@@ -1,0 +1,6 @@
+# 환경 변수 (비밀·로컬 전용 — 커밋하지 않음)
+.env
+**/.env
+.env.*
+!.env.example
+!**/.env.example
