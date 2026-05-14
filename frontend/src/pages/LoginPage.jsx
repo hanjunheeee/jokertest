@@ -1,7 +1,12 @@
 export default function LoginPage() {
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center px-6">
-      <p className="text-lg">로그인 화면입니다</p>
+    <div className="relative h-svh w-full overflow-hidden bg-black">
+      <img
+        src={encodeURI("/로그인.png")}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover object-center"
+        decoding="async"
+      />
     </div>
   )
 }
