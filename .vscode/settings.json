@@ -1,0 +1,10 @@
+{
+  "files.encoding": "utf8",
+  "files.autoGuessEncoding": false,
+  "[javascript]": {
+    "files.encoding": "utf8"
+  },
+  "[javascriptreact]": {
+    "files.encoding": "utf8"
+  }
+}
