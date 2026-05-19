@@ -1,6 +1,7 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { LOGIN_ASSETS } from "../assets/loginAssets.js"
 import PublicAsset from "../components/login/PublicAsset.jsx"
+import SoundControl from "../components/login/SoundControl.jsx"
 import { publicAsset } from "../lib/publicAsset.js"
 
 const inputIconClass = "h-[20px] w-[20px] shrink-0 text-neutral-600"
@@ -89,7 +90,7 @@ function InputSlot({
   const [passwordVisible, setPasswordVisible] = useState(false)
   const inputType = passwordToggle
     ? passwordVisible
-      ? "text"
+      ? "text" 
       : "password"
     : type
 
@@ -184,10 +185,12 @@ function ImageButton({ src, label, className = "" }) {
 
 export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false)
+  const bgVideoRef = useRef(null)
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
       <video
+        ref={bgVideoRef}
         src={publicAsset(LOGIN_ASSETS.bgVideo)}
         autoPlay
         loop
@@ -195,6 +198,16 @@ export default function LoginPage() {
         playsInline
         className="absolute inset-0 h-full w-full object-cover object-center"
       />
+
+      <PublicAsset
+        src={LOGIN_ASSETS.ageRating}
+        alt="전체이용가"
+        className="pointer-events-none absolute left-4 top-4 z-10 h-auto w-[4.5rem] select-none sm:left-6 sm:top-6 sm:w-20"
+      />
+
+      <div className="absolute bottom-4 right-4 z-10 sm:bottom-6 sm:right-6">
+        <SoundControl videoRef={bgVideoRef} />
+      </div>
 
       <div className="absolute inset-0 flex items-center justify-center px-4 py-6">
         <div className="relative w-full max-w-[min(26rem,94vw)]">
