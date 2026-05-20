@@ -1,67 +1,26 @@
 import { useEffect, useState } from "react"
+import { SOUND_CONTROL_ASSETS } from "../../assets/soundControlAssets.js"
+import PublicAsset from "./PublicAsset.jsx"
 
-const iconClass = "h-5 w-5 shrink-0"
+/**
+ * prototype 사운드 조절 UI 프로토타입.png
+ * - 원형 아이콘 높이 ≈ 슬라이더 바 높이의 1.2배
+ * - 슬라이더 바 너비 ≈ 아이콘 지름의 3.8배
+ * - 아이콘이 바 왼쪽에 겹침
+ */
+const ICON_SIZE_CLASS = "w-[clamp(2.85rem,3.9vw,3.5rem)]"
+const BAR_WIDTH_CLASS = "w-[clamp(10.75rem,14.8vw,13.5rem)]"
+const ICON_OVERLAP_CLASS = "-mr-[16%]"
+const BAR_OFFSET_CLASS = "translate-x-[clamp(0.35rem,1.1vw,0.55rem)]"
+const KNOT_INSET_PERCENT = { start: 20, end: 8 }
 
-function VolumeHighIcon() {
-  return (
-    <svg
-      className={iconClass}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M11 5 6 9H3v6h3l5 4V5z" />
-      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
-    </svg>
-  )
-}
+const SLIDER_BAR_CLASS = "block h-auto w-full select-none"
+const SLIDER_KNOT_CLASS =
+  "pointer-events-none absolute top-1/2 z-10 h-auto w-[24%] max-w-[1.15rem] min-w-[0.9rem] -translate-x-1/2 -translate-y-1/2 select-none"
 
-function VolumeLowIcon() {
-  return (
-    <svg
-      className={iconClass}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M11 5 6 9H3v6h3l5 4V5z" />
-      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-    </svg>
-  )
-}
-
-function VolumeMuteIcon() {
-  return (
-    <svg
-      className={iconClass}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M11 5 6 9H3v6h3l5 4V5z" />
-      <path d="m16 9 5 5" />
-      <path d="m21 9-5 5" />
-    </svg>
-  )
-}
-
-function VolumeIcon({ muted, volume }) {
-  if (muted || volume === 0) return <VolumeMuteIcon />
-  if (volume < 0.5) return <VolumeLowIcon />
-  return <VolumeHighIcon />
+function knotLeftPercent(value) {
+  const travel = 100 - KNOT_INSET_PERCENT.start - KNOT_INSET_PERCENT.end
+  return KNOT_INSET_PERCENT.start + value * travel
 }
 
 export default function SoundControl({ videoRef }) {
@@ -75,6 +34,16 @@ export default function SoundControl({ videoRef }) {
     video.muted = muted
   }, [videoRef, volume, muted])
 
+  const sliderValue = muted ? 0 : volume
+  const isSilent = muted || volume === 0
+  const percent = Math.round(sliderValue * 100)
+  const knotLeft = knotLeftPercent(sliderValue)
+
+  const onVolumeChange = (next) => {
+    setVolume(next)
+    setMuted(next === 0)
+  }
+
   const toggleMute = () => {
     setMuted((prev) => {
       if (prev && volume === 0) setVolume(0.6)
@@ -82,38 +51,57 @@ export default function SoundControl({ videoRef }) {
     })
   }
 
-  const onVolumeChange = (event) => {
-    const next = Number(event.target.value)
-    setVolume(next)
-    setMuted(next === 0)
-  }
-
   return (
     <div
-      className="flex items-center gap-2 rounded-lg border border-white/20 bg-black/55 px-3 py-2 text-white shadow-lg backdrop-blur-sm"
+      className="flex items-center"
       role="group"
       aria-label="사운드 조절"
     >
       <button
         type="button"
         onClick={toggleMute}
-        className="flex cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-white/90 transition-colors hover:text-white"
-        aria-label={muted ? "음소거 해제" : "음소거"}
-        aria-pressed={muted}
+        className={`relative z-10 shrink-0 ${ICON_SIZE_CLASS} ${ICON_OVERLAP_CLASS} cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90`}
+        aria-label={isSilent ? "음소거 해제" : "음소거"}
+        aria-pressed={isSilent}
       >
-        <VolumeIcon muted={muted} volume={volume} />
+        <PublicAsset
+          src={
+            isSilent
+              ? SOUND_CONTROL_ASSETS.noSoundIcon
+              : SOUND_CONTROL_ASSETS.soundOnIcon
+          }
+          alt=""
+          className="block h-auto w-full select-none"
+        />
       </button>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.05}
-        value={muted ? 0 : volume}
-        onChange={onVolumeChange}
-        className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-white/25 accent-amber-500 sm:w-28 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-400"
-        aria-label="배경음 볼륨"
-      />
+
+      <div className={`relative shrink-0 ${BAR_WIDTH_CLASS} ${BAR_OFFSET_CLASS}`}>
+        <PublicAsset
+          src={SOUND_CONTROL_ASSETS.sliderBar}
+          alt=""
+          className={SLIDER_BAR_CLASS}
+        />
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={sliderValue}
+          onChange={(event) => onVolumeChange(Number(event.target.value))}
+          className="absolute inset-0 z-20 h-full w-full cursor-pointer opacity-0"
+          aria-label="배경음 볼륨"
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        />
+        <PublicAsset
+          src={SOUND_CONTROL_ASSETS.sliderKnot}
+          alt=""
+          className={SLIDER_KNOT_CLASS}
+          style={{ left: `${knotLeft}%` }}
+          aria-hidden="true"
+        />
+      </div>
     </div>
   )
 }
-

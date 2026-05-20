@@ -1,5 +1,6 @@
 import { motion } from "framer-motion"
 import { useEffect, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { LOBBY_ASSETS } from "../assets/lobbyAssets.js"
 import FriendListPanel from "../components/lobby/FriendListPanel.jsx"
 import PublicAsset from "../components/login/PublicAsset.jsx"
@@ -37,6 +38,7 @@ function holdOnLastFrame(video) {
 }
 
 export default function LobbyPage() {
+  const navigate = useNavigate()
   const bgVideoRef = useRef(null)
   const uiRevealedRef = useRef(false)
   const videoHeldRef = useRef(false)
@@ -44,21 +46,42 @@ export default function LobbyPage() {
   const [uiVisible, setUiVisible] = useState(false)
   const [friendListOpen, setFriendListOpen] = useState(false)
 
-  useEffect(() => {
+  const revealUi = () => {
+    if (uiRevealedRef.current) return
+    uiRevealedRef.current = true
+    setUiVisible(true)
+  }
+
+  const holdVideo = () => {
+    const video = bgVideoRef.current
+    if (!video || videoHeldRef.current) return
+    videoHeldRef.current = true
+    holdOnLastFrame(video)
+  }
+
+  const skipIntro = () => {
+    if (uiRevealedRef.current) return
+
+    revealUi()
+
     const video = bgVideoRef.current
     if (!video) return
 
-    const revealUi = () => {
-      if (uiRevealedRef.current) return
-      uiRevealedRef.current = true
-      setUiVisible(true)
+    if (video.duration && Number.isFinite(video.duration)) {
+      holdVideo()
+      return
     }
 
-    const holdVideo = () => {
-      if (videoHeldRef.current) return
-      videoHeldRef.current = true
-      holdOnLastFrame(video)
+    const onMetadata = () => {
+      video.removeEventListener("loadedmetadata", onMetadata)
+      holdVideo()
     }
+    video.addEventListener("loadedmetadata", onMetadata)
+  }
+
+  useEffect(() => {
+    const video = bgVideoRef.current
+    if (!video) return
 
     const syncPlayback = () => {
       const { duration, currentTime } = video
@@ -129,6 +152,15 @@ export default function LobbyPage() {
         className="absolute inset-0 h-full w-full object-cover object-center"
       />
 
+      {!uiVisible ? (
+        <button
+          type="button"
+          aria-label="인트로 건너뛰기"
+          onClick={skipIntro}
+          className="absolute inset-0 z-20 cursor-pointer border-0 bg-transparent p-0"
+        />
+      ) : null}
+
       <motion.div
         className="absolute inset-0 z-10"
         initial={{ opacity: 0, y: 10 }}
@@ -156,7 +188,11 @@ export default function LobbyPage() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setActiveMenu(item.id)}
+                  onClick={() => {
+                    setActiveMenu(item.id)
+                    if (item.id === "gameplay") navigate("/gameMode")
+                    if (item.id === "settings") navigate("/setting")
+                  }}
                   className={`lobby-menu-btn cursor-pointer border-0 bg-transparent p-0 ${
                     isActive ? "lobby-menu-btn--active" : "lobby-menu-btn--idle"
                   }`}
