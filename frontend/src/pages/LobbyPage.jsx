@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { LOBBY_ASSETS } from "../assets/lobbyAssets.js"
 import FriendListPanel from "../components/lobby/FriendListPanel.jsx"
+import MyPageBannerButton from "../components/lobby/MyPageBannerButton.jsx"
 import PublicAsset from "../components/login/PublicAsset.jsx"
 import { publicAsset } from "../lib/publicAsset.js"
 
@@ -203,6 +204,11 @@ export default function LobbyPage() {
             })}
           </nav>
         </aside>
+
+        {/* prototype 우측 배너 래일 — ER/시즌팩 등과 유사한 대형 가로 버튼 스택 */}
+        <div className="absolute top-[2.5%] right-[0.5%] z-10 flex flex-col items-stretch gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:top-[3%] sm:right-[1%]">
+          <MyPageBannerButton onClick={() => navigate("/mypage")} />
+        </div>
 
         <button
           type="button"

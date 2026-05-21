@@ -5,6 +5,7 @@ import RoomInvitePage from "./pages/RoomInvitePage.jsx"
 import SettingPage from "./pages/SettingPage.jsx"
 import LobbyPage from "./pages/LobbyPage.jsx"
 import LoginPage from "./pages/LoginPage.jsx"
+import MyPage from "./pages/MyPage.jsx"
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/lobby" element={<LobbyPage />} />
+        <Route path="/mypage" element={<MyPage />} />
         <Route path="/gameMode" element={<GameModePage />} />
         <Route path="/roomInvite" element={<RoomInvitePage />} />
         <Route path="/setting" element={<SettingPage />} />
