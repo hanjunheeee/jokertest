@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import SettingPanel from "@/domains/user/components/SettingPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
-import { SETTING_ASSETS } from "@/assets/settingAssets.js"
+import { SETTING_ASSETS } from "../constants/settingAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
 const VIDEO_HOLD_BEFORE_END_SEC = 0.04

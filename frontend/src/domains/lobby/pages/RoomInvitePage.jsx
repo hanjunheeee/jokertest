@@ -1,7 +1,7 @@
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ROOM_INVITE_ASSETS } from "@/assets/roomInviteAssets";
+import { ROOM_INVITE_ASSETS } from "../constants/roomInviteAssets.js"
 import RoomCodeInput from "@/domains/lobby/components/RoomCodeInput.jsx";
 import PublicAsset from "@/shared/ui/PublicAsset";
 import { publicAsset } from "@/shared/utils/publicAsset.js";

@@ -3,7 +3,10 @@ import path from "path"
 import { fileURLToPath } from "url"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
-const targets = ["src/pages/LoginPage.jsx", "src/assets/loginAssets.js"]
+const targets = [
+  "src/domains/auth/pages/LoginPage.jsx",
+  "src/domains/auth/constants/loginAssets.js",
+]
 
 let failed = false
 for (const rel of targets) {

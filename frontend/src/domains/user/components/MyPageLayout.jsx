@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { MY_PAGE_ASSETS, MY_PAGE_PROFILE } from "../../../assets/myPageAssets.js"
+import { MY_PAGE_ASSETS, MY_PAGE_PROFILE } from "../constants/myPageAssets.js"
 import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import BloodRecordFrame from "./BloodRecordFrame.jsx"

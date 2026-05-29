@@ -1,4 +1,4 @@
-import { LOBBY_ASSETS, MY_PAGE_PROFILE } from "@/assets/lobbyAssets.js"
+import { LOBBY_ASSETS, MY_PAGE_PROFILE } from "@/domains/lobby/constants/lobbyAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const TEXT_SHADOW =

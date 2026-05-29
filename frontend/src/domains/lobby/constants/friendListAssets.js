@@ -44,6 +44,22 @@ export const DUMMY_ONLINE_FRIENDS = [
   },
 ]
 
+/** 즐겨찾기 폴더 더미 친구 (레이아웃용) */
+export const DUMMY_FAVORITE_FRIENDS = [
+  {
+    id: "wax-seal",
+    name: "Wax_Seal",
+    profile: FRIEND_LIST_ASSETS.dummyProfile3,
+    online: true,
+  },
+  {
+    id: "midnight-dealer",
+    name: "Midnight_Dealer",
+    profile: FRIEND_LIST_ASSETS.dummyProfile4,
+    online: false,
+  },
+]
+
 /** 오프라인 폴더 더미 친구 */
 export const DUMMY_OFFLINE_FRIENDS = [
   {

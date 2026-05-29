@@ -1,7 +1,7 @@
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import MyPageLayout from "@/domains/user/components/MyPageLayout.jsx"
-import { MY_PAGE_ASSETS } from "@/assets/myPageAssets.js"
+import { MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { publicAsset } from "@/shared/utils/publicAsset"
 

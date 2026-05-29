@@ -11,6 +11,9 @@ import GameModePage from "@/domains/game/pages/GameModePage";
 
 import MyPage from "@/domains/user/pages/MyPage";
 import SettingPage from "@/domains/user/pages/SettingPage";
+
+import StorePage from "@/domains/store/pages/StorePage";
+
 export const router = createBrowserRouter([
     { path: "/", element: <HomePage /> },
     { path: "/login", element: <LoginPage /> },
@@ -19,4 +22,5 @@ export const router = createBrowserRouter([
     { path: "/gameMode", element: <GameModePage /> },
     { path: "/mypage", element: <MyPage /> },
     { path: "/setting", element: <SettingPage /> },
+    { path: "/store", element: <StorePage /> },
 ]);

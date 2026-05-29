@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { SOUND_CONTROL_ASSETS } from "@/assets/soundControlAssets"
+import { SOUND_CONTROL_ASSETS } from "../constants/soundControlAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 /**

@@ -2,10 +2,11 @@ import { AnimatePresence, motion } from "framer-motion"
 import { useState } from "react"
 import {
   countOnlineFriends,
+  DUMMY_FAVORITE_FRIENDS,
   DUMMY_OFFLINE_FRIENDS,
   DUMMY_ONLINE_FRIENDS,
   FRIEND_LIST_ASSETS,
-} from "@/assets/friendListAssets.js"
+} from "../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const PANEL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
@@ -139,6 +140,7 @@ function FriendRow({ name, profileSrc, online }) {
 export default function FriendListPanel({ open, onClose }) {
   const [generalOpen, setGeneralOpen] = useState(true)
   const [offlineOpen, setOfflineOpen] = useState(false)
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
 
   return (
     <AnimatePresence>
@@ -211,6 +213,28 @@ export default function FriendListPanel({ open, onClose }) {
                 {offlineOpen ? (
                   <ul className="mt-1 max-h-[12rem] overflow-y-auto pr-0.5">
                     {DUMMY_OFFLINE_FRIENDS.map((friend) => (
+                      <FriendRow
+                        key={friend.id}
+                        name={friend.name}
+                        profileSrc={friend.profile}
+                        online={friend.online}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
+              </FolderSection>
+
+              <FolderSection className="mt-3.5">
+                <FolderHeader
+                  label={`즐겨찾기 (${countOnlineFriends(DUMMY_FAVORITE_FRIENDS)}/${DUMMY_FAVORITE_FRIENDS.length})`}
+                  open={favoritesOpen}
+                  onToggle={() => setFavoritesOpen((v) => !v)}
+                  className="mt-0 [&_img]:opacity-100 [&_span]:font-bold [&_span]:text-white"
+                />
+
+                {favoritesOpen ? (
+                  <ul className="mt-1 max-h-[12rem] overflow-y-auto pr-0.5">
+                    {DUMMY_FAVORITE_FRIENDS.map((friend) => (
                       <FriendRow
                         key={friend.id}
                         name={friend.name}

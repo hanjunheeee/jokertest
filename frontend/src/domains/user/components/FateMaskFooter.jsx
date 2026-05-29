@@ -2,7 +2,7 @@ import { motion } from "framer-motion"
 import {
   FATE_MASK_DESCRIPTION,
   MY_PAGE_ASSETS,
-} from "@/assets/myPageAssets.js"
+} from "../constants/myPageAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const UI_FADE = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }

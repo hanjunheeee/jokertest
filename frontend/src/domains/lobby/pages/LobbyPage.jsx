@@ -1,7 +1,7 @@
 import { motion } from "framer-motion"
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { LOBBY_ASSETS } from "@/assets/lobbyAssets.js"
+import { LOBBY_ASSETS, LOBBY_MENU_BUTTONS } from "../constants/lobbyAssets.js"
 import FriendListPanel from "@/domains/lobby/components/FriendListPanel.jsx"
 import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -12,12 +12,16 @@ const VIDEO_HOLD_BEFORE_END_SEC = 0.04
 const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
 
 const LOBBY_MENU_ITEMS = [
-  { id: "gameplay", label: "게임플레이" },
-  { id: "settings", label: "설정" },
-  { id: "store", label: "상점" },
-  { id: "archive", label: "기억의 서고" },
-  { id: "exit", label: "종료" },
+  { id: "gameplay", label: "게임플레이", src: LOBBY_MENU_BUTTONS.gameplay },
+  { id: "settings", label: "설정", src: LOBBY_MENU_BUTTONS.settings },
+  { id: "store", label: "상점", src: LOBBY_MENU_BUTTONS.store },
+  { id: "archive", label: "기억의 서고", src: LOBBY_MENU_BUTTONS.archive },
+  { id: "exit", label: "종료", src: LOBBY_MENU_BUTTONS.exit },
 ]
+
+const LOBBY_MENU_BTN_CLASS = "lobby-menu-btn block leading-none"
+const LOBBY_MENU_IMG_CLASS =
+  "lobby-menu-btn__img block h-[clamp(3.35rem,6.2vh,4.85rem)] w-auto max-w-[clamp(12.5rem,23vw,20rem)] object-contain object-center select-none"
 
 function shouldRevealUi(video) {
   const { duration, currentTime } = video
@@ -118,27 +122,11 @@ export default function LobbyPage() {
     <div className="relative h-svh w-full overflow-hidden bg-black">
       <svg aria-hidden="true" className="pointer-events-none absolute h-0 w-0 overflow-hidden">
         <defs>
-          <filter
-            id="lobby-menu-noise"
-            x="-15%"
-            y="-15%"
-            width="130%"
-            height="130%"
-          >
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.78"
-              numOctaves="3"
-              stitchTiles="stitch"
-              result="noise"
-            />
+          <filter id="lobby-menu-red" colorInterpolationFilters="sRGB">
             <feColorMatrix
-              in="noise"
               type="matrix"
-              values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.28 0"
-              result="noiseAlpha"
+              values="0.706 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
             />
-            <feBlend in="SourceGraphic" in2="noiseAlpha" mode="soft-light" />
           </filter>
         </defs>
       </svg>
@@ -193,12 +181,16 @@ export default function LobbyPage() {
                     setActiveMenu(item.id)
                     if (item.id === "gameplay") navigate("/gameMode")
                     if (item.id === "settings") navigate("/setting")
+                    if (item.id === "store") navigate("/store")
                   }}
-                  className={`lobby-menu-btn cursor-pointer border-0 bg-transparent p-0 ${
-                    isActive ? "lobby-menu-btn--active" : "lobby-menu-btn--idle"
-                  }`}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`${LOBBY_MENU_BTN_CLASS} cursor-pointer border-0 bg-transparent p-0`}
                 >
-                  {item.label}
+                  <PublicAsset
+                    src={item.src}
+                    alt={item.label}
+                    className={LOBBY_MENU_IMG_CLASS}
+                  />
                 </button>
               )
             })}

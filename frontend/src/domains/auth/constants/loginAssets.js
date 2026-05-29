@@ -6,6 +6,7 @@ export const LOGIN_ASSETS = {
   input: "/button/입력창1.png",
   checkbox: "/button/체크박스.png",
   loginButton: "/button/로그인 버튼.png",
+  signupButton: "/button/회원가입 버튼.png",
   google: "/button/구글로로그인.png",
   apple: "/button/애플로로그인.png",
   discord: "/button/디스코드로로그인.png",

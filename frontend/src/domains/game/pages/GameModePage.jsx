@@ -1,7 +1,7 @@
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { GAME_MODE_ASSETS, GAME_MODES } from "@/assets/gameModeAssets";
+import { GAME_MODE_ASSETS, GAME_MODES } from "../constants/gameModeAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
 

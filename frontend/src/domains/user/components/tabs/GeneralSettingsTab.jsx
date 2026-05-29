@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { GENERAL_SETTINGS, SETTING_ASSETS } from "@/assets/settingAssets.js"
+import { GENERAL_SETTINGS, SETTING_ASSETS } from "../../constants/settingAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const ROW_CLASS =

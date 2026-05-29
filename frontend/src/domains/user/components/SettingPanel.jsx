@@ -1,6 +1,6 @@
 import { motion } from "framer-motion"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
-import { SETTING_ASSETS, SETTING_TABS } from "@/assets/settingAssets.js"
+import { SETTING_ASSETS, SETTING_TABS } from "../constants/settingAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import GeneralSettingsTab from "@/domains/user/components/tabs/GeneralSettingsTab"
 

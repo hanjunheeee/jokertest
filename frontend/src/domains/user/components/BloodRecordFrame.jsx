@@ -1,4 +1,4 @@
-import { BLOOD_RECORD_STATS, MY_PAGE_ASSETS } from "@/assets/myPageAssets"
+import { BLOOD_RECORD_STATS, MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const TEXT_SHADOW =
