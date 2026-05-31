@@ -20,3 +20,23 @@ exports.createUser = async (userData) => {
 exports.createLoginHistory = async (historyData) => {
   return await db.LoginHistory.create(historyData);
 };
+
+exports.updateUser = async (uuid, updateData) => {
+  return await db.User.update(updateData, { where: { uuid } });
+}
+
+exports.checkActiveBan = async (user_id) => {
+  return await db.UserBan.findOne({
+    where: {
+      user_id,
+      [Op.or]: [
+        { is_permanent: true }, 
+        { end_at: { [Op.gt]: new Date()}} 
+      ]
+    }
+  });
+};
+
+exports.createUserSession = async (sessionData) => {
+  return await db.UserSession.create(sessionData);
+}

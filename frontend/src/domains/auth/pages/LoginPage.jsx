@@ -9,6 +9,8 @@ import SoundControl from "@/domains/auth/components/SoundControl.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
+import { useAuthStore } from "@/domains/auth/store/authStore";
+
 function RememberMeCheckbox({ checked, onChange }) {
   const toggle = () => onChange(!checked)
 
@@ -61,6 +63,8 @@ export default function LoginPage() {
   const [isSignupMode, setIsSignupMode] = useState(false)
   const navigate = useNavigate()
 
+  const login = useAuthStore((state) => state.login)
+
   const [formData, setFormData] = useState({
     login_id: "",
     email: "",
@@ -101,6 +105,9 @@ export default function LoginPage() {
         setIsSignupMode(false)
       } else {
         await loginApi(formData)
+
+        login()
+        
         navigate("/lobby")
       }
     } catch (error) {

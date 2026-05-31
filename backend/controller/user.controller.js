@@ -1,4 +1,6 @@
 const authService = require("../service/auth.service");
+const { getDeviceType } = require("../utils/device");
+const { getClientIp } = require("../utils/ip");
 
 exports.signup = async (req, res, next) => {
     try {
@@ -11,9 +13,11 @@ exports.signup = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
   try {
+    const userAgent = req.headers["user-agent"];
     const reqInfo = {
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
+      ip: getClientIp(req),
+      userAgent: userAgent,
+      deviceType: getDeviceType(userAgent),
     };
 
     const { user, token } = await authService.login(req.body, reqInfo);
@@ -38,3 +42,22 @@ exports.login = async (req, res, next) => {
     res.status(401).json({ message: error.message });
   }
 };
+
+exports.logout = async (req, res, next) => {
+  try {
+    // 1. 프론트에 구워준 쿠키 시원하게 삭제
+    res.clearCookie("accessToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Lax",
+    });
+
+    // 2. 만약 미들웨어를 거쳐서 user 정보와 sessionId가 있다면 DB도 오프라인 처리
+    // (이 로직은 서비스로 빼는 게 좋지만, 구조 이해를 위해 적어둡니다)
+    // await userRepository.updateSessionStatus(req.user.sessionId, false);
+
+    res.status(200).json({ message: "성공적으로 로그아웃 되었습니다." });
+  } catch (error) {
+    res.status(500).json({ message: "로그아웃 처리 중 에러가 발생했습니다." });
+  }
+}
