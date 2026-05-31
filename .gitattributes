@@ -1,0 +1,18 @@
+* text=auto eol=lf
+
+*.js text eol=lf working-tree-encoding=UTF-8
+*.jsx text eol=lf working-tree-encoding=UTF-8
+*.mjs text eol=lf working-tree-encoding=UTF-8
+*.cjs text eol=lf working-tree-encoding=UTF-8
+*.css text eol=lf working-tree-encoding=UTF-8
+*.json text eol=lf working-tree-encoding=UTF-8
+*.md text eol=lf working-tree-encoding=UTF-8
+*.html text eol=lf working-tree-encoding=UTF-8
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.woff2 binary
