@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { loginApi, signupApi } from "../api/auth"
-import { LOGIN_ASSETS } from "../constants/loginAssets.js"
+import { LOGIN_ASSETS } from "../constants/ .js"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import AuthInputSlot, { LockIcon, MailIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
 import SignupForm from "@/domains/auth/components/SignupForm.jsx"
@@ -63,8 +63,6 @@ export default function LoginPage() {
   const [isSignupMode, setIsSignupMode] = useState(false)
   const navigate = useNavigate()
 
-  const login = useAuthStore((state) => state.login)
-
   const [formData, setFormData] = useState({
     login_id: "",
     email: "",
@@ -105,9 +103,6 @@ export default function LoginPage() {
         setIsSignupMode(false)
       } else {
         await loginApi(formData)
-
-        login()
-        
         navigate("/lobby")
       }
     } catch (error) {
