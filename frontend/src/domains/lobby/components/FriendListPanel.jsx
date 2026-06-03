@@ -37,7 +37,7 @@ function SearchBar() {
         alt=""
         className="block h-auto w-full select-none"
       />
-      <input
+      <input 
         type="search"
         placeholder="검색할 친구의 닉네임을 입력하세요."
         className="absolute inset-0 bg-transparent pl-[17%] pr-[6%] text-[11px] text-white/55 outline-none placeholder:text-white/45"
