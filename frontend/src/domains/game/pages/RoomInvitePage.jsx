@@ -2,9 +2,9 @@ import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ROOM_INVITE_ASSETS } from "../constants/roomInviteAssets.js"
-import RoomCodeInput from "@/domains/lobby/components/RoomCodeInput.jsx";
-import PublicAsset from "@/shared/ui/PublicAsset";
-import { publicAsset } from "@/shared/utils/publicAsset.js";
+import RoomCodeInput from "@/domains/game/components/RoomCodeInput.jsx"
+import PublicAsset from "@/shared/ui/PublicAsset"
+import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
 

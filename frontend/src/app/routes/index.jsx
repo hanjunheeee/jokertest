@@ -7,9 +7,9 @@ import HomePage from "@/pages/HomePage"
 import LoginPage from "@/domains/auth/pages/LoginPage";
 
 import LobbyPage from "@/domains/lobby/pages/LobbyPage";
-import RoomInvitePage from "@/domains/lobby/pages/RoomInvitePage";
 
 import GameModePage from "@/domains/game/pages/GameModePage";
+import RoomInvitePage from "@/domains/game/pages/RoomInvitePage";
 
 import MyPage from "@/domains/user/pages/MyPage";
 import SettingPage from "@/domains/user/pages/SettingPage";
