@@ -1,7 +1,10 @@
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { GAME_MODE_ASSETS, GAME_MODES } from "../constants/gameModeAssets.js"
+import {
+  MULTIPLAY_ENTRY_ASSETS,
+  MULTIPLAY_OPTIONS,
+} from "../constants/multiplayEntryAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
@@ -67,31 +70,37 @@ function IconButton({ src, label, onClick, className = "", variants }) {
   )
 }
 
-function GameModeCard({ mode, variants, onSelect }) {
+function MultiplayOptionCard({ option, variants, onSelect }) {
   return (
     <motion.button
       type="button"
-      aria-label={mode.label}
+      aria-label={option.label}
       variants={variants}
-      onClick={() => onSelect?.(mode.id)}
+      onClick={() => onSelect?.(option.id)}
       className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent p-0 transition-transform duration-200 hover:scale-[1.02] active:scale-[0.99]"
     >
       <PublicAsset
-        src={mode.frame}
-        alt={mode.label}
-        className="pointer-events-none mx-auto block h-auto w-full max-w-[clamp(11rem,19.5vw,17.5rem)] select-none drop-shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+        src={option.frame}
+        alt={option.label}
+        className="pointer-events-none mx-auto block h-auto w-full max-w-[clamp(13rem,24vw,20.5rem)] select-none drop-shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
       />
     </motion.button>
   )
 }
 
-export default function GameModePage() {
+/** prototype 게임모드 선택창-멀티플레이 선택.png — GameModePage와 동일 레이아웃 */
+export default function MultiplayEntryPage() {
   const navigate = useNavigate()
   const [uiVisible, setUiVisible] = useState(false)
 
-  const handleModeSelect = (modeId) => {
-    if (modeId === "multi") navigate("/multiplay")
-    if (modeId === "secret-banquet") navigate("/roomInvite")
+  const handleOptionSelect = (optionId) => {
+    if (optionId === "create") {
+      // TODO: 게임 만들기
+      return
+    }
+    if (optionId === "find") {
+      // TODO: 게임 찾기
+    }
   }
 
   useEffect(() => {
@@ -102,7 +111,7 @@ export default function GameModePage() {
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
       <motion.img
-        src={publicAsset(GAME_MODE_ASSETS.bg)}
+        src={publicAsset(MULTIPLAY_ENTRY_ASSETS.bg)}
         alt=""
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -121,20 +130,20 @@ export default function GameModePage() {
         <motion.nav
           variants={NAV_ROW_VARIANTS}
           className="absolute right-[2.5%] top-[2.5%] flex items-center gap-[clamp(0.35rem,0.9vw,0.65rem)] sm:right-[3%] sm:top-[3%]"
-          aria-label="게임모드 유틸리티"
+          aria-label="멀티플레이 유틸리티"
         >
           <IconButton
-            src={GAME_MODE_ASSETS.settingsButton}
+            src={MULTIPLAY_ENTRY_ASSETS.settingsButton}
             label="설정"
             variants={UI_ITEM_VARIANTS}
           />
           <IconButton
-            src={GAME_MODE_ASSETS.micButton}
+            src={MULTIPLAY_ENTRY_ASSETS.micButton}
             label="마이크"
             variants={UI_ITEM_VARIANTS}
           />
           <IconButton
-            src={GAME_MODE_ASSETS.menuButton}
+            src={MULTIPLAY_ENTRY_ASSETS.menuButton}
             label="메뉴"
             variants={UI_ITEM_VARIANTS}
           />
@@ -144,18 +153,18 @@ export default function GameModePage() {
           variants={UI_ITEM_VARIANTS}
           className="absolute inset-x-0 top-[12%] bottom-[10%] flex items-center justify-center px-[clamp(1rem,4vw,3rem)] sm:top-[11%] sm:bottom-[9%]"
           role="group"
-          aria-label="게임 모드 선택"
+          aria-label="멀티플레이 옵션 선택"
         >
           <motion.div
             variants={CARD_ROW_VARIANTS}
-            className="flex w-full max-w-[min(80rem,94vw)] items-stretch justify-center gap-[clamp(0.65rem,2.2vw,2rem)]"
+            className="flex w-full max-w-[min(52rem,88vw)] items-stretch justify-center gap-[clamp(1rem,3vw,2.5rem)]"
           >
-            {GAME_MODES.map((mode) => (
-              <GameModeCard
-                key={mode.id}
-                mode={mode}
+            {MULTIPLAY_OPTIONS.map((option) => (
+              <MultiplayOptionCard
+                key={option.id}
+                option={option}
                 variants={UI_ITEM_VARIANTS}
-                onSelect={handleModeSelect}
+                onSelect={handleOptionSelect}
               />
             ))}
           </motion.div>
@@ -163,13 +172,13 @@ export default function GameModePage() {
 
         <motion.button
           type="button"
-          aria-label="뒤로 가기"
+          aria-label="게임 모드 선택으로 돌아가기"
           variants={UI_ITEM_VARIANTS}
-          onClick={() => navigate("/lobby")}
+          onClick={() => navigate("/gameMode")}
           className="absolute bottom-[2.5%] left-[2.5%] block w-[clamp(4.75rem,7.5vw,6.75rem)] cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90 sm:bottom-[3%] sm:left-[3%]"
         >
           <PublicAsset
-            src={GAME_MODE_ASSETS.backButton}
+            src={MULTIPLAY_ENTRY_ASSETS.backButton}
             alt=""
             className="block h-auto w-full select-none"
           />

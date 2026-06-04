@@ -9,6 +9,7 @@ import LoginPage from "@/domains/auth/pages/LoginPage";
 import LobbyPage from "@/domains/lobby/pages/LobbyPage";
 
 import GameModePage from "@/domains/game/pages/GameModePage";
+import MultiplayEntryPage from "@/domains/game/pages/MultiplayEntryPage";
 import RoomInvitePage from "@/domains/game/pages/RoomInvitePage";
 
 import MyPage from "@/domains/user/pages/MyPage";
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
       { path: "/lobby", element: <LobbyPage /> },
       { path: "/roomInvite", element: <RoomInvitePage /> },
       { path: "/gameMode", element: <GameModePage /> },
+      { path: "/multiplay", element: <MultiplayEntryPage /> },
       { path: "/mypage", element: <MyPage /> },
       { path: "/setting", element: <SettingPage /> },
       { path: "/store", element: <StorePage /> },
