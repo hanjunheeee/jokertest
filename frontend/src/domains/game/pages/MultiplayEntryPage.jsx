@@ -95,7 +95,7 @@ export default function MultiplayEntryPage() {
 
   const handleOptionSelect = (optionId) => {
     if (optionId === "create") {
-      // TODO: 게임 만들기
+      navigate("/game-setup")
       return
     }
     if (optionId === "find") {

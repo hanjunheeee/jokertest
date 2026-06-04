@@ -12,6 +12,8 @@ import GameModePage from "@/domains/game/pages/GameModePage";
 import MultiplayEntryPage from "@/domains/game/pages/MultiplayEntryPage";
 import RoomInvitePage from "@/domains/game/pages/RoomInvitePage";
 
+import GameSetupPage from "@/domains/game-setup/pages/GameSetupPage";
+
 import MyPage from "@/domains/user/pages/MyPage";
 import SettingPage from "@/domains/user/pages/SettingPage";
 
@@ -29,6 +31,7 @@ export const router = createBrowserRouter([
       { path: "/roomInvite", element: <RoomInvitePage /> },
       { path: "/gameMode", element: <GameModePage /> },
       { path: "/multiplay", element: <MultiplayEntryPage /> },
+      { path: "/game-setup", element: <GameSetupPage /> },
       { path: "/mypage", element: <MyPage /> },
       { path: "/setting", element: <SettingPage /> },
       { path: "/store", element: <StorePage /> },
