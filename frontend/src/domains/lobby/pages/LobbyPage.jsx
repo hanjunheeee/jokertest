@@ -11,6 +11,8 @@ import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
+import { useFriendStore } from "../store/friendStore.js"
+
 const UI_REVEAL_BEFORE_END_SEC = 1
 const VIDEO_HOLD_BEFORE_END_SEC = 0.04
 const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
@@ -42,6 +44,12 @@ export default function LobbyPage() {
   const videoHeldRef = useRef(false)
   const [uiVisible, setUiVisible] = useState(false)
   const [friendListOpen, setFriendListOpen] = useState(false)
+  
+  const fetchFriends = useFriendStore((state) => state.fetchFriends)
+
+  useEffect(() => {
+    fetchFriends();
+  }, [fetchFriends]);
 
   const revealUi = () => {
     if (uiRevealedRef.current) return
