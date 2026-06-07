@@ -17,15 +17,16 @@ export default function RoomCodeInput({
   value,
   onChange,
   disabled = false,
+  readOnly = false,
   autoFocus = false,
 }) {
   const inputRefs = useRef([])
 
   useEffect(() => {
-    if (!autoFocus || disabled) return
+    if (!autoFocus || disabled || readOnly) return
     const timer = window.setTimeout(() => focusIndex(0), 280)
     return () => window.clearTimeout(timer)
-  }, [autoFocus, disabled])
+  }, [autoFocus, disabled, readOnly])
 
   const getChars = () =>
     Array.from({ length: CODE_LENGTH }, (_, i) => value[i] ?? "")
@@ -126,6 +127,7 @@ export default function RoomCodeInput({
           maxLength={1}
           value={char}
           disabled={disabled}
+          readOnly={readOnly}
           aria-label={`방 코드 ${index + 1}번째 자리`}
           onChange={(event) => handleChange(index, event)}
           onKeyDown={(event) => handleKeyDown(index, event)}

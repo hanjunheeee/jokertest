@@ -31,7 +31,10 @@ export default function GameSetupPage() {
         draggable={false}
       />
 
-      <GameSetupPanel visible={uiVisible} />
+      <GameSetupPanel
+        visible={uiVisible}
+        onCreateGame={() => navigate("/game-matching")}
+      />
 
       <motion.button
         type="button"

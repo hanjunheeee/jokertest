@@ -62,7 +62,7 @@ function SetupTab({ tab, active, onSelect }) {
   )
 }
 
-export default function GameSetupPanel({ visible }) {
+export default function GameSetupPanel({ visible, onCreateGame }) {
   const [activeTab, setActiveTab] = useState("general")
 
   return (
@@ -111,6 +111,7 @@ export default function GameSetupPanel({ visible }) {
       <button
         type="button"
         aria-label="게임 만들기"
+        onClick={onCreateGame}
         className={CREATE_GAME_BTN_CLASS}
         style={{ outline: "none" }}
       >

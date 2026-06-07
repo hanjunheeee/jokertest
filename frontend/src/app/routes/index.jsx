@@ -8,11 +8,12 @@ import LoginPage from "@/domains/auth/pages/LoginPage";
 
 import LobbyPage from "@/domains/lobby/pages/LobbyPage";
 
-import GameModePage from "@/domains/game/pages/GameModePage";
-import MultiplayEntryPage from "@/domains/game/pages/MultiplayEntryPage";
-import RoomInvitePage from "@/domains/game/pages/RoomInvitePage";
+import GameModePage from "@/domains/game-mode/pages/GameModePage";
+import MultiplayEntryPage from "@/domains/game-mode/pages/MultiplayEntryPage";
+import RoomInvitePage from "@/domains/game-mode/pages/RoomInvitePage";
 
 import GameSetupPage from "@/domains/game-setup/pages/GameSetupPage";
+import GameMatchingPage from "@/domains/game-matching/pages/GameMatchingPage";
 
 import MyPage from "@/domains/user/pages/MyPage";
 import SettingPage from "@/domains/user/pages/SettingPage";
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
       { path: "/gameMode", element: <GameModePage /> },
       { path: "/multiplay", element: <MultiplayEntryPage /> },
       { path: "/game-setup", element: <GameSetupPage /> },
+      { path: "/game-matching", element: <GameMatchingPage /> },
       { path: "/mypage", element: <MyPage /> },
       { path: "/setting", element: <SettingPage /> },
       { path: "/store", element: <StorePage /> },
