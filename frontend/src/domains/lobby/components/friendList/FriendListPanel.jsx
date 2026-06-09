@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect, useState } from "react"
-import { FRIEND_LIST_ASSETS } from "../constants/friendListAssets.js"
-import FriendListTabContent from "@/domains/lobby/components/FriendListTabContent.jsx"
-import FriendAcceptTab from "@/domains/lobby/components/FriendAcceptTab.jsx"
-import FriendRequestTab from "@/domains/lobby/components/FriendRequestTab.jsx"
+import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
+import FriendAcceptTab from "./accept/FriendAcceptTab.jsx"
+import FriendListTabContent from "./list/FriendListTabContent.jsx"
+import FriendRequestTab from "./request/FriendRequestTab.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 function panelAriaLabel(view) {

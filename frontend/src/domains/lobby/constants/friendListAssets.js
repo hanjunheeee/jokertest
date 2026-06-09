@@ -1,5 +1,6 @@
 /** 친구 목록 패널 public 에셋 경로 (frontend/public 기준) */
 export const FRIEND_LIST_ASSETS = {
+  openButton: "/button/친구목록 버튼.png",
   panelFrame: "/frame/friendList/친구목록 탭 프레임.png",
   rowFrame: "/frame/friendList/찢어진 비단 프레임.png",
   profileFrame: "/frame/friendList/친구 프로필 프레임.png",

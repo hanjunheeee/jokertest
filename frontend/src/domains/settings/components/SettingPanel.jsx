@@ -1,8 +1,8 @@
 import { motion } from "framer-motion"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { SETTING_ASSETS, SETTING_TABS } from "../constants/settingAssets.js"
+import GeneralSettingsTab from "@/domains/settings/components/tabs/GeneralSettingsTab"
 import PublicAsset from "@/shared/ui/PublicAsset"
-import GeneralSettingsTab from "@/domains/user/components/tabs/GeneralSettingsTab"
 
 const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
 

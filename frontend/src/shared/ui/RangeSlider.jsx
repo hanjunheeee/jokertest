@@ -15,7 +15,7 @@ function rangeRatio(value, min, max) {
   return (value - min) / (max - min)
 }
 
-export default function ImageRangeSlider({
+export default function RangeSlider({
   value,
   min,
   max,

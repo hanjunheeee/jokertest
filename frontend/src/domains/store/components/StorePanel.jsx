@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { SETTING_ASSETS } from "@/domains/user/constants/settingAssets.js"
+import { SETTING_ASSETS } from "@/domains/settings/constants/settingAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import StoreSidebar from "@/domains/store/components/StoreSidebar.jsx"
 import {

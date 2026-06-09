@@ -1,4 +1,4 @@
-import { FRIEND_LIST_ASSETS } from "../constants/friendListAssets.js"
+import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 export default function FriendListSearchBar({

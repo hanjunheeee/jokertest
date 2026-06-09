@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect, useState } from "react"
-import { ROOM_INVITE_ASSETS } from "@/domains/game-mode/constants/roomInviteAssets.js"
-import RoomCodeInput from "@/domains/game-mode/components/RoomCodeInput.jsx"
+import { ROOM_INVITE_ASSETS } from "@/domains/game/game-mode/constants/roomInviteAssets.js"
+import RoomCodeInput from "@/domains/game/game-mode/components/RoomCodeInput.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const MODAL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }

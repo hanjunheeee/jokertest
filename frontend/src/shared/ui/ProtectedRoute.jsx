@@ -1,13 +1,16 @@
-import { Navigate, Outlet } from "react-router-dom";
-import { useAuthStore } from "@/domains/auth/store/authStore"; // Zustand 스토어 경로
+import { Navigate, Outlet } from "react-router-dom"
+import {
+  selectIsAuthenticated,
+  useAuthStore,
+} from "@/domains/auth/store/authStore"
 
 export default function ProtectedRoute() {
-  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const isAuthenticated = useAuthStore(selectIsAuthenticated)
 
-  if (!isLoggedIn) {
-    alert("로그인이 필요한 페이지입니다!");
-    return <Navigate to="/login" replace />; // 👈 로그인 페이지로 쫓아내기
+  if (!isAuthenticated) {
+    alert("로그인이 필요한 페이지입니다!")
+    return <Navigate to="/login" replace />
   }
 
-  return <Outlet />; // 👈 로그인이 되어있다면, 요청한 페이지(children)를 보여줌!
+  return <Outlet />
 }

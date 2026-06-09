@@ -1,7 +1,7 @@
 import { motion } from "framer-motion"
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import SettingPanel from "@/domains/user/components/SettingPanel.jsx"
+import SettingPanel from "@/domains/settings/components/SettingPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { SETTING_ASSETS } from "../constants/settingAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"

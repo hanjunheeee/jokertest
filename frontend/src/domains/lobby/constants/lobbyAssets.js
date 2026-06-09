@@ -2,7 +2,6 @@
 export const LOBBY_ASSETS = {
   bgVideo: "/bg/대기실 배경 영상2.mp4",
   logo: "/logo/The joker logo.png",
-  friendListButton: "/button/친구목록 버튼.png",
   myPageButton: "/button/마이페이지 이동 버튼_프로토타입2.png",
 }
 

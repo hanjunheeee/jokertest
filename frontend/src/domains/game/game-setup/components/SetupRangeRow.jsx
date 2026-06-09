@@ -3,7 +3,7 @@ import {
   SETUP_ROW_CLASS,
   SETUP_TITLE_CLASS,
 } from "../constants/setupRowStyles.js"
-import ImageRangeSlider from "@/shared/ui/ImageRangeSlider"
+import RangeSlider from "@/shared/ui/RangeSlider"
 
 export default function SetupRangeRow({
   label,
@@ -20,7 +20,7 @@ export default function SetupRangeRow({
         {description ? <p className={SETUP_DESC_CLASS}>{description}</p> : null}
       </div>
 
-      <ImageRangeSlider
+      <RangeSlider
         value={value}
         min={min}
         max={max}

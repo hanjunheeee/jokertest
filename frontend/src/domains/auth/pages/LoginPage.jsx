@@ -9,7 +9,10 @@ import SoundControl from "@/domains/auth/components/SoundControl.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-import { useAuthStore } from "@/domains/auth/store/authStore";
+import {
+  selectIsAuthenticated,
+  useAuthStore,
+} from "@/domains/auth/store/authStore"
 
 function RememberMeCheckbox({ checked, onChange }) {
   const toggle = () => onChange(!checked)
@@ -62,6 +65,7 @@ export default function LoginPage() {
   const audioRef = useRef(null)
   const [isSignupMode, setIsSignupMode] = useState(false)
   const navigate = useNavigate()
+  const isAuthenticated = useAuthStore(selectIsAuthenticated)
   const login = useAuthStore((state) => state.login)
 
   const [formData, setFormData] = useState({
@@ -70,6 +74,12 @@ export default function LoginPage() {
     password: "",
     nickname: "",
   })
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/lobby", { replace: true })
+    }
+  }, [isAuthenticated, navigate])
 
   useEffect(() => {
     const playBgm = () => {
@@ -103,8 +113,8 @@ export default function LoginPage() {
         alert("회원가입이 완료되었습니다! 로그인해주세요.")
         setIsSignupMode(false)
       } else {
-        await loginApi(formData)
-        login()
+        const { user } = await loginApi(formData)
+        login(user)
         navigate("/lobby")
       }
     } catch (error) {

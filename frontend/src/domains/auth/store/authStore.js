@@ -1,15 +1,24 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware';
+import { create } from "zustand"
+import { persist } from "zustand/middleware"
 
 export const useAuthStore = create(
-    persist(
+  persist(
     (set) => ({
-      isLoggedIn: false, // 초기 상태
-      login: () => set({ isLoggedIn: true }),
-      logout: () => set({ isLoggedIn: false }),
+      isLoggedIn: false,
+      user: null,
+      login: (user) => set({ isLoggedIn: true, user }),
+      logout: () => set({ isLoggedIn: false, user: null }),
     }),
     {
-      name: 'auth-storage', // 로컬 스토리지에 저장될 이름
-    }
-  )
+      name: "auth-storage",
+      partialize: (state) => ({
+        isLoggedIn: state.isLoggedIn,
+        user: state.user,
+      }),
+    },
+  ),
 )
+
+export function selectIsAuthenticated(state) {
+  return state.isLoggedIn && state.user != null
+}
