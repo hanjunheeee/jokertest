@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { SOUND_CONTROL_ASSETS } from "../constants/soundControlAssets.js"
+import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 /**
@@ -28,7 +28,7 @@ export default function SoundControl({ audioRef }) {
   const [muted, setMuted] = useState(true)
 
   useEffect(() => {
-    const video = audioRef.current
+    const video = audioRef?.current
     if (!video) return
     video.volume = volume
     video.muted = muted

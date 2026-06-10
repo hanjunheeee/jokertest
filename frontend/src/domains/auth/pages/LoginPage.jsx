@@ -5,8 +5,9 @@ import { LOGIN_ASSETS } from "../constants/loginAssets.js"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import AuthInputSlot, { LockIcon, MailIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
 import SignupForm from "@/domains/auth/components/SignupForm.jsx"
-import SoundControl from "@/domains/auth/components/SoundControl.jsx"
+import { BGM_ASSETS } from "@/shared/constants/bgmAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import SoundControl from "@/shared/ui/SoundControl.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 import {
@@ -127,7 +128,7 @@ export default function LoginPage() {
     <div className="relative h-svh w-full overflow-hidden bg-black">
       <audio
         ref={audioRef}
-        src={publicAsset("/bgm/LoginMusic.wav")}
+        src={publicAsset(BGM_ASSETS.loginMusic)}
         loop
       />
       <video

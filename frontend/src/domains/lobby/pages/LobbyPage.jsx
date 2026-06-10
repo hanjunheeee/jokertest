@@ -2,6 +2,8 @@ import { motion } from "framer-motion"
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { LOBBY_ASSETS } from "../constants/lobbyAssets.js"
+import { BGM_ASSETS } from "@/shared/constants/bgmAssets.js"
+import SoundControl from "@/shared/ui/SoundControl.jsx"
 import FriendListPanel from "@/domains/lobby/components/friendList/FriendListPanel.jsx"
 import FriendListToggleButton from "@/domains/lobby/components/friendList/FriendListToggleButton.jsx"
 import LobbyMenuNav from "@/domains/lobby/components/LobbyMenuNav.jsx"
@@ -35,6 +37,7 @@ function holdOnLastFrame(video) {
 export default function LobbyPage() {
   const navigate = useNavigate()
   const bgVideoRef = useRef(null)
+  const audioRef = useRef(null)
   const uiRevealedRef = useRef(false)
   const videoHeldRef = useRef(false)
   const [uiVisible, setUiVisible] = useState(false)
@@ -74,6 +77,19 @@ export default function LobbyPage() {
   }
 
   useEffect(() => {
+    const playBgm = () => {
+      if (audioRef.current) {
+        audioRef.current.play().catch(() => {})
+      }
+    }
+
+    playBgm()
+    window.addEventListener("click", playBgm, { once: true })
+
+    return () => window.removeEventListener("click", playBgm)
+  }, [])
+
+  useEffect(() => {
     const video = bgVideoRef.current
     if (!video) return
 
@@ -109,6 +125,7 @@ export default function LobbyPage() {
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
+      <audio ref={audioRef} src={publicAsset(BGM_ASSETS.loginMusic)} loop />
       <video
         ref={bgVideoRef}
         src={publicAsset(LOBBY_ASSETS.bgVideo)}
@@ -152,10 +169,13 @@ export default function LobbyPage() {
           <MyPageBannerButton onClick={() => navigate("/mypage")} />
         </div>
 
-        <FriendListToggleButton
-          open={friendListOpen}
-          onOpen={() => setFriendListOpen(true)}
-        />
+        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6">
+          <FriendListToggleButton
+            open={friendListOpen}
+            onOpen={() => setFriendListOpen(true)}
+          />
+          <SoundControl audioRef={audioRef} />
+        </div>
       </motion.div>
 
       <FriendListPanel
