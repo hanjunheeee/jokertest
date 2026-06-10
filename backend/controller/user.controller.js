@@ -17,7 +17,7 @@ exports.signup = async (req, res, next) => {
     await authService.signup(req.body);
     res.status(201).json({ message: "회원가입이 완료되었습니다." });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    next(error);
   }
 }
 
