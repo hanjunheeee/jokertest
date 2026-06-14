@@ -24,13 +24,9 @@ function RememberMeCheckbox({ checked, onChange }) {
       role="checkbox"
       aria-checked={checked}
       onClick={toggle}
-      className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0"
+      className="group flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0"
     >
-      <span
-        className={`relative flex h-4 w-4 shrink-0 items-center justify-center transition-opacity ${
-          checked ? "opacity-100" : "opacity-70"
-        }`}
-      >
+      <span className="interactive-scale-sm relative flex h-4 w-4 shrink-0 items-center justify-center">
         <PublicAsset
           src={LOGIN_ASSETS.checkbox}
           alt=""

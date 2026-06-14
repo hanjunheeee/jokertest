@@ -34,7 +34,7 @@ app.set('trust proxy', 1);
 
 // API 라우트 등록
 // 도메인별로 분리해둔 미니 라우터들을 메인 경로에 꽂아줍니다.
-app.use("/auth", authRouter);
+app.use("/api/auth", authRouter);
 
 // 에러 핸들링 미들웨어 등록
 // 주의: 에러를 낚아채야 하므로 반드시 모든 라우트 설정의 가장 마지막에 위치해야 합니다.

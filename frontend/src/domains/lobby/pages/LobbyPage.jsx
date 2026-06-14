@@ -177,7 +177,7 @@ export default function LobbyPage() {
           <MyPageBannerButton onClick={() => navigate("/mypage")} />
         </div>
 
-        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6">
+        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6 ">
           <FriendListToggleButton
             open={friendListOpen}
             onOpen={() => setFriendListOpen(true)}

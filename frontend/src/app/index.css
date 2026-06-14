@@ -55,6 +55,21 @@
 }
 
 @layer components {
+  /* 큰 이미지/카드 버튼 — hover 시 약간 확대 */
+  .interactive-scale {
+    @apply cursor-pointer border-0 bg-transparent p-0 transition-transform duration-200 ease-out hover:scale-[1.02] active:scale-[0.99];
+  }
+
+  /* 소형 컨트롤 — 부모에 group, 자식(img/span)에 interactive-scale-sm */
+  .interactive-scale-sm {
+    @apply block transition-transform duration-200 ease-out group-hover:scale-[1.18] group-active:scale-[0.9] group-disabled:scale-100;
+  }
+
+  /* 슬라이더 노드 등 — 형제 peer(input) hover/active에 반응 (interactive-scale-sm과 동일 강도) */
+  .interactive-scale-peer-sm {
+    @apply block transition-transform duration-200 ease-out peer-hover:scale-[1.18] peer-active:scale-[0.9];
+  }
+
   /* hover 시 text-main(#b50000) 단색 — sepia/hue-rotate(350deg) 노란 형광 톤 사용 안 함 */
   .lobby-menu-btn__img {
     transition: filter 0.2s ease;

@@ -17,7 +17,6 @@ export const FRIEND_LIST_ASSETS = {
   friendAcceptButton: "/button/friendList/친구수락버튼.png",
   friendBlockButton: "/button/friendList/친구차단버튼.png",
   acceptAllButton: "/button/버튼(수락 및 긍정).png",
-  backButton: "/button/뒤로가기 버튼2.png",
   dummyProfile1: "/button/friendList/더미친구 프로필1.png",
   dummyProfile2: "/button/friendList/더미친구 프로필2.png",
   dummyProfile3: "/button/friendList/더미친구 프로필3.png",

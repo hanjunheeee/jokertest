@@ -2,7 +2,10 @@ import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import StorePanel from "@/domains/store/components/StorePanel.jsx"
 import { STORE_ASSETS } from "../constants/storeAssets.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import {
+  BACK_BUTTON_PAGE_POSITION_CLASS,
+  MotionBackButton,
+} from "@/shared/ui/BackButton.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
@@ -32,21 +35,13 @@ export default function StorePage() {
         <StorePanel />
       </motion.div>
 
-      <motion.button
-        type="button"
-        aria-label="뒤로 가기"
+      <MotionBackButton
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={UI_REVEAL_TRANSITION}
         onClick={() => navigate("/lobby")}
-        className="absolute bottom-[2.5%] left-[2.5%] z-30 block w-[clamp(4.75rem,7.5vw,6.75rem)] cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90 sm:bottom-[3%] sm:left-[3%]"
-      >
-        <PublicAsset
-          src={STORE_ASSETS.backButton}
-          alt=""
-          className="block h-auto w-full select-none"
-        />
-      </motion.button>
+        className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
+      />
     </div>
   )
 }

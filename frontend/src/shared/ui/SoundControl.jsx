@@ -15,8 +15,10 @@ const BAR_OFFSET_CLASS = "translate-x-[clamp(0.35rem,1.1vw,0.55rem)]"
 const KNOT_INSET_PERCENT = { start: 20, end: 8 }
 
 const SLIDER_BAR_CLASS = "block h-auto w-full select-none"
-const SLIDER_KNOT_CLASS =
-  "pointer-events-none absolute top-1/2 z-10 h-auto w-[24%] max-w-[1.15rem] min-w-[0.9rem] -translate-x-1/2 -translate-y-1/2 select-none"
+const SLIDER_KNOT_WRAP_CLASS =
+  "pointer-events-none absolute top-1/2 z-10 w-[24%] max-w-[1.15rem] min-w-[0.9rem] -translate-x-1/2 -translate-y-1/2"
+
+const SLIDER_KNOT_IMG_CLASS = "block h-auto w-full select-none"
 
 function knotLeftPercent(value) {
   const travel = 100 - KNOT_INSET_PERCENT.start - KNOT_INSET_PERCENT.end
@@ -88,19 +90,25 @@ export default function SoundControl({ audioRef }) {
           step={0.05}
           value={sliderValue}
           onChange={(event) => onVolumeChange(Number(event.target.value))}
-          className="absolute inset-0 z-20 h-full w-full cursor-pointer opacity-0"
+          className="peer absolute inset-0 z-20 h-full w-full cursor-pointer opacity-0"
           aria-label="배경음 볼륨"
           aria-valuenow={percent}
           aria-valuemin={0}
           aria-valuemax={100}
         />
-        <PublicAsset
-          src={SOUND_CONTROL_ASSETS.sliderKnot}
-          alt=""
-          className={SLIDER_KNOT_CLASS}
+        <span
+          className={SLIDER_KNOT_WRAP_CLASS}
           style={{ left: `${knotLeft}%` }}
           aria-hidden="true"
-        />
+        >
+          <span className="interactive-scale-peer-sm block w-full">
+            <PublicAsset
+              src={SOUND_CONTROL_ASSETS.sliderKnot}
+              alt=""
+              className={SLIDER_KNOT_IMG_CLASS}
+            />
+          </span>
+        </span>
       </div>
     </div>
   )

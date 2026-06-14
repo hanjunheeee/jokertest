@@ -2,7 +2,7 @@ import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import MyPageLayout from "@/domains/user/components/MyPageLayout.jsx"
 import { MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import { MotionBackButton } from "@/shared/ui/BackButton.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
 const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
@@ -24,21 +24,13 @@ export default function MyPage() {
 
       <MyPageLayout />
 
-      <motion.button
-        type="button"
-        aria-label="뒤로 가기"
+      <MotionBackButton
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={BG_FADE_TRANSITION}
         onClick={() => navigate("/lobby")}
-        className="fixed bottom-[2.5%] left-[2.5%] z-20 block w-[clamp(4.75rem,7.5vw,6.75rem)] cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90 sm:bottom-[3%] sm:left-[3%]"
-      >
-        <PublicAsset
-          src={MY_PAGE_ASSETS.backButton}
-          alt=""
-          className="block h-auto w-full select-none"
-        />
-      </motion.button>
+        className="fixed bottom-[2.5%] left-[2.5%] z-20 sm:bottom-[3%] sm:left-[3%]"
+      />
     </div>
   )
 }

@@ -1,7 +1,6 @@
 /** 마이페이지 public 에셋 경로 (frontend/public 기준) */
 export const MY_PAGE_ASSETS = {
   bg: "/bg/마이페이지 뒷배경.png",
-  backButton: "/button/뒤로가기 버튼2.png",
   reputationBanner: "/button/마이페이지 이동 버튼_프로토타입.png",
   profileFrame: "/frame/mypage/마이페이지 프로필 프레임.png",
   profilePhoto: "/frame/mypage/마이페이지 프로필 사진.png",

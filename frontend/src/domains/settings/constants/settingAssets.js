@@ -3,7 +3,6 @@ export const SETTING_ASSETS = {
   bgVideo: "/bg/로비 설정창 영상.mp4",
   tabActive: "/button/옵션버튼(활성화).png",
   tabInactive: "/button/옵션버튼(비활성화).png",
-  backButton: "/button/뒤로가기 버튼2.png",
   inputField: "/button/입력창1.png",
   checkbox: "/button/체크박스2.png",
   checkMark: "/button/체크표시.png",

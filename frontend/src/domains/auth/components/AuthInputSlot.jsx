@@ -117,10 +117,12 @@ export default function AuthInputSlot({
           <button
             type="button"
             onClick={() => setPasswordVisible((v) => !v)}
-            className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-neutral-600 transition-colors hover:text-neutral-800"
+            className="group shrink-0 cursor-pointer border-0 bg-transparent p-0 text-neutral-600 transition-colors hover:text-neutral-800"
             aria-label={passwordVisible ? "비밀번호 숨기기" : "비밀번호 보기"}
           >
-            {passwordVisible ? <EyeOffIcon /> : <EyeIcon />}
+            <span className="interactive-scale-sm block">
+              {passwordVisible ? <EyeOffIcon /> : <EyeIcon />}
+            </span>
           </button>
         ) : null}
       </div>

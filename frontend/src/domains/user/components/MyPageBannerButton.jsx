@@ -55,8 +55,8 @@ export default function MyPageBannerButton({
       type={isInteractive ? "button" : undefined}
       aria-label={isInteractive ? "마이페이지" : undefined}
       onClick={onClick}
-      className={`relative block [container-type:inline-size] border-0 bg-transparent p-0 leading-none ${
-        isInteractive ? "cursor-pointer" : ""
+      className={`relative block [container-type:inline-size] leading-none ${
+        isInteractive ? "interactive-scale" : "border-0 bg-transparent p-0"
       } ${className}`}
     >
       <PublicAsset

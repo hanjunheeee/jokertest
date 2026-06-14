@@ -2,7 +2,10 @@ import { motion } from "framer-motion"
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import SettingPanel from "@/domains/settings/components/SettingPanel.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import {
+  BACK_BUTTON_PAGE_POSITION_CLASS,
+  MotionBackButton,
+} from "@/shared/ui/BackButton.jsx"
 import { SETTING_ASSETS } from "../constants/settingAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
@@ -95,24 +98,16 @@ export default function SettingPage() {
 
       <SettingPanel visible={introDone} />
 
-      <motion.button
-        type="button"
-        aria-label="뒤로 가기"
+      <MotionBackButton
         initial={{ opacity: 0, y: 8 }}
         animate={
           introDone ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }
         }
         transition={UI_REVEAL_TRANSITION}
         onClick={() => navigate("/lobby")}
-        className="absolute bottom-[2.5%] left-[2.5%] z-30 block w-[clamp(4.75rem,7.5vw,6.75rem)] cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90 sm:bottom-[3%] sm:left-[3%]"
+        className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
         style={{ pointerEvents: introDone ? "auto" : "none" }}
-      >
-        <PublicAsset
-          src={SETTING_ASSETS.backButton}
-          alt=""
-          className="block h-auto w-full select-none"
-        />
-      </motion.button>
+      />
     </div>
   )
 }

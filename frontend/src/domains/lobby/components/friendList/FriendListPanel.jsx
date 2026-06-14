@@ -30,7 +30,10 @@ const PANEL_INSET = {
 }
 
 const FRIEND_ACTION_BTN_CLASS =
-  "block w-[clamp(2.45rem,3.6vw,3rem)] cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
+  "group block w-[clamp(2.45rem,3.6vw,3rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
+
+const FRIEND_ACTION_BTN_IMG_CLASS =
+  "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.9]"
 
 const FRAME_CORNER_BTN_POS =
   "pointer-events-auto absolute right-[clamp(2.35rem,14%,3.1rem)] bottom-[clamp(2.1rem,12%,2.85rem)] z-20"
@@ -51,7 +54,7 @@ function FriendActionButtons({ onRequestClick, onAcceptClick }) {
         <PublicAsset
           src={FRIEND_LIST_ASSETS.friendRequestButton}
           alt=""
-          className="block h-auto w-full select-none"
+          className={FRIEND_ACTION_BTN_IMG_CLASS}
         />
       </button>
       <button
@@ -64,7 +67,7 @@ function FriendActionButtons({ onRequestClick, onAcceptClick }) {
         <PublicAsset
           src={FRIEND_LIST_ASSETS.friendAcceptButton}
           alt=""
-          className="block h-auto w-full select-none"
+          className={FRIEND_ACTION_BTN_IMG_CLASS}
         />
       </button>
     </div>

@@ -8,12 +8,12 @@ import LoginPage from "@/domains/auth/pages/LoginPage";
 
 import LobbyPage from "@/domains/lobby/pages/LobbyPage";
 
-import GameModePage from "@/domains/game/game-mode/pages/GameModePage";
-import MultiplayEntryPage from "@/domains/game/game-mode/pages/MultiplayEntryPage";
-import RoomInvitePage from "@/domains/game/game-mode/pages/RoomInvitePage";
+import GameModePage from "@/domains/game/mode/pages/GameModePage";
+import MultiplayEntryPage from "@/domains/game/mode/pages/MultiplayEntryPage";
+import RoomInvitePage from "@/domains/game/mode/pages/RoomInvitePage";
 
-import GameSetupPage from "@/domains/game/game-setup/pages/GameSetupPage";
-import GameMatchingPage from "@/domains/game/game-matching/pages/GameMatchingPage";
+import GameSetupPage from "@/domains/game/setup/pages/GameSetupPage";
+import GameMatchingPage from "@/domains/game/matching/pages/GameMatchingPage";
 
 import MyPage from "@/domains/user/pages/MyPage";
 import SettingPage from "@/domains/settings/pages/SettingPage";

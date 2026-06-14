@@ -4,6 +4,7 @@ import {
 } from "../../../constants/friendListAssets.js"
 import FriendListSearchBar from "../common/FriendListSearchBar.jsx"
 import IncomingFriendRow from "./IncomingFriendRow.jsx"
+import BackButton from "@/shared/ui/BackButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 function AcceptAllButton({ onClick }) {
@@ -60,19 +61,12 @@ export default function FriendAcceptTab({ onBack }) {
         ))}
       </ul>
 
-      <button
-        type="button"
+      <BackButton
+        size="compact"
+        ariaLabel="친구 목록으로 돌아가기"
         onClick={onBack}
-        aria-label="친구 목록으로 돌아가기"
-        className="mt-2 w-[clamp(2.35rem,4vw,2.85rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
-        style={{ outline: "none" }}
-      >
-        <PublicAsset
-          src={FRIEND_LIST_ASSETS.backButton}
-          alt=""
-          className="block h-auto w-full select-none"
-        />
-      </button>
+        className="mt-2"
+      />
     </div>
   )
 }
