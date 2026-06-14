@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
 import FriendAcceptTab from "./accept/FriendAcceptTab.jsx"
 import FriendListTabContent from "./list/FriendListTabContent.jsx"
@@ -7,21 +7,16 @@ import FriendRequestTab from "./request/FriendRequestTab.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 function panelAriaLabel(view) {
-  if (view === "request") return "친구 신청"
+  if (view === "request") return "친구 신청" 
   if (view === "accept") return "친구 수락"
   return "친구 목록"
 }
 
 const PANEL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
 
-/**
- * prototype 대기실 UI5-친구탭 펼침.png
- * 우측 상단 정렬, 하단은 친구목록 버튼(bottom ~2.5%, 높이 ~7rem) 위까지
- */
 const PANEL_CLASS =
   "absolute right-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(17.5rem,22.5vw,25.5rem)] max-w-[26rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
 
-/** 친구목록 탭 프레임.png 내부 안전 영역 (상단 장식·하단 테두리 여백) */
 const PANEL_INSET = {
   paddingTop: "clamp(4rem, 17%, 5.3rem)",
   paddingBottom: "clamp(2.75rem, 11%, 3.5rem)",
@@ -74,15 +69,26 @@ function FriendActionButtons({ onRequestClick, onAcceptClick }) {
   )
 }
 
-/**
- * 로비 친구 목록 패널 (prototype: 친구목록 창.png, 친구 신청 창2.png)
- */
-export default function FriendListPanel({ open, onClose }) {
+export default function FriendListPanel({
+  open,
+  onClose,
+  onlineFriends = [],
+  offlineFriends = [],
+  favoriteFriends = [],
+  incomingRequests = [],
+  onRefreshRequests,
+  onAcceptRequest,
+  onDeclineRequest,
+  onAcceptAll,
+}) {
   const [panelView, setPanelView] = useState("list")
 
-  useEffect(() => {
+  const [ prevOpen, setPrevOpen ] = useState(open)
+
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (!open) setPanelView("list")
-  }, [open])
+  }
 
   return (
     <AnimatePresence>
@@ -120,12 +126,30 @@ export default function FriendListPanel({ open, onClose }) {
               className="relative flex h-full min-h-0 flex-col"
               style={PANEL_INSET}
             >
-              {panelView === "list" ? <FriendListTabContent /> : null}
-              {panelView === "request" ? (
-                <FriendRequestTab onBack={() => setPanelView("list")} />
+              {panelView === "list" ? (
+                <FriendListTabContent 
+                  onlineFriends={onlineFriends}
+                  offlineFriends={offlineFriends}
+                  favoriteFriends={favoriteFriends}
+                />
               ) : null}
+
+              {panelView === "request" ? (
+                <FriendRequestTab 
+                  onBack={() => setPanelView("list")} 
+                  recommendedFriends={[]} 
+                />
+              ) : null}
+
               {panelView === "accept" ? (
-                <FriendAcceptTab onBack={() => setPanelView("list")} />
+                <FriendAcceptTab
+                  onBack={() => setPanelView("list")}
+                  incomingRequests={incomingRequests}
+                  onAccept={onAcceptRequest}
+                  onDecline={onDeclineRequest}
+                  onAcceptAll={onAcceptAll}
+                  onRefresh={onRefreshRequests}
+                />
               ) : null}
             </div>
 

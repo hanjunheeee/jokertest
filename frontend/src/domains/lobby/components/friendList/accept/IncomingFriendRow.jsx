@@ -4,7 +4,7 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 const ROW_ACTION_BTN_CLASS =
   "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
-export default function IncomingFriendRow({ name, profileSrc, online }) {
+export default function IncomingFriendRow({ requestId, name, profileSrc, onAccept, onDecline }) {
   return (
     <li className="relative mt-2 w-full list-none">
       <PublicAsset
@@ -33,28 +33,7 @@ export default function IncomingFriendRow({ name, profileSrc, online }) {
             <p className="truncate font-subheading text-[clamp(0.78rem,1vw,0.92rem)] leading-tight text-white">
               {name}
             </p>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="relative inline-flex h-[1.05rem] w-[1.05rem] shrink-0">
-                <PublicAsset
-                  src={FRIEND_LIST_ASSETS.onlineBadge}
-                  alt=""
-                  className="h-full w-full select-none"
-                />
-                {!online ? (
-                  <span
-                    className="pointer-events-none absolute inset-0 rounded-full bg-black/80"
-                    aria-hidden="true"
-                  />
-                ) : null}
-              </span>
-              <span
-                className={`text-[9px] leading-none ${
-                  online ? "text-amber-100/85" : "text-white/35"
-                }`}
-              >
-                {online ? "접속 중" : "오프라인"}
-              </span>
-            </div>
+            <p className="mt-0.5 text-[9px] leading-none text-white/45">친구 신청</p>
           </div>
         </div>
 
@@ -62,7 +41,8 @@ export default function IncomingFriendRow({ name, profileSrc, online }) {
           <button
             type="button"
             className={ROW_ACTION_BTN_CLASS}
-            aria-label={`${name} 차단`}
+            aria-label={`${name} 거절`}
+            onClick={() => onDecline && onDecline(requestId)}
             style={{ outline: "none" }}
           >
             <PublicAsset
@@ -75,6 +55,7 @@ export default function IncomingFriendRow({ name, profileSrc, online }) {
             type="button"
             className={ROW_ACTION_BTN_CLASS}
             aria-label={`${name} 친구 수락`}
+            onClick={() => onAccept && onAccept(requestId)}
             style={{ outline: "none" }}
           >
             <PublicAsset

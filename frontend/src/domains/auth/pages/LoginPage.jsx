@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { loginApi, signupApi } from "../api/auth"
+import { loginApi, signupApi, getMeApi } from "../api/auth"
 import { LOGIN_ASSETS } from "../constants/loginAssets.js"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import AuthInputSlot, { LockIcon, MailIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
@@ -66,17 +66,17 @@ export default function LoginPage() {
   const login = useAuthStore((state) => state.login)
 
   const [formData, setFormData] = useState({
-    login_id: "",
     email: "",
     password: "",
     nickname: "",
   })
 
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate("/lobby", { replace: true })
-    }
-  }, [isAuthenticated, navigate])
+    if (!isAuthenticated) return;
+    getMeApi()
+      .then(() => navigate("/lobby", { replace: true }))
+      .catch(() => {});
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const playBgm = () => {

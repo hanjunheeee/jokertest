@@ -31,15 +31,6 @@ export default function SignupForm({ formData, onChange, onSwitchToLogin }) {
 
       <div className="mt-4 flex flex-1 flex-col gap-2">
         <AuthInputSlot
-          type="text"
-          name="login_id"
-          value={formData.login_id}
-          onChange={onChange}
-          leadingIcon={<MailIcon />}
-          placeholder="사용할 아이디를 입력하세요"
-        />
-
-        <AuthInputSlot
           type="email"
           name="email"
           value={formData.email}

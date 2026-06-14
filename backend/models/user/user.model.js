@@ -14,7 +14,6 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4, 
       primaryKey: true, // 보안 및 분산 환경을 고려해 순차적 ID 대신 예측 불가능한 UUID를 기본키로 사용
     },
-    login_id: { type: DataTypes.STRING(50), allowNull: false, unique: true }, // 로그인에 사용할 아이디 (중복 불가)
     password_hash: { type: DataTypes.STRING(255), allowNull: false },         // 단방향 암호화(해싱)된 비밀번호
     nickname: { type: DataTypes.STRING(50), allowNull: false },               // 서비스 내에서 보여질 닉네임
     email: { type: DataTypes.STRING(100), allowNull: false, unique: true },   // 알림 및 계정 찾기용 이메일 (중복 불가)

@@ -4,7 +4,7 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 const ROW_ACTION_BTN_CLASS =
   "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
-export default function RecommendedFriendRow({ name, profileSrc, online }) {
+export default function RecommendedFriendRow({ id, name, profileSrc, online, onSend, sent }) {
   return (
     <li className="relative mt-2 w-full list-none">
       <PublicAsset
@@ -73,8 +73,9 @@ export default function RecommendedFriendRow({ name, profileSrc, online }) {
           </button>
           <button
             type="button"
-            className={ROW_ACTION_BTN_CLASS}
-            aria-label={`${name}에게 친구 신청`}
+            className={`${ROW_ACTION_BTN_CLASS} ${sent ? "opacity-40 cursor-default" : ""}`}
+            aria-label={sent ? "신청 완료" : `${name}에게 친구 신청`}
+            onClick={() => !sent && onSend && onSend(id)}
             style={{ outline: "none" }}
           >
             <PublicAsset

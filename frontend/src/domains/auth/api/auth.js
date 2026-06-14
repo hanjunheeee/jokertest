@@ -1,35 +1,25 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import { api } from '@/shared/api/client';
 
-// 로그인 API
+/**
+ * @desc    로그인 API
+ * 클라이언트에서 입력받은 이메일/비밀번호를 서버로 전송합니다.
+ * @param   {Object} loginData - { email, password }
+ * @returns {Promise<Object>} 성공 시 유저 정보와 토큰 반환
+ */
 export const loginApi = async (loginData) => {
-  const response = await fetch(`${BASE_URL}/api/auth/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(loginData),
-    credentials: "include", 
-  });
-  
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "로그인에 실패했습니다.");
-  
-  return data;
-};
+  return await api.post('/auth/login', loginData);
+}
 
-// 회원가입 API
+/**
+ * @desc    회원가입 API
+ * 신규 유저의 가입 정보를 서버로 전송합니다.
+ * @param   {Object} signupData - { login_id, email, password, nickname }
+ * @returns {Promise<Object>} 성공 시 생성된 유저 데이터 반환
+ */
 export const signupApi = async (signupData) => {
-  const response = await fetch(`${BASE_URL}/api/auth/signup`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(signupData),
-    credentials: "include",
-  });
-  
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "회원가입에 실패했습니다.");
-  
-  return data;
-};
+  return await api.post('/auth/signup', signupData);
+}
+
+export const getMeApi = async () => {
+  return await api.get('/auth/me');
+}

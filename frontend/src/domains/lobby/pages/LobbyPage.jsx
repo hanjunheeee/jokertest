@@ -11,7 +11,7 @@ import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-import { useFriendStore } from "../store/friendStore.js"
+import { fetchMyFriends, fetchIncomingRequests, acceptFriendRequest, declineFriendRequest } from "@/domains/lobby/api/friend.js";
 
 const UI_REVEAL_BEFORE_END_SEC = 1
 const VIDEO_HOLD_BEFORE_END_SEC = 0.04
@@ -45,11 +45,79 @@ export default function LobbyPage() {
   const [uiVisible, setUiVisible] = useState(false)
   const [friendListOpen, setFriendListOpen] = useState(false)
   
-  const fetchFriends = useFriendStore((state) => state.fetchFriends)
+  const [allFriends, setAllFriends] = useState([])
+  const [incomingRequests, setIncomingRequests] = useState([])
 
+  // 💡 1. 순수하게 백엔드에서 데이터만 가져오는 함수 (setState 안 씀)
+  const fetchFriendsApi = async () => {
+    const friendsData = await fetchMyFriends();
+    const requestsData = await fetchIncomingRequests();
+    return { friendsData, requestsData };
+  };
+
+  const handleRefreshFriends = async () => {
+    try {
+      const { friendsData, requestsData } = await fetchFriendsApi();
+      setAllFriends(friendsData);
+      setIncomingRequests(requestsData);
+    } catch (error) {
+      console.error("데이터 로드 실패:", error.message);
+    }
+  };
+
+  const handleAcceptRequest = async (requestId) => {
+    try {
+      await acceptFriendRequest(requestId);
+      const requestsData = await fetchIncomingRequests();
+      setIncomingRequests(requestsData);
+    } catch (error) {
+      console.error("친구 수락 실패:", error.message);
+    }
+  };
+
+  const handleDeclineRequest = async (requestId) => {
+    try {
+      await declineFriendRequest(requestId);
+      setIncomingRequests(prev => prev.filter(r => r.request_id !== requestId));
+    } catch (error) {
+      console.error("친구 거절 실패:", error.message);
+    }
+  };
+
+  const handleAcceptAll = async () => {
+    try {
+      await Promise.all(incomingRequests.map(r => acceptFriendRequest(r.request_id)));
+      setIncomingRequests([]);
+    } catch (error) {
+      console.error("전체 수락 실패:", error.message);
+    }
+  };
+
+  // 💡 3. 패널이 열릴 때 자동으로 상태를 갱신 (리액트 공식 권장 패턴 적용!)
   useEffect(() => {
-    fetchFriends();
-  }, [fetchFriends]);
+    if (!friendListOpen) return;
+
+    let isMounted = true; // 화면이 열려있는지 확인하는 안전장치
+
+    // .then() 안에서 비동기적으로 상태를 업데이트하므로 린터가 안심합니다.
+    fetchFriendsApi()
+      .then(({ friendsData, requestsData }) => {
+        if (isMounted) {
+          setAllFriends(friendsData);
+          setIncomingRequests(requestsData);
+        }
+      })
+      .catch((error) => console.error("데이터 로드 실패:", error.message));
+
+    return () => {
+      isMounted = false; // 패널이 닫히면 데이터가 와도 무시함 (메모리 누수 방지)
+    };
+  }, [friendListOpen]);
+
+  // 폴더 규격에 맞게 3등분
+  const onlineFriends = allFriends.filter(f => f.online && !f.isFavorite);
+  const offlineFriends = allFriends.filter(f => !f.online && !f.isFavorite);
+  const favoriteFriends = allFriends.filter(f => f.isFavorite);
 
   const revealUi = () => {
     if (uiRevealedRef.current) return
@@ -168,11 +236,9 @@ export default function LobbyPage() {
             alt="The Joker"
             className="pointer-events-none h-auto w-[clamp(14rem,27vw,28rem)] translate-y-[clamp(0.4rem,1.2vh,0.9rem)] select-none"
           />
-
           <LobbyMenuNav />
         </aside>
 
-        {/* prototype 우측 배너 래일 — ER/시즌팩 등과 유사한 대형 가로 버튼 스택 */}
         <div className="absolute top-[2.5%] right-[0.5%] z-10 flex flex-col items-stretch gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:top-[3%] sm:right-[1%]">
           <MyPageBannerButton onClick={() => navigate("/mypage")} />
         </div>
@@ -189,6 +255,14 @@ export default function LobbyPage() {
       <FriendListPanel
         open={friendListOpen}
         onClose={() => setFriendListOpen(false)}
+        onlineFriends={onlineFriends}
+        offlineFriends={offlineFriends}
+        favoriteFriends={favoriteFriends}
+        incomingRequests={incomingRequests}
+        onRefreshRequests={handleRefreshFriends}
+        onAcceptRequest={handleAcceptRequest}
+        onDeclineRequest={handleDeclineRequest}
+        onAcceptAll={handleAcceptAll}
       />
     </div>
   )

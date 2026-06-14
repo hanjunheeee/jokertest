@@ -6,7 +6,7 @@
  * @param {Object} res - Express 응답 객체
  * @param {Function} next - Express next 미들웨어 함수
  */
-export const notFoundHandler = (req, res, next) => {
+exports.notFoundHandler = (req, res, next) => {
     // 요청된 메서드와 URL을 포함하여 에러 메시지 생성
     const error = new Error(`${req.method} ${req.url} 라우터를 찾을 수 없습니다.`)
     error.status = 404; // 상태 코드를 404로 설정
@@ -25,7 +25,7 @@ export const notFoundHandler = (req, res, next) => {
  * @param {Object} res - Express 응답 객체
  * @param {Function} next - Express next 미들웨어 함수 (여기선 호출 안 함)
  */
-export const globalErrorHandler = (err, req, res, next) => {
+exports.globalErrorHandler = (err, req, res, next) => {
     // 서버 콘솔에 에러 스택을 빨간색(\x1b[31m)으로 눈에 띄게 출력하여 디버깅을 돕습니다.
     console.error('\x1b[31m%s\x1b[0m', err.stack);
 
