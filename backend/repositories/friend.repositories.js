@@ -197,3 +197,19 @@ exports.searchUsersByNickname = async (query, myUuid) => {
 exports.findOnlinePresence = async (userId) => {
     return await db.OnlinePresence.findOne({ where: { user_id: userId } });
 };
+
+/**
+ * @desc    특정 유저의 접속 상태를 ONLINE/OFFLINE으로 생성 또는 갱신(Upsert)합니다.
+ *          소켓 connect/disconnect 시점에 호출되며, 레코드가 없으면 새로 만들고 있으면 덮어씁니다.
+ *
+ * @param   {string} userId - 상태를 변경할 유저의 UUID
+ * @param   {string} status - 변경할 상태값 ('ONLINE' | 'OFFLINE')
+ * @returns {Promise<Array>} Sequelize upsert 결과
+ */
+exports.upsertOnlinePresence = async (userId, status) => {
+    return await db.OnlinePresence.upsert({
+        user_id: userId,
+        status,
+        last_active_at: new Date()
+    });
+};

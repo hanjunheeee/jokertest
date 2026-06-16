@@ -12,7 +12,7 @@ export const loginApi = async (loginData) => {
 
 /**
  * @desc    회원가입 API
- * 신규 유저의 가입 정보를 서버로 전송합니다.
+ * 신규 유저의 가입 정보를 서버로 전송합니다
  * @param   {Object} signupData - { login_id, email, password, nickname }
  * @returns {Promise<Object>} 성공 시 생성된 유저 데이터 반환
  */

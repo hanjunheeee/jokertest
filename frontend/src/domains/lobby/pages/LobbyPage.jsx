@@ -11,7 +11,8 @@ import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-import { fetchMyFriends, fetchIncomingRequests, acceptFriendRequest, declineFriendRequest } from "@/domains/lobby/api/friend.js";
+import { fetchIncomingRequests, acceptFriendRequest, declineFriendRequest } from "@/domains/lobby/api/friend.js";
+import { useFriendStore } from "@/domains/lobby/store/friendStore";
 
 const UI_REVEAL_BEFORE_END_SEC = 1
 const VIDEO_HOLD_BEFORE_END_SEC = 0.04
@@ -45,20 +46,17 @@ export default function LobbyPage() {
   const [uiVisible, setUiVisible] = useState(false)
   const [friendListOpen, setFriendListOpen] = useState(false)
   
-  const [allFriends, setAllFriends] = useState([])
+  // 소켓의 friend_status_change가 store를 업데이트하면 여기서 즉시 리렌더링됨
+  const friends = useFriendStore((state) => state.friends);
+  const fetchFriendsFromStore = useFriendStore((state) => state.fetchFriends);
   const [incomingRequests, setIncomingRequests] = useState([])
-
-  // 💡 1. 순수하게 백엔드에서 데이터만 가져오는 함수 (setState 안 씀)
-  const fetchFriendsApi = async () => {
-    const friendsData = await fetchMyFriends();
-    const requestsData = await fetchIncomingRequests();
-    return { friendsData, requestsData };
-  };
 
   const handleRefreshFriends = async () => {
     try {
-      const { friendsData, requestsData } = await fetchFriendsApi();
-      setAllFriends(friendsData);
+      const [, requestsData] = await Promise.all([
+        fetchFriendsFromStore(),
+        fetchIncomingRequests(),
+      ]);
       setIncomingRequests(requestsData);
     } catch (error) {
       console.error("데이터 로드 실패:", error.message);
@@ -93,31 +91,26 @@ export default function LobbyPage() {
     }
   };
 
-  // 💡 3. 패널이 열릴 때 자동으로 상태를 갱신 (리액트 공식 권장 패턴 적용!)
+  // 패널이 열릴 때 최신 상태로 초기 동기화 (이후 변경은 소켓이 실시간으로 처리)
   useEffect(() => {
     if (!friendListOpen) return;
 
-    let isMounted = true; // 화면이 열려있는지 확인하는 안전장치
+    let isMounted = true;
 
-    // .then() 안에서 비동기적으로 상태를 업데이트하므로 린터가 안심합니다.
-    fetchFriendsApi()
-      .then(({ friendsData, requestsData }) => {
-        if (isMounted) {
-          setAllFriends(friendsData);
-          setIncomingRequests(requestsData);
-        }
+    Promise.all([fetchFriendsFromStore(), fetchIncomingRequests()])
+      .then(([, requestsData]) => {
+        if (isMounted) setIncomingRequests(requestsData);
       })
       .catch((error) => console.error("데이터 로드 실패:", error.message));
 
     return () => {
-      isMounted = false; // 패널이 닫히면 데이터가 와도 무시함 (메모리 누수 방지)
+      isMounted = false;
     };
-  }, [friendListOpen]);
+  }, [friendListOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 폴더 규격에 맞게 3등분
-  const onlineFriends = allFriends.filter(f => f.online && !f.isFavorite);
-  const offlineFriends = allFriends.filter(f => !f.online && !f.isFavorite);
-  const favoriteFriends = allFriends.filter(f => f.isFavorite);
+  const onlineFriends = friends.filter(f => f.online && !f.isFavorite);
+  const offlineFriends = friends.filter(f => !f.online && !f.isFavorite);
+  const favoriteFriends = friends.filter(f => f.isFavorite);
 
   const revealUi = () => {
     if (uiRevealedRef.current) return
