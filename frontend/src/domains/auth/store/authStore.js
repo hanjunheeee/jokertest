@@ -1,24 +1,25 @@
-import { create } from "zustand"
-import { persist } from "zustand/middleware"
+/**
+ * @file authStore.js
+ * @desc 로그인 상태와 유저 정보를 관리하는 Zustand 스토어. localStorage에 persist됩니다.
+ */
+
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export const useAuthStore = create(
-  persist(
-    (set) => ({
-      isLoggedIn: false,
-      user: null,
-      login: (user) => set({ isLoggedIn: true, user }),
-      logout: () => set({ isLoggedIn: false, user: null }),
-    }),
-    {
-      name: "auth-storage",
-      partialize: (state) => ({
-        isLoggedIn: state.isLoggedIn,
-        user: state.user,
-      }),
-    },
-  ),
-)
+    persist(
+        (set) => ({
+            isLoggedIn: false,
+            user:       null,
+            login:      (user) => set({ isLoggedIn: true, user }),
+            logout:     ()     => set({ isLoggedIn: false, user: null }),
+        }),
+        {
+            name:        "auth-storage",
+            partialize: (state) => ({ isLoggedIn: state.isLoggedIn, user: state.user }),
+        }
+    )
+);
 
-export function selectIsAuthenticated(state) {
-  return state.isLoggedIn && state.user != null
-}
+/** @param {Object} state @returns {boolean} */
+export const selectIsAuthenticated = (state) => state.isLoggedIn && state.user != null;

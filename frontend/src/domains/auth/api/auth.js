@@ -1,25 +1,30 @@
+/**
+ * @file auth.js
+ * @desc 인증 관련 API 함수 (로그인 · 회원가입 · 세션 검증)
+ */
+
 import { api } from '@/shared/api/client';
 
 /**
- * @desc    로그인 API
- * 클라이언트에서 입력받은 이메일/비밀번호를 서버로 전송합니다.
- * @param   {Object} loginData - { email, password }
- * @returns {Promise<Object>} 성공 시 유저 정보와 토큰 반환
+ * @param {Object} loginData - { email, password }
+ * @returns {Promise<{ user: Object }>}
  */
 export const loginApi = async (loginData) => {
-  return await api.post('/auth/login', loginData);
-}
+    return await api.post('/auth/login', loginData);
+};
 
 /**
- * @desc    회원가입 API
- * 신규 유저의 가입 정보를 서버로 전송합니다
- * @param   {Object} signupData - { login_id, email, password, nickname }
- * @returns {Promise<Object>} 성공 시 생성된 유저 데이터 반환
+ * @param {Object} signupData - { email, password, nickname }
+ * @returns {Promise<void>}
  */
 export const signupApi = async (signupData) => {
-  return await api.post('/auth/signup', signupData);
-}
+    return await api.post('/auth/signup', signupData);
+};
 
+/**
+ * 쿠키 유효성을 서버에서 검증합니다. 앱 마운트 시 Zustand 상태를 동기화하는 데 사용됩니다.
+ * @returns {Promise<{ uuid: string, role: string }>}
+ */
 export const getMeApi = async () => {
-  return await api.get('/auth/me');
-}
+    return await api.get('/auth/me');
+};
