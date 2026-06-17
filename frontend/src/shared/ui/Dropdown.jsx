@@ -1,5 +1,17 @@
+/**
+ * 드롭다운 표시 UI — 입력창 PNG 위에 현재 값·▼만 표시
+ * GeneralSettingsTab에서 사용
+ *
+ * props
+ * - value: 표시할 선택값 문자열
+ * - inputFieldSrc: 입력창 프레임 이미지
+ * - className, valueClassName: 레이아웃·텍스트 스타일
+ *
+ * 미구현 (TODO: 클릭·옵션 목록·onChange)
+ */
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+/** 읽기 전용 드롭다운 형태 라벨 (선택 변경 불가) */
 export default function Dropdown({
   value,
   inputFieldSrc,

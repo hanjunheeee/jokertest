@@ -1,3 +1,13 @@
+/**
+ * 설정 목록 checkbox 한 줄 — 제목·설명(선택) + 체크 토글
+ * SetupTabContent에서 type: "checkbox" 항목에 사용
+ *
+ * props
+ * - label: 항목 제목
+ * - description: 부가 설명 (없으면 미표시)
+ * - checked: 체크 여부
+ * - onChange: 토글 시 다음 checked 값 전달
+ */
 import { GAME_SETUP_ASSETS } from "../../constants/gameSetupAssets.js"
 import {
   SETUP_DESC_CLASS,
@@ -6,6 +16,7 @@ import {
 } from "../../constants/setupRowStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+/** 체크박스 이미지·체크표시 오버레이로 on/off 표시 */
 export default function SetupCheckboxRow({ label, description, checked, onChange }) {
   return (
     <div className={SETUP_ROW_CLASS} data-setup-row>

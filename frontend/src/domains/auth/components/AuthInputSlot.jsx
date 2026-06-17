@@ -1,9 +1,23 @@
+/**
+ * 로그인·회원가입 입력 슬롯 — 입력창 PNG 위에 아이콘·input·비밀번호 토글
+ * LoginPage, SignupForm에서 email·password·nickname 필드에 사용
+ *
+ * props
+ * - type: input type (passwordToggle 없을 때, 기본 "text")
+ * - name, value, onChange: 제어 컴포넌트 — 부모 formData와 연동
+ * - placeholder, autoComplete: input 속성
+ * - leadingIcon: 좌측 아이콘 (MailIcon, LockIcon, UserIcon 등)
+ * - passwordToggle: true면 우측 눈 아이콘으로 표시/숨김 전환
+ *
+ * 에셋은 constants/loginAssets.js의 input 참고
+ */
 import { useState } from "react"
 import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const inputIconClass = "h-[20px] w-[20px] shrink-0 text-neutral-600"
 
+/** 입력창 좌측 — 이메일 필드 봉투 아이콘 */
 export function MailIcon() {
   return (
     <svg
@@ -22,6 +36,7 @@ export function MailIcon() {
   )
 }
 
+/** 입력창 좌측 — 비밀번호 필드 자물쇠 아이콘 */
 export function LockIcon() {
   return (
     <svg
@@ -40,6 +55,7 @@ export function LockIcon() {
   )
 }
 
+/** 입력창 우측 토글 — 비밀번호 숨김 상태(클릭 시 표시) */
 function EyeIcon() {
   return (
     <svg
@@ -58,6 +74,7 @@ function EyeIcon() {
   )
 }
 
+/** 입력창 우측 토글 — 비밀번호 표시 중(클릭 시 숨김) */
 function EyeOffIcon() {
   return (
     <svg
@@ -78,6 +95,7 @@ function EyeOffIcon() {
   )
 }
 
+/** 입력창 프레임·아이콘·필드를 한 줄로 묶는 인증 입력 슬롯 */
 export default function AuthInputSlot({
   type = "text",
   name,
@@ -92,7 +110,7 @@ export default function AuthInputSlot({
   const inputType = passwordToggle
     ? passwordVisible
       ? "text"
-      : "password"
+      : "password" // 토글 on이면 평문 표시
     : type
 
   return (

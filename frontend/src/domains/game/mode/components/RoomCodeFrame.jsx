@@ -1,3 +1,19 @@
+/**
+ * 방코드 양피지 프레임 레이아웃 셸 (prototype: 방코드 입력 프레임.png)
+ * RoomInvitePage(입력·취소·참여), RoomCodeViewModal(읽기 전용·복사)에서 공통 사용
+ *
+ * props
+ * - value, onChange: RoomCodeInput에 전달할 방 코드 문자열(최대 6자)
+ * - readOnly: true면 입력만 표시 (모달 방코드 보기)
+ * - autoFocus: 마운트 후 첫 칸 포커스
+ * - disabled: 입력 비활성화
+ * - frameAlt: 프레임 이미지 대체 텍스트
+ * - footer: 하단 버튼 영역 슬롯 (취소·참여, 복사 등)
+ * - overlay: 프레임 위에 겹칠 UI (모달 닫기 버튼 등)
+ * - className: 루트 wrapper 클래스
+ *
+ * inset·스타일은 constants/roomCodeFrameStyles.js, 에셋은 roomInviteAssets.js 참고
+ */
 import { ROOM_INVITE_ASSETS } from "../constants/roomInviteAssets.js"
 import {
   ROOM_CODE_FRAME_FOOTER_INSET,
@@ -7,10 +23,7 @@ import {
 import RoomCodeInput from "./RoomCodeInput.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-/**
- * prototype 방코드 입력 프레임.png
- * - 프레임 PNG + 6칸 입력 슬롯 + 하단 버튼 영역
- */
+/** 프레임 PNG + 중앙 입력 + 하단 footer 슬롯을 배치하는 방코드 UI 프레임 */
 export default function RoomCodeFrame({
   value,
   onChange,

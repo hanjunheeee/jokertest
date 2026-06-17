@@ -1,3 +1,13 @@
+/**
+ * 매칭 팝업 파티 슬롯 그리드 — 준비/미준비 실루엣을 5열·최대 2행으로 표시
+ * MatchingPopupContent에서 slots 배열을 넘겨 사용
+ *
+ * props
+ * - slots: { id, ready }[] — 준비 여부에 따라 실루엣 이미지 분기
+ *
+ * 6명 이상이면 2행·컴팩트 크기, 5명 이하는 1행·큰 크기
+ * 스타일은 constants/matchingPopupStyles.js 참고
+ */
 import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
 import {
   MATCHING_SLOT_CLASS_COMPACT,
@@ -8,8 +18,10 @@ import {
 } from "../constants/matchingPopupStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+/** 한 행에 배치할 슬롯 수 */
 export const MATCHING_SLOT_COLUMNS = 5
 
+/** slots를 columns개씩 잘라 2차원 행 배열로 변환 */
 function chunkSlots(slots, columns = MATCHING_SLOT_COLUMNS) {
   const rows = []
   for (let i = 0; i < slots.length; i += columns) {
@@ -18,11 +30,13 @@ function chunkSlots(slots, columns = MATCHING_SLOT_COLUMNS) {
   return rows
 }
 
+/** 준비 상태별 실루엣을 행 단위로 렌더하는 파티 슬롯 그리드 */
 export default function MatchingPartySlots({ slots = [] }) {
   const rows = chunkSlots(slots)
   const rowCount = rows.length || 1
+  // 2행(6명 이상)이면 작은 실루엣(인원수에 따른 실루엣 크기 조정)
   const slotClass =
-    rowCount > 1 ? MATCHING_SLOT_CLASS_COMPACT : MATCHING_SLOT_CLASS_LARGE
+    rowCount > 1 ? MATCHING_SLOT_CLASS_COMPACT : MATCHING_SLOT_CLASS_LARGE 
 
   return (
     <div className={MATCHING_SLOTS_GRID_CLASS} data-matching-slots>

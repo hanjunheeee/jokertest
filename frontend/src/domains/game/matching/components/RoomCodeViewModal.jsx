@@ -1,3 +1,15 @@
+/**
+ * 방코드 읽기 전용 모달 — RoomInvitePage RoomCodeFrame 재사용
+ * GameMatchingPage에서 "방코드 보기" 시 표시
+ *
+ * props
+ * - open: 모달 표시 여부
+ * - onClose: 배경·닫기 버튼 클릭 시 호출
+ * - roomCode: 표시·복사할 6자리 방 코드 문자열
+ *
+ * 복사는 navigator.clipboard 사용, 입력은 readOnly (onChange 무시)
+ * 닫기·복사 버튼 스타일은 constants/matchingPopupStyles.js, 프레임은 game/mode 참고
+ */
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"
@@ -37,20 +49,23 @@ const FRAME_VARIANTS = {
   },
 }
 
+/** 방코드 6칸 읽기 전용 프레임 + 복사·닫기가 있는 오버레이 모달 */
 export default function RoomCodeViewModal({ open, onClose, roomCode }) {
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState(false) // true면 복사 버튼 라벨 "복사됨" 표시
 
+  // 모달이 닫히면 복사 피드백 상태 초기화
   useEffect(() => {
     if (!open) setCopied(false)
   }, [open])
 
+  /** 클립보드에 roomCode 복사 후 2초간 copied 표시 */
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(roomCode)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
     } catch {
-      setCopied(false)
+      setCopied(false) // 권한 거부·비보안 컨텍스트 등
     }
   }
 
@@ -84,7 +99,7 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
               <RoomCodeFrame
                 frameAlt="방코드"
                 value={roomCode}
-                onChange={() => {}}
+                onChange={() => {}} // readOnly — 입력 변경 없음
                 readOnly
                 overlay={
                   <button

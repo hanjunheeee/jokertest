@@ -39,7 +39,7 @@ initSocket(server);
 
 const port = Number(process.env.PORT) || 4000;
 
-db.sequelize.sync({ force: true })
+db.sequelize.sync({ force: false })
   .then(() => {
     console.log("✅ MySQL DB 연결 및 테이블 동기화 완료!");
     server.listen(port, () => {

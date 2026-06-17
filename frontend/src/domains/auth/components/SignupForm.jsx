@@ -1,7 +1,17 @@
+/**
+ * 회원가입 폼 본문 — LoginPage에서 isSignupMode일 때 표시
+ * 제출·API 호출은 부모 form의 handleSubmit이 처리
+ *
+ * props
+ * - formData: { email, password, nickname } — LoginPage state와 공유
+ * - onChange: handleInputChange — 필드 name으로 formData 갱신
+ * - onSwitchToLogin: "로그인하기" 클릭 시 isSignupMode false
+ */
 import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import AuthImageButton from "./AuthImageButton.jsx"
 import AuthInputSlot, { LockIcon, MailIcon } from "./AuthInputSlot.jsx"
 
+/** 입력창 좌측 — 닉네임 필드 사용자 아이콘 */
 function UserIcon() {
   return (
     <svg
@@ -20,6 +30,7 @@ function UserIcon() {
   )
 }
 
+/** 이메일·비밀번호·닉네임 입력과 회원가입 제출·로그인 전환 링크 */
 export default function SignupForm({ formData, onChange, onSwitchToLogin }) {
   return (
     <>

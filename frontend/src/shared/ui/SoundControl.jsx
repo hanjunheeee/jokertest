@@ -1,13 +1,17 @@
+/**
+ * 우하단 사운드 조절 UI (prototype: 사운드 조절 UI 프로토타입.png)
+ * LoginPage·로비·게임 페이지 등에서 BGM/배경 audio·video ref와 함께 사용
+ *
+ * props
+ * - audioRef: HTMLAudioElement | HTMLVideoElement ref — volume·muted 동기화
+ *
+ * 아이콘 클릭 음소거 토글, 슬라이더로 볼륨 조절 (0이면 muted)
+ * 에셋은 constants/soundControlAssets.js 참고
+ */
 import { useEffect, useState } from "react"
 import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-/**
- * prototype 사운드 조절 UI 프로토타입.png
- * - 원형 아이콘 높이 ≈ 슬라이더 바 높이의 1.2배
- * - 슬라이더 바 너비 ≈ 아이콘 지름의 3.8배
- * - 아이콘이 바 왼쪽에 겹침
- */
 const ICON_SIZE_CLASS = "w-[clamp(2.85rem,3.9vw,3.5rem)]"
 const BAR_WIDTH_CLASS = "w-[clamp(10.75rem,14.8vw,13.5rem)]"
 const ICON_OVERLAP_CLASS = "-mr-[16%]"
@@ -20,15 +24,18 @@ const SLIDER_KNOT_WRAP_CLASS =
 
 const SLIDER_KNOT_IMG_CLASS = "block h-auto w-full select-none"
 
+/** 슬라이더 값(0~1)을 노브 left %로 변환 */
 function knotLeftPercent(value) {
   const travel = 100 - KNOT_INSET_PERCENT.start - KNOT_INSET_PERCENT.end
   return KNOT_INSET_PERCENT.start + value * travel
 }
 
+/** 음소거 아이콘 + 볼륨 슬라이더로 mediaRef 볼륨을 제어 */
 export default function SoundControl({ audioRef }) {
   const [volume, setVolume] = useState(0.6)
-  const [muted, setMuted] = useState(true)
+  const [muted, setMuted] = useState(true) // 초기 음소거 — 자동재생 정책 대응
 
+  // volume·muted 변경 시 연결된 audio/video에 반영
   useEffect(() => {
     const video = audioRef?.current
     if (!video) return
@@ -36,19 +43,19 @@ export default function SoundControl({ audioRef }) {
     video.muted = muted
   }, [audioRef, volume, muted])
 
-  const sliderValue = muted ? 0 : volume
+  const sliderValue = muted ? 0 : volume // UI 슬라이더는 음소거 시 0 위치
   const isSilent = muted || volume === 0
   const percent = Math.round(sliderValue * 100)
   const knotLeft = knotLeftPercent(sliderValue)
 
   const onVolumeChange = (next) => {
     setVolume(next)
-    setMuted(next === 0)
+    setMuted(next === 0) // 0으로 내리면 음소거
   }
 
   const toggleMute = () => {
     setMuted((prev) => {
-      if (prev && volume === 0) setVolume(0.6)
+      if (prev && volume === 0) setVolume(0.6) // 음소거 해제 시 볼륨 0이면 기본값 복구
       return !prev
     })
   }

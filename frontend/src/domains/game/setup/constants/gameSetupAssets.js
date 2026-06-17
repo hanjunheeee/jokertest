@@ -11,6 +11,7 @@ export const GAME_SETUP_ASSETS = {
   arrow: "/button/이동 화살표.png",
 }
 
+/** GameSetupPanel 상단 탭 — 일반 / 회의&투표 */
 export const GAME_SETUP_TABS = [
   { id: "general", label: "일반" },
   { id: "meeting", label: "회의&투표" },

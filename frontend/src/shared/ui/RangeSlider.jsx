@@ -1,3 +1,15 @@
+/**
+ * 이미지 트랙·노브 range 슬라이더 — min~max 숫자 선택
+ * (현재 import처 없음, 설정·볼륨 등 확장용 공통 컴포넌트)
+ *
+ * props
+ * - value, min, max, onChange: 슬라이더 값
+ * - ariaLabel: 접근성
+ * - trackSrc, knobSrc: 트랙·노브 PNG (기본 rangeSliderAssets)
+ * - controlClassName, valueClassName: 루트·상단 숫자 스타일
+ *
+ * 스타일은 constants/rangeSliderStyles.js 참고
+ */
 import { RANGE_SLIDER_ASSETS } from "@/shared/constants/rangeSliderAssets.js"
 import {
   RANGE_SLIDER_CONTROL_CLASS,
@@ -10,11 +22,13 @@ import {
 } from "@/shared/constants/rangeSliderStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+/** value를 0~1 비율로 — 노브 left calc용 */
 function rangeRatio(value, min, max) {
-  if (max === min) return 0
+  if (max === min) return 0 // 구간 없으면 시작 위치
   return (value - min) / (max - min)
 }
 
+/** 투명 input[type=range]로 조작하고 이미지 노브만 따라 움직이는 슬라이더 */
 export default function RangeSlider({
   value,
   min,

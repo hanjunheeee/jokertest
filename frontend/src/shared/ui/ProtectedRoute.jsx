@@ -1,9 +1,16 @@
+/**
+ * 인증 필요 라우트 가드 — app/routes에서 lobby·게임 등 하위 라우트 래핑
+ * 미인증 시 alert 후 /login으로 replace 리다이렉트
+ *
+ * 자식 라우트는 <Outlet />으로 렌더
+ */
 import { Navigate, Outlet } from "react-router-dom"
 import {
   selectIsAuthenticated,
   useAuthStore,
 } from "@/domains/auth/store/authStore"
 
+/** authStore.isAuthenticated 기준으로 Outlet 또는 로그인 리다이렉트 */
 export default function ProtectedRoute() {
   const isAuthenticated = useAuthStore(selectIsAuthenticated)
 

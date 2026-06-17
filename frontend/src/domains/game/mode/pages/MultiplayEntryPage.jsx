@@ -1,3 +1,14 @@
+/**
+ * 멀티플레이 진입 후 세부 옵션 선택 화면 (prototype: 게임모드 선택창-멀티플레이 선택.png)
+ * GameModePage에서 멀티플레이 카드를 고르면 진입합니다.
+ *
+ * - 뒤로가기 → /gameMode
+ * - 게임 만들기 → /game-setup
+ * - 게임 찾기 → 아직 미연동 (TODO)
+ *
+ * UI 구성: GameModeTypeIndicator(상단 모드 표시), ModeOptionCard, SoundControl, BackButton
+ * 옵션 목록·에셋은 constants/modeAssets.js의 MULTIPLAY_OPTIONS 참고
+ */
 import { useNavigate } from "react-router-dom"
 import {
   MODE_SCREEN_ASSETS,
@@ -9,10 +20,11 @@ import BackButton, { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/ui/BackBut
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
-/** prototype 게임모드 선택창-멀티플레이 선택.png — GameModePage와 동일 레이아웃 */
+/** 멀티플레이 하위 옵션(게임 만들기·찾기) 선택·네비게이션을 담당하는 페이지 컴포넌트 */
 export default function MultiplayEntryPage() {
   const navigate = useNavigate()
 
+  /** optionId에 따라 다음 화면으로 이동 — create: 인게임 설정, find: 미구현 */
   const handleOptionSelect = (optionId) => {
     if (optionId === "create") {
       navigate("/game-setup")

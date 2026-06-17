@@ -11,9 +11,10 @@ export const GAME_MATCHING_ASSETS = {
   roomCodeViewButton: "/button/버튼(수락 및 긍정).png",
 }
 
-/** TODO: 서버에서 발급된 방 코드로 교체 */
+/** 미구현 (TODO: 서버 발급 방 코드) — RoomCodeViewModal·방코드 보기용 더미 */
 export const MATCHING_ROOM_CODE_DUMMY = "123456"
 
+/** MatchingPopupPanel·MatchingPopupContent UI 문구 */
 export const MATCHING_POPUP_COPY = {
   title: "멀티 플레이 매칭",
   prompt: "무도회 속에 숨어든 광대를 찾아 떠나시겠습니까?",
@@ -24,6 +25,7 @@ export const MATCHING_POPUP_COPY = {
   deleteRoom: "방 삭제하기",
 }
 
+/** 매칭 방 최대 인원 — 슬롯 그리드·더미 배열 상한 */
 export const MATCHING_MAX_PLAYERS = 10
 
 /** prototype 더미 — 현재 4인, 2명 준비 / 2명 미준비 (최대 10명까지 확장) */

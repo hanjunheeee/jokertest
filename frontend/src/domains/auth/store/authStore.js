@@ -16,10 +16,10 @@ export const useAuthStore = create(
         }),
         {
             name:        "auth-storage",
-            partialize: (state) => ({ isLoggedIn: state.isLoggedIn, user: state.user }),
+            partialize: (state) => ({ isLoggedIn: state.isLoggedIn, user: state.user }), // login·logout 제외하고 영속
         }
     )
 );
 
-/** @param {Object} state @returns {boolean} */
+/** isLoggedIn && user 둘 다 있을 때만 인증됨으로 간주 */
 export const selectIsAuthenticated = (state) => state.isLoggedIn && state.user != null;

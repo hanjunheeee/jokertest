@@ -1,3 +1,14 @@
+/**
+ * 비밀연회장 방 코드 입력·참여 화면 (prototype: 방코드 입력 관련)
+ * GameModePage에서 비밀연회장 카드를 고르면 진입합니다.
+ *
+ * - 뒤로가기 / 취소 → /gameMode
+ * - 참여하기 → 미구현 (TODO: 방 참여 API 연동, 방 코드 6자일 때만 동작 예정)
+ *
+ * UI 구성: RoomCodeFrame(양피지 프레임·6칸 입력), LabelledActionButton(취소·참여하기),
+ *          MotionBackButton(좌하단), 배경 영상
+ * 에셋·스타일은 constants/roomInviteAssets.js, roomCodeFrameStyles.js 참고
+ */
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
@@ -67,6 +78,7 @@ const BACK_BTN_VARIANTS = {
   },
 }
 
+/** 이미지 버튼 위에 텍스트 라벨을 겹쳐 그리는 액션 버튼 (취소·참여하기) */
 function LabelledActionButton({ src, label, onClick, className = "", variants }) {
   return (
     <motion.button
@@ -84,15 +96,17 @@ function LabelledActionButton({ src, label, onClick, className = "", variants })
   )
 }
 
+/** 방 코드 6자리 입력 후 취소·참여를 처리하는 페이지 컴포넌트 */
 export default function RoomInvitePage() {
-  const navigate = useNavigate()
-  const [uiVisible, setUiVisible] = useState(false)
-  const [roomCode, setRoomCode] = useState("")
+  const navigate = useNavigate() // 화면 전환(취소·뒤로가기 → /gameMode)
+  const [uiVisible, setUiVisible] = useState(false) // true가 되면 프레임·버튼 입장 연출 및 클릭 허용
+  const [roomCode, setRoomCode] = useState("") // 입력 중인 방 코드(최대 6자)
 
+  // 프레임 연출 관련 상태값 함수
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setUiVisible(true))
-    return () => cancelAnimationFrame(frame)
-  }, [])
+    const frame = requestAnimationFrame(() => setUiVisible(true)) 
+    return () => cancelAnimationFrame(frame) 
+  }, []) 
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -135,7 +149,7 @@ export default function RoomInvitePage() {
                   variants={BUTTON_VARIANTS}
                   onClick={() => {
                     if (roomCode.length < 6) return
-                    // TODO: 방 참여 API 연동
+                    // 미구현 (TODO: 방 참여 API 연동)
                   }}
                 />
               </motion.div>

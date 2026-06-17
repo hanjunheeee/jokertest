@@ -1,3 +1,13 @@
+/**
+ * 인게임 설정 양피지 패널 (prototype: 인게임 설정 프레임_.png)
+ * GameSetupPage 중앙 — 탭 전환·설정 목록·게임 만들기 버튼
+ *
+ * props
+ * - visible: true면 입장 연출 후 클릭 허용 (부모 uiVisible과 동기)
+ * - onCreateGame: "게임 만들기" 클릭 시 호출 (부모에서 라우팅)
+ *
+ * 에셋·탭·항목 정의는 constants/gameSetupAssets.js 참고
+ */
 import { motion } from "framer-motion"
 import { useState } from "react"
 import {
@@ -43,6 +53,7 @@ const CREATE_GAME_BTN_CLASS =
 const CREATE_GAME_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap font-subheading text-[clamp(1.22rem,1.75vw,1.42rem)] font-bold tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+/** 상단 탭 버튼 한 개 — 활성·비활성 이미지 전환 */
 function SetupTab({ tab, active, onSelect }) {
   return (
     <button
@@ -62,8 +73,9 @@ function SetupTab({ tab, active, onSelect }) {
   )
 }
 
+/** 프레임·탭·본문·게임 만들기 버튼을 묶는 설정 패널 */
 export default function GameSetupPanel({ visible, onCreateGame }) {
-  const [activeTab, setActiveTab] = useState("general")
+  const [activeTab, setActiveTab] = useState("general") // general | meeting
 
   return (
     <div
@@ -99,9 +111,9 @@ export default function GameSetupPanel({ visible, onCreateGame }) {
           </nav>
 
           <div className={SETUP_CONTENT_CLASS}>
-            {activeTab === "general" ? (
+            {activeTab === "general" ? ( // 일반 탭
               <GeneralGameSetupTab />
-            ) : (
+            ) : ( // 회의&투표 탭
               <MeetingGameSetupTab />
             )}
           </div>

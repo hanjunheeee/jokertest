@@ -1,3 +1,15 @@
+/**
+ * 설정 목록 stepper 한 줄 — 제목·설명(선택) + min~max 화살표 증감
+ * SetupTabContent에서 type: "stepper" 항목에 사용
+ *
+ * props
+ * - label: 항목 제목
+ * - description: 부가 설명 (없으면 미표시)
+ * - value: 현재 숫자 값
+ * - min, max, step: 선택 가능 범위·간격 (회의 탭은 step 30초)
+ * - unit: 표시 접미사 (예: "초", 없으면 숫자만)
+ * - onChange: 화살표로 값 변경 시 다음 숫자 전달
+ */
 import { useMemo } from "react"
 import { GAME_SETUP_ASSETS } from "../../constants/gameSetupAssets.js"
 import {
@@ -7,6 +19,7 @@ import {
 } from "../../constants/setupRowStyles.js"
 import Stepper from "@/shared/ui/Stepper"
 
+/** min부터 max까지 step 간격으로 선택지 배열 생성 */
 function buildOptions(min, max, step = 1) {
   const options = []
   for (let current = min; current <= max; current += step) {
@@ -15,6 +28,7 @@ function buildOptions(min, max, step = 1) {
   return options
 }
 
+/** 공유 Stepper에 게임 설정 에셋·스타일을 입힌 숫자 조절 행 */
 export default function SetupStepperRow({
   label,
   description,
@@ -30,7 +44,7 @@ export default function SetupStepperRow({
     () => options.map((option) => (unit ? `${option}${unit}` : option)),
     [options, unit],
   )
-  const index = Math.max(0, options.indexOf(value))
+  const index = Math.max(0, options.indexOf(value)) // value가 목록에 없으면 첫 칸으로
 
   return (
     <div className={SETUP_ROW_CLASS} data-setup-row>

@@ -1,4 +1,4 @@
-/** 게임모드·멀티플레이 선택 화면 공통 public 에셋 (frontend/public 기준) */
+/** GameModePage·MultiplayEntryPage 공통 배경 이미지 (frontend/public 기준) */
 export const MODE_SCREEN_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png",
 }
