@@ -1,112 +1,41 @@
 /**
- * 비밀연회장 방 코드 입력·참여 화면 (prototype: 방코드 입력 관련)
- * GameModePage에서 비밀연회장 카드를 고르면 진입합니다.
+ * 비밀연회장 방 코드 입력·참여 화면.
  *
- * - 뒤로가기 / 취소 → /gameMode
- * - 참여하기 → 미구현 (TODO: 방 참여 API 연동, 방 코드 6자일 때만 동작 예정)
+ * page 계층은 컴포넌트 조합과 네비게이션 제어만 담당합니다.
+ * - 애니메이션 variants → roomInviteAnimations.js
+ * - 버튼 UI → LabelledActionButton
+ * - 방 코드 입력 → RoomCodeFrame > RoomCodeInput (내부적으로 useRoomCodeInput 사용)
  *
- * UI 구성: RoomCodeFrame(양피지 프레임·6칸 입력), LabelledActionButton(취소·참여하기),
- *          MotionBackButton(좌하단), 배경 영상
- * 에셋·스타일은 constants/roomInviteAssets.js, roomCodeFrameStyles.js 참고
+ * uiVisible: requestAnimationFrame 다음 프레임에서 true로 전환하여
+ *   마운트 직후 "hidden → visible" 애니메이션이 부드럽게 시작되도록 합니다.
  */
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import RoomCodeFrame from "../components/RoomCodeFrame.jsx"
+import LabelledActionButton from "../components/LabelledActionButton.jsx"
 import { ROOM_INVITE_ASSETS } from "../constants/roomInviteAssets.js"
 import {
-  ROOM_CODE_ACTION_BTN_CLASS,
-  ROOM_CODE_ACTION_BTN_LABEL_CLASS,
-} from "../constants/roomCodeFrameStyles.js"
-import {
-  BACK_BUTTON_PAGE_POSITION_CLASS,
-  MotionBackButton,
-} from "@/shared/ui/BackButton.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
+  PARCHMENT_FRAME_VARIANTS,
+  BUTTON_ROW_VARIANTS,
+  BUTTON_VARIANTS,
+  BACK_BTN_VARIANTS,
+} from "../constants/roomInviteAnimations.js"
+import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
+import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
-
-/** 양피지 프레임이 위에서 살짝 기울어진 채 내려앉는 연출 */
-const PARCHMENT_FRAME_VARIANTS = {
-  hidden: {
-    opacity: 0,
-    y: -14,
-    rotate: -1,
-    scale: 0.99,
-  },
-  visible: {
-    opacity: 1,
-    y: 0,
-    rotate: 0,
-    scale: 1,
-    transition: {
-      type: "spring",
-      stiffness: 260,
-      damping: 32,
-      mass: 1,
-      when: "beforeChildren",
-      delayChildren: 0.22,
-    },
-  },
-}
-
-const BUTTON_ROW_VARIANTS = {
-  hidden: {},
-  visible: {
-    transition: {
-      staggerChildren: 0.05,
-    },
-  },
-}
-
-const BUTTON_VARIANTS = {
-  hidden: { opacity: 0, y: 5 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] },
-  },
-}
-
-const BACK_BTN_VARIANTS = {
-  hidden: { opacity: 0, y: 4 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: 0.38 },
-  },
-}
-
-/** 이미지 버튼 위에 텍스트 라벨을 겹쳐 그리는 액션 버튼 (취소·참여하기) */
-function LabelledActionButton({ src, label, onClick, className = "", variants }) {
-  return (
-    <motion.button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      variants={variants}
-      className={`${ROOM_CODE_ACTION_BTN_CLASS} ${className}`}
-    >
-      <PublicAsset src={src} alt="" className="block h-auto w-full select-none" />
-      <span className={ROOM_CODE_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
-        {label}
-      </span>
-    </motion.button>
-  )
-}
-
-/** 방 코드 6자리 입력 후 취소·참여를 처리하는 페이지 컴포넌트 */
 export default function RoomInvitePage() {
-  const navigate = useNavigate() // 화면 전환(취소·뒤로가기 → /gameMode)
-  const [uiVisible, setUiVisible] = useState(false) // true가 되면 프레임·버튼 입장 연출 및 클릭 허용
-  const [roomCode, setRoomCode] = useState("") // 입력 중인 방 코드(최대 6자)
+  const navigate = useNavigate()
+  const [uiVisible, setUiVisible] = useState(false) // true가 되면 프레임·버튼 입장 애니메이션 시작
+  const [roomCode, setRoomCode] = useState("") // 입력 중인 방 코드 (최대 6자)
 
-  // 프레임 연출 관련 상태값 함수
+  // 다음 프레임에서 uiVisible을 true로 전환 — 마운트 직후 즉시 전환 시 transition이 무시됨
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setUiVisible(true)) 
-    return () => cancelAnimationFrame(frame) 
-  }, []) 
+    const frame = requestAnimationFrame(() => setUiVisible(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -121,17 +50,18 @@ export default function RoomInvitePage() {
       />
 
       <div className="absolute inset-0 z-10 flex items-center justify-center px-[clamp(1rem,4vw,2.5rem)]">
+        {/* uiVisible 기준으로 PARCHMENT_FRAME_VARIANTS가 hidden → visible 전환 */}
         <motion.div
           className="w-full max-w-[min(52rem,94vw)]"
           initial="hidden"
           animate={uiVisible ? "visible" : "hidden"}
           variants={PARCHMENT_FRAME_VARIANTS}
-          style={{ pointerEvents: uiVisible ? "auto" : "none" }}
+          style={{ pointerEvents: uiVisible ? "auto" : "none" }} // 애니메이션 중 클릭 차단
         >
           <RoomCodeFrame
             value={roomCode}
-            onChange={setRoomCode}
-            autoFocus={uiVisible}
+            onChange={setRoomCode} // 입력값을 roomCode state에 반영
+            autoFocus={uiVisible} // 입장 애니메이션이 시작된 후에 포커스 (RoomCodeInput 내 280ms 지연)
             footer={
               <motion.div
                 variants={BUTTON_ROW_VARIANTS}
@@ -141,15 +71,15 @@ export default function RoomInvitePage() {
                   src={ROOM_INVITE_ASSETS.cancelButton}
                   label="취소"
                   variants={BUTTON_VARIANTS}
-                  onClick={() => navigate("/gameMode")}
+                  onClick={() => navigate("/gameMode")} // 취소 → 게임 모드 선택으로 복귀
                 />
                 <LabelledActionButton
                   src={ROOM_INVITE_ASSETS.joinButton}
                   label="참여하기"
                   variants={BUTTON_VARIANTS}
                   onClick={() => {
-                    if (roomCode.length < 6) return
-                    // 미구현 (TODO: 방 참여 API 연동)
+                    if (roomCode.length < 6) return // 6자리 미만이면 참여 불가
+                    // TODO: 방 참여 API 연동
                   }}
                 />
               </motion.div>

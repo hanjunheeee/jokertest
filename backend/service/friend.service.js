@@ -4,6 +4,7 @@
  */
 
 const friendRepository = require("../repositories/friend.repositories");
+const { createError } = require("../utils/appError");
 
 /**
  * ACCEPTED 친구 목록과 각 친구의 접속 상태를 조합해 반환합니다.
@@ -58,16 +59,12 @@ exports.searchUsers = async (query, myUuid) => {
  */
 exports.sendFriendRequest = async (myUuid, receiverId) => {
     if (myUuid === receiverId) {
-        const err = new Error('자기 자신에게 친구 신청할 수 없습니다.');
-        err.status = 400;
-        throw err;
+        throw createError('자기 자신에게 친구 신청할 수 없습니다.', 400);
     }
 
     const existing = await friendRepository.findPendingRequest(myUuid, receiverId);
     if (existing) {
-        const err = new Error('이미 친구 신청을 보냈습니다.');
-        err.status = 409;
-        throw err;
+        throw createError('이미 친구 신청을 보냈습니다.', 409);
     }
 
     return await friendRepository.createFriendRequest(myUuid, receiverId);
@@ -77,35 +74,37 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
  * 받은 친구 요청을 수락하고 Friendship 레코드를 생성합니다.
  * @param {string} myUuid
  * @param {number} requestId
- * @returns {Promise<void>}
+ * @returns {Promise<{ requesterId: string }>} 컨트롤러에서 소켓 알림 전송에 사용
  * @throws {Error} 404 — 요청 없음 | 403 — 권한 없음 | 409 — 이미 처리됨
  */
 exports.acceptRequest = async (myUuid, requestId) => {
     const request = await friendRepository.findFriendRequestById(requestId);
 
-    if (!request)                      { const e = new Error('친구 요청을 찾을 수 없습니다.'); e.status = 404; throw e; }
-    if (request.receiver_id !== myUuid){ const e = new Error('권한이 없습니다.');              e.status = 403; throw e; }
-    if (request.status !== 'PENDING')  { const e = new Error('이미 처리된 요청입니다.');        e.status = 409; throw e; }
+    if (!request)                       throw createError('친구 요청을 찾을 수 없습니다.', 404);
+    if (request.receiver_id !== myUuid) throw createError('권한이 없습니다.', 403);
+    if (request.status !== 'PENDING')   throw createError('이미 처리된 요청입니다.', 409);
 
     await friendRepository.updateFriendRequestStatus(requestId, 'ACCEPTED');
     await friendRepository.createFriendship(request.requester_id, request.receiver_id);
+    return { requesterId: request.requester_id };
 };
 
 /**
  * 받은 친구 요청을 거절합니다. (Friendship 생성 없음)
  * @param {string} myUuid
  * @param {number} requestId
- * @returns {Promise<void>}
+ * @returns {Promise<{ requesterId: string }>} 컨트롤러에서 소켓 알림 전송에 사용
  * @throws {Error} 404 — 요청 없음 | 403 — 권한 없음 | 409 — 이미 처리됨
  */
 exports.declineRequest = async (myUuid, requestId) => {
     const request = await friendRepository.findFriendRequestById(requestId);
 
-    if (!request)                      { const e = new Error('친구 요청을 찾을 수 없습니다.'); e.status = 404; throw e; }
-    if (request.receiver_id !== myUuid){ const e = new Error('권한이 없습니다.');              e.status = 403; throw e; }
-    if (request.status !== 'PENDING')  { const e = new Error('이미 처리된 요청입니다.');        e.status = 409; throw e; }
+    if (!request)                       throw createError('친구 요청을 찾을 수 없습니다.', 404);
+    if (request.receiver_id !== myUuid) throw createError('권한이 없습니다.', 403);
+    if (request.status !== 'PENDING')   throw createError('이미 처리된 요청입니다.', 409);
 
     await friendRepository.updateFriendRequestStatus(requestId, 'DECLINED');
+    return { requesterId: request.requester_id };
 };
 
 /**

@@ -1,6 +1,6 @@
 /**
  * @file index.js
- * @desc Express 앱 진입점. 미들웨어 → 라우터 → Socket.io → DB 동기화 순으로 기동합니다.
+ * @desc Express 앱 진입점. 환경변수 로드 → 미들웨어 → 라우터 → Socket.io → DB 동기화 순으로 기동합니다.
  */
 
 require("dotenv").config();
@@ -14,11 +14,13 @@ const morgan       = require("morgan");
 const { notFoundHandler, globalErrorHandler } = require("./middleware/errorHandler");
 const authRouter     = require("./routes/auth.routes");
 const friendRouter   = require("./routes/friend.routes");
+const userRouter     = require("./routes/user.routes");
 const { initSocket } = require("./socket/socket");
 const db             = require("./models");
 
 const app = express();
 
+// 프론트 개발 서버에서 쿠키 기반 인증 요청을 보낼 수 있도록 origin과 credentials를 함께 허용합니다.
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -29,6 +31,7 @@ app.set("trust proxy", 1);
 
 app.use("/auth",    authRouter);
 app.use("/friends", friendRouter);
+app.use("/user",    userRouter);
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
@@ -39,6 +42,7 @@ initSocket(server);
 
 const port = Number(process.env.PORT) || 4000;
 
+// force:true는 서버 재시작 때마다 테이블을 DROP하므로 로컬 초기화가 필요할 때만 임시로 사용합니다.
 db.sequelize.sync({ force: false })
   .then(() => {
     console.log("✅ MySQL DB 연결 및 테이블 동기화 완료!");

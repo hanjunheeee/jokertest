@@ -16,6 +16,15 @@ exports.findByEmail = async (email) => {
 };
 
 /**
+ * UUID로 유저를 조회합니다.
+ * @param {string} uuid
+ * @returns {Promise<Object|null>}
+ */
+exports.findByUuid = async (uuid) => {
+    return await db.User.findOne({ where: { uuid } });
+};
+
+/**
  * 신규 유저를 생성합니다.
  * @param {Object} userData - { email, password_hash, nickname }
  * @returns {Promise<Object>}
@@ -68,4 +77,61 @@ exports.checkActiveBan = async (user_id) => {
  */
 exports.createUserSession = async (sessionData) => {
     return await db.UserSession.create(sessionData);
+};
+
+/**
+ * 특정 유저의 기존 온라인 세션을 모두 오프라인 처리합니다.
+ * 로그인 성공 시 단일 활성 세션 정책을 맞추기 위해 새 세션 생성 전에 호출합니다.
+ * @param {string} user_id
+ * @returns {Promise<Array>}
+ */
+exports.markOnlineSessionsOffline = async (user_id) => {
+    return await db.UserSession.update(
+        { is_online: false },
+        { where: { user_id, is_online: true } }
+    );
+};
+
+/**
+ * 회원가입 시 user_stats 초기 레코드를 생성합니다.
+ * @param {string} user_id
+ */
+exports.createUserStats = async (user_id) => {
+    return await db.UserStats.create({ user_id });
+};
+
+/**
+ * 마이페이지에 필요한 프로필 + 게임 통계를 한 번에 조회합니다.
+ * @param {string} uuid
+ * @returns {Promise<Object>}
+ */
+exports.getMyProfile = async (uuid) => {
+    return await db.User.findOne({
+        where: { uuid },
+        attributes: ['nickname', 'profile_image_url'],
+        include: [{
+            model:      db.UserStats,
+            attributes: ['reputation', 'title', 'total_games', 'survival_count', 'execution_count', 'most_played_role'],
+        }],
+    });
+};
+
+/**
+ * 로그아웃(명시적 또는 브라우저 종료) 시점을 DB에 기록합니다.
+ *  - login_history: logout_at 미기록 상태인 가장 최근 성공 이력에 현재 시각을 기록합니다.
+ *  - user_sessions: 해당 유저의 활성 세션을 모두 is_online=false로 처리합니다.
+ * @param {string} user_id
+ */
+exports.recordLogout = async (user_id) => {
+    const lastLogin = await db.LoginHistory.findOne({
+        where: { user_id, success: true, logout_at: null },
+        order: [['login_at', 'DESC']],
+    });
+    if (lastLogin) {
+        await lastLogin.update({ logout_at: new Date() });
+    }
+    await db.UserSession.update(
+        { is_online: false },
+        { where: { user_id, is_online: true } }
+    );
 };

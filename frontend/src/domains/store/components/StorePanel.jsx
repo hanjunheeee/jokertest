@@ -1,3 +1,8 @@
+/**
+ * 상점 메인 패널.
+ *
+ * 현재 선택된 상점 탭에 맞는 상품/콘텐츠 영역을 렌더링합니다.
+ */
 import { useState } from "react"
 import { SETTING_ASSETS } from "@/domains/settings/constants/settingAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"

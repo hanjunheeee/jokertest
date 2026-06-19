@@ -1,3 +1,8 @@
+/**
+ * 추천 친구 행.
+ *
+ * 친구 검색/추천 목록에서 한 명의 후보와 신청 액션을 표시합니다.
+ */
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

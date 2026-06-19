@@ -1,3 +1,8 @@
+/**
+ * 마이페이지 하단 장식 영역.
+ *
+ * Fate Mask 관련 이미지와 전환 연출을 화면 하단에 배치합니다.
+ */
 import { motion } from "framer-motion"
 import {
   FATE_MASK_DESCRIPTION,

@@ -1,4 +1,13 @@
+/**
+ * 마이페이지 배너 버튼.
+ *
+ * 프로필/대표 이미지처럼 클릭 가능한 배너형 UI 조각을 렌더링합니다.
+ */
 import { LOBBY_ASSETS, MY_PAGE_PROFILE } from "@/domains/lobby/constants/lobbyAssets.js"
+import {
+  LOBBY_BANNER_WIDTH_CLASS,
+  LOBBY_TEXT_PANEL_INSET,
+} from "@/domains/user/constants/myPageBannerLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const TEXT_SHADOW =
@@ -7,18 +16,6 @@ const TEXT_SHADOW =
 /** 상·하단 텍스트·구분선 좌측 시작점 통일 (미세 조정 전 과하게 왼쪽) */
 const TEXT_INSET_LEFT = "-4%"
 const TEXT_ALIGN_LEFT = "left-[-4%]"
-
-/** prototype2(로비) — 배너 내 초상화 제외 텍스트 패널 */
-export const LOBBY_TEXT_PANEL_INSET = {
-  top: "20%",
-  bottom: "17%",
-  left: "34%",
-  right: "5%",
-}
-
-/** 로비·마이페이지 배너 동일 너비 (!: 루트 w-full과 충돌 방지) */
-export const LOBBY_BANNER_WIDTH_CLASS =
-  "!w-[clamp(18rem,26vw,30rem)] max-w-full shrink-0"
 
 /** 배너 너비에 비례하는 텍스트 (로비·마이페이지 동일 비율) */
 const LABEL_TEXT_CLASS =

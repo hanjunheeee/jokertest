@@ -11,7 +11,7 @@
  * 닫기·복사 버튼 스타일은 constants/matchingPopupStyles.js, 프레임은 game/mode 참고
  */
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useState } from "react"
+import { useRef, useState } from "react"
 import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
 import {
@@ -52,18 +52,30 @@ const FRAME_VARIANTS = {
 /** 방코드 6칸 읽기 전용 프레임 + 복사·닫기가 있는 오버레이 모달 */
 export default function RoomCodeViewModal({ open, onClose, roomCode }) {
   const [copied, setCopied] = useState(false) // true면 복사 버튼 라벨 "복사됨" 표시
+  const copyFeedbackTimerRef = useRef(null)
 
-  // 모달이 닫히면 복사 피드백 상태 초기화
-  useEffect(() => {
-    if (!open) setCopied(false)
-  }, [open])
+  /** 모달 닫기 시 복사 피드백과 예약된 타이머를 함께 정리합니다. */
+  const handleClose = () => {
+    if (copyFeedbackTimerRef.current) {
+      window.clearTimeout(copyFeedbackTimerRef.current)
+      copyFeedbackTimerRef.current = null
+    }
+    setCopied(false)
+    onClose()
+  }
 
   /** 클립보드에 roomCode 복사 후 2초간 copied 표시 */
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(roomCode)
+      if (copyFeedbackTimerRef.current) {
+        window.clearTimeout(copyFeedbackTimerRef.current)
+      }
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
+      copyFeedbackTimerRef.current = window.setTimeout(() => {
+        setCopied(false)
+        copyFeedbackTimerRef.current = null
+      }, 2000)
     } catch {
       setCopied(false) // 권한 거부·비보안 컨텍스트 등
     }
@@ -81,7 +93,7 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={MODAL_TRANSITION}
-            onClick={onClose}
+            onClick={handleClose}
           />
 
           <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center px-[clamp(1rem,4vw,2.5rem)]">
@@ -105,7 +117,7 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
                   <button
                     type="button"
                     aria-label="방코드 팝업 닫기"
-                    onClick={onClose}
+                    onClick={handleClose}
                     className={MATCHING_MODAL_CLOSE_BTN_CLASS}
                   >
                     <PublicAsset

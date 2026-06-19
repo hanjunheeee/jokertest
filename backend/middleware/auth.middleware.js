@@ -4,6 +4,7 @@
  */
 
 const jwt = require("jsonwebtoken");
+const { createError } = require("../utils/appError");
 
 /**
  * 쿠키에서 accessToken을 꺼내 JWT를 검증합니다.
@@ -17,9 +18,7 @@ exports.verifyToken = (req, res, next) => {
         const token = req.cookies.accessToken;
 
         if (!token) {
-            const err = new Error("로그인이 필요합니다.");
-            err.status = 401;
-            return next(err);
+            return next(createError("로그인이 필요합니다.", 401));
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -28,8 +27,6 @@ exports.verifyToken = (req, res, next) => {
     } catch (error) {
         // 만료·위조된 토큰 — 클라이언트 쿠키도 즉시 제거
         res.clearCookie("accessToken");
-        const err = new Error("유효하지 않거나 만료된 토큰입니다.");
-        err.status = 401;
-        next(err);
+        next(createError("유효하지 않거나 만료된 토큰입니다.", 401));
     }
 };

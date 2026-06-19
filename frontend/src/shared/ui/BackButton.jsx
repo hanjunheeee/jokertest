@@ -1,6 +1,5 @@
 /**
  * 뒤로가기 이미지 버튼 — 게임·설정·로비 등 페이지 좌하단 공통
- * MotionBackButton은 framer-motion 입장 연출용 래퍼
  *
  * props
  * - onClick: 뒤로가기 동작 (보통 navigate)
@@ -9,17 +8,11 @@
  * - className, style: 버튼 추가 스타일
  * - ref: forwardRef 지원
  *
- * BACK_BUTTON_PAGE_POSITION_CLASS — 페이지 좌하단 absolute 위치
  * 에셋은 constants/navigationAssets.js
  */
 import { forwardRef } from "react"
-import { motion } from "framer-motion"
 import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-
-/** 페이지 좌하단 뒤로가기 기본 위치 */
-export const BACK_BUTTON_PAGE_POSITION_CLASS =
-  "absolute bottom-[2.5%] left-[2.5%] sm:bottom-[3%] sm:left-[3%]"
 
 const SIZE_CLASS = {
   page: "w-[clamp(4.75rem,7.5vw,6.75rem)]",
@@ -64,6 +57,3 @@ const BackButton = forwardRef(function BackButton(
 })
 
 export default BackButton
-
-/** BackButton에 motion 애니메이션 props(initial·animate 등)를 붙인 버전 */
-export const MotionBackButton = motion.create(BackButton)

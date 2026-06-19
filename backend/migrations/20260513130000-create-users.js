@@ -1,3 +1,9 @@
+/**
+ * Sequelize 마이그레이션 예시 파일.
+ *
+ * 현재 서버는 models/index.js의 모델 정의와 sequelize.sync로 테이블을 맞추고 있어
+ * 이 마이그레이션은 별도 CLI 실행 시에만 사용됩니다.
+ */
 "use strict";
 
 /** @type {import('sequelize-cli').Migration} */

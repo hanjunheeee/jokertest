@@ -1,3 +1,8 @@
+/**
+ * 일반 설정 탭.
+ *
+ * 사운드/그래픽/게임플레이처럼 전역 옵션에 가까운 설정 컨트롤을 모읍니다.
+ */
 import { useState } from "react"
 import { GENERAL_SETTINGS, SETTING_ASSETS } from "../../constants/settingAssets.js"
 import CheckBox from "@/shared/ui/CheckBox"

@@ -4,6 +4,7 @@
  */
 
 const authService       = require("../service/auth.service");
+const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
 
@@ -38,12 +39,11 @@ exports.login = async (req, res, next) => {
 
         const { user, token } = await authService.login(req.body, reqInfo);
 
-        // JS에서 직접 접근 불가능한 HttpOnly 쿠키로 발급 → XSS 방어
+        // HttpOnly + 세션 쿠키(maxAge 없음): XSS 방어, 브라우저 닫으면 자동 삭제
         res.cookie("accessToken", token, {
             httpOnly: true,
             secure:   process.env.NODE_ENV === "production",
             sameSite: "Lax",
-            maxAge:   1000 * 60 * 60 * 24,
         });
 
         res.status(200).json({
@@ -57,7 +57,6 @@ exports.login = async (req, res, next) => {
             },
         });
     } catch (error) {
-        error.status = 401;
         next(error);
     }
 };
@@ -87,6 +86,7 @@ exports.me = async (req, res, next) => {
  */
 exports.logout = async (req, res, next) => {
     try {
+        await userRepository.recordLogout(req.user.uuid);
         res.clearCookie("accessToken", {
             httpOnly: true,
             secure:   process.env.NODE_ENV === "production",

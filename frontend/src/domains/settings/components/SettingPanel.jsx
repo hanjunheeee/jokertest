@@ -1,12 +1,18 @@
+/**
+ * 설정 패널.
+ *
+ * 탭 전환 및 커스텀 스크롤바 위치 동기화를 담당합니다.
+ * - 탭 전환 상태 → activeTab (이 컴포넌트에서 직접 관리)
+ * - 스크롤바 위치 동기화 → useScrollbarSync (listRef, scrollbarBox 반환)
+ */
 import { motion } from "framer-motion"
-import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { SETTING_ASSETS, SETTING_TABS } from "../constants/settingAssets.js"
 import GeneralSettingsTab from "@/domains/settings/components/tabs/GeneralSettingsTab"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { useScrollbarSync } from "../hooks/useScrollbarSync.js"
+import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
-const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
-
-/** prototype — 영상 위 양피지 영역에 맞춘 오버레이 */
 const PANEL_CLASS =
   "absolute left-1/2 top-[42%] z-20 w-[min(56rem,88vw)] -translate-x-1/2 -translate-y-1/2"
 
@@ -16,15 +22,13 @@ const TAB_BTN_CLASS =
 const TAB_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.95rem,1.35vw,1.15rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-/** 양피지 본문(탭 아래 ~ 하단 장식 위)에 맞춘 목록·스크롤바 높이 */
 const CONTENT_LIST_HEIGHT =
   "h-[clamp(26rem,min(58vh,52dvh),36rem)]"
 
-/** 빈 스크롤바 트랙 너비 (스크롤 연동은 추후) */
 const SCROLLBAR_WIDTH_CLASS = "w-[clamp(0.7rem,1.2vw,0.95rem)]"
-/** 트랙 장식 테두리 안쪽 홈에 맞춘 롤러 가로 비율 */
 const SCROLL_THUMB_WIDTH_CLASS = "w-[62%]"
 
+/** 단일 탭 버튼 — active 여부에 따라 이미지와 aria-pressed가 전환됩니다. */
 function SettingTab({ tab, active, onSelect }) {
   return (
     <button
@@ -43,6 +47,7 @@ function SettingTab({ tab, active, onSelect }) {
   )
 }
 
+/** 미구현 탭에 표시되는 준비 중 안내 */
 function SettingTabPlaceholder() {
   return (
     <p className="flex flex-1 items-center justify-center font-subheading text-[clamp(0.95rem,1.2vw,1.05rem)] text-[#2a1810]/70">
@@ -51,49 +56,13 @@ function SettingTabPlaceholder() {
   )
 }
 
-function measureSettingRows(listEl) {
-  const rows = listEl.querySelectorAll("[data-setting-row]")
-  if (!rows.length) return null
-
-  const wrapRect = listEl.getBoundingClientRect()
-  const firstRect = rows[0].getBoundingClientRect()
-  const lastRect = rows[rows.length - 1].getBoundingClientRect()
-
-  return {
-    top: firstRect.top - wrapRect.top,
-    height: lastRect.bottom - firstRect.top,
-  }
-}
-
 export default function SettingPanel({ visible }) {
-  const [activeTab, setActiveTab] = useState("general")
-  const listRef = useRef(null)
-  const [scrollbarBox, setScrollbarBox] = useState(null)
+  const [activeTab, setActiveTab] = useState("general") // 현재 선택된 탭 id
 
-  const syncScrollbarHeight = useCallback(() => {
-    const listEl = listRef.current
-    if (!listEl || activeTab !== "general") {
-      setScrollbarBox(null)
-      return
-    }
-    setScrollbarBox(measureSettingRows(listEl))
-  }, [activeTab])
+  // listRef를 설정 목록에 연결하면 useScrollbarSync가 ResizeObserver로 높이를 측정해 scrollbarBox를 반환
+  const { listRef, scrollbarBox } = useScrollbarSync(activeTab, visible)
 
-  useLayoutEffect(() => {
-    syncScrollbarHeight()
-    const listEl = listRef.current
-    if (!listEl) return undefined
-
-    const observer = new ResizeObserver(() => syncScrollbarHeight())
-    observer.observe(listEl)
-    window.addEventListener("resize", syncScrollbarHeight)
-
-    return () => {
-      observer.disconnect()
-      window.removeEventListener("resize", syncScrollbarHeight)
-    }
-  }, [syncScrollbarHeight, visible])
-
+  // scrollbarBox가 있으면 측정된 위치로, 없으면 전체 높이(inset-y-0)로 폴백
   const scrollbarStyle =
     scrollbarBox != null
       ? { top: scrollbarBox.top, height: scrollbarBox.height }
@@ -105,7 +74,7 @@ export default function SettingPanel({ visible }) {
       initial={{ opacity: 0, y: 10 }}
       animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
       transition={UI_REVEAL_TRANSITION}
-      style={{ pointerEvents: visible ? "auto" : "none" }}
+      style={{ pointerEvents: visible ? "auto" : "none" }} // 인트로 중 클릭 차단
     >
       <nav
         className="-translate-y-[clamp(0.85rem,2.2vh,1.35rem)] mb-[clamp(0.55rem,1.3vh,0.75rem)] flex justify-center gap-[clamp(0.35rem,0.8vw,0.55rem)]"
@@ -123,6 +92,7 @@ export default function SettingPanel({ visible }) {
 
       <div className={`px-[clamp(0.75rem,2vw,1.25rem)] ${CONTENT_LIST_HEIGHT}`}>
         <div className="relative h-full">
+          {/* listRef 연결 — useScrollbarSync가 이 엘리먼트의 크기를 측정 */}
           <div
             ref={listRef}
             className="flex h-full flex-col pr-[clamp(1.15rem,2vw,1.55rem)]"
@@ -136,6 +106,7 @@ export default function SettingPanel({ visible }) {
             )}
           </div>
 
+          {/* 커스텀 스크롤바 — scrollbarStyle로 설정 행 영역에 정확히 오버레이 */}
           <div
             className={`pointer-events-none absolute right-0 flex translate-x-[clamp(0.25rem,0.65vw,0.5rem)] flex-col leading-[0] ${SCROLLBAR_WIDTH_CLASS} ${scrollbarBox == null ? "inset-y-0" : ""}`}
             style={scrollbarStyle}

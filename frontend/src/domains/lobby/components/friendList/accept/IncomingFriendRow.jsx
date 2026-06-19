@@ -1,3 +1,8 @@
+/**
+ * 받은 친구 요청 행.
+ *
+ * 요청자 정보와 수락/거절 액션 버튼을 표시합니다.
+ */
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

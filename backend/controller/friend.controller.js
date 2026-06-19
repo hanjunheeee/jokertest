@@ -4,6 +4,8 @@
  */
 
 const friendService = require("../service/friend.service");
+const { createError } = require("../utils/appError");
+const { emitToUser } = require("../socket/socket");
 
 /**
  * @route   GET /friends/
@@ -59,12 +61,12 @@ exports.sendFriendRequest = async (req, res, next) => {
         const { receiverId } = req.body;
 
         if (!receiverId) {
-            const err = new Error('receiverId가 필요합니다.');
-            err.status = 400;
-            return next(err);
+            return next(createError('receiverId가 필요합니다.', 400));
         }
 
         await friendService.sendFriendRequest(req.user.uuid, receiverId);
+        emitToUser(receiverId, 'friend_request_received', {});
+
         res.status(200).json({ success: true, message: '친구 신청을 보냈습니다.' });
     } catch (error) {
         next(error);
@@ -77,7 +79,10 @@ exports.sendFriendRequest = async (req, res, next) => {
  */
 exports.acceptRequest = async (req, res, next) => {
     try {
-        await friendService.acceptRequest(req.user.uuid, parseInt(req.params.id, 10));
+        const { requesterId } = await friendService.acceptRequest(req.user.uuid, parseInt(req.params.id, 10));
+        // byUuid: 프런트에서 sentRequestIds의 정확한 항목을 제거하기 위해 필요
+        emitToUser(requesterId, 'friend_request_accepted', { byUuid: req.user.uuid });
+
         res.status(200).json({ success: true, message: '친구 요청을 수락했습니다.' });
     } catch (error) {
         next(error);
@@ -90,7 +95,10 @@ exports.acceptRequest = async (req, res, next) => {
  */
 exports.declineRequest = async (req, res, next) => {
     try {
-        await friendService.declineRequest(req.user.uuid, parseInt(req.params.id, 10));
+        const { requesterId } = await friendService.declineRequest(req.user.uuid, parseInt(req.params.id, 10));
+        // byUuid: 프런트에서 sentRequestIds의 정확한 항목을 제거하기 위해 필요
+        emitToUser(requesterId, 'friend_request_declined', { byUuid: req.user.uuid });
+
         res.status(200).json({ success: true, message: '친구 요청을 거절했습니다.' });
     } catch (error) {
         next(error);

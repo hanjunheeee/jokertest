@@ -7,8 +7,8 @@ const userRepository          = require("../repositories/user.repositories");
 const { hashPassword,
         comparePassword }     = require("../utils/hash");
 const { generateToken }       = require("../utils/jwt");
+const { createError }         = require("../utils/appError");
 const crypto                  = require("crypto");
-const db                      = require("../models");
 
 /**
  * 신규 유저를 등록합니다.
@@ -24,11 +24,14 @@ exports.signup = async (userData) => {
 
     const existingUser = await userRepository.findByEmail(email);
     if (existingUser) {
-        throw new Error("이미 사용 중인 이메일입니다.");
+        throw createError("이미 사용 중인 이메일입니다.", 409);
     }
 
     const password_hash = await hashPassword(password);
-    return await userRepository.createUser({ email, password_hash, nickname });
+    const user = await userRepository.createUser({ email, password_hash, nickname });
+    // 게임 통계 초기 레코드 — 신규 유저는 항상 0으로 시작
+    await userRepository.createUserStats(user.uuid);
+    return user;
 };
 
 /**
@@ -49,16 +52,16 @@ exports.login = async (loginData, reqInfo) => {
 
     const user = await userRepository.findByEmail(email);
     if (!user) {
-        throw new Error("가입되지 않은 이메일입니다.");
+        throw createError("가입되지 않은 이메일입니다.", 401);
     }
 
     if (user.locked_until && user.locked_until > new Date()) {
-        throw new Error("비밀번호 연속 오류로 계정이 잠겼습니다. 잠시 후 다시 시도해주세요.");
+        throw createError("비밀번호 연속 오류로 계정이 잠겼습니다. 잠시 후 다시 시도해주세요.", 423);
     }
 
     const activeBan = await userRepository.checkActiveBan(user.uuid);
     if (activeBan) {
-        throw new Error(`정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}`);
+        throw createError(`정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}`, 403);
     }
 
     const isMatch = await comparePassword(password, user.password_hash);
@@ -81,9 +84,9 @@ exports.login = async (loginData, reqInfo) => {
         });
 
         if (lockedUntil) {
-            throw new Error("비밀번호를 5회 잘못 입력하여 15분간 계정이 잠깁니다.");
+            throw createError("비밀번호를 5회 잘못 입력하여 15분간 계정이 잠깁니다.", 423);
         }
-        throw new Error(`비밀번호가 일치하지 않습니다. (틀린 횟수: ${failCount}/5)`);
+        throw createError(`비밀번호가 일치하지 않습니다. (틀린 횟수: ${failCount}/5)`, 401);
     }
 
     await userRepository.updateUser(user.uuid, {
@@ -92,10 +95,7 @@ exports.login = async (loginData, reqInfo) => {
         last_login_at:      new Date(),
     });
 
-    await db.UserSession.update(
-        { is_online: false },
-        { where: { user_id: user.uuid, is_online: true } }
-    );
+    await userRepository.markOnlineSessionsOffline(user.uuid);
 
     const sessionId = crypto.randomUUID();
     await userRepository.createUserSession({

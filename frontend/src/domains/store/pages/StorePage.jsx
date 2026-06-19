@@ -1,15 +1,16 @@
+/**
+ * 상점 페이지.
+ *
+ * 페이지 계층은 상점 배경/패널/사이드바를 조합하고, 실제 탭 UI는 하위 컴포넌트에 위임합니다.
+ */
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import StorePanel from "@/domains/store/components/StorePanel.jsx"
 import { STORE_ASSETS } from "../constants/storeAssets.js"
-import {
-  BACK_BUTTON_PAGE_POSITION_CLASS,
-  MotionBackButton,
-} from "@/shared/ui/BackButton.jsx"
+import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
-
-const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
-const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
+import { BG_FADE_TRANSITION, UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 export default function StorePage() {
   const navigate = useNavigate()

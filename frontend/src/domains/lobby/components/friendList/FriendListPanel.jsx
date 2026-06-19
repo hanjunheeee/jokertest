@@ -1,3 +1,8 @@
+/**
+ * 친구 목록 패널.
+ *
+ * 친구 목록/친구 신청/받은 요청 탭을 포함하는 로비 우측 패널입니다.
+ */
 import { AnimatePresence, motion } from "framer-motion"
 import { useState } from "react"
 import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
@@ -83,11 +88,9 @@ export default function FriendListPanel({
 }) {
   const [panelView, setPanelView] = useState("list")
 
-  const [ prevOpen, setPrevOpen ] = useState(open)
-
-  if (open !== prevOpen) {
-    setPrevOpen(open)
-    if (!open) setPanelView("list")
+  const handleClose = () => {
+    setPanelView("list")
+    onClose()
   }
 
   return (
@@ -102,7 +105,7 @@ export default function FriendListPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={PANEL_TRANSITION}
-            onClick={onClose}
+            onClick={handleClose}
           />
 
           <motion.aside

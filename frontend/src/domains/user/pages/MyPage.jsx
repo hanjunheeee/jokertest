@@ -1,14 +1,16 @@
+/**
+ * 마이페이지.
+ *
+ * 유저 프로필/전적/꾸미기 요소를 MyPageLayout으로 조합하는 라우트 단위 화면입니다.
+ */
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import MyPageLayout from "@/domains/user/components/MyPageLayout.jsx"
 import { MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
-import {
-  BACK_BUTTON_PAGE_POSITION_CLASS,
-  MotionBackButton,
-} from "@/shared/ui/BackButton.jsx"
+import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
-
-const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
+import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 export default function MyPage() {
   const navigate = useNavigate()

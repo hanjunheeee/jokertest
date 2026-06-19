@@ -1,3 +1,8 @@
+/**
+ * 친구 목록 검색창.
+ *
+ * 친구 목록과 친구 신청 탭에서 공통으로 사용하는 검색 입력 UI입니다.
+ */
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

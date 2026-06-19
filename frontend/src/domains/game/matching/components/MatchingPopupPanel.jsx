@@ -4,10 +4,12 @@
  *
  * props
  * - visible: true면 입장 연출 후 클릭 허용 (부모 uiVisible과 동기)
- * - slots: 파티 슬롯 더미/실데이터 — MatchingPopupContent·MatchingPartySlots로 전달
+ * - slots: 파티 슬롯 실데이터 또는 더미 — MatchingPopupContent·MatchingPartySlots로 전달
  * - onRoomCodeView: "방코드 보기" 클릭 시 호출 (부모에서 모달 열기)
+ * - isHost: true면 게임시작·방 삭제 표시, false면 방 나가기만 표시
+ * - onStartGame, onDeleteRoom: 방장 전용 콜백
+ * - onLeaveRoom: 비방장 전용 콜백
  *
- * 게임시작·방 삭제 버튼은 미구현 (TODO: 방장 권한·API 연동)
  * 에셋·카피·스타일은 constants/gameMatchingAssets.js, matchingPopupStyles.js 참고
  */
 import { motion } from "framer-motion"
@@ -34,7 +36,7 @@ const PANEL_WRAP_CLASS =
   "absolute left-1/2 top-[48%] z-20 flex w-[min(58rem,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col items-center origin-center scale-[0.92]"
 
 /** 프레임·방코드 보기·본문·게임시작/방삭제 버튼을 묶는 매칭 팝업 */
-export default function MatchingPopupPanel({ visible, slots, onRoomCodeView }) {
+export default function MatchingPopupPanel({ visible, slots, onRoomCodeView, isHost, onStartGame, onDeleteRoom, onLeaveRoom }) {
   return (
     <div
       className={PANEL_WRAP_CLASS}
@@ -79,48 +81,54 @@ export default function MatchingPopupPanel({ visible, slots, onRoomCodeView }) {
             animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
             transition={{ ...UI_REVEAL_TRANSITION, delay: 0.08 }}
           >
-            {/* 미구현 (TODO: 게임 시작 API) */}
-            <button
-              type="button"
-              aria-label={MATCHING_POPUP_COPY.startGame}
-              className={MATCHING_ACTION_BTN_CLASS}
-              style={{ outline: "none" }}
-            >
-              <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
-                <PublicAsset
-                  src={GAME_MATCHING_ASSETS.startGameButton}
-                  alt=""
-                  className="block h-auto w-full select-none"
-                />
-                <span
-                  className={MATCHING_ACTION_BTN_LABEL_CLASS}
-                  aria-hidden="true"
+            {isHost ? (
+              <>
+                <button
+                  type="button"
+                  aria-label={MATCHING_POPUP_COPY.startGame}
+                  onClick={onStartGame}
+                  className={MATCHING_ACTION_BTN_CLASS}
+                  style={{ outline: "none" }}
                 >
-                  {MATCHING_POPUP_COPY.startGame}
-                </span>
-              </span>
-            </button>
-            {/* 미구현 (TODO: 방 삭제 API) */}
-            <button
-              type="button"
-              aria-label={MATCHING_POPUP_COPY.deleteRoom}
-              className={MATCHING_ACTION_BTN_CLASS}
-              style={{ outline: "none" }}
-            >
-              <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
-                <PublicAsset
-                  src={GAME_MATCHING_ASSETS.deleteRoomButton}
-                  alt=""
-                  className="block h-auto w-full select-none"
-                />
-                <span
-                  className={MATCHING_ACTION_BTN_LABEL_CLASS}
-                  aria-hidden="true"
+                  <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
+                    <PublicAsset src={GAME_MATCHING_ASSETS.startGameButton} alt="" className="block h-auto w-full select-none" />
+                    <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
+                      {MATCHING_POPUP_COPY.startGame}
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={MATCHING_POPUP_COPY.deleteRoom}
+                  onClick={onDeleteRoom}
+                  className={MATCHING_ACTION_BTN_CLASS}
+                  style={{ outline: "none" }}
                 >
-                  {MATCHING_POPUP_COPY.deleteRoom}
+                  <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
+                    <PublicAsset src={GAME_MATCHING_ASSETS.deleteRoomButton} alt="" className="block h-auto w-full select-none" />
+                    <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
+                      {MATCHING_POPUP_COPY.deleteRoom}
+                    </span>
+                  </span>
+                </button>
+              </>
+            ) : (
+              // 비방장: 방 나가기 버튼만 표시
+              <button
+                type="button"
+                aria-label={MATCHING_POPUP_COPY.leaveRoom}
+                onClick={onLeaveRoom}
+                className={MATCHING_ACTION_BTN_CLASS}
+                style={{ outline: "none" }}
+              >
+                <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
+                  <PublicAsset src={GAME_MATCHING_ASSETS.deleteRoomButton} alt="" className="block h-auto w-full select-none" />
+                  <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
+                    {MATCHING_POPUP_COPY.leaveRoom}
+                  </span>
                 </span>
-              </span>
-            </button>
+              </button>
+            )}
           </motion.div>
         </div>
       </motion.div>

@@ -4,11 +4,12 @@
  *
  * - 뒤로가기 → /gameMode
  * - 게임 만들기 → /game-setup
- * - 게임 찾기 → 아직 미연동 (TODO)
+ * - 게임 찾기 → 랜덤 매칭 큐 진입 → match_found 수신 → /game-matching
  *
  * UI 구성: GameModeTypeIndicator(상단 모드 표시), ModeOptionCard, SoundControl, BackButton
  * 옵션 목록·에셋은 constants/modeAssets.js의 MULTIPLAY_OPTIONS 참고
  */
+import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   MODE_SCREEN_ASSETS,
@@ -16,23 +17,42 @@ import {
 } from "../constants/modeAssets.js"
 import GameModeTypeIndicator from "../components/GameModeTypeIndicator.jsx"
 import ModeOptionCard from "../components/ModeOptionCard.jsx"
-import BackButton, { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/ui/BackButton.jsx"
+import BackButton from "@/shared/ui/BackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
+import { getSocket } from "@/shared/socket/socketClient"
+import { useMatchingStore } from "@/domains/game/matching/store/matchingStore"
 
 /** 멀티플레이 하위 옵션(게임 만들기·찾기) 선택·네비게이션을 담당하는 페이지 컴포넌트 */
 export default function MultiplayEntryPage() {
-  const navigate = useNavigate()
+  const navigate     = useNavigate()
+  const isSearching  = useMatchingStore((s) => s.isSearching)
+  const isInRoom     = useMatchingStore((s) => s.isInRoom)
+  const startSearch  = useMatchingStore((s) => s.startSearch)
+  const stopSearch   = useMatchingStore((s) => s.stopSearch)
 
-  /** optionId에 따라 다음 화면으로 이동 — create: 인게임 설정, find: 미구현 */
+  // match_found 수신 → useSocket이 isInRoom을 true로 변경 → 여기서 navigate
+  useEffect(() => {
+    if (isInRoom) navigate('/game-matching')
+  }, [isInRoom, navigate])
+
   const handleOptionSelect = (optionId) => {
     if (optionId === "create") {
       navigate("/game-setup")
       return
     }
     if (optionId === "find") {
-      // TODO: 게임 찾기
+      const socket = getSocket()
+      if (!socket) return
+      startSearch()
+      socket.emit('join_matchmaking')
     }
+  }
+
+  const handleCancelSearch = () => {
+    getSocket()?.emit('leave_matchmaking')
+    stopSearch()
   }
 
   return (
@@ -67,6 +87,22 @@ export default function MultiplayEntryPage() {
             ))}
           </div>
         </div>
+
+        {/* 매칭 중 오버레이 — isSearching 동안 표시, 취소 버튼으로 큐 이탈 */}
+        {isSearching && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-black/70">
+            <p className="font-subheading text-[clamp(1.4rem,2.2vw,1.8rem)] font-bold text-[#f5f0e6] [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]">
+              매칭 중입니다...
+            </p>
+            <button
+              type="button"
+              onClick={handleCancelSearch}
+              className="font-subheading text-[clamp(1rem,1.4vw,1.15rem)] font-bold text-[#c4a87a] underline underline-offset-4 transition-opacity hover:opacity-75"
+            >
+              취소
+            </button>
+          </div>
+        )}
 
         <BackButton
           ariaLabel="게임 모드 선택으로 돌아가기"

@@ -1,20 +1,21 @@
 /**
  * @file    auth.routes.js
  * @desc    인증(Authentication) 관련 API 라우터입니다.
- *          회원가입 · 로그인 · 세션 검증 엔드포인트를 정의합니다.
+ *          회원가입 · 로그인 · 세션 검증 · 로그아웃 엔드포인트를 정의합니다.
  *
  *  엔드포인트 목록
  *  ┌──────────────────────────────────────────────────────────────┐
  *  │  POST  /auth/signup   신규 회원가입                           │
  *  │  POST  /auth/login    로그인 → HttpOnly 쿠키 발급             │
  *  │  GET   /auth/me       현재 로그인 세션(쿠키) 유효성 검증       │
+ *  │  POST  /auth/logout   HttpOnly 쿠키 제거                       │
  *  └──────────────────────────────────────────────────────────────┘
  */
 
 const express = require("express");
 const router  = express.Router();
 
-const { signup, login, me } = require("../controller/user.controller");
+const { signup, login, me, logout } = require("../controller/user.controller");
 const { verifyToken }        = require("../middleware/auth.middleware");
 
 // ──────────────────────────────────────────────
@@ -52,5 +53,12 @@ router.post("/login", login);
  * @returns { uuid, role }
  */
 router.get("/me", verifyToken, me);
+
+/**
+ * @route   POST /auth/logout
+ * @desc    현재 브라우저의 accessToken 쿠키를 제거합니다.
+ * @access  Private (verifyToken 통과 필요)
+ */
+router.post("/logout", verifyToken, logout);
 
 module.exports = router;

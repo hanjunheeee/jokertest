@@ -1,3 +1,8 @@
+/**
+ * 유저 Sequelize 모델.
+ *
+ * 인증, 프로필, 권한, 잠금/탈퇴 상태를 포함하는 서비스의 중심 계정 테이블입니다.
+ */
 // 핵심 유저 모델 정의
 /**
  * @desc    서비스의 가장 중심이 되는 회원(User) 계정 정보를 관리하는 모델입니다.
@@ -55,8 +60,9 @@ module.exports = (sequelize, DataTypes) => {
     User.hasMany(models.Friendship, { as: 'Friendships1', foreignKey: 'requester_id', sourceKey: 'uuid' });        // 내가 요청해서 성사된 찐친 관계들
     User.hasMany(models.Friendship, { as: 'Friendships2', foreignKey: 'receiver_id', sourceKey: 'uuid' });         // 내가 수락해서 성사된 찐친 관계들
   
-    // 3. 1:1 관계 (유저 1명 : 상태 1개)
+    // 3. 1:1 관계 (유저 1명 : 상태/통계 1개)
     User.hasOne(models.OnlinePresence, { foreignKey: 'user_id', sourceKey: 'uuid' });       // 현재 접속 및 활동 상태
+    User.hasOne(models.UserStats,      { foreignKey: 'user_id', sourceKey: 'uuid' });       // 게임 통계 및 평판
   };
 
   return User;

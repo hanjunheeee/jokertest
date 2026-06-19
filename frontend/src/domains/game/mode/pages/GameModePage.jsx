@@ -11,7 +11,8 @@
 import { useNavigate } from "react-router-dom"
 import { GAME_MODES, MODE_SCREEN_ASSETS } from "../constants/modeAssets.js"
 import ModeOptionCard from "../components/ModeOptionCard.jsx"
-import BackButton, { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/ui/BackButton.jsx"
+import BackButton from "@/shared/ui/BackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
 

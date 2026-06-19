@@ -1,7 +1,14 @@
+/**
+ * 로비 메뉴 내비게이션.
+ *
+ * 게임 모드, 상점, 설정 등 주요 로비 액션으로 이동하는 메뉴를 담당합니다.
+ */
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { LOBBY_MENU_BUTTONS } from "../constants/lobbyAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { logoutApi } from "@/domains/auth/api/auth"
+import { useAuthStore } from "@/domains/auth/store/authStore"
 
 const LOBBY_MENU_ITEMS = [
   { id: "gameplay", label: "게임플레이", src: LOBBY_MENU_BUTTONS.gameplay },
@@ -19,11 +26,16 @@ export default function LobbyMenuNav() {
   const navigate = useNavigate()
   const [activeMenu, setActiveMenu] = useState("gameplay")
 
-  const handleMenuClick = (itemId) => {
+  const handleMenuClick = async (itemId) => {
     setActiveMenu(itemId)
     if (itemId === "gameplay") navigate("/gameMode")
     if (itemId === "settings") navigate("/setting")
     if (itemId === "store") navigate("/store")
+    if (itemId === "exit") {
+      await logoutApi().catch(() => {})
+      useAuthStore.getState().logout()
+      navigate("/login")
+    }
   }
 
   return (

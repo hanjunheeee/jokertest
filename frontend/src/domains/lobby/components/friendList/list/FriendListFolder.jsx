@@ -1,3 +1,8 @@
+/**
+ * 친구 목록 폴더.
+ *
+ * 온라인/오프라인 등 그룹 단위로 친구 목록을 접고 펼치는 컴포넌트입니다.
+ */
 import { useState } from "react"
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import FriendListRow from "./FriendListRow.jsx"

@@ -1,41 +1,27 @@
-import { useState } from "react"
+/**
+ * 친구 신청 탭.
+ *
+ * 검색 상태 및 API 핸들러는 useFriendSearch에 위임합니다.
+ * 이 컴포넌트는 결과 표시 및 검색바·행 컴포넌트를 조합하는 역할만 합니다.
+ */
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
-import { searchFriendCandidates, sendFriendRequest } from "@/domains/lobby/api/friend.js"
+import { useFriendSearch } from "@/domains/lobby/hooks/useFriendSearch.js"
 import FriendListSearchBar from "../common/FriendListSearchBar.jsx"
 import RecommendedFriendRow from "./RecommendedFriendRow.jsx"
 import BackButton from "@/shared/ui/BackButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 export default function FriendRequestTab({ onBack }) {
-  const [query, setQuery] = useState("")
-  const [results, setResults] = useState([])
-  const [searching, setSearching] = useState(false)
-  const [sentIds, setSentIds] = useState(new Set())
-  const [errorMsg, setErrorMsg] = useState("")
-
-  const handleSearch = async () => {
-    if (!query.trim()) return
-    setSearching(true)
-    setErrorMsg("")
-    try {
-      const data = await searchFriendCandidates(query.trim())
-      setResults(data)
-    } catch (err) {
-      setResults([])
-      setErrorMsg(err.message || "검색 중 오류가 발생했습니다.")
-    } finally {
-      setSearching(false)
-    }
-  }
-
-  const handleSend = async (receiverId) => {
-    try {
-      await sendFriendRequest(receiverId)
-      setSentIds(prev => new Set(prev).add(receiverId))
-    } catch (err) {
-      console.error("친구 신청 실패:", err)
-    }
-  }
+  const {
+    query,
+    setQuery,
+    results,
+    searching,   // 검색 요청 진행 중 — "검색 중..." 표시 제어
+    sentIds,     // 신청 완료된 id Set — 버튼 상태 제어
+    errorMsg,    // 검색 실패 메시지 — 에러 표시 제어
+    handleSearch,
+    handleSend,
+  } = useFriendSearch()
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -43,7 +29,7 @@ export default function FriendRequestTab({ onBack }) {
         placeholder="닉네임 입력 후 Enter..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onSubmit={handleSearch}
+        onSubmit={handleSearch} // Enter 키 또는 검색 버튼 → handleSearch 호출
       />
 
       <div className="relative mt-3 flex w-full shrink-0 items-center justify-center">
@@ -59,7 +45,7 @@ export default function FriendRequestTab({ onBack }) {
         </div>
         <button
           type="button"
-          onClick={handleSearch}
+          onClick={handleSearch} // 새로고침 버튼 → 동일한 쿼리로 재검색
           aria-label="검색"
           className="absolute top-1/2 right-[clamp(0.65rem,3.5%,1rem)] w-[clamp(1.45rem,2.1vw,1.7rem)] -translate-y-[calc(50%-0.15rem)] cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
           style={{ outline: "none" }}
@@ -72,6 +58,7 @@ export default function FriendRequestTab({ onBack }) {
         </button>
       </div>
 
+      {/* searching / errorMsg / results 우선순위 순으로 표시 */}
       <ul className="mt-2 min-h-0 flex-1 overflow-y-auto pr-0.5">
         {searching ? (
           <li className="mt-10 text-center text-[11px] text-white/50">검색 중...</li>
@@ -90,7 +77,7 @@ export default function FriendRequestTab({ onBack }) {
               profileSrc={user.profile}
               online={user.online}
               onSend={handleSend}
-              sent={sentIds.has(user.id)}
+              sent={sentIds.has(user.id)} // sentIds에 포함되면 "신청 완료" 상태로 표시
             />
           ))
         )}

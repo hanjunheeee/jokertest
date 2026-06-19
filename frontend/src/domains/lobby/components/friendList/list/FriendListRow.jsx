@@ -1,3 +1,8 @@
+/**
+ * 친구 목록 행.
+ *
+ * 친구 한 명의 프로필, 접속 상태, 즐겨찾기 상태를 표시합니다.
+ */
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

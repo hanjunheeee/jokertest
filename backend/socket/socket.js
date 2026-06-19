@@ -13,6 +13,8 @@ const jwt    = require("jsonwebtoken");
 const cookie = require("cookie");
 
 const presenceService = require("../service/presence.service");
+const userRepository  = require("../repositories/user.repositories");
+const matchmaking     = require("./matchmaking");
 
 /**
  * uuid → socket.id 매핑. 다중 접속 제어와 브로드캐스트 대상 판단에 사용되는 단일 진실 공급원.
@@ -20,6 +22,22 @@ const presenceService = require("../service/presence.service");
  * @type {Map<string, string>}
  */
 const onlineUsers = new Map();
+
+/** initSocket 이후 채워지는 io 참조 — 컨트롤러에서 단방향 push에 사용 */
+let _io = null;
+
+/**
+ * 유저가 온라인이면 소켓 이벤트를 전송합니다. 오프라인이거나 미초기화면 무시합니다.
+ * @param {string} uuid
+ * @param {string} event
+ * @param {Object} payload
+ */
+function emitToUser(uuid, event, payload) {
+    const socketId = onlineUsers.get(uuid);
+    if (socketId && _io) {
+        _io.to(socketId).emit(event, payload);
+    }
+}
 
 /**
  * HTTP 서버에 Socket.io를 부착하고 이벤트 핸들러를 등록합니다.
@@ -35,6 +53,8 @@ function initSocket(httpServer) {
         },
     });
 
+    _io = io;
+
     io.use(authenticateSocket);
 
     io.on("connection", (socket) => {
@@ -44,10 +64,13 @@ function initSocket(httpServer) {
             console.error("\x1b[31m[소켓 접속 처리 에러]\x1b[0m", err);
         });
 
+        matchmaking.registerMatchmakingHandlers(io, socket, uuid);
+
         socket.on("disconnect", () => {
             handleDisconnect(io, socket, uuid).catch((err) => {
                 console.error("\x1b[31m[소켓 종료 처리 에러]\x1b[0m", err);
             });
+            matchmaking.onDisconnect(io, uuid);
         });
     });
 
@@ -117,6 +140,7 @@ async function handleDisconnect(io, socket, uuid) {
     onlineUsers.delete(uuid);
     await presenceService.setPresence(uuid, "OFFLINE");
     await broadcastFriendStatus(io, uuid, "OFFLINE");
+    await userRepository.recordLogout(uuid);
 }
 
 /**
@@ -136,4 +160,4 @@ async function broadcastFriendStatus(io, uuid, status) {
     });
 }
 
-module.exports = { initSocket };
+module.exports = { initSocket, emitToUser };

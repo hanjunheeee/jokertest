@@ -1,55 +1,67 @@
 /**
- * 멀티플레이 매칭 대기 화면 (prototype: 매칭 팝업)
- * GameSetupPage에서 "게임 만들기" 후 진입
+ * 멀티플레이 매칭 대기 화면.
  *
- * - 뒤로가기 → /game-setup
- * - 방코드 보기 → RoomCodeViewModal (현재 MATCHING_ROOM_CODE_DUMMY 표시)
- * - 파티 슬롯·인원·방코드는 constants 더미 데이터 (미구현 TODO: 매칭·방 API 연동)
+ * matchingStore에 방 데이터가 있으면 실제 플레이어·방 코드를 표시합니다.
+ * 없으면 prototype 더미로 폴백 (게임 만들기 흐름 호환).
  *
- * UI 구성: MatchingPopupPanel(매칭 프레임·슬롯·액션), RoomCodeViewModal,
- *          파티 인원 헤더(좌상단), SoundControl(우하단), MotionBackButton(좌하단), 배경 이미지
- * 에셋·더미·카피는 constants/gameMatchingAssets.js, 스타일은 matchingPopupStyles.js 참고
+ * - 방장: 게임시작·방 삭제 가능
+ * - 비방장: 방 나가기
  */
 import { motion } from "framer-motion"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import MatchingPopupPanel from "../components/MatchingPopupPanel.jsx"
 import RoomCodeViewModal from "../components/RoomCodeViewModal.jsx"
+import MatchingPartyHeader from "../components/MatchingPartyHeader.jsx"
 import {
   GAME_MATCHING_ASSETS,
   MATCHING_PARTY_SLOTS_DUMMY_10,
-  MATCHING_POPUP_COPY,
   MATCHING_ROOM_CODE_DUMMY,
 } from "../constants/gameMatchingAssets.js"
-import {
-  MATCHING_PARTY_COUNT_CLASS,
-  MATCHING_PARTY_HEADER_CLASS,
-  MATCHING_PARTY_ICON_CLASS,
-  MATCHING_PARTY_TEXT_CLASS,
-} from "../constants/matchingPopupStyles.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
-import {
-  BACK_BUTTON_PAGE_POSITION_CLASS,
-  MotionBackButton,
-} from "@/shared/ui/BackButton.jsx"
+import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
+import { BG_FADE_TRANSITION, UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
+import { useMatchingStore } from "../store/matchingStore"
+import { useMatchingRoom } from "../hooks/useMatchingRoom"
+import { getSocket } from "@/shared/socket/socketClient"
+import { useAuthStore } from "@/domains/auth/store/authStore"
 
-const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
-const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
-
-/** 배경·매칭 패널·방코드 모달·파티 헤더·공통 UI를 묶는 매칭 대기 페이지 */
 export default function GameMatchingPage() {
   const navigate = useNavigate()
-  const [uiVisible, setUiVisible] = useState(false) // true면 패널·헤더·뒤로가기 입장 연출 및 클릭 허용
-  const [roomCodeOpen, setRoomCodeOpen] = useState(false) // 방코드 읽기 전용 모달 표시 여부
-  const partyCount = MATCHING_PARTY_SLOTS_DUMMY_10.length // 더미 슬롯 수 = 현재 파티 인원
+  const [uiVisible, setUiVisible]   = useState(false)
+  const [roomCodeOpen, setRoomCodeOpen] = useState(false)
 
-  // 프레임 연출 관련 상태값 함수
+  const { isInRoom, players, roomCode, hostUuid, clearRoom } = useMatchingStore()
+  const myUuid = useAuthStore((s) => s.user?.uuid)
+  const isHost = isInRoom && myUuid === hostUuid
+
+  // 게임 시작 시 게임 화면으로 이동 — 게임 화면 미구현 중이므로 로비로 임시 이동
+  const handleRoomDeleted = useCallback(() => navigate('/multiplay'), [navigate])
+  const handleGameStarted = useCallback(() => navigate('/lobby'),     [navigate])
+
+  const { deleteRoom, startGame } = useMatchingRoom({
+    onRoomDeleted: handleRoomDeleted,
+    onGameStarted: handleGameStarted,
+  })
+
+  // 다음 프레임에서 uiVisible 전환 — 마운트 직후 즉시 전환 시 transition이 무시됨
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
-    return () => cancelAnimationFrame(frame) 
+    return () => cancelAnimationFrame(frame)
   }, [])
+
+  const handleBack = () => {
+    getSocket()?.emit('leave_room')
+    clearRoom()
+    navigate('/multiplay')
+  }
+
+  // store에 방 데이터가 없으면 prototype 더미 표시 (게임 만들기 흐름)
+  const slots      = isInRoom ? players.map((p) => ({ id: p.uuid, ready: true })) : MATCHING_PARTY_SLOTS_DUMMY_10
+  const code       = isInRoom ? roomCode : MATCHING_ROOM_CODE_DUMMY
+  const partyCount = slots.length
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -65,44 +77,36 @@ export default function GameMatchingPage() {
 
       <MatchingPopupPanel
         visible={uiVisible}
-        slots={MATCHING_PARTY_SLOTS_DUMMY_10}
-        onRoomCodeView={() => setRoomCodeOpen(true)} // 방코드 보기 모달 열기
+        slots={slots}
+        onRoomCodeView={() => setRoomCodeOpen(true)}
+        isHost={isHost}
+        onStartGame={startGame}
+        onDeleteRoom={deleteRoom}
+        onLeaveRoom={handleBack}
       />
 
       <RoomCodeViewModal
         open={roomCodeOpen}
         onClose={() => setRoomCodeOpen(false)}
-        roomCode={MATCHING_ROOM_CODE_DUMMY} // 미구현 (TODO: 서버 발급 방 코드)
+        roomCode={code}
       />
 
-      <motion.div
-        className={MATCHING_PARTY_HEADER_CLASS}
-        initial={{ opacity: 0 }}
-        animate={uiVisible ? { opacity: 1 } : { opacity: 0 }}
+      <MatchingPartyHeader
+        visible={uiVisible}
+        partyCount={partyCount}
         transition={UI_REVEAL_TRANSITION}
-        aria-label={`${MATCHING_POPUP_COPY.partyLabel} ${partyCount}명`}
-      >
-        <PublicAsset
-          src={GAME_MATCHING_ASSETS.silhouetteNotReady}
-          alt=""
-          className={MATCHING_PARTY_ICON_CLASS}
-        />
-        <span className={MATCHING_PARTY_TEXT_CLASS}>
-          {MATCHING_POPUP_COPY.partyLabel}{" "}
-          <span className={MATCHING_PARTY_COUNT_CLASS}>{partyCount}</span>명
-        </span>
-      </motion.div>
+      />
 
       <div className="absolute bottom-4 right-4 z-30 sm:bottom-6 sm:right-6">
         <SoundControl />
       </div>
 
       <MotionBackButton
-        ariaLabel="인게임 설정으로 돌아가기"
+        ariaLabel="멀티플레이 선택으로 돌아가기"
         initial={{ opacity: 0, y: 8 }}
         animate={uiVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
         transition={UI_REVEAL_TRANSITION}
-        onClick={() => navigate("/game-setup")}
+        onClick={handleBack}
         className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
         style={{ pointerEvents: uiVisible ? "auto" : "none" }}
       />

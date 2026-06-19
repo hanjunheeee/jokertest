@@ -1,38 +1,31 @@
 /**
- * 인게임 설정(게임 만들기) 화면 (prototype: 화면 구성-일반UI)
- * MultiplayEntryPage에서 "게임 만들기" 선택 시 진입
+ * 인게임 설정(게임 만들기) 화면.
  *
- * - 뒤로가기 → /multiplay
- * - 게임 만들기 → /game-matching (설정값 저장·API 연동은 GameSetupPanel 내부 state만 사용)
+ * page 계층은 컴포넌트 조합과 네비게이션 제어만 담당합니다.
+ * - 설정 패널 → GameSetupPanel (visible·onCreateGame 수신)
  *
- * UI 구성: GameSetupPanel(탭·설정 목록·게임 만들기 버튼), SoundControl(우하단),
- *          MotionBackButton(좌하단), 배경 이미지
- * 에셋은 constants/gameSetupAssets.js 참고
+ * uiVisible: requestAnimationFrame 다음 프레임에서 true로 전환하여
+ *   마운트 직후 입장 애니메이션이 자연스럽게 시작되도록 합니다.
  */
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import GameSetupPanel from "../components/GameSetupPanel.jsx"
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
-import {
-  BACK_BUTTON_PAGE_POSITION_CLASS,
-  MotionBackButton,
-} from "@/shared/ui/BackButton.jsx"
+import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
+import { BG_FADE_TRANSITION, UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
-const BG_FADE_TRANSITION = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
-const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
-
-/** 배경·설정 패널·공통 UI를 묶는 인게임 설정 페이지 */
 export default function GameSetupPage() {
   const navigate = useNavigate()
-  const [uiVisible, setUiVisible] = useState(false) // true면 패널·뒤로가기 입장 연출 및 클릭 허용
+  const [uiVisible, setUiVisible] = useState(false) // true가 되면 패널·버튼 입장 애니메이션 시작
 
-  // 프레임 연출 관련 상태값 함수
+  // 다음 프레임에서 uiVisible 전환 — 마운트 직후 즉시 전환 시 transition이 무시됨
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
-    return () => cancelAnimationFrame(frame) 
+    return () => cancelAnimationFrame(frame)
   }, [])
 
   return (
@@ -47,9 +40,10 @@ export default function GameSetupPage() {
         draggable={false}
       />
 
+      {/* uiVisible을 visible로 전달 — 패널 내부에서 입장 애니메이션 처리 */}
       <GameSetupPanel
         visible={uiVisible}
-        onCreateGame={() => navigate("/game-matching")} // 설정 확인 후 매칭 화면으로
+        onCreateGame={() => navigate("/game-matching")} // 설정 완료 → 매칭 대기 화면으로 이동
       />
 
       <div className="absolute bottom-4 right-4 z-30 sm:bottom-6 sm:right-6">
@@ -63,7 +57,7 @@ export default function GameSetupPage() {
         transition={UI_REVEAL_TRANSITION}
         onClick={() => navigate("/multiplay")}
         className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
-        style={{ pointerEvents: uiVisible ? "auto" : "none" }}
+        style={{ pointerEvents: uiVisible ? "auto" : "none" }} // 애니메이션 중 클릭 차단
       />
     </div>
   )

@@ -1,82 +1,28 @@
-import { motion } from "framer-motion"
-import { useEffect, useRef, useState } from "react"
+/**
+ * 설정 페이지.
+ *
+ * page 계층은 훅·컴포넌트 조합과 네비게이션 제어만 담당합니다.
+ * - 배경 영상 인트로 제어 → useVideoIntro (bgVideoRef, introDone, skipIntro)
+ * - 설정 내용 → SettingPanel (introDone을 visible로 받아 페이드인)
+ */
 import { useNavigate } from "react-router-dom"
 import SettingPanel from "@/domains/settings/components/SettingPanel.jsx"
-import {
-  BACK_BUTTON_PAGE_POSITION_CLASS,
-  MotionBackButton,
-} from "@/shared/ui/BackButton.jsx"
+import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
+import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import { SETTING_ASSETS } from "../constants/settingAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
-
-const VIDEO_HOLD_BEFORE_END_SEC = 0.04
-const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
-
-function holdOnLastFrame(video) {
-  const { duration, currentTime } = video
-  if (!duration || !Number.isFinite(duration)) {
-    video.pause()
-    return
-  }
-  const target = Math.max(0, duration - 0.001)
-  if (currentTime < target - 0.02) {
-    video.currentTime = target
-  }
-  video.pause()
-}
+import { useVideoIntro } from "../hooks/useVideoIntro.js"
+import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 export default function SettingPage() {
   const navigate = useNavigate()
-  const bgVideoRef = useRef(null)
-  const videoHeldRef = useRef(false)
-  const [introDone, setIntroDone] = useState(false)
 
-  const holdVideo = () => {
-    const video = bgVideoRef.current
-    if (!video || videoHeldRef.current) return
-    videoHeldRef.current = true
-    holdOnLastFrame(video)
-    setIntroDone(true)
-  }
-
-  const skipIntro = () => {
-    if (videoHeldRef.current) return
-    holdVideo()
-  }
-
-  useEffect(() => {
-    const video = bgVideoRef.current
-    if (!video) return
-
-    const syncPlayback = () => {
-      const { duration, currentTime } = video
-      if (!duration || !Number.isFinite(duration)) return
-
-      const remaining = duration - currentTime
-
-      if (!videoHeldRef.current && remaining <= VIDEO_HOLD_BEFORE_END_SEC) {
-        holdVideo()
-      }
-    }
-
-    const onEnded = () => {
-      holdVideo()
-    }
-
-    video.addEventListener("timeupdate", syncPlayback)
-    video.addEventListener("loadedmetadata", syncPlayback)
-    video.addEventListener("ended", onEnded)
-    syncPlayback()
-
-    return () => {
-      video.removeEventListener("timeupdate", syncPlayback)
-      video.removeEventListener("loadedmetadata", syncPlayback)
-      video.removeEventListener("ended", onEnded)
-    }
-  }, [])
+  // 배경 영상 인트로 제어 — bgVideoRef는 훅 내부에서 관리, introDone이 true가 되면 UI 전환
+  const { bgVideoRef, introDone, skipIntro } = useVideoIntro()
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
+      {/* bgVideoRef를 연결 — 훅이 timeupdate·ended 이벤트로 인트로 종료를 감지 */}
       <video
         ref={bgVideoRef}
         src={publicAsset(SETTING_ASSETS.bgVideo)}
@@ -87,6 +33,7 @@ export default function SettingPage() {
         className="absolute inset-0 h-full w-full object-cover object-center"
       />
 
+      {/* 인트로 중에만 렌더 — 클릭 시 즉시 skipIntro 호출 */}
       {!introDone ? (
         <button
           type="button"
@@ -96,17 +43,17 @@ export default function SettingPage() {
         />
       ) : null}
 
+      {/* introDone을 visible로 전달 — 패널 내부에서 페이드인 애니메이션 처리 */}
       <SettingPanel visible={introDone} />
 
+      {/* introDone 기준으로 뒤로가기 버튼도 동일 타이밍에 등장 */}
       <MotionBackButton
         initial={{ opacity: 0, y: 8 }}
-        animate={
-          introDone ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }
-        }
+        animate={introDone ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
         transition={UI_REVEAL_TRANSITION}
         onClick={() => navigate("/lobby")}
         className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
-        style={{ pointerEvents: introDone ? "auto" : "none" }}
+        style={{ pointerEvents: introDone ? "auto" : "none" }} // 인트로 중 클릭 차단
       />
     </div>
   )

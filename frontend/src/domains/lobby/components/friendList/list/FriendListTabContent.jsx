@@ -1,3 +1,8 @@
+/**
+ * 친구 목록 탭 본문.
+ *
+ * 검색어와 친구 상태를 기준으로 친구 행을 필터링해 렌더링합니다.
+ */
 import FriendListSearchBar from "../common/FriendListSearchBar.jsx"
 import FriendListFolder from "./FriendListFolder.jsx"
 

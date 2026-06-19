@@ -2,9 +2,10 @@
  * 인증 API — LoginPage·App에서 호출
  * 세션 쿠키는 shared/api/client.js의 credentials: "include"로 전송
  *
- * - POST /auth/login — 로그인, { user } 반환 → authStore.login
+ * - POST /auth/login  — 로그인, { user } 반환 → authStore.login
  * - POST /auth/signup — 회원가입 (nickname 포함)
- * - GET /auth/me — 쿠키 유효성·현재 사용자 (앱 마운트·LoginPage 세션 복구)
+ * - GET  /auth/me     — 쿠키 유효성·현재 사용자 (앱 마운트·LoginPage 세션 복구)
+ * - POST /auth/logout — HttpOnly 쿠키 제거 + DB 세션 종료
  */
 import { api } from '@/shared/api/client';
 
@@ -21,4 +22,9 @@ export const signupApi = async (signupData) => {
 /** 서버에 세션(쿠키) 검증 요청 — 유효하면 사용자 정보, 401이면 client가 logout 처리 */
 export const getMeApi = async () => {
     return await api.get('/auth/me');
+};
+
+/** HttpOnly 쿠키 제거 + DB 세션 종료 */
+export const logoutApi = async () => {
+    return await api.post('/auth/logout');
 };

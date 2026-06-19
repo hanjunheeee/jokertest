@@ -1,3 +1,8 @@
+/**
+ * 친구 목록 토글 버튼.
+ *
+ * 로비에서 친구 패널을 열고 닫는 작은 고정 버튼입니다.
+ */
 import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

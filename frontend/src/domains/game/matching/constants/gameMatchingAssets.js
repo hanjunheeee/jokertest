@@ -23,6 +23,7 @@ export const MATCHING_POPUP_COPY = {
   partyLabel: "파티 인원",
   startGame: "게임시작",
   deleteRoom: "방 삭제하기",
+  leaveRoom: "방 나가기",
 }
 
 /** 매칭 방 최대 인원 — 슬롯 그리드·더미 배열 상한 */

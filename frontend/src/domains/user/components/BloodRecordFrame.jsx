@@ -1,3 +1,8 @@
+/**
+ * 혈흔 기록 프레임.
+ *
+ * 마이페이지 전적/통계 값을 장식 프레임 안에 표시합니다.
+ */
 import { BLOOD_RECORD_STATS, MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

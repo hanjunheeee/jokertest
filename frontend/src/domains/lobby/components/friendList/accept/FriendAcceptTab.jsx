@@ -1,3 +1,8 @@
+/**
+ * 받은 친구 요청 탭.
+ *
+ * 수락/거절 가능한 PENDING 요청 목록을 표시합니다.
+ */
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import FriendListSearchBar from "../common/FriendListSearchBar.jsx"
 import IncomingFriendRow from "./IncomingFriendRow.jsx"

@@ -5,18 +5,26 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { LOBBY_INTRO_SESSION_KEY } from "@/domains/lobby/hooks/useLobbyIntro";
 
 export const useAuthStore = create(
     persist(
         (set) => ({
             isLoggedIn: false,
             user:       null,
-            login:      (user) => set({ isLoggedIn: true, user }),
-            logout:     ()     => set({ isLoggedIn: false, user: null }),
+            login: (user) => {
+                // 로그인마다 인트로 기록을 초기화해 이번 세션에서 정확히 한 번 재생되도록 보장
+                localStorage.removeItem(LOBBY_INTRO_SESSION_KEY);
+                return set({ isLoggedIn: true, user });
+            },
+            logout: () => {
+                localStorage.removeItem(LOBBY_INTRO_SESSION_KEY);
+                return set({ isLoggedIn: false, user: null });
+            },
         }),
         {
-            name:        "auth-storage",
-            partialize: (state) => ({ isLoggedIn: state.isLoggedIn, user: state.user }), // login·logout 제외하고 영속
+            name:       "auth-storage",
+            partialize: (state) => ({ isLoggedIn: state.isLoggedIn, user: state.user }),
         }
     )
 );
