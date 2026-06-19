@@ -3,7 +3,7 @@ import { MY_PAGE_ASSETS, MY_PAGE_PROFILE } from "../constants/myPageAssets.js"
 import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import BloodRecordFrame from "./BloodRecordFrame.jsx"
-import FateMaskFooter, { FATE_MASK_FOOTER_SPACE } from "./FateMaskFooter.jsx"
+import FateMaskFooter from "./FateMaskFooter.jsx"
 
 const UI_FADE = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
 
@@ -13,10 +13,9 @@ const UI_FADE = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
  */
 export default function MyPageLayout() {
   return (
-    <>
+    <div className="relative z-10 flex h-full min-h-0 flex-col">
       <motion.main
-        className="relative z-10 flex min-h-svh w-full items-center justify-center px-[clamp(1rem,3vw,2rem)] pt-[clamp(2.5rem,6vh,4.5rem)]"
-        style={{ paddingBottom: FATE_MASK_FOOTER_SPACE }}
+        className="relative flex min-h-0 flex-1 items-center justify-center px-[clamp(1rem,3vw,2rem)] pt-[clamp(2.5rem,6vh,4.5rem)] pb-[clamp(0.25rem,1vh,0.75rem)]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={UI_FADE}
@@ -47,6 +46,6 @@ export default function MyPageLayout() {
       </motion.main>
 
       <FateMaskFooter />
-    </>
+    </div>
   )
 }

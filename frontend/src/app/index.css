@@ -34,9 +34,17 @@
 
   --color-text-main: #b50000;
   --color-text-body: #000000;
+
+  /* ViewportShell 기본값 — 런타임에 layouts/ViewportShell.jsx가 constants로 덮어씀 */
+  --game-viewport-max-width: 1280px;
 }
 
 @layer base {
+  html,
+  body {
+    @apply bg-black;
+  }
+
   body {
     @apply font-sans text-text-body antialiased;
   }
@@ -77,5 +85,29 @@
 
   .lobby-menu-btn:hover .lobby-menu-btn__img {
     filter: url(#lobby-menu-red);
+  }
+
+  /* 텍스트 링크 굵기 */
+  .auth-text-link {
+    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-[13px] text-amber-800 underline-offset-2 hover:underline;
+    font-weight: 700;
+    -webkit-text-stroke: 0.35px currentColor;
+    paint-order: stroke fill;
+  }
+
+  /* app/layouts/ViewportShell — 게임 영역 + 좌우 배너 슬롯 */
+  .viewport-shell {
+    @apply flex min-h-svh w-full bg-black;
+  }
+
+  .viewport-shell__banner {
+    @apply min-h-svh min-w-0 flex-1 bg-black;
+  }
+
+  .viewport-shell__game {
+    @apply relative h-svh w-full shrink-0 overflow-x-hidden bg-black;
+    max-width: var(--game-viewport-max-width);
+    container-type: inline-size;
+    container-name: game-viewport;
   }
 }

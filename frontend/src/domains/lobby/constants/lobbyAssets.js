@@ -1,7 +1,7 @@
 /** 로비 화면 public 에셋 경로 (frontend/public 기준) */
 export const LOBBY_ASSETS = {
   bgVideo: "/bg/대기실 배경 영상4.mp4",
-  logo: "/logo/The joker logo.png",
+  logo: "/logo/가면무도회 로고2.png",
   myPageButton: "/button/마이페이지 이동 버튼_프로토타입2.png",
 }
 

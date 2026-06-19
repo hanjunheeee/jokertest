@@ -226,7 +226,7 @@ export default function LoginPage() {
                       />
                       <button
                         type="button"
-                        className="shrink-0 cursor-pointer text-[13px] text-amber-900 underline-offset-2 hover:underline"
+                        className="auth-text-link shrink-0"
                       >
                         {/* 미구현 (TODO: 비밀번호 찾기) */}
                         비밀번호 찾기
@@ -267,7 +267,7 @@ export default function LoginPage() {
                       <button
                         type="button"
                         onClick={() => setIsSignupMode(true)}
-                        className="cursor-pointer font-bold text-amber-800 underline-offset-2 hover:underline"
+                        className="auth-text-link"
                       >
                         회원가입
                       </button>

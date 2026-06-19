@@ -82,7 +82,7 @@ export default function SignupForm({ formData, onChange, onSwitchToLogin }) {
           <button
             type="button"
             onClick={onSwitchToLogin}
-            className="cursor-pointer font-bold text-amber-800 underline-offset-2 hover:underline"
+            className="auth-text-link"
           >
             로그인하기
           </button>

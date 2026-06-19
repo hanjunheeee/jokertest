@@ -18,8 +18,8 @@ const DESCRIPTION_INSET = {
   right: "14%",
 }
 
-/** fixed 푸터 높이 + 하단 여백 — 본문과 겹침 방지 (MyPageLayout paddingBottom) */
-export const FATE_MASK_FOOTER_SPACE = "clamp(11.5rem,25vh,16rem)"
+const FATE_MASK_FRAME_WRAP_CLASS =
+  "relative mx-auto w-[min(100%,clamp(26rem,68cqw,34rem))] [container-type:inline-size]"
 
 /**
  * 마이페이지 하단 고정 운명의 가면 프레임
@@ -34,13 +34,14 @@ export default function FateMaskFooter({
 
   return (
     <motion.footer
-      className="pointer-events-none fixed inset-x-0 bottom-[clamp(1.75rem,4.5vh,3rem)] z-[15] flex justify-center"
+      className="pointer-events-none z-[15] flex w-full shrink-0 justify-center px-[clamp(0.5rem,2cqw,1rem)] pb-[clamp(0.75rem,2vh,1.25rem)]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={UI_FADE}
       aria-hidden="true"
     >
-      <div className="relative w-[clamp(22rem,34vw,30rem)] [container-type:inline-size]">
+      {/* cqw = 게임 영역 기준 — vw·w-full보다 작고, 모서리 장식은 30rem대보다 넓게 */}
+      <div className={FATE_MASK_FRAME_WRAP_CLASS}>
         <PublicAsset src={src} alt="" className={className} />
 
         {showText ? (
