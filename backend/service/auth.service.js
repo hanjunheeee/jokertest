@@ -27,6 +27,11 @@ exports.signup = async (userData) => {
         throw createError("이미 사용 중인 이메일입니다.", 409);
     }
 
+    const existingNickname = await userRepository.findByNickname(nickname);
+    if (existingNickname) {
+        throw createError("이미 사용 중인 닉네임입니다.", 409);
+    }
+
     const password_hash = await hashPassword(password);
     const user = await userRepository.createUser({ email, password_hash, nickname });
     // 게임 통계 초기 레코드 — 신규 유저는 항상 0으로 시작

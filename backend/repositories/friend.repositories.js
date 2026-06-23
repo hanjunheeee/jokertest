@@ -55,14 +55,37 @@ exports.findIncomingRequests = async (uuid) => {
 };
 
 /**
- * 두 유저 사이에 PENDING 요청이 있는지 확인합니다. (중복 신청 방지용)
- * @param {string} requesterId
- * @param {string} receiverId
+ * 두 유저 사이에 PENDING 요청이 있는지 확인합니다. 양방향 모두 체크합니다.
+ * @param {string} uuidA
+ * @param {string} uuidB
  * @returns {Promise<Object|null>}
  */
-exports.findPendingRequest = async (requesterId, receiverId) => {
+exports.findPendingRequest = async (uuidA, uuidB) => {
     return await db.FriendRequest.findOne({
-        where: { requester_id: requesterId, receiver_id: receiverId, status: 'PENDING' },
+        where: {
+            [Op.or]: [
+                { requester_id: uuidA, receiver_id: uuidB },
+                { requester_id: uuidB, receiver_id: uuidA },
+            ],
+            status: 'PENDING',
+        },
+    });
+};
+
+/**
+ * 두 유저 사이에 Friendship이 이미 존재하는지 확인합니다. 양방향 모두 체크합니다.
+ * @param {string} uuidA
+ * @param {string} uuidB
+ * @returns {Promise<Object|null>}
+ */
+exports.findExistingFriendship = async (uuidA, uuidB) => {
+    return await db.Friendship.findOne({
+        where: {
+            [Op.or]: [
+                { requester_id: uuidA, receiver_id: uuidB },
+                { requester_id: uuidB, receiver_id: uuidA },
+            ],
+        },
     });
 };
 

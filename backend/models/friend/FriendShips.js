@@ -20,10 +20,13 @@ module.exports = (sequelize, DataTypes) => {
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },      // 처음 친구가 된 일시
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },      // 관계 상태가 마지막으로 변경된 일시
   }, {
-    tableName: 'friendships', // 실제 DB에 생성될 테이블 이름
-    timestamps: true,         // Sequelize가 데이터 수정 시 updated_at을 자동으로 갱신하도록 설정
-    createdAt: 'created_at',  // Sequelize 기본명(createdAt)을 DB 컬럼명에 맞게 매핑
-    updatedAt: 'updated_at',  // Sequelize 기본명(updatedAt)을 DB 컬럼명에 맞게 매핑
+    tableName: 'friendships',
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    indexes: [
+      { unique: true, fields: ['requester_id', 'receiver_id'] },
+    ],
   });
 
   // 모델 간의 관계(Associations) 정의

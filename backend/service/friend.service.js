@@ -62,9 +62,14 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
         throw createError('자기 자신에게 친구 신청할 수 없습니다.', 400);
     }
 
-    const existing = await friendRepository.findPendingRequest(myUuid, receiverId);
-    if (existing) {
-        throw createError('이미 친구 신청을 보냈습니다.', 409);
+    const existingFriendship = await friendRepository.findExistingFriendship(myUuid, receiverId);
+    if (existingFriendship) {
+        throw createError('이미 친구인 유저입니다.', 409);
+    }
+
+    const existingRequest = await friendRepository.findPendingRequest(myUuid, receiverId);
+    if (existingRequest) {
+        throw createError('이미 친구 신청 중입니다.', 409);
     }
 
     return await friendRepository.createFriendRequest(myUuid, receiverId);

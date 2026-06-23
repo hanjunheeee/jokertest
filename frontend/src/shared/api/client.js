@@ -59,5 +59,6 @@ export const api = {
     get:    (endpoint)       => apiClient(endpoint),
     post:   (endpoint, body) => apiClient(endpoint, { method: "POST",   body: JSON.stringify(body) }),
     put:    (endpoint, body) => apiClient(endpoint, { method: "PUT",    body: JSON.stringify(body) }),
+    patch:  (endpoint, body) => apiClient(endpoint, { method: "PATCH",  body: JSON.stringify(body) }),
     delete: (endpoint)       => apiClient(endpoint, { method: "DELETE" }),
 };

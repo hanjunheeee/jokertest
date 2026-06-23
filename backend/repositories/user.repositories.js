@@ -16,6 +16,15 @@ exports.findByEmail = async (email) => {
 };
 
 /**
+ * 닉네임으로 유저를 조회합니다.
+ * @param {string} nickname
+ * @returns {Promise<Object|null>}
+ */
+exports.findByNickname = async (nickname) => {
+    return await db.User.findOne({ where: { nickname } });
+};
+
+/**
  * UUID로 유저를 조회합니다.
  * @param {string} uuid
  * @returns {Promise<Object|null>}

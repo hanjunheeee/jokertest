@@ -24,6 +24,7 @@ import {
 export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false)
   const [isSignupMode, setIsSignupMode] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
   const isAuthenticated = useAuthStore(selectIsAuthenticated)
   const login = useAuthStore((state) => state.login)
@@ -55,7 +56,9 @@ export default function LoginPage() {
   /** 제출 시 회원가입·로그인 API 분기 후 성공 시 로비 이동 또는 가입 완료 안내 */
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (isSubmitting) return
 
+    setIsSubmitting(true)
     try {
       if (isSignupMode) {
         await signupApi(formData)
@@ -69,6 +72,8 @@ export default function LoginPage() {
     } catch (error) {
       console.error("API 통신 에러:", error)
       alert(error.message || "서버와 연결할 수 없습니다.")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 

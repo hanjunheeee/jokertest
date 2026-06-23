@@ -16,7 +16,7 @@ export function useMyProfile() {
 
   useEffect(() => {
     getMyProfileApi()
-      .then((res) => setData(res.data))
+      .then((res) => setData(res))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
