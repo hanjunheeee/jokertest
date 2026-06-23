@@ -6,29 +6,48 @@
  * 설정값은 app/constants/viewportLayout.js, 스타일은 app/index.css 참고
  */
 import { Outlet } from "react-router-dom"
+import { VIEWPORT_BANNER_ASSETS } from "@/app/constants/viewportBannerAssets.js"
 import {
   GAME_VIEWPORT_MAX_WIDTH_PX,
   GAME_VIEWPORT_MAX_WIDTH_VAR,
+  VIEWPORT_SHELL_COLUMN_GAP_PX,
+  VIEWPORT_SHELL_COLUMN_GAP_VAR,
 } from "@/app/constants/viewportLayout.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 /** 좌·우 배너 슬롯 + 가운데 게임 영역에 하위 페이지(Outlet) 렌더 */
 export default function ViewportShell() {
   return (
     <div
       className="viewport-shell"
-      style={{ [GAME_VIEWPORT_MAX_WIDTH_VAR]: `${GAME_VIEWPORT_MAX_WIDTH_PX}px` }}
+      style={{
+        [GAME_VIEWPORT_MAX_WIDTH_VAR]: `${GAME_VIEWPORT_MAX_WIDTH_PX}px`,
+        [VIEWPORT_SHELL_COLUMN_GAP_VAR]: `${VIEWPORT_SHELL_COLUMN_GAP_PX}px`,
+      }}
     >
       <aside
         className="viewport-shell__banner viewport-shell__banner--left"
         aria-label="좌측 배너 영역"
-      />
+      >
+        <PublicAsset
+          src={VIEWPORT_BANNER_ASSETS.left}
+          alt=""
+          className="viewport-shell__banner-image"
+        />
+      </aside>
       <main className="viewport-shell__game">
         <Outlet />
       </main>
       <aside
         className="viewport-shell__banner viewport-shell__banner--right"
         aria-label="우측 배너 영역"
-      />
+      >
+        <PublicAsset
+          src={VIEWPORT_BANNER_ASSETS.right}
+          alt=""
+          className="viewport-shell__banner-image"
+        />
+      </aside>
     </div>
   )
 }

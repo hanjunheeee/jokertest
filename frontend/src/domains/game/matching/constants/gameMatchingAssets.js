@@ -9,6 +9,7 @@ export const GAME_MATCHING_ASSETS = {
   restrictionMark: "/button/제한 표시.png",
   timerBar: "/frame/타이머 바.png",
   roomCodeViewButton: "/button/버튼(수락 및 긍정).png",
+  roomCodeShareFrame: "/frame/방코드 발송 프레임.png",
 }
 
 /** 미구현 (TODO: 서버 발급 방 코드) — RoomCodeViewModal·방코드 보기용 더미 */

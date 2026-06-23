@@ -50,7 +50,7 @@ export default function MatchingPopupPanel({ visible, slots, onRoomCodeView, isH
       >
         <button
           type="button"
-          aria-label="방코드 보기"
+          aria-label="초대코드 공유"
           onClick={onRoomCodeView}
           className={MATCHING_ROOM_CODE_BTN_WRAP_CLASS}
           style={{ outline: "none" }}
@@ -61,7 +61,7 @@ export default function MatchingPopupPanel({ visible, slots, onRoomCodeView, isH
               alt=""
               className="block h-auto w-full select-none"
             />
-            <span className={MATCHING_ROOM_CODE_BTN_LABEL_CLASS}>방코드 보기</span>
+            <span className={MATCHING_ROOM_CODE_BTN_LABEL_CLASS}>초대코드 공유</span>
           </span>
         </button>
 

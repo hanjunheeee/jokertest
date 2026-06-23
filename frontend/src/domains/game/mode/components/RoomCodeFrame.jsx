@@ -7,7 +7,7 @@
  * - readOnly: true면 입력만 표시 (모달 방코드 보기)
  * - autoFocus: 마운트 후 첫 칸 포커스
  * - disabled: 입력 비활성화
- * - frameAlt: 프레임 이미지 대체 텍스트
+ * - frameSrc: 프레임 PNG 경로 (기본: 방코드 입력 프레임)
  * - footer: 하단 버튼 영역 슬롯 (취소·참여, 복사 등)
  * - overlay: 프레임 위에 겹칠 UI (모달 닫기 버튼 등)
  * - className: 루트 wrapper 클래스
@@ -31,6 +31,7 @@ export default function RoomCodeFrame({
   autoFocus = false,
   disabled = false,
   frameAlt = "방코드 입력",
+  frameSrc = ROOM_INVITE_ASSETS.inputFrame,
   footer,
   overlay = null,
   className = "relative w-full",
@@ -38,7 +39,7 @@ export default function RoomCodeFrame({
   return (
     <div className={className}>
       <PublicAsset
-        src={ROOM_INVITE_ASSETS.inputFrame}
+        src={frameSrc}
         alt={frameAlt}
         className={ROOM_CODE_FRAME_IMAGE_CLASS}
       />

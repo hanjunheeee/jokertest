@@ -98,15 +98,22 @@
   /* app/layouts/ViewportShell — 게임 영역 + 좌우 배너 슬롯 */
   .viewport-shell {
     @apply flex min-h-svh w-full bg-black;
+    gap: var(--viewport-shell-column-gap, 20px);
   }
 
   .viewport-shell__banner {
-    @apply min-h-svh min-w-0 flex-1 bg-black;
+    @apply flex h-svh min-w-0 flex-1 items-center justify-center bg-black;
+    padding-inline: clamp(0.5rem, 1vw, 1rem);
+  }
+
+  .viewport-shell__banner-image {
+    @apply block h-full w-full object-contain object-center select-none;
   }
 
   .viewport-shell__game {
-    @apply relative h-svh w-full shrink-0 overflow-x-hidden bg-black;
-    max-width: var(--game-viewport-max-width);
+    @apply relative h-svh shrink-0 overflow-x-hidden bg-black;
+    width: min(100%, var(--game-viewport-max-width));
+    flex: 0 0 auto;
     container-type: inline-size;
     container-name: game-viewport;
   }

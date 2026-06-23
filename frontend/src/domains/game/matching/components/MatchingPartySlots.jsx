@@ -8,6 +8,8 @@
  * 6명 이상이면 2행·컴팩트 크기, 5명 이하는 1행·큰 크기
  * 스타일은 constants/matchingPopupStyles.js 참고
  */
+import PlayerSlotGrid from "@/domains/game/shared/components/PlayerSlotGrid.jsx"
+import { PLAYER_SLOT_COLUMNS } from "@/domains/game/shared/utils/chunkPlayerSlots.js"
 import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
 import {
   MATCHING_SLOT_CLASS_COMPACT,
@@ -18,44 +20,32 @@ import {
 } from "../constants/matchingPopupStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-/** 한 행에 배치할 슬롯 수 */
-export const MATCHING_SLOT_COLUMNS = 5
-
-/** slots를 columns개씩 잘라 2차원 행 배열로 변환 */
-function chunkSlots(slots, columns = MATCHING_SLOT_COLUMNS) {
-  const rows = []
-  for (let i = 0; i < slots.length; i += columns) {
-    rows.push(slots.slice(i, i + columns))
-  }
-  return rows
-}
+export { PLAYER_SLOT_COLUMNS as MATCHING_SLOT_COLUMNS }
 
 /** 준비 상태별 실루엣을 행 단위로 렌더하는 파티 슬롯 그리드 */
 export default function MatchingPartySlots({ slots = [] }) {
-  const rows = chunkSlots(slots)
-  const rowCount = rows.length || 1
-  // 2행(6명 이상)이면 작은 실루엣(인원수에 따른 실루엣 크기 조정)
+  const rowCount = Math.ceil(slots.length / PLAYER_SLOT_COLUMNS) || 1
   const slotClass =
-    rowCount > 1 ? MATCHING_SLOT_CLASS_COMPACT : MATCHING_SLOT_CLASS_LARGE 
+    rowCount > 1 ? MATCHING_SLOT_CLASS_COMPACT : MATCHING_SLOT_CLASS_LARGE
 
   return (
-    <div className={MATCHING_SLOTS_GRID_CLASS} data-matching-slots>
-      {rows.map((row, rowIndex) => (
-        <div key={rowIndex} className={MATCHING_SLOTS_ROW_CLASS}>
-          {row.map((slot) => (
-            <PublicAsset
-              key={slot.id}
-              src={
-                slot.ready
-                  ? GAME_MATCHING_ASSETS.silhouetteReady
-                  : GAME_MATCHING_ASSETS.silhouetteNotReady
-              }
-              alt={slot.ready ? "준비 완료" : "준비 중"}
-              className={`${slotClass}${slot.ready ? "" : ` ${MATCHING_SLOT_NOT_READY_OFFSET_CLASS}`}`}
-            />
-          ))}
-        </div>
-      ))}
-    </div>
+    <PlayerSlotGrid
+      slots={slots}
+      columns={PLAYER_SLOT_COLUMNS}
+      className={MATCHING_SLOTS_GRID_CLASS}
+      rowClassName={MATCHING_SLOTS_ROW_CLASS}
+      renderSlot={(slot) => (
+        <PublicAsset
+          key={slot.id}
+          src={
+            slot.ready
+              ? GAME_MATCHING_ASSETS.silhouetteReady
+              : GAME_MATCHING_ASSETS.silhouetteNotReady
+          }
+          alt={slot.ready ? "준비 완료" : "준비 중"}
+          className={`${slotClass}${slot.ready ? "" : ` ${MATCHING_SLOT_NOT_READY_OFFSET_CLASS}`}`}
+        />
+      )}
+    />
   )
 }

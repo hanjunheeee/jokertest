@@ -14,6 +14,7 @@ import { AnimatePresence, motion } from "framer-motion"
 import { useRef, useState } from "react"
 import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
+import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
 import {
   ROOM_CODE_ACTION_BTN_LABEL_CLASS,
 } from "@/domains/game/mode/constants/roomCodeFrameStyles.js"
@@ -109,7 +110,8 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
               onClick={(event) => event.stopPropagation()}
             >
               <RoomCodeFrame
-                frameAlt="방코드"
+                frameSrc={GAME_MATCHING_ASSETS.roomCodeShareFrame}
+                frameAlt="초대 방코드"
                 value={roomCode}
                 onChange={() => {}} // readOnly — 입력 변경 없음
                 readOnly
