@@ -35,8 +35,30 @@ const FRIEND_ACTION_BTN_CLASS =
 const FRIEND_ACTION_BTN_IMG_CLASS =
   "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.9]"
 
+const FRIEND_ACTION_BTN_LABEL_CLASS =
+  "pointer-events-none whitespace-nowrap text-center font-subheading text-[clamp(0.65rem,0.92vw,0.76rem)] auth-text-link leading-none text-black"
+
 const FRAME_CORNER_BTN_POS =
-  "pointer-events-auto absolute right-[clamp(2.35rem,14%,3.1rem)] bottom-[clamp(2.1rem,12%,2.85rem)] z-20"
+  "pointer-events-auto absolute right-[clamp(2.35rem,14%,3.1rem)] bottom-[clamp(2.45rem,13.5%,3.15rem)] z-20"
+
+function FriendActionButton({ label, ariaLabel, src, onClick }) {
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-[0.25rem]">
+      <button
+        type="button"
+        onClick={onClick}
+        className={FRIEND_ACTION_BTN_CLASS}
+        aria-label={ariaLabel}
+        style={{ outline: "none" }}
+      >
+        <PublicAsset src={src} alt="" className={FRIEND_ACTION_BTN_IMG_CLASS} />
+      </button>
+      <span className={FRIEND_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
+        {label}
+      </span>
+    </div>
+  )
+}
 
 function FriendActionButtons({ onRequestClick, onAcceptClick }) {
   return (
@@ -44,32 +66,18 @@ function FriendActionButtons({ onRequestClick, onAcceptClick }) {
       className={`${FRAME_CORNER_BTN_POS} flex items-end gap-[clamp(0.3rem,0.65vw,0.45rem)]`}
       aria-label="친구 신청 및 수락"
     >
-      <button
-        type="button"
+      <FriendActionButton
+        label="친구 추가"
+        ariaLabel="친구 추가"
+        src={FRIEND_LIST_ASSETS.friendRequestButton}
         onClick={onRequestClick}
-        className={FRIEND_ACTION_BTN_CLASS}
-        aria-label="친구 신청"
-        style={{ outline: "none" }}
-      >
-        <PublicAsset
-          src={FRIEND_LIST_ASSETS.friendRequestButton}
-          alt=""
-          className={FRIEND_ACTION_BTN_IMG_CLASS}
-        />
-      </button>
-      <button
-        type="button"
+      />
+      <FriendActionButton
+        label="수락"
+        ariaLabel="친구 수락"
+        src={FRIEND_LIST_ASSETS.friendAcceptButton}
         onClick={onAcceptClick}
-        className={FRIEND_ACTION_BTN_CLASS}
-        aria-label="친구 수락"
-        style={{ outline: "none" }}
-      >
-        <PublicAsset
-          src={FRIEND_LIST_ASSETS.friendAcceptButton}
-          alt=""
-          className={FRIEND_ACTION_BTN_IMG_CLASS}
-        />
-      </button>
+      />
     </div>
   )
 }

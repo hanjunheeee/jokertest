@@ -26,7 +26,8 @@ export default function FriendRequestTab({ onBack }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <FriendListSearchBar
-        placeholder="닉네임 입력 후 Enter..."
+        label="친구 찾기"
+        placeholder="닉네임 입력 후 Enter"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onSubmit={handleSearch} // Enter 키 또는 검색 버튼 → handleSearch 호출

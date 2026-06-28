@@ -29,7 +29,6 @@ export default function FriendListTabContent({
 
       {/* 1. 일반 (온라인) 친구 폴더 */}
       <FriendListFolder
-        className="mt-4"
         label={`일반 (${countOnline(onlineFriends)}/${onlineFriends.length})`}
         friends={onlineFriends}
         defaultOpen

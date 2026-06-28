@@ -83,7 +83,11 @@ export default function LobbyPage() {
         </aside>
 
         <div className="absolute top-[2.5%] right-[0.5%] z-10 flex flex-col items-stretch gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:top-[3%] sm:right-[1%]">
-          <MyPageBannerButton onClick={() => navigate("/mypage")} />
+          <MyPageBannerButton
+            onClick={() => navigate("/mypage")}
+            onSettingsClick={() => navigate("/account")}
+            showSettingsIcon
+          />
         </div>
 
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6 ">

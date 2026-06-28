@@ -15,3 +15,10 @@ export const LOBBY_TEXT_PANEL_INSET = {
 /** 로비·마이페이지 배너 동일 너비 (!: 루트 w-full과 충돌 방지) */
 export const LOBBY_BANNER_WIDTH_CLASS =
   "!w-[clamp(18rem,26vw,30rem)] max-w-full shrink-0"
+
+/** 로비 배너 — 은색 프레임 안(우측 리본 바깥) 설정 톱니 */
+export const LOBBY_SETTINGS_GEAR_LAYOUT = {
+  top: "22%",
+  right: "17%",
+  size: "7.8cqi",
+}

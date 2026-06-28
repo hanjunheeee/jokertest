@@ -1,6 +1,8 @@
 import { motion } from "framer-motion"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
-import InGameChatPanel from "../components/chat/InGameChatPanel.jsx"
+import InGameChatShell from "../components/chat/InGameChatShell.jsx"
+import InGameTopControls from "../components/controls/InGameTopControls.jsx"
+import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
@@ -18,8 +20,10 @@ export default function InGamePage() {
         draggable={false}
       />
 
+      <InGameTopControls />
+      <InGameTimebar />
       <InGamePlayerBoard />
-      <InGameChatPanel />
+      <InGameChatShell />
     </div>
   )
 }

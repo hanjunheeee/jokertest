@@ -1,3 +1,9 @@
+/**
+ * 인게임 플레이어 카드 에셋·inset.
+ *
+ * InGamePlayerCard·pickInGameJobPortrait에서 사용합니다.
+ */
+
 /** 인게임 플레이어 카드 public 에셋 (frontend/public 기준) */
 export const INGAME_PLAYER_ASSETS = {
   cardFrame: "/frame/플레이어카드프레임-베이스.png",

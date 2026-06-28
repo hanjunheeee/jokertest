@@ -46,7 +46,10 @@ export default function FriendAcceptTab({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <FriendListSearchBar placeholder="닉네임 또는 ID 입력..." />
+      <FriendListSearchBar
+        label="요청 검색"
+        placeholder="닉네임 또는 ID 입력"
+      />
 
       <div className="relative mt-3 flex w-full shrink-0 items-center justify-end gap-[clamp(0.3rem,0.55vw,0.45rem)] pr-[clamp(0.65rem,3.5%,1rem)]">
         {/* 부모에게서 받은 onAcceptAll 함수를 연결! */}

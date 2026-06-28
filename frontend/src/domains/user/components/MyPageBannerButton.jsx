@@ -2,10 +2,12 @@
  * 마이페이지 배너 버튼.
  *
  * 프로필/대표 이미지처럼 클릭 가능한 배너형 UI 조각을 렌더링합니다.
+ * showSettingsIcon 시 설정 톱니는 별도 버튼으로 분리해 배너와 독립 hover·클릭.
  */
 import { LOBBY_ASSETS, MY_PAGE_PROFILE } from "@/domains/lobby/constants/lobbyAssets.js"
 import {
   LOBBY_BANNER_WIDTH_CLASS,
+  LOBBY_SETTINGS_GEAR_LAYOUT,
   LOBBY_TEXT_PANEL_INSET,
 } from "@/domains/user/constants/myPageBannerLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -25,6 +27,15 @@ const REPUTATION_TEXT_CLASS =
 const TITLE_TEXT_CLASS =
   "font-subheading text-[3.5cqi] font-bold leading-tight text-[#d8cdb8]"
 
+const ROOT_CLASS =
+  "relative block [container-type:inline-size] leading-none"
+
+const SETTINGS_BTN_CLASS =
+  "group absolute z-10 cursor-pointer border-0 bg-transparent p-0 leading-none"
+
+const SETTINGS_GEAR_IMG_CLASS =
+  "interactive-scale-sm block h-full w-full select-none object-contain"
+
 function StatusDivider() {
   return (
     <div
@@ -35,15 +46,70 @@ function StatusDivider() {
   )
 }
 
-export default function MyPageBannerButton({
-  onClick,
-  profile = MY_PAGE_PROFILE,
-  showText = true,
-  bannerSrc = LOBBY_ASSETS.myPageButton,
-  textPanelInset = LOBBY_TEXT_PANEL_INSET,
-  className = LOBBY_BANNER_WIDTH_CLASS,
-}) {
+function BannerTextPanel({ profile, textPanelInset }) {
   const { reputationLabel, reputationValue, title } = profile
+
+  return (
+    <div
+      className="pointer-events-none absolute grid grid-rows-[1fr_auto_1fr]"
+      style={textPanelInset}
+    >
+      <div className="relative h-full min-h-0 w-full">
+        <p
+          className={`absolute ${TEXT_ALIGN_LEFT} top-1/2 -translate-y-1/2 ${LABEL_TEXT_CLASS}`}
+          style={{ textShadow: TEXT_SHADOW }}
+        >
+          {reputationLabel}
+        </p>
+      </div>
+
+      <StatusDivider />
+
+      <div className="relative h-full min-h-0 w-full">
+        <p
+          className={`absolute ${TEXT_ALIGN_LEFT} top-[14%] ${REPUTATION_TEXT_CLASS}`}
+          style={{ textShadow: TEXT_SHADOW }}
+        >
+          명성 {reputationValue}
+        </p>
+        <p
+          className={`absolute left-[52%] top-[13%] max-w-[52%] truncate text-left ${TITLE_TEXT_CLASS}`}
+          style={{ textShadow: TEXT_SHADOW }}
+        >
+          {title}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function SettingsGearButton({ onClick }) {
+  return (
+    <button
+      type="button"
+      aria-label="계정 설정"
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick?.()
+      }}
+      className={SETTINGS_BTN_CLASS}
+      style={{
+        top: LOBBY_SETTINGS_GEAR_LAYOUT.top,
+        right: LOBBY_SETTINGS_GEAR_LAYOUT.right,
+        width: LOBBY_SETTINGS_GEAR_LAYOUT.size,
+        height: LOBBY_SETTINGS_GEAR_LAYOUT.size,
+      }}
+    >
+      <PublicAsset
+        src={LOBBY_ASSETS.settingsGear}
+        alt=""
+        className={SETTINGS_GEAR_IMG_CLASS}
+      />
+    </button>
+  )
+}
+
+function BannerMainButton({ onClick, bannerSrc, showText, profile, textPanelInset, className }) {
   const isInteractive = typeof onClick === "function"
   const Root = isInteractive ? "button" : "div"
 
@@ -52,8 +118,8 @@ export default function MyPageBannerButton({
       type={isInteractive ? "button" : undefined}
       aria-label={isInteractive ? "마이페이지" : undefined}
       onClick={onClick}
-      className={`relative block [container-type:inline-size] leading-none ${
-        isInteractive ? "interactive-scale" : "border-0 bg-transparent p-0"
+      className={`${ROOT_CLASS} ${
+        isInteractive ? "interactive-scale w-full border-0 bg-transparent p-0" : "w-full"
       } ${className}`}
     >
       <PublicAsset
@@ -61,39 +127,49 @@ export default function MyPageBannerButton({
         alt=""
         className="block h-auto w-full select-none"
       />
-
       {showText ? (
-        <div
-          className="pointer-events-none absolute grid grid-rows-[1fr_auto_1fr]"
-          style={textPanelInset}
-        >
-          <div className="relative h-full min-h-0 w-full">
-            <p
-              className={`absolute ${TEXT_ALIGN_LEFT} top-1/2 -translate-y-1/2 ${LABEL_TEXT_CLASS}`}
-              style={{ textShadow: TEXT_SHADOW }}
-            >
-              {reputationLabel}
-            </p>
-          </div>
-
-          <StatusDivider />
-
-          <div className="relative h-full min-h-0 w-full">
-            <p
-              className={`absolute ${TEXT_ALIGN_LEFT} top-[14%] ${REPUTATION_TEXT_CLASS}`}
-              style={{ textShadow: TEXT_SHADOW }}
-            >
-              명성 {reputationValue}
-            </p>
-            <p
-              className={`absolute left-[52%] top-[13%] max-w-[52%] truncate text-left ${TITLE_TEXT_CLASS}`}
-              style={{ textShadow: TEXT_SHADOW }}
-            >
-              {title}
-            </p>
-          </div>
-        </div>
+        <BannerTextPanel profile={profile} textPanelInset={textPanelInset} />
       ) : null}
     </Root>
+  )
+}
+
+export default function MyPageBannerButton({
+  onClick,
+  onSettingsClick,
+  profile = MY_PAGE_PROFILE,
+  showText = true,
+  showSettingsIcon = false,
+  bannerSrc = LOBBY_ASSETS.myPageButton,
+  textPanelInset = LOBBY_TEXT_PANEL_INSET,
+  className = LOBBY_BANNER_WIDTH_CLASS,
+}) {
+  const hasSettingsControl = showSettingsIcon && typeof onSettingsClick === "function"
+
+  if (hasSettingsControl) {
+    return (
+      <div className={`${ROOT_CLASS} ${className}`}>
+        <BannerMainButton
+          onClick={onClick}
+          bannerSrc={bannerSrc}
+          showText={showText}
+          profile={profile}
+          textPanelInset={textPanelInset}
+          className="!w-full"
+        />
+        <SettingsGearButton onClick={onSettingsClick} />
+      </div>
+    )
+  }
+
+  return (
+    <BannerMainButton
+      onClick={onClick}
+      bannerSrc={bannerSrc}
+      showText={showText}
+      profile={profile}
+      textPanelInset={textPanelInset}
+      className={className}
+    />
   )
 }
