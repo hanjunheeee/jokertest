@@ -51,6 +51,8 @@ export default function GameModePage() {
               <ModeOptionCard
                 key={mode.id}
                 label={mode.label}
+                title={mode.title}
+                descriptionLines={mode.descriptionLines}
                 frame={mode.frame}
                 onSelect={() => handleModeSelect(mode.id)}
               />

@@ -20,18 +20,18 @@ function ControlButton({ ariaLabel, src, onClick }) {
   )
 }
 
-/** 인게임 좌측 상단 — 설정·마이크 버튼 */
+/** 인게임 좌측 상단 — 햄버거(전적목록)·마이크 버튼 */
 export default function InGameTopControls({
-  onSettingsClick,
+  onMenuClick,
   onMicClick,
   className = INGAME_TOP_CONTROLS_POSITION_CLASS,
 }) {
   return (
     <div className={className} aria-label="인게임 컨트롤">
       <ControlButton
-        ariaLabel="설정"
+        ariaLabel="플레이어별 전적목록"
         src={INGAME_CONTROLS_ASSETS.settings}
-        onClick={onSettingsClick}
+        onClick={onMenuClick}
       />
       <ControlButton
         ariaLabel="마이크"

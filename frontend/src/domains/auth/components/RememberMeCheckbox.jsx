@@ -44,7 +44,9 @@ export default function RememberMeCheckbox({ checked, onChange }) {
           </span>
         ) : null}
       </span>
-      <span className="text-[13px] text-text-body">로그인 상태 유지</span>
+      <span className="font-subheading text-[13px] font-bold text-text-body">
+        로그인 상태 유지
+      </span>
     </button>
   )
 }

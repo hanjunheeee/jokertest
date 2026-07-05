@@ -1,13 +1,17 @@
+import { useState } from "react"
 import { motion } from "framer-motion"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
+import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 export default function InGamePage() {
+  const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
+
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
       <motion.img
@@ -20,10 +24,17 @@ export default function InGamePage() {
         draggable={false}
       />
 
-      <InGameTopControls />
+      <InGameTopControls
+        onMenuClick={() => setPlayerRecordListOpen(true)}
+      />
       <InGameTimebar />
       <InGamePlayerBoard />
       <InGameChatShell />
+
+      <PlayerRecordListPanel
+        open={playerRecordListOpen}
+        onClose={() => setPlayerRecordListOpen(false)}
+      />
     </div>
   )
 }

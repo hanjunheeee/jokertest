@@ -9,7 +9,9 @@ import { motion } from "framer-motion"
 import { useState } from "react"
 import { SETTING_ASSETS, SETTING_TABS } from "../constants/settingAssets.js"
 import GeneralSettingsTab from "@/domains/settings/components/tabs/GeneralSettingsTab"
+import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 import { useScrollbarSync } from "../hooks/useScrollbarSync.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
@@ -24,9 +26,6 @@ const TAB_LABEL_CLASS =
 
 const CONTENT_LIST_HEIGHT =
   "h-[clamp(26rem,min(58vh,52dvh),36rem)]"
-
-const SCROLLBAR_WIDTH_CLASS = "w-[clamp(0.7rem,1.2vw,0.95rem)]"
-const SCROLL_THUMB_WIDTH_CLASS = "w-[62%]"
 
 /** 단일 탭 버튼 — active 여부에 따라 이미지와 aria-pressed가 전환됩니다. */
 function SettingTab({ tab, active, onSelect }) {
@@ -62,12 +61,6 @@ export default function SettingPanel({ visible }) {
   // listRef를 설정 목록에 연결하면 useScrollbarSync가 ResizeObserver로 높이를 측정해 scrollbarBox를 반환
   const { listRef, scrollbarBox } = useScrollbarSync(activeTab, visible)
 
-  // scrollbarBox가 있으면 측정된 위치로, 없으면 전체 높이(inset-y-0)로 폴백
-  const scrollbarStyle =
-    scrollbarBox != null
-      ? { top: scrollbarBox.top, height: scrollbarBox.height }
-      : undefined
-
   return (
     <motion.div
       className={PANEL_CLASS}
@@ -95,7 +88,7 @@ export default function SettingPanel({ visible }) {
           {/* listRef 연결 — useScrollbarSync가 이 엘리먼트의 크기를 측정 */}
           <div
             ref={listRef}
-            className="flex h-full flex-col pr-[clamp(1.15rem,2vw,1.55rem)]"
+            className={`flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain pr-[clamp(1.15rem,2vw,1.55rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`}
             role="region"
             aria-label="설정 목록"
           >
@@ -106,23 +99,12 @@ export default function SettingPanel({ visible }) {
             )}
           </div>
 
-          {/* 커스텀 스크롤바 — scrollbarStyle로 설정 행 영역에 정확히 오버레이 */}
-          <div
-            className={`pointer-events-none absolute right-0 flex translate-x-[clamp(0.25rem,0.65vw,0.5rem)] flex-col leading-[0] ${SCROLLBAR_WIDTH_CLASS} ${scrollbarBox == null ? "inset-y-0" : ""}`}
-            style={scrollbarStyle}
-            aria-hidden="true"
-          >
-            <PublicAsset
-              src={SETTING_ASSETS.scrollTrack}
-              alt=""
-              className="block h-full min-h-0 w-full flex-1 select-none object-fill"
-            />
-            <PublicAsset
-              src={SETTING_ASSETS.scrollThumb}
-              alt=""
-              className={`absolute left-1/2 top-[18%] h-auto -translate-x-1/2 select-none ${SCROLL_THUMB_WIDTH_CLASS}`}
-            />
-          </div>
+          <Scrollbar
+            scrollRef={listRef}
+            trackSrc={SETTING_ASSETS.scrollTrack}
+            thumbSrc={SETTING_ASSETS.scrollThumb}
+            box={scrollbarBox}
+          />
         </div>
       </div>
     </motion.div>

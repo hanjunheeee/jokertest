@@ -23,7 +23,7 @@ export default function LoginForm({
   return (
     <>
       <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] text-[13px] leading-relaxed text-text-body/90">
+        <p className="mt-[40px] mb-[-10px] font-subheading text-[13px] font-bold leading-relaxed text-text-body/90">
           계정을 로그인 하여 모험을 계속하세요
         </p>
       </header>
@@ -67,7 +67,7 @@ export default function LoginForm({
           className="mt-1 cursor-pointer"
         />
 
-        <p className="text-center text-[11px] leading-none text-text-body/80">
+        <p className="text-center font-subheading text-[11px] font-bold leading-none text-text-body/85">
           또는
         </p>
         <div className="flex flex-col gap-2">
@@ -89,7 +89,7 @@ export default function LoginForm({
           />
         </div>
 
-        <p className="mt-2 text-center text-[13px] text-text-body">
+        <p className="mt-2 text-center font-subheading text-[13px] font-bold text-text-body">
           계정이 없으신가요?{" "}
           <button
             type="button"

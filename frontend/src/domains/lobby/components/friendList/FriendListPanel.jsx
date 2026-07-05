@@ -7,12 +7,13 @@ import { AnimatePresence, motion } from "framer-motion"
 import { useState } from "react"
 import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
 import FriendAcceptTab from "./accept/FriendAcceptTab.jsx"
+import FriendListViewTabs from "./common/FriendListViewTabs.jsx"
 import FriendListTabContent from "./list/FriendListTabContent.jsx"
 import FriendRequestTab from "./request/FriendRequestTab.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 function panelAriaLabel(view) {
-  if (view === "request") return "친구 신청" 
+  if (view === "request") return "친구 신청"
   if (view === "accept") return "친구 수락"
   return "친구 목록"
 }
@@ -27,59 +28,6 @@ const PANEL_INSET = {
   paddingBottom: "clamp(2.75rem, 11%, 3.5rem)",
   paddingLeft: "10.5%",
   paddingRight: "10.5%",
-}
-
-const FRIEND_ACTION_BTN_CLASS =
-  "group block w-[clamp(2.45rem,3.6vw,3rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
-
-const FRIEND_ACTION_BTN_IMG_CLASS =
-  "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.9]"
-
-const FRIEND_ACTION_BTN_LABEL_CLASS =
-  "pointer-events-none whitespace-nowrap text-center font-subheading text-[clamp(0.65rem,0.92vw,0.76rem)] auth-text-link leading-none text-black"
-
-const FRAME_CORNER_BTN_POS =
-  "pointer-events-auto absolute right-[clamp(2.35rem,14%,3.1rem)] bottom-[clamp(2.45rem,13.5%,3.15rem)] z-20"
-
-function FriendActionButton({ label, ariaLabel, src, onClick }) {
-  return (
-    <div className="flex shrink-0 flex-col items-center gap-[0.25rem]">
-      <button
-        type="button"
-        onClick={onClick}
-        className={FRIEND_ACTION_BTN_CLASS}
-        aria-label={ariaLabel}
-        style={{ outline: "none" }}
-      >
-        <PublicAsset src={src} alt="" className={FRIEND_ACTION_BTN_IMG_CLASS} />
-      </button>
-      <span className={FRIEND_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
-        {label}
-      </span>
-    </div>
-  )
-}
-
-function FriendActionButtons({ onRequestClick, onAcceptClick }) {
-  return (
-    <div
-      className={`${FRAME_CORNER_BTN_POS} flex items-end gap-[clamp(0.3rem,0.65vw,0.45rem)]`}
-      aria-label="친구 신청 및 수락"
-    >
-      <FriendActionButton
-        label="친구 추가"
-        ariaLabel="친구 추가"
-        src={FRIEND_LIST_ASSETS.friendRequestButton}
-        onClick={onRequestClick}
-      />
-      <FriendActionButton
-        label="수락"
-        ariaLabel="친구 수락"
-        src={FRIEND_LIST_ASSETS.friendAcceptButton}
-        onClick={onAcceptClick}
-      />
-    </div>
-  )
 }
 
 export default function FriendListPanel({
@@ -137,8 +85,14 @@ export default function FriendListPanel({
               className="relative flex h-full min-h-0 flex-col"
               style={PANEL_INSET}
             >
+              <FriendListViewTabs
+                activeView={panelView}
+                onRequestClick={() => setPanelView("request")}
+                onAcceptClick={() => setPanelView("accept")}
+              />
+
               {panelView === "list" ? (
-                <FriendListTabContent 
+                <FriendListTabContent
                   onlineFriends={onlineFriends}
                   offlineFriends={offlineFriends}
                   favoriteFriends={favoriteFriends}
@@ -146,10 +100,7 @@ export default function FriendListPanel({
               ) : null}
 
               {panelView === "request" ? (
-                <FriendRequestTab 
-                  onBack={() => setPanelView("list")} 
-                  recommendedFriends={[]} 
-                />
+                <FriendRequestTab onBack={() => setPanelView("list")} />
               ) : null}
 
               {panelView === "accept" ? (
@@ -163,13 +114,6 @@ export default function FriendListPanel({
                 />
               ) : null}
             </div>
-
-            {panelView === "list" ? (
-              <FriendActionButtons
-                onRequestClick={() => setPanelView("request")}
-                onAcceptClick={() => setPanelView("accept")}
-              />
-            ) : null}
           </motion.aside>
         </>
       ) : null}

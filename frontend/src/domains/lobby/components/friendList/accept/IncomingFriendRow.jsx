@@ -64,7 +64,7 @@ export default function IncomingFriendRow({ requestId, name, profileSrc, onAccep
             style={{ outline: "none" }}
           >
             <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendAcceptButton}
+              src={FRIEND_LIST_ASSETS.tabButtonActive}
               alt=""
               className="block h-auto w-full select-none"
             />

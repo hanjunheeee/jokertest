@@ -1,31 +1,29 @@
-import { INGAME_CHAT_ASSETS } from "../../constants/ingameChatAssets.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import {
+  INGAME_CHAT_MESSAGE_BODY_CLASS,
+  INGAME_CHAT_MESSAGE_ROW_CLASS,
+  INGAME_CHAT_MESSAGE_SENDER_CLASS,
+} from "../../constants/ingameChatLayout.js"
 
 /**
- * 인게임 채팅 메시지 한 줄 (프로필 아바타 + 텍스트)
+ * 인게임 채팅 메시지 — 입력창과 동일 CSS wrap (textarea와 같은 클래스·폭)
  */
-export default function InGameChatMessageRow({ senderName, text, profileSrc }) {
+export default function InGameChatMessageRow({
+  senderName,
+  text,
+  textFieldWidth = 0,
+}) {
   return (
-    <li className="flex min-w-0 list-none items-center gap-[0.4em]">
-      <div className="relative mt-[0.08em] size-[clamp(1.45rem,9.2cqi,1.9rem)] shrink-0">
-        <PublicAsset
-          src={INGAME_CHAT_ASSETS.profileFrame}
-          alt=""
-          className="pointer-events-none absolute inset-0 h-full w-full select-none object-contain"
-        />
-        <div className="absolute inset-[22%] overflow-hidden">
-          <PublicAsset
-            src={profileSrc}
-            alt=""
-            className="block h-full w-full select-none object-cover object-center"
-          />
-        </div>
-      </div>
-
-      <p className="mt-[clamp(0.08rem,0.55cqi,0.15rem)] min-w-0 flex-1 whitespace-nowrap font-subheading text-[clamp(0.56rem,2.55cqi,0.74rem)] font-bold leading-none text-[#3a1a0c]">
-        <span>{senderName}:</span>{" "}
-        <span>&quot;{text}&quot;</span>
-      </p>
+    <li className={INGAME_CHAT_MESSAGE_ROW_CLASS}>
+      <span className={INGAME_CHAT_MESSAGE_SENDER_CLASS}>{senderName}:</span>
+      <span
+        className={INGAME_CHAT_MESSAGE_BODY_CLASS}
+        aria-readonly="true"
+        style={
+          textFieldWidth > 0 ? { maxWidth: textFieldWidth } : undefined
+        }
+      >
+        &quot;{text}&quot;
+      </span>
     </li>
   )
 }

@@ -26,7 +26,7 @@ export default function GeneralSettingsTab() {
   )
 
   return (
-    <div className="flex h-full min-h-0 flex-col justify-between">
+    <div className="flex min-h-0 flex-col">
       {GENERAL_SETTINGS.map((item) => {
         if (item.type === "dropdown") {
           return (

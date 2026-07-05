@@ -81,6 +81,8 @@ export default function MultiplayEntryPage() {
               <ModeOptionCard
                 key={option.id}
                 label={option.label}
+                title={option.title}
+                descriptionLines={option.descriptionLines}
                 frame={option.frame}
                 onSelect={() => handleOptionSelect(option.id)}
               />

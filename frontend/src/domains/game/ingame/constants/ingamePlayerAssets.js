@@ -2,39 +2,26 @@
  * 인게임 플레이어 카드 에셋·inset.
  *
  * InGamePlayerCard·pickInGameJobPortrait에서 사용합니다.
+ * 초상 mask inset은 shared/playerPortraitLayout.js (ingameCard variant).
  */
 
 /** 인게임 플레이어 카드 public 에셋 (frontend/public 기준) */
 export const INGAME_PLAYER_ASSETS = {
-  cardFrame: "/frame/플레이어카드프레임-베이스.png",
-  nameplate: "/frame/플레이어 이름표.png",
+  cardFrame: "/frame/ingame-playercard/인게임-플레이어프레임(베이스).png",
 }
 
-/** 더미 — jobs-standing 전신 PNG (상반신 크롭용) */
-export const INGAME_JOB_STANDING_PORTRAITS = [
-  "/frame/jobs-standing/귀족1.png",
-  "/frame/jobs-standing/귀족2.png",
-  "/frame/jobs-standing/귀족3.png",
-  "/frame/jobs-standing/광대1.png",
-  "/frame/jobs-standing/광대2.png",
-  "/frame/jobs-standing/경비원1.png",
-  "/frame/jobs-standing/경비원2.png",
-  "/frame/jobs-standing/경비원3.png",
-  "/frame/jobs-standing/주치의.png",
-]
-
-/** 직업 초상 PNG 배치 inset */
-export const INGAME_PLAYER_PORTRAIT_INSET = {
-  top: "0%",
-  bottom: "10%",
-  left: "20%",
+/** 인게임-플레이어프레임(베이스).png (375×406) — 하단 닉네임 칸 */
+export const INGAME_PLAYER_NAMEPLATE_INSET = {
+  bottom: "7.5%",
+  left: "11%",
   right: "11%",
+  height: "15%",
 }
 
-/** 프레임 안쪽 창 — 배경만 적용 (프레임 밖으로 삐져나오지 않도록) */
-export const INGAME_PLAYER_PORTRAIT_BG_INSET = {
-  top: "12%",
-  bottom: "16%",
-  left: "12%",
-  right: "12%",
-}
+/** InGamePlayerCard — 닉네임 텍스트 (프레임 % 기준, 슬롯 transform과 함께 이동) */
+export const INGAME_PLAYER_NAMEPLATE_CLASS =
+  "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-subheading text-[clamp(0.8rem,5.8cqi,1.1rem)] font-bold leading-none tracking-wide text-[#3a1a0c]"
+
+/** 카드-배경 접착감 — 프레임 알파를 따라가는 은은한 그림자 */
+export const INGAME_PLAYER_CARD_SHADOW_CLASS =
+  "[filter:drop-shadow(0_2px_3px_rgba(10,6,2,0.42))_drop-shadow(0_6px_10px_rgba(8,5,2,0.22))]"

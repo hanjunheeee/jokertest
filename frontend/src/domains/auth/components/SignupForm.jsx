@@ -35,7 +35,7 @@ export default function SignupForm({ formData, onChange, onSwitchToLogin }) {
   return (
     <>
       <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] text-[13px] leading-relaxed text-text-body/90">
+        <p className="mt-[40px] mb-[-10px] font-subheading text-[13px] font-bold leading-relaxed text-text-body/90">
           새로운 모험을 위한 정보를 입력해주세요
         </p>
       </header>
@@ -77,7 +77,7 @@ export default function SignupForm({ formData, onChange, onSwitchToLogin }) {
           className="mt-1 cursor-pointer"
         />
 
-        <p className="mt-2 text-center text-[13px] text-text-body">
+        <p className="mt-2 text-center font-subheading text-[13px] font-bold text-text-body">
           이미 계정이 있으신가요?{" "}
           <button
             type="button"

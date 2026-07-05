@@ -84,7 +84,7 @@ export default function RecommendedFriendRow({ id, name, profileSrc, online, onS
             style={{ outline: "none" }}
           >
             <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendRequestButton}
+              src={FRIEND_LIST_ASSETS.tabButtonActive}
               alt=""
               className="block h-auto w-full select-none"
             />

@@ -1,26 +1,18 @@
+@import url("https://fonts.googleapis.com/earlyaccess/nanummyeongjo.css");
 @import "tailwindcss";
 
 @font-face {
-  font-family: "Yeongwol";
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2507-2@1.0/YeongwolTTF-Regular.woff2")
+  font-family: "Shilla";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-02@1.0/Shilla_CultureM-Medium.woff2")
     format("woff2");
-  font-weight: 400;
+  font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "BookkMyungjo";
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2302@1.0/BookkMyungjo-Lt.woff2")
-    format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "BookkMyungjo";
-  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2302@1.0/BookkMyungjo-Bd.woff2")
+  font-family: "Shilla";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-02@1.0/Shilla_CultureB-Bold.woff2")
     format("woff2");
   font-weight: 700;
   font-style: normal;
@@ -28,9 +20,9 @@
 }
 
 @theme {
-  --font-display: "Yeongwol", serif;
-  --font-subheading: "BookkMyungjo", serif;
-  --font-sans: "BookkMyungjo", serif;
+  --font-display: "Shilla", serif;
+  --font-subheading: "Nanum Myeongjo", serif;
+  --font-sans: "Nanum Myeongjo", serif;
 
   --color-text-main: #b50000;
   --color-text-body: #000000;
@@ -50,7 +42,7 @@
   }
 
   h1 {
-    @apply font-display text-text-main;
+    @apply font-display font-medium text-text-main;
   }
 
   h2 {

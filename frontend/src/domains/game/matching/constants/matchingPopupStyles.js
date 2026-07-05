@@ -32,7 +32,7 @@ export const MATCHING_ROOM_CODE_BTN_LABEL_CLASS =
 
 /** 매칭 팝업 프레임 상단 제목 ("멀티 플레이 매칭") */
 export const MATCHING_TITLE_CLASS =
-  "pointer-events-none absolute left-1/2 top-[5.85%] z-[2] w-[72%] -translate-x-1/2 text-center font-display text-[clamp(2rem,3.15vw,2.75rem)] font-normal leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_1px_rgba(0,0,0,0.45)]"
+  "pointer-events-none absolute left-1/2 top-[5.85%] z-[2] w-[72%] -translate-x-1/2 text-center font-display text-[clamp(2rem,3.15vw,2.75rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_1px_rgba(0,0,0,0.45)]"
 
 /** 팝업 본문 안내 문구 (prompt) */
 export const MATCHING_PROMPT_CLASS =
@@ -90,9 +90,9 @@ export const MATCHING_PARTY_HEADER_CLASS =
 export const MATCHING_PARTY_TEXT_CLASS =
   "font-subheading text-[clamp(1.28rem,1.72vw,1.5rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
 
-/** 파티 인원 숫자만 — 영월체 + 골드 톤 강조 */
+/** 파티 인원 숫자만 — 신라문화체 + 골드 톤 강조 */
 export const MATCHING_PARTY_COUNT_CLASS =
-  "font-display text-[clamp(1.55rem,2.1vw,1.82rem)] font-normal leading-none text-text-main tabular-nums antialiased"
+  "font-display text-[clamp(1.55rem,2.1vw,1.82rem)] font-medium leading-none text-text-main tabular-nums antialiased"
 
 /** 파티 헤더 미준비 실루엣 아이콘 */
 export const MATCHING_PARTY_ICON_CLASS =

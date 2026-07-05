@@ -1,42 +1,66 @@
-import { INGAME_CHAT_ASSETS, INGAME_CHAT_MAX_MESSAGE_LENGTH } from "../../constants/ingameChatAssets.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react"
+import { INGAME_CHAT_INPUT_MAX_LENGTH } from "../../constants/ingameChatAssets.js"
+import {
+  INGAME_CHAT_INPUT_CLASS,
+  INGAME_CHAT_INPUT_VIEWPORT_CLASS,
+  INGAME_CHAT_INPUT_VIEWPORT_WRAP_CLASS,
+} from "../../constants/ingameChatLayout.js"
 
-/**
- * 인게임 채팅 텍스트 입력 + 작성 표시
- * 보내기 버튼은 InGameChatSendButton — 패널에서 별도 inset으로 배치
- */
-export default function InGameChatInput({
-  value,
-  onChange,
-  onSend,
-  className = "",
-}) {
+/** 인게임 채팅 텍스트 입력 — 고정 viewport, 넘치면 줄바꿈·윗줄 clip */
+const InGameChatInput = forwardRef(function InGameChatInput(
+  { value, onChange, onSend, className = "" },
+  ref,
+) {
+  const wrapRef = useRef(null)
+  const textareaRef = useRef(null)
+
+  useImperativeHandle(ref, () => wrapRef.current)
+
+  const scrollToBottom = () => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.scrollTop = textarea.scrollHeight
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [value])
+
   const handleKeyDown = (event) => {
-    if (event.key !== "Enter") return
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return
+    }
     event.preventDefault()
     onSend?.()
   }
 
+  const handleChange = (event) => {
+    const next = event.target.value.slice(0, INGAME_CHAT_INPUT_MAX_LENGTH)
+    onChange({
+      ...event,
+      target: { ...event.target, value: next },
+    })
+    requestAnimationFrame(scrollToBottom)
+  }
+
   return (
     <div
-      className={`relative flex min-h-[clamp(1.5rem,9cqi,2rem)] items-center ${className}`}
+      ref={wrapRef}
+      className={`${INGAME_CHAT_INPUT_VIEWPORT_WRAP_CLASS} ${className}`.trim()}
     >
-      <input
-        type="text"
+      <textarea
+        ref={textareaRef}
+        rows={1}
         value={value}
-        onChange={onChange}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onCompositionEnd={scrollToBottom}
         placeholder="TYPE HERE..."
-        maxLength={INGAME_CHAT_MAX_MESSAGE_LENGTH}
-        className="w-full border-0 bg-transparent pr-[clamp(1.55rem,9.2cqi,2.1rem)] font-subheading text-[clamp(0.62rem,2.65cqi,0.82rem)] font-bold uppercase tracking-[0.04em] text-[#3a1a0c] outline-none placeholder:text-[#6b4a32]/75"
+        className={`${INGAME_CHAT_INPUT_CLASS} ${INGAME_CHAT_INPUT_VIEWPORT_CLASS}`}
         aria-label="채팅 입력"
-      />
-      <PublicAsset
-        src={INGAME_CHAT_ASSETS.writingIndicator}
-        alt=""
-        aria-hidden="true"
-        className="pointer-events-none absolute right-[clamp(0.35rem,2.2cqi,0.55rem)] top-[55%] h-[clamp(0.85rem,5.2cqi,1.15rem)] w-auto -translate-y-1/2 select-none"
       />
     </div>
   )
-}
+})
+
+export default InGameChatInput

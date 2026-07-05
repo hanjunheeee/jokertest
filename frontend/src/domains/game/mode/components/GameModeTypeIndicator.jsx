@@ -20,7 +20,7 @@ const BADGE_CLASS =
   "relative min-w-[clamp(11rem,20vw,14rem)] shrink-0 border-0 bg-transparent p-0 leading-none"
 
 const LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap px-1 font-display text-[clamp(2rem,3vw,2.3rem)] font-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap px-1 font-display text-[clamp(2rem,3vw,2.3rem)] font-medium text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 /** 활성 탭 이미지 위에 label 텍스트를 겹쳐 그리는 모드 표시 배지 */
 export default function GameModeTypeIndicator({
