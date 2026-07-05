@@ -19,6 +19,7 @@ import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 export default function PlayerRecordListRow({
+  // index: 목록 내 순서 — portraitSrc가 없을 때 직업 초상 순환 선택에 사용
   index,
   name,
   wins,

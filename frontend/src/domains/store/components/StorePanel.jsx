@@ -36,6 +36,7 @@ const PURCHASE_BTN_CLASS =
 const PURCHASE_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.88rem,1.2vw,1.02rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+/** 상단 탭 버튼 — active 여부에 따라 이미지와 aria-pressed가 전환됩니다. */
 // tab: { id, label } 형태의 탭 정보
 // active: 이 탭이 현재 선택된 탭인지 여부
 // onSelect: 탭 클릭 시 호출할 콜백. 부모(StorePanel)가 activeTab을 바꾸는 setActiveTab을 넘겨줌
@@ -63,6 +64,7 @@ function StoreTab({ tab, active, onSelect }) {
   )
 }
 
+/** 그리드 상품 슬롯 — 아이콘 + 이름/한줄설명, 선택 시 강조 표시 */
 // icon/name/tagline: 그리드에 표시할 상품 정보 (STORE_GRID_ITEMS 항목에서 옴)
 // selected: 이 아이템이 현재 선택된 상태인지 여부
 // onSelect: 클릭 시 호출할 콜백. 부모가 selectedItem을 이 아이템으로 바꾸는 함수를 넘겨줌
@@ -96,6 +98,7 @@ function StoreItemSlot({ icon, name, tagline, selected, onSelect }) {
   )
 }
 
+/** 선택한 아이템 상세 영역의 구매 버튼 (기능 미구현 — 버튼 이미지 위 텍스트 오버레이) */
 function StorePurchaseButton() {
   return (
     <button
@@ -114,6 +117,7 @@ function StorePurchaseButton() {
   )
 }
 
+/** 선택된 그리드 아이템의 상세 정보(이름/등급/설명/가격)와 구매 버튼을 표시 */
 // item: 현재 선택된 그리드 아이템 (StorePanel의 selectedItem state를 그대로 전달받음)
 function SelectedItemDetail({ item }) {
   // item.id로 더미 상세 정보(이름/등급/설명/가격 등)를 조회

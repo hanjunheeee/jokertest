@@ -36,6 +36,7 @@ const SETTINGS_BTN_CLASS =
 const SETTINGS_GEAR_IMG_CLASS =
   "interactive-scale-sm block h-full w-full select-none object-contain"
 
+/** 배너 텍스트 패널의 상단(명성 라벨)과 하단(명성치·칭호) 사이 구분선 */
 function StatusDivider() {
   return (
     <div

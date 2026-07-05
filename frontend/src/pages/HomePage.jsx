@@ -1,6 +1,7 @@
 /** R2 버킷 루트에 올린 객체 이름과 동일해야 합니다. 한글·공백 포함 가능 */
 const R2_BACKGROUND_OBJECT_KEY = "대기실 배경 이미지2.png"
 
+/** VITE_ASSETS_BASE_URL + R2_BACKGROUND_OBJECT_KEY로 R2 배경 이미지 URL 조립 (base 없으면 undefined) */
 function backgroundImageUrl() {
   const base = import.meta.env.VITE_ASSETS_BASE_URL?.replace(/\/$/, "")
   if (!base) return undefined

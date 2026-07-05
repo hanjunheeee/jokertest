@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { CUSTOM_SCROLLBAR_TRACK_INSET } from "@/shared/constants/customScrollbarStyles.js"
 
+/** 트랙·썸 크기와 inset을 바탕으로 썸 이동 가능 범위(travelRange)와 스크롤 가능 거리(maxScroll)를 계산 */
 function computeTravelMetrics(scrollEl, trackEl, thumbEl, trackInset) {
   const trackHeight = trackEl.clientHeight
   const thumbHeight = thumbEl.offsetHeight
@@ -15,12 +16,14 @@ function computeTravelMetrics(scrollEl, trackEl, thumbEl, trackInset) {
   return { insetTopPx, travelRange, maxScroll }
 }
 
+/** 컨테이너 scrollTop을 썸의 top(px) 위치로 환산 */
 function scrollTopToThumbTop(scrollTop, metrics) {
   const { insetTopPx, travelRange, maxScroll } = metrics
   if (maxScroll <= 0 || travelRange <= 0) return insetTopPx
   return insetTopPx + (scrollTop / maxScroll) * travelRange
 }
 
+/** 드래그로 바뀐 썸 top(px) 위치를 컨테이너 scrollTop으로 환산 (역변환) */
 function thumbTopToScrollTop(thumbTop, metrics) {
   const { insetTopPx, travelRange, maxScroll } = metrics
   if (travelRange <= 0 || maxScroll <= 0) return 0

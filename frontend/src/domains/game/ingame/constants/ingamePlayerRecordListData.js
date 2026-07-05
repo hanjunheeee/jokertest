@@ -1,3 +1,8 @@
+/**
+ * 플레이어별 전적목록 더미 데이터·포맷 유틸.
+ *
+ * PlayerRecordListContent·PlayerRecordListRow에서 사용합니다.
+ */
 import { pickInGameJobPortrait } from "../utils/pickInGameJobPortrait.js"
 
 /** prototype 플레이어별 전적목록 탭.png — 더미 전적 (초상은 pickInGameJobPortrait — jobs-closeup) */
@@ -91,6 +96,7 @@ export const DUMMY_PLAYER_RECORDS = DUMMY_PLAYER_RECORDS_BASE.map(
   }),
 )
 
+/** 승/패/승률을 목록 행에 표시할 한 줄 텍스트로 포맷 */
 export function formatPlayerRecordStats({ wins, losses, winRate }) {
   return `${wins}승 ${losses}패 | ${winRate.toFixed(1)}%`
 }

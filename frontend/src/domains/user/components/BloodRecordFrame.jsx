@@ -22,6 +22,7 @@ const ROW_LABEL_CLASS =
 const ROW_VALUE_CLASS =
   "font-subheading text-[3.8cqi] font-bold leading-none tracking-wide text-[#2a0e08] tabular-nums"
 
+/** 통계 한 줄 — 좌측 라벨, 우측 값. showDivider가 true면 위쪽에 구분선을 그림 */
 function StatRow({ label, value, showDivider }) {
   return (
     <div className="flex flex-col gap-[0.35em]">

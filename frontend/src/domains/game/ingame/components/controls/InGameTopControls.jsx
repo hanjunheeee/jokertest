@@ -30,6 +30,7 @@ function ControlButton({
 
 /** 인게임 좌측 상단 — 햄버거(전적목록)·마이크 버튼 */
 export default function InGameTopControls({
+  // onMenuClick: 햄버거 버튼 클릭 시 호출되는 콜백 — 플레이어별 전적목록 패널을 염
   onMenuClick,
   // onMicClick: 마이크 버튼 클릭 시 호출되는 콜백
   onMicClick,
