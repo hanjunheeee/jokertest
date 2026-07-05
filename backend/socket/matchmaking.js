@@ -21,7 +21,12 @@ const gameRooms = new Map()
 /** uuid → roomId — 역방향 조회용 */
 const playerRoom = new Map()
 
-/** socket에 매칭 관련 이벤트 핸들러를 등록합니다. */
+/**
+ * socket에 매칭 관련 이벤트 핸들러를 등록합니다.
+ * @param {import('socket.io').Server} io
+ * @param {import('socket.io').Socket} socket
+ * @param {string} uuid - 소켓 소유자의 유저 UUID
+ */
 function registerMatchmakingHandlers(io, socket, uuid) {
     socket.on('join_matchmaking', () =>
         handleJoinMatchmaking(io, socket, uuid).catch((err) =>
@@ -34,12 +39,23 @@ function registerMatchmakingHandlers(io, socket, uuid) {
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
 }
 
-/** disconnect 시 큐·방 정리 — socket.js의 disconnect 핸들러에서 호출 */
+/**
+ * disconnect 시 큐·방 정리 — socket.js의 disconnect 핸들러에서 호출
+ * @param {import('socket.io').Server} io
+ * @param {string} uuid - 접속 종료한 유저 UUID
+ */
 function onDisconnect(io, uuid) {
     matchmakingQueue.delete(uuid)
     removeFromRoom(io, null, uuid)
 }
 
+/**
+ * 유저를 매칭 큐에 등록하고, MIN_PLAYERS 이상 모이면 즉시 방을 생성합니다.
+ * 이미 방에 참여 중인 유저는 무시됩니다. 닉네임 위조 방지를 위해 DB에서 직접 조회합니다.
+ * @param {import('socket.io').Server} io
+ * @param {import('socket.io').Socket} socket
+ * @param {string} uuid - 매칭에 참여할 유저 UUID
+ */
 async function handleJoinMatchmaking(io, socket, uuid) {
     if (playerRoom.has(uuid)) return
 
@@ -73,10 +89,20 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     })
 }
 
+/**
+ * 유저를 매칭 큐에서 제거합니다. (방 생성 전 이탈)
+ * @param {string} uuid - 매칭을 취소할 유저 UUID
+ */
 function handleLeaveMatchmaking(uuid) {
     matchmakingQueue.delete(uuid)
 }
 
+/**
+ * 방장이 방을 삭제합니다. 모든 참가자에게 'room_deleted'를 알리고 방/역방향 매핑을 정리합니다.
+ * 방장이 아니면 아무 동작도 하지 않습니다.
+ * @param {import('socket.io').Server} io
+ * @param {string} uuid - 삭제를 요청한 유저 UUID
+ */
 function handleDeleteRoom(io, uuid) {
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
@@ -90,6 +116,12 @@ function handleDeleteRoom(io, uuid) {
     gameRooms.delete(roomId)
 }
 
+/**
+ * 방장이 게임을 시작합니다. 모든 참가자에게 'game_started'를 알리고 방을 정리합니다.
+ * 방장이 아니면 아무 동작도 하지 않습니다.
+ * @param {import('socket.io').Server} io
+ * @param {string} uuid - 시작을 요청한 유저 UUID
+ */
 function handleStartGame(io, uuid) {
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
@@ -103,7 +135,13 @@ function handleStartGame(io, uuid) {
     gameRooms.delete(roomId)
 }
 
-/** 방에서 플레이어 제거 — disconnect 시 socket=null로 호출해도 안전 */
+/**
+ * 방에서 플레이어를 제거합니다 — disconnect 시 socket=null로 호출해도 안전합니다.
+ * 방장이 나가면 다음 플레이어에게 방장을 이관하고, 방이 비면 방을 삭제합니다.
+ * @param {import('socket.io').Server} io
+ * @param {import('socket.io').Socket|null} socket - null이면 소켓 room leave를 생략
+ * @param {string} uuid - 제거할 유저 UUID
+ */
 function removeFromRoom(io, socket, uuid) {
     const roomId = playerRoom.get(uuid)
     if (!roomId) return

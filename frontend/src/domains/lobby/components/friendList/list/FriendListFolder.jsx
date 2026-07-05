@@ -49,6 +49,10 @@ function FolderHeader({ label, open, onToggle }) {
   )
 }
 
+// label: 폴더 헤더에 표시할 텍스트 (예: "일반 (2/4)")
+// friends: 이 폴더 안에 렌더링할 친구 객체 배열
+// defaultOpen: 처음 렌더링될 때 폴더를 펼친 상태로 시작할지 여부
+// className / listClassName: 바깥 섹션과 친구 목록 ul에 각각 적용할 추가 클래스
 export default function FriendListFolder({
   label,
   friends,
@@ -56,6 +60,9 @@ export default function FriendListFolder({
   className = "",
   listClassName = "mt-1.5 pr-0.5",
 }) {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅으로,
+  // 컴포넌트가 값을 기억했다가 setOpen 호출 시 다시 렌더링하도록 해줍니다.
+  // open: 이 폴더가 펼쳐져 있는지 여부. true면 친구 목록(ul)을 렌더링함
   const [open, setOpen] = useState(defaultOpen)
 
   return (

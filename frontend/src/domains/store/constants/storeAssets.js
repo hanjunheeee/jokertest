@@ -18,6 +18,7 @@ export const STORE_TABS = [
   { id: "title", label: "칭호" },
 ]
 
+// STORE_GRID_ITEMS를 만들 때 순서대로 돌려쓸 더미 아이콘 목록
 const DUMMY_ICONS = [
   STORE_ASSETS.dummyItem1,
   STORE_ASSETS.dummyItem2,
@@ -33,6 +34,7 @@ const DUMMY_GRID_TEXT = [
   { name: "궁전의 수호자", tagline: "닉네임 옆에 표시되는 칭호" },
 ]
 
+// 그리드에 표시할 더미 상품 8개. DUMMY_ICONS/DUMMY_GRID_TEXT를 인덱스만큼 순환시켜 채웁니다.
 export const STORE_GRID_ITEMS = Array.from({ length: 8 }, (_, index) => ({
   id: `store-item-${index}`,
   icon: DUMMY_ICONS[index % DUMMY_ICONS.length],
@@ -80,6 +82,10 @@ const DUMMY_ITEM_INFO = [
   },
 ]
 
+/**
+ * itemId(예: "store-item-3")에서 번호만 뽑아 DUMMY_ITEM_INFO 중 하나를 골라 반환.
+ * 번호를 못 읽으면 0번으로 대체하고, DUMMY_ITEM_INFO 길이만큼 순환시켜 매칭합니다.
+ */
 export function getStoreDummyItemInfo(itemId) {
   const index = Number.parseInt(String(itemId).replace("store-item-", ""), 10)
   const safeIndex = Number.isFinite(index) ? index : 0

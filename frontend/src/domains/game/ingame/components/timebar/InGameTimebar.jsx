@@ -16,7 +16,13 @@ import {
 } from "../../constants/ingameTimebarLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-function TimebarNode({ src, active }) {
+/** 시간흐름 바 위 단계 노드 하나 — 활성 단계면 위에 지시 화살표를 추가로 그림 */
+function TimebarNode({
+  // src: 노드에 그릴 단계 아이콘 이미지 경로
+  src,
+  // active: 현재 진행 중인 단계인지 여부 — true면 강조 스타일 + 화살표 표시
+  active,
+}) {
   return (
     <div className="relative flex shrink-0 items-center justify-center">
       {active ? (
@@ -44,7 +50,9 @@ function TimebarNode({ src, active }) {
  * 좌측 일차·단계 노드·지시화살표 — 단계명 텍스트는 추후
  */
 export default function InGameTimebar({
+  // day: 현재 게임 일차 — 좌측 "제 N일" 라벨에 표시
   day = INGAME_TIMEBAR_PREVIEW_DAY,
+  // activePhaseId: 현재 활성화된 단계(낮/투표 등)의 id — 해당 노드만 강조 표시
   activePhaseId = INGAME_DAY_TIMEBAR_ACTIVE_PHASE,
   className = INGAME_TIMEBAR_POSITION_CLASS,
 }) {

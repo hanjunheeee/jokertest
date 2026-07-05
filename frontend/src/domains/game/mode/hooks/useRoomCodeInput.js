@@ -21,9 +21,19 @@ function sanitizeCode(text) {
  * - ArrowLeft/Right: 칸 간 포커스 이동
  * - autoFocus 시 280ms 지연: 입장 연출 애니메이션이 끝난 뒤 포커스를 맞추기 위함
  *
+ * 이 훅이 감싸는 것: 6칸 입력의 DOM ref 관리, 포커스 이동, 입력/삭제/붙여넣기 시
+ * 문자열 정제 로직을 한곳에 모아 RoomCodeInput 컴포넌트를 단순하게 유지합니다.
+ *
  * @param {{ value, onChange, autoFocus, disabled, readOnly }} props
+ * @returns {{ inputRefs, getChars, handleChange, handleKeyDown, handlePaste }}
+ *   inputRefs: 6개 input에 연결할 ref 배열
+ *   getChars: value를 6칸 문자 배열로 변환
+ *   handleChange/handleKeyDown/handlePaste: 각 input에 그대로 연결할 이벤트 핸들러
  */
 export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnly }) {
+  // useRef(초기값)는 리렌더링에도 값이 유지되지만, 값이 바뀌어도 리렌더링을
+  // 일으키지 않는 "상자"를 만듭니다. 여기서는 6개의 input DOM 엘리먼트를
+  // 배열로 담아두고, 리렌더링 없이 직접 focus()/select()를 호출하는 데 씁니다.
   const inputRefs = useRef([]) // 6개 input 엘리먼트를 배열로 참조
 
   /** index번째 input에 포커스 후 전체 선택 */
@@ -35,7 +45,12 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
     }
   }
 
+  // useEffect(콜백, 의존성 배열)는 렌더링 이후에 실행되는 부수효과(DOM 조작,
+  // 타이머, 구독 등)를 등록합니다. 의존성 배열의 값이 바뀔 때만 콜백이 다시 실행되고,
+  // 콜백이 반환하는 함수는 다음 실행 전(또는 언마운트 시) cleanup으로 호출됩니다.
   // 입장 연출 직후 첫 칸에 포커스 — 애니메이션 종료 전 포커스 시 UX 이상으로 280ms 지연
+  // cleanup에서 clearTimeout: 값이 바뀌어 effect가 재실행되거나 언마운트될 때
+  // 이전 타이머가 남아 있으면 의도치 않은 시점에 포커스가 이동할 수 있어 취소함
   useEffect(() => {
     if (!autoFocus || disabled || readOnly) return
     const timer = window.setTimeout(() => focusIndex(0), 280)

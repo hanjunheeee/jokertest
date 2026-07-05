@@ -14,8 +14,11 @@ import { useMyProfile } from "../hooks/useMyProfile.js"
 
 const UI_FADE = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
 
+/** 프로필 배너·피의 기록·운명의 가면 등 마이페이지 하위 컴포넌트를 배치 */
 export default function MyPageLayout() {
   const navigate = useNavigate()
+  // useMyProfile 훅이 서버에서 프로필을 가져와 각 하위 컴포넌트가 바로 쓸 수 있는
+  // 형태(profile/stats/description)로 가공해 돌려줌. loading이 true인 동안은 렌더링을 미룸
   const { profile, stats, description, loading } = useMyProfile()
 
   return (

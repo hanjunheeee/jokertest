@@ -15,6 +15,9 @@ import { useSocket } from "@/shared/hooks/useSocket"
 const RELOAD_FLAG = 'app:was_reload'
 
 export default function App() {
+  // useEffect(콜백, 의존성배열)은 "렌더링 후에 실행할 부수효과(side effect)"를 등록하는 훅입니다.
+  // 의존성 배열이 []이면 컴포넌트가 처음 마운트될 때 딱 한 번만 실행됩니다.
+  // 여기서는 앱이 처음 켜졌을 때 로그인 상태를 서버 쿠키로 재검증하는 용도로 사용합니다.
   useEffect(() => {
     const { isLoggedIn } = useAuthStore.getState()
 
@@ -39,5 +42,7 @@ export default function App() {
   // 로그인 상태에 맞춰 실시간 소켓 연결을 관리 (다중 접속 제어 / 친구 상태 동기화)
   useSocket()
 
+  // RouterProvider는 routes/index.jsx에서 만든 router 설정을 실제로 화면에 적용하는 컴포넌트입니다.
+  // 현재 주소(URL)에 맞는 라우트를 찾아 그 element를 렌더링합니다.
   return <RouterProvider router={router} />
 }

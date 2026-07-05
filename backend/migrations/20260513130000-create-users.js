@@ -8,6 +8,12 @@
 
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
+  /**
+   * users 테이블과 uuid 기본키 제약조건을 생성합니다.
+   * @param {import('sequelize').QueryInterface} queryInterface
+   * @param {import('sequelize').Sequelize} Sequelize
+   * @returns {Promise<void>}
+   */
   async up(queryInterface, Sequelize) {
     await queryInterface.createTable("users", {
       uuid: {
@@ -103,6 +109,11 @@ module.exports = {
     });
   },
 
+  /**
+   * users 테이블을 삭제합니다. (up의 롤백)
+   * @param {import('sequelize').QueryInterface} queryInterface
+   * @returns {Promise<void>}
+   */
   async down(queryInterface) {
     await queryInterface.dropTable("users");
   },

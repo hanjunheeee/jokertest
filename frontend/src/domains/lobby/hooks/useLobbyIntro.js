@@ -49,13 +49,21 @@ function holdOnLastFrame(video) {
  *   ref 뮤텍스로 중복 실행을 막습니다.
  */
 export function useLobbyIntro() {
+  // useRef(초기값)은 리렌더링돼도 값이 유지되는 "상자"(current 프로퍼티)를 만드는 훅입니다.
+  // useState와 달리 값이 바뀌어도 리렌더링을 일으키지 않습니다.
+  // DOM 엘리먼트를 직접 참조하고 싶을 때 주로 사용합니다.
+  // bgVideoRef/audioRef: JSX의 <video>/<audio> 엘리먼트에 연결해 재생 제어에 사용
   const bgVideoRef = useRef(null)
   const audioRef = useRef(null)
 
   const alreadyPlayed = localStorage.getItem(LOBBY_INTRO_SESSION_KEY) === "1"
 
+  // uiRevealedRef/videoHeldRef: 이벤트 핸들러 안에서 "이미 처리했는지"를 즉시 확인하기 위한 ref.
+  // (아래 주석대로 state는 클로저 때문에 이벤트 핸들러 안에서 최신값을 못 읽을 수 있어 ref로 대체)
   const uiRevealedRef = useRef(alreadyPlayed)
   const videoHeldRef = useRef(alreadyPlayed)
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하며, 값이 바뀌면 컴포넌트를
+  // 리렌더링합니다. uiVisible: 인트로 UI(메뉴 등)를 화면에 보여줄지 여부
   const [uiVisible, setUiVisible] = useState(alreadyPlayed)
 
   const revealUi = () => {
@@ -92,7 +100,9 @@ export function useLobbyIntro() {
     video.addEventListener("loadedmetadata", onMetadata)
   }
 
-  // 이미 재생한 경우: metadata 로드 후 즉시 마지막 프레임으로 이동
+  // useEffect(콜백, 의존성배열)는 렌더링 이후에 부수효과(DOM 조작, 이벤트 리스너 등록 등)를
+  // 실행하는 훅입니다. 의존성 배열이 빈 배열([])이면 컴포넌트가 처음 마운트될 때 한 번만 실행됩니다.
+  // 아래는 이미 재생한 경우: metadata 로드 후 즉시 마지막 프레임으로 이동
   useEffect(() => {
     if (!alreadyPlayed) return
     const video = bgVideoRef.current

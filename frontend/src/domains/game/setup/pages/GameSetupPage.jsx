@@ -22,6 +22,8 @@ export default function GameSetupPage() {
   const navigate = useNavigate()
   const [uiVisible, setUiVisible] = useState(false) // true가 되면 패널·버튼 입장 애니메이션 시작
 
+  // useEffect(콜백, 의존성 배열)는 렌더링이 끝난 뒤에 부수 효과(타이머, 구독 등)를 실행하는 훅입니다.
+  // 의존성 배열이 []이면 컴포넌트가 처음 마운트될 때 딱 한 번만 실행됩니다.
   // 다음 프레임에서 uiVisible 전환 — 마운트 직후 즉시 전환 시 transition이 무시됨
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))

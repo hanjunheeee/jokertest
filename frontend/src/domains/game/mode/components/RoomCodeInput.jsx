@@ -14,12 +14,15 @@
 import { useRoomCodeInput } from "../hooks/useRoomCodeInput.js"
 
 export default function RoomCodeInput({
-  value,
-  onChange,
-  disabled = false,
-  readOnly = false,
-  autoFocus = false,
+  value, // 현재 방 코드 문자열 (0~6자, 숫자만)
+  onChange, // 값 변경 시 부모 state 갱신
+  disabled = false, // 입력 비활성화
+  readOnly = false, // 읽기 전용 표시 (모달 방코드 보기)
+  autoFocus = false, // true면 입장 애니메이션 직후 첫 칸에 포커스 (훅 내부에서 280ms 지연)
 }) {
+  // useRoomCodeInput은 이 컴포넌트가 사용하는 커스텀 훅으로, 6칸 입력의
+  // 포커스 이동·붙여넣기·백스페이스 처리 로직을 캡슐화하고 있습니다.
+  // ref 배열과 각 이벤트 핸들러를 반환받아 아래 input들에 그대로 연결합니다.
   const { inputRefs, getChars, handleChange, handleKeyDown, handlePaste } =
     useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnly })
 

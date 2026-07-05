@@ -1,3 +1,10 @@
+/**
+ * 인게임 화면 페이지.
+ *
+ * 배경 이미지 위에 상단 컨트롤·시간흐름 바·플레이어 보드·채팅 패널을 겹쳐 배치합니다.
+ * 각 영역의 실제 동작(소켓 연결, 타이머 등)은 components 하위 컴포넌트가 담당하고,
+ * 이 파일은 화면 조합(레이아웃)만 맡습니다.
+ */
 import { useState } from "react"
 import { motion } from "framer-motion"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
@@ -9,11 +16,15 @@ import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
+/** 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지 */
 export default function InGamePage() {
   const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
+      {/* motion.img: framer-motion이 제공하는, 애니메이션 속성이 붙은 img 태그.
+          initial(시작 상태)의 opacity 0에서 animate(도착 상태)의 opacity 1로 바뀌며
+          배경 이미지가 서서히 나타나는 페이드인 효과를 만듦 */}
       <motion.img
         src={publicAsset(INGAME_ASSETS.bg)}
         alt=""

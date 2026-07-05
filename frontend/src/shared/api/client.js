@@ -1,10 +1,15 @@
 /**
  * @file client.js
  * @desc Fetch 기반 HTTP 클라이언트. 401 자동 로그아웃, { success, data } 응답 자동 언래핑을 처리합니다.
+ *
+ * axios의 interceptor처럼, 매 요청/응답마다 공통으로 필요한 처리(인증 쿠키 포함,
+ * 401 발생 시 자동 로그아웃, 에러 응답을 예외로 변환, 성공 응답 언래핑)를 apiClient
+ * 함수 하나에 모아둡니다. 이 덕분에 각 도메인의 api 호출 코드는 성공 케이스만 신경 쓰면 됩니다.
  */
 
 import { useAuthStore } from "@/domains/auth/store/authStore";
 
+// 모든 API 요청의 기준이 되는 서버 주소 (.env의 VITE_API_BASE_URL)
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 /**
@@ -17,6 +22,9 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 export const apiClient = async (endpoint, options = {}) => {
     const url = `${BASE_URL}${endpoint}`;
 
+    // 기본 옵션 + 호출부가 넘긴 options를 병합.
+    // credentials: "include" — 로그인 세션 쿠키(HttpOnly)를 요청에 함께 실어 보냄
+    // cache: "no-store" — 인증/상태 관련 응답을 브라우저가 캐시하지 않도록 강제
     const defaultOptions = {
         method: "GET",
         credentials: "include",

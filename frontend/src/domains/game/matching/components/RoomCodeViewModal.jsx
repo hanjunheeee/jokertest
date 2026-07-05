@@ -52,7 +52,14 @@ const FRAME_VARIANTS = {
 
 /** 방코드 6칸 읽기 전용 프레임 + 복사·닫기가 있는 오버레이 모달 */
 export default function RoomCodeViewModal({ open, onClose, roomCode }) {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅으로,
+  // 값을 바꾸는 함수를 호출하면 컴포넌트가 다시 렌더링됩니다.
+  // copied: 클립보드 복사 성공 여부. true인 동안 복사 버튼 라벨이 "복사됨"으로 바뀜
   const [copied, setCopied] = useState(false) // true면 복사 버튼 라벨 "복사됨" 표시
+  // useRef(초기값)은 값을 담는 상자({ current })를 반환하는 훅입니다.
+  // useState와 달리 값이 바뀌어도 리렌더링을 일으키지 않고, 렌더링 사이에도
+  // 값이 그대로 유지됩니다. 여기서는 setTimeout의 id를 저장해 뒀다가
+  // 재복사·모달 닫기 시 이전 타이머를 취소하는 용도로 사용합니다.
   const copyFeedbackTimerRef = useRef(null)
 
   /** 모달 닫기 시 복사 피드백과 예약된 타이머를 함께 정리합니다. */

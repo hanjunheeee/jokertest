@@ -34,9 +34,16 @@ function measureSettingRows(listEl) {
  * @param {boolean} visible - 패널 노출 여부
  */
 export function useScrollbarSync(activeTab, visible) {
-  const listRef = useRef(null) // 설정 목록 컨테이너 ref
+  // useRef(초기값)는 .current에 값을 담아두는 훅으로, 값이 바뀌어도 리렌더링을 일으키지
+  // 않습니다. DOM 엘리먼트를 계속 참조해야 할 때 자주 사용합니다.
+  const listRef = useRef(null) // 설정 목록 컨테이너 DOM 엘리먼트를 담을 ref
+
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수]를 반환하며, setScrollbarBox가 호출되면
+  // 이 훅을 사용하는 컴포넌트가 다시 렌더링되어 스크롤바 위치가 화면에 반영됩니다.
   const [scrollbarBox, setScrollbarBox] = useState(null) // 측정된 {top, height} 또는 null
 
+  // useCallback(함수, deps)은 deps가 바뀌지 않는 한 동일한 함수 참조를 재사용하게 해주는 훅입니다.
+  // 여기서는 activeTab이 바뀔 때만 새 함수를 만들어, 아래 useLayoutEffect의 deps로 안전하게 씁니다.
   const syncScrollbarHeight = useCallback(() => {
     const listEl = listRef.current
     if (!listEl || activeTab !== "general") {

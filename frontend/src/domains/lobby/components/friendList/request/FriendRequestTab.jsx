@@ -11,7 +11,9 @@ import RecommendedFriendRow from "./RecommendedFriendRow.jsx"
 import BackButton from "@/shared/ui/BackButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// onBack: "뒤로가기" 버튼 클릭 시 친구 목록 탭으로 되돌아가기 위해 부모가 내려주는 콜백
 export default function FriendRequestTab({ onBack }) {
+  // 검색어 state, 결과, 로딩/에러 상태는 모두 useFriendSearch 훅 안에 캡슐화되어 있습니다.
   const {
     query,
     setQuery,

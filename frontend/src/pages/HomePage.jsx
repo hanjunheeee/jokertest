@@ -7,7 +7,9 @@ function backgroundImageUrl() {
   return `${base}/${encodeURIComponent(R2_BACKGROUND_OBJECT_KEY)}`
 }
 
+/** 서비스 첫 진입 화면(랜딩 페이지). 배경 이미지와 안내 문구만 보여주는 정적 페이지 */
 export default function HomePage() {
+  // 매 렌더링마다 환경변수 기반으로 배경 이미지 URL을 계산 (컴포넌트 상태는 아님)
   const bgUrl = backgroundImageUrl()
 
   return (

@@ -39,7 +39,11 @@ export default function SetupStepperRow({
   unit,
   onChange,
 }) {
+  // useMemo(계산 함수, 의존성 배열)는 의존성 값이 바뀔 때만 계산을 다시 실행해서
+  // 그 결과를 재사용하는 훅입니다. 매 렌더링마다 buildOptions를 다시 돌리지 않고
+  // min·max·step이 바뀔 때만 선택 가능한 값 배열을 새로 계산합니다.
   const options = useMemo(() => buildOptions(min, max, step), [min, max, step])
+  // options나 unit이 바뀔 때만 화면에 표시할 문자열 배열(예: "30초")을 다시 계산
   const displayOptions = useMemo(
     () => options.map((option) => (unit ? `${option}${unit}` : option)),
     [options, unit],

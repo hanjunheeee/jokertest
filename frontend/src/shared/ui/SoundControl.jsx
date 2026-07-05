@@ -30,9 +30,16 @@ function knotLeftPercent(value) {
   return KNOT_INSET_PERCENT.start + value * travel
 }
 
+// audioRef: 이 컴포넌트가 조작할 오디오/비디오 요소의 ref (콜백 아님, DOM 참조를 그대로 전달)
 export default function SoundControl({ audioRef }) {
-  // sliderValue: 음소거 중에는 0 고정 (UI 슬라이더 위치 제어)
-  // isSilent: 아이콘 전환 기준 (음소거 or 볼륨 0)
+  // useAudioControl은 "custom hook"입니다. custom hook이란 useState·useEffect 같은
+  // 기본 훅들을 조합해서 특정 로직(여기서는 볼륨·음소거 상태 관리와 audioRef 동기화)을
+  // 재사용 가능한 함수로 캡슐화한 것으로, 이름이 use로 시작하는 게 관례입니다.
+  // 이 훅은 아래 4가지를 반환합니다.
+  // - sliderValue: 슬라이더에 표시할 값(0~1). 음소거 중에는 0으로 고정되어 UI 슬라이더 위치를 결정
+  // - isSilent: 음소거 상태이거나 볼륨이 0일 때 true — 아이콘 전환 기준
+  // - onVolumeChange: 슬라이더 조작 시 호출해 볼륨을 바꾸는 함수
+  // - toggleMute: 음소거 버튼 클릭 시 호출해 음소거를 켜고 끄는 함수
   const { sliderValue, isSilent, onVolumeChange, toggleMute } = useAudioControl(audioRef)
 
   const percent = Math.round(sliderValue * 100) // aria-valuenow용 정수 퍼센트

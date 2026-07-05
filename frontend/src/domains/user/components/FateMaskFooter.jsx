@@ -30,11 +30,12 @@ const FATE_MASK_FRAME_WRAP_CLASS =
  * 마이페이지 하단 고정 운명의 가면 프레임
  */
 export default function FateMaskFooter({
-  src = MY_PAGE_ASSETS.fateMaskFrame,
-  description = FATE_MASK_DESCRIPTION,
-  showText = true,
-  className = "block h-auto w-full select-none",
+  src = MY_PAGE_ASSETS.fateMaskFrame, // 프레임 이미지 경로 (기본값: 운명의 가면 프레임)
+  description = FATE_MASK_DESCRIPTION, // { prefix, highlight, suffix } 형태의 설명 문구
+  showText = true, // false면 프레임 이미지만 그리고 설명 문구는 숨김
+  className = "block h-auto w-full select-none", // 프레임 이미지에 적용할 클래스
 }) {
+  // 설명 문구를 앞부분/강조 단어/뒷부분으로 나눠 강조 단어만 다른 색으로 렌더링
   const { prefix, highlight, suffix } = description
 
   return (

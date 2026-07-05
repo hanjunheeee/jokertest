@@ -30,6 +30,12 @@ const PANEL_INSET = {
   paddingRight: "10.5%",
 }
 
+// open: 패널이 열려 있는지 여부 (AnimatePresence로 열림/닫힘 애니메이션 처리)
+// onClose: 배경 클릭 등으로 패널을 닫을 때 호출할 콜백
+// onlineFriends/offlineFriends/favoriteFriends: 목록 탭에 표시할 친구 그룹 배열
+// incomingRequests: 수락 탭에 표시할 받은 친구 요청 배열
+// onRefreshRequests/onAcceptRequest/onDeclineRequest/onAcceptAll:
+//   각각 새로고침·수락·거절·전체 수락 버튼 클릭 시 실행할 콜백 (useFriendListSync에서 내려옴)
 export default function FriendListPanel({
   open,
   onClose,
@@ -42,6 +48,8 @@ export default function FriendListPanel({
   onDeclineRequest,
   onAcceptAll,
 }) {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
+  // panelView: 패널 내부에서 현재 보여줄 화면 ("list" | "request" | "accept")
   const [panelView, setPanelView] = useState("list")
 
   const handleClose = () => {

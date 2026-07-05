@@ -24,7 +24,10 @@ function buildInitialState(items) {
  */
 export function useSetupTabState(items) {
   const initial = useMemo(() => buildInitialState(items), [items]) // items 변경 시에만 재계산
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
+  // checks: 체크박스 항목들의 현재 ON/OFF 상태, setChecks: 그 값을 갱신하는 함수
   const [checks, setChecks] = useState(initial.checks)
+  // ranges: 스테퍼 항목들의 현재 숫자 값, setRanges: 그 값을 갱신하는 함수
   const [ranges, setRanges] = useState(initial.ranges)
 
   /** 특정 id의 체크박스 값을 next로 갱신합니다. */

@@ -7,8 +7,12 @@ const SEND_BUTTON_CLASS =
 const SEND_BUTTON_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.48rem,2.65cqi,0.64rem)] font-bold text-black [text-shadow:0_1px_2px_rgba(255,255,255,0.35)]"
 
-/** 인게임 채팅 보내기 버튼 — 입력줄 우측 */
-export default function InGameChatSendButton({ onSend, className = "" }) {
+/** 인게임 채팅 보내기 버튼 — 입력창과 분리 배치 */
+export default function InGameChatSendButton({
+  // onSend: 버튼 클릭 시 호출되는 콜백. 실제 전송 로직은 부모(InGameChatContent)가 담당
+  onSend,
+  className = "",
+}) {
   return (
     <button
       type="button"

@@ -36,6 +36,9 @@ const PURCHASE_BTN_CLASS =
 const PURCHASE_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.88rem,1.2vw,1.02rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// tab: { id, label } 형태의 탭 정보
+// active: 이 탭이 현재 선택된 탭인지 여부
+// onSelect: 탭 클릭 시 호출할 콜백. 부모(StorePanel)가 activeTab을 바꾸는 setActiveTab을 넘겨줌
 function StoreTab({ tab, active, onSelect }) {
   return (
     <button
@@ -60,6 +63,9 @@ function StoreTab({ tab, active, onSelect }) {
   )
 }
 
+// icon/name/tagline: 그리드에 표시할 상품 정보 (STORE_GRID_ITEMS 항목에서 옴)
+// selected: 이 아이템이 현재 선택된 상태인지 여부
+// onSelect: 클릭 시 호출할 콜백. 부모가 selectedItem을 이 아이템으로 바꾸는 함수를 넘겨줌
 function StoreItemSlot({ icon, name, tagline, selected, onSelect }) {
   return (
     <button
@@ -108,7 +114,9 @@ function StorePurchaseButton() {
   )
 }
 
+// item: 현재 선택된 그리드 아이템 (StorePanel의 selectedItem state를 그대로 전달받음)
 function SelectedItemDetail({ item }) {
+  // item.id로 더미 상세 정보(이름/등급/설명/가격 등)를 조회
   const info = getStoreDummyItemInfo(item.id)
 
   return (
@@ -169,7 +177,12 @@ function SelectedItemDetail({ item }) {
 }
 
 export default function StorePanel() {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
+  // 값을 바꾸는 함수를 호출하면 이 컴포넌트가 다시 렌더링되어 화면이 최신 상태로 갱신됩니다.
+
+  // activeTab: 현재 선택된 상단 탭의 id. 초기값은 첫 번째 탭("skin")
   const [activeTab, setActiveTab] = useState(STORE_TABS[0].id)
+  // selectedItem: 그리드에서 현재 선택된 아이템 객체. 초기값은 첫 번째 아이템
   const [selectedItem, setSelectedItem] = useState(STORE_GRID_ITEMS[0])
 
   return (

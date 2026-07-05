@@ -24,6 +24,8 @@ import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 export default function LobbyPage() {
   const navigate = useNavigate()
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅으로, setFriendListOpen을
+  // 호출하면 컴포넌트가 리렌더링되어 최신 값이 화면(패널 열림/닫힘)에 반영됩니다.
   const [friendListOpen, setFriendListOpen] = useState(false) // 친구 목록 패널 열림 여부
 
   // 영상·BGM 인트로 타이밍 제어 — bgVideoRef·audioRef는 훅 내부에서 관리

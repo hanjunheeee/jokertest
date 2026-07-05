@@ -18,7 +18,13 @@ import {
   ROOM_CODE_ACTION_BTN_LABEL_CLASS,
 } from "../constants/roomCodeFrameStyles.js"
 
-export default function LabelledActionButton({ src, label, onClick, className = "", variants }) {
+export default function LabelledActionButton({
+  src, // 버튼 배경 이미지 경로
+  label, // 텍스트 라벨 (aria-label과 화면 표시 겸용)
+  onClick, // 클릭 핸들러
+  className = "", // 추가 클래스
+  variants, // 부모 motion 컨테이너에서 전달받는 animation variant
+}) {
   return (
     <motion.button
       type="button"

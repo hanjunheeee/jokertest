@@ -27,11 +27,16 @@ import { useMatchingStore } from "@/domains/game/matching/store/matchingStore"
 /** 멀티플레이 하위 옵션(게임 만들기·찾기) 선택·네비게이션을 담당하는 페이지 컴포넌트 */
 export default function MultiplayEntryPage() {
   const navigate     = useNavigate()
-  const isSearching  = useMatchingStore((s) => s.isSearching)
-  const isInRoom     = useMatchingStore((s) => s.isInRoom)
-  const startSearch  = useMatchingStore((s) => s.startSearch)
-  const stopSearch   = useMatchingStore((s) => s.stopSearch)
+  // useMatchingStore(selector)는 authStore와 같은 방식의 Zustand 훅입니다.
+  // 매칭 관련 전역 상태 중 필요한 값·액션만 각각 구독해서, 그 값이 바뀔 때만
+  // 이 컴포넌트가 리렌더링되도록 합니다.
+  const isSearching  = useMatchingStore((s) => s.isSearching) // 매칭 큐 탐색 중인지 여부 (오버레이 표시용)
+  const isInRoom     = useMatchingStore((s) => s.isInRoom) // 매칭이 성사되어 방에 들어갔는지 여부
+  const startSearch  = useMatchingStore((s) => s.startSearch) // 매칭 탐색 시작 액션
+  const stopSearch   = useMatchingStore((s) => s.stopSearch) // 매칭 탐색 취소 액션
 
+  // useEffect(콜백, 의존성 배열)는 렌더링 후 실행되는 부수효과를 등록하는 훅으로,
+  // 의존성 배열(isInRoom, navigate)에 담긴 값이 바뀔 때만 콜백이 다시 실행됩니다.
   // match_found 수신 → useSocket이 isInRoom을 true로 변경 → 여기서 navigate
   useEffect(() => {
     if (isInRoom) navigate('/game-matching')

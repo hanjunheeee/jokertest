@@ -6,6 +6,8 @@
 import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// open: 친구 패널이 열려 있는지 여부 (버튼 aria-expanded 표시에 사용)
+// onOpen: 버튼 클릭 시 부모(LobbyPage)로부터 받은 콜백 — 패널을 여는 역할
 export default function FriendListToggleButton({ open, onOpen }) {
   return (
     <button

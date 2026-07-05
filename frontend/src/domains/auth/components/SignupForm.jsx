@@ -31,7 +31,11 @@ function UserIcon() {
 }
 
 /** 이메일·비밀번호·닉네임 입력과 회원가입 제출·로그인 전환 링크 */
-export default function SignupForm({ formData, onChange, onSwitchToLogin }) {
+export default function SignupForm({
+  formData, // { email, password, nickname } — LoginPage state와 공유되는 제어 컴포넌트 값
+  onChange, // 입력창 값이 바뀔 때 실행 — LoginPage의 handleInputChange로 formData 갱신
+  onSwitchToLogin, // "로그인하기" 링크 클릭 시 실행 — LoginPage가 isSignupMode를 false로 전환
+}) {
   return (
     <>
       <header className="text-center">

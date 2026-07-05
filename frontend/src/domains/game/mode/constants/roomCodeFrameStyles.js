@@ -1,3 +1,8 @@
+/**
+ * @file roomCodeFrameStyles.js
+ * @desc RoomCodeFrame·LabelledActionButton이 사용하는 위치(inset)·클래스 스타일 상수 모음
+ */
+
 /** RoomCodeFrame 하단 footer(취소·참여·복사 버튼) 영역 inset */
 export const ROOM_CODE_FRAME_FOOTER_INSET = {
   paddingLeft: "9.5%",

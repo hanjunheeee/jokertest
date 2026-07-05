@@ -16,6 +16,9 @@ const LIST_CLASS =
   "flex min-h-0 flex-1 flex-col gap-[clamp(0.3rem,0.65vh,0.42rem)] overflow-hidden rounded-sm bg-[#1a0f0a]/10 px-[clamp(0.5rem,0.95vw,0.75rem)] py-[clamp(0.45rem,0.9vh,0.65rem)]"
 
 /** aria-pressed로 선택 상태를 노출하는 체크박스 버튼 행 */
+// label: 행에 표시할 텍스트
+// checked: 체크 표시(✓) 여부
+// onToggle: 행 클릭 시 호출할 콜백 (카테고리 토글 또는 정렬 기준 변경)
 function CheckboxRow({ label, checked, onToggle }) {
   return (
     <button
@@ -39,6 +42,8 @@ function CheckboxRow({ label, checked, onToggle }) {
 }
 
 /** 드롭다운 헤더 — 현재 선택값 표시 (실제 드롭다운 기능은 미구현) */
+// title: 헤더에 표시할 항목 이름 (예: "카테고리")
+// value: 현재 선택된 값 (예: "전체목록")
 function DropdownHeader({ title, value }) {
   return (
     <button type="button" className={HEADER_BTN_CLASS} style={{ outline: "none" }}>

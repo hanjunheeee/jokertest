@@ -6,7 +6,15 @@ import {
 } from "../../constants/ingameControlsLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-function ControlButton({ ariaLabel, src, onClick }) {
+/** 아이콘 버튼 하나를 그리는 내부 헬퍼 (설정·마이크가 이 컴포넌트를 재사용) */
+function ControlButton({
+  // ariaLabel: 스크린리더용 버튼 설명
+  ariaLabel,
+  // src: 버튼에 그릴 아이콘 이미지 경로
+  src,
+  // onClick: 버튼 클릭 시 호출되는 콜백
+  onClick,
+}) {
   return (
     <button
       type="button"
@@ -23,6 +31,7 @@ function ControlButton({ ariaLabel, src, onClick }) {
 /** 인게임 좌측 상단 — 햄버거(전적목록)·마이크 버튼 */
 export default function InGameTopControls({
   onMenuClick,
+  // onMicClick: 마이크 버튼 클릭 시 호출되는 콜백
   onMicClick,
   className = INGAME_TOP_CONTROLS_POSITION_CLASS,
 }) {

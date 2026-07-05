@@ -16,6 +16,9 @@ const SETUP_LIST_GAP_CLASS =
   "flex min-h-0 flex-1 flex-col justify-start gap-[clamp(2rem,2.1vh,2.5rem)]"
 
 export default function SetupTabContent({ items }) {
+  // useSetupTabState는 이 도메인에서 직접 만든 custom hook입니다.
+  // 내부적으로 useState 두 개(checks, ranges)를 묶어 관리하고,
+  // 현재 값(checks, ranges)과 값을 바꾸는 함수(setCheck, setRange)를 반환합니다.
   // checks: { [id]: boolean }, ranges: { [id]: number } — items에서 초기값 파생
   const { checks, ranges, setCheck, setRange } = useSetupTabState(items)
 

@@ -6,6 +6,8 @@
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// name: 친구 닉네임, profileSrc: 프로필 이미지 경로
+// online: 접속 중 여부 — 배지 색과 "접속 중"/"오프라인" 텍스트를 결정
 export default function FriendListRow({ name, profileSrc, online }) {
   return (
     <li className="relative mt-2 w-full list-none">

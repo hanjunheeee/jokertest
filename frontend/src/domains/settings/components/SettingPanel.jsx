@@ -28,6 +28,8 @@ const CONTENT_LIST_HEIGHT =
   "h-[clamp(26rem,min(58vh,52dvh),36rem)]"
 
 /** 단일 탭 버튼 — active 여부에 따라 이미지와 aria-pressed가 전환됩니다. */
+// tab: { id, label } 형태의 탭 정보, active: 이 탭이 현재 선택된 탭인지 여부
+// onSelect: 탭 클릭 시 호출할 콜백 (부모가 activeTab을 바꿀 수 있도록 tab.id를 넘겨줌)
 function SettingTab({ tab, active, onSelect }) {
   return (
     <button
@@ -55,7 +57,10 @@ function SettingTabPlaceholder() {
   )
 }
 
+// visible: 패널을 보여줄지 여부 (SettingPage의 인트로 영상이 끝나면 true로 전환되어 페이드인)
 export default function SettingPanel({ visible }) {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수]를 반환하는 훅입니다.
+  // setActiveTab을 호출하면 컴포넌트가 다시 렌더링되어 화면의 활성 탭이 바뀝니다.
   const [activeTab, setActiveTab] = useState("general") // 현재 선택된 탭 id
 
   // listRef를 설정 목록에 연결하면 useScrollbarSync가 ResizeObserver로 높이를 측정해 scrollbarBox를 반환

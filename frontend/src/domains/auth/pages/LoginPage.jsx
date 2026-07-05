@@ -22,13 +22,24 @@ import {
 
 /** 로그인·회원가입 인증 흐름을 제어하고 하위 컴포넌트를 조합 */
 export default function LoginPage() {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환합니다.
+  // 값을 바꾸는 함수(setXxx)를 호출하면 React가 이 컴포넌트를 다시 렌더링해서
+  // 화면에 최신 상태가 반영됩니다. (변수에 직접 대입하면 화면이 갱신되지 않음)
+
+  // rememberMe: "로그인 상태 유지" 체크박스가 체크됐는지 여부 (기본값 false)
   const [rememberMe, setRememberMe] = useState(false)
+  // isSignupMode: 현재 화면이 회원가입 모드인지 여부. true면 SignupForm, false면 LoginForm을 보여줌
   const [isSignupMode, setIsSignupMode] = useState(false)
+  // isSubmitting: API 요청이 진행 중인지 여부. true인 동안 중복 제출을 막는 용도
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
+  // authStore(전역 상태)에서 로그인 여부만 골라서 구독
   const isAuthenticated = useAuthStore(selectIsAuthenticated)
+  // authStore의 login 액션(함수)만 꺼내서 사용
   const login = useAuthStore((state) => state.login)
 
+  // formData: email/password/nickname 입력값을 하나의 객체로 묶어 관리하는 state.
+  // 초기값은 전부 빈 문자열이고, handleInputChange에서 입력할 때마다 갱신됨
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -46,7 +57,11 @@ export default function LoginPage() {
 
   /** email·password·nickname 필드를 formData에 반영 */
   const handleInputChange = (e) => {
+    // input의 name 속성값(예: "email")과 사용자가 입력한 value를 꺼냄
     const { name, value } = e.target
+    // setFormData에 함수를 넘기면 인자로 "바로 직전 state"(prev)를 받을 수 있음.
+    // ...prev로 기존 필드는 그대로 복사하고, [name]: value로 해당 필드만 덮어씀
+    // (예: name이 "email"이면 { ...prev, email: value })
     setFormData((prev) => ({
       ...prev,
       [name]: value,

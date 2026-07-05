@@ -1,3 +1,8 @@
+/**
+ * @file gameMatchingAssets.js
+ * @desc GameMatchingPage(매칭 대기 화면)에서 쓰는 이미지 경로·UI 문구·더미 데이터 모음.
+ */
+
 /** 게임 매칭 화면 public 에셋 (frontend/public 기준) */
 export const GAME_MATCHING_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png",

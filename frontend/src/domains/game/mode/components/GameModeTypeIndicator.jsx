@@ -24,7 +24,7 @@ const LABEL_CLASS =
 
 /** 활성 탭 이미지 위에 label 텍스트를 겹쳐 그리는 모드 표시 배지 */
 export default function GameModeTypeIndicator({
-  label = GAME_MODE_INDICATOR_LABELS.multi,
+  label = GAME_MODE_INDICATOR_LABELS.multi, // 배지에 표시할 모드명 (기본값: "멀티플레이")
 }) {  return (
     <div className={WRAP_CLASS} aria-label="게임 유형">
       <div className={BADGE_CLASS} aria-label={label}>

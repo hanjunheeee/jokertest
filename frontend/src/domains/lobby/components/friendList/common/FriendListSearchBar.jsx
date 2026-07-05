@@ -16,6 +16,10 @@ const SEARCH_LABEL_CLASS =
 const SEARCH_INPUT_CLASS =
   "absolute inset-0 bg-transparent pl-[17%] pr-[6%] font-subheading text-[12px] text-white/85 outline-none placeholder:text-white/65"
 
+// label: 검색창 위에 표시할 라벨 텍스트
+// placeholder: 입력창이 비어있을 때 보여줄 안내 문구
+// value/onChange: 입력값과 그 값이 바뀔 때 부모로 알리는 콜백 (controlled input)
+// onSubmit: Enter 키 입력 시 실행할 콜백 (예: 검색 실행)
 export default function FriendListSearchBar({
   label = "친구 검색",
   placeholder = "검색할 친구 닉네임 입력",

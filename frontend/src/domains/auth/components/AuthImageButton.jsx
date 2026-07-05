@@ -16,11 +16,11 @@ const AUTH_BTN_IMG_CLASS =
 
 /** group 호버 시 이미지만 확대되는 인증 화면 이미지 버튼 */
 export default function AuthImageButton({
-  src,
-  label,
-  className = "",
-  type = "button",
-  onClick,
+  src, // 버튼에 그릴 이미지 경로 (loginAssets.js)
+  label, // 스크린리더용 텍스트 — 화면엔 텍스트가 없어 aria-label로만 노출
+  className = "", // 루트 button에 덧붙일 추가 클래스
+  type = "button", // "submit"이면 감싸는 form 제출, 기본은 일반 버튼
+  onClick, // 클릭 시 실행할 콜백 — 소셜 로그인 등 아직 연결 안 된 버튼은 생략 가능
 }) {
   return (
     <button

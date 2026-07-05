@@ -9,6 +9,10 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 const ROW_ACTION_BTN_CLASS =
   "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
+// id: 이 후보 사용자의 id — 친구 신청 전송 시 필요
+// name, profileSrc, online: 후보의 닉네임/프로필 이미지/접속 상태
+// onSend: 신청 버튼 클릭 시 id를 인자로 넘겨 부모에게 알리는 콜백
+// sent: 이미 신청을 보냈는지 여부 — true면 버튼을 비활성 스타일로 표시
 export default function RecommendedFriendRow({ id, name, profileSrc, online, onSend, sent }) {
   return (
     <li className="relative mt-2 w-full list-none">

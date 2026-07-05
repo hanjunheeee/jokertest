@@ -30,7 +30,7 @@ exports.signup = async (req, res, next) => {
  */
 exports.login = async (req, res, next) => {
     try {
-        const userAgent = req.headers["user-agent"];
+        const userAgent = req.headers["user-agent"]; // 브라우저 정보 파싱
         const reqInfo = {
             ip:         getClientIp(req),
             userAgent:  userAgent,

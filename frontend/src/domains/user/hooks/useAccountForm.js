@@ -9,12 +9,17 @@ import { updateNicknameApi, updatePasswordApi } from "../api/user"
 import { useAuthStore } from "@/domains/auth/store/authStore"
 
 export function useAccountForm() {
+  // authStore(전역 상태)에서 현재 로그인한 사용자 정보와 login 액션만 꺼내서 사용
   const storeUser  = useAuthStore((s) => s.user)
   const storeLogin = useAuthStore((s) => s.login)
 
   // ── 닉네임 섹션 ──────────────────────────────────────────────
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
+  // 값을 바꾸는 함수를 호출하면 이 훅을 사용하는 컴포넌트가 다시 렌더링됩니다.
+  // nickname: 입력창에 표시되는 닉네임 값 (초기값은 로그인한 유저의 기존 닉네임)
   const [nickname, setNickname]           = useState(storeUser?.nickname ?? "")
   const [nicknameMsg, setNicknameMsg]     = useState(null) // { type: 'success'|'error', text }
+  // nicknameLoading: 닉네임 변경 API 요청이 진행 중인지 여부 (버튼 비활성화용)
   const [nicknameLoading, setNicknameLoading] = useState(false)
 
   const handleNicknameSubmit = async (e) => {
@@ -35,12 +40,14 @@ export function useAccountForm() {
   }
 
   // ── 비밀번호 섹션 ─────────────────────────────────────────────
+  // pwForm: currentPassword·newPassword 입력값을 하나의 객체로 묶어 관리하는 state
   const [pwForm, setPwForm] = useState({ currentPassword: "", newPassword: "" })
   const [pwMsg, setPwMsg]   = useState(null) // { type: 'success'|'error', text }
   const [pwLoading, setPwLoading] = useState(false)
 
   const handlePwChange = (e) => {
     const { name, value } = e.target
+    // ...prev로 기존 필드는 그대로 두고 [name]: value로 해당 필드만 덮어씀
     setPwForm((prev) => ({ ...prev, [name]: value }))
   }
 

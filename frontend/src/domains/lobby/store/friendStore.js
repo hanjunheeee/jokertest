@@ -10,6 +10,9 @@
 import { create } from 'zustand';
 import { fetchMyFriends, fetchIncomingRequests as fetchIncomingRequestsApi } from '../api/friend';
 
+// create(...)가 반환하는 useFriendStore는 authStore와 마찬가지로 컴포넌트 트리 밖에
+// 있는 전역 상태 저장소를 구독하기 위한 훅입니다. 아래 객체의 state 필드(friends 등)와
+// actions(fetchFriends 등, set(...)으로 state를 갱신하는 함수)를 함께 정의합니다.
 export const useFriendStore = create((set) => ({
     friends: [],
     incomingRequests: [],
@@ -17,6 +20,7 @@ export const useFriendStore = create((set) => ({
     // 수락/거절 처리된 UUID — useFriendSearch에서 해당 행을 검색 결과에서 즉시 숨김
     resolvedRequestIds: new Set(),
 
+    /** 서버에서 내 친구 목록을 불러와 friends에 저장 */
     fetchFriends: async () => {
         try {
             const friendsData = await fetchMyFriends();
@@ -26,6 +30,7 @@ export const useFriendStore = create((set) => ({
         }
     },
 
+    /** 서버에서 받은(대기 중인) 친구 요청 목록을 불러와 incomingRequests에 저장 */
     fetchIncomingRequests: async () => {
         try {
             const requests = await fetchIncomingRequestsApi();
@@ -42,6 +47,7 @@ export const useFriendStore = create((set) => ({
 
     setIncomingRequests: (requests) => set({ incomingRequests: requests }),
 
+    /** 친구 요청을 보낸 상대의 uuid를 sentRequestIds에 추가 (버튼을 "신청 완료" 상태로 표시) */
     addSentRequest: (uuid) => set((state) => ({
         sentRequestIds: new Set(state.sentRequestIds).add(uuid),
     })),

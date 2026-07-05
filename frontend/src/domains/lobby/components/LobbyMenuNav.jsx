@@ -24,8 +24,13 @@ const LOBBY_MENU_IMG_CLASS =
 
 export default function LobbyMenuNav() {
   const navigate = useNavigate()
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수]를 반환하는 훅으로, 컴포넌트가
+  // 리렌더링 사이에 값을 기억하게 해줍니다. setActiveMenu를 호출하면 컴포넌트가
+  // 다시 렌더링되어 화면에 최신 activeMenu가 반영됩니다.
+  // activeMenu: 현재 선택(강조 표시)된 메뉴 항목의 id (기본값 "gameplay")
   const [activeMenu, setActiveMenu] = useState("gameplay")
 
+  /** 메뉴 클릭 시 활성 메뉴 표시를 갱신하고 해당 경로로 이동(exit는 로그아웃 후 이동) */
   const handleMenuClick = async (itemId) => {
     setActiveMenu(itemId)
     if (itemId === "gameplay") navigate("/gameMode")

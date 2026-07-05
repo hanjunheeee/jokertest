@@ -9,6 +9,9 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 const ROW_ACTION_BTN_CLASS =
   "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
+// requestId: 이 요청을 식별하는 id — 수락/거절 API 호출 시 필요
+// name, profileSrc: 요청을 보낸 사용자의 닉네임/프로필 이미지
+// onAccept, onDecline: 버튼 클릭 시 requestId를 인자로 넘겨 부모에게 알리는 콜백
 export default function IncomingFriendRow({ requestId, name, profileSrc, onAccept, onDecline }) {
   return (
     <li className="relative mt-2 w-full list-none">

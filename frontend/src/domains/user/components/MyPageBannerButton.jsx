@@ -46,6 +46,7 @@ function StatusDivider() {
   )
 }
 
+/** profile: { reputationLabel, reputationValue, title } / textPanelInset: 텍스트 배치용 top·bottom·left·right 값 */
 function BannerTextPanel({ profile, textPanelInset }) {
   const { reputationLabel, reputationValue, title } = profile
 
@@ -83,6 +84,7 @@ function BannerTextPanel({ profile, textPanelInset }) {
   )
 }
 
+/** onClick: 설정 톱니 클릭 시 호출할 콜백 (버블링을 막아 배너 본체 클릭과 분리) */
 function SettingsGearButton({ onClick }) {
   return (
     <button
@@ -109,6 +111,9 @@ function SettingsGearButton({ onClick }) {
   )
 }
 
+// onClick: 배너 클릭 시 호출할 콜백 (없으면 클릭 불가능한 div로 렌더링)
+// bannerSrc: 배너 이미지 경로 / showText: 텍스트 패널 표시 여부
+// profile, textPanelInset: BannerTextPanel에 그대로 전달
 function BannerMainButton({ onClick, bannerSrc, showText, profile, textPanelInset, className }) {
   const isInteractive = typeof onClick === "function"
   const Root = isInteractive ? "button" : "div"
@@ -135,15 +140,16 @@ function BannerMainButton({ onClick, bannerSrc, showText, profile, textPanelInse
 }
 
 export default function MyPageBannerButton({
-  onClick,
-  onSettingsClick,
-  profile = MY_PAGE_PROFILE,
-  showText = true,
-  showSettingsIcon = false,
-  bannerSrc = LOBBY_ASSETS.myPageButton,
-  textPanelInset = LOBBY_TEXT_PANEL_INSET,
-  className = LOBBY_BANNER_WIDTH_CLASS,
+  onClick, // 배너 전체 클릭 시 호출할 콜백 (예: 마이페이지로 이동)
+  onSettingsClick, // 설정 톱니 클릭 시 호출할 콜백. showSettingsIcon과 함께 있어야 톱니가 보임
+  profile = MY_PAGE_PROFILE, // 배너에 표시할 { reputationLabel, reputationValue, title }
+  showText = true, // false면 배너 이미지만 그리고 텍스트 패널은 숨김
+  showSettingsIcon = false, // true + onSettingsClick 존재 시 설정 톱니 버튼을 별도로 렌더링
+  bannerSrc = LOBBY_ASSETS.myPageButton, // 배너 이미지 경로
+  textPanelInset = LOBBY_TEXT_PANEL_INSET, // 텍스트 패널 배치용 top·bottom·left·right 값
+  className = LOBBY_BANNER_WIDTH_CLASS, // 배너 루트에 적용할 클래스
 }) {
+  // 톱니를 별도 버튼으로 분리해야 하는지 여부 (배너 클릭과 별개로 hover·클릭되도록)
   const hasSettingsControl = showSettingsIcon && typeof onSettingsClick === "function"
 
   if (hasSettingsControl) {

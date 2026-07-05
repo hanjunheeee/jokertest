@@ -28,12 +28,18 @@ import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 export default function RoomInvitePage() {
   const navigate = useNavigate()
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환합니다.
+  // 값을 바꾸는 함수를 호출하면 컴포넌트가 다시 렌더링되어 최신 값이 화면에 반영됩니다.
   const [uiVisible, setUiVisible] = useState(false) // true가 되면 프레임·버튼 입장 애니메이션 시작
   const [roomCode, setRoomCode] = useState("") // 입력 중인 방 코드 (최대 6자)
 
+  // useEffect(콜백, 의존성 배열)는 렌더링 이후 실행되는 부수효과를 등록합니다.
+  // 의존성 배열이 []이면 마운트 시 한 번만 실행되고, 콜백이 반환한 함수는
+  // 언마운트 시 cleanup으로 호출됩니다.
   // 다음 프레임에서 uiVisible을 true로 전환 — 마운트 직후 즉시 전환 시 transition이 무시됨
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
+    // cleanup: 컴포넌트가 언마운트되기 전에 아직 실행되지 않은 예약된 프레임 콜백을 취소
     return () => cancelAnimationFrame(frame)
   }, [])
 

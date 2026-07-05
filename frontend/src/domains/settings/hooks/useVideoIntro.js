@@ -29,8 +29,14 @@ function holdOnLastFrame(video) {
  * state(introDone)만으로는 이벤트 핸들러 내 클로저 문제로 중복 실행될 수 있습니다.
  */
 export function useVideoIntro() {
-  const bgVideoRef = useRef(null)
+  // useRef(초기값)는 .current에 값을 담아두는 훅으로, 값이 바뀌어도 리렌더링을 일으키지
+  // 않습니다. DOM 엘리먼트를 참조하거나(bgVideoRef), 리렌더 여부와 상관없이 최신 값을
+  // 유지해야 하는 플래그(videoHeldRef)에 사용합니다.
+  const bgVideoRef = useRef(null) // <video> DOM 엘리먼트를 담을 ref
   const videoHeldRef = useRef(false) // 마지막 프레임 고정이 이미 실행됐는지 — 중복 방지
+
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수]를 반환하는 훅입니다. setIntroDone이
+  // 호출되면 이 훅을 사용하는 컴포넌트가 다시 렌더링되어 화면 전환(페이드인)이 일어납니다.
   const [introDone, setIntroDone] = useState(false) // true가 되면 패널·버튼 페이드인
 
   /** 영상을 마지막 프레임에 한 번만 고정합니다. */
@@ -48,6 +54,9 @@ export function useVideoIntro() {
     holdVideo()
   }
 
+  // useEffect(콜백, deps)는 렌더링이 끝난 뒤 실행되는 훅으로, DOM 이벤트 등록처럼
+  // "리액트 렌더링 밖의" 부수효과를 처리할 때 씁니다. deps가 빈 배열([])이면 컴포넌트가
+  // 처음 마운트될 때 한 번만 실행되고, return한 함수는 언마운트 시 정리(cleanup)됩니다.
   // 영상 재생 진행에 따라 마지막 프레임 고정 타이밍을 감시
   useEffect(() => {
     const video = bgVideoRef.current

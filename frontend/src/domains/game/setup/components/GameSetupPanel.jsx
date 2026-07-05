@@ -75,6 +75,9 @@ function SetupTab({ tab, active, onSelect }) {
 
 /** 프레임·탭·본문·게임 만들기 버튼을 묶는 설정 패널 */
 export default function GameSetupPanel({ visible, onCreateGame }) {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
+  // 값을 바꾸는 함수(setActiveTab)를 호출하면 컴포넌트가 다시 렌더링되어 화면이 갱신됩니다.
+  // activeTab: 현재 선택된 탭의 id
   const [activeTab, setActiveTab] = useState("general") // general | meeting
 
   return (

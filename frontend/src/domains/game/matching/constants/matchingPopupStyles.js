@@ -1,3 +1,9 @@
+/**
+ * @file matchingPopupStyles.js
+ * @desc 매칭 대기 화면(GameMatchingPage) 팝업 UI에서 쓰는 Tailwind 클래스 문자열 상수 모음.
+ * 컴포넌트에서 className을 길게 나열하는 대신 이 상수를 import해서 재사용합니다.
+ */
+
 /** 매칭 팝업 — 이미지+텍스트 라벨 버튼 (group 내 wrapper에 적용, 프레임·텍스트 함께 확대) */
 export const MATCHING_BTN_SCALE_WRAP_CLASS =
   "relative block w-full transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.95]"

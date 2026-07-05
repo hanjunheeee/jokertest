@@ -64,7 +64,14 @@ function UserIcon() {
   )
 }
 
+/** 닉네임/비밀번호 변경 폼 두 섹션을 렌더링하고, 상태·제출 로직은 useAccountForm에 위임 */
 export default function AccountPanel() {
+  // useAccountForm이 폼 상태와 제출 핸들러를 모두 캡슐화해서 돌려줌.
+  // nickname/setNickname: 닉네임 입력값과 그 값을 바꾸는 함수
+  // nicknameMsg: 닉네임 변경 성공/실패 메시지, nicknameLoading: 닉네임 API 요청 중 여부
+  // handleNicknameSubmit: 닉네임 변경 폼 제출 핸들러
+  // pwForm: { currentPassword, newPassword } 객체, handlePwChange: 비밀번호 입력 변경 핸들러
+  // pwMsg/pwLoading: 비밀번호 변경 메시지·로딩 상태, handlePasswordSubmit: 비밀번호 변경 폼 제출 핸들러
   const {
     nickname, setNickname, nicknameMsg, nicknameLoading, handleNicknameSubmit,
     pwForm, handlePwChange, pwMsg, pwLoading, handlePasswordSubmit,

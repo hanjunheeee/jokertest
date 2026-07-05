@@ -33,6 +33,8 @@ function AcceptAllButton({ onClick }) {
 /** * @desc 친구 수락 탭 (실제 API 연동 버전)
  * @param {Function} onBack - 친구 목록으로 돌아가기 핸들러
  * @param {Array} incomingRequests - 백엔드에서 받아온 대기 중인 친구 요청 배열
+ * @param {Function} onAccept - 개별 수락 버튼 클릭 핸들러 (requestId 전달)
+ * @param {Function} onDecline - 개별 거절 버튼 클릭 핸들러 (requestId 전달)
  * @param {Function} onAcceptAll - 전부 수락 버튼 클릭 핸들러
  * @param {Function} onRefresh - 새로고침 버튼 클릭 핸들러
  */

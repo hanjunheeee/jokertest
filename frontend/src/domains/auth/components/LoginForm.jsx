@@ -14,11 +14,11 @@ import RememberMeCheckbox from "@/domains/auth/components/RememberMeCheckbox.jsx
 
 /** 이메일/비밀번호 로그인 UI와 회원가입 전환 링크 */
 export default function LoginForm({
-  formData,
-  rememberMe,
-  onChange,
-  onRememberMeChange,
-  onSwitchToSignup,
+  formData, // { email, password, nickname } — LoginPage의 state를 그대로 전달받음
+  rememberMe, // "로그인 상태 유지" 체크 여부 — LoginPage state
+  onChange, // 입력창 값이 바뀔 때 실행 — LoginPage의 handleInputChange로 formData 갱신
+  onRememberMeChange, // 체크박스 클릭 시 실행 — LoginPage의 setRememberMe
+  onSwitchToSignup, // "회원가입" 링크 클릭 시 실행 — LoginPage가 isSignupMode를 true로 전환
 }) {
   return (
     <>

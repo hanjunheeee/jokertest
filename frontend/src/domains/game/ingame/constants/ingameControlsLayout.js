@@ -8,6 +8,7 @@
 export const INGAME_TOP_CONTROLS_POSITION_CLASS =
   "absolute top-[clamp(0.45rem,1.8vh,1.1rem)] left-[clamp(0.45rem,1.4cqw,0.9rem)] z-10 flex items-center gap-[clamp(0.3rem,1cqw,0.55rem)]"
 
+/** 설정·마이크 버튼 공통 클릭 영역(래퍼) 스타일 */
 export const INGAME_CONTROL_BTN_CLASS =
   "group shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
 

@@ -30,25 +30,41 @@ import { useAuthStore } from "@/domains/auth/store/authStore"
 
 export default function GameMatchingPage() {
   const navigate = useNavigate()
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
+  // 값을 바꾸는 함수를 호출해야 React가 이 컴포넌트를 다시 렌더링합니다.
+  // uiVisible: 입장 연출(페이드인)이 끝나 UI가 보여야 하는지 여부
   const [uiVisible, setUiVisible]   = useState(false)
+  // roomCodeOpen: "방코드 보기" 모달(RoomCodeViewModal)이 열려 있는지 여부
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
 
+  // matchingStore 전체를 구독(selector 없이 호출)해 방 관련 state를 꺼내 씀
   const { isInRoom, players, roomCode, hostUuid, clearRoom } = useMatchingStore()
+  // authStore에서 로그인한 내 uuid만 골라서 구독 (selector 패턴)
   const myUuid = useAuthStore((s) => s.user?.uuid)
+  // 방에 입장한 상태이고, 내 uuid가 방장 uuid와 같으면 방장으로 간주
   const isHost = isInRoom && myUuid === hostUuid
 
+  // useCallback(함수, deps)는 deps가 바뀌지 않는 한 매 렌더링마다 함수를 새로
+  // 만들지 않고 이전 함수를 그대로 재사용하게 해주는 훅입니다. 아래 함수들은
+  // useMatchingRoom에 넘겨져 useEffect의 deps로도 쓰이므로, 매번 새 함수가
+  // 만들어지면 그 useEffect가 불필요하게 재실행됩니다. navigate는 참조가
+  // 바뀌지 않는 안정적인 함수라 deps에 넣어도 실질적인 재생성은 거의 없습니다.
   // 게임 시작 시 게임 화면으로 이동 — 게임 화면 미구현 중이므로 로비로 임시 이동
   const handleRoomDeleted = useCallback(() => navigate('/multiplay'), [navigate])
   const handleGameStarted = useCallback(() => navigate('/lobby'),     [navigate])
 
+  // custom hook 호출 — 방 내 소켓 이벤트 구독은 훅 내부에서 처리되고,
+  // 방장 액션 함수(deleteRoom, startGame)만 돌려받아 버튼에 연결
   const { deleteRoom, startGame } = useMatchingRoom({
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
   })
 
+  // 마운트 시 한 번만 실행되는 useEffect (deps가 빈 배열 []).
   // 다음 프레임에서 uiVisible 전환 — 마운트 직후 즉시 전환 시 transition이 무시됨
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
+    // cleanup: 컴포넌트가 사라지기 전에 예약된 애니메이션 프레임 요청을 취소
     return () => cancelAnimationFrame(frame)
   }, [])
 

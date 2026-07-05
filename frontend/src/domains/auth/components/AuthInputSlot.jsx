@@ -97,15 +97,19 @@ function EyeOffIcon() {
 
 /** 입력창 프레임·아이콘·필드를 한 줄로 묶는 인증 입력 슬롯 */
 export default function AuthInputSlot({
-  type = "text",
-  name,
-  value,
-  onChange,
-  placeholder,
-  autoComplete,
-  leadingIcon,
-  passwordToggle = false,
+  type = "text", // input의 기본 type — passwordToggle이 없을 때만 사용
+  name, // input의 name 속성. 부모의 onChange(e)에서 e.target.name으로 어떤 필드인지 구분
+  value, // 현재 입력값 — 부모(LoginPage 등) state에서 내려받는 제어 컴포넌트의 값
+  onChange, // 입력이 바뀔 때마다 실행되는 콜백 — 보통 부모의 handleInputChange
+  placeholder, // 입력 전 안내 문구
+  autoComplete, // 브라우저 자동완성 힌트 (예: "email", "current-password")
+  leadingIcon, // 입력창 좌측에 보여줄 아이콘 엘리먼트 (MailIcon, LockIcon 등)
+  passwordToggle = false, // true면 비밀번호 표시/숨김 눈 아이콘을 우측에 추가
 }) {
+  // useState(초기값)은 [현재값, 값을 바꾸는 함수]를 반환하는 React 훅입니다.
+  // 컴포넌트 안에서 "이 컴포넌트만 알면 되는" 값을 기억하고, 값이 바뀌면
+  // 화면을 다시 그리게 만듭니다.
+  // passwordVisible: 비밀번호를 평문으로 보여주고 있는지 여부 (기본은 숨김)
   const [passwordVisible, setPasswordVisible] = useState(false)
   const inputType = passwordToggle
     ? passwordVisible
@@ -134,6 +138,7 @@ export default function AuthInputSlot({
         {passwordToggle ? (
           <button
             type="button"
+            // 눈 아이콘 클릭 시 실행 — 이전 값(v)을 받아 반전시켜 표시/숨김을 토글
             onClick={() => setPasswordVisible((v) => !v)}
             className="group shrink-0 cursor-pointer border-0 bg-transparent p-0 text-neutral-600 transition-colors hover:text-neutral-800"
             aria-label={passwordVisible ? "비밀번호 숨기기" : "비밀번호 보기"}

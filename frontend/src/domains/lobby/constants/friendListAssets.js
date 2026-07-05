@@ -146,6 +146,7 @@ export const DUMMY_OFFLINE_FRIENDS = [
   },
 ]
 
+/** friends 배열에서 online이 true인 항목 개수만 세어 반환 */
 export function countOnlineFriends(friends) {
   return friends.filter((friend) => friend.online).length
 }

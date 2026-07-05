@@ -47,10 +47,10 @@ function StatRow({ label, value, showDivider }) {
  * 마이페이지 피의 기록 프레임 (prototype 피의 기록 영역)
  */
 export default function BloodRecordFrame({
-  src = MY_PAGE_ASSETS.bloodRecordFrame,
-  stats = BLOOD_RECORD_STATS,
-  showText = true,
-  className = "block h-auto w-full shrink-0 select-none",
+  src = MY_PAGE_ASSETS.bloodRecordFrame, // 프레임 이미지 경로 (기본값: 마이페이지 피의 기록 프레임)
+  stats = BLOOD_RECORD_STATS, // 표시할 [{ label, value }] 목록 (기본값: prototype 통계)
+  showText = true, // false면 프레임 이미지만 그리고 통계 텍스트는 숨김
+  className = "block h-auto w-full shrink-0 select-none", // 프레임 이미지에 적용할 클래스
 }) {
   return (
     <div className="relative block w-full [container-type:inline-size]">

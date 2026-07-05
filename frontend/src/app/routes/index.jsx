@@ -4,6 +4,10 @@
  * ViewportShell이 전체 화면 비율/공통 레이아웃을 잡고,
  * ProtectedRoute 아래에는 로그인 세션이 필요한 페이지를 둡니다.
  */
+// React Router는 "주소(URL)에 따라 어떤 컴포넌트를 보여줄지" 연결해주는 라이브러리입니다.
+// createBrowserRouter는 <Routes>/<Route>를 JSX로 나열하는 대신, 아래처럼 자바스크립트
+// 객체 배열로 라우트 트리를 정의하는 방식입니다. 각 항목의 path가 주소, element가
+// 그 주소에서 보여줄 컴포넌트, children이 중첩된 하위 라우트를 뜻합니다.
 import { createBrowserRouter } from "react-router-dom";
 
 import ViewportShell from "@/app/layouts/ViewportShell.jsx";
@@ -31,6 +35,8 @@ import StorePage from "@/domains/store/pages/StorePage";
 
 export const router = createBrowserRouter([
   {
+    // 최상위 element는 모든 라우트를 감싸는 공통 레이아웃(ViewportShell).
+    // ViewportShell 내부의 <Outlet />에 아래 children 중 주소가 일치하는 페이지가 렌더됩니다.
     element: <ViewportShell />,
     children: [
       // 공개 라우트: 로그인 전에도 접근 가능

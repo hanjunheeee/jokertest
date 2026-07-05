@@ -5,6 +5,9 @@
  *
  * 설정값은 app/constants/viewportLayout.js, 스타일은 app/index.css 참고
  */
+// Outlet은 React Router가 제공하는 컴포넌트로, "현재 주소에 맞는 자식 라우트가
+// 렌더링될 자리"를 표시합니다. 즉 이 ViewportShell(공통 레이아웃) 안에서
+// <Outlet />이 있는 위치에 routes/index.jsx가 매칭한 페이지(HomePage, LoginPage 등)가 끼워집니다.
 import { Outlet } from "react-router-dom"
 import { VIEWPORT_BANNER_ASSETS } from "@/app/constants/viewportBannerAssets.js"
 import {
@@ -36,6 +39,7 @@ export default function ViewportShell() {
         />
       </aside>
       <main className="viewport-shell__game">
+        {/* 실제 페이지 컴포넌트가 렌더링되는 위치 */}
         <Outlet />
       </main>
       <aside

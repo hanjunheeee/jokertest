@@ -25,16 +25,16 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 /** 프레임 PNG + 중앙 입력 + 하단 footer 슬롯을 배치하는 방코드 UI 프레임 */
 export default function RoomCodeFrame({
-  value,
-  onChange,
-  readOnly = false,
-  autoFocus = false,
-  disabled = false,
-  frameAlt = "방코드 입력",
-  frameSrc = ROOM_INVITE_ASSETS.inputFrame,
-  footer,
-  overlay = null,
-  className = "relative w-full",
+  value, // RoomCodeInput에 전달할 방 코드 문자열(최대 6자)
+  onChange, // 방 코드 문자열 변경 시 호출 (부모 state 갱신)
+  readOnly = false, // true면 입력만 표시 (모달 방코드 보기)
+  autoFocus = false, // 마운트 후 첫 칸 포커스
+  disabled = false, // 입력 비활성화
+  frameAlt = "방코드 입력", // 프레임 이미지 alt 텍스트
+  frameSrc = ROOM_INVITE_ASSETS.inputFrame, // 프레임 PNG 경로 (기본: 방코드 입력 프레임)
+  footer, // 하단 버튼 영역 슬롯 (취소·참여, 복사 등)
+  overlay = null, // 프레임 위에 겹칠 UI (모달 닫기 버튼 등)
+  className = "relative w-full", // 루트 wrapper 클래스
 }) {
   return (
     <div className={className}>

@@ -8,7 +8,11 @@ import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 /** 이미지 체크박스와 접근성 role을 함께 제공하는 제어 컴포넌트 */
-export default function RememberMeCheckbox({ checked, onChange }) {
+export default function RememberMeCheckbox({
+  checked, // 현재 체크 여부 — 부모(LoginForm → LoginPage)가 가진 rememberMe state
+  onChange, // 체크 상태가 바뀔 때 실행할 콜백 — 새 값(boolean)을 인자로 넘겨 부모 state를 갱신
+}) {
+  // 클릭 시 실행 — 현재 checked를 반전시켜 onChange로 부모에 알림 (state 자체는 여기서 바꾸지 않음)
   const toggle = () => onChange(!checked)
 
   return (
