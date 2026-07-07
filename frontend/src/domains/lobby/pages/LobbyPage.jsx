@@ -21,12 +21,17 @@ import { publicAsset } from "@/shared/utils/publicAsset.js"
 import { useLobbyIntro } from "../hooks/useLobbyIntro.js"
 import { useFriendListSync } from "../hooks/useFriendListSync.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
+import { useMyProfile } from "@/domains/user/hooks/useMyProfile.js"
 
 export default function LobbyPage() {
   const navigate = useNavigate()
   // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅으로, setFriendListOpen을
   // 호출하면 컴포넌트가 리렌더링되어 최신 값이 화면(패널 열림/닫힘)에 반영됩니다.
   const [friendListOpen, setFriendListOpen] = useState(false) // 친구 목록 패널 열림 여부
+
+  // 배너에 실제 유저 닉네임·명성치·칭호를 표시하기 위해 서버 프로필을 가져옴
+  // (더 이상 lobbyAssets.js의 하드코딩된 더미 프로필을 기본값으로 쓰지 않음)
+  const { profile, loading: profileLoading } = useMyProfile()
 
   // 영상·BGM 인트로 타이밍 제어 — bgVideoRef·audioRef는 훅 내부에서 관리
   const { bgVideoRef, audioRef, uiVisible, skipIntro } = useLobbyIntro()
@@ -84,14 +89,20 @@ export default function LobbyPage() {
           <LobbyMenuNav />
         </aside>
 
-        <div className="absolute top-[2.5%] right-[0.5%] z-10 flex flex-col items-stretch gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:top-[3%] sm:right-[1%]">
+        {/* profile 로딩이 끝나기 전엔 배너를 아예 그리지 않음 — MyPageBannerButton의 profile은
+            이제 기본값이 없어서, null인 채로 넘기면 BannerTextPanel이 null.reputationLabel을
+            읽으려다 에러남. 로딩이 끝나고 실데이터가 준비된 뒤에만 렌더 */}
+        {!profileLoading && profile ? (
+          <div className="absolute top-[2.5%] right-[0.5%] z-10 flex flex-col items-stretch gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:top-[3%] sm:right-[1%]">
           <MyPageBannerButton
             onClick={() => navigate("/mypage")}
             onSettingsClick={() => navigate("/account")}
             showSettingsIcon
+            profile={profile ?? undefined }
           />
         </div>
-
+        ) :  null }
+      
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6 ">
           <FriendListToggleButton
             open={friendListOpen}

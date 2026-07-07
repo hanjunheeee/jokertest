@@ -46,6 +46,14 @@ export default function LoginPage() {
     nickname: "", // 회원가입 시에만 사용
   })
 
+  // 로그아웃으로 인해 이 페이지에 도달했을 수 있으므로, 마운트 시점에 authStore의
+  // loggedOutIntentionally 플래그를 초기화한다. ProtectedRoute 자신이 이 플래그를 지우면
+  // 언마운트 전 재렌더로 alert가 뒤늦게 뜨는 레이스가 생기기 때문에, 안정적으로 마운트되는
+  // 이 페이지에서 한 번만 정리해준다 (다음 로그아웃 때 다시 true로 세팅됨).
+  useEffect(() => {
+    useAuthStore.getState().clearLoggedOutIntentionally()
+  }, [])
+
   // authStore에 로그인 사용자가 남아 있으면 서버 쿠키도 유효한지 확인한 뒤 로비로 보냅니다.
   useEffect(() => {
     if (!isAuthenticated) return

@@ -15,9 +15,3 @@ export const LOBBY_MENU_BUTTONS = {
   exit: "/button/lobby-menu/로그아웃_2.png",
 }
 
-/** 마이페이지 배너 텍스트 (prototype 명성치/칭호 레이아웃) */
-export const MY_PAGE_PROFILE = {
-  reputationLabel: "플레이어 모던",
-  reputationValue: 92,
-  title: "고결한 귀족",
-}

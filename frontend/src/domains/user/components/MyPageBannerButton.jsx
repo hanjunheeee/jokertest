@@ -4,7 +4,7 @@
  * 프로필/대표 이미지처럼 클릭 가능한 배너형 UI 조각을 렌더링합니다.
  * showSettingsIcon 시 설정 톱니는 별도 버튼으로 분리해 배너와 독립 hover·클릭.
  */
-import { LOBBY_ASSETS, MY_PAGE_PROFILE } from "@/domains/lobby/constants/lobbyAssets.js"
+import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
 import {
   LOBBY_BANNER_WIDTH_CLASS,
   LOBBY_SETTINGS_GEAR_LAYOUT,
@@ -143,7 +143,7 @@ function BannerMainButton({ onClick, bannerSrc, showText, profile, textPanelInse
 export default function MyPageBannerButton({
   onClick, // 배너 전체 클릭 시 호출할 콜백 (예: 마이페이지로 이동)
   onSettingsClick, // 설정 톱니 클릭 시 호출할 콜백. showSettingsIcon과 함께 있어야 톱니가 보임
-  profile = MY_PAGE_PROFILE, // 배너에 표시할 { reputationLabel, reputationValue, title }
+  profile, // 배너에 표시할 { reputationLabel, reputationValue, title } — 기본값 없음, 호출부가 항상 넘겨야 함 (null/undefined 전달 금지)
   showText = true, // false면 배너 이미지만 그리고 텍스트 패널은 숨김
   showSettingsIcon = false, // true + onSettingsClick 존재 시 설정 톱니 버튼을 별도로 렌더링
   bannerSrc = LOBBY_ASSETS.myPageButton, // 배너 이미지 경로
