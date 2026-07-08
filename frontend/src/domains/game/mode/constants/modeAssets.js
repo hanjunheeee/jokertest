@@ -22,8 +22,8 @@ const MODE_FRAMES = {
 export const GAME_MODES = [
   {
     id: "single",
-    label: "싱글플레이",
-    title: "싱글플레이",
+    label: "랜덤 매칭",
+    title: "랜덤 매칭",
     descriptionLines: [
       "홀로 무도회에 잠입하여",
       "베일 뒤에 숨은 광대를 추리하세요.",
@@ -33,8 +33,8 @@ export const GAME_MODES = [
   },
   {
     id: "multi",
-    label: "멀티플레이",
-    title: "멀티플레이",
+    label: "일반 방 찾기",
+    title: "일반 방 찾기",
     descriptionLines: [
       "다른 귀족들과 교류하며,",
       "무도회장을 피로 물들이려는",

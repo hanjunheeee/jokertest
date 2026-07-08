@@ -18,6 +18,7 @@ export const INGAME_CHAT_MAX_MESSAGE_LENGTH = INGAME_CHAT_INPUT_MAX_LENGTH
 
 /** 인게임 채팅 UI public 에셋 (frontend/public 기준) */
 export const INGAME_CHAT_ASSETS = {
-  frame: "/frame/ingame-chatting/인게임-채팅창프레임.png",
-  sendButton: "/button/채팅보내기 버튼.png",
+  frame: "/frame/ingame-chatting/인게임-채팅창프레임2.png",
+  sendButton: "/button/버튼(미선택).png",
+  closeButton: "/button/팝업 닫기 버튼.png",
 }

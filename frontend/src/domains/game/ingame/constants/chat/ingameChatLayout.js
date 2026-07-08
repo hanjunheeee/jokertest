@@ -1,101 +1,86 @@
 /**
- * 인게임 채팅 패널 레이아웃 상수.
+ * 인게임 채팅 공통 레이아웃 상수 + variant facade.
  *
- * InGameChatShell·InGameChatContent·InGameChatInput·InGameChatMessageList·InGameChatMessageRow에서 사용합니다.
+ * InGameChatContent·InGameChatInput·InGameChatMessageList·InGameChatMessageRow에서 사용합니다.
+ * 보드 전용: ingameChatBoardLayout.js — 클로즈업 전용: closeup/ingameChatCloseupLayout.js
  */
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
-import { INGAME_CHAT_FRAME_SCALE } from "./ingameChatAssets.js"
+import {
+  INGAME_CHAT_MESSAGE_LIST_INSET,
+  INGAME_CHAT_TEXT_FIELD_INSET,
+} from "./ingameChatBoardLayout.js"
+import {
+  INGAME_CHAT_CLOSEUP_INPUT_SHIFT_CLASS,
+  INGAME_CHAT_CLOSEUP_INPUT_SINGLE_LINE_HEIGHT_CLASS,
+  INGAME_CHAT_CLOSEUP_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS,
+  INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET,
+  INGAME_CHAT_CLOSEUP_SEND_BUTTON_CLASS,
+  INGAME_CHAT_CLOSEUP_SEND_BUTTON_LABEL_CLASS,
+  INGAME_CHAT_CLOSEUP_SEND_BUTTON_SHIFT_CLASS,
+  INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET,
+  INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_CLASS,
+  INGAME_CHAT_CLOSEUP_TEXT_WRAP_TRIM_CLASS,
+} from "./closeup/ingameChatCloseupLayout.js"
+import { INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME } from "./ingameChatFrameLayout.js"
 
-/** 보내기 제외 — 목록·입력 우측 시프트 (프레임 left % 가산) */
-export const INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME = 9
-
-/** 인게임-채팅창프레임.png — 메시지 목록 영역 (top + height로 세로 클램프) */
-const CHAT_MESSAGE_LIST_INSET_FRAME = {
-  top: 20,
-  left: 8 + INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME,
-  right: 8,
-  height: 50,
-}
-
-/** 인게임-채팅창프레임.png — 텍스트 입력줄 + 보내기 버튼 영역 */
-const CHAT_TEXT_FIELD_INSET_FRAME = {
-  bottom: 13.5,
-  left: 9,
-  right: 9,
-  height: 11,
-}
-
-/** INGAME_CHAT_FRAME_SCALE 적용 시 레이아웃 박스 % 좌표로 변환 */
-function mapFrameInsetToLayoutBox(inset, scale = INGAME_CHAT_FRAME_SCALE) {
-  const gap = (1 - scale) * 100
-  const mapped = {}
-
-  if (inset.top != null) mapped.top = `${gap + inset.top * scale}%`
-  if (inset.bottom != null) mapped.bottom = `${inset.bottom * scale}%`
-  if (inset.left != null) mapped.left = `${inset.left * scale}%`
-  if (inset.right != null) mapped.right = `${gap + inset.right * scale}%`
-  if (inset.height != null) mapped.height = `${inset.height * scale}%`
-
-  return mapped
-}
-
-/** scale 보정 전 내부 레이아웃 박스 너비 — cqi 기준 유지용 */
-export const INGAME_CHAT_LAYOUT_WIDTH_PERCENT = `${100 / INGAME_CHAT_FRAME_SCALE}%`
-
-/** 열린 패널 기준 너비 — 탁자 중앙 Messages 프레임 (G센세 prototype) */
-const INGAME_CHAT_PANEL_WIDTH_BASE = {
-  minRem: 19,
-  midCqw: 40,
-  maxRem: 30,
-}
-
-/**
- * 중앙 채팅 패널 화면 크기 배율.
- * inset %·cqi 비율은 그대로 두고 패널 너비만 일괄 확대합니다.
- */
-export const INGAME_CHAT_PANEL_SIZE_SCALE = 1.15
-
-function scaleChatPanelWidth(value, scale = INGAME_CHAT_PANEL_SIZE_SCALE) {
-  return Math.round(value * scale * 1000) / 1000
-}
-
-/** 중앙 채팅 패널 — 화면 점유 너비 */
-export function getInGameChatPanelWidthStyle(
-  scale = INGAME_CHAT_PANEL_SIZE_SCALE,
-) {
-  return {
-    width: `clamp(${scaleChatPanelWidth(INGAME_CHAT_PANEL_WIDTH_BASE.minRem, scale)}rem, ${scaleChatPanelWidth(INGAME_CHAT_PANEL_WIDTH_BASE.midCqw, scale)}cqw, ${scaleChatPanelWidth(INGAME_CHAT_PANEL_WIDTH_BASE.maxRem, scale)}rem)`,
-  }
-}
-
-/** 중앙 채팅 패널 — 탁자 위 고정 (탑뷰 perspective) */
-export const INGAME_CHAT_PANEL_POSITION_CLASS =
-  "absolute left-1/2 top-[47.5%] z-20 overflow-visible [container-type:inline-size]"
-
-/** G센세 prototype — 탁자 기울기에 맞춘 채팅 프레임 perspective */
-export const INGAME_CHAT_PANEL_PERSPECTIVE = {
-  rotateX: 20,
-  perspective: 1100,
-}
-
-/** 중앙 채팅 패널 width + transform (Tailwind translate와 style transform 병합) */
-export function getInGameChatPanelStyle(
-  scale = INGAME_CHAT_PANEL_SIZE_SCALE,
-  {
-    rotateX = INGAME_CHAT_PANEL_PERSPECTIVE.rotateX,
-    perspective = INGAME_CHAT_PANEL_PERSPECTIVE.perspective,
-  } = INGAME_CHAT_PANEL_PERSPECTIVE,
-) {
-  return {
-    ...getInGameChatPanelWidthStyle(scale),
-    transform: `translate(-50%, -50%) perspective(${perspective}px) rotateX(${rotateX}deg)`,
-    transformOrigin: "center center",
-  }
-}
+export { INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME }
 
 /** 인게임 채팅 — 입력·목록 공통 타이포 */
 export const INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS =
   "font-subheading text-[clamp(0.72rem,3.2cqi,0.92rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatTextTypographyClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_CLASS
+    : INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatInputClass(variant = "board") {
+  return `block w-full resize-none border-0 bg-transparent p-0 outline-none placeholder:text-[#4a2814] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${getInGameChatTextTypographyClass(variant)}`
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatInputPlaceholderClass(variant = "board") {
+  return `pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS} ${getInGameChatTextTypographyClass(variant)} text-[#4a2814]`
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatTextWrapTrimClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_TEXT_WRAP_TRIM_CLASS
+    : INGAME_CHAT_TEXT_WRAP_TRIM_CLASS
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatMessageBodyClass(variant = "board") {
+  return `min-w-0 box-border ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatTextTypographyClass(variant)} ${INGAME_CHAT_TEXT_WRAP_CLASS} ${getInGameChatTextWrapTrimClass(variant)}`
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatMessageSenderClass(variant = "board") {
+  return `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatTextTypographyClass(variant)}`
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatInputSingleLineHeightClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_INPUT_SINGLE_LINE_HEIGHT_CLASS
+    : INGAME_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatInputViewportFixedHeightClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
+    : INGAME_CHAT_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatInputViewportSinglelineClass(variant = "board") {
+  return `overflow-hidden box-border ${INGAME_CHAT_TEXT_WRAP_CLASS} ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS} ${getInGameChatInputSingleLineHeightClass(variant)}`
+}
 
 /** 인게임 채팅 — 폭 기준 줄바꿈 (textarea·목록 공통) */
 export const INGAME_CHAT_TEXT_WRAP_CLASS =
@@ -105,25 +90,106 @@ export const INGAME_CHAT_TEXT_WRAP_CLASS =
 export const INGAME_CHAT_TEXT_WRAP_TRIM_CLASS =
   "pr-[clamp(0.85rem,3.2cqi,1.35rem)]"
 
-/** 입력창 전용 trim — 목록보다 폭을 조금 더 짧게 */
+/** 입력창 전용 trim — 보내기 버튼 여백 */
 export const INGAME_CHAT_INPUT_WRAP_TRIM_CLASS =
-  "pr-[clamp(1.8rem,5.8cqi,2.7rem)]"
+  "pr-[clamp(1.55rem,5.2cqi,2.45rem)]"
 
-/** InGameChatInput — viewport 래퍼 (2줄+ 시 윗줄 상단 mask clip) */
+/** 한 줄 line-height (font-size × leading 1.35) */
+export const INGAME_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS =
+  "max-h-[clamp(0.98rem,4.32cqi,1.26rem)]"
+
+/** 입력창 viewport — 프레임 입력 슬롯 기준 고정 높이 */
+export const INGAME_CHAT_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS =
+  "h-[clamp(1.68rem,6.85cqi,2.12rem)]"
+
+/** 2줄+ — 현재 줄 전체 + 윗줄 약 절반 peek */
+export const INGAME_CHAT_INPUT_MULTI_LINE_VIEWPORT_HEIGHT_CLASS =
+  INGAME_CHAT_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
+
+/** InGameChatInput — viewport 래퍼 공통 */
+export const INGAME_CHAT_INPUT_VIEWPORT_WRAP_BASE_CLASS =
+  "relative min-w-0 flex-1 overflow-hidden"
+
+/** 빈 입력 — placeholder 세로 중앙 */
+export const INGAME_CHAT_INPUT_VIEWPORT_EMPTY_CLASS = "flex items-center"
+
+/** 입력 중 — 멀티라인 peek용 하단 정렬 */
+export const INGAME_CHAT_INPUT_VIEWPORT_FILLED_CLASS =
+  "flex flex-col justify-end"
+
+/** 빈 입력 placeholder — textarea 위 오버레이 */
+export const INGAME_CHAT_INPUT_PLACEHOLDER_CLASS =
+  `pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS} ${INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS} text-[#4a2814]`
+
+/** 2줄+ 시 윗줄 상단 mask clip (~viewport 상단 22%) */
+export const INGAME_CHAT_INPUT_VIEWPORT_MASK_CLASS =
+  "[mask-image:linear-gradient(to_bottom,transparent_0%,#000_22%,#000_100%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0%,#000_22%,#000_100%)]"
+
+/** 1줄 — mask 해제 (부모/조상 mask 상속 방지) */
+export const INGAME_CHAT_INPUT_VIEWPORT_NO_MASK_CLASS =
+  "[mask-image:none] [-webkit-mask-image:none]"
+
+/** @deprecated INGAME_CHAT_INPUT_VIEWPORT_WRAP_BASE_CLASS + 조건부 mask 사용 */
 export const INGAME_CHAT_INPUT_VIEWPORT_WRAP_CLASS =
-  "relative min-w-0 flex-1 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent_0%,#000_22%,#000_100%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0%,#000_22%,#000_100%)]"
+  `${INGAME_CHAT_INPUT_VIEWPORT_WRAP_BASE_CLASS} ${INGAME_CHAT_INPUT_VIEWPORT_MASK_CLASS} ${INGAME_CHAT_INPUT_MULTI_LINE_VIEWPORT_HEIGHT_CLASS}`
 
 /** InGameChatInput — textarea 본문 */
 export const INGAME_CHAT_INPUT_CLASS =
-  `block w-full resize-none border-0 bg-transparent outline-none placeholder:text-[#4a2814] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS}`
+  `block w-full resize-none border-0 bg-transparent p-0 outline-none placeholder:text-[#4a2814] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS}`
 
-/** InGameChatInput — ~1.5줄 보이는 고정 viewport, 초과분은 내부 스크롤 */
+/** 2줄+ — 고정 viewport, scrollTop으로 최신 줄 유지 */
+export const INGAME_CHAT_INPUT_VIEWPORT_MULTILINE_CLASS =
+  `h-full min-h-0 overflow-y-auto overscroll-contain box-border ${INGAME_CHAT_TEXT_WRAP_CLASS} ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS}`
+
+/** 1줄 — 내용 높이에 맞춤 */
+export const INGAME_CHAT_INPUT_VIEWPORT_SINGLELINE_CLASS =
+  `overflow-hidden box-border ${INGAME_CHAT_TEXT_WRAP_CLASS} ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS} ${INGAME_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS}`
+
+/** @deprecated INGAME_CHAT_INPUT_VIEWPORT_MULTILINE_CLASS / SINGLELINE_CLASS 사용 */
 export const INGAME_CHAT_INPUT_VIEWPORT_CLASS =
-  `max-h-[clamp(1.45rem,6.2cqi,1.95rem)] overflow-y-auto overscroll-contain box-border ${INGAME_CHAT_TEXT_WRAP_CLASS} ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS}`
+  INGAME_CHAT_INPUT_VIEWPORT_MULTILINE_CLASS
 
 /** InGameChatContent — 입력창만 우측 시프트 (보내기 버튼 위치 유지) */
 export const INGAME_CHAT_INPUT_SHIFT_CLASS =
-  "ml-[clamp(1.65rem,8.8cqi,2.65rem)]"
+  "ml-[clamp(1.4rem,7.6cqi,2.35rem)]"
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatInputShiftClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_INPUT_SHIFT_CLASS
+    : INGAME_CHAT_INPUT_SHIFT_CLASS
+}
+
+/** InGameChatContent — 보내기 버튼 좌측 당김 (값을 줄이면 오른쪽으로 이동) */
+export const INGAME_CHAT_SEND_BUTTON_SHIFT_CLASS =
+  "-translate-x-[clamp(1.15rem,6.2cqi,1.85rem)]"
+
+const INGAME_CHAT_SEND_BUTTON_CLASS =
+  "interactive-scale relative block w-[clamp(3.45rem,24cqi,4.75rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
+
+const INGAME_CHAT_SEND_BUTTON_LABEL_CLASS =
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.56rem,3.1cqi,0.74rem)] font-bold text-[#e9b582] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatSendButtonClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_SEND_BUTTON_CLASS
+    : INGAME_CHAT_SEND_BUTTON_CLASS
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatSendButtonLabelClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_SEND_BUTTON_LABEL_CLASS
+    : INGAME_CHAT_SEND_BUTTON_LABEL_CLASS
+}
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatSendButtonShiftClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_SEND_BUTTON_SHIFT_CLASS
+    : INGAME_CHAT_SEND_BUTTON_SHIFT_CLASS
+}
 
 /** InGameChatContent — 입력줄 + 보내기 버튼 행 */
 export const INGAME_CHAT_TEXT_FIELD_ROW_CLASS =
@@ -164,12 +230,16 @@ export const INGAME_CHAT_MESSAGE_SENDER_CLASS =
 export const INGAME_CHAT_MESSAGE_ROW_CLASS =
   `flex min-w-0 list-none items-start gap-[0.25em] ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS}`
 
-/** InGameChatContent — 메시지 목록 inset (scale 보정 적용) */
-export const INGAME_CHAT_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
-  CHAT_MESSAGE_LIST_INSET_FRAME,
-)
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatMessageListInset(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
+    : INGAME_CHAT_MESSAGE_LIST_INSET
+}
 
-/** InGameChatContent — 입력줄 inset */
-export const INGAME_CHAT_TEXT_FIELD_INSET = mapFrameInsetToLayoutBox(
-  CHAT_TEXT_FIELD_INSET_FRAME,
-)
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatTextFieldInset(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET
+    : INGAME_CHAT_TEXT_FIELD_INSET
+}

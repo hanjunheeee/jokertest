@@ -1,9 +1,9 @@
-import { INGAME_CONTROLS_ASSETS } from "../../constants/ingameControlsAssets.js"
+import { INGAME_CONTROLS_ASSETS } from "../../constants/controls/ingameControlsAssets.js"
 import {
   INGAME_CONTROL_BTN_CLASS,
   INGAME_CONTROL_BTN_IMG_CLASS,
   INGAME_TOP_CONTROLS_POSITION_CLASS,
-} from "../../constants/ingameControlsLayout.js"
+} from "../../constants/controls/ingameControlsLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 /** 아이콘 버튼 하나를 그리는 내부 헬퍼 (설정·마이크가 이 컴포넌트를 재사용) */

@@ -31,7 +31,7 @@ export const PLAYER_PORTRAIT_STANDING_CROP_IMAGE_CLASS =
 
 /** @type {Record<string, PlayerPortraitVariant>} */
 export const PLAYER_PORTRAIT_VARIANTS = {
-  /** 인게임-플레이어프레임(베이스).png (375×406) — 닉네임 칸 제외 초상창 */
+  /** 인게임-플레이어프레임 PNG (323×354) — 닉네임 칸 제외 초상창 */
   ingameCard: {
     bgInset: {
       top: "10%",

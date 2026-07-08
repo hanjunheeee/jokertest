@@ -1,62 +1,68 @@
 /**
- * 멀티플레이 진입 후 세부 옵션 선택 화면 (prototype: 게임모드 선택창-멀티플레이 선택.png)
- * GameModePage에서 멀티플레이 카드를 고르면 진입합니다.
+ * 멀티플레이(일반 방 찾기) — 방목록 화면
  *
  * - 뒤로가기 → /gameMode
- * - 게임 만들기 → /game-setup
- * - 게임 찾기 → 랜덤 매칭 큐 진입 → match_found 수신 → /game-matching
+ * - 게임 만들기(상단) → /game-setup
+ * - 게임 찾기(상단) → 랜덤 매칭 큐 진입 → match_found 수신 → /game-matching
  *
- * UI 구성: GameModeTypeIndicator(상단 모드 표시), ModeOptionCard, SoundControl, BackButton
- * 옵션 목록·에셋은 constants/modeAssets.js의 MULTIPLAY_OPTIONS 참고
+ * UI: GameModeTypeIndicator + RoomListShell + MatchingSearchOverlay
  */
 import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  MODE_SCREEN_ASSETS,
-  MULTIPLAY_OPTIONS,
-} from "../constants/modeAssets.js"
+import MatchingSearchOverlay from "@/domains/game/matching/components/MatchingSearchOverlay.jsx"
+import { useMatchingStore } from "@/domains/game/matching/store/matchingStore"
+import { MODE_SCREEN_ASSETS } from "../constants/modeAssets.js"
 import GameModeTypeIndicator from "../components/GameModeTypeIndicator.jsx"
-import ModeOptionCard from "../components/ModeOptionCard.jsx"
+import RoomListShell from "../components/roomList/RoomListShell.jsx"
 import BackButton from "@/shared/ui/BackButton.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
-import { publicAsset } from "@/shared/utils/publicAsset"
 import { getSocket } from "@/shared/socket/socketClient"
-import { useMatchingStore } from "@/domains/game/matching/store/matchingStore"
+import { publicAsset } from "@/shared/utils/publicAsset"
 
-/** 멀티플레이 하위 옵션(게임 만들기·찾기) 선택·네비게이션을 담당하는 페이지 컴포넌트 */
+const DUMMY_ROOMS = [
+  { id: "room-1", stage: 1, current: 2, max: 5, title: "누구든 들어와 방" },
+  { id: "room-2", stage: 1, current: 4, max: 8, title: "초보 환영" },
+  { id: "room-3", stage: 2, current: 7, max: 10, title: "진지하게 ㄱㄱ" },
+  { id: "room-4", stage: 1, current: 1, max: 6, title: "친구 구함" },
+  { id: "room-5", stage: 3, current: 5, max: 10, title: "연습방" },
+  { id: "room-6", stage: 2, current: 3, max: 8, title: "느긋하게" },
+  { id: "room-7", stage: 1, current: 6, max: 10, title: "공개방 테스트" },
+  { id: "room-8", stage: 2, current: 2, max: 8, title: "밤늦게만" },
+  { id: "room-9", stage: 1, current: 5, max: 6, title: "거의 만석" },
+  { id: "room-10", stage: 3, current: 8, max: 10, title: "고수만" },
+  { id: "room-11", stage: 1, current: 3, max: 10, title: "편하게 놀자" },
+  { id: "room-12", stage: 2, current: 4, max: 8, title: "속임수 연습" },
+  { id: "room-13", stage: 1, current: 1, max: 5, title: "새벽반" },
+  { id: "room-14", stage: 2, current: 6, max: 10, title: "토론-heavy" },
+  { id: "room-15", stage: 3, current: 3, max: 8, title: "승부는 진지하게" },
+  { id: "room-16", stage: 1, current: 7, max: 10, title: "인원 많음" },
+  { id: "room-17", stage: 2, current: 2, max: 6, title: "소규모 정예" },
+  { id: "room-18", stage: 1, current: 4, max: 8, title: "초보 OK" },
+  { id: "room-19", stage: 3, current: 9, max: 10, title: "마감 임박" },
+  { id: "room-20", stage: 2, current: 5, max: 10, title: "스크롤 테스트" },
+]
+
 export default function MultiplayEntryPage() {
-  const navigate     = useNavigate()
-  // useMatchingStore(selector)는 authStore와 같은 방식의 Zustand 훅입니다.
-  // 매칭 관련 전역 상태 중 필요한 값·액션만 각각 구독해서, 그 값이 바뀔 때만
-  // 이 컴포넌트가 리렌더링되도록 합니다.
-  const isSearching  = useMatchingStore((s) => s.isSearching) // 매칭 큐 탐색 중인지 여부 (오버레이 표시용)
-  const isInRoom     = useMatchingStore((s) => s.isInRoom) // 매칭이 성사되어 방에 들어갔는지 여부
-  const startSearch  = useMatchingStore((s) => s.startSearch) // 매칭 탐색 시작 액션
-  const stopSearch   = useMatchingStore((s) => s.stopSearch) // 매칭 탐색 취소 액션
+  const navigate = useNavigate()
+  const isSearching = useMatchingStore((s) => s.isSearching)
+  const isInRoom = useMatchingStore((s) => s.isInRoom)
+  const startSearch = useMatchingStore((s) => s.startSearch)
+  const stopSearch = useMatchingStore((s) => s.stopSearch)
 
-  // useEffect(콜백, 의존성 배열)는 렌더링 후 실행되는 부수효과를 등록하는 훅으로,
-  // 의존성 배열(isInRoom, navigate)에 담긴 값이 바뀔 때만 콜백이 다시 실행됩니다.
-  // match_found 수신 → useSocket이 isInRoom을 true로 변경 → 여기서 navigate
   useEffect(() => {
-    if (isInRoom) navigate('/game-matching')
+    if (isInRoom) navigate("/game-matching")
   }, [isInRoom, navigate])
 
-  const handleOptionSelect = (optionId) => {
-    if (optionId === "create") {
-      navigate("/game-setup")
-      return
-    }
-    if (optionId === "find") {
-      const socket = getSocket()
-      if (!socket) return
-      startSearch()
-      socket.emit('join_matchmaking')
-    }
+  const handleQuickJoin = () => {
+    const socket = getSocket()
+    if (!socket) return
+    startSearch()
+    socket.emit("join_matchmaking")
   }
 
   const handleCancelSearch = () => {
-    getSocket()?.emit('leave_matchmaking')
+    getSocket()?.emit("leave_matchmaking")
     stopSearch()
   }
 
@@ -72,44 +78,18 @@ export default function MultiplayEntryPage() {
       <div className="absolute inset-0 z-10">
         <GameModeTypeIndicator />
 
+        <RoomListShell
+          rooms={DUMMY_ROOMS}
+          onCreateGame={() => navigate("/game-setup")}
+          onQuickJoin={handleQuickJoin}
+          onRoomSelect={() => {}}
+        />
+
         <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6">
           <SoundControl />
         </div>
 
-        <div
-          className="absolute inset-x-0 top-[12%] bottom-[10%] flex items-center justify-center px-[clamp(1rem,4vw,3rem)] sm:top-[11%] sm:bottom-[9%]"
-          role="group"
-          aria-label="멀티플레이 옵션 선택"
-        >
-          <div className="flex w-full max-w-[min(52rem,88vw)] items-stretch justify-center gap-[clamp(1rem,3vw,2.5rem)]">
-            {MULTIPLAY_OPTIONS.map((option) => (
-              <ModeOptionCard
-                key={option.id}
-                label={option.label}
-                title={option.title}
-                descriptionLines={option.descriptionLines}
-                frame={option.frame}
-                onSelect={() => handleOptionSelect(option.id)}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* 매칭 중 오버레이 — isSearching 동안 표시, 취소 버튼으로 큐 이탈 */}
-        {isSearching && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-black/70">
-            <p className="font-subheading text-[clamp(1.4rem,2.2vw,1.8rem)] font-bold text-[#f5f0e6] [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]">
-              매칭 중입니다...
-            </p>
-            <button
-              type="button"
-              onClick={handleCancelSearch}
-              className="font-subheading text-[clamp(1rem,1.4vw,1.15rem)] font-bold text-[#c4a87a] underline underline-offset-4 transition-opacity hover:opacity-75"
-            >
-              취소
-            </button>
-          </div>
-        )}
+        <MatchingSearchOverlay open={isSearching} onCancel={handleCancelSearch} />
 
         <BackButton
           ariaLabel="게임 모드 선택으로 돌아가기"

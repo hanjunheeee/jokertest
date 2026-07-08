@@ -4,7 +4,7 @@
  * 햄버거 버튼으로 열리며, 로비 친구목록 탭과 동일 프레임·위치 체계를 사용합니다.
  */
 import { AnimatePresence, motion } from "framer-motion"
-import { INGAME_PLAYER_RECORD_LIST_ASSETS } from "../../../constants/ingamePlayerRecordListAssets.js"
+import { INGAME_PLAYER_RECORD_LIST_ASSETS } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListAssets.js"
 import {
   INGAME_PLAYER_RECORD_LIST_BACKDROP_CLASS,
   INGAME_PLAYER_RECORD_LIST_CLOSE_BTN_CLASS,
@@ -13,7 +13,7 @@ import {
   INGAME_PLAYER_RECORD_LIST_PANEL_CLASS,
   INGAME_PLAYER_RECORD_LIST_PANEL_INSET,
   INGAME_PLAYER_RECORD_LIST_PANEL_TRANSITION,
-} from "../../../constants/ingamePlayerRecordListLayout.js"
+} from "../../../constants/controls/playerRecordList/ingamePlayerRecordListLayout.js"
 import PlayerRecordListContent from "./PlayerRecordListContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 

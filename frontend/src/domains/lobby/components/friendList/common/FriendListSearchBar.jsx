@@ -11,10 +11,12 @@ const SEARCH_ZONE_CLASS =
   "mb-4 shrink-0 rounded-md border border-white/20 bg-black/40 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_2px_10px_rgba(0,0,0,0.35)]"
 
 const SEARCH_LABEL_CLASS =
-  "mb-1.5 font-subheading text-[12px] font-bold tracking-wide text-[#ebe2cc]"
+  "mb-1.5 font-subheading text-[14px] font-bold tracking-wide text-[#ebe2cc]"
+
+const SEARCH_INPUT_FRAME_CLASS = "block h-auto w-full select-none"
 
 const SEARCH_INPUT_CLASS =
-  "absolute inset-0 bg-transparent pl-[17%] pr-[6%] font-subheading text-[12px] text-white/85 outline-none placeholder:text-white/65"
+  "absolute inset-0 bg-transparent pl-[17%] pr-[6%] font-subheading text-[12px] leading-none text-white/85 outline-none placeholder:text-white/65"
 
 // label: 검색창 위에 표시할 라벨 텍스트
 // placeholder: 입력창이 비어있을 때 보여줄 안내 문구
@@ -39,7 +41,7 @@ export default function FriendListSearchBar({
         <PublicAsset
           src={FRIEND_LIST_ASSETS.searchInput}
           alt=""
-          className="block h-auto w-full select-none"
+          className={SEARCH_INPUT_FRAME_CLASS}
           aria-hidden="true"
         />
         <input

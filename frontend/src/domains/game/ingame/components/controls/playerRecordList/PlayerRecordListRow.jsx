@@ -1,8 +1,8 @@
 /**
  * 플레이어별 전적목록 — 플레이어 한 줄
  */
-import { INGAME_PLAYER_RECORD_LIST_ASSETS } from "../../../constants/ingamePlayerRecordListAssets.js"
-import { formatPlayerRecordStats } from "../../../constants/ingamePlayerRecordListData.js"
+import { INGAME_PLAYER_RECORD_LIST_ASSETS } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListAssets.js"
+import { formatPlayerRecordStats } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
   INGAME_PLAYER_RECORD_LIST_NAME_CLASS,
   INGAME_PLAYER_RECORD_LIST_PROFILE_FRAME_CLASS,
@@ -13,7 +13,7 @@ import {
   INGAME_PLAYER_RECORD_LIST_TITLE_FRAME_CLASS,
   INGAME_PLAYER_RECORD_LIST_TITLE_TEXT_CLASS,
   INGAME_PLAYER_RECORD_LIST_TITLE_WRAP_CLASS,
-} from "../../../constants/ingamePlayerRecordListLayout.js"
+} from "../../../constants/controls/playerRecordList/ingamePlayerRecordListLayout.js"
 import { pickInGameJobPortrait } from "../../../utils/pickInGameJobPortrait.js"
 import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"

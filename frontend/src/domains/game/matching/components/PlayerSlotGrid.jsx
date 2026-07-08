@@ -4,7 +4,7 @@ import {
 } from "../utils/chunkPlayerSlots.js"
 
 /**
- * N열 플레이어 슬롯 그리드 — matching·ingame 공통 레이아웃
+ * N열 플레이어 슬롯 그리드 — MatchingPartySlots 등 매칭 UI용
  *
  * props
  * - slots: 슬롯 데이터 배열

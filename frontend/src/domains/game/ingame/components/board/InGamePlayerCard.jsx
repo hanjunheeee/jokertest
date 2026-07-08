@@ -1,11 +1,18 @@
 import {
+  INGAME_PLAYER_THEME_TEXT_RENDER_CLASS,
+  resolveInGamePlayerThemeEmphasized,
+} from "../../constants/ingamePlayerTheme.js"
+import {
   INGAME_PLAYER_ASSETS,
-  INGAME_PLAYER_CARD_SHADOW_CLASS,
+  INGAME_PLAYER_FRAME_IMAGE_CLASS,
+  INGAME_PLAYER_FRAME_SHADOW_LAYER_CLASS,
   INGAME_PLAYER_NAMEPLATE_CLASS,
   INGAME_PLAYER_NAMEPLATE_INSET,
-} from "../../constants/ingamePlayerAssets.js"
-import { INGAME_PLAYER_STATUS } from "../../constants/ingamePlayerStatus.js"
+} from "../../constants/board/ingamePlayerAssets.js"
+import { INGAME_PLAYER_STATUS } from "../../constants/board/status/ingamePlayerStatus.js"
+import InGamePlayerFrameStroke from "./InGamePlayerFrameStroke.jsx"
 import InGamePlayerStatusOverlay from "./status/InGamePlayerStatusOverlay.jsx"
+import { resolveInGamePlayerFrameSrc } from "../../utils/pickInGamePlayerFrame.js"
 import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
@@ -13,31 +20,62 @@ import PublicAsset from "@/shared/ui/PublicAsset"
  * 인게임 플레이어 카드 — 배경 + 직업 초상 + 상태 UI + 프레임 + 닉네임
  */
 export default function InGamePlayerCard({
-  // portraitSrc: 카드에 그릴 직업 전신 이미지 경로. 없으면 배경만 표시하고 초상은 생략
   portraitSrc,
+  frameSrc = INGAME_PLAYER_ASSETS.cardFrame,
   nickname = "",
   status = INGAME_PLAYER_STATUS.ALIVE,
-  // className: 부모(InGamePlayerBoard)가 카드 크기(큰 카드/작은 카드)를 지정할 때 넘기는 클래스
+  theme = null,
+  /** 투표 선택 등 — 프레임 stroke 강화 (추후 투표 UI에서 사용) */
+  voteHighlight = false,
   className = "",
 }) {
+  const styles =
+    theme && voteHighlight
+      ? resolveInGamePlayerThemeEmphasized(theme.paletteIndex).styles
+      : theme?.styles
+
+  const nameplateStyle = styles
+    ? {
+        ...INGAME_PLAYER_NAMEPLATE_INSET,
+        color: styles.color,
+      }
+    : INGAME_PLAYER_NAMEPLATE_INSET
+
+  const displayFrameSrc = resolveInGamePlayerFrameSrc(frameSrc, status)
+
   return (
     <div
-      className={`relative shrink-0 [container-type:inline-size] ${INGAME_PLAYER_CARD_SHADOW_CLASS} ${className}`}
+      className={`relative shrink-0 [container-type:inline-size] ${className}`}
     >
-      <div className="relative w-full overflow-hidden">
+      <div className="relative w-full overflow-visible">
         <PlayerPortraitFrame variant="ingameCard" src={portraitSrc} />
         <InGamePlayerStatusOverlay status={status} />
 
-        <PublicAsset
-          src={INGAME_PLAYER_ASSETS.cardFrame}
-          alt=""
-          className="relative z-10 block h-auto w-full select-none"
-        />
+        <div className="relative z-10 w-full overflow-visible">
+          {styles ? (
+            <InGamePlayerFrameStroke
+              frameSrc={displayFrameSrc}
+              color={styles.color}
+              scale={styles.frameStrokeScale}
+            />
+          ) : null}
+          <PublicAsset
+            src={displayFrameSrc}
+            alt=""
+            className={INGAME_PLAYER_FRAME_SHADOW_LAYER_CLASS}
+            aria-hidden="true"
+          />
+          <PublicAsset
+            src={displayFrameSrc}
+            alt=""
+            className={INGAME_PLAYER_FRAME_IMAGE_CLASS}
+          />
+        </div>
 
         {nickname ? (
           <p
-            className={INGAME_PLAYER_NAMEPLATE_CLASS}
-            style={INGAME_PLAYER_NAMEPLATE_INSET}
+            className={`${INGAME_PLAYER_NAMEPLATE_CLASS} ${styles ? INGAME_PLAYER_THEME_TEXT_RENDER_CLASS : ""}`.trim()}
+            style={nameplateStyle}
           >
             <span className="block w-full truncate">{nickname}</span>
           </p>

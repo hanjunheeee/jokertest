@@ -5,7 +5,7 @@ import {
   INGAME_CHAT_MESSAGE_LIST_SCROLL_CLASS,
   INGAME_CHAT_MESSAGE_LIST_SCROLL_WRAP_CLASS,
   INGAME_CHAT_MESSAGE_LIST_SPACER_CLASS,
-} from "../../constants/ingameChatLayout.js"
+} from "../../constants/chat/ingameChatLayout.js"
 import InGameChatMessageRow from "./InGameChatMessageRow.jsx"
 
 /**
@@ -50,6 +50,7 @@ export default function InGameChatMessageList({
           {messages.map((message) => (
             <InGameChatMessageRow
               key={message.id}
+              playerId={message.playerId}
               senderName={message.senderName}
               text={message.text}
               textFieldWidth={textFieldWidth}

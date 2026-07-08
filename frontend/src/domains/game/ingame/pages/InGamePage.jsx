@@ -9,6 +9,7 @@ import { useState } from "react"
 import { motion } from "framer-motion"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
+import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
@@ -38,9 +39,11 @@ export default function InGamePage() {
       <InGameTopControls
         onMenuClick={() => setPlayerRecordListOpen(true)}
       />
-      <InGameTimebar />
-      <InGamePlayerBoard />
-      <InGameChatShell />
+      <InGamePlayerSessionProvider>
+        <InGameTimebar />
+        <InGamePlayerBoard />
+        <InGameChatShell />
+      </InGamePlayerSessionProvider>
 
       <PlayerRecordListPanel
         open={playerRecordListOpen}

@@ -14,6 +14,9 @@ export const INGAME_PLAYER_STATUS = {
 export const INGAME_PREVIEW_PLAYER_STATUS_BY_SLOT = {
   0: INGAME_PLAYER_STATUS.DEAD,
   1: INGAME_PLAYER_STATUS.DISCONNECTED,
+  3: INGAME_PLAYER_STATUS.DEAD,
+  6: INGAME_PLAYER_STATUS.DEAD,
+  8: INGAME_PLAYER_STATUS.DEAD,
 }
 
 /** @param {number} slotIndex @returns {InGamePlayerStatus} */
@@ -51,14 +54,20 @@ export const INGAME_PLAYER_STATUS_BADGE_CLASS =
 export const INGAME_PLAYER_STATUS_DEAD_BADGE_CLASS =
   "pointer-events-none block h-[98%] w-[98%] shrink-0 select-none object-contain object-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] scale-[1.85]"
 
-/** @type {Record<string, { badgeSrc?: string, badgeClass?: string }>} */
+/** 초상창 dim — dead·disconnected 공통 */
+export const INGAME_PLAYER_STATUS_PORTRAIT_DIM_CLASS =
+  "pointer-events-none absolute z-[2] bg-black/45"
+
+/** @type {Record<string, { portraitDim?: boolean, badgeSrc?: string, badgeClass?: string }>} */
 export const INGAME_PLAYER_STATUS_VISUALS = {
   [INGAME_PLAYER_STATUS.ALIVE]: {},
   [INGAME_PLAYER_STATUS.DEAD]: {
+    portraitDim: true,
     badgeSrc: INGAME_PLAYER_STATUS_ASSETS.dead,
     badgeClass: INGAME_PLAYER_STATUS_DEAD_BADGE_CLASS,
   },
   [INGAME_PLAYER_STATUS.DISCONNECTED]: {
+    portraitDim: true,
     badgeSrc: INGAME_PLAYER_STATUS_ASSETS.disconnected,
   },
 }

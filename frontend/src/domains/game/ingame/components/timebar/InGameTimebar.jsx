@@ -3,7 +3,7 @@ import {
   INGAME_DAY_TIMEBAR_PHASES,
   INGAME_TIMEBAR_ASSETS,
   INGAME_TIMEBAR_PREVIEW_DAY,
-} from "../../constants/ingameTimebarAssets.js"
+} from "../../constants/timebar/ingameTimebarAssets.js"
 import {
   INGAME_TIMEBAR_ARROW_SIZE_CLASS,
   INGAME_TIMEBAR_DAY_LABEL_CLASS,
@@ -13,7 +13,7 @@ import {
   INGAME_TIMEBAR_NODE_SIZE_CLASS,
   INGAME_TIMEBAR_POSITION_CLASS,
   INGAME_TIMEBAR_TRACK_INSET,
-} from "../../constants/ingameTimebarLayout.js"
+} from "../../constants/timebar/ingameTimebarLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 /** 시간흐름 바 위 단계 노드 하나 — 활성 단계면 위에 지시 화살표를 추가로 그림 */

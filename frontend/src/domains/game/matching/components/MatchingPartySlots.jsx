@@ -8,8 +8,8 @@
  * 6명 이상이면 2행·컴팩트 크기, 5명 이하는 1행·큰 크기
  * 스타일은 constants/matchingPopupStyles.js 참고
  */
-import PlayerSlotGrid from "@/domains/game/shared/components/PlayerSlotGrid.jsx"
-import { PLAYER_SLOT_COLUMNS } from "@/domains/game/shared/utils/chunkPlayerSlots.js"
+import PlayerSlotGrid from "./PlayerSlotGrid.jsx"
+import { PLAYER_SLOT_COLUMNS } from "../utils/chunkPlayerSlots.js"
 import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
 import {
   MATCHING_SLOT_CLASS_COMPACT,

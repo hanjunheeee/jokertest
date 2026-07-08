@@ -3,7 +3,7 @@
  *
  * PlayerRecordListContent·PlayerRecordListRow에서 사용합니다.
  */
-import { pickInGameJobPortrait } from "../utils/pickInGameJobPortrait.js"
+import { pickInGameJobPortrait } from "../../../utils/pickInGameJobPortrait.js"
 
 /** prototype 플레이어별 전적목록 탭.png — 더미 전적 (초상은 pickInGameJobPortrait — jobs-closeup) */
 const DUMMY_PLAYER_RECORDS_BASE = [

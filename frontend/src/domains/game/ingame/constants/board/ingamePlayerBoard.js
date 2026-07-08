@@ -1,10 +1,18 @@
 /**
- * 인게임 플레이어 보드·링 좌표 설정.
+ * 인게임 플레이어 보드·링 좌표 엔진.
  *
- * 좌표 세트는 { left, top, zone } 위주로 두고,
- * transform 기본값은 zone 프로필 + (선택) derive 규칙에서 상속합니다.
- * 개별 슬롯에서 rotate, scale 등으로 덮어쓸 수 있습니다.
+ * 좌표 데이터는 ingamePlayerLayouts.js — zone 프로필·resolve·style 빌드는 이 파일.
  */
+
+import {
+  INGAME_PLAYER_LAYOUT_10,
+  INGAME_PLAYER_LAYOUTS_BY_COUNT,
+} from "./ingamePlayerLayouts.js"
+
+export {
+  INGAME_PLAYER_LAYOUT_10,
+  INGAME_PLAYER_LAYOUTS_BY_COUNT,
+} from "./ingamePlayerLayouts.js"
 
 /**
  * 레이아웃 확인용 플레이어 수 (4~10).
@@ -22,7 +30,7 @@ export const INGAME_PLAYER_SLOT_BASE_WIDTH =
 
 /**
  * zone별 transform 기본값.
- * 새 인원수 세트 추가 시 좌표 + zone만 넣으면 됩니다.
+ * 새 인원수 세트 추가 시 ingamePlayerLayouts.js에 좌표 + zone만 넣으면 됩니다.
  */
 export const INGAME_PLAYER_SLOT_ZONES = {
   /** 상단 — 뒤 벽에 기대어 선 카드 (rotateX는 derive) */
@@ -94,28 +102,6 @@ export function resolveInGamePlayerSlotPreset(slot) {
     ...derived,
     ...overrides,
   }
-}
-
-/**
- * G센세 prototype 10인 — 시계방향(상단 좌→우 → 좌 → 하단 → 우).
- * 인원별 세트 추가: INGAME_PLAYER_LAYOUTS_BY_COUNT에 키만 추가.
- */
-export const INGAME_PLAYER_LAYOUT_10 = [
-  { left: 21, top: 22, zone: "top", scale: 0.96, rotate: -9, rotateX: -3 },
-  { left: 40, top: 18, zone: "top", rotate: -6, rotateX: -9 },
-  { left: 60, top: 18, zone: "top", rotate: 6, rotateX: -9 },
-  { left: 79, top: 22, zone: "top", scale: 0.96, rotate: 9, rotateX: -3 },
-  { left: 18, top: 46, zone: "side", rotate: -10 },
-  { left: 82, top: 46, zone: "side", rotate: 10 },
-  { left: 20, top: 76, zone: "bottom", rotate: 3 },
-  { left: 40, top: 81, zone: "bottomCenter", rotate: 1 },
-  { left: 60, top: 81, zone: "bottomCenter", rotate: -1 },
-  { left: 80, top: 76, zone: "bottom", rotate: -3 },
-]
-
-/** 인원수별 좌표 세트 — prototype `플레이어 수 별 좌표 세트.png` 기준 확장 */
-export const INGAME_PLAYER_LAYOUTS_BY_COUNT = {
-  10: INGAME_PLAYER_LAYOUT_10,
 }
 
 /** @deprecated resolve된 preset — 디버그·스냅샷용 */

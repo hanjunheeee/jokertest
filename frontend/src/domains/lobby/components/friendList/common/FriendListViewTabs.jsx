@@ -15,7 +15,7 @@ const TAB_BTN_IMG_CLASS =
   "block h-[clamp(1.48rem,2.15vw,1.78rem)] w-full select-none object-fill object-center"
 
 const TAB_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.58rem,0.82vw,0.7rem)] font-bold tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.68rem,0.95vw,0.82rem)] font-bold tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 function FriendListTabButton({ label, active, onClick }) {
   return (

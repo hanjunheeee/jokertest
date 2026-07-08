@@ -2,11 +2,11 @@
  * 플레이어별 전적목록 — 본문 (헤더 + 스크롤 목록)
  */
 import { useRef } from "react"
-import { DUMMY_PLAYER_RECORDS } from "../../../constants/ingamePlayerRecordListData.js"
+import { DUMMY_PLAYER_RECORDS } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
   INGAME_PLAYER_RECORD_LIST_SCROLL_CLASS,
   INGAME_PLAYER_RECORD_LIST_SCROLL_WRAP_CLASS,
-} from "../../../constants/ingamePlayerRecordListLayout.js"
+} from "../../../constants/controls/playerRecordList/ingamePlayerRecordListLayout.js"
 import PlayerRecordListHeader from "./PlayerRecordListHeader.jsx"
 import PlayerRecordListRow from "./PlayerRecordListRow.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"

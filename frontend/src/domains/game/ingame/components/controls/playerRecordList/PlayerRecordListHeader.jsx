@@ -1,13 +1,13 @@
 /**
  * 플레이어별 전적목록 — 헤더 (탑레벨 프레임 + 부제)
  */
-import { INGAME_PLAYER_RECORD_LIST_ASSETS } from "../../../constants/ingamePlayerRecordListAssets.js"
+import { INGAME_PLAYER_RECORD_LIST_ASSETS } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListAssets.js"
 import {
   INGAME_PLAYER_RECORD_LIST_HEADER_PLATE_CLASS,
   INGAME_PLAYER_RECORD_LIST_HEADER_SUBTITLE_CLASS,
   INGAME_PLAYER_RECORD_LIST_HEADER_TITLE_CLASS,
   INGAME_PLAYER_RECORD_LIST_HEADER_WRAP_CLASS,
-} from "../../../constants/ingamePlayerRecordListLayout.js"
+} from "../../../constants/controls/playerRecordList/ingamePlayerRecordListLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 export default function PlayerRecordListHeader() {
