@@ -49,9 +49,9 @@ export default function GameMatchingPage() {
   // useMatchingRoom에 넘겨져 useEffect의 deps로도 쓰이므로, 매번 새 함수가
   // 만들어지면 그 useEffect가 불필요하게 재실행됩니다. navigate는 참조가
   // 바뀌지 않는 안정적인 함수라 deps에 넣어도 실질적인 재생성은 거의 없습니다.
-  // 게임 시작 시 게임 화면으로 이동 — 게임 화면 미구현 중이므로 로비로 임시 이동
+  // 게임 시작 시 서버 GameState를 받은 뒤 인게임 화면으로 이동
   const handleRoomDeleted = useCallback(() => navigate('/multiplay'), [navigate])
-  const handleGameStarted = useCallback(() => navigate('/lobby'),     [navigate])
+  const handleGameStarted = useCallback(() => navigate('/ingame'),    [navigate])
 
   // custom hook 호출 — 방 내 소켓 이벤트 구독은 훅 내부에서 처리되고,
   // 방장 액션 함수(deleteRoom, startGame)만 돌려받아 버튼에 연결

@@ -15,6 +15,7 @@ const cookie = require("cookie");
 const presenceService = require("../service/presence.service");
 const userRepository  = require("../repositories/user.repositories");
 const matchmaking     = require("./matchmaking");
+const gameSession     = require("./gameSession");
 
 /**
  * uuid → socket.id 매핑. 다중 접속 제어와 브로드캐스트 대상 판단에 사용되는 단일 진실 공급원.
@@ -65,12 +66,16 @@ function initSocket(httpServer) {
         });
 
         matchmaking.registerMatchmakingHandlers(io, socket, uuid);
+        gameSession.registerGameHandlers(io, socket, uuid);
 
         socket.on("disconnect", () => {
             handleDisconnect(io, socket, uuid).catch((err) => {
                 console.error("\x1b[31m[소켓 종료 처리 에러]\x1b[0m", err);
             });
             matchmaking.onDisconnect(io, uuid);
+            gameSession.onDisconnect(io, uuid).catch((err) => {
+                console.error("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m", err);
+            });
         });
     });
 

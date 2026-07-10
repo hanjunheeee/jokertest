@@ -4,7 +4,7 @@ import {
   INGAME_CHAT_MESSAGE_ROW_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
 import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../constants/ingamePlayerTheme.js"
-import { useInGamePlayerSessionContext } from "../InGamePlayerSessionProvider.jsx"
+import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
 import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
 
 /**

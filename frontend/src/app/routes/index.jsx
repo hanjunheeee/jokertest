@@ -13,8 +13,6 @@ import { createBrowserRouter } from "react-router-dom";
 import ViewportShell from "@/app/layouts/ViewportShell.jsx";
 import ProtectedRoute from "@/shared/ui/ProtectedRoute";
 
-import HomePage from "@/pages/HomePage"
-
 import LoginPage from "@/domains/auth/pages/LoginPage";
 
 import LobbyPage from "@/domains/lobby/pages/LobbyPage";
@@ -40,7 +38,7 @@ export const router = createBrowserRouter([
     element: <ViewportShell />,
     children: [
       // 공개 라우트: 로그인 전에도 접근 가능
-      { path: "/", element: <HomePage /> },
+      { path: "/", element: <LoginPage /> },
       { path: "/login", element: <LoginPage /> },
       {
         // 보호 라우트: authStore에 로그인 사용자 정보가 있어야 접근 가능

@@ -3,7 +3,7 @@ import {
   buildInGamePlayerSlotStyle,
   getInGamePlayerSlotPresets,
 } from "../../constants/board/ingamePlayerBoard.js"
-import { useInGamePlayerSessionContext } from "../InGamePlayerSessionProvider.jsx"
+import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
 import InGamePlayerCard from "./InGamePlayerCard.jsx"
 
 /**

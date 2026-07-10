@@ -9,17 +9,23 @@ import { useState } from "react"
 import { motion } from "framer-motion"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
+import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
+import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
+import { useInGameSocket } from "../hooks/useInGameSocket.js"
+import { useInGameStore } from "../store/ingameStore.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 /** 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지 */
 export default function InGamePage() {
   const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
+  const gameState = useInGameStore((s) => s.state)
+  useInGameSocket()
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -40,9 +46,13 @@ export default function InGamePage() {
         onMenuClick={() => setPlayerRecordListOpen(true)}
       />
       <InGamePlayerSessionProvider>
-        <InGameTimebar />
+        <InGameTimebar
+          day={gameState?.dayIndex}
+          activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
+        />
         <InGamePlayerBoard />
         <InGameChatShell />
+        <InGameActionPanel />
       </InGamePlayerSessionProvider>
 
       <PlayerRecordListPanel

@@ -15,6 +15,7 @@
 import { useEffect } from 'react'
 import { getSocket } from '@/shared/socket/socketClient'
 import { useMatchingStore } from '../store/matchingStore'
+import { useInGameStore } from '../../ingame/store/ingameStore'
 
 export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   // roomId가 바뀔 때만 리렌더링되도록 matchingStore에서 roomId 값만 구독 (selector 패턴)
@@ -39,9 +40,14 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       clearRoom()
       onRoomDeleted?.()
     })
-    socket.on('game_started', () => {
+    socket.on('game_started', (payload) => {
+      useInGameStore.getState().setGamePayload(payload)
       clearRoom()
-      onGameStarted?.()
+      onGameStarted?.(payload)
+    })
+    socket.on('game_start_failed', ({ message }) => {
+      // 기존 매칭 UI에는 에러 패널이 없으므로 새 UI를 만들지 않고 기본 알림만 사용합니다.
+      alert(message ?? '게임을 시작할 수 없습니다.')
     })
 
     // cleanup: effect가 재실행되기 직전이나 컴포넌트가 사라질 때 호출되어
@@ -53,6 +59,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       socket.off('host_changed')
       socket.off('room_deleted')
       socket.off('game_started')
+      socket.off('game_start_failed')
     }
   }, [roomId, onRoomDeleted, onGameStarted])
 

@@ -24,6 +24,8 @@ import {
 import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
+import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
+import { getSocket } from "@/shared/socket/socketClient.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 export default function RoomInvitePage() {
@@ -42,6 +44,27 @@ export default function RoomInvitePage() {
     // cleanup: 컴포넌트가 언마운트되기 전에 아직 실행되지 않은 예약된 프레임 콜백을 취소
     return () => cancelAnimationFrame(frame)
   }, [])
+
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return undefined
+
+    const handleRoomJoined = (payload) => {
+      useMatchingStore.getState().setRoom(payload)
+      navigate("/game-matching")
+    }
+    const handleRoomJoinFailed = ({ message }) => {
+      alert(message ?? "방에 참여할 수 없습니다.")
+    }
+
+    socket.on("room_joined", handleRoomJoined)
+    socket.on("room_join_failed", handleRoomJoinFailed)
+
+    return () => {
+      socket.off("room_joined", handleRoomJoined)
+      socket.off("room_join_failed", handleRoomJoinFailed)
+    }
+  }, [navigate])
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -85,7 +108,7 @@ export default function RoomInvitePage() {
                   variants={BUTTON_VARIANTS}
                   onClick={() => {
                     if (roomCode.length < 6) return // 6자리 미만이면 참여 불가
-                    // TODO: 방 참여 API 연동
+                    getSocket()?.emit("join_room_by_code", { roomCode })
                   }}
                 />
               </motion.div>

@@ -27,3 +27,14 @@ export const INGAME_DAY_TIMEBAR_ACTIVE_PHASE = "discussion"
 
 /** prototype 일차 표시 — 추후 game state day 값으로 교체 */
 export const INGAME_TIMEBAR_PREVIEW_DAY = 1
+
+/**
+ * 서버 GamePhase를 기존 타임바 노드 id에 매핑합니다.
+ * 새 타임바 UI를 만들지 않고 기존 노드만 재사용하기 위한 연결 계층입니다.
+ */
+export function mapGamePhaseToTimebarPhaseId(phase) {
+  if (phase === "NIGHT") return "night"
+  if (phase === "TRIBUNAL") return "vote"
+  if (phase === "ENDED") return "result"
+  return "discussion"
+}

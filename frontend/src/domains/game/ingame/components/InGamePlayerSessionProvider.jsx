@@ -1,8 +1,7 @@
-import { createContext, useContext } from "react"
 import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
 import { useInGamePlayerSession } from "../hooks/useInGamePlayerSession.js"
-
-const InGamePlayerSessionContext = createContext(null)
+import { useInGameStore } from "../store/ingameStore.js"
+import { InGamePlayerSessionContext } from "./InGamePlayerSessionContext.js"
 
 /**
  * 인게임 플레이어·테마 색상 세션.
@@ -12,24 +11,16 @@ export function InGamePlayerSessionProvider({
   playerCount = INGAME_PREVIEW_PLAYER_COUNT,
   children,
 }) {
-  const session = useInGamePlayerSession(playerCount)
+  const gameState = useInGameStore((s) => s.state)
+  const session = useInGamePlayerSession({
+    playerCount,
+    sourcePlayers: gameState?.players ?? null,
+    localPlayerId: gameState?.localPlayerId,
+  })
 
   return (
     <InGamePlayerSessionContext.Provider value={session}>
       {children}
     </InGamePlayerSessionContext.Provider>
   )
-}
-
-/** @returns {ReturnType<typeof useInGamePlayerSession>} */
-export function useInGamePlayerSessionContext() {
-  const session = useContext(InGamePlayerSessionContext)
-
-  if (!session) {
-    throw new Error(
-      "useInGamePlayerSessionContext must be used within InGamePlayerSessionProvider",
-    )
-  }
-
-  return session
 }

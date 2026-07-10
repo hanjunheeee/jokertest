@@ -9,8 +9,25 @@
 const crypto         = require('crypto')
 const userRepository = require('../repositories/user.repositories')
 const { generateRoomCode } = require('../utils/roomCode')
+const gameSession    = require('./gameSession')
 
-const MIN_PLAYERS = 2
+const OFFICIAL_MIN_PLAYERS = 5
+const OFFICIAL_ROOM_SIZES = [10, 8, 6, 5]
+const DEVELOPMENT_ROOM_SIZES = [10, 8, 6, 5, 2, 1]
+
+function isDevelopmentMatchmaking() {
+    return process.env.NODE_ENV !== 'production'
+}
+
+function getMinPlayers() {
+    if (!isDevelopmentMatchmaking()) return OFFICIAL_MIN_PLAYERS
+    const configured = Number(process.env.GAME_DEV_MIN_PLAYERS ?? 1)
+    return Number.isInteger(configured) && configured > 0 ? configured : 1
+}
+
+function getSupportedRoomSizes() {
+    return isDevelopmentMatchmaking() ? DEVELOPMENT_ROOM_SIZES : OFFICIAL_ROOM_SIZES
+}
 
 /** uuid → { uuid, nickname, socketId } */
 const matchmakingQueue = new Map()
@@ -34,8 +51,17 @@ function registerMatchmakingHandlers(io, socket, uuid) {
         )
     )
     socket.on('leave_matchmaking', () => handleLeaveMatchmaking(uuid))
+    socket.on('join_room_by_code', ({ roomCode } = {}) =>
+        handleJoinRoomByCode(io, socket, uuid, roomCode).catch((err) =>
+            console.error('\x1b[31m[방 코드 참가 에러]\x1b[0m', err)
+        )
+    )
     socket.on('delete_room',       () => handleDeleteRoom(io, uuid))
-    socket.on('start_game',        () => handleStartGame(io, uuid))
+    socket.on('start_game',        () =>
+        handleStartGame(io, uuid).catch((err) =>
+            console.error('\x1b[31m[게임 시작 에러]\x1b[0m', err)
+        )
+    )
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
 }
 
@@ -66,10 +92,14 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     matchmakingQueue.set(uuid, { uuid, nickname: user.nickname, socketId: socket.id })
     socket.emit('matchmaking_queued', { position: matchmakingQueue.size })
 
-    if (matchmakingQueue.size < MIN_PLAYERS) return
+    if (matchmakingQueue.size < getMinPlayers()) return
 
-    const players = [...matchmakingQueue.values()]
-    matchmakingQueue.clear()
+    const queuedPlayers = [...matchmakingQueue.values()]
+    const roomSize = getSupportedRoomSizes().find((size) => queuedPlayers.length >= size)
+    if (!roomSize) return
+
+    const players = queuedPlayers.slice(0, roomSize)
+    players.forEach((player) => matchmakingQueue.delete(player.uuid))
 
     const roomId     = crypto.randomUUID()
     const roomCode   = generateRoomCode()
@@ -87,6 +117,58 @@ async function handleJoinMatchmaking(io, socket, uuid) {
         s.join(roomId)
         s.emit('match_found', { roomId, roomCode, players: playerList, hostUuid })
     })
+}
+
+function buildRoomPayload(room) {
+    return {
+        roomId: room.id,
+        roomCode: room.code,
+        players: [...room.players.values()],
+        hostUuid: room.hostUuid,
+    }
+}
+
+/**
+ * 기존 방 코드 입력 UI와 연결되는 방 참가 핸들러입니다.
+ * 개발 중 1인 방을 만든 뒤 코드로 두 번째 사용자를 붙여 2인 테스트를 할 수 있습니다.
+ */
+async function handleJoinRoomByCode(io, socket, uuid, roomCode) {
+    const normalizedCode = String(roomCode ?? '').trim()
+    if (!normalizedCode) {
+        socket.emit('room_join_failed', { message: '방 코드를 입력해주세요.' })
+        return
+    }
+
+    if (playerRoom.has(uuid)) {
+        socket.emit('room_join_failed', { message: '이미 참여 중인 방이 있습니다.' })
+        return
+    }
+
+    const room = [...gameRooms.values()].find((candidate) => candidate.code === normalizedCode)
+    if (!room) {
+        socket.emit('room_join_failed', { message: '방을 찾을 수 없습니다.' })
+        return
+    }
+
+    const maxRoomSize = getSupportedRoomSizes()[0]
+    if (room.players.size >= maxRoomSize) {
+        socket.emit('room_join_failed', { message: '방이 가득 찼습니다.' })
+        return
+    }
+
+    const user = await userRepository.findByUuid(uuid)
+    if (!user) {
+        socket.emit('room_join_failed', { message: '사용자 정보를 찾을 수 없습니다.' })
+        return
+    }
+
+    const player = { uuid, nickname: user.nickname }
+    room.players.set(uuid, player)
+    playerRoom.set(uuid, room.id)
+    socket.join(room.id)
+
+    socket.emit('room_joined', buildRoomPayload(room))
+    socket.to(room.id).emit('player_joined_room', { player })
 }
 
 /**
@@ -122,14 +204,25 @@ function handleDeleteRoom(io, uuid) {
  * @param {import('socket.io').Server} io
  * @param {string} uuid - 시작을 요청한 유저 UUID
  */
-function handleStartGame(io, uuid) {
+async function handleStartGame(io, uuid) {
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
 
     const room = gameRooms.get(roomId)
     if (!room || room.hostUuid !== uuid) return // 방장만 시작 가능
 
-    io.to(roomId).emit('game_started', { roomId })
+    try {
+        await gameSession.startGameFromRoom(io, room)
+    } catch (error) {
+        const socketId = [...io.sockets.sockets.values()]
+            .find((socket) => socket.data?.user?.uuid === uuid)?.id
+        if (socketId) {
+            io.to(socketId).emit('game_start_failed', {
+                message: error.message,
+            })
+        }
+        return
+    }
 
     room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     gameRooms.delete(roomId)
