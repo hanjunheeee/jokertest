@@ -1,69 +1,35 @@
-/**
- * 마이페이지 하단 장식 영역.
- *
- * Fate Mask 관련 이미지와 전환 연출을 화면 하단에 배치합니다.
- */
 import { motion } from "framer-motion"
+import { FATE_MASK_DESCRIPTION, MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
+import FateMaskDescription from "@/domains/user/components/FateMaskFooter/FateMaskDescription.jsx"
 import {
-  FATE_MASK_DESCRIPTION,
-  MY_PAGE_ASSETS,
-} from "../constants/myPageAssets.js"
+  FATE_MASK_FRAME_IMG_CLASS,
+  FATE_MASK_FRAME_WRAP_CLASS,
+  FATE_MASK_UI_FADE,
+} from "@/domains/user/constants/fateMaskFooterStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-const UI_FADE = { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
-
-const TEXT_SHADOW =
-  "0 1px 2px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.55)"
-
-/** 어두운 본문 박스 영역 (프레임 PNG 기준) */
-const DESCRIPTION_INSET = {
-  top: "55.5%",
-  bottom: "20%",
-  left: "14%",
-  right: "14%",
-}
-
-const FATE_MASK_FRAME_WRAP_CLASS =
-  "relative mx-auto w-[min(100%,clamp(26rem,68cqw,34rem))] [container-type:inline-size]"
-
-/**
- * 마이페이지 하단 고정 운명의 가면 프레임
- */
+// 마이페이지 하단의 "운명의 가면" 프레임을 그리는 컴포넌트입니다.
+// 프레임 이미지는 여기서 그리고, 안쪽 설명 문장은 FateMaskDescription이 담당합니다.
 export default function FateMaskFooter({
-  src = MY_PAGE_ASSETS.fateMaskFrame, // 프레임 이미지 경로 (기본값: 운명의 가면 프레임)
-  description = FATE_MASK_DESCRIPTION, // { prefix, highlight, suffix } 형태의 설명 문구
-  showText = true, // false면 프레임 이미지만 그리고 설명 문구는 숨김
-  className = "block h-auto w-full select-none", // 프레임 이미지에 적용할 클래스
+  src = MY_PAGE_ASSETS.fateMaskFrame,
+  description = FATE_MASK_DESCRIPTION,
+  showText = true,
+  className = FATE_MASK_FRAME_IMG_CLASS,
 }) {
-  // 설명 문구를 앞부분/강조 단어/뒷부분으로 나눠 강조 단어만 다른 색으로 렌더링
-  const { prefix, highlight, suffix } = description
-
   return (
     <motion.footer
       className="pointer-events-none z-[15] flex w-full shrink-0 justify-center px-[clamp(0.5rem,2cqw,1rem)] pb-[clamp(0.75rem,2vh,1.25rem)]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={UI_FADE}
+      transition={FATE_MASK_UI_FADE}
       aria-hidden="true"
     >
-      {/* cqw = 게임 영역 기준 — vw·w-full보다 작고, 모서리 장식은 30rem대보다 넓게 */}
       <div className={FATE_MASK_FRAME_WRAP_CLASS}>
+        {/* 운명의 가면 배경 프레임 이미지입니다. */}
         <PublicAsset src={src} alt="" className={className} />
 
-        {showText ? (
-          <p
-            className="pointer-events-none absolute flex items-end justify-center pb-[0.18em] text-center font-subheading text-[3.1cqi] font-bold leading-[1.55] text-[#e8e4dc]"
-            style={{ ...DESCRIPTION_INSET, textShadow: TEXT_SHADOW }}
-          >
-            <span>
-              {prefix}{" "}
-              <span className="text-[#e8c878] [text-shadow:0_0_10px_rgba(232,200,120,0.45)]">
-                [{highlight}]
-              </span>
-              {suffix}
-            </span>
-          </p>
-        ) : null}
+        {/* showText가 true일 때만 프레임 위에 설명 문장을 올립니다. */}
+        {showText ? <FateMaskDescription description={description} /> : null}
       </div>
     </motion.footer>
   )

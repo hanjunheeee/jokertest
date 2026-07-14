@@ -1,3 +1,4 @@
+// 파일 역할: ingamePlayerRecordListAssets.js - 화면과 로직에서 재사용하는 상수입니다.
 /**
  * 플레이어별 전적목록 패널 에셋.
  *

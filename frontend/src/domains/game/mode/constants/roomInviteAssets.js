@@ -1,4 +1,5 @@
-/** RoomInvitePage·RoomCodeViewModal — 방 초대(방코드) 화면 public 에셋 */
+// 파일 역할: roomInviteAssets.js - 화면과 로직에서 재사용하는 상수입니다.
+// 방코드로 비밀 연회장에 참여하는 화면의 public 에셋입니다.
 export const ROOM_INVITE_ASSETS = {
   bg: "/bg/방초대 화면 뒷배경.png",
   inputFrame: "/frame/방코드 입력 프레임.png",

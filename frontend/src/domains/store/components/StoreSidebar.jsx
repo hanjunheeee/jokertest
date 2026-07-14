@@ -1,24 +1,18 @@
-/**
- * 상점 사이드바.
- *
- * 카테고리 선택·정렬 상태 관리는 useStoreCategoryFilter에 위임합니다.
- * 이 컴포넌트는 카테고리·정렬 목록을 CheckboxRow로 렌더하는 역할만 합니다.
- */
 import { useStoreCategoryFilter } from "../hooks/useStoreCategoryFilter.js"
 
+// 상점 오른쪽 필터/정렬 사이드바 전체 wrapper입니다.
 const WRAP_CLASS =
   "flex h-full w-full flex-col gap-[clamp(0.75rem,1.6vh,1.05rem)] px-[clamp(0.25rem,0.65vw,0.45rem)] py-[clamp(0.25rem,0.65vh,0.4rem)] font-subheading"
 
+// 카테고리/정렬 섹션 제목 버튼 스타일입니다.
 const HEADER_BTN_CLASS =
   "relative flex w-full items-center justify-between gap-2 rounded-sm bg-[#1a0f0a]/12 px-[clamp(0.5rem,0.95vw,0.7rem)] py-[clamp(0.4rem,0.85vh,0.6rem)] text-left text-[clamp(0.88rem,1.15vw,1rem)] font-bold text-[#140c08] transition-opacity hover:opacity-90"
 
+// 필터 항목 목록 영역입니다.
 const LIST_CLASS =
   "flex min-h-0 flex-1 flex-col gap-[clamp(0.3rem,0.65vh,0.42rem)] overflow-hidden rounded-sm bg-[#1a0f0a]/10 px-[clamp(0.5rem,0.95vw,0.75rem)] py-[clamp(0.45rem,0.9vh,0.65rem)]"
 
-/** aria-pressed로 선택 상태를 노출하는 체크박스 버튼 행 */
-// label: 행에 표시할 텍스트
-// checked: 체크 표시(✓) 여부
-// onToggle: 행 클릭 시 호출할 콜백 (카테고리 토글 또는 정렬 기준 변경)
+// 사이드바 안에서 체크 가능한 한 줄 항목입니다.
 function CheckboxRow({ label, checked, onToggle }) {
   return (
     <button
@@ -41,9 +35,7 @@ function CheckboxRow({ label, checked, onToggle }) {
   )
 }
 
-/** 드롭다운 헤더 — 현재 선택값 표시 (실제 드롭다운 기능은 미구현) */
-// title: 헤더에 표시할 항목 이름 (예: "카테고리")
-// value: 현재 선택된 값 (예: "전체목록")
+// 필터 섹션의 현재 선택값을 보여주는 제목 버튼입니다.
 function DropdownHeader({ title, value }) {
   return (
     <button type="button" className={HEADER_BTN_CLASS} style={{ outline: "none" }}>
@@ -54,14 +46,15 @@ function DropdownHeader({ title, value }) {
   )
 }
 
+// 상점의 카테고리 필터와 정렬 옵션을 보여주는 사이드바입니다.
 export default function StoreSidebar() {
   const {
-    categories,      // 카테고리 목록 (고정 배열)
-    sortOptions,     // 정렬 옵션 목록 (고정 배열)
-    checkedCategory, // 현재 선택된 카테고리 Set
-    activeSort,      // 현재 선택된 정렬 기준
-    toggleCategory,  // 카테고리 토글 핸들러
-    setActiveSort,   // 정렬 기준 변경 핸들러
+    categories,
+    sortOptions,
+    checkedCategory,
+    activeSort,
+    toggleCategory,
+    setActiveSort,
   } = useStoreCategoryFilter()
 
   return (
@@ -73,7 +66,7 @@ export default function StoreSidebar() {
             <CheckboxRow
               key={label}
               label={label}
-              checked={checkedCategory.has(label)} // Set에 포함되면 선택 상태
+              checked={checkedCategory.has(label)}
               onToggle={() => toggleCategory(label)}
             />
           ))}
@@ -87,7 +80,7 @@ export default function StoreSidebar() {
             <CheckboxRow
               key={label}
               label={label}
-              checked={activeSort === label} // 단일 선택 — 현재 activeSort와 일치하면 선택
+              checked={activeSort === label}
               onToggle={() => setActiveSort(label)}
             />
           ))}

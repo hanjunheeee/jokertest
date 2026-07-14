@@ -1,53 +1,67 @@
-/**
- * 친구 목록 행.
- *
- * 친구 한 명의 프로필, 접속 상태, 즐겨찾기 상태를 표시합니다.
- */
-import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
+import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+import {
+  FRIEND_ROW_CONTENT_CLASS,
+  FRIEND_ROW_FRAME_CLASS,
+  FRIEND_ROW_INFO_CLASS,
+  FRIEND_ROW_ITEM_CLASS,
+  FRIEND_ROW_NAME_CLASS,
+  FRIEND_ROW_OFFLINE_OVERLAY_CLASS,
+  FRIEND_ROW_PROFILE_IMAGE_CLASS,
+  FRIEND_ROW_STATUS_BADGE_CLASS,
+  FRIEND_ROW_STATUS_TEXT_CLASS,
+  FRIEND_ROW_STATUS_WRAP_CLASS,
+} from "@/domains/lobby/constants/friendListStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-// name: 친구 닉네임, profileSrc: 프로필 이미지 경로
-// online: 접속 중 여부 — 배지 색과 "접속 중"/"오프라인" 텍스트를 결정
+// 친구 한 명의 프로필 이미지를 보여줍니다.
+function FriendListProfileImage({ profileSrc }) {
+  return (
+    <PublicAsset
+      src={profileSrc}
+      alt=""
+      className={FRIEND_ROW_PROFILE_IMAGE_CLASS}
+    />
+  )
+}
+
+// 친구가 현재 접속 중인지 오프라인인지 보여줍니다.
+function FriendOnlineStatus({ online }) {
+  const statusText = online ? "접속 중" : "오프라인"
+  const statusColorClass = online ? "text-amber-100/85" : "text-white/35"
+
+  return (
+    <div className={FRIEND_ROW_STATUS_WRAP_CLASS}>
+      <span className={FRIEND_ROW_STATUS_BADGE_CLASS}>
+        <PublicAsset
+          src={FRIEND_LIST_ASSETS.onlineBadge}
+          alt=""
+          className="h-full w-full select-none"
+        />
+        {!online ? (
+          <span className={FRIEND_ROW_OFFLINE_OVERLAY_CLASS} aria-hidden="true" />
+        ) : null}
+      </span>
+      <span className={`${FRIEND_ROW_STATUS_TEXT_CLASS} ${statusColorClass}`}>
+        {statusText}
+      </span>
+    </div>
+  )
+}
+
+// 친구 목록에서 친구 한 명을 보여주는 row 컴포넌트입니다.
 export default function FriendListRow({ name, profileSrc, online }) {
   return (
-    <li className="relative mt-2 w-full list-none">
+    <li className={FRIEND_ROW_ITEM_CLASS}>
       <PublicAsset
         src={FRIEND_LIST_ASSETS.rowFrame}
         alt=""
-        className="block h-auto w-full select-none"
+        className={FRIEND_ROW_FRAME_CLASS}
       />
-      <div className="absolute inset-0 flex items-center gap-2 px-[7%] py-[6%]">
-        <PublicAsset
-          src={profileSrc}
-          alt=""
-          className="h-auto w-[clamp(2.35rem,26%,3.1rem)] shrink-0 select-none"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-subheading text-[clamp(0.8rem,1.05vw,0.95rem)] leading-tight text-white">
-            {name}
-          </p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <span className="relative inline-flex h-[1.15rem] w-[1.15rem] shrink-0">
-              <PublicAsset
-                src={FRIEND_LIST_ASSETS.onlineBadge}
-                alt=""
-                className="h-full w-full select-none"
-              />
-              {!online ? (
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-full bg-black/80"
-                  aria-hidden="true"
-                />
-              ) : null}
-            </span>
-            <span
-              className={`text-[10px] leading-none ${
-                online ? "text-amber-100/85" : "text-white/35"
-              }`}
-            >
-              {online ? "접속 중" : "오프라인"}
-            </span>
-          </div>
+      <div className={FRIEND_ROW_CONTENT_CLASS}>
+        <FriendListProfileImage profileSrc={profileSrc} />
+        <div className={FRIEND_ROW_INFO_CLASS}>
+          <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
+          <FriendOnlineStatus online={online} />
         </div>
       </div>
     </li>

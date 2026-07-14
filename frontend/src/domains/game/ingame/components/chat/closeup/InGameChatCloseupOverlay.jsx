@@ -1,3 +1,4 @@
+// 파일 역할: InGameChatCloseupOverlay.jsx - 화면을 구성하는 컴포넌트입니다.
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
 import { INGAME_CHAT_ASSETS } from "../../../constants/chat/ingameChatAssets.js"

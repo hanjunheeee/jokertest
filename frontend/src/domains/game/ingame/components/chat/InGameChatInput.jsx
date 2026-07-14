@@ -142,8 +142,14 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   const viewportSinglelineClass = getInGameChatInputViewportSinglelineClass(variant)
   const wrapRef = useRef(null)
   const textareaRef = useRef(null)
+
+  // 입력값이 실제 화면에서 두 줄 이상으로 보이는지 표시합니다.
   const [isVisualMultiLine, setIsVisualMultiLine] = useState(false)
+
+  // 커서가 마지막 시각 줄에 있는지 표시합니다.
   const [isOnLastVisualLine, setIsOnLastVisualLine] = useState(true)
+
+  // 커서가 현재 몇 번째 시각 줄에 있는지 저장합니다.
   const [caretVisualLineIndex, setCaretVisualLineIndex] = useState(0)
   const hasText = value.length > 0
   const showLinePeek = hasText && isVisualMultiLine && isOnLastVisualLine

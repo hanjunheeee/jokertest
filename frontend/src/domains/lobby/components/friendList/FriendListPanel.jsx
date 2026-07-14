@@ -1,59 +1,138 @@
-/**
- * 친구 목록 패널.
- *
- * 친구 목록/친구 신청/받은 요청 탭을 포함하는 로비 우측 패널입니다.
- */
 import { AnimatePresence, motion } from "framer-motion"
+import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+import {
+  FRIEND_PANEL_BACKDROP_CLASS,
+  FRIEND_PANEL_CLASS,
+  FRIEND_PANEL_CONTENT_CLASS,
+  FRIEND_PANEL_FRAME_CLASS,
+  FRIEND_PANEL_INSET_STYLE,
+  FRIEND_PANEL_TRANSITION,
+} from "@/domains/lobby/constants/friendListStyle.js"
 import { useState } from "react"
-import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
-import FriendAcceptTab from "./accept/FriendAcceptTab.jsx"
-import FriendListViewTabs from "./common/FriendListViewTabs.jsx"
-import FriendListTabContent from "./list/FriendListTabContent.jsx"
-import FriendRequestTab from "./request/FriendRequestTab.jsx"
+import { getFriendPanelAriaLabel } from "@/domains/lobby/utils/friendListPanelAria.js"
+import { useFriendListSync } from "@/domains/lobby/hooks/useFriendListSync.js"
+import FriendAcceptTab from "@/domains/lobby/components/friendList/accept/FriendAcceptTab.jsx"
+import FriendListTabContent from "@/domains/lobby/components/friendList/list/FriendListTabContent.jsx"
+import FriendListViewTabs from "@/domains/lobby/components/friendList/FriendListViewTabs.jsx"
+import FriendRequestTab from "@/domains/lobby/components/friendList/request/FriendRequestTab.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-function panelAriaLabel(view) {
-  if (view === "request") return "친구 신청"
-  if (view === "accept") return "친구 수락"
-  return "친구 목록"
+// 친구 패널 바깥을 덮는 배경 버튼입니다. 클릭하면 패널을 닫습니다.
+function FriendListPanelBackdrop({ onClose }) {
+  return (
+    <motion.button
+      type="button"
+      aria-label="친구 목록 닫기"
+      className={FRIEND_PANEL_BACKDROP_CLASS}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={FRIEND_PANEL_TRANSITION}
+      onClick={onClose}
+    />
+  )
 }
 
-const PANEL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
-
-const PANEL_CLASS =
-  "absolute right-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(17.5rem,22.5vw,25.5rem)] max-w-[26rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
-
-const PANEL_INSET = {
-  paddingTop: "clamp(4rem, 17%, 5.3rem)",
-  paddingBottom: "clamp(2.75rem, 11%, 3.5rem)",
-  paddingLeft: "10.5%",
-  paddingRight: "10.5%",
+// 친구 목록 패널의 프레임 이미지와 안쪽 콘텐츠 영역입니다.
+function FriendListPanelFrame({ view, children }) {
+  return (
+    <motion.aside
+      role="dialog"
+      aria-modal="true"
+      aria-label={getFriendPanelAriaLabel(view)}
+      className={FRIEND_PANEL_CLASS}
+      initial={{ opacity: 0, x: 28 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 28 }}
+      transition={FRIEND_PANEL_TRANSITION}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <PublicAsset
+        src={FRIEND_LIST_ASSETS.panelFrame}
+        alt=""
+        className={FRIEND_PANEL_FRAME_CLASS}
+      />
+      <div className={FRIEND_PANEL_CONTENT_CLASS} style={FRIEND_PANEL_INSET_STYLE}>
+        {children}
+      </div>
+    </motion.aside>
+  )
 }
 
-// open: 패널이 열려 있는지 여부 (AnimatePresence로 열림/닫힘 애니메이션 처리)
-// onClose: 배경 클릭 등으로 패널을 닫을 때 호출할 콜백
-// onlineFriends/offlineFriends/favoriteFriends: 목록 탭에 표시할 친구 그룹 배열
-// incomingRequests: 수락 탭에 표시할 받은 친구 요청 배열
-// onRefreshRequests/onAcceptRequest/onDeclineRequest/onAcceptAll:
-//   각각 새로고침·수락·거절·전체 수락 버튼 클릭 시 실행할 콜백 (useFriendListSync에서 내려옴)
-export default function FriendListPanel({
-  open,
-  onClose,
-  onlineFriends = [],
-  offlineFriends = [],
-  favoriteFriends = [],
-  incomingRequests = [],
+// 친구 패널 안에서 현재 선택된 탭 화면을 보여줍니다.
+function FriendListPanelContent({
+  panelView,
+  onListView,
+  onRequestView,
+  onAcceptView,
+  onlineFriends,
+  offlineFriends,
+  favoriteFriends,
+  incomingRequests,
   onRefreshRequests,
   onAcceptRequest,
   onDeclineRequest,
   onAcceptAll,
 }) {
-  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
-  // panelView: 패널 내부에서 현재 보여줄 화면 ("list" | "request" | "accept")
+  return (
+    <>
+      <FriendListViewTabs
+        activeView={panelView}
+        onRequestClick={onRequestView}
+        onAcceptClick={onAcceptView}
+      />
+
+      {panelView === "list" ? (
+        <FriendListTabContent
+          onlineFriends={onlineFriends}
+          offlineFriends={offlineFriends}
+          favoriteFriends={favoriteFriends}
+        />
+      ) : null}
+
+      {panelView === "request" ? (
+        <FriendRequestTab onBack={onListView} />
+      ) : null}
+
+      {panelView === "accept" ? (
+        <FriendAcceptTab
+          onBack={onListView}
+          incomingRequests={incomingRequests}
+          onAccept={onAcceptRequest}
+          onDecline={onDeclineRequest}
+          onAcceptAll={onAcceptAll}
+          onRefresh={onRefreshRequests}
+        />
+      ) : null}
+    </>
+  )
+}
+
+// 친구 목록, 친구 신청, 요청 수락 탭을 모두 조합하는 최종 패널입니다.
+// 친구 데이터/핸들러는 이 패널이 open 여부를 이미 알고 있으므로 여기서 직접
+// useFriendListSync로 구독합니다 — LobbyPage/LobbyFriendArea가 그대로 통과만
+// 시키던 8개의 prop을 두 파일에서 걷어냈습니다.
+export default function FriendListPanel({ open, onClose }) {
+  // 현재 친구 패널 화면입니다. list, request, accept 중 하나를 사용합니다.
   const [panelView, setPanelView] = useState("list")
 
+  const {
+    onlineFriends,
+    offlineFriends,
+    favoriteFriends,
+    incomingRequests,
+    handleRefreshFriends,
+    handleAcceptRequest,
+    handleDeclineRequest,
+    handleAcceptAll,
+  } = useFriendListSync(open)
+
+  const showListView = () => setPanelView("list")
+  const showRequestView = () => setPanelView("request")
+  const showAcceptView = () => setPanelView("accept")
+
   const handleClose = () => {
-    setPanelView("list")
+    showListView()
     onClose()
   }
 
@@ -61,68 +140,23 @@ export default function FriendListPanel({
     <AnimatePresence>
       {open ? (
         <>
-          <motion.button
-            type="button"
-            aria-label="친구 목록 닫기"
-            className="absolute inset-0 z-20 cursor-default border-0 bg-black/25 p-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={PANEL_TRANSITION}
-            onClick={handleClose}
-          />
-
-          <motion.aside
-            role="dialog"
-            aria-modal="true"
-            aria-label={panelAriaLabel(panelView)}
-            className={PANEL_CLASS}
-            initial={{ opacity: 0, x: 28 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 28 }}
-            transition={PANEL_TRANSITION}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.panelFrame}
-              alt=""
-              className="pointer-events-none absolute inset-0 h-full w-full select-none object-fill"
+          <FriendListPanelBackdrop onClose={handleClose} />
+          <FriendListPanelFrame view={panelView}>
+            <FriendListPanelContent
+              panelView={panelView}
+              onListView={showListView}
+              onRequestView={showRequestView}
+              onAcceptView={showAcceptView}
+              onlineFriends={onlineFriends}
+              offlineFriends={offlineFriends}
+              favoriteFriends={favoriteFriends}
+              incomingRequests={incomingRequests}
+              onRefreshRequests={handleRefreshFriends}
+              onAcceptRequest={handleAcceptRequest}
+              onDeclineRequest={handleDeclineRequest}
+              onAcceptAll={handleAcceptAll}
             />
-
-            <div
-              className="relative flex h-full min-h-0 flex-col"
-              style={PANEL_INSET}
-            >
-              <FriendListViewTabs
-                activeView={panelView}
-                onRequestClick={() => setPanelView("request")}
-                onAcceptClick={() => setPanelView("accept")}
-              />
-
-              {panelView === "list" ? (
-                <FriendListTabContent
-                  onlineFriends={onlineFriends}
-                  offlineFriends={offlineFriends}
-                  favoriteFriends={favoriteFriends}
-                />
-              ) : null}
-
-              {panelView === "request" ? (
-                <FriendRequestTab onBack={() => setPanelView("list")} />
-              ) : null}
-
-              {panelView === "accept" ? (
-                <FriendAcceptTab
-                  onBack={() => setPanelView("list")}
-                  incomingRequests={incomingRequests}
-                  onAccept={onAcceptRequest}
-                  onDecline={onDeclineRequest}
-                  onAcceptAll={onAcceptAll}
-                  onRefresh={onRefreshRequests}
-                />
-              ) : null}
-            </div>
-          </motion.aside>
+          </FriendListPanelFrame>
         </>
       ) : null}
     </AnimatePresence>

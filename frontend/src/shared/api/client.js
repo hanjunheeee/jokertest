@@ -1,68 +1,50 @@
-/**
- * @file client.js
- * @desc Fetch 기반 HTTP 클라이언트. 401 자동 로그아웃, { success, data } 응답 자동 언래핑을 처리합니다.
- *
- * axios의 interceptor처럼, 매 요청/응답마다 공통으로 필요한 처리(인증 쿠키 포함,
- * 401 발생 시 자동 로그아웃, 에러 응답을 예외로 변환, 성공 응답 언래핑)를 apiClient
- * 함수 하나에 모아둡니다. 이 덕분에 각 도메인의 api 호출 코드는 성공 케이스만 신경 쓰면 됩니다.
- */
+import { handleApiResponse } from "@/shared/api/response";
 
-import { useAuthStore } from "@/domains/auth/store/authStore";
-
-// 모든 API 요청의 기준이 되는 서버 주소 (.env의 VITE_API_BASE_URL)
+// Vite 환경변수에 설정된 백엔드 API 기본 주소입니다.
+// 예: VITE_API_BASE_URL=http://localhost:4000
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-/**
- * 공통 HTTP 요청 함수.
- * @param {string} endpoint - BASE_URL 이후의 경로 (e.g. '/auth/login')
- * @param {RequestInit} [options={}]
- * @returns {Promise<any>} 응답 body.data (data 키가 없으면 body 전체 반환)
- * @throws {Error} 4xx/5xx 응답 또는 네트워크 오류
- */
-export const apiClient = async (endpoint, options = {}) => {
-    const url = `${BASE_URL}${endpoint}`;
-
-    // 기본 옵션 + 호출부가 넘긴 options를 병합.
-    // credentials: "include" — 로그인 세션 쿠키(HttpOnly)를 요청에 함께 실어 보냄
-    // cache: "no-store" — 인증/상태 관련 응답을 브라우저가 캐시하지 않도록 강제
-    const defaultOptions = {
+// 호출하는 쪽에서 넘긴 options와 기본 fetch 옵션을 합칩니다.
+const createRequestOptions = (options) => {
+    // 모든 요청에 공통으로 들어갈 기본 fetch 옵션입니다.
+    // headers는 맨 마지막에 별도로 합쳐야 합니다 — ...options를 headers보다 먼저 펼치면,
+    // options 안에 headers가 있을 때 그 값이 아래 Content-Type 병합을 통째로 덮어써 버립니다.
+    return {
+        // 별도 지정이 없으면 GET 요청으로 보냅니다.
         method: "GET",
+
+        // 쿠키 기반 인증을 사용할 수 있도록 요청에 쿠키를 포함합니다.
         credentials: "include",
+
+        // 브라우저 캐시를 쓰지 않고 매번 서버에 요청합니다.
         cache: "no-store",
+
+        // method, body 등 호출하는 쪽에서 넘긴 옵션을 먼저 반영합니다.
+        ...options,
+
+        // 기본적으로 JSON 요청을 보낸다고 알려줍니다. headers는 항상 마지막에 계산해서,
+        // 호출하는 쪽이 headers를 넘겨도 Content-Type이 사라지지 않게 합니다.
         headers: {
             "Content-Type": "application/json",
             ...options.headers,
         },
-        ...options,
     };
-
-    const response = await fetch(url, defaultOptions);
-
-    if (response.status === 401) {
-        const errorData = await response.json().catch(() => ({}));
-        useAuthStore.getState().logout();
-        if (window.location.pathname !== '/login') {
-            window.location.replace("/login");
-            return;
-        }
-        // /login 페이지에서의 401 — 리다이렉트 없이 throw해서 호출부(LoginPage)가 메시지를 처리하도록 함
-        throw new Error(errorData.message || "인증에 실패했습니다.");
-    }
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "API 요청 중 에러가 발생했습니다.");
-    }
-
-    // { success: true, data: ... } 포맷에서 data를 자동 추출 — 기존 호출부 코드 변경 불필요
-    const body = await response.json();
-    return body.data !== undefined ? body.data : body;
 };
 
-/**
- * HTTP 메서드별 래퍼.
- * @example api.get('/users'), api.post('/login', { email, password })
- */
+// fetch를 감싼 공통 API 요청 함수입니다.
+// endpoint는 "/users/me" 같은 API 경로이고, options는 fetch 옵션입니다.
+export const apiClient = async (endpoint, options = {}) => {
+    // 기본 API 주소와 endpoint를 합쳐 실제 요청 URL을 만듭니다.
+    const url = `${BASE_URL}${endpoint}`;
+    const requestOptions = createRequestOptions(options);
+
+    // 실제 HTTP 요청을 보냅니다.
+    const response = await fetch(url, requestOptions);
+
+    return await handleApiResponse(response);
+};
+
+// 자주 쓰는 HTTP 메서드를 짧게 호출할 수 있게 만든 헬퍼 객체입니다.
 export const api = {
     get:    (endpoint)       => apiClient(endpoint),
     post:   (endpoint, body) => apiClient(endpoint, { method: "POST",   body: JSON.stringify(body) }),

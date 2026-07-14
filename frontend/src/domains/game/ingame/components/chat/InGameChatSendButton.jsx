@@ -1,3 +1,4 @@
+// 파일 역할: InGameChatSendButton.jsx - 화면을 구성하는 컴포넌트입니다.
 import { INGAME_CHAT_ASSETS } from "../../constants/chat/ingameChatAssets.js"
 import {
   getInGameChatSendButtonClass,

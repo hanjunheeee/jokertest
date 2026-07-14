@@ -1,15 +1,9 @@
-/**
- * @file modeAssets.js
- * @desc GameModePage(게임 모드 선택)·MultiplayEntryPage(멀티플레이 옵션 선택)에서
- * 쓰이는 배경·프레임 이미지 경로와 카드 목록(id·라벨·프레임)을 정의
- */
-
-/** GameModePage·MultiplayEntryPage 공통 배경 이미지 (frontend/public 기준) */
+// 게임 모드 선택 계열 화면의 공통 배경 에셋입니다.
 export const MODE_SCREEN_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png",
 }
 
-/** 모드 카드에서 쓰이는 프레임 이미지 경로 모음 (GAME_MODES·MULTIPLAY_OPTIONS에서 참조) */
+// 각 모드 카드에 사용할 프레임 이미지입니다.
 const MODE_FRAMES = {
   singlePlay: "/frame/gameMode/싱글플레이 프레임.png",
   multiPlay: "/frame/gameMode/멀티플레이 프레임.png",
@@ -18,7 +12,7 @@ const MODE_FRAMES = {
   findGame: "/frame/gameMode/게임 찾기 프레임.png",
 }
 
-/** prototype 게임모드 선택창2.png — 좌→우 카드 순서 */
+// 게임 모드 선택 화면에 보여줄 카드 데이터입니다.
 export const GAME_MODES = [
   {
     id: "single",
@@ -57,7 +51,7 @@ export const GAME_MODES = [
   },
 ]
 
-/** prototype 게임모드 선택창-멀티플레이 선택.png — 좌→우 카드 순서 */
+// 멀티플레이 진입 화면에서 사용할 옵션 카드 데이터입니다.
 export const MULTIPLAY_OPTIONS = [
   {
     id: "create",

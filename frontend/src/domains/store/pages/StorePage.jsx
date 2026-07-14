@@ -1,8 +1,4 @@
-/**
- * 상점 페이지.
- *
- * 페이지 계층은 상점 배경/패널/사이드바를 조합하고, 실제 탭 UI는 하위 컴포넌트에 위임합니다.
- */
+// 파일 역할: StorePage.jsx - 라우터에서 렌더링되는 페이지입니다.
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import StorePanel from "@/domains/store/components/StorePanel.jsx"
@@ -12,6 +8,7 @@ import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLa
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 import { BG_FADE_TRANSITION, UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
+// 로비에서 진입하는 상점 화면입니다.
 export default function StorePage() {
   const navigate = useNavigate()
 

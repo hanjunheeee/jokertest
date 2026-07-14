@@ -16,7 +16,10 @@ export function useInGameChatSession({
   serverEvents = null,
   onSendText = null,
 } = {}) {
+  // 입력 중인 채팅 문장입니다.
   const [draft, setDraft] = useState("")
+
+  // 서버가 아직 없을 때 화면에서만 보여줄 임시 채팅 목록입니다.
   const [localMessages, setLocalMessages] = useState([])
 
   const serverMessages = useMemo(() => {

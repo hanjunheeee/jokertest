@@ -41,7 +41,10 @@ export default function InGameChatContent({
   onSend,
   onOpenCloseup = null,
 }) {
+  // 프레임 크기 계산이 끝나서 채팅 UI를 보여줘도 되는지 표시합니다.
   const [layoutReady, setLayoutReady] = useState(false)
+
+  // 메시지 줄맞춤 계산에 쓰는 실제 입력칸 너비입니다.
   const [textFieldWidth, setTextFieldWidth] = useState(0)
   const inputWrapRef = useRef(null)
   const isBoard = variant === "board"
@@ -83,7 +86,7 @@ export default function InGameChatContent({
   }
 
   return (
-/** board | closeup — InGameChatContent Provider 값 */
+    /** board | closeup — 하위 채팅 컴포넌트들이 현재 표시 모드를 알 수 있게 넘깁니다. */
     <InGameChatVariantContext.Provider value={variant}>
       <div
         className={isBoard ? CHAT_ROOT_BOARD_CLASS : CHAT_ROOT_CLASS}

@@ -1,3 +1,4 @@
+// 파일 역할: pickInGameJobPortrait.js - 여러 곳에서 재사용하는 유틸 함수입니다.
 import { JOB_CLOSEUP_PORTRAITS } from "@/shared/constants/playerPortraitAssets.js"
 import { pickJobPortrait } from "@/shared/utils/pickJobPortrait.js"
 

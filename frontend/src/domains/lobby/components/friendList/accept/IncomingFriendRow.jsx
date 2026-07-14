@@ -1,75 +1,84 @@
-/**
- * 받은 친구 요청 행.
- *
- * 요청자 정보와 수락/거절 액션 버튼을 표시합니다.
- */
-import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
+import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+import {
+  INCOMING_FRIEND_ACTION_BUTTON_CLASS,
+  INCOMING_FRIEND_ACTIONS_CLASS,
+} from "@/domains/lobby/constants/friendListStyle.js"
+import {
+  RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
+  RECOMMENDED_FRIEND_INFO_WRAP_CLASS,
+  RECOMMENDED_FRIEND_NAME_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_FRAME_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_IMAGE_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_IMAGE_WRAP_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_WRAP_CLASS,
+  RECOMMENDED_FRIEND_ROW_CLASS,
+  RECOMMENDED_FRIEND_ROW_CONTENT_CLASS,
+  RECOMMENDED_FRIEND_ROW_FRAME_CLASS,
+  RECOMMENDED_FRIEND_TEXT_WRAP_CLASS,
+} from "@/domains/lobby/constants/friendListStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-const ROW_ACTION_BTN_CLASS =
-  "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
+// 받은 요청 row에서 프로필 프레임과 이미지를 겹쳐서 보여줍니다.
+function IncomingFriendProfile({ profileSrc }) {
+  return (
+    <div className={RECOMMENDED_FRIEND_PROFILE_WRAP_CLASS}>
+      <PublicAsset
+        src={FRIEND_LIST_ASSETS.profileFrame}
+        alt=""
+        className={RECOMMENDED_FRIEND_PROFILE_FRAME_CLASS}
+      />
+      <div className={RECOMMENDED_FRIEND_PROFILE_IMAGE_WRAP_CLASS}>
+        <PublicAsset
+          src={profileSrc}
+          alt=""
+          className={RECOMMENDED_FRIEND_PROFILE_IMAGE_CLASS}
+        />
+      </div>
+    </div>
+  )
+}
 
-// requestId: 이 요청을 식별하는 id — 수락/거절 API 호출 시 필요
-// name, profileSrc: 요청을 보낸 사용자의 닉네임/프로필 이미지
-// onAccept, onDecline: 버튼 클릭 시 requestId를 인자로 넘겨 부모에게 알리는 콜백
+// 받은 친구 요청 한 명을 보여주고 수락/거절 버튼을 제공합니다.
 export default function IncomingFriendRow({ requestId, name, profileSrc, onAccept, onDecline }) {
   return (
-    <li className="relative mt-2 w-full list-none">
+    <li className={RECOMMENDED_FRIEND_ROW_CLASS}>
       <PublicAsset
         src={FRIEND_LIST_ASSETS.rowFrame}
         alt=""
-        className="block h-auto w-full select-none"
+        className={RECOMMENDED_FRIEND_ROW_FRAME_CLASS}
       />
-      <div className="absolute inset-0 flex items-center justify-between gap-1 px-[6%] py-[6%]">
-        <div className="flex min-w-0 max-w-[58%] items-center gap-2">
-          <div className="relative size-[2.65rem] shrink-0">
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.profileFrame}
-              alt=""
-              className="pointer-events-none absolute inset-0 h-full w-full select-none object-contain"
-            />
-            <div className="absolute inset-[22%] overflow-hidden">
-              <PublicAsset
-                src={profileSrc}
-                alt=""
-                className="block h-full w-full select-none object-cover object-center"
-              />
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <p className="truncate font-subheading text-[clamp(0.78rem,1vw,0.92rem)] leading-tight text-white">
-              {name}
-            </p>
-            <p className="mt-0.5 text-[9px] leading-none text-white/45">친구 신청</p>
+      <div className={RECOMMENDED_FRIEND_ROW_CONTENT_CLASS}>
+        <div className={RECOMMENDED_FRIEND_INFO_WRAP_CLASS}>
+          <IncomingFriendProfile profileSrc={profileSrc} />
+          <div className={RECOMMENDED_FRIEND_TEXT_WRAP_CLASS}>
+            <p className={RECOMMENDED_FRIEND_NAME_CLASS}>{name}</p>
           </div>
         </div>
-
-        <div className="flex shrink-0 items-center gap-[clamp(0.2rem,0.45vw,0.35rem)]">
+        <div className={INCOMING_FRIEND_ACTIONS_CLASS}>
           <button
             type="button"
-            className={ROW_ACTION_BTN_CLASS}
-            aria-label={`${name} 거절`}
-            onClick={() => onDecline && onDecline(requestId)}
-            style={{ outline: "none" }}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendBlockButton}
-              alt=""
-              className="block h-auto w-full select-none"
-            />
-          </button>
-          <button
-            type="button"
-            className={ROW_ACTION_BTN_CLASS}
-            aria-label={`${name} 친구 수락`}
-            onClick={() => onAccept && onAccept(requestId)}
+            className={INCOMING_FRIEND_ACTION_BUTTON_CLASS}
+            aria-label={`${name} 수락`}
+            onClick={() => onAccept?.(requestId)}
             style={{ outline: "none" }}
           >
             <PublicAsset
               src={FRIEND_LIST_ASSETS.tabButtonActive}
               alt=""
-              className="block h-auto w-full select-none"
+              className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
+            />
+          </button>
+          <button
+            type="button"
+            className={INCOMING_FRIEND_ACTION_BUTTON_CLASS}
+            aria-label={`${name} 거절`}
+            onClick={() => onDecline?.(requestId)}
+            style={{ outline: "none" }}
+          >
+            <PublicAsset
+              src={FRIEND_LIST_ASSETS.tabButtonInactive}
+              alt=""
+              className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
             />
           </button>
         </div>

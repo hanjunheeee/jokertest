@@ -1,99 +1,126 @@
-/**
- * 추천 친구 행.
- *
- * 친구 검색/추천 목록에서 한 명의 후보와 신청 액션을 표시합니다.
- */
-import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
+import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+import {
+  RECOMMENDED_FRIEND_INFO_WRAP_CLASS,
+  RECOMMENDED_FRIEND_NAME_CLASS,
+  RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS,
+  RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
+  RECOMMENDED_FRIEND_ACTIONS_CLASS,
+  RECOMMENDED_FRIEND_OFFLINE_OVERLAY_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_FRAME_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_IMAGE_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_IMAGE_WRAP_CLASS,
+  RECOMMENDED_FRIEND_PROFILE_WRAP_CLASS,
+  RECOMMENDED_FRIEND_ROW_CLASS,
+  RECOMMENDED_FRIEND_ROW_CONTENT_CLASS,
+  RECOMMENDED_FRIEND_ROW_FRAME_CLASS,
+  RECOMMENDED_FRIEND_SENT_BUTTON_CLASS,
+  RECOMMENDED_FRIEND_STATUS_BADGE_CLASS,
+  RECOMMENDED_FRIEND_STATUS_TEXT_CLASS,
+  RECOMMENDED_FRIEND_STATUS_WRAP_CLASS,
+  RECOMMENDED_FRIEND_TEXT_WRAP_CLASS,
+} from "@/domains/lobby/constants/friendListStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-const ROW_ACTION_BTN_CLASS =
-  "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
+// 추천 친구의 프로필 프레임과 실제 프로필 이미지를 겹쳐서 보여줍니다.
+function RecommendedFriendProfile({ profileSrc }) {
+  return (
+    <div className={RECOMMENDED_FRIEND_PROFILE_WRAP_CLASS}>
+      <PublicAsset
+        src={FRIEND_LIST_ASSETS.profileFrame}
+        alt=""
+        className={RECOMMENDED_FRIEND_PROFILE_FRAME_CLASS}
+      />
+      <div className={RECOMMENDED_FRIEND_PROFILE_IMAGE_WRAP_CLASS}>
+        <PublicAsset
+          src={profileSrc}
+          alt=""
+          className={RECOMMENDED_FRIEND_PROFILE_IMAGE_CLASS}
+        />
+      </div>
+    </div>
+  )
+}
 
-// id: 이 후보 사용자의 id — 친구 신청 전송 시 필요
-// name, profileSrc, online: 후보의 닉네임/프로필 이미지/접속 상태
-// onSend: 신청 버튼 클릭 시 id를 인자로 넘겨 부모에게 알리는 콜백
-// sent: 이미 신청을 보냈는지 여부 — true면 버튼을 비활성 스타일로 표시
+// 추천 친구가 접속 중인지 오프라인인지 표시합니다.
+function RecommendedFriendStatus({ online }) {
+  const statusText = online ? "접속 중" : "오프라인"
+  const statusColorClass = online ? "text-amber-100/85" : "text-white/35"
+
+  return (
+    <div className={RECOMMENDED_FRIEND_STATUS_WRAP_CLASS}>
+      <span className={RECOMMENDED_FRIEND_STATUS_BADGE_CLASS}>
+        <PublicAsset src={FRIEND_LIST_ASSETS.onlineBadge} alt="" className="h-full w-full select-none" />
+        {!online ? (
+          <span className={RECOMMENDED_FRIEND_OFFLINE_OVERLAY_CLASS} aria-hidden="true" />
+        ) : null}
+      </span>
+      <span className={`${RECOMMENDED_FRIEND_STATUS_TEXT_CLASS} ${statusColorClass}`}>
+        {statusText}
+      </span>
+    </div>
+  )
+}
+
+// 추천 친구 row 오른쪽의 차단 버튼과 친구 신청 버튼입니다.
+function RecommendedFriendActions({ id, name, onSend, sent }) {
+  const sendButtonClass = sent
+    ? `${RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS} ${RECOMMENDED_FRIEND_SENT_BUTTON_CLASS}`
+    : RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS
+
+  const handleSendClick = () => {
+    if (sent) return
+    onSend?.(id)
+  }
+
+  return (
+    <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
+      <button
+        type="button"
+        className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
+        aria-label={`${name} 차단`}
+        style={{ outline: "none" }}
+      >
+        <PublicAsset
+          src={FRIEND_LIST_ASSETS.friendBlockButton}
+          alt=""
+          className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
+        />
+      </button>
+      <button
+        type="button"
+        className={sendButtonClass}
+        aria-label={sent ? "신청 완료" : `${name}에게 친구 신청`}
+        onClick={handleSendClick}
+        style={{ outline: "none" }}
+      >
+        <PublicAsset
+          src={FRIEND_LIST_ASSETS.tabButtonActive}
+          alt=""
+          className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
+        />
+      </button>
+    </div>
+  )
+}
+
+// 친구 검색 결과에서 추천 친구 한 명과 신청 버튼을 보여주는 row입니다.
 export default function RecommendedFriendRow({ id, name, profileSrc, online, onSend, sent }) {
   return (
-    <li className="relative mt-2 w-full list-none">
+    <li className={RECOMMENDED_FRIEND_ROW_CLASS}>
       <PublicAsset
         src={FRIEND_LIST_ASSETS.rowFrame}
         alt=""
-        className="block h-auto w-full select-none"
+        className={RECOMMENDED_FRIEND_ROW_FRAME_CLASS}
       />
-      <div className="absolute inset-0 flex items-center justify-between gap-1 px-[6%] py-[6%]">
-        <div className="flex min-w-0 max-w-[58%] items-center gap-2">
-          <div className="relative size-[2.65rem] shrink-0">
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.profileFrame}
-              alt=""
-              className="pointer-events-none absolute inset-0 h-full w-full select-none object-contain"
-            />
-            <div className="absolute inset-[22%] overflow-hidden">
-              <PublicAsset
-                src={profileSrc}
-                alt=""
-                className="block h-full w-full select-none object-cover object-center"
-              />
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <p className="truncate font-subheading text-[clamp(0.78rem,1vw,0.92rem)] leading-tight text-white">
-              {name}
-            </p>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="relative inline-flex h-[1.05rem] w-[1.05rem] shrink-0">
-                <PublicAsset
-                  src={FRIEND_LIST_ASSETS.onlineBadge}
-                  alt=""
-                  className="h-full w-full select-none"
-                />
-                {!online ? (
-                  <span
-                    className="pointer-events-none absolute inset-0 rounded-full bg-black/80"
-                    aria-hidden="true"
-                  />
-                ) : null}
-              </span>
-              <span
-                className={`text-[9px] leading-none ${
-                  online ? "text-amber-100/85" : "text-white/35"
-                }`}
-              >
-                {online ? "접속 중" : "오프라인"}
-              </span>
-            </div>
+      <div className={RECOMMENDED_FRIEND_ROW_CONTENT_CLASS}>
+        <div className={RECOMMENDED_FRIEND_INFO_WRAP_CLASS}>
+          <RecommendedFriendProfile profileSrc={profileSrc} />
+          <div className={RECOMMENDED_FRIEND_TEXT_WRAP_CLASS}>
+            <p className={RECOMMENDED_FRIEND_NAME_CLASS}>{name}</p>
+            <RecommendedFriendStatus online={online} />
           </div>
         </div>
-
-        <div className="flex shrink-0 items-center gap-[clamp(0.2rem,0.45vw,0.35rem)]">
-          <button
-            type="button"
-            className={ROW_ACTION_BTN_CLASS}
-            aria-label={`${name} 차단`}
-            style={{ outline: "none" }}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendBlockButton}
-              alt=""
-              className="block h-auto w-full select-none"
-            />
-          </button>
-          <button
-            type="button"
-            className={`${ROW_ACTION_BTN_CLASS} ${sent ? "opacity-40 cursor-default" : ""}`}
-            aria-label={sent ? "신청 완료" : `${name}에게 친구 신청`}
-            onClick={() => !sent && onSend && onSend(id)}
-            style={{ outline: "none" }}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.tabButtonActive}
-              alt=""
-              className="block h-auto w-full select-none"
-            />
-          </button>
-        </div>
+        <RecommendedFriendActions id={id} name={name} onSend={onSend} sent={sent} />
       </div>
     </li>
   )

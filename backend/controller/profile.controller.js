@@ -1,17 +1,7 @@
-/**
- * @file profile.controller.js
- * @desc 마이페이지 프로필 조회 · 계정 정보 변경 컨트롤러
- */
-
 const userRepository            = require("../repositories/user.repositories");
 const { comparePassword,
         hashPassword }          = require("../utils/hash");
 
-/**
- * @route   GET /user/me/profile
- * @access  Private
- * @returns nickname, reputation, title, 게임 통계, most_played_role
- */
 exports.getMyProfile = async (req, res, next) => {
     try {
         const row = await userRepository.getMyProfile(req.user.uuid);
@@ -37,11 +27,6 @@ exports.getMyProfile = async (req, res, next) => {
     }
 };
 
-/**
- * @route   PATCH /user/me/nickname
- * @access  Private
- * @body    { nickname }
- */
 exports.updateNickname = async (req, res, next) => {
     try {
         const { nickname } = req.body;
@@ -55,11 +40,6 @@ exports.updateNickname = async (req, res, next) => {
     }
 };
 
-/**
- * @route   PATCH /user/me/password
- * @access  Private
- * @body    { currentPassword, newPassword }
- */
 exports.updatePassword = async (req, res, next) => {
     try {
         const { currentPassword, newPassword } = req.body;
@@ -70,7 +50,6 @@ exports.updatePassword = async (req, res, next) => {
         const user = await userRepository.findByUuid(req.user.uuid);
         const isMatch = await comparePassword(currentPassword, user.password_hash);
 
-        // 현재 비밀번호가 틀리면 힌트를 최소화해 계정 탈취 시도를 억제
         if (!isMatch) {
             return res.status(401).json({ success: false, message: "현재 비밀번호가 올바르지 않습니다." });
         }

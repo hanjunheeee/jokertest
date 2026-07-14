@@ -1,3 +1,4 @@
+// 파일 역할: InGamePlayerSessionProvider.jsx - 화면을 구성하는 컴포넌트입니다.
 import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
 import { useInGamePlayerSession } from "../hooks/useInGamePlayerSession.js"
 import { useInGameStore } from "../store/ingameStore.js"

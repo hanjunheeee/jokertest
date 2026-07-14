@@ -1,34 +1,21 @@
-/**
- * 로그인·회원가입용 이미지 버튼 — PNG 한 장을 클릭 가능한 버튼으로 렌더
- * LoginPage(로그인·소셜), SignupForm(회원가입 제출)에서 사용
- *
- * props
- * - src: 버튼 이미지 경로 (loginAssets.js)
- * - label: aria-label·접근성용 (화면에 텍스트 없음)
- * - type: "button" | "submit" (기본 button)
- * - onClick: 클릭 핸들러 (소셜 로그인 등 — 미연동 시 생략)
- * - className: 루트 button 추가 클래스
- */
-import PublicAsset from "@/shared/ui/PublicAsset"
+import PublicAsset from "@/shared/ui/PublicAsset";
 
+// 인증 화면에서 쓰는 이미지 버튼의 공통 이미지 스타일입니다.
+// 마우스를 올리거나 누를 때 살짝 커지고 작아지는 효과가 들어 있습니다.
 const AUTH_BTN_IMG_CLASS =
   "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.05] group-active:scale-[0.95]"
 
-/** group 호버 시 이미지만 확대되는 인증 화면 이미지 버튼 */
-export default function AuthImageButton({
-  src, // 버튼에 그릴 이미지 경로 (loginAssets.js)
-  label, // 스크린리더용 텍스트 — 화면엔 텍스트가 없어 aria-label로만 노출
-  className = "", // 루트 button에 덧붙일 추가 클래스
-  type = "button", // "submit"이면 감싸는 form 제출, 기본은 일반 버튼
-  onClick, // 클릭 시 실행할 콜백 — 소셜 로그인 등 아직 연결 안 된 버튼은 생략 가능
-}) {
+// 이미지 하나로 된 버튼을 만들 때 사용하는 공통 컴포넌트입니다.
+export default function AuthImageButton({ src, label, className = "", type = "button", onClick }) {
   return (
     <button
       type={type}
       onClick={onClick}
+      // 이미지에는 글자가 없으므로, 화면 읽기 프로그램이 읽을 버튼 이름을 따로 넣어줍니다.
       aria-label={label}
       className={`group block w-full cursor-pointer border-0 bg-transparent p-0 leading-none ${className}`}
     >
+      {/* public 이미지 경로를 안전한 URL로 바꿔서 버튼 이미지로 보여줍니다. */}
       <PublicAsset src={src} alt="" className={AUTH_BTN_IMG_CLASS} />
     </button>
   )

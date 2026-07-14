@@ -1,96 +1,82 @@
-/**
- * 친구 신청 탭.
- *
- * 검색 상태 및 API 핸들러는 useFriendSearch에 위임합니다.
- * 이 컴포넌트는 결과 표시 및 검색바·행 컴포넌트를 조합하는 역할만 합니다.
- */
-import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
+import {
+  FRIEND_REQUEST_BACK_BUTTON_CLASS,
+  FRIEND_REQUEST_EMPTY_CLASS,
+  FRIEND_REQUEST_RESULT_LIST_CLASS,
+  FRIEND_REQUEST_TAB_CLASS,
+} from "@/domains/lobby/constants/friendListStyle.js"
 import { useFriendSearch } from "@/domains/lobby/hooks/useFriendSearch.js"
-import FriendListSearchBar from "../common/FriendListSearchBar.jsx"
-import RecommendedFriendRow from "./RecommendedFriendRow.jsx"
 import BackButton from "@/shared/ui/BackButton.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendListSearchBar.jsx"
+import RecommendedFriendRow from "@/domains/lobby/components/friendList/request/RecommendedFriendRow.jsx"
 
-// onBack: "뒤로가기" 버튼 클릭 시 친구 목록 탭으로 되돌아가기 위해 부모가 내려주는 콜백
+// 친구 검색 결과 영역이 비어 있을 때 보여주는 문구입니다.
+function FriendRequestEmptyState({ searching, errorMsg }) {
+  const message = errorMsg || (searching ? "친구를 검색 중입니다." : "검색 결과가 없습니다.")
+
+  return (
+    <li className={FRIEND_REQUEST_EMPTY_CLASS}>
+      {message}
+    </li>
+  )
+}
+
+// 친구 검색 결과 목록을 보여줍니다.
+function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSend }) {
+  return (
+    <ul className={FRIEND_REQUEST_RESULT_LIST_CLASS}>
+      {results.length === 0 ? (
+        <FriendRequestEmptyState searching={searching} errorMsg={errorMsg} />
+      ) : (
+        results.map((friend) => (
+          <RecommendedFriendRow
+            key={friend.id}
+            id={friend.id}
+            name={friend.name}
+            profileSrc={friend.profile}
+            online={friend.online || friend.status === "ONLINE"}
+            onSend={onSend}
+            sent={sentIds.has(friend.id)}
+          />
+        ))
+      )}
+    </ul>
+  )
+}
+
+// 친구를 검색하고 친구 신청을 보내는 탭 화면입니다.
 export default function FriendRequestTab({ onBack }) {
-  // 검색어 state, 결과, 로딩/에러 상태는 모두 useFriendSearch 훅 안에 캡슐화되어 있습니다.
   const {
     query,
     setQuery,
     results,
-    searching,   // 검색 요청 진행 중 — "검색 중..." 표시 제어
-    sentIds,     // 신청 완료된 id Set — 버튼 상태 제어
-    errorMsg,    // 검색 실패 메시지 — 에러 표시 제어
+    searching,
+    sentIds,
+    errorMsg,
     handleSearch,
     handleSend,
   } = useFriendSearch()
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className={FRIEND_REQUEST_TAB_CLASS}>
       <FriendListSearchBar
-        label="친구 찾기"
-        placeholder="닉네임 입력 후 Enter"
+        label="친구 검색"
+        placeholder="검색할 친구 닉네임 입력"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onSubmit={handleSearch} // Enter 키 또는 검색 버튼 → handleSearch 호출
+        onChange={(event) => setQuery(event.target.value)}
+        onSubmit={handleSearch}
       />
-
-      <div className="relative mt-3 flex w-full shrink-0 items-center justify-center">
-        <div className="relative w-[clamp(5.75rem,42%,7rem)]">
-          <PublicAsset
-            src={FRIEND_LIST_ASSETS.recommendedTag}
-            alt=""
-            className="block h-auto w-full select-none"
-          />
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.65rem,0.95vw,0.78rem)] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]">
-            검색 결과
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={handleSearch} // 새로고침 버튼 → 동일한 쿼리로 재검색
-          aria-label="검색"
-          className="absolute top-1/2 right-[clamp(0.65rem,3.5%,1rem)] w-[clamp(1.45rem,2.1vw,1.7rem)] -translate-y-[calc(50%-0.15rem)] cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
-          style={{ outline: "none" }}
-        >
-          <PublicAsset
-            src={FRIEND_LIST_ASSETS.refreshButton}
-            alt=""
-            className="block h-auto w-full select-none"
-          />
-        </button>
-      </div>
-
-      {/* searching / errorMsg / results 우선순위 순으로 표시 */}
-      <ul className="mt-2 min-h-0 flex-1 overflow-y-auto pr-0.5">
-        {searching ? (
-          <li className="mt-10 text-center text-[11px] text-white/50">검색 중...</li>
-        ) : errorMsg ? (
-          <li className="mt-10 text-center text-[11px] text-red-400/80">{errorMsg}</li>
-        ) : results.length === 0 ? (
-          <li className="mt-10 text-center text-[11px] text-white/50">
-            닉네임을 검색해 친구를 찾아보세요.
-          </li>
-        ) : (
-          results.map((user) => (
-            <RecommendedFriendRow
-              key={user.id}
-              id={user.id}
-              name={user.name}
-              profileSrc={user.profile}
-              online={user.online}
-              onSend={handleSend}
-              sent={sentIds.has(user.id)} // sentIds에 포함되면 "신청 완료" 상태로 표시
-            />
-          ))
-        )}
-      </ul>
-
+      <FriendRequestResultsList
+        results={results}
+        searching={searching}
+        errorMsg={errorMsg}
+        sentIds={sentIds}
+        onSend={handleSend}
+      />
       <BackButton
         size="compact"
         ariaLabel="친구 목록으로 돌아가기"
         onClick={onBack}
-        className="mt-2"
+        className={FRIEND_REQUEST_BACK_BUTTON_CLASS}
       />
     </div>
   )

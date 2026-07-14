@@ -1,3 +1,4 @@
+// 파일 역할: assignInGamePlayerThemeIndices.js - 여러 곳에서 재사용하는 유틸 함수입니다.
 import { INGAME_PLAYER_THEME_PALETTE_SIZE } from "../constants/ingamePlayerTheme.js"
 
 function shuffleIndices(length) {

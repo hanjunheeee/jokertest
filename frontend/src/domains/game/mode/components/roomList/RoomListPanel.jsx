@@ -1,14 +1,16 @@
+// 파일 역할: RoomListPanel.jsx - 화면을 구성하는 컴포넌트입니다.
 import { useRef } from "react"
-import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
+import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
 import {
   ROOM_LIST_PANEL_CLASS,
   ROOM_LIST_PANEL_INSET_CLASS,
   ROOM_LIST_SCROLL_CLASS,
   ROOM_LIST_SCROLL_WRAP_CLASS,
-} from "../../constants/roomListLayout.js"
-import RoomListRow from "./RoomListRow.jsx"
+} from "@/domains/game/mode/constants/roomListLayout.js"
+import RoomListRow from "@/domains/game/mode/components/roomList/RoomListRow.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
+// 공개 방 목록과 장식용 스크롤바를 보여주는 패널입니다.
 export default function RoomListPanel({ rooms, onRoomSelect }) {
   const scrollRef = useRef(null)
 
@@ -28,7 +30,6 @@ export default function RoomListPanel({ rooms, onRoomSelect }) {
               />
             ))}
           </ul>
-
           <Scrollbar
             scrollRef={scrollRef}
             trackSrc={ROOM_LIST_ASSETS.scrollTrack}

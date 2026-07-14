@@ -1,14 +1,10 @@
-/**
- * framer-motion 애니메이션을 받을 수 있는 뒤로가기 버튼.
- *
- * BackButton 파일은 순수 컴포넌트만 export하도록 유지하고, motion 래퍼는 별도 파일에서 제공합니다.
- */
 import { motion } from "framer-motion"
-import BackButton from "@/shared/ui/BackButton.jsx"
+import BackButton from "@/shared/ui/BackButton"
 
-// motion.create(컴포넌트)는 일반 컴포넌트를 감싸서 animate/initial/exit 같은
-// framer-motion 애니메이션 props를 받을 수 있는 새 컴포넌트로 만들어 줍니다.
-// 즉 BackButton과 똑같이 동작하면서 애니메이션만 추가로 사용할 수 있습니다.
+// BackButton의 애니메이션 가능 버전입니다.
+// 버튼의 생김새는 BackButton 그대로 쓰고, 움직임만 framer-motion이 제어할 수 있게 합니다.
+// BackButton을 framer-motion이 제어할 수 있는 컴포넌트로 감쌉니다.
+// 이렇게 하면 BackButton 자체는 애니메이션을 몰라도 되고, 사용하는 쪽에서 initial/animate/transition을 넘길 수 있습니다.
 const MotionBackButton = motion.create(BackButton)
 
 export default MotionBackButton

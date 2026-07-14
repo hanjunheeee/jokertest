@@ -1,15 +1,12 @@
-/**
- * 게임 모드 프레임 공통 텍스트 오버레이
- * ModeOptionCard 및 동일 프레임을 쓰는 다른 UI에서 재사용
- */
+// 파일 역할: ModeOptionCardOverlay.jsx - 화면을 구성하는 컴포넌트입니다.
 import {
   MODE_CARD_DESCRIPTION_CLASS,
   MODE_CARD_DESCRIPTION_INSET,
   MODE_CARD_TITLE_CLASS,
   MODE_CARD_TITLE_INSET,
-} from "../constants/modeCardLayout.js"
+} from "@/domains/game/mode/constants/modeCardLayout.js"
 
-/** title·descriptionLines를 프레임 위 고정 슬롯에 렌더 */
+// 게임 모드 카드 이미지 위에 제목과 설명을 올려 보여줍니다.
 export default function ModeOptionCardOverlay({ title, descriptionLines }) {
   if (!title && !descriptionLines?.length) return null
 
@@ -22,10 +19,7 @@ export default function ModeOptionCardOverlay({ title, descriptionLines }) {
       ) : null}
 
       {descriptionLines?.length ? (
-        <p
-          className={MODE_CARD_DESCRIPTION_CLASS}
-          style={MODE_CARD_DESCRIPTION_INSET}
-        >
+        <p className={MODE_CARD_DESCRIPTION_CLASS} style={MODE_CARD_DESCRIPTION_INSET}>
           {descriptionLines.map((line, index) => (
             <span key={`${index}-${line}`}>
               {index > 0 ? <br /> : null}

@@ -1,52 +1,42 @@
-/**
- * 뒤로가기 이미지 버튼 — 게임·설정·로비 등 페이지 좌하단 공통
- *
- * props
- * - onClick: 뒤로가기 동작 (보통 navigate)
- * - size: "page"(큰) | "compact"(작은, 패널 내)
- * - ariaLabel: 접근성 (기본 "뒤로 가기")
- * - className, style: 버튼 추가 스타일
- * - ref: forwardRef 지원
- *
- * 에셋은 constants/navigationAssets.js
- */
-import { forwardRef } from "react"
-import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
-import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { forwardRef } from "react";
+import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets";
+import PublicAsset from "@/shared/ui/PublicAsset";
 
+// 뒤로가기 버튼의 가장 기본 부품입니다.
+// 위치나 등장 애니메이션은 모르고, 버튼 이미지와 클릭 처리만 담당합니다.
+// 사용 위치에 따라 뒤로가기 버튼 크기를 다르게 쓰기 위한 class 모음입니다.
 const SIZE_CLASS = {
   page: "w-[clamp(4.75rem,7.5vw,6.75rem)]",
   compact: "w-[clamp(2.35rem,4vw,2.85rem)] shrink-0",
 }
 
+// 버튼 이미지에 마우스를 올리거나 누를 때 적용할 크기 변화 효과입니다.
 const IMG_SCALE_CLASS = {
   page: "transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.95]",
-  compact:
-    "transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.9]",
+  compact: "transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.9]",
 }
 
-/** navigationAssets 뒤로가기 PNG 버튼 */
+// 이미지로 만든 공통 뒤로가기 버튼입니다.
+// MotionBackButton처럼 애니메이션이 필요한 버튼도 이 기본 버튼을 바탕으로 만듭니다.
+// forwardRef를 써서 부모 컴포넌트가 필요할 때 이 button DOM을 직접 가리킬 수 있게 합니다.
 const BackButton = forwardRef(function BackButton(
-  {
-    onClick, // 버튼 클릭 시 실행할 콜백 (보통 navigate로 이전 화면 이동)
-    size = "page", // 버튼 크기 종류: "page"(기본, 큰 버튼) | "compact"(작은 버튼)
-    className = "", // 버튼에 추가로 덧붙일 클래스
-    ariaLabel = "뒤로 가기", // 스크린리더가 읽어줄 버튼 설명
-    style, // 버튼에 추가로 덧붙일 인라인 스타일
-    ...props // 그 외 나머지 button 속성은 그대로 전달
-  },
-  ref, // forwardRef로 전달받은 ref — 부모가 이 버튼의 DOM 요소를 직접 참조할 수 있게 함
+  { onClick, size = "page", className = "", ariaLabel = "뒤로 가기", style, ...props },
+  ref,
 ) {
   return (
     <button
       ref={ref}
       type="button"
+      // 이미지 버튼이라 화면 읽기 프로그램이 읽을 버튼 이름을 직접 넣습니다.
       aria-label={ariaLabel}
       onClick={onClick}
       className={`group block cursor-pointer border-0 bg-transparent p-0 leading-none ${SIZE_CLASS[size]} ${className}`}
+      // 기본 포커스 outline은 끄고, 호출하는 쪽에서 넘긴 style은 유지합니다.
       style={{ outline: "none", ...style }}
+      // 필요한 추가 button 속성들을 그대로 전달합니다.
       {...props}
     >
+      {/* public 폴더의 뒤로가기 버튼 이미지를 보여줍니다. */}
       <PublicAsset
         src={NAVIGATION_ASSETS.backButton}
         alt=""

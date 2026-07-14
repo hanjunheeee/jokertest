@@ -1,25 +1,14 @@
-/**
- * 비밀번호 해시/검증 유틸리티.
- *
- * 컨트롤러나 서비스가 bcrypt 세부 설정에 의존하지 않도록 암호화 책임을 모읍니다.
- */
+// 비밀번호를 안전하게 해시하고 비교하기 위한 라이브러리입니다.
 const bcrypt = require("bcrypt");
 
-/**
- * 평문 비밀번호를 bcrypt 해시로 변환합니다.
- * @param {string} plainPassword - 사용자가 입력한 평문 비밀번호
- * @returns {Promise<string>}
- */
+// 회원가입/비밀번호 변경 시, 사용자가 입력한 원문 비밀번호를 해시 문자열로 바꿉니다.
+// 두 번째 인자 10은 salt round 값이고, 숫자가 클수록 더 느리지만 계산 비용이 커집니다.
 exports.hashPassword = async (plainPassword) => {
     return await bcrypt.hash(plainPassword, 10);
 };
 
-/**
- * 평문 비밀번호와 저장된 해시가 일치하는지 확인합니다.
- * @param {string} plainPassword - 사용자가 입력한 평문 비밀번호
- * @param {string} hashedPassword - DB에 저장된 비밀번호 해시
- * @returns {Promise<boolean>}
- */
+// 로그인 시, 사용자가 입력한 비밀번호와 DB에 저장된 해시 비밀번호가 같은지 확인합니다.
+// 같으면 true, 다르면 false를 반환합니다.
 exports.comparePassword = async (plainPassword, hashedPassword) => {
     return await bcrypt.compare(plainPassword, hashedPassword);
-};
+}

@@ -1,22 +1,16 @@
-/**
- * 상점 메인 패널.
- *
- * 현재 선택된 상점 탭에 맞는 상품/콘텐츠 영역을 렌더링합니다.
- */
 import { useState } from "react"
 import { SETTING_ASSETS } from "@/domains/settings/constants/settingAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import StoreSidebar from "@/domains/store/components/StoreSidebar.jsx"
-import {
-  getStoreDummyItemInfo,
-  STORE_ASSETS,
-  STORE_GRID_ITEMS,
-  STORE_TABS,
-} from "../constants/storeAssets.js"
+import { STORE_ASSETS } from "../constants/storeAssets.js"
+import { getStoreDummyItemInfo, STORE_GRID_ITEMS } from "../constants/storeItems.js"
+import { STORE_TABS } from "../constants/storeTabs.js"
 
+// 상점 패널 전체를 화면 중앙에 배치하는 wrapper입니다.
 const PANEL_CLASS =
   "absolute left-1/2 top-[48%] z-20 w-[min(70rem,95vw)] -translate-x-1/2 -translate-y-1/2"
 
+// 프레임 이미지 안쪽에 실제 콘텐츠를 올릴 여백입니다.
 const INNER_PAD = {
   paddingTop: "9.5%",
   paddingBottom: "8.5%",
@@ -24,22 +18,23 @@ const INNER_PAD = {
   paddingRight: "8.5%",
 }
 
+// 상단 탭 버튼 이미지 wrapper입니다.
 const TAB_BTN_CLASS =
   "relative min-w-[clamp(5.2rem,10vw,7rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90"
 
+// 탭 버튼 이미지 위에 얹는 텍스트 스타일입니다.
 const TAB_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(1.12rem,1.6vw,1.35rem)] font-bold leading-none text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// 구매 버튼 이미지 wrapper입니다.
 const PURCHASE_BTN_CLASS =
   "relative w-[clamp(6.75rem,12.5vw,9.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
+// 구매 버튼 이미지 위에 얹는 텍스트 스타일입니다.
 const PURCHASE_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.88rem,1.2vw,1.02rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-/** 상단 탭 버튼 — active 여부에 따라 이미지와 aria-pressed가 전환됩니다. */
-// tab: { id, label } 형태의 탭 정보
-// active: 이 탭이 현재 선택된 탭인지 여부
-// onSelect: 탭 클릭 시 호출할 콜백. 부모(StorePanel)가 activeTab을 바꾸는 setActiveTab을 넘겨줌
+// 상점 상단의 카테고리 탭 버튼입니다.
 function StoreTab({ tab, active, onSelect }) {
   return (
     <button
@@ -64,10 +59,7 @@ function StoreTab({ tab, active, onSelect }) {
   )
 }
 
-/** 그리드 상품 슬롯 — 아이콘 + 이름/한줄설명, 선택 시 강조 표시 */
-// icon/name/tagline: 그리드에 표시할 상품 정보 (STORE_GRID_ITEMS 항목에서 옴)
-// selected: 이 아이템이 현재 선택된 상태인지 여부
-// onSelect: 클릭 시 호출할 콜백. 부모가 selectedItem을 이 아이템으로 바꾸는 함수를 넘겨줌
+// 아이템 그리드에 들어가는 상품 한 칸입니다.
 function StoreItemSlot({ icon, name, tagline, selected, onSelect }) {
   return (
     <button
@@ -98,7 +90,7 @@ function StoreItemSlot({ icon, name, tagline, selected, onSelect }) {
   )
 }
 
-/** 선택한 아이템 상세 영역의 구매 버튼 (기능 미구현 — 버튼 이미지 위 텍스트 오버레이) */
+// 선택한 아이템을 구매하는 버튼입니다.
 function StorePurchaseButton() {
   return (
     <button
@@ -117,10 +109,8 @@ function StorePurchaseButton() {
   )
 }
 
-/** 선택된 그리드 아이템의 상세 정보(이름/등급/설명/가격)와 구매 버튼을 표시 */
-// item: 현재 선택된 그리드 아이템 (StorePanel의 selectedItem state를 그대로 전달받음)
+// 현재 선택한 아이템의 상세 정보와 가격을 보여줍니다.
 function SelectedItemDetail({ item }) {
-  // item.id로 더미 상세 정보(이름/등급/설명/가격 등)를 조회
   const info = getStoreDummyItemInfo(item.id)
 
   return (
@@ -180,13 +170,12 @@ function SelectedItemDetail({ item }) {
   )
 }
 
+// 상점 메인 패널입니다. 탭, 상품 그리드, 선택 상품 상세, 사이드 필터를 조합합니다.
 export default function StorePanel() {
-  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
-  // 값을 바꾸는 함수를 호출하면 이 컴포넌트가 다시 렌더링되어 화면이 최신 상태로 갱신됩니다.
-
-  // activeTab: 현재 선택된 상단 탭의 id. 초기값은 첫 번째 탭("skin")
+  // 현재 선택한 상점 탭 id입니다.
   const [activeTab, setActiveTab] = useState(STORE_TABS[0].id)
-  // selectedItem: 그리드에서 현재 선택된 아이템 객체. 초기값은 첫 번째 아이템
+
+  // 현재 상세 정보로 보여줄 선택 상품입니다.
   const [selectedItem, setSelectedItem] = useState(STORE_GRID_ITEMS[0])
 
   return (

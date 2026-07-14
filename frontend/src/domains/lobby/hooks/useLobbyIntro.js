@@ -1,73 +1,40 @@
 import { useEffect, useRef, useState } from "react"
+import {
+  LOBBY_INTRO_SESSION_KEY,
+  LOBBY_VIDEO_HOLD_BEFORE_END_SEC,
+} from "@/domains/lobby/constants/lobbyIntro.js"
+import {
+  holdLobbyVideoOnLastFrame,
+  shouldRevealLobbyUi,
+} from "@/domains/lobby/utils/lobbyIntroVideo.js"
+import { useBgmAutoplay } from "@/shared/hooks/useBgmAutoplay.js"
 
-const UI_REVEAL_BEFORE_END_SEC = 1
-const VIDEO_HOLD_BEFORE_END_SEC = 0.04
-
-/**
- * 인트로 재생 완료 여부를 저장하는 localStorage 키.
- * localStorage를 사용하는 이유: 새로고침 후에도 재생하지 않아야 하기 때문입니다.
- * 로그인·로그아웃 시 authStore에서 이 키를 삭제해 재생 여부를 초기화합니다.
- */
-export const LOBBY_INTRO_SESSION_KEY = "lobby:intro_done"
-
-/**
- * duration이 아직 로드되지 않았으면 false를 반환합니다.
- */
-function shouldRevealUi(video) {
-  const { duration, currentTime } = video
-  if (!duration || !Number.isFinite(duration)) return false
-  return currentTime >= Math.max(0, duration - UI_REVEAL_BEFORE_END_SEC)
-}
-
-/**
- * duration이 없으면 즉시 pause합니다.
- * 0.001초 앞에 고정하는 이유: 정확한 마지막 프레임을 보장하기 위함입니다.
- */
-function holdOnLastFrame(video) {
-  const { duration, currentTime } = video
-  if (!duration || !Number.isFinite(duration)) {
-    video.pause()
-    return
-  }
-  const target = Math.max(0, duration - 0.001)
-  if (currentTime < target - 0.02) {
-    video.currentTime = target
-  }
-  video.pause()
-}
-
-/**
- * 로비 인트로 영상·BGM 재생 제어 훅.
- *
- * 제어 흐름:
- *   1. 영상 종료 1초 전 → UI 페이드인 (revealUi)
- *   2. 영상 종료 0.04초 전 → 마지막 프레임 고정 (holdVideo)
- *   3. 클릭 → 즉시 건너뜀 (skipIntro)
- *
- * uiRevealedRef / videoHeldRef:
- *   이벤트 핸들러 내부에서 state는 클로저로 인해 최신값을 반영하지 못합니다.
- *   ref 뮤텍스로 중복 실행을 막습니다.
- */
+// 로비 인트로 영상, 배경음악, UI 표시 타이밍을 묶어서 관리하는 훅입니다.
 export function useLobbyIntro() {
-  // useRef(초기값)은 리렌더링돼도 값이 유지되는 "상자"(current 프로퍼티)를 만드는 훅입니다.
-  // useState와 달리 값이 바뀌어도 리렌더링을 일으키지 않습니다.
-  // DOM 엘리먼트를 직접 참조하고 싶을 때 주로 사용합니다.
-  // bgVideoRef/audioRef: JSX의 <video>/<audio> 엘리먼트에 연결해 재생 제어에 사용
+  // 로비 인트로 배경 영상 태그를 직접 제어하기 위한 ref입니다.
+  // 컴포넌트에서 <video ref={bgVideoRef}>로 연결해서 currentTime, pause() 등을 사용합니다.
   const bgVideoRef = useRef(null)
+
+  // 로비 배경음악 audio 태그를 직접 제어하기 위한 ref입니다.
+  // 컴포넌트에서 <audio ref={audioRef}>로 연결하고, useBgmAutoplay가 이 ref로 재생을 시도합니다.
   const audioRef = useRef(null)
 
+  // 이전에 인트로를 이미 봤다면 로비 UI를 바로 보여주기 위한 값입니다.
   const alreadyPlayed = localStorage.getItem(LOBBY_INTRO_SESSION_KEY) === "1"
 
-  // uiRevealedRef/videoHeldRef: 이벤트 핸들러 안에서 "이미 처리했는지"를 즉시 확인하기 위한 ref.
-  // (아래 주석대로 state는 클로저 때문에 이벤트 핸들러 안에서 최신값을 못 읽을 수 있어 ref로 대체)
+  // UI를 이미 보여줬는지 기억합니다. 같은 처리가 여러 번 실행되는 것을 막습니다.
   const uiRevealedRef = useRef(alreadyPlayed)
+
+  // 영상을 이미 마지막 프레임에 고정했는지 기억합니다.
   const videoHeldRef = useRef(alreadyPlayed)
-  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하며, 값이 바뀌면 컴포넌트를
-  // 리렌더링합니다. uiVisible: 인트로 UI(메뉴 등)를 화면에 보여줄지 여부
+
+  // 인트로가 끝나서 로비 UI를 화면에 보여줘도 되는지 표시합니다.
   const [uiVisible, setUiVisible] = useState(alreadyPlayed)
 
   const revealUi = () => {
+    // 이미 UI를 보여준 뒤라면 localStorage 저장과 setState를 다시 하지 않습니다.
     if (uiRevealedRef.current) return
+
     uiRevealedRef.current = true
     localStorage.setItem(LOBBY_INTRO_SESSION_KEY, "1")
     setUiVisible(true)
@@ -75,78 +42,83 @@ export function useLobbyIntro() {
 
   const holdVideo = () => {
     const video = bgVideoRef.current
+
+    // video가 아직 연결되지 않았거나 이미 고정했다면 아무것도 하지 않습니다.
     if (!video || videoHeldRef.current) return
+
     videoHeldRef.current = true
-    holdOnLastFrame(video)
+    holdLobbyVideoOnLastFrame(video)
   }
 
-  /**
-   * metadata 미로드 상태에서 pause하면 0초에 멈추므로
-   * loadedmetadata 이후에 고정을 시도합니다.
-   */
   const skipIntro = () => {
+    // 이미 UI가 열린 상태라면 스킵할 것이 없으므로 바로 끝냅니다.
     if (uiRevealedRef.current) return
+
+    // 스킵을 누르면 영상 상태와 상관없이 UI는 먼저 보여줍니다.
     revealUi()
+
     const video = bgVideoRef.current
     if (!video) return
+
+    // 영상 길이를 이미 알고 있으면 바로 마지막 프레임에 고정합니다.
     if (video.duration && Number.isFinite(video.duration)) {
       holdVideo()
       return
     }
+
+    // 영상 길이를 아직 모르면 metadata가 준비된 뒤 마지막 프레임에 고정합니다.
     const onMetadata = () => {
       video.removeEventListener("loadedmetadata", onMetadata)
       holdVideo()
     }
+
     video.addEventListener("loadedmetadata", onMetadata)
   }
 
-  // useEffect(콜백, 의존성배열)는 렌더링 이후에 부수효과(DOM 조작, 이벤트 리스너 등록 등)를
-  // 실행하는 훅입니다. 의존성 배열이 빈 배열([])이면 컴포넌트가 처음 마운트될 때 한 번만 실행됩니다.
-  // 아래는 이미 재생한 경우: metadata 로드 후 즉시 마지막 프레임으로 이동
   useEffect(() => {
+    // 인트로를 처음 보는 사용자는 영상이 정상 재생되어야 하므로 여기서 처리하지 않습니다.
     if (!alreadyPlayed) return
+
     const video = bgVideoRef.current
     if (!video) return
+
+    // 이미 본 인트로라면 처음부터 마지막 프레임으로 보내고 멈춥니다.
     const jumpToEnd = () => {
       if (video.duration && Number.isFinite(video.duration)) {
         video.currentTime = video.duration - 0.001
         video.pause()
       }
     }
+
     if (video.readyState >= 1) {
       jumpToEnd()
     } else {
       video.addEventListener("loadedmetadata", jumpToEnd, { once: true })
     }
-    return () => video.removeEventListener("loadedmetadata", jumpToEnd)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 자동재생 정책에 막히면 첫 클릭 때 재시도
-  useEffect(() => {
-    const playBgm = () => {
-      if (audioRef.current) {
-        audioRef.current.play().catch(() => {})
-      }
-    }
-    playBgm()
-    window.addEventListener("click", playBgm, { once: true })
-    return () => window.removeEventListener("click", playBgm)
-  }, [])
+    return () => video.removeEventListener("loadedmetadata", jumpToEnd)
+  }, []) // mount 시점에 "이미 본 인트로인지" 한 번만 확인하면 됩니다.
 
   useEffect(() => {
     const video = bgVideoRef.current
     if (!video) return
 
+    // 영상 재생 위치를 보면서 UI 표시와 마지막 프레임 고정을 처리합니다.
     const syncPlayback = () => {
       const { duration, currentTime } = video
       if (!duration || !Number.isFinite(duration)) return
+
       const remaining = duration - currentTime
-      if (shouldRevealUi(video)) revealUi()
-      if (!videoHeldRef.current && remaining <= VIDEO_HOLD_BEFORE_END_SEC) holdVideo()
+
+      // 영상 끝나기 직전에 로비 UI를 먼저 보여줍니다.
+      if (shouldRevealLobbyUi(video)) revealUi()
+
+      // 영상이 완전히 끝나기 아주 직전에 마지막 프레임에 고정합니다.
+      if (!videoHeldRef.current && remaining <= LOBBY_VIDEO_HOLD_BEFORE_END_SEC) holdVideo()
     }
 
     const onEnded = () => {
-      // timeupdate가 마지막 타이밍을 놓쳤을 경우를 대비한 안전망
+      // timeupdate가 늦거나 누락되어도 ended에서는 반드시 UI 표시와 영상 고정을 처리합니다.
       revealUi()
       holdVideo()
     }
@@ -161,7 +133,11 @@ export function useLobbyIntro() {
       video.removeEventListener("loadedmetadata", syncPlayback)
       video.removeEventListener("ended", onEnded)
     }
-  }, [])
+  }, []) // video 이벤트 연결은 mount 시점에 한 번만 하면 됩니다.
 
+  // 로비 배경음악 자동 재생을 시도합니다.
+  useBgmAutoplay(audioRef)
+
+  // 화면 컴포넌트가 video/audio ref를 태그에 붙이고, uiVisible/skipIntro를 사용할 수 있게 반환합니다.
   return { bgVideoRef, audioRef, uiVisible, skipIntro }
 }

@@ -1,3 +1,4 @@
+// 파일 역할: InGamePlayerFrameStroke.jsx - 화면을 구성하는 컴포넌트입니다.
 import { publicAsset } from "@/shared/utils/publicAsset"
 
 function buildFrameMaskStyle(frameSrc) {

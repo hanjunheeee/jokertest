@@ -1,13 +1,8 @@
-/**
- * 친구 목록 토글 버튼.
- *
- * 로비에서 친구 패널을 열고 닫는 작은 고정 버튼입니다.
- */
-import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
+// 파일 역할: FriendListToggleButton.jsx - 화면을 구성하는 컴포넌트입니다.
+import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-// open: 친구 패널이 열려 있는지 여부 (버튼 aria-expanded 표시에 사용)
-// onOpen: 버튼 클릭 시 부모(LobbyPage)로부터 받은 콜백 — 패널을 여는 역할
+// 로비 우측 하단에 있는 친구 목록 열기 버튼입니다.
 export default function FriendListToggleButton({ open, onOpen }) {
   return (
     <button

@@ -1,10 +1,3 @@
-/**
- * 인게임 화면 페이지.
- *
- * 배경 이미지 위에 상단 컨트롤·시간흐름 바·플레이어 보드·채팅 패널을 겹쳐 배치합니다.
- * 각 영역의 실제 동작(소켓 연결, 타이머 등)은 components 하위 컴포넌트가 담당하고,
- * 이 파일은 화면 조합(레이아웃)만 맡습니다.
- */
 import { useState } from "react"
 import { motion } from "framer-motion"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
@@ -16,7 +9,6 @@ import PlayerRecordListPanel from "../components/controls/playerRecordList/Playe
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
-import { useInGameSocket } from "../hooks/useInGameSocket.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
@@ -25,7 +17,8 @@ import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 export default function InGamePage() {
   const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
   const gameState = useInGameStore((s) => s.state)
-  useInGameSocket()
+  // useInGameSocket()은 백엔드 game-core/gameSession이 아직 없어서 제외 — gameState는 항상 null이라
+  // 아래 컴포넌트들은 프리뷰(더미) 모드로 렌더링됩니다.
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">

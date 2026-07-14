@@ -1,3 +1,4 @@
+// 파일 역할: useDragScroll.js - React 상태와 부수효과를 묶는 커스텀 훅입니다.
 import { useEffect } from "react"
 
 /**

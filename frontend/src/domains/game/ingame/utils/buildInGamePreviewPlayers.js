@@ -1,3 +1,4 @@
+// 파일 역할: buildInGamePreviewPlayers.js - 여러 곳에서 재사용하는 유틸 함수입니다.
 import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
 import { getPreviewPlayerStatus } from "../constants/board/status/ingamePlayerStatus.js"
 import { resolveInGamePlayerTheme } from "../constants/ingamePlayerTheme.js"
