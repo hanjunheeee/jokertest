@@ -10,12 +10,12 @@ export const INGAME_PLAYER_THEME_PALETTE = [
   { id: "orange", color: "#FF7F39" },
   { id: "amber", color: "#ecff82" },
   { id: "indigo", color: "#748FFC" },
-  { id: "emerald", color: "#0a4a00" },
+  { id: "emerald", color: "#3DDC84" },
   { id: "cyan", color: "#22D3EE" },
   { id: "sky", color: "#38BDF8" },
-  { id: "scarlet", color: "#6c0000" },
-  { id: "fuchsia", color: "#033856" },
-  { id: "rose", color: "#101e85" },
+  { id: "scarlet", color: "#EF5350" },
+  { id: "fuchsia", color: "#C77DFF" },
+  { id: "rose", color: "#FF7094" },
 ]
 
 export const INGAME_PLAYER_THEME_PALETTE_SIZE = INGAME_PLAYER_THEME_PALETTE.length

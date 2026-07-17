@@ -4,7 +4,7 @@ import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScr
 export const ROOM_LIST_SHELL_CLASS =
   "absolute left-1/2 top-1/2 z-10 flex h-[clamp(34rem,64vh,44rem)] w-[min(62rem,82vw)] min-h-0 max-w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-[clamp(0.55rem,1.2vh,0.75rem)] px-[clamp(0.35rem,0.9vw,0.65rem)]"
 
-// 게임 만들기/게임 찾기 버튼 행입니다.
+// 연회장 만들기/연회장 찾기 버튼 행입니다.
 export const ROOM_LIST_TOOLBAR_CLASS =
   "flex shrink-0 items-center justify-start gap-[clamp(0.35rem,0.8vw,0.55rem)]"
 

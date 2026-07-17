@@ -46,12 +46,11 @@ export default function InGamePage() {
         <InGamePlayerBoard />
         <InGameChatShell />
         <InGameActionPanel />
+        <PlayerRecordListPanel
+          open={playerRecordListOpen}
+          onClose={() => setPlayerRecordListOpen(false)}
+        />
       </InGamePlayerSessionProvider>
-
-      <PlayerRecordListPanel
-        open={playerRecordListOpen}
-        onClose={() => setPlayerRecordListOpen(false)}
-      />
     </div>
   )
 }

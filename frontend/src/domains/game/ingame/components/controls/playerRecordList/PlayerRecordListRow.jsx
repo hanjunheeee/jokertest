@@ -4,7 +4,9 @@
 import { INGAME_PLAYER_RECORD_LIST_ASSETS } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListAssets.js"
 import { formatPlayerRecordStats } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
+  INGAME_PLAYER_RECORD_LIST_INFO_CLASS,
   INGAME_PLAYER_RECORD_LIST_NAME_CLASS,
+  INGAME_PLAYER_RECORD_LIST_NAME_ROW_CLASS,
   INGAME_PLAYER_RECORD_LIST_PROFILE_FRAME_CLASS,
   INGAME_PLAYER_RECORD_LIST_PROFILE_WRAP_CLASS,
   INGAME_PLAYER_RECORD_LIST_ROW_CLASS,
@@ -14,11 +16,14 @@ import {
   INGAME_PLAYER_RECORD_LIST_TITLE_TEXT_CLASS,
   INGAME_PLAYER_RECORD_LIST_TITLE_WRAP_CLASS,
 } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListLayout.js"
+import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../../constants/ingamePlayerTheme.js"
 import { pickInGameJobPortrait } from "../../../utils/pickInGameJobPortrait.js"
+import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
 import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 export default function PlayerRecordListRow({
+  playerId = null,
   // index: 목록 내 순서 — portraitSrc가 없을 때 직업 초상 순환 선택에 사용
   index,
   name,
@@ -28,6 +33,12 @@ export default function PlayerRecordListRow({
   title,
   portraitSrc,
 }) {
+  const { getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
+  const themeStyles = playerId ? getThemeStylesByPlayerId(playerId) : null
+  const nameStyle = themeStyles ? { color: themeStyles.color } : undefined
+  const nameClass =
+    `${INGAME_PLAYER_RECORD_LIST_NAME_CLASS} ${themeStyles ? INGAME_PLAYER_THEME_TEXT_RENDER_CLASS : ""}`.trim()
+
   const resolvedPortraitSrc = portraitSrc ?? pickInGameJobPortrait(index)
 
   return (
@@ -42,22 +53,26 @@ export default function PlayerRecordListRow({
           />
         </div>
 
-        <div className="min-w-0 flex-1">
-          <p className={INGAME_PLAYER_RECORD_LIST_NAME_CLASS}>{name}</p>
-          <p className={INGAME_PLAYER_RECORD_LIST_STATS_CLASS}>
-            {formatPlayerRecordStats({ wins, losses, winRate })}
-          </p>
-        </div>
+        <div className={INGAME_PLAYER_RECORD_LIST_INFO_CLASS}>
+          <div className={INGAME_PLAYER_RECORD_LIST_TITLE_WRAP_CLASS}>
+            <PublicAsset
+              src={INGAME_PLAYER_RECORD_LIST_ASSETS.titleFrame}
+              alt=""
+              className={INGAME_PLAYER_RECORD_LIST_TITLE_FRAME_CLASS}
+            />
+            <span className={INGAME_PLAYER_RECORD_LIST_TITLE_TEXT_CLASS}>
+              {title}
+            </span>
+          </div>
 
-        <div className={INGAME_PLAYER_RECORD_LIST_TITLE_WRAP_CLASS}>
-          <PublicAsset
-            src={INGAME_PLAYER_RECORD_LIST_ASSETS.titleFrame}
-            alt=""
-            className={INGAME_PLAYER_RECORD_LIST_TITLE_FRAME_CLASS}
-          />
-          <span className={INGAME_PLAYER_RECORD_LIST_TITLE_TEXT_CLASS}>
-            {title}
-          </span>
+          <div className={INGAME_PLAYER_RECORD_LIST_NAME_ROW_CLASS}>
+            <p className={nameClass} style={nameStyle}>
+              {name}
+            </p>
+            <p className={INGAME_PLAYER_RECORD_LIST_STATS_CLASS}>
+              {formatPlayerRecordStats({ wins, losses, winRate })}
+            </p>
+          </div>
         </div>
       </div>
     </li>
