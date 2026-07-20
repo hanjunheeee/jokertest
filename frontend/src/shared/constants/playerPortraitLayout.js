@@ -83,6 +83,24 @@ export const PLAYER_PORTRAIT_VARIANTS = {
     bgGradientClass: PLAYER_PORTRAIT_BG_GRADIENT_CLASS,
     portraitImageClass: PLAYER_PORTRAIT_CLOSEUP_IMAGE_CLASS,
   },
+
+  /** 투표현황 팝업 — 테두리 프레임 크기 유지, 초상 클립 영역만 넓게 */
+  voteStatus: {
+    bgInset: {
+      top: "4%",
+      bottom: "4%",
+      left: "4%",
+      right: "4%",
+    },
+    portraitInset: {
+      top: "2%",
+      bottom: "2%",
+      left: "2%",
+      right: "2%",
+    },
+    bgGradientClass: PLAYER_PORTRAIT_BG_GRADIENT_CLASS,
+    portraitImageClass: PLAYER_PORTRAIT_CLOSEUP_IMAGE_CLASS,
+  },
 }
 
 /** @param {string} variant */

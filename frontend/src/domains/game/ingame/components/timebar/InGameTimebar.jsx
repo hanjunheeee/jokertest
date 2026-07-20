@@ -12,8 +12,10 @@ import {
   INGAME_TIMEBAR_NODE_GAP_CLASS,
   INGAME_TIMEBAR_NODE_SIZE_CLASS,
   INGAME_TIMEBAR_POSITION_CLASS,
+  INGAME_TIMEBAR_STACK_CLASS,
   INGAME_TIMEBAR_TRACK_INSET,
 } from "../../constants/timebar/ingameTimebarLayout.js"
+import InGameVoteToggleButton from "../vote/InGameVoteToggleButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 /** 시간흐름 바 위 단계 노드 하나 — 활성 단계면 위에 지시 화살표를 추가로 그림 */
@@ -54,12 +56,17 @@ export default function InGameTimebar({
   day = INGAME_TIMEBAR_PREVIEW_DAY,
   // activePhaseId: 현재 활성화된 단계(낮/투표 등)의 id — 해당 노드만 강조 표시
   activePhaseId = INGAME_DAY_TIMEBAR_ACTIVE_PHASE,
+  // onVoteStatusClick: timebar 우측 하단 투표현황 버튼 클릭
+  onVoteStatusClick,
   className = INGAME_TIMEBAR_POSITION_CLASS,
 }) {
   const dayLabel = `제 ${day}일`
 
   return (
-    <div className={className} aria-label={`${dayLabel} 시간 흐름`}>
+    <div
+      className={`${className} ${INGAME_TIMEBAR_STACK_CLASS}`.trim()}
+      aria-label={`${dayLabel} 시간 흐름`}
+    >
       <div className="relative w-full leading-none">
         <PublicAsset
           src={INGAME_TIMEBAR_ASSETS.frame}
@@ -89,6 +96,10 @@ export default function InGameTimebar({
           ))}
         </div>
       </div>
+
+      {onVoteStatusClick ? (
+        <InGameVoteToggleButton onClick={onVoteStatusClick} />
+      ) : null}
     </div>
   )
 }

@@ -8,6 +8,10 @@
 export const INGAME_TIMEBAR_POSITION_CLASS =
   "absolute top-[clamp(0.45rem,1.8vh,1.1rem)] right-[clamp(0.35rem,1.2cqw,0.85rem)] z-10 w-[clamp(18rem,38cqw,30rem)] [container-type:inline-size]"
 
+/** timebar 프레임 + 하단 액션(투표현황 버튼 등) 세로 묶음 */
+export const INGAME_TIMEBAR_STACK_CLASS =
+  "flex flex-col items-end gap-[clamp(0.2rem,0.55vh,0.35rem)]"
+
 /** 진행바 프레임.png — 좌측 일차 프레임 영역 ("제 N일") */
 export const INGAME_TIMEBAR_DAY_LABEL_INSET = {
   top: "23%",
