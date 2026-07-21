@@ -16,7 +16,7 @@ export const ACCOUNT_PANEL_FORM_CLASS = "flex flex-col gap-[clamp(0.5rem,1vh,0.6
 export const ACCOUNT_PANEL_ACTION_ROW_CLASS = "flex items-center justify-between gap-3"
 
 // 확인 버튼에 들어가는 이미지와 글자 스타일입니다.
-export const ACCOUNT_PANEL_CONFIRM_BTN_SRC = "/button/버튼(수락 및 긍정).png"
+export const ACCOUNT_PANEL_CONFIRM_BTN_SRC = "/button/버튼(수락 및 긍정).png".normalize("NFD")
 export const ACCOUNT_PANEL_CONFIRM_BTN_CLASS = "relative block w-[clamp(7rem,13vw,10rem)] cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
 export const ACCOUNT_PANEL_CONFIRM_BTN_IMG_CLASS = "block h-auto w-full select-none"
 export const ACCOUNT_PANEL_CONFIRM_BTN_TEXT_CLASS = "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.8rem,1.1vw,0.95rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.8)]"

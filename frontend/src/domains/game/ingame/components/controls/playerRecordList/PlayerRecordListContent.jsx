@@ -3,6 +3,7 @@
  * 플레이어별 전적목록 — 본문 (헤더 + 스크롤 목록)
  */
 import { useRef } from "react"
+import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
 import { DUMMY_PLAYER_RECORDS } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
   INGAME_PLAYER_RECORD_LIST_SCROLL_CLASS,
@@ -14,6 +15,7 @@ import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
 export default function PlayerRecordListContent() {
   const scrollRef = useRef(null)
+  const { players } = useInGamePlayerSessionContext()
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -25,9 +27,23 @@ export default function PlayerRecordListContent() {
           className={INGAME_PLAYER_RECORD_LIST_SCROLL_CLASS}
           aria-label="플레이어 전적 목록"
         >
-          {DUMMY_PLAYER_RECORDS.map((record, index) => (
-            <PlayerRecordListRow key={record.id} index={index} {...record} />
-          ))}
+          {players.map((player, index) => {
+            const stats = DUMMY_PLAYER_RECORDS[index]
+
+            return (
+              <PlayerRecordListRow
+                key={player.id}
+                playerId={player.id}
+                index={index}
+                name={player.nickname}
+                portraitSrc={player.portraitSrc}
+                wins={stats?.wins ?? 0}
+                losses={stats?.losses ?? 0}
+                winRate={stats?.winRate ?? 0}
+                title={stats?.title ?? "—"}
+              />
+            )
+          })}
         </ul>
 
         <Scrollbar scrollRef={scrollRef} />

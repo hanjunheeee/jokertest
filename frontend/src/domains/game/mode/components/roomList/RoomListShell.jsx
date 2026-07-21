@@ -11,8 +11,8 @@ export default function RoomListShell({ rooms, onCreateGame, onQuickJoin, onRoom
   return (
     <div className={ROOM_LIST_SHELL_CLASS}>
       <nav className={ROOM_LIST_TOOLBAR_CLASS} aria-label="방 목록 작업">
-        <RoomListActionButton label="게임 만들기" onClick={onCreateGame} />
-        <RoomListActionButton label="게임 찾기" onClick={onQuickJoin} />
+        <RoomListActionButton label="연회장 만들기" onClick={onCreateGame} />
+        <RoomListActionButton label="연회장 찾기" onClick={onQuickJoin} />
       </nav>
       <RoomListPanel rooms={rooms} onRoomSelect={onRoomSelect} />
     </div>

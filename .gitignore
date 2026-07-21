@@ -8,3 +8,4 @@
 # 로컬 게임 상태 저장소 — 개발 실행 중 자동 생성됨
 backend/data/*.sqlite
 backend/data/*.sqlite-*
+node_modules

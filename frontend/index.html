@@ -10,4 +10,38 @@
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
+</html><!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>client</title>
+  </head>
+  <body>
+    <!-- 로비 메뉴 hover — index.css .lobby-menu-btn:hover filter: url(#lobby-menu-red) -->
+    <svg aria-hidden="true" width="0" height="0" class="pointer-events-none absolute">
+      <defs>
+        <filter id="lobby-menu-red" color-interpolation-filters="sRGB">
+          <feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0.2126 0.7152 0.0722 0 0
+                    0.2126 0.7152 0.0722 0 0
+                    0.2126 0.7152 0.0722 0 0
+                    0      0      0      1 0"
+            result="lum"
+          />
+          <feComponentTransfer in="lum">
+            <feFuncR type="linear" slope="0.7098" intercept="0" />
+            <feFuncG type="linear" slope="0" intercept="0" />
+            <feFuncB type="linear" slope="0" intercept="0" />
+            <feFuncA type="identity" />
+          </feComponentTransfer>
+        </filter>
+      </defs>
+    </svg>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>

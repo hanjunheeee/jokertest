@@ -1,1 +1,112 @@
+@import url("https://fonts.googleapis.com/earlyaccess/nanummyeongjo.css");
 @import "tailwindcss";
+
+@font-face {
+  font-family: "Shilla";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-02@1.0/Shilla_CultureM-Medium.woff2")
+    format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Shilla";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-02@1.0/Shilla_CultureB-Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-display: "Shilla", serif;
+  --font-subheading: "Nanum Myeongjo", serif;
+  --font-sans: "Nanum Myeongjo", serif;
+
+  --color-text-main: #b50000;
+  --color-text-body: #000000;
+
+  /* ViewportShell 기본값 — 런타임에 layouts/ViewportShell.jsx가 constants로 덮어씀 */
+  --game-viewport-max-width: 1280px;
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-black;
+  }
+
+  body {
+    @apply font-sans text-text-body antialiased;
+  }
+
+  h1 {
+    @apply font-display font-medium text-text-main;
+  }
+
+  h2 {
+    @apply font-subheading text-text-main font-bold;
+  }
+
+  p {
+    @apply text-text-body;
+  }
+}
+
+@layer components {
+  /* 큰 이미지/카드 버튼 — hover 시 약간 확대 */
+  .interactive-scale {
+    @apply cursor-pointer border-0 bg-transparent p-0 transition-transform duration-200 ease-out hover:scale-[1.02] active:scale-[0.99];
+  }
+
+  /* 소형 컨트롤 — 부모에 group, 자식(img/span)에 interactive-scale-sm */
+  .interactive-scale-sm {
+    @apply block transition-transform duration-200 ease-out group-hover:scale-[1.18] group-active:scale-[0.9] group-disabled:scale-100;
+  }
+
+  /* 슬라이더 노드 등 — 형제 peer(input) hover/active에 반응 (interactive-scale-sm과 동일 강도) */
+  .interactive-scale-peer-sm {
+    @apply block transition-transform duration-200 ease-out peer-hover:scale-[1.18] peer-active:scale-[0.9];
+  }
+
+  /* hover 시 text-main(#b50000) 단색 — sepia/hue-rotate(350deg) 노란 형광 톤 사용 안 함 */
+  .lobby-menu-btn__img {
+    transition: filter 0.2s ease;
+  }
+
+  .lobby-menu-btn:hover .lobby-menu-btn__img {
+    filter: url(#lobby-menu-red);
+  }
+
+  /* 텍스트 링크 굵기 */
+  .auth-text-link {
+    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-[13px] text-amber-800 underline-offset-2 hover:underline;
+    font-weight: 700;
+    -webkit-text-stroke: 0.35px currentColor;
+    paint-order: stroke fill;
+  }
+
+  /* app/layouts/ViewportShell — 게임 영역 + 좌우 배너 슬롯 */
+  .viewport-shell {
+    @apply flex min-h-svh w-full bg-black;
+    gap: var(--viewport-shell-column-gap, 20px);
+  }
+
+  .viewport-shell__banner {
+    @apply flex h-svh min-w-0 flex-1 items-center justify-center bg-black;
+    padding-inline: clamp(0.5rem, 1vw, 1rem);
+  }
+
+  .viewport-shell__banner-image {
+    @apply block h-full w-full object-contain object-center select-none;
+  }
+
+  .viewport-shell__game {
+    @apply relative h-svh shrink-0 overflow-x-hidden bg-black;
+    width: min(100%, var(--game-viewport-max-width));
+    flex: 0 0 auto;
+    container-type: inline-size;
+    container-name: game-viewport;
+  }
+}

@@ -14,8 +14,8 @@ export const MODE_CARD_DESCRIPTION_INSET = { top: "64.5%", left: "11%", right: "
 
 // 카드 제목 텍스트 스타일입니다.
 export const MODE_CARD_TITLE_CLASS =
-  "pointer-events-none absolute z-[1] text-center font-display text-[clamp(1.75rem,2.85vw,2.3rem)] font-medium leading-none tracking-normal text-[#1a1008] antialiased"
+  "pointer-events-none absolute z-[1] text-center font-display text-[clamp(calc(1.75rem+4pt),calc(2.85vw+4pt),calc(2.3rem+4pt))] font-medium leading-none tracking-normal text-[#1a1008] antialiased"
 
 // 카드 설명 문구 텍스트 스타일입니다.
 export const MODE_CARD_DESCRIPTION_CLASS =
-  "pointer-events-none absolute z-[1] text-center font-subheading text-[clamp(0.82rem,1.15vw,0.98rem)] font-bold leading-[1.48] text-[#1a1008]"
+  "pointer-events-none absolute z-[1] text-center font-subheading text-[clamp(calc(0.82rem+2pt),calc(1.15vw+2pt),calc(0.98rem+2pt))] font-bold leading-[1.48] text-[#1a1008]"

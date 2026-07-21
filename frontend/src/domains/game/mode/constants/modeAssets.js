@@ -1,6 +1,6 @@
 // 게임 모드 선택 계열 화면의 공통 배경 에셋입니다.
 export const MODE_SCREEN_ASSETS = {
-  bg: "/bg/게임모드 선택창 뒷배경.png",
+  bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
 }
 
 // 각 모드 카드에 사용할 프레임 이미지입니다.
@@ -27,8 +27,8 @@ export const GAME_MODES = [
   },
   {
     id: "multi",
-    label: "일반 방 찾기",
-    title: "일반 방 찾기",
+    label: "방 찾기",
+    title: "방 찾기",
     descriptionLines: [
       "다른 귀족들과 교류하며,",
       "무도회장을 피로 물들이려는",
@@ -48,31 +48,5 @@ export const GAME_MODES = [
       "(방 참여하기)",
     ],
     frame: MODE_FRAMES.secretBanquet,
-  },
-]
-
-// 멀티플레이 진입 화면에서 사용할 옵션 카드 데이터입니다.
-export const MULTIPLAY_OPTIONS = [
-  {
-    id: "create",
-    label: "게임 만들기",
-    title: "게임 만들기",
-    descriptionLines: [
-      "가면 아래의 진실을 숨기고",
-      "새로운 이야기를 시작하세요.",
-      "(방만들기)",
-    ],
-    frame: MODE_FRAMES.createGame,
-  },
-  {
-    id: "find",
-    label: "게임 찾기",
-    title: "게임 찾기",
-    descriptionLines: [
-      "속임수 가득한 무도회에 숨어든",
-      "변장자를 찾아내세요.",
-      "(온라인 공개방 참여)",
-    ],
-    frame: MODE_FRAMES.findGame,
   },
 ]

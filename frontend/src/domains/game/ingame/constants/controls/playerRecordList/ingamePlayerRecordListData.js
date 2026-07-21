@@ -1,7 +1,8 @@
 /**
  * 플레이어별 전적목록 더미 데이터·포맷 유틸.
  *
- * PlayerRecordListContent·PlayerRecordListRow에서 사용합니다.
+ * PlayerRecordListContent는 세션 players와 index로 병합합니다.
+ * id·name·portraitSrc는 더미 참고용이며, 실제 표시는 InGamePlayerSession 기준입니다.
  */
 import { pickInGameJobPortrait } from "../../../utils/pickInGameJobPortrait.js"
 

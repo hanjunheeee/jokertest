@@ -5,15 +5,15 @@
 
 /** 게임 매칭 화면 public 에셋 (frontend/public 기준) */
 export const GAME_MATCHING_ASSETS = {
-  bg: "/bg/게임모드 선택창 뒷배경.png",
+  bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
   popupFrame: "/frame/매칭 팝업 프레임.png",
   silhouetteReady: "/frame/매칭 준비 실루엣.png",
   silhouetteNotReady: "/frame/매칭 미준비 실루엣.png",
-  startGameButton: "/button/버튼(수락 및 긍정).png",
-  deleteRoomButton: "/button/버튼(취소 및 부정).png",
+  startGameButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
+  deleteRoomButton: "/button/버튼(취소 및 부정).png".normalize("NFD"),
   restrictionMark: "/button/제한 표시.png",
   timerBar: "/frame/타이머 바.png",
-  roomCodeViewButton: "/button/버튼(수락 및 긍정).png",
+  roomCodeViewButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
   roomCodeShareFrame: "/frame/방코드 발송 프레임.png",
 }
 

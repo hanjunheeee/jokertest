@@ -61,7 +61,7 @@ export const INGAME_PLAYER_RECORD_LIST_ROW_CLASS =
   "relative mt-[clamp(0.28rem,0.75vh,0.42rem)] w-full list-none first:mt-0"
 
 export const INGAME_PLAYER_RECORD_LIST_ROW_INNER_CLASS =
-  "flex items-center gap-[clamp(0.25rem,0.55vw,0.4rem)] rounded-sm border border-[#3a2818]/80 bg-[#120a06]/55 px-[clamp(0.35rem,1.8%,0.5rem)] py-[clamp(0.28rem,0.75vh,0.4rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+  "flex items-center gap-[clamp(0.35rem,0.75vw,0.55rem)] rounded-sm border border-[#3a2818]/80 bg-[#120a06]/55 px-[clamp(0.4rem,2%,0.55rem)] py-[clamp(0.32rem,0.85vh,0.45rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
 
 export const INGAME_PLAYER_RECORD_LIST_PROFILE_WRAP_CLASS =
   "relative size-[clamp(3.2rem,3.6vw,3.8rem)] shrink-0"
@@ -69,17 +69,24 @@ export const INGAME_PLAYER_RECORD_LIST_PROFILE_WRAP_CLASS =
 export const INGAME_PLAYER_RECORD_LIST_PROFILE_FRAME_CLASS =
   "pointer-events-none absolute inset-0 z-[2] h-full w-full select-none object-contain"
 
+/** 프로필 우측 — 칭호 → (닉네임 | 전적) 가로 배치 */
+export const INGAME_PLAYER_RECORD_LIST_INFO_CLASS =
+  "flex min-w-0 flex-1 flex-col justify-center gap-[clamp(0.1rem,0.3vh,0.16rem)] pt-[clamp(0.22rem,0.6vh,0.38rem)]"
+
+export const INGAME_PLAYER_RECORD_LIST_NAME_ROW_CLASS =
+  "flex min-w-0 items-center gap-[clamp(0.35rem,0.65vw,0.5rem)]"
+
 export const INGAME_PLAYER_RECORD_LIST_NAME_CLASS =
-  "truncate font-subheading text-[clamp(0.72rem,0.95vw,0.88rem)] font-bold leading-tight text-white underline decoration-white/35 underline-offset-[0.18em]"
+  "min-w-0 flex-1 truncate font-subheading text-[clamp(0.92rem,1.18vw,1.08rem)] font-bold leading-tight text-white"
 
 export const INGAME_PLAYER_RECORD_LIST_STATS_CLASS =
-  "mt-[0.18rem] truncate font-subheading text-[clamp(0.58rem,0.78vw,0.68rem)] font-bold leading-none text-white/55 tabular-nums"
+  "shrink-0 truncate font-subheading text-[clamp(0.78rem,1.02vw,0.92rem)] font-bold leading-none text-white/55 tabular-nums"
 
 export const INGAME_PLAYER_RECORD_LIST_TITLE_WRAP_CLASS =
-  "relative ml-auto w-[clamp(5.4rem,44%,6.8rem)] shrink-0"
+  "relative mb-[clamp(0.06rem,0.2vh,0.12rem)] w-[clamp(5.5rem,52%,7.2rem)] max-w-full shrink-0 self-start"
 
 export const INGAME_PLAYER_RECORD_LIST_TITLE_FRAME_CLASS =
-  "block h-[clamp(1.75rem,2.6vw,2.15rem)] w-full select-none object-fill object-center"
+  "block h-[clamp(1.28rem,1.85vw,1.55rem)] w-full select-none object-fill object-center"
 
 export const INGAME_PLAYER_RECORD_LIST_TITLE_TEXT_CLASS =
-  "pointer-events-none absolute inset-[14%_10%_16%_10%] flex items-center justify-center whitespace-nowrap text-center font-subheading text-[clamp(0.62rem,0.88vw,0.76rem)] font-bold leading-tight text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-[16%_12%_18%_12%] flex items-center justify-center whitespace-nowrap text-center font-subheading text-[clamp(0.5rem,0.68vw,0.6rem)] font-bold leading-tight text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
