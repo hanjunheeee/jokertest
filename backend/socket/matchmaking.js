@@ -69,6 +69,15 @@ function registerMatchmakingHandlers(io, socket, uuid) {
     )
     socket.on('create_room', (payload, callback) => handleCreateRoom(io, socket, uuid, payload, callback))
     socket.on('get_current_room', (payload, callback) => handleGetCurrentRoom(uuid, callback))
+    socket.on('get_public_rooms', (payload, callback) => handleGetPublicRooms(callback))
+    // payload를 여기서 미리 구조분해하지 않는다. null/문자열/배열처럼 예상 밖 형태가 오면
+    // `{ roomId } = payload` 구조분해 자체가 예외를 던져 .catch()로 넘어가 사용자에게
+    // 아무 응답도 못 주고 조용히 실패하므로, 원본 payload를 그대로 넘겨 핸들러 안에서 검증한다.
+    socket.on('join_public_room', (payload) =>
+        handleJoinPublicRoom(io, socket, uuid, payload).catch((err) =>
+            console.error('\x1b[31m[공개 방 참가 에러]\x1b[0m', err)
+        )
+    )
     socket.on('delete_room',       () => handleDeleteRoom(io, uuid))
     socket.on('start_game',        () =>
         handleStartGame(io, uuid).catch((err) =>
@@ -135,6 +144,40 @@ function buildRoomPayload(room) {
     }
 }
 
+/** 공개 목록에 노출해도 되는 최소 Room 정보만 반환합니다. */
+function buildPublicRoomList() {
+    return [...gameRooms.values()]
+        // 이번 목록 계약으로 생성된 open/code Room만 대상으로 하며, settings가 없는
+        // 구버전 랜덤 매칭 Room은 공개 목록에 섞지 않는다.
+        .filter((room) => room.accessType === 'open' || room.accessType === 'code')
+        .map((room) => ({
+            // roomCode·참가자·방장·소켓 식별자는 목록 표시에 필요 없고 참가 권한 및 개인정보와
+            // 연결되므로 제외한다. code 방은 accessType만 내려 자물쇠 상태로 표시한다.
+            id: room.id,
+            current: room.players.size,
+            max: room.settings.maxPlayers,
+            title: room.title,
+            accessType: room.accessType,
+            status: room.players.size >= room.settings.maxPlayers ? 'full' : 'waiting',
+        }))
+}
+
+function emitPublicRoomList(io) {
+    if (typeof io?.emit !== 'function') return
+
+    try {
+        io.emit('public_rooms_updated', { rooms: buildPublicRoomList() })
+    } catch (error) {
+        // 목록 알림 실패가 이미 확정된 방 생성·참가 상태를 되돌리면 안 된다.
+        console.error('[공개방 목록 알림 실패]', error)
+    }
+}
+
+function handleGetPublicRooms(callback) {
+    if (typeof callback !== 'function') return
+    callback({ ok: true, rooms: buildPublicRoomList() })
+}
+
 /**
  * 부분 가입된 Socket.IO room에서 안전하게 나갑니다.
  * socket.leave()는 어댑터에 따라 값을 반환하지 않거나 Promise를 반환할 수 있어 .catch()를
@@ -191,10 +234,10 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
     // 반드시 위의 pendingRoomTransitions.has(uuid) 검사에서 걸러진다(더블클릭/동시 요청 방지).
     pendingRoomTransitions.add(uuid)
 
-    handleCreateRoomAfterReservation(socket, uuid, validation.value, callback)
+    handleCreateRoomAfterReservation(io, socket, uuid, validation.value, callback)
 }
 
-async function handleCreateRoomAfterReservation(socket, uuid, { accessType, settings }, callback) {
+async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, settings }, callback) {
     let roomId = null
     let joined = false
     let room = null
@@ -260,6 +303,7 @@ async function handleCreateRoomAfterReservation(socket, uuid, { accessType, sett
         // 코드를 먼저 가져가면 두 방이 같은 코드를 공유하는 상태가 될 수 있기 때문이다.
         gameRooms.set(roomId, room)
         playerRoom.set(uuid, roomId)
+        emitPublicRoomList(io)
     } catch (err) {
         // repository/adapter 등 내부 오류의 상세 내용은 클라이언트에 노출하지 않고 서버에만 남긴다.
         console.error('[방 생성 에러]', err)
@@ -285,7 +329,36 @@ async function handleCreateRoomAfterReservation(socket, uuid, { accessType, sett
     }
 }
 
-async function handleJoinRoomByCode(io, socket, uuid, roomCode) {
+async function handleJoinPublicRoom(io, socket, uuid, payload) {
+    // null/문자열/배열 등 예상 밖 형태는 구조분해 예외 없이 명시적으로 거부한다.
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        socket.emit('room_join_failed', { message: '잘못된 요청입니다.' })
+        return
+    }
+    const { roomId } = payload
+    if (typeof roomId !== 'string' || !roomId) {
+        socket.emit('room_join_failed', { message: '잘못된 요청입니다.' })
+        return
+    }
+
+    const room = gameRooms.get(roomId)
+    // 클라이언트의 버튼 상태는 권한 경계가 아니다. 조작된 roomId 요청으로 코드 방에
+    // 우회 입장하지 못하도록 서버가 실제 Room의 공개 여부를 반드시 다시 확인한다.
+    if (!room || room.accessType !== 'open') {
+        socket.emit('room_join_failed', { message: '공개 방을 찾을 수 없습니다.' })
+        return
+    }
+
+    // 공개 목록에는 비밀 코드가 포함되지 않는다. 서버 내부에서 확인한 공개 Room의 코드만
+    // 기존 코드 참가 경로에 전달해 동일한 잠금·정원·연결 종료 검사를 재사용한다.
+    // 이때 지금 이 시점의 roomId/accessType을 함께 넘겨, handleJoinRoomByCode가 사용자
+    // 조회 등으로 대기하는 동안 이 방이 삭제되고 우연히 같은 코드를 가진 다른(비공개일
+    // 수도 있는) 방이 새로 생기더라도 커밋 직전에 "원래 선택한 그 방이 맞는지"를 다시
+    // 검증할 수 있게 한다.
+    await handleJoinRoomByCode(io, socket, uuid, room.code, { roomId: room.id, accessType: room.accessType })
+}
+
+async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = null) {
     const normalizedCode = String(roomCode ?? '').trim()
     if (!normalizedCode) {
         socket.emit('room_join_failed', { message: '방 코드를 입력해주세요.' })
@@ -354,6 +427,18 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode) {
             return
         }
 
+        // 공개방 목록에서 특정 roomId를 선택해 들어온 요청이라면, 코드로 다시 찾은 이 방이
+        // 정말 그 방이 맞는지(그리고 여전히 공개 방인지) 커밋 직전에 재검증한다. 대기하는
+        // 동안 원래 선택한 방이 삭제되고 우연히 같은 코드를 가진 다른 방(비공개일 수도
+        // 있음)이 새로 생겼다면, 위의 id 동일성 검사만으로는 걸러지지 않는다 — 그 다른
+        // 방도 새로 찾은 room 참조와 gameRooms의 참조가 일치해 정상 방처럼 보이기 때문이다.
+        if (expectedRoom && (room.id !== expectedRoom.roomId || room.accessType !== expectedRoom.accessType)) {
+            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            joinedRoomId = null
+            socket.emit('room_join_failed', { message: '공개 방을 찾을 수 없습니다.' })
+            return
+        }
+
         // join 대기 중 다른 경로로 이미 다른 방에 들어갔을 수 있어 다시 확인한다.
         if (playerRoom.has(uuid)) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
@@ -384,6 +469,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode) {
 
         socket.emit('room_joined', buildRoomPayload(room))
         socket.to(room.id).emit('player_joined_room', { player })
+        emitPublicRoomList(io)
     } catch (err) {
         console.error('[코드 참가 에러]', err)
         // 위의 명시적 실패 경로들은 각자 leave까지 마쳤다. 여기 도달했다는 건 예상 못한
@@ -450,6 +536,7 @@ function handleDeleteRoom(io, uuid) {
 
     room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     gameRooms.delete(roomId)
+    emitPublicRoomList(io)
 }
 
 async function handleStartGame(io, uuid) {
@@ -465,6 +552,7 @@ async function handleStartGame(io, uuid) {
 
     room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     gameRooms.delete(roomId)
+    emitPublicRoomList(io)
 }
 
 function removeFromRoom(io, socket, uuid) {
@@ -480,6 +568,7 @@ function removeFromRoom(io, socket, uuid) {
 
     if (room.players.size === 0) {
         gameRooms.delete(roomId)
+        emitPublicRoomList(io)
         return
     }
 
@@ -489,6 +578,7 @@ function removeFromRoom(io, socket, uuid) {
     }
 
     io.to(roomId).emit('player_left_room', { uuid })
+    emitPublicRoomList(io)
 }
 
 /** 테스트 전용: 모듈 내부 상태를 초기화합니다. 런타임 코드에서는 호출하지 마세요. */
@@ -555,7 +645,10 @@ module.exports = {
         handleCreateRoom,
         handleJoinRoomByCode,
         handleGetCurrentRoom,
+        handleGetPublicRooms,
+        handleJoinPublicRoom,
         handleJoinMatchmaking,
+        handleDeleteRoom,
         leaveSocketRoomSafely,
     },
 }

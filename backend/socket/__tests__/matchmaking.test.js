@@ -16,6 +16,8 @@ const {
     handleCreateRoom,
     handleJoinRoomByCode,
     handleGetCurrentRoom,
+    handleGetPublicRooms,
+    handleJoinPublicRoom,
     handleJoinMatchmaking,
     leaveSocketRoomSafely,
 } = matchmaking.__testables
@@ -43,6 +45,10 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
         emitted: [],
         joined: [],
         left: [],
+        // join/leave 로그(joined·left)와 별개로, "지금 실제로 어느 room에 들어가 있는지"를
+        // Set으로도 추적한다. join 후 실패해 곧바로 leave하는 경로를 검증할 때 로그 배열만으로는
+        // "결국 그 room에 남아있지 않다"를 정확히 표현하기 어렵기 때문이다.
+        currentRooms: new Set(),
         // 프로퍼티로 두어 테스트 중간에 socket.joinShouldReject = false / socket.connected = false
         // 처럼 값을 바꿀 수 있게 한다(클로저로 캡처하면 나중에 바꿔도 반영되지 않음).
         joinShouldReject,
@@ -51,9 +57,11 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
             if (joinGate) await joinGate
             if (socket.joinShouldReject) throw new Error('join 실패(테스트 주입)')
             socket.joined.push(roomId)
+            socket.currentRooms.add(roomId)
         },
         async leave(roomId) {
             socket.left.push(roomId)
+            socket.currentRooms.delete(roomId)
         },
         emit(event, payload) {
             socket.emitted.push({ event, payload })
@@ -75,6 +83,11 @@ function createFakeIo(sockets = []) {
     return {
         sockets: { sockets: socketMap },
         broadcasts,
+        emit(event, payload) {
+            // io.emit()은 특정 room이 아니라 연결된 모든 소켓에 보내는 전역 브로드캐스트다.
+            // roomId를 null로 남겨 room 단위 브로드캐스트(to().emit())와 구분해서 기록한다.
+            broadcasts.push({ roomId: null, event, payload })
+        },
         to(roomId) {
             return {
                 emit(event, payload) {
@@ -727,4 +740,59 @@ test('leaveSocketRoomSafely: leave가 undefined/resolved Promise/동기 예외/r
         const fakeSocket = { leave }
         await assert.doesNotReject(() => leaveSocketRoomSafely(fakeSocket, 'room-x', '[테스트]'))
     }
+})
+
+// ── 공개방 회귀 테스트: Room 교체 경쟁 조건 ─────────────────────────────────
+// 이 테스트는 수정 전 코드에서 먼저 실행해 실패(버그 재현)를 확인한 뒤, 최소 수정을
+// 적용하고 다시 실행해 통과를 확인하는 용도다. 결과는 최종 보고에 그대로 남긴다.
+
+test('공개방 입장: 선택한 open 방(A)이 대기 중 삭제되고 같은 코드의 code 방(B)이 생기면 참가가 거부되고 B에 반영되지 않는다', async () => {
+    const hostASocket = createFakeSocket('uuid-raceAhost')
+    const io = createFakeIo([hostASocket])
+    const createdA = await callAsPromise(handleCreateRoom, io, hostASocket, 'uuid-raceAhost', validSettingsPayload())
+    const roomAId = createdA.room.roomId
+    const roomACode = createdA.room.roomCode
+
+    // 사용자 조회를 지연시켜, 그 사이 A 삭제 + B(같은 코드) 생성을 끼워 넣을 수 있게 한다.
+    const gate = deferred()
+    fakeFindByUuid = async (uuid) => { await gate.promise; return { nickname: `user-${uuid}` } }
+
+    const joinerSocket = createFakeSocket('uuid-racejoiner')
+    io.sockets.sockets.set(joinerSocket.id, joinerSocket)
+    const joinPromise = handleJoinPublicRoom(io, joinerSocket, 'uuid-racejoiner', { roomId: roomAId })
+
+    // handleJoinPublicRoom → handleJoinRoomByCode가 findByUuid 대기 지점까지 진행되도록 한 tick 양보한다.
+    await Promise.resolve()
+
+    // 대기 중 A를 지우고, 같은 roomCode를 가진 code 방 B를 새로 만든다.
+    matchmaking.__removeRoomForTests(roomAId)
+    matchmaking.__seedRoomForTests({
+        id: 'room-B',
+        code: roomACode,
+        hostUuid: 'uuid-hostB',
+        title: 'B',
+        accessType: 'code',
+        players: new Map([['uuid-hostB', { uuid: 'uuid-hostB', nickname: 'hostB' }]]),
+        settings: {
+            maxPlayers: 8, jokerCount: 2, lightsOut: false, soulBetting: false,
+            dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90, voteReveal: true,
+        },
+    })
+
+    gate.resolve({ nickname: 'user-uuid-racejoiner' })
+    await joinPromise
+
+    // 요청은 실패해야 한다.
+    const failedEvent = joinerSocket.emitted.find((e) => e.event === 'room_join_failed')
+    assert.ok(failedEvent, '참가가 거부되어야 하는데 실패 이벤트가 없습니다')
+
+    // B의 players/playerRoom에 참가자가 반영되면 안 된다.
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    const [, roomB] = snapshot.gameRooms.find(([id]) => id === 'room-B')
+    assert.ok(roomB)
+    assert.equal(roomB.players.some(([pUuid]) => pUuid === 'uuid-racejoiner'), false)
+    assert.equal(snapshot.playerRoom.some(([pUuid]) => pUuid === 'uuid-racejoiner'), false)
+
+    // 사용자가 B의 Socket room에 최종적으로 남아있으면 안 된다.
+    assert.equal(joinerSocket.currentRooms.has('room-B'), false)
 })
