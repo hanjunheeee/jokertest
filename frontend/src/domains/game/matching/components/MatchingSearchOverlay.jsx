@@ -1,6 +1,7 @@
 // 파일 역할: MatchingSearchOverlay.jsx - 화면을 구성하는 컴포넌트입니다.
 import {
   MATCHING_SEARCH_OVERLAY_CANCEL_CLASS,
+  MATCHING_SEARCH_OVERLAY_CANCEL_TEXT_CLASS,
   MATCHING_SEARCH_OVERLAY_CLASS,
   MATCHING_SEARCH_OVERLAY_DEFAULT_MESSAGE,
   MATCHING_SEARCH_OVERLAY_MESSAGE_CLASS,
@@ -18,7 +19,7 @@ export default function MatchingSearchOverlay({
     <div className={MATCHING_SEARCH_OVERLAY_CLASS} role="dialog" aria-modal="true">
       <p className={MATCHING_SEARCH_OVERLAY_MESSAGE_CLASS}>{message}</p>
       <button type="button" onClick={onCancel} className={MATCHING_SEARCH_OVERLAY_CANCEL_CLASS}>
-        취소
+        <span className={MATCHING_SEARCH_OVERLAY_CANCEL_TEXT_CLASS}>취소</span>
       </button>
     </div>
   )

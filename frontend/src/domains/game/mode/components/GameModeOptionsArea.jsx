@@ -18,6 +18,7 @@ export default function GameModeOptionsArea({ onModeSelect }) {
             title={mode.title}
             descriptionLines={mode.descriptionLines}
             frame={mode.frame}
+            comingSoon={mode.comingSoon}
             onSelect={() => onModeSelect(mode.id)}
           />
         ))}

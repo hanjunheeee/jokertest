@@ -16,7 +16,11 @@ export default function PublicAsset({
         // macOS에서 NFD로 저장된 한글 파일명은 Linux/Docker에서 NFC 요청과
         // 다른 파일명으로 취급됩니다. 최초 요청이 실패했을 때만 NFD 경로로 재시도합니다.
         if (image.dataset.nfdFallbackSource !== src) {
-            const fallbackSrc = publicAsset(src.normalize("NFD"))
+            // Do not pass this through publicAsset: its normal path is
+            // intentionally NFC. This fallback preserves NFD for files that
+            // actually live on a decomposing filesystem.
+            const normalized = src.startsWith("/") ? src : `/${src}`
+            const fallbackSrc = encodeURI(normalized.normalize("NFD"))
 
             if (fallbackSrc !== image.getAttribute("src")) {
                 image.dataset.nfdFallbackSource = src

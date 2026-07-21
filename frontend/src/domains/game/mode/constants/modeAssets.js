@@ -18,6 +18,7 @@ export const GAME_MODES = [
     id: "single",
     label: "랜덤 매칭",
     title: "랜덤 매칭",
+    comingSoon: true,
     descriptionLines: [
       "홀로 무도회에 잠입하여",
       "베일 뒤에 숨은 광대를 추리하세요.",
