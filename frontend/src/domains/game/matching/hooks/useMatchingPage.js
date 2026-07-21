@@ -29,7 +29,7 @@ export function useMatchingPage() {
   const handleRoomDeleted = useCallback(() => navigate("/multiplay"), [navigate])
   const handleGameStarted = useCallback(() => navigate("/ingame"), [navigate])
 
-  const { deleteRoom, startGame, setReady, isStarting, isSettingReady } = useMatchingRoom({
+  const { deleteRoom, startGame, setReady, isStarting, isSettingReady, isRoomVerified } = useMatchingRoom({
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
   })
@@ -68,6 +68,7 @@ export function useMatchingPage() {
     toggleReady,
     canStart,
     isStarting,
+    isRoomVerified,
     startGame,
     deleteRoom,
     handleBack,

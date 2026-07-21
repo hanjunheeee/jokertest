@@ -16,6 +16,7 @@ export default function MatchingRoomPanelArea({
   onToggleReady,
   canStart,
   isStarting,
+  isRoomVerified,
   onStartGame,
   onDeleteRoom,
   onLeaveRoom,
@@ -32,6 +33,7 @@ export default function MatchingRoomPanelArea({
         onToggleReady={onToggleReady}
         canStart={canStart}
         isStarting={isStarting}
+        isRoomVerified={isRoomVerified}
         onStartGame={onStartGame}
         onDeleteRoom={onDeleteRoom}
         onLeaveRoom={onLeaveRoom}

@@ -9,6 +9,7 @@
  * - isHost: true면 게임시작·방 삭제 표시, false면 방 나가기 표시(준비 버튼은 방장·비방장 공통)
  * - isReady, isSettingReady, onToggleReady: 본인 준비 상태·요청 중 여부·토글 콜백(공통)
  * - canStart, isStarting: 서버가 계산한 시작 가능 여부·시작 요청 진행 중 여부(게임시작 버튼 비활성화에 사용)
+ * - isRoomVerified: 서버 기준 현재 Room 상태 재확인이 끝났는지(준비·시작 버튼 공통 비활성화 조건)
  * - onStartGame, onDeleteRoom: 방장 전용 콜백
  * - onLeaveRoom: 비방장 전용 콜백
  *
@@ -48,6 +49,7 @@ export default function MatchingPopupPanel({
   onToggleReady,
   canStart,
   isStarting,
+  isRoomVerified,
   onStartGame,
   onDeleteRoom,
   onLeaveRoom,
@@ -101,7 +103,7 @@ export default function MatchingPopupPanel({
                   type="button"
                   aria-label={isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn}
                   onClick={onToggleReady}
-                  disabled={isSettingReady}
+                  disabled={isSettingReady || !isRoomVerified}
                   className={MATCHING_ACTION_BTN_CLASS}
                 >
                   <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
@@ -119,7 +121,7 @@ export default function MatchingPopupPanel({
                   type="button"
                   aria-label={isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
                   onClick={onStartGame}
-                  disabled={!canStart || isStarting}
+                  disabled={!canStart || isStarting || !isRoomVerified}
                   className={MATCHING_ACTION_BTN_CLASS}
                 >
                   <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
@@ -150,7 +152,7 @@ export default function MatchingPopupPanel({
                   type="button"
                   aria-label={isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn}
                   onClick={onToggleReady}
-                  disabled={isSettingReady}
+                  disabled={isSettingReady || !isRoomVerified}
                   className={MATCHING_ACTION_BTN_CLASS}
                 >
                   <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>

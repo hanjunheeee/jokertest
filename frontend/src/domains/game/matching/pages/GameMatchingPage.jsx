@@ -27,6 +27,7 @@ export default function GameMatchingPage() {
     toggleReady,
     canStart,
     isStarting,
+    isRoomVerified,
     startGame,
     deleteRoom,
     handleBack,
@@ -48,6 +49,7 @@ export default function GameMatchingPage() {
         onToggleReady={toggleReady}
         canStart={canStart}
         isStarting={isStarting}
+        isRoomVerified={isRoomVerified}
         onStartGame={startGame}
         onDeleteRoom={deleteRoom}
         onLeaveRoom={handleBack}
