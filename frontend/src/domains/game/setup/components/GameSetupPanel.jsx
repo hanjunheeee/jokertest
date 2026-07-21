@@ -4,13 +4,17 @@
  *
  * props
  * - visible: true면 입장 연출 후 클릭 허용 (부모 uiVisible과 동기)
- * - onCreateGame: "게임 만들기" 클릭 시 호출 (부모에서 라우팅)
+ * - isCreating: 방 생성 요청이 진행 중이면 true (게임 만들기 버튼 비활성화용)
+ * - onCreateGame: "게임 만들기" 클릭 시 create_room payload를 담아 호출 (부모에서 emit 처리)
  *
- * 에셋·탭·항목 정의는 constants/gameSetupAssets.js 참고
+ * 에셋은 constants/gameSetupAssets.js, 탭·항목 정의는 constants/gameSetupOptions.js 참고
  */
 import { motion } from "framer-motion"
 import { useState } from "react"
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
+import { GENERAL_GAME_SETUP, MEETING_GAME_SETUP } from "../constants/gameSetupOptions.js"
+import { useSetupTabState } from "../hooks/useSetupTabState.js"
+import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
 import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
@@ -37,10 +41,20 @@ const FRAME_OVERLAY_INSET = {
 const SETUP_CONTENT_CLASS =
   "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip pr-1 pt-[clamp(4rem,5vh,6rem)]"
 
+// 일반+회의&투표 두 탭이 "게임 만들기" 시점에 값을 함께 모을 수 있으려면 같은 상태를
+// 공유해야 한다. 각 탭이 따로 useSetupTabState를 부르면 탭을 전환할 때 다른 쪽 탭에서
+// 입력한 값을 잃어버리므로, 이 패널에서 두 탭의 항목을 합쳐 한 번만 상태를 만든다.
+const ALL_SETUP_ITEMS = [...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP]
+
 /** 프레임·탭·본문·게임 만들기 버튼을 묶는 설정 패널 */
-export default function GameSetupPanel({ visible, onCreateGame }) {
+export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
   // 현재 선택된 설정 탭 id입니다.
   const [activeTab, setActiveTab] = useState("general")
+  const { checks, ranges, setCheck, setRange } = useSetupTabState(ALL_SETUP_ITEMS)
+
+  const handleCreateClick = () => {
+    onCreateGame(buildCreateRoomPayload({ checks, ranges }))
+  }
 
   return (
     <div
@@ -68,15 +82,15 @@ export default function GameSetupPanel({ visible, onCreateGame }) {
 
             <div className={SETUP_CONTENT_CLASS}>
               {activeTab === "general" ? ( // 일반 탭
-                <GeneralGameSetupTab />
+                <GeneralGameSetupTab checks={checks} ranges={ranges} setCheck={setCheck} setRange={setRange} />
               ) : ( // 회의&투표 탭
-                <MeetingGameSetupTab />
+                <MeetingGameSetupTab checks={checks} ranges={ranges} setCheck={setCheck} setRange={setRange} />
               )}
             </div>
           </div>
         </div>
 
-        <GameSetupCreateButton onClick={onCreateGame} />
+        <GameSetupCreateButton onClick={handleCreateClick} disabled={isCreating} />
       </motion.div>
     </div>
   )

@@ -4,6 +4,12 @@
 .env.*
 !.env.example
 !**/.env.example
+# backend 테스트 전용 더미 값(비밀 없음) — CI/다른 개발 환경에서도 npm test가
+# 실제 DATABASE_URL 없이 동작하도록 커밋 대상에서 예외로 둔다.
+!backend/.env.test
+
+# Claude Code 개인 로컬 설정
+.claude/settings.local.json
 
 # 로컬 게임 상태 저장소 — 개발 실행 중 자동 생성됨
 backend/data/*.sqlite

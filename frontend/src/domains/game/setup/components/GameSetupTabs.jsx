@@ -1,4 +1,5 @@
-import { GAME_SETUP_ASSETS, GAME_SETUP_TABS } from "../constants/gameSetupAssets.js"
+import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
+import { GAME_SETUP_TABS } from "../constants/gameSetupOptions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const TAB_BTN_CLASS =

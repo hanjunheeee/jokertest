@@ -10,13 +10,14 @@ import GameSetupPageControls from "../components/GameSetupPageControls.jsx"
 import { useGameSetupPage } from "../hooks/useGameSetupPage.js"
 
 export default function GameSetupPage() {
-  const { uiVisible, goBackToMultiplay, createGame } = useGameSetupPage()
+  const { uiVisible, isCreating, goBackToMultiplay, createGame } = useGameSetupPage()
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
       <GameSetupBackground />
       <GameSetupPanel
         visible={uiVisible}
+        isCreating={isCreating}
         onCreateGame={createGame}
       />
       <GameSetupPageControls visible={uiVisible} onBack={goBackToMultiplay} />

@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "check:utf8": "node scripts/verify-utf8.mjs",
+    "test": "node --test src/**/__tests__/*.test.js",
     "preview": "vite preview"
   },
   "dependencies": {
