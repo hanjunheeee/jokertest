@@ -14,9 +14,10 @@ let userRepositoryRef = userRepository
 function __setUserRepositoryForTests(fakeRepository) {
     userRepositoryRef = fakeRepository ?? userRepository
 }
-// NOTE: 게임 시작(handleStartGame)은 원래 gameSession.startGameFromRoom을 호출하는데,
-// game-core/gameSession은 아직 없는 상태(인게임 단계에서 만들 예정)라 지금은
-// 방 정리 + game_started 브로드캐스트만 하는 스텁으로 둡니다.
+// NOTE: 게임 시작(handleStartGame)은 원래 gameSession.startGameFromRoom을 호출해야 하는데,
+// game-core/gameSession은 아직 없는 상태(인게임 단계에서 만들 예정)다. 그래서 이번 슬라이스는
+// 방장 권한·인원·준비 상태 가드만 검증하고, 전부 통과해도 항상 GAME_CORE_NOT_READY로 응답한다
+// — 방·참가자 상태를 바꾸거나 게임 시작을 알리는 코드는 의도적으로 어디에도 두지 않는다.
 
 const OFFICIAL_MIN_PLAYERS = 5
 const OFFICIAL_ROOM_SIZES = [10, 8, 6, 5]
@@ -79,11 +80,14 @@ function registerMatchmakingHandlers(io, socket, uuid) {
         )
     )
     socket.on('delete_room',       () => handleDeleteRoom(io, uuid))
-    socket.on('start_game',        () =>
-        handleStartGame(io, uuid).catch((err) =>
+    // start_game은 acknowledgement로 응답한다(예전에는 실패 시 game_start_failed 이벤트를
+    // 따로 emit했으나, 요청-응답을 한 쌍으로 명확히 묶기 위해 ack 계약으로 통일했다).
+    socket.on('start_game', (payload, callback) =>
+        handleStartGame(io, socket, uuid, callback).catch((err) =>
             console.error('\x1b[31m[게임 시작 에러]\x1b[0m', err)
         )
     )
+    socket.on('set_ready', (payload, callback) => handleSetReady(io, socket, uuid, payload, callback))
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
 }
 
@@ -135,12 +139,35 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     })
 }
 
+/**
+ * 방이 지금 게임을 시작할 수 있는 상태인지 계산합니다. 결과를 어디에도 저장하지 않고
+ * 참가/퇴장/방장변경/준비상태변경 등 인원 구성이 바뀌는 모든 지점에서 매번 다시 호출합니다
+ * — 캐시해두면 계산 시점과 알림 시점 사이에 상태가 바뀌었을 때 오래된 값을 내려줄 수 있습니다.
+ */
+function computeCanStart(room) {
+    const players = [...room.players.values()]
+    const configuredMinimum = getMinPlayers()
+    // 방 정원이 운영 최소 인원보다 작으면 정원을 기준으로 삼는다 — 그렇지 않으면 정원이
+    // 운영 최소 인원 미만인 방은 영원히 시작할 수 없는 모순이 생긴다.
+    const roomCapacity = room.settings?.maxPlayers ?? configuredMinimum
+    const requiredPlayers = Math.min(configuredMinimum, roomCapacity)
+    const jokerCount = room.settings?.jokerCount ?? 0
+
+    if (players.length < requiredPlayers) return false
+    // 방 생성 시점에는 광대 수가 설정 상한 이하인지만 검증한다. 실제로 그만큼 인원이
+    // 모이지 않으면 전원이 광대인 상황이 될 수 있어, 시작 시점에 실제 인원 기준으로
+    // 비-광대가 최소 1명은 있는지 다시 검증한다.
+    if (players.length <= jokerCount) return false
+    return players.every((player) => player.isReady === true)
+}
+
 function buildRoomPayload(room) {
     return {
         roomId: room.id,
         roomCode: room.code,
         players: [...room.players.values()],
         hostUuid: room.hostUuid,
+        canStart: computeCanStart(room),
     }
 }
 
@@ -271,7 +298,9 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
             hostUuid: uuid,
             title: `${user.nickname}의 방`,
             accessType,
-            players: new Map([[uuid, { uuid, nickname: user.nickname }]]),
+            // 새로 생성된 방의 방장도 다른 참가자와 동일하게 준비 안 됨 상태로 시작한다
+            // (방장이라고 자동으로 준비된 것으로 취급하지 않는다).
+            players: new Map([[uuid, { uuid, nickname: user.nickname, isReady: false }]]),
             settings,
         }
 
@@ -462,13 +491,14 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
 
         // 마지막 검사와 Map 커밋 사이에는 await를 두지 않는다 — 그 틈에 다른 요청이
         // 끼어들면 방금 한 정원 검사가 무의미해지기 때문이다.
-        const player = { uuid, nickname: user.nickname }
+        // 새로 참가하는 사용자도 항상 준비 안 됨 상태로 시작한다(이전 방 참여 이력과 무관).
+        const player = { uuid, nickname: user.nickname, isReady: false }
         room.players.set(uuid, player)
         playerRoom.set(uuid, room.id)
         committed = true
 
         socket.emit('room_joined', buildRoomPayload(room))
-        socket.to(room.id).emit('player_joined_room', { player })
+        socket.to(room.id).emit('player_joined_room', { player, canStart: computeCanStart(room) })
         emitPublicRoomList(io)
     } catch (err) {
         console.error('[코드 참가 에러]', err)
@@ -539,20 +569,110 @@ function handleDeleteRoom(io, uuid) {
     emitPublicRoomList(io)
 }
 
-async function handleStartGame(io, uuid) {
+/**
+ * 인증된 사용자 본인의 준비 상태를 변경합니다(Socket.IO acknowledgement 방식).
+ * payload에 대상 uuid를 받지 않는다 — 본인 외의 참가자 상태를 바꿀 방법 자체를 이벤트
+ * 설계에서 없앤 것이다(신뢰 경계는 socket.data.user.uuid, 즉 이 함수의 uuid 인자 하나뿐).
+ * @param {unknown} payload - { isReady: boolean } 형태만 허용(신뢰하지 않음, 상태 변경 전에 검증)
+ * @param {(response:{ok:true,isReady:boolean,canStart:boolean}|{ok:false,message:string})=>void} callback
+ */
+function handleSetReady(io, socket, uuid, payload, callback) {
+    // 응답을 받을 수 없는 요청은 어떤 상태도 바꾸지 않는다 — 다른 검사보다 먼저 확인한다.
+    if (typeof callback !== 'function') return
+
+    // payload 형식은 반드시 상태를 바꾸기 전에 검사한다. 검증을 통과하기 전에 Map을
+    // 먼저 건드리면, 잘못된 형식의 요청 하나가 되돌릴 수 없는 부분 반영을 남길 수 있다.
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        callback({ ok: false, message: '잘못된 요청입니다.' })
+        return
+    }
+    const { isReady } = payload
+    if (typeof isReady !== 'boolean') {
+        callback({ ok: false, message: '잘못된 요청입니다.' })
+        return
+    }
+
     const roomId = playerRoom.get(uuid)
-    if (!roomId) return
+    const room = roomId ? gameRooms.get(roomId) : null
+    const player = room?.players.get(uuid)
+    if (!room || !player) {
+        callback({ ok: false, message: '참여 중인 방이 없습니다.' })
+        return
+    }
 
-    const room = gameRooms.get(roomId)
-    if (!room || room.hostUuid !== uuid) return
+    // 요청한 값이 이미 현재 값과 같으면 상태 변경도 방송도 하지 않는다(멱등 계약) — 같은
+    // 요청이 여러 번 와도 결과가 달라지지 않고, 불필요한 알림으로 다른 참가자 화면이
+    // 깜빡이는 것도 막는다.
+    if (player.isReady === isReady) {
+        callback({ ok: true, isReady: player.isReady, canStart: computeCanStart(room) })
+        return
+    }
 
-    // TODO: 인게임 단계에서 game-core/gameSession이 생기면 여기서
-    // await gameSession.startGameFromRoom(io, room) 호출로 교체합니다.
-    io.to(roomId).emit('game_started', {})
+    player.isReady = isReady
+    const canStart = computeCanStart(room)
+    socket.to(roomId).emit('player_ready_changed', { uuid, isReady, canStart })
+    callback({ ok: true, isReady, canStart })
+}
 
-    room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
-    gameRooms.delete(roomId)
-    emitPublicRoomList(io)
+/**
+ * 방장의 게임 시작 요청을 검증합니다(Socket.IO acknowledgement 방식 — 예전에는 실패를
+ * game_start_failed 이벤트로 별도 emit했으나, 요청 하나에 응답 하나가 정확히 대응하도록
+ * ack 계약으로 바꿨다). 이 슬라이스에는 실제로 게임을 시작시키는 처리(game-core/gameSession)가
+ * 없으므로, 아래 가드를 전부 통과해도 항상 { ok:false, code:'GAME_CORE_NOT_READY' }로 응답하고
+ * 방·참가자 상태는 어떤 경우에도 바꾸지 않는다 — 과거에 있던 "GameSession 없이 방을 지우고
+ * 시작을 알리는" 임시 처리는 완전히 삭제했으며, 이후 다시 실행되지 않는다. io/socket 인자는
+ * 지금은 쓰이지 않지만, 다음 GameSession 슬라이스에서 성공 시 game_started를 방송하려면
+ * 필요해질 것이므로 시그니처에 남겨둔다.
+ * @param {(response:{ok:false,code:string,message:string})=>void} callback
+ */
+async function handleStartGame(io, socket, uuid, callback) {
+    // 응답을 받을 수 없는 요청은 다른 검사보다 먼저 확인한다 — 어떤 상태도 바꾸지 않는다.
+    if (typeof callback !== 'function') return
+
+    const roomId = playerRoom.get(uuid)
+    const room = roomId ? gameRooms.get(roomId) : null
+    if (!room) {
+        callback({ ok: false, code: 'ROOM_NOT_FOUND', message: '참여 중인 방을 찾을 수 없습니다.' })
+        return
+    }
+    if (room.hostUuid !== uuid) {
+        callback({ ok: false, code: 'NOT_HOST', message: '방장만 게임을 시작할 수 있습니다.' })
+        return
+    }
+
+    const players = [...room.players.values()]
+    const configuredMinimum = getMinPlayers()
+    const roomCapacity = room.settings?.maxPlayers ?? configuredMinimum
+    const requiredPlayers = Math.min(configuredMinimum, roomCapacity)
+    const jokerCount = room.settings?.jokerCount ?? 0
+
+    // 인원 조건(정원을 고려한 최소 인원 + 비-광대 최소 1명)을 준비 여부보다 먼저 검사한다
+    // — 인원 자체가 부족한데 "누가 준비 안 됐는지"부터 알려주는 건 사용자에게 혼란스럽다.
+    if (players.length < requiredPlayers || players.length <= jokerCount) {
+        callback({
+            ok: false,
+            code: 'MIN_PLAYERS_NOT_MET',
+            message: '게임을 시작하기 위한 인원 조건을 아직 충족하지 못했습니다.',
+        })
+        return
+    }
+    if (!players.every((player) => player.isReady === true)) {
+        callback({
+            ok: false,
+            code: 'PLAYERS_NOT_READY',
+            message: '아직 준비하지 않은 참가자가 있습니다.',
+        })
+        return
+    }
+
+    // 여기까지 왔다면 시작 조건은 전부 충족했지만, 실제로 게임을 시작시키는 처리
+    // (game-core/gameSession)는 다음 슬라이스에서 새로 작성한다. 방·참가자 상태를 바꾸는
+    // 코드, game_started를 방송하는 코드는 의도적으로 이 함수 어디에도 두지 않는다.
+    callback({
+        ok: false,
+        code: 'GAME_CORE_NOT_READY',
+        message: '게임 코어를 준비 중입니다. 잠시만 기다려주세요.',
+    })
 }
 
 function removeFromRoom(io, socket, uuid) {
@@ -573,11 +693,13 @@ function removeFromRoom(io, socket, uuid) {
     }
 
     if (room.hostUuid === uuid) {
+        // 방장이 바뀌어도 남은 참가자들의 isReady는 손대지 않는다 — 방장 권한 이전과
+        // 준비 상태는 서로 독립적인 개념이라, 새 방장도 이전에 준비했던 상태 그대로 유지된다.
         room.hostUuid = room.players.keys().next().value
-        io.to(roomId).emit('host_changed', { hostUuid: room.hostUuid })
+        io.to(roomId).emit('host_changed', { hostUuid: room.hostUuid, canStart: computeCanStart(room) })
     }
 
-    io.to(roomId).emit('player_left_room', { uuid })
+    io.to(roomId).emit('player_left_room', { uuid, canStart: computeCanStart(room) })
     emitPublicRoomList(io)
 }
 
@@ -649,6 +771,8 @@ module.exports = {
         handleJoinPublicRoom,
         handleJoinMatchmaking,
         handleDeleteRoom,
+        handleStartGame,
+        handleSetReady,
         leaveSocketRoomSafely,
     },
 }

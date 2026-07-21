@@ -10,11 +10,14 @@
  */
 import PlayerSlotGrid from "./PlayerSlotGrid.jsx"
 import { PLAYER_SLOT_COLUMNS } from "../utils/chunkPlayerSlots.js"
-import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
+import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
 import {
+  MATCHING_SLOT_BADGE_NOT_READY_CLASS,
+  MATCHING_SLOT_BADGE_READY_CLASS,
   MATCHING_SLOT_CLASS_COMPACT,
   MATCHING_SLOT_CLASS_LARGE,
   MATCHING_SLOT_NOT_READY_OFFSET_CLASS,
+  MATCHING_SLOT_WRAP_CLASS,
   MATCHING_SLOTS_GRID_CLASS,
   MATCHING_SLOTS_ROW_CLASS,
 } from "../constants/matchingPopupStyles.js"
@@ -35,16 +38,20 @@ export default function MatchingPartySlots({ slots = [] }) {
       className={MATCHING_SLOTS_GRID_CLASS}
       rowClassName={MATCHING_SLOTS_ROW_CLASS}
       renderSlot={(slot) => (
-        <PublicAsset
-          key={slot.id}
-          src={
-            slot.ready
-              ? GAME_MATCHING_ASSETS.silhouetteReady
-              : GAME_MATCHING_ASSETS.silhouetteNotReady
-          }
-          alt={slot.ready ? "준비 완료" : "준비 중"}
-          className={`${slotClass}${slot.ready ? "" : ` ${MATCHING_SLOT_NOT_READY_OFFSET_CLASS}`}`}
-        />
+        <div key={slot.id} className={MATCHING_SLOT_WRAP_CLASS}>
+          <PublicAsset
+            src={
+              slot.ready
+                ? GAME_MATCHING_ASSETS.silhouetteReady
+                : GAME_MATCHING_ASSETS.silhouetteNotReady
+            }
+            alt={slot.ready ? "준비 완료" : "준비 중"}
+            className={`${slotClass}${slot.ready ? "" : ` ${MATCHING_SLOT_NOT_READY_OFFSET_CLASS}`}`}
+          />
+          <span className={slot.ready ? MATCHING_SLOT_BADGE_READY_CLASS : MATCHING_SLOT_BADGE_NOT_READY_CLASS}>
+            {slot.ready ? MATCHING_POPUP_COPY.readyBadge : MATCHING_POPUP_COPY.notReadyBadge}
+          </span>
+        </div>
       )}
     />
   )

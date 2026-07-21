@@ -22,6 +22,11 @@ export default function GameMatchingPage() {
     roomCode,
     partyCount,
     isHost,
+    isReady,
+    isSettingReady,
+    toggleReady,
+    canStart,
+    isStarting,
     startGame,
     deleteRoom,
     handleBack,
@@ -38,6 +43,11 @@ export default function GameMatchingPage() {
         onRoomCodeOpen={openRoomCode}
         onRoomCodeClose={closeRoomCode}
         isHost={isHost}
+        isReady={isReady}
+        isSettingReady={isSettingReady}
+        onToggleReady={toggleReady}
+        canStart={canStart}
+        isStarting={isStarting}
         onStartGame={startGame}
         onDeleteRoom={deleteRoom}
         onLeaveRoom={handleBack}

@@ -12,21 +12,28 @@ export const MATCHING_BTN_SCALE_WRAP_CLASS =
 export const MATCHING_BTN_IMG_SCALE_CLASS =
   "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.1] group-active:scale-[0.95]"
 
+/** 매칭 팝업 버튼 포커스 표시 — 마우스 클릭 시엔 안 보이고 키보드(Tab) 포커스일 때만
+ * 테마 톤(#f5f0e6)의 outline을 보여준다. outline: none만 남겨 포커스 표시를 완전히
+ * 지우지 않기 위한 공용 클래스. */
+export const MATCHING_BTN_FOCUS_CLASS =
+  "outline-none rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f5f0e6]"
+
 /** 매칭 팝업 프레임 위 — 방코드 보기 (작은 버튼) */
 export const MATCHING_ROOM_CODE_BTN_WRAP_CLASS =
-  "group absolute right-[clamp(0%,0.2vw,0.75%)] top-[clamp(0.1rem,0.65vh,0.45rem)] z-[4] block w-[clamp(7.25rem,10.5vw,8.75rem)] cursor-pointer border-0 bg-transparent p-0 leading-none"
+  `group absolute right-[clamp(0%,0.2vw,0.75%)] top-[clamp(0.1rem,0.65vh,0.45rem)] z-[4] block w-[clamp(7.25rem,10.5vw,8.75rem)] cursor-pointer border-0 bg-transparent p-0 leading-none ${MATCHING_BTN_FOCUS_CLASS}`
 
 /** 매칭 팝업 하단 — 게임시작·방 삭제 버튼 영역 (프레임 inset 위) */
 export const MATCHING_START_GAME_BTN_AREA_CLASS =
   "pointer-events-none absolute inset-x-0 bottom-0 z-[3] flex flex-col items-center justify-end pb-[clamp(4.5rem,10.5%,4.5rem)]"
 
-/** 게임시작·방 삭제 버튼 가로 배치 행 */
+/** 게임시작·방 삭제 버튼 가로 배치 행 — 좁은 화면에서 버튼(방장 3개)이 다 안 들어가면
+ * 다음 줄로 줄바꿈한다(flex-wrap). 줄바꿈된 두 번째 줄도 가운데 정렬 유지. */
 export const MATCHING_ACTION_BTN_ROW_CLASS =
-  "pointer-events-auto mx-auto flex w-full max-w-[min(92%,36rem)] items-center justify-center gap-[clamp(0.55rem,1.15vw,0.85rem)]"
+  "pointer-events-auto mx-auto flex w-full max-w-[min(92%,36rem)] flex-wrap items-center justify-center gap-x-[clamp(0.55rem,1.15vw,0.85rem)] gap-y-[clamp(0.4rem,1vh,0.6rem)]"
 
 /** 게임시작·방 삭제 이미지 버튼 공통 */
 export const MATCHING_ACTION_BTN_CLASS =
-  "group w-[clamp(8.5rem,18vw,11.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
+  `group w-[clamp(8.5rem,18vw,11.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none ${MATCHING_BTN_FOCUS_CLASS}`
 
 /** 게임시작·방 삭제 버튼 이미지 위 텍스트 라벨 */
 export const MATCHING_ACTION_BTN_LABEL_CLASS =
@@ -63,6 +70,22 @@ export const MATCHING_SLOT_CLASS_COMPACT =
 /** 미준비 실루엣만 — 준비 실루엣과 하단 정렬 맞춤 */
 export const MATCHING_SLOT_NOT_READY_OFFSET_CLASS =
   "-translate-y-[clamp(0.42rem,2.1vh,0.75rem)]"
+
+/** 슬롯 실루엣 + 준비 배지를 세로로 묶는 wrapper */
+export const MATCHING_SLOT_WRAP_CLASS =
+  "flex flex-col items-center"
+
+/** 슬롯 준비 배지 공통(테두리·크기) */
+const MATCHING_SLOT_BADGE_BASE_CLASS =
+  "mt-[clamp(0.15rem,0.4vh,0.3rem)] rounded-full px-[clamp(0.4rem,0.8vw,0.55rem)] py-[clamp(0.05rem,0.15vh,0.1rem)] text-[clamp(0.6rem,0.85vw,0.7rem)] font-bold tracking-wide"
+
+/** 준비 완료 슬롯 배지 */
+export const MATCHING_SLOT_BADGE_READY_CLASS =
+  `${MATCHING_SLOT_BADGE_BASE_CLASS} bg-emerald-500/85 text-white`
+
+/** 미준비 슬롯 배지 */
+export const MATCHING_SLOT_BADGE_NOT_READY_CLASS =
+  `${MATCHING_SLOT_BADGE_BASE_CLASS} bg-black/45 text-[#f5f0e6]`
 
 /** 타이머 바 이미지 */
 export const MATCHING_TIMER_BAR_CLASS =

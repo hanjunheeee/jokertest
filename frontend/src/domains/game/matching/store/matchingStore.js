@@ -20,20 +20,39 @@ export const useMatchingStore = create((set) => ({
     // 현재 방장 uuid입니다.
     hostUuid: null,
 
+    // 서버가 계산해 내려준, 지금 게임을 시작할 수 있는 상태인지 여부입니다. 프런트는 이 값을
+    // 그대로 표시만 하고 별도로 재계산하지 않습니다(서버가 유일한 진실).
+    canStart: false,
+
     startSearch: () => set({ isSearching: true}),
     stopSearch: () => set({isSearching: false}),
 
-    setRoom: ({ roomId, roomCode, players, hostUuid }) =>
-        set({ isSearching: false, isInRoom: true, roomId, roomCode, players, hostUuid}),
+    setRoom: ({ roomId, roomCode, players, hostUuid, canStart = false }) =>
+        set({ isSearching: false, isInRoom: true, roomId, roomCode, players, hostUuid, canStart }),
 
-    addPlayer: (player) =>
-        set((s) => ({ players: [...s.players, player]})),
+    // canStart는 참가 시점 서버 계산값을 그대로 반영합니다(생략 시 기존 값 유지).
+    addPlayer: (player, canStart) =>
+        set((s) => ({
+            players: [...s.players, player],
+            canStart: canStart ?? s.canStart,
+        })),
 
-    removePlayer: (uuid) =>
-        set((s) => ({ players: s.players.filter((p) => p.uuid !== uuid)})),
+    removePlayer: (uuid, canStart) =>
+        set((s) => ({
+            players: s.players.filter((p) => p.uuid !== uuid),
+            canStart: canStart ?? s.canStart,
+        })),
 
-    updateHost: (hostUuid) => set({hostUuid}),
+    updateHost: (hostUuid, canStart) =>
+        set((s) => ({ hostUuid, canStart: canStart ?? s.canStart })),
+
+    // set_ready ack(본인)와 player_ready_changed(다른 참가자) 양쪽에서 함께 쓰는 갱신 함수입니다.
+    setPlayerReady: (uuid, isReady, canStart) =>
+        set((s) => ({
+            players: s.players.map((p) => (p.uuid === uuid ? { ...p, isReady } : p)),
+            canStart: canStart ?? s.canStart,
+        })),
 
     clearRoom: () =>
-        set({ isInRoom: false, roomId: null, roomCode: null, players: [], hostUuid: null }),
+        set({ isInRoom: false, roomId: null, roomCode: null, players: [], hostUuid: null, canStart: false }),
 }))

@@ -30,6 +30,12 @@ export const MATCHING_POPUP_COPY = {
   startGame: "게임시작",
   deleteRoom: "방 삭제하기",
   leaveRoom: "방 나가기",
+  readyOn: "준비완료",
+  readyOff: "준비취소",
+  readyPending: "처리 중",
+  readyBadge: "준비완료",
+  notReadyBadge: "대기중",
+  startingGame: "시작 중",
 }
 
 /** 매칭 방 최대 인원 — 슬롯 그리드·더미 배열 상한 */
