@@ -33,6 +33,7 @@ export default function RoomListRow({ room, selected, onSelect }) {
   const isInProgress = displayStatus === "in_progress"
   const isJoinable = !isFull && !isInProgress
   const isCode = accessType === "code"
+  const stageLabel = STAGE_LABELS[stage]
   const statusLabel = isInProgress ? "진행중" : isFull ? "마감" : null
 
   return (
@@ -42,7 +43,7 @@ export default function RoomListRow({ room, selected, onSelect }) {
         onClick={isJoinable ? onSelect : undefined}
         disabled={!isJoinable}
         aria-pressed={selected}
-        aria-label={`${STAGE_LABELS[stage] ?? ""} ${title}, ${current}/${max}명${
+        aria-label={`${stageLabel ? `${stageLabel} ` : ""}${title}, ${current}/${max}명${
           isCode ? ", 코드 필요" : ""
         }${statusLabel ? `, ${statusLabel}` : ""}`}
         className={`${ROOM_LIST_ROW_BUTTON_BASE_CLASS} ${
@@ -53,7 +54,7 @@ export default function RoomListRow({ room, selected, onSelect }) {
 
         <div className={ROOM_LIST_ROW_OVERLAY_CLASS} aria-hidden="true">
           <div className={ROOM_LIST_ROW_TOP_ROW_CLASS}>
-            <span className={ROOM_LIST_ROW_STAGE_BADGE_CLASS}>{STAGE_LABELS[stage] ?? ""}</span>
+            {stageLabel ? <span className={ROOM_LIST_ROW_STAGE_BADGE_CLASS}>{stageLabel}</span> : null}
             <span className={ROOM_LIST_ROW_STATUS_BADGE_WRAP_CLASS}>
               {/* 자물쇠 아이콘 에셋이 아직 없어 텍스트 배지로 대체합니다. */}
               {isCode ? <span className={ROOM_LIST_ROW_LOCK_BADGE_CLASS}>코드</span> : null}
