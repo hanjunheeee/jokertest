@@ -5,8 +5,9 @@ const cookie = require("cookie");
 const presenceService = require("../service/presence.service");
 const userRepository  = require("../repositories/user.repositories");
 const matchmaking     = require("./matchmaking");
-// NOTE: gameSession(인게임)은 아직 없음 (인게임 단계에서 추가 예정) — matchmaking.js의
-// handleStartGame이 지금은 gameSession 호출 없이 game_started만 브로드캐스트하는 스텁입니다.
+// NOTE: Room→GameSession 전환(matchmaking.js의 handleStartGame이 game-core/gameSession을
+// 호출해 참가자별 game_started를 개별 전달)은 구현됐지만, 인게임 진입 후의 실시간 턴/페이즈
+// 동기화(useInGameSocket 및 이를 뒷받침할 소켓 핸들러)는 아직 없어 여기 등록하지 않습니다.
 // const gameSession     = require("./gameSession");
 
 const onlineUsers = new Map();

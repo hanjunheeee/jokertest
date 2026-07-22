@@ -36,5 +36,7 @@ export function mapGamePhaseToTimebarPhaseId(phase) {
   if (phase === "NIGHT") return "night"
   if (phase === "TRIBUNAL") return "vote"
   if (phase === "ENDED") return "result"
+  // 역할 확인 단계를 임시로 discussion 노드에 표시한다. 실제 역할 확인 연출은 다음 슬라이스의 몫이다.
+  if (phase === "ROLE_REVEAL") return "discussion"
   return "discussion"
 }

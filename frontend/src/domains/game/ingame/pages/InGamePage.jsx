@@ -19,8 +19,9 @@ export default function InGamePage() {
   const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
   const [voteStatusOpen, setVoteStatusOpen] = useState(false)
   const gameState = useInGameStore((s) => s.state)
-  // useInGameSocket()은 백엔드 game-core/gameSession이 아직 없어서 제외 — gameState는 항상 null이라
-  // 아래 컴포넌트들은 프리뷰(더미) 모드로 렌더링됩니다.
+  // useInGameSocket()은 인게임 진입 후 실시간 동기화를 담당할 훅인데 아직 없어 제외했습니다.
+  // gameState는 게임 시작 시점의 정적인 초기 state(ROLE_REVEAL 단계)에 머물러 있고, 아래
+  // 컴포넌트들은 그 state와 프리뷰(더미) 데이터를 섞어 렌더링합니다.
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">

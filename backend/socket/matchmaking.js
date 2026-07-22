@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const userRepository = require('../repositories/user.repositories')
 const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
 const { validateCreateRoomPayload } = require('../utils/createRoomValidation')
+const gameSession = require('../game-core/gameSession')
 
 // 테스트에서 실제 DB 모듈 대신 교체할 수 있도록 참조를 변수로 감싼다.
 // node:test의 mock.module()을 시도했으나 이 프로젝트에서는 user.repositories가
@@ -14,10 +15,10 @@ let userRepositoryRef = userRepository
 function __setUserRepositoryForTests(fakeRepository) {
     userRepositoryRef = fakeRepository ?? userRepository
 }
-// NOTE: 게임 시작(handleStartGame)은 원래 gameSession.startGameFromRoom을 호출해야 하는데,
-// game-core/gameSession은 아직 없는 상태(인게임 단계에서 만들 예정)다. 그래서 이번 슬라이스는
-// 방장 권한·인원·준비 상태 가드만 검증하고, 전부 통과해도 항상 GAME_CORE_NOT_READY로 응답한다
-// — 방·참가자 상태를 바꾸거나 게임 시작을 알리는 코드는 의도적으로 어디에도 두지 않는다.
+// NOTE: 게임 시작(handleStartGame)은 방장 권한·인원·준비 상태 가드를 통과하면
+// game-core/gameSession(prepareGameSession → commitGameSession)으로 GameSession을 만들고,
+// 참가자 각자에게 자신의 역할만 담은 개별 game_started를 전달한다. 인게임 중 실시간
+// 턴/페이즈 동기화(useInGameSocket 및 대응 소켓 핸들러)는 아직 없다 — 다음 슬라이스의 몫이다.
 
 const OFFICIAL_MIN_PLAYERS = 5
 const OFFICIAL_ROOM_SIZES = [10, 8, 6, 5]
@@ -615,15 +616,26 @@ function handleSetReady(io, socket, uuid, payload, callback) {
 }
 
 /**
- * 방장의 게임 시작 요청을 검증합니다(Socket.IO acknowledgement 방식 — 예전에는 실패를
- * game_start_failed 이벤트로 별도 emit했으나, 요청 하나에 응답 하나가 정확히 대응하도록
- * ack 계약으로 바꿨다). 이 슬라이스에는 실제로 게임을 시작시키는 처리(game-core/gameSession)가
- * 없으므로, 아래 가드를 전부 통과해도 항상 { ok:false, code:'GAME_CORE_NOT_READY' }로 응답하고
- * 방·참가자 상태는 어떤 경우에도 바꾸지 않는다 — 과거에 있던 "GameSession 없이 방을 지우고
- * 시작을 알리는" 임시 처리는 완전히 삭제했으며, 이후 다시 실행되지 않는다. io/socket 인자는
- * 지금은 쓰이지 않지만, 다음 GameSession 슬라이스에서 성공 시 game_started를 방송하려면
- * 필요해질 것이므로 시그니처에 남겨둔다.
- * @param {(response:{ok:false,code:string,message:string})=>void} callback
+ * 방장의 게임 시작 요청을 검증하고, 전부 통과하면 GameSession으로 전환합니다(Socket.IO
+ * acknowledgement 방식). 전환 절차는 prepare → delivery target preflight → payload 사전 생성
+ * → commit → notify → ack의 6단계로 나뉜다:
+ *   1) prepare: game-core에 역할 배정을 포함한 세션 후보를 요청한다(아직 어떤 상태도 안 바뀜).
+ *   2) delivery target preflight: 참가자 전원이 connected===true이고 이 Room의 Socket.IO
+ *      channel(roomId)에 실제로 join되어 있는 소켓을 최소 1개 가진지 확인한다. 하나라도
+ *      없으면 commit 전에 전체를 거부해 stranded 참가자(Room에서는 빠졌는데 game_started를
+ *      못 받는 상태)를 만들지 않는다.
+ *   3) payload 사전 생성: 참가자별 개인화된 game_started payload를 commit 전에 전부 만들어
+ *      둔다 — 이 단계가 실패해도 아직 상태 불변이다.
+ *   4) commit: game-core registry에 세션을 커밋하고 Room을 정리한다. preflight 완료 후
+ *      여기까지 어떤 await도 없어(Node 이벤트 루프상 disconnect 등 다른 콜백이 끼어들 수
+ *      없음) 서버 메모리 상태 전환은 원자적이다 — 다만 이후 실제 네트워크 전달까지 원자적으로
+ *      보장한다는 뜻은 아니다. commit 시작 이후의 예외는 상태가 부분 반영됐을 수 있다는
+ *      뜻이므로 "실패 ack + Room 유지"를 주장하지 않는다.
+ *   5) notify: 이미 만들어진 payload를 preflight에서 확보한 소켓에 개별 전달한다(공용
+ *      방송 없음 — 참가자별 payload가 다르므로).
+ *   6) ack: 요청한 host에게만 성공 여부를 응답한다.
+ * callback은 어떤 경로로도 정확히 한 번만 호출된다.
+ * @param {(response:{ok:boolean,code?:string,gameId?:string,message?:string})=>void} callback
  */
 async function handleStartGame(io, socket, uuid, callback) {
     // 응답을 받을 수 없는 요청은 다른 검사보다 먼저 확인한다 — 어떤 상태도 바꾸지 않는다.
@@ -665,14 +677,113 @@ async function handleStartGame(io, socket, uuid, callback) {
         return
     }
 
-    // 여기까지 왔다면 시작 조건은 전부 충족했지만, 실제로 게임을 시작시키는 처리
-    // (game-core/gameSession)는 다음 슬라이스에서 새로 작성한다. 방·참가자 상태를 바꾸는
-    // 코드, game_started를 방송하는 코드는 의도적으로 이 함수 어디에도 두지 않는다.
-    callback({
-        ok: false,
-        code: 'GAME_CORE_NOT_READY',
-        message: '게임 코어를 준비 중입니다. 잠시만 기다려주세요.',
+    // callback이 정확히 한 번만 호출되도록 보호한다. ack 자체가 던지는 예외는 로그만 남긴다
+    // (handleCreateRoomAfterReservation의 기존 ack try/catch 관례와 동일).
+    let callbackCalled = false
+    const respond = (payload) => {
+        if (callbackCalled) return
+        callbackCalled = true
+        try {
+            callback(payload)
+        } catch (ackErr) {
+            console.error('[게임 시작 ack 실패]', ackErr)
+        }
+    }
+
+    // 1) prepare
+    let prepared
+    try {
+        prepared = gameSession.prepareGameSession(room)
+    } catch (err) {
+        console.error('[GameSession prepare 에러]', err)
+        respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
+        return
+    }
+    if (!prepared.ok) {
+        // DUPLICATE_ROOM_SESSION / PLAYER_ALREADY_IN_SESSION / INVALID_SESSION_INPUT — 이 시점까지
+        // gameRooms/playerRoom/game-core registry/공개 목록/game_started 전부 불변이다.
+        respond({ ok: false, code: prepared.code, message: '게임을 시작할 수 없습니다.' })
+        return
+    }
+
+    // 2) delivery target preflight — 아직 commit 전이므로 실패해도 모든 상태 불변.
+    let uuidToSockets
+    try {
+        uuidToSockets = resolveParticipantSockets(io, prepared.session.players.keys(), roomId)
+    } catch (err) {
+        console.error('[게임 시작 소켓 조회 에러]', err)
+        respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
+        return
+    }
+    const missingUuid = [...prepared.session.players.keys()].find((u) => !uuidToSockets.get(u)?.length)
+    if (missingUuid) {
+        respond({ ok: false, code: 'PARTICIPANT_UNAVAILABLE', message: '일부 참가자와의 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.' })
+        return
+    }
+
+    // 3) payload 사전 생성 — commit 전에 전부 만들어 둔다. 이 단계도 실패하면 상태 불변.
+    let payloadsByUuid
+    try {
+        payloadsByUuid = new Map()
+        for (const u of prepared.session.players.keys()) {
+            payloadsByUuid.set(u, gameSession.buildGameStartedPayload(prepared.session, u))
+        }
+    } catch (err) {
+        console.error('[game_started payload 생성 에러]', err)
+        respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
+        return
+    }
+
+    // 4) commit — preflight 완료 시점부터 여기까지 어떤 await도 없다. commit 시작 이후의
+    // 예외는 이미 상태가 부분 반영됐을 수 있다는 뜻이므로 "실패 ack + Room 유지"를
+    // 주장하지 않는다.
+    try {
+        gameSession.commitGameSession(prepared.session)
+        room.players.forEach((_, u) => playerRoom.delete(u))
+        gameRooms.delete(roomId)
+    } catch (err) {
+        console.error('[GameSession commit 에러 — 상태가 부분 반영됐을 수 있음]', err)
+        respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임 시작 처리 중 오류가 발생했습니다.' })
+        return
+    }
+
+    // 5) notify — 이미 만들어진 payload를 preflight에서 확보한 소켓에 전달만 한다(재스캔하지
+    // 않음 — 재스캔하면 그 사이 상태가 또 바뀔 수 있어 preflight의 의미가 없어진다). 동일
+    // uuid의 복수 소켓(연결 전환 중 짧은 구간) 전부에게 같은 payload를 보낸다 — 같은
+    // 사용자의 다른 탭에 자기 역할이 중복 전달되는 것은 유출이 아니며, 오래된 소켓만
+    // 골랐다가 실제 활성 탭이 못 받는 것보다 안전하다. 정상 흐름에서는 force_disconnect
+    // 정책(handleConnection)으로 uuid당 소켓이 하나뿐이다.
+    prepared.session.players.forEach((_, u) => {
+        const payload = payloadsByUuid.get(u)
+        for (const s of uuidToSockets.get(u) ?? []) {
+            try {
+                s.emit('game_started', payload)
+            } catch (err) {
+                console.error('[game_started 전달 실패]', err)
+            }
+        }
     })
+    emitPublicRoomList(io)
+
+    // 6) ack
+    respond({ ok: true, gameId: prepared.session.id })
+}
+
+// delivery target: 인증 uuid가 일치하고, connected===true이고, Room의 기존 Socket.IO
+// channel(roomId)에 실제로 join되어 있는(socket.rooms.has(roomId)) 소켓만 인정한다.
+// Socket.IO 의존이라 game-core가 아니라 이 파일(소켓 계층)에 둔다.
+function resolveParticipantSockets(io, uuids, roomId) {
+    const targets = new Set(uuids)
+    const map = new Map()
+    for (const s of io.sockets.sockets.values()) {
+        const u = s.data?.user?.uuid
+        if (!u || !targets.has(u)) continue
+        if (s.connected !== true) continue
+        if (!s.rooms?.has(roomId)) continue
+        if (!map.has(u)) map.set(u, [])
+        map.get(u).push(s)
+    }
+    return map
 }
 
 function removeFromRoom(io, socket, uuid) {

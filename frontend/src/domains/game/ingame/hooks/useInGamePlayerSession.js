@@ -1,8 +1,8 @@
 import { useCallback, useMemo } from "react"
 import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
-import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStatus.js"
 import { resolveInGamePlayerThemeEmphasized } from "../constants/ingamePlayerTheme.js"
 import { buildInGamePreviewPlayers } from "../utils/buildInGamePreviewPlayers.js"
+import { mergeSourcePlayerWithPreview } from "../utils/mergeSourcePlayerWithPreview.js"
 
 /** 백엔드 연동 전 — 첫 슬롯을 로컬 플레이어로 간주 */
 export const INGAME_LOCAL_PLAYER_ID = "player-slot-1"
@@ -27,24 +27,7 @@ export function useInGamePlayerSession(options = INGAME_PREVIEW_PLAYER_COUNT) {
 
     if (!sourcePlayers?.length) return previewPlayers
 
-    return sourcePlayers.map((player, index) => {
-      const preview = previewPlayers[index]
-      const status = !player.connected
-        ? INGAME_PLAYER_STATUS.DISCONNECTED
-        : player.alive
-          ? INGAME_PLAYER_STATUS.ALIVE
-          : INGAME_PLAYER_STATUS.DEAD
-
-      return {
-        ...preview,
-        id: player.id,
-        nickname: player.name ?? preview.nickname,
-        status,
-        role: player.role,
-        team: player.team,
-        deathReason: player.deathReason,
-      }
-    })
+    return sourcePlayers.map((player, index) => mergeSourcePlayerWithPreview(player, previewPlayers[index]))
   }, [playerCount, sourcePlayers])
 
   const playersById = useMemo(

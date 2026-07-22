@@ -3,6 +3,7 @@ import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoar
 import { useInGamePlayerSession } from "../hooks/useInGamePlayerSession.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { InGamePlayerSessionContext } from "./InGamePlayerSessionContext.js"
+import { buildPlayerSessionSourceFromGameState } from "../utils/buildPlayerSessionSourceFromGameState.js"
 
 /**
  * 인게임 플레이어·테마 색상 세션.
@@ -13,11 +14,8 @@ export function InGamePlayerSessionProvider({
   children,
 }) {
   const gameState = useInGameStore((s) => s.state)
-  const session = useInGamePlayerSession({
-    playerCount,
-    sourcePlayers: gameState?.players ?? null,
-    localPlayerId: gameState?.localPlayerId,
-  })
+  const { sourcePlayers, localPlayerId } = buildPlayerSessionSourceFromGameState(gameState)
+  const session = useInGamePlayerSession({ playerCount, sourcePlayers, localPlayerId })
 
   return (
     <InGamePlayerSessionContext.Provider value={session}>
