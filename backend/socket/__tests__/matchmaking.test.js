@@ -34,95 +34,18 @@ function deferred() {
     return { promise, resolve }
 }
 
-/** callback을 받는 핸들러를 Promise로 감싼다(ack 콜백을 test에서 await하기 위함). */
-function callAsPromise(handler, ...args) {
-    return new Promise((resolve) => handler(...args, resolve))
-}
-
-/**
- * 실제 socket.io 서버 없이 emit/join/leave/to/connected만 흉내내는 최소 fake Socket.
- * joinGate를 넘기면 join()이 그 Promise가 풀릴 때까지 대기한다 — join 대기 중 다른 요청이
- * 상태를 바꾸는 레이스(정원 경쟁, 방 삭제/교체, disconnect 등)를 결정적으로 재현하기 위함이다.
- */
-function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false, joinGate = null } = {}) {
-    // join/leave가 이 Set 하나만 갱신한다 — currentRooms(기존 테스트가 참조)와 rooms(프로덕션
-    // 코드가 socket.rooms.has(roomId)로 참조하는 실제 Socket.IO 속성명)가 항상 같은 Set을
-    // 가리키므로 어느 이름으로 읽어도 동일한 결과를 본다.
-    const rooms = new Set()
-    const socket = {
-        id,
-        data: { user: { uuid } },
-        emitted: [],
-        joined: [],
-        left: [],
-        // join/leave 로그(joined·left)와 별개로, "지금 실제로 어느 room에 들어가 있는지"를
-        // Set으로도 추적한다. join 후 실패해 곧바로 leave하는 경로를 검증할 때 로그 배열만으로는
-        // "결국 그 room에 남아있지 않다"를 정확히 표현하기 어렵기 때문이다.
-        currentRooms: rooms,
-        rooms,
-        // 프로퍼티로 두어 테스트 중간에 socket.joinShouldReject = false / socket.connected = false
-        // 처럼 값을 바꿀 수 있게 한다(클로저로 캡처하면 나중에 바꿔도 반영되지 않음).
-        joinShouldReject,
-        connected: true,
-        async join(roomId) {
-            if (joinGate) await joinGate
-            if (socket.joinShouldReject) throw new Error('join 실패(테스트 주입)')
-            socket.joined.push(roomId)
-            rooms.add(roomId)
-        },
-        async leave(roomId) {
-            socket.left.push(roomId)
-            rooms.delete(roomId)
-        },
-        emit(event, payload) {
-            socket.emitted.push({ event, payload })
-        },
-        to(roomId) {
-            return {
-                emit(event, payload) {
-                    socket.emitted.push({ event, payload, broadcastTo: roomId })
-                },
-            }
-        },
-    }
-    return socket
-}
-
-function createFakeIo(sockets = []) {
-    const socketMap = new Map(sockets.map((s) => [s.id, s]))
-    const broadcasts = []
-    return {
-        sockets: { sockets: socketMap },
-        broadcasts,
-        emit(event, payload) {
-            // io.emit()은 특정 room이 아니라 연결된 모든 소켓에 보내는 전역 브로드캐스트다.
-            // roomId를 null로 남겨 room 단위 브로드캐스트(to().emit())와 구분해서 기록한다.
-            broadcasts.push({ roomId: null, event, payload })
-        },
-        to(roomId) {
-            return {
-                emit(event, payload) {
-                    broadcasts.push({ roomId, event, payload })
-                },
-            }
-        },
-    }
-}
-
-function validSettingsPayload(overrides = {}) {
-    return {
-        accessType: 'open',
-        maxPlayers: 8,
-        jokerCount: 2,
-        lightsOut: false,
-        soulBetting: false,
-        dayDiscussionTime: 60,
-        dayVoteTime: 60,
-        nightActionTime: 90,
-        voteReveal: true,
-        ...overrides,
-    }
-}
+// createFakeSocket/createFakeIo/callAsPromise/validSettingsPayload/countingCallback/
+// setupReadyRoomForStart는 backend/socket/__tests__/gameSession.test.js도 실제
+// handleStartGame 등을 구동하는 통합 테스트에서 그대로 재사용해야 해서 공유 fixture
+// 파일로 추출했다(동작 변경 없음 — 순수 이동).
+const {
+    callAsPromise,
+    createFakeSocket,
+    createFakeIo,
+    validSettingsPayload,
+    countingCallback,
+    setupReadyRoomForStart,
+} = require('./testHelpers/matchmakingFixtures')
 
 test.beforeEach(() => {
     matchmaking.__resetStateForTests()
@@ -1062,14 +985,6 @@ test('canStart: 방장이 종료로 바뀌어도 남은 참가자의 준비 상�
 
 // ── start_game: 게임 시작 가드(ack 계약, 성공 처리는 다음 슬라이스) ────────
 
-/** callback 호출 횟수를 함께 세는 헬퍼 — "ack가 정확히 한 번만 전달되는지"를 각 테스트에서 바로 확인한다. */
-function countingCallback() {
-    let calls = 0
-    let response = null
-    const callback = (res) => { calls += 1; response = res }
-    return { callback, getCalls: () => calls, getResponse: () => response }
-}
-
 test('start_game: 참여 중인 방이 없으면 ROOM_NOT_FOUND로 ack가 정확히 한 번 온다', async () => {
     const socket = createFakeSocket('uuid-start-noroom')
     const io = createFakeIo([socket])
@@ -1227,25 +1142,15 @@ test('start_game: callback이 없는 요청은 어떤 상태도 바꾸지 않는
 
 // ── start_game: 성공 경로(GameSession 전환) ─────────────────────────────
 
-/** start_game 성공 시나리오 공통 셋업 — host 1명 + joiner 1명, 정원 4/광대 1, 전원 준비. */
-async function setupReadyRoomForStart(io, hostUuid, joinerUuid) {
-    const hostSocket = io.sockets.sockets.get(`sock-${hostUuid}`) ?? createFakeSocket(hostUuid)
-    io.sockets.sockets.set(hostSocket.id, hostSocket)
-    const created = await callAsPromise(
-        handleCreateRoom, io, hostSocket, hostUuid, validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
-    )
-    const joinerSocket = createFakeSocket(joinerUuid)
-    io.sockets.sockets.set(joinerSocket.id, joinerSocket)
-    await handleJoinRoomByCode(io, joinerSocket, joinerUuid, created.room.roomCode)
-    await callAsPromise(handleSetReady, io, hostSocket, hostUuid, { isReady: true })
-    await callAsPromise(handleSetReady, io, joinerSocket, joinerUuid, { isReady: true })
-    return { hostSocket, joinerSocket, room: created.room }
-}
+// setupReadyRoomForStart는 handleCreateRoom/handleJoinRoomByCode/handleSetReady를
+// 인자로 받는다(공유 fixture는 matchmaking.js를 require하지 않으므로) — 이 파일
+// 상단에서 이미 matchmaking.__testables로 꺼내 둔 지역 변수를 그대로 묶어 넘긴다.
+const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
 
 test('start_game: 모든 조건을 충족하면 GameSession을 생성하고 참가자별로 역할이 다른 개별 game_started를 전달한다', async () => {
     const hostSocket = createFakeSocket('uuid-start-ok-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-ok-host', 'uuid-start-ok-joiner')
+    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-ok-host', 'uuid-start-ok-joiner', readyRoomHandlers)
 
     const { callback, getCalls, getResponse } = countingCallback()
     await handleStartGame(io, hostSocket, 'uuid-start-ok-host', callback)
@@ -1300,7 +1205,7 @@ test('start_game: 모든 조건을 충족하면 GameSession을 생성하고 참�
 test('start_game: 참가자 중 한 명의 소켓이 connected:false이면 PARTICIPANT_UNAVAILABLE로 거부되고 모든 상태가 불변이다', async () => {
     const hostSocket = createFakeSocket('uuid-pu-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-pu-host', 'uuid-pu-joiner')
+    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-pu-host', 'uuid-pu-joiner', readyRoomHandlers)
     joinerSocket.connected = false // 참가자 중 한 명의 연결이 끊긴 상태를 재현
 
     const before = matchmaking.__getStateSnapshotForTests()
@@ -1323,7 +1228,7 @@ test('start_game: 참가자 중 한 명의 소켓이 connected:false이면 PARTI
 test('start_game: 참가자 중 한 명의 소켓이 Room channel에 join되어 있지 않으면 PARTICIPANT_UNAVAILABLE로 거부되고 모든 상태가 불변이다', async () => {
     const hostSocket = createFakeSocket('uuid-nc-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-nc-host', 'uuid-nc-joiner')
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-nc-host', 'uuid-nc-joiner', readyRoomHandlers)
     // connected:true이지만 Room의 Socket.IO channel에는 join되어 있지 않은 상태를 재현한다
     // (force_disconnect 이후 재연결했지만 아직 이전 room에 다시 join하지 않은 짧은 구간 등).
     joinerSocket.rooms.delete(room.roomId)
@@ -1340,7 +1245,7 @@ test('start_game: 참가자 중 한 명의 소켓이 Room channel에 join되어 
 test('start_game: 동일 uuid의 정상적인 복수 소켓 모두에게 game_started가 전달된다', async () => {
     const hostSocket = createFakeSocket('uuid-multi-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-multi-host', 'uuid-multi-joiner')
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-multi-host', 'uuid-multi-joiner', readyRoomHandlers)
 
     // 같은 uuid로 인증된 두 번째 소켓이 이미 같은 channel에 join된 상태(연결 전환 중 짧은 구간)를 재현한다.
     const joinerSecondSocket = createFakeSocket('uuid-multi-joiner', { id: 'sock-uuid-multi-joiner-2' })
@@ -1358,7 +1263,7 @@ test('start_game: 동일 uuid의 정상적인 복수 소켓 모두에게 game_st
 test('start_game: payload 사전 생성 단계에서 예외가 나면 INTERNAL_ERROR로 응답하고 모든 상태가 불변이며 game_started가 전달되지 않는다', async (t) => {
     const hostSocket = createFakeSocket('uuid-payloaderr-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-payloaderr-host', 'uuid-payloaderr-joiner')
+    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-payloaderr-host', 'uuid-payloaderr-joiner', readyRoomHandlers)
 
     // node:test의 MockTracker는 테스트 종료 시 자동으로 원래 함수를 복원하므로, 이 mock이
     // 같은 프로세스의 후속 테스트로 새어 나가지 않는다(수동 try/finally 복원 불필요).
@@ -1382,7 +1287,7 @@ test('start_game: payload 사전 생성 단계에서 예외가 나면 INTERNAL_E
 test('start_game: notify 중 한 참가자의 emit이 실패해도 나머지는 정상 수신하고 host ack은 성공한다', async () => {
     const hostSocket = createFakeSocket('uuid-notifyerr-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-notifyerr-host', 'uuid-notifyerr-joiner')
+    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-notifyerr-host', 'uuid-notifyerr-joiner', readyRoomHandlers)
     joinerSocket.emit = () => { throw new Error('emit 실패(테스트 주입)') }
 
     const { callback, getResponse } = countingCallback()
@@ -1396,7 +1301,7 @@ test('start_game: 참가자 중 한 명이 이미 다른 GameSession에 속해 �
     // 첫 번째 Room을 정상적으로 GameSession으로 전환시킨다.
     const firstHost = createFakeSocket('uuid-pais-shared')
     const io = createFakeIo([firstHost])
-    await setupReadyRoomForStart(io, 'uuid-pais-shared', 'uuid-pais-first-joiner')
+    await setupReadyRoomForStart(io, 'uuid-pais-shared', 'uuid-pais-first-joiner', readyRoomHandlers)
     const firstStart = await callAsPromise(handleStartGame, io, firstHost, 'uuid-pais-shared')
     assert.equal(firstStart.ok, true) // 전제조건: 첫 세션 전환 성공
 
@@ -1427,7 +1332,7 @@ test('start_game: 참가자 중 한 명이 이미 다른 GameSession에 속해 �
 test('start_game: 성공 후 같은 uuid로 get_current_room을 조회하면 room:null이 온다', async () => {
     const hostSocket = createFakeSocket('uuid-gcr-host')
     const io = createFakeIo([hostSocket])
-    await setupReadyRoomForStart(io, 'uuid-gcr-host', 'uuid-gcr-joiner')
+    await setupReadyRoomForStart(io, 'uuid-gcr-host', 'uuid-gcr-joiner', readyRoomHandlers)
 
     const startResult = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-gcr-host')
     assert.equal(startResult.ok, true)
@@ -1439,7 +1344,7 @@ test('start_game: 성공 후 같은 uuid로 get_current_room을 조회하면 roo
 test('start_game: 게임 시작 후 공개방 목록에 그 방이 더 이상 없다', async () => {
     const hostSocket = createFakeSocket('uuid-list-host')
     const io = createFakeIo([hostSocket])
-    const { room } = await setupReadyRoomForStart(io, 'uuid-list-host', 'uuid-list-joiner')
+    const { room } = await setupReadyRoomForStart(io, 'uuid-list-host', 'uuid-list-joiner', readyRoomHandlers)
 
     const startResult = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-list-host')
     assert.equal(startResult.ok, true)

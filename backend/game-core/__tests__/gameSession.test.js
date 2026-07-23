@@ -9,7 +9,7 @@ const {
     checkGameSessionPreconditions,
     assertValidSessionForCommit,
 } = gameSession.__testables
-const { prepareGameSession, commitGameSession, buildGameStartedPayload, GAME_ROLES } = gameSession
+const { prepareGameSession, commitGameSession, buildGameStartedPayload, endGameSessionForPlayer, GAME_ROLES } = gameSession
 
 // 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
 // 각 테스트가 이전 테스트가 남긴 상태의 영향을 받지 않도록 매번 초기화한다.
@@ -411,6 +411,86 @@ test('buildGameStartedPayload: 세션에 없는 uuid로 호출하면 self는 nul
 
     assert.equal(payload.state.self, null)
     assert.equal(payload.state.players.length, 3)
+})
+
+// ---------------------------------------------------------------------------
+// endGameSessionForPlayer — GameSession 정리(반대 방향 뮤테이터)
+// ---------------------------------------------------------------------------
+
+test('endGameSessionForPlayer: 어떤 활성 GameSession에도 속하지 않은 uuid는 NOT_IN_SESSION이고 registry가 불변이다', () => {
+    const before = gameSession.__getStateSnapshotForTests()
+    const result = endGameSessionForPlayer('no-such-uuid', 'PARTICIPANT_LEFT')
+    const after = gameSession.__getStateSnapshotForTests()
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_IN_SESSION' })
+    assert.deepEqual(after, before)
+})
+
+test('endGameSessionForPlayer: 정상 케이스에서 세션에 속했던 참가자 전원이 3개 registry에서 전부 사라진다', () => {
+    const room = makeRoom({ id: 'room-end', players: [makePlayer('end-a'), makePlayer('end-b'), makePlayer('end-c')] })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    const result = endGameSessionForPlayer('end-b', 'PARTICIPANT_LEFT')
+
+    assert.equal(result.ok, true)
+    assert.equal(result.reason, 'PARTICIPANT_LEFT')
+    assert.equal(result.session.id, candidate.session.id)
+    assert.equal(result.session.roomId, 'room-end')
+
+    const snapshot = gameSession.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === candidate.session.id), false)
+    assert.equal(snapshot.roomGameSession.some(([roomId]) => roomId === 'room-end'), false)
+    for (const uuid of ['end-a', 'end-b', 'end-c']) {
+        assert.equal(snapshot.playerSession.some(([playerUuid]) => playerUuid === uuid), false)
+    }
+})
+
+test('endGameSessionForPlayer: 정리 직후 같은 세션의 다른 참가자 uuid로 다시 호출해도 멱등하게 NOT_IN_SESSION이다', () => {
+    const room = makeRoom({ id: 'room-idem', players: [makePlayer('idem-a'), makePlayer('idem-b')] })
+    commitGameSession(buildSessionCandidate(room).session)
+
+    endGameSessionForPlayer('idem-a', 'PARTICIPANT_LEFT')
+    const result = endGameSessionForPlayer('idem-b', 'PARTICIPANT_LEFT')
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_IN_SESSION' })
+})
+
+test('endGameSessionForPlayer: 정리된 uuid를 포함한 새 Room으로 다시 게임을 시작할 수 있다', () => {
+    const room = makeRoom({ id: 'room-restart-1', players: [makePlayer('restart-uuid'), makePlayer('restart-other')] })
+    commitGameSession(buildSessionCandidate(room).session)
+    endGameSessionForPlayer('restart-uuid', 'PARTICIPANT_LEFT')
+
+    const newRoom = makeRoom({ id: 'room-restart-2', players: [makePlayer('restart-uuid'), makePlayer('restart-third')] })
+    const prepared = prepareGameSession(newRoom)
+    assert.equal(prepared.ok, true)
+    assert.doesNotThrow(() => commitGameSession(prepared.session))
+})
+
+test('endGameSessionForPlayer: ABA 방지 — 세션 A 종료 후 시작된 세션 B는 A에 대한 지연 종료 요청으로부터 안전하다', () => {
+    const roomA = makeRoom({ id: 'room-aba-1', players: [makePlayer('aba-uuid'), makePlayer('aba-a-other')] })
+    const candidateA = buildSessionCandidate(roomA)
+    commitGameSession(candidateA.session)
+    const gameIdA = candidateA.session.id
+
+    const endedA = endGameSessionForPlayer('aba-uuid', 'PARTICIPANT_LEFT')
+    assert.equal(endedA.ok, true)
+
+    const roomB = makeRoom({ id: 'room-aba-2', players: [makePlayer('aba-uuid'), makePlayer('aba-b-other')] })
+    const candidateB = buildSessionCandidate(roomB)
+    commitGameSession(candidateB.session)
+    const gameIdB = candidateB.session.id
+
+    const before = gameSession.__getStateSnapshotForTests()
+    // A에 대한 지연·중복 종료 요청이 B가 이미 시작된 뒤에야 도착한 상황을 재현한다.
+    const staleResult = endGameSessionForPlayer('aba-uuid', 'PARTICIPANT_LEFT', gameIdA)
+    const after = gameSession.__getStateSnapshotForTests()
+
+    assert.deepEqual(staleResult, { ok: false, code: 'STALE_SESSION_MISMATCH' })
+    assert.deepEqual(after, before)
+    assert.equal(after.gameSessions.some(([gameId]) => gameId === gameIdB), true)
+    assert.equal(after.roomGameSession.some(([roomId, gameId]) => roomId === 'room-aba-2' && gameId === gameIdB), true)
+    assert.equal(after.playerSession.some(([uuid, gameId]) => uuid === 'aba-uuid' && gameId === gameIdB), true)
 })
 
 // ---------------------------------------------------------------------------

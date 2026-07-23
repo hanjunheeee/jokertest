@@ -5,10 +5,11 @@ const cookie = require("cookie");
 const presenceService = require("../service/presence.service");
 const userRepository  = require("../repositories/user.repositories");
 const matchmaking     = require("./matchmaking");
-// NOTE: Room→GameSession 전환(matchmaking.js의 handleStartGame이 game-core/gameSession을
-// 호출해 참가자별 game_started를 개별 전달)은 구현됐지만, 인게임 진입 후의 실시간 턴/페이즈
-// 동기화(useInGameSocket 및 이를 뒷받침할 소켓 핸들러)는 아직 없어 여기 등록하지 않습니다.
-// const gameSession     = require("./gameSession");
+const gameSession     = require("./gameSession");
+// NOTE: Room→GameSession 전환(matchmaking.js)과 disconnect에 의한 GameSession 정리
+// (gameSession.js의 onDisconnect — registry 삭제 + game_ended 알림 + channel 정리)는
+// 구현됐지만, 인게임 진입 후의 실시간 턴/페이즈 동기화(registerGameHandlers)는 아직
+// 없어 등록하지 않습니다.
 
 const onlineUsers = new Map();
 
@@ -33,29 +34,40 @@ function initSocket(httpServer) {
     _io = io;
 
     io.use(authenticateSocket);
-
-    io.on("connection", (socket) => {
-        const { uuid } = socket.data.user;
-
-        handleConnection(io, socket, uuid).catch((err) => {
-            console.error("\x1b[31m[소켓 접속 처리 에러]\x1b[0m", err);
-        });
-
-        matchmaking.registerMatchmakingHandlers(io, socket, uuid);
-        // gameSession.registerGameHandlers(io, socket, uuid);
-
-        socket.on("disconnect", () => {
-            handleDisconnect(io, socket, uuid).catch((err) => {
-                console.error("\x1b[31m[소켓 종료 처리 에러]\x1b[0m", err);
-            });
-            matchmaking.onDisconnect(io, uuid);
-            // gameSession.onDisconnect(io, uuid).catch((err) => {
-            //     console.error("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m", err);
-            // });
-        });
-    });
+    io.on("connection", (socket) => registerConnectionHandlers(io, socket));
 
     return io;
+}
+
+/**
+ * disconnect 리스너 등록만 담당한다(connection 시점 handleConnection과 분리).
+ * 이렇게 나눠 두면 registerConnectionHandlers 전체를 거치지 않고 disconnect 배선만
+ * 단위 테스트할 수 있다 — handleConnection은 즉시 presence/DB 작업을 시작하므로,
+ * 배선만 검증하려는 테스트가 그 부수효과까지 떠안지 않게 하기 위함이다.
+ */
+function registerDisconnectHandler(io, socket, uuid) {
+    socket.on("disconnect", () => {
+        handleDisconnect(io, socket, uuid).catch((err) => {
+            console.error("\x1b[31m[소켓 종료 처리 에러]\x1b[0m", err);
+        });
+        matchmaking.onDisconnect(io, uuid);
+        gameSession.onDisconnect(io, uuid).catch((err) => {
+            console.error("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m", err);
+        });
+    });
+}
+
+function registerConnectionHandlers(io, socket) {
+    const { uuid } = socket.data.user;
+
+    handleConnection(io, socket, uuid).catch((err) => {
+        console.error("\x1b[31m[소켓 접속 처리 에러]\x1b[0m", err);
+    });
+
+    matchmaking.registerMatchmakingHandlers(io, socket, uuid);
+    // gameSession.registerGameHandlers(io, socket, uuid); // 다음 슬라이스(턴/페이즈 등)
+
+    registerDisconnectHandler(io, socket, uuid);
 }
 
 function authenticateSocket(socket, next) {
@@ -117,4 +129,4 @@ async function broadcastFriendStatus(io, uuid, status) {
     });
 }
 
-module.exports = { initSocket, emitToUser };
+module.exports = { initSocket, emitToUser, __testables: { registerConnectionHandlers, registerDisconnectHandler } };

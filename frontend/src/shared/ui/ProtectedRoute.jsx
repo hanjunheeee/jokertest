@@ -5,6 +5,7 @@ import {
     selectLoggedOutIntentionally,
     useAuthStore,
 } from "@/domains/auth/store/auth.store"
+import { useGameSessionSocketEvents } from "@/domains/game/ingame/hooks/useGameSessionSocketEvents"
 
 // 로그인한 사용자만 통과시켜야 하는 라우트를 감싸는 컴포넌트입니다.
 export default function ProtectedRoute() {
@@ -13,6 +14,12 @@ export default function ProtectedRoute() {
 
     // 사용자가 직접 로그아웃해서 로그인 페이지로 온 상황인지 구분하는 값입니다.
     const loggedOutIntentionally = useAuthStore(selectLoggedOutIntentionally)
+
+    // GameSession 종료(game_ended) 구독입니다. /multiplay, /game-matching, /ingame,
+    // /gameresult 등 이 컴포넌트가 감싸는 모든 라우트 사이를 이동해도 리마운트되지
+    // 않아 이벤트 유실 구간이 생기지 않습니다. 로그인하지 않은 상태(socket이 아직
+    // 없음)에서는 훅 내부에서 즉시 return하므로 안전합니다.
+    useGameSessionSocketEvents()
 
     useEffect(() => {
         // 이미 로그인된 상태면 경고를 띄울 필요가 없습니다.

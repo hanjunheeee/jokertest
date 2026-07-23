@@ -201,6 +201,39 @@ function buildGameStartedPayload(session, viewerUuid) {
     }
 }
 
+/**
+ * 특정 uuid가 속한 활성 GameSession을 즉시 종료합니다(참가자 전원을 3개 registry에서
+ * 제거). uuid가 어떤 활성 GameSession에도 속해있지 않으면 아무 것도 바꾸지 않고
+ * { ok:false, code:'NOT_IN_SESSION' }을 반환합니다 — 대기방 disconnect 등 무관한 호출과
+ * 안전하게 공존하기 위한 계약입니다.
+ *
+ * expectedGameId(선택)를 넘기면, uuid의 현재 세션이 정확히 그 gameId일 때만 종료를
+ * 진행합니다 — 일치하지 않으면 { ok:false, code:'STALE_SESSION_MISMATCH' }를 반환하고
+ * 아무 것도 바꾸지 않습니다. 종료 요청을 처리하는 시점과 그 요청이 원래 발생한 시점
+ * 사이에 지연이 생길 수 있는 호출자가, 그 사이 같은 uuid가 새로 시작한 다른
+ * GameSession을 대신 삭제해버리는 ABA 문제를 막기 위한 가드입니다. 이번 슬라이스의
+ * 유일한 호출자(backend/socket/gameSession.js의 onDisconnect)는 disconnect 감지와 이
+ * 함수 호출 사이에 await이 없어 항상 최신 상태를 읽으므로 지금 당장은 expectedGameId
+ * 없이 호출해도 안전하지만, 가드 자체는 이 함수의 계약으로 지금 추가해 둔다.
+ *
+ * Socket.IO 관련 지식은 이 함수에 없습니다(순수 registry 조작). 알림 전송·Socket.IO
+ * channel 정리는 소켓 계층(backend/socket/gameSession.js)의 책임입니다.
+ */
+function endGameSessionForPlayer(uuid, reason, expectedGameId) {
+    const gameId = playerSession.get(uuid)
+    if (!gameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (expectedGameId !== undefined && gameId !== expectedGameId) {
+        return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+    }
+
+    const session = gameSessions.get(gameId)
+    gameSessions.delete(gameId)
+    roomGameSession.delete(session.roomId)
+    session.players.forEach((_, playerUuid) => playerSession.delete(playerUuid))
+
+    return { ok: true, session, reason }
+}
+
 /** 테스트 전용: 모듈 내부 상태를 초기화합니다. 런타임 코드에서는 호출하지 마세요. */
 function __resetStateForTests() {
     gameSessions.clear()
@@ -222,6 +255,7 @@ module.exports = {
     prepareGameSession,
     commitGameSession,
     buildGameStartedPayload,
+    endGameSessionForPlayer,
     __resetStateForTests,
     __getStateSnapshotForTests,
     // 테스트에서 개별 함수를 직접 호출하기 위한 통로입니다. 런타임 코드에서는 참조하지 않습니다.
