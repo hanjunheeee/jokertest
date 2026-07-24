@@ -17,7 +17,7 @@ export default function InGameTargetPicker({
         <button
           key={player.id}
           type="button"
-          disabled={disabled || !player.alive || !player.connected}
+          disabled={disabled || !player.alive || !player.connected || player.selectable === false}
           className={
             selectedTargetId === player.id
               ? INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS

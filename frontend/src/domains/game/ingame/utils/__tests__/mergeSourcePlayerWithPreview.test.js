@@ -37,6 +37,22 @@ test("team도 동일하게 있으면 복사되고 없으면 키 자체가 생기
   assert.equal(Object.hasOwn(withoutTeam, "team"), false)
 })
 
+test("isAlly:true인 입력은 출력에도 isAlly:true가 있다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, isAlly: true },
+    preview(),
+  )
+  assert.equal(result.isAlly, true)
+})
+
+test("입력 player에 isAlly 키 자체가 없으면 출력에도 isAlly 키가 없다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u2", name: "B", connected: true, alive: true },
+    preview(),
+  )
+  assert.equal(Object.hasOwn(result, "isAlly"), false)
+})
+
 test("connected:false는 DISCONNECTED로 계산된다", () => {
   const result = mergeSourcePlayerWithPreview({ id: "u1", name: "A", connected: false, alive: true }, preview())
   assert.equal(result.status, INGAME_PLAYER_STATUS.DISCONNECTED)

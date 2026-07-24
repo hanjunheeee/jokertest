@@ -771,7 +771,7 @@ test('buildGameStartedPayload: 공용 players[]에는 role/team 키가 없다', 
 
 // JSON 문자열 카운트 대신 구조(own-property)로 검증한다 — 문자열 카운트는 무관한 필드
 // 추가나 값 안의 우연한 문자열 일치에 취약하다(원격 리뷰 반영).
-test('buildGameStartedPayload: state.self는 정확히 {uuid, nickname, role, team} 키만 가지고, role/team이 실제 값과 일치한다', () => {
+test('buildGameStartedPayload: state.self는 role에 따라 정확한 키만 가지고, role/team이 실제 값과 일치한다', () => {
     const room = makeRoom()
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
 
@@ -779,15 +779,74 @@ test('buildGameStartedPayload: state.self는 정확히 {uuid, nickname, role, te
         const payload = buildGameStartedPayload(candidate.session, uuid)
         const actualPlayer = candidate.session.players.get(uuid)
 
-        assert.deepEqual(Object.keys(payload.state.self).sort(), ['nickname', 'role', 'team', 'uuid'])
+        // JOKER는 allies 키가 추가로 있고(같은 방에 다른 JOKER가 없으면 빈 배열), 그 외 역할은 없다.
+        const expectedKeys =
+            actualPlayer.role === 'JOKER'
+                ? ['allies', 'nickname', 'role', 'team', 'uuid']
+                : ['nickname', 'role', 'team', 'uuid']
+        assert.deepEqual(Object.keys(payload.state.self).sort(), expectedKeys)
         assert.equal(payload.state.self.uuid, uuid)
         assert.equal(payload.state.self.role, actualPlayer.role)
         assert.equal(payload.state.self.team, ROLE_TEAMS[actualPlayer.role])
+        if (actualPlayer.role === 'JOKER') {
+            assert.deepEqual(payload.state.self.allies, [])
+        }
 
-        // 공개 players[] 어디에도 role/team own-property가 없어야 한다(비밀 유지).
+        // 공개 players[] 어디에도 role/team/allies own-property가 없어야 한다(비밀 유지).
         for (const player of payload.state.players) {
             assert.equal(Object.hasOwn(player, 'role'), false)
             assert.equal(Object.hasOwn(player, 'team'), false)
+            assert.equal(Object.hasOwn(player, 'allies'), false)
+        }
+    }
+})
+
+test('buildGameStartedPayload: allies는 다른 JOKER uuid의 정확한 전체 집합이다(부분 누락·CITIZEN 혼입·자기 포함·중복 없음)', () => {
+    const room = makeRoom({
+        players: [makePlayer('u1'), makePlayer('u2'), makePlayer('u3'), makePlayer('u4'), makePlayer('u5')],
+        jokerCount: 3,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+
+    const jokerUuids = [...candidate.session.players.values()]
+        .filter((p) => p.role === 'JOKER')
+        .map((p) => p.uuid)
+    assert.equal(jokerUuids.length, 3)
+
+    for (const uuid of jokerUuids) {
+        const payload = buildGameStartedPayload(candidate.session, uuid)
+        const expectedAllies = jokerUuids.filter((u) => u !== uuid).sort()
+        assert.deepEqual([...payload.state.self.allies].sort(), expectedAllies)
+    }
+
+    const citizenUuid = [...candidate.session.players.values()].find((p) => p.role !== 'JOKER').uuid
+    const citizenPayload = buildGameStartedPayload(candidate.session, citizenUuid)
+    assert.equal(Object.hasOwn(citizenPayload.state.self, 'allies'), false)
+})
+
+// 10명 방(jokerCount:1)은 getSpecialRoleBudget(10) === {DOCTOR:1, GUARD:1, WITCH_HUNTER:1}이므로
+// 5개 역할 전부가 결정적으로 한 세션에 존재한다 — CITIZEN만이 아니라 DOCTOR/GUARD/WITCH_HUNTER도
+// self.allies own-property가 없어야 한다는 계약을 직접 순회 검증한다(원격 리뷰 반영).
+test('buildGameStartedPayload: DOCTOR/GUARD/WITCH_HUNTER(및 CITIZEN) viewer의 self에는 allies own-property가 없다', () => {
+    const room = makeRoom({
+        players: Array.from({ length: 10 }, (_, i) => makePlayer(`u${i + 1}`)),
+        jokerCount: 1,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+
+    const nonJokerPlayers = [...candidate.session.players.values()].filter((p) => p.role !== 'JOKER')
+    const presentRoles = new Set(nonJokerPlayers.map((p) => p.role))
+    assert.deepEqual(presentRoles, new Set(['CITIZEN', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']))
+
+    for (const { uuid, role } of nonJokerPlayers) {
+        const payload = buildGameStartedPayload(candidate.session, uuid)
+        assert.equal(Object.hasOwn(payload.state.self, 'allies'), false, `role=${role}`)
+
+        // 공개 players[] 비밀성 계약도 이 결정적 fixture에서 함께 유지되는지 재확인한다.
+        for (const player of payload.state.players) {
+            assert.equal(Object.hasOwn(player, 'role'), false)
+            assert.equal(Object.hasOwn(player, 'team'), false)
+            assert.equal(Object.hasOwn(player, 'allies'), false)
         }
     }
 })

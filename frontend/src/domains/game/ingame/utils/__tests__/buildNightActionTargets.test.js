@@ -68,8 +68,61 @@ test("입력에 role/team이 있어도(본인 항목) 결과 객체에는 role/t
   for (const player of result) {
     assert.equal(Object.hasOwn(player, "role"), false)
     assert.equal(Object.hasOwn(player, "team"), false)
-    assert.deepEqual(Object.keys(player).sort(), ["alive", "connected", "id", "name"])
+    assert.deepEqual(Object.keys(player).sort(), ["alive", "connected", "id", "name", "selectable"])
   }
+})
+
+test("isAlly:true인 항목은 name에 '· 동료 JOKER' 접미사가 붙고 selectable:false다", () => {
+  const [result] = buildNightActionTargets(
+    [{ id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.ALIVE, isAlly: true }],
+    { localPlayerId: "other", selfTargetAllowed: true },
+  )
+  assert.equal(result.name, "B · 동료 JOKER")
+  assert.equal(result.selectable, false)
+})
+
+test("isAlly가 없거나 false인 항목은 name이 원래 nickname 그대로고 selectable:true다", () => {
+  const [result] = buildNightActionTargets(
+    [{ id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.ALIVE }],
+    { localPlayerId: "other", selfTargetAllowed: true },
+  )
+  assert.equal(result.name, "B")
+  assert.equal(result.selectable, true)
+})
+
+test("동료가 2명 이상이면 각각 자신의 닉네임으로 구분되는 접미사 문자열을 갖는다", () => {
+  const result = buildNightActionTargets(
+    [
+      { id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.ALIVE, isAlly: true },
+      { id: "u3", nickname: "C", status: INGAME_PLAYER_STATUS.ALIVE, isAlly: true },
+    ],
+    { localPlayerId: "other", selfTargetAllowed: true },
+  )
+  assert.equal(result[0].name, "B · 동료 JOKER")
+  assert.equal(result[1].name, "C · 동료 JOKER")
+  assert.notEqual(result[0].name, result[1].name)
+})
+
+test("동료 JOKER 항목은 selfTargetAllowed:false여도 목록에서 제거되지 않는다(본인만 필터링 대상)", () => {
+  const result = buildNightActionTargets(
+    [{ id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.ALIVE, isAlly: true }],
+    { localPlayerId: "other", selfTargetAllowed: false },
+  )
+  assert.equal(result.length, 1)
+  assert.equal(result[0].selectable, false)
+})
+
+test("입력 순서가 출력 순서에 그대로 반영된다(동료도 재배치되지 않는다)", () => {
+  const players = [
+    { id: "u1", nickname: "A", status: INGAME_PLAYER_STATUS.ALIVE, isAlly: true },
+    { id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.ALIVE },
+    { id: "u3", nickname: "C", status: INGAME_PLAYER_STATUS.ALIVE, isAlly: true },
+  ]
+  const result = buildNightActionTargets(players, { localPlayerId: "other", selfTargetAllowed: true })
+  assert.deepEqual(
+    result.map((p) => p.id),
+    ["u1", "u2", "u3"],
+  )
 })
 
 test("name은 원본 player.nickname 값이다", () => {

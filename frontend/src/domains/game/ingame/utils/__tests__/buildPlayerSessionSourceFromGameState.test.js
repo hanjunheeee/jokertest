@@ -11,7 +11,7 @@ function validState(overrides = {}) {
       { uuid: "u1", nickname: "호스트" },
       { uuid: "u2", nickname: "참가자" },
     ],
-    self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER" },
+    self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: [] },
     ...overrides,
   }
 }
@@ -158,4 +158,108 @@ test("role과 team이 각각은 허용 목록 안에 있어도 서로 대응하�
 
   const missingTeam = buildPlayerSessionSourceFromGameState(validState({ self: { uuid: "u1", role: "JOKER" } }))
   assert.equal(missingTeam.sourcePlayers, null)
+})
+
+test("self.role이 JOKER인데 allies own-property가 없으면 EMPTY_RESULT다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({ self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER" } }),
+  )
+  assert.equal(result.sourcePlayers, null)
+  assert.equal(result.localPlayerId, null)
+})
+
+test("self.role이 JOKER가 아닌데 allies가 존재하면(빈 배열이어도) EMPTY_RESULT다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({ self: { uuid: "u2", nickname: "참가자", role: "CITIZEN", team: "CITIZEN", allies: [] } }),
+  )
+  assert.equal(result.sourcePlayers, null)
+})
+
+test("self.allies가 배열이 아니면 EMPTY_RESULT다", () => {
+  for (const badAllies of ["u2", {}, null, 1]) {
+    const result = buildPlayerSessionSourceFromGameState(
+      validState({ self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: badAllies } }),
+    )
+    assert.equal(result.sourcePlayers, null)
+  }
+})
+
+test("self.allies가 배열이어도 원소가 문자열이 아니거나 빈 문자열이면 EMPTY_RESULT다", () => {
+  for (const badAllies of [[1], [""]]) {
+    const result = buildPlayerSessionSourceFromGameState(
+      validState({ self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: badAllies } }),
+    )
+    assert.equal(result.sourcePlayers, null)
+  }
+})
+
+test("self.allies에 players 목록에 없는 uuid가 있으면 EMPTY_RESULT다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({ self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["not-in-list"] } }),
+  )
+  assert.equal(result.sourcePlayers, null)
+})
+
+test("self.allies에 자기 자신의 uuid가 있으면 EMPTY_RESULT다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({ self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u1"] } }),
+  )
+  assert.equal(result.sourcePlayers, null)
+})
+
+test("self.allies에 중복 uuid가 있으면 EMPTY_RESULT다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트" },
+        { uuid: "u2", nickname: "참가자" },
+        { uuid: "u3", nickname: "참가자2" },
+      ],
+      self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u2", "u2"] },
+    }),
+  )
+  assert.equal(result.sourcePlayers, null)
+})
+
+test("allies:[]인 정상 케이스는 통과하고 어떤 항목에도 isAlly가 없다", () => {
+  const result = buildPlayerSessionSourceFromGameState(validState())
+  for (const player of result.sourcePlayers) {
+    assert.equal(Object.hasOwn(player, "isAlly"), false)
+  }
+})
+
+test("allies에 있는 uuid의 sourcePlayers 항목에는 isAlly:true가 붙고, 없는 항목엔 키 자체가 없다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트" },
+        { uuid: "u2", nickname: "동료" },
+        { uuid: "u3", nickname: "시민" },
+      ],
+      self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u2"] },
+    }),
+  )
+  const ally = result.sourcePlayers.find((p) => p.id === "u2")
+  const citizen = result.sourcePlayers.find((p) => p.id === "u3")
+  const self = result.sourcePlayers.find((p) => p.id === "u1")
+  assert.equal(ally.isAlly, true)
+  assert.equal(Object.hasOwn(citizen, "isAlly"), false)
+  assert.equal(Object.hasOwn(self, "isAlly"), false)
+})
+
+test("동료가 2명 이상이면 각 동료 uuid 모두에 isAlly:true가 붙는다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트" },
+        { uuid: "u2", nickname: "동료B" },
+        { uuid: "u3", nickname: "동료C" },
+        { uuid: "u4", nickname: "시민" },
+      ],
+      self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u2", "u3"] },
+    }),
+  )
+  assert.equal(result.sourcePlayers.find((p) => p.id === "u2").isAlly, true)
+  assert.equal(result.sourcePlayers.find((p) => p.id === "u3").isAlly, true)
+  assert.equal(Object.hasOwn(result.sourcePlayers.find((p) => p.id === "u4"), "isAlly"), false)
 })

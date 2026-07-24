@@ -2,11 +2,14 @@ import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStat
 
 /**
  * useInGamePlayerSessionContext()가 주는 players(및 localPlayerId)를 InGameTargetPicker가
- * 기대하는 {id, name, alive, connected} 형태로 변환합니다.
+ * 기대하는 {id, name, alive, connected, selectable} 형태로 변환합니다.
  *
  * role/team 등 비밀 필드는 입력 player 객체에 있더라도(본인 항목에는 role/team이 붙어
- * 있음) 절대 복사하지 않습니다 — id/name/alive/connected 네 키만 새로 만들어 반환하므로,
- * 자기 자신이든 다른 참가자든 예외 없이 role/team이 결과에 나타나지 않습니다.
+ * 있음) 절대 복사하지 않습니다 — id/name/alive/connected/selectable 다섯 키만 새로 만들어
+ * 반환하므로, 자기 자신이든 다른 참가자든 예외 없이 role/team이 결과에 나타나지 않습니다.
+ * 동료 JOKER 항목(isAlly:true)은 목록에서 제거하지 않고 name에 "· 동료 JOKER" 접미사를
+ * 붙인 채 selectable:false로 표시합니다(본인 제외는 별개로 filter가 처리 — 동료는 "보이되
+ * 선택 불가", 본인은 "아예 안 보임").
  *
  * id는 원본 player.id를 그대로 씁니다 — buildPlayerSessionSourceFromGameState가
  * player.id = player.uuid로 만들었으므로, 이 함수의 출력 id도 서버가 아는 실제 uuid와
@@ -19,8 +22,9 @@ export function buildNightActionTargets(players, { localPlayerId, selfTargetAllo
     .filter((player) => selfTargetAllowed || player.id !== localPlayerId)
     .map((player) => ({
       id: player.id,
-      name: player.nickname,
+      name: player.isAlly ? `${player.nickname} · 동료 JOKER` : player.nickname,
       alive: player.status !== INGAME_PLAYER_STATUS.DEAD,
       connected: player.status !== INGAME_PLAYER_STATUS.DISCONNECTED,
+      selectable: !player.isAlly,
     }))
 }

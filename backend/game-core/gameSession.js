@@ -290,6 +290,8 @@ function commitGameSession(session) {
 }
 
 // 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
+// self.allies는 viewer가 JOKER일 때만 own-property로 존재한다 — 다른 JOKER의 uuid만 담고
+// role 등 다른 정보는 포함하지 않는다(JOKER끼리만 서로 동료임을 아는 정책의 서버 측 계약).
 function buildGameStartedPayload(session, viewerUuid) {
     const viewer = session.players.get(viewerUuid)
     return {
@@ -300,7 +302,19 @@ function buildGameStartedPayload(session, viewerUuid) {
             dayIndex: session.dayIndex,
             players: [...session.players.values()].map(({ uuid, nickname }) => ({ uuid, nickname })), // role 없음
             self: viewer
-                ? { uuid: viewer.uuid, nickname: viewer.nickname, role: viewer.role, team: ROLE_TEAMS[viewer.role] }
+                ? {
+                      uuid: viewer.uuid,
+                      nickname: viewer.nickname,
+                      role: viewer.role,
+                      team: ROLE_TEAMS[viewer.role],
+                      ...(viewer.role === 'JOKER'
+                          ? {
+                                allies: [...session.players.values()]
+                                    .filter((p) => p.role === 'JOKER' && p.uuid !== viewer.uuid)
+                                    .map((p) => p.uuid),
+                            }
+                          : {}),
+                  }
                 : null,
         },
     }
