@@ -67,9 +67,82 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
     }
 }
 
-/** ROLE_REVEAL 확인 이벤트 배선만 담당합니다(턴/페이즈 등 이후 동기화는 다음 슬라이스의 몫). */
+/**
+ * submit_night_action 전용 ack 전달 헬퍼. 공용 respond()(위)는 acknowledge_role_reveal에서만
+ * 쓰고 여기서는 재사용하지 않는다 — respond()는 callback이 throw할 때 원본 Error를 그대로
+ * 로그하는데, 이 이벤트는 밤 행동이라는 비밀 데이터를 다루므로 그보다 엄격한 고정 구조 로그를
+ * 쓴다. trustedGameId는 client가 보낸 원본 payload.gameId가 아니라 game-core가 registry
+ * 조회로 직접 확인한 session.id(성공 경로)이거나 undefined(그 외 모든 경로)여야 한다 — 이
+ * 함수 자체는 그 값이 어디서 왔는지 모르고 그대로 로그에 쓰기만 한다.
+ */
+function respondNightAction(uuid, trustedGameId, callback, payload) {
+    try {
+        callback(payload)
+    } catch (err) {
+        console.error('[밤 행동 제출 ack 전달 실패]', { code: 'CALLBACK_ERROR', uuid, gameId: trustedGameId })
+    }
+}
+
+/**
+ * NIGHT 밤 행동 제출 요청을 처리합니다(Socket.IO acknowledgement 방식). acknowledge_role_reveal과
+ * 달리 phase 전환을 일으키지 않으므로 브로드캐스트가 전혀 없습니다 — 제출자 본인에게만 ack를
+ * 돌려줍니다.
+ *
+ * 로그의 gameId는 client가 보낸 원본 문자열을 절대 쓰지 않습니다. game-core가 성공
+ * ({ ok:true, gameId: session.id })을 반환한 경로에서만 그 canonical session.id를 로그
+ * 컨텍스트로 쓰고, 그 외 모든 경로(payload 검증 실패·일반 예외·registry 불일치를 포함한 모든
+ * 실패)는 gameId: undefined로 고정합니다 — client가 trim으로 검증은 통과시키면서 앞뒤에
+ * 개행·공백을 두른 문자열을 보내도 그 원본이 로그에 실리지 않게 하기 위함입니다.
+ */
+function handleSubmitNightAction(uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respondNightAction(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId, targetId } = payload
+    if (typeof gameId !== 'string') {
+        respondNightAction(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    if (targetId !== null && typeof targetId !== 'string') {
+        respondNightAction(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let result
+    try {
+        result = gameSessionCore.submitNightAction(uuid, gameId, targetId)
+    } catch (err) {
+        console.error('[밤 행동 제출 처리 에러]', { code: 'UNEXPECTED_ERROR', uuid, gameId: undefined })
+        respondNightAction(uuid, undefined, callback, {
+            ok: false,
+            code: 'INTERNAL_ERROR',
+            message: '요청을 처리하지 못했습니다.',
+        })
+        return
+    }
+
+    if (!result.ok) {
+        if (INTERNAL_ONLY_CODES.has(result.code)) {
+            // registry 불일치는 클라이언트에 내부 상태를 노출하지 않고 일반 오류로만 응답한다.
+            console.error('[밤 행동 제출 registry 불일치]', { code: result.code, uuid, gameId: undefined })
+            respondNightAction(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        respondNightAction(uuid, undefined, callback, { ok: false, code: result.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    // 성공 — result.gameId는 game-core가 registry에서 조회한 canonical session.id다(client
+    // 원본 payload.gameId가 아님). client에게 보내는 payload에는 포함하지 않는다.
+    respondNightAction(uuid, result.gameId, callback, { ok: true })
+}
+
+/** ROLE_REVEAL 확인·NIGHT 행동 제출 이벤트 배선을 담당합니다(턴/페이즈 등 이후 동기화는 다음 슬라이스의 몫). */
 function registerGameHandlers(io, socket, uuid) {
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
+    socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(uuid, payload, callback))
 }
 
 /**
@@ -116,5 +189,5 @@ module.exports = {
     onDisconnect,
     // 테스트에서 socket.on 배선 없이 핸들러를 직접 호출하기 위한 통로입니다(matchmaking.js의
     // __testables 관례와 동일). 런타임 코드에서는 참조하지 않습니다.
-    __testables: { handleAcknowledgeRoleReveal },
+    __testables: { handleAcknowledgeRoleReveal, handleSubmitNightAction },
 }

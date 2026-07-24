@@ -7,7 +7,7 @@ const matchmaking = require('../matchmaking')
 const { createFakeSocket, createFakeIo, countingCallback, setupReadyRoomForStart } = require('./testHelpers/matchmakingFixtures')
 
 const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables
-const { handleAcknowledgeRoleReveal } = gameSessionSocketLayer.__testables
+const { handleAcknowledgeRoleReveal, handleSubmitNightAction } = gameSessionSocketLayer.__testables
 
 // 이 파일은 game-core/gameSession.js(고유 registry)와 matchmaking.js(고유 registry)를
 // 둘 다 실제로 구동하므로, 두 모듈의 registry를 각각 초기화해야 테스트 간 상태 누수가
@@ -336,4 +336,345 @@ test('참가자 disconnect로 GameSession이 정리된 뒤, 같은 uuid를 포�
 
     assert.equal(getResponseB().ok, true)
     assert.notEqual(getResponseB().code, 'PLAYER_ALREADY_IN_SESSION')
+})
+
+// ---------------------------------------------------------------------------
+// submit_night_action (handleSubmitNightAction) — NIGHT 행동 제출
+// ---------------------------------------------------------------------------
+
+/** game-core를 직접 구동해 playerCount=10·jokerCount=1 세션을 NIGHT로 전이시켜 커밋한다. 5개 역할 전부가 정확히 1명씩(CITIZEN은 6명) 배정된다. */
+function commitFullRoleSessionAtNight({ id = 'room-full', gameIdFn } = {}) {
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(`fp-${id}-${i}`))
+    const room = makeRoom({ id, players, jokerCount: 1 })
+    const opts = { randomFn: () => 0.999, ...(gameIdFn ? { gameIdFn } : {}) }
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, opts)
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of session.players.keys()) {
+        gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+    }
+    const byRole = (role) => [...session.players.values()].find((p) => p.role === role).uuid
+    return {
+        session,
+        jokerUuid: byRole('JOKER'),
+        doctorUuid: byRole('DOCTOR'),
+        guardUuid: byRole('GUARD'),
+        witchHunterUuid: byRole('WITCH_HUNTER'),
+        citizenUuid: byRole('CITIZEN'),
+    }
+}
+
+/** playerCount=3·jokerCount=2 세션을 NIGHT로 전이시켜 커밋한다 — JOKER 2명 + CITIZEN 1명. */
+function commitJokerTrioSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
+    const players = [makePlayer(`ja-${id}`), makePlayer(`jb-${id}`), makePlayer(`jc-${id}`)]
+    const room = makeRoom({ id, players, jokerCount: 2 })
+    const opts = { randomFn: () => 0, ...(gameIdFn ? { gameIdFn } : {}) }
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, opts)
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of session.players.keys()) {
+        gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+    }
+    const jokerUuids = [...session.players.values()].filter((p) => p.role === 'JOKER').map((p) => p.uuid)
+    const citizenUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
+    return { session, jokerUuids, citizenUuid }
+}
+
+function throwingCallback(message) {
+    return () => {
+        throw new Error(message)
+    }
+}
+
+// --- 기본 계약: malformed payload / callback 부재 / 브로드캐스트 없음 ---
+
+test('submit_night_action: payload가 객체가 아니거나 배열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+
+    for (const badPayload of [null, 'x', 42, []]) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitNightAction(doctorUuid, badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: gameId가 비문자열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(doctorUuid, { gameId: 123, targetId: citizenUuid }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: targetId가 null도 문자열도 아니면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: 42 }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: targetId 키 자체가 없어도(undefined) INVALID_PAYLOAD다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(doctorUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+})
+
+test('submit_night_action: callback이 함수가 아니면 완전한 no-op이다(예외도 없고 Map도 불변)', () => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
+
+    assert.doesNotThrow(() => handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: citizenUuid }, undefined))
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: core가 SESSION_NOT_FOUND를 반환하는 registry 불일치는 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: null }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('submit_night_action: 성공/실패 어느 경로에서도 브로드캐스트가 발생하지 않는다', () => {
+    const { session, doctorUuid, citizenUuid, guardUuid } = commitFullRoleSessionAtNight()
+    const io = createFakeIo([])
+
+    handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: citizenUuid }, countingCallback().callback)
+    handleSubmitNightAction(guardUuid, { gameId: session.id, targetId: guardUuid }, countingCallback().callback) // 실패(INVALID_TARGET)
+
+    assert.equal(io.broadcasts.length, 0)
+})
+
+// --- JOKER no-op 계약: 소켓 계층 외부 callback 테스트 ---
+// client가 실제로 받는 ack만 검증한다. nightActions 내부 상태 차이(엔트리 없음 vs 실제 target
+// 저장)는 game-core/__tests__/gameSession.test.js의 core 직접 호출 테스트가 전담한다 — 이
+// 테스트 파일에서는 그 상태를 assertion하지 않는다.
+
+test('submit_night_action(JOKER): 자기 자신·다른 JOKER·CITIZEN 세 대상 모두 외부 ack가 정확히 {ok:true}다(추가 키·gameId 없음)', () => {
+    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
+    const [actor, teammate] = jokerUuids
+
+    const self = countingCallback()
+    handleSubmitNightAction(actor, { gameId: session.id, targetId: actor }, self.callback)
+
+    const teammateResult = countingCallback()
+    handleSubmitNightAction(actor, { gameId: session.id, targetId: teammate }, teammateResult.callback)
+
+    const citizenResult = countingCallback()
+    handleSubmitNightAction(actor, { gameId: session.id, targetId: citizenUuid }, citizenResult.callback)
+
+    assert.deepEqual(self.getResponse(), { ok: true })
+    assert.deepEqual(teammateResult.getResponse(), { ok: true })
+    assert.deepEqual(citizenResult.getResponse(), { ok: true })
+})
+
+test('submit_night_action(JOKER, 오라클 방지 회귀): 자기 자신·다른 JOKER·CITIZEN 세 외부 ack가 구조적으로 구분 불가능하다', () => {
+    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
+    const [actor, teammate] = jokerUuids
+
+    const self = countingCallback()
+    handleSubmitNightAction(actor, { gameId: session.id, targetId: actor }, self.callback)
+    const teammateResult = countingCallback()
+    handleSubmitNightAction(actor, { gameId: session.id, targetId: teammate }, teammateResult.callback)
+    const citizenResult = countingCallback()
+    handleSubmitNightAction(actor, { gameId: session.id, targetId: citizenUuid }, citizenResult.callback)
+
+    // client 쪽에서 이 세 응답만으로는 대상이 자기 자신인지, 다른 JOKER인지, 시민인지 전혀
+    // 구분할 수 없다는 것이 이 테스트의 핵심 — deepEqual로 세 payload가 구조적으로 완전히
+    // 동일함을 직접 증명한다.
+    assert.deepEqual(self.getResponse(), teammateResult.getResponse())
+    assert.deepEqual(teammateResult.getResponse(), citizenResult.getResponse())
+    assert.deepEqual(self.getResponse(), { ok: true })
+})
+
+// --- 로그 비밀성: registry 불일치 경로 ---
+
+test('로그 비밀성(registry 불일치): console.error 인자가 정확히 {code, uuid, gameId:undefined}뿐이고 원본 Error가 아니다', (t) => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[밤 행동 제출 registry 불일치]')
+    assert.deepEqual(Object.keys(loggedObj).sort(), ['code', 'gameId', 'uuid'])
+    assert.equal(loggedObj instanceof Error, false)
+    assert.equal(loggedObj.code, 'SESSION_NOT_FOUND')
+    assert.equal(loggedObj.uuid, doctorUuid)
+    assert.equal(loggedObj.gameId, undefined)
+})
+
+// --- 로그 비밀성: 일반 예외 경로 ---
+
+test('로그 비밀성(일반 예외): 의도적으로 민감한 문자열을 담은 Error를 던져도 로그·ack 어디에도 새지 않고 gameId는 undefined다', (t) => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    t.mock.method(gameSessionCore, 'submitNightAction', () => {
+        throw new Error('SECRET role=JOKER targetId=citizen-uuid-X')
+    })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: null }, callback)
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[밤 행동 제출 처리 에러]')
+    assert.deepEqual(loggedObj, { code: 'UNEXPECTED_ERROR', uuid: doctorUuid, gameId: undefined })
+    assert.equal(loggedObj instanceof Error, false)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('SECRET'), false)
+    assert.equal(serialized.includes('role=JOKER'), false)
+    assert.equal(serialized.includes('targetId=citizen-uuid-X'), false)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(JSON.stringify(getResponse()).includes('SECRET'), false)
+})
+
+// --- 로그 비밀성: callback 전달 실패 경로 ---
+
+test('로그 비밀성(callback 전달 실패, 성공 응답 전달 중): gameId는 core가 반환한 canonical session.id고, 이미 반영된 Map 쓰기는 롤백되지 않는다', (t) => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const io = createFakeIo([])
+
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: citizenUuid }, throwingCallback('SECRET stack leak role=DOCTOR')),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[밤 행동 제출 ack 전달 실패]')
+    assert.deepEqual(Object.keys(loggedObj).sort(), ['code', 'gameId', 'uuid'])
+    assert.equal(loggedObj.code, 'CALLBACK_ERROR')
+    assert.equal(loggedObj.gameId, session.id) // client 원본이 아니라 core가 반환한 canonical 값
+    assert.equal(loggedObj instanceof Error, false)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('SECRET'), false)
+    assert.equal(serialized.includes('stack leak'), false)
+    assert.equal(serialized.includes('role=DOCTOR'), false)
+
+    // callback이 throw하기 이전에 이미 일어난 Map 쓰기는 그대로 유지된다.
+    assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('로그 비밀성(callback 전달 실패, 실패 응답 전달 중): gameId는 undefined다(canonical 값을 쓸 근거가 없음)', (t) => {
+    const { session, guardUuid } = commitFullRoleSessionAtNight()
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    // GUARD 자기 자신 대상 → INVALID_TARGET(실패).
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(guardUuid, { gameId: session.id, targetId: guardUuid }, throwingCallback('SECRET-FAIL role=GUARD')),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, undefined)
+    assert.equal(JSON.stringify(errorSpy.mock.calls[0].arguments).includes('SECRET-FAIL'), false)
+})
+
+// --- 로그 비밀성: 일반 예외 + callback 전달 실패 중첩 경로 ---
+
+test('로그 비밀성(중첩): submitNightAction과 callback이 동시에 throw해도 정확히 2건의 고정 구조 로그만 남고 gameId는 둘 다 undefined다', (t) => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    t.mock.method(gameSessionCore, 'submitNightAction', () => {
+        throw new Error('SECRET-A role=JOKER')
+    })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(doctorUuid, { gameId: session.id, targetId: null }, throwingCallback('SECRET-B stack role=GUARD')),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 2)
+    const [firstPrefix, firstLogged] = errorSpy.mock.calls[0].arguments
+    const [secondPrefix, secondLogged] = errorSpy.mock.calls[1].arguments
+    assert.equal(firstPrefix, '[밤 행동 제출 처리 에러]')
+    assert.deepEqual(firstLogged, { code: 'UNEXPECTED_ERROR', uuid: doctorUuid, gameId: undefined })
+    assert.equal(secondPrefix, '[밤 행동 제출 ack 전달 실패]')
+    assert.deepEqual(secondLogged, { code: 'CALLBACK_ERROR', uuid: doctorUuid, gameId: undefined })
+
+    const serialized = JSON.stringify(errorSpy.mock.calls.map((c) => c.arguments))
+    for (const secret of ['SECRET-A', 'SECRET-B', 'role=JOKER', 'role=GUARD', 'stack']) {
+        assert.equal(serialized.includes(secret), false)
+    }
+})
+
+// --- 로그 비밀성: 개행·초장문 gameId + callback throw ---
+
+test('로그 비밀성(개행·초장문 gameId): malformed payload의 gameId에 개행·10만자 문자열이 있어도 로그·ack 어디에도 새지 않는다', (t) => {
+    const { doctorUuid } = commitFullRoleSessionAtNight()
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const longInjection = '\n[admin] login succeeded\nrole=JOKER' + 'x'.repeat(100000)
+
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(doctorUuid, { gameId: longInjection, targetId: null }, throwingCallback('late leak')),
+    )
+
+    // gameId가 문자열이긴 하지만(payload 자체는 형태상 유효) 실제 세션과 일치하지 않으므로
+    // core에서 STALE_SESSION_MISMATCH로 실패한다 — 실패 경로이므로 gameId는 undefined다.
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, undefined)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('admin'), false)
+    assert.equal(serialized.includes('role=JOKER'), false)
+    assert.equal(serialized.includes('xxxxx'), false)
+})
+
+// --- 9라운드 회귀: 검증을 통과한 client 원본 gameId(공백·개행 포함)라도 외부 ack에는 절대
+// 노출되지 않고, callback 실패 로그에는 core가 반환한 canonical session.id만 남는다 ---
+
+test('9라운드 회귀: gameId 앞뒤에 개행·공백이 있어도 trim 후 세션과 일치하면 정상 저장 성공이고, 외부 ack는 정확히 {ok:true}뿐이다(gameId 키 없음)', () => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc', gameIdFn: () => 'abc' })
+    assert.equal(session.id, 'abc')
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(doctorUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(Object.hasOwn(getResponse(), 'gameId'), false)
+    assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
+})
+
+test('9라운드 회귀: 같은 성공 제출에서 callback이 throw하면 CALLBACK_ERROR 로그의 gameId는 정확히 "abc"이고 원본 개행·공백 문자열은 어디에도 없다', (t) => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc2', gameIdFn: () => 'abc' })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    handleSubmitNightAction(doctorUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, throwingCallback('late leak'))
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, 'abc')
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('\n  abc  \n'), false)
+    assert.equal(serialized.includes('  abc  '), false)
+})
+
+test('9라운드 회귀: JOKER no-op 성공에서도 callback이 throw하면 CALLBACK_ERROR 로그의 gameId는 client 원본이 아닌 canonical "abc"다', (t) => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-abc-joker', gameIdFn: () => 'abc' })
+    const [actor, teammate] = jokerUuids
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    handleSubmitNightAction(actor, { gameId: '\n  abc  \n', targetId: teammate }, throwingCallback('late leak'))
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, 'abc')
 })

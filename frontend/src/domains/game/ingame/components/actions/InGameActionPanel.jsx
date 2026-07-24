@@ -22,16 +22,19 @@ export default function InGameActionPanel() {
     error,
     selectedTargetId,
     setSelectedTargetId,
-    alivePlayers,
+    nightActionTargets,
     latestEvents,
     nightActionType,
     nightActionLabel,
     hasTarget,
+    nightActionStatus,
+    nightActionError,
     submitDayVote,
     resolveDayVote,
     submitTribunalVote,
     resolveTribunalVote,
     submitNightAction,
+    skipNightAction,
     resolveNight,
   } = useInGameActionPanel()
   const roleReveal = useInGameRoleRevealAck()
@@ -53,7 +56,7 @@ export default function InGameActionPanel() {
             {gameState.phase} · 제 {gameState.dayIndex}일
           </p>
           <p className={INGAME_ACTION_META_CLASS}>
-            역할 {gameState.self?.role ?? "미정"} · 생존 {alivePlayers.length}명
+            역할 {gameState.self?.role ?? "미정"} · 참가자 {gameState.players?.length ?? 0}명
           </p>
         </div>
         {gameState.winResult ? (
@@ -144,21 +147,39 @@ export default function InGameActionPanel() {
 
       {gameState.phase === "NIGHT" ? (
         <div className={INGAME_ACTION_SECTION_CLASS}>
-          <InGameTargetPicker
-            players={gameState.players}
-            selectedTargetId={selectedTargetId}
-            onSelect={setSelectedTargetId}
-            disabled={nightActionType === "SKIP"}
-          />
+          {nightActionType === null ? (
+            <p className={INGAME_ACTION_META_CLASS}>이 밤에는 행동할 수 없습니다.</p>
+          ) : (
+            <>
+              <InGameTargetPicker
+                players={nightActionTargets}
+                selectedTargetId={selectedTargetId}
+                onSelect={setSelectedTargetId}
+              />
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className={INGAME_ACTION_BUTTON_CLASS}
+                  disabled={nightActionStatus === "submitting" || !hasTarget}
+                  onClick={submitNightAction}
+                >
+                  {nightActionLabel}
+                </button>
+                <button
+                  type="button"
+                  className={INGAME_ACTION_BUTTON_CLASS}
+                  disabled={nightActionStatus === "submitting"}
+                  onClick={skipNightAction}
+                >
+                  건너뛰기
+                </button>
+              </div>
+              {nightActionError ? (
+                <p className="text-[0.68rem] text-red-300">{nightActionError}</p>
+              ) : null}
+            </>
+          )}
           <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              className={INGAME_ACTION_BUTTON_CLASS}
-              disabled={nightActionType !== "SKIP" && !hasTarget}
-              onClick={submitNightAction}
-            >
-              {nightActionLabel}
-            </button>
             <button
               type="button"
               className={INGAME_ACTION_BUTTON_CLASS}

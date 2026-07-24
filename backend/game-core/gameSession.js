@@ -155,6 +155,9 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // ROLE_REVEAL 확인을 추적한다. 세션 객체 안에 두어 endGameSessionForPlayer로
         // 세션이 삭제될 때 별도 정리 없이 함께 사라지게 한다.
         roleRevealAcks: new Set(),
+        // NIGHT pending action을 추적한다. uuid → targetId(참가자 uuid) | null(SKIP).
+        // roleRevealAcks와 동일한 이유로 세션 객체 안에 둔다.
+        nightActions: new Map(),
     }
     return { ok: true, session }
 }
@@ -207,6 +210,13 @@ function assertValidSessionForCommit(session) {
     }
     if (session.roleRevealAcks.size !== 0) {
         throw new Error(`commitGameSession: session.roleRevealAcks가 비어있지 않음(size=${session.roleRevealAcks.size})`)
+    }
+    // nightActions도 roleRevealAcks와 동일한 이유로 커밋 시점엔 항상 빈 Map이어야 한다.
+    if (!(session.nightActions instanceof Map)) {
+        throw new Error('commitGameSession: session.nightActions가 Map이 아님')
+    }
+    if (session.nightActions.size !== 0) {
+        throw new Error(`commitGameSession: session.nightActions가 비어있지 않음(size=${session.nightActions.size})`)
     }
     // channelId/phase/dayIndex는 현재 candidate 경로에서 고정값만 만들어지지만, 수동
     // 조립된 session까지 완전히 방어한다는 이 함수의 목적에 맞춰 여기서도 검사한다.
@@ -343,6 +353,77 @@ function buildPhaseChangedPayload(session) {
     return { gameId: session.id, phase: session.phase, dayIndex: session.dayIndex }
 }
 
+// 이 밤에 행동 가능한 역할인지 판정한다. nightActionMinDayIndex가 null이면(CITIZEN) 애초에
+// 밤 행동이 없는 역할이라 항상 false다. 이 함수가 nightActionMinDayIndex를 최초로 소비한다
+// (ROLE_DEFINITIONS 주석이 예고한 "후속 NIGHT 행동 슬라이스"가 바로 이것).
+function isEligibleForNightAction(role, dayIndex) {
+    const minDayIndex = ROLE_DEFINITIONS[role]?.nightActionMinDayIndex
+    return minDayIndex !== null && minDayIndex !== undefined && dayIndex >= minDayIndex
+}
+
+// 자기 자신을 대상으로 지정할 수 있는 역할. DOCTOR(보호)만 허용한다 — GUARD/WITCH_HUNTER가
+// 자기 자신을 지정하면 INVALID_TARGET으로 거부한다. JOKER의 자기 자신 대상은 team 검사에서
+// 먼저 no-op으로 처리되므로 이 Set까지 도달하지 않는다(아래 submitNightAction 참고).
+const SELF_TARGET_ALLOWED_ROLES = new Set(['DOCTOR'])
+
+/**
+ * NIGHT 밤 행동 제출을 처리합니다. 인증된 uuid와 gameId, targetId(참가자 uuid 또는 SKIP을
+ * 뜻하는 null)만 입력으로 받습니다 — role/team 등 비밀 정보는 이 함수의 입력에도 출력에도
+ * 없습니다. 반환값은 실패 시 { ok:false, code }, 성공 시 { ok:true, gameId: session.id }입니다.
+ *
+ * 반환하는 gameId는 client가 넘긴 원본 문자열이 아니라 registry에서 조회한 session.id
+ * 그대로입니다 — 소켓 계층이 이 값을 callback 전달 실패 로그의 컨텍스트로만 쓰고, client에게
+ * 보내는 ack에는 절대 포함하지 않습니다(client 원본은 검증을 통과했더라도 공백·개행을 포함한
+ * 형태를 그대로 유지할 수 있어 로그에 쓰기에 안전하지 않습니다).
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
+ *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
+ *   → 5. 역할·dayIndex eligibility → 6. targetId가 있으면 참가자로 존재하는지
+ *   → 7. actor가 JOKER이고 대상이 JOKER 진영(자기 자신 포함)이면 Map을 건드리지 않고 성공
+ *      종료(no-op — 오라클 방지를 위해 거부하지 않고, 기존 유효 표를 파괴하지 않기 위해
+ *      SKIP으로 덮어쓰지도 않는다)
+ *   → 8. 그 외 역할이 자기 자신을 대상으로 했는데 허용되지 않으면 거부 → 9. Map에 저장.
+ *
+ * 모든 실패 경로와 7번(no-op)은 session.nightActions를 절대 건드리지 않습니다 — "성공 응답"과
+ * "Map이 바뀜"은 동치가 아닙니다. game-core는 소켓 계층의 가드를 신뢰하지 않고 이 함수 안에서
+ * 독립적으로 전부 재검증합니다(acknowledgeRoleReveal과 동일한 원칙).
+ */
+function submitNightAction(uuid, gameId, targetId) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+    if (!isEligibleForNightAction(actor.role, session.dayIndex)) {
+        return { ok: false, code: 'NOT_ELIGIBLE' }
+    }
+
+    if (targetId !== null) {
+        const targetPlayer = session.players.get(targetId)
+        if (!targetPlayer) return { ok: false, code: 'INVALID_TARGET' }
+
+        if (actor.role === 'JOKER' && ROLE_TEAMS[targetPlayer.role] === 'JOKER') {
+            return { ok: true, gameId: session.id }
+        }
+
+        if (targetId === uuid && !SELF_TARGET_ALLOWED_ROLES.has(actor.role)) {
+            return { ok: false, code: 'INVALID_TARGET' }
+        }
+    }
+
+    session.nightActions.set(uuid, targetId)
+    return { ok: true, gameId: session.id }
+}
+
 /**
  * 특정 uuid가 속한 활성 GameSession을 즉시 종료합니다(참가자 전원을 3개 registry에서
  * 제거). uuid가 어떤 활성 GameSession에도 속해있지 않으면 아무 것도 바꾸지 않고
@@ -412,6 +493,7 @@ module.exports = {
     endGameSessionForPlayer,
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
+    submitNightAction,
     __resetStateForTests,
     __getStateSnapshotForTests,
     // 테스트에서 개별 함수를 직접 호출하거나 registry를 의도적으로 파괴하기 위한 통로입니다.
@@ -424,6 +506,7 @@ module.exports = {
         assertValidSessionForCommit,
         getSpecialRoleBudget,
         computeRoleComposition,
+        isEligibleForNightAction,
         __deleteGameSessionOnlyForTests,
     },
 }

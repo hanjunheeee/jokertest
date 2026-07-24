@@ -3,8 +3,12 @@ import { getSocket } from "@/shared/socket/socketClient"
 import {
   getInGameNightActionLabel,
   getInGameNightActionType,
+  isSelfTargetAllowedForNightAction,
 } from "../constants/actions/ingameActionPanel.js"
 import { useInGameStore } from "../store/ingameStore.js"
+import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
+import { buildNightActionTargets } from "../utils/buildNightActionTargets.js"
+import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
 
 function emitGameAction(eventName, payload = {}) {
   getSocket()?.emit(eventName, payload)
@@ -18,9 +22,23 @@ export function useInGameActionPanel() {
   // 투표/스킬 대상으로 선택한 플레이어 id입니다.
   const [selectedTargetId, setSelectedTargetId] = useState(null)
 
-  const alivePlayers = useMemo(
-    () => gameState?.players?.filter((player) => player.alive && player.connected) ?? [],
-    [gameState?.players],
+  const myRole = gameState?.self?.role
+  const dayIndex = gameState?.dayIndex
+
+  // NIGHT 대상 선택 목록입니다. gameState.players({uuid,nickname})를 InGameTargetPicker에
+  // 직접 넘기면 안 됩니다 — 그 컴포넌트는 {id,name,alive,connected}를 기대하므로 항상
+  // "연결끊김"으로 비활성화됩니다(id/name/alive/connected가 전부 undefined). 보드·채팅·
+  // 투표현황 등 다른 화면과 동일하게 useInGamePlayerSessionContext()가 이미 변환해 둔
+  // {id,nickname,status}를 재사용해 어댑터(buildNightActionTargets)로 형태만 맞춥니다 —
+  // 새 alive 시스템이 아니라 기존 status 계산을 재사용하는 것입니다.
+  const { players: sessionPlayers, localPlayerId } = useInGamePlayerSessionContext()
+  const nightActionTargets = useMemo(
+    () =>
+      buildNightActionTargets(sessionPlayers, {
+        localPlayerId,
+        selfTargetAllowed: isSelfTargetAllowedForNightAction(myRole),
+      }),
+    [sessionPlayers, localPlayerId, myRole],
   )
 
   const latestEvents = useMemo(
@@ -28,9 +46,11 @@ export function useInGameActionPanel() {
     [gameState?.events],
   )
 
-  const nightActionType = getInGameNightActionType(gameState?.myRole)
-  const nightActionLabel = getInGameNightActionLabel(gameState?.myRole)
+  const nightActionType = getInGameNightActionType(myRole, dayIndex)
+  const nightActionLabel = getInGameNightActionLabel(myRole, dayIndex)
   const hasTarget = Boolean(selectedTargetId)
+
+  const nightActionSubmit = useInGameNightActionSubmit()
 
   const submitDayVote = () => {
     emitGameAction("cast_day_vote", { targetId: selectedTargetId })
@@ -49,12 +69,11 @@ export function useInGameActionPanel() {
   }
 
   const submitNightAction = () => {
-    emitGameAction("submit_night_action", {
-      action:
-        nightActionType === "SKIP"
-          ? { type: "SKIP" }
-          : { type: nightActionType, targetId: selectedTargetId },
-    })
+    nightActionSubmit.submit(selectedTargetId ?? null)
+  }
+
+  const skipNightAction = () => {
+    nightActionSubmit.submit(null)
   }
 
   const resolveNight = () => {
@@ -66,16 +85,19 @@ export function useInGameActionPanel() {
     error,
     selectedTargetId,
     setSelectedTargetId,
-    alivePlayers,
+    nightActionTargets,
     latestEvents,
     nightActionType,
     nightActionLabel,
     hasTarget,
+    nightActionStatus: nightActionSubmit.status,
+    nightActionError: nightActionSubmit.error,
     submitDayVote,
     resolveDayVote,
     submitTribunalVote,
     resolveTribunalVote,
     submitNightAction,
+    skipNightAction,
     resolveNight,
   }
 }

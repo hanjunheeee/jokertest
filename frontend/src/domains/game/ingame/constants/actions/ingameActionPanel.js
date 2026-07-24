@@ -19,22 +19,45 @@ export const INGAME_ACTION_TARGET_BUTTON_CLASS =
 export const INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS =
   `${INGAME_ACTION_TARGET_BUTTON_CLASS} border-[#f3d28d] bg-[#5b321d]/80`
 
-// 역할별 밤 행동 타입입니다. 서버에 보낼 action.type 값으로 사용합니다.
-export function getInGameNightActionType(role) {
+// 역할별 밤 행동 최소 dayIndex입니다. 서버 ROLE_DEFINITIONS.nightActionMinDayIndex의
+// UX 전용 사본입니다(서버가 최종 권위자 — 이 값은 대상 선택 UI를 미리 숨기는 용도일 뿐,
+// 실제 권한 판정은 항상 서버가 다시 검증합니다). CITIZEN은 항목 자체가 없어 항상 불가합니다.
+const NIGHT_ACTION_MIN_DAY_INDEX = Object.freeze({
+  JOKER: 0,
+  DOCTOR: 0,
+  GUARD: 0,
+  WITCH_HUNTER: 1,
+})
+
+function isNightActionEligible(role, dayIndex) {
+  const minDayIndex = NIGHT_ACTION_MIN_DAY_INDEX[role]
+  return minDayIndex !== undefined && dayIndex >= minDayIndex
+}
+
+// 역할·dayIndex별 밤 행동 타입입니다. 서버에 보낼 action 종류를 프런트에서 미리 판단하기
+// 위한 용도이며, 행동 불가(CITIZEN 전체·day0 WITCH_HUNTER)면 null을 반환합니다.
+export function getInGameNightActionType(role, dayIndex) {
+  if (!isNightActionEligible(role, dayIndex)) return null
   if (role === "DOCTOR") return "PROTECT"
   if (role === "JOKER") return "ASSASSINATE"
   if (role === "GUARD") return "INVESTIGATE"
   if (role === "WITCH_HUNTER") return "CONFIRM"
-  return "SKIP"
+  return null
 }
 
-// 역할별 밤 행동 버튼 문구입니다.
-export function getInGameNightActionLabel(role) {
+// 역할·dayIndex별 밤 행동 버튼 문구입니다. 행동 불가면 null을 반환합니다.
+export function getInGameNightActionLabel(role, dayIndex) {
+  if (!isNightActionEligible(role, dayIndex)) return null
   if (role === "DOCTOR") return "보호"
   if (role === "JOKER") return "암살"
   if (role === "GUARD") return "조사"
   if (role === "WITCH_HUNTER") return "확인"
-  return "건너뛰기"
+  return null
+}
+
+// 자기 자신을 대상으로 지정할 수 있는 역할입니다. DOCTOR(보호)만 허용합니다.
+export function isSelfTargetAllowedForNightAction(role) {
+  return role === "DOCTOR"
 }
 
 // 개발용 이벤트 목록에 표시할 짧은 문자열을 만듭니다.
