@@ -8,6 +8,8 @@ const {
     buildSessionCandidate,
     checkGameSessionPreconditions,
     assertValidSessionForCommit,
+    getSpecialRoleBudget,
+    computeRoleComposition,
     __deleteGameSessionOnlyForTests,
 } = gameSession.__testables
 const {
@@ -18,6 +20,8 @@ const {
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
     GAME_ROLES,
+    ROLE_DEFINITIONS,
+    ROLE_TEAMS,
 } = gameSession
 
 // 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
@@ -81,6 +85,159 @@ test('assignRoles: 중복 배정이 없고 원본 players 배열/원소를 변�
     assert.deepEqual(players, before)
 })
 
+function countByRole(assigned) {
+    const counts = { JOKER: 0, CITIZEN: 0, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 }
+    for (const player of assigned) counts[player.role] += 1
+    return counts
+}
+
+test('assignRoles: 6명·jokerCount 1이면 DOCTOR 1명이 배정된다(개수는 computeRoleComposition과 동일한 결정적 randomFn으로 확인)', () => {
+    const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`))
+    const assigned = assignRoles(players, 1, () => 0.999)
+
+    assert.equal(assigned.length, 6)
+    assert.deepEqual(countByRole(assigned), computeRoleComposition(6, 1))
+})
+
+test('assignRoles: 8명·jokerCount 1이면 DOCTOR 1명·GUARD 1명이 배정된다', () => {
+    const players = Array.from({ length: 8 }, (_, i) => makePlayer(`p${i}`))
+    const assigned = assignRoles(players, 1, () => 0.999)
+
+    assert.equal(assigned.length, 8)
+    assert.deepEqual(countByRole(assigned), computeRoleComposition(8, 1))
+})
+
+test('assignRoles: 10명·jokerCount 1이면 DOCTOR/GUARD/WITCH_HUNTER가 각 1명씩 배정된다', () => {
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(`p${i}`))
+    const assigned = assignRoles(players, 1, () => 0.999)
+
+    assert.equal(assigned.length, 10)
+    assert.deepEqual(countByRole(assigned), computeRoleComposition(10, 1))
+})
+
+// ---------------------------------------------------------------------------
+// computeRoleComposition / getSpecialRoleBudget — 슬롯 절삭 알고리즘
+// ---------------------------------------------------------------------------
+
+test('getSpecialRoleBudget: 인원 구간별 특수 시민 역할 상한이 확정된 구성표와 일치한다', () => {
+    for (const playerCount of [2, 3, 4, 5]) {
+        assert.deepEqual(getSpecialRoleBudget(playerCount), { DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 })
+    }
+    for (const playerCount of [6, 7]) {
+        assert.deepEqual(getSpecialRoleBudget(playerCount), { DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
+    }
+    for (const playerCount of [8, 9]) {
+        assert.deepEqual(getSpecialRoleBudget(playerCount), { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 0 })
+    }
+    assert.deepEqual(getSpecialRoleBudget(10), { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 })
+})
+
+// computeRoleComposition이 기대하는 값을 테스트 코드가 독립적으로(순차 Math.min으로) 다시
+// 계산해 구현과 비교한다 — 슬롯 절삭 우선순위(DOCTOR → GUARD → WITCH_HUNTER)까지 통째로
+// deepEqual로 고정하므로 "GUARD > 0이면 DOCTOR도 budget만큼 배정돼 있어야 한다" 같은 개별
+// 관계를 따로 검사할 필요가 없다.
+function expectedComposition(playerCount, jokerCount) {
+    const budget = getSpecialRoleBudget(playerCount)
+    let remaining = playerCount - jokerCount
+    const doctor = Math.min(budget.DOCTOR, remaining)
+    remaining -= doctor
+    const guard = Math.min(budget.GUARD, remaining)
+    remaining -= guard
+    const witchHunter = Math.min(budget.WITCH_HUNTER, remaining)
+    remaining -= witchHunter
+    return { JOKER: jokerCount, DOCTOR: doctor, GUARD: guard, WITCH_HUNTER: witchHunter, CITIZEN: remaining }
+}
+
+test('computeRoleComposition: 2~10명 × 모든 유효 jokerCount(0..playerCount-1) 전 조합(54개)에서 불변조건을 만족한다', () => {
+    let combinationsChecked = 0
+    for (let playerCount = 2; playerCount <= 10; playerCount += 1) {
+        for (let jokerCount = 0; jokerCount < playerCount; jokerCount += 1) {
+            const result = computeRoleComposition(playerCount, jokerCount)
+            const expected = expectedComposition(playerCount, jokerCount)
+
+            // 독립적으로 재계산한 기대 composition과 완전히 일치(절삭 우선순위 포함).
+            assert.deepEqual(result, expected, `playerCount=${playerCount}, jokerCount=${jokerCount}`)
+
+            const sum = result.JOKER + result.DOCTOR + result.GUARD + result.WITCH_HUNTER + result.CITIZEN
+            assert.equal(sum, playerCount, `합계 불일치: playerCount=${playerCount}, jokerCount=${jokerCount}`)
+            assert.equal(result.JOKER, jokerCount)
+            for (const role of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER', 'CITIZEN']) {
+                assert.ok(result[role] >= 0, `${role} 수가 음수: playerCount=${playerCount}, jokerCount=${jokerCount}`)
+            }
+            const budget = getSpecialRoleBudget(playerCount)
+            assert.ok(result.DOCTOR <= budget.DOCTOR)
+            assert.ok(result.GUARD <= budget.GUARD)
+            assert.ok(result.WITCH_HUNTER <= budget.WITCH_HUNTER)
+
+            // non-JOKER 인원이 1명 이상이면 시민 진영(CITIZEN 또는 특수 역할)도 최소 1명이다.
+            const nonJokerCount = playerCount - jokerCount
+            const citizenTeamCount = result.CITIZEN + result.DOCTOR + result.GUARD + result.WITCH_HUNTER
+            if (nonJokerCount >= 1) assert.ok(citizenTeamCount >= 1)
+
+            combinationsChecked += 1
+        }
+    }
+    assert.equal(combinationsChecked, 54)
+})
+
+test('computeRoleComposition: 8명·jokerCount 7(socket 계층 상한 밖) — DOCTOR만 1명 배정되고 GUARD/WITCH_HUNTER는 0, 세션은 거부되지 않는다', () => {
+    const result = computeRoleComposition(8, 7)
+    assert.deepEqual(result, { JOKER: 7, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, CITIZEN: 0 })
+})
+
+// ---------------------------------------------------------------------------
+// ROLE_DEFINITIONS / GAME_ROLES / ROLE_TEAMS — canonical 역할 모델
+// ---------------------------------------------------------------------------
+
+test('GAME_ROLES: 정확히 5개 역할이 자기 자신 값으로 매핑되고, 기존 JOKER/CITIZEN 값은 유지된다', () => {
+    assert.deepEqual(Object.keys(GAME_ROLES).sort(), ['CITIZEN', 'DOCTOR', 'GUARD', 'JOKER', 'WITCH_HUNTER'])
+    assert.equal(GAME_ROLES.JOKER, 'JOKER')
+    assert.equal(GAME_ROLES.CITIZEN, 'CITIZEN')
+    assert.equal(GAME_ROLES.DOCTOR, 'DOCTOR')
+    assert.equal(GAME_ROLES.GUARD, 'GUARD')
+    assert.equal(GAME_ROLES.WITCH_HUNTER, 'WITCH_HUNTER')
+})
+
+test('ROLE_TEAMS: JOKER만 JOKER팀이고 나머지 4개 역할은 모두 CITIZEN팀이다', () => {
+    assert.deepEqual(ROLE_TEAMS, {
+        JOKER: 'JOKER',
+        CITIZEN: 'CITIZEN',
+        DOCTOR: 'CITIZEN',
+        GUARD: 'CITIZEN',
+        WITCH_HUNTER: 'CITIZEN',
+    })
+})
+
+test('ROLE_DEFINITIONS: nightActionMinDayIndex가 WITCH_HUNTER 첫날밤 비활성 정책과 정확히 일치한다', () => {
+    assert.equal(ROLE_DEFINITIONS.JOKER.nightActionMinDayIndex, 0)
+    assert.equal(ROLE_DEFINITIONS.CITIZEN.nightActionMinDayIndex, null)
+    assert.equal(ROLE_DEFINITIONS.DOCTOR.nightActionMinDayIndex, 0)
+    assert.equal(ROLE_DEFINITIONS.GUARD.nightActionMinDayIndex, 0)
+    assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex, 1)
+})
+
+test('ROLE_DEFINITIONS: 바깥 객체와 각 역할 정의 모두 개별적으로 동결되어 외부에서 변형할 수 없다', () => {
+    assert.equal(Object.isFrozen(ROLE_DEFINITIONS), true)
+    for (const role of Object.keys(GAME_ROLES)) {
+        assert.equal(Object.isFrozen(ROLE_DEFINITIONS[role]), true, `${role} 정의가 동결되지 않음`)
+    }
+
+    const before = { ...ROLE_DEFINITIONS.WITCH_HUNTER }
+    // non-strict 모드에서는 조용히 무시되므로 throw 여부가 아니라 값 불변을 확인한다.
+    ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex = 0
+    ROLE_DEFINITIONS.JOKER.team = 'CITIZEN'
+    assert.deepEqual(ROLE_DEFINITIONS.WITCH_HUNTER, before)
+    assert.equal(ROLE_DEFINITIONS.JOKER.team, 'JOKER')
+})
+
+test('export 호환성: __testables.assignRoles가 여전히 존재하고, ROLE_DEFINITIONS/ROLE_TEAMS/composition helper가 새로 노출된다', () => {
+    assert.equal(typeof gameSession.__testables.assignRoles, 'function')
+    assert.equal(typeof gameSession.ROLE_DEFINITIONS, 'object')
+    assert.equal(typeof gameSession.ROLE_TEAMS, 'object')
+    assert.equal(typeof gameSession.__testables.computeRoleComposition, 'function')
+    assert.equal(typeof gameSession.__testables.getSpecialRoleBudget, 'function')
+})
+
 // ---------------------------------------------------------------------------
 // validateSessionInput / buildSessionCandidate — 입력 검증
 // ---------------------------------------------------------------------------
@@ -92,6 +249,27 @@ test('validateSessionInput: 빈 players는 EMPTY_PLAYERS로 거부된다', () =>
     assert.equal(result.reason, 'EMPTY_PLAYERS')
 })
 
+test('validateSessionInput: players.length이 1명이면 PLAYER_COUNT_OUT_OF_RANGE로 거부된다', () => {
+    const result = validateSessionInput([makePlayer('a')], 0)
+    assert.equal(result.ok, false)
+    assert.equal(result.reason, 'PLAYER_COUNT_OUT_OF_RANGE')
+})
+
+test('validateSessionInput: players.length이 11명이면 PLAYER_COUNT_OUT_OF_RANGE로 거부된다', () => {
+    const players = Array.from({ length: 11 }, (_, i) => makePlayer(`p${i}`))
+    const result = validateSessionInput(players, 0)
+    assert.equal(result.ok, false)
+    assert.equal(result.reason, 'PLAYER_COUNT_OUT_OF_RANGE')
+})
+
+test('validateSessionInput: players.length이 2명 또는 10명이면(경계값) 통과한다', () => {
+    const twoPlayers = [makePlayer('a'), makePlayer('b')]
+    assert.deepEqual(validateSessionInput(twoPlayers, 0), { ok: true })
+
+    const tenPlayers = Array.from({ length: 10 }, (_, i) => makePlayer(`p${i}`))
+    assert.deepEqual(validateSessionInput(tenPlayers, 1), { ok: true })
+})
+
 test('validateSessionInput: players 값 내부 uuid 중복은 DUPLICATE_UUID로 거부된다', () => {
     const result = validateSessionInput([makePlayer('a'), makePlayer('a')], 0)
     assert.equal(result.ok, false)
@@ -99,25 +277,25 @@ test('validateSessionInput: players 값 내부 uuid 중복은 DUPLICATE_UUID로 
 })
 
 test('validateSessionInput: uuid 누락은 INVALID_UUID로 거부된다', () => {
-    const result = validateSessionInput([{ nickname: 'x' }], 0)
+    const result = validateSessionInput([{ nickname: 'x' }, makePlayer('b')], 0)
     assert.equal(result.ok, false)
     assert.equal(result.reason, 'INVALID_UUID')
 })
 
 test('validateSessionInput: uuid가 빈 문자열이면 INVALID_UUID로 거부된다', () => {
-    const result = validateSessionInput([{ uuid: '', nickname: 'x' }], 0)
+    const result = validateSessionInput([{ uuid: '', nickname: 'x' }, makePlayer('b')], 0)
     assert.equal(result.ok, false)
     assert.equal(result.reason, 'INVALID_UUID')
 })
 
 test('validateSessionInput: nickname 누락은 INVALID_NICKNAME으로 거부된다', () => {
-    const result = validateSessionInput([{ uuid: 'a' }], 0)
+    const result = validateSessionInput([{ uuid: 'a' }, makePlayer('b')], 0)
     assert.equal(result.ok, false)
     assert.equal(result.reason, 'INVALID_NICKNAME')
 })
 
 test('validateSessionInput: nickname이 공백뿐인 문자열이면 INVALID_NICKNAME으로 거부된다', () => {
-    const result = validateSessionInput([{ uuid: 'a', nickname: '   ' }], 0)
+    const result = validateSessionInput([{ uuid: 'a', nickname: '   ' }, makePlayer('b')], 0)
     assert.equal(result.ok, false)
     assert.equal(result.reason, 'INVALID_NICKNAME')
 })
@@ -439,6 +617,41 @@ const malformedSessionCases = [
     ['jokerCount가 음수', { jokerCount: -1 }],
     ['jokerCount가 players.size 이상', { jokerCount: 3 }],
     [
+        'session.players.size가 1명(지원 인원 2~10명 밖)',
+        {
+            jokerCount: 0,
+            players: new Map([['u1', { uuid: 'u1', nickname: 'A', role: GAME_ROLES.CITIZEN }]]),
+        },
+    ],
+    [
+        'session.players.size가 11명(지원 인원 2~10명 밖)',
+        {
+            jokerCount: 0,
+            players: new Map(
+                Array.from({ length: 11 }, (_, i) => [
+                    `u${i}`,
+                    { uuid: `u${i}`, nickname: `N${i}`, role: GAME_ROLES.CITIZEN },
+                ]),
+            ),
+        },
+    ],
+    [
+        '8명 세션에 DOCTOR 2명·GUARD 0명(기대 구성은 DOCTOR 1·GUARD 1)',
+        {
+            jokerCount: 1,
+            players: new Map([
+                ['u1', { uuid: 'u1', nickname: 'A', role: GAME_ROLES.JOKER }],
+                ['u2', { uuid: 'u2', nickname: 'B', role: GAME_ROLES.DOCTOR }],
+                ['u3', { uuid: 'u3', nickname: 'C', role: GAME_ROLES.DOCTOR }],
+                ['u4', { uuid: 'u4', nickname: 'D', role: GAME_ROLES.CITIZEN }],
+                ['u5', { uuid: 'u5', nickname: 'E', role: GAME_ROLES.CITIZEN }],
+                ['u6', { uuid: 'u6', nickname: 'F', role: GAME_ROLES.CITIZEN }],
+                ['u7', { uuid: 'u7', nickname: 'G', role: GAME_ROLES.CITIZEN }],
+                ['u8', { uuid: 'u8', nickname: 'H', role: GAME_ROLES.CITIZEN }],
+            ]),
+        },
+    ],
+    [
         '참가자 전원이 JOKER(jokerCount도 실제 인원수와 같게 설정)',
         {
             jokerCount: 3,
@@ -549,17 +762,26 @@ test('buildGameStartedPayload: 공용 players[]에는 role/team 키가 없다', 
     }
 })
 
-test('buildGameStartedPayload: role 키를 가진 위치는 state.self.role 하나뿐이고, 그 값은 요청한 uuid의 실제 역할과 일치한다', () => {
+// JSON 문자열 카운트 대신 구조(own-property)로 검증한다 — 문자열 카운트는 무관한 필드
+// 추가나 값 안의 우연한 문자열 일치에 취약하다(원격 리뷰 반영).
+test('buildGameStartedPayload: state.self는 정확히 {uuid, nickname, role, team} 키만 가지고, role/team이 실제 값과 일치한다', () => {
     const room = makeRoom()
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
 
     for (const uuid of candidate.session.players.keys()) {
         const payload = buildGameStartedPayload(candidate.session, uuid)
+        const actualPlayer = candidate.session.players.get(uuid)
+
+        assert.deepEqual(Object.keys(payload.state.self).sort(), ['nickname', 'role', 'team', 'uuid'])
         assert.equal(payload.state.self.uuid, uuid)
-        assert.equal(payload.state.self.role, candidate.session.players.get(uuid).role)
-        // JSON 문자열로 직렬화했을 때 "role" 키가 정확히 한 번만 나타나는지(= self.role 한 곳뿐)
-        const roleKeyCount = (JSON.stringify(payload).match(/"role"/g) ?? []).length
-        assert.equal(roleKeyCount, 1)
+        assert.equal(payload.state.self.role, actualPlayer.role)
+        assert.equal(payload.state.self.team, ROLE_TEAMS[actualPlayer.role])
+
+        // 공개 players[] 어디에도 role/team own-property가 없어야 한다(비밀 유지).
+        for (const player of payload.state.players) {
+            assert.equal(Object.hasOwn(player, 'role'), false)
+            assert.equal(Object.hasOwn(player, 'team'), false)
+        }
     }
 })
 

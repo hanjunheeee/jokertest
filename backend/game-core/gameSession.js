@@ -1,6 +1,30 @@
 const crypto = require('crypto')
 
-const GAME_ROLES = { JOKER: 'JOKER', CITIZEN: 'CITIZEN' }
+// 5개 역할의 단일 canonical 정의. GAME_ROLES/ROLE_TEAMS는 모두 이 정의에서 파생된다
+// (역할명을 여러 상수에 손으로 나열하면 하나만 바뀌었을 때 조용히 어긋날 수 있음).
+// nightActionMinDayIndex는 "이 역할이 능력을 쓸 수 있는 가장 이른 dayIndex"다 — null이면
+// 애초에 밤 행동이 없는 역할(CITIZEN). 후속 NIGHT 행동 슬라이스가 소비할 최소 계약이며,
+// 이번 슬라이스의 어떤 실행 로직도 이 값을 참조하지 않는다.
+// 바깥 객체만 Object.freeze하면 각 역할의 내부 필드는 여전히 재할당 가능하므로, canonical
+// metadata를 외부에서 변형 불가능하게 하려면 역할별 정의 각각도 개별적으로 동결해야 한다.
+const ROLE_DEFINITIONS = Object.freeze({
+    JOKER: Object.freeze({ team: 'JOKER', nightActionMinDayIndex: 0 }),
+    CITIZEN: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: null }),
+    DOCTOR: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0 }),
+    GUARD: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0 }),
+    WITCH_HUNTER: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 1 }),
+})
+
+const GAME_ROLES = Object.freeze(
+    Object.fromEntries(Object.keys(ROLE_DEFINITIONS).map((role) => [role, role])),
+)
+const ROLE_TEAMS = Object.freeze(
+    Object.fromEntries(Object.entries(ROLE_DEFINITIONS).map(([role, def]) => [role, def.team])),
+)
+
+const MIN_SUPPORTED_PLAYERS = 2
+const MAX_SUPPORTED_PLAYERS = 10
+
 const INITIAL_GAME_PHASE = 'ROLE_REVEAL' // 아직 밤이 시작되지 않은 역할 확인 단계(사용자 확정)
 const INITIAL_DAY_INDEX = 0
 
@@ -21,12 +45,54 @@ function fisherYatesShuffle(items, randomFn) {
     return result
 }
 
+// 인원수 구간별 특수 시민 역할 상한("budget"). 도입 우선순위(DOCTOR → GUARD →
+// WITCH_HUNTER, 사용자 확정)와 함께 computeRoleComposition이 남은 슬롯에서 이 상한만큼만
+// 채운다. 2~10명 도메인에서만 정의된다(아래 MIN/MAX_SUPPORTED_PLAYERS 참고).
+function getSpecialRoleBudget(playerCount) {
+    if (playerCount >= 10) return { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }
+    if (playerCount >= 8) return { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 0 }
+    if (playerCount >= 6) return { DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 }
+    return { DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 } // 2~5명
+}
+
+// 순수 계산 — 슬롯 절삭(slot-cutting) 방식이라 항상 성공한다: 먼저 jokerCount만큼 JOKER를
+// 배정하고, 남은 non-JOKER 슬롯에서 DOCTOR → GUARD → WITCH_HUNTER 순으로 "budget과 남은
+// 슬롯 중 작은 값"만큼만 채운 뒤, 최종 남은 슬롯은 전부 CITIZEN이 된다. 슬롯이 모자라면
+// 우선순위 뒤쪽 역할부터 0명이 될 뿐 거부/예외는 없다 — 입력 자체의 불변조건
+// (jokerCount < playerCount, 정수, 0 이상, 2~10명)은 validateSessionInput이 이미
+// 보장하므로 이 함수는 그 보장 위에서 계산만 한다. 어떤 유효 입력에서도 각 역할 수는
+// 0 이상이고 합계는 정확히 playerCount다.
+function computeRoleComposition(playerCount, jokerCount) {
+    const budget = getSpecialRoleBudget(playerCount)
+    let remaining = playerCount - jokerCount
+
+    const doctorCount = Math.min(budget.DOCTOR, remaining)
+    remaining -= doctorCount
+    const guardCount = Math.min(budget.GUARD, remaining)
+    remaining -= guardCount
+    const witchHunterCount = Math.min(budget.WITCH_HUNTER, remaining)
+    remaining -= witchHunterCount
+
+    return {
+        JOKER: jokerCount,
+        DOCTOR: doctorCount,
+        GUARD: guardCount,
+        WITCH_HUNTER: witchHunterCount,
+        CITIZEN: remaining, // 남은 슬롯 전부
+    }
+}
+
 function assignRoles(players, jokerCount, randomFn = Math.random) {
     const shuffled = fisherYatesShuffle(players, randomFn)
-    return shuffled.map((player, index) => ({
-        ...player,
-        role: index < jokerCount ? GAME_ROLES.JOKER : GAME_ROLES.CITIZEN,
-    }))
+    const composition = computeRoleComposition(players.length, jokerCount)
+    const roles = [
+        ...Array(composition.JOKER).fill(GAME_ROLES.JOKER),
+        ...Array(composition.DOCTOR).fill(GAME_ROLES.DOCTOR),
+        ...Array(composition.GUARD).fill(GAME_ROLES.GUARD),
+        ...Array(composition.WITCH_HUNTER).fill(GAME_ROLES.WITCH_HUNTER),
+        ...Array(composition.CITIZEN).fill(GAME_ROLES.CITIZEN),
+    ]
+    return shuffled.map((player, index) => ({ ...player, role: roles[index] }))
 }
 
 // players/jokerCount 자체의 불변조건을 검증한다. registry를 읽지 않는 순수 함수다.
@@ -35,6 +101,13 @@ function assignRoles(players, jokerCount, randomFn = Math.random) {
 function validateSessionInput(players, jokerCount) {
     if (!Array.isArray(players) || players.length === 0) {
         return { ok: false, code: 'INVALID_SESSION_INPUT', reason: 'EMPTY_PLAYERS' }
+    }
+    // computeRoleComposition의 인원별 구성표는 2~10명 도메인에서만 정의된다. 정상 Room
+    // 경로는 maxPlayers∈[4..10]/getMinPlayers() 덕분에 실질적으로 이 범위 안에 있지만,
+    // game-core는 socket 계층의 가드를 신뢰하지 않고 독립적으로 재검증한다는 이 파일의
+    // 원칙에 따라 여기서도 명시적으로 강제한다.
+    if (players.length < MIN_SUPPORTED_PLAYERS || players.length > MAX_SUPPORTED_PLAYERS) {
+        return { ok: false, code: 'INVALID_SESSION_INPUT', reason: 'PLAYER_COUNT_OUT_OF_RANGE' }
     }
     const seenUuids = new Set()
     for (const player of players) {
@@ -122,6 +195,11 @@ function assertValidSessionForCommit(session) {
     if (!(session.players instanceof Map) || session.players.size === 0) {
         throw new Error('commitGameSession: session.players가 비어있거나 Map이 아님')
     }
+    // computeRoleComposition의 구성표는 2~10명 도메인에서만 정의된다 — validateSessionInput과
+    // 동일한 이유로 commit 경계에서도 독립적으로 재검증한다.
+    if (session.players.size < MIN_SUPPORTED_PLAYERS || session.players.size > MAX_SUPPORTED_PLAYERS) {
+        throw new Error(`commitGameSession: 지원하지 않는 인원(${session.players.size})`)
+    }
     // roleRevealAcks도 candidate 경로가 고정값(빈 Set)만 만드는 필드이지만, phase/dayIndex/
     // channelId와 동일한 이유로 이 함수 안에서 독립적으로 재검증한다.
     if (!(session.roleRevealAcks instanceof Set)) {
@@ -147,7 +225,7 @@ function assertValidSessionForCommit(session) {
     if (!Number.isInteger(session.jokerCount) || session.jokerCount < 0 || session.jokerCount >= session.players.size) {
         throw new Error(`commitGameSession: 잘못된 session.jokerCount(${session.jokerCount})`)
     }
-    let actualJokerCount = 0
+    const actualCounts = { JOKER: 0, CITIZEN: 0, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 }
     for (const [key, player] of session.players) {
         if (!player || typeof player.uuid !== 'string' || player.uuid.length === 0) {
             throw new Error('commitGameSession: 잘못된 player.uuid')
@@ -161,14 +239,18 @@ function assertValidSessionForCommit(session) {
         if (!Object.values(GAME_ROLES).includes(player.role)) {
             throw new Error(`commitGameSession: 허용되지 않은 role(${player.role})`)
         }
-        if (player.role === GAME_ROLES.JOKER) actualJokerCount += 1
+        actualCounts[player.role] += 1
     }
-    // role이 JOKER/CITIZEN 두 값으로만 제한된 상태에서 JOKER 수까지 일치하면, 나머지
-    // 전원이 CITIZEN이라는 것도 함께 보장된다(별도 CITIZEN 카운트 검사가 필요 없음).
-    if (actualJokerCount !== session.jokerCount) {
-        throw new Error(
-            `commitGameSession: 실제 JOKER 수(${actualJokerCount})가 session.jokerCount(${session.jokerCount})와 불일치`
-        )
+    // 5개 역할 전체 분포를 기대 구성과 대조한다. session에 composition을 저장해두지 않고
+    // session.jokerCount/session.players.size로부터 매번 재계산해 대조한다("저장된 값을
+    // 신뢰하지 않고 재계산·재검증"하는 이 파일의 기존 스타일과 동일).
+    const expected = computeRoleComposition(session.players.size, session.jokerCount)
+    for (const role of Object.keys(GAME_ROLES)) {
+        if (actualCounts[role] !== expected[role]) {
+            throw new Error(
+                `commitGameSession: 실제 ${role} 수(${actualCounts[role]})가 기대값(${expected[role]})과 불일치`
+            )
+        }
     }
 }
 
@@ -207,7 +289,9 @@ function buildGameStartedPayload(session, viewerUuid) {
             phase: session.phase,
             dayIndex: session.dayIndex,
             players: [...session.players.values()].map(({ uuid, nickname }) => ({ uuid, nickname })), // role 없음
-            self: viewer ? { uuid: viewer.uuid, nickname: viewer.nickname, role: viewer.role } : null,
+            self: viewer
+                ? { uuid: viewer.uuid, nickname: viewer.nickname, role: viewer.role, team: ROLE_TEAMS[viewer.role] }
+                : null,
         },
     }
 }
@@ -320,6 +404,8 @@ function __deleteGameSessionOnlyForTests(gameId) {
 
 module.exports = {
     GAME_ROLES,
+    ROLE_DEFINITIONS,
+    ROLE_TEAMS,
     prepareGameSession,
     commitGameSession,
     buildGameStartedPayload,
@@ -336,6 +422,8 @@ module.exports = {
         buildSessionCandidate,
         checkGameSessionPreconditions,
         assertValidSessionForCommit,
+        getSpecialRoleBudget,
+        computeRoleComposition,
         __deleteGameSessionOnlyForTests,
     },
 }

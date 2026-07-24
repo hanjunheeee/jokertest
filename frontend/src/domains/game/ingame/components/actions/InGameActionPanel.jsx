@@ -53,7 +53,7 @@ export default function InGameActionPanel() {
             {gameState.phase} · 제 {gameState.dayIndex}일
           </p>
           <p className={INGAME_ACTION_META_CLASS}>
-            역할 {gameState.myRole ?? "미정"} · 생존 {alivePlayers.length}명
+            역할 {gameState.self?.role ?? "미정"} · 생존 {alivePlayers.length}명
           </p>
         </div>
         {gameState.winResult ? (
