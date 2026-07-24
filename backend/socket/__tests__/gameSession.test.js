@@ -7,11 +7,20 @@ const matchmaking = require('../matchmaking')
 const { createFakeSocket, createFakeIo, countingCallback, setupReadyRoomForStart } = require('./testHelpers/matchmakingFixtures')
 
 const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables
+const { handleAcknowledgeRoleReveal } = gameSessionSocketLayer.__testables
 
 // 이 파일은 game-core/gameSession.js(고유 registry)와 matchmaking.js(고유 registry)를
 // 둘 다 실제로 구동하므로, 두 모듈의 registry를 각각 초기화해야 테스트 간 상태 누수가
 // 없다(matchmaking.test.js의 기존 관례와 동일).
 test.beforeEach(() => {
+    gameSessionCore.__resetStateForTests()
+    matchmaking.__resetStateForTests()
+})
+// registry 불일치를 의도적으로 재현하는 테스트(SESSION_NOT_FOUND/NOT_A_PARTICIPANT 케이스)가
+// 이 파일의 마지막 테스트로 실행되더라도 손상된 singleton 상태가 남지 않게 afterEach에서도
+// 정리한다. 테스트 본문이 예외를 던져도 node:test는 afterEach를 실행하므로 이 정리는
+// 실패한 테스트 뒤에도 보장된다.
+test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
 })
@@ -144,6 +153,152 @@ test('onDisconnect: 같은 uuid로 연속 2회 호출하면 1회차만 처리되
 
     assert.equal(broadcastsAfterFirst, 1)
     assert.equal(broadcastsAfterSecond, 1)
+})
+
+// ---------------------------------------------------------------------------
+// acknowledge_role_reveal (handleAcknowledgeRoleReveal) — ROLE_REVEAL → NIGHT 전이
+// ---------------------------------------------------------------------------
+
+/** game-core를 직접 구동해 N인 GameSession을 커밋하고, 각 uuid에 대응하는 fake socket도 채널에 join된 상태로 준비한다. */
+function commitSessionWithPlayers(uuids, { roomId = 'room-ack' } = {}) {
+    const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)) })
+    const prepared = gameSessionCore.prepareGameSession(room)
+    gameSessionCore.commitGameSession(prepared.session)
+
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(prepared.session.channelId)
+        return s
+    })
+    const io = createFakeIo(sockets)
+
+    return { session: prepared.session, sockets, io }
+}
+
+test('acknowledge_role_reveal: 2인 세션 중 1명만 확인하면 콜백은 ok:true이고 game_phase_changed는 방송되지 않는다', () => {
+    const { session, io } = commitSessionWithPlayers(['p1', 'p2'])
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeRoleReveal(io, null, 'p1', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(io.broadcasts.some((b) => b.event === 'game_phase_changed'), false)
+})
+
+test('acknowledge_role_reveal: 나머지 1명도 확인하면 콜백은 ok:true이고 game_phase_changed가 정확히 1건, payload가 정확히 일치한다', () => {
+    const { session, io } = commitSessionWithPlayers(['q1', 'q2'])
+
+    handleAcknowledgeRoleReveal(io, null, 'q1', { gameId: session.id }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, null, 'q2', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
+    assert.equal(broadcasts.length, 1)
+    assert.equal(broadcasts[0].roomId, session.channelId)
+    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, phase: 'NIGHT', dayIndex: 0 })
+})
+
+test('acknowledge_role_reveal: 3인 세션에서 전원 확인해도 game_phase_changed는 전체 과정에서 정확히 1건만 발생한다', () => {
+    const { session, io } = commitSessionWithPlayers(['r1', 'r2', 'r3'])
+
+    handleAcknowledgeRoleReveal(io, null, 'r1', { gameId: session.id }, countingCallback().callback)
+    handleAcknowledgeRoleReveal(io, null, 'r2', { gameId: session.id }, countingCallback().callback)
+    handleAcknowledgeRoleReveal(io, null, 'r3', { gameId: session.id }, countingCallback().callback)
+
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
+    assert.equal(broadcasts.length, 1)
+})
+
+test('acknowledge_role_reveal: callback이 함수가 아니면 무동작이다(상태 불변, 방송 없음)', () => {
+    const { session, io } = commitSessionWithPlayers(['s1', 's2'])
+
+    handleAcknowledgeRoleReveal(io, null, 's1', { gameId: session.id }, undefined)
+
+    assert.equal(session.roleRevealAcks.size, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('acknowledge_role_reveal: 세션 없는 uuid는 {ok:false, code:"NOT_IN_SESSION"}이다', () => {
+    const { io } = commitSessionWithPlayers(['t1', 't2'])
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeRoleReveal(io, null, 'not-a-participant', { gameId: 'whatever' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'NOT_IN_SESSION', message: '요청을 처리할 수 없습니다.' })
+})
+
+test('acknowledge_role_reveal: gameId 누락/타입 오류 payload는 {ok:false, code:"INVALID_PAYLOAD"}이다', () => {
+    const { session, io } = commitSessionWithPlayers(['u1', 'u2'])
+
+    const missing = countingCallback()
+    handleAcknowledgeRoleReveal(io, null, 'u1', {}, missing.callback)
+    assert.deepEqual(missing.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const wrongType = countingCallback()
+    handleAcknowledgeRoleReveal(io, null, 'u1', { gameId: 123 }, wrongType.callback)
+    assert.deepEqual(wrongType.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    assert.equal(session.roleRevealAcks.size, 0)
+})
+
+test('acknowledge_role_reveal: onDisconnect로 세션이 먼저 종료된 뒤 도착한 늦은 확인은 NOT_IN_SESSION이고 방송이 없다', async () => {
+    const { session, io } = commitSessionWithPlayers(['v1', 'v2'])
+    await gameSessionSocketLayer.onDisconnect(io, 'v1') // 세션 전체 종료(정책 확정)
+
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, null, 'v2', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'NOT_IN_SESSION', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 0)
+})
+
+test('acknowledge_role_reveal: 콜백이 throw해도 game_phase_changed 방송은 정상적으로 발생한다', () => {
+    const { session, io } = commitSessionWithPlayers(['w1', 'w2'])
+    const throwingCallback = () => {
+        throw new Error('콜백 실패(테스트 주입)')
+    }
+
+    handleAcknowledgeRoleReveal(io, null, 'w1', { gameId: session.id }, countingCallback().callback)
+    assert.doesNotThrow(() => handleAcknowledgeRoleReveal(io, null, 'w2', { gameId: session.id }, throwingCallback))
+
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
+    assert.equal(broadcasts.length, 1)
+})
+
+test('acknowledge_role_reveal: N인 세션에서 N번 확인하면 콜백은 N회, game_phase_changed 방송은 정확히 1회다', () => {
+    const uuids = ['x1', 'x2', 'x3', 'x4']
+    const { session, io } = commitSessionWithPlayers(uuids)
+    let callbackCalls = 0
+
+    for (const uuid of uuids) {
+        handleAcknowledgeRoleReveal(io, null, uuid, { gameId: session.id }, () => {
+            callbackCalls += 1
+        })
+    }
+
+    assert.equal(callbackCalls, uuids.length)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 1)
+})
+
+test('acknowledge_role_reveal: core가 SESSION_NOT_FOUND를 반환하는 registry 불일치는 소켓 응답에서 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, io } = commitSessionWithPlayers(['y1', 'y2'])
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, null, 'y1', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('acknowledge_role_reveal: core가 NOT_A_PARTICIPANT를 반환하는 registry 불일치는 소켓 응답에서 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, io } = commitSessionWithPlayers(['z1', 'z2'])
+    session.players.delete('z1')
+
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, null, 'z1', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
 })
 
 // ---------------------------------------------------------------------------

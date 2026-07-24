@@ -18,6 +18,24 @@ export const useInGameStore = create((set) => ({
   setGamePayload: ({ gameId, state }) =>
     set({ gameId: gameId ?? state?.id ?? null, state: state ?? null, error: null }),
 
+  // game_phase_changed 방송을 반영한다. payload는 신뢰하지 않는 외부 입력이므로 구조분해
+  // 전에 형태부터 검증한다 — 이번 슬라이스가 다루는 전이(ROLE_REVEAL→NIGHT, dayIndex 0
+  // 유지)와 정확히 일치할 때만 반영하고, 그 외에는 store를 전혀 건드리지 않는다. set()에
+  // 넘긴 current를 그대로 돌려주면 zustand가 참조 변경 없이 완전한 no-op으로 처리한다
+  // (Object.is로 이전 state와 같은 참조인지 비교해, 같으면 리스너조차 호출하지 않는다).
+  applyPhaseChanged: (payload) =>
+    set((current) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
+      if (typeof payload.gameId !== "string" || payload.gameId.trim().length === 0) return current
+      if (payload.phase !== "NIGHT") return current
+      if (payload.dayIndex !== 0) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (current.state.phase !== "ROLE_REVEAL") return current
+
+      return { state: { ...current.state, phase: payload.phase, dayIndex: payload.dayIndex } }
+    }),
+
   setGameError: (error) => set({ error }),
 
   clearGame: () => set({ gameId: null, state: null, error: null }),

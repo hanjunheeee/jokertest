@@ -24,7 +24,19 @@ export function useGameSessionSocketEvents() {
       clearGame: () => useInGameStore.getState().clearGame(),
       navigate,
     })
+    // ROLE_REVEAL→NIGHT 전이 방송이다. game_ended와 같은 이유로 이 effect 안에서 함께
+    // 구독한다 — /ingame 마운트 시점에만 구독하면 그 전(라우트 전환 중)에 도착하는
+    // 이벤트를 놓칠 수 있다. applyPhaseChanged 자체가 gameId 불일치를 걸러내므로 여기서는
+    // store에 그대로 위임한다.
+    const handlePhaseChanged = (payload) => {
+      useInGameStore.getState().applyPhaseChanged(payload)
+    }
+
     socket.on("game_ended", handleGameEnded)
-    return () => socket.off("game_ended", handleGameEnded)
+    socket.on("game_phase_changed", handlePhaseChanged)
+    return () => {
+      socket.off("game_ended", handleGameEnded)
+      socket.off("game_phase_changed", handlePhaseChanged)
+    }
   }, [socket, navigate])
 }

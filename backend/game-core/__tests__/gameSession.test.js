@@ -8,12 +8,29 @@ const {
     buildSessionCandidate,
     checkGameSessionPreconditions,
     assertValidSessionForCommit,
+    __deleteGameSessionOnlyForTests,
 } = gameSession.__testables
-const { prepareGameSession, commitGameSession, buildGameStartedPayload, endGameSessionForPlayer, GAME_ROLES } = gameSession
+const {
+    prepareGameSession,
+    commitGameSession,
+    buildGameStartedPayload,
+    endGameSessionForPlayer,
+    acknowledgeRoleReveal,
+    buildPhaseChangedPayload,
+    GAME_ROLES,
+} = gameSession
 
 // 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
 // 각 테스트가 이전 테스트가 남긴 상태의 영향을 받지 않도록 매번 초기화한다.
 test.beforeEach(() => {
+    gameSession.__resetStateForTests()
+})
+// registry 불일치를 의도적으로 재현하는 테스트(예: __deleteGameSessionOnlyForTests)가 이
+// 파일의 마지막 테스트로 실행되더라도, beforeEach만으로는 "다음 테스트 시작 전"에만
+// 정리된다 — afterEach로 테스트가 끝난 직후에도 즉시 정리해 손상된 singleton 상태가
+// 파일 실행 종료 후까지 남지 않게 한다. 테스트 본문에서 예외가 나도 node:test는 afterEach를
+// 실행하므로 이 정리는 실패한 테스트 뒤에도 보장된다.
+test.afterEach(() => {
     gameSession.__resetStateForTests()
 })
 
@@ -250,6 +267,143 @@ test('commitGameSession: 참가자 uuid가 이미 다른 세션에 속하면 thr
 })
 
 // ---------------------------------------------------------------------------
+// acknowledgeRoleReveal / buildPhaseChangedPayload — ROLE_REVEAL → NIGHT 전이
+// ---------------------------------------------------------------------------
+
+test('acknowledgeRoleReveal: 2인 세션에서 1명만 확인하면 전이하지 않는다', () => {
+    const room = makeRoom({ id: 'room-ack-1', players: [makePlayer('a1'), makePlayer('a2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    const result = acknowledgeRoleReveal('a1', candidate.session.id)
+
+    assert.equal(result.ok, true)
+    assert.equal(result.transitioned, false)
+    assert.equal(candidate.session.phase, 'ROLE_REVEAL')
+})
+
+test('acknowledgeRoleReveal: 전원(2인)이 확인하면 마지막 호출에서만 NIGHT로 전이하고 dayIndex는 0 그대로다', () => {
+    const room = makeRoom({ id: 'room-ack-2', players: [makePlayer('b1'), makePlayer('b2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    const first = acknowledgeRoleReveal('b1', candidate.session.id)
+    assert.equal(first.transitioned, false)
+    assert.equal(candidate.session.phase, 'ROLE_REVEAL')
+
+    const second = acknowledgeRoleReveal('b2', candidate.session.id)
+    assert.equal(second.transitioned, true)
+    assert.equal(candidate.session.phase, 'NIGHT')
+    assert.equal(candidate.session.dayIndex, 0)
+})
+
+test('acknowledgeRoleReveal: 3인 세션은 세 번째 확인에서만 전이한다', () => {
+    const room = makeRoom({ id: 'room-ack-3', players: [makePlayer('c1'), makePlayer('c2'), makePlayer('c3')], jokerCount: 1 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    assert.equal(acknowledgeRoleReveal('c1', candidate.session.id).transitioned, false)
+    assert.equal(acknowledgeRoleReveal('c2', candidate.session.id).transitioned, false)
+    assert.equal(acknowledgeRoleReveal('c3', candidate.session.id).transitioned, true)
+})
+
+test('acknowledgeRoleReveal: 같은 uuid가 완료 전 두 번 확인해도 멱등하고 재전이 카운트에 영향 없다', () => {
+    const room = makeRoom({ id: 'room-ack-4', players: [makePlayer('d1'), makePlayer('d2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    const first = acknowledgeRoleReveal('d1', candidate.session.id)
+    const second = acknowledgeRoleReveal('d1', candidate.session.id)
+
+    assert.deepEqual(first, { ok: true, transitioned: false, session: candidate.session })
+    assert.deepEqual(second, { ok: true, transitioned: false, session: candidate.session })
+    assert.equal(candidate.session.roleRevealAcks.size, 1)
+    assert.equal(candidate.session.phase, 'ROLE_REVEAL')
+})
+
+test('acknowledgeRoleReveal: playerSession에 없는 uuid는 NOT_IN_SESSION이고 상태가 불변이다', () => {
+    const room = makeRoom({ id: 'room-ack-5', players: [makePlayer('e1'), makePlayer('e2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    const result = acknowledgeRoleReveal('no-such-uuid', candidate.session.id)
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_IN_SESSION' })
+    assert.equal(candidate.session.roleRevealAcks.size, 0)
+})
+
+test('acknowledgeRoleReveal: 자신의 실제 세션과 다른 gameId는 STALE_SESSION_MISMATCH이고 상태가 불변이다', () => {
+    const room = makeRoom({ id: 'room-ack-6', players: [makePlayer('f1'), makePlayer('f2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    const result = acknowledgeRoleReveal('f1', 'not-the-real-game-id')
+
+    assert.deepEqual(result, { ok: false, code: 'STALE_SESSION_MISMATCH' })
+    assert.equal(candidate.session.roleRevealAcks.size, 0)
+})
+
+test('acknowledgeRoleReveal: gameId가 빈 문자열/공백만이면 INVALID_GAME_ID이고 상태가 불변이다', () => {
+    const room = makeRoom({ id: 'room-ack-7', players: [makePlayer('g1'), makePlayer('g2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    assert.deepEqual(acknowledgeRoleReveal('g1', ''), { ok: false, code: 'INVALID_GAME_ID' })
+    assert.deepEqual(acknowledgeRoleReveal('g1', '   '), { ok: false, code: 'INVALID_GAME_ID' })
+    assert.equal(candidate.session.roleRevealAcks.size, 0)
+})
+
+test('acknowledgeRoleReveal: 이미 NIGHT인 세션에 확인하면 INVALID_PHASE이고 재전이하지 않는다', () => {
+    const room = makeRoom({ id: 'room-ack-8', players: [makePlayer('h1'), makePlayer('h2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+    acknowledgeRoleReveal('h1', candidate.session.id)
+    acknowledgeRoleReveal('h2', candidate.session.id) // 여기서 이미 NIGHT로 전이됨
+
+    const result = acknowledgeRoleReveal('h1', candidate.session.id)
+
+    assert.deepEqual(result, { ok: false, code: 'INVALID_PHASE' })
+    assert.equal(candidate.session.phase, 'NIGHT')
+})
+
+test('acknowledgeRoleReveal: registry 불일치(playerSession엔 있지만 gameSessions엔 없음)는 SESSION_NOT_FOUND이고 상태가 불변이다', () => {
+    const room = makeRoom({ id: 'room-ack-9', players: [makePlayer('i1'), makePlayer('i2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+    __deleteGameSessionOnlyForTests(candidate.session.id)
+
+    const result = acknowledgeRoleReveal('i1', candidate.session.id)
+
+    assert.deepEqual(result, { ok: false, code: 'SESSION_NOT_FOUND' })
+    // 다음 테스트는 test.beforeEach의 __resetStateForTests()로 격리되므로 여기서 남긴 불일치
+    // 상태(playerSession에만 남은 항목)가 새어나가지 않는다.
+})
+
+test('acknowledgeRoleReveal: registry 불일치(세션은 있지만 players에 uuid가 없음)는 NOT_A_PARTICIPANT이고 상태가 불변이다', () => {
+    const room = makeRoom({ id: 'room-ack-10', players: [makePlayer('j1'), makePlayer('j2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+    candidate.session.players.delete('j1') // playerSession엔 여전히 j1→gameId가 남아있는 불일치를 재현
+
+    const result = acknowledgeRoleReveal('j1', candidate.session.id)
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_A_PARTICIPANT' })
+})
+
+test('buildPhaseChangedPayload: 결과 키가 정확히 {gameId, phase, dayIndex} 셋뿐이고 players/self/role은 없다', () => {
+    const room = makeRoom({ id: 'room-ack-11', players: [makePlayer('k1'), makePlayer('k2')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+    acknowledgeRoleReveal('k1', candidate.session.id)
+    acknowledgeRoleReveal('k2', candidate.session.id)
+
+    const payload = buildPhaseChangedPayload(candidate.session)
+
+    assert.deepEqual(Object.keys(payload).sort(), ['dayIndex', 'gameId', 'phase'])
+    assert.deepEqual(payload, { gameId: candidate.session.id, phase: 'NIGHT', dayIndex: 0 })
+})
+
+// ---------------------------------------------------------------------------
 // assertValidSessionForCommit — 수동 조립된 malformed session 방어
 // ---------------------------------------------------------------------------
 
@@ -266,6 +420,7 @@ function validSession(overrides = {}) {
             ['u2', { uuid: 'u2', nickname: 'B', role: GAME_ROLES.CITIZEN }],
             ['u3', { uuid: 'u3', nickname: 'C', role: GAME_ROLES.CITIZEN }],
         ]),
+        roleRevealAcks: new Set(),
         ...overrides,
     }
 }
@@ -357,6 +512,10 @@ const malformedSessionCases = [
             ]),
         },
     ],
+    ['session.roleRevealAcks 필드 누락', { roleRevealAcks: undefined }],
+    ['session.roleRevealAcks가 Set이 아닌 배열', { roleRevealAcks: [] }],
+    ['session.roleRevealAcks가 Set이 아닌 일반 객체', { roleRevealAcks: {} }],
+    ['session.roleRevealAcks가 처음부터 비어있지 않음', { roleRevealAcks: new Set(['u1']) }],
 ]
 
 for (const [label, overrides] of malformedSessionCases) {

@@ -9,6 +9,7 @@ import {
   INGAME_ACTION_TITLE_CLASS,
 } from "../../constants/actions/ingameActionPanel.js"
 import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
+import { useInGameRoleRevealAck } from "../../hooks/useInGameRoleRevealAck.js"
 import InGameTargetPicker from "./InGameTargetPicker.jsx"
 
 /**
@@ -33,6 +34,7 @@ export default function InGameActionPanel() {
     submitNightAction,
     resolveNight,
   } = useInGameActionPanel()
+  const roleReveal = useInGameRoleRevealAck()
 
   if (!gameState) {
     return (
@@ -65,6 +67,23 @@ export default function InGameActionPanel() {
         <p className="mt-2 rounded border border-red-300/40 bg-red-950/40 px-2 py-1 text-xs text-red-100">
           {error}
         </p>
+      ) : null}
+
+      {gameState.phase === "ROLE_REVEAL" ? (
+        <div className={INGAME_ACTION_SECTION_CLASS}>
+          <p className={INGAME_ACTION_META_CLASS}>당신의 역할: {gameState.self?.role ?? "확인 중"}</p>
+          <button
+            type="button"
+            className={INGAME_ACTION_BUTTON_CLASS}
+            disabled={roleReveal.status !== "idle"}
+            onClick={roleReveal.acknowledge}
+          >
+            {roleReveal.status === "acked" ? "확인 완료 · 대기 중" : "역할 확인"}
+          </button>
+          {roleReveal.error ? (
+            <p className="text-[0.68rem] text-red-300">{roleReveal.error}</p>
+          ) : null}
+        </div>
       ) : null}
 
       {gameState.phase === "DAY" ? (

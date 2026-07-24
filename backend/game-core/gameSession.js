@@ -79,6 +79,9 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // validateSessionInput이 uuid 중복을 이미 걸러냈으므로 이 Map 생성이 조용히
         // 참가자를 덮어쓸 수 없다.
         players: new Map(assigned.map((p) => [p.uuid, p])),
+        // ROLE_REVEAL 확인을 추적한다. 세션 객체 안에 두어 endGameSessionForPlayer로
+        // 세션이 삭제될 때 별도 정리 없이 함께 사라지게 한다.
+        roleRevealAcks: new Set(),
     }
     return { ok: true, session }
 }
@@ -118,6 +121,14 @@ function assertValidSessionForCommit(session) {
     }
     if (!(session.players instanceof Map) || session.players.size === 0) {
         throw new Error('commitGameSession: session.players가 비어있거나 Map이 아님')
+    }
+    // roleRevealAcks도 candidate 경로가 고정값(빈 Set)만 만드는 필드이지만, phase/dayIndex/
+    // channelId와 동일한 이유로 이 함수 안에서 독립적으로 재검증한다.
+    if (!(session.roleRevealAcks instanceof Set)) {
+        throw new Error('commitGameSession: session.roleRevealAcks가 Set이 아님')
+    }
+    if (session.roleRevealAcks.size !== 0) {
+        throw new Error(`commitGameSession: session.roleRevealAcks가 비어있지 않음(size=${session.roleRevealAcks.size})`)
     }
     // channelId/phase/dayIndex는 현재 candidate 경로에서 고정값만 만들어지지만, 수동
     // 조립된 session까지 완전히 방어한다는 이 함수의 목적에 맞춰 여기서도 검사한다.
@@ -202,6 +213,53 @@ function buildGameStartedPayload(session, viewerUuid) {
 }
 
 /**
+ * ROLE_REVEAL 단계의 역할 확인을 처리합니다. 인증된 uuid와 클라이언트가 알고 있는 gameId만
+ * 입력으로 받습니다(role 등 비밀 정보는 이 함수의 입력에도 출력에도 없습니다).
+ *
+ * game-core 자체가 독립적으로 입력을 검증합니다(validateSessionInput과 동일한 이유 —
+ * 소켓 계층의 가드가 정상 경로에서 이를 막는다는 사실이 game-core의 불변조건을 보장하지
+ * 않습니다). 모든 실패 경로는 어떤 상태도 바꾸지 않고 반환합니다.
+ *
+ * SESSION_NOT_FOUND/NOT_A_PARTICIPANT는 playerSession/gameSessions registry가 정상 경로에서는
+ * 항상 동기화되어 있다는 불변조건이 깨졌을 때만 나오는 내부 진단용 코드입니다 — 소켓 계층은
+ * 이 두 코드를 클라이언트에 그대로 전달하지 않고 INTERNAL_ERROR로 정규화해야 합니다.
+ *
+ * 반환하는 session은 이미 커밋된 실제 registry 참조이므로, transitioned:true를 받은 호출자는
+ * 그 즉시(await 없이) game_phase_changed 방송에 사용해야 합니다.
+ */
+function acknowledgeRoleReveal(uuid, gameId) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    // playerSession/gameSessions/roomGameSession은 정상 경로에서 항상 함께 갱신되지만, 이
+    // 함수는 그 불변조건을 "신뢰"만 하지 않고 직접 확인한다(assertValidSessionForCommit과
+    // 동일한 방어적 태도).
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (session.phase !== 'ROLE_REVEAL') return { ok: false, code: 'INVALID_PHASE' }
+
+    if (session.roleRevealAcks.has(uuid)) return { ok: true, transitioned: false, session }
+
+    session.roleRevealAcks.add(uuid)
+    if (session.roleRevealAcks.size === session.players.size) {
+        session.phase = 'NIGHT'
+        return { ok: true, transitioned: true, session }
+    }
+    return { ok: true, transitioned: false, session }
+}
+
+/** ROLE_REVEAL→NIGHT 전이를 참가자 전체에게 알리는 공용 payload. 참가자 식별·비밀 정보를 전혀 포함하지 않는다. */
+function buildPhaseChangedPayload(session) {
+    return { gameId: session.id, phase: session.phase, dayIndex: session.dayIndex }
+}
+
+/**
  * 특정 uuid가 속한 활성 GameSession을 즉시 종료합니다(참가자 전원을 3개 registry에서
  * 제거). uuid가 어떤 활성 GameSession에도 속해있지 않으면 아무 것도 바꾸지 않고
  * { ok:false, code:'NOT_IN_SESSION' }을 반환합니다 — 대기방 disconnect 등 무관한 호출과
@@ -250,14 +308,34 @@ function __getStateSnapshotForTests() {
     }
 }
 
+/**
+ * 테스트 전용: gameSessions Map에서만 항목을 지웁니다(playerSession/roomGameSession은
+ * 그대로 둡니다). registry 불일치(SESSION_NOT_FOUND) 회귀 테스트를 재현하기 위한 용도로만
+ * 존재하며, 런타임 코드에서는 참조하지 않습니다. 이 함수를 쓰는 테스트는 실행 전후로
+ * __resetStateForTests()를 호출해 다른 테스트로 상태가 새지 않게 격리해야 합니다.
+ */
+function __deleteGameSessionOnlyForTests(gameId) {
+    gameSessions.delete(gameId)
+}
+
 module.exports = {
     GAME_ROLES,
     prepareGameSession,
     commitGameSession,
     buildGameStartedPayload,
     endGameSessionForPlayer,
+    acknowledgeRoleReveal,
+    buildPhaseChangedPayload,
     __resetStateForTests,
     __getStateSnapshotForTests,
-    // 테스트에서 개별 함수를 직접 호출하기 위한 통로입니다. 런타임 코드에서는 참조하지 않습니다.
-    __testables: { assignRoles, validateSessionInput, buildSessionCandidate, checkGameSessionPreconditions, assertValidSessionForCommit },
+    // 테스트에서 개별 함수를 직접 호출하거나 registry를 의도적으로 파괴하기 위한 통로입니다.
+    // 런타임 코드에서는 참조하지 않습니다.
+    __testables: {
+        assignRoles,
+        validateSessionInput,
+        buildSessionCandidate,
+        checkGameSessionPreconditions,
+        assertValidSessionForCommit,
+        __deleteGameSessionOnlyForTests,
+    },
 }

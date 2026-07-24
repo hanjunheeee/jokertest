@@ -8,8 +8,8 @@ const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
 // NOTE: Room→GameSession 전환(matchmaking.js)과 disconnect에 의한 GameSession 정리
 // (gameSession.js의 onDisconnect — registry 삭제 + game_ended 알림 + channel 정리)는
-// 구현됐지만, 인게임 진입 후의 실시간 턴/페이즈 동기화(registerGameHandlers)는 아직
-// 없어 등록하지 않습니다.
+// 구현됐습니다. registerGameHandlers는 ROLE_REVEAL 확인(acknowledge_role_reveal)만
+// 등록되어 있고, 이후 턴/페이즈 동기화는 아직 없습니다.
 
 const onlineUsers = new Map();
 
@@ -65,7 +65,7 @@ function registerConnectionHandlers(io, socket) {
     });
 
     matchmaking.registerMatchmakingHandlers(io, socket, uuid);
-    // gameSession.registerGameHandlers(io, socket, uuid); // 다음 슬라이스(턴/페이즈 등)
+    gameSession.registerGameHandlers(io, socket, uuid);
 
     registerDisconnectHandler(io, socket, uuid);
 }
