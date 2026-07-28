@@ -4,8 +4,10 @@ import {
   getInGameChatPanelStyle,
 } from "../../constants/chat/ingameChatBoardLayout.js"
 import { useInGameChatSession } from "../../hooks/useInGameChatSession.js"
+import { useInGameJokerChatSession } from "../../hooks/useInGameJokerChatSession.js"
 import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
 import { useInGameStore } from "../../store/ingameStore.js"
+import { isJokerNightChatEligible } from "../../utils/isJokerNightChatEligible.js"
 import InGameChatCloseupOverlay from "./closeup/InGameChatCloseupOverlay.jsx"
 import InGameChatContent from "./InGameChatContent.jsx"
 import { getSocket } from "@/shared/socket/socketClient"
@@ -18,27 +20,31 @@ export default function InGameChatShell() {
   const [closeupOpen, setCloseupOpen] = useState(false)
   const { localPlayerId, getPlayerById } = useInGamePlayerSessionContext()
   const gameState = useInGameStore((s) => s.state)
-  const { draft, setDraft, messages, send } = useInGameChatSession({
+  const isJokerNight = isJokerNightChatEligible(gameState)
+
+  // React Hooks 규칙상 두 훅 모두 항상 호출한다 — 결과만 조건부로 선택한다.
+  const publicChatSession = useInGameChatSession({
     localPlayerId,
     getPlayerById,
     serverEvents: gameState?.events ?? null,
     onSendText: gameState
       ? (text) => {
-          const channel =
-            gameState.phase === "NIGHT" && gameState.myRole === "JOKER"
-              ? "JOKER_NIGHT"
-              : "PUBLIC"
-
-          getSocket()?.emit("send_game_chat", { channel, text })
+          getSocket()?.emit("send_game_chat", { channel: "PUBLIC", text })
         }
       : null,
   })
+  const jokerChatSession = useInGameJokerChatSession({ getPlayerById })
+
+  const chatSession = isJokerNight ? jokerChatSession : publicChatSession
 
   const chatProps = {
-    draft,
-    messages,
-    onDraftChange: setDraft,
-    onSend: send,
+    draft: chatSession.draft,
+    messages: chatSession.messages,
+    onDraftChange: chatSession.setDraft,
+    onSend: chatSession.send,
+    status: chatSession.status ?? null,
+    error: chatSession.error ?? null,
+    truncateDraftOnInput: !isJokerNight,
   }
 
   return (

@@ -8,11 +8,14 @@ function callAsPromise(handler, ...args) {
  * joinGate를 넘기면 join()이 그 Promise가 풀릴 때까지 대기한다 — join 대기 중 다른 요청이
  * 상태를 바꾸는 레이스(정원 경쟁, 방 삭제/교체, disconnect 등)를 결정적으로 재현하기 위함이다.
  */
-function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false, joinGate = null } = {}) {
+function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false, joinGate = null, emitShouldThrowOn = null } = {}) {
     // join/leave가 이 Set 하나만 갱신한다 — currentRooms(기존 테스트가 참조)와 rooms(프로덕션
     // 코드가 socket.rooms.has(roomId)로 참조하는 실제 Socket.IO 속성명)가 항상 같은 Set을
     // 가리키므로 어느 이름으로 읽어도 동일한 결과를 본다.
     const rooms = new Set()
+    // event → Set<handler> — on/off/trigger가 이 Map 하나만 갱신한다(JOKER 채팅 listener
+    // 등록/해제·배선 테스트 전용, 기존 emit/to/join/leave 계약과는 독립적이다).
+    const listeners = new Map()
     const socket = {
         id,
         data: { user: { uuid } },
@@ -28,6 +31,9 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
         // 처럼 값을 바꿀 수 있게 한다(클로저로 캡처하면 나중에 바꿔도 반영되지 않음).
         joinShouldReject,
         connected: true,
+        // 프로퍼티로 두어 테스트 중간에 socket.emitShouldThrowOn = 'event' 처럼 값을 바꿀 수
+        // 있게 한다 — 특정 event로 emit할 때만 throw해 개별 recipient 전달 실패를 흉내낸다.
+        emitShouldThrowOn,
         async join(roomId) {
             if (joinGate) await joinGate
             if (socket.joinShouldReject) throw new Error('join 실패(테스트 주입)')
@@ -39,6 +45,9 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
             rooms.delete(roomId)
         },
         emit(event, payload) {
+            if (socket.emitShouldThrowOn === event) {
+                throw new Error(`emit 실패(테스트 주입): ${event}`)
+            }
             socket.emitted.push({ event, payload })
         },
         to(roomId) {
@@ -47,6 +56,19 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
                     socket.emitted.push({ event, payload, broadcastTo: roomId })
                 },
             }
+        },
+        on(event, handler) {
+            if (!listeners.has(event)) listeners.set(event, new Set())
+            listeners.get(event).add(handler)
+        },
+        off(event, handler) {
+            listeners.get(event)?.delete(handler)
+        },
+        trigger(event, ...args) {
+            for (const handler of listeners.get(event) ?? []) handler(...args)
+        },
+        listenerCount(event) {
+            return listeners.get(event)?.size ?? 0
         },
     }
     return socket

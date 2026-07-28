@@ -58,6 +58,14 @@ const CHAT_TEXT_FIELD_INSET_FRAME_CLOSEUP = {
   height: 14,
 }
 
+/** 인게임-채팅창프레임2.png — 클로즈업 상태·오류 문구 (메시지 목록 하단 ~ 입력줄 상단 여백) */
+const CHAT_STATUS_LINE_INSET_FRAME_CLOSEUP = {
+  bottom: 18,
+  left: 5,
+  right: 5,
+  height: 9,
+}
+
 /** InGameChatContent — 클로즈업 메시지 목록 inset (scale 보정 적용) */
 export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
   CHAT_MESSAGE_LIST_INSET_FRAME_CLOSEUP,
@@ -66,6 +74,11 @@ export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
 /** InGameChatContent — 클로즈업 입력줄 inset */
 export const INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET = mapFrameInsetToLayoutBox(
   CHAT_TEXT_FIELD_INSET_FRAME_CLOSEUP,
+)
+
+/** InGameChatContent — 클로즈업 상태·오류 문구 inset */
+export const INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET = mapFrameInsetToLayoutBox(
+  CHAT_STATUS_LINE_INSET_FRAME_CLOSEUP,
 )
 
 /** 클로즈업 — 입력·목록 타이포 (보드 대비 cqi·rem 상향) */

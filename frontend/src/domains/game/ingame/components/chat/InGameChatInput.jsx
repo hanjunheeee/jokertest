@@ -132,7 +132,7 @@ function scrollTextareaToCaretLine(textarea, lineHeight) {
 
 /** 인게임 채팅 텍스트 입력 — 고정 viewport, 넘치면 줄바꿈·윗줄 clip */
 const InGameChatInput = forwardRef(function InGameChatInput(
-  { value, onChange, onSend, className = "" },
+  { value, onChange, onSend, className = "", truncateDraftOnInput = true },
   ref,
 ) {
   const variant = useInGameChatVariant()
@@ -225,7 +225,9 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   }
 
   const handleChange = (event) => {
-    const next = event.target.value.slice(0, INGAME_CHAT_INPUT_MAX_LENGTH)
+    const next = truncateDraftOnInput
+      ? event.target.value.slice(0, INGAME_CHAT_INPUT_MAX_LENGTH)
+      : event.target.value
     onChange({
       ...event,
       target: { ...event.target, value: next },

@@ -11,6 +11,7 @@ const {
     getSpecialRoleBudget,
     computeRoleComposition,
     isEligibleForNightAction,
+    sanitizeJokerChatText,
     __deleteGameSessionOnlyForTests,
 } = gameSession.__testables
 const {
@@ -21,6 +22,9 @@ const {
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
     submitNightAction,
+    prepareJokerChatMessage,
+    commitJokerChatMessage,
+    JOKER_CHAT_MAX_LENGTH,
     GAME_ROLES,
     ROLE_DEFINITIONS,
     ROLE_TEAMS,
@@ -602,6 +606,7 @@ function validSession(overrides = {}) {
         ]),
         roleRevealAcks: new Set(),
         nightActions: new Map(),
+        jokerChatRateLimit: new Map(),
         ...overrides,
     }
 }
@@ -1298,4 +1303,264 @@ test('9라운드 회귀: JOKER no-op 성공에서도 core가 반환하는 gameId
 
     assert.deepEqual(result, { ok: true, gameId: 'abc' })
     assert.equal(session.nightActions.has(actor), false)
+})
+
+// ---------------------------------------------------------------------------
+// sanitizeJokerChatText
+// ---------------------------------------------------------------------------
+
+test('sanitizeJokerChatText: 일반 텍스트는 그대로 통과한다', () => {
+    assert.deepEqual(sanitizeJokerChatText('hello world'), { ok: true, text: 'hello world' })
+})
+
+test('sanitizeJokerChatText: 앞뒤 공백은 trim된다', () => {
+    assert.deepEqual(sanitizeJokerChatText('  hello  '), { ok: true, text: 'hello' })
+})
+
+test('sanitizeJokerChatText: 한글 텍스트는 통과한다', () => {
+    assert.deepEqual(sanitizeJokerChatText('안녕하세요'), { ok: true, text: '안녕하세요' })
+})
+
+test('sanitizeJokerChatText: 이모지(서로게이트 쌍)는 통과한다', () => {
+    assert.deepEqual(sanitizeJokerChatText('😀'), { ok: true, text: '😀' })
+})
+
+test('sanitizeJokerChatText: 내부 개행(LF)은 통과한다', () => {
+    assert.deepEqual(sanitizeJokerChatText('line1\nline2'), { ok: true, text: 'line1\nline2' })
+})
+
+test('sanitizeJokerChatText: CRLF는 LF로 정규화된 뒤 통과한다', () => {
+    assert.deepEqual(sanitizeJokerChatText('line1\r\nline2'), { ok: true, text: 'line1\nline2' })
+})
+
+test('sanitizeJokerChatText: 단독 CR은 LF로 정규화된 뒤 통과한다', () => {
+    assert.deepEqual(sanitizeJokerChatText('line1\rline2'), { ok: true, text: 'line1\nline2' })
+})
+
+test('sanitizeJokerChatText: 빈 문자열은 EMPTY_MESSAGE다', () => {
+    assert.deepEqual(sanitizeJokerChatText(''), { ok: false, code: 'EMPTY_MESSAGE' })
+})
+
+test('sanitizeJokerChatText: 공백/개행만 있으면 EMPTY_MESSAGE다', () => {
+    assert.deepEqual(sanitizeJokerChatText('   \n\n  '), { ok: false, code: 'EMPTY_MESSAGE' })
+})
+
+test('sanitizeJokerChatText: TAB이 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\tb'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: NUL이 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u0000b'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: DEL이 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u007fb'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: C1 NEL(\u0085)이 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u0085b'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: Arabic Letter Mark(\u061c)가 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u061cb'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: LRM(\u200e)이 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u200eb'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: RLM(\u200f)이 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u200fb'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: bidi embedding/override(\u202e)가 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u202eb'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: bidi isolate(\u2066)가 포함되면 INVALID_CHARACTERS다', () => {
+    assert.deepEqual(sanitizeJokerChatText('a\u2066b'), { ok: false, code: 'INVALID_CHARACTERS' })
+})
+
+test('sanitizeJokerChatText: 정확히 150 code unit은 통과한다', () => {
+    const text = 'a'.repeat(150)
+    assert.deepEqual(sanitizeJokerChatText(text), { ok: true, text })
+})
+
+test('sanitizeJokerChatText: 151 code unit은 MESSAGE_TOO_LONG이다', () => {
+    const text = 'a'.repeat(151)
+    assert.deepEqual(sanitizeJokerChatText(text), { ok: false, code: 'MESSAGE_TOO_LONG' })
+})
+
+// ---------------------------------------------------------------------------
+// prepareJokerChatMessage / commitJokerChatMessage
+// ---------------------------------------------------------------------------
+
+test('prepareJokerChatMessage: 정상 호출은 성공하고 jokerChatRateLimit은 호출 전후 완전히 동일하다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-1' })
+    const [actor] = jokerUuids
+    const beforeSnapshot = [...session.jokerChatRateLimit.entries()]
+
+    const result = prepareJokerChatMessage(actor, session.id, 'hello', { now: () => 1000 })
+
+    assert.equal(result.ok, true)
+    assert.equal(result.session, session)
+    assert.equal(result.actorUuid, actor)
+    assert.equal(result.sanitizedText, 'hello')
+    assert.equal(result.sentAt, 1000)
+    assert.deepEqual([...session.jokerChatRateLimit.entries()], beforeSnapshot)
+})
+
+test('prepareJokerChatMessage: gameId가 공백만이면 INVALID_GAME_ID다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-2' })
+    const [actor] = jokerUuids
+
+    const result = prepareJokerChatMessage(actor, '   ', 'hello')
+
+    assert.deepEqual(result, { ok: false, code: 'INVALID_GAME_ID' })
+})
+
+test('prepareJokerChatMessage: playerSession에 없는 uuid는 NOT_IN_SESSION이다', () => {
+    const { session } = commitJokerTrioSessionAtNight({ id: 'room-pjc-3' })
+
+    const result = prepareJokerChatMessage('no-such-uuid', session.id, 'hello')
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_IN_SESSION' })
+})
+
+test('prepareJokerChatMessage: 요청 gameId가 실제 세션과 다르면 STALE_SESSION_MISMATCH다', () => {
+    const { jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-4' })
+    const [actor] = jokerUuids
+
+    const result = prepareJokerChatMessage(actor, 'not-the-real-game-id', 'hello')
+
+    assert.deepEqual(result, { ok: false, code: 'STALE_SESSION_MISMATCH' })
+})
+
+test('prepareJokerChatMessage: ROLE_REVEAL 단계에서는 INVALID_PHASE다', () => {
+    const players = [makePlayer('pjc-5-a'), makePlayer('pjc-5-b'), makePlayer('pjc-5-c')]
+    const room = makeRoom({ id: 'room-pjc-5', players, jokerCount: 2 })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    commitGameSession(candidate.session)
+    const session = candidate.session
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+
+    const result = prepareJokerChatMessage(jokerUuid, session.id, 'hello')
+
+    assert.deepEqual(result, { ok: false, code: 'INVALID_PHASE' })
+})
+
+test('prepareJokerChatMessage: CITIZEN 발신자는 NOT_ELIGIBLE이다(payload 위조 방어)', () => {
+    const { session, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-pjc-6' })
+
+    const result = prepareJokerChatMessage(citizenUuid, session.id, 'hello')
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_ELIGIBLE' })
+})
+
+test('prepareJokerChatMessage: text 검증 실패(빈 문자열)는 EMPTY_MESSAGE 그대로 전파된다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-7' })
+    const [actor] = jokerUuids
+
+    const result = prepareJokerChatMessage(actor, session.id, '   ')
+
+    assert.deepEqual(result, { ok: false, code: 'EMPTY_MESSAGE' })
+})
+
+test('prepareJokerChatMessage: now는 성공 호출당 정확히 1회 호출된다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-8' })
+    const [actor] = jokerUuids
+    let calls = 0
+    const now = () => { calls += 1; return 1000 }
+
+    const result = prepareJokerChatMessage(actor, session.id, 'hello', { now })
+
+    assert.equal(result.ok, true)
+    assert.equal(calls, 1)
+})
+
+test('prepareJokerChatMessage: now가 이상값을 반환하면 전부 INVALID_CLOCK_VALUE이고 Map은 각 호출 전후로 불변이다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-9' })
+    const [actor] = jokerUuids
+    const badValues = [1.5, -1, NaN, Infinity, '123']
+
+    for (const badValue of badValues) {
+        const beforeSnapshot = [...session.jokerChatRateLimit.entries()]
+        const result = prepareJokerChatMessage(actor, session.id, 'hello', { now: () => badValue })
+        assert.deepEqual(result, { ok: false, code: 'INVALID_CLOCK_VALUE' }, `now=${String(badValue)}`)
+        assert.deepEqual([...session.jokerChatRateLimit.entries()], beforeSnapshot, `now=${String(badValue)}`)
+    }
+})
+
+test('prepareJokerChatMessage: now가 throw하면 예외가 전파되고 Map은 불변이다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-10' })
+    const [actor] = jokerUuids
+    const beforeSnapshot = [...session.jokerChatRateLimit.entries()]
+    const now = () => { throw new Error('시계 오류(테스트 주입)') }
+
+    assert.throws(() => prepareJokerChatMessage(actor, session.id, 'hello', { now }))
+    assert.deepEqual([...session.jokerChatRateLimit.entries()], beforeSnapshot)
+})
+
+test('prepareJokerChatMessage: RATE_LIMITED — 간격 미만은 거부, 간격 이상은 통과, 판정에 쓰인 값과 반환된 sentAt이 동일한 now() 결과다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-11' })
+    const [actor] = jokerUuids
+
+    const first = prepareJokerChatMessage(actor, session.id, 'hello', { now: () => 1000 })
+    assert.equal(first.ok, true)
+    assert.equal(first.sentAt, 1000)
+    commitJokerChatMessage(session, actor, first.sentAt)
+
+    const tooSoon = prepareJokerChatMessage(actor, session.id, 'hello', { now: () => 1499 })
+    assert.deepEqual(tooSoon, { ok: false, code: 'RATE_LIMITED' })
+
+    const enoughGap = prepareJokerChatMessage(actor, session.id, 'hello', { now: () => 1500 })
+    assert.equal(enoughGap.ok, true)
+    assert.equal(enoughGap.sentAt, 1500)
+})
+
+test('prepareJokerChatMessage: registry 불일치(playerSession엔 있지만 gameSessions엔 없음)는 SESSION_NOT_FOUND다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-12' })
+    const [actor] = jokerUuids
+    __deleteGameSessionOnlyForTests(session.id)
+
+    const result = prepareJokerChatMessage(actor, session.id, 'hello')
+
+    assert.deepEqual(result, { ok: false, code: 'SESSION_NOT_FOUND' })
+})
+
+test('prepareJokerChatMessage: registry 불일치(세션은 있지만 players에 uuid가 없음)는 NOT_A_PARTICIPANT다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-13' })
+    const [actor] = jokerUuids
+    session.players.delete(actor)
+
+    const result = prepareJokerChatMessage(actor, session.id, 'hello')
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_A_PARTICIPANT' })
+})
+
+test('prepareJokerChatMessage: 공백으로 감싼 유효 gameId로 호출해도 성공하고 session.id는 원본과 동일하다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-14' })
+    const [actor] = jokerUuids
+
+    const result = prepareJokerChatMessage(actor, `  ${session.id}  `, 'hello')
+
+    assert.equal(result.ok, true)
+    assert.equal(result.session.id, session.id)
+})
+
+test('commitJokerChatMessage: 호출하면 jokerChatRateLimit.get(uuid)가 sentAt으로 갱신된다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-cjc-1' })
+    const [actor] = jokerUuids
+
+    commitJokerChatMessage(session, actor, 12345)
+
+    assert.equal(session.jokerChatRateLimit.get(actor), 12345)
+})
+
+test('assertValidSessionForCommit: jokerChatRateLimit이 비어있지 않은 session으로 commit 시도 시 throw한다', () => {
+    const room = makeRoom({ id: 'room-avfc-jcrl', players: [makePlayer('avfc-jcrl-a'), makePlayer('avfc-jcrl-b')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    candidate.session.jokerChatRateLimit.set('avfc-jcrl-a', 123)
+
+    assert.throws(() => commitGameSession(candidate.session), /jokerChatRateLimit/)
 })

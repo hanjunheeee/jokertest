@@ -7,6 +7,7 @@
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 import {
   INGAME_CHAT_MESSAGE_LIST_INSET,
+  INGAME_CHAT_STATUS_LINE_INSET,
   INGAME_CHAT_TEXT_FIELD_INSET,
 } from "./ingameChatBoardLayout.js"
 import {
@@ -17,6 +18,7 @@ import {
   INGAME_CHAT_CLOSEUP_SEND_BUTTON_CLASS,
   INGAME_CHAT_CLOSEUP_SEND_BUTTON_LABEL_CLASS,
   INGAME_CHAT_CLOSEUP_SEND_BUTTON_SHIFT_CLASS,
+  INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET,
   INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET,
   INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_CLASS,
   INGAME_CHAT_CLOSEUP_TEXT_WRAP_TRIM_CLASS,
@@ -243,3 +245,14 @@ export function getInGameChatTextFieldInset(variant = "board") {
     ? INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET
     : INGAME_CHAT_TEXT_FIELD_INSET
 }
+
+/** @param {"board" | "closeup"} [variant] */
+export function getInGameChatStatusLineInset(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET
+    : INGAME_CHAT_STATUS_LINE_INSET
+}
+
+/** InGameChatContent — 상태·오류 문구 줄 래퍼 */
+export const INGAME_CHAT_STATUS_LINE_WRAP_CLASS =
+  "absolute flex items-center justify-center"

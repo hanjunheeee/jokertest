@@ -28,6 +28,14 @@ const CHAT_TEXT_FIELD_INSET_FRAME = {
   height: 11,
 }
 
+/** 인게임-채팅창프레임2.png — 상태·오류 문구 영역 (메시지 목록 하단 ~ 입력줄 상단 여백) */
+const CHAT_STATUS_LINE_INSET_FRAME = {
+  bottom: 18,
+  left: 4,
+  right: 5,
+  height: 6,
+}
+
 /** 열린 패널 기준 너비 — 탁자 중앙 Messages 프레임 (G센세 prototype) */
 const INGAME_CHAT_PANEL_WIDTH_BASE = {
   minRem: 19,
@@ -87,4 +95,9 @@ export const INGAME_CHAT_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
 /** InGameChatContent — 보드 입력줄 inset */
 export const INGAME_CHAT_TEXT_FIELD_INSET = mapFrameInsetToLayoutBox(
   CHAT_TEXT_FIELD_INSET_FRAME,
+)
+
+/** InGameChatContent — 보드 상태·오류 문구 inset */
+export const INGAME_CHAT_STATUS_LINE_INSET = mapFrameInsetToLayoutBox(
+  CHAT_STATUS_LINE_INSET_FRAME,
 )

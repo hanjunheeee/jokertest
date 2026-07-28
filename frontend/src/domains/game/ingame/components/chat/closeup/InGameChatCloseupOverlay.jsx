@@ -23,6 +23,9 @@ export default function InGameChatCloseupOverlay({
   messages,
   onDraftChange,
   onSend,
+  status = null,
+  error = null,
+  truncateDraftOnInput = true,
 }) {
   useEffect(() => {
     if (!open) return undefined
@@ -85,6 +88,9 @@ export default function InGameChatCloseupOverlay({
                 messages={messages}
                 onDraftChange={onDraftChange}
                 onSend={onSend}
+                status={status}
+                error={error}
+                truncateDraftOnInput={truncateDraftOnInput}
               />
             </motion.div>
           </div>

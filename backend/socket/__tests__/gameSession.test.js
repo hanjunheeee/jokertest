@@ -7,7 +7,7 @@ const matchmaking = require('../matchmaking')
 const { createFakeSocket, createFakeIo, countingCallback, setupReadyRoomForStart } = require('./testHelpers/matchmakingFixtures')
 
 const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables
-const { handleAcknowledgeRoleReveal, handleSubmitNightAction } = gameSessionSocketLayer.__testables
+const { handleAcknowledgeRoleReveal, handleSubmitNightAction, handleSubmitJokerChatMessage, resolveJokerTeammateSockets } = gameSessionSocketLayer.__testables
 
 // 이 파일은 game-core/gameSession.js(고유 registry)와 matchmaking.js(고유 registry)를
 // 둘 다 실제로 구동하므로, 두 모듈의 registry를 각각 초기화해야 테스트 간 상태 누수가
@@ -677,4 +677,506 @@ test('9라운드 회귀: JOKER no-op 성공에서도 callback이 throw하면 CAL
     assert.equal(errorSpy.mock.calls.length, 1)
     const [, loggedObj] = errorSpy.mock.calls[0].arguments
     assert.equal(loggedObj.gameId, 'abc')
+})
+
+// ---------------------------------------------------------------------------
+// submit_joker_chat_message (handleSubmitJokerChatMessage) — NIGHT 단계 JOKER 전용 채팅
+// ---------------------------------------------------------------------------
+
+/** game-core를 직접 구동해 NIGHT 단계의 JOKER 전용 채팅 테스트용 세션 + fake socket/io를 준비한다. jokerCount만큼 JOKER, 나머지는 CITIZEN으로 배정된다. */
+function commitJokerChatSessionWithSockets(uuids, { roomId = 'room-jc', jokerCount = 2, gameIdFn } = {}) {
+    const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
+    const opts = { randomFn: () => 0, ...(gameIdFn ? { gameIdFn } : {}) }
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, opts)
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of session.players.keys()) {
+        gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+    }
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(session.channelId)
+        return s
+    })
+    const io = createFakeIo(sockets)
+    const jokerUuids = [...session.players.values()].filter((p) => p.role === 'JOKER').map((p) => p.uuid)
+    const citizenUuids = [...session.players.values()].filter((p) => p.role !== 'JOKER').map((p) => p.uuid)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+    return { session, io, sockets, socketByUuid, jokerUuids, citizenUuids }
+}
+
+test('submit_joker_chat_message: payload가 객체가 아니거나 배열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc1a', 'jc1b', 'jc1c'], { roomId: 'room-jc-1' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+
+    for (const badPayload of [null, 'x', 42, []]) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitJokerChatMessage(io, socket, actor, badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.jokerChatRateLimit.size, 0)
+})
+
+test('submit_joker_chat_message: gameId가 비문자열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc2a', 'jc2b', 'jc2c'], { roomId: 'room-jc-2' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: 123, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+})
+
+test('submit_joker_chat_message: text가 비문자열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc3a', 'jc3b', 'jc3c'], { roomId: 'room-jc-3' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 42 }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+})
+
+test('submit_joker_chat_message: callback이 함수가 아니면 완전한 no-op이다(예외도 없고 Map도 emit도 불변)', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc4a', 'jc4b', 'jc4c'], { roomId: 'room-jc-4' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+
+    assert.doesNotThrow(() => handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, undefined))
+
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+})
+
+test('submit_joker_chat_message: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc5a', 'jc5b', 'jc5c'], { roomId: 'room-jc-5' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, actor)
+
+    const { callback, getResponse } = countingCallback()
+    socket.trigger('submit_joker_chat_message', { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const delivered = socket.emitted.filter((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.length, 1)
+})
+
+test('submit_joker_chat_message: 정확히-한-번 전달 — JOKER 두 소켓(발신자 포함) 각각 정확히 1개, CITIZEN은 0개, io.broadcasts는 비어있다', () => {
+    const { session, io, jokerUuids, citizenUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc6a', 'jc6b', 'jc6c'], { roomId: 'room-jc-6' })
+    const [actor, teammate] = jokerUuids
+    const [citizen] = citizenUuids
+    const senderSocket = socketByUuid.get(actor)
+
+    const { callback, getResponse } = countingCallback()
+    handleSubmitJokerChatMessage(io, senderSocket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socketByUuid.get(actor).emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(socketByUuid.get(teammate).emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(socketByUuid.get(citizen).emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('submit_joker_chat_message: deps.prepare가 실패 응답을 반환하면 그 code 그대로 ack되고 Map은 불변, emit은 0회다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc7a', 'jc7b', 'jc7c'], { roomId: 'room-jc-7' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const deps = { prepare: () => ({ ok: false, code: 'RATE_LIMITED' }) }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'RATE_LIMITED', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+})
+
+test('submit_joker_chat_message: deps.prepare가 throw하면 ack INTERNAL_ERROR이고 로그가 정확히 {code, uuid, gameId:undefined} 3키이며 raw err가 없다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc8a', 'jc8b', 'jc8c'], { roomId: 'room-jc-8' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { prepare: () => { throw new Error('시계 오류(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'PREPARE_UNEXPECTED_ERROR', uuid: actor, gameId: undefined })
+    assert.equal(loggedObj instanceof Error, false)
+})
+
+test('submit_joker_chat_message: prepare가 INVALID_CLOCK_VALUE를 반환하면 ack INTERNAL_ERROR이고 로그가 정확히 {code:"INVALID_CLOCK_VALUE", uuid, gameId:undefined}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc9a', 'jc9b', 'jc9c'], { roomId: 'room-jc-9' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { prepare: () => ({ ok: false, code: 'INVALID_CLOCK_VALUE' }) }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'INVALID_CLOCK_VALUE', uuid: actor, gameId: undefined })
+})
+
+test('submit_joker_chat_message: deps.resolveTeammateSockets가 throw하면 ack INTERNAL_ERROR이고 Map은 불변(commit 미호출), emit 0회, 로그 {code:"RECIPIENT_RESOLVE_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc10a', 'jc10b', 'jc10c'], { roomId: 'room-jc-10' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { resolveTeammateSockets: () => { throw new Error('resolver 실패(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'RECIPIENT_RESOLVE_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: resolveTeammateSockets가 발신자를 제외한 나머지만 반환하면 ack INTERNAL_ERROR이고 Map 불변, 아무에게도 emit되지 않으며 로그 {code:"SENDER_NOT_IN_RECIPIENTS", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc11a', 'jc11b', 'jc11c'], { roomId: 'room-jc-11' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { resolveTeammateSockets: () => [teammateSocket] }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(teammateSocket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'SENDER_NOT_IN_RECIPIENTS', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: deps.idFn이 throw하면 ack INTERNAL_ERROR이고 Map 불변, emit 0회, 로그 {code:"ID_GENERATION_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc12a', 'jc12b', 'jc12c'], { roomId: 'room-jc-12' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { idFn: () => { throw new Error('id 생성 실패(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'ID_GENERATION_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: deps.idFn이 빈 문자열/공백을 반환하면 ack INTERNAL_ERROR(로그 code는 INVALID_MESSAGE_ID)이고 Map 불변, emit 0회다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc13a', 'jc13b', 'jc13c'], { roomId: 'room-jc-13' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    for (const badId of ['', '   ']) {
+        const deps = { idFn: () => badId }
+        const { callback, getResponse } = countingCallback()
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    }
+
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 2)
+    for (const call of errorSpy.mock.calls) {
+        assert.deepEqual(call.arguments[1], { code: 'INVALID_MESSAGE_ID', uuid: actor, gameId: session.id })
+    }
+})
+
+test('submit_joker_chat_message: deps.commit이 throw하면 ack INTERNAL_ERROR이고 성공 ack·emit이 전혀 없으며 로그 {code:"COMMIT_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc14a', 'jc14b', 'jc14c'], { roomId: 'room-jc-14' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { commit: () => { throw new Error('commit 실패(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(teammateSocket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'COMMIT_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: registry 불일치(SESSION_NOT_FOUND)는 ack INTERNAL_ERROR이고 로그가 정확히 {code:"SESSION_NOT_FOUND", uuid, gameId:undefined}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc15a', 'jc15b', 'jc15c'], { roomId: 'room-jc-15' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'SESSION_NOT_FOUND', uuid: actor, gameId: undefined })
+})
+
+test('submit_joker_chat_message: callback이 throw해도 예외가 새지 않고 commit은 이미 반영되며 수신자 전원(발신자 포함)이 정상 수신하고 로그 {code:"CALLBACK_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc16a', 'jc16b', 'jc16c'], { roomId: 'room-jc-16' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.jokerChatRateLimit.get(actor) !== undefined, true)
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'CALLBACK_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: 한 recipient만 emit이 throw해도 나머지(발신자 포함)는 정상 수신하고 로그는 {code:"DELIVERY_ERROR", uuid, gameId}만 남는다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc17a', 'jc17b', 'jc17c'], { roomId: 'room-jc-17' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.emitShouldThrowOn = 'joker_chat_message'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'DELIVERY_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: callback throw와 recipient emit throw가 동시에 발생해도 commit은 반영되고 실패하지 않은 recipient는 정상 수신하며 두 로그가 서로 오염되지 않는다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc18a', 'jc18b', 'jc18c'], { roomId: 'room-jc-18' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.emitShouldThrowOn = 'joker_chat_message'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.jokerChatRateLimit.get(actor) !== undefined, true)
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    assert.equal(errorSpy.mock.calls.length, 2)
+    const [firstPrefix, firstLogged] = errorSpy.mock.calls[0].arguments
+    const [secondPrefix, secondLogged] = errorSpy.mock.calls[1].arguments
+    assert.equal(firstPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(firstLogged, { code: 'CALLBACK_ERROR', uuid: actor, gameId: session.id })
+    assert.equal(secondPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(secondLogged, { code: 'DELIVERY_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: CITIZEN이 직접 호출하면 NOT_ELIGIBLE이고 어떤 소켓에도 브로드캐스트되지 않는다', () => {
+    const { session, io, citizenUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc19a', 'jc19b', 'jc19c'], { roomId: 'room-jc-19' })
+    const [citizen] = citizenUuids
+    const socket = socketByUuid.get(citizen)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, citizen, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+    for (const s of [...socketByUuid.values()]) {
+        assert.equal(s.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    }
+})
+
+test('submit_joker_chat_message: 다른 GameSession의 JOKER 소켓에는 전달되지 않는다(두 세션 동시 커밋, 교차 오염 없음)', () => {
+    const roomA = makeRoom({ id: 'room-cross-a', players: [makePlayer('crossA1'), makePlayer('crossA2'), makePlayer('crossA3')], jokerCount: 2 })
+    const roomB = makeRoom({ id: 'room-cross-b', players: [makePlayer('crossB1'), makePlayer('crossB2'), makePlayer('crossB3')], jokerCount: 2 })
+    const candidateA = gameSessionCore.__testables.buildSessionCandidate(roomA, { randomFn: () => 0 })
+    const candidateB = gameSessionCore.__testables.buildSessionCandidate(roomB, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidateA.session)
+    gameSessionCore.commitGameSession(candidateB.session)
+    const sessionA = candidateA.session
+    const sessionB = candidateB.session
+    for (const uuid of sessionA.players.keys()) gameSessionCore.acknowledgeRoleReveal(uuid, sessionA.id)
+    for (const uuid of sessionB.players.keys()) gameSessionCore.acknowledgeRoleReveal(uuid, sessionB.id)
+
+    const socketsA = [...sessionA.players.keys()].map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(sessionA.channelId)
+        return s
+    })
+    const socketsB = [...sessionB.players.keys()].map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(sessionB.channelId)
+        return s
+    })
+    const io = createFakeIo([...socketsA, ...socketsB])
+
+    const actorA = [...sessionA.players.values()].find((p) => p.role === 'JOKER').uuid
+    const socketA = socketsA.find((s) => s.data.user.uuid === actorA)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socketA, actorA, { gameId: sessionA.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const s of socketsB) {
+        assert.equal(s.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    }
+})
+
+test('submit_joker_chat_message: connected:false인 JOKER 소켓은 수신자에서 제외된다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc21a', 'jc21b', 'jc21c'], { roomId: 'room-jc-21' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.connected = false
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+})
+
+test('submit_joker_chat_message: session.channelId room 밖의 JOKER 소켓은 수신자에서 제외된다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc22a', 'jc22b', 'jc22c'], { roomId: 'room-jc-22' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.rooms.delete(session.channelId)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+})
+
+test('submit_joker_chat_message: payload에 senderUuid/role/team/nickname을 위조해도 브로드캐스트된 senderUuid는 항상 인증 uuid이고 다른 필드는 전달되지 않는다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc23a', 'jc23b', 'jc23c'], { roomId: 'room-jc-23' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(
+        io, socket, actor,
+        { gameId: session.id, text: 'hello', senderUuid: 'forged-uuid', role: 'CITIZEN', team: 'CITIZEN', nickname: 'forged-nickname' },
+        callback,
+    )
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const delivered = socket.emitted.find((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.payload.senderUuid, actor)
+    assert.deepEqual(Object.keys(delivered.payload).sort(), ['gameId', 'messageId', 'senderUuid', 'sentAt', 'text'])
+})
+
+test('submit_joker_chat_message: 공백으로 감싼 유효 gameId로 성공 요청 후 canonical gameId가 노출되고, 연속 두 메시지가 서로 다른 messageId로 도착 순서대로 append된다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc24a', 'jc24b', 'jc24c'], { roomId: 'room-jc-24' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    let clock = 1000
+    const nowFn = () => { const v = clock; clock += 1000; return v }
+    const idQueue = ['msg-jc24-1', 'msg-jc24-2']
+    let idIndex = 0
+    const deps = {
+        prepare: (uuid, gameId, text) => gameSessionCore.prepareJokerChatMessage(uuid, gameId, text, { now: nowFn }),
+        idFn: () => idQueue[idIndex++],
+    }
+
+    const first = countingCallback()
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: `  ${session.id}  `, text: 'first' }, first.callback, deps)
+    assert.deepEqual(first.getResponse(), { ok: true })
+
+    const second = countingCallback()
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'second' }, second.callback, deps)
+    assert.deepEqual(second.getResponse(), { ok: true })
+
+    const delivered = socket.emitted.filter((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.length, 2)
+    assert.equal(delivered[0].payload.gameId, session.id)
+    assert.equal(delivered[1].payload.gameId, session.id)
+    assert.equal(delivered[0].payload.messageId, 'msg-jc24-1')
+    assert.equal(delivered[1].payload.messageId, 'msg-jc24-2')
+    assert.equal(delivered[0].payload.text, 'first')
+    assert.equal(delivered[1].payload.text, 'second')
+})
+
+test('submit_joker_chat_message(중첩): deps.prepare가 throw하고 동시에 callback도 throw하면 두 로그가 각각 독립적으로 3키 고정 구조로 남고 Map은 완전히 불변이며 emit도 없다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc25a', 'jc25b', 'jc25c'], { roomId: 'room-jc-25' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { prepare: () => { throw new Error('SECRET prepare fail') } }
+    const beforeSnapshot = [...session.jokerChatRateLimit.entries()]
+
+    assert.doesNotThrow(() =>
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hi' }, throwingCallback('SECRET callback fail'), deps),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 2)
+    const [firstPrefix, firstLogged] = errorSpy.mock.calls[0].arguments
+    const [secondPrefix, secondLogged] = errorSpy.mock.calls[1].arguments
+    assert.equal(firstPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(firstLogged, { code: 'PREPARE_UNEXPECTED_ERROR', uuid: actor, gameId: undefined })
+    assert.equal(secondPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(secondLogged, { code: 'CALLBACK_ERROR', uuid: actor, gameId: undefined })
+    assert.deepEqual([...session.jokerChatRateLimit.entries()], beforeSnapshot)
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls.map((c) => c.arguments))
+    assert.equal(serialized.includes('SECRET'), false)
+})
+
+test('submit_joker_chat_message: deps.idFn이 앞뒤 공백이 있는 유효 문자열을 반환해도 성공하고 브로드캐스트된 messageId는 trim된 값과 정확히 일치한다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc26a', 'jc26b', 'jc26c'], { roomId: 'room-jc-26' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const deps = { idFn: () => '  msg-1  ' }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hi' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const delivered = socket.emitted.find((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.payload.messageId, 'msg-1')
 })

@@ -28,6 +28,30 @@ const MAX_SUPPORTED_PLAYERS = 10
 const INITIAL_GAME_PHASE = 'ROLE_REVEAL' // 아직 밤이 시작되지 않은 역할 확인 단계(사용자 확정)
 const INITIAL_DAY_INDEX = 0
 
+const JOKER_CHAT_MAX_LENGTH = 150
+const JOKER_CHAT_MIN_INTERVAL_MS = 500
+
+// 금지 문자: LF(\n)만 제외한 C0 제어문자 전체(TAB 포함) · DEL · C1 제어문자(NEL 포함) ·
+// Arabic Letter Mark · LRM/RLM · bidi embedding/override · bidi isolate. bidi/서식 문자는
+// 채팅에서 텍스트 표시 순서를 조작하는 스푸핑 벡터라 명시적으로 차단한다. 이 문자열은 v3에서
+// 스크립트로 생성·검증된 값을 그대로 재사용한다(손으로 다시 타이핑하지 않음).
+const JOKER_CHAT_FORBIDDEN_CHARS_PATTERN =
+    /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/
+
+// 서버·프런트 동일 규칙(공유 모듈이 없는 저장소라 수동 동기화 —
+// frontend/src/domains/game/ingame/utils/sanitizeJokerChatText.js). 순서: CRLF/CR 정규화 →
+// 금지 문자 검사(정규화된 문자열 기준) → trim → 길이 검사(1~150).
+function sanitizeJokerChatText(rawText) {
+    const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    if (JOKER_CHAT_FORBIDDEN_CHARS_PATTERN.test(normalized)) {
+        return { ok: false, code: 'INVALID_CHARACTERS' }
+    }
+    const trimmed = normalized.trim()
+    if (trimmed.length === 0) return { ok: false, code: 'EMPTY_MESSAGE' }
+    if (trimmed.length > JOKER_CHAT_MAX_LENGTH) return { ok: false, code: 'MESSAGE_TOO_LONG' }
+    return { ok: true, text: trimmed }
+}
+
 /** gameId → { id, roomId, channelId, phase, dayIndex, jokerCount, players: Map<uuid,{uuid,nickname,role}> } */
 const gameSessions = new Map()
 /** uuid → gameId — 한 사용자가 속한 활성 GameSession 역매핑(중복 참여 방지에도 사용) */
@@ -158,6 +182,10 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // NIGHT pending action을 추적한다. uuid → targetId(참가자 uuid) | null(SKIP).
         // roleRevealAcks와 동일한 이유로 세션 객체 안에 둔다.
         nightActions: new Map(),
+        // JOKER 전용 NIGHT 채팅 스팸 방지용 "마지막 전송 시각"(uuid → epoch ms). 채팅 자체는
+        // 영구 저장하지 않으므로 이 Map은 rate limit 판정에만 쓰인다. roleRevealAcks/nightActions와
+        // 동일한 이유로 세션 객체 안에 둔다.
+        jokerChatRateLimit: new Map(),
     }
     return { ok: true, session }
 }
@@ -217,6 +245,13 @@ function assertValidSessionForCommit(session) {
     }
     if (session.nightActions.size !== 0) {
         throw new Error(`commitGameSession: session.nightActions가 비어있지 않음(size=${session.nightActions.size})`)
+    }
+    // jokerChatRateLimit도 roleRevealAcks/nightActions와 동일한 이유로 커밋 시점엔 항상 빈 Map이어야 한다.
+    if (!(session.jokerChatRateLimit instanceof Map)) {
+        throw new Error('commitGameSession: session.jokerChatRateLimit이 Map이 아님')
+    }
+    if (session.jokerChatRateLimit.size !== 0) {
+        throw new Error(`commitGameSession: session.jokerChatRateLimit이 비어있지 않음(size=${session.jokerChatRateLimit.size})`)
     }
     // channelId/phase/dayIndex는 현재 candidate 경로에서 고정값만 만들어지지만, 수동
     // 조립된 session까지 완전히 방어한다는 이 함수의 목적에 맞춰 여기서도 검사한다.
@@ -439,6 +474,60 @@ function submitNightAction(uuid, gameId, targetId) {
 }
 
 /**
+ * NIGHT 단계 JOKER 전용 채팅 메시지를 검증합니다(어떤 상태도 바꾸지 않는 순수 함수). 인증된
+ * uuid와 클라이언트가 알고 있는 gameId, 원문 text만 입력으로 받습니다 — role/team/senderUuid
+ * 등은 이 함수의 입력에 아예 없습니다(클라이언트가 그런 필드를 함께 보내도 무시됩니다).
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
+ *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
+ *   → 5. 발신자가 JOKER 진영인지(ROLE_TEAMS[actor.role] !== 'JOKER'면 NOT_ELIGIBLE —
+ *   CITIZEN이 payload를 위조해도 여기서 막힙니다) → 6. sanitizeJokerChatText
+ *   → 7. now()를 정확히 한 번 호출해 sentAt을 계산하고 유효성 검증(INVALID_CLOCK_VALUE)
+ *   → 8. jokerChatRateLimit을 읽기만 해서 rate limit 판정(RATE_LIMITED).
+ *
+ * 이 함수는 session.jokerChatRateLimit을 포함해 어떤 Map도 쓰지 않습니다(읽기만 합니다) —
+ * idFn도 호출하지 않습니다(호출자인 소켓 계층이 recipient 해석·발신자 포함 확인을 전부 통과한
+ * 뒤에만 메시지 ID를 생성합니다).
+ */
+function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+    if (ROLE_TEAMS[actor.role] !== 'JOKER') return { ok: false, code: 'NOT_ELIGIBLE' }
+
+    const sanitized = sanitizeJokerChatText(text)
+    if (!sanitized.ok) return sanitized
+
+    const sentAt = now()
+    if (!Number.isFinite(sentAt) || !Number.isInteger(sentAt) || sentAt < 0) {
+        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
+    }
+
+    const lastSentAt = session.jokerChatRateLimit.get(uuid)
+    if (lastSentAt !== undefined && sentAt - lastSentAt < JOKER_CHAT_MIN_INTERVAL_MS) {
+        return { ok: false, code: 'RATE_LIMITED' }
+    }
+
+    return { ok: true, session, actorUuid: uuid, sanitizedText: sanitized.text, sentAt }
+}
+
+/** JOKER 채팅의 유일한 mutation — prepareJokerChatMessage가 반환한 session/uuid/sentAt으로 rate limit을 갱신합니다. */
+function commitJokerChatMessage(session, uuid, sentAt) {
+    session.jokerChatRateLimit.set(uuid, sentAt)
+}
+
+/**
  * 특정 uuid가 속한 활성 GameSession을 즉시 종료합니다(참가자 전원을 3개 registry에서
  * 제거). uuid가 어떤 활성 GameSession에도 속해있지 않으면 아무 것도 바꾸지 않고
  * { ok:false, code:'NOT_IN_SESSION' }을 반환합니다 — 대기방 disconnect 등 무관한 호출과
@@ -508,6 +597,9 @@ module.exports = {
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
     submitNightAction,
+    prepareJokerChatMessage,
+    commitJokerChatMessage,
+    JOKER_CHAT_MAX_LENGTH,
     __resetStateForTests,
     __getStateSnapshotForTests,
     // 테스트에서 개별 함수를 직접 호출하거나 registry를 의도적으로 파괴하기 위한 통로입니다.
@@ -521,6 +613,7 @@ module.exports = {
         getSpecialRoleBudget,
         computeRoleComposition,
         isEligibleForNightAction,
+        sanitizeJokerChatText,
         __deleteGameSessionOnlyForTests,
     },
 }

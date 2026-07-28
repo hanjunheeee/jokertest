@@ -8,13 +8,16 @@ import {
   getInGameChatInputShiftClass,
   getInGameChatMessageListInset,
   getInGameChatSendButtonShiftClass,
+  getInGameChatStatusLineInset,
   getInGameChatTextFieldInset,
   INGAME_CHAT_MESSAGE_LIST_CONTAINER_CLASS,
+  INGAME_CHAT_STATUS_LINE_WRAP_CLASS,
   INGAME_CHAT_TEXT_FIELD_ROW_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
 import InGameChatInput from "./InGameChatInput.jsx"
 import InGameChatMessageList from "./InGameChatMessageList.jsx"
 import InGameChatSendButton from "./InGameChatSendButton.jsx"
+import InGameChatStatusLine from "./InGameChatStatusLine.jsx"
 import { InGameChatVariantContext } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
@@ -40,6 +43,9 @@ export default function InGameChatContent({
   onDraftChange,
   onSend,
   onOpenCloseup = null,
+  status = null,
+  error = null,
+  truncateDraftOnInput = true,
 }) {
   // 프레임 크기 계산이 끝나서 채팅 UI를 보여줘도 되는지 표시합니다.
   const [layoutReady, setLayoutReady] = useState(false)
@@ -124,16 +130,26 @@ export default function InGameChatContent({
             value={draft}
             onChange={(event) =>
               onDraftChange(
-                event.target.value.slice(0, INGAME_CHAT_INPUT_MAX_LENGTH),
+                truncateDraftOnInput
+                  ? event.target.value.slice(0, INGAME_CHAT_INPUT_MAX_LENGTH)
+                  : event.target.value,
               )
             }
             onSend={handleSend}
             className={getInGameChatInputShiftClass(variant)}
+            truncateDraftOnInput={truncateDraftOnInput}
           />
           <InGameChatSendButton
             onSend={handleSend}
             className={getInGameChatSendButtonShiftClass(variant)}
           />
+        </div>
+
+        <div
+          className={INGAME_CHAT_STATUS_LINE_WRAP_CLASS}
+          style={getInGameChatStatusLineInset(variant)}
+        >
+          <InGameChatStatusLine status={status} error={error} />
         </div>
       </div>
     </InGameChatVariantContext.Provider>

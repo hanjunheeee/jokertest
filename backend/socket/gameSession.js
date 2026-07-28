@@ -1,9 +1,15 @@
+const { randomUUID } = require('node:crypto')
 const gameSessionCore = require('../game-core/gameSession')
 
 // game-core가 내부 진단용으로만 반환하는 코드다(registry 불일치 등, 정상 경로에서는
 // 발생하지 않아야 함). 클라이언트에는 내부 상태를 노출하지 않고 항상 INTERNAL_ERROR로
 // 정규화해 응답한다.
 const INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT'])
+
+// JOKER 채팅 전용 internal-only 코드. 기존 INTERNAL_ONLY_CODES(모든 handleX가 공유하는
+// registry-불일치 코드)와 의미가 섞이지 않도록 별도 상수로 둔다 — INVALID_CLOCK_VALUE는
+// 기존 두 핸들러가 반환하지 않는 코드다.
+const JOKER_CHAT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'INVALID_CLOCK_VALUE'])
 
 /** callback을 항상 안전하게 호출한다 — callback 자체가 던지는 예외가 이후 로직(방송 등)을 막지 않게 한다. */
 function respond(callback, payload) {
@@ -139,10 +145,157 @@ function handleSubmitNightAction(uuid, payload, callback) {
     respondNightAction(uuid, result.gameId, callback, { ok: true })
 }
 
-/** ROLE_REVEAL 확인·NIGHT 행동 제출 이벤트 배선을 담당합니다(턴/페이즈 등 이후 동기화는 다음 슬라이스의 몫). */
+/**
+ * submit_joker_chat_message 전용 ack 전달 헬퍼. respondNightAction과 동일한 이유로 고정
+ * 구조 로그를 쓴다 — callback이 던져도 예외가 바깥으로 새지 않고, 로그는 항상
+ * {code:'CALLBACK_ERROR', uuid, gameId} 3키뿐이다.
+ */
+function respondJokerChat(uuid, gameId, callback, payload) {
+    try {
+        callback(payload)
+    } catch (err) {
+        console.error('[조커 채팅 오류]', { code: 'CALLBACK_ERROR', uuid, gameId })
+    }
+}
+
+/**
+ * 특정 GameSession에서 "지금 실제로 메시지를 받을 수 있는" JOKER 팀 소켓만 골라 반환합니다.
+ * matchmaking.js의 resolveParticipantSockets와 동일한 3조건(참가자 소속·connected===true·
+ * 대상 channel 가입)을 쓰지만, 대상 uuid 집합을 role(JOKER 진영)로 걸러야 하므로 session.players
+ * 에서 직접 유도합니다 — 전용 room이 없으므로 매 전송마다 재계산합니다(세션 최대 10명이라
+ * 성능 문제가 없습니다).
+ */
+function resolveJokerTeammateSockets(io, session) {
+    const sockets = []
+    for (const s of io.sockets.sockets.values()) {
+        const uuid = s.data?.user?.uuid
+        if (!uuid) continue
+        const player = session.players.get(uuid)
+        if (!player) continue
+        if (gameSessionCore.ROLE_TEAMS[player.role] !== 'JOKER') continue
+        if (s.connected !== true) continue
+        if (!s.rooms?.has(session.channelId)) continue
+        sockets.push(s)
+    }
+    return sockets
+}
+
+/**
+ * NIGHT 단계 JOKER 전용 채팅 메시지 제출을 처리합니다(Socket.IO acknowledgement 방식).
+ * deps.prepare/deps.commit/deps.resolveTeammateSockets/deps.idFn을 주입할 수 있습니다 —
+ * production 기본값은 각각 game-core의 prepareJokerChatMessage/commitJokerChatMessage,
+ * 이 파일의 resolveJokerTeammateSockets, node:crypto의 randomUUID입니다.
+ *
+ * 순서: payload 구조 검증 → prepare(어떤 상태도 바꾸지 않음) → 실패 시 internal-only 코드만
+ * INTERNAL_ERROR로 정규화 → resolveTeammateSockets → 발신자 포함 확인(참조 동일성) → idFn
+ * 호출(resolver·발신자 포함 확인을 전부 통과한 뒤에만 — 실패할 요청이 메시지 ID를 낭비하지
+ * 않음) → messageId trim 검증 → commit(유일한 mutation) → ack → 수신자 각각에 개별 emit
+ * (하나가 던져도 나머지는 계속 전달).
+ *
+ * 로그는 예외 없이 console.error('[조커 채팅 오류]', {code, uuid, gameId}) 3키만 쓰고,
+ * canonical session.id를 아직 모르는 실패는 gameId: undefined를 명시적으로 포함합니다.
+ * err 객체, 사용자가 보낸 텍스트 원문, role/team/nickname, 지목 대상 정보는 로그에 절대
+ * 포함하지 않습니다.
+ */
+function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps = {}) {
+    const prepare = deps.prepare ?? gameSessionCore.prepareJokerChatMessage
+    const commit = deps.commit ?? gameSessionCore.commitJokerChatMessage
+    const resolveTeammateSockets = deps.resolveTeammateSockets ?? resolveJokerTeammateSockets
+    const idFn = deps.idFn ?? randomUUID
+
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respondJokerChat(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId, text } = payload
+    if (typeof gameId !== 'string' || typeof text !== 'string') {
+        respondJokerChat(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let prepared
+    try {
+        prepared = prepare(uuid, gameId, text)
+    } catch (err) {
+        console.error('[조커 채팅 오류]', { code: 'PREPARE_UNEXPECTED_ERROR', uuid, gameId: undefined })
+        respondJokerChat(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!prepared.ok) {
+        if (JOKER_CHAT_INTERNAL_ONLY_CODES.has(prepared.code)) {
+            // registry 불일치·시계 이상값은 클라이언트에 내부 상태를 노출하지 않고 일반 오류로만 응답한다.
+            console.error('[조커 채팅 오류]', { code: prepared.code, uuid, gameId: undefined })
+            respondJokerChat(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        // 클라이언트 입력값 검증 실패는 서버 버그가 아니므로 로그하지 않는다(기존 관례와 동일).
+        respondJokerChat(uuid, undefined, callback, { ok: false, code: prepared.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    let teammateSockets
+    try {
+        teammateSockets = resolveTeammateSockets(io, prepared.session)
+    } catch (err) {
+        console.error('[조커 채팅 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
+        respondJokerChat(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    const senderIncluded = teammateSockets.some((s) => s === socket)
+    if (!senderIncluded) {
+        console.error('[조커 채팅 오류]', { code: 'SENDER_NOT_IN_RECIPIENTS', uuid, gameId: prepared.session.id })
+        respondJokerChat(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    let rawMessageId
+    try {
+        rawMessageId = idFn()
+    } catch (err) {
+        console.error('[조커 채팅 오류]', { code: 'ID_GENERATION_ERROR', uuid, gameId: prepared.session.id })
+        respondJokerChat(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+    if (typeof rawMessageId !== 'string' || rawMessageId.trim().length === 0) {
+        console.error('[조커 채팅 오류]', { code: 'INVALID_MESSAGE_ID', uuid, gameId: prepared.session.id })
+        respondJokerChat(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+    const messageId = rawMessageId.trim()
+
+    try {
+        commit(prepared.session, uuid, prepared.sentAt)
+    } catch (err) {
+        console.error('[조커 채팅 오류]', { code: 'COMMIT_ERROR', uuid, gameId: prepared.session.id })
+        respondJokerChat(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    respondJokerChat(uuid, prepared.session.id, callback, { ok: true })
+
+    for (const teammateSocket of teammateSockets) {
+        try {
+            teammateSocket.emit('joker_chat_message', {
+                gameId: prepared.session.id,
+                senderUuid: prepared.actorUuid,
+                text: prepared.sanitizedText,
+                messageId,
+                sentAt: prepared.sentAt,
+            })
+        } catch (err) {
+            console.error('[조커 채팅 오류]', { code: 'DELIVERY_ERROR', uuid: prepared.actorUuid, gameId: prepared.session.id })
+        }
+    }
+}
+
+/** ROLE_REVEAL 확인·NIGHT 행동 제출·JOKER 채팅 이벤트 배선을 담당합니다(턴/페이즈 등 이후 동기화는 다음 슬라이스의 몫). */
 function registerGameHandlers(io, socket, uuid) {
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
     socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(uuid, payload, callback))
+    socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
 }
 
 /**
@@ -189,5 +342,5 @@ module.exports = {
     onDisconnect,
     // 테스트에서 socket.on 배선 없이 핸들러를 직접 호출하기 위한 통로입니다(matchmaking.js의
     // __testables 관례와 동일). 런타임 코드에서는 참조하지 않습니다.
-    __testables: { handleAcknowledgeRoleReveal, handleSubmitNightAction },
+    __testables: { handleAcknowledgeRoleReveal, handleSubmitNightAction, handleSubmitJokerChatMessage, resolveJokerTeammateSockets },
 }
