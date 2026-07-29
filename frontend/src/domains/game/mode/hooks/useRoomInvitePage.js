@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 
 /** 방코드 입력 페이지의 애니메이션 상태와 방 참여 소켓 이벤트를 관리합니다. */
@@ -23,6 +24,9 @@ export function useRoomInvitePage() {
     if (!socket) return undefined
 
     const handleRoomJoined = (payload) => {
+      // matching store를 설정하기 전에 인게임 store의 이전 gameId를 먼저 무효화한다
+      // (useGameSetupPage.js의 enterRoom과 동일한 이유).
+      useInGameStore.getState().clearGame()
       useMatchingStore.getState().setRoom(payload)
       navigate("/game-matching")
     }

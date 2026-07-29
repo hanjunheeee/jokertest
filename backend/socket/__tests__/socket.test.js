@@ -26,7 +26,8 @@ test('disconnect 시 registerDisconnectHandler가 gameSession.onDisconnect를 �
 
     assert.equal(onDisconnectMock.mock.calls.length, 1)
     assert.equal(onDisconnectMock.mock.calls[0].arguments[0], fakeIo)
-    assert.equal(onDisconnectMock.mock.calls[0].arguments[1], 'uuid-1')
+    assert.equal(onDisconnectMock.mock.calls[0].arguments[1], fakeSocket)
+    assert.equal(onDisconnectMock.mock.calls[0].arguments[2], 'uuid-1')
 })
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,10 @@ test('forcedLogout으로 강제 종료된 소켓의 disconnect는 실제 활성 
     const fakeSocket = {
         id: 'socket-forced-a',
         // 다른 기기/탭 로그인으로 강제 종료된 소켓(existingSocket.disconnect(true))을 흉내낸다.
-        data: { user: { uuid: 'forced-a' }, forcedLogout: true },
+        // activeGameId는 실제로는 matchmaking.js의 handleStartGame이 게임 시작 시 심어주는
+        // 값이다(ABA 방지 결합) — 이 테스트는 matchmaking을 거치지 않고 game-core를 직접
+        // 구동하므로 그 결합을 여기서 직접 재현한다.
+        data: { user: { uuid: 'forced-a' }, forcedLogout: true, activeGameId: prepared.session.id },
         rooms: new Set([prepared.session.channelId]),
         on(event, cb) { handlers[event] = cb },
     }

@@ -389,7 +389,7 @@ test('onDisconnect: 방장 혼자 있는 방에서 종료하면 방과 매핑이
     const io = createFakeIo([socket])
     await callAsPromise(handleCreateRoom, io, socket, 'uuid-solo', validSettingsPayload())
 
-    matchmaking.onDisconnect(io, 'uuid-solo')
+    matchmaking.onDisconnect(io, socket, 'uuid-solo')
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.gameRooms.length, 0)
@@ -405,7 +405,7 @@ test('onDisconnect: 참가자가 있는 상태에서 방장이 종료하면 host
     io.sockets.sockets.set(joiner.id, joiner)
     await handleJoinRoomByCode(io, joiner, 'uuid-joiner2', created.room.roomCode)
 
-    matchmaking.onDisconnect(io, 'uuid-host4')
+    matchmaking.onDisconnect(io, hostSocket, 'uuid-host4')
 
     const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed')
     const playerLeft = io.broadcasts.find((b) => b.event === 'player_left_room')
@@ -415,6 +415,52 @@ test('onDisconnect: 참가자가 있는 상태에서 방장이 종료하면 host
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.gameRooms[0][1].hostUuid, 'uuid-joiner2')
+})
+
+// ── onDisconnect ABA 방지 (socket.data.activeRoomId 결합) ───────────────────
+
+test('onDisconnect(ABA): 방을 삭제하고 다른 Socket으로 새 Room을 만든 뒤 도착한 오래된 Socket의 지연 disconnect는 새 Room을 건드리지 않는다', async () => {
+    const uuid = 'aba-mm-uuid'
+    const staleSocket = createFakeSocket(uuid)
+    const io = createFakeIo([staleSocket])
+    await callAsPromise(handleCreateRoom, io, staleSocket, uuid, validSettingsPayload())
+
+    const { handleDeleteRoom } = matchmaking.__testables
+    handleDeleteRoom(io, uuid) // Room A 삭제 → playerRoom에서 uuid 제거됨
+
+    const freshSocket = createFakeSocket(uuid, { id: 'sock-aba-mm-uuid-2' })
+    io.sockets.sockets.set(freshSocket.id, freshSocket)
+    const createdB = await callAsPromise(handleCreateRoom, io, freshSocket, uuid, validSettingsPayload())
+    assert.equal(createdB.ok, true)
+
+    io.broadcasts.length = 0
+    // 오래된 staleSocket의 지연 disconnect가 뒤늦게 도착한다 — activeRoomId는 여전히
+    // Room A를 가리키므로(생성 시점에 결합된 값), 현재 playerRoom(Room B)과 달라 무시된다.
+    matchmaking.onDisconnect(io, staleSocket, uuid)
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.ok(snapshot.gameRooms.some(([id]) => id === createdB.room.roomId), 'Room B가 그대로 남아있어야 한다')
+    assert.equal(snapshot.playerRoom.some(([u, roomId]) => u === uuid && roomId === createdB.room.roomId), true)
+    assert.equal(io.broadcasts.some((b) => b.event === 'player_left_room' || b.event === 'host_changed'), false)
+})
+
+test('onDisconnect(ABA): activeRoomId 결합이 없는 레거시 Socket의 disconnect는 기존처럼 현재 Room을 무조건 정리한다', async () => {
+    const uuid = 'legacy-mm-uuid'
+    matchmaking.__seedRoomForTests({
+        id: 'legacy-room-aba',
+        code: 'LEGACYABA',
+        hostUuid: uuid,
+        players: new Map([[uuid, { uuid, nickname: 'x', isReady: false }]]),
+    })
+    matchmaking.__seedPlayerRoomForTests(uuid, 'legacy-room-aba')
+    const socketWithoutBinding = createFakeSocket(uuid) // activeRoomId를 한 번도 심어주지 않은 소켓
+    const io = createFakeIo([socketWithoutBinding])
+
+    matchmaking.onDisconnect(io, socketWithoutBinding, uuid)
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameRooms.length, 0)
+    assert.equal(snapshot.playerRoom.length, 0)
 })
 
 // ── P0: 생성 도중 연결 종료 ──────────────────────────────────────────────
@@ -431,7 +477,7 @@ test('create_room: 사용자 조회를 기다리는 동안 연결이 끊기면 �
     // 조회 대기 중 연결이 끊긴 상황을 흉내낸다. 이 시점에 실제 onDisconnect가 실행돼도
     // playerRoom에는 아직 아무것도 없어 정리할 게 없다고 판단하고 지나간다.
     socket.connected = false
-    matchmaking.onDisconnect(io, 'uuid-disc')
+    matchmaking.onDisconnect(io, socket, 'uuid-disc')
 
     gate.resolve({ nickname: 'x' }) // 조회가 뒤늦게 돌아옴
     const res = await createPromise
@@ -945,7 +991,7 @@ test('canStart: 미준비 참가자가 나가면 canStart가 다시 true로 재�
     await handleJoinRoomByCode(io, joinerB, 'uuid-canstart-b-joinerB', created.room.roomCode)
     // joinerB는 미준비 상태로 참가해 canStart를 다시 false로 만든다.
 
-    matchmaking.onDisconnect(io, 'uuid-canstart-b-joinerB')
+    matchmaking.onDisconnect(io, joinerB, 'uuid-canstart-b-joinerB')
 
     const leftBroadcast = io.broadcasts.find((b) => b.event === 'player_left_room')
     assert.ok(leftBroadcast)
@@ -970,7 +1016,7 @@ test('canStart: 방장이 종료로 바뀌어도 남은 참가자의 준비 상�
     await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-c-joinerA', { isReady: true })
     await callAsPromise(handleSetReady, io, joinerB, 'uuid-canstart-c-joinerB', { isReady: true })
 
-    matchmaking.onDisconnect(io, 'uuid-canstart-c-host') // 방장 종료 → joinerA가 새 방장
+    matchmaking.onDisconnect(io, hostSocket, 'uuid-canstart-c-host') // 방장 종료 → joinerA가 새 방장
 
     const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed')
     assert.ok(hostChanged)

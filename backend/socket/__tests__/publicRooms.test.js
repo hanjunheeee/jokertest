@@ -190,7 +190,7 @@ test('참가자 disconnect 후 public_rooms_updated 방송에 인원 감소가 �
     await handleJoinPublicRoom(io, joiner, 'disconnect-broadcast-joiner', { roomId: created.room.roomId })
 
     io.emitted.length = 0
-    matchmaking.onDisconnect(io, 'disconnect-broadcast-joiner')
+    matchmaking.onDisconnect(io, joiner, 'disconnect-broadcast-joiner')
 
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
     assert.ok(broadcast, 'disconnect 후 목록 방송이 있어야 합니다')

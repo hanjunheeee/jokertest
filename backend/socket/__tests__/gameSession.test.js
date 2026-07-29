@@ -4,10 +4,23 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
-const { createFakeSocket, createFakeIo, countingCallback, setupReadyRoomForStart } = require('./testHelpers/matchmakingFixtures')
+const {
+    callAsPromise,
+    createFakeSocket,
+    createFakeIo,
+    validSettingsPayload,
+    countingCallback,
+    setupReadyRoomForStart,
+} = require('./testHelpers/matchmakingFixtures')
 
 const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables
-const { handleAcknowledgeRoleReveal, handleSubmitNightAction, handleSubmitJokerChatMessage, resolveJokerTeammateSockets } = gameSessionSocketLayer.__testables
+const {
+    handleAcknowledgeRoleReveal,
+    handleSubmitNightAction,
+    handleSubmitJokerChatMessage,
+    handleLeaveGameSession,
+    resolveJokerTeammateSockets,
+} = gameSessionSocketLayer.__testables
 
 // 이 파일은 game-core/gameSession.js(고유 registry)와 matchmaking.js(고유 registry)를
 // 둘 다 실제로 구동하므로, 두 모듈의 registry를 각각 초기화해야 테스트 간 상태 누수가
@@ -49,6 +62,11 @@ function commitTwoPlayerSession({ roomId = 'room-1', uuidA = 'p1', uuidB = 'p2' 
     const socketB = createFakeSocket(uuidB)
     socketA.rooms.add(prepared.session.channelId)
     socketB.rooms.add(prepared.session.channelId)
+    // 실제로는 matchmaking.js의 handleStartGame이 게임 시작 시 심어주는 ABA 방지 결합
+    // (socket.data.activeGameId)이다 — 이 헬퍼는 matchmaking을 거치지 않고 game-core를
+    // 직접 구동하므로 그 결합을 여기서 직접 재현한다(onDisconnect가 이 값을 읽는다).
+    socketA.data.activeGameId = prepared.session.id
+    socketB.data.activeGameId = prepared.session.id
     const io = createFakeIo([socketA, socketB])
 
     return { session: prepared.session, socketA, socketB, io }
@@ -62,7 +80,7 @@ test('onDisconnect: 어떤 활성 GameSession에도 속하지 않은 uuid는 아
     const socket = createFakeSocket('lonely-uuid')
     const io = createFakeIo([socket])
 
-    await gameSessionSocketLayer.onDisconnect(io, 'lonely-uuid')
+    await gameSessionSocketLayer.onDisconnect(io, socket, 'lonely-uuid')
 
     assert.equal(io.broadcasts.length, 0)
     assert.equal(socket.rooms.size, 0)
@@ -73,9 +91,9 @@ test('onDisconnect: 어떤 활성 GameSession에도 속하지 않은 uuid는 아
 // ---------------------------------------------------------------------------
 
 test('onDisconnect: 정상 케이스에서 payload가 정확히 { gameId, reason }이고 registry/channel이 모두 정리된다', async () => {
-    const { session, socketB, io } = commitTwoPlayerSession()
+    const { session, socketA, socketB, io } = commitTwoPlayerSession()
 
-    await gameSessionSocketLayer.onDisconnect(io, 'p1')
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
 
     const gameEndedBroadcast = io.broadcasts.find((b) => b.event === 'game_ended')
     assert.equal(gameEndedBroadcast.roomId, session.channelId)
@@ -98,7 +116,7 @@ test('onDisconnect: room broadcast는 정확히 1건만 발생하고, channel에
     // — "두 소켓이 실제로 수신했다"는 주장은 하지 않는다.
     const { session, socketA, socketB, io } = commitTwoPlayerSession()
 
-    await gameSessionSocketLayer.onDisconnect(io, 'p1')
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
 
     const gameEndedBroadcasts = io.broadcasts.filter((b) => b.event === 'game_ended')
     assert.equal(gameEndedBroadcasts.length, 1)
@@ -111,12 +129,12 @@ test('onDisconnect: room broadcast는 정확히 1건만 발생하고, channel에
 // ---------------------------------------------------------------------------
 
 test('onDisconnect: game_ended 알림 전송이 실패해도(io.to가 throw) registry 정리와 channel 정리는 정상 수행된다', async () => {
-    const { session, socketB, io } = commitTwoPlayerSession()
+    const { session, socketA, socketB, io } = commitTwoPlayerSession()
     io.to = () => {
         throw new Error('emit 실패(테스트 주입)')
     }
 
-    await assert.doesNotReject(() => gameSessionSocketLayer.onDisconnect(io, 'p1'))
+    await assert.doesNotReject(() => gameSessionSocketLayer.onDisconnect(io, socketA, 'p1'))
 
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
     assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), false)
@@ -124,12 +142,12 @@ test('onDisconnect: game_ended 알림 전송이 실패해도(io.to가 throw) reg
 })
 
 test('onDisconnect: channel 정리가 실패해도(io.in이 throw) registry 정리와 알림 방송은 정상 수행된다', async () => {
-    const { session, io } = commitTwoPlayerSession()
+    const { session, socketA, io } = commitTwoPlayerSession()
     io.in = () => {
         throw new Error('socketsLeave 실패(테스트 주입)')
     }
 
-    await assert.doesNotReject(() => gameSessionSocketLayer.onDisconnect(io, 'p1'))
+    await assert.doesNotReject(() => gameSessionSocketLayer.onDisconnect(io, socketA, 'p1'))
 
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
     assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), false)
@@ -143,12 +161,12 @@ test('onDisconnect: channel 정리가 실패해도(io.in이 throw) registry 정�
 // ---------------------------------------------------------------------------
 
 test('onDisconnect: 같은 uuid로 연속 2회 호출하면 1회차만 처리되고 2회차는 조용히 no-op이다', async () => {
-    const { io } = commitTwoPlayerSession()
+    const { socketA, io } = commitTwoPlayerSession()
 
-    await gameSessionSocketLayer.onDisconnect(io, 'p1')
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
     const broadcastsAfterFirst = io.broadcasts.filter((b) => b.event === 'game_ended').length
 
-    await gameSessionSocketLayer.onDisconnect(io, 'p1')
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
     const broadcastsAfterSecond = io.broadcasts.filter((b) => b.event === 'game_ended').length
 
     assert.equal(broadcastsAfterFirst, 1)
@@ -168,6 +186,8 @@ function commitSessionWithPlayers(uuids, { roomId = 'room-ack' } = {}) {
     const sockets = uuids.map((uuid) => {
         const s = createFakeSocket(uuid)
         s.rooms.add(prepared.session.channelId)
+        // commitTwoPlayerSession과 동일한 이유로 ABA 방지 결합을 직접 재현한다.
+        s.data.activeGameId = prepared.session.id
         return s
     })
     const io = createFakeIo(sockets)
@@ -243,8 +263,8 @@ test('acknowledge_role_reveal: gameId 누락/타입 오류 payload는 {ok:false,
 })
 
 test('acknowledge_role_reveal: onDisconnect로 세션이 먼저 종료된 뒤 도착한 늦은 확인은 NOT_IN_SESSION이고 방송이 없다', async () => {
-    const { session, io } = commitSessionWithPlayers(['v1', 'v2'])
-    await gameSessionSocketLayer.onDisconnect(io, 'v1') // 세션 전체 종료(정책 확정)
+    const { session, sockets, io } = commitSessionWithPlayers(['v1', 'v2'])
+    await gameSessionSocketLayer.onDisconnect(io, sockets[0], 'v1') // 세션 전체 종료(정책 확정)
 
     const { callback, getResponse } = countingCallback()
     handleAcknowledgeRoleReveal(io, null, 'v2', { gameId: session.id }, callback)
@@ -312,14 +332,15 @@ test('참가자 disconnect로 GameSession이 정리된 뒤, 같은 uuid를 포�
     // --- Room A: host + joiner, 최소 인원/전원 준비/전원 channel 가입까지 setupReadyRoomForStart로 충족 ---
     const hostSocketA = createFakeSocket('uuid-cleanup-host')
     const ioA = createFakeIo([hostSocketA])
-    await setupReadyRoomForStart(ioA, 'uuid-cleanup-host', 'uuid-cleanup-joiner', readyRoomHandlers)
+    const { joinerSocket: joinerSocketA } = await setupReadyRoomForStart(ioA, 'uuid-cleanup-host', 'uuid-cleanup-joiner', readyRoomHandlers)
 
     const { callback: cbA, getResponse: getResponseA } = countingCallback()
     await handleStartGame(ioA, hostSocketA, 'uuid-cleanup-host', cbA)
     assert.equal(getResponseA().ok, true) // Room A → GameSession 커밋 성공
 
     // --- joiner의 disconnect를 소켓 계층 onDisconnect로 직접 재현 ---
-    await gameSessionSocketLayer.onDisconnect(ioA, 'uuid-cleanup-joiner')
+    // (handleStartGame이 실제로 joinerSocketA.data.activeGameId를 심어뒀으므로 그대로 재사용한다)
+    await gameSessionSocketLayer.onDisconnect(ioA, joinerSocketA, 'uuid-cleanup-joiner')
 
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
     assert.equal(snapshot.gameSessions.length, 0)
@@ -1179,4 +1200,290 @@ test('submit_joker_chat_message: deps.idFn이 앞뒤 공백이 있는 유효 문
     assert.deepEqual(getResponse(), { ok: true })
     const delivered = socket.emitted.find((e) => e.event === 'joker_chat_message')
     assert.equal(delivered.payload.messageId, 'msg-1')
+})
+
+// ---------------------------------------------------------------------------
+// leave_game_session (handleLeaveGameSession) — 명시적 이탈
+// ---------------------------------------------------------------------------
+
+/**
+ * matchmaking.js의 실제 handleCreateRoom/handleJoinRoomByCode/handleSetReady/handleStartGame을
+ * 실제로 구동해 2인 GameSession을 시작한다(game-core를 직접 커밋하는 다른 헬퍼들과 달리, 이
+ * 절은 activeGameId/activeRoomId 결합과 matchmaking Room 정리까지 실제 production 코드
+ * 경로로 검증해야 하므로 matchmaking을 우회하지 않는다).
+ */
+async function startRealTwoPlayerSession(hostUuid, joinerUuid) {
+    matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+    const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+    const hostSocket = createFakeSocket(hostUuid)
+    const io = createFakeIo([hostSocket])
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, hostUuid, joinerUuid, readyRoomHandlers)
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, hostUuid, callback)
+    const startResponse = getResponse()
+    if (!startResponse.ok) throw new Error(`테스트 셋업 실패: ${JSON.stringify(startResponse)}`)
+    return { io, hostSocket, joinerSocket, gameId: startResponse.gameId, channelId: room.roomId }
+}
+
+test('leave_game_session: payload가 객체가 아니거나 gameId 누락/타입 오류/빈 문자열이면 INVALID_PAYLOAD이고 세션은 불변이다', async () => {
+    const { io } = await startRealTwoPlayerSession('leave-inv-host', 'leave-inv-joiner')
+    const badPayloads = [null, 'x', 42, [], {}, { gameId: 123 }, { gameId: '' }, { gameId: '   ' }]
+
+    for (const payload of badPayloads) {
+        const { callback, getResponse } = countingCallback()
+        handleLeaveGameSession(io, 'leave-inv-host', payload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.length, 1) // 종료되지 않음
+})
+
+test('leave_game_session: callback이 함수가 아니면 완전한 no-op이다(상태 불변, 새 방송 없음)', async () => {
+    const { io } = await startRealTwoPlayerSession('leave-nocb-host', 'leave-nocb-joiner')
+    const broadcastsBefore = io.broadcasts.length
+
+    assert.doesNotThrow(() => handleLeaveGameSession(io, 'leave-nocb-host', { gameId: 'whatever' }, undefined))
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.length, 1)
+    assert.equal(io.broadcasts.length, broadcastsBefore)
+})
+
+test('leave_game_session: 정상 이탈은 ack {ok:true}이고 game_ended가 정확히 한 번 {gameId, reason:"PLAYER_LEFT"}로 방송되며 참가자 전원의 channel과 registry가 정리된다', async () => {
+    const { io, hostSocket, joinerSocket, gameId, channelId } = await startRealTwoPlayerSession('leave-ok-host', 'leave-ok-joiner')
+    const { callback, getResponse } = countingCallback()
+
+    handleLeaveGameSession(io, 'leave-ok-host', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
+    assert.equal(ended.length, 1)
+    assert.deepEqual(ended[0].payload, { gameId, reason: 'PLAYER_LEFT' })
+    assert.equal(hostSocket.rooms.has(channelId), false)
+    assert.equal(joinerSocket.rooms.has(channelId), false)
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameId), false)
+    assert.equal(snapshot.playerSession.length, 0)
+})
+
+test('leave_game_session: 이미 종료된 세션에 대한 뒤늦은 이탈 요청은 멱등하게 {ok:true}이고 추가 game_ended 방송이 없다', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-idem-host', 'leave-idem-joiner')
+    handleLeaveGameSession(io, 'leave-idem-host', { gameId }, countingCallback().callback)
+    const before = io.broadcasts.filter((b) => b.event === 'game_ended').length
+
+    const { callback, getResponse } = countingCallback()
+    handleLeaveGameSession(io, 'leave-idem-host', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const after = io.broadcasts.filter((b) => b.event === 'game_ended').length
+    assert.equal(after, before)
+})
+
+test('leave_game_session: 명시적 이탈 성공 뒤 같은 Socket의 disconnect가 중첩되어도 game_ended는 정확히 한 번뿐이다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-overlap-a-host', 'leave-overlap-a-joiner')
+
+    handleLeaveGameSession(io, 'leave-overlap-a-host', { gameId }, countingCallback().callback)
+    await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'leave-overlap-a-host') // 뒤늦게 도착한 disconnect
+
+    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
+    assert.equal(ended.length, 1)
+})
+
+test('leave_game_session: disconnect가 먼저 처리된 뒤 도착한 명시적 이탈 요청도 game_ended는 정확히 한 번뿐이고 이탈 ack는 여전히 {ok:true}다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-overlap-b-host', 'leave-overlap-b-joiner')
+
+    await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'leave-overlap-b-host')
+    const { callback, getResponse } = countingCallback()
+    handleLeaveGameSession(io, 'leave-overlap-b-host', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
+    assert.equal(ended.length, 1)
+})
+
+test('leave_game_session(ABA, 동일 Socket): 세션 A를 종료한 뒤 같은 Socket으로 세션 B를 시작하면, 그 뒤의 disconnect는 정상적으로 B를 종료한다', async () => {
+    const { io, hostSocket, gameId: gameIdA } = await startRealTwoPlayerSession('aba-same-host', 'aba-same-joinerA')
+    handleLeaveGameSession(io, 'aba-same-host', { gameId: gameIdA }, countingCallback().callback)
+    assert.equal(hostSocket.data.activeGameId, gameIdA) // 이탈 성공 후에도 결합은 지워지지 않고 A를 가리킨다
+
+    // setupReadyRoomForStart는 io.sockets.sockets에 이미 등록된 `sock-${hostUuid}` 소켓을
+    // 재사용하므로, 아래 두 번째 세션도 동일한 hostSocket 인스턴스로 시작된다.
+    const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+    await setupReadyRoomForStart(io, 'aba-same-host', 'aba-same-joinerB', readyRoomHandlers)
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, 'aba-same-host', callback)
+    const gameIdB = getResponse().gameId
+    assert.notEqual(gameIdB, gameIdA)
+    assert.equal(hostSocket.data.activeGameId, gameIdB) // 같은 Socket이 새 세션을 시작하면 결합이 B로 갱신된다
+
+    await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'aba-same-host')
+
+    const endedB = io.broadcasts.filter((b) => b.event === 'game_ended' && b.payload.gameId === gameIdB)
+    assert.equal(endedB.length, 1)
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameIdB), false)
+})
+
+test('leave_game_session(ABA, 다른 Socket): 세션 A 종료 후 같은 uuid가 다른 Socket으로 세션 B를 시작하면, A의 지연 disconnect는 B의 registry·방송에 영향을 주지 않는다', async () => {
+    const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+    const targetUuid = 'aba-cross-target'
+
+    const { io, joinerSocket: staleSocket, gameId: gameIdA } = await startRealTwoPlayerSession('aba-cross-host-a', targetUuid)
+    handleLeaveGameSession(io, targetUuid, { gameId: gameIdA }, countingCallback().callback)
+    assert.equal(staleSocket.data.activeGameId, gameIdA)
+
+    // 같은 uuid가 다른(새) Socket으로 새 Room에 참가해 세션 B를 시작한다. setupReadyRoomForStart는
+    // joiner 소켓을 매번 새로 만들고 같은 키로 io.sockets.sockets에 등록하므로, 이전 staleSocket은
+    // 더 이상 io에 등록돼 있지 않은 "낡은" 소켓이 된다(실제로는 재연결로 교체되는 상황과 동등).
+    const hostSocketB = createFakeSocket('aba-cross-host-b')
+    io.sockets.sockets.set(hostSocketB.id, hostSocketB)
+    const { joinerSocket: freshSocket } = await setupReadyRoomForStart(io, 'aba-cross-host-b', targetUuid, readyRoomHandlers)
+    assert.notEqual(freshSocket, staleSocket)
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocketB, 'aba-cross-host-b', callback)
+    const gameIdB = getResponse().gameId
+    assert.notEqual(gameIdB, gameIdA)
+
+    // 낡은 Socket(staleSocket)의 지연 disconnect가 뒤늦게 도착한다.
+    await gameSessionSocketLayer.onDisconnect(io, staleSocket, targetUuid)
+
+    const endedB = io.broadcasts.filter((b) => b.event === 'game_ended' && b.payload.gameId === gameIdB)
+    assert.equal(endedB.length, 0) // B는 건드려지지 않았다
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameIdB), true) // B는 여전히 살아있다
+})
+
+test('leave_game_session: core가 예외를 던지면 ack는 INTERNAL_ERROR이고 원본 Error가 로그에 노출되지 않는다', (t) => {
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    t.mock.method(gameSessionCore, 'endGameSessionForPlayer', () => {
+        throw new Error('SECRET internal detail')
+    })
+    const io = createFakeIo([])
+    const { callback, getResponse } = countingCallback()
+
+    handleLeaveGameSession(io, 'leave-throw-uuid', { gameId: 'whatever' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('SECRET'), false)
+})
+
+test('leave_game_session: callback이 throw해도 registry 정리·matchmaking 정리·game_ended 방송은 정상적으로 완료된다', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-cbthrow-host', 'leave-cbthrow-joiner')
+
+    assert.doesNotThrow(() =>
+        handleLeaveGameSession(io, 'leave-cbthrow-host', { gameId }, () => {
+            throw new Error('콜백 실패(테스트 주입)')
+        }),
+    )
+
+    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
+    assert.equal(ended.length, 1)
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameId), false)
+})
+
+test('leave_game_session: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-wiring-host', 'leave-wiring-joiner')
+    gameSessionSocketLayer.registerGameHandlers(io, hostSocket, 'leave-wiring-host')
+    const { callback, getResponse } = countingCallback()
+
+    hostSocket.trigger('leave_game_session', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
+    assert.equal(ended.length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// leave_game_session — matchmaking Room 정리(cleanupRoomStateForSessionParticipants)
+// ---------------------------------------------------------------------------
+
+test('세션 종료 시 세션 진행 중 만든 Room B에 비참가자 Q가 참가해 있으면 Room B는 삭제되지 않고 host가 Q로 이전되며, 참가자 Socket은 Room B channel에서 실제로 leave된다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('cleanup-b-host', 'cleanup-b-joiner')
+
+    // 활성 세션 참가자의 create_room은 계약대로 허용된다(게임 시작 시 원래 Room 매핑은 이미
+    // 삭제됐으므로 host는 새 Room B를 자유롭게 만들 수 있다).
+    const createdB = await callAsPromise(
+        handleCreateRoom, io, hostSocket, 'cleanup-b-host', validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
+    )
+    assert.equal(createdB.ok, true)
+
+    const qSocket = createFakeSocket('cleanup-b-q')
+    io.sockets.sockets.set(qSocket.id, qSocket)
+    await handleJoinRoomByCode(io, qSocket, 'cleanup-b-q', createdB.room.roomCode)
+
+    handleLeaveGameSession(io, 'cleanup-b-host', { gameId }, countingCallback().callback)
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    const roomEntry = snapshot.gameRooms.find(([id]) => id === createdB.room.roomId)
+    assert.ok(roomEntry, 'Room B가 통째로 삭제되면 안 된다(비참가자 Q가 있음)')
+    const [, roomB] = roomEntry
+    assert.equal(roomB.hostUuid, 'cleanup-b-q')
+    assert.deepEqual(roomB.players.map(([uuid]) => uuid), ['cleanup-b-q'])
+
+    const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed' && b.roomId === createdB.room.roomId)
+    assert.ok(hostChanged)
+    assert.equal(hostChanged.payload.hostUuid, 'cleanup-b-q')
+
+    assert.equal(hostSocket.rooms.has(createdB.room.roomId), false) // Map 정리만이 아니라 실제 channel leave까지 확인
+    assert.equal(qSocket.rooms.has(createdB.room.roomId), true) // Q는 그대로 유지
+})
+
+test('세션 종료 시 한 참가자의 Socket leave 실패가 다른 참가자·registry 정리를 막지 않는다', async () => {
+    const { io, hostSocket, joinerSocket, gameId } = await startRealTwoPlayerSession('cleanup-iso-host', 'cleanup-iso-joiner')
+
+    const createdHostRoom = await callAsPromise(handleCreateRoom, io, hostSocket, 'cleanup-iso-host', validSettingsPayload())
+    const createdJoinerRoom = await callAsPromise(handleCreateRoom, io, joinerSocket, 'cleanup-iso-joiner', validSettingsPayload())
+
+    joinerSocket.leave = () => {
+        throw new Error('leave 실패(테스트 주입)')
+    }
+
+    assert.doesNotThrow(() => handleLeaveGameSession(io, 'cleanup-iso-host', { gameId }, countingCallback().callback))
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameRooms.some(([id]) => id === createdHostRoom.room.roomId), false)
+    assert.equal(snapshot.gameRooms.some(([id]) => id === createdJoinerRoom.room.roomId), false)
+    assert.equal(snapshot.playerRoom.length, 0)
+
+    const gameSnapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(gameSnapshot.gameSessions.length, 0) // leave 실패와 무관하게 registry 정리는 끝까지 완료됨
+})
+
+test('세션 종료 정리는 세션 진행 중 만든 Room/queue만 제거하고, 다른 활성 세션이나 종료 이후 새로 만든 Room에는 영향이 없다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('cleanup-scope-host', 'cleanup-scope-joiner')
+    matchmaking.__seedMatchmakingQueueForTests('cleanup-scope-host', { uuid: 'cleanup-scope-host', nickname: 'x', socketId: hostSocket.id })
+
+    // 완전히 무관한 다른 세션이 이미 진행 중이다 — 이번 종료 정리가 여기 영향을 주면 안 된다.
+    const { gameId: otherGameId } = await startRealTwoPlayerSession('cleanup-scope-other-host', 'cleanup-scope-other-joiner')
+
+    handleLeaveGameSession(io, 'cleanup-scope-host', { gameId }, countingCallback().callback)
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.matchmakingQueue.some(([uuid]) => uuid === 'cleanup-scope-host'), false)
+
+    const otherSnapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(otherSnapshot.gameSessions.some(([id]) => id === otherGameId), true)
+
+    // 종료 이후에 새로 만든 Room은 이번 정리 대상이 아니다(애초에 존재하지 않았으므로).
+    const afterRoom = await callAsPromise(handleCreateRoom, io, hostSocket, 'cleanup-scope-host', validSettingsPayload())
+    assert.equal(afterRoom.ok, true)
+    const afterSnapshot = matchmaking.__getStateSnapshotForTests()
+    assert.ok(afterSnapshot.gameRooms.some(([id]) => id === afterRoom.room.roomId))
+})
+
+test('세션 종료 직후 참가자별로 새 방 생성과 새 방 코드 참가가 모두 즉시 가능하다', async () => {
+    const { io, hostSocket, joinerSocket, gameId } = await startRealTwoPlayerSession('reentry-host', 'reentry-joiner')
+
+    handleLeaveGameSession(io, 'reentry-host', { gameId }, countingCallback().callback)
+
+    const created = await callAsPromise(handleCreateRoom, io, hostSocket, 'reentry-host', validSettingsPayload())
+    assert.equal(created.ok, true)
+
+    await handleJoinRoomByCode(io, joinerSocket, 'reentry-joiner', created.room.roomCode)
+    assert.ok(joinerSocket.emitted.some((e) => e.event === 'room_joined'))
 })

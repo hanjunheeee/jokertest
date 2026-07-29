@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import {
   PUBLIC_ROOM_JOIN_TIMEOUT_MS,
   PUBLIC_ROOM_LIST_TIMEOUT_MS,
