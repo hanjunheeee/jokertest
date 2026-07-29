@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import {
   CREATE_ROOM_ERROR_MESSAGES,
@@ -54,6 +55,10 @@ export function useGameSetupPage() {
     // 화면을 실제로 옮기는 navigate만 마운트 여부에 따라 건너뛴다(이미 다른 화면으로 이동한
     // 사용자를 방해하지 않기 위함) — 여기서 store 반영까지 생략하면 서버는 방을 만들었는데
     // 클라이언트 상태(matchingStore)는 모르는 상태로 어긋나게 된다.
+    // matching store를 설정하기 전에 인게임 store의 이전 gameId를 먼저 무효화한다 — 두 store
+    // 설정 사이의 창에서 이전 세션의 지연 ack/game_ended가 도착해도 ingame gameId 비교가 더
+    // 이상 그 세션과 일치하지 않으므로, 방금 커밋한 이 Room의 matching 상태를 지우지 않는다.
+    useInGameStore.getState().clearGame()
     useMatchingStore.getState().setRoom(room)
     if (!mountedRef.current) return
     navigate("/game-matching")

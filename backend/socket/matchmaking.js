@@ -29,6 +29,20 @@ const DEVELOPMENT_ROOM_SIZES = [10, 8, 6, 5, 2, 1]
 // 되돌리면 재활성화할 수 있다. 재활성화 시 큐 정책(수동 방 생성과의 관계 등)은 별도 검토 필요.
 const RANDOM_MATCHMAKING_ENABLED = false
 
+// 테스트 전용 오버라이드. 이 상수 자체가 false라 큐 등록/매칭 성사 로직은 정상 경로로는
+// 실행되지 않으므로, 그 경로의 generation 재검사(GameSession 종료 경쟁 조건)를 검증하려면
+// 테스트에서만 일시적으로 켤 수 있어야 한다.
+let randomMatchmakingEnabledOverride = null
+
+function isRandomMatchmakingEnabled() {
+    return randomMatchmakingEnabledOverride ?? RANDOM_MATCHMAKING_ENABLED
+}
+
+/** 테스트 전용: RANDOM_MATCHMAKING_ENABLED를 일시적으로 override한다. null/undefined면 원래 상수로 되돌린다. */
+function __setRandomMatchmakingEnabledForTests(value) {
+    randomMatchmakingEnabledOverride = value ?? null
+}
+
 function isDevelopmentMatchmaking() {
     return process.env.NODE_ENV !== 'production'
 }
@@ -56,6 +70,23 @@ const playerRoom = new Map()
 // 좁게 두지 않고 두 작업이 공유해야, 같은 사용자가 두 요청을 동시에 보내도(예: 다른 탭에서
 // 만들기와 코드 참가를 동시에 시도) 한쪽만 통과시킬 수 있다.
 const pendingRoomTransitions = new Set()
+
+// uuid → 방 전환 세대(generation) 카운터. create_room/코드·공개방 참가/join_matchmaking은
+// 자신의 첫 await 이전(동기 구간)에 이 값을 캡처해 두고, 실제 Room/queue Map에 커밋하기
+// 직전에 다시 비교한다. GameSession 종료 정리(cleanupRoomStateForSessionParticipants)는
+// 종료 core 호출과 같은 동기 구간에서 참가자 전원의 세대를 증가시킨다 — 그 사이에 시작된
+// 요청은 재개돼도 세대가 달라 커밋되지 않는다. 종료 이후에 새로 시작되는 요청은 이미
+// 증가된 세대를 캡처하므로 영향을 받지 않는다.
+const roomTransitionGeneration = new Map()
+
+function getRoomTransitionGeneration(uuid) {
+    return roomTransitionGeneration.get(uuid) ?? 0
+}
+
+/** 세션 종료 정리 전용: uuid의 세대를 1 증가시켜 그 uuid의 진행 중인 방 전환 요청을 무효화한다. */
+function bumpRoomTransitionGeneration(uuid) {
+    roomTransitionGeneration.set(uuid, getRoomTransitionGeneration(uuid) + 1)
+}
 
 function registerMatchmakingHandlers(io, socket, uuid) {
     socket.on('join_matchmaking', () =>
@@ -92,13 +123,31 @@ function registerMatchmakingHandlers(io, socket, uuid) {
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
 }
 
-function onDisconnect(io, uuid) {
-    matchmakingQueue.delete(uuid)
-    removeFromRoom(io, null, uuid)
+/**
+ * ABA 방지: 이 uuid가 매칭 큐/Room을 처리하던 Socket이 지금 disconnect한 그 Socket이 맞는지
+ * 확인한다. 방/코드 참가·생성·큐 매칭 시 그 Socket에 결합해 둔 canonical roomId
+ * (socket.data.activeRoomId)가 현재 playerRoom의 값과 다르면, 이 disconnect는 이미 지난
+ * Room 소속에 대한 뒤늦은 신호이므로 지금의(다른 Socket이 만든) Room을 잘못 정리하지
+ * 않도록 건드리지 않는다. 결합이 아예 없는 Socket(레거시 경로·테스트 등)은 기존처럼
+ * 무조건 정리한다 — 이 가드는 실제로 결합이 있는데 값이 다를 때만 개입한다.
+ */
+function onDisconnect(io, socket, uuid) {
+    const queuedEntry = matchmakingQueue.get(uuid)
+    if (queuedEntry && queuedEntry.socketId === socket?.id) {
+        matchmakingQueue.delete(uuid)
+    }
+
+    const currentRoomId = playerRoom.get(uuid)
+    if (!currentRoomId) return
+
+    const expectedRoomId = socket?.data?.activeRoomId
+    if (expectedRoomId !== undefined && expectedRoomId !== currentRoomId) return
+
+    removeFromRoom(io, socket, uuid)
 }
 
 async function handleJoinMatchmaking(io, socket, uuid) {
-    if (!RANDOM_MATCHMAKING_ENABLED) {
+    if (!isRandomMatchmakingEnabled()) {
         // 현재 UI에는 진입 경로가 없지만, 소켓 이벤트는 클라이언트가 직접 emit할 수도 있어
         // 서버에서 명시적으로 막고 그 사실을 알린다(조용히 무시하지 않음).
         socket.emit('matchmaking_disabled', { message: '현재 빠른 매칭은 지원하지 않습니다.' })
@@ -107,15 +156,27 @@ async function handleJoinMatchmaking(io, socket, uuid) {
 
     if (playerRoom.has(uuid)) return
 
+    // 유일한 await(사용자 조회) 이전, 동기 구간에서 세대를 캡처한다. 대기 중 GameSession
+    // 종료 정리가 이 uuid의 세대를 증가시켰으면(세션 종료), 조회가 끝나도 큐에 등록하지
+    // 않고 기존 `!user` 실패 경로와 동일하게 조용히 반환한다.
+    const generationAtRequest = getRoomTransitionGeneration(uuid)
+
     const user = await userRepositoryRef.findByUuid(uuid)
     if (!user) return
+    if (getRoomTransitionGeneration(uuid) !== generationAtRequest) return
 
-    matchmakingQueue.set(uuid, { uuid, nickname: user.nickname, socketId: socket.id })
+    matchmakingQueue.set(uuid, { uuid, nickname: user.nickname, socketId: socket.id, generation: generationAtRequest })
     socket.emit('matchmaking_queued', { position: matchmakingQueue.size })
 
     if (matchmakingQueue.size < getMinPlayers()) return
 
-    const queuedPlayers = [...matchmakingQueue.values()]
+    // 큐에서 Room으로 전환하기 직전에도 각 항목의 등록 당시 세대와 현재 세대를 다시 비교한다.
+    // 정상적으로는 세션 종료 정리가 참가자를 큐에서도 함께 제거하므로 무관한 항목은 이미
+    // 여기 없겠지만, 그 보장이 깨지는 경우에도 무효화된 항목이 새 Room에 섞여 들어가지
+    // 않도록 하는 방어선이다.
+    const queuedPlayers = [...matchmakingQueue.values()].filter(
+        (entry) => getRoomTransitionGeneration(entry.uuid) === entry.generation
+    )
     const roomSize = getSupportedRoomSizes().find((size) => queuedPlayers.length >= size)
     if (!roomSize) return
 
@@ -136,6 +197,8 @@ async function handleJoinMatchmaking(io, socket, uuid) {
         const s = io.sockets.sockets.get(socketId)
         if (!s) return
         s.join(roomId)
+        // ABA 방지 결합: create_room/join_room_by_code와 동일한 이유(onDisconnect 참고).
+        s.data.activeRoomId = roomId
         s.emit('match_found', { roomId, roomCode, players: playerList, hostUuid })
     })
 }
@@ -261,11 +324,14 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
     // 지점까지는 다른 요청이 끼어들 수 없어, 같은 uuid의 두 번째 create_room/join_room_by_code도
     // 반드시 위의 pendingRoomTransitions.has(uuid) 검사에서 걸러진다(더블클릭/동시 요청 방지).
     pendingRoomTransitions.add(uuid)
+    // 같은 동기 구간에서 세대를 캡처해 둔다. GameSession 종료 정리가 이 uuid의 세대를
+    // 이 요청이 대기하는 동안 증가시키면, 재개된 뒤의 재검사에서 걸러진다.
+    const generationAtReservation = getRoomTransitionGeneration(uuid)
 
-    handleCreateRoomAfterReservation(io, socket, uuid, validation.value, callback)
+    handleCreateRoomAfterReservation(io, socket, uuid, validation.value, callback, generationAtReservation)
 }
 
-async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, settings }, callback) {
+async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation) {
     let roomId = null
     let joined = false
     let room = null
@@ -280,6 +346,14 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
         // await 도중 다른 요청(코드 참가 등)으로 이미 방에 들어갔을 수 있어 최신 상태로 다시 확인한다.
         if (playerRoom.has(uuid)) {
             callback({ ok: false, message: '이미 참여 중인 방이 있습니다.' })
+            return
+        }
+
+        // 사용자 조회를 기다리는 동안 GameSession 종료 정리가 이 uuid의 세대를 증가시켰을
+        // 수 있다(예: 이 uuid가 활성 세션 참가자였고 그 세션이 종료됨). 세대가 달라졌으면
+        // 아직 Socket room에 가입하지 않은 상태이므로 leave 없이 바로 실패로 응답한다.
+        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+            callback({ ok: false, message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
             return
         }
 
@@ -318,6 +392,16 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
             return
         }
 
+        // socket.join을 기다리는 동안에도 GameSession 종료 정리가 세대를 증가시켰을 수
+        // 있다 — Map 커밋 직전 마지막 재검사다. 이미 Socket room에는 가입했으므로 커밋하지
+        // 않고 leave까지 마친 뒤 기존 실패 계약으로 응답한다.
+        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+            await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
+            joined = false
+            callback({ ok: false, message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
+            return
+        }
+
         // roomCode는 join을 기다린 뒤, 그 시점의 최신 gameRooms를 기준으로 생성한다 —
         // join을 기다리는 짧은 시간 동안 다른 요청이 방을 먼저 커밋했을 수 있기 때문이다.
         const code = generateUniqueRoomCode(gameRooms)
@@ -333,6 +417,10 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
         // 코드를 먼저 가져가면 두 방이 같은 코드를 공유하는 상태가 될 수 있기 때문이다.
         gameRooms.set(roomId, room)
         playerRoom.set(uuid, roomId)
+        // ABA 방지 결합: 이 Socket이 지금 이 Room의 정당한 소유자임을 표시해 둔다
+        // (onDisconnect가 참조 — 다른 Socket의 지연 disconnect가 이 Room을 잘못 정리하지
+        // 않도록 하는 근거가 된다).
+        socket.data.activeRoomId = roomId
         emitPublicRoomList(io)
     } catch (err) {
         // repository/adapter 등 내부 오류의 상세 내용은 클라이언트에 노출하지 않고 서버에만 남긴다.
@@ -411,6 +499,8 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
 
     // create_room과 같은 잠금을 공유한다 — await 이전 동기 구간에서 예약해야 동시 요청을 막을 수 있다.
     pendingRoomTransitions.add(uuid)
+    // create_room과 같은 이유로 같은 동기 구간에서 세대를 캡처한다.
+    const generationAtReservation = getRoomTransitionGeneration(uuid)
 
     // catch 블록에서 "join은 됐는데 커밋 전에 실패했는지"를 구분해 Socket room을 정리해야
     // 하므로, try 안의 지역 변수가 아니라 바깥 스코프에 둔다.
@@ -427,6 +517,13 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // await 이후 재검사 — 조회하는 동안 다른 요청으로 이미 방에 들어갔을 수 있다.
         if (playerRoom.has(uuid)) {
             socket.emit('room_join_failed', { message: '이미 참여 중인 방이 있습니다.' })
+            return
+        }
+
+        // 사용자 조회를 기다리는 동안 GameSession 종료 정리가 이 uuid의 세대를 증가시켰을
+        // 수 있다. 아직 Socket room에 가입하지 않았으므로 leave 없이 바로 실패로 응답한다.
+        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+            socket.emit('room_join_failed', { message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
             return
         }
 
@@ -477,6 +574,16 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             return
         }
 
+        // socket.join을 기다리는 동안에도 GameSession 종료 정리가 세대를 증가시켰을 수
+        // 있다 — Map 커밋 직전 마지막 재검사다. 이미 Socket room에는 가입했으므로 leave까지
+        // 마친 뒤 기존 실패 계약으로 응답한다.
+        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            joinedRoomId = null
+            socket.emit('room_join_failed', { message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
+            return
+        }
+
         // settings가 없는 방은 랜덤 매칭이 만든 구버전 방이다(이번 작업이 그 경로를 건드리지
         // 않기 때문). 두 종류의 방이 이 정원 검사를 공유하므로 임시 fallback을 둔다 —
         // 향후 모든 방 구조가 settings로 통일되면 이 fallback은 제거할 수 있다.
@@ -497,6 +604,8 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         room.players.set(uuid, player)
         playerRoom.set(uuid, room.id)
         committed = true
+        // ABA 방지 결합: create_room과 동일한 이유(onDisconnect 참고).
+        socket.data.activeRoomId = room.id
 
         socket.emit('room_joined', buildRoomPayload(room))
         socket.to(room.id).emit('player_joined_room', { player, canStart: computeCanStart(room) })
@@ -747,6 +856,17 @@ async function handleStartGame(io, socket, uuid, callback) {
         return
     }
 
+    // GameSession 종료(disconnect) ABA 방지용 결합: 이 세션의 canonical gameId를 참가자
+    // Socket에 심어 둔다(backend/socket/gameSession.js의 onDisconnect가 읽음). 알림 전달
+    // 성공 여부와 무관하게 항상 수행한다 — Socket 신원 자체는 전달 실패와 관계없는
+    // 사실이기 때문이다. 명시적 이탈이 이 세션을 끝내도 이 결합은 지워지지 않고 그대로
+    // 남아, 같은 Socket이 이후 새 세션을 시작할 때만 새 gameId로 덮어써진다.
+    for (const sockets of uuidToSockets.values()) {
+        for (const s of sockets) {
+            s.data.activeGameId = prepared.session.id
+        }
+    }
+
     // 5) notify — 이미 만들어진 payload를 preflight에서 확보한 소켓에 전달만 한다(재스캔하지
     // 않음 — 재스캔하면 그 사이 상태가 또 바뀔 수 있어 preflight의 의미가 없어진다). 동일
     // uuid의 복수 소켓(연결 전환 중 짧은 구간) 전부에게 같은 payload를 보낸다 — 같은
@@ -814,6 +934,113 @@ function removeFromRoom(io, socket, uuid) {
     emitPublicRoomList(io)
 }
 
+/**
+ * GameSession 종료 core(backend/game-core/gameSession.js의 endGameSessionForPlayer)가 성공한
+ * 직후, 참가자 전원의 현재 matchmaking 소유 상태(gameRooms/playerRoom/matchmakingQueue)를
+ * 정리한다. 게임 시작 시 기존 Room 매핑은 이미 삭제되므로(handleStartGame 4단계 commit),
+ * 여기서 정리되는 Room은 세션이 진행되는 동안 참가자가 새로 만들거나 들어간 Room뿐이다
+ * (활성 세션 참가자의 create_room·코드/공개방 join·queue 진입은 계속 허용되므로 — 아래
+ * onDisconnect의 ABA 가드와 달리 이 함수는 "지금 이 순간의" playerRoom을 그대로 신뢰한다.
+ * 호출자가 종료 core 호출과 동일한 동기 구간에서 반드시 호출해야 하므로, 이 함수가
+ * 실행되는 동안 다른 요청이 끼어들어 gameRooms/playerRoom을 바꿀 수 없기 때문이다).
+ * pendingRoomTransitions는 건드리지 않는다 — 세션 종료와 무관한 진행 중인 요청이다.
+ *
+ * 참가자 여러 명이 우연히 같은 Room에 있을 수 있는 경우(드묾)에도 host 이전이 한 번만
+ * 정확히 일어나도록, 먼저 참가자 전원을 registry(room.players/playerRoom)에서 전부 제거한
+ * 뒤에야 Room별로 leave·host 이전·emit을 수행한다 — 그렇지 않으면 곧 함께 제거될 다른
+ * 세션 참가자에게 host가 잠깐 넘어갔다가 다시 넘어가는 잘못된 중간 상태가 방송될 수 있다.
+ *
+ * 참가자 한 명의 Socket leave 실패나 Room 하나의 host 이전/emit 실패가 다른 참가자·Room·
+ * registry 정리를 막지 않도록 각각 독립된 try/catch로 격리한다.
+ */
+function cleanupRoomStateForSessionParticipants(io, uuids) {
+    // 참가자 전원의 방 전환 세대를 먼저 증가시킨다 — 지금 playerRoom에 없는(아직 커밋되지
+    // 않고 사용자 조회/socket.join을 기다리는 중인) 참가자도 포함해, 이 종료 정리와 같은
+    // 동기 구간 이전에 시작된 create_room/코드·공개방 참가/join_matchmaking 요청이 나중에
+    // 재개돼도 커밋되지 않도록 무효화한다.
+    for (const uuid of uuids) {
+        bumpRoomTransitionGeneration(uuid)
+    }
+
+    const affected = []
+    for (const uuid of uuids) {
+        matchmakingQueue.delete(uuid)
+
+        const roomId = playerRoom.get(uuid)
+        if (!roomId) continue
+        const room = gameRooms.get(roomId)
+        if (!room || !room.players.has(uuid)) {
+            playerRoom.delete(uuid)
+            continue
+        }
+
+        const ownedSockets = []
+        for (const s of io.sockets.sockets.values()) {
+            if (s.data?.user?.uuid !== uuid) continue
+            if (!s.rooms?.has(roomId)) continue
+            ownedSockets.push(s)
+        }
+
+        affected.push({ uuid, roomId, room, ownedSockets })
+    }
+
+    // 참가자 전원을 registry에서 먼저 전부 제거한다(아래 Room별 host 이전보다 앞서야 함).
+    for (const entry of affected) {
+        entry.room.players.delete(entry.uuid)
+        playerRoom.delete(entry.uuid)
+    }
+
+    for (const entry of affected) {
+        for (const s of entry.ownedSockets) {
+            try {
+                s.leave(entry.roomId)
+            } catch (err) {
+                console.error('[세션 종료 Room 소켓 정리 실패]', err)
+            }
+        }
+    }
+
+    const removedUuidsByRoomId = new Map()
+    for (const entry of affected) {
+        if (!removedUuidsByRoomId.has(entry.roomId)) removedUuidsByRoomId.set(entry.roomId, [])
+        removedUuidsByRoomId.get(entry.roomId).push(entry.uuid)
+    }
+
+    const processedRoomIds = new Set()
+    for (const entry of affected) {
+        if (processedRoomIds.has(entry.roomId)) continue
+        processedRoomIds.add(entry.roomId)
+
+        const room = entry.room
+        try {
+            if (room.players.size === 0) {
+                gameRooms.delete(entry.roomId)
+                emitPublicRoomList(io)
+                continue
+            }
+            if (!room.players.has(room.hostUuid)) {
+                room.hostUuid = room.players.keys().next().value
+                io.to(entry.roomId).emit('host_changed', { hostUuid: room.hostUuid, canStart: computeCanStart(room) })
+            }
+        } catch (err) {
+            console.error('[세션 종료 Room 정리 실패]', err)
+        }
+
+        // 같은 Room에서 세션 참가자가 여럿 제거됐을 수 있으므로(드묾), 제거된 UUID
+        // 전원에 대해 개별적으로 player_left_room을 방송한다 — 한 참가자의 emit
+        // 실패가 나머지 참가자의 알림을 막지 않도록 각각 독립된 try/catch로 격리한다.
+        for (const removedUuid of removedUuidsByRoomId.get(entry.roomId) ?? []) {
+            try {
+                io.to(entry.roomId).emit('player_left_room', { uuid: removedUuid, canStart: computeCanStart(room) })
+            } catch (err) {
+                console.error('[세션 종료 Room 정리 실패]', err)
+            }
+        }
+
+        emitPublicRoomList(io)
+    }
+}
+
 /** 테스트 전용: 모듈 내부 상태를 초기화합니다. 런타임 코드에서는 호출하지 마세요. */
 function __resetStateForTests() {
     matchmakingQueue.clear()
@@ -865,6 +1092,7 @@ function __removeRoomForTests(roomId) {
 module.exports = {
     registerMatchmakingHandlers,
     onDisconnect,
+    cleanupRoomStateForSessionParticipants,
     __resetStateForTests,
     __getStateSnapshotForTests,
     __seedMatchmakingQueueForTests,

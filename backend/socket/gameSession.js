@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto')
 const gameSessionCore = require('../game-core/gameSession')
+const matchmaking = require('./matchmaking')
 
 // game-core가 내부 진단용으로만 반환하는 코드다(registry 불일치 등, 정상 경로에서는
 // 발생하지 않아야 함). 클라이언트에는 내부 상태를 노출하지 않고 항상 INTERNAL_ERROR로
@@ -11,12 +12,17 @@ const INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT'])
 // 기존 두 핸들러가 반환하지 않는 코드다.
 const JOKER_CHAT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'INVALID_CLOCK_VALUE'])
 
-/** callback을 항상 안전하게 호출한다 — callback 자체가 던지는 예외가 이후 로직(방송 등)을 막지 않게 한다. */
+/**
+ * callback을 항상 안전하게 호출한다 — callback 자체가 던지는 예외가 이후 로직(방송 등)을
+ * 막지 않게 한다. acknowledge_role_reveal과 leave_game_session이 공유한다(둘 다 비밀 역할
+ * 데이터를 다루지 않으므로 raw Error를 그대로 로그해도 안전하다 — submit_night_action/
+ * submit_joker_chat_message는 그렇지 않아 별도의 고정 구조 로거를 쓴다).
+ */
 function respond(callback, payload) {
     try {
         callback(payload)
     } catch (err) {
-        console.error('[역할 확인 ack 전달 실패]', err)
+        console.error('[ack 전달 실패]', err)
     }
 }
 
@@ -291,11 +297,95 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
     }
 }
 
-/** ROLE_REVEAL 확인·NIGHT 행동 제출·JOKER 채팅 이벤트 배선을 담당합니다(턴/페이즈 등 이후 동기화는 다음 슬라이스의 몫). */
+/**
+ * GameSession 종료 core(endGameSessionForPlayer)가 성공한 직후 공통으로 수행하는 뒷정리.
+ * disconnect·명시적 이탈 두 경로가 모두 이 함수 하나만 거치므로 "종료·방송은 한 번뿐"이라는
+ * 계약이 자연히 지켜진다.
+ *
+ * 세 단계(matchmaking 정리 → game_ended 방송 → channel 정리)는 서로 독립적인 best-effort
+ * 작업이라 각각 분리된 try 블록에 둔다 — 하나가 던져도 나머지 정리가 막히지 않아야 한다
+ * (알림 emit 또는 channel 정리가 실패해도 registry 정리는 이미 끝난 채로 남는다).
+ *
+ * matchmaking 정리는 종료 core 호출과 동일한 동기 구간에서 실행돼야 하므로(중간에 다른
+ * 요청이 gameRooms/playerRoom을 건드릴 수 없어야 함), 호출자는 이 함수를
+ * endGameSessionForPlayer 성공 직후 await 없이 즉시 호출해야 한다.
+ */
+function finalizeGameSessionEnd(io, session, reason) {
+    try {
+        matchmaking.cleanupRoomStateForSessionParticipants(io, [...session.players.keys()])
+    } catch (err) {
+        console.error('[GameSession 종료 시 matchmaking 정리 실패]', err)
+    }
+
+    try {
+        io.to(session.channelId).emit('game_ended', { gameId: session.id, reason })
+    } catch (err) {
+        console.error('[GameSession 종료 알림 전송 실패]', err)
+    }
+
+    try {
+        // 명시적 이탈의 경우 이탈한 소켓 자신도 아직 channel에 남아있어 이 호출로 함께
+        // 정리된다. disconnect의 경우 그 소켓은 Socket.IO가 이미 자동으로 모든 room에서
+        // 내보낸 뒤라 이 호출과 무관하다 — 두 경로 모두 아직 channel에 남아있는 나머지
+        // 참가자들의 소켓을 명시적으로 내보내 승계했던 channel 멤버십을 정리한다.
+        io.in(session.channelId).socketsLeave(session.channelId)
+    } catch (err) {
+        console.error('[GameSession channel 정리 실패]', err)
+    }
+}
+
+/**
+ * leave_game_session 명시적 이탈 요청을 처리합니다(Socket.IO acknowledgement 방식).
+ * UUID는 socket.data.user.uuid(인증된 신원)만 쓰고, payload에서는 gameId만 읽습니다 —
+ * roomId/role/team/nickname 등 다른 필드는 신뢰하지 않고 아예 읽지 않습니다.
+ *
+ * game-core(endGameSessionForPlayer)가 이미 registry 기준으로 ABA를 방지하므로(요청
+ * gameId가 uuid의 현재 활성 세션과 다르면 STALE_SESSION_MISMATCH), 이 함수는 실패 코드가
+ * NOT_IN_SESSION/STALE_SESSION_MISMATCH일 때 둘 다 "이미 그 게임에서는 나가 있음"과
+ * 동치로 보고 멱등하게 성공 응답한다 — 다른(어쩌면 새로 시작된) 세션을 여기서 잘못
+ * 건드리지 않는다.
+ */
+function handleLeaveGameSession(io, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId } = payload
+    if (typeof gameId !== 'string') {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const normalizedGameId = gameId.trim()
+    if (!normalizedGameId) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let result
+    try {
+        result = gameSessionCore.endGameSessionForPlayer(uuid, 'PLAYER_LEFT', normalizedGameId)
+    } catch (err) {
+        console.error('[게임 이탈 처리 에러]', err)
+        respond(callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!result.ok) {
+        respond(callback, { ok: true })
+        return
+    }
+
+    respond(callback, { ok: true })
+    finalizeGameSessionEnd(io, result.session, result.reason)
+}
+
+/** ROLE_REVEAL 확인·NIGHT 행동 제출·JOKER 채팅·명시적 이탈 이벤트 배선을 담당합니다(턴/페이즈 등 이후 동기화는 다음 슬라이스의 몫). */
 function registerGameHandlers(io, socket, uuid) {
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
     socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(uuid, payload, callback))
     socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
+    socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, uuid, payload, callback))
 }
 
 /**
@@ -303,38 +393,35 @@ function registerGameHandlers(io, socket, uuid) {
  * 정책(사용자 확정): 참가자 한 명의 disconnect만으로 그 GameSession 전체를 즉시
  * 종료합니다 — 부분 유지나 재접속 유예는 이번 슬라이스에 없습니다.
  *
+ * ABA 방지: 게임 시작 시 참가자 Socket에 결합해 둔 canonical gameId(socket.data.activeGameId,
+ * matchmaking.js의 handleStartGame이 설정)를 expectedGameId로 종료 core에 전달한다. 결합이
+ * 없는 Socket(한 번도 게임에 참여한 적 없는 Socket)의 disconnect는 애초에 종료 core를
+ * 호출하지 않는다 — 세션 A를 명시적으로 종료한 뒤에도 이 결합은 지워지지 않고 A를 가리킨
+ * 채로 남으므로(handleLeaveGameSession 참고), 같은 uuid가 다른 Socket으로 세션 B를 새로
+ * 시작한 뒤 도착하는 이 Socket의 지연 disconnect는 STALE_SESSION_MISMATCH로 조용히
+ * no-op된다. 같은 Socket이 이후 새 세션을 시작하면 결합값이 그 세션으로 갱신되므로(다시
+ * matchmaking.js의 handleStartGame), 그 이후의 disconnect는 정상적으로 새 세션을 종료한다.
+ *
  * game_ended payload는 { gameId, reason }만 담습니다. 수신자에 따라 달라지는 값이
  * 없으므로(참가자 uuid/nickname/role 등 어떤 식별 정보도 없음) game_started처럼
  * 참가자별로 다른 payload를 개별 전달할 필요가 없습니다 — 이미 남은 참가자들이 전부
  * 가입해 있는 기존 channel(session.channelId)에 한 번만 방송하면 충분하고, 이 편이
  * 더 단순하고 정확합니다.
  */
-async function onDisconnect(io, uuid) {
-    const result = gameSessionCore.endGameSessionForPlayer(uuid, 'PARTICIPANT_LEFT')
+async function onDisconnect(io, socket, uuid) {
+    const expectedGameId = socket?.data?.activeGameId
+    if (expectedGameId === undefined) return
+
+    let result
+    try {
+        result = gameSessionCore.endGameSessionForPlayer(uuid, 'PARTICIPANT_LEFT', expectedGameId)
+    } catch (err) {
+        console.error('[GameSession 종료 처리 에러]', err)
+        return
+    }
     if (!result.ok) return
 
-    // registry 정리는 위에서 이미 끝났다 — 아래 알림/채널 정리가 실패해도 그 사실을
-    // 되돌리지 않는다(정리 자체가 핵심이고 알림 전달은 best-effort다).
-    const { session } = result
-
-    // 알림 전송과 channel 정리는 서로 독립적인 best-effort 작업이라 반드시 분리된
-    // try 블록에 둔다 — 같은 블록에 묶으면 emit이 던질 때 socketsLeave가 통째로
-    // 건너뛰어져 channel 멤버십이 영영 정리되지 않는 문제가 생긴다. 반대 방향
-    // (socketsLeave가 던질 때 알림이 막히는 것)도 마찬가지로 막는다.
-    try {
-        io.to(session.channelId).emit('game_ended', { gameId: session.id, reason: result.reason })
-    } catch (err) {
-        console.error('[GameSession 종료 알림 전송 실패]', err)
-    }
-
-    try {
-        // disconnect한 소켓 자신은 Socket.IO가 이미 자동으로 모든 room에서 내보낸 뒤라 이
-        // 호출과 무관하다 — 아직 channel에 남아있는 나머지 참가자들의 소켓을 명시적으로
-        // 내보내 승계했던 channel 멤버십을 정리한다.
-        io.in(session.channelId).socketsLeave(session.channelId)
-    } catch (err) {
-        console.error('[GameSession channel 정리 실패]', err)
-    }
+    finalizeGameSessionEnd(io, result.session, result.reason)
 }
 
 module.exports = {
@@ -342,5 +429,11 @@ module.exports = {
     onDisconnect,
     // 테스트에서 socket.on 배선 없이 핸들러를 직접 호출하기 위한 통로입니다(matchmaking.js의
     // __testables 관례와 동일). 런타임 코드에서는 참조하지 않습니다.
-    __testables: { handleAcknowledgeRoleReveal, handleSubmitNightAction, handleSubmitJokerChatMessage, resolveJokerTeammateSockets },
+    __testables: {
+        handleAcknowledgeRoleReveal,
+        handleSubmitNightAction,
+        handleSubmitJokerChatMessage,
+        handleLeaveGameSession,
+        resolveJokerTeammateSockets,
+    },
 }

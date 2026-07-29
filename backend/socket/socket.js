@@ -6,10 +6,9 @@ const presenceService = require("../service/presence.service");
 const userRepository  = require("../repositories/user.repositories");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
-// NOTE: Room→GameSession 전환(matchmaking.js)과 disconnect에 의한 GameSession 정리
-// (gameSession.js의 onDisconnect — registry 삭제 + game_ended 알림 + channel 정리)는
-// 구현됐습니다. registerGameHandlers는 ROLE_REVEAL 확인(acknowledge_role_reveal)만
-// 등록되어 있고, 이후 턴/페이즈 동기화는 아직 없습니다.
+// NOTE: Room→GameSession 전환(matchmaking.js), disconnect·명시적 이탈(leave_game_session)에
+// 의한 GameSession 종료(gameSession.js — registry/matchmaking 정리 + game_ended 알림 +
+// channel 정리)는 구현됐습니다. 이후 턴/페이즈 동기화는 아직 없습니다.
 
 const onlineUsers = new Map();
 
@@ -50,8 +49,8 @@ function registerDisconnectHandler(io, socket, uuid) {
         handleDisconnect(io, socket, uuid).catch((err) => {
             console.error("\x1b[31m[소켓 종료 처리 에러]\x1b[0m", err);
         });
-        matchmaking.onDisconnect(io, uuid);
-        gameSession.onDisconnect(io, uuid).catch((err) => {
+        matchmaking.onDisconnect(io, socket, uuid);
+        gameSession.onDisconnect(io, socket, uuid).catch((err) => {
             console.error("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m", err);
         });
     });

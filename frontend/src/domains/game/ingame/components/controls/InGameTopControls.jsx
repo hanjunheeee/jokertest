@@ -5,6 +5,7 @@ import {
   INGAME_TOP_CONTROLS_POSITION_CLASS,
 } from "../../constants/controls/ingameControlsLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
 
 /** 아이콘 버튼 하나를 그리는 내부 헬퍼 (설정·마이크가 이 컴포넌트를 재사용) */
 function ControlButton({
@@ -28,8 +29,10 @@ function ControlButton({
   )
 }
 
-/** 인게임 좌측 상단 — 햄버거(전적목록)·마이크 버튼 */
+/** 인게임 좌측 상단 — 나가기·햄버거(전적목록)·마이크 버튼 */
 export default function InGameTopControls({
+  // onExitClick: 나가기 버튼 클릭 시 호출되는 콜백 — 확인 후 leave_game_session을 전송함
+  onExitClick,
   // onMenuClick: 햄버거 버튼 클릭 시 호출되는 콜백 — 플레이어별 전적목록 패널을 염
   onMenuClick,
   // onMicClick: 마이크 버튼 클릭 시 호출되는 콜백
@@ -38,6 +41,11 @@ export default function InGameTopControls({
 }) {
   return (
     <div className={className} aria-label="인게임 컨트롤">
+      <ControlButton
+        ariaLabel="게임 나가기"
+        src={NAVIGATION_ASSETS.backButton}
+        onClick={onExitClick}
+      />
       <ControlButton
         ariaLabel="플레이어별 전적목록"
         src={INGAME_CONTROLS_ASSETS.settings}

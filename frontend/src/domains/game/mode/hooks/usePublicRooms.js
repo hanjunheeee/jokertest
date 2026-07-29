@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import {
   PUBLIC_ROOM_JOIN_TIMEOUT_MS,
   PUBLIC_ROOM_LIST_TIMEOUT_MS,
@@ -62,6 +63,9 @@ export function usePublicRooms() {
     }
     const handleRoomJoined = (room) => {
       clearJoinState()
+      // matching store를 설정하기 전에 인게임 store의 이전 gameId를 먼저 무효화한다
+      // (useGameSetupPage.js의 enterRoom과 동일한 이유).
+      useInGameStore.getState().clearGame()
       useMatchingStore.getState().setRoom(room)
       navigate("/game-matching")
     }

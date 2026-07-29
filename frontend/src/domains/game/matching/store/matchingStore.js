@@ -54,5 +54,5 @@ export const useMatchingStore = create((set) => ({
         })),
 
     clearRoom: () =>
-        set({ isInRoom: false, roomId: null, roomCode: null, players: [], hostUuid: null, canStart: false }),
+        set({ isSearching: false, isInRoom: false, roomId: null, roomCode: null, players: [], hostUuid: null, canStart: false }),
 }))

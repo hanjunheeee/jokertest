@@ -12,6 +12,7 @@ import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import { useInGameStore } from "../store/ingameStore.js"
+import { useInGameExit } from "../hooks/useInGameExit.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
@@ -22,6 +23,7 @@ export default function InGamePage() {
   const gameId = useInGameStore((s) => s.gameId)
   const gameState = useInGameStore((s) => s.state)
   const navigate = useNavigate()
+  const { requestExit } = useInGameExit()
   // useInGameSocket()은 인게임 진입 후 실시간 동기화를 담당할 훅인데 아직 없어 제외했습니다.
   // gameState는 게임 시작 시점의 정적인 초기 state(ROLE_REVEAL 단계)에 머물러 있고, 아래
   // 컴포넌트들은 그 state와 프리뷰(더미) 데이터를 섞어 렌더링합니다.
@@ -56,6 +58,7 @@ export default function InGamePage() {
       />
 
       <InGameTopControls
+        onExitClick={requestExit}
         onMenuClick={() => setPlayerRecordListOpen(true)}
       />
       <InGamePlayerSessionProvider>
