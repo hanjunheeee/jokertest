@@ -9,6 +9,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
 import { buildNightActionTargets } from "../utils/buildNightActionTargets.js"
 import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
+import { useInGameResolveNight } from "./useInGameResolveNight.js"
 
 function emitGameAction(eventName, payload = {}) {
   getSocket()?.emit(eventName, payload)
@@ -51,6 +52,10 @@ export function useInGameActionPanel() {
   const hasTarget = Boolean(selectedTargetId)
 
   const nightActionSubmit = useInGameNightActionSubmit()
+  const resolveNightRequest = useInGameResolveNight()
+  // 판정이 진행 중이거나(resolving) 이미 끝났으면(resolved) 밤 행동 입력·판정 버튼을 함께
+  // 잠근다 — 판정 완료 후 재제출·중복 판정 요청을 막기 위함이다.
+  const nightActionsLocked = resolveNightRequest.status !== "idle"
 
   const submitDayVote = () => {
     emitGameAction("cast_day_vote", { targetId: selectedTargetId })
@@ -76,10 +81,6 @@ export function useInGameActionPanel() {
     nightActionSubmit.submit(null)
   }
 
-  const resolveNight = () => {
-    emitGameAction("resolve_night")
-  }
-
   return {
     gameState,
     error,
@@ -98,6 +99,10 @@ export function useInGameActionPanel() {
     resolveTribunalVote,
     submitNightAction,
     skipNightAction,
-    resolveNight,
+    nightActionsLocked,
+    resolveNight: resolveNightRequest.resolveNight,
+    resolveNightStatus: resolveNightRequest.status,
+    resolveNightError: resolveNightRequest.error,
+    nightActionResult: resolveNightRequest.nightActionResult,
   }
 }

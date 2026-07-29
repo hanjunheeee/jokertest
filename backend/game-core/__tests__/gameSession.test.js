@@ -607,6 +607,7 @@ function validSession(overrides = {}) {
         roleRevealAcks: new Set(),
         nightActions: new Map(),
         jokerChatRateLimit: new Map(),
+        nightResolution: null,
         ...overrides,
     }
 }

@@ -12,6 +12,11 @@ const INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT'])
 // 기존 두 핸들러가 반환하지 않는 코드다.
 const JOKER_CHAT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'INVALID_CLOCK_VALUE'])
 
+// resolve_night 전용 internal-only 코드. 기존 두 상수와 마찬가지로 의미가 다른 내부 코드
+// 집합을 공용 INTERNAL_ONLY_CODES와 섞지 않기 위해 별도로 둔다 — TARGET_NOT_A_PARTICIPANT는
+// 다른 핸들러가 반환하지 않는 이 이벤트만의 코드다.
+const RESOLVE_NIGHT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'TARGET_NOT_A_PARTICIPANT'])
+
 /**
  * callback을 항상 안전하게 호출한다 — callback 자체가 던지는 예외가 이후 로직(방송 등)을
  * 막지 않게 한다. acknowledge_role_reveal과 leave_game_session이 공유한다(둘 다 비밀 역할
@@ -187,6 +192,24 @@ function resolveJokerTeammateSockets(io, session) {
 }
 
 /**
+ * 특정 GameSession의 "지금 실제로 메시지를 받을 수 있는" 참가자 전체 소켓을 반환합니다.
+ * resolveJokerTeammateSockets와 동일한 3조건(참가자 소속·connected===true·대상 channel
+ * 가입)을 쓰지만, JOKER team 필터가 없다는 점만 다릅니다(전체 참가자 대상 안전 이벤트용).
+ */
+function resolveSessionParticipantSockets(io, session) {
+    const sockets = []
+    for (const s of io.sockets.sockets.values()) {
+        const uuid = s.data?.user?.uuid
+        if (!uuid) continue
+        if (!session.players.has(uuid)) continue
+        if (s.connected !== true) continue
+        if (!s.rooms?.has(session.channelId)) continue
+        sockets.push(s)
+    }
+    return sockets
+}
+
+/**
  * NIGHT 단계 JOKER 전용 채팅 메시지 제출을 처리합니다(Socket.IO acknowledgement 방식).
  * deps.prepare/deps.commit/deps.resolveTeammateSockets/deps.idFn을 주입할 수 있습니다 —
  * production 기본값은 각각 game-core의 prepareJokerChatMessage/commitJokerChatMessage,
@@ -298,6 +321,111 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
 }
 
 /**
+ * resolve_night 전용 ack 전달 헬퍼. respondNightAction/respondJokerChat과 동일한 이유로
+ * 고정 구조 로그를 쓴다 — callback이 던져도 예외가 바깥으로 새지 않고, 로그는 항상
+ * {code:'CALLBACK_ERROR', uuid, gameId} 3키뿐이다.
+ */
+function respondResolveNight(uuid, gameId, callback, payload) {
+    try {
+        callback(payload)
+    } catch (err) {
+        console.error('[밤 행동 판정 오류]', { code: 'CALLBACK_ERROR', uuid, gameId })
+    }
+}
+
+/**
+ * NIGHT 행동 결과 판정 요청을 처리합니다(Socket.IO acknowledgement 방식).
+ * deps.prepare/deps.commit/deps.resolveParticipantSockets를 주입할 수 있습니다 — production
+ * 기본값은 각각 game-core의 prepareNightResolution/commitNightResolution, 이 파일의
+ * resolveSessionParticipantSockets입니다.
+ *
+ * 순서: payload 구조 검증 → prepare(어떤 상태도 바꾸지 않음) → 실패 시 internal-only 코드만
+ * INTERNAL_ERROR로 정규화 → commit(유일한 mutation) → ack({ok:true}) → 참가자 전체에게
+ * night_actions_resolved 개별 emit → 같은 루프에서 GUARD/WITCH_HUNTER 본인에게만
+ * night_action_result 개별 emit. commit 이후의 모든 단계는 ack를 이미 보낸 뒤이므로 실패해도
+ * rollback하지 않고 추가 응답도 만들지 않는다(로그만 남긴다).
+ *
+ * 로그는 예외 없이 console.error('[밤 행동 판정 오류]', {code, uuid, gameId}) 3키만 쓰고,
+ * canonical session.id를 아직 모르는 실패는 gameId: undefined를 명시적으로 포함합니다. raw
+ * Error, 판정 결과(암살 후보·보호 대상·개인 결과 등), nightActions는 로그에 절대 포함하지
+ * 않습니다.
+ */
+function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
+    const prepare = deps.prepare ?? gameSessionCore.prepareNightResolution
+    const commit = deps.commit ?? gameSessionCore.commitNightResolution
+    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respondResolveNight(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId } = payload
+    if (typeof gameId !== 'string') {
+        respondResolveNight(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let prepared
+    try {
+        prepared = prepare(uuid, gameId)
+    } catch (err) {
+        console.error('[밤 행동 판정 오류]', { code: 'PREPARE_UNEXPECTED_ERROR', uuid, gameId: undefined })
+        respondResolveNight(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!prepared.ok) {
+        if (RESOLVE_NIGHT_INTERNAL_ONLY_CODES.has(prepared.code)) {
+            console.error('[밤 행동 판정 오류]', { code: prepared.code, uuid, gameId: undefined })
+            respondResolveNight(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        respondResolveNight(uuid, undefined, callback, { ok: false, code: prepared.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    try {
+        commit(prepared.session, prepared.resolution)
+    } catch (err) {
+        console.error('[밤 행동 판정 오류]', { code: 'COMMIT_ERROR', uuid, gameId: prepared.session.id })
+        respondResolveNight(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    respondResolveNight(uuid, prepared.session.id, callback, { ok: true })
+
+    let recipients
+    try {
+        recipients = resolveParticipantSockets(io, prepared.session)
+    } catch (err) {
+        console.error('[밤 행동 판정 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
+        return
+    }
+
+    for (const recipientSocket of recipients) {
+        try {
+            recipientSocket.emit('night_actions_resolved', { gameId: prepared.session.id, dayIndex: prepared.resolution.dayIndex })
+        } catch (err) {
+            console.error('[밤 행동 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
+        }
+
+        const recipientUuid = recipientSocket.data?.user?.uuid
+        const privateResult = prepared.resolution.privateResults.get(recipientUuid)
+        if (privateResult === undefined) continue
+        try {
+            recipientSocket.emit('night_action_result', {
+                gameId: prepared.session.id,
+                dayIndex: prepared.resolution.dayIndex,
+                ...privateResult,
+            })
+        } catch (err) {
+            console.error('[밤 행동 판정 오류]', { code: 'PRIVATE_DELIVERY_ERROR', uuid, gameId: prepared.session.id })
+        }
+    }
+}
+
+/**
  * GameSession 종료 core(endGameSessionForPlayer)가 성공한 직후 공통으로 수행하는 뒷정리.
  * disconnect·명시적 이탈 두 경로가 모두 이 함수 하나만 거치므로 "종료·방송은 한 번뿐"이라는
  * 계약이 자연히 지켜진다.
@@ -385,6 +513,7 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
     socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(uuid, payload, callback))
     socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
+    socket.on('resolve_night', (payload, callback) => handleResolveNight(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, uuid, payload, callback))
 }
 
@@ -433,7 +562,9 @@ module.exports = {
         handleAcknowledgeRoleReveal,
         handleSubmitNightAction,
         handleSubmitJokerChatMessage,
+        handleResolveNight,
         handleLeaveGameSession,
         resolveJokerTeammateSockets,
+        resolveSessionParticipantSockets,
     },
 }

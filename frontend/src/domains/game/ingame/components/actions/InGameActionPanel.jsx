@@ -35,7 +35,11 @@ export default function InGameActionPanel() {
     resolveTribunalVote,
     submitNightAction,
     skipNightAction,
+    nightActionsLocked,
     resolveNight,
+    resolveNightStatus,
+    resolveNightError,
+    nightActionResult,
   } = useInGameActionPanel()
   const roleReveal = useInGameRoleRevealAck()
 
@@ -160,7 +164,7 @@ export default function InGameActionPanel() {
                 <button
                   type="button"
                   className={INGAME_ACTION_BUTTON_CLASS}
-                  disabled={nightActionStatus === "submitting" || !hasTarget}
+                  disabled={nightActionStatus === "submitting" || !hasTarget || nightActionsLocked}
                   onClick={submitNightAction}
                 >
                   {nightActionLabel}
@@ -168,7 +172,7 @@ export default function InGameActionPanel() {
                 <button
                   type="button"
                   className={INGAME_ACTION_BUTTON_CLASS}
-                  disabled={nightActionStatus === "submitting"}
+                  disabled={nightActionStatus === "submitting" || nightActionsLocked}
                   onClick={skipNightAction}
                 >
                   건너뛰기
@@ -183,11 +187,30 @@ export default function InGameActionPanel() {
             <button
               type="button"
               className={INGAME_ACTION_BUTTON_CLASS}
+              disabled={resolveNightStatus !== "idle"}
               onClick={resolveNight}
             >
-              밤 종료
+              {resolveNightStatus === "resolving"
+                ? "판정 중..."
+                : resolveNightStatus === "resolved"
+                  ? "판정 완료"
+                  : "밤 종료"}
             </button>
           </div>
+          {resolveNightError ? (
+            <p className="text-[0.68rem] text-red-300">{resolveNightError}</p>
+          ) : null}
+          {nightActionResult ? (
+            <p className="text-[0.68rem] text-[#e9d6ba]">
+              개인 결과: {JSON.stringify(
+                Object.fromEntries(
+                  Object.entries(nightActionResult).filter(
+                    ([key]) => key !== "gameId" && key !== "dayIndex",
+                  ),
+                ),
+              )}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

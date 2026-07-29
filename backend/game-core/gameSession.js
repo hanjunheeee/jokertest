@@ -186,6 +186,10 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // 영구 저장하지 않으므로 이 Map은 rate limit 판정에만 쓰인다. roleRevealAcks/nightActions와
         // 동일한 이유로 세션 객체 안에 둔다.
         jokerChatRateLimit: new Map(),
+        // 이번 밤의 판정 결과(prepareNightResolution → commitNightResolution이 채운다). 커밋
+        // 시점엔 항상 null이어야 하고(assertValidSessionForCommit), 판정 이후에는 다시 null로
+        // 돌아가지 않는 immutable 값이 된다(재판정 금지 계약).
+        nightResolution: null,
     }
     return { ok: true, session }
 }
@@ -252,6 +256,11 @@ function assertValidSessionForCommit(session) {
     }
     if (session.jokerChatRateLimit.size !== 0) {
         throw new Error(`commitGameSession: session.jokerChatRateLimit이 비어있지 않음(size=${session.jokerChatRateLimit.size})`)
+    }
+    // nightResolution도 roleRevealAcks/nightActions/jokerChatRateLimit과 동일한 이유로
+    // 커밋 시점엔 항상 null이어야 한다(아직 판정된 적 없는 새 세션).
+    if (session.nightResolution !== null) {
+        throw new Error('commitGameSession: session.nightResolution이 null이 아님')
     }
     // channelId/phase/dayIndex는 현재 candidate 경로에서 고정값만 만들어지지만, 수동
     // 조립된 session까지 완전히 방어한다는 이 함수의 목적에 맞춰 여기서도 검사한다.
@@ -410,6 +419,76 @@ function isEligibleForNightAction(role, dayIndex) {
     return minDayIndex !== null && minDayIndex !== undefined && dayIndex >= minDayIndex
 }
 
+// registry(session.players)를 읽기만 하는 순수 계산 — 이 밤에 행동 가능한 모든 참가자
+// uuid를 반환한다. 제출 완료 여부와는 무관하다(session.nightActions는 참조하지 않는다).
+function getEligibleNightActorUuids(session) {
+    const uuids = []
+    for (const player of session.players.values()) {
+        if (isEligibleForNightAction(player.role, session.dayIndex)) uuids.push(player.uuid)
+    }
+    return uuids
+}
+
+// JOKER의 non-null target을 집계해 최다 득표 대상 하나를 반환한다. 동률(2명 이상이 공동
+// 최다)이거나 전원 SKIP/미제출이면 null이다. Map 순회 순서에 의존하지 않도록 득표수 자체만
+// 비교한다(먼저 등장한 대상이 아니라, 오직 표 수만으로 승자를 가린다).
+function tallyJokerAssassinationTarget(session) {
+    const voteCounts = new Map()
+    for (const player of session.players.values()) {
+        if (player.role !== 'JOKER') continue
+        const target = session.nightActions.get(player.uuid)
+        if (target === undefined || target === null) continue
+        voteCounts.set(target, (voteCounts.get(target) ?? 0) + 1)
+    }
+    if (voteCounts.size === 0) return null
+
+    let winner = null
+    let winnerVotes = 0
+    let tie = false
+    for (const [target, votes] of voteCounts) {
+        if (votes > winnerVotes) {
+            winner = target
+            winnerVotes = votes
+            tie = false
+        } else if (votes === winnerVotes) {
+            tie = true
+        }
+    }
+    return tie ? null : winner
+}
+
+// DOCTOR의 non-null target 전체를 Set으로 반환한다(이번 밤의 보호 대상 집합). 자기 보호를
+// 포함해 별도 필터 없이 그대로 모은다.
+function computeDoctorProtectionSet(session) {
+    const protectedIds = new Set()
+    for (const player of session.players.values()) {
+        if (player.role !== 'DOCTOR') continue
+        const target = session.nightActions.get(player.uuid)
+        if (target === undefined || target === null) continue
+        protectedIds.add(target)
+    }
+    return protectedIds
+}
+
+// 해당 GUARD 본인의 non-null target에 대한 조사 결과({targetId, team})를 계산한다.
+// SKIP(null)이거나 미제출(entry 없음)이면 null — 개인 결과 이벤트를 만들지 않는다는 계약과
+// 대응한다.
+function computeGuardInvestigationResult(session, actorUuid) {
+    const targetId = session.nightActions.get(actorUuid)
+    if (targetId === undefined || targetId === null) return null
+    const targetPlayer = session.players.get(targetId)
+    return { targetId, team: ROLE_TEAMS[targetPlayer.role] }
+}
+
+// 해당 WITCH_HUNTER 본인의 non-null target에 대한 확인 결과({targetId, role})를 계산한다.
+// computeGuardInvestigationResult와 동일하게 SKIP/미제출은 null이다.
+function computeWitchHunterConfirmationResult(session, actorUuid) {
+    const targetId = session.nightActions.get(actorUuid)
+    if (targetId === undefined || targetId === null) return null
+    const targetPlayer = session.players.get(targetId)
+    return { targetId, role: targetPlayer.role }
+}
+
 // 자기 자신을 대상으로 지정할 수 있는 역할. DOCTOR(보호)만 허용한다 — GUARD/WITCH_HUNTER가
 // 자기 자신을 지정하면 INVALID_TARGET으로 거부한다. JOKER의 자기 자신 대상은 team 검사에서
 // 먼저 no-op으로 처리되므로 이 Set까지 도달하지 않는다(아래 submitNightAction 참고).
@@ -452,6 +531,10 @@ function submitNightAction(uuid, gameId, targetId) {
     if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+    // 판정 후에는 역할과 무관하게 전부 거부한다 — eligibility 검사보다 먼저 확인해야
+    // CITIZEN 등 원래 NOT_ELIGIBLE이었을 참가자도 "판정 이후"라는 사실 자체는 알 수 있게
+    // 응답이 구분된다(판정 여부는 비밀이 아니다).
+    if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
     if (!isEligibleForNightAction(actor.role, session.dayIndex)) {
         return { ok: false, code: 'NOT_ELIGIBLE' }
     }
@@ -471,6 +554,85 @@ function submitNightAction(uuid, gameId, targetId) {
 
     session.nightActions.set(uuid, targetId)
     return { ok: true, gameId: session.id }
+}
+
+/**
+ * NIGHT 행동 판정을 준비합니다(어떤 상태도 바꾸지 않는 순수 함수) — prepareJokerChatMessage와
+ * 동일한 prepare 경계입니다. 인증된 uuid와 클라이언트가 알고 있는 gameId만 입력으로 받습니다.
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
+ *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
+ *   → 5. 아직 판정되지 않은 밤(session.nightResolution === null)
+ *   → 6. 모든 eligible actor의 nightActions 제출 완료(ACTIONS_PENDING, 추가 정보 없음)
+ *   → 7. 저장된 모든 non-null target이 여전히 canonical participant인지
+ *      (TARGET_NOT_A_PARTICIPANT — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
+ *
+ * 성공 시 { ok:true, session, resolution } — resolution은 commitNightResolution에 그대로
+ * 넘길 값입니다. privateResults는 GUARD/WITCH_HUNTER의 non-null 결과만 담는 Map이고
+ * (SKIP/미제출은 entry 없음), JOKER/DOCTOR/CITIZEN은 애초에 이 Map에 등장하지 않습니다.
+ */
+function prepareNightResolution(uuid, gameId) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+    if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
+
+    for (const actorUuid of getEligibleNightActorUuids(session)) {
+        if (!session.nightActions.has(actorUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
+    }
+
+    for (const target of session.nightActions.values()) {
+        if (target !== null && !session.players.has(target)) {
+            return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+        }
+    }
+
+    const assassinationTargetId = tallyJokerAssassinationTarget(session)
+    const protectedTargetIds = computeDoctorProtectionSet(session)
+    const pendingEliminationTargetId =
+        assassinationTargetId !== null && !protectedTargetIds.has(assassinationTargetId)
+            ? assassinationTargetId
+            : null
+
+    const privateResults = new Map()
+    for (const player of session.players.values()) {
+        if (player.role === 'GUARD') {
+            const result = computeGuardInvestigationResult(session, player.uuid)
+            if (result !== null) privateResults.set(player.uuid, { actionType: 'INVESTIGATE', ...result })
+        } else if (player.role === 'WITCH_HUNTER' && isEligibleForNightAction('WITCH_HUNTER', session.dayIndex)) {
+            const result = computeWitchHunterConfirmationResult(session, player.uuid)
+            if (result !== null) privateResults.set(player.uuid, { actionType: 'CONFIRM', ...result })
+        }
+    }
+
+    return {
+        ok: true,
+        session,
+        resolution: {
+            gameId: session.id,
+            dayIndex: session.dayIndex,
+            assassinationTargetId,
+            protectedTargetIds,
+            pendingEliminationTargetId,
+            privateResults,
+            resolved: true,
+        },
+    }
+}
+
+/** NIGHT 판정의 유일한 mutation — prepareNightResolution이 반환한 session/resolution으로 session.nightResolution을 확정합니다. */
+function commitNightResolution(session, resolution) {
+    session.nightResolution = resolution
 }
 
 /**
@@ -599,6 +761,8 @@ module.exports = {
     submitNightAction,
     prepareJokerChatMessage,
     commitJokerChatMessage,
+    prepareNightResolution,
+    commitNightResolution,
     JOKER_CHAT_MAX_LENGTH,
     __resetStateForTests,
     __getStateSnapshotForTests,
@@ -614,6 +778,11 @@ module.exports = {
         computeRoleComposition,
         isEligibleForNightAction,
         sanitizeJokerChatText,
+        getEligibleNightActorUuids,
+        tallyJokerAssassinationTarget,
+        computeDoctorProtectionSet,
+        computeGuardInvestigationResult,
+        computeWitchHunterConfirmationResult,
         __deleteGameSessionOnlyForTests,
     },
 }
