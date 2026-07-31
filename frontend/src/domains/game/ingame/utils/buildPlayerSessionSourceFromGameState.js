@@ -27,6 +27,7 @@ export function buildPlayerSessionSourceFromGameState(state) {
     if (!player || typeof player !== "object") return EMPTY_RESULT
     if (typeof player.uuid !== "string" || player.uuid.length === 0) return EMPTY_RESULT
     if (typeof player.nickname !== "string" || player.nickname.trim().length === 0) return EMPTY_RESULT
+    if (typeof player.alive !== "boolean") return EMPTY_RESULT
     if (seenUuids.has(player.uuid)) return EMPTY_RESULT
     seenUuids.add(player.uuid)
   }
@@ -58,7 +59,7 @@ export function buildPlayerSessionSourceFromGameState(state) {
   const allyIds = self.role === "JOKER" ? new Set(self.allies) : null
 
   const sourcePlayers = state.players.map((player) => {
-    const entry = { id: player.uuid, name: player.nickname, connected: true, alive: true }
+    const entry = { id: player.uuid, name: player.nickname, connected: true, alive: player.alive }
     // 본인 항목에만 role/team을 연결한다. 다른 참가자 항목에는 role/team 키 자체를 만들지
     // 않는다(UNKNOWN 같은 가짜 값도 채우지 않음) — 비밀 유지.
     if (player.uuid === self.uuid) {

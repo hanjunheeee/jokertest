@@ -29,6 +29,11 @@ export function useInGameResolveNight() {
   const ackingRef = useRef(false)
   const versionRef = useRef(0)
   const mountedRef = useRef(true)
+  // 현재 gameId 안에서 단조 증가하는 "이미 DAY로 적용된 가장 최근 NIGHT의 dayIndex". null이면
+  // 아직 적용된 NIGHT이 없다는 뜻이다 — gameId가 바뀔 때만 초기화하고(아래 [gameId] effect),
+  // disconnect/unmount로 인한 invalidate()에서는 건드리지 않는다(재연결해도 서버가 이미 확정한
+  // 기준은 여전히 유효하다).
+  const appliedNightDayIndexRef = useRef(null)
 
   useEffect(() => {
     mountedRef.current = true
@@ -62,7 +67,10 @@ export function useInGameResolveNight() {
   }, [socket])
 
   // gameId 변경 시 무효화(이전 gameId를 향한 요청·판정 상태·개인 결과는 새 게임에 넘어가지 않는다).
+  // appliedNightDayIndexRef도 이 새 게임의 초기 폐기 기준(null)으로 되돌린다 — 이전 게임에서
+  // 쌓인 dayIndex가 새 게임의 단조 증가 기준으로 이어지면 안 된다.
   useEffect(() => {
+    appliedNightDayIndexRef.current = null
     invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId])
@@ -84,16 +92,35 @@ export function useInGameResolveNight() {
 
     const handleResult = (payload) => {
       if (!shouldApplyNightBroadcastPayload({ payload, gameId })) return
+      // 이미 DAY로 적용된 NIGHT과 같거나 그보다 오래된(<=) private result는 폐기한다 —
+      // night_action_result.dayIndex(commit 전 값)와 night_result_applied.dayIndex(commit 후
+      // +1된 값)는 항상 전자<후자이므로, 이 비교만으로 "이미 초기화된 뒤 늦게 도착한 개인
+      // 결과"를 걸러낼 수 있다.
+      if (appliedNightDayIndexRef.current !== null && payload.dayIndex <= appliedNightDayIndexRef.current) return
       if (!mountedRef.current) return
       setNightActionResult(payload)
     }
 
+    // NIGHT 결과 적용(사망 + DAY 전이) 방송이다. 검증된 최신(dayIndex가 ref보다 큰) 수신만
+    // ref를 갱신하고 invalidate()로 status/error/nightActionResult를 초기화하며 in-flight
+    // 요청 세대도 무효화한다 — 같거나 오래된 dayIndex는 완전한 no-op이다.
+    const handleApplied = (payload) => {
+      if (!shouldApplyNightBroadcastPayload({ payload, gameId })) return
+      if (payload.phase !== "DAY" || !Number.isInteger(payload.dayIndex)) return
+      if (appliedNightDayIndexRef.current !== null && payload.dayIndex <= appliedNightDayIndexRef.current) return
+      appliedNightDayIndexRef.current = payload.dayIndex
+      invalidate()
+    }
+
     socket.on("night_actions_resolved", handleResolved)
     socket.on("night_action_result", handleResult)
+    socket.on("night_result_applied", handleApplied)
     return () => {
       socket.off("night_actions_resolved", handleResolved)
       socket.off("night_action_result", handleResult)
+      socket.off("night_result_applied", handleApplied)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, gameId])
 
   const resolveNight = () => {

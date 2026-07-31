@@ -385,8 +385,9 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
         return
     }
 
+    let applied
     try {
-        commit(prepared.session, prepared.resolution)
+        applied = commit(prepared.session, prepared.resolution)
     } catch (err) {
         console.error('[밤 행동 판정 오류]', { code: 'COMMIT_ERROR', uuid, gameId: prepared.session.id })
         respondResolveNight(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
@@ -403,6 +404,10 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
         return
     }
 
+    // commit(=commitNightResolution)이 이미 phase/dayIndex를 갱신한 뒤의 session을 받는다 —
+    // recipient마다 동일한 payload이므로 루프 밖에서 한 번만 만들어 재사용한다.
+    const nightResultAppliedPayload = gameSessionCore.buildNightResultAppliedPayload(prepared.session, applied.victimUuid)
+
     for (const recipientSocket of recipients) {
         try {
             recipientSocket.emit('night_actions_resolved', { gameId: prepared.session.id, dayIndex: prepared.resolution.dayIndex })
@@ -412,15 +417,22 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
 
         const recipientUuid = recipientSocket.data?.user?.uuid
         const privateResult = prepared.resolution.privateResults.get(recipientUuid)
-        if (privateResult === undefined) continue
+        if (privateResult !== undefined) {
+            try {
+                recipientSocket.emit('night_action_result', {
+                    gameId: prepared.session.id,
+                    dayIndex: prepared.resolution.dayIndex,
+                    ...privateResult,
+                })
+            } catch (err) {
+                console.error('[밤 행동 판정 오류]', { code: 'PRIVATE_DELIVERY_ERROR', uuid, gameId: prepared.session.id })
+            }
+        }
+
         try {
-            recipientSocket.emit('night_action_result', {
-                gameId: prepared.session.id,
-                dayIndex: prepared.resolution.dayIndex,
-                ...privateResult,
-            })
+            recipientSocket.emit('night_result_applied', nightResultAppliedPayload)
         } catch (err) {
-            console.error('[밤 행동 판정 오류]', { code: 'PRIVATE_DELIVERY_ERROR', uuid, gameId: prepared.session.id })
+            console.error('[밤 행동 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
         }
     }
 }

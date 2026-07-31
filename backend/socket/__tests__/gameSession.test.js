@@ -18,6 +18,7 @@ const {
     handleAcknowledgeRoleReveal,
     handleSubmitNightAction,
     handleSubmitJokerChatMessage,
+    handleResolveNight,
     handleLeaveGameSession,
     resolveJokerTeammateSockets,
 } = gameSessionSocketLayer.__testables
@@ -1486,4 +1487,144 @@ test('세션 종료 직후 참가자별로 새 방 생성과 새 방 코드 참�
 
     await handleJoinRoomByCode(io, joinerSocket, 'reentry-joiner', created.room.roomCode)
     assert.ok(joinerSocket.emitted.some((e) => e.event === 'room_joined'))
+})
+
+// ---------------------------------------------------------------------------
+// resolve_night (handleResolveNight) — NIGHT 결과 적용 + DAY 전이
+// ---------------------------------------------------------------------------
+
+/** 3인(JOKER 1 + CITIZEN 2) NIGHT 세션을 커밋하고 fake socket/io를 채널에 join된 상태로 준비한다. */
+function commitTrioSessionWithSocketsAtNight({ id = 'room-rn' } = {}) {
+    const uuids = [`${id}-a`, `${id}-b`, `${id}-c`]
+    const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of uuids) gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(session.channelId)
+        return s
+    })
+    const io = createFakeIo(sockets)
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    const citizenUuids = [...session.players.values()].filter((p) => p.role !== 'JOKER').map((p) => p.uuid)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+    return { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid }
+}
+
+test('resolve_night: 보호 안 된 유효 희생자 — night_result_applied가 참가자 전원(발신자 포함)에게 정확히 1건씩, payload가 buildNightResultAppliedPayload와 동일하다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-1' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid) ?? null, jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+    assert.equal(session.players.get(victimUuid).alive, false)
+
+    const expectedPayload = gameSessionCore.buildNightResultAppliedPayload(session, victimUuid)
+    for (const uuid of uuids) {
+        const socket = socketByUuid.get(uuid)
+        const delivered = socket.emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(delivered[0].payload, expectedPayload)
+        assert.equal(Object.hasOwn(delivered[0].payload, 'role'), false)
+        assert.equal(Object.hasOwn(delivered[0].payload, 'team'), false)
+    }
+})
+
+test('resolve_night: 무득표(전원 SKIP)면 victimUuid:null이고 전원 alive:true가 유지된다', () => {
+    const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-2' })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, null, uuids[0], { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const uuid of uuids) assert.equal(session.players.get(uuid).alive, true)
+    const delivered = socketByUuid.get(uuids[1]).emitted.find((e) => e.event === 'night_result_applied')
+    assert.deepEqual(delivered.payload.victimUuid, null)
+})
+
+test('resolve_night: 중복 호출 — 두 번째 호출은 NIGHT_ALREADY_RESOLVED이고 phase/dayIndex 변경과 night_result_applied 방송은 전체 과정에서 정확히 1회다', () => {
+    const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-3' })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+
+    handleResolveNight(io, null, uuids[0], { gameId: session.id }, countingCallback().callback)
+    const second = countingCallback()
+    handleResolveNight(io, null, uuids[1], { gameId: session.id }, second.callback)
+
+    assert.deepEqual(second.getResponse(), { ok: false, code: 'NIGHT_ALREADY_RESOLVED', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.dayIndex, 1)
+    const totalDelivered = uuids.reduce(
+        (sum, uuid) => sum + socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length,
+        0,
+    )
+    assert.equal(totalDelivered, 3)
+})
+
+test('resolve_night: 오염된 resolution(세션 밖 uuid를 가리키는 pendingEliminationTargetId)은 INTERNAL_ERROR ack이고, night_result_applied가 없으며, 상태가 호출 전과 동일하다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-4' })
+    const deps = {
+        prepare: () => ({
+            ok: true,
+            session,
+            resolution: { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: 'not-a-participant', privateResults: new Map(), resolved: true },
+        }),
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, null, uuids[0], { gameId: session.id }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, 0)
+    const totalDelivered = uuids.reduce(
+        (sum, uuid) => sum + socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length,
+        0,
+    )
+    assert.equal(totalDelivered, 0)
+})
+
+test('resolve_night: 로그 비밀성 — commit 실패 로그가 정확히 {code:"COMMIT_ERROR", uuid, gameId} 3키뿐이다', (t) => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-5' })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = {
+        prepare: () => ({
+            ok: true,
+            session,
+            resolution: { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: 'not-a-participant', privateResults: new Map(), resolved: true },
+        }),
+    }
+
+    handleResolveNight(io, null, uuids[0], { gameId: session.id }, countingCallback().callback, deps)
+
+    const call = errorSpy.mock.calls.find(
+        (entry) => entry.arguments[0] === '[밤 행동 판정 오류]',
+    )
+    assert.ok(call)
+    assert.deepEqual(Object.keys(call.arguments[1]).sort(), ['code', 'gameId', 'uuid'])
+    assert.equal(call.arguments[1].code, 'COMMIT_ERROR')
+})
+
+test('resolve_night: 한 recipient의 night_result_applied emit이 throw해도 나머지 recipient는 정상 수신하고 커밋된 상태는 롤백되지 않는다', () => {
+    const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-6' })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    const throwingSocket = socketByUuid.get(uuids[0])
+    const originalEmit = throwingSocket.emit.bind(throwingSocket)
+    throwingSocket.emit = (event, ...args) => {
+        if (event === 'night_result_applied') throw new Error('전달 실패(테스트 주입)')
+        return originalEmit(event, ...args)
+    }
+
+    assert.doesNotThrow(() => handleResolveNight(io, null, uuids[0], { gameId: session.id }, countingCallback().callback))
+
+    assert.equal(session.phase, 'DAY')
+    const otherDelivered = socketByUuid.get(uuids[1]).emitted.filter((e) => e.event === 'night_result_applied')
+    assert.equal(otherDelivered.length, 1)
 })

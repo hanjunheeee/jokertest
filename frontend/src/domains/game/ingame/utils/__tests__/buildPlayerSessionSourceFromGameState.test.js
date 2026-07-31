@@ -8,8 +8,8 @@ function validState(overrides = {}) {
     phase: "ROLE_REVEAL",
     dayIndex: 0,
     players: [
-      { uuid: "u1", nickname: "호스트" },
-      { uuid: "u2", nickname: "참가자" },
+      { uuid: "u1", nickname: "호스트", alive: true },
+      { uuid: "u2", nickname: "참가자", alive: true },
     ],
     self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: [] },
     ...overrides,
@@ -232,9 +232,9 @@ test("allies에 있는 uuid의 sourcePlayers 항목에는 isAlly:true가 붙고,
   const result = buildPlayerSessionSourceFromGameState(
     validState({
       players: [
-        { uuid: "u1", nickname: "호스트" },
-        { uuid: "u2", nickname: "동료" },
-        { uuid: "u3", nickname: "시민" },
+        { uuid: "u1", nickname: "호스트", alive: true },
+        { uuid: "u2", nickname: "동료", alive: true },
+        { uuid: "u3", nickname: "시민", alive: true },
       ],
       self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u2"] },
     }),
@@ -251,10 +251,10 @@ test("동료가 2명 이상이면 각 동료 uuid 모두에 isAlly:true가 붙�
   const result = buildPlayerSessionSourceFromGameState(
     validState({
       players: [
-        { uuid: "u1", nickname: "호스트" },
-        { uuid: "u2", nickname: "동료B" },
-        { uuid: "u3", nickname: "동료C" },
-        { uuid: "u4", nickname: "시민" },
+        { uuid: "u1", nickname: "호스트", alive: true },
+        { uuid: "u2", nickname: "동료B", alive: true },
+        { uuid: "u3", nickname: "동료C", alive: true },
+        { uuid: "u4", nickname: "시민", alive: true },
       ],
       self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u2", "u3"] },
     }),

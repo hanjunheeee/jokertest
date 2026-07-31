@@ -600,9 +600,9 @@ function validSession(overrides = {}) {
         dayIndex: 0,
         jokerCount: 1,
         players: new Map([
-            ['u1', { uuid: 'u1', nickname: 'A', role: GAME_ROLES.JOKER }],
-            ['u2', { uuid: 'u2', nickname: 'B', role: GAME_ROLES.CITIZEN }],
-            ['u3', { uuid: 'u3', nickname: 'C', role: GAME_ROLES.CITIZEN }],
+            ['u1', { uuid: 'u1', nickname: 'A', role: GAME_ROLES.JOKER, alive: true }],
+            ['u2', { uuid: 'u2', nickname: 'B', role: GAME_ROLES.CITIZEN, alive: true }],
+            ['u3', { uuid: 'u3', nickname: 'C', role: GAME_ROLES.CITIZEN, alive: true }],
         ]),
         roleRevealAcks: new Set(),
         nightActions: new Map(),
@@ -1564,4 +1564,94 @@ test('assertValidSessionForCommit: jokerChatRateLimit이 비어있지 않은 ses
     candidate.session.jokerChatRateLimit.set('avfc-jcrl-a', 123)
 
     assert.throws(() => commitGameSession(candidate.session), /jokerChatRateLimit/)
+})
+
+// ---------------------------------------------------------------------------
+// commitNightResolution / buildNightResultAppliedPayload — NIGHT 결과 적용 + DAY 전이
+// ---------------------------------------------------------------------------
+
+const { commitNightResolution, buildNightResultAppliedPayload } = gameSession
+
+function nightSessionOf3({ id = 'room-cnr' } = {}) {
+    const room = makeRoom({ id, players: [makePlayer('cnr-a'), makePlayer('cnr-b'), makePlayer('cnr-c')], jokerCount: 1 })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    commitGameSession(candidate.session)
+    for (const uuid of candidate.session.players.keys()) acknowledgeRoleReveal(uuid, candidate.session.id)
+    return candidate.session
+}
+
+test('commitNightResolution: 유효한 victim이 있으면 그 player만 alive:false, phase→DAY, dayIndex+1, nightResolution 설정, 반환값 {victimUuid}', () => {
+    const session = nightSessionOf3()
+    const [victimUuid, otherUuid] = [...session.players.keys()]
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: victimUuid, privateResults: new Map(), resolved: true }
+
+    const result = commitNightResolution(session, resolution)
+
+    assert.deepEqual(result, { victimUuid })
+    assert.equal(session.players.get(victimUuid).alive, false)
+    assert.equal(session.players.get(otherUuid).alive, true)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+    assert.equal(session.nightResolution, resolution)
+})
+
+test('commitNightResolution: pendingEliminationTargetId가 null이면 전원 alive 유지, phase/dayIndex는 그대로 전이한다', () => {
+    const session = nightSessionOf3({ id: 'room-cnr-null' })
+    const uuids = [...session.players.keys()]
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: null, privateResults: new Map(), resolved: true }
+
+    const result = commitNightResolution(session, resolution)
+
+    assert.deepEqual(result, { victimUuid: null })
+    for (const uuid of uuids) assert.equal(session.players.get(uuid).alive, true)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+    assert.equal(session.nightResolution, resolution)
+})
+
+test('commitNightResolution: victim이 세션 밖 uuid를 가리키면 throw하고 nightResolution/phase/dayIndex/alive가 전부 호출 전과 동일하다', () => {
+    const session = nightSessionOf3({ id: 'room-cnr-oob' })
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: 'not-a-participant', privateResults: new Map(), resolved: true }
+
+    assert.throws(() => commitNightResolution(session, resolution))
+
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, 0)
+    for (const player of session.players.values()) assert.equal(player.alive, true)
+})
+
+test('commitNightResolution: victim이 이미 alive:false면 throw하고 상태가 전부 호출 전과 동일하다', () => {
+    const session = nightSessionOf3({ id: 'room-cnr-dead' })
+    const [victimUuid] = [...session.players.keys()]
+    session.players.get(victimUuid).alive = false
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: victimUuid, privateResults: new Map(), resolved: true }
+
+    assert.throws(() => commitNightResolution(session, resolution))
+
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, 0)
+})
+
+test('buildNightResultAppliedPayload: top-level 키가 정확히 [dayIndex, gameId, phase, players, victimUuid], players 원소 키는 정확히 [alive, uuid]뿐이다', () => {
+    const session = nightSessionOf3({ id: 'room-bnrap' })
+    const [victimUuid] = [...session.players.keys()]
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: victimUuid, privateResults: new Map(), resolved: true }
+    commitNightResolution(session, resolution)
+
+    const payload = buildNightResultAppliedPayload(session, victimUuid)
+
+    assert.deepEqual(Object.keys(payload).sort(), ['dayIndex', 'gameId', 'phase', 'players', 'victimUuid'])
+    assert.equal(payload.gameId, session.id)
+    assert.equal(payload.phase, 'DAY')
+    assert.equal(payload.dayIndex, 1)
+    assert.equal(payload.victimUuid, victimUuid)
+    for (const player of payload.players) {
+        assert.deepEqual(Object.keys(player).sort(), ['alive', 'uuid'])
+    }
+    assert.deepEqual(
+        payload.players.find((p) => p.uuid === victimUuid),
+        { uuid: victimUuid, alive: false },
+    )
 })

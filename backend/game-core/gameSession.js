@@ -116,7 +116,7 @@ function assignRoles(players, jokerCount, randomFn = Math.random) {
         ...Array(composition.WITCH_HUNTER).fill(GAME_ROLES.WITCH_HUNTER),
         ...Array(composition.CITIZEN).fill(GAME_ROLES.CITIZEN),
     ]
-    return shuffled.map((player, index) => ({ ...player, role: roles[index] }))
+    return shuffled.map((player, index) => ({ ...player, role: roles[index], alive: true }))
 }
 
 // players/jokerCount 자체의 불변조건을 검증한다. registry를 읽지 않는 순수 함수다.
@@ -292,6 +292,9 @@ function assertValidSessionForCommit(session) {
         }
         if (!Object.values(GAME_ROLES).includes(player.role)) {
             throw new Error(`commitGameSession: 허용되지 않은 role(${player.role})`)
+        }
+        if (player.alive !== true) {
+            throw new Error('commitGameSession: 잘못된 player.alive(신규 세션은 전원 생존 상태여야 함)')
         }
         actualCounts[player.role] += 1
     }
@@ -584,8 +587,8 @@ function prepareNightResolution(uuid, gameId) {
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
     if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
-    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
 
     for (const actorUuid of getEligibleNightActorUuids(session)) {
         if (!session.nightActions.has(actorUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
@@ -630,9 +633,53 @@ function prepareNightResolution(uuid, gameId) {
     }
 }
 
-/** NIGHT 판정의 유일한 mutation — prepareNightResolution이 반환한 session/resolution으로 session.nightResolution을 확정합니다. */
+/**
+ * NIGHT 판정 커밋과 사망/phase/day 전이를 모두 담당하는 유일한 mutation입니다.
+ * prepareNightResolution이 반환한 resolution.pendingEliminationTargetId만 소비하고, 클라이언트
+ * 입력이나 raw nightActions를 다시 읽지 않습니다.
+ *
+ * 검증(victim 존재·alive)은 mutation 이전에 전부 끝내고, 통과한 뒤로는 이 함수가 절대
+ * throw하지 않습니다 — "커밋은 됐는데 사망/phase/day 적용은 안 된" 부분 커밋 상태가
+ * 구조적으로 존재할 수 없습니다. 검증 실패 시 session은 nightResolution을 포함해 어떤
+ * 필드도 바뀌지 않습니다.
+ *
+ * 반환값 { victimUuid }는 buildNightResultAppliedPayload에 그대로 넘길 값입니다.
+ */
 function commitNightResolution(session, resolution) {
+    const victimUuid = resolution.pendingEliminationTargetId
+    let victim = null
+    if (victimUuid !== null) {
+        victim = session.players.get(victimUuid)
+        // 방어적 불변조건: prepareNightResolution이 이미 nightActions의 모든 non-null target을
+        // TARGET_NOT_A_PARTICIPANT로 검증했고, 이번 슬라이스 범위(첫 밤, 재판정 없음)에선 모든
+        // 참가자가 아직 alive:true이므로 이 두 throw는 정상 경로에서 도달 불가능하다 —
+        // assertValidSessionForCommit과 동일하게 수동 조립/오염 상태까지 방어한다. 이 시점까지는
+        // session에 어떤 mutation도 일어나지 않았으므로, 여기서 throw하면 nightResolution을
+        // 포함해 아무 상태도 바뀌지 않는다.
+        if (!victim) throw new Error(`commitNightResolution: victim(${victimUuid})이 참가자가 아님`)
+        if (victim.alive !== true) throw new Error(`commitNightResolution: victim(${victimUuid})이 이미 사망 상태`)
+    }
+    // 이 지점 이후로는 절대 throw하지 않는다 — 아래 네 mutation이 한 세트로 적용된다.
     session.nightResolution = resolution
+    if (victim) victim.alive = false
+    session.phase = 'DAY'
+    session.dayIndex += 1
+    return { victimUuid }
+}
+
+/**
+ * NIGHT 결과 적용(사망 + DAY 전이) 공개 payload. commitNightResolution 호출 이후(phase/
+ * dayIndex가 이미 갱신된) session을 받습니다. role/team/nickname/targetUuid/private result는
+ * 어디에도 포함하지 않습니다.
+ */
+function buildNightResultAppliedPayload(session, victimUuid) {
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, alive })),
+        victimUuid,
+    }
 }
 
 /**
@@ -763,6 +810,7 @@ module.exports = {
     commitJokerChatMessage,
     prepareNightResolution,
     commitNightResolution,
+    buildNightResultAppliedPayload,
     JOKER_CHAT_MAX_LENGTH,
     __resetStateForTests,
     __getStateSnapshotForTests,

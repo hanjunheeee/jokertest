@@ -54,8 +54,10 @@ export function useInGameActionPanel() {
   const nightActionSubmit = useInGameNightActionSubmit()
   const resolveNightRequest = useInGameResolveNight()
   // 판정이 진행 중이거나(resolving) 이미 끝났으면(resolved) 밤 행동 입력·판정 버튼을 함께
-  // 잠근다 — 판정 완료 후 재제출·중복 판정 요청을 막기 위함이다.
-  const nightActionsLocked = resolveNightRequest.status !== "idle"
+  // 잠근다 — 판정 완료 후 재제출·중복 판정 요청을 막기 위함이다. phase !== 'NIGHT'도 함께
+  // 검사한다 — DAY 전이로 resolveNightStatus가 'idle'로 초기화되더라도 NIGHT 조작은 계속
+  // 잠겨 있어야 한다.
+  const nightActionsLocked = resolveNightRequest.status !== "idle" || gameState?.phase !== "NIGHT"
 
   const submitDayVote = () => {
     emitGameAction("cast_day_vote", { targetId: selectedTargetId })

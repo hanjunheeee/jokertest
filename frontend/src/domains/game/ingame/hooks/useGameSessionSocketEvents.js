@@ -6,6 +6,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
+import { parseNightResultAppliedPayload } from "../utils/parseNightResultAppliedPayload.js"
 
 /** 인게임 store와 matching store를 함께 초기화하고 로비로 이동하는 finalizer를 만든다. */
 function buildFinalizer(navigate) {
@@ -48,11 +49,30 @@ export function useGameSessionSocketEvents() {
       useInGameStore.getState().applyPhaseChanged(payload)
     }
 
+    // NIGHT 결과 적용(사망 + DAY 전이) 방송이다. 검증에 필요한 canonical roster/gameId/dayIndex는
+    // 호출 시점의 store에서 직접 읽는다(렌더 시점 클로저를 캡처하지 않음 — 위 handleGameEnded와
+    // 동일한 이유). 파서를 통과한 값만 store action으로 넘긴다.
+    const handleNightResultApplied = (payload) => {
+      const current = useInGameStore.getState()
+      if (!current.gameId || !current.state) return
+      const canonicalPlayerIds = new Set((current.state.players ?? []).map((p) => p.uuid))
+      const parsed = parseNightResultAppliedPayload({
+        payload,
+        gameId: current.gameId,
+        dayIndex: current.state.dayIndex,
+        canonicalPlayerIds,
+      })
+      if (!parsed) return
+      useInGameStore.getState().applyNightResultAppliedPayload(parsed)
+    }
+
     socket.on("game_ended", handleGameEnded)
     socket.on("game_phase_changed", handlePhaseChanged)
+    socket.on("night_result_applied", handleNightResultApplied)
     return () => {
       socket.off("game_ended", handleGameEnded)
       socket.off("game_phase_changed", handlePhaseChanged)
+      socket.off("night_result_applied", handleNightResultApplied)
     }
   }, [socket, navigate])
 
