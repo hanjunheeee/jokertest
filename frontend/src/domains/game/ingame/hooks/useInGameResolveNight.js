@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { getSocket, subscribeSocket } from "@/shared/socket/socketClient"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
 import { computeResolveNightAckPatch } from "../utils/computeResolveNightAckPatch.js"

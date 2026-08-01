@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useSyncExternalStore } from "react"
-import { getSocket, subscribeSocket } from "@/shared/socket/socketClient"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { jokerChatReducer } from "../utils/jokerChatReducer.js"
 import { selectJokerChatView } from "../utils/selectJokerChatView.js"

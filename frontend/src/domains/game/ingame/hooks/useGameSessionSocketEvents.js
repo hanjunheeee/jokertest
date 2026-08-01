@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react"
 import { useNavigate } from "react-router-dom"
-import { getSocket, subscribeSocket } from "@/shared/socket/socketClient"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"

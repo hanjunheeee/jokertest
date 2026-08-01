@@ -195,6 +195,13 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // commitNightResolution이 새 빈 Map으로 교체한다(이전 DAY의 투표를 이어받지 않음).
         // roleRevealAcks/nightActions와 동일한 이유로 세션 객체 안에 둔다.
         dayVotes: new Map(),
+        // 이 dayIndex의 DAY 투표 판정 완료 표식이자 결과. null이면 아직 판정 전이다. 값이
+        // 있으면 { dayIndex, outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount }
+        // 형태이고, 그 dayIndex에 대한 재판정·재제출을 막는 유일한 근거가 된다(commitNightResolution이
+        // dayVotes를 새 빈 Map으로 교체할 때도 이 필드는 그대로 둔다 — 이전 낮의 판정 기록이므로).
+        dayVoteResolution: null,
+        // TRIBUNAL 단계의 피고 정보. commitDayVoteResolution이 outcome:'TRIBUNAL'일 때만 채운다.
+        tribunal: null,
     }
     return { ok: true, session }
 }
@@ -729,6 +736,13 @@ function submitDayVote(uuid, gameId, targetId) {
     const actor = session.players.get(uuid)
     if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
+    // 이 dayIndex가 이미 판정됐으면 outcome과 무관하게 거부한다 — mutation(dayVotes.set) 전에
+    // 확인해 재제출이 이미 판정된 집계를 조용히 어긋나게 만들지 못하게 한다. phase 검사보다
+    // 먼저 확인해야 한다: 판정이 성공하면 phase가 DAY를 벗어나므로 INVALID_PHASE로도 결과적으로
+    // 막히지만, "이미 판정됨"이라는 사실 자체를 별도 코드로 구분해 응답한다.
+    if (session.dayVoteResolution !== null && session.dayVoteResolution.dayIndex === session.dayIndex) {
+        return { ok: false, code: 'DAY_VOTE_ALREADY_RESOLVED' }
+    }
     if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
     if (!actor.alive) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
 
@@ -741,6 +755,172 @@ function submitDayVote(uuid, gameId, targetId) {
 
     session.dayVotes.set(uuid, targetId)
     return { ok: true }
+}
+
+// registry(session.players)를 읽기만 하는 순수 계산 — 이 낮에 투표 가능한(생존) 모든 참가자
+// uuid를 반환한다. submitDayVote가 이미 사망자의 투표를 막으므로, 생존자 전원이 곧 "투표해야
+// 할" 대상이다.
+function getEligibleDayVoterUuids(session) {
+    const uuids = []
+    for (const player of session.players.values()) {
+        if (player.alive) uuids.push(player.uuid)
+    }
+    return uuids
+}
+
+// session.dayVotes를 집계해 TRIBUNAL/TIE/ABSTAINED 중 하나를 판정한다(순수 계산 — 어떤 상태도
+// 바꾸지 않는다). tallyJokerAssassinationTarget과 동일한 tie-break 원칙(득표수만으로 비교하고,
+// Map 순회 순서에 의존하지 않는다)을 따른다. 기권(null)은 별도로 세되 집계 대상에서 제외한다.
+// 유효 표가 하나도 없으면(전원 기권) ABSTAINED, 최다 득표가 둘 이상이면 TIE, 그 외엔 단독
+// 최다 득표자를 TRIBUNAL 대상으로 반환한다.
+//
+// 집계는 session.dayVotes 전체가 아니라 getEligibleDayVoterUuids(session)로 확정한 eligible
+// alive voter 목록만 순회한다 — 사망 후 남은 entry나 non-eligible entry가 결과를 바꾸지 못하게
+// 하기 위함이다. publicVoteCount는 이 eligible voter 총수이고(제출 완료 인원 전체 — 기권 포함),
+// publicAbstainCount는 그중 null 제출 수다.
+function tallyDayVoteOutcome(session) {
+    const eligibleVoterUuids = getEligibleDayVoterUuids(session)
+    const voteCounts = new Map()
+    let abstainCount = 0
+    for (const voterUuid of eligibleVoterUuids) {
+        const targetId = session.dayVotes.get(voterUuid)
+        if (targetId === null || targetId === undefined) {
+            abstainCount += 1
+            continue
+        }
+        voteCounts.set(targetId, (voteCounts.get(targetId) ?? 0) + 1)
+    }
+    const publicVoteCount = eligibleVoterUuids.length
+    const publicAbstainCount = abstainCount
+
+    if (voteCounts.size === 0) {
+        return { outcome: 'ABSTAINED', tribunalTargetUuid: null, publicVoteCount, publicAbstainCount }
+    }
+
+    let winner = null
+    let winnerVotes = 0
+    let tie = false
+    for (const [target, votes] of voteCounts) {
+        if (votes > winnerVotes) {
+            winner = target
+            winnerVotes = votes
+            tie = false
+        } else if (votes === winnerVotes) {
+            tie = true
+        }
+    }
+
+    if (tie) {
+        return { outcome: 'TIE', tribunalTargetUuid: null, publicVoteCount, publicAbstainCount }
+    }
+    return { outcome: 'TRIBUNAL', tribunalTargetUuid: winner, publicVoteCount, publicAbstainCount }
+}
+
+/**
+ * DAY 투표 판정을 준비합니다(어떤 상태도 바꾸지 않는 순수 함수) — prepareNightResolution과
+ * 동일한 prepare 경계입니다. 인증된 uuid와 클라이언트가 알고 있는 gameId·dayIndex만 입력으로
+ * 받습니다.
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId/dayIndex 형태 → 2. uuid의 활성 세션 존재·gameId 일치 → 3. registry 일관성
+ *   (session 실존, uuid가 참가자) → 4. dayIndex가 session.dayIndex와 정확히 일치
+ *   → 5. 이 dayIndex가 이미 판정됐는지(완료 표식 — phase와 무관하게 이미 있으면 그 결과를
+ *   그대로 담아 alreadyResolved:true로 성공 반환합니다. 판정 성공 시 phase가 DAY를 벗어나므로,
+ *   phase 검사보다 먼저 확인해야 재요청이 INVALID_PHASE가 아니라 멱등한 성공으로 처리됩니다)
+ *   → 6. DAY phase → 7. 생존자 전원의 dayVotes 제출 완료(ACTIONS_PENDING, 추가 정보 없음)
+ *   → 8. 저장된 모든 non-null target이 여전히 canonical participant인지(TARGET_NOT_A_PARTICIPANT
+ *   — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
+ *
+ * 성공 시(신규 판정) { ok:true, session, resolution } — resolution은 commitDayVoteResolution에
+ * 그대로 넘길 값입니다. 이미 판정된 경우 { ok:true, alreadyResolved:true, session, resolution }을
+ * 반환하고, 호출자는 다시 commit하거나 재방송하지 않아야 합니다.
+ */
+function prepareDayVoteResolution(uuid, gameId, dayIndex) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+    if (!Number.isInteger(dayIndex)) return { ok: false, code: 'INVALID_DAY_INDEX' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
+
+    if (session.dayVoteResolution !== null && session.dayVoteResolution.dayIndex === dayIndex) {
+        return { ok: true, alreadyResolved: true, session, resolution: session.dayVoteResolution }
+    }
+
+    if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+
+    const eligibleVoterUuids = getEligibleDayVoterUuids(session)
+    for (const voterUuid of eligibleVoterUuids) {
+        if (!session.dayVotes.has(voterUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
+    }
+
+    // 검증은 eligible alive voter의 표만 본다(session.dayVotes 전체가 아님) — 대상도 참가자로
+    // 존재할 뿐 아니라 여전히 alive여야 한다(사망한 참가자를 겨눈 표는 TARGET_NOT_A_PARTICIPANT와
+    // 동일하게 internal-only로 취급한다).
+    for (const voterUuid of eligibleVoterUuids) {
+        const target = session.dayVotes.get(voterUuid)
+        if (target !== null) {
+            const targetPlayer = session.players.get(target)
+            if (!targetPlayer || !targetPlayer.alive) {
+                return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+            }
+        }
+    }
+
+    const tally = tallyDayVoteOutcome(session)
+    return {
+        ok: true,
+        session,
+        resolution: {
+            gameId: session.id,
+            dayIndex: session.dayIndex,
+            outcome: tally.outcome,
+            tribunalTargetUuid: tally.tribunalTargetUuid,
+            publicVoteCount: tally.publicVoteCount,
+            publicAbstainCount: tally.publicAbstainCount,
+        },
+    }
+}
+
+/**
+ * DAY 투표 판정 커밋의 유일한 mutation입니다. prepareDayVoteResolution이 반환한 resolution만
+ * 소비하고, 클라이언트 입력이나 raw dayVotes를 다시 읽지 않습니다. TRIBUNAL 판정이면 phase를
+ * TRIBUNAL로 전이하고 tribunal.candidateId를 채우며, TIE/ABSTAINED면 phase를 DAY로 그대로
+ * 유지합니다(NIGHT로 전이하지 않음) — 어느 쪽도 dayIndex는 바꾸지 않습니다(같은 날의 낮/재판
+ * 연장선이므로). session.dayVoteResolution이 채워진 채로 남으므로, prepareDayVoteResolution의
+ * alreadyResolved 체크가 이 dayIndex의 재제출·재판정을 계속 잠근다(phase가 여전히 DAY라도).
+ */
+function commitDayVoteResolution(session, resolution) {
+    session.dayVoteResolution = resolution
+    if (resolution.outcome === 'TRIBUNAL') {
+        session.phase = 'TRIBUNAL'
+        session.tribunal = { candidateId: resolution.tribunalTargetUuid }
+    } else {
+        session.tribunal = null
+    }
+}
+
+/**
+ * DAY 투표 판정 공개 payload. voterUuid→targetUuid 매핑, role, team, socketId, 내부 Map/Set은
+ * 어디에도 포함하지 않습니다 — 공개 집계 수치와 결과 판정만 담습니다.
+ */
+function buildDayVoteResolvedPayload(session, resolution) {
+    return {
+        gameId: session.id,
+        dayIndex: resolution.dayIndex,
+        phase: session.phase,
+        outcome: resolution.outcome,
+        tribunalTargetUuid: resolution.tribunalTargetUuid,
+        publicVoteCount: resolution.publicVoteCount,
+        publicAbstainCount: resolution.publicAbstainCount,
+    }
 }
 
 /**
@@ -873,6 +1053,9 @@ module.exports = {
     prepareNightResolution,
     commitNightResolution,
     buildNightResultAppliedPayload,
+    prepareDayVoteResolution,
+    commitDayVoteResolution,
+    buildDayVoteResolvedPayload,
     JOKER_CHAT_MAX_LENGTH,
     __resetStateForTests,
     __getStateSnapshotForTests,
@@ -893,6 +1076,8 @@ module.exports = {
         computeDoctorProtectionSet,
         computeGuardInvestigationResult,
         computeWitchHunterConfirmationResult,
+        getEligibleDayVoterUuids,
+        tallyDayVoteOutcome,
         __deleteGameSessionOnlyForTests,
     },
 }

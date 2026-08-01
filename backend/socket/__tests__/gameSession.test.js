@@ -20,6 +20,7 @@ const {
     handleSubmitJokerChatMessage,
     handleResolveNight,
     handleSubmitDayVote,
+    handleResolveDayVote,
     handleLeaveGameSession,
     resolveJokerTeammateSockets,
 } = gameSessionSocketLayer.__testables
@@ -1814,4 +1815,100 @@ test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger�
 
     assert.deepEqual(getResponse(), { ok: true })
     assert.equal(session.dayVotes.get(actor), target)
+})
+
+// ---------------------------------------------------------------------------
+// resolve_day_vote (handleResolveDayVote) — DAY 투표 판정
+// ---------------------------------------------------------------------------
+
+test('resolve_day_vote: TRIBUNAL 판정 ack가 정확히 {ok:true, gameId, dayIndex, outcome:"TRIBUNAL", tribunalTargetUuid}이고 phase가 TRIBUNAL로 전이된다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-1' })
+    const [a, b, c] = uuids
+    handleSubmitDayVote(io, null, a, { gameId: session.id, targetId: c }, countingCallback().callback)
+    handleSubmitDayVote(io, null, b, { gameId: session.id, targetId: c }, countingCallback().callback)
+    handleSubmitDayVote(io, null, c, { gameId: session.id, targetId: null }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    handleResolveDayVote(io, null, a, { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: c,
+    })
+    assert.equal(session.phase, 'TRIBUNAL')
+})
+
+test('resolve_day_vote: TIE 판정 ack의 outcome은 "TIE"이고 phase는 DAY로 유지되며, day_vote_resolved 방송 payload.phase도 DAY다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-2' })
+    const [a, b, c] = uuids
+    handleSubmitDayVote(io, null, a, { gameId: session.id, targetId: b }, countingCallback().callback)
+    handleSubmitDayVote(io, null, b, { gameId: session.id, targetId: c }, countingCallback().callback)
+    handleSubmitDayVote(io, null, c, { gameId: session.id, targetId: a }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    handleResolveDayVote(io, null, a, { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'TIE',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(session.phase, 'DAY')
+
+    const broadcast = socketByUuid.get(a).emitted.find((e) => e.event === 'day_vote_resolved')
+    assert.equal(broadcast.payload.phase, 'DAY')
+    assert.equal(broadcast.payload.outcome, 'TIE')
+})
+
+test('resolve_day_vote: 이미 판정된 dayIndex 재요청은 멱등하게 동일한 결과 필드를 반환하고 재방송하지 않는다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-3' })
+    const [a, b, c] = uuids
+    for (const uuid of uuids) {
+        handleSubmitDayVote(io, null, uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+    }
+
+    handleResolveDayVote(io, null, a, { gameId: session.id, dayIndex: session.dayIndex }, countingCallback().callback)
+    const countBroadcasts = () =>
+        [a, b, c]
+            .map((uuid) => socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved').length)
+            .reduce((sum, n) => sum + n, 0)
+    const countAfterFirst = countBroadcasts()
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveDayVote(io, null, b, { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'ABSTAINED',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(countBroadcasts(), countAfterFirst)
+})
+
+test('resolve_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-4' })
+    const [a] = uuids
+    for (const uuid of uuids) {
+        handleSubmitDayVote(io, null, uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+    }
+    const socket = socketByUuid.get(a)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, a)
+    const { callback, getResponse } = countingCallback()
+
+    socket.trigger('resolve_day_vote', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'ABSTAINED',
+        tribunalTargetUuid: null,
+    })
 })

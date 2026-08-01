@@ -40,6 +40,9 @@ export default function InGameActionPanel() {
     dayVoteHasSubmitted,
     dayVoteLastSubmittedTargetId,
     resolveDayVote,
+    dayVoteResolveStatus,
+    dayVoteResolveError,
+    dayVoteResolution,
     submitTribunalVote,
     resolveTribunalVote,
     submitNightAction,
@@ -130,9 +133,14 @@ export default function InGameActionPanel() {
             <button
               type="button"
               className={INGAME_ACTION_BUTTON_CLASS}
+              disabled={dayVoteResolveStatus !== "idle"}
               onClick={resolveDayVote}
             >
-              낮 집계
+              {dayVoteResolveStatus === "resolving"
+                ? "집계 중..."
+                : dayVoteResolveStatus === "resolved"
+                  ? "집계 완료"
+                  : "낮 집계"}
             </button>
           </div>
           {dayVoteError ? (
@@ -142,6 +150,17 @@ export default function InGameActionPanel() {
               {dayVoteLastSubmittedTargetId === null
                 ? "기권함"
                 : `투표: ${dayVoteTargets.find((p) => p.id === dayVoteLastSubmittedTargetId)?.name ?? dayVoteLastSubmittedTargetId}`}
+            </p>
+          ) : null}
+          {dayVoteResolveError ? (
+            <p className="text-[0.68rem] text-red-300">{dayVoteResolveError}</p>
+          ) : null}
+          {dayVoteResolution ? (
+            <p className="text-[0.68rem] text-[#e9d6ba]">
+              낮 집계 결과: {dayVoteResolution.outcome}
+              {dayVoteResolution.outcome === "TRIBUNAL"
+                ? ` · 대상 ${dayVoteTargets.find((p) => p.id === dayVoteResolution.tribunalTargetUuid)?.name ?? dayVoteResolution.tribunalTargetUuid}`
+                : ""}
             </p>
           ) : null}
         </div>

@@ -17,6 +17,11 @@ const JOKER_CHAT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PART
 // 다른 핸들러가 반환하지 않는 이 이벤트만의 코드다.
 const RESOLVE_NIGHT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'TARGET_NOT_A_PARTICIPANT'])
 
+// resolve_day_vote 전용 internal-only 코드. RESOLVE_NIGHT_INTERNAL_ONLY_CODES와 동일한 3개
+// registry-불일치 코드를 쓴다(별도 상수로 두는 이유도 동일 — 의미가 다른 내부 코드 집합을
+// 공용 INTERNAL_ONLY_CODES와 섞지 않기 위함).
+const RESOLVE_DAY_VOTE_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'TARGET_NOT_A_PARTICIPANT'])
+
 /**
  * callback을 항상 안전하게 호출한다 — callback 자체가 던지는 예외가 이후 로직(방송 등)을
  * 막지 않게 한다. acknowledge_role_reveal과 leave_game_session이 공유한다(둘 다 비밀 역할
@@ -485,6 +490,115 @@ function handleSubmitDayVote(io, socket, uuid, payload, callback) {
 }
 
 /**
+ * resolve_day_vote 전용 ack 전달 헬퍼. respondResolveNight과 동일한 이유로 고정 구조 로그를
+ * 쓴다 — callback이 던져도 예외가 바깥으로 새지 않고, 로그는 항상
+ * {code:'CALLBACK_ERROR', uuid, gameId} 3키뿐이다.
+ */
+function respondResolveDayVote(uuid, gameId, callback, payload) {
+    try {
+        callback(payload)
+    } catch (err) {
+        console.error('[낮 투표 판정 오류]', { code: 'CALLBACK_ERROR', uuid, gameId })
+    }
+}
+
+/**
+ * DAY 투표 판정 요청을 처리합니다(Socket.IO acknowledgement 방식). handleResolveNight과 동일한
+ * 골격(payload 검증 → prepare → internal-only 코드 정규화 → commit → ack → 참가자 전체 방송)을
+ * 따르되, 이미 판정된 dayIndex의 재요청(prepared.alreadyResolved)은 재commit·재방송 없이
+ * ack만 돌려준다는 점이 다르다.
+ *
+ * 로그는 예외 없이 console.error('[낮 투표 판정 오류]', {code, uuid, gameId}) 3키만 쓰고,
+ * canonical session.id를 아직 모르는 실패는 gameId: undefined를 명시적으로 포함합니다. raw
+ * Error, 판정 결과(투표자별 대상 등), dayVotes는 로그에 절대 포함하지 않습니다.
+ */
+function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
+    const prepare = deps.prepare ?? gameSessionCore.prepareDayVoteResolution
+    const commit = deps.commit ?? gameSessionCore.commitDayVoteResolution
+    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respondResolveDayVote(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId, dayIndex } = payload
+    if (typeof gameId !== 'string') {
+        respondResolveDayVote(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    if (!Number.isInteger(dayIndex)) {
+        respondResolveDayVote(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let prepared
+    try {
+        prepared = prepare(uuid, gameId, dayIndex)
+    } catch (err) {
+        console.error('[낮 투표 판정 오류]', { code: 'PREPARE_UNEXPECTED_ERROR', uuid, gameId: undefined })
+        respondResolveDayVote(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!prepared.ok) {
+        if (RESOLVE_DAY_VOTE_INTERNAL_ONLY_CODES.has(prepared.code)) {
+            console.error('[낮 투표 판정 오류]', { code: prepared.code, uuid, gameId: undefined })
+            respondResolveDayVote(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        respondResolveDayVote(uuid, undefined, callback, { ok: false, code: prepared.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    if (prepared.alreadyResolved) {
+        // 이미 판정된 dayIndex에 대한 재요청 — 멱등하게 ack만 돌려주고 재commit·재방송하지 않는다.
+        respondResolveDayVote(uuid, prepared.session.id, callback, {
+            ok: true,
+            gameId: prepared.resolution.gameId,
+            dayIndex: prepared.resolution.dayIndex,
+            outcome: prepared.resolution.outcome,
+            tribunalTargetUuid: prepared.resolution.tribunalTargetUuid,
+        })
+        return
+    }
+
+    try {
+        commit(prepared.session, prepared.resolution)
+    } catch (err) {
+        console.error('[낮 투표 판정 오류]', { code: 'COMMIT_ERROR', uuid, gameId: prepared.session.id })
+        respondResolveDayVote(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    respondResolveDayVote(uuid, prepared.session.id, callback, {
+        ok: true,
+        gameId: prepared.resolution.gameId,
+        dayIndex: prepared.resolution.dayIndex,
+        outcome: prepared.resolution.outcome,
+        tribunalTargetUuid: prepared.resolution.tribunalTargetUuid,
+    })
+
+    let recipients
+    try {
+        recipients = resolveParticipantSockets(io, prepared.session)
+    } catch (err) {
+        console.error('[낮 투표 판정 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
+        return
+    }
+
+    const dayVoteResolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
+
+    for (const recipientSocket of recipients) {
+        try {
+            recipientSocket.emit('day_vote_resolved', dayVoteResolvedPayload)
+        } catch (err) {
+            console.error('[낮 투표 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
+        }
+    }
+}
+
+/**
  * GameSession 종료 core(endGameSessionForPlayer)가 성공한 직후 공통으로 수행하는 뒷정리.
  * disconnect·명시적 이탈 두 경로가 모두 이 함수 하나만 거치므로 "종료·방송은 한 번뿐"이라는
  * 계약이 자연히 지켜진다.
@@ -574,6 +688,7 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
     socket.on('resolve_night', (payload, callback) => handleResolveNight(io, socket, uuid, payload, callback))
     socket.on('cast_day_vote', (payload, callback) => handleSubmitDayVote(io, socket, uuid, payload, callback))
+    socket.on('resolve_day_vote', (payload, callback) => handleResolveDayVote(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, uuid, payload, callback))
 }
 
@@ -624,6 +739,7 @@ module.exports = {
         handleSubmitJokerChatMessage,
         handleResolveNight,
         handleSubmitDayVote,
+        handleResolveDayVote,
         handleLeaveGameSession,
         resolveJokerTeammateSockets,
         resolveSessionParticipantSockets,

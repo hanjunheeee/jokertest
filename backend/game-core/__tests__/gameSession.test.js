@@ -23,6 +23,9 @@ const {
     buildPhaseChangedPayload,
     submitNightAction,
     submitDayVote,
+    prepareDayVoteResolution,
+    commitDayVoteResolution,
+    buildDayVoteResolvedPayload,
     prepareJokerChatMessage,
     commitJokerChatMessage,
     JOKER_CHAT_MAX_LENGTH,
@@ -1887,4 +1890,132 @@ test('submitDayVote: 서로 다른 GameSession은 독립된 dayVotes Map을 가�
     assert.equal(dayA.session.dayVotes.get(dayA.uuidA), dayA.uuidB)
     assert.equal(dayB.session.dayVotes.size, 0)
     assert.notEqual(dayA.session.dayVotes, dayB.session.dayVotes)
+})
+
+// ---------------------------------------------------------------------------
+// prepareDayVoteResolution / commitDayVoteResolution / buildDayVoteResolvedPayload — DAY 투표 판정
+// ---------------------------------------------------------------------------
+
+test('commitDayVoteResolution: TIE 결과는 phase를 DAY로 유지하고, 재요청은 멱등하게 alreadyResolved:true를 반환한다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-tie-1' })
+    // 3자 순환 투표(A→B, B→C, C→A)는 각 대상이 1표씩 얻어 TIE가 된다.
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.outcome, 'TIE')
+    assert.equal(prepared.resolution.tribunalTargetUuid, null)
+
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.tribunal, null)
+    assert.equal(session.dayVoteResolution, prepared.resolution)
+
+    const again = prepareDayVoteResolution(uuidB, session.id, session.dayIndex)
+    assert.equal(again.ok, true)
+    assert.equal(again.alreadyResolved, true)
+    assert.equal(again.resolution, prepared.resolution)
+    assert.equal(session.phase, 'DAY')
+})
+
+test('commitDayVoteResolution: ABSTAINED 결과도 phase를 DAY로 유지한다(NIGHT로 전이하지 않음)', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-abstain-1' })
+    submitDayVote(uuidA, session.id, null)
+    submitDayVote(uuidB, session.id, null)
+    submitDayVote(uuidC, session.id, null)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(prepared.resolution.outcome, 'ABSTAINED')
+
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.tribunal, null)
+})
+
+test('commitDayVoteResolution: TRIBUNAL 결과는 기존대로 phase를 TRIBUNAL로 전이하고 candidateId를 채운다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-tribunal-1' })
+    submitDayVote(uuidA, session.id, uuidC)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, null)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(prepared.resolution.outcome, 'TRIBUNAL')
+    assert.equal(prepared.resolution.tribunalTargetUuid, uuidC)
+
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+
+    assert.equal(session.phase, 'TRIBUNAL')
+    assert.deepEqual(session.tribunal, { candidateId: uuidC })
+})
+
+test('prepareDayVoteResolution: publicVoteCount는 eligible voter 총수(기권 포함)이고 publicAbstainCount는 그중 null 제출 수다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-count-1' })
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, null)
+    submitDayVote(uuidC, session.id, null)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.publicVoteCount, 3)
+    assert.equal(prepared.resolution.publicAbstainCount, 2)
+})
+
+test('prepareDayVoteResolution: 전원 기권이면 publicVoteCount는 0이 아니라 eligible voter 총수다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-count-2' })
+    submitDayVote(uuidA, session.id, null)
+    submitDayVote(uuidB, session.id, null)
+    submitDayVote(uuidC, session.id, null)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+
+    assert.equal(prepared.resolution.outcome, 'ABSTAINED')
+    assert.equal(prepared.resolution.publicVoteCount, 3)
+    assert.equal(prepared.resolution.publicAbstainCount, 3)
+})
+
+test('prepareDayVoteResolution: 사망한 참가자는 eligible voter에서 제외되어 ACTIONS_PENDING을 막지 않고 집계에도 포함되지 않는다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dead-voter-1' })
+    session.players.get(uuidC).alive = false
+
+    // uuidC는 사망했으므로 투표하지 않아도(ACTIONS_PENDING 아님) 판정이 진행된다.
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidA)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.publicVoteCount, 2)
+    assert.equal(prepared.resolution.outcome, 'TIE')
+})
+
+test('prepareDayVoteResolution: eligible voter의 표가 사망한 대상을 가리키면 TARGET_NOT_A_PARTICIPANT다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dead-target-1' })
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+    // 제출 이후 대상이 사망 상태로 바뀐 경계 상황을 재현한다.
+    session.players.get(uuidB).alive = false
+
+    const result = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+
+    assert.deepEqual(result, { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' })
+})
+
+test('buildDayVoteResolvedPayload: TIE/ABSTAINED 이후에도 payload.phase는 DAY를 그대로 노출한다(NIGHT 아님)', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-payload-phase-1' })
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+    const payload = buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
+
+    assert.equal(payload.phase, 'DAY')
+    assert.equal(payload.outcome, 'TIE')
 })

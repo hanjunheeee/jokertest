@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { getSocket, subscribeSocket } from "@/shared/socket/socketClient"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { createDayVoteSubmitController } from "../utils/createDayVoteSubmitController.js"
 import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../utils/computeDayVoteSubmitPatch.js"
