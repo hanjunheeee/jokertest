@@ -26,6 +26,7 @@ const {
     prepareDayVoteResolution,
     commitDayVoteResolution,
     buildDayVoteResolvedPayload,
+    submitTribunalVote,
     prepareJokerChatMessage,
     commitJokerChatMessage,
     JOKER_CHAT_MAX_LENGTH,
@@ -246,6 +247,185 @@ test('export 호환성: __testables.assignRoles가 여전히 존재하고, ROLE_
     assert.equal(typeof gameSession.ROLE_TEAMS, 'object')
     assert.equal(typeof gameSession.__testables.computeRoleComposition, 'function')
     assert.equal(typeof gameSession.__testables.getSpecialRoleBudget, 'function')
+})
+
+// ---------------------------------------------------------------------------
+// submitTribunalVote
+// ---------------------------------------------------------------------------
+
+/** DAY→TRIBUNAL 전이가 이미 끝난 3인 세션을 직접 구성한다(dayVoteResolution·session.tribunal을
+ * commitDayVoteResolution과 동일한 shape로 채운다). */
+function setupTribunalReadySession({
+    uuids = ['t1', 't2', 't3'],
+    defendantUuid = 't3',
+    roomId = `tribunal-${uuids.join('-')}`,
+} = {}) {
+    const room = makeRoom({
+        id: roomId,
+        players: uuids.map((uuid) => makePlayer(uuid)),
+    })
+    const prepared = gameSession.prepareGameSession(room)
+    gameSession.commitGameSession(prepared.session)
+    const session = prepared.session
+    session.phase = 'TRIBUNAL'
+    session.dayVoteResolution = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: defendantUuid,
+        publicVoteCount: uuids.length,
+        publicAbstainCount: 0,
+    }
+    session.tribunal = { candidateId: defendantUuid, dayIndex: session.dayIndex, defendantUuid, votes: new Map() }
+    return { session, defendantUuid }
+}
+
+test('submitTribunalVote: 생존한 비-피고인 참가자의 GUILTY 제출은 성공하고 votes에 기록된다', () => {
+    const { session } = setupTribunalReadySession()
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: true, gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' })
+    assert.equal(session.tribunal.votes.get('t1'), 'GUILTY')
+})
+
+test('submitTribunalVote: gameId가 문자열이 아니거나 빈 문자열이면 INVALID_GAME_ID이고 상태가 바뀌지 않는다', () => {
+    const { session } = setupTribunalReadySession()
+    assert.deepEqual(submitTribunalVote('t1', '', session.dayIndex, 'GUILTY'), { ok: false, code: 'INVALID_GAME_ID' })
+    assert.deepEqual(submitTribunalVote('t1', 123, session.dayIndex, 'GUILTY'), { ok: false, code: 'INVALID_GAME_ID' })
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: 활성 세션이 없는 uuid는 NOT_IN_SESSION이다', () => {
+    setupTribunalReadySession()
+    assert.deepEqual(submitTribunalVote('ghost', 'whatever', 0, 'GUILTY'), { ok: false, code: 'NOT_IN_SESSION' })
+})
+
+test('submitTribunalVote: 현재 활성 세션과 다른 gameId를 보내면 STALE_SESSION_MISMATCH이고 상태가 바뀌지 않는다', () => {
+    const { session } = setupTribunalReadySession()
+    const result = submitTribunalVote('t1', 'other-game-id', session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'STALE_SESSION_MISMATCH' })
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: registry에서 session이 사라지면(SESSION_NOT_FOUND) internal 코드를 반환한다', () => {
+    const { session } = setupTribunalReadySession()
+    gameSession.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'SESSION_NOT_FOUND' })
+})
+
+test('submitTribunalVote: session.players에서 제거된 uuid는 NOT_A_PARTICIPANT이고 상태가 바뀌지 않는다', () => {
+    const { session } = setupTribunalReadySession()
+    session.players.delete('t1')
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'NOT_A_PARTICIPANT' })
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: dayIndex가 정수가 아니면 INVALID_DAY_INDEX, session.dayIndex와 다르면 STALE_DAY_INDEX이다', () => {
+    const { session } = setupTribunalReadySession()
+    assert.deepEqual(submitTribunalVote('t1', session.id, '0', 'GUILTY'), { ok: false, code: 'INVALID_DAY_INDEX' })
+    assert.deepEqual(submitTribunalVote('t1', session.id, session.dayIndex + 1, 'GUILTY'), {
+        ok: false,
+        code: 'STALE_DAY_INDEX',
+    })
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: phase가 TRIBUNAL이 아니면 INVALID_PHASE이고 상태가 바뀌지 않는다', () => {
+    const { session } = setupTribunalReadySession()
+    session.phase = 'DAY'
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'INVALID_PHASE' })
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: session.tribunal이 없으면 TRIBUNAL_STATE_NOT_FOUND이다(internal-only)', () => {
+    const { session } = setupTribunalReadySession()
+    session.tribunal = null
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_STATE_NOT_FOUND' })
+})
+
+test('submitTribunalVote: session.tribunal.dayIndex가 session.dayIndex와 다르면 TRIBUNAL_CONTEXT_MISMATCH이다', () => {
+    const { session } = setupTribunalReadySession()
+    session.tribunal.dayIndex = session.dayIndex + 1
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_CONTEXT_MISMATCH' })
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: canonical dayVoteResolution 부재/outcome 불일치/dayIndex 불일치/대상 불일치 4종 모두 TRIBUNAL_RESOLUTION_MISMATCH이고 상태가 바뀌지 않는다', () => {
+    const noResolution = setupTribunalReadySession({ uuids: ['a1', 'a2', 'a3'], defendantUuid: 'a3' })
+    noResolution.session.dayVoteResolution = null
+    assert.deepEqual(submitTribunalVote('a1', noResolution.session.id, noResolution.session.dayIndex, 'GUILTY'), {
+        ok: false,
+        code: 'TRIBUNAL_RESOLUTION_MISMATCH',
+    })
+
+    const wrongOutcome = setupTribunalReadySession({ uuids: ['b1', 'b2', 'b3'], defendantUuid: 'b3' })
+    wrongOutcome.session.dayVoteResolution.outcome = 'TIE'
+    assert.deepEqual(submitTribunalVote('b1', wrongOutcome.session.id, wrongOutcome.session.dayIndex, 'GUILTY'), {
+        ok: false,
+        code: 'TRIBUNAL_RESOLUTION_MISMATCH',
+    })
+
+    const wrongDayIndex = setupTribunalReadySession({ uuids: ['c1', 'c2', 'c3'], defendantUuid: 'c3' })
+    wrongDayIndex.session.dayVoteResolution.dayIndex = wrongDayIndex.session.dayIndex + 1
+    assert.deepEqual(submitTribunalVote('c1', wrongDayIndex.session.id, wrongDayIndex.session.dayIndex, 'GUILTY'), {
+        ok: false,
+        code: 'TRIBUNAL_RESOLUTION_MISMATCH',
+    })
+
+    const wrongTarget = setupTribunalReadySession({ uuids: ['d1', 'd2', 'd3'], defendantUuid: 'd3' })
+    wrongTarget.session.dayVoteResolution.tribunalTargetUuid = 'd2'
+    const result = submitTribunalVote('d1', wrongTarget.session.id, wrongTarget.session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' })
+    assert.equal(wrongTarget.session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: 피고인이 이미 사망 상태면 TRIBUNAL_STATE_NOT_FOUND이다(internal-only)', () => {
+    const { session, defendantUuid } = setupTribunalReadySession()
+    session.players.get(defendantUuid).alive = false
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_STATE_NOT_FOUND' })
+})
+
+test('submitTribunalVote: 요청자가 이미 사망 상태면 PLAYER_NOT_ALIVE이다', () => {
+    const { session } = setupTribunalReadySession()
+    session.players.get('t1').alive = false
+    const result = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'PLAYER_NOT_ALIVE' })
+})
+
+test('submitTribunalVote: 요청자가 피고인 본인이면 DEFENDANT_CANNOT_VOTE이다', () => {
+    const { session, defendantUuid } = setupTribunalReadySession()
+    const result = submitTribunalVote(defendantUuid, session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(result, { ok: false, code: 'DEFENDANT_CANNOT_VOTE' })
+})
+
+test('submitTribunalVote: vote가 GUILTY/NOT_GUILTY가 아니면 INVALID_TRIBUNAL_VOTE이고 상태가 바뀌지 않는다', () => {
+    const { session } = setupTribunalReadySession()
+    for (const badVote of ['APPROVE', 'guilty', '', null, undefined, 1]) {
+        const result = submitTribunalVote('t1', session.id, session.dayIndex, badVote)
+        assert.deepEqual(result, { ok: false, code: 'INVALID_TRIBUNAL_VOTE' })
+    }
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('submitTribunalVote: 중복 제출은 TRIBUNAL_VOTE_ALREADY_SUBMITTED이고, 빠른 연속 제출에서도 첫 표만 유지된다', () => {
+    const { session } = setupTribunalReadySession()
+    const first = submitTribunalVote('t1', session.id, session.dayIndex, 'GUILTY')
+    assert.deepEqual(first, {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        vote: 'GUILTY',
+    })
+
+    const second = submitTribunalVote('t1', session.id, session.dayIndex, 'NOT_GUILTY')
+    assert.deepEqual(second, { ok: false, code: 'TRIBUNAL_VOTE_ALREADY_SUBMITTED' })
+    assert.equal(session.tribunal.votes.get('t1'), 'GUILTY')
+    assert.equal(session.tribunal.votes.size, 1)
 })
 
 // ---------------------------------------------------------------------------
@@ -1949,7 +2129,17 @@ test('commitDayVoteResolution: TRIBUNAL 결과는 기존대로 phase를 TRIBUNAL
     commitDayVoteResolution(prepared.session, prepared.resolution)
 
     assert.equal(session.phase, 'TRIBUNAL')
-    assert.deepEqual(session.tribunal, { candidateId: uuidC })
+    assert.equal(
+        session.tribunal.candidateId,
+        session.dayVoteResolution.tribunalTargetUuid,
+    )
+    assert.equal(
+        session.tribunal.defendantUuid,
+        session.dayVoteResolution.tribunalTargetUuid,
+    )
+    assert.equal(session.tribunal.dayIndex, session.dayIndex)
+    assert.ok(session.tribunal.votes instanceof Map)
+    assert.equal(session.tribunal.votes.size, 0)
 })
 
 test('prepareDayVoteResolution: publicVoteCount는 eligible voter 총수(기권 포함)이고 publicAbstainCount는 그중 null 제출 수다', () => {

@@ -901,7 +901,12 @@ function commitDayVoteResolution(session, resolution) {
     session.dayVoteResolution = resolution
     if (resolution.outcome === 'TRIBUNAL') {
         session.phase = 'TRIBUNAL'
-        session.tribunal = { candidateId: resolution.tribunalTargetUuid }
+        session.tribunal = {
+            candidateId: resolution.tribunalTargetUuid,
+            dayIndex: session.dayIndex,
+            defendantUuid: resolution.tribunalTargetUuid,
+            votes: new Map(),
+        }
     } else {
         session.tribunal = null
     }
@@ -921,6 +926,71 @@ function buildDayVoteResolvedPayload(session, resolution) {
         publicVoteCount: resolution.publicVoteCount,
         publicAbstainCount: resolution.publicAbstainCount,
     }
+}
+
+/**
+ * TRIBUNAL 유죄/무죄 투표 제출을 처리합니다. 인증된 uuid와 클라이언트가 알고 있는 gameId,
+ * dayIndex, vote('GUILTY'|'NOT_GUILTY')만 입력으로 받습니다. 동기 함수이며(내부에 await 없음),
+ * 검증 실패 시 session.* 어떤 필드도 건드리지 않습니다 — 유일한 mutation은 마지막 단계의
+ * session.tribunal.votes.set(uuid, vote) 한 줄입니다.
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId 형태 → 2. uuid의 활성 세션 존재(NOT_IN_SESSION)·gameId 일치(STALE_SESSION_MISMATCH)
+ *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. dayIndex 형태·session.dayIndex와 일치
+ *   → 5. TRIBUNAL phase → 6. session.tribunal 존재·dayIndex 일치 → 7. canonical dayVoteResolution이
+ *   TRIBUNAL 판정이고 dayIndex·대상이 session.tribunal과 전부 일관되는지 → 8. 피고인 참조 유효성·
+ *   생존 → 9. 요청자 생존 → 10. 요청자≠피고인 → 11. vote 값 검증 → 12. 중복 제출 거부.
+ *
+ * 7~8번(내부 상태 불일치)은 소켓 계층에서 INTERNAL_ERROR로 정규화되는 internal-only 코드다 —
+ * 클라이언트 입력만으로는 도달할 수 없고 서버 내부 상태가 손상됐을 때만 발생한다.
+ */
+function submitTribunalVote(uuid, gameId, dayIndex, vote) {
+    if (typeof gameId !== 'string' || gameId.length === 0) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== gameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (!Number.isInteger(dayIndex)) return { ok: false, code: 'INVALID_DAY_INDEX' }
+    if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
+
+    if (session.phase !== 'TRIBUNAL') return { ok: false, code: 'INVALID_PHASE' }
+
+    const tribunal = session.tribunal
+    if (!tribunal) return { ok: false, code: 'TRIBUNAL_STATE_NOT_FOUND' }
+    if (tribunal.dayIndex !== session.dayIndex) return { ok: false, code: 'TRIBUNAL_CONTEXT_MISMATCH' }
+
+    const resolution = session.dayVoteResolution
+    if (!resolution) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    if (resolution.outcome !== 'TRIBUNAL') return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    if (resolution.dayIndex !== session.dayIndex || resolution.dayIndex !== tribunal.dayIndex) {
+        return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    }
+    if (resolution.tribunalTargetUuid !== tribunal.defendantUuid) {
+        return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    }
+
+    const defendantUuid = tribunal.defendantUuid
+    if (typeof defendantUuid !== 'string' || defendantUuid.length === 0) {
+        return { ok: false, code: 'TRIBUNAL_STATE_NOT_FOUND' }
+    }
+    const defendant = session.players.get(defendantUuid)
+    if (!defendant || !defendant.alive) return { ok: false, code: 'TRIBUNAL_STATE_NOT_FOUND' }
+
+    if (!actor.alive) return { ok: false, code: 'PLAYER_NOT_ALIVE' }
+    if (uuid === defendantUuid) return { ok: false, code: 'DEFENDANT_CANNOT_VOTE' }
+
+    if (vote !== 'GUILTY' && vote !== 'NOT_GUILTY') return { ok: false, code: 'INVALID_TRIBUNAL_VOTE' }
+
+    if (tribunal.votes.has(uuid)) return { ok: false, code: 'TRIBUNAL_VOTE_ALREADY_SUBMITTED' }
+
+    tribunal.votes.set(uuid, vote)
+    return { ok: true, gameId: session.id, dayIndex: session.dayIndex, vote: tribunal.votes.get(uuid) }
 }
 
 /**
@@ -1056,6 +1126,7 @@ module.exports = {
     prepareDayVoteResolution,
     commitDayVoteResolution,
     buildDayVoteResolvedPayload,
+    submitTribunalVote,
     JOKER_CHAT_MAX_LENGTH,
     __resetStateForTests,
     __getStateSnapshotForTests,

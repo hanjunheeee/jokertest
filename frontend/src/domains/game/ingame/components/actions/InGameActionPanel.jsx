@@ -1,4 +1,5 @@
 // 파일 역할: InGameActionPanel.jsx - 화면을 구성하는 컴포넌트입니다.
+import { useEffect, useState } from "react"
 import {
   formatInGameEvent,
   INGAME_ACTION_BUTTON_CLASS,
@@ -6,7 +7,14 @@ import {
   INGAME_ACTION_META_CLASS,
   INGAME_ACTION_PANEL_CLASS,
   INGAME_ACTION_SECTION_CLASS,
+  INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS,
   INGAME_ACTION_TITLE_CLASS,
+  TRIBUNAL_VOTE_GUILTY_LABEL,
+  TRIBUNAL_VOTE_NOT_GUILTY_LABEL,
+  TRIBUNAL_VOTE_SUBMIT_LABEL,
+  TRIBUNAL_VOTE_SUBMITTING_LABEL,
+  TRIBUNAL_DEFENDANT_NOTICE,
+  TRIBUNAL_DEAD_NOTICE,
 } from "../../constants/actions/ingameActionPanel.js"
 import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
 import { useInGameRoleRevealAck } from "../../hooks/useInGameRoleRevealAck.js"
@@ -44,6 +52,12 @@ export default function InGameActionPanel() {
     dayVoteResolveError,
     dayVoteResolution,
     submitTribunalVote,
+    tribunalVoteStatus,
+    tribunalVoteError,
+    tribunalVoteSubmittedVote,
+    tribunalVoteIsDefendant,
+    tribunalVoteAlive,
+    tribunalVoteControlsEnabled,
     resolveTribunalVote,
     submitNightAction,
     skipNightAction,
@@ -54,6 +68,11 @@ export default function InGameActionPanel() {
     nightActionResult,
   } = useInGameActionPanel()
   const roleReveal = useInGameRoleRevealAck()
+  const [selectedTribunalVote, setSelectedTribunalVote] = useState(null)
+
+  useEffect(() => {
+    setSelectedTribunalVote(null)
+  }, [gameState?.phase, gameState?.dayIndex, gameState?.tribunal?.defendantUuid])
 
   if (!gameState) {
     return (
@@ -168,30 +187,51 @@ export default function InGameActionPanel() {
 
       {gameState.phase === "TRIBUNAL" ? (
         <div className={INGAME_ACTION_SECTION_CLASS}>
-          <p className={INGAME_ACTION_META_CLASS}>후보자: {gameState.tribunal?.candidateId ?? "없음"}</p>
+          <p className={INGAME_ACTION_META_CLASS}>피고인: {gameState.tribunal?.defendantUuid ?? "없음"}</p>
+          {tribunalVoteIsDefendant ? (
+            <p className={INGAME_ACTION_META_CLASS}>{TRIBUNAL_DEFENDANT_NOTICE}</p>
+          ) : !tribunalVoteAlive ? (
+            <p className={INGAME_ACTION_META_CLASS}>{TRIBUNAL_DEAD_NOTICE}</p>
+          ) : null}
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
-              className={INGAME_ACTION_BUTTON_CLASS}
-              onClick={() => submitTribunalVote("APPROVE")}
+              className={
+                selectedTribunalVote === "GUILTY" ? INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS : INGAME_ACTION_BUTTON_CLASS
+              }
+              disabled={!tribunalVoteControlsEnabled}
+              onClick={() => setSelectedTribunalVote("GUILTY")}
             >
-              찬성
+              {TRIBUNAL_VOTE_GUILTY_LABEL}
+            </button>
+            <button
+              type="button"
+              className={
+                selectedTribunalVote === "NOT_GUILTY"
+                  ? INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS
+                  : INGAME_ACTION_BUTTON_CLASS
+              }
+              disabled={!tribunalVoteControlsEnabled}
+              onClick={() => setSelectedTribunalVote("NOT_GUILTY")}
+            >
+              {TRIBUNAL_VOTE_NOT_GUILTY_LABEL}
             </button>
             <button
               type="button"
               className={INGAME_ACTION_BUTTON_CLASS}
-              onClick={() => submitTribunalVote("REJECT")}
+              disabled={!selectedTribunalVote || !tribunalVoteControlsEnabled}
+              onClick={() => submitTribunalVote(selectedTribunalVote)}
             >
-              반대
-            </button>
-            <button
-              type="button"
-              className={INGAME_ACTION_BUTTON_CLASS}
-              onClick={resolveTribunalVote}
-            >
-              처형 결정
+              {tribunalVoteStatus === "submitting" ? TRIBUNAL_VOTE_SUBMITTING_LABEL : TRIBUNAL_VOTE_SUBMIT_LABEL}
             </button>
           </div>
+          {tribunalVoteError ? (
+            <p className="text-[0.68rem] text-red-300">{tribunalVoteError}</p>
+          ) : tribunalVoteStatus === "submitted" ? (
+            <p className="text-[0.68rem] text-[#e9d6ba]">
+              제출함: {tribunalVoteSubmittedVote === "GUILTY" ? TRIBUNAL_VOTE_GUILTY_LABEL : TRIBUNAL_VOTE_NOT_GUILTY_LABEL}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

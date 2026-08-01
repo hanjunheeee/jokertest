@@ -68,6 +68,22 @@ export const useInGameStore = create((set) => ({
       return { state: { ...current.state, phase: payload.phase, dayIndex: payload.dayIndex, players: nextPlayers } }
     }),
 
+  // day_vote_resolved 방송 중 TRIBUNAL 전이만 반영한다(TIE/ABSTAINED는 defendantUuid가 없어
+  // 아래 검증에서 자연히 걸러진다). 호출부가 이미 파싱한 값만 넘기지만, applyNightResultAppliedPayload와
+  // 동일한 이유로 여기서도 독립적으로 gameId/phase/dayIndex 일관성을 재확인한다.
+  applyDayVoteResolvedToPhase: (gameId, dayIndex, { defendantUuid } = {}) =>
+    set((current) => {
+      if (typeof gameId !== "string" || gameId.trim().length === 0) return current
+      if (!Number.isInteger(dayIndex)) return current
+      if (typeof defendantUuid !== "string" || defendantUuid.length === 0) return current
+      if (!current.gameId || !current.state) return current
+      if (gameId !== current.gameId) return current
+      if (current.state.phase !== "DAY") return current
+      if (dayIndex !== current.state.dayIndex) return current
+
+      return { state: { ...current.state, phase: "TRIBUNAL", tribunal: { defendantUuid } } }
+    }),
+
   setGameError: (error) => set({ error }),
 
   clearGame: () => set({ gameId: null, state: null, error: null }),

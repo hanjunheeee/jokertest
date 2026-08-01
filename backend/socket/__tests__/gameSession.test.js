@@ -21,6 +21,7 @@ const {
     handleResolveNight,
     handleSubmitDayVote,
     handleResolveDayVote,
+    handleCastTribunalVote,
     handleLeaveGameSession,
     resolveJokerTeammateSockets,
 } = gameSessionSocketLayer.__testables
@@ -274,6 +275,125 @@ test('acknowledge_role_reveal: onDisconnect로 세션이 먼저 종료된 뒤 �
 
     assert.deepEqual(getResponse(), { ok: false, code: 'NOT_IN_SESSION', message: '요청을 처리할 수 없습니다.' })
     assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 0)
+})
+
+// ---------------------------------------------------------------------------
+// cast_tribunal_vote (handleCastTribunalVote)
+// ---------------------------------------------------------------------------
+
+/** DAY→TRIBUNAL 전이가 끝난 3인 세션을 커밋하고, 각 uuid에 대응하는 fake socket도 채널에 join된 상태로 준비한다. */
+function commitTribunalReadySession({ roomId = 'room-tribunal', uuidA = 'w1', uuidB = 'w2', uuidC = 'w3', defendantUuid = 'w3' } = {}) {
+    const room = makeRoom({ id: roomId, players: [makePlayer(uuidA), makePlayer(uuidB), makePlayer(uuidC)] })
+    const prepared = gameSessionCore.prepareGameSession(room)
+    gameSessionCore.commitGameSession(prepared.session)
+    const session = prepared.session
+    session.phase = 'TRIBUNAL'
+    session.dayVoteResolution = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: defendantUuid,
+        publicVoteCount: 3,
+        publicAbstainCount: 0,
+    }
+    session.tribunal = { candidateId: defendantUuid, dayIndex: session.dayIndex, defendantUuid, votes: new Map() }
+
+    const socketA = createFakeSocket(uuidA)
+    const socketB = createFakeSocket(uuidB)
+    const socketC = createFakeSocket(uuidC)
+    for (const s of [socketA, socketB, socketC]) {
+        s.rooms.add(session.channelId)
+        s.data.activeGameId = session.id
+    }
+    const io = createFakeIo([socketA, socketB, socketC])
+
+    return { session, socketA, socketB, socketC, io }
+}
+
+test('cast_tribunal_vote: 성공 ack는 정확히 {ok, gameId, dayIndex, vote}만 담고 broadcast가 없다', () => {
+    const { session, io } = commitTribunalReadySession()
+    const { callback, getResponse } = countingCallback()
+
+    handleCastTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true, gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' })
+    assert.deepEqual(Object.keys(getResponse()).sort(), ['dayIndex', 'gameId', 'ok', 'vote'])
+    assert.equal(io.broadcasts.length, 0)
+    assert.equal(session.tribunal.votes.get('w1'), 'GUILTY')
+})
+
+test('cast_tribunal_vote: payload 형태 오류(gameId/dayIndex 누락·타입 오류)는 INVALID_PAYLOAD이다', () => {
+    const { session, io } = commitTribunalReadySession()
+
+    const missing = countingCallback()
+    handleCastTribunalVote(io, null, 'w1', {}, missing.callback)
+    assert.deepEqual(missing.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const badDayIndex = countingCallback()
+    handleCastTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: '0', vote: 'GUILTY' }, badDayIndex.callback)
+    assert.deepEqual(badDayIndex.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('cast_tribunal_vote: 클라이언트 입력만으로 도달 가능한 공개 코드(INVALID_TRIBUNAL_VOTE)는 그대로 전달된다', () => {
+    const { session, io } = commitTribunalReadySession()
+    const { callback, getResponse } = countingCallback()
+
+    handleCastTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'APPROVE' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_TRIBUNAL_VOTE', message: '요청을 처리할 수 없습니다.' })
+})
+
+test('cast_tribunal_vote: internal-only 코드는 INTERNAL_ERROR로 정규화되고, 로그는 정확히 {gameId, dayIndex, requesterUuid, internalCode} 4필드만 담는다', () => {
+    const { session, io } = commitTribunalReadySession()
+    session.tribunal = null // TRIBUNAL_STATE_NOT_FOUND 유도
+
+    const originalError = console.error
+    const calls = []
+    console.error = (...args) => calls.push(args)
+    let response
+    try {
+        const { callback, getResponse } = countingCallback()
+        handleCastTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, callback)
+        response = getResponse()
+    } finally {
+        console.error = originalError
+    }
+
+    assert.deepEqual(response, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(calls.length, 1)
+    const [, logPayload] = calls[0]
+    assert.deepEqual(Object.keys(logPayload).sort(), ['dayIndex', 'gameId', 'internalCode', 'requesterUuid'])
+    assert.deepEqual(logPayload, {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        requesterUuid: 'w1',
+        internalCode: 'TRIBUNAL_STATE_NOT_FOUND',
+    })
+})
+
+test('cast_tribunal_vote: callback이 던지면 CALLBACK_ERROR로 4필드 로그만 남기고 예외가 새지 않는다', () => {
+    const { session, io } = commitTribunalReadySession()
+    const originalError = console.error
+    const calls = []
+    console.error = (...args) => calls.push(args)
+
+    const throwingCallback = () => {
+        throw new Error('콜백 실패(테스트 주입)')
+    }
+    try {
+        assert.doesNotThrow(() =>
+            handleCastTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, throwingCallback),
+        )
+    } finally {
+        console.error = originalError
+    }
+
+    assert.equal(calls.length, 1)
+    const [, logPayload] = calls[0]
+    assert.deepEqual(Object.keys(logPayload).sort(), ['dayIndex', 'gameId', 'internalCode', 'requesterUuid'])
+    assert.equal(logPayload.internalCode, 'CALLBACK_ERROR')
 })
 
 test('acknowledge_role_reveal: 콜백이 throw해도 game_phase_changed 방송은 정상적으로 발생한다', () => {

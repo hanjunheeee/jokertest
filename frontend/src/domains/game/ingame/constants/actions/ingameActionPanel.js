@@ -60,6 +60,14 @@ export function isSelfTargetAllowedForNightAction(role) {
   return role === "DOCTOR"
 }
 
+// TRIBUNAL 유죄/무죄 투표 섹션 라벨입니다.
+export const TRIBUNAL_VOTE_GUILTY_LABEL = "유죄"
+export const TRIBUNAL_VOTE_NOT_GUILTY_LABEL = "무죄"
+export const TRIBUNAL_VOTE_SUBMIT_LABEL = "투표 제출"
+export const TRIBUNAL_VOTE_SUBMITTING_LABEL = "제출 중..."
+export const TRIBUNAL_DEFENDANT_NOTICE = "당신은 피고인입니다. 투표할 수 없습니다."
+export const TRIBUNAL_DEAD_NOTICE = "사망한 참가자는 투표할 수 없습니다."
+
 // 개발용 이벤트 목록에 표시할 짧은 문자열을 만듭니다.
 export function formatInGameEvent(event) {
   const actor = event.actorId ? ` ${event.actorId}` : ""

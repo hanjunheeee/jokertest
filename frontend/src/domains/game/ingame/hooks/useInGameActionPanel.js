@@ -11,6 +11,7 @@ import { buildNightActionTargets } from "../utils/buildNightActionTargets.js"
 import { buildDayVoteTargets, isSessionPlayerAlive } from "../utils/buildDayVoteTargets.js"
 import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
 import { useInGameDayVoteSubmit } from "./useInGameDayVoteSubmit.js"
+import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
 import { useInGameResolveNight } from "./useInGameResolveNight.js"
 
 const DAY_VOTE_RESOLVE_TIMEOUT_MS = 5000
@@ -278,13 +279,24 @@ export function useInGameActionPanel() {
       })
   }
 
-  const submitTribunalVote = (vote) => {
-    emitGameAction("cast_tribunal_vote", { vote })
-  }
+  const tribunalVoteSubmit = useInGameTribunalVoteSubmit()
 
   const resolveTribunalVote = () => {
     emitGameAction("resolve_tribunal_vote")
   }
+
+  // dayVoteControlsEnabled와 동일한 원칙(단일 플래그로 잠금)이지만 소켓 connected까지 명시적으로
+  // 요구한다 — 끊긴 소켓에 emitWithAck를 시도하면 controller가 아예 submit을 no-op 처리하므로,
+  // 그 전에 버튼 자체를 잠가 사용자에게 헛제출 시도를 보이지 않게 한다.
+  const tribunalVoteControlsEnabled =
+    Boolean(gameState) &&
+    typeof gameId === "string" &&
+    Number.isInteger(dayIndex) &&
+    gameState?.phase === "TRIBUNAL" &&
+    !tribunalVoteSubmit.isDefendant &&
+    tribunalVoteSubmit.alive &&
+    tribunalVoteSubmit.status === "idle" &&
+    Boolean(getSocket()?.connected)
 
   const submitNightAction = () => {
     nightActionSubmit.submit(selectedNightTargetId ?? null)
@@ -321,7 +333,13 @@ export function useInGameActionPanel() {
     dayVoteResolveError,
     dayVoteResolution,
     dayVoteResolveLocked,
-    submitTribunalVote,
+    submitTribunalVote: tribunalVoteSubmit.submitTribunalVote,
+    tribunalVoteStatus: tribunalVoteSubmit.status,
+    tribunalVoteError: tribunalVoteSubmit.error,
+    tribunalVoteSubmittedVote: tribunalVoteSubmit.submittedVote,
+    tribunalVoteIsDefendant: tribunalVoteSubmit.isDefendant,
+    tribunalVoteAlive: tribunalVoteSubmit.alive,
+    tribunalVoteControlsEnabled,
     resolveTribunalVote,
     submitNightAction,
     skipNightAction,

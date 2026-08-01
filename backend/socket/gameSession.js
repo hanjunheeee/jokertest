@@ -22,6 +22,18 @@ const RESOLVE_NIGHT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_P
 // 공용 INTERNAL_ONLY_CODES와 섞지 않기 위함).
 const RESOLVE_DAY_VOTE_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'TARGET_NOT_A_PARTICIPANT'])
 
+// cast_tribunal_vote 전용 internal-only 코드. 앞의 세 상수와 동일한 이유로 별도 상수로 둔다 —
+// TRIBUNAL_STATE_NOT_FOUND/TRIBUNAL_CONTEXT_MISMATCH/TRIBUNAL_RESOLUTION_MISMATCH는 서버 내부
+// 상태 손상(DAY 판정↔session.tribunal 불일치)에서만 발생하고 클라이언트 입력만으로는 도달할 수
+// 없다 — 다른 핸들러가 반환하지 않는 이 이벤트만의 코드다.
+const CAST_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES = new Set([
+    'SESSION_NOT_FOUND',
+    'NOT_A_PARTICIPANT',
+    'TRIBUNAL_STATE_NOT_FOUND',
+    'TRIBUNAL_CONTEXT_MISMATCH',
+    'TRIBUNAL_RESOLUTION_MISMATCH',
+])
+
 /**
  * callback을 항상 안전하게 호출한다 — callback 자체가 던지는 예외가 이후 로직(방송 등)을
  * 막지 않게 한다. acknowledge_role_reveal과 leave_game_session이 공유한다(둘 다 비밀 역할
@@ -599,6 +611,95 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
 }
 
 /**
+ * cast_tribunal_vote 전용 ack 전달 헬퍼. callback이 던져도 예외가 바깥으로 새지 않고, 로그는
+ * 항상 {gameId, dayIndex, requesterUuid, internalCode:'CALLBACK_ERROR'} 4필드만 쓴다 — 공용
+ * respond()나 다른 이벤트 전용 로거를 재사용하지 않는다(raw Error/session을 로그하지 않기 위함).
+ */
+function respondCastTribunalVote(gameId, dayIndex, requesterUuid, callback, payload) {
+    try {
+        callback(payload)
+    } catch (err) {
+        console.error('[재판 투표 제출 오류]', { gameId, dayIndex, requesterUuid, internalCode: 'CALLBACK_ERROR' })
+    }
+}
+
+/**
+ * TRIBUNAL 유죄/무죄 투표 제출 요청을 처리합니다(Socket.IO acknowledgement 방식).
+ * handleSubmitDayVote와 동일한 골격(payload 검증 → core 호출 try/catch → internal-only 코드
+ * 정규화 → respond())을 따르되, 로그는 {gameId, dayIndex, requesterUuid, internalCode} 4필드
+ * 고정 구조를 쓴다(raw Error/session 없음). 성공 이후 broadcast는 없다(본인에게만 ack).
+ *
+ * uuid는 registerGameHandlers가 이미 들고 있는 인증된 클로저 값만 쓰고, payload의 uuid류
+ * 필드는 아예 읽지 않는다.
+ */
+function handleCastTribunalVote(io, socket, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respondCastTribunalVote(undefined, undefined, uuid, callback, {
+            ok: false,
+            code: 'INVALID_PAYLOAD',
+            message: '잘못된 요청입니다.',
+        })
+        return
+    }
+    const { gameId, dayIndex, vote } = payload
+    if (typeof gameId !== 'string') {
+        respondCastTribunalVote(undefined, dayIndex, uuid, callback, {
+            ok: false,
+            code: 'INVALID_PAYLOAD',
+            message: '잘못된 요청입니다.',
+        })
+        return
+    }
+    if (!Number.isInteger(dayIndex)) {
+        respondCastTribunalVote(gameId, undefined, uuid, callback, {
+            ok: false,
+            code: 'INVALID_PAYLOAD',
+            message: '잘못된 요청입니다.',
+        })
+        return
+    }
+
+    let result
+    try {
+        result = gameSessionCore.submitTribunalVote(uuid, gameId, dayIndex, vote)
+    } catch (err) {
+        console.error('[재판 투표 제출 오류]', { gameId, dayIndex, requesterUuid: uuid, internalCode: 'UNEXPECTED_ERROR' })
+        respondCastTribunalVote(gameId, dayIndex, uuid, callback, {
+            ok: false,
+            code: 'INTERNAL_ERROR',
+            message: '요청을 처리하지 못했습니다.',
+        })
+        return
+    }
+
+    if (!result.ok) {
+        if (CAST_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES.has(result.code)) {
+            console.error('[재판 투표 제출 오류]', { gameId, dayIndex, requesterUuid: uuid, internalCode: result.code })
+            respondCastTribunalVote(gameId, dayIndex, uuid, callback, {
+                ok: false,
+                code: 'INTERNAL_ERROR',
+                message: '요청을 처리하지 못했습니다.',
+            })
+            return
+        }
+        respondCastTribunalVote(gameId, dayIndex, uuid, callback, {
+            ok: false,
+            code: result.code,
+            message: '요청을 처리할 수 없습니다.',
+        })
+        return
+    }
+
+    respondCastTribunalVote(gameId, dayIndex, uuid, callback, {
+        ok: true,
+        gameId: result.gameId,
+        dayIndex: result.dayIndex,
+        vote: result.vote,
+    })
+}
+
+/**
  * GameSession 종료 core(endGameSessionForPlayer)가 성공한 직후 공통으로 수행하는 뒷정리.
  * disconnect·명시적 이탈 두 경로가 모두 이 함수 하나만 거치므로 "종료·방송은 한 번뿐"이라는
  * 계약이 자연히 지켜진다.
@@ -689,6 +790,7 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('resolve_night', (payload, callback) => handleResolveNight(io, socket, uuid, payload, callback))
     socket.on('cast_day_vote', (payload, callback) => handleSubmitDayVote(io, socket, uuid, payload, callback))
     socket.on('resolve_day_vote', (payload, callback) => handleResolveDayVote(io, socket, uuid, payload, callback))
+    socket.on('cast_tribunal_vote', (payload, callback) => handleCastTribunalVote(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, uuid, payload, callback))
 }
 
@@ -740,6 +842,7 @@ module.exports = {
         handleResolveNight,
         handleSubmitDayVote,
         handleResolveDayVote,
+        handleCastTribunalVote,
         handleLeaveGameSession,
         resolveJokerTeammateSockets,
         resolveSessionParticipantSockets,
