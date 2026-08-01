@@ -20,8 +20,8 @@ export default function InGameActionPanel() {
   const {
     gameState,
     error,
-    selectedTargetId,
-    setSelectedTargetId,
+    selectedNightTargetId,
+    setSelectedNightTargetId,
     nightActionTargets,
     latestEvents,
     nightActionType,
@@ -29,7 +29,16 @@ export default function InGameActionPanel() {
     hasTarget,
     nightActionStatus,
     nightActionError,
+    selectedDayVoteTargetId,
+    setSelectedDayVoteTargetId,
+    dayVoteTargets,
+    dayVoteControlsEnabled,
     submitDayVote,
+    abstainDayVote,
+    dayVoteStatus,
+    dayVoteError,
+    dayVoteHasSubmitted,
+    dayVoteLastSubmittedTargetId,
     resolveDayVote,
     submitTribunalVote,
     resolveTribunalVote,
@@ -96,18 +105,27 @@ export default function InGameActionPanel() {
       {gameState.phase === "DAY" ? (
         <div className={INGAME_ACTION_SECTION_CLASS}>
           <InGameTargetPicker
-            players={gameState.players}
-            selectedTargetId={selectedTargetId}
-            onSelect={setSelectedTargetId}
+            players={dayVoteTargets}
+            selectedTargetId={selectedDayVoteTargetId}
+            onSelect={setSelectedDayVoteTargetId}
+            disabled={!dayVoteControlsEnabled || dayVoteStatus === "submitting"}
           />
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
               className={INGAME_ACTION_BUTTON_CLASS}
-              disabled={!hasTarget}
+              disabled={!selectedDayVoteTargetId || !dayVoteControlsEnabled || dayVoteStatus === "submitting"}
               onClick={submitDayVote}
             >
               투표
+            </button>
+            <button
+              type="button"
+              className={INGAME_ACTION_BUTTON_CLASS}
+              disabled={!dayVoteControlsEnabled || dayVoteStatus === "submitting"}
+              onClick={abstainDayVote}
+            >
+              기권
             </button>
             <button
               type="button"
@@ -117,6 +135,15 @@ export default function InGameActionPanel() {
               낮 집계
             </button>
           </div>
+          {dayVoteError ? (
+            <p className="text-[0.68rem] text-red-300">{dayVoteError.message}</p>
+          ) : dayVoteHasSubmitted ? (
+            <p className="text-[0.68rem] text-[#e9d6ba]">
+              {dayVoteLastSubmittedTargetId === null
+                ? "기권함"
+                : `투표: ${dayVoteTargets.find((p) => p.id === dayVoteLastSubmittedTargetId)?.name ?? dayVoteLastSubmittedTargetId}`}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -157,8 +184,8 @@ export default function InGameActionPanel() {
             <>
               <InGameTargetPicker
                 players={nightActionTargets}
-                selectedTargetId={selectedTargetId}
-                onSelect={setSelectedTargetId}
+                selectedTargetId={selectedNightTargetId}
+                onSelect={setSelectedNightTargetId}
               />
               <div className="flex flex-wrap gap-1.5">
                 <button

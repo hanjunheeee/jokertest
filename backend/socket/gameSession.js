@@ -438,6 +438,53 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
 }
 
 /**
+ * DAY 투표/기권 제출 요청을 처리합니다(Socket.IO acknowledgement 방식). handleAcknowledgeRoleReveal과
+ * 동일한 골격(payload 검증 → core 호출 try/catch → internal-only 코드 정규화 → respond())을
+ * 따르되, 이번 슬라이스는 집계·전이가 없으므로 broadcast 블록 없이 ack만으로 끝납니다.
+ *
+ * uuid는 인증된 socket에서 전달받은 값만 쓰고, payload의 uuid/role/alive/phase는 아예 읽지
+ * 않습니다(core가 registry 기준으로 다시 전부 검증합니다).
+ */
+function handleSubmitDayVote(io, socket, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId, targetId } = payload
+    if (typeof gameId !== 'string') {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    if (targetId !== null && typeof targetId !== 'string') {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let result
+    try {
+        result = gameSessionCore.submitDayVote(uuid, gameId, targetId)
+    } catch (err) {
+        console.error('[낮 투표 제출 처리 에러]', err)
+        respond(callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!result.ok) {
+        if (INTERNAL_ONLY_CODES.has(result.code)) {
+            // registry 불일치는 클라이언트에 내부 상태를 노출하지 않고 일반 오류로만 응답한다.
+            console.error('[낮 투표 제출 registry 불일치]', { code: result.code, uuid, gameId })
+            respond(callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        respond(callback, { ok: false, code: result.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    respond(callback, { ok: true })
+}
+
+/**
  * GameSession 종료 core(endGameSessionForPlayer)가 성공한 직후 공통으로 수행하는 뒷정리.
  * disconnect·명시적 이탈 두 경로가 모두 이 함수 하나만 거치므로 "종료·방송은 한 번뿐"이라는
  * 계약이 자연히 지켜진다.
@@ -526,6 +573,7 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(uuid, payload, callback))
     socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
     socket.on('resolve_night', (payload, callback) => handleResolveNight(io, socket, uuid, payload, callback))
+    socket.on('cast_day_vote', (payload, callback) => handleSubmitDayVote(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, uuid, payload, callback))
 }
 
@@ -575,6 +623,7 @@ module.exports = {
         handleSubmitNightAction,
         handleSubmitJokerChatMessage,
         handleResolveNight,
+        handleSubmitDayVote,
         handleLeaveGameSession,
         resolveJokerTeammateSockets,
         resolveSessionParticipantSockets,

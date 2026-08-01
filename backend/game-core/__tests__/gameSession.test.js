@@ -22,6 +22,7 @@ const {
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
     submitNightAction,
+    submitDayVote,
     prepareJokerChatMessage,
     commitJokerChatMessage,
     JOKER_CHAT_MAX_LENGTH,
@@ -608,6 +609,7 @@ function validSession(overrides = {}) {
         nightActions: new Map(),
         jokerChatRateLimit: new Map(),
         nightResolution: null,
+        dayVotes: new Map(),
         ...overrides,
     }
 }
@@ -1566,6 +1568,14 @@ test('assertValidSessionForCommit: jokerChatRateLimit이 비어있지 않은 ses
     assert.throws(() => commitGameSession(candidate.session), /jokerChatRateLimit/)
 })
 
+test('assertValidSessionForCommit: dayVotes가 비어있지 않은 session으로 commit 시도 시 throw한다', () => {
+    const room = makeRoom({ id: 'room-avfc-dv', players: [makePlayer('avfc-dv-a'), makePlayer('avfc-dv-b')], jokerCount: 0 })
+    const candidate = buildSessionCandidate(room)
+    candidate.session.dayVotes.set('avfc-dv-a', null)
+
+    assert.throws(() => commitGameSession(candidate.session), /dayVotes/)
+})
+
 // ---------------------------------------------------------------------------
 // commitNightResolution / buildNightResultAppliedPayload — NIGHT 결과 적용 + DAY 전이
 // ---------------------------------------------------------------------------
@@ -1654,4 +1664,227 @@ test('buildNightResultAppliedPayload: top-level 키가 정확히 [dayIndex, game
         payload.players.find((p) => p.uuid === victimUuid),
         { uuid: victimUuid, alive: false },
     )
+})
+
+// ---------------------------------------------------------------------------
+// submitDayVote — DAY 투표/기권 제출
+// ---------------------------------------------------------------------------
+
+/** playerCount=3 세션을 무득표 NIGHT 판정으로 DAY(dayIndex 1, 전원 alive)까지 전이한다. */
+function commitTrioSessionAtDay({ id = 'room-day' } = {}) {
+    const players = [makePlayer(`da-${id}`), makePlayer(`db-${id}`), makePlayer(`dc-${id}`)]
+    const room = makeRoom({ id, players, jokerCount: 1 })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of session.players.keys()) acknowledgeRoleReveal(uuid, session.id)
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: null, privateResults: new Map(), resolved: true }
+    commitNightResolution(session, resolution)
+    const [uuidA, uuidB, uuidC] = [...session.players.keys()]
+    return { session, uuidA, uuidB, uuidC }
+}
+
+test('submitDayVote: 세션 생성 직후 dayVotes는 빈 Map이다', () => {
+    const room = makeRoom({ id: 'room-dv-fresh' })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+    assert.equal(candidate.session.dayVotes instanceof Map, true)
+    assert.equal(candidate.session.dayVotes.size, 0)
+})
+
+test('submitDayVote: NIGHT→DAY 전환마다 dayVotes가 새 빈 Map으로 교체된다(오염된 이전 DAY 재현)', () => {
+    const { session } = commitTrioSessionAtDay({ id: 'room-dv-reset' })
+    session.dayVotes.set('stale-uuid', 'stale-target')
+    const staleMapRef = session.dayVotes
+    session.phase = 'NIGHT'
+    const resolution2 = { gameId: session.id, dayIndex: 1, pendingEliminationTargetId: null, privateResults: new Map(), resolved: true }
+
+    commitNightResolution(session, resolution2)
+
+    assert.notEqual(session.dayVotes, staleMapRef)
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: 정상 대상 투표는 {ok:true}이고 dayVotes에 저장된다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-1' })
+
+    const result = submitDayVote(uuidA, session.id, uuidB)
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(session.dayVotes.get(uuidA), uuidB)
+})
+
+test('submitDayVote: 기권(targetId=null)은 {ok:true}이고 dayVotes에 null로 저장된다', () => {
+    const { session, uuidA } = commitTrioSessionAtDay({ id: 'room-dv-2' })
+
+    const result = submitDayVote(uuidA, session.id, null)
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(session.dayVotes.get(uuidA), null)
+    assert.equal(session.dayVotes.has(uuidA), true)
+})
+
+test('submitDayVote: 재제출은 대상→기권→다른 대상 순으로 항상 최신 값으로 덮어쓴다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dv-3' })
+
+    submitDayVote(uuidA, session.id, uuidB)
+    assert.equal(session.dayVotes.get(uuidA), uuidB)
+    assert.equal(session.dayVotes.size, 1)
+
+    submitDayVote(uuidA, session.id, null)
+    assert.equal(session.dayVotes.get(uuidA), null)
+    assert.equal(session.dayVotes.size, 1)
+
+    submitDayVote(uuidA, session.id, uuidC)
+    assert.equal(session.dayVotes.get(uuidA), uuidC)
+    assert.equal(session.dayVotes.size, 1)
+})
+
+test('submitDayVote: gameId가 빈 문자열/undefined/숫자면 INVALID_GAME_ID이고 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-4' })
+
+    for (const badGameId of ['', undefined, 42]) {
+        assert.deepEqual(submitDayVote(uuidA, badGameId, uuidB), { ok: false, code: 'INVALID_GAME_ID' })
+    }
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: playerSession에 없는 uuid는 NOT_IN_SESSION이다', () => {
+    const { session, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-5' })
+
+    const result = submitDayVote('no-such-uuid', session.id, uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_IN_SESSION' })
+})
+
+test('submitDayVote: 요청 gameId가 실제 세션과 다르면 STALE_SESSION_MISMATCH이고 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-6' })
+
+    const result = submitDayVote(uuidA, 'not-the-real-game-id', uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'STALE_SESSION_MISMATCH' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: gameId 앞뒤에 공백이 있으면 STALE_SESSION_MISMATCH이고 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-6b' })
+
+    const result = submitDayVote(uuidA, ` ${session.id} `, uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'STALE_SESSION_MISMATCH' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: registry 불일치(SESSION_NOT_FOUND)에서 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-7' })
+    __deleteGameSessionOnlyForTests(session.id)
+
+    const result = submitDayVote(uuidA, session.id, uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'SESSION_NOT_FOUND' })
+})
+
+test('submitDayVote: registry 불일치(NOT_A_PARTICIPANT)에서 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-8' })
+    session.players.delete(uuidA)
+
+    const result = submitDayVote(uuidA, session.id, uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'NOT_A_PARTICIPANT' })
+})
+
+test('submitDayVote: NIGHT 단계에서는 INVALID_PHASE이고 dayVotes는 불변이다', () => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-dv-9' })
+
+    const result = submitDayVote(doctorUuid, session.id, citizenUuid)
+
+    assert.deepEqual(result, { ok: false, code: 'INVALID_PHASE' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: ROLE_REVEAL 단계에서는 INVALID_PHASE다', () => {
+    const players = [makePlayer('dv-rr-a'), makePlayer('dv-rr-b'), makePlayer('dv-rr-c')]
+    const room = makeRoom({ id: 'room-dv-10', players, jokerCount: 1 })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+    const session = candidate.session
+    const [uuidA, uuidB] = [...session.players.keys()]
+
+    const result = submitDayVote(uuidA, session.id, uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'INVALID_PHASE' })
+})
+
+test('submitDayVote: 사망한 투표자는 ACTOR_NOT_ALIVE이고 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-11' })
+    session.players.get(uuidA).alive = false
+
+    const result = submitDayVote(uuidA, session.id, uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'ACTOR_NOT_ALIVE' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: 존재하지 않는 대상은 INVALID_TARGET이고 dayVotes는 불변이다', () => {
+    const { session, uuidA } = commitTrioSessionAtDay({ id: 'room-dv-12' })
+
+    const result = submitDayVote(uuidA, session.id, 'no-such-uuid')
+
+    assert.deepEqual(result, { ok: false, code: 'INVALID_TARGET' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: 사망한 대상은 TARGET_NOT_ALIVE이고 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB } = commitTrioSessionAtDay({ id: 'room-dv-13' })
+    session.players.get(uuidB).alive = false
+
+    const result = submitDayVote(uuidA, session.id, uuidB)
+
+    assert.deepEqual(result, { ok: false, code: 'TARGET_NOT_ALIVE' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: 자기 자신을 대상으로 지정하면 SELF_TARGET_NOT_ALLOWED이고 dayVotes는 불변이다', () => {
+    const { session, uuidA } = commitTrioSessionAtDay({ id: 'room-dv-14' })
+
+    const result = submitDayVote(uuidA, session.id, uuidA)
+
+    assert.deepEqual(result, { ok: false, code: 'SELF_TARGET_NOT_ALLOWED' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('submitDayVote: 모든 실패 경로에서 dayVotes/phase/dayIndex/생존 상태가 호출 전후 완전히 동일하다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dv-15' })
+    session.dayVotes.set(uuidC, uuidB) // 기존 유효 제출이 실패 경로에서 파괴되지 않는지도 함께 확인
+    const beforeDayVotes = new Map(session.dayVotes)
+    const beforePhase = session.phase
+    const beforeDayIndex = session.dayIndex
+    const beforeAlive = new Map([...session.players].map(([uuid, p]) => [uuid, p.alive]))
+
+    const failingCalls = [
+        () => submitDayVote(uuidA, '', uuidB),
+        () => submitDayVote('no-such-uuid', session.id, uuidB),
+        () => submitDayVote(uuidA, 'not-the-real-game-id', uuidB),
+        () => submitDayVote(uuidA, session.id, 'no-such-uuid'),
+        () => submitDayVote(uuidA, session.id, uuidA),
+    ]
+    for (const call of failingCalls) {
+        assert.equal(call().ok, false)
+    }
+
+    assert.deepEqual(session.dayVotes, beforeDayVotes)
+    assert.equal(session.phase, beforePhase)
+    assert.equal(session.dayIndex, beforeDayIndex)
+    for (const [uuid, p] of session.players) assert.equal(p.alive, beforeAlive.get(uuid))
+})
+
+test('submitDayVote: 서로 다른 GameSession은 독립된 dayVotes Map을 가지며 한 세션의 투표가 다른 세션에 영향을 주지 않는다', () => {
+    const dayA = commitTrioSessionAtDay({ id: 'room-dv-cross-a' })
+    const dayB = commitTrioSessionAtDay({ id: 'room-dv-cross-b' })
+
+    submitDayVote(dayA.uuidA, dayA.session.id, dayA.uuidB)
+
+    assert.equal(dayA.session.dayVotes.get(dayA.uuidA), dayA.uuidB)
+    assert.equal(dayB.session.dayVotes.size, 0)
+    assert.notEqual(dayA.session.dayVotes, dayB.session.dayVotes)
 })

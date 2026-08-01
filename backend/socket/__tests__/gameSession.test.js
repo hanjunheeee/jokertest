@@ -19,6 +19,7 @@ const {
     handleSubmitNightAction,
     handleSubmitJokerChatMessage,
     handleResolveNight,
+    handleSubmitDayVote,
     handleLeaveGameSession,
     resolveJokerTeammateSockets,
 } = gameSessionSocketLayer.__testables
@@ -1627,4 +1628,190 @@ test('resolve_night: 한 recipient의 night_result_applied emit이 throw해도 �
     assert.equal(session.phase, 'DAY')
     const otherDelivered = socketByUuid.get(uuids[1]).emitted.filter((e) => e.event === 'night_result_applied')
     assert.equal(otherDelivered.length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// cast_day_vote (handleSubmitDayVote) — DAY 투표/기권 제출
+// ---------------------------------------------------------------------------
+
+/** 3인 NIGHT 세션을 무득표로 판정해 DAY(dayIndex 1, 전원 alive)까지 전이하고, fake socket/io를 재사용한다. */
+function commitTrioSessionWithSocketsAtDay({ id = 'room-dv' } = {}) {
+    const { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    handleResolveNight(io, null, jokerUuid, { gameId: session.id }, countingCallback().callback)
+    return { session, io, sockets, uuids, socketByUuid }
+}
+
+test('cast_day_vote: 정상 대상 투표는 ack {ok:true}이고 dayVotes에 저장되며 브로드캐스트가 없다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-1' })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.dayVotes.get(actor), target)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('cast_day_vote: 기권(targetId:null) 제출은 ack {ok:true}이고 dayVotes에 null로 저장된다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-2' })
+    const [actor] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: null }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.dayVotes.get(actor), null)
+    assert.equal(session.dayVotes.has(actor), true)
+})
+
+test('cast_day_vote: payload의 위조 uuid/alive/role/phase는 전부 무시되고 인증된 uuid·registry 기준으로만 처리된다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-3' })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(
+        io, null, actor,
+        { gameId: session.id, targetId: target, uuid: 'forged-uuid', alive: false, role: 'JOKER', phase: 'NIGHT' },
+        callback,
+    )
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.dayVotes.get(actor), target)
+    assert.equal(session.dayVotes.has('forged-uuid'), false)
+})
+
+test('cast_day_vote: callback이 함수가 아니면 완전한 no-op이다(예외 없고 dayVotes 불변)', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-4' })
+    const [actor, target] = uuids
+
+    assert.doesNotThrow(() => handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, undefined))
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: callback이 throw해도 예외가 새지 않고 이미 반영된 dayVotes는 유지된다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-5' })
+    const [actor, target] = uuids
+
+    assert.doesNotThrow(() =>
+        handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.dayVotes.get(actor), target)
+})
+
+test('cast_day_vote: payload가 객체가 아니거나 배열이면 INVALID_PAYLOAD이고 dayVotes는 불변이다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-6' })
+    const [actor] = uuids
+
+    for (const badPayload of [null, 'x', 42, []]) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitDayVote(io, null, actor, badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: gameId가 비문자열이거나 targetId가 null/문자열이 아니면 INVALID_PAYLOAD다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-7' })
+    const [actor, target] = uuids
+
+    const badGameId = countingCallback()
+    handleSubmitDayVote(io, null, actor, { gameId: 123, targetId: target }, badGameId.callback)
+    assert.deepEqual(badGameId.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const badTarget = countingCallback()
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: 42 }, badTarget.callback)
+    assert.deepEqual(badTarget.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: core가 SESSION_NOT_FOUND를 반환하는 registry 불일치는 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-8' })
+    const [actor, target] = uuids
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('cast_day_vote: core가 throw하면 INTERNAL_ERROR로 정규화되고 원본 Error가 로그에 노출되지 않는다', (t) => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-9' })
+    const [actor, target] = uuids
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    t.mock.method(gameSessionCore, 'submitDayVote', () => {
+        throw new Error('SECRET internal detail')
+    })
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    const serialized = JSON.stringify(errorSpy.mock.calls.map((c) => c.arguments))
+    assert.equal(serialized.includes('SECRET'), false)
+})
+
+test('cast_day_vote: 성공/실패 어느 경로에서도 io.broadcasts는 비어있다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-10' })
+    const [actor, target] = uuids
+
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, countingCallback().callback)
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: actor }, countingCallback().callback) // 실패(SELF_TARGET_NOT_ALLOWED)
+
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('cast_day_vote: stale gameId 요청은 실패 code 그대로 ack되고 dayVotes는 불변이다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-11' })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, null, actor, { gameId: 'not-the-real-game-id', targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SESSION_MISMATCH', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: 교차 세션 요청(다른 GameSession의 gameId)은 거부되고 두 세션의 dayVotes 모두 불변이다', () => {
+    const dayA = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-cross-a' })
+    const dayB = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-cross-b' })
+    const [actorA] = dayA.uuids
+    const [, targetB] = dayB.uuids
+    const { callback, getResponse } = countingCallback()
+
+    // actorA(세션 A 소속)가 세션 B의 gameId로 요청 — playerSession상 actorA의 활성 세션은 A이므로
+    // STALE_SESSION_MISMATCH로 거부된다.
+    handleSubmitDayVote(dayA.io, null, actorA, { gameId: dayB.session.id, targetId: targetB }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SESSION_MISMATCH', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(dayB.session.dayVotes.size, 0)
+    assert.equal(dayA.session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: 같은 uuid가 두 번 제출하면 dayVotes에는 마지막 값만 저장된다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-12' })
+    const [actor, targetB, targetC] = uuids
+
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: targetB }, countingCallback().callback)
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: targetC }, countingCallback().callback)
+
+    assert.equal(session.dayVotes.get(actor), targetC)
+    assert.equal(session.dayVotes.size, 1)
+})
+
+test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-13' })
+    const [actor, target] = uuids
+    const socket = socketByUuid.get(actor)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, actor)
+    const { callback, getResponse } = countingCallback()
+
+    socket.trigger('cast_day_vote', { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.dayVotes.get(actor), target)
 })

@@ -190,6 +190,11 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // 시점엔 항상 null이어야 하고(assertValidSessionForCommit), 판정 이후에는 다시 null로
         // 돌아가지 않는 immutable 값이 된다(재판정 금지 계약).
         nightResolution: null,
+        // DAY 투표/기권 제출을 추적한다. uuid → targetId(참가자 uuid) | null(기권). 커밋
+        // 시점엔 항상 빈 Map이어야 하고(assertValidSessionForCommit), NIGHT→DAY 전이마다
+        // commitNightResolution이 새 빈 Map으로 교체한다(이전 DAY의 투표를 이어받지 않음).
+        // roleRevealAcks/nightActions와 동일한 이유로 세션 객체 안에 둔다.
+        dayVotes: new Map(),
     }
     return { ok: true, session }
 }
@@ -261,6 +266,14 @@ function assertValidSessionForCommit(session) {
     // 커밋 시점엔 항상 null이어야 한다(아직 판정된 적 없는 새 세션).
     if (session.nightResolution !== null) {
         throw new Error('commitGameSession: session.nightResolution이 null이 아님')
+    }
+    // dayVotes도 roleRevealAcks/nightActions/jokerChatRateLimit과 동일한 이유로 커밋
+    // 시점엔 항상 빈 Map이어야 한다.
+    if (!(session.dayVotes instanceof Map)) {
+        throw new Error('commitGameSession: session.dayVotes가 Map이 아님')
+    }
+    if (session.dayVotes.size !== 0) {
+        throw new Error(`commitGameSession: session.dayVotes가 비어있지 않음(size=${session.dayVotes.size})`)
     }
     // channelId/phase/dayIndex는 현재 candidate 경로에서 고정값만 만들어지지만, 수동
     // 조립된 session까지 완전히 방어한다는 이 함수의 목적에 맞춰 여기서도 검사한다.
@@ -659,11 +672,15 @@ function commitNightResolution(session, resolution) {
         if (!victim) throw new Error(`commitNightResolution: victim(${victimUuid})이 참가자가 아님`)
         if (victim.alive !== true) throw new Error(`commitNightResolution: victim(${victimUuid})이 이미 사망 상태`)
     }
-    // 이 지점 이후로는 절대 throw하지 않는다 — 아래 네 mutation이 한 세트로 적용된다.
+    // 이 지점 이후로는 절대 throw하지 않는다 — 아래 다섯 mutation이 한 세트로 적용된다.
     session.nightResolution = resolution
     if (victim) victim.alive = false
     session.phase = 'DAY'
     session.dayIndex += 1
+    // 새 DAY는 항상 빈 dayVotes로 시작한다 — 이전 DAY의 투표/기권을 이어받지 않는다(이번
+    // 슬라이스 범위에선 첫 DAY 전이뿐이라 항상 빈 Map 위에 다시 빈 Map을 놓지만, 후속
+    // DAY→NIGHT→DAY 루프에서도 동일한 불변조건을 지키기 위해 매번 새로 만든다).
+    session.dayVotes = new Map()
     return { victimUuid }
 }
 
@@ -680,6 +697,50 @@ function buildNightResultAppliedPayload(session, victimUuid) {
         players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, alive })),
         victimUuid,
     }
+}
+
+/**
+ * DAY 투표/기권 제출을 처리합니다. 인증된 uuid와 클라이언트가 알고 있는 gameId,
+ * targetId(참가자 uuid 또는 명시적 기권을 뜻하는 null)만 입력으로 받습니다. 반환값은
+ * 실패 시 { ok:false, code }, 성공 시 { ok:true }입니다.
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId 형태 → 2. targetId 형태 → 3. uuid의 활성 세션 존재·gameId 일치
+ *   → 4. registry 일관성(session 실존, uuid가 참가자) → 5. DAY phase → 6. actor 생존
+ *   → 7. targetId가 문자열이면 참가자로 존재하는지 → 8. 대상 생존 → 9. 자기 자신 대상 거부
+ *   → 10. session.dayVotes에 저장.
+ *
+ * 모든 실패 경로는 session.dayVotes를 절대 건드리지 않습니다 — submitNightAction과 동일한
+ * 원칙(game-core는 소켓 계층의 가드를 신뢰하지 않고 이 함수 안에서 독립적으로 전부
+ * 재검증합니다). 재제출은 기존 값을 최신 값으로 덮어씁니다.
+ */
+function submitDayVote(uuid, gameId, targetId) {
+    if (typeof gameId !== 'string' || gameId.length === 0) return { ok: false, code: 'INVALID_GAME_ID' }
+    if (targetId !== null && (typeof targetId !== 'string' || targetId.length === 0)) {
+        return { ok: false, code: 'INVALID_TARGET' }
+    }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== gameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+    if (!actor.alive) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
+
+    if (targetId !== null) {
+        const target = session.players.get(targetId)
+        if (!target) return { ok: false, code: 'INVALID_TARGET' }
+        if (!target.alive) return { ok: false, code: 'TARGET_NOT_ALIVE' }
+        if (targetId === uuid) return { ok: false, code: 'SELF_TARGET_NOT_ALLOWED' }
+    }
+
+    session.dayVotes.set(uuid, targetId)
+    return { ok: true }
 }
 
 /**
@@ -806,6 +867,7 @@ module.exports = {
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
     submitNightAction,
+    submitDayVote,
     prepareJokerChatMessage,
     commitJokerChatMessage,
     prepareNightResolution,
