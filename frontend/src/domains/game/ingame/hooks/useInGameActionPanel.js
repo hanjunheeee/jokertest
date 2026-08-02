@@ -13,12 +13,9 @@ import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
 import { useInGameDayVoteSubmit } from "./useInGameDayVoteSubmit.js"
 import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
 import { useInGameResolveNight } from "./useInGameResolveNight.js"
+import { useInGameTribunalVoteResolve } from "./useInGameTribunalVoteResolve.js"
 
 const DAY_VOTE_RESOLVE_TIMEOUT_MS = 5000
-
-function emitGameAction(eventName, payload = {}) {
-  getSocket()?.emit(eventName, payload)
-}
 
 /**
  * resolve_day_vote ack ?묐떟(?먮뒗 ?ㅽ뙣)???꾩갑?덉쓣 ??諛섏쁺???곹깭瑜?怨꾩궛?쒕떎(?쒖닔 ?⑥닔 ?? * computeResolveNightAckPatch? ?숈씪??怨꾩빟). ?깃났 ??'resolved'濡??좉렐?????먯젙? dayIndex?? * ??踰덈쭔 ?좏슚?섎?濡??ъ슂泥?쓣 ?덉슜?섏? ?딅뒗 ?뺤콉怨??쇱튂?쒕떎. ?ㅽ뙣 ??'idle'濡??섎룎???ъ떆?꾪븷
@@ -281,13 +278,17 @@ export function useInGameActionPanel() {
 
   const tribunalVoteSubmit = useInGameTribunalVoteSubmit()
 
-  const resolveTribunalVote = () => {
-    emitGameAction("resolve_tribunal_vote")
-  }
+  const tribunalResolveRequest = useInGameTribunalVoteResolve()
 
   // dayVoteControlsEnabled와 동일한 원칙(단일 플래그로 잠금)이지만 소켓 connected까지 명시적으로
   // 요구한다 — 끊긴 소켓에 emitWithAck를 시도하면 controller가 아예 submit을 no-op 처리하므로,
   // 그 전에 버튼 자체를 잠가 사용자에게 헛제출 시도를 보이지 않게 한다.
+  // 이 클라이언트가 직접 요청 중이거나(resolving) 이미 스스로 판정을 끝냈거나(resolved), 다른
+  // 참가자가 먼저 끝내 canonical store에 반영된 경우(gameState.tribunal.resolved) 모두
+  // 투표·판정 UI를 함께 잠근다.
+  const tribunalResolveLocked =
+    tribunalResolveRequest.status !== "idle" || gameState?.tribunal?.resolved === true
+
   const tribunalVoteControlsEnabled =
     Boolean(gameState) &&
     typeof gameId === "string" &&
@@ -296,6 +297,19 @@ export function useInGameActionPanel() {
     !tribunalVoteSubmit.isDefendant &&
     tribunalVoteSubmit.alive &&
     tribunalVoteSubmit.status === "idle" &&
+    !tribunalResolveLocked &&
+    Boolean(getSocket()?.connected)
+
+  const resolveTribunalVote = () => {
+    tribunalResolveRequest.resolveTribunalVote()
+  }
+
+  const tribunalResolveControlsEnabled =
+    Boolean(gameState) &&
+    typeof gameId === "string" &&
+    Number.isInteger(dayIndex) &&
+    gameState?.phase === "TRIBUNAL" &&
+    !tribunalResolveLocked &&
     Boolean(getSocket()?.connected)
 
   const submitNightAction = () => {
@@ -341,6 +355,13 @@ export function useInGameActionPanel() {
     tribunalVoteAlive: tribunalVoteSubmit.alive,
     tribunalVoteControlsEnabled,
     resolveTribunalVote,
+    tribunalResolveStatus: tribunalResolveRequest.status,
+    tribunalResolveError: tribunalResolveRequest.error,
+    tribunalResolveOutcome: gameState?.tribunal?.outcome ?? tribunalResolveRequest.outcome,
+    tribunalResolveCounts: gameState?.tribunal?.counts ?? tribunalResolveRequest.counts,
+    tribunalResolveExecutedUuid: gameState?.tribunal?.executedUuid ?? tribunalResolveRequest.executedUuid,
+    tribunalResolveLocked,
+    tribunalResolveControlsEnabled,
     submitNightAction,
     skipNightAction,
     nightActionsLocked,

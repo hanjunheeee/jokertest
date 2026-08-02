@@ -937,11 +937,13 @@ function buildDayVoteResolvedPayload(session, resolution) {
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 형태 → 2. uuid의 활성 세션 존재(NOT_IN_SESSION)·gameId 일치(STALE_SESSION_MISMATCH)
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. dayIndex 형태·session.dayIndex와 일치
- *   → 5. TRIBUNAL phase → 6. session.tribunal 존재·dayIndex 일치 → 7. canonical dayVoteResolution이
- *   TRIBUNAL 판정이고 dayIndex·대상이 session.tribunal과 전부 일관되는지 → 8. 피고인 참조 유효성·
- *   생존 → 9. 요청자 생존 → 10. 요청자≠피고인 → 11. vote 값 검증 → 12. 중복 제출 거부.
+ *   → 5. TRIBUNAL phase → 6. session.tribunal 존재·dayIndex 일치 → 7. 이미 판정
+ *   완료(TRIBUNAL_ALREADY_RESOLVED — resolveTribunalVote 성공 이후 잠금) → 8. canonical
+ *   dayVoteResolution이 TRIBUNAL 판정이고 dayIndex·대상이 session.tribunal과 전부 일관되는지
+ *   → 9. 피고인 참조 유효성·생존 → 10. 요청자 생존 → 11. 요청자≠피고인 → 12. vote 값 검증
+ *   → 13. 중복 제출 거부.
  *
- * 7~8번(내부 상태 불일치)은 소켓 계층에서 INTERNAL_ERROR로 정규화되는 internal-only 코드다 —
+ * 8~9번(내부 상태 불일치)은 소켓 계층에서 INTERNAL_ERROR로 정규화되는 internal-only 코드다 —
  * 클라이언트 입력만으로는 도달할 수 없고 서버 내부 상태가 손상됐을 때만 발생한다.
  */
 function submitTribunalVote(uuid, gameId, dayIndex, vote) {
@@ -964,6 +966,7 @@ function submitTribunalVote(uuid, gameId, dayIndex, vote) {
     const tribunal = session.tribunal
     if (!tribunal) return { ok: false, code: 'TRIBUNAL_STATE_NOT_FOUND' }
     if (tribunal.dayIndex !== session.dayIndex) return { ok: false, code: 'TRIBUNAL_CONTEXT_MISMATCH' }
+    if (tribunal.resolved === true) return { ok: false, code: 'TRIBUNAL_ALREADY_RESOLVED' }
 
     const resolution = session.dayVoteResolution
     if (!resolution) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
@@ -991,6 +994,203 @@ function submitTribunalVote(uuid, gameId, dayIndex, vote) {
 
     tribunal.votes.set(uuid, vote)
     return { ok: true, gameId: session.id, dayIndex: session.dayIndex, vote: tribunal.votes.get(uuid) }
+}
+
+// TRIBUNAL 판정 prepare/commit 사이 신뢰 경계를 지키기 위한 pending 레코드 저장소. session
+// (객체 참조) → { resolution, ballotSnapshot }. 모듈 비공개이며 export하지 않는다 — commit이
+// 재검증할 유일한 canonical 근거를 caller가 넘긴 값이 아니라 여기 저장된 값으로 삼기 위함이다
+// (재-prepare가 이전 레코드를 덮어써 우회를 막고, session이 GC되면 자연히 함께 사라진다).
+const TRIBUNAL_PENDING = new WeakMap()
+
+// session.players를 읽기만 하는 순수 계산 — TRIBUNAL 유효 투표자(생존 && 피고인이 아닌
+// 참가자) uuid를 반환한다.
+function getEligibleTribunalVoterUuids(session, defendantUuid) {
+    const uuids = []
+    for (const player of session.players.values()) {
+        if (player.alive && player.uuid !== defendantUuid) uuids.push(player.uuid)
+    }
+    return uuids
+}
+
+// session.tribunal.votes를 읽기만 해서 eligible voter 각각의 표를 voterUuid 코드유닛
+// 오름차순으로 정렬한 구조적 복사본으로 만든다(순수 계산). prepare가 freeze해 pending
+// 레코드로 보관하고, commit이 재호출해 현재 canonical votes와 deep-equal 비교한다.
+function buildTribunalBallotSnapshot(session, tribunal) {
+    const eligibleVoterUuids = getEligibleTribunalVoterUuids(session, tribunal.defendantUuid)
+    const snapshot = eligibleVoterUuids.map((voterUuid) => ({ voterUuid, choice: tribunal.votes.get(voterUuid) }))
+    snapshot.sort((a, b) => {
+        if (a.voterUuid < b.voterUuid) return -1
+        if (a.voterUuid > b.voterUuid) return 1
+        return 0
+    })
+    return snapshot
+}
+
+// ballotSnapshot을 집계해 판정을 계산한다(순수 계산). guilty > notGuilty일 때만 GUILTY이고,
+// 동률을 포함한 나머지는 전부 NOT_GUILTY다 — executedUuid는 GUILTY일 때만 defendantUuid다.
+function tallyTribunalBallots(ballotSnapshot, defendantUuid) {
+    let guilty = 0
+    let notGuilty = 0
+    for (const { choice } of ballotSnapshot) {
+        if (choice === 'GUILTY') guilty += 1
+        else if (choice === 'NOT_GUILTY') notGuilty += 1
+    }
+    const outcome = guilty > notGuilty ? 'GUILTY' : 'NOT_GUILTY'
+    return { counts: { guilty, notGuilty }, outcome, executedUuid: outcome === 'GUILTY' ? defendantUuid : null }
+}
+
+// 두 ballotSnapshot이 원소 단위로(voterUuid·choice 전부) 완전히 동일한지 비교한다(순수 계산).
+// commit이 prepare 시점 이후 표가 바뀌었는지(교환 포함) 판별하는 유일한 근거다.
+function tribunalBallotSnapshotsEqual(a, b) {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) {
+        if (a[i].voterUuid !== b[i].voterUuid || a[i].choice !== b[i].choice) return false
+    }
+    return true
+}
+
+/**
+ * TRIBUNAL 판정을 준비합니다(canonical 상태는 바꾸지 않는 순수 함수 — 단, 성공 시 모듈 비공개
+ * TRIBUNAL_PENDING에 pending 레코드를 기록합니다).
+ *
+ * 검증 순서: 1. gameId/dayIndex 형태 → 2. uuid의 활성 세션 존재·gameId 일치 → 3. registry
+ * 일관성(session 실존, uuid가 참가자) → 4. dayIndex가 session.dayIndex와 일치 → 5. TRIBUNAL
+ * phase → 6. session.tribunal에 candidateId·defendantUuid가 유효한 문자열로 존재
+ * (TRIBUNAL_STATE_NOT_FOUND, internal-only) → 7. 아직 미resolved(TRIBUNAL_ALREADY_RESOLVED)
+ * → 8. 유효 투표자 전원이 정확히 1표씩 제출 완료(TRIBUNAL_VOTES_INCOMPLETE).
+ *
+ * 성공 시 { ok:true, session, resolution }을 반환합니다. resolution은
+ * { gameId, dayIndex, defendantUuid, outcome, counts, executedUuid, ballotSnapshot }이고
+ * root·counts·ballotSnapshot·원소가 전부 freeze되어 있습니다 — commitTribunalVoteResolution에
+ * 그대로(참조 동일성 유지) 넘겨야 합니다.
+ */
+function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+    if (!Number.isInteger(dayIndex)) return { ok: false, code: 'INVALID_DAY_INDEX' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
+    if (session.phase !== 'TRIBUNAL') return { ok: false, code: 'INVALID_PHASE' }
+
+    const tribunal = session.tribunal
+    if (
+        !tribunal ||
+        typeof tribunal.candidateId !== 'string' ||
+        tribunal.candidateId.length === 0 ||
+        typeof tribunal.defendantUuid !== 'string' ||
+        tribunal.defendantUuid.length === 0
+    ) {
+        return { ok: false, code: 'TRIBUNAL_STATE_NOT_FOUND' }
+    }
+    if (tribunal.resolved === true) return { ok: false, code: 'TRIBUNAL_ALREADY_RESOLVED' }
+
+    const eligibleVoterUuids = getEligibleTribunalVoterUuids(session, tribunal.defendantUuid)
+    for (const voterUuid of eligibleVoterUuids) {
+        if (!tribunal.votes.has(voterUuid)) return { ok: false, code: 'TRIBUNAL_VOTES_INCOMPLETE' }
+    }
+
+    const ballotSnapshot = buildTribunalBallotSnapshot(session, tribunal)
+    for (const entry of ballotSnapshot) Object.freeze(entry)
+    Object.freeze(ballotSnapshot)
+
+    const tally = tallyTribunalBallots(ballotSnapshot, tribunal.defendantUuid)
+    const resolution = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        defendantUuid: tribunal.defendantUuid,
+        outcome: tally.outcome,
+        counts: Object.freeze({ guilty: tally.counts.guilty, notGuilty: tally.counts.notGuilty }),
+        executedUuid: tally.executedUuid,
+        ballotSnapshot,
+    }
+    Object.freeze(resolution)
+
+    TRIBUNAL_PENDING.set(session, { resolution, ballotSnapshot })
+
+    return { ok: true, session, resolution }
+}
+
+/**
+ * TRIBUNAL 판정 커밋의 유일한 mutation입니다. prepareTribunalVoteResolution이 만든 pending
+ * 레코드를 신뢰 경계로 삼아 caller가 넘긴 resolution을 재검증합니다: (a) phase/dayIndex/
+ * registry 조회 세션===인자 session + 피고인 존재·alive → (a′) record.resolution===resolution
+ * 참조 동일성 → (b) 현재 canonical votes 정규화 배열 vs record.ballotSnapshot deep-equal →
+ * (c) 재집계 counts/outcome/executedUuid 비교. 어느 하나라도 어긋나면 canonical을 전혀
+ * 건드리지 않고 { ok:false, code:'TRIBUNAL_RESOLUTION_MISMATCH' }를 반환하며 pending 레코드도
+ * 그대로 남겨둡니다(성공했을 때만 지웁니다). 이미 판정된 세션에 대한 재commit은 이 재검증보다
+ * 먼저 { ok:false, code:'TRIBUNAL_ALREADY_RESOLVED' }로 거부합니다.
+ *
+ * 성공 시 GUILTY라면 피고인 alive를 정확히 한 번 false로 바꾸고, session.tribunal에
+ * outcome/counts/executedUuid/resolved를 기록합니다. phase는 이 슬라이스에서 바꾸지
+ * 않습니다(TRIBUNAL 이후 전이는 이후 슬라이스의 몫입니다).
+ */
+function commitTribunalVoteResolution(session, resolution) {
+    const canonicalSession = gameSessions.get(session.id)
+    if (canonicalSession !== session) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    if (session.phase !== 'TRIBUNAL') return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    if (session.dayIndex !== resolution.dayIndex) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+
+    const tribunal = session.tribunal
+    if (!tribunal || tribunal.defendantUuid !== resolution.defendantUuid || tribunal.dayIndex !== resolution.dayIndex) {
+        return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    }
+    if (tribunal.resolved === true) return { ok: false, code: 'TRIBUNAL_ALREADY_RESOLVED' }
+
+    const defendant = session.players.get(resolution.defendantUuid)
+    if (!defendant || !defendant.alive) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+
+    const record = TRIBUNAL_PENDING.get(session)
+    if (!record || record.resolution !== resolution) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+
+    const currentBallotSnapshot = buildTribunalBallotSnapshot(session, tribunal)
+    if (!tribunalBallotSnapshotsEqual(currentBallotSnapshot, record.ballotSnapshot)) {
+        return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    }
+
+    const tally = tallyTribunalBallots(currentBallotSnapshot, tribunal.defendantUuid)
+    if (
+        tally.outcome !== resolution.outcome ||
+        tally.counts.guilty !== resolution.counts.guilty ||
+        tally.counts.notGuilty !== resolution.counts.notGuilty ||
+        tally.executedUuid !== resolution.executedUuid
+    ) {
+        return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    }
+
+    if (resolution.outcome === 'GUILTY') defendant.alive = false
+    tribunal.outcome = resolution.outcome
+    tribunal.counts = { guilty: resolution.counts.guilty, notGuilty: resolution.counts.notGuilty }
+    tribunal.executedUuid = resolution.executedUuid
+    tribunal.resolved = true
+
+    TRIBUNAL_PENDING.delete(session)
+    return { ok: true }
+}
+
+/**
+ * TRIBUNAL 판정 공개 payload. top-level 키는 정확히
+ * [counts, dayIndex, defendantUuid, executedUuid, gameId, outcome, phase]뿐입니다 —
+ * voterUuid별 개별 표(ballotSnapshot)나 role/team/privateRole 등은 어디에도 없습니다.
+ */
+function buildTribunalVoteResolvedPayload(session) {
+    const tribunal = session.tribunal
+    return {
+        gameId: session.id,
+        dayIndex: tribunal.dayIndex,
+        phase: session.phase,
+        defendantUuid: tribunal.defendantUuid,
+        outcome: tribunal.outcome,
+        counts: { guilty: tribunal.counts.guilty, notGuilty: tribunal.counts.notGuilty },
+        executedUuid: tribunal.executedUuid,
+    }
 }
 
 /**
@@ -1127,6 +1327,9 @@ module.exports = {
     commitDayVoteResolution,
     buildDayVoteResolvedPayload,
     submitTribunalVote,
+    prepareTribunalVoteResolution,
+    commitTribunalVoteResolution,
+    buildTribunalVoteResolvedPayload,
     JOKER_CHAT_MAX_LENGTH,
     __resetStateForTests,
     __getStateSnapshotForTests,

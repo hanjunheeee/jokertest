@@ -2032,3 +2032,113 @@ test('resolve_day_vote: registerGameHandlers로 실제 배선하면 socket.trigg
         tribunalTargetUuid: null,
     })
 })
+
+// ---------------------------------------------------------------------------
+// resolve_tribunal_vote (handleResolveTribunalVote) — tribunal_resolved 판정
+// ---------------------------------------------------------------------------
+
+test('handleResolveTribunalVote: 성공 시 commit 이후 canonical에서 빌드한 payload로 ACK와 broadcast 1회(tribunal_resolved 계약)', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-1', uuidA: 'r1', uuidB: 'r2', uuidC: 'r3', defendantUuid: 'r3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, null, 'r1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, null, 'r2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 'r1', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true, gameId: session.id, dayIndex: session.dayIndex, outcome: 'GUILTY', counts: { guilty: 2, notGuilty: 0 }, executedUuid: 'r3' })
+    assert.equal(session.players.get('r3').alive, false)
+    for (const s of [socketA, socketB, socketC]) {
+        const delivered = s.emitted.filter((e) => e.event === 'tribunal_vote_resolved')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(Object.keys(delivered[0].payload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase'])
+    }
+})
+
+test('handleResolveTribunalVote: commit 실패 시 실패 ACK, broadcast 0회, payload 빌드 0회', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-2', uuidA: 's1', uuidB: 's2', uuidC: 's3', defendantUuid: 's3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, null, 's1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, null, 's2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    let buildCalls = 0
+    const deps = {
+        commit: () => ({ ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }),
+    }
+    const originalBuild = gameSessionCore.buildTribunalVoteResolvedPayload
+    gameSessionCore.buildTribunalVoteResolvedPayload = (...args) => {
+        buildCalls += 1
+        return originalBuild(...args)
+    }
+    const { callback, getResponse } = countingCallback()
+
+    try {
+        gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 's1', { gameId: session.id, dayIndex: session.dayIndex }, callback, deps)
+    } finally {
+        gameSessionCore.buildTribunalVoteResolvedPayload = originalBuild
+    }
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(buildCalls, 0)
+    for (const s of [socketA, socketB, socketC]) {
+        assert.equal(s.emitted.filter((e) => e.event === 'tribunal_vote_resolved').length, 0)
+    }
+})
+
+test('resolve_tribunal_vote: 권한 없는 요청 거부(NOT_A_PARTICIPANT → INTERNAL_ERROR)', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-3', uuidA: 't1', uuidB: 't2', uuidC: 't3', defendantUuid: 't3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    session.players.delete('t1')
+    const { callback, getResponse } = countingCallback()
+
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 't1', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('resolve_tribunal_vote: callback 없는 요청은 mutation 없음', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-4', uuidA: 'u1', uuidB: 'u2', uuidC: 'u3', defendantUuid: 'u3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, null, 'u1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, null, 'u2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+
+    assert.doesNotThrow(() =>
+        gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 'u1', { gameId: session.id, dayIndex: session.dayIndex }, undefined),
+    )
+
+    assert.equal(session.players.get('u3').alive, true)
+})
+
+test('resolve_tribunal_vote: ACK와 broadcast에 raw ballot·private role 없음(public snapshot만 노출)', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-5', uuidA: 'v1', uuidB: 'v2', uuidC: 'v3', defendantUuid: 'v3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, null, 'v1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, null, 'v2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 'v1', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    const ackSerialized = JSON.stringify(getResponse())
+    assert.equal(ackSerialized.includes('ballotSnapshot'), false)
+    assert.equal(ackSerialized.includes('voterUuid'), false)
+    assert.equal(ackSerialized.includes('role'), false)
+    const broadcast = socketA.emitted.find((e) => e.event === 'tribunal_vote_resolved')
+    const broadcastSerialized = JSON.stringify(broadcast.payload)
+    assert.equal(broadcastSerialized.includes('ballotSnapshot'), false)
+    assert.equal(broadcastSerialized.includes('voterUuid'), false)
+})
+
+test('resolve_tribunal_vote: 중복 resolve 시 broadcast 증가분 0', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-6', uuidA: 'w1', uuidB: 'w2', uuidC: 'w3', defendantUuid: 'w3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, null, 'w2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: session.dayIndex }, countingCallback().callback)
+    const countBefore = socketA.emitted.filter((e) => e.event === 'tribunal_vote_resolved').length
+
+    const { callback, getResponse } = countingCallback()
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 'w2', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'TRIBUNAL_ALREADY_RESOLVED', message: '요청을 처리할 수 없습니다.' })
+    const countAfter = socketA.emitted.filter((e) => e.event === 'tribunal_vote_resolved').length
+    assert.equal(countAfter, countBefore)
+})

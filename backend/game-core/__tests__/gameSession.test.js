@@ -2209,3 +2209,205 @@ test('buildDayVoteResolvedPayload: TIE/ABSTAINED 이후에도 payload.phase는 D
     assert.equal(payload.phase, 'DAY')
     assert.equal(payload.outcome, 'TIE')
 })
+
+// ---------------------------------------------------------------------------
+// prepareTribunalVoteResolution / commitTribunalVoteResolution / buildTribunalVoteResolvedPayload
+// ---------------------------------------------------------------------------
+
+const { prepareTribunalVoteResolution, commitTribunalVoteResolution, buildTribunalVoteResolvedPayload } = gameSession
+
+function castAllVotes(session, votesByUuid) {
+    for (const [voterUuid, vote] of Object.entries(votesByUuid)) {
+        submitTribunalVote(voterUuid, session.id, session.dayIndex, vote)
+    }
+}
+
+test('resolveTribunalVote: 미제출 유효 투표자가 있으면 거부', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['ta1', 'ta2', 'ta3'], defendantUuid: 'ta3' })
+    submitTribunalVote('ta1', session.id, session.dayIndex, 'GUILTY')
+
+    const result = prepareTribunalVoteResolution('ta1', session.id, session.dayIndex)
+
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_VOTES_INCOMPLETE' })
+})
+
+test('resolveTribunalVote: 모든 유효 표 제출 후 유죄 판결', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['tb1', 'tb2', 'tb3'], defendantUuid: 'tb3' })
+    castAllVotes(session, { tb1: 'GUILTY', tb2: 'GUILTY' })
+
+    const prepared = prepareTribunalVoteResolution('tb1', session.id, session.dayIndex)
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.outcome, 'GUILTY')
+    assert.equal(prepared.resolution.executedUuid, 'tb3')
+    assert.deepEqual(prepared.resolution.counts, { guilty: 2, notGuilty: 0 })
+
+    const committed = commitTribunalVoteResolution(prepared.session, prepared.resolution)
+    assert.deepEqual(committed, { ok: true })
+})
+
+test('resolveTribunalVote: 유죄 피고인은 정확히 한 번 사망', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['tc1', 'tc2', 'tc3'], defendantUuid: 'tc3' })
+    castAllVotes(session, { tc1: 'GUILTY', tc2: 'GUILTY' })
+    const prepared = prepareTribunalVoteResolution('tc1', session.id, session.dayIndex)
+
+    commitTribunalVoteResolution(prepared.session, prepared.resolution)
+
+    assert.equal(session.players.get('tc3').alive, false)
+    assert.equal(session.players.get('tc1').alive, true)
+    assert.equal(session.players.get('tc2').alive, true)
+})
+
+test('resolveTribunalVote: 동률은 무죄', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['td1', 'td2', 'td3', 'td4'], defendantUuid: 'td4' })
+    castAllVotes(session, { td1: 'GUILTY', td2: 'NOT_GUILTY', td3: 'NOT_GUILTY' })
+    // eligible voters(td1,td2,td3) 중 GUILTY 1 vs NOT_GUILTY 2 — 무죄 사례도 겸해 확인 후,
+    // 동률 자체는 counts 비교로 별도 확인한다.
+    const prepared = prepareTribunalVoteResolution('td1', session.id, session.dayIndex)
+    assert.equal(prepared.resolution.outcome, 'NOT_GUILTY')
+
+    const tieSession = setupTribunalReadySession({ uuids: ['te1', 'te2', 'te3'], defendantUuid: 'te3' }).session
+    castAllVotes(tieSession, { te1: 'GUILTY', te2: 'NOT_GUILTY' })
+    const tiePrepared = prepareTribunalVoteResolution('te1', tieSession.id, tieSession.dayIndex)
+    assert.equal(tiePrepared.resolution.outcome, 'NOT_GUILTY')
+    assert.equal(tiePrepared.resolution.executedUuid, null)
+
+    commitTribunalVoteResolution(tiePrepared.session, tiePrepared.resolution)
+    assert.equal(tieSession.players.get('te3').alive, true)
+})
+
+test('resolveTribunalVote: 판정 후 submit/resolve mutation 잠금', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['tf1', 'tf2', 'tf3'], defendantUuid: 'tf3' })
+    castAllVotes(session, { tf1: 'GUILTY', tf2: 'NOT_GUILTY' })
+    const prepared = prepareTribunalVoteResolution('tf1', session.id, session.dayIndex)
+    commitTribunalVoteResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(prepareTribunalVoteResolution('tf1', session.id, session.dayIndex), {
+        ok: false,
+        code: 'TRIBUNAL_ALREADY_RESOLVED',
+    })
+    assert.deepEqual(commitTribunalVoteResolution(session, prepared.resolution), {
+        ok: false,
+        code: 'TRIBUNAL_ALREADY_RESOLVED',
+    })
+    assert.deepEqual(submitTribunalVote('tf3', session.id, session.dayIndex, 'GUILTY'), {
+        ok: false,
+        code: 'TRIBUNAL_ALREADY_RESOLVED',
+    })
+})
+
+test('resolveTribunalVote: 변조된 executedUuid는 commit이 거부하고 아무도 죽지 않는다', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['tg1', 'tg2', 'tg3'], defendantUuid: 'tg3' })
+    castAllVotes(session, { tg1: 'NOT_GUILTY', tg2: 'NOT_GUILTY' })
+    const prepared = prepareTribunalVoteResolution('tg1', session.id, session.dayIndex)
+    const forged = { ...prepared.resolution, outcome: 'GUILTY', executedUuid: 'tg3' }
+
+    const result = commitTribunalVoteResolution(prepared.session, forged)
+
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' })
+    assert.equal(session.players.get('tg3').alive, true)
+})
+
+test('resolveTribunalVote: resolved 이후 재-commit 거부', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['th1', 'th2', 'th3'], defendantUuid: 'th3' })
+    castAllVotes(session, { th1: 'GUILTY', th2: 'GUILTY' })
+    const prepared = prepareTribunalVoteResolution('th1', session.id, session.dayIndex)
+    commitTribunalVoteResolution(prepared.session, prepared.resolution)
+
+    const second = commitTribunalVoteResolution(session, prepared.resolution)
+
+    assert.deepEqual(second, { ok: false, code: 'TRIBUNAL_ALREADY_RESOLVED' })
+})
+
+test('resolveTribunalVote: 변조된 resolution은 미해결 상태에서도 commit이 거부', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['ti1', 'ti2', 'ti3'], defendantUuid: 'ti3' })
+    castAllVotes(session, { ti1: 'GUILTY', ti2: 'NOT_GUILTY' })
+    const forged = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        defendantUuid: 'ti3',
+        outcome: 'GUILTY',
+        counts: { guilty: 99, notGuilty: 0 },
+        executedUuid: 'ti3',
+        ballotSnapshot: [],
+    }
+
+    const result = commitTribunalVoteResolution(session, forged)
+
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' })
+    assert.equal(session.players.get('ti3').alive, true)
+})
+
+test('resolveTribunalVote: prepare 후 canonical 변경 시 원본 resolution commit 거부(재-prepare 우회 포함)', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['tj1', 'tj2', 'tj3'], defendantUuid: 'tj3' })
+    castAllVotes(session, { tj1: 'GUILTY', tj2: 'NOT_GUILTY' })
+    const first = prepareTribunalVoteResolution('tj1', session.id, session.dayIndex)
+
+    // 표를 뒤바꾼 뒤 재-prepare하면 pending 레코드가 갱신되어 이전 resolution 참조는 우회 불가.
+    session.tribunal.votes.set('tj1', 'NOT_GUILTY')
+    session.tribunal.votes.set('tj2', 'GUILTY')
+    prepareTribunalVoteResolution('tj2', session.id, session.dayIndex)
+
+    const bypass = commitTribunalVoteResolution(session, first.resolution)
+    assert.deepEqual(bypass, { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' })
+    assert.equal(session.players.get('tj3').alive, true)
+})
+
+test('resolveTribunalVote: 집계 동일 투표 교환 시 stale commit 거부', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['tk1', 'tk2', 'tk3'], defendantUuid: 'tk3' })
+    castAllVotes(session, { tk1: 'GUILTY', tk2: 'NOT_GUILTY' })
+    const prepared = prepareTribunalVoteResolution('tk1', session.id, session.dayIndex)
+
+    // 총 개수는 동일(GUILTY 1, NOT_GUILTY 1)하지만 투표자별 표를 서로 교환한다.
+    session.tribunal.votes.set('tk1', 'NOT_GUILTY')
+    session.tribunal.votes.set('tk2', 'GUILTY')
+
+    const result = commitTribunalVoteResolution(session, prepared.resolution)
+
+    assert.deepEqual(result, { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' })
+    assert.equal(session.players.get('tk3').alive, true)
+})
+
+test('ballotSnapshot 교체·위조 거부: 양성 대조(변조 없는 정상 commit은 성공)', () => {
+    const { session } = setupTribunalReadySession({ uuids: ['tl1', 'tl2', 'tl3'], defendantUuid: 'tl3' })
+    castAllVotes(session, { tl1: 'GUILTY', tl2: 'GUILTY' })
+    const prepared = prepareTribunalVoteResolution('tl1', session.id, session.dayIndex)
+
+    const result = commitTribunalVoteResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(session.players.get('tl3').alive, false)
+})
+
+test('buildTribunalVoteResolvedPayload: 공개 payload 화이트리스트 (GUILTY/NOT_GUILTY)', () => {
+    const guiltySetup = setupTribunalReadySession({ uuids: ['tm1', 'tm2', 'tm3'], defendantUuid: 'tm3' })
+    castAllVotes(guiltySetup.session, { tm1: 'GUILTY', tm2: 'GUILTY' })
+    const guiltyPrepared = prepareTribunalVoteResolution('tm1', guiltySetup.session.id, guiltySetup.session.dayIndex)
+    commitTribunalVoteResolution(guiltyPrepared.session, guiltyPrepared.resolution)
+    const guiltyPayload = buildTribunalVoteResolvedPayload(guiltySetup.session)
+
+    assert.deepEqual(Object.keys(guiltyPayload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase'])
+    assert.deepEqual(Object.keys(guiltyPayload.counts).sort(), ['guilty', 'notGuilty'])
+    assert.equal(guiltyPayload.outcome, 'GUILTY')
+    assert.equal(guiltyPayload.executedUuid, 'tm3')
+    assert.equal(JSON.stringify(guiltyPayload).includes('ballotSnapshot'), false)
+    assert.equal(JSON.stringify(guiltyPayload).includes('voterUuid'), false)
+    assert.equal(JSON.stringify(guiltyPayload).includes('role'), false)
+
+    const notGuiltySetup = setupTribunalReadySession({ uuids: ['tn1', 'tn2', 'tn3'], defendantUuid: 'tn3' })
+    castAllVotes(notGuiltySetup.session, { tn1: 'NOT_GUILTY', tn2: 'NOT_GUILTY' })
+    const notGuiltyPrepared = prepareTribunalVoteResolution('tn1', notGuiltySetup.session.id, notGuiltySetup.session.dayIndex)
+    commitTribunalVoteResolution(notGuiltyPrepared.session, notGuiltyPrepared.resolution)
+    const notGuiltyPayload = buildTribunalVoteResolvedPayload(notGuiltySetup.session)
+
+    assert.equal(notGuiltyPayload.outcome, 'NOT_GUILTY')
+    assert.equal(notGuiltyPayload.executedUuid, null)
+})
+
+test('공개 payload 화이트리스트: game-started 타인 player 키 무변경', () => {
+    const room = makeRoom()
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    const payload = buildGameStartedPayload(candidate.session, 'u1')
+    for (const player of payload.state.players) {
+        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'uuid'])
+    }
+})

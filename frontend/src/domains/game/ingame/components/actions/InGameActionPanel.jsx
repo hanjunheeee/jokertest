@@ -59,6 +59,9 @@ export default function InGameActionPanel() {
     tribunalVoteAlive,
     tribunalVoteControlsEnabled,
     resolveTribunalVote,
+    tribunalResolveError,
+    tribunalResolveControlsEnabled,
+    tribunalResolveLocked,
     submitNightAction,
     skipNightAction,
     nightActionsLocked,
@@ -72,7 +75,12 @@ export default function InGameActionPanel() {
 
   useEffect(() => {
     setSelectedTribunalVote(null)
-  }, [gameState?.phase, gameState?.dayIndex, gameState?.tribunal?.defendantUuid])
+  }, [
+    gameState?.phase,
+    gameState?.dayIndex,
+    gameState?.tribunal?.defendantUuid,
+    gameState?.tribunal?.resolved,
+  ])
 
   if (!gameState) {
     return (
@@ -224,6 +232,18 @@ export default function InGameActionPanel() {
             >
               {tribunalVoteStatus === "submitting" ? TRIBUNAL_VOTE_SUBMITTING_LABEL : TRIBUNAL_VOTE_SUBMIT_LABEL}
             </button>
+            <button
+              type="button"
+              className={INGAME_ACTION_BUTTON_CLASS}
+              disabled={!tribunalResolveControlsEnabled}
+              onClick={resolveTribunalVote}
+            >
+              {gameState.tribunal?.resolved === true
+                ? "판정 완료"
+                : tribunalResolveLocked
+                  ? "판정 중..."
+                  : "재판 판정"}
+            </button>
           </div>
           {tribunalVoteError ? (
             <p className="text-[0.68rem] text-red-300">{tribunalVoteError}</p>
@@ -231,6 +251,9 @@ export default function InGameActionPanel() {
             <p className="text-[0.68rem] text-[#e9d6ba]">
               제출함: {tribunalVoteSubmittedVote === "GUILTY" ? TRIBUNAL_VOTE_GUILTY_LABEL : TRIBUNAL_VOTE_NOT_GUILTY_LABEL}
             </p>
+          ) : null}
+          {tribunalResolveError ? (
+            <p className="text-[0.68rem] text-red-300">{tribunalResolveError}</p>
           ) : null}
         </div>
       ) : null}

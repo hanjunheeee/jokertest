@@ -1,5 +1,6 @@
 // 파일 역할: ingameStore.js - 전역 상태 store입니다.
 import { create } from "zustand"
+import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
 
 /**
  * 서버 인게임 상태를 보관하는 클라이언트 store.
@@ -83,6 +84,11 @@ export const useInGameStore = create((set) => ({
 
       return { state: { ...current.state, phase: "TRIBUNAL", tribunal: { defendantUuid } } }
     }),
+
+  // tribunal_vote_resolved 방송을 반영한다. 검증·staleness 판단은 순수 함수
+  // applyTribunalResolvedPure에 전부 위임하고(store 참조 보존 no-op 포함), 여기서는 그 결과를
+  // set()에 그대로 전달하기만 한다.
+  applyTribunalResolved: (payload) => set((current) => applyTribunalResolvedPure(current, payload)),
 
   setGameError: (error) => set({ error }),
 

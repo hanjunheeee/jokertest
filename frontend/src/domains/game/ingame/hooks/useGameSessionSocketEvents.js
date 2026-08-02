@@ -83,15 +83,24 @@ export function useGameSessionSocketEvents() {
         .applyDayVoteResolvedToPhase(current.gameId, parsed.dayIndex, { defendantUuid: parsed.tribunalTargetUuid })
     }
 
+    // TRIBUNAL 판정 완료 방송이다. 위 세 핸들러와 달리 별도 파서를 거치지 않고 raw payload를
+    // 그대로 store에 넘긴다 — applyTribunalResolved(→applyTribunalResolvedPure)가 gameId/
+    // dayIndex/phase/defendantUuid 4종을 canonical과 비교해 stale이면 참조를 그대로 보존한다.
+    const handleTribunalVoteResolved = (payload) => {
+      useInGameStore.getState().applyTribunalResolved(payload)
+    }
+
     socket.on("game_ended", handleGameEnded)
     socket.on("game_phase_changed", handlePhaseChanged)
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("day_vote_resolved", handleDayVoteResolved)
+    socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
     return () => {
       socket.off("game_ended", handleGameEnded)
       socket.off("game_phase_changed", handlePhaseChanged)
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("day_vote_resolved", handleDayVoteResolved)
+      socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
     }
   }, [socket, navigate])
 

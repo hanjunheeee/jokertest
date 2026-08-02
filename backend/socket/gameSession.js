@@ -34,6 +34,13 @@ const CAST_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES = new Set([
     'TRIBUNAL_RESOLUTION_MISMATCH',
 ])
 
+// resolve_tribunal_vote 전용 internal-only 코드. TRIBUNAL_ALREADY_RESOLVED·
+// TRIBUNAL_RESOLUTION_MISMATCH·TRIBUNAL_VOTES_INCOMPLETE는 클라이언트가 정상적으로 마주칠 수
+// 있는 안정된 공개 코드라 여기서 제외한다(각각 "이미 판정됨", "재검증 실패", "미완료 투표"를
+// 그대로 알려줘야 UI가 반응할 수 있다) — SESSION_NOT_FOUND/NOT_A_PARTICIPANT/
+// TRIBUNAL_STATE_NOT_FOUND만 서버 내부 상태 손상 신호다.
+const RESOLVE_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'TRIBUNAL_STATE_NOT_FOUND'])
+
 /**
  * callback을 항상 안전하게 호출한다 — callback 자체가 던지는 예외가 이후 로직(방송 등)을
  * 막지 않게 한다. acknowledge_role_reveal과 leave_game_session이 공유한다(둘 다 비밀 역할
@@ -700,6 +707,111 @@ function handleCastTribunalVote(io, socket, uuid, payload, callback) {
 }
 
 /**
+ * resolve_tribunal_vote 전용 ack 전달 헬퍼. respondResolveDayVote와 동일한 이유로 고정 구조
+ * 로그를 쓴다 — callback이 던져도 예외가 바깥으로 새지 않고, 로그는 항상
+ * {code:'CALLBACK_ERROR', uuid, gameId} 3키뿐이다.
+ */
+function respondResolveTribunalVote(uuid, gameId, callback, payload) {
+    try {
+        callback(payload)
+    } catch (err) {
+        console.error('[재판 판정 오류]', { code: 'CALLBACK_ERROR', uuid, gameId })
+    }
+}
+
+/**
+ * TRIBUNAL 판정 요청을 처리합니다(Socket.IO acknowledgement 방식). handleResolveDayVote와
+ * 동일한 골격(payload 검증 → prepare → internal-only 코드 정규화 → commit → ack → 참가자
+ * 전체 방송)을 따르되, alreadyResolved 멱등 단축 분기는 없다(TRIBUNAL_ALREADY_RESOLVED로 그대로
+ * 거부한다) — 그리고 commit 자체가 { ok:false, code }를 반환할 수 있어(신뢰 경계 재검증 실패),
+ * 그 경우도 실패 ack로 그대로 이어지고 payload 빌드·broadcast가 없다.
+ *
+ * deps.prepare/deps.commit/deps.resolveParticipantSockets를 주입할 수 있습니다 — production
+ * 기본값은 각각 game-core의 prepareTribunalVoteResolution/commitTribunalVoteResolution, 이
+ * 파일의 resolveSessionParticipantSockets입니다.
+ */
+function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {}) {
+    const prepare = deps.prepare ?? gameSessionCore.prepareTribunalVoteResolution
+    const commit = deps.commit ?? gameSessionCore.commitTribunalVoteResolution
+    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+
+    if (typeof callback !== 'function') return
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respondResolveTribunalVote(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId, dayIndex } = payload
+    if (typeof gameId !== 'string') {
+        respondResolveTribunalVote(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    if (!Number.isInteger(dayIndex)) {
+        respondResolveTribunalVote(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let prepared
+    try {
+        prepared = prepare(uuid, gameId, dayIndex)
+    } catch (err) {
+        console.error('[재판 판정 오류]', { code: 'PREPARE_UNEXPECTED_ERROR', uuid, gameId: undefined })
+        respondResolveTribunalVote(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!prepared.ok) {
+        if (RESOLVE_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES.has(prepared.code)) {
+            console.error('[재판 판정 오류]', { code: prepared.code, uuid, gameId: undefined })
+            respondResolveTribunalVote(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        respondResolveTribunalVote(uuid, undefined, callback, { ok: false, code: prepared.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    let committed
+    try {
+        committed = commit(prepared.session, prepared.resolution)
+    } catch (err) {
+        console.error('[재판 판정 오류]', { code: 'COMMIT_ERROR', uuid, gameId: prepared.session.id })
+        respondResolveTribunalVote(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!committed.ok) {
+        respondResolveTribunalVote(uuid, prepared.session.id, callback, { ok: false, code: committed.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    const resolvedPayload = gameSessionCore.buildTribunalVoteResolvedPayload(prepared.session)
+
+    respondResolveTribunalVote(uuid, prepared.session.id, callback, {
+        ok: true,
+        gameId: resolvedPayload.gameId,
+        dayIndex: resolvedPayload.dayIndex,
+        outcome: resolvedPayload.outcome,
+        counts: resolvedPayload.counts,
+        executedUuid: resolvedPayload.executedUuid,
+    })
+
+    let recipients
+    try {
+        recipients = resolveParticipantSockets(io, prepared.session)
+    } catch (err) {
+        console.error('[재판 판정 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
+        return
+    }
+
+    for (const recipientSocket of recipients) {
+        try {
+            recipientSocket.emit('tribunal_vote_resolved', resolvedPayload)
+        } catch (err) {
+            console.error('[재판 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
+        }
+    }
+}
+
+/**
  * GameSession 종료 core(endGameSessionForPlayer)가 성공한 직후 공통으로 수행하는 뒷정리.
  * disconnect·명시적 이탈 두 경로가 모두 이 함수 하나만 거치므로 "종료·방송은 한 번뿐"이라는
  * 계약이 자연히 지켜진다.
@@ -791,6 +903,7 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('cast_day_vote', (payload, callback) => handleSubmitDayVote(io, socket, uuid, payload, callback))
     socket.on('resolve_day_vote', (payload, callback) => handleResolveDayVote(io, socket, uuid, payload, callback))
     socket.on('cast_tribunal_vote', (payload, callback) => handleCastTribunalVote(io, socket, uuid, payload, callback))
+    socket.on('resolve_tribunal_vote', (payload, callback) => handleResolveTribunalVote(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, uuid, payload, callback))
 }
 
@@ -843,6 +956,7 @@ module.exports = {
         handleSubmitDayVote,
         handleResolveDayVote,
         handleCastTribunalVote,
+        handleResolveTribunalVote,
         handleLeaveGameSession,
         resolveJokerTeammateSockets,
         resolveSessionParticipantSockets,
