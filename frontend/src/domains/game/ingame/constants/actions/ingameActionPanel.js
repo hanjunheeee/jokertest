@@ -68,6 +68,15 @@ export const TRIBUNAL_VOTE_SUBMITTING_LABEL = "제출 중..."
 export const TRIBUNAL_DEFENDANT_NOTICE = "당신은 피고인입니다. 투표할 수 없습니다."
 export const TRIBUNAL_DEAD_NOTICE = "사망한 참가자는 투표할 수 없습니다."
 
+// winResult.winner → 한국어 승리 문구입니다. 종료되지 않았거나(winResult 없음) winner가
+// 알려진 두 값(CITIZEN/JOKER)이 아니면 null을 반환합니다(getInGameNightActionLabel과 동일한 관례).
+export function getInGameWinResultLabel(winResult) {
+  if (!winResult || typeof winResult !== "object") return null
+  if (winResult.winner === "CITIZEN") return "시민 진영 승리"
+  if (winResult.winner === "JOKER") return "JOKER 진영 승리"
+  return null
+}
+
 // 개발용 이벤트 목록에 표시할 짧은 문자열을 만듭니다.
 export function formatInGameEvent(event) {
   const actor = event.actorId ? ` ${event.actorId}` : ""

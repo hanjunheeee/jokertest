@@ -30,8 +30,85 @@ export function applyTribunalResolvedPure(current, payload) {
   if (!current.gameId || !current.state) return current
   if (payload.gameId !== current.gameId) return current
   if (payload.dayIndex !== current.state.dayIndex) return current
-  if (payload.phase !== current.state.phase) return current
   if (current.state.tribunal?.defendantUuid !== payload.defendantUuid) return current
+
+  // 게임 종료(ENDED) payload는 phase가 TRIBUNAL에서 곧바로 ENDED로 전이하므로, 아래 일반
+  // phase 일치 검사(TRIBUNAL===TRIBUNAL)를 적용할 수 없다 — 별도 분기에서 완화된 조건으로
+  // 검증·적용한다(TRIBUNAL 측 별도 parser를 신설하지 않고 이 함수가 그대로 소유한다).
+  if (payload.phase === "ENDED") {
+    if (current.state.phase !== "TRIBUNAL") return current
+    if (!Array.isArray(payload.players)) return current
+    if (
+      !Object.hasOwn(payload, "winResult") ||
+      payload.winResult === null ||
+      typeof payload.winResult !== "object" ||
+      Array.isArray(payload.winResult) ||
+      (payload.winResult.winner !== "CITIZEN" && payload.winResult.winner !== "JOKER")
+    ) {
+      return current
+    }
+    const winResult = { winner: payload.winResult.winner }
+
+    const canonicalUuids = new Set((current.state.players ?? []).map((p) => p.uuid))
+
+    const aliveByUuid = new Map()
+    for (const p of payload.players) {
+      if (p === null || typeof p !== "object" || Array.isArray(p)) return current
+      if (typeof p.uuid !== "string" || p.uuid.length === 0) return current
+      if (typeof p.isAlive !== "boolean") return current
+      if (aliveByUuid.has(p.uuid)) return current
+      aliveByUuid.set(p.uuid, p.isAlive)
+    }
+    if (aliveByUuid.size !== canonicalUuids.size) return current
+    for (const uuid of aliveByUuid.keys()) {
+      if (!canonicalUuids.has(uuid)) return current
+    }
+
+    const nextEndedPlayers = (current.state.players ?? []).map((p) => ({ ...p, alive: aliveByUuid.get(p.uuid) }))
+
+    return {
+      state: {
+        ...current.state,
+        phase: "ENDED",
+        tribunal: {
+          ...current.state.tribunal,
+          outcome: payload.outcome,
+          counts: { guilty: counts.guilty, notGuilty: counts.notGuilty },
+          executedUuid: payload.executedUuid,
+          resolved: true,
+        },
+        players: nextEndedPlayers,
+        winResult,
+      },
+    }
+  }
+
+  // 승리 없는(no-winner) TRIBUNAL 판정은 phase가 TRIBUNAL에서 곧바로 NIGHT로 전이한다(같은
+  // dayIndex를 유지한 채 — 위 dayIndex 일치 검사가 이미 이를 보장한다). ENDED 분기와 동일한
+  // 이유로 아래 일반 phase 일치 검사(TRIBUNAL===TRIBUNAL)를 적용할 수 없어 별도 분기로
+  // 처리한다. tribunal은 이 밤에는 더 이상 의미가 없는 stale UI 상태이므로 null로 비운다
+  // (ENDED 분기는 반대로 최종 결과를 계속 보여줘야 하므로 tribunal을 남겨둔다). backend
+  // payload에는 players/winResult가 없으므로(비-terminal 판정) executedUuid만으로 생존 상태를
+  // 반영한다 — 일반 분기와 동일한 계산이다.
+  if (payload.phase === "NIGHT") {
+    if (current.state.phase !== "TRIBUNAL") return current
+
+    const nextNightPlayers =
+      payload.executedUuid === null
+        ? current.state.players
+        : (current.state.players ?? []).map((p) => (p.uuid === payload.executedUuid ? { ...p, alive: false } : p))
+
+    return {
+      state: {
+        ...current.state,
+        phase: "NIGHT",
+        tribunal: null,
+        players: nextNightPlayers,
+      },
+    }
+  }
+
+  if (payload.phase !== current.state.phase) return current
 
   const nextPlayers =
     payload.executedUuid === null

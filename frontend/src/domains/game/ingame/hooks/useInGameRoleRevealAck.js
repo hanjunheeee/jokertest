@@ -7,8 +7,14 @@ import { computeRoleRevealInvalidatePatch } from "../utils/computeRoleRevealInva
 const ACK_TIMEOUT_MS = 5000
 
 /**
- * ROLE_REVEAL 단계의 "역할 확인" 요청을 관리한다(useMatchingRoom의 startGame/setReady와
- * 동일한 늦은 응답 방어 패턴을 이 훅 하나의 액션에 맞게 적용).
+ * ROLE_REVEAL 단계의 "역할 확인(acknowledge_role_reveal)" 요청을 자동으로 관리한다
+ * (useMatchingRoom의 startGame/setReady와 동일한 늦은 응답 방어 패턴을 이 훅 하나의 액션에
+ * 맞게 적용). 예전에는 사용자가 버튼을 눌러야만 이 요청이 나갔지만, 지금은 화면 표시(파치먼트
+ * 역할 공개 오버레이)와 완전히 분리된 배경 동작으로 gameId가 준비되는 즉시·매 재연결마다
+ * 자동으로 나간다 — 서버의 ROLE_REVEAL→NIGHT 전이가 참가자 전원의 ack를 요구하는 계약은
+ * 그대로 두되(백엔드 미변경), 그 ack를 "언제 보낼지"만 자동화한다. acknowledge_role_reveal은
+ * 이미 ack한 uuid가 다시 요청해도 {ok:true, transitioned:false}를 반환하는 멱등 연산이므로
+ * 재연결마다 다시 불러도 안전하다.
  */
 export function useInGameRoleRevealAck() {
   const gameId = useInGameStore((s) => s.gameId)
@@ -18,6 +24,10 @@ export function useInGameRoleRevealAck() {
   const [error, setError] = useState(null)
 
   const ackingRef = useRef(false)
+  // status state는 비동기 커밋을 거치므로, 같은 렌더 안에서 invalidate() 직후 곧바로
+  // acknowledge()를 불러도 아직 갱신 전 값을 보게 될 수 있다 — 자동 발사 경로가 그 순간의
+  // stale status 때문에 잘못 건너뛰지 않도록 acked 여부는 이 ref로 동기적으로 추적한다.
+  const ackedRef = useRef(false)
   const versionRef = useRef(0)
   const mountedRef = useRef(true)
 
@@ -39,32 +49,40 @@ export function useInGameRoleRevealAck() {
   const invalidate = () => {
     versionRef.current += 1
     ackingRef.current = false
+    ackedRef.current = false
     const patch = computeRoleRevealInvalidatePatch(mountedRef.current)
     if (!patch) return // unmounted: state는 건드리지 않는다
     setStatus(patch.status)
     setError(patch.error)
   }
 
-  // disconnect・socket 객체 교체(재연결)・unmount 시 무효화.
+  // disconnect・socket 객체 교체(재연결)・unmount 시 무효화 + 재연결마다 자동 재시도.
+  // gameId도 deps에 포함해, socket 인스턴스는 그대로인데 gameId만 바뀌는 경우에도 이
+  // "connect" 핸들러가 새 gameId를 가리키도록(오래된 gameId를 향한 늦은 자동 요청 방지) 한다.
   useEffect(() => {
     if (!socket) return
     const handleDisconnect = () => invalidate()
+    const handleConnect = () => acknowledge()
     socket.on("disconnect", handleDisconnect)
+    socket.on("connect", handleConnect)
     return () => {
       socket.off("disconnect", handleDisconnect)
+      socket.off("connect", handleConnect)
       invalidate() // socket이 바뀌거나 컴포넌트가 사라질 때도 동일하게 무효화
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket])
+  }, [socket, gameId])
 
-  // gameId 변경 시 무효화(이전 gameId를 향한 요청·완료 상태는 새 게임에 넘어가지 않는다).
+  // gameId가 준비되는 즉시 자동으로 확인 요청을 보낸다(이전에는 사용자의 버튼 클릭이
+  // 트리거였다 — 이제는 화면 표시와 무관하게 이 훅 혼자 자동으로 처리한다).
   useEffect(() => {
     invalidate()
+    if (gameId) acknowledge()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId])
 
   const acknowledge = () => {
-    if (ackingRef.current || status === "acked") return
+    if (ackingRef.current || ackedRef.current) return
     const requestSocket = getSocket()
     if (!requestSocket || !requestSocket.connected) {
       setError("서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.")
@@ -97,6 +115,7 @@ export function useInGameRoleRevealAck() {
       .then((response) => {
         if (isStale()) return
         if (response?.ok) {
+          ackedRef.current = true
           setStatus("acked")
         } else {
           setStatus("idle")

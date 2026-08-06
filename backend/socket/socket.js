@@ -11,6 +11,7 @@ const gameSession     = require("./gameSession");
 // channel 정리)는 구현됐습니다. 이후 턴/페이즈 동기화는 아직 없습니다.
 
 const onlineUsers = new Map();
+gameSession.setOnlineUsersRegistry(onlineUsers);
 
 let _io = null;
 
@@ -46,13 +47,17 @@ function initSocket(httpServer) {
  */
 function registerDisconnectHandler(io, socket, uuid) {
     socket.on("disconnect", () => {
+        // gameSession.onDisconnect가 반드시 가장 먼저 실행돼야 한다 — handleDisconnect가
+        // onlineUsers[uuid] 엔트리를 자신의 첫 await 이전에 동기적으로 지우므로, 순서를
+        // 바꾸면 정당한(canonical) 소켓의 실제 disconnect조차 registry에서 자신을 찾지
+        // 못해 게임 세션이 절대 종료되지 않는다.
+        gameSession.onDisconnect(io, socket, uuid).catch((err) => {
+            console.error("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m", err);
+        });
         handleDisconnect(io, socket, uuid).catch((err) => {
             console.error("\x1b[31m[소켓 종료 처리 에러]\x1b[0m", err);
         });
         matchmaking.onDisconnect(io, socket, uuid);
-        gameSession.onDisconnect(io, socket, uuid).catch((err) => {
-            console.error("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m", err);
-        });
     });
 }
 
@@ -61,6 +66,12 @@ function registerConnectionHandlers(io, socket) {
 
     handleConnection(io, socket, uuid).catch((err) => {
         console.error("\x1b[31m[소켓 접속 처리 에러]\x1b[0m", err);
+    });
+
+    // 재접속 시 기존 활성 세션의 channel·activeGameId를 재바인딩한다(권한 부여 아님 — 라우팅
+    // 정보만 동기화하는 fire-and-forget 부수효과).
+    gameSession.resyncSessionRouting(socket, uuid).catch((err) => {
+        console.error("\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m", err);
     });
 
     matchmaking.registerMatchmakingHandlers(io, socket, uuid);
@@ -85,6 +96,11 @@ function authenticateSocket(socket, next) {
 async function handleConnection(io, socket, uuid) {
     const existingSocketId = onlineUsers.get(uuid);
 
+    // registry를 먼저 새 소켓으로 갱신한 뒤에 기존 소켓을 kick한다 — 순서를 바꾸면 기존
+    // 소켓의 disconnect 처리(gameSession.onDisconnect 포함)가 registry에서 여전히 자기
+    // 자신을 canonical로 관측해, 새로 교체된 소켓의 권한까지 함께 무너뜨릴 수 있다.
+    onlineUsers.set(uuid, socket.id);
+
     if (existingSocketId && existingSocketId !== socket.id) {
         const existingSocket = io.sockets.sockets.get(existingSocketId);
 
@@ -97,7 +113,6 @@ async function handleConnection(io, socket, uuid) {
         }
     }
 
-    onlineUsers.set(uuid, socket.id);
     // 서로 결과를 필요로 하지 않는 독립적인 작업이라 순차 await 대신 병렬로 처리합니다.
     await Promise.all([
         presenceService.setPresence(uuid, "ONLINE"),
@@ -128,4 +143,14 @@ async function broadcastFriendStatus(io, uuid, status) {
     });
 }
 
-module.exports = { initSocket, emitToUser, __testables: { registerConnectionHandlers, registerDisconnectHandler } };
+/** 테스트 전용: 라이브 onlineUsers Map 참조를 그대로 반환합니다(복제하지 않습니다). */
+function __getOnlineUsersForTests() {
+    return onlineUsers;
+}
+
+module.exports = {
+    initSocket,
+    emitToUser,
+    __getOnlineUsersForTests,
+    __testables: { registerConnectionHandlers, registerDisconnectHandler },
+};

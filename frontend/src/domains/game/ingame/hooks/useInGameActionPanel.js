@@ -42,7 +42,9 @@ export function shouldApplyDayVoteResolvedPayload({ payload, gameId, dayIndex })
 }
 
 const DAY_VOTE_RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAINED"])
-const DAY_VOTE_RESOLVED_PHASES = new Set(["DAY", "TRIBUNAL"])
+// TIE/ABSTAINED는 TRIBUNAL 없이 곧장 그날 밤(NIGHT)으로 전이하므로(dayIndex는 그대로) phase는
+// NIGHT여야 한다 — DAY로 남는 경우는 없다(commitDayVoteResolution 참고).
+const DAY_VOTE_RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL"])
 
 function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0
@@ -64,12 +66,12 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     if (typeof payload.tribunalTargetUuid !== "string" || payload.tribunalTargetUuid.length === 0) return null
     if (payload.publicVoteCount <= payload.publicAbstainCount) return null
   } else if (payload.outcome === "TIE") {
-    if (payload.phase !== "DAY") return null
+    if (payload.phase !== "NIGHT") return null
     if (payload.tribunalTargetUuid !== null) return null
     if (payload.publicVoteCount <= payload.publicAbstainCount) return null
   } else {
     // ABSTAINED
-    if (payload.phase !== "DAY") return null
+    if (payload.phase !== "NIGHT") return null
     if (payload.tribunalTargetUuid !== null) return null
     if (payload.publicVoteCount !== payload.publicAbstainCount) return null
   }
@@ -92,7 +94,7 @@ export function computeDayVoteResolveInvalidatePatch(mounted) {
 }
 
 /** 媛쒕컻???멸쾶??議곗옉 ?⑤꼸???좏깮媛믨낵 ?뚯폆 ?대깽???꾩넚??愿由ы빀?덈떎. */
-export function useInGameActionPanel() {
+export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
   const gameState = useInGameStore((s) => s.state)
   const error = useInGameStore((s) => s.error)
@@ -210,14 +212,25 @@ export function useInGameActionPanel() {
 
   // ?먯젙??吏꾪뻾 以묒씠嫄곕굹 ?대? ?앸궗?쇰㈃(?ㅻⅨ 李멸??먭? 癒쇱? ?앸궦 寃쎌슦 ?ы븿) ?ы몴쨌湲곌텒쨌?먯젙 ?붿껌
   // ?낅젰???④퍡 ?좉렐????nightActionsLocked? ?숈씪???먯튃?대떎.
-  const dayVoteResolveLocked = dayVoteResolveStatus !== "idle"
+  // 게임이 ENDED로 전이되면 어떤 액션 컨트롤도 활성화되지 않는다(승리 확정 이후 모든 제출·판정
+  // 요청을 UI 단에서부터 막는다). 아래 각 controlsEnabled/Locked 계산은 phase 정확 일치 검사
+  // 덕분에 이미 자연히 잠기지만, 의도를 명시적으로 드러내고 향후 컨트롤 추가에도 회귀하지 않게
+  // 이 플래그로 강제한다.
+  const isGameEnded = gameState?.phase === "ENDED"
+
+  const dayVoteResolveLocked = dayVoteResolveStatus !== "idle" || interactionBlocked
   const dayVoteControlsEnabled =
-    gameState?.phase === "DAY" && isSessionPlayerAlive(localSessionPlayer) && !dayVoteResolveLocked
+    !interactionBlocked &&
+    !isGameEnded &&
+    gameState?.phase === "DAY" &&
+    isSessionPlayerAlive(localSessionPlayer) &&
+    !dayVoteResolveLocked
   // ?먯젙??吏꾪뻾 以묒씠嫄곕굹(resolving) ?대? ?앸궗?쇰㈃(resolved) 諛??됰룞 ?낅젰쨌?먯젙 踰꾪듉???④퍡
   // ?좉렐?????먯젙 ?꾨즺 ???ъ젣異쑣룹쨷蹂??먯젙 ?붿껌??留됯린 ?꾪븿?대떎. phase !== 'NIGHT'???④퍡
   // 寃?ы븳????DAY ?꾩씠濡?resolveNightStatus媛 'idle'濡?珥덇린?붾릺?붾씪??NIGHT 議곗옉? 怨꾩냽
   // ?좉꺼 ?덉뼱???쒕떎.
-  const nightActionsLocked = resolveNightRequest.status !== "idle" || gameState?.phase !== "NIGHT"
+  const nightActionsLocked =
+    interactionBlocked || isGameEnded || resolveNightRequest.status !== "idle" || gameState?.phase !== "NIGHT"
 
   const submitDayVote = () => {
     if (!selectedDayVoteTargetId) return
@@ -287,9 +300,11 @@ export function useInGameActionPanel() {
   // 참가자가 먼저 끝내 canonical store에 반영된 경우(gameState.tribunal.resolved) 모두
   // 투표·판정 UI를 함께 잠근다.
   const tribunalResolveLocked =
-    tribunalResolveRequest.status !== "idle" || gameState?.tribunal?.resolved === true
+    interactionBlocked || tribunalResolveRequest.status !== "idle" || gameState?.tribunal?.resolved === true
 
   const tribunalVoteControlsEnabled =
+    !interactionBlocked &&
+    !isGameEnded &&
     Boolean(gameState) &&
     typeof gameId === "string" &&
     Number.isInteger(dayIndex) &&
@@ -305,6 +320,8 @@ export function useInGameActionPanel() {
   }
 
   const tribunalResolveControlsEnabled =
+    !interactionBlocked &&
+    !isGameEnded &&
     Boolean(gameState) &&
     typeof gameId === "string" &&
     Number.isInteger(dayIndex) &&
@@ -323,6 +340,7 @@ export function useInGameActionPanel() {
   return {
     gameState,
     error,
+    interactionBlocked,
     selectedNightTargetId,
     setSelectedNightTargetId,
     nightActionTargets,

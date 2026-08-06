@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import {
   formatInGameEvent,
+  getInGameWinResultLabel,
   INGAME_ACTION_BUTTON_CLASS,
   INGAME_ACTION_HEADER_CLASS,
   INGAME_ACTION_META_CLASS,
@@ -17,14 +18,25 @@ import {
   TRIBUNAL_DEAD_NOTICE,
 } from "../../constants/actions/ingameActionPanel.js"
 import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
-import { useInGameRoleRevealAck } from "../../hooks/useInGameRoleRevealAck.js"
 import InGameTargetPicker from "./InGameTargetPicker.jsx"
 
 /**
  * 개발용 인게임 조작 패널.
  * TODO: 실제 기획 UI가 들어오면 이 패널은 정식 투표/스킬 UI로 교체합니다.
+ *
+ * ROLE_REVEAL 단계에서 사용자가 직접 눌러야 진행되던 "역할 확인" 게이트는 파치먼트 역할
+ * 공개 오버레이(자동 표시)로 대체됐다 — acknowledge_role_reveal은 이제 useInGameRoleReveal이
+ * 화면 표시와 무관하게 배경에서 자동으로 처리하므로, 이 패널은 그 흐름을 막지 않는다.
+ * 대신 언제든 오버레이를 다시 볼 수 있는 상시 버튼(onOpenRoleReveal)만 노출한다.
+ *
+ * interactionBlocked는 DAY/NIGHT 진입 연출처럼 화면을 덮는 표시 전용 오버레이가 떠 있다는
+ * 뜻이다 — 그동안에는 투표·재판·밤 행동은 물론 집계/판정 같은 결과 컨트롤까지 전부 잠근다.
  */
-export default function InGameActionPanel() {
+export default function InGameActionPanel({
+  onOpenRoleReveal,
+  roleRevealAvailable = false,
+  interactionBlocked = false,
+}) {
   const {
     gameState,
     error,
@@ -69,8 +81,7 @@ export default function InGameActionPanel() {
     resolveNightStatus,
     resolveNightError,
     nightActionResult,
-  } = useInGameActionPanel()
-  const roleReveal = useInGameRoleRevealAck()
+  } = useInGameActionPanel({ interactionBlocked })
   const [selectedTribunalVote, setSelectedTribunalVote] = useState(null)
 
   useEffect(() => {
@@ -102,9 +113,9 @@ export default function InGameActionPanel() {
             역할 {gameState.self?.role ?? "미정"} · 참가자 {gameState.players?.length ?? 0}명
           </p>
         </div>
-        {gameState.winResult ? (
+        {getInGameWinResultLabel(gameState.winResult) ? (
           <p className="rounded border border-[#f3d28d]/60 px-2 py-1 text-xs text-[#ffe2ad]">
-            {gameState.winResult.winner} 승리
+            {getInGameWinResultLabel(gameState.winResult)}
           </p>
         ) : null}
       </div>
@@ -115,22 +126,16 @@ export default function InGameActionPanel() {
         </p>
       ) : null}
 
-      {gameState.phase === "ROLE_REVEAL" ? (
-        <div className={INGAME_ACTION_SECTION_CLASS}>
-          <p className={INGAME_ACTION_META_CLASS}>당신의 역할: {gameState.self?.role ?? "확인 중"}</p>
-          <button
-            type="button"
-            className={INGAME_ACTION_BUTTON_CLASS}
-            disabled={roleReveal.status !== "idle"}
-            onClick={roleReveal.acknowledge}
-          >
-            {roleReveal.status === "acked" ? "확인 완료 · 대기 중" : "역할 확인"}
-          </button>
-          {roleReveal.error ? (
-            <p className="text-[0.68rem] text-red-300">{roleReveal.error}</p>
-          ) : null}
-        </div>
-      ) : null}
+      <div className={INGAME_ACTION_SECTION_CLASS}>
+        <button
+          type="button"
+          className={INGAME_ACTION_BUTTON_CLASS}
+          disabled={!roleRevealAvailable || interactionBlocked}
+          onClick={onOpenRoleReveal}
+        >
+          내 역할 보기
+        </button>
+      </div>
 
       {gameState.phase === "DAY" ? (
         <div className={INGAME_ACTION_SECTION_CLASS}>
@@ -160,7 +165,7 @@ export default function InGameActionPanel() {
             <button
               type="button"
               className={INGAME_ACTION_BUTTON_CLASS}
-              disabled={dayVoteResolveStatus !== "idle"}
+              disabled={interactionBlocked || dayVoteResolveStatus !== "idle"}
               onClick={resolveDayVote}
             >
               {dayVoteResolveStatus === "resolving"

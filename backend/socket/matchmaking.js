@@ -3,6 +3,10 @@ const userRepository = require('../repositories/user.repositories')
 const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
 const { validateCreateRoomPayload } = require('../utils/createRoomValidation')
 const gameSession = require('../game-core/gameSession')
+const {
+    validateCreateRoomRoleComposition,
+    resolveRoleComposition,
+} = require('../game-core/roleComposition')
 
 // 테스트에서 실제 DB 모듈 대신 교체할 수 있도록 참조를 변수로 감싼다.
 // node:test의 mock.module()을 시도했으나 이 프로젝트에서는 user.repositories가
@@ -222,6 +226,10 @@ function computeCanStart(room) {
     // 모이지 않으면 전원이 광대인 상황이 될 수 있어, 시작 시점에 실제 인원 기준으로
     // 비-광대가 최소 1명은 있는지 다시 검증한다.
     if (players.length <= jokerCount) return false
+    // CUSTOM 역할 구성은 정원(maxPlayers) 기준으로 저장돼 있으므로, 지금 인원으로 실제
+    // 구성이 성립하는지도 함께 본다(고정 역할 합 > 현재 인원이면 시작할 수 없다).
+    // AUTO에서는 바로 위 jokerCount 검사와 동일한 판정이라 기존 동작이 그대로 유지된다.
+    if (!resolveRoleComposition(room.settings, players.length).ok) return false
     return players.every((player) => player.isReady === true)
 }
 
@@ -320,6 +328,19 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
         return
     }
 
+    // 역할 구성(AUTO/CUSTOM)은 기본 검증을 통과한 maxPlayers/jokerCount와 함께 봐야 하므로
+    // 그 뒤에 따로 검증한다. 통과하면 settings에 병합할 canonical 조각(방어적 복사본)만
+    // 돌려준다 — 클라이언트 payload의 roleCounts 객체를 그대로 저장하지 않는다.
+    const roleComposition = validateCreateRoomRoleComposition(payload, validation.value.settings)
+    if (!roleComposition.ok) {
+        callback({ ok: false, message: roleComposition.message })
+        return
+    }
+    const validatedValue = {
+        accessType: validation.value.accessType,
+        settings: { ...validation.value.settings, ...roleComposition.value },
+    }
+
     // await(사용자 조회) 이전, 아직 동기 실행 구간에서 예약한다. JS는 단일 스레드라 이
     // 지점까지는 다른 요청이 끼어들 수 없어, 같은 uuid의 두 번째 create_room/join_room_by_code도
     // 반드시 위의 pendingRoomTransitions.has(uuid) 검사에서 걸러진다(더블클릭/동시 요청 방지).
@@ -328,7 +349,7 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
     // 이 요청이 대기하는 동안 증가시키면, 재개된 뒤의 재검사에서 걸러진다.
     const generationAtReservation = getRoomTransitionGeneration(uuid)
 
-    handleCreateRoomAfterReservation(io, socket, uuid, validation.value, callback, generationAtReservation)
+    handleCreateRoomAfterReservation(io, socket, uuid, validatedValue, callback, generationAtReservation)
 }
 
 async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation) {
@@ -774,6 +795,19 @@ async function handleStartGame(io, socket, uuid, callback) {
             ok: false,
             code: 'MIN_PLAYERS_NOT_MET',
             message: '게임을 시작하기 위한 인원 조건을 아직 충족하지 못했습니다.',
+        })
+        return
+    }
+    // 방 생성 시점의 역할 구성 검증은 정원(maxPlayers) 기준이다. 실제로는 정원보다 적은
+    // 인원으로 시작할 수 있으므로, 시작 시점에 "지금 이 인원"으로 구성이 성립하는지 다시
+    // 확인한다(CUSTOM: 고정 역할 합 ≤ 실제 인원, JOKER < 실제 인원). 실패해도 이 시점까지
+    // gameRooms/playerRoom/game-core registry는 전부 불변이다 — 방은 그대로 유지되고
+    // 방장은 인원을 더 모으거나(설정은 생성 후 수정 불가) 방을 다시 만들면 된다.
+    if (!resolveRoleComposition(room.settings, players.length).ok) {
+        callback({
+            ok: false,
+            code: 'INVALID_ROLE_COMPOSITION',
+            message: '설정한 역할 구성이 현재 인원과 맞지 않습니다. 인원을 더 모아주세요.',
         })
         return
     }

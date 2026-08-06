@@ -2,6 +2,8 @@ import { InGamePlayerSessionContext } from "../../components/InGamePlayerSession
 import test from "node:test"
 import assert from "node:assert/strict"
 import React from "react"
+import { renderHook } from "@testing-library/react"
+import { JSDOM } from "jsdom"
 import { renderToStaticMarkup } from "react-dom/server"
 import {
   computeDayVoteResolveAckPatch,
@@ -126,7 +128,7 @@ test("parseDayVoteResolvedPayload: TIE 판정 payload가 올바르면 tribunalTa
   const payload = {
     gameId: "g1",
     dayIndex: 1,
-    phase: "DAY",
+    phase: "NIGHT",
     outcome: "TIE",
     tribunalTargetUuid: null,
     publicVoteCount: 3,
@@ -141,7 +143,7 @@ test("parseDayVoteResolvedPayload: ABSTAINED 판정 payload가 올바르면 파�
   const payload = {
     gameId: "g1",
     dayIndex: 2,
-    phase: "DAY",
+    phase: "NIGHT",
     outcome: "ABSTAINED",
     tribunalTargetUuid: null,
     publicVoteCount: 3,
@@ -370,4 +372,205 @@ test("useInGameActionPanel: DAY phase 상태에서 실제로 렌더링해도 day
     )
   })
   assert.equal(typeof captured.dayVoteControlsEnabled, "boolean")
+})
+
+// ---------------------------------------------------------------------------
+// useInGameActionPanel — ENDED phase 계약 테스트
+// ---------------------------------------------------------------------------
+
+let actionPanelTestDom = null
+
+function ensureActionPanelClientEnvironment() {
+  if (globalThis.document?.body) return
+
+  actionPanelTestDom = new JSDOM(
+    "<!doctype html><html><body></body></html>",
+    { url: "http://localhost/" },
+  )
+
+  globalThis.window = actionPanelTestDom.window
+  globalThis.document = actionPanelTestDom.window.document
+  globalThis.HTMLElement = actionPanelTestDom.window.HTMLElement
+  globalThis.Node = actionPanelTestDom.window.Node
+  globalThis.MutationObserver = actionPanelTestDom.window.MutationObserver
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+}
+
+function renderActionPanelProbe(contextValue = {}) {
+  ensureActionPanelClientEnvironment()
+
+  function Wrapper({ children }) {
+    return React.createElement(
+      InGamePlayerSessionContext.Provider,
+      { value: contextValue },
+      children,
+    )
+  }
+
+  const rendered = renderHook(
+    () => useInGameActionPanel(),
+    { wrapper: Wrapper },
+  )
+
+  const captured = rendered.result.current
+  rendered.unmount()
+  return captured
+}
+
+test("useInGameActionPanel: ENDED + winResult.winner CITIZEN이면 gameState.winResult를 그대로 노출한다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "ENDED",
+      dayIndex: 3,
+      self: { role: "CITIZEN" },
+      players: [],
+      events: [],
+      winResult: { winner: "CITIZEN" },
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe()
+
+  assert.deepEqual(captured.gameState.winResult, { winner: "CITIZEN" })
+})
+
+test("useInGameActionPanel: ENDED + winResult.winner JOKER면 gameState.winResult를 그대로 노출한다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "ENDED",
+      dayIndex: 3,
+      self: { role: "JOKER" },
+      players: [],
+      events: [],
+      winResult: { winner: "JOKER" },
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe()
+
+  assert.deepEqual(captured.gameState.winResult, { winner: "JOKER" })
+})
+
+test("useInGameActionPanel: ENDED면 어떤 조작 액션도 활성화되지 않고 모든 게임 컨트롤이 잠긴다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "ENDED",
+      dayIndex: 3,
+      self: { role: "CITIZEN" },
+      players: [],
+      events: [],
+      winResult: { winner: "CITIZEN" },
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe()
+
+  assert.equal(captured.dayVoteControlsEnabled, false)
+  assert.equal(captured.nightActionsLocked, true)
+  assert.equal(captured.tribunalVoteControlsEnabled, false)
+  assert.equal(captured.tribunalResolveControlsEnabled, false)
+})
+
+test("useInGameActionPanel: ENDED면 이전이라면 컨트롤을 열어줬을 role·생존·비피고인 상태여도 재활성화되지 않는다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "ENDED",
+      dayIndex: 2,
+      self: { role: "JOKER", uuid: "p1" },
+      players: [{ uuid: "p1", alive: true }],
+      events: [],
+      tribunal: { defendantUuid: "p2" },
+      winResult: { winner: "CITIZEN" },
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: [{ id: "p1", nickname: "P1", status: "alive" }],
+    localPlayerId: "p1",
+  })
+
+  // NIGHT_ACTION_MIN_DAY_INDEX상 JOKER·dayIndex 2는 밤 행동 자격 자체는 만족해
+  // nightActionType은 여전히 계산되지만(role/dayIndex만 보고 phase는 보지 않음),
+  // nightActionsLocked를 비롯한 잠금은 ENDED로 인해 그대로 유지돼야 한다.
+  assert.equal(captured.nightActionType, "ASSASSINATE")
+  assert.equal(captured.nightActionsLocked, true)
+  assert.equal(captured.dayVoteControlsEnabled, false)
+  assert.equal(captured.tribunalVoteControlsEnabled, false)
+  assert.equal(captured.tribunalResolveControlsEnabled, false)
+})
+
+test("useInGameActionPanel: 비종료 phase(DAY)에서 생존 상태면 dayVoteControlsEnabled는 여전히 true다(positive control)", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "DAY",
+      dayIndex: 1,
+      self: { role: "CITIZEN", uuid: "p1" },
+      players: [{ uuid: "p1", alive: true }],
+      events: [],
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: [{ id: "p1", nickname: "P1", status: "alive" }],
+    localPlayerId: "p1",
+  })
+
+  assert.equal(captured.dayVoteControlsEnabled, true)
+})
+
+test("useInGameActionPanel: ENDED인데 winResult가 없어도(undefined) throw 없이 안전한 폴백을 따르고 컨트롤은 계속 잠긴다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "ENDED",
+      dayIndex: 3,
+      self: { role: "CITIZEN" },
+      players: [],
+      events: [],
+    },
+    error: null,
+  })
+
+  let captured = null
+  assert.doesNotThrow(() => {
+    captured = renderActionPanelProbe()
+  })
+  assert.equal(captured.gameState.winResult, undefined)
+  assert.equal(captured.nightActionsLocked, true)
+  assert.equal(captured.dayVoteControlsEnabled, false)
+  assert.equal(captured.tribunalVoteControlsEnabled, false)
+  assert.equal(captured.tribunalResolveControlsEnabled, false)
+})
+
+test("useInGameActionPanel: ENDED인데 winResult 형태가 잘못돼도(문자열) throw 없이 안전한 폴백을 따르고 컨트롤은 계속 잠긴다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "ENDED",
+      dayIndex: 3,
+      self: { role: "CITIZEN" },
+      players: [],
+      events: [],
+      winResult: "malformed-not-an-object",
+    },
+    error: null,
+  })
+
+  let captured = null
+  assert.doesNotThrow(() => {
+    captured = renderActionPanelProbe()
+  })
+  assert.equal(captured.gameState.winResult, "malformed-not-an-object")
+  assert.equal(captured.nightActionsLocked, true)
+  assert.equal(captured.dayVoteControlsEnabled, false)
 })

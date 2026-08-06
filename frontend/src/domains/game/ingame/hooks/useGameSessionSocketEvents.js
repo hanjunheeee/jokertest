@@ -57,18 +57,20 @@ export function useGameSessionSocketEvents() {
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const canonicalPlayerIds = new Set((current.state.players ?? []).map((p) => p.uuid))
+      const previouslyDeadUuids = new Set((current.state.players ?? []).filter((p) => p.alive === false).map((p) => p.uuid))
       const parsed = parseNightResultAppliedPayload({
         payload,
         gameId: current.gameId,
         dayIndex: current.state.dayIndex,
         canonicalPlayerIds,
+        previouslyDeadUuids,
       })
       if (!parsed) return
       useInGameStore.getState().applyNightResultAppliedPayload(parsed)
     }
 
-    // DAY 투표 판정 중 TRIBUNAL 전이 방송이다. 검증에 필요한 gameId/dayIndex는 호출 시점의
-    // store에서 직접 읽는다(위 handleNightResultApplied와 동일한 이유).
+    // DAY 투표 판정 방송이다(TRIBUNAL 전이 또는 TIE/ABSTAINED의 NIGHT 전이). 검증에 필요한
+    // gameId/dayIndex는 호출 시점의 store에서 직접 읽는다(위 handleNightResultApplied와 동일한 이유).
     const handleDayVoteResolved = (payload) => {
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
@@ -80,7 +82,10 @@ export function useGameSessionSocketEvents() {
       if (!parsed) return
       useInGameStore
         .getState()
-        .applyDayVoteResolvedToPhase(current.gameId, parsed.dayIndex, { defendantUuid: parsed.tribunalTargetUuid })
+        .applyDayVoteResolvedToPhase(current.gameId, parsed.dayIndex, {
+          outcome: parsed.outcome,
+          defendantUuid: parsed.tribunalTargetUuid,
+        })
     }
 
     // TRIBUNAL 판정 완료 방송이다. 위 세 핸들러와 달리 별도 파서를 거치지 않고 raw payload를

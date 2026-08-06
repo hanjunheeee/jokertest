@@ -46,6 +46,7 @@ test('forcedLogout으로 강제 종료된 소켓의 disconnect는 실제 활성 
     t.after(() => {
         gameSessionCore.__resetStateForTests()
         matchmaking.__resetStateForTests()
+        socket.__getOnlineUsersForTests().delete('forced-a')
     })
 
     const room = {
@@ -90,6 +91,11 @@ test('forcedLogout으로 강제 종료된 소켓의 disconnect는 실제 활성 
             }
         },
     }
+
+    // onDisconnect의 canonical predicate는 forcedLogout이 아니라 onlineUsers registry로만
+    // 판정된다(0절 정책의 근거) — 이 소켓이 여전히 uuid의 registry-canonical 소켓임을
+    // 명시적으로 재현한다(다른 소켓으로 대체되지 않은, 강제 로그아웃만 된 케이스).
+    socket.__getOnlineUsersForTests().set('forced-a', fakeSocket.id)
 
     socket.__testables.registerDisconnectHandler(fakeIo, fakeSocket, 'forced-a')
     handlers.disconnect()

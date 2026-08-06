@@ -9,6 +9,8 @@
  * - items: GENERAL_GAME_SETUP | MEETING_GAME_SETUP 형태 (type: "checkbox" | "stepper")
  * - checks, ranges: 상위가 소유한 전체 설정 상태(다른 탭의 값도 포함되어 있을 수 있음)
  * - setCheck, setRange: 값 변경 콜백
+ * - children: items로 표현할 수 없는 추가 설정 행(예: 역할 구성 구역). 같은 목록 컨테이너
+ *   안에 렌더해 행 간격·구분선이 기존 항목과 동일하게 적용되도록 한다.
  */
 import SetupCheckboxRow from "./rows/SetupCheckboxRow.jsx"
 import SetupStepperRow from "./rows/SetupStepperRow.jsx"
@@ -16,7 +18,7 @@ import SetupStepperRow from "./rows/SetupStepperRow.jsx"
 const SETUP_LIST_GAP_CLASS =
   "flex min-h-0 flex-1 flex-col justify-start gap-[clamp(2rem,2.1vh,2.5rem)]"
 
-export default function SetupTabContent({ items, checks, ranges, setCheck, setRange }) {
+export default function SetupTabContent({ items, checks, ranges, setCheck, setRange, children }) {
   return (
     <div className={SETUP_LIST_GAP_CLASS}>
       {items.map((item) => {
@@ -46,6 +48,7 @@ export default function SetupTabContent({ items, checks, ranges, setCheck, setRa
           />
         )
       })}
+      {children}
     </div>
   )
 }

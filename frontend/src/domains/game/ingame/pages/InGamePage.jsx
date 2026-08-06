@@ -4,6 +4,9 @@ import { motion } from "framer-motion"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
 import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
+import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOverlay.jsx"
+import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
+import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
@@ -13,6 +16,8 @@ import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
+import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
+import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
@@ -24,9 +29,15 @@ export default function InGamePage() {
   const gameState = useInGameStore((s) => s.state)
   const navigate = useNavigate()
   const { requestExit } = useInGameExit()
-  // useInGameSocket()은 인게임 진입 후 실시간 동기화를 담당할 훅인데 아직 없어 제외했습니다.
-  // gameState는 게임 시작 시점의 정적인 초기 state(ROLE_REVEAL 단계)에 머물러 있고, 아래
-  // 컴포넌트들은 그 state와 프리뷰(더미) 데이터를 섞어 렌더링합니다.
+  // 재접속/재연결 시 get_session_snapshot으로 현재 phase까지의 상태를 원자적으로 복원한다.
+  // 이후 이벤트 단위 실시간 동기화(night_result_applied 등)는 useGameSessionSocketEvents가
+  // 별도로 담당한다 — 이 훅은 그 사이에 놓친 스냅샷만 재접속 시점에 채워 넣는다.
+  useInGameSessionSnapshotSync()
+  // 인게임 오버레이 스택 — 역할 공개, DAY/NIGHT 진입 연출, 밤 역할 턴 안내의 표시 순서를
+  // 한 곳에서 결정한다(useInGameOverlayStack 참고). 각 오버레이가 서로의 상태를 알아야 하므로
+  // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
+  // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
+  const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
 
   // 게임 중 새로고침 등으로 ingameStore가 비어있는 채 /ingame에 직접 진입하면(store가
   // 초기화되어 있음) 실제 참가자 대신 더미 프리뷰 데이터로 채워진 화면이 보인다. 유효한
@@ -57,28 +68,59 @@ export default function InGamePage() {
         draggable={false}
       />
 
-      <InGameTopControls
-        onExitClick={requestExit}
-        onMenuClick={() => setPlayerRecordListOpen(true)}
+      {/* 진입 연출이 떠 있는 동안에는 이 게임 표면 전체를 inert로 잠근다 — 포인터도 키보드
+          초점도 안으로 들어가지 못하므로 낮 투표·채팅·재판·밤 행동·결과 컨트롤이 한꺼번에
+          차단된다. 오버레이들은 이 래퍼 바깥에 있어 그대로 조작할 수 있다. */}
+      <div
+        className={`absolute inset-0 ${interactionBlocked ? "pointer-events-none" : ""}`.trim()}
+        inert={interactionBlocked || undefined}
+      >
+        <InGameTopControls
+          onExitClick={requestExit}
+          onMenuClick={() => setPlayerRecordListOpen(true)}
+        />
+        <InGamePlayerSessionProvider>
+          <InGameTimebar
+            day={gameState?.dayIndex}
+            activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
+            onVoteStatusClick={() => setVoteStatusOpen(true)}
+          />
+          <InGamePlayerBoard />
+          <InGameChatShell />
+          <InGameActionPanel
+            onOpenRoleReveal={roleReveal.reopen}
+            roleRevealAvailable={Boolean(roleReveal.roleInfo)}
+            interactionBlocked={interactionBlocked}
+          />
+          <PlayerRecordListPanel
+            open={playerRecordListOpen}
+            onClose={() => setPlayerRecordListOpen(false)}
+          />
+          <InGameVoteStatusPanel
+            open={voteStatusOpen}
+            onClose={() => setVoteStatusOpen(false)}
+          />
+        </InGamePlayerSessionProvider>
+      </div>
+
+      {/* 오버레이는 우선순위가 낮은 것부터 그린다 — 실제 표시 순서는 렌더 순서가 아니라
+          useInGameOverlayStack이 정한 hold 관계와 각자의 z 단계가 결정한다. */}
+      <InGameNightTurnAnnouncementOverlay
+        open={nightTurn.open}
+        announcement={nightTurn.announcement}
+        onClose={nightTurn.close}
       />
-      <InGamePlayerSessionProvider>
-        <InGameTimebar
-          day={gameState?.dayIndex}
-          activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
-          onVoteStatusClick={() => setVoteStatusOpen(true)}
-        />
-        <InGamePlayerBoard />
-        <InGameChatShell />
-        <InGameActionPanel />
-        <PlayerRecordListPanel
-          open={playerRecordListOpen}
-          onClose={() => setPlayerRecordListOpen(false)}
-        />
-        <InGameVoteStatusPanel
-          open={voteStatusOpen}
-          onClose={() => setVoteStatusOpen(false)}
-        />
-      </InGamePlayerSessionProvider>
+      <InGamePhaseEntranceOverlay
+        open={phaseEntrance.open}
+        phase={phaseEntrance.phase}
+        onConfirm={phaseEntrance.confirm}
+      />
+      <InGameRoleRevealOverlay
+        open={roleReveal.open}
+        onClose={roleReveal.close}
+        roleInfo={roleReveal.roleInfo}
+        players={gameState?.players}
+      />
     </div>
   )
 }

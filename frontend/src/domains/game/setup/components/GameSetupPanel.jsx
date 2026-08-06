@@ -13,6 +13,7 @@ import { motion } from "framer-motion"
 import { useState } from "react"
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
 import { GENERAL_GAME_SETUP, MEETING_GAME_SETUP } from "../constants/gameSetupOptions.js"
+import { useRoleCompositionState } from "../hooks/useRoleCompositionState.js"
 import { useSetupTabState } from "../hooks/useSetupTabState.js"
 import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
@@ -51,9 +52,24 @@ export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
   // 현재 선택된 설정 탭 id입니다.
   const [activeTab, setActiveTab] = useState("general")
   const { checks, ranges, setCheck, setRange } = useSetupTabState(ALL_SETUP_ITEMS)
+  // 역할 구성은 "최대 플레이어 수"에 의존하므로(파생 시민 수·합계 검증) 같은 패널에서
+  // 함께 소유한다 — max-players가 바뀌면 다음 렌더에서 곧바로 다시 계산된다.
+  const roleComposition = useRoleCompositionState({
+    maxPlayers: ranges["max-players"],
+    autoJokerCount: ranges["joker-count"],
+  })
 
   const handleCreateClick = () => {
-    onCreateGame(buildCreateRoomPayload({ checks, ranges }))
+    // 검증에 실패한 구성은 애초에 버튼이 비활성화돼 여기까지 오지 않지만, 상태가 바뀌는
+    // 사이의 클릭까지 막기 위해 emit 직전에 한 번 더 확인한다(최종 판단은 서버가 한다).
+    if (!roleComposition.validation.ok) return
+    onCreateGame(
+      buildCreateRoomPayload({
+        checks,
+        ranges,
+        roleComposition: { mode: roleComposition.mode, roleCounts: roleComposition.roleCounts },
+      }),
+    )
   }
 
   return (
@@ -82,7 +98,13 @@ export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
 
             <div className={SETUP_CONTENT_CLASS}>
               {activeTab === "general" ? ( // 일반 탭
-                <GeneralGameSetupTab checks={checks} ranges={ranges} setCheck={setCheck} setRange={setRange} />
+                <GeneralGameSetupTab
+                  checks={checks}
+                  ranges={ranges}
+                  setCheck={setCheck}
+                  setRange={setRange}
+                  roleComposition={roleComposition}
+                />
               ) : ( // 회의&투표 탭
                 <MeetingGameSetupTab checks={checks} ranges={ranges} setCheck={setCheck} setRange={setRange} />
               )}
@@ -90,7 +112,12 @@ export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
           </div>
         </div>
 
-        <GameSetupCreateButton onClick={handleCreateClick} disabled={isCreating} />
+        {/* 역할 구성이 유효하지 않은 동안에는 생성 자체를 막는다(회의&투표 탭에 있어도
+            동일하게 적용된다 — 잘못된 설정이 탭 전환으로 가려지면 안 되기 때문). */}
+        <GameSetupCreateButton
+          onClick={handleCreateClick}
+          disabled={isCreating || !roleComposition.validation.ok}
+        />
       </motion.div>
     </div>
   )

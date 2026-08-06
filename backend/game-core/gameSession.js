@@ -1,5 +1,15 @@
 const crypto = require('crypto')
 
+// 역할 구성(AUTO/CUSTOM)의 canonical 정의·검증·해석은 전부 이 모듈이 소유한다.
+// computeRoleComposition/getSpecialRoleBudget도 그곳으로 옮겨져 있다(아래 __testables에서
+// 그대로 re-export하므로 기존 호출부·테스트의 import 경로는 바뀌지 않는다).
+const {
+    computeRoleComposition,
+    getSpecialRoleBudget,
+    resolveRoleComposition,
+    validateResolvedComposition,
+} = require('./roleComposition')
+
 // 5개 역할의 단일 canonical 정의. GAME_ROLES/ROLE_TEAMS는 모두 이 정의에서 파생된다
 // (역할명을 여러 상수에 손으로 나열하면 하나만 바뀌었을 때 조용히 어긋날 수 있음).
 // nightActionMinDayIndex는 "이 역할이 능력을 쓸 수 있는 가장 이른 dayIndex"다 — null이면
@@ -28,28 +38,174 @@ const MAX_SUPPORTED_PLAYERS = 10
 const INITIAL_GAME_PHASE = 'ROLE_REVEAL' // 아직 밤이 시작되지 않은 역할 확인 단계(사용자 확정)
 const INITIAL_DAY_INDEX = 0
 
-const JOKER_CHAT_MAX_LENGTH = 150
-const JOKER_CHAT_MIN_INTERVAL_MS = 500
+// 텍스트 규칙·rate limit 간격은 채널(공개 DAY·사망자 전용·JOKER 비밀)과 무관하게 하나의
+// canonical 정의를 공유한다 — 채널마다 다른 길이/문자 규칙을 두면 한쪽만 고쳐졌을 때 조용히
+// 어긋난다. JOKER_CHAT_MAX_LENGTH는 이 값의 기존 export 이름으로 그대로 유지된다.
+const CHAT_MAX_LENGTH = 150
+const CHAT_MIN_INTERVAL_MS = 500
+
+// prepare~commit 사이에 정상적으로 흐를 수 있는 최대 시간. commit은 자신의 canonical 시계로
+// 이 창 밖의 sentAt(미래 시각·너무 오래된 시각)을 거부한다 — 그래야 rate limit이 "호출자가
+// 주장한 시각"이 아니라 실제 시간에 고정된다. 한 요청의 prepare~commit은 같은 tick 안에서
+// 끝나므로(수 ms) 이 값은 시계 조정·GC 지연까지 흡수하고도 남는 여유값이다.
+const CHAT_COMMIT_MAX_AGE_MS = 5000
 
 // 금지 문자: LF(\n)만 제외한 C0 제어문자 전체(TAB 포함) · DEL · C1 제어문자(NEL 포함) ·
 // Arabic Letter Mark · LRM/RLM · bidi embedding/override · bidi isolate. bidi/서식 문자는
 // 채팅에서 텍스트 표시 순서를 조작하는 스푸핑 벡터라 명시적으로 차단한다. 이 문자열은 v3에서
 // 스크립트로 생성·검증된 값을 그대로 재사용한다(손으로 다시 타이핑하지 않음).
-const JOKER_CHAT_FORBIDDEN_CHARS_PATTERN =
+const CHAT_FORBIDDEN_CHARS_PATTERN =
     /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/
 
 // 서버·프런트 동일 규칙(공유 모듈이 없는 저장소라 수동 동기화 —
 // frontend/src/domains/game/ingame/utils/sanitizeJokerChatText.js). 순서: CRLF/CR 정규화 →
-// 금지 문자 검사(정규화된 문자열 기준) → trim → 길이 검사(1~150).
-function sanitizeJokerChatText(rawText) {
+// 금지 문자 검사(정규화된 문자열 기준) → trim → 길이 검사(1~150). 세 채널이 이 함수 하나만 쓴다.
+function sanitizeChatText(rawText) {
+    // 문자열이 아닌 입력(채널·발신자를 위조해 끼워넣은 객체, null/undefined, 숫자 등)은 여기서
+    // 곧바로 거부한다 — 소켓 계층이 payload.text의 타입을 이미 검사하지만, 이 함수를 쓰는
+    // prepare 함수들은 game-core의 공개 API라 호출자를 신뢰하지 않고 스스로 fail-closed여야 한다.
+    if (typeof rawText !== 'string') return { ok: false, code: 'INVALID_CHARACTERS' }
     const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-    if (JOKER_CHAT_FORBIDDEN_CHARS_PATTERN.test(normalized)) {
+    if (CHAT_FORBIDDEN_CHARS_PATTERN.test(normalized)) {
         return { ok: false, code: 'INVALID_CHARACTERS' }
     }
     const trimmed = normalized.trim()
     if (trimmed.length === 0) return { ok: false, code: 'EMPTY_MESSAGE' }
-    if (trimmed.length > JOKER_CHAT_MAX_LENGTH) return { ok: false, code: 'MESSAGE_TOO_LONG' }
+    if (trimmed.length > CHAT_MAX_LENGTH) return { ok: false, code: 'MESSAGE_TOO_LONG' }
     return { ok: true, text: trimmed }
+}
+
+/**
+ * 서버가 canonical 상태(인증 uuid의 생존 여부 + session.phase)에서만 유도하는 채팅 채널이다.
+ * 클라이언트는 이 값을 고르지도, 전달하지도 못한다 — 어떤 payload 필드도 채널 판정의 입력이
+ * 아니다.
+ */
+const CHAT_CHANNELS = Object.freeze({ DAY: 'DAY', DEAD: 'DEAD', JOKER: 'JOKER' })
+
+// 채널별 rate limit Map은 session 안에서 서로 다른 필드로 완전히 분리해 둔다 — 같은 uuid라도
+// 한 채널의 전송이 다른 채널의 간격 판정에 영향을 주지 않는다(채널 격리). roleRevealAcks/
+// nightActions와 동일한 이유로 session 객체 안에 두어 세션과 함께 사라지게 한다.
+const CHAT_RATE_LIMIT_FIELD_BY_CHANNEL = Object.freeze({
+    DAY: 'dayChatRateLimit',
+    DEAD: 'deadChatRateLimit',
+    JOKER: 'jokerChatRateLimit',
+})
+
+// 사망자 전용 채팅이 허용되는 phase. ROLE_REVEAL은 아직 아무도 죽을 수 없는 단계라 제외하고,
+// ENDED는 이 집합에 닿기 전에 assertSessionNotEnded가 먼저 막는다.
+const DEAD_CHAT_PHASES = new Set(['NIGHT', 'DAY', 'TRIBUNAL'])
+
+/** 채널에 대응하는 session의 rate limit Map을 돌려준다(알 수 없는 채널이면 undefined). */
+function getChatRateLimitMap(session, channel) {
+    const field = CHAT_RATE_LIMIT_FIELD_BY_CHANNEL[channel]
+    return field ? session[field] : undefined
+}
+
+/**
+ * prepareGameChatMessage가 성공할 때 그 prepared 객체 하나에만 매다는 모듈 사설(private) 능력
+ * 기록이다(prepared 객체 참조 → 발급 당시의 canonical 값 전부).
+ *
+ * canonical 재검증(세션 동일성·멤버십·phase/생존 라우팅·시각 범위)만으로는 "실제로 준비된 그
+ * 요청인가"를 알 수 없다 — 검사를 모두 통과하도록 고른 값이라면 prepare를 아예 건너뛴 직접
+ * commit이나 prepared 번들의 sentAt을 바꿔치기한 commit도 rate limit을 갱신할 수 있기 때문이다.
+ * 이 WeakMap이 그 구멍을 막는다:
+ *
+ *   - 키는 prepare가 만든 그 객체 자체다. 손으로 만든 동일한 모양의 객체는 절대 키가 될 수
+ *     없고(참조로만 조회된다), 이 모듈 밖에서는 기록을 만들 수도 읽을 수도 없다(export 없음).
+ *   - commit이 rate limit을 갱신할 때 쓰는 값(sentAt·channel·uuid·session)은 호출자가 넘긴
+ *     prepared의 노출 필드가 아니라 언제나 이 기록의 값이다. 노출 필드는 "주장"일 뿐이라
+ *     기록과 대조해 하나라도 다르면 그 즉시 거부된다.
+ *   - 성공한 commit은 기록을 지운다 — 같은 prepared로는 다시 커밋되지 않는다(단일 사용).
+ *
+ * WeakMap이라 prepared 객체가 버려지면 기록도 함께 사라진다(만료 정리 로직이 필요 없다).
+ */
+const preparedGameChatCapabilities = new WeakMap()
+
+/** 메시지 ID는 prepare가 만든다 — commit이 대조할 능력 기록에 함께 묶여야 하기 때문이다. */
+function createGameChatMessageId(idFn) {
+    let rawMessageId
+    try {
+        rawMessageId = idFn()
+    } catch (err) {
+        return { ok: false, code: 'ID_GENERATION_ERROR' }
+    }
+    if (typeof rawMessageId !== 'string' || rawMessageId.trim().length === 0) {
+        return { ok: false, code: 'INVALID_MESSAGE_ID' }
+    }
+    return { ok: true, messageId: rawMessageId.trim() }
+}
+
+/**
+ * 호출자에게 노출된 prepared 번들이 발급 이후 한 글자도 바뀌지 않았는지 사설 기록과 대조한다.
+ * commit의 mutation 자체는 기록 값만 쓰므로 이 검사가 없어도 위조된 값이 반영되지는 않지만,
+ * 번들이 손대졌다는 것 자체가 신뢰 경계 침범 신호라 그 요청은 통째로 거부한다(fail-closed).
+ */
+function matchesPreparedGameChatCapability(prepared, capability) {
+    if (
+        prepared.ok !== true ||
+        prepared.session !== capability.session ||
+        prepared.channel !== capability.channel ||
+        prepared.actorUuid !== capability.actorUuid ||
+        prepared.nickname !== capability.nickname ||
+        prepared.sanitizedText !== capability.text ||
+        prepared.sentAt !== capability.sentAt ||
+        prepared.dayIndex !== capability.dayIndex
+    ) {
+        return false
+    }
+
+    const message = prepared.message
+    if (typeof message !== 'object' || message === null) return false
+    const canonical = capability.message
+    return (
+        message.gameId === canonical.gameId &&
+        message.messageId === canonical.messageId &&
+        message.senderUuid === canonical.senderUuid &&
+        message.nickname === canonical.nickname &&
+        message.text === canonical.text &&
+        message.sentAt === canonical.sentAt &&
+        message.dayIndex === canonical.dayIndex
+    )
+}
+
+/**
+ * 인증된 참가자의 canonical 생존 상태와 session.phase만으로 "이 제출이 실제로 어느 채널인지"를
+ * 결정한다(순수 함수 — 어떤 상태도 읽고 바꾸지 않는다).
+ *   - 생존자: DAY에서만 공개 채팅. 그 외 phase는 INVALID_PHASE.
+ *   - 사망자: NIGHT/DAY/TRIBUNAL에서만 사망자 전용 채팅. ROLE_REVEAL은 INVALID_PHASE이고
+ *     ENDED는 호출 전에 이미 GAME_ALREADY_ENDED로 걸린다.
+ * JOKER 비밀 채팅은 이 라우팅에 포함되지 않는다 — 전용 이벤트(prepareJokerChatMessage)가
+ * NIGHT·JOKER 진영·생존을 각각 독립적으로 재검증한다.
+ */
+function resolveGameChatChannel(session, actor) {
+    if (actor.alive === true) {
+        if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+        return { ok: true, channel: CHAT_CHANNELS.DAY }
+    }
+    if (!DEAD_CHAT_PHASES.has(session.phase)) return { ok: false, code: 'INVALID_PHASE' }
+    return { ok: true, channel: CHAT_CHANNELS.DEAD }
+}
+
+/**
+ * 채널별 canonical 수신자 uuid 목록(순수 함수 — session.players를 읽기만 한다).
+ *   - DAY: 생존자 전원(발신자 포함)
+ *   - DEAD: 사망자 전원(발신자 포함)
+ *   - JOKER: "생존한" JOKER 진영뿐(사망한 JOKER는 수신자에서 제외된다)
+ * 알 수 없는 채널은 빈 배열이다 — 호출자(소켓 계층)의 "발신자가 수신자에 포함되는가" 검사가
+ * 반드시 실패하므로 어떤 메시지도 전달되지 않는다(fail-closed).
+ */
+function getChatRecipientUuids(session, channel) {
+    const uuids = []
+    for (const player of session.players.values()) {
+        if (channel === CHAT_CHANNELS.DAY) {
+            if (player.alive === true) uuids.push(player.uuid)
+        } else if (channel === CHAT_CHANNELS.DEAD) {
+            if (player.alive !== true) uuids.push(player.uuid)
+        } else if (channel === CHAT_CHANNELS.JOKER) {
+            if (player.alive === true && ROLE_TEAMS[player.role] === 'JOKER') uuids.push(player.uuid)
+        }
+    }
+    return uuids
 }
 
 /** gameId → { id, roomId, channelId, phase, dayIndex, jokerCount, players: Map<uuid,{uuid,nickname,role}> } */
@@ -58,6 +214,63 @@ const gameSessions = new Map()
 const playerSession = new Map()
 /** roomId → gameId — Room 하나당 활성 GameSession을 하나만 허용하기 위한 역매핑 */
 const roomGameSession = new Map()
+
+// 시민/JOKER 승리 조건을 판정한다(순수 함수 — session.players Map만 읽고 어떤 Map도 바꾸지
+// 않는다). 시민 승리(생존 JOKER 0명)를 JOKER 승리(생존 JOKER ≥ 생존 비-JOKER)보다 먼저
+// 평가한다. 승자가 없으면 null을 반환한다.
+function evaluateWinCondition(session) {
+    let aliveJokerCount = 0
+    let aliveNonJokerCount = 0
+    for (const player of session.players.values()) {
+        if (!player.alive) continue
+        if (player.role === 'JOKER') aliveJokerCount += 1
+        else aliveNonJokerCount += 1
+    }
+    if (aliveJokerCount === 0) return { winner: 'CITIZEN' }
+    if (aliveJokerCount >= aliveNonJokerCount) return { winner: 'JOKER' }
+    return null
+}
+
+// 세션을 종료 상태로 확정하는 유일한 mutation이다. 신규 상태 객체를 만들지 않고 기존
+// session.phase에 'ENDED'를 추가하는 방식을 그대로 따른다 — session.winResult는 이 호출
+// 이후에만 존재하며, 그 존재 여부 자체가 "종료됨"을 뜻하는 신호다.
+function finalizeGameSession(session, winResult) {
+    session.phase = 'ENDED'
+    session.winResult = winResult
+}
+
+// 8개 진입점(prepare 4 + commit 4)이 각자 최상단에서(기존 idempotency 단축 경로보다 먼저)
+// 호출하는 공용 guard다. 이미 종료된 세션에 대한 모든 재요청은 예외 없이 이 코드로
+// 실패한다 — 저장된 terminal을 포함한 성공 재ACK 경로는 없다.
+function assertSessionNotEnded(session) {
+    if (session.phase === 'ENDED') return { ok: false, code: 'GAME_ALREADY_ENDED' }
+    return { ok: true }
+}
+
+// 종료 상태를 클라이언트에 알리기 위한 공개 화이트리스트만 골라낸다(순수 함수, throw 금지).
+// role/원본 ballot/Map·Set/socket/repository 객체는 어디에도 포함하지 않는다. winResult는
+// 세션에 실제로 존재할 때만(확정된 승자가 있을 때만) 포함한다.
+function buildTerminalFields(session) {
+    const fields = {
+        phase: session.phase,
+        players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, isAlive: alive })),
+    }
+    if (session.winResult) fields.winResult = { ...session.winResult }
+    return fields
+}
+
+// 순수 조회 — 재접속 시 소켓 계층이 socket.data.activeGameId를 재바인딩하고 기존 channel에
+// 재가입하는 데만 쓰는 routing 정보(gameId·channelId)만 반환한다. role/team/ballot 등 비밀
+// 정보는 물론, 이 호출로 어떤 권한도 부여되지 않는다(순수 registry 조회일 뿐이다) — 실제
+// mutation·disconnect 권한 판정은 소켓 계층의 isCurrentSocketForUuid만 담당한다. uuid가 활성
+// GameSession에 속해있지 않으면 null이다.
+function getActiveSessionRoutingInfo(uuid) {
+    const gameId = playerSession.get(uuid)
+    if (!gameId) return null
+    const session = gameSessions.get(gameId)
+    if (!session) return null
+    return { gameId: session.id, channelId: session.channelId }
+}
 
 // 순수 계산 — 어떤 Map도 읽지 않는다. randomFn을 주입하면 완전히 결정적이다.
 function fisherYatesShuffle(items, randomFn) {
@@ -69,46 +282,21 @@ function fisherYatesShuffle(items, randomFn) {
     return result
 }
 
-// 인원수 구간별 특수 시민 역할 상한("budget"). 도입 우선순위(DOCTOR → GUARD →
-// WITCH_HUNTER, 사용자 확정)와 함께 computeRoleComposition이 남은 슬롯에서 이 상한만큼만
-// 채운다. 2~10명 도메인에서만 정의된다(아래 MIN/MAX_SUPPORTED_PLAYERS 참고).
-function getSpecialRoleBudget(playerCount) {
-    if (playerCount >= 10) return { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }
-    if (playerCount >= 8) return { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 0 }
-    if (playerCount >= 6) return { DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 }
-    return { DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 } // 2~5명
-}
-
-// 순수 계산 — 슬롯 절삭(slot-cutting) 방식이라 항상 성공한다: 먼저 jokerCount만큼 JOKER를
-// 배정하고, 남은 non-JOKER 슬롯에서 DOCTOR → GUARD → WITCH_HUNTER 순으로 "budget과 남은
-// 슬롯 중 작은 값"만큼만 채운 뒤, 최종 남은 슬롯은 전부 CITIZEN이 된다. 슬롯이 모자라면
-// 우선순위 뒤쪽 역할부터 0명이 될 뿐 거부/예외는 없다 — 입력 자체의 불변조건
-// (jokerCount < playerCount, 정수, 0 이상, 2~10명)은 validateSessionInput이 이미
-// 보장하므로 이 함수는 그 보장 위에서 계산만 한다. 어떤 유효 입력에서도 각 역할 수는
-// 0 이상이고 합계는 정확히 playerCount다.
-function computeRoleComposition(playerCount, jokerCount) {
-    const budget = getSpecialRoleBudget(playerCount)
-    let remaining = playerCount - jokerCount
-
-    const doctorCount = Math.min(budget.DOCTOR, remaining)
-    remaining -= doctorCount
-    const guardCount = Math.min(budget.GUARD, remaining)
-    remaining -= guardCount
-    const witchHunterCount = Math.min(budget.WITCH_HUNTER, remaining)
-    remaining -= witchHunterCount
-
-    return {
-        JOKER: jokerCount,
-        DOCTOR: doctorCount,
-        GUARD: guardCount,
-        WITCH_HUNTER: witchHunterCount,
-        CITIZEN: remaining, // 남은 슬롯 전부
-    }
-}
-
-function assignRoles(players, jokerCount, randomFn = Math.random) {
+/**
+ * 셔플된 순서에 canonical 구성을 그대로 배정합니다(중복 배정 없음 — 역할 배열의 길이가
+ * 정확히 players.length라 index가 일대일로 대응한다).
+ *
+ * 두 번째 인자는 숫자(jokerCount) 또는 이미 해석된 구성 객체 둘 다 받는다. 숫자를 주면
+ * 기존 AUTO 동작 그대로 computeRoleComposition으로 구성을 만든다 — CUSTOM 모드가 생기면서
+ * "구성을 미리 해석해 두고 그대로 배정"하는 경로가 필요해졌지만, 기존 AUTO 호출부(및 그
+ * 호출 계약에 기대는 테스트)를 그대로 두기 위해 두 형태를 모두 지원한다.
+ */
+function assignRoles(players, jokerCountOrComposition, randomFn = Math.random) {
     const shuffled = fisherYatesShuffle(players, randomFn)
-    const composition = computeRoleComposition(players.length, jokerCount)
+    const composition =
+        typeof jokerCountOrComposition === 'number'
+            ? computeRoleComposition(players.length, jokerCountOrComposition)
+            : jokerCountOrComposition
     const roles = [
         ...Array(composition.JOKER).fill(GAME_ROLES.JOKER),
         ...Array(composition.DOCTOR).fill(GAME_ROLES.DOCTOR),
@@ -163,7 +351,15 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
     const validation = validateSessionInput(players, jokerCount)
     if (!validation.ok) return validation
 
-    const assigned = assignRoles(players, jokerCount, randomFn)
+    // 방 생성 시점 검증은 maxPlayers 기준이므로, 시작 시점의 "실제 참가자 수"로 구성을 다시
+    // 해석·검증한다. CUSTOM에서 고정 역할 합이 실제 인원을 넘거나 JOKER가 실제 인원 이상이면
+    // 여기서 거부되고, 아무 registry도 건드리지 않은 상태 그대로 반환된다.
+    const resolved = resolveRoleComposition(room.settings, players.length)
+    if (!resolved.ok) {
+        return { ok: false, code: 'INVALID_SESSION_INPUT', reason: `INVALID_ROLE_COMPOSITION:${resolved.reason}` }
+    }
+
+    const assigned = assignRoles(players, resolved.composition, randomFn)
     const session = {
         id: gameIdFn(),
         roomId: room.id,
@@ -171,8 +367,13 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         phase: INITIAL_GAME_PHASE,
         dayIndex: INITIAL_DAY_INDEX,
         // commit 경계(assertValidSessionForCommit)에서 실제 역할 분포와 대조하기 위해
-        // jokerCount를 session에 함께 보관한다.
-        jokerCount,
+        // jokerCount를 session에 함께 보관한다. resolvedComposition.JOKER를 원천으로 삼아
+        // 두 값이 갈릴 여지를 없앤다(AUTO에서는 room.settings.jokerCount와 같은 값이다).
+        jokerCount: resolved.composition.JOKER,
+        // 이 세션에 실제로 배정된 canonical 5역할 구성(내부 전용 방어적 복사본). CUSTOM은
+        // computeRoleComposition으로 재계산할 수 없으므로 commit 경계가 대조할 기준을
+        // 세션이 직접 들고 있어야 한다. 어떤 공개 payload에도 포함하지 않는다.
+        roleComposition: { ...resolved.composition },
         // validateSessionInput이 uuid 중복을 이미 걸러냈으므로 이 Map 생성이 조용히
         // 참가자를 덮어쓸 수 없다.
         players: new Map(assigned.map((p) => [p.uuid, p])),
@@ -182,10 +383,13 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // NIGHT pending action을 추적한다. uuid → targetId(참가자 uuid) | null(SKIP).
         // roleRevealAcks와 동일한 이유로 세션 객체 안에 둔다.
         nightActions: new Map(),
-        // JOKER 전용 NIGHT 채팅 스팸 방지용 "마지막 전송 시각"(uuid → epoch ms). 채팅 자체는
-        // 영구 저장하지 않으므로 이 Map은 rate limit 판정에만 쓰인다. roleRevealAcks/nightActions와
-        // 동일한 이유로 세션 객체 안에 둔다.
+        // 채널별 채팅 스팸 방지용 "마지막 전송 시각"(uuid → epoch ms). 채팅 자체는 영구
+        // 저장하지 않으므로 이 세 Map은 rate limit 판정에만 쓰인다. 채널마다 별도 Map이라
+        // 한 채널의 전송이 다른 채널을 막지 않는다(CHAT_RATE_LIMIT_FIELD_BY_CHANNEL 참고).
+        // roleRevealAcks/nightActions와 동일한 이유로 세션 객체 안에 둔다.
         jokerChatRateLimit: new Map(),
+        dayChatRateLimit: new Map(),
+        deadChatRateLimit: new Map(),
         // 이번 밤의 판정 결과(prepareNightResolution → commitNightResolution이 채운다). 커밋
         // 시점엔 항상 null이어야 하고(assertValidSessionForCommit), 판정 이후에는 다시 null로
         // 돌아가지 않는 immutable 값이 된다(재판정 금지 계약).
@@ -262,12 +466,16 @@ function assertValidSessionForCommit(session) {
     if (session.nightActions.size !== 0) {
         throw new Error(`commitGameSession: session.nightActions가 비어있지 않음(size=${session.nightActions.size})`)
     }
-    // jokerChatRateLimit도 roleRevealAcks/nightActions와 동일한 이유로 커밋 시점엔 항상 빈 Map이어야 한다.
-    if (!(session.jokerChatRateLimit instanceof Map)) {
-        throw new Error('commitGameSession: session.jokerChatRateLimit이 Map이 아님')
-    }
-    if (session.jokerChatRateLimit.size !== 0) {
-        throw new Error(`commitGameSession: session.jokerChatRateLimit이 비어있지 않음(size=${session.jokerChatRateLimit.size})`)
+    // 채널별 rate limit Map 3개도 roleRevealAcks/nightActions와 동일한 이유로 커밋 시점엔
+    // 항상 빈 Map이어야 한다. 필드명을 손으로 나열하지 않고 채널→필드 매핑을 그대로 순회해
+    // 새 채널이 추가돼도 이 경계 검사가 자동으로 함께 따라오게 한다.
+    for (const field of Object.values(CHAT_RATE_LIMIT_FIELD_BY_CHANNEL)) {
+        if (!(session[field] instanceof Map)) {
+            throw new Error(`commitGameSession: session.${field}이 Map이 아님`)
+        }
+        if (session[field].size !== 0) {
+            throw new Error(`commitGameSession: session.${field}이 비어있지 않음(size=${session[field].size})`)
+        }
     }
     // nightResolution도 roleRevealAcks/nightActions/jokerChatRateLimit과 동일한 이유로
     // 커밋 시점엔 항상 null이어야 한다(아직 판정된 적 없는 새 세션).
@@ -318,16 +526,34 @@ function assertValidSessionForCommit(session) {
         }
         actualCounts[player.role] += 1
     }
-    // 5개 역할 전체 분포를 기대 구성과 대조한다. session에 composition을 저장해두지 않고
-    // session.jokerCount/session.players.size로부터 매번 재계산해 대조한다("저장된 값을
-    // 신뢰하지 않고 재계산·재검증"하는 이 파일의 기존 스타일과 동일).
-    const expected = computeRoleComposition(session.players.size, session.jokerCount)
-    for (const role of Object.keys(GAME_ROLES)) {
-        if (actualCounts[role] !== expected[role]) {
-            throw new Error(
-                `commitGameSession: 실제 ${role} 수(${actualCounts[role]})가 기대값(${expected[role]})과 불일치`
-            )
+    // 5개 역할 전체 분포를 기대 구성과 대조한다.
+    // - CUSTOM 세션은 computeRoleComposition으로 재계산할 수 없으므로(방장이 직접 지정한
+    //   구성이라 인원수만으로 유도되지 않는다) session.roleComposition을 기준으로 삼되,
+    //   그 값 자체도 "저장된 값을 신뢰하지 않는다"는 원칙대로 인원수·jokerCount와 다시
+    //   대조한 뒤에만 사용한다(합계 = 인원수, JOKER = session.jokerCount).
+    // - roleComposition이 없는 세션(구버전·수동 조립)은 기존 AUTO 계약 그대로
+    //   computeRoleComposition으로 재계산해 대조한다.
+    let expected
+    if (session.roleComposition === undefined) {
+        expected = computeRoleComposition(session.players.size, session.jokerCount)
+    } else {
+        const compositionCheck = validateResolvedComposition(
+            session.roleComposition, session.players.size, session.jokerCount,
+        )
+        if (!compositionCheck.ok) {
+            throw new Error(`commitGameSession: 잘못된 session.roleComposition(${compositionCheck.reason})`)
         }
+        expected = session.roleComposition
+    }
+    // 어긋난 역할을 하나만 보고하면 "DOCTOR를 CITIZEN으로 바꿔치기" 같은 교체형 조작에서
+    // GAME_ROLES 키 순서상 앞선 역할(CITIZEN)만 이름이 나오고, 정작 조작된 역할(DOCTOR)은
+    // 메시지에서 사라진다. 어긋난 역할을 전부 적어 키 순서와 무관하게 같은 사실을 가리키게 한다.
+    const mismatchedRoles = Object.keys(GAME_ROLES).filter((role) => actualCounts[role] !== expected[role])
+    if (mismatchedRoles.length > 0) {
+        const detail = mismatchedRoles
+            .map((role) => `실제 ${role} 수(${actualCounts[role]})가 기대값(${expected[role]})과 불일치`)
+            .join(', ')
+        throw new Error(`commitGameSession: ${detail}`)
     }
 }
 
@@ -356,9 +582,53 @@ function commitGameSession(session) {
     session.players.forEach((_, uuid) => playerSession.set(uuid, session.id))
 }
 
+// 특정 참가자 시점의 role/team/ally 식별 정보(순수 함수). buildGameStartedPayload의 self와
+// buildSessionSnapshot의 self가 공유하는 유일한 원천이다 — viewer가 없으면(참가자가 아니면)
+// null을 반환한다. allies는 viewer가 JOKER일 때만 own-property로 존재한다 — 다른 JOKER의
+// uuid만 담고 role 등 다른 정보는 포함하지 않는다(JOKER끼리만 서로 동료임을 아는 정책의
+// 서버 측 계약).
+function buildViewerRoleFields(session, viewer) {
+    if (!viewer) return null
+    return {
+        uuid: viewer.uuid,
+        nickname: viewer.nickname,
+        role: viewer.role,
+        team: ROLE_TEAMS[viewer.role],
+        ...(viewer.role === 'JOKER'
+            ? {
+                  allies: [...session.players.values()]
+                      .filter((p) => p.role === 'JOKER' && p.uuid !== viewer.uuid)
+                      .map((p) => p.uuid),
+              }
+            : {}),
+    }
+}
+
+/**
+ * DAY 단계 진입의 유일한 canonical mutation이다 — phase·dayIndex·그 DAY의 투표 상태를 한
+ * 곳에서 함께 초기화한다. DAY로 들어오는 두 진입점(최초 ROLE_REVEAL→DAY 전이와 매
+ * NIGHT→DAY 전이)이 이 함수 하나만 호출하므로, 어느 한쪽만 부분 초기화된 DAY가 구조적으로
+ * 생길 수 없다(호출부에서 phase/dayIndex/dayVotes를 손으로 다시 나열하지 않는다).
+ *
+ * dayIndex는 언제나 정확히 1 증가한다 — 신규 세션의 INITIAL_DAY_INDEX(0)에서 첫 DAY는 1이
+ * 되고, 이후 밤을 넘길 때마다 하나씩 늘어난다.
+ *
+ * dayVotes는 매번 새 빈 Map으로 교체한다 — 이전 DAY의 투표/기권을 이어받지 않는다.
+ * dayVoteResolution/tribunal은 여기서 건드리지 않는다: 둘 다 "그 dayIndex의 기록"이고,
+ * 이 함수가 dayIndex를 전진시키는 순간 dayIndex 일치 검사(prepareDayVoteResolution의
+ * alreadyResolved 판정, buildSessionSnapshot의 노출 게이트)에서 자동으로 무효가 된다.
+ * 최초 전이 시점에는 애초에 둘 다 null이다(buildSessionCandidate).
+ *
+ * 호출자는 이 함수를 부르기 전에 승리 조건 판정을 끝내야 한다 — 승자가 확정된 밤은 DAY로
+ * 넘어가지 않고 그대로 ENDED가 된다(commitNightResolution 참고).
+ */
+function enterDayPhase(session) {
+    session.phase = 'DAY'
+    session.dayIndex += 1
+    session.dayVotes = new Map()
+}
+
 // 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
-// self.allies는 viewer가 JOKER일 때만 own-property로 존재한다 — 다른 JOKER의 uuid만 담고
-// role 등 다른 정보는 포함하지 않는다(JOKER끼리만 서로 동료임을 아는 정책의 서버 측 계약).
 function buildGameStartedPayload(session, viewerUuid) {
     const viewer = session.players.get(viewerUuid)
     return {
@@ -368,21 +638,7 @@ function buildGameStartedPayload(session, viewerUuid) {
             phase: session.phase,
             dayIndex: session.dayIndex,
             players: [...session.players.values()].map(({ uuid, nickname }) => ({ uuid, nickname })), // role 없음
-            self: viewer
-                ? {
-                      uuid: viewer.uuid,
-                      nickname: viewer.nickname,
-                      role: viewer.role,
-                      team: ROLE_TEAMS[viewer.role],
-                      ...(viewer.role === 'JOKER'
-                          ? {
-                                allies: [...session.players.values()]
-                                    .filter((p) => p.role === 'JOKER' && p.uuid !== viewer.uuid)
-                                    .map((p) => p.uuid),
-                            }
-                          : {}),
-                  }
-                : null,
+            self: buildViewerRoleFields(session, viewer),
         },
     }
 }
@@ -390,6 +646,12 @@ function buildGameStartedPayload(session, viewerUuid) {
 /**
  * ROLE_REVEAL 단계의 역할 확인을 처리합니다. 인증된 uuid와 클라이언트가 알고 있는 gameId만
  * 입력으로 받습니다(role 등 비밀 정보는 이 함수의 입력에도 출력에도 없습니다).
+ *
+ * 참가자 전원이 확인을 마치기 전까지 세션은 ROLE_REVEAL에 그대로 머무릅니다. 마지막으로 남은
+ * 필수 확인 하나가 도착하면 enterDayPhase로 첫 DAY(dayIndex 1)에 진입합니다 — 밤이 아니라
+ * 낮이 게임의 첫 진행 단계입니다. 이 전이는 세션당 정확히 한 번만 일어나며(그 뒤의 모든
+ * 확인은 phase 가드에 걸려 INVALID_PHASE), DAY 상태 초기화는 NIGHT→DAY 전이와 똑같이
+ * enterDayPhase 한 곳에서만 이뤄집니다.
  *
  * game-core 자체가 독립적으로 입력을 검증합니다(validateSessionInput과 동일한 이유 —
  * 소켓 계층의 가드가 정상 경로에서 이를 막는다는 사실이 game-core의 불변조건을 보장하지
@@ -422,14 +684,18 @@ function acknowledgeRoleReveal(uuid, gameId) {
     if (session.roleRevealAcks.has(uuid)) return { ok: true, transitioned: false, session }
 
     session.roleRevealAcks.add(uuid)
+    // 마지막으로 남아있던 참가자의 유효한 확인 하나만이 전이를 일으킨다. 이 시점 이후로는
+    // phase가 더 이상 ROLE_REVEAL이 아니므로 위쪽 phase 가드가 모든 후속 확인(중복·재요청·
+    // 늦게 도착한 동시 요청)을 INVALID_PHASE로 되돌린다 — transitioned:true는 세션당 정확히
+    // 한 번만 나올 수 있고, DAY 상태가 다시 초기화되거나 dayIndex가 또 오르는 경로는 없다.
     if (session.roleRevealAcks.size === session.players.size) {
-        session.phase = 'NIGHT'
+        enterDayPhase(session)
         return { ok: true, transitioned: true, session }
     }
     return { ok: true, transitioned: false, session }
 }
 
-/** ROLE_REVEAL→NIGHT 전이를 참가자 전체에게 알리는 공용 payload. 참가자 식별·비밀 정보를 전혀 포함하지 않는다. */
+/** ROLE_REVEAL→DAY 전이를 참가자 전체에게 알리는 공용 payload. 참가자 식별·비밀 정보를 전혀 포함하지 않는다. */
 function buildPhaseChangedPayload(session) {
     return { gameId: session.id, phase: session.phase, dayIndex: session.dayIndex }
 }
@@ -607,6 +873,9 @@ function prepareNightResolution(uuid, gameId) {
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
     if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
+    const endedCheck1 = assertSessionNotEnded(session)
+    if (!endedCheck1.ok) return endedCheck1
+
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
 
@@ -653,6 +922,56 @@ function prepareNightResolution(uuid, gameId) {
     }
 }
 
+// 밤 사망을 "누가 죽였는지"가 아니라 "어떤 공개 사건이었는지"로만 표현하는 공개 열거값이다.
+// 이 세 값 외에는 어떤 출처도 존재하지 않고, killer uuid·nickname·역할 보유자 식별 정보는
+// 어떤 값에도 담기지 않는다(UNKNOWN_NIGHT는 "밤사이 사망"이라는 사실만 뜻한다).
+const PUBLIC_NIGHT_DEATH_SOURCES = Object.freeze({
+    JOKER: 'JOKER',
+    WITCH_HUNTER: 'WITCH_HUNTER',
+    UNKNOWN_NIGHT: 'UNKNOWN_NIGHT',
+})
+
+/**
+ * 한 희생자의 공개 사망 출처를 판정한다(순수 계산). resolution이 그 희생자를 정확히 하나의
+ * 효과에만 귀속시킬 때에만 그 효과 이름을 돌려주고, 귀속이 없거나 둘 이상이면(모호) 항상
+ * UNKNOWN_NIGHT다 — "모르는 것을 지어내지 않는다"가 이 함수의 유일한 규칙이다.
+ *
+ * witchHunterExecutionTargetId는 현재 production resolver(prepareNightResolution)가 만들지
+ * 않는 선택적 귀속 필드다. 오늘의 WITCH_HUNTER는 확인(CONFIRM)만 할 뿐 사망을 만들지 않으므로
+ * 이 분기는 실제 게임에서 도달하지 않는다 — 어떤 판정이 처형을 명시적·비모호적으로 귀속시킬
+ * 때에만 WITCH_HUNTER가 공개된다는 계약을 코드로 고정해 둔 것이다.
+ */
+function resolveNightDeathSource(resolution, victimUuid) {
+    const attributions = []
+    if (resolution?.assassinationTargetId === victimUuid) attributions.push(PUBLIC_NIGHT_DEATH_SOURCES.JOKER)
+    if (resolution?.witchHunterExecutionTargetId === victimUuid) {
+        attributions.push(PUBLIC_NIGHT_DEATH_SOURCES.WITCH_HUNTER)
+    }
+    return attributions.length === 1 ? attributions[0] : PUBLIC_NIGHT_DEATH_SOURCES.UNKNOWN_NIGHT
+}
+
+/**
+ * 이번 밤에 실제로 죽은 참가자 목록(victimUuids, canonical 적용 순서)을 공개 안전한 reveal
+ * 목록으로 바꾼다(순수 계산). 원소는 정확히 { victimUuid, source } 두 키뿐이고, 같은 victim은
+ * 처음 등장한 위치 하나로 합쳐진다(중복 제거). 호출자는 "alive → dead로 실제 바뀐" 참가자만
+ * 넘겨야 한다 — 이 함수는 생존 여부를 다시 판단하지 않는다(commitNightResolution이 이미
+ * victim 존재·생존을 mutation 전에 검증한 뒤에만 호출한다).
+ *
+ * 매 호출마다 새 배열·새 원소 객체를 만들어 돌려주므로 반환값을 변형해도 resolution이나 다음
+ * 호출 결과에 영향이 없다.
+ */
+function buildNightDeathReveals(resolution, victimUuids) {
+    const reveals = []
+    const seen = new Set()
+    for (const victimUuid of victimUuids) {
+        if (typeof victimUuid !== 'string' || victimUuid.length === 0) continue
+        if (seen.has(victimUuid)) continue
+        seen.add(victimUuid)
+        reveals.push({ victimUuid, source: resolveNightDeathSource(resolution, victimUuid) })
+    }
+    return reveals
+}
+
 /**
  * NIGHT 판정 커밋과 사망/phase/day 전이를 모두 담당하는 유일한 mutation입니다.
  * prepareNightResolution이 반환한 resolution.pendingEliminationTargetId만 소비하고, 클라이언트
@@ -666,6 +985,9 @@ function prepareNightResolution(uuid, gameId) {
  * 반환값 { victimUuid }는 buildNightResultAppliedPayload에 그대로 넘길 값입니다.
  */
 function commitNightResolution(session, resolution) {
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
     const victimUuid = resolution.pendingEliminationTargetId
     let victim = null
     if (victimUuid !== null) {
@@ -679,30 +1001,49 @@ function commitNightResolution(session, resolution) {
         if (!victim) throw new Error(`commitNightResolution: victim(${victimUuid})이 참가자가 아님`)
         if (victim.alive !== true) throw new Error(`commitNightResolution: victim(${victimUuid})이 이미 사망 상태`)
     }
-    // 이 지점 이후로는 절대 throw하지 않는다 — 아래 다섯 mutation이 한 세트로 적용된다.
+    // 이 지점 이후로는 절대 throw하지 않는다.
+    // 공개 사망 reveal은 반드시 이 지점에서 만든다 — 위 두 검증을 통과했다는 것은 victim이
+    // 참가자로 실재하고 아직 alive:true였다는 뜻이므로, 여기서 만들어진 reveal은 정의상
+    // "이번 판정이 실제로 alive→dead로 바꾼 참가자"만 담는다. victim이 없는 밤(무득표·보호
+    // 성공·SKIP)은 빈 배열이고, 재판정 시도는 애초에 이 함수에 도달하지 못한다
+    // (prepareNightResolution의 NIGHT_ALREADY_RESOLVED / assertSessionNotEnded).
+    resolution.publicDeathReveals = buildNightDeathReveals(resolution, victimUuid === null ? [] : [victimUuid])
     session.nightResolution = resolution
     if (victim) victim.alive = false
-    session.phase = 'DAY'
-    session.dayIndex += 1
-    // 새 DAY는 항상 빈 dayVotes로 시작한다 — 이전 DAY의 투표/기권을 이어받지 않는다(이번
-    // 슬라이스 범위에선 첫 DAY 전이뿐이라 항상 빈 Map 위에 다시 빈 Map을 놓지만, 후속
-    // DAY→NIGHT→DAY 루프에서도 동일한 불변조건을 지키기 위해 매번 새로 만든다).
-    session.dayVotes = new Map()
-    return { victimUuid }
+
+    const winResult = evaluateWinCondition(session)
+    if (winResult) {
+        finalizeGameSession(session, winResult)
+        return { ok: true, victimUuid, terminal: { winner: winResult.winner } }
+    }
+
+    // DAY 진입은 최초 ROLE_REVEAL→DAY 전이와 같은 canonical 헬퍼 하나로만 한다 —
+    // phase/dayIndex/dayVotes를 여기서 손으로 다시 나열하면 두 경로가 조용히 어긋날 수 있다.
+    enterDayPhase(session)
+    return { ok: true, victimUuid, terminal: null }
 }
 
 /**
  * NIGHT 결과 적용(사망 + DAY 전이) 공개 payload. commitNightResolution 호출 이후(phase/
  * dayIndex가 이미 갱신된) session을 받습니다. role/team/nickname/targetUuid/private result는
  * 어디에도 포함하지 않습니다.
+ *
+ * deathReveals는 commitNightResolution이 채운 resolution.publicDeathReveals를 그대로 넘기는
+ * 추가 필드입니다(기존 필드는 하나도 바뀌지 않는 순수 추가). 원소는 정확히
+ * { victimUuid, source } 두 키뿐이고, 매 호출마다 새 배열·새 원소로 복사해 담으므로 수신자가
+ * 반환값을 변형해도 canonical resolution은 오염되지 않습니다.
  */
-function buildNightResultAppliedPayload(session, victimUuid) {
+function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) {
     return {
         gameId: session.id,
         phase: session.phase,
         dayIndex: session.dayIndex,
         players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, alive })),
         victimUuid,
+        deathReveals: (Array.isArray(deathReveals) ? deathReveals : []).map(({ victimUuid: v, source }) => ({
+            victimUuid: v,
+            source,
+        })),
     }
 }
 
@@ -848,6 +1189,9 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
     if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
     if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
 
     if (session.dayVoteResolution !== null && session.dayVoteResolution.dayIndex === dayIndex) {
@@ -892,12 +1236,21 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
 /**
  * DAY 투표 판정 커밋의 유일한 mutation입니다. prepareDayVoteResolution이 반환한 resolution만
  * 소비하고, 클라이언트 입력이나 raw dayVotes를 다시 읽지 않습니다. TRIBUNAL 판정이면 phase를
- * TRIBUNAL로 전이하고 tribunal.candidateId를 채우며, TIE/ABSTAINED면 phase를 DAY로 그대로
- * 유지합니다(NIGHT로 전이하지 않음) — 어느 쪽도 dayIndex는 바꾸지 않습니다(같은 날의 낮/재판
- * 연장선이므로). session.dayVoteResolution이 채워진 채로 남으므로, prepareDayVoteResolution의
- * alreadyResolved 체크가 이 dayIndex의 재제출·재판정을 계속 잠근다(phase가 여전히 DAY라도).
+ * TRIBUNAL로 전이하고 tribunal.candidateId를 채웁니다. TIE/ABSTAINED면 TRIBUNAL 없이 곧장 그날
+ * 밤(NIGHT)으로 전이합니다 — commitTribunalVoteResolution의 무죄/비종결 TRIBUNAL→NIGHT 전이와
+ * 동일한 원칙으로, dayIndex는 바꾸지 않습니다(dayIndex 증가는 오직 commitNightResolution의
+ * NIGHT→DAY 전이에서만 일어납니다). nightActions/nightResolution도 그 전이와 동일한 이유로 반드시
+ * 새 Map/null로 되돌려야 한다 — 그러지 않으면 지난 밤의 잔여 nightActions 엔트리가 이번 밤의
+ * ACTIONS_PENDING 판정·집계를 오염시키고, nightResolution이 non-null로 남아있어
+ * prepareNightResolution이 즉시 NIGHT_ALREADY_RESOLVED로 거부해버린다. session.dayVoteResolution은
+ * 어느 outcome이든 채워진 채로 남으므로(TIE/ABSTAINED도 null로 되돌리지 않음), 이후 phase가
+ * NIGHT로 바뀌어도 prepareDayVoteResolution의 alreadyResolved 체크가 이 dayIndex의 재제출·재판정을
+ * 계속 잠근다.
  */
 function commitDayVoteResolution(session, resolution) {
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
     session.dayVoteResolution = resolution
     if (resolution.outcome === 'TRIBUNAL') {
         session.phase = 'TRIBUNAL'
@@ -909,7 +1262,11 @@ function commitDayVoteResolution(session, resolution) {
         }
     } else {
         session.tribunal = null
+        session.phase = 'NIGHT'
+        session.nightActions = new Map()
+        session.nightResolution = null
     }
+    return { ok: true }
 }
 
 /**
@@ -1077,6 +1434,9 @@ function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
     if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
     if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
     if (session.phase !== 'TRIBUNAL') return { ok: false, code: 'INVALID_PHASE' }
 
@@ -1133,6 +1493,9 @@ function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
  * 않습니다(TRIBUNAL 이후 전이는 이후 슬라이스의 몫입니다).
  */
 function commitTribunalVoteResolution(session, resolution) {
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
     const canonicalSession = gameSessions.get(session.id)
     if (canonicalSession !== session) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
     if (session.phase !== 'TRIBUNAL') return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
@@ -1172,7 +1535,24 @@ function commitTribunalVoteResolution(session, resolution) {
     tribunal.resolved = true
 
     TRIBUNAL_PENDING.delete(session)
-    return { ok: true }
+
+    const winResult = evaluateWinCondition(session)
+    if (winResult) {
+        finalizeGameSession(session, winResult)
+        return { ok: true, terminal: { winner: winResult.winner } }
+    }
+
+    // 승리 조건 미충족 — TRIBUNAL은 여기서 끝나고 그날 밤(NIGHT)으로 전이한다. dayIndex는
+    // 그대로 유지한다(같은 날의 낮→재판 연장선이 끝나고 그 밤으로 넘어가는 것뿐이므로 —
+    // dayIndex 증가는 오직 commitNightResolution의 NIGHT→DAY 전이에서만 일어난다).
+    // nightActions/nightResolution은 반드시 새 Map/null로 되돌려야 한다 — 그러지 않으면 지난
+    // 밤의 잔여 nightActions 엔트리가 이번 밤의 ACTIONS_PENDING 판정·집계를 오염시키고,
+    // nightResolution이 non-null로 남아있어 prepareNightResolution이 즉시
+    // NIGHT_ALREADY_RESOLVED로 거부해버린다.
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    return { ok: true, terminal: null }
 }
 
 /**
@@ -1193,6 +1573,143 @@ function buildTribunalVoteResolvedPayload(session) {
     }
 }
 
+// uuid 본인이 현재 phase에서 이미 제출을 마쳤는지(순수 계산 — 어떤 상태도 바꾸지 않는다).
+// 항상 .has()로만 판정한다(.get() !== undefined가 아님) — session.nightActions/dayVotes는
+// SKIP/기권을 null 값으로 저장하므로, .get()은 "미제출"과 "SKIP 제출"을 구분하지 못한다.
+function computeHasActedThisPhase(session, uuid) {
+    switch (session.phase) {
+        case 'ROLE_REVEAL':
+            return session.roleRevealAcks.has(uuid)
+        case 'NIGHT':
+            return session.nightActions.has(uuid)
+        case 'DAY':
+            return session.dayVotes.has(uuid)
+        case 'TRIBUNAL':
+            return session.tribunal ? session.tribunal.votes.has(uuid) : false
+        default:
+            return false // ENDED
+    }
+}
+
+// snapshot에 dayVoteResolution/tribunal을 포함해도 되는지 판정한다(순수 계산). dayIndex
+// 일치만으로는 불충분하다 — commitTribunalVoteResolution의 TRIBUNAL→NIGHT(무죄/비종결) 전이는
+// phase만 NIGHT로 바꾸고 session.dayVoteResolution/session.tribunal은 그대로 남겨두므로(둘 다
+// 여전히 현재 session.dayIndex와 같은 dayIndex를 가짐), dayIndex 일치 검사만으로는 그 NIGHT
+// 단계에서 두 필드가 계속 노출된다. 그 밤이 그대로 게임을 끝내는 경우(킬로 인한 ENDED)에도
+// session.dayIndex는 바뀌지 않으므로 동일한 문제가 ENDED까지 이어진다. 판정 근거는 phase이고,
+// ENDED에서만 예외적으로 "이 종결이 이번 밤의 킬에서 나온 것인지"(nightResolution.dayIndex와
+// session.dayIndex 비교)를 추가로 본다 — 다르면 DAY/TRIBUNAL 사이클이 종결시킨 것이므로 그
+// 사이클의 dayVoteResolution/tribunal은 여전히 유효하다.
+function canIncludeDayTribunalFields(session) {
+    if (session.phase === 'DAY' || session.phase === 'TRIBUNAL') return true
+    if (session.phase === 'ENDED') {
+        return session.nightResolution !== null && session.nightResolution.dayIndex !== session.dayIndex
+    }
+    return false // ROLE_REVEAL, NIGHT
+}
+
+/**
+ * get_session_snapshot 응답 본문을 만든다(순수 함수, 매 호출마다 새 defensive-copy 구조를
+ * 반환한다 — 반환값을 변형해도 session이나 다음 호출 결과에 영향이 없다). uuid는 이미
+ * getSessionSnapshotForPlayer가 참가자로 검증한 뒤에만 넘어온다.
+ *
+ * top-level은 항상 { gameId, phase, dayIndex, players, self }이고, 상황에 따라 nightResult/
+ * dayVoteResolution/tribunal/winResult가 추가된다. 다른 참가자의 role/team/allies/투표·행동
+ * 대상/raw ballot/개별 제출 여부는 어디에도 포함하지 않는다 — self만 본인의 role 관련 필드를
+ * 담는다.
+ */
+function buildSessionSnapshot(session, uuid) {
+    const viewer = session.players.get(uuid)
+    const fields = {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        players: [...session.players.values()].map(({ uuid: pUuid, nickname, alive }) => ({
+            uuid: pUuid,
+            nickname,
+            isAlive: alive,
+        })),
+        self: {
+            ...buildViewerRoleFields(session, viewer),
+            hasActedThisPhase: computeHasActedThisPhase(session, uuid),
+        },
+    }
+
+    if (session.nightResolution) {
+        // session.nightResolution은 매 NIGHT phase 진입 시점(최초 생성, commitTribunalVoteResolution의
+        // 무죄/비종결 TRIBUNAL→NIGHT 리셋)마다 null로 되돌아가므로, 여기 존재한다는 사실 자체가
+        // 항상 "가장 최근에 판정된 밤"을 뜻한다(phase가 NIGHT인 채로 남은 stale 기록일 수 없다).
+        // dayIndex/victimUuid는 반드시 buildNightResultAppliedPayload가 반환한 값을 그대로 써야
+        // 한다 — session.nightResolution.dayIndex를 직접 읽으면 비종결 경로에서 dayIndex 증가
+        // 전의(원래 night_result_applied 방송보다 하나 작은) 값을 돌려주게 된다.
+        // deathReveals도 같은 이유로 canonical 빌더를 통해 얻는다 — 재접속 클라이언트가 받는
+        // 목록은 그 밤의 방송이 실어 나른 목록과 정확히 같아야 하고(가장 최근 판정 하나뿐),
+        // 빌더가 매번 새 배열/새 원소로 복사하므로 응답을 변형해도 session은 오염되지 않는다.
+        const { dayIndex, victimUuid, deathReveals } = buildNightResultAppliedPayload(
+            session,
+            session.nightResolution.pendingEliminationTargetId,
+            session.nightResolution.publicDeathReveals,
+        )
+        fields.nightResult = { dayIndex, victimUuid, deathReveals }
+    }
+
+    if (canIncludeDayTribunalFields(session)) {
+        if (session.dayVoteResolution && session.dayVoteResolution.dayIndex === session.dayIndex) {
+            const { outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount } = buildDayVoteResolvedPayload(
+                session,
+                session.dayVoteResolution,
+            )
+            fields.dayVoteResolution = { outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount }
+        }
+
+        if (session.tribunal && session.tribunal.dayIndex === session.dayIndex) {
+            if (session.tribunal.resolved) {
+                const { defendantUuid, outcome, counts, executedUuid } = buildTribunalVoteResolvedPayload(session)
+                fields.tribunal = { defendantUuid, resolved: true, outcome, counts: { ...counts }, executedUuid }
+            } else {
+                fields.tribunal = { defendantUuid: session.tribunal.defendantUuid, resolved: false }
+            }
+        }
+    }
+
+    if (session.winResult) fields.winResult = { ...session.winResult }
+
+    return fields
+}
+
+/**
+ * get_session_snapshot 요청-ACK 전용 읽기 primitive다(guard 미적용 — ENDED 이후에도 조회
+ * 가능해야 한다). getActiveSessionRoutingInfo와 동일하게 인증된 uuid를 유일한 권한 원천으로
+ * 삼는다 — 클라이언트가 보낸 gameId는 playerSession 조회의 근거로 쓰지 않고, 넘어온 경우
+ * (undefined가 아닌 경우) canonical session.id와 일치하는지 검증하는 부가 확인으로만 쓴다.
+ *
+ * 검증 순서: 1. uuid의 활성 세션 존재(NOT_A_PARTICIPANT) → 2. registry 일관성(session 실존
+ * — SESSION_NOT_FOUND, uuid가 참가자 — NOT_A_PARTICIPANT) → 3. expectedGameId가 주어졌으면
+ * (undefined가 아니면, 빈 문자열·공백만 있는 문자열 포함) trim 후 session.id와 정확히 일치
+ * (GAME_ID_MISMATCH).
+ *
+ * SESSION_NOT_FOUND/NOT_A_PARTICIPANT는 registry 불일치 상황에서만 나오는 internal-only
+ * 코드다 — 소켓 계층이 INTERNAL_ERROR로 정규화해야 한다. GAME_ID_MISMATCH는 클라이언트가
+ * 잘못된(오래된) gameId를 들고 재접속했을 때 정상적으로 도달 가능한 안정된 공개 코드다.
+ */
+function getSessionSnapshotForPlayer(uuid, expectedGameId) {
+    const gameId = playerSession.get(uuid)
+    if (!gameId) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    const session = gameSessions.get(gameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (expectedGameId !== undefined) {
+        const normalizedExpected = typeof expectedGameId === 'string' ? expectedGameId.trim() : ''
+        if (!normalizedExpected || normalizedExpected !== session.id) {
+            return { ok: false, code: 'GAME_ID_MISMATCH' }
+        }
+    }
+
+    return { ok: true, snapshot: buildSessionSnapshot(session, uuid) }
+}
+
 /**
  * NIGHT 단계 JOKER 전용 채팅 메시지를 검증합니다(어떤 상태도 바꾸지 않는 순수 함수). 인증된
  * uuid와 클라이언트가 알고 있는 gameId, 원문 text만 입력으로 받습니다 — role/team/senderUuid
@@ -1201,10 +1718,14 @@ function buildTribunalVoteResolvedPayload(session) {
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
- *   → 5. 발신자가 JOKER 진영인지(ROLE_TEAMS[actor.role] !== 'JOKER'면 NOT_ELIGIBLE —
- *   CITIZEN이 payload를 위조해도 여기서 막힙니다) → 6. sanitizeJokerChatText
+ *   → 5. 발신자가 JOKER 진영이고 아직 생존해 있는지(ROLE_TEAMS[actor.role] !== 'JOKER'이거나
+ *   actor.alive !== true면 NOT_ELIGIBLE — CITIZEN이 payload를 위조해도, 사망한 JOKER가
+ *   요청해도 여기서 막힙니다) → 6. sanitizeChatText
  *   → 7. now()를 정확히 한 번 호출해 sentAt을 계산하고 유효성 검증(INVALID_CLOCK_VALUE)
  *   → 8. jokerChatRateLimit을 읽기만 해서 rate limit 판정(RATE_LIMITED).
+ *
+ * 사망한 JOKER는 이 경로로 보낼 수 없고(NOT_ELIGIBLE), getChatRecipientUuids의 JOKER 채널
+ * 수신자에서도 제외됩니다 — 대신 사망자 전용 채팅(prepareGameChatMessage)만 쓸 수 있습니다.
  *
  * 이 함수는 session.jokerChatRateLimit을 포함해 어떤 Map도 쓰지 않습니다(읽기만 합니다) —
  * idFn도 호출하지 않습니다(호출자인 소켓 계층이 recipient 해석·발신자 포함 확인을 전부 통과한
@@ -1223,10 +1744,14 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
     const actor = session.players.get(uuid)
     if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
     if (ROLE_TEAMS[actor.role] !== 'JOKER') return { ok: false, code: 'NOT_ELIGIBLE' }
+    if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
 
-    const sanitized = sanitizeJokerChatText(text)
+    const sanitized = sanitizeChatText(text)
     if (!sanitized.ok) return sanitized
 
     const sentAt = now()
@@ -1234,8 +1759,8 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
         return { ok: false, code: 'INVALID_CLOCK_VALUE' }
     }
 
-    const lastSentAt = session.jokerChatRateLimit.get(uuid)
-    if (lastSentAt !== undefined && sentAt - lastSentAt < JOKER_CHAT_MIN_INTERVAL_MS) {
+    const lastSentAt = getChatRateLimitMap(session, CHAT_CHANNELS.JOKER).get(uuid)
+    if (lastSentAt !== undefined && sentAt - lastSentAt < CHAT_MIN_INTERVAL_MS) {
         return { ok: false, code: 'RATE_LIMITED' }
     }
 
@@ -1244,7 +1769,225 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
 
 /** JOKER 채팅의 유일한 mutation — prepareJokerChatMessage가 반환한 session/uuid/sentAt으로 rate limit을 갱신합니다. */
 function commitJokerChatMessage(session, uuid, sentAt) {
-    session.jokerChatRateLimit.set(uuid, sentAt)
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    getChatRateLimitMap(session, CHAT_CHANNELS.JOKER).set(uuid, sentAt)
+    return { ok: true }
+}
+
+/**
+ * 공개 DAY 채팅과 사망자 전용 채팅의 단일 검증 진입점입니다(어떤 상태도 바꾸지 않는 순수
+ * 함수). prepareJokerChatMessage와 마찬가지로 인증된 uuid·클라이언트가 알고 있는 gameId·원문
+ * text만 입력으로 받습니다 — 채널·발신자·닉네임·수신자·dayIndex는 전부 canonical 상태에서
+ * 유도되며, 클라이언트가 그런 필드를 함께 보내도 이 함수의 입력에 아예 없습니다.
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
+ *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. 종료 여부(GAME_ALREADY_ENDED)
+ *   → 5. resolveGameChatChannel로 채널 유도(생존↔DAY / 사망↔NIGHT·DAY·TRIBUNAL, 그 외
+ *   INVALID_PHASE) → 6. sanitizeChatText → 7. now()를 정확히 한 번 호출해 sentAt 계산·검증
+ *   (INVALID_CLOCK_VALUE) → 8. 그 채널의 rate limit Map만 읽어 판정(RATE_LIMITED)
+ *   → 9. 메시지 ID 생성·검증(ID_GENERATION_ERROR / INVALID_MESSAGE_ID).
+ *
+ * 어떤 rate limit Map도 쓰지 않습니다(읽기만 합니다) — 실패한 요청은 rate limit을 소비하지
+ * 않고, 세션·registry 상태도 전혀 바뀌지 않습니다. 성공한 요청만 마지막에 메시지 ID를 만들고
+ * (idFn — 기본값 crypto.randomUUID), 그 요청 하나에만 묶인 단일 사용 능력(capability)을
+ * preparedGameChatCapabilities에 기록합니다 — commit이 "이 요청이 실제로 준비된 그 요청인가"를
+ * 대조할 유일한 근거이고, 이 함수가 남기는 유일한 흔적입니다. 능력 기록은 모듈 밖으로
+ * 나가지 않으므로 위조할 수 없습니다.
+ *
+ * 메시지 ID까지 여기서 만드는 이유는, commit이 대조하는 능력에 "밖으로 나갈 공개 메시지"
+ * 전체(messageId 포함)가 통째로 묶여야 하기 때문입니다 — 소켓 계층이 ID를 따로 만들면 그
+ * 값만은 어떤 canonical 기록과도 대조되지 않는 구멍으로 남습니다. idFn이 던지거나 빈
+ * 문자열을 돌려주면 ID_GENERATION_ERROR·INVALID_MESSAGE_ID로 거부되며, 그때도 어떤 Map도
+ * 바뀌지 않습니다(원자성).
+ *
+ * 성공 반환값의 nickname/dayIndex는 session.players/session이 들고 있는 canonical 값이고,
+ * actorUuid는 인증 uuid 그 자체입니다. message는 소켓 계층이 그대로 내보낼 공개 화이트리스트
+ * 7개 키뿐입니다(role/team/alive/allies는 어디에도 없습니다).
+ */
+function prepareGameChatMessage(uuid, gameId, text, { now = Date.now, idFn = () => crypto.randomUUID() } = {}) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    const routed = resolveGameChatChannel(session, actor)
+    if (!routed.ok) return routed
+
+    const sanitized = sanitizeChatText(text)
+    if (!sanitized.ok) return sanitized
+
+    const sentAt = now()
+    if (!Number.isFinite(sentAt) || !Number.isInteger(sentAt) || sentAt < 0) {
+        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
+    }
+
+    const rateLimitMap = getChatRateLimitMap(session, routed.channel)
+    if (!(rateLimitMap instanceof Map)) return { ok: false, code: 'INVALID_CHAT_CHANNEL' }
+    const lastSentAt = rateLimitMap.get(uuid)
+    if (lastSentAt !== undefined && sentAt - lastSentAt < CHAT_MIN_INTERVAL_MS) {
+        return { ok: false, code: 'RATE_LIMITED' }
+    }
+
+    const created = createGameChatMessageId(idFn)
+    if (!created.ok) return created
+
+    // 밖으로 나갈 공개 메시지의 canonical 원본. 소켓 계층은 이 값을 만들지도 고치지도 않고,
+    // commit이 능력 기록에서 돌려주는 사본만 그대로 내보낸다.
+    const message = {
+        gameId: session.id,
+        messageId: created.messageId,
+        senderUuid: uuid,
+        nickname: actor.nickname,
+        text: sanitized.text,
+        sentAt,
+        dayIndex: session.dayIndex,
+    }
+
+    const prepared = {
+        ok: true,
+        session,
+        channel: routed.channel,
+        actorUuid: uuid,
+        nickname: actor.nickname,
+        sanitizedText: sanitized.text,
+        sentAt,
+        dayIndex: session.dayIndex,
+        message: { ...message },
+    }
+
+    preparedGameChatCapabilities.set(
+        prepared,
+        Object.freeze({
+            session,
+            gameId: session.id,
+            channel: routed.channel,
+            actorUuid: uuid,
+            nickname: actor.nickname,
+            text: sanitized.text,
+            sentAt,
+            dayIndex: session.dayIndex,
+            messageId: created.messageId,
+            message: Object.freeze({ ...message }),
+        }),
+    )
+
+    return prepared
+}
+
+/**
+ * DAY/사망자 채팅의 유일한 mutation입니다. 인자는 prepareGameChatMessage가 돌려준 prepared 객체
+ * 하나뿐이고, 그 객체는 "값을 담은 가방"이 아니라 "그 요청 하나를 커밋할 수 있는 단일 사용
+ * 능력(capability)"으로만 취급됩니다.
+ *
+ * 두 가지 독립적인 이유로 prepared의 노출 필드는 어떤 판정의 근거도 되지 못합니다:
+ *   - prepare~commit 사이에 다른 이벤트(밤 판정으로 인한 사망, phase 전이, 세션 종료·이탈,
+ *     재접속)가 끼어들 수 있다 → canonical 상태에서 권한을 처음부터 다시 유도한다.
+ *   - prepared 번들 자체가 호출자에 의해 변조됐을 수 있다 → 실제로 쓰는 값(sentAt·channel·
+ *     uuid·session·공개 메시지)은 전부 모듈 사설 능력 기록에서만 읽는다.
+ *
+ * 검증 순서(앞 단계를 통과해야 뒤가 평가되고, 어디서 실패하든 그 즉시 반환합니다):
+ *   1. 능력 조회 — prepared가 객체이고, production prepare가 발급한 그 객체여야 한다. 손으로
+ *      만든 동일한 모양의 객체·이미 소모된 prepared·prepare를 건너뛴 임의의 값은 전부
+ *      STALE_CHAT_REQUEST다(WeakMap 참조 조회라 위조할 방법이 없다).
+ *   2. 번들 무결성 — 노출된 prepared의 모든 필드(message의 7개 키 포함)가 능력 기록과 한
+ *      글자도 다르지 않아야 한다. sentAt만 바꾸든, message.sentAt과 prepared.sentAt을 함께
+ *      바꾸든, 어느 쪽도 통과하지 못한다(STALE_CHAT_REQUEST).
+ *   3. canonical 세션 동일성 — 인증 uuid(능력 기록의 값)의 현재 활성 gameId로 registry에서
+ *      찾은 session이 정확히 그 session 객체(참조 동일성)여야 하고, session.id와 능력 기록의
+ *      gameId도 그 gameId와 같아야 한다. 세션 밖 발신자·이미 이탈한 발신자는 여기서 걸린다.
+ *   4. 참가자 멤버십 — session.players에 그 uuid가 실제로 있고, 항목의 uuid가 인증 uuid와
+ *      같아야 한다(인증 발신자 uuid 재확인). 닉네임도 발급 당시와 같아야 한다.
+ *   5. 종료 여부(GAME_ALREADY_ENDED)
+ *   6. "지금 실제로 유효한 채널"을 resolveGameChatChannel로 다시 유도해 능력 기록의 채널과
+ *      대조 — 현재 phase/생존 권한을 여기서 다시 통과해야 하고, 그 사이 DAY→NIGHT 전이나
+ *      생존→사망 전이가 있었다면 STALE_CHAT_CHANNEL로 거부된다(라우팅이 바뀐 채널로는 절대
+ *      커밋되지 않는다). dayIndex도 발급 당시와 같아야 한다.
+ *   7. 타임스탬프 — 능력 기록의 sentAt과 그 안의 공개 메시지 sentAt이 정확히 같은 값이어야
+ *      하고, 유한한 비음수 정수여야 한다(INVALID_CLOCK_VALUE). 그 다음 commit이 스스로 호출한
+ *      canonical 시계(now)와 대조해 셋을 모두 만족해야 한다(어기면 STALE_CHAT_TIMESTAMP):
+ *        (a) sentAt <= now()             — 미래 시각을 심어 이후 전송을 잠그지 못한다
+ *        (b) now() - sentAt <= CHAT_COMMIT_MAX_AGE_MS — 오래된 prepared의 재생(replay)을 막는다
+ *        (c) 마지막 전송 시각이 있으면 sentAt - lastSentAt >= CHAT_MIN_INTERVAL_MS
+ *      (c)는 prepare가 이미 한 간격 검사를 commit 시점의 최신 기록으로 다시 하는 것입니다 —
+ *      동시에 준비된 두 요청 중 하나가 먼저 커밋되면, 남은 쪽은 더 이상 간격을 만족하지
+ *      못하므로 거부됩니다(오래된 prepared가 기준 시각을 과거로 되돌리지 못한다).
+ *   8. 다시 유도한 채널에 대응하는 rate limit Map(INVALID_CHAT_CHANNEL)
+ *
+ * 성공하면 능력 기록을 즉시 지우고(같은 prepared의 재생 불가) 그 채널의 Map에 능력 기록의
+ * sentAt을 씁니다 — 다른 채널의 Map은 절대 건드리지 않습니다. 실패한 commit은 DAY/DEAD 어느
+ * rate limit Map도 변형하지 않고 능력도 소모하지 않습니다(원자성 — 남의 실패가 정상 요청의
+ * 능력을 태우지 못한다).
+ *
+ * 반환하는 message는 능력 기록의 사본입니다 — 소켓 계층이 내보내는 값의 출처가 언제나 서버
+ * canonical 상태 하나뿐이 되도록, 호출자가 들고 있는 prepared.message는 쓰지 않습니다.
+ */
+function commitGameChatMessage(prepared, { now = Date.now } = {}) {
+    if (typeof prepared !== 'object' || prepared === null) return { ok: false, code: 'STALE_CHAT_REQUEST' }
+
+    const capability = preparedGameChatCapabilities.get(prepared)
+    if (!capability) return { ok: false, code: 'STALE_CHAT_REQUEST' }
+    if (!matchesPreparedGameChatCapability(prepared, capability)) return { ok: false, code: 'STALE_CHAT_REQUEST' }
+
+    const { session, actorUuid: uuid, sentAt } = capability
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    const currentSession = gameSessions.get(currentGameId)
+    if (!currentSession) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (currentSession !== session) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+    if (session.id !== currentGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+    if (capability.gameId !== currentGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    if (actor.uuid !== uuid) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    if (actor.nickname !== capability.nickname) return { ok: false, code: 'STALE_CHAT_REQUEST' }
+
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    const routed = resolveGameChatChannel(session, actor)
+    if (!routed.ok) return routed
+    if (routed.channel !== capability.channel) return { ok: false, code: 'STALE_CHAT_CHANNEL' }
+    if (session.dayIndex !== capability.dayIndex) return { ok: false, code: 'STALE_CHAT_REQUEST' }
+
+    if (!Number.isFinite(sentAt) || !Number.isInteger(sentAt) || sentAt < 0) {
+        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
+    }
+    // 능력 기록 안에서도 "준비된 시각"과 "밖으로 나갈 메시지의 시각"은 반드시 같은 값이어야 한다.
+    if (capability.message.sentAt !== sentAt) return { ok: false, code: 'INVALID_CLOCK_VALUE' }
+
+    const committedAt = now()
+    if (!Number.isFinite(committedAt) || !Number.isInteger(committedAt) || committedAt < 0) {
+        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
+    }
+    if (sentAt > committedAt) return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
+    if (committedAt - sentAt > CHAT_COMMIT_MAX_AGE_MS) return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
+
+    const rateLimitMap = getChatRateLimitMap(session, routed.channel)
+    if (!(rateLimitMap instanceof Map)) return { ok: false, code: 'INVALID_CHAT_CHANNEL' }
+
+    const lastSentAt = rateLimitMap.get(uuid)
+    if (lastSentAt !== undefined && sentAt - lastSentAt < CHAT_MIN_INTERVAL_MS) {
+        return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
+    }
+
+    preparedGameChatCapabilities.delete(prepared)
+    rateLimitMap.set(uuid, sentAt)
+    return { ok: true, gameId: session.id, channel: routed.channel, message: { ...capability.message } }
 }
 
 /**
@@ -1273,11 +2016,27 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
     }
 
     const session = gameSessions.get(gameId)
+
+    if (session.phase === 'ENDED') {
+        // ENDED 세션은 첫 이탈에 registry 전체를 지우지 않는다 — 참가자마다 개별적으로
+        // "이탈"만 반영하고, 마지막 참가자가 이탈할 때만 세션 자체를 registry에서 지운다.
+        if (!session.detachedUuids) session.detachedUuids = new Set()
+        session.detachedUuids.add(uuid)
+        playerSession.delete(uuid)
+
+        const sessionDeleted = session.detachedUuids.size >= session.players.size
+        if (sessionDeleted) {
+            gameSessions.delete(gameId)
+            roomGameSession.delete(session.roomId)
+        }
+        return { ok: true, session, reason, sessionDeleted }
+    }
+
     gameSessions.delete(gameId)
     roomGameSession.delete(session.roomId)
     session.players.forEach((_, playerUuid) => playerSession.delete(playerUuid))
 
-    return { ok: true, session, reason }
+    return { ok: true, session, reason, sessionDeleted: true }
 }
 
 /** 테스트 전용: 모듈 내부 상태를 초기화합니다. 런타임 코드에서는 호출하지 마세요. */
@@ -1285,6 +2044,7 @@ function __resetStateForTests() {
     gameSessions.clear()
     playerSession.clear()
     roomGameSession.clear()
+    // 채팅 능력 기록은 WeakMap이라 지울 대상이 없다 — prepared 객체가 버려지면 함께 사라진다.
 }
 
 /** 테스트 전용: 내부 Map을 라이브 참조가 아닌 복제된 일반 객체로 반환합니다. */
@@ -1320,9 +2080,14 @@ module.exports = {
     submitDayVote,
     prepareJokerChatMessage,
     commitJokerChatMessage,
+    prepareGameChatMessage,
+    commitGameChatMessage,
+    getChatRecipientUuids,
+    CHAT_CHANNELS,
     prepareNightResolution,
     commitNightResolution,
     buildNightResultAppliedPayload,
+    PUBLIC_NIGHT_DEATH_SOURCES,
     prepareDayVoteResolution,
     commitDayVoteResolution,
     buildDayVoteResolvedPayload,
@@ -1330,13 +2095,27 @@ module.exports = {
     prepareTribunalVoteResolution,
     commitTribunalVoteResolution,
     buildTribunalVoteResolvedPayload,
-    JOKER_CHAT_MAX_LENGTH,
+    // 기존 이름을 그대로 유지한다(값은 채널 공용 CHAT_MAX_LENGTH와 동일한 단일 상수다).
+    JOKER_CHAT_MAX_LENGTH: CHAT_MAX_LENGTH,
+    CHAT_MAX_LENGTH,
+    // 간격·commit 유효 창은 prepare와 commit이 함께 쓰는 canonical 규칙이라, 이 규칙을
+    // 검증하는 테스트가 매직 넘버를 다시 적지 않도록 값 자체를 노출한다.
+    CHAT_MIN_INTERVAL_MS,
+    CHAT_COMMIT_MAX_AGE_MS,
+    buildTerminalFields,
+    getSessionSnapshotForPlayer,
+    buildSessionSnapshot,
+    getActiveSessionRoutingInfo,
     __resetStateForTests,
     __getStateSnapshotForTests,
     // 테스트에서 개별 함수를 직접 호출하거나 registry를 의도적으로 파괴하기 위한 통로입니다.
     // 런타임 코드에서는 참조하지 않습니다.
     __testables: {
+        evaluateWinCondition,
+        finalizeGameSession,
+        assertSessionNotEnded,
         assignRoles,
+        enterDayPhase,
         validateSessionInput,
         buildSessionCandidate,
         checkGameSessionPreconditions,
@@ -1344,12 +2123,18 @@ module.exports = {
         getSpecialRoleBudget,
         computeRoleComposition,
         isEligibleForNightAction,
-        sanitizeJokerChatText,
+        sanitizeChatText,
+        // 기존 테스트/호출부가 쓰던 이름을 그대로 남긴다(동일 함수 참조 — 채널 공용 규칙이다).
+        sanitizeJokerChatText: sanitizeChatText,
+        resolveGameChatChannel,
+        getChatRateLimitMap,
         getEligibleNightActorUuids,
         tallyJokerAssassinationTarget,
         computeDoctorProtectionSet,
         computeGuardInvestigationResult,
         computeWitchHunterConfirmationResult,
+        resolveNightDeathSource,
+        buildNightDeathReveals,
         getEligibleDayVoterUuids,
         tallyDayVoteOutcome,
         __deleteGameSessionOnlyForTests,

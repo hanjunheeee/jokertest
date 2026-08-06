@@ -27,6 +27,8 @@ export default function InGamePlayerCard({
   theme = null,
   /** 투표 선택 등 — 프레임 stroke 강화 (추후 투표 UI에서 사용) */
   voteHighlight = false,
+  /** 인증된 uuid 동등성으로 판정된 본인 여부 — "나" 배지와 절제된 강조 테두리를 켠다 */
+  isSelf = false,
   className = "",
 }) {
   const styles =
@@ -47,9 +49,19 @@ export default function InGamePlayerCard({
     <div
       className={`relative shrink-0 [container-type:inline-size] ${className}`}
     >
-      <div className="relative w-full overflow-visible">
+      <div
+        className={`relative w-full overflow-visible ${isSelf ? "ring-2 ring-[#f3d28d]/80 ring-offset-2 ring-offset-black/40 rounded-full" : ""}`}
+      >
         <PlayerPortraitFrame variant="ingameCard" src={portraitSrc} />
         <InGamePlayerStatusOverlay status={status} />
+        {isSelf ? (
+          <span
+            className="absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#f3d28d] bg-[#3a1a0c] px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-[#ffe2ad] shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+            aria-label="본인"
+          >
+            나
+          </span>
+        ) : null}
 
         <div className="relative z-10 w-full overflow-visible">
           {styles ? (
