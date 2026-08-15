@@ -229,8 +229,18 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   // ?좉렐?????먯젙 ?꾨즺 ???ъ젣異쑣룹쨷蹂??먯젙 ?붿껌??留됯린 ?꾪븿?대떎. phase !== 'NIGHT'???④퍡
   // 寃?ы븳????DAY ?꾩씠濡?resolveNightStatus媛 'idle'濡?珥덇린?붾릺?붾씪??NIGHT 議곗옉? 怨꾩냽
   // ?좉꺼 ?덉뼱???쒕떎.
+  // 사망자는 밤 행동 제출 대상이 아니다 — 바로 위 dayVoteControlsEnabled와 같은 헬퍼·같은 값을
+  // 써서 낮과 밤이 한 생존 규칙을 공유하게 한다. 서버(game-core)도 사망자의 제출을
+  // ACTOR_NOT_ALIVE로 거부하므로, 이 게이트는 그 거부를 UI에서 미리 반영하는 것이다.
+  // localSessionPlayer가 undefined면 isSessionPlayerAlive가 true(생존 취급)를 돌려주는 기존
+  // 폴백을 그대로 승계한다 — 세션 컨텍스트가 비어도 잠금 정책이 바뀌지 않는다.
+  const nightActionAlive = isSessionPlayerAlive(localSessionPlayer)
   const nightActionsLocked =
-    interactionBlocked || isGameEnded || resolveNightRequest.status !== "idle" || gameState?.phase !== "NIGHT"
+    interactionBlocked ||
+    isGameEnded ||
+    !nightActionAlive ||
+    resolveNightRequest.status !== "idle" ||
+    gameState?.phase !== "NIGHT"
 
   const submitDayVote = () => {
     if (!selectedDayVoteTargetId) return
@@ -382,6 +392,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     tribunalResolveControlsEnabled,
     submitNightAction,
     skipNightAction,
+    nightActionAlive,
     nightActionsLocked,
     resolveNight: resolveNightRequest.resolveNight,
     resolveNightStatus: resolveNightRequest.status,

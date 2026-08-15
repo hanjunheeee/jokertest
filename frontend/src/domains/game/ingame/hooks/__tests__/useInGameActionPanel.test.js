@@ -528,6 +528,78 @@ test("useInGameActionPanel: 비종료 phase(DAY)에서 생존 상태면 dayVoteC
   assert.equal(captured.dayVoteControlsEnabled, true)
 })
 
+// ---------------------------------------------------------------------------
+// 밤 행동 생존 게이트 — 사망자는 제출 UI 대상에서 빠진다(서버의 ACTOR_NOT_ALIVE와 짝)
+// ---------------------------------------------------------------------------
+
+test("useInGameActionPanel: NIGHT에서 본인이 사망 상태면 nightActionsLocked가 true이고 nightActionAlive는 false다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "NIGHT",
+      dayIndex: 1,
+      self: { role: "JOKER", uuid: "p1" },
+      players: [{ uuid: "p1", alive: false }],
+      events: [],
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: [{ id: "p1", nickname: "P1", status: "dead" }],
+    localPlayerId: "p1",
+  })
+
+  // 역할·dayIndex상 자격 자체는 그대로 계산되지만(phase/생존은 보지 않는다), 생존 게이트가
+  // 제출을 막는다 — 서버 game-core의 ACTOR_NOT_ALIVE 거부를 UI에서 미리 반영한 것이다.
+  assert.equal(captured.nightActionType, "ASSASSINATE")
+  assert.equal(captured.nightActionAlive, false)
+  assert.equal(captured.nightActionsLocked, true)
+})
+
+test("useInGameActionPanel: NIGHT에서 본인이 생존 상태고 판정 요청이 idle이면 nightActionsLocked는 false다(positive control)", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "NIGHT",
+      dayIndex: 1,
+      self: { role: "JOKER", uuid: "p1" },
+      players: [{ uuid: "p1", alive: true }],
+      events: [],
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: [{ id: "p1", nickname: "P1", status: "alive" }],
+    localPlayerId: "p1",
+  })
+
+  assert.equal(captured.nightActionAlive, true)
+  assert.equal(captured.nightActionsLocked, false)
+})
+
+test("useInGameActionPanel: 세션 컨텍스트가 비어 있으면 생존 게이트는 잠그지 않는다(기존 isSessionPlayerAlive 폴백 승계)", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "NIGHT",
+      dayIndex: 1,
+      self: { role: "JOKER", uuid: "p1" },
+      players: [{ uuid: "p1", alive: true }],
+      events: [],
+    },
+    error: null,
+  })
+
+  // localSessionPlayer가 undefined인 경우 — dayVoteControlsEnabled와 동일하게 생존으로 취급해
+  // 컨텍스트 지연 로딩이 조작을 잠가버리지 않게 한다.
+  const captured = renderActionPanelProbe()
+
+  assert.equal(captured.nightActionAlive, true)
+  assert.equal(captured.nightActionsLocked, false)
+})
+
 test("useInGameActionPanel: ENDED인데 winResult가 없어도(undefined) throw 없이 안전한 폴백을 따르고 컨트롤은 계속 잠긴다", () => {
   useInGameStore.setState({
     gameId: "game-1",
