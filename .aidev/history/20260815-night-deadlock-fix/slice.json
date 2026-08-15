@@ -1,0 +1,27 @@
+{
+  "slice_id": "20260815-night-deadlock-fix",
+  "status": "pending",
+  "branch": "slice/20260815-night-deadlock-fix",
+  "base": "windows-handoff-20260808",
+  "base_commit": "ca1e1175709fb9ff579dbe168d43acd5308f6b8d",
+  "gates": [
+    "plan"
+  ],
+  "setup": {
+    "command": "npm ci --prefix backend",
+    "status": "pending"
+  },
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-15T23:07:50+09:00"
+}
