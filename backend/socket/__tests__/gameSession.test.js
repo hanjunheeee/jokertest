@@ -2293,6 +2293,101 @@ function commitFourPlayerSessionWithSocketsAtNight({ id = 'room-rn-four' } = {})
     }
 }
 
+/**
+ * 8인·jokerCount 1 세션(JOKER 1 / DOCTOR 1 / GUARD 1 / CITIZEN 5)을 첫 밤(NIGHT, dayIndex 0)
+ * 픽스처로 만들고 fake socket/io를 채널에 join된 상태로 준비한다. 위 4인 픽스처는
+ * getSpecialRoleBudget(4)가 {0,0,0}이라 DOCTOR/GUARD가 아예 배정되지 않아, "사망한 행동
+ * 보유자"를 다루는 테스트에 쓸 수 없다(8인부터 DOCTOR·GUARD가 각 1명씩 생긴다).
+ *
+ * 역할별 uuid를 배정 결과에서 직접 찾아 돌려준다 — 셔플이 바뀌어도 테스트가 조용히
+ * 무의미해지지 않도록 uuid 위치가 아니라 역할로 지목하기 위함이다.
+ */
+function commitEightPlayerSessionWithSocketsAtNight({ id = 'room-rn-eight' } = {}) {
+    const uuids = Array.from({ length: 8 }, (_, i) => `${id}-${i}`)
+    const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+
+    ackAllAndRewindToFirstNight(session)
+
+    const sockets = uuids.map((uuid) => {
+        const socket = createFakeSocket(uuid)
+        socket.rooms.add(session.channelId)
+        return socket
+    })
+
+    const io = createFakeIo(sockets)
+    const byRole = (role) => [...session.players.values()].find((player) => player.role === role).uuid
+    const jokerUuid = byRole('JOKER')
+    const doctorUuid = byRole('DOCTOR')
+    const guardUuid = byRole('GUARD')
+    const citizenUuids = [...session.players.values()]
+        .filter((player) => player.role === 'CITIZEN')
+        .map((player) => player.uuid)
+    const socketByUuid = new Map(sockets.map((socket) => [socket.data.user.uuid, socket]))
+
+    return { session, io, sockets, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid }
+}
+
+test('submit_night_action: 사망한 참가자는 ACTOR_NOT_ALIVE ack을 받고 nightActions는 불변이다', () => {
+    const { session, doctorUuid, citizenUuids } = commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-dead-actor' })
+    session.players.get(doctorUuid).alive = false
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(
+        createFakeSocket(doctorUuid),
+        doctorUuid,
+        { gameId: session.id, targetId: citizenUuids[0] },
+        callback,
+    )
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'ACTOR_NOT_ALIVE', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('resolve_night: 사망한 행동 보유자가 미제출이어도 판정은 성공하고 night_result_applied는 사망자 포함 전원에게 1건씩 방송된다', () => {
+    const { session, io, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-dead-pending' })
+    assert.equal(session.players.get(doctorUuid).role, 'DOCTOR')
+    session.players.get(doctorUuid).alive = false
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+    gameSessionCore.submitNightAction(guardUuid, session.id, null)
+    assert.equal(session.nightActions.has(doctorUuid), false)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.players.get(victimUuid).alive, false)
+    // 사망자도 공개 결과 방송의 수신자에서 빠지지 않는다(관전은 계속된다).
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1, `${uuid}가 정확히 1건을 받지 않았다`)
+    }
+})
+
+test('resolve_night: 사망한 GUARD에게는 night_action_result(개인 조사 결과)가 전달되지 않는다', () => {
+    const { session, io, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-dead-guard' })
+    assert.equal(session.players.get(guardUuid).role, 'GUARD')
+    // 생존 상태로 조사를 제출해 둔 뒤 판정 전에 사망시킨다 — 엔트리는 남아 있지만 개인
+    // 결과는 만들어지지 않아야 한다.
+    gameSessionCore.submitNightAction(guardUuid, session.id, citizenUuids[0])
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    gameSessionCore.submitNightAction(doctorUuid, session.id, null)
+    session.players.get(guardUuid).alive = false
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const guardDelivered = socketByUuid.get(guardUuid).emitted.filter((e) => e.event === 'night_action_result')
+    assert.deepEqual(guardDelivered, [])
+})
+
 test('resolve_night: 보호 안 된 유효 희생자 — night_result_applied가 참가자 전원(발신자 포함)에게 정확히 1건씩, payload가 buildNightResultAppliedPayload와 동일하다', () => {
     const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-1' })
     const [victimUuid] = citizenUuids

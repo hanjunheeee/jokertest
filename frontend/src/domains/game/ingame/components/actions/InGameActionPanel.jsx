@@ -76,6 +76,7 @@ export default function InGameActionPanel({
     tribunalResolveLocked,
     submitNightAction,
     skipNightAction,
+    nightActionAlive,
     nightActionsLocked,
     resolveNight,
     resolveNightStatus,
@@ -265,7 +266,12 @@ export default function InGameActionPanel({
 
       {gameState.phase === "NIGHT" ? (
         <div className={INGAME_ACTION_SECTION_CLASS}>
-          {nightActionType === null ? (
+          {/* 사망자에게 영구히 비활성인 버튼 두 개를 남기는 대신 기존 안내 문구로 대체해 제출
+              대상에서 아예 제외한다. nightActionsLocked가 아니라 nightActionAlive로 가르는 이유는
+              위 TRIBUNAL 분기가 tribunalVoteAlive를 쓰는 것과 같다 — 사망은 영구 상태라 UI에서
+              빼는 게 맞지만, 판정 진행 중(resolveNight)이나 interactionBlocked는 일시적 잠금이라
+              살아있는 참가자에게 "행동할 수 없다"고 알리면 사실과 다르다. */}
+          {nightActionType === null || !nightActionAlive ? (
             <p className={INGAME_ACTION_META_CLASS}>이 밤에는 행동할 수 없습니다.</p>
           ) : (
             <>

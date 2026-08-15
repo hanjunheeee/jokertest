@@ -708,11 +708,17 @@ function isEligibleForNightAction(role, dayIndex) {
     return minDayIndex !== null && minDayIndex !== undefined && dayIndex >= minDayIndex
 }
 
-// registry(session.players)를 읽기만 하는 순수 계산 — 이 밤에 행동 가능한 모든 참가자
+// registry(session.players)를 읽기만 하는 순수 계산 — 이 밤에 행동 가능한 "생존한" 참가자
 // uuid를 반환한다. 제출 완료 여부와는 무관하다(session.nightActions는 참조하지 않는다).
+//
+// 생존 검사가 이 함수의 계약에 포함되는 이유: prepareNightResolution의 제출 완료 판정이 이
+// 목록 하나만 보므로, 사망자가 남아 있으면 그가 제출하지 않는 한 밤이 영원히
+// ACTIONS_PENDING으로 막힌다(교착). getEligibleDayVoterUuids가 생존자만 돌려주는 것과 같은
+// 원칙이며, submitNightAction의 ACTOR_NOT_ALIVE 거부와 짝을 이룬다.
 function getEligibleNightActorUuids(session) {
     const uuids = []
     for (const player of session.players.values()) {
+        if (player.alive !== true) continue
         if (isEligibleForNightAction(player.role, session.dayIndex)) uuids.push(player.uuid)
     }
     return uuids
@@ -721,9 +727,14 @@ function getEligibleNightActorUuids(session) {
 // JOKER의 non-null target을 집계해 최다 득표 대상 하나를 반환한다. 동률(2명 이상이 공동
 // 최다)이거나 전원 SKIP/미제출이면 null이다. Map 순회 순서에 의존하지 않도록 득표수 자체만
 // 비교한다(먼저 등장한 대상이 아니라, 오직 표 수만으로 승자를 가린다).
+//
+// 사망한 JOKER의 표는 세지 않는다 — submitNightAction이 이미 사망자의 제출을 막지만,
+// 집계 자체가 canonical 생존 상태에만 의존하게 해서 지난 밤이 남긴 잔여 entry나 수동 조립·
+// 오염 상태가 결과를 바꾸지 못하게 한다(tallyDayVoteOutcome과 같은 원칙).
 function tallyJokerAssassinationTarget(session) {
     const voteCounts = new Map()
     for (const player of session.players.values()) {
+        if (!player.alive) continue
         if (player.role !== 'JOKER') continue
         const target = session.nightActions.get(player.uuid)
         if (target === undefined || target === null) continue
@@ -747,10 +758,12 @@ function tallyJokerAssassinationTarget(session) {
 }
 
 // DOCTOR의 non-null target 전체를 Set으로 반환한다(이번 밤의 보호 대상 집합). 자기 보호를
-// 포함해 별도 필터 없이 그대로 모은다.
+// 포함해 별도 필터 없이 그대로 모은다. 사망한 DOCTOR의 보호는 반영하지 않는다
+// (tallyJokerAssassinationTarget과 동일한 이유 — 집계는 canonical 생존 상태만 본다).
 function computeDoctorProtectionSet(session) {
     const protectedIds = new Set()
     for (const player of session.players.values()) {
+        if (!player.alive) continue
         if (player.role !== 'DOCTOR') continue
         const target = session.nightActions.get(player.uuid)
         if (target === undefined || target === null) continue
@@ -796,11 +809,18 @@ const SELF_TARGET_ALLOWED_ROLES = new Set(['DOCTOR'])
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
- *   → 5. 역할·dayIndex eligibility → 6. targetId가 있으면 참가자로 존재하는지
- *   → 7. actor가 JOKER이고 대상이 JOKER 진영(자기 자신 포함)이면 Map을 건드리지 않고 성공
+ *   → 5. 아직 판정되지 않은 밤 → 6. actor 생존(ACTOR_NOT_ALIVE)
+ *   → 7. 역할·dayIndex eligibility → 8. targetId가 있으면 참가자로 존재하는지
+ *   → 9. 대상 생존(TARGET_NOT_ALIVE)
+ *   → 10. actor가 JOKER이고 대상이 JOKER 진영(자기 자신 포함)이면 Map을 건드리지 않고 성공
  *      종료(no-op — 오라클 방지를 위해 거부하지 않고, 기존 유효 표를 파괴하지 않기 위해
  *      SKIP으로 덮어쓰지도 않는다)
- *   → 8. 그 외 역할이 자기 자신을 대상으로 했는데 허용되지 않으면 거부 → 9. Map에 저장.
+ *   → 11. 그 외 역할이 자기 자신을 대상으로 했는데 허용되지 않으면 거부 → 12. Map에 저장.
+ *
+ * 6·9번(생존 검사)은 submitDayVote와 정확히 같은 코드·같은 순서다 — 밤과 낮이 한 규칙을
+ * 공유한다. 사망자의 제출을 막는 것이 getEligibleNightActorUuids의 생존 필터와 짝을 이뤄
+ * "사망자 때문에 밤이 막히는" 교착을 없애고, 사망한 대상을 막는 것이
+ * commitNightResolution의 "victim은 반드시 alive여야 한다" 전제를 지켜준다.
  *
  * 모든 실패 경로와 7번(no-op)은 session.nightActions를 절대 건드리지 않습니다 — "성공 응답"과
  * "Map이 바뀜"은 동치가 아닙니다. game-core는 소켓 계층의 가드를 신뢰하지 않고 이 함수 안에서
@@ -824,6 +844,10 @@ function submitNightAction(uuid, gameId, targetId) {
     // CITIZEN 등 원래 NOT_ELIGIBLE이었을 참가자도 "판정 이후"라는 사실 자체는 알 수 있게
     // 응답이 구분된다(판정 여부는 비밀이 아니다).
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
+    // eligibility보다 먼저 확인한다 — 생존 여부가 역할보다 근본적인 거부 사유이고, 생존
+    // 상태는 night_result_applied.players와 스냅샷 isAlive로 이미 공개된 정보라 이 순서가
+    // 어떤 비밀도 흘리지 않는다(사망한 CITIZEN은 NOT_ELIGIBLE이 아니라 이 코드를 받는다).
+    if (!actor.alive) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
     if (!isEligibleForNightAction(actor.role, session.dayIndex)) {
         return { ok: false, code: 'NOT_ELIGIBLE' }
     }
@@ -831,6 +855,12 @@ function submitNightAction(uuid, gameId, targetId) {
     if (targetId !== null) {
         const targetPlayer = session.players.get(targetId)
         if (!targetPlayer) return { ok: false, code: 'INVALID_TARGET' }
+        // 시체 지목을 여기서 끊는다. 통과시키면 prepareNightResolution이
+        // TARGET_NOT_A_PARTICIPANT(internal-only → INTERNAL_ERROR)로 그 밤 전체를 판정
+        // 불가능하게 만든다. JOKER 진영 no-op보다 먼저 확인하므로, JOKER가 사망한 동료를
+        // 지목하면 조용한 no-op이 아니라 TARGET_NOT_ALIVE를 받는다 — 생존 여부는 공개
+        // 정보이므로 진영 오라클이 되지 않는다(살아있는 동료에 대한 no-op은 그대로다).
+        if (!targetPlayer.alive) return { ok: false, code: 'TARGET_NOT_ALIVE' }
 
         if (actor.role === 'JOKER' && ROLE_TEAMS[targetPlayer.role] === 'JOKER') {
             return { ok: true, gameId: session.id }
@@ -853,12 +883,18 @@ function submitNightAction(uuid, gameId, targetId) {
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
  *   → 5. 아직 판정되지 않은 밤(session.nightResolution === null)
- *   → 6. 모든 eligible actor의 nightActions 제출 완료(ACTIONS_PENDING, 추가 정보 없음)
- *   → 7. 저장된 모든 non-null target이 여전히 canonical participant인지
- *      (TARGET_NOT_A_PARTICIPANT — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
+ *   → 6. 모든 eligible actor(= 생존한 행동 보유자)의 nightActions 제출 완료
+ *      (ACTIONS_PENDING, 추가 정보 없음)
+ *   → 7. 그 eligible actor들의 non-null target이 여전히 canonical participant이고 생존해
+ *      있는지(TARGET_NOT_A_PARTICIPANT — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
+ *
+ * 6번의 기준은 getEligibleNightActorUuids 하나뿐이며 그 목록은 사망자를 포함하지 않는다 —
+ * 사망한 행동 보유자가 제출하지 않아도 밤은 정상적으로 판정된다. 행동 보유자가 한 명도
+ * 살아있지 않은 밤은 두 루프가 모두 공회전해 곧바로 통과하고, 암살 대상 없는(희생자 없는)
+ * 밤으로 판정된다.
  *
  * 성공 시 { ok:true, session, resolution } — resolution은 commitNightResolution에 그대로
- * 넘길 값입니다. privateResults는 GUARD/WITCH_HUNTER의 non-null 결과만 담는 Map이고
+ * 넘길 값입니다. privateResults는 생존한 GUARD/WITCH_HUNTER의 non-null 결과만 담는 Map이고
  * (SKIP/미제출은 entry 없음), JOKER/DOCTOR/CITIZEN은 애초에 이 Map에 등장하지 않습니다.
  */
 function prepareNightResolution(uuid, gameId) {
@@ -879,13 +915,25 @@ function prepareNightResolution(uuid, gameId) {
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
 
-    for (const actorUuid of getEligibleNightActorUuids(session)) {
+    // 두 루프가 같은 목록을 봐야 한다 — "제출했어야 할 사람"과 "표를 검증할 사람"이 갈리면
+    // 사망자가 남긴 잔여 entry가 판정을 막을 수 있다. 목록은 한 번만 계산해 재사용한다.
+    const eligibleActorUuids = getEligibleNightActorUuids(session)
+    for (const actorUuid of eligibleActorUuids) {
         if (!session.nightActions.has(actorUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
     }
 
-    for (const target of session.nightActions.values()) {
-        if (target !== null && !session.players.has(target)) {
-            return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+    // 검증은 eligible alive actor의 표만 본다(session.nightActions 전체가 아님) — 대상도
+    // 참가자로 존재할 뿐 아니라 여전히 alive여야 한다. 이 생존 검증이
+    // commitNightResolution이 전제로 삼는 조건(victim.alive === true)과 정확히 같으므로,
+    // 여기를 통과한 resolution으로 commit이 throw하는 경우는 존재하지 않는다
+    // (prepareDayVoteResolution과 동일한 모양).
+    for (const actorUuid of eligibleActorUuids) {
+        const target = session.nightActions.get(actorUuid)
+        if (target !== null) {
+            const targetPlayer = session.players.get(target)
+            if (!targetPlayer || !targetPlayer.alive) {
+                return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+            }
         }
     }
 
@@ -898,6 +946,9 @@ function prepareNightResolution(uuid, gameId) {
 
     const privateResults = new Map()
     for (const player of session.players.values()) {
+        // 사망자에게는 개인 결과를 만들지 않는다 — 소켓 계층이 이 Map을 그대로 소비하므로
+        // 여기서 빼면 night_action_result 방송 경로도 함께 정리된다.
+        if (player.alive !== true) continue
         if (player.role === 'GUARD') {
             const result = computeGuardInvestigationResult(session, player.uuid)
             if (result !== null) privateResults.set(player.uuid, { actionType: 'INVESTIGATE', ...result })
@@ -992,12 +1043,19 @@ function commitNightResolution(session, resolution) {
     let victim = null
     if (victimUuid !== null) {
         victim = session.players.get(victimUuid)
-        // 방어적 불변조건: prepareNightResolution이 이미 nightActions의 모든 non-null target을
-        // TARGET_NOT_A_PARTICIPANT로 검증했고, 이번 슬라이스 범위(첫 밤, 재판정 없음)에선 모든
-        // 참가자가 아직 alive:true이므로 이 두 throw는 정상 경로에서 도달 불가능하다 —
-        // assertValidSessionForCommit과 동일하게 수동 조립/오염 상태까지 방어한다. 이 시점까지는
-        // session에 어떤 mutation도 일어나지 않았으므로, 여기서 throw하면 nightResolution을
-        // 포함해 아무 상태도 바뀌지 않는다.
+        // 방어적 불변조건: prepareNightResolution이 이미 eligible actor의 모든 non-null target에
+        // 대해 "참가자로 존재하고 alive"임을 TARGET_NOT_A_PARTICIPANT로 검증했으므로 이 두
+        // throw는 정상 경로에서 도달 불가능하다 — assertValidSessionForCommit과 동일하게
+        // 수동 조립/오염 상태까지 방어한다.
+        //
+        // prepare와 commit 사이에 victim이 죽을 수 없는 근거: phase가 NIGHT인 동안 생존 집합은
+        // 절대 변하지 않는다. alive를 false로 바꾸는 곳은 이 함수(직후 finalizeGameSession
+        // 또는 enterDayPhase로 반드시 NIGHT를 벗어난다)와 commitTribunalVoteResolution
+        // (phase === 'TRIBUNAL'에서만 실행된다) 두 곳뿐이다. 즉 밤은 고정된 생존 집합 위에서
+        // 시작해 그 집합 위에서 판정되며, "밤 도중 사망"이라는 상태는 존재하지 않는다.
+        //
+        // 이 시점까지는 session에 어떤 mutation도 일어나지 않았으므로, 여기서 throw하면
+        // nightResolution을 포함해 아무 상태도 바뀌지 않는다.
         if (!victim) throw new Error(`commitNightResolution: victim(${victimUuid})이 참가자가 아님`)
         if (victim.alive !== true) throw new Error(`commitNightResolution: victim(${victimUuid})이 이미 사망 상태`)
     }
