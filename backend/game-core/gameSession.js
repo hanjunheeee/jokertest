@@ -247,15 +247,53 @@ function assertSessionNotEnded(session) {
     return { ok: true }
 }
 
-// 종료 상태를 클라이언트에 알리기 위한 공개 화이트리스트만 골라낸다(순수 함수, throw 금지).
-// role/원본 ballot/Map·Set/socket/repository 객체는 어디에도 포함하지 않는다. winResult는
-// 세션에 실제로 존재할 때만(확정된 승자가 있을 때만) 포함한다.
+/**
+ * ENDED 세션의 전원 역할 공개 목록을 만든다(순수 함수 — session.players를 읽기만 하고 매
+ * 호출마다 새 배열·새 원소를 만든다).
+ *
+ * 게임이 끝난 뒤의 payload에만 실리므로 비밀 누설이 아니다 — 종료 이후로는 어떤 mutation
+ * 진입점도 열려 있지 않아(assertSessionNotEnded) 이 정보로 게임에 영향을 줄 수 없다. 순서는
+ * session.players 삽입 순서 그대로이고, socket/repository/Map/Set 객체는 어떤 값에도 담지
+ * 않는다.
+ * @param {object} session - canonical GameSession(phase가 ENDED인 세션에서만 호출된다)
+ * @flow session.players를 삽입 순서대로 순회하며 참가자마다 공개용 원소 하나를 만든다.
+ */
+function buildEndedRoleReveals(session) {
+    return [...session.players.values()].map(({ uuid, nickname, role, alive }) => ({
+        uuid,
+        nickname,
+        role,
+        team: ROLE_TEAMS[role],
+        alive,
+    }))
+}
+
+/**
+ * 종료 상태를 클라이언트에 알리기 위한 공개 화이트리스트만 골라낸다(순수 함수, throw 금지).
+ * 원본 ballot/Map·Set/socket/repository 객체는 어디에도 포함하지 않는다. winResult는 세션에
+ * 실제로 존재할 때만(확정된 승자가 있을 때만) 포함한다.
+ *
+ * role/team은 phase가 ENDED일 때의 winResult.reveals에서만 의도적으로 전원 공개된다 — 그
+ * 밖의 어떤 위치에도 role은 없다(players는 여전히 {uuid,isAlive}만 담는다).
+ * @param {object} session - canonical GameSession
+ * @flow winResult가 있을 때만 얕은 복사본을 붙이고, 그 복사본에 한해 phase가 실제로 ENDED일
+ *   때만 reveals/mvp를 얹는다 — winResult를 세팅하는 유일한 writer(finalizeGameSession)가
+ *   phase도 함께 ENDED로 바꾸므로 정상 경로에서 둘은 항상 같이 성립하지만, 이 빌더는 호출자를
+ *   신뢰하지 않는다는 이 파일의 원칙에 따라 phase를 독립적으로 재확인한다. 얕은 복사본에만
+ *   붙으므로 canonical session.winResult는 계속 {winner} 단일 키로 남는다.
+ */
 function buildTerminalFields(session) {
     const fields = {
         phase: session.phase,
         players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, isAlive: alive })),
     }
-    if (session.winResult) fields.winResult = { ...session.winResult }
+    if (session.winResult) {
+        fields.winResult = { ...session.winResult }
+        if (session.phase === 'ENDED') {
+            fields.winResult.reveals = buildEndedRoleReveals(session)
+            fields.winResult.mvp = null // MVP 기획 미확정 — 슬롯만 예약한다
+        }
+    }
     return fields
 }
 
@@ -1703,7 +1741,14 @@ function canIncludeDayTribunalFields(session) {
  * top-level은 항상 { gameId, phase, dayIndex, players, self }이고, 상황에 따라 nightResult/
  * dayVoteResolution/tribunal/winResult가 추가된다. 다른 참가자의 role/team/allies/투표·행동
  * 대상/raw ballot/개별 제출 여부는 어디에도 포함하지 않는다 — self만 본인의 role 관련 필드를
- * 담는다.
+ * 담는다. 단 phase가 ENDED일 때의 winResult.reveals만 예외다: 게임이 끝났으므로 전원의
+ * role/team을 의도적으로 공개한다(buildTerminalFields의 종료 payload와 같은 내용이라
+ * 재접속 클라이언트가 방송을 놓쳐도 같은 결과 화면을 만들 수 있다).
+ * @param {object} session - canonical GameSession
+ * @param {string} uuid - 이미 참가자로 검증된 요청자 uuid
+ * @flow nightResolution이 있으면 nightResult를, DAY/TRIBUNAL 노출 게이트를 통과하면 그
+ *   dayIndex의 dayVoteResolution/tribunal을, winResult가 있으면 그 얕은 복사본을 덧붙이고,
+ *   phase가 ENDED일 때만 그 복사본에 reveals/mvp를 얹는다.
  */
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
@@ -1759,7 +1804,15 @@ function buildSessionSnapshot(session, uuid) {
         }
     }
 
-    if (session.winResult) fields.winResult = { ...session.winResult }
+    // 종료 payload(buildTerminalFields)와 동일한 규칙으로 조립한다 — 방송을 놓친 재접속
+    // 클라이언트가 결과 화면을 만들 때 방송본과 다른 winResult를 받지 않도록.
+    if (session.winResult) {
+        fields.winResult = { ...session.winResult }
+        if (session.phase === 'ENDED') {
+            fields.winResult.reveals = buildEndedRoleReveals(session)
+            fields.winResult.mvp = null // MVP 기획 미확정 — 슬롯만 예약한다
+        }
+    }
 
     return fields
 }
