@@ -1,0 +1,96 @@
+{
+  "branch": "windows-handoff-20260808",
+  "base_commit": "b76fa84f39ffece93f1726aae196aa3da73cde70",
+  "created_stamp": "20260811-220524",
+  "tracked_patch_sha256": "13c4d7930c3482d1e84fa0291f67a626faee48e4696450191c253e62d7ad1b52",
+  "untracked": [
+    {
+      "path": "backend/socket/__tests__/nightTurnProgression.test.js",
+      "sha256": "8c39cc12e7c968e047a647c534c5de3504459b7ad886cec521c806ad6f7828f7"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/actions/__tests__/InGameActionPanel.controlPanel.test.js",
+      "sha256": "1f369d6c4f0838785697babebb71b107b26f27b5b06a9bf683888cca388f641e"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/actions/__tests__/InGameActionPanel.frameAsset.test.js",
+      "sha256": "d5fe3248260fb24423e689fb5325e66a47a59f356f5873aa3bdf34781f3de6f5"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/actions/__tests__/InGameActionPanel.presentation.test.js",
+      "sha256": "4c538cf356e9f6e39abb3e151b60527c22ed6b736c2b3b343701b63fa67f3653"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/actions/__tests__/InGameActionPanel.productionSource.test.js",
+      "sha256": "20306cd879f528c0057067efd20315ef86676aeabc179748fcedba0f59b8c5d2"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/actions/__tests__/InGameActionPanel.visualPolish.test.js",
+      "sha256": "06d55abf974fe14b0aeee948cfcbb7defd9d69a238565b5a8869bad64f3a072b"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/killReveal/InGameKillRevealOverlay.js",
+      "sha256": "fc87a5a6d5bca1593079fcf12f73ad3228e9c7a7b6dcc1198edf215baa2e83a8"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/killReveal/__tests__/InGameKillRevealOverlay.test.js",
+      "sha256": "82fee9fbc5cbefd0b2400afd69911622acce56e9cfa7d079ccc647077a4bd827"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/components/timebar/__tests__/InGameTimebar.productionSource.test.js",
+      "sha256": "3125fb46df7dfb00292937aeb6e74cf0b54a66ccc467128261d2c12db7186a7d"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/hooks/__tests__/useGameSessionSocketEvents.nightTurn.test.js",
+      "sha256": "8a66222f19d0366e7ce2c5c2d8579c01e4363267058155e00c59811e2b44affc"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/hooks/__tests__/useInGameActionPanel.nightTurn.test.js",
+      "sha256": "ae7d0ce88821cf96c71df56eff429d42517e78ea3ada8687c7c742d64ad74043"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/hooks/__tests__/useInGameControlPanelLayout.test.js",
+      "sha256": "64391fd30c7a37653fed6381818ecdf0ee83b38a1e149584babc9636234e7139"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/hooks/__tests__/useInGameKillReveal.test.js",
+      "sha256": "834d8ab3a0d37d5636f29863482c1bc299ffafc82197ceea34b6b1d915b23b97"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/hooks/__tests__/useInGameOverlayStack.killReveal.test.js",
+      "sha256": "88e440214ae7ab51b97a30c1597b3f73c4f82e50784c2c65794dfa159cdc88e5"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/hooks/useInGameControlPanelLayout.js",
+      "sha256": "c8fde120f4e7d54c7068d3bc4b168ab45f8b85ffd4c42b5fad145af914af3867"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/hooks/useInGameKillReveal.js",
+      "sha256": "8755da8d8b9936467d1e07996d121ed067364f36f680fd690751994a255ce75d"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/pages/__tests__/InGamePage.productionSource.test.js",
+      "sha256": "21d4819cbaa80d569445c07a80b677daf65c3508f32ba95355de15d7a3ba2ce1"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/utils/__tests__/buildInGameKillRevealQueueItems.test.js",
+      "sha256": "7528abbb560e741fba5c047652ae2f32d4262745eed37ef719da58df515f39e0"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/utils/__tests__/parseNightTurnChangedPayload.test.js",
+      "sha256": "82ec6a0008c184bec9c6d51c293c1fdf3593eb06a1cc9b1ba30d7d3ad1012788"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/utils/__tests__/reduceInGameKillReveal.test.js",
+      "sha256": "fed38904b02be4103658c77c17e7d0b57c62312255edb75537d8e48f94dbc27c"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/utils/parseNightTurnChangedPayload.js",
+      "sha256": "f40e4e58e208cb58b8ec372fb93401885b97846042dd0ba2dac95576c25e3d29"
+    },
+    {
+      "path": "frontend/src/domains/game/ingame/utils/reduceInGameKillReveal.js",
+      "sha256": "13b8c2fe99ec379600359ed17003212d04df2ac33e1ab9b89d2aa08f321aa464"
+    }
+  ]
+}

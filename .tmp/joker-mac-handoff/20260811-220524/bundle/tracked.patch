@@ -1,0 +1,1562 @@
+diff --git a/backend/game-core/gameSession.js b/backend/game-core/gameSession.js
+index 7b82a63458970a024ebbb4eca4906f0459147d41..1f39726bd0cf4deca91757fce9b35c441375bcce 100644
+--- a/backend/game-core/gameSession.js
++++ b/backend/game-core/gameSession.js
+@@ -845,6 +845,93 @@ function submitNightAction(uuid, gameId, targetId) {
+     return { ok: true, gameId: session.id }
+ }
+ 
++// 순차 NIGHT 역할 진행의 canonical 순서. CITIZEN은 밤 행동이 없어 이 순서에 포함되지 않는다.
++const NIGHT_TURN_ROLE_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
++
++// 특정 역할이 "이번 밤 실제로 제출해야 하는" 생존 참가자 uuid 목록(순수 계산). 그 밤에 행동
++// 자체가 불가능한 역할(day0 WITCH_HUNTER 등)은 항상 빈 배열이다 — computeCurrentNightTurnRole이
++// zero-actor와 동일하게 건너뛴다.
++function getLivingNightTurnActorUuids(session, role) {
++    if (!isEligibleForNightAction(role, session.dayIndex)) return []
++    const uuids = []
++    for (const player of session.players.values()) {
++        if (player.role === role && player.alive) uuids.push(player.uuid)
++    }
++    return uuids
++}
++
++/**
++ * 지금 canonical하게 어느 역할의 NIGHT 턴인지를 session.nightActions·session.players에서만 매번
++ * 다시 계산한다(순수 함수 — 저장된 커서·별도 필드가 전혀 없다. 그래서 이 값이 실제 제출 상태와
++ * 어긋난 채로 남을 수 없다). JOKER → DOCTOR → GUARD → WITCH_HUNTER 순서로 살피며, 생존 eligible
++ * 배우가 하나도 없는 역할은 건너뛰고(zero-actor auto-skip), 생존 eligible 배우 전원이 이미
++ * 제출(SKIP 포함)한 역할도 건너뛴다. 넘길 역할이 하나도 남지 않으면(전부 건너뛰었거나 완료됨)
++ * null — "이 밤의 판정 준비가 끝났다"는 뜻이다.
++ */
++function computeCurrentNightTurnRole(session) {
++    for (const role of NIGHT_TURN_ROLE_ORDER) {
++        const actorUuids = getLivingNightTurnActorUuids(session, role)
++        if (actorUuids.length === 0) continue
++        if (actorUuids.every((actorUuid) => session.nightActions.has(actorUuid))) continue
++        return role
++    }
++    return null
++}
++
++/**
++ * NIGHT 순차 진행의 production 전용 게이트입니다(어떤 상태도 바꾸지 않는 순수 함수). 소켓
++ * 계층이 submitNightAction을 호출하기 전에 통과해야 하는 사전 검사이며, submitNightAction
++ * 자신이 이미 독립적으로 재검증하는 phase·판정 완료·eligibility·target은 여기서 다시 검사하지
++ * 않습니다(단일 출처 유지 — 그 조건이 맞지 않는 요청은 이 게이트를 그대로 통과시키고
++ * submitNightAction이 그 조건에 맞는 기존 코드로 거부하게 둡니다).
++ *
++ * 이 게이트만 추가로 막는 두 조건(생존·현재 턴)은 이번 순차 NIGHT 진행 계약에서만 의미가
++ * 있습니다 — submitNightAction을 직접 호출하는 기존 호출부·테스트는 이 게이트를 거치지 않으므로
++ * 전혀 영향을 받지 않습니다.
++ *
++ * 성공 시 { ok:true, session, actorRole }을 반환합니다 — actorRole은 호출 시점의 actor.role이며,
++ * 호출자가 제출 이후 computeCurrentNightTurnRole(session)과 비교해 턴이 실제로 넘어갔는지
++ * 판별하는 유일한 근거입니다.
++ */
++function checkNightTurnGate(uuid, gameId) {
++    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
++    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
++
++    const currentGameId = playerSession.get(uuid)
++    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
++    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
++
++    const session = gameSessions.get(currentGameId)
++    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
++    const actor = session.players.get(uuid)
++    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
++
++    if (
++        session.phase === 'NIGHT' &&
++        session.nightResolution === null &&
++        isEligibleForNightAction(actor.role, session.dayIndex)
++    ) {
++        if (actor.alive !== true) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
++        if (actor.role !== computeCurrentNightTurnRole(session)) return { ok: false, code: 'NIGHT_TURN_ROLE_MISMATCH' }
++    }
++
++    return { ok: true, session, actorRole: actor.role }
++}
++
++/**
++ * NIGHT 순차 진행 공개 턴 payload. 비밀(참가자 uuid 목록·target map·역할 목록·개인 결과)은
++ * 전혀 포함하지 않습니다 — 지금 어느 역할 턴인지(nightTurnRole, null이면 이 밤의 판정 준비
++ * 완료)만 담습니다.
++ */
++function buildNightTurnChangedPayload(session) {
++    return {
++        gameId: session.id,
++        phase: session.phase,
++        dayIndex: session.dayIndex,
++        nightTurnRole: computeCurrentNightTurnRole(session),
++    }
++}
++
+ /**
+  * NIGHT 행동 판정을 준비합니다(어떤 상태도 바꾸지 않는 순수 함수) — prepareJokerChatMessage와
+  * 동일한 prepare 경계입니다. 인증된 uuid와 클라이언트가 알고 있는 gameId만 입력으로 받습니다.
+@@ -2077,6 +2164,9 @@ module.exports = {
+     acknowledgeRoleReveal,
+     buildPhaseChangedPayload,
+     submitNightAction,
++    checkNightTurnGate,
++    computeCurrentNightTurnRole,
++    buildNightTurnChangedPayload,
+     submitDayVote,
+     prepareJokerChatMessage,
+     commitJokerChatMessage,
+@@ -2129,6 +2219,8 @@ module.exports = {
+         resolveGameChatChannel,
+         getChatRateLimitMap,
+         getEligibleNightActorUuids,
++        NIGHT_TURN_ROLE_ORDER,
++        getLivingNightTurnActorUuids,
+         tallyJokerAssassinationTarget,
+         computeDoctorProtectionSet,
+         computeGuardInvestigationResult,
+diff --git a/backend/socket/__tests__/gameSession.test.js b/backend/socket/__tests__/gameSession.test.js
+index 91bfc29970960fd8c5d3ce6adba0d4feefea3476..168be708db6044f9858868dde77918a9afd12da6 100644
+--- a/backend/socket/__tests__/gameSession.test.js
++++ b/backend/socket/__tests__/gameSession.test.js
+@@ -733,19 +733,21 @@ test('로그 비밀성(registry 불일치): console.error 인자가 정확히 {c
+ // --- 로그 비밀성: 일반 예외 경로 ---
+ 
+ test('로그 비밀성(일반 예외): 의도적으로 민감한 문자열을 담은 Error를 던져도 로그·ack 어디에도 새지 않고 gameId는 undefined다', (t) => {
+-    const { session, doctorUuid } = commitFullRoleSessionAtNight()
++    // 이 밤의 현재 턴 역할(JOKER)이 아니면 submitNightAction에 도달하기도 전에 턴 게이트가
++    // 거부하므로, mock이 실제로 개입하는 경로를 재현하려면 actor가 현재 턴 역할이어야 한다.
++    const { session, jokerUuid } = commitFullRoleSessionAtNight()
+     t.mock.method(gameSessionCore, 'submitNightAction', () => {
+         throw new Error('SECRET role=JOKER targetId=citizen-uuid-X')
+     })
+     const errorSpy = t.mock.method(console, 'error', () => {})
+     const { callback, getResponse } = countingCallback()
+ 
+-    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: null }, callback)
++    handleSubmitNightAction(createFakeSocket(jokerUuid), jokerUuid, { gameId: session.id, targetId: null }, callback)
+ 
+     assert.equal(errorSpy.mock.calls.length, 1)
+     const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+     assert.equal(prefix, '[밤 행동 제출 처리 에러]')
+-    assert.deepEqual(loggedObj, { code: 'UNEXPECTED_ERROR', uuid: doctorUuid, gameId: undefined })
++    assert.deepEqual(loggedObj, { code: 'UNEXPECTED_ERROR', uuid: jokerUuid, gameId: undefined })
+     assert.equal(loggedObj instanceof Error, false)
+ 
+     const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+@@ -760,12 +762,14 @@ test('로그 비밀성(일반 예외): 의도적으로 민감한 문자열을 
+ // --- 로그 비밀성: callback 전달 실패 경로 ---
+ 
+ test('로그 비밀성(callback 전달 실패, 성공 응답 전달 중): gameId는 core가 반환한 canonical session.id고, 이미 반영된 Map 쓰기는 롤백되지 않는다', (t) => {
+-    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
++    // 현재 턴 역할(JOKER)이어야 실제 성공(mutation) 경로를 재현할 수 있다(DOCTOR는 아직
++    // 자기 턴이 아니므로 턴 게이트가 먼저 거부한다).
++    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight()
+     const errorSpy = t.mock.method(console, 'error', () => {})
+     const io = createFakeIo([])
+ 
+     assert.doesNotThrow(() =>
+-        handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: citizenUuid }, throwingCallback('SECRET stack leak role=DOCTOR')),
++        handleSubmitNightAction(createFakeSocket(jokerUuid), jokerUuid, { gameId: session.id, targetId: citizenUuid }, throwingCallback('SECRET stack leak role=DOCTOR')),
+     )
+ 
+     assert.equal(errorSpy.mock.calls.length, 1)
+@@ -782,12 +786,17 @@ test('로그 비밀성(callback 전달 실패, 성공 응답 전달 중): gameId
+     assert.equal(serialized.includes('role=DOCTOR'), false)
+ 
+     // callback이 throw하기 이전에 이미 일어난 Map 쓰기는 그대로 유지된다.
+-    assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
++    assert.equal(session.nightActions.get(jokerUuid), citizenUuid)
+     assert.equal(io.broadcasts.length, 0)
+ })
+ 
+ test('로그 비밀성(callback 전달 실패, 실패 응답 전달 중): gameId는 undefined다(canonical 값을 쓸 근거가 없음)', (t) => {
+-    const { session, guardUuid } = commitFullRoleSessionAtNight()
++    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight()
++    // GUARD의 자기 자신 대상 제출이 INVALID_TARGET에 도달하려면 먼저 JOKER→DOCTOR 턴이 끝나
++    // 있어야 한다(그렇지 않으면 턴 불일치로 먼저 거부된다) — errorSpy 설치 전에 미리 진행한다.
++    handleSubmitNightAction(createFakeSocket(jokerUuid), jokerUuid, { gameId: session.id, targetId: citizenUuid }, countingCallback().callback)
++    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: citizenUuid }, countingCallback().callback)
++
+     const errorSpy = t.mock.method(console, 'error', () => {})
+ 
+     // GUARD 자기 자신 대상 → INVALID_TARGET(실패).
+@@ -804,23 +813,24 @@ test('로그 비밀성(callback 전달 실패, 실패 응답 전달 중): gameId
+ // --- 로그 비밀성: 일반 예외 + callback 전달 실패 중첩 경로 ---
+ 
+ test('로그 비밀성(중첩): submitNightAction과 callback이 동시에 throw해도 정확히 2건의 고정 구조 로그만 남고 gameId는 둘 다 undefined다', (t) => {
+-    const { session, doctorUuid } = commitFullRoleSessionAtNight()
++    // 현재 턴 역할(JOKER)이어야 턴 게이트를 통과해 mock이 실제로 개입한다.
++    const { session, jokerUuid } = commitFullRoleSessionAtNight()
+     t.mock.method(gameSessionCore, 'submitNightAction', () => {
+         throw new Error('SECRET-A role=JOKER')
+     })
+     const errorSpy = t.mock.method(console, 'error', () => {})
+ 
+     assert.doesNotThrow(() =>
+-        handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: null }, throwingCallback('SECRET-B stack role=GUARD')),
++        handleSubmitNightAction(createFakeSocket(jokerUuid), jokerUuid, { gameId: session.id, targetId: null }, throwingCallback('SECRET-B stack role=GUARD')),
+     )
+ 
+     assert.equal(errorSpy.mock.calls.length, 2)
+     const [firstPrefix, firstLogged] = errorSpy.mock.calls[0].arguments
+     const [secondPrefix, secondLogged] = errorSpy.mock.calls[1].arguments
+     assert.equal(firstPrefix, '[밤 행동 제출 처리 에러]')
+-    assert.deepEqual(firstLogged, { code: 'UNEXPECTED_ERROR', uuid: doctorUuid, gameId: undefined })
++    assert.deepEqual(firstLogged, { code: 'UNEXPECTED_ERROR', uuid: jokerUuid, gameId: undefined })
+     assert.equal(secondPrefix, '[밤 행동 제출 ack 전달 실패]')
+-    assert.deepEqual(secondLogged, { code: 'CALLBACK_ERROR', uuid: doctorUuid, gameId: undefined })
++    assert.deepEqual(secondLogged, { code: 'CALLBACK_ERROR', uuid: jokerUuid, gameId: undefined })
+ 
+     const serialized = JSON.stringify(errorSpy.mock.calls.map((c) => c.arguments))
+     for (const secret of ['SECRET-A', 'SECRET-B', 'role=JOKER', 'role=GUARD', 'stack']) {
+@@ -855,22 +865,23 @@ test('로그 비밀성(개행·초장문 gameId): malformed payload의 gameId에
+ // 노출되지 않고, callback 실패 로그에는 core가 반환한 canonical session.id만 남는다 ---
+ 
+ test('9라운드 회귀: gameId 앞뒤에 개행·공백이 있어도 trim 후 세션과 일치하면 정상 저장 성공이고, 외부 ack는 정확히 {ok:true}뿐이다(gameId 키 없음)', () => {
+-    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc', gameIdFn: () => 'abc' })
++    // 현재 턴 역할(JOKER)이어야 실제 성공(mutation) 경로를 재현할 수 있다.
++    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc', gameIdFn: () => 'abc' })
+     assert.equal(session.id, 'abc')
+     const { callback, getResponse } = countingCallback()
+ 
+-    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, callback)
++    handleSubmitNightAction(createFakeSocket(jokerUuid), jokerUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, callback)
+ 
+     assert.deepEqual(getResponse(), { ok: true })
+     assert.equal(Object.hasOwn(getResponse(), 'gameId'), false)
+-    assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
++    assert.equal(session.nightActions.get(jokerUuid), citizenUuid)
+ })
+ 
+ test('9라운드 회귀: 같은 성공 제출에서 callback이 throw하면 CALLBACK_ERROR 로그의 gameId는 정확히 "abc"이고 원본 개행·공백 문자열은 어디에도 없다', (t) => {
+-    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc2', gameIdFn: () => 'abc' })
++    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc2', gameIdFn: () => 'abc' })
+     const errorSpy = t.mock.method(console, 'error', () => {})
+ 
+-    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, throwingCallback('late leak'))
++    handleSubmitNightAction(createFakeSocket(jokerUuid), jokerUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, throwingCallback('late leak'))
+ 
+     assert.equal(errorSpy.mock.calls.length, 1)
+     const [, loggedObj] = errorSpy.mock.calls[0].arguments
+diff --git a/backend/socket/gameSession.js b/backend/socket/gameSession.js
+index cb82a62400bf9c6380b31e5f60b0295974f69a22..d344170b5860bc772fc104b9e3d5f7572c38d977 100644
+--- a/backend/socket/gameSession.js
++++ b/backend/socket/gameSession.js
+@@ -209,9 +209,27 @@ function respondNightAction(uuid, trustedGameId, callback, payload) {
+ }
+ 
+ /**
+- * NIGHT 밤 행동 제출 요청을 처리합니다(Socket.IO acknowledgement 방식). acknowledge_role_reveal과
+- * 달리 phase 전환을 일으키지 않으므로 브로드캐스트가 전혀 없습니다 — 제출자 본인에게만 ack를
+- * 돌려줍니다.
++ * NIGHT 밤 행동 제출 요청을 처리합니다(Socket.IO acknowledgement 방식). JOKER→DOCTOR→GUARD→
++ * WITCH_HUNTER canonical 순차 진행의 유일한 production 진입점입니다 — ack는 항상 제출자
++ * 본인에게만 돌아가지만, 이 제출로 그 역할의 턴이 실제로 끝났다면(생존 eligible 배우 전원
++ * 제출·SKIP 포함) 그 뒤에 정확히 하나의 추가 효과가 일어납니다: 다음 역할이 남아있으면
++ * night_turn_changed를 참가자 전체에 정확히 한 번 방송하고, 더 넘길 역할이 없으면 기존
++ * authoritative 판정(handleResolveNight)을 그대로 재사용해 정확히 한 번 호출합니다(그 안에서
++ * night_actions_resolved/night_action_result/night_result_applied가 기존 계약대로 나갑니다).
++ * 같은 역할의 다른 배우가 아직 남아있는 제출·JOKER teammate 대상 no-op 제출은 턴이 바뀌지
++ * 않으므로 어떤 추가 방송도 만들지 않습니다.
++ *
++ * deps.io가 주어지지 않으면(예: 방송·자동 판정을 검증하지 않는 단위 테스트) ack 이후 아무 것도
++ * 하지 않고 끝납니다 — production 배선(registerGameHandlers)은 항상 io를 함께 넘깁니다.
++ * deps.checkNightTurnGate/deps.submitNightAction/deps.resolveNight/deps.resolveParticipantSockets를
++ * 각각 주입할 수 있습니다 — 기본값은 game-core의 checkNightTurnGate/submitNightAction, 이
++ * 파일의 handleResolveNight, resolveSessionParticipantSockets입니다.
++ *
++ * 턴 게이트(checkNightTurnGate)는 submitNightAction이 이미 검증하는 phase·판정 완료·
++ * eligibility·target은 다시 검사하지 않습니다 — 그 조건이 맞지 않는 요청은 게이트를 그대로
++ * 통과해 submitNightAction 자신의 기존 코드로 거부됩니다. 게이트만 추가로 막는 두 조건(사망한
++ * 배우·현재 턴이 아닌 역할)은 게이트를 거치지 않는 game-core 직접 호출부·기존 테스트에는 영향이
++ * 없습니다.
+  *
+  * 로그의 gameId는 client가 보낸 원본 문자열을 절대 쓰지 않습니다. game-core가 성공
+  * ({ ok:true, gameId: session.id })을 반환한 경로에서만 그 canonical session.id를 로그
+@@ -219,7 +237,13 @@ function respondNightAction(uuid, trustedGameId, callback, payload) {
+  * 실패)는 gameId: undefined로 고정합니다 — client가 trim으로 검증은 통과시키면서 앞뒤에
+  * 개행·공백을 두른 문자열을 보내도 그 원본이 로그에 실리지 않게 하기 위함입니다.
+  */
+-function handleSubmitNightAction(socket, uuid, payload, callback) {
++function handleSubmitNightAction(socket, uuid, payload, callback, deps = {}) {
++    const checkTurnGate = deps.checkNightTurnGate ?? gameSessionCore.checkNightTurnGate
++    const submitNightActionFn = deps.submitNightAction ?? gameSessionCore.submitNightAction
++    const resolveNightHandler = deps.resolveNight ?? handleResolveNight
++    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
++    const io = deps.io
++
+     if (typeof callback !== 'function') return
+     if (!isCurrentSocketForUuid(uuid, socket)) {
+         respondNightAction(uuid, undefined, callback, { ok: false, code: 'STALE_SOCKET', message: '요청을 처리할 수 없습니다.' })
+@@ -239,9 +263,33 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
+         return
+     }
+ 
++    let gate
++    try {
++        gate = checkTurnGate(uuid, gameId)
++    } catch (err) {
++        console.error('[밤 행동 제출 처리 에러]', { code: 'UNEXPECTED_ERROR', uuid, gameId: undefined })
++        respondNightAction(uuid, undefined, callback, {
++            ok: false,
++            code: 'INTERNAL_ERROR',
++            message: '요청을 처리하지 못했습니다.',
++        })
++        return
++    }
++
++    if (!gate.ok) {
++        if (INTERNAL_ONLY_CODES.has(gate.code)) {
++            // registry 불일치는 클라이언트에 내부 상태를 노출하지 않고 일반 오류로만 응답한다.
++            console.error('[밤 행동 제출 registry 불일치]', { code: gate.code, uuid, gameId: undefined })
++            respondNightAction(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
++            return
++        }
++        respondNightAction(uuid, undefined, callback, { ok: false, code: gate.code, message: '요청을 처리할 수 없습니다.' })
++        return
++    }
++
+     let result
+     try {
+-        result = gameSessionCore.submitNightAction(uuid, gameId, targetId)
++        result = submitNightActionFn(uuid, gameId, targetId)
+     } catch (err) {
+         console.error('[밤 행동 제출 처리 에러]', { code: 'UNEXPECTED_ERROR', uuid, gameId: undefined })
+         respondNightAction(uuid, undefined, callback, {
+@@ -266,6 +314,39 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
+     // 성공 — result.gameId는 game-core가 registry에서 조회한 canonical session.id다(client
+     // 원본 payload.gameId가 아님). client에게 보내는 payload에는 포함하지 않는다.
+     respondNightAction(uuid, result.gameId, callback, { ok: true })
++
++    if (!io) return
++
++    const nightTurnRoleAfter = gameSessionCore.computeCurrentNightTurnRole(gate.session)
++    if (nightTurnRoleAfter === gate.actorRole) return // 같은 역할의 다른 배우가 아직 남아있거나 no-op 제출이었다 — 턴 불변.
++
++    if (nightTurnRoleAfter === null) {
++        // 마지막 역할까지 전부 완료됐다 — 기존 authoritative 판정을 그대로 재사용해 정확히
++        // 한 번만 호출한다. 이 자동 호출 자체는 별도 ack가 필요 없으므로 callback은 no-op이다.
++        try {
++            resolveNightHandler(io, socket, uuid, { gameId: result.gameId }, () => {}, deps)
++        } catch (err) {
++            console.error('[밤 행동 제출 오류]', { code: 'AUTO_RESOLVE_ERROR', uuid, gameId: result.gameId })
++        }
++        return
++    }
++
++    // 다음 역할로 실제로 넘어갔다 — 공개 캐노니컬 턴 payload를 참가자 전체에게 정확히 한 번 방송한다.
++    let recipients
++    try {
++        recipients = resolveParticipantSockets(io, gate.session)
++    } catch (err) {
++        console.error('[밤 행동 제출 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: result.gameId })
++        return
++    }
++    const turnPayload = gameSessionCore.buildNightTurnChangedPayload(gate.session)
++    for (const recipientSocket of recipients) {
++        try {
++            recipientSocket.emit('night_turn_changed', turnPayload)
++        } catch (err) {
++            console.error('[밤 행동 제출 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: result.gameId })
++        }
++    }
+ }
+ 
+ /**
+@@ -1340,7 +1421,7 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
+ /** ROLE_REVEAL 확인·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
+ function registerGameHandlers(io, socket, uuid) {
+     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
+-    socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(socket, uuid, payload, callback))
++    socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(socket, uuid, payload, callback, { io }))
+     socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
+     socket.on('submit_game_chat_message', (payload, callback) => handleSubmitGameChatMessage(io, socket, uuid, payload, callback))
+     socket.on('resolve_night', (payload, callback) => handleResolveNight(io, socket, uuid, payload, callback))
+diff --git a/frontend/src/domains/game/ingame/components/actions/InGameActionPanel.jsx b/frontend/src/domains/game/ingame/components/actions/InGameActionPanel.jsx
+index 6cbc1dbe56b32543d26ad4e99e11305f16548625..59099be269f1b24cb98bdd6aa55ae7238a8f0c82 100644
+--- a/frontend/src/domains/game/ingame/components/actions/InGameActionPanel.jsx
++++ b/frontend/src/domains/game/ingame/components/actions/InGameActionPanel.jsx
+@@ -4,11 +4,15 @@ import {
+   formatInGameEvent,
+   getInGameWinResultLabel,
+   INGAME_ACTION_BUTTON_CLASS,
++  INGAME_ACTION_BUTTON_ROW_CLASS,
++  INGAME_ACTION_CAPTION_CLASS,
++  INGAME_ACTION_ERROR_BANNER_CLASS,
++  INGAME_ACTION_ERROR_TEXT_CLASS,
+   INGAME_ACTION_HEADER_CLASS,
+   INGAME_ACTION_META_CLASS,
+-  INGAME_ACTION_PANEL_CLASS,
+   INGAME_ACTION_SECTION_CLASS,
+   INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS,
++  INGAME_ACTION_STATUS_TEXT_CLASS,
+   INGAME_ACTION_TITLE_CLASS,
+   TRIBUNAL_VOTE_GUILTY_LABEL,
+   TRIBUNAL_VOTE_NOT_GUILTY_LABEL,
+@@ -18,10 +22,79 @@ import {
+   TRIBUNAL_DEAD_NOTICE,
+ } from "../../constants/actions/ingameActionPanel.js"
+ import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
++import { useInGameControlPanelLayout } from "../../hooks/useInGameControlPanelLayout.js"
+ import InGameTargetPicker from "./InGameTargetPicker.jsx"
++import { INGAME_VOTE_ASSETS } from "../../constants/vote/ingameVoteAssets.js"
++import PublicAsset from "@/shared/ui/PublicAsset.jsx"
++
++// 인게임 화면 우측 하단에 상시 떠 있는 단일 컨트롤 패널의 배치 클래스.
++// bottom/right로 앵커링해두면 expanded일 때 폭·높이가 늘어나도 항상 우측 하단에 붙은 채
++// 위/왼쪽으로만 자라난다.
++const CONTROL_PANEL_BASE_CLASS =
++  "absolute bottom-[clamp(0.75rem,2vh,1.25rem)] right-[clamp(0.75rem,2vw,1.25rem)] z-30"
++
++// 컨트롤 패널의 실제 프레임/크로마는 "/frame/투표현황창 프레임.png"(INGAME_VOTE_ASSETS.panelFrame)
++// 원본 에셋이다. 폭만 compact/expanded로 바꾸고, 높이는 그 PNG의 실제 가로세로 비율을 눈대중
++// 추정한 aspect-[734/601]을 따라간다 — CSS로 만든 대체 프레임이 아니라 실제 이미지를 그대로
++// 쓰기 위함이다. 추정치가 실제 원본과 살짝 어긋나거나 max-h가 세로 공간이 부족한 뷰포트에서
++// 개입하더라도, 이미지 자체는 object-contain이라 늘어나거나 잘리지 않고 여백으로 흡수된다.
++const CONTROL_PANEL_COMPACT_SIZE_CLASS =
++  "w-[min(22rem,calc(100vw-1.5rem))] max-h-[min(48vh,26rem)] aspect-[734/601]"
++
++const CONTROL_PANEL_EXPANDED_SIZE_CLASS =
++  "w-[min(27rem,calc(100vw-1.5rem))] max-h-[min(70vh,40rem)] aspect-[734/601]"
++
++const CONTROL_PANEL_FRAME_WRAP_CLASS =
++  "relative overflow-hidden text-[#f8ead2] drop-shadow-[0_18px_46px_rgba(0,0,0,0.55)]"
++
++const CONTROL_PANEL_FRAME_IMAGE_CLASS =
++  "pointer-events-none absolute inset-0 z-[1] block h-full w-full select-none object-contain"
++
++// 프레임 PNG 내부 콘텐츠 inset — 상단 장식판/박쥐날개, 좌우 기둥, 하단 모서리 장식을 피해
++// 실제 조작 UI를 그 안쪽에 배치한다. top/bottom은 컨테이닝 블록의 높이, left/right는 폭을
++// 기준으로 계산되므로(절대배치 inset의 표준 동작) 패널 폭이 바뀌어도 비율이 그대로 유지된다.
++const CONTROL_PANEL_CONTENT_INSET_STYLE = {
++  top: "17%",
++  right: "8%",
++  bottom: "6%",
++  left: "8%",
++}
++
++const CONTROL_PANEL_CONTENT_WRAP_CLASS = "absolute z-[2] flex min-h-0 flex-col gap-2"
++
++const CONTROL_PANEL_TOGGLE_BUTTON_CLASS =
++  "shrink-0 rounded-full border border-[#d8b982]/35 bg-[#1c0f08]/70 px-2.5 py-1 text-[0.62rem] font-semibold tracking-wide text-[#e9d3ac] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#f3d28d] hover:bg-[#3a2417]/80 hover:text-[#ffe2ad]"
++
++const CONTROL_PANEL_CONTENT_CLASS = "min-h-0 flex-1 overflow-y-auto pr-1"
++
++const CONTROL_PANEL_CONTENT_ID = "ingame-control-panel-content"
++
++// 헤더 상단 줄 — phase 배지와 "제 N일" 타이틀을 한 줄로 묶는다.
++const CONTROL_PANEL_HEADER_META_ROW_CLASS = "flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
++
++const CONTROL_PANEL_PHASE_BADGE_CLASS =
++  "inline-flex shrink-0 items-center rounded-full border border-[#f3d28d]/45 bg-gradient-to-b from-[#3a2417]/85 to-[#1d1108]/85 px-2 py-0.5 text-[0.68rem] font-semibold tracking-wide text-[#ffe2ad] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
++
++const CONTROL_PANEL_WIN_BADGE_CLASS =
++  "shrink-0 rounded-full border border-[#f3d28d]/60 bg-[#3a2417]/70 px-2.5 py-1 text-[0.68rem] font-semibold tracking-wide text-[#ffe2ad] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
++
++// 각 섹션 캡션(투표 대상 선택/유무죄 판단/밤 행동/이벤트 로그) 앞에 붙는 작은 금색 악센트
++// 바 — 절제된 층위감(요청: 각지고 밋밋한 박스 느낌은 피할 것)을 캡션 레벨에서도 이어간다.
++const CONTROL_PANEL_SECTION_HEADER_ROW_CLASS = "flex items-center gap-1.5"
++
++const CONTROL_PANEL_SECTION_ACCENT_CLASS =
++  "h-3 w-[3px] shrink-0 rounded-full bg-gradient-to-b from-[#f3d28d] to-[#caa565]/10"
++
++const CONTROL_PANEL_EVENT_COUNT_BADGE_CLASS =
++  "ml-auto shrink-0 rounded-full bg-[#1c0f08]/70 px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-[#caa565]"
++
++// 제출/집계/판정처럼 "앞으로 나아가는" 주요 액션 버튼에 얹는 추가 아웃라인 — box-shadow를 쓰는
++// INGAME_ACTION_BUTTON_CLASS의 배경/테두리와 CSS 프로퍼티가 겹치지 않는 outline을 써서, 두
++// 클래스 문자열을 합쳐도 서로 덮어쓰지 않는다.
++const CONTROL_PANEL_PRIMARY_ACTION_EXTRA_CLASS = "outline outline-1 outline-offset-2 outline-[#f3d28d]/45"
+ 
+ /**
+- * 개발용 인게임 조작 패널.
++ * 인게임 화면 우측 하단의 상시 노출 컨트롤 패널.
+  * TODO: 실제 기획 UI가 들어오면 이 패널은 정식 투표/스킬 UI로 교체합니다.
+  *
+  * ROLE_REVEAL 단계에서 사용자가 직접 눌러야 진행되던 "역할 확인" 게이트는 파치먼트 역할
+@@ -31,6 +104,10 @@ import InGameTargetPicker from "./InGameTargetPicker.jsx"
+  *
+  * interactionBlocked는 DAY/NIGHT 진입 연출처럼 화면을 덮는 표시 전용 오버레이가 떠 있다는
+  * 뜻이다 — 그동안에는 투표·재판·밤 행동은 물론 집계/판정 같은 결과 컨트롤까지 전부 잠근다.
++ *
++ * compact/expanded는 useInGameControlPanelLayout이 관리하는 순수 로컬 UI 상태다 — 이 상태를
++ * 접고 펴는 동작 자체는 서버로 아무것도 보내지 않으며, useInGameActionPanel이 들고 있는 선택값·
++ * 제출 상태·에러는 접고 펼 때도 전혀 초기화되지 않는다(두 상태가 서로 독립이기 때문).
+  */
+ export default function InGameActionPanel({
+   onOpenRoleReveal,
+@@ -77,11 +154,10 @@ export default function InGameActionPanel({
+     submitNightAction,
+     skipNightAction,
+     nightActionsLocked,
+-    resolveNight,
+-    resolveNightStatus,
+-    resolveNightError,
++    nightActionControlsEnabled,
+     nightActionResult,
+   } = useInGameActionPanel({ interactionBlocked })
++  const { expanded, toggle: toggleExpanded } = useInGameControlPanelLayout()
+   const [selectedTribunalVote, setSelectedTribunalVote] = useState(null)
+ 
+   useEffect(() => {
+@@ -95,33 +171,64 @@ export default function InGameActionPanel({
+ 
+   if (!gameState) {
+     return (
+-      <aside className={INGAME_ACTION_PANEL_CLASS} aria-label="게임 조작">
+-        <p className={INGAME_ACTION_TITLE_CLASS}>게임 상태 대기</p>
+-        <p className={INGAME_ACTION_META_CLASS}>매칭에서 게임을 시작하거나 방 코드로 참가하세요.</p>
++      <aside className={CONTROL_PANEL_BASE_CLASS} aria-label="게임 조작">
++        <div className={`${CONTROL_PANEL_FRAME_WRAP_CLASS} ${CONTROL_PANEL_COMPACT_SIZE_CLASS}`}>
++          <PublicAsset
++            src={INGAME_VOTE_ASSETS.panelFrame}
++            alt=""
++            className={CONTROL_PANEL_FRAME_IMAGE_CLASS}
++          />
++          <div className={CONTROL_PANEL_CONTENT_WRAP_CLASS} style={CONTROL_PANEL_CONTENT_INSET_STYLE}>
++            <p className={INGAME_ACTION_TITLE_CLASS}>게임 상태 대기</p>
++            <p className={INGAME_ACTION_META_CLASS}>매칭에서 게임을 시작하거나 방 코드로 참가하세요.</p>
++          </div>
++        </div>
+       </aside>
+     )
+   }
+ 
++  const sizeClass = expanded ? CONTROL_PANEL_EXPANDED_SIZE_CLASS : CONTROL_PANEL_COMPACT_SIZE_CLASS
++
+   return (
+-    <aside className={INGAME_ACTION_PANEL_CLASS} aria-label="게임 조작">
++    <aside className={CONTROL_PANEL_BASE_CLASS} aria-label="게임 조작">
++      <div className={`${CONTROL_PANEL_FRAME_WRAP_CLASS} ${sizeClass}`}>
++        <PublicAsset
++          src={INGAME_VOTE_ASSETS.panelFrame}
++          alt=""
++          className={CONTROL_PANEL_FRAME_IMAGE_CLASS}
++        />
++        <div className={CONTROL_PANEL_CONTENT_WRAP_CLASS} style={CONTROL_PANEL_CONTENT_INSET_STYLE}>
+       <div className={INGAME_ACTION_HEADER_CLASS}>
+-        <div>
+-          <p className={INGAME_ACTION_TITLE_CLASS}>
+-            {gameState.phase} · 제 {gameState.dayIndex}일
+-          </p>
++        <div className="min-w-0 flex-1 space-y-1">
++          <div className={CONTROL_PANEL_HEADER_META_ROW_CLASS}>
++            <span className={CONTROL_PANEL_PHASE_BADGE_CLASS}>{gameState.phase}</span>
++            <p className={INGAME_ACTION_TITLE_CLASS}>제 {gameState.dayIndex}일</p>
++          </div>
+           <p className={INGAME_ACTION_META_CLASS}>
+             역할 {gameState.self?.role ?? "미정"} · 참가자 {gameState.players?.length ?? 0}명
+           </p>
+         </div>
+         {getInGameWinResultLabel(gameState.winResult) ? (
+-          <p className="rounded border border-[#f3d28d]/60 px-2 py-1 text-xs text-[#ffe2ad]">
++          <p className={CONTROL_PANEL_WIN_BADGE_CLASS}>
+             {getInGameWinResultLabel(gameState.winResult)}
+           </p>
+         ) : null}
++        <button
++          type="button"
++          className={CONTROL_PANEL_TOGGLE_BUTTON_CLASS}
++          aria-expanded={expanded}
++          aria-controls={CONTROL_PANEL_CONTENT_ID}
++          aria-label={expanded ? "컨트롤 패널 접기" : "컨트롤 패널 펼치기"}
++          onClick={toggleExpanded}
++        >
++          {expanded ? "접기 ▾" : "펼치기 ▴"}
++        </button>
+       </div>
+ 
++      <div id={CONTROL_PANEL_CONTENT_ID} className={CONTROL_PANEL_CONTENT_CLASS}>
+       {error ? (
+-        <p className="mt-2 rounded border border-red-300/40 bg-red-950/40 px-2 py-1 text-xs text-red-100">
++        <p className={INGAME_ACTION_ERROR_BANNER_CLASS}>
++          <span aria-hidden="true" className="mr-1">⚠</span>
+           {error}
+         </p>
+       ) : null}
+@@ -129,26 +236,31 @@ export default function InGameActionPanel({
+       <div className={INGAME_ACTION_SECTION_CLASS}>
+         <button
+           type="button"
+-          className={INGAME_ACTION_BUTTON_CLASS}
++          className={`${INGAME_ACTION_BUTTON_CLASS} flex w-full items-center justify-center gap-1.5`}
+           disabled={!roleRevealAvailable || interactionBlocked}
+           onClick={onOpenRoleReveal}
+         >
++          <span aria-hidden="true" className="text-[#caa565]">◆</span>
+           내 역할 보기
+         </button>
+       </div>
+ 
+       {gameState.phase === "DAY" ? (
+         <div className={INGAME_ACTION_SECTION_CLASS}>
++          <div className={CONTROL_PANEL_SECTION_HEADER_ROW_CLASS}>
++            <span aria-hidden="true" className={CONTROL_PANEL_SECTION_ACCENT_CLASS} />
++            <p className={INGAME_ACTION_CAPTION_CLASS}>투표 대상 선택</p>
++          </div>
+           <InGameTargetPicker
+             players={dayVoteTargets}
+             selectedTargetId={selectedDayVoteTargetId}
+             onSelect={setSelectedDayVoteTargetId}
+             disabled={!dayVoteControlsEnabled || dayVoteStatus === "submitting"}
+           />
+-          <div className="flex flex-wrap gap-1.5">
++          <div className={INGAME_ACTION_BUTTON_ROW_CLASS}>
+             <button
+               type="button"
+-              className={INGAME_ACTION_BUTTON_CLASS}
++              className={`${INGAME_ACTION_BUTTON_CLASS} ${CONTROL_PANEL_PRIMARY_ACTION_EXTRA_CLASS}`}
+               disabled={!selectedDayVoteTargetId || !dayVoteControlsEnabled || dayVoteStatus === "submitting"}
+               onClick={submitDayVote}
+             >
+@@ -164,7 +276,7 @@ export default function InGameActionPanel({
+             </button>
+             <button
+               type="button"
+-              className={INGAME_ACTION_BUTTON_CLASS}
++              className={`${INGAME_ACTION_BUTTON_CLASS} ${CONTROL_PANEL_PRIMARY_ACTION_EXTRA_CLASS}`}
+               disabled={interactionBlocked || dayVoteResolveStatus !== "idle"}
+               onClick={resolveDayVote}
+             >
+@@ -176,19 +288,19 @@ export default function InGameActionPanel({
+             </button>
+           </div>
+           {dayVoteError ? (
+-            <p className="text-[0.68rem] text-red-300">{dayVoteError.message}</p>
++            <p className={INGAME_ACTION_ERROR_TEXT_CLASS}>{dayVoteError.message}</p>
+           ) : dayVoteHasSubmitted ? (
+-            <p className="text-[0.68rem] text-[#e9d6ba]">
++            <p className={INGAME_ACTION_STATUS_TEXT_CLASS}>
+               {dayVoteLastSubmittedTargetId === null
+                 ? "기권함"
+                 : `투표: ${dayVoteTargets.find((p) => p.id === dayVoteLastSubmittedTargetId)?.name ?? dayVoteLastSubmittedTargetId}`}
+             </p>
+           ) : null}
+           {dayVoteResolveError ? (
+-            <p className="text-[0.68rem] text-red-300">{dayVoteResolveError}</p>
++            <p className={INGAME_ACTION_ERROR_TEXT_CLASS}>{dayVoteResolveError}</p>
+           ) : null}
+           {dayVoteResolution ? (
+-            <p className="text-[0.68rem] text-[#e9d6ba]">
++            <p className={INGAME_ACTION_STATUS_TEXT_CLASS}>
+               낮 집계 결과: {dayVoteResolution.outcome}
+               {dayVoteResolution.outcome === "TRIBUNAL"
+                 ? ` · 대상 ${dayVoteTargets.find((p) => p.id === dayVoteResolution.tribunalTargetUuid)?.name ?? dayVoteResolution.tribunalTargetUuid}`
+@@ -200,13 +312,17 @@ export default function InGameActionPanel({
+ 
+       {gameState.phase === "TRIBUNAL" ? (
+         <div className={INGAME_ACTION_SECTION_CLASS}>
++          <div className={CONTROL_PANEL_SECTION_HEADER_ROW_CLASS}>
++            <span aria-hidden="true" className={CONTROL_PANEL_SECTION_ACCENT_CLASS} />
++            <p className={INGAME_ACTION_CAPTION_CLASS}>유무죄 판단</p>
++          </div>
+           <p className={INGAME_ACTION_META_CLASS}>피고인: {gameState.tribunal?.defendantUuid ?? "없음"}</p>
+           {tribunalVoteIsDefendant ? (
+             <p className={INGAME_ACTION_META_CLASS}>{TRIBUNAL_DEFENDANT_NOTICE}</p>
+           ) : !tribunalVoteAlive ? (
+             <p className={INGAME_ACTION_META_CLASS}>{TRIBUNAL_DEAD_NOTICE}</p>
+           ) : null}
+-          <div className="flex flex-wrap gap-1.5">
++          <div className={INGAME_ACTION_BUTTON_ROW_CLASS}>
+             <button
+               type="button"
+               className={
+@@ -231,7 +347,7 @@ export default function InGameActionPanel({
+             </button>
+             <button
+               type="button"
+-              className={INGAME_ACTION_BUTTON_CLASS}
++              className={`${INGAME_ACTION_BUTTON_CLASS} ${CONTROL_PANEL_PRIMARY_ACTION_EXTRA_CLASS}`}
+               disabled={!selectedTribunalVote || !tribunalVoteControlsEnabled}
+               onClick={() => submitTribunalVote(selectedTribunalVote)}
+             >
+@@ -239,7 +355,7 @@ export default function InGameActionPanel({
+             </button>
+             <button
+               type="button"
+-              className={INGAME_ACTION_BUTTON_CLASS}
++              className={`${INGAME_ACTION_BUTTON_CLASS} ${CONTROL_PANEL_PRIMARY_ACTION_EXTRA_CLASS}`}
+               disabled={!tribunalResolveControlsEnabled}
+               onClick={resolveTribunalVote}
+             >
+@@ -251,20 +367,24 @@ export default function InGameActionPanel({
+             </button>
+           </div>
+           {tribunalVoteError ? (
+-            <p className="text-[0.68rem] text-red-300">{tribunalVoteError}</p>
++            <p className={INGAME_ACTION_ERROR_TEXT_CLASS}>{tribunalVoteError}</p>
+           ) : tribunalVoteStatus === "submitted" ? (
+-            <p className="text-[0.68rem] text-[#e9d6ba]">
++            <p className={INGAME_ACTION_STATUS_TEXT_CLASS}>
+               제출함: {tribunalVoteSubmittedVote === "GUILTY" ? TRIBUNAL_VOTE_GUILTY_LABEL : TRIBUNAL_VOTE_NOT_GUILTY_LABEL}
+             </p>
+           ) : null}
+           {tribunalResolveError ? (
+-            <p className="text-[0.68rem] text-red-300">{tribunalResolveError}</p>
++            <p className={INGAME_ACTION_ERROR_TEXT_CLASS}>{tribunalResolveError}</p>
+           ) : null}
+         </div>
+       ) : null}
+ 
+       {gameState.phase === "NIGHT" ? (
+         <div className={INGAME_ACTION_SECTION_CLASS}>
++          <div className={CONTROL_PANEL_SECTION_HEADER_ROW_CLASS}>
++            <span aria-hidden="true" className={CONTROL_PANEL_SECTION_ACCENT_CLASS} />
++            <p className={INGAME_ACTION_CAPTION_CLASS}>밤 행동</p>
++          </div>
+           {nightActionType === null ? (
+             <p className={INGAME_ACTION_META_CLASS}>이 밤에는 행동할 수 없습니다.</p>
+           ) : (
+@@ -273,49 +393,39 @@ export default function InGameActionPanel({
+                 players={nightActionTargets}
+                 selectedTargetId={selectedNightTargetId}
+                 onSelect={setSelectedNightTargetId}
++                disabled={!nightActionControlsEnabled || nightActionStatus !== "idle"}
+               />
+-              <div className="flex flex-wrap gap-1.5">
++              <div className={INGAME_ACTION_BUTTON_ROW_CLASS}>
+                 <button
+                   type="button"
+-                  className={INGAME_ACTION_BUTTON_CLASS}
+-                  disabled={nightActionStatus === "submitting" || !hasTarget || nightActionsLocked}
++                  className={`${INGAME_ACTION_BUTTON_CLASS} ${CONTROL_PANEL_PRIMARY_ACTION_EXTRA_CLASS}`}
++                  disabled={!nightActionControlsEnabled || nightActionStatus !== "idle" || !hasTarget || nightActionsLocked}
+                   onClick={submitNightAction}
+                 >
+-                  {nightActionLabel}
++                  {nightActionStatus === "submitting"
++                    ? "제출 중..."
++                    : nightActionLabel
++                      ? `${nightActionLabel} 확정`
++                      : "행동 확정"}
+                 </button>
+                 <button
+                   type="button"
+                   className={INGAME_ACTION_BUTTON_CLASS}
+-                  disabled={nightActionStatus === "submitting" || nightActionsLocked}
++                  disabled={!nightActionControlsEnabled || nightActionStatus !== "idle" || nightActionsLocked}
+                   onClick={skipNightAction}
+                 >
+                   건너뛰기
+                 </button>
+               </div>
+               {nightActionError ? (
+-                <p className="text-[0.68rem] text-red-300">{nightActionError}</p>
++                <p className={INGAME_ACTION_ERROR_TEXT_CLASS}>{nightActionError}</p>
++              ) : nightActionStatus === "submitted" ? (
++                <p className={INGAME_ACTION_STATUS_TEXT_CLASS}>제출 완료 · 다음 역할을 기다리는 중</p>
+               ) : null}
+             </>
+           )}
+-          <div className="flex flex-wrap gap-1.5">
+-            <button
+-              type="button"
+-              className={INGAME_ACTION_BUTTON_CLASS}
+-              disabled={resolveNightStatus !== "idle"}
+-              onClick={resolveNight}
+-            >
+-              {resolveNightStatus === "resolving"
+-                ? "판정 중..."
+-                : resolveNightStatus === "resolved"
+-                  ? "판정 완료"
+-                  : "밤 종료"}
+-            </button>
+-          </div>
+-          {resolveNightError ? (
+-            <p className="text-[0.68rem] text-red-300">{resolveNightError}</p>
+-          ) : null}
+           {nightActionResult ? (
+-            <p className="text-[0.68rem] text-[#e9d6ba]">
++            <p className={INGAME_ACTION_STATUS_TEXT_CLASS}>
+               개인 결과: {JSON.stringify(
+                 Object.fromEntries(
+                   Object.entries(nightActionResult).filter(
+@@ -328,19 +438,33 @@ export default function InGameActionPanel({
+         </div>
+       ) : null}
+ 
+-      <div className={INGAME_ACTION_SECTION_CLASS}>
+-        <p className={INGAME_ACTION_META_CLASS}>이벤트</p>
+-        <ul className="space-y-1 text-[0.68rem] leading-tight text-[#e9d6ba]">
+-          {latestEvents.length ? (
+-            latestEvents.map((event) => (
+-              <li key={event.id} className="truncate">
+-                {formatInGameEvent(event)}
+-              </li>
+-            ))
+-          ) : (
+-            <li>이벤트 없음</li>
+-          )}
+-        </ul>
++      {expanded ? (
++        <div className={INGAME_ACTION_SECTION_CLASS}>
++          <div className={CONTROL_PANEL_SECTION_HEADER_ROW_CLASS}>
++            <span aria-hidden="true" className={CONTROL_PANEL_SECTION_ACCENT_CLASS} />
++            <p className={INGAME_ACTION_CAPTION_CLASS}>이벤트 로그</p>
++            {latestEvents.length ? (
++              <span className={CONTROL_PANEL_EVENT_COUNT_BADGE_CLASS}>{latestEvents.length}</span>
++            ) : null}
++          </div>
++          <ul className="mt-1 space-y-1 border-t border-[#d8b982]/15 pt-1.5 text-[0.68rem] leading-tight text-[#e9d6ba]">
++            {latestEvents.length ? (
++              latestEvents.map((event) => (
++                <li
++                  key={event.id}
++                  className="truncate before:mr-1 before:text-[#caa565]/70 before:content-['·']"
++                >
++                  {formatInGameEvent(event)}
++                </li>
++              ))
++            ) : (
++              <li className="text-[#cdbb9e]/70">이벤트 없음</li>
++            )}
++          </ul>
++        </div>
++      ) : null}
++      </div>
++        </div>
+       </div>
+     </aside>
+   )
+diff --git a/frontend/src/domains/game/ingame/components/actions/InGameTargetPicker.jsx b/frontend/src/domains/game/ingame/components/actions/InGameTargetPicker.jsx
+index 4d2e1b671cfe66303e28d6dd5c6ffb8a82f19e9e..8ec3e46f7aa57e4f83a327f691ebedaa076efbb7 100644
+--- a/frontend/src/domains/game/ingame/components/actions/InGameTargetPicker.jsx
++++ b/frontend/src/domains/game/ingame/components/actions/InGameTargetPicker.jsx
+@@ -2,8 +2,32 @@
+ import {
+   INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS,
+   INGAME_ACTION_TARGET_BUTTON_CLASS,
++  INGAME_ACTION_TARGET_GRID_CLASS,
++  INGAME_ACTION_TARGET_NAME_CLASS,
++  INGAME_ACTION_TARGET_STATUS_DOT_ALIVE_CLASS,
++  INGAME_ACTION_TARGET_STATUS_DOT_DEAD_CLASS,
++  INGAME_ACTION_TARGET_STATUS_DOT_DISCONNECTED_CLASS,
++  INGAME_ACTION_TARGET_STATUS_ROW_CLASS,
+ } from "../../constants/actions/ingameActionPanel.js"
+ 
++function resolveStatusDotClass(player) {
++  if (!player.connected) return INGAME_ACTION_TARGET_STATUS_DOT_DISCONNECTED_CLASS
++  return player.alive ? INGAME_ACTION_TARGET_STATUS_DOT_ALIVE_CLASS : INGAME_ACTION_TARGET_STATUS_DOT_DEAD_CLASS
++}
++
++// 카드 왼쪽의 원형 이니셜 아바타 — 이름 앞머리 한 글자로 "누구를 고를지" 한눈에 훑을 수 있게
++// 돕는 장식 요소다(순수 프레젠테이션, 서버로 아무것도 전달하지 않는다).
++function resolveInitial(player) {
++  return typeof player.name === "string" && player.name.length > 0 ? player.name.slice(0, 1) : "?"
++}
++
++const TARGET_CARD_ROW_CLASS = "flex items-center gap-2"
++
++const TARGET_CARD_AVATAR_CLASS =
++  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#8a6a44]/40 bg-[#1c0f08]/70 text-[0.66rem] font-semibold text-[#f3e3c6]"
++
++const TARGET_CARD_TEXT_COLUMN_CLASS = "flex min-w-0 flex-1 flex-col"
++
+ /** 투표/스킬 대상을 고르는 플레이어 버튼 목록입니다. */
+ export default function InGameTargetPicker({
+   players,
+@@ -12,25 +36,33 @@ export default function InGameTargetPicker({
+   disabled = false,
+ }) {
+   return (
+-    <div className="grid max-h-32 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+-      {players.map((player) => (
+-        <button
+-          key={player.id}
+-          type="button"
+-          disabled={disabled || !player.alive || !player.connected || player.selectable === false}
+-          className={
+-            selectedTargetId === player.id
+-              ? INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS
+-              : INGAME_ACTION_TARGET_BUTTON_CLASS
+-          }
+-          onClick={() => onSelect(player.id)}
+-        >
+-          <span className="block truncate">{player.name}</span>
+-          <span className="block text-[0.65rem] text-[#cdbb9e]">
+-            {!player.connected ? "연결끊김" : player.alive ? "생존" : "사망"}
+-          </span>
+-        </button>
+-      ))}
++    <div className={INGAME_ACTION_TARGET_GRID_CLASS}>
++      {players.map((player) => {
++        const isSelected = selectedTargetId === player.id
++        return (
++          <button
++            key={player.id}
++            type="button"
++            disabled={disabled || !player.alive || !player.connected || player.selectable === false}
++            aria-pressed={isSelected}
++            className={isSelected ? INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS : INGAME_ACTION_TARGET_BUTTON_CLASS}
++            onClick={() => onSelect(player.id)}
++          >
++            <span className={TARGET_CARD_ROW_CLASS}>
++              <span aria-hidden="true" className={TARGET_CARD_AVATAR_CLASS}>
++                {resolveInitial(player)}
++              </span>
++              <span className={TARGET_CARD_TEXT_COLUMN_CLASS}>
++                <span className={INGAME_ACTION_TARGET_NAME_CLASS}>{player.name}</span>
++                <span className={INGAME_ACTION_TARGET_STATUS_ROW_CLASS}>
++                  <span aria-hidden="true" className={resolveStatusDotClass(player)} />
++                  {!player.connected ? "연결끊김" : player.alive ? "생존" : "사망"}
++                </span>
++              </span>
++            </span>
++          </button>
++        )
++      })}
+     </div>
+   )
+ }
+diff --git a/frontend/src/domains/game/ingame/components/timebar/InGameTimebar.jsx b/frontend/src/domains/game/ingame/components/timebar/InGameTimebar.jsx
+index 15fb37ab59fd72a1f4770d241029784497727bbc..bcbc09e26be9df8ac6392914b5404998f1d01099 100644
+--- a/frontend/src/domains/game/ingame/components/timebar/InGameTimebar.jsx
++++ b/frontend/src/domains/game/ingame/components/timebar/InGameTimebar.jsx
+@@ -15,7 +15,6 @@ import {
+   INGAME_TIMEBAR_STACK_CLASS,
+   INGAME_TIMEBAR_TRACK_INSET,
+ } from "../../constants/timebar/ingameTimebarLayout.js"
+-import InGameVoteToggleButton from "../vote/InGameVoteToggleButton.jsx"
+ import PublicAsset from "@/shared/ui/PublicAsset"
+ 
+ /** 시간흐름 바 위 단계 노드 하나 — 활성 단계면 위에 지시 화살표를 추가로 그림 */
+@@ -56,8 +55,6 @@ export default function InGameTimebar({
+   day = INGAME_TIMEBAR_PREVIEW_DAY,
+   // activePhaseId: 현재 활성화된 단계(낮/투표 등)의 id — 해당 노드만 강조 표시
+   activePhaseId = INGAME_DAY_TIMEBAR_ACTIVE_PHASE,
+-  // onVoteStatusClick: timebar 우측 하단 투표현황 버튼 클릭
+-  onVoteStatusClick,
+   className = INGAME_TIMEBAR_POSITION_CLASS,
+ }) {
+   const dayLabel = `제 ${day}일`
+@@ -96,10 +93,6 @@ export default function InGameTimebar({
+           ))}
+         </div>
+       </div>
+-
+-      {onVoteStatusClick ? (
+-        <InGameVoteToggleButton onClick={onVoteStatusClick} />
+-      ) : null}
+     </div>
+   )
+ }
+\ No newline at end of file
+diff --git a/frontend/src/domains/game/ingame/constants/actions/ingameActionPanel.js b/frontend/src/domains/game/ingame/constants/actions/ingameActionPanel.js
+index c182226cd1a3f776d88df5560b61671fdc25c9c1..1002d17199dc04da27e840be02bf3d138302a2a4 100644
+--- a/frontend/src/domains/game/ingame/constants/actions/ingameActionPanel.js
++++ b/frontend/src/domains/game/ingame/constants/actions/ingameActionPanel.js
+@@ -2,22 +2,58 @@ export const INGAME_ACTION_PANEL_CLASS =
+   "absolute bottom-[clamp(0.75rem,2vh,1.25rem)] left-[clamp(0.75rem,2vw,1.25rem)] z-30 w-[min(24rem,calc(100vw-1.5rem))] rounded-md border border-[#d8b982]/55 bg-black/72 p-3 text-[#f8ead2] shadow-[0_12px_36px_rgba(0,0,0,0.5)] backdrop-blur-sm"
+ 
+ export const INGAME_ACTION_HEADER_CLASS =
+-  "flex items-center justify-between gap-3 border-b border-[#d8b982]/25 pb-2"
++  "flex items-start justify-between gap-2.5 border-b border-[#d8b982]/25 pb-2.5"
+ 
+-export const INGAME_ACTION_TITLE_CLASS = "text-sm font-semibold tracking-normal text-[#ffe2ad]"
++export const INGAME_ACTION_TITLE_CLASS =
++  "text-[0.92rem] font-semibold tracking-wide text-[#ffe6b8] drop-shadow-[0_1px_1px_rgba(0,0,0,0.65)]"
+ 
+-export const INGAME_ACTION_META_CLASS = "text-[0.7rem] leading-tight text-[#cdbb9e]"
++export const INGAME_ACTION_META_CLASS = "text-[0.7rem] font-medium leading-snug text-[#cdbb9e]/90"
+ 
+-export const INGAME_ACTION_SECTION_CLASS = "mt-3 space-y-2"
++// 섹션(유틸리티·낮 투표·재판·밤 행동·이벤트) 공통 카드 껍데기 — 살짝 어두운 레이어 + 은은한
++// 상단 하이라이트 + 얇은 금색 링으로 "층이 진" 느낌을 주되, 뚜렷한 테두리 박스처럼 보이지
++// 않도록 절제한다(요청: 층위감은 원하되 각지고 밋밋한 박스 느낌은 피할 것).
++export const INGAME_ACTION_SECTION_CLASS =
++  "mt-3 space-y-2 rounded-lg bg-[#1c0f08]/45 p-2.5 shadow-[inset_0_1px_0_rgba(255,229,173,0.07)] ring-1 ring-[#d8b982]/15"
++
++// 섹션 안에서 쓰는 작은 라벨(예: "투표 대상 선택") — 본문 텍스트(META)와 구분되는 존재감
++// 낮은 캡션 톤이다.
++export const INGAME_ACTION_CAPTION_CLASS =
++  "text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-[#caa565]/80"
++
++export const INGAME_ACTION_BUTTON_ROW_CLASS = "flex flex-wrap gap-2"
++
++export const INGAME_ACTION_STATUS_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#e7d3ae]/90"
++
++export const INGAME_ACTION_ERROR_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#ff9d8d]"
++
++export const INGAME_ACTION_ERROR_BANNER_CLASS =
++  "mt-2 rounded-md border border-red-400/30 bg-red-950/45 px-2.5 py-1.5 text-[0.72rem] leading-snug text-red-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+ 
+ export const INGAME_ACTION_BUTTON_CLASS =
+-  "min-h-8 rounded border border-[#d8b982]/35 bg-[#2b1c15]/85 px-3 py-1.5 text-xs text-[#f8ead2] transition hover:border-[#f3d28d] hover:bg-[#53321f] disabled:cursor-not-allowed disabled:opacity-40"
++  "min-h-8 rounded-md border border-[#c9a86a]/40 bg-gradient-to-b from-[#3a2417]/90 to-[#1d1108]/90 px-3 py-1.5 text-[0.72rem] font-medium tracking-wide text-[#f3e3c6] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-[#f3d28d] hover:from-[#553420] hover:to-[#2c190d] hover:text-[#ffe9c2] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#c9a86a]/40 disabled:active:scale-100"
+ 
+ export const INGAME_ACTION_TARGET_BUTTON_CLASS =
+-  "min-h-8 rounded border border-[#927556]/45 bg-black/35 px-2 py-1 text-left text-xs text-[#f8ead2] transition hover:border-[#f3d28d] disabled:cursor-not-allowed disabled:opacity-40"
++  "group relative flex min-h-[2.75rem] flex-col justify-center gap-0.5 rounded-md border border-[#8a6a44]/35 bg-gradient-to-b from-[#251409]/85 to-[#150b05]/85 px-2 py-1.5 text-left transition hover:border-[#f3d28d]/70 hover:from-[#3a2313]/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#8a6a44]/35"
+ 
+ export const INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS =
+-  `${INGAME_ACTION_TARGET_BUTTON_CLASS} border-[#f3d28d] bg-[#5b321d]/80`
++  `${INGAME_ACTION_TARGET_BUTTON_CLASS} border-[#f3d28d] from-[#5b321d]/95 to-[#331a0d]/95 ring-1 ring-[#f3d28d]/50`
++
++// 플레이어 대상 카드(InGameTargetPicker) 내부 세부 표현 — 이름/생존 상태 한 줄을 배지 스타일로
++// 정리해 "의도적으로 선택 가능한 항목"처럼 보이게 한다.
++export const INGAME_ACTION_TARGET_GRID_CLASS = "grid max-h-36 grid-cols-2 gap-2 overflow-y-auto pr-1"
++
++export const INGAME_ACTION_TARGET_NAME_CLASS = "block truncate text-[0.78rem] font-medium text-[#f8ead2]"
++
++export const INGAME_ACTION_TARGET_STATUS_ROW_CLASS =
++  "flex items-center gap-1 text-[0.62rem] font-medium tracking-wide text-[#cdbb9e]/85"
++
++export const INGAME_ACTION_TARGET_STATUS_DOT_ALIVE_CLASS =
++  "h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/80 shadow-[0_0_4px_rgba(52,211,153,0.7)]"
++
++export const INGAME_ACTION_TARGET_STATUS_DOT_DEAD_CLASS = "h-1.5 w-1.5 shrink-0 rounded-full bg-red-400/70"
++
++export const INGAME_ACTION_TARGET_STATUS_DOT_DISCONNECTED_CLASS =
++  "h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400/60"
+ 
+ // 역할별 밤 행동 최소 dayIndex입니다. 서버 ROLE_DEFINITIONS.nightActionMinDayIndex의
+ // UX 전용 사본입니다(서버가 최종 권위자 — 이 값은 대상 선택 UI를 미리 숨기는 용도일 뿐,
+diff --git a/frontend/src/domains/game/ingame/constants/killReveal/ingameKillReveal.js b/frontend/src/domains/game/ingame/constants/killReveal/ingameKillReveal.js
+index aa8c24638f76b3a94bca59a94bc3e097d90cfdef..8e99adfeed1b45f8e42b96e253e51eb25447ae26 100644
+--- a/frontend/src/domains/game/ingame/constants/killReveal/ingameKillReveal.js
++++ b/frontend/src/domains/game/ingame/constants/killReveal/ingameKillReveal.js
+@@ -11,9 +11,12 @@ export const INGAME_KILL_ANIMATION_VIDEO_URL = "/assets/ingame/kill-animation.mp
+ /** 닉네임을 찾지 못했을 때 쓰는 대체 표기 — uuid는 절대 화면에 내보내지 않는다. */
+ export const INGAME_KILL_REVEAL_UNKNOWN_NICKNAME = "한 플레이어"
+ 
+-/** 넘기기 버튼 문구 */
++/** 넘기기 버튼 문구 — 재생 오류·워치독 타임아웃처럼 영상이 멈췄을 때 계속 진행하는 버튼이다. */
+ export const INGAME_KILL_REVEAL_SKIP_LABEL = "건너뛰기"
+ 
++/** 다시 재생 버튼 문구 — play() 호출이 reject됐을 때만 노출된다(재생 자체를 다시 시도). */
++export const INGAME_KILL_REVEAL_RETRY_LABEL = "다시 재생"
++
+ /** 영상 재생/오류와 무관하게 화면이 영원히 막히지 않도록 하는 상한 시간(ms) */
+ export const INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS = 12000
+ 
+diff --git a/frontend/src/domains/game/ingame/hooks/useGameSessionSocketEvents.js b/frontend/src/domains/game/ingame/hooks/useGameSessionSocketEvents.js
+index 78cae36f54d47e8dc75c35522ff5f3bf10f54736..ab50de1aa346f28cd6fc0066aee188e4bd9e48d1 100644
+--- a/frontend/src/domains/game/ingame/hooks/useGameSessionSocketEvents.js
++++ b/frontend/src/domains/game/ingame/hooks/useGameSessionSocketEvents.js
+@@ -1,12 +1,13 @@
+ import { useEffect, useSyncExternalStore } from "react"
+ import { useNavigate } from "react-router-dom"
+ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
+-import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
++import { useMatchingStore } from "../../matching/store/matchingStore.js"
+ import { useInGameStore } from "../store/ingameStore.js"
+ import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
+ import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
+ import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
+ import { parseNightResultAppliedPayload } from "../utils/parseNightResultAppliedPayload.js"
++import { parseNightTurnChangedPayload } from "../utils/parseNightTurnChangedPayload.js"
+ import { parseDayVoteResolvedPayload } from "./useInGameActionPanel.js"
+ 
+ /** 인게임 store와 matching store를 함께 초기화하고 로비로 이동하는 finalizer를 만든다. */
+@@ -95,17 +96,29 @@ export function useGameSessionSocketEvents() {
+       useInGameStore.getState().applyTribunalResolved(payload)
+     }
+ 
++    // NIGHT canonical 순차 진행의 턴 변경 방송이다. 검증에 필요한 gameId/dayIndex는 위 세
++    // 핸들러와 동일한 이유로 호출 시점의 store에서 직접 읽는다.
++    const handleNightTurnChanged = (payload) => {
++      const current = useInGameStore.getState()
++      if (!current.gameId || !current.state) return
++      const parsed = parseNightTurnChangedPayload({ payload, gameId: current.gameId, dayIndex: current.state.dayIndex })
++      if (!parsed) return
++      useInGameStore.getState().applyNightTurnChanged(parsed)
++    }
++
+     socket.on("game_ended", handleGameEnded)
+     socket.on("game_phase_changed", handlePhaseChanged)
+     socket.on("night_result_applied", handleNightResultApplied)
+     socket.on("day_vote_resolved", handleDayVoteResolved)
+     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
++    socket.on("night_turn_changed", handleNightTurnChanged)
+     return () => {
+       socket.off("game_ended", handleGameEnded)
+       socket.off("game_phase_changed", handlePhaseChanged)
+       socket.off("night_result_applied", handleNightResultApplied)
+       socket.off("day_vote_resolved", handleDayVoteResolved)
+       socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
++      socket.off("night_turn_changed", handleNightTurnChanged)
+     }
+   }, [socket, navigate])
+ 
+diff --git a/frontend/src/domains/game/ingame/hooks/useInGameActionPanel.js b/frontend/src/domains/game/ingame/hooks/useInGameActionPanel.js
+index 065bf46131f3216c767d3d4e606f2a12b9116352..51ac1f5844404f224503c1d93653ef61dbd1f561 100644
+--- a/frontend/src/domains/game/ingame/hooks/useInGameActionPanel.js
++++ b/frontend/src/domains/game/ingame/hooks/useInGameActionPanel.js
+@@ -9,6 +9,7 @@ import { useInGameStore } from "../store/ingameStore.js"
+ import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
+ import { buildNightActionTargets } from "../utils/buildNightActionTargets.js"
+ import { buildDayVoteTargets, isSessionPlayerAlive } from "../utils/buildDayVoteTargets.js"
++import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
+ import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
+ import { useInGameDayVoteSubmit } from "./useInGameDayVoteSubmit.js"
+ import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
+@@ -143,6 +144,11 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
+   const nightActionLabel = getInGameNightActionLabel(myRole, dayIndex)
+   const hasTarget = Boolean(selectedNightTargetId)
+ 
++  // 지금 canonical하게 어느 역할의 NIGHT 턴인지는 오직 이 selector로만 읽는다(서버가 명시하면
++  // 그 값, 아니면 이 밤의 시작 턴) — 프런트에는 이 값을 앞으로 밀 수 있는 별도 커서가 없다.
++  const nightTurnRole = selectInGameNightTurnRole(gameState ?? null)
++  const isNightActionTurn = gameState?.phase === "NIGHT" && typeof myRole === "string" && myRole === nightTurnRole
++
+   const nightActionSubmit = useInGameNightActionSubmit()
+   const dayVoteSubmit = useInGameDayVoteSubmit()
+   const resolveNightRequest = useInGameResolveNight()
+@@ -232,6 +238,17 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
+   const nightActionsLocked =
+     interactionBlocked || isGameEnded || resolveNightRequest.status !== "idle" || gameState?.phase !== "NIGHT"
+ 
++  // NIGHT 행동 확정/건너뛰기 버튼 자체의 활성화 조건입니다(요구사항: 연결돼 있고 생존한 로컬
++  // 참가자이면서 그 역할이 canonical 현재 NIGHT 턴과 같을 때만 활성화). nightActionsLocked(위,
++  // phase·게임 종료·판정 진행 상태만 본다)와 별개로 결합해, 자기 턴이 아니면 그 자체로도
++  // 잠긴다 — 서버가 이미 독립적으로 재검증하지만(NIGHT_TURN_ROLE_MISMATCH), 클라이언트가 애초에
++  // 자기 턴이 아닌 제출 시도를 보여주지 않는다.
++  const nightActionControlsEnabled =
++    !nightActionsLocked &&
++    isNightActionTurn &&
++    isSessionPlayerAlive(localSessionPlayer) &&
++    Boolean(getSocket()?.connected)
++
+   const submitDayVote = () => {
+     if (!selectedDayVoteTargetId) return
+     dayVoteSubmit.submitDayVote(selectedDayVoteTargetId)
+@@ -245,7 +262,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
+     if (dayVoteAckingRef.current || dayVoteResolveStatus !== "idle") return
+     const requestSocket = getSocket()
+     if (!requestSocket || !requestSocket.connected) {
+-      setDayVoteResolveError("?쒕쾭 ?곌껐???뺤씤?????놁뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.")
++      setDayVoteResolveError("서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.")
+       return
+     }
+     if (!gameId || !Number.isInteger(dayIndex)) return
+@@ -279,7 +296,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
+       .catch(() => {
+         if (!isStale()) {
+           setDayVoteResolveStatus("idle")
+-          setDayVoteResolveError("?붿껌???묐떟?섏? ?딆뒿?덈떎. ?ㅼ떆 ?쒕룄?댁＜?몄슂.")
++          setDayVoteResolveError("요청이 응답하지 않습니다. 다시 시도해주세요.")
+         }
+       })
+       .finally(() => {
+@@ -383,6 +400,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
+     submitNightAction,
+     skipNightAction,
+     nightActionsLocked,
++    nightActionControlsEnabled,
+     resolveNight: resolveNightRequest.resolveNight,
+     resolveNightStatus: resolveNightRequest.status,
+     resolveNightError: resolveNightRequest.error,
+diff --git a/frontend/src/domains/game/ingame/hooks/useInGameNightActionSubmit.js b/frontend/src/domains/game/ingame/hooks/useInGameNightActionSubmit.js
+index d831100bccc62cdd209f4355b5c28526ae463e37..e4f6be353f8d71c5bde4cd9252c7979d520ed782 100644
+--- a/frontend/src/domains/game/ingame/hooks/useInGameNightActionSubmit.js
++++ b/frontend/src/domains/game/ingame/hooks/useInGameNightActionSubmit.js
+@@ -1,8 +1,8 @@
+ import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
+ import { useInGameStore } from "../store/ingameStore.js"
++import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
+ import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
+-import { computeRoleRevealInvalidatePatch } from "../utils/computeRoleRevealInvalidatePatch.js"
+ import { computeNightActionSubmitPatch } from "../utils/computeNightActionSubmitPatch.js"
+ 
+ const SUBMIT_TIMEOUT_MS = 5000
+@@ -10,20 +10,22 @@ const SUBMIT_TIMEOUT_MS = 5000
+ /**
+  * NIGHT 행동 제출(submit_night_action)을 관리한다. useInGameRoleRevealAck와 동일한 늦은
+  * 응답 방어 패턴(mounted ref, generation versionRef, requestSocket identity + connected,
+- * gameId 일치)을 그대로 재사용한다 — isStaleRoleRevealAckResponse/
+- * computeRoleRevealInvalidatePatch는 이름은 role-reveal 전용처럼 보이지만 파라미터가 완전히
+- * 범용이라 새로 만들지 않는다.
++ * gameId 일치)을 재사용한다 — isStaleRoleRevealAckResponse는 이름은 role-reveal 전용처럼
++ * 보이지만 파라미터가 완전히 범용이라 새로 만들지 않는다.
+  *
+- * role-reveal과의 차이: 성공해도 'submitted'로 잠그지 않는다(재제출 허용 정책과 일치) —
+- * 항상 다시 'idle'로 돌아가 버튼이 계속 활성 상태를 유지한다. lastSubmittedTargetId는
+- * 표시용일 뿐 서버 판정에는 관여하지 않는다(JOKER가 금지된 대상을 제출하면 서버는 no-op이지만
+- * 클라이언트는 낙관적으로 "제출됨"이라 표시할 수 있음 — 오라클 방지를 위한 의도된 트레이드오프).
++ * 성공하면 'submitted'로 잠긴다(조용한 중복 제출 방지) — role-reveal과 달리 이 잠금은
++ * "게임이 끝날 때까지"가 아니라 "canonical NIGHT 턴 정체성(gameId·dayIndex·socket·현재 턴
++ * 역할)이 그대로인 동안"만 유효하다. 이 넷 중 하나라도 바뀌면(다음 역할로 턴이 넘어감 포함)
++ * invalidate()가 상태를 'idle'로 되돌려 다음 턴을 다시 제출할 수 있게 한다 — 그 전까지는
++ * 이미 성공한 제출을 향해 같은 턴에서 또 emitWithAck를 보내지 않는다.
+  */
+ export function useInGameNightActionSubmit() {
+   const gameId = useInGameStore((s) => s.gameId)
++  const dayIndex = useInGameStore((s) => s.state?.dayIndex ?? null)
++  const nightTurnRole = useInGameStore((s) => selectInGameNightTurnRole(s.state ?? null))
+   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
+ 
+-  const [status, setStatus] = useState("idle") // idle | submitting
++  const [status, setStatus] = useState("idle") // idle | submitting | submitted
+   const [error, setError] = useState(null)
+   const [lastSubmittedTargetId, setLastSubmittedTargetId] = useState(null)
+ 
+@@ -38,15 +40,15 @@ export function useInGameNightActionSubmit() {
+     }
+   }, [])
+ 
+-  // 진행 중이던 제출을 무효화하고 잠금을 즉시 해제한다. disconnect·socket 교체·gameId
+-  // 변경·unmount 네 지점 모두 이 함수 하나만 거친다(useInGameRoleRevealAck와 동일한 계약).
++  // 진행 중이던 제출을 무효화하고 잠금을 즉시 해제한다. disconnect·socket 교체·canonical
++  // game/day/역할 턴 정체성 변화·unmount 다섯 지점 모두 이 함수 하나만 거친다.
+   const invalidate = () => {
+     versionRef.current += 1
+     ackingRef.current = false
+-    const patch = computeRoleRevealInvalidatePatch(mountedRef.current)
+-    if (!patch) return // unmounted: state는 건드리지 않는다
+-    setStatus(patch.status)
+-    setError(patch.error)
++    if (!mountedRef.current) return // unmounted: state는 건드리지 않는다
++    setStatus("idle")
++    setError(null)
++    setLastSubmittedTargetId(null)
+   }
+ 
+   // disconnect・socket 객체 교체(재연결)・unmount 시 무효화.
+@@ -61,14 +63,17 @@ export function useInGameNightActionSubmit() {
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [socket])
+ 
+-  // gameId 변경 시 무효화(이전 gameId를 향한 요청·에러 상태는 새 게임에 넘어가지 않는다).
++  // canonical game/day/역할 턴 정체성이 바뀔 때만 이전 제출 상태를 지운다(요구사항) — 그 외에는
++  // 성공 응답이 'submitted'로 남아 같은 턴에서 조용한 중복 제출을 막는다. nightTurnRole이
++  // 바뀌는 시점은 "이 배우가 속한 역할의 턴이 실제로 끝난" 시점과 정확히 겹치므로, 이 하나의
++  // 조건으로 "다음 역할을 기다리는 중" 표시의 생명주기가 자연히 끝난다.
+   useEffect(() => {
+     invalidate()
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [gameId])
++  }, [gameId, dayIndex, nightTurnRole])
+ 
+   const submit = (targetId) => {
+-    if (ackingRef.current) return
++    if (ackingRef.current || status === "submitted") return
+     const requestSocket = getSocket()
+     if (!requestSocket || !requestSocket.connected) {
+       setError("서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.")
+diff --git a/frontend/src/domains/game/ingame/hooks/useInGameOverlayStack.js b/frontend/src/domains/game/ingame/hooks/useInGameOverlayStack.js
+index 7c56a49953fa46981ae46a33d3251808f6c1cb52..e951e7f2db608600750b1deb46a7012bac4ce678 100644
+--- a/frontend/src/domains/game/ingame/hooks/useInGameOverlayStack.js
++++ b/frontend/src/domains/game/ingame/hooks/useInGameOverlayStack.js
+@@ -1,4 +1,5 @@
+ import { useInGameRoleReveal } from "./useInGameRoleReveal.js"
++import { useInGameKillReveal } from "./useInGameKillReveal.js"
+ import { useInGamePhaseEntrance } from "./useInGamePhaseEntrance.js"
+ import { useInGameNightTurnAnnouncement } from "./useInGameNightTurnAnnouncement.js"
+ 
+@@ -9,28 +10,24 @@ import { useInGameNightTurnAnnouncement } from "./useInGameNightTurnAnnouncement
+  * 결정한다 — 각 오버레이는 자기 앞 순서가 전부 비었을 때에만 열린다.
+  *
+  *   1. 자기 역할 공개(초기 확인 및 "내 역할 보기" 재열람)
+- *   2. 사망 연출 큐(deathRevealActive)
++ *   2. 사망 연출 큐(killReveal — night_result_applied의 공개 deathReveals)
+  *   3. DAY/NIGHT 진입 연출("낮이 되었습니다" / "밤이 되었습니다")
+  *   4. 밤 역할 턴 안내("광대/의사/경호원/마녀사냥꾼의 시간입니다")
+  *   5. 그 아래 게임 표면의 조작
+  *
+- * 2번(사망 연출)은 아직 이 프런트엔드에 렌더되는 구현이 없다 — 공개 사망 연출 큐를 만드는
+- * 순수 헬퍼(buildInGameKillRevealQueueItems)와 문구 상수만 있고 이를 화면에 띄우는
+- * 컴포넌트·훅이 없다. 그래서 그 자리를 호출부가 넘겨주는 명시적 입력으로 열어 둔다:
+- * 사망 연출 슬라이스가 들어오면 그 훅의 "재생 중" 여부를 deathRevealActive로 넘기기만 하면
+- * 3·4번이 자동으로 그 뒤로 밀린다(진입 연출은 기다리는 동안 소비되지 않으므로, 사망 연출이
+- * 모두 끝난 뒤에 반드시 뜬다).
++ * 2번(killReveal)은 1번이 떠 있는 동안 보류된다(hold) — 자기 역할 확인이 사망 연출보다
++ * 먼저다. killReveal.open이 true인 동안(=큐에서 승격된 항목이 실제로 재생 중인 동안) 3·4번이
++ * 자동으로 그 뒤로 밀린다 — 진입 연출은 기다리는 동안 소비되지 않으므로, 사망 연출 큐가 모두
++ * 끝난 뒤에 반드시 뜬다(같은 밤에 여러 희생자가 있어도 큐가 다 빌 때까지 끊기지 않는다).
+  *
+  * 이 훅은 표시 상태만 조립한다 — socket emit·REST·canonical store 변경이 전혀 없다.
+- *
+- * @param {object} [options]
+- * @param {boolean} [options.deathRevealActive] 사망 연출 큐가 재생 중인가.
+  */
+-export function useInGameOverlayStack({ deathRevealActive = false } = {}) {
++export function useInGameOverlayStack() {
+   const roleReveal = useInGameRoleReveal()
++  const killReveal = useInGameKillReveal({ hold: roleReveal.open })
+ 
+   // 1·2번이 하나라도 떠 있으면 3번은 대기한다(대기 중에도 소비되지 않는다).
+-  const higherPriorityActive = roleReveal.open || deathRevealActive
++  const higherPriorityActive = roleReveal.open || killReveal.open
+   const phaseEntrance = useInGamePhaseEntrance({ hold: higherPriorityActive })
+ 
+   // 4번은 3번이 완전히 끝나야(대기 중인 것도 없어야) 시작한다 — "밤이 되었습니다"를 닫기
+@@ -41,11 +38,13 @@ export function useInGameOverlayStack({ deathRevealActive = false } = {}) {
+ 
+   return {
+     roleReveal,
++    killReveal,
+     phaseEntrance,
+     nightTurn,
+-    // 진입 연출이 화면을 덮고 있는 동안에는 아래 게임 표면(낮 투표·채팅·재판·밤 행동·결과
+-    // 컨트롤)의 입력을 잠근다. 역할 공개 재열람이나 밤 역할 턴 안내는 기존대로 아래 화면을
+-    // 잠그지 않는다(기존 동작 유지).
+-    interactionBlocked: phaseEntrance.blocking,
++    // 진입 연출·사망 연출이 화면을 덮고 있는 동안에는 아래 게임 표면(낮 투표·채팅·재판·밤
++    // 행동·결과 컨트롤)의 입력을 잠근다. killReveal의 불투명 배경이 DAY 진입 연출·ENDED 결과
++    // 표시를 시각적으로도 가리므로, 큐가 다 빌 때까지 그 아래 어떤 결과 화면도 보이지 않는다.
++    // 역할 공개 재열람이나 밤 역할 턴 안내는 기존대로 아래 화면을 잠그지 않는다(기존 동작 유지).
++    interactionBlocked: phaseEntrance.blocking || killReveal.open,
+   }
+ }
+diff --git a/frontend/src/domains/game/ingame/pages/InGamePage.jsx b/frontend/src/domains/game/ingame/pages/InGamePage.jsx
+index a3e2af73d4b30341d53374f9e6a0ff8df12b71e5..761feb3f5a0d0af9a33433e6a0d9b36c9ce1b987 100644
+--- a/frontend/src/domains/game/ingame/pages/InGamePage.jsx
++++ b/frontend/src/domains/game/ingame/pages/InGamePage.jsx
+@@ -7,10 +7,10 @@ import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
+ import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOverlay.jsx"
+ import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
+ import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
++import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.js"
+ import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
+ import InGameTopControls from "../components/controls/InGameTopControls.jsx"
+ import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
+-import InGameVoteStatusPanel from "../components/vote/InGameVoteStatusPanel.jsx"
+ import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
+ import { INGAME_ASSETS } from "../constants/ingameAssets.js"
+ import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
+@@ -24,7 +24,6 @@ import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
+ /** 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지 */
+ export default function InGamePage() {
+   const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
+-  const [voteStatusOpen, setVoteStatusOpen] = useState(false)
+   const gameId = useInGameStore((s) => s.gameId)
+   const gameState = useInGameStore((s) => s.state)
+   const navigate = useNavigate()
+@@ -37,7 +36,7 @@ export default function InGamePage() {
+   // 한 곳에서 결정한다(useInGameOverlayStack 참고). 각 오버레이가 서로의 상태를 알아야 하므로
+   // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
+   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
+-  const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
++  const { roleReveal, killReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
+ 
+   // 게임 중 새로고침 등으로 ingameStore가 비어있는 채 /ingame에 직접 진입하면(store가
+   // 초기화되어 있음) 실제 참가자 대신 더미 프리뷰 데이터로 채워진 화면이 보인다. 유효한
+@@ -83,7 +82,6 @@ export default function InGamePage() {
+           <InGameTimebar
+             day={gameState?.dayIndex}
+             activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
+-            onVoteStatusClick={() => setVoteStatusOpen(true)}
+           />
+           <InGamePlayerBoard />
+           <InGameChatShell />
+@@ -96,10 +94,6 @@ export default function InGamePage() {
+             open={playerRecordListOpen}
+             onClose={() => setPlayerRecordListOpen(false)}
+           />
+-          <InGameVoteStatusPanel
+-            open={voteStatusOpen}
+-            onClose={() => setVoteStatusOpen(false)}
+-          />
+         </InGamePlayerSessionProvider>
+       </div>
+ 
+@@ -115,6 +109,12 @@ export default function InGamePage() {
+         phase={phaseEntrance.phase}
+         onConfirm={phaseEntrance.confirm}
+       />
++      <InGameKillRevealOverlay
++        open={killReveal.open}
++        revealId={killReveal.revealId}
++        message={killReveal.message}
++        onConsume={killReveal.consume}
++      />
+       <InGameRoleRevealOverlay
+         open={roleReveal.open}
+         onClose={roleReveal.close}
+diff --git a/frontend/src/domains/game/ingame/store/__tests__/ingameStore.test.js b/frontend/src/domains/game/ingame/store/__tests__/ingameStore.test.js
+index c2b0d53705c69df9b93255ca00a85bfb3a25d38a..e51658555ca007f0d9fd4a2b11eb312a2689e00e 100644
+--- a/frontend/src/domains/game/ingame/store/__tests__/ingameStore.test.js
++++ b/frontend/src/domains/game/ingame/store/__tests__/ingameStore.test.js
+@@ -339,3 +339,76 @@ test("applySessionSnapshot: dayVoteResolution/tribunal outcome이 서로 모순
+     }),
+   )
+ })
++
++// ---------------------------------------------------------------------------
++// applyDayVoteResolvedToPhase(TIE/ABSTAINED) — 새 NIGHT은 지난 밤의 nightTurnRole을
++// 이어받지 않는다
++// ---------------------------------------------------------------------------
++
++test("applyDayVoteResolvedToPhase: TIE/ABSTAINED로 NIGHT에 진입하면 지난 밤의 nightTurnRole을 null로 되돌린다", () => {
++  seedState({ phase: "DAY", dayIndex: 1, nightTurnRole: "WITCH_HUNTER" })
++
++  useInGameStore.getState().applyDayVoteResolvedToPhase("game-1", 1, { outcome: "TIE" })
++
++  const state = useInGameStore.getState().state
++  assert.equal(state.phase, "NIGHT")
++  assert.equal(state.nightTurnRole, null)
++})
++
++// ---------------------------------------------------------------------------
++// applyNightTurnChanged — night_turn_changed 방송 반영
++// ---------------------------------------------------------------------------
++
++test("applyNightTurnChanged: gameId/phase/dayIndex가 canonical과 일치하면 nightTurnRole을 갱신한다", () => {
++  seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "JOKER" })
++
++  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
++
++  assert.equal(useInGameStore.getState().state.nightTurnRole, "DOCTOR")
++})
++
++test("applyNightTurnChanged: nightTurnRole이 null이면(판정 준비 완료) null로 반영한다", () => {
++  seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "WITCH_HUNTER" })
++
++  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: null })
++
++  assert.equal(useInGameStore.getState().state.nightTurnRole, null)
++})
++
++test("applyNightTurnChanged: 다른 gameId의 방송은 무시되고 store가 전혀 변경되지 않는다", () => {
++  const before = seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "JOKER" })
++  const beforeSnapshot = useInGameStore.getState()
++
++  useInGameStore.getState().applyNightTurnChanged({ gameId: "other-game", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
++
++  assert.equal(useInGameStore.getState(), beforeSnapshot)
++  assert.equal(useInGameStore.getState().state.nightTurnRole, "JOKER")
++  assert.equal(before.nightTurnRole, "JOKER")
++})
++
++test("applyNightTurnChanged: 다른(stale) dayIndex의 방송은 무시된다", () => {
++  seedState({ phase: "NIGHT", dayIndex: 2, nightTurnRole: "JOKER" })
++  const beforeSnapshot = useInGameStore.getState()
++
++  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
++
++  assert.equal(useInGameStore.getState(), beforeSnapshot)
++})
++
++test("applyNightTurnChanged: 현재 phase가 NIGHT가 아니면(이미 DAY로 전이됨) 늦게 도착한 방송은 무시된다", () => {
++  seedState({ phase: "DAY", dayIndex: 2, nightTurnRole: null })
++  const beforeSnapshot = useInGameStore.getState()
++
++  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
++
++  assert.equal(useInGameStore.getState(), beforeSnapshot)
++})
++
++test("applyNightTurnChanged: 같은 값으로의 갱신은 참조를 그대로 보존하는 no-op이다", () => {
++  seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
++  const beforeSnapshot = useInGameStore.getState()
++
++  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
++
++  assert.equal(useInGameStore.getState(), beforeSnapshot)
++})
+diff --git a/frontend/src/domains/game/ingame/store/ingameStore.js b/frontend/src/domains/game/ingame/store/ingameStore.js
+index 447759a1ddf3f9aa8e3976d6801c384b3102f169..c8101fb06ede969c6c974deaab8b1915c859dff9 100644
+--- a/frontend/src/domains/game/ingame/store/ingameStore.js
++++ b/frontend/src/domains/game/ingame/store/ingameStore.js
+@@ -129,11 +129,31 @@ export const useInGameStore = create((set) => ({
+         return { state: { ...current.state, phase: "TRIBUNAL", tribunal: { defendantUuid } } }
+       }
+       if (outcome === "TIE" || outcome === "ABSTAINED") {
+-        return { state: { ...current.state, phase: "NIGHT" } }
++        // 새 NIGHT의 시작 턴은 지난 밤의 nightTurnRole을 이어받지 않는다 — null로 되돌려
++        // selectInGameNightTurnRole이 이 밤의 canonical 시작 턴(getInGameOpeningNightTurnRole)으로
++        // 다시 떨어지게 한다(서버가 첫 턴을 별도로 방송하지 않으므로, 남겨두면 지난 밤 마지막
++        // 역할이 이 밤에도 잘못 announceable할 수 있다).
++        return { state: { ...current.state, phase: "NIGHT", nightTurnRole: null } }
+       }
+       return current
+     }),
+ 
++  // night_turn_changed 방송을 반영한다. gameId/phase/dayIndex가 canonical과 일치할 때만
++  // nightTurnRole을 갱신한다 — stale하거나 다른 게임/낮의 방송은 참조를 그대로 보존한다(no-op).
++  applyNightTurnChanged: (payload) =>
++    set((current) => {
++      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
++      if (typeof payload.gameId !== "string" || payload.gameId.trim().length === 0) return current
++      if (!current.gameId || !current.state) return current
++      if (payload.gameId !== current.gameId) return current
++      if (current.state.phase !== "NIGHT" || payload.phase !== "NIGHT") return current
++      if (!Number.isInteger(payload.dayIndex) || payload.dayIndex !== current.state.dayIndex) return current
++      if (payload.nightTurnRole !== null && typeof payload.nightTurnRole !== "string") return current
++      if (current.state.nightTurnRole === payload.nightTurnRole) return current
++
++      return { state: { ...current.state, nightTurnRole: payload.nightTurnRole } }
++    }),
++
+   // tribunal_vote_resolved 방송을 반영한다. 검증·staleness 판단은 순수 함수
+   // applyTribunalResolvedPure에 전부 위임하고(store 참조 보존 no-op 포함), 여기서는 그 결과를
+   // set()에 그대로 전달하기만 한다.
+diff --git a/frontend/src/domains/game/ingame/utils/__tests__/computeNightActionSubmitPatch.test.js b/frontend/src/domains/game/ingame/utils/__tests__/computeNightActionSubmitPatch.test.js
+index 3bba3b4b4532788331756e5cc008be65663198e8..6888cca3465eb1e4af9ef31ae1c01584603d8a34 100644
+--- a/frontend/src/domains/game/ingame/utils/__tests__/computeNightActionSubmitPatch.test.js
++++ b/frontend/src/domains/game/ingame/utils/__tests__/computeNightActionSubmitPatch.test.js
+@@ -2,8 +2,8 @@ import test from "node:test"
+ import assert from "node:assert/strict"
+ import { computeNightActionSubmitPatch } from "../computeNightActionSubmitPatch.js"
+ 
+-test("{ok:true}면 {status:'idle', error:null}을 반환한다", () => {
+-  assert.deepEqual(computeNightActionSubmitPatch({ ok: true }), { status: "idle", error: null })
++test("{ok:true}면 {status:'submitted', error:null}을 반환한다", () => {
++  assert.deepEqual(computeNightActionSubmitPatch({ ok: true }), { status: "submitted", error: null })
+ })
+ 
+ test("{ok:false, message}면 그 message를 error로 담아 {status:'idle'}을 반환한다", () => {
+@@ -17,8 +17,8 @@ test("{ok:false}만 있고 message가 없으면 기본 에러 문구를 담는
+   assert.notEqual(result.error, null)
+ })
+ 
+-test("세 경우 모두 status는 항상 'idle'이다(재제출 가능 정책의 pure-level 증거)", () => {
+-  assert.equal(computeNightActionSubmitPatch({ ok: true }).status, "idle")
++test("성공은 'submitted'로 잠기고(중복 제출 방지) 실패는 재시도를 위해 'idle'로 남는다", () => {
++  assert.equal(computeNightActionSubmitPatch({ ok: true }).status, "submitted")
+   assert.equal(computeNightActionSubmitPatch({ ok: false, message: "X" }).status, "idle")
+   assert.equal(computeNightActionSubmitPatch({ ok: false }).status, "idle")
+ })
+diff --git a/frontend/src/domains/game/ingame/utils/buildInGameKillRevealQueueItems.js b/frontend/src/domains/game/ingame/utils/buildInGameKillRevealQueueItems.js
+index b553e1c11323799d7d7f8a7f196c28eb3164c8e0..b128d552e74d97adc93b2f4bc9349d1f0f99c5aa 100644
+--- a/frontend/src/domains/game/ingame/utils/buildInGameKillRevealQueueItems.js
++++ b/frontend/src/domains/game/ingame/utils/buildInGameKillRevealQueueItems.js
+@@ -16,8 +16,13 @@ import { normalizeInGameNightDeathReveals } from "./normalizeInGameNightDeathRev
+  *
+  * 같은 payload 안에 완전히 동일한 identity가 중복으로 들어 있으면 한 번만 남긴다.
+  * 유효하지 않은 입력(게임/계정 미확정, nightResult 형태 불일치)이면 빈 배열이다.
++ *
++ * canonicalPlayerIds(Set)를 넘기면 그 roster에 없는 victimUuid는 조용히 걸러진다 — 호출부가
++ * night_result_applied를 canonical store 경유 없이 직접 구독하는 경우(kill reveal 전용
++ * 표시-only 훅) 위조되거나 낡은 victimUuid가 화면에 새어 들어오지 않도록 하는 방어선이다.
++ * 넘기지 않으면(Set이 아니면) 필터링하지 않는다(기존 동작과 호환).
+  */
+-export function buildInGameKillRevealQueueItems({ gameId, authUuid, epoch, nightResult }) {
++export function buildInGameKillRevealQueueItems({ gameId, authUuid, epoch, nightResult, canonicalPlayerIds }) {
+   if (typeof gameId !== "string" || gameId.length === 0) return []
+   if (typeof authUuid !== "string" || authUuid.length === 0) return []
+   if (nightResult === null || typeof nightResult !== "object" || Array.isArray(nightResult)) return []
+@@ -26,9 +31,12 @@ export function buildInGameKillRevealQueueItems({ gameId, authUuid, epoch, night
+   const reveals = normalizeInGameNightDeathReveals(nightResult.deathReveals)
+   if (reveals.length === 0) return []
+ 
++  const rosterFilterActive = canonicalPlayerIds instanceof Set
++
+   const seen = new Set()
+   const items = []
+   for (const reveal of reveals) {
++    if (rosterFilterActive && !canonicalPlayerIds.has(reveal.victimUuid)) continue
+     const id = `${gameId}|${nightResult.dayIndex}|${reveal.victimUuid}|${reveal.source}|${authUuid}|${epoch}`
+     if (seen.has(id)) continue
+     seen.add(id)
+diff --git a/frontend/src/domains/game/ingame/utils/computeNightActionSubmitPatch.js b/frontend/src/domains/game/ingame/utils/computeNightActionSubmitPatch.js
+index ee2745e04a6565df7cccfdf07e9a9fd8a657df45..3da920a03a335e507a2024d403b390db51bd6445 100644
+--- a/frontend/src/domains/game/ingame/utils/computeNightActionSubmitPatch.js
++++ b/frontend/src/domains/game/ingame/utils/computeNightActionSubmitPatch.js
+@@ -1,10 +1,10 @@
+ /**
+  * 밤 행동 제출 ack 응답(또는 실패)이 도착했을 때 반영할 상태를 계산한다.
+- * role-reveal의 computeRoleRevealInvalidatePatch와 달리 성공/실패 어느 쪽이든 항상
+- * status:'idle'을 반환한다 — 재제출이 항상 허용되는 정책이라 role-reveal처럼 'acked'로
+- * 잠그지 않는다.
++ * 성공하면 status:'submitted'로 잠긴다 — 같은 역할 턴 안에서 조용한 중복 제출을 막기 위함이다
++ * (그 턴이 실제로 끝나면 useInGameNightActionSubmit이 canonical 턴 정체성 변화를 감지해
++ * 'idle'로 되돌린다). 실패하면 재시도할 수 있도록 항상 status:'idle'을 반환한다.
+  */
+ export function computeNightActionSubmitPatch(response) {
+-  if (response?.ok) return { status: "idle", error: null }
++  if (response?.ok) return { status: "submitted", error: null }
+   return { status: "idle", error: response?.message ?? "제출하지 못했습니다." }
+ }

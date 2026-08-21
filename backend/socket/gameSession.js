@@ -209,9 +209,27 @@ function respondNightAction(uuid, trustedGameId, callback, payload) {
 }
 
 /**
- * NIGHT 밤 행동 제출 요청을 처리합니다(Socket.IO acknowledgement 방식). acknowledge_role_reveal과
- * 달리 phase 전환을 일으키지 않으므로 브로드캐스트가 전혀 없습니다 — 제출자 본인에게만 ack를
- * 돌려줍니다.
+ * NIGHT 밤 행동 제출 요청을 처리합니다(Socket.IO acknowledgement 방식). JOKER→DOCTOR→GUARD→
+ * WITCH_HUNTER canonical 순차 진행의 유일한 production 진입점입니다 — ack는 항상 제출자
+ * 본인에게만 돌아가지만, 이 제출로 그 역할의 턴이 실제로 끝났다면(생존 eligible 배우 전원
+ * 제출·SKIP 포함) 그 뒤에 정확히 하나의 추가 효과가 일어납니다: 다음 역할이 남아있으면
+ * night_turn_changed를 참가자 전체에 정확히 한 번 방송하고, 더 넘길 역할이 없으면 기존
+ * authoritative 판정(handleResolveNight)을 그대로 재사용해 정확히 한 번 호출합니다(그 안에서
+ * night_actions_resolved/night_action_result/night_result_applied가 기존 계약대로 나갑니다).
+ * 같은 역할의 다른 배우가 아직 남아있는 제출·JOKER teammate 대상 no-op 제출은 턴이 바뀌지
+ * 않으므로 어떤 추가 방송도 만들지 않습니다.
+ *
+ * deps.io가 주어지지 않으면(예: 방송·자동 판정을 검증하지 않는 단위 테스트) ack 이후 아무 것도
+ * 하지 않고 끝납니다 — production 배선(registerGameHandlers)은 항상 io를 함께 넘깁니다.
+ * deps.checkNightTurnGate/deps.submitNightAction/deps.resolveNight/deps.resolveParticipantSockets를
+ * 각각 주입할 수 있습니다 — 기본값은 game-core의 checkNightTurnGate/submitNightAction, 이
+ * 파일의 handleResolveNight, resolveSessionParticipantSockets입니다.
+ *
+ * 턴 게이트(checkNightTurnGate)는 submitNightAction이 이미 검증하는 phase·판정 완료·
+ * eligibility·target은 다시 검사하지 않습니다 — 그 조건이 맞지 않는 요청은 게이트를 그대로
+ * 통과해 submitNightAction 자신의 기존 코드로 거부됩니다. 게이트만 추가로 막는 두 조건(사망한
+ * 배우·현재 턴이 아닌 역할)은 게이트를 거치지 않는 game-core 직접 호출부·기존 테스트에는 영향이
+ * 없습니다.
  *
  * 로그의 gameId는 client가 보낸 원본 문자열을 절대 쓰지 않습니다. game-core가 성공
  * ({ ok:true, gameId: session.id })을 반환한 경로에서만 그 canonical session.id를 로그
@@ -219,7 +237,13 @@ function respondNightAction(uuid, trustedGameId, callback, payload) {
  * 실패)는 gameId: undefined로 고정합니다 — client가 trim으로 검증은 통과시키면서 앞뒤에
  * 개행·공백을 두른 문자열을 보내도 그 원본이 로그에 실리지 않게 하기 위함입니다.
  */
-function handleSubmitNightAction(socket, uuid, payload, callback) {
+function handleSubmitNightAction(socket, uuid, payload, callback, deps = {}) {
+    const checkTurnGate = deps.checkNightTurnGate ?? gameSessionCore.checkNightTurnGate
+    const submitNightActionFn = deps.submitNightAction ?? gameSessionCore.submitNightAction
+    const resolveNightHandler = deps.resolveNight ?? handleResolveNight
+    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+    const io = deps.io
+
     if (typeof callback !== 'function') return
     if (!isCurrentSocketForUuid(uuid, socket)) {
         respondNightAction(uuid, undefined, callback, { ok: false, code: 'STALE_SOCKET', message: '요청을 처리할 수 없습니다.' })
@@ -239,9 +263,33 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
         return
     }
 
+    let gate
+    try {
+        gate = checkTurnGate(uuid, gameId)
+    } catch (err) {
+        console.error('[밤 행동 제출 처리 에러]', { code: 'UNEXPECTED_ERROR', uuid, gameId: undefined })
+        respondNightAction(uuid, undefined, callback, {
+            ok: false,
+            code: 'INTERNAL_ERROR',
+            message: '요청을 처리하지 못했습니다.',
+        })
+        return
+    }
+
+    if (!gate.ok) {
+        if (INTERNAL_ONLY_CODES.has(gate.code)) {
+            // registry 불일치는 클라이언트에 내부 상태를 노출하지 않고 일반 오류로만 응답한다.
+            console.error('[밤 행동 제출 registry 불일치]', { code: gate.code, uuid, gameId: undefined })
+            respondNightAction(uuid, undefined, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        respondNightAction(uuid, undefined, callback, { ok: false, code: gate.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
     let result
     try {
-        result = gameSessionCore.submitNightAction(uuid, gameId, targetId)
+        result = submitNightActionFn(uuid, gameId, targetId)
     } catch (err) {
         console.error('[밤 행동 제출 처리 에러]', { code: 'UNEXPECTED_ERROR', uuid, gameId: undefined })
         respondNightAction(uuid, undefined, callback, {
@@ -266,6 +314,39 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
     // 성공 — result.gameId는 game-core가 registry에서 조회한 canonical session.id다(client
     // 원본 payload.gameId가 아님). client에게 보내는 payload에는 포함하지 않는다.
     respondNightAction(uuid, result.gameId, callback, { ok: true })
+
+    if (!io) return
+
+    const nightTurnRoleAfter = gameSessionCore.computeCurrentNightTurnRole(gate.session)
+    if (nightTurnRoleAfter === gate.actorRole) return // 같은 역할의 다른 배우가 아직 남아있거나 no-op 제출이었다 — 턴 불변.
+
+    if (nightTurnRoleAfter === null) {
+        // 마지막 역할까지 전부 완료됐다 — 기존 authoritative 판정을 그대로 재사용해 정확히
+        // 한 번만 호출한다. 이 자동 호출 자체는 별도 ack가 필요 없으므로 callback은 no-op이다.
+        try {
+            resolveNightHandler(io, socket, uuid, { gameId: result.gameId }, () => {}, deps)
+        } catch (err) {
+            console.error('[밤 행동 제출 오류]', { code: 'AUTO_RESOLVE_ERROR', uuid, gameId: result.gameId })
+        }
+        return
+    }
+
+    // 다음 역할로 실제로 넘어갔다 — 공개 캐노니컬 턴 payload를 참가자 전체에게 정확히 한 번 방송한다.
+    let recipients
+    try {
+        recipients = resolveParticipantSockets(io, gate.session)
+    } catch (err) {
+        console.error('[밤 행동 제출 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: result.gameId })
+        return
+    }
+    const turnPayload = gameSessionCore.buildNightTurnChangedPayload(gate.session)
+    for (const recipientSocket of recipients) {
+        try {
+            recipientSocket.emit('night_turn_changed', turnPayload)
+        } catch (err) {
+            console.error('[밤 행동 제출 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: result.gameId })
+        }
+    }
 }
 
 /**
@@ -1340,7 +1421,7 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
 /** ROLE_REVEAL 확인·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
 function registerGameHandlers(io, socket, uuid) {
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
-    socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(socket, uuid, payload, callback))
+    socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(socket, uuid, payload, callback, { io }))
     socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
     socket.on('submit_game_chat_message', (payload, callback) => handleSubmitGameChatMessage(io, socket, uuid, payload, callback))
     socket.on('resolve_night', (payload, callback) => handleResolveNight(io, socket, uuid, payload, callback))

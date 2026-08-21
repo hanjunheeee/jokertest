@@ -1,0 +1,30 @@
+﻿OLVED로 거부해버린다. session.dayVoteResolution은
+ * 어느 outcome이든 채워진 채로 남으므로(TIE/ABSTAINED도 null로 되돌리지 않음), 이후 phase가
+ * NIGHT로 바뀌어도 prepareDayVoteResolution의 alreadyResolved 체크가 이 dayIndex의 재제출·재판정을
+ * 계속 잠근다.
+ */
+function commitDayVoteResolution(session, resolution) {
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    session.dayVoteResolution = resolution
+    if (resolution.outcome === 'TRIBUNAL') {
+        session.phase = 'TRIBUNAL'
+        session.tribunal = {
+            candidateId: resolution.tribunalTargetUuid,
+            dayIndex: session.dayIndex,
+            defendantUuid: resolution.tribunalTargetUuid,
+            votes: new Map(),
+        }
+    } else {
+        session.tribunal = null
+        session.phase = 'NIGHT'
+        session.nightActions = new Map()
+        session.nightResolution = null
+    }
+    return { ok: true }
+}
+
+/**
+ * DAY 투표 판정 공개 payload. voterUuid→targetUuid 매핑, role, team, socketId, 내부 Map/Set은
+ * 어디에도 포함하지 않습

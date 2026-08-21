@@ -1,0 +1,37 @@
+﻿function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) {
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, alive })),
+        victimUuid,
+        deathReveals: (Array.isArray(deathReveals) ? deathReveals : []).map(({ victimUuid: v, source }) => ({
+            victimUuid: v,
+            source,
+        })),
+    }
+}
+
+/**
+ * DAY 투표/기권 제출을 처리합니다. 인증된 uuid와 클라이언트가 알고 있는 gameId,
+ * targetId(참가자 uuid 또는 명시적 기권을 뜻하는 null)만 입력으로 받습니다. 반환값은
+ * 실패 시 { ok:false, code }, 성공 시 { ok:true }입니다.
+ *
+ * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. gameId 형태 → 2. targetId 형태 → 3. uuid의 활성 세션 존재·gameId 일치
+ *   → 4. registry 일관성(session 실존, uuid가 참가자) → 5. DAY phase → 6. actor 생존
+ *   → 7. targetId가 문자열이면 참가자로 존재하는지 → 8. 대상 생존 → 9. 자기 자신 대상 거부
+ *   → 10. session.dayVotes에 저장.
+ *
+ * 모든 실패 경로는 session.dayVotes를 절대 건드리지 않습니다 — submitNightAction과 동일한
+ * 원칙(game-core는 소켓 계층의 가드를 신뢰하지 않고 이 함수 안에서 독립적으로 전부
+ * 재검증합니다). 재제출은 기존 값을 최신 값으로 덮어씁니다.
+ */
+function submitDayVote(uuid, gameId, targetId) {
+    if (typeof gameId !== 'string' || gameId.length === 0) return { ok: false, code: 'INVALID_GAME_ID' }
+    if (targetId !== null && (typeof targetId !== 'string' || targetId.length === 0)) {
+        return { ok: false, code: 'INVALID_TARGET' }
+    }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_

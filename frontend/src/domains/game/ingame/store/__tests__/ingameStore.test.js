@@ -339,3 +339,76 @@ test("applySessionSnapshot: dayVoteResolution/tribunal outcome이 서로 모순�
     }),
   )
 })
+
+// ---------------------------------------------------------------------------
+// applyDayVoteResolvedToPhase(TIE/ABSTAINED) — 새 NIGHT은 지난 밤의 nightTurnRole을
+// 이어받지 않는다
+// ---------------------------------------------------------------------------
+
+test("applyDayVoteResolvedToPhase: TIE/ABSTAINED로 NIGHT에 진입하면 지난 밤의 nightTurnRole을 null로 되돌린다", () => {
+  seedState({ phase: "DAY", dayIndex: 1, nightTurnRole: "WITCH_HUNTER" })
+
+  useInGameStore.getState().applyDayVoteResolvedToPhase("game-1", 1, { outcome: "TIE" })
+
+  const state = useInGameStore.getState().state
+  assert.equal(state.phase, "NIGHT")
+  assert.equal(state.nightTurnRole, null)
+})
+
+// ---------------------------------------------------------------------------
+// applyNightTurnChanged — night_turn_changed 방송 반영
+// ---------------------------------------------------------------------------
+
+test("applyNightTurnChanged: gameId/phase/dayIndex가 canonical과 일치하면 nightTurnRole을 갱신한다", () => {
+  seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "JOKER" })
+
+  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
+
+  assert.equal(useInGameStore.getState().state.nightTurnRole, "DOCTOR")
+})
+
+test("applyNightTurnChanged: nightTurnRole이 null이면(판정 준비 완료) null로 반영한다", () => {
+  seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "WITCH_HUNTER" })
+
+  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: null })
+
+  assert.equal(useInGameStore.getState().state.nightTurnRole, null)
+})
+
+test("applyNightTurnChanged: 다른 gameId의 방송은 무시되고 store가 전혀 변경되지 않는다", () => {
+  const before = seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "JOKER" })
+  const beforeSnapshot = useInGameStore.getState()
+
+  useInGameStore.getState().applyNightTurnChanged({ gameId: "other-game", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
+
+  assert.equal(useInGameStore.getState(), beforeSnapshot)
+  assert.equal(useInGameStore.getState().state.nightTurnRole, "JOKER")
+  assert.equal(before.nightTurnRole, "JOKER")
+})
+
+test("applyNightTurnChanged: 다른(stale) dayIndex의 방송은 무시된다", () => {
+  seedState({ phase: "NIGHT", dayIndex: 2, nightTurnRole: "JOKER" })
+  const beforeSnapshot = useInGameStore.getState()
+
+  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
+
+  assert.equal(useInGameStore.getState(), beforeSnapshot)
+})
+
+test("applyNightTurnChanged: 현재 phase가 NIGHT가 아니면(이미 DAY로 전이됨) 늦게 도착한 방송은 무시된다", () => {
+  seedState({ phase: "DAY", dayIndex: 2, nightTurnRole: null })
+  const beforeSnapshot = useInGameStore.getState()
+
+  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
+
+  assert.equal(useInGameStore.getState(), beforeSnapshot)
+})
+
+test("applyNightTurnChanged: 같은 값으로의 갱신은 참조를 그대로 보존하는 no-op이다", () => {
+  seedState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
+  const beforeSnapshot = useInGameStore.getState()
+
+  useInGameStore.getState().applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
+
+  assert.equal(useInGameStore.getState(), beforeSnapshot)
+})

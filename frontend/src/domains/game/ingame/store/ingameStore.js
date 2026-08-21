@@ -129,9 +129,29 @@ export const useInGameStore = create((set) => ({
         return { state: { ...current.state, phase: "TRIBUNAL", tribunal: { defendantUuid } } }
       }
       if (outcome === "TIE" || outcome === "ABSTAINED") {
-        return { state: { ...current.state, phase: "NIGHT" } }
+        // 새 NIGHT의 시작 턴은 지난 밤의 nightTurnRole을 이어받지 않는다 — null로 되돌려
+        // selectInGameNightTurnRole이 이 밤의 canonical 시작 턴(getInGameOpeningNightTurnRole)으로
+        // 다시 떨어지게 한다(서버가 첫 턴을 별도로 방송하지 않으므로, 남겨두면 지난 밤 마지막
+        // 역할이 이 밤에도 잘못 announceable할 수 있다).
+        return { state: { ...current.state, phase: "NIGHT", nightTurnRole: null } }
       }
       return current
+    }),
+
+  // night_turn_changed 방송을 반영한다. gameId/phase/dayIndex가 canonical과 일치할 때만
+  // nightTurnRole을 갱신한다 — stale하거나 다른 게임/낮의 방송은 참조를 그대로 보존한다(no-op).
+  applyNightTurnChanged: (payload) =>
+    set((current) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
+      if (typeof payload.gameId !== "string" || payload.gameId.trim().length === 0) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (current.state.phase !== "NIGHT" || payload.phase !== "NIGHT") return current
+      if (!Number.isInteger(payload.dayIndex) || payload.dayIndex !== current.state.dayIndex) return current
+      if (payload.nightTurnRole !== null && typeof payload.nightTurnRole !== "string") return current
+      if (current.state.nightTurnRole === payload.nightTurnRole) return current
+
+      return { state: { ...current.state, nightTurnRole: payload.nightTurnRole } }
     }),
 
   // tribunal_vote_resolved 방송을 반영한다. 검증·staleness 판단은 순수 함수

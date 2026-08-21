@@ -1,0 +1,28 @@
+﻿function computeDoctorProtectionSet(session) {
+    const protectedIds = new Set()
+    for (const player of session.players.values()) {
+        if (player.role !== 'DOCTOR') continue
+        const target = session.nightActions.get(player.uuid)
+        if (target === undefined || target === null) continue
+        protectedIds.add(target)
+    }
+    return protectedIds
+}
+
+// 해당 GUARD 본인의 non-null target에 대한 조사 결과({targetId, team})를 계산한다.
+// SKIP(null)이거나 미제출(entry 없음)이면 null — 개인 결과 이벤트를 만들지 않는다는 계약과
+// 대응한다.
+function computeGuardInvestigationResult(session, actorUuid) {
+    const targetId = session.nightActions.get(actorUuid)
+    if (targetId === undefined || targetId === null) return null
+    const targetPlayer = session.players.get(targetId)
+    return { targetId, team: ROLE_TEAMS[targetPlayer.role] }
+}
+
+// 해당 WITCH_HUNTER 본인의 non-null target에 대한 확인 결과({targetId, role})를 계산한다.
+// computeGuardInvestigationResult와 동일하게 SKIP/미제출은 null이다.
+function computeWitchHunterConfirmationResult(session, actorUuid) {
+    const targetId = session.nightActions.get(actorUuid)
+    if (targetId === undefined || targetId === null) return null
+    const targetPlayer = session.players.get(targetId)
+    ret

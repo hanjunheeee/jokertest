@@ -845,6 +845,93 @@ function submitNightAction(uuid, gameId, targetId) {
     return { ok: true, gameId: session.id }
 }
 
+// 순차 NIGHT 역할 진행의 canonical 순서. CITIZEN은 밤 행동이 없어 이 순서에 포함되지 않는다.
+const NIGHT_TURN_ROLE_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+// 특정 역할이 "이번 밤 실제로 제출해야 하는" 생존 참가자 uuid 목록(순수 계산). 그 밤에 행동
+// 자체가 불가능한 역할(day0 WITCH_HUNTER 등)은 항상 빈 배열이다 — computeCurrentNightTurnRole이
+// zero-actor와 동일하게 건너뛴다.
+function getLivingNightTurnActorUuids(session, role) {
+    if (!isEligibleForNightAction(role, session.dayIndex)) return []
+    const uuids = []
+    for (const player of session.players.values()) {
+        if (player.role === role && player.alive) uuids.push(player.uuid)
+    }
+    return uuids
+}
+
+/**
+ * 지금 canonical하게 어느 역할의 NIGHT 턴인지를 session.nightActions·session.players에서만 매번
+ * 다시 계산한다(순수 함수 — 저장된 커서·별도 필드가 전혀 없다. 그래서 이 값이 실제 제출 상태와
+ * 어긋난 채로 남을 수 없다). JOKER → DOCTOR → GUARD → WITCH_HUNTER 순서로 살피며, 생존 eligible
+ * 배우가 하나도 없는 역할은 건너뛰고(zero-actor auto-skip), 생존 eligible 배우 전원이 이미
+ * 제출(SKIP 포함)한 역할도 건너뛴다. 넘길 역할이 하나도 남지 않으면(전부 건너뛰었거나 완료됨)
+ * null — "이 밤의 판정 준비가 끝났다"는 뜻이다.
+ */
+function computeCurrentNightTurnRole(session) {
+    for (const role of NIGHT_TURN_ROLE_ORDER) {
+        const actorUuids = getLivingNightTurnActorUuids(session, role)
+        if (actorUuids.length === 0) continue
+        if (actorUuids.every((actorUuid) => session.nightActions.has(actorUuid))) continue
+        return role
+    }
+    return null
+}
+
+/**
+ * NIGHT 순차 진행의 production 전용 게이트입니다(어떤 상태도 바꾸지 않는 순수 함수). 소켓
+ * 계층이 submitNightAction을 호출하기 전에 통과해야 하는 사전 검사이며, submitNightAction
+ * 자신이 이미 독립적으로 재검증하는 phase·판정 완료·eligibility·target은 여기서 다시 검사하지
+ * 않습니다(단일 출처 유지 — 그 조건이 맞지 않는 요청은 이 게이트를 그대로 통과시키고
+ * submitNightAction이 그 조건에 맞는 기존 코드로 거부하게 둡니다).
+ *
+ * 이 게이트만 추가로 막는 두 조건(생존·현재 턴)은 이번 순차 NIGHT 진행 계약에서만 의미가
+ * 있습니다 — submitNightAction을 직접 호출하는 기존 호출부·테스트는 이 게이트를 거치지 않으므로
+ * 전혀 영향을 받지 않습니다.
+ *
+ * 성공 시 { ok:true, session, actorRole }을 반환합니다 — actorRole은 호출 시점의 actor.role이며,
+ * 호출자가 제출 이후 computeCurrentNightTurnRole(session)과 비교해 턴이 실제로 넘어갔는지
+ * 판별하는 유일한 근거입니다.
+ */
+function checkNightTurnGate(uuid, gameId) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    if (
+        session.phase === 'NIGHT' &&
+        session.nightResolution === null &&
+        isEligibleForNightAction(actor.role, session.dayIndex)
+    ) {
+        if (actor.alive !== true) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
+        if (actor.role !== computeCurrentNightTurnRole(session)) return { ok: false, code: 'NIGHT_TURN_ROLE_MISMATCH' }
+    }
+
+    return { ok: true, session, actorRole: actor.role }
+}
+
+/**
+ * NIGHT 순차 진행 공개 턴 payload. 비밀(참가자 uuid 목록·target map·역할 목록·개인 결과)은
+ * 전혀 포함하지 않습니다 — 지금 어느 역할 턴인지(nightTurnRole, null이면 이 밤의 판정 준비
+ * 완료)만 담습니다.
+ */
+function buildNightTurnChangedPayload(session) {
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        nightTurnRole: computeCurrentNightTurnRole(session),
+    }
+}
+
 /**
  * NIGHT 행동 판정을 준비합니다(어떤 상태도 바꾸지 않는 순수 함수) — prepareJokerChatMessage와
  * 동일한 prepare 경계입니다. 인증된 uuid와 클라이언트가 알고 있는 gameId만 입력으로 받습니다.
@@ -2077,6 +2164,9 @@ module.exports = {
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
     submitNightAction,
+    checkNightTurnGate,
+    computeCurrentNightTurnRole,
+    buildNightTurnChangedPayload,
     submitDayVote,
     prepareJokerChatMessage,
     commitJokerChatMessage,
@@ -2129,6 +2219,8 @@ module.exports = {
         resolveGameChatChannel,
         getChatRateLimitMap,
         getEligibleNightActorUuids,
+        NIGHT_TURN_ROLE_ORDER,
+        getLivingNightTurnActorUuids,
         tallyJokerAssassinationTarget,
         computeDoctorProtectionSet,
         computeGuardInvestigationResult,

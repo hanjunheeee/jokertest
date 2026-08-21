@@ -11,8 +11,11 @@ export const INGAME_KILL_ANIMATION_VIDEO_URL = "/assets/ingame/kill-animation.mp
 /** 닉네임을 찾지 못했을 때 쓰는 대체 표기 — uuid는 절대 화면에 내보내지 않는다. */
 export const INGAME_KILL_REVEAL_UNKNOWN_NICKNAME = "한 플레이어"
 
-/** 넘기기 버튼 문구 */
+/** 넘기기 버튼 문구 — 재생 오류·워치독 타임아웃처럼 영상이 멈췄을 때 계속 진행하는 버튼이다. */
 export const INGAME_KILL_REVEAL_SKIP_LABEL = "건너뛰기"
+
+/** 다시 재생 버튼 문구 — play() 호출이 reject됐을 때만 노출된다(재생 자체를 다시 시도). */
+export const INGAME_KILL_REVEAL_RETRY_LABEL = "다시 재생"
 
 /** 영상 재생/오류와 무관하게 화면이 영원히 막히지 않도록 하는 상한 시간(ms) */
 export const INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS = 12000

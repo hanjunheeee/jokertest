@@ -9,6 +9,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
 import { buildNightActionTargets } from "../utils/buildNightActionTargets.js"
 import { buildDayVoteTargets, isSessionPlayerAlive } from "../utils/buildDayVoteTargets.js"
+import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
 import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
 import { useInGameDayVoteSubmit } from "./useInGameDayVoteSubmit.js"
 import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
@@ -143,6 +144,11 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const nightActionLabel = getInGameNightActionLabel(myRole, dayIndex)
   const hasTarget = Boolean(selectedNightTargetId)
 
+  // 지금 canonical하게 어느 역할의 NIGHT 턴인지는 오직 이 selector로만 읽는다(서버가 명시하면
+  // 그 값, 아니면 이 밤의 시작 턴) — 프런트에는 이 값을 앞으로 밀 수 있는 별도 커서가 없다.
+  const nightTurnRole = selectInGameNightTurnRole(gameState ?? null)
+  const isNightActionTurn = gameState?.phase === "NIGHT" && typeof myRole === "string" && myRole === nightTurnRole
+
   const nightActionSubmit = useInGameNightActionSubmit()
   const dayVoteSubmit = useInGameDayVoteSubmit()
   const resolveNightRequest = useInGameResolveNight()
@@ -232,6 +238,17 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const nightActionsLocked =
     interactionBlocked || isGameEnded || resolveNightRequest.status !== "idle" || gameState?.phase !== "NIGHT"
 
+  // NIGHT 행동 확정/건너뛰기 버튼 자체의 활성화 조건입니다(요구사항: 연결돼 있고 생존한 로컬
+  // 참가자이면서 그 역할이 canonical 현재 NIGHT 턴과 같을 때만 활성화). nightActionsLocked(위,
+  // phase·게임 종료·판정 진행 상태만 본다)와 별개로 결합해, 자기 턴이 아니면 그 자체로도
+  // 잠긴다 — 서버가 이미 독립적으로 재검증하지만(NIGHT_TURN_ROLE_MISMATCH), 클라이언트가 애초에
+  // 자기 턴이 아닌 제출 시도를 보여주지 않는다.
+  const nightActionControlsEnabled =
+    !nightActionsLocked &&
+    isNightActionTurn &&
+    isSessionPlayerAlive(localSessionPlayer) &&
+    Boolean(getSocket()?.connected)
+
   const submitDayVote = () => {
     if (!selectedDayVoteTargetId) return
     dayVoteSubmit.submitDayVote(selectedDayVoteTargetId)
@@ -245,7 +262,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     if (dayVoteAckingRef.current || dayVoteResolveStatus !== "idle") return
     const requestSocket = getSocket()
     if (!requestSocket || !requestSocket.connected) {
-      setDayVoteResolveError("?쒕쾭 ?곌껐???뺤씤?????놁뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.")
+      setDayVoteResolveError("서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.")
       return
     }
     if (!gameId || !Number.isInteger(dayIndex)) return
@@ -279,7 +296,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
       .catch(() => {
         if (!isStale()) {
           setDayVoteResolveStatus("idle")
-          setDayVoteResolveError("?붿껌???묐떟?섏? ?딆뒿?덈떎. ?ㅼ떆 ?쒕룄?댁＜?몄슂.")
+          setDayVoteResolveError("요청이 응답하지 않습니다. 다시 시도해주세요.")
         }
       })
       .finally(() => {
@@ -383,6 +400,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     submitNightAction,
     skipNightAction,
     nightActionsLocked,
+    nightActionControlsEnabled,
     resolveNight: resolveNightRequest.resolveNight,
     resolveNightStatus: resolveNightRequest.status,
     resolveNightError: resolveNightRequest.error,

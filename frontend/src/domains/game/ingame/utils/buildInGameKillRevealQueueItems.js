@@ -16,8 +16,13 @@ import { normalizeInGameNightDeathReveals } from "./normalizeInGameNightDeathRev
  *
  * 같은 payload 안에 완전히 동일한 identity가 중복으로 들어 있으면 한 번만 남긴다.
  * 유효하지 않은 입력(게임/계정 미확정, nightResult 형태 불일치)이면 빈 배열이다.
+ *
+ * canonicalPlayerIds(Set)를 넘기면 그 roster에 없는 victimUuid는 조용히 걸러진다 — 호출부가
+ * night_result_applied를 canonical store 경유 없이 직접 구독하는 경우(kill reveal 전용
+ * 표시-only 훅) 위조되거나 낡은 victimUuid가 화면에 새어 들어오지 않도록 하는 방어선이다.
+ * 넘기지 않으면(Set이 아니면) 필터링하지 않는다(기존 동작과 호환).
  */
-export function buildInGameKillRevealQueueItems({ gameId, authUuid, epoch, nightResult }) {
+export function buildInGameKillRevealQueueItems({ gameId, authUuid, epoch, nightResult, canonicalPlayerIds }) {
   if (typeof gameId !== "string" || gameId.length === 0) return []
   if (typeof authUuid !== "string" || authUuid.length === 0) return []
   if (nightResult === null || typeof nightResult !== "object" || Array.isArray(nightResult)) return []
@@ -26,9 +31,12 @@ export function buildInGameKillRevealQueueItems({ gameId, authUuid, epoch, night
   const reveals = normalizeInGameNightDeathReveals(nightResult.deathReveals)
   if (reveals.length === 0) return []
 
+  const rosterFilterActive = canonicalPlayerIds instanceof Set
+
   const seen = new Set()
   const items = []
   for (const reveal of reveals) {
+    if (rosterFilterActive && !canonicalPlayerIds.has(reveal.victimUuid)) continue
     const id = `${gameId}|${nightResult.dayIndex}|${reveal.victimUuid}|${reveal.source}|${authUuid}|${epoch}`
     if (seen.has(id)) continue
     seen.add(id)
