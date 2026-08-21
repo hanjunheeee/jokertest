@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260822-joker-night-private-result",
+  "status": "pending",
+  "branch": "slice/20260822-joker-night-private-result",
+  "base": "windows-handoff-20260808",
+  "base_commit": "bfb8e132a4ff78f04f0afbe7ec8cc8bd0a50d3a2",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-22T05:09:55+09:00"
+}
