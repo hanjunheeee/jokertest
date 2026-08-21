@@ -1,6 +1,6 @@
 {
   "slice_id": "20260822-joker-night-private-result",
-  "status": "running:plan",
+  "status": "running:implement",
   "branch": "slice/20260822-joker-night-private-result",
   "base": "windows-handoff-20260808",
   "base_commit": "bfb8e132a4ff78f04f0afbe7ec8cc8bd0a50d3a2",
@@ -23,11 +23,15 @@
   "stages": {
     "plan": {
       "status": "done",
+      "approval": "approved",
       "run_id": "20260822-051005-joker-night-private-result-plan",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "3af2a228641e3d7d976c9d98bbffc4375582fb7f"
     },
     "implement": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260822-054009-joker-night-private-result-implement-2",
+      "attempts": 2
     },
     "test": {
       "status": "pending"
@@ -49,7 +53,39 @@
         "peak_context": 117885
       },
       "cost_usd": 2.735233
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260822-052420-joker-night-private-result-implement",
+      "status": "failed",
+      "turns": 81,
+      "tokens": {
+        "input": 151,
+        "cache_creation": 160229,
+        "cache_read": 9957561,
+        "output": 54412,
+        "billed_input": 10117941,
+        "peak_context": 181115
+      },
+      "cost_usd": 7.942125500000001
+    },
+    {
+      "stage": "implement",
+      "attempt": 2,
+      "run_id": "20260822-054009-joker-night-private-result-implement-2",
+      "status": "completed",
+      "turns": 40,
+      "tokens": {
+        "input": 54,
+        "cache_creation": 76056,
+        "cache_read": 2127001,
+        "output": 12005,
+        "billed_input": 2203111,
+        "peak_context": 96942
+      },
+      "cost_usd": 2.1244555
     }
   ],
-  "updated_at": "2026-08-22T05:16:33+09:00"
+  "updated_at": "2026-08-22T05:43:39+09:00"
 }

@@ -247,3 +247,6 @@ npm run build     # vite build PASS
 | `night_action_result`가 `night_result_applied`보다 늦게 도착(재연결 중 순서 뒤바뀜 등) | 단조 규칙에 걸려 결과가 버려짐 | 요구 5가 기존 규칙 유지를 명시했으므로 그대로 둔다. 단일 소켓 emit 순서는 backend에서 보장됨(0절) — 동작상 문제 없음. 이 트레이드오프를 `handleResult` 주석에 남긴다 |
 | 패널의 디버그 JSON 제거로 "결과가 안 보인다"고 오인 | — | 오버레이가 정식 표시 경로이므로 의도된 제거. 커밋 메시지/보고에 명시 |
 | 재접속(스냅샷)으로 그 밤에 복원될 때 개인 결과가 사라짐 | GUARD가 조사 결과를 못 봄 | 서버가 개인 결과를 재전송하지 않으므로 프론트만으로는 복구 불가. NIGHT 하이드레이션은 재진입으로 간주해 clear한다(요구 1(b)와 일관). 알려진 한계로 보고 |
+
+
+approved: InGameNightPrivateResultOverlay는 .jsx가 아니라 기존 관례대로 .js + createElement로 작성하고, raw source 검사 대신 InGameKillRevealOverlay.test.js와 같은 방식의 DOM 단위 테스트를 추가한다. 나머지는 계획대로.

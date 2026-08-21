@@ -404,6 +404,5 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     resolveNight: resolveNightRequest.resolveNight,
     resolveNightStatus: resolveNightRequest.status,
     resolveNightError: resolveNightRequest.error,
-    nightActionResult: resolveNightRequest.nightActionResult,
   }
 }

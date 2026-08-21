@@ -3,6 +3,27 @@ import { create } from "zustand"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
 import { applySessionSnapshotPure } from "./applySessionSnapshot.js"
 
+/** night_action_result가 실어 나르는 개인 결과의 종류 — 이 둘 외에는 store에 들이지 않는다. */
+const NIGHT_PRIVATE_RESULT_ACTION_TYPES = new Set(["INVESTIGATE", "CONFIRM"])
+
+/**
+ * state 패치가 "NIGHT로 새로 들어가는" 전이일 때만 개인 조사 결과를 함께 비운다.
+ *
+ * 이미 NIGHT인 상태의 갱신(night_turn_changed 등)은 대상이 아니다 — 그 밤에 방금 받은 결과를
+ * 지워버리면 정작 화면에 뜨기 전에 사라진다(이 기능이 고치려는 바로 그 버그다).
+ *
+ * @param {object} current set() 콜백이 받은 현재 store
+ * @param {object} patch 해당 액션이 반영하려는 패치(참조 보존 no-op이면 current 그 자체)
+ * @flow no-op·NIGHT가 아닌 패치·이미 NIGHT였던 경우·이미 비어 있는 경우는 패치를 그대로 통과시킨다.
+ */
+function withNightReentryClear(current, patch) {
+  if (patch === current) return current
+  if (patch.state?.phase !== "NIGHT") return patch
+  if (current.state?.phase === "NIGHT") return patch
+  if (current.nightPrivateResult === null) return patch
+  return { ...patch, nightPrivateResult: null }
+}
+
 /**
  * 서버 인게임 상태를 보관하는 클라이언트 store.
  * 도메인 판정은 서버 game-core가 담당하고, 프론트는 동기화된 상태를 렌더링만 합니다.
@@ -24,6 +45,13 @@ export const useInGameStore = create((set) => ({
   // 하이드레이션이 거부되면(참조 보존 no-op) 이 값도 오르지 않는다.
   snapshotSeq: 0,
 
+  // GUARD/WITCH_HUNTER 본인에게만 오는 1회성 개인 조사 결과(night_action_result).
+  // state(서버 세션 미러) 안이 아니라 최상위에 둔다 — applySessionSnapshotPure가 state를 통째로
+  // 새로 만들기 때문에 그 안에 두면 재접속 하이드레이션에서 조용히 사라진다. 이 값은
+  // night_result_applied(DAY 전이)로는 절대 지워지지 않는다 — 지워지는 곳은 정확히 세 곳뿐이다:
+  // 오버레이 확인(clearNightPrivateResult) · NIGHT 재진입(withNightReentryClear) · gameId 변경.
+  nightPrivateResult: null,
+
   // 백엔드 buildGameStartedPayload는 alive를 보내지 않으므로(계약 불변) 스토어가 정규화
   // 시점에 기본값을 채운다 — 신규 세션은 항상 전원 생존 상태로 시작한다는 game-core의
   // assertValidSessionForCommit 불변조건과 대응한다.
@@ -34,7 +62,31 @@ export const useInGameStore = create((set) => ({
         ? { ...state, players: Array.isArray(state.players) ? state.players.map((p) => ({ ...p, alive: true })) : state.players }
         : null,
       error: null,
+      // 새 세션이므로 이전 게임의 개인 조사 결과는 넘어오지 않는다(요구 1의 clear 시점 (c)).
+      nightPrivateResult: null,
     }),
+
+  // night_action_result(본인에게만 오는 개인 조사 결과)를 보관한다. 호출부(useInGameResolveNight)가
+  // 이미 gameId·dayIndex 단조성을 검사하지만, 다른 액션들과 같은 이유로 여기서도 독립적으로
+  // 형태를 재검증한다 — 어긋나면 current를 그대로 돌려 완전한 no-op으로 만든다.
+  // payload는 얕게 복사해 담는다(호출부가 이후 같은 객체를 손대도 store가 흔들리지 않게).
+  setNightPrivateResult: (payload) =>
+    set((current) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
+      if (typeof payload.gameId !== "string" || payload.gameId.trim().length === 0) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (!Number.isInteger(payload.dayIndex)) return current
+      if (!NIGHT_PRIVATE_RESULT_ACTION_TYPES.has(payload.actionType)) return current
+      if (typeof payload.targetId !== "string" || payload.targetId.length === 0) return current
+
+      return { nightPrivateResult: { ...payload } }
+    }),
+
+  // 개인 조사 결과 오버레이의 확인 버튼이 부르는 유일한 소비 경로다(요구 1의 clear 시점 (a)).
+  // 이미 비어 있으면 참조를 보존해 no-op으로 만든다.
+  clearNightPrivateResult: () =>
+    set((current) => (current.nightPrivateResult === null ? current : { nightPrivateResult: null })),
 
   // game_phase_changed 방송을 반영한다. payload는 신뢰하지 않는 외부 입력이므로 구조분해
   // 전에 형태부터 검증한다 — ROLE_REVEAL에서 나가는 canonical 전이와 정확히 일치할 때만
@@ -57,13 +109,18 @@ export const useInGameStore = create((set) => ({
       const isLegacyFirstNight = payload.phase === "NIGHT" && payload.dayIndex === 0
       if (!isFirstDay && !isLegacyFirstNight) return current
 
-      return { state: { ...current.state, phase: payload.phase, dayIndex: payload.dayIndex } }
+      return withNightReentryClear(current, {
+        state: { ...current.state, phase: payload.phase, dayIndex: payload.dayIndex },
+      })
     }),
 
   // night_result_applied 방송을 반영한다. 호출부(useGameSessionSocketEvents)가 이미
   // parseNightResultAppliedPayload로 검증한 값만 넘기지만, applyPhaseChanged와 동일한 이유로
   // 여기서도 독립적으로 gameId/dayIndex 단조성을 재확인한다 — phase/dayIndex/players[].alive를
   // 하나의 set()으로 함께 반영해 중간 렌더에서 상태가 어긋나지 않게 한다.
+  //
+  // 이 액션은 nightPrivateResult를 절대 건드리지 않는다 — 그 밤의 개인 조사 결과는 DAY로
+  // 넘어온 뒤에야 오버레이로 보여줄 틈이 생기므로, 여기서 지우면 영영 화면에 뜨지 못한다.
   applyNightResultAppliedPayload: (payload) =>
     set((current) => {
       if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
@@ -133,7 +190,9 @@ export const useInGameStore = create((set) => ({
         // selectInGameNightTurnRole이 이 밤의 canonical 시작 턴(getInGameOpeningNightTurnRole)으로
         // 다시 떨어지게 한다(서버가 첫 턴을 별도로 방송하지 않으므로, 남겨두면 지난 밤 마지막
         // 역할이 이 밤에도 잘못 announceable할 수 있다).
-        return { state: { ...current.state, phase: "NIGHT", nightTurnRole: null } }
+        return withNightReentryClear(current, {
+          state: { ...current.state, phase: "NIGHT", nightTurnRole: null },
+        })
       }
       return current
     }),
@@ -157,7 +216,9 @@ export const useInGameStore = create((set) => ({
   // tribunal_vote_resolved 방송을 반영한다. 검증·staleness 판단은 순수 함수
   // applyTribunalResolvedPure에 전부 위임하고(store 참조 보존 no-op 포함), 여기서는 그 결과를
   // set()에 그대로 전달하기만 한다.
-  applyTribunalResolved: (payload) => set((current) => applyTribunalResolvedPure(current, payload)),
+  // 이 판정은 TRIBUNAL→NIGHT 전이를 만들 수 있으므로 NIGHT 재진입 clear를 함께 통과시킨다.
+  applyTribunalResolved: (payload) =>
+    set((current) => withNightReentryClear(current, applyTribunalResolvedPure(current, payload))),
 
   // get_session_snapshot 재접속 응답을 반영한다. 검증·병합은 순수 함수 applySessionSnapshotPure에
   // 전부 위임하고(store 참조 보존 no-op 포함), 여기서는 실제로 반영된 경우에만 snapshotSeq를
@@ -166,12 +227,15 @@ export const useInGameStore = create((set) => ({
     set((current) => {
       const patch = applySessionSnapshotPure(current, response)
       if (patch === current) return current
-      return { ...patch, snapshotSeq: current.snapshotSeq + 1 }
+      // NIGHT으로 복원되는 하이드레이션도 "그 밤에 새로 들어간 것"으로 본다 — 서버는 개인
+      // 조사 결과를 재전송하지 않으므로 프런트만으로 복구할 수 없고, 남겨두면 지난 밤 결과가
+      // 새 밤에 뜬다.
+      return { ...withNightReentryClear(current, patch), snapshotSeq: current.snapshotSeq + 1 }
     }),
 
   setGameError: (error) => set({ error }),
 
-  clearGame: () => set({ gameId: null, state: null, error: null }),
+  clearGame: () => set({ gameId: null, state: null, error: null, nightPrivateResult: null }),
 }))
 
 export const selectInGameState = (store) => store.state

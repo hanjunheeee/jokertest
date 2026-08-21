@@ -7,6 +7,7 @@ import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
 import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOverlay.jsx"
 import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
+import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/InGameNightPrivateResultOverlay.js"
 import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.js"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
@@ -36,7 +37,8 @@ export default function InGamePage() {
   // 한 곳에서 결정한다(useInGameOverlayStack 참고). 각 오버레이가 서로의 상태를 알아야 하므로
   // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
-  const { roleReveal, killReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
+  const { roleReveal, killReveal, nightPrivateResult, phaseEntrance, nightTurn, interactionBlocked } =
+    useInGameOverlayStack()
 
   // 게임 중 새로고침 등으로 ingameStore가 비어있는 채 /ingame에 직접 진입하면(store가
   // 초기화되어 있음) 실제 참가자 대신 더미 프리뷰 데이터로 채워진 화면이 보인다. 유효한
@@ -108,6 +110,12 @@ export default function InGamePage() {
         open={phaseEntrance.open}
         phase={phaseEntrance.phase}
         onConfirm={phaseEntrance.confirm}
+      />
+      <InGameNightPrivateResultOverlay
+        open={nightPrivateResult.open}
+        kind={nightPrivateResult.kind}
+        label={nightPrivateResult.label}
+        onConfirm={nightPrivateResult.confirm}
       />
       <InGameKillRevealOverlay
         open={killReveal.open}
