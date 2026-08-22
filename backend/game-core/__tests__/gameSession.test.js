@@ -3137,6 +3137,106 @@ test('canonical 종료 상태: 승리 확정 시 phase는 ENDED, winResult는 {w
 })
 
 // ---------------------------------------------------------------------------
+// victory-resolution: ENDED 전원 역할 공개(winResult.reveals / mvp)
+// ---------------------------------------------------------------------------
+
+const { buildTerminalFields } = gameSession
+
+/** canonical session.players에서 기대 reveals 배열을 그대로 계산한다(삽입 순서 포함). */
+function expectedRevealsOf(session) {
+    return [...session.players.values()].map((p) => ({
+        uuid: p.uuid,
+        nickname: p.nickname,
+        role: p.role,
+        team: ROLE_TEAMS[p.role],
+        alive: p.alive,
+    }))
+}
+
+test('buildTerminalFields: ENDED 세션의 winResult.reveals가 전원의 {uuid,nickname,role,team,alive}를 삽입 순서 그대로 담고 mvp는 null이다', () => {
+    const session = nightSessionOf3({ id: 'room-terminal-reveals' })
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    commitNightResolution(session, resolution)
+    assert.equal(session.phase, 'ENDED')
+
+    const fields = buildTerminalFields(session)
+
+    // 기존 계약은 그대로다 — top-level 키 집합도, players 원소의 모양({uuid,isAlive})도 불변.
+    assert.deepEqual(Object.keys(fields).sort(), ['phase', 'players', 'winResult'])
+    for (const entry of fields.players) {
+        assert.deepEqual(Object.keys(entry).sort(), ['isAlive', 'uuid'])
+    }
+    assert.equal(fields.winResult.winner, 'CITIZEN')
+    assert.equal(fields.winResult.mvp, null)
+    assert.deepEqual(Object.keys(fields.winResult).sort(), ['mvp', 'reveals', 'winner'])
+
+    // 순서까지 포함해 canonical session.players와 정확히 일치한다.
+    assert.deepEqual(fields.winResult.reveals, expectedRevealsOf(session))
+    assert.equal(fields.winResult.reveals.length, session.players.size)
+    for (const reveal of fields.winResult.reveals) {
+        assert.deepEqual(Object.keys(reveal).sort(), ['alive', 'nickname', 'role', 'team', 'uuid'])
+        assert.equal(reveal.team, ROLE_TEAMS[reveal.role])
+    }
+    // 처형된 JOKER의 역할·사망 상태가 실제로 공개된다(공개의 요점).
+    const jokerReveal = fields.winResult.reveals.find((r) => r.uuid === jokerUuid)
+    assert.deepEqual(jokerReveal, {
+        uuid: jokerUuid,
+        nickname: session.players.get(jokerUuid).nickname,
+        role: 'JOKER',
+        team: 'JOKER',
+        alive: false,
+    })
+})
+
+test('buildTerminalFields: ENDED가 아닌 세션에는 reveals/mvp가 없다(phase 방어 게이트)', () => {
+    const session = nightSessionOf4NoWin({ id: 'room-terminal-not-ended' })
+    assert.equal(session.phase, 'NIGHT')
+
+    // winResult 자체가 없으면 winResult 키도 없다.
+    assert.equal(Object.hasOwn(buildTerminalFields(session), 'winResult'), false)
+
+    // 판정 로직을 거치지 않고 테스트에서만 "ENDED가 아닌데 winResult가 있는" 비정상 상태를
+    // 손으로 만든다(정상 경로에서는 finalizeGameSession이 phase와 winResult를 항상 함께 세팅해
+    // 이 상태가 생기지 않는다) — 빌더가 phase를 독립적으로 재확인하는지 검증하기 위함이다.
+    session.winResult = { winner: 'CITIZEN' }
+    const fields = buildTerminalFields(session)
+
+    assert.deepEqual(fields.winResult, { winner: 'CITIZEN' })
+    assert.equal(Object.hasOwn(fields.winResult, 'reveals'), false)
+    assert.equal(Object.hasOwn(fields.winResult, 'mvp'), false)
+})
+
+test('buildTerminalFields: 반환된 reveals를 변형해도 canonical session(players·winResult)은 오염되지 않는다', () => {
+    const session = nightSessionOf3({ id: 'room-terminal-reveals-immut' })
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    commitNightResolution(session, resolution)
+    const canonicalWinResult = session.winResult
+
+    const first = buildTerminalFields(session)
+    first.winResult.reveals[0].role = 'TAMPERED_ROLE'
+    first.winResult.reveals[0].alive = 'TAMPERED_ALIVE'
+    first.winResult.reveals.push({ uuid: 'forged-uuid', nickname: 'forged', role: 'JOKER', team: 'JOKER', alive: true })
+    first.winResult.mvp = 'TAMPERED_MVP'
+
+    // canonical은 그대로다 — winResult는 여전히 {winner} 단일 키이고 참조도 교체되지 않았다.
+    assert.equal(session.winResult, canonicalWinResult)
+    assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
+    assert.deepEqual(Object.keys(session.winResult), ['winner'])
+    assert.equal(session.players.has('forged-uuid'), false)
+    const firstPlayer = [...session.players.values()][0]
+    assert.notEqual(firstPlayer.role, 'TAMPERED_ROLE')
+    assert.equal(typeof firstPlayer.alive, 'boolean')
+
+    // 재호출은 fresh 데이터를 돌려준다(매 호출 새 배열·새 원소).
+    const second = buildTerminalFields(session)
+    assert.deepEqual(second.winResult.reveals, expectedRevealsOf(session))
+    assert.equal(second.winResult.mvp, null)
+    assert.notEqual(first.winResult.reveals, second.winResult.reveals)
+})
+
+// ---------------------------------------------------------------------------
 // victory-resolution: 종료 후 mutation 차단 — 8개 prepare/commit 진입점
 // ---------------------------------------------------------------------------
 
@@ -3263,6 +3363,13 @@ function normalizeSnapshotPath(path) {
     return path.map((segment) => (typeof segment === 'number' ? '*' : segment)).join('.')
 }
 
+// winResult.reveals는 "게임이 끝났으므로 전원 공개"가 명시적 계약인 유일한 서브트리다 — self와
+// 같은 이유로 키 이름이 아니라 위치 자체를 예외로 둔다. 키 이름 전역 예외(FORBIDDEN_PRIVATE_KEYS
+// 에서 role/team을 빼는 것)와 다르다: 이 경로 밖의 role/team은 여전히 즉시 실패한다.
+function isEndedRevealPath(path) {
+    return path[0] === 'winResult' && path[1] === 'reveals'
+}
+
 function assertNoForbiddenPrivateData(value, secretValues, path = [], insideSelf = false) {
     if (Array.isArray(value)) {
         value.forEach((item, i) => assertNoForbiddenPrivateData(item, secretValues, [...path, i], insideSelf))
@@ -3272,14 +3379,19 @@ function assertNoForbiddenPrivateData(value, secretValues, path = [], insideSelf
         for (const [key, val] of Object.entries(value)) {
             const nextInsideSelf = insideSelf || (path.length === 0 && key === 'self')
             assert.ok(
-                nextInsideSelf || !FORBIDDEN_PRIVATE_KEYS.has(key),
+                nextInsideSelf || isEndedRevealPath([...path, key]) || !FORBIDDEN_PRIVATE_KEYS.has(key),
                 `forbidden key "${key}" found at ${[...path, key].join('.') || '(root)'}`,
             )
             assertNoForbiddenPrivateData(val, secretValues, [...path, key], nextInsideSelf)
         }
         return
     }
-    if (typeof value === 'string' && !insideSelf && !APPROVED_PUBLIC_VALUE_PATHS.has(normalizeSnapshotPath(path))) {
+    if (
+        typeof value === 'string' &&
+        !insideSelf &&
+        !isEndedRevealPath(path) &&
+        !APPROVED_PUBLIC_VALUE_PATHS.has(normalizeSnapshotPath(path))
+    ) {
         for (const secret of secretValues) {
             assert.notStrictEqual(value, secret.value, `leaked ${secret.label} at ${path.join('.') || '(root)'}`)
         }
@@ -3420,6 +3532,8 @@ test('getSessionSnapshotForPlayer: 첫 응답 객체(players/self/winResult/nigh
     first.snapshot.self.role = 'TAMPERED_ROLE'
     first.snapshot.self.hasActedThisPhase = true
     first.snapshot.winResult.winner = 'TAMPERED_WINNER'
+    first.snapshot.winResult.reveals[0].role = 'TAMPERED_ROLE'
+    first.snapshot.winResult.reveals.push({ uuid: 'forged-uuid', nickname: 'forged', role: 'JOKER', team: 'JOKER', alive: true })
     first.snapshot.nightResult.victimUuid = 'tampered-victim'
     first.snapshot.players.push({ uuid: 'forged-uuid', nickname: 'forged', isAlive: true })
 
@@ -3427,14 +3541,18 @@ test('getSessionSnapshotForPlayer: 첫 응답 객체(players/self/winResult/nigh
     assert.equal(session.players.get(jokerUuid).alive, false)
     assert.equal(session.players.get(jokerUuid).nickname.startsWith('nick-'), true)
     assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
+    assert.deepEqual(Object.keys(session.winResult), ['winner']) // reveals/mvp는 복사본에만 붙는다
     assert.equal(session.players.has('forged-uuid'), false)
+    assert.notEqual([...session.players.values()][0].role, 'TAMPERED_ROLE')
 
     // 재요청은 오염되지 않은 fresh 데이터를 돌려준다.
     const second = getSessionSnapshotForPlayer(viewerUuid, session.id)
     assert.equal(second.ok, true)
     assert.equal(second.snapshot.players.find((p) => p.uuid === jokerUuid).isAlive, false)
     assert.equal(second.snapshot.self.role, session.players.get(viewerUuid).role)
-    assert.deepEqual(second.snapshot.winResult, { winner: 'CITIZEN' })
+    assert.equal(second.snapshot.winResult.winner, 'CITIZEN')
+    assert.equal(second.snapshot.winResult.mvp, null)
+    assert.deepEqual(second.snapshot.winResult.reveals, expectedRevealsOf(session))
     assert.equal(second.snapshot.nightResult.victimUuid, jokerUuid)
     assert.equal(second.snapshot.players.length, session.players.size)
 })
@@ -3480,7 +3598,12 @@ test('getSessionSnapshotForPlayer: TRIBUNAL 유죄 처형으로 CITIZEN 승리 �
     assert.deepEqual(snapshot.tribunal, {
         defendantUuid: 'snA2', resolved: true, outcome: 'GUILTY', counts: { guilty: 2, notGuilty: 1 }, executedUuid: 'snA2',
     })
-    assert.deepEqual(snapshot.winResult, { winner: 'CITIZEN' })
+    // ENDED이므로 winResult에는 winner 외에 전원 공개 목록(reveals)과 예약된 mvp 슬롯이 함께 온다.
+    assert.equal(snapshot.winResult.winner, 'CITIZEN')
+    assert.equal(snapshot.winResult.mvp, null)
+    assert.deepEqual(Object.keys(snapshot.winResult).sort(), ['mvp', 'reveals', 'winner'])
+    assert.deepEqual(snapshot.winResult.reveals, expectedRevealsOf(session))
+    assert.equal(snapshot.winResult.reveals.find((r) => r.uuid === 'snA2').role, 'JOKER')
 
     // snA4는 소수 의견(NOT_GUILTY)을 던졌다 — 최종 집계(tribunal.outcome='GUILTY')와 다른 값이므로,
     // 이 개인 표가 다른 어떤 위치에도 노출되지 않아야 한다(FORBIDDEN_PRIVATE_KEYS의 'votes' 키
@@ -3591,7 +3714,9 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
         victimUuid: 'snB4',
         deathReveals: [{ victimUuid: 'snB4', source: 'JOKER' }],
     })
-    assert.deepEqual(endedSnapshot.snapshot.winResult, { winner: 'JOKER' })
+    assert.equal(endedSnapshot.snapshot.winResult.winner, 'JOKER')
+    assert.equal(endedSnapshot.snapshot.winResult.mvp, null)
+    assert.deepEqual(endedSnapshot.snapshot.winResult.reveals, expectedRevealsOf(session))
     assert.equal(Object.hasOwn(endedSnapshot.snapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(endedSnapshot.snapshot, 'tribunal'), false)
 
@@ -3600,6 +3725,35 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     // buildSessionSnapshot을 직접 호출해도(getSessionSnapshotForPlayer를 거치지 않고) 동일한
     // 구조를 반환한다 — get_session_snapshot 계약이 이 순수 함수 하나로 완결됨을 확인한다.
     assert.deepEqual(buildSessionSnapshot(session, 'snB1'), endedSnapshot.snapshot)
+})
+
+test('buildSessionSnapshot: 진행 중 세션에는 winResult가 아예 없고, ENDED 하이드레이션에는 viewer와 무관하게 동일한 전원 reveals가 실린다', () => {
+    const session = nightSessionOf3({ id: 'room-snap-reveals' })
+    const uuids = [...session.players.keys()]
+
+    // 진행 중(NIGHT)에는 winResult 키 자체가 없으므로 reveals가 생길 자리도 없다.
+    for (const uuid of uuids) {
+        assert.equal(Object.hasOwn(buildSessionSnapshot(session, uuid), 'winResult'), false)
+    }
+
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    commitNightResolution(session, resolution)
+    assert.equal(session.phase, 'ENDED')
+
+    const expectedReveals = expectedRevealsOf(session)
+    for (const uuid of uuids) {
+        const snapshot = buildSessionSnapshot(session, uuid)
+        assert.equal(snapshot.winResult.winner, 'CITIZEN')
+        assert.equal(snapshot.winResult.mvp, null)
+        // 공개 목록은 보는 사람에 따라 달라지지 않는다 — 전원이 같은 결과 화면을 본다.
+        assert.deepEqual(snapshot.winResult.reveals, expectedReveals)
+        // reveals 밖의 어떤 위치에서도 다른 참가자의 role이 새지 않는다(경로 예외는 이 서브트리뿐).
+        assertNoForbiddenPrivateData(snapshot, collectOtherPlayerRoleSecrets(session, uuid))
+    }
+
+    // 종료 방송(buildTerminalFields)과 재접속 하이드레이션이 같은 공개 목록을 싣는다.
+    assert.deepEqual(buildSessionSnapshot(session, uuids[0]).winResult.reveals, buildTerminalFields(session).winResult.reveals)
 })
 
 // ---------------------------------------------------------------------------
