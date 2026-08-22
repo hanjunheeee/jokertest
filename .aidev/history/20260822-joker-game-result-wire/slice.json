@@ -1,6 +1,6 @@
 {
   "slice_id": "20260822-joker-game-result-wire",
-  "status": "running:implement",
+  "status": "running:test",
   "branch": "slice/20260822-joker-game-result-wire",
   "base": "windows-handoff-20260808",
   "base_commit": "acf8bce3a651cbb48fed273c2c6fd949901e0749",
@@ -31,10 +31,14 @@
     "implement": {
       "status": "done",
       "run_id": "20260822-235726-joker-game-result-wire-implement",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "b8acef044b8e8679b5ef1f23454476b50d8b1833"
     },
     "test": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260823-003110-joker-game-result-wire-test-2",
+      "verdict": "pass",
+      "attempts": 2
     }
   },
   "runs": [
@@ -69,7 +73,39 @@
         "peak_context": 203776
       },
       "cost_usd": 9.618876
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260823-001036-joker-game-result-wire-test",
+      "status": "completed",
+      "turns": 17,
+      "tokens": {
+        "input": 31,
+        "cache_creation": 42488,
+        "cache_read": 862638,
+        "output": 7228,
+        "billed_input": 905157,
+        "peak_context": 63374
+      },
+      "cost_usd": 1.0370540000000001
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260823-003110-joker-game-result-wire-test-2",
+      "status": "completed",
+      "turns": 16,
+      "tokens": {
+        "input": 23,
+        "cache_creation": 36063,
+        "cache_read": 611164,
+        "output": 5948,
+        "billed_input": 647250,
+        "peak_context": 60040
+      },
+      "cost_usd": 0.815027
     }
   ],
-  "updated_at": "2026-08-23T00:10:35+09:00"
+  "updated_at": "2026-08-23T00:32:58+09:00"
 }
