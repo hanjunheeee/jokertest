@@ -1,3 +1,5 @@
+import { normalizeWinResult } from "../utils/normalizeWinResult.js"
+
 // game-core/gameSession.js의 ROLE_TEAMS와 값이 일치해야 한다 — 이 프로젝트에는 백엔드/프런트가
 // 공유하는 상수 모듈이 없어 수동으로 동기화한다(buildPlayerSessionSourceFromGameState.js와 동일한
 // 관례로 이 파일에도 독립적으로 복제한다).
@@ -34,7 +36,8 @@ function isNonEmptyString(value) {
  * 생략된 phase별 결과 필드(nightResult/dayVoteResolution/tribunal/winResult)는 이전 값을
  * 이어받지 않고 명시적으로 null로 비운다 — stale 데이터가 새 phase로 새어 들어가지 않게 한다.
  * 모든 중첩 구조는 response에서 필드 단위로 새로 만들어 반환하므로, 호출부가 이후 response를
- * 변형해도 store에는 영향이 없다.
+ * 변형해도 store에는 영향이 없다. winResult는 winner만 잘라내지 않고 normalizeWinResult가
+ * 정규화한 { winner, reveals, mvp } 전체를 보존한다 — 결과 페이지가 reveals를 읽어야 한다.
  */
 export function applySessionSnapshotPure(current, response) {
   if (response === null || typeof response !== "object" || Array.isArray(response)) return current
@@ -172,18 +175,13 @@ export function applySessionSnapshotPure(current, response) {
 
   // winResult 존재 여부와 phase==='ENDED'는 항상 함께 성립하는 양방향 불변조건이다
   // (finalizeGameSession이 유일하게 phase를 ENDED로 바꾸며 그 호출에서 winResult도 함께 세팅됨).
+  // 이 payload 문맥 검증만 여기서 하고, winResult 값 자체의 검증·정규화(reveals/mvp 포함)는
+  // 세 파서가 공유하는 normalizeWinResult에 위임한다.
   let winResult = null
   if (response.phase === "ENDED") {
-    if (
-      !Object.hasOwn(response, "winResult") ||
-      response.winResult === null ||
-      typeof response.winResult !== "object" ||
-      Array.isArray(response.winResult) ||
-      (response.winResult.winner !== "CITIZEN" && response.winResult.winner !== "JOKER")
-    ) {
-      return current
-    }
-    winResult = { winner: response.winResult.winner }
+    if (!Object.hasOwn(response, "winResult")) return current
+    winResult = normalizeWinResult(response.winResult)
+    if (winResult === null) return current
   } else if (Object.hasOwn(response, "winResult")) {
     return current
   }

@@ -1,3 +1,5 @@
+import { normalizeWinResult } from "../utils/normalizeWinResult.js"
+
 const TRIBUNAL_RESOLVED_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 
 function isNonNegativeInteger(value) {
@@ -10,6 +12,8 @@ function isNonNegativeInteger(value) {
  * 전부 일치할 때만 반영하고, 그 외에는 원래 current 참조를 그대로 반환한다(최상위·nested
  * 모두 완전한 no-op). 정상 반영 시 tribunal 결과 필드(outcome/counts/executedUuid/resolved)와,
  * executedUuid가 가리키는 참가자의 alive:false만 갱신한다 — 다른 필드는 건드리지 않는다.
+ * 종료(ENDED) 판정의 winResult는 winner만 잘라내지 않고 normalizeWinResult가 정규화한
+ * { winner, reveals, mvp } 전체를 store에 남긴다 — 결과 페이지가 reveals를 읽어야 한다.
  */
 export function applyTribunalResolvedPure(current, payload) {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
@@ -38,16 +42,11 @@ export function applyTribunalResolvedPure(current, payload) {
   if (payload.phase === "ENDED") {
     if (current.state.phase !== "TRIBUNAL") return current
     if (!Array.isArray(payload.players)) return current
-    if (
-      !Object.hasOwn(payload, "winResult") ||
-      payload.winResult === null ||
-      typeof payload.winResult !== "object" ||
-      Array.isArray(payload.winResult) ||
-      (payload.winResult.winner !== "CITIZEN" && payload.winResult.winner !== "JOKER")
-    ) {
-      return current
-    }
-    const winResult = { winner: payload.winResult.winner }
+    // winResult 값의 검증·정규화(reveals/mvp 포함)는 세 파서가 공유하는 normalizeWinResult가
+    // 전담한다 — 여기서는 "종료 payload에는 winResult 필드가 반드시 있어야 한다"만 본다.
+    if (!Object.hasOwn(payload, "winResult")) return current
+    const winResult = normalizeWinResult(payload.winResult)
+    if (winResult === null) return current
 
     const canonicalUuids = new Set((current.state.players ?? []).map((p) => p.uuid))
 

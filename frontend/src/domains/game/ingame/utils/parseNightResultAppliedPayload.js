@@ -1,3 +1,5 @@
+import { normalizeWinResult } from "./normalizeWinResult.js"
+
 /**
  * night_result_applied 방송을 검증·정규화한다. 신뢰하지 않는 외부 입력이므로 top-level 형태,
  * gameId 일치, dayIndex 단조성, canonical roster 정합성(누락/추가/중복 uuid), victim/alive
@@ -10,6 +12,9 @@
  * — victimUuid 하나만으로 사망자 수를 검증하면(과거엔 "사망자는 항상 0명 또는 victimUuid
  * 하나"라고 가정했다) 과거 사망자가 남아있는 정상적인 두 번째 밤 결과가 거부된다. 지정하지
  * 않으면 빈 Set으로 취급한다(첫 밤 시나리오와 호환).
+ *
+ * 종료(ENDED) payload의 winResult는 winner만 잘라내지 않고 normalizeWinResult가 정규화한
+ * { winner, reveals, mvp } 전체를 돌려준다 — 결과 페이지가 reveals를 읽어야 한다.
  */
 export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, canonicalPlayerIds, previouslyDeadUuids }) {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null
@@ -27,16 +32,11 @@ export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, cano
     if (typeof dayIndex !== "number" || payloadDayIndex !== dayIndex) return null
     if (!Array.isArray(players)) return null
     if (victimUuid !== null && typeof victimUuid !== "string") return null
-    if (
-      !Object.hasOwn(payload, "winResult") ||
-      payload.winResult === null ||
-      typeof payload.winResult !== "object" ||
-      Array.isArray(payload.winResult) ||
-      (payload.winResult.winner !== "CITIZEN" && payload.winResult.winner !== "JOKER")
-    ) {
-      return null
-    }
-    const winResult = { winner: payload.winResult.winner }
+    // winResult 값의 검증·정규화(reveals/mvp 포함)는 세 파서가 공유하는 normalizeWinResult가
+    // 전담한다 — 여기서는 "종료 payload에는 winResult 필드가 반드시 있어야 한다"만 본다.
+    if (!Object.hasOwn(payload, "winResult")) return null
+    const winResult = normalizeWinResult(payload.winResult)
+    if (winResult === null) return null
 
     const seenEndedUuids = new Set()
     const normalizedEndedPlayers = []

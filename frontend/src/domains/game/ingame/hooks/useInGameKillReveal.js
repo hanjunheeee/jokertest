@@ -30,6 +30,9 @@ import {
  * 이 밤 결과 적용으로 바뀌지 않으므로(alive만 바뀐다) 다른 핸들러의 store 반영 순서와
  * 경쟁하지 않는다.
  *
+ * 반환값의 pending은 "아직 큐에 남은 연출이 있다"는 파생 읽기다(재생 로직과 무관) — ENDED
+ * 전이가 사망 연출을 자르지 않고 기다리는 판단(useInGameResultNavigation)에 쓰인다.
+ *
  * @param {object} [options]
  * @param {boolean} [options.hold] 더 높은 우선순위 오버레이(자기 역할 공개)가 떠 있는가. true인
  *   동안에는 다음 연출을 띄우지 않되 "소비됨"으로도 처리하지 않는다.
@@ -97,6 +100,11 @@ export function useInGameKillReveal({ hold = false } = {}) {
 
   return {
     open: activeItem !== null,
+    // 아직 재생하지 못하고 큐에 남아 있는 연출이 있는가. 정상 흐름에서는 consume이 다음 항목을
+    // 같은 setState에서 곧바로 승격하므로 open만으로 충분하지만, hold(자기 역할 재열람)가 걸린
+    // 순간에는 active가 비고 queue만 남아 open===false가 된다 — 그 상태를 "연출 끝"으로 오인해
+    // 결과 페이지로 넘어가지 않도록 큐 잔량을 그대로 노출한다. 재생 로직은 손대지 않는 파생 값이다.
+    pending: presentation.queue.length > 0,
     revealId: activeItem?.id ?? null,
     message,
     consume,
