@@ -1,0 +1,111 @@
+{
+  "slice_id": "20260822-joker-night-private-result",
+  "status": "running:test",
+  "branch": "slice/20260822-joker-night-private-result",
+  "base": "windows-handoff-20260808",
+  "base_commit": "bfb8e132a4ff78f04f0afbe7ec8cc8bd0a50d3a2",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 44,
+    "test_files": 10,
+    "budget": 80,
+    "warn": true
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "run_id": "20260822-051005-joker-night-private-result-plan",
+      "attempts": 1,
+      "commit": "3af2a228641e3d7d976c9d98bbffc4375582fb7f"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260822-054009-joker-night-private-result-implement-2",
+      "attempts": 2,
+      "commit": "c44b53b892f65e604141273afaaf121f7537124d"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260822-054340-joker-night-private-result-test",
+      "verdict": "pass",
+      "attempts": 1
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260822-051005-joker-night-private-result-plan",
+      "status": "completed",
+      "turns": 44,
+      "tokens": {
+        "input": 3314,
+        "cache_creation": 103416,
+        "cache_read": 1980756,
+        "output": 27765,
+        "billed_input": 2087486,
+        "peak_context": 117885
+      },
+      "cost_usd": 2.735233
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260822-052420-joker-night-private-result-implement",
+      "status": "failed",
+      "turns": 81,
+      "tokens": {
+        "input": 151,
+        "cache_creation": 160229,
+        "cache_read": 9957561,
+        "output": 54412,
+        "billed_input": 10117941,
+        "peak_context": 181115
+      },
+      "cost_usd": 7.942125500000001
+    },
+    {
+      "stage": "implement",
+      "attempt": 2,
+      "run_id": "20260822-054009-joker-night-private-result-implement-2",
+      "status": "completed",
+      "turns": 40,
+      "tokens": {
+        "input": 54,
+        "cache_creation": 76056,
+        "cache_read": 2127001,
+        "output": 12005,
+        "billed_input": 2203111,
+        "peak_context": 96942
+      },
+      "cost_usd": 2.1244555
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260822-054340-joker-night-private-result-test",
+      "status": "completed",
+      "turns": 16,
+      "tokens": {
+        "input": 25,
+        "cache_creation": 36810,
+        "cache_read": 644462,
+        "output": 4884,
+        "billed_input": 681297,
+        "peak_context": 57696
+      },
+      "cost_usd": 0.812556
+    }
+  ],
+  "updated_at": "2026-08-22T05:45:12+09:00"
+}

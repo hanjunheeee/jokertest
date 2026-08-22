@@ -412,3 +412,210 @@ test("applyNightTurnChanged: 같은 값으로의 갱신은 참조를 그대로 �
 
   assert.equal(useInGameStore.getState(), beforeSnapshot)
 })
+
+// ---------------------------------------------------------------------------
+// nightPrivateResult — GUARD/WITCH_HUNTER 본인에게만 오는 개인 조사 결과
+//
+// 핵심 계약: night_result_applied(DAY 전이)로는 절대 지워지지 않는다. 지워지는 곳은 정확히
+// 세 곳뿐이다 — 오버레이 확인·NIGHT 재진입·gameId 변경.
+// ---------------------------------------------------------------------------
+
+const GUARD_RESULT = Object.freeze({
+  gameId: "game-1",
+  dayIndex: 1,
+  actionType: "INVESTIGATE",
+  targetId: "p2",
+  team: "CITIZEN",
+})
+
+// seedState는 nightPrivateResult를 건드리지 않으므로(다른 테스트와의 누수를 막기 위해)
+// 여기서 명시적으로 초기화한 뒤 원하는 값을 주입한다.
+function seedPrivateResultState(overrides = {}, payload = GUARD_RESULT) {
+  seedState({
+    phase: "NIGHT",
+    dayIndex: 1,
+    players: [
+      { uuid: "p1", nickname: "P1", alive: true },
+      { uuid: "p2", nickname: "P2", alive: true },
+      { uuid: "p3", nickname: "P3", alive: true },
+    ],
+    ...overrides,
+  })
+  useInGameStore.setState({ nightPrivateResult: null })
+  if (payload) useInGameStore.getState().setNightPrivateResult(payload)
+  return useInGameStore.getState().nightPrivateResult
+}
+
+test("setNightPrivateResult: 유효한 payload를 얕은 복사로 보관한다(호출부가 원본을 바꿔도 흔들리지 않는다)", () => {
+  const mutable = { ...GUARD_RESULT }
+  seedPrivateResultState({}, mutable)
+
+  const stored = useInGameStore.getState().nightPrivateResult
+  assert.deepEqual(stored, GUARD_RESULT)
+  assert.notEqual(stored, mutable)
+
+  mutable.team = "JOKER"
+  assert.equal(useInGameStore.getState().nightPrivateResult.team, "CITIZEN")
+})
+
+// [테스트 이름, 무시되어야 하는 payload]
+const ignoredPrivateResults = [
+  ["payload가 null", null],
+  ["payload가 배열", [GUARD_RESULT]],
+  ["다른 gameId", { ...GUARD_RESULT, gameId: "other-game" }],
+  ["dayIndex가 정수가 아님", { ...GUARD_RESULT, dayIndex: "1" }],
+  ["알 수 없는 actionType", { ...GUARD_RESULT, actionType: "KILL" }],
+  ["targetId가 빈 문자열", { ...GUARD_RESULT, targetId: "" }],
+]
+
+for (const [name, payload] of ignoredPrivateResults) {
+  test(`setNightPrivateResult: ${name}이면 참조를 그대로 보존하는 no-op이다`, () => {
+    seedPrivateResultState({}, null)
+    const beforeSnapshot = useInGameStore.getState()
+
+    useInGameStore.getState().setNightPrivateResult(payload)
+
+    assert.equal(useInGameStore.getState(), beforeSnapshot)
+    assert.equal(useInGameStore.getState().nightPrivateResult, null)
+  })
+}
+
+test("applyNightResultAppliedPayload(DAY 전이) 후에도 개인 조사 결과는 그대로 유지된다", () => {
+  seedPrivateResultState({ phase: "NIGHT", dayIndex: 1 })
+
+  useInGameStore.getState().applyNightResultAppliedPayload({
+    gameId: "game-1",
+    phase: "DAY",
+    dayIndex: 2,
+    victimUuid: "p3",
+    players: [
+      { uuid: "p1", alive: true },
+      { uuid: "p2", alive: true },
+      { uuid: "p3", alive: false },
+    ],
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "DAY")
+  assert.deepEqual(useInGameStore.getState().nightPrivateResult, GUARD_RESULT)
+})
+
+test("applyNightTurnChanged(같은 밤의 턴 변경)는 개인 조사 결과를 지우지 않는다", () => {
+  seedPrivateResultState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "GUARD" })
+
+  useInGameStore
+    .getState()
+    .applyNightTurnChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 1, nightTurnRole: "WITCH_HUNTER" })
+
+  assert.equal(useInGameStore.getState().state.nightTurnRole, "WITCH_HUNTER")
+  assert.deepEqual(useInGameStore.getState().nightPrivateResult, GUARD_RESULT)
+})
+
+test("applyDayVoteResolvedToPhase(TIE)로 NIGHT에 재진입하면 개인 조사 결과가 비워진다", () => {
+  seedPrivateResultState({ phase: "DAY", dayIndex: 2 })
+
+  useInGameStore.getState().applyDayVoteResolvedToPhase("game-1", 2, { outcome: "TIE" })
+
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+})
+
+test("applyPhaseChanged(legacy ROLE_REVEAL→NIGHT)로 NIGHT에 진입하면 개인 조사 결과가 비워진다", () => {
+  seedPrivateResultState({ phase: "ROLE_REVEAL", dayIndex: 0 })
+
+  useInGameStore.getState().applyPhaseChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 0 })
+
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+})
+
+test("applyTribunalResolved(TRIBUNAL→NIGHT)로 NIGHT에 재진입하면 개인 조사 결과가 비워진다", () => {
+  seedPrivateResultState({ phase: "TRIBUNAL", dayIndex: 2, tribunal: { defendantUuid: "p3" } })
+
+  useInGameStore.getState().applyTribunalResolved({
+    gameId: "game-1",
+    dayIndex: 2,
+    phase: "NIGHT",
+    defendantUuid: "p3",
+    outcome: "NOT_GUILTY",
+    counts: { guilty: 1, notGuilty: 2 },
+    executedUuid: null,
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+})
+
+test("applySessionSnapshot이 NIGHT으로 하이드레이션하면 개인 조사 결과가 비워진다(서버가 재전송하지 않으므로)", () => {
+  seedPrivateResultState({
+    phase: "DAY",
+    dayIndex: 1,
+    players: [
+      { uuid: "p1", nickname: "P1" },
+      { uuid: "p2", nickname: "P2" },
+      { uuid: "p3", nickname: "P3" },
+    ],
+    self: { uuid: "p1", nickname: "P1", role: "GUARD" },
+  })
+
+  useInGameStore.getState().applySessionSnapshot({
+    ok: true,
+    gameId: "game-1",
+    phase: "NIGHT",
+    dayIndex: 1,
+    players: snapshotPlayers(),
+    self: { uuid: "p1", nickname: "P1", role: "GUARD", team: "CITIZEN", hasActedThisPhase: false },
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+})
+
+test("applySessionSnapshot이 이미 NIGHT인 상태를 다시 반영하는 것은 개인 조사 결과를 지우지 않는다", () => {
+  seedPrivateResultState({
+    phase: "NIGHT",
+    dayIndex: 1,
+    players: [
+      { uuid: "p1", nickname: "P1" },
+      { uuid: "p2", nickname: "P2" },
+      { uuid: "p3", nickname: "P3" },
+    ],
+    self: { uuid: "p1", nickname: "P1", role: "GUARD" },
+  })
+
+  useInGameStore.getState().applySessionSnapshot({
+    ok: true,
+    gameId: "game-1",
+    phase: "NIGHT",
+    dayIndex: 1,
+    players: snapshotPlayers(),
+    self: { uuid: "p1", nickname: "P1", role: "GUARD", team: "CITIZEN", hasActedThisPhase: false },
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.deepEqual(useInGameStore.getState().nightPrivateResult, GUARD_RESULT)
+})
+
+test("setGamePayload(새 게임)와 clearGame은 개인 조사 결과를 비운다", () => {
+  seedPrivateResultState()
+
+  useInGameStore.getState().setGamePayload({
+    gameId: "game-2",
+    state: { id: "game-2", phase: "ROLE_REVEAL", dayIndex: 0, players: [{ uuid: "p1", nickname: "P1" }] },
+  })
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+
+  seedPrivateResultState()
+  useInGameStore.getState().clearGame()
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+})
+
+test("clearNightPrivateResult: 값이 있으면 비우고, 이미 비어 있으면 참조를 보존하는 no-op이다", () => {
+  seedPrivateResultState()
+
+  useInGameStore.getState().clearNightPrivateResult()
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+
+  const beforeSnapshot = useInGameStore.getState()
+  useInGameStore.getState().clearNightPrivateResult()
+  assert.equal(useInGameStore.getState(), beforeSnapshot)
+})

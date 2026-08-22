@@ -155,7 +155,6 @@ export default function InGameActionPanel({
     skipNightAction,
     nightActionsLocked,
     nightActionControlsEnabled,
-    nightActionResult,
   } = useInGameActionPanel({ interactionBlocked })
   const { expanded, toggle: toggleExpanded } = useInGameControlPanelLayout()
   const [selectedTribunalVote, setSelectedTribunalVote] = useState(null)
@@ -424,17 +423,9 @@ export default function InGameActionPanel({
               ) : null}
             </>
           )}
-          {nightActionResult ? (
-            <p className={INGAME_ACTION_STATUS_TEXT_CLASS}>
-              개인 결과: {JSON.stringify(
-                Object.fromEntries(
-                  Object.entries(nightActionResult).filter(
-                    ([key]) => key !== "gameId" && key !== "dayIndex",
-                  ),
-                ),
-              )}
-            </p>
-          ) : null}
+          {/* 개인 조사 결과(GUARD·WITCH_HUNTER)는 이 패널이 아니라 전용 파치먼트 오버레이
+              (InGameNightPrivateResultOverlay)가 보여준다 — 여기 있던 디버그용 JSON 표시는
+              그 정식 표시 경로로 대체됐다. */}
         </div>
       ) : null}
 
