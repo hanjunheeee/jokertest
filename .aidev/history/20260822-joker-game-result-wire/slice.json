@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260822-joker-game-result-wire",
+  "status": "pending",
+  "branch": "slice/20260822-joker-game-result-wire",
+  "base": "windows-handoff-20260808",
+  "base_commit": "acf8bce3a651cbb48fed273c2c6fd949901e0749",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-22T23:38:48+09:00"
+}
