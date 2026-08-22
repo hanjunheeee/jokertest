@@ -19,10 +19,15 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
+import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
-/** 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지 */
+/**
+ * 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지
+ * @flow 유효한 GameSession 상태가 없으면 아무것도 그리지 않고 /multiplay로 돌려보내고, 게임이
+ *   끝나면(ENDED) 사망 연출 큐가 다 빈 뒤 결과 페이지로 넘긴다.
+ */
 export default function InGamePage() {
   const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
   const gameId = useInGameStore((s) => s.gameId)
@@ -39,6 +44,10 @@ export default function InGamePage() {
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
   const { roleReveal, killReveal, nightPrivateResult, phaseEntrance, nightTurn, interactionBlocked } =
     useInGameOverlayStack()
+
+  // 게임이 끝나면(ENDED + winResult 확정) 결과 페이지로 넘어간다 — 단, 이 밤의 사망 연출이
+  // 재생 중이거나 큐에 남아 있는 동안은 기다린다(연출이 통째로 잘리지 않게).
+  useInGameResultNavigation({ hold: killReveal.open || killReveal.pending })
 
   // 게임 중 새로고침 등으로 ingameStore가 비어있는 채 /ingame에 직접 진입하면(store가
   // 초기화되어 있음) 실제 참가자 대신 더미 프리뷰 데이터로 채워진 화면이 보인다. 유효한

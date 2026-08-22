@@ -115,7 +115,7 @@ test("applyTribunalResolvedPure: 종료(ENDED) GUILTY 판정으로 시민 진영
 
   assert.notEqual(result, current)
   assert.equal(result.state.phase, "ENDED")
-  assert.deepEqual(result.state.winResult, { winner: "CITIZEN" })
+  assert.deepEqual(result.state.winResult, { winner: "CITIZEN", reveals: [], mvp: null })
   assert.equal(result.state.tribunal.outcome, "GUILTY")
   assert.equal(result.state.tribunal.resolved, true)
   assert.equal(result.state.players.find((p) => p.uuid === "d1").alive, false)
@@ -136,9 +136,62 @@ test("applyTribunalResolvedPure: 종료(ENDED) NOT_GUILTY 판정으로 조커 �
   const result = applyTribunalResolvedPure(current, payload)
 
   assert.equal(result.state.phase, "ENDED")
-  assert.deepEqual(result.state.winResult, { winner: "JOKER" })
+  assert.deepEqual(result.state.winResult, { winner: "JOKER", reveals: [], mvp: null })
   assert.equal(result.state.tribunal.outcome, "NOT_GUILTY")
   assert.equal(result.state.tribunal.executedUuid, null)
+})
+
+// --- winResult 전체 보존(reveals/mvp) ---
+
+function tribunalReveals() {
+  return [
+    { uuid: "d1", nickname: "D", role: "JOKER", team: "JOKER", alive: false },
+    { uuid: "p2", nickname: "P2", role: "GUARD", team: "CITIZEN", alive: true },
+  ]
+}
+
+test("applyTribunalResolvedPure: 종료 payload의 winResult.reveals와 mvp가 순서·필드 그대로 보존된다", () => {
+  const current = baseCurrent()
+  const result = applyTribunalResolvedPure(
+    current,
+    terminalTribunalPayload({ winResult: { winner: "CITIZEN", reveals: tribunalReveals(), mvp: { uuid: "p2" } } }),
+  )
+
+  assert.deepEqual(result.state.winResult, {
+    winner: "CITIZEN",
+    reveals: tribunalReveals(),
+    mvp: { uuid: "p2" },
+  })
+})
+
+test("applyTribunalResolvedPure: winResult.reveals가 배열이 아니거나 없으면 거부가 아니라 빈 배열로 정규화된다", () => {
+  const current = baseCurrent()
+
+  for (const reveals of ["not-an-array", 42, null, undefined]) {
+    const result = applyTribunalResolvedPure(
+      current,
+      terminalTribunalPayload({ winResult: { winner: "CITIZEN", reveals } }),
+    )
+    assert.notEqual(result, current, `reveals=${String(reveals)}`)
+    assert.deepEqual(result.state.winResult.reveals, [], `reveals=${String(reveals)}`)
+  }
+})
+
+test("applyTribunalResolvedPure: 종료 payload의 winResult 객체를 이후 변형해도 store 결과가 영향받지 않는다", () => {
+  const current = baseCurrent()
+  const payload = terminalTribunalPayload({
+    winResult: { winner: "CITIZEN", reveals: tribunalReveals(), mvp: { uuid: "p2" } },
+  })
+
+  const result = applyTribunalResolvedPure(current, payload)
+  const expected = structuredClone(result.state.winResult)
+
+  payload.winResult.winner = "JOKER"
+  payload.winResult.reveals[0].role = "CITIZEN"
+  payload.winResult.reveals.length = 0
+  payload.winResult.mvp.uuid = "d1"
+
+  assert.deepStrictEqual(result.state.winResult, expected)
 })
 
 test("applyTribunalResolvedPure: 종료 payload의 players 배열이 canonical roster와 정확히 일치하면 생존 상태가 그대로 반영된다", () => {

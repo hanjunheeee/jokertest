@@ -77,7 +77,7 @@ test("정상 종료(ENDED) payload는 파싱되어 정규화된 필드를 반환
       { uuid: "p3", isAlive: true },
     ],
     victimUuid: "p1",
-    winResult: { winner: "CITIZEN" },
+    winResult: { winner: "CITIZEN", reveals: [], mvp: null },
   })
 })
 
@@ -91,12 +91,58 @@ test("종료 payload는 dayIndex가 현재값과 같아도(DAY 전이 없이 즉
 
 test("종료 payload의 winResult.winner가 CITIZEN이면 그대로 보존된다", () => {
   const result = parse(terminalPayload({ winResult: { winner: "CITIZEN" } }))
-  assert.deepEqual(result.winResult, { winner: "CITIZEN" })
+  assert.deepEqual(result.winResult, { winner: "CITIZEN", reveals: [], mvp: null })
 })
 
 test("종료 payload의 winResult.winner가 JOKER면 그대로 보존된다", () => {
   const result = parse(terminalPayload({ winResult: { winner: "JOKER" } }))
-  assert.deepEqual(result.winResult, { winner: "JOKER" })
+  assert.deepEqual(result.winResult, { winner: "JOKER", reveals: [], mvp: null })
+})
+
+function nightReveals() {
+  return [
+    { uuid: "p1", nickname: "P1", role: "CITIZEN", team: "CITIZEN", alive: false },
+    { uuid: "p2", nickname: "P2", role: "JOKER", team: "JOKER", alive: true },
+    { uuid: "p3", nickname: "P3", role: "WITCH_HUNTER", team: "CITIZEN", alive: true },
+  ]
+}
+
+test("종료 payload의 winResult.reveals와 mvp는 순서·필드 그대로 보존된다", () => {
+  const result = parse(
+    terminalPayload({ winResult: { winner: "JOKER", reveals: nightReveals(), mvp: { uuid: "p2" } } }),
+  )
+
+  assert.deepEqual(result.winResult, { winner: "JOKER", reveals: nightReveals(), mvp: { uuid: "p2" } })
+})
+
+test("winResult.reveals가 배열이 아니거나 없으면 거부가 아니라 빈 배열로 정규화된다", () => {
+  for (const reveals of ["not-an-array", 42, null, undefined]) {
+    const result = parse(terminalPayload({ winResult: { winner: "JOKER", reveals } }))
+    assert.notEqual(result, null, `reveals=${String(reveals)}`)
+    assert.deepEqual(result.winResult.reveals, [], `reveals=${String(reveals)}`)
+  }
+})
+
+test("reveals 원소 중 하나라도 객체가 아니면 명단 전체를 빈 배열로 만든다", () => {
+  const result = parse(terminalPayload({ winResult: { winner: "JOKER", reveals: [nightReveals()[0], "p2"] } }))
+
+  assert.deepEqual(result.winResult.reveals, [])
+})
+
+test("winResult 객체를 이후 변형해도 파싱 결과가 영향받지 않는다", () => {
+  const payload = terminalPayload({
+    winResult: { winner: "JOKER", reveals: nightReveals(), mvp: { uuid: "p2" } },
+  })
+
+  const result = parse(payload)
+  const expected = structuredClone(result.winResult)
+
+  payload.winResult.winner = "CITIZEN"
+  payload.winResult.reveals[0].role = "JOKER"
+  payload.winResult.reveals.length = 0
+  payload.winResult.mvp.uuid = "p1"
+
+  assert.deepStrictEqual(result.winResult, expected)
 })
 
 // --- 식별자 보존 ---

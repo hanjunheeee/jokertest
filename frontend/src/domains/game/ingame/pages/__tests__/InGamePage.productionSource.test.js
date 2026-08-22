@@ -40,6 +40,13 @@ test("컨트롤 패널은 기존 useInGameActionPanel 데이터 흐름과 intera
   assert.match(panelBlockMatch[0], /interactionBlocked=\{interactionBlocked\}/)
 })
 
+test("ENDED 결과 페이지 전이 훅은 정확히 한 번 배선되고, 사망 연출 큐(재생 중 + 대기 중)를 hold로 넘긴다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  const occurrences = source.match(/useInGameResultNavigation\(/g) ?? []
+  assert.equal(occurrences.length, 1, "결과 페이지 전이는 중복 배선되면 안 된다")
+  assert.match(source, /useInGameResultNavigation\(\{ hold: killReveal\.open \|\| killReveal\.pending \}\)/)
+})
+
 test("역할 공개/사망 연출/단계 진입/밤 턴 안내 오버레이는 여전히 InGameActionPanel이 속한 상호작용 래퍼 바깥(아래)에서 렌더된다", async () => {
   const source = await readFile(pageUrl, "utf8")
   const panelIndex = source.indexOf("<InGameActionPanel")

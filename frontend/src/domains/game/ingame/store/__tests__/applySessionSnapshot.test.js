@@ -164,7 +164,7 @@ test("applySessionSnapshotPure: 유효한 ENDED 스냅샷은 winResult와 확정
 
   assert.notEqual(result, current)
   assert.equal(result.state.phase, "ENDED")
-  assert.deepEqual(result.state.winResult, { winner: "CITIZEN" })
+  assert.deepEqual(result.state.winResult, { winner: "CITIZEN", reveals: [], mvp: null })
   assert.deepEqual(result.state.tribunal, {
     defendantUuid: "p2",
     resolved: true,
@@ -173,6 +173,67 @@ test("applySessionSnapshotPure: 유효한 ENDED 스냅샷은 winResult와 확정
     executedUuid: "p2",
   })
   assert.equal(result.state.players.find((p) => p.uuid === "p2").alive, false)
+})
+
+// --- winResult 전체 보존(reveals/mvp) ---
+
+function endedReveals() {
+  return [
+    { uuid: "p1", nickname: "P1", role: "JOKER", team: "JOKER", alive: true },
+    { uuid: "p2", nickname: "P2", role: "CITIZEN", team: "CITIZEN", alive: false },
+    { uuid: "p3", nickname: "P3", role: "DOCTOR", team: "CITIZEN", alive: true },
+  ]
+}
+
+test("applySessionSnapshotPure: ENDED 스냅샷의 winResult.reveals는 순서·필드 그대로 보존된다", () => {
+  const current = baseCurrent({ phase: "TRIBUNAL", dayIndex: 1 })
+  const response = baseResponse({
+    phase: "ENDED",
+    dayIndex: 1,
+    winResult: { winner: "JOKER", reveals: endedReveals(), mvp: null },
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.deepEqual(result.state.winResult, { winner: "JOKER", reveals: endedReveals(), mvp: null })
+})
+
+test("applySessionSnapshotPure: winResult.reveals가 배열이 아니거나 없으면 빈 배열로 정규화된다", () => {
+  const current = baseCurrent({ phase: "TRIBUNAL", dayIndex: 1 })
+
+  for (const reveals of ["not-an-array", 42, { uuid: "p1" }, null]) {
+    const response = baseResponse({ phase: "ENDED", dayIndex: 1, winResult: { winner: "CITIZEN", reveals } })
+    const result = applySessionSnapshotPure(current, response)
+    assert.notEqual(result, current, `reveals=${JSON.stringify(reveals)}는 거부가 아니라 정규화다`)
+    assert.deepEqual(result.state.winResult.reveals, [], `reveals=${JSON.stringify(reveals)}`)
+  }
+
+  const withoutReveals = baseResponse({ phase: "ENDED", dayIndex: 1, winResult: { winner: "CITIZEN" } })
+  assert.deepEqual(applySessionSnapshotPure(current, withoutReveals).state.winResult.reveals, [])
+})
+
+test("applySessionSnapshotPure: reveals 원소 중 하나라도 객체가 아니면 명단 전체를 빈 배열로 만든다", () => {
+  const current = baseCurrent({ phase: "TRIBUNAL", dayIndex: 1 })
+  const response = baseResponse({
+    phase: "ENDED",
+    dayIndex: 1,
+    winResult: { winner: "CITIZEN", reveals: [endedReveals()[0], "p2"] },
+  })
+
+  assert.deepEqual(applySessionSnapshotPure(current, response).state.winResult.reveals, [])
+})
+
+test("applySessionSnapshotPure: winResult.mvp는 객체면 보존되고, 없거나 원시값이면 null이다", () => {
+  const current = baseCurrent({ phase: "TRIBUNAL", dayIndex: 1 })
+  const withMvp = baseResponse({
+    phase: "ENDED",
+    dayIndex: 1,
+    winResult: { winner: "CITIZEN", reveals: endedReveals(), mvp: { uuid: "p3" } },
+  })
+  const withoutMvp = baseResponse({ phase: "ENDED", dayIndex: 1, winResult: { winner: "CITIZEN", mvp: "p3" } })
+
+  assert.deepEqual(applySessionSnapshotPure(current, withMvp).state.winResult.mvp, { uuid: "p3" })
+  assert.equal(applySessionSnapshotPure(current, withoutMvp).state.winResult.mvp, null)
 })
 
 test("applySessionSnapshotPure: 이미 ENDED인 store에 동일 phase의 ENDED 스냅샷을 재적용하는 것은 허용된다", () => {
@@ -467,7 +528,7 @@ test("applySessionSnapshotPure: tribunal/winResult/dayVoteResolution 응답 객�
     players: basePlayers().map((p) => (p.uuid === "p2" ? { ...p, isAlive: false } : p)),
     tribunal: { defendantUuid: "p2", resolved: true, outcome: "GUILTY", counts: { guilty: 2, notGuilty: 1 }, executedUuid: "p2" },
     dayVoteResolution: { outcome: "TRIBUNAL", tribunalTargetUuid: "p2", publicVoteCount: 2, publicAbstainCount: 0 },
-    winResult: { winner: "CITIZEN" },
+    winResult: { winner: "CITIZEN", reveals: endedReveals(), mvp: { uuid: "p3" } },
   })
 
   const result = applySessionSnapshotPure(current, response)
@@ -476,6 +537,9 @@ test("applySessionSnapshotPure: tribunal/winResult/dayVoteResolution 응답 객�
   response.tribunal.outcome = "NOT_GUILTY"
   response.tribunal.counts.guilty = 0
   response.winResult.winner = "JOKER"
+  response.winResult.reveals.push({ uuid: "p9", nickname: "P9", role: "GUARD", team: "CITIZEN", alive: true })
+  response.winResult.reveals[0].role = "GUARD"
+  response.winResult.mvp.uuid = "p1"
   response.dayVoteResolution.tribunalTargetUuid = "p3"
 
   assert.deepStrictEqual(result.state, expected)
@@ -505,13 +569,16 @@ test("applySessionSnapshotPure: 구조적으로 동등한 ENDED 스냅샷을 두
 
 // --- winResult 검증 패리티 ---
 
-function applySessionSnapshotAcceptsWinResult(winResultValue) {
+// 세 파서가 실제로 store/반환값에 남긴 winResult를 꺼낸다 — 거부한 경우에만 null이다.
+// accept/reject 패리티와 정규화 결과 패리티를 같은 fixture로 함께 검증하기 위한 형태다.
+function applySessionSnapshotWinResult(winResultValue) {
   const current = baseCurrent({ phase: "TRIBUNAL", dayIndex: 1 })
   const response = baseResponse({ phase: "ENDED", dayIndex: 1, players: basePlayers(), winResult: winResultValue })
-  return applySessionSnapshotPure(current, response) !== current
+  const result = applySessionSnapshotPure(current, response)
+  return result === current ? null : result.state.winResult
 }
 
-function applyTribunalResolvedAcceptsWinResult(winResultValue) {
+function applyTribunalResolvedWinResult(winResultValue) {
   const current = {
     gameId: "game-1",
     error: null,
@@ -542,10 +609,11 @@ function applyTribunalResolvedAcceptsWinResult(winResultValue) {
     ],
     winResult: winResultValue,
   }
-  return applyTribunalResolvedPure(current, payload) !== current
+  const result = applyTribunalResolvedPure(current, payload)
+  return result === current ? null : result.state.winResult
 }
 
-function parseNightResultAcceptsWinResult(winResultValue) {
+function parseNightResultWinResult(winResultValue) {
   const payload = {
     gameId: "game-1",
     phase: "ENDED",
@@ -564,13 +632,17 @@ function parseNightResultAcceptsWinResult(winResultValue) {
     dayIndex: 1,
     canonicalPlayerIds: new Set(["p1", "p2", "p3"]),
   })
-  return result !== null
+  return result === null ? null : result.winResult
 }
 
 const winResultFixtures = [
   { label: "valid CITIZEN", value: { winner: "CITIZEN" }, expected: true },
   { label: "valid JOKER", value: { winner: "JOKER" }, expected: true },
   { label: "valid with extra key", value: { winner: "CITIZEN", extra: true }, expected: true },
+  // reveals가 어긋난 것은 거부 사유가 아니라 정규화 대상이다(빈 명단으로 떨어질 뿐).
+  { label: "non-array reveals", value: { winner: "CITIZEN", reveals: "nope" }, expected: true },
+  { label: "reveals with non-object element", value: { winner: "JOKER", reveals: [{ uuid: "p1" }, 7] }, expected: true },
+  { label: "valid with reveals and mvp", value: { winner: "JOKER", reveals: [{ uuid: "p1" }], mvp: { uuid: "p1" } }, expected: true },
   { label: "null", value: null, expected: false },
   { label: "array", value: ["CITIZEN"], expected: false },
   { label: "wrong winner value", value: { winner: "NOBODY" }, expected: false },
@@ -579,8 +651,18 @@ const winResultFixtures = [
 
 test("winResult 검증: applySessionSnapshotPure/applyTribunalResolvedPure/parseNightResultAppliedPayload의 accept/reject가 동일하다", () => {
   for (const { label, value, expected } of winResultFixtures) {
-    assert.equal(applySessionSnapshotAcceptsWinResult(value), expected, `applySessionSnapshotPure: ${label}`)
-    assert.equal(applyTribunalResolvedAcceptsWinResult(value), expected, `applyTribunalResolvedPure: ${label}`)
-    assert.equal(parseNightResultAcceptsWinResult(value), expected, `parseNightResultAppliedPayload: ${label}`)
+    assert.equal(applySessionSnapshotWinResult(value) !== null, expected, `applySessionSnapshotPure: ${label}`)
+    assert.equal(applyTribunalResolvedWinResult(value) !== null, expected, `applyTribunalResolvedPure: ${label}`)
+    assert.equal(parseNightResultWinResult(value) !== null, expected, `parseNightResultAppliedPayload: ${label}`)
+  }
+})
+
+test("winResult 정규화: 세 파서가 남기는 { winner, reveals, mvp }가 완전히 동일하다", () => {
+  for (const { label, value, expected } of winResultFixtures) {
+    if (!expected) continue
+    const fromSnapshot = applySessionSnapshotWinResult(value)
+    assert.deepEqual(Object.keys(fromSnapshot).sort(), ["mvp", "reveals", "winner"], `키 집합: ${label}`)
+    assert.deepEqual(applyTribunalResolvedWinResult(value), fromSnapshot, `applyTribunalResolvedPure: ${label}`)
+    assert.deepEqual(parseNightResultWinResult(value), fromSnapshot, `parseNightResultAppliedPayload: ${label}`)
   }
 })
