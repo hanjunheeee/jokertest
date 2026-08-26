@@ -133,14 +133,15 @@ function applyCanonicalState({ phase, dayIndex }) {
   })
 }
 
-// night_result_applied의 canonical 반영(NIGHT dayIndex 1 → DAY dayIndex 2). 프로덕션에서는
+// night_result_applied의 canonical 반영(판정된 밤의 dayIndex N → DAY dayIndex N+1). 기본값은
+// 첫 밤(NIGHT 1 → DAY 2)이고, 둘째 밤을 재생할 때는 dayIndex 3을 넘긴다. 프로덕션에서는
 // useGameSessionSocketEvents가 하는 일을 이 테스트가 직접 재현한다.
-function applyCanonicalNightResult() {
+function applyCanonicalNightResult({ dayIndex = 2 } = {}) {
   act(() => {
     useInGameStore.getState().applyNightResultAppliedPayload({
       gameId: GAME_ID,
       phase: "DAY",
-      dayIndex: 2,
+      dayIndex,
       victimUuid: VICTIM_UUID,
       players: [
         { uuid: SELF_UUID, alive: true },
@@ -201,6 +202,29 @@ function fireNightResultApplied(fake, overrides = {}) {
       ...overrides,
     })
   })
+}
+
+// 첫 밤(NIGHT dayIndex 1)을 개인 결과 표시·확인까지 온전히 소비하고 둘째 밤(NIGHT dayIndex 2)
+// 까지 canonical하게 진행시킨다. DAY 2 → NIGHT 전이는 프로덕션과 같은 액션
+// (applyDayVoteResolvedToPhase, 기권 판정)을 쓴다 — 그 경로의 withNightReentryClear가 개인
+// 결과를 비우므로, 둘째 밤의 결과는 반드시 이 헬퍼가 끝난 뒤에 발화시켜야 한다.
+//
+// @param {object} result renderHook이 돌려준 결과 핸들(오버레이 스택 조작용)
+// @param {object} fake mountLiveOverlayStack이 돌려준 fake socket 묶음
+// @flow 첫 밤 개인 결과 방송 → 판정 방송 → DAY 2 반영 → 개인 결과 확인 → 기권 판정으로 NIGHT 2.
+function advanceToSecondNight(result, fake) {
+  firePrivateResult(fake)
+  fireNightResultApplied(fake, { deathReveals: [] })
+  applyCanonicalNightResult()
+  assert.equal(result.current.stack.nightPrivateResult.open, true, "첫 밤 결과는 원래 정상적으로 뜬다")
+  act(() => {
+    result.current.stack.nightPrivateResult.confirm()
+  })
+  act(() => {
+    useInGameStore.getState().applyDayVoteResolvedToPhase(GAME_ID, 2, { outcome: "ABSTAINED" })
+  })
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.equal(useInGameStore.getState().state.dayIndex, 2)
 }
 
 test("역할 공개가 열려 있는 동안에는 개인 조사 결과도 대기만 한다(우선순위 1 > 3)", () => {
@@ -356,4 +380,90 @@ test("live root(InGamePage)가 개인 조사 결과 오버레이를 실제로 �
     "utf8",
   )
   assert.match(stackSource, /useInGameNightPrivateResult/)
+})
+
+// ---------------------------------------------------------------------------
+// 둘째 밤 회귀 — 개인 결과의 stale 판정 기준이 "밤의 dayIndex"여야 한다
+// ---------------------------------------------------------------------------
+
+// 이 슬라이스가 고친 버그의 재현이다. night_action_result.dayIndex는 판정된 밤의 값(N)인데
+// night_result_applied.dayIndex는 그 밤이 적용돼 들어간 DAY의 값(N+1)이다. 후자를 그대로 폐기
+// 기준으로 삼던 시절에는 둘째 밤의 개인 결과(dayIndex 2)가 첫 밤의 기준(2)과 같아져 store에
+// 들어가기도 전에 버려졌다 — GUARD도 WITCH_HUNTER도 예외 없이, 그리고 같은 게임이 이어지는 한
+// 회복되지 않았다.
+test("둘째 밤 GUARD 조사 결과도 수신되어 store에 남고 오버레이로 뜬다(첫 밤만 통과하던 회귀)", () => {
+  const { result, fake, unmount } = mountLiveOverlayStack()
+  act(() => {
+    result.current.stack.roleReveal.close()
+  })
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
+
+  advanceToSecondNight(result, fake)
+
+  firePrivateResult(fake, { dayIndex: 2, team: "JOKER" })
+  fireNightResultApplied(fake, { dayIndex: 3, deathReveals: [] })
+  applyCanonicalNightResult({ dayIndex: 3 })
+
+  assert.notEqual(useInGameStore.getState().nightPrivateResult, null, "둘째 밤 결과가 폐기되면 안 된다")
+  assert.equal(result.current.stack.nightPrivateResult.open, true)
+  assert.equal(result.current.stack.nightPrivateResult.kind, "INVESTIGATE")
+  assert.equal(result.current.stack.nightPrivateResult.label, "홍길동 님은 광대 진영입니다")
+
+  unmount()
+})
+
+test("둘째 밤 WITCH_HUNTER 확인 결과(CONFIRM)도 사망 연출 뒤·DAY 진입 연출 앞이라는 순서 그대로 뜬다", () => {
+  const { result, fake, unmount } = mountLiveOverlayStack()
+  act(() => {
+    result.current.stack.roleReveal.close()
+  })
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
+
+  advanceToSecondNight(result, fake)
+
+  // 새 규칙: WITCH_HUNTER는 시신을 조사하고 그 역할을 돌려받는다(actionType CONFIRM).
+  firePrivateResult(fake, { dayIndex: 2, actionType: "CONFIRM", role: "DOCTOR", team: undefined })
+  fireNightResultApplied(fake, { dayIndex: 3 })
+  applyCanonicalNightResult({ dayIndex: 3 })
+
+  assert.equal(result.current.stack.killReveal.open, true)
+  assert.equal(result.current.stack.nightPrivateResult.open, false, "사망 연출이 먼저다")
+
+  act(() => {
+    result.current.stack.killReveal.consume(result.current.stack.killReveal.revealId)
+  })
+
+  assert.equal(result.current.stack.nightPrivateResult.open, true)
+  assert.equal(result.current.stack.nightPrivateResult.kind, "CONFIRM")
+  assert.equal(result.current.stack.nightPrivateResult.label, "홍길동 님의 역할은 의사입니다")
+  assert.equal(result.current.stack.phaseEntrance.open, false, "DAY 파치먼트는 그 뒤로 밀린다")
+
+  act(() => {
+    result.current.stack.nightPrivateResult.confirm()
+  })
+
+  assert.equal(result.current.stack.phaseEntrance.open, true)
+  assert.equal(result.current.stack.phaseEntrance.message, "낮이 되었습니다")
+
+  unmount()
+})
+
+test("이미 판정이 적용된 밤의 늦은 개인 결과는 그대로 폐기된다(stale 방어는 살아 있다)", () => {
+  const { result, fake, unmount } = mountLiveOverlayStack()
+  act(() => {
+    result.current.stack.roleReveal.close()
+  })
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
+
+  // 개인 결과 없이 첫 밤이 적용된다 — 폐기 기준은 "밤 1"이 된다.
+  fireNightResultApplied(fake, { deathReveals: [] })
+  applyCanonicalNightResult()
+
+  // 그 뒤에 도착한 밤 1의 개인 결과는 이미 지나간 밤의 것이므로 store에 들이지 않는다.
+  firePrivateResult(fake)
+
+  assert.equal(useInGameStore.getState().nightPrivateResult, null)
+  assert.equal(result.current.stack.nightPrivateResult.open, false)
+
+  unmount()
 })

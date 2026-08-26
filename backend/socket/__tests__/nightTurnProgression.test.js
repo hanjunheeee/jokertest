@@ -398,6 +398,75 @@ test('시신이 밤 행동 역할 보유자인 밤: WITCH_HUNTER의 시신 지�
 })
 
 // ---------------------------------------------------------------------------
+// 제2일 밤 개인 결과: GUARD·WITCH_HUNTER 각자에게만, 판정된 밤의 dayIndex를 달고 간다
+// ---------------------------------------------------------------------------
+
+// 위 테스트들이 첫 밤(dayIndex 1)만 다루므로, 개인 결과 계약이 밤이 거듭돼도 그대로인지를
+// 제2일 밤(dayIndex 2)에서 GUARD·WITCH_HUNTER 동시에 못 박는다. 특히 payload의 dayIndex가
+// 판정된 밤의 값(2)이지 DAY 전이 이후의 값(3)이 아니라는 점이 중요하다 — 프런트
+// (useInGameResolveNight)의 stale 폐기 기준이 이 계약 위에 서 있어서, 두 값을 혼동하면
+// 둘째 밤부터 개인 결과가 화면에 뜨지 않는다.
+test('제2일 밤 개인 결과: GUARD의 조사와 WITCH_HUNTER의 확인이 각자 uuid의 소켓에만, 판정된 밤의 dayIndex로 전송된다', () => {
+    const room = makeCustomRoom({
+        id: 'day2-private-room',
+        players: ['d2-joker', 'd2-doctor', 'd2-guard', 'd2-witch', 'd2-citizen'].map((uuid) => makePlayer(uuid)),
+        roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
+    })
+    const session = commitCustom(room)
+    ackAllAndRewindToNight(session, { dayIndex: 2 })
+    const { sockets, io } = wireSockets(session)
+    const jokerUuid = byRole(session, 'JOKER')
+    const doctorUuid = byRole(session, 'DOCTOR')
+    const guardUuid = byRole(session, 'GUARD')
+    const witchHunterUuid = byRole(session, 'WITCH_HUNTER')
+    const citizenUuid = byRole(session, 'CITIZEN')
+    // 지난 낮에 CITIZEN이 죽어 있는 밤이다 — 그래야 WITCH_HUNTER의 턴이 열린다(새 규칙).
+    session.players.get(citizenUuid).alive = false
+
+    assert.deepEqual(submit(io, sockets, jokerUuid, session, null), { ok: true }) // SKIP — 희생자 없음
+    assert.deepEqual(submit(io, sockets, doctorUuid, session, doctorUuid), { ok: true })
+    assert.deepEqual(submit(io, sockets, guardUuid, session, jokerUuid), { ok: true })
+    // WITCH_HUNTER가 마지막 역할이므로 이 제출이 그대로 자동 판정을 트리거한다.
+    assert.deepEqual(submit(io, sockets, witchHunterUuid, session, citizenUuid), { ok: true })
+
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 3)
+
+    // GUARD 본인에게만, 그 밤의 dayIndex(2)를 달고 정확히 1건.
+    const guardEvents = sockets.get(guardUuid).emitted.filter((e) => e.event === 'night_action_result')
+    assert.equal(guardEvents.length, 1)
+    assert.deepEqual(guardEvents[0].payload, {
+        gameId: session.id,
+        dayIndex: 2, // 판정된 밤의 값이지, DAY 전이 이후의 값(3)이 아니다.
+        actionType: 'INVESTIGATE',
+        targetId: jokerUuid,
+        team: 'JOKER',
+    })
+
+    // WITCH_HUNTER 본인에게만, 같은 밤의 dayIndex를 달고 정확히 1건.
+    const witchEvents = sockets.get(witchHunterUuid).emitted.filter((e) => e.event === 'night_action_result')
+    assert.equal(witchEvents.length, 1)
+    assert.deepEqual(witchEvents[0].payload, {
+        gameId: session.id,
+        dayIndex: 2,
+        actionType: 'CONFIRM',
+        targetId: citizenUuid,
+        role: 'CITIZEN',
+    })
+
+    // 그 외 참가자에게는 개인 결과가 한 건도 새지 않는다(비밀 격리).
+    for (const uuid of [jokerUuid, doctorUuid, citizenUuid]) {
+        assert.equal(sockets.get(uuid).emitted.some((e) => e.event === 'night_action_result'), false)
+    }
+
+    // 공개 방송은 전원에게 정확히 1건씩(자동 판정이 한 번만 일어났다는 증거).
+    for (const [, socket] of sockets) {
+        assert.equal(socket.emitted.filter((e) => e.event === 'night_actions_resolved').length, 1)
+        assert.equal(socket.emitted.filter((e) => e.event === 'night_result_applied').length, 1)
+    }
+})
+
+// ---------------------------------------------------------------------------
 // zero actor auto-skip: GUARD가 아예 없으면 DOCTOR 다음은 곧장 WITCH_HUNTER다
 // ---------------------------------------------------------------------------
 
