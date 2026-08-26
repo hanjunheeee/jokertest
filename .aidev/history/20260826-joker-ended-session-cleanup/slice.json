@@ -1,0 +1,111 @@
+{
+  "slice_id": "20260826-joker-ended-session-cleanup",
+  "status": "running:test",
+  "branch": "slice/20260826-joker-ended-session-cleanup",
+  "base": "windows-handoff-20260808",
+  "base_commit": "009736c3a609647f515e5c21ee4480bd87a95115",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 9,
+    "test_files": 3,
+    "budget": 80,
+    "warn": false
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "run_id": "20260826-121616-joker-ended-session-cleanup-plan",
+      "attempts": 1,
+      "commit": "91cbbf1a48abff3e57b490ca8b333c127472cd28"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260826-122328-joker-ended-session-cleanup-implement",
+      "attempts": 1,
+      "commit": "81c9768ec5c873f4a890993ff8178c4b0907751b"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260826-123244-joker-ended-session-cleanup-test-2",
+      "verdict": "pass",
+      "attempts": 2
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260826-121616-joker-ended-session-cleanup-plan",
+      "status": "completed",
+      "turns": 26,
+      "tokens": {
+        "input": 34,
+        "cache_creation": 71588,
+        "cache_read": 1059530,
+        "output": 18015,
+        "billed_input": 1131152,
+        "peak_context": 86057
+      },
+      "cost_usd": 1.69619
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-122328-joker-ended-session-cleanup-implement",
+      "status": "completed",
+      "turns": 47,
+      "tokens": {
+        "input": 78,
+        "cache_creation": 81509,
+        "cache_read": 3282080,
+        "output": 26742,
+        "billed_input": 3363667,
+        "peak_context": 102395
+      },
+      "cost_usd": 3.12507
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-123018-joker-ended-session-cleanup-test",
+      "status": "completed",
+      "turns": 17,
+      "tokens": {
+        "input": 33,
+        "cache_creation": 38068,
+        "cache_read": 834737,
+        "output": 5780,
+        "billed_input": 872838,
+        "peak_context": 58954
+      },
+      "cost_usd": 0.9427135
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260826-123244-joker-ended-session-cleanup-test-2",
+      "status": "completed",
+      "turns": 9,
+      "tokens": {
+        "input": 16,
+        "cache_creation": 23592,
+        "cache_read": 324258,
+        "output": 2686,
+        "billed_input": 347866,
+        "peak_context": 47577
+      },
+      "cost_usd": 0.46527899999999994
+    }
+  ],
+  "updated_at": "2026-08-26T12:33:41+09:00"
+}

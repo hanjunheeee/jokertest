@@ -297,17 +297,24 @@ function buildTerminalFields(session) {
     return fields
 }
 
-// 순수 조회 — 재접속 시 소켓 계층이 socket.data.activeGameId를 재바인딩하고 기존 channel에
-// 재가입하는 데만 쓰는 routing 정보(gameId·channelId)만 반환한다. role/team/ballot 등 비밀
-// 정보는 물론, 이 호출로 어떤 권한도 부여되지 않는다(순수 registry 조회일 뿐이다) — 실제
-// mutation·disconnect 권한 판정은 소켓 계층의 isCurrentSocketForUuid만 담당한다. uuid가 활성
-// GameSession에 속해있지 않으면 null이다.
+/**
+ * 순수 조회 — 재접속 시 소켓 계층이 라우팅을 재동기화하는 데 필요한 정보(gameId·channelId)와
+ * 그 세션의 현재 phase만 반환한다. phase는 소켓 계층이 "기존 channel에 재부착할지, 이미
+ * ENDED인 세션의 잔존 참가자를 정리할지"를 고르는 데만 쓰는 값이다 — role/team/ballot 등
+ * 비밀 정보는 여전히 아무것도 싣지 않고, 이 호출로 어떤 권한도 부여되지 않는다(순수
+ * registry 조회일 뿐이다). 실제 mutation·disconnect 권한 판정은 소켓 계층의
+ * isCurrentSocketForUuid만 담당한다. uuid가 활성 GameSession에 속해있지 않으면 null이다.
+ * @param {string} uuid - 인증된 참가자 uuid
+ * @flow playerSession에 uuid가 없거나 그 gameId의 세션이 registry에 없으면(불일치) null을
+ *   반환하고, 그 외에는 라우팅 정보와 phase를 함께 반환한다 — 즉 non-null 반환은 세션 객체가
+ *   실제로 존재함을 보장한다.
+ */
 function getActiveSessionRoutingInfo(uuid) {
     const gameId = playerSession.get(uuid)
     if (!gameId) return null
     const session = gameSessions.get(gameId)
     if (!session) return null
-    return { gameId: session.id, channelId: session.channelId }
+    return { gameId: session.id, channelId: session.channelId, phase: session.phase }
 }
 
 // 순수 계산 — 어떤 Map도 읽지 않는다. randomFn을 주입하면 완전히 결정적이다.
