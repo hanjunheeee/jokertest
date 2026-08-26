@@ -137,6 +137,32 @@ test("다른 게임의 stale한 턴 방송은 문구를 흔들지 않는다", ()
   hook.unmount()
 })
 
+test("연출 역할 override를 함께 구독하면 canonical 턴과 무관하게 그 문구가 나온다", () => {
+  // 실제 화면(InGamePage)이 쓰는 경로다 — 연출 릴의 현재 역할을 두 번째 인자로 넘긴다.
+  // canonical 턴이 죽은 역할을 건너뛰어도(여기서는 GUARD 방송이 아예 오지 않는다) 상태바는
+  // 릴을 따라 경호원 문구를 그대로 그린다.
+  seed({ phase: "NIGHT", dayIndex: 2, nightTurnRole: "JOKER" })
+  const hook = renderHook(
+    ({ reelRole }) => useInGameStore((s) => selectInGameTimebarStatusMessage(s.state, reelRole)),
+    { initialProps: { reelRole: "JOKER" } },
+  )
+  assert.equal(hook.result.current, "광대의 시간입니다")
+
+  // 서버는 죽은 경호원을 건너뛰고 마녀사냥꾼으로 넘어갔지만, 연출은 경호원 칸을 재생 중이다.
+  act(() => {
+    useInGameStore.getState().applyNightTurnChanged({
+      gameId: GAME_ID,
+      phase: "NIGHT",
+      dayIndex: 2,
+      nightTurnRole: "WITCH_HUNTER",
+    })
+  })
+  hook.rerender({ reelRole: "GUARD" })
+  assert.equal(hook.result.current, "경호원의 시간입니다")
+
+  hook.unmount()
+})
+
 test("DAY / TRIBUNAL / ENDED 상태에서는 각 단계 문구(ENDED는 문구 없음)를 그린다", () => {
   seed({ phase: "DAY", dayIndex: 2 })
   const hook = renderStatus()

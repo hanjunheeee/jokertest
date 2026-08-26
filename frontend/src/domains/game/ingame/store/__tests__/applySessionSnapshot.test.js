@@ -725,3 +725,32 @@ test("applySessionSnapshotPure: colorIndex 0도 보존된다(falsy 값이 조용
     assert.equal(player.colorIndex, 0)
   }
 })
+
+// --- 재접속 시 밤 연출 릴의 재료(nightTurnRoles) 보존 ---
+
+test("applySessionSnapshotPure: nightTurnRoles는 스냅샷에 없어도 이전 state에서 이어받는다", () => {
+  // 게임당 상수라 stale해질 수 없고, 잃어버리면 재접속한 창만 릴이 폴백으로 떨어져
+  // 창마다 다른 밤 연출이 재생된다.
+  const current = baseCurrent({ nightTurnRoles: ["JOKER", "DOCTOR", "GUARD"] })
+  const response = baseResponse({ phase: "NIGHT", dayIndex: 1 })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.notEqual(result, current)
+  assert.deepEqual(result.state.nightTurnRoles, ["JOKER", "DOCTOR", "GUARD"])
+})
+
+test("applySessionSnapshotPure: 이어받은 nightTurnRoles는 방어적으로 복사된다", () => {
+  const current = baseCurrent({ nightTurnRoles: ["JOKER", "GUARD"] })
+  const result = applySessionSnapshotPure(current, baseResponse({ phase: "NIGHT", dayIndex: 1 }))
+
+  current.state.nightTurnRoles.push("WITCH_HUNTER")
+
+  assert.deepEqual(result.state.nightTurnRoles, ["JOKER", "GUARD"])
+})
+
+test("applySessionSnapshotPure: nightTurnRoles가 없던 세션은 키 자체를 만들지 않는다", () => {
+  const result = applySessionSnapshotPure(baseCurrent(), baseResponse({ phase: "NIGHT", dayIndex: 1 }))
+
+  assert.equal(Object.hasOwn(result.state, "nightTurnRoles"), false)
+})

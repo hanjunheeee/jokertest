@@ -39,6 +39,9 @@ function isNonEmptyString(value) {
  * 변형해도 store에는 영향이 없다. winResult는 winner만 잘라내지 않고 normalizeWinResult가
  * 정규화한 { winner, reveals, mvp } 전체를 보존한다 — 결과 페이지가 reveals를 읽어야 한다.
  * roster의 colorIndex도 같은 이유로 보존한다 — 재접속 후에도 참가자 색이 그대로여야 한다.
+ * 게임당 상수인 nightTurnRoles(밤 연출 릴의 재료)는 스냅샷에 실리지 않으므로 이전 state에서
+ * 이어받는다 — 위 "이어받지 않는다" 규칙의 유일한 예외이며, phase별 결과가 아니라 구성 정보라
+ * stale해질 수 없다는 점이 근거다.
  * @param {object} current 신뢰 경계로 쓰이는 현재 store(gameId·state.self.uuid·phase)
  * @param {object} response get_session_snapshot 응답(신뢰하지 않는 외부 입력)
  * @flow payload를 phase·roster·self·phase별 결과 필드 순으로 끝까지 검증하고, 하나라도
@@ -217,10 +220,19 @@ export function applySessionSnapshotPure(current, response) {
     ...(self.role === "JOKER" ? { allies } : {}),
   }
 
+  // nightTurnRoles("이 게임에 존재하는 밤 행동 역할")는 게임당 상수라 스냅샷 payload에 없어도
+  // 기존 state에서 그대로 이어받는다 — response.gameId === current.gameId를 이미 확인한 뒤이므로
+  // 다른 게임의 구성이 섞여 들어올 수 없다. 이어받지 않으면 재접속한 창에서만 밤 연출 릴이
+  // 폴백으로 떨어져 창마다 다른 순서가 재생된다. 다른 중첩 구조와 같은 이유로 방어적 복사한다.
+  const nightTurnRoles = Array.isArray(current.state.nightTurnRoles)
+    ? [...current.state.nightTurnRoles]
+    : null
+
   const nextState = {
     id: response.gameId,
     phase: response.phase,
     dayIndex: response.dayIndex,
+    ...(nightTurnRoles !== null ? { nightTurnRoles } : {}),
     players: nextPlayers,
     self: nextSelf,
     tribunal,

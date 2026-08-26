@@ -31,13 +31,18 @@ test("InGameTimebar는 더 이상 onVoteStatusClick을 전달받지 않는다(�
   assert.doesNotMatch(timebarBlockMatch[0], /onVoteStatusClick/)
 })
 
-test("InGameTimebar는 canonical state에서 파생한 statusMessage를 받고, 기존 day/activePhaseId 배선은 그대로다", async () => {
+test("InGameTimebar는 canonical state + 연출 릴 역할에서 파생한 statusMessage를 받고, 기존 day/activePhaseId 배선은 그대로다", async () => {
   const source = await readFile(pageUrl, "utf8")
   const timebarBlockMatch = source.match(/<InGameTimebar[\s\S]*?\/>/)
   assert.notEqual(timebarBlockMatch, null)
   assert.match(timebarBlockMatch[0], /day=\{gameState\?\.dayIndex\}/)
   assert.match(timebarBlockMatch[0], /activePhaseId=\{mapGamePhaseToTimebarPhaseId\(gameState\?\.phase\)\}/)
-  assert.match(timebarBlockMatch[0], /statusMessage=\{selectInGameTimebarStatusMessage\(gameState\)\}/)
+  // NIGHT 문구는 판정 커서가 아니라 밤 턴 안내 훅의 연출 릴 역할에서 온다 — 그래야 역할
+  // 보유자가 죽어도 그 역할의 상태바 문구가 사라지지 않는다(사망 정보 은폐).
+  assert.match(
+    timebarBlockMatch[0],
+    /statusMessage=\{selectInGameTimebarStatusMessage\(gameState, nightTurn\.statusRole\)\}/,
+  )
   assert.match(source, /import \{ selectInGameTimebarStatusMessage \} from "\.\.\/utils\/selectInGameTimebarStatusMessage\.js"/)
 })
 

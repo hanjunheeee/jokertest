@@ -809,6 +809,11 @@ function enterDayPhase(session) {
  *
  * players의 colorIndex는 비밀 정보 규칙의 대상이 아니다 — 색은 전원 공개 정보이고, viewer가
  * 누구든 같은 목록이 나와야 창마다 같은 참가자가 다른 색으로 보이지 않는다.
+ *
+ * nightTurnRoles도 같은 이유로 viewer와 무관한 공개 값이다 — "이 게임에 어떤 밤 행동 역할이
+ * 존재하는가"만 담고 누가 그 역할인지·몇 명인지·살아 있는지는 담지 않는다. 첫 밤의
+ * night_turn_changed 시퀀스가 이미 이 집합을 전원에게 그대로 노출하므로 새 비밀을 여는 것이
+ * 아니라, 프런트가 밤 연출을 생사와 무관하게 재생할 수 있도록 그 사실을 한 번에 주는 것이다.
  * @param {object} session - canonical GameSession
  * @param {string} viewerUuid - 이 payload를 받을 참가자 uuid
  */
@@ -820,6 +825,8 @@ function buildGameStartedPayload(session, viewerUuid) {
             id: session.id,
             phase: session.phase,
             dayIndex: session.dayIndex,
+            // 밤 연출 릴의 재료(구성 상수) — 판정에 쓰이는 canonical 턴과는 별개다.
+            nightTurnRoles: getSessionNightTurnRoles(session),
             // role 없음(colorIndex는 전원 공개 정보라 그대로 싣는다)
             players: [...session.players.values()].map(({ uuid, nickname, colorIndex }) => ({
                 uuid,
@@ -1096,6 +1103,32 @@ function submitNightAction(uuid, gameId, targetId) {
 
 // 순차 NIGHT 역할 진행의 canonical 순서. CITIZEN은 밤 행동이 없어 이 순서에 포함되지 않는다.
 const NIGHT_TURN_ROLE_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+/**
+ * 연출 전용 — 이 세션의 역할 구성에 실제로 존재하는 밤 행동 역할을 canonical 순서로 돌려준다.
+ *
+ * alive를 절대 보지 않는다: 보유자가 전원 죽어도 목록에서 빠지지 않는다. 빠지는 순간 관찰자가
+ * "안내가 사라짐 = 그 역할 사망"을 추론할 수 있어 사망자의 역할이 전체에 누출되기 때문이다.
+ * 그래서 이 값은 게임당 상수이며 밤마다·죽음마다 달라지지 않는다.
+ *
+ * 판정 경로(getLivingNightTurnActorUuids·computeCurrentNightTurnRole)와는 완전히 별개다 —
+ * 그쪽의 생존 필터는 교착 방지의 핵심이라 그대로 두고, 이 함수는 어떤 판정에도 쓰이지 않는다.
+ * 프런트는 이 목록으로 밤 연출 릴을 만들고, "지금 내 차례인가"는 여전히 canonical 턴이 정한다.
+ *
+ * 그 밤에만 성립하는 조건(마녀사냥꾼의 시신 규칙)은 여기서 판정하지 않는다 — 이 목록은 구성
+ * 정보일 뿐이고, 밤별 조건은 프런트가 공개 roster로 매 밤 다시 본다.
+ *
+ * session.roleComposition이 아니라 session.players를 훑는다 — 구성 필드는 내부 전용이고
+ * players가 실제 배정의 단일 원천이다.
+ * @param {object} session - canonical GameSession
+ * @flow 배정된 role을 모은 뒤 NIGHT_TURN_ROLE_ORDER를 그 순서대로 훑어 보유자가 한 명이라도
+ *   있는 역할만 남긴다(CITIZEN은 순서 자체에 없어 항상 빠진다).
+ */
+function getSessionNightTurnRoles(session) {
+    const assignedRoles = new Set()
+    for (const player of session.players.values()) assignedRoles.add(player.role)
+    return NIGHT_TURN_ROLE_ORDER.filter((role) => assignedRoles.has(role))
+}
 
 // 특정 역할이 "이번 밤 실제로 제출해야 하는" 생존 참가자 uuid 목록(순수 계산). 그 밤에 행동
 // 자체가 불가능한 역할(사망자가 없는 밤의 WITCH_HUNTER 등)은 항상 빈 배열이다 —
@@ -2440,6 +2473,7 @@ module.exports = {
     submitNightAction,
     checkNightTurnGate,
     computeCurrentNightTurnRole,
+    getSessionNightTurnRoles,
     buildNightTurnChangedPayload,
     submitDayVote,
     prepareJokerChatMessage,

@@ -29,6 +29,8 @@ const {
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
     submitNightAction,
+    computeCurrentNightTurnRole,
+    getSessionNightTurnRoles,
     submitDayVote,
     prepareDayVoteResolution,
     commitDayVoteResolution,
@@ -1535,6 +1537,55 @@ test('buildGameStartedPayload: 세션에 없는 uuid로 호출하면 self는 nul
 
     assert.equal(payload.state.self, null)
     assert.equal(payload.state.players.length, 3)
+})
+
+// ---------------------------------------------------------------------------
+// getSessionNightTurnRoles — 밤 연출 릴의 재료(판정 커서와 의도적으로 다른 값)
+// ---------------------------------------------------------------------------
+
+test('getSessionNightTurnRoles: 구성에 실제로 있는 밤 행동 역할만 canonical 순서로 담고 CITIZEN은 없다', () => {
+    const full = commitFullRoleSessionAtNight({ id: 'room-reel-full' })
+    assert.deepEqual(getSessionNightTurnRoles(full.session), ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+    // JOKER 2명 + CITIZEN 1명 구성에는 특수 시민 역할이 하나도 없다.
+    const trio = commitJokerTrioSessionAtNight({ id: 'room-reel-trio' })
+    assert.deepEqual(getSessionNightTurnRoles(trio.session), ['JOKER'])
+})
+
+test('getSessionNightTurnRoles: 보유자가 전원 사망해도 목록이 그대로다 — computeCurrentNightTurnRole은 그 역할을 건너뛴다', () => {
+    const { session, jokerUuid, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-reel-dead' })
+    const before = getSessionNightTurnRoles(session)
+
+    // 그 역할의 유일한 보유자가 죽는다 — "안내가 사라짐 = 그 역할 사망"이 되면 안 되는 상황이다.
+    session.players.get(doctorUuid).alive = false
+
+    assert.deepEqual(getSessionNightTurnRoles(session), before, '연출 목록은 생사와 무관하다')
+    assert.equal(getSessionNightTurnRoles(session).includes('DOCTOR'), true)
+
+    // 같은 세션에서 판정 커서는 정반대로 움직인다 — 죽은 DOCTOR를 기다리면 그 밤이 끝나지
+    // 않으므로 건너뛴다. 두 값이 의도적으로 다르다는 것이 이 슬라이스의 설계 자체다.
+    assert.equal(computeCurrentNightTurnRole(session), 'JOKER')
+    assert.equal(submitNightAction(jokerUuid, session.id, citizenUuid).ok, true)
+    assert.equal(computeCurrentNightTurnRole(session), 'GUARD', '판정 커서는 죽은 DOCTOR를 건너뛴다')
+})
+
+test('buildGameStartedPayload: state.nightTurnRoles는 viewer와 무관하게 같고 역할·생사·uuid를 담지 않는다', () => {
+    const { session } = commitFullRoleSessionAtNight({ id: 'room-reel-payload' })
+    const expected = getSessionNightTurnRoles(session)
+
+    for (const uuid of session.players.keys()) {
+        const payload = buildGameStartedPayload(session, uuid)
+        assert.deepEqual(payload.state.nightTurnRoles, expected)
+    }
+
+    // 이 목록은 "어떤 역할이 이 게임에 존재하는가"일 뿐이다 — 누가 그 역할인지도, 몇 명인지도,
+    // 살아 있는지도 담기지 않는다(참가자 uuid가 단 하나도 섞이지 않는다).
+    const roles = buildGameStartedPayload(session, 'not-a-participant').state.nightTurnRoles
+    assert.deepEqual(roles, expected)
+    for (const uuid of session.players.keys()) {
+        assert.equal(roles.includes(uuid), false)
+    }
+    assert.equal(roles.includes('CITIZEN'), false)
 })
 
 // ---------------------------------------------------------------------------
