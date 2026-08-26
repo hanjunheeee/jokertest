@@ -150,8 +150,10 @@ test('전체 canonical 순서: JOKER→DOCTOR→GUARD→WITCH_HUNTER(SKIP) 제�
     const witchHunterUuid = byRole(session, 'WITCH_HUNTER')
     const citizenUuid = byRole(session, 'CITIZEN')
     // WITCH_HUNTER는 조사할 시신이 하나라도 있어야 턴이 열린다 — rewind는 alive를 되돌리지
-    // 않으므로 반드시 rewind 다음에 세워야 한다. CITIZEN을 죽여야 밤 행동이 있는 역할의 배우가
-    // 전원 생존한 상태로 남는다(죽은 eligible 배우는 판정을 ACTIONS_PENDING에 묶는다).
+    // 않으므로 반드시 rewind 다음에 세워야 한다. 시신을 CITIZEN으로 두면 밤 행동이 있는 역할의
+    // 배우가 전원 생존한 상태로 남아, 이 테스트가 검증하는 canonical 순서(4개 역할 전부가 실제로
+    // 턴을 받는다)가 온전히 관측된다. 시신이 밤 행동 역할 보유자인 판본은 아래 '시신이 밤 행동
+    // 역할 보유자' 테스트가 따로 다룬다.
     session.players.get(citizenUuid).alive = false
 
     assert.deepEqual(submit(io, sockets, jokerUuid, session, null), { ok: true }) // SKIP
@@ -315,6 +317,84 @@ test('WITCH_HUNTER 생존자 지목: production 경로에서 INVALID_TARGET으�
     assert.deepEqual(session.nightActions, before)
     assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'WITCH_HUNTER')
     assert.equal(session.phase, 'NIGHT')
+})
+
+// ---------------------------------------------------------------------------
+// 시신이 밤 행동 역할 보유자인 밤: WH의 시신 지목이 판정까지 트리거한다(교착 회귀 방지)
+// ---------------------------------------------------------------------------
+
+// 이 슬라이스가 고친 교착의 production 재현이다 — 5인·제2일 밤·사망자 1명이고, 그 사망자가
+// 밤 행동이 있는 역할(DOCTOR)의 보유자다. 죽은 DOCTOR는 computeCurrentNightTurnRole이 턴을
+// 주지 않고 checkNightTurnGate가 ACTOR_NOT_ALIVE로 막으므로 영원히 제출할 수 없는데,
+// getEligibleNightActorUuids가 생존을 필터하지 않던 시절에는 prepareNightResolution이 그
+// 제출을 계속 기다려 ACTIONS_PENDING을 반환했다. WH가 canonical 순서의 마지막 역할이고 그
+// 자동 판정 호출의 callback이 no-op이라, 플레이어에게는 "WH가 시신을 지목한 순간 밤이 끝나지
+// 않는다"로만 관측됐다. 아래 5번 단언이 그 지점이며, 수정 전에는 phase가 NIGHT에 머문다.
+test('시신이 밤 행동 역할 보유자인 밤: WITCH_HUNTER의 시신 지목이 소켓 진입점에서 저장되고 그대로 자동 판정까지 트리거한다', () => {
+    const room = makeCustomRoom({
+        id: 'dead-actor-room',
+        players: ['da-joker', 'da-doctor', 'da-guard', 'da-witch', 'da-citizen'].map((uuid) => makePlayer(uuid)),
+        roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
+    })
+    const session = commitCustom(room)
+    ackAllAndRewindToNight(session, { dayIndex: 1 })
+    const { sockets, io } = wireSockets(session)
+    const jokerUuid = byRole(session, 'JOKER')
+    const doctorUuid = byRole(session, 'DOCTOR')
+    const guardUuid = byRole(session, 'GUARD')
+    const witchHunterUuid = byRole(session, 'WITCH_HUNTER')
+    const citizenUuid = byRole(session, 'CITIZEN')
+    // 시신이 CITIZEN이 아니라 DOCTOR라는 점이 이 테스트의 전부다.
+    session.players.get(doctorUuid).alive = false
+
+    // 1. 죽은 DOCTOR는 턴을 받지 못하고 곧장 GUARD로 넘어간다.
+    assert.deepEqual(submit(io, sockets, jokerUuid, session, null), { ok: true }) // SKIP
+    assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'GUARD')
+
+    // 2. GUARD는 SKIP한다 — 그래야 이 밤의 개인 결과가 WITCH_HUNTER 것 하나뿐이 되어
+    //    아래 7번이 "WH 본인만 받는다"를 모호함 없이 단언할 수 있다.
+    assert.deepEqual(submit(io, sockets, guardUuid, session, null), { ok: true })
+    assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'WITCH_HUNTER')
+    assert.equal(session.phase, 'NIGHT')
+
+    // 3. 생존자 지목은 이 밤에도 그대로 거부되고 아무 것도 바꾸지 않는다.
+    const before = new Map(session.nightActions)
+    const rejected = submit(io, sockets, witchHunterUuid, session, citizenUuid) // CITIZEN은 살아있다
+    assert.deepEqual(rejected, { ok: false, code: 'INVALID_TARGET', message: '요청을 처리할 수 없습니다.' })
+    assert.deepEqual(session.nightActions, before)
+    assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'WITCH_HUNTER')
+    assert.equal(session.phase, 'NIGHT')
+
+    // 4. 시신 지목은 소켓 진입점을 통과해 canonical하게 저장된다.
+    assert.deepEqual(submit(io, sockets, witchHunterUuid, session, doctorUuid), { ok: true })
+    assert.equal(session.nightActions.get(witchHunterUuid), doctorUuid)
+
+    // 5. 그리고 그 마지막 제출이 client resolve_night 없이 밤 판정까지 그대로 트리거한다.
+    //    생존 JOKER 1명 < 비JOKER 3명이고 JOKER가 SKIP했으므로 희생자도 승리도 없다 → DAY 전이.
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 2)
+    assert.notEqual(session.nightResolution, null)
+
+    // 6. 참가자 전원(죽은 DOCTOR 포함 — 공개 이벤트는 생존으로 필터하지 않는다)이 정확히 1건씩.
+    for (const [, socket] of sockets) {
+        assert.equal(socket.emitted.filter((e) => e.event === 'night_actions_resolved').length, 1)
+        assert.equal(socket.emitted.filter((e) => e.event === 'night_result_applied').length, 1)
+    }
+
+    // 7. 개인 결과는 WITCH_HUNTER 본인에게만, 그 시신의 역할을 담아서 간다.
+    const privateEvents = sockets.get(witchHunterUuid).emitted.filter((e) => e.event === 'night_action_result')
+    assert.equal(privateEvents.length, 1)
+    assert.deepEqual(privateEvents[0].payload, {
+        gameId: session.id,
+        dayIndex: 1, // 판정된 밤의 dayIndex이지, DAY 전이 이후의 값이 아니다.
+        actionType: 'CONFIRM',
+        targetId: doctorUuid,
+        role: 'DOCTOR',
+    })
+    for (const [uuid, socket] of sockets) {
+        if (uuid === witchHunterUuid) continue
+        assert.equal(socket.emitted.some((e) => e.event === 'night_action_result'), false)
+    }
 })
 
 // ---------------------------------------------------------------------------

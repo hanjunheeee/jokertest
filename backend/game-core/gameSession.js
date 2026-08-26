@@ -930,11 +930,29 @@ function isEligibleForNightAction(session, role) {
     return true
 }
 
-// registry(session.players)를 읽기만 하는 순수 계산 — 이 밤에 행동 가능한 모든 참가자
-// uuid를 반환한다. 제출 완료 여부와는 무관하다(session.nightActions는 참조하지 않는다).
+/**
+ * registry(session.players)를 읽기만 하는 순수 계산 — 이 밤에 실제로 제출해야 하는 생존
+ * 참가자 uuid를 전부 반환한다. 제출 완료 여부와는 무관하다(session.nightActions는 참조하지
+ * 않는다).
+ *
+ * 생존 필터는 선택이 아니라 필수다: "기다릴 대상"의 정의는 순차 턴 기계
+ * (getLivingNightTurnActorUuids·computeCurrentNightTurnRole)와 턴 게이트(checkNightTurnGate의
+ * ACTOR_NOT_ALIVE)가 쓰는 정의와 반드시 일치해야 한다. 사망한 배우는 턴을 절대 받지 못하고
+ * 강제로 제출해도 게이트에서 막히므로, 그런 배우를 여기 포함시키면 prepareNightResolution이
+ * 영원히 오지 않을 제출을 기다려 그 밤이 구조적으로 끝나지 않는다. 낮 경로의
+ * getEligibleDayVoterUuids가 이미 같은 이유로 생존만 세는 것과 대칭이다.
+ *
+ * @param {object} session - canonical GameSession(players와 dayIndex를 읽는다)
+ * @flow 참가자를 순회하며 사망자(alive !== true)를 먼저 걸러내고, 남은 생존자 중
+ *       isEligibleForNightAction이 true인 역할 보유자만 모은다. 생존 판정은 hasAnyDeadPlayer·
+ *       getChatRecipientUuids와 같은 alive !== true 관례를 쓴다 — getLivingNightTurnActorUuids의
+ *       truthy 검사보다 더 넓게 제외하므로 "턴은 주지 않으면서 기다리기만 하는" 상태가 어떤
+ *       alive 값에서도 생기지 않는다(한 방향으로만 안전하다).
+ */
 function getEligibleNightActorUuids(session) {
     const uuids = []
     for (const player of session.players.values()) {
+        if (player.alive !== true) continue
         if (isEligibleForNightAction(session, player.role)) uuids.push(player.uuid)
     }
     return uuids
@@ -1171,13 +1189,20 @@ function buildNightTurnChangedPayload(session) {
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
  *   → 5. 아직 판정되지 않은 밤(session.nightResolution === null)
- *   → 6. 모든 eligible actor의 nightActions 제출 완료(ACTIONS_PENDING, 추가 정보 없음)
+ *   → 6. 모든 생존 eligible actor의 nightActions 제출 완료(ACTIONS_PENDING, 추가 정보 없음).
+ *      기다릴 대상은 getEligibleNightActorUuids가 단독으로 정의하며, 사망한 역할 보유자는
+ *      애초에 턴을 받지 못하므로 그 목록에 없습니다 — 있었다면 그 밤은 영원히 끝나지 않습니다.
  *   → 7. 저장된 모든 non-null target이 여전히 canonical participant인지
  *      (TARGET_NOT_A_PARTICIPANT — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
  *
  * 성공 시 { ok:true, session, resolution } — resolution은 commitNightResolution에 그대로
  * 넘길 값입니다. privateResults는 GUARD/WITCH_HUNTER의 non-null 결과만 담는 Map이고
  * (SKIP/미제출은 entry 없음), JOKER/DOCTOR/CITIZEN은 애초에 이 Map에 등장하지 않습니다.
+ * 사망한 GUARD/WITCH_HUNTER는 nightActions entry가 없어 compute*Result가 null을 돌려주므로
+ * 이 Map에서도 자동으로 빠집니다.
+ *
+ * @param {string} uuid - 인증된 요청자 uuid(그 세션의 참가자여야 합니다)
+ * @param {string} gameId - 클라이언트가 알고 있는 gameId(trim 후 registry의 것과 일치해야 합니다)
  */
 function prepareNightResolution(uuid, gameId) {
     const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''

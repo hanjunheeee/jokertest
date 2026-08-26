@@ -14,6 +14,7 @@ const {
     getSpecialRoleBudget,
     computeRoleComposition,
     isEligibleForNightAction,
+    getEligibleNightActorUuids,
     hasAnyDeadPlayer,
     computeWitchHunterConfirmationResult,
     sanitizeJokerChatText,
@@ -2425,9 +2426,10 @@ function nightSessionOf4NoWin({ id = 'room-cnr4' } = {}) {
     return candidate.session
 }
 
-// 죽이는 대상을 CITIZEN으로 고른 이유: 밤 행동이 있는 역할(JOKER/DOCTOR/GUARD/WITCH_HUNTER)의
-// 보유자를 죽이면 getEligibleNightActorUuids가 생존을 필터하지 않는 기존 동작 때문에 그 밤이
-// 영원히 ACTIONS_PENDING이 된다 — 이번 슬라이스 범위 밖의 선재 결함이라 건드리지 않고 피해 간다.
+// 죽이는 대상을 CITIZEN으로 고른 이유: 밤 행동이 있는 역할 4개의 보유자가 전원 생존한 채로
+// 남아 이 테스트가 검증하는 privateResults 조립이 "누가 기다림 대상인가"와 얽히지 않기
+// 때문이다(의도적 구성이지 우회가 아니다 — 밤 행동 역할 보유자가 시신인 경우는 바로 아래
+// 두 테스트가 따로 다룬다).
 test('prepareNightResolution: 사망자가 있는 밤에는 WITCH_HUNTER의 개인 결과가 {actionType:CONFIRM, targetId, role}로 담긴다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight({
         id: 'room-wh-private',
@@ -2447,6 +2449,42 @@ test('prepareNightResolution: 사망자가 있는 밤에는 WITCH_HUNTER의 개�
         targetId: citizenUuid,
         role: 'CITIZEN',
     })
+})
+
+// "이 밤에 제출해야 하는 배우"의 정의는 순차 턴 기계(computeCurrentNightTurnRole)·턴 게이트
+// (checkNightTurnGate의 ACTOR_NOT_ALIVE)와 반드시 일치해야 한다 — 턴을 받지 못하는 사망 배우를
+// 목록에 남기면 그 밤이 영원히 ACTIONS_PENDING에 묶인다. 낮 경로의 getEligibleDayVoterUuids가
+// 같은 계약을 고정하고 있는 것과 대칭이다.
+test('getEligibleNightActorUuids: 사망한 밤 행동 역할 보유자는 목록에서 제외되고 생존자만 남는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({
+        id: 'room-eligible-dead',
+    })
+    // DOCTOR가 시신이 되면 그 자신은 배우에서 빠지고, 동시에 사망자가 생겨 WITCH_HUNTER 턴이 열린다.
+    session.players.get(doctorUuid).alive = false
+
+    const actorUuids = getEligibleNightActorUuids(session)
+
+    assert.equal(actorUuids.includes(doctorUuid), false)
+    assert.deepEqual([...actorUuids].sort(), [jokerUuid, guardUuid, witchHunterUuid].sort())
+})
+
+test('prepareNightResolution: 사망한 eligible 역할 보유자는 제출하지 않아도 ACTIONS_PENDING을 막지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({
+        id: 'room-dead-actor-pending',
+    })
+    session.players.get(doctorUuid).alive = false
+
+    // 죽은 DOCTOR는 제출하지 않는다 — production에서도 checkNightTurnGate가 ACTOR_NOT_ALIVE로
+    // 막아 제출 자체가 불가능하다. 생존 배우 3명만 제출하면 그것으로 이 밤은 완료다.
+    submitNightAction(jokerUuid, session.id, null)
+    submitNightAction(guardUuid, session.id, jokerUuid)
+    submitNightAction(witchHunterUuid, session.id, doctorUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true, `밤 판정 준비 실패(${prepared.code})`)
+    // 죽은 DOCTOR는 nightActions entry가 없으므로 보호 집합에도 개인 결과에도 등장하지 않는다.
+    assert.equal(prepared.resolution.privateResults.has(doctorUuid), false)
 })
 
 test('commitNightResolution: 유효한 victim이 있으면 그 player만 alive:false, phase→DAY, dayIndex+1, nightResolution 설정, 반환값 {ok:true, victimUuid, terminal:null}', () => {
