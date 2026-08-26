@@ -1,6 +1,6 @@
 {
   "slice_id": "20260826-joker-ended-session-cleanup",
-  "status": "running:implement",
+  "status": "running:test",
   "branch": "slice/20260826-joker-ended-session-cleanup",
   "base": "windows-handoff-20260808",
   "base_commit": "009736c3a609647f515e5c21ee4480bd87a95115",
@@ -31,10 +31,14 @@
     "implement": {
       "status": "done",
       "run_id": "20260826-122328-joker-ended-session-cleanup-implement",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "81c9768ec5c873f4a890993ff8178c4b0907751b"
     },
     "test": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260826-123244-joker-ended-session-cleanup-test-2",
+      "verdict": "pass",
+      "attempts": 2
     }
   },
   "runs": [
@@ -69,7 +73,39 @@
         "peak_context": 102395
       },
       "cost_usd": 3.12507
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-123018-joker-ended-session-cleanup-test",
+      "status": "completed",
+      "turns": 17,
+      "tokens": {
+        "input": 33,
+        "cache_creation": 38068,
+        "cache_read": 834737,
+        "output": 5780,
+        "billed_input": 872838,
+        "peak_context": 58954
+      },
+      "cost_usd": 0.9427135
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260826-123244-joker-ended-session-cleanup-test-2",
+      "status": "completed",
+      "turns": 9,
+      "tokens": {
+        "input": 16,
+        "cache_creation": 23592,
+        "cache_read": 324258,
+        "output": 2686,
+        "billed_input": 347866,
+        "peak_context": 47577
+      },
+      "cost_usd": 0.46527899999999994
     }
   ],
-  "updated_at": "2026-08-26T12:30:18+09:00"
+  "updated_at": "2026-08-26T12:33:41+09:00"
 }
