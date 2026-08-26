@@ -29,8 +29,10 @@ import { MATCHING_POPUP_COPY } from "../../frontend/src/domains/game/matching/co
 import { ROOM_SETUP_PLAN, SEAT_ROLES, expectedRoleRevealTexts } from "./scenarioPlan.js"
 import * as selectors from "./selectors.js"
 
-/** 방 코드 자릿수 — RoomCodeInput이 그리는 입력칸 수와 같다. */
-const ROOM_CODE_LENGTH = 6
+/**
+ * 방장의 방이 공개 목록에 나타날 때까지 기다려주는 상한(소켓 연결 + 브로드캐스트 왕복 여유).
+ */
+const PUBLIC_ROOM_APPEAR_TIMEOUT_MS = 30_000
 
 /**
  * 오버레이 dialog의 aria-label. phase entrance·개인 결과는 프런트 상수를 그대로 쓰고,
@@ -151,42 +153,35 @@ export async function createRoom(seat) {
 }
 
 /**
- * 방장 창의 초대코드 모달에서 6자리 방 코드를 읽는다.
- * @param {object} seat 방장 좌석
- * @flow 모달을 열어 6칸의 입력값을 이어붙이고 다시 닫는다 — 모달이 열린 채로 남으면 다음
- *   조작(준비/시작)의 클릭을 가로챈다.
- * @returns {Promise<string>} 6자리 방 코드
- */
-export async function readRoomCode(seat) {
-  await seat.page.getByRole("button", { name: "초대코드 공유", exact: true }).click()
-  const dialog = seat.page.getByRole("dialog", { name: "방코드" })
-  await expect(dialog).toBeVisible()
-
-  let code = ""
-  for (let index = 0; index < ROOM_CODE_LENGTH; index += 1) {
-    code += await dialog.getByLabel(`방 코드 ${index + 1}번째 자리`).inputValue()
-  }
-
-  await seat.page.getByRole("button", { name: "방코드 팝업 닫기", exact: true }).click()
-  await expect(dialog).toBeHidden()
-
-  expect(code, "방 코드를 6자리로 읽지 못했습니다").toHaveLength(ROOM_CODE_LENGTH)
-  return code
-}
-
-/**
- * 좌석이 방 코드로 입장한다.
+ * 좌석이 공개 방 목록에서 방장의 방을 찾아 입장한다.
  * @param {object} seat 좌석
- * @param {string} roomCode 6자리 방 코드
- * @flow 입장 순서가 곧 역할 배정 순서이므로 호출부는 반드시 순차 await로 부른다.
+ * @param {string} hostNickname 방장(S1) 계정의 닉네임 — 방 제목이 "{닉네임}의 방"이다
+ * @flow /multiplay로 들어가면 usePublicRooms가 마운트 즉시 get_public_rooms로 목록을 받고
+ *   이후 public_rooms_updated 브로드캐스트로 갱신한다 — 그래서 새로고침 없이 "그 방 row가
+ *   1개가 될 때까지" 기다리는 것만으로 목록 갱신 계약을 그대로 따른다(toHaveCount가 타임아웃까지
+ *   재시도하고, 같은 제목의 방이 둘이면 그 자리에서 실패한다). row 클릭은 선택일 뿐이라
+ *   "선택한 방 입장" 버튼을 눌러야 실제 입장이며, 입장 실패는 alert로만 드러나므로
+ *   assertNoDialogs로 마무리한다. 입장 순서가 곧 역할 배정 순서이므로 호출부는 반드시
+ *   순차 await로 부른다.
  */
-export async function joinByCode(seat, roomCode) {
-  await seat.page.goto("/roomInvite")
-  for (let index = 0; index < ROOM_CODE_LENGTH; index += 1) {
-    await seat.page.getByLabel(`방 코드 ${index + 1}번째 자리`).fill(roomCode[index])
-  }
-  await seat.page.getByRole("button", { name: "참여하기", exact: true }).click()
-  await seat.page.waitForURL("**/game-matching")
+export async function joinFromRoomList(seat, hostNickname) {
+  await seat.page.goto("/multiplay")
+
+  const row = seat.page.getByRole("button", { name: selectors.publicRoomRowName(hostNickname) })
+  await expect(
+    row,
+    `${seat.label}: "${selectors.publicRoomTitle(hostNickname)}"이(가) 입장 가능한 상태로 공개 방 목록에 나타나지 않았습니다`,
+  ).toHaveCount(1, { timeout: PUBLIC_ROOM_APPEAR_TIMEOUT_MS })
+  await row.click()
+
+  const enterButton = seat.page.getByRole("button", { name: "선택한 방 입장", exact: true })
+  await expect(
+    enterButton,
+    `${seat.label}: 입장 버튼이 활성화되지 않았습니다(코드 전용·마감 방일 수 있습니다)`,
+  ).toBeEnabled()
+  await enterButton.click()
+
+  await seat.page.waitForURL("**/game-matching", { timeout: PUBLIC_ROOM_APPEAR_TIMEOUT_MS })
   assertNoDialogs(seat)
 }
 

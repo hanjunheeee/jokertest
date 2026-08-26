@@ -1,5 +1,6 @@
 /**
- * data 훅 이름에서 Playwright CSS 셀렉터 문자열을 만드는 순수 함수 모음.
+ * 화면 요소를 지목하는 순수 셀렉터 빌더 모음 — 인게임은 data 훅 기반 CSS 셀렉터,
+ * 공개 방 목록은 접근가능한 이름(aria-label) 패턴이다.
  *
  * 속성 이름은 프런트가 소유한 단일 원천(INGAME_E2E_ATTRS)에서만 읽는다 — 이 파일이 이름을
  * 다시 적지 않으므로 프런트에서 이름을 바꾸면 여기 셀렉터도 자동으로 따라간다.
@@ -112,4 +113,34 @@ export function killReveal() {
  */
 export function nightPrivateResult(kind) {
   return attrSelector(OVERLAY_ATTRS.nightPrivateResult, kind)
+}
+
+/**
+ * 정규식 안에 문자열을 리터럴로 넣을 수 있도록 메타문자를 이스케이프한다.
+ * @param {string} value 정규식 리터럴로 취급할 문자열(닉네임처럼 사용자가 정한 값이 들어온다)
+ */
+export function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * 방장 닉네임으로 만들어지는 공개 방 제목.
+ * @param {string} hostNickname 방을 만든 계정의 닉네임
+ * @flow 이 형식의 원천은 backend/socket/matchmaking.js의 `${user.nickname}의 방`이다 —
+ *   frontend에 import할 상수가 없어 문자열을 여기 한 곳에만 적는다.
+ */
+export function publicRoomTitle(hostNickname) {
+  return `${hostNickname}의 방`
+}
+
+/**
+ * 공개 방 목록 row 버튼의 접근가능한 이름 패턴 — RoomListRow의 aria-label 계약이다.
+ * @param {string} hostNickname 방을 만든 계정의 닉네임
+ * @flow aria-label은 `{단계} {제목}, {현재}/{정원}명{, 코드 필요}{, 진행중|마감}`이다
+ *   (RoomListRow.jsx). 뒤만 앵커링해 `, n/m명`으로 끝나게 하면 코드 전용·진행중·마감
+ *   접미가 붙지 않은 방 = 지금 입장할 수 있는 방만 걸린다. 앞은 열어두어 목록 DTO에
+ *   지금은 없는 stage 배지가 나중에 붙어도 셀렉터가 깨지지 않는다.
+ */
+export function publicRoomRowName(hostNickname) {
+  return new RegExp(`${escapeRegExp(publicRoomTitle(hostNickname))}, \\d+/\\d+명$`)
 }

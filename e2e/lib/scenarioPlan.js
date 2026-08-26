@@ -142,15 +142,21 @@ function buildStepperStep(label, options, currentValue, targetValue) {
 }
 
 /**
- * 방 생성 화면의 기본값에서 5인 CUSTOM(광대1·의사1·경비대1·마녀사냥꾼1)까지의 조작 목록을 만든다.
+ * 방 생성 화면의 기본값에서 5인 공개(open) CUSTOM(광대1·의사1·경비대1·마녀사냥꾼1)까지의
+ * 조작 목록을 만든다.
  *
  * CUSTOM이 반드시 필요한 이유: 5인 AUTO 방의 특수 역할 budget은 전부 0이라
  * (backend getSpecialRoleBudget) 구성이 JOKER 1 + CITIZEN 4가 되고, DEBUG_FIXED_ROLES는
  * COMPOSITION_MISMATCH로 조용히 무시된 뒤 랜덤 배정으로 되돌아간다.
  *
+ * 공개(open)가 반드시 필요한 이유: 나머지 좌석이 공개 방 목록에서 클릭으로 입장하는데,
+ * accessType이 "code"면 그 경로가 프런트·서버 양쪽에서 막힌다.
+ *
  * @flow 순서가 중요하다. ① 정원을 먼저 5로 줄여야 역할 스테퍼의 범위가 5 기준으로 잡히고,
  *   ② 역할 구성을 CUSTOM으로 바꾸는 순간 useRoleCompositionState가 AUTO의 광대 수를 승계하므로
  *   ③ 광대 수 보정은 그 다음에 와야 한다. 나머지 고정 역할은 0에서 1로 올린다.
+ *   "코드로만 참가"는 기본값이 꺼짐일 때 아무 조작도 만들지 않고, 기본값이 뒤집혔을 때만
+ *   끄는 조작이 들어간다.
  * @returns {Array<object>} actors가 그대로 재생하는 조작 목록
  */
 function buildRoomSetupPlan() {
@@ -169,8 +175,11 @@ function buildRoomSetupPlan() {
   )
   if (maxPlayersStep) steps.push(maxPlayersStep)
 
-  // ② 코드로만 참가 — 공개 목록에 노출되지 않게 해 다른 사람이 끼어드는 경로를 줄인다.
-  if (privateLobbyItem.defaultChecked !== true) {
+  // ② 코드로만 참가는 반드시 꺼져 있어야 한다 — 켜면 accessType이 "code"가 되어
+  //    (buildCreateRoomPayload) 공개 목록의 입장 버튼이 잠기고(RoomListShell) 서버도
+  //    join_public_room을 거부한다(backend/socket/matchmaking.js의 handleJoinPublicRoom).
+  //    기본값이 이미 꺼짐이라 지금은 조작이 생기지 않지만, 기본값이 뒤집히면 끄는 조작이 들어간다.
+  if (privateLobbyItem.defaultChecked === true) {
     steps.push({ kind: "checkbox", label: privateLobbyItem.label })
   }
 
