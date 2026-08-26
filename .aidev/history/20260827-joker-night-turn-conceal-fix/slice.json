@@ -1,6 +1,6 @@
 {
   "slice_id": "20260827-joker-night-turn-conceal-fix",
-  "status": "running:plan",
+  "status": "running:implement",
   "branch": "slice/20260827-joker-night-turn-conceal-fix",
   "base": "windows-handoff-20260808",
   "base_commit": "bc47cceba4819b9d65517650e3e890deda9e4562",
@@ -23,11 +23,15 @@
   "stages": {
     "plan": {
       "status": "done",
+      "approval": "approved",
       "run_id": "20260827-011930-joker-night-turn-conceal-fix-plan",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "63ad9a408feac23c799af4c0efa2b46e392d6beb"
     },
     "implement": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260827-012915-joker-night-turn-conceal-fix-implement",
+      "attempts": 1
     },
     "test": {
       "status": "pending"
@@ -49,7 +53,23 @@
         "peak_context": 151500
       },
       "cost_usd": 3.0223095
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260827-012915-joker-night-turn-conceal-fix-implement",
+      "status": "completed",
+      "turns": 68,
+      "tokens": {
+        "input": 117,
+        "cache_creation": 146024,
+        "cache_read": 8136111,
+        "output": 41057,
+        "billed_input": 8282252,
+        "peak_context": 166910
+      },
+      "cost_usd": 6.555305500000002
     }
   ],
-  "updated_at": "2026-08-27T01:28:29+09:00"
+  "updated_at": "2026-08-27T01:39:35+09:00"
 }

@@ -6,7 +6,11 @@ import {
   getInGameNightTurnAnnouncement,
   INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS,
 } from "../constants/nightTurn/ingameNightTurnAnnouncement.js"
-import { selectInGameNightTurnReel } from "../utils/selectInGameNightTurnReel.js"
+import {
+  computeInGameNightTurnReelBarrier,
+  selectInGameNightTurnReel,
+} from "../utils/selectInGameNightTurnReel.js"
+import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
 import {
   buildInGameNightTurnAnnouncementIdentity,
   buildInGameNightTurnAnnouncementScope,
@@ -24,14 +28,24 @@ import {
  * 표시 전용이다 — socket emit(acknowledge_role_reveal 포함)·REST·canonical store 변경이 전혀
  * 없고, 안내를 닫아도 서버의 역할 턴·phase는 조금도 움직이지 않는다.
  *
- * 이 훅이 따라가는 것은 canonical 역할 턴이 아니라 **연출 릴**이다(selectInGameNightTurnReel).
- * 릴은 그 밤에 안내할 역할을 광대→의사→경호원→마녀사냥꾼 순서로 담은 목록이고, 역할 보유자의
- * 생사를 전혀 보지 않는다 — 죽은 역할의 턴 안내가 사라지면 관찰자가 "안내가 사라짐 = 그 역할
- * 사망"을 추론할 수 있어 사망자의 역할이 전체에 누출되기 때문이다. 그래서:
+ * 이 훅은 두 축을 따로 다룬다 — 릴의 **구성**과 릴의 **전진**이다.
  *
- *   - 릴 커서는 고정 리듬(INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)으로만 한 칸씩 전진하고
- *     마지막 칸에서 멈춘다. canonical 턴과는 동기화하지 않는다 — 그 값은 죽은 역할을 건너뛴
- *     판정용 커서라, 거기에 맞추는 순간 죽은 역할의 칸이 다시 사라진다.
+ * 구성은 canonical 턴을 보지 않는다(selectInGameNightTurnReel). 릴은 그 밤에 안내할 역할을
+ * 광대→의사→경호원→마녀사냥꾼 순서로 담은 목록이고, 역할 보유자의 생사를 전혀 보지 않는다 —
+ * 죽은 역할의 칸이 릴에서 빠지면 관찰자가 "안내가 사라짐 = 그 역할 사망"을 추론할 수 있어
+ * 사망자의 역할이 전체에 누출되기 때문이다.
+ *
+ * 전진은 canonical 턴을 **상한**으로 따른다(computeInGameNightTurnReelBarrier). 커서는 상한보다
+ * 뒤에 있을 때만 고정 리듬(INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)으로 한 칸씩 전진하고,
+ * 상한과 릴의 마지막 칸에서 멈춘다. 그래서:
+ *
+ *   - 보유자가 살아있는 역할의 칸에서는 그 역할의 제출로 서버가 canonical 턴을 옮기기 전까지
+ *     커서가 멈춘다 — 제출도 못 한 채 다음 역할 문구로 흘러가는 일이 없다.
+ *   - 보유자가 전원 사망한 역할은 서버가 그 턴을 건너뛴 canonical을 방송하므로 상한이 그 칸
+ *     너머로 뛴다. 칸 자체는 릴에 그대로 남아 안내 한 장을 재생한 뒤 지나간다 — 은폐를 지키는
+ *     유일한 시간 기반 진행이 이것이다.
+ *   - 상한이 두 칸 이상 앞으로 뛰어도 즉시 점프하지 않는다. 점프하면 중간 칸이 한 프레임 만에
+ *     지워져 은폐 목적 자체가 깨지므로, 모든 칸이 똑같이 한 박자를 갖는다.
  *   - 닫기는 지금 떠 있는 카드를 숨길 뿐 커서를 전진시키지 않는다. 리듬은 모든 창에서 같다.
  *   - 판정은 조금도 바뀌지 않는다. "지금 내 차례인가"는 여전히 canonical 턴을 읽는 행동 패널
  *     (useInGameActionPanel)이 알려주고, 죽은 보유자 본인에게는 그대로 패널이 뜨지 않는다.
@@ -43,17 +57,20 @@ import {
  *
  * 하이드레이션 구분:
  *   재접속 스냅샷(get_session_snapshot)으로 이미 진행 중인 밤에 복원되는 것은 "방금 연출이
- *   시작된 것"이 아니므로 커서를 릴의 마지막 칸으로 보내고 그 역할을 baseline으로만 등록한다
- *   (그 밤에 이미 지나간 안내들을 몰아서 재생하지 않는다). 판별은 소켓 리스너 등록 순서가
- *   아니라 store의 snapshotSeq로만 한다(useInGamePhaseEntrance와 동일).
+ *   시작된 것"이 아니므로 커서를 지금의 상한으로 보내고 그 역할을 baseline으로만 등록한다
+ *   (그 밤에 이미 지나간 안내들을 몰아서 재생하지 않는다). 스냅샷에는 canonical 역할 턴이
+ *   실리지 않으므로(applySessionSnapshot) 복원 창의 상한은 그 밤의 시작 역할이며, 이는 같은
+ *   창의 행동 패널이 이미 쓰고 있는 값과 정확히 같다 — 연출과 판정이 어긋나지 않는다. 다음
+ *   night_turn_changed부터는 정상적으로 따라붙는다. 판별은 소켓 리스너 등록 순서가 아니라
+ *   store의 snapshotSeq로만 한다(useInGamePhaseEntrance와 동일).
  *
  * @param {object} [options]
  * @param {boolean} [options.hold] 더 앞 순서의 오버레이(역할 공개, 사망 연출, 개인 조사 결과,
  *   DAY/NIGHT 진입 연출)가 떠 있는가. true인 동안에는 안내를 띄우지 않고 커서도 멈춘다 —
  *   "밤이 되었습니다"를 닫는 즉시 릴의 첫 칸이 반드시 뜬다.
  * @flow 릴 키(scope+dayIndex+릴 구성)가 바뀌면 렌더 중에 커서를 첫 칸으로 되돌리고, 스냅샷
- *   하이드레이션이면 마지막 칸으로 보낸다. 그 뒤 릴 커서가 가리키는 역할 하나만 표시 상태
- *   기계에 넘기고, 고정 타이머가 커서를 한 칸씩 전진시킨다.
+ *   하이드레이션이면 지금의 상한 칸으로 보낸다. 그 뒤 릴 커서가 가리키는 역할 하나만 표시
+ *   상태 기계에 넘기고, 커서가 상한보다 뒤에 있는 동안에만 고정 타이머가 한 칸씩 전진시킨다.
  */
 export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
@@ -64,6 +81,11 @@ export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
   // 모양이다). 구독은 문자열 키 하나로만 하고 배열은 그 키에서 되살린다.
   const reelKey = useInGameStore((s) => selectInGameNightTurnReel(s.state ?? null).join("|"))
   const reelRoles = useMemo(() => (reelKey.length > 0 ? reelKey.split("|") : []), [reelKey])
+  // 릴 커서의 상한. canonical 턴은 문자열 하나라 그대로 구독해도 참조 churn이 없다 —
+  // 판정(useInGameActionPanel)이 읽는 값과 정확히 같은 값이며, 여기서는 릴의 구성원이 아니라
+  // 오직 "어디까지 전진해도 되는가"로만 쓴다(구성원으로 쓰면 죽은 역할의 칸이 사라져 누출된다).
+  const canonicalTurnRole = useInGameStore((s) => selectInGameNightTurnRole(s.state ?? null))
+  const barrierIndex = computeInGameNightTurnReelBarrier(reelRoles, canonicalTurnRole)
   const snapshotSeq = useInGameStore((s) => s.snapshotSeq)
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
@@ -94,13 +116,9 @@ export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
   // 존재하지 않는다. 하이드레이션 판별(snapshotSeq)도 같은 이유로 여기 한 곳에서만 소비한다.
   if (cursor.reelId !== reelId || cursor.snapshotSeq !== snapshotSeq) {
     const hydrated = cursor.snapshotSeq !== snapshotSeq
-    // 하이드레이션은 "이미 진행 중인 밤에 복원된 것"이므로 릴의 마지막 칸에서 이어붙인다 —
-    // 그 밤에 이미 지나간 안내를 몰아서 재생하지 않는다.
-    const nextIndex = hydrated
-      ? Math.max(reelRoles.length - 1, 0)
-      : cursor.reelId !== reelId
-        ? 0
-        : cursor.index
+    // 하이드레이션은 "이미 진행 중인 밤에 복원된 것"이므로 지금의 상한 칸에서 이어붙인다 —
+    // 그 밤에 이미 지나간 안내를 몰아서 재생하지 않고, 상한 너머로 앞질러 가지도 않는다.
+    const nextIndex = hydrated ? barrierIndex : cursor.reelId !== reelId ? 0 : cursor.index
     setCursor({ reelId, snapshotSeq, index: nextIndex, hydrated })
   }
 
@@ -126,19 +144,25 @@ export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, identity, hold, cursor.hydrated])
 
-  // 릴 전진 타이머 — 이 훅에서 커서를 움직이는 유일한 경로다. 마지막 칸에서 멈추고, hold 동안
-  // 에는 아예 시작하지 않으며("밤이 되었습니다"를 닫은 뒤부터 리듬이 흐른다), 하이드레이션으로
-  // 마지막 칸에 복원된 경우에는 전진할 칸 자체가 없다.
+  // 릴 전진 타이머 — 이 훅에서 커서를 움직이는 유일한 경로다. 릴의 마지막 칸과 canonical
+  // 상한에서 멈추고, hold 동안에는 아예 시작하지 않는다("밤이 되었습니다"를 닫은 뒤부터 리듬이
+  // 흐른다). 상한 조건이 이번 회귀의 수정 지점이다 — 보유자가 살아있는 역할의 칸은 그 역할의
+  // 제출로 canonical이 움직이기 전까지 여기서 멈춘다.
+  // 전진할 때 hydrated를 내리는 것도 필수다. 남겨두면 복원 창 이후의 모든 칸이 baseline으로만
+  // 등록돼(reduce의 규칙 2) 그 밤의 안내가 한 장도 뜨지 않는다.
   useEffect(() => {
     if (hold) return undefined
     if (index >= reelRoles.length - 1) return undefined
+    if (index >= barrierIndex) return undefined
     const timer = setTimeout(() => {
       setCursor((current) =>
-        current.reelId === reelId && current.index === index ? { ...current, index: index + 1 } : current,
+        current.reelId === reelId && current.index === index
+          ? { ...current, index: index + 1, hydrated: false }
+          : current,
       )
     }, INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)
     return () => clearTimeout(timer)
-  }, [reelId, index, reelRoles.length, hold])
+  }, [reelId, index, reelRoles.length, hold, barrierIndex])
 
   const activeIdentity = presentation.active?.identity ?? null
   const activeRole = presentation.active?.role ?? null
@@ -168,8 +192,9 @@ export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
     identity: activeIdentity,
     role: activeRole,
     // 상태바가 읽는 값 — 오버레이의 열림/닫힘과 무관하게 릴 커서가 가리키는 역할이다. 릴이
-    // 끝난 뒤에도 밤이 계속되면 마지막 역할 문구가 그대로 남는다((구성+시신+시간)만의 함수라
-    // 누구의 생사도 드러내지 않는다).
+    // 끝난 뒤에도 밤이 계속되면 마지막 역할 문구가 그대로 남는다. 커서는 (구성+시신+시간+
+    // canonical 턴)만의 함수이고, canonical 턴은 이미 전원에게 방송되는 공개 값이라 여기에서
+    // 누구의 생사도 새로 드러나지 않는다.
     statusRole: reelRole,
     close,
   }
