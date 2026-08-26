@@ -1,6 +1,6 @@
 {
   "slice_id": "20260826-joker-result-lobby-button",
-  "status": "running:plan",
+  "status": "running:implement",
   "branch": "slice/20260826-joker-result-lobby-button",
   "base": "windows-handoff-20260808",
   "base_commit": "3ff5ffc589ab0a19d940be94bfa188de946c73f1",
@@ -23,11 +23,16 @@
   "stages": {
     "plan": {
       "status": "done",
+      "approval": "approved",
+      "approval_reason": "로비 버튼 에셋은 frontend/public/button/ 아래 실제 존재하는 빨간 버튼 png 파일을 확인해 사용하고, 존재하지 않는 경로를 만들어내지 않는다.",
       "run_id": "20260826-130003-joker-result-lobby-button-plan",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "7e9511f96e596fcf865f380d48fe7b53122cf664"
     },
     "implement": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260826-130752-joker-result-lobby-button-implement",
+      "attempts": 1
     },
     "test": {
       "status": "pending"
@@ -49,7 +54,23 @@
         "peak_context": 103111
       },
       "cost_usd": 2.4795134999999995
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-130752-joker-result-lobby-button-implement",
+      "status": "completed",
+      "turns": 57,
+      "tokens": {
+        "input": 78,
+        "cache_creation": 85053,
+        "cache_read": 3632417,
+        "output": 21869,
+        "billed_input": 3717548,
+        "peak_context": 105938
+      },
+      "cost_usd": 3.2138535
     }
   ],
-  "updated_at": "2026-08-26T13:06:48+09:00"
+  "updated_at": "2026-08-26T13:13:03+09:00"
 }

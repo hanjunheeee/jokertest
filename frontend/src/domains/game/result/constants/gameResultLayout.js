@@ -104,3 +104,11 @@ export const GAME_RESULT_MVP_PLAYER_NAME_INSET = {
 
 export const GAME_RESULT_MVP_PLAYER_NAME_CLASS =
   "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-display text-[clamp(1.15rem,8.8cqi,1.7rem)] font-medium leading-none tracking-normal text-black antialiased"
+
+/**
+ * 로비 복귀 버튼 래퍼 — 화면 우하단 고정(버튼 자체 스타일은 LabelledActionButton 재사용).
+ * shell(z-10)의 형제라 fixed로 띄우고 그 위(z-20)에 둔다. 폭을 11.4rem으로 고정하면
+ * ROOM_CODE_ACTION_BTN_CLASS의 preferred(부모 대비 19%)가 min 아래로 떨어져 크기가 결정된다.
+ */
+export const GAME_RESULT_LOBBY_BUTTON_WRAP_CLASS =
+  "fixed bottom-[clamp(1rem,3.2vh,2.25rem)] right-[clamp(1.25rem,4vw,3rem)] z-20 flex w-[11.4rem] justify-center"

@@ -14,6 +14,8 @@ export const GAME_RESULT_ASSETS = {
   mvpPlayerFrame:
     "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(베이스).png",
   profileFrame: "/frame/friendList/친구 프로필 프레임.png".normalize("NFD"),
+  /** 로비 복귀 버튼 — 방 삭제/초대 취소와 같은 "부정·이탈" 계열 빨간 버튼 에셋 */
+  lobbyButton: "/button/버튼(취소 및 부정).png".normalize("NFD"),
 }
 
 /** @param {"win" | "lose"} outcome */
