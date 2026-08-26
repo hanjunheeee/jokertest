@@ -3713,3 +3713,129 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     assertNoForbiddenPrivateData(endedSnapshot, collectOtherPlayerRoleSecrets(session, citizenB))
     assert.equal(io.broadcasts.length, 0)
 })
+
+// ---------------------------------------------------------------------------
+// resyncSessionRouting — 재접속 라우팅 재동기화 / ENDED 잔존 정리
+// ---------------------------------------------------------------------------
+
+/**
+ * 결과 화면 새로고침을 흉내낸다 — 옛 소켓의 disconnect가 아직(혹은 영원히) 처리되지 않은 채
+ * 같은 uuid로 새 소켓이 연결된 상황이다. 새 소켓은 기존 channel 밖에 있고 activeGameId 결합도
+ * 없다(handleStartGame을 거치지 않았으므로).
+ * @param {object} io - fake Socket.IO 서버
+ * @param {string} uuid - 재접속한 참가자 uuid
+ */
+function attachReconnectedSocket(io, uuid) {
+    const socket = createFakeSocket(uuid, { id: `sock-${uuid}-new` })
+    io.sockets.sockets.set(socket.id, socket)
+    return socket
+}
+
+test('resyncSessionRouting: ENDED 세션에 잔존한 참가자는 재부착 대신 playerSession에서 정리된다', async () => {
+    const { session, io } = commitTwoPlayerSession()
+    session.phase = 'ENDED'
+
+    const newSocket = attachReconnectedSocket(io, 'p1')
+    await gameSessionSocketLayer.resyncSessionRouting(io, newSocket, 'p1')
+
+    // 재부착하지 않는다 — channel join도, activeGameId 결합도 남기지 않는다.
+    assert.deepEqual(newSocket.joined, [])
+    assert.equal(newSocket.rooms.size, 0)
+    assert.equal(newSocket.data.activeGameId, undefined)
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'p1'), false)
+    // p2가 아직 남아 있으므로 세션 자체는 registry에 그대로 있고 종료 방송도 없다.
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'p2'), true)
+    assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), true)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('resyncSessionRouting: ENDED 세션의 마지막 참가자를 정리하면 finalize까지 수행한다', async () => {
+    const { session, socketA, socketB, io } = commitTwoPlayerSession()
+    session.phase = 'ENDED'
+
+    await gameSessionSocketLayer.resyncSessionRouting(io, attachReconnectedSocket(io, 'p1'), 'p1')
+    await gameSessionSocketLayer.resyncSessionRouting(io, attachReconnectedSocket(io, 'p2'), 'p2')
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), false)
+    assert.equal(snapshot.roomGameSession.some(([roomId]) => roomId === 'room-1'), false)
+    assert.equal(snapshot.playerSession.length, 0)
+
+    const gameEndedBroadcasts = io.broadcasts.filter((b) => b.event === 'game_ended')
+    assert.equal(gameEndedBroadcasts.length, 1)
+    assert.equal(gameEndedBroadcasts[0].roomId, session.channelId)
+    assert.deepEqual(gameEndedBroadcasts[0].payload, { gameId: session.id, reason: 'RECONNECT_AFTER_END' })
+
+    // 아직 channel에 남아 있던 옛 소켓들이 정리된다.
+    assert.equal(socketA.rooms.has(session.channelId), false)
+    assert.equal(socketB.rooms.has(session.channelId), false)
+})
+
+test('resyncSessionRouting: ENDED 잔존을 정리한 뒤 같은 uuid로 새 GameSession을 커밋할 수 있다', async () => {
+    const { session, io } = commitTwoPlayerSession()
+    session.phase = 'ENDED'
+
+    await gameSessionSocketLayer.resyncSessionRouting(io, attachReconnectedSocket(io, 'p1'), 'p1')
+    await gameSessionSocketLayer.resyncSessionRouting(io, attachReconnectedSocket(io, 'p2'), 'p2')
+
+    // 정리 전이라면 "참가자가 이미 다른 GameSession에 속함"으로 거부됐을 커밋이다.
+    const newRoom = makeRoom({ id: 'room-2', players: [makePlayer('p1'), makePlayer('p2')] })
+    const prepared = gameSessionCore.prepareGameSession(newRoom)
+    assert.equal(prepared.ok, true)
+    assert.doesNotThrow(() => gameSessionCore.commitGameSession(prepared.session))
+})
+
+test('resyncSessionRouting: 진행 중 세션이면 기존대로 channel에 재부착하고 registry는 그대로다', async () => {
+    const { session, io } = commitTwoPlayerSession()
+    const before = gameSessionCore.__getStateSnapshotForTests()
+
+    const newSocket = attachReconnectedSocket(io, 'p1')
+    await gameSessionSocketLayer.resyncSessionRouting(io, newSocket, 'p1')
+
+    assert.equal(newSocket.data.activeGameId, session.id)
+    assert.equal(newSocket.rooms.has(session.channelId), true)
+    assert.deepEqual(gameSessionCore.__getStateSnapshotForTests(), before)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('resyncSessionRouting: 이미 channel에 가입된 소켓은 다시 join하지 않는다(멱등)', async () => {
+    const { socketA, io } = commitTwoPlayerSession()
+
+    await gameSessionSocketLayer.resyncSessionRouting(io, socketA, 'p1')
+    await gameSessionSocketLayer.resyncSessionRouting(io, socketA, 'p1')
+
+    assert.deepEqual(socketA.joined, [])
+})
+
+test('resyncSessionRouting: 활성 세션이 없는 uuid는 아무 것도 하지 않는다', async () => {
+    const socket = createFakeSocket('lonely-uuid')
+    const io = createFakeIo([socket])
+
+    await gameSessionSocketLayer.resyncSessionRouting(io, socket, 'lonely-uuid')
+
+    assert.deepEqual(socket.joined, [])
+    assert.equal(socket.rooms.size, 0)
+    assert.equal(socket.data.activeGameId, undefined)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('resyncSessionRouting: 종료 core가 던져도 reject하지 않고 조용히 중단한다', async () => {
+    const { session, io } = commitTwoPlayerSession()
+    session.phase = 'ENDED'
+    const newSocket = attachReconnectedSocket(io, 'p1')
+
+    const original = gameSessionCore.endGameSessionForPlayer
+    gameSessionCore.endGameSessionForPlayer = () => {
+        throw new Error('종료 실패(테스트 주입)')
+    }
+    try {
+        await assert.doesNotReject(() => gameSessionSocketLayer.resyncSessionRouting(io, newSocket, 'p1'))
+    } finally {
+        gameSessionCore.endGameSessionForPlayer = original
+    }
+
+    assert.deepEqual(newSocket.joined, [])
+    assert.equal(io.broadcasts.length, 0)
+})

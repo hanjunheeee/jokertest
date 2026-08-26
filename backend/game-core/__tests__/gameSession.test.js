@@ -34,6 +34,7 @@ const {
     prepareGameChatMessage,
     commitGameChatMessage,
     getChatRecipientUuids,
+    getActiveSessionRoutingInfo,
     CHAT_CHANNELS,
     CHAT_MAX_LENGTH,
     CHAT_MIN_INTERVAL_MS,
@@ -1324,6 +1325,55 @@ test('endGameSessionForPlayer: ABA 방지 — 세션 A 종료 후 시작된 세�
     assert.equal(after.gameSessions.some(([gameId]) => gameId === gameIdB), true)
     assert.equal(after.roomGameSession.some(([roomId, gameId]) => roomId === 'room-aba-2' && gameId === gameIdB), true)
     assert.equal(after.playerSession.some(([uuid, gameId]) => uuid === 'aba-uuid' && gameId === gameIdB), true)
+})
+
+// ---------------------------------------------------------------------------
+// getActiveSessionRoutingInfo — 재접속 라우팅 조회
+// ---------------------------------------------------------------------------
+
+test('getActiveSessionRoutingInfo: 진행 중 세션의 참가자에게 gameId·channelId·phase만 반환한다', () => {
+    const room = makeRoom({ id: 'room-routing', players: [makePlayer('rt-a'), makePlayer('rt-b')] })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    const routing = getActiveSessionRoutingInfo('rt-a')
+
+    // 키 집합을 고정해 role/team/ballot 등 비밀 정보가 새로 실리지 않았음을 못박는다.
+    assert.deepEqual(Object.keys(routing).sort(), ['channelId', 'gameId', 'phase'])
+    assert.equal(routing.gameId, candidate.session.id)
+    assert.equal(routing.channelId, candidate.session.channelId)
+    assert.equal(routing.phase, 'ROLE_REVEAL')
+})
+
+test('getActiveSessionRoutingInfo: 세션이 ENDED면 phase가 ENDED이고 라우팅 값은 그대로다', () => {
+    const room = makeRoom({ id: 'room-routing-ended', players: [makePlayer('rte-a'), makePlayer('rte-b')] })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    candidate.session.phase = 'ENDED'
+    const routing = getActiveSessionRoutingInfo('rte-a')
+
+    assert.deepEqual(routing, {
+        gameId: candidate.session.id,
+        channelId: candidate.session.channelId,
+        phase: 'ENDED',
+    })
+})
+
+test('getActiveSessionRoutingInfo: 활성 세션이 없는 uuid는 null이다', () => {
+    assert.equal(getActiveSessionRoutingInfo('no-such-uuid'), null)
+})
+
+test('getActiveSessionRoutingInfo: registry 불일치(세션만 사라짐)에서도 throw하지 않고 null이다', () => {
+    const room = makeRoom({ id: 'room-routing-gone', players: [makePlayer('rtg-a'), makePlayer('rtg-b')] })
+    const candidate = buildSessionCandidate(room)
+    commitGameSession(candidate.session)
+
+    __deleteGameSessionOnlyForTests(candidate.session.id)
+
+    // phase를 함께 반환하게 된 뒤에도 세션 객체가 없는 경우는 여전히 null이다(session.phase
+    // 접근으로 throw하지 않는다).
+    assert.equal(getActiveSessionRoutingInfo('rtg-a'), null)
 })
 
 // ---------------------------------------------------------------------------

@@ -61,6 +61,12 @@ function registerDisconnectHandler(io, socket, uuid) {
     });
 }
 
+/**
+ * 새 연결 하나에 대한 배선을 전부 담당한다(presence 처리, 세션 라우팅 재동기화,
+ * matchmaking·gameSession 핸들러 등록, disconnect 리스너 등록).
+ * @param {object} io - Socket.IO 서버
+ * @param {object} socket - 방금 연결된 socket
+ */
 function registerConnectionHandlers(io, socket) {
     const { uuid } = socket.data.user;
 
@@ -69,8 +75,10 @@ function registerConnectionHandlers(io, socket) {
     });
 
     // 재접속 시 기존 활성 세션의 channel·activeGameId를 재바인딩한다(권한 부여 아님 — 라우팅
-    // 정보만 동기화하는 fire-and-forget 부수효과).
-    gameSession.resyncSessionRouting(socket, uuid).catch((err) => {
+    // 정보만 동기화하는 fire-and-forget 부수효과). 대상 세션이 이미 ENDED면 재부착 대신 그
+    // 참가자를 세션에서 정리하며, 마지막 참가자였다면 game_ended 방송·channel 정리까지
+    // 이어지므로 io를 함께 넘긴다.
+    gameSession.resyncSessionRouting(io, socket, uuid).catch((err) => {
         console.error("\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m", err);
     });
 

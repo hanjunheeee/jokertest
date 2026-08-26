@@ -96,10 +96,45 @@ function isCurrentSocketForUuid(uuid, socket) {
  * 않는다 — mutation·disconnect 권한은 오직 isCurrentSocketForUuid만 판정한다. 활성 세션이
  * 없으면 아무 것도 하지 않는다(no-op). 이미 가입된 channel에는 다시 join하지 않으므로
  * 동일 socket에 대해 여러 번 호출해도 멱등하다.
+ *
+ * 대상 세션이 이미 ENDED면 재부착하지 않고 그 참가자를 세션에서 정리한다. ENDED 결과
+ * 화면에서 새로고침하면 새 소켓이 먼저 연결돼 registry가 갱신되고, 뒤늦게 도착한 옛 소켓의
+ * disconnect는 isCurrentSocketForUuid 가드(정상 설계인 ABA 방지)에 막혀 정리를 못 한다 —
+ * 그 결과 playerSession에 uuid가 잔존해 다음 게임 시작이 "이미 다른 GameSession에 속함"으로
+ * 거부된다. 그 잔존을 여기서 대신 걷어낸다. 정리 경로에서는 socket.data.activeGameId도
+ * 심지 않는다(재부착하지 않으므로 라우팅 상태를 남기지 않는다 — 새 게임을 시작하면
+ * matchmaking의 handleStartGame이 다시 심는다). 마지막 참가자를 정리한 것이라면
+ * handleLeaveGameSession/onDisconnect와 똑같이 finalizeGameSessionEnd까지 수행한다.
+ * @param {object} io - Socket.IO 서버(마지막 참가자 정리 시 방송·channel 정리에 쓴다)
+ * @param {object} socket - 방금 연결된 socket
+ * @param {string} uuid - 인증된 참가자 uuid
+ * @flow 활성 세션이 없으면 no-op, ENDED면 종료 core로 그 참가자만 정리하고(마지막
+ *   참가자였을 때만 finalize) 재부착하지 않으며, 진행 중이면 기존대로 activeGameId를
+ *   재바인딩하고 channel에 멱등하게 재가입한다.
  */
-async function resyncSessionRouting(socket, uuid) {
+async function resyncSessionRouting(io, socket, uuid) {
     const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
     if (!routing) return
+
+    if (routing.phase === 'ENDED') {
+        let result
+        try {
+            // 조회와 종료 사이에 await이 없으므로 finalizeGameSessionEnd의 계약(종료 core와
+            // 동일한 동기 구간에서 matchmaking 정리)이 그대로 지켜진다. expectedGameId는 이
+            // 파일의 관례대로 명시한다.
+            result = gameSessionCore.endGameSessionForPlayer(uuid, 'RECONNECT_AFTER_END', routing.gameId)
+        } catch (err) {
+            console.error('[ENDED 세션 재접속 정리 에러]', err)
+            return
+        }
+        if (!result.ok) return
+        // handleLeaveGameSession과 동일한 이유로, 마지막 참가자 정리일 때만 실제 방송·channel
+        // 정리를 수행한다("game_ended는 한 번뿐" 계약).
+        if (!result.sessionDeleted) return
+
+        finalizeGameSessionEnd(io, result.session, result.reason)
+        return
+    }
 
     socket.data.activeGameId = routing.gameId
     if (!socket.rooms.has(routing.channelId)) {

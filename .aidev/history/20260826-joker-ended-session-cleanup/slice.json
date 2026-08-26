@@ -1,6 +1,6 @@
 {
   "slice_id": "20260826-joker-ended-session-cleanup",
-  "status": "running:plan",
+  "status": "running:implement",
   "branch": "slice/20260826-joker-ended-session-cleanup",
   "base": "windows-handoff-20260808",
   "base_commit": "009736c3a609647f515e5c21ee4480bd87a95115",
@@ -23,11 +23,15 @@
   "stages": {
     "plan": {
       "status": "done",
+      "approval": "approved",
       "run_id": "20260826-121616-joker-ended-session-cleanup-plan",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "91cbbf1a48abff3e57b490ca8b333c127472cd28"
     },
     "implement": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260826-122328-joker-ended-session-cleanup-implement",
+      "attempts": 1
     },
     "test": {
       "status": "pending"
@@ -49,7 +53,23 @@
         "peak_context": 86057
       },
       "cost_usd": 1.69619
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-122328-joker-ended-session-cleanup-implement",
+      "status": "completed",
+      "turns": 47,
+      "tokens": {
+        "input": 78,
+        "cache_creation": 81509,
+        "cache_read": 3282080,
+        "output": 26742,
+        "billed_input": 3363667,
+        "peak_context": 102395
+      },
+      "cost_usd": 3.12507
     }
   ],
-  "updated_at": "2026-08-26T12:20:30+09:00"
+  "updated_at": "2026-08-26T12:30:18+09:00"
 }
