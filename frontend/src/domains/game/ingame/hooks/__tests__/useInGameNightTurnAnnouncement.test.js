@@ -77,9 +77,12 @@ const DEAD_UUID = "uuid-dead"
  * 상태는 언제나 store의 실제 액션(setGamePayload/applySessionSnapshot)으로만 움직인다 —
  * 훅 내부 상태를 직접 건드리는 경로는 하나도 없다.
  *
- * 안내는 canonical 턴이 아니라 연출 릴을 따라간다: 릴은 서버가 내려준 역할 구성
- * (state.nightTurnRoles)에서 만들어지고, 역할 보유자의 생사를 전혀 보지 않으며, 고정 리듬
- * (INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)으로만 한 칸씩 전진한다.
+ * 안내가 따라가는 릴은 두 축으로 나뉜다. **구성**은 서버가 내려준 역할 구성
+ * (state.nightTurnRoles)에서 만들어지고 역할 보유자의 생사를 전혀 보지 않는다. **전진**은
+ * canonical 턴(night_turn_changed)을 상한으로 삼아 고정 리듬
+ * (INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)으로 한 칸씩만 나아간다 — 그래서 보유자가
+ * 살아있는 역할의 칸은 그 역할의 제출 전에 절대 넘어가지 않고, 보유자가 전원 사망한 역할의
+ * 칸은 서버가 그 턴을 건너뛴 방송을 보낸 덕에 연출 한 장만 재생되고 지나간다.
  */
 function createFakeSocket() {
   const handlers = new Map()
@@ -201,6 +204,23 @@ function advanceToNextNightWithDeath({ dayIndex, victimUuid }) {
   })
 }
 
+/**
+ * 서버가 그 역할의 턴을 끝내고 다음 역할을 방송한 것을 반영한다(night_turn_changed 정상 경로).
+ * 릴 커서의 상한을 움직이는 유일한 입력이며, 훅 내부 상태는 건드리지 않는다.
+ * @param {string} role 서버가 새로 지목한 canonical 역할 턴
+ * @param {number} [dayIndex] 그 밤의 canonical dayIndex(기본값은 store의 현재 값)
+ */
+function advanceCanonicalTurn(role, dayIndex = useInGameStore.getState().state?.dayIndex) {
+  act(() => {
+    useInGameStore.getState().applyNightTurnChanged({
+      gameId: GAME_ID,
+      phase: "NIGHT",
+      dayIndex,
+      nightTurnRole: role,
+    })
+  })
+}
+
 /** 릴 한 칸 분량(2600ms)만큼 고정 리듬을 흘려보낸다. */
 function tickReel(steps = 1) {
   for (let i = 0; i < steps; i += 1) {
@@ -309,7 +329,43 @@ test("같은 릴 칸에서 반복되는 canonical 갱신·스냅샷 재적용은
   unmount()
 })
 
-test("경호원 보유자가 죽은 밤에도 릴은 광대→의사→경호원 순서로 그대로 재생된다", () => {
+test("전원 생존 밤: 각 칸은 그 역할의 제출 전에는 절대 넘어가지 않는다", () => {
+  resetStores()
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    const composition = ["JOKER", "DOCTOR", "GUARD"]
+    const { result, unmount } = mountAtRoleReveal({ nightTurnRoles: composition })
+    applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRoles: composition })
+
+    assert.equal(messageOf(result), "광대의 시간입니다")
+
+    // 광대가 아직 제출하지 않았다 — 서버는 night_turn_changed를 보내지 않았고, 시간이 아무리
+    // 흘러도 상태바가 "가드의 시간"으로 새지 않는다(이 slice가 고치는 회귀).
+    tickReel(5)
+    assert.equal(result.current.statusRole, "JOKER", "제출 전에는 커서가 첫 칸에 머문다")
+    assert.equal(
+      useInGameStore.getState().state.nightTurnRole ?? null,
+      null,
+      "night_turn_changed가 한 번도 오지 않았다",
+    )
+
+    // 광대가 제출하고 서버가 의사 턴을 방송하면 비로소 다음 칸이 온다.
+    advanceCanonicalTurn("DOCTOR")
+    tickReel(1)
+    assert.equal(result.current.statusRole, "DOCTOR")
+    assert.equal(messageOf(result), "의사의 시간입니다")
+
+    // 의사의 제출 전에는 또 멈춘다.
+    tickReel(5)
+    assert.equal(result.current.statusRole, "DOCTOR", "다음 제출 전에는 경호원으로 넘어가지 않는다")
+
+    unmount()
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("보유자가 전원 사망한 역할의 칸도 릴에 남아 연출 한 장을 재생한 뒤 자동으로 넘어간다", () => {
   resetStores()
   mock.timers.enable({ apis: ["setTimeout"] })
   try {
@@ -318,7 +374,7 @@ test("경호원 보유자가 죽은 밤에도 릴은 광대→의사→경호원
 
     applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRoles: composition })
 
-    // 첫 밤에 한 명이 죽는다 — 그가 경호원 보유자였다면 서버는 그 뒤로 GUARD 턴을 아예
+    // 첫 밤에 한 명이 죽는다 — 그가 의사 보유자였다면 서버는 그 뒤로 DOCTOR 턴을 아예
     // 방송하지 않는다(computeCurrentNightTurnRole의 생존 필터). 프런트는 그 사실을 알 수
     // 없어야 하고, 알 필요도 없다.
     advanceToNextNightWithDeath({ dayIndex: 2, victimUuid: DEAD_UUID })
@@ -329,19 +385,26 @@ test("경호원 보유자가 죽은 밤에도 릴은 광대→의사→경호원
     }
 
     observe()
+    // 광대가 제출하자 서버가 의사를 통째로 건너뛰고 경호원 턴을 방송한다.
+    advanceCanonicalTurn("GUARD")
     tickReel(1)
     observe()
     tickReel(1)
     observe()
 
-    assert.deepEqual(seen, [
-      ["JOKER", "광대의 시간입니다"],
-      ["DOCTOR", "의사의 시간입니다"],
-      ["GUARD", "경호원의 시간입니다"],
-    ])
+    assert.deepEqual(
+      seen,
+      [
+        ["JOKER", "광대의 시간입니다"],
+        ["DOCTOR", "의사의 시간입니다"],
+        ["GUARD", "경호원의 시간입니다"],
+      ],
+      "죽은 역할의 칸이 사라지지도, 한 프레임 만에 지워지지도 않는다",
+    )
 
-    // night_turn_changed는 단 한 번도 오지 않았다 — 릴은 canonical 턴 없이 재생된다.
-    assert.equal(useInGameStore.getState().state.nightTurnRole, null)
+    // 경호원 칸에서는 다시 멈춘다 — 그 역할의 제출이 상한을 옮겨야 한다.
+    tickReel(5)
+    assert.equal(result.current.statusRole, "GUARD")
 
     unmount()
   } finally {
@@ -357,6 +420,8 @@ test("릴이 끝나면 상태바가 마지막 역할에 고정되고 새 안내�
     const { result, unmount } = mountAtRoleReveal({ nightTurnRoles: composition })
     applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRoles: composition })
 
+    // 광대·의사가 차례로 제출해 서버가 마지막 역할까지 턴을 옮겼다.
+    advanceCanonicalTurn("GUARD")
     tickReel(2)
     assert.equal(result.current.statusRole, "GUARD")
     assert.equal(messageOf(result), "경호원의 시간입니다")
@@ -398,7 +463,7 @@ test("hold 동안에는 릴이 시작하지도 전진하지도 않는다", () =>
   }
 })
 
-test("닫기는 릴 커서를 움직이지 않는다 — 다음 칸은 고정 리듬으로만 온다", () => {
+test("닫기는 릴 커서를 움직이지 않는다 — 다음 칸은 canonical 턴이 먼저 넘어가야 온다", () => {
   resetStores()
   mock.timers.enable({ apis: ["setTimeout"] })
   try {
@@ -412,6 +477,11 @@ test("닫기는 릴 커서를 움직이지 않는다 — 다음 칸은 고정 �
     assert.equal(result.current.open, false)
     assert.equal(result.current.statusRole, "JOKER", "닫아도 커서는 그 자리다")
 
+    // 닫기를 앞당김 신호로 쓰지 않는다 — 제출이 없으면 시간이 흘러도 그 자리다.
+    tickReel(3)
+    assert.equal(result.current.statusRole, "JOKER")
+
+    advanceCanonicalTurn("DOCTOR")
     tickReel(1)
     assert.equal(result.current.statusRole, "DOCTOR")
     assert.equal(messageOf(result), "의사의 시간입니다")
@@ -447,14 +517,23 @@ test("시신이 있는 밤에는 마녀사냥꾼 칸까지 재생된다(보유�
     applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
 
     // 시신이 없는 첫 밤에는 마녀사냥꾼 칸이 릴에 없다(원래 규칙 유지) — 광대·의사·경호원뿐이다.
+    // 서버가 경호원까지 턴을 옮겨도 그 뒤에 재생할 칸이 없다.
+    advanceCanonicalTurn("GUARD")
     tickReel(2)
     assert.equal(result.current.statusRole, "GUARD")
     tickReel(1)
     assert.equal(result.current.statusRole, "GUARD", "시신이 없으면 마녀사냥꾼 칸이 없다")
 
-    // 시신이 생긴 다음 밤에는 마녀사냥꾼 칸이 들어온다.
+    // 시신이 생긴 다음 밤에는 마녀사냥꾼 칸이 들어온다. canonical이 그 칸까지 와야 비로소
+    // 커서가 거기에 닿는다 — 중간 칸(광대·의사·경호원)은 그대로 한 장씩 재생된다.
     advanceToNextNightWithDeath({ dayIndex: 2, victimUuid: DEAD_UUID })
     tickReel(3)
+    assert.equal(result.current.statusRole, "JOKER", "canonical이 첫 칸에 있는 동안은 멈춰 있다")
+
+    advanceCanonicalTurn("WITCH_HUNTER")
+    tickReel(2)
+    assert.equal(result.current.statusRole, "GUARD", "건너뛴 칸도 한 장씩 재생하며 지나간다")
+    tickReel(1)
 
     assert.equal(result.current.statusRole, "WITCH_HUNTER")
     assert.equal(messageOf(result), "마녀사냥꾼의 시간입니다")
@@ -620,7 +699,7 @@ test("StrictMode의 이중 실행에도 같은 릴 칸이 다시 열리지 않�
   unmount()
 })
 
-test("이미 진행 중인 밤으로의 스냅샷 복원은 릴의 마지막 칸에서 이어붙이고 지나간 안내를 재생하지 않는다", () => {
+test("이미 진행 중인 밤으로의 스냅샷 복원은 canonical 상한에서 이어붙이고 지나간 안내를 재생하지 않는다", () => {
   resetStores()
   mock.timers.enable({ apis: ["setTimeout"] })
   try {
@@ -630,19 +709,46 @@ test("이미 진행 중인 밤으로의 스냅샷 복원은 릴의 마지막 칸
 
     assert.equal(result.current.open, false, "복원은 '방금 연출이 시작된 것'이 아니다")
     assert.equal(result.current.announcement, null)
-    // 시신이 없는 밤의 릴은 광대·의사·경호원 세 칸이고, 복원은 그 마지막 칸에서 이어붙인다.
-    assert.equal(result.current.statusRole, "GUARD")
+    // 스냅샷 payload에는 canonical 역할 턴이 실리지 않으므로(applySessionSnapshot) 복원 창의
+    // 상한은 그 밤의 시작 역할이고, 커서도 거기서 이어붙는다 — 같은 창의 행동 패널이 쓰는
+    // 값과 정확히 같아서 연출과 판정이 어긋나지 않는다.
+    assert.equal(result.current.statusRole, "JOKER")
 
     // 그 밤에 남은 시간 동안 지나간 안내를 몰아서 재생하지 않는다.
     tickReel(3)
     assert.equal(result.current.open, false)
-    assert.equal(result.current.statusRole, "GUARD")
+    assert.equal(result.current.statusRole, "JOKER")
 
     // 다음 밤은 릴의 첫 칸부터 정상 재생된다(복원 예외는 그 밤에만 적용된다).
     applyCanonicalState({ phase: "DAY", dayIndex: 2 })
     applyCanonicalState({ phase: "NIGHT", dayIndex: 2 })
     assert.equal(result.current.open, true)
     assert.equal(messageOf(result), "광대의 시간입니다")
+
+    unmount()
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("복원 창에서도 다음 night_turn_changed부터는 안내가 정상적으로 뜬다", () => {
+  resetStores()
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    const { result, unmount } = mountAtRoleReveal()
+
+    applySnapshot({ phase: "NIGHT", dayIndex: 1 })
+    assert.equal(result.current.open, false)
+    assert.equal(result.current.statusRole, "JOKER")
+
+    // 복원 시점의 칸만 baseline이다. 커서가 전진하면 하이드레이션 표식이 내려가므로 그 뒤의
+    // 칸은 정상적으로 안내된다 — 내려가지 않으면 그 밤의 안내가 한 장도 뜨지 않는다.
+    advanceCanonicalTurn("DOCTOR")
+    tickReel(1)
+
+    assert.equal(result.current.statusRole, "DOCTOR")
+    assert.equal(result.current.open, true, "복원 이후의 칸은 baseline이 아니다")
+    assert.equal(messageOf(result), "의사의 시간입니다")
 
     unmount()
   } finally {

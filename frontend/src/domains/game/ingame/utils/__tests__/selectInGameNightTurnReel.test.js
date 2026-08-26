@@ -1,14 +1,22 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { selectInGameNightTurnReel } from "../selectInGameNightTurnReel.js"
+import {
+  computeInGameNightTurnReelBarrier,
+  selectInGameNightTurnReel,
+} from "../selectInGameNightTurnReel.js"
 import { buildInGameNightTurnReel } from "../../constants/nightTurn/ingameNightTurnAnnouncement.js"
 
 /**
- * 밤 연출 릴 파생 — 이 파일이 지키는 계약은 하나다: **릴은 역할 보유자의 생사를 보지 않는다.**
- * 죽은 역할의 칸이 사라지면 "안내가 사라짐 = 그 역할 사망"으로 사망자의 역할이 누출된다.
- * 유일한 예외는 마녀사냥꾼의 "시신이 없는 밤에는 턴 없음"이며, 그것도 roster 전체의 사망자
- * 존재 여부(이미 공개 정보)만 보고 마녀사냥꾼 보유자 본인의 생사는 보지 않는다.
+ * 밤 연출 릴 파생 — 이 파일이 지키는 계약은 두 축이다.
+ *
+ * 구성(selectInGameNightTurnReel): **릴은 역할 보유자의 생사를 보지 않는다.** 죽은 역할의 칸이
+ * 사라지면 "안내가 사라짐 = 그 역할 사망"으로 사망자의 역할이 누출된다. 유일한 예외는
+ * 마녀사냥꾼의 "시신이 없는 밤에는 턴 없음"이며, 그것도 roster 전체의 사망자 존재 여부(이미
+ * 공개 정보)만 보고 마녀사냥꾼 보유자 본인의 생사는 보지 않는다.
+ *
+ * 전진(computeInGameNightTurnReelBarrier): 커서는 canonical 역할 턴이 놓인 칸을 넘지 못한다 —
+ * 보유자가 살아있는 역할의 칸은 그 역할의 제출로 canonical이 움직이기 전까지 멈춘다.
  */
 const ALL_ROLES = ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"]
 
@@ -118,4 +126,29 @@ test("buildInGameNightTurnReel은 dayIndex가 유효하지 않으면 빈 배열�
   assert.deepEqual(buildInGameNightTurnReel(ALL_ROLES, 1.5), [])
   assert.deepEqual(buildInGameNightTurnReel(ALL_ROLES, 0), ["JOKER", "DOCTOR", "GUARD"])
   assert.deepEqual(buildInGameNightTurnReel(ALL_ROLES, 0, { hasDeadPlayer: true }), ALL_ROLES)
+})
+
+test("상한은 canonical 역할 턴이 릴에서 차지한 칸이다", () => {
+  const reel = ["JOKER", "DOCTOR", "GUARD"]
+  assert.equal(computeInGameNightTurnReelBarrier(reel, "JOKER"), 0)
+  assert.equal(computeInGameNightTurnReelBarrier(reel, "DOCTOR"), 1)
+  assert.equal(computeInGameNightTurnReelBarrier(reel, "GUARD"), 2)
+})
+
+test("canonical 역할이 릴에 없으면 마지막 칸을 상한으로 삼는다(진행 불능 없음)", () => {
+  const reel = ["JOKER", "DOCTOR", "GUARD"]
+  // 구성·시신 판단이 서버와 잠깐 어긋난 창이다. 상한을 못 찾았다고 커서를 0에 얼려두면 그 밤
+  // 내내 상태바가 첫 역할에 갇히므로, "예전처럼 흘러감"이 더 안전한 열화다.
+  assert.equal(computeInGameNightTurnReelBarrier(reel, "WITCH_HUNTER"), 2)
+  assert.equal(computeInGameNightTurnReelBarrier(reel, null), 2)
+  assert.equal(computeInGameNightTurnReelBarrier(reel, undefined), 2)
+  assert.equal(computeInGameNightTurnReelBarrier(reel, ""), 2)
+  assert.equal(computeInGameNightTurnReelBarrier(reel, 3), 2)
+})
+
+test("릴이 비었거나 배열이 아니면 상한은 0이다(throw 없음)", () => {
+  for (const input of [[], null, undefined, "JOKER", 0, { 0: "JOKER" }]) {
+    assert.equal(computeInGameNightTurnReelBarrier(input, "JOKER"), 0)
+  }
+  assert.equal(computeInGameNightTurnReelBarrier(["JOKER"], "JOKER"), 0)
 })

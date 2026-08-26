@@ -137,6 +137,23 @@ function applyCanonicalState({ phase, dayIndex, nightTurnRole }) {
   })
 }
 
+/**
+ * 서버가 그 역할의 턴을 끝내고 다음 역할을 방송한 것을 반영한다(night_turn_changed 정상 경로).
+ * 릴 커서 상한의 유일한 입력이다.
+ * @param {string} role 서버가 새로 지목한 canonical 역할 턴
+ * @param {number} dayIndex 그 밤의 canonical dayIndex
+ */
+function advanceCanonicalTurn(role, dayIndex) {
+  act(() => {
+    useInGameStore.getState().applyNightTurnChanged({
+      gameId: GAME_ID,
+      phase: "NIGHT",
+      dayIndex,
+      nightTurnRole: role,
+    })
+  })
+}
+
 function mountLiveOverlayStack() {
   const fake = createFakeSocket()
   setFakeSocket(fake.socket)
@@ -215,7 +232,15 @@ test("'밤이 되었습니다'를 닫기 전에는 릴이 시작하지도 전진
     assert.equal(result.current.nightTurn.open, true)
     assert.equal(result.current.nightTurn.announcement.message, "광대의 시간입니다")
 
-    // 진입 연출을 닫은 뒤에야 리듬이 흐르기 시작한다.
+    // 진입 연출을 닫아도 canonical 턴(=광대)이 상한이므로 커서는 첫 칸에 머문다 — 광대가
+    // 제출하기 전에 다음 역할 문구로 흘러가지 않는다.
+    act(() => {
+      mock.timers.tick(INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)
+    })
+    assert.equal(result.current.nightTurn.statusRole, "JOKER")
+
+    // 서버가 다음 역할 턴을 방송한 뒤에 비로소 한 칸 전진한다.
+    advanceCanonicalTurn("DOCTOR", 1)
     act(() => {
       mock.timers.tick(INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)
     })
@@ -304,14 +329,16 @@ test("live root(InGamePage)가 교정된 컨트롤러를 그대로 쓴다", () =
   )
   assert.match(stackSource, /useInGameNightTurnAnnouncement/)
 
-  // 컨트롤러가 따라가는 것은 판정 커서(selectInGameNightTurnRole)가 아니라 연출 릴이다 —
-  // 판정 커서를 다시 읽기 시작하면 죽은 역할의 칸이 사라져 사망 정보가 누출된다.
+  // 컨트롤러는 두 축을 모두 읽는다: 릴의 **구성**은 연출 릴(selectInGameNightTurnReel)이
+  // 정하고 — 판정 커서를 구성원으로 쓰면 죽은 역할의 칸이 사라져 사망 정보가 누출된다 —
+  // 릴의 **전진**은 canonical 턴을 상한(computeInGameNightTurnReelBarrier)으로 따른다.
+  // 상한이 없으면 살아있는 역할의 턴이 제출 없이 시간 경과로 넘어간다(직전 slice의 회귀).
   const controllerSource = readFileSync(
     fileURLToPath(new URL("../useInGameNightTurnAnnouncement.js", import.meta.url)),
     "utf8",
   )
   assert.match(controllerSource, /selectInGameNightTurnReel/)
-  assert.doesNotMatch(controllerSource, /selectInGameNightTurnRole/)
+  assert.match(controllerSource, /computeInGameNightTurnReelBarrier/)
   // 참가자 구성에서 다음 역할을 추론하던 예전 로컬 큐 API는 어디에도 남아 있지 않아야 한다.
   assert.doesNotMatch(controllerSource, /getInGameNightTurnAnnouncements/)
 })
