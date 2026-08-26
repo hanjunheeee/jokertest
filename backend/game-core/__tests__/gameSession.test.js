@@ -4,6 +4,8 @@ const assert = require('node:assert/strict')
 const gameSession = require('../gameSession')
 const {
     assignRoles,
+    assignPlayerColors,
+    PLAYER_COLOR_COUNT,
     enterDayPhase,
     validateSessionInput,
     buildSessionCandidate,
@@ -597,6 +599,131 @@ test('submitTribunalVote: 중복 제출은 TRIBUNAL_VOTE_ALREADY_SUBMITTED이고
 })
 
 // ---------------------------------------------------------------------------
+// assignPlayerColors — 참가자 색상 인덱스 배정(순수 함수)
+// ---------------------------------------------------------------------------
+
+/** 참가자 배열에서 colorIndex만 뽑아낸다(배정 결과 비교·중복 검사에 쓴다). */
+function colorIndicesOf(players) {
+    return players.map((p) => p.colorIndex)
+}
+
+test('assignPlayerColors: 5명 전원이 0..9 범위의 정수 colorIndex를 겹치지 않게 받는다', () => {
+    const players = Array.from({ length: 5 }, (_, i) => makePlayer(`c${i}`))
+
+    const colored = assignPlayerColors(players, Math.random)
+
+    assert.equal(colored.length, 5)
+    for (const player of colored) {
+        assert.equal(Number.isInteger(player.colorIndex), true)
+        assert.equal(player.colorIndex >= 0 && player.colorIndex < PLAYER_COLOR_COUNT, true)
+    }
+    assert.equal(new Set(colorIndicesOf(colored)).size, 5)
+})
+
+test('assignPlayerColors: 10명(팔레트 크기와 동일)이면 0~9를 정확히 한 번씩 나눠 갖는다', () => {
+    const players = Array.from({ length: PLAYER_COLOR_COUNT }, (_, i) => makePlayer(`c${i}`))
+
+    const colored = assignPlayerColors(players, Math.random)
+
+    assert.equal(new Set(colorIndicesOf(colored)).size, PLAYER_COLOR_COUNT)
+    assert.deepEqual(
+        colorIndicesOf(colored).slice().sort((a, b) => a - b),
+        Array.from({ length: PLAYER_COLOR_COUNT }, (_, i) => i),
+    )
+})
+
+test('assignPlayerColors: randomFn을 주입하면 결정적이다 — 같은 시퀀스는 같은 배정, 다른 시퀀스는 다른 팔레트 순열', () => {
+    const players = Array.from({ length: 5 }, (_, i) => makePlayer(`c${i}`))
+    const sequence = [0.1, 0.9, 0.4, 0.7, 0.2, 0.6, 0.3, 0.8, 0.5]
+
+    const first = assignPlayerColors(players, sequenceRandom(sequence))
+    const second = assignPlayerColors(players, sequenceRandom(sequence))
+    assert.deepEqual(colorIndicesOf(first), colorIndicesOf(second))
+
+    // 서로 다른 난수는 서로 다른 팔레트 순열을 만든다(색이 입장 순서에 고정돼 있지 않다).
+    assert.notDeepEqual(
+        colorIndicesOf(assignPlayerColors(players, () => 0)),
+        colorIndicesOf(assignPlayerColors(players, () => 0.999)),
+    )
+})
+
+test('assignPlayerColors: 참가자 수가 팔레트 크기를 넘어도 throw하지 않고 팔레트를 순환 배정한다', () => {
+    // 정상 경로는 validateSessionInput의 2~10명 제한 때문에 여기 도달하지 않지만, 이 순수
+    // 함수는 호출자를 신뢰하지 않고 스스로 정의된 동작을 갖는다.
+    const players = Array.from({ length: 12 }, (_, i) => makePlayer(`c${i}`))
+
+    const colored = assignPlayerColors(players, () => 0.5)
+
+    assert.equal(colored.length, 12)
+    for (const [index, player] of colored.entries()) {
+        assert.equal(player.colorIndex >= 0 && player.colorIndex < PLAYER_COLOR_COUNT, true)
+        assert.equal(player.colorIndex, colored[index % PLAYER_COLOR_COUNT].colorIndex)
+    }
+})
+
+test('assignPlayerColors: 원본 배열/원소를 변형하지 않고 새 원소를 반환한다', () => {
+    const players = Array.from({ length: 5 }, (_, i) => makePlayer(`c${i}`))
+    const before = JSON.parse(JSON.stringify(players))
+
+    const colored = assignPlayerColors(players, Math.random)
+
+    assert.deepEqual(players, before)
+    for (const [index, player] of players.entries()) {
+        assert.equal(Object.hasOwn(player, 'colorIndex'), false)
+        assert.notEqual(colored[index], player)
+        assert.equal(colored[index].uuid, player.uuid)
+    }
+})
+
+test('buildSessionCandidate: 10인 세션의 참가자 전원이 겹치지 않는 colorIndex를 갖는다', () => {
+    const room = makeRoom({
+        id: 'room-colors-10',
+        players: Array.from({ length: 10 }, (_, i) => makePlayer(`cc${i}`)),
+        jokerCount: 1,
+    })
+
+    const { session } = buildSessionCandidate(room)
+
+    const indices = colorIndicesOf([...session.players.values()])
+    assert.equal(indices.length, 10)
+    assert.equal(new Set(indices).size, 10)
+    for (const colorIndex of indices) {
+        assert.equal(Number.isInteger(colorIndex), true)
+        assert.equal(colorIndex >= 0 && colorIndex < PLAYER_COLOR_COUNT, true)
+    }
+})
+
+test('buildSessionCandidate: DEBUG_FIXED_ROLES로 역할이 고정돼도 색은 언제나 셔플 배정된다', () => {
+    // 5인·jokerCount 1의 canonical 구성(JOKER 1 + CITIZEN 4)과 개수가 일치해야 고정 배정이
+    // 성립한다 — 어긋나면 경고 한 줄과 함께 랜덤 경로로 되돌아가 이 테스트의 전제가 깨진다.
+    const list = 'JOKER,CITIZEN,CITIZEN,CITIZEN,CITIZEN'
+    const makeFiveRoom = (id) =>
+        makeRoom({ id, players: Array.from({ length: 5 }, (_, i) => makePlayer(`fx${i}`)), jokerCount: 1 })
+
+    withFixedRoles(list, () => {
+        const zero = buildSessionCandidate(makeFiveRoom('room-colors-fixed-a'), { randomFn: () => 0 }).session
+        const high = buildSessionCandidate(makeFiveRoom('room-colors-fixed-b'), { randomFn: () => 0.999 }).session
+
+        // (a) 역할은 여전히 입장 순서 그대로의 고정 배정이다.
+        for (const session of [zero, high]) {
+            assert.deepEqual(
+                [...session.players.values()].map((p) => p.role),
+                list.split(','),
+            )
+        }
+
+        // (b) 색은 전원에게 겹치지 않게 배정된다.
+        for (const session of [zero, high]) {
+            const indices = colorIndicesOf([...session.players.values()])
+            assert.equal(new Set(indices).size, 5)
+        }
+
+        // (c) randomFn을 바꾸면 색 배정이 실제로 달라진다 — 고정 역할 경로에서도 색은 셔플된다.
+        assert.notDeepEqual(colorIndicesOf([...zero.players.values()]), colorIndicesOf([...high.players.values()]))
+    })
+})
+
+// ---------------------------------------------------------------------------
 // validateSessionInput / buildSessionCandidate — 입력 검증
 // ---------------------------------------------------------------------------
 
@@ -1117,7 +1244,7 @@ test('슬라이스1: 초기 DAY 재접속 스냅샷은 DAY/dayIndex 1과 요청�
     assert.equal(result.snapshot.self.role, session.players.get('s7a').role)
     assert.equal(result.snapshot.self.hasActedThisPhase, false) // 아직 이 DAY에 투표하지 않았다
     for (const player of result.snapshot.players) {
-        assert.deepEqual(Object.keys(player).sort(), ['isAlive', 'nickname', 'uuid'])
+        assert.deepEqual(Object.keys(player).sort(), ['colorIndex', 'isAlive', 'nickname', 'uuid'])
     }
     assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, 's7a'))
 })
@@ -3257,7 +3384,7 @@ test('공개 payload 화이트리스트: game-started 타인 player 키 무변�
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
     const payload = buildGameStartedPayload(candidate.session, 'u1')
     for (const player of payload.state.players) {
-        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'uuid'])
+        assert.deepEqual(Object.keys(player).sort(), ['colorIndex', 'nickname', 'uuid'])
     }
 })
 
@@ -3354,13 +3481,14 @@ function expectedRevealsOf(session) {
     return [...session.players.values()].map((p) => ({
         uuid: p.uuid,
         nickname: p.nickname,
+        colorIndex: p.colorIndex,
         role: p.role,
         team: ROLE_TEAMS[p.role],
         alive: p.alive,
     }))
 }
 
-test('buildTerminalFields: ENDED 세션의 winResult.reveals가 전원의 {uuid,nickname,role,team,alive}를 삽입 순서 그대로 담고 mvp는 null이다', () => {
+test('buildTerminalFields: ENDED 세션의 winResult.reveals가 전원의 {uuid,nickname,colorIndex,role,team,alive}를 삽입 순서 그대로 담고 mvp는 null이다', () => {
     const session = nightSessionOf3({ id: 'room-terminal-reveals' })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
     const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
@@ -3382,7 +3510,7 @@ test('buildTerminalFields: ENDED 세션의 winResult.reveals가 전원의 {uuid,
     assert.deepEqual(fields.winResult.reveals, expectedRevealsOf(session))
     assert.equal(fields.winResult.reveals.length, session.players.size)
     for (const reveal of fields.winResult.reveals) {
-        assert.deepEqual(Object.keys(reveal).sort(), ['alive', 'nickname', 'role', 'team', 'uuid'])
+        assert.deepEqual(Object.keys(reveal).sort(), ['alive', 'colorIndex', 'nickname', 'role', 'team', 'uuid'])
         assert.equal(reveal.team, ROLE_TEAMS[reveal.role])
     }
     // 처형된 JOKER의 역할·사망 상태가 실제로 공개된다(공개의 요점).
@@ -3390,6 +3518,7 @@ test('buildTerminalFields: ENDED 세션의 winResult.reveals가 전원의 {uuid,
     assert.deepEqual(jokerReveal, {
         uuid: jokerUuid,
         nickname: session.players.get(jokerUuid).nickname,
+        colorIndex: session.players.get(jokerUuid).colorIndex,
         role: 'JOKER',
         team: 'JOKER',
         alive: false,
@@ -3674,7 +3803,7 @@ test('getSessionSnapshotForPlayer: 5개 역할 전원(NIGHT) — 공개 roster/�
         const result = getSessionSnapshotForPlayer(viewerUuid, session.id)
         assert.equal(result.ok, true)
         for (const player of result.snapshot.players) {
-            assert.deepEqual(Object.keys(player).sort(), ['isAlive', 'nickname', 'uuid'])
+            assert.deepEqual(Object.keys(player).sort(), ['colorIndex', 'isAlive', 'nickname', 'uuid'])
         }
         assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, viewerUuid))
     }
@@ -3858,7 +3987,12 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.notEqual(daySnapshot.snapshot.nightResult.dayIndex, session.nightResolution.dayIndex) // 0 !== 1
     assert.deepEqual(
         daySnapshot.snapshot.players.find((p) => p.uuid === 'snB3'),
-        { uuid: 'snB3', nickname: session.players.get('snB3').nickname, isAlive: false },
+        {
+            uuid: 'snB3',
+            nickname: session.players.get('snB3').nickname,
+            colorIndex: session.players.get('snB3').colorIndex,
+            isAlive: false,
+        },
     )
 
     const dayOutcome = resolveDayVotes(session, { snB1: 'snB2', snB2: 'snB1', snB4: 'snB1' })
@@ -3961,6 +4095,76 @@ test('buildSessionSnapshot: 진행 중 세션에는 winResult가 아예 없고, 
 
     // 종료 방송(buildTerminalFields)과 재접속 하이드레이션이 같은 공개 목록을 싣는다.
     assert.deepEqual(buildSessionSnapshot(session, uuids[0]).winResult.reveals, buildTerminalFields(session).winResult.reveals)
+})
+
+// ---------------------------------------------------------------------------
+// colorIndex — 공개 payload 3종(game_started · 재접속 스냅샷 · ENDED reveals)
+// ---------------------------------------------------------------------------
+
+/** uuid→colorIndex canonical 맵(payload가 session의 값을 그대로 실었는지 대조하는 기준). */
+function canonicalColorsOf(session) {
+    return new Map([...session.players.values()].map((p) => [p.uuid, p.colorIndex]))
+}
+
+test('buildGameStartedPayload: players 전원에 canonical colorIndex가 실리고 viewer가 누구든 같은 목록이다', () => {
+    const room = makeRoom({
+        id: 'room-color-started',
+        players: Array.from({ length: 5 }, (_, i) => makePlayer(`gs${i}`)),
+        jokerCount: 1,
+    })
+    const { session } = buildSessionCandidate(room)
+    const canonical = canonicalColorsOf(session)
+
+    const first = buildGameStartedPayload(session, 'gs0')
+    for (const player of first.state.players) {
+        assert.equal(Object.hasOwn(player, 'colorIndex'), true)
+        assert.equal(player.colorIndex, canonical.get(player.uuid))
+        // 색은 공개 정보지만 타인의 role/team은 여전히 없다.
+        assert.equal(Object.hasOwn(player, 'role'), false)
+        assert.equal(Object.hasOwn(player, 'team'), false)
+    }
+
+    // 창마다 같은 참가자가 다른 색으로 보이던 문제의 회귀 가드 — viewer와 무관하게 동일하다.
+    for (const uuid of [...session.players.keys()]) {
+        assert.deepEqual(buildGameStartedPayload(session, uuid).state.players, first.state.players)
+    }
+})
+
+test('getSessionSnapshotForPlayer: 재접속 스냅샷의 players 전원에 canonical colorIndex가 실리고 비밀 검사기를 통과한다', () => {
+    const uuids = ['cs1', 'cs2', 'cs3', 'cs4']
+    const session = buildSnapQuadSession({ id: 'room-color-snapshot', uuids })
+    ackAll(session)
+    const canonical = canonicalColorsOf(session)
+
+    for (const viewerUuid of uuids) {
+        const result = getSessionSnapshotForPlayer(viewerUuid, session.id)
+        assert.equal(result.ok, true)
+        for (const player of result.snapshot.players) {
+            assert.equal(player.colorIndex, canonical.get(player.uuid))
+        }
+        // colorIndex는 전원 공개 정보라 기존 비밀 검사기의 판정 대상이 아니다.
+        assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, viewerUuid))
+    }
+})
+
+test('ENDED: 방송(buildTerminalFields)과 재접속(buildSessionSnapshot)의 winResult.reveals가 둘 다 전원 colorIndex를 담고 서로 일치한다', () => {
+    const session = nightSessionOf3({ id: 'room-color-reveals' })
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    commitNightResolution(session, resolution)
+    assert.equal(session.phase, 'ENDED')
+
+    const canonical = canonicalColorsOf(session)
+    const broadcastReveals = buildTerminalFields(session).winResult.reveals
+    const hydrationReveals = buildSessionSnapshot(session, [...session.players.keys()][0]).winResult.reveals
+
+    for (const reveals of [broadcastReveals, hydrationReveals]) {
+        assert.equal(reveals.length, session.players.size)
+        for (const reveal of reveals) {
+            assert.equal(reveal.colorIndex, canonical.get(reveal.uuid))
+        }
+    }
+    assert.deepEqual(broadcastReveals, hydrationReveals)
 })
 
 // ---------------------------------------------------------------------------
@@ -4238,9 +4442,9 @@ test('CUSTOM: 커밋된 세션의 공개 payload에는 역할 구성이 노출�
     assert.equal(serialized.includes('roleComposition'), false)
     assert.equal(serialized.includes('roleCounts'), false)
     assert.equal(Object.hasOwn(payload.state, 'roleComposition'), false)
-    // 다른 참가자 목록에는 여전히 role/team이 없다.
+    // 다른 참가자 목록에는 여전히 role/team이 없다(colorIndex는 전원 공개 정보라 예외다).
     for (const player of payload.state.players) {
-        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'uuid'])
+        assert.deepEqual(Object.keys(player).sort(), ['colorIndex', 'nickname', 'uuid'])
     }
 })
 
