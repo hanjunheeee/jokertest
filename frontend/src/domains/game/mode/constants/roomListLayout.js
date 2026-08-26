@@ -96,7 +96,25 @@ export const ROOM_LIST_ROW_SELECTED_RING_CLASS =
 
 // 셸 레벨 하단 영역입니다. 페이지네이션이 목록 패널 내부로 이동했으므로,
 // 이제는 입장하기 버튼만 담아 우측에 둡니다.
-export const ROOM_LIST_FOOTER_CLASS = "flex shrink-0 items-center justify-end"
+//
+// pr-[11rem]: ModePageControls의 사운드 컨트롤(absolute bottom-4 right-4 sm:bottom-6
+// sm:right-6)이 차지하는 자리를 비워 두기 위한 여백입니다. 게임 화면 열 폭은 1192px 고정
+// (viewportLayout.js의 GAME_VIEWPORT_MAX_WIDTH_PX)인데 사운드 폭은 vw 기반이라
+// (soundControlLayout.js: 아이콘 폭의 84% + 슬라이더 바) 화면이 넓을수록 열 안쪽으로 더
+// 들어옵니다 — 1280px에서 129px, clamp 상한에 닿는 1460px 이상에서 약 161px이 최대입니다.
+// 그래서 전 구간을 한 값으로 덮는 176px을 반응형 분기 없이 고정으로 씁니다.
+// 후보 셋(footer 여백 / 사운드 래퍼 이동 / z-order) 중 이 방법을 고른 이유: 사운드 래퍼는
+// gameMode·roomInvite 화면도 함께 쓰므로 옮기면 겹치지도 않는 화면까지 같이 바뀌고,
+// z-order만 올리면 클릭은 통해도 그림은 그대로 겹칩니다(요구사항은 "겹치지 않게").
+// 이 방법은 /multiplay의 입장 버튼 하나만 왼쪽으로 옮기므로 시각 변화 범위가 가장 좁습니다.
+//
+// pointer-events-none: 여백을 준 뒤에도 이 div의 박스 자체는 여전히 사운드 컨트롤 위를
+// 지나가므로, 빈 영역이 음소거 버튼·볼륨 슬라이더의 클릭을 가로채지 않도록 비워 둡니다.
+// 실제 클릭은 아래 ROOM_LIST_ENTER_BTN_CLASS의 pointer-events-auto가 되살립니다
+// (matchingPopupStyles.js의 버튼 영역/버튼 행과 같은 짝 패턴). 둘은 반드시 함께 바뀌어야
+// 합니다 — footer만 none으로 두면 입장 버튼이 클릭 불가가 됩니다.
+export const ROOM_LIST_FOOTER_CLASS =
+  "pointer-events-none flex shrink-0 items-center justify-end pr-[11rem]"
 
 // 목록 패널 내부, 카드 그리드 아래에 붙는 고정 높이 페이지네이션 영역입니다.
 // shrink-0 + min-height로 크기를 고정해 패널 전체 높이를 다시 키우지 않으면서,
@@ -117,8 +135,10 @@ export const ROOM_LIST_PAGE_ARROW_IMG_CLASS = "block h-auto w-full select-none"
 export const ROOM_LIST_PAGE_TEXT_CLASS =
   "shrink-0 px-1 font-subheading text-[clamp(0.78rem,1vw,0.9rem)] font-semibold tabular-nums text-[#e8d5a8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
 
+// pointer-events-auto: ROOM_LIST_FOOTER_CLASS가 빈 영역의 클릭을 흘려보내므로,
+// 실제 조작 대상인 이 버튼에서만 클릭을 다시 받습니다.
 export const ROOM_LIST_ENTER_BTN_CLASS =
-  "relative min-w-[clamp(6.25rem,11vw,7.75rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale disabled:hover:opacity-40"
+  "pointer-events-auto relative min-w-[clamp(6.25rem,11vw,7.75rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale disabled:hover:opacity-40"
 
 export const ROOM_LIST_ENTER_BTN_FRAME_CLASS = "block h-auto w-full select-none"
 
