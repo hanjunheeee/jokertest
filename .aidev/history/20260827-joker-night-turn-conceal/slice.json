@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260827-joker-night-turn-conceal",
+  "status": "pending",
+  "branch": "slice/20260827-joker-night-turn-conceal",
+  "base": "windows-handoff-20260808",
+  "base_commit": "1ed303d3d4bf2a7d21c22a168866f9c4049931a2",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-27T00:22:16+09:00"
+}
