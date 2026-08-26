@@ -13,8 +13,9 @@ const {
 // 5개 역할의 단일 canonical 정의. GAME_ROLES/ROLE_TEAMS는 모두 이 정의에서 파생된다
 // (역할명을 여러 상수에 손으로 나열하면 하나만 바뀌었을 때 조용히 어긋날 수 있음).
 // nightActionMinDayIndex는 "이 역할이 능력을 쓸 수 있는 가장 이른 dayIndex"다 — null이면
-// 애초에 밤 행동이 없는 역할(CITIZEN). 후속 NIGHT 행동 슬라이스가 소비할 최소 계약이며,
-// 이번 슬라이스의 어떤 실행 로직도 이 값을 참조하지 않는다.
+// 애초에 밤 행동이 없는 역할(CITIZEN). 이 값은 dayIndex 하한만 뜻한다: WITCH_HUNTER는 여기에
+// 더해 "그 밤에 조사할 시신이 있는가"까지 함께 만족해야 행동할 수 있다
+// (isEligibleForNightAction 참고 — 두 조건의 canonical 합성 지점은 그 함수 하나뿐이다).
 // 바깥 객체만 Object.freeze하면 각 역할의 내부 필드는 여전히 재할당 가능하므로, canonical
 // metadata를 외부에서 변형 불가능하게 하려면 역할별 정의 각각도 개별적으로 동결해야 한다.
 const ROLE_DEFINITIONS = Object.freeze({
@@ -22,7 +23,7 @@ const ROLE_DEFINITIONS = Object.freeze({
     CITIZEN: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: null }),
     DOCTOR: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0 }),
     GUARD: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0 }),
-    WITCH_HUNTER: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 1 }),
+    WITCH_HUNTER: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0 }),
 })
 
 const GAME_ROLES = Object.freeze(
@@ -887,12 +888,46 @@ function buildPhaseChangedPayload(session) {
     return { gameId: session.id, phase: session.phase, dayIndex: session.dayIndex }
 }
 
-// 이 밤에 행동 가능한 역할인지 판정한다. nightActionMinDayIndex가 null이면(CITIZEN) 애초에
-// 밤 행동이 없는 역할이라 항상 false다. 이 함수가 nightActionMinDayIndex를 최초로 소비한다
-// (ROLE_DEFINITIONS 주석이 예고한 "후속 NIGHT 행동 슬라이스"가 바로 이것).
-function isEligibleForNightAction(role, dayIndex) {
+/**
+ * 이 세션에 사망자가 한 명이라도 있는지 판정한다(session.players만 읽는 순수 계산).
+ *
+ * NIGHT 동안 player.alive는 절대 바뀌지 않으므로(사망 반영은 그 밤을 끝내는
+ * commitNightResolution과 재판 처형뿐이다) 밤 중 어느 시점에 물어도 이 값은 곧 "그 밤 시작
+ * 시점의 사망자 유무"다 — 별도 스냅샷 필드가 필요 없는 이유다.
+ *
+ * @param {object} session - canonical GameSession
+ * @flow 참가자를 순회하다 alive가 true가 아닌 첫 참가자에서 즉시 true로 끝내고, 끝까지
+ *       그런 참가자가 없으면 false다(사망 판정은 getChatRecipientUuids의 DEAD 채널과 동일하게
+ *       alive !== true다 — alive === false만 보면 필드가 없는 손상 상태를 생존으로 오인한다).
+ */
+function hasAnyDeadPlayer(session) {
+    for (const player of session.players.values()) {
+        if (player.alive !== true) return true
+    }
+    return false
+}
+
+/**
+ * 이 밤에 그 역할이 행동 가능한지 판정한다(session을 읽기만 하는 순수 계산).
+ *
+ * nightActionMinDayIndex가 null이면(CITIZEN) 애초에 밤 행동이 없는 역할이라 항상 false다.
+ * 이 함수가 nightActionMinDayIndex를 소비하는 유일한 지점이며, WITCH_HUNTER의 "시신이 있어야
+ * 조사할 수 있다"는 추가 조건도 여기 하나에만 산다 — eligibility를 묻는 모든 호출부(순차 턴
+ * 진행·제출·턴 게이트·판정 준비)가 이 함수만 거치므로 규칙이 한 곳에서만 정의된다.
+ *
+ * @param {object} session - canonical GameSession(dayIndex와 players를 읽는다)
+ * @param {string} role - 판정할 역할명
+ * @flow 밤 행동이 없는 역할 → false, dayIndex 하한 미달 → false, WITCH_HUNTER면 추가로
+ *       사망자 존재 여부를 그대로 반환한다. 사망자가 없는 밤의 WITCH_HUNTER가 false가 되면
+ *       getLivingNightTurnActorUuids가 빈 배열이 되어 computeCurrentNightTurnRole이 zero-actor와
+ *       똑같이 건너뛰고, night_turn_changed에도 그 역할이 등장하지 않는다.
+ */
+function isEligibleForNightAction(session, role) {
     const minDayIndex = ROLE_DEFINITIONS[role]?.nightActionMinDayIndex
-    return minDayIndex !== null && minDayIndex !== undefined && dayIndex >= minDayIndex
+    if (minDayIndex === null || minDayIndex === undefined) return false
+    if (session.dayIndex < minDayIndex) return false
+    if (role === 'WITCH_HUNTER') return hasAnyDeadPlayer(session)
+    return true
 }
 
 // registry(session.players)를 읽기만 하는 순수 계산 — 이 밤에 행동 가능한 모든 참가자
@@ -900,7 +935,7 @@ function isEligibleForNightAction(role, dayIndex) {
 function getEligibleNightActorUuids(session) {
     const uuids = []
     for (const player of session.players.values()) {
-        if (isEligibleForNightAction(player.role, session.dayIndex)) uuids.push(player.uuid)
+        if (isEligibleForNightAction(session, player.role)) uuids.push(player.uuid)
     }
     return uuids
 }
@@ -983,11 +1018,12 @@ const SELF_TARGET_ALLOWED_ROLES = new Set(['DOCTOR'])
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
- *   → 5. 역할·dayIndex eligibility → 6. targetId가 있으면 참가자로 존재하는지
+ *   → 5. 역할 eligibility(isEligibleForNightAction) → 6. targetId가 있으면 참가자로 존재하는지
  *   → 7. actor가 JOKER이고 대상이 JOKER 진영(자기 자신 포함)이면 Map을 건드리지 않고 성공
  *      종료(no-op — 오라클 방지를 위해 거부하지 않고, 기존 유효 표를 파괴하지 않기 위해
  *      SKIP으로 덮어쓰지도 않는다)
- *   → 8. 그 외 역할이 자기 자신을 대상으로 했는데 허용되지 않으면 거부 → 9. Map에 저장.
+ *   → 8. actor가 WITCH_HUNTER인데 대상이 살아있으면 거부(조사 대상은 시신뿐이다)
+ *   → 9. 그 외 역할이 자기 자신을 대상으로 했는데 허용되지 않으면 거부 → 10. Map에 저장.
  *
  * 모든 실패 경로와 7번(no-op)은 session.nightActions를 절대 건드리지 않습니다 — "성공 응답"과
  * "Map이 바뀜"은 동치가 아닙니다. game-core는 소켓 계층의 가드를 신뢰하지 않고 이 함수 안에서
@@ -1011,7 +1047,7 @@ function submitNightAction(uuid, gameId, targetId) {
     // CITIZEN 등 원래 NOT_ELIGIBLE이었을 참가자도 "판정 이후"라는 사실 자체는 알 수 있게
     // 응답이 구분된다(판정 여부는 비밀이 아니다).
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
-    if (!isEligibleForNightAction(actor.role, session.dayIndex)) {
+    if (!isEligibleForNightAction(session, actor.role)) {
         return { ok: false, code: 'NOT_ELIGIBLE' }
     }
 
@@ -1021,6 +1057,14 @@ function submitNightAction(uuid, gameId, targetId) {
 
         if (actor.role === 'JOKER' && ROLE_TEAMS[targetPlayer.role] === 'JOKER') {
             return { ok: true, gameId: session.id }
+        }
+
+        // WITCH_HUNTER의 조사 대상은 시신뿐이다 — 생존자를 지목하면 거부한다. 이 검사가
+        // SELF_TARGET보다 앞서지만 자기 자신 규칙은 그대로 남는다: 살아있는 본인은 여기서
+        // 걸리고(관측되는 코드는 양쪽 다 INVALID_TARGET으로 동일하다), 사망한 본인을 지목하는
+        // 경로는 아래 SELF_TARGET_ALLOWED_ROLES에서 걸린다.
+        if (actor.role === 'WITCH_HUNTER' && targetPlayer.alive === true) {
+            return { ok: false, code: 'INVALID_TARGET' }
         }
 
         if (targetId === uuid && !SELF_TARGET_ALLOWED_ROLES.has(actor.role)) {
@@ -1036,10 +1080,10 @@ function submitNightAction(uuid, gameId, targetId) {
 const NIGHT_TURN_ROLE_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
 
 // 특정 역할이 "이번 밤 실제로 제출해야 하는" 생존 참가자 uuid 목록(순수 계산). 그 밤에 행동
-// 자체가 불가능한 역할(day0 WITCH_HUNTER 등)은 항상 빈 배열이다 — computeCurrentNightTurnRole이
-// zero-actor와 동일하게 건너뛴다.
+// 자체가 불가능한 역할(사망자가 없는 밤의 WITCH_HUNTER 등)은 항상 빈 배열이다 —
+// computeCurrentNightTurnRole이 zero-actor와 동일하게 건너뛴다.
 function getLivingNightTurnActorUuids(session, role) {
-    if (!isEligibleForNightAction(role, session.dayIndex)) return []
+    if (!isEligibleForNightAction(session, role)) return []
     const uuids = []
     for (const player of session.players.values()) {
         if (player.role === role && player.alive) uuids.push(player.uuid)
@@ -1096,7 +1140,7 @@ function checkNightTurnGate(uuid, gameId) {
     if (
         session.phase === 'NIGHT' &&
         session.nightResolution === null &&
-        isEligibleForNightAction(actor.role, session.dayIndex)
+        isEligibleForNightAction(session, actor.role)
     ) {
         if (actor.alive !== true) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
         if (actor.role !== computeCurrentNightTurnRole(session)) return { ok: false, code: 'NIGHT_TURN_ROLE_MISMATCH' }
@@ -1175,7 +1219,7 @@ function prepareNightResolution(uuid, gameId) {
         if (player.role === 'GUARD') {
             const result = computeGuardInvestigationResult(session, player.uuid)
             if (result !== null) privateResults.set(player.uuid, { actionType: 'INVESTIGATE', ...result })
-        } else if (player.role === 'WITCH_HUNTER' && isEligibleForNightAction('WITCH_HUNTER', session.dayIndex)) {
+        } else if (player.role === 'WITCH_HUNTER' && isEligibleForNightAction(session, 'WITCH_HUNTER')) {
             const result = computeWitchHunterConfirmationResult(session, player.uuid)
             if (result !== null) privateResults.set(player.uuid, { actionType: 'CONFIRM', ...result })
         }
@@ -2422,6 +2466,7 @@ module.exports = {
         getSpecialRoleBudget,
         computeRoleComposition,
         isEligibleForNightAction,
+        hasAnyDeadPlayer,
         sanitizeChatText,
         // 기존 테스트/호출부가 쓰던 이름을 그대로 남긴다(동일 함수 참조 — 채널 공용 규칙이다).
         sanitizeJokerChatText: sanitizeChatText,

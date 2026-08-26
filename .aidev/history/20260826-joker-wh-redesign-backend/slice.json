@@ -1,0 +1,111 @@
+{
+  "slice_id": "20260826-joker-wh-redesign-backend",
+  "status": "running:test",
+  "branch": "slice/20260826-joker-wh-redesign-backend",
+  "base": "windows-handoff-20260808",
+  "base_commit": "a59ca5631177d1b0bfea06e631e5443268172d23",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 7,
+    "test_files": 4,
+    "budget": 80,
+    "warn": false
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "run_id": "20260826-200031-joker-wh-redesign-backend-plan",
+      "attempts": 1,
+      "commit": "4d594eea36fe478f40ff7b44eca24ccd03ac01d5"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260826-201324-joker-wh-redesign-backend-implement",
+      "attempts": 1,
+      "commit": "fb95e6fac367ae5e2e566248c536533db4be9730"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260826-203300-joker-wh-redesign-backend-test-2",
+      "verdict": "pass",
+      "attempts": 2
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260826-200031-joker-wh-redesign-backend-plan",
+      "status": "completed",
+      "turns": 28,
+      "tokens": {
+        "input": 42,
+        "cache_creation": 97946,
+        "cache_read": 1652600,
+        "output": 25610,
+        "billed_input": 1750588,
+        "peak_context": 112415
+      },
+      "cost_usd": 2.4462200000000007
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-201324-joker-wh-redesign-backend-implement",
+      "status": "completed",
+      "turns": 69,
+      "tokens": {
+        "input": 123,
+        "cache_creation": 135998,
+        "cache_read": 7643729,
+        "output": 38643,
+        "billed_input": 7779850,
+        "peak_context": 156884
+      },
+      "cost_usd": 6.1485344999999985
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-202218-joker-wh-redesign-backend-test",
+      "status": "completed",
+      "turns": 13,
+      "tokens": {
+        "input": 23,
+        "cache_creation": 43261,
+        "cache_read": 599969,
+        "output": 7582,
+        "billed_input": 643253,
+        "peak_context": 64147
+      },
+      "cost_usd": 0.9222595000000002
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260826-203300-joker-wh-redesign-backend-test-2",
+      "status": "completed",
+      "turns": 8,
+      "tokens": {
+        "input": 14,
+        "cache_creation": 25679,
+        "cache_read": 300979,
+        "output": 2225,
+        "billed_input": 326672,
+        "peak_context": 49668
+      },
+      "cost_usd": 0.46297449999999996
+    }
+  ],
+  "updated_at": "2026-08-26T20:34:12+09:00"
+}
