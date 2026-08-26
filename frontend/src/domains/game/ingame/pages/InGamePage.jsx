@@ -91,10 +91,13 @@ export default function InGamePage() {
           onMenuClick={() => setPlayerRecordListOpen(true)}
         />
         <InGamePlayerSessionProvider>
+          {/* NIGHT 문구는 canonical 턴이 아니라 연출 릴의 현재 역할(nightTurn.statusRole)에서
+              파생한다 — 역할 보유자가 죽어도 그 역할의 상태바 문구가 사라지지 않아야 사망
+              정보가 새지 않는다. */}
           <InGameTimebar
             day={gameState?.dayIndex}
             activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
-            statusMessage={selectInGameTimebarStatusMessage(gameState)}
+            statusMessage={selectInGameTimebarStatusMessage(gameState, nightTurn.statusRole)}
           />
           <InGamePlayerBoard />
           <InGameChatShell />

@@ -61,6 +61,9 @@ mock.module("../../../../../shared/socket/socketClient.js", {
 const { useInGameStore } = await import("../../store/ingameStore.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { useInGameOverlayStack } = await import("../useInGameOverlayStack.js")
+const { INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS } = await import(
+  "../../constants/nightTurn/ingameNightTurnAnnouncement.js"
+)
 
 const GAME_ID = "game-overlay-1"
 const SELF_UUID = "uuid-self"
@@ -100,11 +103,15 @@ function createFakeSocket() {
   return { socket, emitCalls, emitWithAckCalls }
 }
 
+/** 이 게임에 존재하는 밤 행동 역할 구성(서버 game_started state.nightTurnRoles). */
+const NIGHT_TURN_ROLES = ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"]
+
 function buildState({ phase, dayIndex, nightTurnRole }) {
   return {
     id: GAME_ID,
     phase,
     dayIndex,
+    nightTurnRoles: NIGHT_TURN_ROLES,
     players: [
       { uuid: SELF_UUID, nickname: "나" },
       { uuid: OTHER_UUID, nickname: "상대" },
@@ -169,7 +176,7 @@ test("오버레이 순서: 역할 공개 → 진입 연출 → 역할 턴 안내
     "밤 진입 연출이 닫히기 전에는 역할 턴 안내가 뜨지 않는다",
   )
 
-  // 3) 진입 연출을 닫아야 비로소 역할 턴 안내가 뜬다.
+  // 3) 진입 연출을 닫아야 비로소 릴의 첫 칸이 뜬다.
   act(() => {
     result.current.phaseEntrance.confirm()
   })
@@ -180,7 +187,48 @@ test("오버레이 순서: 역할 공개 → 진입 연출 → 역할 턴 안내
   unmount()
 })
 
-test("역할 턴 안내를 닫아도 다음 역할이 이어지지 않고 소켓 emit도 나가지 않는다", () => {
+test("'밤이 되었습니다'를 닫기 전에는 릴이 시작하지도 전진하지도 않는다", () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    const { result, unmount } = mountLiveOverlayStack()
+
+    act(() => {
+      result.current.roleReveal.close()
+    })
+    applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
+    assert.equal(result.current.phaseEntrance.open, true)
+    assert.equal(result.current.nightTurn.open, false)
+
+    // 진입 연출이 떠 있는 동안 고정 리듬이 여러 칸 흘러도 커서는 첫 칸에 그대로 있어야 한다 —
+    // 그렇지 않으면 "밤이 되었습니다"를 오래 보고 있던 창만 광대 안내를 통째로 놓친다.
+    for (let i = 0; i < 3; i += 1) {
+      act(() => {
+        mock.timers.tick(INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)
+      })
+    }
+    assert.equal(result.current.nightTurn.open, false)
+    assert.equal(result.current.nightTurn.statusRole, "JOKER", "릴 커서가 앞으로 밀리지 않았다")
+
+    act(() => {
+      result.current.phaseEntrance.confirm()
+    })
+    assert.equal(result.current.nightTurn.open, true)
+    assert.equal(result.current.nightTurn.announcement.message, "광대의 시간입니다")
+
+    // 진입 연출을 닫은 뒤에야 리듬이 흐르기 시작한다.
+    act(() => {
+      mock.timers.tick(INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)
+    })
+    assert.equal(result.current.nightTurn.statusRole, "DOCTOR")
+    assert.equal(result.current.nightTurn.announcement.message, "의사의 시간입니다")
+
+    unmount()
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("역할 턴 안내를 닫아도 릴이 앞당겨지지 않고 소켓 emit도 나가지 않는다", () => {
   const { result, fake, unmount } = mountLiveOverlayStack()
 
   act(() => {
@@ -203,11 +251,12 @@ test("역할 턴 안내를 닫아도 다음 역할이 이어지지 않고 소켓
   assert.equal(fake.emitCalls.length, emitsBefore, "닫기는 어떤 emit도 하지 않는다")
   assert.equal(fake.emitWithAckCalls.length, acksBefore, "닫기는 역할 확인 ack도 보내지 않는다")
 
-  // 닫은 뒤 같은 밤이 반복 관측돼도 의사·경호원·마녀사냥꾼 안내가 이어지지 않는다.
+  // 닫은 뒤 같은 밤이 반복 관측돼도 다음 칸이 앞당겨지지 않는다(리듬은 타이머만 만든다).
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   assert.equal(result.current.nightTurn.open, false)
   assert.equal(result.current.nightTurn.announcement, null)
+  assert.equal(result.current.nightTurn.statusRole, "JOKER", "닫기는 릴 커서를 움직이지 않는다")
 
   unmount()
 })
@@ -246,6 +295,8 @@ test("live root(InGamePage)가 교정된 컨트롤러를 그대로 쓴다", () =
   assert.match(pageSource, /open=\{nightTurn\.open\}/)
   assert.match(pageSource, /announcement=\{nightTurn\.announcement\}/)
   assert.match(pageSource, /onClose=\{nightTurn\.close\}/)
+  // 상태바 문구도 판정 커서가 아니라 연출 릴에서 온다.
+  assert.match(pageSource, /selectInGameTimebarStatusMessage\(gameState, nightTurn\.statusRole\)/)
 
   const stackSource = readFileSync(
     fileURLToPath(new URL("../useInGameOverlayStack.js", import.meta.url)),
@@ -253,11 +304,14 @@ test("live root(InGamePage)가 교정된 컨트롤러를 그대로 쓴다", () =
   )
   assert.match(stackSource, /useInGameNightTurnAnnouncement/)
 
-  // 로컬 큐를 되살릴 수 있는 예전 API는 어디에도 남아 있지 않아야 한다.
+  // 컨트롤러가 따라가는 것은 판정 커서(selectInGameNightTurnRole)가 아니라 연출 릴이다 —
+  // 판정 커서를 다시 읽기 시작하면 죽은 역할의 칸이 사라져 사망 정보가 누출된다.
   const controllerSource = readFileSync(
     fileURLToPath(new URL("../useInGameNightTurnAnnouncement.js", import.meta.url)),
     "utf8",
   )
+  assert.match(controllerSource, /selectInGameNightTurnReel/)
+  assert.doesNotMatch(controllerSource, /selectInGameNightTurnRole/)
+  // 참가자 구성에서 다음 역할을 추론하던 예전 로컬 큐 API는 어디에도 남아 있지 않아야 한다.
   assert.doesNotMatch(controllerSource, /getInGameNightTurnAnnouncements/)
-  assert.doesNotMatch(controllerSource, /cursor/)
 })

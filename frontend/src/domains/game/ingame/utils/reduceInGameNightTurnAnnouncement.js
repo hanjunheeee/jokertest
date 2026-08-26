@@ -3,7 +3,11 @@
  *
  * reduceInGamePhaseEntrance와 같은 모양이지만 다루는 대상이 다르다(그쪽은 DAY/NIGHT 진입
  * 연출, 이쪽은 역할 턴 안내). 결정적으로 이 기계에는 "다음 턴"이라는 개념 자체가 없다 —
- * 입력으로 들어온 canonical 역할 턴 하나만 보고, 그것을 띄울지 말지만 정한다.
+ * 입력으로 들어온 역할 하나만 보고, 그것을 띄울지 말지만 정한다.
+ *
+ * 입력 role은 canonical 역할 턴이 아니라 **연출 릴의 커서가 가리키는 역할**이다
+ * (useInGameNightTurnAnnouncement가 릴을 전진시키고 그 결과만 여기로 넘긴다). 이 기계의 로직은
+ * 그 구분과 무관하다 — 여기서는 "관측된 역할이 무엇이든 identity 하나당 정확히 한 번"만 지킨다.
  *
  * 상태:
  *   scope   : 현재 유효한 scope(계정+게임+소켓 세대). null이면 안내 대상 세션이 없다.
@@ -20,10 +24,10 @@
  *   2. 새 scope에서 처음 관측한 identity와 스냅샷 하이드레이션으로 도착한 identity는
  *      baseline으로만 등록한다 — 이미 진행 중인 밤에 복원된 것이지 방금 턴이 바뀐 것이
  *      아니므로 안내하지 않는다. 이후의 실시간 canonical 변경은 정상적으로 안내한다.
- *   3. 그 외에 이 scope에서 처음 보는 identity만 실시간 canonical 턴 변경이다 — 정확히 한 번
- *      대기열에 넣는다. 여기가 안내가 열리는 유일한 경로다.
- *   4. 관측 identity가 대기·표시 중인 것과 달라지면(턴이 옮겨감, 날짜가 바뀜, NIGHT를 벗어남,
- *      ENDED) 그 안내는 즉시 무효가 된다.
+ *   3. 그 외에 이 scope에서 처음 보는 identity만 실제 연출 진행이다 — 정확히 한 번 대기열에
+ *      넣는다. 여기가 안내가 열리는 유일한 경로다.
+ *   4. 관측 identity가 대기·표시 중인 것과 달라지면(릴이 다음 칸으로 넘어감, 날짜가 바뀜,
+ *      NIGHT를 벗어남, ENDED) 그 안내는 즉시 무효가 된다.
  *   5. 앞 순서 오버레이가 없으면 pending을 띄우고, 띄운 뒤에 앞 순서가 열리면 다시 pending으로
  *      내린다(소비하지 않는다).
  *
@@ -48,7 +52,7 @@ export const INITIAL_IN_GAME_NIGHT_TURN_ANNOUNCEMENT = Object.freeze({
  * @param {object} input
  * @param {string|null} input.scope     현재 scope(null이면 안내 대상 세션 없음)
  * @param {string|null} input.identity  현재 identity(null이면 안내할 역할 턴이 없음)
- * @param {string|null} input.role      현재 canonical 역할 턴
+ * @param {string|null} input.role      릴 커서가 가리키는 연출 역할
  * @param {number|null} input.dayIndex  현재 canonical dayIndex
  * @param {boolean} input.hold          더 앞 순서의 오버레이가 떠 있는가
  * @param {boolean} input.hydrated      이번 관측이 스냅샷 하이드레이션으로 생긴 것인가

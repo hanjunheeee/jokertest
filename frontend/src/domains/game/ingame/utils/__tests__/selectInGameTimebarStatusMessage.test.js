@@ -94,3 +94,50 @@ test("state가 아닌 입력에도 throw 없이 null이다", () => {
     assert.equal(selectInGameTimebarStatusMessage(input), null)
   }
 })
+
+// --- 연출 역할 override (실제 화면이 쓰는 경로) ---
+
+test("NIGHT — override로 넘긴 연출 역할이 canonical 턴을 이긴다", () => {
+  // 실제 화면(InGamePage)은 연출 릴의 현재 역할을 넘긴다. canonical 턴은 죽은 역할을 건너뛴
+  // 판정용 값이라, 그것만 따르면 그 역할 보유자의 사망이 상태바에서 드러난다.
+  assert.equal(
+    selectInGameTimebarStatusMessage(
+      { phase: "NIGHT", dayIndex: 2, nightTurnRole: "WITCH_HUNTER" },
+      "GUARD",
+    ),
+    announcementOf("GUARD"),
+  )
+  // canonical 턴이 아예 없는(= 그 밤의 판정이 이미 끝난) 상태에서도 연출은 그대로 재생된다.
+  assert.equal(
+    selectInGameTimebarStatusMessage({ phase: "NIGHT", dayIndex: 2, nightTurnRole: null }, "GUARD"),
+    announcementOf("GUARD"),
+  )
+})
+
+test("NIGHT — override가 유효한 문자열이 아니면 기존 canonical 파생으로 떨어진다(하위호환)", () => {
+  for (const override of [null, undefined, "", 0, ["GUARD"]]) {
+    assert.equal(
+      selectInGameTimebarStatusMessage({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" }, override),
+      announcementOf("DOCTOR"),
+    )
+  }
+})
+
+test("NIGHT — 밤 행동이 없는 역할을 override로 넘기면 문구를 지어내지 않는다", () => {
+  assert.equal(
+    selectInGameTimebarStatusMessage({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "JOKER" }, "CITIZEN"),
+    null,
+  )
+})
+
+test("DAY/TRIBUNAL/ENDED는 override를 넘겨도 각 단계 문구를 그대로 쓴다", () => {
+  assert.equal(
+    selectInGameTimebarStatusMessage({ phase: "DAY", dayIndex: 2 }, "GUARD"),
+    INGAME_TIMEBAR_DAY_STATUS_MESSAGE,
+  )
+  assert.equal(
+    selectInGameTimebarStatusMessage({ phase: "TRIBUNAL", dayIndex: 2 }, "GUARD"),
+    INGAME_TIMEBAR_TRIBUNAL_STATUS_MESSAGE,
+  )
+  assert.equal(selectInGameTimebarStatusMessage({ phase: "ENDED", dayIndex: 3 }, "GUARD"), null)
+})
