@@ -38,6 +38,11 @@ function isNonEmptyString(value) {
  * 모든 중첩 구조는 response에서 필드 단위로 새로 만들어 반환하므로, 호출부가 이후 response를
  * 변형해도 store에는 영향이 없다. winResult는 winner만 잘라내지 않고 normalizeWinResult가
  * 정규화한 { winner, reveals, mvp } 전체를 보존한다 — 결과 페이지가 reveals를 읽어야 한다.
+ * roster의 colorIndex도 같은 이유로 보존한다 — 재접속 후에도 참가자 색이 그대로여야 한다.
+ * @param {object} current 신뢰 경계로 쓰이는 현재 store(gameId·state.self.uuid·phase)
+ * @param {object} response get_session_snapshot 응답(신뢰하지 않는 외부 입력)
+ * @flow payload를 phase·roster·self·phase별 결과 필드 순으로 끝까지 검증하고, 하나라도
+ *   어긋나면 current를 그대로 반환한다. 모두 통과하면 state 전체를 새로 만들어 교체한다.
  */
 export function applySessionSnapshotPure(current, response) {
   if (response === null || typeof response !== "object" || Array.isArray(response)) return current
@@ -190,11 +195,17 @@ export function applySessionSnapshotPure(current, response) {
   // ENDED인 스냅샷을 다시 적용하는 것은 막지 않는다(멱등 재적용 허용).
   if (current.state.phase === "ENDED" && response.phase !== "ENDED") return current
 
+  // colorIndex(서버가 배정한 참가자 색)는 위 roster 검증에서 거부 사유로 삼지 않는다 — 이
+  // 파일의 all-or-nothing 관례와 일부러 다르게 판단한 지점이다. 색은 순전히 표시용이라,
+  // 서버가 이상한 색 값 하나를 보냈다는 이유로 재접속 하이드레이션 전체를 거부하면 사용자가
+  // stale 상태에 갇힌다. 유효한 비음수 정수일 때만 키를 만들고, 아니면 키 자체를 만들지 않아
+  // 그 참가자만 기본색으로 떨어지는 것으로 충분하다.
   const nextPlayers = response.players.map((p) => ({
     uuid: p.uuid,
     nickname: p.nickname,
     alive: p.isAlive,
     isConnected: p.isConnected,
+    ...(Number.isInteger(p.colorIndex) && p.colorIndex >= 0 ? { colorIndex: p.colorIndex } : {}),
   }))
 
   const nextSelf = {

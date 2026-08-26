@@ -609,6 +609,46 @@ test("setGamePayload(새 게임)와 clearGame은 개인 조사 결과를 비운�
   assert.equal(useInGameStore.getState().nightPrivateResult, null)
 })
 
+test("setGamePayload: game_started의 colorIndex가 state.players에 그대로 보존된다", () => {
+  useInGameStore.getState().setGamePayload({
+    gameId: "game-3",
+    state: {
+      id: "game-3",
+      phase: "ROLE_REVEAL",
+      dayIndex: 0,
+      players: [
+        { uuid: "p1", nickname: "P1", colorIndex: 0 },
+        { uuid: "p2", nickname: "P2", colorIndex: 7 },
+      ],
+      self: { uuid: "p1", nickname: "P1", role: "CITIZEN", team: "CITIZEN" },
+    },
+  })
+
+  const players = useInGameStore.getState().state.players
+  assert.equal(players[0].colorIndex, 0)
+  assert.equal(players[1].colorIndex, 7)
+  // alive 기본값 주입이 색을 지우지 않는다.
+  assert.equal(players[0].alive, true)
+  assert.equal(players[1].alive, true)
+})
+
+test("setGamePayload: colorIndex가 없는 구세션 payload도 그대로 통과한다(키가 생기지 않는다)", () => {
+  useInGameStore.getState().setGamePayload({
+    gameId: "game-4",
+    state: {
+      id: "game-4",
+      phase: "ROLE_REVEAL",
+      dayIndex: 0,
+      players: [{ uuid: "p1", nickname: "P1" }],
+      self: { uuid: "p1", nickname: "P1", role: "CITIZEN", team: "CITIZEN" },
+    },
+  })
+
+  const players = useInGameStore.getState().state.players
+  assert.equal(Object.hasOwn(players[0], "colorIndex"), false)
+  assert.equal(players[0].alive, true)
+})
+
 test("clearNightPrivateResult: 값이 있으면 비우고, 이미 비어 있으면 참조를 보존하는 no-op이다", () => {
   seedPrivateResultState()
 

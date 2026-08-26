@@ -18,6 +18,11 @@ const EMPTY_RESULT = Object.freeze({ sourcePlayers: null, localPlayerId: null })
  * uuid/nickname과 state.self의 uuid/role/team/allies만 엄격히 검증합니다(state.id/phase/dayIndex,
  * self.nickname 등 이 함수가 쓰지 않는 필드는 검증 대상이 아닙니다) — 검증 대상 필드
  * 중 하나라도 어긋나면 부분 목록 대신 안전한 preview fallback을 돌려줍니다.
+ *
+ * colorIndex(서버가 배정한 참가자 색)는 이 all-or-nothing 검증의 대상이 아닙니다 — 색은 순전히
+ * 표시용이라, 형태가 어긋난 색 값 하나 때문에 참가자 목록 전체가 preview fallback으로 무너지면
+ * 안 됩니다. 유효한 비음수 정수일 때만 키를 만들고(role/team/isAlly와 같은 own-property 관례),
+ * 그렇지 않으면 키 자체가 없어 소비처가 기본색으로 그립니다.
  */
 export function buildPlayerSessionSourceFromGameState(state) {
   if (!state || !Array.isArray(state.players)) return EMPTY_RESULT
@@ -60,6 +65,9 @@ export function buildPlayerSessionSourceFromGameState(state) {
 
   const sourcePlayers = state.players.map((player) => {
     const entry = { id: player.uuid, name: player.nickname, connected: true, alive: player.alive }
+    if (Number.isInteger(player.colorIndex) && player.colorIndex >= 0) {
+      entry.colorIndex = player.colorIndex
+    }
     // 본인 항목에만 role/team을 연결한다. 다른 참가자 항목에는 role/team 키 자체를 만들지
     // 않는다(UNKNOWN 같은 가짜 값도 채우지 않음) — 비밀 유지.
     if (player.uuid === self.uuid) {
