@@ -317,6 +317,82 @@ function getActiveSessionRoutingInfo(uuid) {
     return { gameId: session.id, channelId: session.channelId, phase: session.phase }
 }
 
+// 테스트(E2E 시나리오 재현) 전용 결정적 역할 배정 플래그의 이름. 값이 설정되지 않으면
+// (= production 기본) 아래 세 함수는 process.env 조회 한 번으로 끝나고 assignRoles는 기존
+// 랜덤 경로를 그대로 실행한다. matchmaking.js의 GAME_DEV_MIN_PLAYERS와 같은 이유로 모듈
+// 로드 시점에 값을 캐싱하지 않는다 — 호출마다 읽어야 테스트가 켜고 끌 수 있다.
+const DEBUG_FIXED_ROLES_ENV = 'DEBUG_FIXED_ROLES'
+
+/**
+ * 고정 배정을 포기하고 랜덤 배정으로 되돌릴 때 경고 한 줄만 남기고 null을 반환합니다.
+ * @param {string} reason - 포기 사유(기계 판독용 짧은 코드)
+ */
+function warnDebugFixedRolesFallback(reason) {
+    console.warn(`[${DEBUG_FIXED_ROLES_ENV}] 고정 역할 배정을 건너뛰고 랜덤 배정으로 되돌립니다 — ${reason}`)
+    return null
+}
+
+/**
+ * DEBUG_FIXED_ROLES 문자열을 canonical 역할 이름 배열로 파싱합니다(순수 함수 — env를 읽지 않는다).
+ * @param {unknown} rawValue - process.env.DEBUG_FIXED_ROLES의 원값
+ * @flow 문자열이 아니거나 공백뿐이면 null(= "플래그 꺼짐"이며 경고 대상이 아니다 — 셸이나
+ *   --env-file에서 빈 값은 미설정과 구분할 실익이 없다)을 반환한다. 쉼표로 나눈 토큰 중
+ *   GAME_ROLES에 없는 이름이 하나라도 있으면 {ok:false, reason}, 전부 유효하면
+ *   {ok:true, roles}를 반환한다.
+ */
+function parseDebugFixedRoleList(rawValue) {
+    if (typeof rawValue !== 'string' || rawValue.trim().length === 0) return null
+    const roles = rawValue.split(',').map((token) => token.trim().toUpperCase())
+    for (const role of roles) {
+        // hasOwnProperty로만 판정해 constructor/toString 같은 프로토타입 키가 역할로 통과하는
+        // 구멍을 막는다(GAME_ROLES는 일반 객체에서 파생된 frozen 객체다).
+        if (!Object.prototype.hasOwnProperty.call(GAME_ROLES, role)) {
+            return { ok: false, reason: `UNKNOWN_ROLE:${role}` }
+        }
+    }
+    return { ok: true, roles }
+}
+
+/**
+ * 플래그가 켜져 있고 목록이 안전할 때만 "입장 순서 그대로"의 고정 배정 결과를 만듭니다.
+ * @param {Array<object>} players - 입장 순서(room.players Map 삽입 순서)대로의 참가자 배열
+ * @param {number|object} jokerCountOrComposition - assignRoles가 받은 두 번째 인자 그대로
+ * @flow 플래그가 없으면 아무것도 하지 않고 null을 반환한다(기존 랜덤 경로, 경고 없음).
+ *   파싱 실패·길이 불일치·구성 개수 불일치는 경고 한 줄을 남기고 null을 반환해 랜덤 배정으로
+ *   되돌린다 — 예외를 던지지 않으므로 게임 시작이 실패하지 않는다. 전부 통과하면 셔플하지 않고
+ *   index 순서대로 배정한 새 배열을 반환한다(원본 배열·원소는 변형하지 않는다).
+ */
+function resolveDebugFixedRoleAssignment(players, jokerCountOrComposition) {
+    const parsed = parseDebugFixedRoleList(process.env[DEBUG_FIXED_ROLES_ENV])
+    if (parsed === null) return null
+    if (!parsed.ok) return warnDebugFixedRolesFallback(parsed.reason)
+
+    if (!Array.isArray(players) || parsed.roles.length !== players.length) {
+        return warnDebugFixedRolesFallback(`LENGTH_MISMATCH:${parsed.roles.length}!=${players?.length}`)
+    }
+
+    // 랜덤 경로와 똑같은 판정을 여기서 한 번 더 한다. 그 두 줄을 위로 끌어올려 공유하면
+    // "기존 랜덤 경로는 수정하지 않는다"는 이번 작업의 제약을 어기게 되므로 의도적인 중복이다.
+    const composition =
+        typeof jokerCountOrComposition === 'number'
+            ? computeRoleComposition(players.length, jokerCountOrComposition)
+            : jokerCountOrComposition
+    if (typeof composition !== 'object' || composition === null || Array.isArray(composition)) {
+        return warnDebugFixedRolesFallback('INVALID_COMPOSITION')
+    }
+
+    // assertValidSessionForCommit의 역할별 개수 검사(mismatchedRoles)와 동일한 기준으로 미리
+    // 대조한다 — 여기를 통과한 고정 배정은 commit 경계에서 절대 throw를 유발하지 않는다.
+    const fixedCounts = Object.fromEntries(Object.keys(GAME_ROLES).map((role) => [role, 0]))
+    for (const role of parsed.roles) fixedCounts[role] += 1
+    const mismatchedRoles = Object.keys(GAME_ROLES).filter((role) => fixedCounts[role] !== composition[role])
+    if (mismatchedRoles.length > 0) {
+        return warnDebugFixedRolesFallback(`COMPOSITION_MISMATCH:${mismatchedRoles.join(',')}`)
+    }
+
+    return players.map((player, index) => ({ ...player, role: parsed.roles[index], alive: true }))
+}
+
 // 순수 계산 — 어떤 Map도 읽지 않는다. randomFn을 주입하면 완전히 결정적이다.
 function fisherYatesShuffle(items, randomFn) {
     const result = [...items]
@@ -335,8 +411,18 @@ function fisherYatesShuffle(items, randomFn) {
  * 기존 AUTO 동작 그대로 computeRoleComposition으로 구성을 만든다 — CUSTOM 모드가 생기면서
  * "구성을 미리 해석해 두고 그대로 배정"하는 경로가 필요해졌지만, 기존 AUTO 호출부(및 그
  * 호출 계약에 기대는 테스트)를 그대로 두기 위해 두 형태를 모두 지원한다.
+ *
+ * 유일한 예외는 테스트 전용 DEBUG_FIXED_ROLES 플래그다. 이 플래그가 설정되고 목록이 안전한
+ * 경우에만 셔플 없는 결정적 배정이 앞선다. 미설정(production 기본)이면 아래 랜덤 경로가
+ * 이전과 완전히 동일하게 실행되며, 추가되는 비용은 이 분기 한 번뿐이다.
+ * @param {Array<object>} players - 입장 순서대로의 참가자 배열(변형하지 않는다)
+ * @param {number|object} jokerCountOrComposition - jokerCount(숫자) 또는 해석된 canonical 구성
+ * @param {Function} randomFn - Fisher–Yates에 주입할 난수 함수(고정 배정 경로에서는 쓰이지 않는다)
+ * @flow 고정 배정이 성립하면 그 결과를 그대로 반환하고, 그 외에는 항상 기존 랜덤 경로를 탄다.
  */
 function assignRoles(players, jokerCountOrComposition, randomFn = Math.random) {
+    const fixed = resolveDebugFixedRoleAssignment(players, jokerCountOrComposition)
+    if (fixed) return fixed
     const shuffled = fisherYatesShuffle(players, randomFn)
     const composition =
         typeof jokerCountOrComposition === 'number'
@@ -2265,6 +2351,8 @@ module.exports = {
         finalizeGameSession,
         assertSessionNotEnded,
         assignRoles,
+        parseDebugFixedRoleList,
+        resolveDebugFixedRoleAssignment,
         enterDayPhase,
         validateSessionInput,
         buildSessionCandidate,
