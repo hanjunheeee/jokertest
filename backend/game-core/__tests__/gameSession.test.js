@@ -137,6 +137,163 @@ test('assignRoles: 10명·jokerCount 1이면 DOCTOR/GUARD/WITCH_HUNTER가 각 1�
 })
 
 // ---------------------------------------------------------------------------
+// assignRoles — 테스트 전용 고정 배정(DEBUG_FIXED_ROLES)
+// ---------------------------------------------------------------------------
+
+/** DEBUG_FIXED_ROLES를 일시적으로 설정하고(null이면 삭제) fn 실행 후 반드시 원값으로 되돌린다. */
+function withFixedRoles(value, fn) {
+    const original = process.env.DEBUG_FIXED_ROLES
+    if (value === null) delete process.env.DEBUG_FIXED_ROLES
+    else process.env.DEBUG_FIXED_ROLES = value
+    try {
+        return fn()
+    } finally {
+        if (original === undefined) delete process.env.DEBUG_FIXED_ROLES
+        else process.env.DEBUG_FIXED_ROLES = original
+    }
+}
+
+/** fn 실행 중 발생한 console.warn 메시지를 모아 반환한다(console.warn은 반드시 원복된다). */
+function captureWarnings(fn) {
+    const messages = []
+    const originalWarn = console.warn
+    console.warn = (...args) => messages.push(args.join(' '))
+    try {
+        fn()
+    } finally {
+        console.warn = originalWarn
+    }
+    return messages
+}
+
+const FIVE_ROLE_COMPOSITION = { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1, CITIZEN: 1 }
+
+test('assignRoles: DEBUG_FIXED_ROLES가 설정되면 참가자 입장 순서대로 목록의 역할을 그대로 배정한다', () => {
+    const players = Array.from({ length: 5 }, (_, i) => makePlayer(`p${i}`))
+    const list = 'JOKER,DOCTOR,GUARD,WITCH_HUNTER,CITIZEN'
+
+    let assigned
+    const warnings = captureWarnings(() => {
+        assigned = withFixedRoles(list, () => assignRoles(players, FIVE_ROLE_COMPOSITION, () => 0.5))
+    })
+
+    assert.deepEqual(assigned.map((p) => [p.uuid, p.role]), [
+        ['p0', 'JOKER'], ['p1', 'DOCTOR'], ['p2', 'GUARD'], ['p3', 'WITCH_HUNTER'], ['p4', 'CITIZEN'],
+    ])
+    assert.equal(assigned.every((p) => p.alive === true), true)
+    assert.deepEqual(warnings, [])
+})
+
+test('assignRoles: 고정 배정은 셔플하지 않으므로 randomFn이 무엇이든 결과가 같다', () => {
+    const players = Array.from({ length: 5 }, (_, i) => makePlayer(`p${i}`))
+    const list = 'CITIZEN,JOKER,WITCH_HUNTER,DOCTOR,GUARD'
+
+    const [first, second] = withFixedRoles(list, () => [
+        assignRoles(players, FIVE_ROLE_COMPOSITION, () => 0),
+        assignRoles(players, FIVE_ROLE_COMPOSITION, () => 0.999),
+    ])
+
+    assert.deepEqual(first.map((p) => p.role), ['CITIZEN', 'JOKER', 'WITCH_HUNTER', 'DOCTOR', 'GUARD'])
+    assert.deepEqual(first, second)
+})
+
+test('assignRoles: 고정 배정 경로에서도 원본 players 배열/원소를 변형하지 않는다', () => {
+    const players = Array.from({ length: 5 }, (_, i) => makePlayer(`p${i}`))
+    const before = JSON.parse(JSON.stringify(players))
+
+    withFixedRoles('JOKER,DOCTOR,GUARD,WITCH_HUNTER,CITIZEN', () =>
+        assignRoles(players, FIVE_ROLE_COMPOSITION, () => 0.5))
+
+    assert.deepEqual(players, before)
+})
+
+test('assignRoles: 목록 길이가 참가자 수와 다르면 경고 한 줄을 남기고 랜덤 배정으로 fallback한다', () => {
+    const players = Array.from({ length: 4 }, (_, i) => makePlayer(`p${i}`))
+
+    let assigned
+    const warnings = captureWarnings(() => {
+        assigned = withFixedRoles('JOKER,CITIZEN,CITIZEN', () => assignRoles(players, 1, () => 0))
+    })
+
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /DEBUG_FIXED_ROLES/)
+    assert.deepEqual(countByRole(assigned), computeRoleComposition(4, 1))
+})
+
+test('assignRoles: 알 수 없는 역할명이 있으면 경고 한 줄을 남기고 랜덤 배정으로 fallback한다', () => {
+    const players = Array.from({ length: 3 }, (_, i) => makePlayer(`p${i}`))
+
+    let assigned
+    const warnings = captureWarnings(() => {
+        assigned = withFixedRoles('JOKER,MAYOR,CITIZEN', () => assignRoles(players, 1, () => 0))
+    })
+
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /UNKNOWN_ROLE:MAYOR/)
+    assert.deepEqual(countByRole(assigned), computeRoleComposition(3, 1))
+})
+
+test('assignRoles: 역할 구성과 개수가 어긋나면 경고 한 줄을 남기고 랜덤 배정으로 fallback한다', () => {
+    const players = Array.from({ length: 4 }, (_, i) => makePlayer(`p${i}`))
+
+    let assigned
+    // 구성은 JOKER 1 / CITIZEN 3인데 목록은 JOKER 2 / CITIZEN 2다.
+    const warnings = captureWarnings(() => {
+        assigned = withFixedRoles('JOKER,JOKER,CITIZEN,CITIZEN', () =>
+            assignRoles(players, computeRoleComposition(4, 1), () => 0))
+    })
+
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /COMPOSITION_MISMATCH/)
+    assert.deepEqual(countByRole(assigned), computeRoleComposition(4, 1))
+})
+
+test('assignRoles: DEBUG_FIXED_ROLES가 빈 문자열/공백이면 미설정과 동일하게 경고 없이 랜덤 경로를 탄다', () => {
+    const players = Array.from({ length: 4 }, (_, i) => makePlayer(`p${i}`))
+
+    for (const value of ['', '   ']) {
+        let assigned
+        const warnings = captureWarnings(() => {
+            assigned = withFixedRoles(value, () => assignRoles(players, 1, () => 0))
+        })
+        assert.deepEqual(warnings, [], `value=${JSON.stringify(value)}에서 경고가 발생함`)
+        assert.deepEqual(countByRole(assigned), computeRoleComposition(4, 1))
+    }
+})
+
+test('prepareGameSession/commitGameSession: 유효한 고정 목록이면 입장 순서대로 배정된 채 commit까지 통과한다', () => {
+    // makeRoom의 기본 참가자 순서는 u1 → u2 → u3이고 jokerCount 1이므로 구성은 JOKER 1/CITIZEN 2다.
+    const room = makeRoom({ id: 'room-fixed-ok' })
+
+    const prepared = withFixedRoles('CITIZEN,JOKER,CITIZEN', () =>
+        prepareGameSession(room, { randomFn: () => 0 }))
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.session.players.get('u1').role, GAME_ROLES.CITIZEN)
+    assert.equal(prepared.session.players.get('u2').role, GAME_ROLES.JOKER)
+    assert.equal(prepared.session.players.get('u3').role, GAME_ROLES.CITIZEN)
+    assert.doesNotThrow(() => commitGameSession(prepared.session))
+})
+
+test('prepareGameSession/commitGameSession: 잘못된 고정 목록이어도 게임 시작이 실패하지 않는다', () => {
+    const room = makeRoom({ id: 'room-fixed-bad' })
+
+    let prepared
+    const warnings = captureWarnings(() => {
+        prepared = withFixedRoles('JOKER,CITIZEN', () => prepareGameSession(room, { randomFn: () => 0 }))
+    })
+
+    assert.equal(warnings.length, 1)
+    assert.equal(prepared.ok, true)
+    assert.doesNotThrow(() => commitGameSession(prepared.session))
+})
+
+test('export 호환성: 고정 배정 helper가 __testables로 노출된다', () => {
+    assert.equal(typeof gameSession.__testables.parseDebugFixedRoleList, 'function')
+    assert.equal(typeof gameSession.__testables.resolveDebugFixedRoleAssignment, 'function')
+})
+
+// ---------------------------------------------------------------------------
 // computeRoleComposition / getSpecialRoleBudget — 슬롯 절삭 알고리즘
 // ---------------------------------------------------------------------------
 

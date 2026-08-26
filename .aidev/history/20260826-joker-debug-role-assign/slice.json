@@ -1,0 +1,128 @@
+{
+  "slice_id": "20260826-joker-debug-role-assign",
+  "status": "running:test",
+  "branch": "slice/20260826-joker-debug-role-assign",
+  "base": "windows-handoff-20260808",
+  "base_commit": "e64397a6f88c48086e5fd3191cc439fec9010d2f",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 17,
+    "test_files": 5,
+    "budget": 80,
+    "warn": true
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "approval_reason": ".env.example의 모든 항목은 placeholder 값만 쓴다(실제 접속 문자열·비밀번호·키 금지).",
+      "run_id": "20260826-133102-joker-debug-role-assign-plan",
+      "attempts": 1,
+      "commit": "e9ab9c4ef9c01389c1d14061f8c1e9ad23ae6b41"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260826-133550-joker-debug-role-assign-implement",
+      "attempts": 1,
+      "commit": "406e1a48dc8b1a308cf00ddda7f0d0249fb7293f"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260826-135321-joker-debug-role-assign-test-3",
+      "verdict": "pass",
+      "attempts": 3
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260826-133102-joker-debug-role-assign-plan",
+      "status": "completed",
+      "turns": 21,
+      "tokens": {
+        "input": 18,
+        "cache_creation": 57837,
+        "cache_read": 485262,
+        "output": 16464,
+        "billed_input": 543117,
+        "peak_context": 72305
+      },
+      "cost_usd": 1.232691
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-133550-joker-debug-role-assign-implement",
+      "status": "completed",
+      "turns": 37,
+      "tokens": {
+        "input": 55,
+        "cache_creation": 69302,
+        "cache_read": 2225854,
+        "output": 17681,
+        "billed_input": 2295211,
+        "peak_context": 90188
+      },
+      "cost_usd": 2.2482469999999997
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-133946-joker-debug-role-assign-test",
+      "status": "completed",
+      "turns": 17,
+      "tokens": {
+        "input": 29,
+        "cache_creation": 46996,
+        "cache_read": 786419,
+        "output": 6356,
+        "billed_input": 833444,
+        "peak_context": 67882
+      },
+      "cost_usd": 1.0222145
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260826-134750-joker-debug-role-assign-test-2",
+      "status": "completed",
+      "turns": 18,
+      "tokens": {
+        "input": 33,
+        "cache_creation": 40709,
+        "cache_read": 874303,
+        "output": 7260,
+        "billed_input": 915045,
+        "peak_context": 64689
+      },
+      "cost_usd": 1.0259065000000003
+    },
+    {
+      "stage": "test",
+      "attempt": 3,
+      "run_id": "20260826-135321-joker-debug-role-assign-test-3",
+      "status": "completed",
+      "turns": 14,
+      "tokens": {
+        "input": 17,
+        "cache_creation": 8587,
+        "cache_read": 410273,
+        "output": 3915,
+        "billed_input": 418877,
+        "peak_context": 50248
+      },
+      "cost_usd": 0.3889665
+    }
+  ],
+  "updated_at": "2026-08-26T13:54:33+09:00"
+}
