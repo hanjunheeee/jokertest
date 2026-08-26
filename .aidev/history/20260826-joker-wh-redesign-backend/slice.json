@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260826-joker-wh-redesign-backend",
+  "status": "pending",
+  "branch": "slice/20260826-joker-wh-redesign-backend",
+  "base": "windows-handoff-20260808",
+  "base_commit": "a59ca5631177d1b0bfea06e631e5443268172d23",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-26T20:00:18+09:00"
+}
