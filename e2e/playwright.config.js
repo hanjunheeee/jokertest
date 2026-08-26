@@ -15,8 +15,9 @@ export default defineConfig({
   workers: 1,
   // 재시도는 "10일을 처음부터 다시"라서 실패 원인을 가리기만 한다. trace/video로 남긴다.
   retries: 0,
-  // 진입 연출 21회 × 5창 + 밤 10회 + 사망 영상 재생을 한 테스트가 통째로 감당한다.
-  timeout: 15 * 60_000,
+  // 진입 연출 19회 × 5창 + 밤 9회 + 사망 영상 재생 + 단계별 스크린샷(5창 × 30여 단계)을 한
+  // 테스트가 통째로 감당한다. 스크린샷 비용이 부담되면 E2E_STEP_SHOTS=0으로 끌 수 있다.
+  timeout: 20 * 60_000,
   expect: { timeout: 15_000 },
   reporter: [["list"], ["html", { open: "never" }]],
   use: {

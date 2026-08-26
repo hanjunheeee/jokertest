@@ -7,7 +7,7 @@
  *
  * 이 파일만 playwright에 의존한다 — 나머지 lib/*는 순수해서 브라우저 설치 없이 검증된다.
  */
-import { expect } from "@playwright/test"
+import { expect, test } from "@playwright/test"
 import {
   INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
   INGAME_KILL_REVEAL_RETRY_LABEL,
@@ -52,6 +52,63 @@ const OVERLAY_SETTLE_TIMEOUT_MS = 90_000
 
 /** 사망 연출을 기다려주는 최대 시간 — 프런트 워치독보다 넉넉히 잡는다. */
 const KILL_REVEAL_MAX_WAIT_MS = INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS + 20_000
+
+/**
+ * 단계별 스크린샷을 남길지 여부. `E2E_STEP_SHOTS=0`으로 끌 수 있다 — 5창 × 수십 단계라
+ * 런타임이 문제가 될 때 사람이 손댈 수 있는 탈출구를 하나 남겨둔다.
+ */
+const STEP_SHOTS_ENABLED = process.env.E2E_STEP_SHOTS?.trim() !== "0"
+
+/**
+ * 스크린샷 파일 이름에 쓸 수 있게 문자열을 정규화한다.
+ * @param {string} value 단계 이름·좌석 라벨처럼 공백·괄호·구분점이 섞인 문자열
+ * @flow 파일명에 쓸 수 없거나 셸에서 성가신 문자를 전부 "-"로 접고, 연속된 "-"는 하나로 줄인다.
+ */
+function toFileNamePart(value) {
+  return String(value)
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+/**
+ * 지금 화면을 그 단계의 기록으로 남긴다.
+ * @param {object} seat 좌석
+ * @param {string} label 단계 이름
+ * @flow playwright.config의 screenshot:"only-on-failure"와 역할이 다르다 — 그쪽은 실패한 순간
+ *   하나이고 이쪽은 통과한 단계들의 진행 기록이다. 스크린샷 실패(창이 이미 닫힌 경우 등)로
+ *   시나리오를 무너뜨리지 않는다: 기록은 검증이 아니다.
+ */
+export async function captureStep(seat, label) {
+  if (!STEP_SHOTS_ENABLED) return
+  try {
+    const fileName = `${toFileNamePart(label)}__${toFileNamePart(seat.label)}.png`
+    await seat.page.screenshot({ path: test.info().outputPath(fileName) })
+  } catch {
+    // 기록이 남지 않는 것은 시나리오의 실패가 아니다.
+  }
+}
+
+/**
+ * 관측 검증 하나를 실패해도 멈추지 않는 형태로 실행한다(soft-assert).
+ * @param {object} failureLog createFailureLog가 만든 수집기
+ * @param {string} step 지금 단계 이름(요약에 그대로 들어간다)
+ * @param {object} seat 좌석
+ * @param {Function} fn 검증 본문(async)
+ * @flow 실패하면 수집기에 기록하고 그 순간의 화면을 FAIL-{step}으로 남긴 뒤 false를 돌려준다.
+ *   **관측 전용 계약**: 제출·집계·전이 같은 진행 동작에는 절대 쓰지 않는다 — 진행이 실패한
+ *   뒤의 관측은 전부 무의미해서 요약이 잡음으로 가득 차기 때문이다.
+ * @returns {Promise<boolean>} 검증이 통과했으면 true
+ */
+export async function softly(failureLog, step, seat, fn) {
+  try {
+    await fn()
+    return true
+  } catch (error) {
+    failureLog.record({ step, seatLabel: seat.label, message: error })
+    await captureStep(seat, `FAIL-${step}`)
+    return false
+  }
+}
 
 /**
  * 좌석 하나를 위한 브라우저 컨텍스트와 페이지를 연다.
@@ -497,6 +554,10 @@ export async function submitNightAction(seat, actionLabel, targetUuid) {
  * @param {object} seat 좌석
  * @param {string|null} actionLabel 기대 행동 문구. null이면 "행동할 수 없습니다" 표시를 기대한다
  * @flow 요구서의 "조사 패널이 그 밤에 뜨는지 먼저 검증"이 이 함수다 — 제출보다 먼저 부른다.
+ *   actionLabel === null 분기는 이제 **CITIZEN 전용**이다: 그 문구는 nightActionType이 null일
+ *   때만 뜨는데(InGameActionPanel), WITCH_HUNTER의 밤 행동 하한이 0으로 내려가 그 역할은 시신이
+ *   없는 밤에도 null이 되지 않는다. 마녀사냥꾼의 "이 밤엔 턴이 오지 않는다"는
+ *   assertNightTurnAbsent로 검증한다.
  */
 export async function assertNightActionPanel(seat, actionLabel) {
   const panel = seat.page.locator(selectors.controlPanel())
@@ -508,6 +569,74 @@ export async function assertNightActionPanel(seat, actionLabel) {
     panel.getByRole("button", { name: `${actionLabel} 확정`, exact: true }),
     `${seat.label}: "${actionLabel}" 패널이 이 밤에 뜨지 않았습니다`,
   ).toBeVisible()
+}
+
+/**
+ * 그 밤에 이 좌석의 역할 턴이 오지 않았음을 검증한다.
+ * @param {object} seat 좌석
+ * @param {{announcementMessage:string, actionLabel:string}} expectations
+ *   announcementMessage: 턴이 왔다면 떴을 안내 문구(expectedNightTurnMessage가 만든 값)
+ *   actionLabel: 그 역할의 밤 행동 문구("확인") — 확정 버튼 이름을 만드는 데 쓴다
+ * @flow 관측 가능한 "턴이 오지 않음"은 두 가지다 — ① 안내 문구가 화면에 한 번도 없고,
+ *   ② 확정·건너뛰기 버튼이 끝까지 비활성이다(nightActionControlsEnabled가 isNightActionTurn을
+ *   요구한다). 세 번째 증거인 "아무것도 제출하지 않았는데 밤이 판정된다"는 호출부가 그 좌석에
+ *   submitNightAction을 아예 부르지 않는 것으로 성립한다 — 자격이 있었다면 서버가 그 제출을
+ *   기다리느라 밤이 영영 끝나지 않는다.
+ */
+export async function assertNightTurnAbsent(seat, { announcementMessage, actionLabel }) {
+  await expect(
+    seat.page.getByText(announcementMessage, { exact: true }),
+    `${seat.label}: 오지 않아야 할 턴 안내("${announcementMessage}")가 떴습니다`,
+  ).toHaveCount(0)
+  await expect(
+    panelButton(seat, `${actionLabel} 확정`),
+    `${seat.label}: 턴이 오지 않은 밤인데 "${actionLabel} 확정"이 활성입니다`,
+  ).toBeDisabled()
+  await expect(
+    panelButton(seat, "건너뛰기"),
+    `${seat.label}: 턴이 오지 않은 밤인데 "건너뛰기"가 활성입니다`,
+  ).toBeDisabled()
+}
+
+/**
+ * 밤 행동 대상 목록에서 무엇을 고를 수 있고 무엇이 잠겨 있는지 검증한다.
+ * @param {object} seat 좌석
+ * @param {{selectableUuids:Array<string>, lockedUuids:Array<string>}} expectations
+ *   selectableUuids: 지금 고를 수 있어야 하는 대상 uuid
+ *   lockedUuids: 목록에는 있되 잠겨 있어야 하는 대상 uuid
+ * @flow 요구서의 "대상 목록에 사망자만 나타나는지"의 실제 형태다 — 프로덕션은 생존자를 목록에서
+ *   지우지 않고 selectable:false로 잠근다(buildNightActionTargets). 그래서 "목록에 없다"가 아니라
+ *   "있되 전부 비활성"으로 검증한다. picker 전체가 nightActionControlsEnabled로 잠기므로 반드시
+ *   그 좌석의 턴이 열린 뒤에 부른다 — 그 전에는 사망자 버튼도 비활성이다.
+ */
+export async function assertNightActionTargets(seat, { selectableUuids, lockedUuids }) {
+  for (const uuid of selectableUuids) {
+    await expect(
+      seat.page.locator(selectors.nightTarget(uuid)),
+      `${seat.label}: 고를 수 있어야 하는 대상(${uuid})이 잠겨 있습니다`,
+    ).toBeEnabled()
+  }
+  for (const uuid of lockedUuids) {
+    const target = seat.page.locator(selectors.nightTarget(uuid))
+    await expect(target, `${seat.label}: 대상(${uuid})이 목록에서 사라졌습니다`).toHaveCount(1)
+    await expect(target, `${seat.label}: 잠겨 있어야 하는 대상(${uuid})을 고를 수 있습니다`).toBeDisabled()
+  }
+}
+
+/**
+ * 결과 화면에서 로비로 나간다.
+ * @param {object} seat 좌석
+ * @flow 도착지는 `/lobby`가 아니라 `/multiplay`다 — 결과 페이지의 "로비로"는
+ *   useGameResultLobbyExit → createSessionEndFinalizer를 타고 navigate("/multiplay")로 끝나며,
+ *   leave ack의 성패와 무관하게 언제나 같은 경로다. 사망 좌석을 포함해 5창 전부가 이 경로로
+ *   명시적으로 이탈해야 다음 실행에 세션이 남지 않는다.
+ */
+export async function returnToLobby(seat) {
+  const lobbyButton = seat.page.getByRole("button", { name: "로비로", exact: true })
+  await expect(lobbyButton, `${seat.label}: 결과 화면에 로비 버튼이 없습니다`).toBeEnabled()
+  await lobbyButton.click()
+  await seat.page.waitForURL("**/multiplay", { timeout: 60_000 })
+  assertNoDialogs(seat)
 }
 
 /**
