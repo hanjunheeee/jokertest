@@ -31,6 +31,16 @@ test("InGameTimebar는 더 이상 onVoteStatusClick을 전달받지 않는다(�
   assert.doesNotMatch(timebarBlockMatch[0], /onVoteStatusClick/)
 })
 
+test("InGameTimebar는 canonical state에서 파생한 statusMessage를 받고, 기존 day/activePhaseId 배선은 그대로다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  const timebarBlockMatch = source.match(/<InGameTimebar[\s\S]*?\/>/)
+  assert.notEqual(timebarBlockMatch, null)
+  assert.match(timebarBlockMatch[0], /day=\{gameState\?\.dayIndex\}/)
+  assert.match(timebarBlockMatch[0], /activePhaseId=\{mapGamePhaseToTimebarPhaseId\(gameState\?\.phase\)\}/)
+  assert.match(timebarBlockMatch[0], /statusMessage=\{selectInGameTimebarStatusMessage\(gameState\)\}/)
+  assert.match(source, /import \{ selectInGameTimebarStatusMessage \} from "\.\.\/utils\/selectInGameTimebarStatusMessage\.js"/)
+})
+
 test("컨트롤 패널은 기존 useInGameActionPanel 데이터 흐름과 interactionBlocked를 그대로 전달받는다(오버레이 우선순위 유지)", async () => {
   const source = await readFile(pageUrl, "utf8")
   const panelBlockMatch = source.match(/<InGameActionPanel[\s\S]*?\/>/)

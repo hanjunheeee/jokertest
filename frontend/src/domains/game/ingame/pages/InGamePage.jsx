@@ -15,6 +15,7 @@ import PlayerRecordListPanel from "../components/controls/playerRecordList/Playe
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
+import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarStatusMessage.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
@@ -93,6 +94,7 @@ export default function InGamePage() {
           <InGameTimebar
             day={gameState?.dayIndex}
             activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
+            statusMessage={selectInGameTimebarStatusMessage(gameState)}
           />
           <InGamePlayerBoard />
           <InGameChatShell />

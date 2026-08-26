@@ -44,6 +44,15 @@ export const INGAME_TIMEBAR_ARROW_SIZE_CLASS =
 export const INGAME_TIMEBAR_NODE_ACTIVE_CLASS =
   "brightness-110 drop-shadow-[0_0_10px_rgba(212,168,67,0.85)]"
 
+/**
+ * 프레임 아래 한 줄 — 현재 phase·밤 역할 턴 상태 문구.
+ * 프레임 밖(어두운 게임 배경) 위에 놓이므로 "제 N일"의 다크 브라운이 아니라 이 저장소의
+ * 어두운-배경 텍스트 관례(크림색 + 그림자)를 따른다. z-10 절대배치 래퍼 안이라
+ * pointer-events-none으로 아래 보드의 클릭을 가로채지 않게 한다.
+ */
+export const INGAME_TIMEBAR_STATUS_CLASS =
+  "pointer-events-none self-end truncate text-right font-subheading text-[clamp(0.62rem,3.1cqi,0.86rem)] font-bold leading-none tracking-wide text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+
 /** 좌측 일차 라벨 텍스트 스타일 */
 export const INGAME_TIMEBAR_DAY_LABEL_CLASS =
   "pointer-events-none text-center font-subheading text-[clamp(0.62rem,3.35cqi,0.9rem)] font-bold leading-none tracking-wide text-[#2a1810] [text-shadow:0_1px_0_rgba(255,255,255,0.35)]"

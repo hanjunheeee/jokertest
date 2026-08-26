@@ -1,0 +1,95 @@
+{
+  "slice_id": "20260826-joker-phase-status-bar",
+  "status": "running:test",
+  "branch": "slice/20260826-joker-phase-status-bar",
+  "base": "windows-handoff-20260808",
+  "base_commit": "584f0e331fa2f49a245dd56dc51ffd85a42d51d6",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 41,
+    "test_files": 16,
+    "budget": 80,
+    "warn": true
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "run_id": "20260826-191518-joker-phase-status-bar-plan",
+      "attempts": 1,
+      "commit": "915734727c70c16f763caf4c10a8f8a04a1d7806"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260826-192324-joker-phase-status-bar-implement",
+      "attempts": 1,
+      "commit": "0a461c9d9527c81cd26cc0435b82b880d86889c8"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260826-192828-joker-phase-status-bar-test",
+      "verdict": "pass",
+      "attempts": 1
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260826-191518-joker-phase-status-bar-plan",
+      "status": "completed",
+      "turns": 40,
+      "tokens": {
+        "input": 42,
+        "cache_creation": 103381,
+        "cache_read": 1584760,
+        "output": 29995,
+        "billed_input": 1688183,
+        "peak_context": 117849
+      },
+      "cost_usd": 2.576275
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-192324-joker-phase-status-bar-implement",
+      "status": "completed",
+      "turns": 46,
+      "tokens": {
+        "input": 69,
+        "cache_creation": 80468,
+        "cache_read": 3172741,
+        "output": 22109,
+        "billed_input": 3253278,
+        "peak_context": 101892
+      },
+      "cost_usd": 2.9441205000000004
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-192828-joker-phase-status-bar-test",
+      "status": "completed",
+      "turns": 11,
+      "tokens": {
+        "input": 19,
+        "cache_creation": 33321,
+        "cache_read": 459322,
+        "output": 4107,
+        "billed_input": 492662,
+        "peak_context": 54207
+      },
+      "cost_usd": 0.665641
+    }
+  ],
+  "updated_at": "2026-08-26T19:29:48+09:00"
+}
