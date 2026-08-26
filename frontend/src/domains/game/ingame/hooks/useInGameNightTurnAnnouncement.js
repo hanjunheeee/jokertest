@@ -32,8 +32,9 @@ import {
  *   - 그래서 광대 안내를 닫아도 광대 밤 행동 UI는 그대로 남고(useInGameActionPanel은 자기
  *     역할과 dayIndex만 보고 판단한다), 의사 안내는 canonical 역할 턴이 실제로 DOCTOR로
  *     바뀌었다는 서버발 갱신이 도착해야만 뜬다.
- *   - canonical하게 건너뛰는 역할 턴(day 0의 마녀사냥꾼)은 애초에 identity가 만들어지지 않아
- *     한 프레임도 깜빡이지 않는다.
+ *   - canonical하게 건너뛰는 역할 턴(밤 행동이 없는 CITIZEN)은 애초에 identity가 만들어지지
+ *     않아 한 프레임도 깜빡이지 않는다. 마녀사냥꾼처럼 서버가 그 밤에 턴을 만들지 않는 역할은
+ *     canonical 턴으로 관측되는 일 자체가 없다.
  *
  * 무엇을 언제 보여줄지는 전부 순수 함수 reduceInGameNightTurnAnnouncement가 결정한다 — 이
  * 훅은 canonical 입력(계정 uuid·gameId·phase·dayIndex·역할 턴·소켓 세대)과 앞 순서 오버레이

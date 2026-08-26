@@ -90,3 +90,27 @@ test("getInGameRoleRevealInfo: 각 역할은 서로 다른 roleName/description�
   }
   assert.equal(names.size, roles.length, "역할별 roleName은 서로 달라야 한다")
 })
+
+test("getInGameRoleRevealInfo: WITCH_HUNTER 설명은 '죽은 사람을 지목해 그 직업을 알아냅니다.'다", () => {
+  const self = buildSelf({ role: "WITCH_HUNTER", team: "CITIZEN" })
+  const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
+  assert.ok(result)
+  assert.equal(result.roleName, "마녀사냥꾼")
+  assert.equal(result.description, "죽은 사람을 지목해 그 직업을 알아냅니다.")
+  assert.equal(result.description.includes("둘째 날 밤부터"), false)
+})
+
+test("getInGameRoleRevealInfo: 나머지 네 역할의 설명 문구는 이번 변경에 흔들리지 않는다", () => {
+  const expected = [
+    ["JOKER", "JOKER", "밤마다 한 명을 지목해 처치할 수 있습니다. 낮에는 정체를 들키지 않도록 시민인 척 행동하세요."],
+    ["CITIZEN", "CITIZEN", "특별한 능력은 없습니다. 낮 토론과 투표로 광대를 찾아내야 합니다."],
+    ["DOCTOR", "CITIZEN", "밤마다 한 명을 지목해 광대의 공격으로부터 보호할 수 있습니다."],
+    ["GUARD", "CITIZEN", "밤마다 한 명을 지목해 정체(광대 여부)를 조사할 수 있습니다."],
+  ]
+  for (const [role, team, description] of expected) {
+    const self = buildSelf({ role, team, ...(role === "JOKER" ? { allies: [] } : {}) })
+    const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
+    assert.ok(result, `role=${role}`)
+    assert.equal(result.description, description, `role=${role}`)
+  }
+})

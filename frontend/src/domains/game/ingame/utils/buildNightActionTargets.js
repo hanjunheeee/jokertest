@@ -14,17 +14,35 @@ import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStat
  * id는 원본 player.id를 그대로 씁니다 — buildPlayerSessionSourceFromGameState가
  * player.id = player.uuid로 만들었으므로, 이 함수의 출력 id도 서버가 아는 실제 uuid와
  * 항상 같습니다(제출 시 targetId로 그대로 쓸 수 있어야 함).
+ *
+ * 생존/사망을 기준으로 한 선택 가능 여부는 이 함수가 소유합니다 — InGameTargetPicker는
+ * selectable/connected만 보고 잠그며 alive는 표시(상태 dot·"생존/사망" 라벨)에만 씁니다.
+ *
+ * @param {Array|null|undefined} players 세션 컨텍스트의 참가자 목록({id,nickname,status,isAlly})
+ * @param {string} [localPlayerId] 나 자신의 uuid — selfTargetAllowed가 아니면 목록에서 제외한다
+ * @param {boolean} [selfTargetAllowed] 자기 자신을 대상으로 지정할 수 있는가(DOCTOR)
+ * @param {boolean} [deadTargetsOnly] 사망자만 지목할 수 있는가(WITCH_HUNTER). 생존자를 목록에서
+ *   지우지 않고 선택만 잠근다 — 시신이 아직 없는 밤에 목록이 통째로 비어 "패널이 고장난 것처럼"
+ *   보이지 않게 하기 위해서이며, 동료 JOKER를 "보이되 선택 불가"로 두는 관례와 같다.
+ * @flow 본인을 필터링한 뒤 각 항목의 alive를 한 번 계산해 표시값(alive)과 선택 가능 여부
+ *   (selectable)에 함께 씁니다. 동료 JOKER는 생존/사망과 무관하게 언제나 선택 불가입니다.
  */
-export function buildNightActionTargets(players, { localPlayerId, selfTargetAllowed } = {}) {
+export function buildNightActionTargets(
+  players,
+  { localPlayerId, selfTargetAllowed, deadTargetsOnly = false } = {},
+) {
   if (!Array.isArray(players)) return []
 
   return players
     .filter((player) => selfTargetAllowed || player.id !== localPlayerId)
-    .map((player) => ({
-      id: player.id,
-      name: player.isAlly ? `${player.nickname} · 동료 JOKER` : player.nickname,
-      alive: player.status !== INGAME_PLAYER_STATUS.DEAD,
-      connected: player.status !== INGAME_PLAYER_STATUS.DISCONNECTED,
-      selectable: !player.isAlly,
-    }))
+    .map((player) => {
+      const alive = player.status !== INGAME_PLAYER_STATUS.DEAD
+      return {
+        id: player.id,
+        name: player.isAlly ? `${player.nickname} · 동료 JOKER` : player.nickname,
+        alive,
+        connected: player.status !== INGAME_PLAYER_STATUS.DISCONNECTED,
+        selectable: !player.isAlly && (deadTargetsOnly ? !alive : alive),
+      }
+    })
 }

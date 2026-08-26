@@ -346,15 +346,30 @@ test("canonical하게 건너뛰는 역할 턴은 한 번도 뜨지 않는다", (
   resetStores()
   const { result, unmount } = mountAtRoleReveal()
 
-  // 첫 밤(dayIndex 0)의 마녀사냥꾼은 그 밤에 행동 자체가 불가능해 canonical하게 건너뛴다.
-  applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })
+  // 밤 행동이 없는 역할(CITIZEN)은 안내할 턴 자체가 없어 canonical하게 건너뛴다.
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "CITIZEN" })
 
   assert.equal(result.current.open, false, "건너뛰는 역할은 한 프레임도 깜빡이지 않는다")
   assert.equal(result.current.announcement, null)
 
   // 같은 밤에 반복 갱신이 와도 마찬가지다.
-  applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "CITIZEN" })
   assert.equal(result.current.open, false)
+
+  unmount()
+})
+
+test("첫 밤(dayIndex 0)의 마녀사냥꾼 턴도 dayIndex로 막지 않고 그대로 안내한다", () => {
+  resetStores()
+  const { result, unmount } = mountAtRoleReveal()
+
+  // 시신이 없는 밤에는 서버가 이 턴을 아예 만들지 않는다 — 프런트에는 마녀사냥꾼에 대한
+  // dayIndex 조건이 하나도 없고, canonical 턴으로 온 이상 첫 밤이어도 그대로 안내한다.
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })
+
+  assert.equal(result.current.open, true)
+  assert.equal(result.current.role, "WITCH_HUNTER")
+  assert.equal(messageOf(result), "마녀사냥꾼의 시간입니다")
 
   unmount()
 })

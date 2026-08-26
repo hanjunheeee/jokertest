@@ -7,9 +7,10 @@
  * 광대→의사→경호원→마녀사냥꾼을 프런트 혼자 순차 재생했는데, 그게 서버 턴과 무관하게
  * 안내가 줄줄이 뜨던 회귀의 원인이었다.
  *
- * 그 밤에 행동 자체가 불가능한 역할 턴(day 0의 마녀사냥꾼)은 ingameActionPanel.js의 밤 행동
- * 가능 판정을 그대로 재사용해 걸러낸다 — canonical하게 건너뛰는 역할은 한 프레임도 뜨지
- * 않는다(서버 ROLE_DEFINITIONS.nightActionMinDayIndex의 UX 사본과 항상 같은 값).
+ * 그 밤에 행동 자체가 불가능한 역할 턴(밤 행동이 없는 CITIZEN)은 ingameActionPanel.js의 밤
+ * 행동 가능 판정을 그대로 재사용해 걸러낸다 — canonical하게 건너뛰는 역할은 한 프레임도 뜨지
+ * 않는다(서버 ROLE_DEFINITIONS.nightActionMinDayIndex의 UX 사본과 항상 같은 값). 마녀사냥꾼은
+ * 시신이 없는 밤에 서버가 아예 턴을 만들지 않으므로 애초에 canonical 턴으로 오지 않는다.
  */
 import { getInGameNightActionType } from "../actions/ingameActionPanel.js"
 

@@ -58,11 +58,14 @@ export const INGAME_ACTION_TARGET_STATUS_DOT_DISCONNECTED_CLASS =
 // 역할별 밤 행동 최소 dayIndex입니다. 서버 ROLE_DEFINITIONS.nightActionMinDayIndex의
 // UX 전용 사본입니다(서버가 최종 권위자 — 이 값은 대상 선택 UI를 미리 숨기는 용도일 뿐,
 // 실제 권한 판정은 항상 서버가 다시 검증합니다). CITIZEN은 항목 자체가 없어 항상 불가합니다.
+// 지금은 네 역할 모두 첫 밤부터 하한을 만족합니다 — 마녀사냥꾼이 그 밤에 실제로 행동
+// 가능한지(시신이 있는가)는 서버 isEligibleForNightAction만이 판정하며, 프런트는 그 판정의
+// 결과인 canonical night turn만 따릅니다(dayIndex로 흉내내지 않습니다).
 const NIGHT_ACTION_MIN_DAY_INDEX = Object.freeze({
   JOKER: 0,
   DOCTOR: 0,
   GUARD: 0,
-  WITCH_HUNTER: 1,
+  WITCH_HUNTER: 0,
 })
 
 function isNightActionEligible(role, dayIndex) {
@@ -71,7 +74,7 @@ function isNightActionEligible(role, dayIndex) {
 }
 
 // 역할·dayIndex별 밤 행동 타입입니다. 서버에 보낼 action 종류를 프런트에서 미리 판단하기
-// 위한 용도이며, 행동 불가(CITIZEN 전체·day0 WITCH_HUNTER)면 null을 반환합니다.
+// 위한 용도이며, 행동 불가(CITIZEN)면 null을 반환합니다.
 export function getInGameNightActionType(role, dayIndex) {
   if (!isNightActionEligible(role, dayIndex)) return null
   if (role === "DOCTOR") return "PROTECT"
@@ -94,6 +97,16 @@ export function getInGameNightActionLabel(role, dayIndex) {
 // 자기 자신을 대상으로 지정할 수 있는 역할입니다. DOCTOR(보호)만 허용합니다.
 export function isSelfTargetAllowedForNightAction(role) {
   return role === "DOCTOR"
+}
+
+/**
+ * 사망자만 대상으로 지정할 수 있는 역할입니다. WITCH_HUNTER(확인)만 해당합니다 — 서버
+ * submitNightAction이 살아있는 대상을 INVALID_TARGET으로 거부하는 규칙의 UX 사본이며,
+ * isSelfTargetAllowedForNightAction과 동일하게 최종 권위자는 항상 서버입니다.
+ * @param {string|undefined} role 내 역할
+ */
+export function isDeadTargetOnlyNightActionRole(role) {
+  return role === "WITCH_HUNTER"
 }
 
 // TRIBUNAL 유죄/무죄 투표 섹션 라벨입니다.
