@@ -1,0 +1,112 @@
+{
+  "slice_id": "20260826-joker-result-lobby-button",
+  "status": "running:test",
+  "branch": "slice/20260826-joker-result-lobby-button",
+  "base": "windows-handoff-20260808",
+  "base_commit": "3ff5ffc589ab0a19d940be94bfa188de946c73f1",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 32,
+    "test_files": 5,
+    "budget": 80,
+    "warn": true
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "approval_reason": "로비 버튼 에셋은 frontend/public/button/ 아래 실제 존재하는 빨간 버튼 png 파일을 확인해 사용하고, 존재하지 않는 경로를 만들어내지 않는다.",
+      "run_id": "20260826-130003-joker-result-lobby-button-plan",
+      "attempts": 1,
+      "commit": "7e9511f96e596fcf865f380d48fe7b53122cf664"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260826-130752-joker-result-lobby-button-implement",
+      "attempts": 1,
+      "commit": "009a1d19a67931026795ee052e41e0128b656553"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260826-131912-joker-result-lobby-button-test-2",
+      "verdict": "pass",
+      "attempts": 2
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260826-130003-joker-result-lobby-button-plan",
+      "status": "completed",
+      "turns": 49,
+      "tokens": {
+        "input": 1439,
+        "cache_creation": 88642,
+        "cache_read": 1731997,
+        "output": 28796,
+        "billed_input": 1822078,
+        "peak_context": 103111
+      },
+      "cost_usd": 2.4795134999999995
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-130752-joker-result-lobby-button-implement",
+      "status": "completed",
+      "turns": 57,
+      "tokens": {
+        "input": 78,
+        "cache_creation": 85053,
+        "cache_read": 3632417,
+        "output": 21869,
+        "billed_input": 3717548,
+        "peak_context": 105938
+      },
+      "cost_usd": 3.2138535
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-131303-joker-result-lobby-button-test",
+      "status": "completed",
+      "turns": 22,
+      "tokens": {
+        "input": 42,
+        "cache_creation": 39567,
+        "cache_read": 1189406,
+        "output": 7194,
+        "billed_input": 1229015,
+        "peak_context": 60453
+      },
+      "cost_usd": 1.1704330000000003
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260826-131912-joker-result-lobby-button-test-2",
+      "status": "completed",
+      "turns": 12,
+      "tokens": {
+        "input": 19,
+        "cache_creation": 34757,
+        "cache_read": 472563,
+        "output": 4278,
+        "billed_input": 507339,
+        "peak_context": 58742
+      },
+      "cost_usd": 0.6908965
+    }
+  ],
+  "updated_at": "2026-08-26T13:21:03+09:00"
+}

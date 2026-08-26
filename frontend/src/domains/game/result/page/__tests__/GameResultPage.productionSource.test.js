@@ -43,3 +43,32 @@ test("결과 페이지 컴포넌트·에셋 계약(outcome/players/mvp)은 이 �
   assert.doesNotMatch(source, /players\s*[:=]/)
   assert.doesNotMatch(source, /mvp\s*[:=]/)
 })
+
+test("로비 복귀 버튼은 useGameResultLobbyExit이 만든 핸들러에 물려 있다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  assert.match(
+    source,
+    /import \{ useGameResultLobbyExit \} from "\.\.\/hooks\/useGameResultLobbyExit\.js"/,
+  )
+  assert.match(source, /const requestLobbyExit = useGameResultLobbyExit\(\)/)
+  assert.match(source, /onClick=\{requestLobbyExit\}/)
+})
+
+test("버튼은 새 스타일을 만들지 않고 공통 LabelledActionButton + 기존 빨간 버튼 에셋을 쓴다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  const occurrences = source.match(/<LabelledActionButton\b/g) ?? []
+  assert.equal(occurrences.length, 1)
+  assert.match(source, /src=\{GAME_RESULT_ASSETS\.lobbyButton\}/)
+  assert.match(source, /label="로비로"/)
+})
+
+test("버튼은 실데이터·미리보기 어느 쪽을 그리든 함께 렌더된다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  // 그릴 것이 없을 때의 early return 뒤에 있어야 view의 출처와 무관하게 항상 뜬다.
+  assert.ok(source.indexOf("<LabelledActionButton") > source.indexOf("if (!view) return null"))
+})
+
+test("이탈 요청은 페이지가 아니라 util에 있다 — 페이지는 소켓 이벤트를 직접 다루지 않는다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  assert.doesNotMatch(source, /leave_game_session/)
+})
