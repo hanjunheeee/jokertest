@@ -424,7 +424,9 @@ export async function assertSelfSeat(seat) {
 export async function readTargetUuids(seat, nicknames) {
   const found = new Map()
   for (const nickname of nicknames) {
-    const button = seat.page.locator(selectors.anyTarget()).filter({ hasText: nickname })
+        const button = seat.page
+      .locator(selectors.anyTarget())
+      .filter({ has: seat.page.getByText(nickname, { exact: true }) })
     const count = await button.count()
     if (count === 0) continue
     expect(count, `${seat.label}: 닉네임 "${nickname}"이 대상 버튼 ${count}개에 걸립니다`).toBe(1)
