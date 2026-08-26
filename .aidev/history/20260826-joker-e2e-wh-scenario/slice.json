@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260826-joker-e2e-wh-scenario",
+  "status": "pending",
+  "branch": "slice/20260826-joker-e2e-wh-scenario",
+  "base": "windows-handoff-20260808",
+  "base_commit": "3eb1c1812a89a3a4296e3d3c658515e36573f12b",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-26T21:07:35+09:00"
+}
