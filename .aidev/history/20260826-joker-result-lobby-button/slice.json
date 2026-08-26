@@ -1,6 +1,6 @@
 {
   "slice_id": "20260826-joker-result-lobby-button",
-  "status": "running:implement",
+  "status": "running:test",
   "branch": "slice/20260826-joker-result-lobby-button",
   "base": "windows-handoff-20260808",
   "base_commit": "3ff5ffc589ab0a19d940be94bfa188de946c73f1",
@@ -32,10 +32,14 @@
     "implement": {
       "status": "done",
       "run_id": "20260826-130752-joker-result-lobby-button-implement",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "009a1d19a67931026795ee052e41e0128b656553"
     },
     "test": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260826-131912-joker-result-lobby-button-test-2",
+      "verdict": "pass",
+      "attempts": 2
     }
   },
   "runs": [
@@ -70,7 +74,39 @@
         "peak_context": 105938
       },
       "cost_usd": 3.2138535
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-131303-joker-result-lobby-button-test",
+      "status": "completed",
+      "turns": 22,
+      "tokens": {
+        "input": 42,
+        "cache_creation": 39567,
+        "cache_read": 1189406,
+        "output": 7194,
+        "billed_input": 1229015,
+        "peak_context": 60453
+      },
+      "cost_usd": 1.1704330000000003
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260826-131912-joker-result-lobby-button-test-2",
+      "status": "completed",
+      "turns": 12,
+      "tokens": {
+        "input": 19,
+        "cache_creation": 34757,
+        "cache_read": 472563,
+        "output": 4278,
+        "billed_input": 507339,
+        "peak_context": 58742
+      },
+      "cost_usd": 0.6908965
     }
   ],
-  "updated_at": "2026-08-26T13:13:03+09:00"
+  "updated_at": "2026-08-26T13:21:03+09:00"
 }
