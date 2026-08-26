@@ -35,6 +35,11 @@ const ROLE_TEAMS = Object.freeze(
 const MIN_SUPPORTED_PLAYERS = 2
 const MAX_SUPPORTED_PLAYERS = 10
 
+// 참가자 색상 팔레트의 크기. 실제 색상값(hex)은 프런트 소관이고 backend는 "몇 번째 색인가"
+// (0..PLAYER_COLOR_COUNT-1)만 canonical하게 배정한다 — 그래야 같은 참가자가 창마다 다른
+// 색으로 보이지 않는다.
+const PLAYER_COLOR_COUNT = 10
+
 const INITIAL_GAME_PHASE = 'ROLE_REVEAL' // 아직 밤이 시작되지 않은 역할 확인 단계(사용자 확정)
 const INITIAL_DAY_INDEX = 0
 
@@ -255,13 +260,17 @@ function assertSessionNotEnded(session) {
  * 진입점도 열려 있지 않아(assertSessionNotEnded) 이 정보로 게임에 영향을 줄 수 없다. 순서는
  * session.players 삽입 순서 그대로이고, socket/repository/Map/Set 객체는 어떤 값에도 담지
  * 않는다.
+ *
+ * colorIndex는 비밀 정보 규칙의 대상이 아니다(색은 게임 내내 전원 공개 정보다) — 여기 실리는
+ * 이유는 종료 화면이 진행 중과 같은 색으로 참가자를 그릴 수 있게 하기 위해서다.
  * @param {object} session - canonical GameSession(phase가 ENDED인 세션에서만 호출된다)
  * @flow session.players를 삽입 순서대로 순회하며 참가자마다 공개용 원소 하나를 만든다.
  */
 function buildEndedRoleReveals(session) {
-    return [...session.players.values()].map(({ uuid, nickname, role, alive }) => ({
+    return [...session.players.values()].map(({ uuid, nickname, colorIndex, role, alive }) => ({
         uuid,
         nickname,
+        colorIndex,
         role,
         team: ROLE_TEAMS[role],
         alive,
@@ -438,6 +447,29 @@ function assignRoles(players, jokerCountOrComposition, randomFn = Math.random) {
     return shuffled.map((player, index) => ({ ...player, role: roles[index], alive: true }))
 }
 
+/**
+ * 참가자마다 겹치지 않는 colorIndex(0..PLAYER_COLOR_COUNT-1)를 배정합니다(순수 계산 —
+ * randomFn을 주입하면 완전히 결정적이고, 원본 배열·원소는 변형하지 않는다).
+ *
+ * 색은 전원 공개 정보이고 역할과 완전히 독립이다 — 이 함수는 role/team을 읽지 않는다.
+ * 그래서 assignRoles 안이 아니라 바깥에서 별도로 호출된다: DEBUG_FIXED_ROLES로 역할이
+ * 고정되는 경로에서도 색은 언제나 셔플 배정되어야 한다.
+ * @param {Array<object>} players - 색을 얹을 참가자 배열(변형하지 않는다)
+ * @param {Function} randomFn - 팔레트 셔플(fisherYatesShuffle)에 주입할 난수 함수
+ * @flow 팔레트 인덱스 전체를 참가자 셔플과 같은 fisherYatesShuffle로 한 번 섞은 뒤 참가자
+ *   순서대로 하나씩 얹는다. 인원이 팔레트 크기 이하이면 index가 일대일 대응이라 중복이
+ *   구조적으로 불가능하고, 인원이 팔레트보다 많으면(정상 경로는 validateSessionInput의
+ *   2~10명 제한 때문에 도달하지 않는다) throw하지 않고 팔레트를 순환해 재사용한다 —
+ *   호출자를 신뢰하지 않는다는 이 파일의 원칙에 따라 스스로 정의된 동작을 갖는다.
+ */
+function assignPlayerColors(players, randomFn = Math.random) {
+    const palette = fisherYatesShuffle(
+        Array.from({ length: PLAYER_COLOR_COUNT }, (_, index) => index),
+        randomFn,
+    )
+    return players.map((player, index) => ({ ...player, colorIndex: palette[index % PLAYER_COLOR_COUNT] }))
+}
+
 // players/jokerCount 자체의 불변조건을 검증한다. registry를 읽지 않는 순수 함수다.
 // matchmaking의 기존 가드(computeCanStart 등)가 정상 경로에서 이를 막는다는 사실이
 // game-core 자체의 불변조건을 보장하지 않으므로 이 파일 안에서 독립적으로 검증한다.
@@ -474,7 +506,15 @@ function validateSessionInput(players, jokerCount) {
     return { ok: true }
 }
 
-// prepare 계산 자체는 입력 검증 통과 후에만 진행한다. registry를 전혀 읽지 않는다.
+/**
+ * prepare 계산 자체는 입력 검증 통과 후에만 진행한다. registry를 전혀 읽지 않는다.
+ * @param {object} room - 시작을 요청한 canonical Room(players Map·settings를 읽기만 한다)
+ * @param {Function} randomFn - 역할 배정·색 배정 셔플에 주입할 난수 함수(미지정 시 Math.random)
+ * @param {Function} gameIdFn - 세션 id 생성기(기본 crypto.randomUUID)
+ * @flow 입력 검증 → 실제 인원 기준 역할 구성 재해석에서 하나라도 실패하면 registry를 전혀
+ *   건드리지 않은 채 실패 결과를 그대로 반환하고, 전부 통과하면 역할·색을 차례로 배정한 새
+ *   세션 후보를 만든다.
+ */
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {
     const players = [...room.players.values()]
     const jokerCount = room.settings?.jokerCount ?? 0
@@ -491,6 +531,10 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
     }
 
     const assigned = assignRoles(players, resolved.composition, randomFn)
+    // 색은 역할과 독립이고 DEBUG_FIXED_ROLES와도 무관하다 — 역할이 고정 배정되는 경로에서도
+    // colorIndex는 항상 셔플로 배정된다. 역할 배정이 먼저 끝난 뒤에 호출하므로 randomFn을
+    // 추가로 소비해도 역할 배정 결과는 그대로다.
+    const colored = assignPlayerColors(assigned, randomFn)
     const session = {
         id: gameIdFn(),
         roomId: room.id,
@@ -507,7 +551,7 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         roleComposition: { ...resolved.composition },
         // validateSessionInput이 uuid 중복을 이미 걸러냈으므로 이 Map 생성이 조용히
         // 참가자를 덮어쓸 수 없다.
-        players: new Map(assigned.map((p) => [p.uuid, p])),
+        players: new Map(colored.map((p) => [p.uuid, p])),
         // ROLE_REVEAL 확인을 추적한다. 세션 객체 안에 두어 endGameSessionForPlayer로
         // 세션이 삭제될 때 별도 정리 없이 함께 사라지게 한다.
         roleRevealAcks: new Set(),
@@ -759,7 +803,14 @@ function enterDayPhase(session) {
     session.dayVotes = new Map()
 }
 
-// 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
+/**
+ * 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
+ *
+ * players의 colorIndex는 비밀 정보 규칙의 대상이 아니다 — 색은 전원 공개 정보이고, viewer가
+ * 누구든 같은 목록이 나와야 창마다 같은 참가자가 다른 색으로 보이지 않는다.
+ * @param {object} session - canonical GameSession
+ * @param {string} viewerUuid - 이 payload를 받을 참가자 uuid
+ */
 function buildGameStartedPayload(session, viewerUuid) {
     const viewer = session.players.get(viewerUuid)
     return {
@@ -768,7 +819,12 @@ function buildGameStartedPayload(session, viewerUuid) {
             id: session.id,
             phase: session.phase,
             dayIndex: session.dayIndex,
-            players: [...session.players.values()].map(({ uuid, nickname }) => ({ uuid, nickname })), // role 없음
+            // role 없음(colorIndex는 전원 공개 정보라 그대로 싣는다)
+            players: [...session.players.values()].map(({ uuid, nickname, colorIndex }) => ({
+                uuid,
+                nickname,
+                colorIndex,
+            })),
             self: buildViewerRoleFields(session, viewer),
         },
     }
@@ -1836,7 +1892,9 @@ function canIncludeDayTribunalFields(session) {
  * 대상/raw ballot/개별 제출 여부는 어디에도 포함하지 않는다 — self만 본인의 role 관련 필드를
  * 담는다. 단 phase가 ENDED일 때의 winResult.reveals만 예외다: 게임이 끝났으므로 전원의
  * role/team을 의도적으로 공개한다(buildTerminalFields의 종료 payload와 같은 내용이라
- * 재접속 클라이언트가 방송을 놓쳐도 같은 결과 화면을 만들 수 있다).
+ * 재접속 클라이언트가 방송을 놓쳐도 같은 결과 화면을 만들 수 있다). players의 colorIndex도
+ * 비밀 정보 규칙의 대상이 아니다 — 재접속한 창이 game_started를 받은 창과 같은 색으로 참가자를
+ * 그릴 수 있도록 canonical 값을 그대로 싣는다.
  * @param {object} session - canonical GameSession
  * @param {string} uuid - 이미 참가자로 검증된 요청자 uuid
  * @flow nightResolution이 있으면 nightResult를, DAY/TRIBUNAL 노출 게이트를 통과하면 그
@@ -1849,9 +1907,10 @@ function buildSessionSnapshot(session, uuid) {
         gameId: session.id,
         phase: session.phase,
         dayIndex: session.dayIndex,
-        players: [...session.players.values()].map(({ uuid: pUuid, nickname, alive }) => ({
+        players: [...session.players.values()].map(({ uuid: pUuid, nickname, colorIndex, alive }) => ({
             uuid: pUuid,
             nickname,
+            colorIndex,
             isAlive: alive,
         })),
         self: {
@@ -2351,6 +2410,8 @@ module.exports = {
         finalizeGameSession,
         assertSessionNotEnded,
         assignRoles,
+        assignPlayerColors,
+        PLAYER_COLOR_COUNT,
         parseDebugFixedRoleList,
         resolveDebugFixedRoleAssignment,
         enterDayPhase,

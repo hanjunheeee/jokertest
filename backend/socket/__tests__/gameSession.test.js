@@ -2434,6 +2434,7 @@ function expectedRevealsOf(session) {
     return [...session.players.values()].map((p) => ({
         uuid: p.uuid,
         nickname: p.nickname,
+        colorIndex: p.colorIndex,
         role: p.role,
         team: gameSessionCore.ROLE_TEAMS[p.role],
         alive: p.alive,
