@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260826-joker-result-lobby-button",
+  "status": "pending",
+  "branch": "slice/20260826-joker-result-lobby-button",
+  "base": "windows-handoff-20260808",
+  "base_commit": "3ff5ffc589ab0a19d940be94bfa188de946c73f1",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-26T12:59:52+09:00"
+}
