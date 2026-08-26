@@ -21,6 +21,7 @@ import {
   TRIBUNAL_DEFENDANT_NOTICE,
   TRIBUNAL_DEAD_NOTICE,
 } from "../../constants/actions/ingameActionPanel.js"
+import { buildInGameControlPanelE2eAttrs } from "../../constants/e2e/ingameE2eHooks.js"
 import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
 import { useInGameControlPanelLayout } from "../../hooks/useInGameControlPanelLayout.js"
 import InGameTargetPicker from "./InGameTargetPicker.jsx"
@@ -108,6 +109,17 @@ const CONTROL_PANEL_PRIMARY_ACTION_EXTRA_CLASS = "outline outline-1 outline-offs
  * compact/expanded는 useInGameControlPanelLayout이 관리하는 순수 로컬 UI 상태다 — 이 상태를
  * 접고 펴는 동작 자체는 서버로 아무것도 보내지 않으며, useInGameActionPanel이 들고 있는 선택값·
  * 제출 상태·에러는 접고 펼 때도 전혀 초기화되지 않는다(두 상태가 서로 독립이기 때문).
+ *
+ * gameState가 있을 때의 aside에는 buildInGameControlPanelE2eAttrs가 만든 data 훅(phase·
+ * dayIndex·본인 역할)을 얹는다 — 헤더가 이미 텍스트로 보여주는 값과 같은 값이며, 표시에는
+ * 아무 영향이 없다. gameState가 없는 초기 분기의 aside에는 붙이지 않는다(속성의 부재 자체가
+ * "아직 세션이 없다"는 신호다).
+ *
+ * @param {Function} onOpenRoleReveal 역할 공개 오버레이를 다시 여는 콜백
+ * @param {boolean} roleRevealAvailable 역할 정보가 갖춰져 "내 역할 보기"를 눌러도 되는가
+ * @param {boolean} interactionBlocked 화면을 덮는 오버레이가 떠 있어 조작을 잠가야 하는가
+ * @flow gameState가 없으면 대기 패널만 그리고 끝낸다. 있으면 phase(DAY/TRIBUNAL/NIGHT)별
+ *   섹션을 조건부로 그리고, 이벤트 로그는 expanded일 때만 붙인다.
  */
 export default function InGameActionPanel({
   onOpenRoleReveal,
@@ -189,7 +201,11 @@ export default function InGameActionPanel({
   const sizeClass = expanded ? CONTROL_PANEL_EXPANDED_SIZE_CLASS : CONTROL_PANEL_COMPACT_SIZE_CLASS
 
   return (
-    <aside className={CONTROL_PANEL_BASE_CLASS} aria-label="게임 조작">
+    <aside
+      className={CONTROL_PANEL_BASE_CLASS}
+      aria-label="게임 조작"
+      {...buildInGameControlPanelE2eAttrs(gameState)}
+    >
       <div className={`${CONTROL_PANEL_FRAME_WRAP_CLASS} ${sizeClass}`}>
         <PublicAsset
           src={INGAME_VOTE_ASSETS.panelFrame}

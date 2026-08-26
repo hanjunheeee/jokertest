@@ -7,6 +7,8 @@
     "dev": "concurrently -n backend,frontend -c red,cyan \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
     "game:harness": "npm run game:harness --prefix backend",
     "test:game-core": "npm run test:game-core --prefix backend",
+    "test:e2e-helpers": "node --test \"e2e/lib/__tests__/*.test.js\"",
+    "test:e2e": "npm --prefix e2e test",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

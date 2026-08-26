@@ -9,6 +9,7 @@ import {
   INGAME_ACTION_TARGET_STATUS_DOT_DISCONNECTED_CLASS,
   INGAME_ACTION_TARGET_STATUS_ROW_CLASS,
 } from "../../constants/actions/ingameActionPanel.js"
+import { buildInGameTargetE2eAttrs } from "../../constants/e2e/ingameE2eHooks.js"
 
 function resolveStatusDotClass(player) {
   if (!player.connected) return INGAME_ACTION_TARGET_STATUS_DOT_DISCONNECTED_CLASS
@@ -28,7 +29,19 @@ const TARGET_CARD_AVATAR_CLASS =
 
 const TARGET_CARD_TEXT_COLUMN_CLASS = "flex min-w-0 flex-1 flex-col"
 
-/** 투표/스킬 대상을 고르는 플레이어 버튼 목록입니다. */
+/**
+ * 투표/스킬 대상을 고르는 플레이어 버튼 목록입니다.
+ *
+ * 각 버튼에는 buildInGameTargetE2eAttrs가 만든 대상 uuid data 훅을 얹습니다 — 표시에는
+ * 영향이 없고, E2E가 닉네임 문자열이 아니라 canonical uuid로 대상을 지목할 수 있게 합니다.
+ *
+ * @param {Array} players buildNightActionTargets/buildDayVoteTargets가 만든 대상 목록
+ * @param {string|null} selectedTargetId 지금 선택된 대상의 uuid
+ * @param {Function} onSelect 대상 버튼을 눌렀을 때 uuid를 받는 콜백
+ * @param {boolean} disabled 목록 전체를 잠글지 여부
+ * @flow players를 순회하며 항목별로 선택 여부·비활성 조건(사망·연결끊김·선택 불가)을 계산해
+ *   버튼 하나씩을 그립니다.
+ */
 export default function InGameTargetPicker({
   players,
   selectedTargetId,
@@ -47,6 +60,7 @@ export default function InGameTargetPicker({
             aria-pressed={isSelected}
             className={isSelected ? INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS : INGAME_ACTION_TARGET_BUTTON_CLASS}
             onClick={() => onSelect(player.id)}
+            {...buildInGameTargetE2eAttrs(player)}
           >
             <span className={TARGET_CARD_ROW_CLASS}>
               <span aria-hidden="true" className={TARGET_CARD_AVATAR_CLASS}>
