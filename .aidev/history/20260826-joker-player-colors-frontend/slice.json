@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260826-joker-player-colors-frontend",
+  "status": "pending",
+  "branch": "slice/20260826-joker-player-colors-frontend",
+  "base": "windows-handoff-20260808",
+  "base_commit": "40f4c159b16a3f6f13a460659625230d193d139a",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-26T18:27:20+09:00"
+}
