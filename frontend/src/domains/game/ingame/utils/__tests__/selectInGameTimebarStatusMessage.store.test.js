@@ -100,7 +100,9 @@ test("nightTurnRole: null 방송은 '지목된 턴이 없음'이므로 그 밤�
   hook.unmount()
 })
 
-test("그 밤에 canonical하게 건너뛰는 턴(day 0의 마녀사냥꾼)에서는 문구가 사라진다", () => {
+test("첫 밤(dayIndex 0)의 마녀사냥꾼 턴 방송에도 문구가 그대로 뜬다", () => {
+  // 시신이 없는 밤에는 서버가 이 턴을 방송하지 않으므로, 방송이 온 이상 프런트가 dayIndex로
+  // 되돌려 막지 않는다 — canonical 턴을 그대로 따른다.
   seed({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "JOKER" })
   const hook = renderStatus()
   assert.equal(hook.result.current, "광대의 시간입니다")
@@ -113,7 +115,7 @@ test("그 밤에 canonical하게 건너뛰는 턴(day 0의 마녀사냥꾼)에�
       nightTurnRole: "WITCH_HUNTER",
     })
   })
-  assert.equal(hook.result.current, null)
+  assert.equal(hook.result.current, "마녀사냥꾼의 시간입니다")
 
   hook.unmount()
 })

@@ -48,10 +48,11 @@ test("NIGHT — 역할 턴이 명시되지 않으면 기존 파생 로직대로 
   )
 })
 
-test("NIGHT — 그 밤에 canonical하게 건너뛰는 턴(day 0의 마녀사냥꾼)은 문구가 없다", () => {
+test("NIGHT — 첫 밤(dayIndex 0)의 마녀사냥꾼 턴도 dayIndex로 막지 않고 그 턴의 문구를 쓴다", () => {
+  // 시신이 없는 밤에는 서버가 이 턴을 만들지 않으므로 프런트가 dayIndex로 흉내낼 필요가 없다.
   assert.equal(
     selectInGameTimebarStatusMessage({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" }),
-    null,
+    announcementOf("WITCH_HUNTER"),
   )
 })
 

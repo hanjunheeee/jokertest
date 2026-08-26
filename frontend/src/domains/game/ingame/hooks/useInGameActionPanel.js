@@ -3,6 +3,7 @@ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClie
 import {
   getInGameNightActionLabel,
   getInGameNightActionType,
+  isDeadTargetOnlyNightActionRole,
   isSelfTargetAllowedForNightAction,
 } from "../constants/actions/ingameActionPanel.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -124,6 +125,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
       buildNightActionTargets(sessionPlayers, {
         localPlayerId,
         selfTargetAllowed: isSelfTargetAllowedForNightAction(myRole),
+        deadTargetsOnly: isDeadTargetOnlyNightActionRole(myRole),
       }),
     [sessionPlayers, localPlayerId, myRole],
   )

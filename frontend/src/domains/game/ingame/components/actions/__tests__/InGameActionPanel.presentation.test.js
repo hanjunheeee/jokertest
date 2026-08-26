@@ -82,7 +82,18 @@ test("InGameTargetPicker 카드는 상태 dot과 이름/상태 표시를 갖고,
   assert.match(source, /onClick=\{\(\) => onSelect\(player\.id\)\}/)
   assert.match(
     source,
-    /disabled=\{disabled \|\| !player\.alive \|\| !player\.connected \|\| player\.selectable === false\}/,
+    /disabled=\{disabled \|\| !player\.connected \|\| player\.selectable === false\}/,
   )
   assert.match(source, /aria-hidden="true"\s+className=\{resolveStatusDotClass\(player\)\}/)
+})
+
+test("InGameTargetPicker의 disabled 식에는 alive 게이트가 남아 있지 않다(생존 판정은 빌더의 selectable이 소유)", async () => {
+  const source = await readFile(pickerUrl, "utf8")
+  const disabledExpression = source.match(/disabled=\{[^}]*\}/)
+  assert.notEqual(disabledExpression, null)
+  assert.equal(
+    /player\.alive/.test(disabledExpression[0]),
+    false,
+    "사망자 선택 가능 여부는 buildNightActionTargets가 selectable로 확정한다",
+  )
 })

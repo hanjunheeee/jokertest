@@ -81,7 +81,7 @@ test("InGameTargetPicker 카드는 이니셜 아바타(TARGET_CARD_AVATAR_CLASS)
   assert.match(source, /onClick=\{\(\) => onSelect\(player\.id\)\}/)
   assert.match(
     source,
-    /disabled=\{disabled \|\| !player\.alive \|\| !player\.connected \|\| player\.selectable === false\}/,
+    /disabled=\{disabled \|\| !player\.connected \|\| player\.selectable === false\}/,
   )
 })
 

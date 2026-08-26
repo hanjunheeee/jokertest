@@ -574,3 +574,83 @@ test("useInGameActionPanel: ENDED인데 winResult 형태가 잘못돼도(문자�
   assert.equal(captured.nightActionsLocked, true)
   assert.equal(captured.dayVoteControlsEnabled, false)
 })
+
+// ---------------------------------------------------------------------------
+// useInGameActionPanel — 역할별 밤 행동 대상 목록(nightActionTargets)
+// ---------------------------------------------------------------------------
+
+const NIGHT_TARGET_SESSION_PLAYERS = [
+  { id: "p1", nickname: "P1", status: "alive" },
+  { id: "p2", nickname: "P2", status: "dead" },
+  { id: "p3", nickname: "P3", status: "alive" },
+  { id: "p4", nickname: "P4", status: "dead" },
+]
+
+function renderNightTargetsFor(role) {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "NIGHT",
+      dayIndex: 1,
+      self: { role, uuid: "p1" },
+      players: [],
+      events: [],
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: NIGHT_TARGET_SESSION_PLAYERS,
+    localPlayerId: "p1",
+  })
+  return captured.nightActionTargets
+}
+
+test("useInGameActionPanel: WITCH_HUNTER 턴의 대상 목록은 사망자만 선택 가능하다", () => {
+  const targets = renderNightTargetsFor("WITCH_HUNTER")
+
+  assert.deepEqual(
+    targets.map((t) => [t.id, t.selectable]),
+    [
+      ["p2", true],
+      ["p3", false],
+      ["p4", true],
+    ],
+  )
+  // 생존자는 목록에서 사라지지 않고 선택만 잠긴다.
+  assert.deepEqual(targets.map((t) => t.id), ["p2", "p3", "p4"])
+})
+
+test("useInGameActionPanel: GUARD 턴의 대상 목록은 예전 그대로 생존자만 선택 가능하다(타 역할 불변)", () => {
+  const targets = renderNightTargetsFor("GUARD")
+
+  assert.deepEqual(
+    targets.map((t) => [t.id, t.selectable]),
+    [
+      ["p2", false],
+      ["p3", true],
+      ["p4", false],
+    ],
+  )
+})
+
+test("useInGameActionPanel: JOKER 턴의 대상 목록도 생존자만 선택 가능하다(타 역할 불변)", () => {
+  const targets = renderNightTargetsFor("JOKER")
+
+  assert.deepEqual(
+    targets.map((t) => [t.id, t.selectable]),
+    [
+      ["p2", false],
+      ["p3", true],
+      ["p4", false],
+    ],
+  )
+})
+
+test("useInGameActionPanel: DOCTOR 턴은 selfTargetAllowed 경로가 그대로여서 본인이 목록에 남는다", () => {
+  const targets = renderNightTargetsFor("DOCTOR")
+
+  assert.deepEqual(targets.map((t) => t.id), ["p1", "p2", "p3", "p4"])
+  assert.equal(targets.find((t) => t.id === "p1").selectable, true)
+  assert.equal(targets.find((t) => t.id === "p2").selectable, false)
+})

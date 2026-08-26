@@ -22,7 +22,7 @@ import { selectInGameNightTurnRole } from "./selectInGameNightTurnRole.js"
  * @param {object|null|undefined} state ingameStore의 서버 세션 미러(state.phase·dayIndex·nightTurnRole)
  * @flow NIGHT면 canonical 역할 턴의 안내 문구를 재사용하고, DAY/TRIBUNAL은 고정 문구를 쓰며,
  *   ENDED·ROLE_REVEAL·알 수 없는 phase는 null이다. NIGHT인데 canonical 턴이 없으면
- *   (day 0의 마녀사냥꾼처럼 그 밤에 건너뛰는 턴 · 무효한 dayIndex) 문구를 지어내지 않고 null이다.
+ *   (CITIZEN처럼 밤 행동이 없어 건너뛰는 턴 · 무효한 dayIndex) 문구를 지어내지 않고 null이다.
  *   서버가 턴을 지목하지 않은 밤은 "턴 없음"이 아니라 그 밤의 시작 턴이다(기존 파생 로직 그대로).
  */
 export function selectInGameTimebarStatusMessage(state) {

@@ -133,6 +133,85 @@ test("name은 원본 player.nickname 값이다", () => {
   assert.equal(result.name, "닉네임A")
 })
 
+// ---------------------------------------------------------------------------
+// deadTargetsOnly — 마녀사냥꾼(사망자만 지목) 전용 옵션
+// ---------------------------------------------------------------------------
+
+function makeMixedPlayers() {
+  return [
+    { id: "u1", nickname: "A", status: INGAME_PLAYER_STATUS.ALIVE },
+    { id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.DEAD },
+    { id: "u3", nickname: "C", status: INGAME_PLAYER_STATUS.ALIVE },
+    { id: "u4", nickname: "D", status: INGAME_PLAYER_STATUS.DEAD },
+  ]
+}
+
+test("deadTargetsOnly:true면 사망자만 selectable:true이고 생존자는 selectable:false다", () => {
+  const result = buildNightActionTargets(makeMixedPlayers(), {
+    localPlayerId: "other",
+    selfTargetAllowed: false,
+    deadTargetsOnly: true,
+  })
+  assert.deepEqual(
+    result.map((p) => [p.id, p.selectable]),
+    [
+      ["u1", false],
+      ["u2", true],
+      ["u3", false],
+      ["u4", true],
+    ],
+  )
+})
+
+test("deadTargetsOnly:true여도 생존자를 목록에서 지우지 않는다(길이·순서는 기본 경로와 동일)", () => {
+  const players = makeMixedPlayers()
+  const deadOnly = buildNightActionTargets(players, { localPlayerId: "other", deadTargetsOnly: true })
+  const base = buildNightActionTargets(players, { localPlayerId: "other", deadTargetsOnly: false })
+  assert.deepEqual(deadOnly.map((p) => p.id), base.map((p) => p.id))
+  assert.equal(deadOnly.length, players.length)
+})
+
+test("deadTargetsOnly:true여도 동료 JOKER는 사망자든 아니든 selectable:false다(동료 규칙이 우선)", () => {
+  const [result] = buildNightActionTargets(
+    [{ id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.DEAD, isAlly: true }],
+    { localPlayerId: "other", selfTargetAllowed: true, deadTargetsOnly: true },
+  )
+  assert.equal(result.selectable, false)
+})
+
+test("deadTargetsOnly:true에서 disconnected는 살아있는 것으로 보므로 selectable:false, connected:false다", () => {
+  const [result] = buildNightActionTargets(
+    [{ id: "u1", nickname: "A", status: INGAME_PLAYER_STATUS.DISCONNECTED }],
+    { localPlayerId: "other", selfTargetAllowed: true, deadTargetsOnly: true },
+  )
+  assert.equal(result.alive, true)
+  assert.equal(result.connected, false)
+  assert.equal(result.selectable, false)
+})
+
+test("deadTargetsOnly를 주지 않으면(다른 역할 턴) 생존자만 selectable:true다", () => {
+  const result = buildNightActionTargets(makeMixedPlayers(), { localPlayerId: "other" })
+  assert.deepEqual(
+    result.map((p) => [p.id, p.selectable]),
+    [
+      ["u1", true],
+      ["u2", false],
+      ["u3", true],
+      ["u4", false],
+    ],
+  )
+})
+
+test("deadTargetsOnly는 반환 키 집합을 바꾸지 않는다(다섯 키 그대로)", () => {
+  const result = buildNightActionTargets(makeMixedPlayers(), {
+    localPlayerId: "other",
+    deadTargetsOnly: true,
+  })
+  for (const player of result) {
+    assert.deepEqual(Object.keys(player).sort(), ["alive", "connected", "id", "name", "selectable"])
+  }
+})
+
 test("players가 배열이 아니거나 없으면 빈 배열을 반환한다", () => {
   assert.deepEqual(buildNightActionTargets(null, { localPlayerId: "u1", selfTargetAllowed: true }), [])
   assert.deepEqual(buildNightActionTargets(undefined, { localPlayerId: "u1", selfTargetAllowed: true }), [])

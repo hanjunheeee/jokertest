@@ -25,7 +25,7 @@ const INGAME_ROLE_REVEAL_DISPLAY = Object.freeze({
   WITCH_HUNTER: Object.freeze({
     name: "마녀사냥꾼",
     teamLabel: "시민 진영",
-    description: "둘째 날 밤부터 한 명을 지목해 광대인지 확인할 수 있습니다.",
+    description: "죽은 사람을 지목해 그 직업을 알아냅니다.",
   }),
 })
 
