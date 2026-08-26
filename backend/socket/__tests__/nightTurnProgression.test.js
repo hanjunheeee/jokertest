@@ -142,13 +142,17 @@ test('전체 canonical 순서: JOKER→DOCTOR→GUARD→WITCH_HUNTER(SKIP) 제�
         roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
     })
     const session = commitCustom(room)
-    ackAllAndRewindToNight(session, { dayIndex: 1 }) // WITCH_HUNTER가 행동 가능한 dayIndex
+    ackAllAndRewindToNight(session, { dayIndex: 1 })
     const { sockets, io } = wireSockets(session)
     const jokerUuid = byRole(session, 'JOKER')
     const doctorUuid = byRole(session, 'DOCTOR')
     const guardUuid = byRole(session, 'GUARD')
     const witchHunterUuid = byRole(session, 'WITCH_HUNTER')
     const citizenUuid = byRole(session, 'CITIZEN')
+    // WITCH_HUNTER는 조사할 시신이 하나라도 있어야 턴이 열린다 — rewind는 alive를 되돌리지
+    // 않으므로 반드시 rewind 다음에 세워야 한다. CITIZEN을 죽여야 밤 행동이 있는 역할의 배우가
+    // 전원 생존한 상태로 남는다(죽은 eligible 배우는 판정을 ACTIONS_PENDING에 묶는다).
+    session.players.get(citizenUuid).alive = false
 
     assert.deepEqual(submit(io, sockets, jokerUuid, session, null), { ok: true }) // SKIP
     assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'DOCTOR')
@@ -156,7 +160,9 @@ test('전체 canonical 순서: JOKER→DOCTOR→GUARD→WITCH_HUNTER(SKIP) 제�
     assert.deepEqual(submit(io, sockets, doctorUuid, session, doctorUuid), { ok: true })
     assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'GUARD')
 
-    assert.deepEqual(submit(io, sockets, guardUuid, session, citizenUuid), { ok: true })
+    // GUARD의 조사 대상은 생존자 여부와 무관하지만, 시신이 된 CITIZEN 대신 DOCTOR를 골라
+    // 이 테스트가 검증하는 순차 진행이 GUARD 대상 규칙과 얽히지 않게 둔다.
+    assert.deepEqual(submit(io, sockets, guardUuid, session, doctorUuid), { ok: true })
     assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'WITCH_HUNTER')
     assert.equal(session.phase, 'NIGHT')
 
@@ -184,17 +190,17 @@ test('전체 canonical 순서: JOKER→DOCTOR→GUARD→WITCH_HUNTER(SKIP) 제�
 })
 
 // ---------------------------------------------------------------------------
-// first-NIGHT witch skip: dayIndex 0의 WITCH_HUNTER는 canonical 순서에서 건너뛴다
+// no-corpse witch skip: 조사할 시신이 없는 밤의 WITCH_HUNTER는 canonical 순서에서 건너뛴다
 // ---------------------------------------------------------------------------
 
-test('first-NIGHT witch skip: dayIndex 0에는 WITCH_HUNTER가 canonical 순서에서 건너뛰어져 GUARD 제출로 곧장 자동 판정된다', () => {
+test('no-corpse witch skip: 첫 밤(dayIndex 0)에는 아직 시신이 없어 WITCH_HUNTER가 canonical 순서에서 건너뛰어지고 GUARD 제출로 곧장 자동 판정된다', () => {
     const room = makeCustomRoom({
         id: 'witch-skip-room',
         players: ['ws-joker', 'ws-doctor', 'ws-guard', 'ws-witch', 'ws-citizen'].map((uuid) => makePlayer(uuid)),
         roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
     })
     const session = commitCustom(room)
-    ackAllAndRewindToNight(session, { dayIndex: 0 }) // 이 밤의 dayIndex가 WITCH_HUNTER 최소 행동 dayIndex(1) 미달
+    ackAllAndRewindToNight(session, { dayIndex: 0 }) // 첫 밤 — 아직 아무도 죽지 않아 조사할 시신이 없다
     const { sockets, io } = wireSockets(session)
     const jokerUuid = byRole(session, 'JOKER')
     const doctorUuid = byRole(session, 'DOCTOR')
@@ -215,6 +221,102 @@ test('first-NIGHT witch skip: dayIndex 0에는 WITCH_HUNTER가 canonical 순서�
     }
 })
 
+// 위 테스트가 "첫 밤이라서"가 아니라 "시신이 없어서" 건너뛴다는 것을 못 박는 dayIndex 1 판본이다.
+test('no-corpse witch skip: dayIndex 1이어도 사망자가 한 명도 없으면 WITCH_HUNTER 턴은 열리지 않는다', () => {
+    const room = makeCustomRoom({
+        id: 'witch-skip-day1-room',
+        players: ['wd-joker', 'wd-doctor', 'wd-guard', 'wd-witch', 'wd-citizen'].map((uuid) => makePlayer(uuid)),
+        roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
+    })
+    const session = commitCustom(room)
+    ackAllAndRewindToNight(session, { dayIndex: 1 })
+    const { sockets, io } = wireSockets(session)
+    const jokerUuid = byRole(session, 'JOKER')
+    const doctorUuid = byRole(session, 'DOCTOR')
+    const guardUuid = byRole(session, 'GUARD')
+    const citizenUuid = byRole(session, 'CITIZEN')
+
+    submit(io, sockets, jokerUuid, session, null)
+    submit(io, sockets, doctorUuid, session, doctorUuid)
+    assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'GUARD')
+
+    submit(io, sockets, guardUuid, session, citizenUuid)
+
+    assert.equal(session.phase, 'DAY')
+    for (const [, socket] of sockets) {
+        assert.equal(socket.emitted.filter((e) => e.event === 'night_result_applied').length, 1)
+        assert.equal(socket.emitted.some((e) => e.event === 'night_turn_changed' && e.payload.nightTurnRole === 'WITCH_HUNTER'), false)
+    }
+})
+
+// dayIndex 하한 제한이 제거됐다는 production 경로 증거 — 첫 밤이라도 시신만 있으면 턴이 열린다.
+test('corpse present: dayIndex 0이어도 사망자가 있으면 GUARD 다음에 WITCH_HUNTER 턴이 정상적으로 열린다', () => {
+    const room = makeCustomRoom({
+        id: 'witch-day0-corpse-room',
+        players: ['wc-joker', 'wc-doctor', 'wc-guard', 'wc-witch', 'wc-citizen'].map((uuid) => makePlayer(uuid)),
+        roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
+    })
+    const session = commitCustom(room)
+    ackAllAndRewindToNight(session, { dayIndex: 0 })
+    const { sockets, io } = wireSockets(session)
+    const jokerUuid = byRole(session, 'JOKER')
+    const doctorUuid = byRole(session, 'DOCTOR')
+    const guardUuid = byRole(session, 'GUARD')
+    const witchHunterUuid = byRole(session, 'WITCH_HUNTER')
+    const citizenUuid = byRole(session, 'CITIZEN')
+    session.players.get(citizenUuid).alive = false
+
+    submit(io, sockets, jokerUuid, session, null)
+    submit(io, sockets, doctorUuid, session, doctorUuid)
+    submit(io, sockets, guardUuid, session, doctorUuid)
+
+    assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'WITCH_HUNTER')
+    assert.equal(session.phase, 'NIGHT')
+    for (const [, socket] of sockets) {
+        assert.equal(
+            socket.emitted.filter((e) => e.event === 'night_turn_changed' && e.payload.nightTurnRole === 'WITCH_HUNTER').length,
+            1,
+        )
+    }
+    // 시신을 지목한 제출은 그대로 성공하고 그 값이 canonical하게 저장된다.
+    assert.deepEqual(submit(io, sockets, witchHunterUuid, session, citizenUuid), { ok: true })
+    assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
+})
+
+// ---------------------------------------------------------------------------
+// WITCH_HUNTER가 생존자를 지목하면 production 경로에서 거부되고 턴도 그대로다
+// ---------------------------------------------------------------------------
+
+test('WITCH_HUNTER 생존자 지목: production 경로에서 INVALID_TARGET으로 거부되고 nightActions·턴이 모두 그대로다', () => {
+    const room = makeCustomRoom({
+        id: 'witch-alive-target-room',
+        players: ['wa-joker', 'wa-doctor', 'wa-guard', 'wa-witch', 'wa-citizen'].map((uuid) => makePlayer(uuid)),
+        roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
+    })
+    const session = commitCustom(room)
+    ackAllAndRewindToNight(session, { dayIndex: 1 })
+    const { sockets, io } = wireSockets(session)
+    const jokerUuid = byRole(session, 'JOKER')
+    const doctorUuid = byRole(session, 'DOCTOR')
+    const guardUuid = byRole(session, 'GUARD')
+    const witchHunterUuid = byRole(session, 'WITCH_HUNTER')
+    const citizenUuid = byRole(session, 'CITIZEN')
+    session.players.get(citizenUuid).alive = false
+
+    submit(io, sockets, jokerUuid, session, null)
+    submit(io, sockets, doctorUuid, session, doctorUuid)
+    submit(io, sockets, guardUuid, session, doctorUuid)
+    assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'WITCH_HUNTER')
+    const before = new Map(session.nightActions)
+
+    const rejected = submit(io, sockets, witchHunterUuid, session, doctorUuid) // DOCTOR는 살아있다
+
+    assert.deepEqual(rejected, { ok: false, code: 'INVALID_TARGET', message: '요청을 처리할 수 없습니다.' })
+    assert.deepEqual(session.nightActions, before)
+    assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'WITCH_HUNTER')
+    assert.equal(session.phase, 'NIGHT')
+})
+
 // ---------------------------------------------------------------------------
 // zero actor auto-skip: GUARD가 아예 없으면 DOCTOR 다음은 곧장 WITCH_HUNTER다
 // ---------------------------------------------------------------------------
@@ -222,7 +324,7 @@ test('first-NIGHT witch skip: dayIndex 0에는 WITCH_HUNTER가 canonical 순서�
 test('zero actor auto-skip: GUARD가 존재하지 않으면 DOCTOR 제출 다음은 GUARD를 건너뛰고 곧장 WITCH_HUNTER로 넘어간다', () => {
     const room = makeCustomRoom({
         id: 'zero-actor-room',
-        players: ['za-joker', 'za-doctor', 'za-witch'].map((uuid) => makePlayer(uuid)),
+        players: ['za-joker', 'za-doctor', 'za-witch', 'za-citizen'].map((uuid) => makePlayer(uuid)),
         roleCounts: { JOKER: 1, DOCTOR: 1, WITCH_HUNTER: 1 },
     })
     const session = commitCustom(room)
@@ -231,6 +333,9 @@ test('zero actor auto-skip: GUARD가 존재하지 않으면 DOCTOR 제출 다음
     const jokerUuid = byRole(session, 'JOKER')
     const doctorUuid = byRole(session, 'DOCTOR')
     const witchHunterUuid = byRole(session, 'WITCH_HUNTER')
+    // WITCH_HUNTER 턴이 열리려면 조사할 시신이 있어야 한다 — CITIZEN 한 명을 그 시신으로 둔다
+    // (GUARD 부재로 건너뛴다는 이 테스트의 원래 검증 의도와는 무관한 사전 조건이다).
+    session.players.get(byRole(session, 'CITIZEN')).alive = false
 
     submit(io, sockets, jokerUuid, session, null)
     assert.equal(gameSessionCore.computeCurrentNightTurnRole(session), 'DOCTOR')

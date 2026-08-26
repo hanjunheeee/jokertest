@@ -14,6 +14,8 @@ const {
     getSpecialRoleBudget,
     computeRoleComposition,
     isEligibleForNightAction,
+    hasAnyDeadPlayer,
+    computeWitchHunterConfirmationResult,
     sanitizeJokerChatText,
     evaluateWinCondition,
     __deleteGameSessionOnlyForTests,
@@ -388,12 +390,14 @@ test('ROLE_TEAMS: JOKER만 JOKER팀이고 나머지 4개 역할은 모두 CITIZE
     })
 })
 
-test('ROLE_DEFINITIONS: nightActionMinDayIndex가 WITCH_HUNTER 첫날밤 비활성 정책과 정확히 일치한다', () => {
+// WITCH_HUNTER의 "죽은 사람만 조사한다" 규칙은 dayIndex가 아니라 사망자 존재로 판정되므로
+// (isEligibleForNightAction) 이 표에는 dayIndex 하한만 남는다 — null만이 "밤 행동이 없는 역할"이다.
+test('ROLE_DEFINITIONS: nightActionMinDayIndex는 밤 행동 유무(null=없음)와 dayIndex 하한만 나타낸다', () => {
     assert.equal(ROLE_DEFINITIONS.JOKER.nightActionMinDayIndex, 0)
     assert.equal(ROLE_DEFINITIONS.CITIZEN.nightActionMinDayIndex, null)
     assert.equal(ROLE_DEFINITIONS.DOCTOR.nightActionMinDayIndex, 0)
     assert.equal(ROLE_DEFINITIONS.GUARD.nightActionMinDayIndex, 0)
-    assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex, 1)
+    assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex, 0)
 })
 
 test('ROLE_DEFINITIONS: 바깥 객체와 각 역할 정의 모두 개별적으로 동결되어 외부에서 변형할 수 없다', () => {
@@ -403,8 +407,9 @@ test('ROLE_DEFINITIONS: 바깥 객체와 각 역할 정의 모두 개별적으�
     }
 
     const before = { ...ROLE_DEFINITIONS.WITCH_HUNTER }
-    // non-strict 모드에서는 조용히 무시되므로 throw 여부가 아니라 값 불변을 확인한다.
-    ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex = 0
+    // non-strict 모드에서는 조용히 무시되므로 throw 여부가 아니라 값 불변을 확인한다
+    // (현재값과 다른 값을 넣어야 "무시됐다"가 실제로 검증된다).
+    ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex = 5
     ROLE_DEFINITIONS.JOKER.team = 'CITIZEN'
     assert.deepEqual(ROLE_DEFINITIONS.WITCH_HUNTER, before)
     assert.equal(ROLE_DEFINITIONS.JOKER.team, 'JOKER')
@@ -1743,26 +1748,44 @@ function commitJokerTrioSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
     return { session, jokerUuids, citizenUuid }
 }
 
-// --- isEligibleForNightAction: 5개 역할 × dayIndex 0/1 표 ---
+// --- isEligibleForNightAction: 5개 역할 × dayIndex 0/1 × 사망자 유무 표 ---
+// WITCH_HUNTER만이 사망자 유무 축에 반응한다. dayIndex 0 · 사망자 있음이 true라는 점이
+// "minDayIndex 기반 첫날밤 제한이 제거됐다"는 직접적인 증거다.
 
 const eligibilityTable = [
-    ['JOKER', 0, true],
-    ['JOKER', 1, true],
-    ['DOCTOR', 0, true],
-    ['DOCTOR', 1, true],
-    ['GUARD', 0, true],
-    ['GUARD', 1, true],
-    ['WITCH_HUNTER', 0, false],
-    ['WITCH_HUNTER', 1, true],
-    ['CITIZEN', 0, false],
-    ['CITIZEN', 1, false],
+    ['JOKER', 0, false, true],
+    ['JOKER', 1, false, true],
+    ['DOCTOR', 0, false, true],
+    ['DOCTOR', 1, false, true],
+    ['GUARD', 0, false, true],
+    ['GUARD', 1, false, true],
+    ['WITCH_HUNTER', 0, false, false],
+    ['WITCH_HUNTER', 1, false, false],
+    ['WITCH_HUNTER', 0, true, true],
+    ['WITCH_HUNTER', 1, true, true],
+    ['CITIZEN', 0, false, false],
+    ['CITIZEN', 1, false, false],
+    ['CITIZEN', 1, true, false],
 ]
 
-for (const [role, dayIndex, expected] of eligibilityTable) {
-    test(`isEligibleForNightAction: ${role} × dayIndex ${dayIndex} → ${expected}`, () => {
-        assert.equal(isEligibleForNightAction(role, dayIndex), expected)
+for (const [role, dayIndex, hasDead, expected] of eligibilityTable) {
+    test(`isEligibleForNightAction: ${role} × dayIndex ${dayIndex} × 사망자 ${hasDead ? '있음' : '없음'} → ${expected}`, () => {
+        const { session, citizenUuid } = commitFullRoleSessionAtNight({ id: `elig-${role}-${dayIndex}-${hasDead}` })
+        session.dayIndex = dayIndex
+        if (hasDead) session.players.get(citizenUuid).alive = false
+
+        assert.equal(isEligibleForNightAction(session, role), expected)
     })
 }
+
+test('hasAnyDeadPlayer: 전원 생존이면 false, 한 명이라도 죽으면 true다', () => {
+    const { session, citizenUuid } = commitFullRoleSessionAtNight({ id: 'has-dead' })
+
+    assert.equal(hasAnyDeadPlayer(session), false)
+
+    session.players.get(citizenUuid).alive = false
+    assert.equal(hasAnyDeadPlayer(session), true)
+})
 
 // --- 기본 계약 ---
 
@@ -1794,7 +1817,9 @@ test('submitNightAction: DOCTOR는 자기 자신을 대상으로 지정할 수 �
 for (const roleKey of ['guardUuid', 'witchHunterUuid']) {
     test(`submitNightAction: ${roleKey}는 자기 자신을 대상으로 지정하면 INVALID_TARGET이고 Map은 불변이다`, () => {
         const fixture = commitFullRoleSessionAtNight()
-        if (roleKey === 'witchHunterUuid') fixture.session.dayIndex = 1 // WITCH_HUNTER는 day1 이상이어야 eligibility를 통과한다
+        // WITCH_HUNTER는 조사할 시신이 하나라도 있어야 eligibility를 통과한다 — 시신을 만들어
+        // 주지 않으면 NOT_ELIGIBLE이 나와 정작 검증하려는 자기 지목 규칙에 도달하지 못한다.
+        if (roleKey === 'witchHunterUuid') fixture.session.players.get(fixture.citizenUuid).alive = false
         const actorUuid = fixture[roleKey]
         const before = new Map(fixture.session.nightActions)
 
@@ -1825,7 +1850,7 @@ test('submitNightAction: CITIZEN은 항상 NOT_ELIGIBLE이고 Map은 불변이�
     assert.deepEqual(session.nightActions, before)
 })
 
-test('submitNightAction: WITCH_HUNTER는 dayIndex 0에는 NOT_ELIGIBLE이지만 dayIndex 1부터는 제출 가능하다', () => {
+test('submitNightAction: WITCH_HUNTER는 사망자가 없으면 dayIndex와 무관하게 NOT_ELIGIBLE이다', () => {
     const { session, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight()
 
     const day0 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
@@ -1834,8 +1859,65 @@ test('submitNightAction: WITCH_HUNTER는 dayIndex 0에는 NOT_ELIGIBLE이지만 
 
     session.dayIndex = 1
     const day1 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
-    assert.deepEqual(day1, { ok: true, gameId: session.id })
+    assert.deepEqual(day1, { ok: false, code: 'NOT_ELIGIBLE' })
+    assert.equal(session.nightActions.has(witchHunterUuid), false)
+})
+
+test('submitNightAction: WITCH_HUNTER가 시신을 지목하면 제출에 성공하고 nightActions에 저장된다', () => {
+    const { session, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    session.players.get(citizenUuid).alive = false
+
+    const result = submitNightAction(witchHunterUuid, session.id, citizenUuid)
+
+    assert.deepEqual(result, { ok: true, gameId: session.id })
     assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
+})
+
+test('submitNightAction: WITCH_HUNTER가 생존자를 지목하면 INVALID_TARGET이고 Map은 불변이다', () => {
+    const { session, witchHunterUuid, citizenUuid, doctorUuid } = commitFullRoleSessionAtNight()
+    session.players.get(citizenUuid).alive = false // eligibility만 통과시키고, 지목 대상은 살아있는 DOCTOR다
+    const before = new Map(session.nightActions)
+
+    const result = submitNightAction(witchHunterUuid, session.id, doctorUuid)
+
+    assert.deepEqual(result, { ok: false, code: 'INVALID_TARGET' })
+    assert.deepEqual(session.nightActions, before)
+})
+
+// minDayIndex 기반 첫날밤 제한이 실제로 제거됐다는 증거 — dayIndex 0인 첫 밤이라도 시신만
+// 있으면 조사할 수 있다(이론상의 상황이지만 규칙 자체는 dayIndex를 전혀 보지 않는다).
+test('submitNightAction: WITCH_HUNTER는 dayIndex 0이어도 사망자가 있으면 제출할 수 있다', () => {
+    const { session, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    assert.equal(session.dayIndex, 0)
+    session.players.get(citizenUuid).alive = false
+
+    const result = submitNightAction(witchHunterUuid, session.id, citizenUuid)
+
+    assert.deepEqual(result, { ok: true, gameId: session.id })
+    assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
+})
+
+test('submitNightAction: WITCH_HUNTER는 같은 시신을 다시 지목할 수 있다(반복 조사를 막지 않는다)', () => {
+    const { session, witchHunterUuid, citizenUuid, guardUuid } = commitFullRoleSessionAtNight()
+    session.players.get(citizenUuid).alive = false
+    session.players.get(guardUuid).alive = false
+
+    assert.deepEqual(submitNightAction(witchHunterUuid, session.id, citizenUuid), { ok: true, gameId: session.id })
+    // 다른 시신으로 갈아탄 뒤 처음 시신을 다시 지목해도 계속 성공하고 최신 값으로 덮어써진다.
+    assert.deepEqual(submitNightAction(witchHunterUuid, session.id, guardUuid), { ok: true, gameId: session.id })
+    assert.deepEqual(submitNightAction(witchHunterUuid, session.id, citizenUuid), { ok: true, gameId: session.id })
+    assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
+})
+
+test('computeWitchHunterConfirmationResult: 시신 대상의 결과는 {targetId, role} 두 키뿐이고 role은 그 시신의 실제 역할이다', () => {
+    const { session, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    session.players.get(citizenUuid).alive = false
+    submitNightAction(witchHunterUuid, session.id, citizenUuid)
+
+    const result = computeWitchHunterConfirmationResult(session, witchHunterUuid)
+
+    assert.deepEqual(result, { targetId: citizenUuid, role: 'CITIZEN' })
+    assert.deepEqual(Object.keys(result).sort(), ['role', 'targetId'])
 })
 
 test('submitNightAction: session.phase가 NIGHT가 아니면(ROLE_REVEAL) INVALID_PHASE이고 Map은 불변이다', () => {
@@ -2342,6 +2424,30 @@ function nightSessionOf4NoWin({ id = 'room-cnr4' } = {}) {
     ackAllAndRewindToFirstNight(candidate.session)
     return candidate.session
 }
+
+// 죽이는 대상을 CITIZEN으로 고른 이유: 밤 행동이 있는 역할(JOKER/DOCTOR/GUARD/WITCH_HUNTER)의
+// 보유자를 죽이면 getEligibleNightActorUuids가 생존을 필터하지 않는 기존 동작 때문에 그 밤이
+// 영원히 ACTIONS_PENDING이 된다 — 이번 슬라이스 범위 밖의 선재 결함이라 건드리지 않고 피해 간다.
+test('prepareNightResolution: 사망자가 있는 밤에는 WITCH_HUNTER의 개인 결과가 {actionType:CONFIRM, targetId, role}로 담긴다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-wh-private',
+    })
+    session.players.get(citizenUuid).alive = false
+
+    submitNightAction(jokerUuid, session.id, null)
+    submitNightAction(doctorUuid, session.id, doctorUuid)
+    submitNightAction(guardUuid, session.id, doctorUuid)
+    submitNightAction(witchHunterUuid, session.id, citizenUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true, `밤 판정 준비 실패(${prepared.code})`)
+    assert.deepEqual(prepared.resolution.privateResults.get(witchHunterUuid), {
+        actionType: 'CONFIRM',
+        targetId: citizenUuid,
+        role: 'CITIZEN',
+    })
+})
 
 test('commitNightResolution: 유효한 victim이 있으면 그 player만 alive:false, phase→DAY, dayIndex+1, nightResolution 설정, 반환값 {ok:true, victimUuid, terminal:null}', () => {
     const session = nightSessionOf4NoWin()
