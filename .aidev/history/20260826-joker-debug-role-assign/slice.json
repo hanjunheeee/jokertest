@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260826-joker-debug-role-assign",
+  "status": "pending",
+  "branch": "slice/20260826-joker-debug-role-assign",
+  "base": "windows-handoff-20260808",
+  "base_commit": "e64397a6f88c48086e5fd3191cc439fec9010d2f",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-26T13:30:53+09:00"
+}
