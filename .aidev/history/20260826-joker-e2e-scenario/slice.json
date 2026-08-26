@@ -1,0 +1,111 @@
+{
+  "slice_id": "20260826-joker-e2e-scenario",
+  "status": "running:test",
+  "branch": "slice/20260826-joker-e2e-scenario",
+  "base": "windows-handoff-20260808",
+  "base_commit": "d6e1fc4bc0d7c9ac46b86b8302d056d16522409c",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 47,
+    "test_files": 9,
+    "budget": 80,
+    "warn": true
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "run_id": "20260826-135908-joker-e2e-scenario-plan",
+      "attempts": 1,
+      "commit": "5d57da451bf1ec2d3d7f172e2ada56198a42a73a"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260826-141320-joker-e2e-scenario-implement",
+      "attempts": 1,
+      "commit": "023c16621d57101d48ae601e4f24f53ad9a0c7eb"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260826-144356-joker-e2e-scenario-test-2",
+      "verdict": "pass",
+      "attempts": 2
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260826-135908-joker-e2e-scenario-plan",
+      "status": "completed",
+      "turns": 111,
+      "tokens": {
+        "input": 1117,
+        "cache_creation": 254880,
+        "cache_read": 9133267,
+        "output": 50885,
+        "billed_input": 9389264,
+        "peak_context": 269349
+      },
+      "cost_usd": 8.3931435
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-141320-joker-e2e-scenario-implement",
+      "status": "completed",
+      "turns": 146,
+      "tokens": {
+        "input": 235,
+        "cache_creation": 275465,
+        "cache_read": 27491220,
+        "output": 108313,
+        "billed_input": 27766920,
+        "peak_context": 296351
+      },
+      "cost_usd": 19.209259999999997
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-143644-joker-e2e-scenario-test",
+      "status": "completed",
+      "turns": 31,
+      "tokens": {
+        "input": 51,
+        "cache_creation": 58172,
+        "cache_read": 1747124,
+        "output": 11997,
+        "billed_input": 1805347,
+        "peak_context": 79058
+      },
+      "cost_usd": 1.755462
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "run_id": "20260826-144356-joker-e2e-scenario-test-2",
+      "status": "completed",
+      "turns": 18,
+      "tokens": {
+        "input": 31,
+        "cache_creation": 41864,
+        "cache_read": 887424,
+        "output": 6179,
+        "billed_input": 929319,
+        "peak_context": 65846
+      },
+      "cost_usd": 1.0169819999999998
+    }
+  ],
+  "updated_at": "2026-08-26T14:46:12+09:00"
+}
