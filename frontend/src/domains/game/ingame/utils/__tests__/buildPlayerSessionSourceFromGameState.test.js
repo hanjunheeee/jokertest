@@ -247,6 +247,44 @@ test("allies에 있는 uuid의 sourcePlayers 항목에는 isAlly:true가 붙고,
   assert.equal(Object.hasOwn(self, "isAlly"), false)
 })
 
+test("players 원소의 colorIndex는 sourcePlayers 항목에 그대로 전달된다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, colorIndex: 0 },
+        { uuid: "u2", nickname: "참가자", alive: true, colorIndex: 7 },
+      ],
+    }),
+  )
+  assert.equal(result.sourcePlayers.find((p) => p.id === "u1").colorIndex, 0)
+  assert.equal(result.sourcePlayers.find((p) => p.id === "u2").colorIndex, 7)
+})
+
+test("colorIndex를 보내지 않는 구세션 payload는 colorIndex 키 자체가 없고 목록은 정상이다", () => {
+  const result = buildPlayerSessionSourceFromGameState(validState())
+  assert.equal(result.sourcePlayers.length, 2)
+  for (const player of result.sourcePlayers) {
+    assert.equal(Object.hasOwn(player, "colorIndex"), false)
+  }
+})
+
+test("colorIndex 형태가 어긋나도 목록 전체가 fallback되지 않고 그 항목만 키가 없다", () => {
+  for (const badColorIndex of [-1, "3", 1.5, null, {}]) {
+    const result = buildPlayerSessionSourceFromGameState(
+      validState({
+        players: [
+          { uuid: "u1", nickname: "호스트", alive: true, colorIndex: badColorIndex },
+          { uuid: "u2", nickname: "참가자", alive: true, colorIndex: 2 },
+        ],
+      }),
+    )
+    // 색은 순전히 표시용이라 거부 사유가 아니다 — 목록은 살아 있어야 한다.
+    assert.notEqual(result.sourcePlayers, null)
+    assert.equal(Object.hasOwn(result.sourcePlayers.find((p) => p.id === "u1"), "colorIndex"), false)
+    assert.equal(result.sourcePlayers.find((p) => p.id === "u2").colorIndex, 2)
+  }
+})
+
 test("동료가 2명 이상이면 각 동료 uuid 모두에 isAlly:true가 붙는다", () => {
   const result = buildPlayerSessionSourceFromGameState(
     validState({

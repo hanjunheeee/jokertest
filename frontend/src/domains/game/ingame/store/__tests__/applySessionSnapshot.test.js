@@ -666,3 +666,62 @@ test("winResult 정규화: 세 파서가 남기는 { winner, reveals, mvp }가 �
     assert.deepEqual(parseNightResultWinResult(value), fromSnapshot, `parseNightResultAppliedPayload: ${label}`)
   }
 })
+
+// --- 재접속 시 참가자 색(colorIndex) 보존 ---
+
+test("applySessionSnapshotPure: roster의 colorIndex가 재접속 후에도 state.players에 보존된다", () => {
+  const current = baseCurrent()
+  const response = baseResponse({
+    players: basePlayers().map((p, index) => ({ ...p, colorIndex: index * 3 })),
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.deepEqual(result.state.players, [
+    { uuid: "p1", nickname: "P1", alive: true, isConnected: true, colorIndex: 0 },
+    { uuid: "p2", nickname: "P2", alive: true, isConnected: true, colorIndex: 3 },
+    { uuid: "p3", nickname: "P3", alive: true, isConnected: true, colorIndex: 6 },
+  ])
+})
+
+test("applySessionSnapshotPure: colorIndex를 보내지 않는 구세션 응답도 거부되지 않고 키 없이 통과한다", () => {
+  const current = baseCurrent()
+  const response = baseResponse()
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.notEqual(result, current)
+  for (const player of result.state.players) {
+    assert.equal(Object.hasOwn(player, "colorIndex"), false)
+  }
+})
+
+test("applySessionSnapshotPure: colorIndex 형태가 어긋나도 스냅샷은 반영되고 그 참가자만 키가 없다", () => {
+  for (const badColorIndex of [-1, "3", 1.5, null, {}]) {
+    const current = baseCurrent()
+    const response = baseResponse({
+      players: basePlayers().map((p) =>
+        p.uuid === "p2" ? { ...p, colorIndex: badColorIndex } : { ...p, colorIndex: 1 },
+      ),
+    })
+
+    const result = applySessionSnapshotPure(current, response)
+
+    // 색은 순전히 표시용이라 하이드레이션 거부 사유가 아니다 — stale 상태에 갇히면 안 된다.
+    assert.notEqual(result, current, `${String(badColorIndex)}는 거부 사유가 아니어야 한다`)
+    const bad = result.state.players.find((p) => p.uuid === "p2")
+    assert.equal(Object.hasOwn(bad, "colorIndex"), false)
+    assert.equal(result.state.players.find((p) => p.uuid === "p1").colorIndex, 1)
+  }
+})
+
+test("applySessionSnapshotPure: colorIndex 0도 보존된다(falsy 값이 조용히 사라지지 않는다)", () => {
+  const current = baseCurrent()
+  const response = baseResponse({ players: basePlayers().map((p) => ({ ...p, colorIndex: 0 })) })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  for (const player of result.state.players) {
+    assert.equal(player.colorIndex, 0)
+  }
+})
