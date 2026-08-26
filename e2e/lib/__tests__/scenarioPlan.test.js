@@ -47,18 +47,19 @@ test("진영 파생은 JOKER만 광대 진영이다", () => {
   }
 })
 
-test("ROOM_SETUP_PLAN은 정원 축소 → 코드로만 참가 → CUSTOM 전환 → 역할 인원 순서로 조작한다", () => {
+test("ROOM_SETUP_PLAN은 정원 축소 → CUSTOM 전환 → 역할 인원 순서로 조작한다", () => {
   assert.deepEqual(
     ROOM_SETUP_PLAN.map((step) => step.label),
-    [
-      "최대 플레이어 수",
-      "코드로만 참가",
-      "역할 구성",
-      "광대 인원",
-      "의사 인원",
-      "경비대 인원",
-      "마녀사냥꾼 인원",
-    ],
+    ["최대 플레이어 수", "역할 구성", "광대 인원", "의사 인원", "경비대 인원", "마녀사냥꾼 인원"],
+  )
+})
+
+test("ROOM_SETUP_PLAN은 체크박스를 건드리지 않는다(방이 공개여야 목록에서 입장할 수 있다)", () => {
+  // "코드로만 참가"를 켜면 accessType이 "code"가 되어 공개 목록 입장 버튼이 잠기고
+  // 서버도 join_public_room을 거부한다 — 그 조작이 계획에 되살아나지 않게 고정한다.
+  assert.equal(
+    ROOM_SETUP_PLAN.some((step) => step.kind === "checkbox"),
+    false,
   )
 })
 
@@ -81,7 +82,6 @@ test("ROOM_SETUP_PLAN의 클릭 횟수는 기본값에서 목표값까지의 실
     assert.equal(byLabel[label].direction, "increase")
     assert.equal(byLabel[label].clicks, 1)
   }
-  assert.equal(byLabel["코드로만 참가"].kind, "checkbox")
 })
 
 test("witchHunterCanActOn은 day0에서만 false다(요구서의 skip 분기를 여기서 고정한다)", () => {

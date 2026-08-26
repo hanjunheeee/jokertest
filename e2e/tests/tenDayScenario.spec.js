@@ -1,8 +1,9 @@
 /**
  * 멀티 클라이언트 10일차 시나리오 재생.
  *
- * 브라우저 컨텍스트 5개를 띄워 로그인 → 방 생성·입장 → 게임 시작 → 1~9일차 반복 →
- * 10일차 사망 → 재판 처형 → 결과 화면까지 한 번에 재생한다.
+ * 브라우저 컨텍스트 5개를 띄워 로그인 → 방장이 공개 방 생성 → 나머지 넷이 공개 방 목록에서
+ * 순서대로 입장 → 게임 시작 → 1~9일차 반복 → 10일차 사망 → 재판 처형 → 결과 화면까지 한 번에
+ * 재생한다.
  *
  * 실행 전제(사람이 미리 갖춰야 한다 — e2e/README.md 참고):
  *   1. backend가 DEBUG_FIXED_ROLES=JOKER,DOCTOR,GUARD,WITCH_HUNTER,CITIZEN 과 함께 떠 있다.
@@ -68,12 +69,11 @@ test("5창 10일차 시나리오 — 보호 성공 9일 → 10일차 사망 → 
       }
     })
 
-    await test.step("S1이 5인 CUSTOM 방을 만들고 S2~S5가 순서대로 입장", async () => {
+    await test.step("S1이 5인 공개 CUSTOM 방을 만들고 S2~S5가 목록에서 순서대로 입장", async () => {
       await actors.createRoom(seats[0])
-      const roomCode = await actors.readRoomCode(seats[0])
       // 입장 순서가 곧 역할 배정 순서다 — 절대 병렬로 돌리지 않는다.
       for (const seat of seats.slice(1)) {
-        await actors.joinByCode(seat, roomCode)
+        await actors.joinFromRoomList(seat, seats[0].account.nickname)
       }
     })
 

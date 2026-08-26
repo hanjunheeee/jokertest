@@ -1,7 +1,8 @@
 # E2E 멀티 클라이언트 10일차 시나리오
 
-브라우저 컨텍스트 5개를 띄워 로그인 → 방 생성·전원 입장 → 게임 시작 → 1~9일차 반복 →
-10일차 사망 → 재판 처형 → 결과 화면까지 전체 플로우를 자동 재생한다.
+브라우저 컨텍스트 5개를 띄워 로그인 → 방장이 공개 방 생성 → 나머지 넷이 `/multiplay` 공개 방
+목록에서 순서대로 클릭 입장 → 게임 시작 → 1~9일차 반복 → 10일차 사망 → 재판 처형 →
+결과 화면까지 전체 플로우를 자동 재생한다.
 
 좌석(= 방 입장 순서)이 곧 역할이다.
 
@@ -86,6 +87,25 @@ npm --prefix e2e run report        # 실패 후 HTML 리포트 열기
 
 역할이 어긋나면 "각 창에서 자기 역할 공개 문구 검증" 단계에서 즉시 실패한다.
 
+### 방은 반드시 공개(open)여야 한다
+
+나머지 좌석은 방코드가 아니라 `/multiplay`의 공개 방 목록에서 방을 클릭해 들어간다
+(방코드 입력 화면은 아직 6자리 입력이 동작하지 않는다). 방 생성 화면의 **"코드로만 참가"** 를
+켜면 `accessType`이 `"code"`가 되어(`buildCreateRoomPayload`) 이 경로가 양쪽에서 막힌다 —
+목록의 입장 버튼이 `"코드 필요"`로 비활성되고(`RoomListShell`), 조작된 요청을 보내도 서버가
+`room.accessType !== 'open'`으로 거부한다(`backend/socket/matchmaking.js`의
+`handleJoinPublicRoom`).
+
+그래서 `ROOM_SETUP_PLAN`은 이 체크박스를 **건드리지 않는다**(기본값이 꺼짐이다). 단위 테스트가
+"체크박스 조작이 계획에 없다"를 고정한다.
+
+목록 갱신은 폴링이 아니다. `/multiplay`에 들어가면 `usePublicRooms`가 마운트 즉시
+`get_public_rooms`로 한 번 조회하고, 이후에는 서버의 `public_rooms_updated` 브로드캐스트로
+갱신된다 — 그래서 새로고침 버튼 없이 "방 row가 나타날 때까지" 기다리기만 하면 된다.
+
+방이 공개되는 대신, 테스트가 도는 동안 **같은 backend에 다른 사람이 붙어 있으면 안 된다**.
+낯선 계정이 먼저 들어오면 좌석↔역할이 어긋나고 `confirmRoleReveal`이 첫 관문에서 실패한다.
+
 ### 게임의 첫 진행 단계는 밤이 아니라 낮이다
 
 `ROLE_REVEAL(dayIndex 0) → DAY 1 → NIGHT 1 → DAY 2 → NIGHT 2 → …` 순서다
@@ -126,7 +146,7 @@ npm --prefix e2e run report        # 실패 후 HTML 리포트 열기
 | `playwright.config.js` | 단일 워커·15분 타임아웃·baseURL·자동재생 허용 |
 | `lib/env.js` | `.env` 파싱과 좌석별 계정 해석 (순수) |
 | `lib/scenarioPlan.js` | 방 설정 조작·10일 밤낮 계획·기대 문구 (순수) |
-| `lib/selectors.js` | data 훅 이름 → CSS 셀렉터 (순수) |
+| `lib/selectors.js` | data 훅 이름 → CSS 셀렉터, 공개 방 row 이름 패턴 (순수) |
 | `lib/actors.js` | 좌석 page object — 로그인·방·오버레이 정리·행동 제출 |
 | `tests/tenDayScenario.spec.js` | 시나리오 본문 |
 
@@ -137,6 +157,10 @@ npm --prefix e2e run report        # 실패 후 HTML 리포트 열기
 
 셀렉터도 마찬가지로 프런트가 소유한 단일 원천
 (`frontend/src/domains/game/ingame/constants/e2e/ingameE2eHooks.js`)에서만 속성 이름을 읽는다.
+
+예외는 공개 방 제목(`{닉네임}의 방`) 하나뿐이다. 이 형식은 backend(`socket/matchmaking.js`)가
+만들어 import할 프런트 원천이 없으므로 `lib/selectors.js`의 `publicRoomTitle` 한 곳에만
+문자열로 적어두고, 출처 경로를 주석으로 고정해 두었다.
 
 ## 헬퍼 단위 테스트 (playwright 없이 돈다)
 

@@ -9,11 +9,14 @@ import {
   controlPanelWithSelfRole,
   deadPlayerCard,
   escapeAttrValue,
+  escapeRegExp,
   killReveal,
   nightPrivateResult,
   nightTarget,
   phaseEntrance,
   playerCard,
+  publicRoomRowName,
+  publicRoomTitle,
   selfPlayerCard,
 } from "../selectors.js"
 
@@ -69,4 +72,29 @@ test("닉네임에 인용부호가 섞여도 셀렉터가 깨지지 않는다", 
   // 역슬래시를 먼저 escape해야 이미 넣은 역슬래시를 다시 건드리지 않는다.
   assert.equal(escapeAttrValue('a\\"b'), 'a\\\\\\"b')
   assert.equal(playerCard('닉"네임'), `[${INGAME_E2E_ATTRS.playerNickname}="닉\\"네임"]`)
+})
+
+test("공개 방 제목은 backend의 `{닉네임}의 방` 형식 그대로다", () => {
+  assert.equal(publicRoomTitle("테스터1"), "테스터1의 방")
+})
+
+test("공개 방 row 이름 패턴은 지금 입장할 수 있는 방장의 방만 잡는다", () => {
+  const pattern = publicRoomRowName("테스터1")
+  assert.ok(pattern.test("테스터1의 방, 1/5명"))
+  assert.ok(pattern.test("테스터1의 방, 4/5명"))
+  // 목록 DTO에 지금은 없는 stage 배지가 앞에 붙어도 계속 잡혀야 한다.
+  assert.ok(pattern.test("2단계 테스터1의 방, 3/5명"))
+  // 접미가 붙은 방은 입장할 수 없다 — 셀렉터 단계에서 걸러진다.
+  assert.equal(pattern.test("테스터1의 방, 5/5명, 마감"), false)
+  assert.equal(pattern.test("테스터1의 방, 2/5명, 진행중"), false)
+  assert.equal(pattern.test("테스터1의 방, 2/5명, 코드 필요"), false)
+  // 다른 사람의 방은 잡지 않는다.
+  assert.equal(pattern.test("테스터2의 방, 1/5명"), false)
+})
+
+test("정규식 메타문자가 섞인 닉네임도 리터럴로 취급한다", () => {
+  assert.equal(escapeRegExp("닉(네임"), "닉\\(네임")
+  const pattern = publicRoomRowName("닉(네임")
+  assert.ok(pattern.test("닉(네임의 방, 1/5명"))
+  assert.equal(pattern.test("닉네임의 방, 1/5명"), false)
 })

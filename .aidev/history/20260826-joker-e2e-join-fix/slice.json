@@ -1,0 +1,95 @@
+{
+  "slice_id": "20260826-joker-e2e-join-fix",
+  "status": "running:test",
+  "branch": "slice/20260826-joker-e2e-join-fix",
+  "base": "windows-handoff-20260808",
+  "base_commit": "febe64ea887e325c932b9d66009fdba70016852d",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": {
+    "files": 23,
+    "test_files": 3,
+    "budget": 80,
+    "warn": true
+  },
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "done",
+      "approval": "approved",
+      "run_id": "20260826-151954-joker-e2e-join-fix-plan",
+      "attempts": 1,
+      "commit": "980d38177d3e6e467f08d7a5e6a1012f3ac58261"
+    },
+    "implement": {
+      "status": "done",
+      "run_id": "20260826-152815-joker-e2e-join-fix-implement",
+      "attempts": 1,
+      "commit": "0f3f614cc0b0e5ad0b3707555bc54f03185970cb"
+    },
+    "test": {
+      "status": "done",
+      "run_id": "20260826-153315-joker-e2e-join-fix-test",
+      "verdict": "pass",
+      "attempts": 1
+    }
+  },
+  "runs": [
+    {
+      "stage": "plan",
+      "attempt": 1,
+      "run_id": "20260826-151954-joker-e2e-join-fix-plan",
+      "status": "completed",
+      "turns": 31,
+      "tokens": {
+        "input": 25,
+        "cache_creation": 95442,
+        "cache_read": 1014211,
+        "output": 20023,
+        "billed_input": 1109678,
+        "peak_context": 109910
+      },
+      "cost_usd": 1.9622255000000004
+    },
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "run_id": "20260826-152815-joker-e2e-join-fix-implement",
+      "status": "completed",
+      "turns": 50,
+      "tokens": {
+        "input": 81,
+        "cache_creation": 115421,
+        "cache_read": 4883592,
+        "output": 20399,
+        "billed_input": 4999094,
+        "peak_context": 136307
+      },
+      "cost_usd": 4.1063860000000005
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260826-153315-joker-e2e-join-fix-test",
+      "status": "completed",
+      "turns": 16,
+      "tokens": {
+        "input": 29,
+        "cache_creation": 31183,
+        "cache_read": 679606,
+        "output": 5439,
+        "billed_input": 710818,
+        "peak_context": 52069
+      },
+      "cost_usd": 0.7877529999999999
+    }
+  ],
+  "updated_at": "2026-08-26T15:34:54+09:00"
+}
