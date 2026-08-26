@@ -1,0 +1,31 @@
+{
+  "slice_id": "20260826-joker-ended-session-cleanup",
+  "status": "pending",
+  "branch": "slice/20260826-joker-ended-session-cleanup",
+  "base": "windows-handoff-20260808",
+  "base_commit": "009736c3a609647f515e5c21ee4480bd87a95115",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": null,
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-26T12:16:04+09:00"
+}
