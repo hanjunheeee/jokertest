@@ -1,6 +1,6 @@
 {
   "slice_id": "20260829-joker-b-frontend-display",
-  "status": "running:implement",
+  "status": "running:test",
   "branch": "slice/20260829-joker-b-frontend-display",
   "base": "windows-handoff-20260808",
   "base_commit": "7b37d2c97c4188c5c516e7a5276cd66efb23228e",
@@ -38,10 +38,14 @@
     "implement": {
       "status": "done",
       "run_id": "20260829-021531-joker-b-frontend-display-implement-3",
-      "attempts": 3
+      "attempts": 3,
+      "commit": "6b490f99b1780bdd271036398badb5ba4cd2b2a1"
     },
     "test": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260829-022009-joker-b-frontend-display-test",
+      "verdict": "pass",
+      "attempts": 1
     }
   },
   "runs": [
@@ -108,7 +112,23 @@
         "peak_context": 114735
       },
       "cost_usd": 3.9864469999999996
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260829-022009-joker-b-frontend-display-test",
+      "status": "completed",
+      "turns": 20,
+      "tokens": {
+        "input": 26,
+        "cache_creation": 47203,
+        "cache_read": 769132,
+        "output": 7092,
+        "billed_input": 816361,
+        "peak_context": 68088
+      },
+      "cost_usd": 1.0340260000000001
     }
   ],
-  "updated_at": "2026-08-29T02:20:08+09:00"
+  "updated_at": "2026-08-29T02:22:15+09:00"
 }
