@@ -45,6 +45,12 @@ const ROLE_TEAMS = Object.freeze(
 const MIN_SUPPORTED_PLAYERS = 2
 const MAX_SUPPORTED_PLAYERS = 10
 
+// 프런트 constants/ingamePlayerTheme.js의 INGAME_PLAYER_THEME_PALETTE 길이와 값이 일치해야
+// 한다 — 이 저장소에는 백엔드/프런트가 공유하는 상수 모듈이 없어 수동으로 동기화한다
+// (ROLE_TEAMS 복제와 동일한 관례). MAX_SUPPORTED_PLAYERS와 같은 값이므로 한 세션 안에서는
+// 색이 항상 서로 다르다(순환 재사용이 일어나지 않는다).
+const PLAYER_THEME_PALETTE_SIZE = 10
+
 const INITIAL_GAME_PHASE = 'ROLE_REVEAL' // 아직 밤이 시작되지 않은 역할 확인 단계(사용자 확정)
 const INITIAL_DAY_INDEX = 0
 
@@ -695,16 +701,66 @@ function getResolutionRound(resolution) {
     return Number.isInteger(resolution?.round) && resolution.round >= 1 ? resolution.round : 1
 }
 
-// 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
+/**
+ * session.id에서 결정적으로 유도한 팔레트 인덱스 순열(길이 PLAYER_THEME_PALETTE_SIZE).
+ *
+ * Math.random을 쓰지 않는 이유: 이 함수를 소비하는 buildGameStartedPayload는 참가자 1명당
+ * 한 번씩 호출되므로(socket/matchmaking.js), 호출마다 값이 달라지면 뷰어별로 같은 참가자가
+ * 다른 색을 받는다. session.id는 crypto.randomUUID()라 게임마다 사실상 무작위이면서 한 게임
+ * 안에서는 모든 뷰어에게 동일하다 — FNV-1a로 접은 seed + mulberry32 PRNG로 Fisher-Yates
+ * 셔플하면 "게임마다 무작위, 뷰어끼리 동일"을 함께 만족한다.
+ * @param {object} session - id를 가진 GameSession
+ * @flow id를 32bit seed로 접고 → 그 seed의 PRNG로 팔레트 인덱스 배열을 뒤에서부터 교환한다.
+ */
+function buildPlayerThemeIndices(session) {
+    const id = typeof session?.id === 'string' ? session.id : ''
+    let seed = 0x811c9dc5
+    for (let i = 0; i < id.length; i += 1) {
+        seed ^= id.charCodeAt(i)
+        seed = Math.imul(seed, 0x01000193) >>> 0
+    }
+
+    const nextRandom = () => {
+        seed = (seed + 0x6d2b79f5) >>> 0
+        let t = seed
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+
+    const indices = Array.from({ length: PLAYER_THEME_PALETTE_SIZE }, (_, index) => index)
+    for (let i = indices.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(nextRandom() * (i + 1))
+        const swap = indices[i]
+        indices[i] = indices[j]
+        indices[j] = swap
+    }
+    return indices
+}
+
+/**
+ * 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
+ * players[].themeIndex는 프런트 표시 색상 배정으로, 색을 클라이언트가 각자 추첨하면 같은
+ * 참가자가 화면마다 다른 색으로 보이므로 서버가 배정해 내려준다(role과 달리 비밀이 아니다).
+ * @param {object} session - commit된(또는 candidate) GameSession
+ * @param {string} viewerUuid - 이 payload를 받을 참가자 uuid
+ */
 function buildGameStartedPayload(session, viewerUuid) {
     const viewer = session.players.get(viewerUuid)
+    const themeIndices = buildPlayerThemeIndices(session)
     return {
         gameId: session.id,
         state: {
             id: session.id,
             phase: session.phase,
             dayIndex: session.dayIndex,
-            players: [...session.players.values()].map(({ uuid, nickname }) => ({ uuid, nickname })), // role 없음
+            // session.players는 Map이라 순회 순서가 모든 뷰어에게 동일하다 — 같은 index는
+            // 곧 같은 참가자이므로 뷰어끼리 배정이 갈리지 않는다.
+            players: [...session.players.values()].map(({ uuid, nickname }, index) => ({
+                uuid,
+                nickname,
+                themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
+            })), // role 없음
             self: buildViewerRoleFields(session, viewer),
         },
     }

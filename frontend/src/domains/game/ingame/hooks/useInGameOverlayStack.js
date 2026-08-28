@@ -11,7 +11,7 @@ import { useInGameNightTurnAnnouncement } from "./useInGameNightTurnAnnouncement
  *   1. 자기 역할 공개(초기 확인 및 "내 역할 보기" 재열람)
  *   2. 사망 연출 큐(deathRevealActive)
  *   3. DAY/NIGHT 진입 연출("낮이 되었습니다" / "밤이 되었습니다")
- *   4. 밤 역할 턴 안내("광대/의사/경호원/마녀사냥꾼의 시간입니다")
+ *   4. 밤 역할 턴 안내("광대/의사/경비원/마녀사냥꾼의 시간입니다")
  *   5. 그 아래 게임 표면의 조작
  *
  * 2번(사망 연출)은 아직 이 프런트엔드에 렌더되는 구현이 없다 — 공개 사망 연출 큐를 만드는

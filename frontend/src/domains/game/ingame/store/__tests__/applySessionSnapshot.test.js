@@ -503,6 +503,43 @@ test("applySessionSnapshotPure: 구조적으로 동등한 ENDED 스냅샷을 두
   assert.deepStrictEqual(resultA.state, resultB.state)
 })
 
+// --- themeIndex(표시 색상) 이어받기 ---
+
+test("applySessionSnapshotPure: 스냅샷에 없는 themeIndex를 기존 store roster에서 uuid로 이어받는다", () => {
+  const current = baseCurrent({
+    players: [
+      { uuid: "p1", nickname: "P1", alive: true, themeIndex: 5 },
+      { uuid: "p2", nickname: "P2", alive: true, themeIndex: 2 },
+      { uuid: "p3", nickname: "P3", alive: true, themeIndex: 9 },
+    ],
+  })
+  // 응답 roster 순서가 뒤바뀌어도 uuid 기준으로 이어받는다.
+  const response = baseResponse({ players: [...basePlayers()].reverse() })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.deepEqual(
+    result.state.players.map((p) => [p.uuid, p.themeIndex]),
+    [["p3", 9], ["p2", 2], ["p1", 5]],
+  )
+})
+
+test("applySessionSnapshotPure: 기존 roster에 유효한 themeIndex가 없으면 키 자체를 만들지 않는다", () => {
+  const current = baseCurrent({
+    players: [
+      { uuid: "p1", nickname: "P1", alive: true, themeIndex: "5" },
+      { uuid: "p2", nickname: "P2", alive: true },
+      { uuid: "p3", nickname: "P3", alive: true, themeIndex: 9 },
+    ],
+  })
+
+  const result = applySessionSnapshotPure(current, baseResponse())
+
+  assert.equal(Object.hasOwn(result.state.players[0], "themeIndex"), false)
+  assert.equal(Object.hasOwn(result.state.players[1], "themeIndex"), false)
+  assert.equal(result.state.players[2].themeIndex, 9)
+})
+
 // --- winResult 검증 패리티 ---
 
 function applySessionSnapshotAcceptsWinResult(winResultValue) {

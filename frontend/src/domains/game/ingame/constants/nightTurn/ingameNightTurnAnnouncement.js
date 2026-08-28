@@ -4,7 +4,7 @@
  * 이 파일은 "역할 턴 → 문구" 사전일 뿐이다 — 안내 순서를 프런트에서 진행시키는 큐가 아니다.
  * 지금 어느 역할 턴인지는 언제나 canonical 상태에서만 읽고(selectInGameNightTurnRole.js),
  * 안내를 닫아도 그 값은 조금도 움직이지 않는다. 예전에는 이 배열을 로컬 커서로 훑으며
- * 광대→의사→경호원→마녀사냥꾼을 프런트 혼자 순차 재생했는데, 그게 서버 턴과 무관하게
+ * 광대→의사→경비원→마녀사냥꾼을 프런트 혼자 순차 재생했는데, 그게 서버 턴과 무관하게
  * 안내가 줄줄이 뜨던 회귀의 원인이었다.
  *
  * 그 밤에 행동 자체가 불가능한 역할 턴(day 0의 마녀사냥꾼)은 ingameActionPanel.js의 밤 행동
@@ -21,7 +21,7 @@ import { getInGameNightActionType } from "../actions/ingameActionPanel.js"
 export const INGAME_NIGHT_TURN_ANNOUNCEMENTS = Object.freeze([
   Object.freeze({ role: "JOKER", message: "광대의 시간입니다" }),
   Object.freeze({ role: "DOCTOR", message: "의사의 시간입니다" }),
-  Object.freeze({ role: "GUARD", message: "경호원의 시간입니다" }),
+  Object.freeze({ role: "GUARD", message: "경비원의 시간입니다" }),
   Object.freeze({ role: "WITCH_HUNTER", message: "마녀사냥꾼의 시간입니다" }),
 ])
 

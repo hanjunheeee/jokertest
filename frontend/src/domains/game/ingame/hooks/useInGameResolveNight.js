@@ -4,6 +4,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
 import { computeResolveNightAckPatch } from "../utils/computeResolveNightAckPatch.js"
 import { computeResolveNightInvalidatePatch } from "../utils/computeResolveNightInvalidatePatch.js"
+import { computeResolveNightDayTransitionPatch } from "../utils/computeResolveNightDayTransitionPatch.js"
 import { shouldApplyNightBroadcastPayload } from "../utils/shouldApplyNightBroadcastPayload.js"
 
 const RESOLVE_TIMEOUT_MS = 5000
@@ -16,7 +17,8 @@ const RESOLVE_TIMEOUT_MS = 5000
  *
  * night_actions_resolved(공개 방송)를 구독해 다른 참가자가 먼저 판정을 끝낸 경우에도 이
  * 클라이언트의 입력을 함께 잠근다. night_action_result(개인 결과)는 GUARD/WITCH_HUNTER
- * 본인에게만 도착하므로 그대로 저장해 표시용으로만 쓴다.
+ * 본인에게만 도착하므로 그대로 저장해 표시용으로만 쓰며, 이어지는 낮 전이에서도 지우지
+ * 않는다 — 조사 결과는 그 낮 동안 화면에서 확인할 수 있어야 한다.
  */
 export function useInGameResolveNight() {
   const gameId = useInGameStore((s) => s.gameId)
@@ -44,6 +46,8 @@ export function useInGameResolveNight() {
 
   // 진행 중이던 요청을 무효화하고 잠금을 즉시 해제한다. disconnect·socket 교체·gameId 변경·
   // unmount 네 지점 모두 이 함수 하나만 거친다(useInGameNightActionSubmit과 동일한 계약).
+  // 개인 결과까지 폐기하는 이유는 이 네 지점이 전부 "다른 게임/다른 연결로의 전환"이기
+  // 때문이다 — 같은 게임 안의 낮 전이는 아래 invalidateForDayTransition을 쓴다.
   const invalidate = () => {
     versionRef.current += 1
     ackingRef.current = false
@@ -52,6 +56,18 @@ export function useInGameResolveNight() {
     setStatus(patch.status)
     setError(patch.error)
     setNightActionResult(patch.nightActionResult)
+  }
+
+  // NIGHT→DAY 전이에서 in-flight 요청 세대를 무효화하고 판정 잠금만 되돌린다. invalidate와
+  // 달리 nightActionResult는 그대로 둔다 — WH·경비원의 조사 결과는 그 낮 동안 확인 가능해야
+  // 하고, 그 밤의 결과는 이미 서버가 확정해 보낸 값이라 낮에도 여전히 유효하다.
+  const invalidateForDayTransition = () => {
+    versionRef.current += 1
+    ackingRef.current = false
+    const patch = computeResolveNightDayTransitionPatch(mountedRef.current)
+    if (!patch) return // unmounted: state는 건드리지 않는다
+    setStatus(patch.status)
+    setError(patch.error)
   }
 
   // disconnect・socket 객체 교체(재연결)・unmount 시 무효화.
@@ -93,23 +109,27 @@ export function useInGameResolveNight() {
     const handleResult = (payload) => {
       if (!shouldApplyNightBroadcastPayload({ payload, gameId })) return
       // 이미 DAY로 적용된 NIGHT과 같거나 그보다 오래된(<=) private result는 폐기한다 —
-      // night_action_result.dayIndex(commit 전 값)와 night_result_applied.dayIndex(commit 후
-      // +1된 값)는 항상 전자<후자이므로, 이 비교만으로 "이미 초기화된 뒤 늦게 도착한 개인
-      // 결과"를 걸러낼 수 있다.
+      // night_action_result.dayIndex는 그 NIGHT의 dayIndex이고 ref도 같은 기준(아래
+      // handleApplied가 -1로 환산해 저장)이므로, 이 비교는 "이미 낮으로 넘어간 밤의 결과가
+      // 뒤늦게 도착한 경우"만 걸러낸다. 다음 밤의 결과는 ref보다 큰 dayIndex로 오므로
+      // 그대로 반영된다.
       if (appliedNightDayIndexRef.current !== null && payload.dayIndex <= appliedNightDayIndexRef.current) return
       if (!mountedRef.current) return
       setNightActionResult(payload)
     }
 
-    // NIGHT 결과 적용(사망 + DAY 전이) 방송이다. 검증된 최신(dayIndex가 ref보다 큰) 수신만
-    // ref를 갱신하고 invalidate()로 status/error/nightActionResult를 초기화하며 in-flight
-    // 요청 세대도 무효화한다 — 같거나 오래된 dayIndex는 완전한 no-op이다.
+    // NIGHT 결과 적용(사망 + DAY 전이) 방송이다. payload.dayIndex는 commit 후 +1된 DAY의
+    // 값이므로, ref가 선언한 의미("이미 DAY로 적용된 가장 최근 NIGHT의 dayIndex")에 맞게
+    // -1로 환산해 단조 비교·갱신에 함께 쓴다. 검증된 최신 수신만 ref를 갱신하고
+    // invalidateForDayTransition()으로 status/error만 되돌린다 — 개인 결과는 그 낮 동안
+    // 남는다. 같거나 오래된 dayIndex는 완전한 no-op이다.
     const handleApplied = (payload) => {
       if (!shouldApplyNightBroadcastPayload({ payload, gameId })) return
       if (payload.phase !== "DAY" || !Number.isInteger(payload.dayIndex)) return
-      if (appliedNightDayIndexRef.current !== null && payload.dayIndex <= appliedNightDayIndexRef.current) return
-      appliedNightDayIndexRef.current = payload.dayIndex
-      invalidate()
+      const resolvedNightDayIndex = payload.dayIndex - 1
+      if (appliedNightDayIndexRef.current !== null && resolvedNightDayIndex <= appliedNightDayIndexRef.current) return
+      appliedNightDayIndexRef.current = resolvedNightDayIndex
+      invalidateForDayTransition()
     }
 
     socket.on("night_actions_resolved", handleResolved)

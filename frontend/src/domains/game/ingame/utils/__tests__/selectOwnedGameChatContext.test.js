@@ -26,8 +26,13 @@ test("selectOwnedGameChatContext: 인증 계정이 소유한 상태면 gameId와
   const alive = selectOwnedGameChatContext({ gameId: GAME_ID, state: buildState() }, ME)
   assert.deepEqual(alive, { gameId: GAME_ID, viewChannel: "DAY", sendChannel: "DAY" })
 
-  const dead = selectOwnedGameChatContext({ gameId: GAME_ID, state: buildState({ phase: "NIGHT", alive: false }) }, ME)
+  const dead = selectOwnedGameChatContext({ gameId: GAME_ID, state: buildState({ phase: "TRIBUNAL", alive: false }) }, ME)
   assert.deepEqual(dead, { gameId: GAME_ID, viewChannel: "DEAD", sendChannel: "DEAD" })
+})
+
+test("selectOwnedGameChatContext: 밤의 사망자는 소유자여도 두 채널이 모두 null이다(밤 채팅 차단)", () => {
+  const deadAtNight = selectOwnedGameChatContext({ gameId: GAME_ID, state: buildState({ phase: "NIGHT", alive: false }) }, ME)
+  assert.deepEqual(deadAtNight, { gameId: GAME_ID, viewChannel: null, sendChannel: null })
 })
 
 test("selectOwnedGameChatContext: 보낼 수 없는 phase에서도 보기 채널은 유지된다(기존 규칙 그대로)", () => {

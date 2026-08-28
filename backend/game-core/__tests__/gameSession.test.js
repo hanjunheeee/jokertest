@@ -3698,8 +3698,51 @@ test('공개 payload 화이트리스트: game-started 타인 player 키 무변�
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
     const payload = buildGameStartedPayload(candidate.session, 'u1')
     for (const player of payload.state.players) {
-        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'uuid'])
+        // themeIndex는 표시 색상 배정이라 공개 필드다(role/team과 달리 비밀이 아니다).
+        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'themeIndex', 'uuid'])
     }
+})
+
+// --- game_started players[].themeIndex — 표시 색상 배정 ---
+
+test('game_started themeIndex: 뷰어가 달라도 uuid→themeIndex 매핑이 완전히 동일하다', () => {
+    const room = makeRoom()
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+
+    const mappingFor = (viewerUuid) =>
+        buildGameStartedPayload(candidate.session, viewerUuid).state.players.map((p) => [p.uuid, p.themeIndex])
+
+    assert.deepEqual(mappingFor('u1'), mappingFor('u2'))
+    assert.deepEqual(mappingFor('u1'), mappingFor('u3'))
+})
+
+test('game_started themeIndex: 10인 세션의 배정은 0..9의 순열이다(중복 없음)', () => {
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(`p${i + 1}`))
+    const room = makeRoom({ players, jokerCount: 2 })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+
+    const indices = buildGameStartedPayload(candidate.session, 'p1').state.players.map((p) => p.themeIndex)
+    assert.deepEqual([...indices].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+})
+
+test('game_started themeIndex: 모든 값이 팔레트 범위(0 <= i < 10) 안의 정수다', () => {
+    const room = makeRoom()
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0, gameIdFn: () => 'game-theme-range' })
+
+    for (const player of buildGameStartedPayload(candidate.session, 'u1').state.players) {
+        assert.equal(Number.isInteger(player.themeIndex), true)
+        assert.equal(player.themeIndex >= 0 && player.themeIndex < 10, true)
+    }
+})
+
+test('game_started themeIndex: session.id가 다르면 배정 순서도 달라진다', () => {
+    const buildFor = (gameId) => {
+        const candidate = buildSessionCandidate(makeRoom(), { randomFn: () => 0, gameIdFn: () => gameId })
+        return buildGameStartedPayload(candidate.session, 'u1').state.players.map((p) => p.themeIndex)
+    }
+
+    // 두 세션의 참가자 구성은 같고 session.id만 다르다 — 배정이 id에서 유도된다는 최소 증거다.
+    assert.notDeepEqual(buildFor('game-theme-a'), buildFor('game-theme-b'))
 })
 
 // ---------------------------------------------------------------------------
@@ -4596,9 +4639,9 @@ test('CUSTOM: 커밋된 세션의 공개 payload에는 역할 구성이 노출�
     assert.equal(serialized.includes('roleComposition'), false)
     assert.equal(serialized.includes('roleCounts'), false)
     assert.equal(Object.hasOwn(payload.state, 'roleComposition'), false)
-    // 다른 참가자 목록에는 여전히 role/team이 없다.
+    // 다른 참가자 목록에는 여전히 role/team이 없다(themeIndex는 비밀이 아닌 표시 색상이다).
     for (const player of payload.state.players) {
-        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'uuid'])
+        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'themeIndex', 'uuid'])
     }
 })
 

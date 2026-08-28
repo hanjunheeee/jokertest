@@ -1,3 +1,5 @@
+import { INGAME_PLAYER_THEME_PALETTE_SIZE } from "../constants/ingamePlayerTheme.js"
+
 // game-core/gameSession.js의 ROLE_TEAMS와 값이 일치해야 한다 — 이 프로젝트에는 백엔드/프런트가
 // 공유하는 상수 모듈이 없어 수동으로 동기화한다(둘 중 하나가 바뀌면 같이 바꿔야 함). role과
 // team을 각각 독립적으로 화이트리스트 검사하면 {role:"JOKER", team:"CITIZEN"} 같이 각각은
@@ -15,9 +17,16 @@ const EMPTY_RESULT = Object.freeze({ sourcePlayers: null, localPlayerId: null })
 /**
  * 서버 game_started state를 InGamePlayerSessionProvider가 기대하는 sourcePlayers/localPlayerId
  * 형태로 변환합니다. 이 함수의 책임은 플레이어 세션 변환이므로, state.players 각 항목의
- * uuid/nickname과 state.self의 uuid/role/team/allies만 엄격히 검증합니다(state.id/phase/dayIndex,
- * self.nickname 등 이 함수가 쓰지 않는 필드는 검증 대상이 아닙니다) — 검증 대상 필드
- * 중 하나라도 어긋나면 부분 목록 대신 안전한 preview fallback을 돌려줍니다.
+ * uuid/nickname/alive/themeIndex와 state.self의 uuid/role/team/allies만 엄격히 검증합니다
+ * (state.id/phase/dayIndex, self.nickname 등 이 함수가 쓰지 않는 필드는 검증 대상이 아닙니다)
+ * — 검증 대상 필드 중 하나라도 어긋나면 부분 목록 대신 안전한 preview fallback을 돌려줍니다.
+ *
+ * themeIndex는 표시 색상 배정으로, 서버가 게임당 한 번 배정해 모든 참가자에게 같은 값을
+ * 내려줍니다(클라이언트가 각자 추첨하면 같은 참가자가 화면마다 다른 색으로 보입니다).
+ * role/team과 달리 모든 참가자에게 공통으로 존재하는 필드이므로 조건부가 아니라 항상
+ * 검증·전달합니다.
+ * @param {object} state - game_started payload의 state(신뢰하지 않는 외부 입력)
+ * @flow players 전수 검증 → self 검증 → JOKER면 allies 검증 → sourcePlayers 조립
  */
 export function buildPlayerSessionSourceFromGameState(state) {
   if (!state || !Array.isArray(state.players)) return EMPTY_RESULT
@@ -28,6 +37,8 @@ export function buildPlayerSessionSourceFromGameState(state) {
     if (typeof player.uuid !== "string" || player.uuid.length === 0) return EMPTY_RESULT
     if (typeof player.nickname !== "string" || player.nickname.trim().length === 0) return EMPTY_RESULT
     if (typeof player.alive !== "boolean") return EMPTY_RESULT
+    if (!Number.isInteger(player.themeIndex)) return EMPTY_RESULT
+    if (player.themeIndex < 0 || player.themeIndex >= INGAME_PLAYER_THEME_PALETTE_SIZE) return EMPTY_RESULT
     if (seenUuids.has(player.uuid)) return EMPTY_RESULT
     seenUuids.add(player.uuid)
   }
@@ -59,7 +70,13 @@ export function buildPlayerSessionSourceFromGameState(state) {
   const allyIds = self.role === "JOKER" ? new Set(self.allies) : null
 
   const sourcePlayers = state.players.map((player) => {
-    const entry = { id: player.uuid, name: player.nickname, connected: true, alive: player.alive }
+    const entry = {
+      id: player.uuid,
+      name: player.nickname,
+      connected: true,
+      alive: player.alive,
+      themeIndex: player.themeIndex,
+    }
     // 본인 항목에만 role/team을 연결한다. 다른 참가자 항목에는 role/team 키 자체를 만들지
     // 않는다(UNKNOWN 같은 가짜 값도 채우지 않음) — 비밀 유지.
     if (player.uuid === self.uuid) {

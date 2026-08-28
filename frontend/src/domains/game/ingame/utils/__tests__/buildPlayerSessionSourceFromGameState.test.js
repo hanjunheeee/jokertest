@@ -8,8 +8,8 @@ function validState(overrides = {}) {
     phase: "ROLE_REVEAL",
     dayIndex: 0,
     players: [
-      { uuid: "u1", nickname: "호스트", alive: true },
-      { uuid: "u2", nickname: "참가자", alive: true },
+      { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 3 },
+      { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 7 },
     ],
     self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: [] },
     ...overrides,
@@ -23,10 +23,52 @@ test("정상 입력: uuid→id, nickname→name, connected:true, alive:true로 �
     name: "호스트",
     connected: true,
     alive: true,
+    themeIndex: 3,
     role: "JOKER",
     team: "JOKER",
   })
-  assert.deepEqual(result.sourcePlayers[1], { id: "u2", name: "참가자", connected: true, alive: true })
+  assert.deepEqual(result.sourcePlayers[1], {
+    id: "u2",
+    name: "참가자",
+    connected: true,
+    alive: true,
+    themeIndex: 7,
+  })
+})
+
+test("서버 themeIndex가 모든 참가자 항목에 그대로 전달된다(클라이언트 추첨 없음)", () => {
+  const result = buildPlayerSessionSourceFromGameState(validState())
+  assert.deepEqual(
+    result.sourcePlayers.map((p) => [p.id, p.themeIndex]),
+    [["u1", 3], ["u2", 7]],
+  )
+})
+
+test("players 원소에 themeIndex 키가 없으면 EMPTY_RESULT다(fail-closed)", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true },
+        { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 7 },
+      ],
+    }),
+  )
+  assert.equal(result.sourcePlayers, null)
+  assert.equal(result.localPlayerId, null)
+})
+
+test("themeIndex가 정수가 아니거나 팔레트 범위 밖이면 EMPTY_RESULT다", () => {
+  for (const badThemeIndex of ["3", 1.5, null, NaN, -1, 10]) {
+    const result = buildPlayerSessionSourceFromGameState(
+      validState({
+        players: [
+          { uuid: "u1", nickname: "호스트", alive: true, themeIndex: badThemeIndex },
+          { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 7 },
+        ],
+      }),
+    )
+    assert.equal(result.sourcePlayers, null)
+  }
 })
 
 test("self.uuid가 localPlayerId로 그대로 전달된다", () => {
@@ -232,9 +274,9 @@ test("allies에 있는 uuid의 sourcePlayers 항목에는 isAlly:true가 붙고,
   const result = buildPlayerSessionSourceFromGameState(
     validState({
       players: [
-        { uuid: "u1", nickname: "호스트", alive: true },
-        { uuid: "u2", nickname: "동료", alive: true },
-        { uuid: "u3", nickname: "시민", alive: true },
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0 },
+        { uuid: "u2", nickname: "동료", alive: true, themeIndex: 1 },
+        { uuid: "u3", nickname: "시민", alive: true, themeIndex: 2 },
       ],
       self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u2"] },
     }),
@@ -251,10 +293,10 @@ test("동료가 2명 이상이면 각 동료 uuid 모두에 isAlly:true가 붙�
   const result = buildPlayerSessionSourceFromGameState(
     validState({
       players: [
-        { uuid: "u1", nickname: "호스트", alive: true },
-        { uuid: "u2", nickname: "동료B", alive: true },
-        { uuid: "u3", nickname: "동료C", alive: true },
-        { uuid: "u4", nickname: "시민", alive: true },
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0 },
+        { uuid: "u2", nickname: "동료B", alive: true, themeIndex: 1 },
+        { uuid: "u3", nickname: "동료C", alive: true, themeIndex: 2 },
+        { uuid: "u4", nickname: "시민", alive: true, themeIndex: 3 },
       ],
       self: { uuid: "u1", nickname: "호스트", role: "JOKER", team: "JOKER", allies: ["u2", "u3"] },
     }),

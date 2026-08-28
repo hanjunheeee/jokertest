@@ -15,8 +15,9 @@ import InGameChatContent from "./InGameChatContent.jsx"
  * 인게임 채팅 — 탁자 중앙 상시 표시 + 클로즈업 오버레이
  *
  * 어느 채팅을 보여줄지는 canonical 상태에서만 유도한다(사용자가 고르는 채널 선택기는 없다):
- * 생존한 JOKER의 NIGHT이면 JOKER 비밀 채팅, 그 외에는 공개 DAY/사망자 전용 채팅
- * (useInGameGameChatSession이 self.alive로 두 채널을 다시 가른다).
+ * JOKER의 NIGHT이면 생사와 무관하게 JOKER 비밀 채팅(죽은 광대의 특례 — isJokerNightChatEligible
+ * 참고), 그 외에는 공개 DAY/사망자 전용 채팅(useInGameGameChatSession이 self.alive와 phase로
+ * 두 채널을 다시 가르고, 밤의 사망자에게는 어느 쪽도 열지 않는다).
  */
 export default function InGameChatShell() {
   // 채팅창을 크게 보는 오버레이가 열려 있는지 표시합니다.

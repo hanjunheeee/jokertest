@@ -34,7 +34,12 @@ function isNonEmptyString(value) {
  * 생략된 phase별 결과 필드(nightResult/dayVoteResolution/tribunal/winResult)는 이전 값을
  * 이어받지 않고 명시적으로 null로 비운다 — stale 데이터가 새 phase로 새어 들어가지 않게 한다.
  * 모든 중첩 구조는 response에서 필드 단위로 새로 만들어 반환하므로, 호출부가 이후 response를
- * 변형해도 store에는 영향이 없다.
+ * 변형해도 store에는 영향이 없다. 예외는 players[].themeIndex 하나다 — 스냅샷 payload에 없는
+ * 표시 색상이라 기존 current 값을 uuid로 이어받는다(아래 조립부 주석 참고).
+ * @param {object} current - 현재 store 상태(gameId/state를 신뢰 경계로 쓴다)
+ * @param {object} response - get_session_snapshot 응답(신뢰하지 않는 외부 입력)
+ * @flow 형태·소유권·roster·self·phase별 결과 필드를 차례로 검증하고, 하나라도 어긋나면 즉시
+ *       current를 그대로 돌려준다(부분 반영 없음) — 전부 통과한 뒤에만 새 state를 조립한다.
  */
 export function applySessionSnapshotPure(current, response) {
   if (response === null || typeof response !== "object" || Array.isArray(response)) return current
@@ -192,11 +197,23 @@ export function applySessionSnapshotPure(current, response) {
   // ENDED인 스냅샷을 다시 적용하는 것은 막지 않는다(멱등 재적용 허용).
   if (current.state.phase === "ENDED" && response.phase !== "ENDED") return current
 
+  // 스냅샷 payload에는 표시 색상(themeIndex)이 없다 — game_started 한 곳에서만 내려오는
+  // 값이라 여기서 roster를 새로 조립할 때 기존 store 값을 uuid로 이어받지 않으면 재접속
+  // 하이드레이션마다 색이 사라진다. roster uuid 집합 일치는 위에서 이미 강제했으므로 정상
+  // 경로에서는 항상 찾을 수 있고, 유효한 정수가 없으면 키 자체를 만들지 않는다
+  // (buildPlayerSessionSourceFromGameState가 fail-closed로 preview fallback을 준다).
+  const themeIndexByUuid = new Map(
+    (current.state.players ?? [])
+      .filter((p) => Number.isInteger(p?.themeIndex))
+      .map((p) => [p.uuid, p.themeIndex]),
+  )
+
   const nextPlayers = response.players.map((p) => ({
     uuid: p.uuid,
     nickname: p.nickname,
     alive: p.isAlive,
     isConnected: p.isConnected,
+    ...(themeIndexByUuid.has(p.uuid) ? { themeIndex: themeIndexByUuid.get(p.uuid) } : {}),
   }))
 
   const nextSelf = {
