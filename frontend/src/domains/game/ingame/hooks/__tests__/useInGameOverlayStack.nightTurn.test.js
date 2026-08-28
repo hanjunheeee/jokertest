@@ -203,7 +203,7 @@ test("역할 턴 안내를 닫아도 다음 역할이 이어지지 않고 소켓
   assert.equal(fake.emitCalls.length, emitsBefore, "닫기는 어떤 emit도 하지 않는다")
   assert.equal(fake.emitWithAckCalls.length, acksBefore, "닫기는 역할 확인 ack도 보내지 않는다")
 
-  // 닫은 뒤 같은 밤이 반복 관측돼도 의사·경호원·마녀사냥꾼 안내가 이어지지 않는다.
+  // 닫은 뒤 같은 밤이 반복 관측돼도 의사·경비원·마녀사냥꾼 안내가 이어지지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   assert.equal(result.current.nightTurn.open, false)

@@ -18,7 +18,7 @@ const INGAME_ROLE_REVEAL_DISPLAY = Object.freeze({
     description: "밤마다 한 명을 지목해 광대의 공격으로부터 보호할 수 있습니다.",
   }),
   GUARD: Object.freeze({
-    name: "경비대",
+    name: "경비원",
     teamLabel: "시민 진영",
     description: "밤마다 한 명을 지목해 정체(광대 여부)를 조사할 수 있습니다.",
   }),

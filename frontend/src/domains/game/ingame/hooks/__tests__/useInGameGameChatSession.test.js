@@ -287,7 +287,7 @@ test("생존자의 NIGHT에서는 공개 채팅을 보낼 수 없다(emit 없음
   hook.unmount()
 })
 
-test("사망자는 NIGHT에서도 보낼 수 있다(사망자 전용 채팅)", () => {
+test("사망자는 NIGHT에 보지도 보내지도 못한다(밤 사망자 채팅 차단)", () => {
   seedStore({ phase: "NIGHT", alive: false })
   const fake = createFakeChatSocket()
   setFakeSocket(fake.socket)
@@ -296,8 +296,14 @@ test("사망자는 NIGHT에서도 보낼 수 있다(사망자 전용 채팅)", (
   act(() => hook.result.current.setDraft("밤의 사망자 대화"))
   act(() => hook.result.current.send())
 
-  assert.equal(fake.emitWithAckCalls.length, 1)
-  assert.deepEqual(fake.emitWithAckCalls[0].payload, { gameId: GAME_ID, text: "밤의 사망자 대화" })
+  // 밤의 사망자에게는 열린 채널이 없다 — 입력은 반영되지 않고 emit도 일어나지 않는다.
+  assert.equal(fake.emitWithAckCalls.length, 0)
+  assert.equal(hook.result.current.draft, "")
+
+  // 낮에 오간 DEAD 메시지가 방송돼도 밤 동안은 화면에 남지 않는다(수신 게이팅).
+  const dead = broadcast({ channel: "DEAD", id: "night-dead" })
+  act(() => fake.socket.trigger(dead.event, dead.payload))
+  assert.deepEqual(hook.result.current.messages, [])
 
   hook.unmount()
 })
@@ -566,8 +572,11 @@ test("DAY 오류가 남아있는 상태로 사망해도 DEAD 화면에는 오류
   })
   assert.equal(hook.result.current.error, "요청을 처리할 수 없습니다.")
 
+  // 사망 전이는 낮에서 관측한다 — 밤에는 사망자에게 열린 채널이 아예 없어 전송 계약을 볼 수
+  // 없다(밤 차단은 "사망자는 NIGHT에 보지도 보내지도 못한다"가 따로 고정한다). 낮의 DEAD 전송
+  // 가능 여부는 이 슬라이스에서 바뀌지 않았다.
   await act(async () => {
-    seedStore({ phase: "NIGHT", alive: false })
+    seedStore({ phase: "DAY", alive: false })
     await flushMicrotasks()
   })
 

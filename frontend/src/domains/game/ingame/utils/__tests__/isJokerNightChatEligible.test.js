@@ -22,7 +22,7 @@ function jokerState({ phase = "NIGHT", team = "JOKER", alive = true } = {}) {
   }
 }
 
-test("isJokerNightChatEligible: phase가 NIGHT이고 생존한 self.team이 JOKER면 true다", () => {
+test("isJokerNightChatEligible: phase가 NIGHT이고 self.team이 JOKER면 true다", () => {
   assert.equal(isJokerNightChatEligible(jokerState()), true)
 })
 
@@ -34,13 +34,14 @@ test("isJokerNightChatEligible: phase가 ROLE_REVEAL이고 self.team이 JOKER여
   assert.equal(isJokerNightChatEligible(jokerState({ phase: "ROLE_REVEAL" })), false)
 })
 
-test("isJokerNightChatEligible: 사망한 JOKER는 NIGHT여도 false다(사망 후 JOKER 채팅 송수신 불가)", () => {
-  assert.equal(isJokerNightChatEligible(jokerState({ alive: false })), false)
+test("isJokerNightChatEligible: 사망한 JOKER도 NIGHT이면 true다(죽은 광대만의 확정 특례)", () => {
+  // 밤에 사망자의 DEAD 채널은 닫히지만(inGameChatChannel), 죽은 광대의 JOKER 채널은 열린다.
+  assert.equal(isJokerNightChatEligible(jokerState({ alive: false })), true)
 })
 
 test("isJokerNightChatEligible: canonical roster에서 생존 여부를 확인할 수 없으면 false다(fail-closed)", () => {
-  // roster 자체가 없거나 self가 roster에 없으면 alive를 알 수 없다 — 이때는 JOKER 채팅을
-  // 열지 않는다(서버도 사망한 JOKER의 제출을 NOT_ELIGIBLE로 거부한다).
+  // roster 자체가 없거나 self가 roster에 없으면 canonical state를 신뢰할 수 없다 — 생사와
+  // 무관하게 자격을 주는 규칙이어도 "state를 아직 못 믿는 상태"에서는 열지 않는다.
   assert.equal(isJokerNightChatEligible({ phase: "NIGHT", self: { uuid: "me", team: "JOKER" } }), false)
   assert.equal(
     isJokerNightChatEligible({

@@ -27,6 +27,10 @@ export const useInGameStore = create((set) => ({
   // 백엔드 buildGameStartedPayload는 alive를 보내지 않으므로(계약 불변) 스토어가 정규화
   // 시점에 기본값을 채운다 — 신규 세션은 항상 전원 생존 상태로 시작한다는 game-core의
   // assertValidSessionForCommit 불변조건과 대응한다.
+  //
+  // players[].themeIndex(표시 색상)는 반대다 — 서버가 게임당 한 번 배정해 모든 참가자에게
+  // 같은 값을 내려주므로 스토어는 정규화 없이 그대로 통과시키고(아래 {...p} 스프레드),
+  // 값의 유효성은 소비 지점인 buildPlayerSessionSourceFromGameState가 fail-closed로 검증한다.
   setGamePayload: ({ gameId, state }) =>
     set({
       gameId: gameId ?? state?.id ?? null,

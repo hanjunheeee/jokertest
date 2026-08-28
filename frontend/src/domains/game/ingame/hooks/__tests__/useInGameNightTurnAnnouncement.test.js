@@ -231,7 +231,7 @@ test("광대 안내를 닫아도 이후 역할 안내가 저절로 뜨지 않고
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
 
-  assert.equal(result.current.open, false, "의사·경호원·마녀사냥꾼 안내가 로컬로 이어지지 않는다")
+  assert.equal(result.current.open, false, "의사·경비원·마녀사냥꾼 안내가 로컬로 이어지지 않는다")
   assert.equal(result.current.announcement, null)
 
   // canonical 역할 턴은 여전히 JOKER이고, 밤 행동 UI 판정(InGameActionPanel이 그대로 쓰는
@@ -290,7 +290,7 @@ test("canonical 역할 턴이 DOCTOR로 바뀌면 의사 안내가 정확히 한
   unmount()
 })
 
-test("의사 안내를 닫아도 경호원 안내가 로컬로 뜨지 않는다", () => {
+test("의사 안내를 닫아도 경비원 안내가 로컬로 뜨지 않는다", () => {
   resetStores()
   const { result, unmount } = mountAtRoleReveal()
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
@@ -303,7 +303,7 @@ test("의사 안내를 닫아도 경호원 안내가 로컬로 뜨지 않는다"
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
 
   assert.equal(result.current.open, false)
-  assert.equal(result.current.announcement, null, "경호원 안내를 프런트가 만들어내지 않는다")
+  assert.equal(result.current.announcement, null, "경비원 안내를 프런트가 만들어내지 않는다")
 
   unmount()
 })
@@ -335,7 +335,7 @@ test("이후 canonical 역할 턴 변경마다 그에 대응하는 안내 하나
   assert.deepEqual(seen, [
     ["JOKER", "광대의 시간입니다"],
     ["DOCTOR", "의사의 시간입니다"],
-    ["GUARD", "경호원의 시간입니다"],
+    ["GUARD", "경비원의 시간입니다"],
     ["WITCH_HUNTER", "마녀사냥꾼의 시간입니다"],
   ])
 

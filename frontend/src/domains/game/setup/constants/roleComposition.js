@@ -19,7 +19,7 @@ export const CUSTOM_ROLE_KEYS = Object.freeze(["JOKER", "DOCTOR", "GUARD", "WITC
 export const CUSTOM_ROLE_LABELS = Object.freeze({
   JOKER: "광대",
   DOCTOR: "의사",
-  GUARD: "경비대",
+  GUARD: "경비원",
   WITCH_HUNTER: "마녀사냥꾼",
 })
 
@@ -27,7 +27,7 @@ export const CUSTOM_ROLE_LABELS = Object.freeze({
 export const CITIZEN_ROLE_LABEL = "시민"
 
 /**
- * 특수직업(광대·의사·경비대·마녀사냥꾼) 공통 인원 상한. backend/game-core/roleComposition.js의
+ * 특수직업(광대·의사·경비원·마녀사냥꾼) 공통 인원 상한. backend/game-core/roleComposition.js의
  * MAX_SPECIAL_ROLE_COUNT와 같은 값이어야 한다(수동 동기화). 시민은 정원에서 파생되는 잔여
  * 인원이라 상한이 없다(0명도 정상이다).
  */

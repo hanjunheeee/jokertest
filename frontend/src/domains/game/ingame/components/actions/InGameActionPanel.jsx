@@ -320,17 +320,24 @@ export default function InGameActionPanel({
           {resolveNightError ? (
             <p className="text-[0.68rem] text-red-300">{resolveNightError}</p>
           ) : null}
-          {nightActionResult ? (
-            <p className="text-[0.68rem] text-[#e9d6ba]">
-              개인 결과: {JSON.stringify(
-                Object.fromEntries(
-                  Object.entries(nightActionResult).filter(
-                    ([key]) => key !== "gameId" && key !== "dayIndex",
-                  ),
+        </div>
+      ) : null}
+
+      {/* 개인 결과(WH·경비원의 비공개 조사)는 phase와 무관한 독립 섹션이다 — NIGHT 블록 안에
+          두면 낮으로 넘어가는 순간 화면에서 사라지지만, 조사 결과는 그 낮 동안 확인할 수
+          있어야 한다. 어느 밤의 결과인지 헷갈리지 않도록 dayIndex를 라벨에 함께 노출하고,
+          본문에서는 기존대로 gameId/dayIndex를 걸러낸다. */}
+      {nightActionResult ? (
+        <div className={INGAME_ACTION_SECTION_CLASS}>
+          <p className="text-[0.68rem] text-[#e9d6ba]">
+            개인 결과(제 {nightActionResult.dayIndex}일 밤): {JSON.stringify(
+              Object.fromEntries(
+                Object.entries(nightActionResult).filter(
+                  ([key]) => key !== "gameId" && key !== "dayIndex",
                 ),
-              )}
-            </p>
-          ) : null}
+              ),
+            )}
+          </p>
         </div>
       ) : null}
 

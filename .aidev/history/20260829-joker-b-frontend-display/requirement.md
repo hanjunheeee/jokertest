@@ -1,6 +1,7 @@
----
+﻿---
 approval: plan
 setup: npm ci --prefix backend
+max_turns: implement=160
 ---
 
 # joker-B · 프론트 표시·정보 전달 수정
@@ -32,3 +33,12 @@ setup: npm ci --prefix backend
 ## 자잘한 규칙
 
 - 변경 범위: frontend ingame hooks·utils, 명칭 등장 지점, backend는 payload 한 곳만
+
+## 구현 메모 (사유 선언만 남았다 — 코드는 완성)
+
+최종 응답에 아래 절을 정확히 이 형식으로 포함하라. 경로 구분자는 반드시 '/', 역슬래시 금지:
+
+## 범위 밖 수정 사유
+| 경로 | 사유 |
+| --- | --- |
+| frontend/src/domains/game/ingame/hooks/__tests__/useInGameGameChatSession.test.js | 밤 사망자 채팅 차단(요구 3)으로 채널 수신 게이팅 계약이 바뀌어 기존 테스트 기대값 갱신 필요 |
