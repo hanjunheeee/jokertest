@@ -107,6 +107,7 @@ test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영
   const response = baseResponse({
     phase: "DAY",
     dayIndex: 1,
+    dayPhase: "DAY_DISCUSSION",
     players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
     nightResult: { dayIndex: 1, victimUuid: "p3" },
   })
@@ -115,6 +116,7 @@ test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영
 
   assert.notEqual(result, current)
   assert.equal(result.state.phase, "DAY")
+  assert.equal(result.state.dayPhase, "DAY_DISCUSSION")
   assert.deepEqual(result.state.nightResult, { dayIndex: 1, victimUuid: "p3" })
   assert.equal(result.state.players.find((p) => p.uuid === "p3").alive, false)
   assert.equal(result.state.dayVoteResolution, null)
@@ -196,9 +198,57 @@ test("applySessionSnapshotPure: 이미 ENDED인 store에 동일 phase의 ENDED �
   assert.equal(result.state.phase, "ENDED")
 })
 
+// --- dayPhase(낮 하위 구간) 반영 ---
+
+test("applySessionSnapshotPure: DAY_VOTE 스냅샷은 dayPhase를 그대로 복원한다(재접속해도 투표 화면이 유지된다)", () => {
+  const current = baseCurrent({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION" })
+  const response = baseResponse({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_VOTE" })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.notEqual(result, current)
+  assert.equal(result.state.phase, "DAY")
+  assert.equal(result.state.dayPhase, "DAY_VOTE")
+})
+
+test("applySessionSnapshotPure: 낮이 아닌 스냅샷은 dayPhase를 null로 비운다", () => {
+  const current = baseCurrent({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_VOTE" })
+  const response = baseResponse({ phase: "NIGHT", dayIndex: 1 })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.notEqual(result, current)
+  assert.equal(result.state.dayPhase, null)
+})
+
 // --- 거부: 구조/신원/roster/self ---
 
 const rejectionCases = [
+  [
+    "phase가 DAY인데 dayPhase 키가 없으면 거부된다",
+    () => baseCurrent({ phase: "NIGHT", dayIndex: 1 }),
+    () => baseResponse({ phase: "DAY", dayIndex: 1 }),
+  ],
+  [
+    "phase가 DAY인데 dayPhase가 미지값이면 거부된다",
+    () => baseCurrent({ phase: "NIGHT", dayIndex: 1 }),
+    () => baseResponse({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_LUNCH" }),
+  ],
+  [
+    "phase가 DAY인데 dayPhase가 null이면 거부된다",
+    () => baseCurrent({ phase: "NIGHT", dayIndex: 1 }),
+    () => baseResponse({ phase: "DAY", dayIndex: 1, dayPhase: null }),
+  ],
+  [
+    "phase가 NIGHT인데 dayPhase 키가 있으면 거부된다(양방향 불변조건)",
+    () => baseCurrent({ phase: "DAY", dayIndex: 1 }),
+    () => baseResponse({ phase: "NIGHT", dayIndex: 1, dayPhase: "DAY_VOTE" }),
+  ],
+  [
+    "phase가 ROLE_REVEAL인데 dayPhase 키가 있으면 거부된다",
+    () => baseCurrent(),
+    () => baseResponse({ dayPhase: "DAY_DISCUSSION" }),
+  ],
   ["response가 null이면 거부된다", () => baseCurrent(), () => null],
   ["response가 배열이면 거부된다", () => baseCurrent(), () => ["a", "b"]],
   ["response.ok가 true가 아니면 거부된다", () => baseCurrent(), () => baseResponse({ ok: false })],
@@ -325,12 +375,12 @@ const rejectionCases = [
   [
     "nightResult.dayIndex가 response.dayIndex와 다르면 거부된다",
     () => baseCurrent({ phase: "NIGHT", dayIndex: 1 }),
-    () => baseResponse({ phase: "DAY", dayIndex: 1, nightResult: { dayIndex: 0, victimUuid: null } }),
+    () => baseResponse({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION", nightResult: { dayIndex: 0, victimUuid: null } }),
   ],
   [
     "nightResult.victimUuid가 roster에 없으면 거부된다",
     () => baseCurrent({ phase: "NIGHT", dayIndex: 1 }),
-    () => baseResponse({ phase: "DAY", dayIndex: 1, nightResult: { dayIndex: 1, victimUuid: "phantom" } }),
+    () => baseResponse({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION", nightResult: { dayIndex: 1, victimUuid: "phantom" } }),
   ],
   [
     "dayVoteResolution.tribunalTargetUuid가 roster에 없으면 거부된다",
@@ -377,7 +427,7 @@ const rejectionCases = [
   [
     "ENDED가 아닌데 winResult가 있으면 거부된다",
     () => baseCurrent({ phase: "NIGHT", dayIndex: 1 }),
-    () => baseResponse({ phase: "DAY", dayIndex: 1, winResult: { winner: "CITIZEN" } }),
+    () => baseResponse({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION", winResult: { winner: "CITIZEN" } }),
   ],
   [
     "winResult.winner가 알 수 없는 값이면 거부된다",
@@ -387,7 +437,7 @@ const rejectionCases = [
   [
     "이미 ENDED인 store에 활성 phase 스냅샷을 적용하면 거부된다(종료 롤백 금지)",
     () => baseCurrent({ phase: "ENDED", dayIndex: 1, winResult: { winner: "CITIZEN" } }),
-    () => baseResponse({ phase: "DAY", dayIndex: 2 }),
+    () => baseResponse({ phase: "DAY", dayIndex: 2, dayPhase: "DAY_DISCUSSION" }),
   ],
   [
     "깊이 중첩된 필드 하나가 잘못되어도(tribunal.counts.guilty 음수) 전체 payload가 거부된다",
@@ -430,6 +480,7 @@ test("applySessionSnapshotPure: 반영 이후 원본 response의 중첩 구조�
   const response = baseResponse({
     phase: "DAY",
     dayIndex: 1,
+    dayPhase: "DAY_DISCUSSION",
     players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
     nightResult: { dayIndex: 1, victimUuid: "p3" },
   })

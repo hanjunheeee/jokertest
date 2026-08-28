@@ -14,6 +14,7 @@ import { useInGameDayVoteSubmit } from "./useInGameDayVoteSubmit.js"
 import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
 import { useInGameResolveNight } from "./useInGameResolveNight.js"
 import { useInGameTribunalVoteResolve } from "./useInGameTribunalVoteResolve.js"
+import { useInGameDayDiscussionReady } from "./useInGameDayDiscussionReady.js"
 
 const DAY_VOTE_RESOLVE_TIMEOUT_MS = 5000
 
@@ -107,6 +108,9 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
 
   const myRole = gameState?.self?.role
   const dayIndex = gameState?.dayIndex
+  // 낮 하위 구간(DAY_DISCUSSION | DAY_VOTE). phase === "DAY"일 때만 의미가 있으므로 아래 모든
+  // 게이트는 phase와 dayPhase 두 조건을 반드시 함께 본다.
+  const dayPhase = gameState?.dayPhase
 
   // ??寃뚯엫 ?먮뒗 ?ㅼ쓬 dayIndex濡??꾪솚?섎㈃ ?댁쟾 DAY???좏깮媛믪씠 ??而⑦뀓?ㅽ듃濡??덉뼱?섍?吏
   // ?딄쾶 ?좏깮留?珥덇린?뷀빀?덈떎(?쒖텧 ?곹깭 由ъ뀑? useInGameDayVoteSubmit??controller媛 ?대떦).
@@ -219,10 +223,13 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const isGameEnded = gameState?.phase === "ENDED"
 
   const dayVoteResolveLocked = dayVoteResolveStatus !== "idle" || interactionBlocked
+  // 토론 중(DAY_DISCUSSION)에는 투표·기권 컨트롤을 잠근다 — 서버 submitDayVote가 토론 중 제출을
+  // INVALID_DAY_PHASE로 거부하므로, 이 게이트는 그 거부를 UI에서 미리 반영하는 것이다.
   const dayVoteControlsEnabled =
     !interactionBlocked &&
     !isGameEnded &&
     gameState?.phase === "DAY" &&
+    dayPhase === "DAY_VOTE" &&
     isSessionPlayerAlive(localSessionPlayer) &&
     !dayVoteResolveLocked
   // ?먯젙??吏꾪뻾 以묒씠嫄곕굹(resolving) ?대? ?앸궗?쇰㈃(resolved) 諛??됰룞 ?낅젰쨌?먯젙 踰꾪듉???④퍡
@@ -251,7 +258,18 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     dayVoteSubmit.submitDayVote(null)
   }
 
+  // 낮 집계는 투표가 열린 뒤에만 요청할 수 있다 — 서버 prepareDayVoteResolution이 토론 중
+  // 집계를 INVALID_DAY_PHASE로 거부하므로(생존자 1명 세션에서 0표 집계가 통과하는 경로 차단),
+  // 그 거부를 UI에서 미리 반영한다.
+  const dayVoteResolveControlsEnabled =
+    !interactionBlocked &&
+    !isGameEnded &&
+    gameState?.phase === "DAY" &&
+    dayPhase === "DAY_VOTE" &&
+    dayVoteResolveStatus === "idle"
+
   const resolveDayVote = () => {
+    if (!dayVoteResolveControlsEnabled) return
     if (dayVoteAckingRef.current || dayVoteResolveStatus !== "idle") return
     const requestSocket = getSocket()
     if (!requestSocket || !requestSocket.connected) {
@@ -298,6 +316,17 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
         }
       })
   }
+
+  // 토론 페이즈의 "투표 시작 준비" 배선. 요청 자체(늦은 응답 방어 포함)는 전용 훅이 맡고,
+  // 여기서는 언제 버튼을 열지만 판정한다 — 살아있는 참가자가 토론 중에 아직 준비하지 않았을 때만.
+  const dayReady = useInGameDayDiscussionReady()
+  const dayReadyControlsEnabled =
+    !interactionBlocked &&
+    !isGameEnded &&
+    gameState?.phase === "DAY" &&
+    dayPhase === "DAY_DISCUSSION" &&
+    isSessionPlayerAlive(localSessionPlayer) &&
+    dayReady.status === "idle"
 
   const tribunalVoteSubmit = useInGameTribunalVoteSubmit()
 
@@ -362,8 +391,15 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     nightActionError: nightActionSubmit.error,
     selectedDayVoteTargetId,
     setSelectedDayVoteTargetId,
+    dayPhase,
     dayVoteTargets,
     dayVoteControlsEnabled,
+    dayReadyStatus: dayReady.status,
+    dayReadyError: dayReady.error,
+    dayReadyCount: dayReady.readyCount,
+    dayReadyRequired: dayReady.requiredCount,
+    dayReadyControlsEnabled,
+    submitDayReady: dayReady.submitReady,
     submitDayVote,
     abstainDayVote,
     dayVoteStatus: dayVoteSubmit.status,
@@ -375,6 +411,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     dayVoteResolveError,
     dayVoteResolution,
     dayVoteResolveLocked,
+    dayVoteResolveControlsEnabled,
     submitTribunalVote: tribunalVoteSubmit.submitTribunalVote,
     tribunalVoteStatus: tribunalVoteSubmit.status,
     tribunalVoteError: tribunalVoteSubmit.error,

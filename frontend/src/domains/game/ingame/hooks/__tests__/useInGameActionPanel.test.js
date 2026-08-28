@@ -507,7 +507,58 @@ test("useInGameActionPanel: ENDED면 이전이라면 컨트롤을 열어줬을 r
   assert.equal(captured.tribunalResolveControlsEnabled, false)
 })
 
-test("useInGameActionPanel: 비종료 phase(DAY)에서 생존 상태면 dayVoteControlsEnabled는 여전히 true다(positive control)", () => {
+test("useInGameActionPanel: 비종료 phase(DAY)에서 투표 페이즈·생존 상태면 dayVoteControlsEnabled는 여전히 true다(positive control)", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "DAY",
+      dayIndex: 1,
+      dayPhase: "DAY_VOTE",
+      self: { role: "CITIZEN", uuid: "p1" },
+      players: [{ uuid: "p1", alive: true }],
+      events: [],
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: [{ id: "p1", nickname: "P1", status: "alive" }],
+    localPlayerId: "p1",
+  })
+
+  assert.equal(captured.dayVoteControlsEnabled, true)
+  assert.equal(captured.dayVoteResolveControlsEnabled, true)
+  // 투표가 열린 뒤에는 준비 버튼이 닫힌다(토론 전용 컨트롤).
+  assert.equal(captured.dayReadyControlsEnabled, false)
+})
+
+test("useInGameActionPanel: 토론 페이즈(DAY_DISCUSSION)에서는 투표·집계가 잠기고 준비 버튼만 열린다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "DAY",
+      dayIndex: 1,
+      dayPhase: "DAY_DISCUSSION",
+      self: { role: "CITIZEN", uuid: "p1" },
+      players: [{ uuid: "p1", alive: true }],
+      events: [],
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: [{ id: "p1", nickname: "P1", status: "alive" }],
+    localPlayerId: "p1",
+  })
+
+  assert.equal(captured.dayPhase, "DAY_DISCUSSION")
+  assert.equal(captured.dayVoteControlsEnabled, false)
+  assert.equal(captured.dayVoteResolveControlsEnabled, false)
+  assert.equal(captured.dayReadyControlsEnabled, true)
+  assert.equal(captured.dayReadyStatus, "idle")
+})
+
+test("useInGameActionPanel: dayPhase가 없는(알 수 없는) DAY state에서는 투표·집계·준비가 모두 잠긴다", () => {
   useInGameStore.setState({
     gameId: "game-1",
     state: {
@@ -525,7 +576,32 @@ test("useInGameActionPanel: 비종료 phase(DAY)에서 생존 상태면 dayVoteC
     localPlayerId: "p1",
   })
 
-  assert.equal(captured.dayVoteControlsEnabled, true)
+  assert.equal(captured.dayVoteControlsEnabled, false)
+  assert.equal(captured.dayVoteResolveControlsEnabled, false)
+  assert.equal(captured.dayReadyControlsEnabled, false)
+})
+
+test("useInGameActionPanel: 토론 페이즈여도 사망자에게는 준비 버튼이 열리지 않는다", () => {
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "DAY",
+      dayIndex: 1,
+      dayPhase: "DAY_DISCUSSION",
+      self: { role: "CITIZEN", uuid: "p1" },
+      players: [{ uuid: "p1", alive: false }],
+      events: [],
+    },
+    error: null,
+  })
+
+  const captured = renderActionPanelProbe({
+    players: [{ id: "p1", nickname: "P1", status: "dead" }],
+    localPlayerId: "p1",
+  })
+
+  assert.equal(captured.dayReadyControlsEnabled, false)
+  assert.equal(captured.dayVoteControlsEnabled, false)
 })
 
 // ---------------------------------------------------------------------------

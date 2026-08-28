@@ -14,6 +14,10 @@ const KNOWN_PHASES = new Set(["ROLE_REVEAL", "NIGHT", "DAY", "TRIBUNAL", "ENDED"
 // canIncludeDayTribunalFields와 동일한 게이트) — nightResult/dayVoteResolution/tribunal
 // 모두 이 phase에서는 반드시 없어야 한다.
 const PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS = new Set(["ROLE_REVEAL", "NIGHT"])
+// 낮 하위 구간(game-core의 DAY_PHASES와 값이 일치해야 한다). dayPhase는 phase === "DAY"일
+// 때만 의미가 있으므로 스냅샷도 낮에서만 이 키를 싣는다 — winResult↔ENDED와 같은 양방향
+// 불변조건으로 검증한다.
+const KNOWN_DAY_PHASES = new Set(["DAY_DISCUSSION", "DAY_VOTE"])
 const DAY_VOTE_OUTCOMES = new Set(["ABSTAINED", "TIE", "TRIBUNAL"])
 const TRIBUNAL_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 
@@ -36,10 +40,12 @@ function isNonEmptyString(value) {
  * 모든 중첩 구조는 response에서 필드 단위로 새로 만들어 반환하므로, 호출부가 이후 response를
  * 변형해도 store에는 영향이 없다. 예외는 players[].themeIndex 하나다 — 스냅샷 payload에 없는
  * 표시 색상이라 기존 current 값을 uuid로 이어받는다(아래 조립부 주석 참고).
+ * 낮 하위 구간(dayPhase)도 같은 원칙으로 다룬다 — phase === 'DAY'인 스냅샷에서만 실리고,
+ * 그 외 phase로 복원할 때는 null로 비운다.
  * @param {object} current - 현재 store 상태(gameId/state를 신뢰 경계로 쓴다)
  * @param {object} response - get_session_snapshot 응답(신뢰하지 않는 외부 입력)
- * @flow 형태·소유권·roster·self·phase별 결과 필드를 차례로 검증하고, 하나라도 어긋나면 즉시
- *       current를 그대로 돌려준다(부분 반영 없음) — 전부 통과한 뒤에만 새 state를 조립한다.
+ * @flow 형태·소유권·roster·self·phase별 결과 필드·dayPhase를 차례로 검증하고, 하나라도 어긋나면
+ *       즉시 current를 그대로 돌려준다(부분 반영 없음) — 전부 통과한 뒤에만 새 state를 조립한다.
  */
 export function applySessionSnapshotPure(current, response) {
   if (response === null || typeof response !== "object" || Array.isArray(response)) return current
@@ -193,6 +199,17 @@ export function applySessionSnapshotPure(current, response) {
     return current
   }
 
+  // dayPhase 존재 여부와 phase==='DAY'는 winResult↔ENDED와 같은 양방향 불변조건이다 — 낮
+  // 스냅샷에는 반드시 알려진 하위 구간이 실려야 하고(없으면 재접속 클라이언트가 토론/투표를
+  // 구분하지 못해 그 낮에 갇힌다), 낮이 아닌 스냅샷에는 키 자체가 없어야 한다.
+  let dayPhase = null
+  if (response.phase === "DAY") {
+    if (!Object.hasOwn(response, "dayPhase") || !KNOWN_DAY_PHASES.has(response.dayPhase)) return current
+    dayPhase = response.dayPhase
+  } else if (Object.hasOwn(response, "dayPhase")) {
+    return current
+  }
+
   // 종료(ENDED) 확정 이후에는 어떤 스냅샷도 활성 phase로 되돌릴 수 없다(잠금). 동일하게
   // ENDED인 스냅샷을 다시 적용하는 것은 막지 않는다(멱등 재적용 허용).
   if (current.state.phase === "ENDED" && response.phase !== "ENDED") return current
@@ -229,6 +246,7 @@ export function applySessionSnapshotPure(current, response) {
     id: response.gameId,
     phase: response.phase,
     dayIndex: response.dayIndex,
+    dayPhase,
     players: nextPlayers,
     self: nextSelf,
     tribunal,
