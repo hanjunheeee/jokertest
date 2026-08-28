@@ -2389,6 +2389,48 @@ test('resolve_night: 사망한 GUARD에게는 night_action_result(개인 조사 
     assert.deepEqual(guardDelivered, [])
 })
 
+test('resolve_night: 보호로 막힌 암살 — night_action_result는 광대에게만 1건이고, 나머지에게는 사망 없는 밤으로만 보인다', () => {
+    const { session, io, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-blocked' })
+    const [targetUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, targetUuid)
+    gameSessionCore.submitNightAction(doctorUuid, session.id, targetUuid) // 같은 대상을 보호 → 암살 무효
+    gameSessionCore.submitNightAction(guardUuid, session.id, null)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+
+    // 실패 통지는 광대에게만, 정확히 1건이다 — 보호자·대상·사유는 payload 어디에도 없다.
+    const jokerDelivered = socketByUuid.get(jokerUuid).emitted.filter((e) => e.event === 'night_action_result')
+    assert.equal(jokerDelivered.length, 1)
+    assert.deepEqual(jokerDelivered[0].payload, {
+        gameId: session.id,
+        dayIndex: 0,
+        actionType: 'ASSASSINATE',
+        success: false,
+    })
+
+    // 의사·경비원·시민 전원에게는 개인 결과가 하나도 가지 않는다(경비원은 SKIP이었다).
+    for (const uuid of uuids) {
+        if (uuid === jokerUuid) continue
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_action_result')
+        assert.deepEqual(delivered, [], `${uuid}에게 개인 결과가 전달됐다`)
+    }
+
+    // 공개적으로는 사망 없는 밤이다 — 전원이 동일한 night_result_applied 1건만 받는다.
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1)
+        assert.equal(delivered[0].payload.victimUuid, null)
+        assert.deepEqual(delivered[0].payload.deathReveals, [])
+        for (const player of delivered[0].payload.players) assert.equal(player.alive, true)
+    }
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.players.get(targetUuid).alive, true)
+})
+
 test('resolve_night: 보호 안 된 유효 희생자 — night_result_applied가 참가자 전원(발신자 포함)에게 정확히 1건씩, payload가 buildNightResultAppliedPayload와 동일하다', () => {
     const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-1' })
     const [victimUuid] = citizenUuids

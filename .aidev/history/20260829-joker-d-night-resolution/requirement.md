@@ -1,6 +1,7 @@
 ---
 approval: plan
 setup: npm ci --prefix backend
+max_turns: implement=160
 ---
 
 # joker-D · 밤 해소 규칙 명세화

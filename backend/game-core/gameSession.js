@@ -980,6 +980,22 @@ function computeWitchHunterConfirmationResult(session, actorUuid) {
     return { targetId, role: targetPlayer.role }
 }
 
+/**
+ * 보호로 암살이 무산된 밤에 "생존한 JOKER 본인"에게만 가는 개인 통지의 canonical 형태를 만든다.
+ *
+ * 키는 정확히 두 개(actionType/success)이고, 보호자 uuid·보호자 역할·대상·사유는 어떤 필드에도
+ * 담지 않는다 — 광대가 알 수 있는 것은 "이번 밤의 암살이 성사되지 않았다"는 사실 하나뿐이다
+ * (다른 참가자에게는 사망 없는 밤으로만 보인다). actionType은 GUARD의 'INVESTIGATE',
+ * WITCH_HUNTER의 'CONFIRM'과 같은 계열의 동사이고, 소켓 계층은 privateResults에 항목이 있는
+ * 수신자에게만 night_action_result를 개별 emit하므로 전달 경로는 그대로 재사용된다.
+ *
+ * 매 호출마다 새 객체를 만들어 수신자별로 나눠 준다 — 소켓 계층이 이 객체를 spread해 payload에
+ * 담으므로, 하나를 공유하면 한 수신자 경로의 오염이 나머지에 전파될 수 있다.
+ */
+function buildAssassinationFailureNotice() {
+    return { actionType: 'ASSASSINATE', success: false }
+}
+
 // 자기 자신을 대상으로 지정할 수 있는 역할. DOCTOR(보호)만 허용한다 — GUARD가 자기 자신을
 // 지정하면 INVALID_TARGET으로 거부한다. JOKER의 자기 자신 대상은 team 검사에서 먼저 no-op으로
 // 처리되므로 이 Set까지 도달하지 않는다(아래 submitNightAction 참고). WITCH_HUNTER도 마찬가지로
@@ -1102,11 +1118,17 @@ function submitNightAction(uuid, gameId, targetId) {
  * 밤으로 판정된다.
  *
  * 성공 시 { ok:true, session, resolution } — resolution은 commitNightResolution에 그대로
- * 넘길 값입니다. privateResults는 생존한 GUARD/WITCH_HUNTER의 non-null 결과만 담는 Map이고
- * (SKIP/미제출은 entry 없음), JOKER/DOCTOR/CITIZEN은 애초에 이 Map에 등장하지 않습니다.
- * GUARD는 { actionType:'INVESTIGATE', targetId, role }, WITCH_HUNTER는
- * { actionType:'CONFIRM', targetId, role }이며 — 두 결과 모두 대상의 실제 role을 담습니다
- * (경비원 결과는 진영이 아니라 role이다 — 판정 4.3.1).
+ * 넘길 값입니다. privateResults는 생존한 GUARD/WITCH_HUNTER의 non-null 결과와, 보호로 암살이
+ * 막힌 밤의 생존 JOKER 실패 통지만 담는 Map이고(SKIP/미제출은 entry 없음), DOCTOR/CITIZEN은
+ * 애초에 이 Map에 등장하지 않습니다. GUARD는 { actionType:'INVESTIGATE', targetId, role },
+ * WITCH_HUNTER는 { actionType:'CONFIRM', targetId, role }이며 — 두 결과 모두 대상의 실제 role을
+ * 담습니다(경비원 결과는 진영이 아니라 role이다 — 판정 4.3.1). JOKER는
+ * { actionType:'ASSASSINATE', success:false } 하나뿐이고, 그 밤의 암살 대상이 보호 대상과
+ * 일치했을 때에만 만들어집니다 — 보호자·보호자 역할·대상·사유는 어떤 필드에도 담지 않는다는
+ * 것이 이 통지의 계약입니다(buildAssassinationFailureNotice).
+ *
+ * 한 참가자가 두 항목을 동시에 갖는 경우는 없습니다 — 역할은 서로 배타적이라 각 참가자는
+ * 위 세 분기 중 최대 하나에만 해당합니다.
  *
  * @param {string} uuid - 인증된 요청자 uuid
  * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
@@ -1158,10 +1180,12 @@ function prepareNightResolution(uuid, gameId) {
 
     const assassinationTargetId = tallyJokerAssassinationTarget(session)
     const protectedTargetIds = computeDoctorProtectionSet(session)
-    const pendingEliminationTargetId =
-        assassinationTargetId !== null && !protectedTargetIds.has(assassinationTargetId)
-            ? assassinationTargetId
-            : null
+    // 판정 순서 1단계 — "보호 대조"다. 이 대조는 사망 확정(commitNightResolution)보다 반드시
+    // 먼저 끝난다: 여기서 쓰는 보호 집합은 "아직 아무도 죽지 않은" 밤의 생존 의사들에게서 나온
+    // 것이고, 사망이 확정된 뒤의 잔여 효과 소멸은 3단계에서 별도로 일어난다.
+    const assassinationBlocked =
+        assassinationTargetId !== null && protectedTargetIds.has(assassinationTargetId)
+    const pendingEliminationTargetId = assassinationBlocked ? null : assassinationTargetId
 
     const privateResults = new Map()
     for (const player of session.players.values()) {
@@ -1174,6 +1198,13 @@ function prepareNightResolution(uuid, gameId) {
         } else if (player.role === 'WITCH_HUNTER' && isEligibleForNightAction('WITCH_HUNTER', session.dayIndex)) {
             const result = computeWitchHunterConfirmationResult(session, player.uuid)
             if (result !== null) privateResults.set(player.uuid, { actionType: 'CONFIRM', ...result })
+        } else if (player.role === 'JOKER' && assassinationBlocked) {
+            // 보호로 막힌 밤에만, 그리고 생존한 JOKER에게만 실패 통지를 만든다(루프 선두의 alive
+            // 필터가 사망한 JOKER를 이미 제외한다). 통지는 생존 JOKER 전원에게 간다 — 암살은
+            // tallyJokerAssassinationTarget이 집계하는 진영 단위 행동이라 "누가 그 대상에
+            // 투표했는지"로 수신자를 가르지 않는다. 암살 대상이 없는 밤(전원 SKIP·동률)에는
+            // assassinationBlocked가 false라 통지가 없다 — "실패"는 보호로 막힌 경우만 뜻한다.
+            privateResults.set(player.uuid, buildAssassinationFailureNotice())
         }
     }
 
@@ -1243,9 +1274,46 @@ function buildNightDeathReveals(resolution, victimUuids) {
 }
 
 /**
+ * 밤 해소 판정 순서의 3단계 — "사망자의 잔여 효과 소멸"이다. 이번 밤에 사망이 확정된 참가자가
+ * 남긴 밤 행동 엔트리(의사가 타인에게 건 보호, 경비원의 조사 지시 등)를 session.nightActions에서
+ * 제거하고, 실제로 지워진 actor uuid 목록을 돌려준다.
+ *
+ * 오늘의 스펙(킬 소스가 JOKER 하나뿐)에서는 이 소멸이 관측 가능한 결과를 바꾸지 않는다 —
+ * 보호 대조(1단계)는 사망 확정(2단계)보다 먼저 끝나고, 이 밤 이후 nightActions는 다음 NIGHT
+ * 진입에서 어차피 새 Map으로 교체되기 때문이다. 그럼에도 단계를 코드로 남기는 이유는 킬 직업이
+ * 하나 더 생기는 순간 "죽은 의사의 보호가 두 번째 킬을 계속 막는가"라는 질문이 곧바로 관측
+ * 가능해지기 때문이다. 그때 답이 조용히 갈리지 않도록 순서를 지금 고정한다.
+ *
+ * 호출자는 "alive → dead로 실제 바뀐" 참가자만 넘겨야 한다(buildNightDeathReveals와 같은 계약).
+ * 엔트리가 없는 uuid는 조용히 무시한다. Map 조회·삭제만 하므로 절대 throw하지 않는다 —
+ * commitNightResolution의 "사망 확정 이후로는 throw하지 않는다"는 계약을 깨지 않는다.
+ *
+ * @param {object} session - canonical GameSession(nightActions만 쓴다)
+ * @param {string[]} deadUuids - 이번 판정이 실제로 사망시킨 참가자 uuid 목록
+ * @flow deadUuids를 순회하며 엔트리가 있는 uuid만 삭제하고 그 uuid를 결과 목록에 모은다.
+ */
+function expireDeadPlayerNightEffects(session, deadUuids) {
+    const expired = []
+    for (const uuid of deadUuids) {
+        if (!session.nightActions.has(uuid)) continue
+        session.nightActions.delete(uuid)
+        expired.push(uuid)
+    }
+    return expired
+}
+
+/**
  * NIGHT 판정 커밋과 사망/phase/day 전이를 모두 담당하는 유일한 mutation입니다.
  * prepareNightResolution이 반환한 resolution.pendingEliminationTargetId만 소비하고, 클라이언트
  * 입력이나 raw nightActions를 다시 읽지 않습니다.
+ *
+ * 밤 해소의 canonical 판정 순서는 다음 넷이며, 이 함수가 2~4단계를 이 순서대로 실행합니다:
+ *   1. 보호 대조 — prepareNightResolution이 이미 끝냈다(아직 아무도 죽지 않은 생존 집합 위에서
+ *      계산된 보호 집합으로 pendingEliminationTargetId를 정한다).
+ *   2. 사망 확정 — victim.alive = false.
+ *   3. 사망자의 잔여 효과 소멸 — expireDeadPlayerNightEffects. 반드시 사망 확정 "뒤"에 온다.
+ *   4. 승리 재평가 — 사망 이벤트 직후 항상, 낮 진입(enterDayPhase) 전에 한다(처형·끊김 사망과
+ *      공유하는 원칙). 승자가 확정된 밤은 DAY로 넘어가지 않는다.
  *
  * 검증(victim 존재·alive)은 mutation 이전에 전부 끝내고, 통과한 뒤로는 이 함수가 절대
  * throw하지 않습니다 — "커밋은 됐는데 사망/phase/day 적용은 안 된" 부분 커밋 상태가
@@ -1286,8 +1354,12 @@ function commitNightResolution(session, resolution) {
     // (prepareNightResolution의 NIGHT_ALREADY_RESOLVED / assertSessionNotEnded).
     resolution.publicDeathReveals = buildNightDeathReveals(resolution, victimUuid === null ? [] : [victimUuid])
     session.nightResolution = resolution
+    // 판정 순서 2단계 — 사망 확정.
     if (victim) victim.alive = false
+    // 판정 순서 3단계 — 사망자의 잔여 효과 소멸. 반드시 사망 확정 뒤에 온다.
+    expireDeadPlayerNightEffects(session, victimUuid === null ? [] : [victimUuid])
 
+    // 판정 순서 4단계 — 승리 재평가는 사망 이벤트 직후 항상, 낮 진입 전에 한다.
     const winResult = evaluateWinCondition(session)
     if (winResult) {
         finalizeGameSession(session, winResult)
@@ -2639,6 +2711,8 @@ module.exports = {
         computeDoctorProtectionSet,
         computeGuardInvestigationResult,
         computeWitchHunterConfirmationResult,
+        buildAssassinationFailureNotice,
+        expireDeadPlayerNightEffects,
         resolveNightDeathSource,
         buildNightDeathReveals,
         getEligibleDayVoterUuids,
