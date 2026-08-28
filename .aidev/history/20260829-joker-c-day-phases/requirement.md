@@ -33,3 +33,7 @@ DAY 단일 구간이라 토론 중에도 투표가 들어간다. 토론 페이�
 
 - 변경 범위: backend/game-core/gameSession.js의 DAY 페이즈 전이, backend/socket 이벤트, 프론트 낮 UI 상태
 - joker-A merge 후에 돌린다 (재투표 규칙 의존)
+
+## 구현 메모 (재개용 — 직전 시도가 gameSession.test.js 재읽기로 중단)
+
+gameSession.test.js를 통으로 재읽지 말 것. 접점은 두 가지뿐: ① DAY 진입 헬퍼를 '토론→ready 전원 제출→투표' 경유로 전진시키면 기존 테스트 대부분이 통과한다 — 헬퍼부터 고쳐라 ② 신규 테스트 6종(토론 거부·준비 전이·재투표·전원 기권·광대 처형 승리·스냅샷)은 파일 끝에 추가하라. 실패하는 기존 테스트만 grep으로 좁혀 겨냥 수정. 백엔드 본체(gameSession.js·socket)는 완성돼 있다 — 남은 것은 테스트와 프론트(파서·스토어·훅·패널) 순서다.

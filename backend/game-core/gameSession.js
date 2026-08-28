@@ -54,6 +54,16 @@ const PLAYER_THEME_PALETTE_SIZE = 10
 const INITIAL_GAME_PHASE = 'ROLE_REVEAL' // 아직 밤이 시작되지 않은 역할 확인 단계(사용자 확정)
 const INITIAL_DAY_INDEX = 0
 
+// DAY 안에서만 의미를 갖는 하위 구간이다(session.dayPhase). 토론(DAY_DISCUSSION) 중에는
+// 투표 제출·집계를 받지 않고, 생존자 전원이 준비를 마치면 투표(DAY_VOTE)가 열린다.
+//
+// session.phase 자체를 두 값으로 쪼개지 않는 이유: 'DAY'라는 phase 문자열은 이미 채팅 채널
+// 라우팅(resolveGameChatChannel의 공개 DAY 채팅·DEAD_CHAT_PHASES)·canIncludeDayTribunalFields·
+// computeHasActedThisPhase 등 낮 하위 구간과 무관한 여러 계약의 입력이다. phase는 그대로 두고
+// 하위 구간만 별도 필드로 두면 "dayPhase는 phase === 'DAY'일 때만 읽는다"는 한 줄 불변식으로
+// 계약이 닫히고, 토론·투표 양쪽에서 공개 채팅이 그대로 열려 있다는 요구도 자동으로 만족된다.
+const DAY_PHASES = Object.freeze({ DISCUSSION: 'DAY_DISCUSSION', VOTE: 'DAY_VOTE' })
+
 // 텍스트 규칙·rate limit 간격은 채널(공개 DAY·사망자 전용·JOKER 비밀)과 무관하게 하나의
 // canonical 정의를 공유한다 — 채널마다 다른 길이/문자 규칙을 두면 한쪽만 고쳐졌을 때 조용히
 // 어긋난다. JOKER_CHAT_MAX_LENGTH는 이 값의 기존 export 이름으로 그대로 유지된다.
@@ -418,6 +428,14 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // commitNightResolution이 새 빈 Map으로 교체한다(이전 DAY의 투표를 이어받지 않음).
         // roleRevealAcks/nightActions와 동일한 이유로 세션 객체 안에 둔다.
         dayVotes: new Map(),
+        // DAY 하위 구간(DAY_PHASES). ROLE_REVEAL에는 아직 낮이 없다는 뜻으로 null이고,
+        // enterDayPhase가 DAY로 들어올 때마다 DAY_DISCUSSION으로 세팅한다. phase가 DAY가
+        // 아닌 동안의 값은 어떤 게이트의 입력도 아니다(getDayPhase 주석 참고).
+        dayPhase: null,
+        // 이 낮의 "투표 시작 준비"를 마친 uuid 집합. 생존자 전원이 모이면 enterDayVotePhase가
+        // DAY_VOTE를 연다. roleRevealAcks/nightActions와 동일한 이유로 세션 객체 안에 두고,
+        // enterDayPhase가 매 낮마다 새 Set으로 교체한다(지난 낮의 준비를 이어받지 않음).
+        dayVoteReadyUuids: new Set(),
         // 이 dayIndex의 투표 라운드. 1이 최초 투표, 2가 동점 재투표다(동점 재투표는 phase를
         // DAY에 그대로 둔 채 이 값만 올린다 — 밤 턴 구조·타이머를 건드리지 않기 위함).
         dayVoteRound: 1,
@@ -657,6 +675,10 @@ function buildViewerRoleFields(session, viewer) {
  * dayVotes는 매번 새 빈 Map으로 교체한다 — 이전 DAY의 투표/기권을 이어받지 않는다. 투표
  * 라운드 상태(dayVoteRound/dayVoteExcludedUuids)도 같은 이유로 "최초 투표"로 되돌린다 —
  * 지난 낮의 재투표 제외 목록이 새 낮의 후보를 막으면 안 된다.
+ *
+ * 하위 구간도 같은 원칙으로 함께 초기화한다: 새 낮은 언제나 토론(DAY_DISCUSSION)부터 시작하고
+ * dayVoteReadyUuids는 새 빈 Set으로 교체된다 — 지난 낮의 준비 기록이 이월돼 토론 없이 곧바로
+ * 투표가 열리는 일이 구조적으로 생기지 않는다(DAY 진입점이 이 함수 하나뿐이기 때문이다).
  * dayVoteResolution/tribunal은 여기서 건드리지 않는다: 둘 다 "그 dayIndex의 기록"이고,
  * 이 함수가 dayIndex를 전진시키는 순간 dayIndex 일치 검사(prepareDayVoteResolution의
  * alreadyResolved 판정, buildSessionSnapshot의 노출 게이트)에서 자동으로 무효가 된다.
@@ -670,9 +692,39 @@ function buildViewerRoleFields(session, viewer) {
 function enterDayPhase(session) {
     session.phase = 'DAY'
     session.dayIndex += 1
+    session.dayPhase = DAY_PHASES.DISCUSSION
+    session.dayVoteReadyUuids = new Set()
     session.dayVotes = new Map()
     session.dayVoteRound = 1
     session.dayVoteExcludedUuids = new Set()
+}
+
+/**
+ * 이 세션의 현재 DAY 하위 구간(알려진 두 값이 아니면 토론으로 본다).
+ *
+ * 기본값이 DAY_DISCUSSION인 것은 fail-closed다 — 손으로 조립됐거나 오염돼 하위 구간을 알 수
+ * 없는 session에서는 투표를 열지 않는 쪽이 안전하다("모르면 투표를 받지 않는다"). getDayVoteRound/
+ * getDayVoteExcludedUuids와 같은 위치·같은 관례다. 이 값은 phase === 'DAY'일 때만 의미가 있다 —
+ * 낮을 벗어난 phase에서는 어떤 게이트도 이 값을 읽지 않는다.
+ * @param {object} session - canonical GameSession(읽기만 한다)
+ */
+function getDayPhase(session) {
+    return session.dayPhase === DAY_PHASES.VOTE || session.dayPhase === DAY_PHASES.DISCUSSION
+        ? session.dayPhase
+        : DAY_PHASES.DISCUSSION
+}
+
+/**
+ * DAY_DISCUSSION→DAY_VOTE 전이의 유일한 canonical mutation이다.
+ *
+ * dayVotes/dayVoteRound/dayVoteExcludedUuids는 건드리지 않는다 — enterDayPhase가 이미 이 낮의
+ * 투표 상태를 세팅해 두었고, 이 함수는 "그 투표를 언제부터 받을지"만 연다. 준비 집합은 전이
+ * 이후 의미가 없으므로 비운다(다음 낮의 준비는 enterDayPhase가 다시 새 Set으로 시작한다).
+ * @param {object} session - canonical GameSession(이 함수가 직접 변형한다)
+ */
+function enterDayVotePhase(session) {
+    session.dayPhase = DAY_PHASES.VOTE
+    session.dayVoteReadyUuids = new Set()
 }
 
 /**
@@ -1280,9 +1332,13 @@ function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) 
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 형태 → 2. targetId 형태 → 3. uuid의 활성 세션 존재·gameId 일치
  *   → 4. registry 일관성(session 실존, uuid가 참가자) → 5. 이 dayIndex·이 라운드가 이미
- *   판정됐는지 → 6. DAY phase → 7. actor 생존 → 8. targetId가 문자열이면 참가자로 존재하는지
- *   → 9. 대상 생존 → 10. 자기 자신 대상 거부 → 11. 재투표 제외 대상 거부
- *   (TARGET_EXCLUDED_FROM_REVOTE) → 12. session.dayVotes에 저장.
+ *   판정됐는지 → 6. DAY phase → 7. DAY_VOTE 하위 구간(토론 중이면 INVALID_DAY_PHASE)
+ *   → 8. actor 생존 → 9. targetId가 문자열이면 참가자로 존재하는지
+ *   → 10. 대상 생존 → 11. 자기 자신 대상 거부 → 12. 재투표 제외 대상 거부
+ *   (TARGET_EXCLUDED_FROM_REVOTE) → 13. session.dayVotes에 저장.
+ *
+ * 7번이 토론 중 투표 제출을 막는 유일한 지점이다 — 재투표는 DAY_VOTE 안의 반복이므로 이
+ * 가드에 걸리지 않는다(commitDayVoteResolution의 REVOTE 분기는 dayPhase를 건드리지 않는다).
  *
  * 5번의 판정 완료 검사는 dayIndex만이 아니라 라운드까지 함께 본다 — 동점 재투표(REVOTE)는
  * 같은 dayIndex에서 라운드만 올리므로, dayIndex만 보면 1라운드의 판정 기록이 2라운드 제출을
@@ -1295,7 +1351,7 @@ function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) 
  * @param {string} uuid - 인증된 요청자 uuid
  * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
  * @param {string|null} targetId - 투표 대상 uuid 또는 명시적 기권을 뜻하는 null
- * @flow 위 12단계를 순서대로 평가하고, 어느 하나라도 실패하면 그 자리에서 반환한다.
+ * @flow 위 13단계를 순서대로 평가하고, 어느 하나라도 실패하면 그 자리에서 반환한다.
  */
 function submitDayVote(uuid, gameId, targetId) {
     if (typeof gameId !== 'string' || gameId.length === 0) return { ok: false, code: 'INVALID_GAME_ID' }
@@ -1326,6 +1382,8 @@ function submitDayVote(uuid, gameId, targetId) {
         return { ok: false, code: 'DAY_VOTE_ALREADY_RESOLVED' }
     }
     if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+    // 토론 중에는 투표를 받지 않는다 — 투표는 DAY_VOTE에서만 열린다(요구 1).
+    if (getDayPhase(session) !== DAY_PHASES.VOTE) return { ok: false, code: 'INVALID_DAY_PHASE' }
     if (!actor.alive) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
 
     if (targetId !== null) {
@@ -1353,6 +1411,86 @@ function getEligibleDayVoterUuids(session) {
         if (player.alive) uuids.push(player.uuid)
     }
     return uuids
+}
+
+/**
+ * DAY_DISCUSSION의 "투표 시작 준비"를 처리합니다. 인증된 uuid와 클라이언트가 알고 있는 gameId만
+ * 입력으로 받습니다(role 등 비밀 정보는 이 함수의 입력에도 출력에도 없습니다).
+ *
+ * acknowledgeRoleReveal과 같은 골격입니다 — 생존자 전원이 각자 한 번 보내고, 마지막으로 남은
+ * 준비 하나가 도착하면 enterDayVotePhase로 DAY_VOTE를 엽니다. 그 이후의 모든 요청은 하위 구간
+ * 가드에 걸려 INVALID_DAY_PHASE가 되므로 transitioned:true는 한 낮에 정확히 한 번만 나옵니다.
+ * 타이머 기반 자동 전환은 이 슬라이스의 범위 밖이며(후속 슬라이스), 준비 취소도 없습니다.
+ *
+ * 준비 자격은 투표 자격과 같은 집합(getEligibleDayVoterUuids — 생존자)입니다. 두 규칙을 한
+ * 함수로 묶어야 "준비는 했는데 투표는 못 하는" 참가자나, 사망자가 정족수를 막아 낮이 진행되지
+ * 않는 교착이 생기지 않습니다. readyCount도 그 자격 집합 안에서만 셉니다 — 준비 뒤에 사망한
+ * 참가자가 남긴 항목이 정족수를 오염시키지 못하게 하는 방어입니다(tallyDayVoteOutcome이
+ * eligible voter만 순회하는 것과 같은 원칙).
+ *
+ * SESSION_NOT_FOUND/NOT_A_PARTICIPANT는 registry 불일치에서만 나오는 내부 진단용 코드이므로
+ * 소켓 계층이 INTERNAL_ERROR로 정규화해야 합니다. INVALID_DAY_PHASE/ACTOR_NOT_ALIVE는
+ * 클라이언트가 정상적으로 마주칠 수 있는 공개 코드입니다.
+ *
+ * @param {string} uuid - 인증된 요청자 uuid
+ * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
+ * @flow gameId 형태 → 세션 소유·registry 일관성 → 종료 → DAY phase → DAY_DISCUSSION →
+ *       생존 → 중복(멱등) 순으로 검사하고, 통과하면 준비를 기록한 뒤 정족수가 차면 전이한다.
+ */
+function acknowledgeDayVoteReady(uuid, gameId) {
+    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
+
+    const currentGameId = playerSession.get(uuid)
+    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
+    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
+
+    // acknowledgeRoleReveal과 동일하게 registry 불변조건을 "신뢰"만 하지 않고 직접 확인한다.
+    const session = gameSessions.get(currentGameId)
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+    if (getDayPhase(session) !== DAY_PHASES.DISCUSSION) return { ok: false, code: 'INVALID_DAY_PHASE' }
+    if (!actor.alive) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
+
+    const eligibleUuids = getEligibleDayVoterUuids(session)
+    const readyUuids = session.dayVoteReadyUuids instanceof Set ? session.dayVoteReadyUuids : new Set()
+    session.dayVoteReadyUuids = readyUuids
+    const countReady = () => eligibleUuids.filter((eligibleUuid) => readyUuids.has(eligibleUuid)).length
+
+    // 같은 uuid의 중복 준비는 멱등이다 — 정족수를 두 번 채우지 못하므로 두 번째 준비만으로
+    // 전이가 일어나는 경로가 없다.
+    if (readyUuids.has(uuid)) {
+        return { ok: true, transitioned: false, session, readyCount: countReady(), requiredCount: eligibleUuids.length }
+    }
+
+    readyUuids.add(uuid)
+    const readyCount = countReady()
+    if (readyCount === eligibleUuids.length) {
+        enterDayVotePhase(session)
+        return { ok: true, transitioned: true, session, readyCount, requiredCount: eligibleUuids.length }
+    }
+    return { ok: true, transitioned: false, session, readyCount, requiredCount: eligibleUuids.length }
+}
+
+/**
+ * DAY_DISCUSSION→DAY_VOTE 전이를 참가자 전체에게 알리는 공용 payload. 참가자 식별·비밀 정보를
+ * 전혀 포함하지 않는다 — round는 이미 buildDayVoteResolvedPayload가 공개하는 값이라 새로
+ * 드러나는 정보가 없고, 재접속·재투표 표시에 필요하다.
+ * @param {object} session - canonical GameSession(id/dayIndex/하위 구간만 읽는다)
+ */
+function buildDayPhaseChangedPayload(session) {
+    return {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        dayPhase: getDayPhase(session),
+        round: getDayVoteRound(session),
+    }
 }
 
 // session.dayVotes를 집계해 TRIBUNAL/TIE/ABSTAINED 중 하나를 판정한다(순수 계산 — 어떤 상태도
@@ -1432,7 +1570,8 @@ function tallyDayVoteOutcome(session) {
  *   벗어나므로, phase 검사보다 먼저 확인해야 재요청이 INVALID_PHASE가 아니라 멱등한 성공으로
  *   처리됩니다. REVOTE만은 phase를 DAY에 남기고 라운드를 올리므로, 그 뒤에 도착한 중복 요청은
  *   멱등한 성공이 아니라 2라운드의 ACTIONS_PENDING을 받습니다 — 라운드가 다르면 다른 판정입니다)
- *   → 6. DAY phase → 7. 생존자 전원의 dayVotes 제출 완료(ACTIONS_PENDING, 추가 정보 없음)
+ *   → 6. DAY phase와 DAY_VOTE 하위 구간(토론 중이면 INVALID_DAY_PHASE)
+ *   → 7. 생존자 전원의 dayVotes 제출 완료(ACTIONS_PENDING, 추가 정보 없음)
  *   → 8. 저장된 모든 non-null target이 여전히 canonical participant인지(TARGET_NOT_A_PARTICIPANT
  *   — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
  *
@@ -1478,6 +1617,9 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     }
 
     if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+    // 토론 중에는 집계 자체가 열리지 않는다 — 제출이 하나도 없는 상태(생존자 1명 세션이라면
+    // 0표 집계가 그대로 통과할 수도 있는 상태)에서 판정이 나가는 경로를 막는다.
+    if (getDayPhase(session) !== DAY_PHASES.VOTE) return { ok: false, code: 'INVALID_DAY_PHASE' }
 
     const eligibleVoterUuids = getEligibleDayVoterUuids(session)
     for (const voterUuid of eligibleVoterUuids) {
@@ -1566,11 +1708,17 @@ function commitDayVoteResolution(session, resolution) {
         }
     } else if (resolution.outcome === 'REVOTE') {
         // phase는 DAY 그대로다 — 밤으로 넘어가지 않고 같은 낮에서 한 번 더 투표한다.
+        // dayPhase도 의도적으로 건드리지 않는다: 한 번 열린 DAY_VOTE는 그 낮이 끝날 때까지
+        // DAY_VOTE이므로 재투표는 자동으로 그 안의 반복이 된다(토론으로 되돌아가 준비를 다시
+        // 요구하면 교착이 생긴다 — 요구 3의 계약).
         session.tribunal = null
         session.dayVoteRound = getResolutionRound(resolution) + 1
         session.dayVoteExcludedUuids = new Set(resolution.revoteExcludedUuids ?? [])
         session.dayVotes = new Map()
     } else {
+        // TRIBUNAL/TIE/ABSTAINED는 phase가 DAY를 벗어나므로 dayPhase는 그 순간부터 어떤
+        // 게이트의 입력도 아니다 — dayVoteResolution/tribunal을 남겨두는 기존 관례와 동일하게
+        // 굳이 null로 되돌리지 않고, 다음 enterDayPhase가 DAY_DISCUSSION으로 덮어쓴다.
         session.tribunal = null
         session.phase = 'NIGHT'
         session.nightActions = new Map()
@@ -1906,6 +2054,8 @@ function buildTribunalVoteResolvedPayload(session) {
 // uuid 본인이 현재 phase에서 이미 제출을 마쳤는지(순수 계산 — 어떤 상태도 바꾸지 않는다).
 // 항상 .has()로만 판정한다(.get() !== undefined가 아님) — session.nightActions/dayVotes는
 // SKIP/기권을 null 값으로 저장하므로, .get()은 "미제출"과 "SKIP 제출"을 구분하지 못한다.
+// DAY는 하위 구간마다 "제출"의 뜻이 다르다 — 토론에서는 투표 시작 준비, 투표에서는 표다.
+// 재접속한 클라이언트가 "내가 이미 준비를 눌렀는가"를 알아야 준비 버튼이 두 번 나오지 않는다.
 function computeHasActedThisPhase(session, uuid) {
     switch (session.phase) {
         case 'ROLE_REVEAL':
@@ -1913,7 +2063,8 @@ function computeHasActedThisPhase(session, uuid) {
         case 'NIGHT':
             return session.nightActions.has(uuid)
         case 'DAY':
-            return session.dayVotes.has(uuid)
+            if (getDayPhase(session) === DAY_PHASES.VOTE) return session.dayVotes.has(uuid)
+            return session.dayVoteReadyUuids instanceof Set && session.dayVoteReadyUuids.has(uuid)
         case 'TRIBUNAL':
             return session.tribunal ? session.tribunal.votes.has(uuid) : false
         default:
@@ -1958,6 +2109,10 @@ function buildSessionSnapshot(session, uuid) {
         gameId: session.id,
         phase: session.phase,
         dayIndex: session.dayIndex,
+        // dayPhase는 낮에서만 의미가 있으므로 phase가 DAY일 때만 키 자체를 만든다
+        // (nightResult/tribunal의 선택 필드 관례와 동일). 이 값이 없으면 재접속 클라이언트가
+        // 토론과 투표를 구분하지 못해 그 낮에 갇힌다.
+        ...(session.phase === 'DAY' ? { dayPhase: getDayPhase(session) } : {}),
         players: [...session.players.values()].map(({ uuid: pUuid, nickname, alive }) => ({
             uuid: pUuid,
             nickname,
@@ -2419,6 +2574,9 @@ module.exports = {
     endGameSessionForPlayer,
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
+    DAY_PHASES,
+    acknowledgeDayVoteReady,
+    buildDayPhaseChangedPayload,
     submitNightAction,
     submitDayVote,
     prepareJokerChatMessage,
@@ -2459,6 +2617,8 @@ module.exports = {
         assertSessionNotEnded,
         assignRoles,
         enterDayPhase,
+        enterDayVotePhase,
+        getDayPhase,
         validateSessionInput,
         buildSessionCandidate,
         checkGameSessionPreconditions,

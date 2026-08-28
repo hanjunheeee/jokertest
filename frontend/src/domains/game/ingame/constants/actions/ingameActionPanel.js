@@ -68,6 +68,14 @@ export const TRIBUNAL_VOTE_SUBMITTING_LABEL = "제출 중..."
 export const TRIBUNAL_DEFENDANT_NOTICE = "당신은 피고인입니다. 투표할 수 없습니다."
 export const TRIBUNAL_DEAD_NOTICE = "사망한 참가자는 투표할 수 없습니다."
 
+// DAY 토론 페이즈(DAY_DISCUSSION) 섹션 라벨입니다. 토론 중에는 투표 컨트롤을 렌더하지 않고
+// 안내 문구와 "투표 시작 준비" 버튼만 노출합니다(생존자 전원이 준비하면 DAY_VOTE로 전이).
+export const DAY_DISCUSSION_NOTICE = "토론 중입니다. 투표는 아직 열리지 않았습니다."
+export const DAY_VOTE_READY_LABEL = "투표 시작 준비"
+export const DAY_VOTE_READY_SENDING_LABEL = "준비 중..."
+export const DAY_VOTE_READY_DONE_LABEL = "준비 완료"
+export const DAY_DEAD_NOTICE = "사망한 참가자는 낮 진행에 참여할 수 없습니다."
+
 // winResult.winner → 한국어 승리 문구입니다. 종료되지 않았거나(winResult 없음) winner가
 // 알려진 두 값(CITIZEN/JOKER)이 아니면 null을 반환합니다(getInGameNightActionLabel과 동일한 관례).
 export function getInGameWinResultLabel(winResult) {

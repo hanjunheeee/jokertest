@@ -16,6 +16,11 @@ import {
   TRIBUNAL_VOTE_SUBMITTING_LABEL,
   TRIBUNAL_DEFENDANT_NOTICE,
   TRIBUNAL_DEAD_NOTICE,
+  DAY_DISCUSSION_NOTICE,
+  DAY_VOTE_READY_LABEL,
+  DAY_VOTE_READY_SENDING_LABEL,
+  DAY_VOTE_READY_DONE_LABEL,
+  DAY_DEAD_NOTICE,
 } from "../../constants/actions/ingameActionPanel.js"
 import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
 import InGameTargetPicker from "./InGameTargetPicker.jsx"
@@ -51,8 +56,15 @@ export default function InGameActionPanel({
     nightActionError,
     selectedDayVoteTargetId,
     setSelectedDayVoteTargetId,
+    dayPhase,
     dayVoteTargets,
     dayVoteControlsEnabled,
+    dayReadyStatus,
+    dayReadyError,
+    dayReadyCount,
+    dayReadyRequired,
+    dayReadyControlsEnabled,
+    submitDayReady,
     submitDayVote,
     abstainDayVote,
     dayVoteStatus,
@@ -62,6 +74,7 @@ export default function InGameActionPanel({
     resolveDayVote,
     dayVoteResolveStatus,
     dayVoteResolveError,
+    dayVoteResolveControlsEnabled,
     dayVoteResolution,
     submitTribunalVote,
     tribunalVoteStatus,
@@ -108,7 +121,8 @@ export default function InGameActionPanel({
       <div className={INGAME_ACTION_HEADER_CLASS}>
         <div>
           <p className={INGAME_ACTION_TITLE_CLASS}>
-            {gameState.phase} · 제 {gameState.dayIndex}일
+            {/* 낮은 하위 구간(토론/투표)까지 보여준다 — 같은 DAY라도 지금 무엇을 할 수 있는지가 다르다. */}
+            {gameState.phase === "DAY" && dayPhase ? dayPhase : gameState.phase} · 제 {gameState.dayIndex}일
           </p>
           <p className={INGAME_ACTION_META_CLASS}>
             역할 {gameState.self?.role ?? "미정"} · 참가자 {gameState.players?.length ?? 0}명
@@ -138,7 +152,36 @@ export default function InGameActionPanel({
         </button>
       </div>
 
-      {gameState.phase === "DAY" ? (
+      {/* 토론 페이즈에는 대상 선택기·투표·기권·낮 집계를 아예 렌더하지 않는다 — 서버가 토론 중
+          제출·집계를 INVALID_DAY_PHASE로 거부하므로 화면에도 그 문을 열어두지 않는다. */}
+      {gameState.phase === "DAY" && dayPhase === "DAY_DISCUSSION" ? (
+        <div className={INGAME_ACTION_SECTION_CLASS}>
+          <p className={INGAME_ACTION_META_CLASS}>{DAY_DISCUSSION_NOTICE}</p>
+          {!dayReadyControlsEnabled && dayReadyStatus === "idle" ? (
+            <p className={INGAME_ACTION_META_CLASS}>{DAY_DEAD_NOTICE}</p>
+          ) : null}
+          <button
+            type="button"
+            className={INGAME_ACTION_BUTTON_CLASS}
+            disabled={!dayReadyControlsEnabled}
+            onClick={submitDayReady}
+          >
+            {dayReadyStatus === "sending"
+              ? DAY_VOTE_READY_SENDING_LABEL
+              : dayReadyStatus === "ready"
+                ? DAY_VOTE_READY_DONE_LABEL
+                : DAY_VOTE_READY_LABEL}
+          </button>
+          {Number.isInteger(dayReadyCount) && Number.isInteger(dayReadyRequired) ? (
+            <p className={INGAME_ACTION_META_CLASS}>
+              준비 {dayReadyCount}/{dayReadyRequired}
+            </p>
+          ) : null}
+          {dayReadyError ? <p className="text-[0.68rem] text-red-300">{dayReadyError}</p> : null}
+        </div>
+      ) : null}
+
+      {gameState.phase === "DAY" && dayPhase === "DAY_VOTE" ? (
         <div className={INGAME_ACTION_SECTION_CLASS}>
           <InGameTargetPicker
             players={dayVoteTargets}
@@ -166,7 +209,7 @@ export default function InGameActionPanel({
             <button
               type="button"
               className={INGAME_ACTION_BUTTON_CLASS}
-              disabled={interactionBlocked || dayVoteResolveStatus !== "idle"}
+              disabled={!dayVoteResolveControlsEnabled}
               onClick={resolveDayVote}
             >
               {dayVoteResolveStatus === "resolving"

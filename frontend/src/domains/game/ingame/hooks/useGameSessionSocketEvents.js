@@ -7,6 +7,7 @@ import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
 import { parseNightResultAppliedPayload } from "../utils/parseNightResultAppliedPayload.js"
+import { parseDayPhaseChangedPayload } from "../utils/parseDayPhaseChangedPayload.js"
 import { parseDayVoteResolvedPayload } from "./useInGameActionPanel.js"
 
 /** 인게임 store와 matching store를 함께 초기화하고 로비로 이동하는 finalizer를 만든다. */
@@ -88,6 +89,20 @@ export function useGameSessionSocketEvents() {
         })
     }
 
+    // 낮 하위 페이즈 전이(DAY_DISCUSSION→DAY_VOTE) 방송이다. 검증에 필요한 gameId/dayIndex는
+    // 호출 시점의 store에서 직접 읽는다(위 handleNightResultApplied와 동일한 이유).
+    const handleDayPhaseChanged = (payload) => {
+      const current = useInGameStore.getState()
+      if (!current.gameId || !current.state) return
+      const parsed = parseDayPhaseChangedPayload({
+        payload,
+        gameId: current.gameId,
+        dayIndex: current.state.dayIndex,
+      })
+      if (!parsed) return
+      useInGameStore.getState().applyDayPhaseChanged(parsed)
+    }
+
     // TRIBUNAL 판정 완료 방송이다. 위 세 핸들러와 달리 별도 파서를 거치지 않고 raw payload를
     // 그대로 store에 넘긴다 — applyTribunalResolved(→applyTribunalResolvedPure)가 gameId/
     // dayIndex/phase/defendantUuid 4종을 canonical과 비교해 stale이면 참조를 그대로 보존한다.
@@ -99,12 +114,14 @@ export function useGameSessionSocketEvents() {
     socket.on("game_phase_changed", handlePhaseChanged)
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("day_vote_resolved", handleDayVoteResolved)
+    socket.on("day_phase_changed", handleDayPhaseChanged)
     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
     return () => {
       socket.off("game_ended", handleGameEnded)
       socket.off("game_phase_changed", handlePhaseChanged)
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("day_vote_resolved", handleDayVoteResolved)
+      socket.off("day_phase_changed", handleDayPhaseChanged)
       socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
     }
   }, [socket, navigate])

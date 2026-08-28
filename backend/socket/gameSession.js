@@ -193,6 +193,77 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
 }
 
 /**
+ * DAY_DISCUSSION의 "투표 시작 준비(ready_for_day_vote)" 요청을 처리합니다(Socket.IO
+ * acknowledgement 방식). handleAcknowledgeRoleReveal과 같은 골격이며, 생존자 전원이 준비를
+ * 마쳐 game-core가 transitioned:true를 돌려줄 때만 DAY_VOTE 개시를 참가자 전체 channel에 한 번
+ * 방송합니다 — 중복·늦은 준비는 core가 transitioned:false 또는 INVALID_DAY_PHASE로 되돌리므로
+ * 이 분기에 도달하지 않습니다(한 낮에 day_phase_changed 방송은 정확히 한 번).
+ *
+ * ack에는 요청자 본인이 본 진행률(readyCount/requiredCount)만 담습니다 — 누가 준비했는지는
+ * 방송하지도, 응답하지도 않습니다(새 공개 정보를 만들지 않기 위함).
+ * INVALID_DAY_PHASE/ACTOR_NOT_ALIVE는 클라이언트가 정상적으로 마주칠 수 있는 공개 코드라
+ * INTERNAL_ONLY_CODES에 넣지 않고 그대로 전달합니다.
+ * callback과 broadcast는 서로 독립적인 best-effort 통지입니다(respond가 callback 예외를 삼킵니다).
+ *
+ * @param {object} io - Socket.IO 서버(방송에만 쓴다)
+ * @param {object} socket - 요청 socket(권한 판정에만 쓴다)
+ * @param {string} uuid - 인증된 요청자 uuid
+ * @param {object} payload - 클라이언트 요청({ gameId })
+ * @param {Function} callback - Socket.IO acknowledgement 콜백
+ * @flow socket 권한·payload 형태를 검사하고 core를 호출한 뒤, 실패면 코드 정규화, 성공이면
+ *       ack를 돌려주고 transitioned일 때만 day_phase_changed를 방송한다.
+ */
+function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+    if (!isCurrentSocketForUuid(uuid, socket)) {
+        respond(callback, { ok: false, code: 'STALE_SOCKET', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId } = payload
+    if (typeof gameId !== 'string') {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    let result
+    try {
+        result = gameSessionCore.acknowledgeDayVoteReady(uuid, gameId)
+    } catch (err) {
+        console.error('[낮 투표 준비 처리 에러]', err)
+        respond(callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        return
+    }
+
+    if (!result.ok) {
+        if (INTERNAL_ONLY_CODES.has(result.code)) {
+            // registry 불일치는 클라이언트에 내부 상태를 노출하지 않고 일반 오류로만 응답한다.
+            console.error('[낮 투표 준비 registry 불일치]', { code: result.code, uuid, gameId })
+            respond(callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return
+        }
+        respond(callback, { ok: false, code: result.code, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    respond(callback, { ok: true, readyCount: result.readyCount, requiredCount: result.requiredCount })
+
+    if (result.transitioned) {
+        try {
+            io.to(result.session.channelId).emit(
+                'day_phase_changed',
+                gameSessionCore.buildDayPhaseChangedPayload(result.session),
+            )
+        } catch (err) {
+            console.error('[낮 하위 페이즈 변경 알림 전송 실패]', err)
+        }
+    }
+}
+
+/**
  * submit_night_action 전용 ack 전달 헬퍼. 공용 respond()(위)는 acknowledge_role_reveal에서만
  * 쓰고 여기서는 재사용하지 않는다 — respond()는 callback이 throw할 때 원본 Error를 그대로
  * 로그하는데, 이 이벤트는 밤 행동이라는 비밀 데이터를 다루므로 그보다 엄격한 고정 구조 로그를
@@ -781,6 +852,9 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
  *
  * uuid는 인증된 socket에서 전달받은 값만 쓰고, payload의 uuid/role/alive/phase는 아예 읽지
  * 않습니다(core가 registry 기준으로 다시 전부 검증합니다).
+ *
+ * 토론(DAY_DISCUSSION) 중의 제출은 core가 INVALID_DAY_PHASE로 거부하며, 그 코드는 공개
+ * 코드이므로 이 핸들러가 그대로 클라이언트에 전달합니다(별도 처리가 없습니다).
  */
 function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     if (typeof callback !== 'function') return
@@ -1337,9 +1411,10 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
     respond(callback, { ok: true, ...result.snapshot, players })
 }
 
-/** ROLE_REVEAL 확인·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
+/** ROLE_REVEAL 확인·낮 투표 준비·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
 function registerGameHandlers(io, socket, uuid) {
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
+    socket.on('ready_for_day_vote', (payload, callback) => handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback))
     socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(socket, uuid, payload, callback))
     socket.on('submit_joker_chat_message', (payload, callback) => handleSubmitJokerChatMessage(io, socket, uuid, payload, callback))
     socket.on('submit_game_chat_message', (payload, callback) => handleSubmitGameChatMessage(io, socket, uuid, payload, callback))
@@ -1404,6 +1479,7 @@ module.exports = {
     // __testables 관례와 동일). 런타임 코드에서는 참조하지 않습니다.
     __testables: {
         handleAcknowledgeRoleReveal,
+        handleAcknowledgeDayVoteReady,
         handleSubmitNightAction,
         handleSubmitJokerChatMessage,
         handleSubmitGameChatMessage,

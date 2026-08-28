@@ -16,6 +16,7 @@ const {
 const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables
 const {
     handleAcknowledgeRoleReveal,
+    handleAcknowledgeDayVoteReady,
     handleSubmitNightAction,
     handleSubmitJokerChatMessage,
     handleResolveNight,
@@ -2640,13 +2641,136 @@ test('불변성: NIGHT 종료 payload를 캡처해 중첩 필드를 변형해도
 // cast_day_vote (handleSubmitDayVote) — DAY 투표/기권 제출
 // ---------------------------------------------------------------------------
 
-/** 3인 NIGHT 세션을 무득표로 판정해 DAY(dayIndex 1, 전원 alive)까지 전이하고, fake socket/io를 재사용한다. */
-function commitTrioSessionWithSocketsAtDay({ id = 'room-dv' } = {}) {
+/**
+ * 3인 NIGHT 세션을 무득표로 판정해 DAY(dayIndex 1, 전원 alive)까지 전이하고, fake socket/io를
+ * 재사용한다. 낮은 DAY_DISCUSSION으로 시작하므로 advanceToVote일 때는 생존자 전원의
+ * ready_for_day_vote까지 돌려 투표가 열린 상태(DAY_VOTE)로 넘긴다 — 투표 제출/판정을 검증하는
+ * 기존 테스트들이 보는 출발점이 그대로 유지된다.
+ *
+ * 픽스처 진행 과정에서 쌓인 emit 로그(night_result_applied·day_phase_changed)는 반환 직전에
+ * 비운다 — 이 헬퍼를 쓰는 테스트들은 "자기가 호출한 핸들러가 무엇을 방송했는가"만 세므로
+ * 준비 단계의 방송이 그 카운트에 섞이면 안 된다.
+ *
+ * @param {object} options - 픽스처 옵션
+ * @param {string} options.id - room/세션 식별자 접두사
+ * @param {boolean} options.advanceToVote - true면 DAY_VOTE까지, false면 DAY_DISCUSSION에서 멈춘다
+ * @flow 밤을 무득표로 판정해 낮으로 넘긴 뒤, advanceToVote면 생존자 전원의 준비를 돌리고,
+ *       마지막으로 io/socket의 emit 로그를 비운다.
+ */
+function commitTrioSessionWithSocketsAtDay({ id = 'room-dv', advanceToVote = true } = {}) {
     const { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id })
     gameSessionCore.submitNightAction(jokerUuid, session.id, null)
     handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, countingCallback().callback)
+    if (advanceToVote) {
+        for (const player of session.players.values()) {
+            if (!player.alive) continue
+            handleAcknowledgeDayVoteReady(io, socketByUuid.get(player.uuid), player.uuid, { gameId: session.id }, countingCallback().callback)
+        }
+        assert.equal(session.dayPhase, 'DAY_VOTE')
+    }
+    io.broadcasts.length = 0
+    for (const socket of sockets) socket.emitted.length = 0
     return { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid }
 }
+
+// ---------------------------------------------------------------------------
+// ready_for_day_vote (handleAcknowledgeDayVoteReady) — DAY_DISCUSSION → DAY_VOTE 전이
+// ---------------------------------------------------------------------------
+
+test('ready_for_day_vote: 마지막 준비에서만 day_phase_changed가 채널에 정확히 1회 방송되고 payload에 참가자 식별 정보가 없다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-1', advanceToVote: false })
+    assert.equal(session.dayPhase, 'DAY_DISCUSSION')
+
+    const first = countingCallback()
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, first.callback)
+    assert.deepEqual(first.getResponse(), { ok: true, readyCount: 1, requiredCount: 3 })
+    assert.equal(io.broadcasts.length, 0)
+
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[1]), uuids[1], { gameId: session.id }, countingCallback().callback)
+    assert.equal(io.broadcasts.length, 0)
+
+    const last = countingCallback()
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[2]), uuids[2], { gameId: session.id }, last.callback)
+    assert.deepEqual(last.getResponse(), { ok: true, readyCount: 3, requiredCount: 3 })
+    assert.equal(session.dayPhase, 'DAY_VOTE')
+
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'day_phase_changed')
+    assert.equal(broadcasts.length, 1)
+    assert.equal(broadcasts[0].roomId, session.channelId)
+    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, dayIndex: session.dayIndex, dayPhase: 'DAY_VOTE', round: 1 })
+    assertNoForbiddenPrivateData(broadcasts[0].payload, collectOtherPlayerRoleSecrets(session, uuids[0]))
+})
+
+test('ready_for_day_vote: 같은 참가자의 중복 준비는 멱등이고 전이시키지 않는다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-2', advanceToVote: false })
+
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, countingCallback().callback)
+    const repeat = countingCallback()
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, repeat.callback)
+
+    assert.deepEqual(repeat.getResponse(), { ok: true, readyCount: 1, requiredCount: 3 })
+    assert.equal(session.dayPhase, 'DAY_DISCUSSION')
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('ready_for_day_vote: 이미 DAY_VOTE인 낮에 도착한 늦은 준비는 INVALID_DAY_PHASE이고 방송이 없다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-3' })
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_DAY_PHASE', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('ready_for_day_vote: payload가 객체가 아니거나 gameId가 문자열이 아니면 INVALID_PAYLOAD이고 준비 집합은 불변이다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-4', advanceToVote: false })
+
+    for (const badPayload of [null, 'x', 42, [], {}, { gameId: 123 }]) {
+        const { callback, getResponse } = countingCallback()
+        handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.dayVoteReadyUuids.size, 0)
+    assert.equal(session.dayPhase, 'DAY_DISCUSSION')
+})
+
+test('ready_for_day_vote: 현재 소켓이 아닌 요청은 STALE_SOCKET이고, callback이 함수가 아니면 완전한 no-op이다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-5', advanceToVote: false })
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeDayVoteReady(io, createFakeSocket(uuids[0], { id: 'sock-other' }), uuids[0], { gameId: session.id }, callback)
+    assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SOCKET', message: '요청을 처리할 수 없습니다.' })
+
+    assert.doesNotThrow(() => handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, undefined))
+    assert.equal(session.dayVoteReadyUuids.size, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('ready_for_day_vote: 마지막 준비의 callback이 throw해도 전이와 day_phase_changed 방송은 그대로 진행된다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-6', advanceToVote: false })
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, countingCallback().callback)
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[1]), uuids[1], { gameId: session.id }, countingCallback().callback)
+
+    assert.doesNotThrow(() =>
+        handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[2]), uuids[2], { gameId: session.id }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.dayPhase, 'DAY_VOTE')
+    assert.equal(io.broadcasts.filter((b) => b.event === 'day_phase_changed').length, 1)
+})
+
+test('cast_day_vote: 토론 중(DAY_DISCUSSION) 제출은 INVALID_DAY_PHASE로 거부되고 dayVotes가 비어 있으며 방송이 없다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-discussion', advanceToVote: false })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_DAY_PHASE', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.dayVotes.size, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
 
 test('cast_day_vote: 정상 대상 투표는 ack {ok:true}이고 dayVotes에 저장되며 브로드캐스트가 없다', () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-1' })
@@ -3334,8 +3458,21 @@ test('불변성: TRIBUNAL 종료 payload를 캡처해 중첩 필드를 변형해
 /** votesByUuid(uuid→targetUuid|null) 전원 제출 후 DAY 투표 판정을 core로 직접 커밋한다 — 이
  * 이벤트 자체가 테스트 대상이므로 DAY/TRIBUNAL 진행은 다른 핸들러를 거치지 않고 core로
  * 직접 전진시킨다(commitDeterministicTribunalReadySession과 달리 실제 NIGHT를 거쳐야
- * session.nightResolution이 채워지므로 이 방식을 쓴다). */
+ * session.nightResolution이 채워지므로 이 방식을 쓴다).
+ *
+ * 낮은 DAY_DISCUSSION으로 시작하므로 아직 토론 중이면 생존자 전원의 준비를 먼저 돌려
+ * 투표를 연다(재투표 라운드에서 다시 호출되면 이미 DAY_VOTE이므로 그대로 제출로 넘어간다).
+ *
+ * @param {object} session - 진행 중인 세션
+ * @param {object} votesByUuid - uuid → targetUuid|null 투표 맵
+ * @flow 토론 중이면 준비로 DAY_VOTE까지 전진시킨 뒤, 전원 제출하고 판정을 커밋한다.
+ */
 function resolveDayVotesDirect(session, votesByUuid) {
+    if (session.dayPhase === 'DAY_DISCUSSION') {
+        for (const player of session.players.values()) {
+            if (player.alive) gameSessionCore.acknowledgeDayVoteReady(player.uuid, session.id)
+        }
+    }
     for (const [voterUuid, targetUuid] of Object.entries(votesByUuid)) {
         gameSessionCore.submitDayVote(voterUuid, session.id, targetUuid)
     }
@@ -3677,7 +3814,9 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const dayAck = countingCallback()
     handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, dayAck.callback)
     const daySnapshot = dayAck.getResponse()
-    assert.deepEqual(Object.keys(daySnapshot).sort(), ['dayIndex', 'gameId', 'nightResult', 'ok', 'phase', 'players', 'self'])
+    // 낮 스냅샷에만 dayPhase가 실린다 — 재접속 클라이언트가 토론/투표를 구분해야 하기 때문이다.
+    assert.deepEqual(Object.keys(daySnapshot).sort(), ['dayIndex', 'dayPhase', 'gameId', 'nightResult', 'ok', 'phase', 'players', 'self'])
+    assert.equal(daySnapshot.dayPhase, 'DAY_DISCUSSION')
     assert.deepEqual(daySnapshot.nightResult, {
         dayIndex: session.dayIndex,
         victimUuid: citizenA,

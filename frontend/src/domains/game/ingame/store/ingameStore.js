@@ -61,7 +61,17 @@ export const useInGameStore = create((set) => ({
       const isLegacyFirstNight = payload.phase === "NIGHT" && payload.dayIndex === 0
       if (!isFirstDay && !isLegacyFirstNight) return current
 
-      return { state: { ...current.state, phase: payload.phase, dayIndex: payload.dayIndex } }
+      // 낮은 항상 토론(DAY_DISCUSSION)부터 시작한다 — 서버 enterDayPhase가 DAY 진입 때마다
+      // 하위 구간을 토론으로 초기화하는 것과 대응한다. dayPhase는 phase === "DAY"일 때만
+      // 의미가 있으므로, 낮이 아닌 legacy first-night 경로에서는 null로 둔다.
+      return {
+        state: {
+          ...current.state,
+          phase: payload.phase,
+          dayIndex: payload.dayIndex,
+          dayPhase: isFirstDay ? "DAY_DISCUSSION" : null,
+        },
+      }
     }),
 
   // night_result_applied 방송을 반영한다. 호출부(useGameSessionSocketEvents)가 이미
@@ -95,6 +105,7 @@ export const useInGameStore = create((set) => ({
             ...current.state,
             phase: "ENDED",
             dayIndex: payload.dayIndex,
+            dayPhase: null, // 낮을 벗어났다 — dayPhase는 phase === "DAY"일 때만 의미가 있다.
             players: nextPlayers,
             ...(payload.winResult ? { winResult: payload.winResult } : {}),
           },
@@ -111,7 +122,37 @@ export const useInGameStore = create((set) => ({
         aliveByUuid.has(p.uuid) ? { ...p, alive: aliveByUuid.get(p.uuid) } : p,
       )
 
-      return { state: { ...current.state, phase: payload.phase, dayIndex: payload.dayIndex, players: nextPlayers } }
+      // 새 낮은 항상 토론부터 시작한다(서버 enterDayPhase와 대응) — 지난 낮이 투표 중이었더라도
+      // 이월되지 않는다.
+      return {
+        state: {
+          ...current.state,
+          phase: payload.phase,
+          dayIndex: payload.dayIndex,
+          dayPhase: "DAY_DISCUSSION",
+          players: nextPlayers,
+        },
+      }
+    }),
+
+  // day_phase_changed 방송(낮 안의 DAY_DISCUSSION→DAY_VOTE 전이)을 반영한다. 호출부
+  // (useGameSessionSocketEvents)가 이미 parseDayPhaseChangedPayload로 검증한 값만 넘기지만,
+  // 다른 apply* 액션과 동일한 이유로 여기서도 독립적으로 gameId/phase/dayIndex를 재확인한다.
+  // dayPhase는 phase === "DAY"일 때만 의미가 있으므로 낮이 아니면 어떤 경우에도 반영하지 않는다.
+  applyDayPhaseChanged: (parsed) =>
+    set((current) => {
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return current
+      if (typeof parsed.gameId !== "string" || parsed.gameId.trim().length === 0) return current
+      if (!current.gameId || !current.state) return current
+      if (parsed.gameId !== current.gameId) return current
+      if (current.state.phase !== "DAY") return current
+      if (!Number.isInteger(parsed.dayIndex) || parsed.dayIndex !== current.state.dayIndex) return current
+      if (parsed.dayPhase !== "DAY_VOTE") return current
+      // 이미 투표가 열려 있으면 참조 보존 no-op — 재투표 라운드가 DAY_VOTE에 머무는 동안
+      // 늦게 도착한 중복 방송이 불필요한 리렌더를 만들지 않게 한다.
+      if (current.state.dayPhase === "DAY_VOTE") return current
+
+      return { state: { ...current.state, dayPhase: "DAY_VOTE" } }
     }),
 
   // day_vote_resolved 방송을 반영한다. TRIBUNAL 판정은 phase를 TRIBUNAL로 바꾸고
@@ -128,12 +169,14 @@ export const useInGameStore = create((set) => ({
       if (current.state.phase !== "DAY") return current
       if (dayIndex !== current.state.dayIndex) return current
 
+      // 두 분기 모두 낮을 벗어나므로 dayPhase를 null로 되돌린다 — dayPhase는 phase === "DAY"일
+      // 때만 의미가 있고, 다음 낮 진입 경로가 다시 DAY_DISCUSSION으로 세팅한다.
       if (outcome === "TRIBUNAL") {
         if (typeof defendantUuid !== "string" || defendantUuid.length === 0) return current
-        return { state: { ...current.state, phase: "TRIBUNAL", tribunal: { defendantUuid } } }
+        return { state: { ...current.state, phase: "TRIBUNAL", dayPhase: null, tribunal: { defendantUuid } } }
       }
       if (outcome === "TIE" || outcome === "ABSTAINED") {
-        return { state: { ...current.state, phase: "NIGHT" } }
+        return { state: { ...current.state, phase: "NIGHT", dayPhase: null } }
       }
       return current
     }),
