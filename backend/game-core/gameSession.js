@@ -13,16 +13,26 @@ const {
 // 5개 역할의 단일 canonical 정의. GAME_ROLES/ROLE_TEAMS는 모두 이 정의에서 파생된다
 // (역할명을 여러 상수에 손으로 나열하면 하나만 바뀌었을 때 조용히 어긋날 수 있음).
 // nightActionMinDayIndex는 "이 역할이 능력을 쓸 수 있는 가장 이른 dayIndex"다 — null이면
-// 애초에 밤 행동이 없는 역할(CITIZEN). 후속 NIGHT 행동 슬라이스가 소비할 최소 계약이며,
-// 이번 슬라이스의 어떤 실행 로직도 이 값을 참조하지 않는다.
+// 애초에 밤 행동이 없는 역할(CITIZEN). isEligibleForNightAction이 이 값을 소비한다.
+//
+// WITCH_HUNTER가 2인 이유(첫 밤 비활성 정책): production에서 첫 밤의 dayIndex는 1이다 —
+// ROLE_REVEAL(dayIndex 0) → 전원 ack → enterDayPhase가 첫 DAY(dayIndex 1)를 열고 →
+// commitDayVoteResolution이 dayIndex를 유지한 채 그 밤(NIGHT, dayIndex 1)으로 넘긴다. 두 번째
+// 밤은 dayIndex 2다. dayIndex의 의미·증가 지점(enterDayPhase)은 그대로 두고 이 값만 2로 두어
+// "첫 밤 불가, 둘째 밤부터 가능"을 표현한다.
+//
+// targetMustBeAlive는 "이 역할의 밤 행동 대상이 생존자여야 하는가"다. WITCH_HUNTER만 false다 —
+// 마녀사냥꾼은 사망자를 확인하는 역할이라 생존자 지목이 오히려 거부 사유다. requiresAliveTarget이
+// 이 값을 소비하며, 기본값은 true(알 수 없는 역할까지 fail-closed)다.
+//
 // 바깥 객체만 Object.freeze하면 각 역할의 내부 필드는 여전히 재할당 가능하므로, canonical
 // metadata를 외부에서 변형 불가능하게 하려면 역할별 정의 각각도 개별적으로 동결해야 한다.
 const ROLE_DEFINITIONS = Object.freeze({
-    JOKER: Object.freeze({ team: 'JOKER', nightActionMinDayIndex: 0 }),
-    CITIZEN: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: null }),
-    DOCTOR: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0 }),
-    GUARD: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0 }),
-    WITCH_HUNTER: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 1 }),
+    JOKER: Object.freeze({ team: 'JOKER', nightActionMinDayIndex: 0, targetMustBeAlive: true }),
+    CITIZEN: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: null, targetMustBeAlive: true }),
+    DOCTOR: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0, targetMustBeAlive: true }),
+    GUARD: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 0, targetMustBeAlive: true }),
+    WITCH_HUNTER: Object.freeze({ team: 'CITIZEN', nightActionMinDayIndex: 2, targetMustBeAlive: false }),
 })
 
 const GAME_ROLES = Object.freeze(
@@ -344,6 +354,9 @@ function validateSessionInput(players, jokerCount) {
 }
 
 // prepare 계산 자체는 입력 검증 통과 후에만 진행한다. registry를 전혀 읽지 않는다.
+// @param {object} room - 참가자·설정을 담은 Room(읽기만 한다)
+// @param {object} [options] - randomFn(역할 셔플)·gameIdFn(세션 id 생성) 주입점
+// @flow 입력 검증 → 역할 구성 해석 → 역할 배정 순으로 진행하고, 실패하면 그 자리에서 반환한다.
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {
     const players = [...room.players.values()]
     const jokerCount = room.settings?.jokerCount ?? 0
@@ -399,10 +412,17 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // commitNightResolution이 새 빈 Map으로 교체한다(이전 DAY의 투표를 이어받지 않음).
         // roleRevealAcks/nightActions와 동일한 이유로 세션 객체 안에 둔다.
         dayVotes: new Map(),
+        // 이 dayIndex의 투표 라운드. 1이 최초 투표, 2가 동점 재투표다(동점 재투표는 phase를
+        // DAY에 그대로 둔 채 이 값만 올린다 — 밤 턴 구조·타이머를 건드리지 않기 위함).
+        dayVoteRound: 1,
+        // 이번 라운드에서 후보 자격이 없는 uuid 집합. 최초 투표에서는 항상 비어 있고, 동점
+        // 재투표에서만 직전 라운드의 동점자들로 채워진다(그 동점자에게는 투표할 수 없다).
+        dayVoteExcludedUuids: new Set(),
         // 이 dayIndex의 DAY 투표 판정 완료 표식이자 결과. null이면 아직 판정 전이다. 값이
-        // 있으면 { dayIndex, outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount }
-        // 형태이고, 그 dayIndex에 대한 재판정·재제출을 막는 유일한 근거가 된다(commitNightResolution이
-        // dayVotes를 새 빈 Map으로 교체할 때도 이 필드는 그대로 둔다 — 이전 낮의 판정 기록이므로).
+        // 있으면 { dayIndex, round, outcome, tribunalTargetUuid, publicVoteCount,
+        // publicAbstainCount, excludedUuids, revoteExcludedUuids } 형태이고, 그 dayIndex·라운드에
+        // 대한 재판정·재제출을 막는 유일한 근거가 된다(commitNightResolution이 dayVotes를 새 빈
+        // Map으로 교체할 때도 이 필드는 그대로 둔다 — 이전 낮의 판정 기록이므로).
         dayVoteResolution: null,
         // TRIBUNAL 단계의 피고 정보. commitDayVoteResolution이 outcome:'TRIBUNAL'일 때만 채운다.
         tribunal: null,
@@ -436,6 +456,8 @@ function prepareGameSession(room, opts) {
 // 거치지 않고 (이론상 잘못 조립된) session 객체가 그대로 들어올 가능성까지 스스로 방어해야
 // game-core의 불변조건이 "이 파일 안에서" 완결된다. validateSessionInput은 buildSessionCandidate
 // 경로만 보호하므로, commit 시점에도 session 구조 자체를 다시 검증한다.
+// @param {object} session - 커밋 직전의 GameSession 후보(읽기만 한다)
+// @flow 필드별 검사를 순서대로 수행하고, 어긋나는 즉시 Error를 던진다(반환값 없음).
 function assertValidSessionForCommit(session) {
     if (!session || typeof session.id !== 'string' || session.id.length === 0) {
         throw new Error('commitGameSession: 잘못된 session.id')
@@ -489,6 +511,19 @@ function assertValidSessionForCommit(session) {
     }
     if (session.dayVotes.size !== 0) {
         throw new Error(`commitGameSession: session.dayVotes가 비어있지 않음(size=${session.dayVotes.size})`)
+    }
+    // 투표 라운드/제외 집합도 dayVotes와 동일한 이유로 커밋 시점엔 항상 "최초 투표" 상태여야
+    // 한다 — 재투표 중간 상태로 시작하는 세션은 존재할 수 없다.
+    if (session.dayVoteRound !== 1) {
+        throw new Error(`commitGameSession: 잘못된 session.dayVoteRound(${session.dayVoteRound})`)
+    }
+    if (!(session.dayVoteExcludedUuids instanceof Set)) {
+        throw new Error('commitGameSession: session.dayVoteExcludedUuids가 Set이 아님')
+    }
+    if (session.dayVoteExcludedUuids.size !== 0) {
+        throw new Error(
+            `commitGameSession: session.dayVoteExcludedUuids가 비어있지 않음(size=${session.dayVoteExcludedUuids.size})`,
+        )
     }
     // channelId/phase/dayIndex는 현재 candidate 경로에서 고정값만 만들어지지만, 수동
     // 조립된 session까지 완전히 방어한다는 이 함수의 목적에 맞춰 여기서도 검사한다.
@@ -613,7 +648,9 @@ function buildViewerRoleFields(session, viewer) {
  * dayIndex는 언제나 정확히 1 증가한다 — 신규 세션의 INITIAL_DAY_INDEX(0)에서 첫 DAY는 1이
  * 되고, 이후 밤을 넘길 때마다 하나씩 늘어난다.
  *
- * dayVotes는 매번 새 빈 Map으로 교체한다 — 이전 DAY의 투표/기권을 이어받지 않는다.
+ * dayVotes는 매번 새 빈 Map으로 교체한다 — 이전 DAY의 투표/기권을 이어받지 않는다. 투표
+ * 라운드 상태(dayVoteRound/dayVoteExcludedUuids)도 같은 이유로 "최초 투표"로 되돌린다 —
+ * 지난 낮의 재투표 제외 목록이 새 낮의 후보를 막으면 안 된다.
  * dayVoteResolution/tribunal은 여기서 건드리지 않는다: 둘 다 "그 dayIndex의 기록"이고,
  * 이 함수가 dayIndex를 전진시키는 순간 dayIndex 일치 검사(prepareDayVoteResolution의
  * alreadyResolved 판정, buildSessionSnapshot의 노출 게이트)에서 자동으로 무효가 된다.
@@ -621,11 +658,41 @@ function buildViewerRoleFields(session, viewer) {
  *
  * 호출자는 이 함수를 부르기 전에 승리 조건 판정을 끝내야 한다 — 승자가 확정된 밤은 DAY로
  * 넘어가지 않고 그대로 ENDED가 된다(commitNightResolution 참고).
+ *
+ * @param {object} session - canonical GameSession(이 함수가 직접 변형한다)
  */
 function enterDayPhase(session) {
     session.phase = 'DAY'
     session.dayIndex += 1
     session.dayVotes = new Map()
+    session.dayVoteRound = 1
+    session.dayVoteExcludedUuids = new Set()
+}
+
+/**
+ * 이 세션의 현재 DAY 투표 라운드(정수가 아니면 최초 투표인 1로 본다).
+ * 손으로 조립된(신규 필드가 없는) session도 이 접근자를 통해 항상 유효한 라운드를 갖는다.
+ * @param {object} session - canonical GameSession(읽기만 한다)
+ */
+function getDayVoteRound(session) {
+    return Number.isInteger(session.dayVoteRound) && session.dayVoteRound >= 1 ? session.dayVoteRound : 1
+}
+
+/**
+ * 이번 라운드에서 후보 자격이 없는 uuid 집합(Set이 아니면 빈 Set — fail-open이 아니라
+ * "제외가 없다"는 최초 투표의 기본 상태다).
+ * @param {object} session - canonical GameSession(읽기만 한다)
+ */
+function getDayVoteExcludedUuids(session) {
+    return session.dayVoteExcludedUuids instanceof Set ? session.dayVoteExcludedUuids : new Set()
+}
+
+/**
+ * resolution이 몇 번째 라운드의 판정인지(round가 정수가 아니면 최초 투표인 1로 본다).
+ * @param {object} resolution - prepareDayVoteResolution이 만든(또는 그 형태의) 판정 객체
+ */
+function getResolutionRound(resolution) {
+    return Number.isInteger(resolution?.round) && resolution.round >= 1 ? resolution.round : 1
 }
 
 // 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
@@ -708,6 +775,17 @@ function isEligibleForNightAction(role, dayIndex) {
     return minDayIndex !== null && minDayIndex !== undefined && dayIndex >= minDayIndex
 }
 
+/**
+ * 이 역할의 밤 행동 대상이 "생존자"여야 하는지 판정한다(순수 계산 — ROLE_DEFINITIONS만 읽는다).
+ * targetMustBeAlive가 명시적으로 false인 역할(WITCH_HUNTER)만 사망자를 지목할 수 있고, 그 외
+ * 전부(정의가 없는 알 수 없는 role 포함)는 생존 대상을 요구한다 — 기본값을 true로 두어
+ * fail-closed로 만든다.
+ * @param {string} role - 판정할 역할 키
+ */
+function requiresAliveTarget(role) {
+    return ROLE_DEFINITIONS[role]?.targetMustBeAlive !== false
+}
+
 // registry(session.players)를 읽기만 하는 순수 계산 — 이 밤에 행동 가능한 "생존한" 참가자
 // uuid를 반환한다. 제출 완료 여부와는 무관하다(session.nightActions는 참조하지 않는다).
 //
@@ -772,14 +850,17 @@ function computeDoctorProtectionSet(session) {
     return protectedIds
 }
 
-// 해당 GUARD 본인의 non-null target에 대한 조사 결과({targetId, team})를 계산한다.
+// 해당 GUARD 본인의 non-null target에 대한 조사 결과({targetId, role})를 계산한다.
 // SKIP(null)이거나 미제출(entry 없음)이면 null — 개인 결과 이벤트를 만들지 않는다는 계약과
-// 대응한다.
+// 대응한다. 결과는 진영(team)이 아니라 대상의 실제 role이다 — 경비원의 조사는 "시민 진영인가"가
+// 아니라 "무슨 역할인가"를 알려준다(판정 4.3.1). 이 결과는 조사한 GUARD 본인에게만 전달된다.
+// @param {object} session - canonical GameSession(nightActions/players를 읽기만 한다)
+// @param {string} actorUuid - 조사를 제출한 GUARD 본인의 uuid
 function computeGuardInvestigationResult(session, actorUuid) {
     const targetId = session.nightActions.get(actorUuid)
     if (targetId === undefined || targetId === null) return null
     const targetPlayer = session.players.get(targetId)
-    return { targetId, team: ROLE_TEAMS[targetPlayer.role] }
+    return { targetId, role: targetPlayer.role }
 }
 
 // 해당 WITCH_HUNTER 본인의 non-null target에 대한 확인 결과({targetId, role})를 계산한다.
@@ -791,9 +872,11 @@ function computeWitchHunterConfirmationResult(session, actorUuid) {
     return { targetId, role: targetPlayer.role }
 }
 
-// 자기 자신을 대상으로 지정할 수 있는 역할. DOCTOR(보호)만 허용한다 — GUARD/WITCH_HUNTER가
-// 자기 자신을 지정하면 INVALID_TARGET으로 거부한다. JOKER의 자기 자신 대상은 team 검사에서
-// 먼저 no-op으로 처리되므로 이 Set까지 도달하지 않는다(아래 submitNightAction 참고).
+// 자기 자신을 대상으로 지정할 수 있는 역할. DOCTOR(보호)만 허용한다 — GUARD가 자기 자신을
+// 지정하면 INVALID_TARGET으로 거부한다. JOKER의 자기 자신 대상은 team 검사에서 먼저 no-op으로
+// 처리되므로 이 Set까지 도달하지 않는다(아래 submitNightAction 참고). WITCH_HUNTER도 마찬가지로
+// 여기까지 오지 않는다 — 생존한 자기 자신은 그 앞의 대상 생존 검사에서 TARGET_NOT_DEAD로
+// 걸린다(requiresAliveTarget('WITCH_HUNTER') === false).
 const SELF_TARGET_ALLOWED_ROLES = new Set(['DOCTOR'])
 
 /**
@@ -811,20 +894,28 @@ const SELF_TARGET_ALLOWED_ROLES = new Set(['DOCTOR'])
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
  *   → 5. 아직 판정되지 않은 밤 → 6. actor 생존(ACTOR_NOT_ALIVE)
  *   → 7. 역할·dayIndex eligibility → 8. targetId가 있으면 참가자로 존재하는지
- *   → 9. 대상 생존(TARGET_NOT_ALIVE)
+ *   → 9. 역할별 대상 생존 요구(requiresAliveTarget): 생존 대상을 요구하는 역할은 사망자를
+ *      지목하면 TARGET_NOT_ALIVE, 사망 대상을 요구하는 역할(WITCH_HUNTER)은 생존자를 지목하면
+ *      TARGET_NOT_DEAD
  *   → 10. actor가 JOKER이고 대상이 JOKER 진영(자기 자신 포함)이면 Map을 건드리지 않고 성공
  *      종료(no-op — 오라클 방지를 위해 거부하지 않고, 기존 유효 표를 파괴하지 않기 위해
  *      SKIP으로 덮어쓰지도 않는다)
  *   → 11. 그 외 역할이 자기 자신을 대상으로 했는데 허용되지 않으면 거부 → 12. Map에 저장.
  *
- * 6·9번(생존 검사)은 submitDayVote와 정확히 같은 코드·같은 순서다 — 밤과 낮이 한 규칙을
- * 공유한다. 사망자의 제출을 막는 것이 getEligibleNightActorUuids의 생존 필터와 짝을 이뤄
- * "사망자 때문에 밤이 막히는" 교착을 없애고, 사망한 대상을 막는 것이
- * commitNightResolution의 "victim은 반드시 alive여야 한다" 전제를 지켜준다.
+ * 6·9번(생존 검사)은 submitDayVote와 같은 원칙·같은 순서다 — 밤과 낮이 한 규칙을 공유하되,
+ * 밤에서만 "대상이 사망자여야 하는 역할"이 추가된다. 사망자의 제출을 막는 것이
+ * getEligibleNightActorUuids의 생존 필터와 짝을 이뤄 "사망자 때문에 밤이 막히는" 교착을 없애고,
+ * 사망한 대상을 막는 것이 commitNightResolution의 "victim은 반드시 alive여야 한다" 전제를
+ * 지켜준다(WITCH_HUNTER는 애초에 사망을 만들지 않는 확인 역할이라 이 전제와 무관하다).
  *
- * 모든 실패 경로와 7번(no-op)은 session.nightActions를 절대 건드리지 않습니다 — "성공 응답"과
+ * 모든 실패 경로와 10번(no-op)은 session.nightActions를 절대 건드리지 않습니다 — "성공 응답"과
  * "Map이 바뀜"은 동치가 아닙니다. game-core는 소켓 계층의 가드를 신뢰하지 않고 이 함수 안에서
  * 독립적으로 전부 재검증합니다(acknowledgeRoleReveal과 동일한 원칙).
+ *
+ * @param {string} uuid - 인증된 요청자 uuid
+ * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
+ * @param {string|null} targetId - 행동 대상 uuid 또는 SKIP을 뜻하는 null
+ * @flow 위 12단계를 순서대로 평가하고, 어느 하나라도 실패하면 그 자리에서 반환한다.
  */
 function submitNightAction(uuid, gameId, targetId) {
     const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
@@ -855,12 +946,20 @@ function submitNightAction(uuid, gameId, targetId) {
     if (targetId !== null) {
         const targetPlayer = session.players.get(targetId)
         if (!targetPlayer) return { ok: false, code: 'INVALID_TARGET' }
-        // 시체 지목을 여기서 끊는다. 통과시키면 prepareNightResolution이
+        // 규칙에 어긋난 대상을 여기서 끊는다. 통과시키면 prepareNightResolution이
         // TARGET_NOT_A_PARTICIPANT(internal-only → INTERNAL_ERROR)로 그 밤 전체를 판정
         // 불가능하게 만든다. JOKER 진영 no-op보다 먼저 확인하므로, JOKER가 사망한 동료를
         // 지목하면 조용한 no-op이 아니라 TARGET_NOT_ALIVE를 받는다 — 생존 여부는 공개
         // 정보이므로 진영 오라클이 되지 않는다(살아있는 동료에 대한 no-op은 그대로다).
-        if (!targetPlayer.alive) return { ok: false, code: 'TARGET_NOT_ALIVE' }
+        //
+        // WITCH_HUNTER만 방향이 반대다(requiresAliveTarget === false): 사망자를 확인하는
+        // 역할이라 생존자 지목을 TARGET_NOT_DEAD로 거부한다. 이 코드도 생존 여부라는 공개
+        // 정보만 알려주므로 어떤 비밀도 흘리지 않는다.
+        if (requiresAliveTarget(actor.role)) {
+            if (!targetPlayer.alive) return { ok: false, code: 'TARGET_NOT_ALIVE' }
+        } else if (targetPlayer.alive) {
+            return { ok: false, code: 'TARGET_NOT_DEAD' }
+        }
 
         if (actor.role === 'JOKER' && ROLE_TEAMS[targetPlayer.role] === 'JOKER') {
             return { ok: true, gameId: session.id }
@@ -885,8 +984,9 @@ function submitNightAction(uuid, gameId, targetId) {
  *   → 5. 아직 판정되지 않은 밤(session.nightResolution === null)
  *   → 6. 모든 eligible actor(= 생존한 행동 보유자)의 nightActions 제출 완료
  *      (ACTIONS_PENDING, 추가 정보 없음)
- *   → 7. 그 eligible actor들의 non-null target이 여전히 canonical participant이고 생존해
- *      있는지(TARGET_NOT_A_PARTICIPANT — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
+ *   → 7. 그 eligible actor들의 non-null target이 여전히 canonical participant이고, 그 actor의
+ *      역할이 요구하는 생존 상태(requiresAliveTarget이면 생존, 아니면 사망)를 유지하고 있는지
+ *      (TARGET_NOT_A_PARTICIPANT — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
  *
  * 6번의 기준은 getEligibleNightActorUuids 하나뿐이며 그 목록은 사망자를 포함하지 않는다 —
  * 사망한 행동 보유자가 제출하지 않아도 밤은 정상적으로 판정된다. 행동 보유자가 한 명도
@@ -896,6 +996,13 @@ function submitNightAction(uuid, gameId, targetId) {
  * 성공 시 { ok:true, session, resolution } — resolution은 commitNightResolution에 그대로
  * 넘길 값입니다. privateResults는 생존한 GUARD/WITCH_HUNTER의 non-null 결과만 담는 Map이고
  * (SKIP/미제출은 entry 없음), JOKER/DOCTOR/CITIZEN은 애초에 이 Map에 등장하지 않습니다.
+ * GUARD는 { actionType:'INVESTIGATE', targetId, role }, WITCH_HUNTER는
+ * { actionType:'CONFIRM', targetId, role }이며 — 두 결과 모두 대상의 실제 role을 담습니다
+ * (경비원 결과는 진영이 아니라 role이다 — 판정 4.3.1).
+ *
+ * @param {string} uuid - 인증된 요청자 uuid
+ * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
+ * @flow 위 7단계를 순서대로 평가하고, 통과하면 eligible actor 목록을 두 번 순회해 집계·개인 결과를 만든다.
  */
 function prepareNightResolution(uuid, gameId) {
     const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
@@ -923,7 +1030,10 @@ function prepareNightResolution(uuid, gameId) {
     }
 
     // 검증은 eligible alive actor의 표만 본다(session.nightActions 전체가 아님) — 대상도
-    // 참가자로 존재할 뿐 아니라 여전히 alive여야 한다. 이 생존 검증이
+    // 참가자로 존재할 뿐 아니라 그 actor의 역할이 요구하는 생존 상태를 유지해야 한다.
+    // submitNightAction과 같은 헬퍼(requiresAliveTarget)로 판정하므로 두 경계가 갈릴 수 없다 —
+    // 여기에 이 규칙이 없으면 WITCH_HUNTER의 (정당한) 사망자 지목이 그 밤 전체를
+    // TARGET_NOT_A_PARTICIPANT로 잠가버린다. 생존을 요구하는 역할에 대한 이 검증이
     // commitNightResolution이 전제로 삼는 조건(victim.alive === true)과 정확히 같으므로,
     // 여기를 통과한 resolution으로 commit이 throw하는 경우는 존재하지 않는다
     // (prepareDayVoteResolution과 동일한 모양).
@@ -931,9 +1041,10 @@ function prepareNightResolution(uuid, gameId) {
         const target = session.nightActions.get(actorUuid)
         if (target !== null) {
             const targetPlayer = session.players.get(target)
-            if (!targetPlayer || !targetPlayer.alive) {
-                return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
-            }
+            if (!targetPlayer) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+            const actorRole = session.players.get(actorUuid)?.role
+            const targetStateOk = requiresAliveTarget(actorRole) ? targetPlayer.alive === true : targetPlayer.alive !== true
+            if (!targetStateOk) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
         }
     }
 
@@ -1112,13 +1223,23 @@ function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) 
  *
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 형태 → 2. targetId 형태 → 3. uuid의 활성 세션 존재·gameId 일치
- *   → 4. registry 일관성(session 실존, uuid가 참가자) → 5. DAY phase → 6. actor 생존
- *   → 7. targetId가 문자열이면 참가자로 존재하는지 → 8. 대상 생존 → 9. 자기 자신 대상 거부
- *   → 10. session.dayVotes에 저장.
+ *   → 4. registry 일관성(session 실존, uuid가 참가자) → 5. 이 dayIndex·이 라운드가 이미
+ *   판정됐는지 → 6. DAY phase → 7. actor 생존 → 8. targetId가 문자열이면 참가자로 존재하는지
+ *   → 9. 대상 생존 → 10. 자기 자신 대상 거부 → 11. 재투표 제외 대상 거부
+ *   (TARGET_EXCLUDED_FROM_REVOTE) → 12. session.dayVotes에 저장.
+ *
+ * 5번의 판정 완료 검사는 dayIndex만이 아니라 라운드까지 함께 본다 — 동점 재투표(REVOTE)는
+ * 같은 dayIndex에서 라운드만 올리므로, dayIndex만 보면 1라운드의 판정 기록이 2라운드 제출을
+ * 통째로 막아버린다.
  *
  * 모든 실패 경로는 session.dayVotes를 절대 건드리지 않습니다 — submitNightAction과 동일한
  * 원칙(game-core는 소켓 계층의 가드를 신뢰하지 않고 이 함수 안에서 독립적으로 전부
  * 재검증합니다). 재제출은 기존 값을 최신 값으로 덮어씁니다.
+ *
+ * @param {string} uuid - 인증된 요청자 uuid
+ * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
+ * @param {string|null} targetId - 투표 대상 uuid 또는 명시적 기권을 뜻하는 null
+ * @flow 위 12단계를 순서대로 평가하고, 어느 하나라도 실패하면 그 자리에서 반환한다.
  */
 function submitDayVote(uuid, gameId, targetId) {
     if (typeof gameId !== 'string' || gameId.length === 0) return { ok: false, code: 'INVALID_GAME_ID' }
@@ -1135,11 +1256,17 @@ function submitDayVote(uuid, gameId, targetId) {
     const actor = session.players.get(uuid)
     if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
-    // 이 dayIndex가 이미 판정됐으면 outcome과 무관하게 거부한다 — mutation(dayVotes.set) 전에
-    // 확인해 재제출이 이미 판정된 집계를 조용히 어긋나게 만들지 못하게 한다. phase 검사보다
-    // 먼저 확인해야 한다: 판정이 성공하면 phase가 DAY를 벗어나므로 INVALID_PHASE로도 결과적으로
-    // 막히지만, "이미 판정됨"이라는 사실 자체를 별도 코드로 구분해 응답한다.
-    if (session.dayVoteResolution !== null && session.dayVoteResolution.dayIndex === session.dayIndex) {
+    // 이 dayIndex·이 라운드가 이미 판정됐으면 outcome과 무관하게 거부한다 —
+    // mutation(dayVotes.set) 전에 확인해 재제출이 이미 판정된 집계를 조용히 어긋나게 만들지
+    // 못하게 한다. phase 검사보다 먼저 확인해야 한다: 판정이 성공하면 phase가 DAY를 벗어나므로
+    // INVALID_PHASE로도 결과적으로 막히지만, "이미 판정됨"이라는 사실 자체를 별도 코드로
+    // 구분해 응답한다. 라운드까지 비교하는 이유는 REVOTE만이 phase를 DAY에 남긴 채 라운드를
+    // 올리기 때문이다(1라운드 판정 기록이 2라운드 제출을 막으면 재투표가 성립하지 않는다).
+    if (
+        session.dayVoteResolution !== null &&
+        session.dayVoteResolution.dayIndex === session.dayIndex &&
+        getResolutionRound(session.dayVoteResolution) === getDayVoteRound(session)
+    ) {
         return { ok: false, code: 'DAY_VOTE_ALREADY_RESOLVED' }
     }
     if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
@@ -1150,6 +1277,11 @@ function submitDayVote(uuid, gameId, targetId) {
         if (!target) return { ok: false, code: 'INVALID_TARGET' }
         if (!target.alive) return { ok: false, code: 'TARGET_NOT_ALIVE' }
         if (targetId === uuid) return { ok: false, code: 'SELF_TARGET_NOT_ALLOWED' }
+        // 재투표 라운드에서는 직전 라운드의 동점자가 후보에서 빠진다. 최초 투표에서는 이
+        // 집합이 항상 비어 있으므로 이 검사가 아무것도 막지 않는다.
+        if (getDayVoteExcludedUuids(session).has(targetId)) {
+            return { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' }
+        }
     }
 
     session.dayVotes.set(uuid, targetId)
@@ -1171,19 +1303,27 @@ function getEligibleDayVoterUuids(session) {
 // 바꾸지 않는다). tallyJokerAssassinationTarget과 동일한 tie-break 원칙(득표수만으로 비교하고,
 // Map 순회 순서에 의존하지 않는다)을 따른다. 기권(null)은 별도로 세되 집계 대상에서 제외한다.
 // 유효 표가 하나도 없으면(전원 기권) ABSTAINED, 최다 득표가 둘 이상이면 TIE, 그 외엔 단독
-// 최다 득표자를 TRIBUNAL 대상으로 반환한다.
+// 최다 득표자를 TRIBUNAL 대상으로 반환한다. 동률일 때는 공동 최다 득표 대상 전체를
+// tiedTargetUuids(코드유닛 오름차순)로 함께 돌려준다 — 재투표에서 후보를 제외할 근거다.
+// TIE를 REVOTE로 바꿀지(1라운드)의 판단은 이 함수가 아니라 prepareDayVoteResolution이 한다.
 //
 // 집계는 session.dayVotes 전체가 아니라 getEligibleDayVoterUuids(session)로 확정한 eligible
 // alive voter 목록만 순회한다 — 사망 후 남은 entry나 non-eligible entry가 결과를 바꾸지 못하게
 // 하기 위함이다. publicVoteCount는 이 eligible voter 총수이고(제출 완료 인원 전체 — 기권 포함),
-// publicAbstainCount는 그중 null 제출 수다.
+// publicAbstainCount는 그중 null 제출 수다. 이번 라운드에서 제외된 대상을 향한 표는 기권으로
+// 센다 — submitDayVote가 이미 막으므로 정상 경로에서는 도달할 수 없지만, 잔여·오염 entry가
+// 제외된 후보를 다시 재판에 세우지 못하게 하는 방어 규칙이다(두 공개 집계 수치의 불변식
+// "publicAbstainCount ≤ publicVoteCount"도 그대로 유지된다).
+// @param {object} session - canonical GameSession(dayVotes/players/제외 집합을 읽기만 한다)
+// @flow eligible voter를 순회해 표를 세고, 최다 득표를 찾은 뒤 공동 최다가 둘 이상인지로 분기한다.
 function tallyDayVoteOutcome(session) {
     const eligibleVoterUuids = getEligibleDayVoterUuids(session)
+    const excludedUuids = getDayVoteExcludedUuids(session)
     const voteCounts = new Map()
     let abstainCount = 0
     for (const voterUuid of eligibleVoterUuids) {
         const targetId = session.dayVotes.get(voterUuid)
-        if (targetId === null || targetId === undefined) {
+        if (targetId === null || targetId === undefined || excludedUuids.has(targetId)) {
             abstainCount += 1
             continue
         }
@@ -1193,26 +1333,34 @@ function tallyDayVoteOutcome(session) {
     const publicAbstainCount = abstainCount
 
     if (voteCounts.size === 0) {
-        return { outcome: 'ABSTAINED', tribunalTargetUuid: null, publicVoteCount, publicAbstainCount }
+        return { outcome: 'ABSTAINED', tribunalTargetUuid: null, tiedTargetUuids: [], publicVoteCount, publicAbstainCount }
     }
 
-    let winner = null
     let winnerVotes = 0
-    let tie = false
-    for (const [target, votes] of voteCounts) {
-        if (votes > winnerVotes) {
-            winner = target
-            winnerVotes = votes
-            tie = false
-        } else if (votes === winnerVotes) {
-            tie = true
+    for (const votes of voteCounts.values()) {
+        if (votes > winnerVotes) winnerVotes = votes
+    }
+    const topTargetUuids = [...voteCounts.entries()]
+        .filter(([, votes]) => votes === winnerVotes)
+        .map(([target]) => target)
+        .sort()
+
+    if (topTargetUuids.length > 1) {
+        return {
+            outcome: 'TIE',
+            tribunalTargetUuid: null,
+            tiedTargetUuids: topTargetUuids,
+            publicVoteCount,
+            publicAbstainCount,
         }
     }
-
-    if (tie) {
-        return { outcome: 'TIE', tribunalTargetUuid: null, publicVoteCount, publicAbstainCount }
+    return {
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: topTargetUuids[0],
+        tiedTargetUuids: [],
+        publicVoteCount,
+        publicAbstainCount,
     }
-    return { outcome: 'TRIBUNAL', tribunalTargetUuid: winner, publicVoteCount, publicAbstainCount }
 }
 
 /**
@@ -1223,16 +1371,28 @@ function tallyDayVoteOutcome(session) {
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId/dayIndex 형태 → 2. uuid의 활성 세션 존재·gameId 일치 → 3. registry 일관성
  *   (session 실존, uuid가 참가자) → 4. dayIndex가 session.dayIndex와 정확히 일치
- *   → 5. 이 dayIndex가 이미 판정됐는지(완료 표식 — phase와 무관하게 이미 있으면 그 결과를
- *   그대로 담아 alreadyResolved:true로 성공 반환합니다. 판정 성공 시 phase가 DAY를 벗어나므로,
- *   phase 검사보다 먼저 확인해야 재요청이 INVALID_PHASE가 아니라 멱등한 성공으로 처리됩니다)
+ *   → 5. 이 dayIndex·이 라운드가 이미 판정됐는지(완료 표식 — phase와 무관하게 이미 있으면 그
+ *   결과를 그대로 담아 alreadyResolved:true로 성공 반환합니다. 판정 성공 시 phase가 DAY를
+ *   벗어나므로, phase 검사보다 먼저 확인해야 재요청이 INVALID_PHASE가 아니라 멱등한 성공으로
+ *   처리됩니다. REVOTE만은 phase를 DAY에 남기고 라운드를 올리므로, 그 뒤에 도착한 중복 요청은
+ *   멱등한 성공이 아니라 2라운드의 ACTIONS_PENDING을 받습니다 — 라운드가 다르면 다른 판정입니다)
  *   → 6. DAY phase → 7. 생존자 전원의 dayVotes 제출 완료(ACTIONS_PENDING, 추가 정보 없음)
  *   → 8. 저장된 모든 non-null target이 여전히 canonical participant인지(TARGET_NOT_A_PARTICIPANT
  *   — internal-only, 소켓 계층이 INTERNAL_ERROR로 정규화).
  *
+ * 동점 처리(판정 6.4/6.5): 1라운드가 동률이면 outcome은 TIE가 아니라 REVOTE이고,
+ * revoteExcludedUuids에 동점자 전체가 담깁니다(commit이 그들을 후보에서 빼고 2라운드를 엽니다).
+ * 2라운드 이후의 동률은 기존 TIE 그대로 — 처형 없이 그 밤으로 넘어갑니다. 두 라운드로 항상
+ * 종결됩니다(2라운드에 후보가 하나도 남지 않으면 전원 기권 → ABSTAINED → NIGHT).
+ *
  * 성공 시(신규 판정) { ok:true, session, resolution } — resolution은 commitDayVoteResolution에
  * 그대로 넘길 값입니다. 이미 판정된 경우 { ok:true, alreadyResolved:true, session, resolution }을
  * 반환하고, 호출자는 다시 commit하거나 재방송하지 않아야 합니다.
+ *
+ * @param {string} uuid - 인증된 요청자 uuid
+ * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
+ * @param {number} dayIndex - 클라이언트가 알고 있는 dayIndex(신뢰하지 않음)
+ * @flow 위 8단계를 순서대로 평가하고, 통과하면 집계 결과의 동률 여부와 현재 라운드로 outcome을 고른다.
  */
 function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
@@ -1252,7 +1412,12 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
 
     if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
 
-    if (session.dayVoteResolution !== null && session.dayVoteResolution.dayIndex === dayIndex) {
+    const currentRound = getDayVoteRound(session)
+    if (
+        session.dayVoteResolution !== null &&
+        session.dayVoteResolution.dayIndex === dayIndex &&
+        getResolutionRound(session.dayVoteResolution) === currentRound
+    ) {
         return { ok: true, alreadyResolved: true, session, resolution: session.dayVoteResolution }
     }
 
@@ -1277,16 +1442,24 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     }
 
     const tally = tallyDayVoteOutcome(session)
+    // 1라운드 동률만 재투표로 바꾼다 — 2라운드 이후의 동률은 기존 TIE 계약(처형 없이 NIGHT)
+    // 그대로다. 프런트가 아직 모르는 새 outcome을 TIE 자리에 끼워넣지 않는 이유이기도 하다.
+    const isRevote = tally.outcome === 'TIE' && currentRound === 1
     return {
         ok: true,
         session,
         resolution: {
             gameId: session.id,
             dayIndex: session.dayIndex,
-            outcome: tally.outcome,
+            round: currentRound,
+            outcome: isRevote ? 'REVOTE' : tally.outcome,
             tribunalTargetUuid: tally.tribunalTargetUuid,
             publicVoteCount: tally.publicVoteCount,
             publicAbstainCount: tally.publicAbstainCount,
+            // 이번 라운드에 이미 적용된 제외 목록과, 다음 라운드에 적용할 제외 목록.
+            // 둘 다 정렬·동결된 복사본이라 판정 이후 누구도 바꿀 수 없다.
+            excludedUuids: Object.freeze([...getDayVoteExcludedUuids(session)].sort()),
+            revoteExcludedUuids: Object.freeze(isRevote ? [...tally.tiedTargetUuids] : []),
         },
     }
 }
@@ -1304,10 +1477,27 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
  * 어느 outcome이든 채워진 채로 남으므로(TIE/ABSTAINED도 null로 되돌리지 않음), 이후 phase가
  * NIGHT로 바뀌어도 prepareDayVoteResolution의 alreadyResolved 체크가 이 dayIndex의 재제출·재판정을
  * 계속 잠근다.
+ *
+ * REVOTE(1라운드 동점)만은 phase를 DAY에 그대로 두고 라운드만 올린다 — 새 phase나 타이머를
+ * 만들지 않고 동점 재투표를 표현하기 위해서다. 이때 동점자 전체가 dayVoteExcludedUuids로
+ * 들어가고(그들에게는 투표할 수 없다) dayVotes는 새 빈 Map으로 교체된다. 라운드/제외 목록은
+ * 다음 enterDayPhase가 최초 투표 상태로 되돌린다.
+ *
+ * 커밋 전에 resolution이 정말 "지금 이 세션의 이 라운드" 판정인지 확인한다 — 같은 resolution을
+ * 두 번 커밋하면 라운드가 두 번 오르고 표가 두 번 지워지므로, 어긋나면 아무 것도 바꾸지 않고
+ * DAY_VOTE_RESOLUTION_MISMATCH로 거부한다.
+ *
+ * @param {object} session - canonical GameSession(이 함수가 직접 변형한다)
+ * @param {object} resolution - prepareDayVoteResolution이 반환한 판정 객체
+ * @flow 종료·일관성 가드를 먼저 통과한 뒤 outcome이 TRIBUNAL / REVOTE / 그 외(TIE·ABSTAINED)인지로 분기한다.
  */
 function commitDayVoteResolution(session, resolution) {
     const endedCheck = assertSessionNotEnded(session)
     if (!endedCheck.ok) return endedCheck
+
+    if (resolution.dayIndex !== session.dayIndex || getResolutionRound(resolution) !== getDayVoteRound(session)) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
 
     session.dayVoteResolution = resolution
     if (resolution.outcome === 'TRIBUNAL') {
@@ -1318,6 +1508,12 @@ function commitDayVoteResolution(session, resolution) {
             defendantUuid: resolution.tribunalTargetUuid,
             votes: new Map(),
         }
+    } else if (resolution.outcome === 'REVOTE') {
+        // phase는 DAY 그대로다 — 밤으로 넘어가지 않고 같은 낮에서 한 번 더 투표한다.
+        session.tribunal = null
+        session.dayVoteRound = getResolutionRound(resolution) + 1
+        session.dayVoteExcludedUuids = new Set(resolution.revoteExcludedUuids ?? [])
+        session.dayVotes = new Map()
     } else {
         session.tribunal = null
         session.phase = 'NIGHT'
@@ -1330,16 +1526,27 @@ function commitDayVoteResolution(session, resolution) {
 /**
  * DAY 투표 판정 공개 payload. voterUuid→targetUuid 매핑, role, team, socketId, 내부 Map/Set은
  * 어디에도 포함하지 않습니다 — 공개 집계 수치와 결과 판정만 담습니다.
+ *
+ * round와 revoteExcludedUuids는 재투표를 위한 공개 계약입니다 — 어느 라운드의 결과인지와
+ * 다음 라운드에서 후보 자격을 잃은 사람이 누구인지는 전원이 알아야 하는 정보입니다(동점자
+ * 자체가 공개 집계에서 유도되는 값이라 새로 드러나는 비밀이 없습니다).
+ * revoteExcludedUuids는 매 호출마다 새 배열로 복사하므로 수신자가 변형해도 canonical
+ * resolution은 오염되지 않습니다.
+ *
+ * @param {object} session - canonical GameSession(id/phase만 읽는다)
+ * @param {object} resolution - prepareDayVoteResolution이 반환한 판정 객체
  */
 function buildDayVoteResolvedPayload(session, resolution) {
     return {
         gameId: session.id,
         dayIndex: resolution.dayIndex,
         phase: session.phase,
+        round: getResolutionRound(resolution),
         outcome: resolution.outcome,
         tribunalTargetUuid: resolution.tribunalTargetUuid,
         publicVoteCount: resolution.publicVoteCount,
         publicAbstainCount: resolution.publicAbstainCount,
+        revoteExcludedUuids: [...(resolution.revoteExcludedUuids ?? [])],
     }
 }
 
@@ -1615,11 +1822,19 @@ function commitTribunalVoteResolution(session, resolution) {
 
 /**
  * TRIBUNAL 판정 공개 payload. top-level 키는 정확히
- * [counts, dayIndex, defendantUuid, executedUuid, gameId, outcome, phase]뿐입니다 —
- * voterUuid별 개별 표(ballotSnapshot)나 role/team/privateRole 등은 어디에도 없습니다.
+ * [counts, dayIndex, defendantUuid, executedRole, executedUuid, gameId, outcome, phase]뿐입니다 —
+ * voterUuid별 개별 표(ballotSnapshot)나 처형되지 않은 참가자의 role/team 등은 어디에도 없습니다.
+ *
+ * executedRole은 "이번 처형으로 죽은 사람의 역할"입니다 — 처형된 참가자의 역할은 스펙상 전원에게
+ * 공개되는 정보입니다(판정 6.6/8.2). 최상위 role이 아니라 executedRole이라는 이름을 쓰는 이유는,
+ * 이 저장소에서 최상위 role 키가 "이 payload를 보는 본인의 역할"을 뜻하는 예약된 의미이기
+ * 때문입니다(buildViewerRoleFields). 처형이 없었다면(NOT_GUILTY) executedUuid와 함께 null입니다.
+ *
+ * @param {object} session - canonical GameSession(id/phase/tribunal/players를 읽기만 한다)
  */
 function buildTribunalVoteResolvedPayload(session) {
     const tribunal = session.tribunal
+    const executedUuid = tribunal.executedUuid
     return {
         gameId: session.id,
         dayIndex: tribunal.dayIndex,
@@ -1627,7 +1842,8 @@ function buildTribunalVoteResolvedPayload(session) {
         defendantUuid: tribunal.defendantUuid,
         outcome: tribunal.outcome,
         counts: { guilty: tribunal.counts.guilty, notGuilty: tribunal.counts.notGuilty },
-        executedUuid: tribunal.executedUuid,
+        executedUuid,
+        executedRole: executedUuid ? session.players.get(executedUuid)?.role ?? null : null,
     }
 }
 
@@ -1675,6 +1891,10 @@ function canIncludeDayTribunalFields(session) {
  * dayVoteResolution/tribunal/winResult가 추가된다. 다른 참가자의 role/team/allies/투표·행동
  * 대상/raw ballot/개별 제출 여부는 어디에도 포함하지 않는다 — self만 본인의 role 관련 필드를
  * 담는다.
+ *
+ * @param {object} session - canonical GameSession(읽기만 한다)
+ * @param {string} uuid - 스냅샷을 받을 참가자 본인의 uuid(viewer)
+ * @flow 항상 top-level을 만든 뒤, nightResolution·DAY/TRIBUNAL 노출 조건·winResult를 각각 확인해 선택 필드를 덧붙인다.
  */
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
@@ -1713,11 +1933,20 @@ function buildSessionSnapshot(session, uuid) {
 
     if (canIncludeDayTribunalFields(session)) {
         if (session.dayVoteResolution && session.dayVoteResolution.dayIndex === session.dayIndex) {
-            const { outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount } = buildDayVoteResolvedPayload(
-                session,
-                session.dayVoteResolution,
-            )
-            fields.dayVoteResolution = { outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount }
+            // round/revoteExcludedUuids도 함께 싣는다 — 재투표가 열려 있는 DAY로 재접속한
+            // 클라이언트가 "지금이 몇 라운드이고 누가 후보에서 빠졌는지"를 모르면 그 낮에
+            // 갇힌다(제외된 후보에게 투표해 계속 거부당한다). 둘 다 공개 계약이다
+            // (buildDayVoteResolvedPayload 참고).
+            const { round, outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount, revoteExcludedUuids } =
+                buildDayVoteResolvedPayload(session, session.dayVoteResolution)
+            fields.dayVoteResolution = {
+                round,
+                outcome,
+                tribunalTargetUuid,
+                publicVoteCount,
+                publicAbstainCount,
+                revoteExcludedUuids,
+            }
         }
 
         if (session.tribunal && session.tribunal.dayIndex === session.dayIndex) {
@@ -2181,6 +2410,9 @@ module.exports = {
         getSpecialRoleBudget,
         computeRoleComposition,
         isEligibleForNightAction,
+        requiresAliveTarget,
+        getDayVoteRound,
+        getDayVoteExcludedUuids,
         sanitizeChatText,
         // 기존 테스트/호출부가 쓰던 이름을 그대로 남긴다(동일 함수 참조 — 채널 공용 규칙이다).
         sanitizeJokerChatText: sanitizeChatText,

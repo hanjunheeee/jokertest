@@ -27,12 +27,20 @@ export const CUSTOM_ROLE_LABELS = Object.freeze({
 export const CITIZEN_ROLE_LABEL = "시민"
 
 /**
- * CUSTOM에서 지정할 수 있는 광대 수 상한. 서버는 CUSTOM에서도 payload의 jokerCount를
- * 기존 규칙(backend/utils/createRoomValidation.js의 ALLOWED_JOKER_COUNT = 1~4)으로
- * 검증하고, roleCounts.JOKER와 다르면 거부한다 — 그래서 프런트도 같은 상한을 쓴다.
+ * 특수직업(광대·의사·경비대·마녀사냥꾼) 공통 인원 상한. backend/game-core/roleComposition.js의
+ * MAX_SPECIAL_ROLE_COUNT와 같은 값이어야 한다(수동 동기화). 시민은 정원에서 파생되는 잔여
+ * 인원이라 상한이 없다(0명도 정상이다).
+ */
+export const MAX_SPECIAL_ROLE_COUNT = 2
+
+/**
+ * CUSTOM에서 지정할 수 있는 광대 수 상한. 서버가 AUTO/CUSTOM 두 경로 모두에서 위 상한을
+ * 집행하므로 프런트도 같은 값을 쓴다 — backend/utils/createRoomValidation.js의
+ * ALLOWED_JOKER_COUNT(1~4)는 payload 형태 검증일 뿐이고, 3명 이상은 그 뒤의 역할 구성 검증
+ * (validateCreateRoomRoleComposition)에서 거부된다.
  */
 export const MIN_CUSTOM_JOKER_COUNT = 1
-export const MAX_CUSTOM_JOKER_COUNT = 4
+export const MAX_CUSTOM_JOKER_COUNT = MAX_SPECIAL_ROLE_COUNT
 
 /** CUSTOM으로 전환했을 때의 초기값. 광대 1명 외 고정 역할은 0명에서 시작한다. */
 export const DEFAULT_CUSTOM_ROLE_COUNTS = Object.freeze({

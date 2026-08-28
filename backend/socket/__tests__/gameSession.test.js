@@ -2849,7 +2849,11 @@ test('resolve_day_vote: TRIBUNAL 판정 ack가 정확히 {ok:true, gameId, dayIn
     assert.equal(session.phase, 'TRIBUNAL')
 })
 
-test('resolve_day_vote: TIE 판정 ack의 outcome은 "TIE"이고 phase는 NIGHT로 전이하며(dayIndex 불변), day_vote_resolved 방송 payload.phase도 NIGHT다', () => {
+// 1라운드 동점은 core 계약상 TIE가 아니라 REVOTE이고 phase가 DAY에 남는다(판정 6.4).
+// 3인 세션은 순환 투표에서 생존자 전원이 동점자가 되어 2라운드에 후보가 남지 않으므로,
+// 재투표는 전원 기권(ABSTAINED)으로 종결되며 그때 비로소 NIGHT로 전이한다.
+// 소켓 계층의 ack 형태(round는 싣지 않는다)와 "참가자당 방송 1건" 계약은 두 라운드 모두 동일하다.
+test('resolve_day_vote: 1라운드 동점 ack의 outcome은 "REVOTE"이고 phase는 DAY에 남으며, 재투표 종결 시에만 NIGHT로 전이한다', () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-2' })
     const [a, b, c] = uuids
     const dayIndexBefore = session.dayIndex
@@ -2864,7 +2868,33 @@ test('resolve_day_vote: TIE 판정 ack의 outcome은 "TIE"이고 phase는 NIGHT�
         ok: true,
         gameId: session.id,
         dayIndex: dayIndexBefore,
-        outcome: 'TIE',
+        outcome: 'REVOTE',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, dayIndexBefore)
+
+    const revoteBroadcast = socketByUuid.get(a).emitted.find((e) => e.event === 'day_vote_resolved')
+    assert.equal(revoteBroadcast.payload.phase, 'DAY')
+    assert.equal(revoteBroadcast.payload.dayIndex, dayIndexBefore)
+    assert.equal(revoteBroadcast.payload.outcome, 'REVOTE')
+    assert.deepEqual([...revoteBroadcast.payload.revoteExcludedUuids].sort(), [...uuids].sort())
+    for (const uuid of uuids) {
+        assert.equal(socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved').length, 1)
+    }
+
+    // 2라운드: 동점자(=생존자 전원)가 후보에서 빠졌으므로 기권만 가능하다.
+    for (const uuid of uuids) {
+        handleSubmitDayVote(io, socketByUuid.get(uuid), uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+    }
+    const second = countingCallback()
+    handleResolveDayVote(io, socketByUuid.get(a), a, { gameId: session.id, dayIndex: session.dayIndex }, second.callback)
+
+    assert.deepEqual(second.getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: dayIndexBefore,
+        outcome: 'ABSTAINED',
         tribunalTargetUuid: null,
     })
     assert.equal(session.phase, 'NIGHT')
@@ -2872,12 +2902,11 @@ test('resolve_day_vote: TIE 판정 ack의 outcome은 "TIE"이고 phase는 NIGHT�
     assert.equal(session.nightActions.size, 0)
     assert.equal(session.nightResolution, null)
 
-    const broadcast = socketByUuid.get(a).emitted.find((e) => e.event === 'day_vote_resolved')
-    assert.equal(broadcast.payload.phase, 'NIGHT')
-    assert.equal(broadcast.payload.dayIndex, dayIndexBefore)
-    assert.equal(broadcast.payload.outcome, 'TIE')
     for (const uuid of uuids) {
-        assert.equal(socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved').length, 1)
+        const broadcasts = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved')
+        assert.equal(broadcasts.length, 2)
+        assert.equal(broadcasts[1].payload.phase, 'NIGHT')
+        assert.equal(broadcasts[1].payload.outcome, 'ABSTAINED')
     }
 })
 
@@ -2977,7 +3006,7 @@ test('handleResolveTribunalVote: 성공 시 commit 이후 canonical에서 빌드
     for (const s of [socketA, socketB, socketC]) {
         const delivered = s.emitted.filter((e) => e.event === 'tribunal_vote_resolved')
         assert.equal(delivered.length, 1)
-        assert.deepEqual(Object.keys(delivered[0].payload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase'])
+        assert.deepEqual(Object.keys(delivered[0].payload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase'])
     }
 })
 
@@ -3107,7 +3136,7 @@ test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은
     assert.equal(Object.hasOwn(session, 'winResult'), false)
 
     const expectedPayload = gameSessionCore.buildTribunalVoteResolvedPayload(session)
-    assert.deepEqual(Object.keys(expectedPayload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase'])
+    assert.deepEqual(Object.keys(expectedPayload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase'])
     assert.equal(expectedPayload.phase, 'NIGHT')
 
     for (const s of [socketA, socketB, socketC]) {
@@ -3200,7 +3229,7 @@ test('resolve_tribunal_vote 종료(CITIZEN 승리): 피고인이 마지막 생�
     }
     assert.deepEqual(
         Object.keys(expectedPayload).sort(),
-        ['counts', 'dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
+        ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
     )
     assert.deepEqual(expectedPayload.winResult, { winner: 'CITIZEN' })
 
@@ -3252,7 +3281,7 @@ test('resolve_tribunal_vote 종료(JOKER 승리): 피고인이 비-JOKER고 처�
     }
     assert.deepEqual(
         Object.keys(expectedPayload).sort(),
-        ['counts', 'dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
+        ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
     )
     assert.deepEqual(expectedPayload.winResult, { winner: 'JOKER' })
 

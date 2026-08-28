@@ -6,6 +6,7 @@ import {
   getRoleCountRange,
   validateRoleComposition,
 } from "../roleComposition.js"
+import { MAX_CUSTOM_JOKER_COUNT, MAX_SPECIAL_ROLE_COUNT } from "../../constants/roleComposition.js"
 
 function customInput({ roleCounts, maxPlayers = 8 } = {}) {
   return {
@@ -53,7 +54,8 @@ test("숫자가 아닌 인원 값은 합계에서 숫자로 강제 변환되지 
 })
 
 test("maxPlayers가 바뀌면 같은 roleCounts라도 검증 결과가 즉시 달라진다", () => {
-  const roleCounts = { JOKER: 3, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }
+  // 광대는 상한(2명) 안이어야 이 테스트가 보려는 "정원에 따른 판정 변화"에 도달한다.
+  const roleCounts = { JOKER: 2, DOCTOR: 2, GUARD: 1, WITCH_HUNTER: 1 }
   assert.equal(validateRoleComposition({ mode: "custom", maxPlayers: 8, roleCounts }).ok, true)
 
   const shrunk = validateRoleComposition({ mode: "custom", maxPlayers: 5, roleCounts })
@@ -61,9 +63,30 @@ test("maxPlayers가 바뀌면 같은 roleCounts라도 검증 결과가 즉시 �
   assert.equal(shrunk.code, "FIXED_ROLES_EXCEED_MAX_PLAYERS")
 
   // 정원이 광대 수 이하로 줄면 광대 조건이 먼저 걸린다.
-  const tiny = validateRoleComposition({ mode: "custom", maxPlayers: 3, roleCounts })
+  const tiny = validateRoleComposition({ mode: "custom", maxPlayers: 2, roleCounts })
   assert.equal(tiny.ok, false)
   assert.equal(tiny.code, "JOKER_COUNT_TOO_HIGH")
+})
+
+test("특수직업 상한(2명)을 넘는 광대 수는 정원과 무관하게 JOKER_COUNT_ABOVE_LIMIT으로 거부한다", () => {
+  // 정원이 아무리 커도 3명 이상은 서버가 거부하므로 여기서도 미리 걸러낸다.
+  const aboveLimit = validateRoleComposition({
+    mode: "custom",
+    maxPlayers: 10,
+    roleCounts: { JOKER: 3, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
+  })
+  assert.equal(aboveLimit.ok, false)
+  assert.equal(aboveLimit.code, "JOKER_COUNT_ABOVE_LIMIT")
+
+  // 상한과 같은 값(2)은 통과한다 — 경계는 열려 있다.
+  assert.equal(
+    validateRoleComposition({
+      mode: "custom",
+      maxPlayers: 10,
+      roleCounts: { JOKER: MAX_CUSTOM_JOKER_COUNT, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
+    }).ok,
+    true,
+  )
 })
 
 test("음수·소수·문자열·누락 값은 모두 거부한다", () => {
@@ -87,8 +110,10 @@ test("JOKER=0 · JOKER>=maxPlayers · 합계>maxPlayers는 거부한다", () => 
   assert.equal(zeroJoker.ok, false)
   assert.equal(zeroJoker.code, "JOKER_COUNT_TOO_LOW")
 
+  // 상한(2)보다 큰 값은 JOKER_COUNT_ABOVE_LIMIT이 먼저 걸리므로, "정원 이상" 조건 자체를
+  // 보려면 상한 안의 값으로 정원을 좁혀야 한다.
   const tooManyJokers = validateRoleComposition(
-    customInput({ maxPlayers: 4, roleCounts: { JOKER: 4, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 } }),
+    customInput({ maxPlayers: 2, roleCounts: { JOKER: 2, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 } }),
   )
   assert.equal(tooManyJokers.ok, false)
   assert.equal(tooManyJokers.code, "JOKER_COUNT_TOO_HIGH")
@@ -129,9 +154,16 @@ test("roleCounts가 객체가 아니거나 maxPlayers가 잘못되면 거부한�
 })
 
 test("스테퍼 범위는 역할별 상한만 강제하고 합계는 강제하지 않는다", () => {
-  // 광대는 정원보다 적어야 하고 서버의 기존 상한(4)도 넘을 수 없다.
-  assert.deepEqual(getRoleCountRange("JOKER", 10), { min: 1, max: 4 })
-  assert.deepEqual(getRoleCountRange("JOKER", 4), { min: 1, max: 3 })
+  // 광대는 정원보다 적어야 하고 특수직업 공통 상한(2)도 넘을 수 없다.
+  assert.deepEqual(getRoleCountRange("JOKER", 10), { min: 1, max: 2 })
+  assert.deepEqual(getRoleCountRange("JOKER", 4), { min: 1, max: 2 })
+  // 정원이 2명이면 "정원보다 적어야 한다"가 상한보다 더 좁게 걸린다.
+  assert.deepEqual(getRoleCountRange("JOKER", 2), { min: 1, max: 1 })
   // 다른 역할은 0부터 정원까지 — 합계 초과는 검증 메시지와 버튼 비활성화가 처리한다.
   assert.deepEqual(getRoleCountRange("DOCTOR", 6), { min: 0, max: 6 })
+})
+
+test("MAX_SPECIAL_ROLE_COUNT는 2이고 광대 상한도 같은 값을 쓴다", () => {
+  assert.equal(MAX_SPECIAL_ROLE_COUNT, 2)
+  assert.equal(MAX_CUSTOM_JOKER_COUNT, MAX_SPECIAL_ROLE_COUNT)
 })

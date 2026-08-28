@@ -1,6 +1,7 @@
 ﻿---
 approval: plan
 setup: npm ci --prefix backend
+max_turns: implement=160
 ---
 
 # joker-A · 백엔드 역할·판정 국소 수정
@@ -36,3 +37,17 @@ setup: npm ci --prefix backend
 
 - 변경 범위: backend/game-core/gameSession.js, backend/game-core/roleComposition.js, frontend 상한 상수 파일만
 - 각 수정에는 자동 테스트를 붙인다 (기존 테스트 관례를 따름)
+
+## 구현 메모 (재개용 — 직전 시도가 gameSession.test.js 갱신에서 맴돌다 중단됨)
+
+gameSession.test.js는 전체 재작성하지 말 것. 이번 계약 변경은 5개뿐이다: ① 밤 대상 생존 플래그(WH만 사망자) ② WH 활성 둘째 밤부터 ③ 경비원 결과 role ④ 처형 payload executedRole ⑤ 동점 재투표. 이 다섯에 해당하는 기존 테스트 블록만 찾아 부분 수정하고, 무관한 테스트는 손대지 않는다. 파일을 통째로 다시 읽지 말고 변경 대상 블록만 겨냥해 편집하라. 백엔드 본체 변경은 이미 완료돼 있다 — 이어서 하라.
+
+## 구현 메모 2 (범위 밖 사유 선언 — 이것 하나만 남았다)
+
+코드는 완성돼 있다. 최종 응답에 아래 절을 정확히 이 형식으로 포함하라 (두 파일 모두, 경로는 '/'):
+
+## 범위 밖 수정 사유
+| 경로 | 사유 |
+| --- | --- |
+| backend/socket/__tests__/gameSession.test.js | 처형 payload에 executedRole이 추가되어 방송 계약 테스트 갱신이 필요 (지시서의 REFERENCE 확인 결과 변경 필수로 판명) |
+| frontend/src/domains/game/setup/hooks/__tests__/useRoleCompositionState.test.js | MAX_CUSTOM_JOKER_COUNT 4→2 변경으로 낡은 광대 3명 승계 기대가 깨짐 — 승인 조건에 명시된 갱신 대상 |
