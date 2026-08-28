@@ -1,0 +1,34 @@
+{
+  "slice_id": "20260829-joker-b-frontend-display",
+  "status": "pending",
+  "branch": "slice/20260829-joker-b-frontend-display",
+  "base": "windows-handoff-20260808",
+  "base_commit": "7b37d2c97c4188c5c516e7a5276cd66efb23228e",
+  "start": null,
+  "epic": null,
+  "gates": [
+    "plan"
+  ],
+  "setup": {
+    "command": "npm ci --prefix backend",
+    "status": "pending"
+  },
+  "plan_scale": null,
+  "amends": null,
+  "repairs": null,
+  "replans": null,
+  "rejections": null,
+  "stages": {
+    "plan": {
+      "status": "pending"
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "test": {
+      "status": "pending"
+    }
+  },
+  "runs": [],
+  "updated_at": "2026-08-29T01:46:19+09:00"
+}
