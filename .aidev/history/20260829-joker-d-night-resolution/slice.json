@@ -1,6 +1,6 @@
 {
   "slice_id": "20260829-joker-d-night-resolution",
-  "status": "running:implement",
+  "status": "running:test",
   "branch": "slice/20260829-joker-d-night-resolution",
   "base": "windows-handoff-20260808",
   "base_commit": "c732749c8fd5c098698422e2ca0a98a6d1f4d3fd",
@@ -38,10 +38,14 @@
     "implement": {
       "status": "done",
       "run_id": "20260829-031845-joker-d-night-resolution-implement",
-      "attempts": 1
+      "attempts": 1,
+      "commit": "61b5aae4e2046df8a80cb56a3b43408860f459cb"
     },
     "test": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260829-032346-joker-d-night-resolution-test",
+      "verdict": "pass",
+      "attempts": 1
     }
   },
   "runs": [
@@ -76,7 +80,23 @@
         "peak_context": 142060
       },
       "cost_usd": 3.605571
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260829-032346-joker-d-night-resolution-test",
+      "status": "completed",
+      "turns": 11,
+      "tokens": {
+        "input": 13,
+        "cache_creation": 28424,
+        "cache_read": 286322,
+        "output": 3667,
+        "billed_input": 314759,
+        "peak_context": 49310
+      },
+      "cost_usd": 0.519141
     }
   ],
-  "updated_at": "2026-08-29T03:23:45+09:00"
+  "updated_at": "2026-08-29T03:24:51+09:00"
 }
