@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 
 const {
     ROLE_COMPOSITION_MODES,
+    MAX_SPECIAL_ROLE_COUNT,
     computeRoleComposition,
     resolveRoleCompositionMode,
     validateCustomRoleCounts,
@@ -86,6 +87,69 @@ test('validateCustomRoleCounts: JOKER=0 · JOKER>=정원 · 합계>정원은 거
     assert.equal(validateCustomRoleCounts({ JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }, 4).ok, true)
 })
 
+// ── 특수직업 인원 상한(판정 2.2) ───────────────────────────────────────────
+
+test('MAX_SPECIAL_ROLE_COUNT: 특수직업 공통 상한은 2명이다', () => {
+    assert.equal(MAX_SPECIAL_ROLE_COUNT, 2)
+})
+
+test('validateCustomRoleCounts: 어떤 특수직업도 3명 이상이면 거부하고 2명까지는 통과한다', () => {
+    for (const key of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']) {
+        const overLimit = { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, [key]: 3 }
+        assert.equal(
+            validateCustomRoleCounts(overLimit, 10).reason,
+            'ROLE_COUNT_ABOVE_LIMIT',
+            `${key}=3은 거부돼야 함`,
+        )
+        const atLimit = { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, [key]: 2 }
+        assert.equal(validateCustomRoleCounts(atLimit, 10).ok, true, `${key}=2는 통과해야 함`)
+    }
+})
+
+test('validateCustomRoleCounts: 시민 수는 어떤 경우에도 거부 사유가 아니다(시민 0명 허용)', () => {
+    // 고정 역할 합이 정확히 정원과 같아 시민이 0명이 되는 구성도, 시민이 8명 남는 구성도
+    // 똑같이 통과한다 — CITIZEN에는 상한도 하한도 없다.
+    assert.equal(validateCustomRoleCounts({ JOKER: 2, DOCTOR: 2, GUARD: 2, WITCH_HUNTER: 2 }, 8).ok, true)
+    assert.equal(validateCustomRoleCounts({ JOKER: 1, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 }, 10).ok, true)
+})
+
+test('validateCustomRoleCounts: 상한 검사는 JOKER 교차 검증 뒤에 온다(4인 방 JOKER 4는 기존 코드 유지)', () => {
+    assert.equal(
+        validateCustomRoleCounts({ JOKER: 4, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 }, 4).reason,
+        'JOKER_COUNT_TOO_HIGH',
+    )
+})
+
+test('validateCreateRoomRoleComposition: AUTO에서 광대 3명은 상한 메시지로 거부한다', () => {
+    const result = validateCreateRoomRoleComposition(
+        { roleCompositionMode: 'auto' },
+        baseSettings({ maxPlayers: 8, jokerCount: 3 }),
+    )
+    assert.equal(result.ok, false)
+    assert.equal(result.message, `역할별 인원은 최대 ${MAX_SPECIAL_ROLE_COUNT}명까지 지정할 수 있습니다.`)
+    // 상한 안(2명)이면 그대로 통과한다.
+    assert.equal(validateCreateRoomRoleComposition({ roleCompositionMode: 'auto' }, baseSettings()).ok, true)
+})
+
+test('validateCreateRoomRoleComposition: CUSTOM에서 의사 3명은 상한 메시지로 거부한다', () => {
+    const result = validateCreateRoomRoleComposition(
+        { roleCompositionMode: 'custom', roleCounts: customCounts({ DOCTOR: 3 }) },
+        baseSettings(),
+    )
+    assert.equal(result.ok, false)
+    assert.equal(result.message, `역할별 인원은 최대 ${MAX_SPECIAL_ROLE_COUNT}명까지 지정할 수 있습니다.`)
+})
+
+test('resolveRoleComposition: 시작 시점에도 상한을 다시 강제한다(AUTO 광대 3 · CUSTOM 경비 3)', () => {
+    assert.equal(resolveRoleComposition({ jokerCount: 3 }, 8).reason, 'ROLE_COUNT_ABOVE_LIMIT')
+    const custom = {
+        roleCompositionMode: 'custom',
+        jokerCount: 1,
+        roleCounts: { JOKER: 1, DOCTOR: 0, GUARD: 3, WITCH_HUNTER: 0 },
+    }
+    assert.equal(resolveRoleComposition(custom, 8).reason, 'ROLE_COUNT_ABOVE_LIMIT')
+})
+
 // ── create_room 병합 검증 ──────────────────────────────────────────────────
 
 test('validateCreateRoomRoleComposition: 모드가 없으면 AUTO로 해석되고 roleCounts를 만들지 않는다', () => {
@@ -128,7 +192,9 @@ test('validateCreateRoomRoleComposition: 알 수 없는 모드 값은 거부한�
 // ── 실제 인원 기준 해석 ────────────────────────────────────────────────────
 
 test('resolveRoleComposition: AUTO는 기존 computeRoleComposition 결과와 동일하다', () => {
-    for (const [playerCount, jokerCount] of [[4, 1], [6, 2], [8, 2], [10, 3]]) {
+    // jokerCount는 특수직업 상한(MAX_SPECIAL_ROLE_COUNT=2) 안의 값만 쓴다 — 3명 이상은 AUTO에서도
+    // 거부되므로(아래 상한 테스트) 여기서 쓰면 "AUTO 계산이 동일하다"는 계약을 검증할 수 없다.
+    for (const [playerCount, jokerCount] of [[4, 1], [6, 2], [8, 2], [10, 2]]) {
         const resolved = resolveRoleComposition({ jokerCount }, playerCount)
         assert.equal(resolved.ok, true)
         assert.deepEqual(resolved.composition, computeRoleComposition(playerCount, jokerCount))
@@ -166,18 +232,18 @@ test('resolveRoleComposition: CUSTOM 고정 역할 합이 실제 인원을 넘�
 test('resolveRoleComposition: CUSTOM JOKER가 실제 인원 이상이면 거부한다', () => {
     const settings = {
         roleCompositionMode: 'custom',
-        jokerCount: 3,
-        roleCounts: { JOKER: 3, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
+        jokerCount: 2,
+        roleCounts: { JOKER: 2, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
     }
-    assert.equal(resolveRoleComposition(settings, 4).ok, true)
-    assert.equal(resolveRoleComposition(settings, 3).reason, 'JOKER_COUNT_TOO_HIGH')
+    assert.equal(resolveRoleComposition(settings, 3).ok, true)
+    assert.equal(resolveRoleComposition(settings, 2).reason, 'JOKER_COUNT_TOO_HIGH')
 })
 
 test('resolveRoleComposition: 저장된 jokerCount와 roleCounts.JOKER가 어긋나면 거부한다', () => {
     const tampered = {
         roleCompositionMode: 'custom',
         jokerCount: 1,
-        roleCounts: { JOKER: 3, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
+        roleCounts: { JOKER: 2, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
     }
     assert.equal(resolveRoleComposition(tampered, 8).reason, 'JOKER_COUNT_MISMATCH')
 })

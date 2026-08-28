@@ -25,6 +25,12 @@ const CUSTOM_ROLE_KEYS = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTE
 // 해석된 canonical 구성이 항상 가져야 하는 5개 키(CUSTOM_ROLE_KEYS + CITIZEN).
 const RESOLVED_COMPOSITION_KEYS = Object.freeze([...CUSTOM_ROLE_KEYS, 'CITIZEN'])
 
+// 특수직업(광대·의사·경비원·마녀사냥꾼) 공통 인원 상한. 어떤 역할도 3명 이상으로는 설정할 수
+// 없다(판정 2.2). CITIZEN에는 상한이 없다 — 정원(최대 10명)에서 고정 역할 합을 뺀 잔여 인원이라
+// 입력 자체가 존재하지 않고, 0명도 정상이다(시민 수는 어떤 경우에도 거부 사유가 아니다).
+// frontend/src/domains/game/setup/constants/roleComposition.js의 동명 상수와 수동 동기화한다.
+const MAX_SPECIAL_ROLE_COUNT = 2
+
 function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -90,6 +96,8 @@ function resolveRoleCompositionMode(source) {
  * @param {unknown} roleCounts - 신뢰하지 않는 입력
  * @param {number} slotCount - 비교 기준 인원(생성 시엔 maxPlayers, 시작 시엔 실제 참가자 수)
  * @returns {{ok:true,roleCounts:object}|{ok:false,reason:string}}
+ * @flow 키 집합 → 값 형태 → JOKER 하한/상한 → slotCount 형태 → JOKER 교차 검증 →
+ *   역할별 인원 상한 → 고정 역할 합 순으로 검사하고, 어긋나는 즉시 reason과 함께 반환한다.
  */
 function validateCustomRoleCounts(roleCounts, slotCount) {
     if (!isPlainObject(roleCounts)) {
@@ -117,6 +125,14 @@ function validateCustomRoleCounts(roleCounts, slotCount) {
     if (roleCounts.JOKER >= slotCount) {
         return { ok: false, reason: 'JOKER_COUNT_TOO_HIGH' }
     }
+    // 역할별 인원 상한. JOKER 교차 검증(위 두 줄) "다음"에 두어야 기존 계약이 유지된다 —
+    // 예를 들어 4인 방의 JOKER 4명은 상한 초과이기 이전에 "전원이 광대"라 여전히
+    // JOKER_COUNT_TOO_HIGH로 거부된다.
+    for (const key of CUSTOM_ROLE_KEYS) {
+        if (roleCounts[key] > MAX_SPECIAL_ROLE_COUNT) {
+            return { ok: false, reason: 'ROLE_COUNT_ABOVE_LIMIT' }
+        }
+    }
     const fixedRoleCount = CUSTOM_ROLE_KEYS.reduce((sum, key) => sum + roleCounts[key], 0)
     if (fixedRoleCount > slotCount) {
         return { ok: false, reason: 'FIXED_ROLES_EXCEED_SLOTS' }
@@ -138,6 +154,7 @@ const CREATE_ROOM_ROLE_COMPOSITION_MESSAGES = Object.freeze({
     JOKER_COUNT_TOO_HIGH: '광대 수는 최대 플레이어 수보다 적어야 합니다.',
     INVALID_SLOT_COUNT: '최대 플레이어 수가 올바르지 않습니다.',
     FIXED_ROLES_EXCEED_SLOTS: '지정한 역할 인원의 합이 최대 플레이어 수를 넘습니다.',
+    ROLE_COUNT_ABOVE_LIMIT: `역할별 인원은 최대 ${MAX_SPECIAL_ROLE_COUNT}명까지 지정할 수 있습니다.`,
     ROLE_COUNTS_NOT_ALLOWED: '자동 구성에서는 역할별 인원을 지정할 수 없습니다.',
     JOKER_COUNT_MISMATCH: '광대 수 설정이 서로 어긋났습니다.',
 })
@@ -152,6 +169,7 @@ const CREATE_ROOM_ROLE_COMPOSITION_MESSAGES = Object.freeze({
  * @param {unknown} payload - 클라이언트 원본 payload(신뢰하지 않음)
  * @param {{maxPlayers:number, jokerCount:number}} baseSettings - 검증을 마친 기본 설정
  * @returns {{ok:true,value:object}|{ok:false,message:string}}
+ * @flow 모드를 먼저 해석해 AUTO/CUSTOM으로 분기하고, 각 분기에서 역할 인원 상한까지 검사한다.
  */
 function validateCreateRoomRoleComposition(payload, baseSettings) {
     const mode = resolveRoleCompositionMode(payload)
@@ -165,6 +183,11 @@ function validateCreateRoomRoleComposition(payload, baseSettings) {
         // 지정이 반영됐다고 믿게 되므로 명시적으로 거부한다.
         if (rawRoleCounts !== undefined) {
             return { ok: false, message: CREATE_ROOM_ROLE_COMPOSITION_MESSAGES.ROLE_COUNTS_NOT_ALLOWED }
+        }
+        // AUTO는 roleCounts가 없어 jokerCount가 유일한 상한 대상이다(나머지 특수직업은
+        // getSpecialRoleBudget이 인원 구간별로 최대 1명씩만 배정하므로 이미 상한 안이다).
+        if (baseSettings.jokerCount > MAX_SPECIAL_ROLE_COUNT) {
+            return { ok: false, message: CREATE_ROOM_ROLE_COMPOSITION_MESSAGES.ROLE_COUNT_ABOVE_LIMIT }
         }
         return { ok: true, value: { roleCompositionMode: ROLE_COMPOSITION_MODES.AUTO } }
     }
@@ -190,8 +213,12 @@ function validateCreateRoomRoleComposition(payload, baseSettings) {
  * 방 생성 시점 검증은 maxPlayers 기준이므로, 시작 시점에는 실제 인원 기준으로 반드시
  * 다시 해석·검증해야 한다(정원보다 적은 인원으로 시작할 수 있기 때문).
  *
- * 저장된 값을 신뢰하지 않고 매번 재검증한다(gameSession.js의 기존 스타일과 동일).
+ * 저장된 값을 신뢰하지 않고 매번 재검증한다(gameSession.js의 기존 스타일과 동일) — 방 생성
+ * 시점에 통과했더라도 역할 인원 상한을 시작 시점에 다시 확인한다.
+ * @param {object} settings - 저장된 room.settings(신뢰하지 않음)
+ * @param {number} playerCount - 게임 시작 시점의 실제 참가자 수
  * @returns {{ok:true,composition:object}|{ok:false,reason:string}}
+ * @flow 인원·모드를 확인한 뒤 AUTO(jokerCount만 검증)와 CUSTOM(roleCounts 전체 검증)으로 분기한다.
  */
 function resolveRoleComposition(settings, playerCount) {
     if (!Number.isInteger(playerCount) || playerCount < 1) {
@@ -208,6 +235,11 @@ function resolveRoleComposition(settings, playerCount) {
         }
         if (storedJokerCount >= playerCount) {
             return { ok: false, reason: 'JOKER_COUNT_TOO_HIGH' }
+        }
+        // create_room에서 이미 거부되는 값이지만, "저장된 값을 신뢰하지 않는다"는 이 모듈의
+        // 원칙대로 시작 시점에도 상한을 다시 강제한다(구버전 방·직접 조작된 settings 방어).
+        if (storedJokerCount > MAX_SPECIAL_ROLE_COUNT) {
+            return { ok: false, reason: 'ROLE_COUNT_ABOVE_LIMIT' }
         }
         return { ok: true, composition: computeRoleComposition(playerCount, storedJokerCount) }
     }
@@ -253,6 +285,7 @@ module.exports = {
     ROLE_COMPOSITION_MODES,
     CUSTOM_ROLE_KEYS,
     RESOLVED_COMPOSITION_KEYS,
+    MAX_SPECIAL_ROLE_COUNT,
     getSpecialRoleBudget,
     computeRoleComposition,
     resolveRoleCompositionMode,

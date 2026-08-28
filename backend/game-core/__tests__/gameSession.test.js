@@ -12,6 +12,9 @@ const {
     getSpecialRoleBudget,
     computeRoleComposition,
     isEligibleForNightAction,
+    requiresAliveTarget,
+    getDayVoteRound,
+    getDayVoteExcludedUuids,
     getEligibleNightActorUuids,
     sanitizeJokerChatText,
     evaluateWinCondition,
@@ -234,7 +237,28 @@ test('ROLE_DEFINITIONS: nightActionMinDayIndex가 WITCH_HUNTER 첫날밤 비활�
     assert.equal(ROLE_DEFINITIONS.CITIZEN.nightActionMinDayIndex, null)
     assert.equal(ROLE_DEFINITIONS.DOCTOR.nightActionMinDayIndex, 0)
     assert.equal(ROLE_DEFINITIONS.GUARD.nightActionMinDayIndex, 0)
-    assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex, 1)
+    // production의 첫 밤은 dayIndex 1이다(ROLE_REVEAL 0 → 첫 DAY 1 → 그 밤도 1). 따라서
+    // "첫 밤 불가, 둘째 밤부터 가능"은 2로 표현된다.
+    assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex, 2)
+})
+
+test('ROLE_DEFINITIONS: targetMustBeAlive는 WITCH_HUNTER만 false다', () => {
+    assert.equal(ROLE_DEFINITIONS.JOKER.targetMustBeAlive, true)
+    assert.equal(ROLE_DEFINITIONS.CITIZEN.targetMustBeAlive, true)
+    assert.equal(ROLE_DEFINITIONS.DOCTOR.targetMustBeAlive, true)
+    assert.equal(ROLE_DEFINITIONS.GUARD.targetMustBeAlive, true)
+    assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.targetMustBeAlive, false)
+})
+
+test('requiresAliveTarget: WITCH_HUNTER만 false이고 알 수 없는 역할은 fail-closed로 true다', () => {
+    assert.equal(requiresAliveTarget('JOKER'), true)
+    assert.equal(requiresAliveTarget('CITIZEN'), true)
+    assert.equal(requiresAliveTarget('DOCTOR'), true)
+    assert.equal(requiresAliveTarget('GUARD'), true)
+    assert.equal(requiresAliveTarget('WITCH_HUNTER'), false)
+    for (const unknown of ['MAYOR', '', undefined, null]) {
+        assert.equal(requiresAliveTarget(unknown), true, `${String(unknown)}은 생존 대상을 요구해야 함`)
+    }
 })
 
 test('ROLE_DEFINITIONS: 바깥 객체와 각 역할 정의 모두 개별적으로 동결되어 외부에서 변형할 수 없다', () => {
@@ -246,8 +270,10 @@ test('ROLE_DEFINITIONS: 바깥 객체와 각 역할 정의 모두 개별적으�
     const before = { ...ROLE_DEFINITIONS.WITCH_HUNTER }
     // non-strict 모드에서는 조용히 무시되므로 throw 여부가 아니라 값 불변을 확인한다.
     ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex = 0
+    ROLE_DEFINITIONS.WITCH_HUNTER.targetMustBeAlive = true
     ROLE_DEFINITIONS.JOKER.team = 'CITIZEN'
     assert.deepEqual(ROLE_DEFINITIONS.WITCH_HUNTER, before)
+    assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.targetMustBeAlive, false)
     assert.equal(ROLE_DEFINITIONS.JOKER.team, 'JOKER')
 })
 
@@ -989,11 +1015,18 @@ function validSession(overrides = {}) {
         deadChatRateLimit: new Map(),
         nightResolution: null,
         dayVotes: new Map(),
+        dayVoteRound: 1,
+        dayVoteExcludedUuids: new Set(),
         ...overrides,
     }
 }
 
 const malformedSessionCases = [
+    ['session.dayVoteRound 필드 누락', { dayVoteRound: undefined }],
+    ['session.dayVoteRound가 재투표 중간값', { dayVoteRound: 2 }],
+    ['session.dayVoteExcludedUuids 필드 누락', { dayVoteExcludedUuids: undefined }],
+    ['session.dayVoteExcludedUuids가 Set이 아닌 배열', { dayVoteExcludedUuids: [] }],
+    ['session.dayVoteExcludedUuids가 처음부터 비어있지 않음', { dayVoteExcludedUuids: new Set(['u1']) }],
     ['session.nightActions 필드 누락', { nightActions: undefined }],
     ['session.nightActions가 Map이 아닌 배열', { nightActions: [] }],
     ['session.nightActions가 Map이 아닌 일반 객체', { nightActions: {} }],
@@ -1188,17 +1221,19 @@ test('buildGameStartedPayload: state.self는 role에 따라 정확한 키만 가
     }
 })
 
+// jokerCount는 특수직업 공통 상한(MAX_SPECIAL_ROLE_COUNT = 2)을 넘을 수 없으므로 2로 구성한다.
+// allies 집합 계약(자기 제외·전체 포함·중복 없음)은 JOKER가 2명일 때도 그대로 검증된다.
 test('buildGameStartedPayload: allies는 다른 JOKER uuid의 정확한 전체 집합이다(부분 누락·CITIZEN 혼입·자기 포함·중복 없음)', () => {
     const room = makeRoom({
         players: [makePlayer('u1'), makePlayer('u2'), makePlayer('u3'), makePlayer('u4'), makePlayer('u5')],
-        jokerCount: 3,
+        jokerCount: 2,
     })
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
 
     const jokerUuids = [...candidate.session.players.values()]
         .filter((p) => p.role === 'JOKER')
         .map((p) => p.uuid)
-    assert.equal(jokerUuids.length, 3)
+    assert.equal(jokerUuids.length, 2)
 
     for (const uuid of jokerUuids) {
         const payload = buildGameStartedPayload(candidate.session, uuid)
@@ -1410,19 +1445,25 @@ function commitJokerTrioSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
     return { session, jokerUuids, citizenUuid }
 }
 
-// --- isEligibleForNightAction: 5개 역할 × dayIndex 0/1 표 ---
+// --- isEligibleForNightAction: 5개 역할 × dayIndex 0/1/2 표 ---
+// WITCH_HUNTER는 production 첫 밤(dayIndex 1)까지 비활성이고 둘째 밤(dayIndex 2)부터 활성이다.
 
 const eligibilityTable = [
     ['JOKER', 0, true],
     ['JOKER', 1, true],
+    ['JOKER', 2, true],
     ['DOCTOR', 0, true],
     ['DOCTOR', 1, true],
+    ['DOCTOR', 2, true],
     ['GUARD', 0, true],
     ['GUARD', 1, true],
+    ['GUARD', 2, true],
     ['WITCH_HUNTER', 0, false],
-    ['WITCH_HUNTER', 1, true],
+    ['WITCH_HUNTER', 1, false],
+    ['WITCH_HUNTER', 2, true],
     ['CITIZEN', 0, false],
     ['CITIZEN', 1, false],
+    ['CITIZEN', 2, false],
 ]
 
 for (const [role, dayIndex, expected] of eligibilityTable) {
@@ -1458,19 +1499,26 @@ test('submitNightAction: DOCTOR는 자기 자신을 대상으로 지정할 수 �
     assert.equal(session.nightActions.get(doctorUuid), doctorUuid)
 })
 
-for (const roleKey of ['guardUuid', 'witchHunterUuid']) {
-    test(`submitNightAction: ${roleKey}는 자기 자신을 대상으로 지정하면 INVALID_TARGET이고 Map은 불변이다`, () => {
-        const fixture = commitFullRoleSessionAtNight()
-        if (roleKey === 'witchHunterUuid') fixture.session.dayIndex = 1 // WITCH_HUNTER는 day1 이상이어야 eligibility를 통과한다
-        const actorUuid = fixture[roleKey]
-        const before = new Map(fixture.session.nightActions)
+test('submitNightAction: GUARD는 자기 자신을 대상으로 지정하면 INVALID_TARGET이고 Map은 불변이다', () => {
+    const fixture = commitFullRoleSessionAtNight()
+    const before = new Map(fixture.session.nightActions)
 
-        const result = submitNightAction(actorUuid, fixture.session.id, actorUuid)
+    const result = submitNightAction(fixture.guardUuid, fixture.session.id, fixture.guardUuid)
 
-        assert.deepEqual(result, { ok: false, code: 'INVALID_TARGET' })
-        assert.deepEqual(fixture.session.nightActions, before)
-    })
-}
+    assert.deepEqual(result, { ok: false, code: 'INVALID_TARGET' })
+    assert.deepEqual(fixture.session.nightActions, before)
+})
+
+test('submitNightAction: WITCH_HUNTER의 자기 자신 지목은 (본인이 생존이므로) TARGET_NOT_DEAD이고 Map은 불변이다', () => {
+    const fixture = commitFullRoleSessionAtNight()
+    fixture.session.dayIndex = 2 // WITCH_HUNTER는 둘째 밤부터 eligibility를 통과한다
+    const before = new Map(fixture.session.nightActions)
+
+    const result = submitNightAction(fixture.witchHunterUuid, fixture.session.id, fixture.witchHunterUuid)
+
+    assert.deepEqual(result, { ok: false, code: 'TARGET_NOT_DEAD' })
+    assert.deepEqual(fixture.session.nightActions, before)
+})
 
 test('submitNightAction: 세션에 없는 uuid를 대상으로 지정하면(모든 역할 공통) INVALID_TARGET이고 Map은 불변이다', () => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight()
@@ -1492,17 +1540,144 @@ test('submitNightAction: CITIZEN은 항상 NOT_ELIGIBLE이고 Map은 불변이�
     assert.deepEqual(session.nightActions, before)
 })
 
-test('submitNightAction: WITCH_HUNTER는 dayIndex 0에는 NOT_ELIGIBLE이지만 dayIndex 1부터는 제출 가능하다', () => {
+test('submitNightAction: WITCH_HUNTER는 dayIndex 1까지 NOT_ELIGIBLE이고 dayIndex 2부터 제출 가능하다', () => {
     const { session, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    session.players.get(citizenUuid).alive = false // WITCH_HUNTER의 대상은 사망자여야 한다
 
     const day0 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
     assert.deepEqual(day0, { ok: false, code: 'NOT_ELIGIBLE' })
     assert.equal(session.nightActions.has(witchHunterUuid), false)
 
-    session.dayIndex = 1
+    session.dayIndex = 1 // production의 첫 밤 — 여전히 불가
     const day1 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
-    assert.deepEqual(day1, { ok: true, gameId: session.id })
+    assert.deepEqual(day1, { ok: false, code: 'NOT_ELIGIBLE' })
+    assert.equal(session.nightActions.has(witchHunterUuid), false)
+
+    session.dayIndex = 2 // 두 번째 밤부터 가능
+    const day2 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
+    assert.deepEqual(day2, { ok: true, gameId: session.id })
     assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
+})
+
+// 위 테스트는 dayIndex를 손으로 세팅하지만, 판정 4.2.1이 물어보는 것은 "production이 실제로
+// 걷는 경로에서 첫 밤에 WH가 막히는가"다. ackAllAndRewindToFirstNight이 첫 밤을 인위적으로
+// dayIndex 0으로 되돌려 이 버그를 오래 가려왔으므로, 여기서는 어떤 상태도 손으로 만들지 않고
+// ROLE_REVEAL → DAY(1) → NIGHT(1) → DAY(2) → NIGHT(2)를 전부 core API로만 통과한다.
+test('submitNightAction: production 경로(ROLE_REVEAL→DAY→NIGHT)의 첫 밤에 WITCH_HUNTER는 NOT_ELIGIBLE이고 둘째 밤에는 허용된다', () => {
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(`prod-wh-${i}`))
+    const room = makeRoom({ id: 'room-prod-first-night', players, jokerCount: 1 })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0.999 })
+    commitGameSession(candidate.session)
+    const session = candidate.session
+    const byRole = (role) => [...session.players.values()].find((p) => p.role === role).uuid
+    const jokerUuid = byRole('JOKER')
+    const doctorUuid = byRole('DOCTOR')
+    const guardUuid = byRole('GUARD')
+    const witchHunterUuid = byRole('WITCH_HUNTER')
+
+    // ROLE_REVEAL(dayIndex 0) → 전원 확인 → 첫 낮(dayIndex 1)
+    for (const uuid of session.players.keys()) acknowledgeRoleReveal(uuid, session.id)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+
+    // 전원 기권으로 처형 없이 첫 밤(dayIndex 1)에 진입한다.
+    const abstainAll = () => {
+        for (const [uuid, player] of session.players) {
+            if (player.alive) submitDayVote(uuid, session.id, null)
+        }
+        const prepared = prepareDayVoteResolution(jokerUuid, session.id, session.dayIndex)
+        assert.equal(prepared.resolution.outcome, 'ABSTAINED')
+        commitDayVoteResolution(prepared.session, prepared.resolution)
+    }
+    abstainAll()
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, 1)
+
+    // 첫 밤: WH는 행동할 수 없다(판정 4.2.1).
+    const victimUuid = [...session.players.values()].find(
+        (p) => p.role === 'CITIZEN' && p.alive,
+    ).uuid
+    assert.deepEqual(submitNightAction(witchHunterUuid, session.id, victimUuid), { ok: false, code: 'NOT_ELIGIBLE' })
+    assert.equal(session.nightActions.has(witchHunterUuid), false)
+
+    // 첫 밤 판정으로 사망자가 생기고 둘째 낮(dayIndex 2)으로 넘어간다 — WH가 제출하지 않아도
+    // 밤이 막히지 않는다는 것까지 여기서 함께 확인된다.
+    submitNightAction(jokerUuid, session.id, victimUuid)
+    submitNightAction(doctorUuid, session.id, null)
+    submitNightAction(guardUuid, session.id, null)
+    const nightPrepared = prepareNightResolution(jokerUuid, session.id)
+    assert.equal(nightPrepared.ok, true)
+    commitNightResolution(nightPrepared.session, nightPrepared.resolution)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 2)
+    assert.equal(session.players.get(victimUuid).alive, false)
+
+    // 둘째 밤(dayIndex 2): 이제 WH는 사망자를 지목할 수 있다.
+    abstainAll()
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, 2)
+    assert.deepEqual(submitNightAction(witchHunterUuid, session.id, victimUuid), { ok: true, gameId: session.id })
+    assert.equal(session.nightActions.get(witchHunterUuid), victimUuid)
+})
+
+// --- WITCH_HUNTER 대상 규칙(판정 4.2.2): 사망자만 지목할 수 있다 ---
+
+test('submitNightAction: WITCH_HUNTER가 사망자를 지목하면 저장되고, 생존자를 지목하면 TARGET_NOT_DEAD로 거부된다', () => {
+    const { session, witchHunterUuid, citizenUuid, doctorUuid } = commitFullRoleSessionAtNight()
+    session.dayIndex = 2
+    session.players.get(citizenUuid).alive = false
+
+    const dead = submitNightAction(witchHunterUuid, session.id, citizenUuid)
+    assert.deepEqual(dead, { ok: true, gameId: session.id })
+    assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
+
+    const before = new Map(session.nightActions)
+    const alive = submitNightAction(witchHunterUuid, session.id, doctorUuid)
+    assert.deepEqual(alive, { ok: false, code: 'TARGET_NOT_DEAD' })
+    assert.deepEqual(session.nightActions, before) // 기존 유효 제출이 파괴되지 않는다
+})
+
+test('submitNightAction: 생존 대상을 요구하는 역할(DOCTOR/GUARD/JOKER)은 사망자를 지목하면 TARGET_NOT_ALIVE다', () => {
+    const { session, doctorUuid, guardUuid, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    session.players.get(citizenUuid).alive = false
+
+    for (const actorUuid of [doctorUuid, guardUuid, jokerUuid]) {
+        const before = new Map(session.nightActions)
+        assert.deepEqual(submitNightAction(actorUuid, session.id, citizenUuid), {
+            ok: false,
+            code: 'TARGET_NOT_ALIVE',
+        })
+        assert.deepEqual(session.nightActions, before)
+    }
+})
+
+test('submitNightAction: WITCH_HUNTER의 SKIP(null)은 대상 생존 규칙과 무관하게 그대로 저장된다', () => {
+    const { session, witchHunterUuid } = commitFullRoleSessionAtNight()
+    session.dayIndex = 2
+
+    assert.deepEqual(submitNightAction(witchHunterUuid, session.id, null), { ok: true, gameId: session.id })
+    assert.equal(session.nightActions.get(witchHunterUuid), null)
+})
+
+test('prepareNightResolution: WITCH_HUNTER의 사망자 지목은 밤 판정을 막지 않고 privateResults에 role을 담는다', () => {
+    const { session, witchHunterUuid, jokerUuid, doctorUuid, guardUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'room-wh-resolve' })
+    session.dayIndex = 2
+    session.players.get(citizenUuid).alive = false
+
+    submitNightAction(witchHunterUuid, session.id, citizenUuid)
+    submitNightAction(jokerUuid, session.id, null)
+    submitNightAction(doctorUuid, session.id, null)
+    submitNightAction(guardUuid, session.id, null)
+
+    const prepared = prepareNightResolution(witchHunterUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(prepared.resolution.privateResults.get(witchHunterUuid), {
+        actionType: 'CONFIRM',
+        targetId: citizenUuid,
+        role: session.players.get(citizenUuid).role,
+    })
 })
 
 test('submitNightAction: session.phase가 NIGHT가 아니면(ROLE_REVEAL) INVALID_PHASE이고 Map은 불변이다', () => {
@@ -2410,6 +2585,27 @@ test('제출 후 사망한 JOKER의 잔여 엔트리는 암살 집계에 반영�
     assert.equal(prepared.resolution.pendingEliminationTargetId, null)
 })
 
+// 경비원 조사는 진영(team)이 아니라 대상의 실제 role을 돌려준다(판정 4.3.1) — DOCTOR와 CITIZEN은
+// 둘 다 CITIZEN 진영이므로, team을 돌려주던 이전 계약에서는 구분되지 않던 두 대상이다.
+test('prepareNightResolution: GUARD 조사 결과는 team이 아니라 대상의 실제 role을 담는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-guard-role-result',
+    })
+    submitNightAction(jokerUuid, session.id, null)
+    submitNightAction(doctorUuid, session.id, null)
+
+    for (const [targetUuid, expectedRole] of [[doctorUuid, 'DOCTOR'], [citizenUuid, 'CITIZEN'], [jokerUuid, 'JOKER']]) {
+        submitNightAction(guardUuid, session.id, targetUuid)
+        const prepared = prepareNightResolution(citizenUuid, session.id)
+
+        assert.equal(prepared.ok, true)
+        const guardResult = prepared.resolution.privateResults.get(guardUuid)
+        assert.deepEqual(guardResult, { actionType: 'INVESTIGATE', targetId: targetUuid, role: expectedRole })
+        // team own-property는 더 이상 존재하지 않는다.
+        assert.equal(Object.hasOwn(guardResult, 'team'), false)
+    }
+})
+
 test('prepareNightResolution: 사망한 GUARD에게는 개인 결과(privateResults)를 만들지 않는다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight({
         id: 'room-dead-guard-private',
@@ -2807,29 +3003,60 @@ test('submitDayVote: 서로 다른 GameSession은 독립된 dayVotes Map을 가�
 // prepareDayVoteResolution / commitDayVoteResolution / buildDayVoteResolvedPayload — DAY 투표 판정
 // ---------------------------------------------------------------------------
 
-test('commitDayVoteResolution: TIE 결과는 phase를 NIGHT로 전이하고, 재요청은 멱등하게 alreadyResolved:true를 반환한다', () => {
+// 1라운드 동점은 더 이상 즉시 TIE가 아니라 REVOTE다(판정 6.4) — phase는 DAY에 머무르고
+// 라운드만 올라간다. 재요청 멱등성은 라운드가 넘어가기 전까지만 유효하므로 여기서는
+// commit 이전(같은 라운드) 시점에 확인한다.
+test('commitDayVoteResolution: 1라운드 동점은 REVOTE이고 phase를 DAY에 남긴 채 라운드와 제외 집합만 바꾼다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-tie-1' })
-    // 3자 순환 투표(A→B, B→C, C→A)는 각 대상이 1표씩 얻어 TIE가 된다.
+    // 3자 순환 투표(A→B, B→C, C→A)는 각 대상이 1표씩 얻어 동점이 된다.
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidC)
     submitDayVote(uuidC, session.id, uuidA)
 
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
     assert.equal(prepared.ok, true)
-    assert.equal(prepared.resolution.outcome, 'TIE')
+    assert.equal(prepared.resolution.outcome, 'REVOTE')
     assert.equal(prepared.resolution.tribunalTargetUuid, null)
+    assert.equal(prepared.resolution.round, 1)
+    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [uuidA, uuidB, uuidC].sort())
 
     commitDayVoteResolution(prepared.session, prepared.resolution)
 
-    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
     assert.equal(session.tribunal, null)
     assert.equal(session.dayVoteResolution, prepared.resolution)
+    assert.equal(session.dayVoteRound, 2)
+    assert.deepEqual([...session.dayVoteExcludedUuids].sort(), [uuidA, uuidB, uuidC].sort())
+    assert.equal(session.dayVotes.size, 0)
 
-    const again = prepareDayVoteResolution(uuidB, session.id, session.dayIndex)
-    assert.equal(again.ok, true)
-    assert.equal(again.alreadyResolved, true)
-    assert.equal(again.resolution, prepared.resolution)
-    assert.equal(session.phase, 'NIGHT')
+    // REVOTE는 판정 멱등성의 창을 라운드 단위로 좁힌다 — 1라운드 판정 직후 도착한 중복 요청은
+    // alreadyResolved 성공이 아니라 "2라운드 표가 아직 없다"는 ACTIONS_PENDING을 받는다.
+    // 라운드가 다르면 다른 판정이므로 의도된 동작이다.
+    const stale = prepareDayVoteResolution(uuidB, session.id, session.dayIndex)
+    assert.deepEqual(stale, { ok: false, code: 'ACTIONS_PENDING' })
+})
+
+// 같은 resolution을 두 번 commit해도 라운드가 두 번 오르거나 2라운드 표가 지워지지 않는다.
+test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_VOTE_RESOLUTION_MISMATCH이고 라운드·표가 불변이다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-revote-recommit' })
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+
+    // 2라운드가 열린 뒤 한 표를 넣어 "재-commit이 표를 지우는지"까지 관찰 가능하게 만든다.
+    submitDayVote(uuidA, session.id, null)
+    assert.equal(session.dayVotes.size, 1)
+
+    const second = commitDayVoteResolution(session, prepared.resolution)
+
+    assert.deepEqual(second, { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' })
+    assert.equal(session.dayVoteRound, 2)
+    assert.equal(session.dayVotes.size, 1)
+    assert.equal(session.phase, 'DAY')
 })
 
 test('commitDayVoteResolution: ABSTAINED 결과도 phase를 NIGHT로 전이한다', () => {
@@ -2911,7 +3138,8 @@ test('prepareDayVoteResolution: 사망한 참가자는 eligible voter에서 제�
 
     assert.equal(prepared.ok, true)
     assert.equal(prepared.resolution.publicVoteCount, 2)
-    assert.equal(prepared.resolution.outcome, 'TIE')
+    // 생존 2인이 서로를 지목해 동점이고, 1라운드 동점이므로 outcome은 REVOTE다(집계 수치 계약은 불변).
+    assert.equal(prepared.resolution.outcome, 'REVOTE')
 })
 
 test('prepareDayVoteResolution: eligible voter의 표가 사망한 대상을 가리키면 TARGET_NOT_A_PARTICIPANT다', () => {
@@ -2927,18 +3155,171 @@ test('prepareDayVoteResolution: eligible voter의 표가 사망한 대상을 가
     assert.deepEqual(result, { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' })
 })
 
-test('buildDayVoteResolvedPayload: TIE/ABSTAINED 이후에는 payload.phase가 NIGHT를 노출한다', () => {
+// REVOTE는 phase를 DAY에 남기고, 그 뒤 밤으로 보내는 결과(ABSTAINED·TIE)만 NIGHT를 노출한다.
+// 3인 순환 동점은 생존자 전원이 동점자이므로 2라운드에 후보가 남지 않아 전원 기권 → ABSTAINED로
+// 종결된다(판정 6.5의 "재동점이어도 3라운드로 가지 않는다"를 인원 하한에서 확인).
+test('buildDayVoteResolvedPayload: REVOTE 이후에는 phase가 DAY, 재투표 종결(ABSTAINED) 이후에는 NIGHT를 노출한다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-payload-phase-1' })
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidC)
     submitDayVote(uuidC, session.id, uuidA)
 
-    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    commitDayVoteResolution(prepared.session, prepared.resolution)
-    const payload = buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
+    const first = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    commitDayVoteResolution(first.session, first.resolution)
+    const revotePayload = buildDayVoteResolvedPayload(first.session, first.resolution)
 
-    assert.equal(payload.phase, 'NIGHT')
-    assert.equal(payload.outcome, 'TIE')
+    assert.equal(revotePayload.phase, 'DAY')
+    assert.equal(revotePayload.outcome, 'REVOTE')
+    assert.equal(revotePayload.round, 1)
+    assert.deepEqual(revotePayload.revoteExcludedUuids.sort(), [uuidA, uuidB, uuidC].sort())
+
+    // 2라운드: 생존자 전원이 후보에서 빠졌으므로 남은 선택지는 기권뿐이다.
+    submitDayVote(uuidA, session.id, null)
+    submitDayVote(uuidB, session.id, null)
+    submitDayVote(uuidC, session.id, null)
+
+    const second = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(second.resolution.outcome, 'ABSTAINED')
+    assert.equal(second.resolution.round, 2)
+    commitDayVoteResolution(second.session, second.resolution)
+    const finalPayload = buildDayVoteResolvedPayload(second.session, second.resolution)
+
+    assert.equal(finalPayload.phase, 'NIGHT')
+    assert.equal(finalPayload.outcome, 'ABSTAINED')
+    assert.equal(finalPayload.round, 2)
+    assert.deepEqual(finalPayload.revoteExcludedUuids, [])
+})
+
+// ---------------------------------------------------------------------------
+// 동점 재투표(판정 6.4 / 6.5) — 4인 픽스처
+//
+// 3인 픽스처는 순환 투표에서 생존자 전원이 동점자가 되어 2라운드에 후보가 남지 않는다.
+// "동점자만 제외하고 나머지 후보로 다시 투표한다"는 규칙 자체를 보려면 동점자보다 생존자가
+// 많아야 하므로, 여기서는 4인 세션을 쓴다.
+// ---------------------------------------------------------------------------
+
+/** playerCount=4·jokerCount=1 세션을 커밋하고 production과 동일하게 초기 DAY(dayIndex 1, 전원 alive)까지 전이한다. */
+function commitQuadSessionAtDay({ id = 'room-revote' } = {}) {
+    const players = [makePlayer(`ra-${id}`), makePlayer(`rb-${id}`), makePlayer(`rc-${id}`), makePlayer(`rd-${id}`)]
+    const room = makeRoom({ id, players, jokerCount: 1 })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of session.players.keys()) acknowledgeRoleReveal(uuid, session.id)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+    const [uuidA, uuidB, uuidC, uuidD] = [...session.players.keys()]
+    return { session, uuidA, uuidB, uuidC, uuidD }
+}
+
+/**
+ * 4인 픽스처를 A·C 동점으로 1라운드를 마치고 2라운드(후보 B·D)가 열린 상태까지 진행한다.
+ * @param {string} id - 세션 방 id
+ * @flow 1라운드 표(A→C, B→C, C→A, D→A)를 넣고 prepare/commit으로 REVOTE를 커밋한다.
+ */
+function advanceQuadToRevote(id) {
+    const fixture = commitQuadSessionAtDay({ id })
+    const { session, uuidA, uuidB, uuidC, uuidD } = fixture
+    // C는 A·B에게서, A는 C·D에게서 각각 2표 — 공동 최다이므로 동점자는 {A, C}다.
+    submitDayVote(uuidA, session.id, uuidC)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+    submitDayVote(uuidD, session.id, uuidA)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(prepared.resolution.outcome, 'REVOTE')
+    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [uuidA, uuidC].sort())
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayVoteRound, 2)
+
+    return { ...fixture, firstResolution: prepared.resolution }
+}
+
+test('submitDayVote: 재투표 라운드에서 동점자였던 플레이어에게 투표하면 TARGET_EXCLUDED_FROM_REVOTE이고 dayVotes는 불변이다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-excluded')
+    const before = new Map(session.dayVotes)
+
+    // 동점자 A·C는 여전히 생존·참가자지만 이번 라운드의 후보가 아니다.
+    assert.deepEqual(submitDayVote(uuidB, session.id, uuidA), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
+    assert.deepEqual(submitDayVote(uuidD, session.id, uuidC), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
+    assert.deepEqual(session.dayVotes, before)
+
+    // 제외된 A·C 본인은 투표권을 잃지 않는다 — 후보 자격만 잃는다.
+    assert.deepEqual(submitDayVote(uuidA, session.id, uuidB), { ok: true })
+    assert.equal(session.dayVotes.get(uuidA), uuidB)
+    // 기권도 그대로 가능하다.
+    assert.deepEqual(submitDayVote(uuidC, session.id, null), { ok: true })
+    assert.equal(session.dayVotes.get(uuidC), null)
+})
+
+test('재투표에서 단독 최다 득표가 나오면 기존 계약대로 TRIBUNAL로 전이한다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-tribunal')
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidD)
+    submitDayVote(uuidC, session.id, uuidB)
+    submitDayVote(uuidD, session.id, uuidB)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+
+    assert.equal(prepared.resolution.outcome, 'TRIBUNAL')
+    assert.equal(prepared.resolution.tribunalTargetUuid, uuidB)
+    assert.equal(prepared.resolution.round, 2)
+    assert.deepEqual(prepared.resolution.excludedUuids, [uuidA, uuidC].sort())
+    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [])
+
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+
+    assert.equal(session.phase, 'TRIBUNAL')
+    assert.equal(session.tribunal.defendantUuid, uuidB)
+})
+
+test('재투표도 동점이면 outcome은 TIE이고 처형 없이 NIGHT로 진행한다(3라운드는 없다)', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-tie')
+    const aliveBefore = new Map([...session.players].map(([uuid, p]) => [uuid, p.alive]))
+
+    // B와 D가 2표씩 — 2라운드 동점이다.
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidD)
+    submitDayVote(uuidC, session.id, uuidD)
+    submitDayVote(uuidD, session.id, uuidB)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+
+    // 2라운드 이후의 동률은 REVOTE가 아니라 기존 TIE 계약이다.
+    assert.equal(prepared.resolution.outcome, 'TIE')
+    assert.equal(prepared.resolution.round, 2)
+    assert.equal(prepared.resolution.tribunalTargetUuid, null)
+    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [])
+
+    commitDayVoteResolution(prepared.session, prepared.resolution)
+
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.tribunal, null)
+    for (const [uuid, p] of session.players) assert.equal(p.alive, aliveBefore.get(uuid), `${uuid} 생존 상태 불변`)
+})
+
+test('enterDayPhase: 재투표로 올라간 라운드와 제외 집합은 다음 낮에 최초 투표 상태로 되돌아간다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-reset')
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidD)
+    submitDayVote(uuidC, session.id, uuidD)
+    submitDayVote(uuidD, session.id, uuidB)
+    const tiePrepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    commitDayVoteResolution(tiePrepared.session, tiePrepared.resolution)
+    assert.equal(session.phase, 'NIGHT')
+
+    // 밤을 판정해 다음 낮으로 넘어간다(아무도 지목하지 않아 사망자는 없다).
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    for (const uuid of getEligibleNightActorUuids(session)) submitNightAction(uuid, session.id, null)
+    const nightPrepared = prepareNightResolution(jokerUuid, session.id)
+    commitNightResolution(nightPrepared.session, nightPrepared.resolution)
+
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayVoteRound, 1)
+    assert.equal(session.dayVoteExcludedUuids.size, 0)
+    // 지난 낮에 제외됐던 A도 다시 후보가 된다.
+    assert.deepEqual(submitDayVote(uuidB, session.id, uuidA), { ok: true })
 })
 
 // ---------------------------------------------------------------------------
@@ -3284,13 +3665,21 @@ test('buildTribunalVoteResolvedPayload: 공개 payload 화이트리스트 (GUILT
     commitTribunalVoteResolution(guiltyPrepared.session, guiltyPrepared.resolution)
     const guiltyPayload = buildTribunalVoteResolvedPayload(guiltySetup.session)
 
-    assert.deepEqual(Object.keys(guiltyPayload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase'])
+    assert.deepEqual(
+        Object.keys(guiltyPayload).sort(),
+        ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase'],
+    )
     assert.deepEqual(Object.keys(guiltyPayload.counts).sort(), ['guilty', 'notGuilty'])
     assert.equal(guiltyPayload.outcome, 'GUILTY')
     assert.equal(guiltyPayload.executedUuid, 'tm3')
+    // 처형된 참가자의 role은 스펙상 공개 정보다(판정 6.6/8.2).
+    assert.equal(guiltyPayload.executedRole, guiltySetup.session.players.get('tm3').role)
     assert.equal(JSON.stringify(guiltyPayload).includes('ballotSnapshot'), false)
     assert.equal(JSON.stringify(guiltyPayload).includes('voterUuid'), false)
-    assert.equal(JSON.stringify(guiltyPayload).includes('role'), false)
+    // role이 새는 유일한 경로는 executedRole(처형자 본인) 하나뿐이다 — 다른 참가자의 role은
+    // payload 어디에도 담기지 않는다. executedRole을 지운 사본에 'role' 문자열이 남는지로 확인한다.
+    const { executedRole: _executedRole, ...guiltyWithoutExecutedRole } = guiltyPayload
+    assert.equal(JSON.stringify(guiltyWithoutExecutedRole).includes('role'), false)
 
     const notGuiltySetup = setupTribunalReadySession({ uuids: ['tn1', 'tn2', 'tn3'], defendantUuid: 'tn3' })
     castAllVotes(notGuiltySetup.session, { tn1: 'NOT_GUILTY', tn2: 'NOT_GUILTY' })
@@ -3299,7 +3688,9 @@ test('buildTribunalVoteResolvedPayload: 공개 payload 화이트리스트 (GUILT
     const notGuiltyPayload = buildTribunalVoteResolvedPayload(notGuiltySetup.session)
 
     assert.equal(notGuiltyPayload.outcome, 'NOT_GUILTY')
+    // 처형이 없으면 executedUuid와 executedRole이 함께 null이다.
     assert.equal(notGuiltyPayload.executedUuid, null)
+    assert.equal(notGuiltyPayload.executedRole, null)
 })
 
 test('공개 payload 화이트리스트: game-started 타인 player 키 무변경', () => {
@@ -3553,6 +3944,29 @@ function collectOtherPlayerRoleSecrets(session, viewerUuid) {
     return secrets
 }
 
+// 재투표가 열려 있는 DAY로 재접속한 클라이언트는 "지금이 몇 라운드이고 누가 후보에서
+// 빠졌는지"를 스냅샷에서 알 수 있어야 한다 — 이게 없으면 재투표 중인 낮에 갇힌다.
+test('getSessionSnapshotForPlayer: 재투표 진행 중 DAY 스냅샷은 dayVoteResolution에 round와 revoteExcludedUuids를 노출하고 비밀은 새지 않는다', () => {
+    const { session, uuidA, uuidC } = advanceQuadToRevote('room-snap-revote')
+
+    const result = getSessionSnapshotForPlayer(uuidA, session.id)
+
+    assert.equal(result.ok, true)
+    assert.equal(result.snapshot.phase, 'DAY')
+    assert.equal(result.snapshot.dayIndex, 1)
+    // round는 "이 판정이 몇 라운드의 결과인지"이므로 1이고, 지금 열려 있는 라운드는 그 다음이다.
+    assert.deepEqual(result.snapshot.dayVoteResolution, {
+        round: 1,
+        outcome: 'REVOTE',
+        tribunalTargetUuid: null,
+        publicVoteCount: 4,
+        publicAbstainCount: 0,
+        revoteExcludedUuids: [uuidA, uuidC].sort(),
+    })
+
+    assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, uuidA))
+})
+
 test('getSessionSnapshotForPlayer: ROLE_REVEAL 단계 — top-level 키가 정확히 {gameId,phase,dayIndex,players,self}이고 hasActedThisPhase는 본인 확인 여부만 반영한다', () => {
     const uuids = ['snR1', 'snR2']
     const room = makeRoom({ id: 'room-snap-rr', players: uuids.map((uuid) => makePlayer(uuid)), jokerCount: 1 })
@@ -3732,7 +4146,8 @@ test('getSessionSnapshotForPlayer: TRIBUNAL 유죄 처형으로 CITIZEN 승리 �
     assert.equal(snapshot.dayIndex, 1)
     assert.deepEqual(snapshot.nightResult, { dayIndex: 1, victimUuid: null, deathReveals: [] })
     assert.deepEqual(snapshot.dayVoteResolution, {
-        outcome: 'TRIBUNAL', tribunalTargetUuid: 'snA2', publicVoteCount: 4, publicAbstainCount: 0,
+        round: 1, outcome: 'TRIBUNAL', tribunalTargetUuid: 'snA2', publicVoteCount: 4, publicAbstainCount: 0,
+        revoteExcludedUuids: [],
     })
     assert.deepEqual(snapshot.tribunal, {
         defendantUuid: 'snA2', resolved: true, outcome: 'GUILTY', counts: { guilty: 2, notGuilty: 1 }, executedUuid: 'snA2',
@@ -3803,7 +4218,8 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.equal(tribunalSnapshot.snapshot.phase, 'TRIBUNAL')
     assert.deepEqual(tribunalSnapshot.snapshot.tribunal, { defendantUuid: 'snB1', resolved: false })
     assert.deepEqual(tribunalSnapshot.snapshot.dayVoteResolution, {
-        outcome: 'TRIBUNAL', tribunalTargetUuid: 'snB1', publicVoteCount: 3, publicAbstainCount: 0,
+        round: 1, outcome: 'TRIBUNAL', tribunalTargetUuid: 'snB1', publicVoteCount: 3, publicAbstainCount: 0,
+        revoteExcludedUuids: [],
     })
 
     const tribunalOutcome = resolveTribunalVotes(session, { snB2: 'NOT_GUILTY', snB4: 'NOT_GUILTY' })
@@ -4016,6 +4432,52 @@ test('CUSTOM: JOKER 수가 실제 참가 인원 이상이면 준비 단계에서
     // jokerCount >= players.length는 validateSessionInput이 먼저 잡는다(둘 다 거부이며,
     // 어느 쪽이든 registry를 건드리지 않는다는 계약은 동일하다).
     assert.equal(prepared.code, 'INVALID_SESSION_INPUT')
+    assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0)
+})
+
+// 특수직업 상한(판정 2.2): 광대·의사·경비원·마녀사냥꾼 어느 것도 3명 이상으로는 시작할 수 없다.
+// roleComposition은 "저장된 값을 신뢰하지 않는다"는 원칙이므로 create_room 검증을 통과했더라도
+// 시작 시점에 다시 거부된다.
+for (const role of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']) {
+    test(`CUSTOM: ${role} 3명은 상한(2명)을 넘어 시작 단계에서 ROLE_COUNT_ABOVE_LIMIT으로 거부된다`, () => {
+        const room = makeCustomRoom({
+            players: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'].map((uuid) => makePlayer(uuid)),
+            roleCounts: { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, [role]: 3 },
+        })
+
+        const prepared = prepareGameSession(room)
+
+        assert.equal(prepared.ok, false)
+        assert.equal(prepared.code, 'INVALID_SESSION_INPUT')
+        assert.match(prepared.reason, /INVALID_ROLE_COMPOSITION:ROLE_COUNT_ABOVE_LIMIT/)
+        assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0)
+    })
+
+    test(`CUSTOM: ${role} 2명은 상한 안이므로 그대로 시작된다`, () => {
+        const room = makeCustomRoom({
+            players: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'].map((uuid) => makePlayer(uuid)),
+            roleCounts: { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, [role]: 2 },
+        })
+
+        const prepared = prepareGameSession(room)
+
+        assert.equal(prepared.ok, true)
+        assert.equal(prepared.session.roleComposition[role], 2)
+    })
+}
+
+test('AUTO: 저장된 jokerCount가 상한(2명)을 넘으면 시작 단계에서 ROLE_COUNT_ABOVE_LIMIT으로 거부된다', () => {
+    const room = makeRoom({
+        id: 'room-auto-cap',
+        players: Array.from({ length: 8 }, (_, i) => makePlayer(`ac${i}`)),
+        jokerCount: 3,
+    })
+
+    const prepared = prepareGameSession(room)
+
+    assert.equal(prepared.ok, false)
+    assert.equal(prepared.code, 'INVALID_SESSION_INPUT')
+    assert.match(prepared.reason, /INVALID_ROLE_COMPOSITION:ROLE_COUNT_ABOVE_LIMIT/)
     assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0)
 })
 

@@ -40,16 +40,35 @@ test("초기 모드는 항상 AUTO이고 그 상태로 방을 만들 수 있다"
   assert.equal(result.current.validation.ok, true)
 })
 
+// 광대 상한이 2명(MAX_SPECIAL_ROLE_COUNT)으로 좁아졌으므로 승계 값도 그 안이어야 유효하다.
 test("CUSTOM으로 전환하면 직전 광대 수를 승계하고 파생 시민 수를 계산한다", () => {
-  const { result } = renderRoleComposition({ maxPlayers: 8, autoJokerCount: 3 })
+  const { result } = renderRoleComposition({ maxPlayers: 8, autoJokerCount: 2 })
 
   act(() => result.current.selectMode("custom"))
 
   assert.equal(result.current.isCustom, true)
-  assert.equal(result.current.roleCounts.JOKER, 3)
-  assert.equal(result.current.fixedRoleCount, 3)
-  assert.equal(result.current.citizenCount, 5) // 8 - 3
+  assert.equal(result.current.roleCounts.JOKER, 2)
+  assert.equal(result.current.fixedRoleCount, 2)
+  assert.equal(result.current.citizenCount, 6) // 8 - 2
   assert.equal(result.current.validation.ok, true)
+})
+
+// AUTO 스테퍼는 아직 3 이상을 고를 수 있으므로(상한 반영은 후속 슬라이스), 상한이 2로
+// 좁아진 뒤에는 3이 "범위를 벗어난 값"에 해당한다. 훅의 기존 계약대로 이런 값은 승계하지
+// 않고(보정도 하지 않고) CUSTOM 기본값에서 시작하므로, 전환 직후 상태는 유효하다.
+test("상한을 넘는 AUTO 광대 수는 CUSTOM으로 승계되지 않고 기본값에서 시작한다", () => {
+  const { result } = renderRoleComposition({ maxPlayers: 8, autoJokerCount: 3 })
+
+  act(() => result.current.selectMode("custom"))
+
+  assert.equal(result.current.roleCounts.JOKER, 1)
+  assert.equal(result.current.validation.ok, true)
+
+  // 상한을 넘는 값을 사용자가 직접 지정하면 그때는 보정 없이 검증 실패로 알린다.
+  act(() => result.current.setRoleCount("JOKER", 3))
+  assert.equal(result.current.roleCounts.JOKER, 3)
+  assert.equal(result.current.validation.ok, false)
+  assert.equal(result.current.validation.code, "JOKER_COUNT_ABOVE_LIMIT")
 })
 
 test("maxPlayers가 바뀌면 파생 시민 수와 검증이 즉시 다시 계산된다", () => {
