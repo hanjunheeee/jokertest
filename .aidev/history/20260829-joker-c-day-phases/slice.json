@@ -1,6 +1,6 @@
 {
   "slice_id": "20260829-joker-c-day-phases",
-  "status": "running:implement",
+  "status": "running:test",
   "branch": "slice/20260829-joker-c-day-phases",
   "base": "windows-handoff-20260808",
   "base_commit": "4e2645997139e14d7bd0adccc8c5726287cf506f",
@@ -38,10 +38,14 @@
     "implement": {
       "status": "done",
       "run_id": "20260829-025208-joker-c-day-phases-implement-2",
-      "attempts": 2
+      "attempts": 2,
+      "commit": "300ae7ae9d76bcb2cc84e804b3bcdd804a878173"
     },
     "test": {
-      "status": "pending"
+      "status": "done",
+      "run_id": "20260829-030704-joker-c-day-phases-test",
+      "verdict": "pass",
+      "attempts": 1
     }
   },
   "runs": [
@@ -92,7 +96,23 @@
         "peak_context": 201088
       },
       "cost_usd": 12.235265000000002
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "run_id": "20260829-030704-joker-c-day-phases-test",
+      "status": "completed",
+      "turns": 11,
+      "tokens": {
+        "input": 21,
+        "cache_creation": 38157,
+        "cache_read": 555693,
+        "output": 4181,
+        "billed_input": 593871,
+        "peak_context": 59043
+      },
+      "cost_usd": 0.7640465000000001
     }
   ],
-  "updated_at": "2026-08-29T03:07:03+09:00"
+  "updated_at": "2026-08-29T03:08:21+09:00"
 }
