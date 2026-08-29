@@ -69,20 +69,20 @@ export default function RoomListShell({ rooms, onCreateGame, onJoinByCode, onEnt
   }
 
   const handleEnterRoom = () => {
-    if (selectedRoom && !selectedRoomNeedsCode && !selectedRoomIsFull && !isJoining) {
-      onEnterRoom?.(selectedRoom.id)
-    }
+    if (!selectedRoom || selectedRoomIsFull || isJoining) return
+    if (selectedRoomNeedsCode) onJoinByCode?.(selectedRoom.id)
+    else onEnterRoom?.(selectedRoom.id)
   }
 
   // 서버가 최종 권한/정원 검증을 다시 하므로(pendingRoomTransitions 등), 이 조건은 서버
   // 보호를 대체하지 않는 프런트 UX 보조일 뿐입니다 — 불필요한 요청과 헷갈리는 버튼 상태를
   // 미리 걸러낼 뿐, 서버가 최종 실패를 응답할 가능성은 항상 남아 있습니다.
-  const enterDisabled = !selectedRoom || selectedRoomNeedsCode || selectedRoomIsFull || isJoining
+  const enterDisabled = !selectedRoom || selectedRoomIsFull || isJoining
 
   const enterLabel = isJoining
     ? "입장 중"
     : selectedRoomNeedsCode
-      ? "코드 필요"
+      ? "코드 입력"
       : selectedRoomIsFull
         ? "마감"
         : "입장하기"
@@ -91,7 +91,7 @@ export default function RoomListShell({ rooms, onCreateGame, onJoinByCode, onEnt
     <div className={ROOM_LIST_SHELL_CLASS}>
       <nav className={ROOM_LIST_TOOLBAR_CLASS} aria-label="방 목록 작업">
         <RoomListActionButton label="방 만들기" onClick={onCreateGame} />
-        <RoomListActionButton label="코드로 참가" onClick={onJoinByCode} />
+        <RoomListActionButton label="코드로 참가" onClick={() => onJoinByCode?.()} />
       </nav>
 
       <RoomListPanel

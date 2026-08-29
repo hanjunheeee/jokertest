@@ -56,8 +56,11 @@ export default function RoomListRow({ room, selected, onSelect }) {
           <div className={ROOM_LIST_ROW_TOP_ROW_CLASS}>
             {stageLabel ? <span className={ROOM_LIST_ROW_STAGE_BADGE_CLASS}>{stageLabel}</span> : null}
             <span className={ROOM_LIST_ROW_STATUS_BADGE_WRAP_CLASS}>
-              {/* 자물쇠 아이콘 에셋이 아직 없어 텍스트 배지로 대체합니다. */}
-              {isCode ? <span className={ROOM_LIST_ROW_LOCK_BADGE_CLASS}>코드</span> : null}
+              {isCode ? (
+                <span className={ROOM_LIST_ROW_LOCK_BADGE_CLASS} title="입장 코드 필요">
+                  <span aria-hidden="true">🔒</span>
+                </span>
+              ) : null}
               {isInProgress ? (
                 <span className={ROOM_LIST_ROW_STATUS_BADGE_IN_PROGRESS_CLASS}>진행중</span>
               ) : null}

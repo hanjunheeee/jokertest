@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
@@ -21,6 +21,8 @@ const ROOM_JOIN_FAILURE_MESSAGES = {
 /** 방코드 입력 페이지의 애니메이션 상태와 방 참여 소켓 이벤트를 관리합니다. */
 export function useRoomInvitePage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const selectedRoomId = typeof location.state?.roomId === "string" ? location.state.roomId : null
 
   // 프레임과 버튼 등장 애니메이션을 시작할지 표시합니다.
   const [uiVisible, setUiVisible] = useState(false)
@@ -61,7 +63,10 @@ export function useRoomInvitePage() {
 
   const joinRoom = () => {
     if (roomCode.length < 6) return
-    getSocket()?.emit("join_room_by_code", { roomCode })
+    getSocket()?.emit("join_room_by_code", {
+      roomCode,
+      ...(selectedRoomId ? { roomId: selectedRoomId } : {}),
+    })
   }
 
   const goBackToModeSelect = () => {

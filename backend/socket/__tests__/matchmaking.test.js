@@ -286,6 +286,36 @@ test('join_room_by_code: 코드 없이/빈 코드/틀린 코드로는 code 방�
     assert.equal(snapshot.playerRoom.filter(([uuid]) => uuid.startsWith('uuid-wrong-')).length, 0)
 })
 
+test('join_room_by_code: 선택한 비밀방 roomId가 있으면 방 없음과 코드 불일치를 구분한다', async () => {
+    const secret = seedCodeRoom({ id: 'selected-secret', code: 'SECRET', hostUuid: 'uuid-selected-host' })
+
+    const mismatchSocket = createFakeSocket('uuid-selected-mismatch')
+    await handleJoinRoomByCode(
+        createFakeIo([mismatchSocket]),
+        mismatchSocket,
+        'uuid-selected-mismatch',
+        'WRONG1',
+        { roomId: secret.id, accessType: 'code' },
+    )
+    assert.equal(
+        mismatchSocket.emitted.find((event) => event.event === 'room_join_failed')?.payload?.code,
+        ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH,
+    )
+
+    const missingSocket = createFakeSocket('uuid-selected-missing')
+    await handleJoinRoomByCode(
+        createFakeIo([missingSocket]),
+        missingSocket,
+        'uuid-selected-missing',
+        'SECRET',
+        { roomId: 'missing-secret', accessType: 'code' },
+    )
+    assert.equal(
+        missingSocket.emitted.find((event) => event.event === 'room_join_failed')?.payload?.code,
+        ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND,
+    )
+})
+
 test('입장 거부 사유(코드 불일치·방 없음·이미 시작됨·정원 초과)는 서로 다른 안정적 코드로 응답된다', async () => {
     const codeOf = (socket) => socket.emitted.find((e) => e.event === 'room_join_failed')?.payload?.code
 

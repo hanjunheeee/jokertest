@@ -148,8 +148,14 @@ function registerMatchmakingHandlers(io, socket, uuid) {
         )
     )
     socket.on('leave_matchmaking', () => handleLeaveMatchmaking(uuid))
-    socket.on('join_room_by_code', ({ roomCode } = {}) =>
-        handleJoinRoomByCode(io, socket, uuid, roomCode).catch((err) =>
+    socket.on('join_room_by_code', ({ roomCode, roomId } = {}) =>
+        handleJoinRoomByCode(
+            io,
+            socket,
+            uuid,
+            roomCode,
+            typeof roomId === 'string' && roomId ? { roomId, accessType: 'code' } : null,
+        ).catch((err) =>
             console.error('\x1b[31m[방 코드 참가 에러]\x1b[0m', err)
         )
     )
@@ -617,7 +623,31 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             return
         }
 
-        const room = [...gameRooms.values()].find((candidate) => candidate.code === normalizedCode)
+        // 목록에서 특정 비밀방을 선택한 요청은 roomId로 방을 먼저 고정한 뒤 코드를
+        // 비교한다. 그래야 "그 방이 사라짐"과 "그 방의 코드가 틀림"을 안정적으로
+        // 구분할 수 있다. 툴바의 일반 코드 참가(선택 roomId 없음)는 기존처럼 코드로 찾는다.
+        let room
+        if (expectedRoom?.accessType === 'code') {
+            room = gameRooms.get(expectedRoom.roomId)
+            if (!room) {
+                if (isStartedRoomMark(`id:${expectedRoom.roomId}`)) {
+                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+                } else {
+                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
+                }
+                return
+            }
+            if (room.accessType !== 'code') {
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '비밀 방을 찾을 수 없습니다.')
+                return
+            }
+            if (room.code !== normalizedCode) {
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드가 올바르지 않습니다.')
+                return
+            }
+        } else {
+            room = [...gameRooms.values()].find((candidate) => candidate.code === normalizedCode)
+        }
         if (!room) {
             // 세 사유를 여기서 갈라낸다.
             //  - 그 코드의 방이 방금 게임을 시작했다면 "이미 시작됨"
