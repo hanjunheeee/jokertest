@@ -101,6 +101,17 @@ async function resyncSessionRouting(socket, uuid) {
     const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
     if (!routing) return
 
+    // 유예 만료로 배제된 uuid는 같은 uuid로 다시 접속해도 세션 라우팅을 되돌려받지 못한다 —
+    // activeGameId 재바인딩과 channel 재가입이 모두 여기서 막히므로, 그 세션의 어떤 방송도
+    // 다시 받지 못한다(관전 복귀 거부). 유예 취소보다 먼저 판정해야 배제된 참가자의 재접속이
+    // 이미 끝난 유예를 되살리는 것처럼 보이지 않는다.
+    if (gameSessionCore.isForfeitedFromSession(routing.gameId, uuid)) return
+
+    // 재접속했으므로 진행 중인 유예를 취소한다 — 이 취소가 없으면 새로고침한 참가자가 유예
+    // 만료 시각에 그대로 사망한다. 라우팅 재바인딩보다 먼저 해서, join이 지연되더라도 사망
+    // 확정이 그 사이에 끼어들 수 없게 한다.
+    cancelDisconnectGrace(routing.gameId, uuid)
+
     socket.data.activeGameId = routing.gameId
     if (!socket.rooms.has(routing.channelId)) {
         socket.join(routing.channelId)
@@ -116,6 +127,9 @@ function __resetStateForTests() {
     onlineUsersRegistry = null
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
+    for (const [gameId, pending] of [...disconnectGraceRuns]) {
+        for (const [uuid, run] of [...pending]) detachDisconnectGraceRun(gameId, uuid, run)
+    }
 }
 
 /** 테스트 전용: 현재 onlineUsersRegistry 참조를 읽기 전용으로 반환합니다(변형하지 않습니다). */
@@ -400,11 +414,25 @@ function advanceNightTurn(run) {
  * 기권은 core가 거부하고, 이 함수는 그 거부를 그대로 받아들입니다(그 actor는 미제출로 남고
  * 제출 완료 판정도 그 사실을 그대로 반영합니다).
  *
+ * 기권을 기록하기 "전에", 이 역할의 생존 actor 중 아직 재접속하지 않은 사람의 유예를 먼저
+ * 만료시킵니다 — "밤 자기 턴 중 끊긴 참가자는 그 턴의 제한시간 내에 돌아오지 않으면 사망한다"는
+ * 규칙의 deadline이 곧 이 만료 시점이기 때문입니다. 순서가 중요한 이유는 사망이 먼저 확정돼야
+ * 그 참가자가 getAliveActorUuidsForRole에서 빠져 "죽은 사람 몫의 기권"이 밤 판정에 남지 않기
+ * 때문입니다. 사망 확정이 그 자리에서 턴을 끝내거나(남은 생존자가 이미 제출을 마친 경우) 게임을
+ * 끝낼 수 있으므로, 유예 처리 뒤에 두 가드를 다시 확인합니다.
+ *
  * 늦게 도착한 타이머가 이미 지나간 턴을 잘못 닫지 않도록 run 동일성과 현재 턴 역할을 먼저
  * 확인합니다(endNightTurn과 같은 가드).
  */
 function expireNightTurnWithAbstentions(run, role) {
     const { session } = run
+    if (nightTurnRuns.get(session.id) !== run) return
+    if (session.nightTurnRole !== role) return
+
+    for (const graceRun of [...(disconnectGraceRuns.get(session.id)?.values() ?? [])]) {
+        if (session.players.get(graceRun.uuid)?.role !== role) continue
+        expireDisconnectGrace(graceRun)
+    }
     if (nightTurnRuns.get(session.id) !== run) return
     if (session.nightTurnRole !== role) return
 
@@ -740,6 +768,171 @@ function syncSessionPhaseTimers(io, session) {
 
     stopNightTurnSequence(session.id)
     return null
+}
+
+// gameId → Map<uuid, run> — 진행 중인 재접속 유예 타이머. 한 세션에서 여러 명이 동시에 끊길 수
+// 있으므로 세션당 하나가 아니라 (세션, 참가자)당 하나다. nightTurnRuns/dayPhaseRuns와 같은
+// 구조를 쓰는 이유도 같다 — 늦게 도착한 만료 콜백을 run 동일성 하나로 거를 수 있어야 한다.
+const disconnectGraceRuns = new Map()
+
+/** (gameId, uuid)의 진행 중인 유예 run. 없으면 undefined. */
+function getDisconnectGraceRun(gameId, uuid) {
+    return disconnectGraceRuns.get(gameId)?.get(uuid)
+}
+
+/** run을 registry에서 떼어내고 대기 중인 타이머를 해제한다(취소·만료가 공유하는 유일한 정리 경로). */
+function detachDisconnectGraceRun(gameId, uuid, run) {
+    if (run.timerId !== null) {
+        run.clearTimeoutFn(run.timerId)
+        run.timerId = null
+    }
+    const pending = disconnectGraceRuns.get(gameId)
+    if (!pending) return
+    pending.delete(uuid)
+    if (pending.size === 0) disconnectGraceRuns.delete(gameId)
+}
+
+/**
+ * 진행 중인 세션에서 참가자가 끊겼을 때 세션을 종료하는 대신 재접속 유예를 겁니다. 유예가
+ * 만료될 때까지 재접속하지 않으면 그 참가자만 사망으로 확정되고, 나머지 참가자의 게임은
+ * 그대로 이어집니다(어떤 타이머도 여기서 멈추지 않습니다).
+ *
+ * 유예 길이는 별도 상수를 두지 않고 그 순간의 밤 턴 제한시간(resolveNightTurnDurationMs)을
+ * 그대로 씁니다 — 밤 자기 턴 중 끊긴 참가자에게 "턴 제한시간"과 다른 시간축을 주면 기권·사망·
+ * 턴 종료의 순서가 두 시계에 갈려 결정되기 때문입니다. 밤이 아닌 구간(DAY/TRIBUNAL)에는
+ * 진행 중인 턴이 없으므로 canonical 기본 상수로 폴백합니다.
+ *
+ * 같은 (세션, 참가자)에 이미 유예가 걸려 있으면 기존 run을 그대로 돌려주고 타이머를 다시 걸지
+ * 않습니다(멱등) — 낡은 소켓의 지연 disconnect가 뒤늦게 도착해도 유예가 연장되지 않습니다.
+ */
+function beginDisconnectGrace(io, session, uuid, deps = {}) {
+    const existing = getDisconnectGraceRun(session.id, uuid)
+    if (existing) return existing
+
+    const nightRun = nightTurnRuns.get(session.id)
+    const role = gameSessionCore.getCurrentNightTurnRole(session)
+    const durationMs =
+        deps.graceDurationMs ??
+        (session.phase === 'NIGHT' && role !== null
+            ? resolveNightTurnDurationMs({ session, durationMs: nightRun?.durationMs ?? null }, role)
+            : gameSessionCore.NIGHT_TURN_DURATION_MS)
+
+    const run = {
+        io,
+        session,
+        uuid,
+        timerId: null,
+        setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
+        clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout,
+    }
+    let pending = disconnectGraceRuns.get(session.id)
+    if (!pending) {
+        pending = new Map()
+        disconnectGraceRuns.set(session.id, pending)
+    }
+    pending.set(uuid, run)
+    run.timerId = run.setTimeoutFn(() => expireDisconnectGrace(run), durationMs)
+    return run
+}
+
+/**
+ * 재접속한 참가자의 유예를 취소합니다(대기 중인 타이머도 해제). 취소와 만료가 같은 registry
+ * 항목(run 동일성)을 놓고 경쟁하므로, 둘 중 먼저 도착한 쪽이 run을 떼어내고 나중에 도착한
+ * 쪽은 자기 run이 더 이상 registry에 없다는 사실만으로 조용히 no-op이 됩니다 — 이것이
+ * "재접속과 만료가 동시에 일어나도 중복 사망하지 않는다"의 소켓 계층 절반입니다(나머지 절반은
+ * game-core의 commitDisconnectElimination이 구조적으로 보장합니다).
+ *
+ * 진행 중인 유예가 없으면 아무 것도 하지 않습니다(no-op) — 유예 없이 재접속한 참가자, 이미
+ * 만료된 참가자, 애초에 게임에 없던 uuid가 모두 같은 경로로 안전하게 통과합니다.
+ */
+function cancelDisconnectGrace(gameId, uuid) {
+    const run = getDisconnectGraceRun(gameId, uuid)
+    if (!run) return false
+    detachDisconnectGraceRun(gameId, uuid, run)
+    return true
+}
+
+/**
+ * 유예가 만료된 참가자의 사망을 확정하고, 그 결과를 방송한 뒤 진행 중인 타이머·턴을 새 생존
+ * 집합에 맞춰 다시 동기화합니다.
+ *
+ * 가드 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
+ *   1. run 동일성 — 이미 취소·만료된 run의 늦게 도착한 타이머는 여기서 걸린다.
+ *   2. 실제 재접속 여부(isUuidConnected) — 취소보다 만료가 근소하게 먼저 도착한 경우에도
+ *      "지금 연결돼 있는 사람"은 절대 죽이지 않는다.
+ *   3. game-core 재검증(getDisconnectGraceTarget) — 그 사이 세션이 끝났거나 registry에서
+ *      사라졌거나 이미 배제된 경우를 한 번에 거른다.
+ * 세 가드를 모두 통과해도 commitDisconnectElimination이 다시 한 번 멱등성을 보장하므로,
+ * 중복 사망은 어느 한 가드의 정확성에 기대지 않는다.
+ *
+ * 사망을 방송한 뒤의 뒷정리는 승자 확정 여부로 갈린다 — 승리로 끝났으면 두 타이머를 모두
+ * 정리하고, 그렇지 않으면 진행 중이던 구간의 타이머는 그대로 두고 밤 턴 완료만 다시 확인한다.
+ */
+function expireDisconnectGrace(run) {
+    const { io, session, uuid } = run
+    if (getDisconnectGraceRun(session.id, uuid) !== run) return
+    detachDisconnectGraceRun(session.id, uuid, run)
+
+    if (isUuidConnected(io, uuid)) return
+    const target = gameSessionCore.getDisconnectGraceTarget(uuid, session.id)
+    if (!target || target.session !== session) return
+
+    let applied
+    try {
+        applied = gameSessionCore.commitDisconnectElimination(session, uuid)
+    } catch (err) {
+        // 로그에는 고정 구조만 남긴다(밤 턴 만료 기권 기록 실패와 같은 관례 — role/원본 Error는
+        // 남기지 않는다). 사망 확정에 실패한 참가자는 유예 없이 끊긴 상태로 남을 뿐이고,
+        // 나머지 참가자의 진행은 이 실패에 막히지 않는다.
+        console.error('[재접속 유예 만료 처리 실패]', { code: 'COMMIT_ERROR', uuid, gameId: session.id })
+        return
+    }
+    if (!applied.ok) return
+
+    let payload = null
+    try {
+        // 공개 사망 목록은 밤 사망과 같은 canonical 빌더를 통과한 값만 그대로 실어 나른다 —
+        // 소켓 계층은 목록을 만들지도, 고치지도 않는다(그래서 role이 샐 자리가 없다).
+        payload = gameSessionCore.buildNightResultAppliedPayload(session, applied.victimUuid, applied.deathReveals)
+        if (applied.terminal) {
+            payload = { ...payload, ...gameSessionCore.buildTerminalFields(session) }
+        }
+    } catch (err) {
+        console.error('[재접속 유예 만료 처리 실패]', { code: 'PAYLOAD_BUILD_ERROR', uuid, gameId: session.id })
+    }
+
+    if (payload) {
+        try {
+            io.to(session.channelId).emit('player_eliminated', payload)
+        } catch (err) {
+            console.error('[재접속 유예 만료 처리 실패]', { code: 'DELIVERY_ERROR', uuid, gameId: session.id })
+        }
+    }
+
+    if (applied.terminal) {
+        try {
+            // 승리가 확정돼 ENDED가 됐으므로 밤 턴 시퀀스와 낮 타이머를 모두 정리한다.
+            syncSessionPhaseTimers(io, session)
+        } catch (err) {
+            console.error('[재접속 유예 만료 처리 실패]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: session.id })
+        }
+        return
+    }
+
+    // 승자가 없으면 진행 중이던 구간의 타이머는 손대지 않는다 — 한 명의 사망은 페이즈 전이가
+    // 아니므로 여기서 syncSessionPhaseTimers를 부르면 안 된다(낮에는 startDayPhaseTimer가
+    // 현재 구간을 "다시 걸어" 남은 참가자에게 없던 시간을 더 주게 된다).
+    //
+    // 밤이면 턴 완료만 한 번 다시 확인한다 — 죽은 참가자는 더 이상 생존 actor가 아니므로,
+    // 같은 직업의 남은 생존자가 이미 제출을 마쳤다면 그 턴은 제한시간을 기다리지 않고 그
+    // 자리에서 확정된다.
+    if (session.phase === 'NIGHT') {
+        try {
+            maybeEndNightTurnOnCompletion(session.id)
+        } catch (err) {
+            console.error('[재접속 유예 만료 처리 실패]', { code: 'TURN_COMPLETION_ERROR', uuid, gameId: session.id })
+        }
+    }
 }
 
 /**
@@ -1769,10 +1962,13 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
  */
 function finalizeGameSessionEnd(io, session, reason) {
     try {
-        // 종료된 세션에는 진행할 밤 턴도 낮 구간도 없다 — 대기 중인 타이머를 여기서 반드시
-        // 해제해야 이미 사라진 세션을 나중에 건드리는 콜백이 남지 않는다.
+        // 종료된 세션에는 진행할 밤 턴도 낮 구간도, 기다릴 재접속도 없다 — 대기 중인 타이머를
+        // 여기서 반드시 해제해야 이미 사라진 세션을 나중에 건드리는 콜백이 남지 않는다.
         stopNightTurnSequence(session.id)
         stopDayPhaseTimer(session.id)
+        for (const [uuid, run] of [...(disconnectGraceRuns.get(session.id) ?? [])]) {
+            detachDisconnectGraceRun(session.id, uuid, run)
+        }
     } catch (err) {
         console.error('[GameSession 종료 시 타이머 정리 실패]', err)
     }
@@ -1910,10 +2106,25 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
             respond(callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
             return
         }
+        if (result.code === 'FORFEITED_FROM_SESSION') {
+            // 유예 만료로 배제된 참가자에게는 "일시적 오류"가 아니라 참여 불가 사유를 알린다 —
+            // 이 안내를 받은 클라이언트는 재시도하지 않고 로비로 돌아가야 한다.
+            respond(callback, {
+                ok: false,
+                code: result.code,
+                message: '연결이 끊겨 이 게임에서 제외되었습니다. 다시 참여할 수 없습니다.',
+            })
+            return
+        }
         // GAME_ID_MISMATCH(공백/빈 문자열로 넘어온 경우 포함)는 클라이언트에 그대로 전달한다.
         respond(callback, { ok: false, code: result.code, message: '요청을 처리할 수 없습니다.' })
         return
     }
+
+    // 스냅샷을 받을 자격이 확인된 시점이 곧 "돌아왔다"의 서버측 근거다 — resyncSessionRouting을
+    // 거치지 않고(예: 같은 소켓이 연결을 유지한 채) 스냅샷만 다시 요청한 클라이언트도 여기서
+    // 유예가 풀린다. 이미 취소됐거나 유예가 없으면 no-op이다.
+    cancelDisconnectGrace(result.snapshot.gameId, uuid)
 
     // roster에 실시간 연결 여부만 덧붙인다 — canonical snapshot 자체(result.snapshot)는
     // 변형하지 않고 새 배열/객체로 다시 조립한다(defensive copy 유지).
@@ -1942,9 +2153,16 @@ function registerGameHandlers(io, socket, uuid) {
 }
 
 /**
- * 참가자 disconnect에 따른 GameSession 정리를 처리합니다.
- * 정책(사용자 확정): 참가자 한 명의 disconnect만으로 그 GameSession 전체를 즉시
- * 종료합니다 — 부분 유지나 재접속 유예는 이번 슬라이스에 없습니다.
+ * 참가자 disconnect를 처리합니다 — 세션의 phase에 따라 경로가 둘로 갈립니다.
+ *
+ * 게임이 실제로 진행 중이면(DAY/NIGHT/TRIBUNAL) 세션을 종료하지 않고 그 참가자에게만 재접속
+ * 유예를 겁니다(beginDisconnectGrace). 남은 참가자의 페이즈·타이머·턴은 어떤 것도 여기서
+ * 멈추지 않으며, 유예 안에 돌아오지 않은 참가자만 나중에 사망으로 확정됩니다.
+ *
+ * 그 밖의 경우(ROLE_REVEAL·ENDED·활성 세션 없음)는 기존 정책 그대로 endGameSessionForPlayer를
+ * 부릅니다. ROLE_REVEAL을 유예 대상에서 빼는 이유는 그 단계에서는 아무도 아직 행동할 수 없고
+ * 사망이 의미를 갖지 않기 때문입니다 — 시작 전 handshake 중의 이탈은 "한 명이 빠진 게임"이
+ * 아니라 "시작되지 못한 게임"입니다(getDisconnectGraceTarget 참고).
  *
  * ABA 방지: 게임 시작 시 참가자 Socket에 결합해 둔 canonical gameId(socket.data.activeGameId,
  * matchmaking.js의 handleStartGame이 설정)를 expectedGameId로 종료 core에 전달한다. 결합이
@@ -1966,6 +2184,16 @@ async function onDisconnect(io, socket, uuid) {
 
     const expectedGameId = socket?.data?.activeGameId
     if (expectedGameId === undefined) return
+
+    // 진행 중인 세션(DAY/NIGHT/TRIBUNAL)에서는 세션을 종료하지 않고 재접속 유예만 건다 —
+    // 남은 참가자의 게임은 이 disconnect로 어떤 영향도 받지 않고 그대로 이어진다. 낡은 소켓의
+    // 지연 disconnect는 위의 isCurrentSocketForUuid에서, 다른 세션을 가리키는 결합은
+    // getDisconnectGraceTarget의 expectedGameId 대조에서 각각 걸러진다(둘 다 기존 가드와 동일).
+    const graceTarget = gameSessionCore.getDisconnectGraceTarget(uuid, expectedGameId)
+    if (graceTarget) {
+        beginDisconnectGrace(io, graceTarget.session, uuid)
+        return
+    }
 
     let result
     try {
@@ -2013,5 +2241,9 @@ module.exports = {
         resolveNightTurnDurationMs,
         startDayPhaseTimer,
         stopDayPhaseTimer,
+        beginDisconnectGrace,
+        cancelDisconnectGrace,
+        expireDisconnectGrace,
+        getDisconnectGraceRun,
     },
 }

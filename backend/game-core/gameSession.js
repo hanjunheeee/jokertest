@@ -304,6 +304,51 @@ function getActiveSessionRoutingInfo(uuid) {
     return { gameId: session.id, channelId: session.channelId }
 }
 
+/**
+ * 재접속 유예가 만료돼 그 세션에서 배제된 uuid인지 판정한다(순수 조회 — 어떤 상태도 바꾸지
+ * 않고 절대 throw하지 않는다). 배제 사실은 session.forfeitedUuids(commitDisconnectElimination이
+ * 채우는 Set)에만 존재한다 — playerSession 매핑을 지우는 것만으로는 "한 번도 없던 사람"과
+ * "끊겨서 배제된 사람"을 구분할 수 없어 참여 불가 안내를 만들 수 없기 때문이다.
+ *
+ * 배제된 uuid는 여전히 session.players에 사망자로 남는다(승리 판정·roster·정족수가 그 사실을
+ * 읽어야 한다). 달라지는 것은 오직 "그 세션에 다시 들어올 수 있는가"뿐이다.
+ */
+function isForfeitedFromSession(gameId, uuid) {
+    const session = gameSessions.get(gameId)
+    if (!session) return false
+    return session.forfeitedUuids instanceof Set && session.forfeitedUuids.has(uuid)
+}
+
+/**
+ * 이 disconnect가 "세션 종료"가 아니라 "재접속 유예"로 처리돼야 하는지 판정하고, 그렇다면
+ * 대상 세션을 돌려준다(순수 조회). 소켓 계층이 gameSessions에 직접 손대지 않고도 유예 타이머를
+ * 걸 수 있게 하는 유일한 통로다.
+ *
+ * 유예 대상은 "실제로 게임이 진행 중인" 세 phase(DAY/NIGHT/TRIBUNAL)뿐이다. ROLE_REVEAL은
+ * 아무도 아직 행동할 수 없고 사망이 의미를 갖지 않는 시작 전 handshake라 기존 정책(참가자 한
+ * 명의 disconnect가 세션 전체를 종료)을 그대로 두고, ENDED는 이미 결과가 확정돼 유예할 것이
+ * 없다 — 두 phase 모두 endGameSessionForPlayer의 기존 계약으로 계속 처리된다.
+ *
+ * expectedGameId는 endGameSessionForPlayer와 같은 ABA 가드다(불일치면 null). 이미 죽었거나
+ * 이미 배제된 참가자에게는 유예를 걸지 않는다 — 유예 만료의 유일한 결과가 "사망 확정"이므로,
+ * 그 결과가 이미 난 사람에게 거는 타이머는 정의상 중복이다.
+ */
+function getDisconnectGraceTarget(uuid, expectedGameId) {
+    const gameId = playerSession.get(uuid)
+    if (!gameId) return null
+    if (expectedGameId !== undefined && gameId !== expectedGameId) return null
+
+    const session = gameSessions.get(gameId)
+    if (!session) return null
+    if (session.phase !== 'DAY' && session.phase !== 'NIGHT' && session.phase !== 'TRIBUNAL') return null
+
+    const player = session.players.get(uuid)
+    if (!player || player.alive !== true) return null
+    if (isForfeitedFromSession(gameId, uuid)) return null
+
+    return { session }
+}
+
 // 순수 계산 — 어떤 Map도 읽지 않는다. randomFn을 주입하면 완전히 결정적이다.
 function fisherYatesShuffle(items, randomFn) {
     const result = [...items]
@@ -1552,6 +1597,57 @@ function commitNightResolution(session, resolution) {
 }
 
 /**
+ * 재접속 유예가 만료된 참가자의 사망을 확정하는 유일한 mutation이다(밤 판정과 독립적으로
+ * 호출할 수 있다는 점만 다르고, 판정 순서는 commitNightResolution의 2~4단계를 그대로 따른다):
+ *   2. 사망 확정 — victim.alive = false.
+ *   3. 사망자의 잔여 효과 소멸 — expireDeadPlayerNightEffects. 반드시 사망 확정 "뒤"에 온다.
+ *   4. 승리 재평가 — 사망 이벤트 직후 항상. 승자가 확정되면 그 자리에서 ENDED가 된다.
+ * 밤 판정과 달리 phase는 건드리지 않는다 — 유예 만료는 "그 참가자가 빠졌다"는 사건일 뿐,
+ * 낮/밤을 넘기는 사건이 아니다(진행 중인 턴·구간은 그대로 이어진다).
+ *
+ * 멱등하다 — 이미 죽었거나(ALREADY_ELIMINATED) 이미 끝난 세션(GAME_ALREADY_ENDED)은 아무
+ * 상태도 바꾸지 않고 실패 코드만 돌려준다. "재접속과 타이머 만료가 동시에 도착해도 중복으로
+ * 사망 처리되지 않는다"는 계약이 소켓 계층의 타이머 가드가 아니라 여기서 구조적으로 보장된다.
+ *
+ * 검증을 통과한 뒤로는 절대 throw하지 않는다(commitNightResolution과 같은 계약) — 부분 커밋
+ * 상태가 구조적으로 존재할 수 없다.
+ *
+ * deathReveals는 밤 사망과 정확히 같은 canonical 빌더(buildNightDeathReveals)를 통과하므로
+ * 원소는 { victimUuid, source } 두 키뿐이고 role은 어디에도 실리지 않는다. source가
+ * UNKNOWN_NIGHT인 것은 이 빌더의 규칙("귀속이 없으면 지어내지 않는다") 그대로다 — 끊김 사망은
+ * 어떤 밤 효과에도 귀속되지 않으므로, 사망 사실만 공개하고 원인은 공개하지 않는다.
+ */
+function commitDisconnectElimination(session, uuid) {
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    const victim = session.players.get(uuid)
+    if (!victim) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    if (victim.alive !== true) return { ok: false, code: 'ALREADY_ELIMINATED' }
+
+    // 이 지점 이후로는 절대 throw하지 않는다.
+    const deathReveals = buildNightDeathReveals(null, [uuid])
+    victim.alive = false
+    expireDeadPlayerNightEffects(session, [uuid])
+
+    if (!session.forfeitedUuids) session.forfeitedUuids = new Set()
+    session.forfeitedUuids.add(uuid)
+    // 배제된 uuid는 다시 접속하지 못하므로 스스로 "이탈"을 알릴 기회가 영영 없다. 여기서 미리
+    // detachedUuids에 넣어 두지 않으면 ENDED 이후 마지막 참가자가 나가도 그 수가 채워지지 않아
+    // 세션이 registry(gameSessions/roomGameSession)에 영원히 남는다.
+    if (!session.detachedUuids) session.detachedUuids = new Set()
+    session.detachedUuids.add(uuid)
+
+    const winResult = evaluateWinCondition(session)
+    if (winResult) {
+        finalizeGameSession(session, winResult)
+        return { ok: true, victimUuid: uuid, deathReveals, terminal: { winner: winResult.winner } }
+    }
+
+    return { ok: true, victimUuid: uuid, deathReveals, terminal: null }
+}
+
+/**
  * NIGHT 결과 적용(사망 + DAY 전이) 공개 payload. commitNightResolution 호출 이후(phase/
  * dayIndex가 이미 갱신된) session을 받습니다. role/team/nickname/targetUuid/private result는
  * 어디에도 포함하지 않습니다.
@@ -2356,6 +2452,24 @@ function canIncludeDayTribunalFields(session) {
  */
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
+    // 새로고침한 참가자가 "지금 내가 쓸 수 있는 채팅 채널"을 role·생존·phase에서 스스로 다시
+    // 유도하지 않도록 서버가 그대로 실어 준다. 목록은 canonical 수신자 판정
+    // (getChatRecipientUuids)을 그대로 통과한 채널만 담는다 — 채널 권한의 원천이 하나뿐이어야
+    // 새로고침 전후의 접근 범위가 조용히 갈리지 않는다.
+    //
+    // 채널마다 열려 있는 phase가 정해져 있다: 공개 DAY 채널은 DAY에서만(resolveGameChatChannel),
+    // 역할 채널은 NIGHT에서만(prepareJokerChatMessage) 라우팅된다. 그래서 phase를 먼저 보고,
+    // 그 phase에 열리는 채널에 대해서만 수신 자격을 묻는다. 사망자는 DAY 채널을 계속 받고(관전),
+    // 사망한 광대만 자기 역할 채널에 남는다 — 두 규칙 모두 getChatRecipientUuids의 것이다.
+    const chatChannels = []
+    if (viewer) {
+        if (session.phase === 'DAY' && getChatRecipientUuids(session, CHAT_CHANNELS.DAY).includes(uuid)) {
+            chatChannels.push(CHAT_CHANNELS.DAY)
+        }
+        if (session.phase === 'NIGHT' && getChatRecipientUuids(session, viewer.role).includes(uuid)) {
+            chatChannels.push(viewer.role)
+        }
+    }
     const fields = {
         gameId: session.id,
         phase: session.phase,
@@ -2372,6 +2486,10 @@ function buildSessionSnapshot(session, uuid) {
         self: {
             ...buildViewerRoleFields(session, viewer),
             hasActedThisPhase: computeHasActedThisPhase(session, uuid),
+            // self 안에 두는 이유는 이 목록이 오직 viewer 본인의 것이기 때문이다 — 역할 채널
+            // 이름은 곧 본인의 role이므로 top-level에 두면 다른 참가자에게 보이는 공개 필드와
+            // 같은 자리에 본인 role이 놓이게 된다(hasActedThisPhase와 같은 위치 규약).
+            chatChannels,
         },
     }
 
@@ -2448,6 +2566,10 @@ function getSessionSnapshotForPlayer(uuid, expectedGameId) {
     const session = gameSessions.get(gameId)
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
     if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    // 유예 만료로 배제된 uuid는 gameId가 맞든 틀리든 스냅샷을 받지 못한다 — 거부는 스냅샷을
+    // 만들기 전에 끝나야 하고(그 뒤로 가면 이미 판정이 틀린 것이다), 참여 자격 없음은 gameId
+    // 오타와 다른 사유이므로 별도의 안정된 공개 코드로 알린다.
+    if (isForfeitedFromSession(gameId, uuid)) return { ok: false, code: 'FORFEITED_FROM_SESSION' }
 
     if (expectedGameId !== undefined) {
         const normalizedExpected = typeof expectedGameId === 'string' ? expectedGameId.trim() : ''
@@ -2785,6 +2907,11 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
         if (sessionDeleted) {
             gameSessions.delete(gameId)
             roomGameSession.delete(session.roomId)
+            // 비-ENDED 분기와 같은 마무리를 여기서도 한다 — 유예 만료로 배제된 참가자는
+            // detachedUuids에 미리 들어가 있을 뿐 playerSession 매핑은 남아 있으므로, 이
+            // 정리가 없으면 그 uuid만 영영 "다른 세션에 속함" 상태로 묶여 새 게임을 시작하지
+            // 못한다. 이미 지워진 uuid에 대한 delete는 no-op이라 기존 경로는 그대로다.
+            session.players.forEach((_, playerUuid) => playerSession.delete(playerUuid))
         }
         return { ok: true, session, reason, sessionDeleted }
     }
@@ -2864,6 +2991,11 @@ module.exports = {
     CHAT_CHANNELS,
     prepareNightResolution,
     commitNightResolution,
+    // 끊김 사망은 밤 판정과 같은 순서 계약을 공유하지만 소켓 계층의 유예 타이머가 직접 부르는
+    // 진입점이므로, 밤 판정 3인방과 나란히 정식 export로 둔다.
+    commitDisconnectElimination,
+    getDisconnectGraceTarget,
+    isForfeitedFromSession,
     buildNightResultAppliedPayload,
     PUBLIC_NIGHT_DEATH_SOURCES,
     prepareDayVoteResolution,
