@@ -1,10 +1,7 @@
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 
-// models/index.js는 require 시점에 Sequelize 인스턴스를 만들지만 실제 연결은 하지 않습니다.
-// (.env.test의 DATABASE_URL은 문법만 유효한 더미 값입니다.)
-const db = require("../models");
-const { buildPoolConfig } = db;
+const { buildPoolConfig } = require("../config/dbPool");
 
 const POOL_KEYS = ["max", "min", "idle", "acquire"];
 
@@ -68,9 +65,18 @@ test("config.json의 pool 값보다 환경변수가 우선한다", () => {
     assert.equal(pool.idle, 1000, "환경변수가 없으면 config.json 값이 남아야 합니다");
 });
 
+test("min은 0으로 덮어쓸 수 있고 충돌하는 min/max는 유효한 풀로 보정된다", () => {
+    assert.equal(buildPoolConfig({ min: 3 }, { DB_POOL_MIN: "0" }).min, 0);
+    assert.deepEqual(
+        buildPoolConfig({}, { DB_POOL_MAX: "2", DB_POOL_MIN: "3" }),
+        { max: 2, min: 0, idle: 10000, acquire: 30000 }
+    );
+});
+
 test("생성된 Sequelize 인스턴스에 풀 설정이 실제로 반영된다", () => {
     // buildPoolConfig가 옳아도 Sequelize가 options.pool을 버리면 AC-02가 깨지므로,
     // 살아 있는 인스턴스에서 적용된 값을 직접 읽어 확인합니다.
+    const db       = require("../models");
     const applied  = db.sequelize.options.pool;
     const expected = buildPoolConfig({}, process.env);
 

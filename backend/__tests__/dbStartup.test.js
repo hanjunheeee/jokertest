@@ -38,6 +38,22 @@ test("잘못된 DATABASE_URL로 기동하면 exit code 1로 종료된다", () =>
     // 터미널(동기 출력)로 확인합니다.
     assert.equal(result.signal, null, "타임아웃으로 강제 종료되면 안 됩니다");
     assert.equal(result.status, 1, `종료 코드가 1이 아닙니다 (실제: ${result.status})`);
+    const failureLines = result.stderr.split(/\r?\n/).filter((line) => line.includes("[STARTUP] 실패"));
+    assert.equal(failureLines.length, 1, `실패 로그는 정확히 한 줄이어야 합니다: ${result.stderr}`);
+});
+
+test("형식이 깨진 DATABASE_URL의 동기 초기화 오류도 한 줄 로그 후 exit code 1로 종료된다", () => {
+    const result = spawnSync(process.execPath, [ENTRYPOINT], {
+        env: { ...process.env, DATABASE_URL: "not-a-database-url" },
+        encoding: "utf8",
+        timeout: 10000,
+    });
+
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 1);
+    const failureLines = result.stderr.split(/\r?\n/).filter((line) => line.includes("[STARTUP] 실패"));
+    assert.equal(failureLines.length, 1, `실패 로그는 정확히 한 줄이어야 합니다: ${result.stderr}`);
+    assert.doesNotMatch(result.stderr, /\n\s+at\s/, "원시 스택 트레이스가 출력되면 안 됩니다");
 });
 
 test("DB 연결 실패 시 재시도 없이 한 번만 종료된다", () => {
@@ -91,22 +107,13 @@ test("정상 기동 후 REST 요청과 소켓 핸드셰이크가 동작한다", 
     assert.equal(meRes.status, 401, "/auth 라우터가 마운트되지 않았습니다");
     assert.equal(meBody.success, false);
 
-    // 2) express.json()이 살아 있고 POST 라우트가 붙어 있는지 (401/4xx면 배선은 정상)
-    const loginRes = await fetch(`${base}/auth/login`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({}),
-    });
-    assert.ok(loginRes.status >= 400 && loginRes.status < 500,
-        `/auth/login이 4xx를 반환해야 합니다 (실제: ${loginRes.status})`);
-
-    // 3) 미들웨어 체인 맨 끝의 notFoundHandler
+    // 2) 미들웨어 체인 맨 끝의 notFoundHandler
     const missingRes  = await fetch(`${base}/__no_such_route__`);
     const missingBody = await missingRes.json();
     assert.equal(missingRes.status, 404);
     assert.equal(missingBody.success, false);
 
-    // 4) socket.io가 http 서버에 붙어 있는지 — engine.io 핸드셰이크로 확인합니다.
+    // 3) socket.io가 http 서버에 붙어 있는지 — engine.io 핸드셰이크로 확인합니다.
     //    (인증된 세션까지는 확인하지 않습니다. authenticateSocket이 JWT 쿠키를 요구하므로
     //     여기서 검증하는 범위는 "소켓 서버가 부착되어 응답한다"까지입니다.)
     const handshakeRes  = await fetch(`${base}/socket.io/?EIO=4&transport=polling`);

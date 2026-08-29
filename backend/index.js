@@ -9,6 +9,24 @@ const cookieParser = require("cookie-parser");
 const cors         = require("cors");
 const morgan       = require("morgan");
 
+const failStartup = (error) => {
+    const reason = String(error?.message ?? error ?? "unknown error")
+        .replace(/\s+/g, " ")
+        .trim();
+    console.error(`[STARTUP] 실패 — DB 연결: ${reason}`);
+    process.exit(1);
+};
+
+// 모델 초기화는 라우터/서비스 import보다 먼저 수행합니다. 일부 라우터가 models를
+// 간접 import하므로, 이 경계가 먼저 있어야 잘못된 URL에서 발생하는 Sequelize 생성자
+// 동기 throw와 이후 sync() reject를 동일한 실패 로그/종료 코드로 처리할 수 있습니다.
+let db;
+try {
+    db = require("./models");
+} catch (error) {
+    failStartup(error);
+}
+
 const { notFoundHandler, globalErrorHandler } = require("./middleware/errorHandler");
 const authRouter     = require("./routes/auth.routes");
 const userRouter     = require("./routes/user.routes");
@@ -17,10 +35,6 @@ const { initSocket } = require("./socket/socket");
 
 // app은 Express 서버 객체입니다. 앞으로 라우터, 미들웨어, 서버 실행 설정을 여기에 붙입니다.
 const app = express();
-
-// ./models/index.js를 불러옵니다.
-// 이 안에는 Sequelize 연결 객체와 모델들이 들어 있습니다.
-const db = require("./models");
 
 // 프론트(5173)에서 쿠키 기반 인증 요청을 보낼 수 있도록 origin과 credentials를 함께 허용합니다.
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
@@ -54,26 +68,19 @@ db.sequelize.sync({force: false})
         // 실제로 적용된 풀 값을 함께 찍어, 기동 로그만 보고도 max/min/idle/acquire가
         // 의도한 값으로 들어갔는지 확인할 수 있게 합니다.
         const pool = db.sequelize.options.pool ?? {};
-        console.log(
-            `[DB] 연결 및 테이블 동기화 완료 — pool max=${pool.max} min=${pool.min} idle=${pool.idle}ms acquire=${pool.acquire}ms`
-        );
-
         // DB 준비가 끝난 뒤에 Express 서버를 실행합니다.
         // 이렇게 하면 DB 연결 실패 상태에서 서버만 켜지는 상황을 막을 수 있습니다.
         server.listen(port, () => {
-            console.log(`Backend listening on http://localhost:${port}`)
+            console.log(
+                `[STARTUP] 성공 — port=${port} DB 연결·동기화 완료; pool max=${pool.max} min=${pool.min} idle=${pool.idle}ms acquire=${pool.acquire}ms`
+            );
         });
     })
     .catch((err) => {
         // DB 연결이나 테이블 동기화 중 에러가 나면 여기서 잡힙니다.
         // err를 통째로 넘기면 스택이 여러 줄로 퍼져 성공/실패 로그의 경계가 흐려지므로,
         // 원인은 message 한 줄로만 남깁니다.
-        console.error(`[DB] 연결 실패 — ${err.message}`);
-
-        // 재시도하지 않고 바로 종료합니다. DB 없이 서버만 살아 있으면 모든 요청이
-        // 런타임에 실패하므로, 기동 실패를 exit code 1로 분명히 드러내고
-        // 재기동 여부는 프로세스 관리자(pm2/docker 등)에게 맡깁니다.
-        process.exit(1);
+        failStartup(err);
     })
 
 // 이 파일은 서버 실행 진입점이지만, 테스트에서 기동 후 정리(server.close/io.close)를
