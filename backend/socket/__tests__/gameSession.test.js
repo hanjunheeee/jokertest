@@ -2188,42 +2188,63 @@ test('leave_game_session: registerGameHandlers로 실제 배선하면 socket.tri
 // leave_game_session — matchmaking Room 정리(cleanupRoomStateForSessionParticipants)
 // ---------------------------------------------------------------------------
 
+function seedLegacyRoomDuringSession(io, socket, uuid, roomId, { otherPlayers = [] } = {}) {
+    const players = new Map([
+        [uuid, makePlayer(uuid)],
+        ...otherPlayers.map((player) => [player.uuid, player]),
+    ])
+    const { accessType, ...settings } = validSettingsPayload({ maxPlayers: 4, jokerCount: 1 })
+    const room = {
+        id: roomId,
+        code: roomId.slice(-6).toUpperCase(),
+        title: 'legacy-race-room',
+        accessType,
+        hostUuid: uuid,
+        settings,
+        players,
+    }
+    matchmaking.__seedRoomForTests(room)
+    for (const playerUuid of players.keys()) matchmaking.__seedPlayerRoomForTests(playerUuid, roomId)
+    socket.rooms.add(roomId)
+    for (const player of otherPlayers) {
+        const playerSocket = io.sockets.sockets.get(`sock-${player.uuid}`)
+        playerSocket?.rooms.add(roomId)
+    }
+    return room
+}
+
 test('세션 종료 시 세션 진행 중 만든 Room B에 비참가자 Q가 참가해 있으면 Room B는 삭제되지 않고 host가 Q로 이전되며, 참가자 Socket은 Room B channel에서 실제로 leave된다', async () => {
     const { io, hostSocket, gameId } = await startRealTwoPlayerSession('cleanup-b-host', 'cleanup-b-joiner')
 
-    // 활성 세션 참가자의 create_room은 계약대로 허용된다(게임 시작 시 원래 Room 매핑은 이미
-    // 삭제됐으므로 host는 새 Room B를 자유롭게 만들 수 있다).
-    const createdB = await callAsPromise(
-        handleCreateRoom, io, hostSocket, 'cleanup-b-host', validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
-    )
-    assert.equal(createdB.ok, true)
-
     const qSocket = createFakeSocket('cleanup-b-q')
     io.sockets.sockets.set(qSocket.id, qSocket)
-    await handleJoinRoomByCode(io, qSocket, 'cleanup-b-q', createdB.room.roomCode)
+    const roomId = 'legacy-cleanup-b'
+    seedLegacyRoomDuringSession(io, hostSocket, 'cleanup-b-host', roomId, {
+        otherPlayers: [makePlayer('cleanup-b-q')],
+    })
 
     handleLeaveGameSession(io, createFakeSocket('cleanup-b-host'), 'cleanup-b-host', { gameId }, countingCallback().callback)
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
-    const roomEntry = snapshot.gameRooms.find(([id]) => id === createdB.room.roomId)
+    const roomEntry = snapshot.gameRooms.find(([id]) => id === roomId)
     assert.ok(roomEntry, 'Room B가 통째로 삭제되면 안 된다(비참가자 Q가 있음)')
     const [, roomB] = roomEntry
     assert.equal(roomB.hostUuid, 'cleanup-b-q')
     assert.deepEqual(roomB.players.map(([uuid]) => uuid), ['cleanup-b-q'])
 
-    const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed' && b.roomId === createdB.room.roomId)
+    const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed' && b.roomId === roomId)
     assert.ok(hostChanged)
     assert.equal(hostChanged.payload.hostUuid, 'cleanup-b-q')
 
-    assert.equal(hostSocket.rooms.has(createdB.room.roomId), false) // Map 정리만이 아니라 실제 channel leave까지 확인
-    assert.equal(qSocket.rooms.has(createdB.room.roomId), true) // Q는 그대로 유지
+    assert.equal(hostSocket.rooms.has(roomId), false) // Map 정리만이 아니라 실제 channel leave까지 확인
+    assert.equal(qSocket.rooms.has(roomId), true) // Q는 그대로 유지
 })
 
 test('세션 종료 시 한 참가자의 Socket leave 실패가 다른 참가자·registry 정리를 막지 않는다', async () => {
     const { io, hostSocket, joinerSocket, gameId } = await startRealTwoPlayerSession('cleanup-iso-host', 'cleanup-iso-joiner')
 
-    const createdHostRoom = await callAsPromise(handleCreateRoom, io, hostSocket, 'cleanup-iso-host', validSettingsPayload())
-    const createdJoinerRoom = await callAsPromise(handleCreateRoom, io, joinerSocket, 'cleanup-iso-joiner', validSettingsPayload())
+    const createdHostRoom = seedLegacyRoomDuringSession(io, hostSocket, 'cleanup-iso-host', 'legacy-cleanup-host')
+    const createdJoinerRoom = seedLegacyRoomDuringSession(io, joinerSocket, 'cleanup-iso-joiner', 'legacy-cleanup-joiner')
 
     joinerSocket.leave = () => {
         throw new Error('leave 실패(테스트 주입)')
@@ -2232,8 +2253,8 @@ test('세션 종료 시 한 참가자의 Socket leave 실패가 다른 참가자
     assert.doesNotThrow(() => handleLeaveGameSession(io, createFakeSocket('cleanup-iso-host'), 'cleanup-iso-host', { gameId }, countingCallback().callback))
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
-    assert.equal(snapshot.gameRooms.some(([id]) => id === createdHostRoom.room.roomId), false)
-    assert.equal(snapshot.gameRooms.some(([id]) => id === createdJoinerRoom.room.roomId), false)
+    assert.equal(snapshot.gameRooms.some(([id]) => id === createdHostRoom.id), false)
+    assert.equal(snapshot.gameRooms.some(([id]) => id === createdJoinerRoom.id), false)
     assert.equal(snapshot.playerRoom.length, 0)
 
     const gameSnapshot = gameSessionCore.__getStateSnapshotForTests()

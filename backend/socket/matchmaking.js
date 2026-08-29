@@ -137,8 +137,37 @@ function isStartedRoomMark(mark) {
  * 참가 실패를 단일 계약으로 응답합니다. code는 클라이언트가 분기에 쓰는 안정적 식별자이고
  * message는 사람이 읽는 기본 안내다 — 두 필드를 한 곳에서 함께 붙여 code 누락을 막는다.
  */
-function emitRoomJoinFailed(socket, code, message) {
-    socket.emit('room_join_failed', { code, message })
+function emitRoomJoinFailed(socket, code, message, details = {}) {
+    socket.emit('room_join_failed', { code, message, ...details })
+}
+
+/**
+ * ALREADY_IN_GAME 안내 문구의 유일한 원본. 네 진입점(create_room·join_room_by_code·
+ * join_public_room·join_matchmaking)이 같은 상수를 참조해야 응답 형식이 문자열 복붙에
+ * 기대지 않고 한 곳에서 유지된다.
+ */
+const ALREADY_IN_GAME_MESSAGE = '진행 중인 게임이 있습니다. 게임을 끝내거나 나간 뒤에 다시 시도해주세요.'
+
+/**
+ * 방 생성·참가 네 진입점이 공유하는 인게임 게이트. 활성 게임이 있으면 respond로
+ * ALREADY_IN_GAME을 알리고 true를 돌려준다(호출자는 즉시 return해야 한다).
+ *
+ * respond는 경로별 응답 채널을 감싼 (code, message) 함수다 — create_room은 ack callback,
+ * join 계열은 emitRoomJoinFailed. 채널은 각자의 기존 계약을 그대로 쓰되 code/message 쌍은
+ * 여기 한 곳에서만 만들어진다.
+ *
+ * 네 곳 모두 예약(pendingRoomTransitions.add)·socket.join·await 이전의 동기 구간에서
+ * 호출하므로, 차단됐을 때 되돌려야 할 상태가 아예 생기지 않는다.
+ */
+function rejectIfInActiveGame(uuid, respond) {
+    const routing = gameSession.getActiveSessionRoutingInfo(uuid)
+    if (!routing || gameSession.isForfeitedFromSession(routing.gameId, uuid)) return false
+    respond({
+        code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME,
+        message: ALREADY_IN_GAME_MESSAGE,
+        gameId: routing.gameId,
+    })
+    return true
 }
 
 function registerMatchmakingHandlers(io, socket, uuid) {
@@ -209,6 +238,10 @@ function onDisconnect(io, socket, uuid) {
 }
 
 async function handleJoinMatchmaking(io, socket, uuid) {
+    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) =>
+        emitRoomJoinFailed(socket, code, message, { gameId })
+    )) return
+
     if (!isRandomMatchmakingEnabled()) {
         // 현재 UI에는 진입 경로가 없지만, 소켓 이벤트는 클라이언트가 직접 emit할 수도 있어
         // 서버에서 명시적으로 막고 그 사실을 알린다(조용히 무시하지 않음).
@@ -216,6 +249,10 @@ async function handleJoinMatchmaking(io, socket, uuid) {
         return
     }
 
+    // 이 경로는 지금까지 중복 소속을 조용히 무시했지만(아래 playerRoom 검사), 인게임 거부만은
+    // 다른 세 경로와 같은 room_join_failed 계약으로 명시적으로 알린다 — 사유를 알 수 없는
+    // 무반응은 "진행 중인 게임을 정리하라"는 조치로 이어질 수 없기 때문이다. 큐 등록 이전의
+    // 동기 구간이라 되돌릴 상태도 남지 않는다.
     if (playerRoom.has(uuid)) return
 
     // 유일한 await(사용자 조회) 이전, 동기 구간에서 세대를 캡처한다. 대기 중 GameSession
@@ -363,6 +400,12 @@ async function leaveSocketRoomSafely(socket, roomId, logLabel) {
 function handleCreateRoom(io, socket, uuid, payload, callback) {
     // 응답을 받을 수 없는 요청은 어떤 상태도 바꾸지 않는다 — 그래서 다른 검사보다 먼저 확인한다.
     if (typeof callback !== 'function') return
+
+    // 대기방 소속(playerRoom)보다 먼저 본다 — 인게임 소속은 "나가기"로 풀 수 없는 더 근본적인
+    // 상태라, 두 조건이 겹칠 때 사용자가 실제로 해결해야 하는 쪽을 사유로 돌려줘야 한다.
+    // 이 경로만 응답 채널이 ack callback이므로, 다른 세 경로와 같은 code/message 쌍을 담되
+    // 기존 { ok:false, message } 계약 위에 code를 덧붙이는 형태로 내보낸다.
+    if (rejectIfInActiveGame(uuid, (error) => callback({ ok: false, ...error }))) return
 
     if (playerRoom.has(uuid)) {
         callback({ ok: false, message: '이미 참여 중인 방이 있습니다.' })
@@ -527,6 +570,10 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
 }
 
 async function handleJoinPublicRoom(io, socket, uuid, payload) {
+    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) =>
+        emitRoomJoinFailed(socket, code, message, { gameId })
+    )) return
+
     // null/문자열/배열 등 예상 밖 형태는 구조분해 예외 없이 명시적으로 거부한다.
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.INVALID_REQUEST, '잘못된 요청입니다.')
@@ -538,6 +585,11 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
         return
     }
 
+    // 방 조회보다 앞에 둔다. 아래 handleJoinRoomByCode 위임에도 같은 게이트가 있지만, 그
+    // 위임까지 가려면 방이 실제로 존재하고 공개 방이어야 한다 — 그 전에 걸리면 사용자는
+    // 자신이 인게임이라 거부됐다는 사실 대신 ROOM_NOT_FOUND를 보게 된다. 사유를 안정적으로
+    // 만들기 위해 여기서 먼저 판정한다. 차단되면 위임 자체를 하지 않으므로 실패가 두 번
+    // 나가지 않는다.
     const room = gameRooms.get(roomId)
     if (!room) {
         // 목록을 본 뒤 누르기까지의 짧은 사이에 그 방이 게임을 시작했을 수 있다. 그때는
@@ -568,6 +620,10 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
 }
 
 async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = null) {
+    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) =>
+        emitRoomJoinFailed(socket, code, message, { gameId })
+    )) return
+
     const normalizedCode = String(roomCode ?? '').trim()
     if (!normalizedCode) {
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.CODE_REQUIRED, '방 코드를 입력해주세요.')
@@ -575,6 +631,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     }
 
     // 진입 시점 동기 확인 — 여기서 걸러지는 요청은 예약(pendingRoomTransitions)조차 하지 않는다.
+    // 인게임 소속을 대기방 소속보다 먼저 본다(handleCreateRoom과 같은 이유).
     if (playerRoom.has(uuid)) {
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, '이미 참여 중인 방이 있습니다.')
         return
@@ -1105,7 +1162,10 @@ function removeFromRoom(io, socket, uuid) {
  * 직후, 참가자 전원의 현재 matchmaking 소유 상태(gameRooms/playerRoom/matchmakingQueue)를
  * 정리한다. 게임 시작 시 기존 Room 매핑은 이미 삭제되므로(handleStartGame 4단계 commit),
  * 여기서 정리되는 Room은 세션이 진행되는 동안 참가자가 새로 만들거나 들어간 Room뿐이다
- * (활성 세션 참가자의 create_room·코드/공개방 join·queue 진입은 계속 허용되므로 — 아래
+ * (rejectIfInActiveGame 게이트가 활성 세션 참가자의 create_room·코드/공개방 join·queue
+ * 진입을 막으므로 이제 그런 Room은 유예 만료로 배제된 참가자의 것뿐이다 — 게이트가
+ * forfeited를 활성 소속으로 보지 않기 때문이다. 정리 자체는 그대로 남겨둔다: 게이트가
+ * 판정 시점 이후에 시작된 세션까지 막아주지는 않는다. 아래
  * onDisconnect의 ABA 가드와 달리 이 함수는 "지금 이 순간의" playerRoom을 그대로 신뢰한다.
  * 호출자가 종료 core 호출과 동일한 동기 구간에서 반드시 호출해야 하므로, 이 함수가
  * 실행되는 동안 다른 요청이 끼어들어 gameRooms/playerRoom을 바꿀 수 없기 때문이다).
@@ -1267,6 +1327,10 @@ module.exports = {
     __seedPlayerRoomForTests,
     __removeRoomForTests,
     __setUserRepositoryForTests,
+    __setRandomMatchmakingEnabledForTests,
+    // ALREADY_IN_GAME 응답을 검증하는 테스트가 문구를 복붙하지 않고 이 원본을 그대로
+    // 참조하도록 노출합니다(런타임 코드에서는 참조하지 않습니다).
+    ALREADY_IN_GAME_MESSAGE,
     // 테스트에서 개별 핸들러를 실제 socket.io 이벤트 배선 없이 직접 호출하기 위한 통로입니다.
     // 런타임 코드(index.js 등)에서는 참조하지 않습니다.
     __testables: {

@@ -1,3 +1,8 @@
+// game-core/gameSession은 순수 registry 모듈이라(외부 의존은 node:crypto뿐) 이 파일이
+// 직접 require해도 순환이 생기지 않는다 — 아래 setupReadyRoomForStart 주석이 말하는
+// "matchmaking.js를 require하지 않는다"는 제약과는 별개다.
+const gameSessionCore = require('../../../game-core/gameSession')
+
 /** callback을 받는 핸들러를 Promise로 감싼다(ack 콜백을 test에서 await하기 위함). */
 function callAsPromise(handler, ...args) {
     return new Promise((resolve) => handler(...args, resolve))
@@ -144,6 +149,23 @@ async function setupReadyRoomForStart(io, hostUuid, joinerUuid, { handleCreateRo
     return { hostSocket, joinerSocket, room: created.room }
 }
 
+/**
+ * "활성 gameId를 가진 playerSession을 소유한 계정" 상태를 만든다 — game-core를 실제로
+ * 구동해 GameSession을 커밋하므로 playerSession 매핑도 정상 경로와 동일하게 채워진다.
+ * 테스트가 세션 내부 Map을 직접 심지 않게 하려는 것이 이 헬퍼의 목적이다.
+ *
+ * matchmaking의 대기방 상태(gameRooms/playerRoom)는 건드리지 않는다 — 인게임 게이트가
+ * 대기방 소속과 무관하게 걸린다는 것을 그대로 드러내기 위함이다.
+ *
+ * @returns {object} 커밋된 session (session.id가 곧 활성 gameId다)
+ */
+function seedActiveGameForAccount(uuids, { roomId = 'room-active-game', jokerCount = 1 } = {}) {
+    const players = new Map(uuids.map((uuid) => [uuid, { uuid, nickname: `nick-${uuid}`, isReady: true }]))
+    const prepared = gameSessionCore.prepareGameSession({ id: roomId, players, settings: { jokerCount } })
+    gameSessionCore.commitGameSession(prepared.session)
+    return prepared.session
+}
+
 module.exports = {
     callAsPromise,
     createFakeSocket,
@@ -151,4 +173,5 @@ module.exports = {
     validSettingsPayload,
     countingCallback,
     setupReadyRoomForStart,
+    seedActiveGameForAccount,
 }
