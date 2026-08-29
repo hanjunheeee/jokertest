@@ -69,7 +69,7 @@ function joinFailures(socket) {
 // ---------------------------------------------------------------------------
 
 test('AC-01: 활성 게임에 속한 계정의 create_room은 ALREADY_IN_GAME으로 거부된다', async () => {
-    seedActiveGameForAccount(['ac01-a', 'ac01-b'])
+    const session = seedActiveGameForAccount(['ac01-a', 'ac01-b'])
 
     const socket = createFakeSocket('ac01-a')
     const io = createFakeIo([socket])
@@ -80,6 +80,7 @@ test('AC-01: 활성 게임에 속한 계정의 create_room은 ALREADY_IN_GAME으
         ok: false,
         code: 'ALREADY_IN_GAME',
         message: ALREADY_IN_GAME_MESSAGE,
+        gameId: session.id,
     })
 
     // 예약(pendingRoomTransitions)·Socket room 가입·Map 커밋 어느 것도 일어나지 않는다 —
@@ -115,7 +116,7 @@ test('AC-01: 설정 payload가 유효해도(검증 실패와 무관하게) 인�
 test('AC-02: 활성 게임에 속한 계정의 join_room_by_code는 ALREADY_IN_GAME으로 거부된다', async () => {
     const io = createFakeIo([])
     const { room } = await createRoomAsFreeAccount(io, 'ac02-host')
-    seedActiveGameForAccount(['ac02-joiner', 'ac02-peer'])
+    const session = seedActiveGameForAccount(['ac02-joiner', 'ac02-peer'])
 
     const socket = createFakeSocket('ac02-joiner')
     io.sockets.sockets.set(socket.id, socket)
@@ -123,7 +124,7 @@ test('AC-02: 활성 게임에 속한 계정의 join_room_by_code는 ALREADY_IN_G
     await handleJoinRoomByCode(io, socket, 'ac02-joiner', room.roomCode)
 
     assert.deepEqual(joinFailures(socket).map((e) => e.payload), [
-        { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE },
+        { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id },
     ])
 
     // 방에도, 역방향 매핑에도, 예약에도 흔적이 없다.
@@ -142,7 +143,7 @@ test('AC-02: 활성 게임에 속한 계정의 join_room_by_code는 ALREADY_IN_G
 test('AC-03: 활성 게임에 속한 계정의 join_public_room은 ALREADY_IN_GAME으로 한 번만 거부된다', async () => {
     const io = createFakeIo([])
     const { room } = await createRoomAsFreeAccount(io, 'ac03-host')
-    seedActiveGameForAccount(['ac03-joiner', 'ac03-peer'])
+    const session = seedActiveGameForAccount(['ac03-joiner', 'ac03-peer'])
 
     const socket = createFakeSocket('ac03-joiner')
     io.sockets.sockets.set(socket.id, socket)
@@ -151,7 +152,7 @@ test('AC-03: 활성 게임에 속한 계정의 join_public_room은 ALREADY_IN_GA
 
     // 차단되면 handleJoinRoomByCode 위임 자체를 하지 않으므로 실패가 두 번 나가지 않는다.
     assert.deepEqual(joinFailures(socket).map((e) => e.payload), [
-        { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE },
+        { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id },
     ])
     assert.deepEqual(socket.joined, [])
 })
@@ -170,7 +171,7 @@ test('AC-03: 없는 roomId로 들어와도 인게임 계정에게는 ROOM_NOT_FO
 
 test('AC-03: 활성 게임에 속한 계정의 join_matchmaking은 큐에 들어가지 않고 ALREADY_IN_GAME으로 거부된다', async () => {
     matchmaking.__setRandomMatchmakingEnabledForTests(true)
-    seedActiveGameForAccount(['ac03m-a', 'ac03m-b'])
+    const session = seedActiveGameForAccount(['ac03m-a', 'ac03m-b'])
 
     const socket = createFakeSocket('ac03m-a')
     const io = createFakeIo([socket])
@@ -179,7 +180,7 @@ test('AC-03: 활성 게임에 속한 계정의 join_matchmaking은 큐에 들어
 
     // 이 경로는 원래 중복 소속을 조용히 무시했지만, 인게임 거부만은 명시적으로 알린다.
     assert.deepEqual(joinFailures(socket).map((e) => e.payload), [
-        { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE },
+        { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id },
     ])
     assert.equal(socket.emitted.some((e) => e.event === 'matchmaking_queued'), false)
     assert.equal(socket.emitted.some((e) => e.event === 'match_found'), false)
@@ -191,9 +192,9 @@ test('AC-03: 활성 게임에 속한 계정의 join_matchmaking은 큐에 들어
 // AC-04 — 단일 형식
 // ---------------------------------------------------------------------------
 
-test('AC-04: 네 경로가 모두 같은 code/message 쌍으로 ALREADY_IN_GAME을 알린다', async () => {
+test('AC-04: 네 경로가 모두 같은 code/message/gameId로 ALREADY_IN_GAME을 알린다', async () => {
     matchmaking.__setRandomMatchmakingEnabledForTests(true)
-    seedActiveGameForAccount(['ac04-a', 'ac04-b'])
+    const session = seedActiveGameForAccount(['ac04-a', 'ac04-b'])
 
     const socket = createFakeSocket('ac04-a')
     const io = createFakeIo([socket])
@@ -203,19 +204,21 @@ test('AC-04: 네 경로가 모두 같은 code/message 쌍으로 ALREADY_IN_GAME�
     await handleJoinPublicRoom(io, socket, 'ac04-a', { roomId: 'any-room-id' })
     await handleJoinMatchmaking(io, socket, 'ac04-a')
 
-    const expectedPair = { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE }
+    const expectedPayload = { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id }
 
     // join 계열 세 경로: 기존 계약 그대로 room_join_failed 이벤트 하나씩, 페이로드는 완전히 동일.
     const failures = joinFailures(socket)
     assert.equal(failures.length, 3)
-    for (const failure of failures) assert.deepEqual(failure.payload, expectedPair)
+    for (const failure of failures) assert.deepEqual(failure.payload, expectedPayload)
     // room_join_failed 외의 다른 이벤트는 하나도 나가지 않았다(예: matchmaking_queued).
     assert.equal(socket.emitted.length, 3)
 
     // create_room만 채널이 ack callback이다 — 채널은 각자의 기존 계약을 따르되 code/message
     // 쌍 자체는 join 계열과 글자 하나까지 같다.
-    assert.deepEqual(ackResponse, { ok: false, ...expectedPair })
-    assert.deepEqual({ code: ackResponse.code, message: ackResponse.message }, failures[0].payload)
+    assert.deepEqual(ackResponse, { ok: false, ...expectedPayload })
+    const { ok, ...ackPayload } = ackResponse
+    assert.equal(ok, false)
+    assert.deepEqual(ackPayload, failures[0].payload)
 })
 
 // ---------------------------------------------------------------------------
@@ -294,15 +297,25 @@ test('AC-06: 코드 방을 join_public_room으로 우회하려는 요청은 여�
     assert.equal(joinFailures(socket)[0].payload.code, 'ROOM_CODE_MISMATCH')
 })
 
-test('AC-06: 랜덤 매칭이 비활성이면 인게임 여부와 무관하게 matchmaking_disabled가 먼저다', async () => {
-    seedActiveGameForAccount(['ac06m-a', 'ac06m-b'])
+test('AC-03: 랜덤 매칭이 비활성이어도 인게임 계정은 ALREADY_IN_GAME으로 먼저 거부된다', async () => {
+    const session = seedActiveGameForAccount(['ac06m-a', 'ac06m-b'])
 
     const socket = createFakeSocket('ac06m-a')
     const io = createFakeIo([socket])
 
     await handleJoinMatchmaking(io, socket, 'ac06m-a')
 
-    // 기능 자체가 꺼져 있다는 사실이 더 정확한 사유이므로 그 응답을 그대로 유지한다.
+    assert.deepEqual(joinFailures(socket).map((e) => e.payload), [
+        { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id },
+    ])
+})
+
+test('AC-06: 랜덤 매칭이 비활성이면 게임 미소속 계정은 기존대로 matchmaking_disabled를 받는다', async () => {
+    const socket = createFakeSocket('ac06m-free')
+    const io = createFakeIo([socket])
+
+    await handleJoinMatchmaking(io, socket, 'ac06m-free')
+
     assert.deepEqual(socket.emitted.map((e) => e.event), ['matchmaking_disabled'])
 })
 

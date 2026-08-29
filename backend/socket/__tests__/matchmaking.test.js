@@ -1545,25 +1545,24 @@ test('start_game: notify 중 한 참가자의 emit이 실패해도 나머지는 
 })
 
 test('start_game: 참가자 중 한 명이 이미 다른 GameSession에 속해 있으면 새 Room 전체가 PLAYER_ALREADY_IN_SESSION으로 거부된다', async () => {
-    // 첫 번째 Room을 정상적으로 GameSession으로 전환시킨다.
-    const firstHost = createFakeSocket('uuid-pais-shared')
-    const io = createFakeIo([firstHost])
-    await setupReadyRoomForStart(io, 'uuid-pais-shared', 'uuid-pais-first-joiner', readyRoomHandlers)
-    const firstStart = await callAsPromise(handleStartGame, io, firstHost, 'uuid-pais-shared')
-    assert.equal(firstStart.ok, true) // 전제조건: 첫 세션 전환 성공
-
-    // "uuid-pais-shared"는 이제 GameSession에 속해 있다. 같은 uuid가 참가한 새 Room을 만든다
-    // (GameSession 전환으로 playerRoom에서는 이미 정리됐으므로 새 Room 생성 자체는 허용된다).
+    // 먼저 정상 대기방을 만든 뒤, start_game 직전에 참가자 하나가 다른 경로에서 활성 세션에
+    // 들어간 경합을 game-core의 실제 prepare/commit 경로로 재현한다. MM1 이후에는 이미
+    // 인게임인 계정이 새 Room에 참가할 수 없으므로 이 순서만 계약상 가능한 회귀 시나리오다.
     const newHost = createFakeSocket('uuid-pais-new-host')
-    io.sockets.sockets.set(newHost.id, newHost)
-    const newRoom = await callAsPromise(
-        handleCreateRoom, io, newHost, 'uuid-pais-new-host', validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
+    const io = createFakeIo([newHost])
+    const { joinerSocket: sharedSocket } = await setupReadyRoomForStart(
+        io, 'uuid-pais-new-host', 'uuid-pais-shared', readyRoomHandlers,
     )
-    const sharedSocket = createFakeSocket('uuid-pais-shared', { id: 'sock-uuid-pais-shared-2' })
-    io.sockets.sockets.set(sharedSocket.id, sharedSocket)
-    await handleJoinRoomByCode(io, sharedSocket, 'uuid-pais-shared', newRoom.room.roomCode)
-    await callAsPromise(handleSetReady, io, newHost, 'uuid-pais-new-host', { isReady: true })
-    await callAsPromise(handleSetReady, io, sharedSocket, 'uuid-pais-shared', { isReady: true })
+    const prepared = gameSession.prepareGameSession({
+        id: 'uuid-pais-existing-game',
+        players: new Map([
+            ['uuid-pais-shared', { uuid: 'uuid-pais-shared', nickname: 'shared', isReady: true }],
+            ['uuid-pais-existing-peer', { uuid: 'uuid-pais-existing-peer', nickname: 'peer', isReady: true }],
+        ]),
+        settings: { jokerCount: 1 },
+    })
+    assert.equal(prepared.ok, true)
+    gameSession.commitGameSession(prepared.session)
 
     const before = matchmaking.__getStateSnapshotForTests()
     const beforeSession = gameSession.__getStateSnapshotForTests()
