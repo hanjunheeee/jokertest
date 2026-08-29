@@ -18,11 +18,14 @@ import { getInGameNightActionType } from "../actions/ingameActionPanel.js"
  * 시작 턴"을 고르는 데에만 쓰인다(getInGameOpeningNightTurnRole) — 안내가 이 순서대로
  * 자동으로 넘어간다는 뜻이 아니다.
  */
+// label은 안내 문구에서 "○○" 부분만 떼어낸 같은 표기다. 상태바(InGameTimebar)가 지금 턴을
+// 상시로 표시할 때 쓰며, 안내 오버레이와 상태바가 같은 역할을 다른 이름으로 부르지 않도록
+// message와 한 줄에 붙여 둔다 — 표기를 바꾸려면 이 한 곳만 고치면 된다.
 export const INGAME_NIGHT_TURN_ANNOUNCEMENTS = Object.freeze([
-  Object.freeze({ role: "JOKER", message: "광대의 시간입니다" }),
-  Object.freeze({ role: "DOCTOR", message: "의사의 시간입니다" }),
-  Object.freeze({ role: "GUARD", message: "경비원의 시간입니다" }),
-  Object.freeze({ role: "WITCH_HUNTER", message: "마녀사냥꾼의 시간입니다" }),
+  Object.freeze({ role: "JOKER", label: "광대", message: "광대의 시간입니다" }),
+  Object.freeze({ role: "DOCTOR", label: "의사", message: "의사의 시간입니다" }),
+  Object.freeze({ role: "GUARD", label: "경비원", message: "경비원의 시간입니다" }),
+  Object.freeze({ role: "WITCH_HUNTER", label: "마녀사냥꾼", message: "마녀사냥꾼의 시간입니다" }),
 ])
 
 /**

@@ -22,6 +22,7 @@ import {
   DAY_VOTE_READY_DONE_LABEL,
   DAY_DEAD_NOTICE,
 } from "../../constants/actions/ingameActionPanel.js"
+import { getInGameNightTurnRoleLabel } from "../../utils/getInGameNightTurnRoleLabel.js"
 import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
 import InGameTargetPicker from "./InGameTargetPicker.jsx"
 
@@ -91,6 +92,8 @@ export default function InGameActionPanel({
     skipNightAction,
     nightActionAlive,
     nightActionsLocked,
+    nightTurnRole,
+    isNightTurnActor,
     resolveNight,
     resolveNightStatus,
     resolveNightError,
@@ -318,10 +321,21 @@ export default function InGameActionPanel({
             <p className={INGAME_ACTION_META_CLASS}>이 밤에는 행동할 수 없습니다.</p>
           ) : (
             <>
+              {/* 내 차례가 아니면 버튼이 왜 잠겨 있는지 한 줄로 알린다 — 잠금 자체는
+                  nightActionsLocked(=isNightTurnActor)가 이미 걸었고, 여기서는 그 이유만
+                  비춘다(판정을 두 번 하지 않는다). */}
+              {!isNightTurnActor ? (
+                <p className={INGAME_ACTION_META_CLASS}>
+                  {nightTurnRole
+                    ? `지금은 ${getInGameNightTurnRoleLabel(nightTurnRole) ?? nightTurnRole}의 차례입니다.`
+                    : "지금은 행동할 수 있는 차례가 아닙니다."}
+                </p>
+              ) : null}
               <InGameTargetPicker
                 players={nightActionTargets}
                 selectedTargetId={selectedNightTargetId}
                 onSelect={setSelectedNightTargetId}
+                disabled={nightActionsLocked}
               />
               <div className="flex flex-wrap gap-1.5">
                 <button

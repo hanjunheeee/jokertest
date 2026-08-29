@@ -15,8 +15,11 @@ import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import { useInGameStore } from "../store/ingameStore.js"
+import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
+import { selectInGameNightTurnDeadline } from "../utils/selectInGameNightTurnDeadline.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
+import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
@@ -38,6 +41,12 @@ export default function InGamePage() {
   // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
   const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
+
+  // 상태바에 상시로 띄우는 밤 역할 턴. 안내 오버레이(2.6초 뒤 사라짐)와 같은 selector에서 읽어
+  // 두 표기가 갈라지지 않게 하고, 남은 시간은 서버가 실어 보낸 deadline 하나에서만 만든다.
+  const nightTurnRole = useInGameStore((s) => selectInGameNightTurnRole(s.state ?? null))
+  const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
+  const nightTurnRemainingSec = useInGameNightTurnCountdown(nightTurnDeadline)
 
   // 게임 중 새로고침 등으로 ingameStore가 비어있는 채 /ingame에 직접 진입하면(store가
   // 초기화되어 있음) 실제 참가자 대신 더미 프리뷰 데이터로 채워진 화면이 보인다. 유효한
@@ -83,6 +92,8 @@ export default function InGamePage() {
           <InGameTimebar
             day={gameState?.dayIndex}
             activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
+            nightTurnRole={nightTurnRole}
+            nightTurnRemainingSec={nightTurnRemainingSec}
             onVoteStatusClick={() => setVoteStatusOpen(true)}
           />
           <InGamePlayerBoard />
