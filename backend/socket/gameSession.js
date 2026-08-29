@@ -107,9 +107,14 @@ async function resyncSessionRouting(socket, uuid) {
     }
 }
 
-/** 테스트 전용: onlineUsersRegistry를 초기 상태(null)로 되돌립니다. 런타임 코드에서는 호출하지 마세요. */
+/**
+ * 테스트 전용: onlineUsersRegistry를 초기 상태(null)로 되돌리고, 진행 중인 밤 턴 시퀀스를
+ * 전부 중단합니다(대기 중인 타이머까지 해제하므로 테스트 간에 타이머가 새어나가지 않습니다).
+ * 런타임 코드에서는 호출하지 마세요.
+ */
 function __resetStateForTests() {
     onlineUsersRegistry = null
+    for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
 }
 
 /** 테스트 전용: 현재 onlineUsersRegistry 참조를 읽기 전용으로 반환합니다(변형하지 않습니다). */
@@ -279,10 +284,153 @@ function respondNightAction(uuid, trustedGameId, callback, payload) {
     }
 }
 
+// gameId → 진행 중인 밤 턴 시퀀스 run 컨텍스트. 밤 하나당 최대 하나만 존재하며, 마지막 턴이
+// 끝나면 스스로 지워진다. handleSubmitNightAction이 io도 타이머도 인자로 받지 않고 턴을 앞당길
+// 수 있는 이유가 이 Map이다 — 제출 핸들러는 gameId만으로 진행 중인 run을 찾는다.
+const nightTurnRuns = new Map()
+
+/**
+ * 생존 actor가 없는 턴의 종료 지연(ms)을 계산합니다. 턴 제한시간의 20~60% 구간이며, 난수원을
+ * 인자로 받아 테스트가 결정적으로 검증할 수 있게 합니다(handleResolveNight의 deps 관례와 동일).
+ *
+ * 즉시 끝내지 않는 이유: 종료까지 걸린 시간이 그 역할의 전멸 여부를 그대로 알려주는 부채널이
+ * 되기 때문입니다. 제한시간을 다 쓰지도 않는 이유는 그 반대로, 아무도 제출할 수 없는 턴이
+ * 매번 만료까지 가면 밤이 무의미하게 길어지기 때문입니다.
+ *
+ * randomFn이 [0,1) 밖의 값이나 비수 값을 돌려줘도 비율은 항상 [0.2, 0.6]에 갇힙니다.
+ */
+function computeEmptyTurnDelayMs(durationMs, randomFn = Math.random) {
+    const raw = Number(randomFn())
+    const bounded = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0
+    return Math.floor(durationMs * (0.2 + bounded * 0.4))
+}
+
+/** 밤 턴 방송은 참가자 전원이 이미 가입해 있는 세션 channel에 한 번만 보낸다(수신자별로 달라지는 값이 없다). */
+function emitNightTurnEvent(run, event, payload) {
+    try {
+        run.io.to(run.session.channelId).emit(event, payload)
+    } catch (err) {
+        console.error('[밤 턴 방송 실패]', { code: 'DELIVERY_ERROR', event, gameId: run.session.id })
+    }
+}
+
+/**
+ * 다음 턴으로 넘어갑니다. NIGHT_TURN_ORDER를 다 돌았으면 run을 정리하고 끝냅니다.
+ *
+ * 시작 방송은 생존 여부와 무관하게 항상 같은 빌더로 같은 시점(턴 진입 직후)에 나가고,
+ * deadline도 항상 now + 제한시간입니다 — 생존 actor 유무는 오직 "무엇이 이 턴을 끝내는가"에만
+ * 영향을 줍니다(무인 턴은 무작위 지연 타이머, 그 외에는 전원 제출).
+ */
+function advanceNightTurn(run) {
+    const { session } = run
+    run.index += 1
+    if (run.index >= gameSessionCore.NIGHT_TURN_ORDER.length) {
+        stopNightTurnSequence(session.id)
+        return
+    }
+
+    const role = gameSessionCore.NIGHT_TURN_ORDER[run.index]
+    session.nightTurnRole = role
+    const deadline = run.nowFn() + run.durationMs
+    emitNightTurnEvent(run, 'night_turn_started', gameSessionCore.buildNightTurnStartedPayload(session, role, deadline))
+
+    if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) {
+        run.timerId = run.setTimeoutFn(() => endNightTurn(run, role), computeEmptyTurnDelayMs(run.durationMs, run.randomFn))
+        return
+    }
+
+    // 생존 actor가 있는 턴에는 타이머를 걸지 않는다 — 이 턴을 끝내는 것은 오직 그 역할 생존자
+    // 전원의 제출(SKIP 포함)뿐이고 시간 만료로는 끝나지 않는다. 진입 시점에 이미 전원 제출된
+    // 상태일 수도 있으므로(시퀀서 시작 전에 들어온 제출) 여기서 한 번 확인한다.
+    maybeEndNightTurnOnCompletion(session.id)
+}
+
+/**
+ * 지정한 역할의 턴을 끝내고 종료를 방송한 뒤 다음 턴으로 넘어갑니다. role 인자는 "이 종료
+ * 요청이 어느 턴에 대한 것인지"를 명시해, 이미 지나간 턴의 늦게 도착한 타이머가 현재 턴을
+ * 잘못 끝내는 것을 막습니다.
+ */
+function endNightTurn(run, role) {
+    const { session } = run
+    if (nightTurnRuns.get(session.id) !== run) return
+    if (session.nightTurnRole !== role) return
+
+    if (run.timerId !== null) {
+        run.clearTimeoutFn(run.timerId)
+        run.timerId = null
+    }
+    session.nightTurnRole = null
+    emitNightTurnEvent(run, 'night_turn_ended', gameSessionCore.buildNightTurnEndedPayload(session, role))
+    advanceNightTurn(run)
+}
+
+/**
+ * 진행 중인 턴이 "그 역할 생존자 전원 제출"로 끝났는지 확인하고, 끝났으면 제한시간을 기다리지
+ * 않고 즉시 종료시킵니다. 진행 중인 run이 없으면 아무 것도 하지 않습니다(no-op).
+ */
+function maybeEndNightTurnOnCompletion(gameId) {
+    const run = nightTurnRuns.get(gameId)
+    if (!run) return
+    const role = gameSessionCore.getCurrentNightTurnRole(run.session)
+    if (role === null) return
+    // 생존 actor가 없는 턴은 공집합이라 isRoleTurnComplete가 항상 참이다. 그 턴을 여기서 즉시
+    // 끝내면 종료 타이밍이 곧 전멸 신호가 되므로, 무인 턴은 오직 무작위 지연 타이머만이 끝낸다.
+    if (gameSessionCore.getAliveActorUuidsForRole(run.session, role).length === 0) return
+    if (!gameSessionCore.isRoleTurnComplete(run.session, role)) return
+    endNightTurn(run, role)
+}
+
+/**
+ * 한 밤의 턴 시퀀스를 시작합니다 — NIGHT_TURN_ORDER 순서대로 턴마다 night_turn_started를
+ * 방송하고, 각 턴이 끝날 때 night_turn_ended를 방송한 뒤 다음 턴으로 넘어갑니다.
+ *
+ * deps로 randomFn(무인 턴 지연)·nowFn(deadline)·setTimeoutFn/clearTimeoutFn(타이머)을 주입할 수
+ * 있습니다. production 기본값은 각각 Math.random·Date.now·setTimeout·clearTimeout이며,
+ * turnDurationMs 기본값은 game-core의 NIGHT_TURN_DURATION_MS입니다.
+ *
+ * 같은 세션에 이미 시퀀스가 돌고 있으면 두 번째 호출은 기존 run을 그대로 돌려주고 아무 것도
+ * 다시 시작하지 않습니다(멱등) — 턴이 중복 방송되거나 타이머가 두 벌 걸리지 않습니다.
+ */
+function startNightTurnSequence(io, session, deps = {}) {
+    if (!session || session.phase !== 'NIGHT') return null
+    const existing = nightTurnRuns.get(session.id)
+    if (existing) return existing
+
+    const run = {
+        io,
+        session,
+        index: -1,
+        timerId: null,
+        randomFn: deps.randomFn ?? Math.random,
+        nowFn: deps.nowFn ?? Date.now,
+        setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
+        clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout,
+        durationMs: deps.turnDurationMs ?? gameSessionCore.NIGHT_TURN_DURATION_MS,
+    }
+    nightTurnRuns.set(session.id, run)
+    advanceNightTurn(run)
+    return run
+}
+
+/** 진행 중인 턴 시퀀스를 중단하고 세션에서 턴 상태를 지웁니다(대기 중인 타이머도 해제). */
+function stopNightTurnSequence(gameId) {
+    const run = nightTurnRuns.get(gameId)
+    if (!run) return
+    if (run.timerId !== null) {
+        run.clearTimeoutFn(run.timerId)
+        run.timerId = null
+    }
+    nightTurnRuns.delete(gameId)
+    delete run.session.nightTurnRole
+}
+
 /**
  * NIGHT 밤 행동 제출 요청을 처리합니다(Socket.IO acknowledgement 방식). acknowledge_role_reveal과
- * 달리 phase 전환을 일으키지 않으므로 브로드캐스트가 전혀 없습니다 — 제출자 본인에게만 ack를
- * 돌려줍니다.
+ * 달리 phase 전환을 일으키지 않습니다 — 제출자 본인에게 ack를 돌려주는 것이 이 핸들러의 계약이고,
+ * 유일한 브로드캐스트는 이 제출이 진행 중인 턴의 마지막 제출이었을 때 turn 시퀀서가 내보내는
+ * night_turn_ended(와 뒤이은 다음 턴의 night_turn_started)뿐입니다. 그 방송은 ack를 보낸 "뒤"에
+ * 일어나며 실패해도 ack를 되돌리지 않습니다(handleResolveNight의 commit 이후 단계와 같은 원칙).
+ * 제출 자체의 성패는 payload에 실리지 않으므로 이 방송도 제출자를 식별하지 않습니다.
  *
  * 로그의 gameId는 client가 보낸 원본 문자열을 절대 쓰지 않습니다. game-core가 성공
  * ({ ok:true, gameId: session.id })을 반환한 경로에서만 그 canonical session.id를 로그
@@ -337,6 +485,14 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
     // 성공 — result.gameId는 game-core가 registry에서 조회한 canonical session.id다(client
     // 원본 payload.gameId가 아님). client에게 보내는 payload에는 포함하지 않는다.
     respondNightAction(uuid, result.gameId, callback, { ok: true })
+
+    // ack를 보낸 뒤에만 턴을 앞당긴다 — 이 제출이 그 역할 생존자의 마지막 제출이었다면 여기서
+    // 제한시간을 기다리지 않고 턴이 즉시 끝난다. 진행 중인 시퀀스가 없으면 no-op이다.
+    try {
+        maybeEndNightTurnOnCompletion(result.gameId)
+    } catch (err) {
+        console.error('[밤 턴 종료 처리 에러]', { code: 'TURN_ADVANCE_ERROR', uuid, gameId: result.gameId })
+    }
 }
 
 /**
@@ -1493,5 +1649,8 @@ module.exports = {
         resolveJokerTeammateSockets,
         resolveChatRecipientSockets,
         resolveSessionParticipantSockets,
+        startNightTurnSequence,
+        stopNightTurnSequence,
+        computeEmptyTurnDelayMs,
     },
 }
