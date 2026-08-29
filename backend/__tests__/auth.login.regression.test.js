@@ -88,6 +88,12 @@ test("가입되지 않은 이메일은 401이다", async (t) => {
     );
 });
 
+test("빈 로그인 payload는 DB 조회 없이 400이다", async (t) => {
+    const { names } = stubRepo(t);
+    await assert.rejects(authService.login({}, REQ_INFO), (error) => error.status === 400);
+    assert.deepEqual(names(), []);
+});
+
 test("잠긴 계정은 423이고 비밀번호 검사까지 가지 않는다", async (t) => {
     const user = await activeUser({ locked_until: new Date(Date.now() + 60_000) });
     const { names } = stubRepo(t, { findByEmail: () => user });

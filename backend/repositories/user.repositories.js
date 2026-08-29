@@ -90,10 +90,10 @@ exports.createUserSession = async (sessionData) => {
 
 // 토큰의 sessionId(= user_sessions.id, PK)로 세션 한 건을 읽습니다. 인증 미들웨어가
 // "서명은 유효하지만 이미 내려간 세션"을 판별할 유일한 수단입니다.
-exports.findSessionById = async (id) => {
-    if (!id) return null;
+exports.findActiveSession = async (id, user_id) => {
+    if (!id || !user_id) return null;
     return await db.UserSession.findOne({
-        where:      { id },
+        where:      { id, user_id, is_online: true },
         attributes: ['id', 'user_id', 'is_online'],
     });
 };

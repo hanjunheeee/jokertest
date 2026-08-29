@@ -18,20 +18,33 @@ exports.verifyToken = async (req, res, next) => {
         return next(createError("유효하지 않거나 만료된 토큰입니다.", 401));
     }
 
-    // 서명이 유효하다는 건 "우리가 발급한 토큰"이라는 뜻일 뿐, "지금도 유효한 로그인"이라는
-    // 뜻은 아닙니다. 로그아웃이나 타기기 로그인으로 user_sessions.is_online이 false가 된
-    // 세션의 토큰은 만료(1d) 전이라도 살아 있으므로, 세션 상태를 여기서 한 번 확인합니다.
+    if (!decoded?.uuid || !decoded?.sessionId) {
+        res.clearCookie("accessToken");
+        return next(createError("유효하지 않거나 만료된 토큰입니다.", 401));
+    }
+
+    // 보호 요청마다 현재 세션과 활성 밴을 함께 읽는다. 캐시를 두지 않아 로그아웃·타기기
+    // 로그인·운영 밴이 다음 요청부터 즉시 반영된다. 두 독립 조회는 병렬로 실행한다.
     let session;
+    let activeBan;
     try {
-        session = await userRepository.findSessionById(decoded.sessionId);
+        [session, activeBan] = await Promise.all([
+            userRepository.findActiveSession(decoded.sessionId, decoded.uuid),
+            userRepository.checkActiveBan(decoded.uuid),
+        ]);
     } catch (error) {
         // DB 장애를 401로 바꾸면 접속자 전원이 로그아웃되고 원인도 가려집니다. 5xx로 보냅니다.
         return next(error);
     }
 
-    if (!session || !session.is_online) {
+    if (!session || (session.is_online !== true && session.is_online !== 1)) {
         res.clearCookie("accessToken");
         return next(createError("세션이 만료되었습니다. 다시 로그인해주세요.", 401));
+    }
+
+    if (activeBan) {
+        res.clearCookie("accessToken");
+        return next(createError(`정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}`, 403));
     }
 
     req.user = decoded;

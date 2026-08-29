@@ -6,14 +6,21 @@ const { createError }         = require("../utils/appError");
 const crypto                  = require("crypto");
 
 exports.signup = async (userData) => {
-    const { email, password, nickname } = userData;
+    const { email, password, nickname } = userData ?? {};
 
-    const existingUser = await userRepository.findByEmail(email);
+    if (!email?.trim() || !password || !nickname?.trim()) {
+        throw createError("이메일, 비밀번호, 닉네임을 모두 입력해주세요.", 400);
+    }
+
+    const normalizedEmail = email.trim();
+    const normalizedNickname = nickname.trim();
+
+    const existingUser = await userRepository.findByEmail(normalizedEmail);
     if (existingUser) {
         throw createError("이미 사용 중인 이메일입니다.", 409);
     }
 
-    const existingNickname = await userRepository.findByNickname(nickname);
+    const existingNickname = await userRepository.findByNickname(normalizedNickname);
     if (existingNickname) {
         throw createError("이미 사용 중인 닉네임입니다.", 409);
     }
@@ -25,16 +32,24 @@ exports.signup = async (userData) => {
     // 조회·집계에서 계속 결측으로 튀어나옵니다. 실패 시 둘 다 없던 일이 되게 묶습니다.
     // (해싱은 DB와 무관하고 느리므로 트랜잭션 밖에 둬서 커넥션 점유 시간을 늘리지 않습니다.)
     return await userRepository.withTransaction(async (transaction) => {
-        const user = await userRepository.createUser({ email, password_hash, nickname }, { transaction });
+        const user = await userRepository.createUser({
+            email: normalizedEmail,
+            password_hash,
+            nickname: normalizedNickname,
+        }, { transaction });
         await userRepository.createUserStats(user.uuid, { transaction });
         return user;
     });
 };
 
 exports.login = async (loginData, reqInfo) => {
-    const { email, password } = loginData;
+    const { email, password } = loginData ?? {};
 
-    const user = await userRepository.findByEmail(email);
+    if (!email?.trim() || !password) {
+        throw createError("이메일과 비밀번호를 입력해주세요.", 400);
+    }
+
+    const user = await userRepository.findByEmail(email.trim());
     if (!user) {
         throw createError("가입되지 않은 이메일입니다.", 401);
     }

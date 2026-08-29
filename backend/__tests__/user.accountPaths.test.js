@@ -31,11 +31,17 @@ const startServer = async (t) => {
 const stubDb = (t, user) => {
     const originalUser    = db.User;
     const originalSession = db.UserSession;
+    const originalBan     = db.UserBan;
 
-    db.User        = user;
+    db.User        = { findOne: async () => null, ...user };
     db.UserSession = { findOne: async () => ({ id: "session-1", user_id: "uuid-1", is_online: true }) };
+    db.UserBan     = { findOne: async () => null };
 
-    t.after(() => { db.User = originalUser; db.UserSession = originalSession; });
+    t.after(() => {
+        db.User = originalUser;
+        db.UserSession = originalSession;
+        db.UserBan = originalBan;
+    });
 };
 
 const patchNickname = (base, nickname) =>
@@ -66,6 +72,20 @@ test("중복 닉네임 PATCH는 500이 아니라 409를 반환한다", async (t)
     assert.equal(res.status, 409, "unique 위반이 그대로 새어나가 500이 되고 있습니다");
     assert.equal(body.success, false);
     assert.match(body.message, /닉네임/);
+});
+
+test("중복 닉네임은 UPDATE 전에 사전 조회로도 같은 409를 반환한다", async (t) => {
+    let updates = 0;
+    stubDb(t, {
+        findOne: async ({ where }) => where.nickname ? { uuid: "other-user" } : null,
+        update: async () => { updates += 1; return [1]; },
+    });
+    const base = await startServer(t);
+
+    const res = await patchNickname(base, "중복닉");
+    assert.equal(res.status, 409);
+    assert.match((await res.json()).message, /닉네임/);
+    assert.equal(updates, 0);
 });
 
 test("MySQL이 인덱스 이름만 알려줘도 409로 분류된다", async (t) => {

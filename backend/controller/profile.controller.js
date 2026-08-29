@@ -33,7 +33,14 @@ exports.updateNickname = async (req, res, next) => {
         if (!nickname?.trim()) {
             return res.status(400).json({ success: false, message: "닉네임을 입력해주세요." });
         }
-        await userRepository.updateUser(req.user.uuid, { nickname: nickname.trim() });
+        const normalizedNickname = nickname.trim();
+        const existingUser = await userRepository.findByNickname(normalizedNickname);
+        if (existingUser && existingUser.uuid !== req.user.uuid) {
+            return res.status(409).json({ success: false, message: "이미 사용 중인 닉네임입니다." });
+        }
+
+        // 사전 조회 뒤의 동시 요청 경합은 repository가 unique 오류를 같은 409로 정규화한다.
+        await userRepository.updateUser(req.user.uuid, { nickname: normalizedNickname });
         res.status(200).json({ success: true, message: "닉네임이 변경되었습니다." });
     } catch (error) {
         next(error);

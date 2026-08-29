@@ -33,8 +33,10 @@ const startServer = async (t) => {
 // 스프레드로 복제되지 않으므로, 흉내내는 척하지 않고 필요한 것만 정의합니다.
 const stubSessions = (t, findOne) => {
     const original = db.UserSession;
+    const originalBan = db.UserBan;
     db.UserSession = { findOne };
-    t.after(() => { db.UserSession = original; });
+    db.UserBan = { findOne: async () => null };
+    t.after(() => { db.UserSession = original; db.UserBan = originalBan; });
 };
 
 const authGet = (base, path, token) =>
@@ -71,7 +73,10 @@ test("sessionId 클레임이 없는 토큰은 401이다", async (t) => {
 });
 
 test("is_online:true 세션이면 기존처럼 통과한다", async (t) => {
-    stubSessions(t, async ({ where }) => ({ id: where.id, user_id: "uuid-1", is_online: true }));
+    stubSessions(t, async ({ where }) => {
+        assert.deepEqual(where, { id: "session-online", user_id: "uuid-1", is_online: true });
+        return { id: where.id, user_id: where.user_id, is_online: true };
+    });
     const base = await startServer(t);
 
     const res  = await authGet(base, "/auth/me", tokenFor("session-online"));
@@ -111,6 +116,7 @@ test("세션 조회가 DB 오류로 실패하면 401이 아니라 5xx로 올라�
 test("로그아웃 흐름은 회귀 없이 동작한다", async (t) => {
     const originalSession = db.UserSession;
     const originalHistory = db.LoginHistory;
+    const originalBan = db.UserBan;
     const updates = [];
 
     db.UserSession = {
@@ -118,7 +124,12 @@ test("로그아웃 흐름은 회귀 없이 동작한다", async (t) => {
         update:  async (values, options) => { updates.push({ values, options }); return [1]; },
     };
     db.LoginHistory = { findOne: async () => null };
-    t.after(() => { db.UserSession = originalSession; db.LoginHistory = originalHistory; });
+    db.UserBan = { findOne: async () => null };
+    t.after(() => {
+        db.UserSession = originalSession;
+        db.LoginHistory = originalHistory;
+        db.UserBan = originalBan;
+    });
 
     const base = await startServer(t);
     const res  = await fetch(`${base}/auth/logout`, {
@@ -130,4 +141,19 @@ test("로그아웃 흐름은 회귀 없이 동작한다", async (t) => {
     assert.equal((await res.json()).success, true);
     assert.deepEqual(updates.at(-1).values, { is_online: false });
     assert.deepEqual(updates.at(-1).options.where, { user_id: "uuid-1", is_online: true });
+});
+
+test("활성 밴은 이미 로그인된 토큰도 다음 REST 요청에서 403으로 막는다", async (t) => {
+    const originalSession = db.UserSession;
+    const originalBan = db.UserBan;
+    db.UserSession = { findOne: async () => ({ id: "session-1", user_id: "uuid-1", is_online: true }) };
+    db.UserBan = { findOne: async () => ({ reason: "운영 정지" }) };
+    t.after(() => { db.UserSession = originalSession; db.UserBan = originalBan; });
+
+    const base = await startServer(t);
+    const res = await authGet(base, "/auth/me", tokenFor("session-1"));
+    const body = await res.json();
+
+    assert.equal(res.status, 403);
+    assert.match(body.message, /운영 정지/);
 });
