@@ -266,9 +266,14 @@ function evaluateWinCondition(session) {
 // 세션을 종료 상태로 확정하는 유일한 mutation이다. 신규 상태 객체를 만들지 않고 기존
 // session.phase에 'ENDED'를 추가하는 방식을 그대로 따른다 — session.winResult는 이 호출
 // 이후에만 존재하며, 그 존재 여부 자체가 "종료됨"을 뜻하는 신호다.
+//
+// endedAt은 "승패가 확정된 순간"이다. 세 종결 경로(밤 판정·재판 판정·끊김 사망)가 모두 이
+// 함수 하나를 거치므로, 저장 레코드의 ended_at이 경로마다 다른 시각으로 갈릴 수 없다.
+// 저장이 그보다 늦게(비동기로) 일어나도 기록되는 값은 이 시각 그대로다.
 function finalizeGameSession(session, winResult) {
     session.phase = 'ENDED'
     session.winResult = winResult
+    session.endedAt = Date.now()
 }
 
 // 8개 진입점(prepare 4 + commit 4)이 각자 최상단에서(기존 idempotency 단축 경로보다 먼저)
@@ -289,6 +294,121 @@ function buildTerminalFields(session) {
     }
     if (session.winResult) fields.winResult = { ...session.winResult }
     return fields
+}
+
+// 완주하지 못한 판의 game_results.winner에 넣는 값. 컬럼이 NOT NULL이라 "승자 없음"도
+// 문자열로 표현해야 하고, 팀 이름(CITIZEN/JOKER)과 절대 겹치지 않는 값이어야 한다.
+const ABORTED_WINNER = 'NONE'
+const ABORTED_WIN_REASON = 'ABORTED'
+
+// evaluateWinCondition의 두 분기와 1:1로 대응하는 사유 문자열이다. winResult 자체에 reason을
+// 넣지 않는 이유는 그 객체가 그대로 공개 payload(buildTerminalFields → winResult)로 나가기
+// 때문이다 — 저장 전용 필드를 방송 계약에 섞지 않는다.
+const WIN_REASON_BY_WINNER = Object.freeze({
+    CITIZEN: 'ALL_JOKERS_ELIMINATED',
+    JOKER: 'JOKER_PARITY_REACHED',
+})
+
+// game_result_players.death_reason에 저장하는 값의 전체 집합. 생존자는 null이다.
+const DEATH_REASONS = Object.freeze({
+    NIGHT_KILL: 'NIGHT_KILL',
+    EXECUTION: 'EXECUTION',
+    DISCONNECT: 'DISCONNECT',
+})
+
+/**
+ * 종료된(또는 중단된) 세션을 DB 컬럼 셰이프의 저장용 레코드로 바꾼다. 순수 함수다 —
+ * session을 읽기만 하고 registry도 DB도 건드리지 않으며, 반환값은 전부 새 객체라 이후
+ * 세션 정리가 레코드를 비워버릴 수 없다(저장이 비동기여도 안전한 이유).
+ *
+ * completed 판정은 phase만으로 하지 않는다 — 끊김 사망으로 승자가 확정된 판도 ENDED가
+ * 되기 때문이다. "ENDED이면서 winResult가 있다"가 완주의 유일한 정의이고, 그 밖은 전부
+ * 중단(completed=false)이다.
+ *
+ * 중단된 판에서는 승패가 없으므로 잔류자의 won은 null(미확정)이다. 반면 스스로 판을 깬
+ * 이탈자는 패배로 확정한다(won=false) — 이탈로 통계를 회피할 수 없어야 하기 때문이다.
+ * stats는 won이 확정된 참가자에게만 만들어지므로, 잔류자의 전적은 이 판으로 변하지 않는다.
+ *
+ * @param {object} session - 종료 시점의 GameSession(읽기만 한다)
+ * @param {object} [options]
+ * @param {Map<string,string>|object} [options.deathReasons] - uuid → DEATH_REASONS 값.
+ *        사망 원인은 세션에 남지 않으므로(사망은 alive=false만 남긴다) 소켓 계층이 판정
+ *        시점에 모아 둔 원장을 넘겨준다. 없으면 아래 폴백만으로 채운다.
+ * @param {string[]} [options.leftUuids] - 이 판을 중단시킨 이탈자 uuid 목록.
+ * @param {number} [options.endedAt] - 종료 시각(ms). 완주 판은 session.endedAt이 우선한다.
+ */
+function buildGameResultRecord(session, { deathReasons, leftUuids = [], endedAt = Date.now() } = {}) {
+    const completed = session.phase === 'ENDED' && !!session.winResult
+    const winner = completed ? session.winResult.winner : ABORTED_WINNER
+    const resolvedEndedAt = new Date(completed ? session.endedAt ?? endedAt : endedAt)
+
+    const reasonOf = (uuid) => {
+        if (!deathReasons) return null
+        return (deathReasons instanceof Map ? deathReasons.get(uuid) : deathReasons[uuid]) ?? null
+    }
+    // 유예 만료로 배제된 참가자(forfeitedUuids)와 판을 깨고 나간 이탈자는 사망 원인이 같다.
+    // 다만 이미 승패가 확정된 판에서 나가는 것은 "이탈"이 아니라 결과 화면을 닫는 것일 뿐이라,
+    // 완주한 판에는 leftUuids를 반영하지 않는다(생존한 승자가 이탈자로 기록되면 안 된다).
+    const left = new Set(session.forfeitedUuids ?? [])
+    if (!completed) for (const uuid of leftUuids) left.add(uuid)
+
+    const players = []
+    const stats = []
+    for (const player of session.players.values()) {
+        const hasLeft = left.has(player.uuid)
+        // 이탈자는 판에 남아 있지 않다 — alive 플래그가 아직 true여도 생존으로 기록하지 않는다.
+        const isAlive = hasLeft ? false : player.alive === true
+        // 게임 안에서 이미 죽은 사람이 나중에 나갔다면 사인은 그 죽음이지 이탈이 아니다.
+        const deathReason = isAlive ? null : (reasonOf(player.uuid) ?? (hasLeft ? DEATH_REASONS.DISCONNECT : null))
+        const team = ROLE_TEAMS[player.role] ?? null
+        const won = completed ? team === winner : (hasLeft ? false : null)
+
+        players.push({
+            game_id: session.id,
+            user_id: player.uuid,
+            nickname_snapshot: player.nickname,
+            role: player.role,
+            team,
+            won,
+            is_alive: isAlive,
+            death_reason: deathReason,
+        })
+
+        // 승패가 확정되지 않은 참가자의 전적은 건드리지 않는다(중단 경기의 잔류자).
+        if (won === null) continue
+        stats.push({
+            user_id: player.uuid,
+            total_games: 1,
+            survival_count: isAlive ? 1 : 0,
+            execution_count: deathReason === DEATH_REASONS.EXECUTION ? 1 : 0,
+        })
+    }
+
+    return {
+        result: {
+            id: session.id,
+            room_id: session.roomId ?? null,
+            started_at: new Date(session.startedAt ?? resolvedEndedAt.getTime()),
+            ended_at: resolvedEndedAt,
+            winner,
+            win_reason: completed ? (WIN_REASON_BY_WINNER[winner] ?? null) : ABORTED_WIN_REASON,
+            day_index: session.dayIndex,
+            player_count: session.players.size,
+            // 타이머 설정과 역할 구성은 "이 판이 어떤 규칙으로 돌았는가"의 전부다. Map/Set이
+            // 섞이지 않은 평범한 값만 담아 JSON 컬럼에 그대로 직렬화될 수 있게 한다.
+            settings: {
+                jokerCount: session.jokerCount ?? null,
+                roleComposition: { ...(session.roleComposition ?? {}) },
+                timerSettings: {
+                    ...(session.timerSettings ?? {}),
+                    roleNightActionTimes: { ...(session.timerSettings?.roleNightActionTimes ?? {}) },
+                },
+            },
+            completed,
+        },
+        players,
+        stats,
+    }
 }
 
 // 순수 조회 — 재접속 시 소켓 계층이 socket.data.activeGameId를 재바인딩하고 기존 channel에
@@ -475,6 +595,9 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
     const assigned = assignRoles(players, resolved.composition, randomFn)
     const session = {
         id: gameIdFn(),
+        // 전적 저장(game_results.started_at)의 유일한 원천이다. 세션 객체가 만들어지는 이
+        // 시점 말고는 "이 판이 언제 시작됐는가"를 나중에 복원할 방법이 없으므로 여기서 찍는다.
+        startedAt: Date.now(),
         roomId: room.id,
         channelId: room.id, // 기존 Socket.IO room(roomId)을 그대로 승계
         phase: INITIAL_GAME_PHASE,
@@ -3008,6 +3131,11 @@ module.exports = {
     CHAT_MIN_INTERVAL_MS,
     CHAT_COMMIT_MAX_AGE_MS,
     buildTerminalFields,
+    // 전적 저장 레코드 조립은 소켓 계층이 종결 시점에 그대로 소비하는 공개 계약이라
+    // __testables가 아니라 정식 export다(사망 원인 열거값도 함께 노출해 호출부와 테스트가
+    // 문자열을 다시 적지 않게 한다).
+    buildGameResultRecord,
+    DEATH_REASONS,
     getSessionSnapshotForPlayer,
     buildSessionSnapshot,
     getActiveSessionRoutingInfo,

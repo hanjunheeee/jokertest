@@ -31,6 +31,7 @@ const { notFoundHandler, globalErrorHandler } = require("./middleware/errorHandl
 const authRouter     = require("./routes/auth.routes");
 const userRouter     = require("./routes/user.routes");
 const friendRouter   = require("./routes/friend.routes");
+const gameRouter     = require("./routes/game.routes");
 const { initSocket } = require("./socket/socket");
 
 // app은 Express 서버 객체입니다. 앞으로 라우터, 미들웨어, 서버 실행 설정을 여기에 붙입니다.
@@ -48,6 +49,7 @@ app.set("trust proxy", 1);
 app.use("/auth", authRouter);
 app.use("/user", userRouter);
 app.use("/friends", friendRouter);
+app.use("/game", gameRouter);
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
