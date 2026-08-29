@@ -20,7 +20,9 @@ export default function MultiplayEntryPage() {
         <MultiplayRoomListArea
           rooms={rooms}
           onCreateGame={() => navigate("/game-setup")}
-          onJoinByCode={() => navigate("/roomInvite")}
+          onJoinByCode={(roomId) =>
+            navigate("/roomInvite", { state: typeof roomId === "string" ? { roomId } : null })
+          }
           onEnterRoom={joinPublicRoom}
           isJoining={isJoining}
         />

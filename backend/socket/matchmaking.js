@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const userRepository = require('../repositories/user.repositories')
 const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
 const { validateCreateRoomPayload } = require('../utils/createRoomValidation')
+const { ROOM_JOIN_ERROR_CODES } = require('./roomJoinErrors')
 const gameSession = require('../game-core/gameSession')
 const {
     validateCreateRoomRoleComposition,
@@ -92,6 +93,54 @@ function bumpRoomTransitionGeneration(uuid) {
     roomTransitionGeneration.set(uuid, getRoomTransitionGeneration(uuid) + 1)
 }
 
+// "code:<입장코드>" | "id:<roomId>" → 시작 시각(ms).
+// 게임이 시작되면 handleStartGame이 그 Room을 gameRooms에서 지운다 — 그래서 시작된 방의
+// 코드/roomId로 들어오는 뒤늦은 참가 요청은 "애초에 없던 방"과 구분할 근거가 남지 않는다.
+// 그 구분(ROOM_ALREADY_STARTED vs ROOM_NOT_FOUND)만을 위해 지워진 방의 식별자만 짧게
+// 기억해 둔다. 참가 판정 자체는 언제나 gameRooms의 살아있는 방이 우선이고, 이 표식은
+// 살아있는 방을 하나도 못 찾았을 때만 읽는다 — 즉 어떤 입장도 이 표식으로는 허용되지 않는다.
+const startedRoomMarks = new Map()
+
+// 시작 직후 잘못 들어온 사용자에게 이유를 알려주기 위한 창이다. 한 판의 길이를 넉넉히
+// 덮으면 충분하고, 그 뒤에는 일반적인 "코드 불일치"로 되돌아가도 사용자 경험이 나빠지지
+// 않는다. TTL을 두는 이유는 이 Map이 무한히 커지지 않게 하기 위함이다.
+const STARTED_ROOM_MARK_TTL_MS = 30 * 60 * 1000
+
+function pruneStartedRoomMarks(now) {
+    const threshold = now - STARTED_ROOM_MARK_TTL_MS
+    for (const [mark, startedAt] of startedRoomMarks) {
+        if (startedAt <= threshold) startedRoomMarks.delete(mark)
+    }
+}
+
+/** 게임 시작으로 사라진 Room의 코드/roomId를 표식으로 남긴다(참가 허용 근거가 아니라 사유 판별용). */
+function rememberStartedRoom(room) {
+    const now = Date.now()
+    // 삽입 시점마다 정리해 두면 별도 타이머 없이도 Map 크기가 유효 기간 안쪽으로 유지된다.
+    pruneStartedRoomMarks(now)
+    if (typeof room?.code === 'string' && room.code) startedRoomMarks.set(`code:${room.code}`, now)
+    if (typeof room?.id === 'string' && room.id) startedRoomMarks.set(`id:${room.id}`, now)
+}
+
+/** 해당 식별자가 "방금 시작돼 사라진 방"의 것인지 확인한다. mark는 'code:...' 또는 'id:...' 형식이다. */
+function isStartedRoomMark(mark) {
+    const startedAt = startedRoomMarks.get(mark)
+    if (startedAt === undefined) return false
+    if (startedAt <= Date.now() - STARTED_ROOM_MARK_TTL_MS) {
+        startedRoomMarks.delete(mark)
+        return false
+    }
+    return true
+}
+
+/**
+ * 참가 실패를 단일 계약으로 응답합니다. code는 클라이언트가 분기에 쓰는 안정적 식별자이고
+ * message는 사람이 읽는 기본 안내다 — 두 필드를 한 곳에서 함께 붙여 code 누락을 막는다.
+ */
+function emitRoomJoinFailed(socket, code, message) {
+    socket.emit('room_join_failed', { code, message })
+}
+
 function registerMatchmakingHandlers(io, socket, uuid) {
     socket.on('join_matchmaking', () =>
         handleJoinMatchmaking(io, socket, uuid).catch((err) =>
@@ -99,11 +148,20 @@ function registerMatchmakingHandlers(io, socket, uuid) {
         )
     )
     socket.on('leave_matchmaking', () => handleLeaveMatchmaking(uuid))
-    socket.on('join_room_by_code', ({ roomCode } = {}) =>
-        handleJoinRoomByCode(io, socket, uuid, roomCode).catch((err) =>
+    socket.on('join_room_by_code', (payload = {}) => {
+        const { roomCode, roomId } = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
+            ? payload
+            : {}
+        return handleJoinRoomByCode(
+            io,
+            socket,
+            uuid,
+            roomCode,
+            typeof roomId === 'string' && roomId ? { roomId, accessType: 'code' } : null,
+        ).catch((err) =>
             console.error('\x1b[31m[방 코드 참가 에러]\x1b[0m', err)
         )
-    )
+    })
     socket.on('create_room', (payload, callback) => handleCreateRoom(io, socket, uuid, payload, callback))
     socket.on('get_current_room', (payload, callback) => handleGetCurrentRoom(uuid, callback))
     socket.on('get_public_rooms', (payload, callback) => handleGetPublicRooms(callback))
@@ -471,20 +529,32 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
 async function handleJoinPublicRoom(io, socket, uuid, payload) {
     // null/문자열/배열 등 예상 밖 형태는 구조분해 예외 없이 명시적으로 거부한다.
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-        socket.emit('room_join_failed', { message: '잘못된 요청입니다.' })
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.INVALID_REQUEST, '잘못된 요청입니다.')
         return
     }
     const { roomId } = payload
     if (typeof roomId !== 'string' || !roomId) {
-        socket.emit('room_join_failed', { message: '잘못된 요청입니다.' })
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.INVALID_REQUEST, '잘못된 요청입니다.')
         return
     }
 
     const room = gameRooms.get(roomId)
+    if (!room) {
+        // 목록을 본 뒤 누르기까지의 짧은 사이에 그 방이 게임을 시작했을 수 있다. 그때는
+        // "없는 방"이 아니라 "이미 시작된 방"이라고 알려주는 편이 사용자에게 정확하다.
+        if (isStartedRoomMark(`id:${roomId}`)) {
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+            return
+        }
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
+        return
+    }
     // 클라이언트의 버튼 상태는 권한 경계가 아니다. 조작된 roomId 요청으로 코드 방에
     // 우회 입장하지 못하도록 서버가 실제 Room의 공개 여부를 반드시 다시 확인한다.
-    if (!room || room.accessType !== 'open') {
-        socket.emit('room_join_failed', { message: '공개 방을 찾을 수 없습니다.' })
+    // 코드 방이라는 사실 자체는 공개 목록의 자물쇠 표시로 이미 드러나므로 숨기지 않고,
+    // 대신 "코드가 필요하다"는 사유를 코드 불일치로 분류해 돌려준다.
+    if (room.accessType !== 'open') {
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '이 방은 입장 코드가 필요합니다.')
         return
     }
 
@@ -500,21 +570,25 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
 async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = null) {
     const normalizedCode = String(roomCode ?? '').trim()
     if (!normalizedCode) {
-        socket.emit('room_join_failed', { message: '방 코드를 입력해주세요.' })
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.CODE_REQUIRED, '방 코드를 입력해주세요.')
         return
     }
 
     // 진입 시점 동기 확인 — 여기서 걸러지는 요청은 예약(pendingRoomTransitions)조차 하지 않는다.
     if (playerRoom.has(uuid)) {
-        socket.emit('room_join_failed', { message: '이미 참여 중인 방이 있습니다.' })
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, '이미 참여 중인 방이 있습니다.')
         return
     }
     if (pendingRoomTransitions.has(uuid)) {
-        socket.emit('room_join_failed', { message: '이미 처리 중인 요청이 있습니다.' })
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS, '이미 처리 중인 요청이 있습니다.')
         return
     }
     if (matchmakingQueue.has(uuid)) {
-        socket.emit('room_join_failed', { message: '매칭 대기열에 남아있는 요청이 있습니다. 먼저 취소해주세요.' })
+        emitRoomJoinFailed(
+            socket,
+            ROOM_JOIN_ERROR_CODES.IN_MATCHMAKING_QUEUE,
+            '매칭 대기열에 남아있는 요청이 있습니다. 먼저 취소해주세요.',
+        )
         return
     }
 
@@ -531,26 +605,66 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     try {
         const user = await userRepositoryRef.findByUuid(uuid)
         if (!user) {
-            socket.emit('room_join_failed', { message: '사용자 정보를 찾을 수 없습니다.' })
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, '사용자 정보를 찾을 수 없습니다.')
             return
         }
 
         // await 이후 재검사 — 조회하는 동안 다른 요청으로 이미 방에 들어갔을 수 있다.
         if (playerRoom.has(uuid)) {
-            socket.emit('room_join_failed', { message: '이미 참여 중인 방이 있습니다.' })
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, '이미 참여 중인 방이 있습니다.')
             return
         }
 
         // 사용자 조회를 기다리는 동안 GameSession 종료 정리가 이 uuid의 세대를 증가시켰을
         // 수 있다. 아직 Socket room에 가입하지 않았으므로 leave 없이 바로 실패로 응답한다.
         if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
-            socket.emit('room_join_failed', { message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
+            emitRoomJoinFailed(
+                socket,
+                ROOM_JOIN_ERROR_CODES.SESSION_ENDED,
+                '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.',
+            )
             return
         }
 
-        const room = [...gameRooms.values()].find((candidate) => candidate.code === normalizedCode)
+        // 목록에서 특정 비밀방을 선택한 요청은 roomId로 방을 먼저 고정한 뒤 코드를
+        // 비교한다. 그래야 "그 방이 사라짐"과 "그 방의 코드가 틀림"을 안정적으로
+        // 구분할 수 있다. 툴바의 일반 코드 참가(선택 roomId 없음)는 기존처럼 코드로 찾는다.
+        let room
+        if (expectedRoom?.accessType === 'code') {
+            room = gameRooms.get(expectedRoom.roomId)
+            if (!room) {
+                if (isStartedRoomMark(`id:${expectedRoom.roomId}`)) {
+                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+                } else {
+                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
+                }
+                return
+            }
+            if (room.accessType !== 'code') {
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '비밀 방을 찾을 수 없습니다.')
+                return
+            }
+            if (room.code !== normalizedCode) {
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드가 올바르지 않습니다.')
+                return
+            }
+        } else {
+            room = [...gameRooms.values()].find((candidate) => candidate.code === normalizedCode)
+        }
         if (!room) {
-            socket.emit('room_join_failed', { message: '방을 찾을 수 없습니다.' })
+            // 세 사유를 여기서 갈라낸다.
+            //  - 그 코드의 방이 방금 게임을 시작했다면 "이미 시작됨"
+            //  - roomId를 지목해 들어온 요청(공개방 목록 경유)이면 그 방이 사라진 것이므로 "방 없음"
+            //  - 사용자가 직접 코드를 입력한 요청이면 입력한 코드가 어느 방과도 맞지 않는 것이므로 "코드 불일치"
+            if (isStartedRoomMark(`code:${normalizedCode}`)) {
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+                return
+            }
+            if (expectedRoom) {
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
+                return
+            }
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드와 일치하는 방이 없습니다.')
             return
         }
 
@@ -562,7 +676,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (!socket.connected) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
             joinedRoomId = null
-            socket.emit('room_join_failed', { message: '연결이 끊어져 방에 참여하지 못했습니다.' })
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.DISCONNECTED, '연결이 끊어져 방에 참여하지 못했습니다.')
             return
         }
 
@@ -571,7 +685,13 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (gameRooms.get(room.id) !== room) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
             joinedRoomId = null
-            socket.emit('room_join_failed', { message: '방을 찾을 수 없습니다.' })
+            // 코드로 찾을 때는 분명히 있던 방이 지금은 없거나 다른 객체로 바뀐 상황이다 —
+            // "입력한 코드가 틀렸다"가 아니라 "그 방이 사라졌다"가 정확한 사유다.
+            if (isStartedRoomMark(`id:${room.id}`)) {
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+                return
+            }
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
             return
         }
 
@@ -583,7 +703,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (expectedRoom && (room.id !== expectedRoom.roomId || room.accessType !== expectedRoom.accessType)) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
             joinedRoomId = null
-            socket.emit('room_join_failed', { message: '공개 방을 찾을 수 없습니다.' })
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
             return
         }
 
@@ -591,7 +711,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (playerRoom.has(uuid)) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
             joinedRoomId = null
-            socket.emit('room_join_failed', { message: '이미 참여 중인 방이 있습니다.' })
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, '이미 참여 중인 방이 있습니다.')
             return
         }
 
@@ -601,7 +721,11 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
             joinedRoomId = null
-            socket.emit('room_join_failed', { message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
+            emitRoomJoinFailed(
+                socket,
+                ROOM_JOIN_ERROR_CODES.SESSION_ENDED,
+                '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.',
+            )
             return
         }
 
@@ -614,7 +738,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (room.players.size >= maxRoomSize) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
             joinedRoomId = null
-            socket.emit('room_join_failed', { message: '방이 가득 찼습니다.' })
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_FULL, '방이 가득 찼습니다.')
             return
         }
 
@@ -639,7 +763,11 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (joinedRoomId && !committed) {
             await leaveSocketRoomSafely(socket, joinedRoomId, '[코드 참가 정리 실패]')
         }
-        socket.emit('room_join_failed', { message: '방에 참여하지 못했습니다. 잠시 후 다시 시도해주세요.' })
+        emitRoomJoinFailed(
+            socket,
+            ROOM_JOIN_ERROR_CODES.INTERNAL_ERROR,
+            '방에 참여하지 못했습니다. 잠시 후 다시 시도해주세요.',
+        )
     } finally {
         pendingRoomTransitions.delete(uuid)
     }
@@ -884,6 +1012,10 @@ async function handleStartGame(io, socket, uuid, callback) {
         gameSession.commitGameSession(prepared.session)
         room.players.forEach((_, u) => playerRoom.delete(u))
         gameRooms.delete(roomId)
+        // 방을 지우기 전에 알고 있던 코드/roomId만 표식으로 남긴다 — 뒤늦게 이 방에
+        // 들어오려는 요청에 "없는 방"이 아니라 "이미 시작됨"으로 답하기 위한 근거다.
+        // 이 표식은 참가를 허용하지 않는다(살아있는 방을 못 찾았을 때만 읽힌다).
+        rememberStartedRoom(room)
     } catch (err) {
         console.error('[GameSession commit 에러 — 상태가 부분 반영됐을 수 있음]', err)
         respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임 시작 처리 중 오류가 발생했습니다.' })
@@ -1081,6 +1213,7 @@ function __resetStateForTests() {
     gameRooms.clear()
     playerRoom.clear()
     pendingRoomTransitions.clear()
+    startedRoomMarks.clear()
 }
 
 /**
