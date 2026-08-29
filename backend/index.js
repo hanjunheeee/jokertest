@@ -40,7 +40,8 @@ app.use(globalErrorHandler);
 
 // Socket.io는 raw http 서버에 부착해야 하므로 http.createServer로 감쌉니다.
 const server = http.createServer(app);
-initSocket(server);
+// 반환된 io는 테스트에서 붙어 있는 소켓과 타이머를 정리(io.close())하는 데 씁니다.
+const io = initSocket(server);
 
 // .env에 PORT가 없으면 4000번을 기본값으로 사용합니다.
 const port = Number(process.env.PORT) || 4000;
@@ -50,7 +51,12 @@ const port = Number(process.env.PORT) || 4000;
 db.sequelize.sync({force: false})
     .then(() => {
         // DB 연결과 테이블 동기화가 성공했을 때 실행됩니다.
-        console.log("MySQL DB 연결 및 테이블 동기화 완료");
+        // 실제로 적용된 풀 값을 함께 찍어, 기동 로그만 보고도 max/min/idle/acquire가
+        // 의도한 값으로 들어갔는지 확인할 수 있게 합니다.
+        const pool = db.sequelize.options.pool ?? {};
+        console.log(
+            `[DB] 연결 및 테이블 동기화 완료 — pool max=${pool.max} min=${pool.min} idle=${pool.idle}ms acquire=${pool.acquire}ms`
+        );
 
         // DB 준비가 끝난 뒤에 Express 서버를 실행합니다.
         // 이렇게 하면 DB 연결 실패 상태에서 서버만 켜지는 상황을 막을 수 있습니다.
@@ -60,5 +66,16 @@ db.sequelize.sync({force: false})
     })
     .catch((err) => {
         // DB 연결이나 테이블 동기화 중 에러가 나면 여기서 잡힙니다.
-        console.error("DB 연결 실패:", err);
+        // err를 통째로 넘기면 스택이 여러 줄로 퍼져 성공/실패 로그의 경계가 흐려지므로,
+        // 원인은 message 한 줄로만 남깁니다.
+        console.error(`[DB] 연결 실패 — ${err.message}`);
+
+        // 재시도하지 않고 바로 종료합니다. DB 없이 서버만 살아 있으면 모든 요청이
+        // 런타임에 실패하므로, 기동 실패를 exit code 1로 분명히 드러내고
+        // 재기동 여부는 프로세스 관리자(pm2/docker 등)에게 맡깁니다.
+        process.exit(1);
     })
+
+// 이 파일은 서버 실행 진입점이지만, 테스트에서 기동 후 정리(server.close/io.close)를
+// 할 수 있도록 핸들만 함께 내보냅니다. require 시점의 동작은 달라지지 않습니다.
+module.exports = { app, server, io };
