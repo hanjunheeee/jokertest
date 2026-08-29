@@ -6,6 +6,10 @@ const presenceService = require("../service/presence.service");
 const userRepository  = require("../repositories/user.repositories");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
+// 동시 접속 카운터는 DB를 만지지 않는 순수 인메모리 서비스라, 연결/해제 경로의 await 체인
+// 밖(첫 await 이전)에서 동기적으로 갱신된다 — 아래 스케줄러의 저장 실패와도 완전히 분리된다.
+const concurrentUsers = require("../service/concurrentUsers.service");
+const concurrentSnapshotScheduler = require("../service/concurrentSnapshot.scheduler");
 // NOTE: Room→GameSession 전환(matchmaking.js), disconnect·명시적 이탈(leave_game_session)에
 // 의한 GameSession 종료(gameSession.js — registry/matchmaking 정리 + game_ended 알림 +
 // channel 정리)는 구현됐습니다. 이후 턴/페이즈 동기화는 아직 없습니다.
@@ -35,6 +39,10 @@ function initSocket(httpServer) {
 
     io.use(authenticateSocket);
     io.on("connection", (socket) => registerConnectionHandlers(io, socket));
+
+    // 주기 스냅샷은 소켓 이벤트가 아니라 독립 타이머로 돈다(연결이 없는 구간에도 표본이
+    // 남아야 하므로). 여기서는 기동만 하고 수명주기·실패 격리는 스케줄러 모듈이 책임진다.
+    concurrentSnapshotScheduler.startConcurrentSnapshotScheduler();
 
     return io;
 }
@@ -100,6 +108,10 @@ async function handleConnection(io, socket, uuid) {
     // 소켓의 disconnect 처리(gameSession.onDisconnect 포함)가 registry에서 여전히 자기
     // 자신을 canonical로 관측해, 새로 교체된 소켓의 권한까지 함께 무너뜨릴 수 있다.
     onlineUsers.set(uuid, socket.id);
+    // registry와 같은 동기 구간에서 같은 uuid 키로 센다 — 같은 계정의 두 번째 탭·기기는
+    // registry에서 기존 키를 덮어쓰듯 카운터에서도 이미 있는 항목을 다시 넣을 뿐이라
+    // 고유 접속자 수가 늘지 않는다.
+    concurrentUsers.onConnect(uuid);
 
     if (existingSocketId && existingSocketId !== socket.id) {
         const existingSocket = io.sockets.sockets.get(existingSocketId);
@@ -125,6 +137,11 @@ async function handleDisconnect(io, socket, uuid) {
     if (onlineUsers.get(uuid) !== socket.id) return;
 
     onlineUsers.delete(uuid);
+    // 위 두 가드(forcedLogout·canonical 소켓)를 통과한 마지막 소켓의 해제에서만 여기 도달하므로,
+    // 교체된 낡은 소켓의 지연 disconnect는 카운터를 감소시키지 못한다. 아래 Promise.all(DB 계열)
+    // 밖·이전에 두어 DB 실패가 카운터를 오염시키지 않게 한다.
+    concurrentUsers.onDisconnect(uuid);
+
     await Promise.all([
         presenceService.setPresence(uuid, "OFFLINE"),
         broadcastFriendStatus(io, uuid, "OFFLINE"),
