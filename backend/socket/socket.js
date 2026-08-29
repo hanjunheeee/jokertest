@@ -6,6 +6,9 @@ const presenceService = require("../service/presence.service");
 const userRepository  = require("../repositories/user.repositories");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
+// 동시 접속 값은 onlineUsers와 활성 GameSession에서 매번 파생한다. 별도 증감 상태를 두지 않아
+// canonical 교체·stale disconnect·재접속 유예 중에도 두 registry와 값이 어긋나지 않는다.
+const concurrencyService = require("../service/concurrency.service");
 // NOTE: Room→GameSession 전환(matchmaking.js), disconnect·명시적 이탈(leave_game_session)에
 // 의한 GameSession 종료(gameSession.js — registry/matchmaking 정리 + game_ended 알림 +
 // channel 정리)는 구현됐습니다. 이후 턴/페이즈 동기화는 아직 없습니다.
@@ -35,6 +38,13 @@ function initSocket(httpServer) {
 
     io.use(authenticateSocket);
     io.on("connection", (socket) => registerConnectionHandlers(io, socket));
+
+    // 주기 스냅샷은 소켓 이벤트가 아니라 독립 타이머로 돈다(연결이 없는 구간에도 표본이
+    // 남아야 하므로). 여기서는 라이브 registry provider를 주입해 기동만 한다.
+    concurrencyService.startConcurrentSnapshotScheduler({
+        onlineUsers,
+        getGameSnapshot: gameSession.getActiveGamePresenceSnapshot,
+    });
 
     return io;
 }
@@ -100,7 +110,6 @@ async function handleConnection(io, socket, uuid) {
     // 소켓의 disconnect 처리(gameSession.onDisconnect 포함)가 registry에서 여전히 자기
     // 자신을 canonical로 관측해, 새로 교체된 소켓의 권한까지 함께 무너뜨릴 수 있다.
     onlineUsers.set(uuid, socket.id);
-
     if (existingSocketId && existingSocketId !== socket.id) {
         const existingSocket = io.sockets.sockets.get(existingSocketId);
 

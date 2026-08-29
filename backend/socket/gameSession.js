@@ -2231,12 +2231,18 @@ async function onDisconnect(io, socket, uuid) {
     finalizeGameSessionEnd(io, result.session, result.reason)
 }
 
+/** 활성 GameSession registry의 read-only presence snapshot을 그대로 전달합니다. */
+function getActiveGamePresenceSnapshot() {
+    return gameSessionCore.getActiveGamePresenceSnapshot()
+}
+
 module.exports = {
     registerGameHandlers,
     onDisconnect,
     setOnlineUsersRegistry,
     isCurrentSocketForUuid,
     resyncSessionRouting,
+    getActiveGamePresenceSnapshot,
     __resetStateForTests,
     __getOnlineUsersRegistryForTests,
     // 테스트에서 socket.on 배선 없이 핸들러를 직접 호출하기 위한 통로입니다(matchmaking.js의

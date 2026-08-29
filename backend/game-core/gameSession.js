@@ -2916,6 +2916,15 @@ function __resetStateForTests() {
     // 채팅 능력 기록은 WeakMap이라 지울 대상이 없다 — prepared 객체가 버려지면 함께 사라진다.
 }
 
+/** 운영 지표용 read-only 조회: 활성 세션 수와 모든 참가자 uuid를 복제해 반환합니다. */
+function getActiveGamePresenceSnapshot() {
+    const participantUuids = new Set()
+    for (const session of gameSessions.values()) {
+        for (const uuid of session.players.keys()) participantUuids.add(uuid)
+    }
+    return { room_count: gameSessions.size, participantUuids }
+}
+
 /** 테스트 전용: 내부 Map을 라이브 참조가 아닌 복제된 일반 객체로 반환합니다. */
 function __getStateSnapshotForTests() {
     return {
@@ -3002,6 +3011,7 @@ module.exports = {
     getSessionSnapshotForPlayer,
     buildSessionSnapshot,
     getActiveSessionRoutingInfo,
+    getActiveGamePresenceSnapshot,
     __resetStateForTests,
     __getStateSnapshotForTests,
     // 테스트에서 개별 함수를 직접 호출하거나 registry를 의도적으로 파괴하기 위한 통로입니다.
