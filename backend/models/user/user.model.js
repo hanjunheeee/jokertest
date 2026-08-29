@@ -38,6 +38,8 @@ module.exports = (sequelize, DataTypes) => {
     User.hasMany(models.Friendship, { as: 'Friendships1', foreignKey: 'requester_id', sourceKey: 'uuid' });
     User.hasMany(models.Friendship, { as: 'Friendships2', foreignKey: 'receiver_id', sourceKey: 'uuid' });
 
+    User.hasMany(models.GameResultPlayer, { foreignKey: 'user_id', sourceKey: 'uuid' });
+
     User.hasOne(models.OnlinePresence, { foreignKey: 'user_id', sourceKey: 'uuid' });
     User.hasOne(models.UserStats, { foreignKey: 'user_id', sourceKey: 'uuid' });
   };
