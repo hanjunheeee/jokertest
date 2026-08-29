@@ -27,12 +27,15 @@ export function selectInGameNightTurnRole(state) {
   const dayIndex = state.dayIndex
   if (!Number.isInteger(dayIndex) || dayIndex < 0) return null
 
-  // 서버가 언젠가 역할 턴을 명시적으로 방송하게 되면 그 값이 그대로 canonical 턴이 된다.
-  // 지금의 백엔드 계약에는 이 필드가 없으므로 정상 경로에서는 아래 시작 턴으로 떨어진다.
+  // 서버가 night_turn_started로 역할 턴을 지목했으면 그 값이 그대로 canonical 턴이다
+  // (applyNightTurnStarted가 이 필드에 담는다). 생존 여부는 어디에서도 보지 않으므로 전원
+  // 사망한 역할의 턴도 똑같이 통과한다 — 백엔드 NIGHT_TURN_ORDER가 그 턴을 똑같이 돌리는 것과
+  // 대응한다(턴 진행 자체가 생존 정보를 흘리지 않는다).
   const declared = state.nightTurnRole
   if (typeof declared === "string" && declared.length > 0) {
     return isInGameAnnounceableNightTurnRole(declared, dayIndex) ? declared : null
   }
 
+  // 서버 방송이 아직 도착하지 않은 구간(밤 진입 직후)의 폴백.
   return getInGameOpeningNightTurnRole(dayIndex)
 }
