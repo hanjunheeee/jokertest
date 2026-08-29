@@ -8,7 +8,8 @@ import {
 import { useInGameStore } from "../store/ingameStore.js"
 import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
 import { buildNightActionTargets } from "../utils/buildNightActionTargets.js"
-import { buildDayVoteTargets, isSessionPlayerAlive } from "../utils/buildDayVoteTargets.js"
+import { buildDayVoteTargets } from "../utils/buildDayVoteTargets.js"
+import { resolveInGameSelfAliveForControls } from "../utils/selectInGameSelfAlive.js"
 import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
 import { isInGameNightTurnActor } from "../utils/isInGameNightTurnActor.js"
 import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
@@ -140,6 +141,13 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   )
   const localSessionPlayer = sessionPlayers?.find((player) => player.id === localPlayerId)
 
+  // 조작 컨트롤의 생존 판정원. 서버 canonical 상태(state.players[].alive)를 먼저 보고, 그것이
+  // 판정 불가일 때만 기존 세션 컨텍스트 폴백으로 떨어진다 — 채팅 채널 결정이 이미 쓰는
+  // selectInGameSelfAlive와 같은 판정원이라, 한 화면에서 채팅은 사망자 취급인데 투표는
+  // 생존자 취급이 되는 어긋남이 구조적으로 생기지 않는다. 새 구독 없이 이미 구독 중인
+  // gameState에서 유도하므로, 생존 상태가 바뀌는 그 렌더에서 함께 갱신된다.
+  const selfAliveForControls = resolveInGameSelfAliveForControls(gameState ?? null, localSessionPlayer)
+
   const latestEvents = useMemo(
     () => [...(gameState?.events ?? [])].slice(-6).reverse(),
     [gameState?.events],
@@ -232,7 +240,9 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     !isGameEnded &&
     gameState?.phase === "DAY" &&
     dayPhase === "DAY_VOTE" &&
-    isSessionPlayerAlive(localSessionPlayer) &&
+    // 서버 canonical 생존 상태로 판정한다 — 재판 처형·밤 사망이 반영된 뒤의 2일차 낮에서
+    // 사망자에게 투표 UI가 열리지 않게 한다(서버 submitDayVote의 ACTOR_NOT_ALIVE와 짝).
+    selfAliveForControls &&
     !dayVoteResolveLocked
   // ?먯젙??吏꾪뻾 以묒씠嫄곕굹(resolving) ?대? ?앸궗?쇰㈃(resolved) 諛??됰룞 ?낅젰쨌?먯젙 踰꾪듉???④퍡
   // ?좉렐?????먯젙 ?꾨즺 ???ъ젣異쑣룹쨷蹂??먯젙 ?붿껌??留됯린 ?꾪븿?대떎. phase !== 'NIGHT'???④퍡
@@ -241,9 +251,9 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   // 사망자는 밤 행동 제출 대상이 아니다 — 바로 위 dayVoteControlsEnabled와 같은 헬퍼·같은 값을
   // 써서 낮과 밤이 한 생존 규칙을 공유하게 한다. 서버(game-core)도 사망자의 제출을
   // ACTOR_NOT_ALIVE로 거부하므로, 이 게이트는 그 거부를 UI에서 미리 반영하는 것이다.
-  // localSessionPlayer가 undefined면 isSessionPlayerAlive가 true(생존 취급)를 돌려주는 기존
+  // canonical 판정이 불가능하고 localSessionPlayer도 undefined면 true(생존 취급)를 돌려주는 기존
   // 폴백을 그대로 승계한다 — 세션 컨텍스트가 비어도 잠금 정책이 바뀌지 않는다.
-  const nightActionAlive = isSessionPlayerAlive(localSessionPlayer)
+  const nightActionAlive = selfAliveForControls
   // 지금 어느 역할 턴인지는 안내 오버레이와 정확히 같은 selector에서 읽는다 — 두 화면이 서로
   // 다른 턴을 가리키지 않게 하려면 판정원이 하나여야 한다. 새 구독을 만들지 않고 이미 구독 중인
   // gameState에서 유도하므로, 턴이 바뀌는 그 렌더에서 함께 갱신된다.
@@ -337,7 +347,8 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     !isGameEnded &&
     gameState?.phase === "DAY" &&
     dayPhase === "DAY_DISCUSSION" &&
-    isSessionPlayerAlive(localSessionPlayer) &&
+    // 투표·밤 행동과 같은 판정원을 쓴다 — 세 게이트가 서로 다른 생존 판단을 하지 않게 한다.
+    selfAliveForControls &&
     dayReady.status === "idle"
 
   const tribunalVoteSubmit = useInGameTribunalVoteSubmit()
