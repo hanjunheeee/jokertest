@@ -31,6 +31,10 @@ function startedPayload(overrides = {}) {
   return { gameId: GAME_ID, dayIndex: 1, role: "DOCTOR", deadline: DEADLINE, ...overrides }
 }
 
+function endedPayload(overrides = {}) {
+  return { gameId: GAME_ID, dayIndex: 1, role: "DOCTOR", ...overrides }
+}
+
 // ── applyNightTurnStarted ───────────────────────────────────────────────────────
 
 // 전부 "무시되어야 하는" 입력이다 — store 최상위 참조와 game state 참조가 그대로 유지된다.
@@ -77,8 +81,7 @@ test("applyNightTurnStarted: 유효한 턴은 nightTurnRole/nightTurnDeadline에
 
 test("applyNightTurnStarted: 반영된 역할이 selectInGameNightTurnRole의 canonical 턴이 된다", () => {
   seedNight()
-  // 서버가 아직 아무 턴도 지목하지 않았을 때는 그 밤의 시작 턴(JOKER) 폴백이 쓰인다.
-  assert.equal(selectInGameNightTurnRole(useInGameStore.getState().state), "JOKER")
+  assert.equal(selectInGameNightTurnRole(useInGameStore.getState().state), null)
 
   useInGameStore.getState().applyNightTurnStarted(startedPayload({ role: "GUARD" }))
   assert.equal(selectInGameNightTurnRole(useInGameStore.getState().state), "GUARD")
@@ -118,6 +121,41 @@ test("applyNightTurnStarted: 죽은 역할의 턴도 산 역할의 턴과 똑같
 
   assert.equal(deadRoleTurn, "DOCTOR")
   assert.equal(aliveRoleTurn, "JOKER")
+})
+
+test("applyNightTurnEnded: 현재 턴과 일치하면 role/deadline을 함께 비운다", () => {
+  seedNight()
+  useInGameStore.getState().applyNightTurnStarted(startedPayload())
+  useInGameStore.getState().applyNightTurnEnded(endedPayload())
+
+  const { state } = useInGameStore.getState()
+  assert.equal(state.nightTurnRole, null)
+  assert.equal(state.nightTurnDeadline, null)
+  assert.equal(selectInGameNightTurnRole(state), null)
+})
+
+for (const [label, payload] of [
+  ["다른 게임", endedPayload({ gameId: "other" })],
+  ["다른 날짜", endedPayload({ dayIndex: 2 })],
+  ["다른 역할", endedPayload({ role: "GUARD" })],
+  ["빈 입력", null],
+]) {
+  test(`applyNightTurnEnded: ${label} 종료 방송은 현재 턴을 지우지 않는다`, () => {
+    seedNight()
+    useInGameStore.getState().applyNightTurnStarted(startedPayload())
+    const before = useInGameStore.getState()
+    useInGameStore.getState().applyNightTurnEnded(payload)
+    assert.equal(useInGameStore.getState(), before)
+  })
+}
+
+test("applyNightTurnEnded: 이미 지워진 턴의 중복 종료는 참조 보존 no-op이다", () => {
+  seedNight()
+  useInGameStore.getState().applyNightTurnStarted(startedPayload())
+  useInGameStore.getState().applyNightTurnEnded(endedPayload())
+  const before = useInGameStore.getState()
+  useInGameStore.getState().applyNightTurnEnded(endedPayload())
+  assert.equal(useInGameStore.getState(), before)
 })
 
 // ── 밤을 벗어날 때의 정리 ────────────────────────────────────────────────────────
@@ -171,6 +209,5 @@ test("낮 투표 판정(DAY→NIGHT)은 역할 턴이 비워진 채로 밤에 �
   assert.equal(state.phase, "NIGHT")
   assert.equal(state.nightTurnRole, null)
   assert.equal(state.nightTurnDeadline, null)
-  // 첫 night_turn_started가 도착하기 전에는 그 밤의 시작 턴 폴백이 쓰인다.
-  assert.equal(selectInGameNightTurnRole(state), "JOKER")
+  assert.equal(selectInGameNightTurnRole(state), null)
 })

@@ -7,16 +7,11 @@
  * 광대→의사→경비원→마녀사냥꾼을 프런트 혼자 순차 재생했는데, 그게 서버 턴과 무관하게
  * 안내가 줄줄이 뜨던 회귀의 원인이었다.
  *
- * 그 밤에 행동 자체가 불가능한 역할 턴(day 0의 마녀사냥꾼)은 ingameActionPanel.js의 밤 행동
- * 가능 판정을 그대로 재사용해 걸러낸다 — canonical하게 건너뛰는 역할은 한 프레임도 뜨지
- * 않는다(서버 ROLE_DEFINITIONS.nightActionMinDayIndex의 UX 사본과 항상 같은 값).
+ * 서버가 night_turn_started로 선언한 알려진 역할은 로컬 행동 가능 여부와 무관하게 안내한다.
+ * 역할의 생존·행동 가능 여부를 여기서 다시 추정하면 서버 턴과 화면이 어긋날 수 있다.
  */
-import { getInGameNightActionType } from "../actions/ingameActionPanel.js"
-
 /**
- * 역할 턴별 안내 문구. 배열 순서는 "서버가 아직 아무 턴도 지목하지 않았을 때의 그 밤의
- * 시작 턴"을 고르는 데에만 쓰인다(getInGameOpeningNightTurnRole) — 안내가 이 순서대로
- * 자동으로 넘어간다는 뜻이 아니다.
+ * 역할 턴별 안내 문구. 배열 순서는 표시 사전의 정렬일 뿐이며 현재 턴을 결정하지 않는다.
  */
 // label은 안내 문구에서 "○○" 부분만 떼어낸 같은 표기다. 상태바(InGameTimebar)가 지금 턴을
 // 상시로 표시할 때 쓰며, 안내 오버레이와 상태바가 같은 역할을 다른 이름으로 부르지 않도록
@@ -40,34 +35,18 @@ export const INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS = 2600
 /** 안내 오버레이의 닫기 버튼 문구 */
 export const INGAME_NIGHT_TURN_ANNOUNCEMENT_CLOSE_LABEL = "확인"
 
-/** 그 밤에 실제로 안내할 수 있는 역할 턴인가(행동 불가 = canonical하게 건너뛰는 턴). */
+/** 서버가 선언할 수 있는 알려진 역할 턴인가. */
 export function isInGameAnnounceableNightTurnRole(role, dayIndex) {
   if (typeof role !== "string" || role.length === 0) return false
   if (!Number.isInteger(dayIndex) || dayIndex < 0) return false
-  return getInGameNightActionType(role, dayIndex) !== null
+  return INGAME_NIGHT_TURN_ANNOUNCEMENTS.some((turn) => turn.role === role)
 }
 
 /**
  * 역할 턴 하나에 대응하는 안내를 돌려준다(없으면 null).
- * 그 밤에 건너뛰는 역할이거나 안내 문구가 없는 역할이면 null이다.
+ * 안내 문구가 없는 역할이면 null이다.
  */
 export function getInGameNightTurnAnnouncement(role, dayIndex) {
   if (!isInGameAnnounceableNightTurnRole(role, dayIndex)) return null
   return INGAME_NIGHT_TURN_ANNOUNCEMENTS.find((turn) => turn.role === role) ?? null
-}
-
-/**
- * 그 밤의 시작 역할 턴 — canonical 상태가 역할 턴을 따로 지목하지 않을 때 쓰는 값이다.
- *
- * 서버는 밤을 역할별로 쪼개 진행하지 않고 NIGHT 한 구간에서 자격 있는 역할의 제출을 모두
- * 받는다(game-core submitNightAction). 그래서 그 밤의 canonical 역할 턴은 "그 밤에 행동
- * 가능한 첫 역할" 하나로 고정되며, 안내를 닫아도 프런트가 이 값을 다음 역할로 옮기지 않는다.
- * 유효하지 않은 dayIndex거나 행동 가능한 역할이 하나도 없으면 null이다.
- */
-export function getInGameOpeningNightTurnRole(dayIndex) {
-  if (!Number.isInteger(dayIndex) || dayIndex < 0) return null
-  const opening = INGAME_NIGHT_TURN_ANNOUNCEMENTS.find((turn) =>
-    isInGameAnnounceableNightTurnRole(turn.role, dayIndex),
-  )
-  return opening?.role ?? null
 }

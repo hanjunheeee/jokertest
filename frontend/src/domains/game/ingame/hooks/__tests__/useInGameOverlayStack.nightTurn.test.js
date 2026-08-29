@@ -122,10 +122,12 @@ function buildState({ phase, dayIndex, nightTurnRole }) {
 }
 
 function applyCanonicalState({ phase, dayIndex, nightTurnRole }) {
+  const serverNightTurnRole =
+    phase === "NIGHT" && nightTurnRole === undefined ? "JOKER" : nightTurnRole
   act(() => {
     useInGameStore.getState().setGamePayload({
       gameId: GAME_ID,
-      state: buildState({ phase, dayIndex, nightTurnRole }),
+      state: buildState({ phase, dayIndex, nightTurnRole: serverNightTurnRole }),
     })
   })
 }

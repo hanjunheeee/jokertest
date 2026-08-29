@@ -22,11 +22,7 @@ test("selectInGameNightTurnDeadline: 밤이 아니면 역할과 함께 남은 �
 })
 
 test("selectInGameNightTurnDeadline: 보여줄 턴이 없으면 deadline도 없다(역할 판정에 종속)", () => {
-  // 첫 밤의 마녀사냥꾼은 canonical하게 건너뛰는 턴이라 역할 자체가 null이다.
-  assert.equal(
-    selectInGameNightTurnDeadline(buildNightState({ dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })),
-    null,
-  )
+  assert.equal(selectInGameNightTurnDeadline(buildNightState({ nightTurnRole: null })), null)
 })
 
 test("selectInGameNightTurnDeadline: 형태가 어긋난 deadline은 표시하지 않는다", () => {

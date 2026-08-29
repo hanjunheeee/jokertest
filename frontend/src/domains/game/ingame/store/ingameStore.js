@@ -150,9 +150,8 @@ export const useInGameStore = create((set) => ({
   // (useGameSessionSocketEvents)가 이미 parseNightTurnStartedPayload로 검증한 값만 넘기지만,
   // 다른 apply* 액션과 동일한 이유로 여기서도 독립적으로 gameId/phase/dayIndex를 재확인한다.
   //
-  // 여기 담기는 nightTurnRole이 곧 selectInGameNightTurnRole의 "declared" 분기가 기다리던
-  // canonical 턴이다 — 서버가 턴을 명시하지 않던 시절의 폴백(그 밤의 시작 턴 하나로 고정)은
-  // 이 값이 없는 동안에만 쓰인다.
+  // 여기 담기는 nightTurnRole이 곧 selectInGameNightTurnRole이 읽는 canonical 턴이다.
+  // 이 값이 없는 구간에는 로컬 시작 역할을 추정하지 않고 다음 서버 방송을 기다린다.
   //
   // 생존 여부는 어디에서도 보지 않는다. 백엔드는 생존자가 없는 역할의 턴도 똑같이 돌리고
   // 똑같은 payload를 방송하므로(부채널 차단), 그 성질을 그대로 통과시켜야 죽은 역할의 턴에도
@@ -177,6 +176,20 @@ export const useInGameStore = create((set) => ({
       }
 
       return { state: { ...current.state, nightTurnRole: parsed.role, nightTurnDeadline: parsed.deadline } }
+    }),
+
+  // night_turn_ended는 서버가 현재 역할 턴을 끝냈다는 canonical 방송이다. 현재 턴과 정확히
+  // 일치할 때만 role/deadline을 함께 비우고, 늦은 종료 방송은 참조 보존 no-op으로 버린다.
+  applyNightTurnEnded: (parsed) =>
+    set((current) => {
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return current
+      if (typeof parsed.gameId !== "string" || parsed.gameId.trim().length === 0) return current
+      if (!current.gameId || !current.state || parsed.gameId !== current.gameId) return current
+      if (current.state.phase !== "NIGHT") return current
+      if (!Number.isInteger(parsed.dayIndex) || parsed.dayIndex !== current.state.dayIndex) return current
+      if (typeof parsed.role !== "string" || parsed.role !== current.state.nightTurnRole) return current
+
+      return { state: { ...current.state, ...CLEARED_NIGHT_TURN } }
     }),
 
   // day_phase_changed 방송(낮 안의 DAY_DISCUSSION→DAY_VOTE 전이)을 반영한다. 호출부
@@ -220,9 +233,8 @@ export const useInGameStore = create((set) => ({
         return { state: { ...current.state, phase: "TRIBUNAL", dayPhase: null, tribunal: { defendantUuid } } }
       }
       if (outcome === "TIE" || outcome === "ABSTAINED") {
-        // 새 밤은 항상 "아직 어떤 턴도 방송되지 않은" 상태에서 시작한다 — 서버가 이 전이를
-        // 방송한 "뒤에" 턴 시퀀스를 시작하므로, 첫 night_turn_started가 도착하기 전까지는
-        // selectInGameNightTurnRole의 폴백(그 밤의 시작 턴)이 그대로 쓰인다.
+        // 새 밤은 항상 "아직 어떤 턴도 방송되지 않은" 상태에서 시작한다. 첫
+        // night_turn_started가 도착하기 전까지 role/deadline은 비어 있어야 한다.
         return { state: { ...current.state, phase: "NIGHT", dayPhase: null, ...CLEARED_NIGHT_TURN } }
       }
       return current

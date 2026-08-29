@@ -141,10 +141,12 @@ function buildState({ phase, dayIndex, nightTurnRole }) {
 }
 
 function applyCanonicalState({ phase, dayIndex, nightTurnRole, gameId = GAME_ID }) {
+  const serverNightTurnRole =
+    phase === "NIGHT" && nightTurnRole === undefined ? "JOKER" : nightTurnRole
   act(() => {
     useInGameStore.getState().setGamePayload({
       gameId,
-      state: buildState({ phase, dayIndex, nightTurnRole }),
+      state: buildState({ phase, dayIndex, nightTurnRole: serverNightTurnRole }),
     })
   })
 }
@@ -342,17 +344,22 @@ test("이후 canonical 역할 턴 변경마다 그에 대응하는 안내 하나
   unmount()
 })
 
-test("canonical하게 건너뛰는 역할 턴은 한 번도 뜨지 않는다", () => {
+test("서버가 시작한 역할 턴은 로컬 행동 가능 여부와 무관하게 안내한다", () => {
   resetStores()
   const { result, unmount } = mountAtRoleReveal()
 
-  // 첫 밤(dayIndex 0)의 마녀사냥꾼은 그 밤에 행동 자체가 불가능해 canonical하게 건너뛴다.
+  // 역할 턴 진행은 서버가 단독으로 결정한다. 프런트의 행동 가능 조건으로 서버 이벤트를
+  // 다시 거르면 서버와 화면이 어긋나므로 첫 밤의 방송도 그대로 안내한다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })
 
-  assert.equal(result.current.open, false, "건너뛰는 역할은 한 프레임도 깜빡이지 않는다")
-  assert.equal(result.current.announcement, null)
+  assert.equal(result.current.open, true)
+  assert.equal(messageOf(result), "마녀사냥꾼의 시간입니다")
 
-  // 같은 밤에 반복 갱신이 와도 마찬가지다.
+  act(() => {
+    result.current.close()
+  })
+
+  // 같은 서버 턴의 중복 갱신은 다시 열지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })
   assert.equal(result.current.open, false)
 
