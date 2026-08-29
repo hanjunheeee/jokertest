@@ -373,6 +373,40 @@ function validateSessionInput(players, jokerCount) {
 // @param {object} room - 참가자·설정을 담은 Room(읽기만 한다)
 // @param {object} [options] - randomFn(역할 셔플)·gameIdFn(세션 id 생성) 주입점
 // @flow 입력 검증 → 역할 구성 해석 → 역할 배정 순으로 진행하고, 실패하면 그 자리에서 반환한다.
+/**
+ * 방 설정에서 "타이머 계층이 읽는 제한시간 값"만 골라 담은 방어적 복사본(초 단위)을 만든다.
+ * 세션에 room.settings 전체를 싣지 않는 이유는, 타이머와 무관한 설정이 세션 상태로 새어 들어와
+ * 스냅샷·payload 조립에서 실수로 노출될 여지를 아예 없애기 위함이다.
+ *
+ * 값을 보정하지 않고, 양의 정수가 아니면 null(직업별 값은 키 자체를 생략)로 둔다 — 소비하는
+ * 소켓 계층이 그때 canonical 기본 상수로 폴백한다. "잘못된 값을 거부"하는 책임은 이 함수가
+ * 아니라 방 생성 검증(utils/createRoomValidation)에 있고, 여기까지 온 값은 이미 그 관문을
+ * 통과했거나(정상 경로) 손으로 조립된 값(테스트 픽스처)이다.
+ *
+ * @param {object|undefined} settings - room.settings(읽기만 한다)
+ */
+function buildTimerSettings(settings) {
+    const positiveInt = (value) => (Number.isInteger(value) && value > 0 ? value : null)
+
+    const rawRoleTimes = settings?.roleNightActionTimes
+    const roleNightActionTimes = {}
+    if (rawRoleTimes && typeof rawRoleTimes === 'object' && !Array.isArray(rawRoleTimes)) {
+        // 밤 턴이 도는 역할만 받는다 — 알 수 없는 키는 조용히 버린다(턴이 없는 역할의 값은
+        // 어떤 턴 길이도 바꾸지 못하므로 세션에 남길 이유가 없다).
+        for (const role of NIGHT_TURN_ORDER) {
+            const seconds = positiveInt(rawRoleTimes[role])
+            if (seconds !== null) roleNightActionTimes[role] = seconds
+        }
+    }
+
+    return {
+        dayDiscussionTime: positiveInt(settings?.dayDiscussionTime),
+        dayVoteTime: positiveInt(settings?.dayVoteTime),
+        nightActionTime: positiveInt(settings?.nightActionTime),
+        roleNightActionTimes,
+    }
+}
+
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {
     const players = [...room.players.values()]
     const jokerCount = room.settings?.jokerCount ?? 0
@@ -450,6 +484,9 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         dayVoteResolution: null,
         // TRIBUNAL 단계의 피고 정보. commitDayVoteResolution이 outcome:'TRIBUNAL'일 때만 채운다.
         tribunal: null,
+        // 이 방의 제한시간 설정(초). 밤 턴 타이머와 낮 페이즈 타이머가 길이를 정할 때 읽는
+        // 유일한 출처이며, 값이 없으면 소비하는 쪽이 canonical 기본 상수로 폴백한다.
+        timerSettings: buildTimerSettings(room.settings),
     }
     return { ok: true, session }
 }
@@ -923,6 +960,12 @@ const NIGHT_TURN_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTE
 // 턴 하나의 제한시간. night_turn_started.deadline과, 생존 actor가 없는 턴의 무작위 지연 범위가
 // 모두 이 값 하나에서 유도된다(두 곳이 다른 기준을 쓰면 지연 길이만으로 전멸 여부가 새어나간다).
 const NIGHT_TURN_DURATION_MS = 30_000
+
+// 낮 하위 구간의 기본 제한시간. 방 설정(timerSettings.dayDiscussionTime/dayVoteTime)이 없거나
+// 형태가 어긋난 세션에서만 쓰이는 폴백이며, 값은 설정 UI의 기본값(각 60초)과 같다 — 두 값이
+// 갈리면 "설정을 건드리지 않은 방"과 "손으로 조립된 세션"의 낮 길이가 서로 달라진다.
+const DAY_DISCUSSION_DURATION_MS = 60_000
+const DAY_VOTE_DURATION_MS = 60_000
 
 /**
  * night_turn_started 공용 payload. 이 밤에 그 역할의 생존 actor가 있든 없든 정확히 같은 필드와
@@ -2728,6 +2771,15 @@ module.exports = {
     DAY_PHASES,
     acknowledgeDayVoteReady,
     buildDayPhaseChangedPayload,
+    // 낮 페이즈 타이머(소켓 계층)가 소비하는 공개 계약 — 밤 턴 진행 규칙과 같은 이유로
+    // __testables가 아니라 정식 export다. getDayPhase/getEligibleDayVoterUuids/enterDayVotePhase는
+    // 기존 테스트 호환을 위해 __testables에도 같은 참조로 남아 있다.
+    DAY_DISCUSSION_DURATION_MS,
+    DAY_VOTE_DURATION_MS,
+    getDayPhase,
+    getDayVoteRound,
+    enterDayVotePhase,
+    getEligibleDayVoterUuids,
     submitNightAction,
     // 밤 턴 진행 규칙(순서·제한시간·payload·완료 판정)은 소켓 계층의 턴 오케스트레이터가
     // 그대로 소비하는 공개 계약이므로 __testables가 아니라 정식 export다.
@@ -2780,6 +2832,7 @@ module.exports = {
         enterDayVotePhase,
         getDayPhase,
         validateSessionInput,
+        buildTimerSettings,
         buildSessionCandidate,
         checkGameSessionPreconditions,
         assertValidSessionForCommit,

@@ -51,6 +51,30 @@ export const GENERAL_GAME_SETUP = [
   },
 ]
 
+/**
+ * 직업별 밤 제한시간 스테퍼의 정의. id는 buildCreateRoomPayload가 서버 payload의 역할 키로
+ * 되돌리는 유일한 근거이므로, id와 role의 대응을 여기 한 곳에서만 정한다.
+ *
+ * 범위·step·기본값을 전체 "밤 행동 시간"과 같게 두는 이유: 서버가 두 필드를 같은 허용 목록
+ * (ALLOWED_NIGHT_ACTION_TIME)으로 검증하므로, 여기서만 범위를 넓히면 정상적인 UI 선택값이
+ * 서버에서 거부된다.
+ */
+const ROLE_NIGHT_ACTION_TIME_RANGE = { type: "stepper", min: 30, max: 120, step: 30, defaultValue: 90, unit: "초" }
+
+export const ROLE_NIGHT_ACTION_TIME_OPTIONS = [
+  { role: "JOKER", id: "night-action-time-joker", label: "광대 밤 시간 조절" },
+  { role: "DOCTOR", id: "night-action-time-doctor", label: "의사 밤 시간 조절" },
+  { role: "GUARD", id: "night-action-time-guard", label: "경비원 밤 시간 조절" },
+  { role: "WITCH_HUNTER", id: "night-action-time-witch-hunter", label: "마녀사냥꾼 밤 시간 조절" },
+]
+
+/** 위 정의를 SetupTabContent가 그대로 그릴 수 있는 스테퍼 항목으로 펼친 목록. */
+export const ROLE_NIGHT_ACTION_TIME_ITEMS = ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ id, label }) => ({
+  ...ROLE_NIGHT_ACTION_TIME_RANGE,
+  id,
+  label,
+}))
+
 /** prototype 화면 구성-회의 & 투표UI — 회의&투표 탭 항목 (30초 단위) */
 export const MEETING_GAME_SETUP = [
   {
@@ -83,6 +107,9 @@ export const MEETING_GAME_SETUP = [
     defaultValue: 90,
     unit: "초",
   },
+  // 직업별 밤 시간은 바로 위의 전체 "밤 행동 시간" 다음에 온다 — 값을 지정하지 않은 직업이
+  // 폴백하는 대상이 그 값이라, 화면에서도 그 관계가 드러나는 순서여야 한다.
+  ...ROLE_NIGHT_ACTION_TIME_ITEMS,
   {
     id: "vote-reveal",
     type: "checkbox",

@@ -1,6 +1,11 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { validateCreateRoomPayload } = require('../createRoomValidation')
+const {
+    validateCreateRoomPayload,
+    validateRoleNightActionTimes,
+    ROLE_NIGHT_ACTION_TIME_KEYS,
+    ALLOWED_ROLE_NIGHT_ACTION_TIME,
+} = require('../createRoomValidation')
 
 function validPayload(overrides = {}) {
     return {
@@ -75,4 +80,79 @@ test('서버 권한 필드(uuid 등)는 결과 value에 포함되지 않는다',
     assert.ok(!serialized.includes('attacker'))
     assert.equal(result.value.title, undefined)
     assert.equal(result.value.status, undefined)
+})
+
+// ── 직업별 밤 제한시간(roleNightActionTimes) ─────────────────────────────────
+
+test('직업별 밤 시간을 지정하지 않으면 통과하고 settings에 키 자체가 생기지 않는다', () => {
+    // 필드가 없다 = "전 직업이 nightActionTime으로 폴백한다"는 뜻이다. 빈 객체를 만들어 두면
+    // 폴백과 "빈 객체를 명시적으로 지정함"이 저장된 방 설정에서 구별되지 않는다.
+    const result = validateCreateRoomPayload(validPayload())
+    assert.equal(result.ok, true)
+    assert.equal(Object.hasOwn(result.value.settings, 'roleNightActionTimes'), false)
+})
+
+test('직업별 밤 시간은 알려진 역할 키와 허용된 값만 통과시킨다', () => {
+    const result = validateCreateRoomPayload(
+        validPayload({ roleNightActionTimes: { JOKER: 30, DOCTOR: 60, GUARD: 90, WITCH_HUNTER: 120 } }),
+    )
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.value.settings.roleNightActionTimes, {
+        JOKER: 30,
+        DOCTOR: 60,
+        GUARD: 90,
+        WITCH_HUNTER: 120,
+    })
+    // 허용 집합은 전체 밤 행동 시간과 같은 목록이다(프런트 스테퍼 범위·step이 같기 때문).
+    assert.deepEqual([...ALLOWED_ROLE_NIGHT_ACTION_TIME], [30, 60, 90, 120])
+    assert.deepEqual([...ROLE_NIGHT_ACTION_TIME_KEYS], ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+})
+
+test('일부 직업만 지정해도 통과하고, 지정한 직업만 settings에 담긴다', () => {
+    const result = validateCreateRoomPayload(validPayload({ roleNightActionTimes: { GUARD: 120 } }))
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.value.settings.roleNightActionTimes, { GUARD: 120 })
+    // 나머지 직업은 키가 없으므로 nightActionTime(90)으로 폴백한다.
+    assert.equal(result.value.settings.nightActionTime, 90)
+})
+
+test('허용 목록 밖의 값은 보정하지 않고 거부한다', () => {
+    for (const bad of [45, 0, -30, 150, 30.5, '30', null, undefined, true, [], {}]) {
+        assert.equal(
+            validateCreateRoomPayload(validPayload({ roleNightActionTimes: { JOKER: bad } })).ok,
+            false,
+            `JOKER=${String(bad)}는 거부돼야 함`,
+        )
+    }
+})
+
+test('알 수 없는 역할 키는 조용히 무시하지 않고 거부한다', () => {
+    // 무시하면 클라이언트는 "지정했다"고 믿는데 서버는 다르게 해석하는 상태가 된다
+    // (roleCounts의 UNKNOWN_ROLE_KEY와 같은 원칙).
+    for (const key of ['CITIZEN', 'joker', 'hostUuid', '']) {
+        assert.equal(
+            validateCreateRoomPayload(validPayload({ roleNightActionTimes: { [key]: 30 } })).ok,
+            false,
+            `${key} 키는 거부돼야 함`,
+        )
+    }
+})
+
+test('roleNightActionTimes가 객체가 아니면 거부한다', () => {
+    for (const bad of [null, [], 'x', 30, true]) {
+        assert.equal(validateCreateRoomPayload(validPayload({ roleNightActionTimes: bad })).ok, false)
+    }
+})
+
+test('validateRoleNightActionTimes는 클라이언트 객체를 그대로 담지 않고 새로 만든다', () => {
+    const raw = { JOKER: 30 }
+    const result = validateRoleNightActionTimes(raw)
+    assert.equal(result.ok, true)
+    assert.notEqual(result.value, raw, '입력 객체 참조를 그대로 저장하지 않는다')
+    assert.deepEqual(result.value, { JOKER: 30 })
+
+    // 지정 없음은 정상 입력이며 undefined(=폴백)로 표현된다.
+    assert.deepEqual(validateRoleNightActionTimes(undefined), { ok: true, value: undefined })
+    // 빈 객체는 "지정했지만 아무 직업도 고르지 않음"이라 빈 객체 그대로 통과한다.
+    assert.deepEqual(validateRoleNightActionTimes({}), { ok: true, value: {} })
 })

@@ -6,7 +6,7 @@ const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
 const { createFakeSocket, createFakeIo, countingCallback } = require('./testHelpers/matchmakingFixtures')
 
-const { startNightTurnSequence, computeEmptyTurnDelayMs } = gameSessionSocketLayer.__testables
+const { startNightTurnSequence, computeEmptyTurnDelayMs, resolveNightTurnDurationMs } = gameSessionSocketLayer.__testables
 const { NIGHT_TURN_ORDER, NIGHT_TURN_DURATION_MS } = gameSessionCore
 
 /**
@@ -90,11 +90,11 @@ function makePlayer(uuid, nickname = `nick-${uuid}`) {
     return { uuid, nickname, isReady: true }
 }
 
-function makeRoom({ id = 'room-1', players, jokerCount = 1 } = {}) {
+function makeRoom({ id = 'room-1', players, jokerCount = 1, settings = {} } = {}) {
     return {
         id,
         players: new Map(players.map((p) => [p.uuid, p])),
-        settings: { jokerCount },
+        settings: { jokerCount, ...settings },
     }
 }
 
@@ -118,9 +118,9 @@ function ackAllAndRewindToNight(session, dayIndex) {
  * 네 번째 턴에 생존 actor가 존재할 수 없다 — "네 직업 턴이 모두 참여 가능한 밤"을 만들려면
  * 이 경계를 넘겨야 한다.
  */
-function commitFullRoleSessionAtNight({ id = 'room-turns', dayIndex = 2 } = {}) {
+function commitFullRoleSessionAtNight({ id = 'room-turns', dayIndex = 2, settings = {} } = {}) {
     const players = Array.from({ length: 10 }, (_, i) => makePlayer(`fp-${id}-${i}`))
-    const room = makeRoom({ id, players, jokerCount: 1 })
+    const room = makeRoom({ id, players, jokerCount: 1, settings })
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
     gameSessionCore.commitGameSession(candidate.session)
     const session = candidate.session
@@ -285,10 +285,10 @@ test('night turn: 턴 시퀀스가 돌고 있지 않으면 어떤 직업의 제�
 })
 
 // ---------------------------------------------------------------------------
-// AC-03 — 생존 직업 턴은 전원 제출로만 즉시 종료된다(시간 만료 종료 없음)
+// 생존 직업 턴은 전원 제출로 즉시, 또는 제한시간 만료로 끝난다
 // ---------------------------------------------------------------------------
 
-test('night turn: 생존자가 있는 턴은 제한시간이 여러 번 지나도 종료되지 않는다', () => {
+test('night turn: 생존자가 있는 턴은 제한시간 직전까지는 끝나지 않는다', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
     const { io, submit } = wireSession(session)
     const clock = createManualClock()
@@ -296,10 +296,11 @@ test('night turn: 생존자가 있는 턴은 제한시간이 여러 번 지나�
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     submit(jokerUuids[0], null)
 
-    clock.advance(NIGHT_TURN_DURATION_MS * 10)
+    clock.advance(NIGHT_TURN_DURATION_MS - 1)
 
     assert.deepEqual(turnEventLog(io), [['night_turn_started', 'JOKER']])
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'JOKER')
+    assert.equal(session.nightActions.has(jokerUuids[1]), false, '만료 전에는 아무도 기권으로 기록되지 않는다')
 })
 
 test('night turn: 그 역할 생존자 전원이 제출을 마치는 순간, 시계를 진행시키지 않아도 턴이 즉시 끝난다', () => {
@@ -599,4 +600,260 @@ test('night turn: 건너뛰기와 실제 지목이 섞여도 전원 제출로 �
         [[jokerUuids[0], citizenUuid], [jokerUuids[1], null]].sort(),
     )
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
+})
+
+// ---------------------------------------------------------------------------
+// S1-2 AC-01 — 제한시간이 만료되면 미제출 생존자가 기권으로 기록되고 다음 턴으로 넘어간다
+// ---------------------------------------------------------------------------
+
+test('night turn: 제한시간이 만료되면 미제출 생존자만 기권으로 기록되고 다음 턴이 시작된다', () => {
+    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    // 두 JOKER 중 한 명만 실제로 지목하고, 나머지 한 명은 아무 것도 제출하지 않는다.
+    assert.deepEqual(submit(jokerUuids[0], citizenUuid), { ok: true })
+
+    clock.advance(NIGHT_TURN_DURATION_MS)
+
+    // 이미 제출한 표는 기권으로 덮이지 않고, 미제출자만 SKIP(null)으로 기록된다.
+    assert.equal(session.nightActions.get(jokerUuids[0]), citizenUuid)
+    assert.equal(session.nightActions.has(jokerUuids[1]), true, '미제출 생존자가 기권으로 기록됐다')
+    assert.equal(session.nightActions.get(jokerUuids[1]), null)
+    assert.equal(gameSessionCore.isRoleTurnComplete(session, 'JOKER'), true)
+
+    assert.deepEqual(turnEventLog(io).slice(0, 3), [
+        ['night_turn_started', 'JOKER'],
+        ['night_turn_ended', 'JOKER'],
+        ['night_turn_started', 'DOCTOR'],
+    ])
+})
+
+test('night turn: 아무도 제출하지 않은 채 만료되면 그 역할 생존자 전원이 기권으로 기록된다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight()
+    const { io } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    clock.advance(NIGHT_TURN_DURATION_MS)
+
+    for (const jokerUuid of jokerUuids) {
+        assert.equal(session.nightActions.get(jokerUuid), null, `${jokerUuid}가 기권으로 기록됐다`)
+    }
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
+})
+
+test('night turn: 사망한 actor는 만료 기권 대상이 아니다(기록도 남지 않는다)', () => {
+    // 기권은 "그 역할의 생존 actor 중 미제출자"에게만 기록된다 — 사망자에게 기권을 남기면
+    // 밤 판정의 제출 완료 기준(생존 actor)과 실제 기록이 어긋난다.
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight()
+    session.players.get(jokerUuids[1]).alive = false
+    const { io } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    clock.advance(NIGHT_TURN_DURATION_MS)
+
+    assert.equal(session.nightActions.get(jokerUuids[0]), null)
+    assert.equal(session.nightActions.has(jokerUuids[1]), false, '사망자에게는 기권이 기록되지 않는다')
+})
+
+test('night turn: 만료로 끝난 턴의 방송도 전원 제출로 끝난 턴과 완전히 같은 payload를 쓴다', () => {
+    // 종료 "사유"가 payload로 새어나가지 않는다는 기존 계약(S1-1)이 만료 경로에도 그대로
+    // 적용되는지 고정한다 — 만료로 끝났다는 사실이 곧 "그 역할에 굼뜬 생존자가 있다"는 신호다.
+    const expired = commitJokerTrioSessionAtNight({ id: 'expired-turn' })
+    const wiredExpired = wireSession(expired.session)
+    const expiredClock = createManualClock()
+    startNightTurnSequence(wiredExpired.io, expired.session, { ...expiredClock, randomFn: () => 0.5 })
+    expiredClock.advance(NIGHT_TURN_DURATION_MS)
+
+    const submitted = commitJokerTrioSessionAtNight({ id: 'submitted-turn' })
+    const wiredSubmitted = wireSession(submitted.session)
+    const submittedClock = createManualClock()
+    startNightTurnSequence(wiredSubmitted.io, submitted.session, { ...submittedClock, randomFn: () => 0.5 })
+    for (const jokerUuid of submitted.jokerUuids) wiredSubmitted.submit(jokerUuid, null)
+
+    const pick = (io, event) => io.broadcasts.find((b) => b.event === event && b.payload.role === 'JOKER')
+    for (const event of ['night_turn_started', 'night_turn_ended']) {
+        const fromExpired = pick(wiredExpired.io, event)
+        const fromSubmitted = pick(wiredSubmitted.io, event)
+        assert.ok(fromExpired && fromSubmitted, `두 경로 모두 ${event}를 방송한다`)
+        assert.deepEqual(
+            { ...fromExpired.payload, gameId: 'X' },
+            { ...fromSubmitted.payload, gameId: 'X' },
+            `${event} payload가 종료 사유에 따라 달라졌다`,
+        )
+    }
+})
+
+// ---------------------------------------------------------------------------
+// S1-2 AC-05 — 전원 제출이면 제한시간을 기다리지 않고 즉시 다음 턴으로 간다
+// ---------------------------------------------------------------------------
+
+test('night turn: 전원 제출로 턴이 끝난 뒤에는 그 턴의 만료 타이머가 발화하지 않는다', () => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight()
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    const beforeNow = clock.now()
+    for (const jokerUuid of jokerUuids) submit(jokerUuid, null)
+
+    // 시계를 1ms도 진행시키지 않았는데 이미 다음 턴이다.
+    assert.equal(clock.now(), beforeNow)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
+    const endedCountBefore = turnEventLog(io).filter(([event, role]) => event === 'night_turn_ended' && role === 'JOKER').length
+    assert.equal(endedCountBefore, 1)
+
+    // 원래 만료 시각을 한참 지나도 JOKER 턴이 두 번 끝나지 않는다(예약 타이머가 해제됐다).
+    clock.advance(NIGHT_TURN_DURATION_MS * 3)
+    const endedCountAfter = turnEventLog(io).filter(([event, role]) => event === 'night_turn_ended' && role === 'JOKER').length
+    assert.equal(endedCountAfter, 1, '만료 타이머가 이미 끝난 턴을 다시 끝내지 않는다')
+})
+
+test('night turn: 한 밤의 모든 턴을 전원 제출로 끝내면 시계 없이 시퀀스 전체가 끝난다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight()
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    const startedAt = clock.now()
+    for (const uuid of [jokerUuid, doctorUuid, guardUuid, witchHunterUuid]) submit(uuid, null)
+
+    assert.equal(clock.now(), startedAt)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '마지막 턴까지 끝나 턴 상태가 정리된다')
+    assert.equal(clock.pendingCount(), 0, '남아있는 예약 타이머가 없다')
+})
+
+// ---------------------------------------------------------------------------
+// S1-2 AC-04 — 직업별 밤 제한시간이 실제 턴 길이로 쓰이고, 없으면 nightActionTime으로 폴백한다
+// ---------------------------------------------------------------------------
+
+/** 이 세션 설정에서 각 역할의 턴에 적용되는 제한시간(ms)을 소켓 계층 해석기로 직접 구한다. */
+function appliedDurationMs(session, role) {
+    return resolveNightTurnDurationMs({ durationMs: null, session }, role)
+}
+
+test('night turn: 직업별 밤 시간이 있으면 그 값이, 없으면 nightActionTime이 그 턴의 길이가 된다', () => {
+    const { session } = commitFullRoleSessionAtNight({
+        id: 'per-role-times',
+        settings: { nightActionTime: 60, roleNightActionTimes: { JOKER: 30, GUARD: 120 } },
+    })
+
+    assert.equal(appliedDurationMs(session, 'JOKER'), 30_000)
+    assert.equal(appliedDurationMs(session, 'GUARD'), 120_000)
+    // 지정하지 않은 두 직업은 전체 밤 행동 시간으로 폴백한다.
+    assert.equal(appliedDurationMs(session, 'DOCTOR'), 60_000)
+    assert.equal(appliedDurationMs(session, 'WITCH_HUNTER'), 60_000)
+})
+
+test('night turn: 밤 시간 설정이 아예 없는 방은 모든 턴이 canonical 기본 제한시간을 쓴다', () => {
+    const { session } = commitFullRoleSessionAtNight({ id: 'no-time-settings' })
+    for (const role of NIGHT_TURN_ORDER) {
+        assert.equal(appliedDurationMs(session, role), NIGHT_TURN_DURATION_MS)
+    }
+})
+
+test('night turn: 직업별로 다른 제한시간이 night_turn_started의 deadline에 그대로 나타난다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({
+        id: 'per-role-deadline',
+        settings: { nightActionTime: 60, roleNightActionTimes: { JOKER: 30, GUARD: 120 } },
+    })
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock(7_000_000)
+    const startedAt = clock.now()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    // 제출은 시계를 진행시키지 않으므로 네 턴 모두 같은 시각에 시작한다 — deadline의 차이는
+    // 오직 그 직업에 적용된 제한시간의 차이뿐이다.
+    for (const uuid of [jokerUuid, doctorUuid, guardUuid, witchHunterUuid]) submit(uuid, null)
+
+    const deadlineByRole = new Map(
+        io.broadcasts.filter((b) => b.event === 'night_turn_started').map((b) => [b.payload.role, b.payload.deadline]),
+    )
+    assert.deepEqual([...deadlineByRole.keys()], [...NIGHT_TURN_ORDER])
+    for (const role of NIGHT_TURN_ORDER) {
+        assert.equal(deadlineByRole.get(role), startedAt + appliedDurationMs(session, role), `${role}의 deadline`)
+    }
+})
+
+test('night turn: 직업별 제한시간이 실제 만료 시각을 결정한다', () => {
+    const { session, jokerUuid } = commitFullRoleSessionAtNight({
+        id: 'per-role-expiry',
+        settings: { nightActionTime: 90, roleNightActionTimes: { JOKER: 30 } },
+    })
+    const { io } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+
+    clock.advance(30_000 - 1)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'JOKER', '30초 직전에는 아직 JOKER 턴이다')
+    assert.equal(session.nightActions.has(jokerUuid), false)
+
+    clock.advance(1)
+    assert.equal(session.nightActions.get(jokerUuid), null, '30초에 만료돼 기권이 기록됐다')
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
+})
+
+test('night turn: deps.turnDurationMs를 주면 세션 설정보다 우선해 모든 턴에 쓰인다', () => {
+    // 테스트 전용 주입 통로가 설정보다 우선한다는 계약을 고정한다(주입하지 않으면 설정을 읽는다).
+    const { session } = commitFullRoleSessionAtNight({
+        id: 'explicit-duration',
+        settings: { nightActionTime: 60, roleNightActionTimes: { JOKER: 30 } },
+    })
+    const { io } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5, turnDurationMs: 5_000 })
+    const started = io.broadcasts.find((b) => b.event === 'night_turn_started')
+    assert.equal(started.payload.deadline, clock.now() + 5_000)
+})
+
+// ---------------------------------------------------------------------------
+// S1-2 AC-06 — 무인 턴 지연은 "그 직업에 적용되는" 제한시간의 20~60%다
+// ---------------------------------------------------------------------------
+
+test('night turn: 무인 턴 지연은 전체 밤 시간이 아니라 그 직업에 적용된 제한시간을 기준으로 계산된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid } = commitFullRoleSessionAtNight({
+        id: 'empty-turn-per-role',
+        settings: { nightActionTime: 30, roleNightActionTimes: { GUARD: 120 } },
+    })
+    session.players.get(guardUuid).alive = false
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    // 0.5 → 비율 0.2 + 0.5*0.4 = 0.4. GUARD의 제한시간은 120초이므로 48초여야 한다
+    // (전체 nightActionTime 30초를 기준으로 삼았다면 12초에 끝났을 것이다).
+    const expectedDelay = Math.floor(120_000 * 0.4)
+    assert.equal(expectedDelay, 48_000)
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, null)
+    submit(doctorUuid, null)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'GUARD')
+
+    clock.advance(expectedDelay - 1)
+    assert.deepEqual(turnEventLog(io).at(-1), ['night_turn_started', 'GUARD'], '48초 직전에는 아직 끝나지 않았다')
+
+    clock.advance(1)
+    assert.deepEqual(turnEventLog(io).slice(4, 6), [
+        ['night_turn_started', 'GUARD'],
+        ['night_turn_ended', 'GUARD'],
+    ])
+})
+
+test('night turn: 무인 턴 지연 비율은 어떤 제한시간에서도 20~60% 구간을 벗어나지 않는다', () => {
+    // computeEmptyTurnDelayMs 자체의 경계는 위(S1-1 AC-04)에서 고정했다. 여기서는 직업별
+    // 제한시간이 켜졌을 때 그 기준값이 무엇이든 비율 계약이 유지되는지를 본다.
+    for (const durationMs of [30_000, 60_000, 90_000, 120_000]) {
+        for (const r of [0, 0.25, 0.5, 0.75, 1, -3, 7, NaN]) {
+            const delay = computeEmptyTurnDelayMs(durationMs, () => r)
+            assert.ok(
+                delay >= Math.floor(durationMs * 0.2) && delay <= durationMs * 0.6,
+                `duration=${durationMs}, r=${r} → ${delay}ms가 20~60% 범위를 벗어났다`,
+            )
+        }
+    }
 })

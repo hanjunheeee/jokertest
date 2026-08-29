@@ -108,13 +108,14 @@ async function resyncSessionRouting(socket, uuid) {
 }
 
 /**
- * 테스트 전용: onlineUsersRegistry를 초기 상태(null)로 되돌리고, 진행 중인 밤 턴 시퀀스를
- * 전부 중단합니다(대기 중인 타이머까지 해제하므로 테스트 간에 타이머가 새어나가지 않습니다).
- * 런타임 코드에서는 호출하지 마세요.
+ * 테스트 전용: onlineUsersRegistry를 초기 상태(null)로 되돌리고, 진행 중인 밤 턴 시퀀스와 낮
+ * 페이즈 타이머를 전부 중단합니다(대기 중인 타이머까지 해제하므로 테스트 간에 타이머가
+ * 새어나가지 않습니다). 런타임 코드에서는 호출하지 마세요.
  */
 function __resetStateForTests() {
     onlineUsersRegistry = null
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
+    for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
 }
 
 /** 테스트 전용: 현재 onlineUsersRegistry 참조를 읽기 전용으로 반환합니다(변형하지 않습니다). */
@@ -194,6 +195,13 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
         } catch (err) {
             console.error('[phase 변경 알림 전송 실패]', err)
         }
+        // 첫 DAY가 열리는 유일한 지점이므로 낮 토론 제한시간도 여기서 시작한다. 방송과 분리된
+        // try 블록에 두어 한쪽이 실패해도 다른 쪽이 막히지 않게 한다(onDisconnect와 같은 관례).
+        try {
+            startDayPhaseTimer(io, result.session)
+        } catch (err) {
+            console.error('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: result.session.id })
+        }
     }
 }
 
@@ -265,6 +273,12 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
         } catch (err) {
             console.error('[낮 하위 페이즈 변경 알림 전송 실패]', err)
         }
+        // 전원 준비로 토론이 조기 종료됐다 — 남은 토론 제한시간을 버리고 투표 제한시간을 건다.
+        try {
+            startDayPhaseTimer(io, result.session)
+        } catch (err) {
+            console.error('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: result.session.id })
+        }
     }
 }
 
@@ -305,6 +319,30 @@ function computeEmptyTurnDelayMs(durationMs, randomFn = Math.random) {
     return Math.floor(durationMs * (0.2 + bounded * 0.4))
 }
 
+/**
+ * 이 턴에 적용할 제한시간(ms)을 정합니다. 우선순위는 (1) deps로 명시 주입된 turnDurationMs,
+ * (2) 방 설정의 직업별 밤 시간, (3) 방 설정의 전체 nightActionTime, (4) canonical 기본 상수입니다.
+ *
+ * 직업별 값이 "없을 때만" 전체 값으로 폴백한다는 것이 이 함수의 계약입니다 — 폴백은 조용한
+ * 보정이 아니라 명시된 규칙이고, 잘못된 값(범위 밖·비정수)은 애초에 방 생성 검증에서 거부되어
+ * 여기까지 오지 않습니다. 설정 값의 단위는 초, 반환 단위는 ms입니다.
+ *
+ * deadline 계산과 무인 턴 지연(computeEmptyTurnDelayMs)이 모두 이 한 값에서 유도되므로, 직업별
+ * 시간을 켜도 "지연 길이만으로 전멸 여부가 새어나가지 않는다"는 기존 불변식이 그대로 유지됩니다.
+ */
+function resolveNightTurnDurationMs(run, role) {
+    if (run.durationMs !== null) return run.durationMs
+
+    const timerSettings = run.session.timerSettings
+    const roleSeconds = timerSettings?.roleNightActionTimes?.[role]
+    if (Number.isInteger(roleSeconds) && roleSeconds > 0) return roleSeconds * 1000
+
+    const fallbackSeconds = timerSettings?.nightActionTime
+    if (Number.isInteger(fallbackSeconds) && fallbackSeconds > 0) return fallbackSeconds * 1000
+
+    return gameSessionCore.NIGHT_TURN_DURATION_MS
+}
+
 /** 밤 턴 방송은 참가자 전원이 이미 가입해 있는 세션 channel에 한 번만 보낸다(수신자별로 달라지는 값이 없다). */
 function emitNightTurnEvent(run, event, payload) {
     try {
@@ -318,8 +356,12 @@ function emitNightTurnEvent(run, event, payload) {
  * 다음 턴으로 넘어갑니다. NIGHT_TURN_ORDER를 다 돌았으면 run을 정리하고 끝냅니다.
  *
  * 시작 방송은 생존 여부와 무관하게 항상 같은 빌더로 같은 시점(턴 진입 직후)에 나가고,
- * deadline도 항상 now + 제한시간입니다 — 생존 actor 유무는 오직 "무엇이 이 턴을 끝내는가"에만
- * 영향을 줍니다(무인 턴은 무작위 지연 타이머, 그 외에는 전원 제출).
+ * deadline도 항상 now + 그 직업에 적용되는 제한시간입니다 — 생존 actor 유무는 오직 "무엇이 이
+ * 턴을 끝내는가"에만 영향을 줍니다(무인 턴은 제한시간의 20~60% 무작위 지연, 그 외에는 전원
+ * 제출 또는 제한시간 만료).
+ *
+ * 두 경우 모두 타이머를 정확히 하나 건다 — 어느 쪽도 "타이머가 없는 턴"이 아니므로, 타이머의
+ * 존재 여부 자체가 그 역할의 전멸 여부를 알려주는 부채널이 되지 않는다.
  */
 function advanceNightTurn(run) {
     const { session } = run
@@ -331,18 +373,53 @@ function advanceNightTurn(run) {
 
     const role = gameSessionCore.NIGHT_TURN_ORDER[run.index]
     session.nightTurnRole = role
-    const deadline = run.nowFn() + run.durationMs
+    const durationMs = resolveNightTurnDurationMs(run, role)
+    const deadline = run.nowFn() + durationMs
     emitNightTurnEvent(run, 'night_turn_started', gameSessionCore.buildNightTurnStartedPayload(session, role, deadline))
 
     if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) {
-        run.timerId = run.setTimeoutFn(() => endNightTurn(run, role), computeEmptyTurnDelayMs(run.durationMs, run.randomFn))
+        run.timerId = run.setTimeoutFn(() => endNightTurn(run, role), computeEmptyTurnDelayMs(durationMs, run.randomFn))
         return
     }
 
-    // 생존 actor가 있는 턴에는 타이머를 걸지 않는다 — 이 턴을 끝내는 것은 오직 그 역할 생존자
-    // 전원의 제출(SKIP 포함)뿐이고 시간 만료로는 끝나지 않는다. 진입 시점에 이미 전원 제출된
-    // 상태일 수도 있으므로(시퀀서 시작 전에 들어온 제출) 여기서 한 번 확인한다.
+    // 생존 actor가 있는 턴은 제한시간 만료로 끝날 수 있다 — 만료 시점에 아직 제출하지 않은
+    // 생존자는 기권(SKIP)으로 기록된다. 그 전에 전원이 제출하면 만료를 기다리지 않고 즉시
+    // 끝난다. 진입 시점에 이미 전원 제출된 상태일 수도 있으므로(시퀀서 시작 전에 들어온 제출)
+    // 타이머를 건 "뒤에" 한 번 확인한다 — 여기서 턴이 끝나면 endNightTurn이 이 타이머를 해제한다.
+    run.timerId = run.setTimeoutFn(() => expireNightTurnWithAbstentions(run, role), durationMs)
     maybeEndNightTurnOnCompletion(session.id)
+}
+
+/**
+ * 제한시간이 만료된 턴을 닫습니다 — 그 역할의 생존 actor 중 아직 제출하지 않은 사람을 전부
+ * 기권(SKIP)으로 기록한 뒤 턴을 끝냅니다.
+ *
+ * 기권 기록은 game-core의 submitNightAction(targetId: null)을 그대로 통과시킵니다. 서버가
+ * nightActions Map을 직접 건드리지 않는 이유는, 그렇게 하면 phase·생존·판정 완료 같은 canonical
+ * 가드를 우회한 항목이 밤 판정에 섞일 수 있기 때문입니다 — 이미 판정된 밤이나 사망자에 대한
+ * 기권은 core가 거부하고, 이 함수는 그 거부를 그대로 받아들입니다(그 actor는 미제출로 남고
+ * 제출 완료 판정도 그 사실을 그대로 반영합니다).
+ *
+ * 늦게 도착한 타이머가 이미 지나간 턴을 잘못 닫지 않도록 run 동일성과 현재 턴 역할을 먼저
+ * 확인합니다(endNightTurn과 같은 가드).
+ */
+function expireNightTurnWithAbstentions(run, role) {
+    const { session } = run
+    if (nightTurnRuns.get(session.id) !== run) return
+    if (session.nightTurnRole !== role) return
+
+    for (const actorUuid of gameSessionCore.getAliveActorUuidsForRole(session, role)) {
+        if (session.nightActions.has(actorUuid)) continue
+        try {
+            gameSessionCore.submitNightAction(actorUuid, session.id, null)
+        } catch (err) {
+            // 한 명의 기권 기록 실패가 나머지 기권과 턴 진행 자체를 막지 않는다. 로그에는
+            // 고정 구조만 남긴다(role은 이미 방송된 공개 정보, uuid는 밤 행동 로그의 기존 관례).
+            console.error('[밤 턴 만료 기권 기록 실패]', { code: 'ABSTAIN_ERROR', uuid: actorUuid, gameId: session.id })
+        }
+    }
+
+    endNightTurn(run, role)
 }
 
 /**
@@ -385,8 +462,9 @@ function maybeEndNightTurnOnCompletion(gameId) {
  * 방송하고, 각 턴이 끝날 때 night_turn_ended를 방송한 뒤 다음 턴으로 넘어갑니다.
  *
  * deps로 randomFn(무인 턴 지연)·nowFn(deadline)·setTimeoutFn/clearTimeoutFn(타이머)을 주입할 수
- * 있습니다. production 기본값은 각각 Math.random·Date.now·setTimeout·clearTimeout이며,
- * turnDurationMs 기본값은 game-core의 NIGHT_TURN_DURATION_MS입니다.
+ * 있습니다. production 기본값은 각각 Math.random·Date.now·setTimeout·clearTimeout입니다.
+ * turnDurationMs를 주면 모든 턴이 그 길이를 쓰고, 주지 않으면 턴마다 그 직업에 적용되는
+ * 길이를 세션 설정에서 유도합니다(resolveNightTurnDurationMs).
  *
  * 같은 세션에 이미 시퀀스가 돌고 있으면 두 번째 호출은 기존 run을 그대로 돌려주고 아무 것도
  * 다시 시작하지 않습니다(멱등) — 턴이 중복 방송되거나 타이머가 두 벌 걸리지 않습니다.
@@ -405,7 +483,8 @@ function startNightTurnSequence(io, session, deps = {}) {
         nowFn: deps.nowFn ?? Date.now,
         setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
         clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout,
-        durationMs: deps.turnDurationMs ?? gameSessionCore.NIGHT_TURN_DURATION_MS,
+        // null이면 "명시 주입 없음" — 턴마다 세션 설정에서 그 직업의 길이를 유도한다.
+        durationMs: deps.turnDurationMs ?? null,
     }
     nightTurnRuns.set(session.id, run)
     advanceNightTurn(run)
@@ -422,6 +501,222 @@ function stopNightTurnSequence(gameId) {
     }
     nightTurnRuns.delete(gameId)
     delete run.session.nightTurnRole
+}
+
+// gameId → 진행 중인 낮 페이즈 타이머 run. nightTurnRuns와 짝이 되는 구조이며 세션당 최대
+// 하나만 존재한다. 밤 턴 run과 별도의 Map인 이유는 두 타이머의 수명이 겹치지 않기 때문이다 —
+// 낮 타이머는 phase가 DAY인 동안만, 밤 턴 타이머는 NIGHT인 동안만 산다.
+const dayPhaseRuns = new Map()
+
+/** 낮 하위 구간 전이는 참가자 전원이 이미 가입해 있는 세션 channel에 한 번만 방송한다. */
+function emitDayPhaseEvent(run, event, payload) {
+    try {
+        run.io.to(run.session.channelId).emit(event, payload)
+    } catch (err) {
+        console.error('[낮 페이즈 방송 실패]', { code: 'DELIVERY_ERROR', event, gameId: run.session.id })
+    }
+}
+
+/**
+ * 예약 시점의 낮 상태가 지금도 그대로인지 확인합니다. 만료 콜백은 이 검사를 통과할 때만
+ * 진행합니다 — 조기 전이·재투표·판정으로 상태가 이미 바뀐 뒤 도착한 타이머가 다음 구간을
+ * 잘못 끝내는 것을 막습니다(endNightTurn의 role 대조와 같은 역할).
+ */
+function matchesScheduledDayState(run) {
+    const { session } = run
+    if (session.phase !== 'DAY') return false
+    if (session.dayIndex !== run.scheduledFor.dayIndex) return false
+    if (gameSessionCore.getDayPhase(session) !== run.scheduledFor.dayPhase) return false
+    return gameSessionCore.getDayVoteRound(session) === run.scheduledFor.round
+}
+
+/**
+ * 현재 낮 상태에 맞는 타이머를 새로 겁니다(이미 걸린 타이머는 해제합니다). 세션이 낮을 벗어나
+ * 있으면 run 자체를 정리합니다 — 낮이 아닌 동안에는 낮 타이머가 존재하지 않는다는 것이
+ * 이 구조의 불변식입니다.
+ */
+function scheduleDayPhaseTimer(run) {
+    const { session } = run
+    if (run.timerId !== null) {
+        run.clearTimeoutFn(run.timerId)
+        run.timerId = null
+    }
+    if (session.phase !== 'DAY') {
+        stopDayPhaseTimer(session.id)
+        return
+    }
+
+    const dayPhase = gameSessionCore.getDayPhase(session)
+    const isVote = dayPhase === gameSessionCore.DAY_PHASES.VOTE
+    const durationMs = isVote ? run.voteDurationMs : run.discussionDurationMs
+    run.scheduledFor = {
+        dayIndex: session.dayIndex,
+        dayPhase,
+        round: gameSessionCore.getDayVoteRound(session),
+    }
+    run.deadline = run.nowFn() + durationMs
+    run.timerId = run.setTimeoutFn(
+        isVote ? () => expireDayVoteWithAbstentions(run) : () => expireDayDiscussion(run),
+        durationMs,
+    )
+}
+
+/**
+ * dayDiscussionTime 만료 — 토론을 닫고 DAY_VOTE를 엽니다. 전이 자체는 "전원 준비"와 동일한
+ * canonical mutation(enterDayVotePhase) 하나만 쓰고, 방송도 같은 이벤트·같은 빌더를 씁니다
+ * (자동 전환과 수동 전환이 클라이언트에게 구별되지 않아야 합니다). 전이 직후 곧바로 투표
+ * 제한시간을 겁니다.
+ */
+function expireDayDiscussion(run) {
+    const { session } = run
+    if (dayPhaseRuns.get(session.id) !== run) return
+    if (!matchesScheduledDayState(run)) return
+
+    try {
+        gameSessionCore.enterDayVotePhase(session)
+    } catch (err) {
+        console.error('[낮 토론 만료 처리 실패]', { code: 'TRANSITION_ERROR', gameId: session.id })
+        return
+    }
+
+    emitDayPhaseEvent(run, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
+    scheduleDayPhaseTimer(run)
+}
+
+/**
+ * dayVoteTime 만료 — 아직 투표하지 않은 생존자를 기권으로 기록한 뒤, 수동 판정(resolve_day_vote)과
+ * 정확히 같은 경로(prepareDayVoteResolution → commitDayVoteResolution → day_vote_resolved 방송)로
+ * 그 낮을 해소합니다. 그래서 재투표(REVOTE)·재판(TRIBUNAL)·밤(TIE/ABSTAINED) 중 어디로 가는지는
+ * 이 함수가 아니라 기존 판정 규칙이 정합니다.
+ *
+ * 기권 기록도 game-core의 submitDayVote(targetId: null)를 그대로 통과시킵니다 —
+ * expireNightTurnWithAbstentions와 같은 이유로, canonical 가드를 우회한 표를 집계에 넣지
+ * 않기 위함입니다.
+ *
+ * 판정 요청자로는 참가자 uuid 하나를 씁니다(누구를 고르든 결과가 같은 계산이고, prepare가
+ * registry 일관성을 확인할 대상이 필요할 뿐입니다). REVOTE면 다음 라운드의 투표 제한시간을
+ * 다시 걸고, 그 외에는 phase가 DAY를 벗어나므로 run이 정리됩니다.
+ */
+function expireDayVoteWithAbstentions(run) {
+    const { session } = run
+    if (dayPhaseRuns.get(session.id) !== run) return
+    if (!matchesScheduledDayState(run)) return
+
+    for (const voterUuid of gameSessionCore.getEligibleDayVoterUuids(session)) {
+        if (session.dayVotes.has(voterUuid)) continue
+        try {
+            gameSessionCore.submitDayVote(voterUuid, session.id, null)
+        } catch (err) {
+            console.error('[낮 투표 만료 기권 기록 실패]', { code: 'ABSTAIN_ERROR', uuid: voterUuid, gameId: session.id })
+        }
+    }
+
+    const requesterUuid = session.players.keys().next().value
+    let prepared
+    try {
+        prepared = gameSessionCore.prepareDayVoteResolution(requesterUuid, session.id, session.dayIndex)
+    } catch (err) {
+        console.error('[낮 투표 만료 판정 실패]', { code: 'PREPARE_UNEXPECTED_ERROR', gameId: session.id })
+        return
+    }
+    if (!prepared.ok) {
+        console.error('[낮 투표 만료 판정 실패]', { code: prepared.code, gameId: session.id })
+        return
+    }
+    // 만료와 수동 판정이 거의 동시에 도착해 이미 판정된 경우다 — 재commit·재방송하지 않고,
+    // 타이머만 현재 상태에 맞춰 다시 건다(수동 판정 경로가 하는 일과 같다).
+    if (prepared.alreadyResolved) {
+        scheduleDayPhaseTimer(run)
+        return
+    }
+
+    let committed
+    try {
+        committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution)
+    } catch (err) {
+        console.error('[낮 투표 만료 판정 실패]', { code: 'COMMIT_ERROR', gameId: session.id })
+        return
+    }
+    if (!committed.ok) {
+        console.error('[낮 투표 만료 판정 실패]', { code: committed.code, gameId: session.id })
+        return
+    }
+
+    const resolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution)
+    let recipients = []
+    try {
+        recipients = resolveSessionParticipantSockets(run.io, session)
+    } catch (err) {
+        console.error('[낮 투표 만료 판정 실패]', { code: 'RECIPIENT_RESOLVE_ERROR', gameId: session.id })
+    }
+    for (const recipientSocket of recipients) {
+        try {
+            recipientSocket.emit('day_vote_resolved', resolvedPayload)
+        } catch (err) {
+            console.error('[낮 투표 만료 판정 실패]', { code: 'DELIVERY_ERROR', gameId: session.id })
+        }
+    }
+
+    scheduleDayPhaseTimer(run)
+}
+
+/**
+ * 이 세션의 낮 타이머를 현재 상태(DAY_DISCUSSION / DAY_VOTE)에 맞춰 겁니다. 이미 돌고 있는
+ * run이 있으면 그 run의 deps를 유지한 채 다시 걸고, 없으면 새로 만듭니다 — 호출자는 전부
+ * "낮 상태가 방금 바뀐" 지점(최초 DAY 진입·투표 개시·밤 판정 후 새 낮·재투표 개시)이므로,
+ * 다시 거는 것이 곧 새 구간의 제한시간을 시작하는 것입니다.
+ *
+ * 세션이 낮이 아니면 아무 타이머도 걸지 않고 기존 run을 정리합니다(재판·밤·종료로 넘어간
+ * 낮의 타이머가 남아 나중에 발화하는 일을 막습니다).
+ *
+ * deps로 nowFn·setTimeoutFn·clearTimeoutFn과 discussionDurationMs·voteDurationMs를 주입할 수
+ * 있습니다 — 주입하지 않으면 각각 Date.now·setTimeout·clearTimeout과 세션 설정
+ * (timerSettings.dayDiscussionTime/dayVoteTime, 초 단위)을 쓰고, 설정도 없으면 game-core의
+ * 기본 상수로 폴백합니다.
+ */
+function startDayPhaseTimer(io, session, deps = {}) {
+    if (!session) return null
+    if (session.phase !== 'DAY') {
+        stopDayPhaseTimer(session.id)
+        return null
+    }
+
+    let run = dayPhaseRuns.get(session.id)
+    if (!run) {
+        const timerSettings = session.timerSettings
+        const secondsToMs = (seconds, fallbackMs) =>
+            Number.isInteger(seconds) && seconds > 0 ? seconds * 1000 : fallbackMs
+        run = {
+            io,
+            session,
+            timerId: null,
+            deadline: null,
+            scheduledFor: null,
+            nowFn: deps.nowFn ?? Date.now,
+            setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
+            clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout,
+            discussionDurationMs:
+                deps.discussionDurationMs ??
+                secondsToMs(timerSettings?.dayDiscussionTime, gameSessionCore.DAY_DISCUSSION_DURATION_MS),
+            voteDurationMs:
+                deps.voteDurationMs ?? secondsToMs(timerSettings?.dayVoteTime, gameSessionCore.DAY_VOTE_DURATION_MS),
+        }
+        dayPhaseRuns.set(session.id, run)
+    }
+
+    scheduleDayPhaseTimer(run)
+    return dayPhaseRuns.get(session.id) ?? null
+}
+
+/** 진행 중인 낮 페이즈 타이머를 중단합니다(대기 중인 타이머도 해제). stopNightTurnSequence의 짝. */
+function stopDayPhaseTimer(gameId) {
+    const run = dayPhaseRuns.get(gameId)
+    if (!run) return
+    if (run.timerId !== null) {
+        run.clearTimeoutFn(run.timerId)
+        run.timerId = null
+    }
+    dayPhaseRuns.delete(gameId)
 }
 
 /**
@@ -928,6 +1223,16 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
         return
     }
 
+    // 밤이 판정됐으므로 그 밤의 턴 시퀀스는 어떤 경우에도 끝난다. 낮으로 넘어갔으면(비종결)
+    // 그 낮의 토론 제한시간을 시작하고, 승자가 확정돼 ENDED가 됐으면 낮 타이머도 걸지 않는다
+    // (startDayPhaseTimer가 phase 가드로 스스로 정리한다).
+    try {
+        stopNightTurnSequence(prepared.session.id)
+        startDayPhaseTimer(io, prepared.session)
+    } catch (err) {
+        console.error('[밤 행동 판정 오류]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: prepared.session.id })
+    }
+
     // commit(=commitNightResolution)이 이미 phase/dayIndex를 갱신한 뒤의 session을 받는다 —
     // recipient마다 동일한 payload이므로 루프 밖에서 한 번만 만들어 재사용한다. 기존 필드 조립과
     // terminal 필드 병합은 별도 try 블록이다 — 기존 조립이 실패해도 terminal이 있으면 최소
@@ -1146,6 +1451,15 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
         // prepare~commit 사이 다른 이벤트로 세션이 ENDED로 전이됐을 수 있다(신뢰 경계 재검증 실패).
         respondResolveDayVote(uuid, prepared.session.id, callback, { ok: false, code: committed.code, message: '요청을 처리할 수 없습니다.' })
         return
+    }
+
+    // 판정으로 낮 상태가 바뀌었다 — REVOTE면 다음 라운드의 투표 제한시간을 새로 걸고, 재판·밤·
+    // 종료로 넘어갔으면 남은 낮 타이머를 정리한다(그러지 않으면 이미 끝난 라운드의 타이머가
+    // 나중에 발화한다). ack보다 먼저 해서 콜백이 던져도 타이머 상태가 어긋나지 않게 한다.
+    try {
+        startDayPhaseTimer(io, prepared.session)
+    } catch (err) {
+        console.error('[낮 투표 판정 오류]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: prepared.session.id })
     }
 
     respondResolveDayVote(uuid, prepared.session.id, callback, {
@@ -1420,6 +1734,15 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
  */
 function finalizeGameSessionEnd(io, session, reason) {
     try {
+        // 종료된 세션에는 진행할 밤 턴도 낮 구간도 없다 — 대기 중인 타이머를 여기서 반드시
+        // 해제해야 이미 사라진 세션을 나중에 건드리는 콜백이 남지 않는다.
+        stopNightTurnSequence(session.id)
+        stopDayPhaseTimer(session.id)
+    } catch (err) {
+        console.error('[GameSession 종료 시 타이머 정리 실패]', err)
+    }
+
+    try {
         matchmaking.cleanupRoomStateForSessionParticipants(io, [...session.players.keys()])
     } catch (err) {
         console.error('[GameSession 종료 시 matchmaking 정리 실패]', err)
@@ -1652,5 +1975,8 @@ module.exports = {
         startNightTurnSequence,
         stopNightTurnSequence,
         computeEmptyTurnDelayMs,
+        resolveNightTurnDurationMs,
+        startDayPhaseTimer,
+        stopDayPhaseTimer,
     },
 }
