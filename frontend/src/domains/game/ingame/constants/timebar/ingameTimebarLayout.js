@@ -44,6 +44,17 @@ export const INGAME_TIMEBAR_ARROW_SIZE_CLASS =
 export const INGAME_TIMEBAR_NODE_ACTIVE_CLASS =
   "brightness-110 drop-shadow-[0_0_10px_rgba(212,168,67,0.85)]"
 
+/**
+ * 밤 역할 턴 줄 — 지금 어느 직업의 차례이고 몇 초 남았는지를 상시로 보여주는 한 줄.
+ * 안내 오버레이(2.6초 뒤 사라짐)와 달리 턴이 끝날 때까지 남아 있어야 하므로 시간바 스택 안에
+ * 따로 자리를 잡는다.
+ */
+export const INGAME_TIMEBAR_NIGHT_TURN_CLASS =
+  "pointer-events-none self-end rounded border border-[#d8b982]/45 bg-black/65 px-[clamp(0.4rem,2.4cqi,0.75rem)] py-[clamp(0.12rem,0.9cqi,0.3rem)] text-center font-subheading text-[clamp(0.6rem,3.1cqi,0.85rem)] font-bold leading-none tracking-wide text-[#ffe2ad]"
+
+/** 남은 시간 숫자 — 역할 표기와 같은 줄에서 살짝 흐리게 */
+export const INGAME_TIMEBAR_NIGHT_TURN_COUNTDOWN_CLASS = "ml-1 text-[#e9d6ba]"
+
 /** 좌측 일차 라벨 텍스트 스타일 */
 export const INGAME_TIMEBAR_DAY_LABEL_CLASS =
   "pointer-events-none text-center font-subheading text-[clamp(0.62rem,3.35cqi,0.9rem)] font-bold leading-none tracking-wide text-[#2a1810] [text-shadow:0_1px_0_rgba(255,255,255,0.35)]"

@@ -3,6 +3,11 @@ import { create } from "zustand"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
 import { applySessionSnapshotPure } from "./applySessionSnapshot.js"
 
+// 밤 역할 턴을 "아직 아무 턴도 방송되지 않음"으로 되돌리는 패치. 밤을 벗어나거나 새 밤에
+// 들어갈 때마다 같은 두 필드를 함께 비우기 위해 한 곳에 모아둔다 — 한쪽만 비우면 역할과
+// 남은 시간이 서로 다른 턴을 가리키게 된다.
+const CLEARED_NIGHT_TURN = Object.freeze({ nightTurnRole: null, nightTurnDeadline: null })
+
 /**
  * 서버 인게임 상태를 보관하는 클라이언트 store.
  * 도메인 판정은 서버 game-core가 담당하고, 프론트는 동기화된 상태를 렌더링만 합니다.
@@ -106,6 +111,10 @@ export const useInGameStore = create((set) => ({
             phase: "ENDED",
             dayIndex: payload.dayIndex,
             dayPhase: null, // 낮을 벗어났다 — dayPhase는 phase === "DAY"일 때만 의미가 있다.
+            // 밤을 벗어났다 — 역할 턴은 phase === "NIGHT"일 때만 의미가 있다. 여기서 비우지
+            // 않으면 지난 밤의 마지막 턴이 다음 밤으로 이월돼, 그 밤의 첫 turn 방송이 도착하기
+            // 전에 엉뚱한 역할의 안내가 한 장 뜬다.
+            ...CLEARED_NIGHT_TURN,
             players: nextPlayers,
             ...(payload.winResult ? { winResult: payload.winResult } : {}),
           },
@@ -130,9 +139,57 @@ export const useInGameStore = create((set) => ({
           phase: payload.phase,
           dayIndex: payload.dayIndex,
           dayPhase: "DAY_DISCUSSION",
+          // 밤을 벗어났다 — 위 ENDED 분기와 같은 이유로 역할 턴을 비운다.
+          ...CLEARED_NIGHT_TURN,
           players: nextPlayers,
         },
       }
+    }),
+
+  // night_turn_started 방송(밤 안의 역할 턴 전이)을 반영한다. 호출부
+  // (useGameSessionSocketEvents)가 이미 parseNightTurnStartedPayload로 검증한 값만 넘기지만,
+  // 다른 apply* 액션과 동일한 이유로 여기서도 독립적으로 gameId/phase/dayIndex를 재확인한다.
+  //
+  // 여기 담기는 nightTurnRole이 곧 selectInGameNightTurnRole이 읽는 canonical 턴이다.
+  // 이 값이 없는 구간에는 로컬 시작 역할을 추정하지 않고 다음 서버 방송을 기다린다.
+  //
+  // 생존 여부는 어디에서도 보지 않는다. 백엔드는 생존자가 없는 역할의 턴도 똑같이 돌리고
+  // 똑같은 payload를 방송하므로(부채널 차단), 그 성질을 그대로 통과시켜야 죽은 역할의 턴에도
+  // 모든 참가자 화면에 안내가 동일하게 뜬다.
+  applyNightTurnStarted: (parsed) =>
+    set((current) => {
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return current
+      if (typeof parsed.gameId !== "string" || parsed.gameId.trim().length === 0) return current
+      if (!current.gameId || !current.state) return current
+      if (parsed.gameId !== current.gameId) return current
+      // 역할 턴은 밤에만 의미가 있다. 서버는 NIGHT 전이 방송(day_vote_resolved 등)을 보낸
+      // "뒤에" 턴 시퀀스를 시작하므로, 정상 경로에서 이 게이트에 걸리는 일은 없다 — 늦게
+      // 도착한 이전 밤의 턴이 낮·재판 화면에 새어드는 것을 막는 방어다.
+      if (current.state.phase !== "NIGHT") return current
+      if (!Number.isInteger(parsed.dayIndex) || parsed.dayIndex !== current.state.dayIndex) return current
+      if (typeof parsed.role !== "string" || parsed.role.length === 0) return current
+      if (!Number.isFinite(parsed.deadline) || parsed.deadline <= 0) return current
+      // 같은 턴의 중복 방송은 참조 보존 no-op — 안내는 canonical 턴이 실제로 바뀔 때만 열려야
+      // 하므로, 같은 값의 재방송이 리렌더나 안내 재생을 만들지 않게 한다.
+      if (current.state.nightTurnRole === parsed.role && current.state.nightTurnDeadline === parsed.deadline) {
+        return current
+      }
+
+      return { state: { ...current.state, nightTurnRole: parsed.role, nightTurnDeadline: parsed.deadline } }
+    }),
+
+  // night_turn_ended는 서버가 현재 역할 턴을 끝냈다는 canonical 방송이다. 현재 턴과 정확히
+  // 일치할 때만 role/deadline을 함께 비우고, 늦은 종료 방송은 참조 보존 no-op으로 버린다.
+  applyNightTurnEnded: (parsed) =>
+    set((current) => {
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return current
+      if (typeof parsed.gameId !== "string" || parsed.gameId.trim().length === 0) return current
+      if (!current.gameId || !current.state || parsed.gameId !== current.gameId) return current
+      if (current.state.phase !== "NIGHT") return current
+      if (!Number.isInteger(parsed.dayIndex) || parsed.dayIndex !== current.state.dayIndex) return current
+      if (typeof parsed.role !== "string" || parsed.role !== current.state.nightTurnRole) return current
+
+      return { state: { ...current.state, ...CLEARED_NIGHT_TURN } }
     }),
 
   // day_phase_changed 방송(낮 안의 DAY_DISCUSSION→DAY_VOTE 전이)을 반영한다. 호출부
@@ -176,7 +233,9 @@ export const useInGameStore = create((set) => ({
         return { state: { ...current.state, phase: "TRIBUNAL", dayPhase: null, tribunal: { defendantUuid } } }
       }
       if (outcome === "TIE" || outcome === "ABSTAINED") {
-        return { state: { ...current.state, phase: "NIGHT", dayPhase: null } }
+        // 새 밤은 항상 "아직 어떤 턴도 방송되지 않은" 상태에서 시작한다. 첫
+        // night_turn_started가 도착하기 전까지 role/deadline은 비어 있어야 한다.
+        return { state: { ...current.state, phase: "NIGHT", dayPhase: null, ...CLEARED_NIGHT_TURN } }
       }
       return current
     }),

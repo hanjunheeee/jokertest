@@ -614,6 +614,7 @@ test("useInGameActionPanel: NIGHT에서 본인이 사망 상태면 nightActionsL
     state: {
       phase: "NIGHT",
       dayIndex: 1,
+      nightTurnRole: "JOKER",
       self: { role: "JOKER", uuid: "p1" },
       players: [{ uuid: "p1", alive: false }],
       events: [],
@@ -639,6 +640,7 @@ test("useInGameActionPanel: NIGHT에서 본인이 생존 상태고 판정 요청
     state: {
       phase: "NIGHT",
       dayIndex: 1,
+      nightTurnRole: "JOKER",
       self: { role: "JOKER", uuid: "p1" },
       players: [{ uuid: "p1", alive: true }],
       events: [],
@@ -661,6 +663,7 @@ test("useInGameActionPanel: 세션 컨텍스트가 비어 있으면 생존 게�
     state: {
       phase: "NIGHT",
       dayIndex: 1,
+      nightTurnRole: "JOKER",
       self: { role: "JOKER", uuid: "p1" },
       players: [{ uuid: "p1", alive: true }],
       events: [],

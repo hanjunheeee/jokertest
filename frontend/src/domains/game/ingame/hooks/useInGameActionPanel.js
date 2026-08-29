@@ -9,6 +9,8 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
 import { buildNightActionTargets } from "../utils/buildNightActionTargets.js"
 import { buildDayVoteTargets, isSessionPlayerAlive } from "../utils/buildDayVoteTargets.js"
+import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
+import { isInGameNightTurnActor } from "../utils/isInGameNightTurnActor.js"
 import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
 import { useInGameDayVoteSubmit } from "./useInGameDayVoteSubmit.js"
 import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
@@ -242,10 +244,20 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   // localSessionPlayer가 undefined면 isSessionPlayerAlive가 true(생존 취급)를 돌려주는 기존
   // 폴백을 그대로 승계한다 — 세션 컨텍스트가 비어도 잠금 정책이 바뀌지 않는다.
   const nightActionAlive = isSessionPlayerAlive(localSessionPlayer)
+  // 지금 어느 역할 턴인지는 안내 오버레이와 정확히 같은 selector에서 읽는다 — 두 화면이 서로
+  // 다른 턴을 가리키지 않게 하려면 판정원이 하나여야 한다. 새 구독을 만들지 않고 이미 구독 중인
+  // gameState에서 유도하므로, 턴이 바뀌는 그 렌더에서 함께 갱신된다.
+  const nightTurnRole = selectInGameNightTurnRole(gameState ?? null)
+  // 내 턴인가. 활성(일치)과 비활성(불일치·턴 없음)을 이 하나의 값으로만 가른다.
+  const isNightTurnActor = isInGameNightTurnActor(nightTurnRole, myRole)
   const nightActionsLocked =
     interactionBlocked ||
     isGameEnded ||
     !nightActionAlive ||
+    // 내 직업의 턴이 아니면 제출할 수 없다 — 서버도 진행 중인 턴이 아닌 제출을 거부하므로
+    // (backend handleSubmitNightAction), 이 게이트는 그 거부를 UI에서 미리 반영한다. 죽은
+    // 역할의 턴이든 산 역할의 턴이든 판정은 같다(턴 진행 자체가 생존 정보를 흘리지 않는다).
+    !isNightTurnActor ||
     resolveNightRequest.status !== "idle" ||
     gameState?.phase !== "NIGHT"
 
@@ -431,6 +443,8 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     skipNightAction,
     nightActionAlive,
     nightActionsLocked,
+    nightTurnRole,
+    isNightTurnActor,
     resolveNight: resolveNightRequest.resolveNight,
     resolveNightStatus: resolveNightRequest.status,
     resolveNightError: resolveNightRequest.error,
