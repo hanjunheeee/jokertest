@@ -1,17 +1,31 @@
-import test from "node:test"
+import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import React from "react"
 import { act, renderHook } from "@testing-library/react"
 import { JSDOM } from "jsdom"
-import { InGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
-import { useInGameActionPanel } from "../hooks/useInGameActionPanel.js"
-import { useInGameStore } from "../store/ingameStore.js"
-import { setSocket } from "../../../../shared/socket/socketClient.js"
-import { buildPlayerSessionSourceFromGameState } from "../utils/buildPlayerSessionSourceFromGameState.js"
-import { buildInGamePreviewPlayers } from "../utils/buildInGamePreviewPlayers.js"
-import { mergeSourcePlayerWithPreview } from "../utils/mergeSourcePlayerWithPreview.js"
-import { selectInGameSelfAlive } from "../utils/selectInGameSelfAlive.js"
-import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
+
+// 이 시나리오는 실제 화면과 같은 방식으로 세션 컨텍스트를 만들기 위해
+// buildInGamePreviewPlayers를 쓴다. 그 안의 초상·프레임 픽커는 "@/shared/..." Vite alias로 PNG
+// 에셋을 끌어오므로 node --test가 해석하지 못한다 — 여기서 보는 계약은 생존 게이트뿐이라 두
+// 픽커를 통째로 대체한다(buildInGamePreviewPlayers.test.js와 동일한 관례: mock.module 등록
+// 이후 동적 import로 대상 모듈을 가져온다. 정적 import는 mock 등록보다 먼저 평가되므로 이
+// 아래 프로젝트 모듈은 반드시 동적으로 가져와야 한다).
+mock.module("../utils/pickInGameJobPortrait.js", {
+  namedExports: { pickInGameJobPortrait: (index) => `portrait-${index}` },
+})
+mock.module("../utils/pickInGamePlayerFrame.js", {
+  namedExports: { pickInGamePlayerFrame: (index) => `frame-${index}` },
+})
+
+const { InGamePlayerSessionContext } = await import("../components/InGamePlayerSessionContext.js")
+const { useInGameActionPanel } = await import("../hooks/useInGameActionPanel.js")
+const { useInGameStore } = await import("../store/ingameStore.js")
+const { setSocket } = await import("../../../../shared/socket/socketClient.js")
+const { buildPlayerSessionSourceFromGameState } = await import("../utils/buildPlayerSessionSourceFromGameState.js")
+const { buildInGamePreviewPlayers } = await import("../utils/buildInGamePreviewPlayers.js")
+const { mergeSourcePlayerWithPreview } = await import("../utils/mergeSourcePlayerWithPreview.js")
+const { selectInGameSelfAlive } = await import("../utils/selectInGameSelfAlive.js")
+const { INGAME_PREVIEW_PLAYER_COUNT } = await import("../constants/board/ingamePlayerBoard.js")
 
 // ---------------------------------------------------------------------------
 // AC-03 · 1일차 재판 → 밤 판정 → 2일차 낮 통합 시나리오
