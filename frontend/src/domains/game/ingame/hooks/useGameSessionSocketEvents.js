@@ -8,6 +8,7 @@ import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
 import { parseNightResultAppliedPayload } from "../utils/parseNightResultAppliedPayload.js"
 import { parseDayPhaseChangedPayload } from "../utils/parseDayPhaseChangedPayload.js"
+import { parseNightTurnStartedPayload } from "../utils/parseNightTurnStartedPayload.js"
 import { parseDayVoteResolvedPayload } from "./useInGameActionPanel.js"
 
 /** 인게임 store와 matching store를 함께 초기화하고 로비로 이동하는 finalizer를 만든다. */
@@ -103,6 +104,24 @@ export function useGameSessionSocketEvents() {
       useInGameStore.getState().applyDayPhaseChanged(parsed)
     }
 
+    // 밤 역할 턴 전이(어느 직업의 차례가 시작됐는가) 방송이다. 검증에 필요한 gameId/dayIndex는
+    // 호출 시점의 store에서 직접 읽는다(위 handleNightResultApplied와 동일한 이유).
+    //
+    // 이 구독은 역할·생존과 무관하게 모든 참가자에게 똑같이 걸린다 — 서버도 생존자가 없는
+    // 역할의 턴을 똑같이 돌리고 같은 payload를 세션 channel 전체에 방송하므로, 여기서 역할별·
+    // 생존별로 나눠 구독하면 죽은 직업의 턴 안내만 조용히 사라진다.
+    const handleNightTurnStarted = (payload) => {
+      const current = useInGameStore.getState()
+      if (!current.gameId || !current.state) return
+      const parsed = parseNightTurnStartedPayload({
+        payload,
+        gameId: current.gameId,
+        dayIndex: current.state.dayIndex,
+      })
+      if (!parsed) return
+      useInGameStore.getState().applyNightTurnStarted(parsed)
+    }
+
     // TRIBUNAL 판정 완료 방송이다. 위 세 핸들러와 달리 별도 파서를 거치지 않고 raw payload를
     // 그대로 store에 넘긴다 — applyTribunalResolved(→applyTribunalResolvedPure)가 gameId/
     // dayIndex/phase/defendantUuid 4종을 canonical과 비교해 stale이면 참조를 그대로 보존한다.
@@ -115,6 +134,7 @@ export function useGameSessionSocketEvents() {
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("day_vote_resolved", handleDayVoteResolved)
     socket.on("day_phase_changed", handleDayPhaseChanged)
+    socket.on("night_turn_started", handleNightTurnStarted)
     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
     return () => {
       socket.off("game_ended", handleGameEnded)
@@ -122,6 +142,7 @@ export function useGameSessionSocketEvents() {
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("day_vote_resolved", handleDayVoteResolved)
       socket.off("day_phase_changed", handleDayPhaseChanged)
+      socket.off("night_turn_started", handleNightTurnStarted)
       socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
     }
   }, [socket, navigate])
