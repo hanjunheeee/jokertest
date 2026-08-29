@@ -30,6 +30,31 @@ function isNonEmptyString(value) {
 }
 
 /**
+ * 새로고침으로 메모리 store가 완전히 비었을 때 서버 스냅샷 자체를 신뢰 경계의 씨앗으로
+ * 삼아 기존의 엄격한 applySessionSnapshotPure 검증을 재사용한다. 인증된 socket의 서버가
+ * 돌려준 self/roster만으로 최소 current를 만든 뒤, 최종 store 형태는 한 경로에서 조립한다.
+ */
+export function bootstrapSessionSnapshotPure(response) {
+  if (response === null || typeof response !== "object" || Array.isArray(response)) return null
+  if (!isNonEmptyString(response.gameId)) return null
+  if (!Array.isArray(response.players) || response.players.length === 0) return null
+  if (response.self === null || typeof response.self !== "object" || Array.isArray(response.self)) return null
+  if (!isNonEmptyString(response.self.uuid)) return null
+
+  const seed = {
+    gameId: response.gameId,
+    state: {
+      id: response.gameId,
+      players: response.players.map((player) => ({ uuid: player?.uuid })),
+      self: { uuid: response.self.uuid },
+    },
+  }
+  const patch = applySessionSnapshotPure(seed, response)
+  if (patch === seed) return null
+  return { gameId: response.gameId, ...patch }
+}
+
+/**
  * get_session_snapshot 재접속 응답(신뢰하지 않는 외부 입력)을 store에 통째로 반영할지 판정하는
  * 순수 함수. 전체 payload(roster/self/phase별 결과 필드)를 끝까지 검증한 뒤에만 단일 원자적
  * 교체를 수행하고, 하나라도 어긋나면 원래 current 참조를 그대로 반환한다(부분 반영 없음).
@@ -67,6 +92,7 @@ export function applySessionSnapshotPure(current, response) {
     if (!isNonEmptyString(player.nickname)) return current
     if (typeof player.isAlive !== "boolean") return current
     if (typeof player.isConnected !== "boolean") return current
+    if (Object.hasOwn(player, "themeIndex") && !isNonNegativeInteger(player.themeIndex)) return current
     if (rosterByUuid.has(player.uuid)) return current
     rosterByUuid.set(player.uuid, player)
   }
@@ -230,7 +256,11 @@ export function applySessionSnapshotPure(current, response) {
     nickname: p.nickname,
     alive: p.isAlive,
     isConnected: p.isConnected,
-    ...(themeIndexByUuid.has(p.uuid) ? { themeIndex: themeIndexByUuid.get(p.uuid) } : {}),
+    ...(isNonNegativeInteger(p.themeIndex)
+      ? { themeIndex: p.themeIndex }
+      : themeIndexByUuid.has(p.uuid)
+        ? { themeIndex: themeIndexByUuid.get(p.uuid) }
+        : {}),
   }))
 
   const nextSelf = {

@@ -214,6 +214,104 @@ function registerMatchmakingHandlers(io, socket, uuid) {
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
 }
 
+// ── 재접속 유예(새로고침 대비) ───────────────────────────────────────────────
+// 새로고침은 서버에게 "disconnect 후 새 connect"로만 보인다. 예전처럼 disconnect 즉시 방에서
+// 빼면 재접속 직후의 get_current_room은 언제나 room:null을 돌려줘 대기방이 복구되지 않았다.
+// 그래서 disconnect는 곧바로 제거하지 않고 짧은 유예를 예약하고, 그 안에 "나 아직 이 방에
+// 있다"는 확인(get_current_room의 성공 응답)이 오면 예약을 취소한다.
+const ROOM_RECONNECT_GRACE_MS = 15 * 1000
+
+/** uuid → { roomId, timer, run } — 유예 중인 방 제거 예약 */
+const pendingRoomRemovals = new Map()
+
+// uuid → 마지막으로 "이 방에 있음"이 확인된 순번. 벽시계 대신 단조 증가 카운터를 쓴다 —
+// 예약과 확인이 같은 밀리초에 일어나도 순서 판정이 뒤집히면 안 되기 때문이다.
+let roomPresenceTick = 0
+const roomPresenceConfirmedTick = new Map()
+
+/** get_current_room이 실제 방을 확인해 준 순간을 기록한다(유예 만료 시 판정 기준). */
+function markRoomPresenceConfirmed(uuid) {
+    roomPresenceTick += 1
+    roomPresenceConfirmedTick.set(uuid, roomPresenceTick)
+}
+
+/** 유예 중인 제거 예약을 취소한다. 예약이 없으면 아무 일도 하지 않는다. */
+function cancelRoomRetention(uuid) {
+    const pending = pendingRoomRemovals.get(uuid)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pendingRoomRemovals.delete(uuid)
+}
+
+/** 지금 이 uuid로 살아있는 소켓 하나를 찾는다(없으면 null). 유예 만료 시 채널 정리에 쓴다. */
+function findLiveSocketForUuid(io, uuid) {
+    for (const candidate of io?.sockets?.sockets?.values?.() ?? []) {
+        if (candidate?.data?.user?.uuid !== uuid) continue
+        if (candidate.connected === false) continue
+        return candidate
+    }
+    return null
+}
+
+/**
+ * disconnect 시점의 즉시 제거를 대신하는 예약이다. 유예가 끝날 때까지 재접속 확인이 없었을
+ * 때에만 실제로 방에서 뺀다. 예약 이후에 확인이 왔는지를 순번(tick)으로 판정하므로,
+ * "확인 → 뒤늦은 disconnect" 순서로 도착해도 방금 돌아온 사용자를 내쫓지 않는다.
+ */
+function scheduleRoomRetentionOnDisconnect(io, socket, uuid) {
+    const roomId = playerRoom.get(uuid)
+    if (!roomId) return
+
+    cancelRoomRetention(uuid) // 같은 uuid의 예약은 언제나 가장 최근 것 하나만 남긴다
+    const scheduledTick = roomPresenceTick
+
+    const run = () => {
+        pendingRoomRemovals.delete(uuid)
+        // 예약 이후에 재접속 확인이 왔다면(순번이 더 크다면) 사용자는 이미 돌아온 것이다.
+        if ((roomPresenceConfirmedTick.get(uuid) ?? -1) > scheduledTick) return
+        // 유예 중에 다른 방으로 옮겼거나 이미 정리됐다면 지금 방은 건드리지 않는다.
+        if (playerRoom.get(uuid) !== roomId) return
+        // 재접속은 했지만 대기방으로 돌아오지 않은 경우(예: 로비로 이동) 그 새 소켓이
+        // 채널에 남아 있을 수 있어, 살아있는 소켓을 찾아 leave까지 함께 처리한다.
+        removeFromRoom(io, findLiveSocketForUuid(io, uuid), uuid)
+    }
+
+    const timer = setTimeout(run, ROOM_RECONNECT_GRACE_MS)
+    // 이 타이머 하나 때문에 프로세스가 종료되지 않는 일이 없게 한다(정리는 어차피 유예 목적).
+    if (typeof timer.unref === 'function') timer.unref()
+
+    pendingRoomRemovals.set(uuid, { roomId, timer, run })
+}
+
+/**
+ * 재접속(새로고침·다른 기기 로그인) 직후 새 소켓을 원래 대기방 채널에 다시 넣는다.
+ * 채널 재가입이 없으면 복구된 클라이언트는 player_joined_room·host_changed·room_deleted·
+ * game_started 방송을 하나도 받지 못하고, handleStartGame의 "참가자 전원이 Room channel에
+ * 있어야 한다" 검사에도 걸려 방 전체가 게임을 시작할 수 없게 된다.
+ *
+ * 소속(playerRoom)은 여기서 만들지 않는다 — 이미 있는 소속의 라우팅만 되돌린다. 유예 예약도
+ * 취소하지 않는다 — 재접속했지만 대기방 화면으로 돌아오지 않은 사용자는 유예가 끝나면
+ * 정상적으로 방에서 빠져야 하고, "정말 대기방에 있다"는 확인은 get_current_room만 준다.
+ */
+async function resyncRoomChannelOnReconnect(socket, uuid) {
+    if (!socket) return
+
+    const roomId = playerRoom.get(uuid)
+    if (!roomId) return
+
+    const room = gameRooms.get(roomId)
+    if (!room || !room.players.has(uuid)) return
+
+    // 이 소켓의 뒤늦은 disconnect도 아래 onDisconnect의 ABA 가드를 통과하도록 결합해 둔다.
+    if (socket.data) socket.data.activeRoomId = roomId
+
+    try {
+        await socket.join(roomId)
+    } catch (err) {
+        console.error('\x1b[31m[방 채널 재가입 실패]\x1b[0m', err)
+    }
+}
+
 /**
  * ABA 방지: 이 uuid가 매칭 큐/Room을 처리하던 Socket이 지금 disconnect한 그 Socket이 맞는지
  * 확인한다. 방/코드 참가·생성·큐 매칭 시 그 Socket에 결합해 둔 canonical roomId
@@ -221,6 +319,9 @@ function registerMatchmakingHandlers(io, socket, uuid) {
  * Room 소속에 대한 뒤늦은 신호이므로 지금의(다른 Socket이 만든) Room을 잘못 정리하지
  * 않도록 건드리지 않는다. 결합이 아예 없는 Socket(레거시 경로·테스트 등)은 기존처럼
  * 무조건 정리한다 — 이 가드는 실제로 결합이 있는데 값이 다를 때만 개입한다.
+ *
+ * 가드를 통과해도 곧바로 제거하지 않는다 — 새로고침과 진짜 이탈을 disconnect만으로는
+ * 구분할 수 없으므로, 판단을 유예로 미룬다(scheduleRoomRetentionOnDisconnect).
  */
 function onDisconnect(io, socket, uuid) {
     const queuedEntry = matchmakingQueue.get(uuid)
@@ -234,7 +335,7 @@ function onDisconnect(io, socket, uuid) {
     const expectedRoomId = socket?.data?.activeRoomId
     if (expectedRoomId !== undefined && expectedRoomId !== currentRoomId) return
 
-    removeFromRoom(io, socket, uuid)
+    scheduleRoomRetentionOnDisconnect(io, socket, uuid)
 }
 
 async function handleJoinMatchmaking(io, socket, uuid) {
@@ -860,9 +961,15 @@ function handleGetCurrentRoom(uuid, callback) {
     // roomCode 등 초대 정보를 돌려주는 사고로 이어질 수 있다.
     if (!room || !room.players.has(uuid)) {
         playerRoom.delete(uuid) // 깨진 매핑은 정리해 다음 조회부터 일관되게 "없음"으로 응답한다
+        cancelRoomRetention(uuid) // 매핑이 사라졌으니 유예 예약도 함께 버린다
         callback({ ok: true, room: null })
         return
     }
+
+    // 여기까지 왔다는 것은 이 사용자가 지금 이 방의 실제 참가자임을 서버가 확인했다는 뜻이다.
+    // 새로고침 직후의 재조회도 이 경로로 들어오므로, 이 확인을 유예 취소 신호로 쓴다.
+    markRoomPresenceConfirmed(uuid)
+    cancelRoomRetention(uuid)
 
     callback({ ok: true, room: buildRoomPayload(room) })
 }
@@ -1130,6 +1237,10 @@ function resolveParticipantSockets(io, uuids, roomId) {
 }
 
 function removeFromRoom(io, socket, uuid) {
+    // 실제 제거가 일어나는 유일한 지점이므로, 유예 중인 예약은 여기서 항상 정리한다
+    // (명시적 leave_room·방 삭제·세션 종료 정리로 먼저 빠지는 경우도 모두 여기를 지난다).
+    cancelRoomRetention(uuid)
+
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
 
@@ -1274,6 +1385,27 @@ function __resetStateForTests() {
     playerRoom.clear()
     pendingRoomTransitions.clear()
     startedRoomMarks.clear()
+    // 예약된 타이머를 지우지 않으면 다음 테스트가 도는 도중에 이전 테스트의 제거가 끼어든다.
+    for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
+    pendingRoomRemovals.clear()
+    roomPresenceConfirmedTick.clear()
+    roomPresenceTick = 0
+}
+
+/**
+ * 테스트 전용: 유예 중인 방 제거 예약을 지금 즉시 만료시킵니다(실제 타이머를 기다리지 않기
+ * 위함). 만료 판정 로직은 프로덕션 경로와 완전히 같은 함수를 그대로 실행합니다.
+ */
+function __flushRoomRetentionForTests() {
+    for (const pending of [...pendingRoomRemovals.values()]) {
+        clearTimeout(pending.timer)
+        pending.run()
+    }
+}
+
+/** 테스트 전용: 지금 유예 중인 uuid 목록입니다. */
+function __getPendingRoomRemovalsForTests() {
+    return [...pendingRoomRemovals.entries()].map(([uuid, { roomId }]) => [uuid, roomId])
 }
 
 /**
@@ -1319,8 +1451,12 @@ function __removeRoomForTests(roomId) {
 module.exports = {
     registerMatchmakingHandlers,
     onDisconnect,
+    resyncRoomChannelOnReconnect,
     cleanupRoomStateForSessionParticipants,
+    ROOM_RECONNECT_GRACE_MS,
     __resetStateForTests,
+    __flushRoomRetentionForTests,
+    __getPendingRoomRemovalsForTests,
     __getStateSnapshotForTests,
     __seedMatchmakingQueueForTests,
     __seedRoomForTests,

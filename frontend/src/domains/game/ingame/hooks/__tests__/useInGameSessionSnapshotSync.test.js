@@ -147,7 +147,7 @@ function buildValidSnapshotResponse({ gameId, playerUuid = "player-1", nickname 
     gameId,
     phase,
     dayIndex,
-    players: [{ uuid: playerUuid, nickname, isAlive: true, isConnected: true }],
+    players: [{ uuid: playerUuid, nickname, isAlive: true, isConnected: true, themeIndex: 0 }],
     self: { uuid: playerUuid, nickname, role, team, hasActedThisPhase: false },
   }
 }
@@ -590,4 +590,48 @@ test("cleanup은 이 훅이 등록한 connect 핸들러만 정확한 참조로 �
     "cleanup은 이 훅이 등록한 connect 핸들러 하나만 정확한 참조로 off해야 한다",
   )
   assert.equal(fake.connectHandlers.size, 0)
+})
+
+test("빈 인게임 store로 새로고침하면 gameId 없는 스냅샷을 요청해 현재 게임을 복원한다", async () => {
+  useInGameStore.setState({ gameId: null, state: null, error: null })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  assert.equal(hook.result.current, "checking")
+  assert.equal(fake.emitWithAckCalls.length, 1)
+  assert.deepEqual(fake.emitWithAckCalls[0].payload, {})
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve(buildValidSnapshotResponse({
+      gameId: "g-recovered",
+      phase: "ROLE_REVEAL",
+    }))
+    await flushMicrotasks()
+  })
+
+  assert.equal(useInGameStore.getState().gameId, "g-recovered")
+  assert.equal(useInGameStore.getState().state.phase, "ROLE_REVEAL")
+  assert.equal(hook.result.current, "recovered")
+  hook.unmount()
+})
+
+test("빈 인게임 store에 활성 게임이 없다는 응답이 오면 missing으로 확정한다", async () => {
+  useInGameStore.setState({ gameId: null, state: null, error: null })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve({ ok: false, code: "SESSION_NOT_FOUND" })
+    await flushMicrotasks()
+  })
+
+  assert.equal(useInGameStore.getState().gameId, null)
+  assert.equal(hook.result.current, "missing")
+  hook.unmount()
 })

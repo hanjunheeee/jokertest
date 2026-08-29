@@ -191,6 +191,8 @@ test('참가자 disconnect 후 public_rooms_updated 방송에 인원 감소가 �
 
     io.emitted.length = 0
     matchmaking.onDisconnect(io, joiner, 'disconnect-broadcast-joiner')
+    // disconnect는 이제 재접속 유예 예약이다 — 재접속 확인 없이 유예가 끝난 경우를 재현한다.
+    matchmaking.__flushRoomRetentionForTests()
 
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
     assert.ok(broadcast, 'disconnect 후 목록 방송이 있어야 합니다')

@@ -3,7 +3,6 @@ const jwt    = require("jsonwebtoken");
 const cookie = require("cookie");
 
 const presenceService = require("../service/presence.service");
-const userRepository  = require("../repositories/user.repositories");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
 // 동시 접속 값은 onlineUsers와 활성 GameSession에서 매번 파생한다. 별도 증감 상태를 두지 않아
@@ -126,6 +125,11 @@ async function handleConnection(io, socket, uuid) {
     await Promise.all([
         presenceService.setPresence(uuid, "ONLINE"),
         broadcastFriendStatus(io, uuid, "ONLINE"),
+        // 새로고침·재접속으로 새로 만들어진 이 소켓을 원래 대기방 채널에 다시 넣는다.
+        // 반드시 위의 기존 소켓 kick 이후에 실행돼야 한다 — kick이 일으키는 disconnect가
+        // matchmaking에 "재접속 유예"를 예약하므로, 재가입이 그보다 앞서면 방금 예약된
+        // 유예가 이 소켓의 상태를 덮어써 버린다.
+        matchmaking.resyncRoomChannelOnReconnect(socket, uuid),
     ]);
 }
 
@@ -134,10 +138,15 @@ async function handleDisconnect(io, socket, uuid) {
     if (onlineUsers.get(uuid) !== socket.id) return;
 
     onlineUsers.delete(uuid);
+    // presence(친구 목록의 온라인 표시)만 내린다. 인증 세션(user_sessions.is_online)은
+    // 여기서 건드리지 않는다 — 새로고침도 서버에는 socket disconnect로만 보이므로, 예전처럼
+    // userRepository.recordLogout(uuid)을 부르면 verifyToken이 다음 요청부터 그 세션을
+    // "이미 내려간 세션"으로 보고 401을 돌려줘, 새로고침만으로 로그아웃되는 문제가 생겼다.
+    // 인증 세션을 내리는 일은 명시적 /auth/logout과 새 로그인 시의
+    // markOnlineSessionsOffline(중복 로그인 정리)만 담당한다.
     await Promise.all([
         presenceService.setPresence(uuid, "OFFLINE"),
         broadcastFriendStatus(io, uuid, "OFFLINE"),
-        userRepository.recordLogout(uuid),
     ]);
 }
 
@@ -161,5 +170,5 @@ module.exports = {
     initSocket,
     emitToUser,
     __getOnlineUsersForTests,
-    __testables: { registerConnectionHandlers, registerDisconnectHandler },
+    __testables: { registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect },
 };

@@ -2582,6 +2582,7 @@ function canIncludeDayTribunalFields(session) {
  */
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
+    const themeIndices = buildPlayerThemeIndices(session)
     const fields = {
         gameId: session.id,
         phase: session.phase,
@@ -2590,10 +2591,13 @@ function buildSessionSnapshot(session, uuid) {
         // (nightResult/tribunal의 선택 필드 관례와 동일). 이 값이 없으면 재접속 클라이언트가
         // 토론과 투표를 구분하지 못해 그 낮에 갇힌다.
         ...(session.phase === 'DAY' ? { dayPhase: getDayPhase(session) } : {}),
-        players: [...session.players.values()].map(({ uuid: pUuid, nickname, alive }) => ({
+        players: [...session.players.values()].map(({ uuid: pUuid, nickname, alive }, index) => ({
             uuid: pUuid,
             nickname,
             isAlive: alive,
+            // game_started와 같은 session-id 기반 순열을 다시 계산한다. 메모리 store가 사라진
+            // 새로고침에서도 참가자별 색·보드 슬롯이 최초 진입과 정확히 같아진다.
+            themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
         })),
         self: {
             ...buildViewerRoleFields(session, viewer),

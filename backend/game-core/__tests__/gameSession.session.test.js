@@ -601,9 +601,23 @@ test('슬라이스1: 초기 DAY 재접속 스냅샷은 DAY/dayIndex 1과 요청�
     assert.equal(result.snapshot.self.role, session.players.get('s7a').role)
     assert.equal(result.snapshot.self.hasActedThisPhase, false) // 아직 이 DAY에 투표하지 않았다
     for (const player of result.snapshot.players) {
-        assert.deepEqual(Object.keys(player).sort(), ['isAlive', 'nickname', 'uuid'])
+        assert.deepEqual(Object.keys(player).sort(), ['isAlive', 'nickname', 'themeIndex', 'uuid'])
+        assert.equal(Number.isInteger(player.themeIndex), true)
     }
     assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, 's7a'))
+})
+
+test('재접속 스냅샷은 game_started와 같은 결정적 플레이어 themeIndex를 공개 roster에 보존한다', () => {
+    const uuids = ['s7-theme-a', 's7-theme-b', 's7-theme-c']
+    const session = commitRoleRevealSession({ id: 'room-slice1-theme-snapshot', uuids })
+    const result = getSessionSnapshotForPlayer(uuids[0], session.id)
+    const repeated = getSessionSnapshotForPlayer(uuids[0], session.id)
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.snapshot.players, repeated.snapshot.players)
+    assert.equal(new Set(result.snapshot.players.map((player) => player.themeIndex)).size, uuids.length)
+    assert.ok(result.snapshot.players.every((player) => Number.isInteger(player.themeIndex)))
+    assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, uuids[0]))
 })
 
 // ---------------------------------------------------------------------------
@@ -1333,7 +1347,8 @@ test('getSessionSnapshotForPlayer: 5개 역할 전원(NIGHT) — 공개 roster/�
         const result = getSessionSnapshotForPlayer(viewerUuid, session.id)
         assert.equal(result.ok, true)
         for (const player of result.snapshot.players) {
-            assert.deepEqual(Object.keys(player).sort(), ['isAlive', 'nickname', 'uuid'])
+            assert.deepEqual(Object.keys(player).sort(), ['isAlive', 'nickname', 'themeIndex', 'uuid'])
+            assert.equal(Number.isInteger(player.themeIndex), true)
         }
         assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, viewerUuid))
     }
@@ -1512,8 +1527,14 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.notEqual(daySnapshot.snapshot.nightResult.dayIndex, session.nightResolution.dayIndex) // 0 !== 1
     assert.deepEqual(
         daySnapshot.snapshot.players.find((p) => p.uuid === 'snB3'),
-        { uuid: 'snB3', nickname: session.players.get('snB3').nickname, isAlive: false },
+        {
+            uuid: 'snB3',
+            nickname: session.players.get('snB3').nickname,
+            isAlive: false,
+            themeIndex: daySnapshot.snapshot.players.find((p) => p.uuid === 'snB3').themeIndex,
+        },
     )
+    assert.equal(Number.isInteger(daySnapshot.snapshot.players.find((p) => p.uuid === 'snB3').themeIndex), true)
 
     const dayOutcome = resolveDayVotes(session, { snB1: 'snB2', snB2: 'snB1', snB4: 'snB1' })
     assert.deepEqual(dayOutcome, { ok: true })

@@ -151,7 +151,7 @@ exports.getMyProfile = async (uuid) => {
     };
 };
 
-exports.recordLogout = async (user_id) => {
+exports.recordLogout = async (user_id, session_id) => {
     const lastLogin = await db.LoginHistory.findOne({
         where: { user_id, success: true, logout_at: null },
         order: [['login_at', 'DESC']],
@@ -161,6 +161,6 @@ exports.recordLogout = async (user_id) => {
     }
     await db.UserSession.update(
         { is_online: false },
-        { where: { user_id, is_online: true } }
+        { where: { id: session_id, user_id, is_online: true } }
     );
 };

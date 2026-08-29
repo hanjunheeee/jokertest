@@ -118,10 +118,20 @@ test("로그아웃 흐름은 회귀 없이 동작한다", async (t) => {
     const originalHistory = db.LoginHistory;
     const originalBan = db.UserBan;
     const updates = [];
+    const sessions = new Map([
+        ["session-1", { id: "session-1", user_id: "uuid-1", is_online: true }],
+        ["session-2", { id: "session-2", user_id: "uuid-1", is_online: true }],
+    ]);
 
     db.UserSession = {
-        findOne: async ({ where }) => ({ id: where.id, user_id: "uuid-1", is_online: true }),
-        update:  async (values, options) => { updates.push({ values, options }); return [1]; },
+        findOne: async ({ where }) => sessions.get(where.id) ?? null,
+        update:  async (values, options) => {
+            updates.push({ values, options });
+            const session = sessions.get(options.where.id);
+            if (!session || session.user_id !== options.where.user_id || session.is_online !== true) return [0];
+            Object.assign(session, values);
+            return [1];
+        },
     };
     db.LoginHistory = { findOne: async () => null };
     db.UserBan = { findOne: async () => null };
@@ -140,7 +150,13 @@ test("로그아웃 흐름은 회귀 없이 동작한다", async (t) => {
     assert.equal(res.status, 200);
     assert.equal((await res.json()).success, true);
     assert.deepEqual(updates.at(-1).values, { is_online: false });
-    assert.deepEqual(updates.at(-1).options.where, { user_id: "uuid-1", is_online: true });
+    assert.deepEqual(updates.at(-1).options.where, {
+        id: "session-1",
+        user_id: "uuid-1",
+        is_online: true,
+    });
+    assert.equal(sessions.get("session-1").is_online, false);
+    assert.equal(sessions.get("session-2").is_online, true, "다른 유효 세션까지 종료하면 안 됩니다");
 });
 
 test("활성 밴은 이미 로그인된 토큰도 다음 REST 요청에서 403으로 막는다", async (t) => {

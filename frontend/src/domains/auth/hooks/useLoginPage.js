@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { getMeApi, loginApi, signupApi } from "@/domains/auth/api/auth.api"
-import { selectIsAuthenticated, useAuthStore } from "@/domains/auth/store/auth.store"
+import { getMeApi, loginApi, signupApi } from "../api/auth.api.js"
+import { selectIsAuthenticated, useAuthStore } from "../store/auth.store.js"
 
 const INITIAL_FORM_DATA = { email: "", password: "", nickname: "" }
 
@@ -52,12 +52,12 @@ export function useLoginPage() {
         alert("회원가입이 완료되었습니다! 로그인해주세요.")
         setIsSignupMode(false)
       } else {
-        const { user } = await loginApi(formData)
+        const { user } = await loginApi({ ...formData, rememberMe })
         login(user)
         navigate("/lobby")
       }
     } catch (error) {
-      console.error("API 통신 에러:", error)
+      console.error("API 통신 에러")
       alert(error.message || "서버와 연결할 수 없습니다.")
     } finally {
       setIsSubmitting(false)

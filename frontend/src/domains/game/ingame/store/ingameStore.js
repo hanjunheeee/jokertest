@@ -1,7 +1,7 @@
 // 파일 역할: ingameStore.js - 전역 상태 store입니다.
 import { create } from "zustand"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
-import { applySessionSnapshotPure } from "./applySessionSnapshot.js"
+import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "./applySessionSnapshot.js"
 
 // 밤 역할 턴을 "아직 아무 턴도 방송되지 않음"으로 되돌리는 패치. 밤을 벗어나거나 새 밤에
 // 들어갈 때마다 같은 두 필드를 함께 비우기 위해 한 곳에 모아둔다 — 한쪽만 비우면 역할과
@@ -253,6 +253,16 @@ export const useInGameStore = create((set) => ({
       const patch = applySessionSnapshotPure(current, response)
       if (patch === current) return current
       return { ...patch, snapshotSeq: current.snapshotSeq + 1 }
+    }),
+
+  // 브라우저 새로고침으로 메모리 store가 비었어도 인증된 서버의 현재 세션 스냅샷을 한 번에
+  // 복원한다. 이미 게임 상태가 있으면 기존 신뢰 경계를 우회하지 않도록 반드시 no-op 한다.
+  bootstrapSessionSnapshot: (response) =>
+    set((current) => {
+      if (current.gameId || current.state) return current
+      const patch = bootstrapSessionSnapshotPure(response)
+      if (!patch) return current
+      return { ...patch, error: null, snapshotSeq: current.snapshotSeq + 1 }
     }),
 
   setGameError: (error) => set({ error }),

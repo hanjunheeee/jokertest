@@ -2,6 +2,7 @@ const authService       = require("../service/auth.service");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
+const { buildSessionCookieOptions, clearSessionCookie } = require("../auth/cookieOptions");
 
 exports.signup = async (req, res, next) => {
     try {
@@ -23,11 +24,7 @@ exports.login = async (req, res, next) => {
 
         const { user, token } = await authService.login(req.body, reqInfo);
 
-        res.cookie("accessToken", token, {
-            httpOnly: true,
-            secure:   process.env.NODE_ENV === "production",
-            sameSite: "Lax",
-        });
+        res.cookie("accessToken", token, buildSessionCookieOptions(req.body?.rememberMe));
 
         res.status(200).json({
             success: true,
@@ -60,12 +57,8 @@ exports.me = async (req, res, next) => {
 
 exports.logout = async (req, res, next) => {
     try {
-        await userRepository.recordLogout(req.user.uuid);
-        res.clearCookie("accessToken", {
-            httpOnly: true,
-            secure:   process.env.NODE_ENV === "production",
-            sameSite: "Lax",
-        });
+        await userRepository.recordLogout(req.user.uuid, req.user.sessionId);
+        clearSessionCookie(res);
         res.status(200).json({ success: true, message: "성공적으로 로그아웃 되었습니다." });
     } catch (error) {
         next(error);

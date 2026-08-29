@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -17,6 +17,7 @@ export function useInGameSessionSnapshotSync() {
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
   const gameId = useInGameStore((s) => s.gameId)
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
+  const [bootstrapStatus, setBootstrapStatus] = useState(gameId ? "ready" : "checking")
 
   const mountedRef = useRef(true)
   const epochVersionRef = useRef(0)
@@ -31,7 +32,7 @@ export function useInGameSessionSnapshotSync() {
   }, [])
 
   useEffect(() => {
-    if (!socket || !gameId || !authUuid) return
+    if (!socket || !authUuid) return
 
     // StrictMode의 setup→cleanup→setup 재실행은 deps가 완전히 같은 채로 이 effect 본문을
     // 다시 부른다 — 이때는 epochBaseRef와 현재 값이 같으므로 새 세대로 보지 않는다. 반면
@@ -57,7 +58,7 @@ export function useInGameSessionSnapshotSync() {
 
       requestSocket
         .timeout(SESSION_SNAPSHOT_TIMEOUT_MS)
-        .emitWithAck("get_session_snapshot", { gameId: requestGameId })
+        .emitWithAck("get_session_snapshot", requestGameId ? { gameId: requestGameId } : {})
         .then((response) => {
           const stale = isStaleSessionSnapshotAckResponse({
             mounted: mountedRef.current,
@@ -71,6 +72,15 @@ export function useInGameSessionSnapshotSync() {
             currentSocket: getSocket(),
           })
           if (stale) return
+          if (!requestGameId) {
+            if (response?.ok !== true) {
+              setBootstrapStatus("missing")
+              return
+            }
+            useInGameStore.getState().bootstrapSessionSnapshot(response)
+            setBootstrapStatus(useInGameStore.getState().gameId ? "recovered" : "missing")
+            return
+          }
           // 3A가 이미 완성한 원자적 검증/병합(applySessionSnapshotPure)에 그대로 위임한다 —
           // 형태가 잘못됐거나 ok:false인 응답은 그 함수 내부에서 참조 보존 no-op으로 처리되므로
           // 여기서 별도로 응답 형태를 분기하지 않는다.
@@ -78,6 +88,7 @@ export function useInGameSessionSnapshotSync() {
         })
         .catch(() => {
           // 타임아웃/전송 오류: 조용히 무시한다. 다음 재연결이 새 세대로 다시 요청한다.
+          if (!requestGameId) setBootstrapStatus("failed")
         })
     }
 
@@ -101,4 +112,6 @@ export function useInGameSessionSnapshotSync() {
       socket.off("connect", handleConnect)
     }
   }, [socket, gameId, authUuid])
+
+  return bootstrapStatus
 }

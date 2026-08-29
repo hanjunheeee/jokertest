@@ -35,7 +35,7 @@ export default function InGamePage() {
   // 재접속/재연결 시 get_session_snapshot으로 현재 phase까지의 상태를 원자적으로 복원한다.
   // 이후 이벤트 단위 실시간 동기화(night_result_applied 등)는 useGameSessionSocketEvents가
   // 별도로 담당한다 — 이 훅은 그 사이에 놓친 스냅샷만 재접속 시점에 채워 넣는다.
-  useInGameSessionSnapshotSync()
+  const snapshotSyncStatus = useInGameSessionSnapshotSync()
   // 인게임 오버레이 스택 — 역할 공개, DAY/NIGHT 진입 연출, 밤 역할 턴 안내의 표시 순서를
   // 한 곳에서 결정한다(useInGameOverlayStack 참고). 각 오버레이가 서로의 상태를 알아야 하므로
   // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
@@ -56,9 +56,10 @@ export default function InGamePage() {
   const isValidGameSession = Boolean(gameId) && Boolean(gameState) && gameState.id === gameId
 
   useEffect(() => {
+    if (snapshotSyncStatus === "checking") return
     if (isValidGameSession) return
     navigate("/multiplay", { replace: true })
-  }, [isValidGameSession, navigate])
+  }, [isValidGameSession, navigate, snapshotSyncStatus])
 
   if (!isValidGameSession) return null
 
