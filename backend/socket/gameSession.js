@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto')
 const gameSessionCore = require('../game-core/gameSession')
 const matchmaking = require('./matchmaking')
+const gameResultRepository = require('../repositories/gameResult.repositories')
 
 // game-core가 내부 진단용으로만 반환하는 코드다(registry 불일치 등, 정상 경로에서는
 // 발생하지 않아야 함). 클라이언트에는 내부 상태를 노출하지 않고 항상 INTERNAL_ERROR로
@@ -129,6 +130,35 @@ function __resetStateForTests() {
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
     for (const [gameId, pending] of [...disconnectGraceRuns]) {
         for (const [uuid, run] of [...pending]) detachDisconnectGraceRun(gameId, uuid, run)
+    }
+}
+
+/**
+ * 종료된 한 판을 전적 테이블에 저장합니다 — 세 종결 지점(밤 판정 terminal · 재판 판정
+ * terminal · 세션 정리)이 공유하는 유일한 저장 훅입니다.
+ *
+ * 두 가지를 구조적으로 지킵니다.
+ *   1. 중복 호출은 프로세스 메모리가 아니라 game_results PK가 막습니다.
+ *   2. 저장은 게임 진행을 절대 막지 않는다 — 레코드 조립은 동기적으로 끝내(세션이 곧 정리돼도
+ *      값이 비지 않게) 두고, DB 왕복은 await하지 않으며 실패는 로그로만 남깁니다. 그래서 저장이
+ *      실패해도 뒤따르는 방송(game_ended 등)과 registry 정리는 예정대로 진행됩니다.
+ *
+ * @param {object} session - 종료(또는 중단)된 GameSession
+ * @param {boolean} completed - 정상 승패 확정 여부
+ * @param {string} [disconnectedUuid] - 중단시킨 이탈자 uuid
+ */
+function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
+    const gameId = session?.id
+    if (typeof gameId !== 'string' || !gameId) return
+    try {
+        // repository 호출 자체는 동기적으로 시작돼 세션 스냅샷을 먼저 만든다. 반환 Promise는
+        // 기다리지 않아 방송/정리를 막지 않으며, 중복 호출은 GameResult.id PK가 판정한다.
+        Promise.resolve(gameResultRepository.persistGameResult(session, { completed, disconnectedUuid }))
+            .catch(() => {
+                console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId })
+            })
+    } catch (err) {
+        console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId })
     }
 }
 
@@ -934,6 +964,9 @@ function expireDisconnectGrace(run) {
     }
 
     if (applied.terminal) {
+        // 끊김 사망으로 자연 승패가 확정된 판도 정상 완주다. 참가자가 결과 화면에서 나갈 때까지
+        // 기다리지 않고 ENDED 전이 직후 저장한다.
+        persistTerminalSession(session, { completed: true })
         try {
             // 승리가 확정돼 ENDED가 됐으므로 밤 턴 시퀀스와 낮 타이머를 모두 정리한다.
             syncSessionPhaseTimers(io, session)
@@ -1505,6 +1538,9 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
         } catch (err) {
             console.error('[밤 행동 판정 오류]', { code: 'TERMINAL_BUILD_ERROR', uuid, gameId: prepared.session.id })
         }
+        // 완주 종료의 두 경로 중 하나다. 저장은 여기서 딱 한 번 시작되고, 실패해도 아래의
+        // ACK·방송을 막지 않는다(payload 조립 실패와 같은 격리 정책).
+        persistTerminalSession(prepared.session, { completed: true })
     }
 
     if (!nightResultAppliedPayload) {
@@ -1930,6 +1966,8 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
         } catch (err) {
             console.error('[재판 판정 오류]', { code: 'TERMINAL_BUILD_ERROR', uuid, gameId: prepared.session.id })
         }
+        // 완주 종료의 나머지 한 경로다(handleResolveNight과 동일한 훅·동일한 격리 정책).
+        persistTerminalSession(prepared.session, { completed: true })
     }
 
     if (!resolvedPayload) {
@@ -1984,7 +2022,21 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
  * 요청이 gameRooms/playerRoom을 건드릴 수 없어야 함), 호출자는 이 함수를
  * endGameSessionForPlayer 성공 직후 await 없이 즉시 호출해야 한다.
  */
-function finalizeGameSessionEnd(io, session, reason) {
+function finalizeGameSessionEnd(io, session, reason, leftUuid) {
+    // 전적 저장을 가장 먼저 시도한다 — 아래 정리 단계가 세션에서 읽어갈 값을 지우기 전에
+    // 레코드를 동기적으로 확보하기 위함이다(DB 왕복 자체는 기다리지 않는다). 이 경로로 처음
+    // 들어온 세션은 승패가 확정되지 않은 중단 경기이고, 이미 저장된 세션(밤/재판 판정으로
+    // 완주한 판)은 repository의 GameResult.id PK 멱등 처리가 걸러낸다.
+    try {
+        const completed = session.phase === 'ENDED' && !!session.winResult
+        persistTerminalSession(session, {
+            completed,
+            disconnectedUuid: completed ? undefined : leftUuid,
+        })
+    } catch (err) {
+        console.error('[GameSession 종료 시 전적 저장 실패]', err)
+    }
+
     try {
         // 종료된 세션에는 진행할 밤 턴도 낮 구간도, 기다릴 재접속도 없다 — 대기 중인 타이머를
         // 여기서 반드시 해제해야 이미 사라진 세션을 나중에 건드리는 콜백이 남지 않는다.
@@ -2018,6 +2070,7 @@ function finalizeGameSessionEnd(io, session, reason) {
     } catch (err) {
         console.error('[GameSession channel 정리 실패]', err)
     }
+
 }
 
 /**
@@ -2071,7 +2124,7 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     // 실제로 지워진다 — 그 전까지는 세션이 여전히 존재하므로 game_ended 재방송·channel 정리를
     // 하지 않는다(비-ENDED 경로는 core가 항상 sessionDeleted:true를 반환하므로 회귀가 없다).
     if (result.sessionDeleted) {
-        finalizeGameSessionEnd(io, result.session, result.reason)
+        finalizeGameSessionEnd(io, result.session, result.reason, uuid)
     }
 }
 
@@ -2228,7 +2281,7 @@ async function onDisconnect(io, socket, uuid) {
     // handleLeaveGameSession과 동일한 이유로, 마지막 참가자 이탈일 때만 실제 정리를 수행한다.
     if (!result.sessionDeleted) return
 
-    finalizeGameSessionEnd(io, result.session, result.reason)
+    finalizeGameSessionEnd(io, result.session, result.reason, uuid)
 }
 
 /** 활성 GameSession registry의 read-only presence snapshot을 그대로 전달합니다. */
@@ -2260,6 +2313,8 @@ module.exports = {
         handleResolveTribunalVote,
         handleLeaveGameSession,
         handleGetSessionSnapshot,
+        finalizeGameSessionEnd,
+        persistTerminalSession,
         resolveJokerTeammateSockets,
         resolveChatRecipientSockets,
         resolveSessionParticipantSockets,

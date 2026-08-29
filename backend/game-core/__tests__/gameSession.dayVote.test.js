@@ -1011,6 +1011,7 @@ test('resolveTribunalVote: 유죄 피고인은 정확히 한 번 사망', () => 
     commitTribunalVoteResolution(prepared.session, prepared.resolution)
 
     assert.equal(session.players.get('tc3').alive, false)
+    assert.equal(session.players.get('tc3').deathReason, 'EXECUTION')
     assert.equal(session.players.get('tc1').alive, true)
     assert.equal(session.players.get('tc2').alive, true)
 })

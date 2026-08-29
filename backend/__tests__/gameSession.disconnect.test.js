@@ -280,6 +280,7 @@ test('AC-05: 만료가 먼저 도착하면 사망은 정확히 한 번이고, �
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS)
 
     assert.equal(session.players.get(doctorUuid).alive, false)
+    assert.equal(session.players.get(doctorUuid).deathReason, 'DISCONNECT')
     assert.equal(gameSessionCore.isForfeitedFromSession(session.id, doctorUuid), true)
     assert.equal(eliminationBroadcasts(io).length, 1)
     const endedDoctorTurns = turnEventLog(io).filter(([event, role]) => event === 'night_turn_ended' && role === 'DOCTOR')
