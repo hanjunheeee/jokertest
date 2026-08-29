@@ -404,6 +404,33 @@ test('night turn: dayIndex 때문에 아직 능력이 없는 WITCH_HUNTER 턴도
 // AC-05 — 죽은 직업 턴과 산 직업 턴의 payload가 구별 불가능하다
 // ---------------------------------------------------------------------------
 
+/**
+ * payload 키를 camelCase·snake_case 경계로 잘라 소문자 단어 목록으로 만든다.
+ *
+ * 부분 문자열이 아니라 단어 단위로 비교하는 것이 핵심이다 — 'deadline'은 'dead'를 품고 있지만
+ * AC-01이 명시적으로 요구하는 필드이고 생존 여부와 아무 관계가 없다. 부분 문자열로 검사하면
+ * 이 정상 필드가 위반으로 잡히고, 반대로 'aliveCount' 같은 진짜 누출 필드는 단어 경계가 '_'가
+ * 아니라 대문자라 놓치게 된다.
+ */
+function payloadKeyWords(key) {
+    return key
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .split(/[^A-Za-z0-9]+/)
+        .filter(Boolean)
+        .map((word) => word.toLowerCase())
+}
+
+/**
+ * 턴 payload에 등장해서는 안 되는 단어들. 생존 여부 그 자체(alive/dead)와, 생존 여부에서
+ * 파생되어 간접적으로 전멸을 알려주는 값(그 턴의 actor 수·남은 제출 수·종료 사유)을 모두 막는다.
+ */
+const ALIVENESS_LEAKING_WORDS = new Set([
+    'alive', 'dead', 'alives', 'deads',
+    'actor', 'actors', 'participant', 'participants',
+    'remaining', 'pending', 'count', 'size',
+    'reason', 'cause', 'submitted', 'skipped', 'empty',
+])
+
 test('night turn: 죽은 직업과 산 직업의 턴 방송이 같은 이벤트명·같은 필드 집합을 쓰고 role 외에는 값이 동일하다', () => {
     const { session, jokerUuid, doctorUuid } = commitFullRoleSessionAtNight()
     session.players.get(doctorUuid).alive = false
@@ -435,8 +462,22 @@ test('night turn: 죽은 직업과 산 직업의 턴 방송이 같은 이벤트�
     // 두 경로 모두 payload에 생존 관련 어떤 키도 담지 않는다.
     for (const b of [aliveStarted, deadStarted, aliveEnded, deadEnded]) {
         for (const key of Object.keys(b.payload)) {
-            assert.ok(!/alive|dead|actor|remaining|count|reason|submitted/i.test(key), `금지된 필드: ${key}`)
+            const leaked = payloadKeyWords(key).filter((word) => ALIVENESS_LEAKING_WORDS.has(word))
+            assert.deepEqual(leaked, [], `${b.event} payload의 금지된 필드: ${key}`)
         }
+    }
+})
+
+test('night turn: payload 키 단어 분해가 deadline은 통과시키고 생존 파생 필드는 잡아낸다', () => {
+    // 이 검사 자체가 오탐/미탐 없이 동작한다는 것을 고정한다 — AC-05의 단언이 의미를 가지려면
+    // 검사기가 정상 필드(deadline)를 걸지 않으면서 누출 필드는 표기법과 무관하게 잡아야 한다.
+    const leaks = (key) => payloadKeyWords(key).some((word) => ALIVENESS_LEAKING_WORDS.has(word))
+
+    for (const key of ['gameId', 'dayIndex', 'role', 'deadline']) {
+        assert.equal(leaks(key), false, `정상 필드가 위반으로 잡혔다: ${key}`)
+    }
+    for (const key of ['aliveCount', 'alive_count', 'isDead', 'actorUuids', 'remainingSubmissions', 'endReason']) {
+        assert.equal(leaks(key), true, `누출 필드를 놓쳤다: ${key}`)
     }
 })
 
