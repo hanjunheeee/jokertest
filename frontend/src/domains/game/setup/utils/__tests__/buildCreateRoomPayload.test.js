@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { buildCreateRoomPayload } from "../buildCreateRoomPayload.js"
+import { MEETING_GAME_SETUP, ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../../constants/gameSetupOptions.js"
 
 function state(overrides = {}) {
   return {
@@ -132,4 +133,75 @@ test("CUSTOM에서 AUTO로 되돌아가면 이전 custom 필드가 payload에 �
   assert.deepEqual(backToAuto, AUTO_PAYLOAD)
   assert.equal(Object.hasOwn(backToAuto, "roleCounts"), false)
   assert.equal(backToAuto.jokerCount, 2) // AUTO는 다시 기존 스테퍼 값을 쓴다
+})
+
+// ── 직업별 밤 제한시간 ───────────────────────────────────────────────────────
+
+/** 설정 화면이 실제로 만들어내는 초기 ranges 상태(스테퍼 항목의 기본값)를 그대로 재현한다. */
+function meetingTabRanges() {
+  const ranges = {}
+  for (const item of MEETING_GAME_SETUP) {
+    if (item.type === "stepper") ranges[item.id] = item.defaultValue
+  }
+  return ranges
+}
+
+test("직업별 밤 시간 스테퍼가 없으면 payload에 roleNightActionTimes를 만들지 않는다", () => {
+  // 필드가 없어야 서버가 nightActionTime으로 폴백한다 — 빈 객체를 보내면 안 된다.
+  const payload = buildCreateRoomPayload(state())
+  assert.equal(Object.hasOwn(payload, "roleNightActionTimes"), false)
+})
+
+test("설정 화면의 직업별 스테퍼 값이 역할 키로 그대로 전달된다", () => {
+  const payload = buildCreateRoomPayload(
+    state({
+      ranges: {
+        ...meetingTabRanges(),
+        "night-action-time-joker": 30,
+        "night-action-time-doctor": 60,
+        "night-action-time-guard": 120,
+        "night-action-time-witch-hunter": 90,
+      },
+    }),
+  )
+
+  assert.deepEqual(payload.roleNightActionTimes, {
+    JOKER: 30,
+    DOCTOR: 60,
+    GUARD: 120,
+    WITCH_HUNTER: 90,
+  })
+  // 전체 밤 행동 시간 필드는 그대로 남는다(지정하지 않은 직업의 폴백 대상이다).
+  assert.equal(payload.nightActionTime, 90)
+})
+
+test("회의&투표 탭 기본 상태에서도 네 직업의 값이 모두 실린다", () => {
+  const payload = buildCreateRoomPayload(state({ ranges: meetingTabRanges() }))
+  assert.deepEqual(Object.keys(payload.roleNightActionTimes), ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
+  for (const { role, id } of ROLE_NIGHT_ACTION_TIME_OPTIONS) {
+    const item = MEETING_GAME_SETUP.find((entry) => entry.id === id)
+    assert.ok(item, `${id} 스테퍼가 회의&투표 탭에 있다`)
+    assert.equal(payload.roleNightActionTimes[role], item.defaultValue)
+  }
+})
+
+test("일부 직업만 입력하면 그 직업만 실리고 나머지는 서버 폴백에 맡긴다", () => {
+  const payload = buildCreateRoomPayload(state({ ranges: { "night-action-time-guard": 120 } }))
+  assert.deepEqual(payload.roleNightActionTimes, { GUARD: 120 })
+})
+
+test("직업별 값도 보정하지 않고 그대로 실어 서버가 거부하게 한다", () => {
+  const payload = buildCreateRoomPayload(state({ ranges: { "night-action-time-joker": 45 } }))
+  assert.deepEqual(payload.roleNightActionTimes, { JOKER: 45 })
+})
+
+test("CUSTOM 역할 구성에서도 직업별 밤 시간이 그대로 유지된다", () => {
+  const payload = buildCreateRoomPayload(
+    state({
+      ranges: { "night-action-time-joker": 30 },
+      roleComposition: { mode: "custom", roleCounts: { JOKER: 3, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 } },
+    }),
+  )
+  assert.deepEqual(payload.roleNightActionTimes, { JOKER: 30 })
+  assert.equal(payload.jokerCount, 3)
 })

@@ -9,6 +9,23 @@
  * @returns {object} create_room emit에 실릴 payload
  */
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
+import { ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../constants/gameSetupOptions.js"
+
+/**
+ * 직업별 밤 제한시간 스테퍼 값을 서버 payload 형태({역할키: 초})로 모읍니다.
+ * 스테퍼 자체가 없는 상태(구버전 화면·직업별 설정을 아예 그리지 않는 호출부)에서는 키를 하나도
+ * 만들지 않고, 그러면 payload에 필드가 실리지 않아 서버가 nightActionTime으로 폴백합니다.
+ * roleCounts와 같은 원칙으로 값은 보정하지 않고 그대로 싣습니다 — 잘못된 값은 서버가 거부해야
+ * 하며, 여기서 조용히 고치면 사용자가 지정한 값과 달라집니다.
+ */
+function collectRoleNightActionTimes(ranges) {
+  const roleNightActionTimes = {}
+  for (const { role, id } of ROLE_NIGHT_ACTION_TIME_OPTIONS) {
+    if (!Object.hasOwn(ranges ?? {}, id)) continue
+    roleNightActionTimes[role] = ranges[id]
+  }
+  return roleNightActionTimes
+}
 
 export function buildCreateRoomPayload({ checks, ranges, roleComposition }) {
   const mode =
@@ -30,6 +47,11 @@ export function buildCreateRoomPayload({ checks, ranges, roleComposition }) {
     voteReveal: checks["vote-reveal"],
     roleCompositionMode: mode,
   }
+
+  const roleNightActionTimes = collectRoleNightActionTimes(ranges)
+  // 하나도 없으면 필드 자체를 만들지 않는다 — 빈 객체를 보내면 "전 직업 폴백"과 "지정했지만
+  // 아무 직업도 고르지 않음"이 서버 입장에서 구별되지 않는다.
+  if (Object.keys(roleNightActionTimes).length > 0) payload.roleNightActionTimes = roleNightActionTimes
 
   if (mode === ROLE_COMPOSITION_MODES.AUTO) {
     // AUTO에서는 roleCounts를 아예 만들지 않는다 — CUSTOM으로 갔다가 되돌아온 경우에도

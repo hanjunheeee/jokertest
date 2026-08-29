@@ -3096,6 +3096,13 @@ test('resolve_day_vote: ABSTAINED 판정도 phase가 NIGHT로 전이하며(dayIn
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.dayIndex, dayIndexBefore)
 
+    const turnStarts = io.broadcasts.filter((event) => event.event === 'night_turn_started')
+    assert.equal(turnStarts.length, 1)
+    assert.equal(turnStarts[0].roomId, session.channelId)
+    assert.equal(turnStarts[0].payload.gameId, session.id)
+    assert.equal(turnStarts[0].payload.role, 'JOKER')
+    assert.equal(Number.isInteger(turnStarts[0].payload.deadline), true)
+
     const nightSubmitResult = gameSessionCore.submitNightAction(jokerUuid, session.id, null)
     assert.deepEqual(nightSubmitResult, { ok: true, gameId: session.id })
 })
@@ -3152,6 +3159,10 @@ test('resolve_day_vote: registerGameHandlers로 실제 배선하면 socket.trigg
         outcome: 'ABSTAINED',
         tribunalTargetUuid: null,
     })
+    assert.equal(session.phase, 'NIGHT')
+    const turnStarts = io.broadcasts.filter((event) => event.event === 'night_turn_started')
+    assert.equal(turnStarts.length, 1)
+    assert.equal(turnStarts[0].payload.role, 'JOKER')
 })
 
 // ---------------------------------------------------------------------------
@@ -3300,6 +3311,13 @@ test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.dayIndex, dayIndexBefore)
     assert.equal(Object.hasOwn(session, 'winResult'), false)
+
+    const turnStarts = io.broadcasts.filter((event) => event.event === 'night_turn_started')
+    assert.equal(turnStarts.length, 1)
+    assert.equal(turnStarts[0].roomId, session.channelId)
+    assert.equal(turnStarts[0].payload.gameId, session.id)
+    assert.equal(turnStarts[0].payload.role, 'JOKER')
+    assert.equal(Number.isInteger(turnStarts[0].payload.deadline), true)
 
     const expectedPayload = gameSessionCore.buildTribunalVoteResolvedPayload(session)
     assert.deepEqual(Object.keys(expectedPayload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase'])
