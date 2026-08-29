@@ -9,6 +9,8 @@ const { assertNoForbiddenPrivateData, collectOtherPlayerRoleSecrets } = require(
 
 const {
     startNightTurnSequence,
+    stopNightTurnSequence,
+    startDayPhaseTimer,
     beginDisconnectGrace,
     cancelDisconnectGrace,
     expireDisconnectGrace,
@@ -175,7 +177,7 @@ function turnEventLog(io) {
 // AC-03 — 끊김 사망 공개 메시지에 role이 없다
 // ---------------------------------------------------------------------------
 
-test('AC-03: 유예 만료 사망 방송은 밤 사망과 동일한 공개 계약을 따르고 어디에도 role이 없다', () => {
+test('AC-03: 유예 만료 사망 방송은 끊김 전용 공개 계약이고 어디에도 role·밤 사망 원인이 없다', () => {
     const { session, jokerUuid, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac03' })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
@@ -193,19 +195,35 @@ test('AC-03: 유예 만료 사망 방송은 밤 사망과 동일한 공개 계�
     assert.equal(eliminated[0].roomId, session.channelId)
 
     const payload = eliminated[0].payload
-    // 공개 키 집합은 밤 판정 방송(buildNightResultAppliedPayload)과 정확히 같다.
-    assert.deepEqual(Object.keys(payload).sort(), ['dayIndex', 'deathReveals', 'gameId', 'phase', 'players', 'victimUuid'])
+    assert.deepEqual(Object.keys(payload).sort(), ['dayIndex', 'gameId', 'phase', 'players', 'victimUuid'])
     assert.equal(payload.victimUuid, doctorUuid)
-    assert.deepEqual(payload.deathReveals, [{ victimUuid: doctorUuid, source: 'UNKNOWN_NIGHT' }])
-    for (const reveal of payload.deathReveals) {
-        assert.deepEqual(Object.keys(reveal).sort(), ['source', 'victimUuid'])
-        assert.equal(Object.hasOwn(reveal, 'role'), false)
-    }
+    assert.equal(Object.hasOwn(payload, 'deathReveals'), false)
+    assert.equal(Object.hasOwn(session, 'nightResult'), false)
     for (const player of payload.players) assert.deepEqual(Object.keys(player).sort(), ['alive', 'uuid'])
 
     // role/team/executedRole 같은 비밀 키도, 다른 참가자의 role 값도 payload 어디에도 없다.
     assert.equal(JSON.stringify(payload).includes('role'), false)
     assertNoForbiddenPrivateData(payload, collectOtherPlayerRoleSecrets(session, doctorUuid))
+})
+
+test('AC-02: 자기 NIGHT 턴 도중 끊기면 새 제한시간이 아니라 이미 방송된 deadline의 남은 시간만 받는다', () => {
+    const { session, jokerUuid } = commitFullRoleSessionAtNight({ id: 'ac02-deadline' })
+    const { io, sockets } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, turnDurationMs: 1_000, randomFn: () => 0.5 })
+    assert.equal(session.nightTurnRole, 'JOKER')
+    clock.advance(400)
+
+    disconnectSocket(sockets, jokerUuid)
+    const grace = beginDisconnectGrace(io, session, jokerUuid, clock)
+    assert.equal(grace.deadline, clock.now() + 600)
+
+    clock.advance(599)
+    assert.equal(session.players.get(jokerUuid).alive, true)
+    clock.advance(1)
+    assert.equal(session.players.get(jokerUuid).alive, false)
+    assert.equal(eliminationBroadcasts(io).length, 1)
 })
 
 // ---------------------------------------------------------------------------
@@ -312,8 +330,8 @@ test('AC-04: 마지막 비-JOKER가 유예 만료로 사망하면 그 자리에�
     session.players.get(survivorUuid).alive = false
 
     disconnectSocket(sockets, victimUuid)
-    beginDisconnectGrace(io, session, victimUuid, clock)
-    clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS)
+    const run = beginDisconnectGrace(io, session, victimUuid, clock)
+    expireDisconnectGrace(run)
 
     assert.equal(session.phase, 'ENDED')
     assert.deepEqual(session.winResult, { winner: 'JOKER' })
@@ -330,8 +348,8 @@ test('AC-08: 유예 만료로 배제된 uuid는 같은 uuid로 돌아와도 스�
     const clock = createManualClock()
 
     disconnectSocket(sockets, doctorUuid)
-    beginDisconnectGrace(io, session, doctorUuid, clock)
-    clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS)
+    const run = beginDisconnectGrace(io, session, doctorUuid, clock)
+    expireDisconnectGrace(run)
     assert.equal(gameSessionCore.isForfeitedFromSession(session.id, doctorUuid), true)
 
     // 같은 uuid로 다시 접속한다(새 소켓, 같은 socket.id 규약).
@@ -352,10 +370,10 @@ test('AC-08: 유예 만료로 배제된 uuid는 같은 uuid로 돌아와도 스�
 })
 
 // ---------------------------------------------------------------------------
-// AC-06 — 새로고침 복원(스냅샷의 채팅 채널)
+// AC-06 — 새로고침 복원(기존 스냅샷 계약으로 phase/self 복원, 채널은 S4 selector가 유도)
 // ---------------------------------------------------------------------------
 
-test('AC-06: 재접속 스냅샷은 phase·자기 역할과 함께 접근 가능한 채팅 채널을 복원한다', () => {
+test('AC-06: 재접속 스냅샷은 phase·자기 역할·생존 상태를 복원하고 중복 chatChannels 계약을 만들지 않는다', () => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac06' })
     const { io, sockets } = wireSession(session)
 
@@ -368,8 +386,8 @@ test('AC-06: 재접속 스냅샷은 phase·자기 역할과 함께 접근 가능
     assert.equal(nightResponse.ok, true)
     assert.equal(nightResponse.phase, 'NIGHT')
     assert.equal(nightResponse.self.role, 'DOCTOR')
-    // 밤에는 자기 역할 채널만 열린다.
-    assert.deepEqual(nightResponse.self.chatChannels, ['DOCTOR'])
+    assert.equal(nightResponse.players.find(({ uuid }) => uuid === doctorUuid).isAlive, true)
+    assert.equal(Object.hasOwn(nightResponse.self, 'chatChannels'), false)
 
     gameSessionCore.__testables.enterDayPhase(session)
     const dayResponse = (() => {
@@ -379,6 +397,77 @@ test('AC-06: 재접속 스냅샷은 phase·자기 역할과 함께 접근 가능
     })()
 
     assert.equal(dayResponse.phase, 'DAY')
-    // 낮에는 공개 채널만 열린다(역할 채널은 밤 전용이다).
-    assert.deepEqual(dayResponse.self.chatChannels, ['DAY'])
+    assert.equal(dayResponse.self.role, 'DOCTOR')
+    assert.equal(Object.hasOwn(dayResponse.self, 'chatChannels'), false)
+})
+
+test('AC-02: NIGHT의 다른 역할 중 끊긴 참가자는 역할 턴 변화가 아니라 NIGHT→DAY 경계에서 만료한다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac02-night-boundary' })
+    const { io, sockets } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, turnDurationMs: 1_000, randomFn: () => 0.5 })
+    assert.equal(session.nightTurnRole, 'JOKER')
+    disconnectSocket(sockets, doctorUuid)
+    const run = beginDisconnectGrace(io, session, doctorUuid, clock)
+    assert.equal(run.timerId, null)
+
+    clock.advance(1_000)
+    assert.equal(session.players.get(doctorUuid).alive, true)
+    stopNightTurnSequence(session.id)
+    gameSessionCore.__testables.enterDayPhase(session)
+    startDayPhaseTimer(io, session, { ...clock, discussionDurationMs: 1_000, voteDurationMs: 1_000 })
+    assert.equal(session.players.get(doctorUuid).alive, false)
+})
+
+test('AC-02: DAY 하위 구간에서는 살아 있고 DAY→TRIBUNAL top-level 경계에서만 만료한다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac02-day-boundary' })
+    const { io, sockets } = wireSession(session)
+    const clock = createManualClock()
+    gameSessionCore.__testables.enterDayPhase(session)
+
+    disconnectSocket(sockets, doctorUuid)
+    const run = beginDisconnectGrace(io, session, doctorUuid, clock)
+    assert.equal(run.timerId, null)
+    gameSessionCore.enterDayVotePhase(session)
+    startDayPhaseTimer(io, session, { ...clock, discussionDurationMs: 1_000, voteDurationMs: 1_000 })
+    assert.equal(session.players.get(doctorUuid).alive, true)
+
+    session.phase = 'TRIBUNAL'
+    startDayPhaseTimer(io, session, clock)
+    assert.equal(session.players.get(doctorUuid).alive, false)
+})
+
+test('AC-02: ROLE_REVEAL과 TRIBUNAL도 각각 다음 top-level phase 진입 경계까지 유예한다', () => {
+    const clock = createManualClock()
+
+    const reveal = commitFullRoleSessionAtNight({ id: 'ac02-reveal-boundary' })
+    const revealWiring = wireSession(reveal.session)
+    reveal.session.phase = 'ROLE_REVEAL'
+    disconnectSocket(revealWiring.sockets, reveal.doctorUuid)
+    assert.equal(beginDisconnectGrace(revealWiring.io, reveal.session, reveal.doctorUuid, clock).timerId, null)
+    gameSessionCore.__testables.enterDayPhase(reveal.session)
+    startDayPhaseTimer(revealWiring.io, reveal.session, { ...clock, discussionDurationMs: 1_000, voteDurationMs: 1_000 })
+    assert.equal(reveal.session.players.get(reveal.doctorUuid).alive, false)
+
+    const tribunal = commitFullRoleSessionAtNight({ id: 'ac02-tribunal-boundary' })
+    const tribunalWiring = wireSession(tribunal.session)
+    tribunal.session.phase = 'TRIBUNAL'
+    disconnectSocket(tribunalWiring.sockets, tribunal.doctorUuid)
+    assert.equal(beginDisconnectGrace(tribunalWiring.io, tribunal.session, tribunal.doctorUuid, clock).timerId, null)
+    tribunal.session.phase = 'NIGHT'
+    startNightTurnSequence(tribunalWiring.io, tribunal.session, { ...clock, turnDurationMs: 1_000, randomFn: () => 0.5 })
+    assert.equal(tribunal.session.players.get(tribunal.doctorUuid).alive, false)
+})
+
+test('AC-07: 같은 역할 생존자가 2→1이 되면 남은 한 명의 기존 제출만으로 역할 턴 완료가 재평가된다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac07-resolver' })
+    const secondDoctor = [...session.players.values()].find((player) => player.role === 'CITIZEN').uuid
+    session.players.get(secondDoctor).role = 'DOCTOR'
+
+    assert.equal(gameSessionCore.submitNightAction(doctorUuid, session.id, null).ok, true)
+    assert.equal(gameSessionCore.isRoleTurnComplete(session, 'DOCTOR'), false)
+    const applied = gameSessionCore.commitDisconnectElimination(session, secondDoctor)
+    assert.equal(applied.ok, true)
+    assert.equal(gameSessionCore.isRoleTurnComplete(session, 'DOCTOR'), true)
 })

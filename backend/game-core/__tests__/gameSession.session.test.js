@@ -1311,21 +1311,18 @@ test('getSessionSnapshotForPlayer: JOKER 진영끼리만 allies가 채워지고,
     assert.equal(jokerResult.ok, true)
     assert.deepEqual(
         Object.keys(jokerResult.snapshot.self).sort(),
-        ['allies', 'chatChannels', 'hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'],
+        ['allies', 'hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'],
     )
     assert.deepEqual(jokerResult.snapshot.self.allies, [otherJoker])
-    // NIGHT이므로 열려 있는 채널은 자기 역할 채널 하나뿐이다(공개 DAY 채널은 낮에만 열린다).
-    assert.deepEqual(jokerResult.snapshot.self.chatChannels, ['JOKER'])
     assertNoForbiddenPrivateData(jokerResult.snapshot, collectOtherPlayerRoleSecrets(session, viewerJoker))
 
     const citizenResult = getSessionSnapshotForPlayer(citizenUuid, session.id)
     assert.equal(citizenResult.ok, true)
     assert.deepEqual(
         Object.keys(citizenResult.snapshot.self).sort(),
-        ['chatChannels', 'hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'],
+        ['hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'],
     )
     assert.equal(Object.hasOwn(citizenResult.snapshot.self, 'allies'), false)
-    assert.deepEqual(citizenResult.snapshot.self.chatChannels, [session.players.get(citizenUuid).role])
     assertNoForbiddenPrivateData(citizenResult.snapshot, collectOtherPlayerRoleSecrets(session, citizenUuid))
 })
 

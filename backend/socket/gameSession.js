@@ -389,6 +389,7 @@ function advanceNightTurn(run) {
     session.nightTurnRole = role
     const durationMs = resolveNightTurnDurationMs(run, role)
     const deadline = run.nowFn() + durationMs
+    run.deadline = deadline
     emitNightTurnEvent(run, 'night_turn_started', gameSessionCore.buildNightTurnStartedPayload(session, role, deadline))
 
     if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) {
@@ -464,6 +465,7 @@ function endNightTurn(run, role) {
         run.clearTimeoutFn(run.timerId)
         run.timerId = null
     }
+    run.deadline = null
     session.nightTurnRole = null
     emitNightTurnEvent(run, 'night_turn_ended', gameSessionCore.buildNightTurnEndedPayload(session, role))
     advanceNightTurn(run)
@@ -499,6 +501,8 @@ function maybeEndNightTurnOnCompletion(gameId) {
  */
 function startNightTurnSequence(io, session, deps = {}) {
     if (!session || session.phase !== 'NIGHT') return null
+    expireDisconnectGracesAtPhaseBoundary(session)
+    if (session.phase !== 'NIGHT') return null
     const existing = nightTurnRuns.get(session.id)
     if (existing) return existing
 
@@ -507,6 +511,7 @@ function startNightTurnSequence(io, session, deps = {}) {
         session,
         index: -1,
         timerId: null,
+        deadline: null,
         randomFn: deps.randomFn ?? Math.random,
         nowFn: deps.nowFn ?? Date.now,
         setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
@@ -527,6 +532,7 @@ function stopNightTurnSequence(gameId) {
         run.clearTimeoutFn(run.timerId)
         run.timerId = null
     }
+    run.deadline = null
     nightTurnRuns.delete(gameId)
     delete run.session.nightTurnRole
 }
@@ -704,6 +710,7 @@ function expireDayVoteWithAbstentions(run) {
  */
 function startDayPhaseTimer(io, session, deps = {}) {
     if (!session) return null
+    expireDisconnectGracesAtPhaseBoundary(session)
     if (session.phase !== 'DAY') {
         stopDayPhaseTimer(session.id)
         return null
@@ -755,6 +762,7 @@ function stopDayPhaseTimer(gameId) {
  */
 function syncSessionPhaseTimers(io, session) {
     if (!session) return null
+    expireDisconnectGracesAtPhaseBoundary(session)
 
     if (session.phase === 'DAY') {
         stopNightTurnSequence(session.id)
@@ -797,10 +805,9 @@ function detachDisconnectGraceRun(gameId, uuid, run) {
  * 만료될 때까지 재접속하지 않으면 그 참가자만 사망으로 확정되고, 나머지 참가자의 게임은
  * 그대로 이어집니다(어떤 타이머도 여기서 멈추지 않습니다).
  *
- * 유예 길이는 별도 상수를 두지 않고 그 순간의 밤 턴 제한시간(resolveNightTurnDurationMs)을
- * 그대로 씁니다 — 밤 자기 턴 중 끊긴 참가자에게 "턴 제한시간"과 다른 시간축을 주면 기권·사망·
- * 턴 종료의 순서가 두 시계에 갈려 결정되기 때문입니다. 밤이 아닌 구간(DAY/TRIBUNAL)에는
- * 진행 중인 턴이 없으므로 canonical 기본 상수로 폴백합니다.
+ * 자기 NIGHT 턴이면 이미 방송된 절대 deadline까지의 "남은 시간"만 기다린다. 그 외에는 별도
+ * 시계를 만들지 않고 끊긴 시점의 top-level phase가 끝날 때 만료한다. 이로써 낮 하위 구간
+ * 전환이나 다른 역할의 밤 턴이 유예를 임의로 늘리거나 줄이지 않는다.
  *
  * 같은 (세션, 참가자)에 이미 유예가 걸려 있으면 기존 run을 그대로 돌려주고 타이머를 다시 걸지
  * 않습니다(멱등) — 낡은 소켓의 지연 disconnect가 뒤늦게 도착해도 유예가 연장되지 않습니다.
@@ -810,18 +817,24 @@ function beginDisconnectGrace(io, session, uuid, deps = {}) {
     if (existing) return existing
 
     const nightRun = nightTurnRuns.get(session.id)
-    const role = gameSessionCore.getCurrentNightTurnRole(session)
-    const durationMs =
-        deps.graceDurationMs ??
-        (session.phase === 'NIGHT' && role !== null
-            ? resolveNightTurnDurationMs({ session, durationMs: nightRun?.durationMs ?? null }, role)
-            : gameSessionCore.NIGHT_TURN_DURATION_MS)
+    const currentRole = gameSessionCore.getCurrentNightTurnRole(session)
+    const playerRole = session.players.get(uuid)?.role
+    const isOwnNightTurn =
+        session.phase === 'NIGHT' &&
+        currentRole !== null &&
+        currentRole === playerRole &&
+        nightRun?.deadline !== null &&
+        nightRun?.deadline !== undefined
+    const nowFn = deps.nowFn ?? nightRun?.nowFn ?? Date.now
 
     const run = {
         io,
         session,
         uuid,
         timerId: null,
+        phaseAtDisconnect: session.phase,
+        deadline: isOwnNightTurn ? nightRun.deadline : null,
+        nowFn,
         setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
         clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout,
     }
@@ -831,8 +844,21 @@ function beginDisconnectGrace(io, session, uuid, deps = {}) {
         disconnectGraceRuns.set(session.id, pending)
     }
     pending.set(uuid, run)
-    run.timerId = run.setTimeoutFn(() => expireDisconnectGrace(run), durationMs)
+    if (isOwnNightTurn) {
+        const remainingMs = Math.max(0, run.deadline - run.nowFn())
+        run.timerId = run.setTimeoutFn(() => expireDisconnectGrace(run), remainingMs)
+    }
     return run
+}
+
+/** 끊긴 시점의 top-level phase를 벗어난 유예만 만료한다(DAY 하위 구간 변경은 제외). */
+function expireDisconnectGracesAtPhaseBoundary(session) {
+    const pending = disconnectGraceRuns.get(session.id)
+    if (!pending) return
+    for (const run of [...pending.values()]) {
+        if (run.phaseAtDisconnect === session.phase) continue
+        expireDisconnectGrace(run)
+    }
 }
 
 /**
@@ -891,9 +917,7 @@ function expireDisconnectGrace(run) {
 
     let payload = null
     try {
-        // 공개 사망 목록은 밤 사망과 같은 canonical 빌더를 통과한 값만 그대로 실어 나른다 —
-        // 소켓 계층은 목록을 만들지도, 고치지도 않는다(그래서 role이 샐 자리가 없다).
-        payload = gameSessionCore.buildNightResultAppliedPayload(session, applied.victimUuid, applied.deathReveals)
+        payload = gameSessionCore.buildDisconnectEliminationPayload(session, applied.victimUuid)
         if (applied.terminal) {
             payload = { ...payload, ...gameSessionCore.buildTerminalFields(session) }
         }
@@ -2155,14 +2179,12 @@ function registerGameHandlers(io, socket, uuid) {
 /**
  * 참가자 disconnect를 처리합니다 — 세션의 phase에 따라 경로가 둘로 갈립니다.
  *
- * 게임이 실제로 진행 중이면(DAY/NIGHT/TRIBUNAL) 세션을 종료하지 않고 그 참가자에게만 재접속
+ * 게임이 실제로 존재하는 동안(ROLE_REVEAL/DAY/NIGHT/TRIBUNAL) 세션을 종료하지 않고 그 참가자에게만 재접속
  * 유예를 겁니다(beginDisconnectGrace). 남은 참가자의 페이즈·타이머·턴은 어떤 것도 여기서
  * 멈추지 않으며, 유예 안에 돌아오지 않은 참가자만 나중에 사망으로 확정됩니다.
  *
- * 그 밖의 경우(ROLE_REVEAL·ENDED·활성 세션 없음)는 기존 정책 그대로 endGameSessionForPlayer를
- * 부릅니다. ROLE_REVEAL을 유예 대상에서 빼는 이유는 그 단계에서는 아무도 아직 행동할 수 없고
- * 사망이 의미를 갖지 않기 때문입니다 — 시작 전 handshake 중의 이탈은 "한 명이 빠진 게임"이
- * 아니라 "시작되지 못한 게임"입니다(getDisconnectGraceTarget 참고).
+ * ENDED 또는 활성 세션이 없는 경우에만 기존 정리 경로를 사용합니다. ROLE_REVEAL 중 끊김도
+ * 첫 DAY가 열리는 top-level 경계까지 유예해 시작 직전 일시 단절로 전체 세션을 잃지 않습니다.
  *
  * ABA 방지: 게임 시작 시 참가자 Socket에 결합해 둔 canonical gameId(socket.data.activeGameId,
  * matchmaking.js의 handleStartGame이 설정)를 expectedGameId로 종료 core에 전달한다. 결합이
@@ -2171,7 +2193,7 @@ function registerGameHandlers(io, socket, uuid) {
  * 채로 남으므로(handleLeaveGameSession 참고), 같은 uuid가 다른 Socket으로 세션 B를 새로
  * 시작한 뒤 도착하는 이 Socket의 지연 disconnect는 STALE_SESSION_MISMATCH로 조용히
  * no-op된다. 같은 Socket이 이후 새 세션을 시작하면 결합값이 그 세션으로 갱신되므로(다시
- * matchmaking.js의 handleStartGame), 그 이후의 disconnect는 정상적으로 새 세션을 종료한다.
+ * matchmaking.js의 handleStartGame), 그 이후의 disconnect는 새 세션의 유예를 정상 시작한다.
  *
  * game_ended payload는 { gameId, reason }만 담습니다. 수신자에 따라 달라지는 값이
  * 없으므로(참가자 uuid/nickname/role 등 어떤 식별 정보도 없음) game_started처럼
@@ -2185,7 +2207,7 @@ async function onDisconnect(io, socket, uuid) {
     const expectedGameId = socket?.data?.activeGameId
     if (expectedGameId === undefined) return
 
-    // 진행 중인 세션(DAY/NIGHT/TRIBUNAL)에서는 세션을 종료하지 않고 재접속 유예만 건다 —
+    // 진행 중인 세션(ROLE_REVEAL/DAY/NIGHT/TRIBUNAL)에서는 종료하지 않고 재접속 유예만 건다 —
     // 남은 참가자의 게임은 이 disconnect로 어떤 영향도 받지 않고 그대로 이어진다. 낡은 소켓의
     // 지연 disconnect는 위의 isCurrentSocketForUuid에서, 다른 세션을 가리키는 결합은
     // getDisconnectGraceTarget의 expectedGameId 대조에서 각각 걸러진다(둘 다 기존 가드와 동일).

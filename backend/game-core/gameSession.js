@@ -324,10 +324,9 @@ function isForfeitedFromSession(gameId, uuid) {
  * 대상 세션을 돌려준다(순수 조회). 소켓 계층이 gameSessions에 직접 손대지 않고도 유예 타이머를
  * 걸 수 있게 하는 유일한 통로다.
  *
- * 유예 대상은 "실제로 게임이 진행 중인" 세 phase(DAY/NIGHT/TRIBUNAL)뿐이다. ROLE_REVEAL은
- * 아무도 아직 행동할 수 없고 사망이 의미를 갖지 않는 시작 전 handshake라 기존 정책(참가자 한
- * 명의 disconnect가 세션 전체를 종료)을 그대로 두고, ENDED는 이미 결과가 확정돼 유예할 것이
- * 없다 — 두 phase 모두 endGameSessionForPlayer의 기존 계약으로 계속 처리된다.
+ * 유예 대상은 ROLE_REVEAL을 포함해 실제 세션이 진행 중인 모든 phase다. 자기 NIGHT 턴이 아닌
+ * 구간의 유예는 소켓 계층에서 "현재 top-level phase가 끝날 때" 만료되므로, ROLE_REVEAL 중
+ * 끊긴 참가자도 DAY 진입 전까지 돌아올 수 있다. ENDED는 이미 결과가 확정돼 유예할 것이 없다.
  *
  * expectedGameId는 endGameSessionForPlayer와 같은 ABA 가드다(불일치면 null). 이미 죽었거나
  * 이미 배제된 참가자에게는 유예를 걸지 않는다 — 유예 만료의 유일한 결과가 "사망 확정"이므로,
@@ -340,7 +339,7 @@ function getDisconnectGraceTarget(uuid, expectedGameId) {
 
     const session = gameSessions.get(gameId)
     if (!session) return null
-    if (session.phase !== 'DAY' && session.phase !== 'NIGHT' && session.phase !== 'TRIBUNAL') return null
+    if (!['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(session.phase)) return null
 
     const player = session.players.get(uuid)
     if (!player || player.alive !== true) return null
@@ -1612,10 +1611,8 @@ function commitNightResolution(session, resolution) {
  * 검증을 통과한 뒤로는 절대 throw하지 않는다(commitNightResolution과 같은 계약) — 부분 커밋
  * 상태가 구조적으로 존재할 수 없다.
  *
- * deathReveals는 밤 사망과 정확히 같은 canonical 빌더(buildNightDeathReveals)를 통과하므로
- * 원소는 { victimUuid, source } 두 키뿐이고 role은 어디에도 실리지 않는다. source가
- * UNKNOWN_NIGHT인 것은 이 빌더의 규칙("귀속이 없으면 지어내지 않는다") 그대로다 — 끊김 사망은
- * 어떤 밤 효과에도 귀속되지 않으므로, 사망 사실만 공개하고 원인은 공개하지 않는다.
+ * 끊김 사망은 밤 판정이 아니므로 nightResolution/deathReveals를 만들거나 오염시키지 않는다.
+ * 공개 방송 계약은 buildDisconnectEliminationPayload가 별도로 만들며 role/team/원인을 싣지 않는다.
  */
 function commitDisconnectElimination(session, uuid) {
     const endedCheck = assertSessionNotEnded(session)
@@ -1626,7 +1623,6 @@ function commitDisconnectElimination(session, uuid) {
     if (victim.alive !== true) return { ok: false, code: 'ALREADY_ELIMINATED' }
 
     // 이 지점 이후로는 절대 throw하지 않는다.
-    const deathReveals = buildNightDeathReveals(null, [uuid])
     victim.alive = false
     expireDeadPlayerNightEffects(session, [uuid])
 
@@ -1641,10 +1637,21 @@ function commitDisconnectElimination(session, uuid) {
     const winResult = evaluateWinCondition(session)
     if (winResult) {
         finalizeGameSession(session, winResult)
-        return { ok: true, victimUuid: uuid, deathReveals, terminal: { winner: winResult.winner } }
+        return { ok: true, victimUuid: uuid, terminal: { winner: winResult.winner } }
     }
 
-    return { ok: true, victimUuid: uuid, deathReveals, terminal: null }
+    return { ok: true, victimUuid: uuid, terminal: null }
+}
+
+/** 끊김 사망 전용 공개 payload. 밤 결과와 원인 필드를 공유하지 않고 공개 생존 상태만 전달한다. */
+function buildDisconnectEliminationPayload(session, victimUuid) {
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, alive })),
+        victimUuid,
+    }
 }
 
 /**
@@ -2452,24 +2459,6 @@ function canIncludeDayTribunalFields(session) {
  */
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
-    // 새로고침한 참가자가 "지금 내가 쓸 수 있는 채팅 채널"을 role·생존·phase에서 스스로 다시
-    // 유도하지 않도록 서버가 그대로 실어 준다. 목록은 canonical 수신자 판정
-    // (getChatRecipientUuids)을 그대로 통과한 채널만 담는다 — 채널 권한의 원천이 하나뿐이어야
-    // 새로고침 전후의 접근 범위가 조용히 갈리지 않는다.
-    //
-    // 채널마다 열려 있는 phase가 정해져 있다: 공개 DAY 채널은 DAY에서만(resolveGameChatChannel),
-    // 역할 채널은 NIGHT에서만(prepareJokerChatMessage) 라우팅된다. 그래서 phase를 먼저 보고,
-    // 그 phase에 열리는 채널에 대해서만 수신 자격을 묻는다. 사망자는 DAY 채널을 계속 받고(관전),
-    // 사망한 광대만 자기 역할 채널에 남는다 — 두 규칙 모두 getChatRecipientUuids의 것이다.
-    const chatChannels = []
-    if (viewer) {
-        if (session.phase === 'DAY' && getChatRecipientUuids(session, CHAT_CHANNELS.DAY).includes(uuid)) {
-            chatChannels.push(CHAT_CHANNELS.DAY)
-        }
-        if (session.phase === 'NIGHT' && getChatRecipientUuids(session, viewer.role).includes(uuid)) {
-            chatChannels.push(viewer.role)
-        }
-    }
     const fields = {
         gameId: session.id,
         phase: session.phase,
@@ -2486,10 +2475,6 @@ function buildSessionSnapshot(session, uuid) {
         self: {
             ...buildViewerRoleFields(session, viewer),
             hasActedThisPhase: computeHasActedThisPhase(session, uuid),
-            // self 안에 두는 이유는 이 목록이 오직 viewer 본인의 것이기 때문이다 — 역할 채널
-            // 이름은 곧 본인의 role이므로 top-level에 두면 다른 참가자에게 보이는 공개 필드와
-            // 같은 자리에 본인 role이 놓이게 된다(hasActedThisPhase와 같은 위치 규약).
-            chatChannels,
         },
     }
 
@@ -2994,6 +2979,7 @@ module.exports = {
     // 끊김 사망은 밤 판정과 같은 순서 계약을 공유하지만 소켓 계층의 유예 타이머가 직접 부르는
     // 진입점이므로, 밤 판정 3인방과 나란히 정식 export로 둔다.
     commitDisconnectElimination,
+    buildDisconnectEliminationPayload,
     getDisconnectGraceTarget,
     isForfeitedFromSession,
     buildNightResultAppliedPayload,

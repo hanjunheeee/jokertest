@@ -34,7 +34,7 @@ test('disconnect 시 registerDisconnectHandler가 gameSession.onDisconnect를 �
 // forcedLogout disconnect 배선/core 통합 테스트 (0절 정책의 근거 보강)
 // ---------------------------------------------------------------------------
 
-test('forcedLogout으로 강제 종료된 소켓의 disconnect는 실제 활성 GameSession을 종료시킨다', async (t) => {
+test('forcedLogout으로 강제 종료된 소켓도 활성 GameSession을 종료하지 않고 재접속 유예를 시작한다', async (t) => {
     // 위 테스트는 onDisconnect를 mock으로 대체해 "호출 여부"만 확인했다 — 이 테스트는 fake
     // io/socket과 실제 gameSessionCore registry를 함께 구동해, forcedLogout 경로에서
     // registerDisconnectHandler → gameSession.onDisconnect 배선이 실제로 GameSession
@@ -43,9 +43,12 @@ test('forcedLogout으로 강제 종료된 소켓의 disconnect는 실제 활성 
     // 건드리므로 격리를 위해 명시적으로 초기화한다.
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
+    gameSessionSocketLayer.__resetStateForTests()
+    gameSessionSocketLayer.setOnlineUsersRegistry(socket.__getOnlineUsersForTests())
     t.after(() => {
         gameSessionCore.__resetStateForTests()
         matchmaking.__resetStateForTests()
+        gameSessionSocketLayer.__resetStateForTests()
         socket.__getOnlineUsersForTests().delete('forced-a')
     })
 
@@ -102,7 +105,11 @@ test('forcedLogout으로 강제 종료된 소켓의 disconnect는 실제 활성 
     await Promise.resolve() // gameSession.onDisconnect는 await 없이 동기적으로 registry를 정리하지만, 방어적으로 한 틱 흘려보낸다.
 
     const snapshotAfter = gameSessionCore.__getStateSnapshotForTests()
-    assert.equal(snapshotAfter.gameSessions.some(([gameId]) => gameId === prepared.session.id), false)
-    assert.equal(snapshotAfter.playerSession.some(([uuid]) => uuid === 'forced-a' || uuid === 'forced-b'), false)
-    assert.equal(snapshotAfter.roomGameSession.some(([roomId]) => roomId === 'room-forced-logout'), false)
+    assert.equal(snapshotAfter.gameSessions.some(([gameId]) => gameId === prepared.session.id), true)
+    assert.equal(snapshotAfter.playerSession.some(([uuid]) => uuid === 'forced-a'), true)
+    assert.equal(snapshotAfter.roomGameSession.some(([roomId]) => roomId === 'room-forced-logout'), true)
+    assert.notEqual(
+        gameSessionSocketLayer.__testables.getDisconnectGraceRun(prepared.session.id, 'forced-a'),
+        undefined,
+    )
 })
