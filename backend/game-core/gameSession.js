@@ -1020,23 +1020,77 @@ function getCurrentNightTurnRole(session) {
     return session.nightTurnRole ?? null
 }
 
-// JOKER의 non-null target을 집계해 최다 득표 대상 하나를 반환한다. 동률(2명 이상이 공동
-// 최다)이거나 전원 SKIP/미제출이면 null이다. Map 순회 순서에 의존하지 않도록 득표수 자체만
-// 비교한다(먼저 등장한 대상이 아니라, 오직 표 수만으로 승자를 가린다).
-//
-// 사망한 JOKER의 표는 세지 않는다 — submitNightAction이 이미 사망자의 제출을 막지만,
-// 집계 자체가 canonical 생존 상태에만 의존하게 해서 지난 밤이 남긴 잔여 entry나 수동 조립·
-// 오염 상태가 결과를 바꾸지 못하게 한다(tallyDayVoteOutcome과 같은 원칙).
-function tallyJokerAssassinationTarget(session) {
-    const voteCounts = new Map()
-    for (const player of session.players.values()) {
-        if (!player.alive) continue
-        if (player.role !== 'JOKER') continue
-        const target = session.nightActions.get(player.uuid)
-        if (target === undefined || target === null) continue
-        voteCounts.set(target, (voteCounts.get(target) ?? 0) + 1)
+/**
+ * 역할 → 그 역할의 제출이 서로 어긋났을 때의 판정 정책. 밤 행동 판정에서 역할을 가르는 값은
+ * 이 표 하나뿐이며, 리졸버 본문에는 역할 이름이 등장하지 않는다(정책을 코드가 아니라 데이터로
+ * 두어야 새 역할이 생겨도 분기가 늘지 않는다).
+ *
+ * - PLURALITY: 최다 득표 대상 하나. 동률(2명 이상이 공동 최다)이면 null이다. JOKER의 기존
+ *   다수결 계약이 그대로 이 정책 하나로 옮겨온 것이라, 광대의 판정 결과는 비트 단위로 같다.
+ * - UNANIMOUS: 유효한 제출이 전부 같은 대상일 때만 그 대상. 하나라도 다르면 null이다 —
+ *   같은 역할을 여러 명이 가졌을 때 "누구의 제출이 이겼는지"를 만들지 않기 위한 정책이다.
+ *
+ * 표에 없는 역할(CITIZEN·알 수 없는 값)은 UNANIMOUS로 처리된다 — 애초에
+ * getEligibleNightActorUuids가 행위자를 하나도 돌려주지 않아 결과는 항상 null이지만,
+ * 기본값은 fail-closed 쪽으로 둔다(requiresAliveTarget과 같은 원칙).
+ */
+const NIGHT_ACTION_RESOLUTION_POLICY = Object.freeze({
+    JOKER: 'PLURALITY',
+    DOCTOR: 'UNANIMOUS',
+    GUARD: 'UNANIMOUS',
+    WITCH_HUNTER: 'UNANIMOUS',
+})
+
+/**
+ * 이번 밤 그 역할의 "행동할 수 있는 생존 행위자"와 각자의 제출을 모아 반환한다
+ * ([{ actorUuid, target }] — target은 대상 uuid 또는 SKIP/미제출을 뜻하는 null).
+ *
+ * 행위자 목록은 getAliveActorUuidsForRole 하나에서만 나온다 — 즉 생존 필터도, dayIndex
+ * eligibility(WITCH_HUNTER)도 여기서 다시 구현하지 않는다. 제출 완료 판정(prepareNightResolution)·
+ * 턴 완료 판정(isRoleTurnComplete)과 같은 목록 위에 서므로 세 소비자의 경계가 갈릴 수 없다.
+ *
+ * 미제출(entry 없음)은 SKIP(null)과 같은 null로 접힌다 — 판정에 도달한 밤은 eligible actor
+ * 전원의 제출이 이미 확인된 상태라(ACTIONS_PENDING) 둘을 가를 실익이 없고, 기존 집계 함수들도
+ * 모두 두 값을 같게 다뤄왔다.
+ */
+function collectRoleNightSubmissions(session, role) {
+    return getAliveActorUuidsForRole(session, role).map((actorUuid) => ({
+        actorUuid,
+        target: session.nightActions.get(actorUuid) ?? null,
+    }))
+}
+
+/**
+ * 그 역할의 이번 밤 canonical 행동 대상 하나를 판정한다(순수 계산 — registry를 읽기만 한다).
+ * 암살·보호·조사·확인이 모두 이 한 함수를 거치므로, "같은 역할을 여러 명이 가졌을 때"의 규칙이
+ * 역할마다 갈릴 수 없다.
+ *
+ * SKIP/미제출은 집계에서 제외하고, 유효한 제출이 하나도 없으면 null이다. 남은 제출이 서로
+ * 어긋날 때의 처리만 NIGHT_ACTION_RESOLUTION_POLICY가 가른다. 반환값이 null이면 "이번 밤 그
+ * 역할의 행동은 없었다"는 뜻이고, 호출자는 결과를 만들지 않는다.
+ *
+ * 대상의 존재·생존은 여기서 검사하지 않는다 — prepareNightResolution이 requiresAliveTarget
+ * 기준으로 이미 걸러낸 뒤에만 호출되기 때문이다(TARGET_NOT_A_PARTICIPANT).
+ *
+ * @param {object} session - canonical GameSession(players/nightActions/dayIndex를 읽기만 한다)
+ * @param {string} role - 판정할 역할 키
+ * @returns {string|null} canonical 대상 uuid 또는 null
+ */
+function resolveRoleNightAction(session, role) {
+    const targets = collectRoleNightSubmissions(session, role)
+        .map((submission) => submission.target)
+        .filter((target) => target !== null)
+    if (targets.length === 0) return null
+
+    if (NIGHT_ACTION_RESOLUTION_POLICY[role] !== 'PLURALITY') {
+        // UNANIMOUS — 하나라도 다르면 그 역할의 이번 밤 행동은 없던 것이 된다.
+        return targets.every((target) => target === targets[0]) ? targets[0] : null
     }
-    if (voteCounts.size === 0) return null
+
+    // PLURALITY — Map 순회 순서에 의존하지 않도록 득표수 자체만 비교한다(먼저 등장한 대상이
+    // 아니라, 오직 표 수만으로 승자를 가린다).
+    const voteCounts = new Map()
+    for (const target of targets) voteCounts.set(target, (voteCounts.get(target) ?? 0) + 1)
 
     let winner = null
     let winnerVotes = 0
@@ -1051,43 +1105,6 @@ function tallyJokerAssassinationTarget(session) {
         }
     }
     return tie ? null : winner
-}
-
-// DOCTOR의 non-null target 전체를 Set으로 반환한다(이번 밤의 보호 대상 집합). 자기 보호를
-// 포함해 별도 필터 없이 그대로 모은다. 사망한 DOCTOR의 보호는 반영하지 않는다
-// (tallyJokerAssassinationTarget과 동일한 이유 — 집계는 canonical 생존 상태만 본다).
-function computeDoctorProtectionSet(session) {
-    const protectedIds = new Set()
-    for (const player of session.players.values()) {
-        if (!player.alive) continue
-        if (player.role !== 'DOCTOR') continue
-        const target = session.nightActions.get(player.uuid)
-        if (target === undefined || target === null) continue
-        protectedIds.add(target)
-    }
-    return protectedIds
-}
-
-// 해당 GUARD 본인의 non-null target에 대한 조사 결과({targetId, role})를 계산한다.
-// SKIP(null)이거나 미제출(entry 없음)이면 null — 개인 결과 이벤트를 만들지 않는다는 계약과
-// 대응한다. 결과는 진영(team)이 아니라 대상의 실제 role이다 — 경비원의 조사는 "시민 진영인가"가
-// 아니라 "무슨 역할인가"를 알려준다(판정 4.3.1). 이 결과는 조사한 GUARD 본인에게만 전달된다.
-// @param {object} session - canonical GameSession(nightActions/players를 읽기만 한다)
-// @param {string} actorUuid - 조사를 제출한 GUARD 본인의 uuid
-function computeGuardInvestigationResult(session, actorUuid) {
-    const targetId = session.nightActions.get(actorUuid)
-    if (targetId === undefined || targetId === null) return null
-    const targetPlayer = session.players.get(targetId)
-    return { targetId, role: targetPlayer.role }
-}
-
-// 해당 WITCH_HUNTER 본인의 non-null target에 대한 확인 결과({targetId, role})를 계산한다.
-// computeGuardInvestigationResult와 동일하게 SKIP/미제출은 null이다.
-function computeWitchHunterConfirmationResult(session, actorUuid) {
-    const targetId = session.nightActions.get(actorUuid)
-    if (targetId === undefined || targetId === null) return null
-    const targetPlayer = session.players.get(targetId)
-    return { targetId, role: targetPlayer.role }
 }
 
 /**
@@ -1239,22 +1256,29 @@ function submitNightAction(uuid, gameId, targetId) {
  * 살아있지 않은 밤은 두 루프가 모두 공회전해 곧바로 통과하고, 암살 대상 없는(희생자 없는)
  * 밤으로 판정된다.
  *
+ * 네 직업(JOKER·DOCTOR·GUARD·WITCH_HUNTER)의 대상 선택은 모두 resolveRoleNightAction 하나를
+ * 지납니다 — 역할이 하나 고른 canonical 대상(또는 없음)만 나오므로, 같은 역할을 여러 명이
+ * 가졌을 때도 그 역할의 결과는 정확히 하나입니다. assassinationTargetId는 JOKER의 다수결
+ * 결과이고(동률·전원 SKIP이면 null), protectedTargetIds는 DOCTOR의 canonical 보호 대상 하나를
+ * 담은 Set입니다(의사들이 서로 다른 대상을 지목했거나 아무도 보호하지 않았으면 빈 Set).
+ *
  * 성공 시 { ok:true, session, resolution } — resolution은 commitNightResolution에 그대로
- * 넘길 값입니다. privateResults는 생존한 GUARD/WITCH_HUNTER의 non-null 결과와, 보호로 암살이
- * 막힌 밤의 생존 JOKER 실패 통지만 담는 Map이고(SKIP/미제출은 entry 없음), DOCTOR/CITIZEN은
+ * 넘길 값입니다. privateResults는 생존한 GUARD/WITCH_HUNTER의 canonical 결과와, 보호로 암살이
+ * 막힌 밤의 생존 JOKER 실패 통지만 담는 Map이고(SKIP/미제출/상충은 entry 없음), DOCTOR/CITIZEN은
  * 애초에 이 Map에 등장하지 않습니다. GUARD는 { actionType:'INVESTIGATE', targetId, role },
  * WITCH_HUNTER는 { actionType:'CONFIRM', targetId, role }이며 — 두 결과 모두 대상의 실제 role을
- * 담습니다(경비원 결과는 진영이 아니라 role이다 — 판정 4.3.1). JOKER는
+ * 담습니다(경비원 결과는 진영이 아니라 role이다 — 판정 4.3.1). 그 역할을 가진 생존자가 여럿이면
+ * 전원이 값이 같은(참조는 서로 다른) 결과를 받습니다. JOKER는
  * { actionType:'ASSASSINATE', success:false } 하나뿐이고, 그 밤의 암살 대상이 보호 대상과
  * 일치했을 때에만 만들어집니다 — 보호자·보호자 역할·대상·사유는 어떤 필드에도 담지 않는다는
  * 것이 이 통지의 계약입니다(buildAssassinationFailureNotice).
  *
- * 한 참가자가 두 항목을 동시에 갖는 경우는 없습니다 — 역할은 서로 배타적이라 각 참가자는
- * 위 세 분기 중 최대 하나에만 해당합니다.
+ * 한 참가자가 두 항목을 동시에 갖는 경우는 없습니다 — 결과는 역할 단위로 만들어지고 역할은
+ * 서로 배타적이라, 각 참가자는 자기 역할의 항목 하나에만 해당합니다.
  *
  * @param {string} uuid - 인증된 요청자 uuid
  * @param {string} gameId - 클라이언트가 알고 있는 gameId(신뢰하지 않음)
- * @flow 위 7단계를 순서대로 평가하고, 통과하면 eligible actor 목록을 두 번 순회해 집계·개인 결과를 만든다.
+ * @flow 위 7단계를 순서대로 평가하고, 통과하면 역할별로 리졸버를 돌려 집계·개인 결과를 만든다.
  */
 function prepareNightResolution(uuid, gameId) {
     const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
@@ -1300,8 +1324,16 @@ function prepareNightResolution(uuid, gameId) {
         }
     }
 
-    const assassinationTargetId = tallyJokerAssassinationTarget(session)
-    const protectedTargetIds = computeDoctorProtectionSet(session)
+    // 네 직업의 밤 행동이 모두 같은 리졸버를 지난다 — 대상을 하나 고르는 규칙(다수결·만장일치,
+    // SKIP 제외, 사망자 표 제외)은 여기서 역할별로 갈리지 않고 정책 표 하나로만 갈린다.
+    const assassinationTargetId = resolveRoleNightAction(session, 'JOKER')
+    const protectionTargetId = resolveRoleNightAction(session, 'DOCTOR')
+    const investigationTargetId = resolveRoleNightAction(session, 'GUARD')
+    const confirmationTargetId = resolveRoleNightAction(session, 'WITCH_HUNTER')
+
+    // 보호 대상은 canonical 하나(또는 없음)다. 필드 이름과 Set 타입은 그대로 두어 이 값을
+    // 소비하는 쪽(assassinationBlocked·테스트)의 모양이 바뀌지 않게 하고, 원소 수만 0 또는 1이 된다.
+    const protectedTargetIds = new Set(protectionTargetId === null ? [] : [protectionTargetId])
     // 판정 순서 1단계 — "보호 대조"다. 이 대조는 사망 확정(commitNightResolution)보다 반드시
     // 먼저 끝난다: 여기서 쓰는 보호 집합은 "아직 아무도 죽지 않은" 밤의 생존 의사들에게서 나온
     // 것이고, 사망이 확정된 뒤의 잔여 효과 소멸은 3단계에서 별도로 일어난다.
@@ -1309,25 +1341,44 @@ function prepareNightResolution(uuid, gameId) {
         assassinationTargetId !== null && protectedTargetIds.has(assassinationTargetId)
     const pendingEliminationTargetId = assassinationBlocked ? null : assassinationTargetId
 
+    // 역할 → 그 역할의 생존 보유자 전원에게 "동일하게" 갈 개인 결과의 생성자. 대상이 없는
+    // 역할(전원 SKIP·상충·비활성 WITCH_HUNTER)은 아예 등재되지 않아 결과가 만들어지지 않는다.
+    // 생성자를 담는 이유는 수신자마다 새 객체를 나눠 주기 위함이다 — 소켓 계층이 이 객체를
+    // spread해 payload에 담으므로, 하나를 공유하면 한 수신자 경로의 오염이 나머지에 전파된다.
+    const privateResultBuilderByRole = new Map()
+    if (investigationTargetId !== null) {
+        // 결과는 진영(team)이 아니라 대상의 실제 role이다 — 경비원의 조사는 "시민 진영인가"가
+        // 아니라 "무슨 역할인가"를 알려준다(판정 4.3.1).
+        const role = session.players.get(investigationTargetId).role
+        privateResultBuilderByRole.set('GUARD', () => ({
+            actionType: 'INVESTIGATE',
+            targetId: investigationTargetId,
+            role,
+        }))
+    }
+    if (confirmationTargetId !== null) {
+        const role = session.players.get(confirmationTargetId).role
+        privateResultBuilderByRole.set('WITCH_HUNTER', () => ({
+            actionType: 'CONFIRM',
+            targetId: confirmationTargetId,
+            role,
+        }))
+    }
+    if (assassinationBlocked) {
+        // 보호로 막힌 밤에만 실패 통지를 만든다. 통지는 생존 JOKER 전원에게 간다 — 암살은
+        // 리졸버가 진영 단위로 집계하는 행동이라 "누가 그 대상에 투표했는지"로 수신자를 가르지
+        // 않는다. 암살 대상이 없는 밤(전원 SKIP·동률)에는 assassinationBlocked가 false라 통지가
+        // 없다 — "실패"는 보호로 막힌 경우만 뜻한다.
+        privateResultBuilderByRole.set('JOKER', buildAssassinationFailureNotice)
+    }
+
     const privateResults = new Map()
     for (const player of session.players.values()) {
         // 사망자에게는 개인 결과를 만들지 않는다 — 소켓 계층이 이 Map을 그대로 소비하므로
         // 여기서 빼면 night_action_result 방송 경로도 함께 정리된다.
         if (player.alive !== true) continue
-        if (player.role === 'GUARD') {
-            const result = computeGuardInvestigationResult(session, player.uuid)
-            if (result !== null) privateResults.set(player.uuid, { actionType: 'INVESTIGATE', ...result })
-        } else if (player.role === 'WITCH_HUNTER' && isEligibleForNightAction('WITCH_HUNTER', session.dayIndex)) {
-            const result = computeWitchHunterConfirmationResult(session, player.uuid)
-            if (result !== null) privateResults.set(player.uuid, { actionType: 'CONFIRM', ...result })
-        } else if (player.role === 'JOKER' && assassinationBlocked) {
-            // 보호로 막힌 밤에만, 그리고 생존한 JOKER에게만 실패 통지를 만든다(루프 선두의 alive
-            // 필터가 사망한 JOKER를 이미 제외한다). 통지는 생존 JOKER 전원에게 간다 — 암살은
-            // tallyJokerAssassinationTarget이 집계하는 진영 단위 행동이라 "누가 그 대상에
-            // 투표했는지"로 수신자를 가르지 않는다. 암살 대상이 없는 밤(전원 SKIP·동률)에는
-            // assassinationBlocked가 false라 통지가 없다 — "실패"는 보호로 막힌 경우만 뜻한다.
-            privateResults.set(player.uuid, buildAssassinationFailureNotice())
-        }
+        const buildResult = privateResultBuilderByRole.get(player.role)
+        if (buildResult !== undefined) privateResults.set(player.uuid, buildResult())
     }
 
     return {
@@ -1688,7 +1739,7 @@ function buildDayPhaseChangedPayload(session) {
 }
 
 // session.dayVotes를 집계해 TRIBUNAL/TIE/ABSTAINED 중 하나를 판정한다(순수 계산 — 어떤 상태도
-// 바꾸지 않는다). tallyJokerAssassinationTarget과 동일한 tie-break 원칙(득표수만으로 비교하고,
+// 바꾸지 않는다). resolveRoleNightAction의 PLURALITY와 동일한 tie-break 원칙(득표수만으로 비교하고,
 // Map 순회 순서에 의존하지 않는다)을 따른다. 기권(null)은 별도로 세되 집계 대상에서 제외한다.
 // 유효 표가 하나도 없으면(전원 기권) ABSTAINED, 최다 득표가 둘 이상이면 TIE, 그 외엔 단독
 // 최다 득표자를 TRIBUNAL 대상으로 반환한다. 동률일 때는 공동 최다 득표 대상 전체를
@@ -2848,10 +2899,9 @@ module.exports = {
         resolveGameChatChannel,
         getChatRateLimitMap,
         getEligibleNightActorUuids,
-        tallyJokerAssassinationTarget,
-        computeDoctorProtectionSet,
-        computeGuardInvestigationResult,
-        computeWitchHunterConfirmationResult,
+        NIGHT_ACTION_RESOLUTION_POLICY,
+        collectRoleNightSubmissions,
+        resolveRoleNightAction,
         buildAssassinationFailureNotice,
         expireDeadPlayerNightEffects,
         resolveNightDeathSource,

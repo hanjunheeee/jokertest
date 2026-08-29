@@ -240,6 +240,52 @@ function nightSessionWithDoctor({ id, jokerCount = 1, playerCount = 5 } = {}) {
 }
 
 /**
+ * 같은 역할을 여러 명(기본 2명 — 특수직업 공통 상한)이 나눠 가진 CUSTOM 세션을 그 밤의 픽스처로
+ * 만든다. 공용 밤 행동 리졸버의 "같은 역할 안에서 제출이 갈릴 때"의 규칙은 그 역할 보유자가
+ * 둘 이상이어야만 관찰되는데, AUTO 구성도 기존 픽스처(commitFullRoleSessionAtNight ·
+ * nightSessionWithDoctor)도 역할당 1명만 배정하기 때문이다.
+ *
+ * role === 'JOKER'면 roleCounts.JOKER가 count로 덮이고 makeCustomRoom이 settings.jokerCount를
+ * 거기에 맞춰 주므로, JOKER_COUNT_MISMATCH 없이 조립된다.
+ *
+ * @param {object} options - 픽스처 옵션
+ * @param {string} options.id - room/세션 식별자
+ * @param {string} options.role - 중복 배정할 역할 키
+ * @param {number} options.count - 그 역할에 배정할 인원(1~2)
+ * @param {number} options.jokerCount - JOKER 수(role이 JOKER면 count가 우선한다)
+ * @param {number} options.playerCount - 총 참가 인원
+ * @param {number} options.dayIndex - 되돌릴 밤의 dayIndex(WITCH_HUNTER는 2 이상이어야 활동한다)
+ * @flow room을 조립해 커밋한 뒤 그 밤으로 되돌리고, 역할별 uuid를 배정 결과에서 직접 찾아 준다.
+ */
+function nightSessionWithDuplicateRole({
+    id = 'room-dup',
+    role,
+    count = 2,
+    jokerCount = 1,
+    playerCount = 6,
+    dayIndex = 0,
+} = {}) {
+    const players = Array.from({ length: playerCount }, (_, i) => makePlayer(`dup-${id}-${i}`))
+    const room = makeCustomRoom({
+        id,
+        players,
+        roleCounts: { JOKER: jokerCount, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, [role]: count },
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    assert.equal(candidate.ok, true, `nightSessionWithDuplicateRole: 세션 조립 실패(${candidate.reason})`)
+    commitGameSession(candidate.session)
+    const session = candidate.session
+    ackAllAndRewindToFirstNight(session, { dayIndex })
+    const byRole = (r) => [...session.players.values()].filter((p) => p.role === r).map((p) => p.uuid)
+    return {
+        session,
+        roleUuids: byRole(role),
+        jokerUuids: byRole('JOKER'),
+        citizenUuids: byRole('CITIZEN'),
+    }
+}
+
+/**
  * 생존자 전원의 "투표 시작 준비"로 그 낮을 DAY_DISCUSSION → DAY_VOTE까지 전진시킨다
  * (production과 동일한 경로 — 이 슬라이스에는 타이머 자동 전환이 없다). 이미 DAY_VOTE면
  * 아무것도 하지 않는다(재투표 라운드에서 다시 준비를 요구하지 않는 계약과 짝을 이룬다).
@@ -555,6 +601,7 @@ module.exports = {
     nightSessionOf4NoWin,
     commitAssassinationNight,
     nightSessionWithDoctor,
+    nightSessionWithDuplicateRole,
     advanceDayToVotePhase,
     commitTrioSessionAtDay,
     commitQuadSessionAtDay,
