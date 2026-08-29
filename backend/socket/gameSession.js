@@ -657,7 +657,7 @@ function expireDayVoteWithAbstentions(run) {
         }
     }
 
-    scheduleDayPhaseTimer(run)
+    syncSessionPhaseTimers(run.io, session)
 }
 
 /**
@@ -717,6 +717,29 @@ function stopDayPhaseTimer(gameId) {
         run.timerId = null
     }
     dayPhaseRuns.delete(gameId)
+}
+
+/**
+ * canonical phase가 바뀐 직후 두 종류의 타이머를 한 곳에서 동기화합니다. DAY에서는 낮 타이머만,
+ * NIGHT에서는 밤 턴 시퀀스만 유지하고, 그 밖의 phase(TRIBUNAL/ENDED)에서는 둘 다 정리합니다.
+ * startNightTurnSequence가 세션별 멱등이므로 거의 동시에 도착한 경로가 중복 호출해도 턴은 한 번만
+ * 시작됩니다.
+ */
+function syncSessionPhaseTimers(io, session) {
+    if (!session) return null
+
+    if (session.phase === 'DAY') {
+        stopNightTurnSequence(session.id)
+        return startDayPhaseTimer(io, session)
+    }
+
+    stopDayPhaseTimer(session.id)
+    if (session.phase === 'NIGHT') {
+        return startNightTurnSequence(io, session)
+    }
+
+    stopNightTurnSequence(session.id)
+    return null
 }
 
 /**
@@ -1453,15 +1476,6 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
         return
     }
 
-    // 판정으로 낮 상태가 바뀌었다 — REVOTE면 다음 라운드의 투표 제한시간을 새로 걸고, 재판·밤·
-    // 종료로 넘어갔으면 남은 낮 타이머를 정리한다(그러지 않으면 이미 끝난 라운드의 타이머가
-    // 나중에 발화한다). ack보다 먼저 해서 콜백이 던져도 타이머 상태가 어긋나지 않게 한다.
-    try {
-        startDayPhaseTimer(io, prepared.session)
-    } catch (err) {
-        console.error('[낮 투표 판정 오류]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: prepared.session.id })
-    }
-
     respondResolveDayVote(uuid, prepared.session.id, callback, {
         ok: true,
         gameId: prepared.resolution.gameId,
@@ -1475,7 +1489,7 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
         recipients = resolveParticipantSockets(io, prepared.session)
     } catch (err) {
         console.error('[낮 투표 판정 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
-        return
+        recipients = []
     }
 
     const dayVoteResolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
@@ -1486,6 +1500,14 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
         } catch (err) {
             console.error('[낮 투표 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
         }
+    }
+
+    // 판정 결과를 먼저 전달한 뒤 canonical phase에 맞는 다음 타이머를 시작한다. NIGHT 전이는 여기서
+    // 실제 밤 턴 시퀀스를 시작하므로 클라이언트는 day_vote_resolved 다음에 night_turn_started를 받는다.
+    try {
+        syncSessionPhaseTimers(io, prepared.session)
+    } catch (err) {
+        console.error('[낮 투표 판정 오류]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: prepared.session.id })
     }
 }
 
@@ -1705,7 +1727,7 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
         recipients = resolveParticipantSockets(io, prepared.session)
     } catch (err) {
         console.error('[재판 판정 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
-        return
+        recipients = []
     }
 
     if (broadcastPayload) {
@@ -1716,6 +1738,13 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
                 console.error('[재판 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
             }
         }
+    }
+
+    // 재판 판정 결과를 전달한 다음 NIGHT면 첫 역할 턴을 시작하고, ENDED면 남은 타이머를 정리한다.
+    try {
+        syncSessionPhaseTimers(io, prepared.session)
+    } catch (err) {
+        console.error('[재판 판정 오류]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: prepared.session.id })
     }
 }
 
