@@ -2231,34 +2231,9 @@ async function onDisconnect(io, socket, uuid) {
     finalizeGameSessionEnd(io, result.session, result.reason)
 }
 
-/**
- * 지금 살아있는 GameSession의 개수를 셉니다(동시 접속 지표의 room_count 출처).
- *
- * game-core는 세션 registry를 런타임에 열어주지 않으므로, 소켓 계층이 이미 관측하고 있는 두
- * 통로의 합집합으로 유도한다:
- *   1. 접속 중인 uuid들의 활성 세션(gameId) — 참가자가 한 명이라도 붙어 있는 모든 세션.
- *   2. 진행 중인 재접속 유예가 걸린 세션 — 참가자 전원이 동시에 끊겨 1번으로는 보이지 않지만
- *      아직 종료되지 않은 세션이 여기에 잡힌다(유예 중인 세션은 여전히 활성이다).
- * 같은 세션이 두 통로에 모두 나타날 수 있으므로 gameId Set으로 중복을 제거한다.
- *
- * 순수 조회다 — 어떤 registry도 바꾸지 않고, registry가 아직 주입되지 않았어도(null)
- * throw하지 않고 유예 정보만으로 센다.
- */
-function getActiveGameSessionCount() {
-    const activeGameIds = new Set()
-
-    if (onlineUsersRegistry instanceof Map) {
-        for (const uuid of onlineUsersRegistry.keys()) {
-            const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
-            if (routing) activeGameIds.add(routing.gameId)
-        }
-    }
-
-    for (const [gameId, pending] of disconnectGraceRuns) {
-        if (pending.size > 0) activeGameIds.add(gameId)
-    }
-
-    return activeGameIds.size
+/** 활성 GameSession registry의 read-only presence snapshot을 그대로 전달합니다. */
+function getActiveGamePresenceSnapshot() {
+    return gameSessionCore.getActiveGamePresenceSnapshot()
 }
 
 module.exports = {
@@ -2267,7 +2242,7 @@ module.exports = {
     setOnlineUsersRegistry,
     isCurrentSocketForUuid,
     resyncSessionRouting,
-    getActiveGameSessionCount,
+    getActiveGamePresenceSnapshot,
     __resetStateForTests,
     __getOnlineUsersRegistryForTests,
     // 테스트에서 socket.on 배선 없이 핸들러를 직접 호출하기 위한 통로입니다(matchmaking.js의
