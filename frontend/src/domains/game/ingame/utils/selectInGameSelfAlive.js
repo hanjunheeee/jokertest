@@ -1,3 +1,5 @@
+import { isSessionPlayerAlive } from "./buildDayVoteTargets.js"
+
 /**
  * 본인의 canonical 생존 여부를 store state에서 유도한다(순수 함수).
  *
@@ -22,4 +24,26 @@ export function selectInGameSelfAlive(state) {
   if (!selfEntry || typeof selfEntry.alive !== "boolean") return null
 
   return selfEntry.alive
+}
+
+/**
+ * 조작 컨트롤(낮 투표·낮 준비·밤 행동)의 생존 게이트가 쓸 단일 판정원이다.
+ *
+ * 서버 canonical 상태(state.players[].alive)가 판정 가능하면 언제나 그 값을 쓴다 — 세션
+ * 컨텍스트의 status는 buildPlayerSessionSourceFromGameState가 fail-closed로 preview(더미)
+ * 목록을 돌려주는 구간에서 canonical과 어긋날 수 있어서(예: themeIndex가 없는 스냅샷 복원
+ * 직후), 그 구간에서 사망한 본인에게 투표 UI가 열려 있었다.
+ *
+ * canonical 판정이 불가능할 때만(null) 기존 isSessionPlayerAlive 폴백으로 떨어진다 —
+ * 세션 컨텍스트가 비면 생존 취급하던 종전 정책을 그대로 승계해, 초기 진입·프리뷰 화면이
+ * 회귀하지 않게 한다.
+ *
+ * 세 게이트가 각자 삼항식을 복붙하면 시간이 지나며 서로 어긋나므로(한 화면에서 투표는
+ * 열리고 밤 행동은 잠기는 식), 판정원을 이 함수 하나로 고정한다.
+ */
+export function resolveInGameSelfAliveForControls(state, localSessionPlayer) {
+  const canonicalAlive = selectInGameSelfAlive(state)
+  if (canonicalAlive !== null) return canonicalAlive
+
+  return isSessionPlayerAlive(localSessionPlayer)
 }
