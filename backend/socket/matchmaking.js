@@ -148,8 +148,11 @@ function registerMatchmakingHandlers(io, socket, uuid) {
         )
     )
     socket.on('leave_matchmaking', () => handleLeaveMatchmaking(uuid))
-    socket.on('join_room_by_code', ({ roomCode, roomId } = {}) =>
-        handleJoinRoomByCode(
+    socket.on('join_room_by_code', (payload = {}) => {
+        const { roomCode, roomId } = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
+            ? payload
+            : {}
+        return handleJoinRoomByCode(
             io,
             socket,
             uuid,
@@ -158,7 +161,7 @@ function registerMatchmakingHandlers(io, socket, uuid) {
         ).catch((err) =>
             console.error('\x1b[31m[방 코드 참가 에러]\x1b[0m', err)
         )
-    )
+    })
     socket.on('create_room', (payload, callback) => handleCreateRoom(io, socket, uuid, payload, callback))
     socket.on('get_current_room', (payload, callback) => handleGetCurrentRoom(uuid, callback))
     socket.on('get_public_rooms', (payload, callback) => handleGetPublicRooms(callback))
