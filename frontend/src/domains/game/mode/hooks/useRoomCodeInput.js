@@ -1,14 +1,15 @@
 import { useEffect, useRef } from "react"
+// 방코드의 문자·길이 규칙은 표시 화면(matching)과 공유합니다. 여기에 규칙을 다시 적으면
+// 한쪽만 바뀌었을 때 "보이는데 입력은 안 되는 코드"가 생기므로 출처를 하나로 둡니다.
+// 경로 별칭(@/) 대신 상대 경로를 쓰는 이유는, 이 훅의 테스트가 별칭을 해석하지 못하는
+// node --test로 돌기 때문입니다.
+import {
+  ROOM_CODE_LENGTH,
+  normalizeRoomCodeChar,
+  normalizeRoomCodeText,
+} from "../../matching/utils/roomCode.js"
 
-const CODE_LENGTH = 6
-
-function sanitizeChar(char) {
-  return char.replace(/\D/g, "").slice(-1)
-}
-
-function sanitizeCode(text) {
-  return text.replace(/\D/g, "").slice(0, CODE_LENGTH)
-}
+const CODE_LENGTH = ROOM_CODE_LENGTH
 
 // 방코드 6칸 입력의 포커스 이동, 붙여넣기, 삭제 동작을 처리하는 훅입니다.
 export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnly }) {
@@ -52,12 +53,12 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
       return
     }
 
-    const cleaned = sanitizeChar(raw)
+    const cleaned = normalizeRoomCodeChar(raw)
     if (!cleaned) return
 
     if (raw.length > 1) {
       // 자동완성/붙여넣기로 한 칸에 여러 글자가 들어오면 전체 방코드로 처리합니다.
-      const pasted = sanitizeCode(raw)
+      const pasted = normalizeRoomCodeText(raw)
       onChange(pasted)
       focusIndex(Math.min(pasted.length, CODE_LENGTH - 1))
       return
@@ -99,7 +100,7 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
   const handlePaste = (event) => {
     event.preventDefault()
 
-    const pasted = sanitizeCode(event.clipboardData.getData("text"))
+    const pasted = normalizeRoomCodeText(event.clipboardData.getData("text"))
     onChange(pasted)
     focusIndex(Math.min(Math.max(pasted.length - 1, 0), CODE_LENGTH - 1))
   }
