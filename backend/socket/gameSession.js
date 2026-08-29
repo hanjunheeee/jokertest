@@ -852,11 +852,11 @@ function resolveChatRecipientSockets(io, session, channel) {
 }
 
 /**
- * JOKER 비밀 채팅의 수신자 해석 — JOKER 진영 소켓만 반환합니다. 생존 여부는 조건이 아닙니다
- * (사망한 광대도 getChatRecipientUuids의 JOKER 채널에 그대로 남으므로 팀 대화를 계속 받습니다).
+ * 역할별 비밀 채팅의 수신자 해석. 지정 channel의 canonical 수신자만 반환하며,
+ * JOKER channel에서는 사망한 광대도 계속 팀 대화를 받습니다.
  */
-function resolveJokerTeammateSockets(io, session) {
-    return resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.JOKER)
+function resolveJokerTeammateSockets(io, session, channel = gameSessionCore.CHAT_CHANNELS.JOKER) {
+    return resolveChatRecipientSockets(io, session, channel)
 }
 
 /**
@@ -878,7 +878,8 @@ function resolveSessionParticipantSockets(io, session) {
 }
 
 /**
- * NIGHT 단계 JOKER 전용 채팅 메시지 제출을 처리합니다(Socket.IO acknowledgement 방식).
+ * NIGHT 단계 역할별 채팅 메시지 제출을 처리합니다(Socket.IO acknowledgement 방식).
+ * 기존 wire event/API 이름은 호환성을 위해 joker 명칭을 유지합니다.
  * deps.prepare/deps.commit/deps.resolveTeammateSockets/deps.idFn을 주입할 수 있습니다 —
  * production 기본값은 각각 game-core의 prepareJokerChatMessage/commitJokerChatMessage,
  * 이 파일의 resolveJokerTeammateSockets, node:crypto의 randomUUID입니다.
@@ -938,7 +939,11 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
 
     let teammateSockets
     try {
-        teammateSockets = resolveTeammateSockets(io, prepared.session)
+        teammateSockets = resolveTeammateSockets(
+            io,
+            prepared.session,
+            prepared.channel ?? gameSessionCore.CHAT_CHANNELS.JOKER,
+        )
     } catch (err) {
         console.error('[조커 채팅 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
         respondJokerChat(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })

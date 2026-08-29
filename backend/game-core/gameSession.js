@@ -111,7 +111,11 @@ function sanitizeChatText(rawText) {
  * getChatRecipientUuids 참고. 상수와 rate limit 필드는 세션 조립·정리 계약(아래
  * CHAT_RATE_LIMIT_FIELD_BY_CHANNEL을 그대로 순회하는 코드들)을 건드리지 않기 위해 남겨 둔다.
  */
-const CHAT_CHANNELS = Object.freeze({ DAY: 'DAY', DEAD: 'DEAD', JOKER: 'JOKER' })
+const CHAT_CHANNELS = Object.freeze({
+    DAY: 'DAY',
+    DEAD: 'DEAD',
+    ...Object.fromEntries(Object.values(GAME_ROLES).map((role) => [role, role])),
+})
 
 // 채널별 rate limit Map은 session 안에서 서로 다른 필드로 완전히 분리해 둔다 — 같은 uuid라도
 // 한 채널의 전송이 다른 채널의 간격 판정에 영향을 주지 않는다(채널 격리). roleRevealAcks/
@@ -119,7 +123,7 @@ const CHAT_CHANNELS = Object.freeze({ DAY: 'DAY', DEAD: 'DEAD', JOKER: 'JOKER' }
 const CHAT_RATE_LIMIT_FIELD_BY_CHANNEL = Object.freeze({
     DAY: 'dayChatRateLimit',
     DEAD: 'deadChatRateLimit',
-    JOKER: 'jokerChatRateLimit',
+    ...Object.fromEntries(Object.values(GAME_ROLES).map((role) => [role, 'jokerChatRateLimit'])),
 })
 
 /** 채널에 대응하는 session의 rate limit Map을 돌려준다(알 수 없는 채널이면 undefined). */
@@ -225,11 +229,12 @@ function resolveGameChatChannel(session, actor) {
  */
 function getChatRecipientUuids(session, channel) {
     const uuids = []
+    const roleChannel = Object.values(GAME_ROLES).includes(channel)
     for (const player of session.players.values()) {
         if (channel === CHAT_CHANNELS.DAY) {
             uuids.push(player.uuid)
-        } else if (channel === CHAT_CHANNELS.JOKER) {
-            if (ROLE_TEAMS[player.role] === 'JOKER') uuids.push(player.uuid)
+        } else if (roleChannel && player.role === channel) {
+            if (player.alive === true || channel === CHAT_CHANNELS.JOKER) uuids.push(player.uuid)
         }
     }
     return uuids
@@ -2455,22 +2460,19 @@ function getSessionSnapshotForPlayer(uuid, expectedGameId) {
 }
 
 /**
- * NIGHT 단계 JOKER 전용 채팅 메시지를 검증합니다(어떤 상태도 바꾸지 않는 순수 함수). 인증된
+ * NIGHT 단계 역할별 채팅 메시지를 검증합니다(어떤 상태도 바꾸지 않는 순수 함수). 인증된
  * uuid와 클라이언트가 알고 있는 gameId, 원문 text만 입력으로 받습니다 — role/team/senderUuid
  * 등은 이 함수의 입력에 아예 없습니다(클라이언트가 그런 필드를 함께 보내도 무시됩니다).
  *
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
- *   → 5. 발신자가 JOKER 진영인지(ROLE_TEAMS[actor.role] !== 'JOKER'면 NOT_ELIGIBLE —
- *   CITIZEN이 payload를 위조해도 여기서 막힙니다) → 6. sanitizeChatText
+ *   → 5. 발신자가 생존했는지(사망 JOKER만 예외) → 6. sanitizeChatText
  *   → 7. now()를 정확히 한 번 호출해 sentAt을 계산하고 유효성 검증(INVALID_CLOCK_VALUE)
  *   → 8. jokerChatRateLimit을 읽기만 해서 rate limit 판정(RATE_LIMITED).
  *
- * 생존 여부는 이 판정의 입력이 아닙니다 — 사망한 광대도 밤의 JOKER 채널에서 계속 말하고 듣습니다
- * (getChatRecipientUuids의 JOKER 채널 수신자에도 그대로 남습니다). 공개 채팅은 반대로 사망자의
- * 발행을 전부 거부하므로(resolveGameChatChannel), 사망한 광대에게 열려 있는 유일한 발신 경로가
- * 이 팀 채널입니다.
+ * 생존자는 자신의 역할 채널을 사용하고, 사망한 광대만 JOKER 채널에서 계속 말하고 듣습니다.
+ * 공개 채팅은 사망자의 발행을 전부 거부합니다(resolveGameChatChannel).
  *
  * 이 함수는 session.jokerChatRateLimit을 포함해 어떤 Map도 쓰지 않습니다(읽기만 합니다) —
  * idFn도 호출하지 않습니다(호출자인 소켓 계층이 recipient 해석·발신자 포함 확인을 전부 통과한
@@ -2493,7 +2495,7 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
     if (!endedCheck.ok) return endedCheck
 
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
-    if (ROLE_TEAMS[actor.role] !== 'JOKER') return { ok: false, code: 'NOT_ELIGIBLE' }
+    if (actor.alive !== true && actor.role !== GAME_ROLES.JOKER) return { ok: false, code: 'NOT_ELIGIBLE' }
 
     const sanitized = sanitizeChatText(text)
     if (!sanitized.ok) return sanitized
@@ -2503,12 +2505,13 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
         return { ok: false, code: 'INVALID_CLOCK_VALUE' }
     }
 
-    const lastSentAt = getChatRateLimitMap(session, CHAT_CHANNELS.JOKER).get(uuid)
+    const channel = actor.role
+    const lastSentAt = getChatRateLimitMap(session, channel).get(uuid)
     if (lastSentAt !== undefined && sentAt - lastSentAt < CHAT_MIN_INTERVAL_MS) {
         return { ok: false, code: 'RATE_LIMITED' }
     }
 
-    return { ok: true, session, actorUuid: uuid, sanitizedText: sanitized.text, sentAt }
+    return { ok: true, session, channel, actorUuid: uuid, sanitizedText: sanitized.text, sentAt }
 }
 
 /** JOKER 채팅의 유일한 mutation — prepareJokerChatMessage가 반환한 session/uuid/sentAt으로 rate limit을 갱신합니다. */
@@ -2516,7 +2519,14 @@ function commitJokerChatMessage(session, uuid, sentAt) {
     const endedCheck = assertSessionNotEnded(session)
     if (!endedCheck.ok) return endedCheck
 
-    getChatRateLimitMap(session, CHAT_CHANNELS.JOKER).set(uuid, sentAt)
+    const actor = session.players.get(uuid)
+    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+    if (actor.alive !== true && actor.role !== GAME_ROLES.JOKER) return { ok: false, code: 'NOT_ELIGIBLE' }
+
+    const rateLimitMap = getChatRateLimitMap(session, actor.role)
+    if (!(rateLimitMap instanceof Map)) return { ok: false, code: 'INVALID_CHAT_CHANNEL' }
+    rateLimitMap.set(uuid, sentAt)
     return { ok: true }
 }
 

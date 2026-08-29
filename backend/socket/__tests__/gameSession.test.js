@@ -1227,7 +1227,7 @@ test('submit_joker_chat_message: callback throw와 recipient emit throw가 동�
     assert.deepEqual(secondLogged, { code: 'DELIVERY_ERROR', uuid: actor, gameId: session.id })
 })
 
-test('submit_joker_chat_message: CITIZEN이 직접 호출하면 NOT_ELIGIBLE이고 어떤 소켓에도 브로드캐스트되지 않는다', () => {
+test('submit_joker_chat_message: CITIZEN 발행은 같은 역할 소켓에만 전달되고 JOKER에는 전달되지 않는다', () => {
     const { session, io, citizenUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc19a', 'jc19b', 'jc19c'], { roomId: 'room-jc-19' })
     const [citizen] = citizenUuids
     const socket = socketByUuid.get(citizen)
@@ -1235,9 +1235,47 @@ test('submit_joker_chat_message: CITIZEN이 직접 호출하면 NOT_ELIGIBLE이�
 
     handleSubmitJokerChatMessage(io, socket, citizen, { gameId: session.id, text: 'hello' }, callback)
 
-    assert.deepEqual(getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
-    for (const s of [...socketByUuid.values()]) {
-        assert.equal(s.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const [uuid, s] of socketByUuid) {
+        const expected = session.players.get(uuid).role === 'CITIZEN' ? 1 : 0
+        assert.equal(s.emitted.filter((e) => e.event === 'joker_chat_message').length, expected)
+    }
+})
+
+test('submit_joker_chat_message: 밤의 5개 역할은 각각 같은 역할 소켓에만 전달되고 다른 역할에는 누출되지 않는다', () => {
+    const { session } = commitFullRoleSessionAtNight({ id: 'room-jc-all-roles' })
+    const sockets = [...session.players.keys()].map((uuid) => {
+        const socket = createFakeSocket(uuid)
+        socket.rooms.add(session.channelId)
+        return socket
+    })
+    const io = createFakeIo(sockets)
+    const socketByUuid = new Map(sockets.map((socket) => [socket.data.user.uuid, socket]))
+
+    for (const role of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER', 'CITIZEN']) {
+        for (const socket of sockets) socket.emitted.length = 0
+        io.broadcasts.length = 0
+
+        const actor = [...session.players.values()].find((player) => player.role === role).uuid
+        const { callback, getResponse } = countingCallback()
+        handleSubmitJokerChatMessage(
+            io,
+            socketByUuid.get(actor),
+            actor,
+            { gameId: session.id, text: `${role} private message` },
+            callback,
+        )
+
+        assert.deepEqual(getResponse(), { ok: true }, `${role} 발행이 거부됐다`)
+        for (const [uuid, socket] of socketByUuid) {
+            const expected = session.players.get(uuid).role === role ? 1 : 0
+            assert.equal(
+                socket.emitted.filter((entry) => entry.event === 'joker_chat_message').length,
+                expected,
+                `${role} 메시지의 ${uuid} 전달 수가 올바르지 않다`,
+            )
+        }
+        assert.equal(io.broadcasts.length, 0, `${role} 메시지가 공개 브로드캐스트로 누출됐다`)
     }
 })
 

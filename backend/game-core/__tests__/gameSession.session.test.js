@@ -1115,12 +1115,14 @@ test('prepareJokerChatMessage: ROLE_REVEAL 단계에서는 INVALID_PHASE다', ()
     assert.deepEqual(result, { ok: false, code: 'INVALID_PHASE' })
 })
 
-test('prepareJokerChatMessage: CITIZEN 발신자는 NOT_ELIGIBLE이다(payload 위조 방어)', () => {
+test('prepareJokerChatMessage: 생존 CITIZEN 발신자는 canonical CITIZEN 채널로 라우팅된다', () => {
     const { session, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-pjc-6' })
 
     const result = prepareJokerChatMessage(citizenUuid, session.id, 'hello')
 
-    assert.deepEqual(result, { ok: false, code: 'NOT_ELIGIBLE' })
+    assert.equal(result.ok, true)
+    assert.equal(result.channel, 'CITIZEN')
+    assert.equal(result.actorUuid, citizenUuid)
 })
 
 test('prepareJokerChatMessage: text 검증 실패(빈 문자열)는 EMPTY_MESSAGE 그대로 전파된다', () => {

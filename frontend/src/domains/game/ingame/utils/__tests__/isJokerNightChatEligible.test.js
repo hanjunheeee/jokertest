@@ -11,14 +11,14 @@ test("isJokerNightChatEligible: state.self가 없는 미완성 state는 false다
 })
 
 /** phase/team/생존 여부만 바꿔가며 판정하기 위한 최소 canonical state. */
-function jokerState({ phase = "NIGHT", team = "JOKER", alive = true } = {}) {
+function jokerState({ phase = "NIGHT", role = "JOKER", alive = true } = {}) {
   return {
     phase,
     players: [
       { uuid: "me", nickname: "me", alive },
       { uuid: "other", nickname: "other", alive: true },
     ],
-    self: { uuid: "me", nickname: "me", role: team === "JOKER" ? "JOKER" : "CITIZEN", team },
+    self: { uuid: "me", nickname: "me", role, team: role === "JOKER" ? "JOKER" : "CITIZEN" },
   }
 }
 
@@ -26,8 +26,10 @@ test("isJokerNightChatEligible: phase가 NIGHT이고 self.team이 JOKER면 true�
   assert.equal(isJokerNightChatEligible(jokerState()), true)
 })
 
-test("isJokerNightChatEligible: phase가 NIGHT이고 self.team이 CITIZEN이면 false다", () => {
-  assert.equal(isJokerNightChatEligible(jokerState({ team: "CITIZEN" })), false)
+test("isJokerNightChatEligible: NIGHT의 모든 생존 역할은 true다", () => {
+  for (const role of ["JOKER", "CITIZEN", "DOCTOR", "GUARD", "WITCH_HUNTER"]) {
+    assert.equal(isJokerNightChatEligible(jokerState({ role })), true, role)
+  }
 })
 
 test("isJokerNightChatEligible: phase가 ROLE_REVEAL이고 self.team이 JOKER여도 false다", () => {
@@ -37,6 +39,12 @@ test("isJokerNightChatEligible: phase가 ROLE_REVEAL이고 self.team이 JOKER여
 test("isJokerNightChatEligible: 사망한 JOKER도 NIGHT이면 true다(죽은 광대만의 확정 특례)", () => {
   // 밤에 사망자의 DEAD 채널은 닫히지만(inGameChatChannel), 죽은 광대의 JOKER 채널은 열린다.
   assert.equal(isJokerNightChatEligible(jokerState({ alive: false })), true)
+})
+
+test("isJokerNightChatEligible: 사망한 비-JOKER는 NIGHT이어도 false다", () => {
+  for (const role of ["CITIZEN", "DOCTOR", "GUARD", "WITCH_HUNTER"]) {
+    assert.equal(isJokerNightChatEligible(jokerState({ role, alive: false })), false, role)
+  }
 })
 
 test("isJokerNightChatEligible: canonical roster에서 생존 여부를 확인할 수 없으면 false다(fail-closed)", () => {

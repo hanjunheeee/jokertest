@@ -240,7 +240,7 @@ test("생존자는 day_chat_message_received만 렌더하고 dead_chat_message_r
   hook.unmount()
 })
 
-test("사망자는 dead_chat_message_received만 렌더하고 공개 DAY 메시지는 무시한다", () => {
+test("낮의 사망자는 공개 DAY 메시지를 렌더하고 퇴역한 DEAD 메시지는 무시한다", () => {
   seedStore({ phase: "DAY", alive: false })
   const fake = createFakeChatSocket()
   setFakeSocket(fake.socket)
@@ -253,7 +253,7 @@ test("사망자는 dead_chat_message_received만 렌더하고 공개 DAY 메시�
 
   assert.deepEqual(
     hook.result.current.messages.map((m) => m.text),
-    ["사망자 대화"],
+    ["낮 대화"],
   )
 
   hook.unmount()
@@ -373,8 +373,8 @@ test("DAY→NIGHT 이후 도착한 DAY 응답은 아무 것도 바꾸지 않는�
     await flushMicrotasks()
   })
 
-  // 성공 응답이었지만 그 사이 유효 전송 채널이 사라졌으므로 초안은 지워지지 않는다.
-  assert.equal(hook.result.current.draft, "낮에 보낸 문장")
+  // 화면이 밤의 역할 채널로 전환됐으므로 DAY 초안은 현재 화면에서 마스킹되고 늦은 응답도 반영되지 않는다.
+  assert.equal(hook.result.current.draft, "")
   assert.equal(hook.result.current.error, null)
   assert.equal(hook.result.current.status, "idle")
 
@@ -399,10 +399,11 @@ test("생존→사망 이후 도착한 DAY 실패 응답은 사망자 화면에 
     await flushMicrotasks()
   })
 
-  // 지금 보이는 채널은 DEAD다 — DAY의 오류/전송 표시/초안이 하나도 노출되지 않는다.
+  // 사망자도 낮에는 같은 DAY 내역을 보지만 발행 권한만 잃는다. 늦은 실패 응답은 오류를 만들지
+  // 않고, 사용자가 작성하던 DAY 초안은 보존된다.
   assert.equal(hook.result.current.error, null)
   assert.equal(hook.result.current.status, "idle")
-  assert.equal(hook.result.current.draft, "")
+  assert.equal(hook.result.current.draft, "생전에 보낸 문장")
 
   hook.unmount()
 })
@@ -558,7 +559,7 @@ test("socket이 교체되면 이전 socket으로 보낸 요청의 응답은 반�
   hook.unmount()
 })
 
-test("DAY 오류가 남아있는 상태로 사망해도 DEAD 화면에는 오류가 없고, DEAD 전송은 정상 동작한다", async () => {
+test("DAY 오류가 남아있는 상태로 사망하면 오류는 지워지고 DAY는 열람 전용이 된다", async () => {
   seedStore({ phase: "DAY", alive: true })
   const fake = createFakeChatSocket()
   setFakeSocket(fake.socket)
@@ -581,12 +582,11 @@ test("DAY 오류가 남아있는 상태로 사망해도 DEAD 화면에는 오류
   })
 
   assert.equal(hook.result.current.error, null)
-  assert.equal(hook.result.current.draft, "")
+  assert.equal(hook.result.current.draft, "실패할 문장")
 
   act(() => hook.result.current.setDraft("사망자 문장"))
   act(() => hook.result.current.send())
-  assert.equal(fake.emitWithAckCalls.length, 2)
-  assert.deepEqual(fake.emitWithAckCalls[1].payload, { gameId: GAME_ID, text: "사망자 문장" })
+  assert.equal(fake.emitWithAckCalls.length, 1, "사망자는 DAY를 읽을 수 있지만 새 메시지를 발행할 수 없다")
 
   hook.unmount()
 })

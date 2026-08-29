@@ -11,8 +11,9 @@
 // 자체가 조합 전체에서 성립하는지를 본다(AC 단위 추적 가능성이 이 파일의 존재 이유다).
 //
 // 이 슬라이스가 고정하는 규칙 한 줄 요약:
-//   발행은 "살아 있는 낮의 참가자"(공개 DAY)와 "JOKER 진영"(밤의 팀 채널)만 할 수 있고,
-//   수신은 공개 DAY가 관전 중인 사망자까지 전원, JOKER 채널이 사망한 광대까지 팀 전원이다.
+//   발행은 "살아 있는 낮의 참가자"(공개 DAY)와 "살아 있는 각 역할"(밤의 역할 채널)이 할 수 있고,
+//   수신은 공개 DAY가 관전 중인 사망자까지 전원, 역할 채널은 같은 역할 생존자만이다.
+//   단, 사망한 JOKER는 밤의 JOKER 채널에서 계속 송수신할 수 있다.
 //   사망자 전용 채널(CHAT_CHANNELS.DEAD)은 퇴역해 수신자가 언제나 0명이다.
 
 const test = require('node:test')
@@ -96,11 +97,10 @@ function rolesOf(session) {
 // AC-01 · 밤 턴 — 생존자는 자기 직업 채널만 쓰고 타 직업 채널을 수신하지 않는다
 // ---------------------------------------------------------------------------
 
-test('AC-01: 직업 전용 채널은 JOKER 하나뿐이고 DEAD는 수신자가 없는 퇴역 채널이다', () => {
-    // 이 단언이 깨지면 AC-01의 "각 직업 채널"이 더 이상 JOKER 하나를 뜻하지 않는다는 뜻이고,
-    // 아래 밤 격리 테스트들의 전제가 통째로 다시 정의돼야 한다.
-    assert.deepEqual(Object.keys(CHAT_CHANNELS).sort(), ['DAY', 'DEAD', 'JOKER'])
-    assert.deepEqual(CHAT_CHANNELS, { DAY: 'DAY', DEAD: 'DEAD', JOKER: 'JOKER' })
+test('AC-01: 모든 게임 역할은 같은 이름의 밤 채널을 갖고 DEAD는 수신자가 없는 퇴역 채널이다', () => {
+    assert.deepEqual(Object.keys(CHAT_CHANNELS).sort(), [
+        'CITIZEN', 'DAY', 'DEAD', 'DOCTOR', 'GUARD', 'JOKER', 'WITCH_HUNTER',
+    ])
 
     const { session } = createChatSessionFixture({
         id: 'room-ac1-consts',
@@ -131,37 +131,29 @@ test('AC-01: 밤에는 생존자 누구도 공개 채팅으로 발행할 수 없
     assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
 })
 
-test('AC-01: 밤에 생존 JOKER는 JOKER 채널만 쓸 수 있고, 다른 직업의 생존자는 그 채널을 열 수도 받을 수도 없다', () => {
-    const { session, jokerUuids, otherUuids } = createChatSessionFixture({
+test('AC-01: 밤의 모든 생존자는 자기 역할 채널로 발행하고 같은 역할 생존자만 수신한다', () => {
+    const { session } = createChatSessionFixture({
         id: 'room-ac1-joker',
         phase: 'NIGHT',
-        uuids: ['ac1fa', 'ac1fb', 'ac1fc', 'ac1fd', 'ac1fe'],
-        jokerCount: 2,
+        uuids: ['ac1fa', 'ac1fb', 'ac1fc', 'ac1fd', 'ac1fe', 'ac1ff', 'ac1fg', 'ac1fh', 'ac1fi', 'ac1fj'],
+        jokerCount: 1,
     })
-    assert.equal(jokerUuids.length, 2, '이 픽스처는 JOKER 2명을 전제한다')
-    assert.equal(rolesOf(session).length >= 2, true, '비교 대상이 될 다른 직업이 최소 하나는 배정돼야 한다')
+    assert.deepEqual(rolesOf(session).sort(), ['CITIZEN', 'DOCTOR', 'GUARD', 'JOKER', 'WITCH_HUNTER'])
 
-    // 발행: JOKER 진영만 통과하고, 나머지 직업은 전부 같은 코드로 막힌다.
-    for (const uuid of jokerUuids) {
-        assert.equal(prepareJokerChatMessage(uuid, session.id, '팀 대화', { now: () => 1000 }).ok, true)
-    }
-    for (const uuid of otherUuids) {
-        assert.deepEqual(
-            prepareJokerChatMessage(uuid, session.id, '끼어들기', { now: () => 1000 }),
-            { ok: false, code: 'NOT_ELIGIBLE' },
-            `${session.players.get(uuid).role}는 JOKER 채널을 열 수 없다`,
-        )
-    }
+    for (const player of session.players.values()) {
+        const prepared = prepareJokerChatMessage(player.uuid, session.id, '역할 대화', { now: () => 1000 })
+        assert.equal(prepared.ok, true, `${player.role} 생존자는 밤 채팅을 보낼 수 있다`)
+        assert.equal(prepared.channel, player.role)
 
-    // 수신: JOKER 채널 수신자 집합에 다른 직업은 한 명도 없다.
-    const jokerRecipients = getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)
-    assert.deepEqual([...jokerRecipients].sort(), [...jokerUuids].sort())
-    for (const uuid of otherUuids) {
-        assert.equal(jokerRecipients.includes(uuid), false, `${uuid}는 JOKER 채널을 수신하지 않는다`)
+        const expected = [...session.players.values()]
+            .filter((candidate) => candidate.alive === true && candidate.role === player.role)
+            .map((candidate) => candidate.uuid)
+            .sort()
+        assert.deepEqual(getChatRecipientUuids(session, player.role).sort(), expected)
     }
 })
 
-test('AC-01: 밤에 실제로 메시지를 나를 수 있는 채널은 JOKER 하나뿐이고, 그 수신자는 JOKER 진영 전원과 정확히 같다', () => {
+test('AC-01: 역할 채널들은 서로 겹치지 않고, 사망 비-JOKER만 자기 역할 채널에서 빠진다', () => {
     const uuids = ['ac1ga', 'ac1gb', 'ac1gc', 'ac1gd', 'ac1ge']
     const { session, jokerUuids, otherUuids } = createChatSessionFixture({
         id: 'room-ac1-sets',
@@ -172,16 +164,17 @@ test('AC-01: 밤에 실제로 메시지를 나를 수 있는 채널은 JOKER 하
         deadPicker: ({ jokerUuids: jokers, otherUuids: others }) => [jokers[0], others[0]],
     })
 
-    // 밤에 발행 가능한 유일한 경로가 JOKER 채널임을 라우팅으로 못 박는다.
-    for (const uuid of uuids) {
-        const routed = routeOf(session, uuid)
-        assert.equal(routed.ok, false, `${uuid}의 공개 채팅은 밤에 열리지 않는다`)
+    const seen = new Set()
+    for (const role of rolesOf(session)) {
+        const recipients = getChatRecipientUuids(session, role)
+        for (const uuid of recipients) {
+            assert.equal(seen.has(uuid), false, `${uuid}가 두 역할 채널에 동시에 포함되면 안 된다`)
+            seen.add(uuid)
+            assert.equal(session.players.get(uuid).role, role)
+        }
     }
-
-    const joker = getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)
-    assert.deepEqual([...joker].sort(), [...jokerUuids].sort(), 'JOKER 채널 = JOKER 진영 전원(생존 여부 무관)')
-    for (const uuid of otherUuids) assert.equal(joker.includes(uuid), false)
-    // 퇴역한 DEAD 채널로는 사망자도 새지 않는다.
+    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.JOKER).sort(), jokerUuids.sort())
+    assert.equal(seen.has(otherUuids[0]), false, '사망한 비-JOKER는 밤 채널 수신자에서 제외된다')
     assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [])
 })
 
@@ -579,7 +572,7 @@ test('AC-05: 능력 대조가 보는 필드를 하나씩 흔들면 전부 STALE_
     assert.deepEqual(chatRateLimitSnapshot(session).DAY, [[actor, baseSentAt]])
 })
 
-test('AC-05: 비-JOKER는 JOKER 채널을 열 수 없고, 그 거부는 어떤 Map도 소비하지 않는다', () => {
+test('AC-05: 비-JOKER가 JOKER 채널을 주장해도 서버는 canonical 자기 역할 채널만 유도한다', () => {
     const { session, otherUuids } = createChatSessionFixture({
         id: 'room-ac5-joker',
         phase: 'NIGHT',
@@ -587,10 +580,14 @@ test('AC-05: 비-JOKER는 JOKER 채널을 열 수 없고, 그 거부는 어떤 M
     })
 
     for (const uuid of otherUuids) {
-        assert.deepEqual(prepareJokerChatMessage(uuid, session.id, '권한 없는 발행', { now: () => 60_000 }), {
-            ok: false,
-            code: 'NOT_ELIGIBLE',
+        const actor = session.players.get(uuid)
+        const prepared = prepareJokerChatMessage(uuid, session.id, 'canonical 발행', {
+            now: () => 60_000,
+            channel: CHAT_CHANNELS.JOKER,
         })
+        assert.equal(prepared.ok, true)
+        assert.equal(prepared.channel, actor.role)
+        assert.equal(getChatRecipientUuids(session, CHAT_CHANNELS.JOKER).includes(uuid), false)
     }
     assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
 })
