@@ -910,6 +910,73 @@ function getEligibleNightActorUuids(session) {
     return uuids
 }
 
+// 한 밤 안에서 역할 턴이 도는 canonical 순서다 — 광대(JOKER)가 먼저 표적을 고르고, 의사·경비원이
+// 뒤따르며, 마지막이 WITCH_HUNTER다. 밤 진행 순서를 표현하는 값은 이것 하나뿐이므로 소켓 계층의
+// 턴 오케스트레이터도 테스트도 여기만 읽는다.
+//
+// 이 순서는 "그 밤에 실제로 행동할 수 있는 역할"이 아니라 "턴이 도는 역할" 전부를 담는다 —
+// dayIndex 때문에 아직 능력이 없는 WITCH_HUNTER(nightActionMinDayIndex: 2)나 전원 사망한 역할도
+// 턴 자체는 똑같이 돈다. 턴이 도는지 여부가 생존·역할 정보를 흘리지 않게 하려는 것이며,
+// isEligibleForNightAction은 그 턴 안에서 누가 제출할 수 있는지만 가른다.
+const NIGHT_TURN_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+// 턴 하나의 제한시간. night_turn_started.deadline과, 생존 actor가 없는 턴의 무작위 지연 범위가
+// 모두 이 값 하나에서 유도된다(두 곳이 다른 기준을 쓰면 지연 길이만으로 전멸 여부가 새어나간다).
+const NIGHT_TURN_DURATION_MS = 30_000
+
+/**
+ * night_turn_started 공용 payload. 이 밤에 그 역할의 생존 actor가 있든 없든 정확히 같은 필드와
+ * 같은 값 형태를 만든다 — 생존 정보를 인자로 받지도 않고 session에서 유도하지도 않으므로,
+ * 죽은 직업의 턴과 산 직업의 턴이 payload만으로는 구별되지 않는다. deadline은 호출자가 계산한
+ * 절대시각(ms)이며, 실제 종료가 그보다 이를 수 있다는 사실 자체는 payload에 담기지 않는다.
+ */
+function buildNightTurnStartedPayload(session, role, deadline) {
+    return { gameId: session.id, dayIndex: session.dayIndex, role, deadline }
+}
+
+/**
+ * night_turn_ended 공용 payload. started와 같은 이유로 생존 정보를 받지 않으며, 종료 사유(전원
+ * 제출 / 무인 지연)도 담지 않는다 — 사유를 실으면 그 값 자체가 곧 전멸 신호가 된다.
+ */
+function buildNightTurnEndedPayload(session, role) {
+    return { gameId: session.id, dayIndex: session.dayIndex, role }
+}
+
+// 이 밤에 그 역할로 행동해야 할 "생존" actor uuid만 좁혀서 반환한다. 분모를
+// getEligibleNightActorUuids 위에 얹어 계산하므로, 턴 종료 판정이 보는 목록과
+// prepareNightResolution의 제출 완료 판정이 보는 목록이 갈릴 수 없다.
+function getAliveActorUuidsForRole(session, role) {
+    return getEligibleNightActorUuids(session).filter((uuid) => session.players.get(uuid)?.role === role)
+}
+
+/**
+ * 그 역할의 생존 actor 전원이 이번 밤 제출을 마쳤는지 판정한다.
+ *
+ * 세는 기준은 session.nightActions.has(uuid) 하나다(값이 아니라 키의 존재) — SKIP(targetId
+ * null)도 submitNightAction이 정식으로 기록하므로 여기서 자동으로 제출로 계산된다. 반대로
+ * JOKER가 동료를 지목한 경우는 submitNightAction이 기록 없이 ok만 돌려주는 no-op이라 제출로
+ * 세지 않는다 — prepareNightResolution의 ACTIONS_PENDING 검사도 같은 has() 기준이므로, 여기서
+ * 세는 방식과 밤 판정이 요구하는 조건이 정확히 일치한다.
+ *
+ * 생존 actor가 하나도 없으면 공집합이라 참이 된다. 호출자는 그 경우를 "전원 제출"로 다루면
+ * 안 된다(무인 턴은 별도의 지연 경로로 끝나야 한다) — getAliveActorUuidsForRole로 먼저 갈라야 한다.
+ */
+function isRoleTurnComplete(session, role) {
+    for (const actorUuid of getAliveActorUuidsForRole(session, role)) {
+        if (!session.nightActions.has(actorUuid)) return false
+    }
+    return true
+}
+
+/**
+ * 지금 진행 중인 밤 턴의 역할을 반환한다. 턴 시퀀서가 돌고 있지 않으면(세션에 턴 상태가 아예
+ * 없으면) null이다 — submitNightAction의 턴 검사는 이 null을 "턴 제약 없음"으로 해석하므로,
+ * 시퀀서 없이 밤을 직접 조립하는 경로(테스트 픽스처·기존 흐름)의 제출은 그대로 통과한다.
+ */
+function getCurrentNightTurnRole(session) {
+    return session.nightTurnRole ?? null
+}
+
 // JOKER의 non-null target을 집계해 최다 득표 대상 하나를 반환한다. 동률(2명 이상이 공동
 // 최다)이거나 전원 SKIP/미제출이면 null이다. Map 순회 순서에 의존하지 않도록 득표수 자체만
 // 비교한다(먼저 등장한 대상이 아니라, 오직 표 수만으로 승자를 가린다).
@@ -1065,6 +1132,18 @@ function submitNightAction(uuid, gameId, targetId) {
     if (!actor.alive) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
     if (!isEligibleForNightAction(actor.role, session.dayIndex)) {
         return { ok: false, code: 'NOT_ELIGIBLE' }
+    }
+    // 턴 소유권은 eligibility "다음"이다 — 이 검사가 앞서면 CITIZEN처럼 애초에 밤 행동이 없는
+    // 참가자가 NOT_ELIGIBLE 대신 NOT_YOUR_TURN을 받아, 응답 코드가 "네 턴을 기다리면 된다"는
+    // 잘못된 신호가 된다. 역할 자격은 그 참가자에 대한 고정 사실이고 턴은 시점의 문제이므로
+    // 고정 사실이 먼저 판정되어야 한다.
+    //
+    // 턴 상태가 없으면(getCurrentNightTurnRole === null) 어떤 제출도 막지 않는다 — 턴 시퀀서가
+    // 돌고 있을 때만 유효한 제약이다. 진행 중인 턴의 역할은 그 밤의 모든 참가자에게 이미
+    // night_turn_started로 방송된 공개 정보라, 이 거부 코드는 어떤 비밀도 흘리지 않는다.
+    const currentTurnRole = getCurrentNightTurnRole(session)
+    if (currentTurnRole !== null && currentTurnRole !== actor.role) {
+        return { ok: false, code: 'NOT_YOUR_TURN' }
     }
 
     if (targetId !== null) {
@@ -2650,6 +2729,15 @@ module.exports = {
     acknowledgeDayVoteReady,
     buildDayPhaseChangedPayload,
     submitNightAction,
+    // 밤 턴 진행 규칙(순서·제한시간·payload·완료 판정)은 소켓 계층의 턴 오케스트레이터가
+    // 그대로 소비하는 공개 계약이므로 __testables가 아니라 정식 export다.
+    NIGHT_TURN_ORDER,
+    NIGHT_TURN_DURATION_MS,
+    buildNightTurnStartedPayload,
+    buildNightTurnEndedPayload,
+    getAliveActorUuidsForRole,
+    isRoleTurnComplete,
+    getCurrentNightTurnRole,
     submitDayVote,
     prepareJokerChatMessage,
     commitJokerChatMessage,
