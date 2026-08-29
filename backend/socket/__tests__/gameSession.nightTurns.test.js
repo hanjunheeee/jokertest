@@ -481,6 +481,70 @@ test('night turn: payload 키 단어 분해가 deadline은 통과시키고 생�
     }
 })
 
+/**
+ * 한 밤을 끝까지 돌리고 그동안의 턴 방송을 모두 담아 돌려준다. deadRoles에 든 역할은 그 역할의
+ * 참가자를 전부 사망 처리한 뒤 시작하므로 무인 턴이 되고, 그 턴은 지연 타이머로만 끝난다.
+ *
+ * 생존 actor가 있는 턴은 제출로 끝내므로 시계가 전혀 흐르지 않는다 — 그래서 deadRoles를 바꿔도
+ * 그보다 앞선 턴들의 시작 시각이 달라지지 않고, 두 실행의 같은 역할 턴을 같은 시각 기준으로
+ * 비교할 수 있다(이 성질이 아래 대조 테스트의 전제다).
+ */
+function runNightCapturingTurnBroadcasts({ id, deadRoles = [], startMs = 1_000_000 } = {}) {
+    const fixture = commitFullRoleSessionAtNight({ id })
+    const { session } = fixture
+    const uuidByRole = {
+        JOKER: fixture.jokerUuid,
+        DOCTOR: fixture.doctorUuid,
+        GUARD: fixture.guardUuid,
+        WITCH_HUNTER: fixture.witchHunterUuid,
+    }
+    for (const role of deadRoles) session.players.get(uuidByRole[role]).alive = false
+
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock(startMs)
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+
+    for (const role of NIGHT_TURN_ORDER) {
+        if (gameSessionCore.getCurrentNightTurnRole(session) !== role) break
+        // 무인 턴은 제출할 사람이 없으므로 지연 타이머가 끝내도록 시계를 진행시킨다.
+        if (deadRoles.includes(role)) clock.advance(NIGHT_TURN_DURATION_MS)
+        else submit(uuidByRole[role], null)
+    }
+    return { io, session }
+}
+
+test('night turn: 같은 역할의 턴 방송은 그 역할의 전멸 여부와 무관하게 완전히 동일하다', () => {
+    // AC-05의 가장 강한 형태 — 같은 밤을 두 번 돌리되 한 번은 그 역할이 살아 있고 한 번은
+    // 전멸한 상태로 돌린다. 두 실행에서 그 역할의 턴 방송이 (세션마다 다른 gameId를 빼면)
+    // 완전히 같은 객체라면, payload의 어떤 필드도 어떤 값도 생존 여부의 함수가 아니라는 뜻이다.
+    // 앞선 테스트가 "산 역할 vs 죽은 역할"을 비교하느라 role을 가려야 했던 것과 달리, 여기서는
+    // 역할을 고정하고 생존 여부만 바꾸므로 가릴 필드가 없다.
+    for (const role of NIGHT_TURN_ORDER) {
+        const aliveRun = runNightCapturingTurnBroadcasts({ id: `alive-${role}` })
+        const deadRun = runNightCapturingTurnBroadcasts({ id: `dead-${role}`, deadRoles: [role] })
+
+        const pick = (run, event) => run.io.broadcasts.find((b) => b.event === event && b.payload.role === role)
+        for (const event of ['night_turn_started', 'night_turn_ended']) {
+            const fromAlive = pick(aliveRun, event)
+            const fromDead = pick(deadRun, event)
+            assert.ok(fromAlive, `${role}이 살아 있을 때 ${event}가 방송된다`)
+            assert.ok(fromDead, `${role}이 전멸했을 때도 ${event}가 똑같이 방송된다`)
+
+            // gameId는 세션마다 다른 식별자라 두 실행에서 다를 수밖에 없다 — 각자 자기 세션의
+            // id인지만 확인하고 대조에서는 같은 값으로 가린다.
+            assert.equal(fromAlive.payload.gameId, aliveRun.session.id)
+            assert.equal(fromDead.payload.gameId, deadRun.session.id)
+            assert.equal(fromDead.roomId, deadRun.session.channelId)
+
+            assert.deepEqual(
+                { ...fromDead.payload, gameId: 'X' },
+                { ...fromAlive.payload, gameId: 'X' },
+                `${role}의 ${event} payload가 전멸 여부에 따라 달라졌다`,
+            )
+        }
+    }
+})
+
 test('night turn: 턴 payload 빌더는 생존 정보를 인자로 받지 않는다', () => {
     const { session } = commitFullRoleSessionAtNight()
 
