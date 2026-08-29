@@ -10,9 +10,10 @@
 // 여기서는 그 조각들을 "생존×페이즈×역할" 조합표 하나로 다시 묶어, 채널 격리라는 성질
 // 자체가 조합 전체에서 성립하는지를 본다(AC 단위 추적 가능성이 이 파일의 존재 이유다).
 //
-// ⚠ AC-02 · AC-03 · AC-04는 현재 구현과 어긋난다. 이 파일은 그 어긋남을 산문이 아니라
-//   실행 가능한 형태로 고정하고(divergence 섹션), 필요한 규칙 변경은 범위 밖이므로
-//   .pluto/expansion-request.json으로 올린다. 자세한 내용은 각 divergence 테스트의 주석 참고.
+// 이 슬라이스가 고정하는 규칙 한 줄 요약:
+//   발행은 "살아 있는 낮의 참가자"(공개 DAY)와 "JOKER 진영"(밤의 팀 채널)만 할 수 있고,
+//   수신은 공개 DAY가 관전 중인 사망자까지 전원, JOKER 채널이 사망한 광대까지 팀 전원이다.
+//   사망자 전용 채널(CHAT_CHANNELS.DEAD)은 퇴역해 수신자가 언제나 0명이다.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -32,6 +33,9 @@ const { buildSessionCandidate, resolveGameChatChannel, getChatRateLimitMap } = g
 
 const { makePlayer, makeRoom, chatRateLimitSnapshot, commitPrepared, tamperPrepared, handBuiltPrepared } = require('./gameSession.testUtils')
 
+/** 어떤 phase에서도 사망자가 공개 채팅을 열 수 없음을 훑을 때 쓰는 phase 목록(ENDED 제외 — 그건 GAME_ALREADY_ENDED가 먼저 막는다). */
+const NON_ENDED_PHASES = ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL']
+
 test.beforeEach(() => {
     gameSession.__resetStateForTests()
 })
@@ -48,9 +52,9 @@ test.afterEach(() => {
  * 않는다). alive 플래그는 커밋 이후에만 손대므로 commitGameSession의 입력 불변식을 건드리지
  * 않는다.
  *
- * @param {object} options - id(방 id) · phase · uuids · jokerCount · deadUuids(사망 처리할 uuid)
+ * @param {object} options - id(방 id) · phase · uuids · jokerCount · deadPicker(사망시킬 uuid를 고르는 함수)
  */
-function createChatSessionFixture({ id, phase = 'DAY', uuids, jokerCount = 1, deadUuids = [] }) {
+function createChatSessionFixture({ id, phase = 'DAY', uuids, jokerCount = 1, deadPicker = null }) {
     const room = makeRoom({ id, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
     assert.equal(candidate.ok, true, `createChatSessionFixture: 세션 조립 실패(${candidate.reason})`)
@@ -58,18 +62,21 @@ function createChatSessionFixture({ id, phase = 'DAY', uuids, jokerCount = 1, de
 
     const session = candidate.session
     session.phase = phase
-    for (const uuid of deadUuids) session.players.get(uuid).alive = false
 
     const byTeam = (isJoker) =>
         [...session.players.values()].filter((p) => (p.role === 'JOKER') === isJoker).map((p) => p.uuid)
     const jokerUuids = byTeam(true)
     const otherUuids = byTeam(false)
-    const aliveOf = (list) => list.filter((uuid) => session.players.get(uuid).alive === true)
 
+    const deadUuids = deadPicker ? deadPicker({ jokerUuids, otherUuids }) : []
+    for (const uuid of deadUuids) session.players.get(uuid).alive = false
+
+    const aliveOf = (list) => list.filter((uuid) => session.players.get(uuid).alive === true)
     return {
         session,
         jokerUuids,
         otherUuids,
+        deadUuids,
         aliveJokerUuids: aliveOf(jokerUuids),
         aliveOtherUuids: aliveOf(otherUuids),
     }
@@ -80,18 +87,32 @@ function routeOf(session, uuid) {
     return resolveGameChatChannel(session, session.players.get(uuid))
 }
 
+/** 세션에 실제로 배정된 역할 집합(AC-01의 "각 직업"을 배정 결과에서 직접 읽는다). */
+function rolesOf(session) {
+    return [...new Set([...session.players.values()].map((p) => p.role))]
+}
+
 // ---------------------------------------------------------------------------
 // AC-01 · 밤 턴 — 생존자는 자기 직업 채널만 쓰고 타 직업 채널을 수신하지 않는다
 // ---------------------------------------------------------------------------
 
-test('AC-01: 채널 상수는 DAY/DEAD/JOKER 셋뿐이다 — "직업 전용 채널"은 JOKER 하나가 전부다', () => {
+test('AC-01: 직업 전용 채널은 JOKER 하나뿐이고 DEAD는 수신자가 없는 퇴역 채널이다', () => {
     // 이 단언이 깨지면 AC-01의 "각 직업 채널"이 더 이상 JOKER 하나를 뜻하지 않는다는 뜻이고,
-    // 아래 밤 격리 테스트들의 전제(A-01)가 통째로 다시 정의돼야 한다.
+    // 아래 밤 격리 테스트들의 전제가 통째로 다시 정의돼야 한다.
     assert.deepEqual(Object.keys(CHAT_CHANNELS).sort(), ['DAY', 'DEAD', 'JOKER'])
     assert.deepEqual(CHAT_CHANNELS, { DAY: 'DAY', DEAD: 'DEAD', JOKER: 'JOKER' })
+
+    const { session } = createChatSessionFixture({
+        id: 'room-ac1-consts',
+        phase: 'NIGHT',
+        uuids: ['ac1ca', 'ac1cb', 'ac1cc', 'ac1cd'],
+        deadPicker: ({ otherUuids }) => [otherUuids[0]],
+    })
+    // DEAD는 상수로만 남아 있다 — 사망자가 있어도 수신자가 0명이라 어떤 메시지도 나를 수 없다.
+    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [])
 })
 
-test('AC-01: 밤에는 생존자 누구도 공개 채팅으로 발행할 수 없다(JOKER 포함 전원 INVALID_PHASE)', () => {
+test('AC-01: 밤에는 생존자 누구도 공개 채팅으로 발행할 수 없다(모든 직업이 INVALID_PHASE)', () => {
     const { session, jokerUuids, otherUuids } = createChatSessionFixture({
         id: 'room-ac1-publish',
         phase: 'NIGHT',
@@ -110,7 +131,7 @@ test('AC-01: 밤에는 생존자 누구도 공개 채팅으로 발행할 수 없
     assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
 })
 
-test('AC-01: 밤에 생존 JOKER는 JOKER 채널만 쓸 수 있고, 비-JOKER 생존자는 그 채널을 열 수도 받을 수도 없다', () => {
+test('AC-01: 밤에 생존 JOKER는 JOKER 채널만 쓸 수 있고, 다른 직업의 생존자는 그 채널을 열 수도 받을 수도 없다', () => {
     const { session, jokerUuids, otherUuids } = createChatSessionFixture({
         id: 'room-ac1-joker',
         phase: 'NIGHT',
@@ -118,57 +139,57 @@ test('AC-01: 밤에 생존 JOKER는 JOKER 채널만 쓸 수 있고, 비-JOKER �
         jokerCount: 2,
     })
     assert.equal(jokerUuids.length, 2, '이 픽스처는 JOKER 2명을 전제한다')
+    assert.equal(rolesOf(session).length >= 2, true, '비교 대상이 될 다른 직업이 최소 하나는 배정돼야 한다')
 
-    // 발행: JOKER만 통과한다.
+    // 발행: JOKER 진영만 통과하고, 나머지 직업은 전부 같은 코드로 막힌다.
     for (const uuid of jokerUuids) {
         assert.equal(prepareJokerChatMessage(uuid, session.id, '팀 대화', { now: () => 1000 }).ok, true)
     }
     for (const uuid of otherUuids) {
-        assert.deepEqual(prepareJokerChatMessage(uuid, session.id, '끼어들기', { now: () => 1000 }), {
-            ok: false,
-            code: 'NOT_ELIGIBLE',
-        })
+        assert.deepEqual(
+            prepareJokerChatMessage(uuid, session.id, '끼어들기', { now: () => 1000 }),
+            { ok: false, code: 'NOT_ELIGIBLE' },
+            `${session.players.get(uuid).role}는 JOKER 채널을 열 수 없다`,
+        )
     }
 
-    // 수신: JOKER 채널 수신자 집합에 비-JOKER는 한 명도 없다.
+    // 수신: JOKER 채널 수신자 집합에 다른 직업은 한 명도 없다.
     const jokerRecipients = getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)
     assert.deepEqual([...jokerRecipients].sort(), [...jokerUuids].sort())
     for (const uuid of otherUuids) {
         assert.equal(jokerRecipients.includes(uuid), false, `${uuid}는 JOKER 채널을 수신하지 않는다`)
     }
+})
 
-    // 밤에는 DEAD 채널도 비어 있다(사망자가 없으므로) — 어느 생존자도 타 채널로 새지 않는다.
+test('AC-01: 밤에 실제로 메시지를 나를 수 있는 채널은 JOKER 하나뿐이고, 그 수신자는 JOKER 진영 전원과 정확히 같다', () => {
+    const uuids = ['ac1ga', 'ac1gb', 'ac1gc', 'ac1gd', 'ac1ge']
+    const { session, jokerUuids, otherUuids } = createChatSessionFixture({
+        id: 'room-ac1-sets',
+        phase: 'NIGHT',
+        uuids,
+        jokerCount: 2,
+        // JOKER 한 명과 다른 직업 한 명을 사망 처리해 네 축(생존/사망 × JOKER/비JOKER)을 다 채운다.
+        deadPicker: ({ jokerUuids: jokers, otherUuids: others }) => [jokers[0], others[0]],
+    })
+
+    // 밤에 발행 가능한 유일한 경로가 JOKER 채널임을 라우팅으로 못 박는다.
+    for (const uuid of uuids) {
+        const routed = routeOf(session, uuid)
+        assert.equal(routed.ok, false, `${uuid}의 공개 채팅은 밤에 열리지 않는다`)
+    }
+
+    const joker = getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)
+    assert.deepEqual([...joker].sort(), [...jokerUuids].sort(), 'JOKER 채널 = JOKER 진영 전원(생존 여부 무관)')
+    for (const uuid of otherUuids) assert.equal(joker.includes(uuid), false)
+    // 퇴역한 DEAD 채널로는 사망자도 새지 않는다.
     assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [])
 })
 
-test('AC-01: 밤의 세 채널 수신자 집합은 서로 겹치지 않는다(사망자·생존 JOKER·생존 비-JOKER 혼재)', () => {
-    const uuids = ['ac1ga', 'ac1gb', 'ac1gc', 'ac1gd', 'ac1ge']
-    const seed = createChatSessionFixture({ id: 'room-ac1-disjoint', phase: 'NIGHT', uuids, jokerCount: 2 })
-    // JOKER 한 명과 비-JOKER 한 명을 사망 처리해 세 축이 모두 채워진 조합을 만든다.
-    const deadJoker = seed.jokerUuids[0]
-    const deadOther = seed.otherUuids[0]
-    seed.session.players.get(deadJoker).alive = false
-    seed.session.players.get(deadOther).alive = false
-    const { session } = seed
-
-    const day = getChatRecipientUuids(session, CHAT_CHANNELS.DAY)
-    const dead = getChatRecipientUuids(session, CHAT_CHANNELS.DEAD)
-    const joker = getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)
-
-    assert.deepEqual([...dead].sort(), [deadJoker, deadOther].sort())
-    assert.equal(day.includes(deadJoker), false)
-    assert.equal(day.includes(deadOther), false)
-    // JOKER 채널은 DAY(생존자)의 진부분집합이고 DEAD와는 완전히 분리돼 있다.
-    for (const uuid of joker) assert.equal(day.includes(uuid), true)
-    for (const uuid of joker) assert.equal(dead.includes(uuid), false)
-    assert.equal(day.length + dead.length, session.players.size, 'DAY와 DEAD는 참가자 전원을 정확히 한 번씩 나눠 갖는다')
-})
-
 // ---------------------------------------------------------------------------
-// AC-06 · 낮 턴 — 생존자는 DAY 채널에 메시지를 보낼 수 있다
+// AC-06 · 낮 턴 — 생존 플레이어는 DAY 채널에 메시지를 보낼 수 있다
 // ---------------------------------------------------------------------------
 
-test('AC-06: 낮의 생존자는 DAY 채널로 발행하고 커밋까지 성공하며 생존자 전원이 수신자다', () => {
+test('AC-06: 낮의 생존자는 DAY 채널로 발행하고 커밋까지 성공하며 참가자 전원이 수신자다', () => {
     const { session, aliveOtherUuids, aliveJokerUuids } = createChatSessionFixture({
         id: 'room-ac6-send',
         phase: 'DAY',
@@ -203,7 +224,7 @@ test('AC-06: 낮의 생존자는 DAY 채널로 발행하고 커밋까지 성공�
     // 유도된 채널의 Map만 갱신된다.
     assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [[actor, sentAt]], DEAD: [], JOKER: [] })
 
-    // 발신자를 포함한 생존자 전원이 canonical 수신자다("보낼 수 있다"에는 도달한다는 뜻이 포함된다).
+    // 발신자를 포함한 참가자 전원이 canonical 수신자다("보낼 수 있다"에는 도달한다는 뜻이 포함된다).
     const recipients = getChatRecipientUuids(session, CHAT_CHANNELS.DAY)
     assert.deepEqual([...recipients].sort(), [...aliveOtherUuids, ...aliveJokerUuids].sort())
     assert.equal(recipients.includes(actor), true)
@@ -231,6 +252,211 @@ test('AC-06: rate limit은 정상 1회 발행을 막지 않는다 — 간격 미
     })
     assert.equal(later.ok, true)
     assert.equal(later.channel, CHAT_CHANNELS.DAY)
+})
+
+// ---------------------------------------------------------------------------
+// AC-02 · 낮 턴 — 사망자는 DAY 메시지를 수신·열람하지만 발행은 거부된다
+// ---------------------------------------------------------------------------
+
+test('AC-02: 낮의 사망자는 DAY 채널 수신자에 남아 생존자의 메시지를 그대로 받는다', () => {
+    const { session, otherUuids, jokerUuids, deadUuids } = createChatSessionFixture({
+        id: 'room-ac2-receive',
+        phase: 'DAY',
+        uuids: ['ac2a', 'ac2b', 'ac2c', 'ac2d'],
+        deadPicker: ({ otherUuids: others }) => [others[0]],
+    })
+    const [deadUuid] = deadUuids
+    const sender = otherUuids[1]
+
+    const recipients = getChatRecipientUuids(session, CHAT_CHANNELS.DAY)
+    assert.equal(recipients.includes(deadUuid), true, '사망자는 DAY 채널의 수신자다')
+    assert.deepEqual([...recipients].sort(), [...otherUuids, ...jokerUuids].sort(), 'DAY 수신자는 참가자 전원이다')
+
+    // 그리고 생존자의 발행이 실제로 그 채널로 확정된다 — 사망자가 열람할 메시지가 존재한다.
+    const committed = commitPrepared(
+        prepareGameChatMessage(sender, session.id, '낮 발언', { now: () => 70_000, idFn: () => 'msg-ac2r' }),
+    )
+    assert.equal(committed.ok, true)
+    assert.equal(committed.channel, CHAT_CHANNELS.DAY)
+    assert.equal(getChatRecipientUuids(session, committed.channel).includes(deadUuid), true)
+})
+
+test('AC-02: 낮의 사망자가 발행을 시도하면 서버가 거부하고(NOT_ELIGIBLE) 어떤 Map도 소비되지 않는다', () => {
+    const { session, deadUuids } = createChatSessionFixture({
+        id: 'room-ac2-publish',
+        phase: 'DAY',
+        uuids: ['ac2pa', 'ac2pb', 'ac2pc', 'ac2pd'],
+        deadPicker: ({ otherUuids }) => [otherUuids[0]],
+    })
+    const [deadUuid] = deadUuids
+
+    assert.deepEqual(routeOf(session, deadUuid), { ok: false, code: 'NOT_ELIGIBLE' })
+    assert.deepEqual(prepareGameChatMessage(deadUuid, session.id, '사망자의 낮 발언', { now: () => 70_000 }), {
+        ok: false,
+        code: 'NOT_ELIGIBLE',
+    })
+    assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
+
+    // 밤의 팀 채널도 열리지 않는다(이 사망자는 JOKER 진영이 아니다) — 낮에는 어떤 발신 경로도 없다.
+    assert.deepEqual(prepareJokerChatMessage(deadUuid, session.id, '우회 시도', { now: () => 70_000 }), {
+        ok: false,
+        code: 'INVALID_PHASE',
+    })
+})
+
+test('AC-02: 준비된 뒤 사망이 확정되면 commit이 다시 거부한다 — 발행 권한을 잃은 요청은 커밋되지 않는다', () => {
+    const { session, aliveOtherUuids } = createChatSessionFixture({
+        id: 'room-ac2-commit',
+        phase: 'DAY',
+        uuids: ['ac2ca', 'ac2cb', 'ac2cc'],
+    })
+    const actor = aliveOtherUuids[0]
+    const prepared = prepareGameChatMessage(actor, session.id, '준비는 살아서', { now: () => 71_000 })
+    assert.equal(prepared.channel, CHAT_CHANNELS.DAY)
+
+    session.players.get(actor).alive = false // prepare~commit 사이의 사망
+
+    assert.deepEqual(commitPrepared(prepared), { ok: false, code: 'NOT_ELIGIBLE' })
+    assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
+})
+
+// ---------------------------------------------------------------------------
+// AC-03 · 밤 턴 — 사망자(광대 제외)에게는 어떤 채팅 이벤트도 가지 않는다
+// ---------------------------------------------------------------------------
+
+test('AC-03: 밤의 사망자(비-JOKER)는 어떤 채널의 수신자도 아니고 발행도 못 한다', () => {
+    const { session, deadUuids, jokerUuids } = createChatSessionFixture({
+        id: 'room-ac3',
+        phase: 'NIGHT',
+        uuids: ['ac3a', 'ac3b', 'ac3c', 'ac3d', 'ac3e'],
+        deadPicker: ({ otherUuids }) => [otherUuids[0], otherUuids[1]],
+    })
+    const [deadOne, deadTwo] = deadUuids
+
+    // (1) 발행 경로가 없다 — 공개 채팅은 사망으로, 팀 채널은 진영으로 막힌다.
+    for (const uuid of deadUuids) {
+        assert.deepEqual(routeOf(session, uuid), { ok: false, code: 'NOT_ELIGIBLE' })
+        assert.deepEqual(prepareGameChatMessage(uuid, session.id, '밤의 사망자 대화', { now: () => 80_000 }), {
+            ok: false,
+            code: 'NOT_ELIGIBLE',
+        })
+        assert.deepEqual(prepareJokerChatMessage(uuid, session.id, '팀 대화 흉내', { now: () => 80_000 }), {
+            ok: false,
+            code: 'NOT_ELIGIBLE',
+        })
+    }
+
+    // (2) 밤에 메시지를 나를 수 있는 유일한 채널(JOKER)의 수신자가 아니다.
+    const jokerRecipients = getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)
+    assert.deepEqual([...jokerRecipients].sort(), [...jokerUuids].sort())
+    for (const uuid of deadUuids) assert.equal(jokerRecipients.includes(uuid), false)
+
+    // (3) 사망자끼리 열리던 전용 채널은 남아 있지 않다 — 수신자가 0명이다.
+    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [])
+
+    // (4) DAY 채널에는 이름이 남지만, 밤에는 그 채널로 발행할 수 있는 사람이 아무도 없어
+    //     실제로 전달될 메시지가 생기지 않는다.
+    const dayRecipients = getChatRecipientUuids(session, CHAT_CHANNELS.DAY)
+    assert.equal(dayRecipients.includes(deadOne), true)
+    assert.equal(dayRecipients.includes(deadTwo), true)
+    for (const uuid of session.players.keys()) {
+        assert.equal(routeOf(session, uuid).ok, false, `${uuid}는 밤에 DAY 채널을 열 수 없다`)
+    }
+})
+
+test('AC-03: 사망자의 공개 채팅 발행은 ENDED를 뺀 모든 phase에서 거부된다(밤만의 예외가 아니다)', () => {
+    for (const phase of NON_ENDED_PHASES) {
+        gameSession.__resetStateForTests()
+        const { session, deadUuids } = createChatSessionFixture({
+            id: `room-ac3-${phase}`,
+            phase,
+            uuids: ['ac3pa', 'ac3pb', 'ac3pc'],
+            deadPicker: ({ otherUuids }) => [otherUuids[0]],
+        })
+        const [deadUuid] = deadUuids
+
+        assert.deepEqual(routeOf(session, deadUuid), { ok: false, code: 'NOT_ELIGIBLE' }, `${phase}에서도 거부된다`)
+        assert.deepEqual(prepareGameChatMessage(deadUuid, session.id, '어느 단계든', { now: () => 1000 }), {
+            ok: false,
+            code: 'NOT_ELIGIBLE',
+        })
+        assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
+    }
+})
+
+// ---------------------------------------------------------------------------
+// AC-04 · 밤 턴 — 사망한 광대는 JOKER 채널에서 송수신할 수 있다
+// ---------------------------------------------------------------------------
+
+test('AC-04: 밤에 사망한 광대는 JOKER 채널로 송신할 수 있고 커밋까지 성공한다', () => {
+    const { session, jokerUuids, deadUuids } = createChatSessionFixture({
+        id: 'room-ac4-send',
+        phase: 'NIGHT',
+        uuids: ['ac4a', 'ac4b', 'ac4c', 'ac4d', 'ac4e'],
+        jokerCount: 2,
+        deadPicker: ({ jokerUuids: jokers }) => [jokers[0]],
+    })
+    const [deadJoker] = deadUuids
+    assert.equal(session.players.get(deadJoker).alive, false)
+    assert.equal(jokerUuids.includes(deadJoker), true)
+
+    const prepared = prepareJokerChatMessage(deadJoker, session.id, '죽어서도 팀 대화', { now: () => 90_000 })
+
+    assert.equal(prepared.ok, true, '사망한 광대의 JOKER 발행은 거부되지 않는다')
+    assert.equal(prepared.actorUuid, deadJoker)
+    assert.equal(prepared.sentAt, 90_000)
+    // 준비만으로는 Map이 바뀌지 않고, commit에서만 확정된다.
+    assert.deepEqual(chatRateLimitSnapshot(session).JOKER, [])
+    assert.deepEqual(commitJokerChatMessage(session, deadJoker, prepared.sentAt), { ok: true })
+    assert.deepEqual(chatRateLimitSnapshot(session).JOKER, [[deadJoker, 90_000]])
+})
+
+test('AC-04: 사망한 광대는 JOKER 채널의 수신자로 남고, 살아있는 팀원의 메시지도 그에게 간다', () => {
+    const { session, jokerUuids, otherUuids, deadUuids } = createChatSessionFixture({
+        id: 'room-ac4-receive',
+        phase: 'NIGHT',
+        uuids: ['ac4ra', 'ac4rb', 'ac4rc', 'ac4rd', 'ac4re'],
+        jokerCount: 2,
+        deadPicker: ({ jokerUuids: jokers }) => [jokers[0]],
+    })
+    const [deadJoker] = deadUuids
+    const aliveJoker = jokerUuids.find((uuid) => uuid !== deadJoker)
+
+    // 사망 이후에도 JOKER 채널 수신자 집합은 팀 전원 그대로다.
+    const recipients = getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)
+    assert.deepEqual([...recipients].sort(), [...jokerUuids].sort())
+    assert.equal(recipients.includes(deadJoker), true, '사망한 광대는 팀 채널에서 빠지지 않는다')
+
+    // 살아있는 팀원이 보내도 같은 수신자 집합이다 — 사망한 광대가 그 메시지를 받는다.
+    const teamMessage = prepareJokerChatMessage(aliveJoker, session.id, '남은 팀원', { now: () => 92_000 })
+    assert.equal(teamMessage.ok, true)
+    assert.equal(commitJokerChatMessage(session, aliveJoker, teamMessage.sentAt).ok, true)
+    assert.equal(getChatRecipientUuids(session, CHAT_CHANNELS.JOKER).includes(deadJoker), true)
+
+    // 다른 직업에게는 여전히 새지 않는다 — 열린 것은 "사망" 축이지 "진영" 축이 아니다.
+    for (const uuid of otherUuids) assert.equal(recipients.includes(uuid), false)
+    assert.deepEqual(chatRateLimitSnapshot(session).JOKER, [[aliveJoker, 92_000]])
+})
+
+test('AC-04: 사망한 광대의 팀 채널도 NIGHT 전용이다 — 낮에는 INVALID_PHASE로 막힌다', () => {
+    const { session, deadUuids } = createChatSessionFixture({
+        id: 'room-ac4-phase',
+        phase: 'DAY',
+        uuids: ['ac4pa', 'ac4pb', 'ac4pc', 'ac4pd'],
+        deadPicker: ({ jokerUuids }) => [jokerUuids[0]],
+    })
+    const [deadJoker] = deadUuids
+
+    assert.deepEqual(prepareJokerChatMessage(deadJoker, session.id, '낮의 팀 대화', { now: () => 93_000 }), {
+        ok: false,
+        code: 'INVALID_PHASE',
+    })
+    // 낮에도 공개 채널로는 발행하지 못한다(사망자이므로) — 열린 것은 밤의 팀 채널 하나뿐이다.
+    assert.deepEqual(prepareGameChatMessage(deadJoker, session.id, '낮의 공개 발언', { now: () => 93_000 }), {
+        ok: false,
+        code: 'NOT_ELIGIBLE',
+    })
+    assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
 })
 
 // ---------------------------------------------------------------------------
@@ -308,7 +534,7 @@ function tamperPreparedField(session, actorUuid, patch, { sentAt = 40_000, messa
     return commitPrepared(tamperPrepared(prepared, patch), { now: sentAt })
 }
 
-test('AC-05: 능력 대조가 보는 15개 필드를 하나씩 흔들면 전부 STALE_CHAT_REQUEST로 거부되고 Map은 끝까지 불변이다', () => {
+test('AC-05: 능력 대조가 보는 필드를 하나씩 흔들면 전부 STALE_CHAT_REQUEST로 거부되고 Map은 끝까지 불변이다', () => {
     const { session, aliveOtherUuids } = createChatSessionFixture({
         id: 'room-ac5-fields',
         phase: 'DAY',
@@ -369,92 +595,31 @@ test('AC-05: 비-JOKER는 JOKER 채널을 열 수 없고, 그 거부는 어떤 M
     assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
 })
 
-// ---------------------------------------------------------------------------
-// AC-02 · AC-03 · AC-04 — 현재 구현과 어긋나는 지점(divergence)
-//
-// 아래 세 테스트는 AC를 만족시키지 못한다. AC가 요구하는 규칙과 현재 구현이 실제로 무엇을
-// 하는지를 나란히 고정해, 규칙 변경이 필요하다는 근거를 실행 가능한 형태로 남긴다.
-// 규칙 자체(DEAD_CHAT_PHASES · JOKER 채널의 생존 요건)를 바꾸는 일은 이 슬라이스의 범위
-// 밖이라 .pluto/expansion-request.json으로 올렸다.
-// ---------------------------------------------------------------------------
-
-test('[divergence AC-02] 낮의 사망자는 DAY 메시지를 수신하지 못하고, 발행은 거부 대신 DEAD 채널로 재라우팅된다', () => {
-    const uuids = ['ac2a', 'ac2b', 'ac2c', 'ac2d']
-    const seed = createChatSessionFixture({ id: 'room-ac2', phase: 'DAY', uuids })
-    const deadUuid = seed.otherUuids[0]
-    seed.session.players.get(deadUuid).alive = false
-    const { session } = seed
-
-    // AC-02 전반("DAY 채널 메시지를 수신·열람할 수 있다")과 어긋난다 — DAY 팬아웃은 생존자만이다.
-    const dayRecipients = getChatRecipientUuids(session, CHAT_CHANNELS.DAY)
-    assert.equal(dayRecipients.includes(deadUuid), false, '현재 구현: 사망자는 DAY 수신자가 아니다')
-
-    // AC-02 후반("발행은 서버에서 거부된다")과도 어긋난다 — 거부가 아니라 DEAD 채널로 성공한다.
-    const prepared = prepareGameChatMessage(deadUuid, session.id, '사망자의 낮 발언', {
-        now: () => 70_000,
-        idFn: () => 'msg-ac2',
+test('AC-05: 퇴역한 DEAD 채널은 어떤 조작으로도 되살릴 수 없다 — 라우팅에도 팬아웃에도 나타나지 않는다', () => {
+    const { session, deadUuids, aliveOtherUuids } = createChatSessionFixture({
+        id: 'room-ac5-dead',
+        phase: 'DAY',
+        uuids: ['ac5da', 'ac5db', 'ac5dc', 'ac5dd'],
+        deadPicker: ({ otherUuids }) => [otherUuids[0]],
     })
-    assert.equal(prepared.ok, true, '현재 구현: 사망자의 낮 발행은 거부되지 않는다')
-    assert.equal(prepared.channel, CHAT_CHANNELS.DEAD, '현재 구현: DAY가 아니라 DEAD로 재라우팅된다')
-    assert.equal(commitPrepared(prepared).ok, true)
-    assert.deepEqual(chatRateLimitSnapshot(session).DEAD, [[deadUuid, 70_000]])
-    assert.deepEqual(chatRateLimitSnapshot(session).DAY, [], 'DAY 채널은 사망자에게 열리지 않는다')
+    const [deadUuid] = deadUuids
 
-    // 다만 "사망자가 DAY 채널로는 발행할 수 없다"는 좁은 의미는 성립한다 —
-    // resolveGameChatChannel은 사망자에게 절대 DAY를 돌려주지 않는다.
-    assert.notEqual(routeOf(session, deadUuid).channel, CHAT_CHANNELS.DAY)
-})
-
-test('[divergence AC-03] 밤에도 사망자끼리 DEAD 채널이 열려 있어 사망자에게 채팅 이벤트가 전달된다', () => {
-    const uuids = ['ac3a', 'ac3b', 'ac3c', 'ac3d', 'ac3e']
-    const seed = createChatSessionFixture({ id: 'room-ac3', phase: 'NIGHT', uuids })
-    const [deadOne, deadTwo] = seed.otherUuids
-    seed.session.players.get(deadOne).alive = false
-    seed.session.players.get(deadTwo).alive = false
-    const { session } = seed
-
-    // AC-03("밤 턴에서 사망 플레이어에게 채팅 이벤트가 전송되지 않는다")과 정면으로 어긋난다.
-    // 계획서의 전제 A-02는 DEAD_CHAT_PHASES에 'NIGHT'이 없다고 봤지만 실제로는 포함돼 있다.
-    assert.deepEqual(routeOf(session, deadOne), { ok: true, channel: CHAT_CHANNELS.DEAD })
-
-    const prepared = prepareGameChatMessage(deadOne, session.id, '밤의 사망자 대화', {
-        now: () => 80_000,
-        idFn: () => 'msg-ac3',
-    })
-    assert.equal(prepared.ok, true, '현재 구현: 밤의 사망자 발행은 성공한다')
-    assert.equal(commitPrepared(prepared).ok, true)
-
-    // 그리고 그 메시지는 사망자 전원에게 간다 — "전송되지 않는다"가 아니다.
-    assert.deepEqual([...getChatRecipientUuids(session, CHAT_CHANNELS.DEAD)].sort(), [deadOne, deadTwo].sort())
-})
-
-test('[divergence AC-04] 밤에 사망한 광대는 JOKER 채널에서 송신도 수신도 하지 못한다', () => {
-    const uuids = ['ac4a', 'ac4b', 'ac4c', 'ac4d', 'ac4e']
-    const seed = createChatSessionFixture({ id: 'room-ac4', phase: 'NIGHT', uuids, jokerCount: 2 })
-    const [deadJoker, aliveJoker] = seed.jokerUuids
-    const { session } = seed
-
-    // 살아있는 동안에는 송수신 양쪽이 성립한다(양성 대조).
-    assert.deepEqual([...getChatRecipientUuids(session, CHAT_CHANNELS.JOKER)].sort(), [deadJoker, aliveJoker].sort())
-    assert.equal(prepareJokerChatMessage(deadJoker, session.id, '살아있는 광대', { now: () => 90_000 }).ok, true)
-
-    session.players.get(deadJoker).alive = false
-
-    // AC-04("사망한 광대는 JOKER 채널에서 메시지를 송수신할 수 있다")와 정면으로 어긋난다.
+    // (1) 살아있든 죽었든 어떤 참가자도 DEAD 채널로 라우팅되지 않는다.
+    for (const uuid of session.players.keys()) {
+        assert.notEqual(routeOf(session, uuid).channel, CHAT_CHANNELS.DEAD)
+    }
+    // (2) 사망자가 있어도 DEAD 채널의 수신자는 0명이다(fail-closed — 소켓 계층의 발신자 포함
+    //     검사가 반드시 실패한다).
+    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [])
+    assert.equal(session.players.get(deadUuid).alive, false)
+    // (3) 알 수 없는 채널과 똑같이 다뤄진다.
+    for (const channel of [CHAT_CHANNELS.DEAD, null, undefined, '', 'day', 'UNKNOWN', 42]) {
+        assert.deepEqual(getChatRecipientUuids(session, channel), [])
+    }
+    // (4) DEAD 채널을 주장하는 능력은 대조에서 걸린다.
     assert.deepEqual(
-        prepareJokerChatMessage(deadJoker, session.id, '죽은 광대', { now: () => 91_000 }),
-        { ok: false, code: 'NOT_ELIGIBLE' },
-        '현재 구현: 사망한 광대는 JOKER 채널로 송신할 수 없다',
+        tamperPreparedField(session, aliveOtherUuids[0], { channel: CHAT_CHANNELS.DEAD }, { sentAt: 45_000 }),
+        { ok: false, code: 'STALE_CHAT_REQUEST' },
     )
-    assert.deepEqual(
-        getChatRecipientUuids(session, CHAT_CHANNELS.JOKER),
-        [aliveJoker],
-        '현재 구현: 사망한 광대는 JOKER 채널 수신자에서 빠진다',
-    )
-
-    // 살아있는 팀원의 발행은 그대로 성립하므로, 빠지는 것은 사망한 광대 한 명뿐이다.
-    const teamMessage = prepareJokerChatMessage(aliveJoker, session.id, '남은 팀원', { now: () => 92_000 })
-    assert.equal(teamMessage.ok, true)
-    assert.equal(commitJokerChatMessage(session, aliveJoker, teamMessage.sentAt).ok, true)
-    assert.deepEqual(chatRateLimitSnapshot(session).JOKER, [[aliveJoker, 92_000]])
+    assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })
 })

@@ -12,7 +12,7 @@ const INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT'])
 // 기존 두 핸들러가 반환하지 않는 코드다.
 const JOKER_CHAT_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT', 'INVALID_CLOCK_VALUE'])
 
-// submit_game_chat_message(공개 DAY / 사망자 전용) 전용 internal-only 코드. JOKER 채팅의 3개에
+// submit_game_chat_message(공개 DAY) 전용 internal-only 코드. JOKER 채팅의 3개에
 // INVALID_CHAT_CHANNEL을 더한다 — 채널은 서버가 canonical 상태에서만 유도하므로, 알 수 없는
 // 채널이 나왔다는 것은 클라이언트 입력이 아니라 서버 내부 상태 손상 신호다. 메시지 ID 생성
 // 실패(ID_GENERATION_ERROR/INVALID_MESSAGE_ID)도 같은 이유로 내부 신호다 — 클라이언트 입력이
@@ -829,7 +829,7 @@ function respondJokerChat(uuid, gameId, callback, payload) {
 /**
  * 특정 GameSession에서 "지금 실제로 그 채널의 메시지를 받을 수 있는" 소켓만 골라 반환합니다.
  * matchmaking.js의 resolveParticipantSockets와 동일한 3조건(참가자 소속·connected===true·
- * 대상 channel 가입)에 더해, 수신 자격 자체(생존/사망/생존한 JOKER 진영)는 game-core의
+ * 대상 channel 가입)에 더해, 수신 자격 자체(공개 채널의 참가자 전원 / JOKER 진영)는 game-core의
  * getChatRecipientUuids가 canonical session.players에서 직접 유도한 uuid 집합으로만 판정합니다
  * — 이 함수는 role/alive를 스스로 해석하지 않습니다. 전용 room이 없으므로 매 전송마다
  * 재계산합니다(세션 최대 10명이라 성능 문제가 없습니다).
@@ -852,8 +852,8 @@ function resolveChatRecipientSockets(io, session, channel) {
 }
 
 /**
- * JOKER 비밀 채팅의 수신자 해석 — 생존한 JOKER 진영 소켓만 반환합니다(사망한 JOKER는
- * getChatRecipientUuids의 JOKER 채널에서 이미 제외되므로 여기서도 절대 포함되지 않습니다).
+ * JOKER 비밀 채팅의 수신자 해석 — JOKER 진영 소켓만 반환합니다. 생존 여부는 조건이 아닙니다
+ * (사망한 광대도 getChatRecipientUuids의 JOKER 채널에 그대로 남으므로 팀 대화를 계속 받습니다).
  */
 function resolveJokerTeammateSockets(io, session) {
     return resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.JOKER)
@@ -1014,10 +1014,11 @@ function respondGameChat(uuid, gameId, callback, payload) {
 }
 
 /**
- * 공개 DAY 채팅과 사망자 전용 채팅의 단일 제출 진입점입니다(Socket.IO acknowledgement 방식).
+ * 공개 DAY 채팅의 단일 제출 진입점입니다(Socket.IO acknowledgement 방식).
  * 클라이언트는 { gameId, text }만 보내며 채널을 고르지 않습니다 — 라우팅은 전적으로 game-core의
  * prepareGameChatMessage가 인증 uuid의 canonical 생존 상태와 session.phase에서 유도합니다
- * (생존+DAY → 공개, 사망+NIGHT/DAY/TRIBUNAL → 사망자 전용, 그 외 전부 거부).
+ * (생존+DAY만 통과, 사망자는 NOT_ELIGIBLE, 생존자의 다른 phase는 INVALID_PHASE). 사망자는
+ * 이 채널의 수신자로는 남지만 발신자는 될 수 없습니다.
  *
  * deps.prepare/deps.commit/deps.resolveRecipientSockets/deps.idFn을 주입할 수 있습니다 —
  * production 기본값은 각각 game-core의 prepareGameChatMessage/commitGameChatMessage,

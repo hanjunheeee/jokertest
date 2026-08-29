@@ -1628,33 +1628,24 @@ test('prepareGameChatMessage: 생존자는 ENDED에서 INVALID_PHASE가 아니�
 
 // --- 채널 라우팅: 사망자 ---
 
-test('prepareGameChatMessage: 사망자 + NIGHT/DAY/TRIBUNAL → 전부 DEAD 채널이고 Map은 불변이다', () => {
-    for (const phase of ['NIGHT', 'DAY', 'TRIBUNAL']) {
+test('prepareGameChatMessage: 사망자는 ROLE_REVEAL/NIGHT/DAY/TRIBUNAL 어디서도 발행할 수 없고(NOT_ELIGIBLE) Map은 불변이다', () => {
+    // 사망자는 공개 채널의 관전자다 — 읽기(getChatRecipientUuids)는 열려 있지만 쓰기는 없다.
+    for (const phase of ['ROLE_REVEAL', 'NIGHT', 'DAY', 'TRIBUNAL']) {
         gameSession.__resetStateForTests()
         const { session, citizenUuids } = setupGameChatSession({ id: `room-gc-dead-${phase}`, phase })
         const [actor] = citizenUuids
         session.players.get(actor).alive = false
         const before = chatRateLimitSnapshot(session)
 
-        const result = prepareGameChatMessage(actor, session.id, '사망자 대화', { now: () => 1000 })
-
-        assert.equal(result.ok, true)
-        assert.equal(result.channel, CHAT_CHANNELS.DEAD)
+        assert.deepEqual(prepareGameChatMessage(actor, session.id, '사망자 대화', { now: () => 1000 }), {
+            ok: false,
+            code: 'NOT_ELIGIBLE',
+        })
         assert.deepEqual(chatRateLimitSnapshot(session), before)
     }
 })
 
-test('prepareGameChatMessage: 사망자의 ROLE_REVEAL은 INVALID_PHASE, ENDED는 GAME_ALREADY_ENDED다', () => {
-    gameSession.__resetStateForTests()
-    const reveal = setupGameChatSession({ id: 'room-gc-dead-reveal', phase: 'ROLE_REVEAL' })
-    const revealActor = reveal.citizenUuids[0]
-    reveal.session.players.get(revealActor).alive = false
-    assert.deepEqual(prepareGameChatMessage(revealActor, reveal.session.id, '안녕', { now: () => 1000 }), {
-        ok: false,
-        code: 'INVALID_PHASE',
-    })
-    assert.deepEqual(chatRateLimitSnapshot(reveal.session).DEAD, [])
-
+test('prepareGameChatMessage: 사망자의 ENDED는 NOT_ELIGIBLE이 아니라 GAME_ALREADY_ENDED로 먼저 걸린다', () => {
     gameSession.__resetStateForTests()
     const ended = setupGameChatSession({ id: 'room-gc-dead-ended', phase: 'ENDED' })
     const endedActor = ended.citizenUuids[0]
@@ -1717,13 +1708,16 @@ test('prepareGameChatMessage: 인자에 없는 채널·발신자·닉네임 필�
         code: 'INVALID_GAME_ID',
     })
 
-    // 생존한 발신자는 어떤 시도로도 DEAD 채널을 얻지 못한다 — 죽은 사람만 DEAD다.
+    // 생존한 발신자가 얻는 채널은 언제나 DAY 하나뿐이다.
     const alive = prepareGameChatMessage(actor, session.id, '안녕', { now: () => 1000 })
     assert.equal(alive.channel, CHAT_CHANNELS.DAY)
 
+    // 사망한 발신자는 어떤 채널도 얻지 못한다 — DEAD는 되살릴 수 없는 퇴역 채널이다.
     session.players.get(victim).alive = false
-    const dead = prepareGameChatMessage(victim, session.id, '안녕', { now: () => 1000 })
-    assert.equal(dead.channel, CHAT_CHANNELS.DEAD)
+    assert.deepEqual(prepareGameChatMessage(victim, session.id, '안녕', { now: () => 1000 }), {
+        ok: false,
+        code: 'NOT_ELIGIBLE',
+    })
 })
 
 test('prepareGameChatMessage: 성공 반환값의 키는 정확한 화이트리스트뿐이고 role/team/alive/allies는 어디에도 없다', () => {
@@ -1847,35 +1841,28 @@ test('prepareGameChatMessage: 빈 문자열·초과 길이·제어문자·bidi �
 
 // --- rate limit 채널 격리 ---
 
-test('DAY와 DEAD의 rate limit은 완전히 분리돼 한쪽 전송이 다른 쪽 간격 판정에 영향을 주지 않는다', () => {
+test('DAY의 rate limit은 발신자별로 분리돼 한 사람의 전송이 다른 사람의 간격 판정에 영향을 주지 않는다', () => {
     const { session, citizenUuids } = setupGameChatSession({ id: 'room-gc-rl', phase: 'DAY' })
-    const [alive, dead] = citizenUuids
-    session.players.get(dead).alive = false
+    const [first, second] = citizenUuids
 
-    const aliveFirst = prepareGameChatMessage(alive, session.id, '낮 1', { now: () => 1000 })
-    assert.equal(commitPrepared(aliveFirst).ok, true)
-    const deadFirst = prepareGameChatMessage(dead, session.id, '사망 1', { now: () => 1000 })
-    assert.equal(commitPrepared(deadFirst).ok, true)
+    assert.equal(commitPrepared(prepareGameChatMessage(first, session.id, '낮 1', { now: () => 1000 })).ok, true)
+    // 다른 사람의 기록이 있어도 자기 첫 전송은 간격 제한에 걸리지 않는다.
+    assert.equal(commitPrepared(prepareGameChatMessage(second, session.id, '낮 1', { now: () => 1000 })).ok, true)
 
-    // 각 채널의 Map에만 자기 발신자가 기록된다.
-    assert.deepEqual([...session.dayChatRateLimit.entries()], [[alive, 1000]])
-    assert.deepEqual([...session.deadChatRateLimit.entries()], [[dead, 1000]])
+    assert.deepEqual([...session.dayChatRateLimit.entries()], [[first, 1000], [second, 1000]])
+    assert.equal(session.deadChatRateLimit.size, 0, '퇴역한 DEAD Map으로는 아무것도 흘러들지 않는다')
     assert.equal(session.jokerChatRateLimit.size, 0)
 
-    // 같은 채널 안에서만 간격 제한이 걸린다.
-    assert.deepEqual(prepareGameChatMessage(alive, session.id, '낮 2', { now: () => 1100 }), {
-        ok: false,
-        code: 'RATE_LIMITED',
-    })
-    assert.deepEqual(prepareGameChatMessage(dead, session.id, '사망 2', { now: () => 1100 }), {
+    // 자기 자신의 기록에만 간격 제한이 걸린다.
+    assert.deepEqual(prepareGameChatMessage(first, session.id, '낮 2', { now: () => 1100 }), {
         ok: false,
         code: 'RATE_LIMITED',
     })
     // 간격을 넘기면 다시 통과한다.
-    assert.equal(prepareGameChatMessage(alive, session.id, '낮 3', { now: () => 1600 }).ok, true)
+    assert.equal(prepareGameChatMessage(first, session.id, '낮 3', { now: () => 1600 }).ok, true)
 })
 
-test('같은 사람이 DAY에서 보낸 직후 사망해도 DEAD 채널의 첫 전송은 간격 제한에 걸리지 않는다', () => {
+test('DAY에서 보낸 직후 사망하면 그 다음 발행은 채널을 갈아타지 않고 그대로 거부된다', () => {
     const { session, citizenUuids } = setupGameChatSession({ id: 'room-gc-rl-cross', phase: 'DAY' })
     const [actor] = citizenUuids
 
@@ -1883,10 +1870,14 @@ test('같은 사람이 DAY에서 보낸 직후 사망해도 DEAD 채널의 첫 �
     assert.equal(commitPrepared(dayPrepared).ok, true)
 
     session.players.get(actor).alive = false
-    const deadPrepared = prepareGameChatMessage(actor, session.id, '사망 직후', { now: () => 1100 })
 
-    assert.equal(deadPrepared.ok, true, 'DAY의 기록이 DEAD 간격 판정에 영향을 주면 안 된다')
-    assert.equal(deadPrepared.channel, CHAT_CHANNELS.DEAD)
+    // 간격을 충분히 넘긴 시각이어도(RATE_LIMITED가 아니어야 한다) 사망 자체로 막힌다.
+    assert.deepEqual(prepareGameChatMessage(actor, session.id, '사망 직후', { now: () => 2000 }), {
+        ok: false,
+        code: 'NOT_ELIGIBLE',
+    })
+    assert.equal(session.deadChatRateLimit.size, 0)
+    assert.deepEqual([...session.dayChatRateLimit.entries()], [[actor, 1000]], '거부된 요청은 기준 시각도 밀지 못한다')
 })
 
 // --- 시계 이상값 원자성 ---
@@ -1974,7 +1965,7 @@ test('commitGameChatMessage: prepare 이후 phase가 넘어가면(DAY→NIGHT) �
     assert.deepEqual(chatRateLimitSnapshot(session), before)
 })
 
-test('commitGameChatMessage: prepare 이후 사망이 확정되면 DAY로는 커밋되지 않는다(STALE_CHAT_CHANNEL)', () => {
+test('commitGameChatMessage: prepare 이후 사망이 확정되면 발행 권한을 잃어 커밋되지 않는다(NOT_ELIGIBLE)', () => {
     const { session, citizenUuids } = setupGameChatSession({ id: 'room-gc-commit-alive', phase: 'DAY' })
     const [actor] = citizenUuids
     const prepared = prepareGameChatMessage(actor, session.id, '안녕', { now: () => 1000 })
@@ -1985,9 +1976,9 @@ test('commitGameChatMessage: prepare 이후 사망이 확정되면 DAY로는 커
 
     assert.deepEqual(commitPrepared(prepared), {
         ok: false,
-        code: 'STALE_CHAT_CHANNEL',
+        code: 'NOT_ELIGIBLE',
     })
-    assert.deepEqual(chatRateLimitSnapshot(session), before, 'DEAD Map으로 새어 들어가지도 않는다')
+    assert.deepEqual(chatRateLimitSnapshot(session), before, '어느 Map으로도 새어 들어가지 않는다')
 })
 
 test('commitGameChatMessage: prepare 이후 dayIndex가 바뀌면 거부된다(준비된 그 날의 메시지만 커밋된다)', () => {
@@ -2223,24 +2214,24 @@ test('commitGameChatMessage: 동시에 준비된 두 요청 중 나중 것을 �
     assert.deepEqual([...session.dayChatRateLimit.entries()], [[actor, 10_500]])
 })
 
-test('commitGameChatMessage: 두 채널의 능력은 서로 통용되지 않고 각자의 Map만 갱신한다', () => {
+test('commitGameChatMessage: 각 능력은 유도된 채널의 Map에만 자기 발신자를 기록한다(채널 격리)', () => {
     const { session, citizenUuids } = setupGameChatSession({ id: 'room-gc-commit-channel-cross', phase: 'DAY' })
-    const [alive, dead] = citizenUuids
-    session.players.get(dead).alive = false
+    const [first, second] = citizenUuids
 
-    const alivePrepared = prepareGameChatMessage(alive, session.id, '낮', { now: () => 1000 })
-    const deadPrepared = prepareGameChatMessage(dead, session.id, '사망자', { now: () => 1000 })
-    assert.equal(alivePrepared.channel, CHAT_CHANNELS.DAY)
-    assert.equal(deadPrepared.channel, CHAT_CHANNELS.DEAD)
+    const firstPrepared = prepareGameChatMessage(first, session.id, '낮 1', { now: () => 1000 })
+    const secondPrepared = prepareGameChatMessage(second, session.id, '낮 2', { now: () => 1000 })
+    assert.equal(firstPrepared.channel, CHAT_CHANNELS.DAY)
+    assert.equal(secondPrepared.channel, CHAT_CHANNELS.DAY)
 
-    // 각 능력은 자기 채널의 Map에만 자기 발신자를 기록한다(채널 격리).
-    assert.equal(commitPrepared(alivePrepared).ok, true)
-    assert.deepEqual([...session.dayChatRateLimit.entries()], [[alive, 1000]])
+    assert.equal(commitPrepared(firstPrepared).ok, true)
+    assert.deepEqual([...session.dayChatRateLimit.entries()], [[first, 1000]])
     assert.equal(session.deadChatRateLimit.size, 0)
+    assert.equal(session.jokerChatRateLimit.size, 0)
 
-    assert.equal(commitPrepared(deadPrepared).ok, true)
-    assert.deepEqual([...session.dayChatRateLimit.entries()], [[alive, 1000]])
-    assert.deepEqual([...session.deadChatRateLimit.entries()], [[dead, 1000]])
+    assert.equal(commitPrepared(secondPrepared).ok, true)
+    assert.deepEqual([...session.dayChatRateLimit.entries()], [[first, 1000], [second, 1000]])
+    // 퇴역한 DEAD와 JOKER 채널의 Map은 공개 채팅으로는 절대 갱신되지 않는다.
+    assert.equal(session.deadChatRateLimit.size, 0)
     assert.equal(session.jokerChatRateLimit.size, 0)
 })
 
@@ -2270,26 +2261,30 @@ test('commitGameChatMessage: 실패한 커밋을 여러 번 시도해도 두 Map
 
 // --- getChatRecipientUuids ---
 
-test('getChatRecipientUuids: DAY는 생존자 전원(발신자 포함), DEAD는 사망자 전원(발신자 포함)이다', () => {
+test('getChatRecipientUuids: DAY는 관전 중인 사망자까지 참가자 전원이고, 퇴역한 DEAD는 언제나 빈 배열이다', () => {
     const { session, citizenUuids, jokerUuid } = setupGameChatSession({ id: 'room-gc-recip', phase: 'DAY' })
     const [deadOne, deadTwo] = citizenUuids
     session.players.get(deadOne).alive = false
     session.players.get(deadTwo).alive = false
 
     const dayRecipients = getChatRecipientUuids(session, CHAT_CHANNELS.DAY)
-    const deadRecipients = getChatRecipientUuids(session, CHAT_CHANNELS.DEAD)
 
-    assert.deepEqual(dayRecipients.sort(), [citizenUuids[2], jokerUuid].sort())
-    assert.deepEqual(deadRecipients.sort(), [deadOne, deadTwo].sort())
-    // 두 집합은 서로 겹치지 않고, 합치면 참가자 전원이다.
-    assert.equal(dayRecipients.some((uuid) => deadRecipients.includes(uuid)), false)
-    assert.equal(dayRecipients.length + deadRecipients.length, session.players.size)
+    assert.deepEqual(dayRecipients.sort(), [...citizenUuids, jokerUuid].sort())
+    assert.equal(dayRecipients.length, session.players.size)
+    // 수신은 열려 있지만 발행은 아니다 — 사망자는 관전자일 뿐이다.
+    for (const uuid of [deadOne, deadTwo]) {
+        assert.deepEqual(prepareGameChatMessage(uuid, session.id, '안녕', { now: () => 1000 }), {
+            ok: false,
+            code: 'NOT_ELIGIBLE',
+        })
+    }
+    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [])
 })
 
-test('getChatRecipientUuids: 알 수 없는 채널은 빈 배열이다(fail-closed)', () => {
+test('getChatRecipientUuids: 알 수 없는 채널과 퇴역한 DEAD는 빈 배열이다(fail-closed)', () => {
     const { session } = setupGameChatSession({ id: 'room-gc-recip-unknown', phase: 'DAY' })
 
-    for (const channel of [null, undefined, '', 'day', 'UNKNOWN', 42]) {
+    for (const channel of [CHAT_CHANNELS.DEAD, null, undefined, '', 'day', 'UNKNOWN', 42]) {
         assert.deepEqual(getChatRecipientUuids(session, channel), [])
     }
 })
@@ -2307,9 +2302,9 @@ test('getChatRecipientUuids: 읽기 전용이다 — 호출해도 session.player
     assert.deepEqual([...session.players.entries()].map(([uuid, p]) => [uuid, { ...p }]), playersBefore)
 })
 
-// --- 사망한 JOKER: JOKER 채팅에서 완전히 제외된다 ---
+// --- 사망한 JOKER: 밤의 팀 채널에는 그대로 남는다 ---
 
-test('사망한 JOKER는 JOKER 채팅을 준비할 수 없고(NOT_ELIGIBLE) JOKER 수신자에서도 제외된다', () => {
+test('사망한 JOKER는 JOKER 채팅을 계속 쓸 수 있고 JOKER 수신자에도 남지만, 공개 채팅은 막힌다', () => {
     const { session, jokerUuid } = setupGameChatSession({ id: 'room-gc-dead-joker', phase: 'NIGHT' })
 
     // 살아있는 동안에는 JOKER 채널의 수신자이자 발신자다.
@@ -2318,17 +2313,18 @@ test('사망한 JOKER는 JOKER 채팅을 준비할 수 없고(NOT_ELIGIBLE) JOKE
 
     session.players.get(jokerUuid).alive = false
 
-    // 사망 즉시 JOKER 채널에서 사라진다(수신자 0명).
-    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.JOKER), [])
-    assert.deepEqual(prepareJokerChatMessage(jokerUuid, session.id, '죽은 JOKER', { now: () => 2000 }), {
+    // 사망해도 팀 채널의 자격은 그대로다(생존은 이 판정의 입력이 아니다).
+    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.JOKER), [jokerUuid])
+    const deadJokerChat = prepareJokerChatMessage(jokerUuid, session.id, '죽은 JOKER', { now: () => 2000 })
+    assert.equal(deadJokerChat.ok, true)
+    assert.equal(session.jokerChatRateLimit.size, 0, '준비만으로는 rate limit을 소비하지 않는다')
+    assert.deepEqual(commitJokerChatMessage(session, jokerUuid, deadJokerChat.sentAt), { ok: true })
+    assert.deepEqual([...session.jokerChatRateLimit.entries()], [[jokerUuid, 2000]])
+
+    // 반면 공개 채팅은 사망으로 막히고, 퇴역한 DEAD 채널도 열리지 않는다.
+    assert.deepEqual(prepareGameChatMessage(jokerUuid, session.id, '사망자 대화', { now: () => 2000 }), {
         ok: false,
         code: 'NOT_ELIGIBLE',
     })
-    assert.equal(session.jokerChatRateLimit.size, 0, '거부된 준비는 rate limit을 소비하지 않는다')
-
-    // 대신 사망자 전용 채팅은 쓸 수 있고, DEAD 수신자에 포함된다.
-    const dead = prepareGameChatMessage(jokerUuid, session.id, '사망자 대화', { now: () => 2000 })
-    assert.equal(dead.ok, true)
-    assert.equal(dead.channel, CHAT_CHANNELS.DEAD)
-    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [jokerUuid])
+    assert.deepEqual(getChatRecipientUuids(session, CHAT_CHANNELS.DEAD), [])
 })

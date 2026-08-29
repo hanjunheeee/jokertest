@@ -58,7 +58,7 @@ const INITIAL_DAY_INDEX = 0
 // 투표 제출·집계를 받지 않고, 생존자 전원이 준비를 마치면 투표(DAY_VOTE)가 열린다.
 //
 // session.phase 자체를 두 값으로 쪼개지 않는 이유: 'DAY'라는 phase 문자열은 이미 채팅 채널
-// 라우팅(resolveGameChatChannel의 공개 DAY 채팅·DEAD_CHAT_PHASES)·canIncludeDayTribunalFields·
+// 라우팅(resolveGameChatChannel의 공개 DAY 채팅)·canIncludeDayTribunalFields·
 // computeHasActedThisPhase 등 낮 하위 구간과 무관한 여러 계약의 입력이다. phase는 그대로 두고
 // 하위 구간만 별도 필드로 두면 "dayPhase는 phase === 'DAY'일 때만 읽는다"는 한 줄 불변식으로
 // 계약이 닫히고, 토론·투표 양쪽에서 공개 채팅이 그대로 열려 있다는 요구도 자동으로 만족된다.
@@ -105,6 +105,11 @@ function sanitizeChatText(rawText) {
  * 서버가 canonical 상태(인증 uuid의 생존 여부 + session.phase)에서만 유도하는 채팅 채널이다.
  * 클라이언트는 이 값을 고르지도, 전달하지도 못한다 — 어떤 payload 필드도 채널 판정의 입력이
  * 아니다.
+ *
+ * DEAD는 퇴역한 채널이다(사망자 전용 채팅). 사망자는 이제 공개 DAY 채널의 관전자일 뿐이라
+ * 어떤 경로로도 이 채널로 라우팅되지 않고 수신자도 언제나 0명이다 — resolveGameChatChannel ·
+ * getChatRecipientUuids 참고. 상수와 rate limit 필드는 세션 조립·정리 계약(아래
+ * CHAT_RATE_LIMIT_FIELD_BY_CHANNEL을 그대로 순회하는 코드들)을 건드리지 않기 위해 남겨 둔다.
  */
 const CHAT_CHANNELS = Object.freeze({ DAY: 'DAY', DEAD: 'DEAD', JOKER: 'JOKER' })
 
@@ -116,10 +121,6 @@ const CHAT_RATE_LIMIT_FIELD_BY_CHANNEL = Object.freeze({
     DEAD: 'deadChatRateLimit',
     JOKER: 'jokerChatRateLimit',
 })
-
-// 사망자 전용 채팅이 허용되는 phase. ROLE_REVEAL은 아직 아무도 죽을 수 없는 단계라 제외하고,
-// ENDED는 이 집합에 닿기 전에 assertSessionNotEnded가 먼저 막는다.
-const DEAD_CHAT_PHASES = new Set(['NIGHT', 'DAY', 'TRIBUNAL'])
 
 /** 채널에 대응하는 session의 rate limit Map을 돌려준다(알 수 없는 채널이면 undefined). */
 function getChatRateLimitMap(session, channel) {
@@ -196,39 +197,39 @@ function matchesPreparedGameChatCapability(prepared, capability) {
 
 /**
  * 인증된 참가자의 canonical 생존 상태와 session.phase만으로 "이 제출이 실제로 어느 채널인지"를
- * 결정한다(순수 함수 — 어떤 상태도 읽고 바꾸지 않는다).
+ * 결정한다(순수 함수 — 어떤 상태도 읽고 바꾸지 않는다). 발행 권한만 판정한다 — 수신 권한은
+ * getChatRecipientUuids가 따로 판정하고, 둘의 분업이 "사망자는 읽을 수는 있어도 쓸 수는
+ * 없다"를 만든다.
  *   - 생존자: DAY에서만 공개 채팅. 그 외 phase는 INVALID_PHASE.
- *   - 사망자: NIGHT/DAY/TRIBUNAL에서만 사망자 전용 채팅. ROLE_REVEAL은 INVALID_PHASE이고
+ *   - 사망자: 어떤 phase에서도 발행할 수 없다(NOT_ELIGIBLE). 사망자는 공개 채널의 관전자이지
+ *     발신자가 아니다 — 밤에 사망자끼리 대화가 열리면 밤 동안 정보가 새고(그 밤의 판정 전에
+ *     사망 사실·역할이 오간다), 낮에 사망자가 발언하면 산 사람의 토론에 개입하게 된다.
  *     ENDED는 호출 전에 이미 GAME_ALREADY_ENDED로 걸린다.
  * JOKER 비밀 채팅은 이 라우팅에 포함되지 않는다 — 전용 이벤트(prepareJokerChatMessage)가
- * NIGHT·JOKER 진영·생존을 각각 독립적으로 재검증한다.
+ * NIGHT·JOKER 진영을 각각 독립적으로 재검증한다(사망한 광대도 그 채널에는 남는다).
  */
 function resolveGameChatChannel(session, actor) {
-    if (actor.alive === true) {
-        if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
-        return { ok: true, channel: CHAT_CHANNELS.DAY }
-    }
-    if (!DEAD_CHAT_PHASES.has(session.phase)) return { ok: false, code: 'INVALID_PHASE' }
-    return { ok: true, channel: CHAT_CHANNELS.DEAD }
+    if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
+    if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+    return { ok: true, channel: CHAT_CHANNELS.DAY }
 }
 
 /**
  * 채널별 canonical 수신자 uuid 목록(순수 함수 — session.players를 읽기만 한다).
- *   - DAY: 생존자 전원(발신자 포함)
- *   - DEAD: 사망자 전원(발신자 포함)
- *   - JOKER: "생존한" JOKER 진영뿐(사망한 JOKER는 수신자에서 제외된다)
- * 알 수 없는 채널은 빈 배열이다 — 호출자(소켓 계층)의 "발신자가 수신자에 포함되는가" 검사가
- * 반드시 실패하므로 어떤 메시지도 전달되지 않는다(fail-closed).
+ *   - DAY: 참가자 전원 — 생존자와 "관전 중인 사망자" 모두. 사망자에게 열리는 것은 수신뿐이고
+ *     발행은 resolveGameChatChannel이 따로 거부한다. DAY 채널 자체가 DAY phase에서만
+ *     유도되므로, 이 전원 팬아웃이 밤에 사망자에게 이벤트를 흘리는 경로는 없다.
+ *   - JOKER: JOKER 진영 전원 — 사망한 광대도 팀 채널의 수신자로 남는다.
+ * 그 밖의 채널(퇴역한 DEAD 포함)은 빈 배열이다 — 호출자(소켓 계층)의 "발신자가 수신자에
+ * 포함되는가" 검사가 반드시 실패하므로 어떤 메시지도 전달되지 않는다(fail-closed).
  */
 function getChatRecipientUuids(session, channel) {
     const uuids = []
     for (const player of session.players.values()) {
         if (channel === CHAT_CHANNELS.DAY) {
-            if (player.alive === true) uuids.push(player.uuid)
-        } else if (channel === CHAT_CHANNELS.DEAD) {
-            if (player.alive !== true) uuids.push(player.uuid)
+            uuids.push(player.uuid)
         } else if (channel === CHAT_CHANNELS.JOKER) {
-            if (player.alive === true && ROLE_TEAMS[player.role] === 'JOKER') uuids.push(player.uuid)
+            if (ROLE_TEAMS[player.role] === 'JOKER') uuids.push(player.uuid)
         }
     }
     return uuids
@@ -2461,14 +2462,15 @@ function getSessionSnapshotForPlayer(uuid, expectedGameId) {
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. NIGHT phase
- *   → 5. 발신자가 JOKER 진영이고 아직 생존해 있는지(ROLE_TEAMS[actor.role] !== 'JOKER'이거나
- *   actor.alive !== true면 NOT_ELIGIBLE — CITIZEN이 payload를 위조해도, 사망한 JOKER가
- *   요청해도 여기서 막힙니다) → 6. sanitizeChatText
+ *   → 5. 발신자가 JOKER 진영인지(ROLE_TEAMS[actor.role] !== 'JOKER'면 NOT_ELIGIBLE —
+ *   CITIZEN이 payload를 위조해도 여기서 막힙니다) → 6. sanitizeChatText
  *   → 7. now()를 정확히 한 번 호출해 sentAt을 계산하고 유효성 검증(INVALID_CLOCK_VALUE)
  *   → 8. jokerChatRateLimit을 읽기만 해서 rate limit 판정(RATE_LIMITED).
  *
- * 사망한 JOKER는 이 경로로 보낼 수 없고(NOT_ELIGIBLE), getChatRecipientUuids의 JOKER 채널
- * 수신자에서도 제외됩니다 — 대신 사망자 전용 채팅(prepareGameChatMessage)만 쓸 수 있습니다.
+ * 생존 여부는 이 판정의 입력이 아닙니다 — 사망한 광대도 밤의 JOKER 채널에서 계속 말하고 듣습니다
+ * (getChatRecipientUuids의 JOKER 채널 수신자에도 그대로 남습니다). 공개 채팅은 반대로 사망자의
+ * 발행을 전부 거부하므로(resolveGameChatChannel), 사망한 광대에게 열려 있는 유일한 발신 경로가
+ * 이 팀 채널입니다.
  *
  * 이 함수는 session.jokerChatRateLimit을 포함해 어떤 Map도 쓰지 않습니다(읽기만 합니다) —
  * idFn도 호출하지 않습니다(호출자인 소켓 계층이 recipient 해석·발신자 포함 확인을 전부 통과한
@@ -2492,7 +2494,6 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
 
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
     if (ROLE_TEAMS[actor.role] !== 'JOKER') return { ok: false, code: 'NOT_ELIGIBLE' }
-    if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
 
     const sanitized = sanitizeChatText(text)
     if (!sanitized.ok) return sanitized
@@ -2520,7 +2521,7 @@ function commitJokerChatMessage(session, uuid, sentAt) {
 }
 
 /**
- * 공개 DAY 채팅과 사망자 전용 채팅의 단일 검증 진입점입니다(어떤 상태도 바꾸지 않는 순수
+ * 공개 DAY 채팅의 단일 검증 진입점입니다(어떤 상태도 바꾸지 않는 순수
  * 함수). prepareJokerChatMessage와 마찬가지로 인증된 uuid·클라이언트가 알고 있는 gameId·원문
  * text만 입력으로 받습니다 — 채널·발신자·닉네임·수신자·dayIndex는 전부 canonical 상태에서
  * 유도되며, 클라이언트가 그런 필드를 함께 보내도 이 함수의 입력에 아예 없습니다.
@@ -2528,8 +2529,9 @@ function commitJokerChatMessage(session, uuid, sentAt) {
  * 검증 순서(뒤 단계는 앞 단계를 통과해야만 평가됩니다):
  *   1. gameId 정규화(trim 후 빈 문자열 거부) → 2. uuid의 활성 세션 존재·gameId 일치
  *   → 3. registry 일관성(session 실존, uuid가 참가자) → 4. 종료 여부(GAME_ALREADY_ENDED)
- *   → 5. resolveGameChatChannel로 채널 유도(생존↔DAY / 사망↔NIGHT·DAY·TRIBUNAL, 그 외
- *   INVALID_PHASE) → 6. sanitizeChatText → 7. now()를 정확히 한 번 호출해 sentAt 계산·검증
+ *   → 5. resolveGameChatChannel로 채널 유도(사망자는 NOT_ELIGIBLE, 생존자는 DAY에서만
+ *   통과하고 그 외 phase는 INVALID_PHASE)
+ *   → 6. sanitizeChatText → 7. now()를 정확히 한 번 호출해 sentAt 계산·검증
  *   (INVALID_CLOCK_VALUE) → 8. 그 채널의 rate limit Map만 읽어 판정(RATE_LIMITED)
  *   → 9. 메시지 ID 생성·검증(ID_GENERATION_ERROR / INVALID_MESSAGE_ID).
  *
@@ -2655,9 +2657,11 @@ function prepareGameChatMessage(uuid, gameId, text, { now = Date.now, idFn = () 
  *      같아야 한다(인증 발신자 uuid 재확인). 닉네임도 발급 당시와 같아야 한다.
  *   5. 종료 여부(GAME_ALREADY_ENDED)
  *   6. "지금 실제로 유효한 채널"을 resolveGameChatChannel로 다시 유도해 능력 기록의 채널과
- *      대조 — 현재 phase/생존 권한을 여기서 다시 통과해야 하고, 그 사이 DAY→NIGHT 전이나
- *      생존→사망 전이가 있었다면 STALE_CHAT_CHANNEL로 거부된다(라우팅이 바뀐 채널로는 절대
- *      커밋되지 않는다). dayIndex도 발급 당시와 같아야 한다.
+ *      대조 — 현재 phase/생존 권한을 여기서 다시 통과해야 한다. 그 사이 DAY→NIGHT 전이가
+ *      있었으면 INVALID_PHASE로, 생존→사망 전이가 있었으면 NOT_ELIGIBLE로 거부된다(발행
+ *      권한을 잃은 요청은 준비돼 있었더라도 커밋되지 않는다). STALE_CHAT_CHANNEL은 유도된
+ *      채널이 발급 당시와 달라지는 경우를 위한 방어선으로 남겨 둔다. dayIndex도 발급 당시와
+ *      같아야 한다.
  *   7. 타임스탬프 — 능력 기록의 sentAt과 그 안의 공개 메시지 sentAt이 정확히 같은 값이어야
  *      하고, 유한한 비음수 정수여야 한다(INVALID_CLOCK_VALUE). 그 다음 commit이 스스로 호출한
  *      canonical 시계(now)와 대조해 셋을 모두 만족해야 한다(어기면 STALE_CHAT_TIMESTAMP):
@@ -2670,7 +2674,7 @@ function prepareGameChatMessage(uuid, gameId, text, { now = Date.now, idFn = () 
  *   8. 다시 유도한 채널에 대응하는 rate limit Map(INVALID_CHAT_CHANNEL)
  *
  * 성공하면 능력 기록을 즉시 지우고(같은 prepared의 재생 불가) 그 채널의 Map에 능력 기록의
- * sentAt을 씁니다 — 다른 채널의 Map은 절대 건드리지 않습니다. 실패한 commit은 DAY/DEAD 어느
+ * sentAt을 씁니다 — 다른 채널의 Map은 절대 건드리지 않습니다. 실패한 commit은 어느
  * rate limit Map도 변형하지 않고 능력도 소모하지 않습니다(원자성 — 남의 실패가 정상 요청의
  * 능력을 태우지 못한다).
  *

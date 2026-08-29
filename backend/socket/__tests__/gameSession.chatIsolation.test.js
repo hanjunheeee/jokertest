@@ -8,9 +8,6 @@
 // game-core도 소켓 계층도 mock하지 않는다. registerGameHandlers로 실제 배선한 뒤
 // socket.trigger로 클라이언트가 보내는 이벤트를 그대로 재현하고, 각 소켓의 emitted 기록을
 // 센다("전송되지 않았다"는 부재 단언이라 기록이 비어 있음을 확인할 수단이 필요하다).
-//
-// ⚠ AC-02 · AC-03 · AC-04는 현재 구현과 어긋난다 — 파일 끝의 divergence 섹션과
-//   .pluto/expansion-request.json 참고.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -183,8 +180,8 @@ test('AC-01: 밤에는 생존자 누구도 공개 채팅을 발행할 수 없고
     assert.equal(session.deadChatRateLimit.size, 0)
 })
 
-test('AC-01: 밤의 수신자 소켓 집합은 채널마다 서로 겹치지 않는다', () => {
-    const { session, io, socketByUuid, jokerUuids, otherUuids } = createChatSocketFixture({
+test('AC-01: 밤에 실제로 수신자가 있는 채널은 JOKER 하나뿐이고 DEAD 소켓 집합은 언제나 비어 있다', () => {
+    const { session, io, socketByUuid, jokerUuids } = createChatSocketFixture({
         id: 'room-ci-ac1-sets',
         phase: 'NIGHT',
         uuids: ['ci1ga', 'ci1gb', 'ci1gc', 'ci1gd', 'ci1ge'],
@@ -198,22 +195,18 @@ test('AC-01: 밤의 수신자 소켓 집합은 채널마다 서로 겹치지 않
     const deadSockets = resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.DEAD)
 
     assert.deepEqual(idsOf(jokerSockets), idsOf(jokerUuids.map((u) => socketByUuid.get(u))))
-    assert.deepEqual(idsOf(deadSockets), [socketByUuid.get(otherUuids[0]).id])
-    // JOKER 소켓 집합은 DAY의 부분집합이면서 DEAD와는 완전히 분리돼 있다.
+    assert.deepEqual(deadSockets, [], '퇴역한 DEAD 채널에는 사망자가 있어도 수신 소켓이 없다')
+    // JOKER 소켓 집합은 참가자 전체 집합(DAY)의 부분집합이다 — 다른 직업으로 새지 않는다.
     const dayIds = new Set(idsOf(daySockets))
-    const deadIds = new Set(idsOf(deadSockets))
-    for (const s of jokerSockets) {
-        assert.equal(dayIds.has(s.id), true)
-        assert.equal(deadIds.has(s.id), false)
-    }
-    assert.equal(daySockets.length + deadSockets.length, session.players.size)
+    for (const s of jokerSockets) assert.equal(dayIds.has(s.id), true)
+    assert.equal(daySockets.length, session.players.size, 'DAY 채널은 관전 중인 사망자까지 참가자 전원이다')
 })
 
 // ---------------------------------------------------------------------------
 // AC-06 · 낮 턴 — 생존 플레이어는 DAY 채널에 메시지를 보낼 수 있다
 // ---------------------------------------------------------------------------
 
-test('AC-06: 낮의 생존자가 보낸 DAY 메시지는 생존 소켓 전원(발신자 포함)에게 정확히 1건씩 간다', () => {
+test('AC-06: 낮의 생존자가 보낸 DAY 메시지는 참가자 소켓 전원(발신자 포함)에게 정확히 1건씩 간다', () => {
     const { session, io, socketByUuid, jokerUuids, otherUuids } = createChatSocketFixture({
         id: 'room-ci-ac6',
         phase: 'DAY',
@@ -238,6 +231,164 @@ test('AC-06: 낮의 생존자가 보낸 DAY 메시지는 생존 소켓 전원(�
     assert.equal(payload.gameId, session.id)
     assert.deepEqual([...session.dayChatRateLimit.keys()], [sender])
     assert.equal(io.broadcasts.length, 0)
+})
+
+// ---------------------------------------------------------------------------
+// AC-02 · 낮 턴 — 사망자는 DAY 메시지를 소켓으로 받지만 발행은 라우터가 거부한다
+// ---------------------------------------------------------------------------
+
+test('AC-02: 낮의 사망자 소켓도 생존자의 DAY 메시지를 정확히 1건 받는다(관전 열람)', () => {
+    const { session, socketByUuid, otherUuids, jokerUuids, deadUuids } = createChatSocketFixture({
+        id: 'room-ci-ac2-receive',
+        phase: 'DAY',
+        uuids: ['ci2a', 'ci2b', 'ci2c', 'ci2d'],
+        deadPicker: ({ otherUuids: others }) => [others[0]],
+    })
+    const [deadUuid] = deadUuids
+    const aliveSender = otherUuids[1]
+
+    const response = emitFromClient(socketByUuid.get(aliveSender), 'submit_game_chat_message', {
+        gameId: session.id,
+        text: '낮 발언',
+    })
+
+    assert.deepEqual(response, { ok: true })
+    for (const uuid of [...otherUuids, ...jokerUuids]) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1, `${uuid}는 DAY 메시지를 1건 받는다`)
+    }
+    // 사망자가 받은 payload는 생존자가 받은 것과 완전히 같은 canonical 메시지다(열람 가능).
+    const [deadPayload] = socketByUuid.get(deadUuid).emitted.filter((e) => e.event === DAY_CHAT_EVENT).map((e) => e.payload)
+    const [alivePayload] = socketByUuid.get(jokerUuids[0]).emitted.filter((e) => e.event === DAY_CHAT_EVENT).map((e) => e.payload)
+    assert.deepEqual(deadPayload, alivePayload)
+    assert.equal(deadPayload.senderUuid, aliveSender)
+    // 사망자 전용 채널로 중복 전송되지 않는다.
+    for (const s of socketByUuid.values()) assert.equal(deliveredCount(s, DEAD_CHAT_EVENT), 0)
+})
+
+test('AC-02: 낮의 사망자가 발행을 시도하면 소켓 라우터가 거부하고 아무 소켓도 이벤트를 받지 않는다', () => {
+    const { session, socketByUuid, deadUuids } = createChatSocketFixture({
+        id: 'room-ci-ac2-publish',
+        phase: 'DAY',
+        uuids: ['ci2pa', 'ci2pb', 'ci2pc', 'ci2pd'],
+        deadPicker: ({ otherUuids: others }) => [others[0]],
+    })
+    const [deadUuid] = deadUuids
+
+    const response = emitFromClient(socketByUuid.get(deadUuid), 'submit_game_chat_message', {
+        gameId: session.id,
+        text: '사망자 발언',
+    })
+
+    assert.deepEqual(response, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+    for (const s of socketByUuid.values()) assert.equal(totalChatDeliveries(s), 0)
+    assert.equal(session.dayChatRateLimit.size, 0)
+    assert.equal(session.deadChatRateLimit.size, 0)
+})
+
+// ---------------------------------------------------------------------------
+// AC-03 · 밤 턴 — 사망 플레이어(광대 제외)에게 채팅 이벤트가 전송되지 않는다
+// ---------------------------------------------------------------------------
+
+test('AC-03: 밤에 사망한 비-JOKER 소켓은 어떤 채팅 이벤트도 받지 못하고 발행도 거부된다', () => {
+    const { session, io, socketByUuid, jokerUuids, deadUuids, aliveOtherUuids } = createChatSocketFixture({
+        id: 'room-ci-ac3',
+        phase: 'NIGHT',
+        uuids: ['ci3a', 'ci3b', 'ci3c', 'ci3d', 'ci3e'],
+        jokerCount: 2,
+        deadPicker: ({ otherUuids: others }) => [others[0], others[1]],
+    })
+    const [deadOne, deadTwo] = deadUuids
+
+    // (1) 사망자 본인의 발행 시도는 라우터가 거부한다 — 공개도, 팀 채널도.
+    for (const uuid of deadUuids) {
+        assert.deepEqual(
+            emitFromClient(socketByUuid.get(uuid), 'submit_game_chat_message', { gameId: session.id, text: '밤의 사망자 대화' }),
+            { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' },
+        )
+        assert.deepEqual(
+            emitFromClient(socketByUuid.get(uuid), 'submit_joker_chat_message', { gameId: session.id, text: '팀 대화 흉내' }),
+            { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' },
+        )
+    }
+
+    // (2) 그 밤에 실제로 오가는 유일한 대화(JOKER 팀 채널)도 사망자 소켓에는 닿지 않는다.
+    assert.deepEqual(
+        emitFromClient(socketByUuid.get(jokerUuids[0]), 'submit_joker_chat_message', { gameId: session.id, text: '팀 대화' }),
+        { ok: true },
+    )
+    assert.equal(deliveredCount(socketByUuid.get(deadOne), JOKER_CHAT_EVENT), 0)
+    assert.equal(deliveredCount(socketByUuid.get(deadTwo), JOKER_CHAT_EVENT), 0)
+
+    // (3) 결과적으로 사망자 소켓의 채팅 이벤트 총합이 0이다("전송되지 않는다"의 직접 단언).
+    for (const uuid of deadUuids) {
+        assert.equal(totalChatDeliveries(socketByUuid.get(uuid)), 0, `${uuid}는 밤 동안 어떤 채팅 이벤트도 받지 않는다`)
+    }
+    // 생존한 비-JOKER도 남의 팀 채널을 받지 않는다(격리는 사망 축과 진영 축 모두에서 유지된다).
+    for (const uuid of aliveOtherUuids) assert.equal(totalChatDeliveries(socketByUuid.get(uuid)), 0)
+    assert.deepEqual(resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.DEAD), [])
+    assert.equal(session.deadChatRateLimit.size, 0)
+})
+
+// ---------------------------------------------------------------------------
+// AC-04 · 밤 턴 — 사망한 광대는 JOKER 채널에서 송수신할 수 있다
+// ---------------------------------------------------------------------------
+
+test('AC-04: 밤에 사망한 광대는 JOKER 채널로 보내고, 그 메시지는 팀 소켓 전원(본인 포함)에게 간다', () => {
+    const { session, io, socketByUuid, jokerUuids, otherUuids, deadUuids } = createChatSocketFixture({
+        id: 'room-ci-ac4-send',
+        phase: 'NIGHT',
+        uuids: ['ci4a', 'ci4b', 'ci4c', 'ci4d', 'ci4e'],
+        jokerCount: 2,
+        deadPicker: ({ jokerUuids: jokers }) => [jokers[0]],
+    })
+    const [deadJoker] = deadUuids
+    const aliveJoker = jokerUuids.find((uuid) => uuid !== deadJoker)
+
+    // 사망 이후에도 팀 소켓 집합은 그대로다(수신 자격이 유지된다).
+    assert.deepEqual(
+        resolveJokerTeammateSockets(io, session).map((s) => s.id).sort(),
+        [socketByUuid.get(deadJoker).id, socketByUuid.get(aliveJoker).id].sort(),
+    )
+
+    const response = emitFromClient(socketByUuid.get(deadJoker), 'submit_joker_chat_message', {
+        gameId: session.id,
+        text: '죽어서도 팀 대화',
+    })
+
+    assert.deepEqual(response, { ok: true }, '사망한 광대의 JOKER 발행은 거부되지 않는다')
+    assert.equal(deliveredCount(socketByUuid.get(deadJoker), JOKER_CHAT_EVENT), 1, '발신자 본인도 받는다')
+    assert.equal(deliveredCount(socketByUuid.get(aliveJoker), JOKER_CHAT_EVENT), 1)
+    const [payload] = socketByUuid.get(aliveJoker).emitted.filter((e) => e.event === JOKER_CHAT_EVENT).map((e) => e.payload)
+    assert.equal(payload.senderUuid, deadJoker)
+    assert.equal(payload.text, '죽어서도 팀 대화')
+    // 팀 밖으로는 새지 않는다.
+    for (const uuid of otherUuids) assert.equal(totalChatDeliveries(socketByUuid.get(uuid)), 0)
+    assert.deepEqual([...session.jokerChatRateLimit.keys()], [deadJoker])
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('AC-04: 살아있는 팀원이 보낸 밤 메시지도 사망한 광대의 소켓에 도착한다', () => {
+    const { session, socketByUuid, jokerUuids, otherUuids, deadUuids } = createChatSocketFixture({
+        id: 'room-ci-ac4-receive',
+        phase: 'NIGHT',
+        uuids: ['ci4ra', 'ci4rb', 'ci4rc', 'ci4rd', 'ci4re'],
+        jokerCount: 2,
+        deadPicker: ({ jokerUuids: jokers }) => [jokers[0]],
+    })
+    const [deadJoker] = deadUuids
+    const aliveJoker = jokerUuids.find((uuid) => uuid !== deadJoker)
+
+    assert.deepEqual(
+        emitFromClient(socketByUuid.get(aliveJoker), 'submit_joker_chat_message', { gameId: session.id, text: '남은 팀원' }),
+        { ok: true },
+    )
+
+    assert.equal(deliveredCount(socketByUuid.get(deadJoker), JOKER_CHAT_EVENT), 1, '사망한 광대가 팀 메시지를 수신한다')
+    assert.equal(deliveredCount(socketByUuid.get(aliveJoker), JOKER_CHAT_EVENT), 1)
+    const [payload] = socketByUuid.get(deadJoker).emitted.filter((e) => e.event === JOKER_CHAT_EVENT).map((e) => e.payload)
+    assert.equal(payload.senderUuid, aliveJoker)
+    assert.equal(payload.gameId, session.id)
+    for (const uuid of otherUuids) assert.equal(totalChatDeliveries(socketByUuid.get(uuid)), 0)
 })
 
 // ---------------------------------------------------------------------------
@@ -291,7 +442,6 @@ test('AC-05: payload에 채널·발신자·닉네임을 위조해 쏴도 라우�
         deadPicker: ({ otherUuids: others }) => [others[others.length - 1]],
     })
     const sender = otherUuids[0]
-    const deadUuid = otherUuids[otherUuids.length - 1]
 
     const response = emitFromClient(socketByUuid.get(sender), 'submit_game_chat_message', {
         gameId: session.id,
@@ -307,12 +457,12 @@ test('AC-05: payload에 채널·발신자·닉네임을 위조해 쏴도 라우�
     })
 
     assert.deepEqual(response, { ok: true })
-    // JOKER 채널로도 DEAD 채널로도 새지 않는다.
+    // JOKER 채널로도 DEAD 채널로도 새지 않는다 — 유도된 채널은 언제나 DAY 하나뿐이다.
     for (const s of socketByUuid.values()) {
         assert.equal(deliveredCount(s, JOKER_CHAT_EVENT), 0)
         assert.equal(deliveredCount(s, DEAD_CHAT_EVENT), 0)
+        assert.equal(deliveredCount(s, DAY_CHAT_EVENT), 1)
     }
-    assert.equal(deliveredCount(socketByUuid.get(deadUuid), DAY_CHAT_EVENT), 0)
     const [payload] = socketByUuid.get(jokerUuids[0]).emitted.filter((e) => e.event === DAY_CHAT_EVENT).map((e) => e.payload)
     assert.equal(payload.senderUuid, sender, '위조된 senderUuid는 무시된다')
     assert.equal(payload.nickname, session.players.get(sender).nickname)
@@ -374,103 +524,4 @@ test('AC-05: registry의 canonical 소켓이 아닌 연결에서 쏘면 STALE_SO
     assert.deepEqual(response, { ok: false, code: 'STALE_SOCKET', message: '요청을 처리할 수 없습니다.' })
     for (const s of [...socketByUuid.values(), staleSocket]) assert.equal(totalChatDeliveries(s), 0)
     assert.equal(session.dayChatRateLimit.size, 0)
-})
-
-// ---------------------------------------------------------------------------
-// AC-02 · AC-03 · AC-04 — 현재 구현과 어긋나는 지점(divergence)
-//
-// 세 AC가 요구하는 규칙과 현재 구현이 실제로 하는 일을 소켓 층에서 나란히 고정한다.
-// 규칙 변경은 이 슬라이스의 범위 밖이라 .pluto/expansion-request.json으로 올렸다.
-// ---------------------------------------------------------------------------
-
-test('[divergence AC-02] 낮의 사망자는 DAY 이벤트를 소켓으로 받지 못하고, 발행은 거부 대신 DEAD 채널로 성공한다', () => {
-    const { session, socketByUuid, otherUuids, jokerUuids } = createChatSocketFixture({
-        id: 'room-ci-ac2',
-        phase: 'DAY',
-        uuids: ['ci2a', 'ci2b', 'ci2c', 'ci2d'],
-        deadPicker: ({ otherUuids: others }) => [others[0]],
-    })
-    const deadUuid = otherUuids[0]
-    const aliveSender = otherUuids[1]
-
-    // 생존자의 DAY 메시지는 사망자 소켓에 닿지 않는다(AC-02의 "수신·열람할 수 있다"와 어긋난다).
-    assert.deepEqual(
-        emitFromClient(socketByUuid.get(aliveSender), 'submit_game_chat_message', { gameId: session.id, text: '낮 발언' }),
-        { ok: true },
-    )
-    assert.equal(deliveredCount(socketByUuid.get(deadUuid), DAY_CHAT_EVENT), 0, '현재 구현: 사망자는 DAY 이벤트를 못 받는다')
-    assert.equal(deliveredCount(socketByUuid.get(jokerUuids[0]), DAY_CHAT_EVENT), 1)
-
-    // 사망자의 발행은 거부되지 않고 DEAD 채널로 성공한다(AC-02의 "발행은 거부된다"와 어긋난다).
-    assert.deepEqual(
-        emitFromClient(socketByUuid.get(deadUuid), 'submit_game_chat_message', { gameId: session.id, text: '사망자 발언' }),
-        { ok: true },
-        '현재 구현: 사망자의 낮 발행은 ok로 응답된다',
-    )
-    assert.equal(deliveredCount(socketByUuid.get(deadUuid), DEAD_CHAT_EVENT), 1)
-    for (const uuid of [...jokerUuids, ...otherUuids.slice(1)]) {
-        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0, '다만 생존자에게는 새지 않는다')
-    }
-})
-
-test('[divergence AC-03] 밤에도 사망자 소켓은 DEAD 채팅 이벤트를 받는다', () => {
-    const { session, socketByUuid, otherUuids, jokerUuids } = createChatSocketFixture({
-        id: 'room-ci-ac3',
-        phase: 'NIGHT',
-        uuids: ['ci3a', 'ci3b', 'ci3c', 'ci3d', 'ci3e'],
-        deadPicker: ({ otherUuids: others }) => [others[0], others[1]],
-    })
-    const [deadOne, deadTwo] = otherUuids
-
-    // AC-03("밤 턴에서 사망 플레이어에게 채팅 이벤트가 전송되지 않는다")과 정면으로 어긋난다.
-    assert.deepEqual(
-        emitFromClient(socketByUuid.get(deadOne), 'submit_game_chat_message', { gameId: session.id, text: '밤의 사망자 대화' }),
-        { ok: true },
-        '현재 구현: 밤의 사망자 발행이 성공한다',
-    )
-    assert.equal(deliveredCount(socketByUuid.get(deadOne), DEAD_CHAT_EVENT), 1)
-    assert.equal(deliveredCount(socketByUuid.get(deadTwo), DEAD_CHAT_EVENT), 1, '현재 구현: 밤에도 사망자에게 전송된다')
-    // 생존자 쪽으로는 새지 않는다(격리 자체는 성립한다).
-    for (const uuid of [...jokerUuids, ...otherUuids.slice(2)]) {
-        assert.equal(totalChatDeliveries(socketByUuid.get(uuid)), 0)
-    }
-})
-
-test('[divergence AC-04] 밤에 사망한 광대는 JOKER 채널에서 송신도 수신도 하지 못한다', () => {
-    const { session, io, socketByUuid, jokerUuids } = createChatSocketFixture({
-        id: 'room-ci-ac4',
-        phase: 'NIGHT',
-        uuids: ['ci4a', 'ci4b', 'ci4c', 'ci4d', 'ci4e'],
-        jokerCount: 2,
-    })
-    const [deadJoker, aliveJoker] = jokerUuids
-
-    // 살아있는 동안에는 JOKER 소켓 집합에 둘 다 있다(양성 대조).
-    assert.deepEqual(
-        resolveJokerTeammateSockets(io, session).map((s) => s.id).sort(),
-        [socketByUuid.get(deadJoker).id, socketByUuid.get(aliveJoker).id].sort(),
-    )
-
-    session.players.get(deadJoker).alive = false
-
-    // AC-04("사망한 광대는 JOKER 채널에서 송수신할 수 있다")와 정면으로 어긋난다.
-    assert.deepEqual(
-        resolveJokerTeammateSockets(io, session).map((s) => s.id),
-        [socketByUuid.get(aliveJoker).id],
-        '현재 구현: 사망한 광대 소켓은 JOKER 수신자에서 빠진다',
-    )
-    assert.deepEqual(
-        emitFromClient(socketByUuid.get(deadJoker), 'submit_joker_chat_message', { gameId: session.id, text: '죽은 광대' }),
-        { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' },
-        '현재 구현: 사망한 광대의 JOKER 발행은 거부된다',
-    )
-    for (const s of socketByUuid.values()) assert.equal(deliveredCount(s, JOKER_CHAT_EVENT), 0)
-
-    // 살아있는 팀원이 보내면 그 자신에게만 간다 — 사망한 광대는 수신도 못 한다.
-    assert.deepEqual(
-        emitFromClient(socketByUuid.get(aliveJoker), 'submit_joker_chat_message', { gameId: session.id, text: '남은 팀원' }),
-        { ok: true },
-    )
-    assert.equal(deliveredCount(socketByUuid.get(aliveJoker), JOKER_CHAT_EVENT), 1)
-    assert.equal(deliveredCount(socketByUuid.get(deadJoker), JOKER_CHAT_EVENT), 0, '현재 구현: 사망한 광대는 수신하지 못한다')
 })
