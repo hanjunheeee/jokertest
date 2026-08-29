@@ -1309,13 +1309,19 @@ test('getSessionSnapshotForPlayer: JOKER 진영끼리만 allies가 채워지고,
 
     const jokerResult = getSessionSnapshotForPlayer(viewerJoker, session.id)
     assert.equal(jokerResult.ok, true)
-    assert.deepEqual(Object.keys(jokerResult.snapshot.self).sort(), ['allies', 'hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'])
+    assert.deepEqual(
+        Object.keys(jokerResult.snapshot.self).sort(),
+        ['allies', 'hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'],
+    )
     assert.deepEqual(jokerResult.snapshot.self.allies, [otherJoker])
     assertNoForbiddenPrivateData(jokerResult.snapshot, collectOtherPlayerRoleSecrets(session, viewerJoker))
 
     const citizenResult = getSessionSnapshotForPlayer(citizenUuid, session.id)
     assert.equal(citizenResult.ok, true)
-    assert.deepEqual(Object.keys(citizenResult.snapshot.self).sort(), ['hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'])
+    assert.deepEqual(
+        Object.keys(citizenResult.snapshot.self).sort(),
+        ['hasActedThisPhase', 'nickname', 'role', 'team', 'uuid'],
+    )
     assert.equal(Object.hasOwn(citizenResult.snapshot.self, 'allies'), false)
     assertNoForbiddenPrivateData(citizenResult.snapshot, collectOtherPlayerRoleSecrets(session, citizenUuid))
 })
