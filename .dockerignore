@@ -1,0 +1,15 @@
+# 호스트에서 설치된 node_modules는 컨테이너와 아키텍처가 다를 수 있습니다.
+# 이미지 안에서는 언제나 npm ci로 새로 설치하므로 빌드 컨텍스트에서 제외합니다.
+node_modules
+**/node_modules
+
+# 비밀 값이 이미지 레이어에 들어가지 않도록 합니다. 환경 변수는 compose가 주입합니다.
+.env
+**/.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+npm-debug.log*
+**/dist
