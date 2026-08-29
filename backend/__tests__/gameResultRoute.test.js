@@ -21,7 +21,7 @@ const GAME_ROW = {
     completed: true,
     GameResultPlayers: [
         { user_id: "u1", nickname_snapshot: "닉1", role: "CITIZEN", team: "CITIZEN", won: true,  is_alive: true,  death_reason: null },
-        { user_id: "u2", nickname_snapshot: "닉2", role: "DOCTOR",  team: "CITIZEN", won: true,  is_alive: false, death_reason: "NIGHT_KILL" },
+        { user_id: "u2", nickname_snapshot: "닉2", role: "DOCTOR",  team: "CITIZEN", won: true,  is_alive: false, death_reason: "ASSASSINATION" },
         { user_id: "u3", nickname_snapshot: "닉3", role: "JOKER",   team: "JOKER",   won: false, is_alive: false, death_reason: "EXECUTION" },
     ],
 };
@@ -83,7 +83,7 @@ test("AC-06: 단건 조회가 게임 헤더와 참가자 필드를 정확히 반
 
     assert.deepEqual(body.data.players, [
         { uuid: "u1", nickname_snapshot: "닉1", role: "CITIZEN", team: "CITIZEN", won: true,  is_alive: true,  death_reason: null },
-        { uuid: "u2", nickname_snapshot: "닉2", role: "DOCTOR",  team: "CITIZEN", won: true,  is_alive: false, death_reason: "NIGHT_KILL" },
+        { uuid: "u2", nickname_snapshot: "닉2", role: "DOCTOR",  team: "CITIZEN", won: true,  is_alive: false, death_reason: "ASSASSINATION" },
         { uuid: "u3", nickname_snapshot: "닉3", role: "JOKER",   team: "JOKER",   won: false, is_alive: false, death_reason: "EXECUTION" },
     ]);
 });

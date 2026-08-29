@@ -70,6 +70,7 @@ test('commitNightResolution: 유효한 victim이 있으면 그 player만 alive:f
 
     assert.deepEqual(result, { ok: true, victimUuid: victim.uuid, terminal: null })
     assert.equal(session.players.get(victim.uuid).alive, false)
+    assert.equal(session.players.get(victim.uuid).deathReason, 'ASSASSINATION')
     assert.equal(session.players.get(other.uuid).alive, true)
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, 1)

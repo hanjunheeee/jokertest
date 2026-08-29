@@ -1,4 +1,5 @@
 const db = require("../models");
+const gameSessionCore = require("../game-core/gameSession");
 
 // 한 판의 전적은 세 테이블(game_results · game_result_players · user_stats)에 걸쳐 있고,
 // 셋 중 하나만 남는 상태는 어떤 화면에서도 의미가 없다("경기는 있는데 참가자가 없다",
@@ -11,42 +12,74 @@ const db = require("../models");
  * 나머지 작업은 전부 그 성공을 게이트로 삼기 때문입니다(멱등성의 근거를 프로세스 안의
  * 플래그가 아니라 DB 제약에 둡니다 — 서버가 여러 대여도 그대로 성립합니다).
  *
- * @param {object} record - game-core의 buildGameResultRecord가 만든 { result, players, stats }
+ * @param {object} session - 종료 시점의 세션 스냅샷
+ * @param {object} options
+ * @param {boolean} options.completed - 정상 승패 확정 여부
+ * @param {string} [options.disconnectedUuid] - 중단시킨 이탈자 uuid
  * @returns {Promise<{ persisted: boolean, gameId: string }>} persisted=false는 "이미 저장돼 있어
  *          아무 것도 쓰지 않았다"는 뜻입니다(실패가 아닙니다).
  */
-exports.persistGameResult = async (record) => {
+exports.persistGameResult = async (session, { completed, disconnectedUuid } = {}) => {
+    const record = gameSessionCore.buildGameResultRecord(session, { completed, disconnectedUuid });
     const { result, players = [], stats = [] } = record;
 
-    return await db.sequelize.transaction(async (transaction) => {
-        const [, created] = await db.GameResult.findOrCreate({
-            where: { id: result.id },
-            defaults: result,
-            transaction,
+    try {
+        return await db.sequelize.transaction(async (transaction) => {
+            const [, created] = await db.GameResult.findOrCreate({
+                where: { id: result.id },
+                defaults: result,
+                transaction,
+            });
+
+            // 이미 저장된 판이다. 참가자 재삽입도 통계 재증분도 하지 않는다.
+            if (!created) return { persisted: false, gameId: result.id };
+
+            if (players.length > 0) {
+                await db.GameResultPlayer.bulkCreate(players, { transaction });
+            }
+
+            for (const delta of stats) {
+                await db.UserStats.increment(
+                    {
+                        total_games: delta.total_games,
+                        survival_count: delta.survival_count,
+                        execution_count: delta.execution_count,
+                    },
+                    { where: { user_id: delta.user_id }, transaction },
+                );
+
+                // 현재 판의 참가자 행까지 포함된 역할 이력에서 최빈 역할을 계산한다.
+                const roleRows = await db.GameResultPlayer.findAll({
+                    attributes: ["role"],
+                    // won=null인 중단 경기 잔류자는 user_stats 집계 대상이 아니다.
+                    where: { user_id: delta.user_id, won: { [db.Sequelize.Op.ne]: null } },
+                    raw: true,
+                    transaction,
+                });
+                const roleCounts = new Map();
+                for (const row of roleRows) {
+                    if (typeof row.role !== "string") continue;
+                    roleCounts.set(row.role, (roleCounts.get(row.role) ?? 0) + 1);
+                }
+                const mostPlayedRole = [...roleCounts]
+                    .sort(([roleA, countA], [roleB, countB]) => countB - countA || roleA.localeCompare(roleB))[0]?.[0] ?? null;
+                await db.UserStats.update(
+                    { most_played_role: mostPlayedRole },
+                    { where: { user_id: delta.user_id }, transaction },
+                );
+            }
+
+            return { persisted: true, gameId: result.id };
         });
-
-        // 이미 저장된 판이다. 참가자 재삽입도 통계 재증분도 하지 않는다.
-        if (!created) return { persisted: false, gameId: result.id };
-
-        if (players.length > 0) {
-            await db.GameResultPlayer.bulkCreate(players, { transaction });
-        }
-
-        // user_stats 행이 없는 계정(가입 트랜잭션 도입 이전 계정 등)에는 increment가 0건을
-        // 갱신하고 조용히 지나간다 — 전적 저장이 그 계정 하나 때문에 통째로 롤백되지는 않는다.
-        for (const delta of stats) {
-            await db.UserStats.increment(
-                {
-                    total_games: delta.total_games,
-                    survival_count: delta.survival_count,
-                    execution_count: delta.execution_count,
-                },
-                { where: { user_id: delta.user_id }, transaction },
-            );
-        }
-
-        return { persisted: true, gameId: result.id };
-    });
+    } catch (error) {
+        const constraint = error?.parent?.constraint ?? error?.original?.constraint;
+        const duplicateGameId = error instanceof db.Sequelize.UniqueConstraintError && (
+            constraint === "game_results_pkey" ||
+            error?.fields?.id !== undefined
+        );
+        if (duplicateGameId) return { persisted: false, gameId: result.id };
+        throw error;
+    }
 };
 
 const toPlain = (row) => (row && typeof row.get === "function" ? row.get({ plain: true }) : row);

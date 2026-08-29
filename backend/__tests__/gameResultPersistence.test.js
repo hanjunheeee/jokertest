@@ -12,11 +12,24 @@ const gameSessionCore      = require("../game-core/gameSession");
 const gameSessionSocket    = require("../socket/gameSession");
 
 const { buildGameResultRecord } = gameSessionCore;
-const { finalizeGameSessionEnd, handleResolveNight, handleResolveTribunalVote } = gameSessionSocket.__testables;
+const {
+    beginDisconnectGrace,
+    expireDisconnectGrace,
+    finalizeGameSessionEnd,
+    handleResolveNight,
+    handleResolveTribunalVote,
+} = gameSessionSocket.__testables;
 
 // ── 픽스처 ───────────────────────────────────────────────────────────────────
 
-const makePlayer = (uuid, role, alive = true) => [uuid, { uuid, nickname: `nick-${uuid}`, role, alive }];
+const makePlayer = (uuid, role, alive = true, deathReason = null) => [uuid, {
+    uuid,
+    nickname: `nick-${uuid}`,
+    role,
+    team: role === "JOKER" ? "JOKER" : "CITIZEN",
+    alive,
+    deathReason,
+}];
 
 const makeEndedSession = (overrides = {}) => ({
     id: "game-1",
@@ -33,7 +46,7 @@ const makeEndedSession = (overrides = {}) => ({
     players: new Map([
         makePlayer("u1", "CITIZEN"),
         makePlayer("u2", "DOCTOR"),
-        makePlayer("u3", "JOKER", false),
+        makePlayer("u3", "JOKER", false, "ASSASSINATION"),
     ]),
     ...overrides,
 });
@@ -82,7 +95,7 @@ const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 
 // 커밋된 테이블과 트랜잭션 안에서만 보이는 스테이징을 나눠 둡니다. 커밋에 도달하지 못하면
 // 스테이징은 통째로 버려지므로 "롤백되어 남지 않았다"를 관찰할 수 있습니다.
-const setupFakeDb = (t, { statsFails = false } = {}) => {
+const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
     const original = {
         transaction:      db.sequelize.transaction,
         GameResult:       db.GameResult,
@@ -91,28 +104,44 @@ const setupFakeDb = (t, { statsFails = false } = {}) => {
         User:             db.User,
     };
 
-    const committed = { game_results: [], game_result_players: [], user_stats: new Map() };
+    const committed = {
+        game_results: [],
+        game_result_players: [],
+        role_history: new Map([["u1", ["DOCTOR", "DOCTOR"]]]),
+        user_stats: new Map(),
+    };
     const seenTransactions = [];
     let staged = null;
 
-    committed.user_stats.set("u1", { user_id: "u1", total_games: 3, survival_count: 1, execution_count: 0 });
-    committed.user_stats.set("u2", { user_id: "u2", total_games: 0, survival_count: 0, execution_count: 0 });
-    committed.user_stats.set("u3", { user_id: "u3", total_games: 0, survival_count: 0, execution_count: 0 });
-    committed.user_stats.set("a1", { user_id: "a1", total_games: 0, survival_count: 0, execution_count: 0 });
-    committed.user_stats.set("a2", { user_id: "a2", total_games: 0, survival_count: 0, execution_count: 0 });
-    committed.user_stats.set("a3", { user_id: "a3", total_games: 0, survival_count: 0, execution_count: 0 });
+    const statsRow = (user_id, total_games = 0, survival_count = 0) => ({
+        user_id, total_games, survival_count, execution_count: 0, most_played_role: null,
+    });
+    committed.user_stats.set("u1", statsRow("u1", 3, 1));
+    committed.user_stats.set("u2", statsRow("u2"));
+    committed.user_stats.set("u3", statsRow("u3"));
+    committed.user_stats.set("a1", statsRow("a1"));
+    committed.user_stats.set("a2", statsRow("a2"));
+    committed.user_stats.set("a3", statsRow("a3"));
 
     db.sequelize.transaction = async (work) => {
         const tx = { id: `tx-${seenTransactions.length + 1}` };
-        staged = { game_results: [], game_result_players: [], stats: [] };
+        staged = { game_results: [], game_result_players: [], stats: [], statsUpdates: [] };
         try {
             const result = await work(tx);
             committed.game_results.push(...staged.game_results);
             committed.game_result_players.push(...staged.game_result_players);
+            for (const player of staged.game_result_players) {
+                const history = committed.role_history.get(player.user_id) ?? [];
+                committed.role_history.set(player.user_id, [...history, player.role]);
+            }
             for (const { user_id, delta } of staged.stats) {
                 const row = committed.user_stats.get(user_id);
                 if (!row) continue;
                 for (const [key, amount] of Object.entries(delta)) row[key] += amount;
+            }
+            for (const { user_id, values } of staged.statsUpdates) {
+                const row = committed.user_stats.get(user_id);
+                if (row) Object.assign(row, values);
             }
             return result;
         } finally {
@@ -129,6 +158,12 @@ const setupFakeDb = (t, { statsFails = false } = {}) => {
     db.GameResult = {
         findOrCreate: async ({ where, defaults, transaction }) => {
             requireTransaction({ transaction }, "findOrCreate(game_results)");
+            if (duplicateRace) {
+                const error = Object.create(db.Sequelize.UniqueConstraintError.prototype);
+                error.fields = { id: where.id };
+                error.parent = { constraint: "game_results_pkey" };
+                throw error;
+            }
             const existing = committed.game_results.find((row) => row.id === where.id);
             if (existing) return [existing, false];
             staged.game_results.push(defaults);
@@ -143,6 +178,14 @@ const setupFakeDb = (t, { statsFails = false } = {}) => {
             staged.game_result_players.push(...rows);
             return rows;
         },
+        findAll: async ({ where, transaction }) => {
+            requireTransaction({ transaction }, "findAll(game_result_players roles)");
+            const prior = committed.role_history.get(where.user_id) ?? [];
+            const current = staged.game_result_players
+                .filter((row) => row.user_id === where.user_id)
+                .map((row) => row.role);
+            return [...prior, ...current].map((role) => ({ role }));
+        },
     };
 
     db.UserStats = {
@@ -151,6 +194,11 @@ const setupFakeDb = (t, { statsFails = false } = {}) => {
             if (statsFails) throw new Error("user_stats 증분 실패");
             staged.stats.push({ user_id: options.where.user_id, delta });
         },
+        update: async (values, options) => {
+            requireTransaction(options, "update(user_stats most_played_role)");
+            staged.statsUpdates.push({ user_id: options.where.user_id, values });
+            return [1];
+        },
     };
 
     // 프로필 조회는 같은 in-memory user_stats를 읽습니다 — 커밋된 값이 그대로 보여야 합니다.
@@ -158,7 +206,7 @@ const setupFakeDb = (t, { statsFails = false } = {}) => {
         findOne: async ({ where }) => {
             const stats = committed.user_stats.get(where.uuid);
             if (!stats) return null;
-            return { nickname: `nick-${where.uuid}`, profile_image_url: null, UserStat: { ...stats, reputation: 0, title: "신참", most_played_role: null } };
+            return { nickname: `nick-${where.uuid}`, profile_image_url: null, UserStat: { ...stats, reputation: 0, title: "신참" } };
         },
     };
 
@@ -177,9 +225,9 @@ const setupFakeDb = (t, { statsFails = false } = {}) => {
 const stubPersistGameResult = (t, impl) => {
     const original = gameResultRepository.persistGameResult;
     const calls = [];
-    gameResultRepository.persistGameResult = async (record) => {
-        calls.push(record);
-        return impl ? await impl(record) : { persisted: true, gameId: record.result.id };
+    gameResultRepository.persistGameResult = (session, options) => {
+        calls.push({ session, options });
+        return impl ? impl(session, options) : Promise.resolve({ persisted: true, gameId: session.id });
     };
     t.after(() => {
         gameResultRepository.persistGameResult = original;
@@ -212,9 +260,9 @@ const readProfile = async (uuid) => {
 
 test("AC-01: game_results·game_result_players·user_stats가 단일 트랜잭션으로 저장된다", async (t) => {
     const { committed, seenTransactions } = setupFakeDb(t);
-    const record = buildGameResultRecord(makeEndedSession(), { deathReasons: new Map([["u3", "NIGHT_KILL"]]) });
+    const session = makeEndedSession();
 
-    const outcome = await gameResultRepository.persistGameResult(record);
+    const outcome = await gameResultRepository.persistGameResult(session, { completed: true });
 
     assert.deepEqual(outcome, { persisted: true, gameId: "game-1" });
     assert.equal(committed.game_results.length, 1);
@@ -226,9 +274,11 @@ test("AC-01: game_results·game_result_players·user_stats가 단일 트랜잭�
 
 test("AC-01: 저장 실패는 세 테이블 어디에도 흔적을 남기지 않는다(단일 트랜잭션 롤백)", async (t) => {
     const { committed } = setupFakeDb(t, { statsFails: true });
-    const record = buildGameResultRecord(makeEndedSession());
 
-    await assert.rejects(() => gameResultRepository.persistGameResult(record), /user_stats 증분 실패/);
+    await assert.rejects(
+        () => gameResultRepository.persistGameResult(makeEndedSession(), { completed: true }),
+        /user_stats 증분 실패/,
+    );
 
     assert.deepEqual(committed.game_results, []);
     assert.deepEqual(committed.game_result_players, []);
@@ -237,17 +287,18 @@ test("AC-01: 저장 실패는 세 테이블 어디에도 흔적을 남기지 않
 
 test("AC-01: 저장 후 프로필 조회에 stats 변경이 반영된다", async (t) => {
     const { committed } = setupFakeDb(t);
-    const record = buildGameResultRecord(makeEndedSession(), { deathReasons: new Map([["u3", "NIGHT_KILL"]]) });
 
-    await gameResultRepository.persistGameResult(record);
+    await gameResultRepository.persistGameResult(makeEndedSession(), { completed: true });
 
     assert.equal(committed.user_stats.get("u1").total_games, 4);
     assert.equal(committed.user_stats.get("u1").survival_count, 2);
+    assert.equal(committed.user_stats.get("u1").most_played_role, "DOCTOR");
 
     const body = await readProfile("u1");
     assert.equal(body.success, true);
     assert.equal(body.data.total_games, 4);
     assert.equal(body.data.survival_count, 2);
+    assert.equal(body.data.most_played_role, "DOCTOR");
 });
 
 // ── AC-02 ────────────────────────────────────────────────────────────────────
@@ -276,10 +327,8 @@ test("AC-02: 밤 판정 종료 경로에서 저장이 정확히 1회 일어난�
     await flushAsync();
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].result.id, session.id);
-    assert.equal(calls[0].result.completed, true);
-    // 밤 사망은 판정 시점에만 알 수 있으므로 사인이 함께 실려야 한다.
-    assert.equal(calls[0].players.find((p) => p.user_id === "u3").death_reason, "NIGHT_KILL");
+    assert.equal(calls[0].session, session);
+    assert.equal(calls[0].options.completed, true);
 });
 
 test("AC-02: 종결되지 않은 밤 판정은 저장하지 않는다", async (t) => {
@@ -318,10 +367,11 @@ test("AC-02: 재판 판정 종료 경로에서 저장이 정확히 1회 일어�
     await flushAsync();
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].players.find((p) => p.user_id === "u3").death_reason, "EXECUTION");
+    assert.equal(calls[0].session, session);
+    assert.equal(calls[0].options.completed, true);
 });
 
-test("AC-02: 같은 종료 세션에 두 경로가 모두 닿아도 저장 시도는 1회뿐이다", async (t) => {
+test("AC-02/03: 같은 종료 세션의 중복 훅은 DB 멱등 함수에 그대로 위임한다", async (t) => {
     withSocketLayer(t);
     const calls = stubPersistGameResult(t);
     const session = makeEndedSession();
@@ -338,17 +388,55 @@ test("AC-02: 같은 종료 세션에 두 경로가 모두 닿아도 저장 시�
     finalizeGameSessionEnd(io, session, "PLAYER_LEFT", "u1");
     await flushAsync();
 
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every((call) => call.session === session));
+    assert.ok(calls.every((call) => call.options.completed === true));
+});
+
+test("AC-02: 끊김 사망으로 승패가 확정되면 결과 화면 이탈을 기다리지 않고 저장한다", async (t) => {
+    withSocketLayer(t);
+    const calls = stubPersistGameResult(t);
+    const session = makeEndedSession({ phase: "DAY", winResult: undefined, endedAt: undefined });
+    const victim = session.players.get("u3");
+    victim.alive = true;
+    victim.deathReason = null;
+    const io = createFakeIo();
+
+    const originals = {
+        getDisconnectGraceTarget: gameSessionCore.getDisconnectGraceTarget,
+        commitDisconnectElimination: gameSessionCore.commitDisconnectElimination,
+    };
+    gameSessionCore.getDisconnectGraceTarget = () => ({ session });
+    gameSessionCore.commitDisconnectElimination = () => {
+        victim.alive = false;
+        victim.deathReason = "DISCONNECT";
+        session.phase = "ENDED";
+        session.winResult = { winner: "CITIZEN" };
+        session.endedAt = 62_000;
+        return { ok: true, victimUuid: "u3", terminal: { winner: "CITIZEN" } };
+    };
+    t.after(() => Object.assign(gameSessionCore, originals));
+
+    const run = beginDisconnectGrace(io, session, "u3", {
+        setTimeoutFn: () => null,
+        clearTimeoutFn: () => {},
+    });
+    expireDisconnectGrace(run);
+    await flushAsync();
+
     assert.equal(calls.length, 1);
+    assert.equal(calls[0].session, session);
+    assert.equal(calls[0].options.completed, true);
 });
 
 // ── AC-03 ────────────────────────────────────────────────────────────────────
 
 test("AC-03: 같은 game_id로 두 번 호출해도 행이 중복되지 않고 stats도 두 번 더해지지 않는다", async (t) => {
     const { committed } = setupFakeDb(t);
-    const record = buildGameResultRecord(makeEndedSession(), { deathReasons: new Map([["u3", "NIGHT_KILL"]]) });
+    const session = makeEndedSession();
 
-    const first  = await gameResultRepository.persistGameResult(record);
-    const second = await gameResultRepository.persistGameResult(record);
+    const first  = await gameResultRepository.persistGameResult(session, { completed: true });
+    const second = await gameResultRepository.persistGameResult(session, { completed: true });
 
     assert.deepEqual(first,  { persisted: true,  gameId: "game-1" });
     assert.deepEqual(second, { persisted: false, gameId: "game-1" });
@@ -357,10 +445,20 @@ test("AC-03: 같은 game_id로 두 번 호출해도 행이 중복되지 않고 s
     assert.equal(committed.user_stats.get("u1").total_games, 4);
 });
 
+test("AC-03: 동시 삽입 경쟁의 game_results PK 충돌도 성공한 no-op으로 처리한다", async (t) => {
+    const { committed } = setupFakeDb(t, { duplicateRace: true });
+
+    const outcome = await gameResultRepository.persistGameResult(makeEndedSession(), { completed: true });
+
+    assert.deepEqual(outcome, { persisted: false, gameId: "game-1" });
+    assert.equal(committed.game_result_players.length, 0);
+    assert.equal(committed.user_stats.get("u1").total_games, 3);
+});
+
 // ── AC-04 ────────────────────────────────────────────────────────────────────
 
 test("AC-04: 중단 경기는 completed=false이고 이탈자만 패배·DISCONNECT로 기록된다", () => {
-    const record = buildGameResultRecord(makeAbortedSession(), { leftUuids: ["a3"] });
+    const record = buildGameResultRecord(makeAbortedSession(), { completed: false, disconnectedUuid: "a3" });
 
     assert.equal(record.result.completed, false);
     assert.equal(record.result.winner, "NONE");
@@ -384,34 +482,59 @@ test("AC-04: 중단 경기는 completed=false이고 이탈자만 패배·DISCONN
 
 test("AC-04: 중단 경기 저장 후에도 잔류자의 stats는 그대로다", async (t) => {
     const { committed } = setupFakeDb(t);
-    const record = buildGameResultRecord(makeAbortedSession(), { leftUuids: ["a3"] });
 
-    await gameResultRepository.persistGameResult(record);
+    await gameResultRepository.persistGameResult(makeAbortedSession(), {
+        completed: false,
+        disconnectedUuid: "a3",
+    });
 
     assert.equal(committed.user_stats.get("a3").total_games, 1);
     assert.equal(committed.user_stats.get("a1").total_games, 0);
     assert.equal(committed.user_stats.get("a2").total_games, 0);
 });
 
-test("AC-04: 유예 만료로 배제된 참가자도 이탈자로 기록된다", () => {
-    const session = makeAbortedSession({ forfeitedUuids: new Set(["a2"]) });
-    session.players.get("a2").alive = false;
+test("AC-04: 끊김 사망으로 자연 승패가 확정된 판은 completed=true로 기록된다", () => {
+    const session = makeEndedSession();
+    session.players.get("u3").deathReason = "DISCONNECT";
 
-    const record = buildGameResultRecord(session, { leftUuids: ["a3"] });
+    const record = buildGameResultRecord(session, { completed: true });
+    const disconnected = record.players.find((p) => p.user_id === "u3");
 
-    assert.equal(record.players.find((p) => p.user_id === "a2").death_reason, "DISCONNECT");
-    assert.equal(record.players.find((p) => p.user_id === "a2").won, false);
-    assert.equal(record.stats.length, 2);
+    assert.equal(record.result.completed, true);
+    assert.equal(disconnected.death_reason, "DISCONNECT");
+    assert.equal(disconnected.won, false);
+    assert.equal(record.stats.length, 3);
 });
 
 test("AC-04: 완주한 판에서 나가는 것은 이탈이 아니다(생존 승자가 그대로 남는다)", () => {
-    const record = buildGameResultRecord(makeEndedSession(), { leftUuids: ["u1"] });
+    const record = buildGameResultRecord(makeEndedSession(), { completed: true, disconnectedUuid: "u1" });
 
     const winner = record.players.find((p) => p.user_id === "u1");
     assert.equal(record.result.completed, true);
     assert.equal(winner.won, true);
     assert.equal(winner.is_alive, true);
     assert.equal(winner.death_reason, null);
+});
+
+test("AC-07: 결과 헤더와 참가자 필드 및 사망 사유 문자열을 정확히 채운다", () => {
+    const session = makeEndedSession();
+    const executed = session.players.get("u2");
+    executed.alive = false;
+    executed.deathReason = "EXECUTION";
+
+    const record = buildGameResultRecord(session, { completed: true });
+
+    assert.deepEqual(Object.keys(record.result).sort(), [
+        "completed", "day_index", "ended_at", "id", "player_count", "room_id",
+        "settings", "started_at", "win_reason", "winner",
+    ]);
+    assert.deepEqual(Object.keys(record.players[0]).sort(), [
+        "death_reason", "game_id", "is_alive", "nickname_snapshot", "role",
+        "team", "user_id", "won",
+    ]);
+    assert.equal(record.players.find((p) => p.user_id === "u2").death_reason, "EXECUTION");
+    assert.equal(record.players.find((p) => p.user_id === "u3").death_reason, "ASSASSINATION");
+    assert.equal(record.stats.find((s) => s.user_id === "u2").execution_count, 1);
 });
 
 // ── AC-05 ────────────────────────────────────────────────────────────────────
@@ -436,20 +559,15 @@ test("AC-05: DB 저장이 실패해도 game_ended 방송과 registry 정리는 �
 
 test("AC-05: 저장 훅이 동기적으로 던져도 종료 처리는 멈추지 않는다", async (t) => {
     withSocketLayer(t);
-    const original = gameSessionCore.buildGameResultRecord;
-    gameSessionCore.buildGameResultRecord = () => {
+    const calls = stubPersistGameResult(t, () => {
         throw new Error("레코드 조립 실패");
-    };
-    t.after(() => {
-        gameSessionCore.buildGameResultRecord = original;
     });
-    const calls = stubPersistGameResult(t);
     const io = createFakeIo();
 
     finalizeGameSessionEnd(io, makeAbortedSession(), "PARTICIPANT_LEFT", "a3");
     await flushAsync();
 
-    assert.equal(calls.length, 0);
+    assert.equal(calls.length, 1);
     assert.equal(io.emitted.filter((e) => e.event === "game_ended").length, 1);
 });
 

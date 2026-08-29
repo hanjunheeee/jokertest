@@ -311,7 +311,7 @@ const WIN_REASON_BY_WINNER = Object.freeze({
 
 // game_result_players.death_reason에 저장하는 값의 전체 집합. 생존자는 null이다.
 const DEATH_REASONS = Object.freeze({
-    NIGHT_KILL: 'NIGHT_KILL',
+    ASSASSINATION: 'ASSASSINATION',
     EXECUTION: 'EXECUTION',
     DISCONNECT: 'DISCONNECT',
 })
@@ -331,37 +331,30 @@ const DEATH_REASONS = Object.freeze({
  *
  * @param {object} session - 종료 시점의 GameSession(읽기만 한다)
  * @param {object} [options]
- * @param {Map<string,string>|object} [options.deathReasons] - uuid → DEATH_REASONS 값.
- *        사망 원인은 세션에 남지 않으므로(사망은 alive=false만 남긴다) 소켓 계층이 판정
- *        시점에 모아 둔 원장을 넘겨준다. 없으면 아래 폴백만으로 채운다.
- * @param {string[]} [options.leftUuids] - 이 판을 중단시킨 이탈자 uuid 목록.
+ * @param {boolean} [options.completed] - 정상 승패 확정 여부.
+ * @param {string} [options.disconnectedUuid] - 중단시킨 이탈자 uuid.
  * @param {number} [options.endedAt] - 종료 시각(ms). 완주 판은 session.endedAt이 우선한다.
  */
-function buildGameResultRecord(session, { deathReasons, leftUuids = [], endedAt = Date.now() } = {}) {
-    const completed = session.phase === 'ENDED' && !!session.winResult
+function buildGameResultRecord(session, {
+    completed = session.phase === 'ENDED' && !!session.winResult,
+    disconnectedUuid,
+    endedAt = Date.now(),
+} = {}) {
     const winner = completed ? session.winResult.winner : ABORTED_WINNER
     const resolvedEndedAt = new Date(completed ? session.endedAt ?? endedAt : endedAt)
-
-    const reasonOf = (uuid) => {
-        if (!deathReasons) return null
-        return (deathReasons instanceof Map ? deathReasons.get(uuid) : deathReasons[uuid]) ?? null
-    }
-    // 유예 만료로 배제된 참가자(forfeitedUuids)와 판을 깨고 나간 이탈자는 사망 원인이 같다.
-    // 다만 이미 승패가 확정된 판에서 나가는 것은 "이탈"이 아니라 결과 화면을 닫는 것일 뿐이라,
-    // 완주한 판에는 leftUuids를 반영하지 않는다(생존한 승자가 이탈자로 기록되면 안 된다).
-    const left = new Set(session.forfeitedUuids ?? [])
-    if (!completed) for (const uuid of leftUuids) left.add(uuid)
 
     const players = []
     const stats = []
     for (const player of session.players.values()) {
-        const hasLeft = left.has(player.uuid)
-        // 이탈자는 판에 남아 있지 않다 — alive 플래그가 아직 true여도 생존으로 기록하지 않는다.
-        const isAlive = hasLeft ? false : player.alive === true
-        // 게임 안에서 이미 죽은 사람이 나중에 나갔다면 사인은 그 죽음이지 이탈이 아니다.
-        const deathReason = isAlive ? null : (reasonOf(player.uuid) ?? (hasLeft ? DEATH_REASONS.DISCONNECT : null))
-        const team = ROLE_TEAMS[player.role] ?? null
-        const won = completed ? team === winner : (hasLeft ? false : null)
+        const interruptedLeaver = !completed && player.uuid === disconnectedUuid
+        const isAlive = interruptedLeaver ? false : player.alive === true
+        const deathReason = isAlive
+            ? null
+            : interruptedLeaver
+                ? DEATH_REASONS.DISCONNECT
+                : player.deathReason ?? null
+        const team = player.team ?? ROLE_TEAMS[player.role] ?? null
+        const won = completed ? team === winner : interruptedLeaver ? false : null
 
         players.push({
             game_id: session.id,
@@ -1701,7 +1694,10 @@ function commitNightResolution(session, resolution) {
     resolution.publicDeathReveals = buildNightDeathReveals(resolution, victimUuid === null ? [] : [victimUuid])
     session.nightResolution = resolution
     // 판정 순서 2단계 — 사망 확정.
-    if (victim) victim.alive = false
+    if (victim) {
+        victim.alive = false
+        victim.deathReason = DEATH_REASONS.ASSASSINATION
+    }
     // 판정 순서 3단계 — 사망자의 잔여 효과 소멸. 반드시 사망 확정 뒤에 온다.
     expireDeadPlayerNightEffects(session, victimUuid === null ? [] : [victimUuid])
 
@@ -1747,6 +1743,7 @@ function commitDisconnectElimination(session, uuid) {
 
     // 이 지점 이후로는 절대 throw하지 않는다.
     victim.alive = false
+    victim.deathReason = DEATH_REASONS.DISCONNECT
     expireDeadPlayerNightEffects(session, [uuid])
 
     if (!session.forfeitedUuids) session.forfeitedUuids = new Set()
@@ -2474,7 +2471,10 @@ function commitTribunalVoteResolution(session, resolution) {
         return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
     }
 
-    if (resolution.outcome === 'GUILTY') defendant.alive = false
+    if (resolution.outcome === 'GUILTY') {
+        defendant.alive = false
+        defendant.deathReason = DEATH_REASONS.EXECUTION
+    }
     tribunal.outcome = resolution.outcome
     tribunal.counts = { guilty: resolution.counts.guilty, notGuilty: resolution.counts.notGuilty }
     tribunal.executedUuid = resolution.executedUuid
