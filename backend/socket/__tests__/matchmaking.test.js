@@ -16,6 +16,7 @@ matchmaking.__setUserRepositoryForTests({
 // playerSession/roomGameSession)를 갖는다 — matchmaking.__resetStateForTests()로는 초기화되지
 // 않으므로 이 파일의 beforeEach에서 별도로 초기화한다(테스트 간 상태 누수 방지).
 const gameSession = require('../../game-core/gameSession')
+const { ROOM_JOIN_ERROR_CODES } = require('../roomJoinErrors')
 const {
     handleCreateRoom,
     handleJoinRoomByCode,
@@ -206,9 +207,160 @@ test('join_room_by_code: 빈 코드/존재하지 않는 방을 거부한다', as
 
     await handleJoinRoomByCode(io, socket, 'uuid-J', '  ')
     assert.match(socket.emitted.at(-1).payload.message, /코드를 입력/)
+    assert.equal(socket.emitted.at(-1).payload.code, ROOM_JOIN_ERROR_CODES.CODE_REQUIRED)
 
     await handleJoinRoomByCode(io, socket, 'uuid-J', 'ZZZZZZ')
-    assert.match(socket.emitted.at(-1).payload.message, /찾을 수 없습니다/)
+    assert.match(socket.emitted.at(-1).payload.message, /일치하는 방이 없습니다/)
+    assert.equal(socket.emitted.at(-1).payload.code, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH)
+})
+
+// ── 비밀방(code) 입장 가드: 코드 검증을 우회하는 모든 표면을 서버가 막는지 ─────────
+
+/** 테스트용 code 방(비밀방)을 gameRooms에 직접 심고 그 방 객체를 돌려준다. */
+function seedCodeRoom({ id, code, hostUuid, players = [hostUuid], maxPlayers = 8 }) {
+    const room = {
+        id,
+        code,
+        hostUuid,
+        title: `${hostUuid}의 방`,
+        accessType: 'code',
+        players: new Map(players.map((uuid) => [uuid, { uuid, nickname: `user-${uuid}`, isReady: false }])),
+        settings: { ...validSettingsPayload({ accessType: 'code', maxPlayers }) },
+    }
+    matchmaking.__seedRoomForTests(room)
+    return room
+}
+
+test('join_public_room: 조작된 roomId로 code 방에 코드 없이 들어오려는 시도를 서버가 거부한다', async () => {
+    // 목록 DTO에는 코드가 없으므로, 클라이언트가 할 수 있는 우회는 "코드 방의 roomId를
+    // 공개방 참가 이벤트로 그대로 보내는 것"뿐이다 — 그 표면을 정면으로 겨눈다.
+    const secret = seedCodeRoom({ id: 'secret-room', code: 'SECRET', hostUuid: 'uuid-secret-host' })
+    const attacker = createFakeSocket('uuid-bypass')
+    const io = createFakeIo([attacker])
+
+    await handleJoinPublicRoom(io, attacker, 'uuid-bypass', { roomId: secret.id })
+
+    const failed = attacker.emitted.find((e) => e.event === 'room_join_failed')
+    assert.ok(failed, '코드 방 우회 입장은 거부되어야 합니다')
+    assert.equal(failed.payload.code, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH)
+    assert.equal(attacker.emitted.some((e) => e.event === 'room_joined'), false)
+
+    // 거부는 "응답만 실패"로 끝나면 안 된다 — Socket room·playerRoom·방 인원 어디에도
+    // 흔적이 남지 않아야 다음 요청이 이 잔여 상태를 발판으로 삼을 수 없다.
+    assert.equal(attacker.joined.length, 0)
+    assert.equal(attacker.currentRooms.has(secret.id), false)
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.playerRoom.some(([uuid]) => uuid === 'uuid-bypass'), false)
+    const [, storedRoom] = snapshot.gameRooms.find(([id]) => id === secret.id)
+    assert.equal(storedRoom.players.some(([uuid]) => uuid === 'uuid-bypass'), false)
+})
+
+test('join_room_by_code: 코드 없이/빈 코드/틀린 코드로는 code 방에 입장하지 못한다', async () => {
+    const secret = seedCodeRoom({ id: 'secret-room-2', code: 'SECRET', hostUuid: 'uuid-secret-host2' })
+
+    const cases = [
+        { label: '코드 없음', code: undefined, expected: ROOM_JOIN_ERROR_CODES.CODE_REQUIRED },
+        { label: '빈 문자열', code: '', expected: ROOM_JOIN_ERROR_CODES.CODE_REQUIRED },
+        { label: '공백뿐', code: '   ', expected: ROOM_JOIN_ERROR_CODES.CODE_REQUIRED },
+        { label: '틀린 코드', code: 'WRONG1', expected: ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH },
+        // 대소문자만 다른 코드도 통과시키지 않는다(코드 비교는 정확 일치여야 한다).
+        { label: '대소문자 불일치', code: 'secret', expected: ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH },
+    ]
+
+    for (const { label, code, expected } of cases) {
+        const joiner = createFakeSocket(`uuid-wrong-${label}`)
+        const io = createFakeIo([joiner])
+
+        await handleJoinRoomByCode(io, joiner, `uuid-wrong-${label}`, code)
+
+        const failed = joiner.emitted.find((e) => e.event === 'room_join_failed')
+        assert.ok(failed, `${label}: 거부되어야 합니다`)
+        assert.equal(failed.payload.code, expected, label)
+        assert.equal(joiner.emitted.some((e) => e.event === 'room_joined'), false, label)
+        assert.equal(joiner.joined.length, 0, label)
+    }
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    const [, storedRoom] = snapshot.gameRooms.find(([id]) => id === secret.id)
+    assert.equal(storedRoom.players.length, 1) // host 외에 아무도 들어오지 못했다
+    assert.equal(snapshot.playerRoom.filter(([uuid]) => uuid.startsWith('uuid-wrong-')).length, 0)
+})
+
+test('입장 거부 사유(코드 불일치·방 없음·이미 시작됨·정원 초과)는 서로 다른 안정적 코드로 응답된다', async () => {
+    const codeOf = (socket) => socket.emitted.find((e) => e.event === 'room_join_failed')?.payload?.code
+
+    // 1) 코드 불일치 — 어느 방과도 맞지 않는 코드
+    const mismatchSocket = createFakeSocket('uuid-reason-mismatch')
+    const io = createFakeIo([mismatchSocket])
+    await handleJoinRoomByCode(io, mismatchSocket, 'uuid-reason-mismatch', 'NOSUCH')
+
+    // 2) 방 없음 — 존재하지 않는 roomId를 지목한 공개방 참가
+    const notFoundSocket = createFakeSocket('uuid-reason-notfound')
+    io.sockets.sockets.set(notFoundSocket.id, notFoundSocket)
+    await handleJoinPublicRoom(io, notFoundSocket, 'uuid-reason-notfound', { roomId: 'no-such-room' })
+
+    // 3) 정원 초과 — 올바른 코드지만 이미 정원이 찬 방
+    seedCodeRoom({
+        id: 'reason-full-room',
+        code: 'FULL01',
+        hostUuid: 'uuid-reason-fullhost',
+        players: ['uuid-reason-fullhost', 'uuid-reason-f2', 'uuid-reason-f3', 'uuid-reason-f4'],
+        maxPlayers: 4,
+    })
+    const fullSocket = createFakeSocket('uuid-reason-full')
+    io.sockets.sockets.set(fullSocket.id, fullSocket)
+    await handleJoinRoomByCode(io, fullSocket, 'uuid-reason-full', 'FULL01')
+
+    // 4) 이미 시작됨 — 실제로 게임을 시작시킨 뒤 그 방의 코드로 뒤늦게 들어온다.
+    //    시작된 방은 gameRooms에서 지워지므로, 별도 근거 없이는 "방 없음"과 구분되지 않는다.
+    const { room: startedRoom } = await setupReadyRoomForStart(io, 'uuid-reason-host', 'uuid-reason-joiner', {
+        handleCreateRoom, handleJoinRoomByCode, handleSetReady,
+    })
+    const startAck = await callAsPromise(
+        handleStartGame, io, io.sockets.sockets.get('sock-uuid-reason-host'), 'uuid-reason-host',
+    )
+    assert.equal(startAck.ok, true, '이 검증의 전제인 게임 시작이 실패했습니다')
+
+    const startedSocket = createFakeSocket('uuid-reason-started')
+    io.sockets.sockets.set(startedSocket.id, startedSocket)
+    await handleJoinRoomByCode(io, startedSocket, 'uuid-reason-started', startedRoom.roomCode)
+
+    assert.equal(codeOf(mismatchSocket), ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH)
+    assert.equal(codeOf(notFoundSocket), ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND)
+    assert.equal(codeOf(fullSocket), ROOM_JOIN_ERROR_CODES.ROOM_FULL)
+    assert.equal(codeOf(startedSocket), ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED)
+
+    // 네 사유가 실제로 서로 다른 값이어야 클라이언트가 사유별로 분기할 수 있다.
+    const codes = [mismatchSocket, notFoundSocket, fullSocket, startedSocket].map(codeOf)
+    assert.equal(new Set(codes).size, 4)
+    // 사람이 읽는 message도 함께 유지된다(기존 수신자 호환).
+    for (const socket of [mismatchSocket, notFoundSocket, fullSocket, startedSocket]) {
+        assert.equal(typeof socket.emitted.find((e) => e.event === 'room_join_failed').payload.message, 'string')
+    }
+})
+
+test('공개 방 목록 DTO는 code 방 여부는 알려주되 실제 입장 코드는 노출하지 않는다', async () => {
+    const host = createFakeSocket('uuid-dto-codehost')
+    const io = createFakeIo([host])
+    const created = await callAsPromise(
+        handleCreateRoom, io, host, 'uuid-dto-codehost', validSettingsPayload({ accessType: 'code' }),
+    )
+    const actualCode = created.room.roomCode
+    assert.equal(typeof actualCode, 'string')
+
+    const listed = await callAsPromise(handleGetPublicRooms)
+    const broadcast = io.broadcasts.find((entry) => entry.event === 'public_rooms_updated')
+    assert.ok(broadcast, '방 생성 직후 목록 방송이 있어야 합니다')
+
+    // 요청-응답 경로와 브로드캐스트 경로 둘 다 같은 빌더를 써야 한 쪽으로만 코드가 새지 않는다.
+    for (const dto of [...listed.rooms, ...broadcast.payload.rooms]) {
+        // 자물쇠 표시의 근거인 accessType은 남아 있어야 한다.
+        assert.equal(dto.accessType, 'code')
+        assert.equal(Object.hasOwn(dto, 'code'), false)
+        assert.equal(Object.hasOwn(dto, 'roomCode'), false)
+        // 필드 이름을 바꿔 담는 실수까지 잡기 위해 값 자체가 어디에도 없는지 확인한다.
+        assert.equal(Object.values(dto).includes(actualCode), false)
+    }
 })
 
 test('join_room_by_code: 방별 maxPlayers를 적용해 4인 방의 5번째 참가를 거부한다', async () => {
