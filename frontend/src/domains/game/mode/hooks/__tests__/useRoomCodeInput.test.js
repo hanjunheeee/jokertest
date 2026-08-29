@@ -26,14 +26,15 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { fireEvent, render } = await import("@testing-library/react")
-const { useRoomCodeInput } = await import("../useRoomCodeInput.js")
+const { ROOM_CODE_INPUT_ATTRIBUTES, useRoomCodeInput } = await import("../useRoomCodeInput.js")
 
 const CODE_LENGTH = 6
 
 /**
  * RoomCodeInput과 같은 모양으로 훅을 붙인 최소 하니스다. 실제 컴포넌트를 쓰지 않는 이유는
- * 두 가지다 — 이 테스트 파일은 JSX를 변환하지 않는 node --test에서 돌고, 여기서 고정하려는
- * 계약은 컴포넌트의 마크업이 아니라 훅의 입력 처리·포커스 이동이기 때문이다.
+ * 이 테스트 파일이 JSX를 변환하지 않는 node --test에서 돌기 때문이다. 대신 칸의 정적 속성은
+ * 컴포넌트가 쓰는 것과 같은 ROOM_CODE_INPUT_ATTRIBUTES를 펼쳐 넣는다 — 그래야 여기서 확인한
+ * 속성이 실제 화면에 붙는 속성과 같다고 말할 수 있다.
  *
  * 값은 하니스가 state로 들고 있다(부모가 값을 되돌려주는 실제 사용 형태와 같다).
  * 훅이 부모에게 넘긴 값은 changes 배열에 그대로 쌓아 두고, "서버로 나가는 값"이 가공되지
@@ -58,8 +59,7 @@ function Harness({ initialValue, autoFocus, disabled, readOnly, changes }) {
         ref: (el) => {
           hook.inputRefs.current[index] = el
         },
-        type: "text",
-        maxLength: 1,
+        ...ROOM_CODE_INPUT_ATTRIBUTES,
         value: char,
         disabled,
         readOnly,
@@ -158,26 +158,41 @@ test("서버 문자 집합의 방코드를 끝까지 칠 수 있고 값이 가�
   unmount()
 })
 
-test("소문자를 쳐도 대문자로 바뀌지 않는다", () => {
-  // 서버 비교가 대소문자를 구분하므로, 화면이 케이스를 바꾸면 사용자가 친 값과
-  // 서버로 나가는 값이 달라진다.
+test("소문자를 치면 그 자리에서 대문자로 바뀌어 보인다", () => {
+  // 서버는 대문자 집합에서만 방코드를 뽑고(backend/utils/roomCode.js) 비교는 대소문자를
+  // 구분한다. 소문자를 그대로 두면 멀쩡한 코드인데도 참가가 반드시 실패한다.
   const { cells, changes, displayed, unmount } = setup()
 
   type(cells[0], "a")
   type(cells[1], "b")
 
-  assert.equal(displayed(), "ab")
-  assert.equal(changes.at(-1), "ab")
+  assert.equal(displayed(), "AB")
+  assert.equal(changes.at(-1), "AB", "서버로 나가는 값도 대문자여야 한다")
+  unmount()
+})
+
+test("소문자로 친 방코드를 끝까지 채우면 전부 대문자가 된다", () => {
+  const { cells, changes, displayed, unmount } = setup()
+
+  const typed = "ab2c3d"
+  for (let index = 0; index < typed.length; index += 1) {
+    type(cells[index], typed[index])
+  }
+
+  assert.equal(displayed(), "AB2C3D")
+  assert.equal(changes.at(-1), "AB2C3D")
   unmount()
 })
 
 test("쓸 수 없는 문자는 칸을 건드리지 않는다", () => {
   const { cells, changes, displayed, unmount } = setup()
 
-  type(cells[0], "-")
-  type(cells[0], "가")
+  // 공백·기호·한글·전각 숫자 — 방코드 문자 집합([A-Za-z0-9]) 밖의 값들이다.
+  for (const char of [" ", "-", "가", "３", "!", "_"]) {
+    type(cells[0], char)
+  }
 
-  assert.equal(displayed(), "")
+  assert.equal(displayed(), "", "허용되지 않은 문자가 칸에 남았다")
   assert.deepEqual(changes, [], "무시된 입력은 부모에게 전달하지 않는다")
   unmount()
 })
@@ -210,6 +225,20 @@ test("방코드보다 긴 값을 붙여넣으면 6자까지만 채워진다", ()
   fireEvent.paste(cells[0], { clipboardData: { getData: () => "AB2C3DZZZZ" } })
 
   assert.equal(displayed(), "AB2C3D")
+  unmount()
+})
+
+test("소문자로 복사해 온 6자리 코드를 붙여넣으면 대문자로 채워진다", () => {
+  // 코드를 채팅·메모에서 복사해 오면 케이스가 흐트러져 있는 경우가 흔하다. 붙여넣기도
+  // 타이핑과 같은 값이 나와야 그대로 참가 요청을 보낼 수 있다.
+  const { cells, changes, displayed, focusedIndex, unmount } = setup()
+
+  fireEvent.paste(cells[0], { clipboardData: { getData: () => "ab2c3d" } })
+
+  assert.equal(displayed(), "AB2C3D")
+  assert.equal(changes.at(-1), "AB2C3D")
+  assert.equal(changes.at(-1).length, CODE_LENGTH, "6자리가 다 차야 참여하기가 동작한다")
+  assert.equal(focusedIndex(), 5)
   unmount()
 })
 
@@ -319,6 +348,56 @@ test("autoFocus가 아니면 포커스를 옮기지 않는다", async () => {
 
   assert.equal(view.focusedIndex(), -1)
   view.unmount()
+})
+
+// ── 입력 칸의 DOM 속성 ────────────────────────────────────────────────────────
+
+test("칸의 inputMode는 숫자 전용 키패드를 부르지 않는다", () => {
+  // 방코드에 영문자가 섞이므로 모바일에서 숫자 키패드만 뜨면 코드를 칠 방법이 없다.
+  const { cells, unmount } = setup()
+
+  for (const cell of cells) {
+    const inputMode = cell.getAttribute("inputmode")
+    assert.ok(
+      inputMode && !["numeric", "decimal"].includes(inputMode),
+      `숫자 전용 키패드를 강제한다: inputmode=${inputMode}`,
+    )
+  }
+  unmount()
+})
+
+test("칸의 pattern은 영숫자 한 글자만 받는다", () => {
+  // 칸마다 maxLength=1이고 칸이 6개이므로, 칸 단위 [A-Z0-9]는 코드 전체로 보면
+  // [A-Z0-9]{6}과 같은 제약이다.
+  const { cells, unmount } = setup()
+
+  assert.equal(cells.length, CODE_LENGTH)
+
+  for (const cell of cells) {
+    const pattern = cell.getAttribute("pattern")
+    assert.ok(pattern, "pattern이 없다")
+    assert.equal(cell.getAttribute("maxlength"), "1")
+
+    const cellPattern = new RegExp(`^(?:${pattern})$`)
+    for (const char of "ABZ059") {
+      assert.ok(cellPattern.test(char), `쓸 수 있는 글자를 막는다: ${char}`)
+    }
+    for (const value of [" ", "-", "가", "AB"]) {
+      assert.ok(!cellPattern.test(value), `쓸 수 없는 값을 허용한다: ${value}`)
+    }
+  }
+  unmount()
+})
+
+test("소문자를 쳐도 칸에 남는 값은 pattern을 만족한다", () => {
+  // pattern이 대문자만 받으므로, 정규화가 빠지면 사용자가 방금 친 값이 곧바로 :invalid가 된다.
+  const { cells, unmount } = setup()
+
+  type(cells[0], "a")
+
+  const cellPattern = new RegExp(`^(?:${cells[0].getAttribute("pattern")})$`)
+  assert.ok(cellPattern.test(cells[0].value), `pattern을 벗어난 값: ${cells[0].value}`)
+  unmount()
 })
 
 // ── getChars 계약 ─────────────────────────────────────────────────────────────
