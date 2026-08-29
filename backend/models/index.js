@@ -5,6 +5,7 @@ const fs = require('fs'); // 파일/폴더를 읽기 위한 모듈
 const path = require('path'); // 경로를 안전하게 조합하기 위한 모듈
 const Sequelize = require('sequelize'); // Sequelize　라이브러리
 const process = require('process'); // 환경변수(process.env)를 사용하기 위한 모듈
+const { buildPoolConfig } = require('../config/dbPool');
 
 // 현재 파일 이름(index.js)를 가져옵니다.
 // 모델 파일을 읽을 때 자기 자신은 제외하기 위해 사용합니다.
@@ -21,12 +22,15 @@ const db = {};
 
 let sequelize;
 
+// 두 분기가 같은 풀을 쓰도록 Sequelize 생성 전에 한 번만 계산합니다.
+const pool = buildPoolConfig(config.pool);
+
 // config에 use_env_variable이 있으면 .env의 DATABASE_URL　같은 값을 사용해 DB에 연결합니다.
 if(config.use_env_variable) {
-    sequelize = new Sequelize(process.env[config.use_env_variable], config);
+    sequelize = new Sequelize(process.env[config.use_env_variable], { ...config, pool });
 } else {
     // use_env_variable이 없으면 database, username, password　값을 직접 사용해 DB에 연결합니다.
-    sequelize = new Sequelize(config.database, config.username, config.password, config);
+    sequelize = new Sequelize(config.database, config.username, config.password, { ...config, pool });
 }
 
 // 모델을 도메인별 하위 폴더(auth/, user/ 등)에 나눠 담을 거라
