@@ -21,17 +21,25 @@
   `backend/game-core/harness.js`가 없다. 두 곳 모두 삭제했다.
 - `sqlite3` 의존성 — 모든 환경의 `config/config.json` dialect가 `mysql`이고 저장소 어디에도
   `require("sqlite3")`가 없다. `backend/package.json`과 `backend/package-lock.json`에서
-  제거했다. 로컬 sqlite 파일(`backend/data/game.sqlite`)은 작업 트리에도 git에도 없다.
+  제거했다.
+
+### sqlite 저장소(`backend/data/game.sqlite`) 정리
+
+과거 게임 저장소를 지운 커밋 이후 sqlite 자산은 세 갈래로 남아 있었다. 셋 다 없앴다.
+
+| 잔재 | 처리 |
+| --- | --- |
+| `backend/data/game.sqlite` 파일 | 작업 트리에 없고 git 이력에도 없다. `git log --all --diff-filter=A -- "*game.sqlite"`가 비어 있고 `git ls-files backend/data`도 비어 있어, 파일은 한 번도 추적된 적이 없다. `backend/data/` 디렉터리 자체가 없다. |
+| `sqlite3` 의존성 | `backend/package.json`·`backend/package-lock.json`에서 제거했다(위 항목). |
+| `.gitignore`의 무시 규칙 | `# 로컬 게임 상태 저장소 — 개발 실행 중 자동 생성됨` 주석과 `backend/data/*.sqlite` · `backend/data/*.sqlite-*` 두 줄을 삭제했다. sqlite를 만드는 코드도 의존성도 없어 "개발 실행 중 자동 생성됨"이라는 설명 자체가 더 이상 사실이 아니었고, 이 세 줄이 저장소에 남은 마지막 `game.sqlite` 참조였다. |
 
 ### 남은 후속 정리 (이번 범위 밖)
 
-- `backend/package-lock.json`에 `sqlite3`만 쓰던 전이 의존성(`bindings`, `prebuild-install`,
-  `tar`, `node-gyp` 등)의 항목이 남아 있다. `npm ci`는 그대로 성공하지만 쓰지 않는 패키지를
-  설치한다. 다음에 `npm install`을 한 번 돌리면 lock에서 자동으로 정리된다. 손으로 지우면
-  참조 관계를 잘못 판단할 위험이 있어 하지 않았다.
-- `.gitignore`의 `backend/data/*.sqlite` 두 줄은 sqlite를 쓰지 않게 된 뒤로 의미가 없다.
 - `sequelize-cli` 의존성은 `db:*` 스크립트와 `.sequelizerc`가 사라져 더 쓰이지 않는다.
   의존성 제거는 이번 성공 조건(sqlite3만 제거)의 범위 밖이라 남겼다.
+- `.gitignore` 마지막 줄에 UTF-16으로 잘못 인코딩된 `backend/node_modules/` 한 줄이 남아 있다.
+  바로 위 `node_modules` 규칙이 모든 depth의 `node_modules`를 이미 무시하므로 동작에는 영향이
+  없다. sqlite와 무관한 별개의 오염이라 이번에 건드리지 않았다.
 
 ## 쓰이지 않는 테이블
 
@@ -71,12 +79,40 @@ DB에만 있고 모델이 없는 것인지(예: `SequelizeMeta`) 확인이 필�
 
 `game_results` · `game_result_players` · `concurrent_snapshots`는 **테이블 정의만** 추가했다.
 결과 저장이나 동접 집계를 수행하는 서비스·리포지토리·라우트·소켓 핸들러는 이번 슬라이스에서
-만들지 않았다. 신규 컬럼의 의미는 다음과 같이 두었다.
+만들지 않았다. 신규 컬럼의 의미를 임의로 확장하지 않았고, 요구사항에 명시된
+이름·타입·null 허용 여부·기본값만 모델에 반영했다. `game_result_players`는 `game_id`와
+`user_id`의 복합 기본키를 사용하고, `concurrent_snapshots.captured_at`에만 인덱스를 둔다.
 
-- `game_results.winner_team` — `game-core`의 `evaluateWinCondition`이 내는 `'JOKER' | 'CITIZEN'`
-- `game_result_players.role` — `roleComposition`의 역할 키(`JOKER` · `CITIZEN` · `DOCTOR` ·
-  `GUARD` · `WITCH_HUNTER`)
-- `concurrent_snapshots` — 특정 시각의 동접 수치를 한 줄씩 append하는 시계열 테이블
+확인 방법: `GameResult` · `GameResultPlayer` · `ConcurrentSnapshot` · `game_result` ·
+`concurrent_snapshot`을 backend 전체에서 검색하면 걸리는 파일은 모델 3개, 스키마 테스트 3개,
+그리고 `User.hasMany` 한 줄이 있는 `models/user/user.model.js`뿐이다. `service/` ·
+`repositories/` · `routes/` · `socket/` 어디에도 이 세 모델을 읽거나 쓰는 코드가 없다.
+
+## 기존 테이블에 하지 않은 것
+
+기존 11개 테이블의 모델 파일 중 이번 슬라이스가 건드린 것은 `models/user/user.model.js`
+하나이고, 바뀐 내용은 관계 한 줄뿐이다.
+
+```js
+User.hasMany(models.GameResultPlayer, { foreignKey: 'user_id', sourceKey: 'uuid' });
+```
+
+`hasMany`의 외래키 컬럼은 자식 테이블(`game_result_players`)에만 생기므로 `users`의 컬럼은
+그대로다. 기존 테이블에서 추가·변경·삭제한 컬럼은 하나도 없고, `sync({ force: false })`가
+기존 테이블의 DDL을 다시 쓰지도 않는다. 이 불변성은
+`backend/__tests__/schema.existingTables.test.js`가 11개 테이블의 컬럼 목록·타입·기본키·
+NOT NULL을 스냅샷으로 고정해 회귀 검사하고, `users`에 `game_result`·`concurrent`가 붙은
+컬럼이 새로 생기지 않았는지도 함께 단언한다.
+
+아래 항목은 이 문서에 **기록만** 하고 코드는 한 줄도 고치지 않았다.
+
+| 항목 | 이번 슬라이스의 처리 |
+| --- | --- |
+| `password_reset_tokens` | 기록만 (모델·관계 그대로) |
+| `account_find_requests` | 기록만 (모델 그대로) |
+| `traffic_logs` | 기록만 (모델 그대로) |
+| `online_presence.current_room_id` | 기록만 (`INTEGER` 그대로) |
+| `user_bans.banned_by` | 기록만 (`INTEGER` 그대로) |
 
 ## 스키마 테스트가 확인하는 범위
 
