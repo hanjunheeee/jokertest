@@ -24,13 +24,13 @@ export default function InGameChatShell() {
   const [closeupOpen, setCloseupOpen] = useState(false)
   const { getPlayerById } = useInGamePlayerSessionContext()
   const gameState = useInGameStore((s) => s.state)
-  const isJokerNight = isJokerNightChatEligible(gameState)
+  const isRoleNight = isJokerNightChatEligible(gameState)
 
   // React Hooks 규칙상 두 훅 모두 항상 호출한다 — 결과만 조건부로 선택한다.
   const gameChatSession = useInGameGameChatSession({ getPlayerById })
   const jokerChatSession = useInGameJokerChatSession({ getPlayerById })
 
-  const chatSession = isJokerNight ? jokerChatSession : gameChatSession
+  const chatSession = isRoleNight ? jokerChatSession : gameChatSession
 
   const chatProps = {
     draft: chatSession.draft,

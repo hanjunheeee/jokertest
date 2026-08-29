@@ -6,15 +6,30 @@ import { selectInGameSelfAlive } from "./selectInGameSelfAlive.js"
  * JOKER 비밀 채팅은 별도 이벤트·별도 자격 판정(isJokerNightChatEligible)을 그대로 쓰므로 이
  * 목록에 없다.
  */
-export const INGAME_CHAT_CHANNELS = Object.freeze({ DAY: "DAY", DEAD: "DEAD" })
+export const INGAME_CHAT_CHANNELS = Object.freeze({
+  DAY: "DAY",
+  DEAD: "DEAD",
+  JOKER: "JOKER",
+  CITIZEN: "CITIZEN",
+  DOCTOR: "DOCTOR",
+  GUARD: "GUARD",
+  WITCH_HUNTER: "WITCH_HUNTER",
+})
 
-// 사망자 전용 채팅이 열려 있는 phase.
-//
-// 서버 game-core의 DEAD_CHAT_PHASES는 아직 NIGHT을 포함한다 — "밤에는 사망자가 어떤 채팅도
-// 보거나 보낼 수 없다"는 규칙을 표시 계층인 프런트가 먼저 적용하는 단계이고, 서버 라우팅
-// 동기화는 이 슬라이스 범위 밖이다(다음 슬라이스에서 서버 집합에서도 NIGHT을 빼야 한다).
-// 그때까지 두 집합은 의도적으로 갈려 있다.
-const DEAD_CHAT_PHASES = new Set(["DAY", "TRIBUNAL"])
+const NIGHT_ROLE_CHANNELS = new Set([
+  INGAME_CHAT_CHANNELS.JOKER,
+  INGAME_CHAT_CHANNELS.CITIZEN,
+  INGAME_CHAT_CHANNELS.DOCTOR,
+  INGAME_CHAT_CHANNELS.GUARD,
+  INGAME_CHAT_CHANNELS.WITCH_HUNTER,
+])
+
+function resolveNightRoleChannel(state, alive) {
+  const role = state?.self?.role
+  if (!NIGHT_ROLE_CHANNELS.has(role)) return null
+  if (alive) return role
+  return role === INGAME_CHAT_CHANNELS.JOKER ? role : null
+}
 
 /**
  * "지금 이 클라이언트가 실제로 보낼 수 있는 채널"을 canonical 상태에서만 유도한다(순수 함수).
@@ -30,10 +45,9 @@ export function resolveInGameChatSendChannel(state) {
   const alive = selectInGameSelfAlive(state)
   if (alive === null) return null
 
-  if (alive) {
-    return state?.phase === "DAY" ? INGAME_CHAT_CHANNELS.DAY : null
-  }
-  return DEAD_CHAT_PHASES.has(state?.phase) ? INGAME_CHAT_CHANNELS.DEAD : null
+  if (state?.phase === "DAY") return alive ? INGAME_CHAT_CHANNELS.DAY : null
+  if (state?.phase === "NIGHT") return resolveNightRoleChannel(state, alive)
+  return null
 }
 
 /**
@@ -53,6 +67,7 @@ export function resolveInGameChatSendChannel(state) {
 export function resolveInGameChatViewChannel(state) {
   const alive = selectInGameSelfAlive(state)
   if (alive === null) return null
-  if (alive) return INGAME_CHAT_CHANNELS.DAY
-  return state?.phase === "NIGHT" ? null : INGAME_CHAT_CHANNELS.DEAD
+  if (state?.phase === "DAY") return INGAME_CHAT_CHANNELS.DAY
+  if (state?.phase === "NIGHT") return resolveNightRoleChannel(state, alive)
+  return alive ? INGAME_CHAT_CHANNELS.DAY : null
 }
