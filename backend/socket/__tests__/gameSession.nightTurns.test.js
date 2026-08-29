@@ -1209,13 +1209,201 @@ test('night turn: [은폐] 직업별 제한시간을 바꿔도 무인 턴의 실
 // ---------------------------------------------------------------------------
 // S1-4 AC-03 — 과거 conceal 회귀 재발 방지
 //
-// 저장소 이력에는 "8/27 conceal 수정"으로 특정할 수 있는 커밋이 없다(가장 이른 밤 턴 관련
-// 작업이 S1-1이다). 그래서 그 수정분을 커밋 diff가 아니라 프로덕션 코드가 스스로 남긴 근거
-// — advanceNightTurn·maybeEndNightTurnOnCompletion·computeEmptyTurnDelayMs의 주석이 "이렇게
-// 하지 않으면 부채널이 된다"고 못박아 둔 세 지점 — 으로 재구성해 회귀 케이스로 고정한다.
-// 위 스트림 대조가 payload의 "내용"을 지킨다면, 아래는 payload가 결백해도 남는 부채널
-// (종료 타이밍·deadline 해석·타이머의 존재 여부)을 지킨다.
+// 8/27에는 짝을 이루는 두 개의 conceal 슬라이스가 있었고, 아래 테스트들은 그 둘이 세운 규칙을
+// 지금의 턴 엔진 어휘로 다시 못박는다.
+//
+//  (1) 20260827-joker-night-turn-conceal — "행동 역할 보유자가 사망하면 그 역할의 밤 턴 안내가
+//      더 이상 나오지 않는다. 관찰자는 '안내가 사라짐 = 그 역할 사망'을 추론할 수 있다."
+//      → 턴 연출은 보유자 생사와 무관하게 항상 같은 순서·리듬으로 재생돼야 한다. 단 밤 판정은
+//        무변경 — 죽은 보유자는 여전히 제출 대상이 아니다(생존 필터는 교착 방지의 핵심이라
+//        되돌리면 안 된다).
+//
+//  (2) 20260827-joker-night-turn-conceal-fix — (1)이 턴 진행에 시간 경과 요소를 넣으면서 생긴
+//      회귀: "살아있는 역할의 턴까지 제출 없이 자동으로 다음 턴으로 넘어감(광대가 제출하기
+//      전에 '가드의 시간입니다'로 진행됨 — 제출 불가)."
+//      → 보유자가 살아있는 역할의 턴은 그 역할의 제출이 있을 때까지 진행하지 않는다. 시간
+//        기반 진행은 오직 보유자가 전원 사망한 역할의 턴에만 허용된다.
+//
+// 그 뒤 S1-2가 "제한시간 만료 → 미제출 생존자 기권"을 더했으므로, (2)의 규칙은 지금 엔진에서
+// "생존자가 있는 턴은 무인 턴 지연(제한시간의 20~60%)이 다 지나도 끝나지 않고, 오직 전원
+// 제출이나 제한시간 만료로만 끝난다"로 읽힌다 — 아래 첫 테스트가 정확히 그 형태다.
+//
+// 이어지는 테스트들은 payload가 결백해도 남는 부채널(종료 타이밍·deadline 해석·타이머의 존재
+// 여부)을 지킨다. 위 스트림 대조가 payload의 "내용"을 지키는 것과 짝이다.
 // ---------------------------------------------------------------------------
+
+test('night turn: [conceal 회귀 8/27-fix] 생존자가 있는 직업의 턴은 무인 턴 지연이 다 지나도 제출 없이는 넘어가지 않는다', () => {
+    // 8/27 회귀 그 자체 — 제출 전에 다음 턴 안내로 넘어가 버려 아무도 행동할 수 없었다.
+    // randomFn을 1로 고정해 무인 턴 지연이 상한(제한시간의 60%)이 되게 한 뒤, 그 상한을 지나
+    // 만료 직전까지 시계를 밀어도 턴이 그대로인지 본다. 회귀가 살아 있다면 지연 시각에 턴이
+    // 끝나면서 그 뒤의 제출이 NOT_YOUR_TURN으로 거부된다.
+    for (const role of NIGHT_TURN_ORDER) {
+        const fixture = commitFullRoleSessionAtNight({ id: `regress-alive-${role}` })
+        const { session } = fixture
+        const uuidByRole = {
+            JOKER: fixture.jokerUuid,
+            DOCTOR: fixture.doctorUuid,
+            GUARD: fixture.guardUuid,
+            WITCH_HUNTER: fixture.witchHunterUuid,
+        }
+        const { io, submit } = wireSession(session)
+        const clock = createManualClock()
+        startNightTurnSequence(io, session, { ...clock, randomFn: () => 1 })
+
+        for (const earlierRole of NIGHT_TURN_ORDER) {
+            if (earlierRole === role) break
+            assert.deepEqual(submit(uuidByRole[earlierRole], null), { ok: true })
+        }
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), role)
+        const actorUuid = uuidByRole[role]
+        assert.equal(session.players.get(actorUuid).alive, true, `${role} 보유자가 살아 있다`)
+
+        const durationMs = appliedDurationMs(session, role)
+        const emptyTurnUpperBound = computeEmptyTurnDelayMs(durationMs, () => 1)
+        const endedCount = () => turnEventLog(io).filter(([event, r]) => event === 'night_turn_ended' && r === role).length
+
+        clock.advance(emptyTurnUpperBound)
+        assert.equal(endedCount(), 0, `${role}: 무인 턴 지연 상한(${emptyTurnUpperBound}ms)에 턴이 끝나버렸다`)
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), role, `${role}: 제출 없이 턴이 넘어갔다`)
+
+        clock.advance(durationMs - emptyTurnUpperBound - 1)
+        assert.equal(endedCount(), 0, `${role}: 만료 직전인데 턴이 끝났다`)
+        assert.equal(session.nightActions.has(actorUuid), false, `${role}: 만료 전에 기권으로 기록됐다`)
+
+        // 그래서 제한시간이 다 가기 전에 도착한 제출이 정상적으로 받아들여진다 — 회귀의 증상
+        // ("제출 불가")이 사라졌다는 것을 거부 코드가 아니라 성공 응답으로 확인한다.
+        assert.deepEqual(submit(actorUuid, null), { ok: true }, `${role}: 뒤늦은 제출이 거부됐다`)
+        assert.equal(endedCount(), 1, `${role}: 제출로 턴이 끝난다`)
+    }
+})
+
+test('night turn: [conceal 회귀 8/27] 보유자가 전멸한 직업의 턴 안내도 같은 자리에서 그대로 재생된다', () => {
+    // 8/27 첫 슬라이스의 증상 그대로 — GUARD 보유자가 죽으면 "경호원의 시간입니다"가 아예
+    // 나오지 않아 관찰자가 사망 역할을 알아냈다. 지금 엔진에서 그 안내의 원천은
+    // night_turn_started 방송 하나뿐이므로, 그 방송이 같은 순서·같은 payload로 나가는지 본다.
+    const drive = ({ id, deadRole }) => {
+        const fixture = commitFullRoleSessionAtNight({ id })
+        const { session } = fixture
+        const uuidByRole = {
+            JOKER: fixture.jokerUuid,
+            DOCTOR: fixture.doctorUuid,
+            GUARD: fixture.guardUuid,
+            WITCH_HUNTER: fixture.witchHunterUuid,
+        }
+        if (deadRole) session.players.get(uuidByRole[deadRole]).alive = false
+        const { io, submit } = wireSession(session)
+        const clock = createManualClock()
+        startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+        for (const role of NIGHT_TURN_ORDER) {
+            if (gameSessionCore.getCurrentNightTurnRole(session) !== role) break
+            if (role === deadRole) clock.advance(appliedDurationMs(session, role))
+            else assert.deepEqual(submit(uuidByRole[role], null), { ok: true })
+        }
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, `${id}: 밤이 끝까지 진행됐다`)
+        return io
+    }
+
+    const baselineIo = drive({ id: 'regress-announce-alive' })
+    const baselineLog = turnEventLog(baselineIo)
+    for (const deadRole of NIGHT_TURN_ORDER) {
+        const wipedIo = drive({ id: `regress-announce-${deadRole}`, deadRole })
+
+        // 안내가 "사라지지" 않는다 — 그 역할의 시작 방송이 같은 순서 자리에 그대로 있다.
+        const log = turnEventLog(wipedIo)
+        assert.deepEqual(log, baselineLog, `${deadRole} 전멸 시 턴 안내 순서가 달라졌다`)
+        const announcementIndex = (entries) =>
+            entries.findIndex(([event, role]) => event === 'night_turn_started' && role === deadRole)
+        assert.ok(announcementIndex(baselineLog) >= 0, `${deadRole}: 기준선에 그 역할의 안내가 있다`)
+        assert.equal(
+            announcementIndex(log),
+            announcementIndex(baselineLog),
+            `${deadRole} 전멸 시 안내가 나오는 자리가 밀렸다`,
+        )
+
+        // 안내의 내용도 같다(gameId만 세션마다 다르다) — 문구를 만들 재료가 role·dayIndex·
+        // deadline뿐이므로, 이 동일성이 곧 "같은 안내가 같은 리듬으로 재생된다"는 뜻이다.
+        for (const event of NIGHT_TURN_EVENTS) {
+            const fromWiped = wipedIo.broadcasts.find((b) => b.event === event && b.payload.role === deadRole)
+            const fromAlive = baselineIo.broadcasts.find((b) => b.event === event && b.payload.role === deadRole)
+            assert.ok(fromWiped && fromAlive, `${deadRole}: 양쪽 모두 ${event}를 방송한다`)
+            assert.deepEqual(
+                { ...fromWiped.payload, gameId: 'X' },
+                { ...fromAlive.payload, gameId: 'X' },
+                `${deadRole}: 전멸 시 ${event} 안내 내용이 달라졌다`,
+            )
+        }
+    }
+})
+
+test('night turn: [conceal 회귀 8/27] 은폐를 위해 판정을 되돌리지 않는다 — 죽은 보유자는 제출 대상에서 빠진 채 밤이 끝난다', () => {
+    // 8/27 두 슬라이스가 공통으로 걸어 둔 금지선 — 생존 필터(교착 방지)는 건드리지 않는다.
+    // 연출만 재생하면 되므로 죽은 보유자에게 기권이 기록되거나 그의 제출을 기다리는 일이
+    // 있어서는 안 된다(그러면 밤이 영영 끝나지 않는다).
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({
+        id: 'regress-no-deadlock',
+    })
+    session.players.get(doctorUuid).alive = false
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, null), { ok: true })
+    clock.advance(appliedDurationMs(session, 'DOCTOR')) // 무인 DOCTOR 턴은 연출만 하고 넘어간다
+    assert.deepEqual(submit(guardUuid, null), { ok: true })
+    assert.deepEqual(submit(witchHunterUuid, null), { ok: true })
+
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '밤이 교착 없이 끝까지 진행됐다')
+    assert.deepEqual(
+        [...session.nightActions.keys()].sort(),
+        [jokerUuid, guardUuid, witchHunterUuid].sort(),
+        '생존 제출자만 기록된다',
+    )
+    assert.equal(session.nightActions.has(doctorUuid), false, '죽은 보유자에게는 기권조차 기록되지 않는다')
+    assert.equal(gameSessionCore.isRoleTurnComplete(session, 'DOCTOR'), true, '무인 역할은 공집합이라 제출 대기가 없다')
+})
+
+test('night turn: [conceal 회귀 8/27] 아직 능력이 없는 WITCH_HUNTER의 턴이 전멸 턴과 구별되지 않는다', () => {
+    // 8/27 규칙 3("그 밤에만 성립하는 WITCH_HUNTER 조건은 유지")은 지금 엔진에서
+    // nightActionMinDayIndex=2로 남아 있다. 조건을 유지하되 그 사실이 새면 안 된다 — "오늘 WH
+    // 턴이 짧았다"가 곧 "WH가 죽었다"로 읽히면 은폐가 무의미해지므로, 자격 없는 산 WH의 턴과
+    // 전멸한 WH의 턴이 관전자에게 같은 모양이어야 한다.
+    const capture = ({ id, dayIndex, wipe }) => {
+        const fixture = commitFullRoleSessionAtNight({ id, dayIndex })
+        const { session } = fixture
+        if (wipe) session.players.get(fixture.witchHunterUuid).alive = false
+        const { io, submit } = wireSession(session)
+        const clock = createManualClock()
+        const stamped = stampBroadcastTimes(io, clock)
+        startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+        for (const uuid of [fixture.jokerUuid, fixture.doctorUuid, fixture.guardUuid]) {
+            assert.deepEqual(submit(uuid, null), { ok: true })
+        }
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'WITCH_HUNTER')
+
+        const startedAt = clock.now()
+        const durationMs = appliedDurationMs(session, 'WITCH_HUNTER')
+        clock.advance(durationMs)
+        const started = stamped.find((b) => b.event === 'night_turn_started' && b.payload.role === 'WITCH_HUNTER')
+        const ended = stamped.find((b) => b.event === 'night_turn_ended' && b.payload.role === 'WITCH_HUNTER')
+        assert.ok(started && ended, 'WITCH_HUNTER 턴도 시작과 종료를 모두 방송한다')
+        return {
+            events: stamped.slice(stamped.indexOf(started), stamped.indexOf(ended) + 1).map((b) => b.event),
+            payloadKeys: Object.keys(started.payload).sort().join(','),
+            deadlineOffset: started.payload.deadline - startedAt,
+            turnLengthMs: ended.at - started.at,
+        }
+    }
+
+    // dayIndex 0: WH는 살아 있지만 이번 밤 행동 자격이 없다. dayIndex 2 + 전멸: 보유자가 없다.
+    const ineligible = capture({ id: 'regress-wh-ineligible', dayIndex: 0, wipe: false })
+    const wipedOut = capture({ id: 'regress-wh-wiped', dayIndex: 2, wipe: true })
+
+    assert.deepEqual(ineligible.events, wipedOut.events, 'WH 턴 구간의 이벤트 종류·순서가 다르다')
+    assert.deepEqual(ineligible.events, NIGHT_TURN_EVENTS)
+    assert.equal(ineligible.payloadKeys, wipedOut.payloadKeys, 'WH 턴 payload의 필드 집합이 다르다')
+    assert.equal(ineligible.deadlineOffset, wipedOut.deadlineOffset, 'deadline이 자격 유무에 따라 달라졌다')
+    assert.equal(ineligible.turnLengthMs, wipedOut.turnLengthMs, '턴 길이가 자격 유무에 따라 달라졌다')
+})
 
 test('night turn: [conceal 회귀] 무인 턴이 즉시 끝나지 않는다(공집합 전원제출 판정 회귀)', () => {
     // 회귀의 정체: 전원 제출 판정이 "미제출 생존자가 없다"를 그대로 참으로 읽으면, 생존 actor가
