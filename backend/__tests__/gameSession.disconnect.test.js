@@ -4,7 +4,12 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../socket/gameSession')
 const gameSessionCore = require('../game-core/gameSession')
 const matchmaking = require('../socket/matchmaking')
-const { createFakeSocket, createFakeIo, countingCallback } = require('../socket/__tests__/testHelpers/matchmakingFixtures')
+const {
+    createFakeSocket,
+    createFakeIo,
+    countingCallback,
+    validSettingsPayload,
+} = require('../socket/__tests__/testHelpers/matchmakingFixtures')
 const { assertNoForbiddenPrivateData, collectOtherPlayerRoleSecrets } = require('../game-core/__tests__/gameSession.testUtils')
 
 const {
@@ -367,6 +372,34 @@ test('AC-08: 유예 만료로 배제된 uuid는 같은 uuid로 돌아와도 스�
     assert.equal(response.code, 'FORFEITED_FROM_SESSION')
     assert.equal(Object.hasOwn(response, 'self'), false)
     assert.equal(Object.hasOwn(response, 'players'), false)
+})
+
+test('MM1 AC-05: 인게임 차단 게이트는 기존 게임으로의 재접속(resyncSessionRouting)을 막지 않는다', async () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'mm1-resync' })
+    const { io, sockets } = wireSession(session)
+
+    // 배제되지 않은 참가자가 끊겼다가 같은 uuid의 새 소켓으로 돌아온다(유예는 만료시키지 않는다).
+    disconnectSocket(sockets, doctorUuid)
+    const rejoinSocket = createFakeSocket(doctorUuid)
+    io.sockets.sockets.set(rejoinSocket.id, rejoinSocket)
+
+    await gameSessionSocketLayer.resyncSessionRouting(rejoinSocket, doctorUuid)
+
+    // 재접속은 create/join 핸들러를 전혀 거치지 않으므로 ALREADY_IN_GAME 게이트의 영향을
+    // 받지 않는다 — 활성 gameId를 가졌다는 바로 그 사실이 여기서는 통과의 근거다.
+    assert.equal(rejoinSocket.data.activeGameId, session.id)
+    assert.equal(rejoinSocket.rooms.has(session.channelId), true)
+    assert.deepEqual(rejoinSocket.emitted, [])
+
+    // 같은 시점, 같은 uuid의 create_room은 여전히 차단된다 — 두 경로가 서로 독립임을 보인다.
+    const { callback, getResponse } = countingCallback()
+    matchmaking.__testables.handleCreateRoom(io, rejoinSocket, doctorUuid, validSettingsPayload(), callback)
+    assert.equal(getResponse().code, 'ALREADY_IN_GAME')
+
+    // 그 거부가 방금 되돌린 재접속 라우팅을 손상시키지 않는다.
+    assert.equal(rejoinSocket.data.activeGameId, session.id)
+    assert.equal(rejoinSocket.rooms.has(session.channelId), true)
+    assert.deepEqual(matchmaking.__getStateSnapshotForTests().gameRooms, [])
 })
 
 // ---------------------------------------------------------------------------

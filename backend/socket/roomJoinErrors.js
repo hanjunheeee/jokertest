@@ -22,6 +22,12 @@ const ROOM_JOIN_ERROR_CODES = Object.freeze({
     ROOM_FULL: 'ROOM_FULL',
     /** 이미 다른 방에 참여 중이다. */
     ALREADY_IN_ROOM: 'ALREADY_IN_ROOM',
+    /**
+     * 이미 진행 중인 GameSession에 참가자로 묶여 있다 — 대기방 소속(ALREADY_IN_ROOM)과는
+     * 다른 사유다. ALREADY_IN_ROOM은 "나가기"로 풀 수 있지만 이쪽은 그 게임을 끝내거나
+     * 이탈(leave_game_session)해야 풀린다.
+     */
+    ALREADY_IN_GAME: 'ALREADY_IN_GAME',
     /** 같은 사용자의 방 생성/참가 요청이 아직 처리 중이다. */
     REQUEST_IN_PROGRESS: 'REQUEST_IN_PROGRESS',
     /** 매칭 대기열에 남아 있어 방 참가를 받을 수 없다. */
