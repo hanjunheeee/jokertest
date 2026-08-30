@@ -16,10 +16,18 @@ main 260a10e의 실제 브라우저 검증에서 BUG-076/077을 재현했다. �
 
 ## 예상 범위
 
-- frontend/src/shared/layouts 및 frontend/src/index.css 중 실제 가로 overflow의 원인인 레이아웃
+- frontend/src/shared/layouts 및 frontend/src/app/index.css 중 실제 가로 overflow의 원인인 레이아웃
 - frontend/src/domains/auth/components/AuthScene 및 LoginForm 관련 컴포넌트
 - 관련 frontend 회귀 테스트·수동 검증 문서
 - 이미지 자산·게임 화면 리디자인은 범위 밖. 공유 레이아웃 변경 시 기존 데스크톱 게임 레이아웃 회귀를 확인한다.
+
+### 계획 검토에서 확인된 구현 경로
+
+- 실제 스타일은 `frontend/src/app/index.css`에 있다. `frontend/src/index.css`를 새로 만들어 해결하지 않는다.
+- `AuthScene.jsx`의 h-svh/overflow-hidden과 `AuthScene/AuthFrame.jsx`의 absolute 중앙 배치가 낮은 화면의 세로 잘림 원인 후보이므로 포함한다.
+- 비밀번호 찾기는 `LoginForm/LoginOptions.jsx`의 텍스트 button이다. 이미지 버튼이라는 전제는 틀리다.
+- `AuthImageButton.jsx`는 현재 disabled/aria-describedby prop을 전달하지 않는다. 공통 안내 구현 시 필요한 범위에서 보완한다.
+- 테스트 러너는 Node test이고 `src/**/__tests__/*.test.js`만 수집한다. 신규 `.test.jsx`를 컴포넌트 옆에 두고 테스트된 것으로 간주하지 않는다.
 
 ## 성공 조건
 
