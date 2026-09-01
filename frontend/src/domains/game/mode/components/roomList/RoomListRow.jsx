@@ -9,9 +9,9 @@ import {
   ROOM_LIST_ROW_COUNT_CLASS,
   ROOM_LIST_ROW_DIM_OVERLAY_CLASS,
   ROOM_LIST_ROW_FRAME_CLASS,
+  ROOM_LIST_ROW_FRAME_SELECTED_CLASS,
   ROOM_LIST_ROW_LOCK_BADGE_CLASS,
   ROOM_LIST_ROW_OVERLAY_CLASS,
-  ROOM_LIST_ROW_SELECTED_RING_CLASS,
   ROOM_LIST_ROW_STAGE_BADGE_CLASS,
   ROOM_LIST_ROW_STATUS_BADGE_FULL_CLASS,
   ROOM_LIST_ROW_STATUS_BADGE_IN_PROGRESS_CLASS,
@@ -50,7 +50,11 @@ export default function RoomListRow({ room, selected, onSelect }) {
           isJoinable ? ROOM_LIST_ROW_BUTTON_INTERACTIVE_CLASS : ROOM_LIST_ROW_BUTTON_DISABLED_CLASS
         }`}
       >
-        <PublicAsset src={ROOM_LIST_ASSETS.rowFrame} alt="" className={ROOM_LIST_ROW_FRAME_CLASS} />
+        <PublicAsset
+          src={ROOM_LIST_ASSETS.rowFrame}
+          alt=""
+          className={`${ROOM_LIST_ROW_FRAME_CLASS}${selected ? ` ${ROOM_LIST_ROW_FRAME_SELECTED_CLASS}` : ""}`}
+        />
 
         <div className={ROOM_LIST_ROW_OVERLAY_CLASS} aria-hidden="true">
           <div className={ROOM_LIST_ROW_TOP_ROW_CLASS}>
@@ -74,7 +78,6 @@ export default function RoomListRow({ room, selected, onSelect }) {
         </div>
 
         {isFull || isInProgress ? <div className={ROOM_LIST_ROW_DIM_OVERLAY_CLASS} /> : null}
-        {selected ? <div className={ROOM_LIST_ROW_SELECTED_RING_CLASS} /> : null}
       </button>
     </li>
   )

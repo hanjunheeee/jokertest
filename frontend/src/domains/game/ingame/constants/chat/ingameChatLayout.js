@@ -31,6 +31,10 @@ export { INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME }
 export const INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS =
   "font-subheading text-[clamp(0.72rem,3.2cqi,0.92rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
 
+/** 메시지 목록 — 테마색·배경 대비 (입력창 제외) */
+export const INGAME_CHAT_MESSAGE_TEXT_SHADOW_CLASS =
+  "[text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatTextTypographyClass(variant = "board") {
   return variant === "closeup"
@@ -57,12 +61,12 @@ export function getInGameChatTextWrapTrimClass(variant = "board") {
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatMessageBodyClass(variant = "board") {
-  return `min-w-0 box-border ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatTextTypographyClass(variant)} ${INGAME_CHAT_TEXT_WRAP_CLASS} ${getInGameChatTextWrapTrimClass(variant)}`
+  return `min-w-0 box-border ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${INGAME_CHAT_MESSAGE_TEXT_SHADOW_CLASS} ${getInGameChatTextTypographyClass(variant)} ${INGAME_CHAT_TEXT_WRAP_CLASS} ${getInGameChatTextWrapTrimClass(variant)}`
 }
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatMessageSenderClass(variant = "board") {
-  return `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatTextTypographyClass(variant)}`
+  return `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${INGAME_CHAT_MESSAGE_TEXT_SHADOW_CLASS} ${getInGameChatTextTypographyClass(variant)}`
 }
 
 /** @param {"board" | "closeup"} [variant] */
@@ -222,11 +226,11 @@ export const INGAME_CHAT_MESSAGE_READ_ONLY_CLASS = "select-none"
 
 /** InGameChatMessageRow — 메시지 본문 (입력창과 동일 wrap) */
 export const INGAME_CHAT_MESSAGE_BODY_CLASS =
-  `min-w-0 box-border ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS} ${INGAME_CHAT_TEXT_WRAP_CLASS} ${INGAME_CHAT_TEXT_WRAP_TRIM_CLASS}`
+  `min-w-0 box-border ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${INGAME_CHAT_MESSAGE_TEXT_SHADOW_CLASS} ${INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS} ${INGAME_CHAT_TEXT_WRAP_CLASS} ${INGAME_CHAT_TEXT_WRAP_TRIM_CLASS}`
 
 /** InGameChatMessageRow — 발신자 접두사 */
 export const INGAME_CHAT_MESSAGE_SENDER_CLASS =
-  `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS}`
+  `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${INGAME_CHAT_MESSAGE_TEXT_SHADOW_CLASS} ${INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS}`
 
 /** InGameChatMessageRow — 행 레이아웃 */
 export const INGAME_CHAT_MESSAGE_ROW_CLASS =

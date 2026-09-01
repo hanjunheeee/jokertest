@@ -1,14 +1,9 @@
 import { useEffect, useRef } from "react"
-
-const CODE_LENGTH = 6
-
-function sanitizeChar(char) {
-  return char.replace(/\D/g, "").slice(-1)
-}
-
-function sanitizeCode(text) {
-  return text.replace(/\D/g, "").slice(0, CODE_LENGTH)
-}
+import {
+  ROOM_CODE_LENGTH,
+  sanitizeRoomCode,
+  sanitizeRoomCodeChar,
+} from "@/domains/game/mode/utils/sanitizeRoomCode.js"
 
 // 방코드 6칸 입력의 포커스 이동, 붙여넣기, 삭제 동작을 처리하는 훅입니다.
 export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnly }) {
@@ -30,7 +25,7 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
   }, [autoFocus, disabled, readOnly])
 
   const getChars = () => {
-    return Array.from({ length: CODE_LENGTH }, (_, index) => value[index] ?? "")
+    return Array.from({ length: ROOM_CODE_LENGTH }, (_, index) => value[index] ?? "")
   }
 
   const updateAt = (index, nextChar) => {
@@ -39,7 +34,7 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
     onChange(next.join(""))
 
     // 한 칸을 입력하면 다음 칸으로 자동 이동합니다.
-    if (nextChar && index < CODE_LENGTH - 1) {
+    if (nextChar && index < ROOM_CODE_LENGTH - 1) {
       focusIndex(index + 1)
     }
   }
@@ -52,14 +47,14 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
       return
     }
 
-    const cleaned = sanitizeChar(raw)
+    const cleaned = sanitizeRoomCodeChar(raw)
     if (!cleaned) return
 
     if (raw.length > 1) {
       // 자동완성/붙여넣기로 한 칸에 여러 글자가 들어오면 전체 방코드로 처리합니다.
-      const pasted = sanitizeCode(raw)
+      const pasted = sanitizeRoomCode(raw)
       onChange(pasted)
-      focusIndex(Math.min(pasted.length, CODE_LENGTH - 1))
+      focusIndex(Math.min(pasted.length, ROOM_CODE_LENGTH - 1))
       return
     }
 
@@ -90,7 +85,7 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
       return
     }
 
-    if (event.key === "ArrowRight" && index < CODE_LENGTH - 1) {
+    if (event.key === "ArrowRight" && index < ROOM_CODE_LENGTH - 1) {
       event.preventDefault()
       focusIndex(index + 1)
     }
@@ -99,9 +94,9 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
   const handlePaste = (event) => {
     event.preventDefault()
 
-    const pasted = sanitizeCode(event.clipboardData.getData("text"))
+    const pasted = sanitizeRoomCode(event.clipboardData.getData("text"))
     onChange(pasted)
-    focusIndex(Math.min(Math.max(pasted.length - 1, 0), CODE_LENGTH - 1))
+    focusIndex(Math.min(Math.max(pasted.length - 1, 0), ROOM_CODE_LENGTH - 1))
   }
 
   return { inputRefs, getChars, handleChange, handleKeyDown, handlePaste }

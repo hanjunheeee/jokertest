@@ -21,11 +21,10 @@ export default function RoomCodeInput({
           key={index}
           ref={(el) => { inputRefs.current[index] = el }}
           type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
+          inputMode="text"
           autoComplete="one-time-code"
           autoCorrect="off"
-          autoCapitalize="off"
+          autoCapitalize="characters"
           spellCheck={false}
           maxLength={1}
           value={char}

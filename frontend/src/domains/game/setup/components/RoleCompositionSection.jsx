@@ -22,7 +22,6 @@ import {
   ROLE_COMPOSITION_MODE_OPTIONS,
   ROLE_COMPOSITION_MODES,
 } from "../constants/roleComposition.js"
-import { SETUP_DESC_CLASS } from "../constants/setupRowStyles.js"
 import { getRoleCountRange } from "../utils/roleComposition.js"
 import SetupChoiceRow from "./rows/SetupChoiceRow.jsx"
 import SetupStepperRow from "./rows/SetupStepperRow.jsx"
@@ -30,7 +29,7 @@ import SetupStepperRow from "./rows/SetupStepperRow.jsx"
 const MODE_OPTIONS = ROLE_COMPOSITION_MODE_OPTIONS.map(({ mode, label }) => ({ value: mode, label }))
 
 const SUMMARY_CLASS =
-  "flex shrink-0 flex-col gap-[clamp(0.1rem,0.25vh,0.2rem)] border-b border-[#8b7355]/35 py-[clamp(0.15rem,0.32vh,0.26rem)] last:border-b-0"
+  "flex shrink-0 flex-col items-center gap-[clamp(0.1rem,0.25vh,0.2rem)] border-b border-[#8b7355]/35 py-[clamp(0.15rem,0.32vh,0.26rem)] text-center last:border-b-0"
 
 /** 합계·정원 등 파생 수치 한 줄 */
 const SUMMARY_LINE_CLASS =
@@ -53,7 +52,10 @@ export default function RoleCompositionSection({
   const isCustom = mode === ROLE_COMPOSITION_MODES.CUSTOM
 
   return (
-    <>
+    <div
+      data-setup-role-composition
+      className="flex flex-col gap-[clamp(2rem,2.1vh,2.5rem)]"
+    >
       <SetupChoiceRow
         label="역할 구성"
         description="자동은 인원 수에 맞춰 서버가 특수 역할을 배정합니다. 직접 지정하면 역할별 인원을 방장이 정합니다."
@@ -79,7 +81,7 @@ export default function RoleCompositionSection({
             )
           })}
 
-          <div className={SUMMARY_CLASS}>
+          <div className={SUMMARY_CLASS} data-setup-role-composition-summary>
             <p className={SUMMARY_LINE_CLASS}>
               {/* CITIZEN은 입력 항목이 아니라 남은 자리에서 파생되는 값이다. */}
               {CITIZEN_ROLE_LABEL}: {citizenCount === null ? "-" : `${citizenCount}명`} (자동 계산)
@@ -87,13 +89,13 @@ export default function RoleCompositionSection({
             <p className={SUMMARY_LINE_CLASS}>
               지정한 인원 합계: {Number.isInteger(fixedRoleCount) ? fixedRoleCount : "-"} / {maxPlayers}명
             </p>
-            <p className={SETUP_DESC_CLASS}>
+            <p className={SUMMARY_LINE_CLASS}>
               시민 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
             </p>
             {validation.ok ? null : <p className={SUMMARY_ERROR_CLASS}>{validation.message}</p>}
           </div>
         </>
       ) : null}
-    </>
+    </div>
   )
 }

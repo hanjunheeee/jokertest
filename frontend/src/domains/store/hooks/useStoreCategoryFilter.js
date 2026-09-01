@@ -1,35 +1,21 @@
 import { useState } from "react"
-import {
-  STORE_CATEGORIES,
-  STORE_SORT_OPTIONS,
-} from "../constants/storeFilterOptions.js"
+import { STORE_CATEGORIES } from "../constants/storeFilterOptions.js"
 
-// 상점 사이드바의 카테고리 체크 상태와 정렬 선택 상태를 관리합니다.
+const DEFAULT_STORE_CATEGORY = STORE_CATEGORIES[0]
+
+// 상점 사이드바의 선택된 카테고리를 관리합니다.
 export function useStoreCategoryFilter() {
-  // 현재 체크된 카테고리 이름 목록입니다.
-  const [checkedCategory, setCheckedCategory] = useState(
-    () => new Set(["황금 가면 세트"]),
-  )
+  // 현재 선택된 카테고리입니다. null이면 전체 목록입니다.
+  const [activeCategory, setActiveCategory] = useState(DEFAULT_STORE_CATEGORY)
 
-  // 현재 선택된 정렬 방식입니다.
-  const [activeSort, setActiveSort] = useState("신규순")
-
-  // 카테고리를 누를 때 체크/해제를 토글합니다.
-  const toggleCategory = (label) => {
-    setCheckedCategory((prev) => {
-      const next = new Set(prev)
-      if (next.has(label)) next.delete(label)
-      else next.add(label)
-      return next
-    })
+  // 카테고리를 선택합니다. 같은 항목을 다시 누르면 선택을 해제합니다.
+  const selectCategory = (label) => {
+    setActiveCategory((prev) => (prev === label ? null : label))
   }
 
   return {
     categories: STORE_CATEGORIES,
-    sortOptions: STORE_SORT_OPTIONS,
-    checkedCategory,
-    activeSort,
-    toggleCategory,
-    setActiveSort,
+    activeCategory,
+    selectCategory,
   }
 }

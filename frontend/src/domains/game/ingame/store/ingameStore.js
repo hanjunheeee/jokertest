@@ -38,6 +38,9 @@ export const useInGameStore = create((set) => ({
   state: null,
   error: null,
 
+  // game_started 직전 matchingStore의 hostUuid — GameSession payload에는 아직 없다.
+  hostUuid: null,
+
   // get_session_snapshot 복원이 실제로 반영될 때마다 1씩 오르는 단조 카운터.
   // "이번 state 변화가 실시간 canonical 전이인가, 재접속 하이드레이션인가"를 구독자가
   // 소켓 리스너 등록 순서에 의존하지 않고 판별할 수 있게 하는 유일한 표식이다
@@ -55,12 +58,13 @@ export const useInGameStore = create((set) => ({
   // 백엔드 buildGameStartedPayload는 alive를 보내지 않으므로(계약 불변) 스토어가 정규화
   // 시점에 기본값을 채운다 — 신규 세션은 항상 전원 생존 상태로 시작한다는 game-core의
   // assertValidSessionForCommit 불변조건과 대응한다.
-  setGamePayload: ({ gameId, state }) =>
+  setGamePayload: ({ gameId, state, hostUuid }) =>
     set({
       gameId: gameId ?? state?.id ?? null,
       state: state
         ? { ...state, players: Array.isArray(state.players) ? state.players.map((p) => ({ ...p, alive: true })) : state.players }
         : null,
+      hostUuid: typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null,
       error: null,
       // 새 세션이므로 이전 게임의 개인 조사 결과는 넘어오지 않는다(요구 1의 clear 시점 (c)).
       nightPrivateResult: null,
@@ -235,7 +239,8 @@ export const useInGameStore = create((set) => ({
 
   setGameError: (error) => set({ error }),
 
-  clearGame: () => set({ gameId: null, state: null, error: null, nightPrivateResult: null }),
+  clearGame: () =>
+    set({ gameId: null, state: null, hostUuid: null, error: null, nightPrivateResult: null }),
 }))
 
 export const selectInGameState = (store) => store.state

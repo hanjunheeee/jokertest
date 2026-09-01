@@ -4,11 +4,13 @@ import {
   declineFriendRequest,
 } from "@/domains/lobby/api/friend.api.js"
 import { useFriendStore } from "@/domains/lobby/store/friend.store"
+import { applyFriendFavoriteFlags } from "@/domains/lobby/utils/applyFriendFavoriteFlags.js"
 import { groupFriends } from "@/domains/lobby/utils/groupFriends.js"
 
 // 친구 목록 패널이 열릴 때 친구 목록과 받은 친구 요청을 동기화하는 훅입니다.
 export function useFriendListSync(friendListOpen) {
   const friends = useFriendStore((state) => state.friends)
+  const favoriteFriendIds = useFriendStore((state) => state.favoriteFriendIds)
   const incomingRequests = useFriendStore((state) => state.incomingRequests)
   const fetchFriendsFromStore = useFriendStore((state) => state.fetchFriends)
   const fetchIncomingFromStore = useFriendStore((state) => state.fetchIncomingRequests)
@@ -70,7 +72,7 @@ export function useFriendListSync(friendListOpen) {
   }
 
   return {
-    ...groupFriends(friends),
+    ...groupFriends(applyFriendFavoriteFlags(friends, favoriteFriendIds)),
     incomingRequests,
     handleRefreshFriends,
     handleAcceptRequest,

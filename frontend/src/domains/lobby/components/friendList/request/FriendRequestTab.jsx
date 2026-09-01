@@ -1,4 +1,7 @@
 import {
+  FRIEND_LIST_FILTER_MESSAGES,
+} from "@/domains/lobby/constants/friendListFilter.js"
+import {
   FRIEND_REQUEST_BACK_BUTTON_CLASS,
   FRIEND_REQUEST_EMPTY_CLASS,
   FRIEND_REQUEST_RESULT_LIST_CLASS,
@@ -11,7 +14,8 @@ import RecommendedFriendRow from "@/domains/lobby/components/friendList/request/
 
 // 친구 검색 결과 영역이 비어 있을 때 보여주는 문구입니다.
 function FriendRequestEmptyState({ searching, errorMsg }) {
-  const message = errorMsg || (searching ? "친구를 검색 중입니다." : "검색 결과가 없습니다.")
+  const message = errorMsg
+    || (searching ? "친구를 검색 중입니다." : FRIEND_LIST_FILTER_MESSAGES.noResults)
 
   return (
     <li className={FRIEND_REQUEST_EMPTY_CLASS}>
@@ -21,7 +25,9 @@ function FriendRequestEmptyState({ searching, errorMsg }) {
 }
 
 // 친구 검색 결과 목록을 보여줍니다.
-function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSend }) {
+function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSend, isSearching }) {
+  if (!isSearching) return null
+
   return (
     <ul className={FRIEND_REQUEST_RESULT_LIST_CLASS}>
       {results.length === 0 ? (
@@ -32,7 +38,6 @@ function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSen
             key={friend.id}
             id={friend.id}
             name={friend.name}
-            profileSrc={friend.profile}
             online={friend.online || friend.status === "ONLINE"}
             onSend={onSend}
             sent={sentIds.has(friend.id)}
@@ -50,6 +55,7 @@ export default function FriendRequestTab({ onBack }) {
     setQuery,
     results,
     searching,
+    isSearching,
     sentIds,
     errorMsg,
     handleSearch,
@@ -68,6 +74,7 @@ export default function FriendRequestTab({ onBack }) {
       <FriendRequestResultsList
         results={results}
         searching={searching}
+        isSearching={isSearching}
         errorMsg={errorMsg}
         sentIds={sentIds}
         onSend={handleSend}

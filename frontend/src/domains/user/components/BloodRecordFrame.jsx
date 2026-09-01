@@ -1,6 +1,6 @@
 import { BLOOD_RECORD_STATS, MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
 import BloodRecordStatsPanel from "@/domains/user/components/BloodRecordFrame/BloodRecordStatsPanel.jsx"
-import { BLOOD_RECORD_FRAME_IMG_CLASS } from "@/domains/user/constants/bloodRecordFrameStyle.js"
+import { BLOOD_RECORD_FRAME_IMG_CLASS } from "@/domains/user/constants/myPageLayoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 마이페이지의 "피의 기록" 프레임을 그리는 컴포넌트입니다.

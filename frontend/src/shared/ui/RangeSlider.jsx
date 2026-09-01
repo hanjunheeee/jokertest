@@ -7,6 +7,7 @@
  * - ariaLabel: 접근성
  * - trackSrc, knobSrc: 트랙·노브 PNG (기본 rangeSliderAssets)
  * - controlClassName, valueClassName: 루트·상단 숫자 스타일
+ * - wrapClassName, trackLaneClassName, trackClassName, knobClassName: 트랙·노브 레이아웃 오버라이드
  *
  * 스타일은 constants/rangeSliderStyles.js 참고
  */
@@ -39,6 +40,10 @@ export default function RangeSlider({
   knobSrc = RANGE_SLIDER_ASSETS.knob, // 노브(손잡이) 이미지
   controlClassName = RANGE_SLIDER_CONTROL_CLASS, // 루트 레이아웃 클래스
   valueClassName = RANGE_SLIDER_VALUE_CLASS, // 상단 숫자 표시 클래스
+  wrapClassName = RANGE_SLIDER_WRAP_CLASS,
+  trackLaneClassName = RANGE_SLIDER_TRACK_LANE_CLASS,
+  trackClassName = RANGE_SLIDER_TRACK_CLASS,
+  knobClassName = RANGE_SLIDER_KNOB_CLASS,
 }) {
   const t = rangeRatio(value, min, max)
 
@@ -47,9 +52,9 @@ export default function RangeSlider({
       <p className={valueClassName} aria-live="polite">
         {value}
       </p>
-      <div className={RANGE_SLIDER_WRAP_CLASS}>
+      <div className={wrapClassName}>
         <div
-          className={RANGE_SLIDER_TRACK_LANE_CLASS}
+          className={trackLaneClassName}
           style={{
             "--range-t": t,
             "--knob-half": RANGE_SLIDER_KNOB_HALF,
@@ -58,13 +63,13 @@ export default function RangeSlider({
           <PublicAsset
             src={trackSrc}
             alt=""
-            className={RANGE_SLIDER_TRACK_CLASS}
+            className={trackClassName}
           />
           <PublicAsset
             src={knobSrc}
             alt=""
             aria-hidden="true"
-            className={RANGE_SLIDER_KNOB_CLASS}
+            className={knobClassName}
             style={{
               left: "calc(var(--knob-half) + (100% - 2 * var(--knob-half)) * var(--range-t))",
             }}

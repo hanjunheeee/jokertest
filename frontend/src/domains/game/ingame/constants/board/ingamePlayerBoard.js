@@ -20,9 +20,9 @@ export {
  */
 export const INGAME_PREVIEW_PLAYER_COUNT = 10
 
-/** InGamePlayerBoard — 전체 화면 슬롯 레이어 */
+/** InGamePlayerBoard — 전체 화면 슬롯 레이어 (perspective 완화 — rotateX blur 감소) */
 export const INGAME_PLAYER_BOARD_POSITION_CLASS =
-  "absolute inset-0 z-10 pointer-events-none [perspective:1200px]"
+  "absolute inset-0 z-10 pointer-events-none [perspective:1800px]"
 
 /** 링 슬롯 기본 너비 — scale transform과 별도 (×1.3) */
 export const INGAME_PLAYER_SLOT_BASE_WIDTH =
@@ -70,14 +70,14 @@ export const INGAME_PLAYER_SLOT_ZONES = {
   },
 }
 
-/** zone + left/top 기준 자동 보정 (슬롯에 명시값 없을 때만 적용) */
+/** zone + left/top 기준 자동 보정 (슬롯에 명시값 없을 때만 적용) — rotateX 완화(~50%) */
 function deriveInGamePlayerSlotTransform(zone, left) {
   if (zone === "top") {
     const derived = {}
     if (Math.abs(left - 50) >= 28) {
-      derived.rotateX = -11
+      derived.rotateX = -5
     } else {
-      derived.rotateX = -13
+      derived.rotateX = -6
     }
     return derived
   }

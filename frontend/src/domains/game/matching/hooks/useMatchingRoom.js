@@ -35,6 +35,22 @@ const SET_READY_TIMEOUT_MS = 5000
 // 그대로 노출하지 않고, 사용자가 취할 수 있는 행동(잠시 후 재시도)만 안내한다.
 const SOCKET_UNAVAILABLE_MESSAGE = '서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.'
 
+/** start_game ack code → 사용자 안내 (서버 matchmaking.js / game-core prepare 실패) */
+const START_GAME_ERROR_MESSAGES = {
+  DUPLICATE_ROOM_SESSION:
+    '이 방은 이미 진행 중인 게임 세션이 있습니다. 백엔드를 재시작하거나 잠시 후 다시 시도해주세요.',
+  PLAYER_ALREADY_IN_SESSION:
+    '참가자 중 누군가 이전 게임 세션에 남아 있습니다. 모든 탭에서 로비로 나간 뒤 다시 시도하거나 백엔드를 재시작해주세요.',
+  INVALID_SESSION_INPUT: '게임을 시작할 수 없습니다. 방 설정 또는 참가자 정보를 확인해주세요.',
+}
+
+function getStartGameErrorMessage(response) {
+  if (response?.message && response.code !== 'DUPLICATE_ROOM_SESSION' && response.code !== 'PLAYER_ALREADY_IN_SESSION') {
+    return response.message
+  }
+  return START_GAME_ERROR_MESSAGES[response?.code] ?? response?.message ?? '게임을 시작할 수 없습니다.'
+}
+
 // get_current_room ack 자체의 timeout이다(응답이 하나도 안 올 때).
 const CURRENT_ROOM_CHECK_TIMEOUT_MS = 5000
 // pending:true(서버가 이 uuid의 create_room/join_room_by_code를 아직 처리 중) 응답을 받았을 때
@@ -124,7 +140,8 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 방송이 생길 다음 슬라이스를 위해 리스너 자체는 미리 등록해 둔다.
     const handleGameStarted = (payload) => {
       clearStartState()
-      useInGameStore.getState().setGamePayload(payload)
+      const { hostUuid } = useMatchingStore.getState()
+      useInGameStore.getState().setGamePayload({ ...payload, hostUuid })
       clearRoom()
       onGameStarted?.(payload)
     }
@@ -424,11 +441,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       if (isStaleResponse()) return
 
       if (!response?.ok) {
-        alert(response?.message ?? '게임을 시작할 수 없습니다.')
+        alert(getStartGameErrorMessage(response))
       }
-      // response.ok는 이번 슬라이스에서 항상 false다(GAME_CORE_NOT_READY 등). 실제 성공은
-      // 다음 GameSession 슬라이스에서 game_started 방송으로 처리되며, 그 경로는 위의
-      // handleGameStarted가 별도로 clearStartState를 호출해 잠금을 해제한다.
+      // 성공 시 ok:true ack와 game_started 방송이 함께 온다. handleGameStarted가 인게임 전환을 담당한다.
     } catch {
       // socket.timeout()이 던지는 타임아웃 오류다 — 서버가 보낸 구체적인 실패 사유가 아니므로
       // 일반 실패 메시지와 구분해 안내한다.

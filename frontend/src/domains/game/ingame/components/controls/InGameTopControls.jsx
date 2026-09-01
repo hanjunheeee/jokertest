@@ -29,14 +29,14 @@ function ControlButton({
   )
 }
 
-/** 인게임 좌측 상단 — 나가기·햄버거(전적목록)·마이크 버튼 */
+/** 인게임 좌측 상단 — 나가기·햄버거(전적목록)·설정 버튼 */
 export default function InGameTopControls({
   // onExitClick: 나가기 버튼 클릭 시 호출되는 콜백 — 확인 후 leave_game_session을 전송함
   onExitClick,
   // onMenuClick: 햄버거 버튼 클릭 시 호출되는 콜백 — 플레이어별 전적목록 패널을 염
   onMenuClick,
-  // onMicClick: 마이크 버튼 클릭 시 호출되는 콜백
-  onMicClick,
+  // onSettingsClick: 설정 버튼 클릭 시 호출되는 콜백 — 인게임 설정 패널을 염
+  onSettingsClick,
   className = INGAME_TOP_CONTROLS_POSITION_CLASS,
 }) {
   return (
@@ -48,13 +48,13 @@ export default function InGameTopControls({
       />
       <ControlButton
         ariaLabel="플레이어별 전적목록"
-        src={INGAME_CONTROLS_ASSETS.settings}
+        src={INGAME_CONTROLS_ASSETS.menu}
         onClick={onMenuClick}
       />
       <ControlButton
-        ariaLabel="마이크"
-        src={INGAME_CONTROLS_ASSETS.mic}
-        onClick={onMicClick}
+        ariaLabel="인게임 설정"
+        src={INGAME_CONTROLS_ASSETS.settings}
+        onClick={onSettingsClick}
       />
     </div>
   )

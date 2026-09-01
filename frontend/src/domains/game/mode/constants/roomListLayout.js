@@ -36,7 +36,11 @@ export const ROOM_LIST_GRID_CLASS =
   "grid h-full min-h-0 grid-cols-1 content-start gap-x-[clamp(0.35rem,0.75vw,0.5rem)] gap-y-[clamp(0.3rem,0.8vh,0.45rem)] pr-[clamp(0.85rem,1.6vw,1.15rem)] md:grid-cols-2 md:gap-y-[clamp(0.12rem,0.32vh,0.2rem)] md:pr-0"
 
 export const ROOM_LIST_ROW_CLASS = "relative w-full min-w-0 list-none"
-export const ROOM_LIST_ROW_FRAME_CLASS = "block h-auto w-full select-none"
+export const ROOM_LIST_ROW_FRAME_CLASS =
+  "block h-auto w-full select-none transition-[filter] duration-150"
+
+export const ROOM_LIST_ROW_FRAME_SELECTED_CLASS =
+  "brightness-[1.12] saturate-[1.42] hue-rotate-[-12deg] drop-shadow-[0_0_5px_rgba(160,28,28,0.9)]"
 
 // 페이지당 방 개수(12개)보다 실제 방이 적을 때 채우는 빈 슬롯입니다. 프레임 이미지를
 // invisible로 감춰 자리(높이)만 그대로 차지하게 해서, 페이지가 바뀌어도 그리드 전체
@@ -90,50 +94,33 @@ export const ROOM_LIST_ROW_COUNT_CLASS =
 export const ROOM_LIST_ROW_DIM_OVERLAY_CLASS =
   "pointer-events-none absolute inset-0 rounded-sm bg-black/55 [filter:grayscale(0.6)]"
 
-// 선택된 카드에 씌우는 금색 강조 오버레이입니다(ingameActionPanel.js의 선택 스타일 패턴 차용).
-export const ROOM_LIST_ROW_SELECTED_RING_CLASS =
-  "pointer-events-none absolute inset-0 rounded-sm border-2 border-[#f3d28d] bg-[#5b321d]/25 shadow-[0_0_10px_rgba(243,210,141,0.55)]"
-
 // 셸 레벨 하단 영역입니다. 페이지네이션이 목록 패널 내부로 이동했으므로,
 // 이제는 입장하기 버튼만 담아 우측에 둡니다.
 //
-// pr-[11rem]: ModePageControls의 사운드 컨트롤(absolute bottom-4 right-4 sm:bottom-6
-// sm:right-6)이 차지하는 자리를 비워 두기 위한 여백입니다. 게임 화면 열 폭은 1192px 고정
-// (viewportLayout.js의 GAME_VIEWPORT_MAX_WIDTH_PX)인데 사운드 폭은 vw 기반이라
-// (soundControlLayout.js: 아이콘 폭의 84% + 슬라이더 바) 화면이 넓을수록 열 안쪽으로 더
-// 들어옵니다 — 1280px에서 129px, clamp 상한에 닿는 1460px 이상에서 약 161px이 최대입니다.
-// 그래서 전 구간을 한 값으로 덮는 176px을 반응형 분기 없이 고정으로 씁니다.
-// 후보 셋(footer 여백 / 사운드 래퍼 이동 / z-order) 중 이 방법을 고른 이유: 사운드 래퍼는
-// gameMode·roomInvite 화면도 함께 쓰므로 옮기면 겹치지도 않는 화면까지 같이 바뀌고,
-// z-order만 올리면 클릭은 통해도 그림은 그대로 겹칩니다(요구사항은 "겹치지 않게").
-// 이 방법은 /multiplay의 입장 버튼 하나만 왼쪽으로 옮기므로 시각 변화 범위가 가장 좁습니다.
-//
-// pointer-events-none: 여백을 준 뒤에도 이 div의 박스 자체는 여전히 사운드 컨트롤 위를
-// 지나가므로, 빈 영역이 음소거 버튼·볼륨 슬라이더의 클릭을 가로채지 않도록 비워 둡니다.
-// 실제 클릭은 아래 ROOM_LIST_ENTER_BTN_CLASS의 pointer-events-auto가 되살립니다
-// (matchingPopupStyles.js의 버튼 영역/버튼 행과 같은 짝 패턴). 둘은 반드시 함께 바뀌어야
-// 합니다 — footer만 none으로 두면 입장 버튼이 클릭 불가가 됩니다.
+// pr-0: 방목록 셸(패널)과 같은 오른쪽 끝에 맞춥니다. footer 박스는 pointer-events-none이라
+// 사운드 컨트롤 위를 지나가도 빈 영역 클릭은 가로채지 않고, 버튼만 pointer-events-auto로
+// 받습니다.
 export const ROOM_LIST_FOOTER_CLASS =
-  "pointer-events-none flex shrink-0 items-center justify-end pr-[11rem]"
+  "pointer-events-none flex shrink-0 items-center justify-end pr-[0rem]"
 
 // 목록 패널 내부, 카드 그리드 아래에 붙는 고정 높이 페이지네이션 영역입니다.
 // shrink-0 + min-height로 크기를 고정해 패널 전체 높이를 다시 키우지 않으면서,
 // 카드 6행 아래에 남는 공간을 이 영역이 대신 차지하도록 합니다.
 export const ROOM_LIST_PAGINATION_FOOTER_CLASS =
-  "flex shrink-0 items-center justify-center min-h-[clamp(2.2rem,5vh,3rem)] py-[clamp(0.2rem,0.5vh,0.35rem)]"
+  "flex shrink-0 items-center justify-center min-h-[clamp(2.75rem,6vh,3.75rem)] py-[clamp(0.25rem,0.55vh,0.4rem)]"
 
-export const ROOM_LIST_PAGINATION_CLASS = "flex items-center gap-[clamp(0.3rem,0.6vw,0.45rem)]"
+export const ROOM_LIST_PAGINATION_CLASS = "flex items-center gap-[clamp(0.45rem,0.85vw,0.65rem)]"
 
 // 페이지 이동 화살표는 기존 뒤로가기 버튼 이미지를 재사용하되, 화면 뒤로가기보다
-// 시각적 우선순위가 낮도록 훨씬 작게 표시합니다(기존 BackButton의 compact 크기보다도 작음).
+// 시각적 우선순위가 낮도록 작게 표시합니다.
 export const ROOM_LIST_PAGE_ARROW_BTN_CLASS =
-  "block w-[clamp(1.3rem,1.9vw,1.6rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 opacity-85 transition hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:opacity-30 disabled:brightness-75"
+  "block w-[clamp(1.75rem,2.5vw,2.15rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 opacity-85 transition hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:opacity-30 disabled:brightness-75"
 
 export const ROOM_LIST_PAGE_ARROW_IMG_CLASS = "block h-auto w-full select-none"
 
 // 현재 페이지 표시: 별도 막대 배경 없이 텍스트만 사용합니다(요구사항 8).
 export const ROOM_LIST_PAGE_TEXT_CLASS =
-  "shrink-0 px-1 font-subheading text-[clamp(0.78rem,1vw,0.9rem)] font-semibold tabular-nums text-[#e8d5a8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
+  "shrink-0 px-1 font-subheading text-[clamp(0.95rem,1.25vw,1.1rem)] font-semibold tabular-nums text-[#e8d5a8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
 
 // pointer-events-auto: ROOM_LIST_FOOTER_CLASS가 빈 영역의 클릭을 흘려보내므로,
 // 실제 조작 대상인 이 버튼에서만 클릭을 다시 받습니다.

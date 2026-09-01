@@ -1,3 +1,5 @@
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
+
 /**
  * 인게임 파치먼트(양피지) 공용 셸 레이아웃.
  *
@@ -5,12 +7,12 @@
  * (InGameNightTurnAnnouncementOverlay)가 같은 배경 이미지를 공유한다 —
  * 두 화면이 서로 다른 파치먼트를 그리지 않도록 이 파일 하나만 참조한다.
  *
- * 배경은 준비된 public 에셋(frontend/public/assets/ingame/parchment.png)을 그대로 쓴다.
+ * 배경은 준비된 public 에셋(frontend/public/frame/양피지 모달.png)을 그대로 쓴다.
  * 파일 자체는 불변 자산이라 가공하지 않고, URL만 여기서 한 번 정의한다.
  */
 
 /** 파치먼트 배경 이미지 public URL (frontend/public 기준) */
-export const INGAME_PARCHMENT_IMAGE_URL = "/assets/ingame/parchment.png"
+export const INGAME_PARCHMENT_IMAGE_URL = "/frame/양피지 모달.png".normalize("NFD")
 
 /**
  * 파치먼트 프레임 — 이미지의 가로세로비(3:2)를 그대로 유지한다.
@@ -30,7 +32,7 @@ export const INGAME_PARCHMENT_IMAGE_CLASS =
  * 내용이 길어지면 안쪽에서만 세로로 스크롤한다.
  */
 export const INGAME_PARCHMENT_CONTENT_CLASS =
-  "absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto px-[16%] py-[17%] text-center text-[#3a1a0c]"
+  `absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto overscroll-contain px-[16%] py-[17%] text-center text-[#3a1a0c] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 /**
  * 배경 이미지 로딩이 실패했을 때의 대체 패널 — 이미지 없이도 같은 톤/가독성을 유지한다
@@ -40,4 +42,4 @@ export const INGAME_PARCHMENT_FALLBACK_FRAME_CLASS =
   "pointer-events-auto relative w-[min(40rem,92vw)] rounded-lg border border-[#6b4321] bg-gradient-to-b from-[#f3e5bd] via-[#e7d19f] to-[#c9a05f] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
 
 export const INGAME_PARCHMENT_FALLBACK_CONTENT_CLASS =
-  "flex max-h-[80svh] flex-col items-center justify-center gap-2 overflow-y-auto px-6 py-7 text-center text-[#3a1a0c]"
+  `flex max-h-[80svh] flex-col items-center justify-center gap-2 overflow-y-auto overscroll-contain px-6 py-7 text-center text-[#3a1a0c] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`

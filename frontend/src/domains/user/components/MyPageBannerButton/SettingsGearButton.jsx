@@ -1,6 +1,6 @@
 import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
-import { LOBBY_SETTINGS_GEAR_LAYOUT } from "@/domains/user/constants/myPageBannerLayout.js"
 import {
+  LOBBY_SETTINGS_GEAR_LAYOUT,
   MY_PAGE_BANNER_SETTINGS_BTN_CLASS,
   MY_PAGE_BANNER_SETTINGS_GEAR_IMG_CLASS,
 } from "@/domains/user/constants/myPageBannerStyle.js"

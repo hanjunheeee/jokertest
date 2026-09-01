@@ -3,7 +3,7 @@ import {
   FATE_MASK_DESCRIPTION_INSET,
   FATE_MASK_HIGHLIGHT_CLASS,
   FATE_MASK_TEXT_SHADOW,
-} from "@/domains/user/constants/fateMaskFooterStyle.js"
+} from "@/domains/user/constants/myPageLayoutStyle.js"
 
 export default function FateMaskDescription({ description }) {
   // prefix: 강조 단어 앞 문장입니다.

@@ -29,8 +29,6 @@ export default function InGamePlayerBoard() {
             nickname={player.nickname}
             status={player.status}
             theme={player.theme}
-            // 닉네임·배열 위치가 아니라 canonical uuid 동등성만으로 본인 여부를 판정한다 —
-            // 닉네임이 같은 참가자가 여러 명이어도 정확히 uuid가 일치하는 한 명만 표시된다.
             isSelf={isInGameSelfPlayer(player.id, localPlayerId)}
             className="w-full"
           />

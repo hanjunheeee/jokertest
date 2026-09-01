@@ -6,10 +6,9 @@ import SettingTabs from "./SettingTabs.jsx"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 const PANEL_CLASS =
-  "absolute left-1/2 top-[42%] z-20 w-[min(56rem,88vw)] -translate-x-1/2 -translate-y-1/2"
+  "absolute left-1/2 top-[clamp(6rem,15vh,8rem)] z-20 w-[min(56rem,88vw)] -translate-x-1/2"
 
 export default function SettingPanel({ visible }) {
-  // 현재 선택된 설정 탭 id입니다.
   const [activeTab, setActiveTab] = useState("general")
 
   return (

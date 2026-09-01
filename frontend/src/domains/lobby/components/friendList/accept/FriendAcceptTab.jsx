@@ -9,7 +9,13 @@ import {
   FRIEND_ACCEPT_TAB_CLASS,
   FRIEND_ACCEPT_TOOLBAR_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
+import {
+  FRIEND_LIST_FILTER_FIELDS,
+  FRIEND_LIST_FILTER_MESSAGES,
+  FRIEND_LIST_FILTER_SEARCH,
+} from "@/domains/lobby/constants/friendListFilter.js"
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+import { useFriendListLocalFilter } from "@/domains/lobby/hooks/useFriendListLocalFilter.js"
 import BackButton from "@/shared/ui/BackButton.jsx"
 import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendListSearchBar.jsx"
 import IncomingFriendRow from "@/domains/lobby/components/friendList/accept/IncomingFriendRow.jsx"
@@ -65,27 +71,30 @@ function FriendAcceptToolbar({ onAcceptAll, onRefresh }) {
 }
 
 // 받은 친구 요청이 없을 때 보여주는 빈 상태 문구입니다.
-function FriendAcceptEmptyState() {
+function FriendAcceptEmptyState({ isFiltering }) {
+  const message = isFiltering
+    ? FRIEND_LIST_FILTER_MESSAGES.noResults
+    : FRIEND_LIST_FILTER_MESSAGES.noIncomingRequests
+
   return (
     <li className={FRIEND_ACCEPT_EMPTY_CLASS}>
-      받은 친구 요청이 없습니다.
+      {message}
     </li>
   )
 }
 
 // 받은 친구 요청 목록을 렌더링합니다.
-function FriendAcceptRequestList({ incomingRequests, onAccept, onDecline }) {
+function FriendAcceptRequestList({ incomingRequests, isFiltering, onAccept, onDecline }) {
   return (
     <ul className={FRIEND_ACCEPT_LIST_CLASS}>
       {incomingRequests.length === 0 ? (
-        <FriendAcceptEmptyState />
+        <FriendAcceptEmptyState isFiltering={isFiltering} />
       ) : (
         incomingRequests.map((request) => (
           <IncomingFriendRow
             key={request.request_id || request.id}
             requestId={request.request_id}
             name={request.name}
-            profileSrc={request.profile}
             onAccept={onAccept}
             onDecline={onDecline}
           />
@@ -104,12 +113,25 @@ export default function FriendAcceptTab({
   onAcceptAll,
   onRefresh,
 }) {
+  const { query, setQuery, isFiltering, filteredItems } = useFriendListLocalFilter(
+    incomingRequests,
+    FRIEND_LIST_FILTER_FIELDS.incomingRequest,
+  )
+
+  const visibleRequests = isFiltering ? filteredItems : incomingRequests
+
   return (
     <div className={FRIEND_ACCEPT_TAB_CLASS}>
-      <FriendListSearchBar label="요청 검색" placeholder="닉네임 또는 ID 입력" />
+      <FriendListSearchBar
+        label={FRIEND_LIST_FILTER_SEARCH.acceptTab.label}
+        placeholder={FRIEND_LIST_FILTER_SEARCH.acceptTab.placeholder}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
       <FriendAcceptToolbar onAcceptAll={onAcceptAll} onRefresh={onRefresh} />
       <FriendAcceptRequestList
-        incomingRequests={incomingRequests}
+        incomingRequests={visibleRequests}
+        isFiltering={isFiltering}
         onAccept={onAccept}
         onDecline={onDecline}
       />

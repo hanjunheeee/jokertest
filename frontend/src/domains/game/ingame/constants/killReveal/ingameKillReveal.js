@@ -6,7 +6,7 @@
  */
 
 /** 사망 연출 영상 public URL (frontend/public 기준) */
-export const INGAME_KILL_ANIMATION_VIDEO_URL = "/assets/ingame/kill-animation.mp4"
+export const INGAME_KILL_ANIMATION_VIDEO_URL = "/video-direction/kill-animation.mp4"
 
 /** 닉네임을 찾지 못했을 때 쓰는 대체 표기 — uuid는 절대 화면에 내보내지 않는다. */
 export const INGAME_KILL_REVEAL_UNKNOWN_NICKNAME = "한 플레이어"

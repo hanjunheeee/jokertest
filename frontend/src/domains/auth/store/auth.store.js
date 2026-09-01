@@ -1,4 +1,5 @@
 // Zustand로 전역 상태 store를 만들기 위한 함수입니다.
+import { resetSessionStores } from "@/domains/auth/utils/resetSessionStores.js";
 import { create } from "zustand";
 
 // persist 미들웨어는 store 상태 일부를 localStorage에 저장해 새로고침 후에도 유지해줍니다.
@@ -45,6 +46,7 @@ export const useAuthStore = create(
             // 로그아웃 시 호출합니다.
             // 로그인 상태와 사용자 정보를 비우고, 사용자가 직접 로그아웃했다는 표시를 남깁니다.
             logout: () => {
+                resetSessionStores();
                 return set({ isLoggedIn: false, user: null, loggedOutIntentionally: true});
             },
 

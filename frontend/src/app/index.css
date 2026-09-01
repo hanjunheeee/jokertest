@@ -109,4 +109,41 @@
     container-type: inline-size;
     container-name: game-viewport;
   }
+
+  /* document.documentElement 전체화면(F11) — 배너는 유지하되 슬롯만 축소, 게임 영역 확장 */
+  html:fullscreen,
+  html:-webkit-full-screen {
+    @apply h-full w-full overflow-hidden bg-black;
+  }
+
+  html:fullscreen body,
+  html:-webkit-full-screen body {
+    @apply h-full w-full overflow-hidden;
+  }
+
+  html:fullscreen #root,
+  html:-webkit-full-screen #root {
+    @apply h-full min-h-0 w-full;
+  }
+
+  html:fullscreen .viewport-shell,
+  html:-webkit-full-screen .viewport-shell {
+    @apply h-full min-h-0 w-full;
+    gap: clamp(0.7rem, 0.9vw, 1.2rem);
+  }
+
+  html:fullscreen .viewport-shell__banner,
+  html:-webkit-full-screen .viewport-shell__banner {
+    flex: 0 1 clamp(5.5rem, 10.5vw, 13.5rem);
+    max-width: clamp(5.5rem, 10.5vw, 13.5rem);
+    padding-inline: clamp(0.3rem, 0.5vw, 0.55rem);
+  }
+
+  html:fullscreen .viewport-shell__game,
+  html:-webkit-full-screen .viewport-shell__game {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    height: 100%;
+  }
 }

@@ -1,6 +1,7 @@
 // 파일 역할: LobbyProfileArea.jsx - 화면을 구성하는 컴포넌트입니다.
 import { LOBBY_PROFILE_SHORTCUT_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
 import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
+import { MY_PAGE_PROFILE_BANNER_DEFAULTS } from "@/domains/user/constants/myPageAssets.js"
 
 // 로비 오른쪽 위의 마이프로필 배너 영역입니다.
 export default function LobbyProfileArea({ profile, loading, onMyPage, onAccount }) {
@@ -9,6 +10,7 @@ export default function LobbyProfileArea({ profile, loading, onMyPage, onAccount
   return (
     <div className={LOBBY_PROFILE_SHORTCUT_CLASS}>
       <MyPageBannerButton
+        {...MY_PAGE_PROFILE_BANNER_DEFAULTS}
         onClick={onMyPage}
         onSettingsClick={onAccount}
         showSettingsIcon

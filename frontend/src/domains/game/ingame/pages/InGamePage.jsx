@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { motion } from "framer-motion"
+import InGameBackground from "../components/InGameBackground.jsx"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
 import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
@@ -11,9 +11,9 @@ import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/In
 import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.js"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
+import SettingPanel from "../components/controls/ingameSetting/SettingPanel.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
-import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarStatusMessage.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -21,8 +21,6 @@ import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
-import { publicAsset } from "@/shared/utils/publicAsset"
-import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 /**
  * 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지
@@ -31,6 +29,7 @@ import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
  */
 export default function InGamePage() {
   const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
+  const [ingameSettingOpen, setIngameSettingOpen] = useState(false)
   const gameId = useInGameStore((s) => s.gameId)
   const gameState = useInGameStore((s) => s.state)
   const navigate = useNavigate()
@@ -66,18 +65,7 @@ export default function InGamePage() {
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
-      {/* motion.img: framer-motion이 제공하는, 애니메이션 속성이 붙은 img 태그.
-          initial(시작 상태)의 opacity 0에서 animate(도착 상태)의 opacity 1로 바뀌며
-          배경 이미지가 서서히 나타나는 페이드인 효과를 만듦 */}
-      <motion.img
-        src={publicAsset(INGAME_ASSETS.bg)}
-        alt=""
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={BG_FADE_TRANSITION}
-        className="absolute inset-0 h-full w-full object-cover object-center"
-        draggable={false}
-      />
+      <InGameBackground />
 
       {/* 진입 연출이 떠 있는 동안에는 이 게임 표면 전체를 inert로 잠근다 — 포인터도 키보드
           초점도 안으로 들어가지 못하므로 낮 투표·채팅·재판·밤 행동·결과 컨트롤이 한꺼번에
@@ -88,7 +76,14 @@ export default function InGamePage() {
       >
         <InGameTopControls
           onExitClick={requestExit}
-          onMenuClick={() => setPlayerRecordListOpen(true)}
+          onMenuClick={() => {
+            setIngameSettingOpen(false)
+            setPlayerRecordListOpen(true)
+          }}
+          onSettingsClick={() => {
+            setPlayerRecordListOpen(false)
+            setIngameSettingOpen(true)
+          }}
         />
         <InGamePlayerSessionProvider>
           {/* NIGHT 문구는 canonical 턴이 아니라 연출 릴의 현재 역할(nightTurn.statusRole)에서
@@ -109,6 +104,10 @@ export default function InGamePage() {
           <PlayerRecordListPanel
             open={playerRecordListOpen}
             onClose={() => setPlayerRecordListOpen(false)}
+          />
+          <SettingPanel
+            open={ingameSettingOpen}
+            onClose={() => setIngameSettingOpen(false)}
           />
         </InGamePlayerSessionProvider>
       </div>

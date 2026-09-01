@@ -14,9 +14,9 @@ import { SOUND_CONTROL_CLASSES } from "../../../../../shared/constants/soundCont
 import { GAME_VIEWPORT_MAX_WIDTH_PX } from "../../../../../shared/layouts/constants/viewportLayout.js"
 
 /**
- * /multiplay의 "선택한 방 입장" 버튼이 우하단 사운드 컨트롤에 가려 클릭이 가로채이던 버그의
- * 회귀 방지 스위트다. 양쪽 좌표를 하드코딩하지 않고 실제 production 상수·소스에서 뽑아
- * 계산하므로, 사운드 폭이나 셸 폭이 나중에 바뀌면 겹침이 다시 생기는 순간 이 테스트가 깨진다.
+ * /multiplay의 "선택한 방 입장" 버튼·방목록 셸 정렬 회귀 방지 스위트다. 양쪽 좌표를
+ * 하드코딩하지 않고 실제 production 상수·소스에서 뽑아 계산하므로, 셸 폭이나 footer
+ * pr이 나중에 바뀌면 이 테스트가 깨진다.
  * (.jsx는 이 저장소의 node:test 실행에 JSX 로더가 없어 raw source로 읽는다 —
  * InGameActionPanel.visualPolish.test.js와 같은 제약·같은 방식.)
  */
@@ -177,6 +177,13 @@ function roomListShellBoxPx(viewportWidth) {
   return { width, padding }
 }
 
+/** 방목록 셸 콘텐츠 영역의 오른쪽 끝(패널·입장 버튼이 맞추는 기준선) */
+/** @param viewportWidth 뷰포트 폭(px) */
+function roomListShellContentRightEdgePx(viewportWidth) {
+  const { width, padding } = roomListShellBoxPx(viewportWidth)
+  return (gameColumnWidthPx(viewportWidth) + width) / 2 - padding
+}
+
 /** footer는 justify-end라 입장 버튼의 오른쪽 끝은 pr 여백만으로 결정된다 */
 /** @param viewportWidth 뷰포트 폭(px) */
 function enterButtonRightEdgePx(viewportWidth) {
@@ -205,17 +212,14 @@ function readPanelScale(source) {
   return Number.parseFloat(match[1])
 }
 
-test("입장 버튼은 어떤 일반 뷰포트에서도 사운드 컨트롤 왼쪽 경계를 넘지 않는다", async () => {
-  const modeControls = await readFile(modePageControlsUrl, "utf8")
-
+test("입장 버튼은 방목록 셸 오른쪽 끝(패널과 같은 기준선)에 맞춰진다", () => {
   for (const viewportWidth of VIEWPORT_WIDTHS_PX) {
     const buttonRight = enterButtonRightEdgePx(viewportWidth)
-    const soundLeft = soundControlLeftEdgePx(modeControls, viewportWidth)
+    const shellRight = roomListShellContentRightEdgePx(viewportWidth)
     assert.ok(
-      buttonRight <= soundLeft,
+      Math.abs(buttonRight - shellRight) < 0.01,
       `${viewportWidth}px에서 입장 버튼(오른쪽 ${buttonRight.toFixed(1)}px)이 ` +
-        `사운드 컨트롤(왼쪽 ${soundLeft.toFixed(1)}px)과 ` +
-        `${(buttonRight - soundLeft).toFixed(1)}px 겹친다`,
+        `방목록 셸 오른쪽(${shellRight.toFixed(1)}px)과 ${Math.abs(buttonRight - shellRight).toFixed(1)}px 어긋난다`,
     )
   }
 })

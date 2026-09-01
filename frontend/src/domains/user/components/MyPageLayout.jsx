@@ -1,10 +1,17 @@
 import { motion } from "framer-motion"
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import FateMaskFooter from "@/domains/user/components/FateMaskFooter.jsx"
-import MyPageProfileFrame from "@/domains/user/components/MyPageLayout/MyPageProfileFrame.jsx"
+import AccountManageButton from "@/domains/user/components/MyPageLayout/AccountManageButton.jsx"
 import MyPageSummaryPanel from "@/domains/user/components/MyPageLayout/MyPageSummaryPanel.jsx"
+import ProfileEditButton from "@/domains/user/components/MyPageLayout/ProfileEditButton.jsx"
+import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
+import ProfileEditOverlay from "@/domains/user/components/profileEdit/ProfileEditOverlay.jsx"
+import { MY_PAGE_PROFILE_BANNER_DEFAULTS } from "@/domains/user/constants/myPageAssets.js"
 import {
-  MY_PAGE_CONTENT_ROW_CLASS,
+  MY_PAGE_ACTION_BUTTONS_WRAP_CLASS,
+  MY_PAGE_BANNER_WRAP_CLASS,
+  MY_PAGE_CENTER_STACK_CLASS,
   MY_PAGE_MAIN_CLASS,
   MY_PAGE_ROOT_CLASS,
   MY_PAGE_UI_FADE,
@@ -16,32 +23,38 @@ import { useMyProfile } from "@/domains/user/hooks/useMyProfile.js"
 export default function MyPageLayout() {
   const navigate = useNavigate()
   const { profile, stats, description, loading } = useMyProfile()
+  const [profileEditOpen, setProfileEditOpen] = useState(false)
+
+  const goToAccount = () => navigate("/account")
 
   return (
     <div className={MY_PAGE_ROOT_CLASS}>
+      <div className={MY_PAGE_ACTION_BUTTONS_WRAP_CLASS}>
+        <AccountManageButton onClick={goToAccount} />
+        <ProfileEditButton onClick={() => setProfileEditOpen(true)} />
+      </div>
+
+      <ProfileEditOverlay open={profileEditOpen} onClose={() => setProfileEditOpen(false)} />
+
+      {!loading && profile ? (
+        <div className={MY_PAGE_BANNER_WRAP_CLASS}>
+          <MyPageBannerButton {...MY_PAGE_PROFILE_BANNER_DEFAULTS} profile={profile} />
+        </div>
+      ) : null}
+
       <motion.main
         className={MY_PAGE_MAIN_CLASS}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={MY_PAGE_UI_FADE}
       >
-        <div className={MY_PAGE_CONTENT_ROW_CLASS}>
-          {/* 왼쪽 프로필 이미지 영역입니다. */}
-          <MyPageProfileFrame />
-
-          {/* 프로필 데이터 로딩이 끝난 뒤 오른쪽 요약 영역을 보여줍니다. */}
-          {!loading && profile ? (
-            <MyPageSummaryPanel
-              profile={profile}
-              stats={stats}
-              onAccountClick={() => navigate("/account")}
-            />
-          ) : null}
-        </div>
+        {!loading && profile ? (
+          <div className={MY_PAGE_CENTER_STACK_CLASS}>
+            {description ? <FateMaskFooter description={description} /> : null}
+            <MyPageSummaryPanel stats={stats} />
+          </div>
+        ) : null}
       </motion.main>
-
-      {/* 하단 운명의 가면 설명은 설명 데이터가 준비된 뒤 보여줍니다. */}
-      {!loading && description ? <FateMaskFooter description={description} /> : null}
     </div>
   )
 }

@@ -6,23 +6,15 @@ import {
   FRIEND_ROW_ITEM_CLASS,
   FRIEND_ROW_NAME_CLASS,
   FRIEND_ROW_OFFLINE_OVERLAY_CLASS,
-  FRIEND_ROW_PROFILE_IMAGE_CLASS,
+  FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS,
   FRIEND_ROW_STATUS_BADGE_CLASS,
   FRIEND_ROW_STATUS_TEXT_CLASS,
   FRIEND_ROW_STATUS_WRAP_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
+import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
-
-// 친구 한 명의 프로필 이미지를 보여줍니다.
-function FriendListProfileImage({ profileSrc }) {
-  return (
-    <PublicAsset
-      src={profileSrc}
-      alt=""
-      className={FRIEND_ROW_PROFILE_IMAGE_CLASS}
-    />
-  )
-}
+import FriendListFavoriteStar from "@/domains/lobby/components/friendList/list/FriendListFavoriteStar.jsx"
+import { useFriendStore } from "@/domains/lobby/store/friend.store.js"
 
 // 친구가 현재 접속 중인지 오프라인인지 보여줍니다.
 function FriendOnlineStatus({ online }) {
@@ -49,7 +41,10 @@ function FriendOnlineStatus({ online }) {
 }
 
 // 친구 목록에서 친구 한 명을 보여주는 row 컴포넌트입니다.
-export default function FriendListRow({ name, profileSrc, online }) {
+export default function FriendListRow({ id, name, online }) {
+  const isFavorite = useFriendStore((state) => state.favoriteFriendIds.has(id))
+  const toggleFavorite = useFriendStore((state) => state.toggleFavorite)
+
   return (
     <li className={FRIEND_ROW_ITEM_CLASS}>
       <PublicAsset
@@ -58,7 +53,11 @@ export default function FriendListRow({ name, profileSrc, online }) {
         className={FRIEND_ROW_FRAME_CLASS}
       />
       <div className={FRIEND_ROW_CONTENT_CLASS}>
-        <FriendListProfileImage profileSrc={profileSrc} />
+        <FriendListFavoriteStar
+          active={isFavorite}
+          onToggle={() => toggleFavorite(id)}
+        />
+        <PlayerProfilePortrait wrapClassName={FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS} />
         <div className={FRIEND_ROW_INFO_CLASS}>
           <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
           <FriendOnlineStatus online={online} />

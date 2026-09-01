@@ -25,13 +25,19 @@ import { publicAsset } from "../../../../../shared/utils/publicAsset.js"
  * 표시 전용이다: 소켓 emit·store 변경·phase 전이를 일절 하지 않는다. 배경 이미지를 불러오지
  * 못하면(onError) 이미지 없이도 읽을 수 있는 대체 패널로 즉시 전환한다.
  */
-export default function InGameParchmentPanelBase({ children, contentClassName = "", ...rest }) {
+export default function InGameParchmentPanelBase({
+  children,
+  contentClassName = "",
+  frameClassName = INGAME_PARCHMENT_FRAME_CLASS,
+  fallbackFrameClassName = INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+  ...rest
+}) {
   const [backgroundFailed, setBackgroundFailed] = useState(false)
 
   if (backgroundFailed) {
     return createElement(
       "div",
-      { className: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS, "data-parchment-fallback": "true", ...rest },
+      { className: fallbackFrameClassName, "data-parchment-fallback": "true", ...rest },
       createElement(
         "div",
         { className: `${INGAME_PARCHMENT_FALLBACK_CONTENT_CLASS} ${contentClassName}`.trim() },
@@ -42,7 +48,7 @@ export default function InGameParchmentPanelBase({ children, contentClassName = 
 
   return createElement(
     "div",
-    { className: INGAME_PARCHMENT_FRAME_CLASS, ...rest },
+    { className: frameClassName, ...rest },
     createElement("img", {
       src: publicAsset(INGAME_PARCHMENT_IMAGE_URL),
       alt: "",

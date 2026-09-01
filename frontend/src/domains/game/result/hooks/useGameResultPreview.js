@@ -19,6 +19,6 @@ export function useGameResultPreview() {
     const players = GAME_RESULT_PREVIEW.players
     const mvp = getGameResultMvpPlayer(players, GAME_RESULT_PREVIEW.mvpPlayerId)
 
-    return { outcome, players, mvp }
+    return { outcome, winningTeam: GAME_RESULT_PREVIEW.winningTeam, players, rosterPlayers: players, mvp }
   }, [outcomeParam])
 }

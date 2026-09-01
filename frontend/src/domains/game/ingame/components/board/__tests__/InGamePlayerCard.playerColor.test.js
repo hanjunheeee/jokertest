@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises"
 
 const cardUrl = new URL("../InGamePlayerCard.jsx", import.meta.url)
 const boardUrl = new URL("../InGamePlayerBoard.jsx", import.meta.url)
+const nameplateUrl = new URL("../InGamePlayerNameplate.jsx", import.meta.url)
 
 /**
  * 이 스위트는 "카드 테두리·명패 색은 세션 테마(서버 colorIndex)에서만 온다"는 배선을 지킨다.
@@ -13,9 +14,11 @@ const boardUrl = new URL("../InGamePlayerBoard.jsx", import.meta.url)
  * 배선을 증명한다. 색 값 자체가 옳은지는 useInGamePlayerSession.theme.test.js가 실제 렌더로 잡는다.
  */
 
-test("보드는 세션 플레이어의 theme을 그대로 카드에 넘긴다 — 카드가 색을 다시 정하지 않는다", async () => {
+test("보드는 세션 플레이어의 theme을 카드에 그대로 넘긴다", async () => {
   const source = await readFile(boardUrl, "utf8")
   assert.match(source, /theme=\{player\.theme\}/)
+  assert.doesNotMatch(source, /detachNameplate/)
+  assert.doesNotMatch(source, /useInGamePlayerNameplateOverlayLayout/)
 })
 
 test("프레임 stroke 색은 theme styles.color에서만 온다", async () => {
@@ -30,25 +33,18 @@ test("theme(styles)이 없으면 컬러 stroke 노드를 아예 그리지 않는
 })
 
 test("명패 색도 styles.color에서만 오고, styles이 없으면 색 없이 기존 inset만 남는다", async () => {
-  const source = await readFile(cardUrl, "utf8")
-  assert.match(
-    source,
-    /const nameplateStyle =\s*styles\s*\?\s*\{\s*\.\.\.INGAME_PLAYER_NAMEPLATE_INSET,\s*color: styles\.color,\s*\}\s*:\s*INGAME_PLAYER_NAMEPLATE_INSET/,
-  )
+  const source = await readFile(nameplateUrl, "utf8")
+  assert.match(source, /buildInGamePlayerNameplateStyle\(themeStyles\)/)
 })
 
 test("카드에 색을 정하는 자체 로직이 없다 — 팔레트 직접 참조도, 랜덤/해시도 없다", async () => {
   const source = await readFile(cardUrl, "utf8")
   assert.doesNotMatch(source, /INGAME_PLAYER_THEME_PALETTE/)
   assert.doesNotMatch(source, /Math\.random|hashCode|charCodeAt/)
-  // 색으로 쓰는 hex는 전부 styles.color에서 온다 — style 객체에 hex 리터럴을 직접 넣지 않는다.
   assert.doesNotMatch(source, /color:\s*["'`]#/)
 })
 
 test("styles는 theme에서만 파생된다(voteHighlight는 같은 색의 stroke 강화일 뿐)", async () => {
   const source = await readFile(cardUrl, "utf8")
-  assert.match(
-    source,
-    /const styles =\s*theme && voteHighlight\s*\?\s*resolveInGamePlayerThemeEmphasized\(theme\.paletteIndex\)\.styles\s*:\s*theme\?\.styles/,
-  )
+  assert.match(source, /resolveInGamePlayerCardThemeStyles\(theme, voteHighlight\)/)
 })

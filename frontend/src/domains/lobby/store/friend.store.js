@@ -19,6 +19,19 @@ export const useFriendStore = create((set) => ({
     // 요청을 수락/거절해서 화면에서 처리 완료된 요청 id 목록입니다.
     resolvedRequestIds: new Set(),
 
+    // 기본 탭 즐겨찾기 (프론트 전용, 백엔드 미연동)
+    favoriteFriendIds: new Set(),
+
+    toggleFavorite: (friendId) => set((state) => {
+        const nextFavoriteIds = new Set(state.favoriteFriendIds);
+        if (nextFavoriteIds.has(friendId)) {
+            nextFavoriteIds.delete(friendId);
+        } else {
+            nextFavoriteIds.add(friendId);
+        }
+        return { favoriteFriendIds: nextFavoriteIds };
+    }),
+
     // 서버에서 내 친구 목록을 가져와 store에 저장합니다.
     fetchFriends: async () => {
         try {
@@ -74,4 +87,12 @@ export const useFriendStore = create((set) => ({
                 : friend
         ),
     })),
+
+    reset: () => set({
+        friends: [],
+        incomingRequests: [],
+        sentRequestIds: new Set(),
+        resolvedRequestIds: new Set(),
+        favoriteFriendIds: new Set(),
+    }),
 }));

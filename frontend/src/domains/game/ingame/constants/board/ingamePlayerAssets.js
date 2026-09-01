@@ -5,28 +5,31 @@
  * 초상 mask inset은 shared/playerPortraitLayout.js (ingameCard variant).
  */
 
+const PLAYER_CARD_ALIVE_DIR = "/shopItem/player-card/playerframe-alive"
+const PLAYER_CARD_DEAD_DIR = "/shopItem/player-card/playerframe-dead"
+
 /** alive 상태 프레임 바리에이션 — playerframe-alive (pickInGamePlayerFrame 순환) */
 export const INGAME_PLAYER_ALIVE_FRAME_VARIANTS = [
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(베이스).png",
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(가면).png",
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(그레이).png",
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(모래시계).png",
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(보석).png",
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(사슬).png",
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(악마).png",
-  "/frame/ingame-playercard/playerframe-alive/인게임-플레이어프레임(왕관).png",
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(베이스).png`.normalize("NFD"),
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(가면).png`.normalize("NFD"),
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(그레이).png`.normalize("NFD"),
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(모래시계).png`.normalize("NFD"),
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(보석).png`.normalize("NFD"),
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(사슬).png`.normalize("NFD"),
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(악마).png`.normalize("NFD"),
+  `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(왕관).png`.normalize("NFD"),
 ]
 
 /** dead 상태 프레임 — playerframe-dead (alive와 동일 순서·바리에이션) */
 export const INGAME_PLAYER_DEAD_FRAME_VARIANTS = [
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(베이스) 사망상태.png",
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(가면) 사망상태.png",
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(그레이) 사망상태.png",
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(모래시계) 사망상태.png",
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(보석) 사망상태.png",
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(사슬) 사망상태.png",
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(악마) 사망상태.png",
-  "/frame/ingame-playercard/playerframe-dead/인게임-플레이어프레임(왕관) 사망상태.png",
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(베이스) 사망상태.png`.normalize("NFD"),
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(가면) 사망상태.png`.normalize("NFD"),
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(그레이) 사망상태.png`.normalize("NFD"),
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(모래시계) 사망상태.png`.normalize("NFD"),
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(보석) 사망상태.png`.normalize("NFD"),
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(사슬) 사망상태.png`.normalize("NFD"),
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(악마) 사망상태.png`.normalize("NFD"),
+  `${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(왕관) 사망상태.png`.normalize("NFD"),
 ]
 
 /** 인게임 플레이어 카드 public 에셋 (frontend/public 기준) */
@@ -37,8 +40,8 @@ export const INGAME_PLAYER_ASSETS = {
 /** 인게임-플레이어프레임 PNG (323×354) — 하단 닉네임 칸 */
 export const INGAME_PLAYER_NAMEPLATE_INSET = {
   bottom: "3%",
-  left: "11%",
-  right: "11%",
+  left: "10%",
+  right: "10%",
   height: "15%",
 }
 
@@ -50,6 +53,6 @@ export const INGAME_PLAYER_FRAME_SHADOW_LAYER_CLASS =
 export const INGAME_PLAYER_FRAME_IMAGE_CLASS =
   "relative z-10 block h-auto w-full max-w-full select-none [transform:translateZ(0)] [backface-visibility:hidden] [image-rendering:-webkit-optimize-contrast]"
 
-/** InGamePlayerCard — 닉네임 텍스트 (프레임 % 기준, 슬롯 transform과 함께 이동) */
+/** InGamePlayerCard — 닉네임 (카드 내부 inset — 회전은 슬롯 transform과 동일 트리) */
 export const INGAME_PLAYER_NAMEPLATE_CLASS =
-  "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-subheading text-[clamp(0.8rem,5.8cqi,1.1rem)] font-bold leading-none tracking-wide text-[#3a1a0c]"
+  "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-subheading text-[clamp(0.875rem,5.8cqi,1.1rem)] font-bold leading-none tracking-wide text-[#3a1a0c] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"

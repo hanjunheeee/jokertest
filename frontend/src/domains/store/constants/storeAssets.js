@@ -1,11 +1,20 @@
 /** 상점 화면 public 에셋 경로 (frontend/public 기준) */
 export const STORE_ASSETS = {
-  bg: "/bg/상점 뒷배경.png",
+  bg: "/bg/상점 뒷배경3.PNG",
+  entryVideo: "/bg/상점 진입 영상.mp4",
   panelFrame: "/frame/상점 프레임.png",
   currencyIcon: "/button/재화 표시.png",
+  premiumCurrencyIcon: "/button/재화 표시(다이아).png".normalize("NFD"),
   purchaseButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
+  inactiveButton: "/button/버튼(미선택).png",
   dummyItem1: "/button/더미아이템1.png",
   dummyItem2: "/button/더미아이템2.png",
   dummyItem3: "/button/더미아이템3.png",
   dummyItem4: "/button/더미아이템4.png",
+  checkbox: "/button/체크박스2.png".normalize("NFD"),
+  checkMark: "/button/체크표시.png".normalize("NFD"),
+  previewToggleButton: "/button/반전표시 버튼.png".normalize("NFD"),
+  expandPreviewButton: "/button/확대표시 버튼.png".normalize("NFD"),
+  popupCloseButton: "/button/팝업 닫기 버튼.png".normalize("NFD"),
+  warningIcon: "/button/제한 표시.png",
 }

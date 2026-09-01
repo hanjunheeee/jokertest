@@ -2,7 +2,7 @@ import {
   BLOOD_RECORD_ROW_LABEL_CLASS,
   BLOOD_RECORD_ROW_VALUE_CLASS,
   BLOOD_RECORD_TEXT_SHADOW,
-} from "@/domains/user/constants/bloodRecordFrameStyle.js"
+} from "@/domains/user/constants/myPageLayoutStyle.js"
 
 export default function BloodRecordStatRow({ label, value, showDivider }) {
   return (

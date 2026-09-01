@@ -10,7 +10,7 @@ import {
 function StatusDivider() {
   return (
     <div
-      className="mr-[12%] h-px shrink-0 bg-gradient-to-r from-[#c8b898]/65 via-[#c8b898]/45 to-transparent"
+      className="-translate-y-[0.18rem] mr-[12%] h-px shrink-0 bg-gradient-to-r from-[#c8b898]/65 via-[#c8b898]/45 to-transparent"
       style={{ marginLeft: MY_PAGE_BANNER_TEXT_INSET_LEFT }}
       aria-hidden="true"
     />
@@ -31,7 +31,7 @@ export default function BannerTextPanel({ profile, textPanelInset }) {
       <div className="relative h-full min-h-0 w-full">
         {/* 배너 위쪽에 표시되는 프로필 문구입니다. */}
         <p
-          className={`absolute ${MY_PAGE_BANNER_TEXT_ALIGN_LEFT_CLASS} top-1/2 -translate-y-1/2 ${MY_PAGE_BANNER_LABEL_TEXT_CLASS}`}
+          className={`absolute ${MY_PAGE_BANNER_TEXT_ALIGN_LEFT_CLASS} top-[44%] -translate-y-1/2 ${MY_PAGE_BANNER_LABEL_TEXT_CLASS}`}
           style={{ textShadow: MY_PAGE_BANNER_TEXT_SHADOW }}
         >
           {reputationLabel}
@@ -44,7 +44,7 @@ export default function BannerTextPanel({ profile, textPanelInset }) {
       <div className="relative h-full min-h-0 w-full">
         {/* 배너 아래쪽 왼쪽에 표시되는 명성 값입니다. */}
         <p
-          className={`absolute ${MY_PAGE_BANNER_TEXT_ALIGN_LEFT_CLASS} top-[14%] ${MY_PAGE_BANNER_REPUTATION_TEXT_CLASS}`}
+          className={`absolute ${MY_PAGE_BANNER_TEXT_ALIGN_LEFT_CLASS} top-[8%] ${MY_PAGE_BANNER_REPUTATION_TEXT_CLASS}`}
           style={{ textShadow: MY_PAGE_BANNER_TEXT_SHADOW }}
         >
           명성 {reputationValue}

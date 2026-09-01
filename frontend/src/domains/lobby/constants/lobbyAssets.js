@@ -4,6 +4,7 @@ export const LOBBY_ASSETS = {
   logo: "/logo/가면무도회 로고4.png".normalize("NFD"),
   myPageButton: "/button/마이페이지 이동 버튼_프로토타입2.png".normalize("NFD"),
   settingsGear: "/button/설정톱니바퀴.png",
+  discordLogo: "/button/디스코드 버튼.png".normalize("NFD"),
 }
 
 // 아래 파일들은 저장소에서 macOS의 분해형 유니코드(NFD) 이름으로 저장되어 있습니다.
@@ -13,5 +14,7 @@ export const LOBBY_MENU_BUTTONS = {
   settings: "/button/lobby-menu/설정_3.png".normalize("NFD"),
   store: "/button/lobby-menu/상점_3.png".normalize("NFD"),
   archive: "/button/lobby-menu/기억의 서고_3.png".normalize("NFD"),
+  hallOfFame: "/button/lobby-menu/명예의전당_3.png".normalize("NFD"),
   exit: "/button/lobby-menu/로그아웃_3.png".normalize("NFD"),
+  customerSupport: "/button/lobby-menu/고객센터_3.png".normalize("NFD"),
 }

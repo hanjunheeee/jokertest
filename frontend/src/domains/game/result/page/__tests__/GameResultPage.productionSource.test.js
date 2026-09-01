@@ -30,6 +30,15 @@ test("그릴 결과가 없으면 기존 로비 복귀 경로(/multiplay)로 repl
   assert.match(source, /if \(!view\) return null/)
 })
 
+test("진입 연출 영상이 끝난 뒤에만 GameResultShell과 로비 버튼을 그린다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  assert.match(source, /import GameResultIntroVideo from "\.\.\/components\/GameResultIntroVideo\.jsx"/)
+  assert.match(source, /const \[introComplete, setIntroComplete\] = useState\(false\)/)
+  assert.match(source, /if \(!introComplete\)/)
+  assert.match(source, /<GameResultIntroVideo/)
+  assert.match(source, /onComplete=\{\(\) => setIntroComplete\(true\)\}/)
+})
+
 test("GameResultShell은 정확히 한 번, 고른 view model 하나만 받아 마운트된다", async () => {
   const source = await readFile(pageUrl, "utf8")
   const occurrences = source.match(/<GameResultShell\b/g) ?? []
@@ -62,10 +71,10 @@ test("버튼은 새 스타일을 만들지 않고 공통 LabelledActionButton + 
   assert.match(source, /label="로비로"/)
 })
 
-test("버튼은 실데이터·미리보기 어느 쪽을 그리든 함께 렌더된다", async () => {
+test("로비 버튼은 연출 영상이 끝난 뒤 결과 화면과 함께 렌더된다", async () => {
   const source = await readFile(pageUrl, "utf8")
-  // 그릴 것이 없을 때의 early return 뒤에 있어야 view의 출처와 무관하게 항상 뜬다.
-  assert.ok(source.indexOf("<LabelledActionButton") > source.indexOf("if (!view) return null"))
+  // introComplete가 true일 때만 결과 UI + 로비 버튼이 함께 마운트된다.
+  assert.ok(source.indexOf("<LabelledActionButton") > source.indexOf("if (!introComplete)"))
 })
 
 test("이탈 요청은 페이지가 아니라 util에 있다 — 페이지는 소켓 이벤트를 직접 다루지 않는다", async () => {

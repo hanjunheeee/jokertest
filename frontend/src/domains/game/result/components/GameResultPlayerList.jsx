@@ -10,10 +10,15 @@ import {
   GAME_RESULT_PLAYER_LIST_WRAP_CLASS,
 } from "../constants/gameResultLayout.js"
 import GameResultPlayerRow from "./GameResultPlayerRow.jsx"
+import GameResultWinningTeamBadge from "./GameResultWinningTeamBadge.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-export default function GameResultPlayerList({ outcome = "win", players = [] }) {
+export default function GameResultPlayerList({
+  outcome = "win",
+  winningTeam = null,
+  players = [],
+}) {
   const scrollRef = useRef(null)
   const playerListFrameSrc = resolveGameResultPlayerListFrame(outcome)
 
@@ -36,6 +41,7 @@ export default function GameResultPlayerList({ outcome = "win", players = [] }) 
 
       <div className={GAME_RESULT_PLAYER_LIST_INSET_CLASS}>
         <h2 className={GAME_RESULT_PLAYER_LIST_TITLE_CLASS}>가면무도회 참가자 정체</h2>
+        <GameResultWinningTeamBadge winningTeam={winningTeam} />
 
         <div className={GAME_RESULT_PLAYER_LIST_SCROLL_WRAP_CLASS}>
           <ul
