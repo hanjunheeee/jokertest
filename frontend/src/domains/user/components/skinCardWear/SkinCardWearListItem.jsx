@@ -1,5 +1,6 @@
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 import { SKIN_CARD_WEAR_ASSETS } from "../../constants/skinCardWear/skinCardWearAssets.js"
+import { isSkinCardWearItemEquipped } from "../../constants/skinCardWear/skinCardWearCatalog.js"
 import {
   SKIN_CARD_WEAR_ITEM_KIND_LABEL,
   SKIN_CARD_WEAR_LIST_ITEM_BTN_CLASS,

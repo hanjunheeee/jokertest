@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getMyProfileApi } from '../api/user.api';
+import { getMyProfileApi } from '../api/user.api.js';
 
 // 마이페이지/로비가 각자 따로 GET /user/me/profile을 부르던 걸 하나의 캐시로 공유합니다.
 // friend.store.js와 같은 패턴 — 데이터를 스토어에 두고, 이미 있으면 재요청하지 않습니다.

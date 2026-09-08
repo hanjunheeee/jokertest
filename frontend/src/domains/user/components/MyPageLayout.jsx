@@ -19,7 +19,6 @@ import {
   MY_PAGE_UI_FADE,
 } from "../constants/myPageLayoutStyle.js"
 import { useMyProfile } from "../hooks/useMyProfile.js"
-import { useSkinCardWearOverlay } from "../hooks/useSkinCardWearOverlay.js"
 
 // 마이페이지의 전체 화면 구성을 담당합니다.
 // 프로필 조회는 여기서 하고, 실제 화면 조각은 하위 컴포넌트에 맡깁니다.
@@ -27,13 +26,7 @@ export default function MyPageLayout() {
   const navigate = useNavigate()
   const { profile, stats, description, loading } = useMyProfile()
   const [profileEditOpen, setProfileEditOpen] = useState(false)
-
-  // 스킨&카드 착용 오버레이 열림/닫힘은 전용 훅이 관리합니다.
-  const {
-    open: skinCardWearOpen,
-    openOverlay: openSkinCardWear,
-    closeOverlay: closeSkinCardWear,
-  } = useSkinCardWearOverlay()
+  const [skinCardWearOpen, setSkinCardWearOpen] = useState(false)
 
   const goToAccount = () => navigate("/account")
 
@@ -42,11 +35,11 @@ export default function MyPageLayout() {
       <div className={MY_PAGE_ACTION_BUTTONS_WRAP_CLASS}>
         <AccountManageButton onClick={goToAccount} />
         <ProfileEditButton onClick={() => setProfileEditOpen(true)} />
-        <SkinCardWearButton onClick={openSkinCardWear} />
+        <SkinCardWearButton onClick={() => setSkinCardWearOpen(true)} />
       </div>
 
       <ProfileEditOverlay open={profileEditOpen} onClose={() => setProfileEditOpen(false)} />
-      <SkinCardWearOverlay open={skinCardWearOpen} onClose={closeSkinCardWear} />
+      <SkinCardWearOverlay open={skinCardWearOpen} onClose={() => setSkinCardWearOpen(false)} />
 
       {!loading && profile ? (
         <div className={MY_PAGE_BANNER_WRAP_CLASS}>
