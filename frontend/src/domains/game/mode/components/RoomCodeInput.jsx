@@ -2,7 +2,7 @@
 import {
   ROOM_CODE_INPUT_ATTRIBUTES,
   useRoomCodeInput,
-} from "@/domains/game/mode/hooks/useRoomCodeInput.js"
+} from "../hooks/useRoomCodeInput.js"
 
 // 방코드 6자리를 한 칸씩 입력하는 UI입니다.
 // 칸이 받는 문자 집합과 모바일 키보드 종류(ROOM_CODE_INPUT_ATTRIBUTES)는 값을 걸러내는

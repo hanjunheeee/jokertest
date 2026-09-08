@@ -21,8 +21,9 @@ import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
 import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
 import MeetingGameSetupTab from "./MeetingGameSetupTab.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
-import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
+// 경로 별칭(@/) 대신 상대 경로를 쓰는 이유는 RoomListRow.jsx 맨 위 주석과 같습니다.
+import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../shared/constants/customScrollbarStyles.js"
 
 const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
 

@@ -1,5 +1,7 @@
 // 파일 역할: RoomListRow.jsx - 화면을 구성하는 컴포넌트입니다.
-import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
+// 이식한 화면 파일은 경로 별칭(@/) 대신 상대 경로를 씁니다 — node --test로 도는 순수 JS
+// 테스트가 별칭을 해석하지 못해, 같은 import 체인을 테스트에서 그대로 따라갈 수 없기 때문입니다.
+import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
 import {
   ROOM_LIST_ROW_BOTTOM_ROW_CLASS,
   ROOM_LIST_ROW_BUTTON_BASE_CLASS,
@@ -18,8 +20,8 @@ import {
   ROOM_LIST_ROW_STATUS_BADGE_WRAP_CLASS,
   ROOM_LIST_ROW_TITLE_CLASS,
   ROOM_LIST_ROW_TOP_ROW_CLASS,
-} from "@/domains/game/mode/constants/roomListLayout.js"
-import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+} from "../../constants/roomListLayout.js"
+import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 
 // 더미 stage 값을 화면에 보여줄 짧은 라벨로 바꿉니다(실제 게임 모드 체계가 아직 없어 임시 라벨).
 const STAGE_LABELS = { 1: "1단계", 2: "2단계", 3: "3단계" }
