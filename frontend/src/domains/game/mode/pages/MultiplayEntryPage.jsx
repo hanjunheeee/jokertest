@@ -1,10 +1,11 @@
 // 파일 역할: MultiplayEntryPage.jsx - 라우터에서 렌더링되는 페이지입니다.
 import { useNavigate } from "react-router-dom"
-import GameModeTypeIndicator from "@/domains/game/mode/components/GameModeTypeIndicator.jsx"
-import ModeBackground from "@/domains/game/mode/components/ModeBackground.jsx"
-import ModePageControls from "@/domains/game/mode/components/ModePageControls.jsx"
-import MultiplayRoomListArea from "@/domains/game/mode/components/MultiplayRoomListArea.jsx"
-import { usePublicRooms } from "@/domains/game/mode/hooks/usePublicRooms.js"
+// 경로 별칭(@/) 대신 상대 경로를 쓰는 이유는 RoomListRow.jsx 맨 위 주석과 같습니다.
+import GameModeTypeIndicator from "../components/GameModeTypeIndicator.jsx"
+import ModeBackground from "../components/ModeBackground.jsx"
+import ModePageControls from "../components/ModePageControls.jsx"
+import MultiplayRoomListArea from "../components/MultiplayRoomListArea.jsx"
+import { usePublicRooms } from "../hooks/usePublicRooms.js"
 
 // 멀티플레이 공개방 목록 진입 페이지입니다.
 // 공개방 목록이 기본 화면이라 빠른 매칭(연회장 찾기) 진입은 이 화면에서 제거했습니다.

@@ -17,12 +17,13 @@
  */
 import { AnimatePresence, motion } from "framer-motion"
 import { useId, useRef, useState } from "react"
-import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"
-import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
+// 경로 별칭(@/) 대신 상대 경로를 쓰는 이유는 RoomListRow.jsx 맨 위 주석과 같습니다.
+import RoomCodeFrame from "../../mode/components/RoomCodeFrame.jsx"
+import { ROOM_INVITE_ASSETS } from "../../mode/constants/roomInviteAssets.js"
 import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
 import {
   ROOM_CODE_ACTION_BTN_LABEL_CLASS,
-} from "@/domains/game/mode/constants/roomCodeFrameStyles.js"
+} from "../../mode/constants/roomCodeFrameStyles.js"
 import {
   MATCHING_BTN_SCALE_WRAP_CLASS,
   MATCHING_BTN_IMG_SCALE_CLASS,
@@ -33,7 +34,7 @@ import {
   normalizeRoomCode,
   resolveRoomCodeCopy,
 } from "../utils/roomCode.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
 const MODAL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
 

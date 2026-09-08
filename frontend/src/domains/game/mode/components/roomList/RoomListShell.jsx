@@ -1,6 +1,7 @@
 // 파일 역할: RoomListShell.jsx - 화면을 구성하는 컴포넌트입니다.
 import { useEffect, useMemo, useState } from "react"
-import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
+// 경로 별칭(@/) 대신 상대 경로를 쓰는 이유는 RoomListRow.jsx 맨 위 주석과 같습니다.
+import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
 import {
   ROOM_LIST_ENTER_BTN_CLASS,
   ROOM_LIST_ENTER_BTN_FRAME_CLASS,
@@ -8,11 +9,11 @@ import {
   ROOM_LIST_FOOTER_CLASS,
   ROOM_LIST_SHELL_CLASS,
   ROOM_LIST_TOOLBAR_CLASS,
-} from "@/domains/game/mode/constants/roomListLayout.js"
-import { deriveRoomDisplayStatus } from "@/domains/game/mode/utils/deriveRoomDisplayStatus.js"
-import RoomListActionButton from "@/domains/game/mode/components/roomList/RoomListActionButton.jsx"
-import RoomListPanel from "@/domains/game/mode/components/roomList/RoomListPanel.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+} from "../../constants/roomListLayout.js"
+import { deriveRoomDisplayStatus } from "../../utils/deriveRoomDisplayStatus.js"
+import RoomListActionButton from "./RoomListActionButton.jsx"
+import RoomListPanel from "./RoomListPanel.jsx"
+import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 
 // 데스크톱 기준 한 페이지에 보여줄 방 개수(2열x6행). 화면 크기에 따라 동적으로 바꾸지 않습니다.
 const PAGE_SIZE = 12
