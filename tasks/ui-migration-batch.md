@@ -2,6 +2,8 @@
 
 사람 몫(0단계, 배치 전에 끝낸다): 미커밋 revote 작업 커밋 → `frontend/public` 하위 원격 에셋을 추가만(삭제·이동 없음) 커밋 → `.pluto/config.json`의 `verifyCommands`에 `npm run test:game-core --prefix backend` 추가. 그 뒤 아래 `##` 절이 순서대로 슬라이스가 된다. 각 슬라이스 본문에 공통 계약을 복사해 두었다(파이프라인은 `##` 본문만 슬라이스에 넘긴다).
 
+실행 순서 조정(2026-09-08 22:30): 원격 user 도메인이 store·library에, podium이 library에 의존하므로 실제 실행 순서는 UI-01 → UI-02 → **UI-05 설정 → UI-04 상점 → UI-06 도서관 → UI-03 마이페이지 → UI-07 포디움** → UI-08 이후 순서대로다. 아래 절 번호는 유지한다.
+
 ## UI-01 공용 기반 이식 (index.css·shared)
 
 ### 공통 계약
