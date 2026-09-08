@@ -14,6 +14,7 @@ import InGamePage from "@/domains/game/ingame/pages/InGamePage.jsx";
 import GameResultPage from "@/domains/game/result/page/GameResultPage";
 import SettingPage from "@/domains/settings/pages/SettingPage.jsx";
 import StorePage from "@/domains/store/pages/StorePage.jsx";
+import LibraryPage from "@/domains/library/pages/LibraryPage.jsx";
 
 // 앱 전체 라우터입니다.
 // ViewportShell이 공통 화면 폭과 좌우 배너를 담당하고, 로그인 이후 페이지는 ProtectedRoute 아래에 둡니다.
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
           { path: "/gameresult", element: <GameResultPage /> },
           { path: "/setting", element: <SettingPage /> },
           { path: "/store", element: <StorePage /> },
+          { path: "/library", element: <LibraryPage /> },
         ],
       },
     ],
