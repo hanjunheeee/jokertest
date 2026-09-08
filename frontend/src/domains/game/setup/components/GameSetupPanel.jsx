@@ -10,10 +10,11 @@
  * 에셋은 constants/gameSetupAssets.js, 탭·항목 정의는 constants/gameSetupOptions.js 참고
  */
 import { motion } from "framer-motion"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
 import { GENERAL_GAME_SETUP, MEETING_GAME_SETUP } from "../constants/gameSetupOptions.js"
 import { useRoleCompositionState } from "../hooks/useRoleCompositionState.js"
+import { useSetupContentScrollOnRoleModeChange } from "../hooks/useSetupContentScrollOnRoleModeChange.js"
 import { useSetupTabState } from "../hooks/useSetupTabState.js"
 import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
@@ -21,6 +22,7 @@ import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
 import MeetingGameSetupTab from "./MeetingGameSetupTab.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
 
@@ -33,14 +35,14 @@ const PANEL_CLASS =
 /** 인게임 설정 프레임_.png — 상단 탭 + 양피지 본문 (프레임 내부) */
 const FRAME_OVERLAY_INSET = {
   paddingTop: "3.75%",
-  paddingBottom: "6.5%",
+  paddingBottom: "14%",
   paddingLeft: "9.5%",
   paddingRight: "9.5%",
 }
 
 /** 탭과 분리 — 설정 목록(일반·회의&투표 본문)만 아래로 */
 const SETUP_CONTENT_CLASS =
-  "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip pr-1 pt-[clamp(4rem,5vh,6rem)]"
+  `flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip pt-[clamp(1.35rem,1.85vh,2.5rem)] pb-[clamp(3.25rem,5vh,4.25rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 일반+회의&투표 두 탭이 "게임 만들기" 시점에 값을 함께 모을 수 있으려면 같은 상태를
 // 공유해야 한다. 각 탭이 따로 useSetupTabState를 부르면 탭을 전환할 때 다른 쪽 탭에서
@@ -49,6 +51,7 @@ const ALL_SETUP_ITEMS = [...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP]
 
 /** 프레임·탭·본문·게임 만들기 버튼을 묶는 설정 패널 */
 export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
+  const setupContentRef = useRef(null)
   // 현재 선택된 설정 탭 id입니다.
   const [activeTab, setActiveTab] = useState("general")
   const { checks, ranges, setCheck, setRange } = useSetupTabState(ALL_SETUP_ITEMS)
@@ -58,6 +61,8 @@ export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
     maxPlayers: ranges["max-players"],
     autoJokerCount: ranges["joker-count"],
   })
+
+  useSetupContentScrollOnRoleModeChange(setupContentRef, roleComposition.mode, activeTab)
 
   const handleCreateClick = () => {
     // 검증에 실패한 구성은 애초에 버튼이 비활성화돼 여기까지 오지 않지만, 상태가 바뀌는
@@ -96,7 +101,7 @@ export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
           >
             <GameSetupTabs activeTab={activeTab} onSelect={setActiveTab} />
 
-            <div className={SETUP_CONTENT_CLASS}>
+            <div ref={setupContentRef} className={SETUP_CONTENT_CLASS}>
               {activeTab === "general" ? ( // 일반 탭
                 <GeneralGameSetupTab
                   checks={checks}
