@@ -21,6 +21,7 @@ import {
   ROOM_LIST_ROW_TITLE_CLASS,
   ROOM_LIST_ROW_TOP_ROW_CLASS,
 } from "../../constants/roomListLayout.js"
+import { resolveRoomListRowCode } from "../../utils/resolveRoomListRowCode.js"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 
 // 더미 stage 값을 화면에 보여줄 짧은 라벨로 바꿉니다(실제 게임 모드 체계가 아직 없어 임시 라벨).
@@ -29,12 +30,13 @@ const STAGE_LABELS = { 1: "1단계", 2: "2단계", 3: "3단계" }
 // 공개 방 목록에서 방 하나를 보여주는 표시 전용 row입니다.
 // room.displayStatus는 상위(RoomListShell)에서 deriveRoomDisplayStatus로 미리 계산해 내려줍니다.
 export default function RoomListRow({ room, selected, onSelect }) {
-  const { stage, current, max, title, accessType, displayStatus } = room
+  const { stage, current, max, title, displayStatus } = room
 
   const isFull = displayStatus === "full"
   const isInProgress = displayStatus === "in_progress"
   const isJoinable = !isFull && !isInProgress
-  const isCode = accessType === "code"
+  // 코드 방 배지에 무엇을 그릴지(코드 값 / "코드")는 utils/resolveRoomListRowCode.js가 정합니다.
+  const rowCode = resolveRoomListRowCode(room)
   const stageLabel = STAGE_LABELS[stage]
   const statusLabel = isInProgress ? "진행중" : isFull ? "마감" : null
 
@@ -46,7 +48,7 @@ export default function RoomListRow({ room, selected, onSelect }) {
         disabled={!isJoinable}
         aria-pressed={selected}
         aria-label={`${stageLabel ? `${stageLabel} ` : ""}${title}, ${current}/${max}명${
-          isCode ? ", 코드 필요" : ""
+          rowCode.ariaText ? `, ${rowCode.ariaText}` : ""
         }${statusLabel ? `, ${statusLabel}` : ""}`}
         className={`${ROOM_LIST_ROW_BUTTON_BASE_CLASS} ${
           isJoinable ? ROOM_LIST_ROW_BUTTON_INTERACTIVE_CLASS : ROOM_LIST_ROW_BUTTON_DISABLED_CLASS
@@ -63,7 +65,9 @@ export default function RoomListRow({ room, selected, onSelect }) {
             {stageLabel ? <span className={ROOM_LIST_ROW_STAGE_BADGE_CLASS}>{stageLabel}</span> : null}
             <span className={ROOM_LIST_ROW_STATUS_BADGE_WRAP_CLASS}>
               {/* 자물쇠 아이콘 에셋이 아직 없어 텍스트 배지로 대체합니다. */}
-              {isCode ? <span className={ROOM_LIST_ROW_LOCK_BADGE_CLASS}>코드</span> : null}
+              {rowCode.visible ? (
+                <span className={ROOM_LIST_ROW_LOCK_BADGE_CLASS}>{rowCode.label}</span>
+              ) : null}
               {isInProgress ? (
                 <span className={ROOM_LIST_ROW_STATUS_BADGE_IN_PROGRESS_CLASS}>진행중</span>
               ) : null}

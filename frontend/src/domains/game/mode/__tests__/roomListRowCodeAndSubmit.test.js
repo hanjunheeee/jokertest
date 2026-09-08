@@ -1,9 +1,11 @@
 /**
  * UI-08 이식분 고정 테스트.
  *
- * - AC-01: 이식 대상 9개 파일이 모두 존재하고, 경로 별칭(@/) import가 남아 있지 않다.
+ * - AC-01: 이식 대상 9개 파일이 모두 존재하고, 경로 별칭(@/) import가 남아 있지 않으며,
+ *          원격 본문과의 차이가 허용된 것(별칭 치환·주석·로컬 계약)뿐이다.
  * - AC-02: 이식한 컴포넌트가 라우트 → 페이지 → 부모 → 자식으로 실제 화면 트리에 이어져 있다.
- * - AC-04: 방 목록 행이 "코드 필요"를 표시하고, 방코드 입력이 로컬 훅의 정규화 결과를 제출한다.
+ * - AC-03: 지정된 5개 테스트가 npm test의 실행 대상 집합에 실제로 들어 있다.
+ * - AC-04: 방 목록 행이 방 코드를 표시하고, 방코드 입력이 로컬 훅의 정규화 결과를 제출한다.
  *
  * 이 저장소의 테스트는 `node --test`로 돌고 JSX를 변환하지 않으므로 .jsx는 import할 수 없다
  * (frontend/package.json의 test 스크립트). 그래서 화면 파일은 이미 저장소에 있는 방식
@@ -14,7 +16,8 @@
  */
 import test from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { createElement, useState } from "react"
@@ -25,11 +28,14 @@ import {
   ROOM_LIST_ROW_FRAME_SELECTED_CLASS,
   ROOM_LIST_ROW_LOCK_BADGE_CLASS,
 } from "../constants/roomListLayout.js"
+import { resolveRoomListRowCode } from "../utils/resolveRoomListRowCode.js"
 import { ROOM_CODE_LENGTH } from "../../matching/utils/roomCode.js"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 // frontend/src (이 파일: src/domains/game/mode/__tests__/)
 const srcRoot = path.resolve(here, "..", "..", "..", "..")
+// 저장소 최상위 (frontend/src → frontend → repo)
+const repoRoot = path.resolve(srcRoot, "..", "..")
 
 /** frontend/src 기준 경로의 파일 본문을 읽는다. */
 function readSrc(relativePath) {
@@ -78,6 +84,313 @@ test("AC-01: 이식한 파일에는 경로 별칭(@/) import가 남아 있지 �
       `@/ 별칭 import가 남아 있다: ${relativePath}`,
     )
   }
+})
+
+// ── AC-01: 원격 본문과의 차이가 허용된 것뿐인지 ───────────────────────────────
+//
+// "허용된 차이"는 요구사항이 정한 세 가지다.
+//   (1) 경로 별칭(@/) → 상대 경로 치환
+//   (2) 로컬 훅·API 계약을 유지하기 위해 필요한 부분 — 파일별로 아래에 이유와 함께 적는다
+//   (3) 그 이유를 적은 주석
+// 이 테스트는 원격 본문을 직접 읽어(git show/diff) 바뀐 줄을 한 줄씩 위 셋 중 하나로
+// 분류하고, 어디에도 속하지 않는 줄이 하나라도 남으면 그 줄을 그대로 찍고 실패한다.
+
+const REMOTE_REF = "origin/feature/ui-Phase1complete"
+
+function git(args) {
+  return execFileSync("git", args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  })
+}
+
+/** 원격 ref가 이 저장소에 있는지 — 없으면 비교 근거를 만들 수 없으므로 그대로 실패시킨다. */
+function assertRemoteRefExists() {
+  let resolved = ""
+  try {
+    resolved = git(["rev-parse", "--verify", `${REMOTE_REF}^{commit}`]).trim()
+  } catch (error) {
+    assert.fail(`원격 비교 대상(${REMOTE_REF})을 찾지 못해 차이를 확인할 수 없다: ${error.message}`)
+  }
+  assert.match(resolved, /^[0-9a-f]{40}$/, `${REMOTE_REF}가 커밋을 가리키지 않는다`)
+}
+
+/**
+ * 파일에서 import 문이 차지하는 줄 번호를 모은다. 여러 줄로 쓴 `import { … } from "…"`의
+ * 가운데 줄(멤버 나열)도 import의 일부로 본다 — 별칭 치환은 그 블록 전체를 건드리기 때문이다.
+ */
+function importLineNumbers(source) {
+  const marked = new Set()
+  let inImportBlock = false
+
+  source.split("\n").forEach((raw, index) => {
+    const line = raw.trim()
+    const lineNumber = index + 1
+
+    if (inImportBlock) {
+      marked.add(lineNumber)
+      if (/\bfrom\s+["']/.test(line)) inImportBlock = false
+      return
+    }
+    if (!/^import\b/.test(line)) return
+
+    marked.add(lineNumber)
+    // 한 줄로 끝나지 않는 import면 `from "…"`가 나올 때까지 이어서 표시한다.
+    inImportBlock = !/\bfrom\s+["']/.test(line) && !/^import\s+["']/.test(line)
+  })
+
+  return marked
+}
+
+/** `git diff -U0`을 읽어 원격 대비 사라진 줄·새로 생긴 줄을 줄 번호와 함께 모은다. */
+function diffAgainstRemote(repoRelativePath) {
+  const output = git(["diff", "-U0", REMOTE_REF, "--", repoRelativePath])
+  const added = []
+  const removed = []
+  let oldLine = 0
+  let newLine = 0
+
+  for (const raw of output.split("\n")) {
+    const line = raw.replace(/\r$/, "")
+    const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
+    if (hunk) {
+      oldLine = Number(hunk[1])
+      newLine = Number(hunk[2])
+      continue
+    }
+    if (line.startsWith("+++") || line.startsWith("---")) continue
+    if (line.startsWith("+")) {
+      added.push({ lineNumber: newLine, text: line.slice(1) })
+      newLine += 1
+      continue
+    }
+    if (line.startsWith("-")) {
+      removed.push({ lineNumber: oldLine, text: line.slice(1) })
+      oldLine += 1
+    }
+  }
+
+  return { added, removed }
+}
+
+/**
+ * 파일별로 "로컬 훅·API 계약을 지키느라 원격과 달라진" 줄과 그 이유다.
+ * 여기 적히지 않은 변경은 이 테스트에서 그대로 실패한다.
+ */
+const ALLOWED_LOCAL_CONTRACT_DIFFS = {
+  "domains/game/mode/components/roomList/RoomListRow.jsx": [
+    [/^const \{ stage, current, max, title/, "AC-04: 코드 표시를 room 객체 전체로 계산한다"],
+    [
+      /rowCode|resolveRoomListRowCode|isCode|accessType/,
+      "AC-04: 코드 방 배지가 고정 문구 대신 방 코드 값을 표시한다",
+    ],
+  ],
+  "domains/game/mode/components/roomList/RoomListShell.jsx": [
+    [
+      /selectedRoom|onEnterRoom|onJoinByCode/,
+      "로컬 입장 계약: 코드 방은 버튼을 잠그는 대신 코드 입력 화면으로 방 id를 넘긴다",
+    ],
+    [/"코드 (필요|입력)"/, "같은 계약: 코드 방 입장 버튼 라벨"],
+  ],
+  "domains/game/mode/components/RoomCodeInput.jsx": [
+    [
+      /ROOM_CODE_INPUT_ATTRIBUTES/,
+      "로컬 훅 계약: 칸 속성의 출처를 useRoomCodeInput 한곳으로 유지한다",
+    ],
+    [
+      /^(type|inputMode|autoComplete|autoCorrect|autoCapitalize|spellCheck|maxLength)=/,
+      "같은 계약: 화면에 흩어져 있던 인라인 속성을 훅의 상수로 대체했다",
+    ],
+  ],
+  "domains/game/mode/pages/MultiplayEntryPage.jsx": [
+    [
+      /onJoinByCode|navigate\("\/roomInvite"/,
+      "로컬 입장 계약: 목록에서 고른 코드 방의 id를 코드 입력 화면으로 전달한다",
+    ],
+  ],
+  "domains/game/matching/components/RoomCodeViewModal.jsx": [
+    [
+      /resolveRoomCodeCopy|normalizeRoomCode|displayRoomCode|ROOM_CODE_COPY_ERRORS|outcome/,
+      "로컬 복사 계약: 복사 가능 여부 판정을 utils/roomCode.js에 맡긴다",
+    ],
+    [
+      /[cC]opyError|COPY_ERROR_CLASS|role="alert"|aria-describedby|^<\/p>$/,
+      "같은 계약: 복사 실패 사유를 role=alert 영역으로 읽어준다",
+    ],
+    [/^return$/, "같은 계약: 복사할 수 없는 상태면 클립보드를 건드리지 않고 빠져나온다"],
+    [/copyFeedbackTimerRef|clearCopyFeedbackTimer|setCopied\(false\)/, "같은 계약: 복사 피드백 타이머 정리"],
+    [/clipboard\.writeText|value=\{roomCode\}/, "같은 계약: 표시값과 복사값을 같은 문자열에서 낸다"],
+    [/^<\/?>$/, "같은 계약: 복사 버튼과 오류 문구를 함께 담기 위한 fragment"],
+  ],
+  "domains/game/setup/components/GameSetupPanel.jsx": [],
+  "domains/game/setup/components/RoleCompositionSection.jsx": [],
+  "domains/game/mode/constants/roomListLayout.js": [],
+  "domains/game/setup/hooks/useSetupContentScrollOnRoleModeChange.js": [],
+}
+
+/** 주석·빈 줄인지. 여러 줄 주석은 앞뒤 줄을 이어 봐야 하므로 상태를 들고 판정한다. */
+function makeCommentClassifier() {
+  let inBlockComment = false
+
+  return (text) => {
+    const line = text.trim()
+    if (inBlockComment) {
+      if (line.includes("*/")) inBlockComment = false
+      return true
+    }
+    if (line === "") return true
+    if (line.startsWith("//")) return true
+    if (line.startsWith("*")) return true
+    if (line.startsWith("/*") || line.startsWith("{/*")) {
+      inBlockComment = !line.includes("*/")
+      return true
+    }
+    return false
+  }
+}
+
+test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐이다", () => {
+  assertRemoteRefExists()
+
+  const unexplained = []
+  const usedReasons = new Set()
+
+  for (const relativePath of PORTED_FILES) {
+    const repoRelativePath = `frontend/src/${relativePath}`
+    const localSource = readSrc(relativePath)
+    const remoteSource = git(["show", `${REMOTE_REF}:${repoRelativePath}`])
+    const { added, removed } = diffAgainstRemote(repoRelativePath)
+
+    const allowed = ALLOWED_LOCAL_CONTRACT_DIFFS[relativePath]
+    assert.ok(allowed, `허용 목록에 없는 파일이다: ${relativePath}`)
+
+    // 들여쓰기만 바뀐 줄(예: fragment로 감싸며 한 단계 밀린 마크업)은 내용이 그대로다.
+    const remoteTrimmed = new Set(remoteSource.split("\n").map((line) => line.trim()))
+    const localTrimmed = new Set(localSource.split("\n").map((line) => line.trim()))
+
+    const sides = [
+      { lines: added, sign: "+", imports: importLineNumbers(localSource), counterpart: remoteTrimmed },
+      { lines: removed, sign: "-", imports: importLineNumbers(remoteSource), counterpart: localTrimmed },
+    ]
+
+    for (const { lines, sign, imports, counterpart } of sides) {
+      const isComment = makeCommentClassifier()
+      // 여러 줄로 쓴 대입문(`const X =` 다음 줄에 값)은 앞 줄과 한 몸이라 함께 판정한다.
+      let previousLineContinues = false
+
+      for (const { lineNumber, text } of lines) {
+        const trimmed = text.trim()
+        const continuesAllowedStatement = previousLineContinues
+        previousLineContinues = false
+
+        if (isComment(text)) continue
+        if (imports.has(lineNumber)) continue
+
+        const reason = allowed.find(([pattern]) => pattern.test(trimmed))
+        if (reason) {
+          usedReasons.add(`${relativePath}::${reason[1]}`)
+          previousLineContinues = trimmed.endsWith("=")
+          continue
+        }
+        if (continuesAllowedStatement) continue
+        if (counterpart.has(trimmed)) continue
+
+        unexplained.push(`${relativePath}:${lineNumber} ${sign}${text}`)
+      }
+    }
+
+    // 허용 목록이 실제 차이보다 넓어지지 않게, 적어 둔 이유가 모두 쓰였는지도 확인한다.
+    for (const [, why] of allowed) {
+      assert.ok(
+        usedReasons.has(`${relativePath}::${why}`),
+        `쓰이지 않는 허용 항목이 남아 있다: ${relativePath} — ${why}`,
+      )
+    }
+  }
+
+  assert.deepEqual(unexplained, [], `원격 대비 설명되지 않은 차이:\n${unexplained.join("\n")}`)
+})
+
+// ── AC-03: 지정된 5개 테스트가 실행 대상에 들어 있는지 ────────────────────────
+
+/** 성공 조건이 "수정 없이 통과한다"고 지정한 테스트들. */
+const DESIGNATED_TESTS = [
+  "domains/game/mode/hooks/__tests__/useRoomCodeInput.test.js",
+  "domains/game/matching/utils/__tests__/roomCode.test.js",
+  "domains/game/setup/utils/__tests__/roleComposition.test.js",
+  "domains/game/setup/utils/__tests__/buildCreateRoomPayload.test.js",
+  "domains/game/setup/hooks/__tests__/useRoleCompositionState.test.js",
+]
+
+// package.json이 정한 실행 대상 glob(src, **, __tests__, *.test.js)을 실제 파일 목록으로 펼친다.
+function expandTestGlob(frontendRoot, pattern) {
+  const segments = pattern.split("/")
+  assert.deepEqual(
+    segments,
+    ["src", "**", "__tests__", "*.test.js"],
+    `실행 대상 glob 모양이 바뀌었다: ${pattern}`,
+  )
+
+  const found = new Set()
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (path.basename(dir) === "__tests__" && entry.name.endsWith(".test.js")) found.add(full)
+    }
+  }
+  walk(path.join(frontendRoot, segments[0]))
+
+  return found
+}
+
+test("AC-03: 지정된 5개 테스트가 npm test의 실행 대상에 들어 있다", () => {
+  const frontendRoot = path.join(srcRoot, "..")
+  const testScript = JSON.parse(readFileSync(path.join(frontendRoot, "package.json"), "utf8")).scripts
+    .test
+  // 실행 대상은 test 스크립트의 `--test` 뒤 glob이 전부다 — 그 glob을 여기서 그대로 펼친다.
+  const globMatch = testScript.match(/--test\s+(\S+)\s*$/)
+  assert.ok(globMatch, `test 스크립트에서 실행 대상 glob을 찾지 못했다: ${testScript}`)
+
+  const runSet = expandTestGlob(frontendRoot, globMatch[1])
+
+  // 이 테스트 자신이 그 집합 안에 있어야, 위 계산이 실제 실행 경로와 같다는 근거가 된다.
+  assert.ok(runSet.has(fileURLToPath(import.meta.url)), "이 테스트 자신이 실행 대상에 없다")
+
+  for (const relativePath of DESIGNATED_TESTS) {
+    const absolute = path.join(srcRoot, relativePath)
+    assert.ok(existsSync(absolute), `지정된 테스트가 없다: ${relativePath}`)
+    assert.ok(runSet.has(absolute), `실행 대상에 포함되지 않는다: ${relativePath}`)
+    assert.match(
+      readSrc(relativePath),
+      /\btest\(/,
+      `테스트를 정의하지 않는다: ${relativePath}`,
+    )
+  }
+})
+
+test("AC-03: 지정된 5개 테스트는 이번 작업에서 수정하지 않았다", () => {
+  // 기대값을 고쳐 통과시키지 않았다는 근거다. 슬라이스 시작 커밋과 비교한다.
+  const base = "feed38e"
+  try {
+    git(["cat-file", "-e", `${base}^{commit}`])
+  } catch (error) {
+    assert.fail(`슬라이스 기준 커밋(${base})이 없어 미수정 근거를 만들 수 없다: ${error.message}`)
+  }
+
+  const changed = git([
+    "diff",
+    "--name-only",
+    base,
+    "--",
+    ...DESIGNATED_TESTS.map((relativePath) => `frontend/src/${relativePath}`),
+  ]).trim()
+
+  assert.equal(changed, "", `지정된 테스트가 수정됐다:\n${changed}`)
 })
 
 // ── AC-02: 라우트 → 페이지 → 부모 → 자식 연결 ────────────────────────────────
@@ -180,32 +493,76 @@ test("코드 방 배지 스타일 상수가 실제로 존재한다", () => {
   assert.ok(ROOM_LIST_ROW_LOCK_BADGE_CLASS.length > 0, "배지 클래스가 비어 있다")
 })
 
-test("행은 accessType이 code인 방에만 코드 배지를 그린다", () => {
-  assert.match(
-    roomListRowSource,
-    /const isCode = accessType === "code"/,
-    "코드 방 판정이 accessType에서 나오지 않는다",
-  )
-  assert.match(
-    roomListRowSource,
-    /\{isCode \? <span className=\{ROOM_LIST_ROW_LOCK_BADGE_CLASS\}>코드<\/span> : null\}/,
-    "코드 배지가 isCode에 연결돼 있지 않다",
-  )
+test("행은 방이 코드 값을 실어 주면 그 코드 값을 표시한다", () => {
+  // 행이 실제로 그리는 값을 계산하는 함수를 그대로 부른다(재현이 아니라 같은 코드다).
+  const shown = resolveRoomListRowCode({ accessType: "code", code: "AB2C3D" })
+
+  assert.equal(shown.visible, true, "코드 방인데 배지를 그리지 않는다")
+  assert.equal(shown.value, "AB2C3D", "코드 값이 표시값으로 나오지 않는다")
+  assert.equal(shown.label, "AB2C3D", "배지가 코드 값을 그리지 않는다")
+  assert.equal(shown.ariaText, "코드 AB2C3D", "스크린리더가 코드 값을 읽지 못한다")
 })
 
-test("코드 방은 화면 배지뿐 아니라 aria-label로도 코드 필요를 읽어준다", () => {
+test("코드 값 표시는 서버가 준 문자열을 가공하지 않는다", () => {
+  // 서버 비교는 대소문자를 구분한다(matching/utils/roomCode.js 주석). 목록이 케이스를
+  // 바꿔 보여주면 사용자가 그대로 옮겨 적었을 때 반드시 참가에 실패한다.
+  assert.equal(resolveRoomListRowCode({ accessType: "code", code: "aB2c3D" }).value, "aB2c3D")
+})
+
+test("코드 값이 없거나 형식이 깨졌으면 값 대신 코드 필요만 표시한다", () => {
+  for (const code of [undefined, null, "", "AB2", "AB2C3D7", "AB2-C3D", 123]) {
+    const shown = resolveRoomListRowCode({ accessType: "code", code })
+    assert.equal(shown.visible, true, `코드 방 배지가 사라졌다: ${String(code)}`)
+    assert.equal(shown.value, "", `깨진 코드를 값으로 표시한다: ${String(code)}`)
+    assert.equal(shown.label, "코드", `배지 문구가 다르다: ${String(code)}`)
+    assert.equal(shown.ariaText, "코드 필요", `스크린리더 문구가 다르다: ${String(code)}`)
+  }
+})
+
+test("코드가 필요 없는 방에는 코드 배지를 그리지 않는다", () => {
+  const shown = resolveRoomListRowCode({ accessType: "open", code: "AB2C3D" })
+  assert.equal(shown.visible, false, "공개 방에 코드 배지를 그린다")
+  assert.equal(shown.label, "", "공개 방에 배지 문구가 있다")
+  assert.equal(shown.ariaText, "", "공개 방에 코드 문구를 읽어준다")
+})
+
+test("행이 그 계산 결과를 배지와 aria-label에 그대로 연결한다", () => {
+  assert.match(
+    roomListRowSource,
+    /const rowCode = resolveRoomListRowCode\(room\)/,
+    "행이 코드 표시를 계산하지 않는다",
+  )
+  assert.match(
+    roomListRowSource,
+    /\{rowCode\.visible \? \(\s*\n\s*<span className=\{ROOM_LIST_ROW_LOCK_BADGE_CLASS\}>\{rowCode\.label\}<\/span>/,
+    "배지가 계산된 코드 라벨을 그리지 않는다",
+  )
   // 배지가 들어 있는 오버레이는 aria-hidden이라, 이 문구가 빠지면 스크린리더에서는
-  // 코드 방인지 알 방법이 사라진다.
-  assert.match(roomListRowSource, /isCode \? ", 코드 필요" : ""/)
+  // 코드 방인지도, 코드 값도 알 방법이 사라진다.
+  assert.match(
+    roomListRowSource,
+    /rowCode\.ariaText \? `, \$\{rowCode\.ariaText\}` : ""/,
+    "aria-label이 코드 문구를 싣지 않는다",
+  )
 })
 
-test("행은 방의 비밀 코드 값 자체를 그리지 않는다", () => {
-  // 공개 목록 payload에는 코드 값이 담기지 않는다(constants/multiplayRooms.js 주석).
-  // 표시 대상은 "코드가 필요한 방"이라는 사실뿐이며, 코드 값 노출은 새 비밀 노출이 된다.
-  assert.ok(!/room\.code\b/.test(roomListRowSource), "행이 방 코드 값을 참조한다")
+test("행의 코드 표시는 서버가 목록에 실어 주지 않은 값을 만들어 내지 않는다", () => {
+  // 표시 규칙이 값을 지어내지 않는다는 것과, 지금 공개 목록 payload에 코드 값이 없다는 것은
+  // 서로 다른 사실이다. 앞은 위 테스트가, 뒤는 서버 목록 계약이 정한다 — 목록 계약이 바뀌어
+  // 코드 값이 실려 오면 그때부터 행은 값을 그대로 보여준다.
+  const listContract = readFileSync(
+    path.join(srcRoot, "..", "..", "backend", "socket", "matchmaking.js"),
+    "utf8",
+  )
+  const builder = listContract
+    .split("function buildPublicRoomList()")[1]
+    ?.split("\nfunction ")[0]
+  assert.ok(builder, "공개 목록 payload를 만드는 함수를 찾지 못했다")
+  assert.ok(!/^\s*code:/m.test(builder), "공개 목록 payload가 코드 값을 싣는다")
+  // 더미 목록도 같은 계약을 따른다(코드 값 없이 accessType만).
   assert.ok(
-    !/\bcode,/.test(roomListRowSource.split("const {")[1]?.split("} = room")[0] ?? ""),
-    "행이 room에서 code를 구조분해한다",
+    !/\bcode:/.test(readSrc("domains/game/mode/constants/multiplayRooms.js")),
+    "더미 목록이 코드 값을 담는다",
   )
 })
 
