@@ -5,8 +5,10 @@ import FateMaskFooter from "@/domains/user/components/FateMaskFooter.jsx"
 import AccountManageButton from "@/domains/user/components/MyPageLayout/AccountManageButton.jsx"
 import MyPageSummaryPanel from "@/domains/user/components/MyPageLayout/MyPageSummaryPanel.jsx"
 import ProfileEditButton from "@/domains/user/components/MyPageLayout/ProfileEditButton.jsx"
+import SkinCardWearButton from "@/domains/user/components/MyPageLayout/SkinCardWearButton.jsx"
 import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
 import ProfileEditOverlay from "@/domains/user/components/profileEdit/ProfileEditOverlay.jsx"
+import SkinCardWearOverlay from "@/domains/user/components/skinCardWear/SkinCardWearOverlay.jsx"
 import { MY_PAGE_PROFILE_BANNER_DEFAULTS } from "@/domains/user/constants/myPageAssets.js"
 import {
   MY_PAGE_ACTION_BUTTONS_WRAP_CLASS,
@@ -24,6 +26,7 @@ export default function MyPageLayout() {
   const navigate = useNavigate()
   const { profile, stats, description, loading } = useMyProfile()
   const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [skinCardWearOpen, setSkinCardWearOpen] = useState(false)
 
   const goToAccount = () => navigate("/account")
 
@@ -32,9 +35,11 @@ export default function MyPageLayout() {
       <div className={MY_PAGE_ACTION_BUTTONS_WRAP_CLASS}>
         <AccountManageButton onClick={goToAccount} />
         <ProfileEditButton onClick={() => setProfileEditOpen(true)} />
+        <SkinCardWearButton onClick={() => setSkinCardWearOpen(true)} />
       </div>
 
       <ProfileEditOverlay open={profileEditOpen} onClose={() => setProfileEditOpen(false)} />
+      <SkinCardWearOverlay open={skinCardWearOpen} onClose={() => setSkinCardWearOpen(false)} />
 
       {!loading && profile ? (
         <div className={MY_PAGE_BANNER_WRAP_CLASS}>

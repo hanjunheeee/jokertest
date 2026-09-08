@@ -8,6 +8,7 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 export default function BannerMainButton({
   onClick,
   bannerSrc,
+  bannerImageClassName = "block h-auto w-full select-none",
   showText,
   showProfilePortrait = false,
   profile,
@@ -28,7 +29,7 @@ export default function BannerMainButton({
       className={`${MY_PAGE_BANNER_ROOT_CLASS} ${isInteractive ? "interactive-scale w-full border-0 bg-transparent p-0" : "w-full"} ${className}`}
     >
       {/* 배너 배경 이미지입니다. */}
-      <PublicAsset src={bannerSrc} alt="" className="block h-auto w-full select-none" />
+      <PublicAsset src={bannerSrc} alt="" className={bannerImageClassName} />
 
       {showProfilePortrait ? <BannerProfilePortrait /> : null}
 

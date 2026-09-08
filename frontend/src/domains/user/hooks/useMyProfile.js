@@ -22,7 +22,6 @@ export function useMyProfile() {
     const profile = {
         reputationLabel: `${data.nickname}`,
         reputationValue: data.reputation,
-        title:           data.title,
     }
 
     // 전적 숫자들을 화면에 바로 보여줄 수 있는 배열 형태로 바꿉니다.

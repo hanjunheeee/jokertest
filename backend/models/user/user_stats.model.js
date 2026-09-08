@@ -5,7 +5,6 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true,
     },
     reputation: { type: DataTypes.INTEGER, defaultValue: 0 },
-    title: { type: DataTypes.STRING(50), defaultValue: '신참' },
     total_games: { type: DataTypes.INTEGER, defaultValue: 0 },
     survival_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     execution_count: { type: DataTypes.INTEGER, defaultValue: 0 },

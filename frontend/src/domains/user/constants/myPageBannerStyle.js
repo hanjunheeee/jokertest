@@ -10,6 +10,10 @@ export const LOBBY_TEXT_PANEL_INSET = {
 export const LOBBY_BANNER_WIDTH_CLASS =
   "!w-[clamp(18rem,26vw,30rem)] max-w-full shrink-0"
 
+/** 마이페이지 이동 버튼 프레임(칭호삭제).png — 구 프레임(440×91) 대비 시각 크기 맞춤 (393/440) */
+export const MY_PAGE_BANNER_FRAME_IMAGE_CLASS =
+  "block h-auto w-full select-none origin-left scale-[0.893]"
+
 export const LOBBY_SETTINGS_GEAR_LAYOUT = {
   top: "14.5%",
   right: "17%",
@@ -37,7 +41,6 @@ export const MY_PAGE_BANNER_TEXT_ALIGN_LEFT_CLASS = "left-[-4%]"
 
 export const MY_PAGE_BANNER_LABEL_TEXT_CLASS = "font-subheading text-[4.4cqi] font-bold leading-tight text-[#ebe2cc]"
 export const MY_PAGE_BANNER_REPUTATION_TEXT_CLASS = "font-subheading text-[4cqi] font-bold leading-tight text-[#e5dcc4]"
-export const MY_PAGE_BANNER_TITLE_TEXT_CLASS = "font-subheading text-[3.5cqi] font-bold leading-tight text-[#d8cdb8]"
 
 export const MY_PAGE_BANNER_ROOT_CLASS = "relative block [container-type:inline-size] leading-none"
 

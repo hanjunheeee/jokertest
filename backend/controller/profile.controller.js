@@ -15,7 +15,6 @@ exports.getMyProfile = async (req, res, next) => {
                 nickname:          row.nickname,
                 profile_image_url: row.profile_image_url,
                 reputation:        stats.reputation       ?? 0,
-                title:             stats.title            ?? '신참',
                 total_games:       stats.total_games      ?? 0,
                 survival_count:    stats.survival_count   ?? 0,
                 execution_count:   stats.execution_count  ?? 0,

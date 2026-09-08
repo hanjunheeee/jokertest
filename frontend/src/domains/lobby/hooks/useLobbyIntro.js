@@ -4,7 +4,7 @@ import {
   LOBBY_VIDEO_HOLD_BEFORE_END_SEC,
 } from "@/domains/lobby/constants/lobbyIntro.js"
 import {
-  holdLobbyVideoOnLastFrame,
+  pauseLobbyIntroVideo,
   shouldRevealLobbyUi,
 } from "@/domains/lobby/utils/lobbyIntroVideo.js"
 import { useBgmAutoplay } from "@/shared/hooks/useBgmAutoplay.js"
@@ -25,7 +25,7 @@ export function useLobbyIntro() {
   // UI를 이미 보여줬는지 기억합니다. 같은 처리가 여러 번 실행되는 것을 막습니다.
   const uiRevealedRef = useRef(alreadyPlayed)
 
-  // 영상을 이미 마지막 프레임에 고정했는지 기억합니다.
+  // 영상을 이미 멈춰 PNG 배경으로 넘겼는지 기억합니다.
   const videoHeldRef = useRef(alreadyPlayed)
 
   // 인트로가 끝나서 로비 UI를 화면에 보여줘도 되는지 표시합니다.
@@ -43,11 +43,10 @@ export function useLobbyIntro() {
   const holdVideo = () => {
     const video = bgVideoRef.current
 
-    // video가 아직 연결되지 않았거나 이미 고정했다면 아무것도 하지 않습니다.
     if (!video || videoHeldRef.current) return
 
     videoHeldRef.current = true
-    holdLobbyVideoOnLastFrame(video)
+    pauseLobbyIntroVideo(video)
   }
 
   const skipIntro = () => {
@@ -60,13 +59,13 @@ export function useLobbyIntro() {
     const video = bgVideoRef.current
     if (!video) return
 
-    // 영상 길이를 이미 알고 있으면 바로 마지막 프레임에 고정합니다.
+    // 영상 길이를 이미 알고 있으면 바로 멈춥니다.
     if (video.duration && Number.isFinite(video.duration)) {
       holdVideo()
       return
     }
 
-    // 영상 길이를 아직 모르면 metadata가 준비된 뒤 마지막 프레임에 고정합니다.
+    // 영상 길이를 아직 모르면 metadata가 준비된 뒤 멈춥니다.
     const onMetadata = () => {
       video.removeEventListener("loadedmetadata", onMetadata)
       holdVideo()
@@ -82,21 +81,19 @@ export function useLobbyIntro() {
     const video = bgVideoRef.current
     if (!video) return
 
-    // 이미 본 인트로라면 처음부터 마지막 프레임으로 보내고 멈춥니다.
-    const jumpToEnd = () => {
-      if (video.duration && Number.isFinite(video.duration)) {
-        video.currentTime = video.duration - 0.001
-        video.pause()
-      }
+    // 이미 본 인트로라면 영상은 재생하지 않고 PNG 배경만 사용합니다.
+    const pauseIntro = () => {
+      videoHeldRef.current = true
+      video.pause()
     }
 
     if (video.readyState >= 1) {
-      jumpToEnd()
+      pauseIntro()
     } else {
-      video.addEventListener("loadedmetadata", jumpToEnd, { once: true })
+      video.addEventListener("loadedmetadata", pauseIntro, { once: true })
     }
 
-    return () => video.removeEventListener("loadedmetadata", jumpToEnd)
+    return () => video.removeEventListener("loadedmetadata", pauseIntro)
   }, []) // mount 시점에 "이미 본 인트로인지" 한 번만 확인하면 됩니다.
 
   useEffect(() => {
@@ -113,12 +110,12 @@ export function useLobbyIntro() {
       // 영상 끝나기 직전에 로비 UI를 먼저 보여줍니다.
       if (shouldRevealLobbyUi(video)) revealUi()
 
-      // 영상이 완전히 끝나기 아주 직전에 마지막 프레임에 고정합니다.
+      // 영상이 완전히 끝나기 아주 직전에 멈춰 PNG 배경으로 넘깁니다.
       if (!videoHeldRef.current && remaining <= LOBBY_VIDEO_HOLD_BEFORE_END_SEC) holdVideo()
     }
 
     const onEnded = () => {
-      // timeupdate가 늦거나 누락되어도 ended에서는 반드시 UI 표시와 영상 고정을 처리합니다.
+      // timeupdate가 늦거나 누락되어도 ended에서는 반드시 UI 표시와 영상 정지를 처리합니다.
       revealUi()
       holdVideo()
     }

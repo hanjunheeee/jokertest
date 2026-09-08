@@ -19,6 +19,7 @@ export const JOB_STANDING_PORTRAITS = [
   `${BASIC_STANDING_DIR}/경비원2.png`.normalize("NFD"),
   `${BASIC_STANDING_DIR}/경비원3.png`.normalize("NFD"),
   `${BASIC_STANDING_DIR}/주치의.png`.normalize("NFD"),
+  `${BASIC_STANDING_DIR}/마녀사냥꾼.png`.normalize("NFD"),
 ]
 
 /** jobs-closeup — Player Frame용 얼굴 클로즈업 PNG */
@@ -32,4 +33,5 @@ export const JOB_CLOSEUP_PORTRAITS = [
   `${BASIC_CLOSEUP_DIR}/경비원2_클로즈업.png`.normalize("NFD"),
   `${BASIC_CLOSEUP_DIR}/경비원3_클로즈업.png`.normalize("NFD"),
   `${BASIC_CLOSEUP_DIR}/주치의_클로즈업.png`.normalize("NFD"),
+  `${BASIC_CLOSEUP_DIR}/마녀사냥꾼_클로즈업.png`.normalize("NFD"),
 ]

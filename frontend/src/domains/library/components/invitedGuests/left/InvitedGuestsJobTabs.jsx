@@ -32,9 +32,14 @@ function InvitedGuestsJobTabButton({ label, active, onClick }) {
 }
 
 /** 초대받은 자들 — 좌측 상단 직업 서브탭 */
-export default function InvitedGuestsJobTabs({ tabs, activeIndex, onSelect }) {
+export default function InvitedGuestsJobTabs({
+  tabs,
+  activeIndex,
+  onSelect,
+  tabsClassName = INVITED_GUESTS_JOB_TABS_CLASS,
+}) {
   return (
-    <div className={INVITED_GUESTS_JOB_TABS_CLASS} role="tablist" aria-label="직업 선택">
+    <div className={tabsClassName} role="tablist" aria-label="직업 선택">
       {tabs.map(({ id, jobLabel }, index) => (
         <InvitedGuestsJobTabButton
           key={id}

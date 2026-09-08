@@ -1,6 +1,7 @@
 // 로비 화면의 주요 public 에셋 경로입니다.
 export const LOBBY_ASSETS = {
   bgVideo: "/bg/대기실 배경 영상4.mp4",
+  bgImage: "/bg/로비 뒷배경.png".normalize("NFD"),
   logo: "/logo/가면무도회 로고4.png".normalize("NFD"),
   myPageButton: "/button/마이페이지 이동 버튼_프로토타입2.png".normalize("NFD"),
   settingsGear: "/button/설정톱니바퀴.png",

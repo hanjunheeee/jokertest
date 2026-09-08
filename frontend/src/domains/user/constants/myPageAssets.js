@@ -1,8 +1,10 @@
 // 마이페이지와 계정 관리 화면에서 사용하는 public 에셋·기본값
 
+import { MY_PAGE_BANNER_FRAME_IMAGE_CLASS } from "@/domains/user/constants/myPageBannerStyle.js"
+
 export const MY_PAGE_ASSETS = {
   bg: "/bg/마이페이지 뒷배경.png".normalize("NFD"),
-  myPageButtonFrame: "/frame/mypage/마이페이지 이동버튼 프레임.png".normalize("NFD"),
+  myPageButtonFrame: "/frame/mypage/마이페이지 이동 버튼 프레임(칭호삭제).png".normalize("NFD"),
   bloodRecordFrame: "/frame/mypage/피의 기록 프레임.png",
   fateMaskFrame: "/frame/mypage/운명의 가면 프레임.png",
 }
@@ -12,6 +14,7 @@ export const MY_PAGE_PROFILE_BANNER_DEFAULTS = {
   showText: true,
   showProfilePortrait: true,
   bannerSrc: MY_PAGE_ASSETS.myPageButtonFrame,
+  bannerImageClassName: MY_PAGE_BANNER_FRAME_IMAGE_CLASS,
 }
 
 // 피의 기록 프레임에 보여줄 prototype 더미 통계입니다.

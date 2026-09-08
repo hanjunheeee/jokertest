@@ -17,6 +17,7 @@ export default function MyPageBannerButton({
   showProfilePortrait = false,
   showSettingsIcon = false,
   bannerSrc = LOBBY_ASSETS.myPageButton,
+  bannerImageClassName,
   textPanelInset = LOBBY_TEXT_PANEL_INSET,
   className = LOBBY_BANNER_WIDTH_CLASS,
 }) {
@@ -31,6 +32,7 @@ export default function MyPageBannerButton({
         <BannerMainButton
           onClick={onClick}
           bannerSrc={bannerSrc}
+          bannerImageClassName={bannerImageClassName}
           showText={showText}
           showProfilePortrait={showProfilePortrait}
           profile={profile}
@@ -48,6 +50,7 @@ export default function MyPageBannerButton({
     <BannerMainButton
       onClick={onClick}
       bannerSrc={bannerSrc}
+      bannerImageClassName={bannerImageClassName}
       showText={showText}
       showProfilePortrait={showProfilePortrait}
       profile={profile}
