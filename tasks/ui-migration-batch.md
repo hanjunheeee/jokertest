@@ -72,7 +72,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `friend.store.js`의 즐겨찾기 토글, `useFriendListLocalFilter`, `filterFriendListItems`, `applyFriendFavoriteFlags`, `lobbyMenu.js` 상수(도서관·포디움 항목 포함). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `friend.store.js`의 즐겨찾기 토글, `useFriendListLocalFilter`, `filterFriendListItems`, `applyFriendFavoriteFlags`, `lobbyMenu.js` 상수(도서관·포디움 항목 포함). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -111,7 +111,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useSkinCardWearOverlay`·`useSkinCardWearSelection` 훅, `skinCardWear.store.js`·`profileCustomization.store.js`, `useMyProfile`(응답 계약 유지). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useSkinCardWearOverlay`·`useSkinCardWearSelection` 훅, `skinCardWear.store.js`·`profileCustomization.store.js`, `useMyProfile`(응답 계약 유지). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -149,7 +149,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useStoreCategoryFilter` 훅, `calculateBulkPurchaseTotal.js`, `storeItems.js`·`storeFilterOptions.js` 상수. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useStoreCategoryFilter` 훅, `calculateBulkPurchaseTotal.js`, `storeItems.js`·`storeFilterOptions.js` 상수. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -186,7 +186,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `settingTabs.js`·`soundSettings.js` 상수, 사운드 값을 보관하는 store/훅. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `settingTabs.js`·`soundSettings.js` 상수, 사운드 값을 보관하는 store/훅. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -223,7 +223,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 페이지 이동·북마크 탭 상태를 관리하는 훅 또는 순수 함수, `app/routes/index.jsx`에 `/library` 문자열이 있는지 검사하는 테스트. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 페이지 이동·북마크 탭 상태를 관리하는 훅 또는 순수 함수, `app/routes/index.jsx`에 `/library` 문자열이 있는지 검사하는 테스트. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -259,7 +259,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `app/routes/index.jsx`에 `/podium` 문자열이 있는지 검사하는 테스트, 포디움 데이터 상수 형태 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `app/routes/index.jsx`에 `/podium` 문자열이 있는지 검사하는 테스트, 포디움 데이터 상수 형태 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -299,7 +299,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 기존 `useRoomCodeInput.test.js`, `roomCode.test.js`, `roleComposition.test.js`, `buildCreateRoomPayload.test.js`, `useRoleCompositionState.test.js`(수정 없이 통과), `roomListLayout.js` 상수. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 기존 `useRoomCodeInput.test.js`, `roomCode.test.js`, `roleComposition.test.js`, `buildCreateRoomPayload.test.js`, `useRoleCompositionState.test.js`(수정 없이 통과), `roomListLayout.js` 상수. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -340,7 +340,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `buildGameResultViewModel.js`(로컬 `winResult` 샘플), `useGameResultData` 훅(winResult 없으면 null). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `buildGameResultViewModel.js`(로컬 `winResult` 샘플), `useGameResultData` 훅(winResult 없으면 null). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -379,7 +379,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `buildInGamePlayerNameplateStyle.js`, `resolveInGamePlayerCardThemeStyles.js`(colorIndex별 스타일), 기존 플레이어 데이터 유틸 테스트(수정 없이 통과), 에셋 경로 존재 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `buildInGamePlayerNameplateStyle.js`, `resolveInGamePlayerCardThemeStyles.js`(colorIndex별 스타일), 기존 플레이어 데이터 유틸 테스트(수정 없이 통과), 에셋 경로 존재 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -420,7 +420,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useInGameSettingIsHost` 훅(방장 아니면 false), 사이드 패널 배타 열림 상태를 관리하는 훅(순수 JS로 분리), 인게임 설정 값 store. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useInGameSettingIsHost` 훅(방장 아니면 false), 사이드 패널 배타 열림 상태를 관리하는 훅(순수 JS로 분리), 인게임 설정 값 store. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -462,7 +462,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 기존 `liveRevoteControls.test.js`, `ingameActionPanel.test.js`, `useInGameActionPanel.test.js`, `useInGameActionPanel.canonicalAlive.test.js`(로직 수정 없이 통과), 양피지 모션 상수 형태 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 기존 `liveRevoteControls.test.js`, `ingameActionPanel.test.js`, `useInGameActionPanel.test.js`, `useInGameActionPanel.canonicalAlive.test.js`(로직 수정 없이 통과), 양피지 모션 상수 형태 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -502,7 +502,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `selectInGameTimebarStatusMessage.js`(로컬 nightTurnRole·phase 입력), 기존 밤 턴·overlayStack·snapshot 훅 테스트(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `selectInGameTimebarStatusMessage.js`(로컬 nightTurnRole·phase 입력), 기존 밤 턴·overlayStack·snapshot 훅 테스트(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -544,7 +544,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `reduceInGameNightPrivateResult.js`, `reduceInGameKillReveal.js` 순수 함수(로컬 payload 샘플, 타인 결과 미저장, 사망자 0·1·2명 순서), `useGameSessionSocketEvents`·store의 `nightPrivateResult` 유지 테스트, 기존 overlayStack 테스트(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `reduceInGameNightPrivateResult.js`, `reduceInGameKillReveal.js` 순수 함수(로컬 payload 샘플, 타인 결과 미저장, 사망자 0·1·2명 순서), `useGameSessionSocketEvents`·store의 `nightPrivateResult` 유지 테스트, 기존 overlayStack 테스트(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -586,7 +586,7 @@
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 채팅 행 색상 클래스를 계산하는 순수 함수, 에셋 참조 존재 검사 테스트, 기존 `inGameChatChannel.test.js`(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 채팅 행 색상 클래스를 계산하는 순수 함수, 에셋 참조 존재 검사 테스트, 기존 `inGameChatChannel.test.js`(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
@@ -628,7 +628,7 @@ UI-01~UI-15로 화면을 모두 이식했다. 단위 테스트는 화면 조각�
 
 ### 검증 방식 보정
 
-위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 코드 변경 없음. 검증은 실제 브라우저 기록만으로 한다. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 코드 변경 없음. 검증은 실제 브라우저 기록만으로 한다. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다. 추가 규칙: `node --test`는 `@/` 별칭 import를 해석하지 못한다(기존 테스트는 `@/`를 mock하지 않고, 테스트 대상 모듈은 모두 상대 경로 import를 쓴다). 테스트 대상으로 삼는 모듈과 그 import 체인은 상대 경로·`.js` 확장자 import여야 한다. 원격에서 옮기는 파일이 `@/`를 쓰면 상대 경로로 바꾼다(전례: `pickInGameJobPortrait.js`). API·소켓 경계는 기존처럼 `mock.module("../상대경로.js")`로 대체한다. 이 규칙으로도 테스트할 수 없는 모듈은 테스트 대상에서 빼고 production build와 브라우저 확인으로 검증한다.
 
 ### 예상 범위
 
