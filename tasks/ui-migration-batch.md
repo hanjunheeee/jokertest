@@ -50,6 +50,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -69,6 +70,10 @@
 - 기존 친구 요청 수락·거절·검색 테스트가 그대로 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `friend.store.js`의 즐겨찾기 토글, `useFriendListLocalFilter`, `filterFriendListItems`, `applyFriendFavoriteFlags`, `lobbyMenu.js` 상수(도서관·포디움 항목 포함). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/lobby/**` (원격 기준 30개 파일)
@@ -84,6 +89,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -103,6 +109,10 @@
 - 로컬 `useMyProfile` 테스트가 있으면 그대로 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useSkinCardWearOverlay`·`useSkinCardWearSelection` 훅, `skinCardWear.store.js`·`profileCustomization.store.js`, `useMyProfile`(응답 계약 유지). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/user/**` (원격 기준 46개 파일)
@@ -117,6 +127,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -136,6 +147,10 @@
 - 스킨 확대 오버레이가 열리고 닫히는 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useStoreCategoryFilter` 훅, `calculateBulkPurchaseTotal.js`, `storeItems.js`·`storeFilterOptions.js` 상수. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/store/**` (원격 기준 29개 파일)
@@ -150,6 +165,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -168,6 +184,10 @@
 - 슬라이더 조작이 상태에 반영되는 단위 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `settingTabs.js`·`soundSettings.js` 상수, 사운드 값을 보관하는 store/훅. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/settings/**` (원격 기준 11개 파일)
@@ -182,6 +202,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -200,6 +221,10 @@
 - 페이지 이동 훅 또는 상태의 단위 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 페이지 이동·북마크 탭 상태를 관리하는 훅 또는 순수 함수, `app/routes/index.jsx`에 `/library` 문자열이 있는지 검사하는 테스트. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/library/**` (신규 51개 파일)
@@ -215,6 +240,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -231,6 +257,10 @@
 - `/podium`이 렌더링되는 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `app/routes/index.jsx`에 `/podium` 문자열이 있는지 검사하는 테스트, 포디움 데이터 상수 형태 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/podium/**` (신규 16개 파일)
@@ -246,6 +276,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -266,6 +297,10 @@
 - 모바일 두 뷰포트에서 방 코드 입력 화면을 실제 브라우저로 확인하고 스크린샷을 남긴다. 확인하지 못하면 미검증으로 표기한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 기존 `useRoomCodeInput.test.js`, `roomCode.test.js`, `roleComposition.test.js`, `buildCreateRoomPayload.test.js`, `useRoleCompositionState.test.js`(수정 없이 통과), `roomListLayout.js` 상수. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/mode/components/**`, `mode/constants/roomListLayout.js`, `mode/pages/MultiplayEntryPage.jsx`
@@ -282,6 +317,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -302,6 +338,10 @@
 - 결과 화면의 로비 이동이 로컬 종료 경로를 호출하는 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `buildGameResultViewModel.js`(로컬 `winResult` 샘플), `useGameResultData` 훅(winResult 없으면 null). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/result/**` (원격 기준 24개 중 `useGameResultLobbyExit*`, `createGameResultExitRequest*` 제외)
@@ -316,6 +356,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -336,6 +377,10 @@
 - 참조하는 모든 에셋 경로가 `frontend/public`에 실제로 존재함을 스크립트나 테스트로 보인다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `buildInGamePlayerNameplateStyle.js`, `resolveInGamePlayerCardThemeStyles.js`(colorIndex별 스타일), 기존 플레이어 데이터 유틸 테스트(수정 없이 통과), 에셋 경로 존재 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/ingame/components/board/**`
@@ -352,6 +397,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -372,6 +418,10 @@
 - 방장이 아닐 때 강퇴 UI가 보이지 않는 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `useInGameSettingIsHost` 훅(방장 아니면 false), 사이드 패널 배타 열림 상태를 관리하는 훅(순수 JS로 분리), 인게임 설정 값 store. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/ingame/components/controls/**`
@@ -388,6 +438,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -409,6 +460,10 @@
 - 양피지 모달 열림·확인·닫힘 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 기존 `liveRevoteControls.test.js`, `ingameActionPanel.test.js`, `useInGameActionPanel.test.js`, `useInGameActionPanel.canonicalAlive.test.js`(로직 수정 없이 통과), 양피지 모션 상수 형태 검사. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/ingame/components/actions/**`, `components/parchment/**`
@@ -424,6 +479,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -444,6 +500,10 @@
 - 새로고침 후 `checking` 동안 리다이렉트하지 않는 기존 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `selectInGameTimebarStatusMessage.js`(로컬 nightTurnRole·phase 입력), 기존 밤 턴·overlayStack·snapshot 훅 테스트(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/ingame/pages/InGamePage.jsx`
@@ -460,6 +520,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -481,6 +542,10 @@
 - 이벤트 순차 적용과 snapshot 복구에서 `nightPrivateResult`가 유실되지 않는 테스트가 통과한다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: `reduceInGameNightPrivateResult.js`, `reduceInGameKillReveal.js` 순수 함수(로컬 payload 샘플, 타인 결과 미저장, 사망자 0·1·2명 순서), `useGameSessionSocketEvents`·store의 `nightPrivateResult` 유지 테스트, 기존 overlayStack 테스트(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/ingame/components/roleReveal/**`, `phaseEntrance/**`, `nightTurn/**`, `killReveal/**`(신규), `nightPrivateResult/**`(신규)
@@ -498,6 +563,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다. 단, 이 슬라이스(UI-15)만 참조가 없는 옛 에셋 파일 삭제를 허용한다.
 
 ### 배경
@@ -518,6 +584,10 @@
 - 삭제한 파일 목록과 각 파일의 참조 없음 근거를 커밋 메시지 또는 `docs/qa`에 남긴다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
 
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 채팅 행 색상 클래스를 계산하는 순수 함수, 에셋 참조 존재 검사 테스트, 기존 `inGameChatChannel.test.js`(수정 없이 통과). (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
+
 ### 예상 범위
 
 - `frontend/src/domains/game/ingame/components/chat/**`
@@ -535,6 +605,7 @@
 - 기존 로컬 테스트는 삭제하지 않는다. 표현 변경으로 테스트 수정이 필요하면 검증 대상 행동은 그대로 두고 셀렉터·문구만 맞춘다.
 - 다른 플레이어의 역할·밤 행동 비밀을 클라이언트 state, 로그, 화면에 새로 노출하지 않는다.
 - `npm test --prefix frontend`, `npm run build --prefix frontend`, `npm run test:game-core --prefix backend`가 통과해야 한다. 다른 명령으로 대체하지 않는다.
+- 프론트 테스트는 `node --test`로 실행되며 `.jsx` 파일을 import할 수 없다. 페이지·컴포넌트의 렌더링·표시·열림/닫힘을 검사하는 테스트는 작성하지 않는다. 테스트는 hooks·store·utils·constants의 순수 JS만 대상으로 하고, 훅 테스트는 기존 패턴(jsdom + `React.createElement` + `@testing-library/react`, `hooks/__tests__/useInGameRoleReveal.test.js` 참고)을 따른다. esbuild·테스트 로더·vitest 같은 devDependency 추가, `package.json`·lockfile 변경은 금지한다. 화면 표시는 production build 통과와 실제 브라우저 확인(스크린샷, 불가 시 미검증 표기)으로 검증한다.
 - 에셋은 0단계에서 이미 `frontend/public`에 추가돼 있다. 슬라이스는 에셋 파일을 만들거나 옮기지 않고 경로 상수만 바꾼다.
 
 ### 배경
@@ -554,6 +625,10 @@ UI-01~UI-15로 화면을 모두 이식했다. 단위 테스트는 화면 조각�
 - 기록된 결함 각각에 재현 절차와 관련 화면이 적혀 있다.
 - 코드 변경은 없거나 `docs/qa` 기록에 한정된다.
 - frontend 전체 테스트·production build·backend game-core 테스트가 통과한다.
+
+### 검증 방식 보정
+
+위 성공 조건 중 페이지·컴포넌트가 "렌더링된다", "표시된다", "열리고 닫힌다"고 적힌 항목은 JSX import가 필요하므로 테스트로 작성하지 않는다. 대신 다음으로 대체한다. (1) 해당 동작을 담당하는 훅·store·utils·constants의 순수 JS 단위 테스트 — 이 슬라이스의 대상 예시: 코드 변경 없음. 검증은 실제 브라우저 기록만으로 한다. (2) production build 통과. (3) 실제 브라우저 스크린샷(띄우지 못하면 미검증으로 표기하고 통과로 꾸미지 않는다). 새 테스트 로더나 devDependency로 렌더링 테스트를 가능하게 만드는 계획은 금지한다.
 
 ### 예상 범위
 
