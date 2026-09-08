@@ -97,20 +97,6 @@ function findEnclosingObjectStart(src, mask, idx) {
   throw new Error("감싸는 객체의 여는 중괄호를 찾지 못했습니다.")
 }
 
-// objStart(여는 중괄호)에 대응하는 닫는 중괄호 위치를 문자열/주석을 건너뛰며 앞으로 찾는다.
-function findMatchingBrace(src, mask, objStart) {
-  let depth = 0
-  for (let i = objStart; i < src.length; i += 1) {
-    if (!mask[i]) continue
-    if (src[i] === "{") depth += 1
-    else if (src[i] === "}") {
-      depth -= 1
-      if (depth === 0) return i
-    }
-  }
-  throw new Error("감싸는 객체의 닫는 중괄호를 찾지 못했습니다.")
-}
-
 // bracketStart(여는 대괄호)에 대응하는 닫는 대괄호 위치를 문자열/주석을 건너뛰며 앞으로 찾는다.
 function findMatchingBracket(src, mask, bracketStart) {
   let depth = 0
@@ -125,9 +111,134 @@ function findMatchingBracket(src, mask, bracketStart) {
   throw new Error("children 배열의 닫는 대괄호를 찾지 못했습니다.")
 }
 
+// objStart(여는 중괄호)가 여는 객체 리터럴의 "직접" 속성(중첩 객체 안이 아닌, depth === 1)으로
+// 등장하는 "children:"의 위치만 찾는다. 예를 들어
+//   { element: <ProtectedRoute />, meta: { children: [decoy] }, children: [...] }
+// 처럼 형제 속성 값 안에 우연히 중첩된 children:은 depth === 2에서 발견되므로 무시하고,
+// 실제 objStart 객체의 직접 속성인 마지막 children:만 반환한다. 찾지 못하면 -1.
+function findDirectChildrenKeyIndex(src, mask, objStart) {
+  const key = "children:"
+  let depth = 0
+
+  for (let i = objStart; i < src.length; i += 1) {
+    if (!mask[i]) continue
+    const ch = src[i]
+
+    if (ch === "{") {
+      depth += 1
+      continue
+    }
+
+    if (ch === "}") {
+      depth -= 1
+      if (depth === 0) return -1
+      continue
+    }
+
+    if (depth === 1 && ch === key[0] && src.startsWith(key, i)) {
+      let wholeKeyIsCode = true
+      for (let j = i; j < i + key.length; j += 1) {
+        if (!mask[j]) {
+          wholeKeyIsCode = false
+          break
+        }
+      }
+      if (wholeKeyIsCode) return i
+    }
+  }
+
+  throw new Error("감싸는 객체의 닫는 중괄호를 찾지 못했습니다.")
+}
+
+// 주석(//, /* */)만 코드가 아닌 것으로 표시하고, 문자열 리터럴 내용은 실제 코드로 취급한다.
+// computeCodeMask는 중괄호/대괄호 깊이 계산을 위해 문자열 내용까지 마스킹하지만,
+// "/podium" 같은 실제 경로 등록은 원래 문자열 리터럴 안에 있으므로 그 마스크를 그대로
+// 매치 검증에 쓰면 정상 등록까지 걸러진다. 반면 주석 속 가짜 경로 문자열은 걸러야 하므로
+// 주석만 구분해서 마스킹하는 전용 마스크를 둔다. 문자열 내부는 "//","/*" 같은 주석 시작
+// 기호로 오인하지 않도록 건너뛰되 mask는 true(코드)로 유지한다.
+function computeCommentMask(src) {
+  const mask = new Array(src.length).fill(true)
+  let i = 0
+
+  while (i < src.length) {
+    const ch = src[i]
+    const next = src[i + 1]
+
+    if (ch === "/" && next === "/") {
+      while (i < src.length && src[i] !== "\n") {
+        mask[i] = false
+        i += 1
+      }
+      continue
+    }
+
+    if (ch === "/" && next === "*") {
+      mask[i] = false
+      mask[i + 1] = false
+      i += 2
+      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) {
+        mask[i] = false
+        i += 1
+      }
+      if (i < src.length) {
+        mask[i] = false
+        mask[i + 1] = false
+        i += 2
+      }
+      continue
+    }
+
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch
+      i += 1
+      while (i < src.length && src[i] !== quote) {
+        if (src[i] === "\\") {
+          i += 2
+          continue
+        }
+        i += 1
+      }
+      if (i < src.length) i += 1
+      continue
+    }
+
+    i += 1
+  }
+
+  return mask
+}
+
+// regex가 str 안에서 매치되더라도, 그 매치 구간이 주석(코드가 아닌 위치)에 걸쳐 있으면
+// 인정하지 않는다. 즉 "실제 코드"(문자열 리터럴 포함)로 등장하는 매치만 성공으로 친다.
+function assertMatchInCode(str, regex, message) {
+  const mask = computeCommentMask(str)
+  const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`
+  const globalRegex = new RegExp(regex.source, flags)
+
+  let match = globalRegex.exec(str)
+  while (match !== null) {
+    const start = match.index
+    const end = start + match[0].length
+    let allCode = end > start
+    for (let i = start; i < end; i += 1) {
+      if (!mask[i]) {
+        allCode = false
+        break
+      }
+    }
+    if (allCode) return match
+
+    globalRegex.lastIndex = match[0].length === 0 ? start + 1 : globalRegex.lastIndex
+    match = globalRegex.exec(str)
+  }
+
+  assert.fail(message || `코드 영역에서 패턴을 찾지 못했습니다: ${regex}`)
+}
+
 // "element: <ProtectedRoute />"를 가진 라우트 객체를 찾아, 그 객체 리터럴 안에서만
 // children: 배열을 잘라낸다. 단순히 "<ProtectedRoute 다음에 나오는 첫 children:"이 아니라,
-// element: <ProtectedRoute />와 같은 객체({...}) 소속인 children:만 인정한다.
+// element: <ProtectedRoute />와 같은 객체({...}) 소속의 "직접" children:만 인정한다
+// (형제 속성 값 안에 중첩된 children:은 findDirectChildrenKeyIndex가 depth로 걸러낸다).
 export function extractProtectedRouteChildrenBlock(src) {
   const mask = computeCodeMask(src)
 
@@ -137,13 +248,12 @@ export function extractProtectedRouteChildrenBlock(src) {
   assert.ok(mask[elementIdx], "ProtectedRoute 등록이 문자열/주석 안에만 있습니다.")
 
   const objStart = findEnclosingObjectStart(src, mask, elementIdx)
-  const objEnd = findMatchingBrace(src, mask, objStart)
 
-  const childrenKeyIdx = indexOfInCode(src, mask, "children:", objStart)
-  assert.notEqual(childrenKeyIdx, -1, "ProtectedRoute를 감싸는 객체 안에 children 배열이 없습니다.")
-  assert.ok(
-    childrenKeyIdx < objEnd,
-    "children 배열이 ProtectedRoute를 감싸는 객체 밖에 있습니다.",
+  const childrenKeyIdx = findDirectChildrenKeyIndex(src, mask, objStart)
+  assert.notEqual(
+    childrenKeyIdx,
+    -1,
+    "ProtectedRoute를 감싸는 객체의 직접 속성으로 children 배열이 없습니다.",
   )
 
   const bracketStart = indexOfInCode(src, mask, "[", childrenKeyIdx)
@@ -163,7 +273,7 @@ test("index.jsx가 PodiumPage를 podium 도메인 경로에서 import한다", ()
 test("/podium 경로가 ProtectedRoute의 children 배열 안에 등록되어 있다", () => {
   const childrenBlock = extractProtectedRouteChildrenBlock(source)
 
-  assert.match(
+  assertMatchInCode(
     childrenBlock,
     /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/,
     "ProtectedRoute 자식 목록에 /podium → <PodiumPage /> 등록이 없습니다.",
@@ -203,7 +313,7 @@ test("extractProtectedRouteChildrenBlock은 진짜 children: 앞에 있는 주�
 
   const block = extractProtectedRouteChildrenBlock(decoySource)
 
-  assert.match(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
   assert.equal(block.includes("decoy"), false)
   assert.ok(block.includes("/mypage"))
 })
@@ -229,7 +339,7 @@ test("extractProtectedRouteChildrenBlock은 ProtectedRoute와 무관한 형제 �
 
   const block = extractProtectedRouteChildrenBlock(siblingSource)
 
-  assert.match(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
   assert.equal(block.includes("/other"), false)
 })
 
@@ -248,6 +358,52 @@ test("extractProtectedRouteChildrenBlock은 children 배열 안 문자열에 들
 
   const block = extractProtectedRouteChildrenBlock(bracketInStringSource)
 
-  assert.match(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
-  assert.match(block, /\/weird/)
+  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assertMatchInCode(block, /\/weird/)
+})
+
+test("extractProtectedRouteChildrenBlock은 ProtectedRoute 객체의 형제 속성 값 안에 중첩된 children:을 직접 속성으로 착각하지 않는다", () => {
+  const nestedSiblingPropertySource = `
+    export const router = createBrowserRouter([
+      {
+        element: <ViewportShell />,
+        children: [
+          {
+            element: <ProtectedRoute />,
+            meta: { children: ["decoy-nested-not-a-route-array"] },
+            children: [
+              { path: "/mypage", element: <MyPage /> },
+              { path: "/podium", element: <PodiumPage /> },
+            ],
+          },
+        ],
+      },
+    ])
+  `
+
+  const block = extractProtectedRouteChildrenBlock(nestedSiblingPropertySource)
+
+  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assert.equal(block.includes("decoy-nested-not-a-route-array"), false)
+  assert.ok(block.includes("/mypage"))
+})
+
+test("assertMatchInCode는 주석 안에만 있는 가짜 경로 등록을 실제 코드로 인정하지 않는다", () => {
+  const commentOnlyRegistrationSource = `
+    export const router = createBrowserRouter([
+      {
+        element: <ProtectedRoute />,
+        children: [
+          // { path: "/podium", element: <PodiumPage /> } -- 아직 실제로는 등록 안 함
+          { path: "/mypage", element: <MyPage /> },
+        ],
+      },
+    ])
+  `
+
+  const block = extractProtectedRouteChildrenBlock(commentOnlyRegistrationSource)
+
+  assert.throws(() => {
+    assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  })
 })
