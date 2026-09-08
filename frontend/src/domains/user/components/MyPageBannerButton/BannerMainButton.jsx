@@ -1,10 +1,20 @@
-import BannerTextPanel from "@/domains/user/components/MyPageBannerButton/BannerTextPanel.jsx"
-import { MY_PAGE_BANNER_ROOT_CLASS } from "@/domains/user/constants/myPageBannerStyle.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import BannerProfilePortrait from "./BannerProfilePortrait.jsx"
+import BannerTextPanel from "./BannerTextPanel.jsx"
+import { MY_PAGE_BANNER_ROOT_CLASS } from "../../constants/myPageBannerStyle.js"
+import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
 // 배너 이미지 자체를 그리는 컴포넌트입니다.
 // 클릭 가능한 배너로 쓸 수도 있고, 단순 이미지 배너로만 쓸 수도 있습니다.
-export default function BannerMainButton({ onClick, bannerSrc, showText, profile, textPanelInset, className }) {
+export default function BannerMainButton({
+  onClick,
+  bannerSrc,
+  bannerImageClassName = "block h-auto w-full select-none",
+  showText,
+  showProfilePortrait = false,
+  profile,
+  textPanelInset,
+  className,
+}) {
   // 클릭 함수가 있으면 버튼으로 만들고, 없으면 단순 배너 div로 보여줍니다.
   const isInteractive = typeof onClick === "function"
 
@@ -19,7 +29,9 @@ export default function BannerMainButton({ onClick, bannerSrc, showText, profile
       className={`${MY_PAGE_BANNER_ROOT_CLASS} ${isInteractive ? "interactive-scale w-full border-0 bg-transparent p-0" : "w-full"} ${className}`}
     >
       {/* 배너 배경 이미지입니다. */}
-      <PublicAsset src={bannerSrc} alt="" className="block h-auto w-full select-none" />
+      <PublicAsset src={bannerSrc} alt="" className={bannerImageClassName} />
+
+      {showProfilePortrait ? <BannerProfilePortrait /> : null}
 
       {/* showText가 true일 때만 배너 위에 프로필 텍스트를 올립니다. */}
       {showText ? <BannerTextPanel profile={profile} textPanelInset={textPanelInset} /> : null}

@@ -1,5 +1,5 @@
-import BloodRecordStatRow from "@/domains/user/components/BloodRecordFrame/BloodRecordStatRow.jsx"
-import { BLOOD_RECORD_CONTENT_INSET } from "@/domains/user/constants/bloodRecordFrameStyle.js"
+import BloodRecordStatRow from "./BloodRecordStatRow.jsx"
+import { BLOOD_RECORD_CONTENT_INSET } from "../../constants/myPageLayoutStyle.js"
 
 export default function BloodRecordStatsPanel({ stats }) {
   return (

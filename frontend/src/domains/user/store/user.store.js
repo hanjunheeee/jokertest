@@ -21,4 +21,6 @@ export const useUserProfileStore = create((set) => ({
     patchProfile: (patch) => set((state) => ({
         data: state.data ? { ...state.data, ...patch } : state.data,
     })),
+
+    reset: () => set({ data: null, loading: true }),
 }));
