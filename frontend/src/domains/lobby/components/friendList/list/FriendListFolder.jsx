@@ -49,8 +49,8 @@ function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLAS
       {friends.map((friend) => (
         <FriendListRow
           key={friend.id}
+          id={friend.id}
           name={friend.name}
-          profileSrc={friend.profile}
           online={friend.online}
         />
       ))}
@@ -66,7 +66,6 @@ export default function FriendListFolder({
   className = "",
   listClassName,
 }) {
-  // 현재 친구 그룹이 펼쳐져 있는지 표시합니다.
   const [open, setOpen] = useState(defaultOpen)
 
   const toggleOpen = () => {

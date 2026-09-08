@@ -61,11 +61,16 @@ export function useFriendSearch() {
 
   const visibleResults = filterVisibleFriendCandidates(results, resolvedRequestIds)
 
+  // 검색 결과 목록을 화면에 띄울지 정하는 표시 플래그입니다.
+  // 서버 호출 진행 상태(searching)와 달리 요청이 끝난 뒤에도 검색어가 남아 있으면 true입니다.
+  const isSearching = query.trim().length > 0
+
   return {
     query,
     setQuery,
     results: visibleResults,
     searching,
+    isSearching,
     sentIds: sentRequestIds,
     errorMsg,
     handleSearch,

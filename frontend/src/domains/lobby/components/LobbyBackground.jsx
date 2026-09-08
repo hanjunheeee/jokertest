@@ -1,17 +1,25 @@
-// 파일 역할: LobbyBackground.jsx - 화면을 구성하는 컴포넌트입니다.
 import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
 import {
+  LOBBY_BG_IMAGE_CLASS,
   LOBBY_BG_VIDEO_CLASS,
+  LOBBY_BG_VIDEO_HIDDEN_CLASS,
   LOBBY_INTRO_SKIP_LAYER_CLASS,
 } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
 import { BGM_ASSETS } from "@/shared/constants/bgmAssets.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-// 로비 배경음악, 배경 영상, 인트로 스킵 영역을 담당합니다.
+/** 로비 배경 PNG + 인트로 영상 + BGM */
 export default function LobbyBackground({ bgVideoRef, audioRef, uiVisible, onSkipIntro }) {
   return (
     <>
       <audio ref={audioRef} src={publicAsset(BGM_ASSETS.loginMusic)} loop />
+      <PublicAsset
+        src={LOBBY_ASSETS.bgImage}
+        alt=""
+        className={LOBBY_BG_IMAGE_CLASS}
+        aria-hidden="true"
+      />
       <video
         ref={bgVideoRef}
         src={publicAsset(LOBBY_ASSETS.bgVideo)}
@@ -19,7 +27,7 @@ export default function LobbyBackground({ bgVideoRef, audioRef, uiVisible, onSki
         muted
         playsInline
         preload="auto"
-        className={LOBBY_BG_VIDEO_CLASS}
+        className={`${LOBBY_BG_VIDEO_CLASS} ${uiVisible ? LOBBY_BG_VIDEO_HIDDEN_CLASS : ""}`}
       />
       {!uiVisible ? (
         <button

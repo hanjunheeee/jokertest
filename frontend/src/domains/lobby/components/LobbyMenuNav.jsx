@@ -1,6 +1,9 @@
+import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
 import { LOBBY_MENU_ITEMS } from "@/domains/lobby/constants/lobbyMenu.js"
 import {
   LOBBY_MENU_BTN_CLASS,
+  LOBBY_MENU_CUSTOMER_BTN_CLASS,
+  LOBBY_MENU_DISCORD_IMG_CLASS,
   LOBBY_MENU_IMG_CLASS,
   LOBBY_MENU_NAV_CLASS,
 } from "@/domains/lobby/constants/lobbyMenuStyle.js"
@@ -17,6 +20,7 @@ export default function LobbyMenuNav() {
       {LOBBY_MENU_ITEMS.map((item) => {
         // 현재 선택된 메뉴에는 aria-current를 붙여 화면 읽기 프로그램도 상태를 알 수 있게 합니다.
         const isActive = activeMenu === item.id
+        const isCustomerSupport = item.id === "customerSupport"
 
         return (
           <button
@@ -24,10 +28,21 @@ export default function LobbyMenuNav() {
             type="button"
             onClick={() => handleMenuClick(item.id)}
             aria-current={isActive ? "page" : undefined}
-            className={LOBBY_MENU_BTN_CLASS}
+            aria-label={isCustomerSupport ? item.label : undefined}
+            className={isCustomerSupport ? LOBBY_MENU_CUSTOMER_BTN_CLASS : LOBBY_MENU_BTN_CLASS}
           >
-            {/* 메뉴 버튼 이미지를 표시합니다. alt에는 메뉴 이름을 넣습니다. */}
-            <PublicAsset src={item.src} alt={item.label} className={LOBBY_MENU_IMG_CLASS} />
+            <PublicAsset
+              src={item.src}
+              alt={isCustomerSupport ? "" : item.label}
+              className={LOBBY_MENU_IMG_CLASS}
+            />
+            {isCustomerSupport ? (
+              <PublicAsset
+                src={LOBBY_ASSETS.discordLogo}
+                alt=""
+                className={LOBBY_MENU_DISCORD_IMG_CLASS}
+              />
+            ) : null}
           </button>
         )
       })}
