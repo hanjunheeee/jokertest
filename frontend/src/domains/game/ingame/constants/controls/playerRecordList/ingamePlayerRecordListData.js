@@ -6,6 +6,61 @@
  */
 import { pickInGameJobPortrait } from "../../../utils/pickInGameJobPortrait.js"
 
+// 슬롯 index → shopItem 프로필 사진·테두리 순환. 전적목록 행과 게임 결과 화면
+// 플레이어 행이 같은 규칙을 공유해야 "같은 슬롯 = 같은 프로필"이 화면 사이에서 어긋나지
+// 않는다(gameResultPreviewData·buildGameResultViewModel이 이 함수를 그대로 쓴다).
+const PROFILE_BASE = "/shopItem/player-profile/"
+const BORDER_BASE = "/shopItem/player- profileborder/"
+
+const PROFILE_PHOTO_FILES = [
+  "프로필-금빛가면.png",
+  "프로필-기사.png",
+  "프로필-사냥꾼.png",
+  "프로필-귀부인.png",
+  "프로필-영주.png",
+  "프로필-암살자.png",
+  "프로필-그림자.png",
+  "프로필-악당.png",
+  "프로필-역병의사.png",
+  "프로필-음유시인.png",
+  "프로필-영애.png",
+  "프로필-붉은기운.png",
+]
+
+const PROFILE_BORDER_FILES = [
+  "프로필프레임-황제.png",
+  "프로필프레임-공작.png",
+  "프로필프레임-백작.png",
+  "프로필프레임-후작.png",
+  "프로필프레임-남작.png",
+  "프로필프레임-자작.png",
+  "프로필프레임-귀족.png",
+  "프로필프레임-광대.png",
+  "프로필프레임-주치의.png",
+  "프로필프레임-평민.png",
+  "프로필프레임-경비원.png",
+  "프로필프레임-마녀사냥꾼.png",
+]
+
+/**
+ * 슬롯 index에 대응하는 프로필 사진·테두리 public 경로.
+ *
+ * 경로는 macOS 체크아웃을 위해 NFD로 맞춘다(publicAsset이 요청 직전에 NFC로 되돌린다) —
+ * shared/constants/playerProfileAssets.js와 동일한 관례다.
+ *
+ * @param {number} index 목록 슬롯 index
+ */
+export function getPlayerRecordListProfileAssets(index = 0) {
+  const safeIndex = Number.isInteger(index) && index >= 0 ? index : 0
+
+  return {
+    profilePhotoSrc:
+      `${PROFILE_BASE}${PROFILE_PHOTO_FILES[safeIndex % PROFILE_PHOTO_FILES.length]}`.normalize("NFD"),
+    profileBorderSrc:
+      `${BORDER_BASE}${PROFILE_BORDER_FILES[safeIndex % PROFILE_BORDER_FILES.length]}`.normalize("NFD"),
+  }
+}
+
 /** prototype 플레이어별 전적목록 탭.png — 더미 전적 (초상은 pickInGameJobPortrait — jobs-closeup) */
 const DUMMY_PLAYER_RECORDS_BASE = [
   {

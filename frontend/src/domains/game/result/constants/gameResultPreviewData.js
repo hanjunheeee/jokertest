@@ -1,4 +1,7 @@
+import { INGAME_PLAYER_STATUS } from "@/domains/game/ingame/constants/board/status/ingamePlayerStatus.js"
+import { getPlayerRecordListProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { pickInGameJobPortrait } from "@/domains/game/ingame/utils/pickInGameJobPortrait.js"
+import { pickInGamePlayerFrame } from "@/domains/game/ingame/utils/pickInGamePlayerFrame.js"
 
 /** @typedef {"win" | "lose"} GameResultOutcome */
 
@@ -18,12 +21,16 @@ const PREVIEW_PLAYERS_BASE = [
 
 const players = PREVIEW_PLAYERS_BASE.map((player, index) => ({
   ...player,
+  ...getPlayerRecordListProfileAssets(index),
   portraitSrc: pickInGameJobPortrait(index),
+  frameSrc: pickInGamePlayerFrame(index),
+  cardStatus: index % 4 === 0 ? INGAME_PLAYER_STATUS.DEAD : INGAME_PLAYER_STATUS.ALIVE,
 }))
 
 /** 개발용 기본 outcome — URL `?outcome=win|lose`로 전환 */
 export const GAME_RESULT_PREVIEW = {
   outcome: "lose",
+  winningTeam: "JOKER",
   players,
   mvpPlayerId: "p3",
 }
