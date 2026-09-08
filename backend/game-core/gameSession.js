@@ -3009,6 +3009,8 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
     const session = gameSessions.get(gameId)
 
     if (session.phase === 'ENDED') {
+        // Capture ownership before detaching: earlier leavers may already own a new room/game.
+        const cleanupUuids = [...session.players.keys()].filter((playerUuid) => playerSession.get(playerUuid) === gameId)
         // ENDED 세션은 첫 이탈에 registry 전체를 지우지 않는다 — 참가자마다 개별적으로
         // "이탈"만 반영하고, 마지막 참가자가 이탈할 때만 세션 자체를 registry에서 지운다.
         if (!session.detachedUuids) session.detachedUuids = new Set()
@@ -3018,21 +3020,22 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
         const sessionDeleted = session.detachedUuids.size >= session.players.size
         if (sessionDeleted) {
             gameSessions.delete(gameId)
-            roomGameSession.delete(session.roomId)
+            if (roomGameSession.get(session.roomId) === gameId) roomGameSession.delete(session.roomId)
             // 비-ENDED 분기와 같은 마무리를 여기서도 한다 — 유예 만료로 배제된 참가자는
             // detachedUuids에 미리 들어가 있을 뿐 playerSession 매핑은 남아 있으므로, 이
             // 정리가 없으면 그 uuid만 영영 "다른 세션에 속함" 상태로 묶여 새 게임을 시작하지
             // 못한다. 이미 지워진 uuid에 대한 delete는 no-op이라 기존 경로는 그대로다.
-            session.players.forEach((_, playerUuid) => playerSession.delete(playerUuid))
+            cleanupUuids.forEach((playerUuid) => playerSession.delete(playerUuid))
         }
-        return { ok: true, session, reason, sessionDeleted }
+        return { ok: true, session, reason, sessionDeleted, cleanupUuids }
     }
 
+    const cleanupUuids = [...session.players.keys()].filter((playerUuid) => playerSession.get(playerUuid) === gameId)
     gameSessions.delete(gameId)
-    roomGameSession.delete(session.roomId)
-    session.players.forEach((_, playerUuid) => playerSession.delete(playerUuid))
+    if (roomGameSession.get(session.roomId) === gameId) roomGameSession.delete(session.roomId)
+    cleanupUuids.forEach((playerUuid) => playerSession.delete(playerUuid))
 
-    return { ok: true, session, reason, sessionDeleted: true }
+    return { ok: true, session, reason, sessionDeleted: true, cleanupUuids }
 }
 
 /** 테스트 전용: 모듈 내부 상태를 초기화합니다. 런타임 코드에서는 호출하지 마세요. */

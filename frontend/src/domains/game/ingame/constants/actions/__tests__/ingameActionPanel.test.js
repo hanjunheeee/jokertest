@@ -16,7 +16,8 @@ const eligibilityTable = [
   ["GUARD", 0, "INVESTIGATE"],
   ["GUARD", 1, "INVESTIGATE"],
   ["WITCH_HUNTER", 0, null],
-  ["WITCH_HUNTER", 1, "CONFIRM"],
+  ["WITCH_HUNTER", 1, null],
+  ["WITCH_HUNTER", 2, "CONFIRM"],
   ["CITIZEN", 0, null],
   ["CITIZEN", 1, null],
 ]

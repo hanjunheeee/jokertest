@@ -1,6 +1,8 @@
 // game-core/gameSession.js의 ROLE_TEAMS와 값이 일치해야 한다 — 이 프로젝트에는 백엔드/프런트가
 // 공유하는 상수 모듈이 없어 수동으로 동기화한다(buildPlayerSessionSourceFromGameState.js와 동일한
 // 관례로 이 파일에도 독립적으로 복제한다).
+import { parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
+
 const ROLE_TEAMS = {
   JOKER: "JOKER",
   CITIZEN: "CITIZEN",
@@ -18,7 +20,7 @@ const PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS = new Set(["ROLE_REVEAL", "NIGHT"])
 // 때만 의미가 있으므로 스냅샷도 낮에서만 이 키를 싣는다 — winResult↔ENDED와 같은 양방향
 // 불변조건으로 검증한다.
 const KNOWN_DAY_PHASES = new Set(["DAY_DISCUSSION", "DAY_VOTE"])
-const DAY_VOTE_OUTCOMES = new Set(["ABSTAINED", "TIE", "TRIBUNAL"])
+const DAY_VOTE_OUTCOMES = new Set(["ABSTAINED", "TIE", "TRIBUNAL", "REVOTE"])
 const TRIBUNAL_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 
 function isNonNegativeInteger(value) {
@@ -157,6 +159,9 @@ export function applySessionSnapshotPure(current, response) {
     const raw = response.dayVoteResolution
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return current
     if (!DAY_VOTE_OUTCOMES.has(raw.outcome)) return current
+    const roundFields = parseDayVoteRoundFields(raw, new Set(rosterByUuid.keys()))
+    if (!roundFields) return current
+    if (raw.outcome === "REVOTE" && (response.phase !== "DAY" || response.dayPhase !== "DAY_VOTE")) return current
     if (raw.outcome === "TRIBUNAL") {
       if (!isNonEmptyString(raw.tribunalTargetUuid)) return current
       if (!rosterByUuid.has(raw.tribunalTargetUuid)) return current
@@ -164,11 +169,13 @@ export function applySessionSnapshotPure(current, response) {
       return current
     }
     if (!isNonNegativeInteger(raw.publicVoteCount) || !isNonNegativeInteger(raw.publicAbstainCount)) return current
+    if (raw.outcome === "REVOTE" && raw.publicVoteCount <= raw.publicAbstainCount) return current
     dayVoteResolution = {
       outcome: raw.outcome,
       tribunalTargetUuid: raw.outcome === "TRIBUNAL" ? raw.tribunalTargetUuid : null,
       publicVoteCount: raw.publicVoteCount,
       publicAbstainCount: raw.publicAbstainCount,
+      ...roundFields,
     }
   }
 
@@ -283,6 +290,8 @@ export function applySessionSnapshotPure(current, response) {
     winResult,
     nightResult,
     dayVoteResolution,
+    dayVoteRound: dayVoteResolution?.outcome === "REVOTE" ? dayVoteResolution.round + 1 : (dayVoteResolution?.round ?? 1),
+    dayVoteExcludedUuids: dayVoteResolution?.outcome === "REVOTE" ? [...dayVoteResolution.revoteExcludedUuids] : [],
   }
 
   return { state: nextState }

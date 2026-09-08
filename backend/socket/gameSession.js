@@ -2022,7 +2022,7 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
  * 요청이 gameRooms/playerRoom을 건드릴 수 없어야 함), 호출자는 이 함수를
  * endGameSessionForPlayer 성공 직후 await 없이 즉시 호출해야 한다.
  */
-function finalizeGameSessionEnd(io, session, reason, leftUuid) {
+function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     // 전적 저장을 가장 먼저 시도한다 — 아래 정리 단계가 세션에서 읽어갈 값을 지우기 전에
     // 레코드를 동기적으로 확보하기 위함이다(DB 왕복 자체는 기다리지 않는다). 이 경로로 처음
     // 들어온 세션은 승패가 확정되지 않은 중단 경기이고, 이미 저장된 세션(밤/재판 판정으로
@@ -2050,7 +2050,8 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid) {
     }
 
     try {
-        matchmaking.cleanupRoomStateForSessionParticipants(io, [...session.players.keys()])
+        // Only accounts released by this termination belong to this cleanup generation.
+        matchmaking.cleanupRoomStateForSessionParticipants(io, cleanupUuids)
     } catch (err) {
         console.error('[GameSession 종료 시 matchmaking 정리 실패]', err)
     }
@@ -2124,7 +2125,7 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     // 실제로 지워진다 — 그 전까지는 세션이 여전히 존재하므로 game_ended 재방송·channel 정리를
     // 하지 않는다(비-ENDED 경로는 core가 항상 sessionDeleted:true를 반환하므로 회귀가 없다).
     if (result.sessionDeleted) {
-        finalizeGameSessionEnd(io, result.session, result.reason, uuid)
+        finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
     }
 }
 
@@ -2281,7 +2282,7 @@ async function onDisconnect(io, socket, uuid) {
     // handleLeaveGameSession과 동일한 이유로, 마지막 참가자 이탈일 때만 실제 정리를 수행한다.
     if (!result.sessionDeleted) return
 
-    finalizeGameSessionEnd(io, result.session, result.reason, uuid)
+    finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
 }
 
 /** 활성 GameSession registry의 read-only presence snapshot을 그대로 전달합니다. */

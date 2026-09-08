@@ -1,5 +1,6 @@
 // 파일 역할: InGameActionPanel.jsx - 화면을 구성하는 컴포넌트입니다.
 import { useEffect, useState } from "react"
+import { getPlayerDisplayName } from "../../utils/getPlayerDisplayName.js"
 import {
   formatInGameEvent,
   getInGameWinResultLabel,
@@ -247,7 +248,7 @@ export default function InGameActionPanel({
 
       {gameState.phase === "TRIBUNAL" ? (
         <div className={INGAME_ACTION_SECTION_CLASS}>
-          <p className={INGAME_ACTION_META_CLASS}>피고인: {gameState.tribunal?.defendantUuid ?? "없음"}</p>
+          <p className={INGAME_ACTION_META_CLASS}>피고인: {getPlayerDisplayName(gameState.players, gameState.tribunal?.defendantUuid)}</p>
           {tribunalVoteIsDefendant ? (
             <p className={INGAME_ACTION_META_CLASS}>{TRIBUNAL_DEFENDANT_NOTICE}</p>
           ) : !tribunalVoteAlive ? (

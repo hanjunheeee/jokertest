@@ -3,6 +3,7 @@ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClie
 import { useInGameStore } from "../store/ingameStore.js"
 import { createDayVoteSubmitController } from "../utils/createDayVoteSubmitController.js"
 import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../utils/computeDayVoteSubmitPatch.js"
+import { getDayVoteRound } from "../utils/dayVoteRound.js"
 
 /**
  * DAY 투표 제출(cast_day_vote)을 관리하는 얇은 배선 hook이다. 경쟁 조건 방어 로직은 전부
@@ -14,6 +15,7 @@ export function useInGameDayVoteSubmit() {
   const gameId = useInGameStore((s) => s.gameId)
   const phase = useInGameStore((s) => s.state?.phase)
   const dayIndex = useInGameStore((s) => s.state?.dayIndex)
+  const dayVoteRound = useInGameStore((s) => getDayVoteRound(s.state))
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
   const [state, setState] = useState(INITIAL_DAY_VOTE_SUBMIT_STATE)
@@ -37,11 +39,11 @@ export function useInGameDayVoteSubmit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
-  // gameId/phase/dayIndex 변경 시 진행 중 요청·이전 컨텍스트의 표시 상태를 무효화한다.
+  // 재투표는 phase/dayIndex가 같으므로 round도 요청·표시 상태의 경계에 포함한다.
   useEffect(() => {
     controllerRef.current?.invalidate("CONTEXT_CHANGE")
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, phase, dayIndex])
+  }, [gameId, phase, dayIndex, dayVoteRound])
 
   // disconnect 시 무효화 — 재연결 후 새 socket effect가 새 controller를 만든다.
   useEffect(() => {

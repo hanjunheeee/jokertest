@@ -889,6 +889,20 @@ test('buildGameStartedPayload: 세션에 없는 uuid로 호출하면 self는 nul
 // endGameSessionForPlayer — GameSession 정리(반대 방향 뮤테이터)
 // ---------------------------------------------------------------------------
 
+test('BUG-090: final old ENDED detach preserves an early leaver new active session mapping', () => {
+    const old = buildSessionCandidate(makeRoom({ id: 'old-ended', players: [makePlayer('early-a'), makePlayer('late-b')] })).session
+    commitGameSession(old)
+    old.phase = 'ENDED'
+    endGameSessionForPlayer('early-a', 'LEAVE', old.id)
+    const next = buildSessionCandidate(makeRoom({ id: 'new-active', players: [makePlayer('early-a'), makePlayer('new-c')] })).session
+    commitGameSession(next)
+    const result = endGameSessionForPlayer('late-b', 'LEAVE', old.id)
+    assert.equal(result.sessionDeleted, true)
+    assert.deepEqual(result.cleanupUuids, ['late-b'])
+    assert.equal(gameSession.getActiveSessionRoutingInfo('early-a').gameId, next.id)
+    assert.equal(gameSession.getActiveSessionRoutingInfo('new-c').gameId, next.id)
+})
+
 test('endGameSessionForPlayer: 어떤 활성 GameSession에도 속하지 않은 uuid는 NOT_IN_SESSION이고 registry가 불변이다', () => {
     const before = gameSession.__getStateSnapshotForTests()
     const result = endGameSessionForPlayer('no-such-uuid', 'PARTICIPANT_LEFT')

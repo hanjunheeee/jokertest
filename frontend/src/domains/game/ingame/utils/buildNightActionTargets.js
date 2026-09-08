@@ -15,7 +15,7 @@ import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStat
  * player.id = player.uuid로 만들었으므로, 이 함수의 출력 id도 서버가 아는 실제 uuid와
  * 항상 같습니다(제출 시 targetId로 그대로 쓸 수 있어야 함).
  */
-export function buildNightActionTargets(players, { localPlayerId, selfTargetAllowed } = {}) {
+export function buildNightActionTargets(players, { localPlayerId, selfTargetAllowed, role } = {}) {
   if (!Array.isArray(players)) return []
 
   return players
@@ -25,6 +25,8 @@ export function buildNightActionTargets(players, { localPlayerId, selfTargetAllo
       name: player.isAlly ? `${player.nickname} · 동료 JOKER` : player.nickname,
       alive: player.status !== INGAME_PLAYER_STATUS.DEAD,
       connected: player.status !== INGAME_PLAYER_STATUS.DISCONNECTED,
-      selectable: !player.isAlly,
+      selectable: !player.isAlly && (role === "WITCH_HUNTER"
+        ? player.status === INGAME_PLAYER_STATUS.DEAD
+        : player.status !== INGAME_PLAYER_STATUS.DEAD),
     }))
 }

@@ -2299,6 +2299,42 @@ test('세션 종료 직후 참가자별로 새 방 생성과 새 방 코드 참�
 // resolve_night (handleResolveNight) — NIGHT 결과 적용 + DAY 전이
 // ---------------------------------------------------------------------------
 
+for (const lateExit of ['leave', 'disconnect']) {
+    test(`BUG-090: ENDED ${lateExit} cleanup preserves an early leaver's next room`, async () => {
+        const { session, sockets, io } = commitSessionWithPlayers(['late-a', 'late-b'])
+        session.phase = 'ENDED'
+        matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+        handleLeaveGameSession(io, sockets[0], 'late-a', { gameId: session.id }, countingCallback().callback)
+        const next = await callAsPromise(handleCreateRoom, io, sockets[0], 'late-a', validSettingsPayload())
+        assert.equal(next.ok, true)
+        if (lateExit === 'leave') {
+            handleLeaveGameSession(io, sockets[1], 'late-b', { gameId: session.id }, countingCallback().callback)
+        } else {
+            await gameSessionSocketLayer.onDisconnect(io, sockets[1], 'late-b')
+        }
+        const state = matchmaking.__getStateSnapshotForTests()
+        assert.ok(state.gameRooms.some(([id]) => id === next.room.roomId))
+        assert.ok(state.playerRoom.some(([uuid, id]) => uuid === 'late-a' && id === next.room.roomId))
+        assert.ok(sockets[0].rooms.has(next.room.roomId))
+        assert.equal(gameSessionCore.__getStateSnapshotForTests().gameSessions.length, 0)
+    })
+}
+
+test('BUG-090: late ENDED cleanup does not invalidate an early leaver pending room creation', async () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['pending-a', 'pending-b'])
+    session.phase = 'ENDED'
+    handleLeaveGameSession(io, sockets[0], 'pending-a', { gameId: session.id }, countingCallback().callback)
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => { await gate; return { uuid, nickname: uuid } } })
+    const creating = callAsPromise(handleCreateRoom, io, sockets[0], 'pending-a', validSettingsPayload())
+    handleLeaveGameSession(io, sockets[1], 'pending-b', { gameId: session.id }, countingCallback().callback)
+    release()
+    const next = await creating
+    assert.equal(next.ok, true)
+    assert.ok(matchmaking.__getStateSnapshotForTests().gameRooms.some(([id]) => id === next.room.roomId))
+})
+
 /** 3인(JOKER 1 + CITIZEN 2) 세션을 커밋해 첫 밤(NIGHT, dayIndex 0) 픽스처로 만들고 fake socket/io를 채널에 join된 상태로 준비한다. */
 function commitTrioSessionWithSocketsAtNight({ id = 'room-rn' } = {}) {
     const uuids = [`${id}-a`, `${id}-b`, `${id}-c`]

@@ -7,6 +7,7 @@ import {
   validateRoleComposition,
 } from "../roleComposition.js"
 import { MAX_CUSTOM_JOKER_COUNT, MAX_SPECIAL_ROLE_COUNT } from "../../constants/roleComposition.js"
+import { GENERAL_GAME_SETUP } from "../../constants/gameSetupOptions.js"
 
 function customInput({ roleCounts, maxPlayers = 8 } = {}) {
   return {
@@ -159,11 +160,15 @@ test("스테퍼 범위는 역할별 상한만 강제하고 합계는 강제하�
   assert.deepEqual(getRoleCountRange("JOKER", 4), { min: 1, max: 2 })
   // 정원이 2명이면 "정원보다 적어야 한다"가 상한보다 더 좁게 걸린다.
   assert.deepEqual(getRoleCountRange("JOKER", 2), { min: 1, max: 1 })
-  // 다른 역할은 0부터 정원까지 — 합계 초과는 검증 메시지와 버튼 비활성화가 처리한다.
-  assert.deepEqual(getRoleCountRange("DOCTOR", 6), { min: 0, max: 6 })
+  // 모든 특수직업은 최대 2명이며 합계는 별도 검증한다.
+  for (const role of ["DOCTOR", "GUARD", "WITCH_HUNTER"]) {
+    assert.deepEqual(getRoleCountRange(role, 6), { min: 0, max: 2 })
+    assert.equal(validateRoleComposition(customInput({ roleCounts: { [role]: 3 } })).ok, false)
+  }
 })
 
 test("MAX_SPECIAL_ROLE_COUNT는 2이고 광대 상한도 같은 값을 쓴다", () => {
   assert.equal(MAX_SPECIAL_ROLE_COUNT, 2)
   assert.equal(MAX_CUSTOM_JOKER_COUNT, MAX_SPECIAL_ROLE_COUNT)
+  assert.equal(GENERAL_GAME_SETUP.find((option) => option.id === "joker-count").max, MAX_SPECIAL_ROLE_COUNT)
 })

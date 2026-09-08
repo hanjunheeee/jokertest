@@ -18,6 +18,7 @@ import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
 import { useInGameResolveNight } from "./useInGameResolveNight.js"
 import { useInGameTribunalVoteResolve } from "./useInGameTribunalVoteResolve.js"
 import { useInGameDayDiscussionReady } from "./useInGameDayDiscussionReady.js"
+import { getDayVoteRound, parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
 
 const DAY_VOTE_RESOLVE_TIMEOUT_MS = 5000
 
@@ -28,7 +29,7 @@ const DAY_VOTE_RESOLVE_TIMEOUT_MS = 5000
 export function computeDayVoteResolveAckPatch(response) {
   if (response?.ok) {
     return {
-      status: "resolved",
+      status: response.outcome === "REVOTE" ? "idle" : "resolved",
       error: null,
       resolution: { outcome: response.outcome ?? null, tribunalTargetUuid: response.tribunalTargetUuid ?? null },
     }
@@ -45,10 +46,10 @@ export function shouldApplyDayVoteResolvedPayload({ payload, gameId, dayIndex })
   return true
 }
 
-const DAY_VOTE_RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAINED"])
+const DAY_VOTE_RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAINED", "REVOTE"])
 // TIE/ABSTAINED는 TRIBUNAL 없이 곧장 그날 밤(NIGHT)으로 전이하므로(dayIndex는 그대로) phase는
-// NIGHT여야 한다 — DAY로 남는 경우는 없다(commitDayVoteResolution 참고).
-const DAY_VOTE_RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL"])
+// NIGHT여야 한다. REVOTE만 같은 DAY에 남아 다음 투표 라운드를 연다.
+const DAY_VOTE_RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL", "DAY"])
 
 function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0
@@ -64,8 +65,13 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
   if (!isNonNegativeInteger(payload.publicVoteCount)) return null
   if (!isNonNegativeInteger(payload.publicAbstainCount)) return null
   if (payload.publicAbstainCount > payload.publicVoteCount) return null
+  const roundFields = parseDayVoteRoundFields(payload)
+  if (!roundFields) return null
 
-  if (payload.outcome === "TRIBUNAL") {
+  if (payload.outcome === "REVOTE") {
+    if (payload.phase !== "DAY" || payload.tribunalTargetUuid !== null) return null
+    if (payload.publicVoteCount <= payload.publicAbstainCount) return null
+  } else if (payload.outcome === "TRIBUNAL") {
     if (payload.phase !== "TRIBUNAL") return null
     if (typeof payload.tribunalTargetUuid !== "string" || payload.tribunalTargetUuid.length === 0) return null
     if (payload.publicVoteCount <= payload.publicAbstainCount) return null
@@ -88,6 +94,7 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     tribunalTargetUuid: payload.outcome === "TRIBUNAL" ? payload.tribunalTargetUuid : null,
     publicVoteCount: payload.publicVoteCount,
     publicAbstainCount: payload.publicAbstainCount,
+    ...roundFields,
   }
 }
 
@@ -114,12 +121,14 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   // 낮 하위 구간(DAY_DISCUSSION | DAY_VOTE). phase === "DAY"일 때만 의미가 있으므로 아래 모든
   // 게이트는 phase와 dayPhase 두 조건을 반드시 함께 본다.
   const dayPhase = gameState?.dayPhase
+  const dayVoteRound = getDayVoteRound(gameState)
+  const dayVoteExcludedUuids = gameState?.dayVoteExcludedUuids
 
   // ??寃뚯엫 ?먮뒗 ?ㅼ쓬 dayIndex濡??꾪솚?섎㈃ ?댁쟾 DAY???좏깮媛믪씠 ??而⑦뀓?ㅽ듃濡??덉뼱?섍?吏
   // ?딄쾶 ?좏깮留?珥덇린?뷀빀?덈떎(?쒖텧 ?곹깭 由ъ뀑? useInGameDayVoteSubmit??controller媛 ?대떦).
   useEffect(() => {
     setSelectedDayVoteTargetId(null)
-  }, [gameId, dayIndex])
+  }, [gameId, dayIndex, dayVoteRound])
 
   // NIGHT ????좏깮 紐⑸줉?낅땲?? gameState.players({uuid,nickname})瑜?InGameTargetPicker??  // 吏곸젒 ?섍린硫????⑸땲????洹?而댄룷?뚰듃??{id,name,alive,connected}瑜?湲곕??섎?濡???긽
   // "?곌껐?딄?"?쇰줈 鍮꾪솢?깊솕?⑸땲??id/name/alive/connected媛 ?꾨? undefined). 蹂대뱶쨌梨꾪똿쨌
@@ -130,14 +139,15 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
       buildNightActionTargets(sessionPlayers, {
         localPlayerId,
         selfTargetAllowed: isSelfTargetAllowedForNightAction(myRole),
+        role: myRole,
       }),
     [sessionPlayers, localPlayerId, myRole],
   )
 
   // DAY ?ы몴 ???紐⑸줉?낅땲????buildNightActionTargets? ?щ━ role/isAlly瑜??쎌? ?딆쑝誘濡?  // ?댁븘?덈뒗 ?숇즺 JOKER????긽 ?좏깮 媛?ν븳 ??곸쑝濡??⑥뒿?덈떎.
   const dayVoteTargets = useMemo(
-    () => buildDayVoteTargets(sessionPlayers, { localPlayerId }),
-    [sessionPlayers, localPlayerId],
+    () => buildDayVoteTargets(sessionPlayers, { localPlayerId, excludedUuids: dayVoteExcludedUuids }),
+    [sessionPlayers, localPlayerId, dayVoteExcludedUuids],
   )
   const localSessionPlayer = sessionPlayers?.find((player) => player.id === localPlayerId)
 
@@ -203,17 +213,18 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   useEffect(() => {
     invalidateDayVoteResolve()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, dayIndex])
+  }, [gameId, dayIndex, dayVoteRound])
 
   useEffect(() => {
     if (!dayVoteResolveSocket || !gameId) return
     const handleDayVoteResolved = (payload) => {
       const parsed = parseDayVoteResolvedPayload({ payload, gameId, dayIndex })
       if (!parsed) return
+      if ((parsed.round ?? 1) !== dayVoteRound) return
       dayVoteVersionRef.current += 1
       dayVoteAckingRef.current = false
       if (!dayVoteMountedRef.current) return
-      setDayVoteResolveStatus("resolved")
+      setDayVoteResolveStatus(parsed.outcome === "REVOTE" ? "idle" : "resolved")
       setDayVoteResolveError(null)
       setDayVoteResolution({ outcome: parsed.outcome, tribunalTargetUuid: parsed.tribunalTargetUuid })
     }
@@ -222,7 +233,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
       dayVoteResolveSocket.off("day_vote_resolved", handleDayVoteResolved)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayVoteResolveSocket, gameId, dayIndex])
+  }, [dayVoteResolveSocket, gameId, dayIndex, dayVoteRound])
 
   // ?먯젙??吏꾪뻾 以묒씠嫄곕굹 ?대? ?앸궗?쇰㈃(?ㅻⅨ 李멸??먭? 癒쇱? ?앸궦 寃쎌슦 ?ы븿) ?ы몴쨌湲곌텒쨌?먯젙 ?붿껌
   // ?낅젰???④퍡 ?좉렐????nightActionsLocked? ?숈씪???먯튃?대떎.
@@ -304,6 +315,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     const requestVersion = dayVoteVersionRef.current
     const requestGameId = gameId
     const requestDayIndex = dayIndex
+    const requestRound = dayVoteRound
 
     dayVoteAckingRef.current = true
     setDayVoteResolveStatus("resolving")
@@ -314,7 +326,9 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
       requestVersion !== dayVoteVersionRef.current ||
       requestSocket !== getSocket() ||
       !requestSocket.connected ||
-      requestGameId !== useInGameStore.getState().gameId
+      requestGameId !== useInGameStore.getState().gameId ||
+      requestDayIndex !== useInGameStore.getState().state?.dayIndex ||
+      requestRound !== getDayVoteRound(useInGameStore.getState().state)
 
     requestSocket
       .timeout(DAY_VOTE_RESOLVE_TIMEOUT_MS)

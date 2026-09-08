@@ -1,3 +1,5 @@
+import { MAX_SPECIAL_ROLE_COUNT } from "./roleComposition.js"
+
 /** GameSetupPanel 상단 탭 — 일반 / 회의&투표 */
 export const GAME_SETUP_TABS = [
   { id: "general", label: "일반" },
@@ -31,7 +33,7 @@ export const GENERAL_GAME_SETUP = [
     type: "stepper",
     label: "광대(마피아) 플레이어 수",
     min: 1,
-    max: 4,
+    max: MAX_SPECIAL_ROLE_COUNT,
     defaultValue: 2,
   },
   {

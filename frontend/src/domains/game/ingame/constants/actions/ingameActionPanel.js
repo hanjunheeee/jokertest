@@ -26,7 +26,7 @@ const NIGHT_ACTION_MIN_DAY_INDEX = Object.freeze({
   JOKER: 0,
   DOCTOR: 0,
   GUARD: 0,
-  WITCH_HUNTER: 1,
+  WITCH_HUNTER: 2,
 })
 
 function isNightActionEligible(role, dayIndex) {
@@ -35,7 +35,7 @@ function isNightActionEligible(role, dayIndex) {
 }
 
 // 역할·dayIndex별 밤 행동 타입입니다. 서버에 보낼 action 종류를 프런트에서 미리 판단하기
-// 위한 용도이며, 행동 불가(CITIZEN 전체·day0 WITCH_HUNTER)면 null을 반환합니다.
+// 위한 용도이며, 행동 불가(CITIZEN 전체·dayIndex 2 미만 WITCH_HUNTER)면 null을 반환합니다.
 export function getInGameNightActionType(role, dayIndex) {
   if (!isNightActionEligible(role, dayIndex)) return null
   if (role === "DOCTOR") return "PROTECT"

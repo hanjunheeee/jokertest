@@ -16,11 +16,12 @@ export function isSessionPlayerAlive(sessionPlayer) {
  * connected는 InGameTargetPicker가 선택 가능 여부 판정에 쓰는 필수 필드라 함께 계산해
  * 돌려줍니다 — 연결 끊김은 UI 표시/선택 불가 사유로만 쓰이고 서버 권한의 근거가 아닙니다.
  */
-export function buildDayVoteTargets(sessionPlayers, { localPlayerId } = {}) {
+export function buildDayVoteTargets(sessionPlayers, { localPlayerId, excludedUuids = [] } = {}) {
   if (!Array.isArray(sessionPlayers)) return []
+  const excluded = new Set(excludedUuids)
 
   return sessionPlayers
-    .filter((player) => isSessionPlayerAlive(player) && player.id !== localPlayerId)
+    .filter((player) => isSessionPlayerAlive(player) && player.id !== localPlayerId && !excluded.has(player.id))
     .map((player) => ({
       id: player.id,
       name: player.nickname,

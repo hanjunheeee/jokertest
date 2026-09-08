@@ -9,6 +9,7 @@
 import {
   CUSTOM_ROLE_KEYS,
   MAX_CUSTOM_JOKER_COUNT,
+  MAX_SPECIAL_ROLE_COUNT,
   MIN_CUSTOM_JOKER_COUNT,
   ROLE_COMPOSITION_MODES,
   DEFAULT_CUSTOM_ROLE_COUNTS,
@@ -57,6 +58,7 @@ export const ROLE_COMPOSITION_ERROR_MESSAGES = Object.freeze({
   JOKER_COUNT_TOO_LOW: `광대는 최소 ${MIN_CUSTOM_JOKER_COUNT}명이어야 합니다.`,
   JOKER_COUNT_TOO_HIGH: "광대 수는 최대 플레이어 수보다 적어야 합니다.",
   JOKER_COUNT_ABOVE_LIMIT: `광대는 최대 ${MAX_CUSTOM_JOKER_COUNT}명까지 지정할 수 있습니다.`,
+  SPECIAL_ROLE_COUNT_ABOVE_LIMIT: `특수직업은 각각 최대 ${MAX_SPECIAL_ROLE_COUNT}명까지 지정할 수 있습니다.`,
   FIXED_ROLES_EXCEED_MAX_PLAYERS: "지정한 역할 인원의 합이 최대 플레이어 수를 넘습니다.",
 })
 
@@ -84,6 +86,9 @@ export function validateRoleComposition({ mode, roleCounts, maxPlayers }) {
   }
   if (roleCounts.JOKER < MIN_CUSTOM_JOKER_COUNT) return fail("JOKER_COUNT_TOO_LOW")
   if (roleCounts.JOKER > MAX_CUSTOM_JOKER_COUNT) return fail("JOKER_COUNT_ABOVE_LIMIT")
+  if (CUSTOM_ROLE_KEYS.some((key) => roleCounts[key] > MAX_SPECIAL_ROLE_COUNT)) {
+    return fail("SPECIAL_ROLE_COUNT_ABOVE_LIMIT")
+  }
   if (roleCounts.JOKER >= maxPlayers) return fail("JOKER_COUNT_TOO_HIGH")
   if (getFixedRoleCount(roleCounts) > maxPlayers) return fail("FIXED_ROLES_EXCEED_MAX_PLAYERS")
 
@@ -107,5 +112,5 @@ export function getRoleCountRange(roleKey, maxPlayers) {
       max: Math.max(MIN_CUSTOM_JOKER_COUNT, Math.min(maxPlayers - 1, MAX_CUSTOM_JOKER_COUNT)),
     }
   }
-  return { min: 0, max: maxPlayers }
+  return { min: 0, max: Math.min(maxPlayers, MAX_SPECIAL_ROLE_COUNT) }
 }

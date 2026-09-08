@@ -87,6 +87,7 @@ export function useGameSessionSocketEvents() {
       useInGameStore
         .getState()
         .applyDayVoteResolvedToPhase(current.gameId, parsed.dayIndex, {
+          ...parsed,
           outcome: parsed.outcome,
           defendantUuid: parsed.tribunalTargetUuid,
         })
