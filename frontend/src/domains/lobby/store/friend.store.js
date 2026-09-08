@@ -1,8 +1,9 @@
 import { create } from "zustand";
+// node --test는 @/ alias를 풀지 못하므로 단위 테스트가 닿는 경계는 상대 경로로 둡니다.
 import {
     fetchIncomingRequests as fetchIncomingRequestsApi,
     fetchMyFriends,
-} from "@/domains/lobby/api/friend.api";
+} from "../api/friend.api.js";
 
 // 로비 친구 목록과 친구 요청 상태를 전역에서 관리하는 store입니다.
 export const useFriendStore = create((set) => ({
@@ -18,6 +19,19 @@ export const useFriendStore = create((set) => ({
 
     // 요청을 수락/거절해서 화면에서 처리 완료된 요청 id 목록입니다.
     resolvedRequestIds: new Set(),
+
+    // 기본 탭 즐겨찾기 (프론트 전용, 백엔드 미연동)
+    favoriteFriendIds: new Set(),
+
+    toggleFavorite: (friendId) => set((state) => {
+        const nextFavoriteIds = new Set(state.favoriteFriendIds);
+        if (nextFavoriteIds.has(friendId)) {
+            nextFavoriteIds.delete(friendId);
+        } else {
+            nextFavoriteIds.add(friendId);
+        }
+        return { favoriteFriendIds: nextFavoriteIds };
+    }),
 
     // 서버에서 내 친구 목록을 가져와 store에 저장합니다.
     fetchFriends: async () => {
@@ -74,4 +88,12 @@ export const useFriendStore = create((set) => ({
                 : friend
         ),
     })),
+
+    reset: () => set({
+        friends: [],
+        incomingRequests: [],
+        sentRequestIds: new Set(),
+        resolvedRequestIds: new Set(),
+        favoriteFriendIds: new Set(),
+    }),
 }));

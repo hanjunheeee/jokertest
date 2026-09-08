@@ -1,3 +1,5 @@
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
+
 // 친구 목록 패널이 열리고 닫힐 때 쓰는 애니메이션 설정입니다.
 export const FRIEND_PANEL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
 
@@ -78,7 +80,7 @@ export const FRIEND_FOLDER_LABEL_CLASS = "font-subheading text-[13px] text-white
 export const FRIEND_FOLDER_CHEVRON_CLASS = "ml-auto h-3 w-3 shrink-0 select-none opacity-90"
 
 // 친구 row 목록 기본 스타일입니다.
-export const FRIEND_FOLDER_LIST_CLASS = "mt-1.5 pr-0.5"
+export const FRIEND_FOLDER_LIST_CLASS = "mt-1.5 overflow-visible pr-0.5"
 
 // 친구 한 명을 감싸는 li 스타일입니다.
 export const FRIEND_ROW_ITEM_CLASS = "relative mt-2 w-full list-none"
@@ -87,11 +89,25 @@ export const FRIEND_ROW_ITEM_CLASS = "relative mt-2 w-full list-none"
 export const FRIEND_ROW_FRAME_CLASS = "block h-auto w-full select-none"
 
 // 프레임 이미지 위에 친구 정보를 올리는 영역 스타일입니다.
-export const FRIEND_ROW_CONTENT_CLASS = "absolute inset-0 flex items-center gap-2 px-[7%] py-[6%]"
+export const FRIEND_ROW_CONTENT_CLASS = "absolute inset-0 flex items-center gap-1.5 px-[6%] py-[6%]"
 
-// 친구 프로필 이미지 크기 스타일입니다.
-export const FRIEND_ROW_PROFILE_IMAGE_CLASS =
-  "h-auto w-[clamp(2.35rem,26%,3.1rem)] shrink-0 select-none"
+// 즐겨찾기 빈 별 버튼 스타일입니다.
+export const FRIEND_ROW_FAVORITE_BUTTON_CLASS =
+  "relative z-[2] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90"
+
+export const FRIEND_ROW_FAVORITE_STAR_CLASS =
+  "block size-[clamp(1.05rem,1.45vw,1.25rem)] select-none text-[#a89262]/45"
+
+export const FRIEND_ROW_FAVORITE_STAR_ACTIVE_CLASS =
+  "block size-[clamp(1.05rem,1.45vw,1.25rem)] select-none text-[#e8c56a]"
+
+// 친구 목록 row의 프로필 초상 크기 스타일입니다.
+export const FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS =
+  "relative z-[2] size-[3.6rem] shrink-0 select-none"
+
+// 친구 추가·요청 수락 row의 프로필 초상 크기 스타일입니다.
+export const FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS =
+  "relative z-[2] size-[3.6rem] shrink-0 select-none"
 
 // 친구 이름이 길 때 말줄임이 되도록 잡는 정보 영역 스타일입니다.
 export const FRIEND_ROW_INFO_CLASS = "min-w-0 flex-1"
@@ -113,23 +129,35 @@ export const FRIEND_ROW_OFFLINE_OVERLAY_CLASS =
 // 접속 상태 글자의 공통 스타일입니다.
 export const FRIEND_ROW_STATUS_TEXT_CLASS = "text-[10px] leading-none"
 
+// 친구 목록 기본 탭 전체 레이아웃 스타일입니다.
+export const FRIEND_LIST_TAB_CLASS = "flex h-full min-h-0 flex-col"
+
+// 기본 탭 로컬 검색 결과 목록 스타일입니다.
+export const FRIEND_LIST_FILTER_RESULT_LIST_CLASS =
+  `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
+
+// 기본 탭 로컬 검색 결과가 없을 때 문구 스타일입니다.
+export const FRIEND_LIST_FILTER_EMPTY_CLASS = "mt-6 text-center text-[11px] text-white/50"
+
 // 친구 그룹 안의 row 목록이 너무 길어질 때 스크롤되게 하는 스타일입니다.
-export const FRIEND_TAB_SCROLLABLE_LIST_CLASS = "mt-1 max-h-[12rem] overflow-y-auto pr-0.5"
+export const FRIEND_TAB_SCROLLABLE_LIST_CLASS =
+  `mt-1 max-h-[12rem] overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 첫 그룹 아래부터 그룹 사이에 간격을 주는 스타일입니다.
 export const FRIEND_TAB_GROUP_GAP_CLASS = "mt-3.5"
 
 // 친구 신청 탭 전체 레이아웃 스타일입니다.
-export const FRIEND_REQUEST_TAB_CLASS = "flex h-full min-h-0 flex-col"
+export const FRIEND_REQUEST_TAB_CLASS = "relative flex min-h-0 flex-1 flex-col"
 
 // 친구 검색 결과 목록 스타일입니다.
-export const FRIEND_REQUEST_RESULT_LIST_CLASS = "mt-2 min-h-0 flex-1 overflow-y-auto pr-0.5"
+export const FRIEND_REQUEST_RESULT_LIST_CLASS =
+  `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[clamp(2.6rem,4.2vw,3.1rem)] pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 검색 결과가 없거나 검색 전일 때 보여주는 문구 스타일입니다.
 export const FRIEND_REQUEST_EMPTY_CLASS = "mt-10 text-center text-[11px] text-white/50"
 
-// 친구 신청 탭 아래쪽 뒤로가기 버튼 여백입니다.
-export const FRIEND_REQUEST_BACK_BUTTON_CLASS = "mt-2"
+// 친구 신청 탭 좌측 하단 고정 뒤로가기 버튼 스타일입니다.
+export const FRIEND_REQUEST_BACK_BUTTON_CLASS = "absolute bottom-0 left-0 z-10"
 
 // 친구 요청 수락 탭 전체 레이아웃 스타일입니다.
 export const FRIEND_ACCEPT_TAB_CLASS = "flex h-full min-h-0 flex-col"
@@ -154,7 +182,8 @@ export const FRIEND_ACCEPT_REFRESH_BUTTON_CLASS =
 export const FRIEND_ACCEPT_BUTTON_IMAGE_CLASS = "block h-auto w-full select-none"
 
 // 받은 친구 요청 목록 스타일입니다.
-export const FRIEND_ACCEPT_LIST_CLASS = "mt-2 min-h-0 flex-1 overflow-y-auto pr-0.5"
+export const FRIEND_ACCEPT_LIST_CLASS =
+  `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 받은 요청이 없을 때 보여줄 문구 스타일입니다.
 export const FRIEND_ACCEPT_EMPTY_CLASS = "mt-10 text-center text-[11px] text-white/50"
@@ -184,20 +213,6 @@ export const RECOMMENDED_FRIEND_ROW_CONTENT_CLASS =
 export const RECOMMENDED_FRIEND_INFO_WRAP_CLASS =
   "flex min-w-0 max-w-[58%] items-center gap-2"
 
-// 프로필 프레임 전체 크기 스타일입니다.
-export const RECOMMENDED_FRIEND_PROFILE_WRAP_CLASS = "relative size-[2.65rem] shrink-0"
-
-// 프로필 프레임 이미지 스타일입니다.
-export const RECOMMENDED_FRIEND_PROFILE_FRAME_CLASS =
-  "pointer-events-none absolute inset-0 h-full w-full select-none object-contain"
-
-// 실제 프로필 이미지가 들어가는 안쪽 영역 스타일입니다.
-export const RECOMMENDED_FRIEND_PROFILE_IMAGE_WRAP_CLASS = "absolute inset-[22%] overflow-hidden"
-
-// 실제 프로필 이미지 스타일입니다.
-export const RECOMMENDED_FRIEND_PROFILE_IMAGE_CLASS =
-  "block h-full w-full select-none object-cover object-center"
-
 // 친구 이름과 접속 상태를 담는 텍스트 영역 스타일입니다.
 export const RECOMMENDED_FRIEND_TEXT_WRAP_CLASS = "min-w-0"
 
@@ -220,11 +235,11 @@ export const RECOMMENDED_FRIEND_STATUS_TEXT_CLASS = "text-[9px] leading-none"
 
 // 차단/친구 신청 버튼들을 묶는 오른쪽 영역 스타일입니다.
 export const RECOMMENDED_FRIEND_ACTIONS_CLASS =
-  "flex shrink-0 items-center gap-[clamp(0.2rem,0.45vw,0.35rem)]"
+  "relative z-[2] flex shrink-0 items-center gap-[clamp(0.25rem,0.55vw,0.45rem)]"
 
 // 추천 친구 row의 작은 액션 버튼 스타일입니다.
 export const RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS =
-  "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
+  "block w-[clamp(2.25rem,3.45vw,2.85rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
 // 이미 신청한 버튼에 붙는 비활성 느낌의 스타일입니다.
 export const RECOMMENDED_FRIEND_SENT_BUTTON_CLASS = "opacity-40 cursor-default"

@@ -6,10 +6,7 @@ import {
   RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
   RECOMMENDED_FRIEND_ACTIONS_CLASS,
   RECOMMENDED_FRIEND_OFFLINE_OVERLAY_CLASS,
-  RECOMMENDED_FRIEND_PROFILE_FRAME_CLASS,
-  RECOMMENDED_FRIEND_PROFILE_IMAGE_CLASS,
-  RECOMMENDED_FRIEND_PROFILE_IMAGE_WRAP_CLASS,
-  RECOMMENDED_FRIEND_PROFILE_WRAP_CLASS,
+  FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS,
   RECOMMENDED_FRIEND_ROW_CLASS,
   RECOMMENDED_FRIEND_ROW_CONTENT_CLASS,
   RECOMMENDED_FRIEND_ROW_FRAME_CLASS,
@@ -19,27 +16,8 @@ import {
   RECOMMENDED_FRIEND_STATUS_WRAP_CLASS,
   RECOMMENDED_FRIEND_TEXT_WRAP_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
+import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
-
-// 추천 친구의 프로필 프레임과 실제 프로필 이미지를 겹쳐서 보여줍니다.
-function RecommendedFriendProfile({ profileSrc }) {
-  return (
-    <div className={RECOMMENDED_FRIEND_PROFILE_WRAP_CLASS}>
-      <PublicAsset
-        src={FRIEND_LIST_ASSETS.profileFrame}
-        alt=""
-        className={RECOMMENDED_FRIEND_PROFILE_FRAME_CLASS}
-      />
-      <div className={RECOMMENDED_FRIEND_PROFILE_IMAGE_WRAP_CLASS}>
-        <PublicAsset
-          src={profileSrc}
-          alt=""
-          className={RECOMMENDED_FRIEND_PROFILE_IMAGE_CLASS}
-        />
-      </div>
-    </div>
-  )
-}
 
 // 추천 친구가 접속 중인지 오프라인인지 표시합니다.
 function RecommendedFriendStatus({ online }) {
@@ -94,7 +72,7 @@ function RecommendedFriendActions({ id, name, onSend, sent }) {
         style={{ outline: "none" }}
       >
         <PublicAsset
-          src={FRIEND_LIST_ASSETS.tabButtonActive}
+          src={FRIEND_LIST_ASSETS.friendRequestButton}
           alt=""
           className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
         />
@@ -104,7 +82,7 @@ function RecommendedFriendActions({ id, name, onSend, sent }) {
 }
 
 // 친구 검색 결과에서 추천 친구 한 명과 신청 버튼을 보여주는 row입니다.
-export default function RecommendedFriendRow({ id, name, profileSrc, online, onSend, sent }) {
+export default function RecommendedFriendRow({ id, name, online, onSend, sent }) {
   return (
     <li className={RECOMMENDED_FRIEND_ROW_CLASS}>
       <PublicAsset
@@ -114,7 +92,7 @@ export default function RecommendedFriendRow({ id, name, profileSrc, online, onS
       />
       <div className={RECOMMENDED_FRIEND_ROW_CONTENT_CLASS}>
         <div className={RECOMMENDED_FRIEND_INFO_WRAP_CLASS}>
-          <RecommendedFriendProfile profileSrc={profileSrc} />
+          <PlayerProfilePortrait wrapClassName={FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS} />
           <div className={RECOMMENDED_FRIEND_TEXT_WRAP_CLASS}>
             <p className={RECOMMENDED_FRIEND_NAME_CLASS}>{name}</p>
             <RecommendedFriendStatus online={online} />
