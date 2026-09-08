@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { useUserProfileStore } from "../store/user.store"
+import { useUserProfileStore } from "../store/user.store.js"
 
 // 내 프로필 화면에서 필요한 프로필/통계/소개 문구 데이터를 준비하는 훅입니다.
 export function useMyProfile() {

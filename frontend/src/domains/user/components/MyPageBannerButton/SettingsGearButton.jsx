@@ -1,10 +1,10 @@
-import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
-import { LOBBY_SETTINGS_GEAR_LAYOUT } from "@/domains/user/constants/myPageBannerLayout.js"
+import { LOBBY_ASSETS } from "../../../lobby/constants/lobbyAssets.js"
 import {
+  LOBBY_SETTINGS_GEAR_LAYOUT,
   MY_PAGE_BANNER_SETTINGS_BTN_CLASS,
   MY_PAGE_BANNER_SETTINGS_GEAR_IMG_CLASS,
-} from "@/domains/user/constants/myPageBannerStyle.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+} from "../../constants/myPageBannerStyle.js"
+import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
 // 마이페이지 배너 위에 겹쳐 보이는 설정 톱니 버튼입니다.
 export default function SettingsGearButton({ onClick }) {
