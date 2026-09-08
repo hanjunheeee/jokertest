@@ -16,11 +16,12 @@ function holdOnLastFrame(video) {
   video.pause()
 }
 
+/** 진입 인트로 영상 — 끝나거나 스킵 시 introDone (설정·상점 등 공용) */
 export function useVideoIntro() {
   const bgVideoRef = useRef(null)
   const videoHeldRef = useRef(false)
 
-  // 인트로 영상이 끝났거나 사용자가 건너뛰어서 설정 UI를 보여줘도 되는지 표시합니다.
+  // 인트로 영상이 끝났거나 사용자가 건너뛰어서 UI를 보여줘도 되는지 표시합니다.
   const [introDone, setIntroDone] = useState(false)
 
   const holdVideo = () => {

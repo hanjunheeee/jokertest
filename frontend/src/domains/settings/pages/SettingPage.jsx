@@ -4,7 +4,7 @@ import SettingBackButton from "@/domains/settings/components/SettingBackButton.j
 import SettingBackground from "@/domains/settings/components/SettingBackground.jsx"
 import SettingIntroSkipLayer from "@/domains/settings/components/SettingIntroSkipLayer.jsx"
 import SettingPanel from "@/domains/settings/components/SettingPanel.jsx"
-import { useVideoIntro } from "../hooks/useVideoIntro.js"
+import { useVideoIntro } from "@/shared/hooks/useVideoIntro.js"
 
 export default function SettingPage() {
   const navigate = useNavigate()
