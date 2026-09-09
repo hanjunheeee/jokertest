@@ -4,9 +4,9 @@ import {
   getInGameChatMessageSenderClass,
   INGAME_CHAT_MESSAGE_ROW_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
-import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../constants/ingamePlayerTheme.js"
 import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
 import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
+import { resolveInGameChatPlayerColor } from "./resolveInGameChatPlayerColor.js"
 
 /**
  * 인게임 채팅 메시지 — 입력창과 동일 CSS wrap (textarea와 같은 클래스·폭)
@@ -21,9 +21,8 @@ export default function InGameChatMessageRow({
   const { getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
   const themeStyles = playerId ? getThemeStylesByPlayerId(playerId) : null
 
-  const themedTextStyle = themeStyles ? { color: themeStyles.color } : undefined
-
-  const themedTextClass = themeStyles ? INGAME_PLAYER_THEME_TEXT_RENDER_CLASS : ""
+  const { style: themedTextStyle, className: themedTextClass } =
+    resolveInGameChatPlayerColor(themeStyles)
 
   const messageMaxWidth =
     textFieldWidth > 0
