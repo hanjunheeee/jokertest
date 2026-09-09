@@ -1,13 +1,16 @@
 import { useEffect, useSyncExternalStore } from "react"
 import { useNavigate } from "react-router-dom"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
-import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
+// 상대 경로로 둔다 — 이 훅은 node:test에서 실제로 마운트해 검증하는 대상이고(store/__tests__/
+// nightPrivateResult.test.js), `@/` 별칭은 vite만 해석할 수 있어 그 실행을 막는다.
+import { useMatchingStore } from "../../matching/store/matchingStore.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
 import { parseNightResultAppliedPayload } from "../utils/parseNightResultAppliedPayload.js"
 import { parseInGameNightPrivateResultPayload } from "../utils/reduceInGameNightPrivateResult.js"
+import { selectInGameSelfAlive } from "../utils/selectInGameSelfAlive.js"
 import { parseDayPhaseChangedPayload } from "../utils/parseDayPhaseChangedPayload.js"
 import { parseNightTurnStartedPayload } from "../utils/parseNightTurnStartedPayload.js"
 import { parseNightTurnEndedPayload } from "../utils/parseNightTurnEndedPayload.js"
@@ -76,8 +79,9 @@ export function useGameSessionSocketEvents() {
 
     // 밤 개인 결과(night_action_result)다. 세션 channel 방송이 아니라 결과가 있는 수신자
     // 소켓에게만 개별 emit되는 1회성 통지이고, payload에는 수신자 identity가 없다 — 그래서
-    // 본인 확인은 actionType ↔ 본인 역할 대응으로 한다(parseInGameNightPrivateResultPayload).
-    // 검증에 필요한 gameId/dayIndex/phase/self.role은 호출 시점의 store에서 직접 읽는다(위
+    // 본인 확인은 서버가 그 결과를 만들 수 있는 수신자 조건(역할·생존·대상≠본인) 전부와
+    // 대조해서 한다(parseInGameNightPrivateResultPayload).
+    // 검증에 필요한 gameId/dayIndex/phase/self는 호출 시점의 store에서 직접 읽는다(위
     // handleNightResultApplied와 동일한 이유 — 렌더 시점 클로저를 캡처하지 않는다).
     const handleNightActionResult = (payload) => {
       const current = useInGameStore.getState()
@@ -88,6 +92,9 @@ export function useGameSessionSocketEvents() {
         dayIndex: current.state.dayIndex,
         phase: current.state.phase,
         selfRole: current.state.self?.role ?? null,
+        selfUuid: current.state.self?.uuid ?? null,
+        // 생존은 roster가 유일한 canonical 출처다(self에는 alive가 없다 — selectInGameSelfAlive).
+        selfAlive: selectInGameSelfAlive(current.state),
       })
       if (!parsed) return
       useInGameStore.getState().setNightPrivateResult(parsed)

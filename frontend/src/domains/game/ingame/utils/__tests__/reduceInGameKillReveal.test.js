@@ -109,6 +109,42 @@ test("AC-03: 재판 처형도 같은 큐로 들어가고, 밤 사망과 id가 �
   assert.equal(hasPendingInGameKillReveal(playing), true)
 })
 
+test("AC-03: 재판 사망자 0명 — 처형 없는 판정은 큐에 아무것도 넣지 않고 이동도 막지 않는다", () => {
+  // 무죄·기권 판정에는 executedUuid가 없어 훅이 항목을 아예 만들지 않는다(useInGameKillReveal
+  // 참고). reducer 입장에서는 "빈 items"가 그 상태다.
+  const next = reduceInGameKillReveal(INITIAL_IN_GAME_KILL_REVEAL, { scope: SCOPE, items: [], hold: false })
+  assert.equal(next.active, null)
+  assert.deepEqual(next.queue, [])
+  assert.equal(hasPendingInGameKillReveal(next), false, "보류할 연출이 없다")
+})
+
+test("AC-03: 재판 처형 + 그 밤의 사망 2명 — 도착 순서대로 재생되고 마지막까지 보류한다", () => {
+  // 같은 낮·밤 사이클에서 나올 수 있는 두 사망이다(처형은 낮, 나머지는 그 밤의 판정).
+  const executed = tribunalItem(2, "victim-1")
+  const night = nightItems(2, [{ victimUuid: "victim-2", source: "WITCH_HUNTER" }])
+
+  const first = reduceInGameKillReveal(INITIAL_IN_GAME_KILL_REVEAL, {
+    scope: SCOPE,
+    items: [executed],
+    hold: false,
+  })
+  assert.equal(first.active.source, "TRIBUNAL")
+
+  // 밤 결과가 도착해도 재생 중인 처형 연출을 밀어내지 않고 뒤에 줄을 선다.
+  const queued = reduceInGameKillReveal(first, { scope: SCOPE, items: night, hold: false })
+  assert.equal(queued.active.victimUuid, "victim-1")
+  assert.deepEqual(queued.queue.map((item) => item.victimUuid), ["victim-2"])
+  assert.equal(hasPendingInGameKillReveal(queued), true)
+
+  const second = consumeInGameKillReveal(queued, queued.active.id)
+  assert.equal(second.active.victimUuid, "victim-2")
+  assert.equal(hasPendingInGameKillReveal(second), true, "두 번째가 남아 있는 동안에도 보류한다")
+
+  const done = consumeInGameKillReveal(second, second.active.id)
+  assert.equal(done.active, null)
+  assert.equal(hasPendingInGameKillReveal(done), false, "마지막 연출이 끝나야 이동한다")
+})
+
 test("AC-03: hold가 걸리면 재생 중이던 연출은 소비되지 않고 큐 맨 앞으로 돌아간다", () => {
   const items = nightItems(2, [
     { victimUuid: "victim-1", source: "JOKER" },

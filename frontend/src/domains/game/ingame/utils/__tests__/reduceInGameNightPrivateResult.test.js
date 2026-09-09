@@ -132,6 +132,66 @@ test("AC-02: 저장된 값은 원본 payload와 분리된 새 객체다(호출�
   assert.equal(parsed.role, "JOKER")
 })
 
+// ---------------------------------------------------------------------------
+// AC-02 · 보호 결과 계약과 "같은 역할인 타인의 결과"의 서버 근거.
+//
+// 아래 세 시험의 기대값은 전부 로컬 backend game-core/gameSession.js prepareNightResolution의
+// 실제 생성 규칙에서 유도했다(추측한 계약이 아니다):
+//   - privateResultBuilderByRole은 역할 단위로 결과를 하나 만들고(1514-1539행),
+//     그 역할의 "생존" 보유자 전원에게 값이 같은 사본을 나눠 준다(1542-1547행).
+//   - DOCTOR/CITIZEN은 이 Map에 아예 등장하지 않는다(1432-1433행 계약 주석).
+//   - 자기 자신을 지목할 수 있는 역할은 DOCTOR뿐이다(SELF_TARGET_ALLOWED_ROLES, 1297행).
+// ---------------------------------------------------------------------------
+
+test("AC-02: 보호 결과 — 의사에게는 개인 결과가 없고, 보호가 관측되는 통지는 암살 실패 하나뿐이다", () => {
+  // 서버는 DOCTOR를 privateResults에 넣지 않는다 — 어떤 형태로 위조해 와도 저장되지 않는다.
+  assert.equal(parseAs("DOCTOR", { ...GUARD_INVESTIGATE, actionType: "PROTECT" }), null)
+  assert.equal(parseAs("DOCTOR", { ...GUARD_INVESTIGATE, actionType: "PROTECT", role: "JOKER" }), null)
+  assert.equal(parseAs("DOCTOR", JOKER_ASSASSINATION_FAILED), null)
+  assert.equal(parseAs("DOCTOR", GUARD_INVESTIGATE), null)
+
+  // 보호의 결과는 "보호받았다"가 아니라 "보호로 암살이 막혔다"로만, 그것도 생존 JOKER에게만
+  // 관측된다. 그 통지가 곧 이 계약에서 보호 결과의 전부다.
+  const parsed = parseAs("JOKER", JOKER_ASSASSINATION_FAILED)
+  const display = reduceInGameNightPrivateResult(parsed, PLAYERS)
+  assert.equal(display.kind, "ASSASSINATE")
+  assert.equal(display.label, INGAME_NIGHT_PRIVATE_RESULT_ASSASSINATION_FAILED_LABEL)
+  // 보호자·보호자 역할·대상은 payload에도 저장값에도 표시에도 없다(buildAssassinationFailureNotice).
+  assert.equal(parsed.targetId, null)
+  assert.equal(parsed.role, null)
+})
+
+test("AC-02: 같은 역할인 타인의 결과는 내 결과와 필드가 같다 — 구별할 값의 차이 자체가 없다", () => {
+  // 경비원이 둘인 밤: 서버는 조사 결과를 역할 단위로 한 번 만들어(privateResultBuilderByRole)
+  // 생존 경비원 전원에게 값이 같은 사본으로 배달한다. 그래서 "다른 경비원이 받은 payload"는
+  // 내가 받은 payload와 필드 단위로 동일하다.
+  const mine = { ...GUARD_INVESTIGATE }
+  const theirs = { ...GUARD_INVESTIGATE }
+  assert.deepEqual(mine, theirs, "이 시험의 전제 — 같은 역할의 결과는 값이 같다")
+  assert.deepEqual(parseAs("GUARD", mine), parseAs("GUARD", theirs))
+
+  // 구별이 실제로 가능한 축은 "내가 그 결과를 받을 수 있는 수신자인가" 셋뿐이고, 셋 다 막는다.
+  //  1) 역할이 다르다 — 위 "타인 결과는 저장하지 않는다" 시험.
+  //  2) 내가 이미 죽었다 — 서버는 사망자에게 개인 결과를 만들지 않는다.
+  assert.equal(parseAs("GUARD", GUARD_INVESTIGATE, { selfAlive: false }), null)
+  //  3) 대상이 나다 — 자기 지목이 허용되는 역할은 DOCTOR뿐이고 DOCTOR는 개인 결과를 받지 않는다.
+  assert.equal(parseAs("GUARD", GUARD_INVESTIGATE, { selfUuid: "uuid-target" }), null)
+  assert.equal(
+    parseAs("WITCH_HUNTER", WITCH_HUNTER_CONFIRM, { selfUuid: "uuid-target" }),
+    null,
+    "확인 결과의 대상도 본인일 수 없다",
+  )
+})
+
+test("AC-02: 생존을 아직 모르면(roster 미도착) 거부하지 않는다 — 내 결과를 영구히 잃지 않기 위해", () => {
+  // selectInGameSelfAlive는 roster가 없거나 alive가 없으면 null("모름")을 준다. 그 순간에
+  // 도착한 내 결과까지 버리면 다시 받을 방법이 없다(1회성 개별 emit이다).
+  assert.notEqual(parseAs("GUARD", GUARD_INVESTIGATE, { selfAlive: null }), null)
+  assert.notEqual(parseAs("GUARD", GUARD_INVESTIGATE, { selfAlive: true }), null)
+  // 본인 uuid를 모르면 대상 비교를 건너뛴다(역할·생존 검사는 그대로 적용된다).
+  assert.notEqual(parseAs("GUARD", GUARD_INVESTIGATE, { selfUuid: null }), null)
+})
+
 test("대상을 roster에서 찾지 못하면 uuid를 대신 보여주지 않고 표시를 포기한다", () => {
   const parsed = parseAs("GUARD", GUARD_INVESTIGATE)
   assert.equal(reduceInGameNightPrivateResult(parsed, []), null)

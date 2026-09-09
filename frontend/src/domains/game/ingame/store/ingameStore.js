@@ -78,15 +78,20 @@ export const useInGameStore = create((set) => ({
   // 보내는 것이라 형태를 여기서 다시 검증한다 — 문자열이 아니거나 비어 있으면 null로 두어
   // "방장을 모른다"와 "방장이다"를 섞지 않는다.
   setGamePayload: ({ gameId, state, hostUuid }) =>
-    set({
-      gameId: gameId ?? state?.id ?? null,
-      state: state
-        ? { ...state, players: Array.isArray(state.players) ? state.players.map((p) => ({ ...p, alive: true })) : state.players }
-        : null,
-      hostUuid: typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null,
-      error: null,
-      // 새 세션(gameId 변경)이다 — 이전 게임의 개인 결과가 넘어오지 않게 함께 비운다.
-      ...CLEARED_NIGHT_PRIVATE_RESULT,
+    set((current) => {
+      const nextGameId = gameId ?? state?.id ?? null
+      return {
+        gameId: nextGameId,
+        state: state
+          ? { ...state, players: Array.isArray(state.players) ? state.players.map((p) => ({ ...p, alive: true })) : state.players }
+          : null,
+        hostUuid: typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null,
+        error: null,
+        // 개인 결과는 gameId가 실제로 바뀔 때만 비운다 — 이전 게임의 결과가 새 세션으로 넘어오는
+        // 것은 막아야 하지만, 같은 게임에 대한 재적용(중복 game_started 등)까지 비우면 아직
+        // 확인하지 않은 이번 밤의 결과가 조용히 사라진다("비워지는 시점은 정확히 셋" 계약).
+        ...(nextGameId !== current.gameId ? CLEARED_NIGHT_PRIVATE_RESULT : {}),
+      }
     }),
 
   // game_phase_changed 방송을 반영한다. payload는 신뢰하지 않는 외부 입력이므로 구조분해
