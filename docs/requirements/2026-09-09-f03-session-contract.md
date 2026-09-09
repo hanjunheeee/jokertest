@@ -54,17 +54,25 @@ AC-01을 만족시킨다. 별도의 갱신 비밀값이나 새 스키마가 없�
 회전형 refresh-token 패턴은 아니다 — 나중에 회전형 갱신 자격이 필요해지면 그 스키마 변경은
 별도 마이그레이션 슬라이스에서 진행해야 한다.
 
-## AC-03/AC-04 — 비밀번호 변경 트리거는 이번 슬라이스 범위 밖
+## AC-03/AC-04 — 비밀번호 변경 트리거
 
 - 로그아웃(`user.controller.js`의 `logout` → `recordLogout`)과 운영 밴
   (`sessionLifecycle.resolveSession`의 `checkActiveBan` 재검사, HTTP·Socket.IO 공통)은
   이번 구현으로 AC-03/AC-05를 만족한다.
-- 비밀번호 변경 시 기존 세션을 전부 폐기하는 호출(AC-04, AC-03의 세 번째 트리거)은
-  `backend/controller/profile.controller.js`의 `updatePassword`에서 이뤄져야 하는데, 이
-  파일은 이번 슬라이스의 승인된 수정 범위 밖이다. 필요한 리포지토리 함수
-  (`userRepository.markOnlineSessionsOffline(uuid)`)는 이미 존재하고 로그인 시 중복 세션
-  정리에 쓰이고 있으므로, `updatePassword` 성공 시 이 함수를 호출하도록 연결하는 작업만
-  남아 있다. `.pluto/expansion-request.json`에 이 확장 요청을 기록했다.
+- 비밀번호 변경 시 기존 세션을 전부 폐기하는 호출(AC-04, AC-03의 세 번째 트리거)은 확장
+  승인 이후 `backend/controller/profile.controller.js`의 `updatePassword`에 연결했다.
+  `password_hash` 갱신(`userRepository.updateUser`)과 전체 세션 폐기
+  (`userRepository.markOnlineSessionsOffline(uuid)`)를 `userRepository.withTransaction`
+  하나로 묶어, 폐기가 실패하면 비밀번호 변경도 커밋되지 않는다 — 그렇지 않으면 변경 이전에
+  탈취된 세션이 새 비밀번호 발급 이후에도 유효하게 남는다. 이 호출은 요청 자신이 사용 중인
+  세션도 함께 폐기하므로, 비밀번호 변경 응답 이후 같은 브라우저에서도 재로그인이 필요하다.
+
+## `markOnlineSessionsOffline`의 트랜잭션 옵션
+
+`backend/repositories/user.repositories.js`의 `markOnlineSessionsOffline(user_id, options)`
+은 두 번째 인자로 `{ transaction }`을 받도록 확장했다(기본값 `{}`). 로그인 시 중복 세션
+정리처럼 트랜잭션 없이 호출하는 기존 경로는 그대로 동작하고, 비밀번호 변경처럼 원자성이
+필요한 경로만 `transaction`을 넘긴다.
 
 ## 실제 검증 상태
 
@@ -82,5 +90,8 @@ AC-01을 만족시킨다. 별도의 갱신 비밀값이나 새 스키마가 없�
   폐기된 세션·정지된 계정이 HTTP와 Socket.IO 양쪽에서 같은 `sessionLifecycle.resolveSession`
   기준으로 거부되는지 확인.
 - AC-05: `backend/auth/sessionLifecycle.test.js` — 공유 검증 함수 자체의 단위 테스트.
-- AC-04: 미검증(위 "범위 밖" 항목 참고). 확장 승인 후 `profile.controller.js`에 호출을
-  연결하고 나서 재로그인 요구 여부를 별도로 검증해야 한다.
+- AC-03/AC-04: `backend/__tests__/profile.updatePassword.sessionRevocation.test.js` —
+  비밀번호 변경 성공 시 새 비밀번호와 세션 전체 폐기가 같은 트랜잭션으로 커밋되는지,
+  폐기 실패 시 비밀번호 변경도 함께 롤백되는지(원자성), 현재 비밀번호가 틀리면 트랜잭션
+  자체를 열지 않는지, 그리고 비밀번호 변경 이후 같은 세션의 토큰으로 보낸 후속 보호 요청이
+  거부되는지(재로그인 요구)를 확인한다.

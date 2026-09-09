@@ -98,10 +98,10 @@ exports.findActiveSession = async (id, user_id) => {
     });
 };
 
-exports.markOnlineSessionsOffline = async (user_id) => {
+exports.markOnlineSessionsOffline = async (user_id, options = {}) => {
     return await db.UserSession.update(
         { is_online: false },
-        { where: { user_id, is_online: true } }
+        { where: { user_id, is_online: true }, ...options }
     );
 };
 

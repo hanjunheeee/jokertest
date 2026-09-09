@@ -62,7 +62,16 @@ exports.updatePassword = async (req, res, next) => {
         }
 
         const password_hash = await hashPassword(newPassword);
-        await userRepository.updateUser(req.user.uuid, { password_hash });
+
+        // 비밀번호 변경과 기존 세션 전체 폐기를 하나의 트랜잭션으로 묶는다. 폐기 없이
+        // 비밀번호만 바뀌면 변경 전에 이미 발급된 세션(다른 브라우저·탈취된 세션 포함)이
+        // 새 비밀번호 발급 이후에도 계속 유효하게 남는다(F-03 AC-03/AC-04). 이 요청 자신의
+        // 세션도 함께 폐기되므로 응답 이후 재로그인이 필요하다.
+        await userRepository.withTransaction(async (transaction) => {
+            await userRepository.updateUser(req.user.uuid, { password_hash }, { transaction });
+            await userRepository.markOnlineSessionsOffline(req.user.uuid, { transaction });
+        });
+
         res.status(200).json({ success: true, message: "비밀번호가 변경되었습니다." });
     } catch (error) {
         next(error);
