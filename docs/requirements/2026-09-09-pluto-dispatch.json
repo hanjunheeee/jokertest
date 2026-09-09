@@ -75,7 +75,8 @@
         "F-27"
       ],
       "status": "received_pending_web_conversion_and_validation",
-      "description": "다운로드의 실제 이펙트 파일.zip에서 MOV 5개 수령. 모두 오디오 트랙 존재: 배포용 오디오 제거·무음 유지. 웹 변환·내용 및 게임 연결 검증 대기.",
+      "description": "다운로드의 실제 이펙트 파일.zip에서 MOV 5개 수령. 2026-09-10 사용자가 영상 속 사운드 사용 가능을 확인함: 이 5개 내장음은 보존·동기 재생하고 Master×SFX/음소거 적용. 웹 변환·내용 및 게임 연결 검증 대기. 별도 BGM·다른 미확인 소리는 기존 금지·무음 유지.",
+      "embeddedAudioAuthorization": "user_confirmed_2026-09-10",
       "assetRecord": "docs/requirements/2026-09-10-role-video-assets.md",
       "localManifest": "C:/Users/minsa/jokertest/.pluto/monitor/role-videos-20260910/manifest.json"
     },

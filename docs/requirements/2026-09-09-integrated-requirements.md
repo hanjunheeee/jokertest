@@ -2,6 +2,8 @@
 
 작성일: 2026-09-09 · 버전: 통합 검토본 v4
 
+**2026-09-10 후속 승인 — 제공 영상 내장 사운드:** 사용자가 “영상속 사운드는 가능해”라고 확인했다. [영상 수령·사운드 확인 기록](2026-09-10-role-video-assets.md)의 MOV 5개는 내장 사운드를 보존해 영상과 동기 재생한다. Master×SFX·사용자 음소거·수신자 제한·중복 재생 방지를 적용한다. 아래 AUDIO-01/AUDIO-02 및 인게임 설정의 일괄 영상 무음 문구에는 이 5개만 예외로 적용한다. 별도 BGM 제작·기존 로비/로그인 음악·다른 미확인 소리의 금지와 무음은 유지한다. F-16·F-27·F-28에 함께 반영한다.
+
 상태: **사용자 최종 실행 승인 완료 / Pluto 29개 등록·실행 시작 / 음악 무음 처리 적용 완료**
 실행 승인 기록: 사용자 “이제 도장찍어줄게 pluto넣고 돌려”. [Pluto 승인 실행 JSON](C:/Users/minsa/jokertest/docs/requirements/2026-09-09-pluto-execution.approved.json), 프리셋 `codex-plan`. [실행·ID 대응 기록](C:/Users/minsa/jokertest/docs/requirements/2026-09-09-pluto-dispatch.json). 외부 자료 대기와 미검증 항목은 완료로 간주하지 않는다.
 
