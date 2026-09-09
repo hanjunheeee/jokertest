@@ -12,7 +12,10 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       references: { model: 'users', key: 'uuid' },
     },
-    nickname_snapshot: { type: DataTypes.STRING(30), allowNull: false },
+    // F-01: users.nickname과 동일하게 50자까지 담는다(0002-expand-nickname-snapshot.js가
+    // 기존 DB의 실제 컬럼을 30→50으로 확장한다). 여기서 모델 정의만 앞서가면 새로 sync()된
+    // DB와 마이그레이션으로 만든 DB의 최종 상태가 어긋나므로, 두 경로 모두 50을 목표로 한다.
+    nickname_snapshot: { type: DataTypes.STRING(50), allowNull: false },
     role: { type: DataTypes.STRING(20), allowNull: false },
     team: { type: DataTypes.STRING(20), allowNull: false },
     won: { type: DataTypes.BOOLEAN, allowNull: true },
