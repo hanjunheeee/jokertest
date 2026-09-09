@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { motion } from "framer-motion"
+import InGameBackground from "../components/InGameBackground.jsx"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
 import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
@@ -13,20 +13,26 @@ import PlayerRecordListPanel from "../components/controls/playerRecordList/Playe
 import SettingPanel from "../components/controls/ingameSetting/SettingPanel.jsx"
 import InGameVoteStatusPanel from "../components/vote/InGameVoteStatusPanel.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
-import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
 import { selectInGameNightTurnDeadline } from "../utils/selectInGameNightTurnDeadline.js"
+import {
+  isValidInGameSession,
+  shouldRedirectOutOfInGame,
+} from "../utils/selectInGameSessionGuard.js"
+import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarStatusMessage.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
+import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
-import { publicAsset } from "@/shared/utils/publicAsset"
-import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
-/** 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지 */
+/**
+ * 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지
+ * @flow 유효한 GameSession 상태가 없으면 아무것도 그리지 않고 /multiplay로 돌려보낸다 — 단,
+ *   재접속 스냅샷 동기화가 아직 확인 중(checking)인 동안에는 판단을 미룬다.
+ */
 export default function InGamePage() {
   // 좌측 슬라이드 패널(전적목록·인게임 설정)은 같은 자리에 겹쳐 뜨므로 한 훅이 배타적으로
   // 관리한다 — 한쪽을 열면 다른 쪽은 저절로 닫힌다(useInGameSidePanel 참고).
@@ -46,9 +52,11 @@ export default function InGamePage() {
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
   const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
 
-  // 상태바에 상시로 띄우는 밤 역할 턴. 안내 오버레이(2.6초 뒤 사라짐)와 같은 selector에서 읽어
-  // 두 표기가 갈라지지 않게 하고, 남은 시간은 서버가 실어 보낸 deadline 하나에서만 만든다.
-  const nightTurnRole = useInGameStore((s) => selectInGameNightTurnRole(s.state ?? null))
+  // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다. 사망 연출(UI-14)이
+  // 아직 없으므로 hold는 false다 — UI-14에서 사망 연출 큐를 hold로 연결한다.
+  useInGameResultNavigation({ hold: false })
+
+  // 상태바에 상시로 띄우는 밤 역할 턴의 남은 시간. 서버가 실어 보낸 deadline 하나에서만 만든다.
   const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
   const nightTurnRemainingSec = useInGameNightTurnCountdown(nightTurnDeadline)
 
@@ -57,30 +65,20 @@ export default function InGamePage() {
   // GameSession 상태가 없으면 /multiplay로 돌려보낸다 — 새로고침한 당사자는 서버가
   // 재전송해줄 game_ended도 받을 수 없어 useGameSessionSocketEvents(전역 game_ended
   // 핸들러)만으로는 이 경로를 막지 못하므로, 이 guard로 보완한다.
-  const isValidGameSession = Boolean(gameId) && Boolean(gameState) && gameState.id === gameId
+  // 판단 자체는 selectInGameSessionGuard의 순수 함수 두 개가 들고 있다 — 이 페이지는 .jsx라
+  // node:test로 렌더링해 검증할 수 없어, 실제 값으로 시험할 수 있는 곳으로 떼어 두었다.
+  const isValidGameSession = isValidInGameSession(gameId, gameState)
 
   useEffect(() => {
-    if (snapshotSyncStatus === "checking") return
-    if (isValidGameSession) return
+    if (!shouldRedirectOutOfInGame({ snapshotSyncStatus, gameId, gameState })) return
     navigate("/multiplay", { replace: true })
-  }, [isValidGameSession, navigate, snapshotSyncStatus])
+  }, [gameId, gameState, navigate, snapshotSyncStatus])
 
   if (!isValidGameSession) return null
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
-      {/* motion.img: framer-motion이 제공하는, 애니메이션 속성이 붙은 img 태그.
-          initial(시작 상태)의 opacity 0에서 animate(도착 상태)의 opacity 1로 바뀌며
-          배경 이미지가 서서히 나타나는 페이드인 효과를 만듦 */}
-      <motion.img
-        src={publicAsset(INGAME_ASSETS.bg)}
-        alt=""
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={BG_FADE_TRANSITION}
-        className="absolute inset-0 h-full w-full object-cover object-center"
-        draggable={false}
-      />
+      <InGameBackground />
 
       {/* 진입 연출이 떠 있는 동안에는 이 게임 표면 전체를 inert로 잠근다 — 포인터도 키보드
           초점도 안으로 들어가지 못하므로 낮 투표·채팅·재판·밤 행동·결과 컨트롤이 한꺼번에
@@ -95,11 +93,13 @@ export default function InGamePage() {
           onSettingsClick={sidePanel.openSettings}
         />
         <InGamePlayerSessionProvider>
+          {/* NIGHT 문구는 로컬 canonical 턴(selectInGameNightTurnRole)에서만 파생한다 — 안내
+              오버레이가 닫혀도 이 줄은 턴이 끝날 때까지 남고, 남은 초는 서버 deadline에서
+              만든 카운트다운 하나만 붙는다. */}
           <InGameTimebar
             day={gameState?.dayIndex}
             activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
-            nightTurnRole={nightTurnRole}
-            nightTurnRemainingSec={nightTurnRemainingSec}
+            statusMessage={selectInGameTimebarStatusMessage(gameState, nightTurnRemainingSec)}
             onVoteStatusClick={() => setVoteStatusOpen(true)}
           />
           <InGamePlayerBoard />

@@ -45,15 +45,13 @@ export const INGAME_TIMEBAR_NODE_ACTIVE_CLASS =
   "brightness-110 drop-shadow-[0_0_10px_rgba(212,168,67,0.85)]"
 
 /**
- * 밤 역할 턴 줄 — 지금 어느 직업의 차례이고 몇 초 남았는지를 상시로 보여주는 한 줄.
- * 안내 오버레이(2.6초 뒤 사라짐)와 달리 턴이 끝날 때까지 남아 있어야 하므로 시간바 스택 안에
- * 따로 자리를 잡는다.
+ * 프레임 아래 한 줄 — 현재 phase·밤 역할 턴 상태 문구.
+ * 프레임 밖(어두운 게임 배경) 위에 놓이므로 "제 N일"의 다크 브라운이 아니라 이 저장소의
+ * 어두운-배경 텍스트 관례(크림색 + 그림자)를 따른다. z-10 절대배치 래퍼 안이라
+ * pointer-events-none으로 아래 보드의 클릭을 가로채지 않게 한다.
  */
-export const INGAME_TIMEBAR_NIGHT_TURN_CLASS =
-  "pointer-events-none self-end rounded border border-[#d8b982]/45 bg-black/65 px-[clamp(0.4rem,2.4cqi,0.75rem)] py-[clamp(0.12rem,0.9cqi,0.3rem)] text-center font-subheading text-[clamp(0.6rem,3.1cqi,0.85rem)] font-bold leading-none tracking-wide text-[#ffe2ad]"
-
-/** 남은 시간 숫자 — 역할 표기와 같은 줄에서 살짝 흐리게 */
-export const INGAME_TIMEBAR_NIGHT_TURN_COUNTDOWN_CLASS = "ml-1 text-[#e9d6ba]"
+export const INGAME_TIMEBAR_STATUS_CLASS =
+  "pointer-events-none self-end truncate text-right font-subheading text-[clamp(0.62rem,3.1cqi,0.86rem)] font-bold leading-none tracking-wide text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 /** 좌측 일차 라벨 텍스트 스타일 */
 export const INGAME_TIMEBAR_DAY_LABEL_CLASS =
