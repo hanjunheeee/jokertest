@@ -87,6 +87,16 @@ const VALID_SIGNUP_BASE = {
 const db = require('../../models');
 const authService = require('../../service/auth.service');
 const userRepository = require('../../repositories/user.repositories');
+const gameResultRepository = require('../../repositories/gameResult.repositories');
+
+// db(backend/models)는 require 캐시 싱글턴이라 db.sequelize는 이 파일의 네 테스트가
+// 전부 공유한다. 이전 회차는 테스트마다 개별적으로 t.after(() => db.sequelize.close())를
+// 등록했는데, node:test는 한 파일의 테스트를 순차 실행하므로 첫 테스트가 끝나며 연결을
+// 닫아버리면 이후 테스트는 전부 "연결 종료" 오류로 실패했다(재검토 지적). 파일 전체에서
+// 정확히 한 번만, 모든 테스트가 끝난 뒤에 닫는다.
+test.after(async () => {
+    if (TEST_DB_URL) await db.sequelize.close();
+});
 
 // ── AC-05 ───────────────────────────────────────────────────────────────────
 
@@ -94,23 +104,36 @@ test('AC-05: 사전 조회가 둘 다 "중복 없음"을 본 뒤에도 DB 유일
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
-    t.after(async () => { await db.sequelize.close(); });
 
     // signup()의 findByEmail 사전 조회가 우연히 순차적으로 끝나면(하나가 커밋된 뒤 다른
     // 하나가 조회) 두 번째는 애플리케이션 계층의 사전 검사("이미 사용 중인 이메일입니다.",
     // auth.service.js)에서 걸러질 수 있다 — 이러면 409가 DB 유일 제약이 아니라 이 사전
     // 검사 때문일 수 있어, "DB 유일 제약에 의해 409"라는 AC-05를 입증하지 못한다.
-    // 두 findByEmail 호출이 모두 도착해 "중복 없음"을 확인한 뒤에야 동시에 진행시켜,
-    // 이후의 409가 반드시 INSERT 시점의 DB 유일 제약(toConflictError)에서 나오도록 강제한다.
+    //
+    // 이전 회차는 "두 호출 모두 findByEmail을 시작했다"는 시점(arrival)에만 장벽을 뒀는데,
+    // 이는 두 실제 쿼리가 *시작*되는 것만 보장할 뿐 *완료*를 보장하지 않는다 — JS 이벤트
+    // 루프 스케줄링에 우연히 기대는 것이지 구조적 보장이 아니라는 재검토 지적을 받았다.
+    // 그래서 두 번째 장벽(settled)을 추가해, 두 원본 조회가 모두 "중복 없음"으로 응답을
+    // 받은 뒤에야 각 호출이 결과를 반환하도록 강제한다 — 어느 한쪽도 상대의 조회가 끝나기
+    // 전에는 findByEmail 이후 단계(비밀번호 해싱·INSERT)로 넘어갈 수 없다.
     const originalFindByEmail = userRepository.findByEmail;
     let arrivedCount = 0;
-    let releaseBoth;
-    const bothArrived = new Promise((resolve) => { releaseBoth = resolve; });
+    let releaseArrival;
+    const bothArrived = new Promise((resolve) => { releaseArrival = resolve; });
+    let settledCount = 0;
+    let releaseSettled;
+    const bothSettled = new Promise((resolve) => { releaseSettled = resolve; });
     userRepository.findByEmail = async (queriedEmail) => {
         arrivedCount += 1;
-        if (arrivedCount >= 2) releaseBoth();
+        if (arrivedCount >= 2) releaseArrival();
         await bothArrived;
-        return await originalFindByEmail(queriedEmail);
+
+        const result = await originalFindByEmail(queriedEmail);
+        settledCount += 1;
+        if (settledCount >= 2) releaseSettled();
+        await bothSettled;
+
+        return result;
     };
     t.after(() => { userRepository.findByEmail = originalFindByEmail; });
 
@@ -121,6 +144,7 @@ test('AC-05: 사전 조회가 둘 다 "중복 없음"을 본 뒤에도 DB 유일
     ]);
 
     assert.equal(arrivedCount, 2, '두 요청 모두 findByEmail 사전 조회에 도달해야 경합 조건이 성립한다');
+    assert.equal(settledCount, 2, '두 요청 모두 실제 조회 응답("중복 없음")을 받은 뒤에야 다음 단계로 넘어가야 한다');
 
     const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
     const rejected = attempts.filter((a) => a.status === 'rejected');
@@ -141,7 +165,6 @@ test('AC-06: role/status/email_verified를 실어 보내도 저장되지 않고,
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
-    t.after(async () => { await db.sequelize.close(); });
 
     const email = 'ac06-signup@example.com';
     const created = await authService.signup({
@@ -179,7 +202,6 @@ test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
-    t.after(async () => { await db.sequelize.close(); });
 
     const email = 'ac06-longsnapshot@example.com';
     const created = await authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: 'AC06스냅샷' });
@@ -187,24 +209,24 @@ test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에
     const longNicknameSnapshot = '가'.repeat(45); // 30자 초과, F-01이 확장한 50자 이내
     const gameId = '55555555-5555-5555-5555-555555555555';
 
-    await db.GameResult.create({
+    // 이전 회차는 db.GameResult.create/db.GameResultPlayer.create를 직접 호출해 실제 경기
+    // 기록이 저장되는 경로(gameResult.repositories.persistGameResult, 소켓 계층이 경기 종료
+    // 시 실제로 부르는 함수)를 우회했다 — f01-migrations.integration.test.js의 AC-04와 같은
+    // 원칙으로, 여기서도 실제 저장소 함수를 그대로 태운다(재검토 지적).
+    const session = {
         id: gameId,
-        started_at: new Date(1_000),
-        ended_at: new Date(2_000),
-        winner: 'CITIZEN',
-        day_index: 1,
-        player_count: 1,
-        completed: true,
-    });
-    await db.GameResultPlayer.create({
-        game_id: gameId,
-        user_id: created.uuid,
-        nickname_snapshot: longNicknameSnapshot,
-        role: 'CITIZEN',
-        team: 'CITIZEN',
-        won: true,
-        is_alive: true,
-    });
+        roomId: null,
+        startedAt: 1_000,
+        endedAt: 2_000,
+        dayIndex: 1,
+        players: new Map([[created.uuid, {
+            uuid: created.uuid, nickname: longNicknameSnapshot, role: 'CITIZEN', team: 'CITIZEN', alive: true, deathReason: null,
+        }]]),
+        winResult: { winner: 'CITIZEN' },
+    };
+
+    const outcome = await gameResultRepository.persistGameResult(session, { completed: true });
+    assert.deepEqual(outcome, { persisted: true, gameId });
 
     const [rows] = await sequelize.query(
         'SELECT nickname_snapshot FROM game_result_players WHERE game_id = :gameId AND user_id = :userId',
@@ -225,7 +247,6 @@ test('AC-03: birth_date는 서버 시간대와 무관하게 저장·복원된다
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
-    t.after(async () => { await db.sequelize.close(); });
 
     const originalTz = process.env.TZ;
     t.after(() => {

@@ -1,9 +1,32 @@
 # F-02 회원가입 입력·중복 확인 — 구현 및 검증 증거
 
-날짜: 2026-09-09 (작업 완료: 2026-09-10, 검토 반영: 2026-09-10)
+날짜: 2026-09-09 (작업 완료: 2026-09-10, 검토 반영: 2026-09-10, 2차 검토 반영: 2026-09-10)
 슬라이스: Pluto AM (F-02)
 
-## 검토 반영 (2026-09-10)
+## 2차 검토 반영 (2026-09-10, CODEX-2.json)
+
+CODEX-2.json 검토가 AC-03/AC-05/AC-06을 다시 partial로 반려했다. 반영 내용은
+`.pluto/progress.md`의 "검토 반영 기록 (2026-09-10, CODEX-2.json)"에 지적별로
+기록했다. 요약:
+1. `f02-signup.integration.test.js`의 AC-05/AC-06(2건)/AC-03 네 테스트가 각자
+   `t.after(() => db.sequelize.close())`를 등록해, require 캐시 싱글턴인
+   `db.sequelize`를 첫 테스트(AC-05)가 끝나며 닫아버려 이후 세 테스트가 연결 종료
+   오류로 실패하던 구조적 버그를 고쳤다 — 파일 전체에서 한 번만 닫도록 최상위
+   `test.after` 하나로 통합.
+2. `useEmailAvailabilityCheck`가 "가장 마지막 요청"을 이메일 문자열로만 식별해
+   같은 이메일의 연속 요청(더블 클릭 등)을 구분하지 못하던 버그를 요청 번호
+   (`latestRequestId`) 기반으로 고치고 회귀 테스트를 추가했다.
+3. AC-05 동시 가입 테스트의 장벽이 "두 조회가 시작됨"만 보장하고 "두 조회가
+   완료됨"은 보장하지 않던 문제를, 두 번째 장벽(완료 대기)을 추가해 명시적으로
+   보장하도록 강화했다.
+4. AC-06의 긴 nickname_snapshot 테스트가 `db.GameResultPlayer.create`를 직접
+   호출해 실제 경기 기록 저장 경로(`gameResult.repositories.js`의
+   `persistGameResult`)를 우회하던 문제를, f01의 AC-04와 같은 패턴으로 실제
+   저장소 함수를 호출하도록 고쳤다.
+
+아래 "성공 조건별 근거"와 "미검증 항목"은 이 반영을 반영해 갱신했다.
+
+## 1차 검토 반영 (2026-09-10, CODEX-1.json)
 
 CODEX-1.json 검토가 AC-03/AC-05/AC-06을 partial로 반려했다. 반영 내용은
 `.pluto/progress.md`에 지적별로 기록했다. 요약: (1) `useEmailAvailabilityCheck`의
@@ -12,8 +35,7 @@ CODEX-1.json 검토가 AC-03/AC-05/AC-06을 partial로 반려했다. 반영 내�
 `node impl-check.js node-test` 경로) `backend/models` require 시점에 크래시하던
 버그를 수정(항상 문법적으로 유효한 `DATABASE_URL` 폴백을 두도록), (3) 같은 파일에
 AC-03 시간대별 DB 왕복, AC-05 사전 조회 강제 동기화, AC-06 긴 nickname_snapshot
-경기 기록 저장 테스트를 추가했다. 아래 "성공 조건별 근거"와 "미검증 항목"은 이
-반영을 반영해 갱신했다.
+경기 기록 저장 테스트를 추가했다.
 
 ## 요약
 
@@ -68,7 +90,7 @@ AC-03 시간대별 DB 왕복, AC-05 사전 조회 강제 동기화, AC-06 긴 ni
 
 - `npm ci --prefix backend`, `npm ci --prefix frontend` (node_modules가 없어 먼저 설치).
 - `npm test --prefix backend` — **1007개 중 997 통과, 0 실패, 10 skip**(모두 `F01_TEST_DATABASE_URL` 미설정으로 인한 DB 통합 테스트 — 기존 F-01 6건 + F-02 4건(AC-05 강화판, AC-06 2건, AC-03 신규)).
-- `npm test --prefix frontend` — **1186개 전부 통과, 0 실패**(AC-05 뒤늦은 응답 회귀 테스트 1건 추가).
+- `npm test --prefix frontend` — **1187개 전부 통과, 0 실패**(AC-05 뒤늦은 응답 회귀 테스트 2건 — 다른 이메일/같은 이메일 — 추가, 2차 검토 반영 포함).
 - `npm run build --prefix frontend` — 정상 빌드(청크 크기 경고는 기존부터 있던 것으로 이번 변경과 무관).
 - `node impl-check.js node-test backend/tests/db/f02-signup.integration.test.js` — 검토 반영 후 크래시 없이 4개 테스트 모두 "미검증" skip으로 정상 보고됨(반영 전에는 이 정확한 명령으로 실행 시 `ERR_INVALID_ARG_TYPE`로 파일 전체가 실패했다).
 

@@ -17,9 +17,12 @@ export function useEmailAvailabilityCheck(email) {
 
   // check()를 연달아 누르거나(더블 클릭) 응답을 기다리는 중 이메일을 바꿔 다시 누르면
   // 여러 요청이 동시에 떠 있을 수 있다. 나중에 보낸 요청의 응답이 먼저 온 요청의 응답보다
-  // 먼저 도착할 순서 보장은 없으므로, "가장 마지막으로 보낸 요청"의 이메일을 기억해 두고
-  // 그보다 오래된 요청의 응답이 뒤늦게 도착하면 상태를 덮어쓰지 않고 버린다.
-  const latestRequestEmail = useRef(null)
+  // 먼저 도착할 순서 보장은 없다. 이전에는 "가장 마지막으로 보낸 요청의 이메일 문자열"을
+  // 기억해 뒀는데, 같은 이메일로 두 번 연달아 누르면(예: 더블 클릭) 두 요청의 이메일 값이
+  // 같아 오래된 응답이 뒤늦게 도착해도 걸러지지 않았다(재검토 지적) — 이메일 값이 아니라
+  // 매 호출마다 증가하는 요청 번호로 "가장 마지막 요청"을 식별해야 같은 이메일의 연속
+  // 요청도 구분된다.
+  const latestRequestId = useRef(0)
 
   useEffect(() => {
     if (checkedEmail !== null && checkedEmail !== email) {
@@ -32,16 +35,16 @@ export function useEmailAvailabilityCheck(email) {
     const trimmed = email.trim()
     if (!trimmed) return
 
-    latestRequestEmail.current = trimmed
+    const requestId = ++latestRequestId.current
     setStatus("checking")
     setCheckedEmail(null)
     try {
       const { available } = await checkEmailApi(trimmed)
-      if (latestRequestEmail.current !== trimmed) return
+      if (latestRequestId.current !== requestId) return
       setStatus(available ? "available" : "duplicate")
       setCheckedEmail(trimmed)
     } catch {
-      if (latestRequestEmail.current !== trimmed) return
+      if (latestRequestId.current !== requestId) return
       setStatus("error")
       setCheckedEmail(null)
     }

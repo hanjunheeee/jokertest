@@ -310,3 +310,40 @@ test("AC-05: 이전 이메일의 뒤늦은 응답이 최신 확인 상태를 덮
   assert.equal(hook.result.current.status, "available", "먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰면 안 된다")
   hook.unmount()
 })
+
+test("AC-05: 같은 이메일로 두 번 연달아 확인해도 먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰지 않는다", async () => {
+  // 위 테스트는 이메일이 바뀌는 경우를 다룬다. 여기서는 이메일이 전혀 바뀌지 않는(더블 클릭
+  // 같은) 경우를 다룬다 — 이전 구현은 "가장 마지막 요청"을 이메일 문자열로만 식별해서, 같은
+  // 이메일의 두 요청은 값이 똑같아 오래된 응답이 걸러지지 않았다(재검토 지적).
+  checkEmailRequests.length = 0
+  let resolveFirst
+  const firstPending = new Promise((resolve) => { resolveFirst = resolve })
+  let callCount = 0
+  checkEmailImpl = async () => {
+    callCount += 1
+    if (callCount === 1) {
+      await firstPending
+      return { available: false } // 오래된(첫) 요청은 뒤늦게 "중복"으로 응답한다
+    }
+    return { available: true } // 최신(둘째) 요청은 먼저 "사용 가능"으로 응답한다
+  }
+
+  const hook = renderHook(() => useEmailAvailabilityCheck("dup-click@example.com"))
+
+  let firstCheck
+  act(() => {
+    firstCheck = hook.result.current.check() // 첫 클릭: 응답을 아직 받지 못한 채 느리게 대기 중
+  })
+
+  await act(async () => {
+    await hook.result.current.check() // 둘째 클릭(같은 이메일): 먼저 응답을 받는다
+  })
+  assert.equal(hook.result.current.status, "available", "최신(둘째) 요청의 응답이 먼저 상태를 정해야 한다")
+
+  await act(async () => {
+    resolveFirst()
+    await firstCheck // 이제서야 첫 클릭의 오래된 응답이 도착한다
+  })
+  assert.equal(hook.result.current.status, "available", "같은 이메일이어도 먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰면 안 된다")
+  hook.unmount()
+})
