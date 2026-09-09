@@ -16,6 +16,10 @@ import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { selectInGameNightTurnDeadline } from "../utils/selectInGameNightTurnDeadline.js"
+import {
+  isValidInGameSession,
+  shouldRedirectOutOfInGame,
+} from "../utils/selectInGameSessionGuard.js"
 import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarStatusMessage.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
@@ -56,13 +60,14 @@ export default function InGamePage() {
   // GameSession 상태가 없으면 /multiplay로 돌려보낸다 — 새로고침한 당사자는 서버가
   // 재전송해줄 game_ended도 받을 수 없어 useGameSessionSocketEvents(전역 game_ended
   // 핸들러)만으로는 이 경로를 막지 못하므로, 이 guard로 보완한다.
-  const isValidGameSession = Boolean(gameId) && Boolean(gameState) && gameState.id === gameId
+  // 판단 자체는 selectInGameSessionGuard의 순수 함수 두 개가 들고 있다 — 이 페이지는 .jsx라
+  // node:test로 렌더링해 검증할 수 없어, 실제 값으로 시험할 수 있는 곳으로 떼어 두었다.
+  const isValidGameSession = isValidInGameSession(gameId, gameState)
 
   useEffect(() => {
-    if (snapshotSyncStatus === "checking") return
-    if (isValidGameSession) return
+    if (!shouldRedirectOutOfInGame({ snapshotSyncStatus, gameId, gameState })) return
     navigate("/multiplay", { replace: true })
-  }, [isValidGameSession, navigate, snapshotSyncStatus])
+  }, [gameId, gameState, navigate, snapshotSyncStatus])
 
   if (!isValidGameSession) return null
 

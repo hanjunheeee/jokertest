@@ -73,11 +73,22 @@ test("AC-02: InGamePage가 타임바에 canonical state에서 파생한 statusMe
   )
 })
 
-test("AC-05: 스냅샷 동기화가 확인 중이면 리다이렉트 판단을 미루는 guard가 남아 있다", async () => {
+// 리다이렉트 규칙 자체는 selectInGameSessionGuard.test.js가 실제 값으로 검증한다. 여기서는
+// 페이지가 그 규칙을 직접 다시 쓰지 않고 그대로 호출해 쓴다는 배선만 확인한다.
+test("AC-05: 페이지가 스냅샷 동기화 상태를 받아 guard 순수 함수에 그대로 넘긴다", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.match(source, /const snapshotSyncStatus = useInGameSessionSnapshotSync\(\)/)
-  assert.match(source, /if \(snapshotSyncStatus === "checking"\) return/)
-  assert.match(source, /\[isValidGameSession, navigate, snapshotSyncStatus\]/)
+  assert.match(
+    source,
+    /from "\.\.\/utils\/selectInGameSessionGuard\.js"/,
+  )
+  assert.match(
+    source,
+    /if \(!shouldRedirectOutOfInGame\(\{ snapshotSyncStatus, gameId, gameState \}\)\) return/,
+  )
+  assert.match(source, /\[gameId, gameState, navigate, snapshotSyncStatus\]/)
+  // 페이지가 "checking" 판단을 따로 복제해두면 두 곳이 어긋날 수 있다 — 판단은 guard 한 곳뿐이다.
+  assert.doesNotMatch(source, /=== "checking"/)
 })
 
 test("원격 은닉 릴·밤 개인 결과·사망 연출 배선은 이 슬라이스로 들어오지 않았다", async () => {
