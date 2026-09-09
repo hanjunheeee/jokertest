@@ -6,7 +6,8 @@
 
 // 사운드 슬라이더 항목은 설정 화면(UI-05)과 같은 정의를 그대로 쓴다 — 인게임 설정과
 // 설정 페이지가 서로 다른 기본값·항목을 갖지 않도록 원본을 한 곳(soundSettings.js)에만 둔다.
-// 값 자체도 UI-05의 useSoundSettings가 보관한다(useInGameSettingPanel 참고).
+// 값 자체도 UI-05와 같은 store(settings/store/settingsStore.js)가 보관한다
+// (useInGameSettingPanel 참고).
 export { SOUND_SETTING_VOLUMES as INGAME_SETTING_SOUND_VOLUMES } from "../../../../../settings/constants/soundSettings.js"
 
 export const INGAME_SETTING_TABS = [

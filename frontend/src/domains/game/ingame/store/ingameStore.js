@@ -23,6 +23,14 @@ export const useInGameStore = create((set) => ({
   state: null,
   error: null,
 
+  // 이 게임 세션의 방장 uuid. 서버 buildGameStartedPayload에는 아직 hostUuid가 없으므로,
+  // game_started를 받은 useMatchingRoom이 그 시점 matchingStore의 hostUuid를 함께 넘겨준다.
+  // gameId·state와 같은 set()에서만 채워지고 clearGame이 함께 비우므로, 방장 정보는 항상
+  // "지금 이 세션"에만 묶인다 — 이전 방/이전 게임의 방장이 다음 세션으로 새지 않는다
+  // (useInGameSettingIsHost 참고). 스냅샷 복원 경로는 이 값을 채우지 않는다(서버가 보내지
+  // 않으므로 알 수 없다 → null → 방장 아님으로 fail-closed).
+  hostUuid: null,
+
   // get_session_snapshot 복원이 실제로 반영될 때마다 1씩 오르는 단조 카운터.
   // "이번 state 변화가 실시간 canonical 전이인가, 재접속 하이드레이션인가"를 구독자가
   // 소켓 리스너 등록 순서에 의존하지 않고 판별할 수 있게 하는 유일한 표식이다
@@ -37,12 +45,17 @@ export const useInGameStore = create((set) => ({
   // players[].themeIndex(표시 색상)는 반대다 — 서버가 게임당 한 번 배정해 모든 참가자에게
   // 같은 값을 내려주므로 스토어는 정규화 없이 그대로 통과시키고(아래 {...p} 스프레드),
   // 값의 유효성은 소비 지점인 buildPlayerSessionSourceFromGameState가 fail-closed로 검증한다.
-  setGamePayload: ({ gameId, state }) =>
+  //
+  // hostUuid는 서버 payload가 아니라 호출부(useMatchingRoom)가 방 단계에서 알던 값을 얹어
+  // 보내는 것이라 형태를 여기서 다시 검증한다 — 문자열이 아니거나 비어 있으면 null로 두어
+  // "방장을 모른다"와 "방장이다"를 섞지 않는다.
+  setGamePayload: ({ gameId, state, hostUuid }) =>
     set({
       gameId: gameId ?? state?.id ?? null,
       state: state
         ? { ...state, players: Array.isArray(state.players) ? state.players.map((p) => ({ ...p, alive: true })) : state.players }
         : null,
+      hostUuid: typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null,
       error: null,
     }),
 
@@ -295,7 +308,7 @@ export const useInGameStore = create((set) => ({
 
   setGameError: (error) => set({ error }),
 
-  clearGame: () => set({ gameId: null, state: null, error: null }),
+  clearGame: () => set({ gameId: null, state: null, hostUuid: null, error: null }),
 }))
 
 export const selectInGameState = (store) => store.state
