@@ -10,6 +10,7 @@ import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNi
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
+import SettingPanel from "../components/controls/ingameSetting/SettingPanel.jsx"
 import InGameVoteStatusPanel from "../components/vote/InGameVoteStatusPanel.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
@@ -21,12 +22,15 @@ import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
+import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 /** 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지 */
 export default function InGamePage() {
-  const [playerRecordListOpen, setPlayerRecordListOpen] = useState(false)
+  // 좌측 슬라이드 패널(전적목록·인게임 설정)은 같은 자리에 겹쳐 뜨므로 한 훅이 배타적으로
+  // 관리한다 — 한쪽을 열면 다른 쪽은 저절로 닫힌다(useInGameSidePanel 참고).
+  const sidePanel = useInGameSidePanel()
   const [voteStatusOpen, setVoteStatusOpen] = useState(false)
   const gameId = useInGameStore((s) => s.gameId)
   const gameState = useInGameStore((s) => s.state)
@@ -87,7 +91,8 @@ export default function InGamePage() {
       >
         <InGameTopControls
           onExitClick={requestExit}
-          onMenuClick={() => setPlayerRecordListOpen(true)}
+          onMenuClick={sidePanel.openRecords}
+          onSettingsClick={sidePanel.openSettings}
         />
         <InGamePlayerSessionProvider>
           <InGameTimebar
@@ -105,9 +110,10 @@ export default function InGamePage() {
             interactionBlocked={interactionBlocked}
           />
           <PlayerRecordListPanel
-            open={playerRecordListOpen}
-            onClose={() => setPlayerRecordListOpen(false)}
+            open={sidePanel.recordsOpen}
+            onClose={sidePanel.close}
           />
+          <SettingPanel open={sidePanel.settingsOpen} onClose={sidePanel.close} />
           <InGameVoteStatusPanel
             open={voteStatusOpen}
             onClose={() => setVoteStatusOpen(false)}
