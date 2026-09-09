@@ -1,0 +1,415 @@
+[07:23:42] logged in 5
+[07:23:52] party text: 파티 인원 5명
+[07:23:54] shot 13-matching-5-ready
+[07:23:56] shot 20-role-reveal-p01
+[07:23:58] roles {"QA01":"CITIZEN","QA02":"JOKER","QA03":"CITIZEN","QA04":"CITIZEN","QA05":"JOKER"}
+[07:23:58] shot 21-role-reveal-joker
+[07:23:58] host phase DAY-1
+[07:23:58] QA01 ready
+[07:23:58] QA02 ready
+[07:23:58] QA03 ready
+[07:23:59] QA04 ready
+[07:23:59] QA05 ready
+[07:23:59] QA05 abstain
+[07:23:59] QA05 day resolve
+[07:24:00] shot 31-after-day-resolve-p01
+[07:24:01] QA01 votes QA02
+[07:24:01] QA01 day resolve
+[07:24:03] QA02 abstain
+[07:24:03] QA02 day resolve
+[07:24:04] QA03 votes QA02
+[07:24:04] shot 30-day-vote-target-selected
+[07:24:04] QA03 day resolve
+[07:24:06] QA04 votes QA02
+[07:24:06] QA04 day resolve
+[07:24:07] QA05 not-guilty
+[07:24:07] QA05 tribunal resolve
+[07:24:09] shot 33-after-tribunal-p01
+[07:24:10] host phase TRIBUNAL-1
+[07:24:10] QA01 guilty
+[07:24:10] shot 32-tribunal-p01
+[07:24:10] QA01 tribunal resolve
+[07:24:12] QA02 tribunal resolve
+[07:24:13] QA03 guilty
+[07:24:13] QA03 tribunal resolve
+[07:24:15] QA04 guilty
+[07:24:15] QA04 tribunal resolve
+[07:24:21] QA05 night resolve
+[07:24:22] host phase NIGHT-1
+[07:24:22] shot 40-night-d1-p01
+[07:24:24] QA01 night resolve
+[07:24:26] QA02 night resolve
+[07:24:28] QA03 night resolve
+[07:24:30] QA04 night resolve
+[07:24:32] QA05 night resolve
+[07:24:33] QA01 night resolve
+[07:24:33] QA02 night resolve
+[07:24:33] QA03 night resolve
+[07:24:33] QA04 night resolve
+[07:24:33] QA05 night resolve
+[07:24:34] QA01 night resolve
+[07:24:34] QA02 night resolve
+[07:24:34] QA03 night resolve
+[07:24:34] QA04 night resolve
+[07:24:35] QA05 night resolve
+[07:24:36] QA01 night resolve
+[07:24:36] QA02 night resolve
+[07:24:36] QA03 night resolve
+[07:24:36] QA04 night resolve
+[07:24:36] QA05 night resolve
+[07:24:37] QA01 night resolve
+[07:24:37] QA02 night resolve
+[07:24:37] QA03 night resolve
+[07:24:37] QA04 night resolve
+[07:24:37] QA05 night resolve
+[07:24:38] QA01 night resolve
+[07:24:38] QA02 night resolve
+[07:24:38] QA03 night resolve
+[07:24:38] QA04 night resolve
+[07:24:38] QA05 night resolve
+[07:24:39] QA01 night resolve
+[07:24:39] QA02 night resolve
+[07:24:39] QA03 night resolve
+[07:24:39] QA04 night resolve
+[07:24:39] QA05 night resolve
+[07:24:40] QA01 night resolve
+[07:24:40] QA02 night resolve
+[07:24:40] QA03 night resolve
+[07:24:40] QA04 night resolve
+[07:24:40] QA05 night resolve
+[07:24:41] QA01 night resolve
+[07:24:41] QA02 night resolve
+[07:24:41] QA03 night resolve
+[07:24:41] QA04 night resolve
+[07:24:41] QA05 night resolve
+[07:24:43] QA01 night resolve
+[07:24:43] QA02 night resolve
+[07:24:43] QA03 night resolve
+[07:24:43] QA04 night resolve
+[07:24:43] QA05 night resolve
+[07:24:44] QA01 night resolve
+[07:24:44] QA02 night resolve
+[07:24:44] QA03 night resolve
+[07:24:44] QA04 night resolve
+[07:24:44] QA05 night resolve
+[07:24:45] QA01 night resolve
+[07:24:45] QA02 night resolve
+[07:24:45] QA03 night resolve
+[07:24:45] QA04 night resolve
+[07:24:45] QA05 night resolve
+[07:24:46] QA01 night resolve
+[07:24:46] QA02 night resolve
+[07:24:46] QA03 night resolve
+[07:24:46] QA04 night resolve
+[07:24:46] QA05 night resolve
+[07:24:47] QA01 night resolve
+[07:24:47] QA02 night resolve
+[07:24:47] QA03 night resolve
+[07:24:47] QA04 night resolve
+[07:24:47] QA05 night resolve
+[07:24:48] QA01 night resolve
+[07:24:48] QA02 night resolve
+[07:24:48] QA03 night resolve
+[07:24:48] QA04 night resolve
+[07:24:48] QA05 night resolve
+[07:24:49] QA01 night resolve
+[07:24:49] QA02 night resolve
+[07:24:49] QA03 night resolve
+[07:24:49] QA04 night resolve
+[07:24:50] QA05 night resolve
+[07:24:51] QA01 night resolve
+[07:24:51] QA02 night resolve
+[07:24:51] QA03 night resolve
+[07:24:51] QA04 night resolve
+[07:24:51] QA05 night resolve
+[07:24:52] QA01 night resolve
+[07:24:52] QA02 night resolve
+[07:24:52] QA03 night resolve
+[07:24:52] QA04 night resolve
+[07:24:52] QA05 night resolve
+[07:24:53] QA01 night resolve
+[07:24:53] QA02 night resolve
+[07:24:53] QA03 night resolve
+[07:24:53] QA04 night resolve
+[07:24:53] QA05 night resolve
+[07:24:54] QA01 night resolve
+[07:24:54] QA02 night resolve
+[07:24:54] QA03 night resolve
+[07:24:54] QA04 night resolve
+[07:24:54] QA05 night resolve
+[07:24:55] QA01 night resolve
+[07:24:55] QA02 night resolve
+[07:24:55] QA03 night resolve
+[07:24:55] QA04 night resolve
+[07:24:55] QA05 night resolve
+[07:24:56] QA01 night resolve
+[07:24:56] QA02 night resolve
+[07:24:56] QA03 night resolve
+[07:24:56] QA04 night resolve
+[07:24:56] QA05 night resolve
+[07:24:58] QA01 night resolve
+[07:24:58] QA02 night resolve
+[07:24:58] QA03 night resolve
+[07:24:58] QA04 night resolve
+[07:24:58] QA05 night resolve
+[07:24:59] QA01 night resolve
+[07:24:59] QA02 night resolve
+[07:24:59] QA03 night resolve
+[07:24:59] QA04 night resolve
+[07:24:59] QA05 night resolve
+[07:25:00] QA01 night resolve
+[07:25:00] QA02 night resolve
+[07:25:00] QA03 night resolve
+[07:25:00] QA04 night resolve
+[07:25:00] QA05 night resolve
+[07:25:01] QA01 night resolve
+[07:25:01] QA02 night resolve
+[07:25:01] QA03 night resolve
+[07:25:01] QA04 night resolve
+[07:25:01] QA05 night resolve
+[07:25:02] QA01 night resolve
+[07:25:02] QA02 night resolve
+[07:25:02] QA03 night resolve
+[07:25:02] QA04 night resolve
+[07:25:02] QA05 night resolve
+[07:25:03] QA01 night resolve
+[07:25:03] QA02 night resolve
+[07:25:03] QA03 night resolve
+[07:25:03] QA04 night resolve
+[07:25:03] QA05 night resolve
+[07:25:04] QA01 night resolve
+[07:25:04] QA02 night resolve
+[07:25:04] QA03 night resolve
+[07:25:04] QA04 night resolve
+[07:25:05] QA05 night resolve
+[07:25:06] QA01 night resolve
+[07:25:06] QA02 night resolve
+[07:25:06] QA03 night resolve
+[07:25:06] QA04 night resolve
+[07:25:06] QA05 night resolve
+[07:25:07] QA01 night resolve
+[07:25:07] QA02 night resolve
+[07:25:07] QA03 night resolve
+[07:25:07] QA04 night resolve
+[07:25:07] QA05 night resolve
+[07:25:08] QA01 night resolve
+[07:25:08] QA02 night resolve
+[07:25:08] QA03 night resolve
+[07:25:08] QA04 night resolve
+[07:25:08] QA05 night resolve
+[07:25:09] QA01 night resolve
+[07:25:09] QA02 night resolve
+[07:25:09] QA03 night resolve
+[07:25:09] QA04 night resolve
+[07:25:09] QA05 night resolve
+[07:25:10] QA01 night resolve
+[07:25:10] QA02 night resolve
+[07:25:10] QA03 night resolve
+[07:25:10] QA04 night resolve
+[07:25:10] QA05 night resolve
+[07:25:11] QA01 night resolve
+[07:25:11] QA02 night resolve
+[07:25:11] QA03 night resolve
+[07:25:11] QA04 night resolve
+[07:25:11] QA05 night resolve
+[07:25:12] QA01 night resolve
+[07:25:12] QA02 night resolve
+[07:25:13] QA03 night resolve
+[07:25:13] QA04 night resolve
+[07:25:13] QA05 night resolve
+[07:25:14] QA01 night resolve
+[07:25:14] QA02 night resolve
+[07:25:14] QA03 night resolve
+[07:25:14] QA04 night resolve
+[07:25:14] QA05 night resolve
+[07:25:15] QA01 night resolve
+[07:25:15] QA02 night resolve
+[07:25:15] QA03 night resolve
+[07:25:15] QA04 night resolve
+[07:25:15] QA05 night resolve
+[07:25:16] QA01 night resolve
+[07:25:16] QA02 night resolve
+[07:25:16] QA03 night resolve
+[07:25:16] QA04 night resolve
+[07:25:16] QA05 night resolve
+[07:25:17] QA01 night resolve
+[07:25:17] QA02 night resolve
+[07:25:17] QA03 night resolve
+[07:25:17] QA04 night resolve
+[07:25:17] QA05 night resolve
+[07:25:18] QA01 night resolve
+[07:25:18] QA02 night resolve
+[07:25:18] QA03 night resolve
+[07:25:18] QA04 night resolve
+[07:25:18] QA05 night resolve
+[07:25:19] QA01 night resolve
+[07:25:19] QA02 night resolve
+[07:25:19] QA03 night resolve
+[07:25:19] QA04 night resolve
+[07:25:19] QA05 night resolve
+[07:25:21] QA01 night resolve
+[07:25:21] QA02 night resolve
+[07:25:21] QA03 night resolve
+[07:25:21] QA04 night resolve
+[07:25:21] QA05 night resolve
+[07:25:22] QA01 night resolve
+[07:25:22] QA02 night resolve
+[07:25:22] QA03 night resolve
+[07:25:22] QA04 night resolve
+[07:25:22] QA05 night resolve
+[07:25:23] QA01 night resolve
+[07:25:23] QA02 night resolve
+[07:25:23] QA03 night resolve
+[07:25:23] QA04 night resolve
+[07:25:23] QA05 night resolve
+[07:25:24] QA01 night resolve
+[07:25:24] QA02 night resolve
+[07:25:24] QA03 night resolve
+[07:25:24] QA04 night resolve
+[07:25:24] QA05 night resolve
+[07:25:25] QA01 night resolve
+[07:25:25] QA02 night resolve
+[07:25:25] QA03 night resolve
+[07:25:25] QA04 night resolve
+[07:25:25] QA05 night resolve
+[07:25:26] QA01 night resolve
+[07:25:26] QA02 night resolve
+[07:25:26] QA03 night resolve
+[07:25:26] QA04 night resolve
+[07:25:26] QA05 night resolve
+[07:25:27] QA01 night resolve
+[07:25:27] QA02 night resolve
+[07:25:27] QA03 night resolve
+[07:25:28] QA04 night resolve
+[07:25:28] QA05 night resolve
+[07:25:29] QA01 night resolve
+[07:25:29] QA02 night resolve
+[07:25:29] QA03 night resolve
+[07:25:29] QA04 night resolve
+[07:25:29] QA05 night resolve
+[07:25:30] QA01 night resolve
+[07:25:30] QA02 night resolve
+[07:25:30] QA03 night resolve
+[07:25:30] QA04 night resolve
+[07:25:30] QA05 night resolve
+[07:25:31] QA01 night resolve
+[07:25:31] QA02 night resolve
+[07:25:31] QA03 night resolve
+[07:25:31] QA04 night resolve
+[07:25:31] QA05 night resolve
+[07:25:32] QA01 night resolve
+[07:25:32] QA02 night resolve
+[07:25:32] QA03 night resolve
+[07:25:32] QA04 night resolve
+[07:25:32] QA05 night resolve
+[07:25:33] QA01 night resolve
+[07:25:33] QA02 night resolve
+[07:25:33] QA03 night resolve
+[07:25:33] QA04 night resolve
+[07:25:33] QA05 night resolve
+[07:25:34] QA01 night resolve
+[07:25:34] QA02 night resolve
+[07:25:34] QA03 night resolve
+[07:25:34] QA04 night resolve
+[07:25:34] QA05 night resolve
+[07:25:36] QA01 night resolve
+[07:25:36] QA02 night resolve
+[07:25:36] QA03 night resolve
+[07:25:36] QA04 night resolve
+[07:25:36] QA05 night resolve
+[07:25:37] QA01 night resolve
+[07:25:37] QA02 night resolve
+[07:25:37] QA03 night resolve
+[07:25:37] QA04 night resolve
+[07:25:37] QA05 night resolve
+[07:25:38] QA01 night resolve
+[07:25:38] QA02 night resolve
+[07:25:38] QA03 night resolve
+[07:25:38] QA04 night resolve
+[07:25:38] QA05 night resolve
+[07:25:39] QA01 night resolve
+[07:25:39] QA02 night resolve
+[07:25:39] QA03 night resolve
+[07:25:39] QA04 night resolve
+[07:25:39] QA05 night resolve
+[07:25:40] QA01 night resolve
+[07:25:40] QA02 night resolve
+[07:25:40] QA03 night resolve
+[07:25:40] QA04 night resolve
+[07:25:40] QA05 night resolve
+[07:25:41] QA01 night resolve
+[07:25:41] QA02 night resolve
+[07:25:41] QA03 night resolve
+[07:25:41] QA04 night resolve
+[07:25:41] QA05 night resolve
+[07:25:42] QA01 night resolve
+[07:25:42] QA02 night resolve
+[07:25:42] QA03 night resolve
+[07:25:42] QA04 night resolve
+[07:25:43] QA05 night resolve
+[07:25:44] QA01 night resolve
+[07:25:44] QA02 night resolve
+[07:25:44] QA03 night resolve
+[07:25:44] QA04 night resolve
+[07:25:44] QA05 night resolve
+[07:25:45] QA01 night resolve
+[07:25:45] QA02 night resolve
+[07:25:45] QA03 night resolve
+[07:25:45] QA04 night resolve
+[07:25:45] QA05 night resolve
+[07:25:46] QA01 night resolve
+[07:25:46] QA03 ready
+[07:25:46] QA04 ready
+[07:25:47] QA05 ready
+[07:25:48] host phase DAY-2
+[07:25:48] QA01 ready
+[07:25:48] QA01 votes QA05
+[07:25:48] QA01 day resolve
+[07:25:49] QA02 day resolve
+[07:25:50] QA03 votes QA05
+[07:25:50] QA03 day resolve
+[07:25:52] QA04 votes QA05
+[07:25:52] QA04 day resolve
+[07:25:53] QA05 abstain
+[07:25:53] QA05 day resolve
+[07:25:55] host phase TRIBUNAL-2
+[07:25:55] QA01 guilty
+[07:25:55] QA01 tribunal resolve
+[07:25:57] QA02 tribunal resolve
+[07:25:58] QA03 guilty
+[07:25:58] QA03 tribunal resolve
+[07:26:00] QA04 guilty
+[07:26:00] QA04 tribunal resolve
+[07:26:03] host phase ENDED-2
+[07:26:06] shot 60-result-intro-p01
+[07:26:10] shot 60-result-mvp-p01
+[07:26:11] shot 60-result-mvp-QA02
+[07:26:13] shot 61-back-to-lobby
+
+[
+ {
+  "step": "start-game",
+  "ok": true
+ },
+ {
+  "step": "roles-known",
+  "ok": true,
+  "roles": {
+   "QA01": "CITIZEN",
+   "QA02": "JOKER",
+   "QA03": "CITIZEN",
+   "QA04": "CITIZEN",
+   "QA05": "JOKER"
+  }
+ },
+ {
+  "step": "result-page",
+  "ok": true,
+  "url": "http://localhost:5173/gameresult"
+ },
+ {
+  "step": "back-to-lobby",
+  "ok": false,
+  "url": "http://localhost:5173/gameresult"
+ }
+]

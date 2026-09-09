@@ -1,0 +1,545 @@
+[06:52:09] logged in 5
+[06:52:11] shot 10-game-setup
+[06:52:13] shot 11-matching-host
+[06:52:23] shot 12-matching-10players
+[06:52:23] shot 12-matching-p02
+[06:52:26] shot 13-matching-all-ready
+[06:52:28] shot 20-role-reveal-p01
+[06:52:28] shot 20-role-reveal-p02
+[06:52:28] host phase DAY-1
+[06:52:29] QA01 ready
+[06:52:29] QA02 ready
+[06:52:30] QA03 ready
+[06:52:30] QA04 ready
+[06:52:30] QA05 ready
+[06:52:30] QA05 abstain
+[06:52:31] QA01 abstain
+[06:52:31] host day resolve
+[06:52:32] shot 30-day-vote-p01
+[06:52:32] QA02 abstain
+[06:52:32] QA03 abstain
+[06:52:32] QA04 abstain
+[06:52:32] QA05 abstain
+[06:52:33] QA01 abstain
+[06:52:34] host day resolve
+[06:52:36] host phase NIGHT-1
+[06:52:36] shot 40-night-d1-p01
+[06:52:38] host night resolve
+[06:52:39] host night resolve
+[06:52:41] host night resolve
+[06:52:42] host night resolve
+[06:52:43] host night resolve
+[06:52:44] host night resolve
+[06:52:46] host night resolve
+[06:52:47] host night resolve
+[06:52:48] host night resolve
+[06:52:49] host night resolve
+[06:52:51] host night resolve
+[06:52:52] host night resolve
+[06:52:53] host night resolve
+[06:52:54] host night resolve
+[06:52:56] host night resolve
+[06:52:57] host night resolve
+[06:52:58] host night resolve
+[06:52:59] host night resolve
+[06:53:01] host night resolve
+[06:53:02] host night resolve
+[06:53:03] host night resolve
+[06:53:04] host night resolve
+[06:53:06] host night resolve
+[06:53:07] host night resolve
+[06:53:08] host night resolve
+[06:53:09] host night resolve
+[06:53:11] host night resolve
+[06:53:12] host night resolve
+[06:53:13] host night resolve
+[06:53:14] host night resolve
+[06:53:16] host night resolve
+[06:53:17] host night resolve
+[06:53:18] host night resolve
+[06:53:19] host night resolve
+[06:53:21] host night resolve
+[06:53:22] host night resolve
+[06:53:23] host night resolve
+[06:53:24] host night resolve
+[06:53:26] host night resolve
+[06:53:27] host night resolve
+[06:53:28] host night resolve
+[06:53:29] host night resolve
+[06:53:31] host night resolve
+[06:53:32] host night resolve
+[06:53:33] host night resolve
+[06:53:34] host night resolve
+[06:53:36] host night resolve
+[06:53:37] host night resolve
+[06:53:38] host night resolve
+[06:53:39] host night resolve
+[06:53:41] host night resolve
+[06:53:42] host night resolve
+[06:53:43] host night resolve
+[06:53:44] host night resolve
+[06:53:46] host night resolve
+[06:53:47] host night resolve
+[06:53:48] host night resolve
+[06:53:49] host night resolve
+[06:53:51] host night resolve
+[06:53:52] host night resolve
+[06:53:53] host night resolve
+[06:53:54] host night resolve
+[06:53:56] host night resolve
+[06:53:57] host night resolve
+[06:53:58] host night resolve
+[06:53:59] host night resolve
+[06:54:01] host night resolve
+[06:54:02] host night resolve
+[06:54:03] host night resolve
+[06:54:04] host night resolve
+[06:54:05] QA02 ready
+[06:54:05] QA03 ready
+[06:54:05] QA04 ready
+[06:54:05] QA05 ready
+[06:54:06] host phase DAY-2
+[06:54:06] QA01 ready
+[06:54:06] QA01 abstain
+[06:54:06] host day resolve
+[06:54:07] QA02 abstain
+[06:54:07] QA03 abstain
+[06:54:07] QA04 abstain
+[06:54:07] QA05 abstain
+[06:54:10] QA3 reload p03 -> url=http://localhost:5173/ingame phase=DAY day=2
+[06:54:10] shot 50-reload-p03
+[06:54:11] shot 51-day2-p01
+[06:54:12] QA01 abstain
+[06:54:12] host day resolve
+[06:54:14] host phase NIGHT-2
+[06:54:14] shot 40-night-d2-p01
+[06:54:16] host night resolve
+[06:54:18] host night resolve
+[06:54:19] host night resolve
+[06:54:20] host night resolve
+[06:54:21] host night resolve
+[06:54:23] host night resolve
+[06:54:24] host night resolve
+[06:54:25] host night resolve
+[06:54:26] host night resolve
+[06:54:28] host night resolve
+[06:54:29] host night resolve
+[06:54:30] host night resolve
+[06:54:31] host night resolve
+[06:54:33] host night resolve
+[06:54:34] host night resolve
+[06:54:35] host night resolve
+[06:54:36] host night resolve
+[06:54:38] host night resolve
+[06:54:39] host night resolve
+[06:54:40] host night resolve
+[06:54:41] host night resolve
+[06:54:43] host night resolve
+[06:54:44] host night resolve
+[06:54:45] host night resolve
+[06:54:46] host night resolve
+[06:54:48] host night resolve
+[06:54:49] host night resolve
+[06:54:50] host night resolve
+[06:54:51] host night resolve
+[06:54:53] host night resolve
+[06:54:54] host night resolve
+[06:54:55] host night resolve
+[06:54:56] host night resolve
+[06:54:58] host night resolve
+[06:54:59] host night resolve
+[06:55:00] host night resolve
+[06:55:01] host night resolve
+[06:55:03] host night resolve
+[06:55:04] host night resolve
+[06:55:05] host night resolve
+[06:55:06] host night resolve
+[06:55:08] host night resolve
+[06:55:09] host night resolve
+[06:55:10] host night resolve
+[06:55:11] host night resolve
+[06:55:13] host night resolve
+[06:55:14] host night resolve
+[06:55:15] host night resolve
+[06:55:16] host night resolve
+[06:55:18] host night resolve
+[06:55:19] host night resolve
+[06:55:20] host night resolve
+[06:55:21] host night resolve
+[06:55:23] host night resolve
+[06:55:24] host night resolve
+[06:55:25] host night resolve
+[06:55:26] host night resolve
+[06:55:28] host night resolve
+[06:55:29] host night resolve
+[06:55:30] host night resolve
+[06:55:31] host night resolve
+[06:55:33] host night resolve
+[06:55:34] host night resolve
+[06:55:35] host night resolve
+[06:55:36] host night resolve
+[06:55:38] host night resolve
+[06:55:39] host night resolve
+[06:55:40] host night resolve
+[06:55:41] host night resolve
+[06:55:43] host night resolve
+[06:55:43] QA02 ready
+[06:55:43] QA03 ready
+[06:55:43] QA04 ready
+[06:55:43] QA05 ready
+[06:55:44] host phase DAY-3
+[06:55:44] QA01 ready
+[06:55:44] QA01 abstain
+[06:55:44] host day resolve
+[06:55:45] QA02 abstain
+[06:55:45] QA03 abstain
+[06:55:45] QA04 abstain
+[06:55:45] QA05 abstain
+[06:55:47] QA01 abstain
+[06:55:47] host day resolve
+[06:55:49] host phase NIGHT-3
+[06:55:49] shot 40-night-d3-p01
+[06:55:51] host night resolve
+[06:55:52] host night resolve
+[06:55:54] host night resolve
+[06:55:55] host night resolve
+[06:55:56] host night resolve
+[06:55:57] host night resolve
+[06:55:59] host night resolve
+[06:56:00] host night resolve
+[06:56:01] host night resolve
+[06:56:02] host night resolve
+[06:56:04] host night resolve
+[06:56:05] host night resolve
+[06:56:06] host night resolve
+[06:56:07] host night resolve
+[06:56:09] host night resolve
+[06:56:10] host night resolve
+[06:56:11] host night resolve
+[06:56:12] host night resolve
+[06:56:14] host night resolve
+[06:56:15] host night resolve
+[06:56:16] host night resolve
+[06:56:17] host night resolve
+[06:56:19] host night resolve
+[06:56:20] host night resolve
+[06:56:21] host night resolve
+[06:56:22] host night resolve
+[06:56:24] host night resolve
+[06:56:25] host night resolve
+[06:56:26] host night resolve
+[06:56:27] host night resolve
+[06:56:29] host night resolve
+[06:56:30] host night resolve
+[06:56:31] host night resolve
+[06:56:32] host night resolve
+[06:56:34] host night resolve
+[06:56:35] host night resolve
+[06:56:36] host night resolve
+[06:56:37] host night resolve
+[06:56:39] host night resolve
+[06:56:40] host night resolve
+[06:56:41] host night resolve
+[06:56:42] host night resolve
+[06:56:44] host night resolve
+[06:56:45] host night resolve
+[06:56:46] host night resolve
+[06:56:47] host night resolve
+[06:56:48] host night resolve
+[06:56:50] host night resolve
+[06:56:51] host night resolve
+[06:56:52] host night resolve
+[06:56:53] host night resolve
+[06:56:55] host night resolve
+[06:56:56] host night resolve
+[06:56:57] host night resolve
+[06:56:58] host night resolve
+[06:57:00] host night resolve
+[06:57:01] host night resolve
+[06:57:02] host night resolve
+[06:57:03] host night resolve
+[06:57:05] host night resolve
+[06:57:06] host night resolve
+[06:57:07] host night resolve
+[06:57:08] host night resolve
+[06:57:10] host night resolve
+[06:57:11] host night resolve
+[06:57:12] host night resolve
+[06:57:13] host night resolve
+[06:57:15] host night resolve
+[06:57:16] host night resolve
+[06:57:17] host night resolve
+[06:57:18] QA02 ready
+[06:57:18] QA03 ready
+[06:57:18] QA04 ready
+[06:57:18] QA05 ready
+[06:57:19] host phase DAY-4
+[06:57:19] QA01 ready
+[06:57:19] QA01 abstain
+[06:57:19] host day resolve
+[06:57:20] QA02 abstain
+[06:57:20] QA03 abstain
+[06:57:20] QA04 abstain
+[06:57:20] QA05 abstain
+[06:57:21] QA01 abstain
+[06:57:21] host day resolve
+[06:57:24] host phase NIGHT-4
+[06:57:24] shot 40-night-d4-p01
+[06:57:26] host night resolve
+[06:57:27] host night resolve
+[06:57:28] host night resolve
+[06:57:30] host night resolve
+[06:57:31] host night resolve
+[06:57:32] host night resolve
+[06:57:33] host night resolve
+[06:57:35] host night resolve
+[06:57:36] host night resolve
+[06:57:37] host night resolve
+[06:57:38] host night resolve
+[06:57:39] host night resolve
+[06:57:41] host night resolve
+[06:57:42] host night resolve
+[06:57:43] host night resolve
+[06:57:44] host night resolve
+[06:57:46] host night resolve
+[06:57:47] host night resolve
+[06:57:48] host night resolve
+[06:57:49] host night resolve
+[06:57:51] host night resolve
+[06:57:52] host night resolve
+[06:57:53] host night resolve
+[06:57:54] host night resolve
+[06:57:56] host night resolve
+[06:57:57] host night resolve
+[06:57:58] host night resolve
+[06:57:59] host night resolve
+[06:58:01] host night resolve
+[06:58:02] host night resolve
+[06:58:03] host night resolve
+[06:58:04] host night resolve
+[06:58:06] host night resolve
+[06:58:07] host night resolve
+[06:58:08] host night resolve
+[06:58:09] host night resolve
+[06:58:11] host night resolve
+[06:58:12] host night resolve
+[06:58:13] host night resolve
+[06:58:14] host night resolve
+[06:58:16] host night resolve
+[06:58:17] host night resolve
+[06:58:18] host night resolve
+[06:58:19] host night resolve
+[06:58:21] host night resolve
+[06:58:22] host night resolve
+[06:58:23] host night resolve
+[06:58:24] host night resolve
+[06:58:26] host night resolve
+[06:58:27] host night resolve
+[06:58:28] host night resolve
+[06:58:29] host night resolve
+[06:58:31] host night resolve
+[06:58:32] host night resolve
+[06:58:33] host night resolve
+[06:58:34] host night resolve
+[06:58:36] host night resolve
+[06:58:37] host night resolve
+[06:58:38] host night resolve
+[06:58:39] host night resolve
+[06:58:41] host night resolve
+[06:58:42] host night resolve
+[06:58:43] host night resolve
+[06:58:44] host night resolve
+[06:58:45] host night resolve
+[06:58:47] host night resolve
+[06:58:48] host night resolve
+[06:58:49] host night resolve
+[06:58:50] host night resolve
+[06:58:52] host night resolve
+[06:58:52] QA02 ready
+[06:58:52] QA03 ready
+[06:58:52] QA04 ready
+[06:58:52] QA05 ready
+[06:58:54] host phase DAY-5
+[06:58:54] QA01 ready
+[06:58:54] QA02 abstain
+[06:58:54] QA03 abstain
+[06:58:54] QA04 abstain
+[06:58:54] QA05 abstain
+[06:58:55] QA01 abstain
+[06:58:55] host day resolve
+[06:58:57] host phase NIGHT-5
+[06:58:58] shot 40-night-d5-p01
+[06:59:00] host night resolve
+[06:59:01] host night resolve
+[06:59:02] host night resolve
+[06:59:03] host night resolve
+[06:59:05] host night resolve
+[06:59:06] host night resolve
+[06:59:07] host night resolve
+[06:59:08] host night resolve
+[06:59:10] host night resolve
+[06:59:11] host night resolve
+[06:59:12] host night resolve
+[06:59:13] host night resolve
+[06:59:15] host night resolve
+[06:59:16] host night resolve
+[06:59:17] host night resolve
+[06:59:18] host night resolve
+[06:59:20] host night resolve
+[06:59:21] host night resolve
+[06:59:22] host night resolve
+[06:59:23] host night resolve
+[06:59:25] host night resolve
+[06:59:26] host night resolve
+[06:59:27] host night resolve
+[06:59:28] host night resolve
+[06:59:29] host night resolve
+[06:59:31] host night resolve
+[06:59:32] host night resolve
+[06:59:33] host night resolve
+[06:59:34] host night resolve
+[06:59:36] host night resolve
+[06:59:37] host night resolve
+[06:59:38] host night resolve
+[06:59:39] host night resolve
+[06:59:41] host night resolve
+[06:59:42] host night resolve
+[06:59:43] host night resolve
+[06:59:44] host night resolve
+[06:59:46] host night resolve
+[06:59:47] host night resolve
+[06:59:48] host night resolve
+[06:59:49] host night resolve
+[06:59:51] host night resolve
+[06:59:52] host night resolve
+[06:59:53] host night resolve
+[06:59:54] host night resolve
+[06:59:56] host night resolve
+[06:59:57] host night resolve
+[06:59:58] host night resolve
+[06:59:59] host night resolve
+[07:00:01] host night resolve
+[07:00:02] host night resolve
+[07:00:03] host night resolve
+[07:00:04] host night resolve
+[07:00:06] host night resolve
+[07:00:07] host night resolve
+[07:00:08] host night resolve
+[07:00:09] host night resolve
+[07:00:11] host night resolve
+[07:00:12] host night resolve
+[07:00:13] host night resolve
+[07:00:14] host night resolve
+[07:00:16] host night resolve
+[07:00:17] host night resolve
+[07:00:18] host night resolve
+[07:00:19] host night resolve
+[07:00:20] host night resolve
+[07:00:22] host night resolve
+[07:00:23] host night resolve
+[07:00:24] host night resolve
+[07:00:26] host night resolve
+[07:00:26] QA02 ready
+[07:00:26] QA03 ready
+[07:00:26] QA04 ready
+[07:00:26] QA05 ready
+[07:00:27] host phase DAY-6
+[07:00:27] QA01 ready
+[07:00:27] host day resolve
+[07:00:28] QA02 abstain
+[07:00:28] QA03 abstain
+[07:00:28] QA04 abstain
+[07:00:28] QA05 abstain
+[07:00:30] QA01 abstain
+[07:00:30] host day resolve
+[07:00:32] host phase NIGHT-6
+[07:00:32] shot 40-night-d6-p01
+[07:00:34] host night resolve
+[07:00:35] host night resolve
+[07:00:37] host night resolve
+[07:00:38] host night resolve
+[07:00:39] host night resolve
+[07:00:40] host night resolve
+[07:00:42] host night resolve
+[07:00:43] host night resolve
+[07:00:44] host night resolve
+[07:00:45] host night resolve
+[07:00:47] host night resolve
+[07:00:48] host night resolve
+[07:00:49] host night resolve
+[07:00:50] host night resolve
+[07:00:52] host night resolve
+[07:00:53] host night resolve
+[07:00:54] host night resolve
+[07:00:55] host night resolve
+[07:00:57] host night resolve
+[07:00:58] host night resolve
+[07:00:59] host night resolve
+[07:01:00] host night resolve
+[07:01:02] host night resolve
+[07:01:03] host night resolve
+[07:01:04] host night resolve
+[07:01:05] host night resolve
+[07:01:07] host night resolve
+[07:01:08] host night resolve
+[07:01:09] host night resolve
+[07:01:10] host night resolve
+[07:01:12] host night resolve
+[07:01:13] host night resolve
+[07:01:14] host night resolve
+[07:01:15] host night resolve
+[07:01:17] host night resolve
+[07:01:18] host night resolve
+[07:01:19] host night resolve
+[07:01:20] host night resolve
+[07:01:22] host night resolve
+[07:01:23] host night resolve
+[07:01:24] host night resolve
+[07:01:24] FATAL locator.count: Target crashed 
+    at clickIfEnabled (C:\Users\minsa\AppData\Local\Temp\claude\C--Users-minsa-jokertest\809bb195-c683-4a28-8ff9-3f11b49ccae3\scratchpad\qa\phaseB.mjs:19:15)
+    at C:\Users\minsa\AppData\Local\Temp\claude\C--Users-minsa-jokertest\809bb195-c683-4a28-8ff9-3f11b49ccae3\scratchpad\qa\phaseB.mjs:93:13
+
+[
+ {
+  "step": "create-room",
+  "ok": true
+ },
+ {
+  "step": "BUG-UI16-01",
+  "ok": false,
+  "why": "/multiplay 입장하기 버튼이 사운드 컨트롤 위젯(bottom-right)에 가려져 클릭 불가"
+ },
+ {
+  "step": "join-QA02",
+  "ok": true
+ },
+ {
+  "step": "join-QA03",
+  "ok": true
+ },
+ {
+  "step": "join-QA04",
+  "ok": true
+ },
+ {
+  "step": "join-QA05",
+  "ok": true
+ },
+ {
+  "step": "start-game",
+  "ok": true
+ },
+ {
+  "step": "QA3-reload",
+  "ok": true,
+  "detail": {
+   "phase": "DAY",
+   "day": "2"
+  }
+ },
+ {
+  "step": "fatal",
+  "ok": false,
+  "why": "locator.count: Target crashed "
+ }
+]
