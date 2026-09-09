@@ -4,6 +4,24 @@
 `backend/db/migrations/0002-expand-nickname-snapshot.js`, `backend/scripts/migrate-db.js`가
 구현하는 F-01 마이그레이션 체계의 운영 절차와 검증 근거를 기록한다.
 
+## 최종 검증 업데이트 — 2026-09-09 23:48 KST
+
+운영자(Codex)가 전용 MySQL 테스트 DB와 복구 검증용 DB에만 접근하는 계정을 준비하여
+`F01_TEST_DATABASE_URL`을 자동 검증에 연결했다. **아래 6·7절의 DB 미검증 표시는 이 연결
+이전 구현 환경의 기록이며, 현재 상태는 이 최종 검증 결과가 우선한다.**
+
+- 검증한 구현 커밋: `635a0b7`. 원본 브랜치 반영 커밋: `ba6d469`.
+- 프론트 1,164개 테스트와 production build 통과. 백엔드 전체 986개 테스트 통과,
+  실패 0·건너뜀 0. 실제 DB 마이그레이션·데이터 보존·반복 실행·50자 닉네임·복구 테스트 포함.
+- Claude 결과 검토와 Codex 교차 검증 통과. AC-01~05 기계 판정 PASS.
+- AC-06은 운영자가 8절의 문서, L·U 원본 상태·요구사항, Git 이력을 직접 대조했다.
+  L 병합 `4967850`이 기준 `658ce74`에 포함되고, F-01 변경은 U의 프론트 범위와 겹치지 않는다.
+  L의 초기 스키마는 0001 기준선에서 보존하고, 0002에서 승인된 스냅샷 길이 확장을 적용한다.
+- 로컬 실행 근거: `.pluto/slices/AL/runs/VERIFY-13.json`~`VERIFY-15.json`,
+  `RESULT-3.json`, `CODEX-3.json`, `.pluto/monitor/AL-AC06-review.json`.
+- DB 검증 대상은 전용 `pluto_f01_20260909_al` 및 `_restore_check` 스키마다.
+  앱 DB에 적용할 때에는 이 문서의 백업·마이그레이션·복구 절차를 따른다.
+
 ## 1. 배경 — 왜 sync() 대신 마이그레이션인가
 
 이 저장소는 지금까지 `backend/index.js`의 `db.sequelize.sync({force:false})`만으로 스키마를
