@@ -28,7 +28,9 @@ const EXPECTED_TABLES = {
     columns: {
       game_id: { type: 'UUID', allowNull: false },
       user_id: { type: 'UUID', allowNull: false },
-      nickname_snapshot: { type: 'STRING(30)', allowNull: false },
+      // F-01: 0002-expand-nickname-snapshot.js가 기존 DB의 컬럼을 30→50으로 확장한다.
+      // users.nickname(50자)과 잘림 없이 왕복 저장되도록 모델 정의도 함께 50으로 맞춘다.
+      nickname_snapshot: { type: 'STRING(50)', allowNull: false },
       role: { type: 'STRING(20)', allowNull: false },
       team: { type: 'STRING(20)', allowNull: false },
       won: { type: 'BOOLEAN', allowNull: true },
