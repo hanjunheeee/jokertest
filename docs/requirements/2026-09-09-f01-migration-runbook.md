@@ -155,6 +155,24 @@ DB 통합 테스트(`F01_TEST_DATABASE_URL` 필요)와, DB 없이 이 환경에�
 검사"와 "이력 쓰기 실패 경로"가 전혀 테스트되지 않았다는 지적을 받아, 이번 회차는 DB 접근이
 막힌 이 환경에서도 그 두 가지를 결정론적으로 증명하는 유닛 테스트를 추가했다.
 
+**이번 회차(재검토 CODEX-2 대응) 수정 사항:**
+- `actualIndexesOf`(0001-legacy-baseline.js)가 `queryInterface.showIndex()`의 원시 MySQL
+  `SHOW INDEX` 필드(`Key_name`/`Non_unique`/`Seq_in_index`/`Column_name`)를 읽고 있었다 —
+  실제 sequelize MySQL 방언은 이 값을 `{ primary, fields:[{attribute,...}], name, unique }`
+  형태로 이미 정규화해서 돌려주므로(원시 필드는 결과 객체에 없음), 실제 DB에 대고 돌리면
+  모든 인덱스의 `fields`가 빈 배열이 되어 정상적인 기존 DB조차 "인덱스 누락"으로 등록을
+  거부당했을 것이다. 정규화된 형태를 그대로 읽도록 고쳤고, `legacyBaseline.diffTable.test.js`의
+  가짜 `showIndex` 응답도 원시 형태에서 정규화된 형태로 다시 만들어 이 회귀를 실제로 잡아낼
+  수 있게 했다(새 단위 테스트 `actualIndexesOf: 정규화된 showIndex() 결과에서...` 추가).
+- `f01-migrations.integration.test.js`의 두 번째 AC-05(이력 쓰기 실패 경로)가 `traffic_logs`에
+  `diag_note` 컬럼을 추가한 뒤 14개 테이블 전체를 `SELECT *` 그대로 `deepEqual`하고 있었다 —
+  `diag_note` 추가로 `traffic_logs`의 컬럼 집합 자체가 달라지므로 이 비교는 항상 실패해
+  `resolveFailure` 복구 단계에 결코 도달하지 못했다. `traffic_logs`만 원래 컬럼 값 보존
+  여부(`diag_note` 제외 투영 비교)와 새 컬럼이 기존 행에 NULL로 채워졌는지를 따로 확인하도록
+  고쳤다. 첫 번째 AC-05(전체 백업 복원 경로)에는 `describeTable` 기반 14개 테이블 전체 스키마
+  원복 비교와 `schema_migrations` 전체 행(상태뿐 아니라 id·checksum·시각·오류메시지) 원복
+  비교를 추가했다 — 이전에는 데이터 행과 `status` 필드만 비교했다.
+
 | AC | 내용 | 상태 | 근거 |
 | --- | --- | --- | --- |
 | AC-01 | 빈 DB에서 14개 테이블 생성 | **미검증** (코드 준비 완료, 실행 불가) | `backend/tests/db/f01-migrations.integration.test.js`의 `AC-01` 테스트로 구현됨. 이 환경에는 도달 가능한 전용 MySQL 격리 DB 자격 증명이 없어(§7) `F01_TEST_DATABASE_URL` 없이 스킵됨 — `.pluto/checks/`의 `node-test` 로그에 skip으로 기록. |
@@ -169,12 +187,14 @@ DB 통합 테스트(`F01_TEST_DATABASE_URL` 필요)와, DB 없이 이 환경에�
 - `node "C:/dev/pluto/packages/daemon/dist/src/impl-check.js" test` (backend 전체 회귀,
   `f01-migrations.integration.test.js` 포함) — DB 통합 테스트는 여전히 skip, 나머지는
   전부 pass. 로그: `backend/.pluto/checks/*-test.log`.
-- `backend/__tests__/legacyBaseline.diffTable.test.js`(신규, DB 불필요) — **12/12 pass**.
+- `backend/__tests__/legacyBaseline.diffTable.test.js`(DB 불필요) — **13/13 pass**(이번 회차
+  `actualIndexesOf`의 정규화 회귀를 잡아내는 케이스 1개 추가로 12→13).
   `diffTable`이 (a) 완전히 일치하는 구조는 통과시키고, (b) 컬럼 기본값 불일치(`role`의
   `'USER'`↔`'ADMIN'`, `Sequelize.NOW`↔`CURRENT_TIMESTAMP` 누락)를 잡아내고, (c) `users.email`
   유니크 인덱스 누락과 `friendships`의 복합 유니크 인덱스 컬럼 순서 어긋남을 잡아내고,
   (d) `user_bans.user_id → users.uuid` 외래키 누락·오참조를 잡아내는지를 각각 독립된 케이스로
-  증명한다.
+  증명하며, (e) `actualIndexesOf`가 sequelize의 실제 정규화된 `showIndex()` 응답 형태를
+  올바르게 읽는지(원시 `SHOW INDEX` 필드가 아님을) 직접 증명한다.
 - `backend/__tests__/migrationRunner.test.js`(신규, DB 불필요, fake `sequelize.query`) —
   **14/14 pass**. 정상 적용/재실행 스킵/DDL 실패/체크섬 불일치는 기존 계약을 재확인하고,
   새로 추가한 케이스가 (a) DDL은 성공했지만 `markFinished(applied)` 자체가 실패하면 `failed`로

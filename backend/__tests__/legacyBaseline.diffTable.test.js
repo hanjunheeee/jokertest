@@ -3,10 +3,13 @@
 // F-01 재검토 대응 — diffTable이 컬럼 타입/NOT NULL/기본키뿐 아니라 기본값·유니크 인덱스·
 // 외래키까지 실제로 잡아내는지 증명하는 유닛 테스트. 실제 MySQL 없이(이 환경은 격리 MySQL
 // 자격 증명을 구할 수 없다 — docs/requirements/2026-09-09-f01-migration-runbook.md §7)
-// queryInterface를 흉내낸 순수 객체로 diffTable을 직접 호출한다. describeTable/showIndex/
-// getForeignKeyReferencesForTable이 반환하는 형태는 backend/node_modules/sequelize의
-// dialects/mysql/query.js(DESCRIBE), query-generator.js(FOREIGN_KEY_FIELDS), MySQL의
-// SHOW INDEX 결과 컬럼명(Non_unique/Key_name/Seq_in_index/Column_name)을 그대로 따른다.
+// queryInterface를 흉내낸 순수 객체로 diffTable을 직접 호출한다. describeTable이 반환하는
+// 형태는 backend/node_modules/sequelize/lib/dialects/mysql/query.js(DESCRIBE)를, showIndex가
+// 반환하는 형태는 같은 파일의 handleShowIndexesQuery가 만드는 정규화된 배열
+// ({ primary, fields:[{attribute,length,order}], name, tableName, unique, type }) —
+// 원시 SHOW INDEX 필드(Key_name/Non_unique/Seq_in_index/Column_name)가 아니다 — 를 그대로
+// 따른다. 이전 회차는 원시 필드 형태로 가짜 응답을 만들어, actualIndexesOf가 원시 필드를
+// 읽던 회귀(실제 DB에서는 항상 undefined만 나옴)를 이 테스트가 잡아내지 못했다(재검토 지적).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -61,21 +64,29 @@ const fakeDescribeTable = (definition) => {
     return table;
 };
 
-const fakeShowIndexRows = (definition) => {
-    const rows = [];
-    let seq = 1;
-    for (const [column, columnDef] of Object.entries(definition.columns)) {
-        if (columnDef.primaryKey) rows.push({ Key_name: 'PRIMARY', Non_unique: 0, Seq_in_index: seq++, Column_name: column });
+// queryInterface.showIndex()가 실제로 돌려주는 정규화된 형태 — actualIndexesOf 위 주석 참고.
+const fakeShowIndexResults = (definition) => {
+    const results = [];
+    const primaryFields = Object.entries(definition.columns)
+        .filter(([, columnDef]) => columnDef.primaryKey)
+        .map(([column]) => ({ attribute: column }));
+    if (primaryFields.length > 0) {
+        results.push({ name: 'PRIMARY', primary: true, unique: true, fields: primaryFields });
     }
     for (const [column, columnDef] of Object.entries(definition.columns)) {
-        if (columnDef.unique) rows.push({ Key_name: `${column}_unique`, Non_unique: 0, Seq_in_index: 1, Column_name: column });
+        if (columnDef.unique) {
+            results.push({ name: `${column}_unique`, primary: false, unique: true, fields: [{ attribute: column }] });
+        }
     }
     for (const index of definition.indexes || []) {
-        index.fields.forEach((field, i) => {
-            rows.push({ Key_name: index.name || `idx_${index.fields.join('_')}`, Non_unique: index.unique ? 0 : 1, Seq_in_index: i + 1, Column_name: field });
+        results.push({
+            name: index.name || `idx_${index.fields.join('_')}`,
+            primary: false,
+            unique: Boolean(index.unique),
+            fields: index.fields.map((field) => ({ attribute: field })),
         });
     }
-    return rows;
+    return results;
 };
 
 const fakeForeignKeyRows = (definition) => {
@@ -92,7 +103,7 @@ const fakeForeignKeyRows = (definition) => {
 // 바꿔치기해 "실제 DB가 이렇게 어긋나 있다면"을 흉내낸다.
 const buildQueryInterface = (definition, overrides = {}) => ({
     describeTable: async () => overrides.describeTable ?? fakeDescribeTable(definition),
-    showIndex: async () => overrides.showIndex ?? fakeShowIndexRows(definition),
+    showIndex: async () => overrides.showIndex ?? fakeShowIndexResults(definition),
     getForeignKeyReferencesForTable: async () => overrides.foreignKeys ?? fakeForeignKeyRows(definition),
 });
 
@@ -130,7 +141,7 @@ test('diffTable: NOW() 기본값(CURRENT_TIMESTAMP)이 실제 DB에 없으면 �
 
 test('diffTable: unique 컬럼(email)에 실제 유니크 인덱스가 없으면 잡아낸다', async () => {
     const definition = definitions.users;
-    const showIndex = fakeShowIndexRows(definition).filter((row) => row.Key_name !== 'email_unique');
+    const showIndex = fakeShowIndexResults(definition).filter((index) => index.name !== 'email_unique');
     const problems = await baseline.diffTable(
         buildQueryInterface(definition, { showIndex }), Sequelize, 'users', definition,
     );
@@ -141,14 +152,29 @@ test('diffTable: 복합 유니크 인덱스(friendships)의 컬럼 순서가 다
     const definition = definitions.friendships;
     // 기대: [requester_id, receiver_id]. 실제는 순서가 뒤집힌 인덱스만 있다고 흉내낸다.
     const showIndex = [
-        { Key_name: 'PRIMARY', Non_unique: 0, Seq_in_index: 1, Column_name: 'id' },
-        { Key_name: 'friendships_reversed', Non_unique: 0, Seq_in_index: 1, Column_name: 'receiver_id' },
-        { Key_name: 'friendships_reversed', Non_unique: 0, Seq_in_index: 2, Column_name: 'requester_id' },
+        { name: 'PRIMARY', primary: true, unique: true, fields: [{ attribute: 'id' }] },
+        { name: 'friendships_reversed', primary: false, unique: true, fields: [{ attribute: 'receiver_id' }, { attribute: 'requester_id' }] },
     ];
     const problems = await baseline.diffTable(
         buildQueryInterface(definition, { showIndex }), Sequelize, 'friendships', definition,
     );
     assert.ok(problems.some((p) => p.includes('인덱스')), problems.join('\n'));
+});
+
+test('actualIndexesOf: 정규화된 showIndex() 결과에서 PRIMARY를 제외하고 unique/fields를 그대로 뽑아낸다 (원시 SHOW INDEX 필드가 아님을 증명)', () => {
+    // 실제 mysql2/sequelize가 돌려주는 형태 그대로 — Key_name/Non_unique/Seq_in_index/Column_name
+    // 같은 원시 필드는 여기 전혀 없다. 이전 회차는 이 원시 필드를 읽었기 때문에, 아래처럼
+    // 정규화된 입력을 주면 모든 필드가 undefined가 되어 실제 정상 기존 DB도 거부했을 것이다.
+    const showIndexResults = [
+        { primary: true, unique: true, name: 'PRIMARY', tableName: 'users', type: 'BTREE', fields: [{ attribute: 'uuid' }] },
+        { primary: false, unique: true, name: 'users_nickname_unique', tableName: 'users', type: 'BTREE', fields: [{ attribute: 'nickname' }] },
+        { primary: false, unique: false, name: 'idx_status', tableName: 'users', type: 'BTREE', fields: [{ attribute: 'status' }] },
+    ];
+    const result = baseline.actualIndexesOf(showIndexResults);
+    assert.deepEqual(result, [
+        { unique: true, fields: ['nickname'] },
+        { unique: false, fields: ['status'] },
+    ]);
 });
 
 test('diffTable: 외래키가 실제 DB에 없으면 잡아낸다 (user_bans.user_id → users.uuid)', async () => {

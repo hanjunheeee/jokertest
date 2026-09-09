@@ -557,6 +557,17 @@ test('AC-05: DDL 부분 실패 후 전체 백업 복원으로 실패 이전 상�
     const backup = await backupDatabase();
     const beforeRows = await captureAllRows();
 
+    // 전체 스키마(describeTable)와 이력(schema_migrations) 값 전체도 실패 이전 시점에
+    // 캡처한다 — 이전 회차는 데이터 행만 비교하고 스키마·이력 원복은 검증하지 않았다는
+    // 지적을 받았다(재검토 지적). AC-03처럼 describeTable 스냅샷으로 스키마 구조 전체를,
+    // schema_migrations는 id·checksum·상태·시각·오류메시지까지 전 컬럼을 비교한다.
+    const queryInterfaceForSchema = sequelize.getQueryInterface();
+    const schemaBeforeFailure = {};
+    for (const table of baseline.TABLE_ORDER) {
+        schemaBeforeFailure[table] = await queryInterfaceForSchema.describeTable(table);
+    }
+    const historyBeforeFailure = await queryRows(`SELECT * FROM ${migrationRunner.META_TABLE} ORDER BY id`);
+
     // 실패를 주입한다: 첫 DDL은 성공해 흔적을 남기고, 두 번째 단계에서 던진다 — MySQL DDL은
     // 트랜잭션으로 묶여도 암묵적 커밋을 일으키므로(A-05), 트랜잭션 롤백만으로는 이 흔적이
     // 지워지지 않는다는 것을 함께 보인다.
@@ -636,6 +647,21 @@ test('AC-05: DDL 부분 실패 후 전체 백업 복원으로 실패 이전 상�
         assert.deepEqual(afterRestoreRows[table], beforeRows[table], `복원된 ${table}이 실패 이전 상태와 완전히 같아야 한다`);
     }
 
+    // 전체 스키마(describeTable) 자체도 실패 이전과 완전히 같아야 한다 — poison_column이
+    // users에서 사라진 것은 위에서 개별 확인했지만, 그 확인만으로는 다른 13개 테이블의
+    // 컬럼 타입·NOT NULL·기본키 등이 원복됐는지 증명하지 못한다(재검토 지적: "전체 스키마·
+    // 이력 값의 원복 비교는 없다").
+    const schemaAfterRestore = {};
+    for (const table of baseline.TABLE_ORDER) {
+        schemaAfterRestore[table] = await queryInterfaceForSchema.describeTable(table);
+    }
+    assert.deepEqual(schemaAfterRestore, schemaBeforeFailure, '복원 후 14개 테이블 전체 스키마가 실패 이전과 완전히 같아야 한다');
+
+    // schema_migrations 이력도 상태(status) 필드만이 아니라 id·checksum·시각·오류메시지까지
+    // 전체 값이 실패 이전과 완전히 같아야 한다.
+    const historyAfterRestore = await queryRows(`SELECT * FROM ${migrationRunner.META_TABLE} ORDER BY id`);
+    assert.deepEqual(historyAfterRestore, historyBeforeFailure, '복원 후 schema_migrations 이력 값 전체가 실패 이전과 완전히 같아야 한다');
+
     const restoredStatus = await migrationRunner.getStatus({ sequelize, migrations: MIGRATIONS });
     assert.deepEqual(restoredStatus.map((s) => s.status), ['applied', 'applied'], '복원된 DB는 실패 이전의 정상 이력을 그대로 갖는다');
 
@@ -677,11 +703,33 @@ test('AC-05: DDL은 성공했지만 이력 기록이 실패하면 failed로 귀�
     assert.ok(trafficLogsAfter.diag_note, 'DDL(addColumn)은 이력 쓰기 실패와 무관하게 이미 반영돼 있어야 한다');
 
     // 이 시나리오는 users/game_results 등 기존 데이터를 전혀 건드리지 않았으므로 그대로여야 한다
-    // (14개 테이블 전체 비교).
+    // (14개 테이블 전체 비교). traffic_logs만은 예외다 — migrationWithGoodDdl이 의도적으로
+    // diag_note 컬럼을 추가했으므로 SELECT *의 컬럼 집합 자체가 이전과 달라지는 것이 정상
+    // 동작이다(추가된 컬럼이 있다는 사실 자체를 "변경되지 않아야 한다"로 비교하면 이 검사가
+    // 항상 실패해 아래 복구(resolveFailure) 검증에 도달하지 못한다 — 재검토 지적). traffic_logs는
+    // 대신 (a) diag_note를 제외한 원래 컬럼 값이 그대로인지, (b) 새로 생긴 diag_note가 기존
+    // 행에는 NULL로 채워졌는지를 각각 확인한다.
     const afterInjectionRows = await captureAllRows();
     for (const table of baseline.TABLE_ORDER) {
+        if (table === 'traffic_logs') continue;
         assert.deepEqual(afterInjectionRows[table], beforeRows[table], `${table}은 이력 쓰기 실패 시나리오에서 변경되지 않아야 한다`);
     }
+
+    const trafficLogsOriginalColumns = Object.keys(beforeRows.traffic_logs[0] ?? {});
+    assert.ok(trafficLogsOriginalColumns.length > 0, 'traffic_logs에 미리 심어둔 행이 있어야 이 비교가 의미 있다');
+    const afterTrafficLogsOriginalColumnsOnly = afterInjectionRows.traffic_logs.map((row) => {
+        const projected = {};
+        for (const column of trafficLogsOriginalColumns) projected[column] = row[column];
+        return projected;
+    });
+    assert.deepEqual(
+        afterTrafficLogsOriginalColumnsOnly, beforeRows.traffic_logs,
+        'traffic_logs의 기존 컬럼 값은 diag_note 추가와 무관하게 그대로 보존돼야 한다',
+    );
+    assert.ok(
+        afterInjectionRows.traffic_logs.every((row) => row.diag_note === null),
+        '새로 추가된 diag_note는 기존 행에 NULL로 채워져야 한다(값 유실이 아니라 스키마 확장이다)',
+    );
 
     // markFinished(applied)가 실패해도 catch 블록의 markFinished(failed) 재시도로 안전하게
     // failed로 기록된다(migrationRunner.js) — "DDL은 성공"했다는 사실이 error_message에 남는다.

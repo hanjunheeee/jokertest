@@ -20,7 +20,8 @@
 //     번역해 비교하고, Sequelize.UUIDV4처럼 애플리케이션 레벨에서만 생성되는 값은 DB에
 //     DEFAULT 절이 없으므로 검사에서 제외한다.
 //   - unique index: users.nickname/email 같은 컬럼 단위 unique와 friend_requests/friendships의
-//     복합 유니크 인덱스를 SHOW INDEX 결과와 대조한다.
+//     복합 유니크 인덱스를 queryInterface.showIndex()의 정규화된 결과와 대조한다(원시 SHOW
+//     INDEX 필드가 아니다 — actualIndexesOf 위 주석 참고).
 //   - foreign key: user_id/requester_id/receiver_id 등 실제 belongsTo 연관관계가 sync()로
 //     생성하는 외래키(예: user_bans.user_id→users.uuid)를 INFORMATION_SCHEMA 기반
 //     getForeignKeyReferencesForTable 결과와 대조한다. 이 검사를 추가하면서 아래
@@ -282,17 +283,22 @@ const expectedIndexesOf = (definition) => {
     return indexes;
 };
 
-// SHOW INDEX 결과(행 단위, Seq_in_index로 컬럼 순서를 표시)를 인덱스 이름별로 묶어
-// { unique, fields } 목록으로 재구성한다. PRIMARY는 기본키이지 F-01이 관리하는 "유니크
-// 제약"이 아니므로 제외한다.
-const actualIndexesOf = (showIndexRows) => {
-    const byName = new Map();
-    for (const row of showIndexRows) {
-        if (row.Key_name === 'PRIMARY') continue;
-        if (!byName.has(row.Key_name)) byName.set(row.Key_name, { unique: Number(row.Non_unique) === 0, fields: [] });
-        byName.get(row.Key_name).fields[Number(row.Seq_in_index) - 1] = row.Column_name;
-    }
-    return [...byName.values()];
+// queryInterface.showIndex()는 원시 SHOW INDEX 행이 아니라, sequelize의 MySQL 방언이 이미
+// 인덱스 이름별로 정규화한 배열을 돌려준다(backend/node_modules/sequelize/lib/dialects/mysql/
+// query.js의 handleShowIndexesQuery — Key_name/Non_unique/Seq_in_index/Column_name 같은
+// 원시 필드는 여기서 primary/fields([{attribute,length,order}])/name/tableName/unique/type
+// 으로 이미 변환되어 있고, 원시 필드 이름은 결과 객체에 존재하지 않는다). 이전 회차는 이
+// 정규화를 거치지 않은 원시 필드명을 읽어 실제 MySQL에서는 항상 undefined만 나왔고, 그
+// 결과 모든 기존 인덱스가 "필드 없음"으로 계산돼 정상 기존 DB도 인덱스 불일치로 잘못
+// 거부했다(이번 회차 재검토 지적 — 아래 테스트의 가짜 응답도 실제 정규화된 형태로 맞췄다).
+// PRIMARY는 기본키이지 F-01이 관리하는 "유니크 제약"이 아니므로 제외한다.
+const actualIndexesOf = (showIndexResults) => {
+    return showIndexResults
+        .filter((index) => !index.primary)
+        .map((index) => ({
+            unique: Boolean(index.unique),
+            fields: index.fields.map((field) => field.attribute),
+        }));
 };
 
 const sameFieldOrder = (a, b) => a.length === b.length && a.every((field, i) => field === b[i]);
