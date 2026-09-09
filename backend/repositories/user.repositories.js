@@ -35,16 +35,23 @@ exports.withTransaction = async (work) => {
     return await db.sequelize.transaction(work);
 };
 
-exports.findByEmail = async (email) => {
-    return await db.User.findOne({ where: { email } });
+// options로 { transaction, lock }을 받는다 — 로그인과 비밀번호 변경이 같은 유저 행을
+// FOR UPDATE로 잠그고 직렬화하기 위해 쓴다(F-03 A-04/R-IMPL #7): 비밀번호 변경 트랜잭션이
+// 이 행을 잠근 동안에는 동시 로그인도 대기했다가, 트랜잭션이 커밋된 뒤에야 최신
+// password_hash로 비교하게 되어 "옛 비밀번호로 통과한 로그인이 변경 이후에 세션을 만드는"
+// 경합을 막는다.
+exports.findByEmail = async (email, options = {}) => {
+    const { transaction, lock } = options;
+    return await db.User.findOne({ where: { email }, transaction, lock });
 };
 
 exports.findByNickname = async (nickname) => {
     return await db.User.findOne({ where: { nickname } });
 };
 
-exports.findByUuid = async (uuid) => {
-    return await db.User.findOne({ where: { uuid } });
+exports.findByUuid = async (uuid, options = {}) => {
+    const { transaction, lock } = options;
+    return await db.User.findOne({ where: { uuid }, transaction, lock });
 };
 
 // options는 { transaction } 전달용입니다. 기본값이 있어 기존 호출부는 그대로 동작합니다.
@@ -84,19 +91,23 @@ exports.checkActiveBan = async (user_id) => {
     });
 };
 
-exports.createUserSession = async (sessionData) => {
-    return await db.UserSession.create(sessionData);
+exports.createUserSession = async (sessionData, options = {}) => {
+    return await db.UserSession.create(sessionData, options);
 };
 
 // 토큰의 sessionId(= user_sessions.id, PK)로 세션 한 건을 읽습니다. 인증 미들웨어가
 // "서명은 유효하지만 이미 내려간 세션"을 판별할 유일한 수단입니다. revoked_at은
 // is_online과 별개로 명시적 폐기(로그아웃·비밀번호 변경·재사용 감지)를 나타내므로
 // 둘 다 확인해야 HTTP·Socket.IO가 같은 기준으로 거부한다(F-03 AC-05/AC-09).
+// refresh_token_expires_at도 함께 읽어, sessionLifecycle.resolveSession이 로그인 시점의
+// 절대 30일 기한을 넘긴 세션을 (JWT 자체의 exp와 무관하게) 거부할 수 있게 한다 — 이미
+// 연결된 소켓은 handshake 이후 JWT를 다시 검증하지 않으므로, 그 경로에서 기한 초과를
+// 잡아낼 유일한 수단은 이 DB 필드다(F-03 R-IMPL #4).
 exports.findActiveSession = async (id, user_id) => {
     if (!id || !user_id) return null;
     return await db.UserSession.findOne({
         where:      { id, user_id, is_online: true, revoked_at: null },
-        attributes: ['id', 'user_id', 'is_online', 'revoked_at'],
+        attributes: ['id', 'user_id', 'is_online', 'revoked_at', 'refresh_token_expires_at'],
     });
 };
 

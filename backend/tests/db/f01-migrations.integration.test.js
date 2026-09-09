@@ -418,14 +418,40 @@ test('AC-02: 기존 데이터가 있는 DB에 마이그레이션을 적용해도
     const { applied } = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
     assert.deepEqual(applied, MIGRATIONS.map((m) => m.name));
 
-    // 값 자체는 마이그레이션으로 바뀌지 않는다(0002는 nickname_snapshot 컬럼 폭만 넓힌다) —
-    // 14개 테이블 전체의 모든 행·모든 컬럼이 마이그레이션 전후로 완전히 같아야 한다. 몇 개
-    // 필드만 뽑아 비교하던 이전 회차와 달리, 계정(users/account_find_requests)·인증
-    // (password_reset_tokens/user_sessions/user_bans/login_history)·소셜(friend_requests/
-    // friendships/online_presence/user_stats)·경기(game_results/game_result_players)·운영
-    // (traffic_logs/concurrent_snapshots) 전 도메인을 포괄한다.
+    // 값 자체는 마이그레이션으로 바뀌지 않는다(0002는 nickname_snapshot 컬럼 폭만 넓히고,
+    // 0003은 user_sessions에 nullable 컬럼 5개만 더한다) — 14개 테이블 전체의 모든 행·모든
+    // 컬럼이 마이그레이션 전후로 완전히 같아야 한다. 몇 개 필드만 뽑아 비교하던 이전 회차와
+    // 달리, 계정(users/account_find_requests)·인증(password_reset_tokens/user_sessions/
+    // user_bans/login_history)·소셜(friend_requests/friendships/online_presence/user_stats)·
+    // 경기(game_results/game_result_players)·운영(traffic_logs/concurrent_snapshots) 전
+    // 도메인을 포괄한다. user_sessions만은 0003이 추가한 5개 컬럼만큼 컬럼 집합 자체가
+    // 늘어나는 것이 정상이므로(스키마 확장, 값 유실이 아님), 그 5개를 뺀 기존 컬럼 값이
+    // 완전히 같은지와 새 컬럼이 기존 행에 기본값(NULL)으로 채워졌는지를 각각 확인한다.
+    const NEW_USER_SESSION_COLUMNS = [
+        'refresh_token_hash',
+        'refresh_previous_hash',
+        'refresh_previous_expires_at',
+        'refresh_token_expires_at',
+        'revoked_at',
+    ];
     const afterRows = await captureAllRows();
     for (const table of baseline.TABLE_ORDER) {
+        if (table === 'user_sessions') {
+            assert.equal(afterRows[table].length, beforeRows[table].length,
+                'user_sessions의 행 개수가 마이그레이션 전후로 같아야 한다');
+            afterRows[table].forEach((afterRow, index) => {
+                const beforeRow = beforeRows[table][index];
+                const afterExistingColumnsOnly = { ...afterRow };
+                for (const column of NEW_USER_SESSION_COLUMNS) delete afterExistingColumnsOnly[column];
+                assert.deepEqual(afterExistingColumnsOnly, beforeRow,
+                    `user_sessions의 기존 컬럼 값이 마이그레이션 전후로 완전히 같아야 한다(행 ${index})`);
+                for (const column of NEW_USER_SESSION_COLUMNS) {
+                    assert.equal(afterRow[column], null,
+                        `user_sessions.${column}은 기존 행에 기본값 NULL로 채워져야 한다(행 ${index})`);
+                }
+            });
+            continue;
+        }
         assert.deepEqual(afterRows[table], beforeRows[table], `${table}의 전체 행이 마이그레이션 전후로 완전히 같아야 한다`);
     }
 });
@@ -450,7 +476,11 @@ test('AC-03: 동일 마이그레이션을 반복 실행해도 오류 없이 동�
     assert.deepEqual(snapshotAfter, snapshotBefore, '반복 실행 후에도 스키마가 완전히 같아야 한다');
 
     const status = await migrationRunner.getStatus({ sequelize, migrations: MIGRATIONS });
-    assert.deepEqual(status.map((s) => s.status), ['applied', 'applied']);
+    assert.deepEqual(
+        status.map((s) => ({ name: s.name, status: s.status })),
+        MIGRATIONS.map((m) => ({ name: m.name, status: 'applied' })),
+        '적용된 3개 마이그레이션 각각의 이름과 상태가 정확히 일치해야 한다(0003 추가분 포함)',
+    );
 
     const historyRows = await queryRows(
         `SELECT name, COUNT(*) AS cnt FROM ${migrationRunner.META_TABLE} GROUP BY name`,
@@ -667,7 +697,11 @@ test('AC-05: DDL 부분 실패 후 전체 백업 복원으로 실패 이전 상�
         assert.ok(!checkUsersDescribe.poison_column, '별도 DB로 복원한 결과에는 부분 DDL 흔적이 없어야 한다');
 
         const checkStatus = await migrationRunner.getStatus({ sequelize: restoreCheckDb, migrations: MIGRATIONS });
-        assert.deepEqual(checkStatus.map((s) => s.status), ['applied', 'applied']);
+        assert.deepEqual(
+            checkStatus.map((s) => ({ name: s.name, status: s.status })),
+            MIGRATIONS.map((m) => ({ name: m.name, status: 'applied' })),
+            '별도 DB로 복원한 이력도 3개 마이그레이션의 이름·상태가 정확히 일치해야 한다',
+        );
         const checkPoisonStatus = await migrationRunner.getStatus({ sequelize: restoreCheckDb, migrations: [poisonMigration] });
         assert.equal(checkPoisonStatus[0].status, 'pending', '백업은 poison 마이그레이션 시도 이전 시점이라 이력 자체가 없어야 한다');
     } finally {
@@ -704,7 +738,11 @@ test('AC-05: DDL 부분 실패 후 전체 백업 복원으로 실패 이전 상�
     assert.deepEqual(historyAfterRestore, historyBeforeFailure, '복원 후 schema_migrations 이력 값 전체가 실패 이전과 완전히 같아야 한다');
 
     const restoredStatus = await migrationRunner.getStatus({ sequelize, migrations: MIGRATIONS });
-    assert.deepEqual(restoredStatus.map((s) => s.status), ['applied', 'applied'], '복원된 DB는 실패 이전의 정상 이력을 그대로 갖는다');
+    assert.deepEqual(
+        restoredStatus.map((s) => ({ name: s.name, status: s.status })),
+        MIGRATIONS.map((m) => ({ name: m.name, status: 'applied' })),
+        '복원된 DB는 실패 이전의 정상 이력(3개 마이그레이션 이름·상태)을 그대로 갖는다',
+    );
 
     // schema_migrations 자체가 백업에 포함돼 함께 복원되므로, poison 마이그레이션의 실패
     // 이력도 통째로 사라진다 — 이 경로(전체 백업 복원)에서는 resolveFailure를 호출할 필요가

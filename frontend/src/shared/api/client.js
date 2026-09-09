@@ -1,8 +1,13 @@
-import { handleApiResponse } from "@/shared/api/response";
+import { handleApiResponse } from "./response.js";
+// import.meta.env(Vite 빌드타임 치환)는 env.js 한 곳에만 모아둔다 — 그래야 node:test의
+// mock.module로 이 모듈만 갈아끼워 client.js 자체는 실제 코드로 테스트할 수 있다(상대
+// 경로라야 mock.module이 별도 리졸버 없이 특정할 수 있다. "@/..." 별칭은 Vite 전용이라
+// 플레인 Node에서 해석되지 않는다. F-03 R-IMPL #6).
+import { API_BASE_URL } from "../env.js";
 
 // Vite 환경변수에 설정된 백엔드 API 기본 주소입니다.
 // 예: VITE_API_BASE_URL=http://localhost:4000
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const BASE_URL = API_BASE_URL;
 
 // 호출하는 쪽에서 넘긴 options와 기본 fetch 옵션을 합칩니다.
 const createRequestOptions = (options) => {

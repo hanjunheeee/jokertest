@@ -34,8 +34,13 @@ const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');
 const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname-snapshot');
+// F-03: AC-06가 authService.login()을 실제로 호출하고, login()은 항상
+// userRepository.createUserSession(...)에 refresh_token_hash 등 0003이 추가한 컬럼을
+// (rememberMe가 아니면 null로) 실어 INSERT한다. 이 fixture가 0003을 적용하지 않으면 그
+// 컬럼들이 실제 DB에 없어 "Unknown column" 오류로 로그인 자체가 실패한다(R-IMPL #2).
+const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation];
 const MANAGED_TABLES = [...baseline.TABLE_ORDER, migrationRunner.META_TABLE];
 const DROP_ORDER = [...baseline.TABLE_ORDER].reverse().concat([migrationRunner.META_TABLE]);
 

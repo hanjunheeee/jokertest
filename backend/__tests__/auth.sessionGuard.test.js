@@ -160,10 +160,16 @@ test("로그아웃 흐름은 회귀 없이 동작한다", async (t) => {
     assert.equal(sessions.get("session-2").is_online, true, "다른 유효 세션까지 종료하면 안 됩니다");
 });
 
-test("활성 밴은 이미 로그인된 토큰도 다음 REST 요청에서 403으로 막는다", async (t) => {
+test("활성 밴은 이미 로그인된 토큰도 다음 REST 요청에서 403으로 막고, 전체 세션을 영구 폐기한다", async (t) => {
     const originalSession = db.UserSession;
     const originalBan = db.UserBan;
-    db.UserSession = { findOne: async () => ({ id: "session-1", user_id: "uuid-1", is_online: true }) };
+    const updateCalls = [];
+    db.UserSession = {
+        findOne: async () => ({ id: "session-1", user_id: "uuid-1", is_online: true }),
+        // 밴 감지 시 resolveSession이 이 계정의 세션을 전부 영구 폐기한다(F-03 R-IMPL #7) —
+        // 그 경로가 UPDATE를 부르므로 findOne만 있는 stub는 여기서 TypeError로 500이 난다.
+        update: async (values, options) => { updateCalls.push({ values, options }); return [1]; },
+    };
     db.UserBan = { findOne: async () => ({ reason: "운영 정지" }) };
     t.after(() => { db.UserSession = originalSession; db.UserBan = originalBan; });
 
@@ -173,4 +179,7 @@ test("활성 밴은 이미 로그인된 토큰도 다음 REST 요청에서 403�
 
     assert.equal(res.status, 403);
     assert.match(body.message, /운영 정지/);
+    assert.equal(updateCalls.length, 1, "밴 감지 시 세션 전체 폐기(UPDATE)가 실행되어야 밴 해제 후에도 복원되지 않습니다");
+    assert.equal(updateCalls[0].values.is_online, false);
+    assert.ok(updateCalls[0].values.revoked_at instanceof Date);
 });

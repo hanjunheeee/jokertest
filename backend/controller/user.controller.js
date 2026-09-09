@@ -34,11 +34,11 @@ exports.login = async (req, res, next) => {
             deviceType: getDeviceType(userAgent),
         };
 
-        const { user, token, refreshToken } = await authService.login(req.body, reqInfo);
+        const { user, token, refreshToken, refreshTokenExpiresAt } = await authService.login(req.body, reqInfo);
 
-        res.cookie("accessToken", token, buildSessionCookieOptions(req.body?.rememberMe));
+        res.cookie("accessToken", token, buildSessionCookieOptions(req.body?.rememberMe, refreshTokenExpiresAt));
         if (refreshToken) {
-            res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions());
+            res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions(refreshTokenExpiresAt));
         }
 
         res.status(200).json({
@@ -84,10 +84,16 @@ exports.logout = async (req, res, next) => {
 // 없고, 대신 refreshToken 쿠키 자체를 authService.refresh가 검증·회전시킨다.
 exports.refresh = async (req, res, next) => {
     try {
-        const { accessToken, refreshToken } = await authService.refresh(req.cookies.refreshToken);
+        const { accessToken, refreshToken, refreshTokenExpiresAt } = await authService.refresh(req.cookies.refreshToken);
 
-        res.cookie("accessToken", accessToken, buildSessionCookieOptions(true));
-        res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions());
+        res.cookie("accessToken", accessToken, buildSessionCookieOptions(true, refreshTokenExpiresAt));
+        // grace 재시도(동시 요청 중 이미 다른 요청이 회전한 이전 자격을 다시 제시한 경우)는
+        // refreshToken이 null이다 — 이때는 갱신 쿠키를 건드리지 않는다. 여기서 무언가를
+        // Set-Cookie하면 실제로 회전한 형제 요청이 이미 설정한 최신 값을 되돌려 버릴 수
+        // 있다(F-03 R-IMPL #5).
+        if (refreshToken) {
+            res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions(refreshTokenExpiresAt));
+        }
 
         res.status(200).json({ success: true });
     } catch (error) {

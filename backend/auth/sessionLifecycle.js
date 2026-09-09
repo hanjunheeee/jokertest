@@ -24,7 +24,22 @@ exports.resolveSession = async (decoded) => {
         return { ok: false, status: 401, message: "세션이 만료되었습니다. 다시 로그인해주세요." };
     }
 
+    // 로그인 유지(rememberMe) 세션만 refresh_token_expires_at을 갖는다. 액세스 JWT의 exp는
+    // 이 기한을 넘지 않게 발급 시점에 이미 잘려 있지만(cookieOptions.capAccessTokenTtlSeconds),
+    // Socket.IO는 handshake 이후 이 JWT를 다시 검증하지 않고 decoded payload를 그대로
+    // 재사용한다 — 연결이 30일 넘게 유지되면 JWT exp 검사 자체가 다시 일어나지 않으므로,
+    // 매 보호 이벤트마다 통과하는 이 DB 조회에서 절대 기한 초과를 직접 거부해야
+    // 한다(F-03 R-IMPL #4).
+    if (session.refresh_token_expires_at && session.refresh_token_expires_at <= new Date()) {
+        return { ok: false, status: 401, message: "로그인 유지 기간이 만료되었습니다. 다시 로그인해주세요." };
+    }
+
     if (activeBan) {
+        // 정지가 감지된 시점에 이 계정의 모든 세션(및 갱신 자격)을 영구 폐기한다 — 밴이
+        // 나중에 해제돼도 밴 이전에 발급된 세션이 되살아나지 않게 하기 위해서다. checkActiveBan
+        // 통과 거부만으로는 이 요청의 세션만 막을 뿐, 같은 계정의 다른 기존 세션은
+        // revoked_at이 없는 채로 남아 있다가 밴 해제 후 다시 유효해진다(F-03 R-IMPL #7).
+        await userRepository.markOnlineSessionsOffline(decoded.uuid);
         return { ok: false, status: 403, message: `정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}` };
     }
 

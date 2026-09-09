@@ -129,7 +129,7 @@ test("절대 만료는 회전으로 연장되지 않는다", async (t) => {
     assert.equal(session.refresh_token_expires_at.getTime(), originalExpiry.getTime());
 });
 
-test("회전 응답 유실 유예: 방금 대체된 이전 해시는 유예 시간 안에서는 재사용 감지 없이 다시 회전한다", async (t) => {
+test("회전 응답 유실 유예: 방금 대체된 이전 해시는 유예 시간 안에서는 다시 회전하지 않고 새 액세스 토큰만 내준다", async (t) => {
     const session = baseSession({
         refresh_token_hash: hashOf("raw-new-from-winner"),
         refresh_previous_hash: hashOf("raw-old-lost-response"),
@@ -139,9 +139,33 @@ test("회전 응답 유실 유예: 방금 대체된 이전 해시는 유예 시�
 
     const result = await authService.refresh("raw-old-lost-response");
 
-    assert.ok(result.accessToken, "동시 요청의 패자도 세션을 잃지 않고 새 자격을 받아야 합니다(A-08)");
+    assert.ok(result.accessToken, "동시 요청의 패자도 세션을 잃지 않고 새 액세스 토큰을 받아야 합니다(A-08)");
+    assert.equal(result.refreshToken, null,
+        "grace 재시도가 또 회전하면 previous_hash 포인터가 밀려 이후의 정상 3번째 이상 동시 " +
+        "요청이 재사용으로 오판됩니다(R-IMPL #5) — grace 응답은 회전 자격을 발급하면 안 됩니다");
+    assert.equal(calls.find((c) => c.name === "applyRefreshRotation"), undefined,
+        "grace 재시도는 회전(applyRefreshRotation)을 또 실행하면 안 됩니다");
     assert.equal(calls.find((c) => c.name === "markOnlineSessionsOffline"), undefined,
         "정상적인 동시 갱신 경쟁 패배만으로 세션을 폐기하면 안 됩니다");
+});
+
+test("현재 해시와 매치한 요청만 실제로 회전하고, 방금 만든 previous_hash로는 새 세션을 또 잠그지 않는다", async (t) => {
+    // 3개 이상 동시 요청 시나리오의 핵심 불변식: 어느 한 요청이 회전(previous_hash 세팅)한
+    // 뒤에도, 그 previous_hash를 아직 못 받은 3번째 요청이 "원래" old-old 해시로 다시 오면
+    // grace 매치가 유지돼야 한다 — 즉 previous_hash는 딱 한 번의 회전으로만 갱신되고,
+    // grace 재시도가 그것을 또 앞으로 밀지 않는다는 사실을 이 테스트가 직접 확인한다.
+    const rotatedSession = baseSession({
+        refresh_token_hash: hashOf("raw-current"),
+        refresh_previous_hash: null,
+        refresh_previous_expires_at: null,
+    });
+    const { calls } = stubRepo(t, { findSessionForRefresh: () => rotatedSession });
+
+    await authService.refresh("raw-current");
+
+    const rotateCall = calls.find((c) => c.name === "applyRefreshRotation");
+    assert.ok(rotateCall, "현재 해시 매치는 정상적으로 회전해야 합니다");
+    assert.equal(rotateCall.args[1].previousHash, hashOf("raw-current"));
 });
 
 test("유예 기간이 지난 이전 해시 재사용은 탈취로 간주해 이 사용자의 모든 세션을 폐기한다", async (t) => {
@@ -165,4 +189,56 @@ test("현재·이전 어느 해시와도 일치하지 않는 자격은 재사용
 
     await assert.rejects(authService.refresh("raw-completely-unknown"), (error) => error.status === 401);
     assert.ok(calls.find((c) => c.name === "markOnlineSessionsOffline"));
+});
+
+test("정지 감지 시 401/409가 아니라 403이며, 이 계정의 모든 세션을 함께 영구 폐기한다(밴 해제 후 복원 방지)", async (t) => {
+    const session = baseSession({ refresh_token_hash: hashOf("raw-current") });
+    const { calls } = stubRepo(t, {
+        findSessionForRefresh: () => session,
+        checkActiveBan: () => ({ reason: "욕설" }),
+    });
+
+    await assert.rejects(
+        authService.refresh("raw-current"),
+        (error) => error.status === 403 && /욕설/.test(error.message),
+    );
+
+    const revokeCall = calls.find((c) => c.name === "markOnlineSessionsOffline");
+    assert.ok(revokeCall, "정지 감지 시점에 전체 세션을 폐기해야 밴 해제 후에도 과거 세션이 되살아나지 않습니다(R-IMPL #7)");
+    assert.equal(revokeCall.args[0], "uuid-1");
+    assert.equal(calls.find((c) => c.name === "applyRefreshRotation"), undefined,
+        "정지된 계정에 새 갱신 자격을 발급하면 안 됩니다");
+});
+
+// ── F-03 R-IMPL #4: 절대 30일 기한 캡 ─────────────────────────────────────────
+
+test("절대 기한이 임박하면 새 액세스 토큰의 exp가 기본 TTL 대신 남은 시간만큼만 발급된다", async (t) => {
+    const remainingMs = 5_000; // 절대 만료까지 5초 남음(기본 15분보다 훨씬 짧다)
+    const session = baseSession({
+        refresh_token_hash: hashOf("raw-current"),
+        refresh_token_expires_at: new Date(Date.now() + remainingMs),
+    });
+    stubRepo(t, { findSessionForRefresh: () => session });
+
+    const result = await authService.refresh("raw-current");
+    const decoded = jwt.verify(result.accessToken, process.env.JWT_SECRET);
+
+    const ttlSeconds = decoded.exp - decoded.iat;
+    assert.ok(ttlSeconds <= 5, `절대 기한(5초 남음)을 넘는 TTL이 발급되면 안 됩니다: ${ttlSeconds}`);
+    assert.ok(ttlSeconds >= 1, `절대 기한 이내에서는 굳이 즉시 만료시킬 필요가 없습니다: ${ttlSeconds}`);
+    // exp(초 단위, 내림)가 실제 절대 기한(ms)을 절대 넘지 않아야 한다 — 반올림으로 경계를
+    // 넘기면 이론상 만료된 세션의 access token이 살아있는 상태가 될 수 있다.
+    assert.ok(decoded.exp * 1000 <= session.refresh_token_expires_at.getTime(),
+        "exp(초 반올림 포함)가 절대 기한을 넘으면 안 됩니다");
+});
+
+test("절대 기한을 이미 넘긴 세션은(초 단위 경계) 회전 대신 만료로 거부된다", async (t) => {
+    const session = baseSession({
+        refresh_token_hash: hashOf("raw-current"),
+        refresh_token_expires_at: new Date(Date.now() - 1), // 1ms라도 지났으면 만료
+    });
+    const { calls } = stubRepo(t, { findSessionForRefresh: () => session });
+
+    await assert.rejects(authService.refresh("raw-current"), (error) => error.status === 401);
+    assert.equal(calls.find((c) => c.name === "applyRefreshRotation"), undefined);
 });

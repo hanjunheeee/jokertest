@@ -12,7 +12,7 @@ const { PERSISTENT_SESSION_MAX_AGE_MS, ACCESS_TOKEN_SHORT_TTL_SECONDS } = requir
 const PASSWORD  = "correct-horse";
 const REQ_INFO  = { ip: "127.0.0.1", userAgent: "jest-ua", deviceType: "PC" };
 const REPO_KEYS = [
-    "findByEmail", "checkActiveBan", "createLoginHistory",
+    "withTransaction", "findByEmail", "checkActiveBan", "createLoginHistory",
     "updateUser", "markOnlineSessionsOffline", "createUserSession",
 ];
 
@@ -24,6 +24,9 @@ const stubRepo = (t, overrides = {}) => {
     const record    = (name, result) => (...args) => { calls.push({ name, args }); return result; };
 
     const defaults = {
+        // login() 전체가 하나의 트랜잭션으로 묶인다(F-03 R-IMPL #7: 비밀번호 변경과의
+        // 직렬화). work를 즉시 동기 호출하는 가짜 트랜잭션이라 호출 순서 검증은 그대로 유효하다.
+        withTransaction:           (work) => work({ id: "tx-1", LOCK: { UPDATE: "UPDATE" } }),
         findByEmail:               record("findByEmail", null),
         checkActiveBan:            record("checkActiveBan", null),
         createLoginHistory:        record("createLoginHistory", {}),

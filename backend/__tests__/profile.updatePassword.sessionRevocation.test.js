@@ -61,7 +61,9 @@ const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
 
     db.sequelize.transaction = async (work) => {
         staged = { passwordHash: null, revokedIds: [] };
-        const tx = { id: "tx-1" };
+        // profile.controller.js가 유저 행을 FOR UPDATE로 잠근 채 비밀번호를 확인한다
+        // (F-03 R-IMPL #7: 동시 로그인과의 직렬화) — LOCK.UPDATE 참조가 필요하다.
+        const tx = { id: "tx-1", LOCK: { UPDATE: "UPDATE" } };
         const result = await work(tx);
         if (staged.passwordHash !== null) passwordHash = staged.passwordHash;
         for (const id of staged.revokedIds) {
@@ -149,8 +151,12 @@ test("세션 폐기가 실패하면 비밀번호 변경도 커밋되지 않는�
     assert.equal(sessions.get("session-1").is_online, true);
 });
 
-test("현재 비밀번호가 틀리면 트랜잭션을 열지 않는다", async (t) => {
-    setupFakeDb(t);
+test("현재 비밀번호가 틀리면 트랜잭션은 열리지만(동시 로그인과의 잠금 직렬화) 아무 것도 쓰지 않는다", async (t) => {
+    // F-03 R-IMPL #7: login()도 같은 유저 행을 FOR UPDATE로 잠그고 최신 password_hash로
+    // 비교해야 하므로, 비밀번호 확인 자체가 이 잠금 안에서 일어나야 한다 — "확인이 트랜잭션
+    // 밖에서 끝난다"는 이전 가정은 그 직렬화를 무력화한다. 대신 확인만으로는 어떤 UPDATE도
+    // 실행되지 않아야 한다(원자성 유지).
+    const { calls } = setupFakeDb(t);
     const base = await startServer(t);
 
     const original = db.sequelize.transaction;
@@ -161,7 +167,8 @@ test("현재 비밀번호가 틀리면 트랜잭션을 열지 않는다", async 
     const res = await patchPassword(base, { currentPassword: "wrong", newPassword: "new-pw-456" });
 
     assert.equal(res.status, 401);
-    assert.equal(opened, false);
+    assert.equal(opened, true, "비밀번호 확인도 동시 로그인과 직렬화되도록 유저 행을 잠근 트랜잭션 안에서 일어나야 합니다");
+    assert.equal(calls.length, 0, "비밀번호가 틀리면 User.update/UserSession.update 중 어느 것도 실행되면 안 됩니다");
 });
 
 test("비밀번호 변경 이후 같은 세션의 accessToken으로는 보호 요청이 거부된다(재로그인 요구)", async (t) => {
