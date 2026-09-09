@@ -13,6 +13,11 @@ export const signupApi = async (signupData) => {
     return await api.post('/auth/signup', signupData);
 };
 
+// 가입 입력 단계에서 이메일 중복 여부만 미리 확인합니다. { available: boolean }을 돌려줍니다.
+export const checkEmailApi = async (email) => {
+    return await api.get(`/auth/check-email?email=${encodeURIComponent(email)}`);
+};
+
 // 현재 로그인한 사용자 정보를 조회합니다.
 // 쿠키 기반 인증이라 별도 body 없이 GET 요청만 보냅니다.
 export const getMeApi = async () => {

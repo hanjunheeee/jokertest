@@ -16,17 +16,32 @@ for (const [name, value] of Object.entries({
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+let alertMessages = []
+globalThis.alert = (message) => alertMessages.push(message)
+
 const loginRequests = []
+const signupRequests = []
+const checkEmailRequests = []
 const loggedInUsers = []
 const navigations = []
+
+// checkEmailApi 응답은 테스트마다 바꿔 끼울 수 있게 함수 참조로 둡니다(기본은 항상 사용 가능).
+let checkEmailImpl = async () => ({ available: true })
 
 mock.module("../../api/auth.api.js", {
   namedExports: {
     getMeApi: async () => ({ user: null }),
-    signupApi: async () => ({}),
+    signupApi: async (payload) => {
+      signupRequests.push(payload)
+      return {}
+    },
     loginApi: async (payload) => {
       loginRequests.push(payload)
       return { user: { uuid: "u-1", nickname: "tester" } }
+    },
+    checkEmailApi: async (email) => {
+      checkEmailRequests.push(email)
+      return await checkEmailImpl(email)
     },
   },
 })
@@ -56,7 +71,7 @@ mock.module("react-router-dom", {
 })
 
 const { act, renderHook } = await import("@testing-library/react")
-const { useLoginPage } = await import("../useLoginPage.js")
+const { useLoginPage, useEmailAvailabilityCheck } = await import("../useLoginPage.js")
 
 test("로그인 상태 유지 선택을 로그인 요청 payload에 포함한다", async () => {
   loginRequests.length = 0
@@ -77,7 +92,9 @@ test("로그인 상태 유지 선택을 로그인 요청 payload에 포함한다
   assert.deepEqual(loginRequests[0], {
     email: "qa@example.com",
     password: "secret",
+    passwordConfirm: "",
     nickname: "",
+    birthDate: "",
     rememberMe: true,
   })
   assert.equal(loggedInUsers.length, 1)
@@ -92,5 +109,241 @@ test("기본 로그인은 rememberMe:false를 명시한다", async () => {
     await hook.result.current.handleSubmit({ preventDefault() {} })
   })
   assert.equal(loginRequests[0].rememberMe, false)
+  hook.unmount()
+})
+
+const fillSignupFields = (hook, overrides = {}) => {
+  const fields = {
+    email: "qa@example.com",
+    password: "pw12345678",
+    passwordConfirm: "pw12345678",
+    nickname: "테스트닉",
+    birthDate: "2000-01-01",
+    ...overrides,
+  }
+  for (const [name, value] of Object.entries(fields)) {
+    hook.result.current.handleInputChange({ target: { name, value } })
+  }
+}
+
+test("닉네임이 2자 미만이면 회원가입 요청을 보내지 않고 오류를 알린다", async () => {
+  signupRequests.length = 0
+  alertMessages.length = 0
+  const hook = renderHook(() => useLoginPage())
+
+  act(() => {
+    hook.result.current.setIsSignupMode(true)
+    fillSignupFields(hook, { nickname: "가" })
+  })
+  await act(async () => {
+    await hook.result.current.handleSubmit({ preventDefault() {} })
+  })
+
+  assert.equal(signupRequests.length, 0, "프론트 검증에 걸리면 서버로 요청을 보내지 않아야 한다")
+  assert.equal(alertMessages.length, 1)
+  assert.equal(hook.result.current.isSignupMode, true, "검증 실패 시 회원가입 모드를 유지해야 한다")
+  hook.unmount()
+})
+
+test("비밀번호와 비밀번호 확인이 다르면 회원가입 요청을 보내지 않는다", async () => {
+  signupRequests.length = 0
+  alertMessages.length = 0
+  const hook = renderHook(() => useLoginPage())
+
+  act(() => {
+    hook.result.current.setIsSignupMode(true)
+    fillSignupFields(hook, { passwordConfirm: "다른비밀번호12" })
+  })
+  await act(async () => {
+    await hook.result.current.handleSubmit({ preventDefault() {} })
+  })
+
+  assert.equal(signupRequests.length, 0)
+  assert.equal(alertMessages.length, 1)
+  hook.unmount()
+})
+
+test("생년월일이 미래 날짜면 회원가입 요청을 보내지 않는다", async () => {
+  signupRequests.length = 0
+  alertMessages.length = 0
+  const hook = renderHook(() => useLoginPage())
+
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const futureDate = new Date(Date.UTC(tomorrow.getUTCFullYear(), tomorrow.getUTCMonth(), tomorrow.getUTCDate()))
+  const futureIso = futureDate.toISOString().slice(0, 10)
+
+  act(() => {
+    hook.result.current.setIsSignupMode(true)
+    fillSignupFields(hook, { birthDate: futureIso })
+  })
+  await act(async () => {
+    await hook.result.current.handleSubmit({ preventDefault() {} })
+  })
+
+  assert.equal(signupRequests.length, 0)
+  assert.equal(alertMessages.length, 1)
+  hook.unmount()
+})
+
+test("유효한 회원가입 입력은 signupApi를 호출하고 로그인 모드로 돌아간다", async () => {
+  signupRequests.length = 0
+  alertMessages.length = 0
+  const hook = renderHook(() => useLoginPage())
+
+  act(() => {
+    hook.result.current.setIsSignupMode(true)
+    fillSignupFields(hook)
+  })
+  await act(async () => {
+    await hook.result.current.handleSubmit({ preventDefault() {} })
+  })
+
+  assert.equal(signupRequests.length, 1)
+  assert.deepEqual(signupRequests[0], {
+    email: "qa@example.com",
+    password: "pw12345678",
+    passwordConfirm: "pw12345678",
+    nickname: "테스트닉",
+    birthDate: "2000-01-01",
+  })
+  assert.equal(alertMessages.length, 1, "가입 완료 안내가 한 번 떠야 한다")
+  assert.equal(hook.result.current.isSignupMode, false, "가입 성공 후 로그인 모드로 돌아가야 한다")
+  hook.unmount()
+})
+
+// ── AC-05: 입력 단계 이메일 중복 확인, 확인 후 이메일 변경 시 무효화 ────────────────
+
+test("AC-05: 사용 가능한 이메일을 확인하면 available 상태가 된다", async () => {
+  checkEmailRequests.length = 0
+  checkEmailImpl = async () => ({ available: true })
+
+  let email = "fresh@example.com"
+  const hook = renderHook(() => useEmailAvailabilityCheck(email))
+
+  assert.equal(hook.result.current.status, "idle")
+  await act(async () => {
+    await hook.result.current.check()
+  })
+
+  assert.equal(hook.result.current.status, "available")
+  assert.deepEqual(checkEmailRequests, ["fresh@example.com"])
+  hook.unmount()
+})
+
+test("AC-05: 이미 사용 중인 이메일을 확인하면 duplicate 상태가 된다", async () => {
+  checkEmailRequests.length = 0
+  checkEmailImpl = async () => ({ available: false })
+
+  const hook = renderHook(() => useEmailAvailabilityCheck("taken@example.com"))
+  await act(async () => {
+    await hook.result.current.check()
+  })
+
+  assert.equal(hook.result.current.status, "duplicate")
+  hook.unmount()
+})
+
+test("AC-05: 확인 이후 이메일을 바꾸면 이전 확인 결과가 무효화된다", async () => {
+  checkEmailRequests.length = 0
+  checkEmailImpl = async () => ({ available: true })
+
+  let email = "checked@example.com"
+  const hook = renderHook(({ email: e }) => useEmailAvailabilityCheck(e), { initialProps: { email } })
+
+  await act(async () => {
+    await hook.result.current.check()
+  })
+  assert.equal(hook.result.current.status, "available")
+
+  // 이메일을 바꿔 다시 렌더한다 — checkEmailApi를 다시 호출하지 않아도 이전 결과는 사라져야 한다.
+  hook.rerender({ email: "changed@example.com" })
+  assert.equal(hook.result.current.status, "idle", "이메일이 바뀌면 이전 확인 결과가 무효화되어야 한다")
+  assert.equal(checkEmailRequests.length, 1, "재확인을 누르기 전에는 새로 조회하지 않아야 한다")
+
+  hook.unmount()
+})
+
+test("AC-05: 확인 요청이 실패하면 error 상태가 된다", async () => {
+  checkEmailRequests.length = 0
+  checkEmailImpl = async () => { throw new Error("네트워크 오류") }
+
+  const hook = renderHook(() => useEmailAvailabilityCheck("fail@example.com"))
+  await act(async () => {
+    await hook.result.current.check()
+  })
+
+  assert.equal(hook.result.current.status, "error")
+  hook.unmount()
+})
+
+test("AC-05: 이전 이메일의 뒤늦은 응답이 최신 확인 상태를 덮어쓰지 않는다", async () => {
+  checkEmailRequests.length = 0
+  let resolveFirst
+  const firstPending = new Promise((resolve) => { resolveFirst = resolve })
+  let callCount = 0
+  checkEmailImpl = async () => {
+    callCount += 1
+    if (callCount === 1) {
+      await firstPending
+      return { available: false } // 오래된(첫) 요청은 뒤늦게 "중복"으로 응답한다
+    }
+    return { available: true } // 최신(둘째) 요청은 먼저 "사용 가능"으로 응답한다
+  }
+
+  const hook = renderHook(({ email: e }) => useEmailAvailabilityCheck(e), { initialProps: { email: "old@example.com" } })
+
+  let firstCheck
+  act(() => {
+    firstCheck = hook.result.current.check() // 응답을 아직 받지 못한 채 느리게 대기 중
+  })
+
+  hook.rerender({ email: "new@example.com" })
+  await act(async () => {
+    await hook.result.current.check() // 최신 이메일 확인 요청은 즉시 응답을 받는다
+  })
+  assert.equal(hook.result.current.status, "available", "최신 요청의 응답이 먼저 상태를 정해야 한다")
+
+  await act(async () => {
+    resolveFirst()
+    await firstCheck // 이제서야 오래된 요청의 응답이 도착한다
+  })
+  assert.equal(hook.result.current.status, "available", "먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰면 안 된다")
+  hook.unmount()
+})
+
+test("AC-05: 같은 이메일로 두 번 연달아 확인해도 먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰지 않는다", async () => {
+  // 위 테스트는 이메일이 바뀌는 경우를 다룬다. 여기서는 이메일이 전혀 바뀌지 않는(더블 클릭
+  // 같은) 경우를 다룬다 — 이전 구현은 "가장 마지막 요청"을 이메일 문자열로만 식별해서, 같은
+  // 이메일의 두 요청은 값이 똑같아 오래된 응답이 걸러지지 않았다(재검토 지적).
+  checkEmailRequests.length = 0
+  let resolveFirst
+  const firstPending = new Promise((resolve) => { resolveFirst = resolve })
+  let callCount = 0
+  checkEmailImpl = async () => {
+    callCount += 1
+    if (callCount === 1) {
+      await firstPending
+      return { available: false } // 오래된(첫) 요청은 뒤늦게 "중복"으로 응답한다
+    }
+    return { available: true } // 최신(둘째) 요청은 먼저 "사용 가능"으로 응답한다
+  }
+
+  const hook = renderHook(() => useEmailAvailabilityCheck("dup-click@example.com"))
+
+  let firstCheck
+  act(() => {
+    firstCheck = hook.result.current.check() // 첫 클릭: 응답을 아직 받지 못한 채 느리게 대기 중
+  })
+
+  await act(async () => {
+    await hook.result.current.check() // 둘째 클릭(같은 이메일): 먼저 응답을 받는다
+  })
+  assert.equal(hook.result.current.status, "available", "최신(둘째) 요청의 응답이 먼저 상태를 정해야 한다")
+
+  await act(async () => {
+    resolveFirst()
+    await firstCheck // 이제서야 첫 클릭의 오래된 응답이 도착한다
+  })
+  assert.equal(hook.result.current.status, "available", "같은 이메일이어도 먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰면 안 된다")
   hook.unmount()
 })

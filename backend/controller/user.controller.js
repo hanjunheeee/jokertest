@@ -13,6 +13,18 @@ exports.signup = async (req, res, next) => {
     }
 };
 
+// 가입 입력 단계에서 이메일 중복 여부만 미리 확인한다. 최종 저장 여부는 signup()이
+// 다시 판단하므로, 여기서 available:true를 받아도 그 사이 다른 요청이 같은 이메일로
+// 먼저 가입하면 signup()에서 409로 거부된다.
+exports.checkEmail = async (req, res, next) => {
+    try {
+        const result = await authService.checkEmailAvailability(req.query.email);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 exports.login = async (req, res, next) => {
     try {
         const userAgent = req.headers["user-agent"];

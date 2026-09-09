@@ -1,0 +1,52 @@
+{
+  "nickname": {
+    "minLength": 2,
+    "maxLength": 8,
+    "pattern": "^[가-힣a-zA-Z0-9]+$",
+    "valid": [
+      "가나",
+      "일이삼사오육칠팔",
+      "ab12테스",
+      "12345678",
+      "abcdefgh"
+    ],
+    "invalid": [
+      { "value": "가", "reason": "too_short" },
+      { "value": "a", "reason": "too_short" },
+      { "value": "일이삼사오육칠팔구", "reason": "too_long" },
+      { "value": "123456789", "reason": "too_long" },
+      { "value": "가나다#", "reason": "invalid_char" },
+      { "value": "ab 12", "reason": "invalid_char" },
+      { "value": "가나😀", "reason": "invalid_char" },
+      { "value": "", "reason": "required" },
+      { "value": "  ", "reason": "required" }
+    ]
+  },
+  "password": {
+    "minLength": 8,
+    "maxLength": 64,
+    "valid": [
+      "pw123456",
+      "Passw0rdPassw0rdPassw0rdPassw0rdPassw0rdPassw0rdPassw0rdPassw0rd"
+    ],
+    "invalid": [
+      { "value": "pw12345", "reason": "too_short" },
+      { "value": "Passw0rdPassw0rdPassw0rdPassw0rdPassw0rdPassw0rdPassw0rdPassw0rdX", "reason": "too_long" },
+      { "value": "", "reason": "required" }
+    ]
+  },
+  "birthDate": {
+    "valid": [
+      "2000-01-01",
+      "1999-12-31"
+    ],
+    "invalid": [
+      { "value": "", "reason": "required" },
+      { "value": "2000/01/01", "reason": "invalid_format" },
+      { "value": "01-01-2000", "reason": "invalid_format" },
+      { "value": "2000-13-01", "reason": "invalid_calendar_date" },
+      { "value": "2023-02-30", "reason": "invalid_calendar_date" },
+      { "value": "not-a-date", "reason": "invalid_format" }
+    ]
+  }
+}
