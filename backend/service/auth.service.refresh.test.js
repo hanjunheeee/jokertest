@@ -129,7 +129,7 @@ test("절대 만료는 회전으로 연장되지 않는다", async (t) => {
     assert.equal(session.refresh_token_expires_at.getTime(), originalExpiry.getTime());
 });
 
-test("회전 응답 유실 유예: 방금 대체된 이전 해시는 유예 시간 안에서는 다시 회전하지 않고 새 액세스 토큰만 내준다", async (t) => {
+test("F-03 R-IMPL #8: grace 재시도(회전 응답 유실·동시 요청)는 회전을 다시 실행하지 않고, 실제로 이미 회전된 것과 정확히 같은 자격을 재현한다", async (t) => {
     const session = baseSession({
         refresh_token_hash: hashOf("raw-new-from-winner"),
         refresh_previous_hash: hashOf("raw-old-lost-response"),
@@ -139,14 +139,64 @@ test("회전 응답 유실 유예: 방금 대체된 이전 해시는 유예 시�
 
     const result = await authService.refresh("raw-old-lost-response");
 
-    assert.ok(result.accessToken, "동시 요청의 패자도 세션을 잃지 않고 새 액세스 토큰을 받아야 합니다(A-08)");
-    assert.equal(result.refreshToken, null,
-        "grace 재시도가 또 회전하면 previous_hash 포인터가 밀려 이후의 정상 3번째 이상 동시 " +
-        "요청이 재사용으로 오판됩니다(R-IMPL #5) — grace 응답은 회전 자격을 발급하면 안 됩니다");
+    assert.ok(result.accessToken, "동시 요청의 패자도, 응답을 잃은 클라이언트도 세션을 잃지 않고 새 액세스 토큰을 받아야 합니다(A-08)");
+    assert.ok(result.refreshToken,
+        "회전 응답 자체가 유실되면(첫 응답을 못 받음) grace 재시도가 유일한 복구 수단이다 — " +
+        "refreshToken이 없으면 브라우저에 최신 갱신 자격이 남지 않아 grace 종료 후 재사용으로 폐기된다(R-IMPL #8)");
+    // 이 fixture의 current 해시("raw-new-from-winner")는 실제 회전 결과가 아니라 임의로
+    // 지어낸 값이라, 여기서는 복구 값이 "그" 값과 우연히 같아야 한다고 단언하지 않는다 —
+    // 정확한 재현 여부(실제 회전이 만들었던 값과 정확히 같은 값이 나오는지)는 아래
+    // "응답 유실 후 재시도로 복구한 자격은..." 테스트가 실제 회전→복구 왕복으로 확인한다.
     assert.equal(calls.find((c) => c.name === "applyRefreshRotation"), undefined,
-        "grace 재시도는 회전(applyRefreshRotation)을 또 실행하면 안 됩니다");
+        "grace 재시도는 회전(applyRefreshRotation)을 또 실행하면 안 됩니다 — 이미 회전된 결과를 재계산할 뿐입니다");
     assert.equal(calls.find((c) => c.name === "markOnlineSessionsOffline"), undefined,
-        "정상적인 동시 갱신 경쟁 패배만으로 세션을 폐기하면 안 됩니다");
+        "정상적인 동시 갱신 경쟁 패배·응답 유실만으로 세션을 폐기하면 안 됩니다");
+});
+
+test("F-03 R-IMPL #8: 같은 이전 자격으로 여러 번(역순 포함) 재시도해도 항상 동일한 복구 자격을 돌려준다", async (t) => {
+    const session = baseSession({
+        refresh_token_hash: hashOf("raw-new-from-winner"),
+        refresh_previous_hash: hashOf("raw-old-lost-response"),
+        refresh_previous_expires_at: new Date(Date.now() + REFRESH_TOKEN_GRACE_MS),
+    });
+    stubRepo(t, { findSessionForRefresh: () => session });
+
+    const first = await authService.refresh("raw-old-lost-response");
+    const second = await authService.refresh("raw-old-lost-response");
+    const third = await authService.refresh("raw-old-lost-response");
+
+    assert.equal(first.refreshToken, second.refreshToken);
+    assert.equal(second.refreshToken, third.refreshToken);
+});
+
+test("F-03 R-IMPL #8: 응답 유실 후 재시도로 복구한 자격은 grace가 끝난 뒤 정상적인 다음 회전에 그대로 쓸 수 있다", async (t) => {
+    const session = baseSession({ refresh_token_hash: hashOf("raw-current") });
+    const { calls } = stubRepo(t, {
+        findSessionForRefresh: () => session,
+        applyRefreshRotation: (sessionId, { newHash, previousHash, previousExpiresAt }) => {
+            session.refresh_token_hash = newHash;
+            session.refresh_previous_hash = previousHash;
+            session.refresh_previous_expires_at = previousExpiresAt;
+            return [1];
+        },
+    });
+
+    // 실제 회전이 한 번 일어난다 — 이 응답 자체가 유실됐다고 가정하고 버린다.
+    const lostResponse = await authService.refresh("raw-current");
+    // 클라이언트는 여전히 이전 자격만 갖고 있어 같은 값으로 재시도한다 → 복구.
+    const recovered = await authService.refresh("raw-current");
+    assert.equal(recovered.refreshToken, lostResponse.refreshToken);
+
+    // grace가 실제로 지났다.
+    session.refresh_previous_expires_at = new Date(Date.now() - 1_000);
+
+    // 복구된 자격으로의 다음 회전은 fresh match로 정상 성공해야 한다.
+    const next = await authService.refresh(recovered.refreshToken);
+    assert.ok(next.accessToken);
+    assert.ok(next.refreshToken);
+    assert.notEqual(next.refreshToken, recovered.refreshToken);
+    assert.equal(calls.filter((c) => c.name === "applyRefreshRotation").length, 2,
+        "실제 회전은 lostResponse와 next, 두 번만 일어나야 합니다(복구 재시도는 회전하지 않습니다)");
 });
 
 test("현재 해시와 매치한 요청만 실제로 회전하고, 방금 만든 previous_hash로는 새 세션을 또 잠그지 않는다", async (t) => {

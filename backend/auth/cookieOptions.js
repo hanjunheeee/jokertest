@@ -65,6 +65,13 @@ function clearSessionCookie(res) {
     res.clearCookie("refreshToken", buildBaseCookieOptions());
 }
 
+// 로그인 유지를 선택하지 않은 로그인 응답에서, 브라우저에 남아있을 수 있는 이전 영속
+// refreshToken 쿠키만 지운다(F-03 R-IMPL #6/AC-02). accessToken은 이번 로그인이 막 발급한
+// 새 세션 쿠키이므로 clearSessionCookie처럼 함께 지우면 안 된다 — 그래서 별도 함수로 둔다.
+function clearRefreshCookie(res) {
+    res.clearCookie("refreshToken", buildBaseCookieOptions());
+}
+
 module.exports = {
     PERSISTENT_SESSION_MAX_AGE_MS,
     ACCESS_TOKEN_SHORT_TTL_SECONDS,
@@ -73,4 +80,5 @@ module.exports = {
     buildRefreshCookieOptions,
     capAccessTokenTtlSeconds,
     clearSessionCookie,
+    clearRefreshCookie,
 };

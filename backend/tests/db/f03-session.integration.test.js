@@ -177,25 +177,183 @@ test('R-IMPL #5: 같은 자격으로 들어온 4개의 동시 회전 요청이 �
         '정상적인 3개 이상의 동시 갱신 요청만으로 전체 세션이 폐기되면 안 됩니다(R-IMPL #5)');
     assert.equal(Number(sessionAfter.is_online), 1);
 
-    // 실제로 회전한 건 한 번뿐이어야 한다(반환된 refreshToken 중 null이 아닌 것은 최대 1개).
-    const rotatedCount = fulfilled.filter((v) => v.refreshToken).length;
-    assert.equal(rotatedCount, 1, '동시 요청 중 실제 회전(새 갱신 자격 발급)은 정확히 한 번만 일어나야 합니다');
+    // F-03 R-IMPL #8: grace 응답이 결정론적으로 유도되므로, 실제로 회전(DB 기록)한 건 한
+    // 번뿐이어도 4개의 응답 모두 정확히 같은(유효한) 갱신 자격을 돌려받아야 한다 — 이래야
+    // 브라우저가 4개의 응답 중 어느 것을 마지막으로 쿠키에 반영하든 항상 유효하다.
+    const rotatedTokens = new Set(fulfilled.map((v) => v.refreshToken));
+    assert.equal(rotatedTokens.size, 1,
+        '동시 요청 4개는 응답 순서와 무관하게 모두 같은(결정론적으로 재현된) 갱신 자격을 돌려받아야 합니다(F-03 R-IMPL #8)');
+    const finalHash = crypto.createHash('sha256').update([...rotatedTokens][0]).digest('hex');
+    assert.equal(sessionAfter.refresh_token_hash, finalHash,
+        '4개 응답이 공통으로 돌려준 자격은 실제로 저장된 현재 해시와 일치해야 합니다');
+});
+
+// ── F-03 R-IMPL #8: 회전 응답 유실 → 이전 자격 재시도로 복구 → grace 이후 정상 회전 ──────
+
+test('R-IMPL #8: 회전 응답 유실 후에도 이전 자격 재시도로 안전하게 복구되고, grace 이후 정상 회전이 이어지며, grace 밖 재사용은 여전히 거부된다', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    const { email } = await createUser('lostresponse');
+    const { refreshToken: raw0 } = await authService.login({ email, password: PASSWORD, rememberMe: true }, REQ_INFO);
+
+    // 실제 회전을 한 번 일으킨다 — 이 응답 자체가 네트워크에서 유실됐다고 가정하고 버린다.
+    // 클라이언트는 여전히 raw0만 갖고 있다.
+    const lostResponse = await authService.refresh(raw0);
+    assert.ok(lostResponse.refreshToken);
+
+    // 같은 이전 자격(raw0)으로 재시도한다 — 서버는 원문을 저장하지 않고도 잃어버린 응답과
+    // 정확히 같은 자격을 복구해야 한다.
+    const recovered = await authService.refresh(raw0);
+    assert.equal(recovered.refreshToken, lostResponse.refreshToken,
+        '응답 유실 후 재시도는 실제로 회전했던 자격과 정확히 같은 값을 복구해야 합니다(F-03 R-IMPL #8)');
+
+    // 역순 응답: 네트워크 재전송 등으로 raw0이 다시 제시돼도(몇 번이든) 항상 같은 값이어야 한다.
+    const recoveredAgain = await authService.refresh(raw0);
+    assert.equal(recoveredAgain.refreshToken, lostResponse.refreshToken);
+
+    // grace(30초)가 실제로 지난 뒤: 복구된 자격으로의 다음 정상 회전은 성공해야 한다.
+    const user = await db.User.findOne({ where: { email } });
+    const session = await db.UserSession.findOne({ where: { user_id: user.uuid } });
+    await session.update({ refresh_previous_expires_at: new Date(Date.now() - 1_000) });
+
+    const nextRotation = await authService.refresh(recovered.refreshToken);
+    assert.ok(nextRotation.accessToken);
+    assert.ok(nextRotation.refreshToken);
+    assert.notEqual(nextRotation.refreshToken, recovered.refreshToken);
+
+    // grace 밖에서 이미 두 세대 전인 raw0을 다시 제시하면 재사용으로 간주해 전체 세션을
+    // 폐기해야 한다.
+    await assert.rejects(authService.refresh(raw0), (error) => error.status === 401);
+    const sessionAfterReuse = await db.UserSession.findOne({ where: { id: session.id } });
+    assert.ok(sessionAfterReuse.revoked_at instanceof Date,
+        'grace 밖에서 이미 대체된 자격이 재사용되면 세션 전체가 폐기되어야 합니다');
+});
+
+// ── AC-03/AC-05: 로그아웃 후 실제 HTTP 보호 요청·refresh·기존 및 신규 Socket.IO 인증이
+// 모두 거부된다 — 공통 resolveSession 단위 호출만으로 모든 배선을 검증한 것으로 보지
+// 않는다 ─────────────────────────────────────────────────────────────────────
+
+test('AC-03/AC-05: 실제 로그아웃 후 HTTP 보호 요청·refresh·기존 및 신규 Socket.IO 인증이 모두 거부된다', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    const { email } = await createUser('logoutwiring');
+    const { token, refreshToken } = await authService.login({ email, password: PASSWORD, rememberMe: true }, REQ_INFO);
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const express = require('express');
+    const cookieParser = require('cookie-parser');
+    const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+    const { once } = require('node:events');
+    const socketLayer = require('../../socket/socket');
+    const fakeHandshakeSocket = (accessToken) => ({ handshake: { headers: { cookie: `accessToken=${accessToken}` } }, data: {} });
+    const runAuthenticateSocket = (socket) =>
+        new Promise((resolve) => socketLayer.__testables.authenticateSocket(socket, resolve));
+
+    const app = express();
+    app.use(express.json());
+    app.use(cookieParser());
+    app.use('/auth', require('../../routes/auth.routes'));
+    app.use(notFoundHandler);
+    app.use(globalErrorHandler);
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    // 사전 조건: 로그아웃 이전에는 모든 경로가 통과한다.
+    assert.equal((await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${token}` } })).status, 200);
+    assert.equal(await runAuthenticateSocket(fakeHandshakeSocket(token)), undefined);
+    const guarded = { data: { user: decoded }, emitted: [], disconnectCalls: 0, _handlers: {},
+        on(event, cb) { this._handlers[event] = cb; },
+        emit(event, payload) { this.emitted.push({ event, payload }); },
+        disconnect() { this.disconnectCalls += 1; } };
+    socketLayer.__testables.wrapSocketWithSessionGuard(guarded);
+    let ran = false;
+    guarded.on('game_action', () => { ran = true; });
+    await guarded._handlers.game_action();
+    assert.equal(ran, true);
+
+    // 실제 로그아웃.
+    const logoutRes = await fetch(`${base}/auth/logout`, { method: 'POST', headers: { cookie: `accessToken=${token}` } });
+    assert.equal(logoutRes.status, 200);
+
+    // 로그아웃 이후: 실제 HTTP 보호 요청 거부.
+    assert.equal((await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${token}` } })).status, 401);
+    // 로그아웃 이후: 실제 refresh 거부.
+    await assert.rejects(authService.refresh(refreshToken), (error) => error.status === 401);
+    // 로그아웃 이후: 신규 소켓 연결(handshake) 거부.
+    assert.ok(await runAuthenticateSocket(fakeHandshakeSocket(token)) instanceof Error,
+        '로그아웃된 계정의 신규 소켓 연결은 거부되어야 합니다(F-03 AC-03/AC-05)');
+    // 로그아웃 이후: 이미 연결된 소켓의 후속 보호 이벤트도 거부되고 강제 종료된다.
+    let ranAfterLogout = false;
+    guarded.on('game_action', () => { ranAfterLogout = true; });
+    await guarded._handlers.game_action();
+    assert.equal(ranAfterLogout, false, '로그아웃 이후 이미 연결된 소켓의 보호 이벤트는 실행되면 안 됩니다');
+    assert.ok(guarded.emitted.some((e) => e.event === 'force_disconnect'));
+    assert.ok(guarded.disconnectCalls >= 1);
 });
 
 // ── R-IMPL #7: 정지 감지 시 전체 세션 영구 폐기, 밴 해제 후에도 복원되지 않는다 ────────
 
-test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 해제 후에도 과거 세션이 복원되지 않는다', async (t) => {
+test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 해제 후에도 과거 세션이 복원되지 않으며, 실제 HTTP·refresh·기존 및 신규 소켓이 모두 거부된다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const { email, uuid } = await createUser('ban');
-    const { token } = await authService.login({ email, password: PASSWORD, rememberMe: false }, REQ_INFO);
+    const { token, refreshToken } = await authService.login({ email, password: PASSWORD, rememberMe: true }, REQ_INFO);
     const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 정상 세션임을 먼저 확인한다.
+    // 실제 HTTP 앱(라우트 스택 전체)과 소켓 인증 배선을 태운다 — resolveSession 단위 호출
+    // 만으로 모든 배선을 검증한 것으로 보지 않는다(F-03 AC-03/AC-05).
+    const express = require('express');
+    const cookieParser = require('cookie-parser');
+    const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+    const { once } = require('node:events');
+    const socketLayer = require('../../socket/socket');
+    const fakeHandshakeSocket = (accessToken) => ({ handshake: { headers: { cookie: `accessToken=${accessToken}` } }, data: {} });
+    const runAuthenticateSocket = (socket) =>
+        new Promise((resolve) => socketLayer.__testables.authenticateSocket(socket, resolve));
+    const makeGuardedSocket = (user) => {
+        const handlers = {};
+        return {
+            data: { user },
+            emitted: [],
+            disconnectCalls: 0,
+            on(event, cb) { handlers[event] = cb; },
+            emit(event, payload) { this.emitted.push({ event, payload }); },
+            disconnect() { this.disconnectCalls += 1; },
+            _handlers: handlers,
+        };
+    };
+
+    const app = express();
+    app.use(express.json());
+    app.use(cookieParser());
+    app.use('/auth', require('../../routes/auth.routes'));
+    app.use(notFoundHandler);
+    app.use(globalErrorHandler);
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    // 정상 세션임을 먼저 확인한다 — resolveSession뿐 아니라 실제 HTTP·소켓 경로 모두.
     assert.equal((await sessionLifecycle.resolveSession(decoded)).ok, true);
+    assert.equal((await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${token}` } })).status, 200);
+    assert.equal(await runAuthenticateSocket(fakeHandshakeSocket(token)), undefined);
+    const guarded = makeGuardedSocket(decoded);
+    socketLayer.__testables.wrapSocketWithSessionGuard(guarded);
+    let protectedEventRan = false;
+    guarded.on('game_action', () => { protectedEventRan = true; });
+    await guarded._handlers.game_action();
+    assert.equal(protectedEventRan, true, '정지 이전에는 이미 연결된 소켓의 보호 이벤트가 정상 실행되어야 합니다');
 
     const ban = await db.UserBan.create({ user_id: uuid, reason: 'R-IMPL 테스트 정지', is_permanent: true });
 
@@ -207,6 +365,21 @@ test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 
     assert.ok(sessionAfterBan.revoked_at instanceof Date,
         '정지 감지 시점에 세션이 실제로 영구 폐기(revoked_at)되어야 합니다 — 단순 거부만으로는 밴 해제 후 복원을 막지 못합니다(R-IMPL #7)');
 
+    // 정지 이후: 실제 HTTP 보호 요청 거부.
+    assert.equal((await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${token}` } })).status, 401);
+    // 정지 이후: 실제 refresh 거부.
+    await assert.rejects(authService.refresh(refreshToken), (error) => error.status === 401 || error.status === 403);
+    // 정지 이후: 신규 소켓 연결(handshake) 거부.
+    assert.ok(await runAuthenticateSocket(fakeHandshakeSocket(token)) instanceof Error,
+        '정지된 계정의 신규 소켓 연결은 거부되어야 합니다(F-03 AC-03/AC-05)');
+    // 정지 이후: 이미 연결된 소켓의 후속 보호 이벤트도 거부되고 강제 종료된다.
+    let protectedEventRanAfterBan = false;
+    guarded.on('game_action', () => { protectedEventRanAfterBan = true; });
+    await guarded._handlers.game_action();
+    assert.equal(protectedEventRanAfterBan, false, '정지 이후 이미 연결된 소켓의 보호 이벤트는 실행되면 안 됩니다');
+    assert.ok(guarded.emitted.some((e) => e.event === 'force_disconnect'));
+    assert.ok(guarded.disconnectCalls >= 1);
+
     // 밴을 해제한다.
     await ban.destroy();
 
@@ -214,30 +387,43 @@ test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 
     const afterUnban = await sessionLifecycle.resolveSession(decoded);
     assert.equal(afterUnban.ok, false,
         '밴 해제 후에도 밴 이전에 폐기된 세션이 다시 유효해지면 안 됩니다(R-IMPL #7)');
+    assert.equal((await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${token}` } })).status, 401,
+        '밴 해제 후에도 실제 HTTP 보호 요청은 계속 거부되어야 합니다');
 });
 
 // ── R-IMPL #7 / AC-04: 비밀번호 변경은 이미 오프라인인 다른 세션의 갱신 자격도 폐기한다 ──
 
-test('R-IMPL #7/AC-04: 비밀번호 변경은 현재 세션뿐 아니라 이미 오프라인인 이전 세션의 갱신 자격도 함께 폐기한다', async (t) => {
+test('R-IMPL #7/AC-04: 비밀번호 변경은 변경 요청 세션뿐 아니라, 변경 직전까지 실제로 유효했던 다른 세션의 갱신 자격도 함께 폐기한다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const { email, uuid } = await createUser('pwchange');
 
-    // 로그인 정책상 새 로그인은 기존 세션을 offline 처리한다 — "다른 브라우저에서 로그인된
-    // 세션"을 흉내내기 위해 두 번 로그인한 뒤, 첫 세션(A)의 회전형 갱신 자격이 비밀번호
-    // 변경으로 함께 죽는지 확인한다(A는 is_online=false지만 refresh_token_hash는 여전히
-    // 살아있는 상태 — user.repositories.js의 markOnlineSessionsOffline 주석이 명시하는
-    // 바로 그 위험).
-    const loginA = await authService.login({ email, password: PASSWORD, rememberMe: true }, REQ_INFO);
+    // 비밀번호를 바꾸는 세션(B)만 실제 로그인 경로로 만든다 — login()은 로그인할 때마다
+    // 이 계정의 기존 세션을 전부 오프라인·폐기 처리하므로(단일 활성 세션 정책, F-03에서
+    // 바꾸지 않는다), 로그인을 두 번 해서 "다른 기기의 세션"을 만들면 그 세션은 두 번째
+    // 로그인 시점에 이미 죽어버려 비밀번호 변경이 무엇을 더 폐기했는지 증명하지 못한다.
+    // 그래서 "다른 기기의 세션"(A)은 login()을 거치지 않고 실제 회전 자격 저장 방식과
+    // 동일하게(해시만 저장) 직접 시딩한다 — 로그인 정책 자체는 손대지 않으면서, 비밀번호
+    // 변경 시점까지 실제로 살아있던 다른 세션을 재현한다(R-IMPL #10).
     const loginB = await authService.login({ email, password: PASSWORD, rememberMe: true }, REQ_INFO);
 
-    const sessionsBeforeChange = await db.UserSession.findAll({ where: { user_id: uuid }, order: [['connected_at', 'ASC']] });
-    assert.equal(sessionsBeforeChange.length, 2);
-    const sessionA = sessionsBeforeChange[0];
-    assert.equal(Number(sessionA.is_online), 0, '두 번째 로그인이 첫 세션을 오프라인 처리했어야 합니다(기존 정책)');
-    assert.ok(sessionA.refresh_token_hash, '오프라인 세션도 갱신 자격 해시는 아직 살아있어야 이 테스트가 의미 있습니다');
+    const rawTokenA = crypto.randomBytes(32).toString('base64url');
+    const hashA = crypto.createHash('sha256').update(rawTokenA).digest('hex');
+    const sessionA = await db.UserSession.create({
+        id: crypto.randomUUID(),
+        user_id: uuid,
+        ip_address: '127.0.0.1',
+        is_online: true,
+        refresh_token_hash: hashA,
+        refresh_token_expires_at: new Date(Date.now() + 29 * 24 * 60 * 60 * 1000),
+    });
+
+    // 사전 조건: 비밀번호 변경 이전에는 세션 A의 갱신 자격이 실제로 유효해야 이 테스트가
+    // 의미 있다 — mock 없이 실제 authService.refresh()로 확인한다.
+    const beforeChange = await authService.refresh(rawTokenA);
+    assert.ok(beforeChange.accessToken, '변경 이전에는 세션 A의 갱신 자격이 실제로 통과해야 합니다');
 
     // 실제 profile.controller.js의 updatePassword 경로를 그대로 태운다(라우트 → 컨트롤러 →
     // repository, 격리 DB 대상).
@@ -250,6 +436,7 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 현재 세션뿐 아니라 이미 
     app.use(express.json());
     app.use(cookieParser());
     app.use('/user', require('../../routes/user.routes'));
+    app.use('/auth', require('../../routes/auth.routes'));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
     const server = app.listen(0, '127.0.0.1');
@@ -257,7 +444,6 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 현재 세션뿐 아니라 이미 
     t.after(() => new Promise((resolve) => server.close(resolve)));
     const base = `http://127.0.0.1:${server.address().port}`;
 
-    const decodedB = require('jsonwebtoken').verify(loginB.token, process.env.JWT_SECRET);
     const res = await fetch(`${base}/user/me/password`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json', cookie: `accessToken=${loginB.token}` },
@@ -266,14 +452,26 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 현재 세션뿐 아니라 이미 
     assert.equal(res.status, 200);
 
     const sessionsAfterChange = await db.UserSession.findAll({ where: { user_id: uuid } });
+    assert.equal(sessionsAfterChange.length, 2);
     for (const session of sessionsAfterChange) {
         assert.ok(session.revoked_at instanceof Date,
-            `세션 ${session.id}은 비밀번호 변경 후 폐기되어야 합니다(이미 오프라인이던 다른 세션 포함)`);
+            `세션 ${session.id}은 비밀번호 변경 후 폐기되어야 합니다(변경 직전까지 유효했던 다른 세션 포함)`);
         assert.equal(Number(session.is_online), 0);
     }
 
-    // 오프라인이던 세션 A의 갱신 자격도 이제 refresh()로 되살릴 수 없어야 한다.
-    await assert.rejects(authService.refresh(loginA.refreshToken), (error) => error.status === 401);
+    // 변경 직전까지 유효했던 세션 A의 갱신 자격은 이제 refresh()로 되살릴 수 없어야 한다 —
+    // 변경 이전(beforeChange)에는 통과했던 바로 그 자격이다.
+    await assert.rejects(authService.refresh(rawTokenA), (error) => error.status === 401);
+
+    // 변경 요청을 실행한 세션(B) 자신도 재로그인이 요구된다(AC-04) — 같은 액세스 토큰으로의
+    // 실제 HTTP 보호 요청과 소켓 인증이 모두 거부되어야 한다(AC-03/AC-05).
+    assert.equal((await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${loginB.token}` } })).status, 401);
+    await assert.rejects(authService.refresh(loginB.refreshToken), (error) => error.status === 401);
+
+    const socketLayer = require('../../socket/socket');
+    const postChangeSocket = { handshake: { headers: { cookie: `accessToken=${loginB.token}` } }, data: {} };
+    const authErr = await new Promise((resolve) => socketLayer.__testables.authenticateSocket(postChangeSocket, resolve));
+    assert.ok(authErr instanceof Error, '비밀번호 변경 이전 토큰으로의 신규 소켓 연결은 거부되어야 합니다(AC-03/AC-05)');
 
     // 변경 이후 같은 계정으로의 새 로그인은 새 비밀번호로만 성공해야 한다(직렬화 확인).
     await assert.rejects(

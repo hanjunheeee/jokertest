@@ -323,7 +323,89 @@ false여도 갱신 자격(refresh)은 유효할 수 있어, 그 경로까지 함
   반영한다(AC-09). matchmaking.js·gameSession.js는 건드리지 않았다 — `socket.on`을 감싸는
   방식이라 두 모듈이 등록하는 핸들러에도 자동으로 적용된다.
 
-## 실제 검증 상태 (R-IMPL #2 수정 세션 기준, 2026-09-10)
+## 실제 검증 상태 (CODEX-2 반송 대응 세션 기준, 2026-09-10)
+
+- **`node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test`(격리
+  MySQL 주입 래퍼) — 이번 세션에서도 미실행.** Bash·PowerShell 두 도구 모두 "승인이
+  필요합니다"로 즉시 거부했다(이번 세션 2회 시도, 이전 세션들까지 합치면 누적 5회 이상
+  동일하게 차단). 형태를 바꿔 우회하지 않았다 — 자격 JSON을 직접 읽어 동등한 명령을
+  재구성하는 시도도 하지 않았다. **다음 시도 또는 루트 운영자가 반드시 이 명령으로
+  아래 "이번 세션에서 고친 것"의 DB 시험(R-IMPL #7 확장, AC-03/AC-05 로그아웃 배선,
+  R-IMPL #8, 수정된 R-IMPL #7/AC-04)을 재검증해야 한다.** 준비 방법(비밀값 없이):
+  `C:/Users/minsa/jokertest/.pluto/monitor/f01-test-db.private.json`이 이미 존재하고,
+  이 명령이 실행되면 그 안의 자격으로 `F01_TEST_DATABASE_URL` 환경변수가 주입되어
+  `backend/tests/db/*.integration.test.js`가 skip 대신 실제로 실행된다. 강제 시간 경계
+  재현은 코드가 아니라 DB 값을 직접 되돌리는 방식(예: `f03-session.integration.test.js`의
+  `session.update({ refresh_previous_expires_at: new Date(Date.now() - 1000) })`)을 이미
+  테스트 안에 구현해 두었으므로, 이 래퍼 실행 자체 외에 별도 시간 조작은 필요 없다.
+- **`node "C:/dev/pluto/packages/daemon/dist/src/impl-check.js" test`(backend, 격리 DB
+  없이 실행 가능한 전체 스위트) — 이번 세션에서 여러 차례 실행, 모두 통과.** 최종 실행:
+  tests 1062 / pass 1043 / fail 0 / skipped 19(격리 MySQL 없이는 검증 불가능한 F01/F02/F03
+  DB 통합 테스트 — "미검증"으로 남는다, PASS로 위장하지 않았다). 로그:
+  `backend/.pluto/checks/`(가장 최근 `*-test.log`).
+- **`node "...impl-check.js" build`(backend)** — `Missing script: "build"`. 순수 Node
+  서버라 빌드 스크립트가 없는 것이 정상(회귀 아님).
+- **`node "...impl-check.js" test`(frontend)** — 통과. tests 1199 / pass 1199 / fail 0.
+- **`node "...impl-check.js" build`(frontend)** — `vite build` 성공(1021 modules, dist
+  생성). 실제 브라우저에서의 로그인 유지·브라우저 재시작·회전 응답 유실 복구·소켓
+  재연결 수동 확인은 이 실행 환경(도구 기반 세션)에서 할 수 없다 — 루트 운영자가 직접
+  확인해야 한다(AC-01/AC-02/AC-06 manual 부분, 미실행으로 남긴다).
+
+### 이번 세션(CODEX-2 반송 대응)에서 고친 것과 그 근거 테스트
+
+- **AC-01(회전 응답 유실 복구, R-IMPL #8)** — `backend/service/auth.service.js`의 회전
+  로직을 무작위 생성(`generateRefreshSecret`)에서 "이전 원문 자격 + 세션ID"에 대한 HMAC
+  결정론적 유도(`deriveRotatedRefreshToken`)로 바꿨다. grace(이전 해시) 매치는 더 이상
+  `refreshToken: null`을 반환하지 않고, 실제 회전 당시 발급했을 값을 저장 없이 그대로
+  재계산해 돌려준다 — 몇 번을 재시도하든, 응답이 어떤 순서로 도착하든, 몇 개가
+  동시에 도착하든 항상 같은 값이 나오므로 회전 성공 응답 자체가 유실돼도 다음 재시도가
+  그 값을 복구한다. `user.controller.js`의 refresh 핸들러는 이제 매번 Set-Cookie해도
+  안전하다(형제 요청의 최신 값을 되돌릴 위험이 없다 — 모두 같은 값이므로).
+  근거: `backend/service/auth.service.refresh.test.js`(grace 재시도가 회전을 재실행하지
+  않음 + 응답 유실→재시도→복구 왕복이 정확히 같은 값을 내는지 + grace 이후 정상 회전
+  확인, 3건 추가/수정), `backend/tests/db/f03-session.integration.test.js`의 수정된
+  "R-IMPL #5"(4개 동시 요청이 모두 같은 자격을 받고 그 자격이 실제 저장된 해시와
+  일치)와 신규 "R-IMPL #8"(실제 DB로 응답 유실→재시도 복구→grace 이후 정상 회전→grace
+  밖 재사용 거부 전 과정 확인) — **격리 MySQL 없이는 이번 세션에서 skip 상태다.**
+- **AC-02(영속 쿠키 미발급/제거, R-IMPL #6)** — `backend/auth/cookieOptions.js`에
+  `clearRefreshCookie` 추가, `user.controller.js`의 `login`이 `rememberMe`가 아니면
+  이전에 남아있을 수 있는 영속 `refreshToken` 쿠키를 명시적으로 지운다. 근거:
+  `backend/__tests__/auth.login.regression.test.js`에 실제 Express 앱 + fetch로
+  `/auth/login`을 호출해 진짜 `Set-Cookie` 헤더를 읽는 시험 4건 추가 — 유지 선택 시
+  Max-Age·HttpOnly·SameSite=Lax·(운영환경) Secure 확인, 미선택 시 Max-Age·Expires 부재
+  확인, 이전 영속 쿠키가 실제로 지워지는지(값 비고 과거 Expires, Max-Age 없음) 확인,
+  `NODE_ENV=production`에서 Secure가 붙는지 확인. 옵션 객체만 보던 기존
+  `cookieOptions.test.js`의 한계를 실제 HTTP 응답 검사로 보완했다.
+- **AC-03/AC-05(실제 배선 검증)** — `backend/tests/db/f03-session.integration.test.js`에
+  실제 로그인→로그아웃, 실제 로그인→정지(기존 "R-IMPL #7" 확장) 이후 실제 Express
+  `/auth/me`·`authService.refresh()`·`socket.js`의 `authenticateSocket`(신규 연결)·
+  `wrapSocketWithSessionGuard`(이미 연결된 소켓의 후속 이벤트) 네 경로가 모두 거부되는지
+  확인하는 시험을 추가했다 — `sessionLifecycle.resolveSession` 단위 호출만으로 배선
+  검증을 대신하지 않는다. 비밀번호 변경 시험("R-IMPL #7/AC-04")에도 변경 요청 세션
+  자신의 HTTP·refresh·소켓 거부 확인을 추가했다. **격리 MySQL 없이는 이번 세션에서 skip
+  상태다.**
+- **AC-04(다른 세션 fixture 결함)** — 기존 시험은 `loginA`를 `loginB`의 로그인 자체가
+  이미 폐기(단일 활성 세션 정책)한 뒤 비밀번호 변경으로 다시 폐기됐다고 잘못 단언하고
+  있었다. 로그인 정책(새 로그인이 이 계정의 기존 세션을 전부 오프라인·폐기하는 것)은
+  바꾸지 않되, "비밀번호 변경 직전까지 실제로 유효했던 다른 세션"을 `db.UserSession.create`
+  로 직접 시딩(로그인 경로를 거치지 않아 그 정책의 영향을 받지 않는다)하도록 고쳤다.
+  변경 이전에는 `authService.refresh()`로 그 세션의 자격이 실제로 통과함을 먼저 확인한
+  뒤, 실제 `PATCH /user/me/password`를 호출하고 나서야 같은 자격이 거부됨을 확인한다 —
+  이전에는 증명하지 못했던 "비밀번호 변경이 실제로 그 세션을 폐기했다"는 인과관계를 이제
+  증명한다. **격리 MySQL 없이는 이번 세션에서 skip 상태다.**
+
+### 남은 일 / 다음 행동
+
+1. **`run-backend-tests.cjs test`(격리 MySQL) 승인·실행** — 이번 세션이 추가/수정한 DB
+   시험(R-IMPL #5/#8, 로그아웃 배선, 정지 배선 확장, R-IMPL #7/AC-04 수정)이 실제 DB에서
+   통과하는지 확인해야 한다. 여러 세션에 걸쳐 반복적으로 막힌, 가장 중요한 미완 항목이다.
+2. 실제 브라우저에서: 로그인 유지 후 재시작 → 유지, 미선택 후 종료 → 세션쿠키 소멸(및
+   이전 영속 쿠키가 실제로 삭제되는지 개발자 도구 Application 탭에서 확인), 액세스 토큰
+   (또는 절대 기한 임박) 만료 뒤 자동 갱신·소켓 재연결이 매끄러운지, 네트워크 탭에서
+   회전 응답 하나를 인위적으로 차단(예: DevTools의 요청 차단 또는 오프라인 토글)했다가
+   복구한 뒤에도 세션이 로그아웃되지 않는지 — 루트 운영자의 수동 확인이 필요하다.
+
+## 실제 검증 상태 (R-IMPL #2 수정 세션 기준, 2026-09-10, 과거 기록)
 
 - **`node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test`(격리
   MySQL 주입 래퍼) — 이번 세션에서 미실행.** Bash·PowerShell 두 도구 모두 이 명령을

@@ -13,9 +13,25 @@ const {
 const crypto                  = require("crypto");
 
 // 갱신 자격 원문은 무작위 256비트 값이다. 서버는 이 값을 절대 저장하지 않고, 아래
-// hashRefreshToken이 만든 sha256 해시만 DB에 남긴다(F-03 A-03).
+// hashRefreshToken이 만든 sha256 해시만 DB에 남긴다(F-03 A-03). 로그인 시 최초 발급에만
+// 쓰인다 — 그 이후의 모든 회전은 아래 deriveRotatedRefreshToken을 쓴다(F-03 R-IMPL #8).
 const generateRefreshSecret = () => crypto.randomBytes(32).toString("base64url");
 const hashRefreshToken      = (rawToken) => crypto.createHash("sha256").update(rawToken).digest("hex");
+
+// 회전으로 발급하는 새 갱신 자격은 "이전 원문 자격 + 세션ID"에 대한 HMAC으로 결정론적으로
+// 유도한다(무작위가 아니다). 서버는 원문을 저장하지 않지만, 같은 입력(클라이언트가 실제로
+// 들고 있는 이전 원문)이 다시 들어오면 항상 같은 출력을 재현할 수 있다 — 그래서 회전
+// 성공 응답 자체가 유실돼도(네트워크 단절), 클라이언트가 이전 자격으로 재시도하기만 하면
+// 서버가 저장 없이 잃어버린 새 자격을 그대로 다시 계산해 돌려줄 수 있다. 입력(이전
+// 원문)이 달라지면 출력도 완전히 달라지므로(HMAC은 안전한 PRF), 서버의 비밀키 없이는
+// 다음 회전 값을 미리 예측할 수 없다 — 예측 불가능성은 무작위 생성과 동등하게 유지된다
+// (F-03 A-08/R-IMPL #8). 세션ID를 입력에 섞어 서로 다른 세션의 회전 체인이 절대 같은 값을
+// 만들지 않게 한다. JWT_SECRET을 재사용하되 고정 라벨로 용도를 분리해, 같은 키를 다른
+// 목적(JWT 서명)으로 쓰는 것과 입력 구조 자체를 다르게 둔다.
+const deriveRotatedRefreshToken = (previousRawToken, sessionId) =>
+    crypto.createHmac("sha256", process.env.JWT_SECRET)
+        .update(`refresh-rotation-v1:${sessionId}:${previousRawToken}`)
+        .digest("base64url");
 
 exports.signup = async (userData) => {
     // 닉네임 길이·문자셋, 비밀번호 길이, 비밀번호 확인 일치, 생년월일 유효성을 여기서
@@ -239,23 +255,25 @@ exports.refresh = async (rawRefreshToken) => {
         }, { expiresIn: cappedTtlSeconds });
 
         if (isGraceMatch) {
-            // 이미 회전된 결과를 grace 재시도가 또 회전시키지 않는다. 동시에 들어온 다른
-            // 요청이 이미 새 자격을 발급받아 refresh_token_hash를 가져갔을 수 있는데, 여기서
-            // 또 회전하면 refresh_previous_hash 포인터가 한 번 더 앞으로 밀려, 그 사이 아직
-            // 응답을 못 받은 정상적인 3번째 이상의 동시 요청이 이후 "현재도 이전도 아닌 값"을
-            // 제시하는 꼴이 되어 재사용(탈취)으로 오판된다(F-03 R-IMPL #5). grace 재시도에는
-            // 새 액세스 토큰만 내리고 갱신 쿠키는 건드리지 않는다 — 브라우저의 쿠키 저장소는
-            // 실제로 회전한 요청(현재 해시와 일치했던 요청)이 설정한 최신 값을 그대로 유지해야
-            // 하며, 여기서 다시 Set-Cookie를 보내면 그 최신 값을 되돌려 버릴 수 있다.
+            // 이 세션은 이미 한 번 회전되어 refresh_token_hash가 다음 세대 값을 가리키고
+            // 있다. 그 회전이 만들었던 원문은 deriveRotatedRefreshToken(이전 원문, 세션ID)로
+            // 결정론적으로 재현되므로, 지금 이 요청이 다시 제시한 이전 원문(rawRefreshToken)과
+            // 세션ID로 같은 함수를 다시 계산하면 그때 실제로 발급했던 것과 정확히 같은 값이
+            // 나온다 — 몇 번째 재시도든, 응답이 어떤 순서로 도착하든 항상 같다. 그래서
+            // previous_hash를 또 앞으로 미는(재회전) 대신, 이미 회전된 결과를 그대로
+            // 재계산해 돌려주기만 한다 — DB에는 아무 것도 다시 쓰지 않는다(F-03 A-08/R-IMPL
+            // #5/#8: 3번째 이상의 동시 요청이나, 회전 응답 자체의 유실 모두 같은 방식으로
+            // 안전하게 복구된다).
+            const recoveredRawRefreshToken = deriveRotatedRefreshToken(rawRefreshToken, session.id);
             return {
                 type: "ok",
                 accessToken,
-                refreshToken: null,
+                refreshToken: recoveredRawRefreshToken,
                 refreshTokenExpiresAt: session.refresh_token_expires_at,
             };
         }
 
-        const newRawRefreshToken = generateRefreshSecret();
+        const newRawRefreshToken = deriveRotatedRefreshToken(rawRefreshToken, session.id);
         const newHash = hashRefreshToken(newRawRefreshToken);
 
         await userRepository.applyRefreshRotation(session.id, {
