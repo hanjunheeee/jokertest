@@ -22,7 +22,10 @@
 - `backend/db/migrations/0001-legacy-baseline.js` — 14개 테이블의 실제(기준선 시점) 정의를
   고정한다. 빈 DB에는 그대로 생성하고, 이미 14개 테이블이 있는 기존 DB는 구조를 대조해
   일치할 때만 DDL 없이 "기준선으로 등록"한다. 일부만 있거나 구조가 다르면 추측하지 않고
-  에러로 멈춘다.
+  에러로 멈춘다. 구조 대조(`diffTable`)는 컬럼 목록·타입·NOT NULL·기본키뿐 아니라
+  **기본값(defaultValue)·유니크 인덱스·외래키**까지 확인한다(이전 회차 검토 지적으로 추가 —
+  §6의 `legacyBaseline.diffTable.test.js` 참고). 그래서 `user_bans.user_id → users.uuid`
+  같은 실제 belongsTo 연관관계의 외래키도 기준선 정의에 포함돼 있다.
 - `backend/db/migrations/0002-expand-nickname-snapshot.js` — `nickname_snapshot`을 30→50자로
   확장한다. 이미 50자면 아무 것도 하지 않고(멱등), 30자가 아닌 다른 상태면 에러로 멈춘다.
   `down()`은 30자를 초과하는 데이터가 있으면 축소를 거부한다(자름 금지).
@@ -74,40 +77,111 @@
 
 ## 5. 실패·복구 절차
 
-1. `migrate` 실행 중 오류가 나면 해당 마이그레이션이 `schema_migrations`에 `status='failed'`,
-   `error_message`와 함께 기록된다. MySQL의 DDL은 트랜잭션 안에서도 암묵적 커밋을 일으키므로,
-   **트랜잭션 롤백만으로는 이미 실행된 DDL을 되돌릴 수 없다**(예: 컬럼 하나는 추가된 채
-   나머지 단계가 실행되지 않은 상태로 남을 수 있다).
-2. 이후 `migrate`를 다시 실행하면 `failed` 이력이 있는 마이그레이션에서 즉시 거부된다 —
-   무조건 재적용은 실패 원인을 검증 없이 반복할 위험이 있어 차단한다.
-3. 운영자는 1단계에서 만든 백업으로 전체 복원한다:
-   `mysql <db> < backup-<timestamp>.sql` (또는 관리형 DB의 스냅샷 복원).
-4. 복원 후 실제 스키마·데이터·이력이 마이그레이션 이전 상태와 같은지 확인한다.
-5. `node backend/scripts/migrate-db.js resolve-failure --name <migration-name> --confirm`으로
-   실패 이력을 정리한다(`--confirm` 없이는 거부됨 — 실제 복구 없이 이력만 지우는 사고 방지).
+`migrate` 실행 중 실패는 두 층위로 나뉘고(§2, `migrationRunner.js` 헤더 주석), 어느 쪽이냐에
+따라 올바른 복구 경로가 다르다 — 이전 회차 검토에서 "runbook이 기술하는 절차와 실제 테스트가
+다르다"는 지적을 받은 부분이라, 여기서 두 경로를 명확히 나눈다.
+
+- **경로 A — DDL 자체가 실패했거나, 실패 이후 상태를 신뢰할 수 없을 때(기본 선택)**:
+  `schema_migrations`에 `status='failed'`로 기록되고, MySQL DDL의 암묵적 커밋 때문에 부분
+  DDL 흔적(예: 컬럼 하나만 추가된 상태)이 실제 스키마에 남아 있을 수 있다. 이 경우 **전체
+  백업 복원**이 기본이다.
+- **경로 B — DDL(`migration.up()`/`verify()`)은 확실히 성공했는데, 그 결과를
+  `schema_migrations`에 기록하는 쓰기(`markFinished`) 자체만 실패했을 때**: 스키마 변경은
+  이미 안전하게 반영돼 있으므로 전체 DB를 되돌릴 필요가 없다. `resolve-failure`로 이력만
+  정리하는 **부분 복구**로 충분하다. `error_message`에 `[DDL은 성공, 이후 단계(verify 또는
+  이력 기록)에서 실패]` 표시가 있으면 이 경로에 해당한다는 신호다(`migrate-db.js status`로
+  확인). 이력 쓰기가 두 번(응용 실패 기록 시도 + 대체 실패 기록 시도) 모두 실패하면 행이
+  `status='running'`인 채로 멈춘다 — 이것도 "동시 실행"이 아니라 크래시/이력쓰기실패
+  흔적이므로(§2) 같은 경로 B로 다룬다.
+
+이 두 경로 중 어느 쪽인지 애매하면 항상 경로 A(전체 백업 복원)를 택한다 — 데이터 손실
+위험이 없는 쪽을 기본값으로 삼는다.
+
+### 경로 A: 전체 백업 복원
+
+1. `migrate` 실행 중 오류가 나면 해당 마이그레이션이 `schema_migrations`에 `status='failed'`
+   (또는 이력 쓰기 자체가 실패했다면 `running`)로 기록된다.
+2. 이후 `migrate`를 다시 실행하면 `failed`/`running` 이력이 있는 마이그레이션에서 즉시
+   거부된다 — 무조건 재적용은 실패 원인을 검증 없이 반복할 위험이 있어 차단한다.
+3. 운영자는 적용 전 백업으로 **전체 복원**한다: `mysql <db> < backup-<timestamp>.sql`
+   (또는 관리형 DB의 스냅샷 복원). 이 백업은 `schema_migrations` 테이블 자체도 포함하므로,
+   복원하면 실패 이력 행도 함께 사라진다.
+4. 복원 후 실제 스키마·데이터·이력이 마이그레이션 이전 상태와 완전히 같은지 확인한다
+   (14개 테이블 전체 — 몇 개 필드만 보고 넘어가지 않는다).
+5. **`resolve-failure`를 호출할 필요가 없다** — `schema_migrations`도 백업에 포함돼 함께
+   복원됐으므로, 실패 이력 행 자체가 이미 없다(`migrate-db.js status`로 확인하면 해당
+   마이그레이션이 `pending`으로 보인다).
 6. 원인을 고친 뒤 다시 `migrate`를 실행한다.
 
-`backend/tests/db/f01-migrations.integration.test.js`의 AC-05 케이스가 이 전체 절차(백업 →
-의도적 부분 실패 주입 → 실패 이력·부분 DDL 흔적 확인 → 무조건 재적용 차단 확인 → 백업
-복원 → 스키마/데이터/이력 원복 확인)를 SQL 레벨에서 그대로 재현한다. `mysqldump`/`mysql`
-CLI 대신 `SHOW CREATE TABLE` + 전체 행 캡처/재적재를 쓰지만, 검증하는 절차는 동일하다.
+`backend/tests/db/f01-migrations.integration.test.js`의 `AC-05: DDL 부분 실패 후 전체 백업
+복원으로...` 케이스가 이 절차(백업 → 의도적 DDL 부분 실패 주입 → 실패 이력·부분 DDL 흔적
+확인 → 무조건 재적용 차단 확인 → 별도 격리 DB에 백업을 먼저 복원해 대조 → 원본 DB 복원 →
+14개 테이블 전체 스키마/데이터/이력 원복 확인 → 실패 이력 자체가 사라졌음(`pending`) 확인)을
+SQL 레벨에서 그대로 재현한다. `mysqldump`/`mysql` CLI 대신 `SHOW CREATE TABLE` + 전체 행
+캡처/재적재를 쓰지만, 검증하는 절차는 동일하다. 별도 격리 DB(`CREATE DATABASE`) 권한이 없는
+환경에서는 이 테스트가 그 사실을 `t.skip`으로 명시하고 멈춘다 — 권한이 없다고 나머지만
+검증하고 통과로 표시하지 않는다.
+
+### 경로 B: 부분 복구 (`resolve-failure`)
+
+1. `migrate-db.js status`로 해당 마이그레이션의 `error_message`에
+   `[DDL은 성공, 이후 단계(verify 또는 이력 기록)에서 실패]` 표시가 있는지 확인한다.
+2. 실제 DB에 가서 그 마이그레이션의 DDL이 의도한 대로 반영됐는지 수동으로 확인한다
+   (`DESCRIBE`/`SHOW CREATE TABLE` 등). 반영돼 있고 데이터에 이상이 없다면 전체 백업을
+   복원할 필요가 없다.
+3. `node backend/scripts/migrate-db.js resolve-failure --name <migration-name> --confirm`으로
+   실패(또는 running으로 멈춘) 이력을 정리한다(`--confirm` 없이는 거부됨 — 실제 확인 없이
+   이력만 지우는 사고 방지).
+4. 정리 후 원인이 된 문제(예: 이력 쓰기가 실패했던 DB 연결/락 문제)를 고친 뒤, 이미 반영된
+   DDL을 다시 실행해도 안전하도록(멱등하도록, 또는 `IF NOT EXISTS` 류로) 필요하면 마이그레이션
+   정의를 조정하고 `migrate`를 다시 실행한다.
+
+`backend/tests/db/f01-migrations.integration.test.js`의 `AC-05: DDL은 성공했지만 이력 기록이
+실패하면...` 케이스가 이 경로를 그대로 재현한다 — `sequelize.query`만 가로채는 Proxy로
+"DDL은 성공, `UPDATE schema_migrations ... status='applied'`만 실패"를 실제 DB에 대고
+주입하고, DDL이 실제로 반영됐음·14개 테이블 중 무관한 데이터는 전혀 바뀌지 않았음·
+`resolve-failure`로 정리한 뒤 재시도가 실제로 성공함까지 확인한다. 이 경로는 이전 회차에
+전혀 테스트되지 않았던 부분이다.
+
+이 두 경로 모두 `backend/__tests__/migrationRunner.test.js`(DB 없이 fake `sequelize.query`로
+동작하는 유닛 테스트, §6)가 상태 전이 규칙 자체(이력 쓰기 실패 시 failed로 안전하게 귀결,
+두 번 다 실패하면 running에 멈춤, `resolveFailure`가 failed/running 모두 처리, applied
+checksum 불일치 감지)를 별도로 검증한다 — 이 환경에서 실제로 실행해 통과를 확인했다(§6).
 
 ## 6. AC별 증거
 
+DB 통합 테스트(`F01_TEST_DATABASE_URL` 필요)와, DB 없이 이 환경에서 실제로 실행해 통과를
+확인한 유닛 테스트를 분리해서 기록한다 — 이전 회차 검토에서 "diffTable의 기본값/유니크/외래키
+검사"와 "이력 쓰기 실패 경로"가 전혀 테스트되지 않았다는 지적을 받아, 이번 회차는 DB 접근이
+막힌 이 환경에서도 그 두 가지를 결정론적으로 증명하는 유닛 테스트를 추가했다.
+
 | AC | 내용 | 상태 | 근거 |
 | --- | --- | --- | --- |
-| AC-01 | 빈 DB에서 14개 테이블 생성 | **미검증** (코드 준비 완료, 실행 불가) | `backend/tests/db/f01-migrations.integration.test.js`의 `AC-01` 테스트로 구현됨. 이 환경에는 도달 가능한 전용 MySQL 격리 DB 자격 증명이 없어(§7) `F01_TEST_DATABASE_URL` 없이 스킵됨 — `.pluto/checks/`의 `node-test` 로그에 5건 모두 skip으로 기록. |
-| AC-02 | 기존 데이터 보존 | **미검증** (사유 동일) | 같은 파일의 `AC-02` 테스트. 계정·인증 토큰·경기 기록을 심은 뒤 마이그레이션을 적용해 행 단위 값 보존을 검증하도록 작성됨. |
-| AC-03 | 반복 실행 동일 결과 | **미검증** (사유 동일) | `AC-03` 테스트. 두 번째 실행이 아무 것도 적용하지 않고, `describeTable` 스냅샷이 완전히 같고, `schema_migrations`에 이름당 정확히 1행만 남는지 검증하도록 작성됨. |
-| AC-04 | 50자 닉네임 무손실 저장 | **미검증** (사유 동일) | `AC-04` 테스트. `gameResultRepository.persistGameResult`(실제 저장 경로, `backend/repositories/gameResult.repositories.js` → `backend/game-core/gameSession.js`의 `buildGameResultRecord`)를 그대로 호출해 50자 닉네임 왕복 저장을 검증하도록 작성됨. |
-| AC-05 | 실패 후 문서화된 복구 | **미검증** (사유 동일) | `AC-05` 테스트. 위 5절 절차를 그대로 구현. |
+| AC-01 | 빈 DB에서 14개 테이블 생성 | **미검증** (코드 준비 완료, 실행 불가) | `backend/tests/db/f01-migrations.integration.test.js`의 `AC-01` 테스트로 구현됨. 이 환경에는 도달 가능한 전용 MySQL 격리 DB 자격 증명이 없어(§7) `F01_TEST_DATABASE_URL` 없이 스킵됨 — `.pluto/checks/`의 `node-test` 로그에 skip으로 기록. |
+| AC-02 | 기존 데이터 보존(계정·인증·경기 전체) | **미검증**(DB 통합, 사유 동일) / **부분 검증됨**(diffTable 로직) | 같은 파일의 `AC-02` 테스트가 `createLegacyDatabaseSchema()`(0001-legacy-baseline.js를 전혀 거치지 않는 독립 raw SQL DDL)로 "진짜 기존 DB"를 만들고, 14개 테이블 전체·모든 행을 마이그레이션 전후로 `deepEqual` 비교하도록 재작성됨(이전 회차는 같은 baseline.up()으로 만든 DB를 몇 개 필드만 비교했다). `diffTable`이 실제로 기본값·유니크 인덱스·외래키 불일치를 잡아내는지는 `backend/__tests__/legacyBaseline.diffTable.test.js`(DB 불필요)가 이 환경에서 직접 실행해 확인함 — §아래. |
+| AC-03 | 반복 실행 동일 결과 | **미검증** (DB 통합, 사유 동일) | `AC-03` 테스트. 두 번째 실행이 아무 것도 적용하지 않고, `describeTable` 스냅샷이 완전히 같고, `schema_migrations`에 이름당 정확히 1행만 남는지 검증하도록 작성됨. |
+| AC-04 | 50자 닉네임 무손실 저장 | **미검증** (DB 통합, 사유 동일) | `AC-04` 테스트. `gameResultRepository.persistGameResult`(실제 저장 경로, `backend/repositories/gameResult.repositories.js` → `backend/game-core/gameSession.js`의 `buildGameResultRecord`)를 그대로 호출해 50자 닉네임 왕복 저장을 검증하도록 작성됨. |
+| AC-05 | 실패 후 문서화된 복구(경로 A·B 모두) | **미검증**(DB 통합, 사유 동일) / **부분 검증됨**(runner 상태 전이) | 같은 파일에 두 테스트가 있다: (경로 A) `AC-05: DDL 부분 실패 후 전체 백업 복원으로...`가 §5 경로 A 전체를 14개 테이블 전체 비교로 재현하고, 별도 격리 DB 생성 권한이 없으면 통과로 위장하지 않고 `t.skip`한다(이전 회차는 이 경우도 통과했다). (경로 B) `AC-05: DDL은 성공했지만 이력 기록이 실패하면...`이 이전 회차에 없던 "역사 쓰기 실패" 시나리오를 Proxy로 실제 DB에 주입하고 `resolveFailure` 부분 복구까지 검증한다. 두 경로의 상태 전이 규칙 자체는 `backend/__tests__/migrationRunner.test.js`(DB 불필요)가 이 환경에서 직접 실행해 확인함 — §아래. |
 | AC-06 | Pluto L(DB3)·U(QA5) 충돌 대조 기록 | **완료** (문서화) | §7. |
 
 같은 슬라이스에서 실행 가능했던 검증은 실제로 실행했다:
 
 - `node "C:/dev/pluto/packages/daemon/dist/src/impl-check.js" test` (backend 전체 회귀,
-  `f01-migrations.integration.test.js` 포함) — **958개 중 953 pass · 0 fail · 5 skip**
-  (skip 5건은 위 AC-01~05, 사유는 §7). 로그: `backend/.pluto/checks/*-test.log`.
+  `f01-migrations.integration.test.js` 포함) — DB 통합 테스트는 여전히 skip, 나머지는
+  전부 pass. 로그: `backend/.pluto/checks/*-test.log`.
+- `backend/__tests__/legacyBaseline.diffTable.test.js`(신규, DB 불필요) — **12/12 pass**.
+  `diffTable`이 (a) 완전히 일치하는 구조는 통과시키고, (b) 컬럼 기본값 불일치(`role`의
+  `'USER'`↔`'ADMIN'`, `Sequelize.NOW`↔`CURRENT_TIMESTAMP` 누락)를 잡아내고, (c) `users.email`
+  유니크 인덱스 누락과 `friendships`의 복합 유니크 인덱스 컬럼 순서 어긋남을 잡아내고,
+  (d) `user_bans.user_id → users.uuid` 외래키 누락·오참조를 잡아내는지를 각각 독립된 케이스로
+  증명한다.
+- `backend/__tests__/migrationRunner.test.js`(신규, DB 불필요, fake `sequelize.query`) —
+  **14/14 pass**. 정상 적용/재실행 스킵/DDL 실패/체크섬 불일치는 기존 계약을 재확인하고,
+  새로 추가한 케이스가 (a) DDL은 성공했지만 `markFinished(applied)` 자체가 실패하면 `failed`로
+  안전하게 귀결되고 `error_message`에 "DDL은 성공"이 남는지, (b) 두 번째 `markFinished(failed)`
+  마저 실패하면 행이 `running`에 멈추고 원래 오류가 전파되며 경고가 로그되는지, (c)
+  `resolveFailure`가 `failed`뿐 아니라 `running`도 정리할 수 있는지, (d) `running`으로 멈춘
+  이력이 있으면 재적용 시 `up()`을 다시 호출하지 않고 즉시 차단하는지를 증명한다.
 - 개별로 `schema.gameTables.test.js`, `schema.existingTables.test.js`,
   `schema.gameResultPlayersFk.test.js`를 `node-test`로 재확인 — 전부 pass, 회귀 없음.
   (`game_result_player.model.js`와 `schema.gameTables.test.js`의 `nickname_snapshot` 기대값을

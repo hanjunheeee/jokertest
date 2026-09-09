@@ -13,6 +13,19 @@
 //   2) 이미 sync()로 이 14개 테이블이 존재하는 기존 DB — 실제 구조를 이 기준선과
 //      대조해 일치할 때만 "등록"(DDL 없이 통과)한다. 일부만 존재하거나 구조가 다르면
 //      추측으로 넘어가지 않고 에러로 멈춘다.
+//
+// diffTable의 구조 대조는 컬럼 목록·타입·NOT NULL·기본키 외에도 다음을 확인한다(이전 회차
+// 검토에서 "기본값·유니크 인덱스·외래키를 확인하지 않는다"는 지적을 받아 추가함):
+//   - defaultValue: users.role='USER' 같은 컬럼 기본값. Sequelize.NOW→'CURRENT_TIMESTAMP'로
+//     번역해 비교하고, Sequelize.UUIDV4처럼 애플리케이션 레벨에서만 생성되는 값은 DB에
+//     DEFAULT 절이 없으므로 검사에서 제외한다.
+//   - unique index: users.nickname/email 같은 컬럼 단위 unique와 friend_requests/friendships의
+//     복합 유니크 인덱스를 SHOW INDEX 결과와 대조한다.
+//   - foreign key: user_id/requester_id/receiver_id 등 실제 belongsTo 연관관계가 sync()로
+//     생성하는 외래키(예: user_bans.user_id→users.uuid)를 INFORMATION_SCHEMA 기반
+//     getForeignKeyReferencesForTable 결과와 대조한다. 이 검사를 추가하면서 아래
+//     buildDefinitions도 실제 연관관계와 같은 references를 선언하도록 맞췄다 — 그렇지
+//     않으면 진짜 기존 DB(외래키 있음)가 매번 "구조 불일치"로 거부된다.
 
 const TABLE_ORDER = [
     'users',
@@ -64,7 +77,7 @@ const buildDefinitions = (Sequelize) => ({
     password_reset_tokens: {
         columns: {
             id: { type: Sequelize.INTEGER, primaryKey: true, allowNull: false, autoIncrement: true },
-            user_id: { type: Sequelize.UUID, allowNull: false },
+            user_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
             token: { type: Sequelize.STRING(255), allowNull: false },
             expired_at: { type: Sequelize.DATE, allowNull: false },
             used: { type: Sequelize.BOOLEAN, allowNull: true, defaultValue: false },
@@ -74,7 +87,7 @@ const buildDefinitions = (Sequelize) => ({
     user_sessions: {
         columns: {
             id: { type: Sequelize.STRING(255), primaryKey: true, allowNull: false },
-            user_id: { type: Sequelize.UUID, allowNull: false },
+            user_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
             ip_address: { type: Sequelize.STRING(45), allowNull: true },
             connected_at: { type: Sequelize.DATE, allowNull: true, defaultValue: Sequelize.NOW },
             last_ping_at: { type: Sequelize.DATE, allowNull: true },
@@ -84,7 +97,7 @@ const buildDefinitions = (Sequelize) => ({
     user_bans: {
         columns: {
             id: { type: Sequelize.INTEGER, primaryKey: true, allowNull: false, autoIncrement: true },
-            user_id: { type: Sequelize.UUID, allowNull: false },
+            user_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
             reason: { type: Sequelize.TEXT, allowNull: true },
             banned_by: { type: Sequelize.INTEGER, allowNull: true },
             is_permanent: { type: Sequelize.BOOLEAN, allowNull: true, defaultValue: false },
@@ -95,7 +108,7 @@ const buildDefinitions = (Sequelize) => ({
     },
     user_stats: {
         columns: {
-            user_id: { type: Sequelize.UUID, primaryKey: true, allowNull: false },
+            user_id: { type: Sequelize.UUID, primaryKey: true, allowNull: false, references: { model: 'users', key: 'uuid' } },
             reputation: { type: Sequelize.INTEGER, allowNull: true, defaultValue: 0 },
             title: { type: Sequelize.STRING(50), allowNull: true, defaultValue: '신참' },
             total_games: { type: Sequelize.INTEGER, allowNull: true, defaultValue: 0 },
@@ -107,7 +120,7 @@ const buildDefinitions = (Sequelize) => ({
     login_history: {
         columns: {
             id: { type: Sequelize.INTEGER, primaryKey: true, allowNull: false, autoIncrement: true },
-            user_id: { type: Sequelize.UUID, allowNull: false },
+            user_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
             ip_address: { type: Sequelize.STRING(45), allowNull: true },
             user_agent: { type: Sequelize.TEXT, allowNull: true },
             device_type: { type: Sequelize.STRING(20), allowNull: true },
@@ -118,7 +131,7 @@ const buildDefinitions = (Sequelize) => ({
     },
     online_presence: {
         columns: {
-            user_id: { type: Sequelize.UUID, primaryKey: true, allowNull: false },
+            user_id: { type: Sequelize.UUID, primaryKey: true, allowNull: false, references: { model: 'users', key: 'uuid' } },
             status: { type: Sequelize.STRING(20), allowNull: true, defaultValue: 'ONLINE' },
             last_active_at: { type: Sequelize.DATE, allowNull: true, defaultValue: Sequelize.NOW },
             current_room_id: { type: Sequelize.INTEGER, allowNull: true },
@@ -127,8 +140,8 @@ const buildDefinitions = (Sequelize) => ({
     friend_requests: {
         columns: {
             id: { type: Sequelize.INTEGER, primaryKey: true, allowNull: false, autoIncrement: true },
-            requester_id: { type: Sequelize.UUID, allowNull: false },
-            receiver_id: { type: Sequelize.UUID, allowNull: false },
+            requester_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
+            receiver_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
             status: { type: Sequelize.STRING(20), allowNull: true, defaultValue: 'PENDING' },
             message: { type: Sequelize.TEXT, allowNull: true },
             created_at: { type: Sequelize.DATE, allowNull: true, defaultValue: Sequelize.NOW },
@@ -141,8 +154,8 @@ const buildDefinitions = (Sequelize) => ({
     friendships: {
         columns: {
             id: { type: Sequelize.INTEGER, primaryKey: true, allowNull: false, autoIncrement: true },
-            requester_id: { type: Sequelize.UUID, allowNull: false },
-            receiver_id: { type: Sequelize.UUID, allowNull: false },
+            requester_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
+            receiver_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
             status: { type: Sequelize.STRING(20), allowNull: true, defaultValue: 'ACCEPTED' },
             created_at: { type: Sequelize.DATE, allowNull: false },
             updated_at: { type: Sequelize.DATE, allowNull: false },
@@ -239,6 +252,61 @@ const expectedTypeCategory = (Sequelize, columnDef) => {
     }
 };
 
+// MySQL의 SHOW FULL COLUMNS(=describeTable)가 돌려주는 Default 값은 항상 리터럴 문자열이거나
+// null이다. Sequelize.NOW로 선언한 컬럼은 DDL에서 `DEFAULT CURRENT_TIMESTAMP`로 번역되고,
+// Sequelize.UUIDV4는 애플리케이션 레벨(INSERT 시점 client-side)에서만 생성되고 DB DEFAULT
+// 절 자체가 없으므로 여기서는 검사 대상에서 제외한다(undefined 반환 = 이 컬럼은 기본값을
+// 비교하지 않는다). columnDef에 defaultValue 키 자체가 없는 컬럼도 같은 이유로 제외한다 —
+// "기본값을 선언하지 않았다"는 사실만으로 실제 DB에 기본값이 없다고 단정할 근거가 없다.
+const expectedDefaultValue = (Sequelize, columnDef) => {
+    if (!Object.prototype.hasOwnProperty.call(columnDef, 'defaultValue')) return undefined;
+    const value = columnDef.defaultValue;
+    if (value === Sequelize.NOW) return 'CURRENT_TIMESTAMP';
+    if (value === Sequelize.UUIDV4) return undefined;
+    if (value === null) return null;
+    if (typeof value === 'boolean') return value ? '1' : '0';
+    return String(value);
+};
+
+// 컬럼 단위 unique:true와 definition.indexes에 선언된 인덱스를 하나의 목록으로 합친다.
+// 필드 순서는 정의된 순서를 그대로 유지한다 — 복합 유니크 인덱스는 MySQL에서 컬럼 순서가
+// 의미를 가지므로(왼쪽 접두사 규칙) 순서까지 같아야 "같은 인덱스"로 본다.
+const expectedIndexesOf = (definition) => {
+    const indexes = [];
+    for (const [column, columnDef] of Object.entries(definition.columns)) {
+        if (columnDef.unique) indexes.push({ fields: [column], unique: true });
+    }
+    for (const index of definition.indexes || []) {
+        indexes.push({ fields: index.fields, unique: Boolean(index.unique) });
+    }
+    return indexes;
+};
+
+// SHOW INDEX 결과(행 단위, Seq_in_index로 컬럼 순서를 표시)를 인덱스 이름별로 묶어
+// { unique, fields } 목록으로 재구성한다. PRIMARY는 기본키이지 F-01이 관리하는 "유니크
+// 제약"이 아니므로 제외한다.
+const actualIndexesOf = (showIndexRows) => {
+    const byName = new Map();
+    for (const row of showIndexRows) {
+        if (row.Key_name === 'PRIMARY') continue;
+        if (!byName.has(row.Key_name)) byName.set(row.Key_name, { unique: Number(row.Non_unique) === 0, fields: [] });
+        byName.get(row.Key_name).fields[Number(row.Seq_in_index) - 1] = row.Column_name;
+    }
+    return [...byName.values()];
+};
+
+const sameFieldOrder = (a, b) => a.length === b.length && a.every((field, i) => field === b[i]);
+
+const expectedForeignKeysOf = (definition) => {
+    const foreignKeys = [];
+    for (const [column, columnDef] of Object.entries(definition.columns)) {
+        if (columnDef.references) {
+            foreignKeys.push({ column, referencedTable: columnDef.references.model, referencedColumn: columnDef.references.key });
+        }
+    }
+    return foreignKeys;
+};
+
 /** 실제 DB의 한 테이블이 기준선 정의와 구조적으로 일치하는지 확인한다. 다르면 이유를 모은다. */
 const diffTable = async (queryInterface, Sequelize, tableName, definition) => {
     const actual = await queryInterface.describeTable(tableName);
@@ -266,6 +334,40 @@ const diffTable = async (queryInterface, Sequelize, tableName, definition) => {
         }
         if (columnDef.primaryKey && !actualColumn.primaryKey) {
             problems.push(`${column}: 기본키여야 하는데 실제로는 아닙니다`);
+        }
+
+        const expectedDefault = expectedDefaultValue(Sequelize, columnDef);
+        if (expectedDefault !== undefined) {
+            const actualDefault = actualColumn.defaultValue === null ? null : String(actualColumn.defaultValue);
+            if (expectedDefault !== actualDefault) {
+                problems.push(`${column}: 기본값 불일치 (기대 ${JSON.stringify(expectedDefault)} / 실제 ${JSON.stringify(actualDefault)})`);
+            }
+        }
+    }
+
+    const showIndexRows = await queryInterface.showIndex(tableName);
+    const actualIndexes = actualIndexesOf(showIndexRows);
+    for (const expected of expectedIndexesOf(definition)) {
+        const match = actualIndexes.find((idx) => idx.unique === expected.unique && sameFieldOrder(idx.fields, expected.fields));
+        if (!match) {
+            problems.push(
+                `인덱스 누락 또는 불일치: fields=[${expected.fields.join(',')}] unique=${expected.unique} — ` +
+                `실제 인덱스: ${JSON.stringify(actualIndexes)}`,
+            );
+        }
+    }
+
+    const actualForeignKeys = await queryInterface.getForeignKeyReferencesForTable(tableName);
+    for (const expected of expectedForeignKeysOf(definition)) {
+        const match = actualForeignKeys.some((fk) =>
+            fk.columnName === expected.column &&
+            fk.referencedTableName === expected.referencedTable &&
+            fk.referencedColumnName === expected.referencedColumn);
+        if (!match) {
+            problems.push(
+                `외래키 누락 또는 불일치: ${tableName}.${expected.column} → ${expected.referencedTable}.${expected.referencedColumn} — ` +
+                `실제 외래키: ${JSON.stringify(actualForeignKeys.map((fk) => `${fk.columnName}→${fk.referencedTableName}.${fk.referencedColumnName}`))}`,
+            );
         }
     }
 
@@ -341,4 +443,8 @@ module.exports = {
     TABLE_ORDER,
     buildDefinitions,
     diffTable,
+    expectedDefaultValue,
+    expectedIndexesOf,
+    actualIndexesOf,
+    expectedForeignKeysOf,
 };

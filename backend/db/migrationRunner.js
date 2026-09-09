@@ -9,6 +9,15 @@
 // DDL을 되돌릴 수 없다(A-05). 그래서 실패는 schema_migrations에 상태로만 남기고,
 // 실제 복구는 backend/scripts/migrate-db.js의 상태 조회 + 문서화된 백업 복원 절차로
 // 처리한다. 이 파일은 "부분 실패를 숨기지 않고 기록한다"까지만 책임진다.
+//
+// 실패에는 두 층위가 있다: (1) migration.up()/verify() 자체가 던지는 실패 — 기존에
+// 처리하던 경로. (2) up()/verify()는 성공했는데 그 결과를 schema_migrations에 기록하는
+// markFinished 호출 자체가 실패하는 "이력 쓰기 실패" — 이전 검토에서 이 경로가 테스트되지
+// 않았다는 지적을 받아 추가했다. 이 경우 행은 'failed'로도 마무리되지 못하고 'running'에
+// 멈춘다. applyMigrations는 항상 GET_LOCK을 쥔 채로 실행되므로, 락 밖에서 관찰되는
+// running 행은 절대 "지금 동시에 실행 중"일 수 없고 반드시 이전 실행의 크래시/이력 쓰기
+// 실패 흔적이다 — 그래서 resolveFailure는 failed뿐 아니라 running도 사람이 확인한 뒤
+// 정리할 수 있게 한다.
 
 const crypto = require('crypto');
 
@@ -153,7 +162,17 @@ const applyMigrations = async ({ sequelize, migrations, logger = () => {} }) => 
             }
 
             if (existing && existing.status === 'running') {
-                throw new Error(`${migration.name}이 이미 running 상태입니다 — 동시 실행 여부를 확인하세요.`);
+                // withLock() 안이라 이 프로세스가 이미 LOCK_NAME 락을 쥐고 있다 — 즉 지금
+                // 이 실행과 "동시에" 같은 마이그레이션을 실행 중인 다른 프로세스는 있을 수
+                // 없다(있었다면 GET_LOCK 단계에서 막혔다). 그런데도 status가 running이라는
+                // 것은, 이전 실행이 up()/verify() 도중 크래시했거나 markFinished 자체(이력
+                // 쓰기)가 실패해 'applied'/'failed' 어느 쪽으로도 마무리되지 못했다는 뜻이다.
+                throw new Error(
+                    `${migration.name}이 running 상태로 남아 있습니다. 지금 실행은 락(${LOCK_NAME})을 ` +
+                    `이미 획득했으므로 동시 실행이 아니라, 이전 실행이 도중에 중단됐거나(크래시) 이력 ` +
+                    `기록 자체가 실패한 흔적입니다. 실제 DB 상태(DDL이 실제로 적용됐는지)를 수동으로 ` +
+                    `확인한 뒤 resolveFailure로 이력을 정리하세요.`,
+                );
             }
 
             if (existing) {
@@ -163,8 +182,15 @@ const applyMigrations = async ({ sequelize, migrations, logger = () => {} }) => 
             logger(`apply ${migration.name} ...`);
             await insertRunningRow(sequelize, migration.name, checksum);
 
+            // DDL(migration.up)이 실제로 끝났는지를 별도로 추적한다. MySQL DDL은 암묵적
+            // 커밋을 일으키므로, up()이 성공한 뒤 verify()나 markFinished(이력 쓰기) 단계에서
+            // 실패해도 스키마 변경 자체는 이미 반영돼 있다 — 이 경우를 "DDL 자체가 실패"한
+            // 경우와 구분해 기록해야 복구 절차(전체 백업 복원 vs 부분 수동 정리)를 올바르게
+            // 고를 수 있다.
+            let ddlCompleted = false;
             try {
                 await migration.up(queryInterface, Sequelize, sequelize);
+                ddlCompleted = true;
                 if (typeof migration.verify === 'function') {
                     await migration.verify(queryInterface, Sequelize, sequelize);
                 }
@@ -172,11 +198,24 @@ const applyMigrations = async ({ sequelize, migrations, logger = () => {} }) => 
                 applied.push(migration.name);
                 logger(`applied ${migration.name}`);
             } catch (error) {
-                await markFinished(sequelize, migration.name, {
-                    status: 'failed',
-                    checksum,
-                    errorMessage: String(error?.message ?? error).slice(0, 2000),
-                });
+                const baseMessage = String(error?.message ?? error).slice(0, 2000);
+                const errorMessage = (ddlCompleted
+                    ? `[DDL은 성공, 이후 단계(verify 또는 이력 기록)에서 실패] ${baseMessage}`
+                    : baseMessage
+                ).slice(0, 2000);
+                try {
+                    await markFinished(sequelize, migration.name, { status: 'failed', checksum, errorMessage });
+                } catch (historyWriteError) {
+                    // 이력 쓰기 자체가 실패한 경우(A-05가 우려하는 "역사 쓰기 실패") — 행이
+                    // status='running'인 채로 남는다. 원래 오류를 숨기지 않고 그대로 던지되,
+                    // 이 이중 실패를 로거에 남겨 운영자가 resolveFailure로 수동 정리하도록 안내한다.
+                    logger(
+                        `경고: ${migration.name}의 실패를 ${META_TABLE}에 기록하는 것도 실패했습니다 — ` +
+                        `이 행은 status='running'으로 남아 있을 수 있습니다(ddlCompleted=${ddlCompleted}). ` +
+                        `원래 오류: ${baseMessage} / 이력 쓰기 오류: ${String(historyWriteError?.message ?? historyWriteError)}. ` +
+                        `실제 DB 상태를 확인한 뒤 resolveFailure로 이력을 정리하세요.`,
+                    );
+                }
                 throw error;
             }
         }
@@ -186,9 +225,13 @@ const applyMigrations = async ({ sequelize, migrations, logger = () => {} }) => 
 };
 
 /**
- * 실패 이력을 사람이 확인한 뒤 정리한다. confirmRecovered가 true가 아니면 거부한다 —
- * 백업 복원 등 실제 복구 없이 이력만 지워 재적용을 유도하는 사고를 막기 위함이다.
- * 정리 후에는 행을 지워 다음 migrate 실행이 이 마이그레이션을 다시 pending으로 본다.
+ * 실패(failed) 또는 멈춘(running) 이력을 사람이 확인한 뒤 정리한다. confirmRecovered가
+ * true가 아니면 거부한다 — 백업 복원 등 실제 복구 없이 이력만 지워 재적용을 유도하는
+ * 사고를 막기 위함이다. running도 대상에 포함하는 이유: applyMigrations는 항상 락을 쥔
+ * 채로 동작하므로, 락 밖에서 관찰된 running 행은 동시 실행이 아니라 이전 실행이 크래시했거나
+ * 이력 쓰기(markFinished) 자체가 실패해 'failed'로도 마무리되지 못한 흔적이다(A-05) —
+ * 이 경우도 같은 수동 확인·정리 절차가 필요하다. 정리 후에는 행을 지워 다음 migrate
+ * 실행이 이 마이그레이션을 다시 pending으로 본다.
  */
 const resolveFailure = async ({ sequelize, name, confirmRecovered }) => {
     if (confirmRecovered !== true) {
@@ -196,10 +239,12 @@ const resolveFailure = async ({ sequelize, name, confirmRecovered }) => {
     }
     const existing = await findRow(sequelize, name);
     if (!existing) throw new Error(`${name}의 실패 이력을 찾을 수 없습니다.`);
-    if (existing.status !== 'failed') throw new Error(`${name}은 failed 상태가 아닙니다 (현재: ${existing.status}).`);
+    if (existing.status !== 'failed' && existing.status !== 'running') {
+        throw new Error(`${name}은 failed/running 상태가 아닙니다 (현재: ${existing.status}) — 정리할 필요가 없습니다.`);
+    }
 
     await sequelize.query(`DELETE FROM ${META_TABLE} WHERE name = :name`, { replacements: { name } });
-    return { cleared: name };
+    return { cleared: name, previousStatus: existing.status };
 };
 
 /** 실패 후 상태 대조: 기록된 schema_migrations 상태와 실제 테이블 존재 여부를 나란히 보여준다. */

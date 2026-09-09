@@ -46,18 +46,25 @@ const runStatus = async (db) => {
     console.log('마이그레이션 상태:');
     printStatusTable(rows);
     const hasFailed = rows.some((r) => r.status === 'failed');
+    // running은 지금 이 프로세스가 만든 상태가 아니므로(각 명령은 매번 새로 락을 걸고
+    // 끝나면 반드시 applied/failed로 정리한다) 여기 보인다는 것은 이전 실행이 크래시했거나
+    // 이력 쓰기 자체가 실패해 멈춘 흔적이다 — failed와 같은 수준으로 취급한다.
+    const hasStuckRunning = rows.some((r) => r.status === 'running');
     if (hasFailed) {
         console.log('\n실패 이력이 있습니다. docs/requirements/2026-09-09-f01-migration-runbook.md의 복구 절차를 먼저 수행하세요.');
     }
-    return hasFailed ? 1 : 0;
+    if (hasStuckRunning) {
+        console.log('\nrunning 상태로 멈춘 이력이 있습니다 — 이전 실행이 중단됐거나 이력 기록 자체가 실패한 흔적입니다. 실제 DB 상태를 확인한 뒤 복구 절차를 수행하세요.');
+    }
+    return (hasFailed || hasStuckRunning) ? 1 : 0;
 };
 
 const runMigrate = async (db) => {
     const preStatus = await migrationRunner.getStatus({ sequelize: db.sequelize, migrations: MIGRATIONS });
-    const failedBefore = preStatus.filter((r) => r.status === 'failed');
-    if (failedBefore.length > 0) {
-        console.error('다음 마이그레이션에 실패 이력이 있어 무조건 재적용을 차단합니다:');
-        printStatusTable(failedBefore);
+    const blockedBefore = preStatus.filter((r) => r.status === 'failed' || r.status === 'running');
+    if (blockedBefore.length > 0) {
+        console.error('다음 마이그레이션에 실패/미완료(running) 이력이 있어 무조건 재적용을 차단합니다:');
+        printStatusTable(blockedBefore);
         console.error('\ndocs/requirements/2026-09-09-f01-migration-runbook.md의 복구 절차를 수행한 뒤 resolve-failure로 이력을 정리하세요.');
         return 1;
     }
