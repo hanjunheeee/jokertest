@@ -2,8 +2,8 @@
 
 작성일: 2026-09-09 · 버전: 통합 검토본 v4
 
-상태: **사용자 최종 실행 승인 완료 / Pluto 등록 준비 / 음악 무음 처리 적용 완료**
-실행 승인 기록: 사용자 “이제 도장찍어줄게 pluto넣고 돌려”. [Pluto 승인 실행 JSON](C:/Users/minsa/jokertest/docs/requirements/2026-09-09-pluto-execution.approved.json), 프리셋 `codex-plan`. 외부 자료 대기와 미검증 항목은 완료로 간주하지 않는다.
+상태: **사용자 최종 실행 승인 완료 / Pluto 29개 등록·실행 시작 / 음악 무음 처리 적용 완료**
+실행 승인 기록: 사용자 “이제 도장찍어줄게 pluto넣고 돌려”. [Pluto 승인 실행 JSON](C:/Users/minsa/jokertest/docs/requirements/2026-09-09-pluto-execution.approved.json), 프리셋 `codex-plan`. [실행·ID 대응 기록](C:/Users/minsa/jokertest/docs/requirements/2026-09-09-pluto-dispatch.json). 외부 자료 대기와 미검증 항목은 완료로 간주하지 않는다.
 
 
 조사 기준: `C:/Users/minsa/jokertest`, 브랜치 `windows-handoff-20260808`, 커밋 `bab2793`.

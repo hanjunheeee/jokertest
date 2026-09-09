@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "prepared",
+  "status": "dispatched",
   "approvedAt": "2026-09-09T13:31:06.325Z",
   "requirementsRevision": 4,
   "executionFile": "docs/requirements/2026-09-09-pluto-execution.approved.json",
@@ -94,6 +94,190 @@
       "description": "비밀번호 재설정 메일 발송 어댑터 설정·발신 주소·공식 앱 기본 URL·실제 테스트 수신함. 키는 서버 설정으로만 주입."
     }
   ],
-  "batchId": null,
-  "slices": []
+  "batchId": "batch-0ea6f89b-9d6d-4a1d-a3ca-432c303afdcb",
+  "slices": [
+    {
+      "plutoId": "AL",
+      "featureId": "F-01",
+      "name": "F-01 DB 변경·기존 계정 이관 기반",
+      "index": 1
+    },
+    {
+      "plutoId": "AM",
+      "featureId": "F-02",
+      "name": "F-02 회원가입 입력·중복 확인",
+      "index": 2
+    },
+    {
+      "plutoId": "AN",
+      "featureId": "F-03",
+      "name": "F-03 로그인 유지·세션 만료",
+      "index": 3
+    },
+    {
+      "plutoId": "AO",
+      "featureId": "F-04",
+      "name": "F-04 계정관리 닉네임·비밀번호 보완",
+      "index": 4
+    },
+    {
+      "plutoId": "AP",
+      "featureId": "F-05",
+      "name": "F-05 소셜 계정 공통 기반",
+      "index": 5
+    },
+    {
+      "plutoId": "AQ",
+      "featureId": "F-06",
+      "name": "F-06 Google 로그인",
+      "index": 6
+    },
+    {
+      "plutoId": "AR",
+      "featureId": "F-07",
+      "name": "F-07 Discord 로그인",
+      "index": 7
+    },
+    {
+      "plutoId": "AS",
+      "featureId": "F-08",
+      "name": "F-08 지갑·거래·카탈로그·소유권",
+      "index": 8
+    },
+    {
+      "plutoId": "AT",
+      "featureId": "F-09",
+      "name": "F-09 실제 상품 구매·표시용 이모티콘 탭",
+      "index": 9
+    },
+    {
+      "plutoId": "AU",
+      "featureId": "F-10",
+      "name": "F-10 직업 전적·랭킹·운명의 가면",
+      "index": 10
+    },
+    {
+      "plutoId": "AV",
+      "featureId": "F-11",
+      "name": "F-11 투표 참여 영속 집계",
+      "index": 11
+    },
+    {
+      "plutoId": "AW",
+      "featureId": "F-12",
+      "name": "F-12 22개 업적·자동 보상·서고 해금",
+      "index": 12
+    },
+    {
+      "plutoId": "AX",
+      "featureId": "F-13",
+      "name": "F-13 프로필·테두리 편집·계정 프로필 인게임 반영",
+      "index": 13
+    },
+    {
+      "plutoId": "AY",
+      "featureId": "F-14",
+      "name": "F-14 구매 스킨·카드 장착",
+      "index": 14
+    },
+    {
+      "plutoId": "AZ",
+      "featureId": "F-15",
+      "name": "F-15 통합 일반·채팅 설정",
+      "index": 15
+    },
+    {
+      "plutoId": "BA",
+      "featureId": "F-16",
+      "name": "F-16 효과음 전체·사운드 설정·금지 음악 무음 유지",
+      "index": 16
+    },
+    {
+      "plutoId": "BB",
+      "featureId": "F-17",
+      "name": "F-17 알림 모달·읽음·발생 이벤트",
+      "index": 17
+    },
+    {
+      "plutoId": "BC",
+      "featureId": "F-18",
+      "name": "F-18 로비 프로필·Discord 고객센터·명예의 전당 진입 제거",
+      "index": 18
+    },
+    {
+      "plutoId": "BD",
+      "featureId": "F-19",
+      "name": "F-19 친구창 보완·차단/해제·대기방 친구 UI·실제 초대",
+      "index": 19
+    },
+    {
+      "plutoId": "BE",
+      "featureId": "F-20",
+      "name": "F-20 대기방 설정 변경",
+      "index": 20
+    },
+    {
+      "plutoId": "BF",
+      "featureId": "F-21",
+      "name": "F-21 방장 추방",
+      "index": 21
+    },
+    {
+      "plutoId": "BG",
+      "featureId": "F-22",
+      "name": "F-22 강제 종료·종료 정리",
+      "index": 22
+    },
+    {
+      "plutoId": "BH",
+      "featureId": "F-23",
+      "name": "F-23 관전자 설정·입장·권한 전면 제거",
+      "index": 23
+    },
+    {
+      "plutoId": "BI",
+      "featureId": "F-24",
+      "name": "F-24 방 코드·다음 게임 설정 유지",
+      "index": 24
+    },
+    {
+      "plutoId": "BJ",
+      "featureId": "F-25",
+      "name": "F-25 밤 순차 판정·킬 후 치료",
+      "index": 25
+    },
+    {
+      "plutoId": "BK",
+      "featureId": "F-26",
+      "name": "F-26 능력 사용자·대상자 이벤트",
+      "index": 26
+    },
+    {
+      "plutoId": "BL",
+      "featureId": "F-27",
+      "name": "F-27 직업별 영상·완료 후 다음 턴",
+      "index": 27
+    },
+    {
+      "plutoId": "BM",
+      "featureId": "F-29",
+      "name": "F-29 아이디 찾기·비밀번호 찾기·메일 재설정",
+      "index": 28
+    },
+    {
+      "plutoId": "BN",
+      "featureId": "F-28",
+      "name": "F-28 통합 인수·회귀 검증",
+      "index": 29
+    }
+  ],
+  "dispatchedAt": "2026-09-09T13:32:10.210Z",
+  "baselineCommit": "236afb9d244417e79bf2d639e73cc7bc8e16ec6b",
+  "monitoring": {
+    "automationId": "pluto-joker",
+    "status": "ACTIVE",
+    "intervalMinutes": 5,
+    "targetThreadId": "01a08514-e41c-7aa0-85f0-2e7b375d4123",
+    "runbook": "docs/requirements/2026-09-09-pluto-monitoring.md"
+  }
 }
