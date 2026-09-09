@@ -7,6 +7,8 @@ import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
 import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOverlay.jsx"
 import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
+import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/InGameNightPrivateResultOverlay.jsx"
+import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
@@ -23,6 +25,8 @@ import {
 import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarStatusMessage.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
+import { useInGameKillReveal } from "../hooks/useInGameKillReveal.js"
+import { useInGameNightPrivateResult } from "../hooks/useInGameNightPrivateResult.js"
 import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
@@ -52,9 +56,24 @@ export default function InGamePage() {
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
   const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
 
-  // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다. 사망 연출(UI-14)이
-  // 아직 없으므로 hold는 false다 — UI-14에서 사망 연출 큐를 hold로 연결한다.
-  useInGameResultNavigation({ hold: false })
+  // 사망 연출과 밤 개인 결과는 오버레이 스택 밖에서 이 페이지가 직접 조립한다 —
+  // useInGameOverlayStack은 인자 없이 호출하는 기존 계약을 그대로 유지하고(로컬 오버레이 스택
+  // 로직은 이 슬라이스에서 바꾸지 않는다), 두 오버레이의 우선순위는 여기서 hold로 잇는다:
+  //   1. 자기 역할 공개(roleReveal) → 2. 사망 연출 → 3. 밤 개인 결과
+  // 3·4번(진입 연출·역할 턴 안내)보다 위에 그려지는 것은 각자의 z 단계가 보장한다
+  // (killReveal z-[70]/[71], nightPrivateResult z-[65]/[66] > 진입·안내 z-[60]/[61]).
+  const killReveal = useInGameKillReveal({ hold: roleReveal.open })
+  const nightPrivateResult = useInGameNightPrivateResult({
+    hold: roleReveal.open || killReveal.open,
+  })
+
+  // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다 — 단, 이 판정의 사망
+  // 연출이 재생 중이거나 큐에 남아 있는 동안은 기다린다(연출이 통째로 잘리지 않게).
+  useInGameResultNavigation({ hold: killReveal.open || killReveal.pending })
+
+  // 사망 연출·개인 결과가 떠 있는 동안에도 아래 게임 표면의 입력을 함께 잠근다. 잠금 판단만
+  // 여기서 합치고, 오버레이 스택이 내는 interactionBlocked 자체는 그대로 아래로 흘려보낸다.
+  const surfaceLocked = interactionBlocked || killReveal.open || nightPrivateResult.open
 
   // 상태바에 상시로 띄우는 밤 역할 턴의 남은 시간. 서버가 실어 보낸 deadline 하나에서만 만든다.
   const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
@@ -84,8 +103,8 @@ export default function InGamePage() {
           초점도 안으로 들어가지 못하므로 낮 투표·채팅·재판·밤 행동·결과 컨트롤이 한꺼번에
           차단된다. 오버레이들은 이 래퍼 바깥에 있어 그대로 조작할 수 있다. */}
       <div
-        className={`absolute inset-0 ${interactionBlocked ? "pointer-events-none" : ""}`.trim()}
-        inert={interactionBlocked || undefined}
+        className={`absolute inset-0 ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
+        inert={surfaceLocked || undefined}
       >
         <InGameTopControls
           onExitClick={requestExit}
@@ -138,6 +157,18 @@ export default function InGamePage() {
         onClose={roleReveal.close}
         roleInfo={roleReveal.roleInfo}
         players={gameState?.players}
+      />
+      <InGameNightPrivateResultOverlay
+        open={nightPrivateResult.open}
+        kind={nightPrivateResult.kind}
+        label={nightPrivateResult.label}
+        onConfirm={nightPrivateResult.confirm}
+      />
+      <InGameKillRevealOverlay
+        open={killReveal.open}
+        revealId={killReveal.revealId}
+        message={killReveal.message}
+        onConsume={killReveal.consume}
       />
     </div>
   )

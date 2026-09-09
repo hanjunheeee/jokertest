@@ -18,28 +18,28 @@ export const INGAME_ROLE_REVEAL_PANEL_WRAP_CLASS =
 export const INGAME_ROLE_REVEAL_PANEL_CLASS = "pointer-events-auto relative"
 
 export const INGAME_ROLE_REVEAL_HEADER_CLASS =
-  "w-full space-y-0.5 border-b border-[#6b4321]/40 pb-2"
+  "w-full space-y-1 border-b border-[#6b4321]/40 pb-[clamp(0.45rem,1.2vw,0.65rem)]"
 
 export const INGAME_ROLE_REVEAL_NICKNAME_CLASS =
-  "text-xs font-semibold tracking-wide text-[#5b3a20]"
+  "text-[clamp(1.05rem,2.65vw,1.25rem)] font-semibold tracking-wide text-[#5b3a20]"
 
 export const INGAME_ROLE_REVEAL_ROLE_NAME_CLASS =
-  "font-subheading text-xl font-bold tracking-wide text-[#3a1a0c]"
+  "font-display text-[clamp(1.65rem,4.8vw,2.65rem)] font-medium tracking-wide text-[#3a1a0c] antialiased"
 
 export const INGAME_ROLE_REVEAL_TEAM_BADGE_CLASS =
   "mt-1 inline-block rounded-full border border-[#6b4321]/50 bg-[#3a1a0c]/10 px-3 py-0.5 text-[0.7rem] font-semibold tracking-wide text-[#5b3a20]"
 
 export const INGAME_ROLE_REVEAL_DESCRIPTION_CLASS =
-  "text-[0.8rem] leading-relaxed text-[#4a2c14]"
+  "text-[clamp(0.88rem,2.2vw,1.02rem)] leading-relaxed text-[#4a2c14]"
 
 export const INGAME_ROLE_REVEAL_ALLY_SECTION_CLASS =
-  "w-full rounded border border-[#6b4321]/35 bg-black/5 p-1.5 text-xs text-[#4a2c14]"
+  "w-full rounded border border-[#6b4321]/35 bg-black/5 p-[clamp(0.45rem,1.2vw,0.65rem)] text-[clamp(0.78rem,1.9vw,0.9rem)] text-[#4a2c14]"
 
 export const INGAME_ROLE_REVEAL_ALLY_LIST_CLASS =
   "mt-1 flex flex-wrap justify-center gap-1.5"
 
 export const INGAME_ROLE_REVEAL_ALLY_CHIP_CLASS =
-  "rounded-full border border-[#6b4321]/40 bg-[#3a1a0c]/10 px-2 py-0.5"
+  "rounded-full border border-[#6b4321]/40 bg-[#3a1a0c]/10 px-[clamp(0.45rem,1.1vw,0.6rem)] py-[clamp(0.15rem,0.45vw,0.25rem)] text-[clamp(0.76rem,1.85vw,0.88rem)]"
 
 export const INGAME_ROLE_REVEAL_PRIMARY_BUTTON_CLASS =
   "mt-1 min-h-9 w-[min(14rem,100%)] rounded border border-[#6b4321] bg-[#3a1a0c] px-4 py-1.5 text-sm font-semibold tracking-wide text-[#f8ead2] transition hover:bg-[#5b3a20]"
