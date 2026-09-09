@@ -91,10 +91,48 @@ test("AC-05: 페이지가 스냅샷 동기화 상태를 받아 guard 순수 함�
   assert.doesNotMatch(source, /=== "checking"/)
 })
 
-test("원격 은닉 릴·밤 개인 결과·사망 연출 배선은 이 슬라이스로 들어오지 않았다 (결과 이동 훅은 예외)", async () => {
+// UI-13에서는 이 세 배선(원격 은닉 릴·개인 결과·사망 연출)이 아직 들어오지 않았음을 확인했다.
+// 그중 개인 결과·사망 연출은 UI-14가 로컬 계약(store nightPrivateResult, night_result_applied·
+// 재판 처형 사망자)으로 들여오는 것이 요구사항이라, 같은 관심사(페이지에 무엇이 배선돼 있는가)를
+// 그대로 두고 기대값만 이 슬라이스의 계약으로 옮긴다. 원격 은닉 릴(statusRole)은 여전히 금지다 —
+// 밤 턴 은닉 계산은 로컬이 다르게 푸는 문제라 어느 슬라이스에서도 가져오지 않는다.
+test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연출은 로컬 훅으로 배선된다", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.doesNotMatch(source, /statusRole/)
-  assert.doesNotMatch(source, /killReveal/)
-  assert.doesNotMatch(source, /nightPrivateResult/)
-  // 결과 페이지 이동(useInGameResultNavigation)은 이 슬라이스의 추가 요구로 들어왔다 — 은닉 릴·개인 결과·사망 연출만 막는다.
+
+  // 사망 연출: 로컬 훅에서 받아 오버레이로 넘기고, 결과 페이지 이동을 큐가 빌 때까지 보류한다.
+  assert.match(source, /import \{ useInGameKillReveal \} from "\.\.\/hooks\/useInGameKillReveal\.js"/)
+  assert.match(source, /const killReveal = useInGameKillReveal\(\{ hold: roleReveal\.open \}\)/)
+  assert.match(source, /useInGameResultNavigation\(\{ hold: killReveal\.open \|\| killReveal\.pending \}\)/)
+
+  // 밤 개인 결과: 사망 연출 뒤 순서로 열리고, 확인 콜백은 store를 비우는 훅의 것을 그대로 쓴다.
+  assert.match(
+    source,
+    /import \{ useInGameNightPrivateResult \} from "\.\.\/hooks\/useInGameNightPrivateResult\.js"/,
+  )
+  assert.match(source, /hold: roleReveal\.open \|\| killReveal\.open/)
+
+  // 두 오버레이는 각각 정확히 한 번 마운트되고 훅 상태를 그대로 받는다.
+  for (const mount of [
+    {
+      tag: "InGameKillRevealOverlay",
+      props: [/open=\{killReveal\.open\}/, /revealId=\{killReveal\.revealId\}/, /message=\{killReveal\.message\}/, /onConsume=\{killReveal\.consume\}/],
+    },
+    {
+      tag: "InGameNightPrivateResultOverlay",
+      props: [/open=\{nightPrivateResult\.open\}/, /kind=\{nightPrivateResult\.kind\}/, /label=\{nightPrivateResult\.label\}/, /onConfirm=\{nightPrivateResult\.confirm\}/],
+    },
+  ]) {
+    const occurrences = source.match(new RegExp(`<${mount.tag}\\b`, "g")) ?? []
+    assert.equal(occurrences.length, 1, `${mount.tag}은 정확히 한 번만 마운트돼야 한다`)
+    const block = source.match(new RegExp(`<${mount.tag}[\\s\\S]*?/>`))
+    assert.notEqual(block, null, `${mount.tag} 마운트 블록을 찾을 수 없다`)
+    for (const prop of mount.props) {
+      assert.match(block[0], prop, `${mount.tag}의 ${prop} 배선이 없다`)
+    }
+  }
+
+  // 두 오버레이가 떠 있는 동안에도 아래 게임 표면은 잠긴다(오버레이 스택의 판단에 더해서만).
+  assert.match(source, /const surfaceLocked = interactionBlocked \|\| killReveal\.open \|\| nightPrivateResult\.open/)
+  assert.match(source, /inert=\{surfaceLocked \|\| undefined\}/)
 })
