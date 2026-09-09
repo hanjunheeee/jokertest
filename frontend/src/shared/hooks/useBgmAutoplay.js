@@ -1,8 +1,20 @@
 import { useEffect } from "react"
+import { MUSIC_PLAYBACK_ENABLED } from "../constants/bgmAssets.js"
 
 // 페이지에서 사용할 배경음악 자동 재생 훅입니다.
 export function useBgmAutoplay(audioRef) {
     useEffect(() => {
+        // 재생 차단 중에는 클릭으로 재시도하는 이벤트도 등록하지 않는다.
+        if (!MUSIC_PLAYBACK_ENABLED) {
+            const media = audioRef.current
+            if (media) {
+                media.muted = true
+                media.volume = 0
+                media.pause()
+            }
+            return undefined
+        }
+
         // 배경음악을 재생하는 함수입니다.
         const playBgm = () => {
             // 아직 audio 태그가 화면에 연결되지 않았다면 실행하지 않습니다.

@@ -1,4 +1,4 @@
-import { BGM_ASSETS } from "@/shared/constants/bgmAssets.js"
+import { BGM_ASSETS, MUSIC_PLAYBACK_ENABLED } from "@/shared/constants/bgmAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 
@@ -6,8 +6,10 @@ import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 export default function AuthBackgroundMedia({ audioRef }) {
   return (
     <>
-      {/* 실제 소리를 재생하는 audio 태그입니다. 화면에는 보이지 않습니다. */}
-      <audio ref={audioRef} src={publicAsset(BGM_ASSETS.loginMusic)} loop />
+      {/* 사용이 허용된 경우에만 음원을 로드합니다. */}
+      {MUSIC_PLAYBACK_ENABLED ? (
+        <audio ref={audioRef} src={publicAsset(BGM_ASSETS.loginMusic)} loop />
+      ) : null}
 
       {/* 로그인 화면 전체에 깔리는 배경 영상입니다. */}
       <video

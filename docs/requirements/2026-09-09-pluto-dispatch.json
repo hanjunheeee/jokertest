@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "status": "prepared",
+  "approvedAt": "2026-09-09T13:31:06.325Z",
+  "requirementsRevision": 4,
+  "executionFile": "docs/requirements/2026-09-09-pluto-execution.approved.json",
+  "executionSha256": "28446168e47f6b1dce683965417c35360cbc8772309880446231ed88ffa8ed77",
+  "orderedFeatureIds": [
+    "F-01",
+    "F-02",
+    "F-03",
+    "F-04",
+    "F-05",
+    "F-06",
+    "F-07",
+    "F-08",
+    "F-09",
+    "F-10",
+    "F-11",
+    "F-12",
+    "F-13",
+    "F-14",
+    "F-15",
+    "F-16",
+    "F-17",
+    "F-18",
+    "F-19",
+    "F-20",
+    "F-21",
+    "F-22",
+    "F-23",
+    "F-24",
+    "F-25",
+    "F-26",
+    "F-27",
+    "F-29",
+    "F-28"
+  ],
+  "preset": "codex-plan",
+  "originalPlanTimeoutMs": 180000,
+  "planTimeoutMs": 600000,
+  "baselineBeforeCommit": {
+    "branch": "windows-handoff-20260808",
+    "commit": "bab2793"
+  },
+  "preservedStandaloneSlices": [
+    "L",
+    "U"
+  ],
+  "excludedFeatures": [
+    "F-16A",
+    "F-16B"
+  ],
+  "externalInputs": [
+    {
+      "id": "oauth_configuration",
+      "scope": [
+        "F-06",
+        "F-07"
+      ],
+      "status": "readiness_unverified",
+      "description": "실제 OAuth 앱 키·콜백 URL 설정. 비밀값은 문서에 저장하지 않음."
+    },
+    {
+      "id": "discord_support_url",
+      "scope": [
+        "F-18"
+      ],
+      "status": "user_will_provide",
+      "description": "사용자가 지원 URL을 추후 제공."
+    },
+    {
+      "id": "role_video_assets",
+      "scope": [
+        "F-27"
+      ],
+      "status": "user_will_provide",
+      "description": "경비원·의사·마녀사냥꾼 전용 영상."
+    },
+    {
+      "id": "sfx_assets",
+      "scope": [
+        "F-16"
+      ],
+      "status": "needs_assets_and_usage_review",
+      "description": "버튼·알림·게임 이벤트 효과음. 미확인 자산은 무음·기록."
+    },
+    {
+      "id": "recovery_email_delivery",
+      "scope": [
+        "F-29"
+      ],
+      "status": "readiness_unverified",
+      "description": "비밀번호 재설정 메일 발송 어댑터 설정·발신 주소·공식 앱 기본 URL·실제 테스트 수신함. 키는 서버 설정으로만 주입."
+    }
+  ],
+  "batchId": null,
+  "slices": []
+}

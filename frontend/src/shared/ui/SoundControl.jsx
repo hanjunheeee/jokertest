@@ -9,7 +9,7 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 // 배경음 볼륨과 음소거를 조절하는 UI 컴포넌트입니다.
 export default function SoundControl({ audioRef }) {
   // 실제 audio 제어 로직은 훅에 맡기고, 여기서는 화면에 필요한 값만 꺼냅니다.
-  const { sliderValue, isSilent, onVolumeChange, toggleMute } = useAudioControl(audioRef)
+  const { sliderValue, isSilent, disabled, onVolumeChange, toggleMute } = useAudioControl(audioRef)
 
   // range input의 접근성 값은 0~100 기준으로 보여줍니다.
   const percent = Math.round(sliderValue * 100)
@@ -22,9 +22,11 @@ export default function SoundControl({ audioRef }) {
       {/* 사운드 on/off 버튼입니다. 현재 상태에 따라 그림과 화면 읽기용 버튼 이름이 바뀝니다. */}
       <button
         type="button"
+        disabled={disabled}
         onClick={toggleMute}
         className={`relative z-10 shrink-0 ${SOUND_CONTROL_CLASSES.iconSize} ${SOUND_CONTROL_CLASSES.iconOverlap} cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90`}
-        aria-label={isSilent ? "음소거 해제" : "음소거"}
+        aria-label={disabled ? "배경음 사용 안 함" : isSilent ? "음소거 해제" : "음소거"}
+        title={disabled ? "배경음 사용 안 함" : undefined}
         aria-pressed={isSilent}
       >
         <PublicAsset
@@ -39,6 +41,7 @@ export default function SoundControl({ audioRef }) {
         <PublicAsset src={SOUND_CONTROL_ASSETS.sliderBar} alt="" className={SOUND_CONTROL_CLASSES.sliderBar} />
         <input
           type="range"
+          disabled={disabled}
           min={0}
           max={1}
           step={0.05}

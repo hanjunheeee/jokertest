@@ -5,7 +5,7 @@ import {
   LOBBY_BG_VIDEO_HIDDEN_CLASS,
   LOBBY_INTRO_SKIP_LAYER_CLASS,
 } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
-import { BGM_ASSETS } from "@/shared/constants/bgmAssets.js"
+import { BGM_ASSETS, MUSIC_PLAYBACK_ENABLED } from "@/shared/constants/bgmAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
@@ -13,7 +13,9 @@ import { publicAsset } from "@/shared/utils/publicAsset.js"
 export default function LobbyBackground({ bgVideoRef, audioRef, uiVisible, onSkipIntro }) {
   return (
     <>
-      <audio ref={audioRef} src={publicAsset(BGM_ASSETS.loginMusic)} loop />
+      {MUSIC_PLAYBACK_ENABLED ? (
+        <audio ref={audioRef} src={publicAsset(BGM_ASSETS.loginMusic)} loop />
+      ) : null}
       <PublicAsset
         src={LOBBY_ASSETS.bgImage}
         alt=""
