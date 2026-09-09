@@ -7,7 +7,7 @@ const bcrypt = require("bcrypt");
 
 const userRepository = require("../repositories/user.repositories");
 const authService    = require("../service/auth.service");
-const { PERSISTENT_SESSION_MAX_AGE_MS } = require("../auth/cookieOptions");
+const { PERSISTENT_SESSION_MAX_AGE_MS, ACCESS_TOKEN_SHORT_TTL_SECONDS } = require("../auth/cookieOptions");
 
 const PASSWORD  = "correct-horse";
 const REQ_INFO  = { ip: "127.0.0.1", userAgent: "jest-ua", deviceType: "PC" };
@@ -81,26 +81,47 @@ test("정상 로그인은 세션을 만들고 sessionId가 담긴 토큰을 발�
     });
 });
 
-test("F-03 AC-01: 로그인 유지를 선택하면 액세스 토큰이 30일 뒤에 만료된다", async (t) => {
+test("F-03 AC-01: 로그인 유지를 선택하면 액세스 토큰은 짧게 살고, 대신 30일 절대 만료의 회전형 갱신 자격이 함께 발급된다", async (t) => {
     const user = await activeUser();
-    stubRepo(t, { findByEmail: () => user });
+    const { calls } = stubRepo(t, { findByEmail: () => user });
 
     const result = await authService.login(
         { email: "a@b.com", password: PASSWORD, rememberMe: true }, REQ_INFO,
     );
     const decoded = jwt.verify(result.token, process.env.JWT_SECRET);
 
-    assert.equal(decoded.exp - decoded.iat, PERSISTENT_SESSION_MAX_AGE_MS / 1000);
+    // 액세스 토큰 자체를 30일로 늘리면 만료 전까지 갱신 경로(폐기·재사용 감지)가 한 번도
+    // 실행되지 않는다 — 그래서 로그인 유지 여부와 무관하게 액세스 토큰은 짧게 산다.
+    assert.equal(decoded.exp - decoded.iat, ACCESS_TOKEN_SHORT_TTL_SECONDS);
+
+    // 30일 절대 만료는 refreshToken(원문)과 그 해시가 담당한다. 원문은 응답으로만 나가고
+    // DB에는 해시만 저장된다(A-03).
+    assert.ok(result.refreshToken, "로그인 유지 시 갱신 자격이 발급되어야 합니다");
+
+    const sessionArg = calls.find((call) => call.name === "createUserSession").args[0];
+    assert.ok(sessionArg.refresh_token_hash, "세션에 갱신 자격 해시가 저장되어야 합니다");
+    assert.notEqual(sessionArg.refresh_token_hash, result.refreshToken, "원문을 그대로 저장하면 안 됩니다");
+    assert.ok(sessionArg.refresh_token_expires_at instanceof Date);
+    assert.equal(
+        sessionArg.refresh_token_expires_at.getTime() - Date.now() >= PERSISTENT_SESSION_MAX_AGE_MS - 5_000,
+        true,
+        "절대 만료는 로그인 시점 기준 30일이어야 합니다",
+    );
 });
 
-test("F-03 AC-02: 로그인 유지를 선택하지 않으면 액세스 토큰은 기존처럼 1일 뒤에 만료된다", async (t) => {
+test("F-03 AC-02: 로그인 유지를 선택하지 않으면 액세스 토큰은 기존처럼 1일 뒤에 만료되고, 갱신 자격은 발급되지 않는다", async (t) => {
     const user = await activeUser();
-    stubRepo(t, { findByEmail: () => user });
+    const { calls } = stubRepo(t, { findByEmail: () => user });
 
     const result = await authService.login({ email: "a@b.com", password: PASSWORD }, REQ_INFO);
     const decoded = jwt.verify(result.token, process.env.JWT_SECRET);
 
     assert.equal(decoded.exp - decoded.iat, 24 * 60 * 60);
+    assert.equal(result.refreshToken, null, "로그인 유지를 선택하지 않으면 갱신 자격을 주면 안 됩니다(AC-02)");
+
+    const sessionArg = calls.find((call) => call.name === "createUserSession").args[0];
+    assert.equal(sessionArg.refresh_token_hash, null);
+    assert.equal(sessionArg.refresh_token_expires_at, null);
 });
 
 test("가입되지 않은 이메일은 401이다", async (t) => {

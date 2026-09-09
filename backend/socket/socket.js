@@ -70,8 +70,41 @@ function registerDisconnectHandler(io, socket, uuid) {
     });
 }
 
+// 연결 시점의 authenticateSocket 통과가 그 소켓의 남은 수명 내내 유효함을 보장하지 않는다
+// — 연결 이후에 로그아웃·비밀번호 변경·정지가 일어나도 Socket.IO는 handshake 이후로는
+// 아무 것도 다시 검사하지 않는다. socket.on을 감싸 disconnect를 제외한 모든 이벤트 앞에
+// sessionLifecycle.resolveSession을 한 번 더 통과시킨다 — matchmaking.js·gameSession.js를
+// 건드리지 않고도 "이미 연결된 소켓의 후속 보호 동작"까지 HTTP와 같은 검증 기준을
+// 적용한다(F-03 AC-05/AC-09). 이벤트마다 DB 조회가 하나 더 붙는 비용은 있지만, 세션
+// 폐기가 소켓에도 즉시 반영되어야 한다는 요구가 그 비용보다 우선한다.
+function wrapSocketWithSessionGuard(socket) {
+    const registerListener = socket.on.bind(socket);
+    socket.on = (event, listener) => {
+        if (event === "disconnect") return registerListener(event, listener);
+
+        return registerListener(event, async (...args) => {
+            let result;
+            try {
+                result = await sessionLifecycle.resolveSession(socket.data.user);
+            } catch (err) {
+                console.error("\x1b[31m[소켓 세션 재검증 에러]\x1b[0m", err);
+                return;
+            }
+            if (!result.ok) {
+                socket.emit("force_disconnect", { message: result.message });
+                socket.disconnect(true);
+                return;
+            }
+            return listener(...args);
+        });
+    };
+    return socket;
+}
+
 function registerConnectionHandlers(io, socket) {
     const { uuid } = socket.data.user;
+
+    wrapSocketWithSessionGuard(socket);
 
     handleConnection(io, socket, uuid).catch((err) => {
         console.error("\x1b[31m[소켓 접속 처리 에러]\x1b[0m", err);
@@ -175,5 +208,8 @@ module.exports = {
     initSocket,
     emitToUser,
     __getOnlineUsersForTests,
-    __testables: { registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect, authenticateSocket },
+    __testables: {
+        registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect,
+        authenticateSocket, wrapSocketWithSessionGuard,
+    },
 };

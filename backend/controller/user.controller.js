@@ -2,7 +2,7 @@ const authService       = require("../service/auth.service");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
-const { buildSessionCookieOptions, clearSessionCookie } = require("../auth/cookieOptions");
+const { buildSessionCookieOptions, buildRefreshCookieOptions, clearSessionCookie } = require("../auth/cookieOptions");
 
 exports.signup = async (req, res, next) => {
     try {
@@ -34,9 +34,12 @@ exports.login = async (req, res, next) => {
             deviceType: getDeviceType(userAgent),
         };
 
-        const { user, token } = await authService.login(req.body, reqInfo);
+        const { user, token, refreshToken } = await authService.login(req.body, reqInfo);
 
         res.cookie("accessToken", token, buildSessionCookieOptions(req.body?.rememberMe));
+        if (refreshToken) {
+            res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions());
+        }
 
         res.status(200).json({
             success: true,
@@ -73,6 +76,26 @@ exports.logout = async (req, res, next) => {
         clearSessionCookie(res);
         res.status(200).json({ success: true, message: "성공적으로 로그아웃 되었습니다." });
     } catch (error) {
+        next(error);
+    }
+};
+
+// 액세스 토큰이 만료된 뒤(F-03 AC-01) 호출된다. verifyToken을 거치지 않으므로 req.user가
+// 없고, 대신 refreshToken 쿠키 자체를 authService.refresh가 검증·회전시킨다.
+exports.refresh = async (req, res, next) => {
+    try {
+        const { accessToken, refreshToken } = await authService.refresh(req.cookies.refreshToken);
+
+        res.cookie("accessToken", accessToken, buildSessionCookieOptions(true));
+        res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions());
+
+        res.status(200).json({ success: true });
+    } catch (error) {
+        // 갱신 자격이 애초에 무효/만료/폐기됐다면 남아있는 쿠키도 함께 정리해, 클라이언트가
+        // 같은 무효 쿠키로 갱신을 반복 시도하지 않게 한다.
+        if (error?.status === 401 || error?.status === 403) {
+            clearSessionCookie(res);
+        }
         next(error);
     }
 };

@@ -4,8 +4,17 @@ const { hashPassword,
 const { generateToken }       = require("../utils/jwt");
 const { createError }         = require("../utils/appError");
 const { validateSignupPayload } = require("../validation/signupValidation");
-const { PERSISTENT_SESSION_MAX_AGE_MS } = require("../auth/cookieOptions");
+const {
+    PERSISTENT_SESSION_MAX_AGE_MS,
+    ACCESS_TOKEN_SHORT_TTL_SECONDS,
+    REFRESH_TOKEN_GRACE_MS,
+} = require("../auth/cookieOptions");
 const crypto                  = require("crypto");
+
+// 갱신 자격 원문은 무작위 256비트 값이다. 서버는 이 값을 절대 저장하지 않고, 아래
+// hashRefreshToken이 만든 sha256 해시만 DB에 남긴다(F-03 A-03).
+const generateRefreshSecret = () => crypto.randomBytes(32).toString("base64url");
+const hashRefreshToken      = (rawToken) => crypto.createHash("sha256").update(rawToken).digest("hex");
 
 exports.signup = async (userData) => {
     // 닉네임 길이·문자셋, 비밀번호 길이, 비밀번호 확인 일치, 생년월일 유효성을 여기서
@@ -111,24 +120,103 @@ exports.login = async (loginData, reqInfo) => {
     await userRepository.markOnlineSessionsOffline(user.uuid);
 
     const sessionId = crypto.randomUUID();
+
+    // 로그인 유지를 선택했을 때만 회전형 갱신 자격을 발급한다. 미선택 세션은 갱신 수단
+    // 자체가 없으므로 액세스 토큰이 만료되면(기존과 동일하게 1일) 재로그인이 필요하다(AC-02).
+    let refreshToken = null;
+    let refreshTokenHash = null;
+    let refreshTokenExpiresAt = null;
+    if (rememberMe === true) {
+        refreshToken = generateRefreshSecret();
+        refreshTokenHash = hashRefreshToken(refreshToken);
+        refreshTokenExpiresAt = new Date(Date.now() + PERSISTENT_SESSION_MAX_AGE_MS);
+    }
+
     await userRepository.createUserSession({
-        id:         sessionId,
-        user_id:    user.uuid,
-        ip_address: reqInfo.ip,
-        is_online:  true,
+        id:                       sessionId,
+        user_id:                  user.uuid,
+        ip_address:               reqInfo.ip,
+        is_online:                true,
+        refresh_token_hash:       refreshTokenHash,
+        refresh_token_expires_at: refreshTokenExpiresAt,
     });
 
-    // 쿠키의 Max-Age(buildSessionCookieOptions)와 같은 기준(rememberMe === true)으로
-    // 액세스 토큰 자체의 만료도 30일로 늘린다. 그렇지 않으면 쿠키는 30일 남아 있어도
-    // 토큰이 1일 뒤 서명 검증 단계에서 만료돼 재로그인이 강제된다(F-03 AC-01).
-    // 이 30일은 로그인 시점 기준 절대 만료이며, 이후 갱신으로 연장되지 않는다.
+    // 액세스 토큰은 로그인 유지 여부와 무관하게 짧게 산다. 로그인 유지의 30일 창은 위
+    // refreshToken(서버에는 해시만 저장)이 절대 만료로 책임지고, 액세스 토큰은 그 창 안에서
+    // 회전형 갱신(POST /auth/refresh)으로 계속 재발급된다 — 쿠키만 오래 살고 검증되지 않는
+    // 상태를 피하기 위함이다(F-03 A-01).
     const token = generateToken({
         uuid:      user.uuid,
         role:      user.role,
         sessionId: sessionId,
     }, {
-        expiresIn: rememberMe === true ? Math.floor(PERSISTENT_SESSION_MAX_AGE_MS / 1000) : "1d",
+        expiresIn: rememberMe === true ? ACCESS_TOKEN_SHORT_TTL_SECONDS : "1d",
     });
 
-    return { user, token };
+    return { user, token, refreshToken };
+};
+
+// 액세스 토큰 만료 후 회전형 갱신 자격으로 새 액세스 토큰(및 새 갱신 자격)을 발급한다.
+// 전체가 하나의 트랜잭션 안에서 행 잠금(FOR UPDATE)을 잡고 동작해, 동시에 들어온 두 회전
+// 요청이 서로의 회전을 덮어쓰지 못하게 한다(F-03 A-03/A-08).
+exports.refresh = async (rawRefreshToken) => {
+    if (!rawRefreshToken) {
+        throw createError("갱신 자격이 없습니다. 다시 로그인해주세요.", 401);
+    }
+
+    const presentedHash = hashRefreshToken(rawRefreshToken);
+
+    return await userRepository.withTransaction(async (transaction) => {
+        const session = await userRepository.findSessionForRefresh(presentedHash, { transaction });
+
+        if (!session) {
+            throw createError("유효하지 않은 갱신 자격입니다. 다시 로그인해주세요.", 401);
+        }
+        if (session.revoked_at) {
+            throw createError("세션이 폐기되었습니다. 다시 로그인해주세요.", 401);
+        }
+        if (!session.refresh_token_expires_at || session.refresh_token_expires_at <= new Date()) {
+            throw createError("로그인 유지 기간이 만료되었습니다. 다시 로그인해주세요.", 401);
+        }
+
+        const activeBan = await userRepository.checkActiveBan(session.user_id);
+        if (activeBan) {
+            throw createError(`정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}`, 403);
+        }
+
+        const now = new Date();
+        const isFreshMatch = session.refresh_token_hash === presentedHash;
+        const isGraceMatch = !isFreshMatch
+            && session.refresh_previous_hash === presentedHash
+            && session.refresh_previous_expires_at
+            && session.refresh_previous_expires_at > now;
+
+        if (!isFreshMatch && !isGraceMatch) {
+            // 이미 회전되어 무효화된 자격이 유예 기간 밖에서 다시 제시됐다 — 탈취로 의심해
+            // 이 사용자의 모든 세션(모든 갱신 자격 포함)을 폐기한다(A-03/A-08 재사용 감지).
+            await userRepository.markOnlineSessionsOffline(session.user_id, { transaction });
+            throw createError("갱신 자격 재사용이 감지되어 모든 세션이 종료되었습니다. 다시 로그인해주세요.", 401);
+        }
+
+        const newRawRefreshToken = generateRefreshSecret();
+        const newHash = hashRefreshToken(newRawRefreshToken);
+
+        await userRepository.applyRefreshRotation(session.id, {
+            newHash,
+            previousHash: session.refresh_token_hash,
+            previousExpiresAt: new Date(now.getTime() + REFRESH_TOKEN_GRACE_MS),
+        }, { transaction });
+
+        const user = await userRepository.findByUuid(session.user_id);
+        const accessToken = generateToken({
+            uuid:      session.user_id,
+            role:      user?.role,
+            sessionId: session.id,
+        }, { expiresIn: ACCESS_TOKEN_SHORT_TTL_SECONDS });
+
+        return {
+            accessToken,
+            refreshToken: newRawRefreshToken,
+        };
+    });
 };

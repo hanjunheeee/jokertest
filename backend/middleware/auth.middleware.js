@@ -14,6 +14,12 @@ exports.verifyToken = async (req, res, next) => {
         decoded = sessionLifecycle.verifyAccessToken(token);
     } catch (error) {
         res.clearCookie("accessToken");
+        // 서명 자체가 만료된 경우만 별도 code를 붙인다 — 프론트가 이 code를 볼 때만
+        // POST /auth/refresh를 시도하고, 그 외(서명 위조·형식 오류 등)에는 곧장
+        // 로그아웃 처리해 무의미한 갱신 시도를 반복하지 않는다(F-03 A-07).
+        if (error?.name === "TokenExpiredError") {
+            return next(createError("액세스 토큰이 만료되었습니다.", 401, "ACCESS_TOKEN_EXPIRED"));
+        }
         return next(createError("유효하지 않거나 만료된 토큰입니다.", 401));
     }
 

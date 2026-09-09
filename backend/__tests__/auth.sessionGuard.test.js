@@ -74,7 +74,7 @@ test("sessionId 클레임이 없는 토큰은 401이다", async (t) => {
 
 test("is_online:true 세션이면 기존처럼 통과한다", async (t) => {
     stubSessions(t, async ({ where }) => {
-        assert.deepEqual(where, { id: "session-online", user_id: "uuid-1", is_online: true });
+        assert.deepEqual(where, { id: "session-online", user_id: "uuid-1", is_online: true, revoked_at: null });
         return { id: where.id, user_id: where.user_id, is_online: true };
     });
     const base = await startServer(t);
@@ -149,7 +149,8 @@ test("로그아웃 흐름은 회귀 없이 동작한다", async (t) => {
 
     assert.equal(res.status, 200);
     assert.equal((await res.json()).success, true);
-    assert.deepEqual(updates.at(-1).values, { is_online: false });
+    assert.equal(updates.at(-1).values.is_online, false);
+    assert.ok(updates.at(-1).values.revoked_at instanceof Date, "로그아웃은 revoked_at도 기록해야 갱신 자격도 함께 막힙니다");
     assert.deepEqual(updates.at(-1).options.where, {
         id: "session-1",
         user_id: "uuid-1",

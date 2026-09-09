@@ -89,19 +89,59 @@ exports.createUserSession = async (sessionData) => {
 };
 
 // 토큰의 sessionId(= user_sessions.id, PK)로 세션 한 건을 읽습니다. 인증 미들웨어가
-// "서명은 유효하지만 이미 내려간 세션"을 판별할 유일한 수단입니다.
+// "서명은 유효하지만 이미 내려간 세션"을 판별할 유일한 수단입니다. revoked_at은
+// is_online과 별개로 명시적 폐기(로그아웃·비밀번호 변경·재사용 감지)를 나타내므로
+// 둘 다 확인해야 HTTP·Socket.IO가 같은 기준으로 거부한다(F-03 AC-05/AC-09).
 exports.findActiveSession = async (id, user_id) => {
     if (!id || !user_id) return null;
     return await db.UserSession.findOne({
-        where:      { id, user_id, is_online: true },
-        attributes: ['id', 'user_id', 'is_online'],
+        where:      { id, user_id, is_online: true, revoked_at: null },
+        attributes: ['id', 'user_id', 'is_online', 'revoked_at'],
     });
 };
 
+// 이 사용자의 아직 폐기되지 않은 세션을 모두 폐기합니다(is_online=false + revoked_at 기록).
+// 로그인 시 중복 세션 정리, 비밀번호 변경, 갱신 자격 재사용 감지가 모두 이 함수를 씁니다 —
+// 세 경우 전부 "이전에 발급된 자격은 더 이상 유효하지 않아야 한다"는 같은 요구이기 때문입니다.
+// is_online 여부로 대상을 좁히지 않는 이유: is_online이 이미 false인 세션도 갱신 자격
+// (refresh_token_hash)은 여전히 유효할 수 있어, 그 경로까지 함께 막아야 합니다.
 exports.markOnlineSessionsOffline = async (user_id, options = {}) => {
     return await db.UserSession.update(
-        { is_online: false },
-        { where: { user_id, is_online: true }, ...options }
+        { is_online: false, revoked_at: new Date() },
+        { where: { user_id, revoked_at: null }, ...options }
+    );
+};
+
+// 갱신 요청이 제시한 해시로 세션을 찾습니다. refresh_token_hash(현재 유효한 자격)와
+// refresh_previous_hash(방금 회전되어 대체된 자격, 응답유실 유예용) 둘 다 대조합니다.
+// transaction이 있으면 FOR UPDATE로 잠가 동시 회전 요청이 서로의 갱신을 덮어쓰지 못하게
+// 합니다(F-03 A-03/A-08).
+exports.findSessionForRefresh = async (hash, options = {}) => {
+    const { transaction } = options;
+    if (!hash) return null;
+    return await db.UserSession.findOne({
+        where: {
+            [Op.or]: [
+                { refresh_token_hash: hash },
+                { refresh_previous_hash: hash },
+            ],
+        },
+        transaction,
+        lock: transaction ? transaction.LOCK.UPDATE : undefined,
+    });
+};
+
+// 갱신 자격을 회전시킵니다. 기존 refresh_token_hash는 previousHash로 물러나 짧은 유예
+// 동안만 재시도를 허용하고, 절대 만료(refresh_token_expires_at)는 건드리지 않습니다 —
+// 회전이 로그인 시점 기준 30일 창을 연장해서는 안 됩니다(F-03 A-01/A-03).
+exports.applyRefreshRotation = async (sessionId, { newHash, previousHash, previousExpiresAt }, options = {}) => {
+    return await db.UserSession.update(
+        {
+            refresh_token_hash: newHash,
+            refresh_previous_hash: previousHash,
+            refresh_previous_expires_at: previousExpiresAt,
+        },
+        { where: { id: sessionId }, ...options }
     );
 };
 
@@ -160,7 +200,7 @@ exports.recordLogout = async (user_id, session_id) => {
         await lastLogin.update({ logout_at: new Date() });
     }
     await db.UserSession.update(
-        { is_online: false },
+        { is_online: false, revoked_at: new Date() },
         { where: { id: session_id, user_id, is_online: true } }
     );
 };

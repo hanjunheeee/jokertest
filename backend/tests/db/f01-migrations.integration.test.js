@@ -23,8 +23,9 @@ const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');
 const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname-snapshot');
+const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation];
 const MANAGED_TABLES = [...baseline.TABLE_ORDER, migrationRunner.META_TABLE];
 const DROP_ORDER = [...baseline.TABLE_ORDER].reverse().concat([migrationRunner.META_TABLE]);
 
@@ -455,6 +456,46 @@ test('AC-03: 동일 마이그레이션을 반복 실행해도 오류 없이 동�
         `SELECT name, COUNT(*) AS cnt FROM ${migrationRunner.META_TABLE} GROUP BY name`,
     );
     for (const row of historyRows) assert.equal(Number(row.cnt), 1, `${row.name} 이력이 중복되면 안 된다`);
+});
+
+// ── F-03: 0003-add-refresh-token-rotation ─────────────────────────────────────
+
+test('F-03: 0003 마이그레이션이 user_sessions에 회전형 갱신 자격 컬럼을 추가하고, 재실행해도 데이터가 보존된다', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    const queryInterface = sequelize.getQueryInterface();
+    const table = await queryInterface.describeTable('user_sessions');
+    for (const column of [
+        'refresh_token_hash',
+        'refresh_previous_hash',
+        'refresh_previous_expires_at',
+        'refresh_token_expires_at',
+        'revoked_at',
+    ]) {
+        assert.ok(table[column], `user_sessions.${column} 컬럼이 있어야 한다`);
+    }
+
+    // 기존 계정·세션 데이터가 컬럼 추가로 손실되지 않는지 확인한다(A-06).
+    const userId = '55555555-5555-5555-5555-555555555555';
+    await queryRows(
+        `INSERT INTO users (uuid, password_hash, nickname, email, created_at, updated_at)
+         VALUES (:uuid, 'hash', 'refresh-nick', 'refresh-nick@example.com', NOW(), NOW())`,
+        { uuid: userId },
+    );
+    await queryRows(
+        `INSERT INTO user_sessions (id, user_id, is_online, connected_at)
+         VALUES ('sess-refresh-1', :uuid, true, NOW())`,
+        { uuid: userId },
+    );
+
+    const { applied: appliedAgain } = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    assert.deepEqual(appliedAgain, [], '이미 적용된 0003도 재실행에서 건너뛰어야 한다');
+
+    const preserved = await queryRows(`SELECT id, user_id FROM user_sessions WHERE id = 'sess-refresh-1'`);
+    assert.equal(preserved.length, 1, '재실행 후에도 기존 세션 행이 보존되어야 한다');
+    assert.equal(preserved[0].user_id, userId);
 });
 
 // ── AC-04 ───────────────────────────────────────────────────────────────────

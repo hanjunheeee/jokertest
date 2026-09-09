@@ -42,17 +42,25 @@ const EXISTING_TABLES = [
         },
     },
     {
+        // F-03: 회전형 갱신 자격 컬럼 5개(refresh_token_hash 등)가 추가됐다
+        // (backend/db/migrations/0003-add-refresh-token-rotation.js). 모두 nullable이라
+        // 기존 세션 행에는 영향이 없다.
         model: 'UserSession',
         tableName: 'user_sessions',
         pk: ['id'],
         notNull: ['user_id'],
         columns: {
-            id:           'STRING(255)',
-            user_id:      'UUID',
-            ip_address:   'STRING(45)',
-            connected_at: 'DATE',
-            last_ping_at: 'DATE',
-            is_online:    'BOOLEAN',
+            id:                          'STRING(255)',
+            user_id:                     'UUID',
+            ip_address:                  'STRING(45)',
+            connected_at:                'DATE',
+            last_ping_at:                'DATE',
+            is_online:                   'BOOLEAN',
+            refresh_token_hash:          'STRING(64)',
+            refresh_previous_hash:       'STRING(64)',
+            refresh_previous_expires_at: 'DATE',
+            refresh_token_expires_at:    'DATE',
+            revoked_at:                  'DATE',
         },
     },
     {

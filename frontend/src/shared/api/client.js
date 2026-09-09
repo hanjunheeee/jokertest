@@ -31,15 +31,49 @@ const createRequestOptions = (options) => {
     };
 };
 
+// 액세스 토큰 만료(F-03)로 401을 받은 요청들이 동시에 갱신을 시도하면 회전형 갱신 자격이
+// 불필요하게 여러 번 회전합니다(A-07). 진행 중인 갱신 요청 하나를 여기 보관해 모든 호출이
+// 같은 결과를 공유하게 합니다. useSocket.js도 소켓 재인증에 이 함수를 그대로 재사용합니다.
+let refreshPromise = null;
+
+export const refreshAccessToken = () => {
+    if (!refreshPromise) {
+        refreshPromise = fetch(`${BASE_URL}/auth/refresh`, {
+            method:      "POST",
+            credentials: "include",
+            cache:       "no-store",
+        })
+            .then((response) => response.ok)
+            .catch(() => false)
+            .finally(() => { refreshPromise = null; });
+    }
+    return refreshPromise;
+};
+
 // fetch를 감싼 공통 API 요청 함수입니다.
 // endpoint는 "/users/me" 같은 API 경로이고, options는 fetch 옵션입니다.
-export const apiClient = async (endpoint, options = {}) => {
+// _isRetry는 갱신 후 재시도 호출임을 표시하는 내부 플래그로, 호출하는 쪽에서 넘길 값이
+// 아닙니다 — 이게 없으면 갱신 자체가 실패했을 때 재시도가 무한히 반복될 수 있습니다.
+export const apiClient = async (endpoint, options = {}, _isRetry = false) => {
     // 기본 API 주소와 endpoint를 합쳐 실제 요청 URL을 만듭니다.
     const url = `${BASE_URL}${endpoint}`;
     const requestOptions = createRequestOptions(options);
 
     // 실제 HTTP 요청을 보냅니다.
     const response = await fetch(url, requestOptions);
+
+    // "액세스 토큰이 만료됐을 뿐"인 401만 갱신 대상입니다. 로그아웃·정지·재사용 감지 같은
+    // 다른 401은 그대로 handleApiResponse로 흘려보내 즉시 로그아웃 처리되게 둡니다 — 갱신을
+    // 시도해도 성공할 수 없는 상황에서 재시도를 반복하지 않기 위함입니다.
+    if (response.status === 401 && !_isRetry && endpoint !== "/auth/refresh") {
+        const body = await response.clone().json().catch(() => ({}));
+        if (body.code === "ACCESS_TOKEN_EXPIRED") {
+            const refreshed = await refreshAccessToken();
+            if (refreshed) {
+                return apiClient(endpoint, options, true);
+            }
+        }
+    }
 
     return await handleApiResponse(response);
 };

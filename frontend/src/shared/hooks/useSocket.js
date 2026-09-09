@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { useAuthStore } from "@/domains/auth/store/auth.store";
 import { setSocket } from "@/shared/socket/socketClient";
+import { refreshAccessToken } from "@/shared/api/client";
 
 // 백엔드 socket.io 서버 주소입니다.
 // HTTP API 기본 주소와 같은 서버를 사용합니다.
@@ -49,8 +50,23 @@ export function useSocket() {
 
         // TODO: match_found — 매칭 도메인 만들 때 추가
 
+        // 액세스 토큰이 만료된 채로 연결(또는 재연결)을 시도하면 백엔드의 authenticateSocket이
+        // "UNAUTHORIZED"로 거부합니다(F-03 AC-05). apiClient.js의 refreshAccessToken()과
+        // 같은 진행 중인 갱신 요청을 공유해 갱신 자격을 불필요하게 여러 번 회전시키지 않고,
+        // 갱신이 성공했을 때만 재연결을 시도합니다. 갱신 자체가 실패하면(로그인 유지 자격도
+        // 없거나 만료된 경우) 더 이상 재시도하지 않아 무한 루프를 만들지 않습니다.
+        let reauthExhausted = false;
         socket.on("connect_error", (error) => {
             console.error("[소켓 연결 실패]", error.message);
+            if (error.message !== "UNAUTHORIZED" || reauthExhausted) return;
+
+            refreshAccessToken().then((refreshed) => {
+                if (refreshed) {
+                    socket.connect();
+                } else {
+                    reauthExhausted = true;
+                }
+            });
         });
 
         return () => {

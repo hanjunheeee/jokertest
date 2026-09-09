@@ -16,6 +16,7 @@ exports.globalErrorHandler = (err, req, res, next) => {
     res.status(statusCode).json({
         success: false,
         message: err.message || '서버 내부에서 에러가 발생했습니다.',
+        code: err.code,
         error: process.env.NODE_ENV === 'production' ? undefined : err.stack,
     });
 };
