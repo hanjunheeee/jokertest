@@ -74,8 +74,10 @@
       "scope": [
         "F-27"
       ],
-      "status": "user_will_provide",
-      "description": "경비원·의사·마녀사냥꾼 전용 영상."
+      "status": "received_pending_web_conversion_and_validation",
+      "description": "다운로드의 실제 이펙트 파일.zip에서 MOV 5개 수령. 모두 오디오 트랙 존재: 배포용 오디오 제거·무음 유지. 웹 변환·내용 및 게임 연결 검증 대기.",
+      "assetRecord": "docs/requirements/2026-09-10-role-video-assets.md",
+      "localManifest": "C:/Users/minsa/jokertest/.pluto/monitor/role-videos-20260910/manifest.json"
     },
     {
       "id": "sfx_assets",
