@@ -7,6 +7,7 @@ const bcrypt = require("bcrypt");
 
 const userRepository = require("../repositories/user.repositories");
 const authService    = require("../service/auth.service");
+const { PERSISTENT_SESSION_MAX_AGE_MS } = require("../auth/cookieOptions");
 
 const PASSWORD  = "correct-horse";
 const REQ_INFO  = { ip: "127.0.0.1", userAgent: "jest-ua", deviceType: "PC" };
@@ -78,6 +79,28 @@ test("정상 로그인은 세션을 만들고 sessionId가 담긴 토큰을 발�
     assert.deepEqual(calls.find((call) => call.name === "createLoginHistory").args[0], {
         user_id: "uuid-1", ip_address: "127.0.0.1", user_agent: "jest-ua", success: true,
     });
+});
+
+test("F-03 AC-01: 로그인 유지를 선택하면 액세스 토큰이 30일 뒤에 만료된다", async (t) => {
+    const user = await activeUser();
+    stubRepo(t, { findByEmail: () => user });
+
+    const result = await authService.login(
+        { email: "a@b.com", password: PASSWORD, rememberMe: true }, REQ_INFO,
+    );
+    const decoded = jwt.verify(result.token, process.env.JWT_SECRET);
+
+    assert.equal(decoded.exp - decoded.iat, PERSISTENT_SESSION_MAX_AGE_MS / 1000);
+});
+
+test("F-03 AC-02: 로그인 유지를 선택하지 않으면 액세스 토큰은 기존처럼 1일 뒤에 만료된다", async (t) => {
+    const user = await activeUser();
+    stubRepo(t, { findByEmail: () => user });
+
+    const result = await authService.login({ email: "a@b.com", password: PASSWORD }, REQ_INFO);
+    const decoded = jwt.verify(result.token, process.env.JWT_SECRET);
+
+    assert.equal(decoded.exp - decoded.iat, 24 * 60 * 60);
 });
 
 test("가입되지 않은 이메일은 401이다", async (t) => {

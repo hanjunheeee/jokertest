@@ -120,6 +120,49 @@ const resetSocketRegistries = () => {
 test.beforeEach(resetSocketRegistries);
 test.after(resetSocketRegistries);
 
+// ── F-03 AC-03/AC-05: authenticateSocket이 HTTP verifyToken과 같은 sessionLifecycle을
+// 공유해, 폐기된 세션·정지된 계정을 동일하게 거부하는지 확인합니다. ─────────────────────
+
+const fakeHandshakeSocket = (token) => ({ handshake: { headers: { cookie: `accessToken=${token}` } }, data: {} });
+
+const runAuthenticateSocket = (socket) =>
+    new Promise((resolve) => socketLayer.__testables.authenticateSocket(socket, resolve));
+
+test("F-03 AC-05: 세션이 폐기되면 authenticateSocket도 HTTP와 동일하게 거부한다", async (t) => {
+    const { session } = stubAuthStorage(t);
+    session.is_online = false;
+    const token = generateToken({ uuid: UUID, role: "USER", sessionId: SESSION_ID });
+
+    const socket = fakeHandshakeSocket(token);
+    const err = await runAuthenticateSocket(socket);
+
+    assert.ok(err instanceof Error, "폐기된 세션의 토큰은 소켓 인증도 거부해야 합니다");
+    assert.equal(socket.data.user, undefined);
+});
+
+test("F-03 AC-03/AC-05: 정지된 계정은 socket 인증에서도 거부된다", async (t) => {
+    stubAuthStorage(t);
+    db.UserBan = { findOne: async () => ({ reason: "운영 정지" }) };
+    const token = generateToken({ uuid: UUID, role: "USER", sessionId: SESSION_ID });
+
+    const socket = fakeHandshakeSocket(token);
+    const err = await runAuthenticateSocket(socket);
+
+    assert.ok(err instanceof Error, "정지된 계정의 토큰은 소켓 인증도 거부해야 합니다");
+    assert.equal(socket.data.user, undefined);
+});
+
+test("F-03 AC-05: 유효한 세션이면 authenticateSocket이 정상 통과한다", async (t) => {
+    stubAuthStorage(t);
+    const token = generateToken({ uuid: UUID, role: "USER", sessionId: SESSION_ID });
+
+    const socket = fakeHandshakeSocket(token);
+    const err = await runAuthenticateSocket(socket);
+
+    assert.equal(err, undefined);
+    assert.equal(socket.data.user.uuid, UUID);
+});
+
 test("AC-06: socket disconnect는 auth session의 is_online을 바꾸지 않는다", async (t) => {
     const { session, presenceWrites } = stubAuthStorage(t);
 

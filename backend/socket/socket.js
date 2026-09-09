@@ -1,7 +1,7 @@
 const { Server } = require("socket.io");
-const jwt    = require("jsonwebtoken");
 const cookie = require("cookie");
 
+const sessionLifecycle = require("../auth/sessionLifecycle");
 const presenceService = require("../service/presence.service");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
@@ -89,12 +89,17 @@ function registerConnectionHandlers(io, socket) {
     registerDisconnectHandler(io, socket, uuid);
 }
 
-function authenticateSocket(socket, next) {
+// HTTP의 verifyToken(auth.middleware.js)과 같은 sessionLifecycle.resolveSession을 호출해,
+// 폐기된 세션·정지된 계정을 두 경로가 항상 같은 기준으로 거부하게 한다(F-03 AC-03/AC-05).
+async function authenticateSocket(socket, next) {
     try {
         const { accessToken } = cookie.parse(socket.handshake.headers.cookie || "");
         if (!accessToken) return next(new Error("UNAUTHORIZED"));
 
-        const decoded = jwt.verify(accessToken, process.env.JWT_SECRET);
+        const decoded = sessionLifecycle.verifyAccessToken(accessToken);
+        const result   = await sessionLifecycle.resolveSession(decoded);
+        if (!result.ok) return next(new Error("UNAUTHORIZED"));
+
         socket.data.user = decoded;
         next();
     } catch {
@@ -170,5 +175,5 @@ module.exports = {
     initSocket,
     emitToUser,
     __getOnlineUsersForTests,
-    __testables: { registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect },
+    __testables: { registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect, authenticateSocket },
 };

@@ -4,6 +4,7 @@ const { hashPassword,
 const { generateToken }       = require("../utils/jwt");
 const { createError }         = require("../utils/appError");
 const { validateSignupPayload } = require("../validation/signupValidation");
+const { PERSISTENT_SESSION_MAX_AGE_MS } = require("../auth/cookieOptions");
 const crypto                  = require("crypto");
 
 exports.signup = async (userData) => {
@@ -57,7 +58,7 @@ exports.checkEmailAvailability = async (email) => {
 };
 
 exports.login = async (loginData, reqInfo) => {
-    const { email, password } = loginData ?? {};
+    const { email, password, rememberMe } = loginData ?? {};
 
     if (!email?.trim() || !password) {
         throw createError("이메일과 비밀번호를 입력해주세요.", 400);
@@ -117,10 +118,16 @@ exports.login = async (loginData, reqInfo) => {
         is_online:  true,
     });
 
+    // 쿠키의 Max-Age(buildSessionCookieOptions)와 같은 기준(rememberMe === true)으로
+    // 액세스 토큰 자체의 만료도 30일로 늘린다. 그렇지 않으면 쿠키는 30일 남아 있어도
+    // 토큰이 1일 뒤 서명 검증 단계에서 만료돼 재로그인이 강제된다(F-03 AC-01).
+    // 이 30일은 로그인 시점 기준 절대 만료이며, 이후 갱신으로 연장되지 않는다.
     const token = generateToken({
         uuid:      user.uuid,
         role:      user.role,
         sessionId: sessionId,
+    }, {
+        expiresIn: rememberMe === true ? Math.floor(PERSISTENT_SESSION_MAX_AGE_MS / 1000) : "1d",
     });
 
     return { user, token };
