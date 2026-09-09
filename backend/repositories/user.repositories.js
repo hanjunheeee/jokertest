@@ -75,8 +75,8 @@ exports.createUserStats = async (user_id, options = {}) => {
     return await db.UserStats.create({ user_id }, options);
 };
 
-exports.createLoginHistory = async (historyData) => {
-    return await db.LoginHistory.create(historyData);
+exports.createLoginHistory = async (historyData, options = {}) => {
+    return await db.LoginHistory.create(historyData, options);
 };
 
 exports.checkActiveBan = async (user_id) => {

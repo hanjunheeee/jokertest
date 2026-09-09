@@ -79,7 +79,7 @@ exports.login = async (loginData, reqInfo) => {
     // 비밀번호 변경과 동시에 들어온 로그인은 둘 중 하나가 커밋될 때까지 대기한다 —
     // 그래야 "이미 바뀌고 있는 비밀번호로 통과한 로그인이 변경 완료 이후에 새 세션을
     // 만드는" 경합이 생기지 않는다(F-03 A-04/R-IMPL #7).
-    return await userRepository.withTransaction(async (transaction) => {
+    const outcome = await userRepository.withTransaction(async (transaction) => {
         const user = await userRepository.findByEmail(email.trim(), { transaction, lock: transaction.LOCK.UPDATE });
         if (!user) {
             throw createError("가입되지 않은 이메일입니다.", 401);
@@ -95,7 +95,7 @@ exports.login = async (loginData, reqInfo) => {
             // 밴 이전 세션이 되살아나지 않게 하기 위해서다(F-03 R-IMPL #7, sessionLifecycle의
             // 같은 처리와 동일한 원칙).
             await userRepository.markOnlineSessionsOffline(user.uuid, { transaction });
-            throw createError(`정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}`, 403);
+            return { error: createError(`정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}`, 403) };
         }
 
         const isMatch = await comparePassword(password, user.password_hash);
@@ -105,7 +105,7 @@ exports.login = async (loginData, reqInfo) => {
             ip_address: reqInfo.ip,
             user_agent: reqInfo.userAgent,
             success:    isMatch,
-        });
+        }, { transaction });
 
         if (!isMatch) {
             const failCount   = user.failed_login_count + 1;
@@ -117,9 +117,9 @@ exports.login = async (loginData, reqInfo) => {
             }, { transaction });
 
             if (lockedUntil) {
-                throw createError("비밀번호를 5회 잘못 입력하여 15분간 계정이 잠깁니다.", 423);
+                return { error: createError("비밀번호를 5회 잘못 입력하여 15분간 계정이 잠깁니다.", 423) };
             }
-            throw createError(`비밀번호가 일치하지 않습니다. (틀린 횟수: ${failCount}/5)`, 401);
+            return { error: createError(`비밀번호가 일치하지 않습니다. (틀린 횟수: ${failCount}/5)`, 401) };
         }
 
         await userRepository.updateUser(user.uuid, {
@@ -169,8 +169,12 @@ exports.login = async (loginData, reqInfo) => {
                 : "1d",
         });
 
-        return { user, token, refreshToken, refreshTokenExpiresAt };
+        return { value: { user, token, refreshToken, refreshTokenExpiresAt } };
     });
+    // Persist login failure counters and ban revocation before returning domain errors.
+    // Unexpected storage failures still throw inside the transaction and roll back.
+    if (outcome.error) throw outcome.error;
+    return outcome.value;
 };
 
 // 액세스 토큰 만료 후 회전형 갱신 자격으로 새 액세스 토큰(및 필요하면 새 갱신 자격)을

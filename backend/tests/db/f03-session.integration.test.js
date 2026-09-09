@@ -283,3 +283,39 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 현재 세션뿐 아니라 이미 
     const reLogin = await authService.login({ email, password: 'new-correct-horse-2', rememberMe: false }, REQ_INFO);
     assert.ok(reLogin.token);
 });
+
+
+test('operator regression: failed logins commit counters/history and fifth attempt locks the account', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    const { email, uuid } = await createUser('failed');
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+        await assert.rejects(
+            authService.login({ email, password: 'incorrect-password' }, REQ_INFO),
+            (error) => error.status === (attempt === 5 ? 423 : 401),
+        );
+        const stored = await db.User.findByPk(uuid);
+        assert.equal(stored.failed_login_count, attempt);
+    }
+    const stored = await db.User.findByPk(uuid);
+    assert.ok(stored.locked_until > new Date());
+    assert.equal(await db.LoginHistory.count({ where: { user_id: uuid, success: false } }), 5);
+    assert.equal(await db.UserSession.count({ where: { user_id: uuid } }), 0);
+    await assert.rejects(authService.login({ email, password: PASSWORD }, REQ_INFO), (error) => error.status === 423);
+});
+
+test('operator regression: banned login commits session revocation before returning 403', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    const { email, uuid } = await createUser('banlogin');
+    const login = await authService.login({ email, password: PASSWORD, rememberMe: true }, REQ_INFO);
+    const ban = await db.UserBan.create({ user_id: uuid, reason: 'operator regression', is_permanent: true });
+    await assert.rejects(authService.login({ email, password: PASSWORD }, REQ_INFO), (error) => error.status === 403);
+    const sessions = await db.UserSession.findAll({ where: { user_id: uuid } });
+    assert.equal(sessions.length, 1);
+    assert.ok(sessions[0].revoked_at instanceof Date);
+    await ban.destroy();
+    await assert.rejects(authService.refresh(login.refreshToken), (error) => error.status === 401);
+});
