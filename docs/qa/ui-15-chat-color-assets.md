@@ -193,3 +193,11 @@ frontend/src/shared/utils/__tests__/publicAssetReferences.test.js`를 다시 돌
 확인하지 못했다. `resolveInGameChatPlayerColor`가 `INGAME_PLAYER_THEME_PALETTE`(고정 10색)를
 그대로 전달하고 행 컴포넌트가 그 `style.color`를 span에 적용한다는 것은 단위 시험으로 확인했지만,
 실제 렌더 결과의 시각 확인은 **미검증**으로 남긴다.
+
+## 5. 옛 에셋 삭제 (사람 커밋, 2026-09-09 14:30)
+
+원격이 삭제·이동한 옛 경로 54개 중 `frontend/src` 전체(테스트 포함)에서 경로·파일명을 NFC/NFD 양쪽으로 검색해 참조가 없는 14개만 삭제했다. 나머지 40개는 같은 파일명이 새 상수(`shopItem/basic`, `playerPortraitAssets` 등)에서도 쓰여 보수적으로 남겼다.
+
+삭제: `assets/ingame/parchment.png`, `bg/상점 뒷배경.png`, `bg/인게임 뒷배경_1.png`, `button/friendList/더미친구 프로필1~5.png`, `button/lobby-menu/게임플레이_2.png`, `기억의 서고_2.png`, `로그아웃_2.png`, `상점_2.png`, `설정_2.png`, `button/마이페이지 이동 버튼_프로토타입.png`.
+
+삭제 후 `publicAssetReferences.test.js`를 포함한 frontend 전체 테스트와 build가 통과했다.
