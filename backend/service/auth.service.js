@@ -3,17 +3,18 @@ const { hashPassword,
         comparePassword }     = require("../utils/hash");
 const { generateToken }       = require("../utils/jwt");
 const { createError }         = require("../utils/appError");
+const { validateSignupPayload } = require("../validation/signupValidation");
 const crypto                  = require("crypto");
 
 exports.signup = async (userData) => {
-    const { email, password, nickname } = userData ?? {};
-
-    if (!email?.trim() || !password || !nickname?.trim()) {
-        throw createError("이메일, 비밀번호, 닉네임을 모두 입력해주세요.", 400);
+    // 닉네임 길이·문자셋, 비밀번호 길이, 비밀번호 확인 일치, 생년월일 유효성을 여기서
+    // 모두 검사한다. value에는 허용한 필드(email/password/nickname/birthDate)만 담기므로
+    // role·status·email_verified 같은 관리 필드가 요청에 섞여 있어도 저장 payload에 닿지 않는다.
+    const parsed = validateSignupPayload(userData);
+    if (!parsed.ok) {
+        throw createError(parsed.message, parsed.status ?? 400);
     }
-
-    const normalizedEmail = email.trim();
-    const normalizedNickname = nickname.trim();
+    const { email: normalizedEmail, password, nickname: normalizedNickname, birthDate } = parsed.value;
 
     const existingUser = await userRepository.findByEmail(normalizedEmail);
     if (existingUser) {
@@ -36,10 +37,23 @@ exports.signup = async (userData) => {
             email: normalizedEmail,
             password_hash,
             nickname: normalizedNickname,
+            birth_date: birthDate,
         }, { transaction });
         await userRepository.createUserStats(user.uuid, { transaction });
         return user;
     });
+};
+
+// 가입 최종 제출 이전, 입력 단계에서 이메일 중복을 미리 확인하기 위한 함수다. signup()의
+// findByEmail 사전 검사와 같은 저장소 함수를 재사용하므로 두 단계가 같은 판정을 내린다 —
+// 다만 이 함수가 available:true를 돌려준 뒤에도 다른 요청이 먼저 같은 이메일로 가입할 수
+// 있으므로, 최종 저장은 여전히 signup()의 유일 제약(및 findByEmail 재검사)에 의존한다.
+exports.checkEmailAvailability = async (email) => {
+    if (typeof email !== "string" || !email.trim()) {
+        throw createError("이메일을 입력해주세요.", 400);
+    }
+    const existing = await userRepository.findByEmail(email.trim());
+    return { available: !existing };
 };
 
 exports.login = async (loginData, reqInfo) => {

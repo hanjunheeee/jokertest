@@ -70,7 +70,16 @@ const setupFakeDb = (t, { statsCreateFails = false } = {}) => {
     return { committed, seenTransactions };
 };
 
-const SIGNUP_INPUT = { email: "a@b.com", password: "pw1234!", nickname: "닉" };
+// F-02: 닉네임 2~8자(한글/영문/숫자), 비밀번호 8~64자 + passwordConfirm 일치, 생년월일
+// 유효성 검사가 auth.service.js의 signup() 앞단에 추가되었다 — 이 스위트는 트랜잭션
+// 롤백/커밋 경로를 검증하는 것이 목적이므로, 검증 자체는 항상 통과하는 값을 쓴다.
+const SIGNUP_INPUT = {
+    email: "a@b.com",
+    password: "pw12345678",
+    passwordConfirm: "pw12345678",
+    nickname: "테스트닉",
+    birthDate: "2000-01-01",
+};
 
 test("user_stats 생성이 실패하면 user도 함께 롤백되어 두 테이블 모두 비어 있다", async (t) => {
     const { committed } = setupFakeDb(t, { statsCreateFails: true });
