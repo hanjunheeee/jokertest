@@ -124,7 +124,11 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 방송이 생길 다음 슬라이스를 위해 리스너 자체는 미리 등록해 둔다.
     const handleGameStarted = (payload) => {
       clearStartState()
-      useInGameStore.getState().setGamePayload(payload)
+      // 서버 payload에는 hostUuid가 없다. 바로 아래 clearRoom()이 방 상태를 지우므로, 그 전에
+      // 지금 방의 방장을 읽어 이 게임 세션의 값으로 함께 넘긴다 — 인게임 설정의 방관리 탭이
+      // 읽는 방장 정보는 이 경로로만 들어오고 세션과 함께 사라진다(ingameStore.hostUuid 참고).
+      const { hostUuid } = useMatchingStore.getState()
+      useInGameStore.getState().setGamePayload({ ...payload, hostUuid })
       clearRoom()
       onGameStarted?.(payload)
     }
