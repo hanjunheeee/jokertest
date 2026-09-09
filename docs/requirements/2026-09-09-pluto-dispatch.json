@@ -271,7 +271,7 @@
       "index": 29
     }
   ],
-  "dispatchedAt": "2026-09-09T13:32:10.210Z",
+  "dispatchedAt": "2026-09-09T13:32:10.21Z",
   "baselineCommit": "236afb9d244417e79bf2d639e73cc7bc8e16ec6b",
   "monitoring": {
     "automationId": "pluto-joker",
@@ -279,5 +279,13 @@
     "intervalMinutes": 5,
     "targetThreadId": "01a08514-e41c-7aa0-85f0-2e7b375d4123",
     "runbook": "docs/requirements/2026-09-09-pluto-monitoring.md"
-  }
+  },
+  "verifyCommands": [
+    "npm ci --prefix frontend",
+    "npm ci --prefix backend",
+    "npm test --prefix frontend",
+    "npm run build --prefix frontend",
+    "npm test --prefix backend"
+  ],
+  "dockerRecoveryRecord": ".pluto/monitor/docker-recovery-20260909.json"
 }

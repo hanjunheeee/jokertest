@@ -10,8 +10,10 @@
 - Pluto ID: AL~BN, 총 29개. F-01~F-27 → F-29 → F-28 순서.
 - 프리셋: `codex-plan`. Codex 계획, Claude 계획 검토·구현·결과 판정, Codex 교차 검증.
 - 계획 호출 제한: 600,000ms. 자동 재시도는 기존 프리셋의 3회 한도를 유지한다.
+- 자동 검증은 양쪽 의존성 설치, 프론트 전체 테스트·빌드, `npm test --prefix backend`를 실행한다. 백엔드 전체 테스트에는 기존 game-core 테스트도 포함되며 인증·경제·DB 회귀를 함께 검사한다. 실제 DB 마이그레이션과 외부 연동의 인수 근거는 각 작업에서 별도로 검증한다.
 - 제외: F-16A/F-16B 음악 제작. 기존 L(DB3)·U(QA5)는 수동 대기 상태와 작업 자료를 보존한다.
 - 최초 확인: F-01/AL의 AC 완료, PLAN running, 프리셋의 `planner: codex` 확인.
+- 후속 확인: F-01/AL은 Codex 계획과 Claude 계획 검토를 통과해 IMPL/running으로 진행했다. Docker의 오래된 실행 소켓 오류를 데이터·볼륨 변경 없이 복구했고, 기존 `jokertest-db-1`은 running/healthy다. 복구 근거·백업 위치는 `.pluto/monitor/docker-recovery-20260909.json`에 보존한다.
 
 ## 진행 확인
 
