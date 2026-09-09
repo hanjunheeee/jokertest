@@ -25,6 +25,7 @@ import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
+import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
 
 /**
@@ -50,6 +51,10 @@ export default function InGamePage() {
   // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
   const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
+
+  // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다. 사망 연출(UI-14)이
+  // 아직 없으므로 hold는 false다 — UI-14에서 사망 연출 큐를 hold로 연결한다.
+  useInGameResultNavigation({ hold: false })
 
   // 상태바에 상시로 띄우는 밤 역할 턴의 남은 시간. 서버가 실어 보낸 deadline 하나에서만 만든다.
   const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))

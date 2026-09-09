@@ -91,10 +91,10 @@ test("AC-05: 페이지가 스냅샷 동기화 상태를 받아 guard 순수 함�
   assert.doesNotMatch(source, /=== "checking"/)
 })
 
-test("원격 은닉 릴·밤 개인 결과·사망 연출 배선은 이 슬라이스로 들어오지 않았다", async () => {
+test("원격 은닉 릴·밤 개인 결과·사망 연출 배선은 이 슬라이스로 들어오지 않았다 (결과 이동 훅은 예외)", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.doesNotMatch(source, /statusRole/)
   assert.doesNotMatch(source, /killReveal/)
   assert.doesNotMatch(source, /nightPrivateResult/)
-  assert.doesNotMatch(source, /useInGameResultNavigation/)
+  // 결과 페이지 이동(useInGameResultNavigation)은 이 슬라이스의 추가 요구로 들어왔다 — 은닉 릴·개인 결과·사망 연출만 막는다.
 })
