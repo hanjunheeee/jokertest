@@ -21,6 +21,15 @@ const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 // unavailable(t)의 "미검증" skip에 도달하기도 전에 파일 전체가 실패로 보였다.
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 
+// AC-06은 가입 후 authService.login()까지 실제로 호출해 재로그인 성공을 확인한다.
+// login()은 generateToken()(backend/utils/jwt.js)을 거치는데, 이 함수는 JWT_SECRET이
+// 없으면 조용히 넘어가지 않고 즉시 예외를 던진다(auth.middleware.js 검증 쪽에 기본값이
+// 없어 로그인은 되는데 이후 인증이 전부 401 나는 혼란을 막기 위한 설계). .env.test에는
+// JWT_SECRET이 없으므로, backend/__tests__/auth.login.regression.test.js와 같은 방식으로
+// 이 파일 전용 더미 값을 여기서 직접 채운다 — 그래야 격리 DB가 있는 환경에서 AC-06의
+// 재로그인 단계가 서명 키 부재로 실패하지 않는다.
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'f02-signup-integration-test-secret';
+
 const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');

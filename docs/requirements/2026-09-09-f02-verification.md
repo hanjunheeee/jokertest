@@ -1,7 +1,22 @@
 # F-02 회원가입 입력·중복 확인 — 구현 및 검증 증거
 
-날짜: 2026-09-09 (작업 완료: 2026-09-10, 검토 반영: 2026-09-10, 2차 검토 반영: 2026-09-10)
+날짜: 2026-09-09 (작업 완료: 2026-09-10, 검토 반영: 2026-09-10, 2차 검토 반영: 2026-09-10, 3차 검토 반영: 2026-09-10)
 슬라이스: Pluto AM (F-02)
+
+## 3차 검토 반영 (2026-09-10, CODEX-3.json)
+
+CODEX-3.json 검토가 AC-06을 다시 partial로 반려했다: 관리 필드 기본값 확인 이후
+`authService.login()`이 JWT 서명 키 부재로 실패해 가입 후 재로그인 성공 검증에
+공백이 남는다는 지적이었다. 원인은 `backend/tests/db/f02-signup.integration.test.js`가
+`DATABASE_URL`은 스스로 더미 값으로 채우면서도(22행) `JWT_SECRET`은 전혀 채우지
+않았다는 것 — `generateToken()`(`backend/utils/jwt.js`)은 `JWT_SECRET`이 없으면
+조용히 넘어가지 않고 즉시 예외를 던지도록 의도적으로 설계돼 있어(인증 미들웨어와의
+불일치로 인한 혼란을 막기 위함), 격리 DB가 실제로 연결되는 환경에서도 재로그인
+단계에서 이 예외로 막혔을 것이다. `backend/__tests__/auth.login.regression.test.js`가
+이미 같은 방식(파일 최상단에서 더미 `JWT_SECRET` 설정)으로 `login()`과 발급된 토큰
+검증까지 실행 검증하고 있어, 이 패턴을 그대로 `f02-signup.integration.test.js`에도
+적용했다. 반영 내용은 `.pluto/progress.md`의 "검토 반영 기록 (2026-09-10,
+CODEX-3.json)"에 기록했다.
 
 ## 2차 검토 반영 (2026-09-10, CODEX-2.json)
 
@@ -85,6 +100,7 @@ AC-03 시간대별 DB 왕복, AC-05 사전 조회 강제 동기화, AC-06 긴 ni
   - nickname_snapshot 30→50: F-01에서 이미 처리·검증 완료(`073506f docs: record completed F01 database verification`, `backend/db/migrations/0002-expand-nickname-snapshot.js`, `backend/models/game/game_result_player.model.js`의 `STRING(50)`). **검토 반영**: F-01의 별도 스위트를 인용하는 데 그치지 않고, F-02 자신의 가입 경로로 만든 계정에 대해 45자 `nickname_snapshot`을 실제 `game_result_players` 저장 경로로 저장·복원하는 테스트("AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에서 잘리지 않는다")를 `f02-signup.integration.test.js`에 추가했다. **격리 DB 없이는 skip되어 미검증**.
   - 재로그인 성공: `f02-signup.integration.test.js`의 AC-06 테스트가 `authService.signup` 이후 `authService.login`을 호출해 확인 — **격리 DB 없이는 skip**.
   - **검토 반영(공통 버그 수정)**: `f02-signup.integration.test.js`는 `backend/models`를 require하는데, `F01_TEST_DATABASE_URL`이 없을 때 `process.env.DATABASE_URL`이 완전히 비어 있으면(`.env.test`를 로드하지 않는 방식으로 이 파일을 실행하는 경우, 예: 지시된 `node impl-check.js node-test` 경로) `new Sequelize(undefined)`가 즉시 예외를 던져 `unavailable(t)`의 "미검증" skip에 도달하기도 전에 파일 전체가 실패로 보였다. `.env.test`와 동일한 더미 값(`mysql://test:test@localhost:3306/test`)으로 폴백하도록 고쳐, 이제 이 명령으로 직접 실행해도 4개 테스트 모두 정상적으로 skip(미검증)로 보고된다(크래시하지 않음). 이 버그는 AC-05/AC-06 담당 테스트 3개 모두에 영향을 줬다.
+  - **3차 검토 반영(JWT_SECRET 부재 수정)**: `login()`이 거치는 `generateToken()`(`backend/utils/jwt.js`)은 `JWT_SECRET`이 없으면 즉시 예외를 던지도록 설계돼 있는데, `.env.test`에는 `JWT_SECRET`이 없고 이 통합 테스트 파일도 `DATABASE_URL`만 스스로 채울 뿐 `JWT_SECRET`은 채우지 않았다 — 격리 DB가 실제로 연결되는 환경에서도 AC-06의 재로그인 단계가 서명 키 부재로 막혔을 구조였다. `backend/__tests__/auth.login.regression.test.js`가 이미 쓰는 패턴(파일 최상단에서 더미 `JWT_SECRET` 설정)을 그대로 적용해 `process.env.JWT_SECRET = process.env.JWT_SECRET || 'f02-signup-integration-test-secret';`을 22행 `DATABASE_URL` 폴백 직후에 추가했다. **격리 DB가 없는 이 환경에서는 여전히 skip — 미검증**이지만, 지적된 실패 원인은 코드로 명확히 특정해 고쳤다.
 
 ## 실행한 검증
 
