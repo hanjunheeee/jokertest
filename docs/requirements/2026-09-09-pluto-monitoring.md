@@ -14,6 +14,7 @@
 - 제외: F-16A/F-16B 음악 제작. 기존 L(DB3)·U(QA5)는 수동 대기 상태와 작업 자료를 보존한다.
 - 최초 확인: F-01/AL의 AC 완료, PLAN running, 프리셋의 `planner: codex` 확인.
 - 후속 확인: F-01/AL은 Codex 계획과 Claude 계획 검토를 통과해 IMPL/running으로 진행했다. Docker의 오래된 실행 소켓 오류를 데이터·볼륨 변경 없이 복구했고, 기존 `jokertest-db-1`은 running/healthy다. 복구 근거·백업 위치는 `.pluto/monitor/docker-recovery-20260909.json`에 보존한다.
+- DB 검증 환경 보완: `pluto_f01_20260909_al`과 해당 이름의 `_restore_check` DB에만 접근하는 전용 테스트 계정을 준비했다. 백엔드 검증 명령은 `.pluto/monitor/run-backend-tests.cjs test`가 기존 전체 테스트 스크립트와 같은 Node 명령을 실행하면서 `F01_TEST_DATABASE_URL`을 주입한다. 비밀값은 무시되는 로컬 설정 파일에서만 읽고 출력에서 가린다. 실제 명령은 원본 `.pluto/config.json`, 제공 근거와 최초 실패 결과는 `.pluto/monitor/AL-test-db-environment.json`에 있다. 같은 테스트 DB를 초기화하는 수동 테스트와 Pluto 검증을 동시에 실행하지 않는다.
 
 ## 진행 확인
 

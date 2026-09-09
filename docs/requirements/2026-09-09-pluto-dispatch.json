@@ -285,7 +285,8 @@
     "npm ci --prefix backend",
     "npm test --prefix frontend",
     "npm run build --prefix frontend",
-    "npm test --prefix backend"
+    "node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test"
   ],
-  "dockerRecoveryRecord": ".pluto/monitor/docker-recovery-20260909.json"
+  "dockerRecoveryRecord": ".pluto/monitor/docker-recovery-20260909.json",
+  "backendTestEnvironmentRecord": ".pluto/monitor/AL-test-db-environment.json"
 }
