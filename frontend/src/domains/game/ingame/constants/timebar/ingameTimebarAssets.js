@@ -2,6 +2,8 @@
  * 인게임 시간흐름 바 에셋·prototype 단계 설정.
  *
  * InGameTimebar에서 사용합니다. 추후 game phase·day state 연동 예정.
+ * phase에 딸린 인디케이터 상태 문구 상수도 여기 삽니다(밤 역할 턴 문구는 예외 —
+ * constants/nightTurn/ingameNightTurnAnnouncement.js가 유일한 출처이므로 복제하지 않습니다).
  */
 
 /** 인게임 시간흐름 바 public 에셋 (frontend/public/frame/ingame-timebar) */
@@ -27,6 +29,12 @@ export const INGAME_DAY_TIMEBAR_ACTIVE_PHASE = "discussion"
 
 /** prototype 일차 표시 — 추후 game state day 값으로 교체 */
 export const INGAME_TIMEBAR_PREVIEW_DAY = 1
+
+/** DAY 단계 인디케이터 상태 문구 */
+export const INGAME_TIMEBAR_DAY_STATUS_MESSAGE = "낮 — 토론과 투표"
+
+/** TRIBUNAL 단계 인디케이터 상태 문구 */
+export const INGAME_TIMEBAR_TRIBUNAL_STATUS_MESSAGE = "재판 진행 중"
 
 /**
  * 서버 GamePhase를 기존 타임바 노드 id에 매핑합니다.
