@@ -1,23 +1,26 @@
-// 표시 상수는 원격 UI(feature/ui-Phase1complete)에서 그대로 가져왔고, 밤 행동 자격·재판·낮
-// 토론 라벨 등 게임 규칙에 매인 값은 로컬 계약을 유지한다 — 원격은 WITCH_HUNTER 하한을 0으로
-// 낮췄지만(그쪽은 서버가 canonical night turn으로 자격을 판정한다), 이 저장소의 백엔드
-// isEligibleForNightAction은 여전히 dayIndex 2를 요구하므로 로컬 값을 그대로 둔다.
+// 이 슬라이스(UI-12)에서 이 파일에 허용된 변경은 "표시 라벨·에셋 키 추가"뿐이다.
+// 그래서 이식 이전부터 있던 스타일 상수(PANEL/HEADER/TITLE/META/SECTION/BUTTON/
+// TARGET_BUTTON/SELECTED_TARGET_BUTTON)의 값은 원격이 다시 칠했더라도 이식하지 않고
+// 이 저장소의 기존 값을 그대로 둔다 — 원격 대조 결과는
+// docs/qa/2026-09-09-ui-12-remote-port-audit.md에 남겼다.
+// 아래에 새로 추가된 상수(CAPTION·BUTTON_ROW·STATUS/ERROR 텍스트·TARGET_* 카드 표현)는
+// 이식된 InGameActionPanel/InGameTargetPicker가 원격과 같은 이름으로 import하는 표시
+// 상수라 원격 정의를 그대로 가져왔다.
+//
+// 밤 행동 자격·재판·낮 토론 라벨 등 게임 규칙에 매인 값도 로컬 계약을 유지한다 — 원격은
+// WITCH_HUNTER 하한을 0으로 낮췄지만(그쪽은 서버가 canonical night turn으로 자격을
+// 판정한다), 이 저장소의 백엔드 isEligibleForNightAction은 여전히 dayIndex 2를 요구한다.
 export const INGAME_ACTION_PANEL_CLASS =
   "absolute bottom-[clamp(0.75rem,2vh,1.25rem)] left-[clamp(0.75rem,2vw,1.25rem)] z-30 w-[min(24rem,calc(100vw-1.5rem))] rounded-md border border-[#d8b982]/55 bg-black/72 p-3 text-[#f8ead2] shadow-[0_12px_36px_rgba(0,0,0,0.5)] backdrop-blur-sm"
 
 export const INGAME_ACTION_HEADER_CLASS =
-  "flex items-start justify-between gap-2.5 border-b border-[#d8b982]/25 pb-2.5"
+  "flex items-center justify-between gap-3 border-b border-[#d8b982]/25 pb-2"
 
-export const INGAME_ACTION_TITLE_CLASS =
-  "text-[0.92rem] font-semibold tracking-wide text-[#ffe6b8] drop-shadow-[0_1px_1px_rgba(0,0,0,0.65)]"
+export const INGAME_ACTION_TITLE_CLASS = "text-sm font-semibold tracking-normal text-[#ffe2ad]"
 
-export const INGAME_ACTION_META_CLASS = "text-[0.7rem] font-medium leading-snug text-[#cdbb9e]/90"
+export const INGAME_ACTION_META_CLASS = "text-[0.7rem] leading-tight text-[#cdbb9e]"
 
-// 섹션(유틸리티·낮 투표·재판·밤 행동·이벤트) 공통 카드 껍데기 — 살짝 어두운 레이어 + 은은한
-// 상단 하이라이트 + 얇은 금색 링으로 "층이 진" 느낌을 주되, 뚜렷한 테두리 박스처럼 보이지
-// 않도록 절제한다.
-export const INGAME_ACTION_SECTION_CLASS =
-  "mt-3 space-y-2 rounded-lg bg-[#1c0f08]/45 p-2.5 shadow-[inset_0_1px_0_rgba(255,229,173,0.07)] ring-1 ring-[#d8b982]/15"
+export const INGAME_ACTION_SECTION_CLASS = "mt-3 space-y-2"
 
 // 섹션 안에서 쓰는 작은 라벨(예: "투표 대상 선택") — 본문 텍스트(META)와 구분되는 존재감
 // 낮은 캡션 톤이다.
@@ -34,13 +37,13 @@ export const INGAME_ACTION_ERROR_BANNER_CLASS =
   "mt-2 rounded-md border border-red-400/30 bg-red-950/45 px-2.5 py-1.5 text-[0.72rem] leading-snug text-red-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
 
 export const INGAME_ACTION_BUTTON_CLASS =
-  "min-h-8 rounded-md border border-[#c9a86a]/40 bg-gradient-to-b from-[#3a2417]/90 to-[#1d1108]/90 px-3 py-1.5 text-[0.72rem] font-medium tracking-wide text-[#f3e3c6] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-[#f3d28d] hover:from-[#553420] hover:to-[#2c190d] hover:text-[#ffe9c2] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#c9a86a]/40 disabled:active:scale-100"
+  "min-h-8 rounded border border-[#d8b982]/35 bg-[#2b1c15]/85 px-3 py-1.5 text-xs text-[#f8ead2] transition hover:border-[#f3d28d] hover:bg-[#53321f] disabled:cursor-not-allowed disabled:opacity-40"
 
 export const INGAME_ACTION_TARGET_BUTTON_CLASS =
-  "group relative flex min-h-[2.75rem] flex-col justify-center gap-0.5 rounded-md border border-[#8a6a44]/35 bg-gradient-to-b from-[#251409]/85 to-[#150b05]/85 px-2 py-1.5 text-left transition hover:border-[#f3d28d]/70 hover:from-[#3a2313]/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#8a6a44]/35"
+  "min-h-8 rounded border border-[#927556]/45 bg-black/35 px-2 py-1 text-left text-xs text-[#f8ead2] transition hover:border-[#f3d28d] disabled:cursor-not-allowed disabled:opacity-40"
 
 export const INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS =
-  `${INGAME_ACTION_TARGET_BUTTON_CLASS} border-[#f3d28d] from-[#5b321d]/95 to-[#331a0d]/95 ring-1 ring-[#f3d28d]/50`
+  `${INGAME_ACTION_TARGET_BUTTON_CLASS} border-[#f3d28d] bg-[#5b321d]/80`
 
 // 플레이어 대상 카드(InGameTargetPicker) 내부 세부 표현 — 이름/생존 상태 한 줄을 배지 스타일로
 // 정리해 "의도적으로 선택 가능한 항목"처럼 보이게 한다.

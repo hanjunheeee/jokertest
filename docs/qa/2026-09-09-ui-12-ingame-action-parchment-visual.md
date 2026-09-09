@@ -20,7 +20,16 @@
   - 양피지 열림·확인·닫힘: 역할 공개·밤 역할 턴 안내·DAY/NIGHT 진입 세 오버레이가 새 공용 셸
     (`InGameParchmentModalAnimated` / `InGameParchmentModalBase`)을 실제로 쓰도록 배선했고,
     확인 버튼은 공용 `InGameParchmentConfirmButton`(에셋 `/button/버튼(수락 및 긍정).png`)이다.
-    backdrop 클릭·Escape·확인 버튼 세 경로 모두 같은 `onDismiss`로 모인다. 실제 애니메이션과
-    양피지 배경(`/frame/양피지 모달.png`) 렌더는 브라우저에서만 확인할 수 있다 — 미검증.
-- 자동 검증 결과: frontend 테스트 1066개 통과, `npm run build --prefix frontend` 성공,
+    backdrop 클릭·Escape·확인 버튼 세 경로 모두 같은 `onDismiss`로 모인다.
+    이 셸 체인은 전부 `.js`(createElement)라 jsdom에서 실제로 마운트해 검증했다
+    (`components/parchment/__tests__/InGameParchmentModalWiring.test.js`): DAY/NIGHT 진입
+    오버레이를 렌더해 backdrop·dialog·양피지 배경 `<img src="/frame/양피지 모달.png">`·공용 확인
+    버튼 `<img src="/button/버튼(수락 및 긍정).png">`이 실제 DOM에 나오는 것과, 확인·backdrop·
+    Escape 세 경로가 모두 닫기 콜백을 부르는 것을 확인했다. 같은 파일이 `InGamePage`가 세
+    오버레이를 각각 한 번씩 마운트하고 오버레이 스택 상태를 그대로 넘기는 것도 고정한다.
+    **애니메이션(framer-motion) 연출과 양피지 배경의 실제 픽셀 렌더는 브라우저에서만 확인할 수
+    있다 — 여전히 미검증.**
+- 원격 대비 전체 이식 대조(파일 목록·파일별 diff)는
+  `docs/qa/2026-09-09-ui-12-remote-port-audit.md`에 있다.
+- 자동 검증 결과: frontend 테스트 1071개 통과, `npm run build --prefix frontend` 성공,
   backend `test:game-core` 481개 통과.
