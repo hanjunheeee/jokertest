@@ -8,7 +8,7 @@ import {
 import StoreBulkPurchasePanel from "./StoreBulkPurchasePanel.jsx"
 
 /** 일괄구매 확인 — 상점 UI 위 오버레이 */
-export default function StoreBulkPurchaseOverlay({ open, items, deadPreviewIds, onClose, onConfirm }) {
+export default function StoreBulkPurchaseOverlay({ open, items, deadPreviewIds, onClose, onConfirm, purchaseState, onCheck, onRetry }) {
   useEffect(() => {
     if (!open) return undefined
 
@@ -51,6 +51,9 @@ export default function StoreBulkPurchaseOverlay({ open, items, deadPreviewIds, 
                 deadPreviewIds={deadPreviewIds}
                 onClose={onClose}
                 onConfirm={onConfirm}
+                purchaseState={purchaseState}
+                onCheck={onCheck}
+                onRetry={onRetry}
               />
             </motion.div>
           </div>

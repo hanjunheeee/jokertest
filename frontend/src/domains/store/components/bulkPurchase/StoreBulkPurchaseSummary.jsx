@@ -1,3 +1,4 @@
+import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { STORE_ASSETS } from "../../constants/storeAssets.js"
 import {
@@ -14,7 +15,7 @@ import {
 } from "../../constants/storeBulkPurchaseLayout.js"
 
 /** 일괄구매 확인 — 합계·구매 버튼 */
-export default function StoreBulkPurchaseSummary({ total, hasPendingPrice, onConfirm }) {
+export default function StoreBulkPurchaseSummary({ total, hasPendingPrice, onConfirm, purchaseState = { status: "idle" }, onCheck, onRetry }) {
   return (
     <aside className={STORE_BULK_PURCHASE_SUMMARY_CLASS} aria-label="구매 합계">
       <div className={STORE_BULK_PURCHASE_TOTAL_ROW_CLASS}>
@@ -28,17 +29,19 @@ export default function StoreBulkPurchaseSummary({ total, hasPendingPrice, onCon
               alt=""
               className={STORE_BULK_PURCHASE_TOTAL_ICON_CLASS}
             />
-            <span className={STORE_BULK_PURCHASE_TOTAL_AMOUNT_CLASS}>{total.toLocaleString()}</span>
+            <span className={STORE_BULK_PURCHASE_TOTAL_AMOUNT_CLASS}>{total.toLocaleString()} 골드</span>
           </div>
         )}
       </div>
 
+      <StorePurchaseFeedback state={purchaseState} onCheck={onCheck} onRetry={onRetry} />
       <button
         type="button"
         className={STORE_BULK_PURCHASE_CONFIRM_BTN_CLASS}
         style={{ outline: "none" }}
         aria-label="구매하기"
         onClick={onConfirm}
+        disabled={hasPendingPrice || ["pending", "unknown", "confirmed", "blocked"].includes(purchaseState.status)}
       >
         <PublicAsset
           src={STORE_ASSETS.purchaseButton}

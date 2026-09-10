@@ -17,6 +17,7 @@ const ITEM_TYPES = Object.freeze({
     PROFILE_BORDER: 'PROFILE_BORDER',
     SKIN: 'SKIN',
     PLAYER_CARD_FRAME: 'PLAYER_CARD_FRAME',
+    EMOTICON: 'EMOTICON',
 });
 
 // frontend/public/shopItem/player-profile/*.png 16종 전부 (파일명 "프로필-" 접두 제거).
@@ -92,7 +93,22 @@ const playerCardFrameItems = PLAYER_CARD_VARIANTS.map((variant) => ({
     purchasable: true,
 }));
 
-const ALL_ITEMS = [...profilePhotoItems, ...profileBorderItems, ...skinItems, ...playerCardFrameItems];
+// F-09 AC-05: 이모티콘 탭은 "준비 중" 표시 전용이다 — 실제 판매하지 않는다
+// (frontend에는 이 유형의 항목을 그릴 그리드 콘텐츠가 아직 없다). 그래도 서버 카탈로그에
+// 이 유형·ID를 명시적으로 등록해 두는 이유는, 나중에 표시용 카드가 추가되거나 누군가
+// 그럴듯한 ID를 추측해 조작된 구매 요청을 보내도 "카탈로그에 없는 상품"이 아니라
+// "존재하지만 구매 불가능한 상품"으로 항상 purchasable:false에 걸려 거부되게 하기
+// 위함이다(purchaseItem/purchaseItems는 존재 여부와 무관하게 purchasable !== true면
+// 동일하게 거부한다).
+const emoticonItems = ['웃음', '울음', '화남', '박수'].map((label) => ({
+    id: `emoticon-${label}`,
+    type: ITEM_TYPES.EMOTICON,
+    priceGold: 0,
+    defaultGrant: false,
+    purchasable: false,
+}));
+
+const ALL_ITEMS = [...profilePhotoItems, ...profileBorderItems, ...skinItems, ...playerCardFrameItems, ...emoticonItems];
 
 const CATALOG_BY_ID = new Map(ALL_ITEMS.map((item) => [item.id, item]));
 

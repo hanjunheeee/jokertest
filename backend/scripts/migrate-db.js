@@ -24,7 +24,8 @@ const addSocialAuth = require('../db/migrations/0005-add-social-auth');
 // 소셜 가입과 기본 지급에 필요한 스키마를 실제 배포 명령에서도 순서대로 적용한다.
 const addEconomy = require('../db/migrations/0006-add-economy');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy];
+const addEconomyPurchaseRequests = require('../db/migrations/0007-add-economy-purchase-requests');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

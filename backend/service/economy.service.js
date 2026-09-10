@@ -27,13 +27,21 @@
 // 얻은 쪽은 소유권/잔액을 다시 따지지 않고 먼저 커밋된 원래 결과를 그대로 돌려받는다 —
 // 순서가 반대(소유권 검사가 먼저)면 늦은 쪽이 "이미 보유함"으로 잘못 거부될 수 있다.
 
+// F-09 CODEX-2 재검토(AC-03) 대응: getCatalogItem만은 구조 분해로 캡처하지 않고 catalog
+// 모듈 객체를 통해서만 호출한다(catalog.getCatalogItem(...)) — 구조 분해로 지역 변수에
+// 캡처하면 그 값은 require 시점의 함수 참조로 고정되어, 시험이 나중에
+// catalogModule.getCatalogItem = fn으로 몽키패치해도 이 파일은 여전히 원래 함수를 쓴다.
+// AC-03(혼합 재화)은 "운영 가격 데이터를 변경하지 않고" 격리된 시험용 상품(DIAMOND 가격)을
+// 검증해야 하므로, catalog.js의 ALL_ITEMS에 실제 항목을 추가하는 대신 시험이 이 함수를
+// 일시적으로 교체할 수 있어야 한다 — 프로퍼티 접근(catalog.getCatalogItem)이라야 그 교체가
+// 이 파일에도 실제로 반영된다.
+const catalog = require('../economy/catalog');
 const {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,
     DEFAULT_PROFILE_BORDER_ID,
-    getCatalogItem,
     listDefaultGrantItems,
-} = require('../economy/catalog');
+} = catalog;
 const { createError } = require('../utils/appError');
 
 const FREE_CARD_FRAME_ID = 'player-card-베이스';
@@ -75,6 +83,7 @@ const economyModels = (db) => ({
     EconomyLedgerEntry: db.EconomyLedgerEntry,
     EconomyEntitlement: db.sequelize.models.EconomyEntitlement,
     EconomyLoadout: db.sequelize.models.EconomyLoadout,
+    EconomyPurchaseRequest: db.sequelize.models.EconomyPurchaseRequest,
 });
 
 const defaultDb = () => require('../models');
@@ -373,25 +382,193 @@ const listTransactions = async (userId, { limit = 50 } = {}, db = defaultDb()) =
     }));
 };
 
-/** 클라이언트가 보낸 가격은 절대 읽지 않는다 — priceGold는 항상 카탈로그 조회값이다
- *  (AC-04). itemId가 카탈로그에 없거나 구매 불가 상품이면 즉시 거부한다. 현재 구매
- *  가능한 코스메틱은 모두 GOLD로만 판매한다(현금·재화 패키지 판매 제외). */
-const purchaseItem = async ({ userId, itemId, referenceEventId }, db = defaultDb()) => {
-    const catalogItem = getCatalogItem(itemId);
-    if (!catalogItem || catalogItem.purchasable !== true) {
-        throw createError('존재하지 않거나 구매할 수 없는 상품입니다.', 400, 'ITEM_NOT_PURCHASABLE');
+// F-09 개별·일괄 구매 공통 처리. ─────────────────────────────────────────────
+//
+// 하나의 요청 식별자(referenceEventId)가 여러 상품을 가리킬 수 있으므로, 상품별 원장
+// 유일 키는 `${referenceEventId}::item::${itemId}`로 파생한다 — itemId 중복은 이미
+// 앞에서 거부하므로 이 파생 키는 같은 번들 안에서 항상 서로 다르고, 같은 번들을
+// 재시도하면 항상 같은 값으로 재계산되어 applyLedgerTransaction 자체의 재처리 방지도
+// 그대로 작동한다(이중 방어).
+const derivePurchaseItemReferenceEventId = (referenceEventId, itemId) => `${referenceEventId}::item::${itemId}`;
+
+/** 구매 요청 전체(품목 id 목록)를 정렬해 정규화한다 — 같은 참조 사건 ID의 재시도가
+ *  요청 순서만 다른 경우도 "같은 요청"으로 인정하고, 실제로 다른 상품 구성이면 충돌로
+ *  거부한다(AC-04 payload mismatch, F0367 payloadMatches와 같은 목적). */
+const normalizePurchaseRequestPayload = (items) => ({ itemIds: items.map((entry) => entry.itemId).slice().sort() });
+
+const purchasePayloadsEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// 개별 구매(purchaseItem)가 기존에 쓰던 것과 같은 오류(코드 REFERENCE_EVENT_CONFLICT)를
+// 그대로 재사용한다 — 참조 사건 ID 재사용이 다른 내용과 충돌한다는 개념은 원장 한 줄이든
+// 구매 요청 번들이든 동일하므로, 새 코드를 만들지 않고 기존 소비자(라우트·프론트
+// pendingPurchases 판정)와의 호환을 그대로 유지한다.
+const purchaseRequestConflictError = referenceEventConflictError;
+
+/** 원장 행을 GET /economy/purchases 응답·serializeLedgerEntry와 같은 모양의 평범한
+ *  객체로 남긴다 — result_json에 그대로 저장해도, 나중에 그 JSON을 그대로 읽어도 항상
+ *  같은 필드 이름(snake_case)을 쓰게 해 idempotent 여부와 무관하게 호출부가 같은 코드로
+ *  처리할 수 있게 한다. */
+const snapshotLedgerEntry = (ledgerEntry) => (
+    typeof ledgerEntry.get === 'function' ? ledgerEntry.get({ plain: true }) : ledgerEntry
+);
+
+/**
+ * 개별·일괄 구매의 공통 원자적 처리. items는 [{ itemId }, ...] 형태이며 1개면 개별
+ * 구매, 2개 이상이면 일괄 구매다(AC-01/AC-02). 클라이언트가 보낸 가격·재화는 절대
+ * 읽지 않는다 — 모든 상품은 catalog.getCatalogItem으로만 조회한다(AC-04).
+ *
+ * 구현 계약(작업 지시서 계획 메모): 빈 목록·중복 상품·존재하지 않거나 구매 불가능한
+ * 상품은 지갑을 건드리기 전에 즉시 거부한다. 통과한 상품들은 지갑 잠금 → 재처리 방지
+ * 재확인 → 상품별 applyLedgerTransaction(같은 외부 트랜잭션 t 위에서 실행, 품목별 독립
+ * 커밋 없음)을 순서대로 실행하고, 하나라도 실패하면(존재 여부·이미 보유·잔액 부족 등)
+ * 그 오류가 트랜잭션 전체를 롤백시켜 앞서 처리된 품목의 차감·지급도 함께 되돌아간다.
+ * 모든 품목이 성공하면 그 결과를 EconomyPurchaseRequest 한 행으로 같은 트랜잭션에서
+ * 커밋해, 이후 같은 참조 사건 ID로 조회·재시도하면(getPurchaseResult, 또는 이 함수를
+ * 같은 인자로 재호출) 새로 차감하지 않고 이미 커밋된 결과를 그대로 돌려준다(AC-04).
+ */
+const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb()) => {
+    if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
+        throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+        throw createError('구매할 상품 목록이 비어 있습니다.', 400, 'EMPTY_PURCHASE_ITEMS');
+    }
+    const itemIds = items.map((entry) => entry?.itemId);
+    if (itemIds.some((id) => typeof id !== 'string' || id.length === 0)) {
+        throw createError('itemId가 필요합니다.', 400, 'INVALID_PURCHASE_ITEM');
+    }
+    if (new Set(itemIds).size !== itemIds.length) {
+        throw createError('같은 상품을 중복으로 요청할 수 없습니다.', 400, 'DUPLICATE_PURCHASE_ITEM');
     }
 
-    return applyLedgerTransaction(db, {
-        userId,
-        reason: 'PURCHASE',
-        currency: CURRENCIES.GOLD,
-        amount: -catalogItem.priceGold,
-        itemId: catalogItem.id,
-        itemType: catalogItem.type,
-        referenceEventId,
-        entitlementSource: 'PURCHASE',
+    const kind = items.length > 1 ? 'BULK' : 'SINGLE';
+    const payload = normalizePurchaseRequestPayload(items);
+    const models = economyModels(db);
+
+    // 재처리 방지 조회(AC-04)는 카탈로그 검증보다 먼저 한다 — 이미 커밋된 요청을 같은
+    // 참조 사건 ID로 재시도했다면, 그 사이 카탈로그 상태가 바뀌었더라도(상품이 나중에
+    // purchasable:false로 바뀌는 등) 항상 기존 커밋 결과를 그대로 복원해야 한다
+    // (CODEX-1 AC-04 재검토: "카탈로그 검증이 기존 성공 조회보다 먼저"였던 순서를
+    // 뒤집음 — 이미 커밋된 요청을 다시 카탈로그 규칙으로 거부하면 멱등성 계약이 깨진다).
+    // 카탈로그 검증은 이 조회를 통과해 "완전히 새로운 요청"으로 판명된 뒤에만 실행한다.
+    const preExisting = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
+    if (preExisting) {
+        if (!purchasePayloadsEqual(preExisting.payload_json, payload)) throw purchaseRequestConflictError();
+        return { idempotent: true, kind: preExisting.kind, results: preExisting.result_json };
+    }
+
+    // 카탈로그 조회·구매 가능 여부 확인은 지갑을 건드리기 전에 끝낸다 — 표시용
+    // 이모티콘처럼 존재하지 않거나 purchasable:false인 상품이 하나라도 섞여 있으면
+    // 트랜잭션을 열지도 않고 즉시 거부한다(AC-05, 부작용 없음).
+    const resolvedItems = itemIds.map((itemId) => {
+        const catalogItem = catalog.getCatalogItem(itemId);
+        if (!catalogItem || catalogItem.purchasable !== true) {
+            throw createError(`존재하지 않거나 구매할 수 없는 상품입니다: ${itemId}`, 400, 'ITEM_NOT_PURCHASABLE');
+        }
+        return catalogItem;
     });
+
+    await ensureWalletRow(db, userId);
+
+    const runWrite = async (t) => {
+        // 지갑 행을 한 번만 잠그면 GOLD·DIAMOND 두 컬럼 모두 이 트랜잭션 동안 안전하다
+        // (한 행에 두 재화 컬럼이 함께 있다, economy.model.js 참고).
+        await models.EconomyWallet.findOne({ where: { user_id: userId }, transaction: t, lock: t.LOCK.UPDATE });
+
+        // 잠금 뒤 재확인(recheck-after-lock) — applyLedgerTransaction과 같은 이유로,
+        // 동시에 들어온 같은 참조 사건 ID 재시도가 이 지갑 잠금 뒤에서 대기했다면 먼저
+        // 커밋된 결과를 그대로 돌려받아야 한다.
+        const committed = await models.EconomyPurchaseRequest.findOne({
+            where: { user_id: userId, reference_event_id: referenceEventId },
+            transaction: t,
+        });
+        if (committed) {
+            if (!purchasePayloadsEqual(committed.payload_json, payload)) throw purchaseRequestConflictError();
+            return { idempotent: true, kind: committed.kind, results: committed.result_json };
+        }
+
+        const results = [];
+        for (const catalogItem of resolvedItems) {
+            // eslint-disable-next-line no-await-in-loop -- 같은 외부 트랜잭션 t 위에서
+            // 순서대로 실행해야 한다(품목별 독립 커밋 금지) — Promise.all로 병렬화하면
+            // 같은 지갑 행에 대한 경합이 생기고 트랜잭션 경계도 흐트러진다.
+            const outcome = await applyLedgerTransaction(db, {
+                userId,
+                reason: 'PURCHASE',
+                currency: catalogItem.currency ?? CURRENCIES.GOLD,
+                amount: -catalogItem.priceGold,
+                itemId: catalogItem.id,
+                itemType: catalogItem.type,
+                referenceEventId: derivePurchaseItemReferenceEventId(referenceEventId, catalogItem.id),
+                entitlementSource: 'PURCHASE',
+            }, { transaction: t });
+            results.push(snapshotLedgerEntry(outcome.ledgerEntry));
+        }
+
+        let purchaseRequest;
+        try {
+            purchaseRequest = await models.EconomyPurchaseRequest.create({
+                user_id: userId,
+                reference_event_id: referenceEventId,
+                kind,
+                payload_json: payload,
+                result_json: results,
+            }, { transaction: t });
+        } catch (error) {
+            if (error?.name === 'SequelizeUniqueConstraintError') {
+                throw Object.assign(
+                    createError('이미 처리된 참조 사건입니다.', 409, 'DUPLICATE_PURCHASE_REQUEST'),
+                    { referenceEventId },
+                );
+            }
+            throw error;
+        }
+
+        return { idempotent: false, kind, results, purchaseRequestId: purchaseRequest.id };
+    };
+
+    const resolveDuplicateRequest = async () => {
+        const existing = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
+        if (!existing) return null;
+        if (!purchasePayloadsEqual(existing.payload_json, payload)) throw purchaseRequestConflictError();
+        return { idempotent: true, kind: existing.kind, results: existing.result_json };
+    };
+
+    try {
+        return await models.sequelize.transaction(runWrite);
+    } catch (error) {
+        if (error?.code === 'DUPLICATE_PURCHASE_REQUEST') {
+            const resolved = await resolveDuplicateRequest();
+            if (resolved) return resolved;
+        }
+        throw error;
+    }
+};
+
+/** 개별 구매 — purchaseItems(품목 1개)에 위임하고, 기존 라우트(POST /economy/purchase)와
+ *  호환되도록 결과 모양(`{ idempotent, ledgerEntry }`)을 그대로 유지한다. results[0]은
+ *  snapshotLedgerEntry가 만든 평범한 객체라 economy.routes.js의 serializeLedgerEntry가
+ *  기존과 동일하게 동작한다. */
+const purchaseItem = async ({ userId, itemId, referenceEventId }, db = defaultDb()) => {
+    const result = await purchaseItems({ userId, items: [{ itemId }], referenceEventId }, db);
+    return { idempotent: result.idempotent, ledgerEntry: result.results[0] };
+};
+
+/** 커밋 후 응답 유실을 복구한다(AC-04) — 인증된 본인 계정 범위에서만 조회한다. 구매가
+ *  실제로 커밋된 경우에만 EconomyPurchaseRequest 행이 존재하므로, 이 함수가 null을
+ *  돌려주는 것은 "아직 커밋된 적 없음"(요청이 아예 도달하지 않았거나, 도달했어도
+ *  커밋 전 오류로 롤백됨)을 뜻한다 — 그 두 경우를 이 함수 하나로는 구분하지 않는다.
+ *  호출부(라우트)는 원래 요청이 명시적으로 거부 응답을 받았는지 여부로 그 둘을 구분한다
+ *  — 명시적 거부를 받았다면 애초에 이 함수를 부를 필요가 없고, 응답을 못 받았을
+ *  때만(타임아웃·연결 단절) 이 함수로 확인한다. */
+const getPurchaseResult = async (userId, referenceEventId, db = defaultDb()) => {
+    if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
+        throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
+    }
+    const models = economyModels(db);
+    const existing = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
+    if (!existing) return null;
+    return { kind: existing.kind, results: existing.result_json, createdAt: existing.created_at };
 };
 
 /** QA/운영 보상 지급 — role 검사는 라우트 계층 책임이다(실제 계정 데이터 기준, 라우트
@@ -433,7 +610,7 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
     const models = economyModels(db);
 
     if (!isFreeCardFrame) {
-        const catalogItem = getCatalogItem(itemId);
+        const catalogItem = catalog.getCatalogItem(itemId);
         if (!catalogItem || catalogItem.type !== expectedType) {
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }
@@ -460,6 +637,8 @@ module.exports = {
     getWalletSummary,
     listTransactions,
     purchaseItem,
+    purchaseItems,
+    getPurchaseResult,
     grantReward,
     equipItem,
     // 테스트 전용 — 낮은 레벨 원장 적용 로직을 직접 검증할 때 사용한다.
