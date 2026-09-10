@@ -22,6 +22,12 @@ const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
 
 const TOKEN = generateToken({ uuid: "uuid-1", role: "USER", sessionId: "session-1" });
 
+// F-04 AC-02: 각 테스트가 stubDb로 db.User를 교체하기 전, 원본 User 모델 정의를 미리 잡아
+// 둔다 — DB 유니크 제약 존재 여부를 실행 순서와 무관하게 확인하기 위해서다.
+const USER_MODEL_ATTRIBUTES = typeof db.User.getAttributes === "function"
+    ? db.User.getAttributes()
+    : db.User.rawAttributes;
+
 const startServer = async (t) => {
     const app = express();
     app.use(express.json());
@@ -120,6 +126,33 @@ test("중복 닉네임은 UPDATE 전에 사전 조회로도 같은 409를 반환
     assert.equal(res.status, 409);
     assert.match((await res.json()).message, /닉네임/);
     assert.equal(updates, 0);
+});
+
+test("AC-02: nickname은 애플리케이션 사전 조회가 아니라 실제 users 테이블 유니크 제약으로도 보호된다", () => {
+    // 사전 조회(findByNickname)는 경합 창을 좁힐 뿐 막지 못한다 — 두 요청이 동시에 그 조회를
+    // 통과하면 애플리케이션 코드만으로는 중복을 막을 수 없다. 이 위의 두 테스트("MySQL이
+    // 인덱스 이름만...", "사전 조회로도 같은 409를...")가 실제로 지키는 보장이 되려면
+    // 0001-legacy-baseline.js가 만드는 users_nickname_unique 인덱스와 이 모델 정의가
+    // 일치해야 한다 — 여기서 그 정의를 직접 확인한다.
+    assert.equal(USER_MODEL_ATTRIBUTES.nickname.unique, true);
+});
+
+test("AC-02: 사전 조회를 통과해도 UPDATE 시점 동시 중복이면 409이고 닉네임은 이전 값 그대로 남는다", async (t) => {
+    // 사전 조회 통과 직후 경쟁자가 먼저 같은 닉네임으로 커밋을 끝내는 경합을 흉내낸다.
+    // findByNickname은 아직 빈 값을 보고 통과시키지만, 뒤따르는 UPDATE는 그 사이 생긴
+    // 유니크 위반으로 실패해야 하고, 그 실패 후에도 저장된 닉네임은 바뀌면 안 된다.
+    const stored = "이전유지닉";
+    stubDb(t, {
+        findOne: async ({ where }) => (where.nickname ? null : { uuid: "uuid-1", nickname: stored }),
+        update: async () => { throw uniqueConstraintError({ paths: ["nickname"] }); },
+    });
+    const base = await startServer(t);
+
+    const res = await patchNickname(base, "경쟁닉네임");
+    assert.equal(res.status, 409);
+
+    const profile = await (await getProfile(base)).json();
+    assert.equal(profile.data.nickname, stored, "동시 중복 실패 후에도 저장된 닉네임이 바뀌면 안 됩니다");
 });
 
 test("MySQL이 인덱스 이름만 알려줘도 409로 분류된다", async (t) => {
