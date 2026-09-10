@@ -16,6 +16,14 @@
 > 옛 세션이 되살아났다, (6) `import.meta.env`를 이유로 프론트 로직이 실제로는 테스트되지
 > 않았다. 이 문서는 그 두 번째 반송(R-IMPL #2)의 수정 결과를 반영한다 — 아래 "R-IMPL #2
 > 수정 내역" 절 참고.
+>
+> 이후 코드 리뷰 기반 반송(CODEX-2~4)들은 전부 로컬 스위트로 잡히지 않는 결함이었다.
+> 2026-09-10 운영자가 실제 Chrome으로 로그인 유지 로그인 후 약 18분 뒤 새 탭에서 `/lobby`를
+> 다시 열었을 때, 실제로 `/login` 화면으로 떨어지는 실패가 재현됐다(R-IMPL 실제 Chrome
+> 재현). 근본 원인과 수정은 아래 "R-IMPL 실제 Chrome 재현 대응" 절 참고 — `auth.middleware.js`
+> 가 만료된 액세스 토큰마다 `accessToken` 쿠키를 먼저 지워버려, 갱신이 끝나기 전에 도착하는
+> 동시 요청이 코드 없는 일반 401을 받아 유효한 갱신 자격이 남아 있는데도 전역 로그아웃을
+> 먼저 일으켰다.
 
 ## 정책 요약
 
@@ -354,6 +362,98 @@ false여도 갱신 자격(refresh)은 유효할 수 있어, 그 경로까지 함
   handshake 이후에 일어난 로그아웃·정지·비밀번호 변경을 그 소켓의 다음 동작부터 즉시
   반영한다(AC-09). matchmaking.js·gameSession.js는 건드리지 않았다 — `socket.on`을 감싸는
   방식이라 두 모듈이 등록하는 핸들러에도 자동으로 적용된다.
+
+## R-IMPL 실제 Chrome 재현 대응 (2026-09-10)
+
+### 실제 관찰 (운영자, Chrome)
+
+- 02:18Z 로그인 유지 체크 후 실제 로그인, 로비 진입까지 login200/me200/profile200 확인.
+- 약 18분 뒤(액세스 토큰 15분 만료를 지난 시점) 새 탭에서 `/lobby`를 직접 열었다 — 비밀번호
+  재입력 없이. Chrome 주 프로세스는 재시작되지 않았다(같은 PID, 같은 생성 시각) — 이 재현은
+  "브라우저 전체 재시작 후 복원"(AC-01의 다른 축)이 아니라 "액세스 만료 후 자동 갱신"만을
+  겨냥한다.
+- 결과: `/login` 화면으로 떨어지고 마이페이지 로케이터가 없었으며, 이후 인증 JS alert도
+  발생했다. 요청 로그 순서: `profile401, me401, profile401, me401, refresh200` — 갱신
+  자체(`refresh200`)는 성공했지만 그보다 먼저 도착한 두 번째 라운드의 401 두 개가 이미 전역
+  로그아웃을 일으킨 뒤였다.
+- 에러 로그: 첫 두 요청(`profile401, me401`)은 `auth.middleware.js`의
+  `ACCESS_TOKEN_EXPIRED`(회복 가능), 다음 두 요청은 코드 없는 "로그인이 필요합니다."(쿠키
+  자체가 없을 때만 나는 응답, `auth.middleware.js:11`)였다. OS/서버 시계 offset은 0 —
+  시계를 가속한 과거 통과와는 다른, 실제 15분 경과다.
+
+### 원인 (관찰과 추론을 분리)
+
+**관찰**: 두 번째 라운드의 401이 "쿠키 자체가 없을 때"만 나는 코드 경로(`if (!token)`,
+`auth.middleware.js:10-12`)에서 나왔다. 즉 그 요청이 서버에 도달했을 때 브라우저에 이미
+`accessToken` 쿠키가 없었다.
+
+**추론**: 만료된 액세스 토큰마다(`TokenExpiredError` catch 분기) `auth.middleware.js`가
+`res.clearCookie("accessToken")`를 실행했다. `Set-Cookie`는 브라우저가 응답 헤더를 받는 즉시
+(자바스크립트가 body를 읽기도 전에) 적용된다. `/lobby` 진입 시 `me`·`profile` 같은 여러 요청이
+거의 동시에 만료된 토큰으로 나가는데, 그중 먼저 도착한 응답의 `clearCookie`가 브라우저의
+`accessToken` 쿠키를 즉시 지워버린다. 아직 진행 중인 공유 갱신(`refreshAccessToken()`의
+in-flight 프라미스, `frontend/src/shared/api/client.js`)이 끝나기 전에 도착하는 다른
+동시/후속 요청은 쿠키가 이미 사라진 채로 서버에 닿아 code 없는 일반 401을 받는다. 프론트는
+code가 없는 401에는 갱신을 시도하지 않고(`apiClient`의 `code === "ACCESS_TOKEN_EXPIRED"`
+분기 밖) 곧장 `handleAuthUnauthorized`(`frontend/src/domains/auth/api/unauthorized.js`)를 태워
+`window.location.replace("/login")`로 하드 네비게이션한다 — 이 시점에 실제 갱신(`refresh200`)
+이 아직 성공을 향해 진행 중이었어도 이미 늦다. 이것이 관찰된 요청 순서
+(`profile401, me401, profile401, me401, refresh200`)와 최종 `/login` 화면을 정확히 설명한다.
+
+늦게 도착하는 만료 응답이 방금 갱신으로 받은 **새** `accessToken` 쿠키를 되돌려 지우는 경로도
+같은 원인(`clearCookie`가 회복 가능한 만료 케이스에서도 무조건 실행됨)에서 나온다 — 새 쿠키
+발급 이후 도착한 옛 요청의 만료 응답이 같은 `Set-Cookie: accessToken=; Max-Age=0`를 보내면,
+도착 순서에 따라 방금 받은 새 쿠키를 지울 수 있다.
+
+### 수정
+
+`backend/middleware/auth.middleware.js`의 `verifyToken` — `TokenExpiredError` 분기에서
+`res.clearCookie("accessToken")` 호출을 제거했다(서명 위조·형식 오류 등 회복 불가능한
+분기의 `clearCookie`는 그대로 유지). 만료는 갱신으로 복구 가능하므로 쿠키를 지우지 않고
+그대로 둔다:
+- 갱신이 끝나기 전 도착하는 동시/후속 요청은 계속 (지워지지 않은) 만료된 쿠키를 보내
+  `ACCESS_TOKEN_EXPIRED`를 받으므로, 프론트가 매번 같은 공유 갱신(`refreshAccessToken()`)을
+  기다렸다가 재시도할 수 있다 — code 없는 일반 401로 떨어져 전역 로그아웃을 먼저 트리거하지
+  않는다.
+- 새 자격 발급 이후 늦게 도착하는 옛 만료 응답도 더 이상 `Set-Cookie`를 보내지 않으므로, 그
+  응답이 방금 받은 새 `accessToken` 쿠키를 되돌려 지울 수 없다.
+- 서명 위조·형식 오류 같은 회복 불가능한 오류는 여전히 즉시 쿠키를 지운다 — 진짜 인증
+  실패(위조·폐기·정지·절대 만료·로그아웃)는 이 수정과 무관하게 계속 거부되고,
+  `authService.refresh`의 실제 갱신 유효성 검사(폐기·절대 만료·밴·재사용 감지)는 전혀
+  건드리지 않았다. HTTP·Socket 갱신 공유(`refreshAccessToken()` in-flight 프라미스)와
+  재시도 상한·cleanup 보호(`useSocket.js`)도 기존 그대로다.
+
+### 검사
+
+`backend/__tests__/auth.sessionGuard.test.js`에 실제 Express 앱(`verifyToken` →
+`authService.refresh`까지 실제 코드 경로)으로 세 개의 테스트를 추가했다:
+1. "만료된 액세스 토큰의 401 응답은 accessToken 쿠키를 지우지 않는다" — 응답의
+   `Set-Cookie` 헤더에 `accessToken=`으로 시작하는 항목이 없는지 직접 확인한다(수정의 핵심
+   계약).
+2. "서명이 위조되거나 형식이 잘못된 토큰은 여전히 accessToken 쿠키를 지운다" — 회복
+   불가능한 분기의 기존 동작이 유지되는지 확인하는 회귀 가드.
+3. "만료 응답 이후에도 쿠키가 남아 있어 동시/후속 요청이 계속 복구 가능한 코드를 받고,
+   갱신 후 정상 API가 복원되며, 새 자격 발급 이후 도착한 늦은 만료 응답도 그 새 쿠키를
+   건드리지 않는다" — 만료 401 → (실제 브라우저라면 쿠키가 남아있을) 동일 토큰의 동시
+   요청이 여전히 `ACCESS_TOKEN_EXPIRED`를 받는지 → 실제 `POST /auth/refresh` 성공 → 새
+   토큰으로 재시도해 실제 `200`과 정상 데이터 복원 → 새 자격 발급 이후 도착한 옛 만료
+   요청이 새 쿠키를 지우는 `Set-Cookie`를 보내지 않는지 → 세션이 폐기된 뒤에는 방금
+   발급받은 자격도, 갱신도 모두 거부되는지(확정 로그아웃, 모든 401을 무조건 성공으로
+   취급하지 않는다는 계약)까지 한 번에 확인한다.
+
+결과: `node C:/dev/pluto/packages/daemon/dist/src/impl-check.js test`(backend) → exit=0,
+tests 1066 / pass 1046 / fail 0 / skipped 20(F01/F02/F03 격리 MySQL 미가용, 기존과 동일
+사유 — 신규 테스트 3건 추가로 1063→1066, 전부 로컬에서 통과해 skip 수는 그대로 20).
+frontend 스위트(1200 pass / 0 fail)·`npm run build`(1021 modules)는 이번 세션에서 코드를
+바꾸지 않았지만 재실행해 회귀 없음을 확인했다. **`node
+C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test`(격리 MySQL 주입)는 이번
+세션에서도 "이 명령은 승인이 필요합니다"로 거부되어 미실행 — 여러 세션에 걸쳐 반복된 것과
+동일한 도구 승인 차단이다.** 이 수정은 `auth.middleware.js`(HTTP 미들웨어)에만 있고
+`f03-session.integration.test.js`가 다루는 회전·재사용 감지 DB 로직은 손대지 않았으므로,
+그 파일의 격리 DB 검증 필요성 자체는 이 세션 전후로 달라지지 않았다.
+
+실제 Chrome 재검증(브라우저 전체 재시작 포함 AC-01, 15분 만료 후 자동 갱신)은 여전히
+운영자가 직접 수행해야 한다 — 이 세션은 도구 기반 환경에서 실제 브라우저를 띄울 수 없다.
 
 ## 실제 검증 상태 (R-IMPL #11 반송 대응 세션 기준, 2026-09-10)
 
