@@ -205,6 +205,47 @@ test('재시도 안전(retry-safe): 계속 실패하는 계정은 failures에 �
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[1]).length, 0, '계속 실패한 계정은 부분 지급 없이 0건으로 남아야 한다');
 });
 
+for (const failedIndex of [0, 1]) {
+    test(`실패 계정 ${failedIndex}: 중단 후 저장된 체크포인트로 재개하면 누락·중복 지급이 없다`, async () => {
+        const uuids = uuidsFor(5);
+        const db = createFakeDb({ userUuids: uuids });
+        const originalCreate = db.EconomyLedgerEntry.create;
+        db.EconomyLedgerEntry.create = async (fields) => {
+            if (fields.user_id === uuids[failedIndex]) throw new Error('지속 실패');
+            return originalCreate(fields);
+        };
+        let persistedCheckpoint = null;
+        const checkpoints = [];
+        await assert.rejects(backfillDefaultEntitlements({
+            db, batchSize: 2, maxRetries: 0,
+            onCheckpoint: async (uuid) => {
+                await Promise.resolve();
+                persistedCheckpoint = uuid;
+                checkpoints.push(uuid);
+            },
+            onProgress: ({ processed, resumeAfterUuid }) => {
+                assert.equal(resumeAfterUuid, persistedCheckpoint);
+                if (processed === 4) throw new Error('중단 시뮬레이션');
+            },
+        }), /중단 시뮬레이션/);
+        const safeCheckpoint = failedIndex === 0 ? null : uuids[0];
+        assert.deepEqual(checkpoints, [safeCheckpoint, safeCheckpoint]);
+        assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[3]).length, 17,
+            '실패 뒤의 정상 계정도 처리한다');
+
+        db.EconomyLedgerEntry.create = originalCreate;
+        const resumed = await backfillDefaultEntitlements({ db, batchSize: 2, startAfterUuid: persistedCheckpoint });
+        assert.deepEqual(resumed.failures, []);
+        for (const uuid of uuids) {
+            const owned = db._inspect.entitlements.filter((e) => e.user_id === uuid);
+            assert.equal(owned.length, 17);
+            assert.equal(new Set(owned.map((e) => e.item_id)).size, 17);
+        }
+        const ledgerKeys = db._inspect.ledgerEntries.map((e) => `${e.user_id}:${e.reference_event_id}`);
+        assert.equal(new Set(ledgerKeys).size, ledgerKeys.length);
+    });
+}
+
 test('계정이 없으면 아무 것도 처리하지 않고 빈 결과를 돌려준다', async () => {
     const db = createFakeDb({ userUuids: [] });
     const result = await backfillDefaultEntitlements({ db });

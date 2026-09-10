@@ -49,18 +49,19 @@ const runBackfill = async (db, options) => {
         startAfterUuid: options.startAfterUuid ?? null,
         maxRetries: Number.isInteger(options.maxRetries) && options.maxRetries >= 0 ? options.maxRetries : undefined,
         onCheckpoint: (uuid) => { lastCheckpoint = uuid; },
-        onProgress: ({ processed, granted, failedCount, lastUuid }) => {
-            console.log(`  처리 ${processed}건, 지급 성공 ${granted}건, 실패 ${failedCount}건 (마지막 uuid: ${lastUuid})`);
+        onProgress: ({ processed, granted, failedCount, lastUuid, resumeAfterUuid }) => {
+            console.log(`  처리 ${processed}건, 지급 성공 ${granted}건, 실패 ${failedCount}건 (마지막 조회 uuid: ${lastUuid})`);
+            console.log(`  재개 체크포인트: ${resumeAfterUuid ?? '(없음: --start-after-uuid 없이 재실행)'}`);
         },
     });
 
     console.log(`백필 완료: 총 ${result.processed}건 처리, ${result.granted}건 성공, ${result.failures.length}건 실패.`);
     if (result.failures.length > 0) {
-        console.log('실패한 계정(재실행 시 --start-after-uuid로 이 uuid 이전부터 다시 시도하면 멱등이라 안전합니다):');
+        console.log('실패한 계정(재실행 시 마지막 조회 uuid가 아닌 재개 체크포인트를 사용하세요):');
         for (const failure of result.failures) {
             console.log(`  ${failure.userId}: ${failure.message}`);
         }
-        console.log(`마지막 처리된 체크포인트 uuid: ${lastCheckpoint ?? '(없음)'}`);
+        console.log(`재개 체크포인트: ${lastCheckpoint ?? '(없음: --start-after-uuid 없이 재실행)'}`);
         return 1;
     }
     return 0;

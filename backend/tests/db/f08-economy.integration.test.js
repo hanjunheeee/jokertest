@@ -35,29 +35,24 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'f08-economy-integration-test
 const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');
-const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname-snapshot');
-const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addEconomy = require('../../db/migrations/0006-add-economy');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy];
+// 복제한 테스트 전용 목록 대신 실제 배포 CLI의 등록 순서를 검증한다.
+const { MIGRATIONS } = require('../../scripts/migrate-db');
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, addEconomy, migrationRunner,
 });
 
 let sequelize;
-let connectionError = null;
 
 test.before(async () => {
     if (!TEST_DB_URL) return;
     sequelize = new Sequelize(TEST_DB_URL, { logging: false });
-    try {
-        await sequelize.authenticate();
-    } catch (error) {
-        connectionError = error;
-    }
+    // 설정된 DB 연결 실패는 검증 실패다. 미설정인 경우만 미검증으로 남긴다.
+    await sequelize.authenticate();
 });
 
 test.after(async () => {
@@ -67,10 +62,6 @@ test.after(async () => {
 const unavailable = (t) => {
     if (!TEST_DB_URL) {
         t.skip('F01_TEST_DATABASE_URL이 설정되지 않았습니다 — 실제 MySQL 격리 DB 없이는 AC를 검증할 수 없습니다 (미검증).');
-        return true;
-    }
-    if (connectionError) {
-        t.skip(`격리 DB(${TEST_DB_URL.replace(/:[^:@]*@/, ':***@')})에 연결할 수 없습니다 — 미검증: ${connectionError.message}`);
         return true;
     }
     return false;
