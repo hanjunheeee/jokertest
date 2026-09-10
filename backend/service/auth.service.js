@@ -33,6 +33,49 @@ const deriveRotatedRefreshToken = (previousRawToken, sessionId) =>
         .update(`refresh-rotation-v1:${sessionId}:${previousRawToken}`)
         .digest("base64url");
 
+// 로그인 성공이 확정된 이후의 세션 발급 절차(기존 세션 정리 → 세션 행 생성 → 액세스/갱신
+// 토큰 발급)를 login()에서 분리했다. F-05 socialAuth.service.js가 소셜 로그인·가입 완료
+// 시점에 같은 절차를 그대로 재사용한다 — 비밀번호 검증과 세션 발급이 분리되어 있어야
+// "비밀번호 없이 인증된" 소셜 로그인도 같은 세션 계약(단일 활성 세션, 회전형 갱신 자격)을
+// 따를 수 있다(F-05 A-03). transaction은 호출부가 이미 열어 둔 것을 그대로 받는다 —
+// user 조회·저장과 세션 발급이 하나의 원자적 단위여야 하기 때문이다.
+exports.issueSessionForUser = async (user, { rememberMe = false } = {}, reqInfo = {}, transaction) => {
+    await userRepository.markOnlineSessionsOffline(user.uuid, { transaction });
+
+    const sessionId = crypto.randomUUID();
+    const now = new Date();
+
+    let refreshToken = null;
+    let refreshTokenHash = null;
+    let refreshTokenExpiresAt = null;
+    if (rememberMe === true) {
+        refreshToken = generateRefreshSecret();
+        refreshTokenHash = hashRefreshToken(refreshToken);
+        refreshTokenExpiresAt = new Date(now.getTime() + PERSISTENT_SESSION_MAX_AGE_MS);
+    }
+
+    await userRepository.createUserSession({
+        id:                       sessionId,
+        user_id:                  user.uuid,
+        ip_address:               reqInfo.ip,
+        is_online:                true,
+        refresh_token_hash:       refreshTokenHash,
+        refresh_token_expires_at: refreshTokenExpiresAt,
+    }, { transaction });
+
+    const token = generateToken({
+        uuid:      user.uuid,
+        role:      user.role,
+        sessionId: sessionId,
+    }, {
+        expiresIn: rememberMe === true
+            ? capAccessTokenTtlSeconds(ACCESS_TOKEN_SHORT_TTL_SECONDS, refreshTokenExpiresAt, now)
+            : "1d",
+    });
+
+    return { token, refreshToken, refreshTokenExpiresAt };
+};
+
 exports.signup = async (userData) => {
     // 닉네임 길이·문자셋, 비밀번호 길이, 비밀번호 확인 일치, 생년월일 유효성을 여기서
     // 모두 검사한다. value에는 허용한 필드(email/password/nickname/birthDate)만 담기므로
@@ -144,46 +187,15 @@ exports.login = async (loginData, reqInfo) => {
             last_login_at:      new Date(),
         }, { transaction });
 
-        await userRepository.markOnlineSessionsOffline(user.uuid, { transaction });
-
-        const sessionId = crypto.randomUUID();
-        const now = new Date();
-
         // 로그인 유지를 선택했을 때만 회전형 갱신 자격을 발급한다. 미선택 세션은 갱신 수단
         // 자체가 없으므로 액세스 토큰이 만료되면(기존과 동일하게 1일) 재로그인이 필요하다(AC-02).
-        let refreshToken = null;
-        let refreshTokenHash = null;
-        let refreshTokenExpiresAt = null;
-        if (rememberMe === true) {
-            refreshToken = generateRefreshSecret();
-            refreshTokenHash = hashRefreshToken(refreshToken);
-            refreshTokenExpiresAt = new Date(now.getTime() + PERSISTENT_SESSION_MAX_AGE_MS);
-        }
-
-        await userRepository.createUserSession({
-            id:                       sessionId,
-            user_id:                  user.uuid,
-            ip_address:               reqInfo.ip,
-            is_online:                true,
-            refresh_token_hash:       refreshTokenHash,
-            refresh_token_expires_at: refreshTokenExpiresAt,
-        }, { transaction });
-
-        // 액세스 토큰은 로그인 유지 여부와 무관하게 짧게 산다. 로그인 유지의 30일 창은 위
+        // 액세스 토큰은 로그인 유지 여부와 무관하게 짧게 산다. 로그인 유지의 30일 창은
         // refreshToken(서버에는 해시만 저장)이 절대 만료로 책임지고, 액세스 토큰은 그 창 안에서
         // 회전형 갱신(POST /auth/refresh)으로 계속 재발급된다 — 쿠키만 오래 살고 검증되지 않는
-        // 상태를 피하기 위함이다(F-03 A-01). 로그인 순간은 절대 기한이 막 새로 시작하는
-        // 시점이라 capAccessTokenTtlSeconds는 사실상 no-op이지만, refresh()와 같은 계산
-        // 경로를 타야 로그인·갱신 사이에 캡 로직이 갈라지지 않는다.
-        const token = generateToken({
-            uuid:      user.uuid,
-            role:      user.role,
-            sessionId: sessionId,
-        }, {
-            expiresIn: rememberMe === true
-                ? capAccessTokenTtlSeconds(ACCESS_TOKEN_SHORT_TTL_SECONDS, refreshTokenExpiresAt, now)
-                : "1d",
-        });
+        // 상태를 피하기 위함이다(F-03 A-01). 세션 발급 절차 자체는 issueSessionForUser로
+        // 분리되어 있다(F-05가 소셜 로그인·가입 완료에도 재사용한다).
+        const { token, refreshToken, refreshTokenExpiresAt } =
+            await exports.issueSessionForUser(user, { rememberMe }, reqInfo, transaction);
 
         return { value: { user, token, refreshToken, refreshTokenExpiresAt } };
     });

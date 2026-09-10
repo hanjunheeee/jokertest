@@ -196,7 +196,11 @@ const EXISTING_TABLES = [
     },
 ];
 
-const NEW_MODELS = ['GameResult', 'GameResultPlayer', 'ConcurrentSnapshot'];
+const NEW_MODELS = [
+    'GameResult', 'GameResultPlayer', 'ConcurrentSnapshot',
+    // F-05: 소셜 계정 공통 기반(0005-add-social-auth 마이그레이션).
+    'ExternalIdentity', 'OAuthState', 'SocialSignupIntent',
+];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {
     const expected = [...EXISTING_TABLES.map((table) => table.model), ...NEW_MODELS].sort();

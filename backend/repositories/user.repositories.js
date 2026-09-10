@@ -9,6 +9,9 @@ const { createError } = require("../utils/appError");
 const UNIQUE_CONFLICTS = [
     { field: "nickname", message: "이미 사용 중인 닉네임입니다." },
     { field: "email",    message: "이미 사용 중인 이메일입니다." },
+    // F-05 AC-01: external_identities의 (provider, subject) 복합 유일 인덱스 이름에
+    // 포함된 부분 문자열이다 — 동시에 같은 소셜 계정을 연결하려는 경합을 409로 정규화한다.
+    { field: "provider_subject", message: "이미 연결된 소셜 계정입니다." },
 ];
 
 const toConflictError = (error) => {
@@ -250,4 +253,49 @@ exports.recordLogout = async (user_id, session_id) => {
         { is_online: false, revoked_at: new Date() },
         { where: { id: session_id, user_id, is_online: true } }
     );
+};
+
+// ── F-05: 소셜 계정 공통 기반 ────────────────────────────────────────────────
+
+// (provider, subject) 조합으로 이미 연결된 identity가 있는지 조회한다. 있으면 재로그인
+// (AC-03)이고, 없으면 최초 로그인(가입 보완 필요)이다.
+exports.findExternalIdentity = async ({ provider, subject }, options = {}) => {
+    const { transaction, lock } = options;
+    return await db.ExternalIdentity.findOne({ where: { provider, subject }, transaction, lock });
+};
+
+exports.createExternalIdentity = async (data, options = {}) => {
+    try {
+        return await db.ExternalIdentity.create(data, options);
+    } catch (error) {
+        throw toConflictError(error);
+    }
+};
+
+exports.createOAuthState = async (data, options = {}) => {
+    return await db.OAuthState.create(data, options);
+};
+
+// state_hash는 절대 원문을 저장하지 않는 해시다(F-05 AC-05). lock을 넘기면 소비(consume)
+// 시점에 동시 재사용 요청을 직렬화한다.
+exports.findOAuthStateByHash = async (stateHash, options = {}) => {
+    const { transaction, lock } = options;
+    return await db.OAuthState.findOne({ where: { state_hash: stateHash }, transaction, lock });
+};
+
+exports.markOAuthStateConsumed = async (id, options = {}) => {
+    return await db.OAuthState.update({ consumed_at: new Date() }, { where: { id }, ...options });
+};
+
+exports.createSocialSignupIntent = async (data, options = {}) => {
+    return await db.SocialSignupIntent.create(data, options);
+};
+
+exports.findSocialSignupIntentByHash = async (intentTokenHash, options = {}) => {
+    const { transaction, lock } = options;
+    return await db.SocialSignupIntent.findOne({ where: { intent_token_hash: intentTokenHash }, transaction, lock });
+};
+
+exports.markSocialSignupIntentConsumed = async (id, options = {}) => {
+    return await db.SocialSignupIntent.update({ consumed_at: new Date() }, { where: { id }, ...options });
 };
