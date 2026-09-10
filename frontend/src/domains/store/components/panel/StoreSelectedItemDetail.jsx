@@ -23,14 +23,16 @@ import {
   STORE_PURCHASE_LABEL_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
-// 선택한 아이템을 구매하는 버튼입니다.
-function StorePurchaseButton({ onClick, disabled = false }) {
+// 선택한 아이템을 구매하는 버튼입니다. 이미 보유한 상품이면 "구매" 대신 "보유중"을 보여주고
+// 클릭해도 아무 일도 하지 않는다(F-09 R-IMPL, AC-06 재검토 — 서버가 이미 거부하는 것과
+// 별개로, 재로그인 후 실제로 복원된 소유권이 화면에도 드러나야 한다).
+function StorePurchaseButton({ onClick, disabled = false, owned = false }) {
   return (
     <button
       type="button"
       className={`${STORE_PURCHASE_BTN_CLASS} ${disabled ? "cursor-not-allowed opacity-45" : "hover:opacity-90"}`}
       style={{ outline: "none" }}
-      aria-label="구매"
+      aria-label={owned ? "보유중" : "구매"}
       disabled={disabled}
       onClick={onClick}
     >
@@ -39,7 +41,7 @@ function StorePurchaseButton({ onClick, disabled = false }) {
         alt=""
         className={STORE_PURCHASE_BTN_IMAGE_CLASS}
       />
-      <span className={STORE_PURCHASE_LABEL_CLASS}>구매</span>
+      <span className={STORE_PURCHASE_LABEL_CLASS}>{owned ? "보유중" : "구매"}</span>
     </button>
   )
 }
@@ -50,6 +52,7 @@ export default function StoreSelectedItemDetail({
   displayIcon = item.icon,
   onPurchaseClick,
   purchaseDisabled = false,
+  owned = false,
 }) {
   return (
     <section className={STORE_DETAIL_SECTION_CLASS} aria-label="선택한 아이템 정보">
@@ -87,7 +90,7 @@ export default function StoreSelectedItemDetail({
               )}
             </div>
 
-            <StorePurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} />
+            <StorePurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} owned={owned} />
           </div>
         </div>
       </div>

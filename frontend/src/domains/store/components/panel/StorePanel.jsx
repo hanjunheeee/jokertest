@@ -121,6 +121,16 @@ export default function StorePanel({ visible = true }) {
   const [bulkPurchaseOpen, setBulkPurchaseOpen] = useState(false)
   const [bulkPurchaseState, setBulkPurchaseStateRaw] = useState(IDLE_BULK_PURCHASE_STATE)
   const authUserId = useAuthStore((state) => state.user?.uuid ?? null)
+  // F-09 R-IMPL(AC-06 재검토): useEconomyStore.entitlements는 fetchSummary가 이미
+  // 채워왔지만 지금까지 어떤 화면도 이 값을 읽지 않았다 — 재로그인 후 서버가 실제로
+  // 돌려준 소유권이 있어도 화면 어디에도 드러나지 않았다는 뜻이다. 여기서 읽어
+  // StoreItemGrid(일괄선택 차단)·StoreSelectedItemDetail(구매 버튼 비활성화·"보유중"
+  // 표시)에 전달해, 소유권 복원이 실제로 눈에 보이는 화면 상태로 이어지게 한다.
+  const entitlements = useEconomyStore((state) => state.entitlements)
+  const ownedItemIds = useMemo(
+    () => new Set(entitlements.map((entitlement) => entitlement.itemId)),
+    [entitlements],
+  )
   // visibleItems(현재 카테고리) 변경 효과가 마운트 시점에도 한 번 실행되는데, 그때
   // 아래 계정 복원 효과가 막 세팅한 bulkMode/bulkSelectedIds를 지워버리면 안 된다 —
   // 사용자가 실제로 카테고리를 바꿀 때만 초기화하도록 첫 실행은 건너뛴다.
@@ -195,7 +205,10 @@ export default function StorePanel({ visible = true }) {
   const handleBulkModeChange = (nextBulkMode) => {
     setBulkMode(nextBulkMode)
     if (nextBulkMode) {
-      setBulkSelectedIds(new Set(selectedItem ? [selectedItem.id] : []))
+      // 이미 보유한 상품을 선택한 채로 일괄구매 모드에 들어가면 그 상품이 자동으로
+      // 선택돼 버린다 — 보유중인 상품은 일괄구매 대상이 될 수 없다(AC-06 재검토).
+      const canSeedSelection = selectedItem && !ownedItemIds.has(selectedItem.id)
+      setBulkSelectedIds(new Set(canSeedSelection ? [selectedItem.id] : []))
     } else {
       setBulkSelectedIds(new Set())
       setBulkPurchaseOpen(false)
@@ -219,7 +232,9 @@ export default function StorePanel({ visible = true }) {
     // "인게임 재화"(현금 충전) · "이모티콘"(표시 전용)은 이 슬라이스에서 실제 구매를
     // 연결하지 않는다 — visibleItems가 애초에 "이모티콘" 카테고리에선 비어 있어
     // selectedItem이 없지만, "인게임 재화"는 항목이 있으므로 여기서 명시적으로 막는다.
-    if (!selectedItem || !isRealPurchaseCategory(selectedItem.category)) return
+    // 이미 보유한 상품도 서버가 어차피 ITEM_ALREADY_OWNED로 거부하지만, 화면에서부터
+    // 요청을 만들지 않는다(AC-06 재검토, 버튼은 disabled로도 막혀 있어 이중 방어).
+    if (!selectedItem || !isRealPurchaseCategory(selectedItem.category) || ownedItemIds.has(selectedItem.id)) return
 
     useEconomyStore.getState().purchase({ itemId: selectedItem.id }).catch(() => {
       // 실패/응답 유실 상태는 useEconomyStore.pendingPurchases에 이미 기록되어 있다
@@ -334,6 +349,7 @@ export default function StorePanel({ visible = true }) {
                     showSkinNotice={activeCategory === "스킨"}
                     bulkMode={bulkMode}
                     bulkSelectedIds={bulkSelectedIds}
+                    ownedItemIds={ownedItemIds}
                     onBulkModeChange={handleBulkModeChange}
                     onBulkSelectionChange={handleBulkSelectionChange}
                   />
@@ -347,9 +363,11 @@ export default function StorePanel({ visible = true }) {
                       isDeadPreview(selectedItem.id),
                     )}
                     onPurchaseClick={handlePurchaseClick}
+                    owned={ownedItemIds.has(selectedItem.id)}
                     purchaseDisabled={
                       (bulkMode && bulkSelectedIds.size === 0)
                       || !isRealPurchaseCategory(selectedItem.category)
+                      || ownedItemIds.has(selectedItem.id)
                     }
                   />
                 ) : null}
