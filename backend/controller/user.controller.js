@@ -3,6 +3,7 @@ const jwt                = require("jsonwebtoken");
 const authService       = require("../service/auth.service");
 const socialAuthService = require("../service/socialAuth.service");
 const googleOAuthService = require("../service/googleOAuth.service");
+const discordOAuthService = require("../service/discordOAuth.service");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
@@ -36,9 +37,17 @@ const oauthAttemptCookieOptions = (maxAgeSeconds) => ({
     maxAge:   maxAgeSeconds * 1000,
 });
 
-// payload는 { fp, rememberMe, purpose: "login" } 또는 (SIGNUP_REQUIRED 이후)
-// { intentToken, rememberMe, purpose: "signup" } 중 하나다 — purpose로 두 쓰임을 구분해,
-// 콜백이 로그인용 서명을 가입 보완 단계에서 잘못 재사용하지 않게 한다.
+// payload는 { fp, rememberMe, purpose: "login", provider } 또는 (SIGNUP_REQUIRED 이후)
+// { intentToken, rememberMe, purpose: "signup", provider } 중 하나다 — purpose로 두 쓰임을
+// 구분해, 콜백이 로그인용 서명을 가입 보완 단계에서 잘못 재사용하지 않게 한다.
+//
+// F-07: provider("google" | "discord")도 이 서명에 함께 묶는다 — state 자체는 제공자를
+// 구분하지 않는 공용 값이라(socialAuth.service.js issueOAuthState/consumeOAuthState는
+// purpose만 검사한다), provider 바인딩이 없으면 한 제공자로 시작한 로그인 시도의 서명된
+// 쿠키(및 그 쿠키가 실어온 fp)를 다른 제공자의 콜백 라우트에 그대로 들이밀 수 있다. 아래
+// googleAuthCallback/discordAuthCallback은 각각 자신의 provider와 정확히 일치하는 쿠키만
+// fp·rememberMe의 출처로 신뢰한다 — 불일치하면 fp가 undefined가 되어 STATE_MISSING으로
+// 자연스럽게 거부된다(콜백이 서로의 시도를 받아들이지 않는다).
 const signOAuthAttempt = (payload, ttlSeconds) =>
     jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ttlSeconds });
 
@@ -209,7 +218,7 @@ exports.googleAuthStart = async (req, res, next) => {
         const { state } = await socialAuthService.issueOAuthState({ purpose: "login", browserFingerprint });
 
         const attemptToken = signOAuthAttempt(
-            { fp: browserFingerprint, rememberMe, purpose: "login" },
+            { fp: browserFingerprint, rememberMe, purpose: "login", provider: "google" },
             OAUTH_ATTEMPT_TTL_SECONDS,
         );
         res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
@@ -252,9 +261,11 @@ exports.googleAuthCallback = async (req, res, next) => {
         // attempt가 null이면(쿠키 없음·서명 위조·만료·purpose 불일치) fp는 undefined다 —
         // 별도로 분기하지 않아도 아래 consumeOAuthState가 STATE_MISSING으로 자연스럽게
         // 거부하므로(browserFingerprint 필수 검증, F-05 socialAuth.service.js), 위조된
-        // 시도가 Google을 부르는 일은 없다.
-        const browserFingerprint = attempt?.purpose === "login" ? attempt.fp : undefined;
-        const rememberMe = attempt?.purpose === "login" && attempt?.rememberMe === true;
+        // 시도가 Google을 부르는 일은 없다. provider가 "google"이 아니면(F-07 Discord 시도의
+        // 쿠키를 여기로 들이민 경우 포함) 같은 이유로 fp를 내주지 않는다(제공자 바인딩,
+        // 위 signOAuthAttempt 주석 참고).
+        const browserFingerprint = attempt?.purpose === "login" && attempt?.provider === "google" ? attempt.fp : undefined;
+        const rememberMe = attempt?.purpose === "login" && attempt?.provider === "google" && attempt?.rememberMe === true;
 
         // 1) state 소비를 먼저, 그리고 유일하게 커밋한다 — Google을 부르기 전에 끝난다.
         await socialAuthService.consumeOAuthState(req.query.state, { browserFingerprint, purpose: "login" });
@@ -285,7 +296,7 @@ exports.googleAuthCallback = async (req, res, next) => {
             // 보완 창(30분)만큼 다시 세팅한다(R-IMPL #2) — 완료 시점에
             // exports.completeSocialSignup이 이 쿠키를 읽는다.
             const intentAttemptToken = signOAuthAttempt(
-                { intentToken: result.intentToken, rememberMe, purpose: "signup" },
+                { intentToken: result.intentToken, rememberMe, purpose: "signup", provider: "google" },
                 SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
             );
             res.cookie(OAUTH_ATTEMPT_COOKIE, intentAttemptToken, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
@@ -315,14 +326,212 @@ exports.googleAuthCallback = async (req, res, next) => {
     }
 };
 
-// F-05 AC-04/D-01 R-IMPL: 명시적 연결(link) HTTP 핸들러는 여기 두지 않는다. 이 컨트롤러가
-// req.body의 provider/subject/email을 그대로 socialAuthService.linkExternalIdentity에
-// 전달하면, 로그인한 사용자가 소유권 증명 없이 임의의 소셜 identity를 자기 계정에 선점할 수
-// 있다(운영자 코드 검토 R-IMPL — state·세션 검증만으로는 provider/subject 자체의 진위를
-// 증명하지 못한다). socialAuthService.issueOAuthState(purpose:"link")·linkExternalIdentity는
-// 서버가 OAuth 교환·검증을 마친 결과만 입력으로 받는 내부 전용 계약으로 남겨 두고, F-06/F-07이
-// 실제 제공자 검증 어댑터를 완성해 그 검증 결과로만 이 함수들을 호출하는 라우트를 추가할
-// 때까지 공개 HTTP 경로는 두지 않는다(backend/routes/auth.routes.js 참고).
+// F-07: Discord 로그인 시작. googleAuthStart와 완전히 대칭이다 — provider만 다르다.
+exports.discordAuthStart = async (req, res, next) => {
+    try {
+        const rememberMe = req.query.rememberMe === "true";
+        const browserFingerprint = crypto.randomBytes(32).toString("base64url");
+
+        const { state } = await socialAuthService.issueOAuthState({ purpose: "login", browserFingerprint });
+
+        const attemptToken = signOAuthAttempt(
+            { fp: browserFingerprint, rememberMe, purpose: "login", provider: "discord" },
+            OAUTH_ATTEMPT_TTL_SECONDS,
+        );
+        res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
+
+        res.redirect(discordOAuthService.buildAuthorizationUrl(state));
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-07: Discord 콜백. googleAuthCallback과 완전히 대칭이다(같은 순서·같은 실패 처리,
+// R-IMPL #2/#3 그대로 적용) — provider만 다르고, 그 provider 값이 attempt 쿠키 바인딩과
+// resolveOAuthAccount 판정 모두에 쓰인다.
+exports.discordAuthCallback = async (req, res, next) => {
+    const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
+    res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
+
+    const frontendBase = process.env.FRONTEND_URL;
+    const redirectWithError = (code) => res.redirect(`${frontendBase}/login?socialError=${encodeURIComponent(code)}`);
+
+    try {
+        const userAgent = req.headers["user-agent"];
+        const reqInfo = {
+            ip:         getClientIp(req),
+            userAgent:  userAgent,
+            deviceType: getDeviceType(userAgent),
+        };
+
+        // provider가 "discord"가 아니면(Google 시도의 쿠키를 여기로 들이민 경우 포함) fp를
+        // 내주지 않는다 — googleAuthCallback과 같은 제공자 바인딩(signOAuthAttempt 주석 참고).
+        const browserFingerprint = attempt?.purpose === "login" && attempt?.provider === "discord" ? attempt.fp : undefined;
+        const rememberMe = attempt?.purpose === "login" && attempt?.provider === "discord" && attempt?.rememberMe === true;
+
+        // 1) state 소비를 먼저, 그리고 유일하게 커밋한다 — Discord를 부르기 전에 끝난다.
+        await socialAuthService.consumeOAuthState(req.query.state, { browserFingerprint, purpose: "login" });
+
+        // Discord도 사용자가 동의 화면에서 취소하면 code 대신 error를 실어 돌려준다 — 이
+        // 경우 코드 교환 자체를 시도하지 않는다(교환할 code가 없다).
+        const cancelled = req.query.error !== undefined;
+        let subject = null;
+        let email = null;
+        if (!cancelled) {
+            // 2) state가 유효했을 때만 제공자를 부른다. 여기서 실패해도(타임아웃 포함) 위
+            // state 소비는 이미 커밋되어 있어 재사용될 수 없다(R-IMPL #3).
+            const profile = await discordOAuthService.exchangeCodeForProfile(req.query.code);
+            subject = profile.subject;
+            email = profile.email;
+        }
+
+        // 3) 계정 조회/생성과 세션 발급 — rememberMe를 그대로 넘겨 재로그인이면 정확히
+        // 한 번만 세션을 발급한다(R-IMPL #2, 이중 발급 없음).
+        const result = await socialAuthService.resolveOAuthAccount({
+            provider: "discord", subject, email, cancelled, rememberMe, reqInfo,
+        });
+
+        if (result.status === "SIGNUP_REQUIRED") {
+            const intentAttemptToken = signOAuthAttempt(
+                { intentToken: result.intentToken, rememberMe, purpose: "signup", provider: "discord" },
+                SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
+            );
+            res.cookie(OAUTH_ATTEMPT_COOKIE, intentAttemptToken, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
+            return res.redirect(`${frontendBase}/login?socialIntent=${encodeURIComponent(result.intentToken)}`);
+        }
+
+        // status === "LOGIN" (재로그인). resolveOAuthAccount가 이미 rememberMe 그대로 세션을
+        // 발급했다 — 여기서는 그 결과를 쿠키로 옮기기만 한다.
+        res.cookie("accessToken", result.token, buildSessionCookieOptions(rememberMe, result.refreshTokenExpiresAt));
+        if (result.refreshToken) {
+            res.cookie("refreshToken", result.refreshToken, buildRefreshCookieOptions(result.refreshTokenExpiresAt));
+        } else {
+            clearRefreshCookie(res);
+        }
+
+        return res.redirect(`${frontendBase}/lobby`);
+    } catch (error) {
+        if (!error?.code) {
+            console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
+        }
+        return redirectWithError(error?.code || "OAUTH_FAILED");
+    }
+};
+
+// F-07 AC-04/D-01: 명시적 연결(link) — 로그인한 사용자가 Discord 계정을 자기 계정에 연결한다.
+//
+// F-05는 이 HTTP 핸들러를 의도적으로 만들지 않았다(운영자 코드 검토 R-IMPL) — req.body의
+// provider/subject/email을 그대로 socialAuthService.linkExternalIdentity에 넘기면, state·
+// 세션 검증을 통과해도 그 provider/subject 자체의 진위는 증명되지 않아 로그인한 사용자가
+// 임의의 소셜 identity를 자기 계정에 선점할 수 있었다(이전에 존재했던 POST /auth/social/link·
+// /auth/social/link/state가 바로 그 패턴이었다 — backend/__tests__/socialAuth.route.test.js가
+// 그 두 라우트의 부재를 회귀로 고정한다). 이 함수들은 그 패턴을 반복하지 않는다 — 클라이언트는
+// code 하나만 넘기고, subject·email은 아래에서 discordOAuthService.exchangeCodeForProfile이
+// 실제 Discord 서버로부터 검증해 얻은 값만 쓴다(googleAuthCallback/discordAuthCallback과 같은
+// 원칙). F-06/F-07이 그 검증 어댑터(googleOAuth.service.js/discordOAuth.service.js)를 완성한
+// 지금에야 이 라우트를 열 수 있다(backend/routes/auth.routes.js 참고). 이번 회차는 Discord만
+// 연다 — 시작한 슬라이스(F-07)의 범위에 맞춘다.
+exports.discordLinkStart = async (req, res, next) => {
+    try {
+        const browserFingerprint = crypto.randomBytes(32).toString("base64url");
+
+        // req.user는 verifyToken이 방금 검증한 현재 세션에서 나온다 — 클라이언트가 body로
+        // 주장하는 userId/sessionId가 아니라, 이 요청 자체의 인증 결과만 믿는다.
+        const { state } = await socialAuthService.issueOAuthState({
+            purpose: "link", userId: req.user.uuid, sessionId: req.user.sessionId, browserFingerprint,
+        });
+
+        const attemptToken = signOAuthAttempt(
+            { fp: browserFingerprint, purpose: "link", provider: "discord" },
+            OAUTH_ATTEMPT_TTL_SECONDS,
+        );
+        res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
+
+        // AC-04 R-IMPL #2: 연결은 로그인과 다른 콜백(DISCORD_LINK_REDIRECT_URI)으로 등록되어
+        // 있어야 한다 — 이 인가 URL과 아래 콜백의 코드 교환이 정확히 같은 purpose를 써서
+        // 같은 redirect_uri를 쓰게 한다(discordOAuth.service.js resolveRedirectUri 참고).
+        res.redirect(discordOAuthService.buildAuthorizationUrl(state, { purpose: "link" }));
+    } catch (error) {
+        next(error);
+    }
+};
+
+// 연결 콜백 — 로그인 콜백(discordAuthCallback)과 달리 세션을 새로 발급하지 않는다(이미
+// 로그인해 있다, verifyToken이 그 인증을 강제한다).
+//
+// R-IMPL #3 재검토 지적: 이전 버전은 코드 교환(exchangeCodeForProfile)을 먼저 부르고 나서야
+// socialAuthService.linkExternalIdentity가 state를 소비했다 — 위조/불일치/만료/재사용
+// state도 일단 Discord 네트워크 호출까지 가고 나서야 거부됐다. 로그인 콜백(R-IMPL #3)과 같은
+// 순서로 맞춘다: state 소비와 "지금 인증된 사용자/세션으로 발급된 state인지" 바인딩 확인을
+// Discord를 부르기 전에 먼저, 그리고 독립적으로 커밋한다 — 취소든 정상이든 이 한 곳에서만
+// consumeOAuthState를 부르므로 더 이상 취소 분기를 따로 나눌 필요가 없다. state 소비가 끝난
+// 뒤의 나머지(현재 세션 재확인 → identity 조회/생성)만 하는
+// socialAuthService.linkExternalIdentityForValidatedSession을 쓴다 — 기존
+// socialAuthService.linkExternalIdentity(rawState를 받아 그 안에서 직접 소비하는 계약)를
+// 그대로 다시 부르면 위에서 이미 커밋한 state를 또 소비하려다 STATE_REUSED로 스스로 거부된다.
+exports.discordLinkCallback = async (req, res, next) => {
+    const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
+    res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
+
+    // CODEX-2 재검토 지적: 연결(link)은 AccountPage(DiscordAccountLink.jsx)에서 로그인한
+    // 사용자가 직접 시작한 흐름이다 — 그 결과(성공/취소/실패)를 아무도 소비하지 않는 /lobby에
+    // 그대로 얹어두지 않고, 흐름이 시작된 실제 화면(/account)으로 돌려보내 그 화면이
+    // socialLinkSuccess/socialLinkError를 읽고 지우게 한다(DiscordAccountLink.jsx 참고).
+    const frontendBase = process.env.FRONTEND_URL;
+    const redirectWithError = (code) => res.redirect(`${frontendBase}/account?socialLinkError=${encodeURIComponent(code)}`);
+
+    try {
+        // purpose/provider가 일치하지 않으면(다른 왕복의 쿠키를 들이민 경우 포함) fp를
+        // 내주지 않는다 — 로그인 콜백과 같은 바인딩 원칙(signOAuthAttempt 주석 참고).
+        const browserFingerprint = attempt?.purpose === "link" && attempt?.provider === "discord" ? attempt.fp : undefined;
+        const rawState = req.query.state;
+
+        // 1) state 소비를 먼저, 그리고 유일하게 커밋한다 — Discord를 부르기 전에 끝난다
+        // (R-IMPL #3). 누락/위조/만료/재사용/지문 불일치/용도 불일치는 모두 여기서 걸러져
+        // 코드 교환까지 가지 않는다.
+        const consumed = await socialAuthService.consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
+
+        // 2) 이 state가 "지금" 인증된 사용자·세션에게 발급된 것인지 확인한다 — req.user는
+        // verifyToken이 이 요청 자체에서 방금 검증한 값이므로, 다른 세션이 발급받은 link
+        // state를 이 콜백에 들이밀 수 없다(재검토 지적, 기존 linkExternalIdentity의
+        // STATE_USER_MISMATCH 검증과 같은 원칙 — 제공자 호출보다 먼저 수행한다).
+        if (consumed.userId !== req.user.uuid || consumed.sessionId !== req.user.sessionId) {
+            const error = new Error("연결 요청 세션과 state 발급 세션이 일치하지 않습니다.");
+            error.status = 400; error.code = "STATE_USER_MISMATCH";
+            throw error;
+        }
+
+        // Discord도 사용자가 동의 화면에서 취소하면 code 대신 error를 실어 돌려준다 — state는
+        // 이미 위에서 소비했으므로(재사용 방지) 여기서는 그대로 취소로 종료한다.
+        if (req.query.error !== undefined) {
+            const error = new Error("사용자가 계정 연결을 취소했습니다.");
+            error.status = 400; error.code = "OAUTH_CANCELLED";
+            throw error;
+        }
+
+        // 3) state가 유효했을 때만, 그리고 오직 연결 전용 redirect_uri로만 Discord를 부른다.
+        // 서버가 실제로 Discord와 교환해 검증한 subject/email만 연결에 쓴다 — 이 요청은
+        // code 외에 다른 신원 파라미터를 아예 받지 않으므로, 클라이언트가 subject/email을
+        // 주장할 수 있는 입력 자체가 없다.
+        const profile = await discordOAuthService.exchangeCodeForProfile(req.query.code, { purpose: "link" });
+
+        // 4) 위에서 이미 검증·소비한 state를 다시 소비하지 않는 전용 함수로 연결만 수행한다.
+        await socialAuthService.linkExternalIdentityForValidatedSession({
+            userId: req.user.uuid,
+            sessionId: req.user.sessionId,
+            provider: "discord",
+            subject: profile.subject,
+            email: profile.email,
+        });
+
+        return res.redirect(`${frontendBase}/account?socialLinkSuccess=discord`);
+    } catch (error) {
+        if (!error?.code) {
+            console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
+        }
+        return redirectWithError(error?.code || "OAUTH_FAILED");
+    }
+};
 
 // 액세스 토큰이 만료된 뒤(F-03 AC-01) 호출된다. verifyToken을 거치지 않으므로 req.user가
 // 없고, 대신 refreshToken 쿠키 자체를 authService.refresh가 검증·회전시킨다.

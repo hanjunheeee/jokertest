@@ -4,6 +4,8 @@ const router  = express.Router();
 const {
     signup, login, me, logout, checkEmail, refresh,
     completeSocialSignup, googleAuthStart, googleAuthCallback,
+    discordAuthStart, discordAuthCallback,
+    discordLinkStart, discordLinkCallback,
 } = require("../controller/user.controller");
 const { verifyToken }        = require("../middleware/auth.middleware");
 
@@ -22,23 +24,31 @@ router.post("/logout", verifyToken, logout);
 // 걸지 않는다 — 인증은 intentToken(socialAuth.service.js가 발급) 자체가 대신한다.
 router.post("/social/signup/complete", completeSocialSignup);
 
-// F-06: Google 제공자 검증 어댑터(googleOAuth.service.js)가 완성되어, F-05가 남겨둔
-// 계약(auth.routes.js 위쪽 주석 — "실제 제공자 검증 어댑터를 완성해 그 어댑터가 검증한
-// 결과로만 이 함수들을 호출하는 라우트를 추가할 때까지")대로 로그인 시작·콜백 라우트를
-// 추가한다. 둘 다 브라우저의 전체 페이지 이동(GET)으로 동작하는 표준 인가 코드 흐름이라
-// verifyToken을 걸지 않는다 — 인증 자체가 이 왕복(state 발급 → Google 동의 → 콜백)의
-// 결과물이다.
+// F-06/F-07: Google·Discord 제공자 검증 어댑터(googleOAuth.service.js/discordOAuth.service.js)가
+// 완성되어, F-05가 남겨둔 계약(auth.routes.js 위쪽 주석 — "실제 제공자 검증 어댑터를 완성해
+// 그 어댑터가 검증한 결과로만 이 함수들을 호출하는 라우트를 추가할 때까지")대로 로그인
+// 시작·콜백 라우트를 추가한다. 모두 브라우저의 전체 페이지 이동(GET)으로 동작하는 표준
+// 인가 코드 흐름이라 verifyToken을 걸지 않는다 — 인증 자체가 이 왕복(state 발급 → 제공자
+// 동의 → 콜백)의 결과물이다. 두 제공자의 state는 같은 socialAuth.service.js state 저장소를
+// 공유하지만, user.controller.js가 서명하는 oauthAttempt 쿠키에 provider를 함께 묶어 한
+// 제공자로 시작한 시도의 쿠키를 다른 제공자의 콜백이 받아들이지 않게 한다(user.controller.js
+// signOAuthAttempt 주석 참고).
 router.get("/google", googleAuthStart);
 router.get("/google/callback", googleAuthCallback);
+router.get("/discord", discordAuthStart);
+router.get("/discord/callback", discordAuthCallback);
 
-// F-05 AC-04/D-01 R-IMPL: 명시적 연결(link) 라우트는 여기서 등록하지 않는다. 인증된
-// 사용자라도 요청 본문의 provider/subject/email은 클라이언트가 주장한 값일 뿐 서버가 검증한
-// 적이 없다 — 공개 HTTP 경로로 노출하면 로그인한 사용자가 소유권 증명 없이 임의의 소셜
-// identity를 자기 계정에 선점할 수 있다(운영자 코드 검토 R-IMPL). socialAuthService의
-// issueOAuthState(purpose:"link")·linkExternalIdentity는 이미 서버가 OAuth 교환·검증을
-// 마친 provider/subject만 입력으로 받는 내부 전용 계약으로 남겨두고(backend/tests/db/
-// f05-social-auth.integration.test.js가 그 계약을 직접 검증한다), F-06/F-07이 실제 제공자
-// 검증 어댑터를 완성해 그 어댑터가 검증한 결과로만 이 함수들을 호출하는 라우트를 추가할 때까지
-// 공개 라우트는 닫아 둔다.
+// F-07 AC-04/D-01: 명시적 연결(link) — 로그인한 사용자가 Discord 계정을 자기 계정에 연결한다.
+// F-05는 이 라우트를 의도적으로 열지 않았다(운영자 코드 검토 R-IMPL) — 공개 HTTP 경로로
+// provider/subject/email을 client가 직접 주장하게 두면(이전에 있었던 POST /auth/social/link·
+// /auth/social/link/state가 그 패턴이었다 — backend/__tests__/socialAuth.route.test.js가 그
+// 두 라우트의 부재를 회귀로 고정한다), 로그인한 사용자가 소유권 증명 없이 임의의 소셜
+// identity를 자기 계정에 선점할 수 있다. 이제 discordOAuth.service.js(F-07)가 실제 제공자
+// 검증 어댑터를 완성했으므로, 그 어댑터가 검증한 subject/email만 쓰는 이 라우트를 연다 —
+// verifyToken으로 보호되고, 클라이언트는 code 외에 다른 신원 파라미터를 아예 보내지 않는다
+// (user.controller.js discordLinkStart/discordLinkCallback 참고). Google(F-06)의 동등한 링크
+// 라우트는 이 슬라이스(F-07) 범위 밖이라 추가하지 않는다.
+router.get("/discord/link", verifyToken, discordLinkStart);
+router.get("/discord/link/callback", verifyToken, discordLinkCallback);
 
 module.exports = router;

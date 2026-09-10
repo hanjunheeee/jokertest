@@ -7,6 +7,7 @@ import {
 } from "@/domains/user/constants/accountPanelStyle.js"
 import NicknameSection from "@/domains/user/components/AccountPanel/NicknameSection.jsx"
 import PasswordSection from "@/domains/user/components/AccountPanel/PasswordSection.jsx"
+import DiscordAccountLink from "@/domains/user/components/DiscordAccountLink.jsx"
 import { useAccountForm } from "@/domains/user/hooks/useAccountForm.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
@@ -52,6 +53,9 @@ export default function AccountPanel() {
             pwLoading={pwLoading}
             onSubmit={handlePasswordSubmit}
           />
+
+          {/* F-07 AC-04/D-01: 로그인한 사용자가 Discord 계정을 명시적으로 연결하는 컨트롤입니다. */}
+          <DiscordAccountLink />
         </div>
       </div>
     </motion.div>
