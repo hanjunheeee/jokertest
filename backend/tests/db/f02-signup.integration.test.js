@@ -34,10 +34,19 @@ const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');
 const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname-snapshot');
+// F-03: AC-06가 authService.login()을 실제로 호출하고, login()은 항상
+// userRepository.createUserSession(...)에 refresh_token_hash 등 0003이 추가한 컬럼을
+// (rememberMe가 아니면 null로) 실어 INSERT한다. 이 fixture가 0003을 적용하지 않으면 그
+// 컬럼들이 실제 DB에 없어 "Unknown column" 오류로 로그인 자체가 실패한다(R-IMPL #2).
+const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
+// F-03 R-IMPL #11: refresh_token_history는 user_sessions의 자식 테이블이다. 같은 격리
+// DB를 공유하는 f01/f03 DB 스위트와 관리 테이블/삭제 순서를 일관되게 맞추지 않으면,
+// 이 테이블을 모르는 스위트의 resetSchema()가 "F-01이 모르는 테이블"로 오판해 거부한다.
+const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot];
-const MANAGED_TABLES = [...baseline.TABLE_ORDER, migrationRunner.META_TABLE];
-const DROP_ORDER = [...baseline.TABLE_ORDER].reverse().concat([migrationRunner.META_TABLE]);
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
+const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, migrationRunner.META_TABLE];
+const DROP_ORDER = [addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
 
 let sequelize;
 let connectionError = null;

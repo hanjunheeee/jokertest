@@ -120,6 +120,49 @@ const resetSocketRegistries = () => {
 test.beforeEach(resetSocketRegistries);
 test.after(resetSocketRegistries);
 
+// ── F-03 AC-03/AC-05: authenticateSocket이 HTTP verifyToken과 같은 sessionLifecycle을
+// 공유해, 폐기된 세션·정지된 계정을 동일하게 거부하는지 확인합니다. ─────────────────────
+
+const fakeHandshakeSocket = (token) => ({ handshake: { headers: { cookie: `accessToken=${token}` } }, data: {} });
+
+const runAuthenticateSocket = (socket) =>
+    new Promise((resolve) => socketLayer.__testables.authenticateSocket(socket, resolve));
+
+test("F-03 AC-05: 세션이 폐기되면 authenticateSocket도 HTTP와 동일하게 거부한다", async (t) => {
+    const { session } = stubAuthStorage(t);
+    session.is_online = false;
+    const token = generateToken({ uuid: UUID, role: "USER", sessionId: SESSION_ID });
+
+    const socket = fakeHandshakeSocket(token);
+    const err = await runAuthenticateSocket(socket);
+
+    assert.ok(err instanceof Error, "폐기된 세션의 토큰은 소켓 인증도 거부해야 합니다");
+    assert.equal(socket.data.user, undefined);
+});
+
+test("F-03 AC-03/AC-05: 정지된 계정은 socket 인증에서도 거부된다", async (t) => {
+    stubAuthStorage(t);
+    db.UserBan = { findOne: async () => ({ reason: "운영 정지" }) };
+    const token = generateToken({ uuid: UUID, role: "USER", sessionId: SESSION_ID });
+
+    const socket = fakeHandshakeSocket(token);
+    const err = await runAuthenticateSocket(socket);
+
+    assert.ok(err instanceof Error, "정지된 계정의 토큰은 소켓 인증도 거부해야 합니다");
+    assert.equal(socket.data.user, undefined);
+});
+
+test("F-03 AC-05: 유효한 세션이면 authenticateSocket이 정상 통과한다", async (t) => {
+    stubAuthStorage(t);
+    const token = generateToken({ uuid: UUID, role: "USER", sessionId: SESSION_ID });
+
+    const socket = fakeHandshakeSocket(token);
+    const err = await runAuthenticateSocket(socket);
+
+    assert.equal(err, undefined);
+    assert.equal(socket.data.user.uuid, UUID);
+});
+
 test("AC-06: socket disconnect는 auth session의 is_online을 바꾸지 않는다", async (t) => {
     const { session, presenceWrites } = stubAuthStorage(t);
 
@@ -213,6 +256,65 @@ test("AC-09: force_disconnect 안내에는 토큰·쿠키 같은 값이 들어�
     const payload = existing.emitted[0].payload;
     assert.deepEqual(Object.keys(payload), ["message"]);
     assert.equal(/token|cookie|password/i.test(JSON.stringify(payload)), false);
+});
+
+// ── F-03 AC-05/AC-09: 이미 연결된 소켓의 후속 보호 동작도 세션 폐기를 즉시 반영한다 ──────
+
+/** wrapSocketWithSessionGuard가 감싸는 socket.on을 흉내내는 최소 fake socket. */
+const makeGuardedSocket = (uuid) => {
+    const handlers = {};
+    return {
+        data: { user: { uuid, sessionId: SESSION_ID } },
+        emitted: [],
+        disconnectCalls: 0,
+        on(event, cb) { handlers[event] = cb; },
+        emit(event, payload) { this.emitted.push({ event, payload }); },
+        disconnect() { this.disconnectCalls += 1; },
+        _handlers: handlers,
+    };
+};
+
+test("F-03 AC-09: 연결된 소켓의 보호 이벤트는 세션이 폐기되면 실행되지 않고 강제 종료된다", async (t) => {
+    const { session } = stubAuthStorage(t);
+    const socket = makeGuardedSocket(UUID);
+    socketLayer.__testables.wrapSocketWithSessionGuard(socket);
+
+    let ran = false;
+    socket.on("game_action", () => { ran = true; });
+
+    session.is_online = false; // 로그아웃/정지 등으로 세션이 폐기된 상태를 흉내낸다.
+    await socket._handlers.game_action();
+
+    assert.equal(ran, false, "폐기된 세션에서는 이벤트 핸들러 본문이 실행되면 안 됩니다");
+    assert.deepEqual(socket.emitted.map((e) => e.event), ["force_disconnect"]);
+    assert.equal(socket.disconnectCalls, 1);
+});
+
+test("F-03 AC-09: 유효한 세션이면 보호 이벤트가 그대로 실행된다", async (t) => {
+    stubAuthStorage(t);
+    const socket = makeGuardedSocket(UUID);
+    socketLayer.__testables.wrapSocketWithSessionGuard(socket);
+
+    let ran = false;
+    socket.on("game_action", () => { ran = true; });
+    await socket._handlers.game_action();
+
+    assert.equal(ran, true);
+    assert.equal(socket.disconnectCalls, 0);
+});
+
+test("F-03 AC-09: disconnect 이벤트는 세션 재검증 없이 그대로 등록된다", async (t) => {
+    stubAuthStorage(t);
+    const socket = makeGuardedSocket(UUID);
+    socketLayer.__testables.wrapSocketWithSessionGuard(socket);
+
+    let ran = false;
+    socket.on("disconnect", () => { ran = true; });
+    // db.UserSession을 일부러 깨서, 재검증을 시도했다면 여기서 던졌을 것임을 보장한다.
+    db.UserSession = { findOne: async () => { throw new Error("재검증이 호출되면 안 됩니다"); } };
+    await socket._handlers.disconnect();
+
+    assert.equal(ran, true);
 });
 
 test("AC-09/AC-06: 강제 종료된 이전 소켓의 disconnect는 새 세션의 presence를 덮지 않는다", async (t) => {
