@@ -126,40 +126,14 @@ exports.completeSocialSignup = async (req, res, next) => {
     }
 };
 
-// F-05 AC-04/D-01: 로그인 중인 사용자가 소셜 계정을 명시적으로 연결하기 전에 발급받는
-// state다. userId·sessionId는 요청 본문이 아니라 verifyToken이 이미 검증한 req.user에서만
-// 가져온다 — 그래야 "지금 유효하게 인증된 바로 그 세션"이 발급자임을 서버가 보장한다.
-exports.issueSocialLinkState = async (req, res, next) => {
-    try {
-        const { browserFingerprint } = req.body;
-        const result = await socialAuthService.issueOAuthState({
-            purpose:    "link",
-            userId:     req.user.uuid,
-            sessionId:  req.user.sessionId,
-            browserFingerprint,
-        });
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// F-05 AC-04/D-01: 명시적 연결 실행. userId·sessionId는 여기서도 req.user에서만 가져오고
-// 요청 본문의 값은 쓰지 않는다 — linkExternalIdentity는 이 값이 state 발급 세션과 일치하고
-// (소비 시점에) 여전히 활성 상태인지를 이 값 기준으로 재검증한다.
-exports.linkSocialIdentity = async (req, res, next) => {
-    try {
-        const { provider, subject, email, rawState, browserFingerprint } = req.body;
-        const identity = await socialAuthService.linkExternalIdentity({
-            userId:    req.user.uuid,
-            sessionId: req.user.sessionId,
-            provider, subject, email, rawState, browserFingerprint,
-        });
-        res.status(200).json({ success: true, data: identity });
-    } catch (error) {
-        next(error);
-    }
-};
+// F-05 AC-04/D-01 R-IMPL: 명시적 연결(link) HTTP 핸들러는 여기 두지 않는다. 이 컨트롤러가
+// req.body의 provider/subject/email을 그대로 socialAuthService.linkExternalIdentity에
+// 전달하면, 로그인한 사용자가 소유권 증명 없이 임의의 소셜 identity를 자기 계정에 선점할 수
+// 있다(운영자 코드 검토 R-IMPL — state·세션 검증만으로는 provider/subject 자체의 진위를
+// 증명하지 못한다). socialAuthService.issueOAuthState(purpose:"link")·linkExternalIdentity는
+// 서버가 OAuth 교환·검증을 마친 결과만 입력으로 받는 내부 전용 계약으로 남겨 두고, F-06/F-07이
+// 실제 제공자 검증 어댑터를 완성해 그 검증 결과로만 이 함수들을 호출하는 라우트를 추가할
+// 때까지 공개 HTTP 경로는 두지 않는다(backend/routes/auth.routes.js 참고).
 
 // 액세스 토큰이 만료된 뒤(F-03 AC-01) 호출된다. verifyToken을 거치지 않으므로 req.user가
 // 없고, 대신 refreshToken 쿠키 자체를 authService.refresh가 검증·회전시킨다.

@@ -3,7 +3,7 @@ const router  = express.Router();
 
 const {
     signup, login, me, logout, checkEmail, refresh,
-    completeSocialSignup, issueSocialLinkState, linkSocialIdentity,
+    completeSocialSignup,
 } = require("../controller/user.controller");
 const { verifyToken }        = require("../middleware/auth.middleware");
 
@@ -22,8 +22,14 @@ router.post("/logout", verifyToken, logout);
 // 걸지 않는다 — 인증은 intentToken(socialAuth.service.js가 발급) 자체가 대신한다.
 router.post("/social/signup/complete", completeSocialSignup);
 
-// F-05 AC-04/D-01: 로그인 중인 사용자만 명시적 연결을 시작·완료할 수 있다.
-router.post("/social/link/state", verifyToken, issueSocialLinkState);
-router.post("/social/link", verifyToken, linkSocialIdentity);
+// F-05 AC-04/D-01 R-IMPL: 명시적 연결(link) 라우트는 여기서 등록하지 않는다. 인증된
+// 사용자라도 요청 본문의 provider/subject/email은 클라이언트가 주장한 값일 뿐 서버가 검증한
+// 적이 없다 — 공개 HTTP 경로로 노출하면 로그인한 사용자가 소유권 증명 없이 임의의 소셜
+// identity를 자기 계정에 선점할 수 있다(운영자 코드 검토 R-IMPL). socialAuthService의
+// issueOAuthState(purpose:"link")·linkExternalIdentity는 이미 서버가 OAuth 교환·검증을
+// 마친 provider/subject만 입력으로 받는 내부 전용 계약으로 남겨두고(backend/tests/db/
+// f05-social-auth.integration.test.js가 그 계약을 직접 검증한다), F-06/F-07이 실제 제공자
+// 검증 어댑터를 완성해 그 어댑터가 검증한 결과로만 이 함수들을 호출하는 라우트를 추가할 때까지
+// 공개 라우트는 닫아 둔다.
 
 module.exports = router;

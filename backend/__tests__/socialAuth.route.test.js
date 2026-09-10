@@ -10,11 +10,18 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localh
 // 로직을 격리 DB로 검증한다(이 저장소에서는 F01_TEST_DATABASE_URL이 없어 skip될 수 있다).
 // 이 파일은 그와 다른 층을 검증한다 — completeSocialSignupApi(프론트)가 실제로 호출하는
 // POST /auth/social/signup/complete 라우트가 존재하고, Set-Cookie 계약(login 컨트롤러와
-// 동일한 원칙)을 지키는지, 그리고 AC-04의 핵심(연결 요청의 userId/sessionId는 요청 본문이
-// 아니라 verifyToken이 검증한 req.user에서만 나온다)을 실제 Express 미들웨어 체인으로
-// 확인한다. socialAuth.service.js 자체의 트랜잭션/state 로직은 여기서 다시 검증하지 않고
-// 스텁으로 대체한다(auth.login.regression.test.js·profile.updatePassword.sessionRevocation
-// .test.js와 같은 패턴).
+// 동일한 원칙)을 지키는지 확인한다. socialAuth.service.js 자체의 트랜잭션/state 로직은
+// 여기서 다시 검증하지 않고 스텁으로 대체한다(auth.login.regression.test.js·
+// profile.updatePassword.sessionRevocation.test.js와 같은 패턴).
+//
+// R-IMPL(운영자 코드 검토): POST /auth/social/link·/auth/social/link/state는 이전 회차에
+// 등록되어 있었으나, 인증된 사용자라도 요청 본문의 provider/subject/email은 서버가 검증한
+// 적 없는 클라이언트 주장일 뿐이었다 — state·세션 검증을 통과해도 그 값 자체의 진위는
+// 증명되지 않아, 로그인한 사용자가 임의의 소셜 identity를 자기 계정에 선점할 수 있었다.
+// 이번 회차는 그 두 라우트를 auth.routes.js에서 제거했다(내부 전용 서비스 계약으로만
+// 남김). 아래 테스트는 "제거됨"을 회귀로 고정한다 — 인증·유효 state가 있어도 조작한
+// provider/subject로는 이 경로를 통해 identity를 만들 수 없음을(라우트 자체가 없어 서비스
+// 계층에 도달조차 하지 않음을) 검증한다.
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -133,66 +140,45 @@ test("가입 자격이 만료되면(INTENT_EXPIRED) 서비스 오류의 status·
     assert.equal(findSetCookie(res, "accessToken"), undefined, "실패 시 세션 쿠키를 발급하면 안 됩니다");
 });
 
-// ── POST /auth/social/link/state ─────────────────────────────────────────────
+// ── POST /auth/social/link/state, POST /auth/social/link (R-IMPL: 라우트 제거됨) ─────
 
-test("인증 쿠키 없이 링크 state 발급을 요청하면 401이고 서비스는 호출되지 않는다", async (t) => {
+test("인증 없이 링크 state 발급을 요청해도 라우트가 없어 404이고 서비스는 호출되지 않는다", async (t) => {
     const { calls } = stubSocialAuthService(t);
     const base = await startServer(t);
 
     const res = await postJson(base, "/auth/social/link/state", { browserFingerprint: "fp-1" });
 
-    assert.equal(res.status, 401);
-    assert.equal(calls.length, 0, "인증되지 않은 요청은 서비스 계층까지 도달하면 안 됩니다");
+    assert.equal(res.status, 404);
+    assert.equal(calls.length, 0, "제거된 라우트는 서비스 계층까지 도달하면 안 됩니다");
 });
 
-test("로그아웃(세션 폐기)된 토큰으로는 링크 state 발급 요청 자체가 verifyToken에서 401로 거부된다", async (t) => {
-    stubAuthGate(t, { sessionActive: false });
+test("유효한 세션 쿠키로 링크 state 발급을 요청해도 라우트가 없어 404이고 서비스는 호출되지 않는다", async (t) => {
+    stubAuthGate(t, { sessionActive: true });
     const { calls } = stubSocialAuthService(t);
     const base = await startServer(t);
 
     const res = await postJson(base, "/auth/social/link/state", { browserFingerprint: "fp-1" },
         { cookie: `accessToken=${TOKEN}` });
 
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 404);
     assert.equal(calls.length, 0);
 });
 
-test("링크 state 발급은 verifyToken이 검증한 req.user의 uuid·sessionId만 쓰고 요청 본문 값은 무시한다", async (t) => {
+test("인증·유효 state가 있다고 주장해도 연결 실행 라우트가 없어 조작한 provider/subject로 identity를 만들 수 없다(404, 서비스 미호출)", async (t) => {
     stubAuthGate(t, { sessionActive: true });
-    const { lastCall } = stubSocialAuthService(t, {
-        issueOAuthState: async () => ({ state: "raw-state", expiresAt: new Date() }),
-    });
-    const base = await startServer(t);
-
-    const res = await postJson(base, "/auth/social/link/state",
-        { browserFingerprint: "fp-1", userId: "attacker-uuid", sessionId: "attacker-session" },
-        { cookie: `accessToken=${TOKEN}` },
-    );
-    const body = await res.json();
-
-    assert.equal(res.status, 200);
-    assert.equal(body.data.state, "raw-state");
-
-    const call = lastCall("issueOAuthState");
-    assert.equal(call.args[0].userId, "uuid-1", "req.user.uuid가 아니라 요청 본문의 값을 썼습니다");
-    assert.equal(call.args[0].sessionId, "session-1", "req.user.sessionId가 아니라 요청 본문의 값을 썼습니다");
-    assert.equal(call.args[0].purpose, "link");
-});
-
-// ── POST /auth/social/link ───────────────────────────────────────────────────
-
-test("인증 쿠키 없이 연결 실행을 요청하면 401이고 서비스는 호출되지 않는다", async (t) => {
     const { calls } = stubSocialAuthService(t);
     const base = await startServer(t);
 
-    const res = await postJson(base, "/auth/social/link",
-        { provider: "google", subject: "sub-1", rawState: "state-1", browserFingerprint: "fp-1" });
+    const res = await postJson(base, "/auth/social/link", {
+        provider: "google", subject: "attacker-forged-subject", email: "victim@example.com",
+        rawState: "state-1", browserFingerprint: "fp-1",
+    }, { cookie: `accessToken=${TOKEN}` });
 
-    assert.equal(res.status, 401);
-    assert.equal(calls.length, 0);
+    assert.equal(res.status, 404);
+    assert.equal(calls.length, 0, "조작한 provider/subject를 실어도 socialAuthService.linkExternalIdentity가 호출되면 안 됩니다");
 });
 
-test("로그아웃(세션 폐기)된 토큰으로는 연결 실행 요청 자체가 verifyToken에서 401로 거부된다", async (t) => {
+test("로그아웃(세션 폐기)된 토큰으로도 연결 실행 라우트는 여전히 존재하지 않는다(404)", async (t) => {
     stubAuthGate(t, { sessionActive: false });
     const { calls } = stubSocialAuthService(t);
     const base = await startServer(t);
@@ -202,49 +188,6 @@ test("로그아웃(세션 폐기)된 토큰으로는 연결 실행 요청 자체
         { cookie: `accessToken=${TOKEN}` },
     );
 
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 404);
     assert.equal(calls.length, 0);
-});
-
-test("연결 실행은 verifyToken이 검증한 req.user의 uuid·sessionId만 쓰고 요청 본문의 userId·sessionId는 무시한다", async (t) => {
-    stubAuthGate(t, { sessionActive: true });
-    const { lastCall } = stubSocialAuthService(t, {
-        linkExternalIdentity: async () => ({ id: 1, provider: "google", subject: "sub-1", user_id: "uuid-1" }),
-    });
-    const base = await startServer(t);
-
-    const res = await postJson(base, "/auth/social/link", {
-        provider: "google", subject: "sub-1", rawState: "state-1", browserFingerprint: "fp-1",
-        userId: "attacker-uuid", sessionId: "attacker-session",
-    }, { cookie: `accessToken=${TOKEN}` });
-    const body = await res.json();
-
-    assert.equal(res.status, 200);
-    assert.equal(body.data.user_id, "uuid-1");
-
-    const call = lastCall("linkExternalIdentity");
-    assert.equal(call.args[0].userId, "uuid-1");
-    assert.equal(call.args[0].sessionId, "session-1");
-});
-
-test("이미 다른 계정에 연결된 소셜 계정이면(IDENTITY_ALREADY_LINKED) 409가 그대로 응답에 실린다", async (t) => {
-    stubAuthGate(t, { sessionActive: true });
-    stubSocialAuthService(t, {
-        linkExternalIdentity: async () => {
-            const error = new Error("이미 다른 계정에 연결된 소셜 계정입니다.");
-            error.status = 409;
-            error.code = "IDENTITY_ALREADY_LINKED";
-            throw error;
-        },
-    });
-    const base = await startServer(t);
-
-    const res = await postJson(base, "/auth/social/link",
-        { provider: "google", subject: "sub-1", rawState: "state-1", browserFingerprint: "fp-1" },
-        { cookie: `accessToken=${TOKEN}` },
-    );
-    const body = await res.json();
-
-    assert.equal(res.status, 409);
-    assert.equal(body.code, "IDENTITY_ALREADY_LINKED");
 });
