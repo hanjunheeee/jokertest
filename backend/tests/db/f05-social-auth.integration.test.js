@@ -146,7 +146,7 @@ test('AC-02: 소셜 가입 완료는 임의의 공용 비밀번호 없이 NOT NU
     });
     assert.equal(callback1.status, 'SIGNUP_REQUIRED');
     const signup1 = await socialAuthService.completeSocialSignup({
-        intentToken: callback1.intentToken, nickname: '소셜닉1', reqInfo: REQ_INFO,
+        intentToken: callback1.intentToken, nickname: '소셜닉1', birthDate: '1990-01-01', reqInfo: REQ_INFO,
     });
 
     const state2 = await issueLoginState();
@@ -155,7 +155,7 @@ test('AC-02: 소셜 가입 완료는 임의의 공용 비밀번호 없이 NOT NU
         rawState: state2.state, browserFingerprint: state2.browserFingerprint, reqInfo: REQ_INFO,
     });
     const signup2 = await socialAuthService.completeSocialSignup({
-        intentToken: callback2.intentToken, nickname: '소셜닉2', reqInfo: REQ_INFO,
+        intentToken: callback2.intentToken, nickname: '소셜닉2', birthDate: '1990-01-02', reqInfo: REQ_INFO,
     });
 
     const stored1 = await db.User.findByPk(signup1.user.uuid);
@@ -208,14 +208,14 @@ test('AC-02: completeSocialSignup은 계정마다 crypto.randomBytes로 서로 �
         provider: 'google', subject: `sub-${crypto.randomUUID()}`, email: `ac02b-${crypto.randomUUID()}@example.com`,
         rawState: state, browserFingerprint, reqInfo: REQ_INFO,
     });
-    await socialAuthService.completeSocialSignup({ intentToken: callback1.intentToken, nickname: '소셜닉3', reqInfo: REQ_INFO });
+    await socialAuthService.completeSocialSignup({ intentToken: callback1.intentToken, nickname: '소셜닉3', birthDate: '1990-01-03', reqInfo: REQ_INFO });
 
     const state2 = await issueLoginState();
     const callback2 = await socialAuthService.handleOAuthCallback({
         provider: 'google', subject: `sub-${crypto.randomUUID()}`, email: `ac02c-${crypto.randomUUID()}@example.com`,
         rawState: state2.state, browserFingerprint: state2.browserFingerprint, reqInfo: REQ_INFO,
     });
-    await socialAuthService.completeSocialSignup({ intentToken: callback2.intentToken, nickname: '소셜닉4', reqInfo: REQ_INFO });
+    await socialAuthService.completeSocialSignup({ intentToken: callback2.intentToken, nickname: '소셜닉4', birthDate: '1990-01-04', reqInfo: REQ_INFO });
 
     // state/intent 토큰 발급도 같은 함수를 32바이트로 쓰므로 여러 값이 잡히지만, 그중
     // 어떤 두 값도 겹치지 않아야 한다 — 하나라도 겹치면 예측 가능하거나 재사용된 원문이
@@ -530,7 +530,7 @@ test('AC-05: 만료된 가입 보완 자격(intent)으로는 완료할 수 없�
     await intentRow.update({ expires_at: new Date(Date.now() - 1000) });
 
     await assert.rejects(
-        socialAuthService.completeSocialSignup({ intentToken: callback.intentToken, nickname: '만료테스트', reqInfo: REQ_INFO }),
+        socialAuthService.completeSocialSignup({ intentToken: callback.intentToken, nickname: '만료테스트', birthDate: '1990-01-05', reqInfo: REQ_INFO }),
         (error) => error.status === 400 && error.code === 'INTENT_EXPIRED',
     );
 });

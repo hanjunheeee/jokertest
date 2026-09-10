@@ -22,7 +22,7 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
         {/* 기본 로그인 제출 버튼입니다. */}
         <AuthImageButton type="submit" src={LOGIN_ASSETS.loginButton} label="로그인" className="mt-1 cursor-pointer" />
 
-        <SocialLoginButtons />
+        <SocialLoginButtons rememberMe={rememberMe} />
         <AuthModeSwitchPrompt question="계정이 없으신가요?" actionLabel="회원가입" onSwitch={onSwitchToSignup} />
       </div>
     </>
