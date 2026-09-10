@@ -29,7 +29,7 @@
 - `GOOGLE_REDIRECT_URI` (Google Cloud Console에 등록된 콜백 URL과 정확히 일치해야 함)
 - `GOOGLE_OAUTH_TIMEOUT_MS` (선택, 기본 8000ms — 제공자 응답 타임아웃)
 
-이 네 값이 실제로 채워지고, `GOOGLE_REDIRECT_URI`가 Google 콘솔에 등록된 콜백과 일치하는
+필수 세 값(ID·비밀키·콜백 URL)이 실제로 채워지고, `GOOGLE_REDIRECT_URI`가 Google 콘솔에 등록된 콜백과 일치하는
 배포 환경에서 사람이 브라우저로 최초/재로그인/취소 세 시나리오를 직접 눌러 확인해야 위
 readiness_unverified 상태가 검증됨으로 바뀐다. 이 저장소의 어떤 자동 테스트도 이 조건을
 대신 만족시키지 않는다.
@@ -57,7 +57,7 @@ readiness_unverified 상태가 검증됨으로 바뀐다. 이 저장소의 어�
 - `/login?socialIntent=...`에서 소셜 가입 보완 폼(닉네임·생년월일)만 UI로 렌더링됨.
 - 생년월일 미입력 시 제출이 거부됨(필수 항목).
 - 9자 닉네임 입력 시 거부됨(닉네임 길이 상한 초과).
-- 소셜 오류 취소 후 쿼리 정리(재시도 시 이전 `socialError` 쿼리가 남지 않음).
+- 가입 보완 화면에서 취소하면 `socialIntent` 쿼리가 제거되고 기본 로그인 화면으로 복귀함.
 - `EMAIL_CONFLICT` 오류 문구가 화면에 표시됨.
 
 ### 이번 회차의 새 크래시 수정과 회귀 확인
@@ -75,9 +75,12 @@ readiness_unverified 상태가 검증됨으로 바뀐다. 이 저장소의 어�
 대체하도록 했다. `frontend/src/domains/auth/pages/__tests__/LoginPage.social.test.js`에
 `__proto__`/`constructor`/`toString`/`hasOwnProperty`/알 수 없는 코드 각각의 회귀를
 추가했고, 기존 `EMAIL_CONFLICT`/`OAUTH_CANCELLED` 정상 문구가 그대로 보존됨도 같은 테스트로
-재확인했다. 이 수정 이후의 실제 브라우저 재확인은 운영자가 다음 빌드에서 직접 수행한다
-(이 문서 작성 시점에는 아직 수행되지 않았다 — readiness_unverified와 별개로, 이 크래시
-자체의 브라우저 재확인도 미완료 항목으로 남긴다).
+재확인했다. 운영자는 수정된 빌드를 Chrome에서 직접 재검증했다. 같은
+`/login?socialError=__proto__` 주소에서 기본 오류 안내와 로그인 폼이 정상 표시됐고,
+콘솔 오류는 없었다. 확인한 소스와 최종 구현 커밋 `51913c10`의 SHA-256도 일치했다.
+근거는 `.pluto/monitor/AQ-browser-fixed-20260910.json`과
+`.pluto/monitor/AQ-browser-fixed-hashes.json`이다. 이는 로컬 화면 재검증이며 실제 Google
+인증의 `readiness_unverified` 상태는 그대로 유지한다.
 
 ## AC-06 — 실제 격리 DB 회귀 증거
 
@@ -98,7 +101,7 @@ wrapper로 실행한 실제 backend 회귀 결과가 기록되어 있다.
   `--env-file=.env.test --test --test-concurrency=1`으로 실행하고,
   `F01_TEST_DATABASE_URL`을 비공개 설정에서 주입한다.
 - DB 허용 목록: `pluto_f01_20260909_al`, `pluto_f01_20260909_al_restore_check` — 이 두 이름만
-  허용한다(`backend/tests/db/isolatedTestDb.js`가 재설정 직전 실제 `SELECT DATABASE()`로
+  허용한다(`backend/tests/helpers/isolatedTestDb.js`가 재설정 직전 실제 `SELECT DATABASE()`로
   현재 연결 대상을 확인하고 목록에 없으면 거부한다).
 - 실행 계정 DB나 Docker 볼륨을 삭제·초기화한 적이 없다.
 - 비공개 접속 정보(비밀번호 등)는 이 문서를 포함해 어디에도 출력·기록하지 않는다.
@@ -113,6 +116,17 @@ skip된다"는 이전 주장을 반복하지 않는다.
 한다(아래 "실행한 검증" 참고).
 
 ## 실행한 검증 (이번 회차)
+
+최종 구현 커밋 `51913c10`에 대한 정규 Pluto 검증 결과:
+
+- `VERIFY-9`: 프론트 전체 테스트 **1,226 통과 / 실패 0 / 건너뜀 0**.
+- `VERIFY-10`: 프론트 production build **exit 0**.
+- `VERIFY-11`: 전용 DB wrapper의 백엔드 전체 테스트 **1,145 통과 / 실패 0 / 건너뜀 0**.
+- `CODEX-3`: 교차 검증 **PASS**, 불일치·하향 판정 없음.
+- 수동 AC-05는 외부 연동을 미검증으로 기록했는지 확인한 조건이다. 실제 Google 인증
+  성공을 수동 PASS로 대체한 것이 아니다.
+
+실행 기록은 `.pluto/slices/AQ/runs/`에 보존한다. 아래는 구현 중 수행한 추가 검증이다.
 
 - `node impl-check.js node-test frontend/src/domains/auth/pages/__tests__/LoginPage.social.test.js`
   — `mapSocialErrorCode`/`resolveSocialLoginView` own-property 가드와 기존 회귀 전체.
