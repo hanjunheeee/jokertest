@@ -107,23 +107,20 @@ exports.consumeOAuthState = async (rawState, opts = {}) => {
 
 // ── OAuth 콜백 공통 처리 (AC-03/AC-04/AC-05) ─────────────────────────────────
 
-// 제공자별 연동이 검증을 마친 뒤 넘겨주는 결과만 받는다: provider/subject(고유 식별자),
-// email(제공자가 준 이메일), rawState/browserFingerprint(state 검증용), cancelled(사용자가
-// 제공자 화면에서 취소했는지).
-exports.handleOAuthCallback = async ({
-    provider, subject, email, rawState, browserFingerprint, cancelled, reqInfo = {},
+// F-06 R-IMPL #3: 제공자 교환(네트워크 호출)은 state 소비보다 나중에 일어나야 한다 — 그래야
+// 위조/불일치/만료/재사용 state는 Google을 부르기 전에 걸러지고, 교환 자체가 실패해도(취소가
+// 아닌 네트워크·제공자 오류) 이미 소비된 state는 재사용될 수 없다. 그래서 이 함수는 더 이상
+// state를 직접 소비하지 않는다 — 호출자(콜백 라우트)가 exports.consumeOAuthState로 먼저
+// 소비를 커밋한 뒤에야, 성공이든 실패든 제공자를 호출하고 그 결과만 여기로 넘긴다. 아래
+// exports.handleOAuthCallback은 상태 소비를 함께 묶어 처리해야 하는 기존/테스트 호출부
+// (state 소비와 계정 판정이 원자적으로 한 번에 끝나야 하는 자리)를 위해 그대로 남겨둔다.
+//
+// rememberMe: 사용자가 로그인 시작 시점에 선택한 "로그인 상태 유지" 값. 재로그인(LOGIN)
+// 판정에서 세션을 발급할 때 그대로 쓴다 — 컨트롤러가 이 함수 호출 뒤에 다시 세션을 발급하지
+// 않아도 되도록, 세션 발급은 여기 한 번으로 끝난다(F-06 R-IMPL #2: 이중 발급 금지).
+exports.resolveOAuthAccount = async ({
+    provider, subject, email, cancelled, rememberMe = false, reqInfo = {},
 }) => {
-    // state 소비는 이 콜백이 최종적으로 성공하는지와 분리된 자신만의 트랜잭션에서 먼저
-    // 커밋한다. state는 "제공자가 정확히 한 번 돌려준 리다이렉트"라는 사실 자체를 보장하는
-    // 값이라, 사용자 취소나 이메일 미제공/충돌처럼 계정을 만들지 못하는 결과로 끝나도 이미
-    // 도착한 콜백은 소비된 것으로 남아야 같은 state로의 재생(replay)을 막을 수 있다. 아래
-    // 계정 생성/조회 로직과 하나의 트랜잭션으로 묶으면, 그 로직이 던지는 오류가 managed
-    // transaction을 통째로 롤백시켜 방금 커밋하려던 소비까지 되돌린다(재검토 지적: 실패·
-    // 취소 콜백 이후 재사용 방지가 빠져 있었다) — 그래서 소비만 별도로 먼저 커밋한다.
-    // 제공자는 사용자가 동의 화면에서 취소했을 때도 원래 발급했던 state를 그대로 리다이렉트에
-    // 실어 돌려주므로, 취소 여부 판정보다 항상 먼저 소비한다.
-    await exports.consumeOAuthState(rawState, { browserFingerprint, purpose: "login" });
-
     if (cancelled === true) {
         throw createError("사용자가 로그인을 취소했습니다.", 400, "OAUTH_CANCELLED");
     }
@@ -142,7 +139,7 @@ exports.handleOAuthCallback = async ({
             if (!user) {
                 throw createError("연결된 계정을 찾을 수 없습니다.", 404, "LINKED_USER_MISSING");
             }
-            const session = await authService.issueSessionForUser(user, { rememberMe: false }, reqInfo, transaction);
+            const session = await authService.issueSessionForUser(user, { rememberMe: rememberMe === true }, reqInfo, transaction);
             return { status: "LOGIN", user, ...session };
         }
 
@@ -177,13 +174,40 @@ exports.handleOAuthCallback = async ({
     });
 };
 
+// 제공자별 연동이 검증을 마친 뒤 넘겨주는 결과만 받는다: provider/subject(고유 식별자),
+// email(제공자가 준 이메일), rawState/browserFingerprint(state 검증용), cancelled(사용자가
+// 제공자 화면에서 취소했는지). state 소비와 계정 판정을 한 번에 묶어서 처리하고 싶은
+// 호출부(예: DB 통합 테스트가 검증하는 원자적 계약)를 위한 편의 함수 — 내부적으로
+// consumeOAuthState → resolveOAuthAccount를 그대로 순서대로 호출할 뿐이다. 제공자 네트워크
+// 호출이 상태 소비와 계정 판정 "사이"에 끼는 실제 콜백 라우트(F-06)는 이 함수를 쓰지 않고
+// 두 단계를 직접 나눠 호출한다(user.controller.js googleAuthCallback 참고, R-IMPL #3).
+exports.handleOAuthCallback = async ({
+    provider, subject, email, rawState, browserFingerprint, cancelled, rememberMe = false, reqInfo = {},
+}) => {
+    // state 소비는 이 콜백이 최종적으로 성공하는지와 분리된 자신만의 트랜잭션에서 먼저
+    // 커밋한다. state는 "제공자가 정확히 한 번 돌려준 리다이렉트"라는 사실 자체를 보장하는
+    // 값이라, 사용자 취소나 이메일 미제공/충돌처럼 계정을 만들지 못하는 결과로 끝나도 이미
+    // 도착한 콜백은 소비된 것으로 남아야 같은 state로의 재생(replay)을 막을 수 있다. 아래
+    // 계정 생성/조회 로직과 하나의 트랜잭션으로 묶으면, 그 로직이 던지는 오류가 managed
+    // transaction을 통째로 롤백시켜 방금 커밋하려던 소비까지 되돌린다(재검토 지적: 실패·
+    // 취소 콜백 이후 재사용 방지가 빠져 있었다) — 그래서 소비만 별도로 먼저 커밋한다.
+    // 제공자는 사용자가 동의 화면에서 취소했을 때도 원래 발급했던 state를 그대로 리다이렉트에
+    // 실어 돌려주므로, 취소 여부 판정보다 항상 먼저 소비한다.
+    await exports.consumeOAuthState(rawState, { browserFingerprint, purpose: "login" });
+
+    return await exports.resolveOAuthAccount({ provider, subject, email, cancelled, rememberMe, reqInfo });
+};
+
 // ── 소셜 가입 보완 완료 (AC-02/AC-03) ────────────────────────────────────────
 
 // 닉네임(및 선택적으로 생년월일)을 받아 실제 users 행을 만든다. password_hash는 NOT NULL
 // 제약을 만족시키기 위해 매 계정마다 새로 무작위 값을 생성해 해시한다 — 여러 소셜 계정이
 // 같은(공용/예측 가능한) 비밀번호를 공유하지 않는다(AC-02). 원문은 어디에도 반환·저장하지
 // 않고 이 함수 안에서만 쓰고 버린다 — 소셜 전용 계정은 비밀번호 로그인 경로를 쓰지 않는다.
-exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, reqInfo = {} }) => {
+// rememberMe: 콜백이 SIGNUP_REQUIRED로 끝나기 전에 사용자가 선택했던 "로그인 상태 유지"
+// 값을 컨트롤러가 서버 서명 쿠키로 보존해 여기까지 그대로 전달한다(F-06 R-IMPL #2). 기본값은
+// false — 호출부가 넘기지 않으면 기존과 동일하게 세션 쿠키(비영속)로 발급된다.
+exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememberMe = false, reqInfo = {} }) => {
     if (typeof intentToken !== "string" || !intentToken) {
         throw createError("가입 정보가 없습니다.", 400, "INTENT_INVALID");
     }
@@ -239,7 +263,7 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, reqInf
         }, { transaction });
         await userRepository.markSocialSignupIntentConsumed(intent.id, { transaction });
 
-        const session = await authService.issueSessionForUser(user, { rememberMe: false }, reqInfo, transaction);
+        const session = await authService.issueSessionForUser(user, { rememberMe: rememberMe === true }, reqInfo, transaction);
         return { user, ...session };
     });
 };

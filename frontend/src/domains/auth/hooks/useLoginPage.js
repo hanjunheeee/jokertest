@@ -6,6 +6,47 @@ import { validateSignupForm } from "../validation/signupValidation.js"
 
 const INITIAL_FORM_DATA = { email: "", password: "", passwordConfirm: "", nickname: "", birthDate: "" }
 
+// F-06 AC-04: 서버(user.controller.js googleAuthCallback)가 실어 보내는 socialError 코드를
+// 사용자가 이해할 수 있는 문구로 옮긴다. 서버가 낼 수 있는 코드를 유한 집합으로 미리 정의해
+// 두고(경계 매핑), 이 목록에 없는 값이 와도 조용히 숨기지 않고 안전한 기본 문구로 대체한다.
+export const SOCIAL_ERROR_MESSAGES = {
+  OAUTH_CANCELLED: "Google 로그인을 취소했습니다.",
+  STATE_MISSING: "로그인 요청 정보가 없습니다. 다시 시도해주세요.",
+  STATE_INVALID: "로그인 요청이 유효하지 않습니다. 다시 시도해주세요.",
+  STATE_EXPIRED: "로그인 요청이 만료되었습니다. 다시 시도해주세요.",
+  STATE_REUSED: "이미 처리된 로그인 요청입니다. 다시 시도해주세요.",
+  STATE_FINGERPRINT_MISMATCH: "요청 출처가 일치하지 않습니다. 다시 시도해주세요.",
+  EMAIL_CONFLICT: "이미 가입된 이메일입니다. 기존 계정으로 로그인한 뒤 연결해주세요.",
+  EMAIL_MISSING: "Google 계정에서 이메일 정보를 받지 못했습니다.",
+  PROVIDER_INVALID: "Google 로그인 정보를 확인할 수 없습니다.",
+  GOOGLE_OAUTH_NOT_CONFIGURED: "지금은 Google 로그인을 사용할 수 없습니다.",
+  GOOGLE_CODE_MISSING: "Google 인증 정보가 없습니다. 다시 시도해주세요.",
+  GOOGLE_TOKEN_EXCHANGE_FAILED: "Google 인증에 실패했습니다. 다시 시도해주세요.",
+  GOOGLE_PROFILE_FETCH_FAILED: "Google 프로필 조회에 실패했습니다. 다시 시도해주세요.",
+  GOOGLE_PROFILE_INVALID: "Google 계정 정보를 확인할 수 없습니다.",
+  GOOGLE_OAUTH_TIMEOUT: "Google 응답이 지연되었습니다. 다시 시도해주세요.",
+}
+export const DEFAULT_SOCIAL_ERROR_MESSAGE = "소셜 로그인에 실패했습니다. 다시 시도해주세요."
+
+export function mapSocialErrorCode(code) {
+  return SOCIAL_ERROR_MESSAGES[code] ?? DEFAULT_SOCIAL_ERROR_MESSAGE
+}
+
+// F-06 AC-02: 로그인 화면 URL 쿼리(socialIntent/socialError)를 화면이 그려야 할 모드로
+// 번역한다. 실제 쿼리 파싱(useSearchParams)은 페이지가 하고, 이 함수는 이미 꺼낸 값만 받아
+// 순수하게 판정한다 — 이 저장소의 node:test 실행에는 JSX 변환기가 없어 LoginPage.jsx를
+// 직접 렌더링해 검증할 수 없으므로(위 useEmailAvailabilityCheck와 같은 이유), 그 판정
+// 로직만 여기 순수 함수로 분리해 둔다.
+export function resolveSocialLoginView({ socialIntent, socialError } = {}) {
+  if (typeof socialIntent === "string" && socialIntent) {
+    return { mode: "socialSignup", intentToken: socialIntent }
+  }
+  if (typeof socialError === "string" && socialError) {
+    return { mode: "socialError", message: mapSocialErrorCode(socialError) }
+  }
+  return { mode: "default" }
+}
+
 // 가입 입력 단계의 이메일 중복 확인 상태를 관리합니다. SignupFields.jsx는 JSX라 이 저장소의
 // node:test 실행(JSX 변환기 없음)으로는 직접 검증할 수 없으므로, 그 상태 로직만 여기 순수
 // 훅으로 분리해 useLoginPage.test.js가 renderHook으로 검증할 수 있게 합니다.

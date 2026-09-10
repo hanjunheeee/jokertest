@@ -28,6 +28,7 @@ const assert       = require("node:assert/strict");
 const { once }     = require("node:events");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
+const jwt          = require("jsonwebtoken");
 
 const { generateToken } = require("../utils/jwt");
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
@@ -118,6 +119,81 @@ test("가입 완료 성공 시 accessToken 세션 쿠키를 발급하고 이전 
     assert.ok(refreshCookie, "이전 영속 refreshToken 쿠키를 지우는 Set-Cookie가 있어야 합니다");
     assert.match(refreshCookie, /^refreshToken=;/, "삭제 쿠키는 값이 비어 있어야 합니다");
     assert.match(refreshCookie, /Expires=/i);
+});
+
+// ── F-06 R-IMPL #2: googleAuthCallback이 SIGNUP_REQUIRED에서 다시 서명해 둔 oauthAttempt
+// 쿠키로 rememberMe 선택이 이 완료 단계까지 보존되는지 검증한다. 요청 본문에 rememberMe를
+// 실어도 무시되어야 한다 — 서버가 로그인 시작 시점에 서명한 값만 신뢰한다.
+
+const signAttempt = (payload, ttlSeconds = 1800) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ttlSeconds });
+
+test("SIGNUP_REQUIRED 콜백이 남긴 서명 쿠키에 rememberMe:true가 있으면 완료 서비스에 그대로 전달되고 영속 쿠키로 반영된다(AC-02)", async (t) => {
+    const { calls } = stubSocialAuthService(t, {
+        completeSocialSignup: async () => ({
+            user: { uuid: "new-uuid", nickname: "소셜닉", role: "USER" },
+            token: "remembered-access-token",
+            refreshToken: "remembered-refresh-token",
+            refreshTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        }),
+    });
+    const base = await startServer(t);
+
+    const attemptCookie = signAttempt({ intentToken: "intent-1", rememberMe: true, purpose: "signup" });
+    const res = await postJson(base, "/auth/social/signup/complete",
+        { intentToken: "intent-1", nickname: "소셜닉" },
+        { cookie: `oauthAttempt=${attemptCookie}` },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(calls[0].args[0].rememberMe, true, "완료 서비스는 서명 쿠키의 rememberMe를 그대로 받아야 합니다");
+
+    const accessCookie = findSetCookie(res, "accessToken");
+    assert.match(accessCookie, /Max-Age/i, "rememberMe:true면 영속 쿠키여야 합니다");
+    const refreshCookie = findSetCookie(res, "refreshToken");
+    assert.match(refreshCookie, /^refreshToken=remembered-refresh-token/);
+});
+
+test("쿠키의 intentToken이 지금 제출된 것과 다르면(다른 시도의 쿠키 재사용) rememberMe는 false로 떨어진다", async (t) => {
+    const { calls } = stubSocialAuthService(t, {
+        completeSocialSignup: async () => ({
+            user: { uuid: "new-uuid", nickname: "소셜닉", role: "USER" },
+            token: "fake-access-token", refreshToken: null, refreshTokenExpiresAt: null,
+        }),
+    });
+    const base = await startServer(t);
+
+    const attemptCookie = signAttempt({ intentToken: "other-intent", rememberMe: true, purpose: "signup" });
+    const res = await postJson(base, "/auth/social/signup/complete",
+        { intentToken: "intent-1", nickname: "소셜닉" },
+        { cookie: `oauthAttempt=${attemptCookie}` },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(calls[0].args[0].rememberMe, false);
+});
+
+test("서명 쿠키가 없거나 다른 비밀키로 위조되었으면 요청 본문의 rememberMe는 무시되고 항상 false가 전달된다(F-06 R-IMPL #2)", async (t) => {
+    const { calls } = stubSocialAuthService(t, {
+        completeSocialSignup: async () => ({
+            user: { uuid: "new-uuid", nickname: "소셜닉", role: "USER" },
+            token: "fake-access-token", refreshToken: null, refreshTokenExpiresAt: null,
+        }),
+    });
+    const base = await startServer(t);
+
+    const noCookieRes = await postJson(base, "/auth/social/signup/complete",
+        { intentToken: "intent-1", nickname: "소셜닉", rememberMe: true });
+    assert.equal(calls[0].args[0].rememberMe, false);
+
+    const forged = jwt.sign({ intentToken: "intent-1", rememberMe: true, purpose: "signup" }, "wrong-secret", { expiresIn: 1800 });
+    const forgedRes = await postJson(base, "/auth/social/signup/complete",
+        { intentToken: "intent-1", nickname: "소셜닉", rememberMe: true },
+        { cookie: `oauthAttempt=${forged}` },
+    );
+    assert.equal(calls[1].args[0].rememberMe, false);
+
+    assert.equal(noCookieRes.status, 200);
+    assert.equal(forgedRes.status, 200);
 });
 
 test("가입 자격이 만료되면(INTENT_EXPIRED) 서비스 오류의 status·code가 그대로 응답에 실린다", async (t) => {

@@ -1,4 +1,5 @@
 const crypto            = require("crypto");
+const jwt                = require("jsonwebtoken");
 const authService       = require("../service/auth.service");
 const socialAuthService = require("../service/socialAuth.service");
 const googleOAuthService = require("../service/googleOAuth.service");
@@ -7,27 +8,51 @@ const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
 const { buildSessionCookieOptions, buildRefreshCookieOptions, clearSessionCookie, clearRefreshCookie } = require("../auth/cookieOptions");
 
-// F-06: Google OAuth 왕복(시작 → Google 동의 → 콜백) 동안만 살아있는 값 두 가지를 쿠키에
-// 담아 보존한다. 둘 다 socialAuth.service.js의 oauth_states 테이블에는 저장할 자리가 없는
-// 값이라(스키마 변경은 이 작업 범위 밖) 브라우저에 결합된 쿠키로 왕복시킨다 — state
-// 자체의 CSRF·재생 방지는 여전히 F-05의 state·browser_fingerprint 검증이 담당한다:
-//   - oauthFp: 이 왕복을 시작한 브라우저를 표시하는 무작위 값. issueOAuthState에
-//     browserFingerprint로 그대로 전달되어 state에 결합되므로, 다른 브라우저가 이 state를
-//     가로채 콜백을 재현해도 fingerprint 불일치로 거부된다(F-05 A-04).
-//   - oauthRememberMe: 로그인 유지 선택. 콜백의 code/state는 Google이 만든 값이라 여기 담을
-//     수 없고, 시작 시점에 서버가 세팅한 이 쿠키만 신뢰한다 — 그래서 콜백 쪽 쿼리 파라미터를
-//     바꾸는 것만으로는 이미 시작된 시도의 로그인 유지 선택을 바꿀 수 없다(AC-02/A-02).
-const OAUTH_FP_COOKIE = "oauthFp";
-const OAUTH_REMEMBER_COOKIE = "oauthRememberMe";
+// F-06: Google OAuth 왕복(시작 → Google 동의 → 콜백, 그리고 신규 계정이면 그 뒤의 가입
+// 보완까지) 동안만 살아있는 값을 쿠키에 담아 보존한다 — browserFingerprint(state에 결합되는
+// 값, F-05 A-04)와 rememberMe(로그인 상태 유지 선택, AC-02/A-02).
+//
+// 이전 회차는 이 둘을 각각 평문 httpOnly 쿠키(oauthFp/oauthRememberMe)로 나눠 보존했다.
+// 재검토 지적(R-IMPL #2): HttpOnly는 브라우저 스크립트의 "읽기"만 막을 뿐, 그 값 자체가
+// 서버가 발급했다는 것을 증명하지 않는다 — 평문 쿠키는 값을 위조해도 서버가 구분할 방법이
+// 없었다. 이제 두 값을 하나의 서버 서명(JWT, HMAC)된 토큰에 담아 내려보낸다: 서명이 없으면
+// 애초에 값 자체가 존재하지 않는 것과 같게 취급되므로(변조 시 검증 실패 → 아래 fp가
+// undefined가 되어 state 소비 자체가 STATE_MISSING/FINGERPRINT_MISMATCH로 거부된다),
+// rememberMe도 같은 서명으로 보호된다 — 사용자가 쿠키 값을 직접 바꿔 로그인 유지 선택을
+// 조작할 수 없다.
+const OAUTH_ATTEMPT_COOKIE = "oauthAttempt";
 // socialAuth.service.js의 OAUTH_STATE_TTL_MS(10분, 리다이렉트 왕복 시간만 견디면 되는 값)와
-// 맞춘다 — state가 만료되기 전에 이 쿠키들도 함께 사라져야 의미가 있다.
-const OAUTH_ATTEMPT_COOKIE_MAX_AGE_MS = 10 * 60 * 1000;
-const oauthAttemptCookieOptions = () => ({
+// 맞춘다 — state가 만료되기 전에 이 쿠키도 함께 사라져야 의미가 있다.
+const OAUTH_ATTEMPT_TTL_SECONDS = 10 * 60;
+// socialAuth.service.js의 SOCIAL_SIGNUP_INTENT_TTL_MS(가입 보완 폼을 채우는 동안 유지되는
+// 30분)와 맞춘다 — SIGNUP_REQUIRED로 끝난 뒤에는 이 쿠키를 이 길이로 다시 서명해, 가입
+// 보완이 끝날 때까지 원래 rememberMe 선택을 들고 간다(아래 googleAuthCallback 참고).
+const SOCIAL_SIGNUP_INTENT_TTL_SECONDS = 30 * 60;
+
+const oauthAttemptCookieOptions = (maxAgeSeconds) => ({
     httpOnly: true,
     sameSite: "Lax",
     secure:   process.env.NODE_ENV === "production",
-    maxAge:   OAUTH_ATTEMPT_COOKIE_MAX_AGE_MS,
+    maxAge:   maxAgeSeconds * 1000,
 });
+
+// payload는 { fp, rememberMe, purpose: "login" } 또는 (SIGNUP_REQUIRED 이후)
+// { intentToken, rememberMe, purpose: "signup" } 중 하나다 — purpose로 두 쓰임을 구분해,
+// 콜백이 로그인용 서명을 가입 보완 단계에서 잘못 재사용하지 않게 한다.
+const signOAuthAttempt = (payload, ttlSeconds) =>
+    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ttlSeconds });
+
+// 서명이 없거나 만료·변조된 쿠키는 조용히 null로 돌려준다 — 호출부가 그 결과(예: fp가
+// undefined)로 자연스럽게 STATE_MISSING 등 기존 검증 경로를 타게 둔다. 별도 오류 코드를
+// 만들지 않는다.
+const verifyOAuthAttempt = (token) => {
+    if (typeof token !== "string" || !token) return null;
+    try {
+        return jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+        return null;
+    }
+};
 
 exports.signup = async (req, res, next) => {
     try {
@@ -114,10 +139,14 @@ exports.logout = async (req, res, next) => {
     }
 };
 
-// F-05: 소셜 로그인 최초 인증 이후, 닉네임 등 필수 정보를 보완해 가입을 완료한다.
-// completeSocialSignup은 항상 rememberMe:false로 세션을 발급하므로(소셜 전용 계정은
-// 로그인 유지를 선택할 입력 자체가 없다), login()의 "로그인 유지 미선택" 분기와 같은 이유로
-// refreshToken 쿠키를 세우지 않고, 남아있을 수 있는 이전 영속 refreshToken 쿠키만 지운다.
+// F-05/F-06: 소셜 로그인 최초 인증 이후, 닉네임 등 필수 정보를 보완해 가입을 완료한다.
+// rememberMe는 요청 본문이 아니라 googleAuthCallback이 SIGNUP_REQUIRED일 때 다시 서명해 둔
+// oauthAttempt 쿠키에서만 읽는다 — 클라이언트가 이 요청의 body에 rememberMe를 실어도 반영되지
+// 않는다(F-06 R-IMPL #2: 로그인 시작 시점에 서버가 서명한 선택만 신뢰). 쿠키가 없거나·서명이
+// 유효하지 않거나·purpose가 "signup"이 아니거나·intentToken이 지금 제출된 것과 다르면(다른
+// 시도의 쿠키를 재사용) 안전한 기본값(false)으로 떨어진다 — 비밀번호 로그인의 기존
+// "로그인 유지 미선택" 분기와 같은 이유로 refreshToken 쿠키를 세우지 않고, 남아있을 수 있는
+// 이전 영속 refreshToken 쿠키만 지운다.
 exports.completeSocialSignup = async (req, res, next) => {
     try {
         const userAgent = req.headers["user-agent"];
@@ -128,12 +157,24 @@ exports.completeSocialSignup = async (req, res, next) => {
         };
 
         const { intentToken, nickname, birthDate } = req.body;
-        const { user, token, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
-            intentToken, nickname, birthDate, reqInfo,
+
+        const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
+        const rememberMe = attempt?.purpose === "signup"
+            && attempt?.intentToken === intentToken
+            && attempt?.rememberMe === true;
+        // 가입 보완용 쿠키는 이 요청 하나로 수명을 다한다 — 성공/실패 어느 쪽이든 지운다.
+        res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
+
+        const { user, token, refreshToken, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
+            intentToken, nickname, birthDate, rememberMe, reqInfo,
         });
 
-        res.cookie("accessToken", token, buildSessionCookieOptions(false, refreshTokenExpiresAt));
-        clearRefreshCookie(res);
+        res.cookie("accessToken", token, buildSessionCookieOptions(rememberMe, refreshTokenExpiresAt));
+        if (refreshToken) {
+            res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions(refreshTokenExpiresAt));
+        } else {
+            clearRefreshCookie(res);
+        }
 
         res.status(200).json({
             success: true,
@@ -161,8 +202,11 @@ exports.googleAuthStart = async (req, res, next) => {
 
         const { state } = await socialAuthService.issueOAuthState({ purpose: "login", browserFingerprint });
 
-        res.cookie(OAUTH_FP_COOKIE, browserFingerprint, oauthAttemptCookieOptions());
-        res.cookie(OAUTH_REMEMBER_COOKIE, rememberMe ? "1" : "0", oauthAttemptCookieOptions());
+        const attemptToken = signOAuthAttempt(
+            { fp: browserFingerprint, rememberMe, purpose: "login" },
+            OAUTH_ATTEMPT_TTL_SECONDS,
+        );
+        res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
 
         res.redirect(googleOAuthService.buildAuthorizationUrl(state));
     } catch (error) {
@@ -173,14 +217,20 @@ exports.googleAuthStart = async (req, res, next) => {
 // F-06: Google 콜백. Google이 사용자를 이 경로로 다시 이동시키며 code·state(정상)나
 // error·state(취소)를 실어 온다 — 그래서 이 라우트는 항상 프론트로의 리다이렉트로
 // 끝난다(JSON을 돌려주면 브라우저 전체 페이지 이동 한가운데서 그대로 노출된다). 성공하면
-// F-05의 공통 계정 조회/생성·세션 발급(handleOAuthCallback)으로 이어지고(AC-01), 실패하면
-// 자동 병합·세션 발급 없이 오류 코드만 실어 로그인 화면으로 되돌린다(AC-04).
+// F-05의 공통 계정 조회/생성·세션 발급으로 이어지고(AC-01), 실패하면 자동 병합·세션 발급
+// 없이 오류 코드만 실어 로그인 화면으로 되돌린다(AC-04).
+//
+// R-IMPL #3: state 검증·소비는 Google을 부르기 전에 원자적으로 끝나야 한다 — 그래야
+// 위조/불일치/만료/재사용 state는 애초에 Google 네트워크 호출까지 가지 않고, 그 뒤의 코드
+// 교환이 실패(네트워크·제공자 오류)해도 이미 커밋된 소비 덕분에 같은 state를 다시 시도할 수
+// 없다. 그래서 socialAuthService.handleOAuthCallback(상태 소비+계정 판정을 한 번에 묶는
+// 편의 함수) 대신, consumeOAuthState → (필요하면) exchangeCodeForProfile → resolveOAuthAccount
+// 세 단계를 이 자리에서 직접 순서대로 호출한다.
 exports.googleAuthCallback = async (req, res, next) => {
-    const browserFingerprint = req.cookies?.[OAUTH_FP_COOKIE];
-    const rememberMe = req.cookies?.[OAUTH_REMEMBER_COOKIE] === "1";
+    const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
     // 이 왕복 전용 쿠키는 콜백 한 번으로 수명이 끝난다 — 성공/실패 어느 쪽이든 지운다.
-    res.clearCookie(OAUTH_FP_COOKIE, oauthAttemptCookieOptions());
-    res.clearCookie(OAUTH_REMEMBER_COOKIE, oauthAttemptCookieOptions());
+    // SIGNUP_REQUIRED로 끝나면 아래에서 가입 보완용으로 다시(더 긴 TTL로) 세팅한다.
+    res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
 
     const frontendBase = process.env.FRONTEND_URL;
     const redirectWithError = (code) => res.redirect(`${frontendBase}/login?socialError=${encodeURIComponent(code)}`);
@@ -193,61 +243,65 @@ exports.googleAuthCallback = async (req, res, next) => {
             deviceType: getDeviceType(userAgent),
         };
 
+        // attempt가 null이면(쿠키 없음·서명 위조·만료·purpose 불일치) fp는 undefined다 —
+        // 별도로 분기하지 않아도 아래 consumeOAuthState가 STATE_MISSING으로 자연스럽게
+        // 거부하므로(browserFingerprint 필수 검증, F-05 socialAuth.service.js), 위조된
+        // 시도가 Google을 부르는 일은 없다.
+        const browserFingerprint = attempt?.purpose === "login" ? attempt.fp : undefined;
+        const rememberMe = attempt?.purpose === "login" && attempt?.rememberMe === true;
+
+        // 1) state 소비를 먼저, 그리고 유일하게 커밋한다 — Google을 부르기 전에 끝난다.
+        await socialAuthService.consumeOAuthState(req.query.state, { browserFingerprint, purpose: "login" });
+
         // Google은 사용자가 동의 화면에서 취소하면 code 대신 error(예: access_denied)를
         // 실어 돌려준다 — 이 경우 코드 교환 자체를 시도하지 않는다(교환할 code가 없다).
         const cancelled = req.query.error !== undefined;
         let subject = null;
         let email = null;
         if (!cancelled) {
+            // 2) state가 유효했을 때만 제공자를 부른다. 여기서 실패해도(타임아웃 포함) 위
+            // state 소비는 이미 커밋되어 있어 재사용될 수 없다(R-IMPL #3).
             const profile = await googleOAuthService.exchangeCodeForProfile(req.query.code);
             subject = profile.subject;
             email = profile.email;
         }
 
-        const result = await socialAuthService.handleOAuthCallback({
-            provider: "google",
-            subject,
-            email,
-            rawState: req.query.state,
-            browserFingerprint,
-            cancelled,
-            reqInfo,
+        // 3) 계정 조회/생성과 세션 발급 — rememberMe를 그대로 넘겨 재로그인이면 정확히
+        // 한 번만 세션을 발급한다(R-IMPL #2, 이중 발급 없음).
+        const result = await socialAuthService.resolveOAuthAccount({
+            provider: "google", subject, email, cancelled, rememberMe, reqInfo,
         });
 
         if (result.status === "SIGNUP_REQUIRED") {
             // 신규 계정 — 닉네임 등 정보 보완이 끝나야 세션이 생긴다(F-05
             // completeSocialSignup, useSocialSignup.js가 이 intentToken을 그대로 받는다).
+            // rememberMe 선택을 그대로 들고 가도록, intentToken에 결합된 서명 쿠키를 가입
+            // 보완 창(30분)만큼 다시 세팅한다(R-IMPL #2) — 완료 시점에
+            // exports.completeSocialSignup이 이 쿠키를 읽는다.
+            const intentAttemptToken = signOAuthAttempt(
+                { intentToken: result.intentToken, rememberMe, purpose: "signup" },
+                SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
+            );
+            res.cookie(OAUTH_ATTEMPT_COOKIE, intentAttemptToken, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
             return res.redirect(`${frontendBase}/login?socialIntent=${encodeURIComponent(result.intentToken)}`);
         }
 
-        // status === "LOGIN" (재로그인). handleOAuthCallback은 항상 rememberMe:false로
-        // 세션을 발급한다(F-05 socialAuth.service.js 계약, 이 작업 범위 밖) — 사용자가 로그인
-        // 유지를 선택했다면(AC-02) F-05와 같은 세션 발급 절차(authService.issueSessionForUser,
-        // login()·completeSocialSignup이 재사용하는 그 함수)를 그대로 다시 호출해
-        // rememberMe:true로 재발급한다. 이 재발급도 markOnlineSessionsOffline로 시작하므로
-        // 방금 만든 rememberMe:false 세션은 활성 상태로 남지 않는다 — 폐기된 세션 행 하나가
-        // 감사 기록처럼 남는 것만 감수한다(트랜잭션을 나눠 이중 발급하는 대신 F-05
-        // socialAuth.service.js에 rememberMe 인자를 추가하려면 그 파일도 함께 고쳐야 해
-        // 이번 작업 범위를 넘어간다).
-        let session = result;
-        if (rememberMe) {
-            session = await authService.issueSessionForUser(result.user, { rememberMe: true }, reqInfo);
-        }
-
-        res.cookie("accessToken", session.token, buildSessionCookieOptions(rememberMe, session.refreshTokenExpiresAt));
-        if (session.refreshToken) {
-            res.cookie("refreshToken", session.refreshToken, buildRefreshCookieOptions(session.refreshTokenExpiresAt));
+        // status === "LOGIN" (재로그인). resolveOAuthAccount가 이미 rememberMe 그대로 세션을
+        // 발급했다 — 여기서는 그 결과를 쿠키로 옮기기만 한다.
+        res.cookie("accessToken", result.token, buildSessionCookieOptions(rememberMe, result.refreshTokenExpiresAt));
+        if (result.refreshToken) {
+            res.cookie("refreshToken", result.refreshToken, buildRefreshCookieOptions(result.refreshTokenExpiresAt));
         } else {
             clearRefreshCookie(res);
         }
 
         return res.redirect(`${frontendBase}/lobby`);
     } catch (error) {
-        // state 누락/위조/만료/재사용, 취소, 이메일 충돌 등은 모두 code가 있는 도메인
-        // 오류다(F-05 socialAuth.service.js) — 자동 병합이나 세션 발급 없이 그 code만 실어
-        // 로그인 화면으로 돌려보낸다(AC-04). code가 없는 뜻밖의 오류는 global error
-        // handler처럼 로그를 남긴 뒤에도 여전히 브라우저 리다이렉트로 마무리한다 — 이 경로는
-        // 항상 전체 페이지 이동 중이라 JSON을 응답하면 그대로 화면에 노출된다.
+        // state 누락/위조/만료/재사용, 취소, 이메일 충돌, 제공자 타임아웃 등은 모두 code가
+        // 있는 도메인 오류다 — 자동 병합이나 세션 발급 없이 그 code만 실어 로그인 화면으로
+        // 돌려보낸다(AC-04). code가 없는 뜻밖의 오류는 global error handler처럼 로그를 남긴
+        // 뒤에도 여전히 브라우저 리다이렉트로 마무리한다 — 이 경로는 항상 전체 페이지 이동
+        // 중이라 JSON을 응답하면 그대로 화면에 노출된다.
         if (!error?.code) {
             console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
         }

@@ -7,6 +7,22 @@ const { createError } = require("../utils/appError");
 const GOOGLE_AUTH_ENDPOINT      = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT     = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_ENDPOINT  = "https://openidconnect.googleapis.com/v1/userinfo";
+// 테스트가 실제 fetch를 유지한 채 요청 목적지만 로컬 fixture 서버로 돌릴 수 있게 노출한다
+// (googleOAuth.service.test.js) — exchangeCodeForProfile 자체를 스텁으로 갈아끼우지 않고도
+// "진짜" 네트워크 왕복(요청 본문·헤더 구성, 실패 상태코드 처리, 응답 파싱)을 검증하기 위함.
+exports.GOOGLE_TOKEN_ENDPOINT = GOOGLE_TOKEN_ENDPOINT;
+exports.GOOGLE_USERINFO_ENDPOINT = GOOGLE_USERINFO_ENDPOINT;
+
+// F-06 R-IMPL #3: Google이 응답하지 않거나 지나치게 느리면 콜백 요청이 무기한 걸려 있게
+// 되고, 사용자에게는 아무 오류도 보이지 않은 채 로딩만 계속된다 — 반드시 유한한 시간 안에
+// 포기하고 안전한 UI 오류로 이어져야 한다. 테스트가 이 값을 짧게 줄여 타임아웃 경로 자체를
+// 빠르게 재현할 수 있도록 호출 시점에 환경변수로 덮어쓸 수 있게 둔다(운영 기본값 8초).
+const GOOGLE_REQUEST_TIMEOUT_MS = () => Number(process.env.GOOGLE_OAUTH_TIMEOUT_MS) || 8000;
+
+// AbortSignal.timeout()이 실제로 발동하면 fetch는 이름이 "TimeoutError"인 DOMException으로
+// 거부한다(AbortController를 직접 만들어 setTimeout으로 abort()를 호출했다면 "AbortError"가
+// 나온다 — 둘 다 시간 초과로 취급해 같은 안전한 오류 코드로 통일한다).
+const isTimeoutError = (error) => error?.name === "TimeoutError" || error?.name === "AbortError";
 
 // AC-03: 클라이언트 비밀키(및 클라이언트 ID·redirect_uri)는 코드에 하드코딩하지 않고
 // 환경변수로만 읽는다. require 시점이 아니라 호출 시점에 읽어야, 아직 실제 Google 앱 키가
@@ -52,17 +68,26 @@ exports.exchangeCodeForProfile = async (code) => {
     const clientSecret = readRequiredEnv("GOOGLE_CLIENT_SECRET");
     const redirectUri   = readRequiredEnv("GOOGLE_REDIRECT_URI");
 
-    const tokenResponse = await fetch(GOOGLE_TOKEN_ENDPOINT, {
-        method:  "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body:    new URLSearchParams({
-            code,
-            client_id:     clientId,
-            client_secret: clientSecret,
-            redirect_uri:  redirectUri,
-            grant_type:    "authorization_code",
-        }),
-    });
+    let tokenResponse;
+    try {
+        tokenResponse = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+            method:  "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body:    new URLSearchParams({
+                code,
+                client_id:     clientId,
+                client_secret: clientSecret,
+                redirect_uri:  redirectUri,
+                grant_type:    "authorization_code",
+            }),
+            signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS()),
+        });
+    } catch (error) {
+        if (isTimeoutError(error)) {
+            throw createError("Google 인가 코드 교환 응답이 지연되었습니다.", 504, "GOOGLE_OAUTH_TIMEOUT");
+        }
+        throw error;
+    }
     if (!tokenResponse.ok) {
         throw createError("Google 인가 코드 교환에 실패했습니다.", 502, "GOOGLE_TOKEN_EXCHANGE_FAILED");
     }
@@ -71,9 +96,18 @@ exports.exchangeCodeForProfile = async (code) => {
         throw createError("Google로부터 access_token을 받지 못했습니다.", 502, "GOOGLE_TOKEN_EXCHANGE_FAILED");
     }
 
-    const profileResponse = await fetch(GOOGLE_USERINFO_ENDPOINT, {
-        headers: { authorization: `Bearer ${tokenBody.access_token}` },
-    });
+    let profileResponse;
+    try {
+        profileResponse = await fetch(GOOGLE_USERINFO_ENDPOINT, {
+            headers: { authorization: `Bearer ${tokenBody.access_token}` },
+            signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS()),
+        });
+    } catch (error) {
+        if (isTimeoutError(error)) {
+            throw createError("Google 프로필 조회 응답이 지연되었습니다.", 504, "GOOGLE_OAUTH_TIMEOUT");
+        }
+        throw error;
+    }
     if (!profileResponse.ok) {
         throw createError("Google 프로필 조회에 실패했습니다.", 502, "GOOGLE_PROFILE_FETCH_FAILED");
     }
