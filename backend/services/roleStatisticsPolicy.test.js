@@ -7,6 +7,7 @@ const {
     aggregateRoleStatistics,
     buildRoleRanking,
     selectMaskOfFateRole,
+    isAchievementRewardEligibleGame,
 } = require('./roleStatisticsPolicy')
 
 // ── AC-02: 고정 한국어 매핑 ───────────────────────────────────────────────────
@@ -168,4 +169,29 @@ test('selectMaskOfFateRole: both zero wins and zero win rate use game count befo
     const selected = selectMaskOfFateRole([roleStat('CITIZEN', 1, 0), roleStat('GUARD', 7, 0)])
     assert.equal(selected.role, 'GUARD')
     assert.equal(selected.games, 7)
+})
+
+// ── AC-05/A-13: 업적/보상 자격 — 전적 자격과는 분리된 질문 ──────────────────────
+
+test('isAchievementRewardEligibleGame: 정상 확정된 운영 경기만 보상 자격이 있다', () => {
+    assert.equal(isAchievementRewardEligibleGame({ completed: true, gameSourceValue: 'production' }), true)
+})
+
+test('isAchievementRewardEligibleGame: 중단 경기는 이탈자 패배 전적이 유지되더라도 보상 자격이 없다', () => {
+    // 전적 자격(AC-05: 이탈자 won=false 확정)과 보상 자격은 별개 질문이다 — completed가
+    // false이면 gameSourceValue가 production이어도 보상 대상이 아니다.
+    assert.equal(isAchievementRewardEligibleGame({ completed: false, gameSourceValue: 'production' }), false)
+})
+
+test('isAchievementRewardEligibleGame: 개발 경기는 정상 확정이어도 보상 자격이 없다', () => {
+    assert.equal(isAchievementRewardEligibleGame({ completed: true, gameSourceValue: 'development' }), false)
+})
+
+test('isAchievementRewardEligibleGame: 중단+개발이 겹쳐도(둘 다 실격 사유) false다', () => {
+    assert.equal(isAchievementRewardEligibleGame({ completed: false, gameSourceValue: 'development' }), false)
+})
+
+test('isAchievementRewardEligibleGame: gameSourceValue가 없는(이 필드 이전) 정상 확정 과거 경기는 소급으로 자격이 있다(D-11)', () => {
+    assert.equal(isAchievementRewardEligibleGame({ completed: true, gameSourceValue: undefined }), true)
+    assert.equal(isAchievementRewardEligibleGame({ completed: true, gameSourceValue: null }), true)
 })

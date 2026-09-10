@@ -106,6 +106,29 @@ function selectMaskOfFateRole(statsByRoleForUser, { minGames = MASK_OF_FATE_MIN_
     ))[0]
 }
 
+/**
+ * AC-05/A-13: 이 판이 업적/보상 지급 대상인지 판정한다 — "이 판을 전적에 넣는가"
+ * (aggregateRoleStatistics/호출부의 개발 경기 제외)와는 다른 질문이다. 실제 지급 원장·
+ * 1회성 보장(멱등)은 F-12가 구현하고, 이 함수는 "지급해도 되는 판인가"라는 자격 판정만
+ * 순수하게 담당한다.
+ *
+ * 규칙:
+ *   - 정상 확정(completed=true)이면서 운영 경기(gameSourceValue !== 'development')만 자격이
+ *     있다.
+ *   - 중단 경기(completed=false)는 이탈자의 패배 전적이 유지되더라도(AC-05) 보상 대상이
+ *     아니다 — 전적 자격과 보상 자격은 분리된 질문이다.
+ *   - 개발 경기는 completed 여부와 무관하게 자격이 없다.
+ *   - gameSourceValue가 없는(이 필드가 생기기 전) 과거 경기는 개발 여부를 식별할 근거가
+ *     없으므로 운영 기록으로 보아 자격이 있다고 판정한다 — 소급 업적 1회 지급(D-11) 대상에서
+ *     "소급"이라는 이유만으로 제외하지 않는다(A-06/A-07과 동일한 원칙).
+ *
+ * @param {{ completed: boolean, gameSourceValue?: string|null }} game
+ * @returns {boolean}
+ */
+function isAchievementRewardEligibleGame({ completed, gameSourceValue }) {
+    return completed === true && gameSourceValue !== 'development'
+}
+
 module.exports = {
     ROLE_CODES,
     ROLE_KOREAN_NAMES,
@@ -115,4 +138,5 @@ module.exports = {
     aggregateRoleStatistics,
     buildRoleRanking,
     selectMaskOfFateRole,
+    isAchievementRewardEligibleGame,
 }
