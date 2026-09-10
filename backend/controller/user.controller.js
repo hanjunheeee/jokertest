@@ -3,6 +3,7 @@ const jwt                = require("jsonwebtoken");
 const authService       = require("../service/auth.service");
 const socialAuthService = require("../service/socialAuth.service");
 const googleOAuthService = require("../service/googleOAuth.service");
+const discordOAuthService = require("../service/discordOAuth.service");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
@@ -36,9 +37,17 @@ const oauthAttemptCookieOptions = (maxAgeSeconds) => ({
     maxAge:   maxAgeSeconds * 1000,
 });
 
-// payload는 { fp, rememberMe, purpose: "login" } 또는 (SIGNUP_REQUIRED 이후)
-// { intentToken, rememberMe, purpose: "signup" } 중 하나다 — purpose로 두 쓰임을 구분해,
-// 콜백이 로그인용 서명을 가입 보완 단계에서 잘못 재사용하지 않게 한다.
+// payload는 { fp, rememberMe, purpose: "login", provider } 또는 (SIGNUP_REQUIRED 이후)
+// { intentToken, rememberMe, purpose: "signup", provider } 중 하나다 — purpose로 두 쓰임을
+// 구분해, 콜백이 로그인용 서명을 가입 보완 단계에서 잘못 재사용하지 않게 한다.
+//
+// F-07: provider("google" | "discord")도 이 서명에 함께 묶는다 — state 자체는 제공자를
+// 구분하지 않는 공용 값이라(socialAuth.service.js issueOAuthState/consumeOAuthState는
+// purpose만 검사한다), provider 바인딩이 없으면 한 제공자로 시작한 로그인 시도의 서명된
+// 쿠키(및 그 쿠키가 실어온 fp)를 다른 제공자의 콜백 라우트에 그대로 들이밀 수 있다. 아래
+// googleAuthCallback/discordAuthCallback은 각각 자신의 provider와 정확히 일치하는 쿠키만
+// fp·rememberMe의 출처로 신뢰한다 — 불일치하면 fp가 undefined가 되어 STATE_MISSING으로
+// 자연스럽게 거부된다(콜백이 서로의 시도를 받아들이지 않는다).
 const signOAuthAttempt = (payload, ttlSeconds) =>
     jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ttlSeconds });
 
@@ -209,7 +218,7 @@ exports.googleAuthStart = async (req, res, next) => {
         const { state } = await socialAuthService.issueOAuthState({ purpose: "login", browserFingerprint });
 
         const attemptToken = signOAuthAttempt(
-            { fp: browserFingerprint, rememberMe, purpose: "login" },
+            { fp: browserFingerprint, rememberMe, purpose: "login", provider: "google" },
             OAUTH_ATTEMPT_TTL_SECONDS,
         );
         res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
@@ -252,9 +261,11 @@ exports.googleAuthCallback = async (req, res, next) => {
         // attempt가 null이면(쿠키 없음·서명 위조·만료·purpose 불일치) fp는 undefined다 —
         // 별도로 분기하지 않아도 아래 consumeOAuthState가 STATE_MISSING으로 자연스럽게
         // 거부하므로(browserFingerprint 필수 검증, F-05 socialAuth.service.js), 위조된
-        // 시도가 Google을 부르는 일은 없다.
-        const browserFingerprint = attempt?.purpose === "login" ? attempt.fp : undefined;
-        const rememberMe = attempt?.purpose === "login" && attempt?.rememberMe === true;
+        // 시도가 Google을 부르는 일은 없다. provider가 "google"이 아니면(F-07 Discord 시도의
+        // 쿠키를 여기로 들이민 경우 포함) 같은 이유로 fp를 내주지 않는다(제공자 바인딩,
+        // 위 signOAuthAttempt 주석 참고).
+        const browserFingerprint = attempt?.purpose === "login" && attempt?.provider === "google" ? attempt.fp : undefined;
+        const rememberMe = attempt?.purpose === "login" && attempt?.provider === "google" && attempt?.rememberMe === true;
 
         // 1) state 소비를 먼저, 그리고 유일하게 커밋한다 — Google을 부르기 전에 끝난다.
         await socialAuthService.consumeOAuthState(req.query.state, { browserFingerprint, purpose: "login" });
@@ -285,7 +296,7 @@ exports.googleAuthCallback = async (req, res, next) => {
             // 보완 창(30분)만큼 다시 세팅한다(R-IMPL #2) — 완료 시점에
             // exports.completeSocialSignup이 이 쿠키를 읽는다.
             const intentAttemptToken = signOAuthAttempt(
-                { intentToken: result.intentToken, rememberMe, purpose: "signup" },
+                { intentToken: result.intentToken, rememberMe, purpose: "signup", provider: "google" },
                 SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
             );
             res.cookie(OAUTH_ATTEMPT_COOKIE, intentAttemptToken, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
@@ -308,6 +319,98 @@ exports.googleAuthCallback = async (req, res, next) => {
         // 돌려보낸다(AC-04). code가 없는 뜻밖의 오류는 global error handler처럼 로그를 남긴
         // 뒤에도 여전히 브라우저 리다이렉트로 마무리한다 — 이 경로는 항상 전체 페이지 이동
         // 중이라 JSON을 응답하면 그대로 화면에 노출된다.
+        if (!error?.code) {
+            console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
+        }
+        return redirectWithError(error?.code || "OAUTH_FAILED");
+    }
+};
+
+// F-07: Discord 로그인 시작. googleAuthStart와 완전히 대칭이다 — provider만 다르다.
+exports.discordAuthStart = async (req, res, next) => {
+    try {
+        const rememberMe = req.query.rememberMe === "true";
+        const browserFingerprint = crypto.randomBytes(32).toString("base64url");
+
+        const { state } = await socialAuthService.issueOAuthState({ purpose: "login", browserFingerprint });
+
+        const attemptToken = signOAuthAttempt(
+            { fp: browserFingerprint, rememberMe, purpose: "login", provider: "discord" },
+            OAUTH_ATTEMPT_TTL_SECONDS,
+        );
+        res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
+
+        res.redirect(discordOAuthService.buildAuthorizationUrl(state));
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-07: Discord 콜백. googleAuthCallback과 완전히 대칭이다(같은 순서·같은 실패 처리,
+// R-IMPL #2/#3 그대로 적용) — provider만 다르고, 그 provider 값이 attempt 쿠키 바인딩과
+// resolveOAuthAccount 판정 모두에 쓰인다.
+exports.discordAuthCallback = async (req, res, next) => {
+    const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
+    res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
+
+    const frontendBase = process.env.FRONTEND_URL;
+    const redirectWithError = (code) => res.redirect(`${frontendBase}/login?socialError=${encodeURIComponent(code)}`);
+
+    try {
+        const userAgent = req.headers["user-agent"];
+        const reqInfo = {
+            ip:         getClientIp(req),
+            userAgent:  userAgent,
+            deviceType: getDeviceType(userAgent),
+        };
+
+        // provider가 "discord"가 아니면(Google 시도의 쿠키를 여기로 들이민 경우 포함) fp를
+        // 내주지 않는다 — googleAuthCallback과 같은 제공자 바인딩(signOAuthAttempt 주석 참고).
+        const browserFingerprint = attempt?.purpose === "login" && attempt?.provider === "discord" ? attempt.fp : undefined;
+        const rememberMe = attempt?.purpose === "login" && attempt?.provider === "discord" && attempt?.rememberMe === true;
+
+        // 1) state 소비를 먼저, 그리고 유일하게 커밋한다 — Discord를 부르기 전에 끝난다.
+        await socialAuthService.consumeOAuthState(req.query.state, { browserFingerprint, purpose: "login" });
+
+        // Discord도 사용자가 동의 화면에서 취소하면 code 대신 error를 실어 돌려준다 — 이
+        // 경우 코드 교환 자체를 시도하지 않는다(교환할 code가 없다).
+        const cancelled = req.query.error !== undefined;
+        let subject = null;
+        let email = null;
+        if (!cancelled) {
+            // 2) state가 유효했을 때만 제공자를 부른다. 여기서 실패해도(타임아웃 포함) 위
+            // state 소비는 이미 커밋되어 있어 재사용될 수 없다(R-IMPL #3).
+            const profile = await discordOAuthService.exchangeCodeForProfile(req.query.code);
+            subject = profile.subject;
+            email = profile.email;
+        }
+
+        // 3) 계정 조회/생성과 세션 발급 — rememberMe를 그대로 넘겨 재로그인이면 정확히
+        // 한 번만 세션을 발급한다(R-IMPL #2, 이중 발급 없음).
+        const result = await socialAuthService.resolveOAuthAccount({
+            provider: "discord", subject, email, cancelled, rememberMe, reqInfo,
+        });
+
+        if (result.status === "SIGNUP_REQUIRED") {
+            const intentAttemptToken = signOAuthAttempt(
+                { intentToken: result.intentToken, rememberMe, purpose: "signup", provider: "discord" },
+                SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
+            );
+            res.cookie(OAUTH_ATTEMPT_COOKIE, intentAttemptToken, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
+            return res.redirect(`${frontendBase}/login?socialIntent=${encodeURIComponent(result.intentToken)}`);
+        }
+
+        // status === "LOGIN" (재로그인). resolveOAuthAccount가 이미 rememberMe 그대로 세션을
+        // 발급했다 — 여기서는 그 결과를 쿠키로 옮기기만 한다.
+        res.cookie("accessToken", result.token, buildSessionCookieOptions(rememberMe, result.refreshTokenExpiresAt));
+        if (result.refreshToken) {
+            res.cookie("refreshToken", result.refreshToken, buildRefreshCookieOptions(result.refreshTokenExpiresAt));
+        } else {
+            clearRefreshCookie(res);
+        }
+
+        return res.redirect(`${frontendBase}/lobby`);
+    } catch (error) {
         if (!error?.code) {
             console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
         }

@@ -87,9 +87,10 @@ const decodedAttemptCookie = (headers) => {
 };
 
 // 실제 googleAuthStart가 세팅하는 것과 같은 형태의 서명된 시도 쿠키를 만든다 — 컨트롤러의
-// jwt.verify 검증 경로를 값 그대로 믿어주는 스텁이 아니라 실제로 태운다.
-const loginAttemptCookie = (fp, rememberMe) =>
-    `oauthAttempt=${jwt.sign({ fp, rememberMe, purpose: "login" }, process.env.JWT_SECRET, { expiresIn: 600 })}`;
+// jwt.verify 검증 경로를 값 그대로 믿어주는 스텁이 아니라 실제로 태운다. provider는 F-07이
+// 추가한 제공자 바인딩 필드다 — 기본값 "google"로 이 파일의 기존 회귀를 그대로 보존한다.
+const loginAttemptCookie = (fp, rememberMe, provider = "google") =>
+    `oauthAttempt=${jwt.sign({ fp, rememberMe, purpose: "login", provider }, process.env.JWT_SECRET, { expiresIn: 600 })}`;
 
 // ── GET /auth/google (AC-01: 시작) ───────────────────────────────────────────
 
@@ -122,6 +123,7 @@ test("GET /auth/google은 state를 발급해 Google 인가 URL로 302 리다이�
     // 조작 없이 그대로 담겼는지 확인한다.
     const decoded = decodedAttemptCookie(res.headers);
     assert.equal(decoded.purpose, "login");
+    assert.equal(decoded.provider, "google");
     assert.equal(decoded.rememberMe, true);
     assert.equal(decoded.fp, issueArgs.browserFingerprint);
 });
@@ -415,6 +417,30 @@ test("oauthAttempt 쿠키가 없거나 위조되면 fingerprint 없이 state 소
     assert.equal(forgedRes.headers.location, `${process.env.FRONTEND_URL}/login?socialError=STATE_MISSING`);
 
     assert.equal(google.calls.length, 0);
+});
+
+// ── F-07 고유: 제공자 바인딩 — 다른 제공자로 시작한 시도의 쿠키를 받아들이지 않는다 ────
+
+test("Discord 시작 시도의 oauthAttempt 쿠키(provider:discord)는 Google 콜백에서 fp 없이 취급되어 Google을 부르지 않는다(제공자 바인딩)", async (t) => {
+    const google = stubModule(t, googleOAuthService, GOOGLE_KEYS, {
+        exchangeCodeForProfile: async () => { throw new Error("호출되면 안 됩니다"); },
+    });
+    stubModule(t, socialAuthService, SOCIAL_KEYS, {
+        consumeOAuthState: async (rawState, { browserFingerprint } = {}) => {
+            assert.equal(browserFingerprint, undefined, "다른 제공자의 쿠키는 fp 없이 전달되어야 합니다");
+            const error = new Error("state가 없습니다.");
+            error.status = 400; error.code = "STATE_MISSING";
+            throw error;
+        },
+    });
+    const base = await startServer(t);
+
+    const res = await rawGet(base, "/auth/google/callback?code=c&state=s", {
+        cookie: loginAttemptCookie("fp-1", false, "discord"),
+    });
+
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/login?socialError=STATE_MISSING`);
+    assert.equal(google.calls.length, 0, "provider가 일치하지 않으면 Google 코드 교환을 시도하면 안 됩니다");
 });
 
 // ── AC-03: 클라이언트 비밀키는 환경변수로만 주입된다 ─────────────────────────

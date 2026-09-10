@@ -82,6 +82,27 @@ test("주요 실패 코드는 서로 다른 문구로 매핑된다(하나의 뭉
   assert.equal(cancelled, SOCIAL_ERROR_MESSAGES.OAUTH_CANCELLED)
 })
 
+// ── F-07: Discord 전용 코드도 Google과 동일한 계약으로 매핑되어야 한다 ────────────
+
+test("Discord 전용 오류 코드(DISCORD_*)는 Google과 구분되는 문구로 매핑된다", () => {
+  const googleTimeout = mapSocialErrorCode("GOOGLE_OAUTH_TIMEOUT")
+  const discordTimeout = mapSocialErrorCode("DISCORD_OAUTH_TIMEOUT")
+  assert.notEqual(googleTimeout, discordTimeout)
+  assert.match(discordTimeout, /Discord/)
+  assert.doesNotMatch(discordTimeout, /Google/)
+
+  const discordNotConfigured = mapSocialErrorCode("DISCORD_OAUTH_NOT_CONFIGURED")
+  assert.match(discordNotConfigured, /Discord/)
+})
+
+test("제공자 공용 코드(OAUTH_CANCELLED/EMAIL_MISSING/PROVIDER_INVALID)는 어느 한 제공자 이름도 못박지 않는다(Google 전용 문구가 Discord 실패에 잘못 붙지 않는다)", () => {
+  for (const code of ["OAUTH_CANCELLED", "EMAIL_MISSING", "PROVIDER_INVALID"]) {
+    const message = mapSocialErrorCode(code)
+    assert.doesNotMatch(message, /Google/, `${code}는 Google 전용 문구를 담으면 안 됩니다`)
+    assert.doesNotMatch(message, /Discord/, `${code}는 Discord 전용 문구를 담으면 안 됩니다`)
+  }
+})
+
 // ── AC-02: /login?socialIntent=... / socialError=... 쿼리를 화면 모드로 옮긴다 ─────────
 
 test("socialIntent가 있으면 소셜 가입 보완 화면 모드가 된다", () => {

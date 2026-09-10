@@ -29,8 +29,10 @@ function CalendarIcon() {
 // (중복 제출)·기존 이메일과의 충돌입니다.
 const BLOCKED_STATUSES = new Set(["expired", "cancelled", "conflict"])
 
-// F-06 AC-02: Google 최초 로그인이 SIGNUP_REQUIRED로 끝나면 LoginPage가 이 화면을 렌더링해
-// 닉네임·생년월일을 받아 가입을 완료합니다. 로딩/만료/충돌/재시도 같은 상태 전이 로직 자체는
+// F-06/F-07 AC-02: Google·Discord 최초 로그인이 SIGNUP_REQUIRED로 끝나면 LoginPage가 이
+// 화면을 렌더링해 닉네임·생년월일을 받아 가입을 완료합니다(어느 제공자였는지는 화면에
+// 노출하지 않습니다 — intentToken은 프론트에서 불투명한 값입니다). 로딩/만료/충돌/재시도
+// 같은 상태 전이 로직 자체는
 // useSocialSignup(F-05, useSocialSignup.test.js로 이미 검증됨)이 갖고 있고, 이 컴포넌트는
 // 그 status를 화면에 옮겨 그리기만 합니다. AuthScene이 children을 하나의 <form>으로
 // 감싸므로(AuthFrame.jsx), 여기서는 중첩 <form>을 만들지 않고 제출 버튼을 직접
@@ -76,7 +78,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
     <>
       <header className="text-center">
         <p className="mt-[40px] mb-[-10px] font-subheading text-[13px] font-bold leading-relaxed text-text-body/90">
-          Google 계정으로 처음 오셨네요. 닉네임과 생년월일을 알려주세요
+          소셜 계정으로 처음 오셨네요. 닉네임과 생년월일을 알려주세요
         </p>
       </header>
 

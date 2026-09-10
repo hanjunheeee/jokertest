@@ -4,6 +4,7 @@ const router  = express.Router();
 const {
     signup, login, me, logout, checkEmail, refresh,
     completeSocialSignup, googleAuthStart, googleAuthCallback,
+    discordAuthStart, discordAuthCallback,
 } = require("../controller/user.controller");
 const { verifyToken }        = require("../middleware/auth.middleware");
 
@@ -22,14 +23,19 @@ router.post("/logout", verifyToken, logout);
 // 걸지 않는다 — 인증은 intentToken(socialAuth.service.js가 발급) 자체가 대신한다.
 router.post("/social/signup/complete", completeSocialSignup);
 
-// F-06: Google 제공자 검증 어댑터(googleOAuth.service.js)가 완성되어, F-05가 남겨둔
-// 계약(auth.routes.js 위쪽 주석 — "실제 제공자 검증 어댑터를 완성해 그 어댑터가 검증한
-// 결과로만 이 함수들을 호출하는 라우트를 추가할 때까지")대로 로그인 시작·콜백 라우트를
-// 추가한다. 둘 다 브라우저의 전체 페이지 이동(GET)으로 동작하는 표준 인가 코드 흐름이라
-// verifyToken을 걸지 않는다 — 인증 자체가 이 왕복(state 발급 → Google 동의 → 콜백)의
-// 결과물이다.
+// F-06/F-07: Google·Discord 제공자 검증 어댑터(googleOAuth.service.js/discordOAuth.service.js)가
+// 완성되어, F-05가 남겨둔 계약(auth.routes.js 위쪽 주석 — "실제 제공자 검증 어댑터를 완성해
+// 그 어댑터가 검증한 결과로만 이 함수들을 호출하는 라우트를 추가할 때까지")대로 로그인
+// 시작·콜백 라우트를 추가한다. 모두 브라우저의 전체 페이지 이동(GET)으로 동작하는 표준
+// 인가 코드 흐름이라 verifyToken을 걸지 않는다 — 인증 자체가 이 왕복(state 발급 → 제공자
+// 동의 → 콜백)의 결과물이다. 두 제공자의 state는 같은 socialAuth.service.js state 저장소를
+// 공유하지만, user.controller.js가 서명하는 oauthAttempt 쿠키에 provider를 함께 묶어 한
+// 제공자로 시작한 시도의 쿠키를 다른 제공자의 콜백이 받아들이지 않게 한다(user.controller.js
+// signOAuthAttempt 주석 참고).
 router.get("/google", googleAuthStart);
 router.get("/google/callback", googleAuthCallback);
+router.get("/discord", discordAuthStart);
+router.get("/discord/callback", discordAuthCallback);
 
 // F-05 AC-04/D-01 R-IMPL: 명시적 연결(link) 라우트는 여기서 등록하지 않는다. 인증된
 // 사용자라도 요청 본문의 provider/subject/email은 클라이언트가 주장한 값일 뿐 서버가 검증한
