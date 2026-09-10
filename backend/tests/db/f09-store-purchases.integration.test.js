@@ -145,6 +145,9 @@ test('AC-01: 미판매(purchasable:false) 상품 구매는 거부되고 부작�
 
     const userId = await createLocalUser('ac1sale');
     await seedGold(userId, 10000);
+    // seedGold 자체가 TEST_SEED 원장 한 줄을 남긴다 — 이후 단언은 "구매 시도 전 대비 변화가
+    // 없다"를 절대 0이 아니라 이 기준선 대비로 확인해야 한다(CODEX-1 AC-01 재검토).
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     await assert.rejects(
         () => economyService.purchaseItem({ userId, itemId: catalog.DEFAULT_PROFILE_PHOTO_ID, referenceEventId: `p-${userId}` }),
@@ -154,7 +157,7 @@ test('AC-01: 미판매(purchasable:false) 상품 구매는 거부되고 부작�
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000, '거부된 구매는 잔액을 건드리면 안 된다');
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 구매가 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -164,6 +167,7 @@ test('AC-01: 잘못된(존재하지 않는) 상품 구매는 거부되고 부작
 
     const userId = await createLocalUser('ac1bad');
     await seedGold(userId, 10000);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     await assert.rejects(
         () => economyService.purchaseItem({ userId, itemId: 'no-such-item-id', referenceEventId: `p-${userId}` }),
@@ -173,7 +177,7 @@ test('AC-01: 잘못된(존재하지 않는) 상품 구매는 거부되고 부작
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000);
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 구매가 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -183,6 +187,7 @@ test('AC-01: 검증 실패(참조 사건 ID 누락)는 거부되고 부작용이
 
     const userId = await createLocalUser('ac1val');
     await seedGold(userId, 10000);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     await assert.rejects(
         () => economyService.purchaseItem({ userId, itemId: 'profile-border-남작', referenceEventId: '' }),
@@ -192,7 +197,7 @@ test('AC-01: 검증 실패(참조 사건 ID 누락)는 거부되고 부작용이
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000);
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 구매가 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -229,6 +234,7 @@ test('AC-01: 커밋 전 DB 오류(EconomyPurchaseRequest 기록 실패)는 실�
 
     const userId = await createLocalUser('ac1ddl');
     await seedGold(userId, 10000);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     // F-09가 새로 도입한 경로(품목별 applyLedgerTransaction 성공 이후에도 최종
     // EconomyPurchaseRequest 기록이 실패하면 전체가 롤백되어야 한다)를 실제 DB 트랜잭션
@@ -252,7 +258,7 @@ test('AC-01: 커밋 전 DB 오류(EconomyPurchaseRequest 기록 실패)는 실�
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000, '실제 DB 트랜잭션이 롤백되어 지갑 잔액이 원래대로 남아야 한다');
     assert.equal(await countEntitlements(userId), 0, '롤백된 트랜잭션은 소유권도 남기면 안 된다');
-    assert.equal(await countLedgerEntries(userId), 0, '롤백된 트랜잭션은 원장도 남기면 안 된다');
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '롤백된 트랜잭션은 원장도 추가하면 안 된다(seedGold의 원장은 그대로 남아 있어야 한다)');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -264,6 +270,7 @@ test('AC-02: 모든 품목이 유효하면 일괄 구매가 한 트랜잭션으�
 
     const userId = await createLocalUser('ac2ok');
     await seedGold(userId, 10000);
+    const ledgerBeforePurchase = await countLedgerEntries(userId);
 
     const result = await economyService.purchaseItems({
         userId,
@@ -278,7 +285,7 @@ test('AC-02: 모든 품목이 유효하면 일괄 구매가 한 트랜잭션으�
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000 - 200 - 500);
     assert.equal(await countEntitlements(userId), 2);
-    assert.equal(await countLedgerEntries(userId), 2);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforePurchase + 2, 'seedGold의 원장 1건 + 품목 2건이어야 한다');
     assert.equal(await countPurchaseRequests(userId), 1);
 });
 
@@ -288,6 +295,7 @@ test('AC-02: 한 품목이 구매 불가능하면 일괄 구매 전체가 실패
 
     const userId = await createLocalUser('ac2one');
     await seedGold(userId, 10000);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     await assert.rejects(
         () => economyService.purchaseItems({
@@ -301,7 +309,7 @@ test('AC-02: 한 품목이 구매 불가능하면 일괄 구매 전체가 실패
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000, '한 품목이라도 실패하면 유효했던 다른 품목도 차감되면 안 된다');
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 묶음이 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -312,6 +320,7 @@ test('AC-02: 총액이 잔액을 초과하면 일괄 구매 전체가 실패하�
     const userId = await createLocalUser('ac2sum');
     // 남작(200) + 가면(500) = 700, 하지만 잔액은 600뿐이다.
     await seedGold(userId, 600);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     await assert.rejects(
         () => economyService.purchaseItems({
@@ -325,7 +334,7 @@ test('AC-02: 총액이 잔액을 초과하면 일괄 구매 전체가 실패하�
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 600, '총액 부족으로 실패한 묶음은 어느 품목도 차감하면 안 된다');
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 묶음이 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -339,6 +348,11 @@ test('AC-02: 이미 보유한 품목이 섞인 일괄 구매는 다른 유효 �
 
     const walletBefore = await getWallet(userId);
     const entitlementsBefore = await countEntitlements(userId);
+    // 사전 구매(남작) 자체가 원장 1건 + 구매 요청 기록 1건을 이미 남긴 상태다 — 아래
+    // 실패한 일괄 구매가 "무변경"임을 확인하려면 절대 0이 아니라 이 기준선 대비로
+    // 비교해야 한다(CODEX-1 AC-02 재검토: 원장·요청 기록 assertion 누락 지적).
+    const ledgerBefore = await countLedgerEntries(userId);
+    const purchaseRequestsBefore = await countPurchaseRequests(userId);
 
     await assert.rejects(
         () => economyService.purchaseItems({
@@ -352,6 +366,8 @@ test('AC-02: 이미 보유한 품목이 섞인 일괄 구매는 다른 유효 �
     const walletAfter = await getWallet(userId);
     assert.equal(walletAfter.balance_gold, walletBefore.balance_gold, '이미 보유한 품목 때문에 실패한 묶음은 다른 유효 품목도 차감하면 안 된다');
     assert.equal(await countEntitlements(userId), entitlementsBefore, '가면도 함께 지급되면 안 된다');
+    assert.equal(await countLedgerEntries(userId), ledgerBefore, '거부된 묶음이 원장을 추가하면 안 된다(가면 품목도 롤백되어야 한다)');
+    assert.equal(await countPurchaseRequests(userId), purchaseRequestsBefore, '거부된 묶음이 구매 요청 기록을 남기면 안 된다');
 });
 
 test('AC-02: 두 번째 품목 지급 단계에서 DB 쓰기가 실패하면 첫 번째 품목의 이미 적용된 차감·원장도 함께 롤백된다', async (t) => {
@@ -360,6 +376,7 @@ test('AC-02: 두 번째 품목 지급 단계에서 DB 쓰기가 실패하면 첫
 
     const userId = await createLocalUser('ac2mid');
     await seedGold(userId, 10000);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     // 첫 번째 품목(남작)은 applyLedgerTransaction까지 정상적으로 끝나 지갑 UPDATE·원장
     // INSERT가 "이 트랜잭션 안에서는" 이미 반영된 상태다. 두 번째 품목(가면)의 소유권
@@ -387,7 +404,7 @@ test('AC-02: 두 번째 품목 지급 단계에서 DB 쓰기가 실패하면 첫
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000, '두 번째 품목 실패가 첫 번째 품목의 이미 적용된 차감도 함께 롤백해야 한다');
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0, '첫 번째 품목의 원장도 함께 롤백되어야 한다');
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '첫 번째 품목의 원장도 함께 롤백되어야 한다(seedGold의 원장만 남아야 한다)');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -480,6 +497,7 @@ test('AC-04: 개별 구매가 커밋된 뒤에는 같은 참조 사건 ID 조회
 
     const userId = await createLocalUser('ac4ind');
     await seedGold(userId, 10000);
+    const ledgerBeforePurchase = await countLedgerEntries(userId);
     const referenceEventId = `commit-${userId}`;
 
     const first = await economyService.purchaseItem({ userId, itemId: 'profile-border-남작', referenceEventId });
@@ -499,7 +517,7 @@ test('AC-04: 개별 구매가 커밋된 뒤에는 같은 참조 사건 ID 조회
 
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000 - 200, '조회·재시도 모두 추가 차감을 일으키면 안 된다');
-    assert.equal(await countLedgerEntries(userId), 1);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforePurchase + 1, 'seedGold의 원장 1건 + 구매 원장 1건이어야 하며 재시도가 추가로 늘리면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 1);
 });
 
@@ -575,6 +593,7 @@ test('AC-05: 표시용 이모티콘 개별 구매는 거부되고 부작용이 �
 
     const userId = await createLocalUser('ac5ind');
     await seedGold(userId, 10000);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
 
     const emoticonItem = catalog.ALL_ITEMS.find((item) => item.type === catalog.ITEM_TYPES.EMOTICON);
     assert.ok(emoticonItem, '카탈로그에 표시용 이모티콘 항목이 있어야 한다');
@@ -588,7 +607,7 @@ test('AC-05: 표시용 이모티콘 개별 구매는 거부되고 부작용이 �
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000);
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 구매가 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });
 
@@ -598,6 +617,7 @@ test('AC-05: 이모티콘이 섞인 일괄 구매는 조작된 요청이어도 �
 
     const userId = await createLocalUser('ac5bulk');
     await seedGold(userId, 10000);
+    const ledgerBeforeAttempt = await countLedgerEntries(userId);
     const emoticonItem = catalog.ALL_ITEMS.find((item) => item.type === catalog.ITEM_TYPES.EMOTICON);
 
     await assert.rejects(
@@ -612,6 +632,6 @@ test('AC-05: 이모티콘이 섞인 일괄 구매는 조작된 요청이어도 �
     const wallet = await getWallet(userId);
     assert.equal(wallet.balance_gold, 10000, '이모티콘이 섞인 조작된 묶음은 정상 상품도 지급하면 안 된다');
     assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), 0);
+    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 묶음이 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });

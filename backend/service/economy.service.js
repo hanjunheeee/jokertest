@@ -441,6 +441,22 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
         throw createError('같은 상품을 중복으로 요청할 수 없습니다.', 400, 'DUPLICATE_PURCHASE_ITEM');
     }
 
+    const kind = items.length > 1 ? 'BULK' : 'SINGLE';
+    const payload = normalizePurchaseRequestPayload(items);
+    const models = economyModels(db);
+
+    // 재처리 방지 조회(AC-04)는 카탈로그 검증보다 먼저 한다 — 이미 커밋된 요청을 같은
+    // 참조 사건 ID로 재시도했다면, 그 사이 카탈로그 상태가 바뀌었더라도(상품이 나중에
+    // purchasable:false로 바뀌는 등) 항상 기존 커밋 결과를 그대로 복원해야 한다
+    // (CODEX-1 AC-04 재검토: "카탈로그 검증이 기존 성공 조회보다 먼저"였던 순서를
+    // 뒤집음 — 이미 커밋된 요청을 다시 카탈로그 규칙으로 거부하면 멱등성 계약이 깨진다).
+    // 카탈로그 검증은 이 조회를 통과해 "완전히 새로운 요청"으로 판명된 뒤에만 실행한다.
+    const preExisting = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
+    if (preExisting) {
+        if (!purchasePayloadsEqual(preExisting.payload_json, payload)) throw purchaseRequestConflictError();
+        return { idempotent: true, kind: preExisting.kind, results: preExisting.result_json };
+    }
+
     // 카탈로그 조회·구매 가능 여부 확인은 지갑을 건드리기 전에 끝낸다 — 표시용
     // 이모티콘처럼 존재하지 않거나 purchasable:false인 상품이 하나라도 섞여 있으면
     // 트랜잭션을 열지도 않고 즉시 거부한다(AC-05, 부작용 없음).
@@ -451,16 +467,6 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
         }
         return catalogItem;
     });
-
-    const kind = items.length > 1 ? 'BULK' : 'SINGLE';
-    const payload = normalizePurchaseRequestPayload(items);
-    const models = economyModels(db);
-
-    const preExisting = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
-    if (preExisting) {
-        if (!purchasePayloadsEqual(preExisting.payload_json, payload)) throw purchaseRequestConflictError();
-        return { idempotent: true, kind: preExisting.kind, results: preExisting.result_json };
-    }
 
     await ensureWalletRow(db, userId);
 

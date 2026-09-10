@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import StoreItemGrid from "./StoreItemGrid.jsx"
@@ -37,6 +37,35 @@ const isRealPurchaseCategory = (category) => !NON_PURCHASABLE_CATEGORIES.has(cat
 // 다음의 새 시도는 새 참조 사건 ID를 쓴다(economy.store.js purchase()와 같은 규칙).
 const buildBulkPurchaseReferenceEventId = (userId) => `bulk-purchase:${userId}:${crypto.randomUUID()}`
 
+// F-09 CODEX-1 재검토(AC-04): 미확정(pending/unknown) 일괄구매 상태는 원래 요청
+// payload(itemId 목록)와 함께 계정별로 보존해야 한다 — StorePanel이 다른 화면으로
+// 이동했다가 되돌아오는 등으로 리마운트돼도 같은 참조 사건 ID·같은 품목으로 재확인해야
+// 서버가 새로 차감하지 않는다. useEconomyStore.pendingPurchases(F-08 개별 구매)와 같은
+// 수준의 보존이다 — 모듈 스코프 Map에 두어 컴포넌트 인스턴스를 벗어나 살아남되, 전체
+// 새로고침까지 버티지는 않는다(그건 이 코드베이스 기존 관례에도 없다).
+const bulkPurchaseStateByUser = new Map()
+
+const IDLE_BULK_PURCHASE_STATE = { referenceEventId: null, status: "idle", error: null, itemIds: [] }
+
+const readStoredBulkPurchaseState = (userId) => {
+  if (!userId) return IDLE_BULK_PURCHASE_STATE
+  const stored = bulkPurchaseStateByUser.get(userId)
+  if (!stored) return IDLE_BULK_PURCHASE_STATE
+  // 리마운트 시점엔 전송 중이던 요청의 실제 결과를 알 수 없다 — "pending"은 전송 불확실
+  // 상태("unknown")로 취급해, 재확인이 같은 참조 사건 ID를 재사용하게 한다.
+  if (stored.status === "pending") return { ...stored, status: "unknown" }
+  return stored
+}
+
+const writeStoredBulkPurchaseState = (userId, state) => {
+  if (!userId) return
+  if (state.status === "idle" || state.status === "confirmed") {
+    bulkPurchaseStateByUser.delete(userId)
+    return
+  }
+  bulkPurchaseStateByUser.set(userId, state)
+}
+
 // 상점 메인 패널입니다. 상품 그리드, 선택 상품 상세, 사이드 필터를 조합합니다.
 export default function StorePanel({ visible = true }) {
   const { categories, activeCategory, selectCategory } = useStoreCategoryFilter()
@@ -52,19 +81,49 @@ export default function StorePanel({ visible = true }) {
   const [bulkMode, setBulkMode] = useState(false)
   const [bulkSelectedIds, setBulkSelectedIds] = useState(() => new Set())
   const [bulkPurchaseOpen, setBulkPurchaseOpen] = useState(false)
-  const [bulkPurchaseState, setBulkPurchaseState] = useState({
-    referenceEventId: null,
-    status: "idle", // idle | pending | confirmed | rejected | unknown
-    error: null,
-  })
+  const [bulkPurchaseState, setBulkPurchaseStateRaw] = useState(IDLE_BULK_PURCHASE_STATE)
+  const authUserId = useAuthStore((state) => state.user?.uuid ?? null)
+  // visibleItems(현재 카테고리) 변경 효과가 마운트 시점에도 한 번 실행되는데, 그때
+  // 아래 계정 복원 효과가 막 세팅한 bulkMode/bulkSelectedIds를 지워버리면 안 된다 —
+  // 사용자가 실제로 카테고리를 바꿀 때만 초기화하도록 첫 실행은 건너뛴다.
+  const skipNextVisibleItemsReset = useRef(true)
+
+  // setBulkPurchaseState는 React 상태와 계정별 영속 저장소(bulkPurchaseStateByUser)를
+  // 함께 갱신한다 — 이 컴포넌트가 언마운트돼도(다른 화면 이동 등) 미확정 상태가
+  // 사라지지 않게 한다(F-09 AC-04).
+  const setBulkPurchaseState = (next) => {
+    setBulkPurchaseStateRaw(next)
+    writeStoredBulkPurchaseState(authUserId, next)
+  }
 
   useEffect(() => {
     useEconomyStore.getState().fetchSummary()
   }, [])
 
+  // 계정이 바뀌거나(로그인/전환) 컴포넌트가 처음 마운트될 때, 그 계정의 미확정 일괄구매가
+  // 남아 있으면 참조 사건 ID·원래 품목·확인 대화상자를 그대로 복원한다 — 재조회·재시도가
+  // 새 참조 사건 ID를 만들지 않게 한다(F-09 AC-04).
+  useEffect(() => {
+    const stored = readStoredBulkPurchaseState(authUserId)
+    setBulkPurchaseStateRaw(stored)
+    skipNextVisibleItemsReset.current = true
+    if (stored.status === "unknown" && stored.itemIds.length > 0) {
+      setBulkMode(true)
+      setBulkSelectedIds(new Set(stored.itemIds))
+      setBulkPurchaseOpen(true)
+    } else {
+      setBulkMode(false)
+      setBulkSelectedIds(new Set())
+      setBulkPurchaseOpen(false)
+    }
+  }, [authUserId])
+
+  // 일괄구매 확인 대화상자는 카테고리와 무관하게 원래 선택된 품목을 그대로 보여줘야
+  // 한다(리마운트 복원 포함) — 현재 카테고리로 걸러진 visibleItems 대신 전체 카탈로그
+  // (STORE_ITEMS)에서 조회한다.
   const bulkSelectedItems = useMemo(
-    () => visibleItems.filter((item) => bulkSelectedIds.has(item.id)),
-    [visibleItems, bulkSelectedIds],
+    () => STORE_ITEMS.filter((item) => bulkSelectedIds.has(item.id)),
+    [bulkSelectedIds],
   )
 
   const toggleDeadPreview = (itemId) => {
@@ -142,23 +201,28 @@ export default function StorePanel({ visible = true }) {
     if (bulkPurchaseState.status === "pending") return
 
     // 응답 유실(status "unknown")로 남은 시도만 같은 참조 사건 ID를 재사용한다 — 서버가
-    // 이미 확정적으로 거부했다면(rejected) 다음 시도는 새 참조 사건 ID를 쓴다.
-    const referenceEventId = bulkPurchaseState.status === "unknown" && bulkPurchaseState.referenceEventId
+    // 이미 확정적으로 거부했다면(rejected) 다음 시도는 새 참조 사건 ID를 쓴다. 재사용할
+    // 때는 지금 화면에 보이는 선택이 아니라, 그 시도가 실제로 서버에 보냈던 원래 품목
+    // 목록(bulkPurchaseState.itemIds)을 그대로 다시 보낸다 — 그래야 서버의 payload 일치
+    // 검사(정규화된 itemId 목록 비교)를 항상 통과한다(CODEX-1 AC-04 재검토: "미확정 요청은
+    // 원래 payload·계정별로 보존되지 않고").
+    const isUnknownRetry = bulkPurchaseState.status === "unknown"
+      && Boolean(bulkPurchaseState.referenceEventId)
+      && bulkPurchaseState.itemIds.length > 0
+    const referenceEventId = isUnknownRetry
       ? bulkPurchaseState.referenceEventId
       : buildBulkPurchaseReferenceEventId(userId)
+    const itemIds = isUnknownRetry
+      ? bulkPurchaseState.itemIds
+      : bulkSelectedItems.map((item) => item.id)
 
-    setBulkPurchaseState({ referenceEventId, status: "pending", error: null })
+    setBulkPurchaseState({ referenceEventId, status: "pending", error: null, itemIds })
 
     try {
       await api.post("/economy/purchases/bulk", {
-        items: bulkSelectedItems.map((item) => ({ itemId: item.id })),
+        items: itemIds.map((itemId) => ({ itemId })),
         referenceEventId,
       })
-      setBulkPurchaseState({ referenceEventId, status: "confirmed", error: null })
-      await useEconomyStore.getState().fetchSummary()
-      setBulkPurchaseOpen(false)
-      setBulkMode(false)
-      setBulkSelectedIds(new Set())
     } catch (error) {
       // backend/utils/appError.js의 createError는 서버가 실제로 처리해 거부한 응답에
       // 항상 code를 싣는다 — code가 있으면 확정된 거부(rejected), 없으면 응답을 받지
@@ -169,8 +233,19 @@ export default function StorePanel({ visible = true }) {
         referenceEventId,
         status: confirmedRejection ? "rejected" : "unknown",
         error: error.message ?? "일괄 구매에 실패했습니다.",
+        itemIds,
       })
+      return
     }
+
+    // 구매 자체는 이미 서버에 커밋됐다 — 이후 지갑 갱신·UI 정리가 실패해도 그 실패를
+    // 구매 실패로 되돌리면 안 된다(CODEX-1 AC-04 재검토: "성공 후 fetchSummary 실패까지
+    // 구매 실패로 되돌린다"). 확정 상태를 먼저 확정하고, 부수 효과는 별도로 처리한다.
+    setBulkPurchaseState({ referenceEventId, status: "confirmed", error: null, itemIds })
+    setBulkPurchaseOpen(false)
+    setBulkMode(false)
+    setBulkSelectedIds(new Set())
+    useEconomyStore.getState().fetchSummary().catch(() => {})
   }
 
   useEffect(() => {
@@ -179,9 +254,15 @@ export default function StorePanel({ visible = true }) {
       return visibleItems[0] ?? null
     })
     setSkinZoomItem(null)
-    setBulkMode(false)
-    setBulkSelectedIds(new Set())
-    setBulkPurchaseOpen(false)
+    if (skipNextVisibleItemsReset.current) {
+      // 마운트 직후 계정 복원 효과가 이미 세팅한 bulkMode/bulkSelectedIds를 지우지
+      // 않는다 — 실제 카테고리 전환에서만 초기화한다.
+      skipNextVisibleItemsReset.current = false
+    } else {
+      setBulkMode(false)
+      setBulkSelectedIds(new Set())
+      setBulkPurchaseOpen(false)
+    }
   }, [visibleItems])
 
   return (
