@@ -49,8 +49,15 @@ exports.recordValidDayVoteParticipation = async ({ gameId, dayIndex, userId }) =
 // game_results와의 INNER JOIN으로 앞부분("아직 결과 없음")을 자동으로 걸러내고,
 // completed/gameSource 조건은 여기서 명시적으로 확인한다 — gameResult.repositories.js의
 // isRoleStatisticsEligibleGame과 같은 판정 기준(F-10)을 그대로 따른다.
+//
+// F-11 CODEX-1 재검토(AC-05): completed는 raw MySQL 조회(findAll의 include+raw:true)에서
+// JS boolean이 아니라 TINYINT(1) 그대로인 1/0으로 돌아온다 — gameResult.repositories.js의
+// toRoleStatisticsRow가 won에 대해 이미 쓰는 것과 같은 정규화가 필요하다. `=== true`만
+// 비교하면 정상 완료된 운영 경기도 completed:1로 저장돼 있어 매번 제외되어 버린다.
+const isCompletedGameResult = (gameResult) => gameResult?.completed === true || gameResult?.completed === 1;
+
 const isEligibleGameResult = (gameResult) =>
-    gameResult?.completed === true && gameResult?.settings?.gameSource?.value !== "development";
+    isCompletedGameResult(gameResult) && gameResult?.settings?.gameSource?.value !== "development";
 
 /**
  * F-11 AC-05: F-12가 업적 진행을 판정할 때 쓰는 조회 연결점. 한 계정이 갖고 있는 저장된

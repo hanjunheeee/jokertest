@@ -228,6 +228,46 @@ test('AC-03: 3인 전원 동점 재투표(2라운드 전원 기권)에서도 day
     assert.equal(await countVoteParticipations(session.id), 3, '재투표(같은 day_index)는 이미 기록된 사건 수를 넘지 않는다');
 });
 
+// F-11 CODEX-1 재검토(AC-03): 최초 라운드에서 기권했던 참가자가 재투표에서 비기권으로
+// 돌아서는 경우다 — A-01은 "최초 일반 낮 투표"의 유효한 비기권 참여만을 세고
+// "재판·재투표 자체는 새 사건을 만들지 않는다"고 정의하므로, 이 뒤늦은 비기권은 새 사건을
+// 만들면 안 된다.
+test('AC-03/A-01: 최초 라운드에서 기권한 참가자가 재투표에서 비기권으로 돌아서도 새 사건이 생기지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const [a, b, c] = [await createLocalUser('vp3ra'), await createLocalUser('vp3rb'), await createLocalUser('vp3rc')];
+    const session = createRunningSessionAtDayVote([a, b, c]);
+    registerOnline([a, b, c]);
+
+    // 라운드 1: a→b, b는 기권, c→a. b와 a가 1표씩 받아 동점 → REVOTE(a, b가 다음 라운드
+    // 대상에서 제외된다). b는 기권이므로 이 라운드에서 사건이 생기지 않는다.
+    await submitVote(session, a, b);
+    const bAbstainResponse = await submitVote(session, b, null);
+    assert.deepEqual(bAbstainResponse, { ok: true });
+    await submitVote(session, c, a);
+    assert.equal(await countVoteParticipations(session.id), 2, '기권한 b를 제외한 a·c의 사건만 저장되어야 한다');
+
+    const prepared = gameSessionCore.prepareDayVoteResolution(a, session.id, session.dayIndex);
+    assert.equal(prepared.ok, true);
+    assert.equal(prepared.resolution.outcome, 'REVOTE');
+    const committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution);
+    assert.equal(committed.ok, true);
+
+    // 라운드 2: a와 b가 대상에서 제외되었으므로 유일한 유효 대상은 c다. b는 이제 기권이 아닌
+    // c에게 투표한다 — 최초 라운드가 아니므로 이 제출은 새 사건을 만들면 안 된다.
+    const bRevoteResponse = await submitVote(session, b, c);
+    assert.deepEqual(bRevoteResponse, { ok: true }, '재투표 제출 자체는 ack가 성공해야 한다');
+    await submitVote(session, a, c);
+
+    assert.equal(await countVoteParticipations(session.id), 2, '재투표의 비기권 제출은 새 사건을 만들지 않는다');
+    assert.equal(
+        await db.VoteParticipation.count({ where: { game_id: session.id, user_id: b } }),
+        0,
+        '최초 라운드에 기권한 b는 재투표에서 비기권으로 돌아서도 사건이 생기면 안 된다',
+    );
+});
+
 test('AC-03: TRIBUNAL 전이는 그 낮의 비기권 사건 수를 바꾸지 않는다', async (t) => {
     if (unavailable(t)) return;
     await setUp();

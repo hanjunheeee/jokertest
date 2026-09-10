@@ -1613,6 +1613,13 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
  * 항상 "이 제출이 실제로 반영된" 라운드로 귀속되게 합니다(A-03 조건 3). 저장이 실패하면
  * 메모리 투표는 이미 반영된 채로 남겨두고(A-03 조건 2 — 같은 요청의 재시도를 거절하지
  * 않습니다) 재시도 가능한 실패 코드로 ack합니다.
+ *
+ * F-11 CODEX-1 재검토(AC-03): 저장 시도는 이 dayIndex의 최초 투표 라운드(dayVoteRound===1)에만
+ * 합니다. A-01은 "일반 낮 라운드당 1회"를 최초 투표의 유효한 비기권 참여로 정의하고
+ * "재판·재투표 자체는 새 사건을 만들지 않는다"고 명시합니다 — 최초 라운드에서 기권했던
+ * 참가자가 재투표(round>=2)에서 뒤늦게 비기권으로 돌아서더라도 그 제출은 최초 투표가
+ * 아니므로 새 사건을 만들면 안 됩니다. 최초 라운드의 비기권 제출은 이미 저장을 시도했으므로
+ * (성공했든 DB 유일 제약에 막혔든) 그 뒤 라운드에서 다시 시도할 필요가 없습니다.
  */
 async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     if (typeof callback !== 'function') return
@@ -1657,6 +1664,14 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     if (targetId === null) {
         // 기권은 D-09가 세지 않는 참여다 — 저장을 시도하지 않으므로 어떤 await도 거치지
         // 않고 기존과 동일하게 동기적으로 ack한다.
+        respond(callback, { ok: true })
+        return
+    }
+
+    // A-01: 재투표(2라운드 이상)의 비기권 제출은 최초 투표가 아니므로 새 사건을 만들지
+    // 않는다 — 최초 라운드에서 기권했던 참가자가 재투표에서 비기권으로 돌아서는 경우가
+    // 여기서 걸러진다.
+    if (gameSessionCore.getSessionDayVoteRound(gameId) !== 1) {
         respond(callback, { ok: true })
         return
     }
