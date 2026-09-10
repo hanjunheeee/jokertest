@@ -48,9 +48,17 @@ const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-tok
 // backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 다섯 스위트가 항상 같은 정의를
 // 쓰게 한다.
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
+// F-08 CODEX-2(AC-03) 대응: authService.signup()이 이제 계정 생성 트랜잭션 안에서
+// economyService.ensureDefaultEntitlements를 호출해 economy_wallets/economy_entitlements/
+// economy_ledger_entries/economy_loadouts에 직접 INSERT한다 — 이 스위트가 authService.signup을
+// 실제로 여러 번 호출하므로(AC-05 동시 가입, AC-06 관리 필드 무시 등) 그 테이블이 실제로
+// 존재해야 한다(buildManagedSchema는 이 테이블을 이제 기본으로 관리 목록에 포함하므로 —
+// isolatedTestDb.js 참고 — 따로 넘길 필요는 없지만, MIGRATIONS 체인에는 명시적으로
+// 넣어야 실제로 테이블이 만들어진다).
+const addEconomy = require('../../db/migrations/0006-add-economy');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addEconomy];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

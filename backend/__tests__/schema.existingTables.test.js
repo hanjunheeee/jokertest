@@ -200,6 +200,11 @@ const NEW_MODELS = [
     'GameResult', 'GameResultPlayer', 'ConcurrentSnapshot',
     // F-05: 소셜 계정 공통 기반(0005-add-social-auth 마이그레이션).
     'ExternalIdentity', 'OAuthState', 'SocialSignupIntent',
+    // F-08: 지갑·거래·소유권·장착. backend/models/economy/economy.model.js는 파일 하나에
+    // 모델 4개(EconomyWallet/EconomyLedgerEntry/EconomyEntitlement/EconomyLoadout)를
+    // 정의하지만, models/index.js 로더는 파일이 반환한 모델 하나만 db[name]에 등록한다
+    // (economy.model.js 상단 주석 참고) — 그래서 여기 보이는 건 EconomyLedgerEntry뿐이다.
+    'EconomyLedgerEntry',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {

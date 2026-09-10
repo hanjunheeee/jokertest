@@ -4,6 +4,8 @@ const { hashPassword,
 const { generateToken }       = require("../utils/jwt");
 const { createError }         = require("../utils/appError");
 const { validateSignupPayload } = require("../validation/signupValidation");
+const db                      = require("../models");
+const economyService          = require("./economy.service");
 const {
     PERSISTENT_SESSION_MAX_AGE_MS,
     ACCESS_TOKEN_SHORT_TTL_SECONDS,
@@ -102,6 +104,14 @@ exports.signup = async (userData) => {
     // createUserStats가 실패했을 때 통계 없는 반쪽 계정이 남아, 그 계정은 이후 프로필
     // 조회·집계에서 계속 결측으로 튀어나옵니다. 실패 시 둘 다 없던 일이 되게 묶습니다.
     // (해싱은 DB와 무관하고 느리므로 트랜잭션 밖에 둬서 커넥션 점유 시간을 늘리지 않습니다.)
+    //
+    // CODEX-2(F-08 AC-03) 대응: 기본 프로필 16종·평민 테두리 1종·지갑(0/0) 지급도 같은
+    // 트랜잭션 안에서 끝낸다 — wallet/equip 조회 시점까지 미루는 지연 지급은 "가입 시
+    // 지급"이 아니라는 지적(lazy grant on wallet/equip is NOT signup)에 따른 것이다.
+    // economyService.ensureDefaultEntitlements에 이 transaction을 그대로 넘겨, 아직
+    // 커밋되지 않은 신규 user.uuid를 참조하는 경쟁 트랜잭션을 새로 열지 않는다 — DB
+    // 오류로 지급이 실패하면 계정 생성 자체도 함께 롤백되어, 필수 지급 없이 계정만
+    // 만들어지는 상태가 남지 않는다.
     return await userRepository.withTransaction(async (transaction) => {
         const user = await userRepository.createUser({
             email: normalizedEmail,
@@ -110,6 +120,7 @@ exports.signup = async (userData) => {
             birth_date: birthDate,
         }, { transaction });
         await userRepository.createUserStats(user.uuid, { transaction });
+        await economyService.ensureDefaultEntitlements(user.uuid, db, { transaction });
         return user;
     });
 };
