@@ -1893,6 +1893,44 @@ function submitDayVote(uuid, gameId, targetId) {
     return { ok: true }
 }
 
+/**
+ * F-11: 투표 참여 사건을 저장할 때 필요한 최소 컨텍스트(day_index)만 읽어옵니다(상태를
+ * 바꾸지 않는 순수 조회). submitDayVote가 이미 성공한 직후에만 호출되므로 존재 검증을
+ * 다시 하지 않고, 세션이 없으면 null만 돌려줍니다 — submitDayVote의 반환 계약({ok:true})을
+ * 건드리지 않기 위해 별도 함수로 둡니다(기존 dayVote 테스트들이 deepEqual({ok:true})로
+ * 정확한 키 집합을 검증하므로, 반환값에 필드를 추가하면 그 계약이 깨집니다).
+ *
+ * 집계 키에는 재투표 차수(dayVoteRound)가 아니라 이 dayIndex만 들어갑니다(A-02) — 같은
+ * dayIndex 안에서 재투표가 열려도 이미 기록된 사건은 다시 만들어지지 않습니다.
+ *
+ * @param {string} gameId
+ * @returns {number|null}
+ */
+function getSessionDayIndex(gameId) {
+    const session = gameSessions.get(gameId)
+    return session ? session.dayIndex : null
+}
+
+/**
+ * F-11 CODEX-1 재검토(AC-03): 투표 참여 사건을 저장하기 전에 "지금이 이 dayIndex의 최초
+ * 투표 라운드인가"를 확인하기 위한 순수 조회입니다(상태를 바꾸지 않습니다). getSessionDayIndex와
+ * 같은 이유로 별도 함수입니다 — submitDayVote의 반환 계약({ok:true})에 필드를 추가하지 않기
+ * 위함입니다.
+ *
+ * A-01: "일반 낮 라운드당 1회"는 최초 투표 라운드(getDayVoteRound===1)의 유효한 비기권
+ * 참여만을 뜻합니다("재판·재투표 자체는 새 사건을 만들지 않는다"). 최초 라운드에서 기권한
+ * 참가자가 재투표(REVOTE, round>=2)에서 뒤늦게 비기권으로 돌아서더라도, 그 제출 자체는
+ * "최초 일반 낮 투표"가 아니므로 새 사건을 만들면 안 됩니다 — 호출부(handleSubmitDayVote)는
+ * 이 값이 1일 때만 저장을 시도합니다.
+ *
+ * @param {string} gameId
+ * @returns {number|null}
+ */
+function getSessionDayVoteRound(gameId) {
+    const session = gameSessions.get(gameId)
+    return session ? getDayVoteRound(session) : null
+}
+
 // registry(session.players)를 읽기만 하는 순수 계산 — 이 낮에 투표 가능한(생존) 모든 참가자
 // uuid를 반환한다. submitDayVote가 이미 사망자의 투표를 막으므로, 생존자 전원이 곧 "투표해야
 // 할" 대상이다.
@@ -3124,6 +3162,8 @@ module.exports = {
     isRoleTurnComplete,
     getCurrentNightTurnRole,
     submitDayVote,
+    getSessionDayIndex,
+    getSessionDayVoteRound,
     prepareJokerChatMessage,
     commitJokerChatMessage,
     prepareGameChatMessage,

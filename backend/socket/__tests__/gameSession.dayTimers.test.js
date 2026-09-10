@@ -1,3 +1,8 @@
+// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 문자열로 파싱한다(연결을 실제로
+// 시도하지는 않는다). npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이
+// 비어 있어 require 자체가 죽으므로, 다른 스위트(gameSession.test.js 등)와 같은 더미 폴백을 둔다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -33,11 +38,16 @@ test.beforeEach(() => {
     matchmaking.__resetStateForTests()
     gameSessionSocketLayer.__resetStateForTests()
     gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
+    // F-11: handleSubmitDayVote는 비기권 투표의 성공 ack 전에 투표 참여 저장을 await한다
+    // (A-03) — 이 파일은 실제 DB 없이 타이머 로직만 태우는 순수 단위 테스트이므로, 그 저장을
+    // 즉시 성공하는 스텁으로 갈아끼운다(gameSession.test.js와 같은 관례).
+    gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests(async () => ({ recorded: true }))
 })
 test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
     gameSessionSocketLayer.__resetStateForTests()
+    gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests()
 })
 
 /** gameSession.nightTurns.test.js의 동명 헬퍼와 같은 계약(수동 시계)이다. */
@@ -117,9 +127,13 @@ function wireSession(session) {
         gameSessionSocketLayer.registerGameHandlers(io, socket, uuid)
         sockets.set(uuid, socket)
     }
-    const castVote = (uuid, targetId) => {
+    // F-11: cast_day_vote(handleSubmitDayVote)는 비기권 투표에서 성공 ack 전에 투표 참여 저장을
+    // await하므로(A-03) 더 이상 항상 동기로 응답하지 않는다 — socket.trigger는 핸들러의 반환
+    // Promise를 넘겨주지 않으므로, 콜백이 실제로 호출될 때까지 한 틱 기다린 뒤 응답을 읽는다.
+    const castVote = async (uuid, targetId) => {
         const { callback, getResponse } = countingCallback()
         sockets.get(uuid).trigger('cast_day_vote', { gameId: session.id, targetId }, callback)
+        await new Promise((resolve) => setImmediate(resolve))
         return getResponse()
     }
     const readyForVote = (uuid) => {
@@ -278,14 +292,14 @@ function startAtDayVote({ id, playerCount = 4, settings = {} } = {}) {
     return { ...fixture, ...wired, clock }
 }
 
-test('day vote timer: 미투표 생존자의 표가 기권으로 집계되고 유효 표는 그대로 반영된다', () => {
+test('day vote timer: 미투표 생존자의 표가 기권으로 집계되고 유효 표는 그대로 반영된다', async () => {
     const { session, uuids, io, sockets, castVote, clock } = startAtDayVote({
         id: 'room-vote-tribunal',
         settings: { dayVoteTime: 30 },
     })
 
     // 4명 중 한 명만 투표하고 나머지 세 명은 침묵한다 — 단독 최다 득표이므로 재판으로 간다.
-    assert.deepEqual(castVote(uuids[0], uuids[1]), { ok: true })
+    assert.deepEqual(await castVote(uuids[0], uuids[1]), { ok: true })
 
     clock.advance(30_000)
 
@@ -317,15 +331,15 @@ test('day vote timer: 아무도 투표하지 않고 만료되면 전원 기권�
     assert.equal(clock.pendingCount(), 0, '낮을 벗어났으므로 남은 낮 타이머가 없다')
 })
 
-test('day vote timer: 1라운드 동점이면 재투표가 열리고 그 라운드의 제한시간이 다시 걸린다', () => {
+test('day vote timer: 1라운드 동점이면 재투표가 열리고 그 라운드의 제한시간이 다시 걸린다', async () => {
     const { session, uuids, castVote, clock } = startAtDayVote({
         id: 'room-vote-revote',
         settings: { dayVoteTime: 30 },
     })
 
     // uuids[2]와 uuids[3]이 각각 1표씩 — 1라운드 동점이다.
-    assert.deepEqual(castVote(uuids[0], uuids[2]), { ok: true })
-    assert.deepEqual(castVote(uuids[1], uuids[3]), { ok: true })
+    assert.deepEqual(await castVote(uuids[0], uuids[2]), { ok: true })
+    assert.deepEqual(await castVote(uuids[1], uuids[3]), { ok: true })
 
     clock.advance(30_000)
 
@@ -343,7 +357,7 @@ test('day vote timer: 1라운드 동점이면 재투표가 열리고 그 라운�
     assert.equal(session.phase, 'NIGHT')
 })
 
-test('day vote timer: 만료 전에 전원이 투표해도 제한시간까지는 판정하지 않는다', () => {
+test('day vote timer: 만료 전에 전원이 투표해도 제한시간까지는 판정하지 않는다', async () => {
     // 낮 투표의 조기 판정(전원 투표 즉시 해소)은 이 슬라이스의 계약이 아니다 — 만료 또는
     // 명시적 resolve_day_vote만이 낮을 닫는다는 사실을 고정한다.
     const { session, uuids, castVote, clock } = startAtDayVote({
@@ -351,20 +365,20 @@ test('day vote timer: 만료 전에 전원이 투표해도 제한시간까지는
         settings: { dayVoteTime: 30 },
     })
 
-    for (const uuid of uuids) assert.deepEqual(castVote(uuid, null), { ok: true })
+    for (const uuid of uuids) assert.deepEqual(await castVote(uuid, null), { ok: true })
     assert.equal(session.dayVoteResolution, null)
 
     clock.advance(30_000)
     assert.equal(session.dayVoteResolution.outcome, 'ABSTAINED')
 })
 
-test('day vote timer: 수동 판정이 먼저 끝나면 만료 타이머가 같은 낮을 다시 판정하지 않는다', () => {
+test('day vote timer: 수동 판정이 먼저 끝나면 만료 타이머가 같은 낮을 다시 판정하지 않는다', async () => {
     const { session, uuids, sockets, castVote, clock } = startAtDayVote({
         id: 'room-vote-manual-first',
         settings: { dayVoteTime: 30 },
     })
 
-    for (const uuid of uuids) assert.deepEqual(castVote(uuid, uuids[1] === uuid ? null : uuids[1]), { ok: true })
+    for (const uuid of uuids) assert.deepEqual(await castVote(uuid, uuids[1] === uuid ? null : uuids[1]), { ok: true })
 
     const { callback, getResponse } = countingCallback()
     sockets.get(uuids[0]).trigger('resolve_day_vote', { gameId: session.id, dayIndex: session.dayIndex }, callback)
@@ -390,11 +404,11 @@ test('day vote timer: 판정으로 게임이 낮을 벗어나면 낮 타이머 r
     assert.equal(clock.pendingCount(), 0)
 })
 
-test('day vote timer: 사망자는 기권 집계 분모에도 들어가지 않는다', () => {
+test('day vote timer: 사망자는 기권 집계 분모에도 들어가지 않는다', async () => {
     const { session, uuids, castVote, clock } = startAtDayVote({ id: 'room-vote-dead', settings: { dayVoteTime: 30 } })
     session.players.get(uuids[3]).alive = false
 
-    assert.deepEqual(castVote(uuids[0], uuids[1]), { ok: true })
+    assert.deepEqual(await castVote(uuids[0], uuids[1]), { ok: true })
     clock.advance(30_000)
 
     const resolution = session.dayVoteResolution

@@ -15,6 +15,10 @@ const addEconomy = require('../../db/migrations/0006-add-economy');
 // f09 스위트가 이 테이블을 만들면, 그 사실을 모르는 다른 스위트(f01~f08)의 resetSchema()가
 // "모르는 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다.
 const addEconomyPurchaseRequests = require('../../db/migrations/0007-add-economy-purchase-requests');
+// F-11: vote_participations(0008)도 같은 이유로 항상 관리 목록에 포함시킨다 — voteParticipation
+// 스위트가 이 테이블을 만들면, 그 사실을 모르는 다른 스위트의 resetSchema()가 "모르는
+// 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다.
+const addVoteParticipations = require('../../db/migrations/0008-add-vote-participations');
 
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
@@ -73,13 +77,16 @@ const assertDedicatedTestDatabase = async (sequelize, url) => {
 // 하위 호환을 유지한다).
 const buildManagedSchema = ({
     baseline, addRefreshTokenHistory, addSocialAuth, addEconomy: addEconomyOverride,
-    addEconomyPurchaseRequests: addEconomyPurchaseRequestsOverride, migrationRunner,
+    addEconomyPurchaseRequests: addEconomyPurchaseRequestsOverride,
+    addVoteParticipations: addVoteParticipationsOverride, migrationRunner,
 }) => {
     const resolvedAddEconomy = addEconomyOverride ?? addEconomy;
     const resolvedAddEconomyPurchaseRequests = addEconomyPurchaseRequestsOverride ?? addEconomyPurchaseRequests;
+    const resolvedAddVoteParticipations = addVoteParticipationsOverride ?? addVoteParticipations;
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
     const economyTables = Object.values(resolvedAddEconomy.TABLE_NAMES);
     const purchaseRequestTables = Object.values(resolvedAddEconomyPurchaseRequests.TABLE_NAMES);
+    const voteParticipationTables = Object.values(resolvedAddVoteParticipations.TABLE_NAMES);
 
     const managedTables = [
         ...baseline.TABLE_ORDER,
@@ -87,10 +94,12 @@ const buildManagedSchema = ({
         ...socialTables,
         ...economyTables,
         ...purchaseRequestTables,
+        ...voteParticipationTables,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        ...voteParticipationTables,
         ...purchaseRequestTables,
         ...economyTables,
         ...socialTables,
