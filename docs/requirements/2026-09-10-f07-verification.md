@@ -1,5 +1,41 @@
 # F-07 Discord 로그인 — 검증 근거 및 외부 연동 미검증 기록
 
+## 최종 운영자 검증·병합 확인 (2026-09-10 21:55 KST)
+
+최종 구현 `ff5299eaef071fe0a5d7fc4476a27c517f92d1cf`는 Pluto 정규 검증과
+CODEX-4 교차 심사 PASS 후 `ee1f45a1ad8f6bc8180e59b620d2ab24751420e4`로 병합됐다.
+AR(F-07)은 RESULT done이며 AS(F-08 지갑·거래·카탈로그·소유권)가 구현 단계로 진행했다.
+아래 이전 회차의 실행 불가·실패·재실행 필요 서술은 당시 이력이다. 최종 판정은 이 절을 따른다.
+
+| 최종 실행 근거 | 결과 |
+| --- | --- |
+| VERIFY-16·17 양쪽 의존성 설치 | 모두 exit 0 |
+| VERIFY-18 프론트 전체 테스트 | 1,241 통과 / 실패 0 / 건너뜀 0 |
+| VERIFY-19 프론트 프로덕션 빌드 | exit 0 |
+| VERIFY-20 격리 실제 DB를 포함한 백엔드 전체 테스트 | 1,192 통과 / 실패 0 / 건너뜀 0 |
+| CODEX-4 교차 심사 | PASS, 이견·하향 판정 없음 |
+
+최종 쿠키 헬퍼는 Fetch Headers의 `getSetCookie()`와 기존 일반 헤더 객체를 모두 지원한다.
+여러 쿠키와 Expires의 쉼표를 포함한 회귀 테스트를 추가했으며 기존 인증 assertion은 유지했다.
+실제 DB 테스트에서 Discord HTTP 응답만 로컬 fixture이므로, 이 통과는 실제 Discord 인증 증거가 아니다.
+
+운영자가 Chrome에서 실제 로컬 로그인과 계정관리 화면, Discord 연결 버튼의 확인창 표시,
+취소 오류 표시·닫기 후 URL 정리, `__proto__` 오류값의 안전한 일반 메시지 표시를 확인했다.
+성공 query의 표시도 확인했으나 이는 UI 검증이며 실제 계정 연결 성공을 뜻하지 않는다.
+후속 화면 검사에서 브라우저 오류 로그는 없었다. 확인창의 수락·취소 동작 자체는 브라우저
+도구 전송 시간 초과 이후 재검증하지 못해 미검증으로 남긴다. 운영자 테스트 서버는 종료했다.
+
+서버의 `DISCORD_CLIENT_ID`·`DISCORD_CLIENT_SECRET`·`DISCORD_REDIRECT_URI`·
+`DISCORD_LINK_REDIRECT_URI`와 공개 고객센터 설정 `VITE_DISCORD_SUPPORT_URL`의 분리를
+확인했다. 고객센터 URL 실제 값은 추후 제공이며 F-18에서 고객센터 진입과 연결한다.
+AC-05 수동 확인은 이 설정 분리만, AC-06 수동 확인은 외부 미검증 상태의 정확한 기록만을
+뜻한다. 실제 Discord 최초·재로그인·취소·명시적 연결은 앱 키와 등록된 두 콜백 설정이 없어
+계속 `readiness_unverified`다. 심사나 실제 인증을 수동 PASS로 대체하지 않았다.
+
+근거: `.pluto/monitor/AR-completion-20260910.json`,
+`.pluto/monitor/AR-browser-b8bde586.json`,
+`.pluto/monitor/AR-browser-followup-ff5299ea.json`, `.pluto/slices/AR/runs/`.
+
 날짜: 2026-09-10
 슬라이스: Pluto AR (F-07)
 
