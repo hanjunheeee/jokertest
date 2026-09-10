@@ -21,6 +21,10 @@ const socketLayer  = require("../socket/socket");
 const { Op } = db.Sequelize;
 
 const TOKEN = generateToken({ uuid: "uuid-1", role: "USER", sessionId: "session-1" });
+// F-04 AC-05 재검토 지적: 세션 fixture가 session-1 하나뿐이면 "전체 세션 폐기"를 증명하지
+// 못한다(하나짜리 목록은 우연히 다 지워져도 "전체"와 "하나"를 구분할 수 없다). 다른
+// 기기/브라우저에서 로그인한 두 번째 온라인 세션을 별도 토큰으로 둔다.
+const SESSION_2_TOKEN = generateToken({ uuid: "uuid-1", role: "USER", sessionId: "session-2" });
 const CURRENT_PASSWORD = "current-pw-123";
 const ACCOUNT_EMAIL = "account-holder@example.com";
 
@@ -29,6 +33,8 @@ const ACCOUNT_EMAIL = "account-holder@example.com";
 // 심어 두려면 여기서도 같은 공식을 써야 한다.
 const RAW_REFRESH_TOKEN = "test-raw-refresh-token-before-password-change";
 const REFRESH_TOKEN_HASH = crypto.createHash("sha256").update(RAW_REFRESH_TOKEN).digest("hex");
+const RAW_REFRESH_TOKEN_2 = "test-raw-refresh-token-2-before-password-change";
+const REFRESH_TOKEN_HASH_2 = crypto.createHash("sha256").update(RAW_REFRESH_TOKEN_2).digest("hex");
 
 const startServer = async (t) => {
     const app = express();
@@ -74,6 +80,15 @@ const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
         ["session-1", {
             id: "session-1", user_id: "uuid-1", is_online: true, revoked_at: null,
             refresh_token_hash: REFRESH_TOKEN_HASH, refresh_previous_hash: null,
+            refresh_token_expires_at: FUTURE_EXPIRY,
+        }],
+        // 다른 기기/브라우저에서 로그인한 두 번째 온라인 세션. markOnlineSessionsOffline은
+        // is_online===true인 모든 세션을 user_id로만 걸러 폐기하므로(id를 지정하지 않는다),
+        // 이 fixture가 있어야 "session-1만 우연히 지워졌다"가 아니라 "이 사용자의 모든 기존
+        // 세션이 폐기됐다"를 구분해서 증명할 수 있다.
+        ["session-2", {
+            id: "session-2", user_id: "uuid-1", is_online: true, revoked_at: null,
+            refresh_token_hash: REFRESH_TOKEN_HASH_2, refresh_previous_hash: null,
             refresh_token_expires_at: FUTURE_EXPIRY,
         }],
     ]);
@@ -185,6 +200,7 @@ test("비밀번호 변경 성공 시 새 비밀번호와 세션 전체 폐기가
     assert.equal(body.success, true);
     assert.ok(await bcrypt.compare("new-pw-456", getPasswordHash()));
     assert.equal(sessions.get("session-1").is_online, false, "F-03 AC-04: 비밀번호 변경 전 세션이 폐기되어야 합니다");
+    assert.equal(sessions.get("session-2").is_online, false, "F-04 AC-05: session-1이 아닌 다른 기존 온라인 세션도 함께 폐기되어야 합니다");
 
     const userUpdate    = calls.find((c) => c.name === "User.update");
     const sessionUpdate = calls.find((c) => c.name === "UserSession.update");
@@ -305,6 +321,68 @@ test("F-04 AC-05: 비밀번호 변경 이후 같은 세션의 소켓 인증도 �
 
     assert.ok(passedToNext instanceof Error, "비밀번호 변경 후에는 소켓 인증도 실패해야 합니다");
     assert.equal(passedToNext.message, "UNAUTHORIZED");
+});
+
+test("F-04 AC-05: 비밀번호 변경 이후에는 변경에 쓰이지 않은 다른 기존 세션(다른 기기)의 accessToken도 거부된다", async (t) => {
+    // 재검토 지적: 세션 fixture가 session-1 하나뿐이면 "전체 폐기"와 "이 요청에 쓰인 세션만
+    // 폐기"를 구분할 수 없다. 비밀번호 변경 요청 자체는 session-1의 쿠키로 보내고, 그 요청과
+    // 아무 관련 없는 session-2(다른 기기에서 로그인해 둔 세션)의 토큰으로도 이후 보호 요청이
+    // 막히는지 직접 확인한다.
+    setupFakeDb(t);
+    const base = await startServer(t);
+
+    const changeRes = await patchPassword(base, { currentPassword: CURRENT_PASSWORD, newPassword: "new-pw-456" });
+    assert.equal(changeRes.status, 200);
+
+    const otherSessionRes = await fetch(`${base}/user/me/profile`, {
+        headers: { cookie: `accessToken=${SESSION_2_TOKEN}` },
+    });
+    assert.equal(
+        otherSessionRes.status, 401,
+        "비밀번호 변경에 쓰이지 않은 다른 기존 세션도 거부되어야 합니다(전체 세션 폐기, 세션 하나만 폐기가 아님)",
+    );
+});
+
+test("F-04 AC-05: 비밀번호 변경 이전부터 이미 연결되어 있던 소켓은 새 인증 시도가 아니라 다음 보호 이벤트에서 즉시 차단된다", async (t) => {
+    // 재검토 지적: 위 소켓 테스트는 "비밀번호 변경 이후 새로 authenticateSocket을 호출하면
+    // 거부된다"만 증명했다 — 이는 신규 연결 시도를 막을 뿐, 비밀번호 변경 *이전부터* 이미
+    // 연결되어 handshake를 통과해 둔 소켓이 계속 살아남아 보호 기능을 쓰는 경우는 별개다.
+    // socket.js의 wrapSocketWithSessionGuard가 바로 그 경우를 막는 배선이다(연결 이후 이벤트마다
+    // resolveSession을 다시 검사) — 여기서는 handshake를 통과한 것처럼 socket.data.user를
+    // 미리 채워 둔 소켓에 보호 이벤트 리스너를 등록한 뒤, 비밀번호를 변경하고, 그 다음에야
+    // 이 기존 소켓에서 이벤트를 발생시켜 리스너가 차단되는지 본다.
+    setupFakeDb(t);
+    const base = await startServer(t);
+
+    const listeners = {};
+    const emitted = [];
+    let disconnectedWithForce = null;
+    const fakeSocket = {
+        // authenticateSocket이 handshake 시점에 이미 채워 뒀을 값 — 비밀번호 변경 이전에
+        // 연결이 성사된 상태를 흉내낸다.
+        data: { user: { uuid: "uuid-1", sessionId: "session-1", role: "USER" } },
+        on(event, listener) { listeners[event] = listener; },
+        emit(event, payload) { emitted.push({ event, payload }); },
+        disconnect(force) { disconnectedWithForce = force; },
+    };
+    socketLayer.__testables.wrapSocketWithSessionGuard(fakeSocket);
+
+    let protectedActionCalled = false;
+    fakeSocket.on("send_chat_message", () => { protectedActionCalled = true; });
+
+    // 소켓은 비밀번호 변경 *이전에* 이미 이 보호 이벤트를 등록해 뒀다.
+    assert.equal(typeof listeners.send_chat_message, "function");
+
+    const changeRes = await patchPassword(base, { currentPassword: CURRENT_PASSWORD, newPassword: "new-pw-456" });
+    assert.equal(changeRes.status, 200);
+
+    // 비밀번호 변경 이후, 이미 연결되어 있던 바로 그 소켓에서 보호 이벤트가 발생한다 — 새로
+    // authenticateSocket을 태우지 않는다(신규 연결이 아니라 기존 연결의 후속 이벤트).
+    await listeners.send_chat_message();
+
+    assert.equal(protectedActionCalled, false, "비밀번호 변경으로 폐기된 세션의 소켓에서는 보호 이벤트 리스너가 실행되면 안 됩니다");
+    assert.ok(emitted.some((e) => e.event === "force_disconnect"), "폐기된 세션의 소켓에는 force_disconnect가 전달되어야 합니다");
+    assert.equal(disconnectedWithForce, true, "폐기된 세션의 소켓은 강제 종료되어야 합니다");
 });
 
 test("F-04 AC-05: 비밀번호 변경 후 새 비밀번호로는 재로그인에 성공하고 옛 비밀번호로는 실패한다", async (t) => {

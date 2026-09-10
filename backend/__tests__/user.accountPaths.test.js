@@ -16,6 +16,18 @@ const db = require("../models");
 const { generateToken } = require("../utils/jwt");
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
 
+// F-04 AC-02: 실제 격리 DB에서 유니크 제약이 동작하는지 확인하려면 애플리케이션 db 싱글턴이
+// 아니라(이 파일의 다른 테스트들이 db.User를 스텁으로 바꿔 쓰므로 공유할 수 없다) 독립된
+// Sequelize 연결이 필요하다. backend/tests/db/f02-signup.integration.test.js와 같은
+// 원칙(F01_TEST_DATABASE_URL이 없거나 연결에 실패하면 실패가 아니라 t.skip으로 "미검증")을
+// 그대로 따른다.
+const { Sequelize }          = require("sequelize");
+const migrationRunner        = require("../db/migrationRunner");
+const baseline                = require("../db/migrations/0001-legacy-baseline");
+const expandNicknameSnapshot  = require("../db/migrations/0002-expand-nickname-snapshot");
+const addRefreshTokenRotation = require("../db/migrations/0003-add-refresh-token-rotation");
+const addRefreshTokenHistory  = require("../db/migrations/0004-add-refresh-token-history");
+
 // F-04 AC-01: 닉네임 변경도 가입(F-02)과 같은 벡터로 판정이 갈리지 않는지 확인한다.
 const FIXTURE_PATH = path.join(__dirname, "..", "..", "tests", "fixtures", "f02-signup-validation.json");
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
@@ -137,14 +149,102 @@ test("AC-02: nickname은 애플리케이션 사전 조회가 아니라 실제 us
     assert.equal(USER_MODEL_ATTRIBUTES.nickname.unique, true);
 });
 
+test("AC-02: 실제 격리 DB에서 애플리케이션 사전 조회 없이 UPDATE만 보내도 users_nickname_unique 제약이 막는다", async (t) => {
+    // 재검토 지적: 위 정적 확인(모델 정의의 unique:true)만으로는 "실제 DB 경합"의 증거가
+    // 되지 못한다 — 모델 정의와 실제 배포 DB의 인덱스가 어긋나 있어도 이 정적 검사는 여전히
+    // 통과하기 때문이다. 여기서는 findByNickname 같은 애플리케이션 사전 조회를 완전히
+    // 우회하고, 순수 SQL UPDATE 두 건이 실제 MySQL 컬럼 제약만으로 충돌하는지 직접 본다.
+    const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
+    if (!TEST_DB_URL) {
+        t.skip("F01_TEST_DATABASE_URL이 설정되지 않았습니다 — 실제 MySQL 격리 DB 없이는 DB 유니크 제약 자체를 검증할 수 없습니다 (미검증).");
+        return;
+    }
+
+    const sequelize = new Sequelize(TEST_DB_URL, { logging: false });
+    try {
+        await sequelize.authenticate();
+    } catch (error) {
+        t.skip(`격리 DB(${TEST_DB_URL.replace(/:[^:@]*@/, ":***@")})에 연결할 수 없습니다 — 미검증: ${error.message}`);
+        await sequelize.close();
+        return;
+    }
+
+    try {
+        const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
+        const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, migrationRunner.META_TABLE];
+        const DROP_ORDER = [addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
+
+        const queryInterface = sequelize.getQueryInterface();
+        const existing = new Set(await queryInterface.showAllTables());
+        const unknown = [...existing].filter((tableName) => !MANAGED_TABLES.includes(tableName));
+        if (unknown.length > 0) {
+            throw new Error(
+                `격리 DB에 F-01이 모르는 테이블이 있습니다: [${unknown.join(", ")}]. ` +
+                "전용 테스트 DB가 맞는지 확인하세요 — 안전을 위해 진행을 거부합니다.",
+            );
+        }
+        for (const table of DROP_ORDER) {
+            if (existing.has(table)) await queryInterface.dropTable(table);
+        }
+        await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+        const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        await sequelize.query(
+            `INSERT INTO users (uuid, password_hash, nickname, email, birth_date, created_at, updated_at)
+             VALUES (:userA, 'x', :nicknameA, :emailA, '2000-01-01', NOW(), NOW()),
+                    (:userB, 'x', :nicknameB, :emailB, '2000-01-01', NOW(), NOW())`,
+            {
+                replacements: {
+                    userA: USER_A, nicknameA: "DB유니크1", emailA: "db-unique-1@example.com",
+                    userB: USER_B, nicknameB: "DB유니크2", emailB: "db-unique-2@example.com",
+                },
+            },
+        );
+
+        // findByNickname 사전 조회를 거치지 않고 직접 UPDATE한다 — 이 요청이 막히는 이유가
+        // 애플리케이션 코드가 아니라 컬럼 제약이어야 한다.
+        await assert.rejects(
+            () => sequelize.query(
+                "UPDATE users SET nickname = :nickname WHERE uuid = :uuid",
+                { replacements: { nickname: "DB유니크1", uuid: USER_B } },
+            ),
+            /nickname|Duplicate|unique/i,
+            "사전 조회 없이 보낸 UPDATE도 DB 유니크 제약으로 거부되어야 합니다",
+        );
+
+        const [rows] = await sequelize.query(
+            "SELECT nickname FROM users WHERE uuid = :uuid",
+            { replacements: { uuid: USER_B } },
+        );
+        assert.equal(rows[0].nickname, "DB유니크2", "제약 위반 UPDATE 이후에도 저장된 닉네임은 바뀌면 안 됩니다");
+    } finally {
+        await sequelize.close();
+    }
+});
+
 test("AC-02: 사전 조회를 통과해도 UPDATE 시점 동시 중복이면 409이고 닉네임은 이전 값 그대로 남는다", async (t) => {
     // 사전 조회 통과 직후 경쟁자가 먼저 같은 닉네임으로 커밋을 끝내는 경합을 흉내낸다.
     // findByNickname은 아직 빈 값을 보고 통과시키지만, 뒤따르는 UPDATE는 그 사이 생긴
     // 유니크 위반으로 실패해야 하고, 그 실패 후에도 저장된 닉네임은 바뀌면 안 된다.
-    const stored = "이전유지닉";
+    //
+    // stored는 update가 성공하면 실제로 바뀌는 상태다(재검토 지적: 이전 회차는 findOne이
+    // 항상 같은 상수를 돌려줘 "안 바뀌었다"는 단언이 update 호출 여부와 무관하게 참이었다).
+    // 아래에서 같은 update 함수로 성공 케이스도 한 번 태워, 이 상태가 실제로 변할 수 있는데도
+    // 경합 실패 시에는 변하지 않았다는 것을 보인다 — "원래 못 바뀌는 상수라서"가 아니라
+    // "이 UPDATE가 실패해서" 보존됐다는 근거다.
+    let stored = "이전유지닉";
+    let simulateRaceOnce = true;
     stubDb(t, {
         findOne: async ({ where }) => (where.nickname ? null : { uuid: "uuid-1", nickname: stored }),
-        update: async () => { throw uniqueConstraintError({ paths: ["nickname"] }); },
+        update: async (values) => {
+            if (simulateRaceOnce) {
+                simulateRaceOnce = false;
+                throw uniqueConstraintError({ paths: ["nickname"] });
+            }
+            if (Object.prototype.hasOwnProperty.call(values, "nickname")) stored = values.nickname;
+            return [1];
+        },
     });
     const base = await startServer(t);
 
@@ -153,6 +253,13 @@ test("AC-02: 사전 조회를 통과해도 UPDATE 시점 동시 중복이면 409
 
     const profile = await (await getProfile(base)).json();
     assert.equal(profile.data.nickname, stored, "동시 중복 실패 후에도 저장된 닉네임이 바뀌면 안 됩니다");
+    assert.equal(stored, "이전유지닉", "실패한 UPDATE는 상태를 건드리면 안 됩니다");
+
+    // 같은 update 함수가 실제로 값을 바꿀 수 있다는 것 자체를 증명한다 — 위 보존이 죽은
+    // 코드(항상 실패하거나 원래 아무 것도 못 쓰는 스텁)가 아니라 경합 실패의 결과임을 보인다.
+    const retry = await patchNickname(base, "재시도닉네임");
+    assert.equal(retry.status, 200);
+    assert.equal(stored, "재시도닉네임", "경합 없이 재시도하면 같은 update 함수가 실제로 값을 바꿔야 합니다");
 });
 
 test("MySQL이 인덱스 이름만 알려줘도 409로 분류된다", async (t) => {

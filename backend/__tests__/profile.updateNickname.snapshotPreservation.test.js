@@ -7,8 +7,9 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localh
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 
-const db                = require("../models");
-const profileController = require("../controller/profile.controller");
+const db                  = require("../models");
+const profileController   = require("../controller/profile.controller");
+const gameResultRepository = require("../repositories/gameResult.repositories");
 
 // F-04 AC-03: 닉네임 변경은 users.nickname만 갱신해야 하고, 이미 저장된 경기의
 // game_result_players.nickname_snapshot(X0064 — 경기 종료 시점 스냅샷, F-01)은 절대
@@ -88,4 +89,50 @@ test("AC-03: 닉네임 변경은 현재 표시를 즉시 새 값으로 바꾸고
     assert.equal(snapshotRow.nickname_snapshot, CURRENT_NICKNAME_SNAPSHOT, "닉네임 변경이 과거 경기 스냅샷을 건드리면 안 됩니다");
     const historicalRow = await db.GameResultPlayer.findOne();
     assert.equal(historicalRow.nickname_snapshot, CURRENT_NICKNAME_SNAPSHOT, "과거 경기 화면은 현재 닉네임이 아니라 스냅샷을 보여줘야 합니다");
+});
+
+// 재검토 지적: 위 테스트는 db.GameResultPlayer.findOne을 직접 불러 "쓰기 메서드가 없어서
+// 안전하다"만 증명했을 뿐, 실제로 과거 경기 화면이 쓰는 조회 함수(X0064
+// gameResult.repositories.findGameResultById — 경기 상세 API가 그대로 호출하는 함수)가
+// nickname_snapshot을 내보내는 실행 경로까지는 태우지 않았다. 여기서는 그 실제 저장소
+// 함수를 스텁이 아니라 그대로 호출해, 닉네임 변경 이후에도 과거 경기 조회 응답이 users.nickname이
+// 아니라 저장된 스냅샷을 돌려주는지 확인한다.
+test("AC-03: 닉네임 변경 이후에도 과거 경기 조회 경로(findGameResultById)는 users.nickname이 아니라 저장된 스냅샷을 그대로 돌려준다", async (t) => {
+    const { getCurrentNickname } = stubDb(t);
+
+    const originalGameResult = db.GameResult;
+    const toPlayerRow = () => ({
+        user_id: "uuid-1", nickname_snapshot: CURRENT_NICKNAME_SNAPSHOT,
+        role: "CITIZEN", team: "CITIZEN", won: true, is_alive: false, death_reason: "EXECUTED",
+    });
+    const toGameRow = () => ({
+        id: "game-snap-1", room_id: null, winner: "CITIZEN", win_reason: null,
+        started_at: new Date(0), ended_at: new Date(1000), day_index: 1,
+        player_count: 1, settings: null, completed: true,
+        GameResultPlayers: [{ get: ({ plain }) => (plain ? toPlayerRow() : null) }],
+    });
+    db.GameResult = { findOne: async () => ({ get: ({ plain }) => (plain ? toGameRow() : null) }) };
+    t.after(() => { db.GameResult = originalGameResult; });
+
+    const changeRes = await call(profileController.updateNickname, {
+        user: { uuid: "uuid-1" },
+        body: { nickname: "변경후닉2" },
+    });
+    assert.equal(changeRes.status, 200);
+    assert.equal(getCurrentNickname(), "변경후닉2", "닉네임 변경 자체는 정상적으로 반영되어야 합니다");
+
+    // 실제 API가 경기 상세를 조회할 때 태우는 바로 그 저장소 함수를 그대로 호출한다(스텁
+    // 대체가 아니라 실행) — 닉네임 변경과 무관하게 과거 경기 참가자의 nickname_snapshot이
+    // 그대로 보여야 한다.
+    const historicalGame = await gameResultRepository.findGameResultById("game-snap-1");
+    assert.equal(
+        historicalGame.players[0].nickname_snapshot,
+        CURRENT_NICKNAME_SNAPSHOT,
+        "닉네임 변경 이후에도 실제 경기 조회 함수는 현재 users.nickname이 아니라 저장된 스냅샷을 돌려줘야 합니다",
+    );
+    assert.notEqual(
+        historicalGame.players[0].nickname_snapshot,
+        getCurrentNickname(),
+        "과거 경기 스냅샷과 현재 닉네임은 서로 다른 값으로 구분되어야 합니다",
+    );
 });
