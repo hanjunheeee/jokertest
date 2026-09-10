@@ -1,3 +1,9 @@
+// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 문자열로 파싱한다(연결을 실제로
+// 시도하지는 않는다 — 이 파일은 db.* 를 전부 가짜로 교체한다). npm test(--env-file=.env.test)
+// 밖에서 이 파일만 직접 실행하면 그 값이 비어 있어 require 자체가 죽으므로, 다른 스위트
+// (auth.login.regression.test.js 등)와 같은 더미 폴백을 둔다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
+
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -178,7 +184,25 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
             staged.game_result_players.push(...rows);
             return rows;
         },
-        findAll: async ({ where, transaction }) => {
+        // F-10: roleStatistics 조회(gameResult.repositories.js의 findRoleStatisticsRows)는
+        // include로 GameResult.settings를 함께 읽고, 트랜잭션 밖(커밋된 값만)에서 호출된다 —
+        // most_played_role 갱신에 쓰는 트랜잭션 안쪽 role-history 조회와는 모양이 다르므로
+        // include 유무로 분기한다.
+        findAll: async ({ where, transaction, include }) => {
+            if (include) {
+                const gameById = new Map(committed.game_results.map((g) => [g.id, g]));
+                return committed.game_result_players
+                    .filter((row) => row.won !== null && row.won !== undefined)
+                    .filter((row) => where.user_id === undefined || row.user_id === where.user_id)
+                    .filter((row) => where.role === undefined || row.role === where.role)
+                    .map((row) => ({
+                        user_id: row.user_id,
+                        role: row.role,
+                        won: row.won,
+                        is_alive: row.is_alive,
+                        GameResult: { settings: gameById.get(row.game_id)?.settings ?? null },
+                    }));
+            }
             requireTransaction({ transaction }, "findAll(game_result_players roles)");
             const prior = committed.role_history.get(where.user_id) ?? [];
             const current = staged.game_result_players

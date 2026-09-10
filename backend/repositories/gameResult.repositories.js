@@ -1,5 +1,6 @@
 const db = require("../models");
 const gameSessionCore = require("../game-core/gameSession");
+const roleStatisticsPolicy = require("../services/roleStatisticsPolicy");
 
 // 한 판의 전적은 세 테이블(game_results · game_result_players · user_stats)에 걸쳐 있고,
 // 셋 중 하나만 남는 상태는 어떤 화면에서도 의미가 없다("경기는 있는데 참가자가 없다",
@@ -75,7 +76,10 @@ exports.persistGameResult = async (session, { completed, disconnectedUuid } = {}
         const constraint = error?.parent?.constraint ?? error?.original?.constraint;
         const duplicateGameId = error instanceof db.Sequelize.UniqueConstraintError && (
             constraint === "game_results_pkey" ||
-            error?.fields?.id !== undefined
+            error?.fields?.id !== undefined || (
+                error?.fields?.PRIMARY === result.id &&
+                /^INSERT INTO [`"]?game_results[`"]?\s/i.test(error?.sql ?? "")
+            )
         );
         if (duplicateGameId) return { persisted: false, gameId: result.id };
         throw error;
@@ -124,4 +128,94 @@ exports.findGameResultById = async (gameId) => {
             };
         }),
     };
+};
+
+// F-10: 직업 전적·랭킹·운명의 가면. roleStatisticsPolicy(순수 계산)와 DB 사이의 유일한
+// 연결점이다 — won=null(중단 경기 잔류자) 제외와 개발 경기 제외는 여기서, 집계·정렬·동률
+// 규칙은 정책 모듈에서 각각 담당한다(관심사를 섞지 않는다).
+
+// settings.gameSource가 아예 없는 행은 이 필드가 생기기 전에 저장된 과거 경기다. D-09가
+// 과거 기록의 개발 여부 분류 기준을 명시적으로 미확정 상태로 남겼고, 실제로 식별할 수 있는
+// 근거도 없으므로 임의로 개발 경기로 재분류하지 않고 운영 기록으로 보아 소급 집계한다
+// (A-06/A-07). "development"로 명시된 값만 제외한다.
+const isRoleStatisticsEligibleGame = (settings) => settings?.gameSource?.value !== "development";
+
+const toRoleStatisticsRow = (playerRow) => ({
+    user_id: playerRow.user_id,
+    role: playerRow.role,
+    won: playerRow.won === true || playerRow.won === 1 ? true : playerRow.won === false || playerRow.won === 0 ? false : null,
+    is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
+});
+
+/**
+ * 승패가 확정된(won not null) 참가 기록을 직업 통계 집계용 행으로 읽어온다. 개발 경기는
+ * 여기서 제외되므로, 이 함수가 돌려주는 행은 곧바로 roleStatisticsPolicy.aggregateRoleStatistics에
+ * 넘겨도 되는 상태다.
+ */
+const findRoleStatisticsRows = async (where) => {
+    const rows = await db.GameResultPlayer.findAll({
+        attributes: ["user_id", "role", "won", "is_alive"],
+        where: { ...where, won: { [db.Sequelize.Op.ne]: null } },
+        include: [{ model: db.GameResult, attributes: ["settings"], required: true }],
+        raw: true,
+        nest: true,
+    });
+    return rows
+        .filter((row) => isRoleStatisticsEligibleGame(row.GameResult?.settings))
+        .map(toRoleStatisticsRow);
+};
+
+/**
+ * AC-01: 한 계정의 직업별(5개 고정) 전적. 판을 한 번도 하지 않은 직업도 games:0인 행으로
+ * 채워 돌려준다 — 다른 직업 데이터로 대체하거나 목록에서 빠지는 일이 없어야 한다.
+ */
+exports.getMyRoleStatistics = async (userId) => {
+    const rows = await findRoleStatisticsRows({ user_id: userId });
+    const statsByRole = new Map(
+        roleStatisticsPolicy.aggregateRoleStatistics(rows).map((entry) => [entry.role, entry]),
+    );
+    return roleStatisticsPolicy.ROLE_CODES.map((role) => statsByRole.get(role) ?? {
+        user_id: userId,
+        role,
+        games: 0,
+        wins: 0,
+        survivalCount: 0,
+        winRate: 0,
+    });
+};
+
+/**
+ * AC-03: 한 직업의 전체 적격(최소 10판) 사용자 랭킹을 승률 내림차순으로 반환한다. 잘라내지
+ * 않은 전체 목록이다 — 화면 페이지 이동은 호출부(컨트롤러/프런트)의 몫이다.
+ */
+exports.getRoleRanking = async (role) => {
+    const rows = await findRoleStatisticsRows({ role });
+    const ranked = roleStatisticsPolicy.buildRoleRanking(roleStatisticsPolicy.aggregateRoleStatistics(rows));
+    if (ranked.length === 0) return [];
+
+    const users = await db.User.findAll({
+        where: { uuid: ranked.map((entry) => entry.user_id) },
+        attributes: ["uuid", "nickname", "profile_image_url"],
+        raw: true,
+    });
+    const userByUuid = new Map(users.map((user) => [user.uuid, user]));
+
+    return ranked.map((entry, index) => ({
+        rank: index + 1,
+        uuid: entry.user_id,
+        nickname: userByUuid.get(entry.user_id)?.nickname ?? null,
+        profile_image_url: userByUuid.get(entry.user_id)?.profile_image_url ?? null,
+        games: entry.games,
+        wins: entry.wins,
+        winRate: entry.winRate,
+    }));
+};
+
+/**
+ * AC-04: 마이페이지 "운명의 가면"에 표시할, 최소 1판 이상 최고 승률 직업. 대상이 없으면
+ * null이다(더미 직업으로 대체하지 않는다).
+ */
+exports.getHighestWinRateRole = async (userId) => {
+    const rows = await findRoleStatisticsRows({ user_id: userId });
+    return roleStatisticsPolicy.selectMaskOfFateRole(roleStatisticsPolicy.aggregateRoleStatistics(rows));
 };

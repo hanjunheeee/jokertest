@@ -42,6 +42,8 @@ const { useMyProfile } = await import("../useMyProfile.js")
 const { useUserProfileStore } = await import("../../store/user.store.js")
 
 // 로컬 API가 실제로 돌려주는 프로필 응답 모양입니다. title을 포함합니다.
+// F-10: highest_win_rate_role(운명의 가면, AC-04)이 most_played_role과 별도 필드로
+// 추가됐다 — 자세한 마스크 선택 계약은 useMyProfile.roleStatistics.test.js가 검증한다.
 const PROFILE_ROW = {
   nickname: "가면술사",
   reputation: 1280,
@@ -50,6 +52,7 @@ const PROFILE_ROW = {
   survival_count: 788,
   execution_count: 112,
   most_played_role: "광대",
+  highest_win_rate_role: "마녀사냥꾼",
 }
 
 function resetStore() {
@@ -110,7 +113,10 @@ test("stats는 전적 숫자를 천 단위 구분 문자열로 바꿔 3행으로
   ])
 })
 
-test("description은 가장 많이 플레이한 역할을 강조 문구로 만든다", () => {
+// F-10 AC-04: "운명의 가면"은 최다 플레이(most_played_role)가 아니라 서버가 계산한 최고
+// 승률 직업(highest_win_rate_role)을 강조 문구로 쓴다. 상세 동률·0판 계약은
+// useMyProfile.roleStatistics.test.js가 검증한다.
+test("description은 최고 승률 직업(highest_win_rate_role)을 강조 문구로 만든다", () => {
   resetStore()
   useUserProfileStore.setState({ data: PROFILE_ROW, loading: false })
 
@@ -118,16 +124,16 @@ test("description은 가장 많이 플레이한 역할을 강조 문구로 만�
 
   assert.deepEqual(result.current.description, {
     prefix: "이 자는",
-    highlight: "광대",
+    highlight: "마녀사냥꾼",
     suffix: "의 가면을 쓸 때 가장 잔혹합니다.",
   })
 })
 
-test("most_played_role이 없으면 강조 문구를 ???로 대체한다", () => {
+test("highest_win_rate_role이 없으면(전적 0판) 강조 문구를 전적 없음으로 대체한다", () => {
   resetStore()
-  useUserProfileStore.setState({ data: { ...PROFILE_ROW, most_played_role: null }, loading: false })
+  useUserProfileStore.setState({ data: { ...PROFILE_ROW, highest_win_rate_role: null }, loading: false })
 
   const { result } = renderHook(() => useMyProfile())
 
-  assert.equal(result.current.description.highlight, "???")
+  assert.equal(result.current.description.highlight, "전적 없음")
 })

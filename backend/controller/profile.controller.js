@@ -1,4 +1,6 @@
 const userRepository            = require("../repositories/user.repositories");
+const gameResultRepository      = require("../repositories/gameResult.repositories");
+const roleStatisticsPolicy      = require("../services/roleStatisticsPolicy");
 const { comparePassword,
         hashPassword }          = require("../utils/hash");
 const { validateNickname,
@@ -10,6 +12,10 @@ exports.getMyProfile = async (req, res, next) => {
         if (!row) return res.status(404).json({ success: false, message: "유저를 찾을 수 없습니다." });
 
         const stats = row.UserStat ?? {};
+        // F-10 AC-04/A-11: most_played_role(최다 플레이)과는 의미가 다른 별도 필드다 —
+        // 기존 필드는 값도 계산 방식도 그대로 두고, "운명의 가면"이 쓸 최고 승률 직업만
+        // 새로 얹는다. 대상이 없으면(전적 0판) null을 그대로 내려보낸다(더미로 대체하지 않는다).
+        const highestWinRateRole = await gameResultRepository.getHighestWinRateRole(req.user.uuid);
 
         res.status(200).json({
             success: true,
@@ -22,6 +28,9 @@ exports.getMyProfile = async (req, res, next) => {
                 survival_count:    stats.survival_count   ?? 0,
                 execution_count:   stats.execution_count  ?? 0,
                 most_played_role:  stats.most_played_role ?? null,
+                highest_win_rate_role: highestWinRateRole
+                    ? roleStatisticsPolicy.getRoleKoreanName(highestWinRateRole.role)
+                    : null,
             },
         });
     } catch (error) {
