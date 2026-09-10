@@ -19,3 +19,6 @@
 
 # F10 checkpoint contained a NUL; keep the complete policy diff reviewable.
 backend/services/roleStatisticsPolicy.js diff
+
+# F12: expose both sides of the historical NUL-containing test as text.
+backend/services/achievementService.test.js diff
