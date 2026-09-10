@@ -24,13 +24,21 @@ const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
+// F-08 CODEX-2(AC-03) 대응: socialAuthService.completeSocialSignup이 이제 계정 생성
+// 트랜잭션 안에서 economyService.ensureDefaultEntitlements를 호출해 economy_wallets/
+// economy_entitlements/economy_ledger_entries/economy_loadouts에 직접 INSERT한다 —
+// 이 스위트가 그 테이블 없이 마이그레이션을 적용하면 실제 가입 완료 호출이 "테이블
+// 없음"으로 실패한다(buildManagedSchema는 이 테이블을 이제 기본으로 관리 목록에 포함하므로
+// — isolatedTestDb.js 참고 — 따로 넘길 필요는 없지만, MIGRATIONS 체인에는 명시적으로
+// 넣어야 실제로 테이블이 만들어진다).
+const addEconomy = require('../../db/migrations/0006-add-economy');
 // F-05 R-IMPL(CODEX-2/VERIFY-10): 관리 목록·드롭 순서·대상 DB 확인은
 // backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 f01~f05·user.accountPaths가
 // 항상 같은 정의를 쓰게 한다(이 스위트가 만드는 social 테이블을 다른 스위트가 몰라
 // resetSchema()가 거부하던 결함의 근본 원인).
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

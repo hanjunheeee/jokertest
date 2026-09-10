@@ -87,6 +87,13 @@ const db = require('../../models');
 const economyService = require('../../service/economy.service');
 const { CURRENCIES } = economyService;
 const { hashPassword } = require('../../utils/hash');
+// CODEX-2(AC-03) 대응: 신규 로컬 가입(authService.signup)·소셜 가입 완료
+// (socialAuthService.completeSocialSignup)·기존 계정 백필(backfillEconomy)이 지갑/장착
+// GET·POST를 한 번도 거치지 않고도 실제로 기본 지급을 끝내는지 검증한다("lazy grant on
+// wallet/equip is NOT signup/backfill" — 지연 지급은 가입·이관을 대신하지 못한다).
+const authService = require('../../service/auth.service');
+const socialAuthService = require('../../service/socialAuth.service');
+const { backfillDefaultEntitlements } = require('../../db/backfillEconomy');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
@@ -311,6 +318,136 @@ test('AC-03(R-IMPL): 실제 DB에서도 지갑 조회 없이 곧바로 기본 �
 
     const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
     assert.equal(owned.length, 17, '장착이 트리거한 자동 기본 지급으로 17종을 모두 보유해야 한다');
+});
+
+// ── AC-03(CODEX-2): 신규 가입/소셜 가입 완료/기존 계정 백필 — wallet·equip 조회 이전 ──
+// 이전 지적: "ensureDefaultEntitlements는 조회·장착 시 지연 지급하므로 직전 지적의 신규
+// 가입·기존 계정 이관 시 17종 보유 및 기본 선택 보장 연결 근거는 여전히 없다." 아래
+// 테스트들은 economyService.getWalletSummary/equipItem을 단 한 번도 호출하지 않고,
+// authService.signup/socialAuthService.completeSocialSignup/backfillDefaultEntitlements가
+// 실제 DB 트랜잭션 위에서 직접 그 근거를 남기는지만 확인한다.
+
+const REQ_INFO = { ip: '127.0.0.1', userAgent: 'f08-integration' };
+
+test('AC-03(CODEX-2): authService.signup 직후 — 지갑/장착 조회를 한 번도 거치지 않아도 기본 지급이 이미 끝나 있다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const uuid = crypto.randomUUID();
+    const nickname = `sgn${uuid.slice(0, 5)}`.slice(0, 8);
+    const user = await authService.signup({
+        email: `signup-${uuid}@example.com`,
+        password: 'correct-horse-battery-1',
+        passwordConfirm: 'correct-horse-battery-1',
+        nickname,
+        birthDate: '2000-01-01',
+    });
+
+    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
+    const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: user.uuid } });
+    assert.equal(owned.length, 17, '가입 트랜잭션이 커밋된 시점에 이미 기본 프로필 16종 + 평민 테두리 1종을 보유해야 한다');
+    assert.equal(new Set(owned.map((row) => row.item_id)).size, 17, '중복 지급이 없어야 한다');
+
+    const wallet = await db.sequelize.models.EconomyWallet.findOne({ where: { user_id: user.uuid } });
+    assert.ok(wallet, '가입과 동시에 지갑 행도 만들어져 있어야 한다');
+    assert.equal(wallet.balance_gold, 0);
+    assert.equal(wallet.balance_diamond, 0);
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: user.uuid } });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
+    assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
+});
+
+test('AC-03(CODEX-2): socialAuthService.completeSocialSignup 직후 — 지갑/장착 조회 없이도 기본 지급이 이미 끝나 있다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const browserFingerprint = `fp-${crypto.randomUUID()}`;
+    const { state } = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint });
+    const email = `social-${crypto.randomUUID()}@example.com`;
+    const callback = await socialAuthService.handleOAuthCallback({
+        provider: 'google', subject: `google-sub-${crypto.randomUUID()}`, email,
+        rawState: state, browserFingerprint, reqInfo: REQ_INFO,
+    });
+    assert.equal(callback.status, 'SIGNUP_REQUIRED');
+
+    const signup = await socialAuthService.completeSocialSignup({
+        intentToken: callback.intentToken, nickname: '소셜기본닉', birthDate: '1995-05-05', reqInfo: REQ_INFO,
+    });
+
+    const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: signup.user.uuid } });
+    assert.equal(owned.length, 17, '소셜 가입 완료 트랜잭션이 커밋된 시점에 이미 기본 지급이 끝나 있어야 한다');
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: signup.user.uuid } });
+    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
+    assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
+});
+
+test('AC-03(CODEX-2): 가입 트랜잭션 실패는 기본 지급까지 함께 롤백한다(부분 계정 방지)', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const uuid = crypto.randomUUID();
+    const nickname = `rb${uuid.slice(0, 6)}`.slice(0, 8);
+
+    // ensureDefaultEntitlements 안에서 실제로 한 번 지급(itemId 있는 원장 기록)이 성공한
+    // 뒤, 그 다음(아직 트랜잭션이 끝나기 전) 단계에서 실패를 주입해 "일부만 지급된 채
+    // 커밋되는" 상태가 생기지 않는지 확인한다 — 열여섯 번째 항목에서 실패를 주입해 앞선
+    // 열다섯 건은 이미 INSERT된 상태에서 트랜잭션 전체가 롤백되는지를 본다.
+    const models = db.sequelize.models;
+    const originalCreate = models.EconomyEntitlement.create;
+    let createCount = 0;
+    models.EconomyEntitlement.create = function patched(...args) {
+        createCount += 1;
+        if (createCount === 16) return Promise.reject(new Error('시뮬레이션된 지급 실패'));
+        return originalCreate.apply(this, args);
+    };
+    t.after(() => { models.EconomyEntitlement.create = originalCreate; });
+
+    await assert.rejects(
+        authService.signup({
+            email: `rollback-${uuid}@example.com`,
+            password: 'correct-horse-battery-1',
+            passwordConfirm: 'correct-horse-battery-1',
+            nickname,
+            birthDate: '2000-01-01',
+        }),
+        /시뮬레이션된 지급 실패/,
+    );
+
+    const userRow = await db.User.findOne({ where: { nickname } });
+    assert.equal(userRow, null, '기본 지급이 실패하면 계정 생성 자체도 롤백되어 반쪽 계정이 남으면 안 된다');
+});
+
+test('AC-03(CODEX-2): 기존 계정 백필(backfillDefaultEntitlements) — 가입 훅 없이 만들어진 계정도 지갑/장착 조회 없이 지급된다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    // createLocalUser는 db.User.create를 직접 호출한다 — authService.signup을 거치지
+    // 않으므로 이 슬라이스 이전에 만들어진 "가입 훅을 거친 적 없는 기존 계정"을 그대로
+    // 흉내낸다.
+    const userId = await createLocalUser('backfill');
+    const preOwned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
+    assert.equal(preOwned.length, 0, '백필 전에는 기본 지급을 전혀 받지 않은 상태여야 한다');
+
+    const result = await backfillDefaultEntitlements({ db, batchSize: 50 });
+    assert.ok(result.processed >= 1);
+    assert.deepEqual(result.failures, []);
+
+    const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
+    assert.equal(owned.length, 17, '백필 이후에는 지갑/장착 조회 없이도 기본 프로필 16종 + 평민 테두리 1종을 보유해야 한다');
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
+    assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
+
+    // 재실행(체크포인트 재개 흉내) — 멱등이므로 중복 지급되면 안 된다.
+    const result2 = await backfillDefaultEntitlements({ db, batchSize: 50 });
+    assert.deepEqual(result2.failures, []);
+    const ownedAfterRerun = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
+    assert.equal(ownedAfterRerun.length, 17, '재실행이 중복 지급을 만들면 안 된다');
 });
 
 // ── F-08 요구사항: DIAMOND 재화(실제 DB) ─────────────────────────────────────

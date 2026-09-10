@@ -114,8 +114,13 @@ const REWARD_CATALOG = Object.freeze({
     EVENT_COMPENSATION_GOLD: { currency: 'GOLD', amount: 1000 },
 });
 
+// CODEX-2 재검토: REWARD_CATALOG[reason]을 그대로 읽으면 reason="toString"·"constructor"
+// 같은 값이 REWARD_CATALOG 자신의 것이 아니라 프로토타입 체인(Object.prototype)에서
+// 우연히 발견된 함수를 truthy로 돌려줘, "카탈로그에 없는 reason"이 통과할 뻔한다 —
+// hasOwnProperty로 이 표가 실제로 소유한 키인지부터 확인한다(own-property safe lookup).
 /** @param {string} reason @returns {{currency:string,amount:number} | undefined} */
-const getRewardCatalogEntry = (reason) => REWARD_CATALOG[reason];
+const getRewardCatalogEntry = (reason) =>
+    Object.prototype.hasOwnProperty.call(REWARD_CATALOG, reason) ? REWARD_CATALOG[reason] : undefined;
 
 module.exports = {
     ITEM_TYPES,

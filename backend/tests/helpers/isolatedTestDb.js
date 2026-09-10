@@ -1,5 +1,17 @@
 'use strict';
 
+// F-08 CODEX-2 재검토(AC-03) 대응: economy_* 4개 테이블(0006-add-economy)을 이 파일이
+// 직접 require해 항상 관리 목록에 포함시킨다. 이전에는 addEconomy를 매 호출부가 직접
+// import해서 넘겨야 하는 "선택 인자"였는데, f08-economy.integration.test.js만 그렇게
+// 고쳐지고 f01~f03/f05/f07/user.accountPaths는 고쳐지지 않아 — 그 스위트들이 실제
+// authService.signup()/socialAuthService.completeSocialSignup()을 호출하면(둘 다 이제
+// 같은 계정 생성 트랜잭션 안에서 economy 기본 지급을 하므로) economy_* 테이블이 필요하고,
+// 이미 다른 F-08 스위트가 남긴 economy_* 테이블이 있으면 그 사실을 모르는 스위트의
+// resetSchema()가 "모르는 테이블"로 오판해 거부했다(VERIFY-10과 같은 근본 원인). 매
+// 호출부가 개별적으로 addEconomy를 넘기게 하는 대신, 여기서 한 번만 require해 모든
+// 호출부에 기본으로 적용되게 한다 — 새 마이그레이션이 생겨도 이 파일 하나만 고치면 된다.
+const addEconomy = require('../../db/migrations/0006-add-economy');
+
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
 // 테스트 DB)를 공유한다. 각 스위트가 "우리가 관리하는 테이블 목록·드롭 순서"를 따로
@@ -51,12 +63,14 @@ const assertDedicatedTestDatabase = async (sequelize, url) => {
 // 테이블·refresh_token_history 모두 users(또는 user_sessions)를 참조하는 자식이므로,
 // baseline 역순(부모인 users를 맨 마지막에 드롭)보다 먼저 드롭해야 FK 제약에 걸리지 않는다.
 //
-// addEconomy는 선택 인자다(F-08 R-IMPL: economy_* 테이블도 이 공유 관리 목록에 편입해
-// f01~f07이 이 테이블의 존재를 몰라 거부하던 문제를 없앤다). 넘기지 않으면 이전과 완전히
-// 같은 동작이라 f01~f07·user.accountPaths 호출부를 고칠 필요가 없다.
-const buildManagedSchema = ({ baseline, addRefreshTokenHistory, addSocialAuth, addEconomy, migrationRunner }) => {
+// addEconomy 인자는 더 이상 필요하지 않다 — 이 파일이 위에서 직접 require한 모듈을 기본값
+//으로 쓴다(호출부가 명시적으로 다른 값을 넘기면 그 값을 우선한다 — isolatedTestDb.guard.test.js
+// 처럼 완전히 가짜인 baseline/addSocialAuth를 넘기는 단위 시험이 실제 파일을 몰라도 되게
+// 하위 호환을 유지한다).
+const buildManagedSchema = ({ baseline, addRefreshTokenHistory, addSocialAuth, addEconomy: addEconomyOverride, migrationRunner }) => {
+    const resolvedAddEconomy = addEconomyOverride ?? addEconomy;
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
-    const economyTables = addEconomy ? Object.values(addEconomy.TABLE_NAMES) : [];
+    const economyTables = Object.values(resolvedAddEconomy.TABLE_NAMES);
 
     const managedTables = [
         ...baseline.TABLE_ORDER,

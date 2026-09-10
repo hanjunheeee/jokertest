@@ -1,15 +1,96 @@
 # F-08 지갑·거래·카탈로그·소유권 — 이관·복구·검증 기록
 
 날짜: 2026-09-09 최초 작성, 2026-09-10 R-IMPL(반송) 대응으로 갱신, 2026-09-10 CODEX-1
-재검토(AC-03/AC-04 미해결 partial) 대응으로 추가 갱신
+재검토(AC-03/AC-04 미해결 partial) 대응으로 추가 갱신, 2026-09-10 CODEX-2 재검토
+(AC-03/AC-04 다시 미해결/partial) 대응으로 추가 갱신
 슬라이스: Pluto AS (F-08)
 
-이 문서는 세 회차를 함께 기록한다: (1) 최초 구현 — 계획의 "새로 만들 것" 6개 모듈을
+이 문서는 네 회차를 함께 기록한다: (1) 최초 구현 — 계획의 "새로 만들 것" 6개 모듈을
 신규로 구현, (2) R-IMPL 반송 대응(2026-09-10) — 운영자가 정확한 커밋(`2d7c3976`)과
 파일 4개의 스코프 플래그 14개를 검토한 뒤 지적한 실질적 결함을 수정, (3) CODEX-1
 재검토 대응(2026-09-10) — 독립 검토가 AC-03·AC-04를 "미해결/partial"로 남긴 구체적
-결함 2건을 추가로 수정. 아래 "CODEX-1 재검토 대응"절이 이번 회차에 실제로 바뀐
-내용이고, 그 이전 절들은 이전 회차 기록을 필요한 만큼 갱신했다.
+결함 2건을 추가로 수정, (4) CODEX-2 재검토 대응(2026-09-10) — CODEX-1 대응이 "지연
+지급 확장"과 "카탈로그 값으로 amount 대체"로만 고쳐, 사람이 다시 "lazy grant on
+wallet/equip is NOT signup/backfill"·"silently ignoring tampered fields is NOT
+rejecting tampered requests"로 반려한 것을 실제 가입/이관 훅과 실제 400 거부로
+고쳤다. 아래 "CODEX-2 재검토 대응"절이 이번 회차에 실제로 바뀐 내용이고, 그 이전
+절들은 이전 회차 기록을 그대로 보존한다.
+
+## CODEX-2 재검토 대응(2026-09-10) — 무엇을 왜 고쳤는가
+
+CODEX-2.json이 남긴 두 미해결 지적과, 그 뒤에 이어진 사람의 명시적 교정 기록
+("Bounded operator correction after actual VERIFY-10 and CODEX-2")을 함께 대응했다.
+
+1. **AC-03 partial(가입·기존 계정 이관 연결 근거 없음, 재반려)** — CODEX-1 대응은
+   `equipItem` 맨 앞에서 `ensureDefaultEntitlements`를 호출하도록 확장했을 뿐, 실제
+   가입 경로(`authService.signup`·`socialAuthService.completeSocialSignup`)나 별도
+   백필 절차를 전혀 만들지 않았다 — "지갑/장착 조회 시점의 지연 지급"은 "가입 시 지급"이
+   아니라는 것이 이번 지적의 핵심이다(교정 기록: "lazy grant on wallet/equip is NOT
+   signup/backfill"). 지금은:
+   - `economy.service.js`의 `applyLedgerTransaction`/`ensureWalletRow`/
+     `ensureDefaultLoadout`/`ensureDefaultEntitlements`가 모두 선택적
+     `{ transaction }`(부모 트랜잭션)을 받도록 확장됐다 — 신규 가입은 계정 생성
+     트랜잭션 안에서 이미 열려 있는 트랜잭션을 그대로 재사용해야 한다(그 트랜잭션
+     밖에서 새 트랜잭션을 열면 아직 커밋되지 않은 신규 `user.uuid`를 다른 커넥션이
+     보지 못해 FK 제약에 걸리거나, 부모가 실패해도 이미 커밋되어 원자성이 깨진다).
+   - `auth.service.js`의 `signup()`과 `socialAuth.service.js`의
+     `completeSocialSignup()`이 각자의 `userRepository.withTransaction` 콜백 안에서
+     `economyService.ensureDefaultEntitlements(user.uuid, db, { transaction })`을
+     직접 호출한다 — 계정이 커밋되는 순간 기본 지급도 이미 끝나 있다. 지급이 실패하면
+     (트랜잭션 안에서 던지므로) 계정 생성 자체도 함께 롤백되어, 필수 지급 없는 반쪽
+     계정이 남지 않는다(`f08-economy.integration.test.js`의 "가입 트랜잭션 실패는
+     기본 지급까지 함께 롤백한다" 시험으로 직접 확인).
+   - 이 슬라이스 이전에 이미 만들어진 기존 계정(가입 훅을 거친 적 없는 계정)을 위해
+     `backend/db/backfillEconomy.js`(신규, `backfillDefaultEntitlements`)와
+     `backend/db/backfillEconomy.cli.js`(신규, `run --confirm` 진입점)를 추가했다.
+     uuid 오름차순 배치(기본 200건)로 처리하고, 배치마다 마지막 uuid를 체크포인트로
+     보고해(호출부가 기록해 두면 `--start-after-uuid`로 재개 가능) 중단 후 재개할 수
+     있다. `ensureDefaultEntitlements` 자체가 멱등이라 같은 계정을 재시도해도 중복
+     지급되지 않으므로(재시도 안전), 한 계정이 실패해도 배치 전체를 막지 않고
+     failures로 모아 계속 진행한다. `backend/index.js`나 다른 어떤 기동 경로도 이
+     CLI를 자동 호출하지 않는다("Do not automatically run production backfill or
+     arbitrary startup sync") — 사람이 명시적으로 `node backend/db/
+     backfillEconomy.cli.js run --confirm`을 실행해야 하고, 이 세션에서는 격리 테스트
+     DB에서도 실행하지 않았다(단위 시험만 통과시켰다, 아래 "실행한 검증" 참고).
+   - `equipItem` 맨 앞의 지연 지급(CODEX-1 대응)은 그대로 유지했다 — 신규/기존 계정
+     모두 지금은 가입/백필에서 이미 지급이 끝나 있어야 하지만, 어떤 이유로든(예:
+     백필이 아직 완료되지 않은 과도기) 아직 못 받은 계정이 `equip`부터 호출해도
+     `ITEM_NOT_OWNED`로 잘못 거부되지 않도록 하는 방어선으로 남겨뒀다 — 이제는 "가입/
+     백필을 대신하는 유일한 지급 경로"가 아니라 "보조 방어선"이라는 점이 이전 회차와
+     다르다.
+   - `backend/tests/helpers/isolatedTestDb.js`의 `buildManagedSchema`가 이제
+     `0006-add-economy` 마이그레이션을 직접 `require`해 economy_* 4개 테이블을
+     **기본으로** 관리 목록에 포함한다(이전에는 선택 인자 `addEconomy`를 호출부가
+     일일이 넘겨야 했는데, f08 스위트만 그렇게 고쳐지고 f01~f03/f05/f07/
+     `user.accountPaths.test.js`는 고쳐지지 않았다 — VERIFY-10과 같은 근본 원인이
+     재발할 뻔했다). `f02-signup.integration.test.js`(`authService.signup`을 실제로
+     반복 호출)·`f05-social-auth.integration.test.js`·
+     `f07-discord-oauth.integration.test.js`(둘 다 `completeSocialSignup`을 실제로
+     호출)의 `MIGRATIONS` 배열에도 `0006-add-economy`를 추가해, 그 스위트들의 실제
+     가입 호출이 economy_* 테이블 부재로 실패하지 않게 했다.
+2. **AC-04 partial(변조 요청이 여전히 201로 성공, 재반려)** — CODEX-1 대응은
+   `/economy/admin/grant`가 `amount`·`currency` 대신 `reason`(카탈로그 키)만 읽게
+   했지만, `economy.route.test.js`는 여전히 `amount`/`currency`/`price`/`balance`
+   같은 필드를 **함께** 보내도 그 값이 "무시되고" 201로 성공하기를 기대했다 — 교정
+   기록의 핵심 지적대로 "무시"는 "거부"가 아니다. 지금은:
+   - `/economy/purchase`와 `/economy/admin/grant` 둘 다 문서화된 필드
+     (`itemId`/`referenceEventId`, `userId`/`reason`/`referenceEventId`) 밖의 키가
+     하나라도 있으면 서비스를 호출하기 전에 `400`(`UNKNOWN_PURCHASE_FIELD`/
+     `UNKNOWN_GRANT_FIELD`)으로 거부한다(`Object.keys`로 자체 열거 가능 속성만
+     검사 — own-property 안전). `price`·`priceGold`·`priceAmount`·`balance`·
+     `balanceGold`·`balanceDiamond`·`amount`·`currency`·임의의 알 수 없는 필드
+     전부 이 경로로 거부되고, 서비스는 한 번도 호출되지 않는다(`economy.route.test.js`가
+     각 필드별로 반복 검증).
+   - `backend/economy/catalog.js`의 `getRewardCatalogEntry`가 `REWARD_CATALOG[reason]`
+     직접 접근 대신 `hasOwnProperty` 확인을 거친다 — `reason: "toString"`/
+     `"constructor"`/`"__proto__"`처럼 `Object.prototype`에서 우연히 값이 발견되는
+     키가 유효한 보상 사유로 오인되지 않는다(own-property safe catalog lookup,
+     `economy.route.test.js`에 회귀 시험 추가).
+   - 문서화된 필드만 보낸 정상 요청(변조 없음)은 여전히 서버 카탈로그 가격/보상량으로
+     성공한다(positive control 시험 유지·추가).
+
+이번 회차는 프론트(`.jsx`/`economy.store.js`) 파일을 건드리지 않았다 — CODEX-2
+지적은 모두 백엔드(가입/소셜가입/백필/라우트/카탈로그) 범위였다.
 
 ## CODEX-1 재검토 대응(2026-09-10) — 무엇을 왜 고쳤는가
 
@@ -145,6 +226,12 @@
   장착 상태를 복원하는 zustand store. `requestGeneration`으로 계정 격리를 보장하고,
   구매 실패를 `rejected`(서버 확정 거부)/`unknown`(전송 불확실)로 구분한다.
 - `backend/__tests__/economy.migration.test.js`(신규, R-IMPL)
+- `backend/db/backfillEconomy.js`(신규, CODEX-2) — 기존 계정 기본 지급 백필. 배치·
+  체크포인트·재시도 안전.
+- `backend/db/backfillEconomy.cli.js`(신규, CODEX-2) — 위 백필의 명시적 CLI 진입점
+  (`run --confirm`). 어떤 기동 경로도 자동 호출하지 않는다.
+- `backend/db/backfillEconomy.test.js`(신규, CODEX-2) — 배치/체크포인트/재개/멱등/
+  재시도-후-성공/영구실패-후-failures 계약을 fake db로 검증.
 - `docs/requirements/2026-09-09-f08-economy-evidence.md`(본 문서)
 
 ## 계획에는 없었지만 필요해서 한 것(계획 밖 최소 배선)
@@ -212,43 +299,64 @@
   계정 참조 사건 ID 재사용이 서로의 원장에 영향을 주지 않는다는 것은 위 AC-02와 함께
   검증한다.
 
-## 실행한 검증(CODEX-1 재검토 대응, 2026-09-10)
+## 실행한 검증(CODEX-2 재검토 대응, 2026-09-10)
 
-- `node impl-check.js node-test backend/service/economy.service.test.js` — **21 pass /
-  0 fail**(19 → 21, AC-03 경쟁 상태·장착-우선 자동지급 회귀 2건 추가).
-- `node impl-check.js node-test backend/__tests__/economy.route.test.js` — **14 pass /
-  0 fail**(12 → 14, AC-04 변조 무시·알 수 없는 reason 거부 2건 추가). 첫 실행에서
-  `AC-06` 계열 4건이 `fetch failed: bad port`로 실패했다가 재실행 시 전부 통과했다 —
-  이전 회차 evidence에도 기록된 이 환경 고유의 랜덤 포트 플레이키이고, 이번 변경과
-  무관함을 재실행으로 확인했다.
+- `node impl-check.js node-test backend/service/economy.service.test.js` — **24 pass /
+  0 fail**(21 → 24, 부모 트랜잭션 재사용·롤백·`ensureDefaultEntitlements` 부모 트랜잭션
+  threading 회귀 3건 추가).
+- `node impl-check.js node-test backend/__tests__/economy.route.test.js` — **17 pass /
+  0 fail**(14 → 17, 구매/관리자 지급 알 수 없는 필드 400 거부·own-property safe
+  reason 거부 3건 추가, 기존 "변조 무시" 계열 시험 2건은 400 기대로 재작성).
 - `node impl-check.js node-test backend/__tests__/economy.migration.test.js` — **5 pass
   / 0 fail**(변경 없음, 회귀 확인).
+- `node impl-check.js node-test backend/db/backfillEconomy.test.js`(신규) — **7 pass /
+  0 fail**(배치·체크포인트/재개·멱등·재시도-후-성공·영구실패-격리·빈-결과·기본값
+  노출).
+- `node impl-check.js node-test backend/__tests__/auth.signup.rollback.test.js` —
+  **4 pass / 0 fail**(기존 3건 + 가입 성공 시 기본 지급 17종/기본 선택 검증 추가,
+  단독 실행을 위한 `DATABASE_URL` 자리표시자도 이번에 추가).
+- `node impl-check.js node-test backend/__tests__/socialAuth.service.test.js` —
+  **4 pass / 0 fail**(변경 없음, `completeSocialSignup`을 직접 호출하지 않는 스위트라
+  영향 없음을 재확인).
+- `node impl-check.js node-test backend/__tests__/isolatedTestDb.guard.test.js` —
+  **10 pass / 0 fail**(`buildManagedSchema`의 economy 테이블 기본 포함이 기존 계약을
+  그대로 유지함을 재확인 — 관리 목록에 4개 테이블이 늘어도 `existingTables`에 없으면
+  drop이 호출되지 않으므로 기존 `dropCalls` 단언이 그대로 통과한다).
 - `node impl-check.js node-test backend/tests/db/f08-economy.integration.test.js` —
-  **0 pass / 0 fail / 11 skipped**(10 → 11, AC-03 "장착 우선" 실제 DB 시나리오 추가.
-  `F01_TEST_DATABASE_URL` 미설정 — 미검증, 아래 참고).
-- `npm test --prefix backend`(백엔드 전체) — **1,189 pass / 0 fail / 54 skipped**
-  (1,185→1,189 pass, 53→54 skipped, 신규 4건 반영). skip은 전부
+  **0 pass / 0 fail / 15 skipped**(11 → 15, 신규 가입/소셜 가입 완료/가입 트랜잭션
+  롤백/기존 계정 백필 4건 추가. `F01_TEST_DATABASE_URL` 미설정 — 미검증, 아래 참고).
+- `npm test --prefix backend`(백엔드 전체) — **1,202 pass / 0 fail / 58 skipped**
+  (1,189→1,202 pass, 54→58 skipped, 위 신규 시험 반영). skip은 전부
   `F01_TEST_DATABASE_URL` 미설정에 의한 기존 관례.
 - `npm test --prefix frontend`(프론트 전체) — **1,254 pass / 0 fail / 0 skipped**(이번
-  회차는 프론트 파일을 건드리지 않았다 — 회귀 없음 확인용 재실행).
+  회차도 프론트 파일을 건드리지 않았다 — 회귀 없음 확인용 재실행).
 - `npm run build --prefix frontend` — production build **exit 0**(경고: 메인 청크
   500KB 초과 — 이 슬라이스 이전부터 있던 번들 구성, 범위 밖, 변경 없음).
-- `node impl-check.js test`/`node impl-check.js build`(레포 루트) — 이전 회차와 동일하게
-  각각 `exit 1`(스텁)·정의 없음으로 실패한다(이 슬라이스 이전부터 있던 상태, 이번에도
-  재확인만 했다) — 위 `npm test --prefix backend`/`--prefix frontend`로 대체 확인.
+- `node impl-check.js test`(레포 루트) — 이전 회차와 동일하게 루트 `package.json`의
+  스텁 `test` 스크립트(`echo "Error: no test specified" && exit 1`)라 `exit 1`이다
+  (이 슬라이스 이전부터 있던 상태, 이번에도 재확인만 했다) — 위
+  `npm test --prefix backend`/`--prefix frontend`로 대체 확인.
 
 ## 미검증 항목(readiness_unverified)
 
 - **AC-01/AC-02/AC-03/AC-06을 실제 MySQL 행 잠금·복합 유일 인덱스·트랜잭션 롤백
-  위에서 검증** — `backend/tests/db/f08-economy.integration.test.js`가 f01~f07과 같은
-  `F01_TEST_DATABASE_URL`을 기다리지만 이 세션에는 설정돼 있지 않아 skip됐다(신규
-  추가된 AC-03 "장착 우선" 실제 DB 시나리오도 마찬가지로 미검증). 이 세션의 명령 승인
-  절차상 Docker exec/DB 리셋을 직접 실행할 수 없다(운영자 지시: 이 파일 밖에서 별도
-  DB를 만들거나 조작하지 말 것) — 로컬에서 실행이 거부된 것이 DB 자체의 부재를 뜻하지
-  않는다. 운영자 또는 정규 VERIFY 단계가 `F01_TEST_DATABASE_URL`을 채워 재실행해야
-  한다.
+  위에서 검증, 그리고 이번에 추가된 실제 가입/소셜 가입 완료/가입 롤백/기존 계정
+  백필 4건** — `backend/tests/db/f08-economy.integration.test.js`가 f01~f07과 같은
+  `F01_TEST_DATABASE_URL`을 기다리지만 이 세션에는 설정돼 있지 않아 skip됐다. 이
+  세션의 명령 승인 절차상 Docker exec/DB 리셋을 직접 실행할 수 없다(운영자 지시: 이
+  파일 밖에서 별도 DB를 만들거나 조작하지 말 것) — 로컬에서 실행이 거부된 것이 DB
+  자체의 부재를 뜻하지 않는다. 운영자 또는 정규 VERIFY 단계가
+  `F01_TEST_DATABASE_URL`을 채워 재실행해야 한다. 같은 이유로
+  `backend/db/backfillEconomy.cli.js`도 격리 테스트 DB 위에서 실제로 실행해 본 적은
+  없다(단위 시험만 통과, 위 참고) — 운영 DB에는 더더욱 실행하지 않았다.
 - **실제 브라우저에서 상점/마이페이지 화면이 `/economy/*` API를 실제로 호출하는지** —
   데이터 계층만 만들었고 화면 연결은 범위 밖이라 브라우저 검증 대상이 아직 없다.
+- **운영 배포에서 `backend/db/backfillEconomy.cli.js run --confirm`을 실제로 실행하는
+  절차 자체** — 이 세션은 그 CLI를 만들고 격리 DB 없이 단위 시험만 통과시켰을 뿐,
+  실제 운영/스테이징 DB에 대한 백필 실행은 하지 않았다(교정 기록: "Do not
+  automatically run production backfill" — 자동 실행은 물론 이 세션에서의 수동 실행도
+  하지 않았다). 배포 담당자가 `F01_TEST_DATABASE_URL` 등 격리 DB에서 먼저 시험
+  실행한 뒤 운영 DB에 적용해야 한다.
 
 ## 복구 절차
 
@@ -257,16 +365,37 @@
 `economy_wallets`/`economy_ledger_entries`/`economy_entitlements`/`economy_loadouts`
 4개 테이블만 추가, 이제 `0006-add-economy.js` 마이그레이션으로 관리됨).
 
-- `backend/economy/catalog.js`
+- `backend/economy/catalog.js`(CODEX-2: `getRewardCatalogEntry` own-property safe화)
 - `backend/models/economy/economy.model.js`
 - `backend/db/migrations/0006-add-economy.js`(신규, R-IMPL)
-- `backend/service/economy.service.js`
-- `backend/service/economy.service.test.js`
-- `backend/routes/economy.routes.js`
-- `backend/__tests__/economy.route.test.js`
+- `backend/service/economy.service.js`(CODEX-2: 부모 트랜잭션 재사용 지원)
+- `backend/service/economy.service.test.js`(CODEX-2: 부모 트랜잭션 재사용 회귀 3건)
+- `backend/routes/economy.routes.js`(CODEX-2: 알 수 없는 필드 400 거부)
+- `backend/__tests__/economy.route.test.js`(CODEX-2: 알 수 없는 필드 거부·own-property
+  safe reason 거부 시험으로 갱신)
 - `backend/__tests__/economy.migration.test.js`(신규, R-IMPL)
-- `backend/tests/db/f08-economy.integration.test.js`
-- `backend/tests/helpers/isolatedTestDb.js`(`addEconomy` 선택 인자 추가, R-IMPL)
+- `backend/db/backfillEconomy.js`(신규, CODEX-2)
+- `backend/db/backfillEconomy.cli.js`(신규, CODEX-2)
+- `backend/db/backfillEconomy.test.js`(신규, CODEX-2)
+- `backend/service/auth.service.js`(CODEX-2: `signup()`이 가입 트랜잭션 안에서 기본
+  지급을 호출)
+- `backend/service/socialAuth.service.js`(CODEX-2: `completeSocialSignup()`이 가입
+  트랜잭션 안에서 기본 지급을 호출)
+- `backend/__tests__/auth.signup.rollback.test.js`(CODEX-2: economy fake 모델 추가,
+  기본 지급 검증 추가, 단독 실행용 `DATABASE_URL` 자리표시자 추가)
+- `backend/tests/db/f08-economy.integration.test.js`(CODEX-2: 실제 가입/소셜 가입
+  완료/가입 롤백/기존 계정 백필 4건 추가)
+- `backend/tests/db/f02-signup.integration.test.js`(CODEX-2: `0006-add-economy`를
+  `MIGRATIONS`에 추가 — `authService.signup` 실호출이 economy 테이블을 필요로 함)
+- `backend/tests/db/f05-social-auth.integration.test.js`(CODEX-2: 동일 이유로
+  `0006-add-economy` 추가)
+- `backend/tests/db/f07-discord-oauth.integration.test.js`(CODEX-2: 동일 이유로
+  `0006-add-economy` 추가)
+- `backend/tests/helpers/isolatedTestDb.js`(R-IMPL: `addEconomy` 선택 인자 추가 →
+  CODEX-2: economy 테이블을 기본으로 포함하도록 중앙화, 호출부마다 넘길 필요 없음)
+- `backend/scripts/migrate-db.js`(CODEX-2: 실제 배포 마이그레이션 목록에
+  `0006-add-economy` 추가 — 0005-add-social-auth는 이 슬라이스 이전부터 이 목록에
+  없던 별도 이슈로, 범위 밖으로 남겨뒀다)
 - `backend/index.js`(economy 라우터 마운트 2줄)
 - `backend/__tests__/schema.existingTables.test.js`(`NEW_MODELS`에 `EconomyLedgerEntry`
   추가)

@@ -4,6 +4,8 @@ const authService = require("./auth.service");
 const { hashPassword } = require("../utils/hash");
 const { createError } = require("../utils/appError");
 const { validateNickname, validateBirthDate } = require("../validation/signupValidation");
+const db = require("../models");
+const economyService = require("./economy.service");
 
 // F-05 소셜 계정 공통 기반. 제공자별 실제 OAuth 연동(F-06/F-07)은 이 파일의 책임이 아니다 —
 // 여기 모든 함수는 이미 서버가 검증을 마친 결과(provider/subject/email, state 원문)만
@@ -264,6 +266,11 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememb
             email_snapshot: intent.email,
         }, { transaction });
         await userRepository.markSocialSignupIntentConsumed(intent.id, { transaction });
+        // CODEX-2(F-08 AC-03) 대응: 로컬 가입(auth.service.js signup)과 같은 이유로, 소셜
+        // 가입 완료도 이 계정 생성 트랜잭션 안에서 기본 지급(프로필 16종·평민 테두리 1종·
+        // 지갑 0/0)을 끝낸다 — 별도의 wallet/equip 조회로 미루는 지연 지급은 "가입 시
+        // 지급"의 대체가 될 수 없다.
+        await economyService.ensureDefaultEntitlements(user.uuid, db, { transaction });
 
         const session = await authService.issueSessionForUser(user, { rememberMe: rememberMe === true }, reqInfo, transaction);
         return { user, ...session };

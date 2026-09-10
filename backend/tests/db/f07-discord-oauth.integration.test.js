@@ -52,9 +52,15 @@ const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
+// F-08 CODEX-2(AC-03) 대응: socialAuthService.completeSocialSignup(Discord 가입 완료도
+// 공통 함수를 그대로 탄다)이 이제 계정 생성 트랜잭션 안에서
+// economyService.ensureDefaultEntitlements를 호출한다 — f05-social-auth.integration.test.js와
+// 같은 이유로 addEconomy를 마이그레이션 체인에 편입한다(관리 목록은 isolatedTestDb.js가
+// 이제 기본으로 포함한다).
+const addEconomy = require('../../db/migrations/0006-add-economy');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

@@ -79,12 +79,19 @@ const economyModels = (db) => ({
 
 const defaultDb = () => require('../models');
 
-/** 지갑 행이 없으면 두 재화 모두 잔액 0으로 만들어 둔다 — 잠금 트랜잭션 밖에서 미리
- *  실행해, 잠금 트랜잭션 안에서는 항상 SELECT ... FOR UPDATE만 하면 되게 한다. */
-const ensureWalletRow = async (db, userId) => {
+/** 지갑 행이 없으면 두 재화 모두 잔액 0으로 만들어 둔다 — 독립 호출(잠금 트랜잭션 밖)에서는
+ *  미리 실행해 잠금 트랜잭션 안에서는 항상 SELECT ... FOR UPDATE만 하면 되게 한다.
+ *
+ *  CODEX-2(AC-03) 대응: 신규 가입처럼 부모 트랜잭션(externalTransaction)이 주어지면 그
+ *  안에서 실행해야 한다 — 아직 커밋되지 않은 신규 계정 uuid를 그 트랜잭션 밖에서(다른
+ *  커넥션으로) 참조하면 FK 제약을 볼 수 없어 실패한다. */
+const ensureWalletRow = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
     try {
-        await models.EconomyWallet.create({ user_id: userId, balance_gold: 0, balance_diamond: 0 });
+        await models.EconomyWallet.create(
+            { user_id: userId, balance_gold: 0, balance_diamond: 0 },
+            externalTransaction ? { transaction: externalTransaction } : undefined,
+        );
     } catch (error) {
         if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
     }
@@ -105,10 +112,17 @@ const referenceEventConflictError = () =>
  * 지갑 잠금 → (다시 한번) 재처리 방지 확인 → (필요하면) 소유 여부 확인 → 잔액 검증 →
  * 지갑 갱신 → 원장 기록 → (필요하면) 소유권 부여를 하나의 트랜잭션으로 실행한다. amount는
  * 양수(지급)/음수(차감) 모두 가능하다.
+ *
+ * CODEX-2(AC-03) 대응: options.transaction으로 이미 열려 있는 부모 트랜잭션(예: 회원가입의
+ * userRepository.withTransaction)을 받으면 새 트랜잭션을 열지 않고 그 트랜잭션 위에서
+ * 그대로 실행한다 — 신규 계정처럼 아직 커밋되지 않은 행을 참조해야 하는 호출부가 별도
+ * 트랜잭션을 열면(경쟁하는 트랜잭션) 그 계정 행을 보지 못해 FK 제약에 걸리거나, 부모가
+ * 실패해도 이미 커밋되어 버려 원자성이 깨진다("accept the parent transaction rather than
+ * opening a competing transaction before the new user commits").
  */
 const applyLedgerTransaction = async (db, {
     userId, reason, currency, amount, itemId = null, itemType = null, referenceEventId, entitlementSource = null,
-}) => {
+}, { transaction: externalTransaction = null } = {}) => {
     if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
     }
@@ -126,96 +140,116 @@ const applyLedgerTransaction = async (db, {
     // 요청처럼 이 조회를 둘 다 통과하는 경우는 아래 잠금 안 재확인이 마저 처리한다.
     const preExisting = await models.EconomyLedgerEntry.findOne({
         where: { user_id: userId, reference_event_id: referenceEventId },
+        ...(externalTransaction ? { transaction: externalTransaction } : {}),
     });
     if (preExisting) {
         if (!payloadMatches(preExisting, payload)) throw referenceEventConflictError();
         return { idempotent: true, ledgerEntry: preExisting };
     }
 
-    await ensureWalletRow(db, userId);
+    await ensureWalletRow(db, userId, externalTransaction);
+
+    const runWrite = async (t) => {
+        const wallet = await models.EconomyWallet.findOne({
+            where: { user_id: userId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+        });
+
+        // 잠금을 잡은 뒤 재확인(recheck-after-lock) — 소유권/잔액 검증보다 먼저 한다.
+        // 동시에 들어온 같은 키 재시도가 이 지갑 잠금 뒤에서 대기했다면, 앞선 요청이
+        // 이미 커밋한 결과를 그대로 돌려받아야 한다(소유권 재검사로 잘못 거부되면 안 됨).
+        const committed = await models.EconomyLedgerEntry.findOne({
+            where: { user_id: userId, reference_event_id: referenceEventId },
+            transaction: t,
+        });
+        if (committed) {
+            if (!payloadMatches(committed, payload)) throw referenceEventConflictError();
+            return { idempotent: true, ledgerEntry: committed };
+        }
+
+        if (itemId) {
+            const owned = await models.EconomyEntitlement.findOne({
+                where: { user_id: userId, item_id: itemId },
+                transaction: t,
+            });
+            if (owned) {
+                throw createError('이미 보유한 상품입니다.', 409, 'ITEM_ALREADY_OWNED');
+            }
+        }
+
+        const column = CURRENCY_TO_WALLET_COLUMN[currency];
+        const newBalance = wallet[column] + amount;
+        if (newBalance < 0) {
+            throw createError('잔액이 부족합니다.', 400, 'INSUFFICIENT_BALANCE');
+        }
+        if (newBalance > MAX_BALANCE) {
+            throw createError('잔액 한도를 초과했습니다.', 400, 'BALANCE_LIMIT_EXCEEDED');
+        }
+
+        await wallet.update({ [column]: newBalance }, { transaction: t });
+
+        let ledgerEntry;
+        try {
+            ledgerEntry = await models.EconomyLedgerEntry.create({
+                user_id: userId,
+                reason,
+                item_id: itemId,
+                currency,
+                amount,
+                balance_after: newBalance,
+                reference_event_id: referenceEventId,
+            }, { transaction: t });
+        } catch (error) {
+            if (error?.name === 'SequelizeUniqueConstraintError') {
+                throw Object.assign(
+                    createError('이미 처리된 참조 사건입니다.', 409, 'DUPLICATE_REFERENCE_EVENT'),
+                    { referenceEventId },
+                );
+            }
+            throw error;
+        }
+
+        if (itemId) {
+            await models.EconomyEntitlement.create({
+                user_id: userId,
+                item_id: itemId,
+                item_type: itemType,
+                source: entitlementSource,
+            }, { transaction: t });
+        }
+
+        return { idempotent: false, ledgerEntry, walletBalance: newBalance };
+    };
+
+    const resolveDuplicate = async (transactionForLookup) => {
+        const existing = await models.EconomyLedgerEntry.findOne({
+            where: { user_id: userId, reference_event_id: referenceEventId },
+            ...(transactionForLookup ? { transaction: transactionForLookup } : {}),
+        });
+        if (!existing) return null;
+        if (!payloadMatches(existing, payload)) throw referenceEventConflictError();
+        return { idempotent: true, ledgerEntry: existing };
+    };
+
+    if (externalTransaction) {
+        try {
+            return await runWrite(externalTransaction);
+        } catch (error) {
+            if (error?.code === 'DUPLICATE_REFERENCE_EVENT') {
+                const resolved = await resolveDuplicate(externalTransaction);
+                if (resolved) return resolved;
+            }
+            throw error;
+        }
+    }
 
     try {
-        return await models.sequelize.transaction(async (t) => {
-            const wallet = await models.EconomyWallet.findOne({
-                where: { user_id: userId },
-                transaction: t,
-                lock: t.LOCK.UPDATE,
-            });
-
-            // 잠금을 잡은 뒤 재확인(recheck-after-lock) — 소유권/잔액 검증보다 먼저 한다.
-            // 동시에 들어온 같은 키 재시도가 이 지갑 잠금 뒤에서 대기했다면, 앞선 요청이
-            // 이미 커밋한 결과를 그대로 돌려받아야 한다(소유권 재검사로 잘못 거부되면 안 됨).
-            const committed = await models.EconomyLedgerEntry.findOne({
-                where: { user_id: userId, reference_event_id: referenceEventId },
-                transaction: t,
-            });
-            if (committed) {
-                if (!payloadMatches(committed, payload)) throw referenceEventConflictError();
-                return { idempotent: true, ledgerEntry: committed };
-            }
-
-            if (itemId) {
-                const owned = await models.EconomyEntitlement.findOne({
-                    where: { user_id: userId, item_id: itemId },
-                    transaction: t,
-                });
-                if (owned) {
-                    throw createError('이미 보유한 상품입니다.', 409, 'ITEM_ALREADY_OWNED');
-                }
-            }
-
-            const column = CURRENCY_TO_WALLET_COLUMN[currency];
-            const newBalance = wallet[column] + amount;
-            if (newBalance < 0) {
-                throw createError('잔액이 부족합니다.', 400, 'INSUFFICIENT_BALANCE');
-            }
-            if (newBalance > MAX_BALANCE) {
-                throw createError('잔액 한도를 초과했습니다.', 400, 'BALANCE_LIMIT_EXCEEDED');
-            }
-
-            await wallet.update({ [column]: newBalance }, { transaction: t });
-
-            let ledgerEntry;
-            try {
-                ledgerEntry = await models.EconomyLedgerEntry.create({
-                    user_id: userId,
-                    reason,
-                    item_id: itemId,
-                    currency,
-                    amount,
-                    balance_after: newBalance,
-                    reference_event_id: referenceEventId,
-                }, { transaction: t });
-            } catch (error) {
-                if (error?.name === 'SequelizeUniqueConstraintError') {
-                    throw Object.assign(
-                        createError('이미 처리된 참조 사건입니다.', 409, 'DUPLICATE_REFERENCE_EVENT'),
-                        { referenceEventId },
-                    );
-                }
-                throw error;
-            }
-
-            if (itemId) {
-                await models.EconomyEntitlement.create({
-                    user_id: userId,
-                    item_id: itemId,
-                    item_type: itemType,
-                    source: entitlementSource,
-                }, { transaction: t });
-            }
-
-            return { idempotent: false, ledgerEntry, walletBalance: newBalance };
-        });
+        return await models.sequelize.transaction(runWrite);
     } catch (error) {
         if (error?.code === 'DUPLICATE_REFERENCE_EVENT') {
-            const existing = await models.EconomyLedgerEntry.findOne({
-                where: { user_id: userId, reference_event_id: referenceEventId },
-            });
-            if (existing) {
-                if (!payloadMatches(existing, payload)) throw referenceEventConflictError();
-                return { idempotent: true, ledgerEntry: existing };
-            }
+            const resolved = await resolveDuplicate(null);
+            if (resolved) return resolved;
         }
         throw error;
     }
@@ -230,31 +264,46 @@ const applyLedgerTransaction = async (db, {
  *  쓰기가 그 값을 되돌려 덮어썼다(read-then-blind-write 경쟁 상태). 지금은 WHERE 절에
  *  "지금도 컬럼이 null"이라는 조건을 실은 모델 수준 UPDATE로 바꿨다 — 이 조건부 UPDATE는
  *  단일 SQL 문이라 원자적이므로, 그 사이 다른 트랜잭션이 이미 값을 넣었다면 0행에
- *  적용되어 그 값을 그대로 둔다(컬럼별로 각각 조건부라 두 컬럼이 독립적으로 안전하다). */
-const ensureDefaultLoadout = async (db, userId) => {
+ *  적용되어 그 값을 그대로 둔다(컬럼별로 각각 조건부라 두 컬럼이 독립적으로 안전하다).
+ *
+ *  CODEX-2(AC-03) 대응: externalTransaction이 주어지면(신규 가입 등) 그 트랜잭션 안에서
+ *  실행한다 — applyLedgerTransaction과 같은 이유(부모 트랜잭션 재사용, 경쟁 트랜잭션
+ *  금지). */
+const ensureDefaultLoadout = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
+    const txOptions = externalTransaction ? { transaction: externalTransaction } : {};
+
     await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
         defaults: { user_id: userId },
+        ...txOptions,
     });
 
     await models.EconomyLoadout.update(
         { selected_profile_photo_id: DEFAULT_PROFILE_PHOTO_ID },
-        { where: { user_id: userId, selected_profile_photo_id: null } },
+        { where: { user_id: userId, selected_profile_photo_id: null }, ...txOptions },
     );
     await models.EconomyLoadout.update(
         { selected_profile_border_id: DEFAULT_PROFILE_BORDER_ID },
-        { where: { user_id: userId, selected_profile_border_id: null } },
+        { where: { user_id: userId, selected_profile_border_id: null }, ...txOptions },
     );
 
-    return models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    return models.EconomyLoadout.findOne({ where: { user_id: userId }, ...txOptions });
 };
 
-/** 기본 프로필 16종 + 평민 테두리 1종을 중복 없이 지급한다(AC-03). 기존 계정·신규 계정
- *  모두 이 함수를 호출하는 경로(지갑 조회 등)를 타면 되므로, 별도의 가입 훅이 없어도
- *  두 경우 모두 커버된다. 이미 지급된 항목은 원장의 (user_id, reference_event_id) 유일
- *  제약으로 조용히 건너뛴다. */
-const ensureDefaultEntitlements = async (userId, db = defaultDb()) => {
+/** 기본 프로필 16종 + 평민 테두리 1종을 중복 없이 지급한다(AC-03). 지갑/소유품 조회
+ *  (getWalletSummary)·장착(equipItem) 경로가 이 함수를 호출해 지연 지급을 보장하고,
+ *  회원가입 경로(auth.service.js signup·socialAuth.service.js completeSocialSignup)는
+ *  계정 생성 트랜잭션 안에서 직접 호출해 신규 계정이 커밋되는 순간 이미 지급이 끝나
+ *  있게 한다(CODEX-2 재검토: "lazy grant on wallet/equip is NOT signup/backfill" — 지연
+ *  지급은 신규 가입을 대신하지 못하므로, 가입 자체가 이 함수를 명시적으로 호출해야 한다).
+ *  기존 계정(이 슬라이스 이전에 만들어진 계정) 이관은 backend/db/backfillEconomy.js가
+ *  같은 함수를 배치로 호출한다. 이미 지급된 항목은 원장의 (user_id, reference_event_id)
+ *  유일 제약으로 조용히 건너뛴다(재실행/재호출 모두 멱등).
+ *
+ *  externalTransaction이 주어지면(회원가입 트랜잭션 등) 그 안에서 실행한다 —
+ *  applyLedgerTransaction/ensureDefaultLoadout 참고. */
+const ensureDefaultEntitlements = async (userId, db = defaultDb(), { transaction: externalTransaction = null } = {}) => {
     for (const item of listDefaultGrantItems()) {
         const referenceEventId = `default-grant:${userId}:${item.id}`;
         try {
@@ -267,13 +316,13 @@ const ensureDefaultEntitlements = async (userId, db = defaultDb()) => {
                 itemType: item.type,
                 referenceEventId,
                 entitlementSource: 'DEFAULT_GRANT',
-            });
+            }, { transaction: externalTransaction });
         } catch (error) {
             if (error?.code === 'ITEM_ALREADY_OWNED') continue;
             throw error;
         }
     }
-    return ensureDefaultLoadout(db, userId);
+    return ensureDefaultLoadout(db, userId, externalTransaction);
 };
 
 /** 자기 계정의 지갑·소유품·장착 상태를 한 번에 돌려준다. 매 호출마다 기본 지급을

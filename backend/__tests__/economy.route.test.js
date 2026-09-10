@@ -124,8 +124,46 @@ test("AC-06: 본인 계정 조회는 200으로 허용된다", async (t) => {
 });
 
 // ── AC-04: 구매 요청은 itemId·referenceEventId만 서비스로 전달한다 ─────────
+// CODEX-2 재검토: "서비스에는 문서화된 필드만 전달된다"는 것만으로는 부족했다 — 이전
+// 버전은 price·balance 같은 변조 필드를 조용히 무시하고도 201을 돌려줬는데, 무시와
+// 거부는 다르다. 지금은 문서화된 필드(itemId/referenceEventId) 밖의 값이 하나라도
+// 있으면 서비스를 호출하기 전에 400으로 거부해야 한다.
 
-test("AC-04: 구매 요청에 price 등 임의 필드를 함께 보내도 서비스에는 itemId·referenceEventId만 전달된다", async (t) => {
+test("AC-04(CODEX-2): 구매 요청에 price·balance 등 알 수 없는 필드가 포함되면 서비스 호출 전에 400으로 거부된다", async (t) => {
+    stubAuthGate(t);
+    const { calls } = stubService(t);
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/purchase", {
+        method: "POST",
+        token: tokenFor(USER_A),
+        body: { itemId: "profile-border-남작", referenceEventId: "ref-1", price: 1, balance: 999999 },
+    });
+
+    assert.equal(res.status, 400);
+    assert.equal(res.json.code, "UNKNOWN_PURCHASE_FIELD");
+    assert.equal(calls.filter((c) => c.name === "purchaseItem").length, 0, "변조된 요청은 서비스를 호출하면 안 된다");
+});
+
+test("AC-04(CODEX-2): price·priceGold·priceAmount·balance·balanceGold·balanceDiamond·amount·currency 등 어떤 알 수 없는 필드도 구매 요청에서 거부된다", async (t) => {
+    stubAuthGate(t);
+    const { calls } = stubService(t);
+    const base = await startServer(t);
+
+    const tamperFields = ["price", "priceGold", "priceAmount", "balance", "balanceGold", "balanceDiamond", "amount", "currency", "rewardAmount"];
+    for (const field of tamperFields) {
+        const res = await request(base, "/economy/purchase", {
+            method: "POST",
+            token: tokenFor(USER_A),
+            body: { itemId: "profile-border-남작", referenceEventId: `ref-${field}`, [field]: 1 },
+        });
+        assert.equal(res.status, 400, `${field} 필드가 있으면 400이어야 한다`);
+        assert.equal(res.json.code, "UNKNOWN_PURCHASE_FIELD");
+    }
+    assert.equal(calls.filter((c) => c.name === "purchaseItem").length, 0);
+});
+
+test("AC-04: 문서화된 필드(itemId·referenceEventId)만 있는 정상 구매 요청은 서비스로 그대로 전달되고 201로 성공한다(positive control)", async (t) => {
     stubAuthGate(t);
     const { lastCall } = stubService(t, {
         purchaseItem: async () => ({ idempotent: false, ledgerEntry: { id: 1 } }),
@@ -135,7 +173,7 @@ test("AC-04: 구매 요청에 price 등 임의 필드를 함께 보내도 서비
     const res = await request(base, "/economy/purchase", {
         method: "POST",
         token: tokenFor(USER_A),
-        body: { itemId: "profile-border-남작", referenceEventId: "ref-1", price: 1, balance: 999999 },
+        body: { itemId: "profile-border-남작", referenceEventId: "ref-1" },
     });
 
     assert.equal(res.status, 201);
@@ -264,28 +302,43 @@ test("ADMIN 권한도 관리자 지급 경로를 사용할 수 있다", async (t
     assert.equal(lastCall("grantReward").args[0].amount, 1000, 'amount는 서버 카탈로그(QA_TEST_GRANT_DIAMOND) 값이어야 한다');
 });
 
-test("AC-04(R-IMPL): 관리자 지급 요청에 amount·currency를 함께 보내도 무시되고 항상 서버 카탈로그 값이 사용된다(변조 방지)", async (t) => {
+// CODEX-2 재검토: 이전 버전은 amount·currency가 함께 와도 "무시하고 카탈로그 값을
+// 쓴다"는 이유로 201을 기대했다 — 하지만 무시는 거부가 아니다. 문서화된 필드
+// (userId/reason/referenceEventId) 밖의 값이 하나라도 있으면 grantReward를 호출하기
+// 전에 400으로 거부해야 한다.
+test("AC-04(CODEX-2): amount·currency·balance 등 알 수 없는 필드가 있으면 관리자 지급 요청도 서비스 호출 전에 400으로 거부된다", async (t) => {
     stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "ADMIN" } } });
-    const { lastCall } = stubService(t, {
-        grantReward: async () => ({ idempotent: false, ledgerEntry: { id: 1 } }),
-    });
+    const { calls } = stubService(t);
     const base = await startServer(t);
 
-    const res = await request(base, "/economy/admin/grant", {
-        method: "POST",
-        token: tokenFor(USER_A, "ADMIN"),
-        // 클라이언트가 카탈로그 값과 다른 amount·currency를 함께 보내는 변조 시도.
-        body: {
-            userId: USER_B,
-            reason: "QA_TEST_GRANT_GOLD",
-            amount: 999999999,
-            currency: "DIAMOND",
-            referenceEventId: "tamper-1",
-        },
-    });
-    assert.equal(res.status, 201);
-    assert.equal(lastCall("grantReward").args[0].amount, 100000, '클라이언트가 보낸 amount는 무시되어야 한다');
-    assert.equal(lastCall("grantReward").args[0].currency, "GOLD", '클라이언트가 보낸 currency는 무시되어야 한다');
+    const tamperFields = ["amount", "currency", "balance", "balanceGold", "balanceDiamond", "priceGold"];
+    for (const field of tamperFields) {
+        const res = await request(base, "/economy/admin/grant", {
+            method: "POST",
+            token: tokenFor(USER_A, "ADMIN"),
+            body: { userId: USER_B, reason: "QA_TEST_GRANT_GOLD", referenceEventId: `ref-${field}`, [field]: 1 },
+        });
+        assert.equal(res.status, 400, `${field} 필드가 있으면 400이어야 한다`);
+        assert.equal(res.json.code, "UNKNOWN_GRANT_FIELD");
+    }
+    assert.equal(calls.filter((c) => c.name === "grantReward").length, 0, "변조된 요청은 서비스를 호출하면 안 된다");
+});
+
+test("AC-04(CODEX-2): 프로토타입 체인에서 우연히 값이 발견되는 reason(toString 등)은 보상 사유로 인정되지 않는다(own-property safe lookup)", async (t) => {
+    stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "ADMIN" } } });
+    const { calls } = stubService(t);
+    const base = await startServer(t);
+
+    for (const reason of ["toString", "constructor", "__proto__", "hasOwnProperty", "valueOf"]) {
+        const res = await request(base, "/economy/admin/grant", {
+            method: "POST",
+            token: tokenFor(USER_A, "ADMIN"),
+            body: { userId: USER_B, reason, referenceEventId: `proto-${reason}` },
+        });
+        assert.equal(res.status, 400, `reason=${reason}는 400으로 거부되어야 한다`);
+        assert.equal(res.json.code, "UNKNOWN_REWARD_REASON");
+    }
+    assert.equal(calls.filter((c) => c.name === "grantReward").length, 0);
 });
 
 test("AC-04(R-IMPL): 보상 카탈로그에 없는 reason은 400으로 거부되고 grantReward는 호출되지 않는다", async (t) => {

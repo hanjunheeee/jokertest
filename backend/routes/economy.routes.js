@@ -34,6 +34,22 @@ const serializeLoadout = (loadout) => ({
     selectedCardFrameId: loadout.selected_card_frame_id,
 });
 
+// CODEX-2 재검토(AC-04): 이전 버전은 req.body에서 문서화된 필드만 "골라 읽어" 서비스로
+// 넘겼을 뿐, price·balance·amount·currency 같은 다른 필드가 함께 와도 조용히 무시하고
+// 201을 돌려줬다 — "무시"는 "거부"가 아니다. 변조 필드가 하나라도 있으면 서비스/DB를
+// 건드리기 전에 즉시 400으로 거부한다. Object.keys는 자체 열거 가능 속성만 보므로
+// (own-property), express.json()이 만든 일반 객체에서 __proto__ 같은 키가 실려 와도
+// 여기서 평범한 미지 필드로 그대로 잡힌다.
+const ALLOWED_PURCHASE_FIELDS = new Set(["itemId", "referenceEventId"]);
+const ALLOWED_GRANT_FIELDS = new Set(["userId", "reason", "referenceEventId"]);
+
+const rejectUnknownFields = (body, allowedFields, errorCode) => {
+    const unknown = Object.keys(body ?? {}).filter((key) => !allowedFields.has(key));
+    if (unknown.length > 0) {
+        throw createError("허용되지 않은 필드가 포함되어 있습니다.", 400, errorCode);
+    }
+};
+
 router.get("/accounts/:userId/wallet", verifyToken, requireSelf, async (req, res, next) => {
     try {
         const summary = await economyService.getWalletSummary(req.params.userId);
@@ -59,12 +75,15 @@ router.get("/accounts/:userId/transactions", verifyToken, requireSelf, async (re
 // 처리하므로 다른 계정을 대상으로 지정할 방법 자체가 없다.
 router.post("/purchase", verifyToken, async (req, res, next) => {
     try {
-        const { itemId, referenceEventId } = req.body ?? {};
+        const body = req.body ?? {};
+        // 클라이언트가 price·balance 등 다른 필드를 함께 보내면 무시하는 대신 즉시 거부한다
+        // (F-08 AC-04, CODEX-2 재검토) — economyService.purchaseItem은 서버 카탈로그 가격만
+        // 신뢰하지만, 변조 필드가 조용히 무시되는 것과 요청 자체가 거부되는 것은 다르다.
+        rejectUnknownFields(body, ALLOWED_PURCHASE_FIELDS, "UNKNOWN_PURCHASE_FIELD");
+        const { itemId, referenceEventId } = body;
         if (typeof itemId !== "string" || typeof referenceEventId !== "string") {
             throw createError("itemId와 referenceEventId가 필요합니다.", 400, "INVALID_PURCHASE_REQUEST");
         }
-        // 클라이언트가 함께 보낼 수 있는 price·balance 등 다른 필드는 절대 읽지 않는다
-        // (F-08 AC-04) — economyService.purchaseItem은 서버 카탈로그 가격만 신뢰한다.
         const result = await economyService.purchaseItem({ userId: req.user.uuid, itemId, referenceEventId });
         res.status(result.idempotent ? 200 : 201).json({
             idempotent: result.idempotent,
@@ -97,13 +116,20 @@ router.post("/equip", verifyToken, async (req, res, next) => {
 // 신뢰하면 안 된다. 이제 클라이언트는 amount·currency 대신 reason(보상 카탈로그의 키)만
 // 보내고, 실제 지급 금액·재화는 항상 backend/economy/catalog.js의 REWARD_CATALOG 값이다
 // — reason이 카탈로그에 없으면 요청 자체를 거부한다.
+//
+// CODEX-2 재검토(AC-04): reason만 읽고 amount·currency·balance 등 나머지 필드는 조용히
+// 무시하던 이전 버전은 "변조 요청 거부"가 아니었다 — 문서화된 필드(userId/reason/
+// referenceEventId) 밖의 값이 하나라도 오면 grantReward를 호출하기 전에 즉시 400으로
+// 거부한다.
 router.post("/admin/grant", verifyToken, async (req, res, next) => {
     try {
         const actingAccount = await userRepository.findByUuid(req.user.uuid);
         if (!actingAccount || (actingAccount.role !== "ADMIN" && actingAccount.role !== "QA")) {
             throw createError("권한이 없습니다.", 403, "ECONOMY_ADMIN_ONLY");
         }
-        const { userId, reason, referenceEventId } = req.body ?? {};
+        const body = req.body ?? {};
+        rejectUnknownFields(body, ALLOWED_GRANT_FIELDS, "UNKNOWN_GRANT_FIELD");
+        const { userId, reason, referenceEventId } = body;
         if (typeof userId !== "string" || typeof referenceEventId !== "string") {
             throw createError("userId와 referenceEventId가 필요합니다.", 400, "INVALID_GRANT_REQUEST");
         }

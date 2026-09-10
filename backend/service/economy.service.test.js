@@ -38,12 +38,26 @@ const createFakeDb = () => {
 
     // 같은 user_id에 대한 lock 획득 요청을 FIFO로 순서를 매겨, 실제 행 잠금처럼 한 번에
     // 하나의 트랜잭션만 그 사용자의 지갑을 쥐게 한다.
-    const acquireUserLock = (userId) => {
+    //
+    // CODEX-2(AC-03) 대응: 실제 InnoDB 행 잠금은 트랜잭션 단위다 — 같은 트랜잭션이 같은
+    // 행을 두 번째로 SELECT ... FOR UPDATE해도 자기 자신과는 경합하지 않고 즉시 통과한다
+    // (회원가입 트랜잭션 안에서 ensureDefaultEntitlements가 같은 지갑 행을 17번 연속
+    // 잠그는 패턴이 실제로 이렇다). lockHolders로 "지금 이 행을 쥔 트랜잭션"을 추적해,
+    // 같은 트랜잭션 객체가 재요청하면 큐에 서지 않고 바로 통과시킨다 — 이게 없으면 한
+    // 트랜잭션 안에서의 재진입 요청이 자기 자신의 이전 요청이 풀리길 기다리며 교착된다.
+    const lockHolders = new Map();
+    const acquireUserLock = (userId, transaction) => {
+        if (lockHolders.get(userId) === transaction) {
+            return Promise.resolve(() => {});
+        }
         const tail = mutexTails.get(userId) ?? Promise.resolve();
         let release;
         const held = new Promise((resolve) => { release = resolve; });
         mutexTails.set(userId, tail.then(() => held));
-        return tail.then(() => release);
+        return tail.then(() => {
+            lockHolders.set(userId, transaction);
+            return () => { lockHolders.delete(userId); release(); };
+        });
     };
 
     const EconomyWallet = {
@@ -72,7 +86,7 @@ const createFakeDb = () => {
             const record = walletsByUser.get(where.user_id);
             if (!record) return null;
             if (lock && transaction) {
-                const release = await acquireUserLock(where.user_id);
+                const release = await acquireUserLock(where.user_id, transaction);
                 transaction._releasers.push(release);
             }
             return record;
@@ -560,4 +574,68 @@ test('AC-05: 정당히 보유한 상품은 장착에 성공한다', async () => 
 
     const loadout = await economyService.equipItem({ userId, slot: 'PROFILE_BORDER', itemId: PURCHASABLE_ITEM_ID }, db);
     assert.equal(loadout.selected_profile_border_id, PURCHASABLE_ITEM_ID);
+});
+
+// ── CODEX-2(AC-03): 부모 트랜잭션 재사용(회원가입 등) ───────────────────────
+// "lazy grant on wallet/equip is NOT signup/backfill" 지적 대응 — 회원가입은 계정 생성
+// 트랜잭션 안에서 ensureDefaultEntitlements/applyLedgerTransaction을 직접 호출해야 하고,
+// 그때 새 트랜잭션을 또 열면(경쟁 트랜잭션) 아직 커밋되지 않은 신규 계정을 참조하지
+// 못하거나 전체 원자성이 깨진다. 아래는 그 threading이 실제로 이뤄지는지 fake db로
+// 검증한다 — 실제 MySQL의 FK/원자성 검증은 backend/tests/db/f08-economy.integration.test.js
+// 몫이다.
+
+test('CODEX-2(AC-03): applyLedgerTransaction이 외부(부모) 트랜잭션을 받으면 새 트랜잭션을 열지 않고 그 위에서 실행된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-parent-tx';
+    const originalTransaction = db.sequelize.transaction;
+    let transactionCallCount = 0;
+    db.sequelize.transaction = (fn) => { transactionCallCount += 1; return originalTransaction(fn); };
+
+    await db.sequelize.transaction(async (t) => {
+        await economyService.__internal.applyLedgerTransaction(db, {
+            userId, reason: 'TEST_SEED', currency: CURRENCIES.GOLD, amount: 100,
+            referenceEventId: `parent-tx-${userId}`,
+        }, { transaction: t });
+    });
+
+    assert.equal(transactionCallCount, 1, '부모 트랜잭션 하나만 열려야 하고, 내부에서 경쟁하는 새 트랜잭션을 추가로 열면 안 된다');
+    const wallet = db._inspect.walletsByUser.get(userId);
+    assert.equal(wallet.balance_gold, 100);
+});
+
+test('CODEX-2(AC-03): 부모 트랜잭션이 이후 단계에서 실패해 롤백되면 그 안에서 일어난 지갑 갱신도 함께 되돌려진다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-parent-tx-rollback';
+    await grantBalance(db, userId, 500); // 사전 시드(별도 트랜잭션, 이미 커밋됨)
+
+    await assert.rejects(
+        () => db.sequelize.transaction(async (t) => {
+            await economyService.__internal.applyLedgerTransaction(db, {
+                userId, reason: 'TEST_SEED', currency: CURRENCIES.GOLD, amount: 300,
+                referenceEventId: `parent-tx-rollback-${userId}`,
+            }, { transaction: t });
+            // 회원가입이라면 이 뒤에 오는 다른 단계(예: 세션 발급)가 실패하는 상황을 흉내낸다.
+            throw new Error('시뮬레이션된 계정 생성 실패(이후 단계)');
+        }),
+        /시뮬레이션된 계정 생성 실패/,
+    );
+
+    const wallet = db._inspect.walletsByUser.get(userId);
+    assert.equal(wallet.balance_gold, 500, '부모 트랜잭션이 롤백되면 그 안에서 일어난 지갑 갱신도 되돌려져야 한다');
+});
+
+test('CODEX-2(AC-03): ensureDefaultEntitlements도 외부 트랜잭션을 받으면 같은 트랜잭션 위에서 기본 지급을 모두 마친다(회원가입 훅 흉내)', async () => {
+    const db = createFakeDb();
+    const userId = 'user-signup-parent-tx';
+
+    await db.sequelize.transaction(async (t) => {
+        await economyService.ensureDefaultEntitlements(userId, db, { transaction: t });
+    });
+
+    const granted = db._inspect.entitlements.filter((e) => e.user_id === userId);
+    assert.equal(granted.length, 17, '부모 트랜잭션 안에서도 기본 프로필 16종 + 평민 테두리 1종이 모두 지급되어야 한다');
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '부모 트랜잭션 안에서도 기본 선택값이 채워져야 한다');
+    assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
 });
