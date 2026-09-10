@@ -447,23 +447,38 @@ exports.discordLinkStart = async (req, res, next) => {
         );
         res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
 
-        res.redirect(discordOAuthService.buildAuthorizationUrl(state));
+        // AC-04 R-IMPL #2: 연결은 로그인과 다른 콜백(DISCORD_LINK_REDIRECT_URI)으로 등록되어
+        // 있어야 한다 — 이 인가 URL과 아래 콜백의 코드 교환이 정확히 같은 purpose를 써서
+        // 같은 redirect_uri를 쓰게 한다(discordOAuth.service.js resolveRedirectUri 참고).
+        res.redirect(discordOAuthService.buildAuthorizationUrl(state, { purpose: "link" }));
     } catch (error) {
         next(error);
     }
 };
 
 // 연결 콜백 — 로그인 콜백(discordAuthCallback)과 달리 세션을 새로 발급하지 않는다(이미
-// 로그인해 있다, verifyToken이 그 인증을 강제한다). linkExternalIdentity(F-05)는 state 소비와
-// identity 생성을 하나의 트랜잭션으로 묶어 처리하므로, 로그인 콜백처럼 소비를 먼저 분리해
-// 커밋하지 않는다 — 취소(사용자가 Discord 동의 화면에서 취소)만 예외로, 그 경우엔 연결을
-// 시도할 내용이 없으므로 독립 소비(exports.consumeOAuthState)로 state만 재사용 불가 처리한다.
+// 로그인해 있다, verifyToken이 그 인증을 강제한다).
+//
+// R-IMPL #3 재검토 지적: 이전 버전은 코드 교환(exchangeCodeForProfile)을 먼저 부르고 나서야
+// socialAuthService.linkExternalIdentity가 state를 소비했다 — 위조/불일치/만료/재사용
+// state도 일단 Discord 네트워크 호출까지 가고 나서야 거부됐다. 로그인 콜백(R-IMPL #3)과 같은
+// 순서로 맞춘다: state 소비와 "지금 인증된 사용자/세션으로 발급된 state인지" 바인딩 확인을
+// Discord를 부르기 전에 먼저, 그리고 독립적으로 커밋한다 — 취소든 정상이든 이 한 곳에서만
+// consumeOAuthState를 부르므로 더 이상 취소 분기를 따로 나눌 필요가 없다. state 소비가 끝난
+// 뒤의 나머지(현재 세션 재확인 → identity 조회/생성)만 하는
+// socialAuthService.linkExternalIdentityForValidatedSession을 쓴다 — 기존
+// socialAuthService.linkExternalIdentity(rawState를 받아 그 안에서 직접 소비하는 계약)를
+// 그대로 다시 부르면 위에서 이미 커밋한 state를 또 소비하려다 STATE_REUSED로 스스로 거부된다.
 exports.discordLinkCallback = async (req, res, next) => {
     const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
     res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(OAUTH_ATTEMPT_TTL_SECONDS));
 
+    // CODEX-2 재검토 지적: 연결(link)은 AccountPage(DiscordAccountLink.jsx)에서 로그인한
+    // 사용자가 직접 시작한 흐름이다 — 그 결과(성공/취소/실패)를 아무도 소비하지 않는 /lobby에
+    // 그대로 얹어두지 않고, 흐름이 시작된 실제 화면(/account)으로 돌려보내 그 화면이
+    // socialLinkSuccess/socialLinkError를 읽고 지우게 한다(DiscordAccountLink.jsx 참고).
     const frontendBase = process.env.FRONTEND_URL;
-    const redirectWithError = (code) => res.redirect(`${frontendBase}/lobby?socialLinkError=${encodeURIComponent(code)}`);
+    const redirectWithError = (code) => res.redirect(`${frontendBase}/account?socialLinkError=${encodeURIComponent(code)}`);
 
     try {
         // purpose/provider가 일치하지 않으면(다른 왕복의 쿠키를 들이민 경우 포함) fp를
@@ -471,29 +486,45 @@ exports.discordLinkCallback = async (req, res, next) => {
         const browserFingerprint = attempt?.purpose === "link" && attempt?.provider === "discord" ? attempt.fp : undefined;
         const rawState = req.query.state;
 
+        // 1) state 소비를 먼저, 그리고 유일하게 커밋한다 — Discord를 부르기 전에 끝난다
+        // (R-IMPL #3). 누락/위조/만료/재사용/지문 불일치/용도 불일치는 모두 여기서 걸러져
+        // 코드 교환까지 가지 않는다.
+        const consumed = await socialAuthService.consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
+
+        // 2) 이 state가 "지금" 인증된 사용자·세션에게 발급된 것인지 확인한다 — req.user는
+        // verifyToken이 이 요청 자체에서 방금 검증한 값이므로, 다른 세션이 발급받은 link
+        // state를 이 콜백에 들이밀 수 없다(재검토 지적, 기존 linkExternalIdentity의
+        // STATE_USER_MISMATCH 검증과 같은 원칙 — 제공자 호출보다 먼저 수행한다).
+        if (consumed.userId !== req.user.uuid || consumed.sessionId !== req.user.sessionId) {
+            const error = new Error("연결 요청 세션과 state 발급 세션이 일치하지 않습니다.");
+            error.status = 400; error.code = "STATE_USER_MISMATCH";
+            throw error;
+        }
+
+        // Discord도 사용자가 동의 화면에서 취소하면 code 대신 error를 실어 돌려준다 — state는
+        // 이미 위에서 소비했으므로(재사용 방지) 여기서는 그대로 취소로 종료한다.
         if (req.query.error !== undefined) {
-            await socialAuthService.consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
             const error = new Error("사용자가 계정 연결을 취소했습니다.");
             error.status = 400; error.code = "OAUTH_CANCELLED";
             throw error;
         }
 
+        // 3) state가 유효했을 때만, 그리고 오직 연결 전용 redirect_uri로만 Discord를 부른다.
         // 서버가 실제로 Discord와 교환해 검증한 subject/email만 연결에 쓴다 — 이 요청은
         // code 외에 다른 신원 파라미터를 아예 받지 않으므로, 클라이언트가 subject/email을
         // 주장할 수 있는 입력 자체가 없다.
-        const profile = await discordOAuthService.exchangeCodeForProfile(req.query.code);
+        const profile = await discordOAuthService.exchangeCodeForProfile(req.query.code, { purpose: "link" });
 
-        await socialAuthService.linkExternalIdentity({
+        // 4) 위에서 이미 검증·소비한 state를 다시 소비하지 않는 전용 함수로 연결만 수행한다.
+        await socialAuthService.linkExternalIdentityForValidatedSession({
             userId: req.user.uuid,
             sessionId: req.user.sessionId,
             provider: "discord",
             subject: profile.subject,
             email: profile.email,
-            rawState,
-            browserFingerprint,
         });
 
-        return res.redirect(`${frontendBase}/lobby?socialLinkSuccess=discord`);
+        return res.redirect(`${frontendBase}/account?socialLinkSuccess=discord`);
     } catch (error) {
         if (!error?.code) {
             console.error('\x1b[31m%s\x1b[0m', error?.stack || error);

@@ -11,6 +11,10 @@ const { once } = require("node:events");
 process.env.DISCORD_CLIENT_ID     = process.env.DISCORD_CLIENT_ID     || "adapter-test-client-id";
 process.env.DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "adapter-test-client-secret";
 process.env.DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI  || "https://backend.example.test/auth/discord/callback";
+// AC-04 R-IMPL #2: 로그인 후 명시적 연결(link)은 로그인과 다른 콜백으로 Discord Developer
+// Portal에 등록되어야 한다 — 같은 값을 쓰면 실제 Discord는 그 한 콜백으로만 돌려주므로
+// link로 시작한 왕복도 로그인 콜백(purpose:link를 거부한다)으로 떨어진다.
+process.env.DISCORD_LINK_REDIRECT_URI = process.env.DISCORD_LINK_REDIRECT_URI || "https://backend.example.test/auth/discord/link/callback";
 
 const discordOAuthService = require("../service/discordOAuth.service");
 
@@ -237,4 +241,51 @@ test("DISCORD_CLIENT_ID/REDIRECT_URI가 설정되어 있으면 인가 URL에 하
     assert.match(url, /client_id=env-client-id/);
     assert.match(url, /redirect_uri=https/);
     assert.match(url, /state=state-abc/);
+});
+
+// ── CODEX-2 재검토 지적 #2: 연결(link)은 로그인과 별개의 redirect_uri를 써야 한다 ────────
+
+test("purpose:link로 인가 URL을 만들면 DISCORD_REDIRECT_URI가 아니라 DISCORD_LINK_REDIRECT_URI가 실린다(AC-04)", async (t) => {
+    const loginUrl = discordOAuthService.buildAuthorizationUrl("state-login", { purpose: "login" });
+    const linkUrl  = discordOAuthService.buildAuthorizationUrl("state-link", { purpose: "link" });
+
+    const loginRedirect = new URL(loginUrl).searchParams.get("redirect_uri");
+    const linkRedirect  = new URL(linkUrl).searchParams.get("redirect_uri");
+
+    assert.equal(loginRedirect, process.env.DISCORD_REDIRECT_URI);
+    assert.equal(linkRedirect, process.env.DISCORD_LINK_REDIRECT_URI);
+    assert.notEqual(linkRedirect, loginRedirect,
+        "로그인과 연결이 같은 redirect_uri를 쓰면 실제 Discord가 항상 로그인 콜백으로만 돌려줘 link 콜백이 purpose:link를 거부하게 된다");
+});
+
+test("DISCORD_LINK_REDIRECT_URI가 없으면 DISCORD_REDIRECT_URI가 설정되어 있어도 purpose:link 인가 URL 생성은 설정 오류로 거부된다", async (t) => {
+    const original = process.env.DISCORD_LINK_REDIRECT_URI;
+    delete process.env.DISCORD_LINK_REDIRECT_URI;
+    t.after(() => {
+        if (original === undefined) delete process.env.DISCORD_LINK_REDIRECT_URI; else process.env.DISCORD_LINK_REDIRECT_URI = original;
+    });
+
+    assert.throws(
+        () => discordOAuthService.buildAuthorizationUrl("state-link", { purpose: "link" }),
+        (error) => error.code === "DISCORD_OAUTH_NOT_CONFIGURED",
+    );
+});
+
+test("purpose:link로 코드를 교환하면 토큰 요청 본문의 redirect_uri가 DISCORD_LINK_REDIRECT_URI다(AC-04, OAuth 명세: 인가 URL 발급 때와 같은 redirect_uri여야 한다)", async (t) => {
+    let tokenRequestBody = null;
+    const base = await startMockDiscord(t, {
+        tokenHandler: (req, res, body) => {
+            tokenRequestBody = body;
+            jsonHandler(200, { access_token: "link-access-token-1" })(req, res);
+        },
+        meHandler: jsonHandler(200, { id: "discord-id-link-1", email: "link@example.com", verified: true }),
+    });
+    withFetchRedirectedTo(t, base);
+
+    const profile = await discordOAuthService.exchangeCodeForProfile("link-auth-code", { purpose: "link" });
+
+    assert.deepEqual(profile, { subject: "discord-id-link-1", email: "link@example.com" });
+    const params = new URLSearchParams(tokenRequestBody);
+    assert.equal(params.get("redirect_uri"), process.env.DISCORD_LINK_REDIRECT_URI);
+    assert.notEqual(params.get("redirect_uri"), process.env.DISCORD_REDIRECT_URI);
 });

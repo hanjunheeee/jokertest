@@ -31,11 +31,22 @@ const readRequiredEnv = (name) => {
     return value;
 };
 
+// R-IMPL #2(AC-04): 로그인(login)과 로그인 후 명시적 연결(link)은 Discord Developer
+// Portal에 서로 다른 콜백(redirect_uri)으로 등록되어야 한다 — 둘이 같은 값을 쓰면, link로
+// 시작한 왕복도 실제 Discord는 그 한 콜백으로만 돌려주므로 로그인 콜백(discordAuthCallback,
+// purpose:link를 받아들이지 않는다)으로 떨어져 버린다. 인가 URL 발급과 토큰 교환은 OAuth
+// 명세상 반드시 같은 redirect_uri를 써야 하므로, 아래 두 함수 모두 이 헬퍼 하나로 purpose에
+// 맞는 값을 읽는다 — 호출부가 각자 다른 이름을 읽어 둘이 어긋날 여지를 없앤다.
+const resolveRedirectUri = (purpose) =>
+    purpose === "link" ? readRequiredEnv("DISCORD_LINK_REDIRECT_URI") : readRequiredEnv("DISCORD_REDIRECT_URI");
+
 // 로그인 시작 — 사용자를 Discord 동의 화면으로 보낼 URL을 만든다. state는 이미
 // socialAuthService.issueOAuthState(F-05)가 발급한 원문을 그대로 받아 그대로 실어 보낸다.
-exports.buildAuthorizationUrl = (state) => {
+// purpose는 "login"(기본값) 또는 "link" — user.controller.js discordLinkStart가 "link"를
+// 넘겨 위 resolveRedirectUri가 DISCORD_LINK_REDIRECT_URI를 쓰게 한다.
+exports.buildAuthorizationUrl = (state, { purpose = "login" } = {}) => {
     const clientId    = readRequiredEnv("DISCORD_CLIENT_ID");
-    const redirectUri = readRequiredEnv("DISCORD_REDIRECT_URI");
+    const redirectUri = resolveRedirectUri(purpose);
 
     const params = new URLSearchParams({
         client_id:     clientId,
@@ -56,14 +67,16 @@ exports.buildAuthorizationUrl = (state) => {
 // 반환하는 값만 socialAuthService.resolveOAuthAccount에 전달되므로, subject·email은 반드시
 // 이 함수 안에서 Discord 서버가 확인해 준 값이어야 한다 — 클라이언트가 주장한 값을 그대로
 // 통과시키면 F-05 A-03(제공자 식별자로만 조회)이 무너진다.
-exports.exchangeCodeForProfile = async (code) => {
+exports.exchangeCodeForProfile = async (code, { purpose = "login" } = {}) => {
     if (typeof code !== "string" || !code) {
         throw createError("인가 코드가 없습니다.", 400, "DISCORD_CODE_MISSING");
     }
 
     const clientId     = readRequiredEnv("DISCORD_CLIENT_ID");
     const clientSecret = readRequiredEnv("DISCORD_CLIENT_SECRET");
-    const redirectUri   = readRequiredEnv("DISCORD_REDIRECT_URI");
+    // OAuth 명세상 토큰 교환의 redirect_uri는 인가 URL 발급 때와 정확히 같아야 한다 — 같은
+    // purpose 기반 헬퍼로 읽어 두 값이 어긋날 여지를 없앤다(위 buildAuthorizationUrl 참고).
+    const redirectUri  = resolveRedirectUri(purpose);
 
     let tokenResponse;
     try {

@@ -278,7 +278,16 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememb
 // 통과, issueOAuthState 참고). 재검토 지적: userId만 신뢰하면 "그 값이 발급 이후에도 계속
 // 유효했다"는 것을 보장하지 못한다 — state에 결합된 sessionId가 소비(콜백) 시점에도 여전히
 // 활성 상태인지 다시 확인해, 발급과 소비 사이에 로그아웃·세션 폐기가 있었다면 거부한다.
-exports.linkExternalIdentity = async ({ userId, sessionId, provider, subject, email, rawState, browserFingerprint }) => {
+// F-07 R-IMPL #3 재검토 지적: discordLinkCallback(user.controller.js)은 이제 state 소비를
+// 제공자 호출보다 먼저, 그리고 독립적으로 커밋한다(googleAuthCallback/discordAuthCallback과
+// 같은 이유 — 위조/불일치/만료/재사용 state가 Discord 네트워크 호출까지 가지 않게 한다).
+// 그래서 "state 소비가 이미 끝난 뒤" 남은 절차(현재 세션이 여전히 유효한지 재확인 → identity
+// 조회/생성)만 하는 함수가 필요하다 — 아래 exports.linkExternalIdentity(rawState를 받아 그
+// 안에서 직접 소비하는 기존 계약)를 그대로 다시 부르면 이미 커밋된 state를 또 소비하려다
+// STATE_REUSED로 스스로 거부된다. userId/sessionId는 호출부가 이미 state 소비 결과와 "지금
+// 인증된 사용자"를 대조해 바인딩을 확인한 뒤 넘기는 값이어야 한다(user.controller.js
+// discordLinkCallback 참고) — 이 함수는 그 대조를 다시 하지 않는다.
+const linkExternalIdentityForValidatedSession = async ({ userId, sessionId, provider, subject, email }) => {
     if (!userId || !sessionId) {
         throw createError("로그인이 필요합니다.", 401);
     }
@@ -287,14 +296,9 @@ exports.linkExternalIdentity = async ({ userId, sessionId, provider, subject, em
     }
 
     return await userRepository.withTransaction(async (transaction) => {
-        const consumed = await consumeOAuthStateTx(rawState, { browserFingerprint, purpose: "link" }, transaction);
-        if (consumed.userId !== userId || consumed.sessionId !== sessionId) {
-            throw createError("연결 요청 세션과 state 발급 세션이 일치하지 않습니다.", 400, "STATE_USER_MISMATCH");
-        }
-
-        // 콜백(소비) 시점의 유효한 인증을 이 자리에서 다시 확인한다 — state 자체가 유효해도,
-        // 발급 이후 로그아웃·비밀번호 변경으로 인한 전체 세션 폐기·정지 등으로 이 세션이
-        // 이미 무효화됐다면 연결을 완료시키지 않는다(재검토 지적).
+        // state 소비(콜백 도착) 시점 이후에도 이 세션이 여전히 유효한지 다시 확인한다 —
+        // state 자체가 유효해도, 발급 이후 로그아웃·비밀번호 변경으로 인한 전체 세션 폐기·
+        // 정지 등으로 이 세션이 이미 무효화됐다면 연결을 완료시키지 않는다(재검토 지적).
         const activeSession = await userRepository.findActiveSession(sessionId, userId);
         if (!activeSession) {
             throw createError("세션이 만료되었거나 폐기되었습니다. 다시 로그인해주세요.", 401, "SESSION_REVOKED");
@@ -317,4 +321,23 @@ exports.linkExternalIdentity = async ({ userId, sessionId, provider, subject, em
             email_snapshot: typeof email === "string" && email.trim() ? email.trim() : null,
         }, { transaction });
     });
+};
+exports.linkExternalIdentityForValidatedSession = linkExternalIdentityForValidatedSession;
+
+// 기존 계약(F-05, f05-social-auth.integration.test.js가 직접 검증) — rawState를 받아 이
+// 함수 안에서 직접 소비까지 한 번에 처리한다. 이제 위 조각(linkExternalIdentityForValidatedSession)
+// 위에 state 소비 단계만 앞에 더해 그대로 재구성한다 — 오류 코드·순서·최종 동작은 이전과
+// 동일하게 유지된다(재사용 호출부를 위해 그대로 남겨둔다, discordLinkCallback은 더 이상 이
+// 함수를 쓰지 않는다 — 위 주석 참고).
+exports.linkExternalIdentity = async ({ userId, sessionId, provider, subject, email, rawState, browserFingerprint }) => {
+    if (!userId || !sessionId) {
+        throw createError("로그인이 필요합니다.", 401);
+    }
+
+    const consumed = await exports.consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
+    if (consumed.userId !== userId || consumed.sessionId !== sessionId) {
+        throw createError("연결 요청 세션과 state 발급 세션이 일치하지 않습니다.", 400, "STATE_USER_MISMATCH");
+    }
+
+    return linkExternalIdentityForValidatedSession({ userId, sessionId, provider, subject, email });
 };

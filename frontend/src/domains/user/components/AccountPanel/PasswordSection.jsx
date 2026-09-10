@@ -1,17 +1,19 @@
 import AuthInputSlot, { LockIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
 import {
   ACCOUNT_PANEL_ACTION_ROW_CLASS,
+  ACCOUNT_PANEL_DIVIDER_SECTION_CLASS,
   ACCOUNT_PANEL_FORM_CLASS,
   ACCOUNT_PANEL_HEADING_CLASS,
-  ACCOUNT_PANEL_SECTION_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
 import ConfirmButton from "@/domains/user/components/AccountPanel/ConfirmButton.jsx"
 import FeedbackMsg from "@/domains/user/components/AccountPanel/FeedbackMsg.jsx"
 
 // 비밀번호 변경 입력칸과 제출 버튼을 묶은 섹션입니다.
+// F-07: 이 섹션 아래에 DiscordAccountLink 섹션이 추가되어 더 이상 마지막 섹션이 아니므로,
+// 다른 섹션과의 경계를 보여주는 구분선 스타일을 씁니다(AccountPanel.jsx 참고).
 export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoading, onSubmit }) {
   return (
-    <section className={ACCOUNT_PANEL_SECTION_CLASS}>
+    <section className={ACCOUNT_PANEL_DIVIDER_SECTION_CLASS}>
       <h3 className={ACCOUNT_PANEL_HEADING_CLASS}>비밀번호 변경</h3>
 
       <form onSubmit={onSubmit} className={ACCOUNT_PANEL_FORM_CLASS}>

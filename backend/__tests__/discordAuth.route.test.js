@@ -37,7 +37,7 @@ const socialAuthService  = require("../service/socialAuth.service");
 const discordOAuthService = require("../service/discordOAuth.service");
 const userRepository     = require("../repositories/user.repositories");
 
-const SOCIAL_KEYS  = ["issueOAuthState", "consumeOAuthState", "resolveOAuthAccount", "linkExternalIdentity"];
+const SOCIAL_KEYS  = ["issueOAuthState", "consumeOAuthState", "resolveOAuthAccount", "linkExternalIdentityForValidatedSession"];
 const DISCORD_KEYS = ["buildAuthorizationUrl", "exchangeCodeForProfile"];
 const REPO_KEYS     = ["findActiveSession", "checkActiveBan"];
 
@@ -553,25 +553,43 @@ test("GET /auth/discord/link은 인증된 사용자의 uuid/sessionId로 purpose
     assert.equal(issueArgs.purpose, "link");
     assert.equal(issueArgs.userId, LINK_UUID, "요청 body가 아니라 인증된 세션의 uuid만 써야 합니다");
     assert.equal(issueArgs.sessionId, LINK_SESSION_ID, "요청 body가 아니라 인증된 세션의 sessionId만 써야 합니다");
-    assert.equal(discord.lastCall("buildAuthorizationUrl").args[0], "link-raw-state-1");
+    const buildArgs = discord.lastCall("buildAuthorizationUrl").args;
+    assert.equal(buildArgs[0], "link-raw-state-1");
+    assert.equal(buildArgs[1]?.purpose, "link",
+        "CODEX-2 재검토 지적: 연결 시작은 로그인과 다른 redirect_uri를 쓰도록 purpose:link를 넘겨야 합니다");
 
     const decoded = decodedAttemptCookie(res.headers);
     assert.equal(decoded.purpose, "link");
     assert.equal(decoded.provider, "discord");
 });
 
-test("GET /auth/discord/link/callback 성공 시 서버가 검증한 subject/email만 linkExternalIdentity에 전달하고 세션 쿠키 변경 없이 성공 리다이렉트한다(AC-04)", async (t) => {
+// CODEX-2 재검토 지적 #2/#3: discordLinkCallback은 이제 state 소비를 제공자 호출보다 먼저
+// 커밋하고, 그 소비 결과(userId/sessionId)가 지금 인증된 사용자와 일치하는지도 Discord를
+// 부르기 전에 확인한다 — 그래서 아래 테스트들은 socialAuthService.linkExternalIdentity가
+// 아니라 consumeOAuthState(먼저 호출)·linkExternalIdentityForValidatedSession(그 다음에만
+// 호출)을 스텁한다.
+
+test("GET /auth/discord/link/callback 성공 시 state 소비가 코드 교환보다 먼저 일어나고, 서버가 검증한 subject/email만 linkExternalIdentityForValidatedSession에 전달하며 세션 쿠키 변경 없이 성공 리다이렉트한다(AC-04, R-IMPL #3 순서)", async (t) => {
     stubAuthGate(t);
+    const callOrder = [];
     const discord = stubModule(t, discordOAuthService, DISCORD_KEYS, {
         buildAuthorizationUrl: (state) => `https://discord.com/api/oauth2/authorize?state=${state}`,
-        exchangeCodeForProfile: async (code) => {
+        exchangeCodeForProfile: async (code, opts) => {
+            callOrder.push("exchange");
             assert.equal(code, "link-code-1");
+            assert.equal(opts?.purpose, "link", "연결 콜백은 link 전용 redirect_uri로 교환해야 합니다");
             return { subject: "discord-sub-verified", email: "verified@discord.example" };
         },
     });
     const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {
         issueOAuthState: async () => ({ state: "link-state-1", expiresAt: new Date() }),
-        linkExternalIdentity: async () => ({ provider: "discord", subject: "discord-sub-verified", user_id: LINK_UUID }),
+        consumeOAuthState: async (rawState, opts) => {
+            callOrder.push("consume");
+            assert.equal(rawState, "link-state-1");
+            assert.equal(opts?.purpose, "link");
+            return { purpose: "link", userId: LINK_UUID, sessionId: LINK_SESSION_ID };
+        },
+        linkExternalIdentityForValidatedSession: async () => ({ provider: "discord", subject: "discord-sub-verified", user_id: LINK_UUID }),
     });
     const base = await startServer(t);
 
@@ -582,10 +600,11 @@ test("GET /auth/discord/link/callback 성공 시 서버가 검증한 subject/ema
     });
 
     assert.equal(res.statusCode, 302);
-    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/lobby?socialLinkSuccess=discord`);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkSuccess=discord`);
     assert.equal(findSetCookie(res.headers, "accessToken"), undefined, "연결은 새 세션을 발급하면 안 됩니다(이미 로그인해 있다)");
+    assert.deepEqual(callOrder, ["consume", "exchange"], "state 소비가 제공자 호출보다 먼저 일어나야 합니다(R-IMPL #3)");
 
-    const linkArgs = social.lastCall("linkExternalIdentity").args[0];
+    const linkArgs = social.lastCall("linkExternalIdentityForValidatedSession").args[0];
     assert.equal(linkArgs.userId, LINK_UUID);
     assert.equal(linkArgs.sessionId, LINK_SESSION_ID);
     assert.equal(linkArgs.provider, "discord");
@@ -602,7 +621,8 @@ test("이미 다른 계정에 연결된 identity는 GET /auth/discord/link/callb
     });
     stubModule(t, socialAuthService, SOCIAL_KEYS, {
         issueOAuthState: async () => ({ state: "link-state-owned", expiresAt: new Date() }),
-        linkExternalIdentity: async () => {
+        consumeOAuthState: async () => ({ purpose: "link", userId: LINK_UUID, sessionId: LINK_SESSION_ID }),
+        linkExternalIdentityForValidatedSession: async () => {
             const error = new Error("이미 다른 계정에 연결된 소셜 계정입니다.");
             error.status = 409; error.code = "IDENTITY_ALREADY_LINKED";
             throw error;
@@ -617,10 +637,30 @@ test("이미 다른 계정에 연결된 identity는 GET /auth/discord/link/callb
     });
 
     assert.equal(res.statusCode, 302);
-    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/lobby?socialLinkError=IDENTITY_ALREADY_LINKED`);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=IDENTITY_ALREADY_LINKED`);
 });
 
-test("연결을 취소하면(error 파라미터) state는 소비되지만 linkExternalIdentity는 호출되지 않고, 같은 state는 재사용할 수 없다(AC-04)", async (t) => {
+test("연결 요청 세션과 state 발급 세션이 다르면 Discord를 부르기 전에 STATE_USER_MISMATCH로 거부된다(AC-04, R-IMPL #3: 제공자 호출 전에 바인딩을 확인한다)", async (t) => {
+    stubAuthGate(t);
+    const discord = stubModule(t, discordOAuthService, DISCORD_KEYS, {
+        exchangeCodeForProfile: async () => { throw new Error("바인딩이 일치하지 않으면 호출되면 안 됩니다"); },
+    });
+    const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {
+        consumeOAuthState: async () => ({ purpose: "link", userId: "other-uuid", sessionId: "other-session" }),
+    });
+    const base = await startServer(t);
+
+    const res = await rawGet(base, "/auth/discord/link/callback?code=c&state=s", {
+        cookie: `${linkAccessTokenCookie()}; oauthAttempt=${jwt.sign({ fp: "link-fp-1", purpose: "link", provider: "discord" }, process.env.JWT_SECRET, { expiresIn: 600 })}`,
+    });
+
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=STATE_USER_MISMATCH`);
+    assert.equal(discord.calls.length, 0, "바인딩이 일치하지 않으면 Discord 코드 교환을 시도하면 안 됩니다");
+    assert.equal(social.calls.filter((c) => c.name === "linkExternalIdentityForValidatedSession").length, 0);
+});
+
+test("연결을 취소하면(error 파라미터) state는 소비되지만 linkExternalIdentityForValidatedSession은 호출되지 않고, 같은 state는 재사용할 수 없다(AC-04)", async (t) => {
     stubAuthGate(t);
     const discord = stubModule(t, discordOAuthService, DISCORD_KEYS, {
         exchangeCodeForProfile: async () => { throw new Error("취소된 콜백에서는 호출되면 안 됩니다"); },
@@ -634,9 +674,9 @@ test("연결을 취소하면(error 파라미터) state는 소비되지만 linkEx
                 throw error;
             }
             consumed.add(rawState);
-            return { purpose: "link" };
+            return { purpose: "link", userId: LINK_UUID, sessionId: LINK_SESSION_ID };
         },
-        linkExternalIdentity: async () => { throw new Error("취소된 콜백에서는 호출되면 안 됩니다"); },
+        linkExternalIdentityForValidatedSession: async () => { throw new Error("취소된 콜백에서는 호출되면 안 됩니다"); },
     });
     const base = await startServer(t);
 
@@ -644,13 +684,13 @@ test("연결을 취소하면(error 파라미터) state는 소비되지만 linkEx
     const first = await rawGet(base, "/auth/discord/link/callback?error=access_denied&state=cancel-state-1", {
         cookie: `${cookie}; oauthAttempt=${jwt.sign({ fp: "link-fp-1", purpose: "link", provider: "discord" }, process.env.JWT_SECRET, { expiresIn: 600 })}`,
     });
-    assert.equal(first.headers.location, `${process.env.FRONTEND_URL}/lobby?socialLinkError=OAUTH_CANCELLED`);
+    assert.equal(first.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=OAUTH_CANCELLED`);
     assert.equal(discord.calls.length, 0);
-    assert.equal(social.calls.filter((c) => c.name === "linkExternalIdentity").length, 0);
+    assert.equal(social.calls.filter((c) => c.name === "linkExternalIdentityForValidatedSession").length, 0);
 
     const second = await rawGet(base, "/auth/discord/link/callback?error=access_denied&state=cancel-state-1", {
         cookie: `${cookie}; oauthAttempt=${jwt.sign({ fp: "link-fp-1", purpose: "link", provider: "discord" }, process.env.JWT_SECRET, { expiresIn: 600 })}`,
     });
-    assert.equal(second.headers.location, `${process.env.FRONTEND_URL}/lobby?socialLinkError=STATE_REUSED`,
+    assert.equal(second.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=STATE_REUSED`,
         "취소된 콜백도 state를 소비해야 같은 state로의 재시도가 막힙니다");
 });
