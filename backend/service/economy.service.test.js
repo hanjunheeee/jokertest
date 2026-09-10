@@ -1,22 +1,31 @@
 'use strict';
 
 // F-08 economy.service.js 단위 시험. 실제 MySQL 없이도 AC-01(동시 구매 무결성)·
-// AC-02(재처리 방지 키)·AC-03(기본 지급)·AC-04(서버 가격 신뢰)·AC-05(소유권·종류 검증)를
-// 검증하기 위해, Sequelize 모델과 같은 호출 계약({find,create,update,lock} 등)만 흉내
-// 내는 인메모리 fake db를 주입한다(backend/service/concurrency.service.js가 이미 쓰는
-// model 주입 패턴과 같다). 지갑 행 잠금(SELECT ... FOR UPDATE)은 사용자별 순서 큐로
-// 흉내 내, 서비스가 실제로 "잠금 → 소유 여부 확인" 순서를 지키는지까지 검증한다 — 순서가
-// 반대라면(소유 여부를 먼저 확인) 이 fake에서도 AC-01 시험이 실패한다.
+// AC-02(재처리 방지 키)·AC-03(기본 지급)·AC-04(서버 가격 신뢰)·AC-05(소유권·종류 검증)·
+// AC-06(계정 격리)를 검증하기 위해, Sequelize 모델과 같은 호출 계약({find,create,update,
+// lock} 등)만 흉내 내는 인메모리 fake db를 주입한다(backend/service/concurrency.service.js가
+// 이미 쓰는 model 주입 패턴과 같다). 지갑 행 잠금(SELECT ... FOR UPDATE)은 사용자별 순서
+// 큐로 흉내 내, 서비스가 실제로 "잠금 → 재처리 방지 재확인 → 소유 여부 확인" 순서를
+// 지키는지까지 검증한다 — 순서가 어긋나면(소유 여부를 먼저 확인하거나, 재확인을 잠금 밖
+// 에서만 한다) 이 fake에서도 AC-01/AC-02 시험이 실패한다.
 //
 // 실제 MySQL 유일 제약·행 잠금 자체를 검증하는 통합 시험은
 // backend/tests/db/f08-economy.integration.test.js에 있다(F01_TEST_DATABASE_URL이
 // 없으면 미검증으로 skip — f01~f07과 같은 관례).
+//
+// R-IMPL(2026-09-10, 반송) 대응: 이전 버전은 참조 사건 ID를 계정과 무관하게 전역
+// 조회했다 — 다른 계정이 같은 참조 사건 ID를 제출하면 그 계정의 원장 행을 그대로
+// 돌려받았고(계정 간 정보 노출, AC-06), 같은 계정이 같은 키를 다른 내용으로 재전송해도
+// "성공"을 잘못 돌려줬다(AC-02). fake의 EconomyLedgerEntry는 이제 (user_id,
+// reference_event_id) 복합 키로만 조회·유일성을 판정해, 실제 모델의 복합 유일 인덱스와
+// 같은 계약을 흉내낸다.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const economyService = require('./economy.service');
 const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../economy/catalog');
+const { CURRENCIES } = economyService;
 
 const createFakeDb = () => {
     const walletsByUser = new Map();
@@ -38,7 +47,7 @@ const createFakeDb = () => {
     };
 
     const EconomyWallet = {
-        async create({ user_id, balance_gold }) {
+        async create({ user_id, balance_gold, balance_diamond }) {
             if (walletsByUser.has(user_id)) {
                 const error = new Error('duplicate wallet');
                 error.name = 'SequelizeUniqueConstraintError';
@@ -47,6 +56,7 @@ const createFakeDb = () => {
             const record = {
                 user_id,
                 balance_gold,
+                balance_diamond,
                 async update(patch, options = {}) {
                     if (options.transaction) {
                         const before = { ...record };
@@ -103,20 +113,30 @@ const createFakeDb = () => {
         },
     };
 
+    // 실제 모델의 (user_id, reference_event_id) 복합 유일 인덱스와 같은 계약: 조회·중복
+    // 판정 모두 계정 범위로 좁힌다 — 그래야 다른 계정이 같은 문자열을 재사용해도 서로
+    // 간섭하지 않는다는 것을 이 fake로도 검증할 수 있다.
+    let ledgerCreateInterceptor = null;
     const EconomyLedgerEntry = {
-        async create({ user_id, reason, item_id, amount, balance_after, reference_event_id }) {
-            if (ledgerEntries.some((e) => e.reference_event_id === reference_event_id)) {
-                const error = new Error('duplicate reference_event_id');
+        async create(fields) {
+            const { user_id, reason, item_id, currency, amount, balance_after, reference_event_id } = fields;
+            if (ledgerCreateInterceptor) {
+                const interceptor = ledgerCreateInterceptor;
+                ledgerCreateInterceptor = null;
+                await interceptor(fields);
+            }
+            if (ledgerEntries.some((e) => e.user_id === user_id && e.reference_event_id === reference_event_id)) {
+                const error = new Error('duplicate reference_event_id for this account');
                 error.name = 'SequelizeUniqueConstraintError';
                 throw error;
             }
-            const record = { id: nextLedgerId++, user_id, reason, item_id, amount, balance_after, reference_event_id, created_at: new Date() };
+            const record = { id: nextLedgerId++, user_id, reason, item_id, currency, amount, balance_after, reference_event_id, created_at: new Date() };
             ledgerEntries.push(record);
             return record;
         },
         async findOne({ where }) {
             if (!where.reference_event_id) return null;
-            return ledgerEntries.find((e) => e.reference_event_id === where.reference_event_id) ?? null;
+            return ledgerEntries.find((e) => e.user_id === where.user_id && e.reference_event_id === where.reference_event_id) ?? null;
         },
         async findAll({ where, limit }) {
             const rows = ledgerEntries.filter((e) => e.user_id === where.user_id).slice().reverse();
@@ -143,14 +163,18 @@ const createFakeDb = () => {
         sequelize,
         EconomyLedgerEntry,
         _inspect: { walletsByUser, ledgerEntries, entitlements },
+        // 테스트가 다음 한 번의 EconomyLedgerEntry.create 호출 직전에 임의의 실패를
+        // 주입할 수 있게 한다("injected write failure" 롤백 시험용).
+        _interceptNextLedgerCreate: (fn) => { ledgerCreateInterceptor = fn; },
     };
 };
 
 const PURCHASABLE_ITEM_ID = 'profile-border-남작'; // priceGold 200
 const PURCHASABLE_ITEM_PRICE = 200;
+const OTHER_PURCHASABLE_ITEM_ID = 'profile-border-자작'; // priceGold 300
 
-const grantBalance = async (db, userId, amountGold) => {
-    await economyService.grantReward({ userId, amountGold, reason: 'TEST_SEED', referenceEventId: `seed:${userId}:${amountGold}:${Math.random()}` }, db);
+const grantBalance = async (db, userId, amount, currency = CURRENCIES.GOLD) => {
+    await economyService.grantReward({ userId, amount, currency, reason: 'TEST_SEED', referenceEventId: `seed:${userId}:${amount}:${Math.random()}` }, db);
 };
 
 // ── AC-01: 동시 구매 무결성 ──────────────────────────────────────────────────
@@ -181,6 +205,20 @@ test('AC-01: 같은 계정으로 동일 상품을 동시에 두 번 구매 요�
 
     const ownedCount = db._inspect.entitlements.filter((e) => e.user_id === userId && e.item_id === PURCHASABLE_ITEM_ID).length;
     assert.equal(ownedCount, 1, '소유권이 중복 부여되면 안 된다');
+});
+
+test('AC-01: 같은 계정으로 서로 다른 참조 사건 ID의 서로 다른 지급 요청은 둘 다 독립적으로 성공한다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-ac01-different-keys';
+
+    const results = await Promise.allSettled([
+        economyService.grantReward({ userId, amount: 100, referenceEventId: `key-a-${userId}` }, db),
+        economyService.grantReward({ userId, amount: 250, referenceEventId: `key-b-${userId}` }, db),
+    ]);
+
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 2, '서로 다른 키의 지급은 서로 간섭하지 않고 둘 다 성공해야 한다');
+    const wallet = db._inspect.walletsByUser.get(userId);
+    assert.equal(wallet.balance_gold, 350);
 });
 
 // ── AC-02: 재처리 방지 키 ────────────────────────────────────────────────────
@@ -214,6 +252,100 @@ test('AC-02: 기본 지급을 두 번 호출해도 계정당 한 번만 지급�
     assert.equal(grantedForUser.length, 17, '중복 없이 17종(프로필 16 + 테두리 1)만 보유해야 한다');
 });
 
+test('AC-02(R-IMPL): 같은 계정이 같은 참조 사건 ID를 다른 상품 구매에 재사용하면 이전 결과를 노출하지 않고 거부된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-ac02-mismatch';
+    await grantBalance(db, userId, 1000);
+    const referenceEventId = `shared-key-${userId}`;
+
+    const first = await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId }, db);
+    assert.equal(first.idempotent, false);
+
+    await assert.rejects(
+        () => economyService.purchaseItem({ userId, itemId: OTHER_PURCHASABLE_ITEM_ID, referenceEventId }, db),
+        (error) => error.status === 409 && error.code === 'REFERENCE_EVENT_CONFLICT'
+            // 이전 요청의 상품·금액 등 내용이 에러에 실려서는 안 된다(재사용 응답에 원래
+            // 결과를 노출하지 않는다).
+            && error.ledgerEntry === undefined
+            && !JSON.stringify(error).includes(PURCHASABLE_ITEM_ID),
+    );
+
+    // 거부된 재사용 시도가 두 번째 상품을 실제로 지급하면 안 된다.
+    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === userId && e.item_id === OTHER_PURCHASABLE_ITEM_ID).length, 0);
+});
+
+test('AC-02/AC-06(R-IMPL): 같은 참조 사건 ID 문자열을 다른 계정이 제출해도 서로의 원장에 영향을 주지 않는다', async () => {
+    const db = createFakeDb();
+    const userA = 'user-ac06-a';
+    const userB = 'user-ac06-b';
+    const sharedReferenceEventId = 'shared-across-accounts';
+
+    await grantBalance(db, userA, 500);
+    await grantBalance(db, userB, 500);
+
+    const resultA = await economyService.purchaseItem({ userId: userA, itemId: PURCHASABLE_ITEM_ID, referenceEventId: sharedReferenceEventId }, db);
+    // 이전 버전의 결함: 전역 조회가 userA의 원장 행을 찾아 userB에게 "idempotent 성공"으로
+    // 그대로 돌려줬다(계정 간 정보 노출). 지금은 userB의 조회가 자기 계정 범위로 좁혀져
+    // userA의 행을 절대 보지 못하고, 완전히 독립된 새 구매로 처리되어야 한다.
+    const resultB = await economyService.purchaseItem({ userId: userB, itemId: PURCHASABLE_ITEM_ID, referenceEventId: sharedReferenceEventId }, db);
+
+    assert.equal(resultA.idempotent, false);
+    assert.equal(resultB.idempotent, false, 'userB의 요청은 userA의 결과를 재사용한 것이 아니라 독립적으로 새로 처리되어야 한다');
+    assert.notEqual(resultA.ledgerEntry.id, resultB.ledgerEntry.id);
+    assert.equal(resultA.ledgerEntry.user_id, userA);
+    assert.equal(resultB.ledgerEntry.user_id, userB);
+
+    const walletA = db._inspect.walletsByUser.get(userA);
+    const walletB = db._inspect.walletsByUser.get(userB);
+    assert.equal(walletA.balance_gold, 500 - PURCHASABLE_ITEM_PRICE);
+    assert.equal(walletB.balance_gold, 500 - PURCHASABLE_ITEM_PRICE);
+});
+
+test('AC-02(R-IMPL): 동시에 들어온 같은 참조 사건 ID 재시도는 하나만 실제로 처리되고 나머지는 같은 커밋 결과를 돌려받는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-ac02-concurrent-same-key';
+    await grantBalance(db, userId, 1000);
+    const referenceEventId = `concurrent-${userId}`;
+
+    const results = await Promise.all([
+        economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId }, db),
+        economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId }, db),
+        economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId }, db),
+    ]);
+
+    const nonIdempotent = results.filter((r) => r.idempotent === false);
+    const idempotent = results.filter((r) => r.idempotent === true);
+    assert.equal(nonIdempotent.length, 1, '실제 처리는 정확히 한 번이어야 한다');
+    assert.equal(idempotent.length, 2, '나머지는 재처리 없이 같은 커밋 결과를 돌려받아야 한다');
+    for (const r of results) assert.equal(r.ledgerEntry.id, nonIdempotent[0].ledgerEntry.id);
+
+    const wallet = db._inspect.walletsByUser.get(userId);
+    assert.equal(wallet.balance_gold, 1000 - PURCHASABLE_ITEM_PRICE, '동시 재시도가 중복 차감을 일으키면 안 된다');
+});
+
+test('AC-02(R-IMPL): 지갑 갱신 뒤 원장 기록에서 실제 쓰기 실패가 나면 지갑 잔액이 롤백된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-ac02-rollback';
+    await grantBalance(db, userId, 1000);
+    const ledgerCountBeforeFailure = db._inspect.ledgerEntries.filter((e) => e.user_id === userId).length;
+
+    db._interceptNextLedgerCreate(() => { throw new Error('시뮬레이션된 DB 쓰기 실패'); });
+
+    await assert.rejects(
+        () => economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `rollback-${userId}` }, db),
+        /시뮬레이션된 DB 쓰기 실패/,
+    );
+
+    const wallet = db._inspect.walletsByUser.get(userId);
+    assert.equal(wallet.balance_gold, 1000, '지갑 갱신 이후 실패한 트랜잭션은 잔액을 원래대로 되돌려야 한다');
+    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === userId).length, 0, '실패한 트랜잭션은 소유권도 부여하면 안 된다');
+    assert.equal(
+        db._inspect.ledgerEntries.filter((e) => e.user_id === userId).length,
+        ledgerCountBeforeFailure,
+        '실패한 원장 기록 자체는 남으면 안 된다(실패 전 시드 지급 원장만 남아 있어야 한다)',
+    );
+});
+
 // ── AC-03: 기본 프로필/테두리 지급 + 기본 선택값 ────────────────────────────
 
 test('AC-03: 신규/기존 계정 모두 기본 프로필 16종 + 평민 테두리 1종을 보유하고 기본 선택은 금빛가면이다', async () => {
@@ -233,6 +365,8 @@ test('AC-03: 신규/기존 계정 모두 기본 프로필 16종 + 평민 테두�
 
     assert.equal(summary.loadout.selectedProfilePhotoId, DEFAULT_PROFILE_PHOTO_ID);
     assert.equal(summary.loadout.selectedProfileBorderId, DEFAULT_PROFILE_BORDER_ID);
+    assert.equal(summary.balanceGold, 0);
+    assert.equal(summary.balanceDiamond, 0, 'F-08 요구사항: DIAMOND 잔액도 초기값 0이어야 한다');
 });
 
 test('A-04: 이미 유효한 선택값이 있는 계정은 기본 지급 시에도 선택값이 바뀌지 않는다', async () => {
@@ -244,7 +378,6 @@ test('A-04: 이미 유효한 선택값이 있는 계정은 기본 지급 시에�
 
     await economyService.ensureDefaultEntitlements(userId, db);
 
-    const loadout = db._inspect.walletsByUser; // sanity: wallet 존재 확인용 접근 아님
     const summary = await economyService.getWalletSummary(userId, db);
     assert.equal(summary.loadout.selectedProfilePhotoId, 'player-profile-기사', '기존 유효 선택을 덮어쓰면 안 된다');
 });
@@ -277,6 +410,40 @@ test('AC-04: 카탈로그에 없거나 구매 불가한 상품은 거부된다',
     await assert.rejects(
         () => economyService.purchaseItem({ userId, itemId: '../../etc/passwd', referenceEventId: `req-b-${userId}` }, db),
         (error) => error.code === 'ITEM_NOT_PURCHASABLE',
+    );
+});
+
+test('AC-04(F-08 요구사항): DIAMOND 재화 지급은 balance_diamond만 바꾸고 GOLD는 그대로 둔다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-ac04-diamond';
+
+    const result = await economyService.grantReward({ userId, amount: 50, currency: CURRENCIES.DIAMOND, referenceEventId: `diamond-${userId}` }, db);
+    assert.equal(result.idempotent, false);
+    assert.equal(result.ledgerEntry.currency, CURRENCIES.DIAMOND);
+
+    const wallet = db._inspect.walletsByUser.get(userId);
+    assert.equal(wallet.balance_diamond, 50);
+    assert.equal(wallet.balance_gold, 0, 'DIAMOND 지급이 GOLD 잔액을 바꾸면 안 된다');
+});
+
+test('금액이 안전한 정수 범위를 벗어나면 지갑을 건드리기 전에 거부된다(오버플로 방지)', async () => {
+    const db = createFakeDb();
+    const userId = 'user-overflow';
+
+    await assert.rejects(
+        () => economyService.grantReward({ userId, amount: 2_000_000_000, referenceEventId: `overflow-${userId}` }, db),
+        (error) => error.code === 'AMOUNT_OUT_OF_RANGE',
+    );
+    assert.equal(db._inspect.walletsByUser.has(userId), false, '거부된 요청은 지갑 행조차 만들면 안 된다');
+});
+
+test('알 수 없는 재화(currency)로 지급하면 거부된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-bad-currency';
+
+    await assert.rejects(
+        () => economyService.grantReward({ userId, amount: 100, currency: 'BITCOIN', referenceEventId: `bad-${userId}` }, db),
+        (error) => error.code === 'INVALID_CURRENCY',
     );
 });
 

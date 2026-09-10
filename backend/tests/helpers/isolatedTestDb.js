@@ -47,20 +47,27 @@ const assertDedicatedTestDatabase = async (sequelize, url) => {
 };
 
 // baseline(F-01) + refresh_token_history(F-03) + social auth 3개 테이블(F-05) +
-// schema_migrations을 한 번에 조립한다. social 테이블·refresh_token_history 모두 users
-// (또는 user_sessions)를 참조하는 자식이므로, baseline 역순(부모인 users를 맨 마지막에
-// 드롭)보다 먼저 드롭해야 FK 제약에 걸리지 않는다.
-const buildManagedSchema = ({ baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner }) => {
+// economy 4개 테이블(F-08, 선택) + schema_migrations을 한 번에 조립한다. social/economy
+// 테이블·refresh_token_history 모두 users(또는 user_sessions)를 참조하는 자식이므로,
+// baseline 역순(부모인 users를 맨 마지막에 드롭)보다 먼저 드롭해야 FK 제약에 걸리지 않는다.
+//
+// addEconomy는 선택 인자다(F-08 R-IMPL: economy_* 테이블도 이 공유 관리 목록에 편입해
+// f01~f07이 이 테이블의 존재를 몰라 거부하던 문제를 없앤다). 넘기지 않으면 이전과 완전히
+// 같은 동작이라 f01~f07·user.accountPaths 호출부를 고칠 필요가 없다.
+const buildManagedSchema = ({ baseline, addRefreshTokenHistory, addSocialAuth, addEconomy, migrationRunner }) => {
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
+    const economyTables = addEconomy ? Object.values(addEconomy.TABLE_NAMES) : [];
 
     const managedTables = [
         ...baseline.TABLE_ORDER,
         addRefreshTokenHistory.TABLE_NAME,
         ...socialTables,
+        ...economyTables,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        ...economyTables,
         ...socialTables,
         addRefreshTokenHistory.TABLE_NAME,
         ...[...baseline.TABLE_ORDER].reverse(),

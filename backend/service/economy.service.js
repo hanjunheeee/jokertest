@@ -11,10 +11,21 @@
 // 풀린 뒤에야 진행되고, 그 시점엔 이미 소유 중이라는 것을 보고 즉시 거부된다 — 잠금보다
 // 먼저 소유 여부를 확인하면 이 보장이 깨진다.
 //
-// 재처리 방지(AC-02): reference_event_id는 economy_ledger_entries에 전역 유일 제약이
-// 걸려 있다. 같은 참조 사건 ID로 재전송되면 먼저 가벼운 사전 조회로 거의 항상 잡아내고,
-// 정말 동시에 들어와 사전 조회를 둘 다 통과한 경우에도 두 번째 INSERT가 유일 제약에서
-// 실패해 이미 처리된 결과를 그대로 돌려준다(중복 지급 없음).
+// 재처리 방지(AC-02)/계정 격리(AC-06) — R-IMPL(2026-09-10) 반송 수정:
+// 이전 버전은 reference_event_id만으로(계정 무관) 전역 조회해 기존 원장 행을 그대로
+// 돌려줬다. 그러면 (a) 다른 계정이 남의 참조 사건 ID를 그대로 제출하면 그 계정의 원장
+// 행을 조회해 돌려받고(계정 간 정보 노출, AC-06 위반), (b) 같은 계정이 같은 키를 다른
+// 내용(다른 상품·다른 금액)으로 재전송해도 예전 결과를 "성공"으로 잘못 돌려줬다. 지금은
+// (user_id, reference_event_id) 조합으로만 조회·유일 제약을 걸고, 기존 행을 찾으면 반드시
+// 지금 요청과 같은 조작(reason·itemId·currency·amount)인지 확인한다 — 같은 계정이 같은
+// 키를 다른 내용으로 재사용하면 이전 결과를 노출하지 않고 일반화된 409로 거부한다(payload
+// mismatch, no disclosure). 다른 계정이 같은 키 문자열을 쓰는 것은 애초에 "재사용"이 아니라
+// 완전히 독립된 요청으로 취급된다(조회 자체가 계정 범위이므로).
+//
+// 이 재확인은 지갑 잠금을 잡은 "뒤에", 소유 여부·잔액 검증보다 "먼저" 한 번 더 실행된다
+// (recheck-after-lock). 그래야 동시에 들어온 같은 키 재시도가 서로 경합해도, 늦게 잠금을
+// 얻은 쪽은 소유권/잔액을 다시 따지지 않고 먼저 커밋된 원래 결과를 그대로 돌려받는다 —
+// 순서가 반대(소유권 검사가 먼저)면 늦은 쪽이 "이미 보유함"으로 잘못 거부될 수 있다.
 
 const {
     ITEM_TYPES,
@@ -26,6 +37,25 @@ const {
 const { createError } = require('../utils/appError');
 
 const FREE_CARD_FRAME_ID = 'player-card-베이스';
+
+// F-08 요구사항: GOLD·DIAMOND 두 재화 모두 정수 잔액을 갖는다(초기값 0/0). 현재 구매
+// 가능한 코스메틱은 모두 GOLD로만 판매한다(현금 충전·재화 패키지 판매는 이 슬라이스
+// 범위 밖) — purchaseItem은 항상 CURRENCIES.GOLD로 applyLedgerTransaction을 호출한다.
+const CURRENCIES = Object.freeze({ GOLD: 'GOLD', DIAMOND: 'DIAMOND' });
+
+const CURRENCY_TO_WALLET_COLUMN = Object.freeze({
+    GOLD: 'balance_gold',
+    DIAMOND: 'balance_diamond',
+});
+
+// MySQL INTEGER(부호 있는 32비트, 최대 약 21억)의 실제 컬럼 범위보다 충분히 작게 잡아,
+// 잔액 갱신(currentBalance + amount)이 오버플로되지 않게 두 번 확인한다: 요청 자체의
+// amount가 이 범위를 벗어나면 지갑을 건드리기 전에 즉시 거부하고, 갱신 후 잔액도 이
+// 범위를 넘으면 마찬가지로 거부한다.
+const MAX_BALANCE = 1_000_000_000;
+
+const isValidCurrency = (currency) => Object.prototype.hasOwnProperty.call(CURRENCY_TO_WALLET_COLUMN, currency);
+const isBoundedAmount = (amount) => Number.isInteger(amount) && Number.isSafeInteger(amount) && Math.abs(amount) <= MAX_BALANCE;
 
 const SLOT_TO_ITEM_TYPE = {
     PROFILE_PHOTO: ITEM_TYPES.PROFILE_PHOTO,
@@ -49,36 +79,56 @@ const economyModels = (db) => ({
 
 const defaultDb = () => require('../models');
 
-/** 지갑 행이 없으면 잔액 0으로 만들어 둔다 — 잠금 트랜잭션 밖에서 미리 실행해, 잠금
- *  트랜잭션 안에서는 항상 SELECT ... FOR UPDATE만 하면 되게 한다. */
+/** 지갑 행이 없으면 두 재화 모두 잔액 0으로 만들어 둔다 — 잠금 트랜잭션 밖에서 미리
+ *  실행해, 잠금 트랜잭션 안에서는 항상 SELECT ... FOR UPDATE만 하면 되게 한다. */
 const ensureWalletRow = async (db, userId) => {
     const models = economyModels(db);
     try {
-        await models.EconomyWallet.create({ user_id: userId, balance_gold: 0 });
+        await models.EconomyWallet.create({ user_id: userId, balance_gold: 0, balance_diamond: 0 });
     } catch (error) {
         if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
     }
 };
 
+/** 기존 원장 행이 지금 요청과 같은 조작인지 확인한다 — 같지 않으면 같은 참조 사건 ID가
+ *  다른 내용으로 재사용된 것이다(AC-02 payload mismatch). */
+const payloadMatches = (entry, { reason, itemId, currency, amount }) =>
+    entry.reason === reason
+    && (entry.item_id ?? null) === (itemId ?? null)
+    && entry.currency === currency
+    && entry.amount === amount;
+
+const referenceEventConflictError = () =>
+    createError('참조 사건 ID가 이미 다른 요청에 사용되었습니다.', 409, 'REFERENCE_EVENT_CONFLICT');
+
 /**
- * 지갑 잠금 → (필요하면) 소유 여부 확인 → 잔액 검증 → 지갑 갱신 → 원장 기록 →
- * (필요하면) 소유권 부여를 하나의 트랜잭션으로 실행한다. amount는 양수(지급)/음수(차감)
- * 모두 가능하다.
+ * 지갑 잠금 → (다시 한번) 재처리 방지 확인 → (필요하면) 소유 여부 확인 → 잔액 검증 →
+ * 지갑 갱신 → 원장 기록 → (필요하면) 소유권 부여를 하나의 트랜잭션으로 실행한다. amount는
+ * 양수(지급)/음수(차감) 모두 가능하다.
  */
 const applyLedgerTransaction = async (db, {
-    userId, reason, amount, itemId = null, itemType = null, referenceEventId, entitlementSource = null,
+    userId, reason, currency, amount, itemId = null, itemType = null, referenceEventId, entitlementSource = null,
 }) => {
     if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
     }
-    if (!Number.isInteger(amount)) {
-        throw createError('금액은 정수여야 합니다.', 400, 'INVALID_AMOUNT');
+    if (!isValidCurrency(currency)) {
+        throw createError('알 수 없는 재화입니다.', 400, 'INVALID_CURRENCY');
+    }
+    if (!isBoundedAmount(amount)) {
+        throw createError('금액이 허용 범위를 벗어난 정수여야 합니다.', 400, 'AMOUNT_OUT_OF_RANGE');
     }
 
     const models = economyModels(db);
+    const payload = { reason, itemId, currency, amount };
 
-    const preExisting = await models.EconomyLedgerEntry.findOne({ where: { reference_event_id: referenceEventId } });
+    // 계정 범위 사전 조회(최적화) — 대부분의 재전송은 이 단계에서 잡힌다. 진짜 동시
+    // 요청처럼 이 조회를 둘 다 통과하는 경우는 아래 잠금 안 재확인이 마저 처리한다.
+    const preExisting = await models.EconomyLedgerEntry.findOne({
+        where: { user_id: userId, reference_event_id: referenceEventId },
+    });
     if (preExisting) {
+        if (!payloadMatches(preExisting, payload)) throw referenceEventConflictError();
         return { idempotent: true, ledgerEntry: preExisting };
     }
 
@@ -92,6 +142,18 @@ const applyLedgerTransaction = async (db, {
                 lock: t.LOCK.UPDATE,
             });
 
+            // 잠금을 잡은 뒤 재확인(recheck-after-lock) — 소유권/잔액 검증보다 먼저 한다.
+            // 동시에 들어온 같은 키 재시도가 이 지갑 잠금 뒤에서 대기했다면, 앞선 요청이
+            // 이미 커밋한 결과를 그대로 돌려받아야 한다(소유권 재검사로 잘못 거부되면 안 됨).
+            const committed = await models.EconomyLedgerEntry.findOne({
+                where: { user_id: userId, reference_event_id: referenceEventId },
+                transaction: t,
+            });
+            if (committed) {
+                if (!payloadMatches(committed, payload)) throw referenceEventConflictError();
+                return { idempotent: true, ledgerEntry: committed };
+            }
+
             if (itemId) {
                 const owned = await models.EconomyEntitlement.findOne({
                     where: { user_id: userId, item_id: itemId },
@@ -102,12 +164,16 @@ const applyLedgerTransaction = async (db, {
                 }
             }
 
-            const newBalance = wallet.balance_gold + amount;
+            const column = CURRENCY_TO_WALLET_COLUMN[currency];
+            const newBalance = wallet[column] + amount;
             if (newBalance < 0) {
                 throw createError('잔액이 부족합니다.', 400, 'INSUFFICIENT_BALANCE');
             }
+            if (newBalance > MAX_BALANCE) {
+                throw createError('잔액 한도를 초과했습니다.', 400, 'BALANCE_LIMIT_EXCEEDED');
+            }
 
-            await wallet.update({ balance_gold: newBalance }, { transaction: t });
+            await wallet.update({ [column]: newBalance }, { transaction: t });
 
             let ledgerEntry;
             try {
@@ -115,6 +181,7 @@ const applyLedgerTransaction = async (db, {
                     user_id: userId,
                     reason,
                     item_id: itemId,
+                    currency,
                     amount,
                     balance_after: newBalance,
                     reference_event_id: referenceEventId,
@@ -138,12 +205,17 @@ const applyLedgerTransaction = async (db, {
                 }, { transaction: t });
             }
 
-            return { idempotent: false, ledgerEntry, walletBalanceGold: newBalance };
+            return { idempotent: false, ledgerEntry, walletBalance: newBalance };
         });
     } catch (error) {
         if (error?.code === 'DUPLICATE_REFERENCE_EVENT') {
-            const existing = await models.EconomyLedgerEntry.findOne({ where: { reference_event_id: referenceEventId } });
-            if (existing) return { idempotent: true, ledgerEntry: existing };
+            const existing = await models.EconomyLedgerEntry.findOne({
+                where: { user_id: userId, reference_event_id: referenceEventId },
+            });
+            if (existing) {
+                if (!payloadMatches(existing, payload)) throw referenceEventConflictError();
+                return { idempotent: true, ledgerEntry: existing };
+            }
         }
         throw error;
     }
@@ -168,8 +240,8 @@ const ensureDefaultLoadout = async (db, userId) => {
 
 /** 기본 프로필 16종 + 평민 테두리 1종을 중복 없이 지급한다(AC-03). 기존 계정·신규 계정
  *  모두 이 함수를 호출하는 경로(지갑 조회 등)를 타면 되므로, 별도의 가입 훅이 없어도
- *  두 경우 모두 커버된다. 이미 지급된 항목은 원장의 reference_event_id 유일 제약으로
- *  조용히 건너뛴다. */
+ *  두 경우 모두 커버된다. 이미 지급된 항목은 원장의 (user_id, reference_event_id) 유일
+ *  제약으로 조용히 건너뛴다. */
 const ensureDefaultEntitlements = async (userId, db = defaultDb()) => {
     for (const item of listDefaultGrantItems()) {
         const referenceEventId = `default-grant:${userId}:${item.id}`;
@@ -177,6 +249,7 @@ const ensureDefaultEntitlements = async (userId, db = defaultDb()) => {
             await applyLedgerTransaction(db, {
                 userId,
                 reason: 'DEFAULT_GRANT',
+                currency: CURRENCIES.GOLD,
                 amount: 0,
                 itemId: item.id,
                 itemType: item.type,
@@ -205,6 +278,7 @@ const getWalletSummary = async (userId, db = defaultDb()) => {
 
     return {
         balanceGold: wallet ? wallet.balance_gold : 0,
+        balanceDiamond: wallet ? wallet.balance_diamond : 0,
         entitlements: entitlements.map((row) => ({
             itemId: row.item_id,
             itemType: row.item_type,
@@ -230,6 +304,7 @@ const listTransactions = async (userId, { limit = 50 } = {}, db = defaultDb()) =
         id: row.id,
         reason: row.reason,
         itemId: row.item_id,
+        currency: row.currency,
         amount: row.amount,
         balanceAfter: row.balance_after,
         referenceEventId: row.reference_event_id,
@@ -238,7 +313,8 @@ const listTransactions = async (userId, { limit = 50 } = {}, db = defaultDb()) =
 };
 
 /** 클라이언트가 보낸 가격은 절대 읽지 않는다 — priceGold는 항상 카탈로그 조회값이다
- *  (AC-04). itemId가 카탈로그에 없거나 구매 불가 상품이면 즉시 거부한다. */
+ *  (AC-04). itemId가 카탈로그에 없거나 구매 불가 상품이면 즉시 거부한다. 현재 구매
+ *  가능한 코스메틱은 모두 GOLD로만 판매한다(현금·재화 패키지 판매 제외). */
 const purchaseItem = async ({ userId, itemId, referenceEventId }, db = defaultDb()) => {
     const catalogItem = getCatalogItem(itemId);
     if (!catalogItem || catalogItem.purchasable !== true) {
@@ -248,6 +324,7 @@ const purchaseItem = async ({ userId, itemId, referenceEventId }, db = defaultDb
     return applyLedgerTransaction(db, {
         userId,
         reason: 'PURCHASE',
+        currency: CURRENCIES.GOLD,
         amount: -catalogItem.priceGold,
         itemId: catalogItem.id,
         itemType: catalogItem.type,
@@ -256,14 +333,18 @@ const purchaseItem = async ({ userId, itemId, referenceEventId }, db = defaultDb
     });
 };
 
-/** QA/운영 보상 지급 — role 검사는 라우트 계층 책임이다. amountGold는 호출부(라우트)가
- *  서버 내부 정책으로 결정하는 값으로, 이 함수 자체는 일반 사용자 요청에서 직접
- *  호출되지 않는다. */
-const grantReward = async ({ userId, amountGold, reason = 'REWARD', referenceEventId }, db = defaultDb()) => {
-    if (!Number.isInteger(amountGold) || amountGold <= 0) {
-        throw createError('amountGold는 1 이상의 정수여야 합니다.', 400, 'INVALID_AMOUNT');
+/** QA/운영 보상 지급 — role 검사는 라우트 계층 책임이다(실제 계정 데이터 기준, 라우트
+ *  참고). currency는 GOLD/DIAMOND 중 하나를 명시해야 하며 기본값은 GOLD다. amount는
+ *  1 이상의 정수만 허용한다(음수·0 지급은 이 경로의 목적이 아니다) — 상한·안전 정수
+ *  검증은 applyLedgerTransaction이 공통으로 담당한다. */
+const grantReward = async ({ userId, amount, currency = CURRENCIES.GOLD, reason = 'REWARD', referenceEventId }, db = defaultDb()) => {
+    if (!isValidCurrency(currency)) {
+        throw createError('알 수 없는 재화입니다.', 400, 'INVALID_CURRENCY');
     }
-    return applyLedgerTransaction(db, { userId, reason, amount: amountGold, referenceEventId });
+    if (!Number.isInteger(amount) || amount <= 0) {
+        throw createError('amount는 1 이상의 정수여야 합니다.', 400, 'INVALID_AMOUNT');
+    }
+    return applyLedgerTransaction(db, { userId, reason, currency, amount, referenceEventId });
 };
 
 /** 소유권·아이템 종류를 검증한 뒤에만 장착한다(AC-05). itemId가 카탈로그에 없는
@@ -303,6 +384,7 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
 };
 
 module.exports = {
+    CURRENCIES,
     FREE_CARD_FRAME_ID,
     SLOT_TO_ITEM_TYPE,
     ensureDefaultEntitlements,

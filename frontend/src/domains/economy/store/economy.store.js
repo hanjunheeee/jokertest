@@ -2,6 +2,15 @@
 // 소유품·장착 상태를 backend/routes/economy.routes.js에서 복원한다. 도메인 관례상 API
 // 호출은 별도 *.api.js로 감싸지만, 이 작업의 계획된 새 파일은 이 store 하나뿐이라(수정
 // 범위 문서) fetch 호출을 이 파일 안에 그대로 둔다.
+//
+// R-IMPL(2026-09-10, 반송) 대응 — 계정 격리: 이전 버전은 로그아웃/계정 전환에 전혀
+// 반응하지 않았다. 로그아웃해도 이전 계정의 잔액·소유품·pendingPurchases가 그대로 남고,
+// 이전 계정에 대한 fetch/purchase/equip 응답이 나중에 도착하면(응답 유실 후 지연 도착 등)
+// 그 사이 로그인한 다음 계정의 상태를 덮어쓸 수 있었다. requestGeneration을 계정
+// 전환/로그아웃마다 증가시키고, 모든 비동기 완료 지점에서 "요청을 시작한 시점의
+// generation"과 "지금 generation"을 비교해 다르면(그 사이 계정이 바뀌었다면) 응답을
+// 조용히 버린다 — 어느 계정이 요청했는지와 무관하게, 지금 로그인된 계정과 다른 데이터로
+// 화면을 덮어쓰는 일을 막는다.
 import { create } from "zustand"
 
 import { api } from "../../../shared/api/client.js"
@@ -15,13 +24,16 @@ const initialLoadout = {
 
 const initialState = {
   balanceGold: 0,
+  balanceDiamond: 0,
   entitlements: [],
   loadout: initialLoadout,
   status: "idle", // idle | loading | ready | error
   error: null,
   // itemId별 구매 진행 상태. referenceEventId를 유지해 응답 유실 후 재시도가 같은
   // 참조 사건 ID를 재사용하게 한다(백엔드 재처리 방지 키, F-08 AC-02) — 그래야 "성공했는지
-  // 모르는 채로 재시도"해도 서버가 중복 지급하지 않는다.
+  // 모르는 채로 재시도"해도 서버가 중복 지급하지 않는다. status는 pending(진행 중)|
+  // confirmed(서버가 성공 응답)|rejected(서버가 명시적으로 거부, code 있음)|unknown(응답을
+  // 받지 못함 — 성공/실패를 알 수 없는 전송 불확실 상태) 중 하나다.
   pendingPurchases: {},
 }
 
@@ -32,6 +44,7 @@ const buildReferenceEventId = (userId, itemId) =>
 
 export const useEconomyStore = create((set, get) => ({
   ...initialState,
+  requestGeneration: 0,
 
   /** 지갑 잔액·소유품·장착 상태를 서버에서 다시 읽어온다. */
   fetchSummary: async () => {
@@ -41,20 +54,26 @@ export const useEconomyStore = create((set, get) => ({
       return
     }
 
+    const generation = get().requestGeneration
     set({ status: "loading", error: null })
     try {
       const [wallet, entitlementsResponse] = await Promise.all([
         api.get(`/economy/accounts/${userId}/wallet`),
         api.get(`/economy/accounts/${userId}/entitlements`),
       ])
+      // 응답이 도착하기 전에 로그아웃했거나 다른 계정으로 전환됐다면, 이 응답은 더 이상
+      // "현재 계정"의 것이 아니다 — 화면 상태를 덮어쓰지 않고 조용히 버린다.
+      if (get().requestGeneration !== generation) return
       set({
         balanceGold: wallet.balanceGold,
+        balanceDiamond: wallet.balanceDiamond,
         entitlements: entitlementsResponse.entitlements,
         loadout: entitlementsResponse.loadout,
         status: "ready",
         error: null,
       })
     } catch (error) {
+      if (get().requestGeneration !== generation) return
       set({ status: "error", error: error.message ?? "지갑 정보를 불러오지 못했습니다." })
     }
   },
@@ -67,49 +86,88 @@ export const useEconomyStore = create((set, get) => ({
     const userId = resolveUserId()
     if (!userId) throw new Error("로그인이 필요합니다.")
 
+    const generation = get().requestGeneration
     const existingPending = get().pendingPurchases[itemId]
-    const referenceEventId = existingPending?.referenceEventId ?? buildReferenceEventId(userId, itemId)
+    // 응답 유실(전송 불확실, status "unknown")로 남은 대기만 같은 참조 사건 ID를
+    // 재사용한다 — 서버가 이미 확정적으로 거부한(rejected) 시도는 결과가 이미 확정됐으므로
+    // 다음 시도는 새 참조 사건 ID로 취급한다.
+    const referenceEventId = existingPending?.status === "unknown"
+      ? existingPending.referenceEventId
+      : buildReferenceEventId(userId, itemId)
 
     set((state) => ({
       pendingPurchases: {
         ...state.pendingPurchases,
-        [itemId]: { referenceEventId, status: "pending", error: null },
+        [itemId]: { referenceEventId, status: "pending", error: null, code: null },
       },
     }))
 
     try {
       const result = await api.post("/economy/purchase", { itemId, referenceEventId })
+      if (get().requestGeneration !== generation) return result
       set((state) => ({
         pendingPurchases: {
           ...state.pendingPurchases,
-          [itemId]: { referenceEventId, status: "confirmed", error: null },
+          [itemId]: { referenceEventId, status: "confirmed", error: null, code: null },
         },
       }))
       await get().fetchSummary()
       return result
     } catch (error) {
-      // 네트워크가 끊겨 응답을 못 받았을 수도, 서버가 정말 거부했을 수도 있다 — 어느
-      // 쪽인지 이 시점엔 알 수 없으므로 referenceEventId는 지우지 않는다. retryPurchase가
-      // 같은 참조 사건 ID로 재시도하면 서버가 중복 지급 없이 안전하게 같은 결과를 돌려준다.
+      if (get().requestGeneration !== generation) throw error
+
+      // backend/utils/appError.js의 createError는 서버가 실제로 처리해 거부한 응답에
+      // 항상 code를 싣는다(handleApiResponse/toApiError, shared/api/response.js). code가
+      // 있으면 "서버가 응답했고 명시적으로 거부했다"는 확정된 사실이고, code가 없으면
+      // fetch 자체가 실패했거나(네트워크 단절 등 TypeError) 응답을 받지 못한 것이라
+      // 성공/실패를 알 수 없는 전송 불확실 상태다 — 이 둘을 구분해야 재시도 전략(같은
+      // 참조 사건 ID 재사용 여부)이 달라진다(F-08 R-IMPL: "distinguish confirmed server
+      // rejection from transport uncertainty").
+      const confirmedRejection = typeof error.code === "string" && error.code.length > 0
       set((state) => ({
         pendingPurchases: {
           ...state.pendingPurchases,
-          [itemId]: { referenceEventId, status: "unknown", error: error.message ?? "구매 요청에 실패했습니다." },
+          [itemId]: {
+            referenceEventId,
+            status: confirmedRejection ? "rejected" : "unknown",
+            error: error.message ?? (confirmedRejection ? "구매가 거부되었습니다." : "구매 요청에 실패했습니다."),
+            code: confirmedRejection ? error.code : null,
+          },
         },
       }))
       throw error
     }
   },
 
-  /** 응답을 잃어버린(status "unknown") 구매를 같은 참조 사건 ID로 재시도한다. */
+  /** 응답을 잃어버렸거나(unknown) 거부된(rejected) 구매를 다시 시도한다. unknown이면
+   *  같은 참조 사건 ID를 재사용하고, rejected면 새 시도로 취급해 새 참조 사건 ID를 쓴다. */
   retryPurchase: (itemId) => get().purchase({ itemId }),
 
   /** @param {{ slot: "PROFILE_PHOTO" | "PROFILE_BORDER" | "PLAYER_CARD_FRAME", itemId: string }} params */
   equip: async ({ slot, itemId }) => {
+    const generation = get().requestGeneration
     const result = await api.post("/economy/equip", { slot, itemId })
+    if (get().requestGeneration !== generation) return result
     set((state) => ({ loadout: { ...state.loadout, ...result.loadout } }))
     return result
   },
 
-  reset: () => set({ ...initialState, pendingPurchases: {} }),
+  /** 계정 경계를 넘는 모든 상태를 지우고 진행 중이던 요청들을 전부 무효화한다
+   *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 계정의 응답은 전부 무시된다. */
+  reset: () => set((state) => ({
+    ...initialState,
+    pendingPurchases: {},
+    requestGeneration: state.requestGeneration + 1,
+  })),
 }))
+
+// 로그아웃(user → null)이든 다른 계정으로 전환(uuid 변경)이든, 계정 식별자가 바뀌는
+// 순간 즉시 리셋한다 — 화면이 다시 fetchSummary를 부르기 전까지 이전 계정의 잔액·소유품이
+// 그대로 보이거나, 전환 도중이던 요청이 새 계정 화면에 뒤늦게 반영되는 것을 막는다.
+useAuthStore.subscribe((state, prevState) => {
+  const nextUserId = state.user?.uuid ?? null
+  const prevUserId = prevState?.user?.uuid ?? null
+  if (nextUserId !== prevUserId) {
+    useEconomyStore.getState().reset()
+  }
+})

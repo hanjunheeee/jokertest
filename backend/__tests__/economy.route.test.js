@@ -21,12 +21,18 @@ const { createError } = require("../utils/appError");
 const userRepository = require("../repositories/user.repositories");
 const economyService  = require("../service/economy.service");
 
-const REPO_KEYS = ["findActiveSession", "checkActiveBan"];
+const REPO_KEYS = ["findActiveSession", "checkActiveBan", "findByUuid"];
 
-const stubAuthGate = (t) => {
+// R-IMPL(2026-09-10, 반송): 관리자 전용 지급 경로는 더 이상 JWT의 req.user.role을 그대로
+// 믿지 않고, 매 요청마다 실제 계정 행(userRepository.findByUuid)을 다시 읽어 그 시점의
+// role로 판정한다("Existing permission identity must be verified from real server
+// session/account data"). accountsByUuid가 없는 uuid는 계정이 존재하지 않는 것으로
+// 취급된다(기본값은 role: "USER").
+const stubAuthGate = (t, { accountsByUuid = {} } = {}) => {
     const originals = Object.fromEntries(REPO_KEYS.map((key) => [key, userRepository[key]]));
     userRepository.findActiveSession = async (id, userId) => ({ id, user_id: userId, is_online: true, revoked_at: null, refresh_token_expires_at: null });
     userRepository.checkActiveBan = async () => null;
+    userRepository.findByUuid = async (uuid) => accountsByUuid[uuid] ?? { uuid, role: "USER" };
     t.after(() => Object.assign(userRepository, originals));
 };
 
@@ -107,13 +113,14 @@ test("AC-06: 다른 계정의 거래 내역·소유품에 접근하면 403으로
 test("AC-06: 본인 계정 조회는 200으로 허용된다", async (t) => {
     stubAuthGate(t);
     stubService(t, {
-        getWalletSummary: async (userId) => ({ balanceGold: 42, entitlements: [], loadout: {} }),
+        getWalletSummary: async (userId) => ({ balanceGold: 42, balanceDiamond: 7, entitlements: [], loadout: {} }),
     });
     const base = await startServer(t);
 
     const res = await request(base, `/economy/accounts/${USER_A}/wallet`, { token: tokenFor(USER_A) });
     assert.equal(res.status, 200);
     assert.equal(res.json.balanceGold, 42);
+    assert.equal(res.json.balanceDiamond, 7, 'F-08 요구사항: DIAMOND 잔액도 응답에 포함되어야 한다');
 });
 
 // ── AC-04: 구매 요청은 itemId·referenceEventId만 서비스로 전달한다 ─────────
@@ -180,23 +187,43 @@ test("AC-05: 임의 파일 경로를 itemId로 보내면 서비스가 던진 400
 });
 
 // ── 관리자 전용 지급 경로 ────────────────────────────────────────────────────
+// R-IMPL(2026-09-10): 권한은 토큰이 아니라 실제 계정 행(userRepository.findByUuid)의
+// role로 판정된다 — 아래 테스트들은 토큰의 role 클레임과 DB의 실제 role을 일부러 다르게
+// 둬서, 라우트가 토큰이 아니라 DB 값을 본다는 것을 직접 증명한다.
 
 test("일반 USER 권한은 관리자 지급 경로를 사용할 수 없다", async (t) => {
-    stubAuthGate(t);
+    stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "USER" } } });
     stubService(t);
     const base = await startServer(t);
 
     const res = await request(base, "/economy/admin/grant", {
         method: "POST",
         token: tokenFor(USER_A, "USER"),
-        body: { userId: USER_B, amountGold: 100, referenceEventId: "grant-1" },
+        body: { userId: USER_B, amount: 100, referenceEventId: "grant-1" },
+    });
+    assert.equal(res.status, 403);
+    assert.equal(res.json.code, "ECONOMY_ADMIN_ONLY");
+});
+
+test("토큰 클레임이 QA/ADMIN이어도 실제 계정의 현재 role이 아니면 거부된다(토큰이 아니라 DB를 신뢰한다)", async (t) => {
+    // 토큰은 발급 당시 role=QA를 실어 나르지만, 그 뒤 권한이 회수되어 실제 계정은
+    // 지금 USER다 — 이 라우트는 토큰이 아니라 실제 계정 행을 다시 조회해야 이 회수를
+    // 반영할 수 있다.
+    stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "USER" } } });
+    stubService(t);
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/admin/grant", {
+        method: "POST",
+        token: tokenFor(USER_A, "QA"),
+        body: { userId: USER_B, amount: 100, referenceEventId: "grant-1" },
     });
     assert.equal(res.status, 403);
     assert.equal(res.json.code, "ECONOMY_ADMIN_ONLY");
 });
 
 test("QA 권한은 관리자 지급 경로를 사용할 수 있다", async (t) => {
-    stubAuthGate(t);
+    stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "QA" } } });
     const { lastCall } = stubService(t, {
         grantReward: async () => ({ idempotent: false, ledgerEntry: { id: 1 } }),
     });
@@ -204,9 +231,28 @@ test("QA 권한은 관리자 지급 경로를 사용할 수 있다", async (t) =
 
     const res = await request(base, "/economy/admin/grant", {
         method: "POST",
-        token: tokenFor(USER_A, "QA"),
-        body: { userId: USER_B, amountGold: 100, referenceEventId: "grant-1" },
+        // 토큰 자체는 role을 USER로 실어도(또는 아무 값이어도) 실제 계정 행이 QA이므로
+        // 통과해야 한다 — 판정 기준이 토큰이 아니라 DB임을 반대 방향으로도 증명한다.
+        token: tokenFor(USER_A, "USER"),
+        body: { userId: USER_B, amount: 100, referenceEventId: "grant-1" },
     });
     assert.equal(res.status, 201);
     assert.equal(lastCall("grantReward").args[0].userId, USER_B);
+    assert.equal(lastCall("grantReward").args[0].amount, 100);
+});
+
+test("ADMIN 권한도 관리자 지급 경로를 사용할 수 있다", async (t) => {
+    stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "ADMIN" } } });
+    const { lastCall } = stubService(t, {
+        grantReward: async () => ({ idempotent: false, ledgerEntry: { id: 1 } }),
+    });
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/admin/grant", {
+        method: "POST",
+        token: tokenFor(USER_A, "ADMIN"),
+        body: { userId: USER_B, amount: 50, currency: "DIAMOND", referenceEventId: "grant-diamond-1" },
+    });
+    assert.equal(res.status, 201);
+    assert.equal(lastCall("grantReward").args[0].currency, "DIAMOND");
 });
