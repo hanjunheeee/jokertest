@@ -21,7 +21,7 @@ const RANKING_MIN_GAMES = 10
 const MASK_OF_FATE_MIN_GAMES = 1
 
 function getRoleKoreanName(role) {
-    return ROLE_KOREAN_NAMES[role] ?? null
+    return ROLE_CODES.includes(role) ? ROLE_KOREAN_NAMES[role] : null
 }
 
 /**
@@ -40,7 +40,7 @@ function aggregateRoleStatistics(rows) {
 
     for (const row of rows ?? []) {
         if (row.won !== true && row.won !== false) continue // null/undefined 제외(AC-05)
-        if (typeof row.user_id !== 'string' || typeof row.role !== 'string') continue
+        if (typeof row.user_id !== 'string' || !ROLE_CODES.includes(row.role)) continue
 
         const key = `${row.user_id}\u0000${row.role}`
         const entry = grouped.get(key) ?? {
@@ -90,7 +90,7 @@ function buildRoleRanking(statsForRole, { minGames = RANKING_MIN_GAMES } = {}) {
  * @returns {{ role: string, games: number, wins: number, winRate: number }|null}
  */
 function selectMaskOfFateRole(statsByRoleForUser, { minGames = MASK_OF_FATE_MIN_GAMES, roleOrder = ROLE_CODES } = {}) {
-    const eligible = (statsByRoleForUser ?? []).filter((entry) => entry.games >= minGames)
+    const eligible = (statsByRoleForUser ?? []).filter((entry) => ROLE_CODES.includes(entry.role) && entry.games >= minGames)
     if (eligible.length === 0) return null
 
     const fixedIndex = (role) => {

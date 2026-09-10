@@ -158,9 +158,8 @@ test('selectMaskOfFateRole: 최소 1판 미만(0판) 직업은 후보에서 제�
     assert.equal(result.role, 'JOKER')
 })
 
-test('selectMaskOfFateRole: 고정 5개 밖의 알 수 없는 직업 코드가 섞여도 죽지 않고, 동률이면 고정 직업 뒤로 밀린다', () => {
-    // ROLE_CODES에 없는 코드는 fixedIndex가 roleOrder.length(고정 5개보다 뒤)로 처리된다 —
-    // 알 수 없는 값이 섞여 들어와도 예외 없이 계산되고, 완전 동률이면 항상 뒤로 밀린다.
+test('selectMaskOfFateRole: 고정 5개 밖의 직업은 동률 여부와 관계없이 후보에서 제외된다', () => {
+    // 고정 5개 밖의 값은 후보에서 제외하여 정상 직업의 운명의 가면을 가리지 않는다.
     const result = selectMaskOfFateRole([roleStat('UNKNOWN_ROLE', 10, 5), roleStat('GUARD', 10, 5)])
     assert.equal(result.role, 'GUARD')
 })
@@ -194,4 +193,22 @@ test('isAchievementRewardEligibleGame: 중단+개발이 겹쳐도(둘 다 실격
 test('isAchievementRewardEligibleGame: gameSourceValue가 없는(이 필드 이전) 정상 확정 과거 경기는 소급으로 자격이 있다(D-11)', () => {
     assert.equal(isAchievementRewardEligibleGame({ completed: true, gameSourceValue: undefined }), true)
     assert.equal(isAchievementRewardEligibleGame({ completed: true, gameSourceValue: null }), true)
+})
+
+test('unregistered roles cannot displace a valid lower-win-rate fate mask or produce statistics', () => {
+    const stats = aggregateRoleStatistics([
+        {user_id:'u1',role:'UNKNOWN_ROLE',won:true,is_alive:true},
+        {user_id:'u1',role:'GUARD',won:false,is_alive:false},
+    ])
+    assert.deepEqual(stats.map(s => s.role), ['GUARD'])
+    assert.equal(selectMaskOfFateRole(stats).role, 'GUARD')
+    assert.equal(selectMaskOfFateRole([roleStat('UNKNOWN_ROLE',10,10),roleStat('GUARD',1,0)]).role,'GUARD')
+})
+
+test('only unregistered roles give no mask, no role stats and no Korean role name', () => {
+    for (const role of ['UNKNOWN_ROLE','', 'constructor', '__proto__']) {
+        assert.equal(selectMaskOfFateRole([roleStat(role,10,10)]),null)
+        assert.deepEqual(aggregateRoleStatistics([{user_id:'u1',role,won:true}]),[])
+        assert.equal(getRoleKoreanName(role),null)
+    }
 })
