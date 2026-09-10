@@ -21,10 +21,14 @@ const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');
 const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname-snapshot');
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
+// F-03 R-IMPL #11: 2세대 이상 전 갱신 자격 재사용 감지용 이력 테이블(user_sessions의
+// 자식 테이블). 같은 격리 DB를 공유하는 f01/f02 DB 스위트와 관리 테이블/삭제 순서를
+// 일관되게 맞추지 않으면 서로의 resetSchema()가 "모르는 테이블"로 오판해 거부한다.
+const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation];
-const MANAGED_TABLES = [...baseline.TABLE_ORDER, migrationRunner.META_TABLE];
-const DROP_ORDER = [...baseline.TABLE_ORDER].reverse().concat([migrationRunner.META_TABLE]);
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
+const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, migrationRunner.META_TABLE];
+const DROP_ORDER = [addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
 
 let sequelize;
 let connectionError = null;
@@ -224,11 +228,44 @@ test('R-IMPL #8: 회전 응답 유실 후에도 이전 자격 재시도로 안�
     assert.notEqual(nextRotation.refreshToken, recovered.refreshToken);
 
     // grace 밖에서 이미 두 세대 전인 raw0을 다시 제시하면 재사용으로 간주해 전체 세션을
-    // 폐기해야 한다.
+    // 폐기해야 한다(F-03 R-IMPL #11 — findSessionForRefresh가 refresh_token_history까지
+    // 뒤져 이 세션을 찾아내야 한다. 두 세대 전 자격은 현재·직전 해시 어디에도 없다).
     await assert.rejects(authService.refresh(raw0), (error) => error.status === 401);
     const sessionAfterReuse = await db.UserSession.findOne({ where: { id: session.id } });
     assert.ok(sessionAfterReuse.revoked_at instanceof Date,
         'grace 밖에서 이미 대체된 자격이 재사용되면 세션 전체가 폐기되어야 합니다');
+
+    // 재사용 감지는 "제시된 그 자격"만이 아니라 세션 전체를 폐기해야 한다 — 방금 정상적으로
+    // 발급받았던 최신 자격(nextRotation.refreshToken)으로도 더 이상 갱신할 수 없고, 이
+    // 세션의 HTTP 보호 요청(공통 sessionLifecycle.resolveSession, AC-05)도 거부되어야
+    // 한다(F-03 R-IMPL #11).
+    await assert.rejects(authService.refresh(nextRotation.refreshToken), (error) => error.status === 401,
+        '두 세대 이상 전 자격의 재사용이 감지된 뒤에는 방금 발급된 최신 갱신 자격도 거부되어야 합니다');
+    const decoded = { uuid: sessionAfterReuse.user_id, sessionId: sessionAfterReuse.id };
+    assert.equal((await sessionLifecycle.resolveSession(decoded)).ok, false,
+        '두 세대 이상 전 자격의 재사용이 감지된 뒤에는 이 세션의 HTTP 접근도 거부되어야 합니다');
+});
+
+// ── F-03 R-IMPL #11: 한 번도 발급된 적 없는 임의의 자격은 정상 세션을 폐기하지 않는다 ──
+
+test('R-IMPL #11: 발급된 적 없는 임의의 갱신 자격은 401만 돌려주고, 그 계정의 정상 세션은 폐기하지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    const { email } = await createUser('neverissued');
+    await authService.login({ email, password: PASSWORD, rememberMe: true }, REQ_INFO);
+
+    // 이 세션의 회전 이력에 전혀 없는, 완전히 무관한 무작위 값이다 — findSessionForRefresh가
+    // 현재·직전 해시는 물론 refresh_token_history에서도 이 해시를 찾지 못해야 한다.
+    const neverIssuedRaw = crypto.randomBytes(32).toString('base64url');
+    await assert.rejects(authService.refresh(neverIssuedRaw), (error) => error.status === 401);
+
+    const user = await db.User.findOne({ where: { email } });
+    const session = await db.UserSession.findOne({ where: { user_id: user.uuid } });
+    assert.equal(session.revoked_at, null,
+        '한 번도 발급된 적 없는 임의의 자격은 어떤 세션과도 연관되지 않으므로, 정상 세션을 폐기하면 안 됩니다(F-03 R-IMPL #11)');
+    assert.equal(Number(session.is_online), 1);
 });
 
 // ── AC-03/AC-05: 로그아웃 후 실제 HTTP 보호 요청·refresh·기존 및 신규 Socket.IO 인증이

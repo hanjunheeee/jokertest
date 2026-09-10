@@ -66,6 +66,18 @@ export function useSocket() {
         let reauthAttempts = 0;
         let reauthExhausted = false;
         let cancelled = false;
+
+        // 실제로 handshake가 성공(connect)해야만 이번 재인증 사이클이 끝난 것으로 본다.
+        // HTTP 갱신 성공(refreshAccessToken이 true를 돌려줌)만으로 카운터를 되돌리면,
+        // "갱신은 매번 성공하는데 소켓 handshake는 계속 UNAUTHORIZED"인 상황(F-03 R-IMPL #6이
+        // 막으려던 바로 그 상황)에서 매번 카운터가 리셋되어 MAX_REAUTH_ATTEMPTS 상한이
+        // 무력화된다. 반대로 실제 연결 성공 이후에는 카운터를 반드시 되돌려야 한다 — 그래야
+        // 30일 로그인 유지 기간 동안 여러 번 독립적으로 반복되는 정상적인 액세스 토큰
+        // 만료·복구(F-03 A-01)가 이전 사이클의 실패 횟수와 누적되어 상한을 오판하지
+        // 않는다(F-03 R-IMPL #11) — 상한은 "연속 실패"에만 적용되어야 한다.
+        socket.on("connect", () => {
+            reauthAttempts = 0;
+        });
         socket.on("connect_error", (error) => {
             console.error("[소켓 연결 실패]", error.message);
             if (error.message !== "UNAUTHORIZED" || reauthExhausted || cancelled) return;
@@ -101,6 +113,7 @@ export function useSocket() {
             // 등록했던 이벤트 리스너를 제거합니다.
             socket.off("force_disconnect");
             socket.off("connect_error");
+            socket.off("connect");
 
             // socket 연결을 끊습니다.
             socket.disconnect();

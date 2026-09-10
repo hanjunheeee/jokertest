@@ -235,8 +235,11 @@ exports.refresh = async (rawRefreshToken) => {
             && session.refresh_previous_expires_at > now;
 
         if (!isFreshMatch && !isGraceMatch) {
-            // 이미 회전되어 무효화된 자격이 유예 기간 밖에서 다시 제시됐다 — 탈취로 의심해
-            // 이 사용자의 모든 세션(모든 갱신 자격 포함)을 폐기한다(A-03/A-08 재사용 감지).
+            // 이미 회전되어 무효화된 자격이 유예 기간 밖에서 다시 제시됐다 — 현재 세대도,
+            // 직전 세대도 아니라면 2세대 이상 전 자격일 수 있다(findSessionForRefresh가
+            // refresh_token_history까지 뒤져 이 세션을 찾아온 경우, F-03 R-IMPL #11). 몇
+            // 세대 전이든 이미 대체된 자격의 재사용은 모두 탈취로 의심해 이 사용자의 모든
+            // 세션(모든 갱신 자격 포함)을 폐기한다(A-03/A-08 재사용 감지).
             await userRepository.markOnlineSessionsOffline(session.user_id, { transaction });
             return { type: "reuse" };
         }
@@ -280,6 +283,10 @@ exports.refresh = async (rawRefreshToken) => {
             newHash,
             previousHash: session.refresh_token_hash,
             previousExpiresAt: new Date(now.getTime() + REFRESH_TOKEN_GRACE_MS),
+            // 이번 회전으로 refresh_previous_hash 칸에서 밀려나는 이전 세대 해시 — 존재하면
+            // (즉 이번이 이 세션의 두 번째 이상 회전이면) 이력에 남겨 2세대 이상 전 자격의
+            // 재사용도 감지할 수 있게 한다(F-03 R-IMPL #11).
+            evictedHash: session.refresh_previous_hash,
         }, { transaction });
 
         return {

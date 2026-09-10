@@ -41,7 +41,9 @@
   있는 경우, 이 유예 창 안에서는 재사용으로 오판하지 않고 다시 회전시켜 준다.
 - **재사용 감지**: 유예 창을 벗어났거나 현재/직전 어느 해시와도 맞지 않는 자격이 제시되면
   탈취로 간주해 그 사용자의 **모든** 세션(모든 갱신 자격 포함)을 폐기한다
-  (`userRepository.markOnlineSessionsOffline`, `revoked_at` 기록).
+  (`userRepository.markOnlineSessionsOffline`, `revoked_at` 기록). "현재/직전"보다 더 오래된
+  (2세대 이상 전) 자격도 같은 방식으로 감지된다 — `refresh_token_history`(아래 스키마 절)에
+  회전으로 대체되어 사라진 모든 세대의 해시를 세션에 연결해 보존하기 때문이다(R-IMPL #11).
 - **세션 유효성 재검사**: `user_sessions.is_online`·`revoked_at`·활성 밴 여부는 매 보호
   요청마다 캐시 없이 다시 조회한다(`backend/auth/sessionLifecycle.js`의 `resolveSession`).
   HTTP(`auth.middleware.js`의 `verifyToken`), Socket.IO 연결(`socket.js`의
@@ -66,10 +68,38 @@
 `backend/tests/db/f01-migrations.integration.test.js`의 `MIGRATIONS` 목록과
 `backend/scripts/migrate-db.js`에 함께 등록했다.
 
+## 스키마 — `backend/db/migrations/0004-add-refresh-token-history.js` (R-IMPL #11)
+
+`user_sessions.refresh_previous_hash`는 딱 한 세대(방금 대체된 자격)만 기억한다. 회전이
+두 번 이상 일어나면 그보다 오래된 세대의 해시는 어디에도 남지 않아, 그 자격이 나중에 다시
+제시돼도 "이 세션 소유였던 자격"인지 판별할 수 없어 그냥 "모르는 자격"(무효, 401)으로만
+처리되고 세션 전체를 폐기하지 못했다 — `f03-session.integration.test.js`의 "R-IMPL #8"
+테스트가 실제 격리 DB에서 이 결함을 재현했다(raw0→raw1→raw2로 두 번 회전한 뒤 raw0을
+다시 제시하면 어느 세션과도 매칭되지 않았다).
+
+새 테이블 `refresh_token_history`(0001~0003의 내용·체크섬은 건드리지 않는 완전히 새로운
+추가)가 이를 보완한다:
+
+| 컬럼 | 용도 |
+| --- | --- |
+| `session_id` | 이 해시를 실제로 소비했던 세션(`user_sessions.id`, FK) |
+| `token_hash` | 회전으로 대체되어 사라진 세대의 sha256 해시(unique) — 원문은 저장하지 않는다 |
+| `created_at` | 회전(소비) 시각 |
+
+`userRepository.applyRefreshRotation`이 회전마다 `refresh_previous_hash` 칸에서 밀려나는
+이전 세대의 해시(`evictedHash`)를 **같은 트랜잭션**으로 이 테이블에 기록한다(최초 회전 시엔
+`evictedHash`가 없어 기록하지 않는다). `userRepository.findSessionForRefresh`는 현재·직전
+해시 조회가 실패하면 이 테이블에서 세션을 찾아 되돌려주므로, 그 뒤를 잇는 회전
+알고리즘(아래)의 "어느 쪽과도 맞지 않으면 재사용" 판정이 2세대 이상 전 자격도 그대로
+포착한다 — 회전 로직 자체는 손대지 않았다. 이력에 없는(한 번도 발급된 적 없는) 임의의
+해시는 어떤 세션과도 연관되지 않으므로 정상 세션을 폐기하지 않는다.
+
 ## 회전 알고리즘 (`authService.refresh`, 트랜잭션 + 행 잠금)
 
 1. 제시된 원문을 해시해 `refresh_token_hash` 또는 `refresh_previous_hash`가 일치하는
-   세션을 `FOR UPDATE`로 잠그고 조회한다(`userRepository.findSessionForRefresh`).
+   세션을 `FOR UPDATE`로 잠그고 조회한다(`userRepository.findSessionForRefresh`). 둘 다
+   맞지 않으면 `refresh_token_history`에서 2세대 이상 전 자격인지 추가로 조회한다(R-IMPL
+   #11).
 2. 세션이 없거나 `revoked_at`이 있으면 401. 절대 만료(`refresh_token_expires_at`)를
    넘겼으면 401(재로그인 요구). 활성 밴이면 이 사용자의 모든 세션을 영구 폐기하고 403
    (R-IMPL #2 #5 — 아래 "정지 감지 시 영구 폐기" 절 참고).
@@ -84,7 +114,9 @@
    "grace match")이면: **회전은 다시 실행하지 않는다** — 새 액세스 토큰만 응답하고
    `refreshToken`은 `null`이다(R-IMPL #2 #3 참고 — 아래 절에서 이유를 설명한다). 컨트롤러는
    `refreshToken`이 `null`이면 갱신 쿠키를 건드리지 않는다.
-6. 어느 쪽과도 맞지 않으면 재사용 감지 — 이 사용자의 모든 세션을 폐기하고 401.
+6. 어느 쪽과도 맞지 않으면 재사용 감지 — 이 사용자의 모든 세션을 폐기하고 401. 1단계에서
+   `refresh_token_history`를 통해 찾아낸 2세대 이상 전 자격도 여기서 같은 방식으로 걸린다
+   (그 세션의 현재·직전 해시와는 어차피 일치하지 않으므로 추가 분기가 필요 없다).
 
 트랜잭션 콜백 자체는 어떤 경우에도 `throw`하지 않는다 — 위 2/6의 폐기(UPDATE)를 포함해
 항상 `{ type, ... }` 형태의 결과 객체를 `return`하고, 트랜잭션이 커밋된 **뒤에** 그 타입에
@@ -322,6 +354,62 @@ false여도 갱신 자격(refresh)은 유효할 수 있어, 그 경로까지 함
   handshake 이후에 일어난 로그아웃·정지·비밀번호 변경을 그 소켓의 다음 동작부터 즉시
   반영한다(AC-09). matchmaking.js·gameSession.js는 건드리지 않았다 — `socket.on`을 감싸는
   방식이라 두 모듈이 등록하는 핸들러에도 자동으로 적용된다.
+
+## 실제 검증 상태 (R-IMPL #11 반송 대응 세션 기준, 2026-09-10)
+
+CODEX-3 반려의 정확한 원인: `f03-session.integration.test.js:230`의 "grace 밖에서 이미
+대체된 자격이 재사용되면 세션 전체가 폐기되어야 합니다" assertion이 실패했다 — raw0으로
+로그인 후 raw0→raw1, raw1→raw2로 두 번 회전한 뒤 raw0을 다시 제시하면,
+`findSessionForRefresh`가 현재 해시(raw2)·직전 해시(raw1) 둘 중 어디와도 raw0을 매칭하지
+못해 세션 자체를 찾지 못하고("invalid", 401만 반환) 폐기를 실행하지 않았다. 이번 세션은
+이 원인만 정정했다(위 "스키마 — 0004" 절 참고) — 회전 알고리즘·grace 판정·결정론적 유도
+(R-IMPL #8) 등 이미 검증된 부분은 재구현하지 않았다.
+
+- 코드 수정: (1) `backend/db/migrations/0004-add-refresh-token-history.js` 신규 —
+  `refresh_token_history` 테이블(회전으로 대체되어 사라지는 해시를 세션에 연결해 보존,
+  unique 인덱스로 중복/오염 방지). (2) `backend/repositories/user.repositories.js`의
+  `findSessionForRefresh`가 현재·직전 해시 조회 실패 시 이 테이블에서 세션을 추가 조회하고,
+  `applyRefreshRotation`이 회전과 **같은 트랜잭션**으로 밀려나는 이전 세대 해시를 이
+  테이블에 기록한다(`evictedHash`). (3) `backend/service/auth.service.js`는 회전 호출부에서
+  `evictedHash: session.refresh_previous_hash`를 한 줄 추가로 넘길 뿐, 재사용 판정 로직
+  (`isFreshMatch`/`isGraceMatch`/reuse 분기)은 손대지 않았다 — 2세대 이상 전 자격도 세션을
+  찾아오기만 하면 기존 "어느 쪽과도 맞지 않으면 재사용" 분기가 그대로 처리한다.
+  (4) `backend/tests/db/{f01-migrations,f02-signup,f03-session}.integration.test.js`·
+  `backend/scripts/migrate-db.js`에 0004를 등록하고, 세 DB 스위트가 같은 격리 MySQL을
+  공유하므로 관리 테이블/삭제 순서(`MANAGED_TABLES`/`DROP_ORDER`)를 일관되게 맞췄다
+  (자식 테이블이라 `user_sessions`보다 먼저 드롭한다). (5) `f03-session.integration.test.js`의
+  230행 assertion은 삭제·약화하지 않았고, 그 뒤에 "2세대 이상 전 자격 재사용 감지 후 최신
+  자격/HTTP 접근도 거부됨" 확인을 추가했다. 신규 "R-IMPL #11" 테스트로 "발급된 적 없는
+  임의의 자격은 정상 세션을 폐기하지 않는다"도 확인한다.
+- `frontend/src/shared/hooks/useSocket.js`: `reauthAttempts`가 실제 socket `connect` 성공
+  이벤트에서만 0으로 리셋되도록 리스너를 추가했다(이전에는 리셋 로직 자체가 없어, 정상
+  연결을 사이에 둔 독립적인 만료·복구가 여러 번 반복되면 결국 누적된 카운트로 오인 차단될
+  수 있었다). HTTP 갱신 성공만으로는 리셋하지 않으므로 R-IMPL #6이 막던 "갱신은 성공하는데
+  handshake는 계속 UNAUTHORIZED" 무한 재시도 방지는 그대로 유지된다. 근거:
+  `frontend/src/shared/hooks/__tests__/useSocket.test.js`에 "정상 연결을 사이에 둔 3회
+  이상의 독립적인 만료·복구는 상한에 걸리지 않는다" 신규 추가(기존 "갱신은 성공하는데
+  계속 UNAUTHORIZED" 시험은 그대로 유지).
+- **`node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test`(격리 MySQL
+  주입 래퍼) — 이번 세션에서도 미실행.** Bash·PowerShell 두 도구 모두 이번 세션에 3회
+  시도(각각 `cd &&` 결합형 1회, 단독형 Bash 1회, 단독형 PowerShell 1회)했고 전부 "승인이
+  필요합니다"로 즉시 거부됐다 — 여러 세션에 걸쳐 반복돼 온 것과 동일한 차단이다. 형태를
+  바꿔 우회하지 않았다(자격 JSON을 직접 읽어 동등한 명령을 재구성하지 않았다). **이번
+  세션이 고친 `refresh_token_history` 관련 코드(위 항목들)의 실제 격리 MySQL 검증은 다음
+  시도 또는 루트 운영자가 이 명령으로 반드시 확인해야 한다** — 특히
+  `f03-session.integration.test.js`의 수정된 "R-IMPL #8"(두 세대 전 자격 재사용 후 최신
+  자격/HTTP 접근 거부 확장분)과 신규 "R-IMPL #11".
+- **`node "C:/dev/pluto/packages/daemon/dist/src/impl-check.js" test`(backend, 격리 DB
+  없이 실행 가능한 전체 스위트)** — 통과. tests 1063 / pass 1043 / fail 0 / skipped 20
+  (F01/F02/F03 DB 통합 테스트 — 격리 MySQL 없이는 "미검증"으로 남는다, PASS로 위장하지
+  않았다. 신규 "R-IMPL #11" 테스트 1건이 늘어 skip 수가 19→20이 됐다).
+- **`node "...impl-check.js" build`(backend)** — `Missing script: "build"`(정상, 회귀 아님).
+- **`node "...impl-check.js" test`(frontend)** — 통과. tests 1200 / pass 1200 / fail 0
+  (신규 useSocket 시험 1건 포함해 1199→1200).
+- **`node "...impl-check.js" build`(frontend)** — `vite build` 성공(1021 modules, dist 생성).
+- **실제 브라우저 검증(AC-01/AC-02/AC-06 manual)은 이번 세션에서도 실행하지 않았다** —
+  브라우저 전체 종료/재시작, 16분(15분 액세스 만료+여유) 시계 경계, 회전 응답 유실 인위
+  재현은 도구 기반 세션에서 수행할 수 없다. PASS로 위장하지 않는다 — 루트 운영자가 직접
+  확인해야 한다.
 
 ## 실제 검증 상태 (CODEX-2 반송 대응 세션 기준, 2026-09-10)
 

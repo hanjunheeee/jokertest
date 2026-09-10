@@ -127,10 +127,19 @@ exports.markOnlineSessionsOffline = async (user_id, options = {}) => {
 // refresh_previous_hash(방금 회전되어 대체된 자격, 응답유실 유예용) 둘 다 대조합니다.
 // transaction이 있으면 FOR UPDATE로 잠가 동시 회전 요청이 서로의 갱신을 덮어쓰지 못하게
 // 합니다(F-03 A-03/A-08).
+//
+// 현재·직전 해시 둘 다와 맞지 않으면, 이 세션이 과거에(2세대 이상 전) 실제로 회전시켜
+// 소비한 자격일 수 있습니다 — 그 이력은 refresh_token_history에 남아 있습니다(F-03
+// R-IMPL #11, applyRefreshRotation 참고). 여기서 그 이력까지 찾아내야, 호출부
+// (auth.service.js의 refresh)가 "모르는 자격"으로 조용히 놓치지 않고 재사용 감지로
+// 세션 전체를 폐기할 수 있습니다. 이력에 없는 임의의 미발급 해시는 어떤 세션도 찾아내지
+// 못하므로 정상 세션을 폐기하지 않습니다.
 exports.findSessionForRefresh = async (hash, options = {}) => {
     const { transaction } = options;
     if (!hash) return null;
-    return await db.UserSession.findOne({
+
+    const lock = transaction ? transaction.LOCK.UPDATE : undefined;
+    const direct = await db.UserSession.findOne({
         where: {
             [Op.or]: [
                 { refresh_token_hash: hash },
@@ -138,14 +147,41 @@ exports.findSessionForRefresh = async (hash, options = {}) => {
             ],
         },
         transaction,
-        lock: transaction ? transaction.LOCK.UPDATE : undefined,
+        lock,
+    });
+    if (direct) return direct;
+
+    const [historyRows] = await db.sequelize.query(
+        'SELECT session_id FROM refresh_token_history WHERE token_hash = :hash LIMIT 1',
+        { replacements: { hash }, transaction },
+    );
+    const historyMatch = historyRows[0];
+    if (!historyMatch) return null;
+
+    return await db.UserSession.findOne({
+        where: { id: historyMatch.session_id },
+        transaction,
+        lock,
     });
 };
 
 // 갱신 자격을 회전시킵니다. 기존 refresh_token_hash는 previousHash로 물러나 짧은 유예
 // 동안만 재시도를 허용하고, 절대 만료(refresh_token_expires_at)는 건드리지 않습니다 —
 // 회전이 로그인 시점 기준 30일 창을 연장해서는 안 됩니다(F-03 A-01/A-03).
-exports.applyRefreshRotation = async (sessionId, { newHash, previousHash, previousExpiresAt }, options = {}) => {
+//
+// evictedHash는 이번 회전으로 refresh_previous_hash 칸에서 밀려나 사라질 이전 세대의
+// 해시입니다(최초 회전 시에는 previous가 아직 없어 null입니다). 그대로 버리면 2세대 이상
+// 전 자격의 재사용을 더 이상 추적할 수 없으므로, 회전과 같은 트랜잭션 안에서
+// refresh_token_history에 남깁니다(F-03 R-IMPL #11) — 회전 커밋과 이력 기록이 분리되면
+// 한쪽만 반영된 채 끝나는 부분 커밋이 생길 수 있습니다.
+exports.applyRefreshRotation = async (sessionId, { newHash, previousHash, previousExpiresAt, evictedHash }, options = {}) => {
+    const { transaction } = options;
+    if (evictedHash) {
+        await db.sequelize.query(
+            'INSERT INTO refresh_token_history (session_id, token_hash, created_at) VALUES (:sessionId, :hash, NOW())',
+            { replacements: { sessionId, hash: evictedHash }, transaction },
+        );
+    }
     return await db.UserSession.update(
         {
             refresh_token_hash: newHash,

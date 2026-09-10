@@ -162,6 +162,38 @@ test("F-03 R-IMPL #6: 갱신은 매번 성공하는데 소켓이 계속 UNAUTHOR
   authState.isLoggedIn = false;
 });
 
+test("F-03 R-IMPL #11: 정상 연결을 사이에 둔 3회 이상의 독립적인 만료·복구는 상한에 걸리지 않는다", async () => {
+  resetAll();
+  authState.isLoggedIn = true;
+  refreshImpl = async () => true;
+  const hook = renderHook(() => useSocket());
+  await act(async () => {});
+
+  const socket = createdSockets[0];
+
+  // 독립적인 만료→갱신→재연결 성공 사이클을 3번 반복한다. HTTP 갱신 성공만으로는 카운터가
+  // 리셋되지 않으므로(위 R-IMPL #6 시험), 매번 실제 "connect" 성공까지 나야 다음 사이클이
+  // 이전 실패 횟수와 누적되지 않는다.
+  for (let i = 0; i < 3; i += 1) {
+    await act(async () => {
+      socket.fire("connect_error", { message: "UNAUTHORIZED" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      socket.fire("connect");
+    });
+  }
+
+  assert.equal(refreshCalls.length, 3, "독립적인 만료 3번 각각이 갱신을 시도해야 합니다");
+  assert.equal(socket.connectCallCount, 3, "3번 모두 재연결을 시도해야 합니다");
+  assert.equal(logoutCalls.length, 0,
+    "정상 연결로 매듭지어진 독립적인 만료·복구가 누적되어 상한을 오판하면 안 됩니다(F-03 R-IMPL #11)");
+
+  hook.unmount();
+  authState.isLoggedIn = false;
+});
+
 test("갱신 자체가 실패하면 즉시 재시도를 멈추고 로그아웃한다", async () => {
   resetAll();
   authState.isLoggedIn = true;

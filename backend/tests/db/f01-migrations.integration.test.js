@@ -24,10 +24,16 @@ const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');
 const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname-snapshot');
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
+// F-03 R-IMPL #11: refresh_token_history는 user_sessions.id를 참조하는 자식 테이블이다.
+// 이 스위트가 모르는 채로 두면(같은 격리 DB를 공유하는 f02/f03 DB 스위트가 이 테이블을
+// 만든 뒤) resetSchema()가 "F-01이 모르는 테이블"로 오판해 진행을 거부한다 — 세 DB
+// 스위트 모두 같은 관리 테이블/삭제 순서를 알아야 한다.
+const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation];
-const MANAGED_TABLES = [...baseline.TABLE_ORDER, migrationRunner.META_TABLE];
-const DROP_ORDER = [...baseline.TABLE_ORDER].reverse().concat([migrationRunner.META_TABLE]);
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
+const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, migrationRunner.META_TABLE];
+// refresh_token_history가 user_sessions를 참조하므로 그 자식 테이블을 가장 먼저 드롭한다.
+const DROP_ORDER = [addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
 
 let sequelize;
 let connectionError = null;
@@ -479,7 +485,7 @@ test('AC-03: 동일 마이그레이션을 반복 실행해도 오류 없이 동�
     assert.deepEqual(
         status.map((s) => ({ name: s.name, status: s.status })),
         MIGRATIONS.map((m) => ({ name: m.name, status: 'applied' })),
-        '적용된 3개 마이그레이션 각각의 이름과 상태가 정확히 일치해야 한다(0003 추가분 포함)',
+        '적용된 4개 마이그레이션 각각의 이름과 상태가 정확히 일치해야 한다(0003/0004 추가분 포함)',
     );
 
     const historyRows = await queryRows(
@@ -700,7 +706,7 @@ test('AC-05: DDL 부분 실패 후 전체 백업 복원으로 실패 이전 상�
         assert.deepEqual(
             checkStatus.map((s) => ({ name: s.name, status: s.status })),
             MIGRATIONS.map((m) => ({ name: m.name, status: 'applied' })),
-            '별도 DB로 복원한 이력도 3개 마이그레이션의 이름·상태가 정확히 일치해야 한다',
+            '별도 DB로 복원한 이력도 4개 마이그레이션의 이름·상태가 정확히 일치해야 한다',
         );
         const checkPoisonStatus = await migrationRunner.getStatus({ sequelize: restoreCheckDb, migrations: [poisonMigration] });
         assert.equal(checkPoisonStatus[0].status, 'pending', '백업은 poison 마이그레이션 시도 이전 시점이라 이력 자체가 없어야 한다');
@@ -741,7 +747,7 @@ test('AC-05: DDL 부분 실패 후 전체 백업 복원으로 실패 이전 상�
     assert.deepEqual(
         restoredStatus.map((s) => ({ name: s.name, status: s.status })),
         MIGRATIONS.map((m) => ({ name: m.name, status: 'applied' })),
-        '복원된 DB는 실패 이전의 정상 이력(3개 마이그레이션 이름·상태)을 그대로 갖는다',
+        '복원된 DB는 실패 이전의 정상 이력(4개 마이그레이션 이름·상태)을 그대로 갖는다',
     );
 
     // schema_migrations 자체가 백업에 포함돼 함께 복원되므로, poison 마이그레이션의 실패

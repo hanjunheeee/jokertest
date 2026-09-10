@@ -19,8 +19,9 @@ const migrationRunner = require('../db/migrationRunner');
 const baseline = require('../db/migrations/0001-legacy-baseline');
 const expandNicknameSnapshot = require('../db/migrations/0002-expand-nickname-snapshot');
 const addRefreshTokenRotation = require('../db/migrations/0003-add-refresh-token-rotation');
+const addRefreshTokenHistory = require('../db/migrations/0004-add-refresh-token-history');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;
