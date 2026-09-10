@@ -24,12 +24,16 @@ const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
+// F-05 R-IMPL(CODEX-2/VERIFY-10): 관리 목록·드롭 순서·대상 DB 확인은
+// backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 f01~f05·user.accountPaths가
+// 항상 같은 정의를 쓰게 한다(이 스위트가 만드는 social 테이블을 다른 스위트가 몰라
+// resetSchema()가 거부하던 결함의 근본 원인).
+const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth];
-const SOCIAL_TABLES = Object.values(addSocialAuth.TABLE_NAMES);
-const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, ...SOCIAL_TABLES, migrationRunner.META_TABLE];
-// social 테이블은 users를 참조하므로 baseline(users 포함) 앞에 지워야 한다.
-const DROP_ORDER = [...SOCIAL_TABLES, addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
+const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
+    baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
+});
 
 let sequelize;
 let connectionError = null;
@@ -61,18 +65,7 @@ const unavailable = (t) => {
 };
 
 const resetSchema = async () => {
-    const queryInterface = sequelize.getQueryInterface();
-    const existing = new Set(await queryInterface.showAllTables());
-    const unknown = [...existing].filter((t) => !MANAGED_TABLES.includes(t));
-    if (unknown.length > 0) {
-        throw new Error(
-            `격리 DB에 F-01/F-05가 모르는 테이블이 있습니다: [${unknown.join(', ')}]. ` +
-            `전용 테스트 DB가 맞는지 확인하세요 — 안전을 위해 진행을 거부합니다.`,
-        );
-    }
-    for (const table of DROP_ORDER) {
-        if (existing.has(table)) await queryInterface.dropTable(table);
-    }
+    await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
 // backend/models과 service/repository는 require 캐시 싱글턴이라, 파일 맨 위에서 맞춰둔

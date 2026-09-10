@@ -27,6 +27,12 @@ const baseline                = require("../db/migrations/0001-legacy-baseline")
 const expandNicknameSnapshot  = require("../db/migrations/0002-expand-nickname-snapshot");
 const addRefreshTokenRotation = require("../db/migrations/0003-add-refresh-token-rotation");
 const addRefreshTokenHistory  = require("../db/migrations/0004-add-refresh-token-history");
+// F-05 R-IMPL(CODEX-2/VERIFY-10): external_identities/oauth_states/social_signup_intents도
+// 같은 격리 DB를 공유한다. 관리 목록·드롭 순서·대상 DB 확인은
+// backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 다섯 스위트가 항상 같은 정의를
+// 쓰게 한다.
+const addSocialAuth           = require("../db/migrations/0005-add-social-auth");
+const { buildManagedSchema, resetManagedSchema } = require("../tests/helpers/isolatedTestDb");
 
 // F-04 AC-01: 닉네임 변경도 가입(F-02)과 같은 벡터로 판정이 갈리지 않는지 확인한다.
 const FIXTURE_PATH = path.join(__dirname, "..", "..", "tests", "fixtures", "f02-signup-validation.json");
@@ -171,21 +177,11 @@ test("AC-02: 실제 격리 DB에서 애플리케이션 사전 조회 없이 UPDA
 
     try {
         const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
-        const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, migrationRunner.META_TABLE];
-        const DROP_ORDER = [addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
+        const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
+            baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
+        });
 
-        const queryInterface = sequelize.getQueryInterface();
-        const existing = new Set(await queryInterface.showAllTables());
-        const unknown = [...existing].filter((tableName) => !MANAGED_TABLES.includes(tableName));
-        if (unknown.length > 0) {
-            throw new Error(
-                `격리 DB에 F-01이 모르는 테이블이 있습니다: [${unknown.join(", ")}]. ` +
-                "전용 테스트 DB가 맞는지 확인하세요 — 안전을 위해 진행을 거부합니다.",
-            );
-        }
-        for (const table of DROP_ORDER) {
-            if (existing.has(table)) await queryInterface.dropTable(table);
-        }
+        await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
         await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
         const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

@@ -29,11 +29,18 @@ const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-to
 // 만든 뒤) resetSchema()가 "F-01이 모르는 테이블"로 오판해 진행을 거부한다 — 세 DB
 // 스위트 모두 같은 관리 테이블/삭제 순서를 알아야 한다.
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
+// F-05 R-IMPL(CODEX-2/VERIFY-10): external_identities/oauth_states/social_signup_intents도
+// 같은 격리 DB를 공유한다 — f05-social-auth.integration.test.js가 만든 이 세 테이블을 이
+// 스위트가 모르면 resetSchema()가 "모르는 테이블"로 오판해 거부한다. 관리 목록·드롭
+// 순서·대상 DB 확인은 backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 다섯 스위트
+// (f01~f05, user.accountPaths)가 항상 같은 정의를 쓰게 한다.
+const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
+const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
-const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, migrationRunner.META_TABLE];
-// refresh_token_history가 user_sessions를 참조하므로 그 자식 테이블을 가장 먼저 드롭한다.
-const DROP_ORDER = [addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
+const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
+    baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
+});
 
 let sequelize;
 let connectionError = null;
@@ -71,21 +78,10 @@ const queryRows = async (sql, replacements) => {
     return rows;
 };
 
-// 매 테스트를 완전히 빈 스키마에서 시작한다. 우리가 모르는 테이블이 있으면 전용 격리 DB가
-// 아닐 수 있으므로(다른 앱/사람의 데이터일 위험) 진행을 거부한다.
+// 매 테스트를 완전히 빈 스키마에서 시작한다. 대상 DB가 승인된 전용 테스트 DB가 아니거나,
+// 우리가 모르는 테이블이 있으면(다른 앱/사람의 데이터일 위험) 진행을 거부한다.
 const resetSchema = async () => {
-    const queryInterface = sequelize.getQueryInterface();
-    const existing = new Set(await queryInterface.showAllTables());
-    const unknown = [...existing].filter((t) => !MANAGED_TABLES.includes(t));
-    if (unknown.length > 0) {
-        throw new Error(
-            `격리 DB에 F-01이 모르는 테이블이 있습니다: [${unknown.join(', ')}]. ` +
-            `전용 테스트 DB가 맞는지 확인하세요 — 안전을 위해 진행을 거부합니다.`,
-        );
-    }
-    for (const table of DROP_ORDER) {
-        if (existing.has(table)) await queryInterface.dropTable(table);
-    }
+    await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
 // SHOW CREATE TABLE + 전체 행을 떠서 SQL 레벨 백업을 만든다. 운영에서는 mysqldump로

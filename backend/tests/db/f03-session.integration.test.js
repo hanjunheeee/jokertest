@@ -25,10 +25,17 @@ const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-to
 // 자식 테이블). 같은 격리 DB를 공유하는 f01/f02 DB 스위트와 관리 테이블/삭제 순서를
 // 일관되게 맞추지 않으면 서로의 resetSchema()가 "모르는 테이블"로 오판해 거부한다.
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
+// F-05 R-IMPL(CODEX-2/VERIFY-10): external_identities/oauth_states/social_signup_intents도
+// 같은 격리 DB를 공유한다. 관리 목록·드롭 순서·대상 DB 확인은
+// backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 다섯 스위트가 항상 같은 정의를
+// 쓰게 한다.
+const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
+const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
-const MANAGED_TABLES = [...baseline.TABLE_ORDER, addRefreshTokenHistory.TABLE_NAME, migrationRunner.META_TABLE];
-const DROP_ORDER = [addRefreshTokenHistory.TABLE_NAME, ...[...baseline.TABLE_ORDER].reverse(), migrationRunner.META_TABLE];
+const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
+    baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
+});
 
 let sequelize;
 let connectionError = null;
@@ -60,18 +67,7 @@ const unavailable = (t) => {
 };
 
 const resetSchema = async () => {
-    const queryInterface = sequelize.getQueryInterface();
-    const existing = new Set(await queryInterface.showAllTables());
-    const unknown = [...existing].filter((t) => !MANAGED_TABLES.includes(t));
-    if (unknown.length > 0) {
-        throw new Error(
-            `격리 DB에 F-01이 모르는 테이블이 있습니다: [${unknown.join(', ')}]. ` +
-            `전용 테스트 DB가 맞는지 확인하세요 — 안전을 위해 진행을 거부합니다.`,
-        );
-    }
-    for (const table of DROP_ORDER) {
-        if (existing.has(table)) await queryInterface.dropTable(table);
-    }
+    await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
 // backend/models와 service/repository는 require 캐시 싱글턴이라, 파일 맨 위에서 이미
