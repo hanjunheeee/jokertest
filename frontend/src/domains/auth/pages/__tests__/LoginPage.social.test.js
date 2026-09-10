@@ -109,3 +109,44 @@ test("둘 다 없으면 기본 로그인 화면 모드가 된다", () => {
 test("빈 문자열 쿼리값은 없는 것과 같이 취급한다(URLSearchParams.get은 없는 키도 빈 문자열이 아니라 null을 준다는 것과는 별개로, 방어적으로도 안전해야 한다)", () => {
   assert.deepEqual(resolveSocialLoginView({ socialIntent: "", socialError: "" }), { mode: "default" })
 })
+
+// ── R-IMPL 재현(Chrome 09:56:37Z, /login?socialError=__proto__ → React #31): 일반 객체를
+// 대괄호 표기법으로 색인하면 own property가 아닌 상속 키까지 값으로 튀어나올 수 있다.
+// mapSocialErrorCode는 이제 own-property만 신뢰해야 하고, 그 값은 항상 문자열이어야
+// 한다(객체/함수가 그대로 나오면 JSX 렌더링에서 다시 React #31로 이어진다). ────────────
+
+test("__proto__ 코드는 Object.prototype이 아니라 기본 문구로 매핑된다(own-property가 아님)", () => {
+  const message = mapSocialErrorCode("__proto__")
+  assert.equal(message, DEFAULT_SOCIAL_ERROR_MESSAGE)
+  assert.equal(typeof message, "string")
+})
+
+test("constructor 코드는 생성자 함수가 아니라 기본 문구로 매핑된다(own-property가 아님)", () => {
+  const message = mapSocialErrorCode("constructor")
+  assert.equal(message, DEFAULT_SOCIAL_ERROR_MESSAGE)
+  assert.equal(typeof message, "string")
+})
+
+test("toString 코드는 상속된 함수가 아니라 기본 문구로 매핑된다(own-property가 아님)", () => {
+  const message = mapSocialErrorCode("toString")
+  assert.equal(message, DEFAULT_SOCIAL_ERROR_MESSAGE)
+  assert.equal(typeof message, "string")
+})
+
+test("hasOwnProperty 코드는 상속된 함수가 아니라 기본 문구로 매핑된다(own-property가 아님)", () => {
+  const message = mapSocialErrorCode("hasOwnProperty")
+  assert.equal(message, DEFAULT_SOCIAL_ERROR_MESSAGE)
+  assert.equal(typeof message, "string")
+})
+
+test("__proto__ socialError 쿼리도 오류 안내 모드에서 기본 문구를 담는다(정상 conflict/cancel 문구는 그대로 보존된다)", () => {
+  const protoView = resolveSocialLoginView({ socialIntent: null, socialError: "__proto__" })
+  assert.equal(protoView.mode, "socialError")
+  assert.equal(protoView.message, DEFAULT_SOCIAL_ERROR_MESSAGE)
+
+  const conflictView = resolveSocialLoginView({ socialIntent: null, socialError: "EMAIL_CONFLICT" })
+  assert.equal(conflictView.message, SOCIAL_ERROR_MESSAGES.EMAIL_CONFLICT)
+
+  const cancelView = resolveSocialLoginView({ socialIntent: null, socialError: "OAUTH_CANCELLED" })
+  assert.equal(cancelView.message, SOCIAL_ERROR_MESSAGES.OAUTH_CANCELLED)
+})

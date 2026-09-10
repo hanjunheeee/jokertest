@@ -29,7 +29,15 @@ export const SOCIAL_ERROR_MESSAGES = {
 export const DEFAULT_SOCIAL_ERROR_MESSAGE = "소셜 로그인에 실패했습니다. 다시 시도해주세요."
 
 export function mapSocialErrorCode(code) {
-  return SOCIAL_ERROR_MESSAGES[code] ?? DEFAULT_SOCIAL_ERROR_MESSAGE
+  // 재검토 지적(R-IMPL, Chrome 재현: /login?socialError=__proto__ → React #31): 일반
+  // 객체를 대괄호 표기법으로 색인하면 own property가 아닌 상속 키(__proto__·constructor·
+  // toString·hasOwnProperty 등)까지 값으로 튀어나올 수 있고, 그 값은 문자열이 아니라
+  // 객체/함수라 그대로 JSX에 렌더링하면 "Objects are not valid as a React child"(#31)로
+  // 크래시한다. hasOwnProperty 가드로 이 목록에 실제로 정의한 own key만 신뢰한다.
+  if (typeof code === "string" && Object.prototype.hasOwnProperty.call(SOCIAL_ERROR_MESSAGES, code)) {
+    return SOCIAL_ERROR_MESSAGES[code]
+  }
+  return DEFAULT_SOCIAL_ERROR_MESSAGE
 }
 
 // F-06 AC-02: 로그인 화면 URL 쿼리(socialIntent/socialError)를 화면이 그려야 할 모드로
