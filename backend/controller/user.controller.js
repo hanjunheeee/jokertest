@@ -1,9 +1,33 @@
+const crypto            = require("crypto");
 const authService       = require("../service/auth.service");
 const socialAuthService = require("../service/socialAuth.service");
+const googleOAuthService = require("../service/googleOAuth.service");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
 const { buildSessionCookieOptions, buildRefreshCookieOptions, clearSessionCookie, clearRefreshCookie } = require("../auth/cookieOptions");
+
+// F-06: Google OAuth 왕복(시작 → Google 동의 → 콜백) 동안만 살아있는 값 두 가지를 쿠키에
+// 담아 보존한다. 둘 다 socialAuth.service.js의 oauth_states 테이블에는 저장할 자리가 없는
+// 값이라(스키마 변경은 이 작업 범위 밖) 브라우저에 결합된 쿠키로 왕복시킨다 — state
+// 자체의 CSRF·재생 방지는 여전히 F-05의 state·browser_fingerprint 검증이 담당한다:
+//   - oauthFp: 이 왕복을 시작한 브라우저를 표시하는 무작위 값. issueOAuthState에
+//     browserFingerprint로 그대로 전달되어 state에 결합되므로, 다른 브라우저가 이 state를
+//     가로채 콜백을 재현해도 fingerprint 불일치로 거부된다(F-05 A-04).
+//   - oauthRememberMe: 로그인 유지 선택. 콜백의 code/state는 Google이 만든 값이라 여기 담을
+//     수 없고, 시작 시점에 서버가 세팅한 이 쿠키만 신뢰한다 — 그래서 콜백 쪽 쿼리 파라미터를
+//     바꾸는 것만으로는 이미 시작된 시도의 로그인 유지 선택을 바꿀 수 없다(AC-02/A-02).
+const OAUTH_FP_COOKIE = "oauthFp";
+const OAUTH_REMEMBER_COOKIE = "oauthRememberMe";
+// socialAuth.service.js의 OAUTH_STATE_TTL_MS(10분, 리다이렉트 왕복 시간만 견디면 되는 값)와
+// 맞춘다 — state가 만료되기 전에 이 쿠키들도 함께 사라져야 의미가 있다.
+const OAUTH_ATTEMPT_COOKIE_MAX_AGE_MS = 10 * 60 * 1000;
+const oauthAttemptCookieOptions = () => ({
+    httpOnly: true,
+    sameSite: "Lax",
+    secure:   process.env.NODE_ENV === "production",
+    maxAge:   OAUTH_ATTEMPT_COOKIE_MAX_AGE_MS,
+});
 
 exports.signup = async (req, res, next) => {
     try {
@@ -123,6 +147,111 @@ exports.completeSocialSignup = async (req, res, next) => {
         });
     } catch (error) {
         next(error);
+    }
+};
+
+// F-06: Google 로그인 시작. 브라우저를 Google 동의 화면으로 곧장 이동시키는 GET 라우트다
+// (버튼 클릭 = 이 경로로의 전체 페이지 이동, AC-01). rememberMe는 쿼리로 받는다 — 이 요청
+// 자체가 사용자가 방금 누른 "로그인 상태 유지" 체크박스 값을 실어 보내는 유일한 시점이고,
+// 이 시점 이후로는 오직 아래에서 세팅하는 쿠키만 신뢰한다(AC-02/A-02).
+exports.googleAuthStart = async (req, res, next) => {
+    try {
+        const rememberMe = req.query.rememberMe === "true";
+        const browserFingerprint = crypto.randomBytes(32).toString("base64url");
+
+        const { state } = await socialAuthService.issueOAuthState({ purpose: "login", browserFingerprint });
+
+        res.cookie(OAUTH_FP_COOKIE, browserFingerprint, oauthAttemptCookieOptions());
+        res.cookie(OAUTH_REMEMBER_COOKIE, rememberMe ? "1" : "0", oauthAttemptCookieOptions());
+
+        res.redirect(googleOAuthService.buildAuthorizationUrl(state));
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-06: Google 콜백. Google이 사용자를 이 경로로 다시 이동시키며 code·state(정상)나
+// error·state(취소)를 실어 온다 — 그래서 이 라우트는 항상 프론트로의 리다이렉트로
+// 끝난다(JSON을 돌려주면 브라우저 전체 페이지 이동 한가운데서 그대로 노출된다). 성공하면
+// F-05의 공통 계정 조회/생성·세션 발급(handleOAuthCallback)으로 이어지고(AC-01), 실패하면
+// 자동 병합·세션 발급 없이 오류 코드만 실어 로그인 화면으로 되돌린다(AC-04).
+exports.googleAuthCallback = async (req, res, next) => {
+    const browserFingerprint = req.cookies?.[OAUTH_FP_COOKIE];
+    const rememberMe = req.cookies?.[OAUTH_REMEMBER_COOKIE] === "1";
+    // 이 왕복 전용 쿠키는 콜백 한 번으로 수명이 끝난다 — 성공/실패 어느 쪽이든 지운다.
+    res.clearCookie(OAUTH_FP_COOKIE, oauthAttemptCookieOptions());
+    res.clearCookie(OAUTH_REMEMBER_COOKIE, oauthAttemptCookieOptions());
+
+    const frontendBase = process.env.FRONTEND_URL;
+    const redirectWithError = (code) => res.redirect(`${frontendBase}/login?socialError=${encodeURIComponent(code)}`);
+
+    try {
+        const userAgent = req.headers["user-agent"];
+        const reqInfo = {
+            ip:         getClientIp(req),
+            userAgent:  userAgent,
+            deviceType: getDeviceType(userAgent),
+        };
+
+        // Google은 사용자가 동의 화면에서 취소하면 code 대신 error(예: access_denied)를
+        // 실어 돌려준다 — 이 경우 코드 교환 자체를 시도하지 않는다(교환할 code가 없다).
+        const cancelled = req.query.error !== undefined;
+        let subject = null;
+        let email = null;
+        if (!cancelled) {
+            const profile = await googleOAuthService.exchangeCodeForProfile(req.query.code);
+            subject = profile.subject;
+            email = profile.email;
+        }
+
+        const result = await socialAuthService.handleOAuthCallback({
+            provider: "google",
+            subject,
+            email,
+            rawState: req.query.state,
+            browserFingerprint,
+            cancelled,
+            reqInfo,
+        });
+
+        if (result.status === "SIGNUP_REQUIRED") {
+            // 신규 계정 — 닉네임 등 정보 보완이 끝나야 세션이 생긴다(F-05
+            // completeSocialSignup, useSocialSignup.js가 이 intentToken을 그대로 받는다).
+            return res.redirect(`${frontendBase}/login?socialIntent=${encodeURIComponent(result.intentToken)}`);
+        }
+
+        // status === "LOGIN" (재로그인). handleOAuthCallback은 항상 rememberMe:false로
+        // 세션을 발급한다(F-05 socialAuth.service.js 계약, 이 작업 범위 밖) — 사용자가 로그인
+        // 유지를 선택했다면(AC-02) F-05와 같은 세션 발급 절차(authService.issueSessionForUser,
+        // login()·completeSocialSignup이 재사용하는 그 함수)를 그대로 다시 호출해
+        // rememberMe:true로 재발급한다. 이 재발급도 markOnlineSessionsOffline로 시작하므로
+        // 방금 만든 rememberMe:false 세션은 활성 상태로 남지 않는다 — 폐기된 세션 행 하나가
+        // 감사 기록처럼 남는 것만 감수한다(트랜잭션을 나눠 이중 발급하는 대신 F-05
+        // socialAuth.service.js에 rememberMe 인자를 추가하려면 그 파일도 함께 고쳐야 해
+        // 이번 작업 범위를 넘어간다).
+        let session = result;
+        if (rememberMe) {
+            session = await authService.issueSessionForUser(result.user, { rememberMe: true }, reqInfo);
+        }
+
+        res.cookie("accessToken", session.token, buildSessionCookieOptions(rememberMe, session.refreshTokenExpiresAt));
+        if (session.refreshToken) {
+            res.cookie("refreshToken", session.refreshToken, buildRefreshCookieOptions(session.refreshTokenExpiresAt));
+        } else {
+            clearRefreshCookie(res);
+        }
+
+        return res.redirect(`${frontendBase}/lobby`);
+    } catch (error) {
+        // state 누락/위조/만료/재사용, 취소, 이메일 충돌 등은 모두 code가 있는 도메인
+        // 오류다(F-05 socialAuth.service.js) — 자동 병합이나 세션 발급 없이 그 code만 실어
+        // 로그인 화면으로 돌려보낸다(AC-04). code가 없는 뜻밖의 오류는 global error
+        // handler처럼 로그를 남긴 뒤에도 여전히 브라우저 리다이렉트로 마무리한다 — 이 경로는
+        // 항상 전체 페이지 이동 중이라 JSON을 응답하면 그대로 화면에 노출된다.
+        if (!error?.code) {
+            console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
+        }
+        return redirectWithError(error?.code || "OAUTH_FAILED");
     }
 };
 
