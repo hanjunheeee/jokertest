@@ -104,7 +104,7 @@ const makePlayer = (uuid, role, alive = true) => [uuid, {
 
 const makeEndedSession = (id, playersMap, overrides = {}) => ({
     id,
-    roomId: `room-${id}`,
+    roomId: crypto.randomUUID(),
     phase: 'ENDED',
     dayIndex: 2,
     jokerCount: 1,
@@ -169,7 +169,7 @@ test('AC-01: 동시 요청(경합)에서도 같은 game_id는 실제 DB 제약�
 
 // ── AC-01: 실제 저장→JOIN 조회 왕복 — boolean 타입, settings(JSON) 보존 ────────
 
-test('AC-01: 실제 DB 저장→JOIN 조회 왕복에서 won/is_alive가 boolean이고 settings.gameSource가 보존된다', async (t) => {
+test('AC-01: 실제 DB raw TINYINT를 정규화한 JOIN 통계와 settings.gameSource가 보존된다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
@@ -191,8 +191,9 @@ test('AC-01: 실제 DB 저장→JOIN 조회 왕복에서 won/is_alive가 boolean
     // row.won === true/false의 strict 비교를 쓰므로, dialect가 0/1 숫자를 그대로 새어나오게
     // 하면 이 비교가 조용히 깨질 수 있다.
     const rawPlayers = await db.GameResultPlayer.findAll({ where: { game_id: gameId }, raw: true });
-    assert.equal(typeof rawPlayers[0].won, 'boolean', 'won이 raw 조회에서도 실제 boolean이어야 한다');
-    assert.equal(typeof rawPlayers[0].is_alive, 'boolean', 'is_alive가 raw 조회에서도 실제 boolean이어야 한다');
+    assert.equal(rawPlayers[0].won, 1, 'MySQL raw BOOLEAN is TINYINT; the repository must normalize it');
+    assert.equal(rawPlayers[0].is_alive, 1);
+    assert.equal(guard.winRate, 1, 'normalized booleans must reach the policy');
 
     const storedGame = await db.GameResult.findOne({ where: { id: gameId }, raw: true });
     assert.deepEqual(storedGame.settings.gameSource, { v: 1, value: 'production' }, 'JSON 컬럼이 저장→조회 왕복에서 구조를 보존해야 한다');
@@ -239,7 +240,7 @@ test('AC-05: 중단 경기는 이탈자 패배만 확정되고, 잔류자(won=nu
     const result = await gameResultRepository.persistGameResult(session, { completed: false, disconnectedUuid: leaver });
     assert.equal(result.persisted, true);
 
-    const rows = await db.GameResultPlayer.findAll({ where: { game_id: gameId }, raw: true });
+    const rows = await db.GameResultPlayer.findAll({ where: { game_id: gameId } });
     const leaverRow = rows.find((r) => r.user_id === leaver);
     const stayerRow = rows.find((r) => r.user_id === stayer);
     assert.equal(leaverRow.won, false, '이탈자는 패배로 확정되어야 한다');

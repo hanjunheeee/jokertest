@@ -206,3 +206,11 @@ F-10 자체가 추가하는 별도 복구 절차는 없다.
   즉시 실패한다(`echo "Error: no test specified"`, `Missing script: "build"`). F-10 범위 밖의
   기존 저장소 상태이므로 고치지 않았고, 대신 backend/frontend 각각의 실제 npm 스크립트를 직접
   실행해 위 결과를 얻었다.
+
+
+## 운영자 CODEX-2 보정 및 실제 검증
+
+운영자 CODEX-2 반려 원인 보정: (1) 실제 DB fixture roomId를 36자 UUID로 수정했다. 그 뒤 실제 MySQL 시험이 숨겨져 있던 두 구현 결함을 드러냈다: raw BOOLEAN은 0/1이어서 기존 strict boolean 집계에서 빠졌고, 동시 경기 PK 충돌은 MySQL fields.PRIMARY 형식이라 기존 멱등 처리에서 빠졌다. 저장소 경계에서 0/1을 boolean으로 정규화하고, game_results INSERT의 현재 경기 PRIMARY 충돌만 중복 저장으로 인정하도록 보정했다. 중복·동시·실제 JSON JOIN·롤백·중단·소켓 저장 6개 모두 실제 격리 DB에서 통과했다. raw 값을 boolean이라고 가정하던 시험은 실제 dialect 값과 최종 집계 양쪽을 검증하도록 수정했다.
+(2) 현재 정책 파일 NUL은 0개였으나 비교 기준 bc289497에는 NUL이 있어서 Git이 양쪽 본문을 바이너리로 생략했다. .gitattributes의 해당 정책 파일 한 경로에 diff를 지정해 이전/현재 전체 텍스트를 심사할 수 있게 했다. 과거 커밋이나 반려 기록은 변경하지 않았다.
+(3) 같은 직업 중첩 요청에 요청별 토큰을 추가해 오래된 성공/실패가 최신 결과를 덮지 않게 했다. A→B→A 성공/실패 역순 회귀 시험을 추가했다. useMyProfile은 계정 reset 세대 변경을 구독해 마운트 유지 중 계정 전환에도 새 계정을 재조회한다. 실제 renderHook 전환 시험을 추가했다. InvitedGuestsSpread는 이미 byJobKey 변경과 idle 상태를 구독하므로 계정 reset 후 재조회 경로가 존재했다.
+운영자 전체 검증: frontend 1292/1292, backend 1334/1334, 모두 실패0·skip0, production build 통과. 로그는 원본 .pluto/monitor/AU-{frontend,backend,build}-operator-repair.log. 이는 이번 운영자 실행 근거이며 Pluto 최종 심사 통과를 뜻하지 않는다. AC03 실제 브라우저 검증은 아직 운영자 대기다. 이제 수정된 실제 커밋에 대해 기존 전체 검증과 Claude/Codex 심사를 정상 재실행한다. IMPL만 완료로 기록하고 VERIFY/RESULT/manual PASS를 수동 완료하지 않는다.

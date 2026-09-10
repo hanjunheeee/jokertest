@@ -16,3 +16,6 @@
 *.webp binary
 *.mp4 binary
 *.woff2 binary
+
+# F10 checkpoint contained a NUL; keep the complete policy diff reviewable.
+backend/services/roleStatisticsPolicy.js diff

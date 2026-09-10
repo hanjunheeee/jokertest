@@ -76,7 +76,10 @@ exports.persistGameResult = async (session, { completed, disconnectedUuid } = {}
         const constraint = error?.parent?.constraint ?? error?.original?.constraint;
         const duplicateGameId = error instanceof db.Sequelize.UniqueConstraintError && (
             constraint === "game_results_pkey" ||
-            error?.fields?.id !== undefined
+            error?.fields?.id !== undefined || (
+                error?.fields?.PRIMARY === result.id &&
+                /^INSERT INTO [`"]?game_results[`"]?\s/i.test(error?.sql ?? "")
+            )
         );
         if (duplicateGameId) return { persisted: false, gameId: result.id };
         throw error;
@@ -140,8 +143,8 @@ const isRoleStatisticsEligibleGame = (settings) => settings?.gameSource?.value !
 const toRoleStatisticsRow = (playerRow) => ({
     user_id: playerRow.user_id,
     role: playerRow.role,
-    won: playerRow.won,
-    is_alive: playerRow.is_alive,
+    won: playerRow.won === true || playerRow.won === 1 ? true : playerRow.won === false || playerRow.won === 0 ? false : null,
+    is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
 });
 
 /**

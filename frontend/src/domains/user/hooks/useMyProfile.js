@@ -3,15 +3,16 @@ import { useUserProfileStore } from "../store/user.store.js"
 
 // 내 프로필 화면에서 필요한 프로필/통계/소개 문구 데이터를 준비하는 훅입니다.
 export function useMyProfile() {
+    const generation = useUserProfileStore((s) => s.requestGeneration)
     const data = useUserProfileStore((s) => s.data)
     const loading = useUserProfileStore((s) => s.loading)
     const fetchProfile = useUserProfileStore((s) => s.fetchProfile)
 
     useEffect(() => {
         // 캐시에 이미 데이터가 있으면 재요청하지 않습니다 (로비→마이페이지 이동 시 중복 fetch 방지).
-        if (data) return
+        if (useUserProfileStore.getState().data) return
         fetchProfile()
-    }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [generation, fetchProfile])
 
     if(!data) {
         // 아직 데이터가 없으면 화면에서 안전하게 처리할 수 있도록 null 값을 반환합니다.

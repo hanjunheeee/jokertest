@@ -26,6 +26,7 @@ const initialByJobKey = () => Object.fromEntries(JOB_KEYS.map((jobKey) => [jobKe
 export const useRoleStatisticsStore = create((set, get) => ({
   byJobKey: initialByJobKey(),
   requestGeneration: 0,
+  requestTokens: {},
 
   /** 선택한 직업의 내 전적과 전체 랭킹을 함께 불러온다. 이미 성공한 직업도 재시도용으로 다시 부를 수 있다. */
   requestJob: async (jobKey) => {
@@ -33,7 +34,9 @@ export const useRoleStatisticsStore = create((set, get) => ({
     if (!role) return;
 
     const generation = get().requestGeneration;
+    const token = Symbol(jobKey);
     set((state) => ({
+      requestTokens: { ...state.requestTokens, [jobKey]: token },
       byJobKey: { ...state.byJobKey, [jobKey]: { ...state.byJobKey[jobKey], status: "loading", error: null } },
     }));
 
@@ -44,7 +47,7 @@ export const useRoleStatisticsStore = create((set, get) => ({
       ]);
       // 응답이 도착하기 전에 로그아웃했거나 계정이 바뀌었다면 더 이상 "지금 이 화면"의
       // 응답이 아니다 — 조용히 버린다(A-08).
-      if (get().requestGeneration !== generation) return;
+      if (get().requestGeneration !== generation || get().requestTokens[jobKey] !== token) return;
 
       const myStats = myStatsList.find((entry) => entry.role === role) ?? null;
       set((state) => ({
@@ -54,7 +57,7 @@ export const useRoleStatisticsStore = create((set, get) => ({
         },
       }));
     } catch (error) {
-      if (get().requestGeneration !== generation) return;
+      if (get().requestGeneration !== generation || get().requestTokens[jobKey] !== token) return;
       set((state) => ({
         byJobKey: {
           ...state.byJobKey,
@@ -68,7 +71,7 @@ export const useRoleStatisticsStore = create((set, get) => ({
   retryJob: (jobKey) => get().requestJob(jobKey),
 
   /** 계정 경계를 넘는 상태를 지우고 진행 중이던 요청을 전부 무효화한다(requestGeneration 증가). */
-  reset: () => set((state) => ({ byJobKey: initialByJobKey(), requestGeneration: state.requestGeneration + 1 })),
+  reset: () => set((state) => ({ byJobKey: initialByJobKey(), requestTokens: {}, requestGeneration: state.requestGeneration + 1 })),
 }));
 
 // 로그아웃이든 계정 전환이든 계정 식별자가 바뀌는 순간 즉시 리셋한다(economy.store.js와 동일 계약).

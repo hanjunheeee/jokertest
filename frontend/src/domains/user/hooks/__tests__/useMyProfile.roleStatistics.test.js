@@ -59,7 +59,8 @@ mock.module("../../../auth/store/auth.store.js", {
   },
 })
 
-const { renderHook, waitFor } = await import("@testing-library/react")
+const { renderHook, waitFor, act, cleanup } = await import("@testing-library/react")
+test.afterEach(() => cleanup())
 const { useMyProfile } = await import("../useMyProfile.js")
 const { useUserProfileStore } = await import("../../store/user.store.js")
 
@@ -163,4 +164,16 @@ test("로그아웃(user → null)하면 프로필 캐시가 비워진다", async
   const state = useUserProfileStore.getState()
   assert.equal(state.data, null)
   assert.equal(state.loading, true)
+})
+
+test('mounted profile refetches once after account switch and renders the new mask', async () => {
+  resetStore()
+  profileResponse = { ...BASE_PROFILE_ROW, nickname:'first', highest_win_rate_role:'광대' }
+  const { result } = renderHook(() => useMyProfile())
+  await waitFor(() => assert.equal(result.current.profile?.reputationLabel, 'first'))
+  profileResponse = { ...BASE_PROFILE_ROW, nickname:'second', highest_win_rate_role:'주치의' }
+  await act(async () => setCurrentUser({uuid:'user-2'}))
+  await waitFor(() => assert.equal(result.current.profile?.reputationLabel, 'second'))
+  assert.equal(result.current.description.highlight, '주치의')
+  assert.equal(getMyProfileCallCount, 2)
 })

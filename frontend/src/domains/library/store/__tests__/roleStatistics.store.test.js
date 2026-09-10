@@ -176,3 +176,29 @@ test("직업 탭을 바꾸는 동안 이전 직업으로 보낸 요청은 다른
   assert.equal(useRoleStatisticsStore.getState().byJobKey.noble.ranking[0].uuid, "slow-noble", "뒤늦게 도착해도 자기 자신의 직업 키는 정상 반영되어야 한다")
   assert.equal(useRoleStatisticsStore.getState().byJobKey.clown.ranking[0].uuid, "fast-clown", "다른 직업의 응답이 clown 상태를 덮어쓰면 안 된다")
 })
+
+for (const staleFailure of [false, true]) {
+  test('A→B→A overlap discards older same-job ' + (staleFailure ? 'failure' : 'success'), async () => {
+    resetStore()
+    const gate = createDeferred()
+    let nobleCalls = 0
+    getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
+    getRoleRankingImpl = async (role) => {
+      if (role === 'CITIZEN' && ++nobleCalls === 1) {
+        await gate.promise
+        if (staleFailure) throw new Error('stale failure')
+        return { ranking: [{uuid:'old'}] }
+      }
+      return { ranking: [{uuid:'latest-' + role}] }
+    }
+    const old = useRoleStatisticsStore.getState().requestJob('noble')
+    await useRoleStatisticsStore.getState().requestJob('clown')
+    await useRoleStatisticsStore.getState().requestJob('noble')
+    gate.resolve()
+    await old
+    const latest = useRoleStatisticsStore.getState().byJobKey.noble
+    assert.equal(latest.status, 'success')
+    assert.equal(latest.ranking[0].uuid, 'latest-CITIZEN')
+    assert.equal(latest.error, null)
+  })
+}
