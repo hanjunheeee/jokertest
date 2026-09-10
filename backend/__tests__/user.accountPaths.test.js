@@ -1,14 +1,24 @@
 process.env.JWT_SECRET = "account-paths-test-secret";
+// models/index.js는 require 시점에 DATABASE_URL을 파싱합니다(연결은 하지 않습니다).
+// npm test는 --env-file=.env.test로 이 값을 주지만, 파일 하나만 직접 실행할 때도
+// 동작하도록 없을 때만 더미 값을 채웁니다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
 const { once }     = require("node:events");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
+const fs           = require("node:fs");
+const path         = require("node:path");
 
 const db = require("../models");
 const { generateToken } = require("../utils/jwt");
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
+
+// F-04 AC-01: 닉네임 변경도 가입(F-02)과 같은 벡터로 판정이 갈리지 않는지 확인한다.
+const FIXTURE_PATH = path.join(__dirname, "..", "..", "tests", "fixtures", "f02-signup-validation.json");
+const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
 
 const TOKEN = generateToken({ uuid: "uuid-1", role: "USER", sessionId: "session-1" });
 
@@ -61,6 +71,30 @@ const uniqueConstraintError = ({ paths = [], fields = {} } = {}) =>
         errors: paths.map((path) => ({ path, message: "must be unique" })),
         fields,
     });
+
+test("AC-01: 가입과 같은 fixture 무효 닉네임은 변경 요청에서도 400으로 거부된다", async (t) => {
+    stubDb(t, { update: async () => { throw new Error("검증에서 걸러져야 하며 update가 호출되면 안 됩니다"); } });
+    const base = await startServer(t);
+
+    for (const { value, reason } of fixture.nickname.invalid) {
+        const res  = await patchNickname(base, value);
+        const body = await res.json();
+        assert.equal(res.status, 400, `"${value}"(${reason})는 400이어야 합니다`);
+        assert.equal(body.success, false);
+    }
+});
+
+test("AC-01: 가입과 같은 fixture 유효 닉네임(2~8자 경계 포함)은 변경이 허용된다", async (t) => {
+    const calls = [];
+    stubDb(t, { update: async (values) => { calls.push(values); return [1]; } });
+    const base = await startServer(t);
+
+    for (const value of fixture.nickname.valid) {
+        const res = await patchNickname(base, value);
+        assert.equal(res.status, 200, `"${value}"는 200이어야 합니다`);
+    }
+    assert.equal(calls.length, fixture.nickname.valid.length);
+});
 
 test("중복 닉네임 PATCH는 500이 아니라 409를 반환한다", async (t) => {
     stubDb(t, { update: async () => { throw uniqueConstraintError({ paths: ["nickname"] }); } });

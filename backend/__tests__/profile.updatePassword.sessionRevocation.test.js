@@ -1,4 +1,8 @@
 process.env.JWT_SECRET = "profile-password-test-secret";
+// models/index.js는 require 시점에 DATABASE_URL을 파싱합니다(연결은 하지 않습니다).
+// npm test는 --env-file=.env.test로 이 값을 주지만, 파일 하나만 직접 실행할 때도
+// 동작하도록 없을 때만 더미 값을 채웁니다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -148,6 +152,37 @@ test("세션 폐기가 실패하면 비밀번호 변경도 커밋되지 않는�
         await bcrypt.compare(CURRENT_PASSWORD, getPasswordHash()),
         "폐기가 실패했는데 비밀번호만 바뀌면 원자성이 깨집니다",
     );
+    assert.equal(sessions.get("session-1").is_online, true);
+});
+
+test("F-04 AC-04: 새 비밀번호가 8자 미만이면 트랜잭션을 열지 않고 400으로 거부된다", async (t) => {
+    const { calls, sessions, getPasswordHash } = setupFakeDb(t);
+    const base = await startServer(t);
+
+    const res  = await patchPassword(base, { currentPassword: CURRENT_PASSWORD, newPassword: "short" });
+    const body = await res.json();
+
+    assert.equal(res.status, 400);
+    assert.equal(body.success, false);
+    assert.equal(calls.length, 0, "정책 위반 새 비밀번호는 해시·세션 쓰기로 이어지면 안 됩니다");
+    assert.ok(await bcrypt.compare(CURRENT_PASSWORD, getPasswordHash()), "비밀번호 해시가 그대로 유지되어야 합니다");
+    assert.equal(sessions.get("session-1").is_online, true, "세션이 폐기되면 안 됩니다");
+});
+
+test("F-04 AC-04: 새 비밀번호가 bcrypt 72바이트를 넘으면 400으로 거부된다", async (t) => {
+    // 한글은 UTF-8로 글자당 3바이트라, 25자만 되어도 75바이트로 72바이트 한도를 넘는다.
+    // 문자 수 상한(64)만 검사했다면 이 값은 통과했을 것이다.
+    const tooManyBytes = "가".repeat(25);
+    const { calls, sessions, getPasswordHash } = setupFakeDb(t);
+    const base = await startServer(t);
+
+    const res  = await patchPassword(base, { currentPassword: CURRENT_PASSWORD, newPassword: tooManyBytes });
+    const body = await res.json();
+
+    assert.equal(res.status, 400);
+    assert.equal(body.success, false);
+    assert.equal(calls.length, 0);
+    assert.ok(await bcrypt.compare(CURRENT_PASSWORD, getPasswordHash()));
     assert.equal(sessions.get("session-1").is_online, true);
 });
 

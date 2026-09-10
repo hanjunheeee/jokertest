@@ -11,6 +11,10 @@ const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]+$/;
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 64;
+// bcrypt는 72바이트를 넘는 입력을 조용히 잘라서 해시한다 — 문자 수 상한(64)만으로는
+// 멀티바이트 문자(한글 등)가 섞인 입력이 72바이트를 넘는 경우를 걸러내지 못해, 사용자가
+// 입력한 값과 실제로 해시되는 값이 달라질 수 있다.
+const PASSWORD_MAX_BYTES = 72;
 
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -76,6 +80,9 @@ const validatePassword = (password) => {
     if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
         return { ok: false, message: `비밀번호는 ${PASSWORD_MIN_LENGTH}~${PASSWORD_MAX_LENGTH}자여야 합니다.` };
     }
+    if (Buffer.byteLength(password, 'utf8') > PASSWORD_MAX_BYTES) {
+        return { ok: false, message: `비밀번호는 ${PASSWORD_MAX_BYTES}바이트를 넘을 수 없습니다.` };
+    }
     return { ok: true, value: password };
 };
 
@@ -129,6 +136,7 @@ module.exports = {
     NICKNAME_PATTERN,
     PASSWORD_MIN_LENGTH,
     PASSWORD_MAX_LENGTH,
+    PASSWORD_MAX_BYTES,
     parseIsoDateUtc,
     todayUtc,
     validateNickname,

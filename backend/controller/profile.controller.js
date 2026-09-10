@@ -1,6 +1,8 @@
 const userRepository            = require("../repositories/user.repositories");
 const { comparePassword,
         hashPassword }          = require("../utils/hash");
+const { validateNickname,
+        validatePassword }      = require("../validation/signupValidation");
 
 exports.getMyProfile = async (req, res, next) => {
     try {
@@ -30,10 +32,13 @@ exports.getMyProfile = async (req, res, next) => {
 exports.updateNickname = async (req, res, next) => {
     try {
         const { nickname } = req.body;
-        if (!nickname?.trim()) {
-            return res.status(400).json({ success: false, message: "닉네임을 입력해주세요." });
+        // 가입(F0573/F0541)과 같은 길이·허용 문자 기준을 재사용한다 — 두 경로가
+        // 서로 다른 닉네임을 허용하면 가입 때는 막혔던 값이 변경으로는 통과하게 된다.
+        const nicknameResult = validateNickname(nickname);
+        if (!nicknameResult.ok) {
+            return res.status(400).json({ success: false, message: nicknameResult.message });
         }
-        const normalizedNickname = nickname.trim();
+        const normalizedNickname = nicknameResult.value;
         const existingUser = await userRepository.findByNickname(normalizedNickname);
         if (existingUser && existingUser.uuid !== req.user.uuid) {
             return res.status(409).json({ success: false, message: "이미 사용 중인 닉네임입니다." });
@@ -52,6 +57,13 @@ exports.updatePassword = async (req, res, next) => {
         const { currentPassword, newPassword } = req.body;
         if (!currentPassword || !newPassword) {
             return res.status(400).json({ success: false, message: "현재 비밀번호와 새 비밀번호를 입력해주세요." });
+        }
+        // 가입(F0542)과 같은 길이·bcrypt 72바이트 기준을 재사용한다 — 이 검사 없이 해시로
+        // 넘기면 bcrypt가 72바이트를 넘는 부분을 조용히 잘라, 사용자가 입력한 값과 실제로
+        // 인증에 쓰이는 값이 달라진다. 트랜잭션을 열기 전에 거부하므로 해시·세션 모두 그대로 남는다.
+        const newPasswordResult = validatePassword(newPassword);
+        if (!newPasswordResult.ok) {
+            return res.status(400).json({ success: false, message: newPasswordResult.message });
         }
 
         // 현재 비밀번호 확인부터 세션 전체 폐기까지 하나의 트랜잭션 + 유저 행 잠금(FOR UPDATE)

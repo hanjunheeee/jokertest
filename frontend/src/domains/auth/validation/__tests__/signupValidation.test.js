@@ -93,6 +93,13 @@ test("AC-04: fixture의 무효한 비밀번호는 모두 거부된다", () => {
   }
 })
 
+test("F-04 AC-04: bcrypt 72바이트를 넘는 비밀번호는 거부된다(멀티바이트 문자 포함)", () => {
+  // 한글은 UTF-8로 글자당 3바이트라, 문자 수 상한(64)만으로는 25자짜리 한글 비밀번호가
+  // 75바이트로 72바이트 한도를 넘는 경우를 걸러내지 못한다.
+  assert.equal(validatePassword("가".repeat(25)).ok, false)
+  assert.equal(validatePassword("가".repeat(24)).ok, true)
+})
+
 test("AC-04: 비밀번호와 비밀번호 확인이 다르면 거부된다", () => {
   assert.equal(validatePasswordConfirm("pw12345678", "pw12345678").ok, true)
   assert.equal(validatePasswordConfirm("pw12345678", "different").ok, false)
