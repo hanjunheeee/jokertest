@@ -85,12 +85,12 @@ export default function StoreSelectedItemDetail({
                     alt=""
                     className={STORE_DETAIL_PRICE_ICON_CLASS}
                   />
-                  <span className={STORE_DETAIL_PRICE_AMOUNT_CLASS}>{item.priceAmount}</span>
+                  <span className={STORE_DETAIL_PRICE_AMOUNT_CLASS}>{item.priceAmount} 골드</span>
                 </>
               )}
             </div>
 
-            <StorePurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} owned={owned} />
+            {item.category !== "이모티콘" ? <StorePurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} owned={owned} /> : <span>표시 전용 · 준비중</span>}
           </div>
         </div>
       </div>

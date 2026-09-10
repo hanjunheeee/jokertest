@@ -189,6 +189,7 @@ export default function StoreItemGrid({
   bulkMode = false,
   bulkSelectedIds = new Set(),
   ownedItemIds = new Set(),
+  selectionDisabled = false,
   onBulkModeChange,
   onBulkSelectionChange,
 }) {
@@ -197,6 +198,7 @@ export default function StoreItemGrid({
   }
 
   const handleSelectItem = (item) => {
+    if (selectionDisabled) return
     // F-09 R-IMPL(AC-06 재검토): 이미 보유한 상품은 일괄구매 선택 대상에서 제외한다 —
     // 서버(purchaseItems)도 기보유 상품을 ITEM_ALREADY_OWNED로 거부하지만, 화면에서부터
     // 선택 자체를 막아야 "보유중" 표시와 실제 동작이 일치한다.

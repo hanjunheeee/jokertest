@@ -137,7 +137,7 @@ function createIngameMoneyItem(currencyKey, amount) {
     ),
     priceAmount: STORE_PRICE_PENDING,
     grade: config.label,
-    description: `${config.label} ${amount}개 패키지. 구매 후 계정에 즉시 지급됩니다.`,
+    description: `${config.label} ${amount}개 패키지. 판매 준비 중입니다.`,
     tag: null,
   }
 }
@@ -148,12 +148,19 @@ export const INGAME_MONEY_STORE_ITEMS = [
   ...[10, 50, 100, 300].map((amount) => createIngameMoneyItem("diamond", amount)),
 ]
 
+export const EMOTICON_STORE_ITEMS = ["웃음", "울음", "화남", "박수"].map((name, i) => ({
+  id: `emoticon-${name}`, category: "이모티콘", name: `${name} 이모티콘`,
+  icon: PLAYER_CARD_STORE_ITEMS[i].icon, priceAmount: STORE_PRICE_PENDING,
+  grade: "임시 상품", description: "표시 전용 임시 이미지입니다. 구매 및 사용은 준비 중입니다.", tag: "준비중",
+}))
+
 /** 등록된 전체 상품 — 카테고리별 배열을 여기에 합칩니다. */
 export const STORE_ITEMS = [
   ...SKIN_STORE_ITEMS,
   ...PROFILE_BORDER_STORE_ITEMS,
   ...PLAYER_CARD_STORE_ITEMS,
   ...INGAME_MONEY_STORE_ITEMS,
+  ...EMOTICON_STORE_ITEMS,
 ]
 
 /** @deprecated STORE_ITEMS 사용 */

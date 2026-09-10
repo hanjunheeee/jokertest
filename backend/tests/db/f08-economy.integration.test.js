@@ -45,10 +45,7 @@ const addEconomy = require('../../db/migrations/0006-add-economy');
 const addEconomyPurchaseRequests = require('../../db/migrations/0007-add-economy-purchase-requests');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [
-    baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory,
-    addSocialAuth, addEconomy, addEconomyPurchaseRequests,
-];
+const { MIGRATIONS } = require('../../scripts/migrate-db');
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, migrationRunner,
 });
@@ -75,10 +72,7 @@ const unavailable = (t) => {
         t.skip('F01_TEST_DATABASE_URL이 설정되지 않았습니다 — 실제 MySQL 격리 DB 없이는 AC를 검증할 수 없습니다 (미검증).');
         return true;
     }
-    if (connectionError) {
-        t.skip(`격리 DB(${TEST_DB_URL.replace(/:[^:@]*@/, ':***@')})에 연결할 수 없습니다 — 미검증: ${connectionError.message}`);
-        return true;
-    }
+    if (connectionError) throw connectionError;
     return false;
 };
 

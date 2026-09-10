@@ -13,7 +13,7 @@ import StoreBulkPurchaseItemList from "./StoreBulkPurchaseItemList.jsx"
 import StoreBulkPurchaseSummary from "./StoreBulkPurchaseSummary.jsx"
 
 /** 일괄구매 확인 팝업 본문 */
-export default function StoreBulkPurchasePanel({ items, deadPreviewIds, onClose, onConfirm }) {
+export default function StoreBulkPurchasePanel({ items, deadPreviewIds, onClose, onConfirm, purchaseState, onCheck, onRetry }) {
   const { total, hasPendingPrice } = calculateBulkPurchaseTotal(items)
 
   return (
@@ -42,6 +42,9 @@ export default function StoreBulkPurchasePanel({ items, deadPreviewIds, onClose,
           total={total}
           hasPendingPrice={hasPendingPrice}
           onConfirm={onConfirm}
+          purchaseState={purchaseState}
+          onCheck={onCheck}
+          onRetry={onRetry}
         />
       </div>
     </div>
