@@ -1,4 +1,5 @@
 const authService       = require("../service/auth.service");
+const socialAuthService = require("../service/socialAuth.service");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
@@ -88,6 +89,51 @@ exports.logout = async (req, res, next) => {
         next(error);
     }
 };
+
+// F-05: 소셜 로그인 최초 인증 이후, 닉네임 등 필수 정보를 보완해 가입을 완료한다.
+// completeSocialSignup은 항상 rememberMe:false로 세션을 발급하므로(소셜 전용 계정은
+// 로그인 유지를 선택할 입력 자체가 없다), login()의 "로그인 유지 미선택" 분기와 같은 이유로
+// refreshToken 쿠키를 세우지 않고, 남아있을 수 있는 이전 영속 refreshToken 쿠키만 지운다.
+exports.completeSocialSignup = async (req, res, next) => {
+    try {
+        const userAgent = req.headers["user-agent"];
+        const reqInfo = {
+            ip:         getClientIp(req),
+            userAgent:  userAgent,
+            deviceType: getDeviceType(userAgent),
+        };
+
+        const { intentToken, nickname, birthDate } = req.body;
+        const { user, token, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
+            intentToken, nickname, birthDate, reqInfo,
+        });
+
+        res.cookie("accessToken", token, buildSessionCookieOptions(false, refreshTokenExpiresAt));
+        clearRefreshCookie(res);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                user: {
+                    uuid:     user.uuid,
+                    nickname: user.nickname,
+                    role:     user.role,
+                },
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-05 AC-04/D-01 R-IMPL: 명시적 연결(link) HTTP 핸들러는 여기 두지 않는다. 이 컨트롤러가
+// req.body의 provider/subject/email을 그대로 socialAuthService.linkExternalIdentity에
+// 전달하면, 로그인한 사용자가 소유권 증명 없이 임의의 소셜 identity를 자기 계정에 선점할 수
+// 있다(운영자 코드 검토 R-IMPL — state·세션 검증만으로는 provider/subject 자체의 진위를
+// 증명하지 못한다). socialAuthService.issueOAuthState(purpose:"link")·linkExternalIdentity는
+// 서버가 OAuth 교환·검증을 마친 결과만 입력으로 받는 내부 전용 계약으로 남겨 두고, F-06/F-07이
+// 실제 제공자 검증 어댑터를 완성해 그 검증 결과로만 이 함수들을 호출하는 라우트를 추가할
+// 때까지 공개 HTTP 경로는 두지 않는다(backend/routes/auth.routes.js 참고).
 
 // 액세스 토큰이 만료된 뒤(F-03 AC-01) 호출된다. verifyToken을 거치지 않으므로 req.user가
 // 없고, 대신 refreshToken 쿠키 자체를 authService.refresh가 검증·회전시킨다.

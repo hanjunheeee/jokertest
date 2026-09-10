@@ -29,3 +29,9 @@ export const getMeApi = async () => {
 export const logoutApi = async () => {
     return await api.post('/auth/logout');
 };
+
+// F-05: 소셜 로그인 최초 인증 이후, 닉네임 등 필수 정보를 보완해 가입을 완료합니다.
+// intentToken은 서버(socialAuth.service.js의 handleOAuthCallback)가 발급한 1회용 값입니다.
+export const completeSocialSignupApi = async ({ intentToken, nickname, birthDate }) => {
+    return await api.post('/auth/social/signup/complete', { intentToken, nickname, birthDate });
+};

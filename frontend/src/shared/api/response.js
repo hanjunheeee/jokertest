@@ -14,6 +14,15 @@ const readErrorBody = async (response) => {
 
 // 401 인증 실패 응답을 처리합니다.
 // 여기서는 auth store를 직접 만지지 않고, 등록된 도메인 핸들러만 호출합니다.
+// 서버 응답 body의 code(backend/utils/appError.js가 실어 보내는 안정적인 값)를 Error
+// 객체에도 실어, 호출하는 쪽이 메시지 문자열이 아니라 code로 분기할 수 있게 합니다
+// (F-05: state 만료/재사용/이메일 충돌처럼 분기해야 하는 상황이 늘어나며 추가했습니다).
+const toApiError = (errorData, fallbackMessage) => {
+    const error = new Error(errorData.message || fallbackMessage);
+    if (errorData.code) error.code = errorData.code;
+    return error;
+};
+
 const handleUnauthorized = async (response) => {
     const errorData = await readErrorBody(response);
 
@@ -23,13 +32,13 @@ const handleUnauthorized = async (response) => {
     }
 
     // 핸들러가 등록되지 않은 경우에도 호출한 쪽에서 실패를 알 수 있게 에러를 던집니다.
-    throw new Error(errorData.message || "인증에 실패했습니다.");
+    throw toApiError(errorData, "인증에 실패했습니다.");
 };
 
 // 401 외의 실패 응답을 공통 에러로 처리합니다.
 const handleErrorResponse = async (response) => {
     const errorData = await readErrorBody(response);
-    throw new Error(errorData.message || "API 요청 중 에러가 발생했습니다.");
+    throw toApiError(errorData, "API 요청 중 에러가 발생했습니다.");
 };
 
 // 성공 응답 body를 읽고, API 응답 형태에 맞게 필요한 값만 반환합니다.

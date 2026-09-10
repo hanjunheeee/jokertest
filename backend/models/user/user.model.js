@@ -31,6 +31,8 @@ module.exports = (sequelize, DataTypes) => {
     User.hasMany(models.LoginHistory, { foreignKey: 'user_id', sourceKey: 'uuid' });
     User.hasMany(models.PasswordResetToken, { foreignKey: 'user_id', sourceKey: 'uuid' });
     User.hasMany(models.UserSession, { foreignKey: 'user_id', sourceKey: 'uuid' });
+    // F-05: 한 계정에 여러 소셜 identity(구글/카카오 등)가 연결될 수 있다(AC-04 명시적 연결).
+    User.hasMany(models.ExternalIdentity, { foreignKey: 'user_id', sourceKey: 'uuid' });
 
     User.hasMany(models.FriendRequest, { as: 'SentRequests', foreignKey: 'requester_id', sourceKey: 'uuid' });
     User.hasMany(models.FriendRequest, { as: 'ReceivedRequests', foreignKey: 'receiver_id', sourceKey: 'uuid' });
