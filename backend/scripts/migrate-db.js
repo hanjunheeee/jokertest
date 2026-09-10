@@ -26,8 +26,11 @@ const addRefreshTokenHistory = require('../db/migrations/0004-add-refresh-token-
 // 안에서 기본 지급을 저장할 테이블이 실제로 존재한다. (0005-add-social-auth는 이 배열에
 // 이미 없던 이전부터의 상태를 그대로 뒀다 — F-08 범위 밖의 별도 이슈.)
 const addEconomy = require('../db/migrations/0006-add-economy');
+// F-09: economy_purchase_requests(0007)도 같은 이유로 실제 배포 마이그레이션 명령에
+// 포함해야 economyService.purchaseItem/purchaseItems가 커밋할 테이블이 실제로 존재한다.
+const addEconomyPurchaseRequests = require('../db/migrations/0007-add-economy-purchase-requests');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addEconomy];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addEconomy, addEconomyPurchaseRequests];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

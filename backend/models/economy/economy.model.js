@@ -156,11 +156,56 @@ module.exports = (sequelize, DataTypes) => {
         updatedAt: 'updated_at',
     });
 
+    // F-09 개별·일괄 구매 결과 복구용 영속 레코드. (user_id, reference_event_id) 복합
+    // 유일 인덱스로 요청 단위 재처리 방지 키 역할을 한다 — economy_ledger_entries의 같은
+    // 패턴을 그대로 따르되, 이 테이블은 "품목 하나"가 아니라 "구매 요청 하나 전체"(단일
+    // 또는 일괄)의 정규화된 요청 내용(payload_json)과 커밋된 결과(result_json)를 묶어
+    // 저장한다. 이 행은 구매가 실제로 커밋될 때만(지갑 차감·원장 기록·소유권 부여와 같은
+    // 트랜잭션 안에서) 만들어지므로, 이 행이 존재한다는 것 자체가 "그 요청은 이미 커밋된
+    // 성공"이라는 뜻이다(economy.service.js getPurchaseResult 참고, F-09 AC-04).
+    const EconomyPurchaseRequest = sequelize.define('EconomyPurchaseRequest', {
+        id: {
+            type: DataTypes.BIGINT,
+            primaryKey: true,
+            allowNull: false,
+            autoIncrement: true,
+        },
+        user_id: {
+            type: DataTypes.UUID,
+            allowNull: false,
+        },
+        reference_event_id: {
+            type: DataTypes.STRING(150),
+            allowNull: false,
+        },
+        kind: {
+            type: DataTypes.STRING(10),
+            allowNull: false,
+        },
+        payload_json: {
+            type: DataTypes.JSON,
+            allowNull: false,
+        },
+        result_json: {
+            type: DataTypes.JSON,
+            allowNull: false,
+        },
+    }, {
+        tableName: 'economy_purchase_requests',
+        timestamps: true,
+        createdAt: 'created_at',
+        updatedAt: false,
+        indexes: [
+            { unique: true, fields: ['user_id', 'reference_event_id'], name: 'economy_purchase_requests_user_reference_unique' },
+        ],
+    });
+
     EconomyLedgerEntry.associate = (models) => {
         EconomyWallet.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
         EconomyLedgerEntry.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
         EconomyEntitlement.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
         EconomyLoadout.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
+        EconomyPurchaseRequest.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
     };
 
     return EconomyLedgerEntry;

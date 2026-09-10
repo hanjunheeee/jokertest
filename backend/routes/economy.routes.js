@@ -42,6 +42,11 @@ const serializeLoadout = (loadout) => ({
 // 여기서 평범한 미지 필드로 그대로 잡힌다.
 const ALLOWED_PURCHASE_FIELDS = new Set(["itemId", "referenceEventId"]);
 const ALLOWED_GRANT_FIELDS = new Set(["userId", "reason", "referenceEventId"]);
+// F-09 일괄 구매 — 같은 이유(AC-04)로 문서화된 필드(items·referenceEventId) 밖의 값이
+// 오면 즉시 거부한다. items 배열의 각 원소도 itemId 하나만 허용한다 — 조작된 요청이
+// item마다 price·currency 같은 필드를 끼워 넣어도 서비스에 닿기 전에 거부된다.
+const ALLOWED_BULK_PURCHASE_FIELDS = new Set(["items", "referenceEventId"]);
+const ALLOWED_BULK_PURCHASE_ITEM_FIELDS = new Set(["itemId"]);
 
 const rejectUnknownFields = (body, allowedFields, errorCode) => {
     const unknown = Object.keys(body ?? {}).filter((key) => !allowedFields.has(key));
@@ -89,6 +94,47 @@ router.post("/purchase", verifyToken, async (req, res, next) => {
             idempotent: result.idempotent,
             ledgerEntry: serializeLedgerEntry(result.ledgerEntry),
         });
+    } catch (error) { next(error); }
+});
+
+// F-09 일괄 구매 — 개별 구매(POST /purchase)와 같은 인증된 본인 계정 기준 원자적 처리다
+// (economyService.purchaseItems). 하나라도 실패하면 묶음 전체가 실패한다(AC-02).
+router.post("/purchases/bulk", verifyToken, async (req, res, next) => {
+    try {
+        const body = req.body ?? {};
+        rejectUnknownFields(body, ALLOWED_BULK_PURCHASE_FIELDS, "UNKNOWN_BULK_PURCHASE_FIELD");
+        const { items, referenceEventId } = body;
+        if (typeof referenceEventId !== "string") {
+            throw createError("referenceEventId가 필요합니다.", 400, "INVALID_BULK_PURCHASE_REQUEST");
+        }
+        if (!Array.isArray(items) || items.length === 0) {
+            throw createError("items가 필요합니다.", 400, "INVALID_BULK_PURCHASE_REQUEST");
+        }
+        for (const item of items) {
+            rejectUnknownFields(item, ALLOWED_BULK_PURCHASE_ITEM_FIELDS, "UNKNOWN_BULK_PURCHASE_ITEM_FIELD");
+            if (typeof item?.itemId !== "string") {
+                throw createError("items[].itemId가 필요합니다.", 400, "INVALID_BULK_PURCHASE_REQUEST");
+            }
+        }
+        const result = await economyService.purchaseItems({ userId: req.user.uuid, items, referenceEventId });
+        res.status(result.idempotent ? 200 : 201).json({
+            idempotent: result.idempotent,
+            kind: result.kind,
+            results: result.results.map(serializeLedgerEntry),
+        });
+    } catch (error) { next(error); }
+});
+
+// F-09 AC-04 — 커밋 후 응답을 잃어버렸을 때 같은 참조 사건 ID로 결과를 복구한다.
+// 커밋된 적이 없으면(요청이 아예 도달하지 않았거나 커밋 전 오류로 롤백됨) 404다 — 그
+// 두 경우를 이 응답 하나로는 구분하지 않는다(economyService.getPurchaseResult 참고).
+router.get("/purchases/:referenceEventId", verifyToken, async (req, res, next) => {
+    try {
+        const result = await economyService.getPurchaseResult(req.user.uuid, req.params.referenceEventId);
+        if (!result) {
+            throw createError("해당 참조 사건 ID로 커밋된 구매 결과가 없습니다.", 404, "PURCHASE_RESULT_NOT_FOUND");
+        }
+        res.json({ kind: result.kind, results: result.results.map(serializeLedgerEntry), createdAt: result.createdAt });
     } catch (error) { next(error); }
 });
 

@@ -40,11 +40,17 @@ const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-to
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addEconomy = require('../../db/migrations/0006-add-economy');
+// F-09: economyService.purchaseItem이 이제 economy_purchase_requests에도 쓰므로(공통
+// purchaseItems 경로로 리팩터링됨, AC-04) 이 스위트도 그 테이블이 실제로 존재해야 한다.
+const addEconomyPurchaseRequests = require('../../db/migrations/0007-add-economy-purchase-requests');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy];
+const MIGRATIONS = [
+    baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory,
+    addSocialAuth, addEconomy, addEconomyPurchaseRequests,
+];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
-    baseline, addRefreshTokenHistory, addSocialAuth, addEconomy, migrationRunner,
+    baseline, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, migrationRunner,
 });
 
 let sequelize;

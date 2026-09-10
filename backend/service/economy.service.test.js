@@ -183,8 +183,39 @@ const createFakeDb = () => {
         },
     };
 
+    // F-09: purchaseItem이 이제 공통 purchaseItems 경로(EconomyPurchaseRequest 기록)를
+    // 거치므로, 이 fake도 그 모델을 흉내내야 한다 — 계약은 EconomyLedgerEntry와 같다:
+    // (user_id, reference_event_id) 복합 키로만 조회·유일성을 판정한다.
+    const purchaseRequests = [];
+    let nextPurchaseRequestId = 1;
+    const EconomyPurchaseRequest = {
+        async create({ user_id, reference_event_id, kind, payload_json, result_json }, options = {}) {
+            if (purchaseRequests.some((r) => r.user_id === user_id && r.reference_event_id === reference_event_id)) {
+                const error = new Error('duplicate purchase request reference_event_id for this account');
+                error.name = 'SequelizeUniqueConstraintError';
+                throw error;
+            }
+            const record = {
+                id: nextPurchaseRequestId++, user_id, reference_event_id, kind, payload_json, result_json,
+                created_at: new Date(),
+            };
+            if (options.transaction) {
+                options.transaction._undo.push(() => {
+                    const index = purchaseRequests.indexOf(record);
+                    if (index !== -1) purchaseRequests.splice(index, 1);
+                });
+            }
+            purchaseRequests.push(record);
+            return record;
+        },
+        async findOne({ where }) {
+            if (!where.reference_event_id) return null;
+            return purchaseRequests.find((r) => r.user_id === where.user_id && r.reference_event_id === where.reference_event_id) ?? null;
+        },
+    };
+
     const sequelize = {
-        models: { EconomyWallet, EconomyEntitlement, EconomyLoadout },
+        models: { EconomyWallet, EconomyEntitlement, EconomyLoadout, EconomyPurchaseRequest },
         transaction: async (fn) => {
             const t = { LOCK: { UPDATE: 'UPDATE' }, _releasers: [], _undo: [] };
             try {
@@ -201,7 +232,7 @@ const createFakeDb = () => {
     return {
         sequelize,
         EconomyLedgerEntry,
-        _inspect: { walletsByUser, ledgerEntries, entitlements },
+        _inspect: { walletsByUser, ledgerEntries, entitlements, purchaseRequests },
         // 테스트가 다음 한 번의 EconomyLedgerEntry.create 호출 직전에 임의의 실패를
         // 주입할 수 있게 한다("injected write failure" 롤백 시험용).
         _interceptNextLedgerCreate: (fn) => { ledgerCreateInterceptor = fn; },
