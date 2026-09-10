@@ -179,9 +179,46 @@ const rawGet = (base, path, { cookie } = {}) => new Promise((resolve, reject) =>
     req.end();
 });
 
-const setCookies = (headers) => headers['set-cookie'] ?? [];
+// R-IMPL(b8bde586) 재검토 지적: rawGet(node:http)의 응답은 IncomingHttpHeaders라
+// headers['set-cookie']가 문자열 배열이지만, 아래 fetch(가입 완료 요청)의 response.headers는
+// WHATWG Headers라 대괄호 인덱싱이 항상 undefined다 — HTTP 200과 실제 계정/식별자 생성에도
+// 불구하고 281·285행의 쿠키 assertion이 그 자리에서 실패했다. Set-Cookie를 쉼표로 split하면
+// Expires 값 자체에 쉼표가 들어 있어(예: "Expires=Wed, 21 Oct 2026 07:28:00 GMT") 쿠키 하나를
+// 둘로 잘못 쪼갠다 — 대신 WHATWG Headers가 제공하는 getSetCookie()(합치지 않고 배열 그대로
+// 반환)를 우선 쓰고, 없으면(node:http 형태) 기존 대괄호 인덱싱으로 되돌아간다.
+const setCookies = (headers) => {
+    if (typeof headers.getSetCookie === 'function') return headers.getSetCookie();
+    const raw = headers['set-cookie'] ?? [];
+    return Array.isArray(raw) ? raw : [raw];
+};
 const findSetCookie = (headers, name) => setCookies(headers).filter((c) => c.startsWith(`${name}=`)).at(-1);
 const cookieHeader = (raw) => raw.split(';')[0];
+
+// ── setCookies 헬퍼 자체의 회귀 — node:http/WHATWG Headers 두 형태 모두, 그리고 Expires의
+// 쉼표를 쿠키 경계로 오인하지 않는지 — DB 없이 바로 실행된다(스킵되지 않는다).
+test('setCookies는 node:http 헤더와 fetch(WHATWG) Headers 양쪽에서 여러 Set-Cookie를 배열로 읽고, Expires의 쉼표를 쿠키 경계로 쪼개지 않는다', () => {
+    const expiresCookie = 'sessionId=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/';
+    const otherCookie = 'refreshToken=xyz; HttpOnly';
+
+    const nodeHeaders = { 'set-cookie': [expiresCookie, otherCookie] };
+    assert.deepEqual(setCookies(nodeHeaders), [expiresCookie, otherCookie]);
+    assert.equal(findSetCookie(nodeHeaders, 'sessionId'), expiresCookie);
+
+    const fetchHeaders = new Headers();
+    fetchHeaders.append('set-cookie', expiresCookie);
+    fetchHeaders.append('set-cookie', otherCookie);
+    assert.deepEqual(setCookies(fetchHeaders), [expiresCookie, otherCookie]);
+    assert.equal(findSetCookie(fetchHeaders, 'sessionId'), expiresCookie);
+
+    // 단일 Set-Cookie만 있는 node:http 응답은 배열이 아니라 문자열로 올 수 있다 — 그 경우도
+    // 빈 배열로 조용히 삼키지 않고 1개짜리 배열로 정규화해야 한다.
+    assert.deepEqual(setCookies({ 'set-cookie': otherCookie }), [otherCookie]);
+
+    // Set-Cookie가 전혀 없는 응답은 여전히 빈 배열이어야 한다(기존 쿠키 부재 assertion을
+    // 깨뜨리지 않는다).
+    assert.deepEqual(setCookies({}), []);
+    assert.deepEqual(setCookies(new Headers()), []);
+});
 
 const createLocalUser = async (label) => {
     const uuid = crypto.randomUUID();

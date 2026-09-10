@@ -134,6 +134,35 @@
    실행하지 못했다 — 형태를 바꿔 우회하지 않고 아래 "실행한 검증"에 정확히 기록했다. 정규
    VERIFY 단계의 재실행이 필요하다.
 
+## VERIFY-15/CODEX-3 재검토 지적과 이번 회차(테스트 헬퍼 복구)의 해결
+
+VERIFY-15(격리 DB 배경 전체 회귀, 운영자 재실행)와 CODEX-3 재검토는 R-IMPL 복구 회차의 라우팅·
+연결 UI·state-먼저-소비·설정 분리 수정 4가지를 모두 CLOSED로 확인했다 — 남은 결함은 AC-02
+실제 DB 테스트 자체의 테스트 헬퍼 하나였다.
+
+- **정확한 원인**: `backend/tests/db/f07-discord-oauth.integration.test.js`의 `setCookies(headers)`가
+  `headers['set-cookie']`만 읽었다 — 이는 `rawGet`(node:http `IncomingHttpHeaders`)에는 맞지만,
+  가입 완료 요청(`POST /auth/social/signup/complete`)은 `fetch`로 보내고 그 `response.headers`는
+  WHATWG `Headers` 객체다. 대괄호 인덱싱은 이 객체에서 항상 `undefined`를 반환해, 실제로는
+  HTTP 200과 실제 `users`/`external_identities` 행 생성이 성공했음에도(VERIFY-15 실측:
+  1189 pass/2 fail/0 skip, 281·285행의 쿠키 assertion에서 실패) 완료 이후 assertion이 그
+  자리에서 깨졌다.
+- **수정**: `setCookies`가 `headers.getSetCookie`(WHATWG `Headers`가 제공하는, 여러 Set-Cookie를
+  합치지 않고 배열로 반환하는 메서드)가 있으면 그것을 쓰고, 없으면(node:http 형태) 기존
+  대괄호 인덱싱으로 되돌아가도록 고쳤다 — 두 형태 모두 지원한다. Set-Cookie를 쉼표로 split하지
+  않는다(Expires 값 자체에 쉼표가 들어 있어 잘못 쪼개질 수 있기 때문 — `getSetCookie()`는
+  애초에 합치지 않으므로 이 문제가 없다). 기존 쿠키 존재·Max-Age·refreshToken·재시도
+  rememberMe true/false·identity 개수·재로그인 assertion은 전부 그대로 남겨 두었다(제거·완화
+  없음).
+- **신규 회귀**: `f07-discord-oauth.integration.test.js`에 `setCookies`/`findSetCookie` 자체를
+  검증하는 단위 테스트를 DB 케이스들보다 앞에 추가했다 — node:http 헤더 형태와 fetch(WHATWG)
+  `Headers` 형태 양쪽에서 여러 Set-Cookie를 배열로 읽는지, `Expires`의 쉼표를 쿠키 경계로
+  쪼개지 않는지, 단일 Set-Cookie(문자열)·Set-Cookie 없음 모두 정규화되는지 확인한다. 이 테스트는
+  `F01_TEST_DATABASE_URL` 없이도(이 세션 포함) 항상 실행되며 스킵되지 않는다.
+- **범위**: 프로덕션 인증 코드는 손대지 않았다 — 이 지적은 테스트 헬퍼(assertion 도구) 결함이지
+  실제 서버 동작의 결함이 아니었다. 앞선 라우팅·연결 UI·state-먼저-소비·설정 분리 수정은
+  CODEX-3에서 CLOSED로 확인되어 이번 회차에서 다시 진단하거나 바꾸지 않았다.
+
 ## AC-05 — 실제 Discord 외부 연동은 readiness_unverified
 
 이 슬라이스는 실제 Discord 클라이언트 ID·비밀키·등록된 redirect_uri를 받은 적이 없다.
@@ -147,6 +176,17 @@
   (R-IMPL 복구 회차 신규 시나리오) — readiness_unverified. 화면 컨트롤과 서버 라우트·상태
   검증 순서는 이번 회차가 로컬 fixture·격리 DB로 검증했지만, 실제 Discord 계정·등록된
   `DISCORD_LINK_REDIRECT_URI`로 버튼을 눌러 왕복한 적은 없다.
+
+### 테스트 헬퍼 복구 회차 — 실제 Chrome 증거(부분)
+
+운영자가 root `.pluto/monitor/AR-browser-b8bde586.json`에 실제 Chrome 브라우저로 확인한 결과를
+남겼다: 프로덕션 소스를 로컬 API를 가리키도록 별도 빌드해, 실제 백엔드+격리 DB로 로그인에
+성공했고, 인증된 `/account` 화면에 닉네임·비밀번호·Discord 연결 컨트롤이 정상 렌더링됐으며,
+"연결하기"를 클릭하자 네이티브 `confirm()` 대화상자가 떴다(위 `DiscordAccountLink.jsx`의
+`window.confirm` 명시적 확인 단계가 실제로 동작함을 보인다). 이 네이티브 confirm이 브라우저
+제어 전송(transport)을 타임아웃시켜 자동으로 닫을 수 없었다 — confirm 해제, 연결 UI 전체
+왕복, 실제 외부 Discord 인증 성공 중 어느 것도 이 세션이 통과했다고 주장하지 않는다. 실제
+제공자 로그인·연결은 계속 readiness_unverified로 남는다.
 
 ### 실제 연동에 필요한 것 (서버 환경변수 이름만, 값은 기록하지 않음)
 
@@ -284,8 +324,9 @@ F-05/F-06이 설계한 `oauthAttempt` 서명 쿠키(state에 결합되는 browse
 - `node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs`(F-01 승인된 격리 MySQL
   스키마를 사용하는 백엔드 전체 회귀 래퍼, F-06 회차에서 운영자가 직접 실행해 1145
   pass/0 fail/0 skip을 기록한 바로 그 스크립트, VERIFY-10에서는 1185 pass/1 fail/0 skip을
-  기록했다)를 이번 R-IMPL 복구 회차를 포함해 이 워크트리 대상으로 세 차례 실행을 시도했으나,
-  매번 세션의 명령 승인 절차에서 거부되어("이 명령은 승인이 필요합니다") 실행되지 못했다 —
+  기록했다)를 이번 테스트 헬퍼 복구 회차를 포함해 이 워크트리 대상으로 네 차례 실행을
+  시도했으나, 매번 세션의 명령 승인 절차에서 거부되어("이 명령은 승인이 필요합니다"/"This
+  command requires approval") 실행되지 못했다 —
   형태를 바꿔 우회하지 않았다. 이 스크립트가 다루는 DB 자격·대상 스키마는 운영자 전용 비공개
   설정(`f01-test-db.private.json`)에 있으므로, 이 격리 DB 배경의 전체 회귀(닉네임 fixture를
   고친 `backend/tests/db/f07-discord-oauth.integration.test.js`의 8개를 포함해)는 운영자 또는
@@ -302,6 +343,32 @@ F-05/F-06이 설계한 `oauthAttempt` 서명 쿠키(state에 결합되는 browse
 - VERIFY-10 실측(격리 DB 배경, 운영자 재실행): **1185 pass / 1 fail / 0 skip** — 실패 1건은
   `f07-discord-oauth.integration.test.js:225`(닉네임 fixture 결함, 위 "CODEX-2 재검토 지적" 1번
   참고).
+- VERIFY-13/14/15 실측(R-IMPL 복구 회차, 운영자 재실행): VERIFY-13 프론트 1,241 pass/0 fail/0
+  skip. VERIFY-14 build exit 0. VERIFY-15 백엔드(격리 DB 배경) **1189 pass / 2 fail / 0 skip** —
+  실패 2건 모두 `f07-discord-oauth.integration.test.js`의 281·285행(가입 완료 쿠키 assertion),
+  원인은 위 "VERIFY-15/CODEX-3 재검토 지적과 이번 회차(테스트 헬퍼 복구)의 해결" 절 참고(테스트
+  헬퍼 `setCookies`가 fetch의 WHATWG `Headers`를 지원하지 않았다 — HTTP 200과 실제 계정/identity
+  생성 자체는 이미 성공하고 있었다).
+
+### 이번 회차(테스트 헬퍼 복구, b8bde586 기준) 실측
+
+- `node impl-check.js node-test backend/tests/db/f07-discord-oauth.integration.test.js` — **1
+  pass / 0 fail / 8 skipped**. pass 1건은 이번 회차가 새로 추가한 `setCookies`/`findSetCookie`
+  단위 회귀(node:http·fetch Headers 양쪽 형태, Expires 쉼표 비분리, 단일/부재 Set-Cookie
+  정규화) — `F01_TEST_DATABASE_URL` 없이도 항상 실행되고 통과한다. 나머지 8개(AC-02
+  rememberMe false/true 포함)는 이 세션에 격리 DB 접근 권한이 없어 이전 회차와 같은 이유로
+  skip이다 — VERIFY-15가 잡아낸 281·285행 실패가 실제로 해소됐는지는 이 세션 권한으로
+  재확인하지 못했다. 격리 DB 배경 최종 재실행이 필요하다.
+- `node impl-check.js test`(cwd=backend) — 백엔드 전체 **1,192 total / 1,149 pass / 0 fail / 43
+  skipped**(VERIFY-15 이전 수치 대비 이번 회차 신규 단위 회귀 1개가 pass로 반영, 실패 없음,
+  skip 구성은 동일하게 `F01_TEST_DATABASE_URL` 미설정에 의한 것).
+- `node "C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs" test`(격리 DB 배경 전체
+  회귀) — 이번 회차에서도 세션 명령 승인 절차에서 거부됨("This command requires approval") —
+  형태를 바꿔 우회하지 않았다. VERIFY-15가 실제로 실행한 그 스크립트이며, 이 수정이 VERIFY-15의
+  281·285행 실패를 실제로 해소하는지 확정하려면 정규 VERIFY 단계 또는 운영자의 재실행이
+  필요하다 — **이 문서는 그 재실행 결과를 아직 반영하지 않은 상태로 pending이다.**
+- 프론트엔드/빌드는 이번 회차에서 파일을 고치지 않아 재실행하지 않았다(VERIFY-13/14 수치 그대로
+  유효).
 
 ### 이번 회차(R-IMPL 복구) 실측
 
@@ -378,7 +445,8 @@ F-05/F-06이 설계한 `oauthAttempt` 서명 쿠키(state에 결합되는 browse
   전체 회귀로 회귀 없음 재확인)
 - `backend/tests/db/f07-discord-oauth.integration.test.js` (CODEX-1 대응 회차 신규 — AC-02/
   AC-03/AC-04 실제 DB 증거 + R-IMPL 복구 회차: 닉네임 fixture 수정, rememberMe true/false 분리,
-  link redirect_uri 추적 assertion 추가)
+  link redirect_uri 추적 assertion 추가 + 테스트 헬퍼 복구 회차: `setCookies`가 node:http
+  헤더와 fetch WHATWG `Headers` 양쪽을 지원하도록 수정, 그 회귀를 고정하는 단위 테스트 추가)
 - `frontend/src/domains/auth/components/LoginForm/SocialLoginButtons.jsx` (처음 구현 회차)
 - `frontend/src/domains/auth/components/SocialSignupForm.jsx` (처음 구현 회차)
 - `frontend/src/domains/auth/hooks/useLoginPage.js` (처음 구현 회차)
