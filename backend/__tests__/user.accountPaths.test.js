@@ -62,19 +62,24 @@ const startServer = async (t) => {
 };
 
 // 인증 미들웨어를 통과시키기 위한 온라인 세션 + 테스트마다 갈아끼울 User 대체 객체.
-const stubDb = (t, user) => {
-    const originalUser    = db.User;
-    const originalSession = db.UserSession;
-    const originalBan     = db.UserBan;
+const stubDb = (t, user, gameResultPlayer) => {
+    const originalUser             = db.User;
+    const originalSession          = db.UserSession;
+    const originalBan              = db.UserBan;
+    const originalGameResultPlayer = db.GameResultPlayer;
 
     db.User        = { findOne: async () => null, ...user };
     db.UserSession = { findOne: async () => ({ id: "session-1", user_id: "uuid-1", is_online: true }) };
     db.UserBan     = { findOne: async () => null };
+    // F-10: getMyProfile이 이제 roleStatistics(getHighestWinRateRole)도 함께 조회한다.
+    // 이 스위트(닉네임/프로필 필드 회귀)의 관심사가 아니므로 기본값은 빈 전적이다.
+    db.GameResultPlayer = { findAll: async () => [], ...gameResultPlayer };
 
     t.after(() => {
         db.User = originalUser;
         db.UserSession = originalSession;
         db.UserBan = originalBan;
+        db.GameResultPlayer = originalGameResultPlayer;
     });
 };
 
@@ -330,6 +335,9 @@ test("user_stats 행이 없는 계정도 프로필 조회가 200으로 성공한
         survival_count:    0,
         execution_count:   0,
         most_played_role:  null,
+        // F-10 A-11: highest_win_rate_role은 most_played_role과 별도로 추가된 필드다.
+        // 전적이 없으므로(빈 GameResultPlayer 스텁) null이다.
+        highest_win_rate_role: null,
     });
 });
 

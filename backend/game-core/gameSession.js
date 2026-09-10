@@ -316,6 +316,14 @@ const DEATH_REASONS = Object.freeze({
     DISCONNECT: 'DISCONNECT',
 })
 
+// F-10 A-07: 이 판이 운영 직업 통계·랭킹·보상 집계 대상인지는 room.settings나 소켓 payload
+// 같은 클라이언트 입력이 아니라 서버 프로세스의 실행 환경으로만 판정한다. buildSessionCandidate가
+// 세션 생성 시점에 한 번 호출해 session.gameSource에 고정하므로, 이후 서버가 재시작해
+// NODE_ENV가 바뀌어도 이미 만들어진 세션·저장된 결과의 출처는 흔들리지 않는다.
+function resolveGameSource() {
+    return process.env.NODE_ENV === 'production' ? 'production' : 'development'
+}
+
 /**
  * 종료된(또는 중단된) 세션을 DB 컬럼 셰이프의 저장용 레코드로 바꾼다. 순수 함수다 —
  * session을 읽기만 하고 registry도 DB도 건드리지 않으며, 반환값은 전부 새 객체라 이후
@@ -396,6 +404,11 @@ function buildGameResultRecord(session, {
                     ...(session.timerSettings ?? {}),
                     roleNightActionTimes: { ...(session.timerSettings?.roleNightActionTimes ?? {}) },
                 },
+                // F-10 A-07: session.gameSource는 세션 생성 시점에 서버 환경으로 고정된 값이다
+                // (클라이언트가 채울 수 없다). 버전을 함께 저장해 두면 이후 판정 규칙이 바뀌어도
+                // 이미 저장된 과거 레코드의 값을 다시 해석할 수 있다. session.gameSource가 없는
+                // 세션(수동으로 조립한 테스트 픽스처 등)은 지금 이 프로세스의 환경으로 대신한다.
+                gameSource: { v: 1, value: session.gameSource ?? resolveGameSource() },
             },
             completed,
         },
@@ -599,6 +612,10 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // jokerCount를 session에 함께 보관한다. resolvedComposition.JOKER를 원천으로 삼아
         // 두 값이 갈릴 여지를 없앤다(AUTO에서는 room.settings.jokerCount와 같은 값이다).
         jokerCount: resolved.composition.JOKER,
+        // F-10 A-07: 운영 랭킹·보상 집계 자격의 유일한 판정 시점이다. room.settings는 클라이언트가
+        // 채운 값이라 여기서 참조하지 않는다 — resolveGameSource()는 서버 프로세스의 NODE_ENV만
+        // 본다. buildGameResultRecord가 이 값을 그대로 결과 레코드에 옮겨 담는다.
+        gameSource: resolveGameSource(),
         // 이 세션에 실제로 배정된 canonical 5역할 구성(내부 전용 방어적 복사본). CUSTOM은
         // computeRoleComposition으로 재계산할 수 없으므로 commit 경계가 대조할 기준을
         // 세션이 직접 들고 있어야 한다. 어떤 공개 payload에도 포함하지 않는다.
@@ -3162,6 +3179,7 @@ module.exports = {
         validateSessionInput,
         buildTimerSettings,
         buildSessionCandidate,
+        resolveGameSource,
         checkGameSessionPreconditions,
         assertValidSessionForCommit,
         getSpecialRoleBudget,

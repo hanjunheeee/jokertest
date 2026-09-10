@@ -106,6 +106,23 @@ test('buildRoleRanking: 입력 배열을 변형하지 않는다', () => {
     assert.deepEqual(input.map((r) => r.user_id), originalOrder)
 })
 
+test('buildRoleRanking: 0승(0판이 아닌 0승)끼리도 승률 동률로 취급해 판수 내림차순으로 가린다', () => {
+    // 둘 다 승률 0이지만 판수가 다르다 — "0승이니 후순위"가 아니라 여전히 판수↓ 규칙을 따른다.
+    const fewerGames = statEntry('u-few', 10, 0)
+    const moreGames = statEntry('u-more', 15, 0)
+    const result = buildRoleRanking([fewerGames, moreGames])
+    assert.deepEqual(result.map((r) => r.user_id), ['u-more', 'u-few'])
+})
+
+test('buildRoleRanking: 반올림하면 같아 보이는 승률도 원시 값으로 정확히 정렬된다', () => {
+    // 60.05%와 59.95%는 정수 %로 반올림하면 둘 다 60%지만, 정렬은 반올림 전 원시 winRate를
+    // 써야 한다(A-04) — 표시 단계에서만 반올림한다.
+    const higher = { user_id: 'u-higher', games: 2000, wins: 1201, winRate: 1201 / 2000 } // 0.6005
+    const lower = { user_id: 'u-lower', games: 2000, wins: 1199, winRate: 1199 / 2000 }   // 0.5995
+    const result = buildRoleRanking([lower, higher])
+    assert.deepEqual(result.map((r) => r.user_id), ['u-higher', 'u-lower'])
+})
+
 // ── AC-04/A-05: 운명의 가면 ───────────────────────────────────────────────────
 
 function roleStat(role, games, wins) {
@@ -138,4 +155,11 @@ test('selectMaskOfFateRole: 승률 동률이면 승수 → 판수 → 고정 직
 test('selectMaskOfFateRole: 최소 1판 미만(0판) 직업은 후보에서 제외된다', () => {
     const result = selectMaskOfFateRole([roleStat('CITIZEN', 0, 0), roleStat('JOKER', 1, 0)])
     assert.equal(result.role, 'JOKER')
+})
+
+test('selectMaskOfFateRole: 고정 5개 밖의 알 수 없는 직업 코드가 섞여도 죽지 않고, 동률이면 고정 직업 뒤로 밀린다', () => {
+    // ROLE_CODES에 없는 코드는 fixedIndex가 roleOrder.length(고정 5개보다 뒤)로 처리된다 —
+    // 알 수 없는 값이 섞여 들어와도 예외 없이 계산되고, 완전 동률이면 항상 뒤로 밀린다.
+    const result = selectMaskOfFateRole([roleStat('UNKNOWN_ROLE', 10, 5), roleStat('GUARD', 10, 5)])
+    assert.equal(result.role, 'GUARD')
 })

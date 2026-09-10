@@ -1,26 +1,52 @@
-import { INVITED_GUESTS_MASTERY_RANKING_LIMIT } from "./jobSpreadMeta.js"
+// 정적 소개(catalog)·도전과제(challenges)와 런타임 직업 전적·랭킹(jobState)을 합쳐 화면이
+// 그대로 쓸 수 있는 spread 목록을 만든다.
+//
+// F-10 AC-03/AC-06: 예전 버전은 다른 직업 데이터가 없으면 noble(귀족) 더미로 대체했고
+// 랭킹을 INVITED_GUESTS_MASTERY_RANKING_LIMIT로 잘랐다 — 둘 다 실서비스 더미였다. 지금은
+// jobKey마다 자기 자신의 런타임 상태만 쓰고(다른 직업으로 대체하지 않는다), 랭킹은 서버가
+// 돌려준 전체 목록을 그대로 넘긴다(화면 내 페이지 이동은 InvitedGuestsMasteryRanking의 몫).
 
-const INVITED_GUESTS_DEV_FALLBACK_JOB_KEY = "noble"
+const formatWinRate = (winRate) => `${Math.round((winRate ?? 0) * 100)}%`
+
+const toMyStatsDisplay = (myStats) => myStats && {
+  playCount: myStats.games,
+  winRate: formatWinRate(myStats.winRate),
+  survivalCount: myStats.survivalCount,
+}
+
+const toRankingRowDisplay = (entry) => ({
+  rank: entry.rank,
+  profileSrc: entry.profile_image_url ?? entry.profileSrc ?? null,
+  // 프로필 테두리는 상점 소유품(F-08 영역)이라 직업 전적 API가 내려주지 않는다 — 없으면
+  // InvitedGuestsRankingProfile이 테두리 없이 그린다.
+  profileBorderSrc: null,
+  nickname: entry.nickname,
+  playCount: entry.games,
+  winRate: formatWinRate(entry.winRate),
+})
 
 /**
  * @param {{ id: string, jobKey: string }[]} spreadMeta
  * @param {Record<string, object>} catalog
  * @param {Record<string, object[]>} challenges
- * @param {{ myStats: Record<string, object>, ranking: Record<string, object[]> }} devState
+ * @param {{
+ *   byJobKey?: Record<string, { status: 'idle'|'loading'|'success'|'error', myStats: object|null, ranking: object[]|null, error: string|null }>,
+ *   clearedChallengeIds?: Record<string, string[]>,
+ * }} [jobState]
  */
-export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, devState) {
+export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobState = {}) {
   return spreadMeta.map(({ id, jobKey }) => {
     const job = catalog[jobKey]
     const jobChallenges = challenges[jobKey]
-    const myStats =
-      devState.myStats[jobKey] ?? devState.myStats[INVITED_GUESTS_DEV_FALLBACK_JOB_KEY]
-    const ranking =
-      devState.ranking[jobKey] ?? devState.ranking[INVITED_GUESTS_DEV_FALLBACK_JOB_KEY]
-    const clearedChallengeIds = new Set(devState.clearedChallengeIds?.[jobKey] ?? [])
 
-    if (!job || !jobChallenges?.length || !myStats || !ranking) {
+    // 정적 소개·도전과제 정의가 아예 없는 건 직업 카탈로그 데이터 문제다 — API 로딩 상태와
+    // 무관하게 이 spread 자체를 그릴 수 없다.
+    if (!job || !jobChallenges?.length) {
       return { id, jobKey, ready: false }
     }
+
+    const clearedChallengeIds = new Set(jobState.clearedChallengeIds?.[jobKey] ?? [])
+    const state = jobState.byJobKey?.[jobKey] ?? { status: "idle", myStats: null, ranking: null, error: null }
 
     return {
       id,
@@ -32,10 +58,14 @@ export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, devSt
         standingImage: job.standingImage,
         standingImageClass: job.standingImageClass,
         standingImageWrapClass: job.standingImageWrapClass,
-        myStats,
+        statsStatus: state.status,
+        statsError: state.error,
+        myStats: toMyStatsDisplay(state.myStats),
       },
       right: {
-        ranking: ranking.slice(0, INVITED_GUESTS_MASTERY_RANKING_LIMIT),
+        rankingStatus: state.status,
+        rankingError: state.error,
+        ranking: state.ranking?.map(toRankingRowDisplay) ?? null,
         challenges: jobChallenges.map((challenge) => ({
           ...challenge,
           cleared: clearedChallengeIds.has(challenge.id),

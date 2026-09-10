@@ -32,11 +32,15 @@ export function useMyProfile() {
         { label: "단두대 처형",  value: data.execution_count.toLocaleString() },
     ]
 
-    // 가장 많이 플레이한 역할을 강조 문구로 보여주기 위한 데이터입니다.
+    // "운명의 가면"은 가장 많이 플레이한 직업이 아니라 최소 1판 이상 중 가장 승률이 높은
+    // 직업이다(F-10 AC-04) — most_played_role(최다 플레이, 위 stats에서는 쓰지 않음)과는
+    // 다른 필드다. 대상이 없으면(전적이 0판) 서버가 null을 내려보내고, 여기서 더미 직업으로
+    // 대체하지 않고 "전적 없음"으로 명시한다(A-05).
+    const hasHighestWinRateRole = Boolean(data.highest_win_rate_role)
     const description = {
         prefix:    "이 자는",
-        highlight: data.most_played_role ?? "???",
-        suffix:    "의 가면을 쓸 때 가장 잔혹합니다.",
+        highlight: hasHighestWinRateRole ? data.highest_win_rate_role : "전적 없음",
+        suffix:    hasHighestWinRateRole ? "의 가면을 쓸 때 가장 잔혹합니다." : "아직 어떤 가면도 증명하지 못했습니다.",
     }
 
     return { profile, stats, description, loading }

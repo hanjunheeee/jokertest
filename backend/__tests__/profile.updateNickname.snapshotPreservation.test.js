@@ -44,6 +44,10 @@ const stubDb = (t) => {
 
     db.GameResultPlayer = {
         findOne: async () => ({ ...snapshotRow }),
+        // F-10: getMyProfile이 이제 roleStatistics(getHighestWinRateRole)도 함께 조회한다.
+        // 이 스위트의 관심사(닉네임 스냅샷 보존)와는 무관하므로 빈 전적으로 응답한다 —
+        // 쓰기 메서드(update/bulkCreate/destroy)는 여전히 정의하지 않는다.
+        findAll: async () => [],
     };
 
     t.after(() => {

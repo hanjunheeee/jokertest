@@ -8,6 +8,7 @@ import InvitedGuestsMasteryRanking from "../../../../domains/library/components/
 import InvitedGuestsSectionTitle from "../../../../domains/library/components/invitedGuests/shared/InvitedGuestsSectionTitle.jsx"
 import { getInvitedGuestsPage } from "../../../../domains/library/content/invitedGuests/index.js"
 import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../../domains/library/content/invitedGuests/jobSpreadMeta.js"
+import { useRoleStatisticsStore } from "../../../../domains/library/store/roleStatistics.store.js"
 import {
   INVITED_GUESTS_JOB_TITLE_CLASS,
   INVITED_GUESTS_JOB_TABS_ANCHOR_CLASS,
@@ -27,12 +28,33 @@ import {
   invitedGuestsRevealTransition,
 } from "../../../../domains/library/constants/invitedGuests/entranceMotion.js"
 
+// F-10: 로딩·에러·빈 랭킹 상태 문구. 기존 표 텍스트 톤(font-subheading, #1a1008)을 그대로 쓴다.
+const INVITED_GUESTS_STATE_MESSAGE_CLASS =
+  "font-subheading text-[clamp(0.76rem,0.98vw,0.88rem)] leading-snug text-[#1a1008]/80"
+const INVITED_GUESTS_STATE_RETRY_BUTTON_CLASS =
+  "mt-1 underline underline-offset-2 text-[#1a1008]"
+
 /** 초대받은 자들 — 좌·우 페이지 스프레드 (하단 행 Y 정렬) */
 export default function InvitedGuestsSpread() {
   const [jobIndex, setJobIndex] = useState(0)
   const rightColumnRef = useRef(null)
-  const page = getInvitedGuestsPage(jobIndex)
+
+  // F-10 AC-03: 직업별 내 전적·전체 랭킹은 계정마다 다른 런타임 값이다(더미로 대체하지 않는다).
+  const byJobKey = useRoleStatisticsStore((state) => state.byJobKey)
+  const requestJob = useRoleStatisticsStore((state) => state.requestJob)
+  const retryJob = useRoleStatisticsStore((state) => state.retryJob)
+
+  const page = getInvitedGuestsPage(jobIndex, { byJobKey })
   const isReady = page.ready
+  const jobKey = page.jobKey
+
+  // 탭을 처음 선택했을 때만 요청한다 — 이미 성공/로딩/에러 상태인 직업을 매 렌더마다
+  // 다시 부르지 않는다(재시도는 사용자가 retryJob을 직접 호출한다).
+  useEffect(() => {
+    if (!jobKey) return undefined
+    if (byJobKey[jobKey]?.status === "idle") requestJob(jobKey)
+    return undefined
+  }, [jobKey, byJobKey, requestJob])
 
   useEffect(() => {
     if (!isReady) return undefined
@@ -88,7 +110,18 @@ export default function InvitedGuestsSpread() {
           animate={INVITED_GUESTS_REVEAL_ANIMATE}
           transition={invitedGuestsRevealTransition(INVITED_GUESTS_REVEAL_DELAYS.leftLower)}
         >
-          <InvitedGuestsMyJobStats {...leftContent.myStats} />
+          {leftContent.statsStatus === "error" ? (
+            <div className={INVITED_GUESTS_STATE_MESSAGE_CLASS}>
+              <p>{leftContent.statsError ?? "전적을 불러오지 못했습니다."}</p>
+              <button type="button" onClick={() => retryJob(jobKey)} className={INVITED_GUESTS_STATE_RETRY_BUTTON_CLASS}>
+                다시 시도
+              </button>
+            </div>
+          ) : leftContent.myStats ? (
+            <InvitedGuestsMyJobStats {...leftContent.myStats} />
+          ) : (
+            <p className={INVITED_GUESTS_STATE_MESSAGE_CLASS}>전적을 불러오는 중입니다…</p>
+          )}
         </motion.div>
       )}
 
@@ -120,7 +153,20 @@ export default function InvitedGuestsSpread() {
                   animate={INVITED_GUESTS_REVEAL_ANIMATE}
                   transition={invitedGuestsRevealTransition(INVITED_GUESTS_REVEAL_DELAYS.rightUpper)}
                 >
-                  <InvitedGuestsMasteryRanking ranking={rightContent.ranking} hideHeader />
+                  {rightContent.rankingStatus === "error" ? (
+                    <div className={INVITED_GUESTS_STATE_MESSAGE_CLASS}>
+                      <p>{rightContent.rankingError ?? "랭킹을 불러오지 못했습니다."}</p>
+                      <button type="button" onClick={() => retryJob(jobKey)} className={INVITED_GUESTS_STATE_RETRY_BUTTON_CLASS}>
+                        다시 시도
+                      </button>
+                    </div>
+                  ) : rightContent.ranking === null ? (
+                    <p className={INVITED_GUESTS_STATE_MESSAGE_CLASS}>랭킹을 불러오는 중입니다…</p>
+                  ) : rightContent.ranking.length === 0 ? (
+                    <p className={INVITED_GUESTS_STATE_MESSAGE_CLASS}>최소 10판 이상 플레이한 사용자가 아직 없습니다.</p>
+                  ) : (
+                    <InvitedGuestsMasteryRanking ranking={rightContent.ranking} hideHeader />
+                  )}
                 </motion.div>
               </>
             )}
