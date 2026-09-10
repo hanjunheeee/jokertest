@@ -1,3 +1,10 @@
+// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 문자열로 파싱한다(연결을 실제로
+// 시도하지는 않는다 — 이 파일은 db.* 를 갈아끼우지 않지만 voteParticipationRepository를 통해
+// 성공 스텁으로 우회하므로 실제 DB에 닿지 않는다). npm test(--env-file=.env.test) 밖에서 이
+// 파일만 직접 실행하면 그 값이 비어 있어 require 자체가 죽으므로, 다른 스위트
+// (gameResultPersistence.test.js 등)와 같은 더미 폴백을 둔다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -60,6 +67,12 @@ test.beforeEach(() => {
     matchmaking.__resetStateForTests()
     gameSessionSocketLayer.__resetStateForTests()
     gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
+    // F-11: 이 파일은 실제 DB 없이 소켓 계층만 태우는 순수 단위 테스트다. handleSubmitDayVote는
+    // 비기권 투표의 성공 ack 전에 투표 참여 저장을 await하므로(A-03), 실제 저장소(db.VoteParticipation,
+    // 실제 DB 연결이 필요)를 즉시 성공하는 스텁으로 갈아끼운다 — 이 스위트가 검증하는 것은 ack
+    // 타이밍·payload 계약이지 저장소 자체가 아니다. 실제 DB 왕복 검증은
+    // backend/tests/voteParticipation.persistence.test.js가 담당한다.
+    gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests(async () => ({ recorded: true }))
 })
 // registry 불일치를 의도적으로 재현하는 테스트(SESSION_NOT_FOUND/NOT_A_PARTICIPANT 케이스)가
 // 이 파일의 마지막 테스트로 실행되더라도 손상된 singleton 상태가 남지 않게 afterEach에서도
@@ -69,10 +82,20 @@ test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
     gameSessionSocketLayer.__resetStateForTests()
+    gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests()
 })
 
 function makePlayer(uuid, nickname = `nick-${uuid}`) {
     return { uuid, nickname, isReady: true }
+}
+
+// F-11: socket.trigger()는 등록된 리스너의 반환값(Promise)을 그대로 넘겨주지 않으므로,
+// handleSubmitDayVote처럼 async인 핸들러를 socket.trigger로 배선 검증할 때는 콜백이 실제로
+// 호출될 때까지 매크로태스크 한 틱을 기다려야 한다(테스트가 주입하는 스텁 저장소는 즉시
+// resolve하는 Promise이므로 microtask 큐만 한 번 비워도 충분하지만, setImmediate로 여유를
+// 둔다 — gameResultPersistence.test.js의 flushAsync와 동일한 관례).
+function flushAsync() {
+    return new Promise((resolve) => setImmediate(resolve))
 }
 
 /** game-core가 받는 room 형태를 흉내낸다(소켓 계층 테스트에서는 matchmaking을 거치지 않고 직접 커밋한다). */
@@ -2914,12 +2937,12 @@ test('cast_day_vote: 토론 중(DAY_DISCUSSION) 제출은 INVALID_DAY_PHASE로 �
     assert.equal(io.broadcasts.length, 0)
 })
 
-test('cast_day_vote: 정상 대상 투표는 ack {ok:true}이고 dayVotes에 저장되며 브로드캐스트가 없다', () => {
+test('cast_day_vote: 정상 대상 투표는 ack {ok:true}이고 dayVotes에 저장되며 브로드캐스트가 없다', async () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-1' })
     const [actor, target] = uuids
     const { callback, getResponse } = countingCallback()
 
-    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
+    await handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
 
     assert.deepEqual(getResponse(), { ok: true })
     assert.equal(session.dayVotes.get(actor), target)
@@ -2938,12 +2961,12 @@ test('cast_day_vote: 기권(targetId:null) 제출은 ack {ok:true}이고 dayVote
     assert.equal(session.dayVotes.has(actor), true)
 })
 
-test('cast_day_vote: payload의 위조 uuid/alive/role/phase는 전부 무시되고 인증된 uuid·registry 기준으로만 처리된다', () => {
+test('cast_day_vote: payload의 위조 uuid/alive/role/phase는 전부 무시되고 인증된 uuid·registry 기준으로만 처리된다', async () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-3' })
     const [actor, target] = uuids
     const { callback, getResponse } = countingCallback()
 
-    handleSubmitDayVote(
+    await handleSubmitDayVote(
         io, socketByUuid.get(actor), actor,
         { gameId: session.id, targetId: target, uuid: 'forged-uuid', alive: false, role: 'JOKER', phase: 'NIGHT' },
         callback,
@@ -3078,7 +3101,7 @@ test('cast_day_vote: 같은 uuid가 두 번 제출하면 dayVotes에는 마지�
     assert.equal(session.dayVotes.size, 1)
 })
 
-test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', () => {
+test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', async () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-13' })
     const [actor, target] = uuids
     const socket = socketByUuid.get(actor)
@@ -3086,6 +3109,7 @@ test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger�
     const { callback, getResponse } = countingCallback()
 
     socket.trigger('cast_day_vote', { gameId: session.id, targetId: target }, callback)
+    await flushAsync()
 
     assert.deepEqual(getResponse(), { ok: true })
     assert.equal(session.dayVotes.get(actor), target)

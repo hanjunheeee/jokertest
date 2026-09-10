@@ -25,7 +25,9 @@ const addSocialAuth = require('../db/migrations/0005-add-social-auth');
 const addEconomy = require('../db/migrations/0006-add-economy');
 
 const addEconomyPurchaseRequests = require('../db/migrations/0007-add-economy-purchase-requests');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests];
+// F-11: 투표 참여 영속 집계 테이블도 실제 배포 명령에서 순서대로 적용한다.
+const addVoteParticipations = require('../db/migrations/0008-add-vote-participations');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;
