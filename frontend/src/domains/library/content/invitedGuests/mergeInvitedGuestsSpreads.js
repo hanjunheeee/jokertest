@@ -16,7 +16,7 @@ const toMyStatsDisplay = (myStats) => myStats && {
 
 const toRankingRowDisplay = (entry) => ({
   rank: entry.rank,
-  profileSrc: entry.profile_image_url ?? entry.profileSrc ?? null,
+  profileSrc: entry.profile_image_url || entry.profileSrc || "/shopItem/player-profile/프로필-금빛가면.png",
   // 프로필 테두리는 상점 소유품(F-08 영역)이라 직업 전적 API가 내려주지 않는다 — 없으면
   // InvitedGuestsRankingProfile이 테두리 없이 그린다.
   profileBorderSrc: null,

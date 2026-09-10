@@ -125,3 +125,15 @@ test("InvitedGuestsMasteryRanking.jsx: 전달받은 ranking 전체 길이를 기
   assert.equal(source.includes("pageCount"), true)
   assert.equal(source.includes("ranking.length"), true, "잘리지 않은 전체 길이를 기준으로 페이지 수를 계산해야 한다")
 })
+
+test('new accounts without a portrait use the granted gold-mask asset instead of crashing PublicAsset', () => {
+  const ranking = bigRanking(2)
+  ranking[1].profile_image_url = ''
+  const pages = mergeInvitedGuestsSpreads(INVITED_GUESTS_JOB_SPREAD_META, INVITED_GUESTS_JOB_CATALOG, INVITED_GUESTS_JOB_CHALLENGES, {
+    byJobKey: {noble:{status:'success',myStats:null,ranking,error:null}}
+  })
+  for (const row of pages.find(p => p.jobKey === 'noble').right.ranking) {
+    assert.equal(row.profileSrc, '/shopItem/player-profile/프로필-금빛가면.png')
+    assert.ok(row.profileSrc.startsWith('/'))
+  }
+})

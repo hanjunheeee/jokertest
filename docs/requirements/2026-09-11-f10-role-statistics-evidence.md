@@ -214,3 +214,10 @@ F-10 자체가 추가하는 별도 복구 절차는 없다.
 (2) 현재 정책 파일 NUL은 0개였으나 비교 기준 bc289497에는 NUL이 있어서 Git이 양쪽 본문을 바이너리로 생략했다. .gitattributes의 해당 정책 파일 한 경로에 diff를 지정해 이전/현재 전체 텍스트를 심사할 수 있게 했다. 과거 커밋이나 반려 기록은 변경하지 않았다.
 (3) 같은 직업 중첩 요청에 요청별 토큰을 추가해 오래된 성공/실패가 최신 결과를 덮지 않게 했다. A→B→A 성공/실패 역순 회귀 시험을 추가했다. useMyProfile은 계정 reset 세대 변경을 구독해 마운트 유지 중 계정 전환에도 새 계정을 재조회한다. 실제 renderHook 전환 시험을 추가했다. InvitedGuestsSpread는 이미 byJobKey 변경과 idle 상태를 구독하므로 계정 reset 후 재조회 경로가 존재했다.
 운영자 전체 검증: frontend 1292/1292, backend 1334/1334, 모두 실패0·skip0, production build 통과. 로그는 원본 .pluto/monitor/AU-{frontend,backend,build}-operator-repair.log. 이는 이번 운영자 실행 근거이며 Pluto 최종 심사 통과를 뜻하지 않는다. AC03 실제 브라우저 검증은 아직 운영자 대기다. 이제 수정된 실제 커밋에 대해 기존 전체 검증과 Claude/Codex 심사를 정상 재실행한다. IMPL만 완료로 기록하고 VERIFY/RESULT/manual PASS를 수동 완료하지 않는다.
+
+
+## 실제 브라우저 인수 및 발견 오류 보정
+
+운영자 실제 Chrome AC-03 검증(2026-09-11): 격리 DB 계정 8개와 실제 persistGameResult로 저장한 경기 fixture로 로그인→기억의 서고→초대받은 자들 UI를 직접 조작했다. 최초 실행에서 null 프로필이 PublicAsset.startsWith를 호출해 화면 전체가 실패하는 실제 오류를 발견했다(AU-browser-null-avatar-failure.txt). 표시 매퍼가 신규 계정의 null/빈 프로필을 기존 기본 지급 금빛가면 자산으로 처리하도록 수정하고 회귀 시험을 추가했다. 수정 후 전체 frontend1293개 실패0·skip0 및 build 통과.
+수정 후 실제 화면에서 귀족 내 전적12판·승률50%·생존6회, 주치의2판·100%·생존2회, 나머지 세 직업0판·0%를 확인했다. 귀족 랭킹은 첫 페이지1~5위와 다음 페이지6~7위를 모두 표시했고 9판100% 계정은 제외됐다. 승률 동률에서12판이10판보다 앞서며, 10판50% 동률 두 계정은 UUID 오름차순(B→A)으로 표시됐다. 독립 fixture 기대 순서와 실제 DOM의 전체7행을 대조했다. 개발 경기3개는 귀족 전적에서 제외되고 출처 필드 없는 과거1판은 포함됐다. 직업 왕복 시 첫 페이지로 돌아왔고, 페이지 재탐색/새로고침에도 전적을 유지했다. 마이페이지는 최다 플레이 귀족 대신 최고 승률 주치의를 운명의 가면으로 표시했다.
+서버는 AU 실제 소스와 MySQL API이며 API/mock/store를 브라우저에서 주입하지 않았다. fixture 저장은 테스트 준비이며 실제 게임을 플레이했다고 주장하지 않는다. 계정 전환 중 마운트 유지와 지연 응답은 앞선 store/renderHook 시험으로 확인한 범위다. 자료: .pluto/monitor/AU-browser-{fixture.json,noble-page1.txt,noble-page2.txt,doctor.txt,zero-광대.txt,zero-경비원.txt,zero-마녀사냥꾼.txt,fate-mask.txt,reload.txt}. 변경된 현재 커밋은 정상 Pluto 전체 시험·Claude/Codex 재심사 후 승인해야 한다.
