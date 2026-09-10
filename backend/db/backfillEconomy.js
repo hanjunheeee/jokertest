@@ -23,7 +23,7 @@ const DEFAULT_MAX_RETRIES = 2;
  *
  * - 배치(batch): batchSize만큼씩 끊어 읽어 한 번에 메모리에 올리는 계정 수를 제한한다 —
  *   전체 계정을 한 번에 메모리에 올리지 않아 대규모 users 테이블에서도 안전하다.
- * - 체크포인트(checkpoint): 매 배치가 끝날 때마다 그 배치의 마지막 uuid를 onCheckpoint로
+ * - 체크포인트(checkpoint): 매 배치가 끝날 때마다 연속 성공 구간의 마지막 uuid를 onCheckpoint로
  *   보고한다. 호출부(CLI)가 그 값을 기록해 두면, 중간에 프로세스가 죽거나 중단되어도
  *   다음 실행에 startAfterUuid로 그 값을 넘겨 이미 끝난 구간을 다시 훑지 않고 이어서
  *   재개할 수 있다.
@@ -47,6 +47,8 @@ const backfillDefaultEntitlements = async ({
 } = {}) => {
     const { Op } = db.Sequelize;
     let cursor = startAfterUuid;
+    // 조회는 실패 뒤에도 계속하지만 재개 위치는 최초 실패 계정을 넘지 않는다.
+    let resumeAfterUuid = startAfterUuid;
     let processed = 0;
     let granted = 0;
     const failures = [];
@@ -75,14 +77,15 @@ const backfillDefaultEntitlements = async ({
             processed += 1;
             if (succeeded) {
                 granted += 1;
+                if (failures.length === 0) resumeAfterUuid = user.uuid;
             } else {
                 failures.push({ userId: user.uuid, message: lastError?.message ?? String(lastError) });
             }
         }
 
         cursor = users[users.length - 1].uuid;
-        onCheckpoint(cursor);
-        onProgress({ processed, granted, failedCount: failures.length, lastUuid: cursor });
+        await onCheckpoint(resumeAfterUuid);
+        await onProgress({ processed, granted, failedCount: failures.length, lastUuid: cursor, resumeAfterUuid });
 
         if (users.length < batchSize) break;
     }
