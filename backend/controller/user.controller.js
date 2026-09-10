@@ -162,12 +162,18 @@ exports.completeSocialSignup = async (req, res, next) => {
         const rememberMe = attempt?.purpose === "signup"
             && attempt?.intentToken === intentToken
             && attempt?.rememberMe === true;
-        // 가입 보완용 쿠키는 이 요청 하나로 수명을 다한다 — 성공/실패 어느 쪽이든 지운다.
-        res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
 
         const { user, token, refreshToken, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
             intentToken, nickname, birthDate, rememberMe, reqInfo,
         });
+
+        // 가입 보완용 쿠키는 계정이 실제로 만들어진 뒤에만 지운다(CODEX-1 재검토 지적
+        // AC-02) — 이전 버전은 서비스 호출 전에 무조건 지웠다: 닉네임 중복(409) 같은
+        // 재시도 가능한 실패에도 쿠키가 사라져, 사용자가 같은 화면에서 다시 제출하면
+        // rememberMe:true로 시작한 선택이 조용히 false로 떨어졌다. intentToken 자체는
+        // 서버가 발급한 값을 그대로 다시 보내야 하므로 재시도에는 아무 문제가 없고, 쿠키가
+        // 살아있어야 그 재시도도 원래 선택을 그대로 유지한다.
+        res.clearCookie(OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
 
         res.cookie("accessToken", token, buildSessionCookieOptions(rememberMe, refreshTokenExpiresAt));
         if (refreshToken) {

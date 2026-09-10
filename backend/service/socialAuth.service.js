@@ -215,14 +215,16 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememb
     if (!nicknameResult.ok) {
         throw createError(nicknameResult.message, 400);
     }
-    let birthDateValue = null;
-    if (birthDate !== undefined && birthDate !== null && birthDate !== "") {
-        const birthDateResult = validateBirthDate(birthDate);
-        if (!birthDateResult.ok) {
-            throw createError(birthDateResult.message, 400);
-        }
-        birthDateValue = birthDateResult.value;
+    // CODEX-1 재검토 지적 AC-02: 작업 지시서는 소셜 가입 보완에 "닉네임과 필수 생년월일"을
+    // 요구한다 — SocialSignupForm.jsx는 이미 화면에서 생년월일을 막고 있었지만, 그건 클라이언트
+    // 검증일 뿐이다. 이 함수를 직접 호출(예: intentToken만 아는 요청)하면 생년월일 없이도
+    // 계정이 만들어졌다 — 서버가 같은 규칙을 다시 강제해야 한다(F-02 authService.signup의
+    // validateSignupPayload와 같은 원칙, 신뢰 경계는 항상 서버).
+    const birthDateResult = validateBirthDate(birthDate);
+    if (!birthDateResult.ok) {
+        throw createError(birthDateResult.message, 400);
     }
+    const birthDateValue = birthDateResult.value;
 
     return await userRepository.withTransaction(async (transaction) => {
         const intentHash = hashValue(intentToken);

@@ -216,6 +216,52 @@ test("가입 자격이 만료되면(INTENT_EXPIRED) 서비스 오류의 status·
     assert.equal(findSetCookie(res, "accessToken"), undefined, "실패 시 세션 쿠키를 발급하면 안 됩니다");
 });
 
+// ── CODEX-1 재검토 지적 AC-02: 실패해도 재시도 가능한 오류는 oauthAttempt 쿠키를 지우면
+// 안 된다. 이전 버전은 서비스 호출 전에 무조건 지워, 닉네임 중복(409) 같은 재시도 가능한
+// 실패 뒤 같은 화면에서 다시 제출하면 rememberMe:true로 시작한 선택이 false로 떨어졌다.
+
+test("닉네임 중복(재시도 가능한 실패)이 나면 oauthAttempt 쿠키를 지우지 않아 재시도에서도 rememberMe가 보존된다(CODEX-1 AC-02)", async (t) => {
+    stubSocialAuthService(t, {
+        completeSocialSignup: async () => {
+            const error = new Error("이미 사용 중인 닉네임입니다.");
+            error.status = 409;
+            throw error;
+        },
+    });
+    const base = await startServer(t);
+
+    const attemptCookie = signAttempt({ intentToken: "intent-1", rememberMe: true, purpose: "signup" });
+    const res = await postJson(base, "/auth/social/signup/complete",
+        { intentToken: "intent-1", nickname: "중복닉" },
+        { cookie: `oauthAttempt=${attemptCookie}` },
+    );
+
+    assert.equal(res.status, 409);
+    assert.equal(findSetCookie(res, "oauthAttempt"), undefined,
+        "실패해도 재시도 가능한 오류라면 oauthAttempt 쿠키를 다시 지우면 안 됩니다 — 브라우저에 원래 서명 쿠키가 그대로 남아야 재시도가 rememberMe를 유지합니다");
+});
+
+test("가입 완료에 성공하면 그제서야 oauthAttempt 쿠키를 지운다(CODEX-1 AC-02)", async (t) => {
+    stubSocialAuthService(t, {
+        completeSocialSignup: async () => ({
+            user: { uuid: "new-uuid", nickname: "소셜닉", role: "USER" },
+            token: "fake-access-token", refreshToken: null, refreshTokenExpiresAt: null,
+        }),
+    });
+    const base = await startServer(t);
+
+    const attemptCookie = signAttempt({ intentToken: "intent-1", rememberMe: true, purpose: "signup" });
+    const res = await postJson(base, "/auth/social/signup/complete",
+        { intentToken: "intent-1", nickname: "소셜닉" },
+        { cookie: `oauthAttempt=${attemptCookie}` },
+    );
+
+    assert.equal(res.status, 200);
+    const clearedAttempt = findSetCookie(res, "oauthAttempt");
+    assert.ok(clearedAttempt, "성공했으면 더 이상 필요 없는 oauthAttempt 쿠키를 지워야 합니다");
+    assert.match(clearedAttempt, /^oauthAttempt=;/, "삭제 쿠키는 값이 비어 있어야 합니다");
+});
+
 // ── POST /auth/social/link/state, POST /auth/social/link (R-IMPL: 라우트 제거됨) ─────
 
 test("인증 없이 링크 state 발급을 요청해도 라우트가 없어 404이고 서비스는 호출되지 않는다", async (t) => {
