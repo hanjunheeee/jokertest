@@ -7,6 +7,54 @@
 산출물이다. `.pluto/done.json`/`.pluto/progress.md`만 갱신하고 patch에는 반영되지 않는
 방식은 F-06 재반려 사례가 이미 실패로 확인했으므로 반복하지 않는다.
 
+## CODEX-1 재검토 지적과 이번 회차의 해결
+
+이전 회차는 검토(CODEX-1)에서 AC-02/AC-03/AC-04/AC-05가 각각 `partial`로 반려되었다. 이번
+회차가 각 지적을 어떻게 해결했는지 요약한다(세부 근거는 아래 각 절).
+
+- **AC-02** ("테스트가 resolveOAuthAccount를 스텁하므로 실제 Discord 신규 계정 생성·가입
+  완료·기존 identity 조회 근거가 필요") — `backend/tests/db/f07-discord-oauth.integration.test.js`
+  (신규)를 추가했다. `f05-social-auth.integration.test.js`(F-05)가 이미 이 실행 경로 자체를
+  실제 DB로 검증하지만 provider로 `'google'`/`'kakao'`만 쓰고 `'discord'`는 한 번도 쓰지
+  않았다(이번 회차에 grep으로 재확인) — 새 파일은 provider `'discord'`로, 그리고
+  `socialAuthService`뿐 아니라 `discordOAuthService`(fetch 목적지만 로컬 fixture로 리다이렉트,
+  나머지 로직은 전혀 스텁하지 않음)와 실제 `auth.routes.js`(스텁 없음)까지 전부 실제로 태워
+  신규 가입 → 가입 완료 → 재로그인(기존 identity 조회) 전 과정을 실제 `users`/
+  `external_identities` 행으로 확인한다.
+- **AC-03** ("discordOAuth.service.js가 이메일을 null로 반환한 뒤 공통 서비스가
+  EMAIL_MISSING으로 거부하는 실행 경로와 assertion이 제공되지 않았다") — 두 층에서 보강했다.
+  (1) `backend/__tests__/discordAuth.route.test.js`에 컨트롤러 계약 수준 테스트를 추가해,
+  `discordOAuthService.exchangeCodeForProfile`이 `email:null`을 반환하면 컨트롤러가 그 값을
+  가공하지 않고 그대로 `resolveOAuthAccount`에 넘기는지 단언한다. (2) 위 신규 DB 통합
+  테스트에 실제 Discord fixture가 `verified:false`(이메일 미검증)를 반환하는 시나리오를
+  추가해, `discordOAuth.service.js`가 실제로 `email:null`을 만들고 → 실제
+  `socialAuthService.resolveOAuthAccount`가 실제로 `EMAIL_MISSING`으로 거부하고 → 실제 HTTP
+  콜백이 세션 쿠키 없이 리다이렉트하는 전체 실행 경로를 스텁 없이 잇는다.
+- **AC-04** ("auth.routes.js는 명시적 연결 라우트를 등록하지 않아 로그인 후 동의·제공자
+  소유권 검증을 통한 실제 연결 경로가 충족되지 않는다") — `GET /auth/discord/link`·
+  `GET /auth/discord/link/callback`을 새로 열었다(`backend/controller/user.controller.js`의
+  `discordLinkStart`/`discordLinkCallback`, `backend/routes/auth.routes.js`에 `verifyToken`으로
+  보호된 라우트로 등록). F-05가 이 라우트를 의도적으로 닫아 둔 이유(운영자 코드 검토
+  R-IMPL — 클라이언트가 주장하는 provider/subject/email을 그대로 믿는 위험, 이전에 있던
+  `POST /auth/social/link`가 바로 그 패턴이었다)는 그대로 존중한다 — 새 라우트는 `code` 외에
+  다른 신원 파라미터를 아예 받지 않고, `subject`/`email`은 오직
+  `discordOAuthService.exchangeCodeForProfile`이 실제 Discord 서버와 교환해 검증한 값만 쓴다.
+  `socialAuthService.linkExternalIdentity`(F-05, 미수정)를 그대로 재사용해 자동 병합·이미
+  연결된 identity 재사용을 막는다. 컨트롤러 계약 테스트(`discordAuth.route.test.js`)와 실제
+  DB+HTTP 통합 테스트(`f07-discord-oauth.integration.test.js`) 양쪽에서 성공·미인증(401)·
+  이미 연결됨(409)·취소+재사용 방지를 검증한다. Google(F-06)의 동등한 링크 라우트는 이
+  슬라이스(F-07) 범위 밖이라 추가하지 않았다.
+- **AC-05** ("검증 문서는 고객센터 컴포넌트와 로고만 언급하여 실제 초대 URL의 독립된 설정
+  키·값 출처를 확인할 근거가 부족하다") — 재조사 결과를 아래 "AC-05" 절에 갱신했다: 로비의
+  `LobbyDiscordButton.jsx`는 현재 `onClick` prop을 받는 순수 프레젠테이션 컴포넌트이고,
+  호출부(`LobbyPage.jsx`)는 `<LobbyDiscordButton />`을 `onClick` 없이(기본값 `() => {}`) 렌더링한다
+  — 즉 이 저장소에는 애초에 "고객센터 Discord 초대 URL" 자체가 아직 어디에도 문자열로 존재하지
+  않는다(`grep -r "discord.gg\|DISCORD_INVITE\|discordInvite"` 결과 0건). OAuth 자격
+  (`DISCORD_CLIENT_ID`/`SECRET`/`REDIRECT_URI`)과 공유할 "값"이 아직 코드베이스에 없으므로,
+  분리 여부를 값 수준으로 비교할 대상 자체가 없다는 것이 이번 재조사의 정확한 결론이다 — 값이
+  생기면(향후 슬라이스가 실제 초대 URL을 상수로 추가하면) 그 값이 이 OAuth 환경변수 세 개와
+  겹치지 않는지 다시 확인해야 한다는 점을 아래에 남겨 둔다.
+
 ## AC-05 — 실제 Discord 외부 연동은 readiness_unverified
 
 이 슬라이스는 실제 Discord 클라이언트 ID·비밀키·등록된 redirect_uri를 받은 적이 없다.
@@ -36,24 +84,48 @@ Developer Portal에 등록된 콜백과 일치하는 배포 환경에서 사람�
 
 `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET`/`DISCORD_REDIRECT_URI`는 오직
 `discordOAuth.service.js`의 `readRequiredEnv`만 읽으며, 이 세 값은 Discord OAuth 앱(로그인
-인가·토큰 교환)의 자격만 가리킨다. 저장소 안에서 이미 존재하는 고객센터 Discord 초대 버튼
-(`frontend/src/domains/lobby/components/LobbyDiscordButton.jsx`, 로비 화면)은 별도 도메인
-(lobby)의 UI 컴포넌트로, 이번 F-07 변경 범위 밖이며 이 OAuth 환경변수를 전혀 참조하지 않는다
-— 두 설정은 코드 구조상으로도 서로 다른 파일·다른 값으로 완전히 분리되어 있다. `grep -ri
-discord` 결과 OAuth 자격과 고객센터 버튼 자산(`lobbyAssets.js`의 `discordLogo`) 사이에 값
-공유가 없음을 확인했다(수동 확인, 자동 테스트 아님).
+인가·토큰 교환)의 자격만 가리킨다.
+
+CODEX-1 재검토에서 이 절이 "고객센터 컴포넌트와 로고만 언급했다"고 지적했다 — 재조사한
+정확한 사실관계는 다음과 같다:
+
+- `frontend/src/domains/lobby/components/LobbyDiscordButton.jsx`는 `onClick`을 prop으로
+  받기만 하는 순수 프레젠테이션 컴포넌트다(내부에 URL을 직접 갖지 않는다).
+- 유일한 호출부 `frontend/src/domains/lobby/pages/LobbyPage.jsx:48`은
+  `<LobbyDiscordButton />`을 `onClick` 없이 렌더링한다 — 컴포넌트 기본값(`() => {}`)이 그대로
+  쓰여 현재는 클릭해도 아무 것도 하지 않는다.
+- 저장소 전체에서 `discord.gg`·`DISCORD_INVITE`·`discordInvite` 어떤 패턴으로도 실제 초대
+  URL 문자열이 존재하지 않는다(grep 0건, `frontend/src/domains/lobby/constants/lobbyAssets.js`의
+  `discordLogo`는 이미지 에셋 경로일 뿐 URL이 아니다).
+
+즉 "고객센터 Discord 초대 URL"이라는 값 자체가 이 코드베이스에 아직 없다 — 그래서 OAuth
+자격(`DISCORD_CLIENT_ID`/`SECRET`/`REDIRECT_URI`)과 비교해 "분리되어 있는지" 판정할 대상 값이
+없다(비교할 두 값 중 하나가 존재하지 않으므로, 값 수준의 공유가 애초에 불가능하다 — 코드
+구조상의 분리가 아니라 대상의 부재로 성립하는 분리다). 이 F-07 슬라이스는 로비 Discord
+버튼에 실제 초대 URL을 연결하는 작업을 범위에 포함하지 않는다(승인된 수정 범위 밖 —
+`frontend/src/domains/lobby/**`는 이번 슬라이스의 대상 파일 목록에 없다). 향후 어떤 슬라이스가
+그 URL을 실제 값으로 추가하면, 그 값이 `DISCORD_CLIENT_ID`/`SECRET`/`REDIRECT_URI`와 겹치지
+않는 별도 설정 키에 저장되는지 그 시점에 다시 확인해야 한다.
 
 ### 로컬 fixture·UI 검증과의 구분
 
 아래는 실제 Discord 외부 인증이 **아니며**, 그렇게 주장하지 않는다.
 
-- `backend/__tests__/discordAuth.route.test.js`(17개)·`backend/__tests__/googleAuth.route.test.js`(18개,
-  F-07 제공자 바인딩 회귀 1개 추가)는 `socialAuthService`/`discordOAuthService`를 스텁으로
-  대체한 서버 라우트 계약 테스트다 — 실제 Discord 서버와 통신하지 않는다.
+- `backend/__tests__/discordAuth.route.test.js`(23개, AC-03 EMAIL_MISSING 컨트롤러 계약·AC-04
+  링크 라우트 계약 각 4~5개 추가)·`backend/__tests__/googleAuth.route.test.js`(18개, F-07
+  제공자 바인딩 회귀 1개 추가)는 `socialAuthService`/`discordOAuthService`를 스텁으로 대체한
+  서버 라우트 계약 테스트다 — 실제 Discord 서버와 통신하지 않는다.
 - `backend/__tests__/discordOAuth.service.test.js`(10개)는 `exchangeCodeForProfile`이 실제
   Discord 엔드포인트가 아니라 로컬 `http.createServer` fixture로 왕복하도록 `fetch` 목적지만
   바꾼 것이다 — 요청 형태(본문·헤더)와 실패·타임아웃 처리를 검증할 뿐, 실제 Discord 계정
   인증을 증명하지 않는다.
+- `backend/tests/db/f07-discord-oauth.integration.test.js`(신규, 7개)는 `socialAuthService`도
+  `discordOAuthService`도 스텁하지 않는다 — 실제 격리 MySQL DB + `fetch` 목적지만 로컬
+  fixture로 리다이렉트한 실제 `discordOAuthService` + 스텁 없는 실제 `auth.routes.js`로 신규
+  가입·가입 완료·재로그인·EMAIL_MISSING·EMAIL_CONFLICT·명시적 연결(성공/401/이미 연결됨/
+  취소+재사용 방지)을 검증한다. 다만 실제 Discord 서버가 아니라 로컬 fixture와 통신하고,
+  `F01_TEST_DATABASE_URL`이 없는 환경(이 세션 포함)에서는 f01~f05와 같은 원칙으로 skip되어
+  "미검증"으로 남는다 — 아래 "실행한 검증" 절 참고.
 - `frontend/src/domains/auth/pages/__tests__/LoginPage.social.test.js`에 추가한 Discord 관련
   케이스는 `mapSocialErrorCode`가 순수 함수로서 코드→문구 매핑을 올바르게 하는지만 검증한다 —
   화면 렌더링이나 실제 리다이렉트 왕복을 검증하지 않는다.
@@ -106,48 +178,65 @@ F-05/F-06이 설계한 `oauthAttempt` 서명 쿠키(state에 결합되는 browse
   재현한 적이 없다.
 - `node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs`(F-01 승인된 격리 MySQL
   스키마를 사용하는 백엔드 전체 회귀 래퍼, F-06 회차에서 운영자가 직접 실행해 1145
-  pass/0 fail/0 skip을 기록한 바로 그 스크립트)를 이번 회차에서도 이 워크트리 대상으로
-  실행을 시도했으나, 세션의 명령 승인 절차에서 거부되어("이 명령은 승인이 필요합니다")
-  실행되지 못했다 — 형태를 바꿔 우회하지 않았다. 이 스크립트가 다루는 DB 자격·대상 스키마는
-  운영자 전용 비공개 설정(`f01-test-db.private.json`)에 있으므로, 이 격리 DB 배경의 전체
-  회귀는 운영자 또는 정규 VERIFY 단계가 별도로 재실행해 확인해야 한다.
+  pass/0 fail/0 skip을 기록한 바로 그 스크립트)를 이번 회차에서도, 그리고 이번 CODEX-1
+  재검토 대응 회차에서도 이 워크트리 대상으로 실행을 시도했으나, 두 번 모두 세션의 명령
+  승인 절차에서 거부되어("이 명령은 승인이 필요합니다") 실행되지 못했다 — 형태를 바꿔
+  우회하지 않았다. 이 스크립트가 다루는 DB 자격·대상 스키마는 운영자 전용 비공개 설정
+  (`f01-test-db.private.json`)에 있으므로, 이 격리 DB 배경의 전체 회귀
+  (`backend/tests/db/f07-discord-oauth.integration.test.js`의 7개를 포함해)는 운영자 또는
+  정규 VERIFY 단계가 별도로 재실행해 확인해야 한다.
 
-## 실행한 검증 (이번 회차)
+## 실행한 검증 (CODEX-1 재검토 대응 회차 포함)
 
 - `node impl-check.js node-test backend/__tests__/discordOAuth.service.test.js` — **10 pass / 0 fail**.
   로컬 fixture HTTP 서버로 Discord 토큰·프로필 엔드포인트 요청 형태·실패·타임아웃 처리를 검증.
-- `node impl-check.js node-test backend/__tests__/discordAuth.route.test.js` — **17 pass / 0 fail**.
-  시작·콜백 라우트 계약, state 소비 순서(R-IMPL #3), rememberMe 보존(R-IMPL #2), 취소/충돌/
-  재사용/제공자 바인딩 각 시나리오.
+- `node impl-check.js node-test backend/__tests__/discordAuth.route.test.js` — **23 pass / 0 fail**
+  (기존 17개 + AC-03 EMAIL_MISSING 계약 1개 + AC-04 링크 라우트 계약 5개 신규). 시작·콜백 라우트
+  계약, state 소비 순서(R-IMPL #3), rememberMe 보존(R-IMPL #2), 취소/충돌/이메일 미제공/재사용/
+  제공자 바인딩/명시적 연결 각 시나리오.
+- `node impl-check.js node-test backend/tests/db/f07-discord-oauth.integration.test.js` — **0 pass
+  / 0 fail / 7 skipped**(`F01_TEST_DATABASE_URL` 미설정, 이 세션에서는 f01~f06과 같은 이유로
+  실제 DB 검증이 불가능하다 — 미검증으로 남는다). 구문·require 오류 없이 전부 skip 경로로
+  정상 진입하는 것은 확인했다.
 - `node impl-check.js node-test backend/__tests__/googleAuth.route.test.js` — **18 pass / 0 fail**
   (기존 17개 + 제공자 바인딩 회귀 1개 신규). 기존 Google 회귀가 provider 필드 추가로 깨지지
   않음을 확인.
-- `node impl-check.js test`(cwd=backend) — 백엔드 전체 테스트 **1,138 pass / 0 fail / 35
-  skipped**. skip은 `F01_TEST_DATABASE_URL` 미설정으로 인한 기존 DB 통합 테스트 skip이며(F-06
-  문서가 기록한 것과 같은 패턴), 이번 회차가 새로 skip을 늘리지 않았다.
+- `node impl-check.js test`(cwd=backend) — 백엔드 전체 테스트 **1,144 pass / 0 fail / 42
+  skipped**. skip은 `F01_TEST_DATABASE_URL` 미설정으로 인한 기존 DB 통합 테스트 skip(이번
+  회차의 신규 f07 DB 통합 테스트 7개 포함)이며, 이번 회차가 skip을 실패로 위장하지 않았다.
 - `node impl-check.js test`(cwd=frontend) — 프론트 전체 테스트 **1,228 pass / 0 fail / 0
   skipped**. `LoginPage.social.test.js`의 Discord 전용 케이스(제공자 이름 미노출 검증 포함)를
-  포함한 전체 통과.
+  포함한 전체 통과(이번 CODEX-1 대응 회차는 프론트 파일을 고치지 않았다 — 회귀 없음 재확인).
 - `node impl-check.js build`(cwd=frontend) — production build **exit 0**.
-- 수동 AC-05는 OAuth 설정과 고객센터 초대 URL이 분리되어 있는지, 외부 연동을 미검증으로
-  기록했는지 확인한 조건이다. 실제 Discord 인증 성공을 수동 PASS로 대체한 것이 아니다.
+- 수동 AC-05는 OAuth 설정과 고객센터 초대 URL이 분리된 별도 값인지 재조사한 조건이다(위
+  "AC-05" 절 — 재조사 결과 초대 URL 값 자체가 아직 코드베이스에 없다는 것을 확인했다). 실제
+  Discord 인증 성공을 수동 PASS로 대체한 것이 아니다.
 
 로그 경로는 이번 회차의 `.pluto/progress.md` 기록에 남긴다.
 
 ## 복구 절차
 
-이번 회차는 아래 파일만 고쳤다 — 롤백이 필요하면 이 목록을 이전 커밋 상태로 되돌리면 된다.
-스키마 변경은 없다(`oauth_states`/`social_signup_intents`/`external_identities` 테이블 구조
-변경 없음 — provider 바인딩은 DB가 아니라 서버 서명 쿠키(JWT) payload에만 추가되었다).
+아래 파일만 고쳤다(처음 구현 회차 + CODEX-1 재검토 대응 회차 누계) — 롤백이 필요하면 이
+목록을 이전 커밋 상태로 되돌리면 된다. 스키마 변경은 없다(`oauth_states`/
+`social_signup_intents`/`external_identities` 테이블 구조 변경 없음 — provider 바인딩은 DB가
+아니라 서버 서명 쿠키(JWT) payload에만 추가되었고, 명시적 연결(link)도 F-05가 이미 만들어 둔
+`external_identities`/`oauth_states` 스키마와 `linkExternalIdentity`/
+`issueOAuthState(purpose:"link")` 함수를 그대로 재사용한다 — 새 라우트만 추가되었다).
 
-- `backend/service/discordOAuth.service.js` (신규)
-- `backend/controller/user.controller.js`
-- `backend/routes/auth.routes.js`
-- `backend/__tests__/discordAuth.route.test.js` (신규)
-- `backend/__tests__/discordOAuth.service.test.js` (신규)
-- `backend/__tests__/googleAuth.route.test.js`
-- `frontend/src/domains/auth/components/LoginForm/SocialLoginButtons.jsx`
-- `frontend/src/domains/auth/components/SocialSignupForm.jsx`
-- `frontend/src/domains/auth/hooks/useLoginPage.js`
-- `frontend/src/domains/auth/pages/__tests__/LoginPage.social.test.js`
-- `docs/requirements/2026-09-10-f07-verification.md` (본 문서, 신규)
+- `backend/service/discordOAuth.service.js` (신규, 처음 구현 회차)
+- `backend/controller/user.controller.js` (처음 구현 회차 + CODEX-1 대응: `discordLinkStart`/
+  `discordLinkCallback` 추가)
+- `backend/routes/auth.routes.js` (처음 구현 회차 + CODEX-1 대응: `GET /auth/discord/link`·
+  `GET /auth/discord/link/callback` 등록)
+- `backend/__tests__/discordAuth.route.test.js` (신규, 처음 구현 회차 + CODEX-1 대응: AC-03
+  EMAIL_MISSING·AC-04 링크 라우트 테스트 추가)
+- `backend/__tests__/discordOAuth.service.test.js` (신규, 처음 구현 회차)
+- `backend/__tests__/googleAuth.route.test.js` (처음 구현 회차)
+- `backend/tests/db/f07-discord-oauth.integration.test.js` (신규, CODEX-1 대응 회차 — AC-02/
+  AC-03/AC-04 실제 DB 증거)
+- `frontend/src/domains/auth/components/LoginForm/SocialLoginButtons.jsx` (처음 구현 회차)
+- `frontend/src/domains/auth/components/SocialSignupForm.jsx` (처음 구현 회차)
+- `frontend/src/domains/auth/hooks/useLoginPage.js` (처음 구현 회차)
+- `frontend/src/domains/auth/pages/__tests__/LoginPage.social.test.js` (처음 구현 회차)
+- `docs/requirements/2026-09-10-f07-verification.md` (본 문서, 처음 구현 회차 신규 + CODEX-1
+  대응 회차 갱신)
