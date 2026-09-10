@@ -585,6 +585,56 @@ const grantReward = async ({ userId, amount, currency = CURRENCIES.GOLD, reason 
     return applyLedgerTransaction(db, { userId, reason, currency, amount, referenceEventId });
 };
 
+// F-12(A-03): achievementService.js가 업적 보상(재화)을 지급할 때 쓰는 통로. grantReward와
+// 거의 같지만 외부(호출부가 이미 열어 둔) 트랜잭션 위에서 실행할 수 있어야 한다 — 업적
+// 달성 행(achievement_grants) 삽입과 재화 지급이 하나의 트랜잭션으로 원자적이어야
+// 하기 때문이다(전부 성공하거나 전부 롤백). reason은 항상 'ACHIEVEMENT_REWARD'로 고정해
+// 이 통로로 들어온 원장 항목을 다른 지급 경로와 구분할 수 있게 한다.
+const grantAchievementCurrency = async (
+    { userId, currency, amount, referenceEventId },
+    db = defaultDb(),
+    { transaction: externalTransaction = null } = {},
+) => {
+    if (!isValidCurrency(currency)) {
+        throw createError('알 수 없는 재화입니다.', 400, 'INVALID_CURRENCY');
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+        throw createError('amount는 1 이상의 정수여야 합니다.', 400, 'INVALID_AMOUNT');
+    }
+    return applyLedgerTransaction(
+        db,
+        { userId, reason: 'ACHIEVEMENT_REWARD', currency, amount, referenceEventId },
+        { transaction: externalTransaction },
+    );
+};
+
+// F-12(A-03): 업적 보상(직업 테두리 등 아이템) 지급 통로. ensureDefaultEntitlements와 같은
+// 트릭(currency는 항상 필요하므로 GOLD 0원 원장 항목에 아이템 소유권을 얹는다)을 쓰되,
+// 이미 보유 중인 경우(A-03: "기존 테두리 보유가 거래 전체 실패를 일으키면 안 된다")
+// ITEM_ALREADY_OWNED를 거래 실패로 취급하지 않고 이미 만족된 상태로 삼켜, 바깥
+// 트랜잭션(achievement_grants 삽입 포함)이 이 이유만으로 롤백되지 않게 한다.
+const grantAchievementItem = async (
+    { userId, itemId, itemType, referenceEventId },
+    db = defaultDb(),
+    { transaction: externalTransaction = null } = {},
+) => {
+    try {
+        return await applyLedgerTransaction(
+            db,
+            {
+                userId, reason: 'ACHIEVEMENT_REWARD', currency: CURRENCIES.GOLD, amount: 0,
+                itemId, itemType, referenceEventId, entitlementSource: 'ACHIEVEMENT_GRANT',
+            },
+            { transaction: externalTransaction },
+        );
+    } catch (error) {
+        if (error?.code === 'ITEM_ALREADY_OWNED') {
+            return { idempotent: true, alreadyOwned: true };
+        }
+        throw error;
+    }
+};
+
 /** 소유권·아이템 종류를 검증한 뒤에만 장착한다(AC-05). itemId가 카탈로그에 없는
  *  임의 문자열(파일 경로 등)이면 ITEM_TYPE_MISMATCH로 거부되고, 카탈로그에 있어도
  *  보유하지 않았으면 ITEM_NOT_OWNED(403)로 거부된다. */
@@ -640,6 +690,8 @@ module.exports = {
     purchaseItems,
     getPurchaseResult,
     grantReward,
+    grantAchievementCurrency,
+    grantAchievementItem,
     equipItem,
     // 테스트 전용 — 낮은 레벨 원장 적용 로직을 직접 검증할 때 사용한다.
     __internal: { applyLedgerTransaction, ensureWalletRow, ensureDefaultLoadout },

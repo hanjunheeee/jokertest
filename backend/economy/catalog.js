@@ -49,6 +49,12 @@ const PURCHASABLE_BORDER_PRICES = {
     황제: 1000,
 };
 
+// F-12: 초대받은 자들(jobChallenges.js) 직업별 30승 보상 테두리. frontend
+// INVITED_GUESTS_ASSETS의 {job}ProfileBorder(프로필프레임-귀족.png 등)에 대응하며, 구매
+// 상점(storeItems.js PROFILE_BORDER_STORE_ITEMS)의 등급별 테두리(남작~황제)와는 완전히
+// 별개의 품목이다 — 구매로는 얻을 수 없고 achievementService.js의 업적 지급으로만 준다.
+const JOB_PROFILE_BORDER_NAMES = ['귀족', '광대', '주치의', '경비원', '마녀사냥꾼'];
+
 const profileBorderItems = [
     {
         id: DEFAULT_PROFILE_BORDER_ID,
@@ -63,6 +69,13 @@ const profileBorderItems = [
         priceGold,
         defaultGrant: false,
         purchasable: true,
+    })),
+    ...JOB_PROFILE_BORDER_NAMES.map((name) => ({
+        id: `profile-border-${name}`,
+        type: ITEM_TYPES.PROFILE_BORDER,
+        priceGold: 0,
+        defaultGrant: false,
+        purchasable: false,
     })),
 ];
 

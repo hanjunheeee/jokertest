@@ -219,3 +219,58 @@ exports.getHighestWinRateRole = async (userId) => {
     const rows = await findRoleStatisticsRows({ user_id: userId });
     return roleStatisticsPolicy.selectMaskOfFateRole(roleStatisticsPolicy.aggregateRoleStatistics(rows));
 };
+
+// F-12: 업적(금지된 기록·직업 도전과제) 진행률. findRoleStatisticsRows와 달리 won=null
+// 잔류자를 미리 걸러내지 않고 completed도 함께 읽는다 — roleStatisticsPolicy가 F-12를 위해
+// 노출한 isAchievementRewardEligibleGame(completed && !development)이 F-10의
+// isRoleStatisticsEligibleGame(development만 제외)보다 엄격한 게이트이기 때문이다(AC-05:
+// 중단 경기는 참가자가 이탈자뿐이라도 진행률에 반영되면 안 된다).
+const toAchievementProgressRow = (playerRow) => ({
+    role: playerRow.role,
+    won: playerRow.won === true || playerRow.won === 1,
+    is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
+});
+
+/**
+ * AC-02/AC-05: 한 계정의 "금지된 기록"·직업 도전과제 진행률 원천 집계.
+ * - completedGames: 정상 확정(completed=true, 비개발) 경기에 참가한 횟수.
+ * - survivals: 그중 생존(is_alive=true)한 횟수.
+ * - wins: 그중 승리(won=true)한 횟수.
+ * - roleWinsByRole: 그중 승리한 횟수를 역할(GAME_ROLES 코드)별로 집계한 Map.
+ */
+exports.getAchievementProgressStats = async (userId) => {
+    const rows = await db.GameResultPlayer.findAll({
+        attributes: ["role", "won", "is_alive"],
+        where: { user_id: userId },
+        include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
+        raw: true,
+        nest: true,
+    });
+
+    const eligibleRows = rows
+        .filter((row) => roleStatisticsPolicy.isAchievementRewardEligibleGame({
+            completed: row.GameResult?.completed === true || row.GameResult?.completed === 1,
+            gameSourceValue: row.GameResult?.settings?.gameSource?.value,
+        }))
+        .map(toAchievementProgressRow);
+
+    const roleWinsByRole = new Map();
+    let survivals = 0;
+    let wins = 0;
+    for (const row of eligibleRows) {
+        if (row.is_alive) survivals += 1;
+        if (row.won) {
+            wins += 1;
+            if (typeof row.role === "string") {
+                roleWinsByRole.set(row.role, (roleWinsByRole.get(row.role) ?? 0) + 1);
+            }
+        }
+    }
+
+    return {
+        completedGames: eligibleRows.length,
+        survivals,
+        wins,
+        roleWinsByRole,
+    };
+};

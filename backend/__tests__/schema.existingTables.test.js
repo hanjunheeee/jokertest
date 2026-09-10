@@ -207,6 +207,8 @@ const NEW_MODELS = [
     'EconomyLedgerEntry',
     // F-11: 투표 참여 영속 집계(0008-add-vote-participations 마이그레이션).
     'VoteParticipation',
+    // F-12: 업적 지급 이력(0009-add-achievement-grants 마이그레이션).
+    'AchievementGrant',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {
