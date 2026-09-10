@@ -222,20 +222,32 @@ const applyLedgerTransaction = async (db, {
 };
 
 /** 선택값이 없는(null) 계정에만 금빛가면/평민 기본값을 채운다(A-04) — 기존 유효 선택은
- *  절대 덮어쓰지 않는다. */
+ *  절대 덮어쓰지 않는다.
+ *
+ *  R-IMPL(2026-09-10, AC-03 재검토): 이전 버전은 findOrCreate로 읽은 스냅샷("아직
+ *  null")을 근거로 loadout 인스턴스를 무조건 update(patch)했다 — 그 읽기와 쓰기 사이에
+ *  동시 equipItem 요청이 끼어들어 같은 컬럼에 유효한 선택을 먼저 커밋하면, 이 무조건
+ *  쓰기가 그 값을 되돌려 덮어썼다(read-then-blind-write 경쟁 상태). 지금은 WHERE 절에
+ *  "지금도 컬럼이 null"이라는 조건을 실은 모델 수준 UPDATE로 바꿨다 — 이 조건부 UPDATE는
+ *  단일 SQL 문이라 원자적이므로, 그 사이 다른 트랜잭션이 이미 값을 넣었다면 0행에
+ *  적용되어 그 값을 그대로 둔다(컬럼별로 각각 조건부라 두 컬럼이 독립적으로 안전하다). */
 const ensureDefaultLoadout = async (db, userId) => {
     const models = economyModels(db);
-    const [loadout] = await models.EconomyLoadout.findOrCreate({
+    await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
         defaults: { user_id: userId },
     });
 
-    const patch = {};
-    if (!loadout.selected_profile_photo_id) patch.selected_profile_photo_id = DEFAULT_PROFILE_PHOTO_ID;
-    if (!loadout.selected_profile_border_id) patch.selected_profile_border_id = DEFAULT_PROFILE_BORDER_ID;
-    if (Object.keys(patch).length > 0) await loadout.update(patch);
+    await models.EconomyLoadout.update(
+        { selected_profile_photo_id: DEFAULT_PROFILE_PHOTO_ID },
+        { where: { user_id: userId, selected_profile_photo_id: null } },
+    );
+    await models.EconomyLoadout.update(
+        { selected_profile_border_id: DEFAULT_PROFILE_BORDER_ID },
+        { where: { user_id: userId, selected_profile_border_id: null } },
+    );
 
-    return loadout;
+    return models.EconomyLoadout.findOne({ where: { user_id: userId } });
 };
 
 /** 기본 프로필 16종 + 평민 테두리 1종을 중복 없이 지급한다(AC-03). 기존 계정·신규 계정
@@ -359,6 +371,14 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
     if (typeof itemId !== 'string' || itemId.length === 0) {
         throw createError('itemId가 필요합니다.', 400, 'INVALID_ITEM_ID');
     }
+
+    // R-IMPL(2026-09-10, AC-03 재검토): 기본 지급은 지금까지 getWalletSummary(지갑/소유품
+    // 조회 GET) 경로를 탄 계정에만 보장됐다 — 신규 가입 직후든 이관된 기존 계정이든, 그
+    // GET을 한 번도 거치지 않고 곧바로 기본 프로필/테두리를 장착하려 하면 실제로는 아직
+    // 그 항목을 보유하지 않은 상태라 ITEM_NOT_OWNED로 잘못 거부됐다. 별도의 가입 훅을
+    // 추가하는 대신, 장착도 "계정이 경제 시스템을 처음 건드리는 지점"이 될 수 있다는
+    // 전제로 여기서도 같은 지급을 보장한다 — 멱등하므로 반복 호출해도 안전하다.
+    await ensureDefaultEntitlements(userId, db);
 
     const isFreeCardFrame = slot === 'PLAYER_CARD_FRAME' && itemId === FREE_CARD_FRAME_ID;
     const models = economyModels(db);

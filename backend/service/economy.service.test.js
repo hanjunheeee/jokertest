@@ -93,23 +93,48 @@ const createFakeDb = () => {
         },
     };
 
+    // 실제 Sequelize는 findOrCreate/findOne이 조회 시점의 컬럼 값을 담은 분리된(disconnected)
+    // 인스턴스를 돌려준다 — 그 뒤 다른 커넥션이 같은 행을 UPDATE해도 이미 가져온 인스턴스의
+    // 필드는 저절로 바뀌지 않는다(다시 조회해야만 최신값을 본다). 그래서 이 fake도 canonical
+    // 저장소(loadoutsByUser)와 "그 시점의 스냅샷 복사본"을 분리한다 — 그래야
+    // ensureDefaultLoadout이 스냅샷의 오래된 값을 근거로 무조건 덮어쓰면(read-then-blind-write)
+    // 동시 equip의 실제 커밋을 지워버리는 경쟑 상태를, 이 fake로도 재현해 검증할 수 있다.
+    const snapshotLoadout = (stored) => {
+        const snapshot = {
+            ...stored,
+            async update(patch) { Object.assign(stored, patch); Object.assign(snapshot, patch); },
+        };
+        return snapshot;
+    };
     const EconomyLoadout = {
         async findOrCreate({ where, defaults }) {
-            let record = loadoutsByUser.get(where.user_id);
-            if (record) return [record, false];
-            record = {
+            let stored = loadoutsByUser.get(where.user_id);
+            if (stored) return [snapshotLoadout(stored), false];
+            stored = {
                 user_id: where.user_id,
                 selected_profile_photo_id: null,
                 selected_profile_border_id: null,
                 selected_card_frame_id: null,
                 ...defaults,
-                async update(patch) { Object.assign(record, patch); },
             };
-            loadoutsByUser.set(where.user_id, record);
-            return [record, true];
+            loadoutsByUser.set(where.user_id, stored);
+            return [snapshotLoadout(stored), true];
         },
         async findOne({ where }) {
-            return loadoutsByUser.get(where.user_id) ?? null;
+            const stored = loadoutsByUser.get(where.user_id);
+            return stored ? snapshotLoadout(stored) : null;
+        },
+        // 실제 Sequelize의 모델 수준 Model.update(values, {where})와 같은 계약: where의
+        // 모든 조건(예: 특정 컬럼이 "지금" null인지)이 canonical 저장소의 현재 값과 일치할
+        // 때만 갱신하고 [affectedCount]를 돌려준다 — 오래된 스냅샷이 아니라 항상 최신
+        // 상태를 기준으로 판정한다는 점이 이 조건부 갱신의 원자성을 보장한다.
+        async update(patch, { where }) {
+            const stored = loadoutsByUser.get(where.user_id);
+            if (!stored) return [0];
+            const matches = Object.entries(where).every(([key, expected]) => stored[key] === expected);
+            if (!matches) return [0];
+            Object.assign(stored, patch);
+            return [1];
         },
     };
 
@@ -380,6 +405,53 @@ test('A-04: 이미 유효한 선택값이 있는 계정은 기본 지급 시에�
 
     const summary = await economyService.getWalletSummary(userId, db);
     assert.equal(summary.loadout.selectedProfilePhotoId, 'player-profile-기사', '기존 유효 선택을 덮어쓰면 안 된다');
+});
+
+test('AC-03(R-IMPL): ensureDefaultLoadout의 조건부 갱신은 스냅샷을 읽은 뒤·쓰기 전 사이에 커밋된 동시 equip 결과를 덮어쓰지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-ac03-race';
+    const { applyLedgerTransaction, ensureDefaultLoadout } = economyService.__internal;
+
+    // equipItem의 소유권 검사를 통과하도록 구매 가능 상품(profile-border-남작)의 소유권만
+    // 직접 지급해 둔다 — loadout 행은 아직 건드리지 않는다.
+    await applyLedgerTransaction(db, {
+        userId, reason: 'DEFAULT_GRANT', currency: CURRENCIES.GOLD, amount: 0,
+        itemId: PURCHASABLE_ITEM_ID, itemType: 'PROFILE_BORDER',
+        referenceEventId: `seed-item-${userId}`, entitlementSource: 'DEFAULT_GRANT',
+    });
+
+    // ensureDefaultLoadout이 findOrCreate로 "아직 선택 없음" 스냅샷을 읽은 바로 다음, 실제
+    // 조건부 UPDATE를 실행하기 전에 동시 equipItem이 끼어들어 남작 테두리를 먼저 커밋하는
+    // 상황을 재현한다. 한 번만 개입하도록 원래 함수로 즉시 되돌려 중첩 호출(equipItem
+    // 내부의 ensureDefaultEntitlements→ensureDefaultLoadout)까지 다시 가로채지 않게 한다.
+    const models = db.sequelize.models;
+    const originalFindOrCreate = models.EconomyLoadout.findOrCreate;
+    models.EconomyLoadout.findOrCreate = async (...args) => {
+        models.EconomyLoadout.findOrCreate = originalFindOrCreate;
+        const result = await originalFindOrCreate.apply(models.EconomyLoadout, args);
+        await economyService.equipItem({ userId, slot: 'PROFILE_BORDER', itemId: PURCHASABLE_ITEM_ID }, db);
+        return result;
+    };
+
+    await ensureDefaultLoadout(db, userId);
+
+    const loadout = await models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_border_id, PURCHASABLE_ITEM_ID, '동시에 커밋된 유효 선택을 기본값이 덮어쓰면 안 된다');
+});
+
+test('AC-03(R-IMPL): 지갑 조회 없이 곧바로 기본 프로필을 장착해도 자동으로 기본 지급된 뒤 성공한다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-ac03-equip-first';
+
+    // getWalletSummary(따라서 ensureDefaultEntitlements)를 한 번도 먼저 호출하지 않고
+    // 곧바로 기본 프로필(금빛가면)을 장착한다 — 신규 가입 직후 상점을 열지 않고 바로
+    // 장착부터 시도하는 클라이언트, 또는 별도 가입 훅 없이 이관된 기존 계정의 첫 접근을
+    // 흉내낸다.
+    const loadout = await economyService.equipItem({ userId, slot: 'PROFILE_PHOTO', itemId: DEFAULT_PROFILE_PHOTO_ID }, db);
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
+
+    const owned = db._inspect.entitlements.filter((e) => e.user_id === userId);
+    assert.equal(owned.length, 17, '장착이 트리거한 자동 기본 지급으로 17종을 모두 보유해야 한다');
 });
 
 // ── AC-04: 서버가 클라이언트 가격을 신뢰하지 않는다 ─────────────────────────

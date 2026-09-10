@@ -5,6 +5,7 @@ const { verifyToken } = require("../middleware/auth.middleware");
 const { createError }  = require("../utils/appError");
 const economyService = require("../service/economy.service");
 const userRepository = require("../repositories/user.repositories");
+const { getRewardCatalogEntry } = require("../economy/catalog");
 
 // 자기 계정 데이터만 조회할 수 있다(F-08 AC-06). verifyToken이 채운 req.user.uuid와
 // URL의 :userId가 다르면 401이 아니라 403이다 — 토큰 자체는 유효하지만 그 토큰의
@@ -88,21 +89,35 @@ router.post("/equip", verifyToken, async (req, res, next) => {
 // 전까지는 갱신되지 않는다 — 이 경로처럼 민감한 관리자 전용 기능은 req.user.role을
 // 그대로 믿지 않고, 매 요청마다 실제 계정 행(userRepository.findByUuid)을 다시 읽어
 // "지금 이 순간" 실제 서버 계정 데이터에 저장된 권한으로 판정한다(F-08 R-IMPL: "Existing
-// permission identity must be verified from real server session/account data"). amount·
-// currency는 요청 본문이 정하지만, 이 경로 자체가 일반 유저 요청 표면이 아니라 운영
-// 전용이라 AC-04의 "클라이언트 값을 그대로 신뢰하지 않는다"는 일반 구매/장착 경로에는
-// 적용되지만 이 관리자 경로에는 해당하지 않는다.
+// permission identity must be verified from real server session/account data").
+//
+// R-IMPL(2026-09-10, AC-04 재검토): 이전 버전은 요청 본문의 amount·currency를 그대로
+// grantReward에 넘겼다 — 인증된 QA/ADMIN이라 해도 그 값은 여전히 "클라이언트가 보낸 값"
+// 이므로, purchaseItem이 클라이언트 price를 절대 읽지 않는 것과 같은 이유로 여기서도
+// 신뢰하면 안 된다. 이제 클라이언트는 amount·currency 대신 reason(보상 카탈로그의 키)만
+// 보내고, 실제 지급 금액·재화는 항상 backend/economy/catalog.js의 REWARD_CATALOG 값이다
+// — reason이 카탈로그에 없으면 요청 자체를 거부한다.
 router.post("/admin/grant", verifyToken, async (req, res, next) => {
     try {
         const actingAccount = await userRepository.findByUuid(req.user.uuid);
         if (!actingAccount || (actingAccount.role !== "ADMIN" && actingAccount.role !== "QA")) {
             throw createError("권한이 없습니다.", 403, "ECONOMY_ADMIN_ONLY");
         }
-        const { userId, amount, currency, reason, referenceEventId } = req.body ?? {};
+        const { userId, reason, referenceEventId } = req.body ?? {};
         if (typeof userId !== "string" || typeof referenceEventId !== "string") {
             throw createError("userId와 referenceEventId가 필요합니다.", 400, "INVALID_GRANT_REQUEST");
         }
-        const result = await economyService.grantReward({ userId, amount, currency, reason, referenceEventId });
+        const rewardEntry = typeof reason === "string" ? getRewardCatalogEntry(reason) : undefined;
+        if (!rewardEntry) {
+            throw createError("존재하지 않는 보상 사유입니다.", 400, "UNKNOWN_REWARD_REASON");
+        }
+        const result = await economyService.grantReward({
+            userId,
+            amount: rewardEntry.amount,
+            currency: rewardEntry.currency,
+            reason,
+            referenceEventId,
+        });
         res.status(result.idempotent ? 200 : 201).json({
             idempotent: result.idempotent,
             ledgerEntry: serializeLedgerEntry(result.ledgerEntry),

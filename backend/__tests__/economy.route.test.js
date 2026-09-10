@@ -190,6 +190,11 @@ test("AC-05: 임의 파일 경로를 itemId로 보내면 서비스가 던진 400
 // R-IMPL(2026-09-10): 권한은 토큰이 아니라 실제 계정 행(userRepository.findByUuid)의
 // role로 판정된다 — 아래 테스트들은 토큰의 role 클레임과 DB의 실제 role을 일부러 다르게
 // 둬서, 라우트가 토큰이 아니라 DB 값을 본다는 것을 직접 증명한다.
+//
+// R-IMPL(2026-09-10, AC-04 재검토): 클라이언트는 더 이상 amount·currency를 직접 보낼 수
+// 없다 — reason은 backend/economy/catalog.js의 REWARD_CATALOG 키여야 하고, 실제 지급
+// 금액·재화는 항상 그 카탈로그 값이다(구매 경로가 itemId로 카탈로그 가격을 찾는 것과
+// 같은 패턴). 아래 테스트들은 이 계약으로 갱신됐다.
 
 test("일반 USER 권한은 관리자 지급 경로를 사용할 수 없다", async (t) => {
     stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "USER" } } });
@@ -199,7 +204,7 @@ test("일반 USER 권한은 관리자 지급 경로를 사용할 수 없다", as
     const res = await request(base, "/economy/admin/grant", {
         method: "POST",
         token: tokenFor(USER_A, "USER"),
-        body: { userId: USER_B, amount: 100, referenceEventId: "grant-1" },
+        body: { userId: USER_B, reason: "QA_TEST_GRANT_GOLD", referenceEventId: "grant-1" },
     });
     assert.equal(res.status, 403);
     assert.equal(res.json.code, "ECONOMY_ADMIN_ONLY");
@@ -216,13 +221,13 @@ test("토큰 클레임이 QA/ADMIN이어도 실제 계정의 현재 role이 아�
     const res = await request(base, "/economy/admin/grant", {
         method: "POST",
         token: tokenFor(USER_A, "QA"),
-        body: { userId: USER_B, amount: 100, referenceEventId: "grant-1" },
+        body: { userId: USER_B, reason: "QA_TEST_GRANT_GOLD", referenceEventId: "grant-1" },
     });
     assert.equal(res.status, 403);
     assert.equal(res.json.code, "ECONOMY_ADMIN_ONLY");
 });
 
-test("QA 권한은 관리자 지급 경로를 사용할 수 있다", async (t) => {
+test("QA 권한은 관리자 지급 경로를 사용할 수 있다 — 실제 지급 금액은 항상 서버 보상 카탈로그 값이다", async (t) => {
     stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "QA" } } });
     const { lastCall } = stubService(t, {
         grantReward: async () => ({ idempotent: false, ledgerEntry: { id: 1 } }),
@@ -234,11 +239,12 @@ test("QA 권한은 관리자 지급 경로를 사용할 수 있다", async (t) =
         // 토큰 자체는 role을 USER로 실어도(또는 아무 값이어도) 실제 계정 행이 QA이므로
         // 통과해야 한다 — 판정 기준이 토큰이 아니라 DB임을 반대 방향으로도 증명한다.
         token: tokenFor(USER_A, "USER"),
-        body: { userId: USER_B, amount: 100, referenceEventId: "grant-1" },
+        body: { userId: USER_B, reason: "QA_TEST_GRANT_GOLD", referenceEventId: "grant-1" },
     });
     assert.equal(res.status, 201);
     assert.equal(lastCall("grantReward").args[0].userId, USER_B);
-    assert.equal(lastCall("grantReward").args[0].amount, 100);
+    assert.equal(lastCall("grantReward").args[0].amount, 100000, 'amount는 서버 카탈로그(QA_TEST_GRANT_GOLD) 값이어야 한다');
+    assert.equal(lastCall("grantReward").args[0].currency, "GOLD");
 });
 
 test("ADMIN 권한도 관리자 지급 경로를 사용할 수 있다", async (t) => {
@@ -251,8 +257,48 @@ test("ADMIN 권한도 관리자 지급 경로를 사용할 수 있다", async (t
     const res = await request(base, "/economy/admin/grant", {
         method: "POST",
         token: tokenFor(USER_A, "ADMIN"),
-        body: { userId: USER_B, amount: 50, currency: "DIAMOND", referenceEventId: "grant-diamond-1" },
+        body: { userId: USER_B, reason: "QA_TEST_GRANT_DIAMOND", referenceEventId: "grant-diamond-1" },
     });
     assert.equal(res.status, 201);
     assert.equal(lastCall("grantReward").args[0].currency, "DIAMOND");
+    assert.equal(lastCall("grantReward").args[0].amount, 1000, 'amount는 서버 카탈로그(QA_TEST_GRANT_DIAMOND) 값이어야 한다');
+});
+
+test("AC-04(R-IMPL): 관리자 지급 요청에 amount·currency를 함께 보내도 무시되고 항상 서버 카탈로그 값이 사용된다(변조 방지)", async (t) => {
+    stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "ADMIN" } } });
+    const { lastCall } = stubService(t, {
+        grantReward: async () => ({ idempotent: false, ledgerEntry: { id: 1 } }),
+    });
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/admin/grant", {
+        method: "POST",
+        token: tokenFor(USER_A, "ADMIN"),
+        // 클라이언트가 카탈로그 값과 다른 amount·currency를 함께 보내는 변조 시도.
+        body: {
+            userId: USER_B,
+            reason: "QA_TEST_GRANT_GOLD",
+            amount: 999999999,
+            currency: "DIAMOND",
+            referenceEventId: "tamper-1",
+        },
+    });
+    assert.equal(res.status, 201);
+    assert.equal(lastCall("grantReward").args[0].amount, 100000, '클라이언트가 보낸 amount는 무시되어야 한다');
+    assert.equal(lastCall("grantReward").args[0].currency, "GOLD", '클라이언트가 보낸 currency는 무시되어야 한다');
+});
+
+test("AC-04(R-IMPL): 보상 카탈로그에 없는 reason은 400으로 거부되고 grantReward는 호출되지 않는다", async (t) => {
+    stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "ADMIN" } } });
+    const { calls } = stubService(t);
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/admin/grant", {
+        method: "POST",
+        token: tokenFor(USER_A, "ADMIN"),
+        body: { userId: USER_B, reason: "FREE_MONEY", referenceEventId: "grant-unknown" },
+    });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.code, "UNKNOWN_REWARD_REASON");
+    assert.equal(calls.filter((c) => c.name === "grantReward").length, 0);
 });

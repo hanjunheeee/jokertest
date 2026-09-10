@@ -293,6 +293,26 @@ test('AC-03: 실제 DB에서도 기본 프로필 16종 + 평민 테두리 1종�
     assert.equal(summary.balanceDiamond, 0);
 });
 
+// R-IMPL(2026-09-10, AC-03 재검토): 이전에는 기본 지급이 getWalletSummary(지갑/소유품
+// 조회 GET) 경로에서만 보장됐다 — 그 GET을 한 번도 거치지 않고(신규 가입 직후 상점을
+// 열지 않은 클라이언트, 또는 별도 가입 훅 없이 이관된 기존 계정의 첫 접근) 곧바로 기본
+// 프로필을 장착하려 하면 실제 MySQL에서도 ITEM_NOT_OWNED로 잘못 거부됐는지가 이 시험의
+// 핵심이다 — economyService.equipItem이 내부에서 ensureDefaultEntitlements를 먼저
+// 보장하는지 실제 DB 위에서 확인한다.
+test('AC-03(R-IMPL): 실제 DB에서도 지갑 조회 없이 곧바로 기본 프로필을 장착하면 자동으로 기본 지급된 뒤 성공한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('ac03eq');
+    const { DEFAULT_PROFILE_PHOTO_ID } = require('../../economy/catalog');
+
+    const loadout = await economyService.equipItem({ userId, slot: 'PROFILE_PHOTO', itemId: DEFAULT_PROFILE_PHOTO_ID });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
+
+    const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
+    assert.equal(owned.length, 17, '장착이 트리거한 자동 기본 지급으로 17종을 모두 보유해야 한다');
+});
+
 // ── F-08 요구사항: DIAMOND 재화(실제 DB) ─────────────────────────────────────
 
 test('F-08 요구사항: DIAMOND 지급은 실제 DB에서도 balance_diamond만 바꾸고 GOLD와 독립적으로 원장에 남는다', async (t) => {

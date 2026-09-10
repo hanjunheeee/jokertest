@@ -102,11 +102,28 @@ const getCatalogItem = (itemId) => CATALOG_BY_ID.get(itemId);
 /** 기본 지급 대상(AC-03: 프로필 16종 + 평민 테두리 1종) 전체. */
 const listDefaultGrantItems = () => ALL_ITEMS.filter((item) => item.defaultGrant === true);
 
+// R-IMPL(2026-09-10, AC-04 재검토): /economy/admin/grant는 인증된 QA/ADMIN 계정만 호출할 수
+// 있지만, 그 요청도 여전히 "클라이언트가 보낸 값"이라는 점에서는 일반 구매 요청과 다르지
+// 않다 — purchaseItem이 클라이언트가 보낸 price를 절대 읽지 않고 항상 카탈로그의
+// priceGold만 신뢰하는 것과 같은 이유로, 지급 사유(reason)도 클라이언트가 보낸 amount·
+// currency를 그대로 신뢰하지 않고 이 서버 보상 카탈로그의 값만 신뢰해야 한다. reason은
+// 이 카탈로그의 키여야 하고, 실제 지급되는 금액·재화는 항상 이 표의 값이다.
+const REWARD_CATALOG = Object.freeze({
+    QA_TEST_GRANT_GOLD: { currency: 'GOLD', amount: 100000 },
+    QA_TEST_GRANT_DIAMOND: { currency: 'DIAMOND', amount: 1000 },
+    EVENT_COMPENSATION_GOLD: { currency: 'GOLD', amount: 1000 },
+});
+
+/** @param {string} reason @returns {{currency:string,amount:number} | undefined} */
+const getRewardCatalogEntry = (reason) => REWARD_CATALOG[reason];
+
 module.exports = {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,
     DEFAULT_PROFILE_BORDER_ID,
     getCatalogItem,
     listDefaultGrantItems,
+    getRewardCatalogEntry,
     ALL_ITEMS,
+    REWARD_CATALOG,
 };

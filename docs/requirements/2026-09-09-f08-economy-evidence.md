@@ -1,13 +1,61 @@
 # F-08 지갑·거래·카탈로그·소유권 — 이관·복구·검증 기록
 
-날짜: 2026-09-09 최초 작성, 2026-09-10 R-IMPL(반송) 대응으로 갱신
+날짜: 2026-09-09 최초 작성, 2026-09-10 R-IMPL(반송) 대응으로 갱신, 2026-09-10 CODEX-1
+재검토(AC-03/AC-04 미해결 partial) 대응으로 추가 갱신
 슬라이스: Pluto AS (F-08)
 
-이 문서는 두 회차를 함께 기록한다: (1) 최초 구현 — 계획의 "새로 만들 것" 6개 모듈을
+이 문서는 세 회차를 함께 기록한다: (1) 최초 구현 — 계획의 "새로 만들 것" 6개 모듈을
 신규로 구현, (2) R-IMPL 반송 대응(2026-09-10) — 운영자가 정확한 커밋(`2d7c3976`)과
-파일 4개의 스코프 플래그 14개를 검토한 뒤 지적한 실질적 결함을 수정. 아래 "R-IMPL
-반송 대응"절이 이번 회차에 실제로 바뀐 내용이고, 그 이전 절들은 최초 구현 시점 기록을
-필요한 만큼 갱신했다.
+파일 4개의 스코프 플래그 14개를 검토한 뒤 지적한 실질적 결함을 수정, (3) CODEX-1
+재검토 대응(2026-09-10) — 독립 검토가 AC-03·AC-04를 "미해결/partial"로 남긴 구체적
+결함 2건을 추가로 수정. 아래 "CODEX-1 재검토 대응"절이 이번 회차에 실제로 바뀐
+내용이고, 그 이전 절들은 이전 회차 기록을 필요한 만큼 갱신했다.
+
+## CODEX-1 재검토 대응(2026-09-10) — 무엇을 왜 고쳤는가
+
+독립 검토(CODEX-1.json)가 남긴 두 미해결 지적을 대응했다:
+
+1. **AC-03 partial ①(read-then-blind-write 경쟁 상태)** — `ensureDefaultLoadout`이
+   `findOrCreate`로 읽은 loadout 인스턴스가 두 컬럼 모두 `null`이면 그 스냅샷을 근거로
+   `instance.update(patch)`를 무조건 실행했다. 실제 Sequelize의 `findOrCreate`가 돌려주는
+   인스턴스는 조회 시점의 분리된(disconnected) 스냅샷이라, 그 읽기와 쓰기 사이에 동시
+   `equipItem` 요청이 같은 컬럼에 유효한 선택을 먼저 커밋해도 스냅샷에는 반영되지
+   않는다 — 그 뒤 무조건 `update(patch)`가 실행되면 방금 커밋된 유효 선택을 기본값으로
+   되돌려 덮어썼다. 지금은 컬럼별로 `EconomyLoadout.update(patch, {where: {user_id,
+   해당컬럼: null}})` 형태의 모델 수준 조건부 UPDATE로 바꿨다 — WHERE 절 자체에 "지금도
+   null인지"를 실어 단일 SQL 문으로 원자적으로 판정하므로, 그 사이 다른 트랜잭션이 이미
+   값을 넣었으면 0행에 적용되어 그 값을 그대로 둔다. `economy.service.test.js`의 fake
+   `EconomyLoadout`도 canonical 저장소와 "그 시점 스냅샷"을 분리하도록 다시 만들어(이전
+   fake는 같은 객체 참조를 그대로 돌려줘 이 경쟁 상태 자체를 재현할 수 없었다), 새 회귀
+   시험이 구버전 코드에서는 실패하고 신버전에서는 통과함을 직접 확인했다.
+2. **AC-03 partial ②(가입·기존 계정 이관 연결 근거 없음)** — 기본 지급은
+   `getWalletSummary`(지갑/소유품 조회 GET) 경로에서만 보장됐다 — 그 경로를 한 번도
+   거치지 않고 곧바로 `equipItem`부터 호출하면(신규 가입 직후 상점을 열지 않고 바로
+   기본 프로필을 장착하려는 클라이언트, 또는 별도 가입 훅 없이 이관된 기존 계정의 첫
+   접근) 아직 어떤 기본 항목도 실제로 보유하지 않은 상태라 `ITEM_NOT_OWNED`로 잘못
+   거부됐다. 별도의 가입 훅을 추가하는 대신(계획대로 훅 없는 지연 지급 설계를
+   유지하되), `equipItem`도 "계정이 경제 시스템을 처음 건드리는 지점"이 될 수 있다는
+   전제로 함수 맨 앞에서 `ensureDefaultEntitlements`를 호출하도록 확장했다(멱등하므로
+   반복 호출해도 안전). 이제 신규 가입이든 이관된 기존 계정이든, `wallet` GET·`equip`
+   POST 어느 쪽을 먼저 호출해도 AC-03 보장이 동일하게 성립한다.
+3. **AC-04 partial(관리자 지급 경로가 클라이언트 amount·currency를 그대로 신뢰)** —
+   `purchaseItem`은 서버 카탈로그 가격만 쓰지만, `/economy/admin/grant`와
+   `grantReward`는 요청 본문의 `amount`·`currency`를 범위 검사(`isBoundedAmount`)만
+   거쳐 그대로 지급했다 — 인증된 QA/ADMIN 요청이라 해도 그 값은 여전히 "클라이언트가
+   보낸 값"이라, 서버 저장값과 대조하지 않는 한 AC-04("클라이언트가 전송한 …보상량 값을
+   서버가 그대로 신뢰하지 않고 서버 저장값 기준으로 검증")를 만족하지 못한다. 지금은
+   `backend/economy/catalog.js`에 `REWARD_CATALOG`(사유→`{currency, amount}` 고정값)를
+   추가하고, `/economy/admin/grant`는 요청 본문에서 `amount`·`currency`를 아예 읽지
+   않는다 — `reason`이 이 카탈로그의 키여야 하고, 실제 지급 금액·재화는 항상 카탈로그
+   값이다(`purchaseItem`이 `itemId`로 카탈로그 가격을 찾는 것과 같은 패턴). 카탈로그에
+   없는 `reason`은 `UNKNOWN_REWARD_REASON`(400)으로 거부되고 `grantReward`가 아예
+   호출되지 않는다. `economyService.grantReward` 자체의 시그니처(임의 `amount`를 받는
+   저수준 함수)는 그대로 뒀다 — 이 함수는 신뢰된 서버 내부 호출(테스트 시딩,
+   `ensureDefaultEntitlements` 등)이 여전히 정당하게 쓰는 범용 원장 적용 도구이고,
+   실제 보안 경계는 "클라이언트 요청이 도달하는 라우트"이므로 그 경계(`/admin/grant`)만
+   카탈로그로 봉쇄했다. `economy.route.test.js`의 관리자 지급 테스트를 `reason` 기반
+   계약으로 갱신하고, 클라이언트가 카탈로그와 다른 `amount`/`currency`를 함께 보내도
+   무시된다는 것과 알 수 없는 `reason`이 거부된다는 것을 각각 새 테스트로 고정했다.
 
 ## R-IMPL 반송 대응(2026-09-10) — 무엇을 왜 고쳤는가
 
@@ -139,13 +187,21 @@
   전송 불확실(`unknown`)을 구분해 재시도 전략을 달리한다(`economy.store.test.js`).
 - **AC-03(기본 지급)** — 서비스 단위 시험이 신규 계정(엔터티 17개, 프로필 16 + 테두리
   1, 중복 없음, 기본 선택 = 금빛가면/평민, GOLD·DIAMOND 잔액 0/0)과 기존 호출 반복을
-  검증한다. A-04(기존 유효 선택 보존)도 별도 테스트로 고정했다. DB 통합 시험이 같은
-  시나리오를 실제 MySQL로 재확인한다.
-- **AC-04(서버 가격 신뢰)** — 라우트는 요청 본문에서 `itemId`·`referenceEventId`만
-  읽는다. 서비스 시험은 카탈로그 가격 기준 잔액 부족 거부, 카탈로그에 없거나 구매
-  불가한 itemId 거부, **DIAMOND 지급이 GOLD 잔액을 바꾸지 않음**, **안전 정수 범위를
-  벗어난 금액은 지갑을 건드리기 전에 거부**(오버플로 방지), **알 수 없는 재화 거부**를
-  확인한다.
+  검증한다. A-04(기존 유효 선택 보존)도 별도 테스트로 고정했다. **(CODEX-1)** 조건부
+  갱신이 스냅샷을 읽은 뒤·쓰기 전 사이에 커밋된 동시 `equip` 결과를 덮어쓰지 않는다는
+  것과, 지갑 조회 없이 곧바로 기본 프로필을 장착해도(자동 기본 지급 후) 성공한다는 것을
+  각각 새 단위 시험으로 고정했다. DB 통합 시험이 신규 계정 지급 시나리오와 "지갑 조회
+  없이 곧바로 장착" 시나리오를 실제 MySQL로 재확인한다.
+- **AC-04(서버 가격·보상량 신뢰)** — 라우트는 요청 본문에서 `itemId`·
+  `referenceEventId`만 읽는다. 서비스 시험은 카탈로그 가격 기준 잔액 부족 거부,
+  카탈로그에 없거나 구매 불가한 itemId 거부, **DIAMOND 지급이 GOLD 잔액을 바꾸지
+  않음**, **안전 정수 범위를 벗어난 금액은 지갑을 건드리기 전에 거부**(오버플로 방지),
+  **알 수 없는 재화 거부**를 확인한다. **(CODEX-1)** 관리자 지급 경로(`/economy/admin/
+  grant`)는 더 이상 요청 본문의 `amount`·`currency`를 읽지 않고 `reason`을
+  `REWARD_CATALOG`에서 조회한 고정값만 쓴다 — `economy.route.test.js`가 클라이언트가
+  카탈로그와 다른 `amount`/`currency`를 함께 보내도 무시된다는 것과, 카탈로그에 없는
+  `reason`은 `UNKNOWN_REWARD_REASON`(400)으로 거부되고 `grantReward`가 호출조차 되지
+  않는다는 것을 검증한다.
 - **AC-05(소유권·종류 검증)** — 서비스 시험 3건(미보유 거부 403·임의 문자열 거부 400·
   슬롯-종류 불일치 거부 400) + 정상 보유 시 성공 1건. 라우트 시험은 서비스가 던진
   코드가 그대로 HTTP 상태로 나가는지 확인한다.
@@ -156,44 +212,41 @@
   계정 참조 사건 ID 재사용이 서로의 원장에 영향을 주지 않는다는 것은 위 AC-02와 함께
   검증한다.
 
-## 실행한 검증(R-IMPL 반송 대응, 2026-09-10)
+## 실행한 검증(CODEX-1 재검토 대응, 2026-09-10)
 
-- `node impl-check.js node-test backend/service/economy.service.test.js` — **19 pass /
-  0 fail**.
-- `node impl-check.js node-test backend/__tests__/economy.route.test.js` — **12 pass /
-  0 fail**.
+- `node impl-check.js node-test backend/service/economy.service.test.js` — **21 pass /
+  0 fail**(19 → 21, AC-03 경쟁 상태·장착-우선 자동지급 회귀 2건 추가).
+- `node impl-check.js node-test backend/__tests__/economy.route.test.js` — **14 pass /
+  0 fail**(12 → 14, AC-04 변조 무시·알 수 없는 reason 거부 2건 추가). 첫 실행에서
+  `AC-06` 계열 4건이 `fetch failed: bad port`로 실패했다가 재실행 시 전부 통과했다 —
+  이전 회차 evidence에도 기록된 이 환경 고유의 랜덤 포트 플레이키이고, 이번 변경과
+  무관함을 재실행으로 확인했다.
 - `node impl-check.js node-test backend/__tests__/economy.migration.test.js` — **5 pass
-  / 0 fail**.
+  / 0 fail**(변경 없음, 회귀 확인).
 - `node impl-check.js node-test backend/tests/db/f08-economy.integration.test.js` —
-  **0 pass / 0 fail / 10 skipped**(`F01_TEST_DATABASE_URL` 미설정 — 미검증, 아래 참고).
-  더 이상 `F08_TEST_DATABASE_URL`을 요구하지 않고 f01~f07과 같은 변수를 본다.
-- `node impl-check.js node-test backend/__tests__/isolatedTestDb.guard.test.js` —
-  **10 pass / 0 fail**(`buildManagedSchema`에 `addEconomy` 선택 인자를 추가한 뒤에도
-  기존 호출 계약이 그대로임을 확인).
-- `npm test --prefix backend`(백엔드 전체) — **1,185 pass / 0 fail / 53 skipped**
-  (1,238 total). skip은 전부 `F01_TEST_DATABASE_URL` 미설정에 의한 기존 관례이고,
-  실패를 skip으로 위장하지 않았다. 이전 회차에 보고된 `fetch failed: bad port` 플레이키는
-  이번 실행에서 재현되지 않았다.
-- `npm test --prefix frontend`(프론트 전체) — **1,254 pass / 0 fail / 0 skipped**.
-  `economy.store.test.js`가 7개 → 13개로 늘었다(계정 격리·지연 응답·확정 거부/전송
-  불확실 구분 6건 추가). 기존 스위트 회귀 없음.
+  **0 pass / 0 fail / 11 skipped**(10 → 11, AC-03 "장착 우선" 실제 DB 시나리오 추가.
+  `F01_TEST_DATABASE_URL` 미설정 — 미검증, 아래 참고).
+- `npm test --prefix backend`(백엔드 전체) — **1,189 pass / 0 fail / 54 skipped**
+  (1,185→1,189 pass, 53→54 skipped, 신규 4건 반영). skip은 전부
+  `F01_TEST_DATABASE_URL` 미설정에 의한 기존 관례.
+- `npm test --prefix frontend`(프론트 전체) — **1,254 pass / 0 fail / 0 skipped**(이번
+  회차는 프론트 파일을 건드리지 않았다 — 회귀 없음 확인용 재실행).
 - `npm run build --prefix frontend` — production build **exit 0**(경고: 메인 청크
-  500KB 초과 — 이 슬라이스 이전부터 있던 번들 구성, 범위 밖).
-- `node impl-check.js test`/`node impl-check.js build`(레포 루트) — 루트
-  `package.json`의 `test`/`build` 스크립트가 각각 `exit 1` 스텁·정의 없음이라(이
-  슬라이스 이전부터 있던 상태) 그대로 실행하면 항상 실패한다 — 이 슬라이스가 만든
-  결함이 아니라서 고치지 않았고, 대신 위 `npm test --prefix backend`/`--prefix
-  frontend`로 각 패키지를 직접 확인했다.
+  500KB 초과 — 이 슬라이스 이전부터 있던 번들 구성, 범위 밖, 변경 없음).
+- `node impl-check.js test`/`node impl-check.js build`(레포 루트) — 이전 회차와 동일하게
+  각각 `exit 1`(스텁)·정의 없음으로 실패한다(이 슬라이스 이전부터 있던 상태, 이번에도
+  재확인만 했다) — 위 `npm test --prefix backend`/`--prefix frontend`로 대체 확인.
 
 ## 미검증 항목(readiness_unverified)
 
 - **AC-01/AC-02/AC-03/AC-06을 실제 MySQL 행 잠금·복합 유일 인덱스·트랜잭션 롤백
   위에서 검증** — `backend/tests/db/f08-economy.integration.test.js`가 f01~f07과 같은
-  `F01_TEST_DATABASE_URL`을 기다리지만 이 세션에는 설정돼 있지 않아 skip됐다. 이
-  세션의 명령 승인 절차상 Docker exec/DB 리셋을 직접 실행할 수 없다(운영자 지시: 이
-  파일 밖에서 별도 DB를 만들거나 조작하지 말 것) — 로컬에서 실행이 거부된 것이
-  DB 자체의 부재를 뜻하지 않는다. 운영자 또는 정규 VERIFY 단계가
-  `F01_TEST_DATABASE_URL`을 채워 재실행해야 한다.
+  `F01_TEST_DATABASE_URL`을 기다리지만 이 세션에는 설정돼 있지 않아 skip됐다(신규
+  추가된 AC-03 "장착 우선" 실제 DB 시나리오도 마찬가지로 미검증). 이 세션의 명령 승인
+  절차상 Docker exec/DB 리셋을 직접 실행할 수 없다(운영자 지시: 이 파일 밖에서 별도
+  DB를 만들거나 조작하지 말 것) — 로컬에서 실행이 거부된 것이 DB 자체의 부재를 뜻하지
+  않는다. 운영자 또는 정규 VERIFY 단계가 `F01_TEST_DATABASE_URL`을 채워 재실행해야
+  한다.
 - **실제 브라우저에서 상점/마이페이지 화면이 `/economy/*` API를 실제로 호출하는지** —
   데이터 계층만 만들었고 화면 연결은 범위 밖이라 브라우저 검증 대상이 아직 없다.
 
