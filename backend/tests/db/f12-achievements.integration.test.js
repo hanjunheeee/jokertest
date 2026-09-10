@@ -137,8 +137,21 @@ const persistWins = async (userId, role, count) => {
 
 const getWalletRow = async (userId) => db.sequelize.models.EconomyWallet.findOne({ where: { user_id: userId }, raw: true });
 const getEntitlement = async (userId, itemId) => db.sequelize.models.EconomyEntitlement.findOne({ where: { user_id: userId, item_id: itemId }, raw: true });
+// CODEX-1 재검토(AC-03/AC-04): persistWins(userId, 'CITIZEN', N)으로 쌓은 승수는 noble-win-*
+// 뿐 아니라 completedGames·survivals·wins(직업 무관) 지표도 함께 채운다 — 예를 들어 10승은
+// noble-win-10과 동시에 record-1-masquerade(3게임 완료)·record-3-first-morning(5생존)·
+// record-5-clown-story(10승)까지 함께 달성시킨다(N에 따라 record-4/6/7도 함께 달성될 수
+// 있다). 그래서 지갑 "총" 잔액을 특정 업적 하나의 보상액과 그대로 비교하면(예: ===10) 다른
+// 업적이 함께 지급한 금액까지 섞여 실패한다 — 이전 회차는 이 겹침을 계산에 넣지 않고
+// wallet.balance_gold===10만 기대해 실제 DB에서는 실패했다. 검증 대상 업적의
+// reference_event_id로 원장 항목을 직접 조회해, 다른 업적이 동시에 얼마를 지급했든 그
+// 업적 자신의 지급 금액과 지급 횟수만 독립적으로 확인한다.
+const getLedgerEntry = async (userId, referenceEventId) =>
+    db.EconomyLedgerEntry.findOne({ where: { user_id: userId, reference_event_id: referenceEventId }, raw: true });
+const countLedgerEntries = async (userId, referenceEventId) =>
+    db.EconomyLedgerEntry.count({ where: { user_id: userId, reference_event_id: referenceEventId } });
 
-test('AC-02/AC-03: 귀족으로 10승하면 noble-win-10이 지급되고 지갑에 골드10·다이아10이 반영된다', async (t) => {
+test('AC-02/AC-03: 귀족으로 10승하면 noble-win-10이 지급되고 그 업적 몫의 원장(골드10·다이아10)이 정확히 기록된다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
@@ -153,9 +166,12 @@ test('AC-02/AC-03: 귀족으로 10승하면 noble-win-10이 지급되고 지갑�
     const grantRow = await db.AchievementGrant.findOne({ where: { user_id: userId, achievement_id: 'noble-win-10' }, raw: true });
     assert.ok(grantRow, 'achievement_grants 행이 실제로 커밋돼야 한다');
 
-    const wallet = await getWalletRow(userId);
-    assert.equal(wallet.balance_gold, 10);
-    assert.equal(wallet.balance_diamond, 10);
+    const goldEntry = await getLedgerEntry(userId, 'achievement:noble-win-10:GOLD');
+    const diamondEntry = await getLedgerEntry(userId, 'achievement:noble-win-10:DIAMOND');
+    assert.ok(goldEntry, 'noble-win-10 골드 지급 원장 항목이 있어야 한다');
+    assert.ok(diamondEntry, 'noble-win-10 다이아 지급 원장 항목이 있어야 한다');
+    assert.equal(goldEntry.amount, 10);
+    assert.equal(diamondEntry.amount, 10);
 });
 
 test('AC-03: 직업 30승은 테두리 소유권을 카탈로그 계약대로 지급한다', async (t) => {
@@ -190,8 +206,12 @@ test('AC-04: 실제 DB 경합(동시 평가 요청)에서도 같은 업적은 �
     const grantCount = await db.AchievementGrant.count({ where: { user_id: userId, achievement_id: 'noble-win-10' } });
     assert.equal(grantCount, 1, '동시 요청이어도 achievement_grants 유일 제약으로 한 번만 남아야 한다');
 
-    const wallet = await getWalletRow(userId);
-    assert.equal(wallet.balance_gold, 10, '동시 요청이 재화를 두 번 지급하면 안 된다');
+    // 이 시나리오(10승)는 noble-win-10과 함께 record-1/3/5도 동시에 달성시킨다(위 헬퍼 주석
+    // 참고) — 지갑 총액이 아니라 noble-win-10 자신의 원장 항목 개수·금액만 확인한다.
+    assert.equal(await countLedgerEntries(userId, 'achievement:noble-win-10:GOLD'), 1, '동시 요청이 noble-win-10 골드를 두 번 지급하면 안 된다');
+    assert.equal(await countLedgerEntries(userId, 'achievement:noble-win-10:DIAMOND'), 1, '동시 요청이 noble-win-10 다이아를 두 번 지급하면 안 된다');
+    const goldEntry = await getLedgerEntry(userId, 'achievement:noble-win-10:GOLD');
+    assert.equal(goldEntry.amount, 10);
 });
 
 test('AC-04: 페이지 재진입(재평가) 재시도는 이미 지급된 업적을 다시 지급하지 않는다', async (t) => {
@@ -205,9 +225,14 @@ test('AC-04: 페이지 재진입(재평가) 재시도는 이미 지급된 업적
     await achievementService.evaluateAndGrantForUser(userId);
     await achievementService.evaluateAndGrantForUser(userId);
 
-    const wallet = await getWalletRow(userId);
-    assert.equal(wallet.balance_gold, 10);
-    assert.equal(wallet.balance_diamond, 10);
+    // 이 시나리오(10승)는 noble-win-10과 함께 record-1/3/5도 동시에 달성시킨다 — 지갑
+    // 총액이 아니라 noble-win-10 자신의 원장 항목 개수·금액만 확인한다.
+    assert.equal(await countLedgerEntries(userId, 'achievement:noble-win-10:GOLD'), 1, '재시도가 noble-win-10 골드를 중복 지급하면 안 된다');
+    assert.equal(await countLedgerEntries(userId, 'achievement:noble-win-10:DIAMOND'), 1, '재시도가 noble-win-10 다이아를 중복 지급하면 안 된다');
+    const goldEntry = await getLedgerEntry(userId, 'achievement:noble-win-10:GOLD');
+    const diamondEntry = await getLedgerEntry(userId, 'achievement:noble-win-10:DIAMOND');
+    assert.equal(goldEntry.amount, 10);
+    assert.equal(diamondEntry.amount, 10);
 });
 
 test('AC-05: 중단 경기 참가자는 진행률에 반영되지 않는다', async (t) => {

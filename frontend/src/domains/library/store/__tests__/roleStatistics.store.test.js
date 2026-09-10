@@ -115,9 +115,9 @@ test("0판 직업은 빈 랭킹(success, ranking:[])으로 남는다 — 실패�
   assert.equal(state.myStats.games, 0)
 })
 
-// ── F-12 AC-01/AC-06: 직업 도전과제 클리어 id를 업적 조회에서 함께 채운다 ────────
+// ── F-12 AC-01/AC-06: 직업 도전과제 진행률을 업적 조회에서 함께 채운다 ────────
 
-test("requestJob: 달성한 업적 id만 clearedChallengeIds에 담긴다", async () => {
+test("requestJob: 업적 조회 결과가 id별 achieved·current·threshold로 그대로 보존된다(CODEX-1 재검토 — current/threshold를 버리지 않는다)", async () => {
   resetStore()
   getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
   getRoleRankingImpl = async () => ({ role: "CITIZEN", ranking: [] })
@@ -130,12 +130,16 @@ test("requestJob: 달성한 업적 id만 clearedChallengeIds에 담긴다", asyn
   await useRoleStatisticsStore.getState().requestJob("noble")
 
   assert.deepEqual(
-    useRoleStatisticsStore.getState().byJobKey.noble.clearedChallengeIds,
-    ["noble-win-10", "record-1-masquerade"],
+    useRoleStatisticsStore.getState().byJobKey.noble.achievementsById,
+    {
+      "noble-win-10": { achieved: true, current: 12, threshold: 10 },
+      "noble-win-20": { achieved: false, current: 12, threshold: 20 },
+      "record-1-masquerade": { achieved: true, current: 5, threshold: 3 },
+    },
   )
 })
 
-test("requestJob: 업적을 하나도 달성하지 못했으면 clearedChallengeIds는 빈 배열이다", async () => {
+test("requestJob: 업적을 하나도 달성하지 못했어도 진행률(current/threshold)은 achievementsById에 남는다", async () => {
   resetStore()
   getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
   getRoleRankingImpl = async () => ({ role: "CITIZEN", ranking: [] })
@@ -143,7 +147,10 @@ test("requestJob: 업적을 하나도 달성하지 못했으면 clearedChallenge
 
   await useRoleStatisticsStore.getState().requestJob("noble")
 
-  assert.deepEqual(useRoleStatisticsStore.getState().byJobKey.noble.clearedChallengeIds, [])
+  assert.deepEqual(
+    useRoleStatisticsStore.getState().byJobKey.noble.achievementsById,
+    { "noble-win-10": { achieved: false, current: 2, threshold: 10 } },
+  )
 })
 
 // ── A-08: 로그아웃/계정 전환/직업 변경 시 상태 격리 ─────────────────────────────

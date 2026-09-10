@@ -110,15 +110,18 @@ const stubAuthDb = (t) => {
 };
 
 // achievementService.getStatusForUser는 gameResult.repositories.js/voteParticipation.repositories.js를
-// 거쳐 실제 db.GameResultPlayer/db.VoteParticipation을 조회한다 — 라우트 경계만 확인하는
-// 이 시험에서는 빈 결과를 주는 최소 스텁으로 대체한다.
+// 거쳐 실제 db.GameResultPlayer/db.VoteParticipation을 조회하고(AC-02), 영속 지급 이력
+// (AC-06)을 위해 db.AchievementGrant도 직접 조회한다 — 라우트 경계만 확인하는 이 시험에서는
+// 셋 다 빈 결과를 주는 최소 스텁으로 대체한다.
 const stubProgressDb = (t) => {
-    const original = { GameResultPlayer: db.GameResultPlayer, VoteParticipation: db.VoteParticipation };
+    const original = { GameResultPlayer: db.GameResultPlayer, VoteParticipation: db.VoteParticipation, AchievementGrant: db.AchievementGrant };
     db.GameResultPlayer = { findAll: async () => [] };
     db.VoteParticipation = { findAll: async () => [] };
+    db.AchievementGrant = { findAll: async () => [] };
     t.after(() => {
         db.GameResultPlayer = original.GameResultPlayer;
         db.VoteParticipation = original.VoteParticipation;
+        db.AchievementGrant = original.AchievementGrant;
     });
 };
 
@@ -138,4 +141,5 @@ test("AC-06: 인증된 요청은 실제 라우터→컨트롤러→서비스를 
     const body = await res.json();
     assert.equal(body.data.length, 22);
     assert.equal(body.data.every((a) => a.achieved === false), true, "전적이 없으면 전부 미달성이어야 한다");
+    assert.equal(body.data.every((a) => a.granted === false && a.grantedAt === null), true, "지급 이력이 없으면 전부 granted:false여야 한다(AC-06)");
 });

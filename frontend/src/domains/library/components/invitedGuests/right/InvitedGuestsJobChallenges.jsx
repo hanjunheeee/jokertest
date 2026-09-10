@@ -34,6 +34,8 @@ export default function InvitedGuestsJobChallenges({ challenges }) {
                 label={challenge.label}
                 rewards={challenge.rewards}
                 cleared={challenge.cleared}
+                current={challenge.current}
+                threshold={challenge.threshold}
                 onOpenProfileBorderZoom={setProfileBorderZoomItem}
               />
             ))}

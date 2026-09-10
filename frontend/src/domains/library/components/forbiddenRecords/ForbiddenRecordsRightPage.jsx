@@ -44,14 +44,20 @@ export default function ForbiddenRecordsRightPage({ pageIndex = 0 }) {
   const { id, right } = getForbiddenRecordsPage(pageIndex)
   const { locked, unlockCondition, unlockProgress, unlockRewards, progressUnit, clearIllust, body } = right
   // F-12 AC-01/AC-06: 서버 업적 상태로 연결한다 — 이 spread의 id가 곧 achievementDefinitions.js의
-  // 업적 id다(record-1-masquerade 등). 아직 불러오는 중이면(achievements === null) 정적 더미
-  // 진행도로 안전하게 표시하고, 도착하면 실제 진행률·달성 여부로 교체한다.
-  const { achievements } = useAchievements()
+  // 업적 id다(record-1-masquerade 등). 실제 진행률이 도착하면 그것으로 교체하고, 아직 한 번도
+  // 불러온 적이 없는 최초 렌더에서만 정적 더미 진행도를 잠깐 보여준다 — 로딩 중이거나 조회가
+  // 실패했을 때는 계정과 무관한 고정 더미 수치("1/3회 완료" 등)를 실제 진행률처럼 보여주면
+  // 안 되므로(CODEX-1 AC-06 재검토), 그 두 상태는 별도 문구로 표시한다.
+  const { achievements, status, error } = useAchievements()
   const achievement = achievements?.find((entry) => entry.id === id)
   const challengeCleared = achievement?.achieved ?? false
   const displayedProgress = achievement
     ? `${Math.min(achievement.current, achievement.threshold)}/${achievement.threshold}${progressUnit ?? ""}`
-    : unlockProgress
+    : status === "loading"
+      ? "진행률을 불러오는 중…"
+      : status === "error"
+        ? (error ?? "진행률을 불러오지 못했습니다")
+        : unlockProgress
   const challengeClearIllustSrc =
     clearIllust ?? getForbiddenRecordsChallengeClearIllust(pageIndex + 1)
 

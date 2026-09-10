@@ -132,19 +132,37 @@ const evaluateAndGrantForUser = async (userId) => {
  * 감소하지 않는 한 계속 achieved:true로 남는다 — "이미 지급된 업적이 재조회에서
  * granted:false라는 이유로 미지급으로 표시되는" 오류를 피한다.
  *
+ * CODEX-1 재검토(AC-06): achieved는 진행률만으로 계산한 값이라, 게임/투표 이벤트 직후
+ * fire-and-forget으로 실행되는 evaluateAndGrantForUser 호출이 (지급 도중 오류 등으로)
+ * 아직 성공한 적이 없어도 achieved:true로 보일 수 있다 — "조건은 채웠지만 실제로 재화·
+ * 아이템은 아직 지급되지 않은" 상태다. 이 함수는 achievement_grants(영속 지급 이력)를
+ * 함께 조회해 granted·grantedAt을 덧붙인다 — 재로그인·새로고침 후 화면이 "달성 조건
+ * 충족"과 "실제로 지급됨"을 구분해 보여줄 수 있어야 한다(AC-06).
+ *
  * @param {string} userId
- * @returns {Promise<Array<{ id: string, achieved: boolean, current: number, threshold: number }>>}
+ * @returns {Promise<Array<{ id: string, achieved: boolean, current: number, threshold: number, granted: boolean, grantedAt: Date|null }>>}
  */
 const getStatusForUser = async (userId) => {
     if (typeof userId !== 'string' || userId.length === 0) return [];
 
-    const progress = await loadProgress(userId);
-    return achievementDefinitions.ACHIEVEMENT_DEFINITIONS.map((definition) => ({
-        id: definition.id,
-        achieved: meetsThreshold(definition, progress),
-        current: currentValueOf(definition, progress),
-        threshold: definition.threshold,
-    }));
+    const { db } = deps;
+    const [progress, grants] = await Promise.all([
+        loadProgress(userId),
+        db.AchievementGrant.findAll({ where: { user_id: userId }, attributes: ['achievement_id', 'granted_at'], raw: true }),
+    ]);
+    const grantedAtById = new Map(grants.map((grant) => [grant.achievement_id, grant.granted_at]));
+
+    return achievementDefinitions.ACHIEVEMENT_DEFINITIONS.map((definition) => {
+        const grantedAt = grantedAtById.get(definition.id) ?? null;
+        return {
+            id: definition.id,
+            achieved: meetsThreshold(definition, progress),
+            current: currentValueOf(definition, progress),
+            threshold: definition.threshold,
+            granted: grantedAt !== null,
+            grantedAt,
+        };
+    });
 };
 
 module.exports = {

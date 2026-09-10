@@ -65,6 +65,10 @@ const createFakeDb = () => {
             });
             return [record, true];
         },
+        // getStatusForUser(AC-06)가 영속 지급 이력(achievement_id, granted_at)을 읽을 때 쓴다.
+        async findAll({ where }) {
+            return achievementGrants.filter((g) => g.user_id === where.user_id);
+        },
     };
 
     const sequelize = {
@@ -311,7 +315,10 @@ test('A-09: getStatusForUser는 22개 전부의 진행률·달성 여부를 반�
 
     assert.equal(status.length, 22);
     const record1 = status.find((s) => s.id === 'record-1-masquerade');
-    assert.deepEqual(record1, { id: 'record-1-masquerade', achieved: true, current: 3, threshold: 3 });
+    // 진행률은 충족했지만(achieved:true) 아직 evaluateAndGrantForUser가 한 번도 실행되지
+    // 않았으므로 achievement_grants 행이 없다 — granted:false·grantedAt:null이어야 한다
+    // (CODEX-1 재검토 AC-06: achieved와 "실제로 지급됨"을 혼동하면 안 된다).
+    assert.deepEqual(record1, { id: 'record-1-masquerade', achieved: true, current: 3, threshold: 3, granted: false, grantedAt: null });
     // 조회만으로는 재화가 지급되지 않는다 — grantAchievement를 호출하지 않는다.
     assert.equal(economyService.calls.length, 0);
 });
@@ -347,6 +354,33 @@ test('A-09: 이미 지급된 업적도(달성 지표가 누적값이라) 재조�
 
     const noble10 = status.find((s) => s.id === 'noble-win-10');
     assert.equal(noble10.achieved, true);
+    assert.equal(noble10.granted, true, '실제로 지급된 업적은 granted:true여야 한다(AC-06)');
+    assert.ok(noble10.grantedAt, 'grantedAt이 함께 반환되어야 한다(AC-06)');
+});
+
+test('AC-06: getStatusForUser는 조건은 채웠지만(achieved:true) 아직 지급 이력이 없는 업적을 granted:false로, 실제 지급된 업적은 granted:true로 구분한다', async () => {
+    const { db } = createFakeDb();
+    const economyService = createFakeEconomyService();
+    const { gameResultRepository, voteParticipationRepository } = createFakeProgressRepos({
+        // completedGames:15 → record-1(3)·record-4(15) 모두 achieved:true가 되지만,
+        // evaluateAndGrantForUser는 record-1만 실행해 record-4는 achieved인데도 미지급 상태로 남긴다.
+        'user-a': { completedGames: 15, survivals: 0, wins: 0, voteParticipations: 0, roleWins: {} },
+    });
+    __internal.__setDepsForTests({ db, economyService, gameResultRepository, voteParticipationRepository });
+
+    await __internal.grantAchievement('user-a', { id: 'record-1-masquerade', rewards: [{ type: 'CURRENCY', currency: 'GOLD', amount: 50 }, { type: 'CURRENCY', currency: 'DIAMOND', amount: 50 }] });
+
+    const status = await achievementService.getStatusForUser('user-a');
+    const record1 = status.find((s) => s.id === 'record-1-masquerade');
+    const record4 = status.find((s) => s.id === 'record-4-testimonies');
+
+    assert.equal(record1.achieved, true);
+    assert.equal(record1.granted, true, 'record-1은 실제로 grantAchievement를 거쳤으므로 granted:true다');
+    assert.ok(record1.grantedAt);
+
+    assert.equal(record4.achieved, true, 'record-4도 진행률 조건(15게임)은 채웠다');
+    assert.equal(record4.granted, false, 'record-4는 아직 grantAchievement를 거치지 않았으므로 granted:false여야 한다(지급 실패/미실행과 achieved를 혼동하면 안 된다)');
+    assert.equal(record4.grantedAt, null);
 });
 
 test('빈 userId로 getStatusForUser를 부르면 빈 배열이다', async () => {

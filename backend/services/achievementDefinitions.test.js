@@ -9,6 +9,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const {
     ACHIEVEMENT_DEFINITIONS,
@@ -16,6 +18,12 @@ const {
     JOB_ACHIEVEMENTS,
     getAchievementDefinition,
 } = require('./achievementDefinitions');
+
+// CODEX-1 재검토(AC-01): 위 EXPECTED_* 배열은 손으로 옮겨 적은 값이라 프론트 원본이 바뀌어도
+// 조용히 어긋날 수 있다 — 아래 테스트들은 실제 frontend/ 소스 파일을 동적 import로 직접 읽어
+// 대조해, "22개 원문·순서 보존"을 손으로 옮겨 적은 사본이 아니라 진짜 소스에 근거해 검증한다.
+const FRONTEND_SPREAD_META_PATH = path.join(__dirname, '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'forbiddenRecords', 'spreadMeta.js');
+const FRONTEND_JOB_CHALLENGES_PATH = path.join(__dirname, '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'invitedGuests', 'jobChallenges.js');
 
 // spreadMeta.js FORBIDDEN_RECORDS_SPREAD_META와 같은 순서·id·조건.
 const EXPECTED_FORBIDDEN_RECORDS = [
@@ -117,4 +125,45 @@ test('A-02: 직업별 30승 테두리 itemId가 서로 다르고 직업 수(5개
 
 test('getAchievementDefinition: 존재하지 않는 id는 undefined다', () => {
     assert.equal(getAchievementDefinition('no-such-id'), undefined);
+});
+
+// ── AC-01 CODEX-1 재검토: 손으로 옮긴 기대값이 아니라 실제 frontend 소스와 직접 대조 ──
+
+test('AC-01: 실제 frontend/spreadMeta.js의 FORBIDDEN_RECORDS_SPREAD_META 7개 id·순서가 백엔드 정의와 정확히 일치한다', async () => {
+    const mod = await import(pathToFileURL(FRONTEND_SPREAD_META_PATH).href);
+    const frontendIds = mod.FORBIDDEN_RECORDS_SPREAD_META.map((entry) => entry.id);
+    assert.deepEqual(frontendIds, FORBIDDEN_RECORD_ACHIEVEMENTS.map((def) => def.id));
+});
+
+test('AC-01: 실제 frontend/jobChallenges.js의 INVITED_GUESTS_JOB_CHALLENGES 15개 id·순서가 백엔드 정의와 정확히 일치한다', async () => {
+    const mod = await import(pathToFileURL(FRONTEND_JOB_CHALLENGES_PATH).href);
+    const frontendIds = Object.values(mod.INVITED_GUESTS_JOB_CHALLENGES).flatMap((list) => list.map((c) => c.id));
+    assert.deepEqual(frontendIds, JOB_ACHIEVEMENTS.map((def) => def.id));
+});
+
+test('A-02: 실제 frontend/jobChallenges.js의 통화 보상 수량(count)이 백엔드 정의(amount)와 일치한다(아이콘 파일명 숫자가 아니라 count 필드로 비교)', async () => {
+    const mod = await import(pathToFileURL(FRONTEND_JOB_CHALLENGES_PATH).href);
+    let checked = 0;
+    for (const list of Object.values(mod.INVITED_GUESTS_JOB_CHALLENGES)) {
+        for (const challenge of list) {
+            const backendDef = getAchievementDefinition(challenge.id);
+            assert.ok(backendDef, `${challenge.id}: 백엔드 정의가 없다`);
+            const frontendCurrencyRewards = challenge.rewards.filter((r) => r.type === 'currency');
+            const backendCurrencyRewards = backendDef.rewards.filter((r) => r.type === 'CURRENCY');
+            assert.equal(frontendCurrencyRewards.length, backendCurrencyRewards.length, `${challenge.id}: 통화 보상 개수 불일치`);
+            frontendCurrencyRewards.forEach((frontendReward, i) => {
+                assert.equal(frontendReward.count, backendCurrencyRewards[i].amount, `${challenge.id}: 보상 수량 불일치`);
+            });
+            checked += 1;
+        }
+    }
+    assert.equal(checked, 15);
+});
+
+test('A-02: 실제 frontend/spreadMeta.js의 금지된 기록 공통 보상 수량(FORBIDDEN_RECORDS_DUMMY_UNLOCK_REWARDS)이 백엔드 정의와 일치한다', async () => {
+    const mod = await import(pathToFileURL(FRONTEND_SPREAD_META_PATH).href);
+    const frontendCounts = mod.FORBIDDEN_RECORDS_DUMMY_UNLOCK_REWARDS.map((r) => r.count);
+    for (const def of FORBIDDEN_RECORD_ACHIEVEMENTS) {
+        assert.deepEqual(def.rewards.map((r) => r.amount), frontendCounts, `${def.id}: 보상 수량이 프론트 정의와 다르다`);
+    }
 });

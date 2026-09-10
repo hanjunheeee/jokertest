@@ -66,6 +66,7 @@ const resetSchema = async () => {
 const db = require('../../models');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
 const achievementRecoveryService = require('../../services/achievementRecoveryService');
+const economyService = require('../../service/economy.service');
 const { hashPassword } = require('../../utils/hash');
 
 test.after(async () => {
@@ -181,4 +182,55 @@ test('A-07: 여러 계정을 한 번에 백필해도 각 계정은 자신의 진
 
     const rookieGrantCount = await db.AchievementGrant.count({ where: { user_id: rookie } });
     assert.equal(rookieGrantCount, 0, '1승뿐인 계정은 아무 업적도 지급받으면 안 된다');
+});
+
+// ── CODEX-1 재검토(AC-05): 실제 CLI(evaluateAllUsers) 중단·지급 실패 후 복구 ──────────
+//
+// 이전 회차는 fake db/achievementService로만(achievementRecoveryService.test.js) 실패
+// 격리·재실행 포함 여부를 검증했다 — "실제" 중단(실제 트랜잭션 롤백)·복구 경로에 대한 근거가
+// 없다는 지적에 대응해, 실제 DB 위에서 economy.service의 지급 함수 하나를 일시적으로
+// 고장 내 evaluateAllUsers(backfill-achievements.js가 그대로 호출하는 함수) 한 번을
+// 실패시키고, achievement_grants·원장이 부분 지급 없이 롤백되는지, 그리고 원인이 사라진
+// 뒤 재실행(복구)에서 정상 지급되는지 확인한다.
+test('AC-05: 지급 도중 실패한 계정은 achievement_grants·원장이 롤백되고, 원인이 사라진 뒤 재실행하면 정상 복구된다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('interrupt1');
+    // record-1-masquerade(게임 3회 완료)만 달성 가능하게 한다 — survivals(5)·wins(10) 문턱은
+    // 넘지 않으므로 이 계정에는 그 업적 하나만 걸린다.
+    await persistWins(userId, 'CITIZEN', 3);
+
+    const originalGrantAchievementCurrency = economyService.grantAchievementCurrency;
+    economyService.grantAchievementCurrency = async () => {
+        throw new Error('simulated interruption during grant');
+    };
+
+    let interrupted;
+    try {
+        interrupted = await achievementRecoveryService.evaluateAllUsers();
+    } finally {
+        economyService.grantAchievementCurrency = originalGrantAchievementCurrency;
+    }
+
+    assert.equal(interrupted.errors.length, 1, '지급 실패는 evaluateAllUsers 요약의 errors로 드러나야 한다');
+    assert.equal(interrupted.errors[0].userId, userId);
+
+    const grantCountAfterFailure = await db.AchievementGrant.count({ where: { user_id: userId } });
+    assert.equal(grantCountAfterFailure, 0, '보상 지급이 실패하면 achievement_grants도 함께 롤백되어야 한다(부분 지급 금지)');
+    const walletAfterFailure = await getWalletRow(userId);
+    assert.equal(walletAfterFailure?.balance_gold ?? 0, 0, '실패한 지급은 잔액에 반영되면 안 된다');
+
+    // 복구: 원인(고장 낸 함수)이 사라진 뒤 다시 실행하면 처음부터 다시 시도해 정상 지급된다.
+    const recovered = await achievementRecoveryService.evaluateAllUsers();
+    assert.deepEqual(recovered.errors, []);
+    const grantedForUser = recovered.grants.find((g) => g.userId === userId)?.achievementIds ?? [];
+    assert.ok(grantedForUser.includes('record-1-masquerade'), '복구 실행에서 정상 지급되어야 한다');
+
+    const grantCountAfterRecovery = await db.AchievementGrant.count({ where: { user_id: userId, achievement_id: 'record-1-masquerade' } });
+    assert.equal(grantCountAfterRecovery, 1, '실패했던 시도의 흔적이 남아 중복 지급되면 안 된다');
+
+    const walletAfterRecovery = await getWalletRow(userId);
+    assert.equal(walletAfterRecovery.balance_gold, 50);
+    assert.equal(walletAfterRecovery.balance_diamond, 50);
 });

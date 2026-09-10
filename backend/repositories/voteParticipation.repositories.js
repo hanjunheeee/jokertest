@@ -77,3 +77,10 @@ exports.countEligibleDayVoteParticipations = async (userId) => {
     });
     return rows.filter((row) => isEligibleGameResult(row.GameResult)).length;
 };
+
+// CODEX-1 재검토(AC-02): isEligibleGameResult 자체는 DB 없이도 검증 가능한 순수 판정
+// 로직인데, 지금까지는 이 파일 전체가 db.VoteParticipation.findAll을 거쳐야만 실행되는
+// countEligibleDayVoteParticipations 뒤에 숨어 있어 F01_TEST_DATABASE_URL 없이는 "정상
+// 확정 경기의 유효 투표만 남긴다"는 판정 자체를 확인할 근거가 없었다. 런타임 경로는
+// 바꾸지 않고, 테스트 전용으로 순수 함수만 노출한다.
+exports.__internal = { isEligibleGameResult };

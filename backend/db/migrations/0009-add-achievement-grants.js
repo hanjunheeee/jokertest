@@ -36,6 +36,18 @@ module.exports = {
                 achievement_id: { type: Sequelize.STRING(60), allowNull: false },
                 granted_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.NOW },
             });
+        }
+
+        // CODEX-1 재검토(AC-04): createTable은 성공했지만 이어지는 addIndex 전에 프로세스가
+        // 죽으면(배포 중단 등), 테이블만 있고 유일 인덱스는 없는 상태로 남는다. 예전 코드는
+        // existingTables.has(...)만으로 up() 재실행 여부를 판단해 이 경우 addIndex를 영영
+        // 건너뛰었다 — 그러면 동시 달성·재시도가 achievement_grants 유일 제약 없이 통과해
+        // AC-04(중복 지급 방지)가 깨진다. 테이블 존재 여부와 별개로 인덱스 존재 여부를 항상
+        // 확인하고 없으면 다시 만든다(멱등, addIndex를 두 번 불러도 안전하지 않으므로 존재
+        // 확인 후에만 호출한다).
+        const indexes = await queryInterface.showIndex(TABLE_NAMES.ACHIEVEMENT_GRANTS);
+        const hasUniqueIndex = indexes.some((index) => index.name === 'achievement_grants_user_achievement_unique');
+        if (!hasUniqueIndex) {
             await queryInterface.addIndex(TABLE_NAMES.ACHIEVEMENT_GRANTS, ['user_id', 'achievement_id'], {
                 name: 'achievement_grants_user_achievement_unique', unique: true,
             });
@@ -54,6 +66,14 @@ module.exports = {
         const missing = Object.values(TABLE_NAMES).filter((t) => !existingTables.has(t));
         if (missing.length > 0) {
             throw new Error(`0009-add-achievement-grants 적용 후에도 누락된 테이블: [${missing.join(', ')}]`);
+        }
+
+        // CODEX-1 재검토(AC-04): 테이블만 있고 유일 인덱스가 없는 중간 실패 상태를 verify가
+        // 놓치지 않게, 인덱스 존재 여부도 함께 확인한다.
+        const indexes = await queryInterface.showIndex(TABLE_NAMES.ACHIEVEMENT_GRANTS);
+        const hasUniqueIndex = indexes.some((index) => index.name === 'achievement_grants_user_achievement_unique');
+        if (!hasUniqueIndex) {
+            throw new Error('0009-add-achievement-grants 적용 후에도 achievement_grants_user_achievement_unique 유일 인덱스가 없습니다');
         }
     },
 

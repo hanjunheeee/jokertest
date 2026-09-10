@@ -70,6 +70,7 @@ const resetSchema = async () => {
 
 const db = require('../../models');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
+const achievementService = require('../../services/achievementService');
 const { hashPassword } = require('../../utils/hash');
 const { generateToken } = require('../../utils/jwt');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
@@ -142,11 +143,13 @@ const startRouteServer = async (t) => {
 
 const tokenFor = (uuid) => generateToken({ uuid, role: 'USER', sessionId: `session-${uuid}` });
 
-test('AC-01/AC-06: 실제 DB 기준 진행률 3승을 쌓으면 기록 1(게임 3회 완료)이 achieved:true로 조회된다', async (t) => {
+test('AC-01/AC-06: 실제 DB 기준 진행률 3승을 쌓으면 기록 1(게임 3회 완료)이 achieved:true로 조회되지만, 아직 지급 이벤트가 없었으므로 granted:false다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
     const userId = await createLocalUser('api1');
+    // persistGameResult만 직접 호출한다(소켓 계층의 evaluateAchievementsForUsers를 거치지
+    // 않는다) — 아직 achievementService.evaluateAndGrantForUser가 실행된 적이 없다.
     await persistWins(userId, 'CITIZEN', 3);
 
     const base = await startRouteServer(t);
@@ -156,7 +159,29 @@ test('AC-01/AC-06: 실제 DB 기준 진행률 3승을 쌓으면 기록 1(게임 
 
     assert.equal(body.data.length, 22);
     const record1 = body.data.find((a) => a.id === 'record-1-masquerade');
-    assert.deepEqual(record1, { id: 'record-1-masquerade', achieved: true, current: 3, threshold: 3 });
+    // CODEX-1 재검토(AC-06): achieved(진행률 조건 충족)와 granted(실제 지급 이력)를 구분한다
+    // — 게임/투표 이벤트가 아직 한 번도 evaluateAndGrantForUser를 트리거하지 않았으므로
+    // achievement_grants 행이 없고, granted는 false·grantedAt은 null이어야 한다.
+    assert.deepEqual(record1, { id: 'record-1-masquerade', achieved: true, current: 3, threshold: 3, granted: false, grantedAt: null });
+});
+
+test('AC-06: 실제로 지급된 업적은 조회에서 granted:true와 grantedAt(영속 지급 이력)을 함께 반환한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('api1b');
+    await persistWins(userId, 'CITIZEN', 3);
+    // 게임 종료 이벤트가 트리거하는 실제 지급 경로를 흉내낸다.
+    await achievementService.evaluateAndGrantForUser(userId);
+
+    const base = await startRouteServer(t);
+    const res = await fetch(`${base}/user/me/achievements`, { headers: { cookie: `accessToken=${tokenFor(userId)}` } });
+    const body = await res.json();
+
+    const record1 = body.data.find((a) => a.id === 'record-1-masquerade');
+    assert.equal(record1.achieved, true);
+    assert.equal(record1.granted, true, '재로그인·새로고침 후에도 실제 지급 이력이 granted:true로 복원되어야 한다');
+    assert.ok(record1.grantedAt, 'grantedAt이 함께 조회되어야 한다');
 });
 
 test('A-09: 조회 API를 반복 호출해도 achievement_grants 행이 생기지 않는다(조회는 지급하지 않는다)', async (t) => {

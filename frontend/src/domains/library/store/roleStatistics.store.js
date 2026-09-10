@@ -20,7 +20,7 @@ export const JOB_KEY_TO_ROLE_CODE = Object.freeze({
 
 const JOB_KEYS = Object.keys(JOB_KEY_TO_ROLE_CODE);
 
-const emptyJobState = () => ({ status: "idle", myStats: null, ranking: null, error: null, clearedChallengeIds: [] });
+const emptyJobState = () => ({ status: "idle", myStats: null, ranking: null, error: null, achievementsById: {} });
 
 const initialByJobKey = () => Object.fromEntries(JOB_KEYS.map((jobKey) => [jobKey, emptyJobState()]));
 
@@ -44,8 +44,10 @@ export const useRoleStatisticsStore = create((set, get) => ({
     try {
       // F-12 AC-01/AC-06: 직업 도전과제(초대받은 자들)의 클리어 표시는 achievementDefinitions.js가
       // 정의한 업적 id(noble-win-10 등)로 판정한다 — 도전과제 id와 업적 id가 같은 문자열이므로
-      // 별도 jobKey별 필터링 없이 achieved된 id 전체를 그대로 저장해 두면 mergeInvitedGuestsSpreads.js가
-      // 각 도전과제의 id로 조회한다.
+      // 별도 jobKey별 필터링 없이 22개 전체를 id로 색인해 두면 mergeInvitedGuestsSpreads.js가
+      // 각 도전과제의 id로 조회한다. CODEX-1 재검토(AC-01): achieved 여부만 남기고 current·
+      // threshold를 버리면 도전과제 화면이 실제 진행률("7/10승" 등)을 보여줄 방법이 없어진다
+      // — 서버가 내려준 값을 id별로 그대로 보존한다.
       const [myStatsList, rankingResponse, achievements] = await Promise.all([
         getMyRoleStatisticsApi(),
         getRoleRankingApi(role),
@@ -56,11 +58,13 @@ export const useRoleStatisticsStore = create((set, get) => ({
       if (get().requestGeneration !== generation || get().requestTokens[jobKey] !== token) return;
 
       const myStats = myStatsList.find((entry) => entry.role === role) ?? null;
-      const clearedChallengeIds = achievements.filter((a) => a.achieved).map((a) => a.id);
+      const achievementsById = Object.fromEntries(
+        achievements.map((a) => [a.id, { achieved: a.achieved, current: a.current, threshold: a.threshold }]),
+      );
       set((state) => ({
         byJobKey: {
           ...state.byJobKey,
-          [jobKey]: { status: "success", myStats, ranking: rankingResponse.ranking, error: null, clearedChallengeIds },
+          [jobKey]: { status: "success", myStats, ranking: rankingResponse.ranking, error: null, achievementsById },
         },
       }));
     } catch (error) {
