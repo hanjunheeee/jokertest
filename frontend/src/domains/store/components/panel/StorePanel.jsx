@@ -37,6 +37,44 @@ const isRealPurchaseCategory = (category) => !NON_PURCHASABLE_CATEGORIES.has(cat
 // 다음의 새 시도는 새 참조 사건 ID를 쓴다(economy.store.js purchase()와 같은 규칙).
 const buildBulkPurchaseReferenceEventId = (userId) => `bulk-purchase:${userId}:${crypto.randomUUID()}`
 
+// F-09 CODEX-2 재검토(AC-04): "응답 body에 code 문자열이 있으면 확정 거부"라는 판정은
+// 너무 넓다 — 서버가 커밋 여부를 확신할 수 없는 상황에서도 code를 실어 보낼 수 있다.
+// 예를 들어 economy_purchase_requests 유일 제약 충돌을 서버가 자체적으로 해소하지 못하고
+// 그대로 새어나온 DUPLICATE_PURCHASE_REQUEST/DUPLICATE_REFERENCE_EVENT는 "이 참조 사건
+// ID가 이미 다른 곳에서 커밋됐을 수 있다"는 뜻이지 "이 요청이 확정적으로 거부됐다"는
+// 뜻이 아니다 — 이런 code를 확정 거부로 오판해 다음 시도에 새 참조 사건 ID를 만들면,
+// 실제로 커밋된 요청과 무관한 새 구매가 되어 재화가 다시 차감될 수 있다(AC-04 위반).
+// 그래서 "code가 있으면 거부"가 아니라, backend/routes/economy.routes.js와
+// backend/service/economy.service.js(purchaseItems/applyLedgerTransaction)가 지갑을
+// 건드리기 전(검증 단계) 또는 같은 트랜잭션의 롤백을 보장하는 시점에만 던지는 code를
+// 화이트리스트로 인정한다 — 이 목록에 없는 code(알 수 없는 code 포함)와 code가 아예
+// 없는 경우는 모두 안전하게 전송 불확실(unknown)로 남겨 같은 참조 사건 ID를 재사용하게
+// 한다.
+const CONFIRMED_PURCHASE_REJECTION_CODES = new Set([
+  // economy.routes.js POST /purchases/bulk — economyService.purchaseItems를 부르기 전
+  // 요청 형태만 검증한다(부작용 없음).
+  "UNKNOWN_BULK_PURCHASE_FIELD",
+  "UNKNOWN_BULK_PURCHASE_ITEM_FIELD",
+  "INVALID_BULK_PURCHASE_REQUEST",
+  // economy.service.js purchaseItems — 지갑 잠금·트랜잭션을 열기 전 검증(부작용 없음).
+  "MISSING_REFERENCE_EVENT_ID",
+  "EMPTY_PURCHASE_ITEMS",
+  "INVALID_PURCHASE_ITEM",
+  "DUPLICATE_PURCHASE_ITEM",
+  "ITEM_NOT_PURCHASABLE",
+  // economy.service.js applyLedgerTransaction — 일괄 구매의 모든 품목이 같은 외부
+  // 트랜잭션 위에서 순차 실행되므로(품목별 독립 커밋 없음), 이 오류들은 트랜잭션 전체가
+  // 롤백됨을 보장한다.
+  "INVALID_CURRENCY",
+  "AMOUNT_OUT_OF_RANGE",
+  "ITEM_ALREADY_OWNED",
+  "INSUFFICIENT_BALANCE",
+  "BALANCE_LIMIT_EXCEEDED",
+  // 같은 참조 사건 ID가 이미 다른 내용(payload)으로 커밋되어 있다는 뜻이다 — 이 ID를
+  // 재사용하는 한 항상 다시 충돌하므로, 다음 시도는 새 참조 사건 ID를 써야 한다.
+  "REFERENCE_EVENT_CONFLICT",
+])
+
 // F-09 CODEX-1 재검토(AC-04): 미확정(pending/unknown) 일괄구매 상태는 원래 요청
 // payload(itemId 목록)와 함께 계정별로 보존해야 한다 — StorePanel이 다른 화면으로
 // 이동했다가 되돌아오는 등으로 리마운트돼도 같은 참조 사건 ID·같은 품목으로 재확인해야
@@ -224,11 +262,12 @@ export default function StorePanel({ visible = true }) {
         referenceEventId,
       })
     } catch (error) {
-      // backend/utils/appError.js의 createError는 서버가 실제로 처리해 거부한 응답에
-      // 항상 code를 싣는다 — code가 있으면 확정된 거부(rejected), 없으면 응답을 받지
-      // 못한 전송 불확실 상태(unknown)다(economy.store.js purchase()와 같은 구분,
-      // F-09 AC-04).
-      const confirmedRejection = typeof error.code === "string" && error.code.length > 0
+      // CODEX-2 재검토(AC-04): code 존재 여부만으로 판정하지 않는다 — 화이트리스트에
+      // 있는, "이 요청은 커밋되지 않았다"는 것이 보장된 code만 확정 거부로 인정한다
+      // (CONFIRMED_PURCHASE_REJECTION_CODES 선언부 주석 참고). 그 밖의 모든 code(일반
+      // 서버 오류·해소되지 못한 내부 재처리 방지 충돌 등)와 code 없음은 전송 불확실
+      // 상태(unknown)로 남는다.
+      const confirmedRejection = typeof error.code === "string" && CONFIRMED_PURCHASE_REJECTION_CODES.has(error.code)
       setBulkPurchaseState({
         referenceEventId,
         status: confirmedRejection ? "rejected" : "unknown",
