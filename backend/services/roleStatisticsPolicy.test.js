@@ -163,3 +163,9 @@ test('selectMaskOfFateRole: 고정 5개 밖의 알 수 없는 직업 코드가 �
     const result = selectMaskOfFateRole([roleStat('UNKNOWN_ROLE', 10, 5), roleStat('GUARD', 10, 5)])
     assert.equal(result.role, 'GUARD')
 })
+
+test('selectMaskOfFateRole: both zero wins and zero win rate use game count before fixed role order', () => {
+    const selected = selectMaskOfFateRole([roleStat('CITIZEN', 1, 0), roleStat('GUARD', 7, 0)])
+    assert.equal(selected.role, 'GUARD')
+    assert.equal(selected.games, 7)
+})

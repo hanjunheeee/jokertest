@@ -1,13 +1,6 @@
 # F-10 직업 전적·랭킹·운명의 가면 — 구현 근거 (2026-09-11)
 
-1~4차 호출은 순수 정책 모듈(`roleStatisticsPolicy.js`/`.test.js`)만 만들고, 나머지(라우트·컨트롤러·
-프런트 store·서고/마이페이지 연결)가 이미 승인된 수정 범위(`처음 정한 범위`)에 포함돼 있는데도
-"확장 승인이 필요하다"고 잘못 판단해 `.pluto/expansion-request.json`만 반복 시도했다(그마저 디스크에
-남지 않았다). 이번 호출에서 수정 범위 문서를 다시 대조한 결과, X0091(user.routes.js)·X0036
-(profile.controller.js)·X0601(pages.js)·X0566/K0145(InvitedGuestsSpread.jsx)·F1373/X0600
-(mergeInvitedGuestsSpreads.js)·X0784(user.store.js)·X0773(useMyProfile.js)는 전부 `처음 정한 범위`에
-이미 있고, `roleStatistics.controller.js`/`roleStatistics.api.js`/`roleStatistics.store.js`는
-`새로 만들 것` 목록에 이미 있다 — 확장 승인 대상이 아니었다. 이번 호출은 실제로 구현했다.
+초기 계획은 편집 범위를 5개 부품으로 제한하여 API·프로필·서고 런타임 연결 파일을 누락했다. 구현자가 작성한 확장 요청 배열은 단일 객체를 기대하는 데몬에서 처리되지 않았다. 운영자가 실제 요청 파일과 초기 지시서를 확인하고 D-09 오기를 정정한 뒤 공식 재계획을 실행했다. Codex 재계획과 Claude 검토를 거쳐 연결 범위가 추가됐으며, 기존 정책 파일은 미완성 체크포인트 bc289497로 보존했다. a5f6e71d는 확장된 계획에 따른 첫 통합 구현이다. 이전 요청이 없었다거나 이전 범위에도 연결 파일이 이미 있었다는 해석은 잘못이다.
 
 ## AC별 변경
 
