@@ -7,6 +7,8 @@ import test, { mock } from "node:test"
 // subscribe(listener)가 (state, prevState)로 리스너를 부르는 최소한의 흉내를 낸다.
 let getMyRoleStatisticsImpl = async () => { throw new Error("getMyRoleStatisticsApi stub not set") }
 let getRoleRankingImpl = async () => { throw new Error("getRoleRankingApi stub not set") }
+// F-12: requestJob이 이제 직업 도전과제 클리어 표시를 위해 업적 상태도 함께 불러온다.
+let getMyAchievementsImpl = async () => []
 let currentUser = { uuid: "user-1" }
 const authListeners = new Set()
 
@@ -20,6 +22,12 @@ mock.module("../../api/roleStatistics.api.js", {
   namedExports: {
     getMyRoleStatisticsApi: (...args) => getMyRoleStatisticsImpl(...args),
     getRoleRankingApi: (...args) => getRoleRankingImpl(...args),
+  },
+})
+
+mock.module("../../api/achievements.api.js", {
+  namedExports: {
+    getMyAchievementsApi: (...args) => getMyAchievementsImpl(...args),
   },
 })
 
@@ -47,6 +55,7 @@ const ALL_ROLE_STATS = Object.values(JOB_KEY_TO_ROLE_CODE).map((role) => ({
 function resetStore() {
   getMyRoleStatisticsImpl = async () => { throw new Error("getMyRoleStatisticsApi stub not set") }
   getRoleRankingImpl = async () => { throw new Error("getRoleRankingApi stub not set") }
+  getMyAchievementsImpl = async () => []
   currentUser = { uuid: "user-1" }
   useRoleStatisticsStore.getState().reset()
 }
@@ -104,6 +113,37 @@ test("0판 직업은 빈 랭킹(success, ranking:[])으로 남는다 — 실패�
   assert.equal(state.status, "success")
   assert.deepEqual(state.ranking, [])
   assert.equal(state.myStats.games, 0)
+})
+
+// ── F-12 AC-01/AC-06: 직업 도전과제 클리어 id를 업적 조회에서 함께 채운다 ────────
+
+test("requestJob: 달성한 업적 id만 clearedChallengeIds에 담긴다", async () => {
+  resetStore()
+  getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
+  getRoleRankingImpl = async () => ({ role: "CITIZEN", ranking: [] })
+  getMyAchievementsImpl = async () => [
+    { id: "noble-win-10", achieved: true, current: 12, threshold: 10 },
+    { id: "noble-win-20", achieved: false, current: 12, threshold: 20 },
+    { id: "record-1-masquerade", achieved: true, current: 5, threshold: 3 },
+  ]
+
+  await useRoleStatisticsStore.getState().requestJob("noble")
+
+  assert.deepEqual(
+    useRoleStatisticsStore.getState().byJobKey.noble.clearedChallengeIds,
+    ["noble-win-10", "record-1-masquerade"],
+  )
+})
+
+test("requestJob: 업적을 하나도 달성하지 못했으면 clearedChallengeIds는 빈 배열이다", async () => {
+  resetStore()
+  getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
+  getRoleRankingImpl = async () => ({ role: "CITIZEN", ranking: [] })
+  getMyAchievementsImpl = async () => [{ id: "noble-win-10", achieved: false, current: 2, threshold: 10 }]
+
+  await useRoleStatisticsStore.getState().requestJob("noble")
+
+  assert.deepEqual(useRoleStatisticsStore.getState().byJobKey.noble.clearedChallengeIds, [])
 })
 
 // ── A-08: 로그아웃/계정 전환/직업 변경 시 상태 격리 ─────────────────────────────

@@ -125,8 +125,31 @@ const evaluateAndGrantForUser = async (userId) => {
     return results;
 };
 
+/**
+ * userId의 22개 업적 진행률·달성 여부를 읽기 전용으로 반환한다(A-09) — grantAchievement를
+ * 호출하지 않으므로 반복 호출(페이지 재진입 포함)해도 보상이 지급되지 않는다. achieved는
+ * 진행률 지표(현재값 ≥ 임계값)만으로 판정하므로, 이미 지급된 업적도 그 지표가 누적값이라
+ * 감소하지 않는 한 계속 achieved:true로 남는다 — "이미 지급된 업적이 재조회에서
+ * granted:false라는 이유로 미지급으로 표시되는" 오류를 피한다.
+ *
+ * @param {string} userId
+ * @returns {Promise<Array<{ id: string, achieved: boolean, current: number, threshold: number }>>}
+ */
+const getStatusForUser = async (userId) => {
+    if (typeof userId !== 'string' || userId.length === 0) return [];
+
+    const progress = await loadProgress(userId);
+    return achievementDefinitions.ACHIEVEMENT_DEFINITIONS.map((definition) => ({
+        id: definition.id,
+        achieved: meetsThreshold(definition, progress),
+        current: currentValueOf(definition, progress),
+        threshold: definition.threshold,
+    }));
+};
+
 module.exports = {
     loadProgress,
+    getStatusForUser,
     evaluateAndGrantForUser,
     // 테스트 전용 — 순수 판정 로직을 DB 없이 직접 검증하거나(meetsThreshold/currentValueOf),
     // 의존성을 fake로 갈아끼워(설정을 생략하면 실제 defaultDeps로 되돌아간다)

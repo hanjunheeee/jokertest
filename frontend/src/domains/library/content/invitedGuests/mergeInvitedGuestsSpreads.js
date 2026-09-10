@@ -30,8 +30,7 @@ const toRankingRowDisplay = (entry) => ({
  * @param {Record<string, object>} catalog
  * @param {Record<string, object[]>} challenges
  * @param {{
- *   byJobKey?: Record<string, { status: 'idle'|'loading'|'success'|'error', myStats: object|null, ranking: object[]|null, error: string|null }>,
- *   clearedChallengeIds?: Record<string, string[]>,
+ *   byJobKey?: Record<string, { status: 'idle'|'loading'|'success'|'error', myStats: object|null, ranking: object[]|null, error: string|null, clearedChallengeIds?: string[] }>,
  * }} [jobState]
  */
 export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobState = {}) {
@@ -45,8 +44,11 @@ export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobSt
       return { id, jobKey, ready: false }
     }
 
-    const clearedChallengeIds = new Set(jobState.clearedChallengeIds?.[jobKey] ?? [])
-    const state = jobState.byJobKey?.[jobKey] ?? { status: "idle", myStats: null, ranking: null, error: null }
+    const state = jobState.byJobKey?.[jobKey] ?? { status: "idle", myStats: null, ranking: null, error: null, clearedChallengeIds: [] }
+    // F-12 AC-01/AC-06: 도전과제 id는 그대로 achievementDefinitions.js의 업적 id다
+    // (noble-win-10 등) — roleStatistics.store.js가 직업 전적과 함께 불러온 달성 업적 id
+    // 목록에서 클리어 여부를 읽는다(더 이상 항상 빈 배열로 남는 더미가 아니다).
+    const clearedChallengeIds = new Set(state.clearedChallengeIds ?? [])
 
     return {
       id,
