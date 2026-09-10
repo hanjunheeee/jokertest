@@ -22,13 +22,24 @@ const VALID_PURPOSES = new Set(["login", "link"]);
 // ── OAuth state 발급/소비 (AC-05) ────────────────────────────────────────────
 
 // purpose: "login"(최초 인증) 또는 "link"(로그인 중인 사용자의 명시적 계정 연결, AC-04/D-01).
-// link는 지금 로그인해 있는 사용자에게 발급하므로 userId가 필수다.
-exports.issueOAuthState = async ({ purpose, userId = null, browserFingerprint }) => {
+// link는 지금 로그인해 있는 사용자에게 발급하므로 userId·sessionId가 모두 필수다 —
+// userId만으로는 "그 값이 지금 유효한 인증에서 나왔다"는 것을 이후에 다시 확인할 수 없다
+// (재검토 지적). sessionId는 그 인증을 실제로 발급한 특정 세션(user_sessions.id)이다.
+exports.issueOAuthState = async ({ purpose, userId = null, sessionId = null, browserFingerprint }) => {
     if (!VALID_PURPOSES.has(purpose)) {
         throw createError("state 발급 목적이 올바르지 않습니다.", 400);
     }
-    if (purpose === "link" && !userId) {
-        throw createError("계정 연결을 위한 state는 로그인한 사용자만 발급할 수 있습니다.", 400);
+    if (purpose === "link") {
+        if (!userId || !sessionId) {
+            throw createError("계정 연결을 위한 state는 로그인한 사용자만 발급할 수 있습니다.", 400);
+        }
+        // 발급 시점에도 이 세션이 실제로 살아있는지 확인한다 — 이미 로그아웃되었거나
+        // 다른 이유로 폐기된 세션의 사용자로는애초에 link state 자체를 만들 수 없다
+        // (F-05 AC-04, "시작 세션의 유효한 인증" 요구).
+        const activeSession = await userRepository.findActiveSession(sessionId, userId);
+        if (!activeSession) {
+            throw createError("유효한 로그인 세션이 아닙니다. 다시 로그인해주세요.", 401, "SESSION_INVALID");
+        }
     }
     if (typeof browserFingerprint !== "string" || !browserFingerprint) {
         throw createError("요청 출처 정보가 없습니다.", 400);
@@ -41,6 +52,7 @@ exports.issueOAuthState = async ({ purpose, userId = null, browserFingerprint })
         state_hash: hashValue(rawState),
         purpose,
         user_id: purpose === "link" ? userId : null,
+        session_id: purpose === "link" ? sessionId : null,
         browser_fingerprint_hash: hashValue(browserFingerprint),
         expires_at: expiresAt,
     });
@@ -86,7 +98,7 @@ const consumeOAuthStateTx = async (rawState, { browserFingerprint, purpose } = {
     // consumed_at이 이미 채워진 상태를 보고 STATE_REUSED로 거부된다.
     await userRepository.markOAuthStateConsumed(row.id, { transaction });
 
-    return { purpose: row.purpose, userId: row.user_id };
+    return { purpose: row.purpose, userId: row.user_id, sessionId: row.session_id };
 };
 
 exports.consumeOAuthState = async (rawState, opts = {}) => {
@@ -101,8 +113,17 @@ exports.consumeOAuthState = async (rawState, opts = {}) => {
 exports.handleOAuthCallback = async ({
     provider, subject, email, rawState, browserFingerprint, cancelled, reqInfo = {},
 }) => {
-    // 취소는 state를 소비하지 않고 즉시 거부한다 — 이미 발급된 state는 사용자가 다시
-    // 시도할 때 재사용할 필요가 없도록 그대로 유효 기간 안에서 살아있게 둔다.
+    // state 소비는 이 콜백이 최종적으로 성공하는지와 분리된 자신만의 트랜잭션에서 먼저
+    // 커밋한다. state는 "제공자가 정확히 한 번 돌려준 리다이렉트"라는 사실 자체를 보장하는
+    // 값이라, 사용자 취소나 이메일 미제공/충돌처럼 계정을 만들지 못하는 결과로 끝나도 이미
+    // 도착한 콜백은 소비된 것으로 남아야 같은 state로의 재생(replay)을 막을 수 있다. 아래
+    // 계정 생성/조회 로직과 하나의 트랜잭션으로 묶으면, 그 로직이 던지는 오류가 managed
+    // transaction을 통째로 롤백시켜 방금 커밋하려던 소비까지 되돌린다(재검토 지적: 실패·
+    // 취소 콜백 이후 재사용 방지가 빠져 있었다) — 그래서 소비만 별도로 먼저 커밋한다.
+    // 제공자는 사용자가 동의 화면에서 취소했을 때도 원래 발급했던 state를 그대로 리다이렉트에
+    // 실어 돌려주므로, 취소 여부 판정보다 항상 먼저 소비한다.
+    await exports.consumeOAuthState(rawState, { browserFingerprint, purpose: "login" });
+
     if (cancelled === true) {
         throw createError("사용자가 로그인을 취소했습니다.", 400, "OAUTH_CANCELLED");
     }
@@ -111,8 +132,6 @@ exports.handleOAuthCallback = async ({
     }
 
     return await userRepository.withTransaction(async (transaction) => {
-        await consumeOAuthStateTx(rawState, { browserFingerprint, purpose: "login" }, transaction);
-
         const existingIdentity = await userRepository.findExternalIdentity(
             { provider, subject }, { transaction, lock: transaction.LOCK.UPDATE },
         );
@@ -227,11 +246,14 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, reqInf
 
 // ── 로그인 후 명시적 계정 연결 (AC-04, D-01) ─────────────────────────────────
 
-// userId는 이미 인증된(로그인한) 사용자의 uuid다 — 이 함수는 그 사용자가 직접 "이 소셜
-// 계정을 내 계정에 연결하겠다"고 승인한 흐름에서만 호출되어야 하며, rawState는 그 승인을
-// 증명한다(purpose="link"로 발급된 state만 통과, issueOAuthState 참고).
-exports.linkExternalIdentity = async ({ userId, provider, subject, email, rawState, browserFingerprint }) => {
-    if (!userId) {
+// userId·sessionId는 이 요청을 보낸 "지금 유효하게 인증된" 세션에서 나온 값이어야 한다 —
+// 이 함수는 그 세션의 사용자가 직접 "이 소셜 계정을 내 계정에 연결하겠다"고 승인한
+// 흐름에서만 호출되어야 하며, rawState는 그 승인을 증명한다(purpose="link"로 발급된 state만
+// 통과, issueOAuthState 참고). 재검토 지적: userId만 신뢰하면 "그 값이 발급 이후에도 계속
+// 유효했다"는 것을 보장하지 못한다 — state에 결합된 sessionId가 소비(콜백) 시점에도 여전히
+// 활성 상태인지 다시 확인해, 발급과 소비 사이에 로그아웃·세션 폐기가 있었다면 거부한다.
+exports.linkExternalIdentity = async ({ userId, sessionId, provider, subject, email, rawState, browserFingerprint }) => {
+    if (!userId || !sessionId) {
         throw createError("로그인이 필요합니다.", 401);
     }
     if (typeof provider !== "string" || !provider || typeof subject !== "string" || !subject) {
@@ -240,8 +262,16 @@ exports.linkExternalIdentity = async ({ userId, provider, subject, email, rawSta
 
     return await userRepository.withTransaction(async (transaction) => {
         const consumed = await consumeOAuthStateTx(rawState, { browserFingerprint, purpose: "link" }, transaction);
-        if (consumed.userId !== userId) {
-            throw createError("연결 요청 사용자와 state 발급 사용자가 일치하지 않습니다.", 400, "STATE_USER_MISMATCH");
+        if (consumed.userId !== userId || consumed.sessionId !== sessionId) {
+            throw createError("연결 요청 세션과 state 발급 세션이 일치하지 않습니다.", 400, "STATE_USER_MISMATCH");
+        }
+
+        // 콜백(소비) 시점의 유효한 인증을 이 자리에서 다시 확인한다 — state 자체가 유효해도,
+        // 발급 이후 로그아웃·비밀번호 변경으로 인한 전체 세션 폐기·정지 등으로 이 세션이
+        // 이미 무효화됐다면 연결을 완료시키지 않는다(재검토 지적).
+        const activeSession = await userRepository.findActiveSession(sessionId, userId);
+        if (!activeSession) {
+            throw createError("세션이 만료되었거나 폐기되었습니다. 다시 로그인해주세요.", 401, "SESSION_REVOKED");
         }
 
         const existing = await userRepository.findExternalIdentity(

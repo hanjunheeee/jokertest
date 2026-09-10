@@ -1,4 +1,5 @@
 const authService       = require("../service/auth.service");
+const socialAuthService = require("../service/socialAuth.service");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");
@@ -84,6 +85,77 @@ exports.logout = async (req, res, next) => {
         await userRepository.recordLogout(req.user.uuid, req.user.sessionId);
         clearSessionCookie(res);
         res.status(200).json({ success: true, message: "성공적으로 로그아웃 되었습니다." });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-05: 소셜 로그인 최초 인증 이후, 닉네임 등 필수 정보를 보완해 가입을 완료한다.
+// completeSocialSignup은 항상 rememberMe:false로 세션을 발급하므로(소셜 전용 계정은
+// 로그인 유지를 선택할 입력 자체가 없다), login()의 "로그인 유지 미선택" 분기와 같은 이유로
+// refreshToken 쿠키를 세우지 않고, 남아있을 수 있는 이전 영속 refreshToken 쿠키만 지운다.
+exports.completeSocialSignup = async (req, res, next) => {
+    try {
+        const userAgent = req.headers["user-agent"];
+        const reqInfo = {
+            ip:         getClientIp(req),
+            userAgent:  userAgent,
+            deviceType: getDeviceType(userAgent),
+        };
+
+        const { intentToken, nickname, birthDate } = req.body;
+        const { user, token, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
+            intentToken, nickname, birthDate, reqInfo,
+        });
+
+        res.cookie("accessToken", token, buildSessionCookieOptions(false, refreshTokenExpiresAt));
+        clearRefreshCookie(res);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                user: {
+                    uuid:     user.uuid,
+                    nickname: user.nickname,
+                    role:     user.role,
+                },
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-05 AC-04/D-01: 로그인 중인 사용자가 소셜 계정을 명시적으로 연결하기 전에 발급받는
+// state다. userId·sessionId는 요청 본문이 아니라 verifyToken이 이미 검증한 req.user에서만
+// 가져온다 — 그래야 "지금 유효하게 인증된 바로 그 세션"이 발급자임을 서버가 보장한다.
+exports.issueSocialLinkState = async (req, res, next) => {
+    try {
+        const { browserFingerprint } = req.body;
+        const result = await socialAuthService.issueOAuthState({
+            purpose:    "link",
+            userId:     req.user.uuid,
+            sessionId:  req.user.sessionId,
+            browserFingerprint,
+        });
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-05 AC-04/D-01: 명시적 연결 실행. userId·sessionId는 여기서도 req.user에서만 가져오고
+// 요청 본문의 값은 쓰지 않는다 — linkExternalIdentity는 이 값이 state 발급 세션과 일치하고
+// (소비 시점에) 여전히 활성 상태인지를 이 값 기준으로 재검증한다.
+exports.linkSocialIdentity = async (req, res, next) => {
+    try {
+        const { provider, subject, email, rawState, browserFingerprint } = req.body;
+        const identity = await socialAuthService.linkExternalIdentity({
+            userId:    req.user.uuid,
+            sessionId: req.user.sessionId,
+            provider, subject, email, rawState, browserFingerprint,
+        });
+        res.status(200).json({ success: true, data: identity });
     } catch (error) {
         next(error);
     }

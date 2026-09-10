@@ -47,6 +47,11 @@ module.exports = {
                     type: Sequelize.UUID, allowNull: true,
                     references: { model: 'users', key: 'uuid' },
                 },
+                // F-05 AC-04 재검토 지적: purpose="link" state는 발급한 특정 세션에도
+                // 결합된다 — user_id만으로는 그 세션이 이미 로그아웃·폐기된 뒤에도 여전히
+                // 유효한 인증으로 오인될 수 있다(user_sessions.id 참고, FK는 걸지 않는다 —
+                // 세션은 폐기되어도 행 자체는 남아있어 참조 무결성과 무관하다).
+                session_id: { type: Sequelize.STRING(255), allowNull: true },
                 browser_fingerprint_hash: { type: Sequelize.STRING(64), allowNull: false },
                 expires_at: { type: Sequelize.DATE, allowNull: false },
                 consumed_at: { type: Sequelize.DATE, allowNull: true },

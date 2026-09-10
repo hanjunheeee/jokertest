@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
     purpose: { type: DataTypes.STRING(20), allowNull: false },
     // link 목적일 때만 채워진다 — 로그인 중인 사용자가 발급한 state라는 뜻이다.
     user_id: { type: DataTypes.UUID, allowNull: true },
+    // F-05 AC-04 재검토 지적: link state는 user_id뿐 아니라 그것을 발급한 "특정 세션"에도
+    // 결합된다. 발급 시점과 소비(콜백) 시점 모두 이 세션이 여전히 유효한지
+    // (user.repositories.js의 findActiveSession)를 다시 확인해야, 로그아웃·세션 폐기 이후
+    // 그 사이 알아낸(혹은 이미 만료된) userId만으로 연결이 완료되는 것을 막을 수 있다.
+    session_id: { type: DataTypes.STRING(255), allowNull: true },
     browser_fingerprint_hash: { type: DataTypes.STRING(64), allowNull: false },
     expires_at: { type: DataTypes.DATE, allowNull: false },
     // null이면 아직 소비되지 않은 state다. 소비 시점을 기록해 재사용을 거부한다.
