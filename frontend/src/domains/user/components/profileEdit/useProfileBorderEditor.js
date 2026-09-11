@@ -146,12 +146,12 @@ export function useProfileBorderEditor({ open, onClose }) {
         // 대기하는 동안 계정이 바뀌었거나 편집기를 닫았다 다시 열었다 — 이 성공은 더 이상
         // 지금 세션의 것이 아니다(A-08). 지금 세션 기준으로는 아직 아무것도 확정되지
         // 않았으므로 편집기를 닫지 않는다.
-        setConfirmStatus("idle")
         return
       }
       setConfirmStatus("idle")
       onClose()
     } catch (error) {
+      if (isStale()) return // 이전 세션의 응답은 현재 화면이나 재조회를 변경하지 않는다.
       // F-13 AC-02 재검토 — economy.store.js의 purchase()와 같은 이유(응답 유실은 서버
       // 상태 재조회로 확정한다): backend/utils/appError.js의 createError는 서버가 실제로
       // 처리해 거부한 응답에만 code를 싣는다. code가 없으면 네트워크 단절 등으로 응답
@@ -172,7 +172,6 @@ export function useProfileBorderEditor({ open, onClose }) {
         if (useEconomyStore.getState().status === "error") refreshUncertain = true
       }
       if (isStale()) {
-        setConfirmStatus("idle")
         return
       }
       setConfirmStatus("idle")

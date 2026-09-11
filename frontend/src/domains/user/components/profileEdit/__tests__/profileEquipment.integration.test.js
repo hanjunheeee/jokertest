@@ -29,6 +29,13 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 let getImpl = async () => { throw new Error("api.get stub not set") }
 let postImpl = async () => { throw new Error("api.post stub not set") }
+// F-13 AC-03(CODEX-2) — 업적 조회 성공에서 economy 갱신을 유발하는 실제 연결(useAchievements.js의
+// syncEconomyIfSuccess)을 직접 fetchSummary를 호출해 흉내내지 않고 실제 훅을 마운트해
+// 증명하려면, 그 훅이 실제로 부르는 진입점(getMyAchievementsApi)만 useAchievements.test.js와
+// 동일한 방식으로 가로챈다 — achievements.api.js는 @/shared/api/client 별칭을 쓰므로(이
+// 저장소의 node:test 실행에서 별칭이 해석되지 않는다) 그 안쪽이 아니라 이 모듈 전체를
+// 대체한다.
+let getMyAchievementsImpl = async () => { throw new Error("getMyAchievementsApi stub not set") }
 let currentUser = { uuid: "user-1" }
 const authListeners = new Set()
 
@@ -58,17 +65,27 @@ mock.module("../../../../auth/store/auth.store.js", {
   },
 })
 
+mock.module("../../../../library/api/achievements.api.js", {
+  namedExports: {
+    getMyAchievementsApi: (...args) => getMyAchievementsImpl(...args),
+  },
+})
+
 const { renderHook, waitFor, act, cleanup } = await import("@testing-library/react")
 test.afterEach(() => cleanup())
 
 const { useProfileBorderEditor } = await import("../useProfileBorderEditor.js")
 const { useEconomyStore } = await import("../../../../economy/store/economy.store.js")
+const { useAchievements } = await import("../../../../library/hooks/useAchievements.js")
+const { useAchievementsStore } = await import("../../../../library/store/achievements.store.js")
 
 function resetStores() {
   getImpl = async () => { throw new Error("api.get stub not set") }
   postImpl = async () => { throw new Error("api.post stub not set") }
+  getMyAchievementsImpl = async () => { throw new Error("getMyAchievementsApi stub not set") }
   currentUser = { uuid: "user-1" }
   useEconomyStore.getState().reset()
+  useAchievementsStore.getState().reset()
 }
 
 const walletOk = { balanceGold: 100, balanceDiamond: 100 }
@@ -217,6 +234,71 @@ test("F-13 AC-02(CODEX-1): 저장 응답을 기다리는 동안 편집기를 닫
   assert.equal(closeCount, 0, "이미 닫혔다가 다시 열린 세션은 이전 세션의 늦은 성공으로 다시 닫히면 안 된다(계정은 그대로라 generation만으로는 구분되지 않는다)")
 })
 
+test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편집기를 닫았다 다시 열어 세션 B가 새로 저장을 시작하면, A의 뒤늦은 완료(성공)는 진행 중인 B의 saving 상태·초안·편집기를 전혀 건드리지 않고 오직 B 자신의 완료만 B를 정착시킨다", async () => {
+  // CODEX-2 반송 근거: useProfileBorderEditor.handleConfirm의 isStale() 분기가 한때
+  // setConfirmStatus("idle")을 실행해, 이미 폐기된 세션(A)의 응답이 새로 연 세션(B)의
+  // 진행 중인 saving 상태를 실수로 idle로 되돌릴 수 있었다(B가 저장을 시작조차 하지 않은
+  // 채로 남는 회귀). 위 CODEX-1 테스트는 B가 아직 아무 것도 시작하지 않은 상태만 검증했다
+  // — 이 테스트는 B도 실제로 handleConfirm을 호출해 saving 중인 상태에서 A의 응답이
+  // 도착하는, 지시서가 명시한 정확한 시나리오를 고정한다. economy.store.js의 equipProfile은
+  // 계정 세대(requestGeneration)만 검사하므로(같은 계정 안에서의 편집기 재오픈은 세대가
+  // 바뀌지 않는다) A의 성공은 store.loadout 자체는 정상적으로 반영한다 — 이 테스트가
+  // 검증하는 것은 store가 아니라 "지금 화면(이 훅 인스턴스)의 UI 상태"가 A가 아니라
+  // 오직 B에 의해서만 정착되어야 한다는 것이다.
+  resetStores()
+  getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
+  const postDeferreds = []
+  postImpl = async () => new Promise((resolve, reject) => { postDeferreds.push({ resolve, reject }) })
+
+  let closeCount = 0
+  const { result, rerender } = renderHook(
+    ({ open }) => useProfileBorderEditor({ open, onClose: () => { closeCount += 1 } }),
+    { initialProps: { open: true } },
+  )
+  await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+
+  // 세션 A: 귀족으로 확정 시도, 응답 대기 상태로 둔다.
+  act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
+  let confirmAPromise
+  act(() => { confirmAPromise = result.current.handleConfirm() })
+  assert.equal(result.current.confirmStatus, "saving")
+  assert.equal(postDeferreds.length, 1)
+
+  rerender({ open: false }) // 사용자가 A의 응답을 기다리지 않고 편집기를 닫음
+  rerender({ open: true }) // 즉시 다시 연다 — 세션 B 시작(초안이 실제 장착값으로 리셋됨)
+  assert.equal(result.current.draftBorderItemId, "profile-border-평민", "B의 초안은 실제 장착값으로 리셋되어야 한다")
+  assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
+
+  // 세션 B: 남작으로 확정 시도, 역시 응답 대기 상태로 둔다 — 지금 A와 B 둘 다 saving 중인
+  // 요청이 있다(핵심 시나리오: "session B save pending").
+  act(() => result.current.setDraftBorderItemId("profile-border-남작"))
+  let confirmBPromise
+  act(() => { confirmBPromise = result.current.handleConfirm() })
+  assert.equal(result.current.confirmStatus, "saving", "B가 시작한 저장은 saving 상태여야 한다")
+  assert.equal(postDeferreds.length, 2, "A와 B 각각 정확히 한 번씩 POST가 나가야 한다")
+
+  // A의 응답이 이제 뒤늦게 성공으로 도착한다 — 이미 폐기된 세션의 완료다.
+  await act(async () => {
+    postDeferreds[0].resolve({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
+    await confirmAPromise
+  })
+
+  assert.equal(result.current.confirmStatus, "saving", "A의 완료는 진행 중인 B의 saving 상태를 해제하면 안 된다(이전 반송 지적의 회귀)")
+  assert.equal(result.current.confirmError, null, "A의 완료가 B 화면에 오류를 남기면 안 된다")
+  assert.equal(closeCount, 0, "A의 완료는 B 세션의 편집기를 닫으면 안 된다")
+  assert.equal(result.current.draftBorderItemId, "profile-border-남작", "A의 완료가 B의 진행 중인 초안을 되돌리면 안 된다")
+
+  // B의 응답이 도착(성공)하면 그제서야 B 자신이 정착한다.
+  await act(async () => {
+    postDeferreds[1].resolve({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
+    await confirmBPromise
+  })
+
+  assert.equal(result.current.confirmStatus, "idle", "B 자신의 완료는 정상적으로 saving을 해제해야 한다")
+  assert.equal(closeCount, 1, "오직 B의 완료만 B의 편집기를 닫아야 한다")
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작", "마지막으로 확정된 값(B)이 최종 장착 상태여야 한다")
+})
+
 test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계정이 바뀌면, 이전 계정의 재조회 결과로 지금 계정 화면을 덮어쓰지 않는다", async () => {
   resetStores()
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
@@ -349,7 +431,14 @@ test("F-13 AC-03: 구매 직후(economy store의 purchase가 이미 entitlements
   )
 })
 
-test("F-13 AC-03: 업적 획득 후 서고 화면이 실제로 트리거하는 economy 재조회(useAchievements.js의 syncEconomyIfSuccess)가 도착하면, 열려 있는 편집기의 선택 목록에도 즉시 반영된다", async () => {
+test("F-13 AC-03(CODEX-2): 실제 useAchievements 훅을 마운트해 실제 업적 조회 성공(그 훅 내부의 syncEconomyIfSuccess)이 economy를 갱신하면, 열려 있는 편집기의 선택 목록에도 즉시 반영된다 — fetchSummary를 직접 호출해 흉내내지 않는다", async () => {
+  // CODEX-2 반송 근거: 이전 버전은 useAchievements.js를 전혀 마운트하지 않고
+  // useEconomyStore.getState().fetchSummary()를 테스트가 직접 호출해 "업적 → economy 갱신"
+  // 연결 자체를 증명하지 못했다(그 연결이 끊어져도 이 직접 호출만으로는 테스트가 여전히
+  // 통과한다). 이제 실제 useAchievements 훅을 renderHook으로 마운트하고, 그 훅이 실제로
+  // 호출하는 getMyAchievementsApi(mock.module로 전송만 가로챈다, 위 useAchievements.test.js와
+  // 동일한 관례)가 성공 응답을 돌려주게 해, 훅 내부의 실제 syncEconomyIfSuccess가 스스로
+  // economy store를 갱신하는지를 검증한다.
   resetStores()
   let entitlementsCalls = 0
   getImpl = async (endpoint) => {
@@ -365,20 +454,21 @@ test("F-13 AC-03: 업적 획득 후 서고 화면이 실제로 트리거하는 e
       loadout: { selectedProfileBorderId: "profile-border-평민" },
     }
   }
+  getMyAchievementsImpl = async () => ([
+    { id: "invited-guests-노블-win-10", current: 10, threshold: 10, achieved: true, granted: true },
+  ])
 
-  const { result } = renderHook(() => useProfileBorderEditor({ open: true, onClose: () => {} }))
-  await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
-  assert.deepEqual(result.current.ownedBorderOptions.map((o) => o.itemId), ["profile-border-평민"])
+  const editor = renderHook(() => useProfileBorderEditor({ open: true, onClose: () => {} }))
+  await waitFor(() => assert.equal(editor.result.current.borderListStatus, "ready"))
+  assert.deepEqual(editor.result.current.ownedBorderOptions.map((o) => o.itemId), ["profile-border-평민"])
+  const walletCallsBeforeAchievements = entitlementsCalls
 
-  // frontend/src/domains/library/hooks/useAchievements.js의 syncEconomyIfSuccess가 업적 조회
-  // 성공 시 실제로 호출하는 진입점과 동일하다 — 그 훅을 다시 마운트하지 않고 그 훅이
-  // 트리거하는 실제 economy store 진입점만 재사용해 실제 연결(업적 → economy 갱신 → 편집기
-  // 목록)을 증명한다.
-  await act(async () => { await useEconomyStore.getState().fetchSummary() })
+  const achievementsHook = renderHook(() => useAchievements())
+  await waitFor(() => assert.equal(achievementsHook.result.current.status, "success"), { timeout: 1000 })
 
-  assert.deepEqual(
-    result.current.ownedBorderOptions.map((o) => o.itemId).sort(),
+  await waitFor(() => assert.deepEqual(
+    editor.result.current.ownedBorderOptions.map((o) => o.itemId).sort(),
     ["profile-border-광대", "profile-border-평민"],
-    "업적 획득 후 economy 상태가 갱신되면 편집기를 다시 열지 않아도 목록에 즉시 반영되어야 한다",
-  )
+  ), { timeout: 1000 })
+  assert.ok(entitlementsCalls > walletCallsBeforeAchievements, "실제 업적 조회 성공이 economy 재조회를 스스로 유발해야 한다(테스트가 대신 호출한 것이 아니다)")
 })
