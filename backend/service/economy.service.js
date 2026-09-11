@@ -707,8 +707,18 @@ const grantAchievementItem = async (
 
 /** 소유권·아이템 종류를 검증한 뒤에만 장착한다(AC-05). itemId가 카탈로그에 없는
  *  임의 문자열(파일 경로 등)이면 ITEM_TYPE_MISMATCH로 거부되고, 카탈로그에 있어도
- *  보유하지 않았으면 ITEM_NOT_OWNED(403)로 거부된다. */
-const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
+ *  보유하지 않았으면 ITEM_NOT_OWNED(403)로 거부된다.
+ *
+ *  F-14(AC-01, R-IMPL P1 "coherent persisted write ordering") — equipProfileAppearance와
+ *  같은 EconomyLoadout 행·같은 revision 컬럼을 갱신하므로, 이 함수도 같은 CAS 계약을
+ *  따른다: expectedRevision을 보내면 SELECT ... FOR UPDATE 행 잠금 안에서 지금 행의
+ *  revision과 정확히 같을 때만 커밋하고, 다르면(다른 확정이 그 사이 먼저 커밋됐다면)
+ *  어떤 컬럼도 건드리지 않고 즉시 409(SKIN_REVISION_CONFLICT)로 거부한다 — 지연되거나
+ *  응답 순서가 뒤바뀐 요청이 더 최신 저장을 조용히 덮어쓰는 일이 구조적으로 불가능하다.
+ *  expectedRevision을 아직 모르는 호출자(레거시 내부 호출·이 값을 넘기지 않는 기존
+ *  테스트)와의 호환을 위해 이 값은 선택이다 — 생략하면 CAS 비교 없이 이전과 동일하게
+ *  즉시 커밋한다(잠금 자체는 항상 걸어 동시 갱신을 직렬화한다). */
+const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaultDb()) => {
     const expectedType = SLOT_TO_ITEM_TYPE[slot];
     const column = SLOT_TO_LOADOUT_COLUMN[slot];
     if (!expectedType || !column) {
@@ -750,16 +760,34 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
         }
     }
 
-    const [loadout] = await models.EconomyLoadout.findOrCreate({
+    await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
         defaults: { user_id: userId, revision: crypto.randomUUID() },
     });
-    // F-13 AC-02 설계 감사 — 이 경로(카드 프레임 등 일반 장착)도 equipProfileAppearance와
-    // 같은 EconomyLoadout 행을 갱신하므로, 값을 바꿀 때마다 revision도 함께 새로 발급해야
-    // 한다. 그래야 이 경로로 행이 바뀐 뒤에는 프로필 편집기가 들고 있던 이전 revision이
-    // 자동으로 무효화되어(CAS 비교 실패) 그 사이의 변경을 조용히 덮어쓰지 못한다.
-    await loadout.update({ [column]: itemId, revision: crypto.randomUUID() });
-    return loadout;
+
+    const hasExpectedRevision = typeof expectedRevision === 'string' && expectedRevision.length > 0;
+
+    // equipProfileAppearance와 같은 이유로 행 잠금 "안에서" 비교·갱신을 함께 한다(A-01) —
+    // 겹치는 두 확정(다른 슬롯의 equipItem, 또는 equipProfileAppearance)이 동시에 같은
+    // 행을 노려도 완전히 직렬화된다.
+    return db.sequelize.transaction(async (t) => {
+        const loadout = await models.EconomyLoadout.findOne({
+            where: { user_id: userId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+        });
+
+        if (hasExpectedRevision && loadout.revision !== expectedRevision) {
+            throw createError(
+                '장착 상태가 다른 곳에서 이미 변경되었습니다. 최신 상태를 다시 불러온 뒤 다시 시도하세요.',
+                409,
+                'SKIN_REVISION_CONFLICT',
+            );
+        }
+
+        await loadout.update({ [column]: itemId, revision: crypto.randomUUID() }, { transaction: t });
+        return loadout;
+    });
 };
 
 // F-13 AC-02 설계 감사(운영자, 2026-09-11) — CODEX-9가 도입했던 clientIntentAt(클라이언트

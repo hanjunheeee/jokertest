@@ -74,8 +74,10 @@ const { useEconomyStore } = await import("../../../../economy/store/economy.stor
 const { useSkinCardWearStore } = await import("../../../store/skinCardWear.store.js")
 const {
   SKIN_CARD_WEAR_JOB_TABS,
+  SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID,
   buildDefaultSkinsByJob,
   getDefaultSkinIdForJob,
+  getPlayerCardItems,
   getSkinItemsForJob,
 } = await import("../../../constants/skinCardWear/skinCardWearCatalog.js")
 
@@ -169,13 +171,18 @@ test("F-14(R-IMPL P1/AC-05): 부분 성공(스킨 성공 + 카드 명시적 거�
   const skinButton = document.querySelector(`button[aria-label^="${otherSkin.name}"]`)
   act(() => { skinButton.click() })
 
+  // F-14(AC-02): 프리미엄 카드는 entitlements가 있어야 선택 가능(disabled 아님)하다 — 이
+  // 테스트는 "선택은 됐지만 서버가 다른 이유로 거부"를 재현하는 것이 목적이므로, 소유는
+  // 미리 부여해 둔다(선택 자체가 막히는 것은 별도 AC-02 테스트가 검증한다).
+  const otherCard = getPlayerCardItems().find((item) => item.id !== SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID)
+  act(() => { useEconomyStore.setState({ entitlements: [{ itemId: otherCard.id, itemType: "PLAYER_CARD_FRAME" }] }) })
+
   // 카드 미리보기로 전환해 카드 하나를 고른다.
   const toggleButton = document.querySelector('button[aria-label="플레이어 카드 미리보기로 전환"]')
   assert.ok(toggleButton)
   act(() => { toggleButton.click() })
-  const cardButtons = [...document.querySelectorAll('button[aria-pressed]')].filter((btn) => btn !== skinButton)
-  const cardButton = cardButtons.find((btn) => btn.getAttribute("aria-pressed") === "false")
-  assert.ok(cardButton, "기본값이 아닌 카드 버튼이 하나는 있어야 한다")
+  const cardButton = document.querySelector(`button[aria-label^="${otherCard.name}"]`)
+  assert.ok(cardButton, "소유한 카드 버튼이 실제 DOM에 렌더돼야 한다")
   act(() => { cardButton.click() })
   assert.equal(cardButton.getAttribute("aria-pressed"), "true")
 
@@ -262,4 +269,42 @@ test("F-14(AC-03): 저장 확인 중 계정이 전환되면 새 계정 화면에
   })
 
   assert.equal(onClose.mock.callCount(), 0, "계정 전환으로 무효화된 저장은 화면을 닫으면 안 된다(성공으로 오인 금지)")
+})
+
+// F-14(AC-02/AC-03, R-IMPL P1 "actual list ownership contract" + "Mounted Overlay
+// account-switch test must assert new user's actual owned options AND equipped display") —
+// 이전 버전은 계정 전환 시험이 onClose 미호출만 확인했을 뿐, 실제 목록에 새 계정의 소유·
+// 장착 상태가 반영되는지는 검증하지 않았다. 이 시험은 실제 DOM 버튼의 disabled/aria-label을
+// 통해 계정별 소유·장착 표시가 정확히 갈아끼워지는지 확인한다.
+test("F-14 AC-02/AC-03: 계정을 전환하면 새 계정의 실제 소유·장착 상태만 목록에 표시된다", async () => {
+  resetAll()
+  const premiumSkin = getSkinItemsForJob(FIRST_JOB_ID).find((item) => item.source === "premium")
+  assert.ok(premiumSkin, "테스트 전제: 프리미엄 스킨이 있어야 한다")
+
+  getImpl = async (endpoint) => {
+    if (endpoint.endsWith("/wallet")) return { balanceGold: 0, balanceDiamond: 0 }
+    if (endpoint.includes("/user-1/")) {
+      return {
+        entitlements: [{ itemId: premiumSkin.id, itemType: "SKIN" }],
+        loadout: { selectedCardFrameId: null, selectedSkinsByJob: { [FIRST_JOB_ID]: premiumSkin.id } },
+      }
+    }
+    return { entitlements: [], loadout: { selectedCardFrameId: null, selectedSkinsByJob: null } }
+  }
+
+  render(React.createElement(SkinCardWearOverlay, { open: true, onClose: () => {} }))
+  await flushMicrotasks()
+
+  const buttonForUser1 = document.querySelector(`button[aria-label^="${premiumSkin.name}"]`)
+  assert.ok(buttonForUser1, "user-1이 보유한 프리미엄 스킨 버튼이 렌더돼야 한다")
+  assert.equal(buttonForUser1.hasAttribute("disabled"), false, "보유한 항목은 disabled가 아니어야 한다")
+  assert.equal(buttonForUser1.getAttribute("aria-label"), `${premiumSkin.name}, 착용 중`, "user-1은 실제로 이 스킨을 장착 중이어야 한다")
+
+  act(() => { setCurrentUser({ uuid: "user-2" }) })
+  await flushMicrotasks()
+
+  const buttonForUser2 = document.querySelector(`button[aria-label^="${premiumSkin.name}"]`)
+  assert.ok(buttonForUser2, "계정 전환 뒤에도 같은 스킨 항목이 목록에 있어야 한다")
+  assert.equal(buttonForUser2.hasAttribute("disabled"), true, "user-2는 이 스킨을 보유하지 않으므로 disabled여야 한다")
+  assert.equal(buttonForUser2.getAttribute("aria-label"), `${premiumSkin.name}, 미보유`, "user-2 화면에 이전 계정의 장착 표시가 남으면 안 된다")
 })

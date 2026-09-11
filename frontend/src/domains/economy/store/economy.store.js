@@ -69,20 +69,127 @@ const buildReferenceEventId = (userId, itemId) =>
   `purchase:${userId}:${itemId}:${crypto.randomUUID()}`
 
 // F-13 AC-02(운영자 지시, 2026-09-11 22:12: "replacing temporary unknown blocking/reset
-// escape") — 겹치는 프로필 확정을 한 번에 하나씩만 실제로 전송하도록 직렬화한다(A-06 "정상
-// 프로필 직렬 큐"). 이전 버전은 전송 불확실(응답 유실)이 한 번 생기면 profileOutcomeUnknown
-// 플래그로 이후의 모든 확정을 로그아웃/재로그인 전까지 영구히 막았다 — 그러나 서버가 이제
-// 영속 revision을 CAS로 비교하므로(equipProfileAppearance) 그런 영구 차단이 더 이상
-// 필요하지 않다: 뒤이은 확정이 실제로 전송되면, 그 사이 앞선 확정이 조용히 커밋됐었더라도
-// 서버가 예전 revision을 보고 409로 거부해 스스로 재조정(authoritative GET)하게 만든다 —
-// 정확성의 근거가 클라이언트의 불확실한 추측이 아니라 서버의 CAS 판정으로 옮겨졌다.
-let profileQueue = null
+// escape") — 겹치는 확정을 한 번에 하나씩만 실제로 전송하도록 직렬화한다(A-06 "정상 직렬
+// 큐"). 이전 버전은 전송 불확실(응답 유실)이 한 번 생기면 profileOutcomeUnknown 플래그로
+// 이후의 모든 확정을 로그아웃/재로그인 전까지 영구히 막았다 — 그러나 서버가 이제 영속
+// revision을 CAS로 비교하므로(equipProfileAppearance) 그런 영구 차단이 더 이상 필요하지
+// 않다: 뒤이은 확정이 실제로 전송되면, 그 사이 앞선 확정이 조용히 커밋됐었더라도 서버가
+// 예전 revision을 보고 409로 거부해 스스로 재조정(authoritative GET)하게 만든다 — 정확성의
+// 근거가 클라이언트의 불확실한 추측이 아니라 서버의 CAS 판정으로 옮겨졌다.
+//
+// F-14(AC-01, R-IMPL P1 "coherent persisted write ordering... integrating with profile
+// writes rather than creating mutually independent queues") — equip()(직업 스킨·카드
+// 프레임)과 equipProfile()(사진·테두리)은 모두 같은 EconomyLoadout 행·같은 revision
+// 컬럼을 공유한다. 예전처럼 equip()을 독립된 요청으로 두면(CAS도 큐도 없이 매번 즉시
+// 커밋) 두 진입점이 서로의 revision 변화를 모른 채 경쟁해 지연·역전된 응답이 더 최신
+// 저장을 조용히 덮어쓸 수 있었다 — 이제 하나의 loadoutQueue로 이 행에 대한 모든 쓰기
+// 시도(직업 스킨·카드 프레임·프로필 사진·테두리)를 실제로 보내는 순서까지 직렬화하고,
+// 아래 sendLoadoutWrite 하나가 두 진입점 모두의 CAS 재조정을 담당한다.
+let loadoutQueue = null
 
-// F-13 AC-02(A-09): conflict/전송 불확실 자동 재시도는 최초 POST 이후 최대 이 횟수만큼만
-// 허용한다(초기 시도 1회 + 재시도 2회 = 최대 3회 실제 전송). 이 한도를 넘기거나 재조정용
-// GET 자체가 실패하면 draft·명확한 오류·사용자 재시도 경로를 남기고 더 이상 자동으로
+// F-13 AC-02(A-09): conflict 자동 재시도는 최초 POST 이후 최대 이 횟수만큼만 허용한다
+// (초기 시도 1회 + 재시도 2회 = 최대 3회 실제 전송). 이 한도를 넘기거나 재조정용 GET
+// 자체가 실패하면 draft·명확한 오류·사용자 재시도 경로를 남기고 더 이상 자동으로
 // 재전송하지 않는다.
-const MAX_PROFILE_EQUIP_AUTO_RETRIES = 2
+const MAX_LOADOUT_EQUIP_AUTO_RETRIES = 2
+
+const SLOT_TO_LOADOUT_FIELD = Object.freeze({
+  PROFILE_PHOTO: "selectedProfilePhotoId",
+  PROFILE_BORDER: "selectedProfileBorderId",
+  PLAYER_CARD_FRAME: "selectedCardFrameId",
+})
+
+/**
+ * 공용 loadout 행 write 직렬화 + CAS 재조정(F-13/F-14 공유, 위 loadoutQueue 설명 참고).
+ * endpoint에 buildBody(expectedRevision)의 결과를 POST하고, 서버가 conflictCode로
+ * 거부하면 authoritative GET(entitlements)으로 재조정한다 — 요청한 슬롯이 이미 서버
+ * 값과 같으면(matches) 재전송 없이 그 상태를 받아들이고, 다르면 최신 revision으로 같은
+ * 사용자 의도를 다시 보낸다. applyExtra(mergedLoadout)는 서버 응답에 없는 필드(예:
+ * POST /economy/equip 응답에는 없는 selectedSkinsByJob)를 이 요청 자체의 성공으로부터
+ * 직접 미러링할 때만 쓴다 — mergedLoadout은 이미 "이전 상태 + 이번에 받은 loadout"이
+ * 합쳐진 값이라, authoritative GET으로 받아온 최신 다른 직업 스킨 값을 실수로 덮어쓰지
+ * 않는다.
+ * @param {() => any} get @param {(fn: (state: any) => any) => void} set
+ */
+const sendLoadoutWrite = (get, set, { endpoint, buildBody, matches, applyExtra, conflictCode }) => {
+  const generation = get().requestGeneration
+  const userId = resolveUserId()
+  const isCurrent = () => Boolean(userId) && generation === get().requestGeneration && userId === resolveUserId()
+  const sessionChangedError = () => Object.assign(new Error("계정이 변경되어 저장을 취소했습니다."), { code: "SESSION_CHANGED" })
+
+  // withExtra=false는 "아직 이 요청 자신의 의도가 커밋됐다고 확정되지 않은" 중간 새로고침
+  // (충돌 재조정 GET 직후)에 쓴다 — applyExtra는 이 요청이 실제로 원하는 값을 강제로
+  // 미러링하므로, 성공이 확정되기 전에 적용하면 아직 서버에 보내지도 않은 값을 화면에
+  // 낙관적으로 앞서 보여주게 된다. GET이 돌려준 다른 필드(예: 다른 직업의 최신 스킨)는
+  // 재전송 여부와 무관하게 항상 정직하게 반영해야 하므로, merge 자체는 매번 수행한다.
+  const applyLoadoutResult = (loadout, { withExtra = true } = {}) => {
+    if (!isCurrent()) return
+    set((state) => {
+      const merged = { ...state.loadout, ...loadout }
+      return {
+        loadout: (withExtra && applyExtra) ? { ...merged, ...applyExtra(merged) } : merged,
+        loadoutWriteSeq: state.loadoutWriteSeq + 1,
+      }
+    })
+  }
+
+  // 이 GET의 유일한 목적은 CAS 재조정에 쓸 현재 서버 loadout·revision을 읽는 것뿐이다 —
+  // 지갑·소유품은 여기서 요청도·기록도 하지 않는다(F-13 AC-02 운영자 코드 리뷰,
+  // 2026-09-12: fetchSummary만이 그 필드들의 신선도를 책임진다).
+  const fetchAuthoritativeLoadout = async () => {
+    if (!isCurrent()) throw sessionChangedError()
+    const entitlementsResponse = await api.get(`/economy/accounts/${userId}/entitlements`)
+    if (!isCurrent()) throw sessionChangedError()
+    return entitlementsResponse.loadout
+  }
+
+  const attemptSend = async (expectedRevision, attemptNumber) => {
+    if (!isCurrent()) throw sessionChangedError()
+    try {
+      const result = await api.post(endpoint, buildBody(expectedRevision))
+      applyLoadoutResult(result.loadout)
+      return result
+    } catch (error) {
+      if (!isCurrent()) throw error
+
+      // 서버가 CAS 충돌로 명확히 거부한 경우만 재조정한다 — 전송 불확실(code 없음)과 그
+      // 밖의 명시적 거부(소유권·종류 불일치 등)는 그대로 다시 던진다.
+      const code = error?.code
+      if (code !== conflictCode || attemptNumber > MAX_LOADOUT_EQUIP_AUTO_RETRIES) throw error
+
+      let serverLoadout
+      try {
+        serverLoadout = await fetchAuthoritativeLoadout()
+      } catch {
+        // GET 자체가 실패했다 — 원래 오류(충돌)를 그대로 남긴다(초안 유지, 명확한 오류,
+        // 사용자 재시도 경로). 조용히 무한 재시도하지 않는다.
+        throw error
+      }
+      if (!isCurrent()) throw sessionChangedError()
+
+      // serverLoadout은 항상 신선한 authoritative 상태다 — 재전송 여부와 무관하게 먼저
+      // 정직하게 반영해 둔다(이 요청과 무관한 다른 필드의 최신 값도 함께 담고 있을 수
+      // 있다). 아직 이 요청 자신의 의도가 커밋됐다고 확정되지 않았으므로 applyExtra(내가
+      // 원하는 값 강제 반영)는 여기서 적용하지 않는다.
+      applyLoadoutResult(serverLoadout, { withExtra: false })
+
+      if (matches(serverLoadout)) {
+        // 요청한 슬롯이 이미 서버 값과 같다 — 그 사이 이 요청(또는 동등한 다른 확정)이
+        // 실제로는 커밋돼 있었다는 뜻이다. 재전송할 필요 없이 서버 진실을 그대로 받아들인다.
+        return { loadout: serverLoadout, reconciled: true }
+      }
+      // 최신 사용자 의도를 최신 revision으로 다시 보낸다.
+      return attemptSend(serverLoadout.revision, attemptNumber + 1)
+    }
+  }
+
+  const run = () => attemptSend(get().loadout.revision, 1)
+  const result = loadoutQueue ? loadoutQueue.then(run) : run()
+  const settled = result.then(() => undefined, () => undefined)
+  loadoutQueue = settled
+  settled.then(() => { if (loadoutQueue === settled) loadoutQueue = null })
+  return result
+}
 
 export const useEconomyStore = create((set, get) => ({
   ...initialState,
@@ -205,21 +312,35 @@ export const useEconomyStore = create((set, get) => ({
    *  같은 참조 사건 ID를 재사용하고, rejected면 새 시도로 취급해 새 참조 사건 ID를 쓴다. */
   retryPurchase: (itemId) => get().purchase({ itemId }),
 
-  /** @param {{ slot: "PROFILE_PHOTO" | "PROFILE_BORDER" | "PLAYER_CARD_FRAME" | "JOB_SKIN_NOBLE" | "JOB_SKIN_CLOWN" | "JOB_SKIN_GUARD" | "JOB_SKIN_DOCTOR" | "JOB_SKIN_WITCH_HUNTER", itemId: string }} params */
-  equip: async ({ slot, itemId }) => {
-    const generation = get().requestGeneration
-    const result = await api.post("/economy/equip", { slot, itemId })
-    if (get().requestGeneration !== generation) return result
+  /** F-14(AC-01, R-IMPL P1 "coherent persisted write ordering") — 직업 스킨·카드 프레임
+   *  장착도 이제 equipProfile과 같은 CAS·직렬 큐(loadoutQueue, sendLoadoutWrite)를 공유한다.
+   *  지금 알고 있는 loadout.revision을 expectedRevision으로 함께 보내고, 서버가
+   *  409(SKIN_REVISION_CONFLICT)로 거부하면 authoritative GET으로 재조정한다 — 지연되거나
+   *  응답 순서가 뒤바뀐 요청이 더 최신 저장을 덮어쓰지 못한다. 응답(routes.js
+   *  serializeLoadout)에는 selectedSkinsByJob이 없으므로, 그 미러는 이 요청이 실제로 보낸
+   *  (jobId, itemId) 자체로부터 직접 반영한다(applyExtra) — equipItem은 전부-아니면-무로
+   *  동작하므로 성공은 곧 서버가 정확히 이 값으로 커밋했다는 증거다.
+   *  @param {{ slot: "PROFILE_PHOTO" | "PROFILE_BORDER" | "PLAYER_CARD_FRAME" | "JOB_SKIN_NOBLE" | "JOB_SKIN_CLOWN" | "JOB_SKIN_GUARD" | "JOB_SKIN_DOCTOR" | "JOB_SKIN_WITCH_HUNTER", itemId: string }} params */
+  equip: ({ slot, itemId }) => {
     const jobId = JOB_SKIN_SLOT_TO_JOB_ID[slot]
-    set((state) => ({
-      loadout: {
-        ...state.loadout,
-        ...result.loadout,
-        ...(jobId ? { selectedSkinsByJob: { ...state.loadout.selectedSkinsByJob, [jobId]: itemId } } : {}),
-      },
-      loadoutWriteSeq: state.loadoutWriteSeq + 1,
-    }))
-    return result
+    const field = jobId ? null : SLOT_TO_LOADOUT_FIELD[slot]
+    return sendLoadoutWrite(get, set, {
+      endpoint: "/economy/equip",
+      buildBody: (expectedRevision) => ({
+        slot,
+        itemId,
+        ...(expectedRevision ? { expectedRevision } : {}),
+      }),
+      applyExtra: jobId
+        ? (merged) => ({ selectedSkinsByJob: { ...merged.selectedSkinsByJob, [jobId]: itemId } })
+        : undefined,
+      matches: (serverLoadout) => (jobId
+        ? (serverLoadout.selectedSkinsByJob?.[jobId] ?? null) === itemId
+        : field
+          ? serverLoadout[field] === itemId
+          : false),
+      conflictCode: "SKIN_REVISION_CONFLICT",
+    })
   },
 
   /** F-13 AC-01/AC-02: 프로필 수정 모달의 확인 한 번을 사진·테두리 동시 확정 요청 하나로
@@ -232,7 +353,7 @@ export const useEconomyStore = create((set, get) => ({
    *  로 거부하면(다른 확정이 그 사이 먼저 커밋됐다는 서버의 확정적 신호) authoritative GET
    *  으로 현재 서버 loadout·revision을 다시 읽는다 — 요청한 슬롯이 이미 그 값과 같으면 그
    *  서버 진실을 그대로 받아들이고(재전송 불필요, 성공으로 취급), 다르면 최신 revision으로
-   *  같은 사용자 의도를 자동으로 다시 보낸다(최대 MAX_PROFILE_EQUIP_AUTO_RETRIES회).
+   *  같은 사용자 의도를 자동으로 다시 보낸다(최대 MAX_LOADOUT_EQUIP_AUTO_RETRIES회).
    *
    *  전송 불확실(응답 자체를 받지 못함, code 없음)과 그 외 명시적 거부(ITEM_NOT_OWNED 등)는
    *  이 함수가 재조정하지 않고 그대로 다시 던진다 — 전송 불확실의 authoritative GET 재조정은
@@ -244,98 +365,30 @@ export const useEconomyStore = create((set, get) => ({
    *  고 알려주는 conflict에만 적용한다. "영구 차단 후 재로그인 요구"였던 이전
    *  profileOutcomeUnknown 방식과 달리, 이 재조정은 요청마다 독립적으로 이뤄지므로 뒤이은
    *  확정(다음 handleConfirm 클릭 등)을 막지 않는다.
+   *
+   *  R-IMPL(2026-09-12, "integrating with profile writes rather than creating mutually
+   *  independent queues") — 실제 요청 전송은 equip()과 같은 sendLoadoutWrite/loadoutQueue를
+   *  공유한다. loadoutAttemptSeq는 여전히 이 함수만 올린다(fetchSummary가 "이 GET이 더 최신
+   *  equipProfile 시도보다 오래됐는지"를 가리는 데만 쓴다 — applyLoadoutResult 자체는
+   *  이전과 같이 attemptSeq로 결과를 가리지 않는다, 계정만 확인해 항상 반영한다).
    *  @param {{ photoItemId?: string, borderItemId?: string }} params */
   equipProfile: ({ photoItemId, borderItemId }) => {
-    const generation = get().requestGeneration
-    const userId = resolveUserId()
-    const attemptSeq = get().loadoutAttemptSeq + 1
-    set({ loadoutAttemptSeq: attemptSeq })
-
-    // A committed before B can be sent. Even if B is rejected, A remains the actual
-    // saved value; discarding A merely because B was queued is wrong — 그래서 이 함수가
-    // 실제로 확정한 loadout(직접 성공, 또는 아래 재조정으로 "이미 반영됨"이 확인된 경우)은
-    // 계정만 확인해 항상 반영한다(loadoutAttemptSeq로 가리지 않는다 — 그 값은 오직
-    // fetchSummary의 GET 결과가 이 시도보다 오래됐는지 가리는 데만 쓰인다). 계정이 바뀐
-    // 경우(A-06)만 애초에 보내지 않고 즉시 중단한다.
-    const isCurrent = () => Boolean(userId) && generation === get().requestGeneration && userId === resolveUserId()
-    const sessionChangedError = () => Object.assign(new Error("계정이 변경되어 저장을 취소했습니다."), { code: "SESSION_CHANGED" })
-
-    // 이 시도(attemptSeq) 자신이 실제로 확정한 결과만 적용한다 — 계정 확인만 거친다.
-    const applyLoadoutResult = (loadout) => {
-      if (isCurrent()) {
-        set((state) => ({ loadout: { ...state.loadout, ...loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
-      }
-    }
-
-    // 재조정용 authoritative GET. 이 GET의 유일한 목적은 CAS 재조정에 쓸 현재 서버
-    // loadout·revision을 읽는 것뿐이다 — 지갑·소유품은 이 함수가 쓰지 않는다(운영자 코드
-    // 리뷰, 2026-09-12: "It only needs authoritative loadout for CAS: avoid writing
-    // unrelated wallet/entitlements there"). 이전 버전은 이 GET이 받아온 지갑·소유품도
-    // summaryRequestSeq 같은 순서 가드 없이 곧바로 store에 썼다 — 그러면 이 충돌 재조정이
-    // 지연되는 동안(예: 409를 받고 authoritative GET을 기다리는 사이) 실제 최신 구매·업적
-    // 성공이 fetchSummary로 이미 더 신선한 잔액·소유품을 반영해도, 나중에 이 재조정 GET의
-    // 오래된 응답이 도착하면 그 신선한 값을 조용히 덮어쓸 수 있었다(이 함수는 fetchSummary와
-    // 별개의 요청이라 loadoutWriteSeq/summaryRequestSeq 어느 가드도 보호하지 않았다). 지갑·
-    // 소유품의 신선도는 이미 fetchSummary(summaryRequestSeq로 순서 보장)만의 책임이므로,
-    // 여기서는 아예 그 필드들을 요청도·기록도 하지 않는다 — 그래야 이 GET이 아무리 늦게
-    // 도착해도 store의 지갑·소유품에 영향을 줄 수 없다(구조적으로 경쟁 자체가 사라진다).
-    const fetchAuthoritativeLoadout = async () => {
-      if (!isCurrent()) throw sessionChangedError()
-      const entitlementsResponse = await api.get(`/economy/accounts/${userId}/entitlements`)
-      if (!isCurrent()) throw sessionChangedError()
-      return entitlementsResponse.loadout
-    }
-
-    const attemptSend = async (expectedRevision, attemptNumber) => {
-      if (!isCurrent()) throw sessionChangedError()
-      try {
-        const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId, expectedRevision })
-        applyLoadoutResult(result.loadout)
-        return result
-      } catch (error) {
-        if (!isCurrent()) throw error
-
-        // 오직 서버 CAS 충돌(PROFILE_REVISION_CONFLICT)만 이 함수가 재조정한다 — 전송
-        // 불확실(code 없음)과 그 외 명시적 거부는 그대로 다시 던진다(위 함수 설명 참고,
-        // A-11 계약을 지키는 재조정은 호출부가 담당한다).
-        const code = error?.code
-        if (code !== "PROFILE_REVISION_CONFLICT" || attemptNumber > MAX_PROFILE_EQUIP_AUTO_RETRIES) throw error
-
-        let serverLoadout
-        try {
-          serverLoadout = await fetchAuthoritativeLoadout()
-        } catch {
-          // GET 자체가 실패했다 — 원래 오류(409 충돌)를 그대로 남긴다(초안 유지, 명확한
-          // 오류, 사용자 재시도 경로 — A-09). 조용히 무한 재시도하지 않는다.
-          throw error
-        }
-        if (!isCurrent()) throw sessionChangedError()
-
-        const photoMatches = photoItemId === undefined || serverLoadout.selectedProfilePhotoId === photoItemId
-        const borderMatches = borderItemId === undefined || serverLoadout.selectedProfileBorderId === borderItemId
-        if (photoMatches && borderMatches) {
-          // 요청한 슬롯이 이미 서버 값과 같다 — 그 사이 이 요청(또는 동등한 다른 확정)이
-          // 실제로는 커밋돼 있었다는 뜻이다. 재전송할 필요 없이 서버 진실을 그대로 받아들인다.
-          applyLoadoutResult(serverLoadout)
-          return { loadout: serverLoadout, reconciled: true }
-        }
-        // 최신 사용자 의도를 최신 revision으로 다시 보낸다.
-        return attemptSend(serverLoadout.revision, attemptNumber + 1)
-      }
-    }
-
-    const run = () => attemptSend(get().loadout.revision, 1)
-    const result = profileQueue ? profileQueue.then(run) : run()
-    const settled = result.then(() => undefined, () => undefined)
-    profileQueue = settled
-    settled.then(() => { if (profileQueue === settled) profileQueue = null })
-    return result
+    set((state) => ({ loadoutAttemptSeq: state.loadoutAttemptSeq + 1 }))
+    return sendLoadoutWrite(get, set, {
+      endpoint: "/economy/equip-profile",
+      buildBody: (expectedRevision) => ({ photoItemId, borderItemId, expectedRevision }),
+      matches: (serverLoadout) => (
+        (photoItemId === undefined || serverLoadout.selectedProfilePhotoId === photoItemId)
+        && (borderItemId === undefined || serverLoadout.selectedProfileBorderId === borderItemId)
+      ),
+      conflictCode: "PROFILE_REVISION_CONFLICT",
+    })
   },
 
   /** 계정 경계를 넘는 모든 상태를 지우고 진행 중이던 요청들을 전부 무효화한다
    *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 계정의 응답은 전부 무시된다. */
   reset: () => {
-    profileQueue = null
+    loadoutQueue = null
     set((state) => ({
     ...initialState,
     pendingPurchases: {},

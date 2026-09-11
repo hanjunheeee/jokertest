@@ -30,6 +30,7 @@ export default function SkinCardWearList({
                 item={item}
                 selected={selectedItemId === item.id}
                 equipped={isSkinCardWearItemEquipped(item, appliedSkinsByJob, appliedCardFrameId)}
+                owned={item.owned !== false}
                 onSelect={onSelectItem}
               />
             ))}

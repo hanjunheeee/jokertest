@@ -170,6 +170,84 @@ test("equip은 서버가 돌려준 loadout으로 상태를 갱신한다", async 
   assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
 })
 
+// ── F-14 AC-01(P1 PRIORITY, R-IMPL "coherent persisted write ordering"): equip() CAS ──
+// equip()(직업 스킨·카드 프레임)은 equipProfile과 같은 CAS·직렬 큐를 공유한다. 아래
+// 시험은 위 F-13 AC-02(A-09) 시험들과 같은 계약을 equip()에서도 그대로 고정한다.
+
+test("F-14 AC-01(P1): equip()은 현재 loadout.revision을 expectedRevision으로 함께 보낸다", async () => {
+  resetStore()
+  useEconomyStore.setState({ loadout: { ...useEconomyStore.getState().loadout, revision: "rev-known" } })
+  let seenBody
+  postImpl = async (_, body) => { seenBody = body; return { loadout: {} } }
+
+  await useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+
+  assert.equal(seenBody.expectedRevision, "rev-known")
+})
+
+test("F-14 AC-01(P1): 서버 CAS 충돌(409 SKIN_REVISION_CONFLICT) 후 authoritative GET이 요청한 스킨과 이미 같은 값을 보여주면 재전송 없이 그 서버 진실을 받아들인다", async () => {
+  resetStore()
+  let postCalls = 0
+  postImpl = async () => {
+    postCalls++
+    throw Object.assign(new Error("conflict"), { code: "SKIN_REVISION_CONFLICT" })
+  }
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedSkinsByJob: { guard: "player-skin-경비원1-바이올렛" }, revision: "server-rev-1" } })
+
+  const result = await useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+
+  assert.equal(postCalls, 1, "요청한 스킨이 이미 서버 값과 같으면 재전송하지 않아야 한다")
+  assert.equal(result.reconciled, true)
+  assert.equal(useEconomyStore.getState().loadout.selectedSkinsByJob.guard, "player-skin-경비원1-바이올렛")
+  assert.equal(useEconomyStore.getState().loadout.revision, "server-rev-1")
+})
+
+test("F-14 AC-01(P1): 지연 커밋 후 재조정 GET이 다른 값을 보여주면 최신 revision으로 같은 스킨 선택을 재전송해 성공하고, 다른 직업의 최신 값은 덮어쓰지 않는다", async () => {
+  resetStore()
+  let postCalls = 0
+  const seenRevisions = []
+  postImpl = async (_, body) => {
+    postCalls++
+    seenRevisions.push(body.expectedRevision)
+    if (postCalls === 1) throw Object.assign(new Error("conflict"), { code: "SKIN_REVISION_CONFLICT" })
+    return { loadout: {} }
+  }
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    // 재조정 GET은 다른 기기가 그 사이 noble 스킨도 바꿨다는 최신 사실을 함께 돌려준다.
+    : { entitlements: [], loadout: { selectedSkinsByJob: { guard: "player-skin-경비원1-바이올렛", noble: "player-skin-귀족1-블러드" }, revision: "server-rev-1" } })
+
+  await useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원2-푸른서리" })
+
+  assert.equal(postCalls, 2, "충돌 후 서버 값이 다르면 최신 revision으로 정확히 한 번 재전송해야 한다")
+  assert.equal(seenRevisions[1], "server-rev-1")
+  const { selectedSkinsByJob } = useEconomyStore.getState().loadout
+  assert.equal(selectedSkinsByJob.guard, "player-skin-경비원2-푸른서리", "이번 요청 자신의 슬롯은 실제로 보낸 값으로 반영되어야 한다")
+  assert.equal(selectedSkinsByJob.noble, "player-skin-귀족1-블러드", "재조정 GET이 알려준 다른 직업의 최신 값을 덮어쓰면 안 된다")
+})
+
+test("F-14 AC-01(P1): equip()과 equipProfile()은 같은 직렬 큐를 공유한다 — 뒤이은 프로필 확정은 앞선 스킨 장착이 실제로 끝난 뒤에만 전송된다", async () => {
+  resetStore()
+  const gate = createDeferred()
+  const calls = []
+  postImpl = async (endpoint, body) => {
+    calls.push(endpoint)
+    if (calls.length === 1) await gate.promise
+    if (endpoint === "/economy/equip") return { loadout: {} }
+    return { loadout: { selectedProfileBorderId: body.borderItemId } }
+  }
+
+  const a = useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+  const b = useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+  assert.deepEqual(calls, ["/economy/equip"], "같은 큐를 공유하므로 A(스킨)가 실제로 서버에 전송될 때까지 B(프로필)는 전송되면 안 된다")
+  gate.resolve()
+  await Promise.all([a, b])
+  assert.deepEqual(calls, ["/economy/equip", "/economy/equip-profile"])
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+})
+
 // ── F-13 AC-01/AC-02: equipProfile(사진·테두리 동시 확정) ──────────────────────
 
 test("equipProfile은 바뀐 슬롯만 실어 POST /economy/equip-profile을 호출하고 서버가 돌려준 loadout으로 상태를 갱신한다", async () => {

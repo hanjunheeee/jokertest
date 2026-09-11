@@ -148,13 +148,20 @@ router.get("/purchases/:referenceEventId", verifyToken, async (req, res, next) =
     } catch (error) { next(error); }
 });
 
+// F-14(AC-01, R-IMPL P1 "coherent persisted write ordering") — expectedRevision은 선택
+// 필드다: 클라이언트가 GET 응답의 loadout.revision을 그대로 되돌려 보내면 서버가 CAS로
+// 비교해(economyService.equipItem 참고) 지연·역전된 요청이 더 최신 저장을 덮어쓰지 못하게
+// 막는다 — POST /economy/equip-profile의 expectedRevision과 정확히 같은 계약이다.
 router.post("/equip", verifyToken, async (req, res, next) => {
     try {
-        const { slot, itemId } = req.body ?? {};
+        const { slot, itemId, expectedRevision } = req.body ?? {};
         if (typeof slot !== "string" || typeof itemId !== "string") {
             throw createError("slot과 itemId가 필요합니다.", 400, "INVALID_EQUIP_REQUEST");
         }
-        const loadout = await economyService.equipItem({ userId: req.user.uuid, slot, itemId });
+        if (expectedRevision !== undefined && typeof expectedRevision !== "string") {
+            throw createError("expectedRevision은 문자열이어야 합니다.", 400, "INVALID_EQUIP_REQUEST");
+        }
+        const loadout = await economyService.equipItem({ userId: req.user.uuid, slot, itemId, expectedRevision });
         res.json({ loadout: serializeLoadout(loadout) });
     } catch (error) { next(error); }
 });

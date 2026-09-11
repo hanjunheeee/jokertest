@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import {
+  SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID,
   SKIN_CARD_WEAR_JOB_TABS,
   getDefaultSkinIdForJob,
   getPlayerCardItems,
@@ -44,6 +45,20 @@ const CONFIRMED_EQUIP_REJECTION_CODES = new Set([
 const isConfirmedEquipRejection = (error) =>
   typeof error?.code === "string" && CONFIRMED_EQUIP_REJECTION_CODES.has(error.code)
 
+// F-14(AC-02, R-IMPL P1 "actual list ownership contract") — 미보유 스킨·카드는 목록에서
+// 선택·저장할 수 없어야 한다. 무료 기본품 판정은 backend/service/economy.service.js의
+// isFreeJobSkin/FREE_CARD_FRAME_ID와 정확히 같은 두 가지 근거만 인정한다: (1) 기본 스킨
+// (item.source === "basic", catalog.js BASIC_SKIN_STEMS로 만들어진 basic-skin-* 9종 — 서버의
+// FREE_JOB_SKIN_IDS_BY_SLOT 정확한 allowlist와 1:1 대응), (2) 기본 카드 프레임(player-card-베이스,
+// 서버 FREE_CARD_FRAME_ID와 같은 문자열). 그 밖의 모든 프리미엄 스킨·카드는 economy store가
+// 서버에서 그대로 받아온 entitlements 목록에 itemId가 있을 때만 소유한 것으로 인정한다 — 접두어
+// 추측이나 클라이언트 판단을 추가하지 않는다.
+const isItemOwned = (item, entitlements) => {
+  if (item.itemType === "skin" && item.source === "basic") return true
+  if (item.itemType === "card" && item.id === SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID) return true
+  return entitlements.some((entry) => entry.itemId === item.id)
+}
+
 export const SKIN_CARD_WEAR_CONFIRM_STATUS = Object.freeze({
   IDLE: "idle",
   SAVING: "saving",
@@ -75,16 +90,21 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   // 갱신되므로 이 경합을 실제로 막는다(state만으로는 중복 저장을 막을 수 없다).
   const savingRef = useRef(false)
 
+  // F-14(AC-02): 인증된 서버 소유 목록만 신뢰한다 — economy store가 fetchSummary로 받아온
+  // entitlements 외에는 어떤 것도 소유 판정의 근거가 아니다(정적 카탈로그 전체를 그대로
+  // 노출하던 이전 버그의 원인).
+  const entitlements = useEconomyStore((state) => state.entitlements)
+
   const activeJobId = SKIN_CARD_WEAR_JOB_TABS[activeJobIndex]?.id ?? SKIN_CARD_WEAR_JOB_TABS[0].id
   const selectedItem = getSkinCardWearItemById(selectedItemId)
 
   const listItems = useMemo(() => {
-    if (previewMode === SKIN_CARD_WEAR_PREVIEW_MODE_CARD) {
-      return getPlayerCardItems()
-    }
+    const rawItems = previewMode === SKIN_CARD_WEAR_PREVIEW_MODE_CARD
+      ? getPlayerCardItems()
+      : getSkinItemsForJob(activeJobId)
 
-    return getSkinItemsForJob(activeJobId)
-  }, [previewMode, activeJobId])
+    return rawItems.map((item) => ({ ...item, owned: isItemOwned(item, entitlements) }))
+  }, [previewMode, activeJobId, entitlements])
 
   const preview = useMemo(
     () =>
@@ -99,6 +119,10 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   )
 
   const selectItem = useCallback((item) => {
+    // F-14(AC-02): 미보유 항목은 선택 자체를 막는다 — 목록/버튼의 disabled 표시는 UI
+    // 방어선일 뿐이고, 실제 draft가 바뀌는 유일한 지점인 여기서도 막아야 어떤 경로로
+    // onSelect가 호출돼도(합성 이벤트 우회 등) 미보유 항목이 draft에 들어갈 수 없다.
+    if (item.owned === false) return
     setSelectedItemId(item.id)
 
     if (item.itemType === "skin" && item.jobId) {

@@ -164,20 +164,69 @@ test("카드 보기로 전환하면 플레이어 카드 목록과 카드 미리�
   )
 })
 
-test("카드 보기에서 카드를 고르면 draft 카드 프레임이 바뀐다", () => {
-  const { result } = renderSelection()
-
-  act(() => result.current.togglePreviewMode())
-
+test("카드 보기에서 소유한 카드를 고르면 draft 카드 프레임이 바뀐다", () => {
+  resetEconomy()
   const otherCard = getPlayerCardItems().find(
     (item) => item.id !== SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID,
   )
   assert.ok(otherCard, "기본 카드 말고도 고를 카드가 있어야 한다")
+  // F-14(AC-02): 기본 카드가 아닌 프리미엄 카드는 entitlements에 있어야만 선택할 수 있다.
+  useEconomyStore.setState({ entitlements: [{ itemId: otherCard.id, itemType: "PLAYER_CARD_FRAME" }] })
+
+  const { result } = renderSelection()
+  act(() => result.current.togglePreviewMode())
 
   act(() => result.current.selectItem(otherCard))
 
   assert.equal(result.current.draftCardFrameId, otherCard.id)
   assert.equal(result.current.preview.frameSrc, otherCard.frameSrc)
+})
+
+// ── F-14 AC-02: 소유권 게이트 ────────────────────────────────────────────────
+
+test("F-14 AC-02: 기본 스킨·기본 카드는 entitlements 없이도 항상 owned:true다", () => {
+  resetEconomy()
+  const { result } = renderSelection()
+
+  assert.ok(result.current.listItems.every((item) => item.source !== "basic" || item.owned === true))
+
+  act(() => result.current.togglePreviewMode())
+  const defaultCard = result.current.listItems.find((item) => item.id === SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID)
+  assert.equal(defaultCard.owned, true)
+})
+
+test("F-14 AC-02: entitlements에 없는 프리미엄 스킨·카드는 owned:false이고 선택해도 draft가 바뀌지 않는다", () => {
+  resetEconomy()
+  const { result } = renderSelection()
+
+  const premiumSkin = result.current.listItems.find((item) => item.source === "premium")
+  assert.ok(premiumSkin, "프리미엄 스킨 목록이 있어야 한다")
+  assert.equal(premiumSkin.owned, false)
+
+  const draftBefore = result.current.draftSkinsByJob[FIRST_JOB_ID]
+  act(() => result.current.selectItem(premiumSkin))
+  assert.equal(result.current.selectedItemId, draftBefore, "미보유 항목 선택은 selectedItemId를 바꾸면 안 된다")
+  assert.equal(result.current.draftSkinsByJob[FIRST_JOB_ID], draftBefore, "미보유 항목 선택은 draft를 바꾸면 안 된다")
+
+  act(() => result.current.togglePreviewMode())
+  const premiumCard = result.current.listItems.find((item) => item.id !== SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID)
+  assert.equal(premiumCard.owned, false)
+  act(() => result.current.selectItem(premiumCard))
+  assert.equal(result.current.draftCardFrameId, SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID, "미보유 카드 선택은 draft를 바꾸면 안 된다")
+})
+
+test("F-14 AC-02: entitlements에 있는 프리미엄 스킨은 owned:true가 되고 선택할 수 있다", () => {
+  resetEconomy()
+  const { result } = renderSelection()
+  const premiumSkin = getSkinItemsForJob(FIRST_JOB_ID).find((item) => item.source === "premium")
+  assert.ok(premiumSkin)
+  act(() => { useEconomyStore.setState({ entitlements: [{ itemId: premiumSkin.id, itemType: "SKIN" }] }) })
+
+  const owned = result.current.listItems.find((item) => item.id === premiumSkin.id)
+  assert.equal(owned.owned, true)
+
+  act(() => result.current.selectItem(premiumSkin))
+  assert.equal(result.current.draftSkinsByJob[FIRST_JOB_ID], premiumSkin.id)
 })
 
 test("카드 보기에서 다시 전환하면 스킨 보기와 직업 스킨 선택으로 돌아온다", () => {
@@ -248,6 +297,8 @@ test("F-14 AC-01: 바뀐 슬롯만 골라 equip을 호출하고 성공하면 SUC
   act(() => result.current.selectItem(otherSkin))
 
   const otherCard = getPlayerCardItems().find((item) => item.id !== SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID)
+  // F-14(AC-02): 프리미엄 카드는 entitlements에 있어야만 선택할 수 있다.
+  act(() => { useEconomyStore.setState({ entitlements: [{ itemId: otherCard.id, itemType: "PLAYER_CARD_FRAME" }] }) })
   act(() => result.current.togglePreviewMode())
   act(() => result.current.selectItem(otherCard))
 
