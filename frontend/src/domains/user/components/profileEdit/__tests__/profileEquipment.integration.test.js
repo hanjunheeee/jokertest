@@ -33,8 +33,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 // 저장소의 node:test 실행에서 실제로 import·마운트할 수 있어야 한다 — 이 파일은 .js라
 // vite alias·JSX 변환을 직접 풀 수 없는(이 저장소 관례) 제약이 있다. 이미
 // frontend/.../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs가 이 제약을 없애는
-// module.register() ESM 훅(oxc 변환 + "@/" alias 해석, production 코드 변경 없음)을
-// 만들어 뒀으므로 새 하네스를 또 만들지 않고 그대로 재사용한다.
+// module.register() ESM 훅(TypeScript transpileModule 변환 + "@/" alias 해석, production
+// 코드 변경 없음)을 만들어 뒀으므로 새 하네스를 또 만들지 않고 그대로 재사용한다.
 register(new URL("../../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 let getImpl = async () => { throw new Error("api.get stub not set") }

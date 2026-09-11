@@ -49,7 +49,7 @@ mock.module("../../../auth/store/auth.store.js", {
 //
 // F-13(CODEX-4) 재검토: 친구 목록·서고 랭킹 두 컴포넌트는 raw source 정규식 대신 실제
 // jsdom 렌더로 바꿨다 — frontend/.../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs가
-// 이미 만든 module.register() ESM 훅(oxc 변환 + "@/" alias 해석)을 그대로 재사용해 이
+// 이미 만든 module.register() ESM 훅(TypeScript transpileModule 변환 + "@/" alias 해석)을 그대로 재사용해 이
 // 저장소의 node:test 실행 제약(vite alias·JSX 미해석)을 없앤다. 두 컴포넌트는 props만으로
 // 결정되는 순수 표시 컴포넌트라 store/네트워크 mock 없이 그대로 마운트할 수 있다.
 //
