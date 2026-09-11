@@ -1,70 +1,141 @@
 import assert from "node:assert/strict"
-import test from "node:test"
+import test, { mock } from "node:test"
 
-// store와 기본값은 모두 순수 JS라 API 경계 mock 없이 그대로 불러올 수 있습니다.
+// F-12(AC-06) 재검토 대응: profileCustomization.store.js가 이제 economy.store.js·
+// auth.store.js를 모듈 로드 시점에 구독한다(서버 loadout 반영, 계정 전환 초기화) —
+// economy.store.test.js와 같은 이유로, 실제 fetch/localStorage를 태우지 않도록 API
+// 경계와 auth store를 mock.module로 먼저 대체한 뒤에 이 store를 불러와야 한다.
+let getImpl = async () => { throw new Error("api.get stub not set") }
+let postImpl = async () => { throw new Error("api.post stub not set") }
+let currentUser = { uuid: "user-1" }
+const authListeners = new Set()
+
+const setCurrentUser = (nextUser) => {
+  const prevUser = currentUser
+  currentUser = nextUser
+  for (const listener of authListeners) listener({ user: currentUser }, { user: prevUser })
+}
+
+mock.module("../../../../shared/api/client.js", {
+  namedExports: {
+    api: {
+      get: (...args) => getImpl(...args),
+      post: (...args) => postImpl(...args),
+    },
+  },
+})
+
+mock.module("../../../auth/store/auth.store.js", {
+  namedExports: {
+    useAuthStore: {
+      getState: () => ({ user: currentUser }),
+      subscribe: (listener) => { authListeners.add(listener); return () => authListeners.delete(listener) },
+    },
+  },
+})
+
 const { useProfileCustomizationStore } = await import("../profileCustomization.store.js")
+const { useEconomyStore } = await import("../../../economy/store/economy.store.js")
 const { PLAYER_PROFILE_ASSETS } = await import("../../../../shared/constants/playerProfileAssets.js")
+const { DEFAULT_PROFILE_BORDER_ITEM_ID } = await import("../../constants/profileEditLayout.js")
 
-function withCleanStore(run) {
-  const initialState = useProfileCustomizationStore.getState()
-
-  try {
-    run()
-  } finally {
-    useProfileCustomizationStore.setState(initialState, true)
-  }
+function resetStores() {
+  getImpl = async () => { throw new Error("api.get stub not set") }
+  postImpl = async () => { throw new Error("api.post stub not set") }
+  currentUser = { uuid: "user-1" }
+  useEconomyStore.getState().reset()
+  useProfileCustomizationStore.getState().reset()
 }
 
 test("초기 프로필 사진·테두리는 shared 기본 에셋이다", () => {
-  withCleanStore(() => {
-    useProfileCustomizationStore.getState().reset()
+  resetStores()
 
-    const { photoSrc, frameSrc } = useProfileCustomizationStore.getState()
+  const { photoSrc, frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
 
-    assert.equal(photoSrc, PLAYER_PROFILE_ASSETS.defaultPhoto)
-    assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
-  })
+  assert.equal(photoSrc, PLAYER_PROFILE_ASSETS.defaultPhoto)
+  assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
+  assert.equal(selectedBorderItemId, DEFAULT_PROFILE_BORDER_ITEM_ID)
 })
 
-test("applyCustomization은 넘긴 사진·테두리를 그대로 반영한다", () => {
-  withCleanStore(() => {
-    useProfileCustomizationStore.getState().applyCustomization({
-      photoSrc: "/shopItem/player-profile/프로필-광대.png",
-      frameSrc: "/shopItem/player- profileborder/프로필프레임-귀족.png",
-    })
+test("applyPhoto는 사진만 바꾸고(무료 편집, A-11) 테두리는 건드리지 않는다", () => {
+  resetStores()
 
-    const { photoSrc, frameSrc } = useProfileCustomizationStore.getState()
+  useProfileCustomizationStore.getState().applyPhoto("/shopItem/player-profile/프로필-광대.png")
 
-    assert.equal(photoSrc, "/shopItem/player-profile/프로필-광대.png")
-    assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png")
-  })
+  const { photoSrc, frameSrc } = useProfileCustomizationStore.getState()
+  assert.equal(photoSrc, "/shopItem/player-profile/프로필-광대.png")
+  assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
 })
 
-test("applyCustomization에 한쪽만 넘기면 나머지는 이전 값을 유지한다", () => {
-  withCleanStore(() => {
-    useProfileCustomizationStore.getState().reset()
-    useProfileCustomizationStore.getState().applyCustomization({ photoSrc: "/photo-only.png" })
+test("applyEquippedBorder는 서버 itemId를 실제 표시 자산으로 바꿔 반영한다(A-10)", () => {
+  resetStores()
 
-    const { photoSrc, frameSrc } = useProfileCustomizationStore.getState()
+  useProfileCustomizationStore.getState().applyEquippedBorder("profile-border-귀족")
 
-    assert.equal(photoSrc, "/photo-only.png")
-    // frameSrc를 넘기지 않았으므로 기본 테두리가 그대로 남아야 합니다.
-    assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
-  })
+  const { frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
+  assert.equal(selectedBorderItemId, "profile-border-귀족")
+  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+})
+
+test("applyEquippedBorder(null)은 기본 테두리로 되돌린다", () => {
+  resetStores()
+  useProfileCustomizationStore.getState().applyEquippedBorder("profile-border-귀족")
+
+  useProfileCustomizationStore.getState().applyEquippedBorder(null)
+
+  const { frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
+  assert.equal(selectedBorderItemId, DEFAULT_PROFILE_BORDER_ITEM_ID)
+  assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
 })
 
 test("reset은 적용된 커스터마이징을 기본값으로 되돌린다", () => {
-  withCleanStore(() => {
-    useProfileCustomizationStore.getState().applyCustomization({
-      photoSrc: "/photo.png",
-      frameSrc: "/frame.png",
-    })
+  resetStores()
+  useProfileCustomizationStore.getState().applyPhoto("/photo.png")
+  useProfileCustomizationStore.getState().applyEquippedBorder("profile-border-남작")
 
-    useProfileCustomizationStore.getState().reset()
+  useProfileCustomizationStore.getState().reset()
 
-    const { photoSrc, frameSrc } = useProfileCustomizationStore.getState()
+  const { photoSrc, frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
+  assert.equal(photoSrc, PLAYER_PROFILE_ASSETS.defaultPhoto)
+  assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
+  assert.equal(selectedBorderItemId, DEFAULT_PROFILE_BORDER_ITEM_ID)
+})
 
-    assert.equal(photoSrc, PLAYER_PROFILE_ASSETS.defaultPhoto)
-    assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
-  })
+// ── AC-06(A-12): economy store의 loadout 변화를 실제 표시에 반영 ────────────────────────
+
+test("economy store의 fetchSummary가 loadout을 채우면 테두리 표시가 자동으로 반영된다(편집기를 열지 않아도)", async () => {
+  resetStores()
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedProfileBorderId: "profile-border-귀족" } })
+
+  await useEconomyStore.getState().fetchSummary()
+
+  const { frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
+  assert.equal(selectedBorderItemId, "profile-border-귀족")
+  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+})
+
+test("계정을 전환하면(economy store reset) 표시 테두리도 기본값으로 되돌아간다", async () => {
+  resetStores()
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedProfileBorderId: "profile-border-귀족" } })
+  await useEconomyStore.getState().fetchSummary()
+  assert.equal(useProfileCustomizationStore.getState().selectedBorderItemId, "profile-border-귀족")
+
+  setCurrentUser({ uuid: "user-2" })
+
+  const { frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
+  assert.equal(selectedBorderItemId, DEFAULT_PROFILE_BORDER_ITEM_ID)
+  assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
+})
+
+test("로그아웃하면 로컬 사진 선택도 기본값으로 되돌아간다", () => {
+  resetStores()
+  useProfileCustomizationStore.getState().applyPhoto("/photo-only.png")
+
+  setCurrentUser(null)
+
+  assert.equal(useProfileCustomizationStore.getState().photoSrc, PLAYER_PROFILE_ASSETS.defaultPhoto)
 })

@@ -112,10 +112,32 @@ export const PROFILE_EDIT_FREE_PHOTOS = [
   "프로필-귀부인.png",
 ].map((name) => `${PROFILE_PHOTO_BASE}${name}`.normalize("NFD"))
 
-/** 보유 중인 프로필 테두리 (구매 로직 연동 전 — 평민만) */
-export const PROFILE_EDIT_OWNED_BORDERS = [
-  `${PROFILE_BORDER_BASE}프로필프레임-평민.png`.normalize("NFD"),
-]
+// F-12(AC-06) 재검토 대응 — 서버 카탈로그(backend/economy/catalog.js)의 profile-border-{tier}
+// itemId 규칙과 정확히 같은 파일명 대응이다. 기본 지급(평민)·구매 테두리(남작~황제)·업적
+// 지급 직업 테두리(귀족~마녀사냥꾼) 모두 같은 `프로필프레임-{tier}.png` 자산 하나로
+// 귀결되므로, 예전처럼 정적 배열로 다시 나열하지 않고 서버가 돌려준 itemId에서 직접
+// 유도한다(A-10) — noble(귀족)을 포함해 서버가 실제로 소유했다고 응답한 어떤 티어든 같은
+// 규칙으로 자산을 찾는다.
+const PROFILE_BORDER_ITEM_ID_PREFIX = "profile-border-"
+
+/** 서버 카탈로그(backend/economy/catalog.js DEFAULT_PROFILE_BORDER_ID)와 같은 기본 지급
+ *  테두리 itemId. 프론트·백엔드가 별도 런타임이라 문자열을 다시 적는다(catalog.js의 기존
+ *  관례와 같음). */
+export const DEFAULT_PROFILE_BORDER_ITEM_ID = `${PROFILE_BORDER_ITEM_ID_PREFIX}평민`
+
+/** backend economy.service.getWalletSummary가 돌려주는 entitlement.itemType 값
+ *  (backend/economy/catalog.js ITEM_TYPES.PROFILE_BORDER). */
+export const PROFILE_BORDER_ITEM_TYPE = "PROFILE_BORDER"
+
+/** 서버 entitlement/loadout의 itemId를 실제 표시 자산 경로로 바꾼다. itemId가 테두리
+ *  규칙을 따르지 않으면(알 수 없는 값) null을 돌려준다 — 호출부가 기본 테두리로 대체한다.
+ *  @param {string | null | undefined} itemId @returns {string | null} */
+export const profileBorderAssetSrcForItemId = (itemId) => {
+  if (typeof itemId !== "string" || !itemId.startsWith(PROFILE_BORDER_ITEM_ID_PREFIX)) return null
+  const tier = itemId.slice(PROFILE_BORDER_ITEM_ID_PREFIX.length)
+  if (!tier) return null
+  return `${PROFILE_BORDER_BASE}프로필프레임-${tier}.png`.normalize("NFD")
+}
 
 export const PROFILE_EDIT_TAB_PHOTO = "photo"
 export const PROFILE_EDIT_TAB_BORDER = "border"
@@ -124,3 +146,13 @@ export const PROFILE_EDIT_TABS = [
   { id: PROFILE_EDIT_TAB_PHOTO, label: "프로필 수정" },
   { id: PROFILE_EDIT_TAB_BORDER, label: "테두리 수정" },
 ]
+
+// F-12(AC-06): 테두리 그리드의 로딩/오류/빈 소유 목록 상태 표시(계획 메모 실행 순서 (2)).
+export const PROFILE_EDIT_GRID_STATUS_TEXT_CLASS =
+  "flex flex-col items-center gap-[0.5rem] px-[0.5rem] py-[1rem] text-center font-body text-[0.85rem] text-[#5c554d]"
+
+export const PROFILE_EDIT_GRID_RETRY_BTN_CLASS =
+  "cursor-pointer rounded-md border border-[#b83232]/40 bg-transparent px-[0.75rem] py-[0.3rem] font-body text-[0.82rem] text-[#b83232] transition-opacity hover:opacity-80"
+
+export const PROFILE_EDIT_ERROR_TEXT_CLASS =
+  "px-[clamp(0.85rem,1.5vw,1.15rem)] pb-[0.35rem] text-center font-body text-[0.8rem] text-[#b83232]"

@@ -1,9 +1,12 @@
 import { STORE_ASSETS } from "../../../store/constants/storeAssets.js"
+import { PLAYER_PROFILE_ASSETS } from "../../../../shared/constants/playerProfileAssets.js"
 import {
   PROFILE_EDIT_CLOSE_BTN_CLASS,
   PROFILE_EDIT_CLOSE_BTN_IMG_CLASS,
+  PROFILE_EDIT_ERROR_TEXT_CLASS,
   PROFILE_EDIT_HEADER_CLASS,
   PROFILE_EDIT_PANEL_CLASS,
+  profileBorderAssetSrcForItemId,
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 import ProfileEditConfirmButton from "./ProfileEditConfirmButton.jsx"
@@ -15,12 +18,19 @@ export default function ProfileEditPanel({
   activeTab,
   onTabChange,
   draftPhoto,
-  draftFrame,
+  draftBorderItemId,
+  ownedBorderOptions,
+  borderListStatus,
+  onRetryLoadBorders,
   onSelectPhoto,
-  onSelectFrame,
+  onSelectBorder,
   onClose,
   onConfirm,
+  confirmStatus,
+  confirmError,
 }) {
+  const draftFrame = profileBorderAssetSrcForItemId(draftBorderItemId) ?? PLAYER_PROFILE_ASSETS.defaultBorder
+
   return (
     <div className={PROFILE_EDIT_PANEL_CLASS}>
       <button
@@ -46,12 +56,17 @@ export default function ProfileEditPanel({
       <ProfileEditOptionGrid
         activeTab={activeTab}
         selectedPhoto={draftPhoto}
-        selectedFrame={draftFrame}
         onSelectPhoto={onSelectPhoto}
-        onSelectFrame={onSelectFrame}
+        ownedBorderOptions={ownedBorderOptions}
+        borderListStatus={borderListStatus}
+        selectedBorderItemId={draftBorderItemId}
+        onSelectBorder={onSelectBorder}
+        onRetryLoadBorders={onRetryLoadBorders}
       />
 
-      <ProfileEditConfirmButton onClick={onConfirm} />
+      {confirmError ? <p className={PROFILE_EDIT_ERROR_TEXT_CLASS}>{confirmError}</p> : null}
+
+      <ProfileEditConfirmButton onClick={onConfirm} disabled={confirmStatus === "saving"} />
     </div>
   )
 }
