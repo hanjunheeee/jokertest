@@ -85,3 +85,29 @@ test("connected:true, alive:false는 DEAD로 계산된다", () => {
   const result = mergeSourcePlayerWithPreview({ id: "u1", name: "A", connected: true, alive: false }, preview())
   assert.equal(result.status, INGAME_PLAYER_STATUS.DEAD)
 })
+
+// F-13(AC-05): 계정 프로필 이미지(사진·테두리) — role/team/isAlly와 같은 조건부 복사 관례.
+test("입력 player에 accountProfilePhotoId/accountProfileBorderId가 있으면 출력에도 같은 값이 있다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    {
+      id: "u1",
+      name: "A",
+      connected: true,
+      alive: true,
+      accountProfilePhotoId: "player-profile-금빛가면",
+      accountProfileBorderId: "profile-border-귀족",
+    },
+    preview(),
+  )
+  assert.equal(result.accountProfilePhotoId, "player-profile-금빛가면")
+  assert.equal(result.accountProfileBorderId, "profile-border-귀족")
+})
+
+test("입력 player에 accountProfilePhotoId/accountProfileBorderId 키 자체가 없으면 출력에도 키가 없다(preview 기본 초상 유지)", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u2", name: "B", connected: true, alive: true },
+    preview(),
+  )
+  assert.equal(Object.hasOwn(result, "accountProfilePhotoId"), false)
+  assert.equal(Object.hasOwn(result, "accountProfileBorderId"), false)
+})

@@ -1010,10 +1010,27 @@ function buildPlayerThemeIndices(session) {
     return indices
 }
 
+// F-13(AC-05): 계정 프로필 이미지(사진·테두리)는 role과 달리 비밀이 아니라 모든 참가자에게
+// 동일하게 공개되는 정보다 — themeIndex와 같은 이유로 game_started·재접속 스냅샷 양쪽의
+// 공용 players[]에 실어 보낸다. 다만 이 두 필드는 아직 모든 세션 참가자에게 보장되지
+// 않는다(A-04: 방 참가자 객체에 계정 로드아웃을 실어 보내는 업스트림 배선은 이 슬라이스
+// 범위 밖) — 그런 참가자까지 억지로 기본값을 만들어 채우면 "서버가 실제로 아는 값"과
+// "그냥 채워 넣은 기본값"을 클라이언트가 구분할 수 없게 되므로, F1305
+// mergeSourcePlayerWithPreview.js의 조건부 복사 관례와 동일하게 실제로 값을 가진 필드만
+// 옮긴다(own-property 존재 여부로 판정 — undefined를 명시적으로 대입한 경우까지 포함해
+// 그대로 옮긴다는 뜻이다).
+function buildPlayerAccountProfileFields(player) {
+    return {
+        ...(Object.hasOwn(player, 'accountProfilePhotoId') ? { accountProfilePhotoId: player.accountProfilePhotoId } : {}),
+        ...(Object.hasOwn(player, 'accountProfileBorderId') ? { accountProfileBorderId: player.accountProfileBorderId } : {}),
+    }
+}
+
 /**
  * 특정 참가자 시점의 game_started payload. 다른 참가자의 role은 절대 포함하지 않는다.
  * players[].themeIndex는 프런트 표시 색상 배정으로, 색을 클라이언트가 각자 추첨하면 같은
  * 참가자가 화면마다 다른 색으로 보이므로 서버가 배정해 내려준다(role과 달리 비밀이 아니다).
+ * players[].accountProfilePhotoId/accountProfileBorderId도 같은 이유로 공개 필드다(F-13 AC-05).
  * @param {object} session - commit된(또는 candidate) GameSession
  * @param {string} viewerUuid - 이 payload를 받을 참가자 uuid
  */
@@ -1028,10 +1045,11 @@ function buildGameStartedPayload(session, viewerUuid) {
             dayIndex: session.dayIndex,
             // session.players는 Map이라 순회 순서가 모든 뷰어에게 동일하다 — 같은 index는
             // 곧 같은 참가자이므로 뷰어끼리 배정이 갈리지 않는다.
-            players: [...session.players.values()].map(({ uuid, nickname }, index) => ({
-                uuid,
-                nickname,
+            players: [...session.players.values()].map((player, index) => ({
+                uuid: player.uuid,
+                nickname: player.nickname,
                 themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
+                ...buildPlayerAccountProfileFields(player),
             })), // role 없음
             self: buildViewerRoleFields(session, viewer),
         },
@@ -2646,13 +2664,17 @@ function buildSessionSnapshot(session, uuid) {
         // (nightResult/tribunal의 선택 필드 관례와 동일). 이 값이 없으면 재접속 클라이언트가
         // 토론과 투표를 구분하지 못해 그 낮에 갇힌다.
         ...(session.phase === 'DAY' ? { dayPhase: getDayPhase(session) } : {}),
-        players: [...session.players.values()].map(({ uuid: pUuid, nickname, alive }, index) => ({
-            uuid: pUuid,
-            nickname,
-            isAlive: alive,
+        players: [...session.players.values()].map((player, index) => ({
+            uuid: player.uuid,
+            nickname: player.nickname,
+            isAlive: player.alive,
             // game_started와 같은 session-id 기반 순열을 다시 계산한다. 메모리 store가 사라진
             // 새로고침에서도 참가자별 색·보드 슬롯이 최초 진입과 정확히 같아진다.
             themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
+            // F-13(AC-05): 세션 커밋 시점에 session.players로 복사된(assignRoles의 스프레드,
+            // A-04) 계정 프로필 식별자를 그대로 재노출한다 — game_started와 동일한 값이라
+            // 재접속·새로고침 후에도 preview 기본 이미지로 되돌아가지 않는다.
+            ...buildPlayerAccountProfileFields(player),
         })),
         self: {
             ...buildViewerRoleFields(session, viewer),
