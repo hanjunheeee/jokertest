@@ -88,7 +88,8 @@ const grantAchievement = async (userId, definition) => {
             const constraint = error?.parent?.constraint ?? error?.original?.constraint;
             const isDuplicateGrant = error instanceof db.Sequelize.UniqueConstraintError && (
                 constraint === 'achievement_grants_user_achievement_unique' ||
-                error?.fields?.achievement_id !== undefined
+                Object.prototype.hasOwnProperty.call(error?.fields ?? {}, 'achievement_grants_user_achievement_unique') ||
+                (error?.fields?.user_id === userId && error?.fields?.achievement_id === definition.id)
             );
             if (!isDuplicateGrant) throw error;
             created = false;

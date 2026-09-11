@@ -226,15 +226,10 @@ const createRacyFakeDb = () => {
 
     const AchievementGrant = {
         async findOrCreate({ where, defaults, transaction }) {
-            const existing = achievementGrants.find(
-                (g) => g.user_id === where.user_id && g.achievement_id === where.achievement_id,
-            );
-            if (existing) return [existing, false];
-
             if (insertHappened) {
                 // 다른(이미 커밋된) 트랜잭션이 먼저 삽입했다 — 이 호출의 SELECT는 그 커밋
                 // 이전에 실행돼 못 봤지만, INSERT 시점에는 실제 유일 제약과 충돌한다.
-                const error = new UniqueConstraintError({ errors: [], fields: { user_id: where.user_id, achievement_id: where.achievement_id } });
+                const error = new UniqueConstraintError({ errors: [], fields: { achievement_grants_user_achievement_unique: `${where.user_id}-${where.achievement_id}` } });
                 throw error;
             }
             insertHappened = true;
