@@ -509,6 +509,24 @@ const KNOWN_DYNAMIC_PUBLIC_ASSET_CALL_ARGS = [
       "그대로 흘러드는 경로가 있어 서버가 실제로 보내는 값까지는 정적으로 증명할 수 없다 " +
       "(알려진 한계 — AC-06 브라우저 확인으로 보완).",
   },
+  {
+    file: "domains/library/components/forbiddenRecords/ForbiddenRecordsUnlockCondition.js",
+    argText: "reward.icon",
+    reason:
+      "F-12: 유일한 호출부는 ForbiddenRecordsRightPage.jsx가 spreadMeta.js의 " +
+      "FORBIDDEN_RECORDS_DUMMY_UNLOCK_REWARDS를 그대로 넘기는 unlockRewards뿐이다 — 그 배열의 icon은 " +
+      "assets.js의 FORBIDDEN_RECORDS_REWARD_ASSETS.gold50/diamond10(이 파일의 일반 스캔이 검증하는 " +
+      "리터럴 문자열)뿐이다.",
+  },
+  {
+    file: "domains/library/components/invitedGuests/shared/InvitedGuestsChallengeRow.js",
+    argText: "reward.icon",
+    reason:
+      "F-12: 유일한 호출부는 InvitedGuestsJobChallenges.jsx가 jobChallenges.js의 " +
+      "INVITED_GUESTS_JOB_CHALLENGES 항목의 rewards를 그대로 넘기는 challenges뿐이다 — 그 rewards의 " +
+      "icon은 invitedGuests/assets.js의 INVITED_GUESTS_CURRENCY_ASSETS.gold50/diamond10과 " +
+      "INVITED_GUESTS_ASSETS.*ProfileBorder(이 파일의 일반 스캔이 검증하는 리터럴 문자열)뿐이다.",
+  },
 ]
 
 const allowlistKey = (file, argText) => `${file}::${argText}`

@@ -3,12 +3,35 @@ const gameSessionCore = require('../game-core/gameSession')
 const matchmaking = require('./matchmaking')
 const gameResultRepository = require('../repositories/gameResult.repositories')
 const voteParticipationRepository = require('../repositories/voteParticipation.repositories')
+const achievementService = require('../services/achievementService')
 
 // F-11: handleSubmitDayVote가 실제로 호출하는 참조입니다. __setRecordVoteParticipationForTests로만
 // 바꿀 수 있고, 런타임 코드 경로는 항상 이 변수를 통해서만 저장소를 호출합니다(직접
 // voteParticipationRepository.recordValidDayVoteParticipation을 참조하지 않습니다) — 순수
 // 단위 테스트가 실제 DB 없이도 ack 타이밍을 검증할 수 있게 합니다.
 let recordVoteParticipationImpl = voteParticipationRepository.recordValidDayVoteParticipation
+
+// F-12: persistTerminalSession(게임 종료)과 handleSubmitDayVote(낮 투표)가 실제로 호출하는
+// 참조입니다. __setEvaluateAchievementsForTests로만 바꿀 수 있고, 런타임 코드 경로는 항상
+// 이 변수를 통해서만 호출합니다 — recordVoteParticipationImpl과 같은 이유(순수 단위
+// 테스트가 실제 DB 없이도 ack/방송 타이밍을 검증할 수 있게 함)입니다.
+let evaluateAchievementsImpl = achievementService.evaluateAndGrantForUser
+
+/**
+ * userIds 각각에 대해 업적을 재평가·지급합니다. 게임 진행/ack를 절대 막지 않도록 항상
+ * fire-and-forget으로 호출됩니다(persistTerminalSession의 "저장은 게임 진행을 막지
+ * 않는다"는 기존 규칙과 동일) — 한 계정의 평가 실패가 나머지 계정 평가를 막지 않게 각각
+ * 독립적으로 catch합니다.
+ */
+function evaluateAchievementsForUsers(userIds, gameId) {
+    for (const userId of userIds) {
+        if (typeof userId !== 'string' || !userId) continue
+        Promise.resolve(evaluateAchievementsImpl(userId))
+            .catch(() => {
+                console.error('[업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId, userId })
+            })
+    }
+}
 
 // game-core가 내부 진단용으로만 반환하는 코드다(registry 불일치 등, 정상 경로에서는
 // 발생하지 않아야 함). 클라이언트에는 내부 상태를 노출하지 않고 항상 INTERNAL_ERROR로
@@ -157,13 +180,22 @@ function __resetStateForTests() {
 function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     const gameId = session?.id
     if (typeof gameId !== 'string' || !gameId) return
+    // session은 클로저로 캡처만 한다(동기 스냅샷) — 세션이 곧 정리돼도 참가자 uuid 목록은
+    // 이미 배열로 고정돼 있어 안전하다(buildGameResultRecord가 session.players를 읽는 것과
+    // 같은 이유).
+    const participantUuids = session?.players instanceof Map ? [...session.players.values()].map((p) => p.uuid) : []
     try {
         // repository 호출 자체는 동기적으로 시작돼 세션 스냅샷을 먼저 만든다. 반환 Promise는
         // 기다리지 않아 방송/정리를 막지 않으며, 중복 호출은 GameResult.id PK가 판정한다.
+        // F-12: 저장 성공/실패와 무관하게(이미 커밋된 과거 경기가 있을 수 있으므로) 참가자
+        // 전원의 업적을 재평가한다 — persistGameResult 자체가 중단 경기·개발 경기를 걸러내지
+        // 않아도, achievementService는 항상 DB에 실제로 커밋된 정상 확정 경기만 집계하므로
+        // 안전하다(AC-05).
         Promise.resolve(gameResultRepository.persistGameResult(session, { completed, disconnectedUuid }))
             .catch(() => {
                 console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId })
             })
+            .then(() => evaluateAchievementsForUsers(participantUuids, gameId))
     } catch (err) {
         console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId })
     }
@@ -1690,6 +1722,9 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     }
 
     respond(callback, { ok: true })
+    // F-12: ack를 먼저 보낸 뒤 fire-and-forget으로 재평가한다 — 업적 평가(DB 조회 여러 건 +
+    // 조건 충족 시 트랜잭션)가 투표 제출 응답 지연을 만들지 않게 한다.
+    evaluateAchievementsForUsers([uuid], gameId)
 }
 
 /**
@@ -2384,6 +2419,12 @@ module.exports = {
         // 되돌립니다. 런타임 코드에서는 참조하지 않습니다.
         __setRecordVoteParticipationForTests(fn) {
             recordVoteParticipationImpl = fn ?? voteParticipationRepository.recordValidDayVoteParticipation
+        },
+        // F-12: persistTerminalSession/handleSubmitDayVote가 참조하는 업적 평가 호출을 순수
+        // 단위 테스트에서 갈아끼우기 위한 통로입니다. fn을 생략(undefined)하면 실제
+        // achievementService로 되돌립니다. 런타임 코드에서는 참조하지 않습니다.
+        __setEvaluateAchievementsForTests(fn) {
+            evaluateAchievementsImpl = fn ?? achievementService.evaluateAndGrantForUser
         },
     },
 }

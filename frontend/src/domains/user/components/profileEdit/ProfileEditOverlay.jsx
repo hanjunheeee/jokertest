@@ -1,29 +1,31 @@
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import {
   PROFILE_EDIT_BACKDROP_CLASS,
   PROFILE_EDIT_PANEL_WRAP_CLASS,
-  PROFILE_EDIT_TAB_PHOTO,
   PROFILE_EDIT_TRANSITION,
 } from "../../constants/profileEditLayout.js"
-import { useProfileCustomizationStore } from "../../store/profileCustomization.store.js"
+import { useProfileBorderEditor } from "./useProfileBorderEditor.js"
 import ProfileEditPanel from "./ProfileEditPanel.jsx"
 
 export default function ProfileEditOverlay({ open, onClose }) {
-  const appliedPhoto = useProfileCustomizationStore((state) => state.photoSrc)
-  const appliedFrame = useProfileCustomizationStore((state) => state.frameSrc)
-  const applyCustomization = useProfileCustomizationStore((state) => state.applyCustomization)
-
-  const [activeTab, setActiveTab] = useState(PROFILE_EDIT_TAB_PHOTO)
-  const [draftPhoto, setDraftPhoto] = useState(appliedPhoto)
-  const [draftFrame, setDraftFrame] = useState(appliedFrame)
+  const {
+    activeTab,
+    setActiveTab,
+    draftPhoto,
+    setDraftPhoto,
+    draftBorderItemId,
+    setDraftBorderItemId,
+    ownedBorderOptions,
+    borderListStatus,
+    retryLoadBorders,
+    confirmStatus,
+    confirmError,
+    handleConfirm,
+  } = useProfileBorderEditor({ open, onClose })
 
   useEffect(() => {
     if (!open) return undefined
-
-    setActiveTab(PROFILE_EDIT_TAB_PHOTO)
-    setDraftPhoto(appliedPhoto)
-    setDraftFrame(appliedFrame)
 
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose()
@@ -31,12 +33,7 @@ export default function ProfileEditOverlay({ open, onClose }) {
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, appliedPhoto, appliedFrame, onClose])
-
-  const handleConfirm = () => {
-    applyCustomization({ photoSrc: draftPhoto, frameSrc: draftFrame })
-    onClose()
-  }
+  }, [open, onClose])
 
   return (
     <AnimatePresence>
@@ -68,11 +65,16 @@ export default function ProfileEditOverlay({ open, onClose }) {
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 draftPhoto={draftPhoto}
-                draftFrame={draftFrame}
+                draftBorderItemId={draftBorderItemId}
+                ownedBorderOptions={ownedBorderOptions}
+                borderListStatus={borderListStatus}
+                onRetryLoadBorders={retryLoadBorders}
                 onSelectPhoto={setDraftPhoto}
-                onSelectFrame={setDraftFrame}
+                onSelectBorder={setDraftBorderItemId}
                 onClose={onClose}
                 onConfirm={handleConfirm}
+                confirmStatus={confirmStatus}
+                confirmError={confirmError}
               />
             </motion.div>
           </div>

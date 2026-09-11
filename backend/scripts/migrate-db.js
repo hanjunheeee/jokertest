@@ -27,7 +27,9 @@ const addEconomy = require('../db/migrations/0006-add-economy');
 const addEconomyPurchaseRequests = require('../db/migrations/0007-add-economy-purchase-requests');
 // F-11: 투표 참여 영속 집계 테이블도 실제 배포 명령에서 순서대로 적용한다.
 const addVoteParticipations = require('../db/migrations/0008-add-vote-participations');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations];
+// F-12: 업적 지급 이력 테이블도 실제 배포 명령에서 순서대로 적용한다.
+const addAchievementGrants = require('../db/migrations/0009-add-achievement-grants');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

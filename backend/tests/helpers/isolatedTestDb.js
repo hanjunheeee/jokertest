@@ -19,6 +19,10 @@ const addEconomyPurchaseRequests = require('../../db/migrations/0007-add-economy
 // 스위트가 이 테이블을 만들면, 그 사실을 모르는 다른 스위트의 resetSchema()가 "모르는
 // 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다.
 const addVoteParticipations = require('../../db/migrations/0008-add-vote-participations');
+// F-12: achievement_grants(0009)도 같은 이유로 항상 관리 목록에 포함시킨다 — achievement
+// 스위트가 이 테이블을 만들면, 그 사실을 모르는 다른 스위트의 resetSchema()가 "모르는
+// 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다.
+const addAchievementGrants = require('../../db/migrations/0009-add-achievement-grants');
 
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
@@ -78,15 +82,18 @@ const assertDedicatedTestDatabase = async (sequelize, url) => {
 const buildManagedSchema = ({
     baseline, addRefreshTokenHistory, addSocialAuth, addEconomy: addEconomyOverride,
     addEconomyPurchaseRequests: addEconomyPurchaseRequestsOverride,
-    addVoteParticipations: addVoteParticipationsOverride, migrationRunner,
+    addVoteParticipations: addVoteParticipationsOverride,
+    addAchievementGrants: addAchievementGrantsOverride, migrationRunner,
 }) => {
     const resolvedAddEconomy = addEconomyOverride ?? addEconomy;
     const resolvedAddEconomyPurchaseRequests = addEconomyPurchaseRequestsOverride ?? addEconomyPurchaseRequests;
     const resolvedAddVoteParticipations = addVoteParticipationsOverride ?? addVoteParticipations;
+    const resolvedAddAchievementGrants = addAchievementGrantsOverride ?? addAchievementGrants;
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
     const economyTables = Object.values(resolvedAddEconomy.TABLE_NAMES);
     const purchaseRequestTables = Object.values(resolvedAddEconomyPurchaseRequests.TABLE_NAMES);
     const voteParticipationTables = Object.values(resolvedAddVoteParticipations.TABLE_NAMES);
+    const achievementGrantTables = Object.values(resolvedAddAchievementGrants.TABLE_NAMES);
 
     const managedTables = [
         ...baseline.TABLE_ORDER,
@@ -95,10 +102,12 @@ const buildManagedSchema = ({
         ...economyTables,
         ...purchaseRequestTables,
         ...voteParticipationTables,
+        ...achievementGrantTables,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        ...achievementGrantTables,
         ...voteParticipationTables,
         ...purchaseRequestTables,
         ...economyTables,

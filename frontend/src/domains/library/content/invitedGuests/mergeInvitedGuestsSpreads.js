@@ -30,8 +30,7 @@ const toRankingRowDisplay = (entry) => ({
  * @param {Record<string, object>} catalog
  * @param {Record<string, object[]>} challenges
  * @param {{
- *   byJobKey?: Record<string, { status: 'idle'|'loading'|'success'|'error', myStats: object|null, ranking: object[]|null, error: string|null }>,
- *   clearedChallengeIds?: Record<string, string[]>,
+ *   byJobKey?: Record<string, { status: 'idle'|'loading'|'success'|'error', myStats: object|null, ranking: object[]|null, error: string|null, achievementsById?: Record<string, { achieved: boolean, current: number, threshold: number, granted: boolean }> }>,
  * }} [jobState]
  */
 export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobState = {}) {
@@ -45,8 +44,17 @@ export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobSt
       return { id, jobKey, ready: false }
     }
 
-    const clearedChallengeIds = new Set(jobState.clearedChallengeIds?.[jobKey] ?? [])
-    const state = jobState.byJobKey?.[jobKey] ?? { status: "idle", myStats: null, ranking: null, error: null }
+    const state = jobState.byJobKey?.[jobKey] ?? { status: "idle", myStats: null, ranking: null, error: null, achievementsById: {} }
+    // F-12 AC-01/AC-06: 도전과제 id는 그대로 achievementDefinitions.js의 업적 id다
+    // (noble-win-10 등) — roleStatistics.store.js가 직업 전적과 함께 불러온 업적 진행률에서
+    // 클리어 여부와 현재값·임계값을 함께 읽는다. CODEX-1 재검토(AC-01): cleared 불리언만
+    // 남기지 않고 current·threshold도 그대로 전달해, 화면이 실제 진행률을 표시할 수 있게
+    // 한다(더 이상 항상 빈 값으로 남는 더미가 아니다).
+    const achievementsById = state.achievementsById ?? {}
+    // CODEX-2 재검토(AC-06): cleared는 achieved(진행률 조건 충족)가 아니라 granted(실제
+    // 지급 이력)로 판정한다 — 조건은 채웠지만 보상 지급이 아직 실패/지연된 상태를 "클리어"로
+    // 잘못 보여주면 재로그인 후 실제 지급 상태와 화면이 어긋난다(테두리 소유도 granted가
+    // true일 때만 실제로 존재한다).
 
     return {
       id,
@@ -66,10 +74,15 @@ export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobSt
         rankingStatus: state.status,
         rankingError: state.error,
         ranking: state.ranking?.map(toRankingRowDisplay) ?? null,
-        challenges: jobChallenges.map((challenge) => ({
-          ...challenge,
-          cleared: clearedChallengeIds.has(challenge.id),
-        })),
+        challenges: jobChallenges.map((challenge) => {
+          const progress = achievementsById[challenge.id]
+          return {
+            ...challenge,
+            cleared: progress?.granted ?? false,
+            current: progress?.current ?? null,
+            threshold: progress?.threshold ?? null,
+          }
+        }),
       },
     }
   })
