@@ -639,6 +639,64 @@ test("F-13 AC-02(운영자 지시, 2026-09-11 22:12): equipProfile은 clientInte
   assert.equal(seenBodies[0].expectedRevision, null, "revision을 아직 모르면(초기 상태) null을 그대로 보낸다")
 })
 
+test("F-13 AC-02(운영자 코드 리뷰, 2026-09-12): 충돌 재조정용 authoritative GET은 지갑·소유품을 전혀 쓰지 않으므로, 뒤늦게 도착해도 더 최신 purchase가 반영한 잔액·소유품을 덮어쓰지 않는다", async () => {
+  // 운영자 지적: "fetchAuthoritativeLoadout in economy.store writes wallet/entitlements
+  // without summaryRequestSeq guard. A delayed conflict GET can undo a newer
+  // purchase/achievement summary." — 재현 시나리오: equip-profile이 409로 충돌해 재조정용
+  // authoritative GET을 보내는 사이, 실제 purchase가 성공해 그 자신의 fetchSummary(wallet+
+  // entitlements)가 먼저 신선한 값으로 정착한다. 그 뒤에야 오래된 재조정용 GET이 응답하면,
+  // 그 GET이 지갑·소유품을 전혀 쓰지 않아야만(economy.store.js의 fetchAuthoritativeLoadout
+  // 참고) 신선한 purchase 결과가 살아남는다 — summaryRequestSeq 같은 순서 가드로 막는
+  // 대신, 애초에 이 경로가 그 필드들을 쓰지 않게 해 경쟁 자체를 구조적으로 없앴다.
+  resetStore()
+  const getResolvers = []
+  getImpl = (endpoint) => new Promise((resolve) => { getResolvers.push({ endpoint, resolve }) })
+
+  let equipPostCalls = 0
+  postImpl = async (endpoint) => {
+    if (endpoint === "/economy/equip-profile") {
+      equipPostCalls += 1
+      throw Object.assign(new Error("conflict"), { code: "PROFILE_REVISION_CONFLICT" })
+    }
+    if (endpoint === "/economy/purchase") return { idempotent: false, ledgerEntry: { id: 1 } }
+    throw new Error(`unexpected post ${endpoint}`)
+  }
+
+  // equip-profile이 충돌해 재조정용 GET(entitlements 하나)을 보류한다.
+  const equipPromise = useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+  for (let i = 0; i < 10 && getResolvers.length < 1; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  assert.equal(getResolvers.length, 1, "충돌 재조정은 GET을 정확히 한 번만 보내야 한다")
+  assert.ok(getResolvers[0].endpoint.endsWith("/entitlements"), "재조정 GET은 loadout이 담긴 entitlements endpoint만 불러야 한다(wallet은 부르지 않는다)")
+
+  // 그 사이 실제 구매가 성공해 최신 fetchSummary(wallet+entitlements)가 시작되고 먼저 응답한다.
+  const purchasePromise = useEconomyStore.getState().purchase({ itemId: "profile-border-백작" })
+  for (let i = 0; i < 10 && getResolvers.length < 3; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  assert.equal(getResolvers.length, 3, "purchase 성공 뒤 fetchSummary가 wallet·entitlements 두 endpoint를 추가로 불러야 한다")
+  getResolvers.slice(1).forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
+    ? { balanceGold: 500, balanceDiamond: 9 }
+    : { entitlements: [{ itemId: "profile-border-백작", itemType: "PROFILE_BORDER" }], loadout: { selectedProfileBorderId: "profile-border-평민" } }))
+  await purchasePromise
+  assert.equal(useEconomyStore.getState().balanceGold, 500, "purchase가 먼저 반영한 신선한 잔액이어야 한다")
+
+  // 이제야 프로필 충돌 재조정용 GET(더 오래된 요청)이 도착한다 — 요청한 슬롯과 같은 값을
+  // 돌려줘 재조정 자체는 성공(재전송 없음)으로 끝나지만, 지갑·소유품은 그대로여야 한다.
+  getResolvers[0].resolve({ entitlements: [{ itemId: "stale-item" }], loadout: { selectedProfileBorderId: "profile-border-남작", revision: "server-rev-late" } })
+  const result = await equipPromise
+
+  assert.equal(equipPostCalls, 1, "요청한 슬롯이 이미 서버 값과 같으므로 재전송하지 않는다")
+  assert.equal(result.reconciled, true)
+  assert.equal(useEconomyStore.getState().balanceGold, 500, "충돌 재조정 GET의 지연된 응답이 최신 purchase 잔액을 덮어쓰면 안 된다")
+  assert.deepEqual(
+    useEconomyStore.getState().entitlements.map((e) => e.itemId),
+    ["profile-border-백작"],
+    "충돌 재조정 GET의 지연된 응답이 최신 purchase 소유품을 덮어쓰면 안 된다",
+  )
+})
+
 // ── F-08 R-IMPL: 서버 확정 거부 vs 전송 불확실 구분 ──────────────────────────
 
 test("서버가 code와 함께 명시적으로 거부하면(확정 거부) status는 rejected이고, 재시도는 새 참조 사건 ID를 쓴다", async () => {

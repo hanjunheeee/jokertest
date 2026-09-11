@@ -365,19 +365,26 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
   assert.equal(result.current.draftBorderItemId, "profile-border-평민", "B의 초안은 실제 장착값으로 리셋되어야 한다")
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
-  // 세션 B: 남작으로 확정 시도, 역시 응답 대기 상태로 둔다 — 지금 A와 B 둘 다 saving 중인
-  // 요청이 있다(핵심 시나리오: "session B save pending").
+  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 된다(핵심 시나리오: "session B
+  // save pending"). 다만 economy.store.js의 profileQueue가 겹치는 확정을 실제 전송 순서로
+  // 직렬화하므로("A committed before B can be sent"), B의 실제 네트워크 POST는 A가
+  // settle되기 전까지 큐에서 대기한다 — 그래서 이 시점엔 아직 postDeferreds가 A 하나뿐이다.
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
   assert.equal(result.current.confirmStatus, "saving", "B가 시작한 저장은 saving 상태여야 한다")
-  assert.equal(postDeferreds.length, 2, "A와 B 각각 정확히 한 번씩 POST가 나가야 한다")
+  assert.equal(postDeferreds.length, 1, "B의 실제 전송은 A가 settle되기 전까지 큐에서 대기한다(직렬화)")
 
-  // A의 응답이 이제 뒤늦게 성공으로 도착한다 — 이미 폐기된 세션의 완료다.
+  // A의 응답이 이제 뒤늦게 성공으로 도착한다 — 이미 폐기된 세션의 완료다. A가 settle되어야
+  // 비로소 B의 실제 POST가 큐에서 나간다.
   await act(async () => {
     postDeferreds[0].resolve({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
     await confirmAPromise
   })
+  for (let i = 0; i < 10 && postDeferreds.length < 2; i += 1) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  }
+  assert.equal(postDeferreds.length, 2, "A가 settle된 뒤에야 B의 실제 POST가 큐에서 나가야 한다")
 
   assert.equal(result.current.confirmStatus, "saving", "A의 완료는 진행 중인 B의 saving 상태를 해제하면 안 된다(이전 반송 지적의 회귀)")
   assert.equal(result.current.confirmError, null, "A의 완료가 B 화면에 오류를 남기면 안 된다")
@@ -395,12 +402,19 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
   assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작", "마지막으로 확정된 값(B)이 최종 장착 상태여야 한다")
 })
 
-test("F-13 AC-02(CODEX-5): 세션 B가 세션 A보다 먼저 확정돼도, A의 뒤늦은 성공(역전된 완료 순서)이 이미 확정된 B의 값을 store에서 되돌리지 않는다(CODEX-2 시험의 반대 순서)", async () => {
-  // CODEX-5 반송 근거: 지금까지의 시험은 전부 A가 B보다 먼저 완료되는 순서만 검증했다 —
-  // "완료 순서가 아니라 시작 순서로 승자를 가른다"는 계약은 순서를 뒤집어도(B가 먼저
-  // 확정되고 A가 그 뒤에 뒤늦게 성공으로 도착해도) 성립해야 증명된다. economy.store.js의
-  // loadoutAttemptSeq 가드가 실제로 이 역전된 순서에서도 store.loadout을 지키는지 훅을
-  // 통해 끝까지 확인한다.
+test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 확정을 실제 전송 순서로 직렬화하므로 '완료 순서 역전'은 같은 세션 안에서 더 이상 재현될 수 없음을 먼저 확인하고, 유일하게 가능한 순서(A settle → B 실제 전송 → B 완료)에서 A의 완료가 이미 확정된 B의 값을 store에서 되돌리지 않는다는 것도 확인한다", async () => {
+  // CODEX-5 반송 근거(원문): 완료 순서가 뒤집혀도(B가 먼저 확정되고 A가 그 뒤에 뒤늦게
+  // 성공으로 도착해도) 최신 시도(B)의 값이 지켜져야 한다는 계약을 검증했다. 그 뒤 운영자
+  // 설계 감사(2026-09-11 22:12)로 economy.store.js가 겹치는 확정을 profileQueue로 실제
+  // 전송 순서까지 직렬화하도록 바뀌었다 — "A committed before B can be sent"(economy.store.js
+  // 주석) 그 자체가 이제 A의 실제 네트워크 POST가 settle되기 전까지 B의 실제 POST조차 나갈
+  // 수 없다는 뜻이다. 그래서 "B가 A보다 먼저 완료"라는 원래 시나리오는 같은 계정·같은
+  // 클라이언트 세션 안에서는 더 이상 재현할 수 없다(그 자체가 이 직렬화 설계의 목적이다).
+  // 이 시험은 그 사실을 먼저 직접 증명한 뒤(잠시 기다려도 B의 실제 POST가 나가지 않는다),
+  // 유일하게 가능한 순서에서도 A의 완료가 이미 확정된 B를 덮어쓰지 않는다는 계약이 여전히
+  // 성립함을 확인한다 — 덧붙여 A가 자기 자신의 확정으로 먼저 성공하는 순간 store가 즉시
+  // A의 값을 반영한다는 것(economy.store.js의 applyLoadoutResult는 attemptSeq가 아니라
+  // 계정만 확인한다)과, 그 값이 나중에 B의 완료로 정상적으로 대체된다는 것까지 함께 고정한다.
   resetStores()
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
   const postDeferreds = []
@@ -422,39 +436,61 @@ test("F-13 AC-02(CODEX-5): 세션 B가 세션 A보다 먼저 확정돼도, A의 
   rerender({ open: false }) // A의 응답을 기다리지 않고 닫음
   rerender({ open: true }) // 세션 B 시작
 
-  // 세션 B: 남작으로 확정 시도, 먼저 응답을 받아 확정된다.
+  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 되지만, 실제 POST는 A가
+  // settle되기 전까지 나가지 않는다. 잠시 기다려 봐도 postDeferreds는 여전히 A 하나뿐이어야
+  // 한다 — "B가 A보다 먼저 완료"는 이제 물리적으로 불가능하다.
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
-  assert.equal(postDeferreds.length, 2)
+  for (let i = 0; i < 5; i += 1) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  }
+  assert.equal(postDeferreds.length, 1, "A가 settle되기 전에는 B의 실제 POST가 나갈 수 없다(완료 순서 역전이 구조적으로 불가능함을 직접 확인)")
 
-  await act(async () => {
-    postDeferreds[1]({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
-    await confirmBPromise
-  })
-  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
-  assert.equal(closeCount, 1, "B 자신의 완료만 편집기를 닫아야 한다")
-
-  // A(더 먼저 시작된 세션)가 그제서야 뒤늦게 성공으로 도착한다.
+  // 유일하게 가능한 순서대로 A를 먼저 settle시킨다 — 그제서야 B의 실제 POST가 큐에서 나간다.
   await act(async () => {
     postDeferreds[0]({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
     await confirmAPromise
+  })
+  for (let i = 0; i < 10 && postDeferreds.length < 2; i += 1) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  }
+  assert.equal(postDeferreds.length, 2, "A가 settle된 뒤에야 B의 실제 POST가 나가야 한다")
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-귀족",
+    "A가 자기 자신의 확정으로 성공했으므로(아직 B는 완료 전) 이 시점의 store는 A의 값을 반영해야 한다",
+  )
+  assert.equal(closeCount, 0, "A의 완료는 아직 진행 중인 B 세션의 편집기를 닫으면 안 된다")
+
+  // B가 이제 정상적으로 완료(성공)된다 — 마지막으로 확정된 값(B)이 최종 장착 상태여야 한다.
+  await act(async () => {
+    postDeferreds[1]({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
+    await confirmBPromise
   })
 
   assert.equal(
     useEconomyStore.getState().loadout.selectedProfileBorderId,
     "profile-border-남작",
-    "완료 순서가 역전돼도(B가 먼저 확정) A의 뒤늦은 성공이 이미 확정된 B의 값을 덮어쓰면 안 된다",
+    "B(나중에 시작된 세션)의 완료가 A의 값을 정상적으로 대체해야 한다",
   )
-  assert.equal(closeCount, 1, "이미 폐기된 세션 A의 뒤늦은 완료가 onClose를 추가로 부르면 안 된다")
+  assert.equal(closeCount, 1, "오직 B 자신의 완료만 편집기를 닫아야 한다")
 })
 
-test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫았다 다시 열어 세션 B가 저장을 시작해 먼저 확정되면, A의 뒤늦은 거부(전송 불확실)가 도착해도 이미 확정된 B의 값과 편집기 상태를 전혀 건드리지 않는다", async () => {
+test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫았다 다시 열어 세션 B가 저장을 시작하면, 그 뒤 도착하는 A의 거부(전송 불확실)는 재조회·오류 표시 없이 조용히 무시되고, 뒤이어 실제로 전송되는 B의 확정이 정상적으로 완료된다", async () => {
   // 계획 메모 지시 시나리오 — "A pending -> close/reopen -> B saving -> A late reject/refresh
   // completion -> B success"를 실제 훅으로 끝까지 재현한다. A의 거부는 editorSessionRef가
   // 이미 무효화한 뒤 도착하므로 isStale()이 fetchSummary 호출 자체를 막아야 한다(재조회조차
   // 시도하면 안 된다 — 이미 위 CODEX-4 시험이 단일 세션 안에서는 고정했지만, 여기서는 그
-  // 사이 실제로 다른 세션(B)이 저장을 확정한 뒤에도 똑같이 성립하는지 확인한다).
+  // 사이 실제로 다른 세션(B)이 준비된 뒤에도 똑같이 성립하는지 확인한다).
+  //
+  // F-13 AC-02(운영자 지시, 2026-09-11 22:12) 재검토 — economy.store.js의 profileQueue가
+  // 겹치는 확정을 실제 전송 순서로 직렬화하므로, B의 실제 POST는 A가 settle(이 시험에서는
+  // 거부로 settle)되기 전까지 나갈 수 없다 — 그래서 원래 시나리오의 "B가 먼저 확정된 뒤 A의
+  // 거부가 뒤늦게 도착한다"는 순서는 이제 재현할 수 없다(A는 항상 B보다 먼저 settle된다).
+  // 이 시험은 그 대신 "A가 거부로 settle된 뒤에야 B의 실제 POST가 나가고, A의 거부 자체는
+  // (이미 무효화된 세션이므로) 재조회·오류 표시 없이 조용히 무시된 채로 B가 정상적으로
+  // 완료된다"는, 직렬화된 설계에서 유일하게 가능한 순서를 검증한다.
   resetStores()
   let walletCalls = 0
   getImpl = async (endpoint) => {
@@ -481,19 +517,15 @@ test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫
   rerender({ open: false }) // 닫음
   rerender({ open: true }) // 세션 B 시작
 
-  // 세션 B: 남작으로 확정 시도, 먼저 확정된다.
+  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 되지만, 실제 POST는 A가
+  // settle되기 전까지 큐에서 대기한다.
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
-  assert.equal(postDeferreds.length, 2)
-  await act(async () => {
-    postDeferreds[1].resolve({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
-    await confirmBPromise
-  })
-  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
-  assert.equal(closeCount, 1)
+  assert.equal(postDeferreds.length, 1, "B의 실제 전송은 A가 settle되기 전까지 나가지 않는다(직렬화)")
 
-  // A의 저장이 이제야 거부(code 없음, 전송 불확실)로 도착한다 — 이미 폐기된 세션의 완료다.
+  // A의 저장이 거부(code 없음, 전송 불확실)로 도착한다 — 이미 폐기된 세션(editorSessionRef
+  // 무효화)의 응답이라 isStale()이 재조회·오류 표시를 막는다.
   await act(async () => {
     postDeferreds[0].reject(new TypeError("network disconnected"))
     await confirmAPromise
@@ -504,23 +536,45 @@ test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫
     walletCallsBeforeConfirm,
     "이미 폐기된 세션 A의 거부는 재조회(fetchSummary)조차 시도하면 안 된다(isStale()이 fetchSummary보다 먼저 확인된다)",
   )
+  assert.equal(result.current.confirmError, null, "폐기된 세션의 거부가 지금 화면(B)에 오류를 남기면 안 된다")
+
+  // A가 settle(거부)된 뒤에야 B의 실제 POST가 큐에서 나간다.
+  for (let i = 0; i < 10 && postDeferreds.length < 2; i += 1) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  }
+  assert.equal(postDeferreds.length, 2, "A가 settle된 뒤에야 B의 실제 POST가 나가야 한다")
+  assert.equal(result.current.confirmStatus, "saving", "B의 실제 POST가 이제 막 나갔을 뿐 아직 응답을 받지 못했으므로 saving 상태여야 한다")
+
+  // B의 응답이 도착(성공)하면 정상적으로 완료된다.
+  await act(async () => {
+    postDeferreds[1].resolve({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
+    await confirmBPromise
+  })
+
   assert.equal(
     useEconomyStore.getState().loadout.selectedProfileBorderId,
     "profile-border-남작",
-    "A의 뒤늦은 거부가 이미 확정된 B의 값을 덮어쓰면 안 된다",
+    "B가 정상적으로 확정한 값이 최종 장착 상태여야 한다",
   )
   assert.equal(result.current.confirmStatus, "idle")
-  assert.equal(result.current.confirmError, null, "폐기된 세션의 거부가 지금 화면(B)에 오류를 남기면 안 된다")
-  assert.equal(closeCount, 1, "A의 뒤늦은 완료가 onClose를 추가로 부르면 안 된다")
+  assert.equal(result.current.confirmError, null, "B 자신의 성공적인 완료에는 오류가 남으면 안 된다")
+  assert.equal(closeCount, 1, "B 자신의 완료만 편집기를 닫아야 한다")
 })
 
-test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편집기를 닫았다 다시 열어 세션 B가 저장을 시작해 아직 saving 중일 때(B 완료 이전), A의 뒤늦은 거부(전송 불확실)가 도착해도 진행 중인 B의 saving 상태·초안·편집기·재조회를 전혀 건드리지 않는다", async () => {
+test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편집기를 닫았다 다시 열어 세션 B가 저장을 시작하면, A의 거부(전송 불확실)로 큐가 전진해 B의 실제 POST가 막 나간 직후(B가 아직 saving 중일 때)에도 B의 saving 상태·초안·편집기·재조회를 전혀 건드리지 않는다", async () => {
   // CODEX-6 반송 근거: 위 CODEX-5 시험은 A의 뒤늦은 거부가 "B가 이미 확정된 뒤"에만
   // 도착하는 순서만 검증했다 — 계획 메모가 명시한 "session B save pending"(B가 아직
   // saving 중일 때 A의 거부가 도착) 순서는 어느 시험도 재현하지 않았다. isStale()이
   // editorSessionRef만으로 판정되므로 이 순서 자체는 위 CODEX-2(A의 성공 버전)와 동일한
   // 보호를 받아야 하지만, "A의 응답이 거부(재조회 시도)"라는 점에서 그 재조회 시도조차
   // B의 saving을 건드리면 안 된다는 것을 별도로 고정해야 한다.
+  //
+  // F-13 AC-02(운영자 지시, 2026-09-11 22:12) 재검토 — economy.store.js의 profileQueue가
+  // 겹치는 확정을 실제 전송 순서로 직렬화하므로, "A와 B 둘 다 실제 네트워크 요청이 동시에
+  // 미해결 상태"는 더 이상 재현할 수 없다(B의 실제 POST는 A가 settle되어야 나간다). 대신
+  // A의 거부로 큐가 전진해 B의 실제 POST가 막 나간 바로 그 시점(B는 여전히 자기 자신의
+  // 응답을 기다리는 saving 상태)에, A의 거부가 B의 saving·초안·편집기·재조회를 전혀
+  // 건드리지 않는다는 것을 확인한다.
   resetStores()
   let walletCalls = 0
   getImpl = async (endpoint) => {
@@ -548,16 +602,16 @@ test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편�
   rerender({ open: true }) // 즉시 다시 연다 — 세션 B 시작(초안이 실제 장착값으로 리셋됨)
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
-  // 세션 B: 남작으로 확정 시도, 응답 대기 상태로 둔다 — 지금 A와 B 둘 다 아직 완료되지
-  // 않은 saving 요청이 있다(핵심 시나리오: "session B save pending").
+  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 된다(핵심 시나리오: "session B
+  // save pending"). 실제 POST는 A가 settle되기 전까지 큐에서 대기한다(직렬화).
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
   assert.equal(result.current.confirmStatus, "saving", "B가 시작한 저장은 saving 상태여야 한다")
-  assert.equal(postDeferreds.length, 2, "A와 B 각각 정확히 한 번씩 POST가 나가야 한다")
+  assert.equal(postDeferreds.length, 1, "B의 실제 전송은 A가 settle되기 전까지 큐에서 대기한다(직렬화)")
 
-  // A의 저장이 이제 뒤늦게 거부(code 없음, 전송 불확실)로 도착한다 — B는 아직 완료되지
-  // 않았다(B의 POST는 여전히 응답 대기 중이다).
+  // A의 저장이 거부(code 없음, 전송 불확실)로 도착한다 — 이 거부로 큐가 전진해 B의 실제
+  // POST가 나간다. B는 아직 완료되지 않았다(B의 POST는 여전히 응답 대기 중이다).
   await act(async () => {
     postDeferreds[0].reject(new TypeError("network disconnected"))
     await confirmAPromise
@@ -568,6 +622,10 @@ test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편�
     walletCallsBeforeConfirm,
     "이미 폐기된 세션 A의 거부는 재조회(fetchSummary)조차 시도하면 안 된다 — 진행 중인 B의 saving과 무관해야 한다",
   )
+  for (let i = 0; i < 10 && postDeferreds.length < 2; i += 1) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  }
+  assert.equal(postDeferreds.length, 2, "A가 settle된 뒤에야 B의 실제 POST가 나가야 한다")
   assert.equal(result.current.confirmStatus, "saving", "A의 뒤늦은 거부가 아직 완료되지 않은 B의 saving 상태를 해제하면 안 된다(핵심 회귀)")
   assert.equal(result.current.confirmError, null, "A의 뒤늦은 거부가 진행 중인 B 화면에 오류를 남기면 안 된다")
   assert.equal(closeCount, 0, "A의 뒤늦은 거부가 아직 진행 중인 B의 편집기를 닫으면 안 된다")

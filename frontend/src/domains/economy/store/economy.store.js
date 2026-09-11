@@ -238,19 +238,22 @@ export const useEconomyStore = create((set, get) => ({
       }
     }
 
-    // 재조정용 authoritative GET. equipProfile이 바꾸지 않는 지갑·소유품은 fetchSummary와
-    // 같은 계약으로 항상 정착시킨다(attemptSeq 보호 불필요) — loadout은 여기서 store에
-    // 직접 쓰지 않고 호출부가 확인한 뒤 applyLoadoutResult로 반영할지 판단한다.
+    // 재조정용 authoritative GET. 이 GET의 유일한 목적은 CAS 재조정에 쓸 현재 서버
+    // loadout·revision을 읽는 것뿐이다 — 지갑·소유품은 이 함수가 쓰지 않는다(운영자 코드
+    // 리뷰, 2026-09-12: "It only needs authoritative loadout for CAS: avoid writing
+    // unrelated wallet/entitlements there"). 이전 버전은 이 GET이 받아온 지갑·소유품도
+    // summaryRequestSeq 같은 순서 가드 없이 곧바로 store에 썼다 — 그러면 이 충돌 재조정이
+    // 지연되는 동안(예: 409를 받고 authoritative GET을 기다리는 사이) 실제 최신 구매·업적
+    // 성공이 fetchSummary로 이미 더 신선한 잔액·소유품을 반영해도, 나중에 이 재조정 GET의
+    // 오래된 응답이 도착하면 그 신선한 값을 조용히 덮어쓸 수 있었다(이 함수는 fetchSummary와
+    // 별개의 요청이라 loadoutWriteSeq/summaryRequestSeq 어느 가드도 보호하지 않았다). 지갑·
+    // 소유품의 신선도는 이미 fetchSummary(summaryRequestSeq로 순서 보장)만의 책임이므로,
+    // 여기서는 아예 그 필드들을 요청도·기록도 하지 않는다 — 그래야 이 GET이 아무리 늦게
+    // 도착해도 store의 지갑·소유품에 영향을 줄 수 없다(구조적으로 경쟁 자체가 사라진다).
     const fetchAuthoritativeLoadout = async () => {
       if (!isCurrent()) throw sessionChangedError()
-      const [wallet, entitlementsResponse] = await Promise.all([
-        api.get(`/economy/accounts/${userId}/wallet`),
-        api.get(`/economy/accounts/${userId}/entitlements`),
-      ])
+      const entitlementsResponse = await api.get(`/economy/accounts/${userId}/entitlements`)
       if (!isCurrent()) throw sessionChangedError()
-      if (isCurrent()) {
-        set({ balanceGold: wallet.balanceGold, balanceDiamond: wallet.balanceDiamond, entitlements: entitlementsResponse.entitlements })
-      }
       return entitlementsResponse.loadout
     }
 
