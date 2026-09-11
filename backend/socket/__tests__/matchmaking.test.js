@@ -1965,3 +1965,47 @@ test('AC-07: 유예 중 방이 이미 사라졌다면 만료가 뒤늦은 방송
     assert.equal(io.broadcasts.length, 0, '이미 사라진 방에 대해 뒤늦은 방송이 나갔습니다')
     assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms.some(([id]) => id === created.room.roomId), false)
 })
+
+
+for (const failureStage of ['preflight', 'payload']) {
+    test('F14 private loadouts never enter public room after ' + failureStage + ' failure', async (t) => {
+        const hostId = 'uuid-private-host'
+        const guestId = 'uuid-private-guest'
+        const host = createFakeSocket(hostId)
+        const io = createFakeIo([host])
+        const { joinerSocket } = await setupReadyRoomForStart(io, hostId, guestId, readyRoomHandlers)
+        const before = JSON.parse(JSON.stringify(await callAsPromise(handleGetCurrentRoom, hostId)))
+        fakeGetGameStartLoadouts = async (ids) => Object.fromEntries(ids.map((id) => [id, {
+            profilePhotoId: 'player-profile-드워프', profileBorderId: 'profile-border-귀족',
+            cardFrameId: 'player-card-시험용',
+            skinsByJob: Object.fromEntries(Object.values(ROLE_TO_SKIN_JOB_ID).map((job) => [job, id + '-private-' + job])),
+        }]))
+        if (failureStage === 'preflight') joinerSocket.connected = false
+        else t.mock.method(gameSession, 'buildGameStartedPayload', () => { throw new Error('injected payload failure') })
+        const failed = await callAsPromise(handleStartGame, io, host, hostId)
+        assert.equal(failed.ok, false)
+        assert.equal(failed.code, failureStage === 'preflight' ? 'PARTICIPANT_UNAVAILABLE' : 'INTERNAL_ERROR')
+        for (const id of [hostId, guestId]) {
+            const current = await callAsPromise(handleGetCurrentRoom, id)
+            for (const player of current.room.players) {
+                assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false, 'private job map must never reach get_current_room')
+                assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+            }
+            assert.deepEqual(current, before, 'failed start leaves the original public room unchanged')
+        }
+        assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0)
+        joinerSocket.connected = true
+        t.mock.restoreAll()
+        const retried = await callAsPromise(handleStartGame, io, host, hostId)
+        assert.equal(retried.ok, true)
+        for (const socket of [host, joinerSocket]) {
+            const state = socket.emitted.find((event) => event.event === 'game_started').payload.state
+            assert.equal(state.self.accountSkinId, state.self.uuid + '-private-' + ROLE_TO_SKIN_JOB_ID[state.self.role])
+            for (const player of state.players) {
+                assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false)
+                assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+                assert.equal(player.accountCardFrameId, 'player-card-시험용')
+            }
+        }
+    })
+}
