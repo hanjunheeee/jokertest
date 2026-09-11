@@ -4111,3 +4111,45 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     assertNoForbiddenPrivateData(endedSnapshot, collectOtherPlayerRoleSecrets(session, citizenB))
     assert.equal(io.broadcasts.length, 0)
 })
+
+
+// Chrome regression: a dead participant refreshing must not destroy the running game.
+for (const phase of ['DAY', 'TRIBUNAL', 'NIGHT']) {
+    test('F13 dead participant disconnect retains session and authenticated reconnect in ' + phase, async () => {
+        const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'dead-reconnect-' + phase })
+        const uuid = uuids[0]
+        session.phase = phase
+        const player = session.players.get(uuid)
+        player.alive = false
+        player.accountProfilePhotoId = 'player-profile-기사'
+        player.accountProfileBorderId = 'profile-border-귀족'
+        const originalTheme = gameSessionCore.getSessionSnapshotForPlayer(uuid, session.id).snapshot.players.find((entry) => entry.uuid === uuid).themeIndex
+        const oldSocket = socketByUuid.get(uuid)
+        oldSocket.data.activeGameId = session.id
+        oldSocket.connected = false
+
+        await gameSessionSocketLayer.onDisconnect(io, oldSocket, uuid)
+        assert.equal(io.broadcasts.some((event) => event.event === 'game_ended'), false)
+        assert.equal(gameSessionSocketLayer.__testables.getDisconnectGraceRun(session.id, uuid), undefined)
+        assert.equal(gameSessionCore.getActiveSessionRoutingInfo(uuids[1]).gameId, session.id)
+
+        const replacement = createFakeSocket(uuid)
+        replacement.id = 'reconnected-' + uuid
+        io.sockets.sockets.delete(oldSocket.id)
+        io.sockets.sockets.set(replacement.id, replacement)
+        gameSessionSocketLayer.setOnlineUsersRegistry(new Map(uuids.map((id) => [id, id === uuid ? replacement.id : socketByUuid.get(id).id])))
+        await gameSessionSocketLayer.resyncSessionRouting(replacement, uuid)
+        const { callback, getResponse } = countingCallback()
+        handleGetSessionSnapshot(io, replacement, uuid, { gameId: session.id }, callback)
+        const response = getResponse()
+        assert.equal(response.ok, true)
+        assert.equal(response.phase, phase)
+        assert.equal(replacement.data.activeGameId, session.id)
+        assert.equal(replacement.rooms.has(session.channelId), true)
+        const restored = response.players.find((entry) => entry.uuid === uuid)
+        assert.equal(restored.isAlive, false)
+        assert.equal(restored.accountProfilePhotoId, 'player-profile-기사')
+        assert.equal(restored.accountProfileBorderId, 'profile-border-귀족')
+        assert.equal(restored.themeIndex, originalTheme)
+    })
+}

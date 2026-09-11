@@ -2356,6 +2356,12 @@ async function onDisconnect(io, socket, uuid) {
         return
     }
 
+    // Already-dead participants need no elimination timer, but still retain their
+    // active game and reconnect rights. A missing grace target is not evidence that
+    // the game ended: falling through here used to delete every participant's session.
+    const reconnectState = gameSessionCore.getSessionSnapshotForPlayer(uuid, expectedGameId)
+    if (reconnectState.ok && ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(reconnectState.snapshot.phase)) return
+
     let result
     try {
         result = gameSessionCore.endGameSessionForPlayer(uuid, 'PARTICIPANT_LEFT', expectedGameId)

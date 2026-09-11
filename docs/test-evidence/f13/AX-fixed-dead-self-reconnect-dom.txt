@@ -1,0 +1,42 @@
+- complementary "좌측 배너 영역"
+- main:
+  - generic "인게임 컨트롤":
+    - button "게임 나가기"
+    - button "플레이어별 전적목록"
+    - button "인게임 설정"
+  - generic "제 1일 시간 흐름":
+    - generic: 제 1일
+    - button "투표 현황 열기":
+      - generic: 투표 현황
+  - paragraph:
+    - generic: 외형검증3
+  - paragraph:
+    - generic: 외형검증1
+  - paragraph:
+    - generic: 외형검증4
+  - generic "본인": 나
+  - paragraph:
+    - generic: 초보검증
+  - paragraph:
+    - generic: 외형검증2
+  - paragraph:
+    - generic: 업적검증
+  - complementary "채팅":
+    - log "채팅 내역":
+    - generic: TYPE HERE...
+    - textbox "채팅 입력":
+      - /placeholder: ""
+    - button "채팅 보내기":
+      - generic: 보내기
+  - complementary "게임 조작":
+    - generic: NIGHT
+    - paragraph: 제 1일
+    - paragraph: 역할 CITIZEN · 참가자 6명
+    - button "컨트롤 패널 펼치기": 펼치기 ▴
+    - button "내 역할 보기":
+      - generic: ◆
+      - text: 내 역할 보기
+    - paragraph: 밤 행동
+    - paragraph: 이 밤에는 행동할 수 없습니다.
+    - button "밤 종료"
+- complementary "우측 배너 영역"
