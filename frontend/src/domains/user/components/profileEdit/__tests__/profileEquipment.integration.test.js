@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { JSDOM } from "jsdom"
+import { register } from "node:module"
+import React from "react"
 
 // F-13 AC-02 재검토 전용 회귀 — 기존 profileBorder.integration.test.js가 미리보기·취소·
 // 확인·저장 거부·중복 확인 방지·계정 전환 차단(A-08)을 이미 폭넓게 검증하므로 여기서는
@@ -26,6 +28,14 @@ installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+// F-13 AC-03(CODEX-4): "실제 옵션 렌더링 근거"를 남기려면 ProfileEditOptionGrid.jsx를 이
+// 저장소의 node:test 실행에서 실제로 import·마운트할 수 있어야 한다 — 이 파일은 .js라
+// vite alias·JSX 변환을 직접 풀 수 없는(이 저장소 관례) 제약이 있다. 이미
+// frontend/.../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs가 이 제약을 없애는
+// module.register() ESM 훅(oxc 변환 + "@/" alias 해석, production 코드 변경 없음)을
+// 만들어 뒀으므로 새 하네스를 또 만들지 않고 그대로 재사용한다.
+register(new URL("../../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 let getImpl = async () => { throw new Error("api.get stub not set") }
 let postImpl = async () => { throw new Error("api.post stub not set") }
@@ -71,13 +81,16 @@ mock.module("../../../../library/api/achievements.api.js", {
   },
 })
 
-const { renderHook, waitFor, act, cleanup } = await import("@testing-library/react")
+const { renderHook, render, waitFor, act, cleanup } = await import("@testing-library/react")
 test.afterEach(() => cleanup())
 
 const { useProfileBorderEditor } = await import("../useProfileBorderEditor.js")
 const { useEconomyStore } = await import("../../../../economy/store/economy.store.js")
 const { useAchievements } = await import("../../../../library/hooks/useAchievements.js")
 const { useAchievementsStore } = await import("../../../../library/store/achievements.store.js")
+const { default: ProfileEditOptionGrid } = await import("../ProfileEditOptionGrid.jsx")
+const { PROFILE_EDIT_PHOTO_OPTIONS, PROFILE_EDIT_TAB_BORDER } =
+  await import("../../../constants/profileEditLayout.js")
 
 function resetStores() {
   getImpl = async () => { throw new Error("api.get stub not set") }
@@ -234,6 +247,83 @@ test("F-13 AC-02(CODEX-1): 저장 응답을 기다리는 동안 편집기를 닫
   assert.equal(closeCount, 0, "이미 닫혔다가 다시 열린 세션은 이전 세션의 늦은 성공으로 다시 닫히면 안 된다(계정은 그대로라 generation만으로는 구분되지 않는다)")
 })
 
+test("F-13 AC-02(CODEX-4): 저장 응답을 기다리는 동안 편집기를 닫고 다시 열지 않으면, 뒤늦게 도착한 성공 응답을 취소로 취급하지 않고 실제로 서버에 확정된 값을 store에 그대로 반영하며 onClose를 다시 부르지 않는다", async () => {
+  // CODEX-4 반송 근거: "close without reopen" 시나리오 자체가 시험에 없었고, "서버가 실제로
+  // 확정한 저장을 취소처럼 취급하면 안 된다"(진짜 서버 상태를 일관되게 보존)는 지시를
+  // 검증할 증거가 없었다. economy.store.js의 equipProfile은 계정 세대(requestGeneration)만
+  // 검사하므로(같은 계정 안에서 편집기를 닫기만 한 것은 세대를 바꾸지 않는다) 뒤늦은 성공은
+  // store.loadout에 실제로 반영되어야 한다 — 이 훅의 세션 무효화(editorSessionRef)는 오직
+  // "지금 화면(이 훅 인스턴스)"의 UI 상태(confirmStatus/onClose)만 억제할 뿐, 이미 서버에
+  // 커밋된 진실 자체를 감추거나 되돌리지 않는다.
+  resetStores()
+  getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
+  let resolvePost
+  postImpl = async () => new Promise((resolve) => { resolvePost = resolve })
+
+  let closeCount = 0
+  const { result, rerender } = renderHook(
+    ({ open }) => useProfileBorderEditor({ open, onClose: () => { closeCount += 1 } }),
+    { initialProps: { open: true } },
+  )
+  await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+  act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
+
+  let confirmPromise
+  act(() => { confirmPromise = result.current.handleConfirm() }) // 저장 진행 중(응답 대기)
+  assert.equal(result.current.confirmStatus, "saving")
+
+  rerender({ open: false }) // 사용자가 응답을 기다리지 않고 편집기를 닫고, 다시 열지 않는다
+
+  await act(async () => {
+    resolvePost({ loadout: { selectedProfileBorderId: "profile-border-귀족" } }) // 닫힌 뒤 뒤늦게 성공 도착
+    await confirmPromise
+  })
+
+  assert.equal(closeCount, 0, "이미 닫힌 세션의 늦은 성공이 onClose를 다시 부르면 안 된다(중복 close)")
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-귀족",
+    "서버가 실제로 확정한 저장은 편집기가 닫혀 있어도 취소로 취급되지 않고 store에 그대로 반영되어야 한다",
+  )
+})
+
+test("F-13 AC-02(CODEX-4): 저장 응답을 기다리는 동안 편집기를 닫고 다시 열지 않으면, 뒤늦게 도착한 거부 응답은 이미 무효한 세션의 재조회·오류 표시를 유발하지 않는다", async () => {
+  resetStores()
+  let walletCalls = 0
+  getImpl = async (endpoint) => {
+    if (endpoint.endsWith("/wallet")) walletCalls += 1
+    return readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
+  }
+  let rejectPost
+  postImpl = async () => new Promise((_resolve, reject) => { rejectPost = reject })
+
+  let closeCount = 0
+  const { result, rerender } = renderHook(
+    ({ open }) => useProfileBorderEditor({ open, onClose: () => { closeCount += 1 } }),
+    { initialProps: { open: true } },
+  )
+  await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+  const walletCallsBeforeConfirm = walletCalls
+  act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
+
+  let confirmPromise
+  act(() => { confirmPromise = result.current.handleConfirm() })
+  rerender({ open: false }) // 닫고 다시 열지 않는다
+
+  await act(async () => {
+    rejectPost(new TypeError("network disconnected")) // 닫힌 뒤 뒤늦게 응답 유실(code 없음) 도착
+    await confirmPromise
+  })
+
+  assert.equal(closeCount, 0, "이미 닫힌 세션은 onClose를 다시 부르면 안 된다")
+  assert.equal(
+    walletCalls,
+    walletCallsBeforeConfirm,
+    "이미 무효화된 세션의 거부는 재조회(서버 상태 확인)조차 시도하면 안 된다 — isStale() 확인이 fetchSummary보다 먼저다",
+  )
+  assert.equal(result.current.confirmError, null, "닫힌 세션에는 새 오류 메시지가 생기면 안 된다")
+})
+
 test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편집기를 닫았다 다시 열어 세션 B가 새로 저장을 시작하면, A의 뒤늦은 완료(성공)는 진행 중인 B의 saving 상태·초안·편집기를 전혀 건드리지 않고 오직 B 자신의 완료만 B를 정착시킨다", async () => {
   // CODEX-2 반송 근거: useProfileBorderEditor.handleConfirm의 isStale() 분기가 한때
   // setConfirmStatus("idle")을 실행해, 이미 폐기된 세션(A)의 응답이 새로 연 세션(B)의
@@ -319,22 +409,28 @@ test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계�
 
   assert.equal(result.current.confirmStatus, "idle")
   assert.equal(useEconomyStore.getState().requestGeneration >= 1, true, "계정 전환은 generation을 올려 이전 계정 응답을 무효화한다")
-  assert.notEqual(
+  // CODEX-4 반송 근거: notEqual만으로는 "A의 값(평민)만 아니면 무엇이든 통과"하므로, B 계정의
+  // 실제 서버 값이 반영됐는지는 증명하지 못한다(예: 빈 값·undefined·엉뚱한 다른 계정 값도
+  // 전부 통과해버린다) — B 계정이 실제로 응답한 정확한 값(브론즈)과 정확히 같아야 한다.
+  assert.equal(
     useEconomyStore.getState().loadout.selectedProfileBorderId,
-    "profile-border-평민",
-    "폐기된 A 계정의 재조회 결과(평민)가 B 계정 화면에 캐시로 남으면 안 된다",
+    "profile-border-브론즈",
+    "폐기된 A 계정의 재조회 결과(평민)를 버리는 것에서 그치지 않고, 지금 계정(B)이 실제로 응답한 값으로 정확히 채워져야 한다",
   )
 })
 
 test("F-13 AC-04: 편집기를 닫고 다른 계정으로 전환한 뒤 다시 열면, 이전 계정의 캐시가 아니라 새 계정이 실제로 서버에서 조회한 장착값·보유 목록으로 복원된다", async () => {
   resetStores()
+  // CODEX-4 반송 근거: 이 시험은 테두리 복원만 검증했고 사진 복원은 다루지 않았다 —
+  // 사진 16종은 모두 기본 지급이라 보유 목록 자체는 계정마다 같지만, "지금 선택된" 사진
+  // (loadout.selectedProfilePhotoId)은 계정마다 다를 수 있으므로 그 복원도 별도로 고정한다.
   const dataByUser = {
     "user-1": {
-      loadout: { selectedProfileBorderId: "profile-border-평민" },
+      loadout: { selectedProfilePhotoId: "player-profile-기사", selectedProfileBorderId: "profile-border-평민" },
       entitlements: [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }],
     },
     "user-2": {
-      loadout: { selectedProfileBorderId: "profile-border-귀족" },
+      loadout: { selectedProfilePhotoId: "player-profile-드워프", selectedProfileBorderId: "profile-border-귀족" },
       entitlements: [
         { itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" },
         { itemId: "profile-border-남작", itemType: "PROFILE_BORDER" },
@@ -349,6 +445,7 @@ test("F-13 AC-04: 편집기를 닫고 다른 계정으로 전환한 뒤 다시 �
     { initialProps: { open: true } },
   )
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+  assert.equal(result.current.draftPhotoItemId, "player-profile-기사")
   assert.equal(result.current.draftBorderItemId, "profile-border-평민")
   assert.deepEqual(result.current.ownedBorderOptions.map((o) => o.itemId), ["profile-border-평민"])
 
@@ -357,6 +454,11 @@ test("F-13 AC-04: 편집기를 닫고 다른 계정으로 전환한 뒤 다시 �
   rerender({ open: true }) // 새 계정으로 편집기를 다시 염
 
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+  assert.equal(
+    result.current.draftPhotoItemId,
+    "player-profile-드워프",
+    "새 계정의 실제 장착 사진이어야 한다(이전 계정의 기사가 캐시로 남으면 안 된다)",
+  )
   assert.equal(
     result.current.draftBorderItemId,
     "profile-border-귀족",
@@ -369,11 +471,14 @@ test("F-13 AC-04: 편집기를 닫고 다른 계정으로 전환한 뒤 다시 �
   )
 })
 
-test("F-13 AC-04: 로그아웃 후 재로그인하면 편집기는 로그아웃 이전의 캐시가 아니라 재로그인한 계정이 실제로 서버에서 조회한 값으로 복원된다", async () => {
+test("F-13 AC-04: 로그아웃 후 재로그인하면 편집기는 로그아웃 이전의 캐시가 아니라 재로그인한 계정이 실제로 서버에서 조회한 값(사진·테두리 모두)으로 복원된다", async () => {
   resetStores()
   getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
     ? walletOk
-    : { entitlements: [{ itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" }], loadout: { selectedProfileBorderId: "profile-border-귀족" } })
+    : {
+      entitlements: [{ itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" }],
+      loadout: { selectedProfilePhotoId: "player-profile-그림자", selectedProfileBorderId: "profile-border-귀족" },
+    })
   postImpl = async () => { throw new Error("이 테스트는 확인을 호출하지 않는다") }
 
   const { result, rerender } = renderHook(
@@ -381,6 +486,7 @@ test("F-13 AC-04: 로그아웃 후 재로그인하면 편집기는 로그아웃 
     { initialProps: { open: true } },
   )
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+  assert.equal(result.current.draftPhotoItemId, "player-profile-그림자")
   assert.equal(result.current.draftBorderItemId, "profile-border-귀족")
 
   rerender({ open: false })
@@ -393,7 +499,8 @@ test("F-13 AC-04: 로그아웃 후 재로그인하면 편집기는 로그아웃 
   rerender({ open: true })
 
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
-  assert.equal(result.current.draftBorderItemId, "profile-border-귀족", "재로그인 후 로그아웃 이전 캐시가 아니라 서버의 실제 값으로 복원되어야 한다")
+  assert.equal(result.current.draftPhotoItemId, "player-profile-그림자", "재로그인 후 로그아웃 이전 캐시가 아니라 서버의 실제 사진 값으로 복원되어야 한다")
+  assert.equal(result.current.draftBorderItemId, "profile-border-귀족", "재로그인 후 로그아웃 이전 캐시가 아니라 서버의 실제 테두리 값으로 복원되어야 한다")
   assert.deepEqual(result.current.ownedBorderOptions.map((o) => o.itemId), ["profile-border-귀족"])
 })
 
@@ -471,4 +578,74 @@ test("F-13 AC-03(CODEX-2): 실제 useAchievements 훅을 마운트해 실제 업
     ["profile-border-광대", "profile-border-평민"],
   ), { timeout: 1000 })
   assert.ok(entitlementsCalls > walletCallsBeforeAchievements, "실제 업적 조회 성공이 economy 재조회를 스스로 유발해야 한다(테스트가 대신 호출한 것이 아니다)")
+})
+
+test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사진 탭은 16종 실제 이미지 전부를, 테두리 탭은 방금 업적으로 획득한 테두리를 실제 DOM 옵션으로 보여준다 — 훅 필드가 아니라 렌더된 화면 자체를 검증한다", async () => {
+  // CODEX-4 반송 근거: 지금까지의 AC-03 시험은 useProfileBorderEditor 훅이 돌려주는
+  // ownedBorderOptions 배열(필드)만 확인했을 뿐, 실제 화면(ProfileEditOptionGrid.jsx)이 그
+  // 값을 옵션으로 그리는지는 증명하지 않았다 — 사진 탭의 "실제 옵션 렌더링 근거"도 전혀
+  // 없었다(정적 PROFILE_EDIT_PHOTO_OPTIONS를 실제로 그리는지 확인한 적이 없다). 이 시험은
+  // 실제 훅 + 실제 컴포넌트 + 실제 업적 성공 이벤트를 전부 연결해 최종 DOM의 <img src>까지
+  // 확인한다.
+  resetStores()
+  let entitlementsCalls = 0
+  getImpl = async (endpoint) => {
+    if (endpoint.endsWith("/wallet")) return walletOk
+    entitlementsCalls += 1
+    return {
+      entitlements: entitlementsCalls === 1
+        ? [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }]
+        : [
+          { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
+          { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" }, // 방금 업적으로 획득
+        ],
+      loadout: { selectedProfileBorderId: "profile-border-평민" },
+    }
+  }
+  getMyAchievementsImpl = async () => ([
+    { id: "invited-guests-광대-win-10", current: 10, threshold: 10, achieved: true, granted: true },
+  ])
+
+  const editor = renderHook(() => useProfileBorderEditor({ open: true, onClose: () => {} }))
+  await waitFor(() => assert.equal(editor.result.current.borderListStatus, "ready"))
+
+  const renderGrid = () => render(React.createElement(ProfileEditOptionGrid, {
+    activeTab: editor.result.current.activeTab,
+    selectedPhotoItemId: editor.result.current.draftPhotoItemId,
+    onSelectPhoto: editor.result.current.setDraftPhotoItemId,
+    ownedBorderOptions: editor.result.current.ownedBorderOptions,
+    borderListStatus: editor.result.current.borderListStatus,
+    selectedBorderItemId: editor.result.current.draftBorderItemId,
+    onSelectBorder: editor.result.current.setDraftBorderItemId,
+    onRetryLoadBorders: editor.result.current.retryLoadBorders,
+  }))
+
+  // 사진 탭 — 정적이지만 실제로 16종 전부가, 실제 자산 경로로 렌더되는지 확인한다.
+  const photoGrid = renderGrid()
+  const photoImgs = [...photoGrid.container.querySelectorAll("img")]
+  assert.equal(photoImgs.length, PROFILE_EDIT_PHOTO_OPTIONS.length, "사진 옵션이 서버 카탈로그 16종과 어긋나면 안 된다")
+  for (const { src } of PROFILE_EDIT_PHOTO_OPTIONS) {
+    const expected = encodeURI(src.normalize("NFC"))
+    assert.ok(photoImgs.some((img) => img.getAttribute("src") === expected), `사진 옵션 ${src}가 실제 DOM에 없다`)
+  }
+  const selectedPhotoButton = photoGrid.container.querySelector('button[aria-pressed="true"]')
+  assert.ok(selectedPhotoButton?.querySelector("img"), "현재 선택된 사진 옵션이 실제로 선택 표시되어야 한다")
+  photoGrid.unmount()
+
+  // 테두리 탭 — 업적 성공 이전에는 아직 광대를 보유하지 않았다.
+  act(() => editor.result.current.setActiveTab(PROFILE_EDIT_TAB_BORDER))
+  const beforeGrid = renderGrid()
+  assert.equal(beforeGrid.container.querySelectorAll("img").length, 1, "업적 획득 전에는 평민 테두리 하나만 실제 옵션으로 보여야 한다")
+  beforeGrid.unmount()
+
+  const achievementsHook = renderHook(() => useAchievements())
+  await waitFor(() => assert.equal(achievementsHook.result.current.status, "success"), { timeout: 1000 })
+  await waitFor(() => assert.equal(editor.result.current.ownedBorderOptions.length, 2), { timeout: 1000 })
+
+  const afterGrid = renderGrid()
+  const borderImgs = [...afterGrid.container.querySelectorAll("img")]
+  assert.equal(borderImgs.length, 2, "업적으로 방금 획득한 테두리가 재오픈 없이도 실제 DOM 옵션에 즉시 추가되어야 한다")
+  const expectedNewBorderSrc = encodeURI("/shopItem/player- profileborder/프로필프레임-광대.png".normalize("NFC"))
+  assert.ok(borderImgs.some((img) => img.getAttribute("src") === expectedNewBorderSrc), "방금 업적으로 획득한 테두리 이미지가 실제 DOM에 없다")
+  afterGrid.unmount()
 })

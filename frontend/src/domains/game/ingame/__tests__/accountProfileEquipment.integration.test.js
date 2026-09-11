@@ -5,6 +5,13 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
+// F-13 AC-05(CODEX-4): 실제 소켓 핸들러(backend/socket/gameSession.js)를 이 파일에서 직접
+// require하면, 그 모듈이 끌고 오는 gameResult/voteParticipation repositories·achievementService가
+// require 시점에 backend/models(→Sequelize)를 초기화한다 — 이 저장소의 backend 테스트가
+// 공유하는 관례(gameResultPersistence.test.js 등)와 동일하게, 실제로 연결을 시도하지는
+// 않지만 파싱 가능한 문자열이 있어야 require 자체가 죽지 않는다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test"
+
 // F-13 AC-05 — 대기방(matchmaking room.players) → 서버 game_started/재접속 스냅샷
 // (buildPlayerAccountProfileFields, backend/game-core/gameSession.js) → 프런트 변환
 // (buildPlayerSessionSourceFromGameState) → 최종 카드 렌더 입력(mergeSourcePlayerWithPreview)
@@ -26,6 +33,25 @@ mock.module("../utils/pickInGamePlayerFrame.js", {
   namedExports: {
     pickInGamePlayerFrame: (index) => `dummy-frame-${index}`,
     resolveInGamePlayerFrameSrc: (frameSrc, status) => (status === "dead" ? `${frameSrc}-dead-variant` : frameSrc),
+  },
+})
+
+// F-13 AC-05(CODEX-4): "대기방 훅(useMatchingPage) 연결"을 raw source 정규식이 아니라 실제
+// renderHook으로 검증하기 위해, useMatchingPage.js가 끌고 오는 주변 협력자(react-router의
+// useNavigate, useMatchingRoom)만 이 저장소의 기존 관례(useInGameKillReveal.test.js 등)와
+// 같은 방식으로 갈아끼운다 — useMatchingStore는 실제 store 그대로 쓴다. useMatchingRoom
+// 자체는 소켓·인증 store를 더 깊이 끌고 들어가 이 시험의 관심사(slots 데이터 배선)를 넘으므로
+// 최소 shape만 흉내낸다(이 훅 내부 동작은 이 파일의 검증 대상이 아니다).
+const navigateCalls = []
+mock.module("react-router-dom", {
+  namedExports: { useNavigate: () => (...args) => navigateCalls.push(args) },
+})
+mock.module("../../matching/hooks/useMatchingRoom.js", {
+  namedExports: {
+    useMatchingRoom: () => ({
+      deleteRoom: () => {}, startGame: () => {}, setReady: () => {},
+      isStarting: false, isSettingReady: false, isRoomVerified: true,
+    }),
   },
 })
 
@@ -52,8 +78,12 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 register(new URL("./testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
-const { render, cleanup } = await import("@testing-library/react")
+const { render, renderHook, cleanup } = await import("@testing-library/react")
 test.afterEach(() => cleanup())
+
+const { useMatchingStore } = await import("../../matching/store/matchingStore.js")
+const { useAuthStore } = await import("../../../auth/store/auth.store.js")
+const { useMatchingPage } = await import("../../matching/hooks/useMatchingPage.js")
 
 const { buildPlayerSessionSourceFromGameState } = await import("../utils/buildPlayerSessionSourceFromGameState.js")
 const { buildInGamePreviewPlayers } = await import("../utils/buildInGamePreviewPlayers.js")
@@ -72,6 +102,15 @@ const { useInGameStore } = await import("../store/ingameStore.js")
 // 대해 서버가 실제로 노출하는 두 개의 독립된 직렬화 진입점(최초 game_started, 재접속
 // get_session_snapshot)을 각각 그대로 호출한다.
 const { default: gameSessionCore } = await import("../../../../../../backend/game-core/gameSession.js")
+// F-13 AC-05(CODEX-4) — 재접속 회귀는 이전까지 buildSessionSnapshot의 결과를 { ok: true, ... }
+// 로 직접 감싸 "실제 소켓 핸들러(handleGetSessionSnapshot)와 동일한 ack 계약"이라고만
+// 주석으로 적었을 뿐, 그 계약을 실제로 실행하지 않았다(isCurrentSocketForUuid 인증, roster의
+// isConnected 실시간 계산, ENDED 이후 조회 등은 이 핸들러 안에서만 일어난다). 아래는 그
+// 실제 CJS 핸들러와, 이 저장소의 socket 테스트가 공유하는 fake socket/io 하네스를 그대로
+// 가져와 진짜 get_session_snapshot 이벤트 처리 경로를 구동한다.
+const { default: gameSessionSocketLayer } = await import("../../../../../../backend/socket/gameSession.js")
+const { default: matchmakingFixtures } = await import("../../../../../../backend/socket/__tests__/testHelpers/matchmakingFixtures.js")
+const { createFakeSocket, createFakeIo, countingCallback } = matchmakingFixtures
 
 function gameStartedState(players) {
   return {
@@ -163,7 +202,7 @@ test("F-13 AC-05: 서버가 계정 테두리를 실어 보낸 참가자는 최�
 // 되돌아가던 실제 결함을 잡아낸다(고쳐진 코드는 store/applySessionSnapshot.js 참고).
 test("F-13 AC-05: 실제 backend 세션에서 독립적으로 만든 game_started/재접속 스냅샷을 실제 ingameStore 액션으로 반영하면, 실제 렌더된 DOM의 계정 사진·테두리가 새로고침 전후로 동일하게 유지되고 preview 기본 이미지로 되돌아가지 않는다", () => {
   const { buildSessionCandidate } = gameSessionCore.__testables
-  const { commitGameSession, buildGameStartedPayload, buildSessionSnapshot } = gameSessionCore
+  const { commitGameSession, buildGameStartedPayload } = gameSessionCore
 
   const room = {
     id: "room-account-profile-reconnect",
@@ -173,6 +212,8 @@ test("F-13 AC-05: 실제 backend 세션에서 독립적으로 만든 game_starte
     ]),
     settings: { jokerCount: 1 },
   }
+  gameSessionSocketLayer.__resetStateForTests()
+
   const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
   assert.equal(candidate.ok, true, "실제 세션 생성이 성공해야 재접속 시나리오를 구성할 수 있다")
   commitGameSession(candidate.session)
@@ -183,9 +224,27 @@ test("F-13 AC-05: 실제 backend 세션에서 독립적으로 만든 game_starte
   // 커밋된 이 판의 스냅샷은 영향받지 않아야 한다(A-04) — 커밋 이후 값을 바꿔 그 불변성을
   // 실제로 확인한다.
   room.players.get("ru1").accountProfilePhotoId = "player-profile-마인"
-  const reconnectSnapshot = buildSessionSnapshot(candidate.session, viewerUuid)
-  // 실제 소켓 핸들러(handleGetSessionSnapshot)와 동일한 ack 계약으로 감싼다.
-  const reconnectAck = { ok: true, ...reconnectSnapshot, players: reconnectSnapshot.players.map((p) => ({ ...p, isConnected: true })) }
+
+  // CODEX-4 반송 근거: 이전 버전은 buildSessionSnapshot의 결과를 { ok: true, ... }로 직접
+  // 감싸 ack를 손으로 합성했다 — 실제 소켓 핸들러(handleGetSessionSnapshot)는 전혀 호출되지
+  // 않아, isCurrentSocketForUuid 인증·roster의 isConnected 실시간 계산 같은 그 핸들러 자신의
+  // 로직은 이 시험을 전혀 통과하지 않았다. 아래는 이 저장소의 socket 테스트(gameSession.test.js
+  // F-13 AC-05 시험)와 동일한 fake socket/io 하네스로 진짜 이벤트 처리 경로를 구동한다.
+  const sockets = ["ru1", "ru2"].map((uuid) => {
+    const socket = createFakeSocket(uuid)
+    socket.rooms.add(candidate.session.channelId)
+    return socket
+  })
+  const io = createFakeIo(sockets)
+  const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+  gameSessionSocketLayer.setOnlineUsersRegistry(new Map(sockets.map((s) => [s.data.user.uuid, s.id])))
+
+  const { callback, getResponse } = countingCallback()
+  gameSessionSocketLayer.__testables.handleGetSessionSnapshot(
+    io, socketByUuid.get(viewerUuid), viewerUuid, { gameId: candidate.session.id }, callback,
+  )
+  const reconnectAck = getResponse()
+  assert.equal(reconnectAck.ok, true, "실제 핸들러가 인증(isCurrentSocketForUuid)을 통과하고 정상 ack를 돌려줘야 한다")
 
   useInGameStore.setState({ gameId: null, state: null, error: null, snapshotSeq: 0 })
   // 실제 화면이 game_started를 받을 때 부르는 바로 그 액션이다(useMatchingRoom.js).
@@ -390,10 +449,36 @@ test("F-13 AC-05: InGamePlayerCard는 role을 props로 받지도 렌더하지도
 // F-13 AC-05 재검토(CODEX-2) — MatchingPartySlots 실제 DOM 렌더
 // ---------------------------------------------------------------------------
 
-test("F-13 AC-05: 대기방(useMatchingPage)은 room.players의 계정 프로필 필드를 slots에서 버리지 않는다(데이터 배선)", async () => {
-  const hookSource = await readFile(new URL("../../matching/hooks/useMatchingPage.js", import.meta.url), "utf8")
-  assert.match(hookSource, /accountProfilePhotoId:\s*player\.accountProfilePhotoId/)
-  assert.match(hookSource, /accountProfileBorderId:\s*player\.accountProfileBorderId/)
+test("F-13 AC-05(CODEX-4): 대기방(useMatchingPage)은 실제로 마운트됐을 때 room.players의 계정 프로필 필드를 slots에서 버리지 않는다 — source 정규식이 아니라 실제 훅 실행으로 검증한다", () => {
+  useAuthStore.setState({ user: { uuid: "viewer-uuid" }, isLoggedIn: true, loggedOutIntentionally: false })
+  useMatchingStore.setState({
+    isSearching: false,
+    isInRoom: true,
+    roomId: "room-1",
+    roomCode: "ABC123",
+    hostUuid: "viewer-uuid",
+    canStart: true,
+    players: [
+      { uuid: "viewer-uuid", isReady: true, accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" },
+      { uuid: "peer-uuid", isReady: false, accountProfilePhotoId: "player-profile-드워프", accountProfileBorderId: "profile-border-평민" },
+      { uuid: "no-profile-uuid", isReady: false }, // 계정 프로필 필드가 아예 없는 참가자(레거시/미도착)
+    ],
+  })
+
+  const { result, unmount } = renderHook(() => useMatchingPage())
+  try {
+    assert.equal(result.current.slots.length, 3)
+    const [viewerSlot, peerSlot, bareSlot] = result.current.slots
+    assert.equal(viewerSlot.accountProfilePhotoId, "player-profile-기사", "실제 훅 실행 결과에서 본인 계정 사진이 slots로 빠져야 한다")
+    assert.equal(viewerSlot.accountProfileBorderId, "profile-border-귀족")
+    assert.equal(peerSlot.accountProfilePhotoId, "player-profile-드워프", "다른 참가자의 계정 사진도 각자 다른 값으로 slots에 실려야 한다")
+    assert.equal(peerSlot.accountProfileBorderId, "profile-border-평민")
+    assert.equal(bareSlot.accountProfilePhotoId, undefined, "필드가 없는 참가자는 undefined로 그대로 전달되어야 한다(MatchingPartySlots가 기본 자산으로 대체)")
+  } finally {
+    unmount()
+    useMatchingStore.getState().clearRoom()
+    useAuthStore.setState({ user: null, isLoggedIn: false, loggedOutIntentionally: false })
+  }
 })
 
 test("F-13 AC-05: MatchingPartySlots는 실제 DOM에서 슬롯마다 서로 다른 계정 초상·테두리를 그리고, 계정 프로필이 없는 더미 슬롯은 기존 기본 자산으로 대체하며, 준비 배지는 그대로 유지한다", () => {

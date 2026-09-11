@@ -62,8 +62,8 @@ export function useProfileBorderEditor({ open, onClose }) {
   // 소유 목록을 한 번도 불러오지 못했거나(idle) 이전 시도가 실패했으면(error) 새로
   // 시도한다 — GET은 반복해도 안전하다(A-09).
   useEffect(() => {
-    if (!open) return
     editorSessionRef.current += 1
+    if (!open) return
     hasEditedRef.current = false
     setActiveTab(PROFILE_EDIT_TAB_PHOTO)
     const latestLoadout = useEconomyStore.getState().loadout
@@ -77,6 +77,7 @@ export function useProfileBorderEditor({ open, onClose }) {
     if (latestStatus === "idle" || latestStatus === "error") {
       fetchSummary()
     }
+    return () => { editorSessionRef.current += 1 }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, generation, fetchSummary])
 

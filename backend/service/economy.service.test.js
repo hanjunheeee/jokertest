@@ -716,6 +716,41 @@ test('F-13 AC-01: 테두리를 보유하지 않은 채 사진과 함께 확정�
     assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
 });
 
+test('F-13 AC-01(CODEX-4): 소유권 행만 사라진(원장은 그대로인) 기본 사진은 ensureDefaultEntitlements가 조용히 재지급하지 않고 equipProfileAppearance가 실제로 거부한다', async () => {
+    // 배경: 프로필 사진 16종은 전부 defaultGrant:true·purchasable:false(catalog.js)라,
+    // "구매하지 않은 프리미엄 사진"이라는 시나리오 자체가 카탈로그에 존재하지 않는다.
+    // 그런데도 ITEM_NOT_OWNED는 equipProfileAppearance가 실제로 낼 수 있는 응답이어야
+    // 한다 — ensureDefaultEntitlements의 멱등성은 EconomyEntitlement 행이 아니라
+    // EconomyLedgerEntry의 결정적 reference_event_id(`default-grant:${userId}:${item.id}`)
+    // 로 판정되므로(applyLedgerTransaction의 preExisting 조회), 관리자 수동 회수·부분
+    // 마이그레이션 실패 같은 원인으로 원장은 남은 채 소유권 행만 사라지면, 재호출은 "이미
+    // 처리된 참조 사건"으로 보고 조용히 넘어가 소유권을 되살리지 않는다 — 이 시험은 가짜
+    // catalog 항목을 만들지 않고, 실제 서비스 계약(원장 기준 idempotency)이 만드는 이
+    // 데이터 무결성 예외 하나만으로 실제 거부 경로를 고정한다.
+    const db = createFakeDb();
+    const userId = 'user-f13-photo-entitlement-gap';
+    await economyService.getWalletSummary(userId, db); // 기본 16종 사진 + 평민 테두리 지급(원장 포함)
+
+    const idx = db._inspect.entitlements.findIndex((e) => e.user_id === userId && e.item_id === 'player-profile-기사');
+    assert.notEqual(idx, -1, '사전 조건: 기본 지급으로 이미 보유하고 있어야 한다');
+    db._inspect.entitlements.splice(idx, 1); // 소유권 행만 제거 — 원장(ledgerEntries)은 그대로 둔다
+
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사' }, db),
+        (error) => error.status === 403 && error.code === 'ITEM_NOT_OWNED',
+        'equipProfileAppearance 내부의 ensureDefaultEntitlements 재호출이 소유권을 조용히 복구하면 안 된다',
+    );
+
+    assert.equal(
+        db._inspect.entitlements.some((e) => e.user_id === userId && e.item_id === 'player-profile-기사'),
+        false,
+        'ensureDefaultEntitlements가 원장 존재만으로 소유권 행을 재발급하면 이 거부 경로 자체가 사라진다 — 재발급되지 않아야 한다',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '거부된 요청은 기존 사진 선택을 바꾸면 안 된다');
+});
+
 test('F-13 AC-01: 사진 슬롯에 테두리 itemId를 보내면 종류 불일치로 거부되고 기존 선택은 그대로 유지된다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-joint-typemismatch';
