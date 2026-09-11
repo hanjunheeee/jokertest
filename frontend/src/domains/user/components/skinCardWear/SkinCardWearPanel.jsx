@@ -70,7 +70,7 @@ export default function SkinCardWearPanel({
           />
         </button>
 
-        <div className={SKIN_CARD_WEAR_PANEL_CONTENT_CLASS} style={SKIN_CARD_WEAR_PANEL_INNER_PAD}>
+        <div className={SKIN_CARD_WEAR_PANEL_CONTENT_CLASS} style={SKIN_CARD_WEAR_PANEL_INNER_PAD} inert={isSaving} aria-disabled={isSaving}>
           <SkinCardWearJobTabs
             tabs={jobTabs}
             activeIndex={activeJobIndex}

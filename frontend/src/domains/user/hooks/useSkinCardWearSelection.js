@@ -149,7 +149,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     // F-14(AC-02): 미보유 항목은 선택 자체를 막는다 — 목록/버튼의 disabled 표시는 UI
     // 방어선일 뿐이고, 실제 draft가 바뀌는 유일한 지점인 여기서도 막아야 어떤 경로로
     // onSelect가 호출돼도(합성 이벤트 우회 등) 미보유 항목이 draft에 들어갈 수 없다.
-    if (item.owned === false) return
+    if (savingRef.current || item.owned === false) return
     setSelectedItemId(item.id)
 
     if (item.itemType === "skin" && item.jobId) {
@@ -166,6 +166,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
 
   const handleJobSelect = useCallback(
     (index) => {
+      if (savingRef.current) return
       setActiveJobIndex(index)
 
       if (previewMode !== SKIN_CARD_WEAR_PREVIEW_MODE_SKIN) return
@@ -180,6 +181,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   )
 
   const togglePreviewMode = useCallback(() => {
+    if (savingRef.current) return
     setPreviewMode((prev) => {
       const nextMode =
         prev === SKIN_CARD_WEAR_PREVIEW_MODE_SKIN

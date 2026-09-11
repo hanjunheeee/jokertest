@@ -402,3 +402,22 @@ test('operator: editing during opening GET must never save untouched slots', asy
   await flushMicrotasks()
   assert.deepEqual(writes.map(({slot,itemId}) => ({slot,itemId})), [{ slot: 'JOB_SKIN_NOBLE', itemId: chosen.id }], 'untouched server equipment was overwritten by a stale default draft')
 })
+
+
+test('operator: pending save prevents later selection from being silently lost', async () => {
+  resetAll()
+  getImpl = async () => ({ ...flatLoadout(), balanceGold: 0, balanceDiamond: 0 })
+  let release
+  postImpl = () => new Promise((resolve) => { release = resolve })
+  render(React.createElement(SkinCardWearOverlay, { open: true, onClose: () => {} }))
+  await flushMicrotasks()
+  const alternatives = getSkinItemsForJob(FIRST_JOB_ID).filter((item) => item.source === 'basic' && item.id !== getDefaultSkinIdForJob(FIRST_JOB_ID))
+  const button = (item) => document.querySelector('button[aria-label^="' + item.name + '"]')
+  act(() => button(alternatives[0]).click())
+  act(() => document.querySelector('button[aria-busy]').click())
+  assert.equal(typeof release, 'function')
+  act(() => button(alternatives[1]).click())
+  assert.equal(button(alternatives[0]).getAttribute('aria-pressed'), 'true', 'selection changed while the preceding draft was being saved')
+  assert.equal(button(alternatives[1]).getAttribute('aria-pressed'), 'false')
+  await act(async () => release({ loadout: {} }))
+})
