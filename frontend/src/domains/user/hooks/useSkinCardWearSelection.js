@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID,
   SKIN_CARD_WEAR_JOB_TABS,
@@ -90,6 +90,25 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   // 갱신되므로 이 경합을 실제로 막는다(state만으로는 중복 저장을 막을 수 없다).
   const savingRef = useRef(false)
   const saveGeneration = useRef(0)
+  const editedSlots = useRef(new Set())
+
+  // Refresh untouched slots from the server without losing explicit user edits.
+  useEffect(() => {
+    setDraftSkinsByJob((previous) => {
+      const next = Object.fromEntries(SKIN_CARD_WEAR_JOB_TABS.map(({ id }) =>
+        [id, editedSlots.current.has(id) ? previous[id] : initialSkinsByJob[id]]))
+      return SKIN_CARD_WEAR_JOB_TABS.every(({ id }) => next[id] === previous[id]) ? previous : next
+    })
+    if (!editedSlots.current.has("card")) setDraftCardFrameId(initialCardFrameId)
+    setSelectedItemId((previous) => {
+      const item = getSkinCardWearItemById(previous)
+      if (item?.itemType === "skin" && !editedSlots.current.has(item.jobId)) {
+        return initialSkinsByJob[item.jobId] ?? getDefaultSkinIdForJob(item.jobId)
+      }
+      if (item?.itemType === "card" && !editedSlots.current.has("card")) return initialCardFrameId
+      return previous
+    })
+  }, [initialSkinsByJob, initialCardFrameId])
 
   // F-14(AC-02): 인증된 서버 소유 목록만 신뢰한다 — economy store가 fetchSummary로 받아온
   // entitlements 외에는 어떤 것도 소유 판정의 근거가 아니다(정적 카탈로그 전체를 그대로
@@ -127,11 +146,13 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     setSelectedItemId(item.id)
 
     if (item.itemType === "skin" && item.jobId) {
+      editedSlots.current.add(item.jobId)
       setDraftSkinsByJob((prev) => ({ ...prev, [item.jobId]: item.id }))
       return
     }
 
     if (item.itemType === "card") {
+      editedSlots.current.add("card")
       setDraftCardFrameId(item.id)
     }
   }, [])
@@ -169,6 +190,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   }, [draftCardFrameId, draftSkinsByJob, activeJobId])
 
   const resetDraft = useCallback(({ skinsByJob, cardFrameId }) => {
+    editedSlots.current.clear()
     saveGeneration.current += 1
     savingRef.current = false
     setActiveJobIndex(0)
@@ -213,11 +235,11 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     const changedSlots = []
     for (const { id: jobId } of SKIN_CARD_WEAR_JOB_TABS) {
       const draftSkinId = draftSkinsByJob[jobId]
-      if (draftSkinId && draftSkinId !== appliedSkinsByJob?.[jobId]) {
+      if (editedSlots.current.has(jobId) && draftSkinId && draftSkinId !== appliedSkinsByJob?.[jobId]) {
         changedSlots.push({ slot: JOB_ID_TO_SKIN_SLOT[jobId], itemId: draftSkinId, jobId })
       }
     }
-    if (draftCardFrameId && draftCardFrameId !== appliedCardFrameId) {
+    if (editedSlots.current.has("card") && draftCardFrameId && draftCardFrameId !== appliedCardFrameId) {
       changedSlots.push({ slot: "PLAYER_CARD_FRAME", itemId: draftCardFrameId, jobId: null })
     }
 

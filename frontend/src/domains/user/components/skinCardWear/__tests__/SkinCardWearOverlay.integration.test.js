@@ -20,6 +20,7 @@ installDomGlobal("window", dom.window)
 installDomGlobal("document", dom.window.document)
 installDomGlobal("navigator", dom.window.navigator)
 installDomGlobal("HTMLElement", dom.window.HTMLElement)
+installDomGlobal("Element", dom.window.Element)
 installDomGlobal("Node", dom.window.Node)
 installDomGlobal("Event", dom.window.Event)
 installDomGlobal("MutationObserver", dom.window.MutationObserver)
@@ -370,4 +371,28 @@ test('operator: failed reconciliation GET cannot confirm matching cached equipme
   await flushMicrotasks()
   assert.equal(closes, 0)
   assert.match(document.querySelector('[role="alert"]').textContent, /저장 결과를 확인하지 못했습니다/)
+})
+
+
+test('operator: editing during opening GET must never save untouched slots', async () => {
+  resetAll()
+  let release
+  const pending = new Promise((resolve) => { release = resolve })
+  getImpl = async () => pending
+  render(React.createElement(SkinCardWearOverlay, { open: true, onClose: () => {} }))
+  const chosen = getSkinItemsForJob(FIRST_JOB_ID).find((item) => item.source === 'basic' && item.id !== getDefaultSkinIdForJob(FIRST_JOB_ID))
+  act(() => document.querySelector('button[aria-label^="' + chosen.name + '"]').click())
+  const untouchedJob = SKIN_CARD_WEAR_JOB_TABS[1].id
+  const saved = getSkinItemsForJob(untouchedJob).find((item) => item.source === 'basic' && item.id !== getDefaultSkinIdForJob(untouchedJob))
+  assert.ok(saved)
+  await act(async () => { release({
+    ...flatLoadout({ selectedSkinsByJob: { ...buildDefaultSkinsByJob(), [untouchedJob]: saved.id } }),
+    balanceGold: 0, balanceDiamond: 0,
+  }) })
+  await flushMicrotasks()
+  const writes = []
+  postImpl = async (endpoint, body) => { writes.push(body); return { loadout: {} } }
+  await act(async () => document.querySelector('button[aria-busy]').click())
+  await flushMicrotasks()
+  assert.deepEqual(writes.map(({slot,itemId}) => ({slot,itemId})), [{ slot: 'JOB_SKIN_NOBLE', itemId: chosen.id }], 'untouched server equipment was overwritten by a stale default draft')
 })
