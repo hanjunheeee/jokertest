@@ -35,6 +35,7 @@
 // 검증해야 하므로, catalog.js의 ALL_ITEMS에 실제 항목을 추가하는 대신 시험이 이 함수를
 // 일시적으로 교체할 수 있어야 한다 — 프로퍼티 접근(catalog.getCatalogItem)이라야 그 교체가
 // 이 파일에도 실제로 반영된다.
+const crypto = require('crypto');
 const catalog = require('../economy/catalog');
 const {
     ITEM_TYPES,
@@ -284,16 +285,21 @@ const ensureDefaultLoadout = async (db, userId, externalTransaction = null) => {
 
     await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
-        defaults: { user_id: userId },
+        defaults: { user_id: userId, revision: crypto.randomUUID() },
         ...txOptions,
     });
 
+    // F-13 AC-02 설계 감사 — 실제로 값을 바꾸는 조건부 UPDATE 문 안에서만 revision도 함께
+    // 새로 발급한다(같은 단일 SQL 문이라 값과 revision이 항상 같은 문장에서 원자적으로
+    // 바뀐다). WHERE 절의 IS NULL 조건 때문에 이미 값이 채워진(정정할 것이 없는) 행은 0행이
+    // 영향받아 revision도 그대로다 — 정정 없는 반복 호출(매 GET마다 실행됨)만으로 revision이
+    // 계속 바뀌어 불필요한 CAS 충돌을 만드는 일이 없다.
     await models.EconomyLoadout.update(
-        { selected_profile_photo_id: DEFAULT_PROFILE_PHOTO_ID },
+        { selected_profile_photo_id: DEFAULT_PROFILE_PHOTO_ID, revision: crypto.randomUUID() },
         { where: { user_id: userId, selected_profile_photo_id: null }, ...txOptions },
     );
     await models.EconomyLoadout.update(
-        { selected_profile_border_id: DEFAULT_PROFILE_BORDER_ID },
+        { selected_profile_border_id: DEFAULT_PROFILE_BORDER_ID, revision: crypto.randomUUID() },
         { where: { user_id: userId, selected_profile_border_id: null }, ...txOptions },
     );
 
@@ -359,6 +365,10 @@ const getWalletSummary = async (userId, db = defaultDb()) => {
             selectedProfilePhotoId: loadout?.selected_profile_photo_id ?? null,
             selectedProfileBorderId: loadout?.selected_profile_border_id ?? null,
             selectedCardFrameId: loadout?.selected_card_frame_id ?? null,
+            // F-13 AC-02: 클라이언트가 다음 equipProfileAppearance 호출에 expectedRevision으로
+            // 그대로 되돌려 보낼 CAS 토큰. ensureDefaultEntitlements가 이미 위에서 실행됐으므로
+            // 이 시점의 loadout 행은 항상 존재하고 revision도 항상 채워져 있다.
+            revision: loadout?.revision ?? null,
         },
     };
 };
@@ -673,46 +683,59 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
 
     const [loadout] = await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
-        defaults: { user_id: userId },
+        defaults: { user_id: userId, revision: crypto.randomUUID() },
     });
-    await loadout.update({ [column]: itemId });
+    // F-13 AC-02 설계 감사 — 이 경로(카드 프레임 등 일반 장착)도 equipProfileAppearance와
+    // 같은 EconomyLoadout 행을 갱신하므로, 값을 바꿀 때마다 revision도 함께 새로 발급해야
+    // 한다. 그래야 이 경로로 행이 바뀐 뒤에는 프로필 편집기가 들고 있던 이전 revision이
+    // 자동으로 무효화되어(CAS 비교 실패) 그 사이의 변경을 조용히 덮어쓰지 못한다.
+    await loadout.update({ [column]: itemId, revision: crypto.randomUUID() });
     return loadout;
 };
 
 // F-13 AC-02 설계 감사(운영자, 2026-09-11) — CODEX-9가 도입했던 clientIntentAt(클라이언트
 // 벽시계 시각) + lastProfileEquipIntentAtByUser(인메모리 Map) 높은-수위 표시 방식은 세 가지로
-// 깨져 있어 제거했다:
-//   1) Date.now()는 전순서가 아니다 — 같은 밀리초에 겹친 두 클릭은 순서를 구분할 수 없고,
-//      기기 시계가 뒤로 가거나 어긋나면 정당한 나중 요청이 거부된다. 미래의 유한한 시각값이
-//      들어오면 그 뒤로 영영(세션이 바뀌어도) 그 계정의 의도 판정을 오염시킨다.
-//   2) Map 갱신이 트랜잭션 커밋보다 먼저 실행됐다 — update가 던지거나 커밋 자체가 실패해도
-//      Map은 이미 전진해 있어, 그 뒤의 유효한 재시도가 조용히 무시될 수 있었다(Map이 DB와
-//      원자적이지 않음).
-//   3) 인메모리 값은 프로세스 재시작으로 사라지고 인스턴스마다 다르다 — 영속적 장착 보장을
-//      전제로 삼을 수 없다.
-// 대체 설계는 새 상태를 전혀 두지 않는다: 아래 SELECT ... FOR UPDATE 행 잠금이 겹치는
-// 두 확정 요청을 이미 완전히 직렬화하므로(한쪽이 커밋할 때까지 다른 쪽은 대기), 서버는
-// "먼저 잠금을 놓은 요청이 먼저, 그 다음 요청이 나중" 순서로 자연스럽게 커밋한다 — 이
-// 순서는 동일 커넥션에서 순서대로 보낸 요청이라면 사실상 거의 항상 전송 순서와 일치한다
-// (진짜 네트워크 재정렬은 극히 드물다). 사용자가 지금 보는 화면이 "가장 나중에 시작한
-// 확정"과 항상 일치하는지는 프런트(economy.store.js의 loadoutAttemptSeq)가 순수 클라이언트
-// 로컬 판단만으로 이미 보장한다(같은 탭 안에서 더 늦게 시작된 시도가 있으면 이전 시도의
-// 응답은 도착 순서와 무관하게 절대 store.loadout에 반영되지 않는다) — 이 보장은 서버가
-// 무엇을 커밋했는지와 무관하게 성립하므로, 서버 쪽에 별도의 순서 추적 상태가 없어도
-// 화면은 항상 사용자의 마지막 결정을 보여준다. 남는 잔여 위험(진짜 네트워크 재정렬로
-// DB 최종값이 화면과 다르게 커밋되는 경우)은 극히 드물고, 다음 자연스러운 재조회(편집기
-// 재오픈·새로고침·재로그인)에서 스스로 바로잡힌다 — 이 잔여 위험을 감수하는 쪽이 세
-// 가지 실제 결함을 가진 메커니즘을 유지하는 것보다 낫다는 것이 이번 감사의 결론이다.
+// 깨져 있어 제거됐다: (1) Date.now()는 전순서가 아니다 — 같은 밀리초 충돌·시계 역행/오차가
+// 정당한 요청을 잃거나 거부한다. (2) Map 갱신이 트랜잭션 커밋보다 먼저 실행돼 롤백에도
+// 의도가 전진했다(Map이 DB와 원자적이지 않음). (3) 인메모리 값은 프로세스 재시작·다중
+// 인스턴스에서 사라진다 — 영속적 장착 보장의 근거가 될 수 없다.
+//
+// 그 뒤를 이은 "행 잠금만으로 충분하다"는 설계(순수 SELECT ... FOR UPDATE 직렬화 + 프런트
+// loadoutAttemptSeq 로컬 판단)는 겹치는 확정 요청의 실제 DB 커밋 순서가 클라이언트의 "시작
+// 순서"와 정확히 일치한다는 것을 서버가 스스로 증명하지 못한다는 잔여 위험을 문서화된 채로
+// 남겼다(진짜 네트워크 재정렬 시 화면과 DB 최종값이 일시적으로 어긋날 수 있음) — 사람의
+// 운영자 감사가 이 잔여 위험을 받아들이지 않고, corrections가 제시한 두 대안 중 "서버가
+// 발급하는 영속 revision을 행 잠금 아래 CAS로 비교한다"는 쪽을 채택하도록 지시했다. 지금의
+// 설계는 그 지시를 그대로 구현한다:
+//   - EconomyLoadout 행에 서버 전용 revision 컬럼(0010-add-economy-loadout-revision.js)을
+//     두고, 성공적으로 커밋될 때마다 crypto.randomUUID()로 새 값을 발급한다(순서 비교가
+//     아니라 동일성 비교만 한다 — A-10: 값이 같아도 명시적 재저장은 항상 새 UUID를 받는다,
+//     이것이 ABA 공격을 차단한다).
+//   - 클라이언트는 자신이 마지막으로 읽은 revision을 expectedRevision으로 함께 보낸다.
+//     이 함수는 SELECT ... FOR UPDATE 행 잠금을 잡은 뒤, 지금 행의 revision이 요청의
+//     expectedRevision과 정확히 같을 때만 갱신을 커밋한다 — 다르면(다른 확정이 그 사이
+//     먼저 커밋됐다면) 어떤 컬럼도 건드리지 않고 즉시 409로 거부한다(PROFILE_REVISION_CONFLICT).
+//     이 비교는 클라이언트의 "시작 순서" 추측이 아니라 서버가 실제로 무엇을 커밋했는지를
+//     직접 보증하므로, 진짜 네트워크 재정렬이 있어도 잘못된 값이 조용히 덮어써지는 일이
+//     구조적으로 불가능하다(불일치는 항상 거부되지, 결코 통과되지 않는다).
+//   - 거부된 클라이언트는 authoritative GET(현재 loadout+revision)으로 재조정한다 —
+//     요청한 슬롯이 이미 서버 값과 같으면 그 상태를 그대로 받아들이고, 다르면 최신 revision
+//     으로 같은 의도를 다시 보낸다(economy.store.js의 equipProfile 참고).
+//   - equipItem(카드 프레임 등 일반 장착)도 같은 행을 갱신할 때마다 revision을 함께 새로
+//     발급한다 — 그래야 그 경로로 행이 바뀐 뒤에는 프로필 편집기가 들고 있던 이전 revision이
+//     자동으로 무효화된다.
 
 /** F-13 AC-01/AC-02: 프로필 사진·테두리를 하나의 확정으로 함께 저장한다. photoItemId·
  *  borderItemId 각각은 넘기지 않으면(undefined) 그 슬롯을 건드리지 않는다 — 사진만
  *  바뀐 확인은 photoItemId만 보내면 된다. 두 슬롯 모두 equipItem과 같은 카탈로그 조회·
  *  소유권 검사(ITEM_TYPE_MISMATCH/ITEM_NOT_OWNED)를 거치며, 검증은 어떤 컬럼도 갱신하기
  *  전에 전부 끝낸다 — 한쪽이라도 실패하면 loadout.update가 아예 호출되지 않아 이전 상태가
- *  그대로 유지된다(부분 저장 없음). 두 컬럼을 실제로 바꾸는 곳은 이 함수 끝의 단일
- *  loadout.update(updates) 한 번뿐이라, DB에는 하나의 UPDATE 문으로만 반영된다. 겹치는
- *  두 확정 요청은 아래 행 잠금으로 완전히 직렬화된다(동시 갱신 없음). */
-const equipProfileAppearance = async ({ userId, photoItemId, borderItemId }, db = defaultDb()) => {
+ *  그대로 유지된다(부분 저장 없음). expectedRevision이 지금 행의 revision과 다르면(다른
+ *  확정이 그 사이 먼저 커밋됐다면) 컬럼을 전혀 건드리지 않고 409로 거부한다(A-01) — 값과
+ *  새 revision을 함께 바꾸는 곳은 이 함수 끝의 단일 loadout.update(updates) 한 번뿐이라,
+ *  DB에는 하나의 UPDATE 문으로만 반영된다(부분 커밋 없음). 겹치는 두 확정 요청은 아래
+ *  행 잠금으로 완전히 직렬화된다(동시 갱신 없음). */
+const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expectedRevision }, db = defaultDb()) => {
     const slots = [
         ['PROFILE_PHOTO', photoItemId],
         ['PROFILE_BORDER', borderItemId],
@@ -725,6 +748,9 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId }, db 
         if (typeof itemId !== 'string' || itemId.length === 0) {
             throw createError('itemId가 필요합니다.', 400, 'INVALID_ITEM_ID');
         }
+    }
+    if (typeof expectedRevision !== 'string' || expectedRevision.length === 0) {
+        throw createError('expectedRevision이 필요합니다.', 400, 'MISSING_EXPECTED_REVISION');
     }
 
     // equipItem과 같은 이유(R-IMPL 2026-09-10) — 아직 getWalletSummary를 거치지 않은
@@ -754,13 +780,15 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId }, db 
     // 되게 한다 — ensureWalletRow와 같은 관례).
     await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
-        defaults: { user_id: userId },
+        defaults: { user_id: userId, revision: crypto.randomUUID() },
     });
 
     // 여기서부터 실제 컬럼을 바꾸는 지점까지를 SELECT ... FOR UPDATE로 잠근 트랜잭션 안에
     // 둔다 — applyLedgerTransaction의 지갑 잠금과 같은 이유다. 겹치는 두 확정 요청이 동시에
     // 이 함수를 호출해도, 뒤에 도착한 쪽은 앞선 트랜잭션이 커밋(또는 롤백)해 잠금을 놓을
     // 때까지 완전히 기다렸다가에야 자신의 갱신을 시작한다(동시 갱신 없음, 전부-아니면-무).
+    // expectedRevision 비교도 이 잠금 "안에서" 한다(A-01) — 잠금 밖에서 비교하면 비교와
+    // 실제 커밋 사이에 다른 트랜잭션이 끼어들 수 있어 CAS가 무의미해진다.
     return db.sequelize.transaction(async (t) => {
         const loadout = await models.EconomyLoadout.findOne({
             where: { user_id: userId },
@@ -768,7 +796,21 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId }, db 
             lock: t.LOCK.UPDATE,
         });
 
-        await loadout.update(updates, { transaction: t });
+        if (loadout.revision !== expectedRevision) {
+            // 컬럼을 전혀 건드리지 않고 즉시 거부한다 — 던지면 이 트랜잭션 콜백 전체가
+            // 롤백되므로(Sequelize 계약) 부분 갱신이 남을 수 없다.
+            throw createError(
+                '프로필이 다른 곳에서 이미 변경되었습니다. 최신 상태를 다시 불러온 뒤 다시 시도하세요.',
+                409,
+                'PROFILE_REVISION_CONFLICT',
+            );
+        }
+
+        // A-10(ABA 방지): 요청한 슬롯 값이 지금 행의 값과 우연히 같아도(예: A→B→A) 이 저장은
+        // 사용자의 명시적 재확정이므로 항상 새 UUID를 받는다 — "값이 같으니 실질적으로
+        // 아무 것도 안 바뀌었다"고 판단해 revision 발급을 건너뛰면, 이전에 발급됐다가 아직
+        // 완료되지 않은 다른 요청의 revision이 우연히 다시 유효해질 수 있다.
+        await loadout.update({ ...updates, revision: crypto.randomUUID() }, { transaction: t });
         return loadout;
     });
 };

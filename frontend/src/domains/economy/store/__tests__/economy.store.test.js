@@ -264,15 +264,130 @@ test("rejected latest profile keeps the preceding committed server value", async
   assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "A")
 })
 
-test("unknown outcome blocks queued writes instead of claiming they saved", async () => {
+// F-13 AC-02(운영자 지시, 2026-09-11 22:12: "replacing temporary unknown blocking/reset
+// escape") — 이전 버전은 전송 불확실이 한 번 생기면 profileOutcomeUnknown 플래그로 이후의
+// 모든 확정을 로그아웃 전까지 영구 차단했다. 지금은 store가 전송 불확실을 즉시 그대로
+// 다시 던지고(재조정은 호출부의 몫, 위 A-11 계약 보존 시험 참고), 그런 영구 차단 상태를
+// 전혀 두지 않는다 — 뒤이은 쓰기(B)는 A의 결과를 알 수 없어도 스스로 서버에 확정을
+// 시도한다. 이 시험은 그런 경우에도 B가 A 때문에 영원히 막히지 않고 독립적으로 시도한다는
+// 것과, 성공을 조용히 주장하지 않고 둘 다 명확한 오류로 남는다는 것(초안 유지, 사용자
+// 재시도 가능)을 함께 확인한다.
+test("unknown outcome does not permanently block queued writes — each write independently attempts and surfaces its own explicit error", async () => {
   resetStore()
   const gate = createDeferred(); let calls = 0
   postImpl = async () => { calls++; await gate.promise; throw new TypeError("connection lost") }
+  // code 없는 실패(전송 불확실)는 store가 GET을 시도조차 하지 않고 즉시 다시 던진다(위
+  // A-11 계약 보존 시험 참고) — getImpl은 resetStore()의 기본 스텁 그대로 두어도 된다.
   const a = useEconomyStore.getState().equipProfile({ borderItemId: "A" })
   const b = useEconomyStore.getState().equipProfile({ borderItemId: "B" })
-  const failures = Promise.all([assert.rejects(a, /connection lost/), assert.rejects(b, { code: "PROFILE_OUTCOME_UNKNOWN" })])
-  gate.resolve(); await failures
-  assert.equal(calls, 1)
+  const failures = Promise.all([assert.rejects(a, /connection lost/), assert.rejects(b, /connection lost/)])
+  gate.resolve()
+  await failures
+  assert.equal(calls, 2, "B는 A의 결과를 확인할 수 없는 상태에서도 영구 차단되지 않고 스스로 서버에 확정을 시도해야 한다")
+})
+
+test("F-13 AC-02(A-09): 서버 CAS 충돌(409) 후 authoritative GET이 요청한 슬롯과 이미 같은 값을 보여주면 재전송 없이 그 서버 진실을 받아들인다", async () => {
+  resetStore()
+  let postCalls = 0
+  postImpl = async () => {
+    postCalls++
+    throw Object.assign(new Error("conflict"), { code: "PROFILE_REVISION_CONFLICT" })
+  }
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 10, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedProfileBorderId: "profile-border-남작", revision: "server-rev-1" } })
+
+  const result = await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+
+  assert.equal(postCalls, 1, "요청한 슬롯이 이미 서버 값과 같으면 재전송하지 않아야 한다")
+  assert.equal(result.reconciled, true)
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+  assert.equal(useEconomyStore.getState().loadout.revision, "server-rev-1", "재조정 GET이 읽은 최신 revision이 store에 반영되어야 한다")
+})
+
+test("F-13 AC-02(A-09): 서버 CAS 충돌(409) 후 authoritative GET이 다른 값을 보여주면 최신 revision으로 같은 의도를 재전송해 성공한다", async () => {
+  resetStore()
+  let postCalls = 0
+  const seenRevisions = []
+  postImpl = async (_, body) => {
+    postCalls++
+    seenRevisions.push(body.expectedRevision)
+    if (postCalls === 1) throw Object.assign(new Error("conflict"), { code: "PROFILE_REVISION_CONFLICT" })
+    return { loadout: { selectedProfileBorderId: "profile-border-남작", revision: "server-rev-2" } }
+  }
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 10, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedProfileBorderId: "profile-border-다른값", revision: "server-rev-1" } })
+
+  const result = await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+
+  assert.equal(postCalls, 2, "충돌 후 서버 값이 다르면 최신 revision으로 정확히 한 번 재전송해야 한다")
+  assert.equal(seenRevisions[1], "server-rev-1", "재전송은 재조정 GET이 읽은 최신 revision을 실어야 한다")
+  assert.equal(result.loadout.selectedProfileBorderId, "profile-border-남작")
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+})
+
+test("F-13 AC-02(A-09): 충돌 재조정이 반복 실패하면 최대 재시도(2회) 뒤 명확한 오류로 끝나고 초안·재시도 경로가 남는다(무한 재시도 금지)", async () => {
+  resetStore()
+  let postCalls = 0
+  postImpl = async () => {
+    postCalls++
+    throw Object.assign(new Error("conflict"), { code: "PROFILE_REVISION_CONFLICT" })
+  }
+  let getCalls = 0
+  getImpl = async (endpoint) => {
+    if (endpoint.endsWith("/wallet")) return { balanceGold: 10, balanceDiamond: 0 }
+    getCalls++
+    // 매번 다른(여전히 요청과 다른) revision을 돌려줘 재조정이 절대 "이미 같다"로 끝나지
+    // 않게 한다 — 충돌이 계속 반복되는 최악의 경우.
+    return { entitlements: [], loadout: { selectedProfileBorderId: "profile-border-다른값", revision: `server-rev-${getCalls}` } }
+  }
+
+  await assert.rejects(
+    () => useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" }),
+    { code: "PROFILE_REVISION_CONFLICT" },
+  )
+
+  assert.equal(postCalls, 3, "최초 POST 1회 + 자동 재시도 최대 2회 = 총 3회를 넘겨 보내면 안 된다")
+})
+
+test("F-13 AC-02(A-09): 소유권 거부(ITEM_NOT_OWNED)처럼 명시적 거부는 재조정 GET 없이 즉시 던진다", async () => {
+  resetStore()
+  let getCalls = 0
+  postImpl = async () => { throw Object.assign(new Error("not owned"), { code: "ITEM_NOT_OWNED" }) }
+  getImpl = async () => { getCalls++; throw new Error("should not be called") }
+
+  await assert.rejects(
+    () => useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-황제" }),
+    { code: "ITEM_NOT_OWNED" },
+  )
+
+  assert.equal(getCalls, 0, "명시적 거부는 authoritative GET을 시도하지 않아야 한다(불필요한 재조정 없음)")
+})
+
+test("F-13 AC-02(A-09, A-11 계약 보존): 전송 불확실(code 없음)은 store가 스스로 재조정하지 않고 즉시 다시 던진다 — 재조정·재시도는 호출부(useProfileBorderEditor.js)의 몫이다", async () => {
+  // 운영자 지시(2026-09-11 22:12)의 "UI A-11의 오류·초안 유지·편집기 미닫힘·사용자 재시도
+  // 복구 단언을 삭제하여 통과시킨다" 금지 조항을 직접 고정한다. 전송 불확실의 authoritative
+  // GET 재조정은 이미 useProfileBorderEditor.js의 handleConfirm이 fetchSummary로 수행하고
+  // 있다(profileEquipment.integration.test.js/profileBorder.integration.test.js가 그 UI
+  // 계약을 검증) — 여기서 store가 또 한 번 재조정하면 GET이 중복 호출될 뿐 아니라, "정말
+  // 실패했는지 아직도 알 수 없는" 상태를 조용히 자동 재전송으로 덮어써 A-11의 관찰 가능성
+  // (사용자가 매 시도의 결과를 직접 확인할 수 있어야 한다)을 없앤다. 그래서 store는 오직
+  // 서버가 명확하게 "다른 값이 이미 커밋됐다"고 알려주는 conflict(409)만 재조정한다 — 전송
+  // 불확실은 GET을 시도조차 하지 않고 원래 오류를 그대로 호출부에 넘긴다.
+  resetStore()
+  let postCalls = 0
+  let getCalls = 0
+  postImpl = async () => { postCalls++; throw new TypeError("네트워크 오류") } // code 없음
+  getImpl = async () => { getCalls++; throw new Error("should not be called") }
+
+  await assert.rejects(
+    () => useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-귀족" }),
+    /네트워크 오류/,
+  )
+
+  assert.equal(postCalls, 1, "전송 불확실은 store 안에서 자동으로 다시 보내면 안 된다(한 번만 전송)")
+  assert.equal(getCalls, 0, "전송 불확실의 재조정은 store가 아니라 호출부의 몫이다 — store는 GET을 시도하지 않아야 한다")
 })
 
 test("account switch cancels queued old-account write before transport", async () => {
@@ -500,24 +615,28 @@ test("F-13(CODEX-9): equipProfile이 시작된 뒤에 시작된 fetchSummary가 
   )
 })
 
-test("F-13 AC-02 설계 감사(2026-09-11): equipProfile은 더 이상 clientIntentAt(클라이언트 벽시계 시각)을 요청에 싣지 않는다", async () => {
+test("F-13 AC-02(운영자 지시, 2026-09-11 22:12): equipProfile은 clientIntentAt(클라이언트 벽시계 시각) 대신 서버 CAS용 expectedRevision을 요청에 싣는다", async () => {
   // 운영자 설계 감사 근거: Date.now() 기반 clientIntentAt은 같은 밀리초 충돌·시계 역행/오차·
   // 그 판정을 지탱하던 서버 인메모리 상태의 비영속성이라는 세 가지 결함이 있어 제거됐다
-  // (economy.service.js의 equipProfileAppearance 주석 참고). 이 시험은 그 제거가 실제로
-  // 반영됐는지(허용되지 않은 필드로 되살아나지 않는지)만 고정한다 — "가장 나중에 시작된
-  // 시도만 store.loadout에 반영된다"는 화면 계약 자체는 순수 클라이언트 로컬 판단
-  // (loadoutAttemptSeq)만으로 이미 보장되며, 아래 다른 시험들이 그 계약을 검증한다.
+  // (economy.service.js의 equipProfileAppearance 주석 참고). 그 대체로 서버가 발급하는
+  // 영속 revision을 CAS로 비교하는 expectedRevision이 추가됐다 — 이 시험은 요청 본문이
+  // 정확히 이 세 필드(photoItemId/borderItemId/expectedRevision)만 담는지 고정한다.
   resetStore()
   const seenBodies = []
   postImpl = async (endpoint, body) => {
     seenBodies.push(body)
-    return { loadout: { selectedProfileBorderId: "profile-border-남작" } }
+    return { loadout: { selectedProfileBorderId: "profile-border-남작", revision: "server-rev-1" } }
   }
 
   await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
 
   assert.equal(seenBodies.length, 1)
-  assert.deepEqual(Object.keys(seenBodies[0]).sort(), ["borderItemId", "photoItemId"], "clientIntentAt 없이 photoItemId/borderItemId만 실려야 한다")
+  assert.deepEqual(
+    Object.keys(seenBodies[0]).sort(),
+    ["borderItemId", "expectedRevision", "photoItemId"],
+    "clientIntentAt 없이 photoItemId/borderItemId/expectedRevision만 실려야 한다",
+  )
+  assert.equal(seenBodies[0].expectedRevision, null, "revision을 아직 모르면(초기 상태) null을 그대로 보낸다")
 })
 
 // ── F-08 R-IMPL: 서버 확정 거부 vs 전송 불확실 구분 ──────────────────────────

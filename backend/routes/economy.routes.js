@@ -32,6 +32,8 @@ const serializeLoadout = (loadout) => ({
     selectedProfilePhotoId: loadout.selected_profile_photo_id,
     selectedProfileBorderId: loadout.selected_profile_border_id,
     selectedCardFrameId: loadout.selected_card_frame_id,
+    // F-13 AC-02: 다음 equip-profile 호출에 expectedRevision으로 그대로 되돌아올 CAS 토큰.
+    revision: loadout.revision,
 });
 
 // CODEX-2 재검토(AC-04): 이전 버전은 req.body에서 문서화된 필드만 "골라 읽어" 서비스로
@@ -51,8 +53,10 @@ const ALLOWED_BULK_PURCHASE_ITEM_FIELDS = new Set(["itemId"]);
 // 외의 값이 오면 즉시 거부한다(다른 write 라우트와 같은 관례, CODEX-2 재검토). clientIntentAt
 // (클라이언트 벽시계 시각을 서버 순서 판정 근거로 쓰던 필드)은 운영자 설계 감사(2026-09-11)
 // 로 제거했다 — economyService.equipProfileAppearance의 새 주석 참고(같은 밀리초 충돌·시계
-// 역행/오차·비영속 인메모리 상태라는 세 가지 결함이 있었다).
-const ALLOWED_EQUIP_PROFILE_FIELDS = new Set(["photoItemId", "borderItemId"]);
+// 역행/오차·비영속 인메모리 상태라는 세 가지 결함이 있었다). 그 대체로 서버가 발급하는
+// 영속 revision을 CAS로 비교하는 expectedRevision을 새로 추가했다(운영자 지시, 2026-09-11
+// 22:12) — 클라이언트가 GET 응답의 loadout.revision을 그대로 되돌려 보낸다.
+const ALLOWED_EQUIP_PROFILE_FIELDS = new Set(["photoItemId", "borderItemId", "expectedRevision"]);
 
 const rejectUnknownFields = (body, allowedFields, errorCode) => {
     const unknown = Object.keys(body ?? {}).filter((key) => !allowedFields.has(key));
@@ -162,17 +166,21 @@ router.post("/equip-profile", verifyToken, async (req, res, next) => {
     try {
         const body = req.body ?? {};
         rejectUnknownFields(body, ALLOWED_EQUIP_PROFILE_FIELDS, "UNKNOWN_EQUIP_PROFILE_FIELD");
-        const { photoItemId, borderItemId } = body;
+        const { photoItemId, borderItemId, expectedRevision } = body;
         if (photoItemId !== undefined && typeof photoItemId !== "string") {
             throw createError("photoItemId는 문자열이어야 합니다.", 400, "INVALID_EQUIP_PROFILE_REQUEST");
         }
         if (borderItemId !== undefined && typeof borderItemId !== "string") {
             throw createError("borderItemId는 문자열이어야 합니다.", 400, "INVALID_EQUIP_PROFILE_REQUEST");
         }
+        if (typeof expectedRevision !== "string" || expectedRevision.length === 0) {
+            throw createError("expectedRevision이 필요합니다.", 400, "MISSING_EXPECTED_REVISION");
+        }
         const loadout = await economyService.equipProfileAppearance({
             userId: req.user.uuid,
             photoItemId,
             borderItemId,
+            expectedRevision,
         });
         res.json({ loadout: serializeLoadout(loadout) });
     } catch (error) { next(error); }

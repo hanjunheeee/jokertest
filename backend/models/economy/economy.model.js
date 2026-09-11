@@ -149,6 +149,17 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING(120),
             allowNull: true,
         },
+        // F-13 AC-02 설계 감사(운영자, 2026-09-11) — 서버가 매 성공적 장착 확정마다 새로
+        // 발급하는 CAS(compare-and-swap) 토큰. 클라이언트는 자신이 마지막으로 읽은 값을
+        // expectedRevision으로 함께 보내야 하고, 서버는 SELECT ... FOR UPDATE 행 잠금 안에서
+        // 그 값이 지금 행의 값과 같을 때만 갱신을 커밋한다(economy.service.js의
+        // equipProfileAppearance 참고). 애플리케이션 코드가 매 생성·갱신마다 crypto.randomUUID()
+        // 로 명시적으로 채운다 — Sequelize defaultValue를 쓰지 않는 이유는 단일 DEFAULT 값이
+        // 모든 신규 행에 같은 문자열을 채워 CAS 비교를 무의미하게 만들기 때문이다.
+        revision: {
+            type: DataTypes.STRING(36),
+            allowNull: false,
+        },
     }, {
         tableName: 'economy_loadouts',
         timestamps: true,

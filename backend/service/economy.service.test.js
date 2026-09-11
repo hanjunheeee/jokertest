@@ -710,32 +710,43 @@ test('CODEX-2(AC-03): ensureDefaultEntitlements도 외부 트랜잭션을 받으
 });
 
 // ── F-13 AC-01/AC-02: equipProfileAppearance(사진·테두리 동시 확정) ─────────────
+//
+// F-13 AC-02(운영자 설계 감사, 2026-09-11): expectedRevision은 실제 클라이언트가 항상
+// GET(getWalletSummary)으로 먼저 읽은 값을 그대로 되돌려 보내는 값이다 — 이 헬퍼가 그
+// 실제 흐름(먼저 조회해 revision을 얻은 뒤에만 확정을 시도한다)을 시험에서도 그대로
+// 재현한다.
+const currentRevision = async (db, userId) => (await economyService.getWalletSummary(userId, db)).loadout.revision;
 
-test('F-13 AC-02: 사진·테두리를 동시에 정당하게 보유한 상태로 확정하면 두 컬럼 모두 갱신된다', async () => {
+test('F-13 AC-02: 사진·테두리를 동시에 정당하게 보유한 상태로 확정하면 두 컬럼과 revision이 모두 갱신된다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-joint-ok';
     await grantBalance(db, userId, 1000);
     await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+    const expectedRevision = await currentRevision(db, userId);
 
     const loadout = await economyService.equipProfileAppearance({
         userId,
         photoItemId: 'player-profile-기사',
         borderItemId: PURCHASABLE_ITEM_ID,
+        expectedRevision,
     }, db);
 
     assert.equal(loadout.selected_profile_photo_id, 'player-profile-기사');
     assert.equal(loadout.selected_profile_border_id, PURCHASABLE_ITEM_ID);
+    assert.notEqual(loadout.revision, expectedRevision, '성공적인 확정은 항상 새 revision을 발급해야 한다(A-10)');
 });
 
 test('F-13 AC-01: 테두리를 보유하지 않은 채 사진과 함께 확정을 요청하면 거부되고 사진도 저장되지 않는다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-joint-unowned-border';
+    const expectedRevision = await currentRevision(db, userId);
 
     await assert.rejects(
         () => economyService.equipProfileAppearance({
             userId,
             photoItemId: 'player-profile-기사',
             borderItemId: 'profile-border-황제', // 보유하지 않음
+            expectedRevision,
         }, db),
         (error) => error.status === 403 && error.code === 'ITEM_NOT_OWNED',
     );
@@ -743,6 +754,7 @@ test('F-13 AC-01: 테두리를 보유하지 않은 채 사진과 함께 확정�
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '검증에 실패하면 사진 슬롯도 저장되지 않아 기본값 그대로여야 한다(부분 저장 금지)');
     assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
+    assert.equal(loadout.revision, expectedRevision, '거부된 요청은 revision도 바꾸면 안 된다');
 });
 
 test('F-13 AC-01(CODEX-4): 소유권 행만 사라진(원장은 그대로인) 기본 사진은 ensureDefaultEntitlements가 조용히 재지급하지 않고 equipProfileAppearance가 실제로 거부한다', async () => {
@@ -758,14 +770,14 @@ test('F-13 AC-01(CODEX-4): 소유권 행만 사라진(원장은 그대로인) �
     // 데이터 무결성 예외 하나만으로 실제 거부 경로를 고정한다.
     const db = createFakeDb();
     const userId = 'user-f13-photo-entitlement-gap';
-    await economyService.getWalletSummary(userId, db); // 기본 16종 사진 + 평민 테두리 지급(원장 포함)
+    const expectedRevision = await currentRevision(db, userId); // 기본 16종 사진 + 평민 테두리 지급(원장 포함)
 
     const idx = db._inspect.entitlements.findIndex((e) => e.user_id === userId && e.item_id === 'player-profile-기사');
     assert.notEqual(idx, -1, '사전 조건: 기본 지급으로 이미 보유하고 있어야 한다');
     db._inspect.entitlements.splice(idx, 1); // 소유권 행만 제거 — 원장(ledgerEntries)은 그대로 둔다
 
     await assert.rejects(
-        () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사' }, db),
+        () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision }, db),
         (error) => error.status === 403 && error.code === 'ITEM_NOT_OWNED',
         'equipProfileAppearance 내부의 ensureDefaultEntitlements 재호출이 소유권을 조용히 복구하면 안 된다',
     );
@@ -783,13 +795,15 @@ test('F-13 AC-01(CODEX-4): 소유권 행만 사라진(원장은 그대로인) �
 test('F-13 AC-01: 사진 슬롯에 테두리 itemId를 보내면 종류 불일치로 거부되고 기존 선택은 그대로 유지된다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-joint-typemismatch';
-    await economyService.equipProfileAppearance({ userId, photoItemId: DEFAULT_PROFILE_PHOTO_ID }, db);
+    const firstRevision = await currentRevision(db, userId);
+    const afterFirst = await economyService.equipProfileAppearance({ userId, photoItemId: DEFAULT_PROFILE_PHOTO_ID, expectedRevision: firstRevision }, db);
 
     await assert.rejects(
         () => economyService.equipProfileAppearance({
             userId,
             photoItemId: DEFAULT_PROFILE_BORDER_ID, // 테두리 itemId를 사진 슬롯에
             borderItemId: DEFAULT_PROFILE_BORDER_ID,
+            expectedRevision: afterFirst.revision,
         }, db),
         (error) => error.status === 400 && error.code === 'ITEM_TYPE_MISMATCH',
     );
@@ -801,9 +815,10 @@ test('F-13 AC-01: 사진 슬롯에 테두리 itemId를 보내면 종류 불일�
 test('F-13 AC-02: 사진만 바뀐 확인은 borderItemId 없이 photoItemId만 보내면 테두리 컬럼을 건드리지 않는다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-photo-only';
-    await economyService.equipProfileAppearance({ userId, photoItemId: DEFAULT_PROFILE_PHOTO_ID, borderItemId: DEFAULT_PROFILE_BORDER_ID }, db);
+    const firstRevision = await currentRevision(db, userId);
+    const afterFirst = await economyService.equipProfileAppearance({ userId, photoItemId: DEFAULT_PROFILE_PHOTO_ID, borderItemId: DEFAULT_PROFILE_BORDER_ID, expectedRevision: firstRevision }, db);
 
-    const loadout = await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사' }, db);
+    const loadout = await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision: afterFirst.revision }, db);
     assert.equal(loadout.selected_profile_photo_id, 'player-profile-기사');
     assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID, '넘기지 않은 테두리 슬롯은 그대로 유지되어야 한다');
 });
@@ -811,45 +826,140 @@ test('F-13 AC-02: 사진만 바뀐 확인은 borderItemId 없이 photoItemId만 
 test('F-13 AC-02: 아무 슬롯도 넘기지 않으면 거부된다', async () => {
     const db = createFakeDb();
     await assert.rejects(
-        () => economyService.equipProfileAppearance({ userId: 'user-f13-empty' }, db),
+        () => economyService.equipProfileAppearance({ userId: 'user-f13-empty', expectedRevision: 'irrelevant' }, db),
         (error) => error.status === 400 && error.code === 'EMPTY_PROFILE_EQUIP_REQUEST',
     );
 });
 
-// ── F-13 AC-02 설계 감사(운영자, 2026-09-11): clientIntentAt/인메모리 Map 제거 ──────
+// ── F-13 AC-02(운영자 설계 감사, 2026-09-11): 서버 발급 영속 revision CAS ───────────
 //
-// 이전 CODEX-9 버전은 클라이언트 벽시계 시각(clientIntentAt)과 인메모리 Map으로 겹치는
-// 확정의 "의도 순서"를 서버가 재구성하려 했으나, (1) 같은 밀리초 충돌로 유효한 갱신을
-// 잃고 (2) 시계 역행/오차가 정당한 나중 요청을 거부하며 (3) Map이 트랜잭션 커밋보다 먼저
-// 갱신돼 롤백에도 의도가 전진하고 재시작·다중 인스턴스에서 사라진다는 세 가지 결함이 있어
-// 제거했다(economy.service.js의 equipProfileAppearance 주석 참고). 아래 시험은 그 필드가
-// 남아 있지 않음(넘겨도 조용히 무시됨)과, 겹치지 않는 정상 순차 호출에서는 여전히 나중
-// 호출이 이전 값을 정상적으로 대체함(행 잠금에 의한 전부-아니면-무 원자성 자체는 그대로
-// 유효함)을 고정한다. "실제 네트워크 재정렬로 도착 순서가 뒤바뀌어도 서버가 의도 순서를
-// 보존한다"는 보장 자체는 더 이상 서버 책임이 아니다 — 화면 정합성은 economy.store.js의
-// loadoutAttemptSeq(순수 클라이언트 로컬 판단)가 별도로 보장한다(economy.store.test.js 참고).
+// clientIntentAt(클라이언트 벽시계 시각)과 인메모리 Map으로 겹치는 확정의 "의도 순서"를
+// 서버가 재구성하려던 이전 시도는 (1) 같은 밀리초 충돌로 유효한 갱신을 잃고 (2) 시계
+// 역행/오차가 정당한 나중 요청을 거부하며 (3) Map이 트랜잭션 커밋보다 먼저 갱신돼 롤백에도
+// 의도가 전진하고 재시작·다중 인스턴스에서 사라진다는 세 가지 결함이 있어 제거됐다. 그
+// 자리를 대신했던 "행 잠금만으로 충분하다"(프런트 loadoutAttemptSeq만으로 화면 정합성을
+// 보장)는 설계도, 서버가 실제로 무엇을 커밋했는지를 스스로 증명하지 못한다는 잔여 위험이
+// 있어 운영자 지시로 대체됐다: 지금은 서버가 발급하는 영속 revision(EconomyLoadout.revision)
+// 을 행 잠금 안에서 CAS(compare-and-swap)로 비교한다(economy.service.js의
+// equipProfileAppearance 주석 참고). 아래 시험은 그 CAS 계약 자체를 고정한다.
 
-test('F-13 AC-02(설계 감사): 겹치지 않는 순차 확정에서는 나중 호출이 이전 값을 정상적으로 대체한다(행 잠금 원자성 회귀 방지)', async () => {
+test('F-13 AC-02: 겹치지 않는 순차 확정에서는 나중 호출이 이전 값을 정상적으로 대체한다(행 잠금 원자성 회귀 방지)', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-sequential-order';
     await grantBalance(db, userId, 1000);
     await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+    const revision1 = await currentRevision(db, userId);
 
-    await economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID }, db);
-    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID }, db);
+    const afterFirst = await economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID, expectedRevision: revision1 }, db);
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, expectedRevision: afterFirst.revision }, db);
 
     assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, '나중에 호출된 확정이 이전 값을 정상적으로 대체해야 한다');
 });
 
-test('F-13 AC-02(설계 감사): clientIntentAt을 실어 보내도(구버전 클라이언트·프록시 잔재 등) 조용히 무시되고 갱신 자체는 정상 적용된다', async () => {
+test('F-13 AC-02: clientIntentAt은 더 이상 인자로 받지 않는다(구버전 클라이언트·프록시 잔재가 실려도 조용히 무시된다)', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-ignored-intent-field';
     await grantBalance(db, userId, 1000);
     await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+    const expectedRevision = await currentRevision(db, userId);
 
-    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, clientIntentAt: 12345 }, db);
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, expectedRevision, clientIntentAt: 12345 }, db);
 
     assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, 'clientIntentAt은 더 이상 읽히지 않으므로 갱신 자체는 정상 적용되어야 한다');
+});
+
+test('F-13 AC-02(A-01): expectedRevision이 없거나 형식이 잘못되면 거부되고 장착값이 바뀌지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-missing-revision';
+    const expectedRevision = await currentRevision(db, userId);
+
+    for (const badRevision of [undefined, '', 123, null]) {
+        await assert.rejects(
+            () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision: badRevision }, db),
+            (error) => error.status === 400 && error.code === 'MISSING_EXPECTED_REVISION',
+        );
+    }
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, 'expectedRevision 누락·오형식 요청이 장착값을 바꾸면 안 된다');
+    assert.equal(loadout.revision, expectedRevision, 'expectedRevision 누락·오형식 요청이 revision도 바꾸면 안 된다');
+});
+
+test('F-13 AC-02(A-01): 오래된(이미 다른 확정이 먼저 커밋한) revision으로 확정을 요청하면 409로 거부되고 아무 컬럼도 바뀌지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-stale-revision';
+    const staleRevision = await currentRevision(db, userId);
+
+    // 다른 확정(또는 다른 탭)이 먼저 커밋되어 revision이 이미 전진했다.
+    const committed = await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision: staleRevision }, db);
+    assert.notEqual(committed.revision, staleRevision);
+
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID, expectedRevision: staleRevision }, db),
+        (error) => error.status === 409 && error.code === 'PROFILE_REVISION_CONFLICT',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_photo_id, 'player-profile-기사', '충돌로 거부된 요청은 이미 커밋된 값을 바꾸면 안 된다');
+    assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID, '충돌로 거부된 요청이 의도한 값이 실제로 커밋되면 안 된다(부분 저장 금지)');
+    assert.equal(loadout.revision, committed.revision, '거부된 요청은 revision도 바꾸면 안 된다');
+});
+
+test('F-13 AC-02(A-01): 같은 오래된 revision을 들고 동시에 경쟁하는 두 확정 중 정확히 하나만 성공한다(동시 CAS 경쟁)', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-cas-race';
+    const revision = await currentRevision(db, userId);
+
+    const [settledA, settledB] = await Promise.allSettled([
+        economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID, expectedRevision: revision }, db),
+        economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision: revision }, db),
+    ]);
+
+    const fulfilled = [settledA, settledB].filter((r) => r.status === 'fulfilled');
+    const rejected = [settledA, settledB].filter((r) => r.status === 'rejected');
+    assert.equal(fulfilled.length, 1, '같은 오래된 revision으로 경쟁하는 두 확정 중 정확히 하나만 성공해야 한다');
+    assert.equal(rejected.length, 1);
+    assert.equal(rejected[0].reason.code, 'PROFILE_REVISION_CONFLICT');
+});
+
+test('F-13 AC-02(A-10, ABA 방지): 같은 값을 다시 명시적으로 저장해도 매번 새 revision을 받고, 무효화된 오래된 revision은 값이 우연히 같아져도 재유효화되지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-aba';
+    const revision0 = await currentRevision(db, userId);
+
+    const toB = await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-평민', expectedRevision: revision0 }, db);
+    const backToDefault = await economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID, expectedRevision: toB.revision }, db);
+
+    assert.notEqual(backToDefault.revision, revision0, '값이 원래(revision0 시점)와 같아도 명시적 재저장은 새 revision을 받아야 한다');
+
+    // revision0(최초 값)을 여전히 들고 있는 지연된 요청은, 지금 값이 우연히 revision0
+    // 시점과 같은 DEFAULT_PROFILE_BORDER_ID라도 절대 통과하면 안 된다 — revision0은 이미
+    // 두 번 갱신을 거쳐 무효화됐다.
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision: revision0 }, db),
+        (error) => error.code === 'PROFILE_REVISION_CONFLICT',
+        'ABA(같은 값으로 되돌아온) 상황에서도 오래된 revision0은 다시 유효해지면 안 된다',
+    );
+});
+
+test('F-13(F0394 equipItem): 일반 장착(카드 프레임)도 같은 행을 갱신하면 revision을 새로 발급해, 프로필 편집기가 들고 있던 이전 revision을 무효화한다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-equipitem-invalidates';
+    const staleRevision = await currentRevision(db, userId); // 편집기가 이 시점에 revision을 읽어 뒀다고 가정
+
+    // 그 사이 같은 계정이 카드 프레임(equipItem, 일반 장착 경로)을 바꾼다 — 같은
+    // EconomyLoadout 행이지만 다른 컬럼이다.
+    await economyService.equipItem({ userId, slot: 'PLAYER_CARD_FRAME', itemId: economyService.FREE_CARD_FRAME_ID }, db);
+
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision: staleRevision }, db),
+        (error) => error.code === 'PROFILE_REVISION_CONFLICT',
+        'equipItem이 같은 행의 revision을 이미 전진시켰으므로 편집기가 들고 있던 이전 revision은 무효해야 한다',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_card_frame_id, economyService.FREE_CARD_FRAME_ID, 'equipItem 자신의 갱신은 정상적으로 반영되어야 한다');
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '거부된 프로필 확정은 사진 컬럼을 바꾸면 안 된다');
 });
 
 // ── F-13 AC-05 전제: getPublicProfileLoadouts(대기방·인게임 공개 노출) ──────────
@@ -857,7 +967,8 @@ test('F-13 AC-02(설계 감사): clientIntentAt을 실어 보내도(구버전 �
 test('F-13 AC-05: getPublicProfileLoadouts는 대상 계정의 사진·테두리 id만 돌려주고 지갑·소유 목록은 포함하지 않는다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-public-a';
-    await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', borderItemId: DEFAULT_PROFILE_BORDER_ID }, db);
+    const expectedRevision = await currentRevision(db, userId);
+    await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', borderItemId: DEFAULT_PROFILE_BORDER_ID, expectedRevision }, db);
 
     const result = await economyService.getPublicProfileLoadouts([userId], db);
     assert.deepEqual(result[userId], { profilePhotoId: 'player-profile-기사', profileBorderId: DEFAULT_PROFILE_BORDER_ID });
@@ -877,8 +988,10 @@ test('F-13 AC-05: 여러 계정을 한 번에 조회해도 계정별로 서로 �
     const db = createFakeDb();
     const userA = 'user-f13-public-multi-a';
     const userB = 'user-f13-public-multi-b';
-    await economyService.equipProfileAppearance({ userId: userA, photoItemId: 'player-profile-기사' }, db);
-    await economyService.equipProfileAppearance({ userId: userB, photoItemId: 'player-profile-드워프' }, db);
+    const revisionA = await currentRevision(db, userA);
+    const revisionB = await currentRevision(db, userB);
+    await economyService.equipProfileAppearance({ userId: userA, photoItemId: 'player-profile-기사', expectedRevision: revisionA }, db);
+    await economyService.equipProfileAppearance({ userId: userB, photoItemId: 'player-profile-드워프', expectedRevision: revisionB }, db);
 
     const result = await economyService.getPublicProfileLoadouts([userA, userB], db);
     assert.equal(result[userA].profilePhotoId, 'player-profile-기사');

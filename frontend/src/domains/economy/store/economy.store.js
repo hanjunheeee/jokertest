@@ -20,6 +20,11 @@ const initialLoadout = {
   selectedProfilePhotoId: null,
   selectedProfileBorderId: null,
   selectedCardFrameId: null,
+  // F-13 AC-02(운영자 지시, 2026-09-11 22:12): 서버가 발급하는 CAS(compare-and-swap) 토큰.
+  // equipProfile은 이 값을 expectedRevision으로 그대로 되돌려 보낸다 — 서버가 실제로 무엇을
+  // 커밋했는지를 직접 보증하므로, 더 이상 클라이언트의 "시작 순서" 추측(loadoutAttemptSeq)
+  // 만으로 화면 정합성을 지탱하지 않는다(economy.service.js의 equipProfileAppearance 참고).
+  revision: null,
 }
 
 const initialState = {
@@ -42,10 +47,21 @@ const resolveUserId = () => useAuthStore.getState().user?.uuid ?? null
 const buildReferenceEventId = (userId, itemId) =>
   `purchase:${userId}:${itemId}:${crypto.randomUUID()}`
 
-// Only one profile write may be in flight per account generation. Unknown outcomes
-// stop the queue: a GET cannot prove that a disconnected POST will never commit.
+// F-13 AC-02(운영자 지시, 2026-09-11 22:12: "replacing temporary unknown blocking/reset
+// escape") — 겹치는 프로필 확정을 한 번에 하나씩만 실제로 전송하도록 직렬화한다(A-06 "정상
+// 프로필 직렬 큐"). 이전 버전은 전송 불확실(응답 유실)이 한 번 생기면 profileOutcomeUnknown
+// 플래그로 이후의 모든 확정을 로그아웃/재로그인 전까지 영구히 막았다 — 그러나 서버가 이제
+// 영속 revision을 CAS로 비교하므로(equipProfileAppearance) 그런 영구 차단이 더 이상
+// 필요하지 않다: 뒤이은 확정이 실제로 전송되면, 그 사이 앞선 확정이 조용히 커밋됐었더라도
+// 서버가 예전 revision을 보고 409로 거부해 스스로 재조정(authoritative GET)하게 만든다 —
+// 정확성의 근거가 클라이언트의 불확실한 추측이 아니라 서버의 CAS 판정으로 옮겨졌다.
 let profileQueue = null
-let profileOutcomeUnknown = false
+
+// F-13 AC-02(A-09): conflict/전송 불확실 자동 재시도는 최초 POST 이후 최대 이 횟수만큼만
+// 허용한다(초기 시도 1회 + 재시도 2회 = 최대 3회 실제 전송). 이 한도를 넘기거나 재조정용
+// GET 자체가 실패하면 draft·명확한 오류·사용자 재시도 경로를 남기고 더 이상 자동으로
+// 재전송하지 않는다.
+const MAX_PROFILE_EQUIP_AUTO_RETRIES = 2
 
 export const useEconomyStore = create((set, get) => ({
   ...initialState,
@@ -179,38 +195,104 @@ export const useEconomyStore = create((set, get) => ({
 
   /** F-13 AC-01/AC-02: 프로필 수정 모달의 확인 한 번을 사진·테두리 동시 확정 요청 하나로
    *  보낸다. 실제로 바뀐 슬롯만 넘기면 되고(다른 슬롯은 undefined로 넘겨 건드리지 않는다),
-   *  서버가 두 슬롯을 함께 검증·저장한 뒤 돌려준 loadout만 반영한다 — 실패하면(한쪽이라도
-   *  미보유/종류 불일치) 아무 것도 반영하지 않고 그대로 던진다(이전 장착 상태 유지, equip과
-   *  같은 generation 가드).
+   *  서버가 두 슬롯을 함께 검증·저장한 뒤 돌려준 loadout만 반영한다 — 명시적 거부(소유권·
+   *  종류 불일치 등)는 아무 것도 반영하지 않고 그대로 던진다(이전 장착 상태 유지).
+   *
+   *  F-13 AC-02(운영자 지시, 2026-09-11 22:12) — 서버 CAS 재조정: 요청마다 지금 알고 있는
+   *  loadout.revision을 expectedRevision으로 함께 보낸다. 서버가 409(PROFILE_REVISION_CONFLICT)
+   *  로 거부하면(다른 확정이 그 사이 먼저 커밋됐다는 서버의 확정적 신호) authoritative GET
+   *  으로 현재 서버 loadout·revision을 다시 읽는다 — 요청한 슬롯이 이미 그 값과 같으면 그
+   *  서버 진실을 그대로 받아들이고(재전송 불필요, 성공으로 취급), 다르면 최신 revision으로
+   *  같은 사용자 의도를 자동으로 다시 보낸다(최대 MAX_PROFILE_EQUIP_AUTO_RETRIES회).
+   *
+   *  전송 불확실(응답 자체를 받지 못함, code 없음)과 그 외 명시적 거부(ITEM_NOT_OWNED 등)는
+   *  이 함수가 재조정하지 않고 그대로 다시 던진다 — 전송 불확실의 authoritative GET 재조정은
+   *  이미 호출부(useProfileBorderEditor.js의 handleConfirm)가 fetchSummary로 수행하고 있다
+   *  (A-11: 오류 표시·초안 유지·편집기 미닫힘·사용자 재시도 복구 계약). 여기서 또 한 번
+   *  재조정하면 호출을 중복시킬 뿐 아니라, "정말 실패했는지 아직도 알 수 없는" 상태를 조용히
+   *  자동 재전송으로 덮어써 A-11의 관찰 가능성(사용자가 매 시도의 결과를 직접 확인할 수
+   *  있어야 한다)을 없앤다 — 그래서 자동 재시도는 서버가 명확하게 "다른 값이 이미 커밋됐다"
+   *  고 알려주는 conflict에만 적용한다. "영구 차단 후 재로그인 요구"였던 이전
+   *  profileOutcomeUnknown 방식과 달리, 이 재조정은 요청마다 독립적으로 이뤄지므로 뒤이은
+   *  확정(다음 handleConfirm 클릭 등)을 막지 않는다.
    *  @param {{ photoItemId?: string, borderItemId?: string }} params */
   equipProfile: ({ photoItemId, borderItemId }) => {
     const generation = get().requestGeneration
     const userId = resolveUserId()
     const attemptSeq = get().loadoutAttemptSeq + 1
     set({ loadoutAttemptSeq: attemptSeq })
-    const run = async () => {
-      if (!userId || generation !== get().requestGeneration || userId !== resolveUserId()) {
-        throw Object.assign(new Error("계정이 변경되어 저장을 취소했습니다."), { code: "SESSION_CHANGED" })
-      }
-      if (profileOutcomeUnknown) {
-        throw Object.assign(new Error("이전 저장 결과를 확인할 수 없어 추가 저장을 중지했습니다. 다시 로그인한 뒤 저장 상태를 확인해 주세요."), { code: "PROFILE_OUTCOME_UNKNOWN" })
-      }
-      try {
-        const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId })
-        if (generation === get().requestGeneration) {
-          // A committed before B can be sent. Even if B is rejected, A remains the
-          // actual saved value; discarding A merely because B was queued is wrong.
-          set(state => ({ loadout: { ...state.loadout, ...result.loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
-        }
-        return result
-      } catch (error) {
-        if (generation === get().requestGeneration && !error.code) {
-          profileOutcomeUnknown = true
-          set({ error: "프로필 저장 결과를 확인할 수 없습니다." })
-        }
-        throw error
+
+    // A committed before B can be sent. Even if B is rejected, A remains the actual
+    // saved value; discarding A merely because B was queued is wrong — 그래서 이 함수가
+    // 실제로 확정한 loadout(직접 성공, 또는 아래 재조정으로 "이미 반영됨"이 확인된 경우)은
+    // 계정만 확인해 항상 반영한다(loadoutAttemptSeq로 가리지 않는다 — 그 값은 오직
+    // fetchSummary의 GET 결과가 이 시도보다 오래됐는지 가리는 데만 쓰인다). 계정이 바뀐
+    // 경우(A-06)만 애초에 보내지 않고 즉시 중단한다.
+    const isCurrent = () => Boolean(userId) && generation === get().requestGeneration && userId === resolveUserId()
+    const sessionChangedError = () => Object.assign(new Error("계정이 변경되어 저장을 취소했습니다."), { code: "SESSION_CHANGED" })
+
+    // 이 시도(attemptSeq) 자신이 실제로 확정한 결과만 적용한다 — 계정 확인만 거친다.
+    const applyLoadoutResult = (loadout) => {
+      if (isCurrent()) {
+        set((state) => ({ loadout: { ...state.loadout, ...loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
       }
     }
+
+    // 재조정용 authoritative GET. equipProfile이 바꾸지 않는 지갑·소유품은 fetchSummary와
+    // 같은 계약으로 항상 정착시킨다(attemptSeq 보호 불필요) — loadout은 여기서 store에
+    // 직접 쓰지 않고 호출부가 확인한 뒤 applyLoadoutResult로 반영할지 판단한다.
+    const fetchAuthoritativeLoadout = async () => {
+      if (!isCurrent()) throw sessionChangedError()
+      const [wallet, entitlementsResponse] = await Promise.all([
+        api.get(`/economy/accounts/${userId}/wallet`),
+        api.get(`/economy/accounts/${userId}/entitlements`),
+      ])
+      if (!isCurrent()) throw sessionChangedError()
+      if (isCurrent()) {
+        set({ balanceGold: wallet.balanceGold, balanceDiamond: wallet.balanceDiamond, entitlements: entitlementsResponse.entitlements })
+      }
+      return entitlementsResponse.loadout
+    }
+
+    const attemptSend = async (expectedRevision, attemptNumber) => {
+      if (!isCurrent()) throw sessionChangedError()
+      try {
+        const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId, expectedRevision })
+        applyLoadoutResult(result.loadout)
+        return result
+      } catch (error) {
+        if (!isCurrent()) throw error
+
+        // 오직 서버 CAS 충돌(PROFILE_REVISION_CONFLICT)만 이 함수가 재조정한다 — 전송
+        // 불확실(code 없음)과 그 외 명시적 거부는 그대로 다시 던진다(위 함수 설명 참고,
+        // A-11 계약을 지키는 재조정은 호출부가 담당한다).
+        const code = error?.code
+        if (code !== "PROFILE_REVISION_CONFLICT" || attemptNumber > MAX_PROFILE_EQUIP_AUTO_RETRIES) throw error
+
+        let serverLoadout
+        try {
+          serverLoadout = await fetchAuthoritativeLoadout()
+        } catch {
+          // GET 자체가 실패했다 — 원래 오류(409 충돌)를 그대로 남긴다(초안 유지, 명확한
+          // 오류, 사용자 재시도 경로 — A-09). 조용히 무한 재시도하지 않는다.
+          throw error
+        }
+        if (!isCurrent()) throw sessionChangedError()
+
+        const photoMatches = photoItemId === undefined || serverLoadout.selectedProfilePhotoId === photoItemId
+        const borderMatches = borderItemId === undefined || serverLoadout.selectedProfileBorderId === borderItemId
+        if (photoMatches && borderMatches) {
+          // 요청한 슬롯이 이미 서버 값과 같다 — 그 사이 이 요청(또는 동등한 다른 확정)이
+          // 실제로는 커밋돼 있었다는 뜻이다. 재전송할 필요 없이 서버 진실을 그대로 받아들인다.
+          applyLoadoutResult(serverLoadout)
+          return { loadout: serverLoadout, reconciled: true }
+        }
+        // 최신 사용자 의도를 최신 revision으로 다시 보낸다.
+        return attemptSend(serverLoadout.revision, attemptNumber + 1)
+      }
+    }
+
+    const run = () => attemptSend(get().loadout.revision, 1)
     const result = profileQueue ? profileQueue.then(run) : run()
     const settled = result.then(() => undefined, () => undefined)
     profileQueue = settled
@@ -222,7 +304,6 @@ export const useEconomyStore = create((set, get) => ({
    *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 계정의 응답은 전부 무시된다. */
   reset: () => {
     profileQueue = null
-    profileOutcomeUnknown = false
     set((state) => ({
     ...initialState,
     pendingPurchases: {},
