@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import {
   SKIN_CARD_WEAR_BACKDROP_CLASS,
   SKIN_CARD_WEAR_PANEL_WRAP_CLASS,
@@ -11,6 +11,10 @@ import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import SkinCardWearPanel from "./SkinCardWearPanel.jsx"
 
 export default function SkinCardWearOverlay({ open, onClose }) {
+  const lifecycle = useRef(0)
+  const dirty = useRef(false)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const appliedSkinsByJob = useSkinCardWearStore((state) => state.skinsByJob)
   const appliedCardFrameId = useSkinCardWearStore((state) => state.cardFrameId)
   const fetchSummary = useEconomyStore((state) => state.fetchSummary)
@@ -42,47 +46,31 @@ export default function SkinCardWearOverlay({ open, onClose }) {
     initialCardFrameId: appliedCardFrameId,
   })
 
-  // F-14(AC-01/AC-03, R-IMPL P1 수정): 열림·계정 전환 생명주기의 조회/초기화를 서버
-  // loadout 갱신 자체와 분리한다 — 이 effect는 open 또는 requestGeneration이 바뀔 때만
-  // 실행되고, resetDraft·fetchSummary는 그때 정확히 한 번(+fetch 완료 시 authoritative
-  // 값으로 한 번 더)만 수행한다. appliedSkinsByJob/appliedCardFrameId는 더 이상 의존성이
-  // 아니다 — 이전에는 이 값들이 바뀔 때마다(매 fetchSummary 응답이 만드는 새 객체 참조
-  // 포함) effect가 재실행되어 GET→resetDraft가 무한 반복되고, 부분 성공 뒤 아직 저장되지
-  // 않은 다른 슬롯의 초안까지 지워졌다.
+  // Each opening/account owns its async work; background reads cannot replace edits.
   useEffect(() => {
+    const epoch = ++lifecycle.current
     if (!open) return undefined
-
-    let cancelled = false
-
-    // 마지막으로 알려진 applied 값으로 즉시 초기화해 첫 프레임부터 빈 화면이 뜨지 않게 한다.
+    dirty.current = false
     resetDraft({
       skinsByJob: useSkinCardWearStore.getState().skinsByJob,
       cardFrameId: useSkinCardWearStore.getState().cardFrameId,
     })
-
-    // 열 때마다 서버 확정값을 다시 조회한다 — 다른 기기·탭에서 바뀐 구매·장착이 있어도
-    // 목록·미리보기가 낡은 값으로 열리지 않는다. 조회가 끝난 뒤 딱 한 번 더
-    // authoritative 값으로 초안을 맞춘다(그 사이 사용자가 편집을 시작했다면 이 open 시점
-    // 기준으로는 최신 서버 값을 우선한다 — 열자마자의 일회성 동기화이지, 편집 중 반복
-    // 동기화가 아니다).
-    fetchSummary().then(() => {
-      if (cancelled) return
+    fetchSummary().then((result) => {
+      if (epoch !== lifecycle.current || dirty.current || !result?.ok) return
       resetDraft({
         skinsByJob: useSkinCardWearStore.getState().skinsByJob,
         cardFrameId: useSkinCardWearStore.getState().cardFrameId,
       })
     })
-
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose()
+      if (event.key === "Escape") onCloseRef.current()
     }
-
     window.addEventListener("keydown", onKeyDown)
     return () => {
-      cancelled = true
+      lifecycle.current += 1
       window.removeEventListener("keydown", onKeyDown)
     }
-  }, [open, requestGeneration, onClose, resetDraft, fetchSummary])
+  }, [open, requestGeneration, resetDraft, fetchSummary])
 
   // F-14(AC-01/AC-02/AC-05): 로컬 낙관적 반영 없음 — confirmLoadout이 실제로 서버 확정
   // 성공(ok:true)을 보고했을 때만 닫는다. 명시적 거부·전송 불확실은 열린 채로 남아 Panel이
@@ -90,11 +78,14 @@ export default function SkinCardWearOverlay({ open, onClose }) {
   // stale 결과는 성공도 실패도 아니므로 그대로 무시한다 — 이미 무효한 이전 계정 컨텍스트라
   // 닫기·오류 표시 어느 쪽도 하지 않는다(그 계정 화면은 auth store 전환으로 별도 정리된다).
   const handleConfirm = async () => {
+    const epoch = lifecycle.current
+    dirty.current = true
     const result = await confirmLoadout({
       appliedSkinsByJob,
       appliedCardFrameId,
+      isActive: () => epoch === lifecycle.current,
     })
-    if (result.ok) onClose()
+    if (result.ok && epoch === lifecycle.current) onCloseRef.current()
   }
 
   return (
@@ -128,7 +119,7 @@ export default function SkinCardWearOverlay({ open, onClose }) {
                 selectedItemId={selectedItemId}
                 appliedSkinsByJob={appliedSkinsByJob}
                 appliedCardFrameId={appliedCardFrameId}
-                onSelectItem={selectItem}
+                onSelectItem={(item) => { dirty.current = true; selectItem(item) }}
                 jobTabs={jobTabs}
                 activeJobIndex={activeJobIndex}
                 onJobSelect={setActiveJobIndex}

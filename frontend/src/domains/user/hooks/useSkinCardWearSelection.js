@@ -89,6 +89,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   // setConfirmStatus("saving")이 아직 커밋되지 않았을 수 있다 — ref는 동기적으로 즉시
   // 갱신되므로 이 경합을 실제로 막는다(state만으로는 중복 저장을 막을 수 없다).
   const savingRef = useRef(false)
+  const saveGeneration = useRef(0)
 
   // F-14(AC-02): 인증된 서버 소유 목록만 신뢰한다 — economy store가 fetchSummary로 받아온
   // entitlements 외에는 어떤 것도 소유 판정의 근거가 아니다(정적 카탈로그 전체를 그대로
@@ -168,6 +169,8 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   }, [draftCardFrameId, draftSkinsByJob, activeJobId])
 
   const resetDraft = useCallback(({ skinsByJob, cardFrameId }) => {
+    saveGeneration.current += 1
+    savingRef.current = false
     setActiveJobIndex(0)
     setPreviewMode(SKIN_CARD_WEAR_PREVIEW_MODE_SKIN)
     setDraftSkinsByJob(skinsByJob)
@@ -186,19 +189,16 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
    *    뒤 하나라도 거부됐으면 전체를 실패로 보고한다. economy store의 equip()은 성공한
    *    슬롯의 미러(selectedSkinsByJob/selectedCardFrameId)를 응답 즉시 직접 반영하므로,
    *    다른 슬롯이 거부돼도 이미 성공한 슬롯의 화면 값은 stale로 남지 않는다.
-   *  - 전송 불확실(응답을 받지 못함, 인정된 거부 코드가 없음)은 authoritative GET
-   *    (fetchSummary)으로 재조정한다 — 다만 F13에서 폐기된 "GET이 성공했으면 write가
-   *    끝나지 못했다는 증거"라는 가정은 반복하지 않는다. GET이 돌려준 실제 값이 이 함수가
-   *    보내려던 값과 "일치하는지"만 성공의 근거로 삼는다 — 일치하면 그 사이 실제로 커밋된
-   *    것이 확인된 것이고(낡은 in-flight 요청이 나중에 늦게 커밋되어도 같은 값이라 문제
-   *    없다), 불일치하거나 GET 자체가 실패하면 여전히 불확실한 채로 남겨 재시도 수단을
-   *    보여준다(성공 토스트를 띄우지 않는다, AC-05).
+   *  - 전송 불확실은 이번 조회가 성공하고 적용된 서버 값으로만 확인한다. 실패하거나
+   *    더 최신 쓰기로 폐기된 조회는 캐시 값이 같아도 성공으로 취급하지 않는다.
+   *    지연 쓰기의 충돌 방지는 별도 서버 revision CAS와 공용 저장 큐의 책임이다.
    *  - 계정이 저장 도중 바뀌면(A-04) 어떤 결과도 적용하지 않고 stale로만 보고한다 — 호출부
    *    (Overlay)가 이를 성공도 실패도 아닌 것으로 처리해 새 계정 화면에 영향을 주지 않는다.
    * @param {{ appliedSkinsByJob: Record<string, string>, appliedCardFrameId: string }} applied
    */
-  const confirmLoadout = useCallback(async ({ appliedSkinsByJob, appliedCardFrameId }) => {
+  const confirmLoadout = useCallback(async ({ appliedSkinsByJob, appliedCardFrameId, isActive = () => true }) => {
     if (savingRef.current) return { ok: false, reason: "ALREADY_SAVING" }
+    const saveEpoch = saveGeneration.current
     savingRef.current = true
     setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.SAVING)
     setConfirmError(null)
@@ -206,6 +206,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     const userIdAtStart = useAuthStore.getState().user?.uuid ?? null
     const generationAtStart = useEconomyStore.getState().requestGeneration
     const isStale = () =>
+      !isActive() || saveEpoch !== saveGeneration.current ||
       (useAuthStore.getState().user?.uuid ?? null) !== userIdAtStart
       || useEconomyStore.getState().requestGeneration !== generationAtStart
 
@@ -221,7 +222,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     }
 
     const finish = (result) => {
-      savingRef.current = false
+      if (saveEpoch === saveGeneration.current) savingRef.current = false
       return result
     }
 
@@ -253,10 +254,10 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     let unresolvedUncertain = uncertainSlots.length > 0
     if (unresolvedUncertain) {
       try {
-        await useEconomyStore.getState().fetchSummary()
+        const summary = await useEconomyStore.getState().fetchSummary()
         if (isStale()) return finish({ ok: false, stale: true })
-        const latestLoadout = useEconomyStore.getState().loadout
-        unresolvedUncertain = uncertainSlots.some(({ itemId, jobId }) =>
+        const latestLoadout = summary?.loadout
+        unresolvedUncertain = !summary?.ok || !latestLoadout || uncertainSlots.some(({ itemId, jobId }) =>
           (jobId ? latestLoadout.selectedSkinsByJob?.[jobId] ?? null : latestLoadout.selectedCardFrameId) !== itemId,
         )
       } catch {

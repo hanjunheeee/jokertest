@@ -308,3 +308,66 @@ test("F-14 AC-02/AC-03: 계정을 전환하면 새 계정의 실제 소유·장�
   assert.equal(buttonForUser2.hasAttribute("disabled"), true, "user-2는 이 스킨을 보유하지 않으므로 disabled여야 한다")
   assert.equal(buttonForUser2.getAttribute("aria-label"), `${premiumSkin.name}, 미보유`, "user-2 화면에 이전 계정의 장착 표시가 남으면 안 된다")
 })
+
+
+test('operator: delayed opening GET must preserve a dirty draft and callback rerenders', async () => {
+  resetAll()
+  let release
+  const pending = new Promise((resolve) => { release = resolve })
+  let calls = 0
+  getImpl = async () => { calls += 1; return pending }
+  const view = render(React.createElement(SkinCardWearOverlay, { open: true, onClose: () => {} }))
+  const skin = getSkinItemsForJob(FIRST_JOB_ID).find((item) => item.source === 'basic' && item.id !== getDefaultSkinIdForJob(FIRST_JOB_ID))
+  const selected = () => document.querySelector('button[aria-label^="' + skin.name + '"]')
+  act(() => selected().click())
+  assert.equal(selected().getAttribute('aria-pressed'), 'true')
+  await act(async () => { release({ ...flatLoadout(), balanceGold: 0, balanceDiamond: 0 }) })
+  await flushMicrotasks()
+  assert.equal(selected().getAttribute('aria-pressed'), 'true', 'opening GET erased dirty selection')
+  view.rerender(React.createElement(SkinCardWearOverlay, { open: true, onClose: () => {} }))
+  await flushMicrotasks()
+  assert.equal(calls, 2, 'new callback identity restarted opening fetch')
+  assert.equal(selected().getAttribute('aria-pressed'), 'true')
+})
+
+test('operator: old save completion must not close a reopened wear dialog', async () => {
+  resetAll()
+  getImpl = async () => ({ ...flatLoadout(), balanceGold: 0, balanceDiamond: 0 })
+  let release
+  postImpl = () => new Promise((resolve) => { release = resolve })
+  let closes = 0
+  const onClose = () => { closes += 1 }
+  const view = render(React.createElement(SkinCardWearOverlay, { open: true, onClose }))
+  await flushMicrotasks()
+  const skin = getSkinItemsForJob(FIRST_JOB_ID).find((item) => item.source === 'basic' && item.id !== getDefaultSkinIdForJob(FIRST_JOB_ID))
+  act(() => document.querySelector('button[aria-label^="' + skin.name + '"]').click())
+  act(() => document.querySelector('button[aria-busy]').click())
+  assert.equal(typeof release, 'function')
+  view.rerender(React.createElement(SkinCardWearOverlay, { open: false, onClose }))
+  view.rerender(React.createElement(SkinCardWearOverlay, { open: true, onClose }))
+  await flushMicrotasks()
+  await act(async () => { release({ loadout: {} }) })
+  await flushMicrotasks()
+  assert.equal(closes, 0, 'old save closed the newly opened dialog')
+  assert.ok(document.querySelector('[role="dialog"]'))
+})
+
+
+test('operator: failed reconciliation GET cannot confirm matching cached equipment', async () => {
+  resetAll()
+  getImpl = async () => ({ ...flatLoadout(), balanceGold: 0, balanceDiamond: 0 })
+  let closes = 0
+  render(React.createElement(SkinCardWearOverlay, { open: true, onClose: () => { closes += 1 } }))
+  await flushMicrotasks()
+  const skin = getSkinItemsForJob(FIRST_JOB_ID).find((item) => item.source === 'basic' && item.id !== getDefaultSkinIdForJob(FIRST_JOB_ID))
+  act(() => document.querySelector('button[aria-label^="' + skin.name + '"]').click())
+  postImpl = async () => {
+    useEconomyStore.setState((state) => ({ loadout: { ...state.loadout, selectedSkinsByJob: { [FIRST_JOB_ID]: skin.id } } }))
+    throw new Error('reply lost')
+  }
+  getImpl = async () => { throw new Error('reconciliation unavailable') }
+  await act(async () => { document.querySelector('button[aria-busy]').click() })
+  await flushMicrotasks()
+  assert.equal(closes, 0)
+  assert.match(document.querySelector('[role="alert"]').textContent, /저장 결과를 확인하지 못했습니다/)
+})
