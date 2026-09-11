@@ -3,7 +3,7 @@ import { useAchievements } from "../../../../domains/library/hooks/useAchievemen
 import { resolveForbiddenRecordChallengeState } from "../../../../domains/library/content/forbiddenRecords/resolveForbiddenRecordChallengeState.js"
 import { getForbiddenRecordsPage } from "../../../../domains/library/content/forbiddenRecords/index.js"
 import { FORBIDDEN_RECORDS_ASSETS, getForbiddenRecordsChallengeClearIllust } from "../../../../domains/library/constants/forbiddenRecords/assets.js"
-import ForbiddenRecordsUnlockCondition from "../../../../domains/library/components/forbiddenRecords/ForbiddenRecordsUnlockCondition.jsx"
+import ForbiddenRecordsUnlockCondition from "../../../../domains/library/components/forbiddenRecords/ForbiddenRecordsUnlockCondition.js"
 import {
   FORBIDDEN_BLOOD_SPREAD_ANIMATE,
   FORBIDDEN_BLOOD_SPREAD_INITIAL,

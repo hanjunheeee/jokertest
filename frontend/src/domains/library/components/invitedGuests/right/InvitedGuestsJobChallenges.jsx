@@ -1,5 +1,5 @@
 import { useState } from "react"
-import InvitedGuestsChallengeRow from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsChallengeRow.jsx"
+import InvitedGuestsChallengeRow from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsChallengeRow.js"
 import ProfileBorderZoomOverlay from "../../../../../shared/ui/profileBorderZoom/ProfileBorderZoomOverlay.jsx"
 import {
   INVITED_GUESTS_TABLE_CLASS,

@@ -165,6 +165,31 @@ test("retry는 fetchAchievements를 다시 실행한다", async () => {
   assert.equal(calls, 2)
 })
 
+// CODEX-3 재검토(AC-06): 이전 버전은 화면이 부르는 retry가 store.retry를 그대로 노출해,
+// 재시도가 성공해도(예: 일시적 네트워크 오류 후 재시도) 경제(재화·소유품·테두리) 상태는
+// 갱신되지 않았다 — 지급된 업적이 재시도로 드러나도 화면의 재화·테두리 소유 상태는 새로
+// 고침 전까지 낡은 채로 남았다. retry는 마운트 시 최초 조회와 동일하게, 성공할 때마다
+// 경제 상태도 함께 새로 읽어와야 한다.
+test("retry가 성공하면 경제 상태도 함께 다시 읽어온다", async () => {
+  resetStore()
+  let calls = 0
+  getMyAchievementsImpl = async () => { calls += 1; if (calls === 1) throw new Error("일시 오류"); return SAMPLE_ACHIEVEMENTS }
+
+  const { result } = renderHook(() => useAchievements())
+  await waitFor(() => assert.equal(result.current.status, "error"))
+  assert.equal(fetchSummaryCalls, 0, "최초 조회가 실패하면 경제 상태를 읽어오면 안 된다")
+
+  await act(async () => { await result.current.retry() })
+
+  assert.equal(result.current.status, "success")
+  assert.equal(fetchSummaryCalls, 1, "retry가 성공하면 경제 상태를 다시 읽어와야 한다")
+
+  // 이미 성공한 뒤 재호출한 retry도 매번 경제 상태를 다시 읽어온다(재시도 버튼 여러 번
+  // 눌러도 안전하게 최신화되어야 한다).
+  await act(async () => { await result.current.retry() })
+  assert.equal(fetchSummaryCalls, 2)
+})
+
 // ── A-08: 계정 전환 시 업적 상태가 격리되고, 새 계정에서 다시 경제 상태를 읽어온다 ──
 
 test("계정을 전환하면 이전 계정의 업적이 사라지고 새 계정 조회가 다시 트리거된다", async () => {

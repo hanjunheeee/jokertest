@@ -3,6 +3,10 @@ import test from "node:test"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { createElement } from "react"
+import { JSDOM } from "jsdom"
+import { cleanup, render } from "@testing-library/react"
+import { publicAsset } from "../../../../../shared/utils/publicAsset.js"
 
 // F-12 AC-01/AC-06: 금지된 기록 7개 + 직업 도전과제 15개(합계 22개)의 서버 업적 상태 연결을
 // 고정한다. 이 저장소의 테스트는 node --test로 돌고 JSX를 변환하지 않으므로(frontend/package.json의
@@ -31,6 +35,36 @@ const { INVITED_GUESTS_JOB_SPREAD_META } = await import("../../../content/invite
 const { INVITED_GUESTS_JOB_CATALOG } = await import("../../../content/invitedGuests/jobCatalog.js")
 const { FORBIDDEN_RECORDS_SPREAD_META } = await import("../../../content/forbiddenRecords/spreadMeta.js")
 const { resolveForbiddenRecordChallengeState } = await import("../../../content/forbiddenRecords/resolveForbiddenRecordChallengeState.js")
+
+// ── CODEX-3 재검토(AC-01): 순수 함수 실행·소스 문자열 검사를 넘어선 실제 DOM 렌더 ──
+//
+// ForbiddenRecordsUnlockCondition.jsx/ForbiddenRecordsUnlockRewards.jsx/
+// InvitedGuestsChallengeRow.jsx/InvitedGuestsChallengeRewards.jsx는 이 슬라이스에서
+// .js(createElement, JSX 없음)로 옮겨졌다 — InGameParchmentPanelBase.js가 이미 쓰는
+// 이유와 같다: 이 저장소의 node --test는 변환기가 없어 실제 JSX 구문은 파싱할 수 없으므로,
+// 실제 프로덕션 DOM을 검증해야 하는 화면은 테스트가 그대로 import할 수 있는 .js여야 한다.
+// (mock.module로 .jsx 의존성을 대체하는 방법도 시도했지만, node:test의 모듈 목(mock) 로더는
+// 대상의 실제 파일 포맷을 먼저 판별하려 시도해 .jsx 확장자에서 ERR_UNKNOWN_FILE_EXTENSION으로
+// 실패한다 — 그래서 보상 렌더러까지 함께 옮겼다.) PublicAsset.jsx(공용 이미지 컴포넌트)는
+// 옮기지 않았다 — 그 컴포넌트는 이 앱 전역에서 널리 쓰여 범위 밖이므로, 두 보상 렌더러는
+// PublicAsset.jsx를 쓰는 대신 그 컴포넌트가 실제로 하는 일(publicAsset() 경로 계산 + NFD
+// 재시도)을 그대로 복제해 <img>를 직접 그린다(각 파일 상단 주석 참고). 이 테스트가 실제로
+// 확인하는 것은 "F-12가 직접 건드린 조건·행·보상 표시 컴포넌트가 실제 spreadMeta.js/
+// jobChallenges.js 원문·서버 진행률을 실제 DOM에 그대로 전달하는가"이다.
+const { default: ForbiddenRecordsUnlockCondition } = await import("../../forbiddenRecords/ForbiddenRecordsUnlockCondition.js")
+const { default: InvitedGuestsChallengeRow } = await import("../shared/InvitedGuestsChallengeRow.js")
+
+let integrationDom = null
+function ensureClientEnvironment() {
+  if (globalThis.document?.body) return
+  integrationDom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" })
+  globalThis.window = integrationDom.window
+  globalThis.document = integrationDom.window.document
+  globalThis.HTMLElement = integrationDom.window.HTMLElement
+  globalThis.Node = integrationDom.window.Node
+  globalThis.MutationObserver = integrationDom.window.MutationObserver
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+}
 
 // ── 순수 함수: mergeInvitedGuestsSpreads가 서버 달성 id로 cleared·진행률을 판정한다 ──
 //
@@ -189,6 +223,145 @@ test("AC-01/AC-06: 실제 FORBIDDEN_RECORDS_SPREAD_META 7개 전부가 unlockCon
     checkedCount += 1
   }
   assert.equal(checkedCount, 7, "금지된 기록 7개 전부를 확인해야 한다")
+})
+
+// ── CODEX-3 재검토(AC-01): 금지된 기록 7개 — 실제 DOM 렌더 + 원문 보존 ──────────────
+
+test("AC-01: FORBIDDEN_RECORDS_SPREAD_META 7개 전부가 실제 렌더된 DOM에 unlockCondition·진행률·unlockRewards 원문을 그대로 보여준다", () => {
+  ensureClientEnvironment()
+  let checkedCount = 0
+  try {
+    for (const spread of FORBIDDEN_RECORDS_SPREAD_META) {
+      const { unlockCondition, unlockRewards, progressUnit } = spread.right
+      const { displayedProgress } = resolveForbiddenRecordChallengeState({
+        achievement: { current: 1, threshold: 3, achieved: false, granted: false },
+        status: "success",
+        error: null,
+        unlockProgress: spread.right.unlockProgress,
+        progressUnit,
+      })
+
+      const { unmount } = render(
+        createElement(ForbiddenRecordsUnlockCondition, {
+          condition: unlockCondition,
+          progress: displayedProgress,
+          rewards: unlockRewards,
+        }),
+      )
+      try {
+        // 조건 원문이 실제 DOM 텍스트로 그대로 나온다(대괄호로 감싸는 레이아웃과 별개로).
+        assert.equal(
+          document.body.textContent.includes(unlockCondition),
+          true,
+          `${spread.id}: unlockCondition 원문("${unlockCondition}")이 실제 렌더 DOM에 없다`,
+        )
+        // 서버 진행률("1/3" + progressUnit)도 원본 꼬리말(progressUnit)을 유지한 채 렌더된다.
+        assert.equal(
+          document.body.textContent.includes(`1/3${progressUnit}`),
+          true,
+          `${spread.id}: 진행률 문구가 실제 DOM에 없다`,
+        )
+        // 보상(unlockRewards)은 icon·count가 그대로 실제 <img>·텍스트로 렌더된다(진짜
+        // ForbiddenRecordsUnlockRewards.js가 publicAsset()으로 계산한 src를 포함해서).
+        const rewardIcons = document.querySelectorAll("img[data-asset-src]")
+        assert.equal(rewardIcons.length, unlockRewards.length, `${spread.id}: 보상 개수가 원문과 다르다`)
+        unlockRewards.forEach((reward, index) => {
+          assert.equal(rewardIcons[index].getAttribute("data-asset-src"), reward.icon)
+          assert.equal(rewardIcons[index].getAttribute("src"), publicAsset(reward.icon))
+          assert.equal(document.body.textContent.includes(`×${reward.count}`), true, `${spread.id}: 보상 수량(×${reward.count})이 실제 DOM에 없다`)
+        })
+        checkedCount += 1
+      } finally {
+        unmount()
+      }
+    }
+  } finally {
+    cleanup()
+  }
+  assert.equal(checkedCount, 7, "금지된 기록 7개 전부를 실제 렌더로 확인해야 한다")
+})
+
+// ── CODEX-3 재검토(AC-01): 직업 도전과제 15개 — 실제 DOM 렌더 + 원문 보존, cleared 분기 ──
+
+test("AC-01: INVITED_GUESTS_JOB_CHALLENGES 15개 전부가 실제 렌더된 DOM에 label·rewards 원문을 유지하고, cleared 여부에 따라 다른 실제 DOM을 그린다", () => {
+  ensureClientEnvironment()
+  let checkedCount = 0
+  try {
+    for (const jobKey of Object.keys(INVITED_GUESTS_JOB_CHALLENGES)) {
+      for (const challenge of INVITED_GUESTS_JOB_CHALLENGES[jobKey]) {
+        // (1) 미클리어: label·진행률·rewards 원문이 실제 DOM에 그대로 나와야 한다.
+        const notCleared = render(
+          createElement(
+            "table",
+            null,
+            createElement(
+              "tbody",
+              null,
+              createElement(InvitedGuestsChallengeRow, {
+                label: challenge.label,
+                rewards: challenge.rewards,
+                cleared: false,
+                current: 7,
+                threshold: challenge.difficulty === 1 ? 10 : challenge.difficulty === 2 ? 20 : 30,
+              }),
+            ),
+          ),
+        )
+        try {
+          assert.equal(
+            document.body.textContent.includes(challenge.label),
+            true,
+            `${challenge.id}: label 원문("${challenge.label}")이 실제 렌더 DOM에 없다`,
+          )
+          // 보상(challenge.rewards)은 icon·count·label이 그대로 실제 <img>·텍스트/버튼으로
+          // 렌더된다(진짜 InvitedGuestsChallengeRewards.js가 publicAsset()으로 계산한 src
+          // 포함) — currency는 ×count 텍스트로, border는 확대 보기 버튼 라벨로 구분된다.
+          const rewardIcons = document.querySelectorAll("img[data-asset-src]")
+          assert.equal(rewardIcons.length, challenge.rewards.length, `${challenge.id}: 보상 개수가 원문과 다르다`)
+          challenge.rewards.forEach((reward, index) => {
+            assert.equal(rewardIcons[index].getAttribute("data-asset-src"), reward.icon)
+            assert.equal(rewardIcons[index].getAttribute("src"), publicAsset(reward.icon))
+            if (reward.type === "currency") {
+              assert.equal(document.body.textContent.includes(`×${reward.count}`), true, `${challenge.id}: 보상 수량(×${reward.count})이 실제 DOM에 없다`)
+            } else {
+              assert.notEqual(
+                document.querySelector(`button[aria-label="${reward.label} 크게 보기"]`),
+                null,
+                `${challenge.id}: 테두리 보상 확대 버튼("${reward.label} 크게 보기")이 실제 DOM에 없다`,
+              )
+            }
+          })
+        } finally {
+          notCleared.unmount()
+        }
+
+        // (2) 클리어: 실제 지급 이력이 있으면 rewards 배선이 아니라 클리어 문구만 실제
+        // DOM에 나와야 한다(원문 유출·중복 지급 표시 방지).
+        const clearedRender = render(
+          createElement(
+            "table",
+            null,
+            createElement(
+              "tbody",
+              null,
+              createElement(InvitedGuestsChallengeRow, { label: challenge.label, rewards: challenge.rewards, cleared: true }),
+            ),
+          ),
+        )
+        try {
+          assert.equal(document.body.textContent.includes("-- 도전과제 클리어 --"), true, `${challenge.id}: 클리어 문구가 실제 DOM에 없다`)
+          assert.equal(document.querySelectorAll("img[data-asset-src]").length, 0, `${challenge.id}: 클리어 상태에서 보상이 다시 렌더되면 안 된다`)
+        } finally {
+          clearedRender.unmount()
+        }
+
+        checkedCount += 1
+      }
+    }
+  } finally {
+    cleanup()
+  }
+  assert.equal(checkedCount, 15, "직업 도전과제 15개 전부를 실제 렌더로 확인해야 한다")
 })
 
 // ── 화면(.jsx) 배선: 실제 파일 소스에 연결 지점이 있는지 확인한다 ─────────────────

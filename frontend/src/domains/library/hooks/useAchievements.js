@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useCallback, useEffect } from "react"
 import { useAchievementsStore } from "../store/achievements.store.js"
 import { useEconomyStore } from "../../economy/store/economy.store.js"
 
@@ -22,7 +22,18 @@ export function useAchievements() {
   const achievements = useAchievementsStore((s) => s.achievements)
   const error = useAchievementsStore((s) => s.error)
   const fetchAchievements = useAchievementsStore((s) => s.fetchAchievements)
-  const retry = useAchievementsStore((s) => s.retry)
+  const storeRetry = useAchievementsStore((s) => s.retry)
+
+  // CODEX-3 재검토(AC-06): 마운트 효과가 끝난 뒤(성공 시에만) 경제 상태를 다시 읽어오는
+  // 로직을 재사용 가능한 콜백으로 뽑아, retry도 같은 계약을 따르게 한다 — 이전 버전은 이
+  // 갱신을 마운트 효과 안에서만 인라인으로 했고, 화면이 store.retry를 그대로 노출해
+  // "재시도 성공"이 경제 갱신으로 이어지지 않았다(재시도로 업적이 새로 지급 상태가 돼도
+  // 재화·소유품·테두리 화면은 갱신되지 않는 버그).
+  const syncEconomyIfSuccess = useCallback(() => {
+    if (useAchievementsStore.getState().status === "success") {
+      useEconomyStore.getState().fetchSummary()
+    }
+  }, [])
 
   // generation이 바뀌면(계정 전환/로그아웃 reset) 다시 조회하고, 컴포넌트가 다시
   // 마운트돼도(재진입) 항상 다시 조회한다 — 더 이상 "이미 캐시된 값이 있으면 건너뛴다"는
@@ -33,12 +44,14 @@ export function useAchievements() {
     let active = true
     fetchAchievements().then(() => {
       if (!active) return
-      if (useAchievementsStore.getState().status === "success") {
-        useEconomyStore.getState().fetchSummary()
-      }
+      syncEconomyIfSuccess()
     })
     return () => { active = false }
-  }, [generation, fetchAchievements])
+  }, [generation, fetchAchievements, syncEconomyIfSuccess])
+
+  // 화면이 부르는 retry는 store.retry를 그대로 넘기지 않는다 — 재시도가 성공하면 마운트
+  // 효과와 동일하게 경제 상태도 함께 새로 읽어와야 한다(CODEX-3 재검토 AC-06).
+  const retry = useCallback(() => storeRetry().then(syncEconomyIfSuccess), [storeRetry, syncEconomyIfSuccess])
 
   const achievedIds = new Set((achievements ?? []).filter((a) => a.achieved).map((a) => a.id))
   const grantedIds = new Set((achievements ?? []).filter((a) => a.granted).map((a) => a.id))

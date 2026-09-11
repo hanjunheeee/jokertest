@@ -83,7 +83,15 @@ const setUp = async () => {
 
 const createLocalUser = async (label) => {
     const uuid = crypto.randomUUID();
-    const nickname = `${label}${uuid.slice(0, 8 - label.length)}`.slice(0, 8);
+    // CODEX-3 재검토(AC-05): 기존 `${label}${uuid.slice(0, 8 - label.length)}`.slice(0, 8)는
+    // label.length가 8 이상이면(예: "filler119") `8 - label.length`가 음수가 되고,
+    // String.prototype.slice(0, 음수)는 "끝에서부터 자르기"로 동작한다 — 그 결과가 다시
+    // slice(0, 8)로 잘리면서 사실상 label의 앞 8자만 남아 uuid가 전혀 반영되지 않았다.
+    // 그래서 filler11(8자)과 filler119(9자, 앞 8자가 "filler11"로 같음)가 같은 닉네임으로
+    // 충돌해 실제 MySQL UNIQUE 위반으로 재현됐다. label 길이와 무관하게 uuid에서 뽑은 6자로
+    // 유일성을 보장하고, label은 앞 2자만 가독성용으로 남긴다(승인된 닉네임 상한 2~8자 안,
+    // 항상 8자 고정이라 길이별 분기가 필요 없다).
+    const nickname = `${label.slice(0, 2)}${uuid.replace(/-/g, "").slice(0, 6)}`;
     await db.User.create({
         uuid,
         password_hash: await hashPassword('correct-horse-battery-1'),
@@ -276,24 +284,58 @@ const getEntitlement = async (userId, itemId) =>
 
 const BACKFILL_SCRIPT_PATH = path.join(__dirname, '..', '..', 'scripts', 'backfill-achievements.js');
 
-/** backfill-achievements.js를 자식 프로세스로 실행하고, killAfterMs가 주어지면 그
- *  시간 뒤 SIGKILL을 보낸다. { exitCode, signal }을 반환한다 — signal이 'SIGKILL'이면
- *  실제로 강제 종료됐다는 뜻이고, null이면 그 전에 스스로 끝났다는 뜻이다. */
-const runBackfillProcess = (killAfterMs = null) => new Promise((resolve, reject) => {
+/** backfill-achievements.js를 자식 프로세스로 실행한다. { exitCode, signal }을
+ *  반환한다 — signal이 'SIGKILL'이면 실제로 강제 종료됐다는 뜻이고, null이면 스스로
+ *  끝났다는 뜻이다. */
+const runBackfillProcess = () => new Promise((resolve, reject) => {
     const child = fork(BACKFILL_SCRIPT_PATH, [], {
         env: { ...process.env, DATABASE_URL: TEST_DB_URL },
         stdio: 'ignore',
     });
-    let killTimer = null;
-    if (killAfterMs !== null) {
-        killTimer = setTimeout(() => child.kill('SIGKILL'), killAfterMs);
-    }
+    child.on('error', (error) => reject(error));
+    child.on('exit', (code, signal) => resolve({ exitCode: code, signal }));
+});
+
+/** backfill-achievements.js를 자식 프로세스로 실행하고, userId에 대한 achievement_grants
+ *  행이 처음 커밋되는 순간을 폴링으로 관찰해 그 즉시 SIGKILL한다.
+ *
+ *  CODEX-3 재검토(AC-05): 이전 버전은 고정 150ms 뒤에 무조건 SIGKILL을 보냈다 — 그 150ms
+ *  동안 실제로 userId의 지급 트랜잭션에 도달했는지 전혀 확인하지 않아서, 만약 전체 처리가
+ *  150ms 안에 이미 다 끝났다면(또는 반대로 그 계정에 전혀 도달하지 못했다면) "중단 복구"
+ *  시나리오를 실제로는 한 번도 실행하지 않고도 통과했을 것이다. db.User.findAll()은
+ *  정렬 없이 반환되고 uuid(랜덤)를 기본키로 쓰는 InnoDB는 클러스터 인덱스 순서가 생성
+ *  순서와 무관하므로, userId가 전체 순회 중 몇 번째에 처리될지는 미리 알 수 없다 — 그래서
+ *  타이밍을 추측하는 대신 실제 DB 상태 변화(첫 grant 커밋)에 반응한다. maxWaitMs 안에도
+ *  전혀 진행이 없으면 안전장치로 그냥 종료시킨다(그 경우 호출부가 이후 단언에서 실패로
+ *  드러낸다 — 조용히 통과시키지 않는다). */
+const runBackfillProcessKillOnFirstGrant = (userId, { pollIntervalMs = 5, maxWaitMs = 20000 } = {}) => new Promise((resolve, reject) => {
+    const child = fork(BACKFILL_SCRIPT_PATH, [], {
+        env: { ...process.env, DATABASE_URL: TEST_DB_URL },
+        stdio: 'ignore',
+    });
+    const startedAt = Date.now();
+    let settled = false;
+    const poller = setInterval(() => {
+        if (settled) return;
+        db.AchievementGrant.count({ where: { user_id: userId } })
+            .then((count) => {
+                if (settled) return;
+                if (count >= 1 || Date.now() - startedAt > maxWaitMs) {
+                    settled = true;
+                    clearInterval(poller);
+                    child.kill('SIGKILL');
+                }
+            })
+            .catch(() => {}); // 폴링 쿼리 하나가 실패해도 다음 tick에서 다시 시도한다.
+    }, pollIntervalMs);
     child.on('error', (error) => {
-        if (killTimer) clearTimeout(killTimer);
+        settled = true;
+        clearInterval(poller);
         reject(error);
     });
     child.on('exit', (code, signal) => {
-        if (killTimer) clearTimeout(killTimer);
+        settled = true;
+        clearInterval(poller);
         resolve({ exitCode: code, signal });
     });
 });
@@ -321,13 +363,15 @@ const findPartiallyGrantedAchievements = async (userId) => {
     return [...new Set(partial)];
 };
 
-test('AC-05: 실제 CLI(backfill-achievements.js) 프로세스를 SIGKILL로 강제 종료해도 부분 지급된 업적이 남지 않고, 다시 실행하면 완전히 복구된다', async (t) => {
+test('AC-05: 실제 CLI(backfill-achievements.js) 프로세스를 지급 도중 SIGKILL로 강제 종료해도 부분 지급된 업적이 남지 않고, 다시 실행하면 완전히 복구된다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
-    // CLI가 전체 계정을 순회하는 데 실제로 시간이 걸리게(=중단이 처리 도중 발생할 여지를
-    // 늘리게) 여분 계정을 여러 개 만든다. 실제로 언제 SIGKILL이 도달하든(순회 초반이든
-    // 후반이든) 아래 불변식 검증은 항상 성립해야 하므로, 정확한 타이밍에 의존하지 않는다.
+    // CLI가 전체 계정을 순회하는 데 실제로 시간이 걸리게(=SIGKILL이 heavyUserId의 9개
+    // 지급이 전부 끝나기 전에 도착할 여지를 늘리게) 여분 계정을 여러 개 만든다. uuid(랜덤)를
+    // 기본키로 쓰는 InnoDB의 클러스터 인덱스 순서는 생성 순서와 무관하므로, heavyUserId가
+    // 전체 순회 중 몇 번째에 처리될지는 이 순서로 제어할 수 없다 — 그래서 아래
+    // runBackfillProcessKillOnFirstGrant가 순서를 추측하지 않고 실제 진행을 관찰한다.
     const fillerCount = 120;
     for (let i = 0; i < fillerCount; i += 1) {
         // eslint-disable-next-line no-await-in-loop
@@ -339,17 +383,30 @@ test('AC-05: 실제 CLI(backfill-achievements.js) 프로세스를 SIGKILL로 강
     // 생길 여지가 가장 큰 계정이다.
     await persistWins(heavyUserId, 'CITIZEN', 30);
 
-    const { signal } = await runBackfillProcess(150);
-    t.diagnostic(`backfill 자식 프로세스 종료 신호: ${signal ?? '(정상 종료, SIGKILL 도달 전에 이미 끝남)'}`);
+    // CODEX-3 재검토(AC-05): 고정 시간을 기다리는 대신, heavyUserId의 achievement_grants
+    // 행이 처음 커밋되는 순간을 폴링으로 관찰해 그 즉시 SIGKILL한다 — 지급 트랜잭션 진행
+    // 도중에 실제로 도달했는지를 시간 추측이 아니라 관찰로 보장한다.
+    const { signal } = await runBackfillProcessKillOnFirstGrant(heavyUserId);
+    t.diagnostic(`backfill 자식 프로세스 종료 신호: ${signal ?? '(정상 종료 — 아래 grants 개수 단언이 실제 중단 여부를 확인한다)'}`);
 
-    // 불변식(SIGKILL이 언제 도달했든 항상 성립해야 한다): 이 시점까지 커밋된
-    // achievement_grants 행은 전부 완전한 보상을 실제로 갖고 있어야 한다 — "행은 있는데
-    // 원장/소유권 일부가 없는" 상태가 있으면 안 된다.
+    // 실제로 지급 도중에 죽었는지 관찰값으로 직접 증명한다: 9개 중 최소 1개는 커밋됐지만
+    // 9개 전부가 끝나기 전에 죽어야 한다. 0이면 첫 grant 전에(=아무 진행도 없이) 죽은
+    // 것이고, 9면 이미 다 끝난 뒤에 죽은 것이다 — 둘 다 "중단 복구" 시나리오를 실제로
+    // 검증하지 못했다는 뜻이므로 테스트가 그대로 드러내야 한다(조용히 통과시키지 않는다).
+    const grantCountAfterKill = await db.AchievementGrant.count({ where: { user_id: heavyUserId } });
+    assert.ok(
+        grantCountAfterKill >= 1 && grantCountAfterKill < 9,
+        `SIGKILL이 실제로 지급 도중에 도달해야 한다 — 관찰된 grants=${grantCountAfterKill}(기대 범위 1~8)`,
+    );
+
+    // 불변식(SIGKILL이 정확히 몇 번째 지급 도중 도달했든 항상 성립해야 한다): 이 시점까지
+    // 커밋된 achievement_grants 행은 전부 완전한 보상을 실제로 갖고 있어야 한다 — "행은
+    // 있는데 원장/소유권 일부가 없는" 상태가 있으면 안 된다.
     const partialAfterKill = await findPartiallyGrantedAchievements(heavyUserId);
     assert.deepEqual(partialAfterKill, [], '중단 시점과 무관하게 부분 지급된 업적이 있으면 안 된다');
 
     // 복구: 중단 없이 다시 실행해 끝까지 완료한다.
-    const recovery = await runBackfillProcess(null);
+    const recovery = await runBackfillProcess();
     assert.equal(recovery.signal, null, '복구 실행은 중단 없이 정상 종료되어야 한다');
 
     const grantRows = await db.AchievementGrant.findAll({ where: { user_id: heavyUserId }, attributes: ['achievement_id'], raw: true });
