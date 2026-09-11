@@ -135,3 +135,31 @@ test("accountProfilePhotoId가 알 수 없는(카탈로그 규칙과 다른) 값
   )
   assert.equal(result.portraitSrc, "p.png")
 })
+
+// F-13 AC-05 재검토: 계정 테두리는 frameSrc(직업 스킨/카드 프레임)와 겹쳐 쓰지 않고
+// 별도 필드 accountBorderSrc로만 노출한다 — InGamePlayerCard가 이 필드로 별도 레이어를
+// 그린다(frameSrc 자체는 위 "accountProfileBorderId가 있어도 frameSrc는 건드리지 않는다"
+// 테스트가 이미 고정한다).
+test("유효한 accountProfileBorderId가 있으면 출력에 accountBorderSrc가 실제 테두리 자산으로 채워진다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountProfileBorderId: "profile-border-귀족" },
+    preview(),
+  )
+  assert.equal(result.accountBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+})
+
+test("accountProfileBorderId 키 자체가 없으면 accountBorderSrc 키도 생기지 않는다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u2", name: "B", connected: true, alive: true },
+    preview(),
+  )
+  assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
+})
+
+test("accountProfileBorderId가 알 수 없는(카탈로그 규칙과 다른) 값이면 accountBorderSrc 키가 생기지 않는다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountProfileBorderId: "../../../etc/passwd" },
+    preview(),
+  )
+  assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
+})

@@ -48,8 +48,17 @@ export function useMatchingPage() {
   // 준비 완료/준비 취소 버튼은 목표 상태(현재의 반대값)를 명시적으로 전달한다.
   const toggleReady = () => setReady(!isReady)
 
+  // F-13(AC-05): room.players는 matchmaking.js(loadRoomParticipantProfile/
+  // captureRoomStartProfiles)가 이미 계정별 accountProfilePhotoId/accountProfileBorderId를
+  // 실어 보낸다 — 여기서 그 두 필드를 버리지 않고 그대로 slots에 옮겨야 대기방 슬롯이
+  // 서로 다른 계정 이미지를 보여줄 수 있다(MatchingPartySlots.jsx).
   const slots = isInRoom
-    ? players.map((player) => ({ id: player.uuid, ready: Boolean(player.isReady) }))
+    ? players.map((player) => ({
+        id: player.uuid,
+        ready: Boolean(player.isReady),
+        accountProfilePhotoId: player.accountProfilePhotoId,
+        accountProfileBorderId: player.accountProfileBorderId,
+      }))
     : MATCHING_PARTY_SLOTS_DUMMY_10
 
   const displayRoomCode = isInRoom ? roomCode : MATCHING_ROOM_CODE_DUMMY

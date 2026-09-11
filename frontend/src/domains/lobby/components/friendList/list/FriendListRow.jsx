@@ -15,6 +15,7 @@ import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import FriendListFavoriteStar from "@/domains/lobby/components/friendList/list/FriendListFavoriteStar.jsx"
 import { useFriendStore } from "@/domains/lobby/store/friend.store.js"
+import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
 // 친구가 현재 접속 중인지 오프라인인지 보여줍니다.
 function FriendOnlineStatus({ online }) {
@@ -41,9 +42,14 @@ function FriendOnlineStatus({ online }) {
 }
 
 // 친구 목록에서 친구 한 명을 보여주는 row 컴포넌트입니다.
-export default function FriendListRow({ id, name, online }) {
+// F-13(AC-05): accountProfilePhotoId/accountProfileBorderId는 친구 목록 API가 실제로
+// 내려주면 채워진다(현재는 백엔드가 아직 이 필드를 내려주지 않아 undefined로 들어와도
+// resolveAccountProfileAssets가 기본 자산으로 안전하게 대체한다) — 필드가 생기는 즉시
+// 이 컴포넌트는 그대로 실제 계정별 초상을 그린다.
+export default function FriendListRow({ id, name, online, accountProfilePhotoId, accountProfileBorderId }) {
   const isFavorite = useFriendStore((state) => state.favoriteFriendIds.has(id))
   const toggleFavorite = useFriendStore((state) => state.toggleFavorite)
+  const { portraitSrc, frameSrc } = resolveAccountProfileAssets({ accountProfilePhotoId, accountProfileBorderId })
 
   return (
     <li className={FRIEND_ROW_ITEM_CLASS}>
@@ -57,7 +63,11 @@ export default function FriendListRow({ id, name, online }) {
           active={isFavorite}
           onToggle={() => toggleFavorite(id)}
         />
-        <PlayerProfilePortrait wrapClassName={FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS} />
+        <PlayerProfilePortrait
+          photoSrc={portraitSrc}
+          frameSrc={frameSrc}
+          wrapClassName={FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS}
+        />
         <div className={FRIEND_ROW_INFO_CLASS}>
           <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
           <FriendOnlineStatus online={online} />

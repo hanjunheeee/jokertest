@@ -1,5 +1,6 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
 
 // F-13 AC-05 — 대기방(matchmaking room.players) → 서버 game_started/재접속 스냅샷
 // (buildPlayerAccountProfileFields, backend/game-core/gameSession.js) → 프런트 변환
@@ -21,7 +22,8 @@ mock.module("../utils/pickInGamePlayerFrame.js", {
 const { buildPlayerSessionSourceFromGameState } = await import("../utils/buildPlayerSessionSourceFromGameState.js")
 const { buildInGamePreviewPlayers } = await import("../utils/buildInGamePreviewPlayers.js")
 const { mergeSourcePlayerWithPreview } = await import("../utils/mergeSourcePlayerWithPreview.js")
-const { resolveAccountProfilePhotoSrc } = await import("../../../../shared/utils/resolveAccountProfileAssets.js")
+const { resolveAccountProfileBorderSrc, resolveAccountProfilePhotoSrc } =
+  await import("../../../../shared/utils/resolveAccountProfileAssets.js")
 
 function gameStartedState(players) {
   return {
@@ -81,4 +83,53 @@ test("F-13 AC-05: 재접속 스냅샷과 최초 game_started가 같은 변환 �
     firstRender.map((p) => [p.id, p.portraitSrc]),
     "재접속 후에도 계정 사진이 preview 기본 이미지로 되돌아가면 안 된다",
   )
+})
+
+// F-13 AC-05 재검토(CURRENT OPERATOR CORRECTION) — "in-game final portrait must render the
+// separate profile border as well as photo without changing role/card frames or revealing
+// roles". 위 테스트들은 사진(portraitSrc)까지만 검증했다 — 아래는 계정 테두리가 최종 렌더
+// 입력까지 도달하는지, 그리고 InGamePlayerBoard/InGamePlayerCard가 그 값을 실제로
+// 전달·렌더하면서도 frameSrc(직업 스킨/카드 프레임)와 role은 전혀 건드리지 않는지를 고정한다.
+
+test("F-13 AC-05: 서버가 계정 테두리를 실어 보낸 참가자는 최종 렌더 입력에 accountBorderSrc가 실제 테두리 자산으로 채워진다", () => {
+  const state = gameStartedState([
+    { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" },
+    { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
+  ])
+
+  const finalPlayers = renderFinalPlayers(state)
+  const withBorder = finalPlayers.find((p) => p.id === "u1")
+  const withoutBorder = finalPlayers.find((p) => p.id === "u2")
+
+  assert.equal(withBorder.accountBorderSrc, resolveAccountProfileBorderSrc("profile-border-귀족"))
+  assert.equal(Object.hasOwn(withoutBorder, "accountBorderSrc"), false, "계정 테두리가 없는 참가자는 accountBorderSrc 키 자체가 생기면 안 된다")
+})
+
+test("F-13 AC-05: InGamePlayerBoard는 accountBorderSrc를 InGamePlayerCard에 그대로 넘기고, InGamePlayerCard는 그 값이 있을 때만 frameSrc와 별개인 새 레이어를 그린다", async () => {
+  // InGamePlayerBoard.jsx/InGamePlayerCard.jsx는 .jsx이고 @/shared/ui 등 vite alias를
+  // 타므로 이 저장소의 node:test 실행에서는 렌더는커녕 resolve조차 되지 않는다
+  // (InGamePlayerCard.playerColor.test.js와 동일한 제약) — raw source 검증으로 실제
+  // production 배선을 증명한다.
+  const boardSource = await readFile(new URL("../components/board/InGamePlayerBoard.jsx", import.meta.url), "utf8")
+  assert.match(boardSource, /accountBorderSrc=\{player\.accountBorderSrc\}/, "보드는 세션 플레이어의 accountBorderSrc를 카드에 그대로 넘겨야 한다")
+
+  const cardSource = await readFile(new URL("../components/board/InGamePlayerCard.jsx", import.meta.url), "utf8")
+  assert.match(cardSource, /accountBorderSrc\s*=\s*null/, "accountBorderSrc는 기본값이 있어 값이 없는 참가자는 기존과 동일하게 렌더된다")
+  assert.match(cardSource, /\{accountBorderSrc \? \(/, "accountBorderSrc가 있을 때만 추가 레이어를 그려야 한다(없으면 카드 모양이 기존과 완전히 같아야 함)")
+  // frameSrc(직업 스킨/카드 프레임)와 role은 이 변경으로 전혀 건드리지 않는다 — displayFrameSrc
+  // 계산·InGamePlayerFrameStroke 호출부가 accountBorderSrc와 무관하게 그대로 남아 있어야 한다.
+  assert.match(cardSource, /resolveInGamePlayerFrameSrc\(frameSrc, status\)/)
+  assert.doesNotMatch(cardSource, /role/i, "InGamePlayerCard는 role을 아예 받지도 참조하지도 않아야 한다(비밀 유지)")
+})
+
+test("F-13 AC-05: 대기방(useMatchingPage)은 room.players의 계정 프로필 필드를 slots에서 버리지 않고, MatchingPartySlots는 그 필드로 슬롯마다 실제 계정 초상을 그린다", async () => {
+  const hookSource = await readFile(new URL("../../matching/hooks/useMatchingPage.js", import.meta.url), "utf8")
+  assert.match(hookSource, /accountProfilePhotoId:\s*player\.accountProfilePhotoId/)
+  assert.match(hookSource, /accountProfileBorderId:\s*player\.accountProfileBorderId/)
+
+  // MatchingPartySlots.jsx도 .jsx라 위와 같은 이유로 raw source 검증을 쓴다.
+  const slotsSource = await readFile(new URL("../../matching/components/MatchingPartySlots.jsx", import.meta.url), "utf8")
+  assert.match(slotsSource, /resolveAccountProfileAssets\(slot\)/, "슬롯마다 독립적으로 계정 자산을 해석해야 서로 다른 계정 이미지가 나온다")
+  assert.match(slotsSource, /<PlayerProfilePortrait/, "실루엣 대신 실제 계정 초상 컴포넌트를 그려야 한다")
+  assert.match(slotsSource, /slot\.ready \? MATCHING_SLOT_BADGE_READY_CLASS : MATCHING_SLOT_BADGE_NOT_READY_CLASS/, "준비 여부 배지는 계정 초상 도입과 무관하게 그대로 유지되어야 한다")
 })

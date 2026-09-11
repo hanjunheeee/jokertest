@@ -1,6 +1,9 @@
 import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStatus.js"
 import { resolveInGamePlayerTheme } from "../constants/ingamePlayerTheme.js"
-import { resolveAccountProfilePhotoSrc } from "../../../../shared/utils/resolveAccountProfileAssets.js"
+import {
+  resolveAccountProfileBorderSrc,
+  resolveAccountProfilePhotoSrc,
+} from "../../../../shared/utils/resolveAccountProfileAssets.js"
 
 /**
  * 참가자 하나(sourcePlayers의 원소)를 preview 더미와 병합합니다. role/team/isAlly는 입력에 그
@@ -23,11 +26,17 @@ import { resolveAccountProfilePhotoSrc } from "../../../../shared/utils/resolveA
  * 유지되므로 preview 기본 이미지로 되돌아가지 않는다). frameSrc는 건드리지 않는다 —
  * 인게임 카드의 frameSrc는 계정 프로필 테두리가 아니라 장착한 직업 스킨/카드 프레임
  * 소유이므로, accountProfileBorderId로 덮어쓰면 스킨 표시가 깨진다.
+ *
+ * accountProfileBorderId는 그 대신 별도 필드 accountBorderSrc로만 노출한다(F-13 AC-05
+ * 재검토: "in-game final portrait must render the separate profile border as well as photo
+ * without changing role/card frames") — frameSrc(직업 스킨)와 같은 자리에 겹쳐 쓰지 않고,
+ * InGamePlayerCard가 별도 레이어로 그릴 수 있게 이름 자체를 다르게 둔다.
  * @param {object} player - sourcePlayers 원소
  * @param {object} preview - buildInGamePreviewPlayers가 만든 같은 슬롯의 더미
  * @flow connected/alive로 status를 정한 뒤 조건부 키(role/team/isAlly/themeIndex/
  *       accountProfilePhotoId/accountProfileBorderId)를 덧씌우고, 유효한 계정 사진이
- *       있으면 portraitSrc만 그 자산으로 바꾼다.
+ *       있으면 portraitSrc만 그 자산으로 바꾸고, 유효한 계정 테두리가 있으면
+ *       accountBorderSrc를 추가한다.
  */
 export function mergeSourcePlayerWithPreview(player, preview) {
   const status = !player.connected
@@ -39,6 +48,9 @@ export function mergeSourcePlayerWithPreview(player, preview) {
   const resolvedAccountPhotoSrc = Object.hasOwn(player, "accountProfilePhotoId")
     ? resolveAccountProfilePhotoSrc(player.accountProfilePhotoId)
     : null
+  const resolvedAccountBorderSrc = Object.hasOwn(player, "accountProfileBorderId")
+    ? resolveAccountProfileBorderSrc(player.accountProfileBorderId)
+    : null
 
   return {
     ...preview,
@@ -46,6 +58,7 @@ export function mergeSourcePlayerWithPreview(player, preview) {
     nickname: player.name ?? preview.nickname,
     status,
     ...(resolvedAccountPhotoSrc != null ? { portraitSrc: resolvedAccountPhotoSrc } : {}),
+    ...(resolvedAccountBorderSrc != null ? { accountBorderSrc: resolvedAccountBorderSrc } : {}),
     ...(Object.hasOwn(player, "role") ? { role: player.role } : {}),
     ...(Object.hasOwn(player, "team") ? { team: player.team } : {}),
     ...(Object.hasOwn(player, "isAlly") ? { isAlly: player.isAlly } : {}),

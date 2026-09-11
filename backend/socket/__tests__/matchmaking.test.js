@@ -148,6 +148,39 @@ test('join_room_by_code: 참가자의 서버 공개 프로필(사진·테두리)
     assert.equal(joinerEntry.accountProfileBorderId, 'profile-border-남작')
 })
 
+// F-13 AC-05(공개 응답 안전성) — loadRoomParticipantProfile은 economyService.getPublicProfileLoadouts의
+// 반환값에서 profilePhotoId/profileBorderId 두 필드만 꺼내 accountProfilePhotoId/
+// accountProfileBorderId로 옮긴다(economy.service.js 참고, 지갑·소유 목록은 그 함수 자체가
+// 절대 포함하지 않는다). 이 테스트는 그 계약이 room.players 공개 payload까지 그대로 지켜지는지
+// — 즉 fake economyService가 실수로라도 추가 필드(잔액·소유 목록 등)를 흘려도 room.players
+// 항목에는 알려진 안전한 키만 남는지 — 못박는다. 새 필드가 room.players에 늘어나면 이 테스트가
+// 먼저 깨져, 의도치 않은 공개 노출을 경고한다.
+test('create_room: room.players 항목은 알려진 안전한 키만 갖는다(economyService가 잔액 등 여분 필드를 흘려도 새어나가지 않는다)', async () => {
+    fakeGetPublicProfileLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [
+            id,
+            {
+                profilePhotoId: 'player-profile-기사',
+                profileBorderId: 'profile-border-귀족',
+                // 아래 두 필드는 실제 economyService.getPublicProfileLoadouts가 절대 포함하지
+                // 않지만, "혹시 흘러도 이쪽에서 막힌다"를 증명하기 위해 fake에서만 주입한다.
+                balanceGold: 999999,
+                entitlements: ['secret-item'],
+            },
+        ]))
+
+    const socket = createFakeSocket('uuid-profile-safe-keys')
+    const io = createFakeIo([socket])
+    const res = await callAsPromise(handleCreateRoom, io, socket, 'uuid-profile-safe-keys', validSettingsPayload())
+
+    assert.equal(res.ok, true)
+    const [host] = res.room.players
+    assert.deepEqual(
+        Object.keys(host).sort(),
+        ['accountProfileBorderId', 'accountProfilePhotoId', 'isReady', 'nickname', 'uuid'],
+    )
+})
+
 test('create_room: callback이 없는 요청은 어떤 상태도 바꾸지 않는다', () => {
     const before = matchmaking.__getStateSnapshotForTests()
     const socket = createFakeSocket('uuid-C')

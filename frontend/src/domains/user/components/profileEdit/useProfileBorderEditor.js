@@ -102,10 +102,26 @@ export function useProfileBorderEditor({ open, onClose }) {
       setConfirmStatus("idle")
       onClose()
     } catch (error) {
+      // F-13 AC-02 재검토 — economy.store.js의 purchase()와 같은 이유(응답 유실은 서버
+      // 상태 재조회로 확정한다): backend/utils/appError.js의 createError는 서버가 실제로
+      // 처리해 거부한 응답에만 code를 싣는다. code가 없으면 네트워크 단절 등으로 응답
+      // 자체를 받지 못한 것이라 성공/실패를 알 수 없다 — 그런 경우에만 현재 장착 상태를
+      // 다시 읽어(fetchSummary) currentPhotoItemId/currentBorderItemId가 추측이 아니라
+      // 실제 서버 진실을 반영하게 한다(명시적 거부는 아무 것도 바뀌지 않았으므로 다시
+      // 읽을 필요가 없다). fetchSummary 자체의 실패는 이 catch가 이미 다루는 오류를
+      // 덮어쓰지 않는다.
+      const confirmedRejection = typeof error?.code === "string" && error.code.length > 0
+      if (!confirmedRejection) {
+        await fetchSummary().catch(() => {})
+      }
+      if (useEconomyStore.getState().requestGeneration !== startGeneration) {
+        setConfirmStatus("idle")
+        return
+      }
       setConfirmStatus("idle")
       setConfirmError(error?.message ?? "프로필 저장에 실패했습니다.")
     }
-  }, [confirmStatus, draftPhotoItemId, currentPhotoItemId, draftBorderItemId, currentBorderItemId, equipProfile, onClose])
+  }, [confirmStatus, draftPhotoItemId, currentPhotoItemId, draftBorderItemId, currentBorderItemId, equipProfile, fetchSummary, onClose])
 
   return {
     activeTab,

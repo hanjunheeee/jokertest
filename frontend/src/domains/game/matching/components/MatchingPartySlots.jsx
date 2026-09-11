@@ -10,26 +10,33 @@
  */
 import PlayerSlotGrid from "./PlayerSlotGrid.jsx"
 import { PLAYER_SLOT_COLUMNS } from "../utils/chunkPlayerSlots.js"
-import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
+import { MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
 import {
   MATCHING_SLOT_BADGE_NOT_READY_CLASS,
   MATCHING_SLOT_BADGE_READY_CLASS,
-  MATCHING_SLOT_CLASS_COMPACT,
-  MATCHING_SLOT_CLASS_LARGE,
-  MATCHING_SLOT_NOT_READY_OFFSET_CLASS,
+  MATCHING_SLOT_PORTRAIT_WRAP_CLASS_COMPACT,
+  MATCHING_SLOT_PORTRAIT_WRAP_CLASS_LARGE,
   MATCHING_SLOT_WRAP_CLASS,
   MATCHING_SLOTS_GRID_CLASS,
   MATCHING_SLOTS_ROW_CLASS,
 } from "../constants/matchingPopupStyles.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
+import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
 export { PLAYER_SLOT_COLUMNS as MATCHING_SLOT_COLUMNS }
 
-/** 준비 상태별 실루엣을 행 단위로 렌더하는 파티 슬롯 그리드 */
+/**
+ * 파티 슬롯 그리드 — F-13(AC-05): 준비 여부만 다른 공용 실루엣 대신, 슬롯이 실제 방
+ * 참가자(accountProfilePhotoId/accountProfileBorderId, useMatchingPage.js가 room.players에서
+ * 그대로 옮겨온 값)를 담고 있으면 계정별로 서로 다른 실제 초상·테두리를 그린다. 대기방에
+ * 아직 들어가지 않은 더미 슬롯(MATCHING_PARTY_SLOTS_DUMMY_10)은 그 필드가 없어
+ * resolveAccountProfileAssets가 기본 자산으로 대체한다 — 기존 더미 미리보기와 동일하게
+ * 동작한다. 준비/미준비 여부는 이제 배지로만 구분한다.
+ */
 export default function MatchingPartySlots({ slots = [] }) {
   const rowCount = Math.ceil(slots.length / PLAYER_SLOT_COLUMNS) || 1
-  const slotClass =
-    rowCount > 1 ? MATCHING_SLOT_CLASS_COMPACT : MATCHING_SLOT_CLASS_LARGE
+  const portraitWrapClass =
+    rowCount > 1 ? MATCHING_SLOT_PORTRAIT_WRAP_CLASS_COMPACT : MATCHING_SLOT_PORTRAIT_WRAP_CLASS_LARGE
 
   return (
     <PlayerSlotGrid
@@ -37,22 +44,21 @@ export default function MatchingPartySlots({ slots = [] }) {
       columns={PLAYER_SLOT_COLUMNS}
       className={MATCHING_SLOTS_GRID_CLASS}
       rowClassName={MATCHING_SLOTS_ROW_CLASS}
-      renderSlot={(slot) => (
-        <div key={slot.id} className={MATCHING_SLOT_WRAP_CLASS}>
-          <PublicAsset
-            src={
-              slot.ready
-                ? GAME_MATCHING_ASSETS.silhouetteReady
-                : GAME_MATCHING_ASSETS.silhouetteNotReady
-            }
-            alt={slot.ready ? "준비 완료" : "준비 중"}
-            className={`${slotClass}${slot.ready ? "" : ` ${MATCHING_SLOT_NOT_READY_OFFSET_CLASS}`}`}
-          />
-          <span className={slot.ready ? MATCHING_SLOT_BADGE_READY_CLASS : MATCHING_SLOT_BADGE_NOT_READY_CLASS}>
-            {slot.ready ? MATCHING_POPUP_COPY.readyBadge : MATCHING_POPUP_COPY.notReadyBadge}
-          </span>
-        </div>
-      )}
+      renderSlot={(slot) => {
+        const { portraitSrc, frameSrc } = resolveAccountProfileAssets(slot)
+        return (
+          <div key={slot.id} className={MATCHING_SLOT_WRAP_CLASS}>
+            <PlayerProfilePortrait
+              photoSrc={portraitSrc}
+              frameSrc={frameSrc}
+              wrapClassName={portraitWrapClass}
+            />
+            <span className={slot.ready ? MATCHING_SLOT_BADGE_READY_CLASS : MATCHING_SLOT_BADGE_NOT_READY_CLASS}>
+              {slot.ready ? MATCHING_POPUP_COPY.readyBadge : MATCHING_POPUP_COPY.notReadyBadge}
+            </span>
+          </div>
+        )
+      }}
     />
   )
 }

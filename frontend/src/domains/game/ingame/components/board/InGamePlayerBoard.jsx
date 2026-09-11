@@ -26,6 +26,7 @@ export default function InGamePlayerBoard() {
           <InGamePlayerCard
             portraitSrc={player.portraitSrc}
             frameSrc={player.frameSrc}
+            accountBorderSrc={player.accountBorderSrc}
             nickname={player.nickname}
             status={player.status}
             theme={player.theme}
