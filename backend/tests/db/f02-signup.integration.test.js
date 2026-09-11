@@ -56,9 +56,11 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 // isolatedTestDb.js 참고 — 따로 넘길 필요는 없지만, MIGRATIONS 체인에는 명시적으로
 // 넣어야 실제로 테이블이 만들어진다).
 const addEconomy = require('../../db/migrations/0006-add-economy');
+// Current auth services create EconomyLoadout rows, including its persisted CAS revision.
+const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addEconomy];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addEconomy, addLoadoutRevision];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });
