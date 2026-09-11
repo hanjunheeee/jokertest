@@ -284,65 +284,65 @@ const getEntitlement = async (userId, itemId) =>
 
 const BACKFILL_SCRIPT_PATH = path.join(__dirname, '..', '..', 'scripts', 'backfill-achievements.js');
 
-/** backfill-achievements.js를 자식 프로세스로 실행한다. { exitCode, signal }을
- *  반환한다 — signal이 'SIGKILL'이면 실제로 강제 종료됐다는 뜻이고, null이면 스스로
- *  끝났다는 뜻이다. */
-const runBackfillProcess = () => new Promise((resolve, reject) => {
+// Independent deadline remains active even when the observation query never settles.
+// Poll serially; query errors fail the test and terminate the actual CLI child.
+const observeBackfillProcess = ({ userId = null, pollIntervalMs = 5, maxWaitMs = 20000 } = {}) => new Promise((resolve, reject) => {
     const child = fork(BACKFILL_SCRIPT_PATH, [], {
         env: { ...process.env, DATABASE_URL: TEST_DB_URL },
         stdio: 'ignore',
     });
-    child.on('error', (error) => reject(error));
-    child.on('exit', (code, signal) => resolve({ exitCode: code, signal }));
-});
-
-/** backfill-achievements.js를 자식 프로세스로 실행하고, userId에 대한 achievement_grants
- *  행이 처음 커밋되는 순간을 폴링으로 관찰해 그 즉시 SIGKILL한다.
- *
- *  CODEX-3 재검토(AC-05): 이전 버전은 고정 150ms 뒤에 무조건 SIGKILL을 보냈다 — 그 150ms
- *  동안 실제로 userId의 지급 트랜잭션에 도달했는지 전혀 확인하지 않아서, 만약 전체 처리가
- *  150ms 안에 이미 다 끝났다면(또는 반대로 그 계정에 전혀 도달하지 못했다면) "중단 복구"
- *  시나리오를 실제로는 한 번도 실행하지 않고도 통과했을 것이다. db.User.findAll()은
- *  정렬 없이 반환되고 uuid(랜덤)를 기본키로 쓰는 InnoDB는 클러스터 인덱스 순서가 생성
- *  순서와 무관하므로, userId가 전체 순회 중 몇 번째에 처리될지는 미리 알 수 없다 — 그래서
- *  타이밍을 추측하는 대신 실제 DB 상태 변화(첫 grant 커밋)에 반응한다. maxWaitMs 안에도
- *  전혀 진행이 없으면 안전장치로 그냥 종료시킨다(그 경우 호출부가 이후 단언에서 실패로
- *  드러낸다 — 조용히 통과시키지 않는다). */
-const runBackfillProcessKillOnFirstGrant = (userId, { pollIntervalMs = 5, maxWaitMs = 20000 } = {}) => new Promise((resolve, reject) => {
-    const child = fork(BACKFILL_SCRIPT_PATH, [], {
-        env: { ...process.env, DATABASE_URL: TEST_DB_URL },
-        stdio: 'ignore',
-    });
-    const startedAt = Date.now();
     let settled = false;
-    const poller = setInterval(() => {
+    let stopping = false;
+    let failure = null;
+    let pollTimer;
+    let cleanupTimer;
+    const cleanup = () => {
+        clearTimeout(deadline);
+        clearTimeout(pollTimer);
+        clearTimeout(cleanupTimer);
+    };
+    const finish = (error, result) => {
         if (settled) return;
-        db.AchievementGrant.count({ where: { user_id: userId } })
-            .then((count) => {
-                if (settled) return;
-                if (count >= 1 || Date.now() - startedAt > maxWaitMs) {
-                    settled = true;
-                    clearInterval(poller);
-                    child.kill('SIGKILL');
-                }
-            })
-            .catch(() => {}); // 폴링 쿼리 하나가 실패해도 다음 tick에서 다시 시도한다.
-    }, pollIntervalMs);
-    child.on('error', (error) => {
         settled = true;
-        clearInterval(poller);
-        reject(error);
+        cleanup();
+        if (error) reject(error);
+        else resolve(result);
+    };
+    const stop = (error = null) => {
+        if (settled || stopping) return;
+        stopping = true;
+        failure = error;
+        clearTimeout(pollTimer);
+        cleanupTimer = setTimeout(() => {
+            child.kill('SIGKILL');
+            child.unref();
+            finish(failure ?? new Error('Backfill child did not exit after SIGKILL'));
+        }, 5000);
+        child.kill('SIGKILL');
+    };
+    const deadline = setTimeout(() => stop(new Error('Backfill process exceeded its independent deadline')), maxWaitMs);
+    child.once('error', (error) => {
+        failure = error;
+        stop(error);
     });
-    child.on('exit', (code, signal) => {
-        settled = true;
-        clearInterval(poller);
-        resolve({ exitCode: code, signal });
-    });
+    child.once('close', (exitCode, signal) => finish(failure, { exitCode, signal }));
+    const poll = async () => {
+        if (settled || stopping) return;
+        try {
+            const count = await db.AchievementGrant.count({ where: { user_id: userId } });
+            if (settled || stopping) return;
+            if (count >= 1) stop();
+            else pollTimer = setTimeout(poll, pollIntervalMs);
+        } catch (error) {
+            stop(error);
+        }
+    };
+    if (userId) pollTimer = setTimeout(poll, pollIntervalMs);
 });
 
-/** achievement_grants에 남아있는 각 행이 자신의 업적 정의가 요구하는 보상 전부(원장
- *  항목·아이템 소유권)를 실제로 갖고 있는지 확인한다. 하나라도 빠졌으면 그 achievement_id를
- *  담아 돌려준다 — 빈 배열이면 "부분 지급된 업적이 없다"는 뜻이다. */
+const runBackfillProcess = () => observeBackfillProcess({ maxWaitMs: 60000 });
+const runBackfillProcessKillOnFirstGrant = (userId, options = {}) => observeBackfillProcess({ ...options, userId });
+
 const findPartiallyGrantedAchievements = async (userId) => {
     const grants = await db.AchievementGrant.findAll({ where: { user_id: userId }, attributes: ['achievement_id'], raw: true });
     const partial = [];
@@ -387,7 +387,7 @@ test('AC-05: 실제 CLI(backfill-achievements.js) 프로세스를 지급 도중 
     // 행이 처음 커밋되는 순간을 폴링으로 관찰해 그 즉시 SIGKILL한다 — 지급 트랜잭션 진행
     // 도중에 실제로 도달했는지를 시간 추측이 아니라 관찰로 보장한다.
     const { signal } = await runBackfillProcessKillOnFirstGrant(heavyUserId);
-    t.diagnostic(`backfill 자식 프로세스 종료 신호: ${signal ?? '(정상 종료 — 아래 grants 개수 단언이 실제 중단 여부를 확인한다)'}`);
+    assert.equal(signal, 'SIGKILL', '실제 CLI 자식 프로세스의 강제 종료 신호를 확인해야 한다');
 
     // 실제로 지급 도중에 죽었는지 관찰값으로 직접 증명한다: 9개 중 최소 1개는 커밋됐지만
     // 9개 전부가 끝나기 전에 죽어야 한다. 0이면 첫 grant 전에(=아무 진행도 없이) 죽은
@@ -408,6 +408,7 @@ test('AC-05: 실제 CLI(backfill-achievements.js) 프로세스를 지급 도중 
     // 복구: 중단 없이 다시 실행해 끝까지 완료한다.
     const recovery = await runBackfillProcess();
     assert.equal(recovery.signal, null, '복구 실행은 중단 없이 정상 종료되어야 한다');
+    assert.equal(recovery.exitCode, 0, '복구 CLI가 오류 없이 성공 종료되어야 한다');
 
     const grantRows = await db.AchievementGrant.findAll({ where: { user_id: heavyUserId }, attributes: ['achievement_id'], raw: true });
     const grantIds = grantRows.map((g) => g.achievement_id);
