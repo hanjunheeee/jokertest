@@ -42,6 +42,11 @@ const resolveUserId = () => useAuthStore.getState().user?.uuid ?? null
 const buildReferenceEventId = (userId, itemId) =>
   `purchase:${userId}:${itemId}:${crypto.randomUUID()}`
 
+// Only one profile write may be in flight per account generation. Unknown outcomes
+// stop the queue: a GET cannot prove that a disconnected POST will never commit.
+let profileQueue = null
+let profileOutcomeUnknown = false
+
 export const useEconomyStore = create((set, get) => ({
   ...initialState,
   requestGeneration: 0,
@@ -178,39 +183,52 @@ export const useEconomyStore = create((set, get) => ({
    *  미보유/종류 불일치) 아무 것도 반영하지 않고 그대로 던진다(이전 장착 상태 유지, equip과
    *  같은 generation 가드).
    *  @param {{ photoItemId?: string, borderItemId?: string }} params */
-  equipProfile: async ({ photoItemId, borderItemId }) => {
+  equipProfile: ({ photoItemId, borderItemId }) => {
     const generation = get().requestGeneration
-    // F-13 AC-02(CODEX-5): 이 호출을 "지금 사용자가 원하는 최신 확정 시도"로 등록한다 —
-    // 이후 이 값이 다시 바뀌면(더 새로운 equipProfile 호출이 시작되면) 이 시도의 응답은
-    // 도착 순서와 무관하게 loadout을 쓸 자격을 잃는다(같은 화면 안에서의 낙관적 갱신
-    // 규칙 — 클라이언트가 "지금 보여줄 값"을 정하는 용도일 뿐이다).
+    const userId = resolveUserId()
     const attemptSeq = get().loadoutAttemptSeq + 1
     set({ loadoutAttemptSeq: attemptSeq })
-    // F-13 AC-02 설계 감사(운영자, 2026-09-11) — 이전에는 이 시점에 clientIntentAt(Date.now())을
-    // 함께 보내 서버가 겹치는 확정들의 커밋 순서를 재구성하도록 시도했으나, 벽시계는 전순서가
-    // 아니고(같은 밀리초 충돌), 시계 역행/오차가 정당한 요청을 거부하며, 그 판정을 지탱하던
-    // 서버 인메모리 상태는 재시작·다중 인스턴스에서 사라진다는 세 가지 결함이 있어 제거했다
-    // (backend/service/economy.service.js의 equipProfileAppearance 주석 참고). 화면에 무엇을
-    // 보여줄지는 여전히 위 attemptSeq만으로 완전히 결정된다 — 같은 탭에서 이 호출보다 더
-    // 나중에 시작된 확정이 있으면, 이 호출의 응답이 어떤 순서로 도착하든 store.loadout에
-    // 반영될 자격이 없다(아래 두 재확인). 서버는 행 잠금(equipProfileAppearance)으로 겹치는
-    // 두 확정의 갱신 자체만 원자적으로 직렬화할 뿐, 어느 쪽이 "의도상 더 나중"인지는 더 이상
-    // 판단하지 않는다 — 실제 네트워크 재정렬로 커밋 순서가 뒤바뀌는 것은 극히 드물고, 그런
-    // 잔여 불일치는 다음 자연스러운 재조회(편집기 재오픈·새로고침)에서 스스로 바로잡힌다.
-    const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId })
-    if (get().requestGeneration !== generation) return result
-    if (get().loadoutAttemptSeq !== attemptSeq) return result
-    set((state) => ({ loadout: { ...state.loadout, ...result.loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
+    const run = async () => {
+      if (!userId || generation !== get().requestGeneration || userId !== resolveUserId()) {
+        throw Object.assign(new Error("계정이 변경되어 저장을 취소했습니다."), { code: "SESSION_CHANGED" })
+      }
+      if (profileOutcomeUnknown) {
+        throw Object.assign(new Error("이전 저장 결과를 확인할 수 없어 추가 저장을 중지했습니다. 다시 로그인한 뒤 저장 상태를 확인해 주세요."), { code: "PROFILE_OUTCOME_UNKNOWN" })
+      }
+      try {
+        const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId })
+        if (generation === get().requestGeneration) {
+          // A committed before B can be sent. Even if B is rejected, A remains the
+          // actual saved value; discarding A merely because B was queued is wrong.
+          set(state => ({ loadout: { ...state.loadout, ...result.loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
+        }
+        return result
+      } catch (error) {
+        if (generation === get().requestGeneration && !error.code) {
+          profileOutcomeUnknown = true
+          set({ error: "프로필 저장 결과를 확인할 수 없습니다." })
+        }
+        throw error
+      }
+    }
+    const result = profileQueue ? profileQueue.then(run) : run()
+    const settled = result.then(() => undefined, () => undefined)
+    profileQueue = settled
+    settled.then(() => { if (profileQueue === settled) profileQueue = null })
     return result
   },
 
   /** 계정 경계를 넘는 모든 상태를 지우고 진행 중이던 요청들을 전부 무효화한다
    *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 계정의 응답은 전부 무시된다. */
-  reset: () => set((state) => ({
+  reset: () => {
+    profileQueue = null
+    profileOutcomeUnknown = false
+    set((state) => ({
     ...initialState,
     pendingPurchases: {},
     requestGeneration: state.requestGeneration + 1,
-  })),
+  }))
+  },
 }))
 
 // 로그아웃(user → null)이든 다른 계정으로 전환(uuid 변경)이든, 계정 식별자가 바뀌는

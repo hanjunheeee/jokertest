@@ -229,29 +229,63 @@ test("equipProfile 응답이 도착하기 전에 계정이 바뀌면(requestGene
 // loadoutAttemptSeq 가드가 실제로 이 STORE 레벨 경쟁을 막는지 직접 확인한다(훅을 거치지
 // 않고 store 함수만 호출 — 훅의 세션 무효화와는 독립적인 계약이다).
 
-test("F-13 AC-02(CODEX-5): 같은 계정 안에서 더 먼저 시작된 equipProfile 시도(A)가 더 나중에 시작된 시도(B)보다 늦게 성공 응답을 받아도, 이미 확정된 B의 결과를 덮어쓰지 않는다(완료 순서가 아니라 시작 순서로 승자를 가른다)", async () => {
+test("profile writes serialize actual commits: B cannot reach server before A settles", async () => {
   resetStore()
-  const postDeferreds = []
-  postImpl = () => new Promise((resolve) => { postDeferreds.push(resolve) })
+  const gate = createDeferred()
+  const calls = []
+  let persisted = null
+  postImpl = async (_, body) => {
+    calls.push(body.borderItemId)
+    if (calls.length === 1) await gate.promise
+    persisted = body.borderItemId
+    return { loadout: { selectedProfileBorderId: persisted } }
+  }
+  const a = useEconomyStore.getState().equipProfile({ borderItemId: "A" })
+  const b = useEconomyStore.getState().equipProfile({ borderItemId: "B" })
+  assert.deepEqual(calls, ["A"])
+  gate.resolve()
+  await Promise.all([a, b])
+  assert.deepEqual(calls, ["A", "B"])
+  assert.equal(persisted, "B")
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, persisted)
+})
 
-  const confirmA = useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-귀족" })
-  const confirmB = useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
-  assert.equal(postDeferreds.length, 2, "A와 B 각각 정확히 한 번씩 POST가 나가야 한다")
+test("rejected latest profile keeps the preceding committed server value", async () => {
+  resetStore()
+  const gate = createDeferred()
+  postImpl = async (_, body) => {
+    if (body.borderItemId === "A") { await gate.promise; return { loadout: { selectedProfileBorderId: "A" } } }
+    throw Object.assign(new Error("not owned"), { code: "ITEM_NOT_OWNED" })
+  }
+  const a = useEconomyStore.getState().equipProfile({ borderItemId: "A" })
+  const b = useEconomyStore.getState().equipProfile({ borderItemId: "B" })
+  const rejected = assert.rejects(b, { code: "ITEM_NOT_OWNED" })
+  gate.resolve(); await a; await rejected
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "A")
+})
 
-  // B(더 나중에 시작된 시도)가 먼저 확정된다.
-  postDeferreds[1]({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
-  await confirmB
-  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+test("unknown outcome blocks queued writes instead of claiming they saved", async () => {
+  resetStore()
+  const gate = createDeferred(); let calls = 0
+  postImpl = async () => { calls++; await gate.promise; throw new TypeError("connection lost") }
+  const a = useEconomyStore.getState().equipProfile({ borderItemId: "A" })
+  const b = useEconomyStore.getState().equipProfile({ borderItemId: "B" })
+  const failures = Promise.all([assert.rejects(a, /connection lost/), assert.rejects(b, { code: "PROFILE_OUTCOME_UNKNOWN" })])
+  gate.resolve(); await failures
+  assert.equal(calls, 1)
+})
 
-  // A(더 먼저 시작된 시도)가 그제서야 뒤늦게 성공으로 도착한다.
-  postDeferreds[0]({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
-  await confirmA
-
-  assert.equal(
-    useEconomyStore.getState().loadout.selectedProfileBorderId,
-    "profile-border-남작",
-    "이미 확정된 더 최신 시도(B)의 결과를 더 오래된 시도(A)의 뒤늦은 성공이 덮어쓰면 안 된다",
-  )
+test("account switch cancels queued old-account write before transport", async () => {
+  resetStore()
+  const gate = createDeferred(); let calls = 0
+  postImpl = async () => { calls++; await gate.promise; return { loadout: { selectedProfileBorderId: "A" } } }
+  const a = useEconomyStore.getState().equipProfile({ borderItemId: "A" })
+  const b = useEconomyStore.getState().equipProfile({ borderItemId: "B" })
+  const rejected = assert.rejects(b, { code: "SESSION_CHANGED" })
+  setCurrentUser({ uuid: "user-2" })
+  gate.resolve(); await a; await rejected
+  assert.equal(calls, 1)
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, null)
 })
 
 test("F-13 AC-02(CODEX-5): equipProfile 시도가 시작되기 전부터 진행 중이던 fetchSummary(재조회)가 그 시도보다 늦게 도착해도, 이미 확정된 최신 loadout을 덮어쓰지 않는다", async () => {
