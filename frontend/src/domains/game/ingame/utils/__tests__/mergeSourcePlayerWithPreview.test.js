@@ -163,3 +163,45 @@ test("accountProfileBorderId가 알 수 없는(카탈로그 규칙과 다른) �
   )
   assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
 })
+
+// ── F-14(AC-01/AC-04): 장착한 플레이어 카드 프레임(accountCardFrameId) ─────────────────
+
+test("유효한 accountCardFrameId가 있으면 preview의 더미 frameSrc 대신 실제 장착 카드 프레임으로 바뀐다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountCardFrameId: "player-card-왕관" },
+    preview(),
+  )
+  assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(왕관).png".normalize("NFC"))
+  assert.equal(result.accountCardFrameId, "player-card-왕관")
+})
+
+test("accountCardFrameId 키 자체가 없으면 preview의 더미 frameSrc가 그대로 유지되고 accountCardFrameId 키도 생기지 않는다", () => {
+  const source = preview()
+  const result = mergeSourcePlayerWithPreview({ id: "u1", name: "A", connected: true, alive: true }, source)
+  assert.equal(result.frameSrc, source.frameSrc)
+  assert.equal(Object.hasOwn(result, "accountCardFrameId"), false)
+})
+
+test("accountCardFrameId가 알 수 없는(카탈로그 규칙과 다른) 값이면 preview의 더미 frameSrc를 그대로 둔다", () => {
+  const source = preview()
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountCardFrameId: "../../../etc/passwd" },
+    source,
+  )
+  assert.equal(result.frameSrc, source.frameSrc)
+})
+
+test("accountCardFrameId가 있어도 portraitSrc·accountBorderSrc는 각자 독립적으로 해석된다(서로 종속되지 않음)", () => {
+  const result = mergeSourcePlayerWithPreview(
+    {
+      id: "u1", name: "A", connected: true, alive: true,
+      accountProfilePhotoId: "player-profile-기사",
+      accountProfileBorderId: "profile-border-귀족",
+      accountCardFrameId: "player-card-사슬",
+    },
+    preview(),
+  )
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+  assert.equal(result.accountBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+  assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).png".normalize("NFC"))
+})

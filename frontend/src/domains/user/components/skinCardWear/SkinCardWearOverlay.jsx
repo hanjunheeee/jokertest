@@ -7,12 +7,13 @@ import {
 } from "../../constants/skinCardWear/skinCardWearLayout.js"
 import { useSkinCardWearSelection } from "../../hooks/useSkinCardWearSelection.js"
 import { useSkinCardWearStore } from "../../store/skinCardWear.store.js"
+import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import SkinCardWearPanel from "./SkinCardWearPanel.jsx"
 
 export default function SkinCardWearOverlay({ open, onClose }) {
   const appliedSkinsByJob = useSkinCardWearStore((state) => state.skinsByJob)
   const appliedCardFrameId = useSkinCardWearStore((state) => state.cardFrameId)
-  const applyLoadout = useSkinCardWearStore((state) => state.applyLoadout)
+  const fetchSummary = useEconomyStore((state) => state.fetchSummary)
 
   const {
     listItems,
@@ -27,6 +28,9 @@ export default function SkinCardWearOverlay({ open, onClose }) {
     selectItem,
     togglePreviewMode,
     resetDraft,
+    confirmStatus,
+    confirmError,
+    confirmLoadout,
   } = useSkinCardWearSelection({
     initialSkinsByJob: appliedSkinsByJob,
     initialCardFrameId: appliedCardFrameId,
@@ -39,6 +43,9 @@ export default function SkinCardWearOverlay({ open, onClose }) {
       skinsByJob: appliedSkinsByJob,
       cardFrameId: appliedCardFrameId,
     })
+    // F-14(AC-01): 열 때마다 서버 확정값을 다시 조회한다 — 다른 기기·탭에서 바뀐 구매·장착이
+    // 있어도 목록·미리보기가 낡은 값으로 열리지 않는다.
+    fetchSummary()
 
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose()
@@ -46,14 +53,19 @@ export default function SkinCardWearOverlay({ open, onClose }) {
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, appliedSkinsByJob, appliedCardFrameId, onClose, resetDraft])
+  }, [open, appliedSkinsByJob, appliedCardFrameId, onClose, resetDraft, fetchSummary])
 
-  const handleConfirm = () => {
-    applyLoadout({
-      skinsByJob: draftSkinsByJob,
-      cardFrameId: draftCardFrameId,
+  // F-14(AC-01/AC-02/AC-05): 로컬 낙관적 반영 없음 — confirmLoadout이 실제로 서버 확정
+  // 성공(ok:true)을 보고했을 때만 닫는다. 명시적 거부·전송 불확실은 열린 채로 남아 Panel이
+  // confirmStatus/confirmError로 오류·재시도 수단을 보여준다. 저장 도중 계정이 전환된
+  // stale 결과는 성공도 실패도 아니므로 그대로 무시한다 — 이미 무효한 이전 계정 컨텍스트라
+  // 닫기·오류 표시 어느 쪽도 하지 않는다(그 계정 화면은 auth store 전환으로 별도 정리된다).
+  const handleConfirm = async () => {
+    const result = await confirmLoadout({
+      appliedSkinsByJob,
+      appliedCardFrameId,
     })
-    onClose()
+    if (result.ok) onClose()
   }
 
   return (
@@ -96,6 +108,8 @@ export default function SkinCardWearOverlay({ open, onClose }) {
                 onTogglePreviewMode={togglePreviewMode}
                 onClose={onClose}
                 onConfirm={handleConfirm}
+                confirmStatus={confirmStatus}
+                confirmError={confirmError}
               />
             </motion.div>
           </div>

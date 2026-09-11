@@ -4,6 +4,7 @@ import {
   resolveAccountProfileBorderSrc,
   resolveAccountProfilePhotoSrc,
 } from "../../../../shared/utils/resolveAccountProfileAssets.js"
+import { resolveAccountCardFrameSrc } from "./pickInGamePlayerFrame.js"
 
 /**
  * 참가자 하나(sourcePlayers의 원소)를 preview 더미와 병합합니다. role/team/isAlly는 입력에 그
@@ -51,6 +52,12 @@ export function mergeSourcePlayerWithPreview(player, preview) {
   const resolvedAccountBorderSrc = Object.hasOwn(player, "accountProfileBorderId")
     ? resolveAccountProfileBorderSrc(player.accountProfileBorderId)
     : null
+  // F-14(AC-01/AC-04): 장착한 플레이어 카드 프레임(accountCardFrameId)은 profile photo·
+  // border와 마찬가지로 공개 필드다(어떤 역할이든 같은 카드를 고를 수 있어 역할을 드러내지
+  // 않는다) — 있으면 preview의 더미 순환 frameSrc를 실제 장착 프레임으로 덮어쓴다.
+  const resolvedAccountCardFrameSrc = Object.hasOwn(player, "accountCardFrameId")
+    ? resolveAccountCardFrameSrc(player.accountCardFrameId)
+    : null
 
   return {
     ...preview,
@@ -59,6 +66,7 @@ export function mergeSourcePlayerWithPreview(player, preview) {
     status,
     ...(resolvedAccountPhotoSrc != null ? { portraitSrc: resolvedAccountPhotoSrc } : {}),
     ...(resolvedAccountBorderSrc != null ? { accountBorderSrc: resolvedAccountBorderSrc } : {}),
+    ...(resolvedAccountCardFrameSrc != null ? { frameSrc: resolvedAccountCardFrameSrc } : {}),
     ...(Object.hasOwn(player, "role") ? { role: player.role } : {}),
     ...(Object.hasOwn(player, "team") ? { team: player.team } : {}),
     ...(Object.hasOwn(player, "isAlly") ? { isAlly: player.isAlly } : {}),
@@ -70,6 +78,9 @@ export function mergeSourcePlayerWithPreview(player, preview) {
       : {}),
     ...(Object.hasOwn(player, "accountProfileBorderId")
       ? { accountProfileBorderId: player.accountProfileBorderId }
+      : {}),
+    ...(Object.hasOwn(player, "accountCardFrameId")
+      ? { accountCardFrameId: player.accountCardFrameId }
       : {}),
     deathReason: player.deathReason,
   }

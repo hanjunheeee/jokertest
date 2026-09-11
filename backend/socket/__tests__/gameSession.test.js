@@ -517,6 +517,14 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     matchmaking.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+        // F-14(AC-01/AC-04): captureRoomStartProfiles(게임 시작 직전 스냅샷)는 getGameStartLoadouts를
+        // 부른다 — 이 fake가 없으면 실제 handleStartGame 경로를 타는 이 파일의 통합 시험들이
+        // INTERNAL_ERROR로 죽는다.
+        getGameStartLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, {
+                profilePhotoId: null, profileBorderId: null, cardFrameId: null,
+                skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+            }])),
     })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
 
@@ -2031,6 +2039,14 @@ async function startRealTwoPlayerSession(hostUuid, joinerUuid) {
     matchmaking.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+        // F-14(AC-01/AC-04): captureRoomStartProfiles(게임 시작 직전 스냅샷)는 getGameStartLoadouts를
+        // 부른다 — 이 fake가 없으면 실제 handleStartGame 경로를 타는 이 파일의 통합 시험들이
+        // INTERNAL_ERROR로 죽는다.
+        getGameStartLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, {
+                profilePhotoId: null, profileBorderId: null, cardFrameId: null,
+                skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+            }])),
     })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
     const hostSocket = createFakeSocket(hostUuid)
@@ -2341,6 +2357,14 @@ for (const lateExit of ['leave', 'disconnect']) {
     matchmaking.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+        // F-14(AC-01/AC-04): captureRoomStartProfiles(게임 시작 직전 스냅샷)는 getGameStartLoadouts를
+        // 부른다 — 이 fake가 없으면 실제 handleStartGame 경로를 타는 이 파일의 통합 시험들이
+        // INTERNAL_ERROR로 죽는다.
+        getGameStartLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, {
+                profilePhotoId: null, profileBorderId: null, cardFrameId: null,
+                skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+            }])),
     })
         handleLeaveGameSession(io, sockets[0], 'late-a', { gameId: session.id }, countingCallback().callback)
         const next = await callAsPromise(handleCreateRoom, io, sockets[0], 'late-a', validSettingsPayload())

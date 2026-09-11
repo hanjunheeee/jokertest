@@ -149,6 +149,29 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING(120),
             allowNull: true,
         },
+        // F-14(AC-01): 직업별 장착 스킨. 값이 없으면(null) 프론트가 그 직업의 기본 스킨으로
+        // 대체해 표시한다(skinCardWear.store.js) — selected_card_frame_id와 같은 이유로 서비스
+        // 계층이 백필하지 않는다(0011-add-economy-loadout-job-skins 참고).
+        selected_skin_noble: {
+            type: DataTypes.STRING(191),
+            allowNull: true,
+        },
+        selected_skin_clown: {
+            type: DataTypes.STRING(191),
+            allowNull: true,
+        },
+        selected_skin_guard: {
+            type: DataTypes.STRING(191),
+            allowNull: true,
+        },
+        selected_skin_doctor: {
+            type: DataTypes.STRING(191),
+            allowNull: true,
+        },
+        selected_skin_witch_hunter: {
+            type: DataTypes.STRING(191),
+            allowNull: true,
+        },
         // F-13 AC-02 설계 감사(운영자, 2026-09-11) — 서버가 매 성공적 장착 확정마다 새로
         // 발급하는 CAS(compare-and-swap) 토큰. 클라이언트는 자신이 마지막으로 읽은 값을
         // expectedRevision으로 함께 보내야 하고, 서버는 SELECT ... FOR UPDATE 행 잠금 안에서

@@ -20,6 +20,11 @@ const initialLoadout = {
   selectedProfilePhotoId: null,
   selectedProfileBorderId: null,
   selectedCardFrameId: null,
+  // F-14(AC-01): 직업별 장착 스킨. GET /entitlements(getWalletSummary)만 이 필드를 채운다 —
+  // POST /economy/equip 응답(routes.js serializeLoadout)에는 이 필드가 없으므로, equip 성공
+  // 뒤 이 값을 최신화하려면 fetchSummary로 다시 조회해야 한다(useSkinCardWearSelection.js
+  // confirmLoadout 참고).
+  selectedSkinsByJob: null,
   // F-13 AC-02(운영자 지시, 2026-09-11 22:12): 서버가 발급하는 CAS(compare-and-swap) 토큰.
   // equipProfile은 이 값을 expectedRevision으로 그대로 되돌려 보낸다 — 서버가 실제로 무엇을
   // 커밋했는지를 직접 보증하므로, 더 이상 클라이언트의 "시작 순서" 추측(loadoutAttemptSeq)

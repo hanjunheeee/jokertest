@@ -466,9 +466,18 @@ async function loadRoomParticipantProfile(uuid) {
 }
 
 /**
- * F-13(AC-05): 게임 시작 직전 room의 모든 참가자에 대해 서버 loadout을 다시 확보해
- * room.players에 반영한다("게임 시작 시 스냅샷된 계정 프로필") — 대기방에 머무는 동안
- * 프로필을 바꿨을 수 있으므로, 참가 시점이 아니라 시작 시점의 최신값을 커밋한다.
+ * F-13(AC-05)/F-14(AC-01/AC-04): 게임 시작 직전 room의 모든 참가자에 대해 서버 loadout을
+ * 다시 확보해 room.players에 반영한다("게임 시작 시 스냅샷된 계정 외형") — 대기방에 머무는
+ * 동안 프로필·스킨을 바꿨을 수 있으므로, 참가 시점이 아니라 시작 시점의 최신값을 커밋한다.
+ *
+ * economyServiceRef.getGameStartLoadouts(loadRoomParticipantProfile이 참가 시점에 쓰는
+ * getPublicProfileLoadouts와 달리)는 공개 필드(사진·테두리·카드 프레임)와 비공개 필드
+ * (직업별 스킨 선택 skinsByJob)를 함께 돌려준다 — 이 함수가 그 둘을 서로 다른 키로 나눠
+ * room.players에 심는다: accountProfilePhotoId/BorderId/CardFrameId는 이후
+ * game-core/gameSession.js buildPlayerAccountProfileFields가 공용 players[]로 공개하고,
+ * accountSkinsByJob은 세션 내부 전용 필드로만 남아 buildViewerRoleFields가 뷰어 자신의
+ * 실제 역할에 대응하는 값 하나만 self로 골라낸다(다른 참가자에게는 절대 그대로 노출되지
+ * 않는다, AC-04).
  *
  * 조회 자체는 비동기라 그 사이 방 상태가 바뀔 수 있다 — 호출부(handleStartGame)가 이미
  * 통과시킨 조건(방 존재·방장 동일·참가자 구성·전원 준비)을 조회 완료 직후 다시 확인하고,
@@ -477,7 +486,7 @@ async function loadRoomParticipantProfile(uuid) {
  */
 async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture) {
     const uuids = [...uuidsAtCapture]
-    const loadouts = await economyServiceRef.getPublicProfileLoadouts(uuids)
+    const loadouts = await economyServiceRef.getGameStartLoadouts(uuids)
 
     const stillHost = room.hostUuid === hostUuid
     const sameParticipants = room.players.size === uuids.length && uuids.every((u) => room.players.has(u))
@@ -488,9 +497,12 @@ async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture) {
 
     for (const uuid of uuids) {
         const player = room.players.get(uuid)
-        const loadout = loadouts[uuid] ?? { profilePhotoId: null, profileBorderId: null }
-        player.accountProfilePhotoId = loadout.profilePhotoId
-        player.accountProfileBorderId = loadout.profileBorderId
+        const loadout = loadouts[uuid] ?? {}
+        player.accountProfilePhotoId = loadout.profilePhotoId ?? null
+        player.accountProfileBorderId = loadout.profileBorderId ?? null
+        player.accountCardFrameId = loadout.cardFrameId ?? null
+        player.accountSkinsByJob = loadout.skinsByJob
+            ?? { noble: null, clown: null, guard: null, doctor: null, witchHunter: null }
     }
     return { ok: true }
 }

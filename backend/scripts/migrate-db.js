@@ -32,7 +32,10 @@ const addAchievementGrants = require('../db/migrations/0009-add-achievement-gran
 // F-13: 프로필 장착 CAS(compare-and-swap)에 쓰는 영속 revision 컬럼도 실제 배포 명령에서
 // 순서대로 적용한다(economy.service.js의 equipProfileAppearance 참고).
 const addEconomyLoadoutRevision = require('../db/migrations/0010-add-economy-loadout-revision');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision];
+// F-14: 직업별 장착 스킨 컬럼도 실제 배포 명령에서 순서대로 적용한다(economy.service.js의
+// equipItem 확장 슬롯 참고).
+const addEconomyLoadoutJobSkins = require('../db/migrations/0011-add-economy-loadout-job-skins');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;
