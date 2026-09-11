@@ -21,12 +21,19 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
     // event → Set<handler> — on/off/trigger가 이 Map 하나만 갱신한다(JOKER 채팅 listener
     // 등록/해제·배선 테스트 전용, 기존 emit/to/join/leave 계약과는 독립적이다).
     const listeners = new Map()
+    // F-13(AC-05): 참가 경로가 사용자 조회와 계정 프로필 조회를 Promise.all로 함께
+    // 기다리게 되면서, join() 호출까지 필요한 microtask 틱 수가 호출부마다 달라질 수
+    // 있다 — 정확한 틱 수를 세는 대신, join()이 실제로 호출된 순간(joinGate 대기에 들어가기
+    // 직전)을 이 Promise로 신호해 테스트가 결정적으로 대기할 수 있게 한다.
+    let resolveJoinCalled
+    const joinCalled = new Promise((resolve) => { resolveJoinCalled = resolve })
     const socket = {
         id,
         data: { user: { uuid } },
         emitted: [],
         joined: [],
         left: [],
+        joinCalled,
         // join/leave 로그(joined·left)와 별개로, "지금 실제로 어느 room에 들어가 있는지"를
         // Set으로도 추적한다. join 후 실패해 곧바로 leave하는 경로를 검증할 때 로그 배열만으로는
         // "결국 그 room에 남아있지 않다"를 정확히 표현하기 어렵기 때문이다.
@@ -40,6 +47,7 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
         // 있게 한다 — 특정 event로 emit할 때만 throw해 개별 recipient 전달 실패를 흉내낸다.
         emitShouldThrowOn,
         async join(roomId) {
+            resolveJoinCalled()
             if (joinGate) await joinGate
             if (socket.joinShouldReject) throw new Error('join 실패(테스트 주입)')
             socket.joined.push(roomId)

@@ -152,6 +152,20 @@ export const useEconomyStore = create((set, get) => ({
     return result
   },
 
+  /** F-13 AC-01/AC-02: 프로필 수정 모달의 확인 한 번을 사진·테두리 동시 확정 요청 하나로
+   *  보낸다. 실제로 바뀐 슬롯만 넘기면 되고(다른 슬롯은 undefined로 넘겨 건드리지 않는다),
+   *  서버가 두 슬롯을 함께 검증·저장한 뒤 돌려준 loadout만 반영한다 — 실패하면(한쪽이라도
+   *  미보유/종류 불일치) 아무 것도 반영하지 않고 그대로 던진다(이전 장착 상태 유지, equip과
+   *  같은 generation 가드).
+   *  @param {{ photoItemId?: string, borderItemId?: string }} params */
+  equipProfile: async ({ photoItemId, borderItemId }) => {
+    const generation = get().requestGeneration
+    const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId })
+    if (get().requestGeneration !== generation) return result
+    set((state) => ({ loadout: { ...state.loadout, ...result.loadout } }))
+    return result
+  },
+
   /** 계정 경계를 넘는 모든 상태를 지우고 진행 중이던 요청들을 전부 무효화한다
    *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 계정의 응답은 전부 무시된다. */
   reset: () => set((state) => ({

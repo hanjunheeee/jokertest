@@ -138,6 +138,15 @@ const createFakeDb = () => {
             const stored = loadoutsByUser.get(where.user_id);
             return stored ? snapshotLoadout(stored) : null;
         },
+        // F-13: getPublicProfileLoadouts의 일괄 조회(where.user_id가 배열)를 흉내낸다 —
+        // 실제 Sequelize는 배열 값을 IN절로 변환한다.
+        async findAll({ where }) {
+            const userIds = Array.isArray(where.user_id) ? where.user_id : [where.user_id];
+            return userIds
+                .map((userId) => loadoutsByUser.get(userId))
+                .filter(Boolean)
+                .map(snapshotLoadout);
+        },
         // 실제 Sequelize의 모델 수준 Model.update(values, {where})와 같은 계약: where의
         // 모든 조건(예: 특정 컬럼이 "지금" null인지)이 canonical 저장소의 현재 값과 일치할
         // 때만 갱신하고 [affectedCount]를 돌려준다 — 오래된 스냅샷이 아니라 항상 최신
@@ -669,4 +678,109 @@ test('CODEX-2(AC-03): ensureDefaultEntitlements도 외부 트랜잭션을 받으
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '부모 트랜잭션 안에서도 기본 선택값이 채워져야 한다');
     assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
+});
+
+// ── F-13 AC-01/AC-02: equipProfileAppearance(사진·테두리 동시 확정) ─────────────
+
+test('F-13 AC-02: 사진·테두리를 동시에 정당하게 보유한 상태로 확정하면 두 컬럼 모두 갱신된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-joint-ok';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+
+    const loadout = await economyService.equipProfileAppearance({
+        userId,
+        photoItemId: 'player-profile-기사',
+        borderItemId: PURCHASABLE_ITEM_ID,
+    }, db);
+
+    assert.equal(loadout.selected_profile_photo_id, 'player-profile-기사');
+    assert.equal(loadout.selected_profile_border_id, PURCHASABLE_ITEM_ID);
+});
+
+test('F-13 AC-01: 테두리를 보유하지 않은 채 사진과 함께 확정을 요청하면 거부되고 사진도 저장되지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-joint-unowned-border';
+
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({
+            userId,
+            photoItemId: 'player-profile-기사',
+            borderItemId: 'profile-border-황제', // 보유하지 않음
+        }, db),
+        (error) => error.status === 403 && error.code === 'ITEM_NOT_OWNED',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '검증에 실패하면 사진 슬롯도 저장되지 않아 기본값 그대로여야 한다(부분 저장 금지)');
+    assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
+});
+
+test('F-13 AC-01: 사진 슬롯에 테두리 itemId를 보내면 종류 불일치로 거부되고 기존 선택은 그대로 유지된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-joint-typemismatch';
+    await economyService.equipProfileAppearance({ userId, photoItemId: DEFAULT_PROFILE_PHOTO_ID }, db);
+
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({
+            userId,
+            photoItemId: DEFAULT_PROFILE_BORDER_ID, // 테두리 itemId를 사진 슬롯에
+            borderItemId: DEFAULT_PROFILE_BORDER_ID,
+        }, db),
+        (error) => error.status === 400 && error.code === 'ITEM_TYPE_MISMATCH',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '실패한 확정 시도가 이전 사진 선택을 바꾸면 안 된다');
+});
+
+test('F-13 AC-02: 사진만 바뀐 확인은 borderItemId 없이 photoItemId만 보내면 테두리 컬럼을 건드리지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-photo-only';
+    await economyService.equipProfileAppearance({ userId, photoItemId: DEFAULT_PROFILE_PHOTO_ID, borderItemId: DEFAULT_PROFILE_BORDER_ID }, db);
+
+    const loadout = await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사' }, db);
+    assert.equal(loadout.selected_profile_photo_id, 'player-profile-기사');
+    assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID, '넘기지 않은 테두리 슬롯은 그대로 유지되어야 한다');
+});
+
+test('F-13 AC-02: 아무 슬롯도 넘기지 않으면 거부된다', async () => {
+    const db = createFakeDb();
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({ userId: 'user-f13-empty' }, db),
+        (error) => error.status === 400 && error.code === 'EMPTY_PROFILE_EQUIP_REQUEST',
+    );
+});
+
+// ── F-13 AC-05 전제: getPublicProfileLoadouts(대기방·인게임 공개 노출) ──────────
+
+test('F-13 AC-05: getPublicProfileLoadouts는 대상 계정의 사진·테두리 id만 돌려주고 지갑·소유 목록은 포함하지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-public-a';
+    await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', borderItemId: DEFAULT_PROFILE_BORDER_ID }, db);
+
+    const result = await economyService.getPublicProfileLoadouts([userId], db);
+    assert.deepEqual(result[userId], { profilePhotoId: 'player-profile-기사', profileBorderId: DEFAULT_PROFILE_BORDER_ID });
+    assert.equal('balanceGold' in result[userId], false);
+    assert.equal('entitlements' in result[userId], false);
+});
+
+test('F-13 AC-05: 아직 경제 시스템을 한 번도 건드리지 않은 신규 계정도 조회 시 기본 지급을 보장받아 기본값으로 노출된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-public-fresh';
+
+    const result = await economyService.getPublicProfileLoadouts([userId], db);
+    assert.deepEqual(result[userId], { profilePhotoId: DEFAULT_PROFILE_PHOTO_ID, profileBorderId: DEFAULT_PROFILE_BORDER_ID });
+});
+
+test('F-13 AC-05: 여러 계정을 한 번에 조회해도 계정별로 서로 다른 결과가 섞이지 않는다', async () => {
+    const db = createFakeDb();
+    const userA = 'user-f13-public-multi-a';
+    const userB = 'user-f13-public-multi-b';
+    await economyService.equipProfileAppearance({ userId: userA, photoItemId: 'player-profile-기사' }, db);
+    await economyService.equipProfileAppearance({ userId: userB, photoItemId: 'player-profile-드워프' }, db);
+
+    const result = await economyService.getPublicProfileLoadouts([userA, userB], db);
+    assert.equal(result[userA].profilePhotoId, 'player-profile-기사');
+    assert.equal(result[userB].profilePhotoId, 'player-profile-드워프');
 });

@@ -111,3 +111,27 @@ test("입력 player에 accountProfilePhotoId/accountProfileBorderId 키 자체�
   assert.equal(Object.hasOwn(result, "accountProfilePhotoId"), false)
   assert.equal(Object.hasOwn(result, "accountProfileBorderId"), false)
 })
+
+test("유효한 accountProfilePhotoId가 있으면 preview의 더미 portraitSrc 대신 실제 계정 사진으로 바뀐다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountProfilePhotoId: "player-profile-기사" },
+    preview(),
+  )
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+})
+
+test("accountProfileBorderId가 있어도 frameSrc는 건드리지 않는다(직업 스킨/카드 프레임 소유 유지)", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountProfileBorderId: "profile-border-귀족" },
+    preview(),
+  )
+  assert.equal(result.frameSrc, "f.png", "인게임 카드의 frameSrc는 계정 테두리가 아니라 스킨 소유다")
+})
+
+test("accountProfilePhotoId가 알 수 없는(카탈로그 규칙과 다른) 값이면 preview의 더미 portraitSrc를 그대로 둔다", () => {
+  const result = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountProfilePhotoId: "../../../etc/passwd" },
+    preview(),
+  )
+  assert.equal(result.portraitSrc, "p.png")
+})

@@ -513,6 +513,11 @@ test('acknowledge_role_reveal: core가 NOT_A_PARTICIPANT를 반환하는 registr
 
 test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uuid를 포함한 새 Room에서 다시 게임을 시작할 수 있다', async () => {
     matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+    // F-13(AC-05): economy.service.js도 userRepository와 같은 이유로 fake가 필요하다.
+    matchmaking.__setEconomyServiceForTests({
+        getPublicProfileLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+    })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
 
     // --- Room A: host + joiner, 최소 인원/전원 준비/전원 channel 가입까지 setupReadyRoomForStart로 충족 ---
@@ -2022,6 +2027,11 @@ test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지�
  */
 async function startRealTwoPlayerSession(hostUuid, joinerUuid) {
     matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+    // F-13(AC-05): economy.service.js도 userRepository와 같은 이유로 fake가 필요하다.
+    matchmaking.__setEconomyServiceForTests({
+        getPublicProfileLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+    })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
     const hostSocket = createFakeSocket(hostUuid)
     const io = createFakeIo([hostSocket])
@@ -2327,6 +2337,11 @@ for (const lateExit of ['leave', 'disconnect']) {
         const { session, sockets, io } = commitSessionWithPlayers(['late-a', 'late-b'])
         session.phase = 'ENDED'
         matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+    // F-13(AC-05): economy.service.js도 userRepository와 같은 이유로 fake가 필요하다.
+    matchmaking.__setEconomyServiceForTests({
+        getPublicProfileLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+    })
         handleLeaveGameSession(io, sockets[0], 'late-a', { gameId: session.id }, countingCallback().callback)
         const next = await callAsPromise(handleCreateRoom, io, sockets[0], 'late-a', validSettingsPayload())
         assert.equal(next.ok, true)
@@ -3883,6 +3898,38 @@ test('get_session_snapshot: roster의 isConnected는 registry상 canonical socke
     assert.equal(players.find((p) => p.uuid === connectedUuid).isConnected, true)
     assert.equal(players.find((p) => p.uuid === disconnectedUuid).isConnected, false)
     assert.equal(players.find((p) => p.uuid === missingUuid).isConnected, false)
+})
+
+test('get_session_snapshot: F-13 AC-05 — 참가자의 계정 프로필(사진·테두리)이 재접속 스냅샷 roster에도 그대로 유지된다', () => {
+    const uuids = ['room-snap-profile-a', 'room-snap-profile-b']
+    const room = makeRoom({
+        id: 'room-snap-profile',
+        players: [
+            { ...makePlayer(uuids[0]), accountProfilePhotoId: 'player-profile-기사', accountProfileBorderId: 'profile-border-귀족' },
+            makePlayer(uuids[1]),
+        ],
+    })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+
+    const sockets = uuids.map((uuid) => {
+        const socket = createFakeSocket(uuid)
+        socket.rooms.add(session.channelId)
+        return socket
+    })
+    const io = createFakeIo(sockets)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+
+    const { callback, getResponse } = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback)
+
+    const players = getResponse().players
+    const withProfile = players.find((p) => p.uuid === uuids[0])
+    const withoutProfile = players.find((p) => p.uuid === uuids[1])
+    assert.equal(withProfile.accountProfilePhotoId, 'player-profile-기사')
+    assert.equal(withProfile.accountProfileBorderId, 'profile-border-귀족')
+    assert.equal(Object.hasOwn(withoutProfile, 'accountProfilePhotoId'), false, '계정 외형이 없던 참가자는 그 키 자체가 생기면 안 된다')
 })
 
 test('get_session_snapshot: 반복 요청은 deep-equal하고 canonical registry 상태를 바꾸지 않는다(멱등)', () => {

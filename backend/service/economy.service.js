@@ -679,6 +679,82 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
     return loadout;
 };
 
+/** F-13 AC-01/AC-02: 프로필 사진·테두리를 하나의 확정으로 함께 저장한다. photoItemId·
+ *  borderItemId 각각은 넘기지 않으면(undefined) 그 슬롯을 건드리지 않는다 — 사진만
+ *  바뀐 확인은 photoItemId만 보내면 된다. 두 슬롯 모두 equipItem과 같은 카탈로그 조회·
+ *  소유권 검사(ITEM_TYPE_MISMATCH/ITEM_NOT_OWNED)를 거치며, 검증은 어떤 컬럼도 갱신하기
+ *  전에 전부 끝낸다 — 한쪽이라도 실패하면 loadout.update가 아예 호출되지 않아 이전 상태가
+ *  그대로 유지된다(부분 저장 없음). 두 컬럼을 실제로 바꾸는 곳은 이 함수 끝의 단일
+ *  loadout.update(updates) 한 번뿐이라, DB에는 하나의 UPDATE 문으로만 반영된다. */
+const equipProfileAppearance = async ({ userId, photoItemId, borderItemId }, db = defaultDb()) => {
+    const slots = [
+        ['PROFILE_PHOTO', photoItemId],
+        ['PROFILE_BORDER', borderItemId],
+    ].filter(([, itemId]) => itemId !== undefined);
+
+    if (slots.length === 0) {
+        throw createError('변경할 프로필 항목이 없습니다.', 400, 'EMPTY_PROFILE_EQUIP_REQUEST');
+    }
+    for (const [, itemId] of slots) {
+        if (typeof itemId !== 'string' || itemId.length === 0) {
+            throw createError('itemId가 필요합니다.', 400, 'INVALID_ITEM_ID');
+        }
+    }
+
+    // equipItem과 같은 이유(R-IMPL 2026-09-10) — 아직 getWalletSummary를 거치지 않은
+    // 계정이 곧바로 프로필을 확정하려 해도 기본 지급이 먼저 보장돼야 ITEM_NOT_OWNED로
+    // 잘못 거부되지 않는다.
+    await ensureDefaultEntitlements(userId, db);
+    const models = economyModels(db);
+
+    const updates = {};
+    for (const [slot, itemId] of slots) {
+        const expectedType = SLOT_TO_ITEM_TYPE[slot];
+        const column = SLOT_TO_LOADOUT_COLUMN[slot];
+        const catalogItem = catalog.getCatalogItem(itemId);
+        if (!catalogItem || catalogItem.type !== expectedType) {
+            throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
+        }
+        // eslint-disable-next-line no-await-in-loop -- 슬롯이 최대 2개뿐이고, 두 검증 모두
+        // 실제 컬럼을 갱신하기 전에 순서대로 끝나야 한다(부분 검증 후 병렬 갱신 금지).
+        const owned = await models.EconomyEntitlement.findOne({ where: { user_id: userId, item_id: itemId } });
+        if (!owned) {
+            throw createError('보유하지 않은 상품은 장착할 수 없습니다.', 403, 'ITEM_NOT_OWNED');
+        }
+        updates[column] = itemId;
+    }
+
+    const [loadout] = await models.EconomyLoadout.findOrCreate({
+        where: { user_id: userId },
+        defaults: { user_id: userId },
+    });
+    await loadout.update(updates);
+    return loadout;
+};
+
+/** F-13 AC-05 전제: 대기방·인게임에서 타인에게도 공개할 사진·테두리 itemId만 돌려준다
+ *  (지갑·소유 목록 등 비공개 경제 정보는 절대 포함하지 않는다). 대상 계정에 기본 지급이
+ *  아직 안 되어 있어도 조회 전에 보장한다 — 신규 계정이 방에 들어오자마자 loadout이
+ *  비어 있는 채로 노출되는 것을 막는다. */
+const getPublicProfileLoadouts = async (userIds, db = defaultDb()) => {
+    const uniqueUserIds = [...new Set(userIds)].filter((id) => typeof id === 'string' && id.length > 0);
+    if (uniqueUserIds.length === 0) return {};
+
+    const models = economyModels(db);
+    await Promise.all(uniqueUserIds.map((userId) => ensureDefaultEntitlements(userId, db)));
+    const loadouts = await models.EconomyLoadout.findAll({ where: { user_id: uniqueUserIds } });
+
+    const byUserId = {};
+    for (const userId of uniqueUserIds) byUserId[userId] = { profilePhotoId: null, profileBorderId: null };
+    for (const loadout of loadouts) {
+        byUserId[loadout.user_id] = {
+            profilePhotoId: loadout.selected_profile_photo_id ?? null,
+            profileBorderId: loadout.selected_profile_border_id ?? null,
+        };
+    }
+    return byUserId;
+};
+
 module.exports = {
     CURRENCIES,
     FREE_CARD_FRAME_ID,
@@ -693,6 +769,8 @@ module.exports = {
     grantAchievementCurrency,
     grantAchievementItem,
     equipItem,
+    equipProfileAppearance,
+    getPublicProfileLoadouts,
     // 테스트 전용 — 낮은 레벨 원장 적용 로직을 직접 검증할 때 사용한다.
     __internal: { applyLedgerTransaction, ensureWalletRow, ensureDefaultLoadout },
 };

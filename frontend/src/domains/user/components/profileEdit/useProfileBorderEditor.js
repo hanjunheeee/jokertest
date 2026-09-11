@@ -1,34 +1,39 @@
 import { useCallback, useEffect, useState } from "react"
-import { useProfileCustomizationStore } from "../../store/profileCustomization.store.js"
 import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import {
   DEFAULT_PROFILE_BORDER_ITEM_ID,
+  DEFAULT_PROFILE_PHOTO_ITEM_ID,
   PROFILE_BORDER_ITEM_TYPE,
   PROFILE_EDIT_TAB_PHOTO,
   profileBorderAssetSrcForItemId,
 } from "../../constants/profileEditLayout.js"
 
-// F-12(AC-06) 재검토 대응 — ProfileEditOverlay의 실제 편집 로직(계획 메모 실행 순서
+// F-13(AC-01/AC-02) 재검토 대응 — ProfileEditOverlay의 실제 편집 로직(계획 메모 실행 순서
 // (2)~(3)). 훅으로 뽑은 이유는 ProfileEditOverlay.jsx가 다른 화면(MyPageLayout.jsx, 이
 // 슬라이스 범위 밖)에서 ".jsx"로 import되므로 이 파일의 확장자를 바꿀 수 없고, 그러면
 // node:test가 JSX 구문을 파싱하지 못해(이 저장소 관례, ForbiddenRecordsUnlockCondition.js
 // 참고) 실제 편집 동작을 테스트할 길이 없기 때문이다 — 이 훅 자체가 Overlay가 그대로 쓰는
 // 실제 로직이라, 훅을 직접 렌더 테스트하는 것이 곧 실제 컴포넌트 동작을 검증하는 것이다.
+//
+// F-13 재검토: 사진도 더 이상 프론트 전용 무료 선택이 아니다(F-12 A-11 정책 변경) — 대기방·
+// 인게임에 타인에게도 노출하려면(AC-05) 서버가 확정한 값이어야 한다. draftPhotoItemId도
+// draftBorderItemId와 완전히 대칭인 itemId 기반 초안이 되고, 확인은 economy store의
+// equipProfile(사진·테두리를 하나의 요청으로 함께 확정)만 호출한다 — 이전처럼 사진은
+// 로컬에 즉시 반영하고 테두리만 서버에 보내는 비대칭 경로는 없다.
 export function useProfileBorderEditor({ open, onClose }) {
-  const photoSrc = useProfileCustomizationStore((state) => state.photoSrc)
-  const applyPhoto = useProfileCustomizationStore((state) => state.applyPhoto)
-
   const generation = useEconomyStore((state) => state.requestGeneration)
   const economyStatus = useEconomyStore((state) => state.status)
   const entitlements = useEconomyStore((state) => state.entitlements)
+  const selectedProfilePhotoId = useEconomyStore((state) => state.loadout.selectedProfilePhotoId)
   const selectedProfileBorderId = useEconomyStore((state) => state.loadout.selectedProfileBorderId)
   const fetchSummary = useEconomyStore((state) => state.fetchSummary)
-  const equip = useEconomyStore((state) => state.equip)
+  const equipProfile = useEconomyStore((state) => state.equipProfile)
 
+  const currentPhotoItemId = selectedProfilePhotoId ?? DEFAULT_PROFILE_PHOTO_ITEM_ID
   const currentBorderItemId = selectedProfileBorderId ?? DEFAULT_PROFILE_BORDER_ITEM_ID
 
   const [activeTab, setActiveTab] = useState(PROFILE_EDIT_TAB_PHOTO)
-  const [draftPhoto, setDraftPhoto] = useState(photoSrc)
+  const [draftPhotoItemId, setDraftPhotoItemId] = useState(currentPhotoItemId)
   const [draftBorderItemId, setDraftBorderItemId] = useState(currentBorderItemId)
   const [confirmStatus, setConfirmStatus] = useState("idle") // idle | saving
   const [confirmError, setConfirmError] = useState(null)
@@ -40,8 +45,9 @@ export function useProfileBorderEditor({ open, onClose }) {
   useEffect(() => {
     if (!open) return
     setActiveTab(PROFILE_EDIT_TAB_PHOTO)
-    setDraftPhoto(useProfileCustomizationStore.getState().photoSrc)
-    setDraftBorderItemId(useEconomyStore.getState().loadout.selectedProfileBorderId ?? DEFAULT_PROFILE_BORDER_ITEM_ID)
+    const latestLoadout = useEconomyStore.getState().loadout
+    setDraftPhotoItemId(latestLoadout.selectedProfilePhotoId ?? DEFAULT_PROFILE_PHOTO_ITEM_ID)
+    setDraftBorderItemId(latestLoadout.selectedProfileBorderId ?? DEFAULT_PROFILE_BORDER_ITEM_ID)
     setConfirmStatus("idle")
     setConfirmError(null)
 
@@ -63,15 +69,18 @@ export function useProfileBorderEditor({ open, onClose }) {
         : ownedBorderOptions.length === 0 ? "empty"
           : "ready"
 
-  // A-11: 확인은 실제 서버 equip의 성공 결과에 따라서만 장착 상태를 반영한다. 실패하면
-  // 오류와 초안을 유지하고 편집기를 닫지 않는다(재시도 가능). 무료 사진만 바뀌었으면
-  // 테두리를 건드리지 않아 불필요한 equip 요청을 만들지 않는다.
+  // F-13 AC-01/AC-02: 확인은 실제 서버 equipProfile의 성공 결과에 따라서만 장착 상태를
+  // 반영한다(economy store가 loadout을 갱신하면 profileCustomization store가 그 값을
+  // 거울처럼 반영한다 — 이 훅은 직접 로컬 상태를 건드리지 않는다). 실패하면 오류와 초안을
+  // 유지하고 편집기를 닫지 않는다(재시도 가능). 사진·테두리 어느 쪽도 바뀌지 않았으면
+  // 불필요한 요청을 만들지 않는다. 바뀐 슬롯만 요청에 실어, 바뀌지 않은 슬롯이 검증
+  // 과정에서 실수로 재검증·재저장되지 않게 한다.
   const handleConfirm = useCallback(async () => {
     if (confirmStatus === "saving") return // 중복 확인 방지
 
+    const photoChanged = draftPhotoItemId !== currentPhotoItemId
     const borderChanged = draftBorderItemId !== currentBorderItemId
-    if (!borderChanged) {
-      if (draftPhoto !== photoSrc) applyPhoto(draftPhoto)
+    if (!photoChanged && !borderChanged) {
       onClose()
       return
     }
@@ -80,27 +89,29 @@ export function useProfileBorderEditor({ open, onClose }) {
     setConfirmError(null)
     const startGeneration = useEconomyStore.getState().requestGeneration
     try {
-      await equip({ slot: "PROFILE_BORDER", itemId: draftBorderItemId })
+      await equipProfile({
+        photoItemId: photoChanged ? draftPhotoItemId : undefined,
+        borderItemId: borderChanged ? draftBorderItemId : undefined,
+      })
       if (useEconomyStore.getState().requestGeneration !== startGeneration) {
         // 대기하는 동안 계정이 바뀌었다 — 이 성공은 더 이상 지금 화면의 것이 아니다(A-08).
         // 지금 계정 기준으로는 아직 아무것도 확정되지 않았으므로 편집기를 닫지 않는다.
         setConfirmStatus("idle")
         return
       }
-      if (draftPhoto !== photoSrc) applyPhoto(draftPhoto)
       setConfirmStatus("idle")
       onClose()
     } catch (error) {
       setConfirmStatus("idle")
-      setConfirmError(error?.message ?? "테두리 장착에 실패했습니다.")
+      setConfirmError(error?.message ?? "프로필 저장에 실패했습니다.")
     }
-  }, [confirmStatus, draftBorderItemId, currentBorderItemId, draftPhoto, photoSrc, applyPhoto, equip, onClose])
+  }, [confirmStatus, draftPhotoItemId, currentPhotoItemId, draftBorderItemId, currentBorderItemId, equipProfile, onClose])
 
   return {
     activeTab,
     setActiveTab,
-    draftPhoto,
-    setDraftPhoto,
+    draftPhotoItemId,
+    setDraftPhotoItemId,
     draftBorderItemId,
     setDraftBorderItemId,
     ownedBorderOptions,

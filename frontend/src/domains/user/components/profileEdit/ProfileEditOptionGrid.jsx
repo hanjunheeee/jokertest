@@ -9,18 +9,20 @@ import {
   PROFILE_EDIT_OPTION_CARD_SELECTED_CLASS,
   PROFILE_EDIT_OPTION_PHOTO_CLASS,
   PROFILE_EDIT_OPTION_PHOTO_WRAP_CLASS,
-  PROFILE_EDIT_FREE_PHOTOS,
+  PROFILE_EDIT_PHOTO_OPTIONS,
   PROFILE_EDIT_TAB_PHOTO,
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
-// F-12(AC-06) 재검토 대응: 테두리는 더 이상 정적 목록(PROFILE_EDIT_OWNED_BORDERS)이
-// 아니다 — ownedBorderOptions(서버 entitlements에서 유도한 itemId+자산 목록)만 그린다.
-// 로딩/오류/빈 소유 목록은 사진 탭과 무관하게 테두리 탭에서만 구분해 보여준다(사진은 항상
-// 정적 무료 목록이라 서버 상태에 의존하지 않는다, A-11).
+// F-12(AC-06)/F-13(AC-01) 재검토 대응: 테두리·사진 모두 정적 src 목록이 아니라
+// {itemId, src} 목록이다 — 선택은 항상 itemId로 하고(서버에 저장할 값과 화면에 그릴 값을
+// 하나로 묶는다), 테두리는 ownedBorderOptions(서버 entitlements에서 유도)를, 사진은
+// PROFILE_EDIT_PHOTO_OPTIONS(현재 카탈로그 기준 16종 전부 기본 지급이라 정적 목록과
+// 실제 소유 목록이 같다, A-07)를 그린다. 로딩/오류/빈 소유 목록은 테두리 탭에서만
+// 구분해 보여준다.
 export default function ProfileEditOptionGrid({
   activeTab,
-  selectedPhoto,
+  selectedPhotoItemId,
   onSelectPhoto,
   ownedBorderOptions,
   borderListStatus,
@@ -81,17 +83,17 @@ export default function ProfileEditOptionGrid({
     >
       {isPhotoTab ? (
         <div className={PROFILE_EDIT_GRID_CLASS}>
-          {PROFILE_EDIT_FREE_PHOTOS.map((src) => {
-            const selected = selectedPhoto === src
+          {PROFILE_EDIT_PHOTO_OPTIONS.map(({ itemId, src }) => {
+            const selected = selectedPhotoItemId === itemId
 
             return (
               <button
-                key={src}
+                key={itemId}
                 type="button"
                 aria-pressed={selected}
                 className={PROFILE_EDIT_OPTION_BTN_CLASS}
                 style={{ outline: "none" }}
-                onClick={() => onSelectPhoto(src)}
+                onClick={() => onSelectPhoto(itemId)}
               >
                 <div
                   className={`${PROFILE_EDIT_OPTION_CARD_CLASS} ${selected ? PROFILE_EDIT_OPTION_CARD_SELECTED_CLASS : ""}`}

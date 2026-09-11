@@ -170,6 +170,57 @@ test("equip은 서버가 돌려준 loadout으로 상태를 갱신한다", async 
   assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
 })
 
+// ── F-13 AC-01/AC-02: equipProfile(사진·테두리 동시 확정) ──────────────────────
+
+test("equipProfile은 바뀐 슬롯만 실어 POST /economy/equip-profile을 호출하고 서버가 돌려준 loadout으로 상태를 갱신한다", async () => {
+  resetStore()
+  postImpl = async (endpoint, body) => {
+    assert.equal(endpoint, "/economy/equip-profile")
+    assert.equal(body.photoItemId, "player-profile-기사")
+    assert.equal(body.borderItemId, undefined, "넘기지 않은 슬롯은 요청 본문에 값이 있으면 안 된다")
+    return { loadout: { selectedProfilePhotoId: "player-profile-기사", selectedProfileBorderId: "profile-border-평민" } }
+  }
+
+  await useEconomyStore.getState().equipProfile({ photoItemId: "player-profile-기사" })
+
+  const { loadout } = useEconomyStore.getState()
+  assert.equal(loadout.selectedProfilePhotoId, "player-profile-기사")
+  assert.equal(loadout.selectedProfileBorderId, "profile-border-평민")
+})
+
+test("equipProfile이 실패하면 이전 loadout을 그대로 두고 예외를 던진다", async () => {
+  resetStore()
+  useEconomyStore.setState({ loadout: { selectedProfilePhotoId: "player-profile-금빛가면", selectedProfileBorderId: "profile-border-평민", selectedCardFrameId: null } })
+  postImpl = async () => {
+    const error = new Error("보유하지 않은 상품은 장착할 수 없습니다.")
+    error.code = "ITEM_NOT_OWNED"
+    throw error
+  }
+
+  await assert.rejects(
+    () => useEconomyStore.getState().equipProfile({ photoItemId: "player-profile-기사", borderItemId: "profile-border-황제" }),
+    (error) => error.code === "ITEM_NOT_OWNED",
+  )
+
+  const { loadout } = useEconomyStore.getState()
+  assert.equal(loadout.selectedProfilePhotoId, "player-profile-금빛가면")
+  assert.equal(loadout.selectedProfileBorderId, "profile-border-평민")
+})
+
+test("equipProfile 응답이 도착하기 전에 계정이 바뀌면(requestGeneration 변경) 늦게 도착한 결과가 새 계정 상태를 덮어쓰지 않는다", async () => {
+  resetStore()
+  let resolvePost
+  postImpl = () => new Promise((resolve) => { resolvePost = resolve })
+
+  const equipPromise = useEconomyStore.getState().equipProfile({ photoItemId: "player-profile-기사" })
+  useEconomyStore.getState().reset() // 계정 전환/로그아웃 흉내 — generation 증가
+
+  resolvePost({ loadout: { selectedProfilePhotoId: "player-profile-기사" } })
+  await equipPromise
+
+  assert.equal(useEconomyStore.getState().loadout.selectedProfilePhotoId, null, "이전 계정 요청의 늦은 성공이 리셋된 상태를 덮어쓰면 안 된다")
+})
+
 // ── F-08 R-IMPL: 서버 확정 거부 vs 전송 불확실 구분 ──────────────────────────
 
 test("서버가 code와 함께 명시적으로 거부하면(확정 거부) status는 rejected이고, 재시도는 새 참조 사건 ID를 쓴다", async () => {

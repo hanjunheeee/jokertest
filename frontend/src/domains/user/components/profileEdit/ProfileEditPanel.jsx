@@ -7,6 +7,7 @@ import {
   PROFILE_EDIT_HEADER_CLASS,
   PROFILE_EDIT_PANEL_CLASS,
   profileBorderAssetSrcForItemId,
+  profilePhotoAssetSrcForItemId,
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 import ProfileEditConfirmButton from "./ProfileEditConfirmButton.jsx"
@@ -17,7 +18,7 @@ import ProfileEditTabs from "./ProfileEditTabs.jsx"
 export default function ProfileEditPanel({
   activeTab,
   onTabChange,
-  draftPhoto,
+  draftPhotoItemId,
   draftBorderItemId,
   ownedBorderOptions,
   borderListStatus,
@@ -29,6 +30,7 @@ export default function ProfileEditPanel({
   confirmStatus,
   confirmError,
 }) {
+  const draftPhoto = profilePhotoAssetSrcForItemId(draftPhotoItemId) ?? PLAYER_PROFILE_ASSETS.defaultPhoto
   const draftFrame = profileBorderAssetSrcForItemId(draftBorderItemId) ?? PLAYER_PROFILE_ASSETS.defaultBorder
 
   return (
@@ -55,7 +57,7 @@ export default function ProfileEditPanel({
 
       <ProfileEditOptionGrid
         activeTab={activeTab}
-        selectedPhoto={draftPhoto}
+        selectedPhotoItemId={draftPhotoItemId}
         onSelectPhoto={onSelectPhoto}
         ownedBorderOptions={ownedBorderOptions}
         borderListStatus={borderListStatus}

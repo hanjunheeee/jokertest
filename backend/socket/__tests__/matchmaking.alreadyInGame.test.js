@@ -37,17 +37,26 @@ const fakeUserRepository = {
         return { uuid, nickname: `nick-${uuid}` }
     },
 }
+// F-13(AC-05): economy.service.js도 실제 호출 시 backend/models(실제 DB)가 필요해
+// userRepository와 같은 이유로 fake를 주입한다.
+const fakeEconomyService = {
+    async getPublicProfileLoadouts(userIds) {
+        return Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }]))
+    },
+}
 
 test.beforeEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
     matchmaking.__setUserRepositoryForTests(fakeUserRepository)
+    matchmaking.__setEconomyServiceForTests(fakeEconomyService)
     findByUuidCalls = 0
 })
 test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
     matchmaking.__setUserRepositoryForTests(null)
+    matchmaking.__setEconomyServiceForTests(null)
     matchmaking.__setRandomMatchmakingEnabledForTests(null)
 })
 

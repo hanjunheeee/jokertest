@@ -289,6 +289,39 @@ test("allies에 있는 uuid의 sourcePlayers 항목에는 isAlly:true가 붙고,
   assert.equal(Object.hasOwn(self, "isAlly"), false)
 })
 
+test("F-13 AC-05: accountProfilePhotoId/accountProfileBorderId가 있는 참가자 항목에는 그대로 복사되고 없는 항목엔 키 자체가 없다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" },
+        { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
+      ],
+    }),
+  )
+  const withProfile = result.sourcePlayers.find((p) => p.id === "u1")
+  const withoutProfile = result.sourcePlayers.find((p) => p.id === "u2")
+  assert.equal(withProfile.accountProfilePhotoId, "player-profile-기사")
+  assert.equal(withProfile.accountProfileBorderId, "profile-border-귀족")
+  assert.equal(Object.hasOwn(withoutProfile, "accountProfilePhotoId"), false)
+  assert.equal(Object.hasOwn(withoutProfile, "accountProfileBorderId"), false)
+})
+
+test("F-13 AC-05: accountProfilePhotoId/accountProfileBorderId가 null이어도(미보유) own-property면 그대로 복사된다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountProfilePhotoId: null, accountProfileBorderId: null },
+        { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
+      ],
+    }),
+  )
+  const self = result.sourcePlayers.find((p) => p.id === "u1")
+  assert.equal(Object.hasOwn(self, "accountProfilePhotoId"), true)
+  assert.equal(self.accountProfilePhotoId, null)
+  assert.equal(Object.hasOwn(self, "accountProfileBorderId"), true)
+  assert.equal(self.accountProfileBorderId, null)
+})
+
 test("동료가 2명 이상이면 각 동료 uuid 모두에 isAlly:true가 붙는다", () => {
   const result = buildPlayerSessionSourceFromGameState(
     validState({
