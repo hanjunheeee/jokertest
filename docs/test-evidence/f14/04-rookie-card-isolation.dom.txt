@@ -1,0 +1,74 @@
+- complementary "좌측 배너 영역"
+- main:
+  - button "계정 관리":
+    - generic: 계정 관리
+  - button "프로필 수정":
+    - generic: 프로필 수정
+  - button "스킨&카드 착용":
+    - generic: 스킨&카드 착용
+  - button "이모티콘":
+    - generic: 이모티콘
+  - button "스킨&카드 착용 닫기"
+  - dialog "스킨&카드 착용":
+    - heading "스킨&카드 목록" [level=2]
+    - button "스킨&카드 착용 닫기"
+    - tablist "직업 선택":
+      - tab "귀족" [selected]:
+        - generic: 귀족
+      - tab "광대":
+        - generic: 광대
+      - tab "주치의":
+        - generic: 주치의
+      - tab "경비원":
+        - generic: 경비원
+      - tab "마녀사냥꾼":
+        - generic: 마녀사냥꾼
+    - complementary "스킨&카드 목록":
+      - button "베이스, 착용 중" [pressed]:
+        - generic: 베이스
+        - generic: 플레이어 카드
+      - button "가고일, 미보유" [disabled]:
+        - generic: 가고일
+        - generic: 미보유
+      - button "가면, 미보유" [disabled]:
+        - generic: 가면
+        - generic: 미보유
+      - button "그레이, 미보유" [disabled]:
+        - generic: 그레이
+        - generic: 미보유
+      - button "모래시계, 미보유" [disabled]:
+        - generic: 모래시계
+        - generic: 미보유
+      - button "보석, 미보유" [disabled]:
+        - generic: 보석
+        - generic: 미보유
+      - button "사슬, 미보유" [disabled]:
+        - generic: 사슬
+        - generic: 미보유
+      - button "악마, 미보유" [disabled]:
+        - generic: 악마
+        - generic: 미보유
+      - button "왕관, 미보유" [disabled]:
+        - generic: 왕관
+        - generic: 미보유
+    - region "스킨&카드 미리보기":
+      - paragraph:
+        - generic: 초보검증
+      - button "스킨 일러스트 미리보기로 전환" [active] [pressed]
+    - button "적용":
+      - generic: 적용
+  - paragraph: 초보검증
+  - paragraph: 명성 0
+  - main:
+    - paragraph:
+      - text: 이 자는
+      - generic: "[전적 없음]"
+      - text: 아직 어떤 가면도 증명하지 못했습니다.
+    - generic: 전체 판수
+    - generic: "0"
+    - generic: 생존 횟수
+    - generic: "0"
+    - generic: 단두대 처형
+    - generic: "0"
+  - button "뒤로 가기"
+- complementary "우측 배너 영역"

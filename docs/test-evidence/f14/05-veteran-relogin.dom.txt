@@ -1,0 +1,63 @@
+- complementary "좌측 배너 영역"
+- main:
+  - button "계정 관리":
+    - generic: 계정 관리
+  - button "프로필 수정":
+    - generic: 프로필 수정
+  - button "스킨&카드 착용" [active]:
+    - generic: 스킨&카드 착용
+  - button "이모티콘":
+    - generic: 이모티콘
+  - button "스킨&카드 착용 닫기"
+  - dialog "스킨&카드 착용":
+    - heading "스킨&카드 목록" [level=2]
+    - button "스킨&카드 착용 닫기"
+    - tablist "직업 선택":
+      - tab "귀족" [selected]:
+        - generic: 귀족
+      - tab "광대":
+        - generic: 광대
+      - tab "주치의":
+        - generic: 주치의
+      - tab "경비원":
+        - generic: 경비원
+      - tab "마녀사냥꾼":
+        - generic: 마녀사냥꾼
+    - complementary "스킨&카드 목록":
+      - button "귀족1":
+        - generic: 귀족1
+        - generic: 기본 스킨
+      - button "귀족2":
+        - generic: 귀족2
+        - generic: 기본 스킨
+      - button "귀족3":
+        - generic: 귀족3
+        - generic: 기본 스킨
+      - button "귀족-블러드, 착용 중" [pressed]:
+        - generic: 귀족-블러드
+        - generic: 스킨
+      - button "귀족-로코코, 미보유" [disabled]:
+        - generic: 귀족-로코코
+        - generic: 미보유
+      - button "귀족-빅토리아, 미보유" [disabled]:
+        - generic: 귀족-빅토리아
+        - generic: 미보유
+    - region "스킨&카드 미리보기":
+      - button "플레이어 카드 미리보기로 전환"
+    - button "적용":
+      - generic: 적용
+  - paragraph: 업적검증
+  - paragraph: 명성 0
+  - main:
+    - paragraph:
+      - text: 이 자는
+      - generic: "[귀족]"
+      - text: 의 가면을 쓸 때 가장 잔혹합니다.
+    - generic: 전체 판수
+    - generic: "30"
+    - generic: 생존 횟수
+    - generic: "30"
+    - generic: 단두대 처형
+    - generic: "0"
+  - button "뒤로 가기"
+- complementary "우측 배너 영역"

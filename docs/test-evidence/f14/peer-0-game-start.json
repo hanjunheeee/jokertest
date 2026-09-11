@@ -1,0 +1,65 @@
+{
+  "gameId": "c0679dc5-9f6e-473b-8f5f-ea006c9106dc",
+  "state": {
+    "id": "c0679dc5-9f6e-473b-8f5f-ea006c9106dc",
+    "phase": "ROLE_REVEAL",
+    "dayIndex": 0,
+    "players": [
+      {
+        "uuid": "b5d80d9c-1169-4214-856a-3976f65e291a",
+        "nickname": "외형검증4",
+        "themeIndex": 4,
+        "accountProfilePhotoId": "player-profile-금빛가면",
+        "accountProfileBorderId": "profile-border-평민",
+        "accountCardFrameId": null
+      },
+      {
+        "uuid": "20f163de-53b7-420e-937a-cf66393a0842",
+        "nickname": "외형검증2",
+        "themeIndex": 8,
+        "accountProfilePhotoId": "player-profile-금빛가면",
+        "accountProfileBorderId": "profile-border-평민",
+        "accountCardFrameId": null
+      },
+      {
+        "uuid": "a0304489-37d5-4b2f-ad6b-9ad1b9cea404",
+        "nickname": "외형검증3",
+        "themeIndex": 5,
+        "accountProfilePhotoId": "player-profile-금빛가면",
+        "accountProfileBorderId": "profile-border-평민",
+        "accountCardFrameId": null
+      },
+      {
+        "uuid": "5ff73f17-c138-42fa-a780-357228d74c17",
+        "nickname": "외형검증1",
+        "themeIndex": 3,
+        "accountProfilePhotoId": "player-profile-금빛가면",
+        "accountProfileBorderId": "profile-border-평민",
+        "accountCardFrameId": null
+      },
+      {
+        "uuid": "c5ffa2d3-6bf2-45d7-9748-deb9c8011e18",
+        "nickname": "업적검증",
+        "themeIndex": 2,
+        "accountProfilePhotoId": "player-profile-금빛가면",
+        "accountProfileBorderId": "profile-border-평민",
+        "accountCardFrameId": "player-card-왕관"
+      },
+      {
+        "uuid": "b3ca31cc-8065-4c43-b109-f24673b73472",
+        "nickname": "초보검증",
+        "themeIndex": 0,
+        "accountProfilePhotoId": "player-profile-금빛가면",
+        "accountProfileBorderId": "profile-border-평민",
+        "accountCardFrameId": null
+      }
+    ],
+    "self": {
+      "uuid": "b3ca31cc-8065-4c43-b109-f24673b73472",
+      "nickname": "초보검증",
+      "role": "CITIZEN",
+      "team": "CITIZEN",
+      "accountSkinId": null
+    }
+  }
+}
