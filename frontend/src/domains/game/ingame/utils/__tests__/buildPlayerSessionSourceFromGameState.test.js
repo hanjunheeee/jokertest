@@ -322,6 +322,30 @@ test("F-13 AC-05: accountProfilePhotoId/accountProfileBorderId가 null이어도(
   assert.equal(self.accountProfileBorderId, null)
 })
 
+test("R-IMPL(2026-09-11): player.isConnected이 boolean으로 있으면 connected에 그 값이 그대로 전달된다(하드코딩된 true가 아니다)", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, isConnected: false },
+        { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1, isConnected: true },
+      ],
+    }),
+  )
+  assert.equal(
+    result.sourcePlayers.find((p) => p.id === "u1").connected,
+    false,
+    "isConnected:false는 connected:false로 이어져야 한다 — 연결 끊김 오버레이가 실제로 뜨려면 이 값이 살아 있어야 한다(실제 Chrome 회귀: applySessionSnapshot은 isConnected를 보존했는데 이 함수가 connected를 하드코딩해 오버레이가 뜨지 않았다)",
+  )
+  assert.equal(result.sourcePlayers.find((p) => p.id === "u2").connected, true)
+})
+
+test("R-IMPL(2026-09-11): player.isConnected 필드 자체가 없는 참가자는(레거시 입력) connected:true로만 안전하게 대체된다", () => {
+  const result = buildPlayerSessionSourceFromGameState(validState())
+  for (const player of result.sourcePlayers) {
+    assert.equal(player.connected, true)
+  }
+})
+
 test("동료가 2명 이상이면 각 동료 uuid 모두에 isAlly:true가 붙는다", () => {
   const result = buildPlayerSessionSourceFromGameState(
     validState({

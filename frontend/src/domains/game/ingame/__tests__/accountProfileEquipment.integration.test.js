@@ -60,7 +60,7 @@ const { buildInGamePreviewPlayers } = await import("../utils/buildInGamePreviewP
 const { mergeSourcePlayerWithPreview } = await import("../utils/mergeSourcePlayerWithPreview.js")
 const { resolveAccountProfileBorderSrc, resolveAccountProfilePhotoSrc } =
   await import("../../../../shared/utils/resolveAccountProfileAssets.js")
-const { INGAME_PLAYER_STATUS } = await import("../constants/board/status/ingamePlayerStatus.js")
+const { INGAME_PLAYER_STATUS, INGAME_PLAYER_STATUS_ASSETS } = await import("../constants/board/status/ingamePlayerStatus.js")
 const { default: InGamePlayerBoard } = await import("../components/board/InGamePlayerBoard.jsx")
 const { InGamePlayerSessionContext } = await import("../components/InGamePlayerSessionContext.js")
 const { default: MatchingPartySlots } = await import("../../matching/components/MatchingPartySlots.jsx")
@@ -220,6 +220,130 @@ test("F-13 AC-05: 실제 backend 세션에서 독립적으로 만든 game_starte
     "재접속 뒤에도 실제 렌더된 DOM(계정 사진·테두리 포함)이 그대로 유지되어야 한다 — preview 기본 이미지로 되돌아가면 안 된다",
   )
   assert.ok(afterReconnectRender.includes(expectedPhotoSrc), "재접속 뒤에도 실제 계정 사진이 DOM에 남아 있어야 한다(수정 전에는 store가 이 필드를 빠뜨려 사라졌다)")
+})
+
+// ---------------------------------------------------------------------------
+// R-IMPL(2026-09-11) — 실제 Chrome AC-05 회귀: 5인 게임에서 실제 인증된 peer 4명이
+// 연결이 끊겼을 때, 사진은 남아 있었지만 연결 끊김 오버레이가 새로고침 후에도 뜨지 않았다.
+// 원인은 store/applySessionSnapshot.js가 아니라(그 파일은 이미 isConnected를 boolean
+// 그대로 보존한다) InGamePlayerSessionProvider.jsx가 실제로 호출하는
+// buildPlayerSessionSourceFromGameState.js가 connected를 항상 true로 하드코딩해
+// isConnected 값을 최종 렌더 모델에 아예 옮기지 못했던 것이다. operator가 이미
+// buildPlayerSessionSourceFromGameState.js를 고쳤다(uncommitted, 이 테스트가 그 패치를
+// 전제로 한다). 아래는 실제 backend 세션 → 실제 buildSessionSnapshot → 실제 소켓 계층과
+// 동일한 isConnected 오버레이 계약 → 실제 store.applySessionSnapshot/bootstrapSessionSnapshot
+// (새로고침 진입점) → 실제 buildPlayerSessionSourceFromGameState → 실제 DOM 렌더까지 전부
+// 실제 함수로 연결해, 연결 끊김·사망 배지가 실제로 나타나고 계정 사진·테두리는 그대로
+// 유지되며 role은 노출되지 않는지, 새로고침 후에도 동일한지 확인한다.
+test("F-13 AC-05 R-IMPL: 재접속 스냅샷의 isConnected:false/isAlive:false가 실제 DOM에 연결 끊김·사망 오버레이로 반영되고, 계정 사진·테두리는 유지되며, role은 노출되지 않고, 새로고침(bootstrap) 후에도 동일하게 유지된다", () => {
+  const { buildSessionCandidate } = gameSessionCore.__testables
+  const { commitGameSession, buildSessionSnapshot } = gameSessionCore
+
+  const room = {
+    id: "room-disconnect-dead-reload",
+    players: new Map([
+      ["v1", { uuid: "v1", nickname: "관전자", isReady: true, accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" }],
+      ["v2", { uuid: "v2", nickname: "끊김생존", isReady: true, accountProfilePhotoId: "player-profile-드워프", accountProfileBorderId: "profile-border-평민" }],
+      ["v3", { uuid: "v3", nickname: "연결사망", isReady: true, accountProfilePhotoId: "player-profile-그림자", accountProfileBorderId: "profile-border-귀족" }],
+      ["v4", { uuid: "v4", nickname: "끊김사망", isReady: true, accountProfilePhotoId: "player-profile-마인", accountProfileBorderId: "profile-border-평민" }],
+    ]),
+    settings: { jokerCount: 1 },
+  }
+  const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+  assert.equal(candidate.ok, true, "실제 세션 생성이 성공해야 시나리오를 구성할 수 있다")
+  commitGameSession(candidate.session)
+  const viewerUuid = "v1"
+  const { buildGameStartedPayload } = gameSessionCore
+
+  const renderOnce = () => {
+    const finalPlayers = renderFinalPlayers(useInGameStore.getState().state)
+    return renderBoard(finalPlayers, viewerUuid)
+  }
+
+  // applySessionSnapshot(재접속 액션)은 "이미 진행 중인 게임"을 전제로 roster를 기존 store와
+  // 대조한다 — 실제 화면도 game_started로 먼저 진입한 뒤에만 그 액션을 받으므로, 여기서도
+  // 먼저 실제 game_started 경로(setGamePayload)로 store를 채운다.
+  const startedPayload = buildGameStartedPayload(candidate.session, viewerUuid)
+  useInGameStore.setState({ gameId: null, state: null, error: null, snapshotSeq: 0 })
+  useInGameStore.getState().setGamePayload({ gameId: startedPayload.gameId, state: startedPayload.state })
+
+  // 실제 사망 처리와 같은 지점(victim.alive = false, gameSession.js의 killPlayer/tribunal 경로)을
+  // 직접 흉내낸다 — session.players는 Map이므로 항목을 직접 갱신하는 것이 canonical 경로다.
+  candidate.session.players.get("v3").alive = false
+  candidate.session.players.get("v4").alive = false
+
+  const snapshot = buildSessionSnapshot(candidate.session, viewerUuid)
+  // 실제 소켓 계층(handleGetSessionSnapshot, backend/socket/gameSession.js:2294-2297)과 동일한
+  // 계약으로 isConnected를 덧붙인다 — v2/v4가 실제 Chrome 회귀의 "4명 끊김"과 같은 모양의
+  // 혼합 상태(끊겼지만 생존 / 끊겼고 사망)를 대표한다.
+  const reconnectAck = {
+    ok: true,
+    ...snapshot,
+    players: snapshot.players.map((p) => ({
+      ...p,
+      isConnected: p.uuid === "v2" || p.uuid === "v4" ? false : true,
+    })),
+  }
+
+  // 게임이 이미 진행 중인 상태에서 도착하는 실제 재접속 ack 경로(핸드셰이크 사이에 끊겼다
+  // 다시 붙는 것) — useInGameSessionSnapshotSync.js가 실제로 부르는 바로 그 액션이다.
+  useInGameStore.getState().applySessionSnapshot(reconnectAck)
+  const firstRender = renderOnce()
+
+  const disconnectedBadge = INGAME_PLAYER_STATUS_ASSETS.disconnected.normalize("NFC")
+  const deadBadge = INGAME_PLAYER_STATUS_ASSETS.dead.normalize("NFC")
+  const v2PhotoSrc = resolveAccountProfilePhotoSrc("player-profile-드워프").normalize("NFC")
+  const v3PhotoSrc = resolveAccountProfilePhotoSrc("player-profile-그림자").normalize("NFC")
+  const v4PhotoSrc = resolveAccountProfilePhotoSrc("player-profile-마인").normalize("NFC")
+  const v3BorderSrc = resolveAccountProfileBorderSrc("profile-border-귀족").normalize("NFC")
+
+  // 수정 전에는 connected가 항상 true였으므로 status가 DISCONNECTED로 절대 떨어지지 않아
+  // 아래 두 단언이 실패했다(실제 Chrome 회귀 재현).
+  assert.equal(
+    firstRender.filter((src) => src === disconnectedBadge).length,
+    2,
+    "끊긴 두 참가자(v2, v4)마다 연결 끊김 배지가 실제 DOM에 렌더되어야 한다",
+  )
+  // mergeSourcePlayerWithPreview는 !connected를 alive보다 먼저 판정하므로, 끊기고 사망한 v4는
+  // 사망 배지가 아니라 연결 끊김 배지로 나타난다 — 연결이 유지된 채 사망만 한 v3만 사망 배지다.
+  assert.equal(
+    firstRender.filter((src) => src === deadBadge).length,
+    1,
+    "연결이 유지된 채 사망만 한 v3만 사망 배지가 렌더되어야 한다",
+  )
+
+  assert.ok(firstRender.includes(v2PhotoSrc), "연결이 끊겨도 계정 사진은 그대로 유지되어야 한다(리포트: 사진은 남아 있었다)")
+  assert.ok(firstRender.includes(v3PhotoSrc), "사망해도 계정 사진은 유지되어야 한다")
+  assert.ok(firstRender.includes(v4PhotoSrc), "끊기고 사망해도 계정 사진은 유지되어야 한다")
+  assert.ok(firstRender.includes(v3BorderSrc), "사망한 참가자도 계정 테두리가 유지되어야 한다(상태 오버레이와 별개 레이어)")
+
+  // role 비밀성 — 연결 끊김·사망 오버레이가 추가되어도 role 값이 DOM 텍스트로 노출되면 안 된다.
+  const selfRole = useInGameStore.getState().state.self.role
+  const { container: roleCheckContainer } = render(
+    React.createElement(
+      InGamePlayerSessionContext.Provider,
+      { value: { players: renderFinalPlayers(useInGameStore.getState().state), localPlayerId: viewerUuid } },
+      React.createElement(InGamePlayerBoard),
+    ),
+  )
+  assert.doesNotMatch(
+    roleCheckContainer.textContent,
+    new RegExp(selfRole),
+    "연결 끊김·사망 오버레이가 추가되어도 role 값이 DOM 텍스트로 노출되면 안 된다",
+  )
+  cleanup()
+
+  // 새로고침 재현 — 메모리 store를 완전히 비운 뒤, 실제 화면이 새로고침에서 부르는 바로 그
+  // 진입점(bootstrapSessionSnapshot)으로만 복원한다(applySessionSnapshot 재호출이 아니다).
+  useInGameStore.setState({ gameId: null, state: null, error: null, snapshotSeq: 0 })
+  useInGameStore.getState().bootstrapSessionSnapshot(reconnectAck)
+  const afterReloadRender = renderOnce()
+
+  assert.deepEqual(
+    afterReloadRender,
+    firstRender,
+    "새로고침(빈 store에서 bootstrapSessionSnapshot) 후에도 연결 끊김·사망 배지와 계정 사진·테두리가 그대로 유지되어야 한다 — 리포트의 'photos retained but disconnected overlays absent even after reload' 실패를 재현/차단한다",
+  )
 })
 
 // ---------------------------------------------------------------------------

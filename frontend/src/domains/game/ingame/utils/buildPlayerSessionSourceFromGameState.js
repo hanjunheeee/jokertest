@@ -73,7 +73,7 @@ export function buildPlayerSessionSourceFromGameState(state) {
     const entry = {
       id: player.uuid,
       name: player.nickname,
-      connected: true,
+      connected: typeof player.isConnected === "boolean" ? player.isConnected : true,
       alive: player.alive,
       themeIndex: player.themeIndex,
     }
