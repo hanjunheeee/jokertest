@@ -29,6 +29,21 @@ const JOB_ID_TO_SKIN_SLOT = Object.freeze({
   witchHunter: "JOB_SKIN_WITCH_HUNTER",
 })
 
+// F-14(AC-02/AC-05, R-IMPL P1 수정): "서버가 명시적으로 거부했다"고 판정하는 근거를
+// error.code가 존재하는 임의의 문자열이라는 것만으로 삼지 않는다 — fetch 자체가 실패했을
+// 때(네트워크 단절 등)의 원인 객체가 우연히 .code 문자열을 가져도(전송 계층의 에러 코드),
+// 그건 서버가 실제로 응답해 거부했다는 증거가 아니다(전송 불확실과 혼동하면 안 된다).
+// economy.service.js equipItem이 실제로 던질 수 있는 유한한 코드 집합만 "확정적 거부"로
+// 인정한다 — 이 목록 밖의 코드(또는 코드 없음)는 전부 전송 불확실로 취급한다.
+const CONFIRMED_EQUIP_REJECTION_CODES = new Set([
+  "UNKNOWN_EQUIP_SLOT",
+  "INVALID_ITEM_ID",
+  "ITEM_TYPE_MISMATCH",
+  "ITEM_NOT_OWNED",
+])
+const isConfirmedEquipRejection = (error) =>
+  typeof error?.code === "string" && CONFIRMED_EQUIP_REJECTION_CODES.has(error.code)
+
 export const SKIN_CARD_WEAR_CONFIRM_STATUS = Object.freeze({
   IDLE: "idle",
   SAVING: "saving",
@@ -139,13 +154,21 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
   }, [])
 
   /**
-   * F-14(AC-01/AC-02/AC-05): 바뀐 슬롯만 골라 economy store의 equip()을 순서대로 호출한다.
-   * 슬롯별 equip은 각각 독립적인 서버 변경을 일으키므로(A-03) 부분 성공·명시적 거부·전송
-   * 불확실을 구분해서 처리한다:
-   *  - 명시적 거부(error.code 있음)는 오류로 기록하고 계속 진행한다(다른 슬롯은 그대로
-   *    시도해 부분 성공을 허용한다) — 모두 끝난 뒤 하나라도 거부됐으면 전체를 실패로 보고한다.
-   *  - 전송 불확실(응답을 받지 못함, code 없음)은 마지막에 fetchSummary로 authoritative
-   *    재조정을 하게 한다.
+   * F-14(AC-01/AC-02/AC-05, R-IMPL P1 수정): 바뀐 슬롯만 골라 economy store의 equip()을
+   * 순서대로 호출한다. 슬롯별 equip은 각각 독립적인 서버 변경을 일으키므로(A-03) 부분
+   * 성공·명시적 거부·전송 불확실을 구분해서 처리한다:
+   *  - 명시적 거부(isConfirmedEquipRejection이 인정하는 유한한 코드 목록에 있음)는 오류로
+   *    기록하고 계속 진행한다(다른 슬롯은 그대로 시도해 부분 성공을 허용한다) — 모두 끝난
+   *    뒤 하나라도 거부됐으면 전체를 실패로 보고한다. economy store의 equip()은 성공한
+   *    슬롯의 미러(selectedSkinsByJob/selectedCardFrameId)를 응답 즉시 직접 반영하므로,
+   *    다른 슬롯이 거부돼도 이미 성공한 슬롯의 화면 값은 stale로 남지 않는다.
+   *  - 전송 불확실(응답을 받지 못함, 인정된 거부 코드가 없음)은 authoritative GET
+   *    (fetchSummary)으로 재조정한다 — 다만 F13에서 폐기된 "GET이 성공했으면 write가
+   *    끝나지 못했다는 증거"라는 가정은 반복하지 않는다. GET이 돌려준 실제 값이 이 함수가
+   *    보내려던 값과 "일치하는지"만 성공의 근거로 삼는다 — 일치하면 그 사이 실제로 커밋된
+   *    것이 확인된 것이고(낡은 in-flight 요청이 나중에 늦게 커밋되어도 같은 값이라 문제
+   *    없다), 불일치하거나 GET 자체가 실패하면 여전히 불확실한 채로 남겨 재시도 수단을
+   *    보여준다(성공 토스트를 띄우지 않는다, AC-05).
    *  - 계정이 저장 도중 바뀌면(A-04) 어떤 결과도 적용하지 않고 stale로만 보고한다 — 호출부
    *    (Overlay)가 이를 성공도 실패도 아닌 것으로 처리해 새 계정 화면에 영향을 주지 않는다.
    * @param {{ appliedSkinsByJob: Record<string, string>, appliedCardFrameId: string }} applied
@@ -166,11 +189,11 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     for (const { id: jobId } of SKIN_CARD_WEAR_JOB_TABS) {
       const draftSkinId = draftSkinsByJob[jobId]
       if (draftSkinId && draftSkinId !== appliedSkinsByJob?.[jobId]) {
-        changedSlots.push({ slot: JOB_ID_TO_SKIN_SLOT[jobId], itemId: draftSkinId })
+        changedSlots.push({ slot: JOB_ID_TO_SKIN_SLOT[jobId], itemId: draftSkinId, jobId })
       }
     }
     if (draftCardFrameId && draftCardFrameId !== appliedCardFrameId) {
-      changedSlots.push({ slot: "PLAYER_CARD_FRAME", itemId: draftCardFrameId })
+      changedSlots.push({ slot: "PLAYER_CARD_FRAME", itemId: draftCardFrameId, jobId: null })
     }
 
     const finish = (result) => {
@@ -184,37 +207,38 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     }
 
     let firstRejection = null
-    let anyUncertain = false
-    for (const { slot, itemId } of changedSlots) {
+    const uncertainSlots = []
+    for (const changedSlot of changedSlots) {
       if (isStale()) return finish({ ok: false, stale: true })
       try {
         // eslint-disable-next-line no-await-in-loop -- 슬롯별 장착은 각각 독립적인 서버
         // 변경을 일으키므로 순서대로 결과를 확인해야 한다(부분 성공·실패 구분).
-        await useEconomyStore.getState().equip({ slot, itemId })
+        await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
       } catch (error) {
         if (isStale()) return finish({ ok: false, stale: true })
-        const confirmedRejection = typeof error?.code === "string" && error.code.length > 0
-        if (confirmedRejection) {
+        if (isConfirmedEquipRejection(error)) {
           if (!firstRejection) firstRejection = error
         } else {
-          anyUncertain = true
+          uncertainSlots.push(changedSlot)
         }
       }
     }
 
     if (isStale()) return finish({ ok: false, stale: true })
 
-    if (anyUncertain || !firstRejection) {
-      // 전송 불확실은 authoritative GET으로 재조정해야 하고, 명시적 거부 없이 전부 성공한
-      // 경우도 economy store의 equip() 응답에는 selectedSkinsByJob이 없어(economy.store.js
-      // 주석 참고) 최신 loadout을 다시 읽어야 한다 — 재조회 결과는 skinCardWear.store.js가
-      // economy store 구독으로 자동 반영하므로, 재시도 시 이미 커밋된 슬롯은 diff에서
-      // 저절로 빠진다(자기 치유).
+    let unresolvedUncertain = uncertainSlots.length > 0
+    if (unresolvedUncertain) {
       try {
         await useEconomyStore.getState().fetchSummary()
+        if (isStale()) return finish({ ok: false, stale: true })
+        const latestLoadout = useEconomyStore.getState().loadout
+        unresolvedUncertain = uncertainSlots.some(({ itemId, jobId }) =>
+          (jobId ? latestLoadout.selectedSkinsByJob?.[jobId] ?? null : latestLoadout.selectedCardFrameId) !== itemId,
+        )
       } catch {
-        // fetchSummary는 실패를 store.status/error에만 남기고 던지지 않는다 — 이 catch는
-        // 방어적으로만 존재한다.
+        // fetchSummary 자체가 실패했다 — 진짜 값을 확인할 방법이 없으므로 불확실한 채로
+        // 남긴다(swallowed 실패를 성공으로 취급하지 않는다).
+        unresolvedUncertain = true
       }
     }
 
@@ -226,7 +250,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
       return finish({ ok: false, error: firstRejection })
     }
 
-    if (anyUncertain) {
+    if (unresolvedUncertain) {
       setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.UNCERTAIN)
       setConfirmError("저장 결과를 확인하지 못했습니다. 다시 시도해 주세요.")
       return finish({ ok: false, uncertain: true })

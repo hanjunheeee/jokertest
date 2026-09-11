@@ -49,6 +49,22 @@ const initialState = {
 
 const resolveUserId = () => useAuthStore.getState().user?.uuid ?? null
 
+// F-14(AC-01, R-IMPL P1 수정): POST /economy/equip 응답(routes.js serializeLoadout)에는
+// selectedSkinsByJob이 없다(프로필 슬롯만 되돌려준다) — economy.service.js의 equipItem은
+// 전부-아니면-무로 동작하므로(부분 적용 없이 던지거나 정확히 그 값으로 커밋한다), 이 요청이
+// 실제로 보낸 (slot, itemId) 자체가 "서버가 지금 막 정확히 이 값으로 커밋했다"는 증거다.
+// 별도 재조회(fetchSummary) 없이 이 응답만으로 직업별 스킨 미러를 직접 갱신하면, 여러 슬롯을
+// 순서대로 equip하다가 다른 슬롯이 명시적으로 거부돼 재조회를 건너뛰어도 이미 성공한 슬롯의
+// 미러가 stale로 남지 않는다. frontend/src/domains/user/hooks/useSkinCardWearSelection.js의
+// JOB_ID_TO_SKIN_SLOT과 반대 방향의 같은 매핑이다(공유 모듈이 없어 독립적으로 든다).
+const JOB_SKIN_SLOT_TO_JOB_ID = Object.freeze({
+  JOB_SKIN_NOBLE: "noble",
+  JOB_SKIN_CLOWN: "clown",
+  JOB_SKIN_GUARD: "guard",
+  JOB_SKIN_DOCTOR: "doctor",
+  JOB_SKIN_WITCH_HUNTER: "witchHunter",
+})
+
 const buildReferenceEventId = (userId, itemId) =>
   `purchase:${userId}:${itemId}:${crypto.randomUUID()}`
 
@@ -189,12 +205,20 @@ export const useEconomyStore = create((set, get) => ({
    *  같은 참조 사건 ID를 재사용하고, rejected면 새 시도로 취급해 새 참조 사건 ID를 쓴다. */
   retryPurchase: (itemId) => get().purchase({ itemId }),
 
-  /** @param {{ slot: "PROFILE_PHOTO" | "PROFILE_BORDER" | "PLAYER_CARD_FRAME", itemId: string }} params */
+  /** @param {{ slot: "PROFILE_PHOTO" | "PROFILE_BORDER" | "PLAYER_CARD_FRAME" | "JOB_SKIN_NOBLE" | "JOB_SKIN_CLOWN" | "JOB_SKIN_GUARD" | "JOB_SKIN_DOCTOR" | "JOB_SKIN_WITCH_HUNTER", itemId: string }} params */
   equip: async ({ slot, itemId }) => {
     const generation = get().requestGeneration
     const result = await api.post("/economy/equip", { slot, itemId })
     if (get().requestGeneration !== generation) return result
-    set((state) => ({ loadout: { ...state.loadout, ...result.loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
+    const jobId = JOB_SKIN_SLOT_TO_JOB_ID[slot]
+    set((state) => ({
+      loadout: {
+        ...state.loadout,
+        ...result.loadout,
+        ...(jobId ? { selectedSkinsByJob: { ...state.loadout.selectedSkinsByJob, [jobId]: itemId } } : {}),
+      },
+      loadoutWriteSeq: state.loadoutWriteSeq + 1,
+    }))
     return result
   },
 

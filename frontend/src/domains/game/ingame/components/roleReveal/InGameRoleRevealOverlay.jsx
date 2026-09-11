@@ -7,9 +7,12 @@ import {
   INGAME_ROLE_REVEAL_HEADER_CLASS,
   INGAME_ROLE_REVEAL_NICKNAME_CLASS,
   INGAME_ROLE_REVEAL_ROLE_NAME_CLASS,
+  INGAME_ROLE_REVEAL_STANDING_IMG_CLASS,
+  INGAME_ROLE_REVEAL_STANDING_WRAP_CLASS,
   INGAME_ROLE_REVEAL_TEAM_BADGE_CLASS,
 } from "../../constants/roleReveal/ingameRoleRevealLayout.js"
 import { resolveInGameRoleRevealAllies } from "../../utils/resolveInGameRoleRevealAllies.js"
+import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 import InGameParchmentModalAnimated from "../parchment/InGameParchmentModalAnimated.jsx"
 
 /**
@@ -51,6 +54,12 @@ export default function InGameRoleRevealOverlay({
         <p className={INGAME_ROLE_REVEAL_ROLE_NAME_CLASS}>{roleInfo.roleName}</p>
         <p className={INGAME_ROLE_REVEAL_TEAM_BADGE_CLASS}>{roleInfo.teamLabel}</p>
       </div>
+
+      {roleInfo.standingSrc ? (
+        <div className={INGAME_ROLE_REVEAL_STANDING_WRAP_CLASS}>
+          <PublicAsset src={roleInfo.standingSrc} alt="" className={INGAME_ROLE_REVEAL_STANDING_IMG_CLASS} />
+        </div>
+      ) : null}
 
       {roleInfo.description ? (
         <p className={INGAME_ROLE_REVEAL_DESCRIPTION_CLASS}>{roleInfo.description}</p>

@@ -34,13 +34,18 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addEconomy = require('../../db/migrations/0006-add-economy');
 // Current auth services create EconomyLoadout rows, including its persisted CAS revision.
 const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
+// F-14(AC-01) 반송 대응: backend/models/economy/economy.model.js의 EconomyLoadout이 이제
+// selected_skin_noble/clown/guard/doctor/witch_hunter 5개 컬럼을 명시적으로 선언한다 —
+// 이 스위트가 실제 가입 완료 경로로 만드는 EconomyLoadout 행도 그 컬럼을 SELECT하므로,
+// 0011이 빠지면 그 컬럼이 없는 실제 DB에서 "Unknown column" 오류로 깨진다.
+const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
 // F-05 R-IMPL(CODEX-2/VERIFY-10): 관리 목록·드롭 순서·대상 DB 확인은
 // backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 f01~f05·user.accountPaths가
 // 항상 같은 정의를 쓰게 한다(이 스위트가 만드는 social 테이블을 다른 스위트가 몰라
 // resetSchema()가 거부하던 결함의 근본 원인).
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

@@ -60,9 +60,14 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addEconomy = require('../../db/migrations/0006-add-economy');
 // Current auth services create EconomyLoadout rows, including its persisted CAS revision.
 const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
+// F-14(AC-01) 반송 대응: backend/models/economy/economy.model.js의 EconomyLoadout이 이제
+// selected_skin_noble/clown/guard/doctor/witch_hunter 5개 컬럼을 명시적으로 선언한다 —
+// completeSocialSignup(Discord)이 실제로 만드는 EconomyLoadout 행도 그 컬럼을 SELECT하므로,
+// 0011이 빠지면 그 컬럼이 없는 실제 DB에서 "Unknown column" 오류로 깨진다.
+const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

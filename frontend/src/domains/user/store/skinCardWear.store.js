@@ -22,6 +22,15 @@ const resolveSkinsByJobFromServer = (selectedSkinsByJob) =>
     }),
   )
 
+// R-IMPL P1(무한 조회 루프) 대응: economy store의 loadout.selectedSkinsByJob은 scalar인
+// selectedCardFrameId와 달리 객체다 — fetchSummary가 응답마다 매번 새 객체를 만들어 내므로,
+// 값이 하나도 바뀌지 않은 조회 결과조차 매번 새 참조를 만든다. 참조만 비교해 applyLoadout을
+// 호출하면 이 store의 skinsByJob도 매번 새 객체가 되어(appliedSkinsByJob 참조 변경),
+// 그 값을 구독하는 SkinCardWearOverlay의 effect가 fetchSummary→새 객체→effect 재실행→
+// fetchSummary로 무한 반복된다. 내용이 실제로 같으면 참조도 바꾸지 않도록 값 단위로 비교한다.
+const skinsByJobContentEqual = (a, b) =>
+  SKIN_CARD_WEAR_JOB_TABS.every(({ id }) => (a?.[id] ?? null) === (b?.[id] ?? null))
+
 /** 스킨&카드 착용 — 직업별 장착 스킨·플레이어 카드. F-14부터는 서버 economy loadout이
  *  유일한 진실이다(useEconomyStore 구독). */
 export const useSkinCardWearStore = create((set) => ({
@@ -51,11 +60,17 @@ export const useSkinCardWearStore = create((set) => ({
 useEconomyStore.subscribe((state, prevState) => {
   const nextSkinsByJob = state.loadout.selectedSkinsByJob
   if (nextSkinsByJob !== prevState?.loadout?.selectedSkinsByJob) {
-    useSkinCardWearStore.getState().applyLoadout({ skinsByJob: resolveSkinsByJobFromServer(nextSkinsByJob) })
+    const resolved = resolveSkinsByJobFromServer(nextSkinsByJob)
+    if (!skinsByJobContentEqual(resolved, useSkinCardWearStore.getState().skinsByJob)) {
+      useSkinCardWearStore.getState().applyLoadout({ skinsByJob: resolved })
+    }
   }
   const nextCardFrameId = state.loadout.selectedCardFrameId
   if (nextCardFrameId !== prevState?.loadout?.selectedCardFrameId) {
-    useSkinCardWearStore.getState().applyLoadout({ cardFrameId: nextCardFrameId ?? SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID })
+    const resolvedCardFrameId = nextCardFrameId ?? SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID
+    if (resolvedCardFrameId !== useSkinCardWearStore.getState().cardFrameId) {
+      useSkinCardWearStore.getState().applyLoadout({ cardFrameId: resolvedCardFrameId })
+    }
   }
 })
 
