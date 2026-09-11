@@ -74,18 +74,20 @@ export const useEconomyStore = create((set, get) => ({
       // 응답이 도착하기 전에 로그아웃했거나 다른 계정으로 전환됐다면, 이 응답은 더 이상
       // "현재 계정"의 것이 아니다 — 화면 상태를 덮어쓰지 않고 조용히 버린다.
       if (get().requestGeneration !== generation) return
-      // F-13 AC-02(CODEX-5): 이 조회가 시작된 뒤 equipProfile로 더 최신 확정 시도가
-      // 시작됐다면, 이 조회는 그 시도보다 오래된 정보일 수 있다 — loadout(과 함께 조회된
-      // 잔액·소유품)을 덮어쓰지 않는다(그 최신 시도 자신의 완료가 진실을 확정한다).
-      if (get().loadoutAttemptSeq !== attemptSeq) return
-      set({
+      // F-13 AC-02(CODEX-6): 이 조회가 시작된 뒤 equipProfile로 더 최신 확정 시도가
+      // 시작됐다면, 이 조회가 함께 받아온 loadout은 그 시도보다 오래된 정보일 수 있다 —
+      // loadout만 덮어쓰지 않는다(그 최신 시도 자신의 완료가 진실을 확정한다). 지갑·소유품은
+      // equipProfile이 바꾸는 값이 아니므로 loadout과 달리 보호가 필요 없다 — 같은 계정의
+      // 유효한 조회 결과라면 그대로 반영하고 status도 "ready"까지 정상 종료한다(loadout
+      // 하나만 보류할 뿐, summary 전체를 폐기하면 status가 "loading"에 멈춰 남는다).
+      set((state) => ({
         balanceGold: wallet.balanceGold,
         balanceDiamond: wallet.balanceDiamond,
         entitlements: entitlementsResponse.entitlements,
-        loadout: entitlementsResponse.loadout,
+        loadout: state.loadoutAttemptSeq === attemptSeq ? entitlementsResponse.loadout : state.loadout,
         status: "ready",
         error: null,
-      })
+      }))
     } catch (error) {
       if (get().requestGeneration !== generation) return
       set({ status: "error", error: error.message ?? "지갑 정보를 불러오지 못했습니다." })

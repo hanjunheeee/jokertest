@@ -263,8 +263,15 @@ test("F-13 AC-02(CODEX-5): equipProfile 시도가 시작되기 전부터 진행 
   const pendingRefreshResolvers = []
   getImpl = (endpoint) => new Promise((resolve) => {
     pendingRefreshResolvers.push(() => resolve(endpoint.endsWith("/wallet")
-      ? { balanceGold: 0, balanceDiamond: 0 }
-      : { entitlements: [], loadout: { selectedProfileBorderId: "profile-border-평민" } }))
+      // CODEX-6 재검토: 이전 값은 0/[]이라 초기 상태(default)와 구분되지 않아, 코드가
+      // 실수로 이 필드를 통째로 건너뛰어도(예: 조기 return으로 set 자체를 호출하지 않아도)
+      // 시험이 여전히 통과했다 — 초기값과 뚜렷이 다른 값으로 바꿔 "실제로 이 조회 결과가
+      // 반영됐다"는 것 자체를 증명하게 한다.
+      ? { balanceGold: 777, balanceDiamond: 42 }
+      : {
+        entitlements: [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }],
+        loadout: { selectedProfileBorderId: "profile-border-평민" },
+      }))
   })
   // useProfileBorderEditor.handleConfirm의 catch 분기가 응답 유실 뒤 호출하는 것과 같은
   // 형태의 재조회를 먼저 시작한다(예: 이전 시도의 거부 이후 재조회).
@@ -279,11 +286,88 @@ test("F-13 AC-02(CODEX-5): equipProfile 시도가 시작되기 전부터 진행 
   assert.equal(pendingRefreshResolvers.length, 2, "fetchSummary는 wallet·entitlements 두 endpoint를 함께 불러야 한다")
   pendingRefreshResolvers.forEach((resolve) => resolve())
   await refreshPromise
+  assert.equal(useEconomyStore.getState().status, "ready", "suppressed old loadout must not leave summary loading")
+  assert.equal(useEconomyStore.getState().balanceGold, 777, "지갑은 loadout 보류와 무관하게 실제 조회값으로 정착해야 한다")
+  assert.equal(useEconomyStore.getState().balanceDiamond, 42)
+  assert.deepEqual(
+    useEconomyStore.getState().entitlements,
+    [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }],
+    "소유품도 loadout 보류와 무관하게 실제 조회값(비어있지 않은 값)으로 정착해야 한다",
+  )
 
   assert.equal(
     useEconomyStore.getState().loadout.selectedProfileBorderId,
     "profile-border-남작",
     "더 먼저 시작된 재조회가 뒤늦게 도착해 더 최신 확정 시도(equipProfile)의 결과를 덮어쓰면 안 된다",
+  )
+})
+
+test("F-13 AC-03(CODEX-6): 실제 purchase가 유발한 fetchSummary가 아직 끝나지 않은 동안 더 최신 equipProfile이 먼저 확정돼도, purchase가 끝나면 방금 구매한 항목이 실제로 entitlements에 반영되고 loading 상태가 남지 않는다", async () => {
+  // CODEX-6 반송 근거: "새 fetchSummary 가드는 구매·useAchievements 후 조회 중
+  // equipProfile이 시작되면 entitlements까지 폐기하고 loading을 남겨 획득 항목의 즉시
+  // 표시를 막는다"는 반송 지적을 실제 purchase() 경로로 재현해 반증한다 — 지금까지의
+  // 시험은 이 상호작용을 store 함수 직접 호출로만 흉내냈을 뿐, 실제 purchase()가 스스로
+  // 유발하는 fetchSummary(구매 성공 직후 자동 재조회, AC-03)와 겹치는 경우는 검증한 적이
+  // 없었다.
+  resetStore()
+  let resolvePurchasePost
+  postImpl = async (endpoint, body) => {
+    if (endpoint === "/economy/purchase") {
+      assert.equal(body.itemId, "profile-border-백작")
+      return new Promise((resolve) => { resolvePurchasePost = () => resolve({ idempotent: false, ledgerEntry: { id: 1 } }) })
+    }
+    if (endpoint === "/economy/equip-profile") {
+      return { loadout: { selectedProfileBorderId: "profile-border-남작" } }
+    }
+    throw new Error(`unexpected post ${endpoint}`)
+  }
+
+  const pendingRefreshResolvers = []
+  getImpl = (endpoint) => new Promise((resolve) => {
+    pendingRefreshResolvers.push(() => resolve(endpoint.endsWith("/wallet")
+      ? { balanceGold: 850, balanceDiamond: 12 }
+      : {
+        entitlements: [
+          { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
+          { itemId: "profile-border-백작", itemType: "PROFILE_BORDER" }, // 방금 구매한 상품
+        ],
+        // purchase의 POST가 시작된 시점(equip-profile 이전)의 오래된 loadout — equip의
+        // 결과를 덮어쓰면 안 된다는 것을 증명하기 위해 일부러 다른 값을 둔다.
+        loadout: { selectedProfileBorderId: "profile-border-평민" },
+      }))
+  })
+
+  const purchasePromise = useEconomyStore.getState().purchase({ itemId: "profile-border-백작" })
+  resolvePurchasePost()
+  // purchase()의 POST await 이후 fetchSummary가 Promise.all(api.get, api.get)을 실제로
+  // 호출해 pendingRefreshResolvers에 등록할 때까지, async 함수의 promise-adoption에 걸리는
+  // 여러 마이크로태스크 틱을 넘겨준다(정확한 틱 수를 세는 대신 매크로태스크 경계로 전부 비운다).
+  for (let i = 0; i < 10 && pendingRefreshResolvers.length < 2; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  assert.equal(pendingRefreshResolvers.length, 2, "purchase 성공 직후 실제 fetchSummary(wallet·entitlements)가 시작되어야 한다")
+  assert.equal(useEconomyStore.getState().status, "loading")
+
+  // 그 사이 프로필 편집기에서 실제로 더 최신 equipProfile 확정 시도가 시작되어 먼저 끝난다.
+  await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+
+  // purchase가 시작시킨(더 오래된) fetchSummary가 이제야 도착한다.
+  pendingRefreshResolvers.forEach((resolve) => resolve())
+  await purchasePromise
+
+  assert.equal(useEconomyStore.getState().status, "ready", "purchase가 유발한 fetchSummary가 겹쳐도 loading에 멈춰 남으면 안 된다")
+  assert.equal(useEconomyStore.getState().balanceGold, 850)
+  assert.equal(useEconomyStore.getState().balanceDiamond, 12)
+  assert.deepEqual(
+    useEconomyStore.getState().entitlements.map((e) => e.itemId).sort(),
+    ["profile-border-백작", "profile-border-평민"].sort(),
+    "방금 구매한 항목이 entitlements에서 폐기되지 않고 실제로 반영되어야 한다(즉시 표시 요구, AC-03)",
+  )
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-남작",
+    "purchase가 유발한(더 오래된) fetchSummary의 loadout이 더 최신 equipProfile의 결과를 덮어쓰면 안 된다",
   )
 })
 
