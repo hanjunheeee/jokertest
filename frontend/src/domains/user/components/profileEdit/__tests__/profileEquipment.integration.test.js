@@ -668,6 +668,94 @@ test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummar
   assert.equal(closeCount, 1, "A의 뒤늦은 재조회 완료가 onClose를 추가로 부르면 안 된다")
 })
 
+test("F-13 AC-02 CODEX-7: B가 saving인 동안 A의 재조회 완료는 B 상태와 초안을 유지하고 B만 닫는다", async () => {
+  resetStores()
+  // 마운트 시 최초 조회는 즉시 풀리는 값으로 둔다 — 아래에서 제어할 deferred는 오직 A의
+  // 거부가 유발하는 재조회(fetchSummary) 한 번뿐이어야 한다.
+  getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
+  const postDeferreds = []
+  postImpl = () => new Promise((resolve, reject) => { postDeferreds.push({ resolve, reject }) })
+
+  let closeCount = 0
+  const { result, rerender } = renderHook(
+    ({ open }) => useProfileBorderEditor({ open, onClose: () => { closeCount += 1 } }),
+    { initialProps: { open: true } },
+  )
+  await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+
+  // 최초 조회가 끝난 뒤부터는 GET을 제어 가능한 deferred로 바꿔, A의 거부가 유발하는
+  // 재조회만 붙잡아둘 수 있게 한다.
+  const walletDeferreds = []
+  getImpl = (endpoint) => new Promise((resolve) => {
+    if (endpoint.endsWith("/wallet")) {
+      walletDeferreds.push(() => resolve(walletOk))
+    } else {
+      walletDeferreds.push(() => resolve({
+        entitlements: [{ itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" }],
+        // A가 시작한 재조회가 실제로 돌려주는(오래된) 값 — B가 확정한 값과 달라야
+        // "덮어쓰지 않는다"를 의미 있게 증명할 수 있다.
+        loadout: { selectedProfileBorderId: "profile-border-평민" },
+      }))
+    }
+  })
+
+  // 세션 A: 귀족으로 확정 시도 — 응답은 거부(전송 불확실)라 자체적으로 재조회를 시작한다.
+  act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
+  let confirmAPromise
+  act(() => { confirmAPromise = result.current.handleConfirm() })
+  assert.equal(postDeferreds.length, 1)
+  await act(async () => { postDeferreds[0].reject(new TypeError("network disconnected")) })
+  // handleConfirm의 catch가 isStale()을 먼저 확인하지만(아직 유효한 세션이므로 통과),
+  // confirmedRejection이 아니라서 fetchSummary()를 실제로 호출한다 — 그 안의
+  // Promise.all(api.get, api.get)이 등록될 때까지 매크로태스크 경계로 넘겨준다.
+  for (let i = 0; i < 10 && walletDeferreds.length < 2; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  assert.equal(walletDeferreds.length, 2, "A의 거부는 서버 상태를 재조회해야 한다(응답 유실)")
+  assert.equal(result.current.confirmStatus, "saving", "재조회가 끝나기 전까지는 아직 A 자신의 handleConfirm이 진행 중이다")
+
+  rerender({ open: false }) // A의 재조회가 아직 끝나지 않은 채로 편집기를 닫음
+  rerender({ open: true }) // 세션 B 시작(초안이 실제 장착값으로 리셋됨)
+  assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
+
+  // B를 실제 saving 상태에 두고 A의 GET 응답부터 완료시킨다.
+  act(() => {
+    result.current.setDraftPhotoItemId("player-profile-기사")
+    result.current.setDraftBorderItemId("profile-border-남작")
+  })
+  let confirmBPromise
+  act(() => { confirmBPromise = result.current.handleConfirm() })
+  assert.equal(postDeferreds.length, 2)
+  assert.equal(result.current.confirmStatus, "saving")
+  await act(async () => {
+    walletDeferreds.forEach((resolve) => resolve())
+    await confirmAPromise
+  })
+  assert.equal(result.current.confirmStatus, "saving", "A refresh must not settle pending B")
+  assert.equal(result.current.confirmError, null)
+  assert.equal(closeCount, 0, "A refresh must not close pending B")
+  assert.equal(result.current.draftPhotoItemId, "player-profile-기사")
+  assert.equal(result.current.draftBorderItemId, "profile-border-남작")
+  assert.equal(useEconomyStore.getState().status, "ready")
+  await act(async () => {
+    postDeferreds[1].resolve({ loadout: {
+      selectedProfilePhotoId: "player-profile-기사",
+      selectedProfileBorderId: "profile-border-남작",
+    } })
+    await confirmBPromise
+  })
+  assert.equal(useEconomyStore.getState().loadout.selectedProfilePhotoId, "player-profile-기사")
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-남작",
+    "A가 더 먼저 시작시킨 재조회가 뒤늦게 끝나도 이미 확정된 더 최신 시도(B)의 값을 덮어쓰면 안 된다",
+  )
+  assert.equal(result.current.confirmStatus, "idle", "A의 뒤늦은 재조회 완료가 이미 정착된 B의 화면 상태를 되돌리면 안 된다")
+  assert.equal(result.current.confirmError, null, "A의 뒤늦은 재조회 완료가 B 화면에 오류를 남기면 안 된다")
+  assert.equal(closeCount, 1, "A의 뒤늦은 재조회 완료가 onClose를 추가로 부르면 안 된다")
+})
+
+
 test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계정이 바뀌면, 이전 계정의 재조회 결과로 지금 계정 화면을 덮어쓰지 않는다", async () => {
   resetStores()
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
