@@ -100,7 +100,7 @@ export function applySessionSnapshotPure(current, response) {
     // 문자열이어야 하고, 없는 참가자는 그대로 키 자체가 없어야 한다.
     if (Object.hasOwn(player, "accountProfilePhotoId") && !isNonEmptyString(player.accountProfilePhotoId)) return current
     if (Object.hasOwn(player, "accountProfileBorderId") && !isNonEmptyString(player.accountProfileBorderId)) return current
-    if (Object.hasOwn(player, "accountCardFrameId") && !isNonEmptyString(player.accountCardFrameId)) return current
+    if (Object.hasOwn(player, "accountCardFrameId") && player.accountCardFrameId !== null && !isNonEmptyString(player.accountCardFrameId)) return current
     if (rosterByUuid.has(player.uuid)) return current
     rosterByUuid.set(player.uuid, player)
   }

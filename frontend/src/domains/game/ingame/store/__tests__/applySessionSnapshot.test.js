@@ -727,3 +727,12 @@ test('F14 snapshot: null own skin is retained and malformed equipment is rejecte
   assertRejected(baseCurrent(), baseResponse({self:baseSelfObj({accountSkinId:{bad:true}})}))
   assertRejected(baseCurrent(), baseResponse({players:basePlayers().map(p=>({...p,accountCardFrameId:42}))}))
 })
+
+
+test('F14 real QA roster: unequipped null cards coexist with a purchased card', () => {
+  const current=baseCurrent()
+  const response=baseResponse({players:basePlayers().map((p,i)=>({...p,accountCardFrameId:i===0?'player-card-왕관':null}))})
+  const result=applySessionSnapshotPure(current,response)
+  assert.notEqual(result,current)
+  assert.deepEqual(result.state.players.map(p=>p.accountCardFrameId),response.players.map(p=>p.accountCardFrameId))
+})
