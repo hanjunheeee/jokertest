@@ -1,6 +1,5 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
-import { readFile } from "node:fs/promises"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
@@ -14,6 +13,34 @@ mock.module("../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "http://test-api.local" },
 })
 
+// F-13 AC-05(CODEX-5 재검토) — 로비 배너(LobbyProfileArea → MyPageBannerButton →
+// BannerProfilePortrait)는 이전까지 readFile 소스 정규식으로만 "showProfilePortrait를
+// 켰는지"를 확인했을 뿐, 실제로 서버가 응답한 계정 사진·테두리가 화면에 그려지는지는
+// 전혀 증명하지 못했다("공개 표시는 로비의 경우 소스 정규식이어서 검증 부족" 반송 지적).
+// BannerProfilePortrait는 마운트 시 useEconomyStore.getState().fetchSummary()(실제 네트워크
+// GET)를 호출하고 profileCustomization store(useEconomyStore를 구독)를 거쳐 photoSrc/
+// frameSrc를 반영하므로, api.client와 auth store만 이 파일 전용으로 갈아끼우고(economy.
+// store.test.js와 같은 최소 흉내) 나머지(economy store·profileCustomization store·
+// BannerProfilePortrait 전부)는 실제 코드 그대로 마운트해 실제 DOM img src까지 확인한다.
+let getImpl = async () => { throw new Error("api.get stub not set") }
+let postImpl = async () => { throw new Error("api.post stub not set") }
+mock.module("../../../../shared/api/client.js", {
+  namedExports: {
+    api: {
+      get: (...args) => getImpl(...args),
+      post: (...args) => postImpl(...args),
+    },
+  },
+})
+mock.module("../../../auth/store/auth.store.js", {
+  namedExports: {
+    useAuthStore: {
+      getState: () => ({ user: { uuid: "user-1" } }),
+      subscribe: () => () => {},
+    },
+  },
+})
+
 // F-13 AC-05(CURRENT OPERATOR CORRECTION) — "implement missing photo/border fields in
 // profile/friend/ranking responses ... retain them through client transforms and supply
 // actual image/border assets to portrait components". 이 파일은 로비·마이페이지·친구·서고
@@ -24,10 +51,13 @@ mock.module("../../../../shared/env.js", {
 // jsdom 렌더로 바꿨다 — frontend/.../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs가
 // 이미 만든 module.register() ESM 훅(oxc 변환 + "@/" alias 해석)을 그대로 재사용해 이
 // 저장소의 node:test 실행 제약(vite alias·JSX 미해석)을 없앤다. 두 컴포넌트는 props만으로
-// 결정되는 순수 표시 컴포넌트라 store/네트워크 mock 없이 그대로 마운트할 수 있다. 로비
-// 배너(LobbyProfileArea → MyPageBannerButton → BannerProfilePortrait)는 마운트 시
-// profileCustomization store·economy store의 실제 fetchSummary(네트워크)까지 함께 끌려와
-// 이 파일의 범위를 넘으므로 source 검증을 유지한다.
+// 결정되는 순수 표시 컴포넌트라 store/네트워크 mock 없이 그대로 마운트할 수 있다.
+//
+// F-13(CODEX-5) 재검토: 로비 배너(LobbyProfileArea → MyPageBannerButton →
+// BannerProfilePortrait)도 더 이상 source 정규식에 머무르지 않는다 — 위 api.client·auth
+// store mock만으로 실제 economy store의 fetchSummary(네트워크)·profileCustomization
+// store(economy store 구독)까지 전부 실제 코드 그대로 마운트해, 서버가 응답한 계정 사진·
+// 테두리가 실제 DOM img로 그려지는지 직접 확인한다.
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true })
 function installDomGlobal(name, value) {
   Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
@@ -44,22 +74,62 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 register(new URL("../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
-const { render, cleanup } = await import("@testing-library/react")
+const { render, waitFor, cleanup } = await import("@testing-library/react")
 test.afterEach(() => cleanup())
 
 const { default: FriendListRow } = await import("../../../lobby/components/friendList/list/FriendListRow.jsx")
 const { default: InvitedGuestsRankingRow } =
   await import("../../../library/components/invitedGuests/shared/InvitedGuestsRankingRow.jsx")
+const { default: LobbyProfileArea } = await import("../../../lobby/components/LobbyProfileArea.jsx")
+const { useEconomyStore } = await import("../../../economy/store/economy.store.js")
 
-const lobbyProfileAreaUrl = new URL("../../../lobby/components/LobbyProfileArea.jsx", import.meta.url)
+test("로비: 실제 LobbyProfileArea를 마운트하면(showProfilePortrait 배선을 거쳐) 서버가 실제로 응답한 계정 사진·테두리가 배너에 실제 DOM img로 그려진다", async () => {
+  useEconomyStore.getState().reset()
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : {
+      entitlements: [],
+      loadout: { selectedProfilePhotoId: "player-profile-기사", selectedProfileBorderId: "profile-border-귀족" },
+    })
 
-test("로비: LobbyProfileArea가 showProfilePortrait를 켜야 배너에 실제 장착 사진·테두리가 그려진다", async () => {
-  const source = await readFile(lobbyProfileAreaUrl, "utf8")
-  assert.match(
-    source,
-    /<MyPageBannerButton[\s\S]*?showProfilePortrait[\s\S]*?\/>/,
-    "showProfilePortrait를 넘기지 않으면 BannerMainButton이 BannerProfilePortrait를 아예 렌더하지 않아 로비 배너에 사진이 전혀 보이지 않는다",
-  )
+  const { container } = render(React.createElement(LobbyProfileArea, {
+    profile: { reputationLabel: "초심자", reputationValue: 0 },
+    loading: false,
+    onMyPage: () => {},
+    onAccount: () => {},
+  }))
+
+  const { portraitSrc, frameSrc } = resolveAccountProfileAssets({
+    accountProfilePhotoId: "player-profile-기사",
+    accountProfileBorderId: "profile-border-귀족",
+  })
+
+  await waitFor(() => {
+    const imgSrcs = [...container.querySelectorAll("img")].map((img) => decodeURIComponent(img.getAttribute("src")))
+    assert.ok(imgSrcs.includes(portraitSrc.normalize("NFC")), "실제 DOM에 계정 사진 img가 없다")
+    assert.ok(imgSrcs.includes(frameSrc.normalize("NFC")), "실제 DOM에 계정 테두리 img가 없다")
+  })
+})
+
+test("로비: 장착 사진·테두리가 없는(loadout 기본값) 계정은 기본 자산으로 안전하게 대체되어 렌더된다", async () => {
+  useEconomyStore.getState().reset()
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedProfilePhotoId: null, selectedProfileBorderId: null } })
+
+  const { container } = render(React.createElement(LobbyProfileArea, {
+    profile: { reputationLabel: "초심자", reputationValue: 0 },
+    loading: false,
+    onMyPage: () => {},
+    onAccount: () => {},
+  }))
+
+  const { portraitSrc, frameSrc } = resolveAccountProfileAssets({})
+  await waitFor(() => {
+    const imgSrcs = [...container.querySelectorAll("img")].map((img) => decodeURIComponent(img.getAttribute("src")))
+    assert.ok(imgSrcs.includes(portraitSrc.normalize("NFC")))
+    assert.ok(imgSrcs.includes(frameSrc.normalize("NFC")))
+  })
 })
 
 test("친구 목록: 실제 FriendListRow를 마운트하면 계정별 accountProfilePhotoId/accountProfileBorderId가 resolveAccountProfileAssets로 해석되어 실제 DOM img src로 그려진다", () => {

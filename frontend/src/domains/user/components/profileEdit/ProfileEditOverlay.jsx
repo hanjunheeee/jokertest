@@ -16,6 +16,9 @@ export default function ProfileEditOverlay({ open, onClose }) {
     setDraftPhotoItemId,
     draftBorderItemId,
     setDraftBorderItemId,
+    ownedPhotoOptions,
+    photoListStatus,
+    retryLoadPhotos,
     ownedBorderOptions,
     borderListStatus,
     retryLoadBorders,
@@ -66,6 +69,9 @@ export default function ProfileEditOverlay({ open, onClose }) {
                 onTabChange={setActiveTab}
                 draftPhotoItemId={draftPhotoItemId}
                 draftBorderItemId={draftBorderItemId}
+                ownedPhotoOptions={ownedPhotoOptions}
+                photoListStatus={photoListStatus}
+                onRetryLoadPhotos={retryLoadPhotos}
                 ownedBorderOptions={ownedBorderOptions}
                 borderListStatus={borderListStatus}
                 onRetryLoadBorders={retryLoadBorders}

@@ -5,7 +5,9 @@ import {
   DEFAULT_PROFILE_PHOTO_ITEM_ID,
   PROFILE_BORDER_ITEM_TYPE,
   PROFILE_EDIT_TAB_PHOTO,
+  PROFILE_PHOTO_ITEM_TYPE,
   profileBorderAssetSrcForItemId,
+  profilePhotoAssetSrcForItemId,
 } from "../../constants/profileEditLayout.js"
 
 // F-13(AC-01/AC-02) 재검토 대응 — ProfileEditOverlay의 실제 편집 로직(계획 메모 실행 순서
@@ -111,6 +113,21 @@ export function useProfileBorderEditor({ open, onClose }) {
         : ownedBorderOptions.length === 0 ? "empty"
           : "ready"
 
+  // F-13 AC-03 재검토(CODEX-5): 사진도 테두리와 같은 계약을 따른다 — 지금 카탈로그의 16종은
+  // 전부 defaultGrant(무료 기본 지급)라 사실상 모든 계정이 항상 전부 보유하지만, 목록
+  // 자체는 정적 배열이 아니라 entitlements에서 유도한 실제 소유 목록이어야 앞으로 구매·
+  // 업적으로만 얻는 사진이 카탈로그에 추가돼도(A-07) 별도 배선 없이 즉시 반영된다.
+  const ownedPhotoOptions = entitlements
+    .filter((item) => item.itemType === PROFILE_PHOTO_ITEM_TYPE)
+    .map((item) => ({ itemId: item.itemId, src: profilePhotoAssetSrcForItemId(item.itemId) }))
+    .filter((item) => item.src != null)
+
+  const photoListStatus =
+    economyStatus === "error" ? "error"
+      : economyStatus === "idle" || economyStatus === "loading" ? "loading"
+        : ownedPhotoOptions.length === 0 ? "empty"
+          : "ready"
+
   // F-13 AC-01/AC-02: 확인은 실제 서버 equipProfile의 성공 결과에 따라서만 장착 상태를
   // 반영한다(economy store가 loadout을 갱신하면 profileCustomization store가 그 값을
   // 거울처럼 반영한다 — 이 훅은 직접 로컬 상태를 건드리지 않는다). 실패하면 오류와 초안을
@@ -192,6 +209,9 @@ export function useProfileBorderEditor({ open, onClose }) {
     setDraftPhotoItemId: setDraftPhotoItemIdTracked,
     draftBorderItemId,
     setDraftBorderItemId: setDraftBorderItemIdTracked,
+    ownedPhotoOptions,
+    photoListStatus,
+    retryLoadPhotos: fetchSummary,
     ownedBorderOptions,
     borderListStatus,
     retryLoadBorders: fetchSummary,

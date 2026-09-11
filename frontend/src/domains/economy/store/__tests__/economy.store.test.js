@@ -221,6 +221,72 @@ test("equipProfile 응답이 도착하기 전에 계정이 바뀌면(requestGene
   assert.equal(useEconomyStore.getState().loadout.selectedProfilePhotoId, null, "이전 계정 요청의 늦은 성공이 리셋된 상태를 덮어쓰면 안 된다")
 })
 
+// F-13 AC-02(CODEX-5) 재검토 — STORE 레벨 순서 보장. useProfileBorderEditor.js의
+// editorSessionRef는 오직 "지금 이 훅 인스턴스"의 UI 상태(confirmStatus/onClose)만
+// 지킬 뿐, economy.store.js 자체의 loadout은 지금까지 requestGeneration(계정 경계)만
+// 검사했다 — 같은 계정 안에서 이전 시도가 더 최신 시도보다 늦게 완료되면(응답 도착 순서가
+// 요청 시작 순서와 다르면) 여전히 store.loadout을 되돌려 덮어쓸 수 있었다. 아래 두 시험은
+// loadoutAttemptSeq 가드가 실제로 이 STORE 레벨 경쟁을 막는지 직접 확인한다(훅을 거치지
+// 않고 store 함수만 호출 — 훅의 세션 무효화와는 독립적인 계약이다).
+
+test("F-13 AC-02(CODEX-5): 같은 계정 안에서 더 먼저 시작된 equipProfile 시도(A)가 더 나중에 시작된 시도(B)보다 늦게 성공 응답을 받아도, 이미 확정된 B의 결과를 덮어쓰지 않는다(완료 순서가 아니라 시작 순서로 승자를 가른다)", async () => {
+  resetStore()
+  const postDeferreds = []
+  postImpl = () => new Promise((resolve) => { postDeferreds.push(resolve) })
+
+  const confirmA = useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-귀족" })
+  const confirmB = useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+  assert.equal(postDeferreds.length, 2, "A와 B 각각 정확히 한 번씩 POST가 나가야 한다")
+
+  // B(더 나중에 시작된 시도)가 먼저 확정된다.
+  postDeferreds[1]({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
+  await confirmB
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+
+  // A(더 먼저 시작된 시도)가 그제서야 뒤늦게 성공으로 도착한다.
+  postDeferreds[0]({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
+  await confirmA
+
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-남작",
+    "이미 확정된 더 최신 시도(B)의 결과를 더 오래된 시도(A)의 뒤늦은 성공이 덮어쓰면 안 된다",
+  )
+})
+
+test("F-13 AC-02(CODEX-5): equipProfile 시도가 시작되기 전부터 진행 중이던 fetchSummary(재조회)가 그 시도보다 늦게 도착해도, 이미 확정된 최신 loadout을 덮어쓰지 않는다", async () => {
+  resetStore()
+  // fetchSummary는 wallet·entitlements 두 endpoint를 Promise.all로 동시에 부른다 — 단일
+  // resolver 변수를 두 번째 호출이 덮어쓰면 첫 번째 호출의 Promise가 영영 풀리지 않아
+  // Promise.all 자체가 멈춘다(await가 영원히 끝나지 않는다). 두 endpoint의 resolver를
+  // 모두 모아뒀다가 함께 풀어야 한다.
+  const pendingRefreshResolvers = []
+  getImpl = (endpoint) => new Promise((resolve) => {
+    pendingRefreshResolvers.push(() => resolve(endpoint.endsWith("/wallet")
+      ? { balanceGold: 0, balanceDiamond: 0 }
+      : { entitlements: [], loadout: { selectedProfileBorderId: "profile-border-평민" } }))
+  })
+  // useProfileBorderEditor.handleConfirm의 catch 분기가 응답 유실 뒤 호출하는 것과 같은
+  // 형태의 재조회를 먼저 시작한다(예: 이전 시도의 거부 이후 재조회).
+  const refreshPromise = useEconomyStore.getState().fetchSummary()
+
+  // 그 사이 실제로 더 최신 equipProfile 확정 시도가 시작되어 먼저 끝난다.
+  postImpl = async () => ({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
+  await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+
+  // 먼저 시작됐던 재조회가 이제야 도착한다 — equipProfile보다 오래된 정보다.
+  assert.equal(pendingRefreshResolvers.length, 2, "fetchSummary는 wallet·entitlements 두 endpoint를 함께 불러야 한다")
+  pendingRefreshResolvers.forEach((resolve) => resolve())
+  await refreshPromise
+
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-남작",
+    "더 먼저 시작된 재조회가 뒤늦게 도착해 더 최신 확정 시도(equipProfile)의 결과를 덮어쓰면 안 된다",
+  )
+})
+
 // ── F-08 R-IMPL: 서버 확정 거부 vs 전송 불확실 구분 ──────────────────────────
 
 test("서버가 code와 함께 명시적으로 거부하면(확정 거부) status는 rejected이고, 재시도는 새 참조 사건 ID를 쓴다", async () => {

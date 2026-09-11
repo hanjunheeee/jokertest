@@ -45,6 +45,15 @@ const buildReferenceEventId = (userId, itemId) =>
 export const useEconomyStore = create((set, get) => ({
   ...initialState,
   requestGeneration: 0,
+  // F-13 AC-02 재검토(CODEX-5) — requestGeneration은 계정 경계만 가른다. 같은 계정 안에서도
+  // 이전 equipProfile 시도의 뒤늦은 완료(성공이든, 그로 인한 재조회든)가 그 사이 새로
+  // 시작된 더 최신 시도의 결과를 덮어쓸 수 있었다(완료 순서가 응답 도착 순서에 좌우되므로).
+  // equipProfile을 호출할 때마다 이 값을 올려 "지금 사용자가 실제로 원하는 최신 확정
+  // 시도"를 표시하고, loadout을 실제로 쓰는 모든 지점(equipProfile 자신의 성공 처리·
+  // fetchSummary)이 자신이 시작된 이후 더 최신 시도가 생기지 않았을 때만 반영한다 — 오직
+  // 가장 나중에 "시작된" 시도만 loadout을 쓸 자격이 있다(완료 순서가 아니라 시작 순서로
+  // 승자를 가른다).
+  loadoutAttemptSeq: 0,
 
   /** 지갑 잔액·소유품·장착 상태를 서버에서 다시 읽어온다. */
   fetchSummary: async () => {
@@ -55,6 +64,7 @@ export const useEconomyStore = create((set, get) => ({
     }
 
     const generation = get().requestGeneration
+    const attemptSeq = get().loadoutAttemptSeq
     set({ status: "loading", error: null })
     try {
       const [wallet, entitlementsResponse] = await Promise.all([
@@ -64,6 +74,10 @@ export const useEconomyStore = create((set, get) => ({
       // 응답이 도착하기 전에 로그아웃했거나 다른 계정으로 전환됐다면, 이 응답은 더 이상
       // "현재 계정"의 것이 아니다 — 화면 상태를 덮어쓰지 않고 조용히 버린다.
       if (get().requestGeneration !== generation) return
+      // F-13 AC-02(CODEX-5): 이 조회가 시작된 뒤 equipProfile로 더 최신 확정 시도가
+      // 시작됐다면, 이 조회는 그 시도보다 오래된 정보일 수 있다 — loadout(과 함께 조회된
+      // 잔액·소유품)을 덮어쓰지 않는다(그 최신 시도 자신의 완료가 진실을 확정한다).
+      if (get().loadoutAttemptSeq !== attemptSeq) return
       set({
         balanceGold: wallet.balanceGold,
         balanceDiamond: wallet.balanceDiamond,
@@ -160,8 +174,14 @@ export const useEconomyStore = create((set, get) => ({
    *  @param {{ photoItemId?: string, borderItemId?: string }} params */
   equipProfile: async ({ photoItemId, borderItemId }) => {
     const generation = get().requestGeneration
+    // F-13 AC-02(CODEX-5): 이 호출을 "지금 사용자가 원하는 최신 확정 시도"로 등록한다 —
+    // 이후 이 값이 다시 바뀌면(더 새로운 equipProfile 호출이 시작되면) 이 시도의 응답은
+    // 도착 순서와 무관하게 loadout을 쓸 자격을 잃는다.
+    const attemptSeq = get().loadoutAttemptSeq + 1
+    set({ loadoutAttemptSeq: attemptSeq })
     const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId })
     if (get().requestGeneration !== generation) return result
+    if (get().loadoutAttemptSeq !== attemptSeq) return result
     set((state) => ({ loadout: { ...state.loadout, ...result.loadout } }))
     return result
   },

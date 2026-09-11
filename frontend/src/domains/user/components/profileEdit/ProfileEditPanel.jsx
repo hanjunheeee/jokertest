@@ -20,6 +20,9 @@ export default function ProfileEditPanel({
   onTabChange,
   draftPhotoItemId,
   draftBorderItemId,
+  ownedPhotoOptions,
+  photoListStatus,
+  onRetryLoadPhotos,
   ownedBorderOptions,
   borderListStatus,
   onRetryLoadBorders,
@@ -57,8 +60,11 @@ export default function ProfileEditPanel({
 
       <ProfileEditOptionGrid
         activeTab={activeTab}
+        ownedPhotoOptions={ownedPhotoOptions}
+        photoListStatus={photoListStatus}
         selectedPhotoItemId={draftPhotoItemId}
         onSelectPhoto={onSelectPhoto}
+        onRetryLoadPhotos={onRetryLoadPhotos}
         ownedBorderOptions={ownedBorderOptions}
         borderListStatus={borderListStatus}
         selectedBorderItemId={draftBorderItemId}

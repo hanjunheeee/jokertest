@@ -197,6 +197,52 @@ test("AC-03: 최소 10판 미만 사용자는 랭킹에서 빠지고, 나머지�
     assert.equal(ranking[0].profile_image_url, "/b.png");
 });
 
+// F-13 AC-05(CODEX-5 재검토) — 위 파일 상단의 __setEconomyServiceForTests fake는 모든
+// uuid에 항상 null만 돌려주므로, 지금까지 어떤 테스트도 getRoleRanking이 실제로 서로 다른
+// accountProfilePhotoId/accountProfileBorderId를 랭킹 각 행에 실어 보내는지 증명하지
+// 못했다("장착 POST만 검사하고 공개 응답 검증은 부족하다"는 반송 지적). 이 시험만 실제
+// non-null 값을 돌려주는 fake로 바꿔 넣어(t.after로 원래 fake 복원) 계정별로 다른 값이
+// 실제 랭킹 응답에 그대로 실리는지, 그리고 순위·승률 등 기존 계산은 전혀 건드리지 않는지
+// 확인한다.
+test("F-13 AC-05: getRoleRanking은 계정별로 서로 다른 실제 장착 사진·테두리를 랭킹 각 행에 싣는다(순위·승률 계산은 그대로다)", async (t) => {
+    const fixture = setupFixtureDb(t);
+    fixture.addGame("g1", { gameSource: productionGame() });
+    fixture.addUser("b-user", { nickname: "비유저", profile_image_url: "/b.png" });
+    fixture.addUser("a-user", { nickname: "에이유저", profile_image_url: "/a.png" });
+
+    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "b-user", "JOKER", i < 8));  // 0.8
+    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "a-user", "JOKER", i < 5));  // 0.5
+
+    let seenUserIds = null;
+    gameResultRepository.__setEconomyServiceForTests({
+        getPublicProfileLoadouts: async (userIds) => {
+            seenUserIds = userIds;
+            return {
+                "b-user": { profilePhotoId: "player-profile-기사", profileBorderId: "profile-border-귀족" },
+                "a-user": { profilePhotoId: "player-profile-드워프", profileBorderId: "profile-border-평민" },
+            };
+        },
+    });
+    t.after(() => {
+        gameResultRepository.__setEconomyServiceForTests({
+            getPublicProfileLoadouts: async (userIds) =>
+                Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+        });
+    });
+
+    const ranking = await gameResultRepository.getRoleRanking("JOKER");
+
+    assert.deepEqual([...seenUserIds].sort(), ["a-user", "b-user"]);
+    assert.deepEqual(ranking.map((r) => r.uuid), ["b-user", "a-user"], "승률 순위 계산은 이 필드 추가와 무관하게 그대로여야 한다");
+    const b = ranking.find((r) => r.uuid === "b-user");
+    const a = ranking.find((r) => r.uuid === "a-user");
+    assert.equal(b.accountProfilePhotoId, "player-profile-기사");
+    assert.equal(b.accountProfileBorderId, "profile-border-귀족");
+    assert.equal(a.accountProfilePhotoId, "player-profile-드워프");
+    assert.equal(a.accountProfileBorderId, "profile-border-평민");
+    assert.notEqual(b.accountProfilePhotoId, a.accountProfilePhotoId, "서로 다른 계정은 서로 다른 값이어야 한다(고정값이 아니다)");
+});
+
 test("A-10: 랭킹 응답은 화면이 페이지를 넘기기 전에 잘리지 않는다(전체 적격 사용자)", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("g1", { gameSource: productionGame() });

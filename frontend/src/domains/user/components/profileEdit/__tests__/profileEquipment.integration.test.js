@@ -89,8 +89,14 @@ const { useEconomyStore } = await import("../../../../economy/store/economy.stor
 const { useAchievements } = await import("../../../../library/hooks/useAchievements.js")
 const { useAchievementsStore } = await import("../../../../library/store/achievements.store.js")
 const { default: ProfileEditOptionGrid } = await import("../ProfileEditOptionGrid.jsx")
-const { PROFILE_EDIT_PHOTO_OPTIONS, PROFILE_EDIT_TAB_BORDER } =
+const { PROFILE_EDIT_PHOTO_OPTIONS, PROFILE_EDIT_TAB_BORDER, PROFILE_PHOTO_ITEM_TYPE } =
   await import("../../../constants/profileEditLayout.js")
+
+// F-13 AC-03 재검토(CODEX-5): ownedPhotoOptions는 이제 정적 배열이 아니라 서버
+// entitlements에서 유도되므로(ownedBorderOptions와 같은 계약), 실제 계정이 보유한 사진
+// entitlement 행을 흉내낼 공용 fixture가 필요하다 — 지금 카탈로그의 16종은 전부 기본 지급
+// (defaultGrant:true)이므로 "모든 계정이 항상 전부 보유"를 흉내낼 때는 이 전체 목록을 쓴다.
+const allDefaultPhotoEntitlements = PROFILE_EDIT_PHOTO_OPTIONS.map(({ itemId }) => ({ itemId, itemType: PROFILE_PHOTO_ITEM_TYPE }))
 
 function resetStores() {
   getImpl = async () => { throw new Error("api.get stub not set") }
@@ -389,6 +395,125 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
   assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작", "마지막으로 확정된 값(B)이 최종 장착 상태여야 한다")
 })
 
+test("F-13 AC-02(CODEX-5): 세션 B가 세션 A보다 먼저 확정돼도, A의 뒤늦은 성공(역전된 완료 순서)이 이미 확정된 B의 값을 store에서 되돌리지 않는다(CODEX-2 시험의 반대 순서)", async () => {
+  // CODEX-5 반송 근거: 지금까지의 시험은 전부 A가 B보다 먼저 완료되는 순서만 검증했다 —
+  // "완료 순서가 아니라 시작 순서로 승자를 가른다"는 계약은 순서를 뒤집어도(B가 먼저
+  // 확정되고 A가 그 뒤에 뒤늦게 성공으로 도착해도) 성립해야 증명된다. economy.store.js의
+  // loadoutAttemptSeq 가드가 실제로 이 역전된 순서에서도 store.loadout을 지키는지 훅을
+  // 통해 끝까지 확인한다.
+  resetStores()
+  getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
+  const postDeferreds = []
+  postImpl = () => new Promise((resolve) => { postDeferreds.push(resolve) })
+
+  let closeCount = 0
+  const { result, rerender } = renderHook(
+    ({ open }) => useProfileBorderEditor({ open, onClose: () => { closeCount += 1 } }),
+    { initialProps: { open: true } },
+  )
+  await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+
+  // 세션 A: 귀족으로 확정 시도, 응답 대기 상태로 둔다.
+  act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
+  let confirmAPromise
+  act(() => { confirmAPromise = result.current.handleConfirm() })
+  assert.equal(postDeferreds.length, 1)
+
+  rerender({ open: false }) // A의 응답을 기다리지 않고 닫음
+  rerender({ open: true }) // 세션 B 시작
+
+  // 세션 B: 남작으로 확정 시도, 먼저 응답을 받아 확정된다.
+  act(() => result.current.setDraftBorderItemId("profile-border-남작"))
+  let confirmBPromise
+  act(() => { confirmBPromise = result.current.handleConfirm() })
+  assert.equal(postDeferreds.length, 2)
+
+  await act(async () => {
+    postDeferreds[1]({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
+    await confirmBPromise
+  })
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+  assert.equal(closeCount, 1, "B 자신의 완료만 편집기를 닫아야 한다")
+
+  // A(더 먼저 시작된 세션)가 그제서야 뒤늦게 성공으로 도착한다.
+  await act(async () => {
+    postDeferreds[0]({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
+    await confirmAPromise
+  })
+
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-남작",
+    "완료 순서가 역전돼도(B가 먼저 확정) A의 뒤늦은 성공이 이미 확정된 B의 값을 덮어쓰면 안 된다",
+  )
+  assert.equal(closeCount, 1, "이미 폐기된 세션 A의 뒤늦은 완료가 onClose를 추가로 부르면 안 된다")
+})
+
+test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫았다 다시 열어 세션 B가 저장을 시작해 먼저 확정되면, A의 뒤늦은 거부(전송 불확실)가 도착해도 이미 확정된 B의 값과 편집기 상태를 전혀 건드리지 않는다", async () => {
+  // 계획 메모 지시 시나리오 — "A pending -> close/reopen -> B saving -> A late reject/refresh
+  // completion -> B success"를 실제 훅으로 끝까지 재현한다. A의 거부는 editorSessionRef가
+  // 이미 무효화한 뒤 도착하므로 isStale()이 fetchSummary 호출 자체를 막아야 한다(재조회조차
+  // 시도하면 안 된다 — 이미 위 CODEX-4 시험이 단일 세션 안에서는 고정했지만, 여기서는 그
+  // 사이 실제로 다른 세션(B)이 저장을 확정한 뒤에도 똑같이 성립하는지 확인한다).
+  resetStores()
+  let walletCalls = 0
+  getImpl = async (endpoint) => {
+    if (endpoint.endsWith("/wallet")) walletCalls += 1
+    return readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
+  }
+  const postDeferreds = []
+  postImpl = () => new Promise((resolve, reject) => { postDeferreds.push({ resolve, reject }) })
+
+  let closeCount = 0
+  const { result, rerender } = renderHook(
+    ({ open }) => useProfileBorderEditor({ open, onClose: () => { closeCount += 1 } }),
+    { initialProps: { open: true } },
+  )
+  await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
+  const walletCallsBeforeConfirm = walletCalls
+
+  // 세션 A: 귀족으로 확정 시도, 응답 대기.
+  act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
+  let confirmAPromise
+  act(() => { confirmAPromise = result.current.handleConfirm() })
+  assert.equal(postDeferreds.length, 1)
+
+  rerender({ open: false }) // 닫음
+  rerender({ open: true }) // 세션 B 시작
+
+  // 세션 B: 남작으로 확정 시도, 먼저 확정된다.
+  act(() => result.current.setDraftBorderItemId("profile-border-남작"))
+  let confirmBPromise
+  act(() => { confirmBPromise = result.current.handleConfirm() })
+  assert.equal(postDeferreds.length, 2)
+  await act(async () => {
+    postDeferreds[1].resolve({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
+    await confirmBPromise
+  })
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+  assert.equal(closeCount, 1)
+
+  // A의 저장이 이제야 거부(code 없음, 전송 불확실)로 도착한다 — 이미 폐기된 세션의 완료다.
+  await act(async () => {
+    postDeferreds[0].reject(new TypeError("network disconnected"))
+    await confirmAPromise
+  })
+
+  assert.equal(
+    walletCalls,
+    walletCallsBeforeConfirm,
+    "이미 폐기된 세션 A의 거부는 재조회(fetchSummary)조차 시도하면 안 된다(isStale()이 fetchSummary보다 먼저 확인된다)",
+  )
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-남작",
+    "A의 뒤늦은 거부가 이미 확정된 B의 값을 덮어쓰면 안 된다",
+  )
+  assert.equal(result.current.confirmStatus, "idle")
+  assert.equal(result.current.confirmError, null, "폐기된 세션의 거부가 지금 화면(B)에 오류를 남기면 안 된다")
+  assert.equal(closeCount, 1, "A의 뒤늦은 완료가 onClose를 추가로 부르면 안 된다")
+})
+
 test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계정이 바뀌면, 이전 계정의 재조회 결과로 지금 계정 화면을 덮어쓰지 않는다", async () => {
   resetStores()
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
@@ -594,8 +719,9 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
     entitlementsCalls += 1
     return {
       entitlements: entitlementsCalls === 1
-        ? [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }]
+        ? [...allDefaultPhotoEntitlements, { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }]
         : [
+          ...allDefaultPhotoEntitlements,
           { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
           { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" }, // 방금 업적으로 획득
         ],
@@ -611,8 +737,11 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
 
   const renderGrid = () => render(React.createElement(ProfileEditOptionGrid, {
     activeTab: editor.result.current.activeTab,
+    ownedPhotoOptions: editor.result.current.ownedPhotoOptions,
+    photoListStatus: editor.result.current.photoListStatus,
     selectedPhotoItemId: editor.result.current.draftPhotoItemId,
     onSelectPhoto: editor.result.current.setDraftPhotoItemId,
+    onRetryLoadPhotos: editor.result.current.retryLoadPhotos,
     ownedBorderOptions: editor.result.current.ownedBorderOptions,
     borderListStatus: editor.result.current.borderListStatus,
     selectedBorderItemId: editor.result.current.draftBorderItemId,
@@ -648,4 +777,64 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
   const expectedNewBorderSrc = encodeURI("/shopItem/player- profileborder/프로필프레임-광대.png".normalize("NFC"))
   assert.ok(borderImgs.some((img) => img.getAttribute("src") === expectedNewBorderSrc), "방금 업적으로 획득한 테두리 이미지가 실제 DOM에 없다")
   afterGrid.unmount()
+})
+
+test("F-13 AC-03(CODEX-5): 사진 탭도 테두리 탭과 같은 계약을 따른다 — 정적 목록이 아니라 실제 entitlements에서 보유한 사진만 실제 DOM 옵션으로 보이고, 보유하지 않은 사진은 보이지 않는다", async () => {
+  // CODEX-5 반송 근거: 이전까지 사진 탭은 항상 PROFILE_EDIT_PHOTO_OPTIONS 정적 배열
+  // 16종 전부를 그렸다 — 실제 서버가 응답한 entitlements와 무관했다(계정이 일부만
+  // 보유해도, 심지어 하나도 보유하지 않아도 16장이 그대로 보였다). 이 시험은 계정이
+  // 카탈로그 16종 중 일부만 실제로 보유한 상태를 흉내내, 실제 렌더된 DOM이 보유한
+  // 사진만 옵션으로 보여주는지 확인한다(보유하지 않은 사진은 옵션 자체가 존재하지
+  // 않아야 한다).
+  resetStores()
+  const ownedPhotoIds = ["player-profile-기사", "player-profile-드워프"]
+  const unownedPhotoIds = PROFILE_EDIT_PHOTO_OPTIONS
+    .map((o) => o.itemId)
+    .filter((itemId) => !ownedPhotoIds.includes(itemId))
+  assert.ok(unownedPhotoIds.length > 0, "이 시험이 의미가 있으려면 미보유 사진이 최소 하나는 있어야 한다")
+
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? walletOk
+    : {
+      entitlements: [
+        ...ownedPhotoIds.map((itemId) => ({ itemId, itemType: PROFILE_PHOTO_ITEM_TYPE })),
+        { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
+      ],
+      loadout: { selectedProfilePhotoId: "player-profile-기사", selectedProfileBorderId: "profile-border-평민" },
+    })
+
+  const editor = renderHook(() => useProfileBorderEditor({ open: true, onClose: () => {} }))
+  await waitFor(() => assert.equal(editor.result.current.photoListStatus, "ready"))
+  assert.deepEqual(
+    editor.result.current.ownedPhotoOptions.map((o) => o.itemId).sort(),
+    [...ownedPhotoIds].sort(),
+    "보유하지 않은 사진이 ownedPhotoOptions에 섞이면 안 된다",
+  )
+
+  const { container } = render(React.createElement(ProfileEditOptionGrid, {
+    activeTab: editor.result.current.activeTab,
+    ownedPhotoOptions: editor.result.current.ownedPhotoOptions,
+    photoListStatus: editor.result.current.photoListStatus,
+    selectedPhotoItemId: editor.result.current.draftPhotoItemId,
+    onSelectPhoto: editor.result.current.setDraftPhotoItemId,
+    onRetryLoadPhotos: editor.result.current.retryLoadPhotos,
+    ownedBorderOptions: editor.result.current.ownedBorderOptions,
+    borderListStatus: editor.result.current.borderListStatus,
+    selectedBorderItemId: editor.result.current.draftBorderItemId,
+    onSelectBorder: editor.result.current.setDraftBorderItemId,
+    onRetryLoadBorders: editor.result.current.retryLoadBorders,
+  }))
+
+  const photoImgs = [...container.querySelectorAll("img")]
+  assert.equal(photoImgs.length, ownedPhotoIds.length, "실제 DOM 옵션 수는 보유한 사진 수와 정확히 같아야 한다")
+  for (const itemId of ownedPhotoIds) {
+    const { src } = PROFILE_EDIT_PHOTO_OPTIONS.find((o) => o.itemId === itemId)
+    const expected = encodeURI(src.normalize("NFC"))
+    assert.ok(photoImgs.some((img) => img.getAttribute("src") === expected), `보유한 사진 ${itemId}가 실제 DOM에 없다`)
+  }
+  for (const itemId of unownedPhotoIds) {
+    const { src } = PROFILE_EDIT_PHOTO_OPTIONS.find((o) => o.itemId === itemId)
+    const forbidden = encodeURI(src.normalize("NFC"))
+    assert.ok(!photoImgs.some((img) => img.getAttribute("src") === forbidden), `보유하지 않은 사진 ${itemId}가 실제 DOM 옵션에 보이면 안 된다`)
+  }
 })
