@@ -679,16 +679,30 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
     return loadout;
 };
 
-// F-13 AC-02(CODEX-9): 겹치는 equipProfileAppearance 확정들이 네트워크 사정으로 서버에
-// 뒤바뀐 순서로 도착해도, 실제로 가장 나중에 "시작된" 의도만 커밋되도록 계정별 마지막
-// 적용 clientIntentAt(사용자가 확인을 누른 실제 클라이언트 시각, ms)을 기억해 둔다.
-// matchmaking.js의 playerRoom/gameSessions와 같은 이유로 이 서버는 이미 단일 프로세스
-// 인메모리 상태를 전제하므로(수평 확장·재시작 후 리셋은 이 슬라이스의 우려 범위 밖 —
-// 새 세션은 이 계정 세션 안에서의 겹침 문제 자체가 다시 없다), 새 DB 컬럼 없이도 이
-// 보장을 구현할 수 있다. 실제 직렬화(아래 SELECT ... FOR UPDATE)와 함께 있어야만 의미가
-// 있다 — Map만으로는 "먼저 통과 판정을 받은 요청의 느린 커밋이 나중 판정을 받은 요청의
-// 빠른 커밋을 덮어쓰는" 순서 역전을 막지 못한다.
-const lastProfileEquipIntentAtByUser = new Map();
+// F-13 AC-02 설계 감사(운영자, 2026-09-11) — CODEX-9가 도입했던 clientIntentAt(클라이언트
+// 벽시계 시각) + lastProfileEquipIntentAtByUser(인메모리 Map) 높은-수위 표시 방식은 세 가지로
+// 깨져 있어 제거했다:
+//   1) Date.now()는 전순서가 아니다 — 같은 밀리초에 겹친 두 클릭은 순서를 구분할 수 없고,
+//      기기 시계가 뒤로 가거나 어긋나면 정당한 나중 요청이 거부된다. 미래의 유한한 시각값이
+//      들어오면 그 뒤로 영영(세션이 바뀌어도) 그 계정의 의도 판정을 오염시킨다.
+//   2) Map 갱신이 트랜잭션 커밋보다 먼저 실행됐다 — update가 던지거나 커밋 자체가 실패해도
+//      Map은 이미 전진해 있어, 그 뒤의 유효한 재시도가 조용히 무시될 수 있었다(Map이 DB와
+//      원자적이지 않음).
+//   3) 인메모리 값은 프로세스 재시작으로 사라지고 인스턴스마다 다르다 — 영속적 장착 보장을
+//      전제로 삼을 수 없다.
+// 대체 설계는 새 상태를 전혀 두지 않는다: 아래 SELECT ... FOR UPDATE 행 잠금이 겹치는
+// 두 확정 요청을 이미 완전히 직렬화하므로(한쪽이 커밋할 때까지 다른 쪽은 대기), 서버는
+// "먼저 잠금을 놓은 요청이 먼저, 그 다음 요청이 나중" 순서로 자연스럽게 커밋한다 — 이
+// 순서는 동일 커넥션에서 순서대로 보낸 요청이라면 사실상 거의 항상 전송 순서와 일치한다
+// (진짜 네트워크 재정렬은 극히 드물다). 사용자가 지금 보는 화면이 "가장 나중에 시작한
+// 확정"과 항상 일치하는지는 프런트(economy.store.js의 loadoutAttemptSeq)가 순수 클라이언트
+// 로컬 판단만으로 이미 보장한다(같은 탭 안에서 더 늦게 시작된 시도가 있으면 이전 시도의
+// 응답은 도착 순서와 무관하게 절대 store.loadout에 반영되지 않는다) — 이 보장은 서버가
+// 무엇을 커밋했는지와 무관하게 성립하므로, 서버 쪽에 별도의 순서 추적 상태가 없어도
+// 화면은 항상 사용자의 마지막 결정을 보여준다. 남는 잔여 위험(진짜 네트워크 재정렬로
+// DB 최종값이 화면과 다르게 커밋되는 경우)은 극히 드물고, 다음 자연스러운 재조회(편집기
+// 재오픈·새로고침·재로그인)에서 스스로 바로잡힌다 — 이 잔여 위험을 감수하는 쪽이 세
+// 가지 실제 결함을 가진 메커니즘을 유지하는 것보다 낫다는 것이 이번 감사의 결론이다.
 
 /** F-13 AC-01/AC-02: 프로필 사진·테두리를 하나의 확정으로 함께 저장한다. photoItemId·
  *  borderItemId 각각은 넘기지 않으면(undefined) 그 슬롯을 건드리지 않는다 — 사진만
@@ -696,8 +710,9 @@ const lastProfileEquipIntentAtByUser = new Map();
  *  소유권 검사(ITEM_TYPE_MISMATCH/ITEM_NOT_OWNED)를 거치며, 검증은 어떤 컬럼도 갱신하기
  *  전에 전부 끝낸다 — 한쪽이라도 실패하면 loadout.update가 아예 호출되지 않아 이전 상태가
  *  그대로 유지된다(부분 저장 없음). 두 컬럼을 실제로 바꾸는 곳은 이 함수 끝의 단일
- *  loadout.update(updates) 한 번뿐이라, DB에는 하나의 UPDATE 문으로만 반영된다. */
-const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, clientIntentAt }, db = defaultDb()) => {
+ *  loadout.update(updates) 한 번뿐이라, DB에는 하나의 UPDATE 문으로만 반영된다. 겹치는
+ *  두 확정 요청은 아래 행 잠금으로 완전히 직렬화된다(동시 갱신 없음). */
+const equipProfileAppearance = async ({ userId, photoItemId, borderItemId }, db = defaultDb()) => {
     const slots = [
         ['PROFILE_PHOTO', photoItemId],
         ['PROFILE_BORDER', borderItemId],
@@ -742,32 +757,16 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, clien
         defaults: { user_id: userId },
     });
 
-    // F-13 AC-02(CODEX-9): 여기서부터 실제 컬럼을 바꾸는 지점까지를 SELECT ... FOR UPDATE로
-    // 잠근 트랜잭션 안에 둔다 — applyLedgerTransaction의 지갑 잠금과 같은 이유다. 겹치는
-    // 두 확정 요청이 동시에 이 함수를 호출해도, 뒤에 도착한 쪽은 앞선 트랜잭션이 커밋(또는
-    // 롤백)해 잠금을 놓을 때까지 완전히 기다렸다가에야 자신의 clientIntentAt 판정을 시작한다
-    // — "판정은 먼저 통과했는데 실제 커밋은 늦게 끝나 더 최신 판정의 커밋을 덮어쓰는" 순서
-    // 역전이 이 직렬화 덕분에 일어날 수 없다(판정과 커밋이 같은 잠금 구간 안에서 원자적).
-    // clientIntentAt이 없는 호출(과거 클라이언트 등)은 순서 보장 없이 기존처럼 무조건
-    // 적용한다.
+    // 여기서부터 실제 컬럼을 바꾸는 지점까지를 SELECT ... FOR UPDATE로 잠근 트랜잭션 안에
+    // 둔다 — applyLedgerTransaction의 지갑 잠금과 같은 이유다. 겹치는 두 확정 요청이 동시에
+    // 이 함수를 호출해도, 뒤에 도착한 쪽은 앞선 트랜잭션이 커밋(또는 롤백)해 잠금을 놓을
+    // 때까지 완전히 기다렸다가에야 자신의 갱신을 시작한다(동시 갱신 없음, 전부-아니면-무).
     return db.sequelize.transaction(async (t) => {
         const loadout = await models.EconomyLoadout.findOne({
             where: { user_id: userId },
             transaction: t,
             lock: t.LOCK.UPDATE,
         });
-
-        if (typeof clientIntentAt === 'number' && Number.isFinite(clientIntentAt)) {
-            const lastIntentAt = lastProfileEquipIntentAtByUser.get(userId) ?? 0;
-            if (clientIntentAt <= lastIntentAt) {
-                // 이미 더 나중에 시작된 확정이 커밋된 적이 있다 — 이 오래된 의도는 조용히
-                // 적용하지 않고(재처리 방지와 같은 정신) 지금의 실제 loadout을 그대로
-                // 돌려준다(요청 자체를 오류로 취급하지 않는다 — 보낼 당시엔 이 요청도
-                // 정당한 최신 시도였다).
-                return loadout;
-            }
-            lastProfileEquipIntentAtByUser.set(userId, clientIntentAt);
-        }
 
         await loadout.update(updates, { transaction: t });
         return loadout;

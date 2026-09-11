@@ -186,16 +186,18 @@ export const useEconomyStore = create((set, get) => ({
     // 규칙 — 클라이언트가 "지금 보여줄 값"을 정하는 용도일 뿐이다).
     const attemptSeq = get().loadoutAttemptSeq + 1
     set({ loadoutAttemptSeq: attemptSeq })
-    // F-13 AC-02(CODEX-9) — "가장 나중에 시작된 시도가 이긴다"는 위 클라이언트 규칙만으로는
-    // 실제 서버 최종 저장값과의 일치를 보장하지 못한다: 겹치는 두 확정 요청이 서로 다른
-    // 커넥션으로 나가면, 실제로 나중에 커밋되는 쪽은 네트워크 사정에 따라 바뀔 수 있다(A가
-    // 더 먼저 시작됐어도 서버에는 B보다 늦게 도달해 늦게 커밋될 수 있다) — 그래서 이 문제는
-    // 클라이언트가 응답 순서를 더 정교하게 추측해서 풀 수 없다. 대신 사용자가 이 확정을
-    // "시작한" 실제 시각(clientIntentAt)을 서버에 함께 보내, 서버(equipProfileAppearance,
-    // backend/service/economy.service.js)가 행 잠금으로 겹치는 확정들을 완전히 직렬화하고
-    // "가장 나중에 시작된 의도"만 실제로 커밋되도록 보장한다 — 어느 요청이 먼저 커밋을
-    // 시도하든 결과는 항상 같다(도착 순서 무관, 실제 DB 상태 자체가 옳다).
-    const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId, clientIntentAt: Date.now() })
+    // F-13 AC-02 설계 감사(운영자, 2026-09-11) — 이전에는 이 시점에 clientIntentAt(Date.now())을
+    // 함께 보내 서버가 겹치는 확정들의 커밋 순서를 재구성하도록 시도했으나, 벽시계는 전순서가
+    // 아니고(같은 밀리초 충돌), 시계 역행/오차가 정당한 요청을 거부하며, 그 판정을 지탱하던
+    // 서버 인메모리 상태는 재시작·다중 인스턴스에서 사라진다는 세 가지 결함이 있어 제거했다
+    // (backend/service/economy.service.js의 equipProfileAppearance 주석 참고). 화면에 무엇을
+    // 보여줄지는 여전히 위 attemptSeq만으로 완전히 결정된다 — 같은 탭에서 이 호출보다 더
+    // 나중에 시작된 확정이 있으면, 이 호출의 응답이 어떤 순서로 도착하든 store.loadout에
+    // 반영될 자격이 없다(아래 두 재확인). 서버는 행 잠금(equipProfileAppearance)으로 겹치는
+    // 두 확정의 갱신 자체만 원자적으로 직렬화할 뿐, 어느 쪽이 "의도상 더 나중"인지는 더 이상
+    // 판단하지 않는다 — 실제 네트워크 재정렬로 커밋 순서가 뒤바뀌는 것은 극히 드물고, 그런
+    // 잔여 불일치는 다음 자연스러운 재조회(편집기 재오픈·새로고침)에서 스스로 바로잡힌다.
+    const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId })
     if (get().requestGeneration !== generation) return result
     if (get().loadoutAttemptSeq !== attemptSeq) return result
     set((state) => ({ loadout: { ...state.loadout, ...result.loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))

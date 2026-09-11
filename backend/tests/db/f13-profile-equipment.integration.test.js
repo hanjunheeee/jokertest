@@ -178,22 +178,25 @@ test('AC-01: 동시에 서로 다른 값으로 확정 요청이 들어와도 실
     assert.equal(loadout.selected_profile_border_id, 'profile-border-귀족');
 });
 
-test('AC-02(CODEX-9): 실제 DB에서도 더 나중에 의도된 확정(B)이 먼저 처리·커밋된 뒤 더 오래된 의도(A)가 뒤늦게 도착해도 B의 커밋을 덮어쓰지 못한다', async (t) => {
+test('AC-02(설계 감사, 2026-09-11): clientIntentAt은 더 이상 순서 판정에 쓰이지 않는다 — 실제 DB에서도 겹치지 않는 순차 확정은 나중 호출이 이전 값을 정상 대체한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
+    // 운영자 설계 감사 근거: Date.now() 기반 clientIntentAt + 인메모리 Map은 같은 밀리초
+    // 충돌·시계 역행/오차·프로세스 재시작에 취약해 제거됐다(economy.service.js 주석 참고).
+    // 이 시험은 그 필드를 실어 보내도 무시된 채 행 잠금만으로 정상적인 전부-아니면-무
+    // 원자적 갱신이 이뤄지는지 확인한다 — 화면에 "어느 의도가 마지막인지"는 더 이상 서버가
+    // 아니라 economy.store.js의 loadoutAttemptSeq(클라이언트 로컬 판단)가 보장한다.
     const userId = await createLocalUser('f13intent');
     await economyService.getWalletSummary(userId);
     await economyService.grantAchievementItem({ userId, itemId: 'profile-border-귀족', itemType: 'PROFILE_BORDER', referenceEventId: `grant-${userId}` });
 
-    // B: 더 나중에(clientIntentAt 2000) 의도된 확정이 실제로는 먼저 도착해 먼저 처리·커밋된다.
-    await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-귀족', clientIntentAt: 2000 });
-    // A: 더 먼저(clientIntentAt 1000) 의도된 확정이 실제로는 늦게 도착한다.
-    const result = await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-평민', clientIntentAt: 1000 });
+    await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-평민', clientIntentAt: 9999 });
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-귀족', clientIntentAt: 1 });
 
-    assert.equal(result.selected_profile_border_id, 'profile-border-귀족', '더 오래된 의도(A)가 나중에 도착해도 이미 커밋된 더 최신 의도(B)를 덮어쓰면 안 된다');
+    assert.equal(result.selected_profile_border_id, 'profile-border-귀족', 'clientIntentAt 값과 무관하게 나중에 호출된 확정이 이전 값을 정상적으로 대체해야 한다');
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
-    assert.equal(loadout.selected_profile_border_id, 'profile-border-귀족', '실제 DB에 영속된 최종 상태도 더 최신 의도(B)여야 한다');
+    assert.equal(loadout.selected_profile_border_id, 'profile-border-귀족', '실제 DB에 영속된 최종 상태도 마지막 호출의 값이어야 한다');
 });
 
 // ── AC-03/AC-04: 구매·업적 지급 직후 조회, 계정별 복원 ───────────────────────

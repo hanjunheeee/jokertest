@@ -466,15 +466,13 @@ test("F-13(CODEX-9): equipProfile이 시작된 뒤에 시작된 fetchSummary가 
   )
 })
 
-test("F-13 AC-02(CODEX-9): equipProfile은 실제 서버 순서 판정에 쓸 수 있게 이 확정을 시작한 클라이언트 시각(clientIntentAt)을 요청에 함께 싣는다", async () => {
-  // CODEX-9 반송 근거: "가장 나중에 시작된 시도가 이긴다"는 클라이언트 규칙(attemptSeq)
-  // 만으로는 실제 서버 최종 저장값과의 일치를 보장하지 못한다 — 겹치는 두 확정이 서로
-  // 다른 커넥션으로 나가면 실제 커밋 순서가 시작 순서와 다를 수 있기 때문이다. 그래서
-  // "언제 시작됐는가"라는 판단 근거 자체를 서버로 넘겨, 서버(equipProfileAppearance)가
-  // 겹치는 확정들을 직렬화해 실제로 가장 나중에 시작된 의도만 커밋되도록 보장해야 한다
-  // (backend/service/economy.service.test.js의 대응 시험이 그 서버 쪽 계약을 고정한다).
-  // 이 시험은 클라이언트가 그 판단 근거(clientIntentAt)를 실제로 매 확정마다 보낸다는
-  // 것만 고정한다 — 값 자체는 서버 시각과 비교되므로 실제 시각(Date.now())이어야 한다.
+test("F-13 AC-02 설계 감사(2026-09-11): equipProfile은 더 이상 clientIntentAt(클라이언트 벽시계 시각)을 요청에 싣지 않는다", async () => {
+  // 운영자 설계 감사 근거: Date.now() 기반 clientIntentAt은 같은 밀리초 충돌·시계 역행/오차·
+  // 그 판정을 지탱하던 서버 인메모리 상태의 비영속성이라는 세 가지 결함이 있어 제거됐다
+  // (economy.service.js의 equipProfileAppearance 주석 참고). 이 시험은 그 제거가 실제로
+  // 반영됐는지(허용되지 않은 필드로 되살아나지 않는지)만 고정한다 — "가장 나중에 시작된
+  // 시도만 store.loadout에 반영된다"는 화면 계약 자체는 순수 클라이언트 로컬 판단
+  // (loadoutAttemptSeq)만으로 이미 보장되며, 아래 다른 시험들이 그 계약을 검증한다.
   resetStore()
   const seenBodies = []
   postImpl = async (endpoint, body) => {
@@ -482,17 +480,10 @@ test("F-13 AC-02(CODEX-9): equipProfile은 실제 서버 순서 판정에 쓸 �
     return { loadout: { selectedProfileBorderId: "profile-border-남작" } }
   }
 
-  const before = Date.now()
   await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
-  const after = Date.now()
 
   assert.equal(seenBodies.length, 1)
-  assert.equal(typeof seenBodies[0].clientIntentAt, "number")
-  assert.equal(Number.isFinite(seenBodies[0].clientIntentAt), true)
-  assert.equal(seenBodies[0].clientIntentAt >= before && seenBodies[0].clientIntentAt <= after, true, "clientIntentAt은 이 호출이 시작된 실제 시각이어야 한다")
-
-  await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-귀족" })
-  assert.equal(seenBodies[1].clientIntentAt >= seenBodies[0].clientIntentAt, true, "더 나중에 시작된 확정일수록 clientIntentAt도 더 크거나 같아야 한다")
+  assert.deepEqual(Object.keys(seenBodies[0]).sort(), ["borderItemId", "photoItemId"], "clientIntentAt 없이 photoItemId/borderItemId만 실려야 한다")
 })
 
 // ── F-08 R-IMPL: 서버 확정 거부 vs 전송 불확실 구분 ──────────────────────────

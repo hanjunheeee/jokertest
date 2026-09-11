@@ -816,62 +816,40 @@ test('F-13 AC-02: 아무 슬롯도 넘기지 않으면 거부된다', async () =
     );
 });
 
-// ── F-13 AC-02(CODEX-9): 겹치는 확정의 실제 서버 커밋 순서 보장 ──────────────────
+// ── F-13 AC-02 설계 감사(운영자, 2026-09-11): clientIntentAt/인메모리 Map 제거 ──────
 //
-// 반송 근거: "가장 나중에 시작된 시도가 이긴다"는 economy.store.js(프론트)의 클라이언트
-// 규칙만으로는 실제 서버 최종 저장값과의 일치를 보장하지 못한다 — 겹치는 두 확정 요청이
-// 서로 다른 커넥션으로 나가면, 실제 DB 커밋은 클라이언트가 요청을 "보낸" 순서와 무관하게
-// 뒤바뀔 수 있다. 아래 시험은 실제로 서버에 "도착/처리"되는 순서를 클라이언트의 확정
-// "의도" 순서와 정반대로 뒤집어, 그래도 최종 저장값이 항상 의도 순서(clientIntentAt)를
-// 따르는지 직접 증명한다 — 실제 호출 순서(fake db가 처리하는 순서)만으로는 이 보장이
-// 성립하지 않는다는 것이 핵심이므로, 일부러 "더 나중 의도(B)를 먼저 호출·커밋"시킨 뒤
-// "더 오래된 의도(A)를 그 다음에 호출"해 A가 B를 덮어쓰지 못하는지 확인한다.
+// 이전 CODEX-9 버전은 클라이언트 벽시계 시각(clientIntentAt)과 인메모리 Map으로 겹치는
+// 확정의 "의도 순서"를 서버가 재구성하려 했으나, (1) 같은 밀리초 충돌로 유효한 갱신을
+// 잃고 (2) 시계 역행/오차가 정당한 나중 요청을 거부하며 (3) Map이 트랜잭션 커밋보다 먼저
+// 갱신돼 롤백에도 의도가 전진하고 재시작·다중 인스턴스에서 사라진다는 세 가지 결함이 있어
+// 제거했다(economy.service.js의 equipProfileAppearance 주석 참고). 아래 시험은 그 필드가
+// 남아 있지 않음(넘겨도 조용히 무시됨)과, 겹치지 않는 정상 순차 호출에서는 여전히 나중
+// 호출이 이전 값을 정상적으로 대체함(행 잠금에 의한 전부-아니면-무 원자성 자체는 그대로
+// 유효함)을 고정한다. "실제 네트워크 재정렬로 도착 순서가 뒤바뀌어도 서버가 의도 순서를
+// 보존한다"는 보장 자체는 더 이상 서버 책임이 아니다 — 화면 정합성은 economy.store.js의
+// loadoutAttemptSeq(순수 클라이언트 로컬 판단)가 별도로 보장한다(economy.store.test.js 참고).
 
-test('F-13 AC-02(CODEX-9): 더 나중에 의도된 확정(B)이 서버에 먼저 도착해 커밋된 뒤, 더 오래된 의도(A)가 뒤늦게 도착해도 B의 커밋을 덮어쓰지 못한다', async () => {
+test('F-13 AC-02(설계 감사): 겹치지 않는 순차 확정에서는 나중 호출이 이전 값을 정상적으로 대체한다(행 잠금 원자성 회귀 방지)', async () => {
     const db = createFakeDb();
-    const userId = 'user-f13-intent-order-reversed';
-    await grantBalance(db, userId, 1000);
-    await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
-    await economyService.purchaseItem({ userId, itemId: OTHER_PURCHASABLE_ITEM_ID, referenceEventId: `buy2-${userId}` }, db);
-
-    // B: 사용자가 더 나중에(클라이언트 시각 2000) 확정을 시작했지만, 서버에는 A보다
-    // 먼저 도달해 먼저 처리·커밋된다(네트워크 재정렬).
-    await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, clientIntentAt: 2000 }, db);
-    // A: 사용자가 더 먼저(클라이언트 시각 1000) 확정을 시작했지만, 서버에는 B보다 늦게
-    // 도달한다.
-    const result = await economyService.equipProfileAppearance({ userId, borderItemId: OTHER_PURCHASABLE_ITEM_ID, clientIntentAt: 1000 }, db);
-
-    assert.equal(
-        result.selected_profile_border_id,
-        PURCHASABLE_ITEM_ID,
-        '더 오래된 의도(A)가 나중에 도착해도 이미 커밋된 더 최신 의도(B)의 결과를 덮어쓰면 안 된다(호출 자체는 오류로 취급하지 않되, 조용히 적용하지 않는다)',
-    );
-    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
-    assert.equal(loadout.selected_profile_border_id, PURCHASABLE_ITEM_ID, '실제로 영속된 최종 상태도 더 최신 의도(B)여야 한다 — 클라이언트가 무엇을 최종값으로 믿든, 서버 진실 자체가 항상 이래야 한다');
-});
-
-test('F-13 AC-02(CODEX-9): 정상적인 처리 순서(더 먼저 의도된 확정이 먼저 처리됨)에서도 더 나중 의도가 이전 값을 정상적으로 대체한다', async () => {
-    const db = createFakeDb();
-    const userId = 'user-f13-intent-order-normal';
-    await grantBalance(db, userId, 1000);
-    await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
-
-    await economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID, clientIntentAt: 1000 }, db);
-    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, clientIntentAt: 2000 }, db);
-
-    assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, '순서가 뒤집히지 않은 정상 경로에서는 최신 의도가 그대로 반영되어야 한다(회귀 방지)');
-});
-
-test('F-13 AC-02(CODEX-9): clientIntentAt을 보내지 않으면(과거 클라이언트 등) 순서 판정 없이 기존처럼 항상 적용된다', async () => {
-    const db = createFakeDb();
-    const userId = 'user-f13-intent-order-legacy';
+    const userId = 'user-f13-sequential-order';
     await grantBalance(db, userId, 1000);
     await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
 
     await economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID }, db);
     const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID }, db);
 
-    assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, 'clientIntentAt 없이 호출하는 기존 계약(순서 보장 없이 무조건 적용)은 그대로 유지되어야 한다');
+    assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, '나중에 호출된 확정이 이전 값을 정상적으로 대체해야 한다');
+});
+
+test('F-13 AC-02(설계 감사): clientIntentAt을 실어 보내도(구버전 클라이언트·프록시 잔재 등) 조용히 무시되고 갱신 자체는 정상 적용된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-ignored-intent-field';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, clientIntentAt: 12345 }, db);
+
+    assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, 'clientIntentAt은 더 이상 읽히지 않으므로 갱신 자체는 정상 적용되어야 한다');
 });
 
 // ── F-13 AC-05 전제: getPublicProfileLoadouts(대기방·인게임 공개 노출) ──────────

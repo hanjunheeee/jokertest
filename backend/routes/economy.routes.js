@@ -48,12 +48,11 @@ const ALLOWED_GRANT_FIELDS = new Set(["userId", "reason", "referenceEventId"]);
 const ALLOWED_BULK_PURCHASE_FIELDS = new Set(["items", "referenceEventId"]);
 const ALLOWED_BULK_PURCHASE_ITEM_FIELDS = new Set(["itemId"]);
 // F-13(AC-01/AC-02): 프로필 사진·테두리 동시 확정 전용 필드. photoItemId/borderItemId
-// 외의 값이 오면 즉시 거부한다(다른 write 라우트와 같은 관례, CODEX-2 재검토).
-// clientIntentAt(CODEX-9): 이 확정을 사용자가 실제로 "시작한" 클라이언트 시각(ms) —
-// 겹치는 확정 요청이 네트워크 사정으로 서버에 뒤바뀐 순서로 도착해도, 서버가 실제로
-// 가장 나중에 시작된 의도만 커밋하도록 판단하는 근거로 쓴다(economyService.equipProfileAppearance
-// 참고). 없으면(과거 클라이언트 등) 순서 보장 없이 기존처럼 무조건 적용한다.
-const ALLOWED_EQUIP_PROFILE_FIELDS = new Set(["photoItemId", "borderItemId", "clientIntentAt"]);
+// 외의 값이 오면 즉시 거부한다(다른 write 라우트와 같은 관례, CODEX-2 재검토). clientIntentAt
+// (클라이언트 벽시계 시각을 서버 순서 판정 근거로 쓰던 필드)은 운영자 설계 감사(2026-09-11)
+// 로 제거했다 — economyService.equipProfileAppearance의 새 주석 참고(같은 밀리초 충돌·시계
+// 역행/오차·비영속 인메모리 상태라는 세 가지 결함이 있었다).
+const ALLOWED_EQUIP_PROFILE_FIELDS = new Set(["photoItemId", "borderItemId"]);
 
 const rejectUnknownFields = (body, allowedFields, errorCode) => {
     const unknown = Object.keys(body ?? {}).filter((key) => !allowedFields.has(key));
@@ -163,21 +162,17 @@ router.post("/equip-profile", verifyToken, async (req, res, next) => {
     try {
         const body = req.body ?? {};
         rejectUnknownFields(body, ALLOWED_EQUIP_PROFILE_FIELDS, "UNKNOWN_EQUIP_PROFILE_FIELD");
-        const { photoItemId, borderItemId, clientIntentAt } = body;
+        const { photoItemId, borderItemId } = body;
         if (photoItemId !== undefined && typeof photoItemId !== "string") {
             throw createError("photoItemId는 문자열이어야 합니다.", 400, "INVALID_EQUIP_PROFILE_REQUEST");
         }
         if (borderItemId !== undefined && typeof borderItemId !== "string") {
             throw createError("borderItemId는 문자열이어야 합니다.", 400, "INVALID_EQUIP_PROFILE_REQUEST");
         }
-        if (clientIntentAt !== undefined && (typeof clientIntentAt !== "number" || !Number.isFinite(clientIntentAt))) {
-            throw createError("clientIntentAt은 숫자여야 합니다.", 400, "INVALID_EQUIP_PROFILE_REQUEST");
-        }
         const loadout = await economyService.equipProfileAppearance({
             userId: req.user.uuid,
             photoItemId,
             borderItemId,
-            clientIntentAt,
         });
         res.json({ loadout: serializeLoadout(loadout) });
     } catch (error) { next(error); }

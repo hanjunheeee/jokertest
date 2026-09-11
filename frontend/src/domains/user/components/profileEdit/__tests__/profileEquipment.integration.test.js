@@ -947,6 +947,60 @@ test("F-13 AC-03(CODEX-2): 실제 useAchievements 훅을 마운트해 실제 업
   assert.ok(entitlementsCalls > walletCallsBeforeAchievements, "실제 업적 조회 성공이 economy 재조회를 스스로 유발해야 한다(테스트가 대신 호출한 것이 아니다)")
 })
 
+test("F-13 AC-03(설계 감사, 2026-09-11): 편집기 마운트가 시작시킨(더 오래된) 초기 조회가 실제 useAchievements 성공이 유발한(더 최신) 조회보다 늦게 응답해도, 방금 획득한 테두리가 선택 목록에서 다시 사라지지 않는다", async () => {
+  // 리뷰 지적 근거: "economy.store.js의 fetchSummary에는 조회 간 순서 검사가 없어 획득 전
+  // 지연 응답이 새 소유품·잔액을 덮어쓰고 선택지를 다시 제거할 수 있다." economy.store.test.js
+  // 가 이미 store 레벨에서 이 레이스(summaryRequestSeq 가드)를 직접 호출로 증명하고,
+  // 바로 위 CODEX-2 시험이 useAchievements 훅의 실제 연결을 증명하지만, 둘을 합쳐 "실제 훅
+  // 배선 위에서 진짜 레이스(마운트가 시작한 오래된 조회가 achievements 갱신보다 늦게 응답)"
+  // 까지 증명한 시험은 없었다 — 이 시험이 그 공백을 메운다.
+  resetStores()
+  const initialGetDeferreds = []
+  // 편집기 마운트가 스스로 시작시키는 초기 fetchSummary를 붙잡아둔다(아직 획득 전 — 평민만
+  // 보유한 오래된 응답을 나중에 돌려주기 위해).
+  getImpl = (endpoint) => new Promise((resolve) => { initialGetDeferreds.push({ endpoint, resolve }) })
+
+  const editor = renderHook(() => useProfileBorderEditor({ open: true, onClose: () => {} }))
+  await waitFor(() => assert.equal(initialGetDeferreds.length, 2))
+  assert.equal(editor.result.current.borderListStatus, "loading", "초기 조회가 아직 응답하지 않았으므로 loading이어야 한다")
+
+  // 실제 업적 조회 성공(useAchievements 내부의 syncEconomyIfSuccess)이 스스로 유발하는
+  // 새 fetchSummary는 초기 조회보다 먼저 응답한다(신선한 값 — 광대 테두리 포함).
+  getMyAchievementsImpl = async () => ([
+    { id: "invited-guests-노블-win-10", current: 10, threshold: 10, achieved: true, granted: true },
+  ])
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? walletOk
+    : {
+      entitlements: [
+        { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
+        { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" }, // 방금 업적으로 획득
+      ],
+      loadout: { selectedProfileBorderId: "profile-border-평민" },
+    })
+  const achievementsHook = renderHook(() => useAchievements())
+  await waitFor(() => assert.equal(achievementsHook.result.current.status, "success"), { timeout: 1000 })
+  await waitFor(() => assert.deepEqual(
+    editor.result.current.ownedBorderOptions.map((o) => o.itemId).sort(),
+    ["profile-border-광대", "profile-border-평민"],
+  ), { timeout: 1000 })
+
+  // 편집기 마운트가 시작시켰던(더 오래된) 초기 조회가 이제야 획득 전의 오래된 값으로
+  // 응답한다 — 이미 반영된 신선한 소유 목록을 되돌리면 안 된다.
+  await act(async () => {
+    initialGetDeferreds.forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
+      ? walletOk
+      : { entitlements: [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }], loadout: { selectedProfileBorderId: "profile-border-평민" } }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  assert.deepEqual(
+    editor.result.current.ownedBorderOptions.map((o) => o.itemId).sort(),
+    ["profile-border-광대", "profile-border-평민"],
+    "편집기 마운트가 시작시킨 더 오래된 조회의 뒤늦은 응답이 실제 업적 갱신으로 이미 반영된 소유 목록을 되돌리면 안 된다",
+  )
+})
+
 test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사진 탭은 16종 실제 이미지 전부를, 테두리 탭은 방금 업적으로 획득한 테두리를 실제 DOM 옵션으로 보여준다 — 훅 필드가 아니라 렌더된 화면 자체를 검증한다", async () => {
   // CODEX-4 반송 근거: 지금까지의 AC-03 시험은 useProfileBorderEditor 훅이 돌려주는
   // ownedBorderOptions 배열(필드)만 확인했을 뿐, 실제 화면(ProfileEditOptionGrid.jsx)이 그
