@@ -30,7 +30,7 @@ const toRankingRowDisplay = (entry) => ({
  * @param {Record<string, object>} catalog
  * @param {Record<string, object[]>} challenges
  * @param {{
- *   byJobKey?: Record<string, { status: 'idle'|'loading'|'success'|'error', myStats: object|null, ranking: object[]|null, error: string|null, achievementsById?: Record<string, { achieved: boolean, current: number, threshold: number }> }>,
+ *   byJobKey?: Record<string, { status: 'idle'|'loading'|'success'|'error', myStats: object|null, ranking: object[]|null, error: string|null, achievementsById?: Record<string, { achieved: boolean, current: number, threshold: number, granted: boolean }> }>,
  * }} [jobState]
  */
 export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobState = {}) {
@@ -51,6 +51,10 @@ export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobSt
     // 남기지 않고 current·threshold도 그대로 전달해, 화면이 실제 진행률을 표시할 수 있게
     // 한다(더 이상 항상 빈 값으로 남는 더미가 아니다).
     const achievementsById = state.achievementsById ?? {}
+    // CODEX-2 재검토(AC-06): cleared는 achieved(진행률 조건 충족)가 아니라 granted(실제
+    // 지급 이력)로 판정한다 — 조건은 채웠지만 보상 지급이 아직 실패/지연된 상태를 "클리어"로
+    // 잘못 보여주면 재로그인 후 실제 지급 상태와 화면이 어긋난다(테두리 소유도 granted가
+    // true일 때만 실제로 존재한다).
 
     return {
       id,
@@ -74,7 +78,7 @@ export function mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobSt
           const progress = achievementsById[challenge.id]
           return {
             ...challenge,
-            cleared: progress?.achieved ?? false,
+            cleared: progress?.granted ?? false,
             current: progress?.current ?? null,
             threshold: progress?.threshold ?? null,
           }

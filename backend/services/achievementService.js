@@ -66,11 +66,33 @@ const loadProgress = async (userId) => {
 const grantAchievement = async (userId, definition) => {
     const { db, economyService } = deps;
     return db.sequelize.transaction(async (transaction) => {
-        const [, created] = await db.AchievementGrant.findOrCreate({
-            where: { user_id: userId, achievement_id: definition.id },
-            defaults: { user_id: userId, achievement_id: definition.id, granted_at: new Date() },
-            transaction,
-        });
+        let created;
+        try {
+            const result = await db.AchievementGrant.findOrCreate({
+                where: { user_id: userId, achievement_id: definition.id },
+                defaults: { user_id: userId, achievement_id: definition.id, granted_at: new Date() },
+                transaction,
+            });
+            created = result[1];
+        } catch (error) {
+            // CODEX-2 재검토(AC-04): findOrCreate에 외부 트랜잭션(transaction)을 넘기면
+            // Sequelize는 자신의 내부 유일 제약 충돌 자동 재시도(관리하는 트랜잭션일 때만
+            // 동작)를 건너뛴다 — 그래서 같은 계정·같은 업적을 겹쳐 평가하는 진짜 동시 요청은
+            // 둘 다 SELECT에서 상대를 보지 못하고 INSERT 단계에서
+            // achievement_grants_user_achievement_unique 유일 제약과 실제로 충돌할 수 있다
+            // (실제 MySQL 실행에서 재현됨). gameResult.repositories.js의 persistGameResult·
+            // voteParticipation.repositories.js의 recordValidDayVoteParticipation과 같은
+            // 관례로, 이 충돌은 "다른 요청이 이미 지급했다"는 뜻이므로 재지급하지 않고
+            // 조용히 넘어간다 — MySQL은 한 statement의 유일 제약 위반으로 트랜잭션 전체를
+            // 자동으로 중단시키지 않으므로, 이 catch 뒤에도 트랜잭션은 정상적으로 계속된다.
+            const constraint = error?.parent?.constraint ?? error?.original?.constraint;
+            const isDuplicateGrant = error instanceof db.Sequelize.UniqueConstraintError && (
+                constraint === 'achievement_grants_user_achievement_unique' ||
+                error?.fields?.achievement_id !== undefined
+            );
+            if (!isDuplicateGrant) throw error;
+            created = false;
+        }
 
         // 이미 지급된 업적이다. 재지급하지 않는다.
         if (!created) return { granted: false };

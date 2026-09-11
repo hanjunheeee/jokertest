@@ -212,6 +212,69 @@ test('AC-04: 동시에 같은 업적을 두 번 평가해도 재화는 한 번�
     assert.equal(economyService.calls.length, 2); // GOLD + DIAMOND, 딱 한 번만.
 });
 
+// CODEX-2 재검토(AC-04): 위 createFakeDb()의 findOrCreate는 같은 키를 쥔 트랜잭션이 끝날
+// 때까지 다음 요청을 "대기"시키는 협조적 락으로 동시성을 흉내낸다 — 실제 MySQL에서
+// findOrCreate에 외부 트랜잭션을 넘기면 이 자동 재시도가 동작하지 않아, 두 트랜잭션이
+// SELECT에서 서로를 보지 못하고 INSERT에서 achievement_grants_user_achievement_unique와
+// 실제로 충돌해 db.Sequelize.UniqueConstraintError를 던질 수 있다(실제 백엔드 실행에서
+// 재현됨). 이 fake는 그 "진짜 충돌"을 그대로 재현해 grantAchievement가 예외를 삼키고
+// granted:false로 정상 반환하는지 검증한다 — 이전 fake는 이 경로를 절대 통과하지 않았다.
+const createRacyFakeDb = () => {
+    const { UniqueConstraintError } = require('sequelize');
+    const achievementGrants = [];
+    let insertHappened = false;
+
+    const AchievementGrant = {
+        async findOrCreate({ where, defaults, transaction }) {
+            const existing = achievementGrants.find(
+                (g) => g.user_id === where.user_id && g.achievement_id === where.achievement_id,
+            );
+            if (existing) return [existing, false];
+
+            if (insertHappened) {
+                // 다른(이미 커밋된) 트랜잭션이 먼저 삽입했다 — 이 호출의 SELECT는 그 커밋
+                // 이전에 실행돼 못 봤지만, INSERT 시점에는 실제 유일 제약과 충돌한다.
+                const error = new UniqueConstraintError({ errors: [], fields: { user_id: where.user_id, achievement_id: where.achievement_id } });
+                throw error;
+            }
+            insertHappened = true;
+            const record = { id: 1, ...defaults };
+            achievementGrants.push(record);
+            return [record, true];
+        },
+    };
+
+    const sequelize = {
+        async transaction(fn) {
+            return fn({});
+        },
+    };
+
+    return { db: { sequelize, AchievementGrant, Sequelize: { UniqueConstraintError } }, achievementGrants };
+};
+
+test('AC-04 CODEX-2 재검토: findOrCreate가 실제 유일 제약 충돌(db.Sequelize.UniqueConstraintError)을 던져도 예외 없이 granted:false로 처리한다', async () => {
+    const { db, achievementGrants } = createRacyFakeDb();
+    const economyService = createFakeEconomyService();
+    __internal.__setDepsForTests({ db, economyService });
+
+    const noble10 = getAchievementDefinition('noble-win-10');
+
+    const first = await __internal.grantAchievement('user-a', noble10);
+    assert.equal(first.granted, true);
+
+    // 두 번째 호출은 findOrCreate의 SELECT가 첫 번째 삽입을 보지 못한 채(예: 이미 커밋된
+    // 것을 나중에 보게 되는 것이 아니라, 애초에 findOrCreate가 아직 존재를 모른 채 INSERT를
+    // 시도하는) 실제 유일 제약과 충돌하는 상황을 흉내낸다 — 이 fake는 이미 insertHappened를
+    // true로 만들어 두 번째 findOrCreate 호출이 항상 그 충돌 분기를 타게 한다.
+    const second = await __internal.grantAchievement('user-a', noble10);
+    assert.equal(second.granted, false, '유일 제약 충돌은 예외로 새면 안 되고 granted:false로 흡수돼야 한다');
+
+    assert.equal(achievementGrants.length, 1, 'achievement_grants에는 최초 삽입 한 행만 남아야 한다');
+    // 두 번째 호출은 재화를 다시 지급하지 않았다(GOLD+DIAMOND 두 번만, 첫 호출분).
+    assert.equal(economyService.calls.length, 2);
+});
+
 test('A-03: 보상 지급 도중 실패하면 업적 달성 행도 함께 롤백된다(부분 지급이 남지 않는다)', async () => {
     const { db, achievementGrants } = createFakeDb();
     const economyService = createFakeEconomyService({ failReferenceEventId: 'achievement:noble-win-10:DIAMOND' });

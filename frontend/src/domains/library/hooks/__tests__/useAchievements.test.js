@@ -72,9 +72,10 @@ const createDeferred = () => {
 }
 
 const SAMPLE_ACHIEVEMENTS = [
-  { id: "record-1-masquerade", achieved: true, current: 3, threshold: 3 },
-  { id: "record-2-extra-mask", achieved: false, current: 4, threshold: 10 },
-  { id: "noble-win-10", achieved: true, current: 12, threshold: 10 },
+  { id: "record-1-masquerade", achieved: true, current: 3, threshold: 3, granted: true },
+  { id: "record-2-extra-mask", achieved: false, current: 4, threshold: 10, granted: false },
+  // achieved:true이지만 아직 지급 이력이 없는(지급 대기/실패) 경우도 있을 수 있다(AC-06).
+  { id: "noble-win-10", achieved: true, current: 12, threshold: 10, granted: false },
 ]
 
 function resetStore() {
@@ -96,6 +97,20 @@ test("마운트 시 업적을 조회하고, achieved:true인 id만 achievedIds�
   assert.equal(result.current.achievedIds.has("record-2-extra-mask"), false)
 })
 
+// CODEX-2 재검토(AC-06): achieved(진행률 조건 충족)와 granted(실제 지급 이력)를 구분해야
+// 한다 — noble-win-10은 achieved:true지만 아직 지급 이력이 없으므로 grantedIds에는 없어야
+// 한다.
+test("grantedIds에는 실제로 지급된(granted:true) id만 담긴다", async () => {
+  resetStore()
+  getMyAchievementsImpl = async () => SAMPLE_ACHIEVEMENTS
+
+  const { result } = renderHook(() => useAchievements())
+  await waitFor(() => assert.equal(result.current.status, "success"))
+
+  assert.deepEqual([...result.current.grantedIds], ["record-1-masquerade"])
+  assert.equal(result.current.grantedIds.has("noble-win-10"), false, "achieved여도 granted가 아니면 포함되면 안 된다")
+})
+
 test("조회가 처음 성공하면 경제 상태를 정확히 한 번 다시 읽어온다", async () => {
   resetStore()
   getMyAchievementsImpl = async () => SAMPLE_ACHIEVEMENTS
@@ -108,18 +123,32 @@ test("조회가 처음 성공하면 경제 상태를 정확히 한 번 다시 �
   assert.equal(fetchSummaryCalls, 1, "같은 세대에서 재렌더될 때마다 다시 부르면 안 된다")
 })
 
-test("이미 캐시된 업적이 있으면 다시 마운트해도 재요청하지 않는다", async () => {
+// CODEX-2 재검토(AC-06): 이전 버전은 캐시가 있으면 재마운트해도 다시 조회하지 않았다 —
+// 그래서 서고 페이지를 벗어났다가(언마운트) 그 사이 새 게임/투표로 업적이 추가로
+// 지급된 뒤 다시 들어와도(재마운트), 진행률·달성·재화·테두리 소유 상태가 전혀 갱신되지
+// 않았다("지급 완료 후 갱신을 보장하지 못한다"는 지적). 지금은 재마운트할 때마다 항상
+// 다시 조회하고, 조회가 성공할 때마다 경제 상태도 함께 새로 읽어온다.
+test("재마운트하면 항상 다시 조회해 최신 지급 상태를 반영하고, 그때마다 경제 상태도 다시 읽어온다", async () => {
   resetStore()
   let calls = 0
-  getMyAchievementsImpl = async () => { calls += 1; return SAMPLE_ACHIEVEMENTS }
+  getMyAchievementsImpl = async () => {
+    calls += 1
+    // 두 번째 호출(재마운트 후)부터는 noble-win-10도 실제로 지급됐다고 가정한다.
+    if (calls === 1) return SAMPLE_ACHIEVEMENTS
+    return SAMPLE_ACHIEVEMENTS.map((a) => (a.id === "noble-win-10" ? { ...a, granted: true } : a))
+  }
 
   const first = renderHook(() => useAchievements())
   await waitFor(() => assert.equal(first.result.current.status, "success"))
+  assert.equal(first.result.current.grantedIds.has("noble-win-10"), false)
+  assert.equal(fetchSummaryCalls, 1)
   first.unmount()
 
   const second = renderHook(() => useAchievements())
-  assert.equal(second.result.current.achievements, SAMPLE_ACHIEVEMENTS)
-  assert.equal(calls, 1, "캐시가 있으면 재마운트 시 다시 조회하지 않는다")
+  await waitFor(() => assert.equal(second.result.current.status, "success"))
+  assert.equal(calls, 2, "재마운트 시 다시 조회해야 새로 지급된 업적을 반영할 수 있다")
+  assert.equal(second.result.current.grantedIds.has("noble-win-10"), true, "재마운트 후 최신 지급 상태(granted:true)가 반영되어야 한다")
+  assert.equal(fetchSummaryCalls, 2, "재마운트로 조회가 다시 성공하면 경제 상태도 다시 읽어와야 한다")
 })
 
 test("retry는 fetchAchievements를 다시 실행한다", async () => {

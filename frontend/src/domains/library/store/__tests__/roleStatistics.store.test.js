@@ -117,14 +117,15 @@ test("0판 직업은 빈 랭킹(success, ranking:[])으로 남는다 — 실패�
 
 // ── F-12 AC-01/AC-06: 직업 도전과제 진행률을 업적 조회에서 함께 채운다 ────────
 
-test("requestJob: 업적 조회 결과가 id별 achieved·current·threshold로 그대로 보존된다(CODEX-1 재검토 — current/threshold를 버리지 않는다)", async () => {
+test("requestJob: 업적 조회 결과가 id별 achieved·current·threshold·granted로 그대로 보존된다(CODEX-2 재검토 — granted를 버리지 않는다)", async () => {
   resetStore()
   getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
   getRoleRankingImpl = async () => ({ role: "CITIZEN", ranking: [] })
   getMyAchievementsImpl = async () => [
-    { id: "noble-win-10", achieved: true, current: 12, threshold: 10 },
-    { id: "noble-win-20", achieved: false, current: 12, threshold: 20 },
-    { id: "record-1-masquerade", achieved: true, current: 5, threshold: 3 },
+    { id: "noble-win-10", achieved: true, current: 12, threshold: 10, granted: true },
+    { id: "noble-win-20", achieved: false, current: 12, threshold: 20, granted: false },
+    // achieved:true지만 아직 지급 이력이 없는(지급 대기/실패) 경우도 있을 수 있다(AC-06).
+    { id: "record-1-masquerade", achieved: true, current: 5, threshold: 3, granted: false },
   ]
 
   await useRoleStatisticsStore.getState().requestJob("noble")
@@ -132,9 +133,9 @@ test("requestJob: 업적 조회 결과가 id별 achieved·current·threshold로 
   assert.deepEqual(
     useRoleStatisticsStore.getState().byJobKey.noble.achievementsById,
     {
-      "noble-win-10": { achieved: true, current: 12, threshold: 10 },
-      "noble-win-20": { achieved: false, current: 12, threshold: 20 },
-      "record-1-masquerade": { achieved: true, current: 5, threshold: 3 },
+      "noble-win-10": { achieved: true, current: 12, threshold: 10, granted: true },
+      "noble-win-20": { achieved: false, current: 12, threshold: 20, granted: false },
+      "record-1-masquerade": { achieved: true, current: 5, threshold: 3, granted: false },
     },
   )
 })
@@ -143,13 +144,13 @@ test("requestJob: 업적을 하나도 달성하지 못했어도 진행률(curren
   resetStore()
   getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
   getRoleRankingImpl = async () => ({ role: "CITIZEN", ranking: [] })
-  getMyAchievementsImpl = async () => [{ id: "noble-win-10", achieved: false, current: 2, threshold: 10 }]
+  getMyAchievementsImpl = async () => [{ id: "noble-win-10", achieved: false, current: 2, threshold: 10, granted: false }]
 
   await useRoleStatisticsStore.getState().requestJob("noble")
 
   assert.deepEqual(
     useRoleStatisticsStore.getState().byJobKey.noble.achievementsById,
-    { "noble-win-10": { achieved: false, current: 2, threshold: 10 } },
+    { "noble-win-10": { achieved: false, current: 2, threshold: 10, granted: false } },
   )
 })
 

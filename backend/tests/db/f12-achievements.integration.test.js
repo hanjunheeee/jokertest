@@ -266,6 +266,53 @@ test('AC-05: 개발 경기는 진행률에 반영되지 않는다', async (t) =>
     assert.equal(stats.completedGames, 0, '개발 경기는 진행률에 포함되면 안 된다');
 });
 
+// CODEX-2 재검토(AC-03): 이전 회차는 지갑 "총" 잔액 기대값이 실제로는 여러 업적의 보상이
+// 겹쳐 틀렸다는 지적을 받아, 특정 업적의 원장 항목만 개별로 확인하는 방식으로 바꿨다 —
+// 하지만 그 수정은 "동시 달성 전체 지갑 합계"를 검증해야 한다는 원래 요구를 채우지 못했다
+// (개별 원장 검사만으로는 여러 업적이 동시에 지급될 때 지갑 최종 합계가 정확히 그 총합과
+// 일치하는지 증명하지 못한다). 이 시험은 30승으로 동시에 걸리는 9개 업적(기록 6개 +
+// noble-win-10/20/30) 전부를 정확히 계산한 뒤, 지갑 "총" 잔액이 그 합과 정확히 일치하는지
+// 확인한다 — 기록 6개(50G+50D×6=300G/300D) + noble-10(10G/10D) + noble-20(20G/30D) =
+// 330G/340D, noble-30은 재화 없이 테두리 아이템만. 또한 evaluateAndGrantForUser를 동시에
+// 두 번(Promise.all) 실행해, 9개 업적 전부가 동시에 경합해도(AC-04) 이 총액이 두 배로
+// 지급되지 않는지도 함께 확인한다.
+test('AC-03/AC-04: 30승으로 9개 업적이 동시에 걸려도(동시 평가 포함) 지갑 총액·지급 개수·테두리 소유권이 정확히 일치한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('multi30');
+    await persistWins(userId, 'CITIZEN', 30);
+
+    // AC-04: 동시에 두 번 평가해도(9개 업적 전부가 동시에 경합) 총액이 두 배가 되면 안 된다.
+    await Promise.all([
+        achievementService.evaluateAndGrantForUser(userId),
+        achievementService.evaluateAndGrantForUser(userId),
+    ]);
+
+    const grantRows = await db.AchievementGrant.findAll({ where: { user_id: userId }, attributes: ['achievement_id'], raw: true });
+    const grantIds = grantRows.map((g) => g.achievement_id);
+    assert.equal(new Set(grantIds).size, grantIds.length, '동시 평가로 같은 업적이 중복 지급되면 안 된다');
+    assert.deepEqual(
+        [...grantIds].sort(),
+        ['noble-win-10', 'noble-win-20', 'noble-win-30', 'record-1-masquerade', 'record-3-first-morning', 'record-4-testimonies', 'record-5-clown-story', 'record-6-dead-mans-leaving', 'record-7-erased-night'].sort(),
+        '30승 계정은 정확히 이 9개 업적만 달성해야 한다(record-2는 투표 참여, 다른 직업 업적은 역할이 달라 제외)',
+    );
+
+    const wallet = await getWalletRow(userId);
+    // 기록 6개 × (50G+50D) = 300G/300D, + noble-win-10(10G/10D) + noble-win-20(20G/30D).
+    assert.equal(wallet.balance_gold, 330, '지갑 총 골드가 9개 업적 보상의 합과 정확히 일치해야 한다');
+    assert.equal(wallet.balance_diamond, 340, '지갑 총 다이아가 9개 업적 보상의 합과 정확히 일치해야 한다');
+
+    const entitlement = await getEntitlement(userId, 'profile-border-귀족');
+    assert.ok(entitlement, 'noble-win-30 테두리 소유권도 함께 지급되어야 한다');
+
+    // 재평가(페이지 재진입 흉내)해도 총액이 늘어나면 안 된다(AC-04).
+    await achievementService.evaluateAndGrantForUser(userId);
+    const walletAfterRetry = await getWalletRow(userId);
+    assert.equal(walletAfterRetry.balance_gold, 330);
+    assert.equal(walletAfterRetry.balance_diamond, 340);
+});
+
 test('AC-05: 이 기능이 생기기 전부터 이미 쌓여 있던 과거 확정 경기도 다음 평가 호출에서 한 번에 소급 지급된다', async (t) => {
     if (unavailable(t)) return;
     await setUp();

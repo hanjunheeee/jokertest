@@ -153,3 +153,35 @@ test("A→B→A overlap discards older same-generation failure", async () => {
   assert.deepEqual(state.achievements, SAMPLE_ACHIEVEMENTS)
   assert.equal(state.error, null)
 })
+
+// CODEX-2 재검토(AC-06): useAchievements가 재마운트마다 다시 조회하도록 바뀌면서, 같은
+// 세대(계정 전환 없이) 안에서도 fetchAchievements가 겹쳐 호출될 수 있게 됐다 —
+// requestToken이 "가장 나중에 시작된 호출"만 반영하는지 확인한다(roleStatistics.store.js의
+// requestTokens와 같은 이유).
+test("같은 세대 안에서 겹친 fetchAchievements 중 먼저 시작됐지만 늦게 끝나는 응답은 버려진다", async () => {
+  resetStore()
+  const gate = createDeferred()
+  let calls = 0
+  getMyAchievementsImpl = async () => {
+    calls += 1
+    if (calls === 1) {
+      await gate.promise
+      return [{ id: "record-1-masquerade", achieved: false, current: 0, threshold: 3, granted: false }]
+    }
+    return SAMPLE_ACHIEVEMENTS
+  }
+
+  const stalePromise = useAchievementsStore.getState().fetchAchievements()
+  await useAchievementsStore.getState().fetchAchievements()
+  assert.equal(useAchievementsStore.getState().status, "success", "나중에 시작된 호출은 즉시 반영되어야 한다")
+  assert.deepEqual(useAchievementsStore.getState().achievements, SAMPLE_ACHIEVEMENTS)
+
+  gate.resolve()
+  await stalePromise
+
+  assert.deepEqual(
+    useAchievementsStore.getState().achievements,
+    SAMPLE_ACHIEVEMENTS,
+    "먼저 시작된(하지만 나중에 끝난) 호출의 응답이 최신 상태를 덮어쓰면 안 된다",
+  )
+})

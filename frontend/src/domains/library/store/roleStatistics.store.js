@@ -58,8 +58,11 @@ export const useRoleStatisticsStore = create((set, get) => ({
       if (get().requestGeneration !== generation || get().requestTokens[jobKey] !== token) return;
 
       const myStats = myStatsList.find((entry) => entry.role === role) ?? null;
+      // CODEX-2 재검토(AC-06): achieved(진행률 조건 충족)만 남기면 지급이 실패/지연된
+      // 업적도 화면에 "클리어"로 보일 수 있다 — mergeInvitedGuestsSpreads.js가 실제 지급
+      // 이력(granted)으로 cleared를 판정할 수 있도록 여기서도 버리지 않고 함께 보존한다.
       const achievementsById = Object.fromEntries(
-        achievements.map((a) => [a.id, { achieved: a.achieved, current: a.current, threshold: a.threshold }]),
+        achievements.map((a) => [a.id, { achieved: a.achieved, current: a.current, threshold: a.threshold, granted: a.granted }]),
       );
       set((state) => ({
         byJobKey: {
