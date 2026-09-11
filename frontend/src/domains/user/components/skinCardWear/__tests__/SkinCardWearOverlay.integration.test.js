@@ -84,8 +84,14 @@ const {
 
 const FIRST_JOB_ID = SKIN_CARD_WEAR_JOB_TABS[0].id
 
-function flatLoadout({ selectedCardFrameId = null, selectedSkinsByJob = null } = {}) {
-  return { entitlements: [], loadout: { selectedCardFrameId, selectedSkinsByJob } }
+// F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — 실제 getWalletSummary는
+// loadout 행이 항상 존재하고 revision도 항상 채워져 있음을 보장한다(economy.service.js
+// ensureDefaultEntitlements). 기본값에도 revision을 실어 둬야 Overlay가 여는 즉시 authoritative
+// revision을 알게 되고, 이후 equip() 호출이 이미 처리된 것과 무관한 추가 authoritative GET을
+// 새로 시도하지 않는다(그러지 않으면 이 파일의 여러 시험이 가정하는 postImpl/getImpl 교체
+// 타이밍이 흐트러진다).
+function flatLoadout({ selectedCardFrameId = null, selectedSkinsByJob = null, revision = "server-rev-0" } = {}) {
+  return { entitlements: [], loadout: { selectedCardFrameId, selectedSkinsByJob, revision } }
 }
 
 function resetAll() {

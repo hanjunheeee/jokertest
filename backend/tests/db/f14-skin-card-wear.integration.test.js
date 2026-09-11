@@ -158,6 +158,118 @@ test('F-14 AC-01: 실제 구매한 카드 프레임을 장착하면 실제 DB �
     assert.equal(summary.loadout.selectedCardFrameId, CARD_FRAME_ITEM_ID);
 });
 
+// ── R-IMPL2(CODEX-2, 2026-09-12) AC-01: 실제 MySQL 위에서의 revision CAS·롤백 검증 ──────
+// economy.service.test.js는 인메모리 fake db로 이미 CAS 비교 순서(잠금 → 재확인 → 갱신)와
+// equipItem↔equipProfileAppearance의 교차 충돌을 검증했다 — 이 세 시험은 그 논리가 실제
+// InnoDB 행 잠금·트랜잭션 위에서도 그대로 성립하는지(가짜 mutex가 아니라 진짜
+// SELECT ... FOR UPDATE 경합과 진짜 ROLLBACK)를 추가로 고정한다.
+
+test('F-14 AC-01(R-IMPL2): 같은 revision을 노리는 두 동시 스킨 장착 요청 중 실제 DB에서 하나만 커밋되고 다른 하나는 SKIN_REVISION_CONFLICT로 거부된다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('f14cas1');
+    await purchase(userId, GUARD_SKIN_ITEM_ID);
+    await purchase(userId, NOBLE_SKIN_ITEM_ID);
+
+    const before = await economyService.getWalletSummary(userId);
+    const initialRevision = before.loadout.revision;
+    assert.ok(initialRevision, '초기 revision이 실제로 발급되어 있어야 한다');
+
+    const results = await Promise.allSettled([
+        economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID, expectedRevision: initialRevision }),
+        economyService.equipItem({ userId, slot: 'JOB_SKIN_NOBLE', itemId: NOBLE_SKIN_ITEM_ID, expectedRevision: initialRevision }),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    assert.equal(fulfilled.length, 1, '같은 revision을 노린 두 동시 쓰기 중 정확히 하나만 실제로 커밋되어야 한다');
+    assert.equal(rejected.length, 1, '나머지 하나는 실제 DB CAS 비교로 거부되어야 한다');
+    assert.equal(rejected[0].reason.status, 409);
+    assert.equal(rejected[0].reason.code, 'SKIN_REVISION_CONFLICT');
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    if (fulfilled[0].value.selected_skin_guard === GUARD_SKIN_ITEM_ID) {
+        assert.equal(loadout.selected_skin_guard, GUARD_SKIN_ITEM_ID, '실제로 커밋에 성공한 쪽의 값만 DB에 반영되어야 한다');
+        assert.equal(loadout.selected_skin_noble, null, '거부된 쪽의 값은 DB에 반영되면 안 된다');
+    } else {
+        assert.equal(loadout.selected_skin_noble, NOBLE_SKIN_ITEM_ID, '실제로 커밋에 성공한 쪽의 값만 DB에 반영되어야 한다');
+        assert.equal(loadout.selected_skin_guard, null, '거부된 쪽의 값은 DB에 반영되면 안 된다');
+    }
+    assert.notEqual(loadout.revision, initialRevision, '실제로 커밋된 쪽이 새 revision을 발급받아야 한다');
+});
+
+test('F-14 AC-01(R-IMPL2): 다른 확정이 먼저 실제로 커밋된 뒤, 지연되어 도착한 오래된 revision의 스킨 장착 요청은 거부되고 최신 행(값·revision)이 그대로 보존된다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('f14stale1');
+    await purchase(userId, GUARD_SKIN_ITEM_ID);
+    await purchase(userId, CARD_FRAME_ITEM_ID);
+
+    const before = await economyService.getWalletSummary(userId);
+    const staleRevision = before.loadout.revision;
+
+    // 다른 확정(카드 프레임)이 먼저 실제로 커밋되어 revision이 전진한다 — 지연된 스킨 요청은
+    // 이 사실을 아직 모른 채 예전 revision을 그대로 들고 있다.
+    const afterCardEquip = await economyService.equipItem({
+        userId, slot: 'PLAYER_CARD_FRAME', itemId: CARD_FRAME_ITEM_ID, expectedRevision: staleRevision,
+    });
+    assert.notEqual(afterCardEquip.revision, staleRevision, '먼저 커밋된 확정이 실제로 새 revision을 발급받아야 한다(시험 전제)');
+
+    await assert.rejects(
+        () => economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID, expectedRevision: staleRevision }),
+        (error) => error.status === 409 && error.code === 'SKIN_REVISION_CONFLICT',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_card_frame_id, CARD_FRAME_ITEM_ID, '먼저 커밋된 카드 프레임 값이 그대로 보존되어야 한다');
+    assert.equal(loadout.selected_skin_guard, null, '거부된 오래된 스킨 쓰기는 DB에 전혀 반영되면 안 된다');
+    assert.equal(loadout.revision, afterCardEquip.revision, '거부된 쓰기가 최신 revision을 되돌리거나 바꾸면 안 된다');
+});
+
+test('F-14 AC-01(R-IMPL2): 갱신 시도 중 트랜잭션이 실패하면 실제 DB에서 롤백되어 기존 선택 컬럼과 revision이 모두 그대로 보존된다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('f14rollback1');
+    await purchase(userId, GUARD_SKIN_ITEM_ID);
+    await purchase(userId, DOCTOR_SKIN_ITEM_ID);
+    await economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID });
+
+    const before = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    const beforeSnapshot = before.get({ plain: true });
+
+    // EconomyLoadout.prototype.update(인스턴스 메서드)만 일시적으로 실패하게 만든다 — 트랜잭션
+    // 안에서 실제로 그 갱신 시도가 일어난 뒤에 실패해야 롤백 계약을 검증한다. ensureDefaultLoadout이
+    // 쓰는 것은 클래스 정적 메서드(models.EconomyLoadout.update)라 이 패치의 영향을 받지 않는다.
+    const originalUpdate = db.sequelize.models.EconomyLoadout.prototype.update;
+    let updateCalls = 0;
+    db.sequelize.models.EconomyLoadout.prototype.update = function patchedUpdate() {
+        updateCalls += 1;
+        return Promise.reject(new Error('injected update failure (rollback test)'));
+    };
+
+    try {
+        await assert.rejects(
+            () => economyService.equipItem({
+                userId, slot: 'JOB_SKIN_DOCTOR', itemId: DOCTOR_SKIN_ITEM_ID, expectedRevision: beforeSnapshot.revision,
+            }),
+            /injected update failure/,
+        );
+    } finally {
+        db.sequelize.models.EconomyLoadout.prototype.update = originalUpdate;
+    }
+
+    assert.equal(updateCalls, 1, '주입한 실패가 실제로 update 호출 지점에서 발생했어야 한다(전제 확인)');
+
+    const after = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    const afterSnapshot = after.get({ plain: true });
+    assert.equal(afterSnapshot.selected_skin_guard, beforeSnapshot.selected_skin_guard, '롤백 후 기존에 저장돼 있던 선택 컬럼이 그대로 보존되어야 한다');
+    assert.equal(afterSnapshot.selected_skin_doctor, beforeSnapshot.selected_skin_doctor, '실패한 갱신 시도의 값이 커밋되면 안 된다');
+    assert.equal(afterSnapshot.revision, beforeSnapshot.revision, '실패한 트랜잭션은 revision도 그대로 두어야 한다(새 UUID가 커밋되면 안 된다)');
+});
+
 // ── 거부 경로: 실제 DB 위에서도 소유권·직업 접두어 검증이 성립하는지 ────────────────
 
 test('F-14 AC-02: 미보유 직업 스킨을 장착 요청하면 실제 DB에서도 거부되고 컬럼이 바뀌지 않는다', async (t) => {

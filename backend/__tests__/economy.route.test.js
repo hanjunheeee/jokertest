@@ -202,7 +202,7 @@ test("AC-05: 소유하지 않은 상품 장착은 서비스가 던진 403을 그
     const res = await request(base, "/economy/equip", {
         method: "POST",
         token: tokenFor(USER_A),
-        body: { slot: "PROFILE_BORDER", itemId: "profile-border-황제" },
+        body: { slot: "PROFILE_BORDER", itemId: "profile-border-황제", expectedRevision: "server-rev-1" },
     });
     assert.equal(res.status, 403);
     assert.equal(res.json.code, "ITEM_NOT_OWNED");
@@ -218,10 +218,93 @@ test("AC-05: 임의 파일 경로를 itemId로 보내면 서비스가 던진 400
     const res = await request(base, "/economy/equip", {
         method: "POST",
         token: tokenFor(USER_A),
-        body: { slot: "PROFILE_PHOTO", itemId: "../../../etc/passwd" },
+        body: { slot: "PROFILE_PHOTO", itemId: "../../../etc/passwd", expectedRevision: "server-rev-1" },
     });
     assert.equal(res.status, 400);
     assert.equal(res.json.code, "ITEM_TYPE_MISMATCH");
+});
+
+// F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — expectedRevision이 없거나
+// 빈 문자열이면 서비스를 호출하기도 전에 400(MISSING_EXPECTED_REVISION)으로 거부해, 버전
+// 없는 덮어쓰기가 DB에 닿을 방법 자체를 없앤다(equip-profile과 동일한 계약,
+// profileEquipment.publicResponses.test.js의 대응 시험과 같은 근거).
+test("POST /economy/equip: expectedRevision이 없거나 빈 문자열이면 서비스 호출 전에 400(MISSING_EXPECTED_REVISION)으로 거부된다", async (t) => {
+    stubAuthGate(t);
+    const { calls } = stubService(t);
+    const base = await startServer(t);
+
+    const withoutField = await request(base, "/economy/equip", {
+        method: "POST",
+        token: tokenFor(USER_A),
+        body: { slot: "PLAYER_CARD_FRAME", itemId: "player-card-왕관" },
+    });
+    assert.equal(withoutField.status, 400);
+    assert.equal(withoutField.json.code, "MISSING_EXPECTED_REVISION");
+
+    const emptyField = await request(base, "/economy/equip", {
+        method: "POST",
+        token: tokenFor(USER_A),
+        body: { slot: "PLAYER_CARD_FRAME", itemId: "player-card-왕관", expectedRevision: "" },
+    });
+    assert.equal(emptyField.status, 400);
+    assert.equal(emptyField.json.code, "MISSING_EXPECTED_REVISION");
+
+    assert.equal(calls.filter((c) => c.name === "equipItem").length, 0, "expectedRevision 검증에 실패하면 서비스가 아예 호출되면 안 된다");
+});
+
+// F-14(AC-01, R-IMPL2 "MUST CLOSE STALE CONFLICT REPLAY") — economy.store.js의 authoritative
+// GET 재조정은 이 정확한 code(SKIN_REVISION_CONFLICT)로만 트리거되므로, 라우트가 이를 다른
+// status로 뭉개면 클라이언트 쪽 충돌 처리 자체가 작동하지 않는다.
+test("POST /economy/equip: 서버 CAS 충돌(409)이면 서비스가 던진 오류를 그대로 응답한다", async (t) => {
+    stubAuthGate(t);
+    stubService(t, {
+        equipItem: async () => { throw createError("장착 상태가 다른 곳에서 이미 변경되었습니다.", 409, "SKIN_REVISION_CONFLICT"); },
+    });
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/equip", {
+        method: "POST",
+        token: tokenFor(USER_A),
+        body: { slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛", expectedRevision: "stale-rev" },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.code, "SKIN_REVISION_CONFLICT");
+});
+
+// F-14(AC-01, R-IMPL2 "Return authoritative full loadout INCLUDING selectedSkinsByJob and
+// revision from actual endpoint, rather than reconstructing selected field from request") —
+// 응답은 서비스가 실제로 돌려준 loadout 행(selected_skin_* 5개 컬럼)에서 selectedSkinsByJob을
+// 조립해야 한다. 요청 필드(slot/itemId)를 되짚어 재구성한 값이 아니라는 것을 증명하기 위해,
+// 요청한 슬롯(guard) 외의 다른 직업 값(noble)도 서비스 반환값 그대로 실리는지 함께 확인한다.
+test("POST /economy/equip: 성공 응답은 서비스가 실제로 돌려준 loadout 행에서 selectedSkinsByJob·revision을 그대로 조립한다", async (t) => {
+    stubAuthGate(t);
+    stubService(t, {
+        equipItem: async () => ({
+            selected_profile_photo_id: null,
+            selected_profile_border_id: null,
+            selected_card_frame_id: "player-card-왕관",
+            selected_skin_noble: "player-skin-귀족1-블러드",
+            selected_skin_clown: null,
+            selected_skin_guard: "player-skin-경비원1-바이올렛",
+            selected_skin_doctor: null,
+            selected_skin_witch_hunter: null,
+            revision: "server-rev-2",
+        }),
+    });
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/equip", {
+        method: "POST",
+        token: tokenFor(USER_A),
+        body: { slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛", expectedRevision: "server-rev-1" },
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.json.loadout.selectedSkinsByJob.guard, "player-skin-경비원1-바이올렛");
+    assert.equal(res.json.loadout.selectedSkinsByJob.noble, "player-skin-귀족1-블러드", "요청하지 않은 다른 직업의 값도 서비스 반환값 그대로 실려야 한다");
+    assert.equal(res.json.loadout.selectedSkinsByJob.clown, null);
+    assert.equal(res.json.loadout.selectedCardFrameId, "player-card-왕관");
+    assert.equal(res.json.loadout.revision, "server-rev-2");
 });
 
 // ── 관리자 전용 지급 경로 ────────────────────────────────────────────────────

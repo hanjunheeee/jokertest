@@ -36,11 +36,18 @@ const JOB_ID_TO_SKIN_SLOT = Object.freeze({
 // 그건 서버가 실제로 응답해 거부했다는 증거가 아니다(전송 불확실과 혼동하면 안 된다).
 // economy.service.js equipItem이 실제로 던질 수 있는 유한한 코드 집합만 "확정적 거부"로
 // 인정한다 — 이 목록 밖의 코드(또는 코드 없음)는 전부 전송 불확실로 취급한다.
+// F-14(AC-01, R-IMPL2 "Include SKIN_REVISION_CONFLICT in hook confirmed rejection handling,
+// not false transport uncertainty/success") — economy.store.js의 equip()은 이제 스킨/카드
+// 충돌 시 오래된 의도를 자동 재전송하지 않고(replayOnConflict:false) SKIN_REVISION_CONFLICT를
+// 그대로 되돌린다. 서버가 실제로 응답해 명확히 거부한 것이므로 전송 불확실(uncertain)이
+// 아니라 확정 거부로 다뤄야 한다 — 그래야 uncertainSlots의 "실패 응답을 다시 fetchSummary로
+// 확인" 경로로 새지 않고, 사용자에게 즉시 명확한 오류·재시도 수단이 표시된다.
 const CONFIRMED_EQUIP_REJECTION_CODES = new Set([
   "UNKNOWN_EQUIP_SLOT",
   "INVALID_ITEM_ID",
   "ITEM_TYPE_MISMATCH",
   "ITEM_NOT_OWNED",
+  "SKIN_REVISION_CONFLICT",
 ])
 const isConfirmedEquipRejection = (error) =>
   typeof error?.code === "string" && CONFIRMED_EQUIP_REJECTION_CODES.has(error.code)

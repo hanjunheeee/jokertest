@@ -103,15 +103,31 @@ const SLOT_TO_LOADOUT_FIELD = Object.freeze({
  * 공용 loadout 행 write 직렬화 + CAS 재조정(F-13/F-14 공유, 위 loadoutQueue 설명 참고).
  * endpoint에 buildBody(expectedRevision)의 결과를 POST하고, 서버가 conflictCode로
  * 거부하면 authoritative GET(entitlements)으로 재조정한다 — 요청한 슬롯이 이미 서버
- * 값과 같으면(matches) 재전송 없이 그 상태를 받아들이고, 다르면 최신 revision으로 같은
- * 사용자 의도를 다시 보낸다. applyExtra(mergedLoadout)는 서버 응답에 없는 필드(예:
- * POST /economy/equip 응답에는 없는 selectedSkinsByJob)를 이 요청 자체의 성공으로부터
- * 직접 미러링할 때만 쓴다 — mergedLoadout은 이미 "이전 상태 + 이번에 받은 loadout"이
- * 합쳐진 값이라, authoritative GET으로 받아온 최신 다른 직업 스킨 값을 실수로 덮어쓰지
- * 않는다.
+ * 값과 같으면(matches) 재전송 없이 그 상태를 받아들이고, 다르면(requireKnownRevision을
+ * 쓰는 호출자는) 최신 revision으로 같은 사용자 의도를 다시 보낸다. applyExtra(mergedLoadout)는
+ * 서버 응답에 없는 필드(예: POST /economy/equip 응답에는 없는 selectedSkinsByJob)를 이
+ * 요청 자체의 성공으로부터 직접 미러링할 때만 쓴다 — mergedLoadout은 이미 "이전 상태 +
+ * 이번에 받은 loadout"이 합쳐진 값이라, authoritative GET으로 받아온 최신 다른 직업 스킨
+ * 값을 실수로 덮어쓰지 않는다.
+ *
+ * F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — requireKnownRevision이
+ * true인 호출자(equip)는 revision을 아직 모르면(초기 로딩 전) 버전 없이 POST하는 대신
+ * authoritative GET으로 먼저 읽는다 — 그 GET마저 실패하면 LOADOUT_REVISION_UNAVAILABLE로
+ * 명확히 거부하고 버전 없이 전송하지 않는다. equipProfile은 이 옵션을 쓰지 않는다(F-13이
+ * 이미 고정한 계약: revision을 아직 모르면 null을 그대로 실어 보낸다 — economy.store.test.js
+ * "clientIntentAt... 대신 서버 CAS용 expectedRevision을 요청에 싣는다" 시험 참고).
+ *
+ * F-14(AC-01, R-IMPL2 "MUST CLOSE STALE CONFLICT REPLAY") — replayOnConflict가 false인
+ * 호출자(equip)는 충돌 시 서버 값과 다르면(오래된 의도) 새 revision으로 자동 재전송하지
+ * 않는다 — 서버 진실은 이미 반영했고, 사용자 draft는 호출부(훅)가 보관하므로 원래 conflict
+ * 오류를 그대로 되돌려 명시적 재시도를 요구한다. equipProfile은 기존 F-13 자동 재조정
+ * 계약(true, 기본값)을 그대로 유지한다.
  * @param {() => any} get @param {(fn: (state: any) => any) => void} set
  */
-const sendLoadoutWrite = (get, set, { endpoint, buildBody, matches, applyExtra, conflictCode }) => {
+const sendLoadoutWrite = (get, set, {
+  endpoint, buildBody, matches, applyExtra, conflictCode,
+  requireKnownRevision = false, replayOnConflict = true,
+}) => {
   const generation = get().requestGeneration
   const userId = resolveUserId()
   const isCurrent = () => Boolean(userId) && generation === get().requestGeneration && userId === resolveUserId()
@@ -178,12 +194,45 @@ const sendLoadoutWrite = (get, set, { endpoint, buildBody, matches, applyExtra, 
         // 실제로는 커밋돼 있었다는 뜻이다. 재전송할 필요 없이 서버 진실을 그대로 받아들인다.
         return { loadout: serverLoadout, reconciled: true }
       }
-      // 최신 사용자 의도를 최신 revision으로 다시 보낸다.
+
+      if (!replayOnConflict) {
+        // F-14(AC-01, R-IMPL2 "MUST CLOSE STALE CONFLICT REPLAY") — 서버 값이 요청한
+        // 값과 다르다(오래된 의도) — 서버 진실은 이미 위에서 반영했고, 사용자 draft는
+        // 호출부(훅)가 보관하므로 여기서는 되돌리지 않는다. 오래된 의도를 새 revision으로
+        // 자동 재전송하지 않고, 원래 conflict 오류를 그대로 되돌려 명시적 재시도를 요구한다.
+        throw error
+      }
+
+      // 최신 사용자 의도를 최신 revision으로 다시 보낸다(F-13 프로필 자동 재조정 계약).
       return attemptSend(serverLoadout.revision, attemptNumber + 1)
     }
   }
 
-  const run = () => attemptSend(get().loadout.revision, 1)
+  const run = async () => {
+    let revision = get().loadout.revision
+    if (requireKnownRevision && (typeof revision !== "string" || revision.length === 0)) {
+      // F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — 아직 revision을
+      // 모르는 채(예: 초기 fetchSummary 완료 전) 저장을 시도하면, 버전 없는 POST로 서버가
+      // 무조건 커밋하게 두는 대신 authoritative revision을 먼저 읽는다.
+      if (!isCurrent()) throw sessionChangedError()
+      let authoritative
+      try {
+        authoritative = await fetchAuthoritativeLoadout()
+      } catch {
+        if (!isCurrent()) throw sessionChangedError()
+        // GET마저 실패했다 — 복구 가능한 명확한 오류로 남기고 버전 없이 전송하지 않는다
+        // (초안 유지, 사용자 재시도 경로. 성공/확정 거부 어느 쪽도 아니다).
+        throw Object.assign(
+          new Error("장착 상태를 아직 불러오지 못해 저장할 수 없습니다. 다시 시도해 주세요."),
+          { code: "LOADOUT_REVISION_UNAVAILABLE" },
+        )
+      }
+      if (!isCurrent()) throw sessionChangedError()
+      applyLoadoutResult(authoritative, { withExtra: false })
+      revision = authoritative.revision
+    }
+    return attemptSend(revision, 1)
+  }
   const result = loadoutQueue ? loadoutQueue.then(run) : run()
   const settled = result.then(() => undefined, () => undefined)
   loadoutQueue = settled
@@ -320,20 +369,37 @@ export const useEconomyStore = create((set, get) => ({
    *  지금 알고 있는 loadout.revision을 expectedRevision으로 함께 보내고, 서버가
    *  409(SKIN_REVISION_CONFLICT)로 거부하면 authoritative GET으로 재조정한다 — 지연되거나
    *  응답 순서가 뒤바뀐 요청이 더 최신 저장을 덮어쓰지 못한다. 응답(routes.js
-   *  serializeLoadout)에는 selectedSkinsByJob이 없으므로, 그 미러는 이 요청이 실제로 보낸
-   *  (jobId, itemId) 자체로부터 직접 반영한다(applyExtra) — equipItem은 전부-아니면-무로
-   *  동작하므로 성공은 곧 서버가 정확히 이 값으로 커밋했다는 증거다.
+   *  serializeEquipLoadout)에는 이제 selectedSkinsByJob이 실제로 포함되어 오지만, 그
+   *  응답에는 서버가 이 요청 자신의 의도를 그대로 커밋했다는 사실만 있을 뿐 다른 미확정
+   *  슬롯과의 병합 규칙까지는 담지 않으므로, applyExtra는 이 요청이 실제로 보낸
+   *  (jobId, itemId) 자체로부터 직접 반영한다 — equipItem은 전부-아니면-무로 동작하므로
+   *  성공은 곧 서버가 정확히 이 값으로 커밋했다는 증거다.
+   *
+   *  R-IMPL2(2026-09-12, CODEX-2 "MUST CLOSE UNVERSIONED PUBLIC WRITE"/"MUST CLOSE STALE
+   *  CONFLICT REPLAY") — equipProfile과 달리 두 가지를 더 강제한다: (1) requireKnownRevision —
+   *  revision을 아직 모르면 버전 없이 전송하는 대신 authoritative GET을 먼저 시도하고, 그마저
+   *  실패하면 LOADOUT_REVISION_UNAVAILABLE로 명확히 거부한다(버전 없는 커밋 금지). (2)
+   *  replayOnConflict:false — 충돌 후 서버 값이 요청과 다르면(오래된 의도) 자동으로
+   *  재전송하지 않는다. 서버 진실은 반영하고, 원래 SKIN_REVISION_CONFLICT 오류를 그대로
+   *  되돌려 훅이 명시적 거부로 처리하게 한다(useSkinCardWearSelection.js의
+   *  CONFIRMED_EQUIP_REJECTION_CODES 참고) — F-13 프로필의 자동 재조정(replayOnConflict
+   *  기본값 true)과 다른 이 슬라이스만의 계약이다.
+   *  requireKnownRevision/replayOnConflict은 실제 F-14 소비 경로인 직업 스킨·카드 프레임
+   *  슬롯에만 적용한다(isSkinOrCardSlot) — PROFILE_PHOTO/PROFILE_BORDER를 이 제네릭
+   *  equip()으로 직접 호출하는 것은 이 슬라이스 범위 밖의 기존 계약
+   *  (profileBorderHydration.test.js)이라 그 두 슬롯의 기존 동작(버전 없어도 즉시 전송,
+   *  충돌 시 자동 재조정)은 그대로 둔다 — 실제 UI는 사진·테두리에 항상 equipProfile()을
+   *  쓴다.
    *  @param {{ slot: "PROFILE_PHOTO" | "PROFILE_BORDER" | "PLAYER_CARD_FRAME" | "JOB_SKIN_NOBLE" | "JOB_SKIN_CLOWN" | "JOB_SKIN_GUARD" | "JOB_SKIN_DOCTOR" | "JOB_SKIN_WITCH_HUNTER", itemId: string }} params */
   equip: ({ slot, itemId }) => {
     const jobId = JOB_SKIN_SLOT_TO_JOB_ID[slot]
     const field = jobId ? null : SLOT_TO_LOADOUT_FIELD[slot]
+    const isSkinOrCardSlot = Boolean(jobId) || slot === "PLAYER_CARD_FRAME"
     return sendLoadoutWrite(get, set, {
       endpoint: "/economy/equip",
-      buildBody: (expectedRevision) => ({
-        slot,
-        itemId,
-        ...(expectedRevision ? { expectedRevision } : {}),
-      }),
+      buildBody: (expectedRevision) => (isSkinOrCardSlot
+        ? { slot, itemId, expectedRevision }
+        : { slot, itemId, ...(expectedRevision ? { expectedRevision } : {}) }),
       applyExtra: jobId
         ? (merged) => ({ selectedSkinsByJob: { ...merged.selectedSkinsByJob, [jobId]: itemId } })
         : undefined,
@@ -343,6 +409,8 @@ export const useEconomyStore = create((set, get) => ({
           ? serverLoadout[field] === itemId
           : false),
       conflictCode: "SKIN_REVISION_CONFLICT",
+      requireKnownRevision: isSkinOrCardSlot,
+      replayOnConflict: !isSkinOrCardSlot,
     })
   },
 

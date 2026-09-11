@@ -80,6 +80,14 @@ function resetEconomy() {
   postImpl = async () => { throw new Error("api.post stub not set") }
   currentUser = { uuid: "user-1" }
   useEconomyStore.getState().reset()
+  // F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — 실제 화면에서는 Overlay가
+  // 열리자마자 fetchSummary로 authoritative revision을 먼저 읽어 두므로(SkinCardWearOverlay.jsx
+  // 열림 effect), confirmLoadout이 호출될 때 store.equip()은 revision을 이미 알고 있는 채로
+  // 시작한다. 이 파일은 훅만 단독으로 렌더해 그 Overlay 마운트 단계를 거치지 않으므로, 여기서
+  // 같은 전제를 직접 만들어 둔다 — 그러지 않으면 매 equip() 호출이 먼저 authoritative GET을
+  // 시도하게 되어(economy.store.js sendLoadoutWrite의 requireKnownRevision), 아래 테스트들이
+  // 검증하려는 "명시적 거부/전송 불확실 직후 첫 POST" 시나리오가 흐트러진다.
+  useEconomyStore.setState((state) => ({ loadout: { ...state.loadout, revision: "known-rev" } }))
 }
 
 function renderSelection() {

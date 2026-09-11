@@ -990,6 +990,11 @@ module.exports = {
     equipProfileAppearance,
     getPublicProfileLoadouts,
     getGameStartLoadouts,
+    // F-14(AC-01, R-IMPL2 "실제 endpoint가 authoritative loadout을 돌려줘야 한다") —
+    // economy.routes.js가 POST /economy/equip 응답에 selectedSkinsByJob을 실을 때 이 함수를
+    // 그대로 재사용한다(요청 필드를 되짚어 재구성하지 않고, equipItem이 실제로 돌려준 loadout
+    // 행에서 직접 읽는다).
+    buildSkinsByJob,
     // 테스트 전용 — 낮은 레벨 원장 적용 로직을 직접 검증할 때 사용한다.
     __internal: { applyLedgerTransaction, ensureWalletRow, ensureDefaultLoadout },
 };
