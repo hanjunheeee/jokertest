@@ -245,9 +245,11 @@ test('F-14 AC-01(R-IMPL2): 갱신 시도 중 트랜잭션이 실패하면 실제
     // 쓰는 것은 클래스 정적 메서드(models.EconomyLoadout.update)라 이 패치의 영향을 받지 않는다.
     const originalUpdate = db.sequelize.models.EconomyLoadout.prototype.update;
     let updateCalls = 0;
-    db.sequelize.models.EconomyLoadout.prototype.update = function patchedUpdate() {
+    db.sequelize.models.EconomyLoadout.prototype.update = async function patchedUpdate(...args) {
         updateCalls += 1;
-        return Promise.reject(new Error('injected update failure (rollback test)'));
+        assert.ok(args[1]?.transaction, 'the real update must run inside the transaction being rolled back');
+        await originalUpdate.apply(this, args);
+        throw new Error('injected update failure (rollback test)');
     };
 
     try {
