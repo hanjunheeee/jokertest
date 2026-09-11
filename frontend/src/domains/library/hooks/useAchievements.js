@@ -24,13 +24,17 @@ export function useAchievements() {
   const fetchAchievements = useAchievementsStore((s) => s.fetchAchievements)
   const storeRetry = useAchievementsStore((s) => s.retry)
 
-  // CODEX-3 재검토(AC-06): 마운트 효과가 끝난 뒤(성공 시에만) 경제 상태를 다시 읽어오는
-  // 로직을 재사용 가능한 콜백으로 뽑아, retry도 같은 계약을 따르게 한다 — 이전 버전은 이
-  // 갱신을 마운트 효과 안에서만 인라인으로 했고, 화면이 store.retry를 그대로 노출해
-  // "재시도 성공"이 경제 갱신으로 이어지지 않았다(재시도로 업적이 새로 지급 상태가 돼도
-  // 재화·소유품·테두리 화면은 갱신되지 않는 버그).
-  const syncEconomyIfSuccess = useCallback(() => {
-    if (useAchievementsStore.getState().status === "success") {
+  // CODEX-4 재검토(AC-06): 이전 버전은 fetchAchievements()가 끝난 뒤 전역
+  // useAchievementsStore.getState().status만 다시 읽어 "성공했는지"를 판단했다 — 그런데
+  // 이 훅이 재마운트마다·retry마다 다시 조회하도록 바뀌면서 여러 호출이 겹칠 수 있게 됐고,
+  // 전역 status는 "가장 나중에 반영된 호출"의 결과일 뿐 "지금 이 콜백이 속한 호출"의
+  // 결과가 아니다 — 그래서 이미 폐기된(store가 세대/토큰 불일치로 버린) 호출의 콜백이,
+  // 우연히 다른 나중 호출이 성공해 둔 상태를 보고 경제 상태를 또 한 번(중복으로) 다시
+  // 읽어올 수 있었다. achievements.store.js의 fetchAchievements가 이제 그 순간 자신이 직접
+  // 판정한 결과를 outcome으로 돌려주므로, 여기서는 전역 상태 대신 그 값만 본다 — "이
+  // 호출이 지금도 유효한 성공인지"를 이 호출 자신의 결과로만 판단한다(A-08 원칙 유지).
+  const syncEconomyIfSuccess = useCallback((outcome) => {
+    if (outcome?.outcome === "success") {
       useEconomyStore.getState().fetchSummary()
     }
   }, [])
@@ -42,9 +46,9 @@ export function useAchievements() {
   // 상태도 함께 새로 읽어온다.
   useEffect(() => {
     let active = true
-    fetchAchievements().then(() => {
+    fetchAchievements().then((outcome) => {
       if (!active) return
-      syncEconomyIfSuccess()
+      syncEconomyIfSuccess(outcome)
     })
     return () => { active = false }
   }, [generation, fetchAchievements, syncEconomyIfSuccess])

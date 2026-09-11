@@ -190,6 +190,79 @@ test("retry가 성공하면 경제 상태도 함께 다시 읽어온다", async 
   assert.equal(fetchSummaryCalls, 2)
 })
 
+// CODEX-4 재검토(AC-06): 이전 버전의 syncEconomyIfSuccess는 전역
+// useAchievementsStore.getState().status만 다시 읽었다 — 겹친 두 retry 중 먼저 시작됐지만
+// 늦게 끝나는(store가 세대/토큰 불일치로 폐기하는) 응답의 콜백이, 그 사이 나중에 시작된
+// retry가 이미 성공해 둔 전역 status를 보고 경제 상태를 또 한 번(중복으로) 읽어올 수
+// 있었다. 이제 각 호출은 자신의 outcome만 보고 판단하므로, 폐기된 쪽은 경제 상태를 다시
+// 읽지 않아야 한다.
+test("겹친 retry 중 먼저 시작됐지만 늦게 끝나는(폐기된) 응답은 경제 상태를 중복으로 다시 읽어오지 않는다", async () => {
+  resetStore()
+  const staleGate = createDeferred()
+  let calls = 0
+  getMyAchievementsImpl = async () => {
+    calls += 1
+    if (calls === 2) { await staleGate.promise }
+    return SAMPLE_ACHIEVEMENTS
+  }
+
+  const { result } = renderHook(() => useAchievements())
+  await waitFor(() => assert.equal(result.current.status, "success"))
+  assert.equal(fetchSummaryCalls, 1, "마운트 조회 성공 시 1회")
+
+  let staleOutcomePromise
+  await act(async () => {
+    staleOutcomePromise = result.current.retry() // calls=2, staleGate에 걸려 대기한다
+  })
+
+  await act(async () => {
+    await result.current.retry() // calls=3, 즉시 성공 — "나중에 시작된 호출"로 store에 반영된다
+  })
+  assert.equal(fetchSummaryCalls, 2, "나중에 시작된 retry가 성공하면 경제 상태를 다시 읽어와야 한다")
+
+  await act(async () => {
+    staleGate.resolve()
+    await staleOutcomePromise
+  })
+
+  assert.equal(fetchSummaryCalls, 2, "먼저 시작됐지만 늦게 끝난(폐기된) retry는 경제 상태를 또 읽어오면 안 된다")
+})
+
+// CODEX-4 재검토(AC-06): 계정 전환 전에 시작된 retry가 전환 이후에 늦게 도착하면, 그 응답은
+// achievements.store.js의 세대 판정으로 outcome:'stale'이 되어야 하고, 그 stale 응답이 새
+// 계정의 경제 상태를 다시 읽어오는 일로 이어지면 안 된다.
+test("계정 전환 전에 시작된 retry가 전환 후 늦게 도착해도 경제 상태를 다시 읽어오지 않는다", async () => {
+  resetStore()
+  const gate = createDeferred()
+  let calls = 0
+  getMyAchievementsImpl = async () => {
+    calls += 1
+    if (calls === 1) return SAMPLE_ACHIEVEMENTS // 최초 마운트(user-1)
+    if (calls === 2) { await gate.promise; return SAMPLE_ACHIEVEMENTS } // user-1의 retry, 늦게 도착
+    return [{ id: "record-1-masquerade", achieved: false, current: 0, threshold: 3, granted: false }] // 계정 전환 후 재마운트(user-2)
+  }
+
+  const { result } = renderHook(() => useAchievements())
+  await waitFor(() => assert.equal(result.current.status, "success"))
+  assert.equal(fetchSummaryCalls, 1)
+
+  let staleRetryPromise
+  await act(async () => {
+    staleRetryPromise = result.current.retry() // calls=2, gate에 걸림 — 아직 user-1이다
+  })
+
+  await act(async () => { setCurrentUser({ uuid: "user-2" }) }) // requestGeneration 증가
+  await waitFor(() => assert.equal(result.current.status, "success")) // calls=3, 새 계정 조회 성공
+  assert.equal(fetchSummaryCalls, 2, "새 계정 조회가 성공하면 경제 상태를 다시 읽어와야 한다")
+
+  await act(async () => {
+    gate.resolve()
+    await staleRetryPromise
+  })
+
+  assert.equal(fetchSummaryCalls, 2, "계정 전환 전에 시작된 retry의 지연 응답은 경제 상태를 다시 읽어오면 안 된다")
+})
+
 // ── A-08: 계정 전환 시 업적 상태가 격리되고, 새 계정에서 다시 경제 상태를 읽어온다 ──
 
 test("계정을 전환하면 이전 계정의 업적이 사라지고 새 계정 조회가 다시 트리거된다", async () => {

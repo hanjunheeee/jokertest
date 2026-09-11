@@ -85,6 +85,43 @@ test("retry는 fetchAchievements를 다시 실행한다", async () => {
   assert.equal(useAchievementsStore.getState().status, "success")
 })
 
+// CODEX-4 재검토(AC-06): 이전 버전의 fetchAchievements는 아무것도 반환하지 않아,
+// useAchievements.js가 "이번 호출이 실제로 성공했는지"를 판단하려면 나중에 전역 status를
+// 다시 읽는 수밖에 없었다 — 그러면 겹친 호출 중 폐기된 쪽이 다른(나중) 호출의 성공을
+// 자신의 것으로 착각할 수 있었다. fetchAchievements가 그 순간 자신이 직접 판정한
+// generation/token 일치 여부를 outcome으로 돌려주는지 직접 검증한다.
+test("fetchAchievements는 성공하면 outcome:'success'를 반환한다", async () => {
+  resetStore()
+  getMyAchievementsImpl = async () => SAMPLE_ACHIEVEMENTS
+
+  const outcome = await useAchievementsStore.getState().fetchAchievements()
+
+  assert.deepEqual(outcome, { outcome: "success" })
+})
+
+test("fetchAchievements는 실패하면 outcome:'error'를 반환한다", async () => {
+  resetStore()
+  getMyAchievementsImpl = async () => { throw new Error("네트워크 오류") }
+
+  const outcome = await useAchievementsStore.getState().fetchAchievements()
+
+  assert.deepEqual(outcome, { outcome: "error" })
+})
+
+test("세대가 바뀌어 폐기된 호출은 outcome:'stale'을 반환하고 store 상태를 건드리지 않는다", async () => {
+  resetStore()
+  const deferred = createDeferred()
+  getMyAchievementsImpl = async () => { await deferred.promise; return SAMPLE_ACHIEVEMENTS }
+
+  const stalePromise = useAchievementsStore.getState().fetchAchievements()
+  setCurrentUser({ uuid: "user-2" }) // reset() → requestGeneration 증가
+  deferred.resolve()
+
+  const outcome = await stalePromise
+  assert.deepEqual(outcome, { outcome: "stale" })
+  assert.equal(useAchievementsStore.getState().status, "idle", "폐기된 호출은 status를 바꾸면 안 된다")
+})
+
 // ── A-08: 로그아웃/계정 전환 시 상태 격리, 지연 응답 경합 ───────────────────────
 
 test("로그아웃하면 업적 상태가 초기화된다", async () => {
