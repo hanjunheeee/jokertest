@@ -1,5 +1,6 @@
 const crypto = require('crypto')
 const userRepository = require('../repositories/user.repositories')
+const economyService = require('../service/economy.service')
 const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
 const { validateCreateRoomPayload } = require('../utils/createRoomValidation')
 const { ROOM_JOIN_ERROR_CODES } = require('./roomJoinErrors')
@@ -19,6 +20,16 @@ let userRepositoryRef = userRepository
 /** 테스트 전용: userRepository 구현을 교체합니다. 인자 없이 호출하면 실제 모듈로 되돌립니다. */
 function __setUserRepositoryForTests(fakeRepository) {
     userRepositoryRef = fakeRepository ?? userRepository
+}
+
+// F-13(AC-05): economy.service.js 자체는 require 시점에 backend/models를 즉시 불러오지
+// 않지만(defaultDb()가 호출 시점에 지연 require한다), 실제로 호출하면 그 순간 실제 DB
+// 연결을 요구한다 — userRepositoryRef와 같은 이유로 테스트가 교체할 수 있어야 한다.
+let economyServiceRef = economyService
+
+/** 테스트 전용: economyService 구현을 교체합니다. 인자 없이 호출하면 실제 모듈로 되돌립니다. */
+function __setEconomyServiceForTests(fakeEconomyService) {
+    economyServiceRef = fakeEconomyService ?? economyService
 }
 // NOTE: 게임 시작(handleStartGame)은 방장 권한·인원·준비 상태 가드를 통과하면
 // game-core/gameSession(prepareGameSession → commitGameSession)으로 GameSession을 만들고,
@@ -439,6 +450,51 @@ function buildRoomPayload(room) {
     }
 }
 
+// F-13(AC-05): 인증된 uuid의 공개 프로필(사진·테두리)만 조회해 room.players 항목에 심을
+// 필드를 만든다. economyServiceRef.getPublicProfileLoadouts는 지갑·소유 목록 등 비공개
+// 정보를 절대 포함하지 않으므로(economy.service.js 참고), 이 필드를 그대로 room.players →
+// buildRoomPayload → 클라이언트로 공개해도 안전하다. 조회 실패는 여기서 삼키지 않고 그대로
+// 던진다 — 호출부(handleCreateRoomAfterReservation/handleJoinRoomByCode)가 방 생성·참가
+// 실패로 처리해야, 계정 외형을 확보하지 못한 참가자가 빈 필드로 방에 들어가는 일이 없다.
+async function loadRoomParticipantProfile(uuid) {
+    const loadouts = await economyServiceRef.getPublicProfileLoadouts([uuid])
+    const loadout = loadouts[uuid] ?? { profilePhotoId: null, profileBorderId: null }
+    return {
+        accountProfilePhotoId: loadout.profilePhotoId,
+        accountProfileBorderId: loadout.profileBorderId,
+    }
+}
+
+/**
+ * F-13(AC-05): 게임 시작 직전 room의 모든 참가자에 대해 서버 loadout을 다시 확보해
+ * room.players에 반영한다("게임 시작 시 스냅샷된 계정 프로필") — 대기방에 머무는 동안
+ * 프로필을 바꿨을 수 있으므로, 참가 시점이 아니라 시작 시점의 최신값을 커밋한다.
+ *
+ * 조회 자체는 비동기라 그 사이 방 상태가 바뀔 수 있다 — 호출부(handleStartGame)가 이미
+ * 통과시킨 조건(방 존재·방장 동일·참가자 구성·전원 준비)을 조회 완료 직후 다시 확인하고,
+ * 하나라도 깨졌으면 room.players를 전혀 건드리지 않고 { ok:false, code } 만 돌려준다
+ * (부분 반영 금지 — 일부 참가자만 새 값으로 덮이는 상태가 생기지 않는다).
+ */
+async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture) {
+    const uuids = [...uuidsAtCapture]
+    const loadouts = await economyServiceRef.getPublicProfileLoadouts(uuids)
+
+    const stillHost = room.hostUuid === hostUuid
+    const sameParticipants = room.players.size === uuids.length && uuids.every((u) => room.players.has(u))
+    const stillReady = sameParticipants && uuids.every((u) => room.players.get(u).isReady === true)
+    if (!stillHost || !sameParticipants || !stillReady) {
+        return { ok: false, code: 'ROOM_STATE_CHANGED' }
+    }
+
+    for (const uuid of uuids) {
+        const player = room.players.get(uuid)
+        const loadout = loadouts[uuid] ?? { profilePhotoId: null, profileBorderId: null }
+        player.accountProfilePhotoId = loadout.profilePhotoId
+        player.accountProfileBorderId = loadout.profileBorderId
+    }
+    return { ok: true }
+}
+
 /** 공개 목록에 노출해도 되는 최소 Room 정보만 반환합니다. */
 function buildPublicRoomList() {
     return [...gameRooms.values()]
@@ -560,7 +616,13 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
     let room = null
 
     try {
-        const user = await userRepositoryRef.findByUuid(uuid)
+        // F-13(AC-05): 사용자 조회와 함께 인증 uuid의 공개 프로필(사진·테두리)도 확보한다
+        // — 실패하면(경제 시스템 조회 오류 등) 기본 외형으로 조용히 넘어가지 않고 아래
+        // catch에서 방 생성 실패로 처리한다.
+        const [user, accountProfile] = await Promise.all([
+            userRepositoryRef.findByUuid(uuid),
+            loadRoomParticipantProfile(uuid),
+        ])
         if (!user) {
             callback({ ok: false, message: '사용자 정보를 찾을 수 없습니다.' })
             return
@@ -598,7 +660,7 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
             accessType,
             // 새로 생성된 방의 방장도 다른 참가자와 동일하게 준비 안 됨 상태로 시작한다
             // (방장이라고 자동으로 준비된 것으로 취급하지 않는다).
-            players: new Map([[uuid, { uuid, nickname: user.nickname, isReady: false }]]),
+            players: new Map([[uuid, { uuid, nickname: user.nickname, isReady: false, ...accountProfile }]]),
             settings,
         }
 
@@ -761,7 +823,12 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     let committed = false
 
     try {
-        const user = await userRepositoryRef.findByUuid(uuid)
+        // F-13(AC-05): handleCreateRoomAfterReservation과 같은 이유로 사용자 조회와 함께
+        // 공개 프로필도 확보한다.
+        const [user, accountProfile] = await Promise.all([
+            userRepositoryRef.findByUuid(uuid),
+            loadRoomParticipantProfile(uuid),
+        ])
         if (!user) {
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, '사용자 정보를 찾을 수 없습니다.')
             return
@@ -903,7 +970,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // 마지막 검사와 Map 커밋 사이에는 await를 두지 않는다 — 그 틈에 다른 요청이
         // 끼어들면 방금 한 정원 검사가 무의미해지기 때문이다.
         // 새로 참가하는 사용자도 항상 준비 안 됨 상태로 시작한다(이전 방 참여 이력과 무관).
-        const player = { uuid, nickname: user.nickname, isReady: false }
+        const player = { uuid, nickname: user.nickname, isReady: false, ...accountProfile }
         room.players.set(uuid, player)
         playerRoom.set(uuid, room.id)
         committed = true
@@ -1109,6 +1176,25 @@ async function handleStartGame(io, socket, uuid, callback) {
             code: 'PLAYERS_NOT_READY',
             message: '아직 준비하지 않은 참가자가 있습니다.',
         })
+        return
+    }
+
+    // 0) 계정 외형 스냅샷(F-13 AC-05) — 시작 직전 참가자들의 서버 loadout을 다시 확보해
+    // room.players에 반영한다("게임 시작 시 스냅샷된 계정 프로필"은 참가 시점이 아니라
+    // 시작 시점 값이어야 한다). 조회는 비동기라 그 사이 방 상태가 바뀔 수 있으므로,
+    // captureRoomStartProfiles가 위에서 이미 통과시킨 조건(방장·인원 구성·준비 상태)을
+    // 다시 확인한다 — 깨졌으면 room.players를 건드리지 않고 그대로 실패로 응답한다.
+    const uuidsAtCapture = players.map((player) => player.uuid)
+    let captured
+    try {
+        captured = await captureRoomStartProfiles(room, uuid, uuidsAtCapture)
+    } catch (err) {
+        console.error('[게임 시작 계정 외형 조회 에러]', err)
+        callback({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
+        return
+    }
+    if (!captured.ok) {
+        callback({ ok: false, code: captured.code, message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
         return
     }
 
@@ -1463,6 +1549,7 @@ module.exports = {
     __seedPlayerRoomForTests,
     __removeRoomForTests,
     __setUserRepositoryForTests,
+    __setEconomyServiceForTests,
     __setRandomMatchmakingEnabledForTests,
     // ALREADY_IN_GAME 응답을 검증하는 테스트가 문구를 복붙하지 않고 이 원본을 그대로
     // 참조하도록 노출합니다(런타임 코드에서는 참조하지 않습니다).

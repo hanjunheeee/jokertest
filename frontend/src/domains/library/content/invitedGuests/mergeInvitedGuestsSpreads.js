@@ -5,6 +5,10 @@
 // 랭킹을 INVITED_GUESTS_MASTERY_RANKING_LIMIT로 잘랐다 — 둘 다 실서비스 더미였다. 지금은
 // jobKey마다 자기 자신의 런타임 상태만 쓰고(다른 직업으로 대체하지 않는다), 랭킹은 서버가
 // 돌려준 전체 목록을 그대로 넘긴다(화면 내 페이지 이동은 InvitedGuestsMasteryRanking의 몫).
+import {
+  resolveAccountProfileBorderSrc,
+  resolveAccountProfilePhotoSrc,
+} from "../../../../shared/utils/resolveAccountProfileAssets.js"
 
 const formatWinRate = (winRate) => `${Math.round((winRate ?? 0) * 100)}%`
 
@@ -14,12 +18,21 @@ const toMyStatsDisplay = (myStats) => myStats && {
   survivalCount: myStats.survivalCount,
 }
 
+// F-13 AC-05(운영자 확장 승인): gameResult.repositories.js의 getRoleRanking이 이제
+// economyService.getPublicProfileLoadouts로 조회한 accountProfilePhotoId/accountProfileBorderId를
+// 함께 내려준다 — 실제 장착 사진·테두리가 있으면 그것을 쓰고, 없으면 기존처럼 legacy
+// profile_image_url(경제 이전 계정의 구 프로필)·하드코딩 기본 사진으로 대체한다. 순위·승률
+// 등 다른 필드는 전혀 건드리지 않는다.
 const toRankingRowDisplay = (entry) => ({
   rank: entry.rank,
-  profileSrc: entry.profile_image_url || entry.profileSrc || "/shopItem/player-profile/프로필-금빛가면.png",
-  // 프로필 테두리는 상점 소유품(F-08 영역)이라 직업 전적 API가 내려주지 않는다 — 없으면
-  // InvitedGuestsRankingProfile이 테두리 없이 그린다.
-  profileBorderSrc: null,
+  profileSrc:
+    resolveAccountProfilePhotoSrc(entry.accountProfilePhotoId) ||
+    entry.profile_image_url ||
+    entry.profileSrc ||
+    "/shopItem/player-profile/프로필-금빛가면.png",
+  // 실제 장착 테두리가 없으면(미보유·구 계정) null로 남겨 기존처럼 테두리 없이 그린다
+  // (InvitedGuestsRankingProfile은 profileBorderSrc가 없으면 렌더하지 않는다).
+  profileBorderSrc: resolveAccountProfileBorderSrc(entry.accountProfileBorderId),
   nickname: entry.nickname,
   playCount: entry.games,
   winRate: formatWinRate(entry.winRate),

@@ -21,8 +21,8 @@ const {
     GAME_ROLES,
 } = gameSession
 
-function makePlayer(uuid, nickname = `nick-${uuid}`) {
-    return { uuid, nickname, isReady: true }
+function makePlayer(uuid, nickname = `nick-${uuid}`, extra = {}) {
+    return { uuid, nickname, isReady: true, ...extra }
 }
 
 /** buildSessionCandidate/prepareGameSession이 받는 room 형태를 흉내낸다. */

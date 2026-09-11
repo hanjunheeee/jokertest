@@ -91,6 +91,39 @@ test("applySessionSnapshotPure: 유효한 ROLE_REVEAL 스냅샷을 반영하고 
   assert.equal(result.state.dayVoteResolution, null)
 })
 
+test("F-13(AC-05) CODEX-2 회귀: 응답의 accountProfilePhotoId/accountProfileBorderId가 있는 참가자는 반영된 players에도 그대로 남고, 없는 참가자는 키 자체가 생기지 않는다(재접속·새로고침이 계정 사진·테두리를 조용히 지우면 안 된다)", () => {
+  const current = baseCurrent()
+  const response = baseResponse({
+    players: [
+      { uuid: "p1", nickname: "P1", isAlive: true, isConnected: true, accountProfilePhotoId: "player-profile-그림자", accountProfileBorderId: "profile-border-귀족" },
+      { uuid: "p2", nickname: "P2", isAlive: true, isConnected: true },
+      { uuid: "p3", nickname: "P3", isAlive: true, isConnected: true },
+    ],
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  const p1 = result.state.players.find((p) => p.uuid === "p1")
+  const p2 = result.state.players.find((p) => p.uuid === "p2")
+  assert.equal(p1.accountProfilePhotoId, "player-profile-그림자")
+  assert.equal(p1.accountProfileBorderId, "profile-border-귀족")
+  assert.equal(Object.hasOwn(p2, "accountProfilePhotoId"), false)
+  assert.equal(Object.hasOwn(p2, "accountProfileBorderId"), false)
+})
+
+test("applySessionSnapshotPure: accountProfilePhotoId/accountProfileBorderId가 있지만 빈 문자열이면 전체 스냅샷을 거부한다", () => {
+  const current = baseCurrent()
+  const response = baseResponse({
+    players: [
+      { uuid: "p1", nickname: "P1", isAlive: true, isConnected: true, accountProfilePhotoId: "" },
+      { uuid: "p2", nickname: "P2", isAlive: true, isConnected: true },
+      { uuid: "p3", nickname: "P3", isAlive: true, isConnected: true },
+    ],
+  })
+
+  assertRejected(current, response)
+})
+
 test("applySessionSnapshotPure: 유효한 NIGHT 스냅샷을 반영한다(nightResult 없음)", () => {
   const current = baseCurrent()
   const response = baseResponse({ phase: "NIGHT" })

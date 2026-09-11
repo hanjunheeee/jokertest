@@ -1,5 +1,6 @@
 const db = require("../models");
 const friendRepository = require("../repositories/friend.repositories");
+const economyService = require("../service/economy.service");
 const { createError } = require("../utils/appError");
 
 exports.getFriendList = async (myUuid) => {
@@ -14,8 +15,14 @@ exports.getFriendList = async (myUuid) => {
     const presences = await friendRepository.findOnlinePresences(friendInfos.map((f) => f.uuid));
     const presenceByUuid = new Map(presences.map((p) => [p.user_id, p]));
 
+    // F-13 AC-05(운영자 확장 승인): 친구 목록에도 실제 장착 사진·테두리를 보여주기 위해
+    // economyService.getPublicProfileLoadouts로 친구들의 appearance id만 일괄 조회한다 —
+    // 지갑·소유 목록 등 비공개 경제 정보는 절대 섞이지 않는다(그 함수 자체의 계약).
+    const loadoutsByUuid = await economyService.getPublicProfileLoadouts(friendInfos.map((f) => f.uuid));
+
     return friendInfos.map((friendInfo) => {
         const presence = presenceByUuid.get(friendInfo.uuid);
+        const loadout = loadoutsByUuid[friendInfo.uuid] ?? { profilePhotoId: null, profileBorderId: null };
 
         return {
             id:         friendInfo.uuid,
@@ -24,6 +31,8 @@ exports.getFriendList = async (myUuid) => {
             status:     presence ? presence.status : 'OFFLINE',
             online:     presence ? presence.status !== 'OFFLINE' : false,
             isFavorite: false,
+            accountProfilePhotoId:  loadout.profilePhotoId,
+            accountProfileBorderId: loadout.profileBorderId,
         };
     });
 };

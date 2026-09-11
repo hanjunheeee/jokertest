@@ -155,6 +155,7 @@ export default function InGameActionPanel({
     dayReadyCount,
     dayReadyRequired,
     dayReadyControlsEnabled,
+    selfAliveForControls,
     submitDayReady,
     submitDayVote,
     abstainDayVote,
@@ -293,7 +294,7 @@ export default function InGameActionPanel({
             <p className={INGAME_ACTION_CAPTION_CLASS}>{DAY_DISCUSSION_CAPTION}</p>
           </div>
           <p className={INGAME_ACTION_META_CLASS}>{DAY_DISCUSSION_NOTICE}</p>
-          {!dayReadyControlsEnabled && dayReadyStatus === "idle" ? (
+          {selfAliveForControls === false && dayReadyStatus === "idle" ? (
             <p className={INGAME_ACTION_META_CLASS}>{DAY_DEAD_NOTICE}</p>
           ) : null}
           <button

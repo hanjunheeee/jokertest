@@ -1,6 +1,18 @@
 const db = require("../models");
 const gameSessionCore = require("../game-core/gameSession");
 const roleStatisticsPolicy = require("../services/roleStatisticsPolicy");
+const economyService = require("../service/economy.service");
+
+// backend/socket/matchmaking.js의 __setEconomyServiceForTests와 같은 이유(같은 패턴) —
+// economyService.getPublicProfileLoadouts는 실제 backend/models(Economy* 테이블)에 접근하는데,
+// 이 파일의 기존 통합 테스트(roleStatistics.integration.test.js)는 GameResultPlayer/GameResult/
+// User만 in-place로 가짜로 바꿔두고 Economy* 모델은 그대로 실제 Sequelize 모델이다 — 테스트
+// 전용으로 이 참조만 교체할 수 있게 해, 실제 DB 연결 없이도 getRoleRanking을 단위 테스트할
+// 수 있게 한다.
+let economyServiceRef = economyService;
+function __setEconomyServiceForTests(fakeEconomyService) {
+    economyServiceRef = fakeEconomyService ?? economyService;
+}
 
 // 한 판의 전적은 세 테이블(game_results · game_result_players · user_stats)에 걸쳐 있고,
 // 셋 중 하나만 남는 상태는 어떤 화면에서도 의미가 없다("경기는 있는데 참가자가 없다",
@@ -199,16 +211,26 @@ exports.getRoleRanking = async (role) => {
         raw: true,
     });
     const userByUuid = new Map(users.map((user) => [user.uuid, user]));
+    // F-13 AC-05(운영자 확장 승인): 서고 랭킹에도 실제 장착 사진·테두리를 보여주기 위해
+    // economyService.getPublicProfileLoadouts로 랭킹에 오른 계정들의 appearance id만 일괄
+    // 조회한다 — 지갑·소유 목록 등 비공개 경제 정보는 절대 섞이지 않는다(그 함수 자체의
+    // 계약). 순위 계산·승률 등 기존 필드는 전혀 건드리지 않는다.
+    const loadoutsByUuid = await economyServiceRef.getPublicProfileLoadouts(ranked.map((entry) => entry.user_id));
 
-    return ranked.map((entry, index) => ({
-        rank: index + 1,
-        uuid: entry.user_id,
-        nickname: userByUuid.get(entry.user_id)?.nickname ?? null,
-        profile_image_url: userByUuid.get(entry.user_id)?.profile_image_url ?? null,
-        games: entry.games,
-        wins: entry.wins,
-        winRate: entry.winRate,
-    }));
+    return ranked.map((entry, index) => {
+        const loadout = loadoutsByUuid[entry.user_id] ?? { profilePhotoId: null, profileBorderId: null };
+        return {
+            rank: index + 1,
+            uuid: entry.user_id,
+            nickname: userByUuid.get(entry.user_id)?.nickname ?? null,
+            profile_image_url: userByUuid.get(entry.user_id)?.profile_image_url ?? null,
+            accountProfilePhotoId: loadout.profilePhotoId,
+            accountProfileBorderId: loadout.profileBorderId,
+            games: entry.games,
+            wins: entry.wins,
+            winRate: entry.winRate,
+        };
+    });
 };
 
 /**
@@ -274,3 +296,6 @@ exports.getAchievementProgressStats = async (userId) => {
         roleWinsByRole,
     };
 };
+
+// 테스트 전용 — economyServiceRef 교체(getRoleRanking의 계정 프로필 조회 fake 주입).
+exports.__setEconomyServiceForTests = __setEconomyServiceForTests;

@@ -12,10 +12,13 @@ export default function ProfileEditOverlay({ open, onClose }) {
   const {
     activeTab,
     setActiveTab,
-    draftPhoto,
-    setDraftPhoto,
+    draftPhotoItemId,
+    setDraftPhotoItemId,
     draftBorderItemId,
     setDraftBorderItemId,
+    ownedPhotoOptions,
+    photoListStatus,
+    retryLoadPhotos,
     ownedBorderOptions,
     borderListStatus,
     retryLoadBorders,
@@ -64,12 +67,15 @@ export default function ProfileEditOverlay({ open, onClose }) {
               <ProfileEditPanel
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
-                draftPhoto={draftPhoto}
+                draftPhotoItemId={draftPhotoItemId}
                 draftBorderItemId={draftBorderItemId}
+                ownedPhotoOptions={ownedPhotoOptions}
+                photoListStatus={photoListStatus}
+                onRetryLoadPhotos={retryLoadPhotos}
                 ownedBorderOptions={ownedBorderOptions}
                 borderListStatus={borderListStatus}
                 onRetryLoadBorders={retryLoadBorders}
-                onSelectPhoto={setDraftPhoto}
+                onSelectPhoto={setDraftPhotoItemId}
                 onSelectBorder={setDraftBorderItemId}
                 onClose={onClose}
                 onConfirm={handleConfirm}

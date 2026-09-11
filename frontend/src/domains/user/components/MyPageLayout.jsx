@@ -3,6 +3,7 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import FateMaskFooter from "./FateMaskFooter.jsx"
 import AccountManageButton from "./MyPageLayout/AccountManageButton.jsx"
+import EmoticonEntryButton from "./MyPageLayout/EmoticonEntryButton.jsx"
 import MyPageSummaryPanel from "./MyPageLayout/MyPageSummaryPanel.jsx"
 import ProfileEditButton from "./MyPageLayout/ProfileEditButton.jsx"
 import SkinCardWearButton from "./MyPageLayout/SkinCardWearButton.jsx"
@@ -36,6 +37,9 @@ export default function MyPageLayout() {
         <AccountManageButton onClick={goToAccount} />
         <ProfileEditButton onClick={() => setProfileEditOpen(true)} />
         <SkinCardWearButton onClick={() => setSkinCardWearOpen(true)} />
+        {/* F-13 AC-06: 진입 버튼만 추가한다 — onOpenEmoticons를 넘기지 않아 클릭해도
+            아무 탭·모달도 열리지 않는 미연결 상태를 유지한다. */}
+        <EmoticonEntryButton />
       </div>
 
       <ProfileEditOverlay open={profileEditOpen} onClose={() => setProfileEditOpen(false)} />

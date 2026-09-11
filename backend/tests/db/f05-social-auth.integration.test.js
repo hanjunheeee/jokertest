@@ -32,13 +32,15 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 // — isolatedTestDb.js 참고 — 따로 넘길 필요는 없지만, MIGRATIONS 체인에는 명시적으로
 // 넣어야 실제로 테이블이 만들어진다).
 const addEconomy = require('../../db/migrations/0006-add-economy');
+// Current auth services create EconomyLoadout rows, including its persisted CAS revision.
+const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
 // F-05 R-IMPL(CODEX-2/VERIFY-10): 관리 목록·드롭 순서·대상 DB 확인은
 // backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 f01~f05·user.accountPaths가
 // 항상 같은 정의를 쓰게 한다(이 스위트가 만드는 social 테이블을 다른 스위트가 몰라
 // resetSchema()가 거부하던 결함의 근본 원인).
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

@@ -73,7 +73,7 @@ export function buildPlayerSessionSourceFromGameState(state) {
     const entry = {
       id: player.uuid,
       name: player.nickname,
-      connected: true,
+      connected: typeof player.isConnected === "boolean" ? player.isConnected : true,
       alive: player.alive,
       themeIndex: player.themeIndex,
     }
@@ -86,6 +86,17 @@ export function buildPlayerSessionSourceFromGameState(state) {
       // 동료 JOKER 항목에만 isAlly를 붙인다 — role/team과 마찬가지로 해당 없는 항목에는
       // 키 자체가 생기지 않는다.
       entry.isAlly = true
+    }
+    // F-13(AC-05): 계정 프로필 사진·테두리는 role과 달리 비밀이 아니라 모든 참가자에게
+    // 공개되는 식별자다(buildGameStartedPayload/buildSessionSnapshot의 공용 players[]가
+    // 이미 전원에게 같은 방식으로 내려준다). mergeSourcePlayerWithPreview가 이 두 필드를
+    // own-property일 때만 조건부로 쓰므로, 여기서 전달하지 않으면 서버가 보낸 값이 있어도
+    // 최종 초상에 반영되지 않는다 — role/isAlly와 같은 조건부 복사 관례를 따른다.
+    if (Object.hasOwn(player, "accountProfilePhotoId")) {
+      entry.accountProfilePhotoId = player.accountProfilePhotoId
+    }
+    if (Object.hasOwn(player, "accountProfileBorderId")) {
+      entry.accountProfileBorderId = player.accountProfileBorderId
     }
     return entry
   })

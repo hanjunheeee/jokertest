@@ -5,6 +5,12 @@ const matchmaking = require('../matchmaking')
 matchmaking.__setUserRepositoryForTests({
     findByUuid: async (uuid) => ({ nickname: `user-${uuid}` }),
 })
+// F-13(AC-05): economy.service.js도 실제 호출 시 backend/models(실제 DB)가 필요해
+// userRepository와 같은 이유로 fake를 주입한다.
+matchmaking.__setEconomyServiceForTests({
+    getPublicProfileLoadouts: async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+})
 
 const {
     handleCreateRoom,

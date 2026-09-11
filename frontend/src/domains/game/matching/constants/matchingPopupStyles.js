@@ -71,6 +71,19 @@ export const MATCHING_SLOT_CLASS_COMPACT =
 export const MATCHING_SLOT_NOT_READY_OFFSET_CLASS =
   "-translate-y-[clamp(0.42rem,2.1vh,0.75rem)]"
 
+// F-13(AC-05): 대기방 슬롯이 준비 여부만 다른 실루엣 대신 서로 다른 계정 초상(PlayerProfilePortrait)을
+// 그려야 한다. PlayerProfilePortrait의 wrapClassName은 내부에서 absolute로 배치되는 사진·테두리
+// 레이어를 담는 relative 컨테이너가 필요하므로, <img> 전용이던 위 MATCHING_SLOT_CLASS_*(object-contain
+// 이미지 클래스)를 그대로 재사용할 수 없다 — 같은 폭을 유지하는 별도 relative 래퍼 크기를 둔다.
+
+/** 5명 이하일 때 슬롯 초상 래퍼 크기(MATCHING_SLOT_CLASS_LARGE와 같은 폭) */
+export const MATCHING_SLOT_PORTRAIT_WRAP_CLASS_LARGE =
+  "relative aspect-square w-[clamp(5.35rem,9.4vw,7.35rem)] max-w-full shrink-0 select-none"
+
+/** 6~10명일 때 슬롯 초상 래퍼 크기(MATCHING_SLOT_CLASS_COMPACT와 같은 폭) */
+export const MATCHING_SLOT_PORTRAIT_WRAP_CLASS_COMPACT =
+  "relative aspect-square w-[clamp(4.25rem,7.2vw,5.75rem)] max-w-full shrink-0 select-none"
+
 /** 슬롯 실루엣 + 준비 배지를 세로로 묶는 wrapper */
 export const MATCHING_SLOT_WRAP_CLASS =
   "flex flex-col items-center"

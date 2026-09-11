@@ -886,6 +886,79 @@ test('buildGameStartedPayload: 세션에 없는 uuid로 호출하면 self는 nul
 })
 
 // ---------------------------------------------------------------------------
+// F-13(AC-05) — 계정 프로필 이미지(사진·테두리) 스냅샷
+// ---------------------------------------------------------------------------
+
+test('F-13(AC-05): buildSessionCandidate는 room.players의 계정 프로필 식별자를 변형 없이 session.players로 복사한다(A-04)', () => {
+    const room = makeRoom({
+        players: [
+            makePlayer('ap1', 'A', { accountProfilePhotoId: 'player-profile-금빛가면', accountProfileBorderId: 'profile-border-귀족' }),
+            makePlayer('ap2', 'B'), // 계정 프로필 필드가 아예 없는 참가자도 섞어 둔다
+            makePlayer('ap3', 'C'),
+        ],
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+
+    assert.equal(candidate.ok, true)
+    const p1 = candidate.session.players.get('ap1')
+    assert.equal(p1.accountProfilePhotoId, 'player-profile-금빛가면')
+    assert.equal(p1.accountProfileBorderId, 'profile-border-귀족')
+    const p2 = candidate.session.players.get('ap2')
+    assert.equal(Object.hasOwn(p2, 'accountProfilePhotoId'), false)
+    assert.equal(Object.hasOwn(p2, 'accountProfileBorderId'), false)
+
+    // room.players 원본 객체를 직접 참조하지 않는다(변경 가능한 방 참가자 객체 참조 금지, A-04) —
+    // 세션 커밋 뒤 방 참가자 쪽 필드를 바꿔도 세션에는 영향이 없어야 한다.
+    room.players.get('ap1').accountProfilePhotoId = 'player-profile-마인'
+    assert.equal(candidate.session.players.get('ap1').accountProfilePhotoId, 'player-profile-금빛가면')
+})
+
+test('F-13(AC-05): buildGameStartedPayload의 공용 players[]는 계정 프로필 필드를 실제로 가진 참가자에게만 담는다(비밀 아님, 조건부 노출)', () => {
+    const room = makeRoom({
+        players: [
+            makePlayer('gs1', 'A', { accountProfilePhotoId: 'player-profile-금빛가면', accountProfileBorderId: 'profile-border-평민' }),
+            makePlayer('gs2', 'B'),
+        ],
+        jokerCount: 1,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    const payload = buildGameStartedPayload(candidate.session, 'gs2') // 타인(gs2) 시점에서도 gs1의 공개 프로필이 보인다
+
+    const p1 = payload.state.players.find((p) => p.uuid === 'gs1')
+    const p2 = payload.state.players.find((p) => p.uuid === 'gs2')
+    assert.equal(p1.accountProfilePhotoId, 'player-profile-금빛가면')
+    assert.equal(p1.accountProfileBorderId, 'profile-border-평민')
+    assert.equal(Object.hasOwn(p2, 'accountProfilePhotoId'), false)
+    assert.equal(Object.hasOwn(p2, 'accountProfileBorderId'), false)
+})
+
+test('F-13(AC-05): 재접속 스냅샷(buildSessionSnapshot)도 game_started와 동일한 계정 프로필 식별자를 그대로 보존한다', () => {
+    const uuids = ['snap-ap-1', 'snap-ap-2']
+    const room = makeRoom({
+        players: [
+            makePlayer(uuids[0], 'A', { accountProfilePhotoId: 'player-profile-그림자', accountProfileBorderId: 'profile-border-귀족' }),
+            makePlayer(uuids[1], 'B'),
+        ],
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    commitGameSession(candidate.session)
+    const session = candidate.session
+
+    const startedPayload = buildGameStartedPayload(session, uuids[1])
+    const snapshot = buildSessionSnapshot(session, uuids[1])
+
+    const startedP1 = startedPayload.state.players.find((p) => p.uuid === uuids[0])
+    const snapshotP1 = snapshot.players.find((p) => p.uuid === uuids[0])
+    assert.equal(snapshotP1.accountProfilePhotoId, startedP1.accountProfilePhotoId)
+    assert.equal(snapshotP1.accountProfileBorderId, startedP1.accountProfileBorderId)
+    assert.equal(snapshotP1.accountProfilePhotoId, 'player-profile-그림자')
+
+    const snapshotP2 = snapshot.players.find((p) => p.uuid === uuids[1])
+    assert.equal(Object.hasOwn(snapshotP2, 'accountProfilePhotoId'), false)
+    assert.equal(Object.hasOwn(snapshotP2, 'accountProfileBorderId'), false)
+})
+
+// ---------------------------------------------------------------------------
 // endGameSessionForPlayer — GameSession 정리(반대 방향 뮤테이터)
 // ---------------------------------------------------------------------------
 

@@ -52,6 +52,8 @@ function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLAS
           id={friend.id}
           name={friend.name}
           online={friend.online}
+          accountProfilePhotoId={friend.accountProfilePhotoId}
+          accountProfileBorderId={friend.accountProfileBorderId}
         />
       ))}
     </ul>

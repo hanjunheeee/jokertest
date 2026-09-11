@@ -95,6 +95,11 @@ export function applySessionSnapshotPure(current, response) {
     if (typeof player.isAlive !== "boolean") return current
     if (typeof player.isConnected !== "boolean") return current
     if (Object.hasOwn(player, "themeIndex") && !isNonNegativeInteger(player.themeIndex)) return current
+    // F-13(AC-05): 계정 프로필 사진·테두리는 backend buildPlayerAccountProfileFields와 동일한
+    // own-property 조건부 계약이다(비밀이 아니라 조건부 노출) — 있으면 반드시 비어있지 않은
+    // 문자열이어야 하고, 없는 참가자는 그대로 키 자체가 없어야 한다.
+    if (Object.hasOwn(player, "accountProfilePhotoId") && !isNonEmptyString(player.accountProfilePhotoId)) return current
+    if (Object.hasOwn(player, "accountProfileBorderId") && !isNonEmptyString(player.accountProfileBorderId)) return current
     if (rosterByUuid.has(player.uuid)) return current
     rosterByUuid.set(player.uuid, player)
   }
@@ -268,6 +273,12 @@ export function applySessionSnapshotPure(current, response) {
       : themeIndexByUuid.has(p.uuid)
         ? { themeIndex: themeIndexByUuid.get(p.uuid) }
         : {}),
+    // F-13(AC-05): 이전 버전은 이 조립에서 계정 프로필 필드를 빠뜨려, 재접속·새로고침
+    // 스냅샷을 반영할 때마다 서버가 실제로 보낸 사진·테두리 값이 store에서 조용히
+    // 사라지고 최종 카드가 preview 기본 이미지로 되돌아갔다(buildPlayerSessionSourceFromGameState/
+    // mergeSourcePlayerWithPreview의 own-property 조건부 계약과 동일하게 여기서도 있을 때만 옮긴다).
+    ...(Object.hasOwn(p, "accountProfilePhotoId") ? { accountProfilePhotoId: p.accountProfilePhotoId } : {}),
+    ...(Object.hasOwn(p, "accountProfileBorderId") ? { accountProfileBorderId: p.accountProfileBorderId } : {}),
   }))
 
   const nextSelf = {

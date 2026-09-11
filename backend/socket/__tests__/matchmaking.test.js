@@ -7,10 +7,18 @@ const assert = require('node:assert/strict')
 // 초기화가 실패해(직접 실행해 확인) 이 프로젝트 구조에서는 쓸 수 없었다. 대신 matchmaking.js가
 // 제공하는 __setUserRepositoryForTests로 내부 참조만 교체하는 의존성 주입 방식을 쓴다.
 let fakeFindByUuid = async (uuid) => ({ nickname: `user-${uuid}` })
+// F-13(AC-05): economy.service.js도 userRepository와 같은 이유(실제 호출 시 backend/models가
+// 필요한 실제 DB 연결을 요구)로 fake를 주입한다. 기본값은 모든 uuid에 대해 사진·테두리
+// 모두 미지정(null)으로 응답한다 — 이 기본값을 검증하는 테스트만 실제 값을 오버라이드한다.
+let fakeGetPublicProfileLoadouts = async (userIds) =>
+    Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }]))
 
 const matchmaking = require('../matchmaking')
 matchmaking.__setUserRepositoryForTests({
     findByUuid: (...args) => fakeFindByUuid(...args),
+})
+matchmaking.__setEconomyServiceForTests({
+    getPublicProfileLoadouts: (...args) => fakeGetPublicProfileLoadouts(...args),
 })
 // game-core/gameSession.js는 matchmaking.js와 별도 모듈이라 자체 registry(gameSessions/
 // playerSession/roomGameSession)를 갖는다 — matchmaking.__resetStateForTests()로는 초기화되지
@@ -52,6 +60,8 @@ test.beforeEach(() => {
     matchmaking.__resetStateForTests()
     gameSession.__resetStateForTests()
     fakeFindByUuid = async (uuid) => ({ nickname: `user-${uuid}` })
+    fakeGetPublicProfileLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }]))
 })
 
 // ── create_room ──────────────────────────────────────────────────────────
@@ -90,6 +100,85 @@ test('create_room: 정상 생성 시 Socket room 가입과 Map 반영이 이루�
     assert.equal(room.title, 'user-uuid-B의 방')
     assert.equal(room.accessType, 'open')
     assert.equal(room.settings.maxPlayers, 8)
+})
+
+// ── F-13 AC-05: 인증 계정 loadout이 room.players에 실린다 ────────────────────────
+
+test('create_room: 방장의 서버 공개 프로필(사진·테두리)이 room.players 항목에 실린다', async () => {
+    fakeGetPublicProfileLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-기사', profileBorderId: 'profile-border-귀족' }]))
+
+    const socket = createFakeSocket('uuid-profile-create')
+    const io = createFakeIo([socket])
+    const res = await callAsPromise(handleCreateRoom, io, socket, 'uuid-profile-create', validSettingsPayload())
+
+    assert.equal(res.ok, true)
+    const [host] = res.room.players
+    assert.equal(host.accountProfilePhotoId, 'player-profile-기사')
+    assert.equal(host.accountProfileBorderId, 'profile-border-귀족')
+})
+
+test('create_room: 계정 프로필 조회가 실패하면 기본 외형으로 조용히 넘어가지 않고 방 생성 자체가 실패한다', async () => {
+    fakeGetPublicProfileLoadouts = async () => { throw new Error('economy 조회 실패(테스트 주입)') }
+
+    const socket = createFakeSocket('uuid-profile-create-fail')
+    const io = createFakeIo([socket])
+    const res = await callAsPromise(handleCreateRoom, io, socket, 'uuid-profile-create-fail', validSettingsPayload())
+
+    assert.equal(res.ok, false)
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameRooms.length, 0, '계정 외형을 확보하지 못했으면 방이 커밋되면 안 된다')
+})
+
+test('join_room_by_code: 참가자의 서버 공개 프로필(사진·테두리)이 room.players 항목에 실린다', async () => {
+    const hostSocket = createFakeSocket('uuid-profile-host')
+    const io = createFakeIo([hostSocket])
+    const created = await callAsPromise(handleCreateRoom, io, hostSocket, 'uuid-profile-host', validSettingsPayload())
+
+    fakeGetPublicProfileLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-드워프', profileBorderId: 'profile-border-남작' }]))
+
+    const joinerSocket = createFakeSocket('uuid-profile-joiner')
+    io.sockets.sockets.set(joinerSocket.id, joinerSocket)
+    await handleJoinRoomByCode(io, joinerSocket, 'uuid-profile-joiner', created.room.roomCode)
+
+    const joinedPayload = joinerSocket.emitted.find((e) => e.event === 'room_joined').payload
+    const joinerEntry = joinedPayload.players.find((p) => p.uuid === 'uuid-profile-joiner')
+    assert.equal(joinerEntry.accountProfilePhotoId, 'player-profile-드워프')
+    assert.equal(joinerEntry.accountProfileBorderId, 'profile-border-남작')
+})
+
+// F-13 AC-05(공개 응답 안전성) — loadRoomParticipantProfile은 economyService.getPublicProfileLoadouts의
+// 반환값에서 profilePhotoId/profileBorderId 두 필드만 꺼내 accountProfilePhotoId/
+// accountProfileBorderId로 옮긴다(economy.service.js 참고, 지갑·소유 목록은 그 함수 자체가
+// 절대 포함하지 않는다). 이 테스트는 그 계약이 room.players 공개 payload까지 그대로 지켜지는지
+// — 즉 fake economyService가 실수로라도 추가 필드(잔액·소유 목록 등)를 흘려도 room.players
+// 항목에는 알려진 안전한 키만 남는지 — 못박는다. 새 필드가 room.players에 늘어나면 이 테스트가
+// 먼저 깨져, 의도치 않은 공개 노출을 경고한다.
+test('create_room: room.players 항목은 알려진 안전한 키만 갖는다(economyService가 잔액 등 여분 필드를 흘려도 새어나가지 않는다)', async () => {
+    fakeGetPublicProfileLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [
+            id,
+            {
+                profilePhotoId: 'player-profile-기사',
+                profileBorderId: 'profile-border-귀족',
+                // 아래 두 필드는 실제 economyService.getPublicProfileLoadouts가 절대 포함하지
+                // 않지만, "혹시 흘러도 이쪽에서 막힌다"를 증명하기 위해 fake에서만 주입한다.
+                balanceGold: 999999,
+                entitlements: ['secret-item'],
+            },
+        ]))
+
+    const socket = createFakeSocket('uuid-profile-safe-keys')
+    const io = createFakeIo([socket])
+    const res = await callAsPromise(handleCreateRoom, io, socket, 'uuid-profile-safe-keys', validSettingsPayload())
+
+    assert.equal(res.ok, true)
+    const [host] = res.room.players
+    assert.deepEqual(
+        Object.keys(host).sort(),
+        ['accountProfileBorderId', 'accountProfilePhotoId', 'isReady', 'nickname', 'uuid'],
+    )
 })
 
 test('create_room: callback이 없는 요청은 어떤 상태도 바꾸지 않는다', () => {
@@ -702,11 +791,14 @@ test('create_room: socket.join 대기 중 연결이 끊기면 Socket room을 정
 
     const createPromise = callAsPromise(handleCreateRoom, io, socket, 'uuid-disc2', validSettingsPayload())
 
-    // 사용자 조회(gate가 걸리지 않은 기본 fakeFindByUuid)가 끝나 "조회 후" 연결 확인을 통과하고
-    // socket.join(joinGate)에서 막 대기를 시작한 시점까지 한 tick 양보한 뒤에 연결을 끊는다.
-    // 여기서 바로 connected=false를 주면 "조회 후" 체크에서 먼저 걸려 join 자체가
-    // 호출되지 않으므로, join 이후 체크를 검증하려면 이 순서가 필요하다.
-    await Promise.resolve()
+    // 사용자 조회 + 계정 프로필 조회(F-13 AC-05, gate가 걸리지 않은 기본 fake들)가 끝나
+    // "조회 후" 연결 확인을 통과하고 socket.join(joinGate)에서 막 대기를 시작한 시점까지
+    // 기다린 뒤에 연결을 끊는다 — 정확한 microtask 틱 수 대신 join()이 실제로 호출된
+    // 순간을 신호하는 socket.joinCalled를 기다린다(틱 수는 Promise.all 내부 구현에 따라
+    // 달라질 수 있어 세는 방식은 깨지기 쉽다). 여기서 바로 connected=false를 주면 "조회 후"
+    // 체크에서 먼저 걸려 join 자체가 호출되지 않으므로, join 이후 체크를 검증하려면 이
+    // 순서가 필요하다.
+    await socket.joinCalled
     socket.connected = false
     gate.resolve()
     const res = await createPromise
@@ -871,10 +963,12 @@ test('join_room_by_code: join 대기 중 방이 삭제되면 참가를 거부하
     io.sockets.sockets.set(joiner.id, joiner)
     const joinPromise = handleJoinRoomByCode(io, joiner, 'uuid-deljoin', roomCode)
 
-    // handleJoinRoomByCode가 사용자 조회를 마치고 방을 code로 찾은 뒤 socket.join(joinGate)
-    // 대기에 들어갈 때까지 한 tick 양보한다. 여기서 바로 방을 지우면 아직 방 조회 자체가
-    // 실행되기 전이라 "방 삭제 후 join" 상황이 아니라 "애초에 없던 방" 상황이 돼버린다.
-    await Promise.resolve()
+    // handleJoinRoomByCode가 사용자 조회 + 계정 프로필 조회(F-13 AC-05)를 마치고 방을
+    // code로 찾은 뒤 socket.join(joinGate) 대기에 들어갈 때까지 기다린다(정확한 tick 수
+    // 대신 join() 호출 자체를 신호하는 socket.joinCalled를 쓴다 — 위 create_room 테스트와
+    // 같은 이유). 여기서 바로 방을 지우면 아직 방 조회 자체가 실행되기 전이라 "방 삭제 후
+    // join" 상황이 아니라 "애초에 없던 방" 상황이 돼버린다.
+    await joiner.joinCalled
     // join이 대기하는 동안 방장이 방을 삭제한 상황을 흉내낸다.
     matchmaking.__removeRoomForTests(roomId)
     gate.resolve()
@@ -897,8 +991,8 @@ test('join_room_by_code: join 대기 중 같은 id의 다른 Room 객체로 교�
     io.sockets.sockets.set(joiner.id, joiner)
     const joinPromise = handleJoinRoomByCode(io, joiner, 'uuid-swapjoin', roomCode)
 
-    // 방 조회가 끝나고 socket.join(joinGate) 대기에 들어갈 때까지 한 tick 양보한다(위와 동일한 이유).
-    await Promise.resolve()
+    // 방 조회가 끝나고 socket.join(joinGate) 대기에 들어갈 때까지 기다린다(위와 동일한 이유).
+    await joiner.joinCalled
     // join이 대기하는 동안 같은 roomId를 가진 "다른" 객체로 바꿔치기한다(참조 동등성 깨짐).
     matchmaking.__seedRoomForTests({
         id: roomId,
@@ -1400,6 +1494,82 @@ test('start_game: callback이 없는 요청은 어떤 상태도 바꾸지 않는
 // 인자로 받는다(공유 fixture는 matchmaking.js를 require하지 않으므로) — 이 파일
 // 상단에서 이미 matchmaking.__testables로 꺼내 둔 지역 변수를 그대로 묶어 넘긴다.
 const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+
+test('start_game: 시작 직전 최신 서버 loadout으로 계정 외형을 다시 확보해 game_started에 반영한다(F-13 AC-05, 참가 시점이 아니라 시작 시점 값)', async () => {
+    fakeGetPublicProfileLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-금빛가면', profileBorderId: 'profile-border-평민' }]))
+
+    const hostSocket = createFakeSocket('uuid-start-profile-host')
+    const io = createFakeIo([hostSocket])
+    await setupReadyRoomForStart(io, 'uuid-start-profile-host', 'uuid-start-profile-joiner', readyRoomHandlers)
+
+    // 대기방에 머무는 동안 방장이 프로필을 바꿨다고 가정한다 — game_started에는 참가
+    // 시점 값이 아니라 지금(시작 시점) 값이 스냅샷되어야 한다.
+    fakeGetPublicProfileLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-드워프', profileBorderId: 'profile-border-귀족' }]))
+
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, 'uuid-start-profile-host', callback)
+    assert.equal(getResponse().ok, true)
+
+    const hostPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
+    const hostSelf = hostPayload.state.players.find((p) => p.uuid === 'uuid-start-profile-host')
+    assert.equal(hostSelf.accountProfilePhotoId, 'player-profile-드워프')
+    assert.equal(hostSelf.accountProfileBorderId, 'profile-border-귀족')
+})
+
+test('start_game: 계정 외형 재조회가 실패하면 GameSession을 커밋하지 않고 실패로 응답한다', async () => {
+    const hostSocket = createFakeSocket('uuid-start-econ-fail-host')
+    const io = createFakeIo([hostSocket])
+    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-econ-fail-host', 'uuid-start-econ-fail-joiner', readyRoomHandlers)
+
+    fakeGetPublicProfileLoadouts = async () => { throw new Error('economy 조회 실패(테스트 주입)') }
+
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, 'uuid-start-econ-fail-host', callback)
+
+    assert.equal(getResponse().ok, false)
+    assert.equal(getResponse().code, 'INTERNAL_ERROR')
+    assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0, '계정 외형 조회가 실패했으면 GameSession이 커밋되면 안 된다')
+    const roomSnapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(roomSnapshot.gameRooms.length, 1, '방은 그대로 유지되어야 한다')
+    assert.equal(joinerSocket.emitted.filter((e) => e.event === 'game_started').length, 0)
+})
+
+test('start_game: 계정 외형 재조회 중 참가자가 준비를 해제하면 ROOM_STATE_CHANGED로 거부하고 room.players를 부분 반영하지 않는다', async () => {
+    const hostSocket = createFakeSocket('uuid-start-race-host')
+    const io = createFakeIo([hostSocket])
+    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-race-host', 'uuid-start-race-joiner', readyRoomHandlers)
+
+    // captureRoomStartProfiles의 조회(getPublicProfileLoadouts)가 끝나기 전에 방 상태가
+    // 바뀌는 레이스를 재현한다 — deferred로 조회 완료 시점을 결정적으로 제어한다.
+    const gate = deferred()
+    fakeGetPublicProfileLoadouts = async (userIds) => {
+        await gate.promise
+        return Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-기사', profileBorderId: 'profile-border-귀족' }]))
+    }
+
+    const { callback, getResponse } = countingCallback()
+    const startPromise = handleStartGame(io, hostSocket, 'uuid-start-race-host', callback)
+
+    // 조회가 아직 끝나지 않은 사이 참가자가 준비를 해제한다.
+    await callAsPromise(handleSetReady, io, joinerSocket, 'uuid-start-race-joiner', { isReady: false })
+    gate.resolve()
+    await startPromise
+
+    assert.equal(getResponse().ok, false)
+    assert.equal(getResponse().code, 'ROOM_STATE_CHANGED')
+    assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0, '방 상태가 바뀌었으면 GameSession이 커밋되면 안 된다')
+
+    const roomSnapshot = matchmaking.__getStateSnapshotForTests()
+    const [, room] = roomSnapshot.gameRooms[0]
+    const [, joinerEntry] = room.players.find(([playerUuid]) => playerUuid === 'uuid-start-race-joiner')
+    assert.equal(joinerEntry.isReady, false, '레이스를 재현한 준비 해제 상태가 그대로 유지되어야 한다')
+    // captureRoomStartProfiles가 무효화됐으므로 참가 시점(setupReadyRoomForStart 기본 fake:
+    // profilePhotoId/profileBorderId 둘 다 null)에 실린 값 그대로여야 한다 — 이번 재조회
+    // 결과('player-profile-기사'/'profile-border-귀족')로 부분 반영되면 안 된다.
+    assert.equal(joinerEntry.accountProfilePhotoId, null, '조회가 무효화됐으면 room.players는 시작 재조회 이전(참가 시점) 값 그대로여야 한다')
+})
 
 test('start_game: 모든 조건을 충족하면 GameSession을 생성하고 참가자별로 역할이 다른 개별 game_started를 전달한다', async () => {
     const hostSocket = createFakeSocket('uuid-start-ok-host')

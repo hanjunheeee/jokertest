@@ -1,0 +1,174 @@
+[
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/더미배너 세로형.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/bg/인게임-전경보드(뒷배경).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/bg/인게임-전경보드(뒷배경) 밤.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/button/뒤로가기 버튼2.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/button/햄버거 버튼.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/button/설정 버튼.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-timebar/진행바 프레임.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-timebar/지시화살표.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-timebar/밤시간 노드.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-timebar/결과발표 노드.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-timebar/토론 노드.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-timebar/추방투표 노드.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/button/버튼(수락 및 긍정).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-profile/프로필-금빛가면.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player- profileborder/프로필프레임-평민.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(베이스).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(베이스).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-profile/프로필-금빛가면.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player- profileborder/프로필프레임-평민.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(가면).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(가면).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-profile/프로필-금빛가면.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player- profileborder/프로필프레임-평민.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(그레이).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(그레이).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-profile/프로필-금빛가면.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player- profileborder/프로필프레임-평민.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-status/게임사망상태.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-dead/인게임-플레이어프레임(모래시계) 사망상태.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-dead/인게임-플레이어프레임(모래시계) 사망상태.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-profile/프로필-금빛가면.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player- profileborder/프로필프레임-평민.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-status/연결끊김상태.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(보석).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(보석).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-profile/프로필-기사.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player- profileborder/프로필프레임-귀족.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/ingame-chatting/인게임-채팅창프레임2.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/button/버튼(미선택).png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/투표현황창 프레임.png"
+  },
+  {
+    "loaded": true,
+    "src": "http://127.0.0.1:5183/frame/더미배너 가로형.png"
+  }
+]

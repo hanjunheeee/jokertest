@@ -58,9 +58,11 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 // 같은 이유로 addEconomy를 마이그레이션 체인에 편입한다(관리 목록은 isolatedTestDb.js가
 // 이제 기본으로 포함한다).
 const addEconomy = require('../../db/migrations/0006-add-economy');
+// Current auth services create EconomyLoadout rows, including its persisted CAS revision.
+const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });
