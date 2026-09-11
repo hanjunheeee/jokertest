@@ -66,22 +66,35 @@ test("F-13 AC-05: 계정 테두리는 인게임 카드의 frameSrc(직업 스킨
   assert.equal(merged.frameSrc, "dummy-frame-0", "accountProfileBorderId는 game_started state에 값이 있어도 카드 frameSrc를 바꾸면 안 된다")
 })
 
-test("F-13 AC-05: 재접속 스냅샷과 최초 game_started가 같은 변환 경로(buildPlayerSessionSourceFromGameState)를 타므로 같은 계정 사진이 같은 값으로 다시 나온다", () => {
-  const gameStartedPlayers = [
+test("F-13 AC-05: 재접속 스냅샷 payload가 game_started와 같은 계정 프로필 값을 실어 보내면, 프런트 렌더 결과도 새로고침 전후로 동일하게 유지된다", () => {
+  // CODEX-1 재검토: 이전 버전은 완전히 같은 state 객체를 두 번 그대로 재사용해 순수 함수의
+  // 결정성(같은 입력→같은 출력)만 증명했다 — "서버가 실제로 같은 값을 보낸다"는 보장까지는
+  // 아무것도 증명하지 못했다. 그 서버 측 보장(같은 판 안에서 room.players의 값이 나중에
+  // 바뀌어도 캡처된 session.players 값은 그대로 유지되고, buildSessionSnapshot과
+  // buildGameStartedPayload가 같은 값을 낸다)은 backend/game-core/__tests__/gameSession.session.test.js의
+  // "F-13(AC-05): 재접속 스냅샷(buildSessionSnapshot)도 game_started와 동일한 계정 프로필
+  // 식별자를 그대로 보존한다"와 "값으로 복사"(room.players 변경 후 candidate 불변) 테스트가
+  // 이미 맡고 있다. 이 프런트 테스트는 그 서버 보장을 가정하지 않는다 — game_started와
+  // 재접속 스냅샷이 서로 독립적으로 구성된(별도 객체 그래프의) payload라도, 값만 같으면
+  // buildPlayerSessionSourceFromGameState→mergeSourcePlayerWithPreview 변환 경로가 그 값을
+  // 잃어버리지 않고 같은 최종 렌더 결과로 이어지는지만 검증한다(동일 참조 재사용이 아니라
+  // JSON 왕복으로 만든 독립된 객체를 쓴다 — 소켓으로 두 번 따로 수신한 payload를 흉내낸다).
+  const buildIndependentGameStartedPayload = () => JSON.parse(JSON.stringify([
     { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountProfilePhotoId: "player-profile-그림자", accountProfileBorderId: "profile-border-평민" },
     { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1, accountProfilePhotoId: "player-profile-드워프", accountProfileBorderId: "profile-border-평민" },
-  ]
+  ]))
 
-  // 재접속 스냅샷도 서버가 같은 필드를 같은 규칙(own-property 조건부)으로 내려준다
-  // (backend buildSessionSnapshot이 buildGameStartedPayload와 같은 buildPlayerAccountProfileFields를
-  // 공유). 새로고침 전후 state가 완전히 동일하다고 가정해도 최종 렌더 결과가 달라지면 안 된다.
-  const firstRender = renderFinalPlayers(gameStartedState(gameStartedPlayers))
-  const afterReconnectRender = renderFinalPlayers(gameStartedState(gameStartedPlayers))
+  const gameStartedPayload = buildIndependentGameStartedPayload() // 최초 game_started 수신을 흉내낸다
+  const reconnectSnapshotPayload = buildIndependentGameStartedPayload() // 새로고침 뒤 별도 소켓 수신(get_session_snapshot)을 흉내낸다 — 동일 참조가 아니다
+  assert.notEqual(gameStartedPayload, reconnectSnapshotPayload, "두 payload가 같은 객체 참조를 공유하면 안 된다(서로 다른 소켓 수신을 흉내내야 한다)")
+
+  const firstRender = renderFinalPlayers(gameStartedState(gameStartedPayload))
+  const afterReconnectRender = renderFinalPlayers(gameStartedState(reconnectSnapshotPayload))
 
   assert.deepEqual(
-    afterReconnectRender.map((p) => [p.id, p.portraitSrc]),
-    firstRender.map((p) => [p.id, p.portraitSrc]),
-    "재접속 후에도 계정 사진이 preview 기본 이미지로 되돌아가면 안 된다",
+    afterReconnectRender.map((p) => [p.id, p.portraitSrc, p.accountBorderSrc]),
+    firstRender.map((p) => [p.id, p.portraitSrc, p.accountBorderSrc]),
+    "재접속 후에도 계정 사진·테두리가 preview 기본 이미지로 되돌아가면 안 된다",
   )
 })
 

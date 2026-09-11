@@ -23,6 +23,8 @@ export default function FriendListFilterResults({ friends }) {
           id={friend.id}
           name={friend.name}
           online={friend.online || friend.status === "ONLINE"}
+          accountProfilePhotoId={friend.accountProfilePhotoId}
+          accountProfileBorderId={friend.accountProfileBorderId}
         />
       ))}
     </ul>

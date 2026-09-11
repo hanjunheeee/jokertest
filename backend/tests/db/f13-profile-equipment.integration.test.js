@@ -117,7 +117,7 @@ test('AC-01/AC-02: 사진·테두리를 함께 확정하면 실제 DB에 한 번
 
     const userId = await createLocalUser('f13both');
     await economyService.getWalletSummary(userId); // 기본 지급 선행
-    await economyService.grantAchievementItem({ userId, itemId: 'profile-border-귀족', referenceEventId: `grant-${userId}` });
+    await economyService.grantAchievementItem({ userId, itemId: 'profile-border-귀족', itemType: 'PROFILE_BORDER', referenceEventId: `grant-${userId}` });
 
     await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', borderItemId: 'profile-border-귀족' });
 
@@ -165,7 +165,7 @@ test('AC-01: 동시에 서로 다른 값으로 확정 요청이 들어와도 실
 
     const userId = await createLocalUser('f13race');
     await economyService.getWalletSummary(userId);
-    await economyService.grantAchievementItem({ userId, itemId: 'profile-border-귀족', referenceEventId: `grant-${userId}` });
+    await economyService.grantAchievementItem({ userId, itemId: 'profile-border-귀족', itemType: 'PROFILE_BORDER', referenceEventId: `grant-${userId}` });
 
     const results = await Promise.allSettled([
         economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사' }),
@@ -186,7 +186,7 @@ test('AC-03: 업적으로 테두리를 지급받은 직후 getPublicProfileLoado
 
     const userId = await createLocalUser('f13ach');
     await economyService.getWalletSummary(userId);
-    await economyService.grantAchievementItem({ userId, itemId: 'profile-border-광대', referenceEventId: `ach-${userId}` });
+    await economyService.grantAchievementItem({ userId, itemId: 'profile-border-광대', itemType: 'PROFILE_BORDER', referenceEventId: `ach-${userId}` });
 
     const loadout = await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-광대' });
     assert.equal(loadout.selected_profile_border_id, 'profile-border-광대');

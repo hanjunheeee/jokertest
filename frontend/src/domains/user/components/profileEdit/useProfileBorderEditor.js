@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import {
   DEFAULT_PROFILE_BORDER_ITEM_ID,
@@ -37,6 +37,25 @@ export function useProfileBorderEditor({ open, onClose }) {
   const [draftBorderItemId, setDraftBorderItemId] = useState(currentBorderItemId)
   const [confirmStatus, setConfirmStatus] = useState("idle") // idle | saving
   const [confirmError, setConfirmError] = useState(null)
+  // F-13 AC-02 재검토(CODEX-1): 응답 유실 뒤 재조회(fetchSummary)마저 실패하면 "지금 상태를
+  // 확인할 수 없다"는 사실 자체가 단순 네트워크 오류와 구분되어야 한다 — 조용히 원래 오류
+  // 메시지만 보여주고 넘어가면(이전 버전처럼 .catch(() => {})로 삼키면) 사용자는 실제로
+  // 저장됐는지 여부를 영영 알 길이 없는데도 평범한 실패처럼 보인다.
+  const [confirmUncertain, setConfirmUncertain] = useState(false)
+
+  // F-13 AC-02 재검토(CODEX-1): 계정 세대(requestGeneration)만으로는 "같은 계정 안에서
+  // 편집기를 취소하고 다시 연" 경우를 구분하지 못한다 — 그 사이 이전 확인 요청이 뒤늦게
+  // 성공 응답을 받으면, 이미 닫혔다 다시 열린(초안이 리셋된) 새 세션을 실수로 대신 닫아버릴
+  // 수 있다. 편집기가 실제로 "열릴 때"마다(계정 전환으로 인한 재오픈 포함) 세션 id를 새로
+  // 발급해, 비동기 응답이 도착했을 때 지금도 같은 세션인지 계정 세대와 별도로 확인한다.
+  const editorSessionRef = useRef(0)
+  // F-13 AC-04 재검토(CORRECTION): 편집기가 열리는 바로 그 순간의 store.loadout은 계정
+  // 전환 직후(reset() 직후)라면 아직 서버 조회가 끝나지 않은 빈/기본값일 수 있다 — 아래
+  // 세션 효과가 그 순간의 값으로 초안을 고정해버리면, 실제 fetchSummary가 나중에 성공해도
+  // 초안은 갱신되지 않아 새 계정의 실제 장착값이 아니라 기본값에 멈춰 있게 된다. 사용자가
+  // 이 세션에서 아직 직접 선택을 바꾸지 않았을 때만, 조회가 실제로 끝나 값이 바뀌면 초안을
+  // 그 값으로 다시 맞춘다 — 사용자가 이미 무언가 고른 뒤에는 절대 덮어쓰지 않는다(A-08).
+  const hasEditedRef = useRef(false)
 
   // 편집기가 열릴 때(또는 그 사이 계정이 바뀌었을 때) 실제 적용 상태로 초안을 되돌린다 —
   // 이전에 열었을 때 남은 미확정 선택이나 이전 계정의 선택이 보이면 안 된다(A-08). 아직
@@ -44,12 +63,15 @@ export function useProfileBorderEditor({ open, onClose }) {
   // 시도한다 — GET은 반복해도 안전하다(A-09).
   useEffect(() => {
     if (!open) return
+    editorSessionRef.current += 1
+    hasEditedRef.current = false
     setActiveTab(PROFILE_EDIT_TAB_PHOTO)
     const latestLoadout = useEconomyStore.getState().loadout
     setDraftPhotoItemId(latestLoadout.selectedProfilePhotoId ?? DEFAULT_PROFILE_PHOTO_ITEM_ID)
     setDraftBorderItemId(latestLoadout.selectedProfileBorderId ?? DEFAULT_PROFILE_BORDER_ITEM_ID)
     setConfirmStatus("idle")
     setConfirmError(null)
+    setConfirmUncertain(false)
 
     const latestStatus = useEconomyStore.getState().status
     if (latestStatus === "idle" || latestStatus === "error") {
@@ -57,6 +79,25 @@ export function useProfileBorderEditor({ open, onClose }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, generation, fetchSummary])
+
+  // F-13 AC-04 재검토(CORRECTION): 위 세션 효과가 세팅한 초안이 조회 시점의 스냅샷일
+  // 뿐이었다면(계정 전환 직후처럼), 실제 조회가 끝나 currentPhotoItemId/currentBorderItemId가
+  // 뒤늦게 바뀔 때 이 효과가 초안을 그 실제 값으로 다시 맞춘다. 사용자가 이미 이 세션에서
+  // 선택을 바꿨다면(hasEditedRef) 건드리지 않는다.
+  useEffect(() => {
+    if (!open || hasEditedRef.current) return
+    setDraftPhotoItemId(currentPhotoItemId)
+    setDraftBorderItemId(currentBorderItemId)
+  }, [open, currentPhotoItemId, currentBorderItemId])
+
+  const setDraftPhotoItemIdTracked = useCallback((itemId) => {
+    hasEditedRef.current = true
+    setDraftPhotoItemId(itemId)
+  }, [])
+  const setDraftBorderItemIdTracked = useCallback((itemId) => {
+    hasEditedRef.current = true
+    setDraftBorderItemId(itemId)
+  }, [])
 
   const ownedBorderOptions = entitlements
     .filter((item) => item.itemType === PROFILE_BORDER_ITEM_TYPE)
@@ -87,15 +128,24 @@ export function useProfileBorderEditor({ open, onClose }) {
 
     setConfirmStatus("saving")
     setConfirmError(null)
+    setConfirmUncertain(false)
     const startGeneration = useEconomyStore.getState().requestGeneration
+    const startSession = editorSessionRef.current
+    // 계정 세대(A-08)뿐 아니라 이 편집기 세션 자체가 그 사이 닫혔다 다시 열렸는지도 함께
+    // 확인한다 — 둘 중 하나라도 바뀌었으면 이 응답은 더 이상 지금 보고 있는 화면의 것이
+    // 아니다.
+    const isStale = () =>
+      useEconomyStore.getState().requestGeneration !== startGeneration || editorSessionRef.current !== startSession
+
     try {
       await equipProfile({
         photoItemId: photoChanged ? draftPhotoItemId : undefined,
         borderItemId: borderChanged ? draftBorderItemId : undefined,
       })
-      if (useEconomyStore.getState().requestGeneration !== startGeneration) {
-        // 대기하는 동안 계정이 바뀌었다 — 이 성공은 더 이상 지금 화면의 것이 아니다(A-08).
-        // 지금 계정 기준으로는 아직 아무것도 확정되지 않았으므로 편집기를 닫지 않는다.
+      if (isStale()) {
+        // 대기하는 동안 계정이 바뀌었거나 편집기를 닫았다 다시 열었다 — 이 성공은 더 이상
+        // 지금 세션의 것이 아니다(A-08). 지금 세션 기준으로는 아직 아무것도 확정되지
+        // 않았으므로 편집기를 닫지 않는다.
         setConfirmStatus("idle")
         return
       }
@@ -108,18 +158,30 @@ export function useProfileBorderEditor({ open, onClose }) {
       // 자체를 받지 못한 것이라 성공/실패를 알 수 없다 — 그런 경우에만 현재 장착 상태를
       // 다시 읽어(fetchSummary) currentPhotoItemId/currentBorderItemId가 추측이 아니라
       // 실제 서버 진실을 반영하게 한다(명시적 거부는 아무 것도 바뀌지 않았으므로 다시
-      // 읽을 필요가 없다). fetchSummary 자체의 실패는 이 catch가 이미 다루는 오류를
-      // 덮어쓰지 않는다.
+      // 읽을 필요가 없다).
+      //
+      // CODEX-1 재검토: 이전 버전은 이 재조회 자체가 실패해도 .catch(() => {})로 조용히
+      // 삼켜, "저장도 실패했고 지금 실제 상태를 확인하는 것도 실패했다"는 이중 불확실
+      // 상태가 평범한 저장 실패와 똑같이 보였다. fetchSummary는 자체적으로 실패를
+      // 삼키고 상태를 "error"로 남기므로(economy.store.js), 그 상태를 직접 확인해 구분되는
+      // confirmUncertain 신호와 메시지로 드러낸다.
       const confirmedRejection = typeof error?.code === "string" && error.code.length > 0
+      let refreshUncertain = false
       if (!confirmedRejection) {
-        await fetchSummary().catch(() => {})
+        await fetchSummary()
+        if (useEconomyStore.getState().status === "error") refreshUncertain = true
       }
-      if (useEconomyStore.getState().requestGeneration !== startGeneration) {
+      if (isStale()) {
         setConfirmStatus("idle")
         return
       }
       setConfirmStatus("idle")
-      setConfirmError(error?.message ?? "프로필 저장에 실패했습니다.")
+      setConfirmUncertain(refreshUncertain)
+      setConfirmError(
+        refreshUncertain
+          ? "저장 결과를 확인하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해주세요."
+          : (error?.message ?? "프로필 저장에 실패했습니다."),
+      )
     }
   }, [confirmStatus, draftPhotoItemId, currentPhotoItemId, draftBorderItemId, currentBorderItemId, equipProfile, fetchSummary, onClose])
 
@@ -127,14 +189,15 @@ export function useProfileBorderEditor({ open, onClose }) {
     activeTab,
     setActiveTab,
     draftPhotoItemId,
-    setDraftPhotoItemId,
+    setDraftPhotoItemId: setDraftPhotoItemIdTracked,
     draftBorderItemId,
-    setDraftBorderItemId,
+    setDraftBorderItemId: setDraftBorderItemIdTracked,
     ownedBorderOptions,
     borderListStatus,
     retryLoadBorders: fetchSummary,
     confirmStatus,
     confirmError,
+    confirmUncertain,
     handleConfirm,
   }
 }

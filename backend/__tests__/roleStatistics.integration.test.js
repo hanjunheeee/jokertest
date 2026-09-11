@@ -20,6 +20,16 @@ const gameSessionCore         = require("../game-core/gameSession");
 
 const { buildGameResultRecord } = gameSessionCore;
 
+// F-13(AC-05, 운영자 확장 승인): getRoleRanking이 이제 economyService.getPublicProfileLoadouts로
+// 계정 프로필(사진·테두리)을 함께 조회한다 — 그 함수는 실제 backend/models(Economy* 테이블)에
+// 접근하는데, 이 파일은 GameResultPlayer/GameResult/User만 가짜로 바꿔두므로(위 setupFixtureDb)
+// 그대로 두면 실제 DB 연결을 시도해 실패한다. matchmaking.test.js와 같은 이유로 fake를
+// 주입한다 — 기본값은 모든 uuid에 대해 사진·테두리 모두 미지정(null)으로 응답한다.
+gameResultRepository.__setEconomyServiceForTests({
+    getPublicProfileLoadouts: async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+});
+
 // ── 픽스처 DB: game_result_players(+소속 game_results.settings) · users를 메모리에 둔다 ──
 //
 // F-10의 새 조회(getMyRoleStatistics/getRoleRanking/getHighestWinRateRole)는 이미 커밋된
