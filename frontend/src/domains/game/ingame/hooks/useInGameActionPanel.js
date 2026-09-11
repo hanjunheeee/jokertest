@@ -436,6 +436,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     dayReadyCount: dayReady.readyCount,
     dayReadyRequired: dayReady.requiredCount,
     dayReadyControlsEnabled,
+    selfAliveForControls,
     submitDayReady: dayReady.submitReady,
     submitDayVote,
     abstainDayVote,
