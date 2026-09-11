@@ -54,6 +54,8 @@ export const useEconomyStore = create((set, get) => ({
   // 가장 나중에 "시작된" 시도만 loadout을 쓸 자격이 있다(완료 순서가 아니라 시작 순서로
   // 승자를 가른다).
   loadoutAttemptSeq: 0,
+  summaryRequestSeq: 0,
+  loadoutWriteSeq: 0,
 
   /** 지갑 잔액·소유품·장착 상태를 서버에서 다시 읽어온다. */
   fetchSummary: async () => {
@@ -65,7 +67,9 @@ export const useEconomyStore = create((set, get) => ({
 
     const generation = get().requestGeneration
     const attemptSeq = get().loadoutAttemptSeq
-    set({ status: "loading", error: null })
+    const writeSeq = get().loadoutWriteSeq
+    const summarySeq = get().summaryRequestSeq + 1
+    set({ summaryRequestSeq: summarySeq, status: "loading", error: null })
     try {
       const [wallet, entitlementsResponse] = await Promise.all([
         api.get(`/economy/accounts/${userId}/wallet`),
@@ -73,7 +77,7 @@ export const useEconomyStore = create((set, get) => ({
       ])
       // 응답이 도착하기 전에 로그아웃했거나 다른 계정으로 전환됐다면, 이 응답은 더 이상
       // "현재 계정"의 것이 아니다 — 화면 상태를 덮어쓰지 않고 조용히 버린다.
-      if (get().requestGeneration !== generation) return
+      if (get().requestGeneration !== generation || get().summaryRequestSeq !== summarySeq) return
       // F-13 AC-02(CODEX-6): 이 조회가 시작된 뒤 equipProfile로 더 최신 확정 시도가
       // 시작됐다면, 이 조회가 함께 받아온 loadout은 그 시도보다 오래된 정보일 수 있다 —
       // loadout만 덮어쓰지 않는다(그 최신 시도 자신의 완료가 진실을 확정한다). 지갑·소유품은
@@ -84,12 +88,12 @@ export const useEconomyStore = create((set, get) => ({
         balanceGold: wallet.balanceGold,
         balanceDiamond: wallet.balanceDiamond,
         entitlements: entitlementsResponse.entitlements,
-        loadout: state.loadoutAttemptSeq === attemptSeq ? entitlementsResponse.loadout : state.loadout,
+        loadout: state.loadoutAttemptSeq === attemptSeq && state.loadoutWriteSeq === writeSeq ? entitlementsResponse.loadout : state.loadout,
         status: "ready",
         error: null,
       }))
     } catch (error) {
-      if (get().requestGeneration !== generation) return
+      if (get().requestGeneration !== generation || get().summaryRequestSeq !== summarySeq) return
       set({ status: "error", error: error.message ?? "지갑 정보를 불러오지 못했습니다." })
     }
   },
@@ -164,7 +168,7 @@ export const useEconomyStore = create((set, get) => ({
     const generation = get().requestGeneration
     const result = await api.post("/economy/equip", { slot, itemId })
     if (get().requestGeneration !== generation) return result
-    set((state) => ({ loadout: { ...state.loadout, ...result.loadout } }))
+    set((state) => ({ loadout: { ...state.loadout, ...result.loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
     return result
   },
 
@@ -178,13 +182,23 @@ export const useEconomyStore = create((set, get) => ({
     const generation = get().requestGeneration
     // F-13 AC-02(CODEX-5): 이 호출을 "지금 사용자가 원하는 최신 확정 시도"로 등록한다 —
     // 이후 이 값이 다시 바뀌면(더 새로운 equipProfile 호출이 시작되면) 이 시도의 응답은
-    // 도착 순서와 무관하게 loadout을 쓸 자격을 잃는다.
+    // 도착 순서와 무관하게 loadout을 쓸 자격을 잃는다(같은 화면 안에서의 낙관적 갱신
+    // 규칙 — 클라이언트가 "지금 보여줄 값"을 정하는 용도일 뿐이다).
     const attemptSeq = get().loadoutAttemptSeq + 1
     set({ loadoutAttemptSeq: attemptSeq })
-    const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId })
+    // F-13 AC-02(CODEX-9) — "가장 나중에 시작된 시도가 이긴다"는 위 클라이언트 규칙만으로는
+    // 실제 서버 최종 저장값과의 일치를 보장하지 못한다: 겹치는 두 확정 요청이 서로 다른
+    // 커넥션으로 나가면, 실제로 나중에 커밋되는 쪽은 네트워크 사정에 따라 바뀔 수 있다(A가
+    // 더 먼저 시작됐어도 서버에는 B보다 늦게 도달해 늦게 커밋될 수 있다) — 그래서 이 문제는
+    // 클라이언트가 응답 순서를 더 정교하게 추측해서 풀 수 없다. 대신 사용자가 이 확정을
+    // "시작한" 실제 시각(clientIntentAt)을 서버에 함께 보내, 서버(equipProfileAppearance,
+    // backend/service/economy.service.js)가 행 잠금으로 겹치는 확정들을 완전히 직렬화하고
+    // "가장 나중에 시작된 의도"만 실제로 커밋되도록 보장한다 — 어느 요청이 먼저 커밋을
+    // 시도하든 결과는 항상 같다(도착 순서 무관, 실제 DB 상태 자체가 옳다).
+    const result = await api.post("/economy/equip-profile", { photoItemId, borderItemId, clientIntentAt: Date.now() })
     if (get().requestGeneration !== generation) return result
     if (get().loadoutAttemptSeq !== attemptSeq) return result
-    set((state) => ({ loadout: { ...state.loadout, ...result.loadout } }))
+    set((state) => ({ loadout: { ...state.loadout, ...result.loadout }, loadoutWriteSeq: state.loadoutWriteSeq + 1 }))
     return result
   },
 

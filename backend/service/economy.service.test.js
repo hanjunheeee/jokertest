@@ -60,6 +60,26 @@ const createFakeDb = () => {
         });
     };
 
+    // F-13 AC-02(CODEX-9): EconomyLoadout 전용 잠금 — 실제 DB에서는 EconomyWallet 행과
+    // EconomyLoadout 행이 서로 다른 행이라 서로의 잠금과 무관하게 각자 직렬화되므로, 같은
+    // mutexTails/lockHolders를 공유하지 않고 독립된 큐를 둔다(위 acquireUserLock과 같은
+    // FIFO·재진입 계약).
+    const loadoutMutexTails = new Map();
+    const loadoutLockHolders = new Map();
+    const acquireLoadoutLock = (userId, transaction) => {
+        if (loadoutLockHolders.get(userId) === transaction) {
+            return Promise.resolve(() => {});
+        }
+        const tail = loadoutMutexTails.get(userId) ?? Promise.resolve();
+        let release;
+        const held = new Promise((resolve) => { release = resolve; });
+        loadoutMutexTails.set(userId, tail.then(() => held));
+        return tail.then(() => {
+            loadoutLockHolders.set(userId, transaction);
+            return () => { loadoutLockHolders.delete(userId); release(); };
+        });
+    };
+
     const EconomyWallet = {
         async create({ user_id, balance_gold, balance_diamond }) {
             if (walletsByUser.has(user_id)) {
@@ -134,9 +154,18 @@ const createFakeDb = () => {
             loadoutsByUser.set(where.user_id, stored);
             return [snapshotLoadout(stored), true];
         },
-        async findOne({ where }) {
+        async findOne({ where, transaction, lock }) {
             const stored = loadoutsByUser.get(where.user_id);
-            return stored ? snapshotLoadout(stored) : null;
+            if (!stored) return null;
+            if (lock && transaction) {
+                const release = await acquireLoadoutLock(where.user_id, transaction);
+                transaction._releasers.push(release);
+            }
+            // 잠금을 실제로 기다린 뒤에는(다른 트랜잭션이 그 사이 커밋했을 수 있다) 반드시
+            // 최신 canonical 값을 다시 스냅샷해야 한다 — 잠금 대기 전에 만든 스냅샷을
+            // 그대로 돌려주면 실제 SELECT ... FOR UPDATE가 잠금 획득 후 최신값을 읽는다는
+            // 계약과 달라진다.
+            return snapshotLoadout(stored);
         },
         // F-13: getPublicProfileLoadouts의 일괄 조회(where.user_id가 배열)를 흉내낸다 —
         // 실제 Sequelize는 배열 값을 IN절로 변환한다.
@@ -785,6 +814,64 @@ test('F-13 AC-02: 아무 슬롯도 넘기지 않으면 거부된다', async () =
         () => economyService.equipProfileAppearance({ userId: 'user-f13-empty' }, db),
         (error) => error.status === 400 && error.code === 'EMPTY_PROFILE_EQUIP_REQUEST',
     );
+});
+
+// ── F-13 AC-02(CODEX-9): 겹치는 확정의 실제 서버 커밋 순서 보장 ──────────────────
+//
+// 반송 근거: "가장 나중에 시작된 시도가 이긴다"는 economy.store.js(프론트)의 클라이언트
+// 규칙만으로는 실제 서버 최종 저장값과의 일치를 보장하지 못한다 — 겹치는 두 확정 요청이
+// 서로 다른 커넥션으로 나가면, 실제 DB 커밋은 클라이언트가 요청을 "보낸" 순서와 무관하게
+// 뒤바뀔 수 있다. 아래 시험은 실제로 서버에 "도착/처리"되는 순서를 클라이언트의 확정
+// "의도" 순서와 정반대로 뒤집어, 그래도 최종 저장값이 항상 의도 순서(clientIntentAt)를
+// 따르는지 직접 증명한다 — 실제 호출 순서(fake db가 처리하는 순서)만으로는 이 보장이
+// 성립하지 않는다는 것이 핵심이므로, 일부러 "더 나중 의도(B)를 먼저 호출·커밋"시킨 뒤
+// "더 오래된 의도(A)를 그 다음에 호출"해 A가 B를 덮어쓰지 못하는지 확인한다.
+
+test('F-13 AC-02(CODEX-9): 더 나중에 의도된 확정(B)이 서버에 먼저 도착해 커밋된 뒤, 더 오래된 의도(A)가 뒤늦게 도착해도 B의 커밋을 덮어쓰지 못한다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-intent-order-reversed';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+    await economyService.purchaseItem({ userId, itemId: OTHER_PURCHASABLE_ITEM_ID, referenceEventId: `buy2-${userId}` }, db);
+
+    // B: 사용자가 더 나중에(클라이언트 시각 2000) 확정을 시작했지만, 서버에는 A보다
+    // 먼저 도달해 먼저 처리·커밋된다(네트워크 재정렬).
+    await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, clientIntentAt: 2000 }, db);
+    // A: 사용자가 더 먼저(클라이언트 시각 1000) 확정을 시작했지만, 서버에는 B보다 늦게
+    // 도달한다.
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: OTHER_PURCHASABLE_ITEM_ID, clientIntentAt: 1000 }, db);
+
+    assert.equal(
+        result.selected_profile_border_id,
+        PURCHASABLE_ITEM_ID,
+        '더 오래된 의도(A)가 나중에 도착해도 이미 커밋된 더 최신 의도(B)의 결과를 덮어쓰면 안 된다(호출 자체는 오류로 취급하지 않되, 조용히 적용하지 않는다)',
+    );
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_border_id, PURCHASABLE_ITEM_ID, '실제로 영속된 최종 상태도 더 최신 의도(B)여야 한다 — 클라이언트가 무엇을 최종값으로 믿든, 서버 진실 자체가 항상 이래야 한다');
+});
+
+test('F-13 AC-02(CODEX-9): 정상적인 처리 순서(더 먼저 의도된 확정이 먼저 처리됨)에서도 더 나중 의도가 이전 값을 정상적으로 대체한다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-intent-order-normal';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+
+    await economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID, clientIntentAt: 1000 }, db);
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID, clientIntentAt: 2000 }, db);
+
+    assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, '순서가 뒤집히지 않은 정상 경로에서는 최신 의도가 그대로 반영되어야 한다(회귀 방지)');
+});
+
+test('F-13 AC-02(CODEX-9): clientIntentAt을 보내지 않으면(과거 클라이언트 등) 순서 판정 없이 기존처럼 항상 적용된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f13-intent-order-legacy';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: PURCHASABLE_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+
+    await economyService.equipProfileAppearance({ userId, borderItemId: DEFAULT_PROFILE_BORDER_ID }, db);
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: PURCHASABLE_ITEM_ID }, db);
+
+    assert.equal(result.selected_profile_border_id, PURCHASABLE_ITEM_ID, 'clientIntentAt 없이 호출하는 기존 계약(순서 보장 없이 무조건 적용)은 그대로 유지되어야 한다');
 });
 
 // ── F-13 AC-05 전제: getPublicProfileLoadouts(대기방·인게임 공개 노출) ──────────

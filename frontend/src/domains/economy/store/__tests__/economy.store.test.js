@@ -371,6 +371,130 @@ test("F-13 AC-03(CODEX-6): 실제 purchase가 유발한 fetchSummary가 아직 �
   )
 })
 
+// ── F-13 AC-02/AC-03(CODEX-9): 조회·확정 시도 사이의 실제 응답 순서 회귀 ──────────
+
+test("F-13(CODEX-9): 획득 전에 시작된 fetchSummary가 획득 후 시작된 fetchSummary보다 늦게 성공 응답을 받아도, 새 조회가 반영한 신선한 소유품·잔액을 덮어쓰지 않는다", async () => {
+  resetStore()
+  const resolvers = []
+  getImpl = (endpoint) => new Promise((resolve) => { resolvers.push({ endpoint, resolve }) })
+
+  const oldFetch = useEconomyStore.getState().fetchSummary() // 획득 전(오래된) 조회
+  const newFetch = useEconomyStore.getState().fetchSummary() // 구매/업적 이후 시작된 새 조회
+  assert.equal(resolvers.length, 4, "두 fetchSummary가 각각 wallet·entitlements 두 endpoint를 불러야 한다")
+
+  // 새 조회(획득 후)가 먼저 신선한 값으로 응답한다.
+  resolvers.slice(2).forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
+    ? { balanceGold: 500, balanceDiamond: 9 }
+    : { entitlements: [{ itemId: "profile-border-백작", itemType: "PROFILE_BORDER" }], loadout: { selectedProfileBorderId: "profile-border-백작" } }))
+  await newFetch
+  assert.equal(useEconomyStore.getState().balanceGold, 500)
+
+  // 획득 전 시작됐던 오래된 조회가 이제야 도착한다(획득 전의 오래된 값).
+  resolvers.slice(0, 2).forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedProfileBorderId: null } }))
+  await oldFetch
+
+  assert.equal(useEconomyStore.getState().status, "ready", "오래된 조회의 뒤늦은 성공이 ready 상태를 되돌리면 안 된다")
+  assert.equal(useEconomyStore.getState().balanceGold, 500, "새 조회의 신선한 잔액이 오래된 조회로 덮어써지면 안 된다")
+  assert.deepEqual(
+    useEconomyStore.getState().entitlements,
+    [{ itemId: "profile-border-백작", itemType: "PROFILE_BORDER" }],
+    "방금 획득한 소유품이 오래된 조회로 다시 사라지면 안 된다",
+  )
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-백작")
+})
+
+test("F-13(CODEX-9): 획득 전에 시작된 fetchSummary가 획득 후 시작된 fetchSummary보다 늦게 실패해도, 이미 확정된 신선한 상태와 ready를 되돌리지 않는다", async () => {
+  resetStore()
+  const resolvers = []
+  getImpl = (endpoint) => new Promise((resolve, reject) => { resolvers.push({ endpoint, resolve, reject }) })
+
+  const oldFetch = useEconomyStore.getState().fetchSummary()
+  const newFetch = useEconomyStore.getState().fetchSummary()
+  assert.equal(resolvers.length, 4)
+
+  resolvers.slice(2).forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
+    ? { balanceGold: 300, balanceDiamond: 1 }
+    : { entitlements: [{ itemId: "profile-border-백작", itemType: "PROFILE_BORDER" }], loadout: { selectedProfileBorderId: "profile-border-백작" } }))
+  await newFetch
+
+  // 오래된 조회가 이제야 실패로 도착한다 — 이미 반영된 새 조회 결과를 되돌리면 안 된다.
+  resolvers.slice(0, 2).forEach(({ reject }) => reject(new Error("오래된 조회의 지연된 네트워크 오류")))
+  await oldFetch
+
+  assert.equal(useEconomyStore.getState().status, "ready", "오래된 조회의 뒤늦은 실패가 이미 확정된 ready 상태를 error로 되돌리면 안 된다")
+  assert.equal(useEconomyStore.getState().balanceGold, 300)
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-백작")
+})
+
+test("F-13(CODEX-9): equipProfile이 시작된 뒤에 시작된 fetchSummary가 equip 성공보다 늦게 equip 이전의 오래된 loadout으로 응답해도, 이미 저장된 사진·테두리를 덮어쓰지 않는다", async () => {
+  resetStore()
+  let resolveEquipPost
+  postImpl = () => new Promise((resolve) => { resolveEquipPost = resolve })
+
+  const equipPromise = useEconomyStore.getState().equipProfile({ photoItemId: "player-profile-기사", borderItemId: "profile-border-백작" })
+
+  const getResolvers = []
+  getImpl = (endpoint) => new Promise((resolve) => { getResolvers.push({ endpoint, resolve }) })
+  const fetchPromise = useEconomyStore.getState().fetchSummary() // equip이 이미 진행 중일 때 시작된 조회
+  assert.equal(getResolvers.length, 2)
+
+  // equip이 먼저 성공한다.
+  resolveEquipPost({ loadout: { selectedProfilePhotoId: "player-profile-기사", selectedProfileBorderId: "profile-border-백작" } })
+  await equipPromise
+  assert.equal(useEconomyStore.getState().loadout.selectedProfilePhotoId, "player-profile-기사")
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-백작")
+
+  // equip보다 먼저 시작됐던(하지만 나중에 도착하는) 조회가 이제야 equip 이전의 오래된
+  // loadout으로 응답한다.
+  getResolvers.forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
+    ? { balanceGold: 100, balanceDiamond: 2 }
+    : { entitlements: [], loadout: { selectedProfilePhotoId: "player-profile-금빛가면", selectedProfileBorderId: "profile-border-평민" } }))
+  await fetchPromise
+
+  assert.equal(useEconomyStore.getState().status, "ready")
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfilePhotoId,
+    "player-profile-기사",
+    "equip보다 먼저 시작된 재조회의 오래된 사진 값이 이미 저장된 값을 덮어쓰면 안 된다",
+  )
+  assert.equal(
+    useEconomyStore.getState().loadout.selectedProfileBorderId,
+    "profile-border-백작",
+    "equip보다 먼저 시작된 재조회의 오래된 테두리 값이 이미 저장된 값을 덮어쓰면 안 된다",
+  )
+})
+
+test("F-13 AC-02(CODEX-9): equipProfile은 실제 서버 순서 판정에 쓸 수 있게 이 확정을 시작한 클라이언트 시각(clientIntentAt)을 요청에 함께 싣는다", async () => {
+  // CODEX-9 반송 근거: "가장 나중에 시작된 시도가 이긴다"는 클라이언트 규칙(attemptSeq)
+  // 만으로는 실제 서버 최종 저장값과의 일치를 보장하지 못한다 — 겹치는 두 확정이 서로
+  // 다른 커넥션으로 나가면 실제 커밋 순서가 시작 순서와 다를 수 있기 때문이다. 그래서
+  // "언제 시작됐는가"라는 판단 근거 자체를 서버로 넘겨, 서버(equipProfileAppearance)가
+  // 겹치는 확정들을 직렬화해 실제로 가장 나중에 시작된 의도만 커밋되도록 보장해야 한다
+  // (backend/service/economy.service.test.js의 대응 시험이 그 서버 쪽 계약을 고정한다).
+  // 이 시험은 클라이언트가 그 판단 근거(clientIntentAt)를 실제로 매 확정마다 보낸다는
+  // 것만 고정한다 — 값 자체는 서버 시각과 비교되므로 실제 시각(Date.now())이어야 한다.
+  resetStore()
+  const seenBodies = []
+  postImpl = async (endpoint, body) => {
+    seenBodies.push(body)
+    return { loadout: { selectedProfileBorderId: "profile-border-남작" } }
+  }
+
+  const before = Date.now()
+  await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+  const after = Date.now()
+
+  assert.equal(seenBodies.length, 1)
+  assert.equal(typeof seenBodies[0].clientIntentAt, "number")
+  assert.equal(Number.isFinite(seenBodies[0].clientIntentAt), true)
+  assert.equal(seenBodies[0].clientIntentAt >= before && seenBodies[0].clientIntentAt <= after, true, "clientIntentAt은 이 호출이 시작된 실제 시각이어야 한다")
+
+  await useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-귀족" })
+  assert.equal(seenBodies[1].clientIntentAt >= seenBodies[0].clientIntentAt, true, "더 나중에 시작된 확정일수록 clientIntentAt도 더 크거나 같아야 한다")
+})
+
 // ── F-08 R-IMPL: 서버 확정 거부 vs 전송 불확실 구분 ──────────────────────────
 
 test("서버가 code와 함께 명시적으로 거부하면(확정 거부) status는 rejected이고, 재시도는 새 참조 사건 ID를 쓴다", async () => {

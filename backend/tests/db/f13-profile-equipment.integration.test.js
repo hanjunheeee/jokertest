@@ -178,6 +178,24 @@ test('AC-01: 동시에 서로 다른 값으로 확정 요청이 들어와도 실
     assert.equal(loadout.selected_profile_border_id, 'profile-border-귀족');
 });
 
+test('AC-02(CODEX-9): 실제 DB에서도 더 나중에 의도된 확정(B)이 먼저 처리·커밋된 뒤 더 오래된 의도(A)가 뒤늦게 도착해도 B의 커밋을 덮어쓰지 못한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('f13intent');
+    await economyService.getWalletSummary(userId);
+    await economyService.grantAchievementItem({ userId, itemId: 'profile-border-귀족', itemType: 'PROFILE_BORDER', referenceEventId: `grant-${userId}` });
+
+    // B: 더 나중에(clientIntentAt 2000) 의도된 확정이 실제로는 먼저 도착해 먼저 처리·커밋된다.
+    await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-귀족', clientIntentAt: 2000 });
+    // A: 더 먼저(clientIntentAt 1000) 의도된 확정이 실제로는 늦게 도착한다.
+    const result = await economyService.equipProfileAppearance({ userId, borderItemId: 'profile-border-평민', clientIntentAt: 1000 });
+
+    assert.equal(result.selected_profile_border_id, 'profile-border-귀족', '더 오래된 의도(A)가 나중에 도착해도 이미 커밋된 더 최신 의도(B)를 덮어쓰면 안 된다');
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_border_id, 'profile-border-귀족', '실제 DB에 영속된 최종 상태도 더 최신 의도(B)여야 한다');
+});
+
 // ── AC-03/AC-04: 구매·업적 지급 직후 조회, 계정별 복원 ───────────────────────
 
 test('AC-03: 업적으로 테두리를 지급받은 직후 getPublicProfileLoadouts 대상에는 포함되지 않지만(장착 전) equipProfileAppearance로 즉시 장착할 수 있다', async (t) => {
