@@ -83,6 +83,9 @@ const createLocalUser = async (label) => {
         nickname,
         email: `${label}-${uuid}@example.com`,
     });
+    // Purchase scenarios require a funded isolated test account. Use the real ledger
+    // service so production purchase/ownership checks and all assertions remain intact.
+    await economyService.grantReward({ userId: uuid, amount: 10000, reason: 'F14_TEST_SEED', referenceEventId: 'f14-seed:' + uuid });
     return uuid;
 };
 
