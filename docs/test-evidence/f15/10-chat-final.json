@@ -1,0 +1,49 @@
+{
+  "head": "ab46e576",
+  "measures": [
+    {
+      "inputs": [
+        {
+          "font": "12.635px",
+          "style": "font-size: clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)));"
+        }
+      ],
+      "setting": "100"
+    },
+    {
+      "inputs": [
+        {
+          "font": "7.581px",
+          "style": "font-size: clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)));"
+        }
+      ],
+      "setting": "0"
+    },
+    {
+      "inputs": [
+        {
+          "font": "7.581px",
+          "style": "font-size: clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)));"
+        },
+        {
+          "font": "12.288px",
+          "style": "font-size: clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)));"
+        }
+      ],
+      "view": "closeup min"
+    },
+    {
+      "inputs": [
+        {
+          "font": "12.635px",
+          "style": "font-size: clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)));"
+        },
+        {
+          "font": "20.48px",
+          "style": "font-size: clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)));"
+        }
+      ],
+      "view": "closeup max"
+    }
+  ]
+}

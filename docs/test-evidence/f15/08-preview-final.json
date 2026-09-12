@@ -1,0 +1,45 @@
+{
+  "head": "ab46e576",
+  "measures": [
+    {
+      "rows": [
+        {
+          "cls": "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-subheading text-[clamp(0.875rem,5.8cqi,1.1rem)] font-bold leading-none tracking-wide text-[#3a1a0c] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]",
+          "font": "18.951px",
+          "rect": {
+            "h": 36.640625,
+            "w": 178.390625
+          },
+          "text": "업적검증"
+        }
+      ],
+      "scale": "1"
+    },
+    {
+      "rows": [
+        {
+          "font": "21.7937px",
+          "rect": {
+            "h": 36.640625,
+            "w": 178.390625
+          },
+          "text": "업적검증"
+        }
+      ],
+      "scale": "1.15"
+    },
+    {
+      "rows": [
+        {
+          "font": "16.1084px",
+          "rect": {
+            "h": 36.640625,
+            "w": 178.390625
+          },
+          "text": "업적검증"
+        }
+      ],
+      "scale": "0.85"
+    }
+  ]
+}
