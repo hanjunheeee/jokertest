@@ -94,15 +94,13 @@ export default function SkinCardWearOverlay({ open, onClose }) {
   }
 
   const handleConfirm = async () => {
-    // 확인 버튼은 explicit 표식으로 일반 capture에서 제외한다.
-    // 저장 성공 여부와 무관하게 "장착을 눌렀다"는
-    // 입력 자체에 대한 소리이고, 아래 업무 경로는 그대로 진행된다(AC-06).
-    dispatchUiSfx("ui-confirm")
+    // 실제 변경·저장 잠금 검사를 통과한 입력만 훅의 onChanged 경계에서 소리를 낸다.
     const epoch = lifecycle.current
     dirty.current = true
     const result = await confirmLoadout({
       appliedSkinsByJob,
       appliedCardFrameId,
+      onChanged: () => dispatchUiSfx("ui-confirm"),
       isActive: () => epoch === lifecycle.current,
     })
     if (result.ok && epoch === lifecycle.current) onCloseRef.current()

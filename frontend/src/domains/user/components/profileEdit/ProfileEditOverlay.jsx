@@ -40,10 +40,7 @@ export default function ProfileEditOverlay({ open, onClose }) {
   }
 
   /** 저장(확인)은 클릭과 같은 task에서 소리를 내고, 업무 경로는 원래대로 진행한다(AC-06). */
-  const handleConfirmWithSfx = (...args) => {
-    dispatchUiSfx("ui-confirm")
-    return handleConfirm(...args)
-  }
+  const handleConfirmWithSfx = () => handleConfirm({ onChanged: () => dispatchUiSfx("ui-confirm") })
 
   useEffect(() => {
     if (!open) return undefined

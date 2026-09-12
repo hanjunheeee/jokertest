@@ -48,7 +48,7 @@ const playRoomSfx = (kind, sfxEvent) => {
     eventId: sfxEvent.eventId,
     accountId,
     roomId: sfxEvent.roomId,
-    origin: 'live',
+    origin: sfxEvent.origin,
   })
 }
 
@@ -172,7 +172,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
           eventId: `game:${gameId}:started`,
           accountId,
           gameId,
-          origin: 'live',
+          origin: payload?.sfxEvent?.origin ?? payload?.origin ?? 'live',
         })
       }
     }

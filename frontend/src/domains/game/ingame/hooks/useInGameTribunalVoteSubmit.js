@@ -36,7 +36,7 @@ function playTribunalVoteSubmitSfx(sfxEvent, requestScope) {
     eventId: sfxEvent.eventId,
     accountId,
     gameId: requestScope.gameId,
-    origin: "live",
+    origin: sfxEvent.origin,
   })
 }
 

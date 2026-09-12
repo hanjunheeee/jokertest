@@ -44,12 +44,12 @@ function currentAccountId() {
 }
 
 /** 게임 범위 사건 하나를 공통 재생기로 넘긴다. 절대 던지지 않는다. */
-function playGameSfx(kind, eventId, gameId) {
+function playGameSfx(kind, eventId, gameId, origin = "live") {
   if (typeof eventId !== "string" || eventId.length === 0) return
   if (typeof gameId !== "string" || gameId.length === 0) return
   const accountId = currentAccountId()
   if (accountId === null) return
-  dispatchSfxEvent({ kind, eventId, accountId, gameId, origin: "live" })
+  dispatchSfxEvent({ kind, eventId, accountId, gameId, origin })
 }
 
 /**
@@ -60,12 +60,12 @@ function playGameSfx(kind, eventId, gameId) {
  * 근거는 ENDED + winResult다(useInGameResultNavigation). 그래서 여기서도 그 두 값만 본다.
  * GameResultPage 진입 자체나 ?outcome= 미리보기는 이 경로를 거치지 않으므로 소리가 없다.
  */
-function dispatchResultSfxIfEnded() {
+function dispatchResultSfxIfEnded(origin = "live") {
   const current = useInGameStore.getState()
   if (!current.gameId || !current.state) return
   if (current.state.phase !== "ENDED") return
   if (!VALID_WINNERS.has(current.state.winResult?.winner)) return
-  playGameSfx("game-result", `game:${current.gameId}:result`, current.gameId)
+  playGameSfx("game-result", `game:${current.gameId}:result`, current.gameId, origin)
 }
 
 /** 인게임 store와 matching store를 함께 초기화하고 로비로 이동하는 finalizer를 만든다. */
@@ -115,6 +115,7 @@ export function useGameSessionSocketEvents() {
         "game-phase-changed",
         `game:${after.gameId}:phase:${after.state.phase}:${after.state.dayIndex}`,
         after.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
       )
     }
 
@@ -137,7 +138,7 @@ export function useGameSessionSocketEvents() {
       useInGameStore.getState().applyNightResultAppliedPayload(parsed)
       // 밤 결과로 승패가 확정될 수 있다. 사망 자체의 공개음은 player_eliminated가 담당하고,
       // 여기서는 종료 전이만 결과음으로 잇는다(두 사건의 ID는 서로 다르다).
-      dispatchResultSfxIfEnded()
+      dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
     }
 
     // 밤 개인 결과(night_action_result)다. 세션 channel 방송이 아니라 결과가 있는 수신자
@@ -174,7 +175,7 @@ export function useGameSessionSocketEvents() {
       if (accountId === null || envelope.accountId !== accountId) return
       if (envelope.gameId !== current.gameId) return
       const kind = parsed.actionType === "ASSASSINATE" ? "night-private-failure" : "night-private-result"
-      playGameSfx(kind, envelope.eventId, current.gameId)
+      playGameSfx(kind, envelope.eventId, current.gameId, envelope.origin ?? "restore")
     }
 
     // DAY 투표 판정 방송이다(TRIBUNAL 전이 또는 TIE/ABSTAINED의 NIGHT 전이). 검증에 필요한
@@ -204,6 +205,7 @@ export function useGameSessionSocketEvents() {
         "day-vote-resolved",
         `game:${current.gameId}:day:${parsed.dayIndex}:round:${round}:day-resolved`,
         current.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
       )
     }
 
@@ -223,6 +225,7 @@ export function useGameSessionSocketEvents() {
         "day-phase-changed",
         `game:${current.gameId}:day:${parsed.dayIndex}:dayphase:${parsed.dayPhase}`,
         current.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
       )
     }
 
@@ -249,6 +252,7 @@ export function useGameSessionSocketEvents() {
         "night-turn-started",
         `game:${current.gameId}:day:${parsed.dayIndex}:nightturn:${parsed.role}`,
         current.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
       )
     }
 
@@ -285,8 +289,9 @@ export function useGameSessionSocketEvents() {
         "tribunal-vote-resolved",
         `game:${after.gameId}:day:${after.state.dayIndex}:tribunal-resolved`,
         after.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
       )
-      dispatchResultSfxIfEnded()
+      dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
     }
 
     /**
@@ -325,8 +330,8 @@ export function useGameSessionSocketEvents() {
         envelope !== null && typeof envelope === "object" && typeof envelope.eventId === "string"
           ? envelope.eventId
           : `game:${current.gameId}:day:${parsed.dayIndex}:victim:${parsed.victimUuid}:eliminated`
-      playGameSfx("player-eliminated", eventId, current.gameId)
-      dispatchResultSfxIfEnded()
+      playGameSfx("player-eliminated", eventId, current.gameId, envelope ? (envelope.origin ?? "restore") : "live")
+      dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
     }
 
     socket.on("game_ended", handleGameEnded)

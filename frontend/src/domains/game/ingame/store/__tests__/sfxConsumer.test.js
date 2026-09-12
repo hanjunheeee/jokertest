@@ -198,7 +198,7 @@ test("F16 actual private consumer rejects foreign account and never emits secret
 
 test("F16 real hook and player deduplicate private delivery without losing game state",()=>{
   seedNightSession(); const session=openSession(); const player=recordProductionPlayer()
-  const payload={...GUARD_RESULT,sfxEvent:{eventId:"private-2",accountId:SELF_UUID,gameId:GAME_ID}}
+  const payload={...GUARD_RESULT,sfxEvent:{eventId:"private-2",accountId:SELF_UUID,gameId:GAME_ID,origin:"live"}}
   session.deliver("night_action_result",payload)
   session.deliver("night_action_result",payload)
   const logs=player.getSilenceLog()
@@ -230,4 +230,15 @@ test("F16 actual eliminated consumer applies terminal once and rejects resurrect
   assert.equal(useInGameStore.getState().state,ended)
   assert.equal(events.length,2)
   session.close()
+})
+
+
+test("F16 private restore origin survives consumer forwarding and does not claim the live event",()=>{
+  seedNightSession();const session=openSession();const player=recordProductionPlayer()
+  const payload={...GUARD_RESULT,sfxEvent:{eventId:"restore-private",accountId:SELF_UUID,gameId:GAME_ID,origin:"restore"}}
+  session.deliver("night_action_result",payload)
+  assert.equal(player.getSilenceLog().filter(x=>x.reason==="asset-unreviewed").length,0)
+  session.deliver("night_action_result",{...payload,sfxEvent:{...payload.sfxEvent,origin:"live"}})
+  assert.equal(player.getSilenceLog().filter(x=>x.reason==="asset-unreviewed").length,1)
+  session.close();player.dispose()
 })

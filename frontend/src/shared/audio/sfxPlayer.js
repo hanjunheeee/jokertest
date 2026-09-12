@@ -126,7 +126,7 @@ export function createSfxPlayer(io) {
 
   const mixListeners = new Set()
   /** 내장음(embedded) claim이 붙여 둔 매체들 — mix 변경을 함께 받는다. */
-  const embeddedMedia = new Set()
+  const embeddedClaims = new Set()
 
   const silenceLog = []
   const SILENCE_LOG_LIMIT = 200
@@ -166,6 +166,7 @@ export function createSfxPlayer(io) {
     const previous = lastScope
     lastScope = next
     generation += 1
+    for (const claim of [...embeddedClaims]) claim.release()
 
     if (accountChanged) {
       handled.clear()
@@ -208,14 +209,23 @@ export function createSfxPlayer(io) {
     }
   }
 
+  function silenceMedia(media) {
+    guard(() => { media.muted = true }, undefined)
+    guard(() => { media.volume = 0 }, undefined)
+    guard(() => media.pause?.(), undefined)
+  }
+
   function applyMixToMedia(media, mix) {
-    // 속성 대입 각각이 던질 수 있다(잠긴 매체·플랫폼 제약) — 서로를 막지 않게 따로 감싼다.
-    guard(() => {
+    try {
+      media.muted = true
       media.volume = mix.gain
-    }, undefined)
-    guard(() => {
       media.muted = mix.muted
-    }, undefined)
+      if (media.volume !== mix.gain || media.muted !== mix.muted) throw new Error("mix rejected")
+      return true
+    } catch {
+      silenceMedia(media)
+      return false
+    }
   }
 
   function refreshMix() {
@@ -223,8 +233,12 @@ export function createSfxPlayer(io) {
     const next = computeMix()
     if (next.gain === currentMix.gain && next.muted === currentMix.muted) return
     currentMix = next
-    if (active?.media) applyMixToMedia(active.media, currentMix)
-    for (const media of embeddedMedia) applyMixToMedia(media, currentMix)
+    const playing = active
+    if (playing?.media && !applyMixToMedia(playing.media, currentMix)) {
+      record("mix-apply-failed", playing.event, {stage:"mix"})
+      playing.settle(SFX_COMPLETION.FAILED)
+    }
+    for (const claim of [...embeddedClaims]) claim.refresh(currentMix)
     for (const listener of [...mixListeners]) guard(() => listener(getMix()), undefined)
   }
 
@@ -352,6 +366,7 @@ export function createSfxPlayer(io) {
     }
 
     const handle = {
+      event,
       get media() {
         return media
       },
@@ -372,6 +387,11 @@ export function createSfxPlayer(io) {
 
     // 로드가 영원히 정착하지 않아도 completion은 유한 시간 안에 끝난다.
     loadTimer = guard(() => setTimer(() => handle.settle(SFX_COMPLETION.TIMED_OUT), SFX_LOAD_TIMEOUT_MS), null)
+    if (loadTimer == null || settled) {
+      record("timer-install-failed", event, {stage:"load"})
+      handle.settle(SFX_COMPLETION.FAILED)
+      return completion
+    }
 
     const loadControl = { isCancelled: () => isStale() }
     let loading
@@ -424,7 +444,11 @@ export function createSfxPlayer(io) {
         return
       }
 
-      applyMixToMedia(media, currentMix)
+      if (!applyMixToMedia(media, currentMix)) {
+        record("mix-apply-failed", event, {stage:"media"})
+        handle.settle(SFX_COMPLETION.FAILED)
+        return
+      }
 
       const onEnded = () => handle.settle(SFX_COMPLETION.PLAYED)
       const onError = () => handle.settle(SFX_COMPLETION.FAILED)
@@ -450,6 +474,12 @@ export function createSfxPlayer(io) {
         () => setTimer(() => handle.settle(SFX_COMPLETION.TIMED_OUT), entry.durationMs + SFX_PLAYBACK_WATCHDOG_MS),
         null,
       )
+
+      if (watchdog == null || settled) {
+        record("timer-install-failed", event, {stage:"play"})
+        handle.settle(SFX_COMPLETION.FAILED)
+        return
+      }
 
       let playResult
       try {
@@ -489,6 +519,16 @@ export function createSfxPlayer(io) {
     }
     const { entry, event, generation: capturedGeneration } = admitted
 
+    // 자산 미검토는 음소거·알림 설정과 독립된 배포 제한이다. 다른 무음 조건이
+    // 겹쳐도 이 사유를 먼저 남겨 누락된 자산 검토가 설정에 가려지지 않게 한다.
+    const allowed = checkSfxAssetAllowed(entry)
+    if (!allowed.allowed) {
+      // AC-02: 미확인 자산은 매체를 만들지 않고 무음 사유만 남긴다.
+      record(allowed.reason, event, { stage: "manifest", note: entry.silenceReason ?? null })
+      return suppressed(allowed.reason)
+    }
+
+
     // 내장음이 소유한 사건에는 별도 음을 내지 않는다(AC-05). 표식은 이미 선점했으므로
     // 뒤늦은 separate dispatch도 중복으로 막힌다.
     if (event.audioMode === "embedded" || entry.audioMode === "embedded") {
@@ -512,12 +552,6 @@ export function createSfxPlayer(io) {
       return suppressed(SFX_SUPPRESSED_REASON.MUTED)
     }
 
-    const allowed = checkSfxAssetAllowed(entry)
-    if (!allowed.allowed) {
-      // AC-02: 미확인 자산은 매체를 만들지 않고 무음 사유만 남긴다.
-      record(allowed.reason, event, { stage: "manifest", note: entry.silenceReason ?? null })
-      return suppressed(allowed.reason)
-    }
 
     if (entry.scope === SFX_SCOPE.UI) {
       const at = guard(now, 0)
@@ -540,38 +574,54 @@ export function createSfxPlayer(io) {
    * 실제 변환·청음·동기 연결은 F-27 담당이다. 여기서 제공하는 것은 볼륨/mute 적용과
    * cleanup 계약뿐이다.
    *
-   * @returns {{ status:'claimed'|'suppressed', reason:string|null, attach:(media:object)=>void, release:()=>void }}
+   * @returns {{ status:'claimed'|'suppressed', reason:string|null, attach:(media:object)=>boolean, release:()=>void }}
    */
   function claimAudio(rawEvent, options) {
     const mode = options?.mode ?? "embedded"
     const admitted = admit(mode === "embedded" ? { ...rawEvent, audioMode: "embedded" } : rawEvent)
     if (!admitted.ok) {
       record(admitted.reason, admitted.event ?? rawEvent, { stage: "claim" })
-      return { status: "suppressed", reason: admitted.reason, attach: () => {}, release: () => {} }
+      return { status: "suppressed", reason: admitted.reason, attach: () => false, release: () => {} }
     }
 
     let released = false
     let attached = null
-
+    const owner = {
+      refresh(mix) {
+        if (attached && !applyMixToMedia(attached, mix)) {
+          record("mix-apply-failed", admitted.event, {stage:"embedded"})
+          release()
+        }
+      },
+      release,
+    }
+    function release() {
+      if (released) return
+      released = true
+      embeddedClaims.delete(owner)
+      if (attached !== null) {
+        silenceMedia(attached)
+        attached = null
+      }
+    }
+    embeddedClaims.add(owner)
     return {
       status: "claimed",
       reason: null,
-      /** 승인된 매체에만 현재 mix를 적용하고, 이후 변경도 함께 받게 한다. */
+      // A claim owns one media. Reattaching that media is idempotent; a second is rejected.
       attach(media) {
-        if (released || media === null || typeof media !== "object") return
-        attached = media
-        embeddedMedia.add(media)
-        applyMixToMedia(media, currentMix)
-      },
-      /** cleanup. 이후의 어떤 mix 변경도 이 매체를 건드리지 않는다. */
-      release() {
-        if (released) return
-        released = true
-        if (attached !== null) {
-          embeddedMedia.delete(attached)
-          attached = null
+        syncScope()
+        if (disposed || released || admitted.generation !== generation || media === null || typeof media !== "object") return false
+        if (attached !== null) return attached === media
+        if (!applyMixToMedia(media, currentMix)) {
+          record("mix-apply-failed", admitted.event, {stage:"embedded"})
+          release()
+          return false
         }
+        attached = media
+        return true
       },
+      release,
     }
   }
 
@@ -581,7 +631,7 @@ export function createSfxPlayer(io) {
     stopActive(SFX_COMPLETION.STOPPED)
     handled.clear()
     mixListeners.clear()
-    embeddedMedia.clear()
+    for (const claim of [...embeddedClaims]) claim.release()
     if (typeof unsubscribeSettings === "function") guard(unsubscribeSettings, undefined)
   }
 

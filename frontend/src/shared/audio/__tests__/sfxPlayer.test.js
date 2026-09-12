@@ -200,7 +200,7 @@ function makePlayer(overrides = {}) {
     loadAsset,
     createMedia,
     now: clock.now,
-    setTimer: clock.setTimer,
+    setTimer: overrides.setTimer ?? clock.setTimer,
     clearTimer: clock.clearTimer,
   })
 
@@ -685,4 +685,84 @@ test("AC-06 새 사건은 이전 활성 SFX를 stopped로 끝내고 자리를 �
 
   assert.equal(await first.completion, SFX_COMPLETION.STOPPED)
   assert.equal(h.media[0].pauseCalls >= 1, true)
+})
+
+
+test("AC-02 unreviewed asset reason survives mute, zero volume and disabled notification", () => {
+  for (const settings of [{sfxMuted:true},{masterVolume:0},{notifications:{"friend-invite":false}}]) {
+    const h=makePlayer({settings,manifest:{
+      "test-unreviewed": approvedEntry({reviewStatus:SFX_REVIEW_STATUS.NEEDS_REVIEW,sha256:null,src:null,notificationKey:"friend-invite"}),
+    }})
+    const result=h.player.dispatch({kind:"test-unreviewed",eventId:"unreviewed-settings",accountId:"acct-1",gameId:"game-1",origin:"live"})
+    assert.equal(result.reason,"asset-unreviewed")
+    assert.equal(h.player.getSilenceLog().at(-1).reason,"asset-unreviewed")
+    assert.equal(h.loads.length,0)
+    assert.equal(h.media.length,0)
+    h.player.dispose()
+  }
+})
+
+
+test("AC-03 rejected initial media volume never calls play", async () => {
+  const factory=createMediaRecorder()
+  const h=makePlayer({createMedia:src=>{
+    const media=factory(src)
+    Object.defineProperty(media,"volume",{get:()=>1,set:()=>{throw Error("volume rejected")}})
+    return media
+  }})
+  const result=h.player.dispatch(gameEvent("locked-initial")); await settleLoads(h)
+  assert.equal(await result.completion,SFX_COMPLETION.FAILED)
+  assert.equal(factory.created[0].playCalls,0)
+  assert.ok(factory.created[0].pauseCalls>=1)
+  assert.equal(h.clock.pendingCount(),0)
+})
+
+test("AC-03 rejected mute during playback stops the active media", async () => {
+  const h=makePlayer(); const result=h.player.dispatch(gameEvent("locked-playing"));await settleLoads(h)
+  const media=h.media[0]
+  Object.defineProperty(media,"muted",{get:()=>false,set:()=>{throw Error("mute rejected")}})
+  h.setSettings({sfxMuted:true})
+  assert.equal(await result.completion,SFX_COMPLETION.FAILED)
+  assert.ok(media.pauseCalls>=1)
+  assert.equal(media.volume,0)
+  assert.equal(h.clock.pendingCount(),0)
+})
+
+test("AC-05 embedded claim owns one media and stops it on scope change/release/dispose",()=>{
+  for(const boundary of ["scope","release","dispose"]){
+    const h=makePlayer();const claim=h.player.claimAudio(gameEvent("claim-"+boundary),{mode:"embedded"})
+    const media={volume:1,muted:false,pauses:0,pause(){this.pauses++}}
+    const other={volume:1,muted:false}
+    assert.equal(claim.attach(media),true)
+    assert.equal(claim.attach(media),true)
+    assert.equal(claim.attach(other),false)
+    if(boundary==="scope")h.setScope({accountId:"another"})
+    else if(boundary==="dispose")h.player.dispose()
+    else claim.release()
+    assert.ok(media.pauses>=1);assert.equal(media.muted,true);assert.equal(media.volume,0)
+    assert.equal(claim.attach(other),false)
+    h.setSettings({sfxVolume:10});assert.equal(other.volume,1)
+    h.player.dispose()
+  }
+})
+
+test("AC-05 a claim made before an account switch cannot attach later",()=>{
+  const h=makePlayer();const claim=h.player.claimAudio(gameEvent("late-attach"),{mode:"embedded"})
+  h.setScope({accountId:"next"})
+  assert.equal(claim.attach({volume:1,muted:false}),false)
+})
+
+test("AC-06 load timer installation failure settles without starting the load",async()=>{
+  const h=makePlayer({setTimer:()=>{throw Error("timer unavailable")}})
+  const result=h.player.dispatch(gameEvent("timer-load"))
+  assert.equal(await Promise.race([result.completion,Promise.resolve("unsettled")]),SFX_COMPLETION.FAILED)
+  assert.equal(h.loads.length,0);assert.equal(h.media.length,0)
+})
+
+test("AC-06 playback watchdog installation failure settles before play",async()=>{
+  let calls=0
+  const h=makePlayer({setTimer:()=>{if(++calls===1)return 1;throw Error("watchdog unavailable")}})
+  const result=h.player.dispatch(gameEvent("timer-play"));await settleLoads(h)
+  assert.equal(await Promise.race([result.completion,Promise.resolve("unsettled")]),SFX_COMPLETION.FAILED)
+  assert.equal(h.media[0].playCalls,0);assert.ok(h.media[0].pauseCalls>=1)
 })

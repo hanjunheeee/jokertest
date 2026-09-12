@@ -284,7 +284,7 @@ export function useSfxRuntime() {
       const auth = useAuthStore.getState()
       const accountId = auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null
       if (accountId === null || envelope.accountId !== accountId) return
-      dispatchSfxEvent({ kind: envelope.kind, eventId: envelope.eventId, accountId, origin: "live" })
+      dispatchSfxEvent({ kind: envelope.kind, eventId: envelope.eventId, accountId, origin: envelope.origin })
     }
 
     socket.on("achievement_granted", handleAchievementGranted)

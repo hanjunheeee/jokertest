@@ -27,7 +27,7 @@ function playFriendSfx(sfxEvent) {
         kind: sfxEvent.kind,
         eventId: sfxEvent.eventId,
         accountId,
-        origin: "live",
+        origin: sfxEvent.origin,
     });
 }
 

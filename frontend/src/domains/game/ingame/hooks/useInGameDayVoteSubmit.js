@@ -53,7 +53,7 @@ function playDayVoteSubmitSfx(sfxEvent, requestScope, requestSocket) {
     eventId: sfxEvent.eventId,
     accountId,
     gameId: requestScope.gameId,
-    origin: "live",
+    origin: sfxEvent.origin,
   })
 }
 

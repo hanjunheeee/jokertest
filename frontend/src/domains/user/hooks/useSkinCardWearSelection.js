@@ -227,7 +227,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
    *    (Overlay)가 이를 성공도 실패도 아닌 것으로 처리해 새 계정 화면에 영향을 주지 않는다.
    * @param {{ appliedSkinsByJob: Record<string, string>, appliedCardFrameId: string }} applied
    */
-  const confirmLoadout = useCallback(async ({ appliedSkinsByJob, appliedCardFrameId, isActive = () => true }) => {
+  const confirmLoadout = useCallback(async ({ appliedSkinsByJob, appliedCardFrameId, isActive = () => true, onChanged }) => {
     if (savingRef.current) return { ok: false, reason: "ALREADY_SAVING" }
     const saveEpoch = saveGeneration.current
     savingRef.current = true
@@ -261,6 +261,9 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
       setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.SUCCESS)
       return finish({ ok: true, changed: false })
     }
+
+    if (isStale()) return finish({ ok: false, stale: true })
+    try { onChanged?.() } catch { /* Audio cannot block the accepted save. */ }
 
     let firstRejection = null
     const uncertainSlots = []

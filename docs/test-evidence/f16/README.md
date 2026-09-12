@@ -20,3 +20,13 @@
 - 자산 파일·이용 조건은 아직 미제공이다. 실제 배포 manifest는 needs_assets_and_usage_review로 무음과 사유를 남긴다. mock fixture 성공은 실제 자산 승인/청음이 아니다.
 - 로드·play 거절·영구 대기·watchdog 및 Master×SFX 적용은 실제 공통 재생기와 주입 fixture의 자동 테스트로 검증했다. 실제 Chrome에서 모든 브라우저 자동재생 실패를 강제했다는 주장은 하지 않는다.
 - F17 신규 알림, F19 실제 초대, F27 전체 능력 영상/MOV5 내장음, F28 통합 검증은 담당 작업의 미완료로 남는다. F15 전체화면은 사용자 직접 검증 예외를 그대로 유지한다.
+
+## 독립 심사 1회 후 보정
+
+- 미검토 자산 검사를 mute/알림 설정보다 먼저 수행한다. 실제 Chrome production runtime에서 mute=true와 asset-unreviewed가 함께 기록됨을 확인했다(browser/muted-unreviewed-after-review.json).
+- 볼륨/mute 적용 실패 시 play를 호출하지 않으며 재생 중 실패 시 pause·정리한다. 타이머 설치 실패도 즉시 실패 완료한다.
+- 내장음 claim은 매체 하나만 소유하며 범위 변경·release·dispose 이후 attach를 거부하고 기존 매체를 멈춘다.
+- 소켓 envelope의 restore 출처를 소비자가 live로 덮어쓰지 않는다. 실제 개인 결과 소비 훅에서 restore 거부 뒤 같은 live ID가 처리되는 회귀를 추가했다.
+- 변경 없는 장착/프로필 확인은 효과음을 만들지 않는다. 변경 및 저장 잠금 검사를 통과한 입력에서만 onChanged를 호출한다.
+- 보정 후 관련 실제 소비·UI·재생기 회귀 104/104 PASS, fail0/skip0. 이는 전체 재검증을 대체하지 않으며 최종 공식 VERIFY 및 두 독립 심사 결과를 기다린다.
+- 이전 공식 npm ci의 EPERM은 검증용 Vite가 네이티브 모듈을 점유한 상태에서 설치를 실행한 운영 순서 오류였다. QA 서버를 종료한 재설치가 성공했고 이번 재검증 전에도 종료했다. 이전 실패 기록은 보존했다.
