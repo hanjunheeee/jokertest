@@ -5,6 +5,9 @@ import {
   getInGameChatInputPlaceholderClass,
   getInGameChatInputViewportFixedHeightClass,
   getInGameChatInputViewportSinglelineClass,
+  getInGameChatScaledFontSize,
+  getInGameChatTextScale,
+  getInGameChatTextScaleStyle,
   INGAME_CHAT_INPUT_VIEWPORT_EMPTY_CLASS,
   INGAME_CHAT_INPUT_VIEWPORT_FILLED_CLASS,
   INGAME_CHAT_INPUT_VIEWPORT_MASK_CLASS,
@@ -12,7 +15,13 @@ import {
   INGAME_CHAT_INPUT_VIEWPORT_NO_MASK_CLASS,
   INGAME_CHAT_INPUT_VIEWPORT_WRAP_BASE_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
+import { INGAME_SETTING_CHAT_SLIDER } from "../../constants/controls/ingameSetting/ingameSettingData.js"
+import { useSettingsStore } from "../../../../settings/store/settingsStore.js"
 import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
+
+function selectChatTextSize(state) {
+  return state.chatTextSize ?? INGAME_SETTING_CHAT_SLIDER.defaultValue
+}
 
 const TEXTAREA_MIRROR_STYLE_KEYS = [
   "boxSizing",
@@ -143,6 +152,12 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   const wrapRef = useRef(null)
   const textareaRef = useRef(null)
 
+  // F-15(AC-02): 채팅 글자 크기 설정 — 배율은 래퍼에 CSS 변수로만 얹고, textarea·
+  // placeholder의 타이포 클래스가 그 변수를 clamp 세 항에 곱해 쓴다(경계 보존).
+  const chatTextSize = useSettingsStore(selectChatTextSize)
+  const chatTextScale = getInGameChatTextScale(chatTextSize)
+  const chatTextScaleStyle = getInGameChatTextScaleStyle(chatTextSize)
+
   // 입력값이 실제 화면에서 두 줄 이상으로 보이는지 표시합니다.
   const [isVisualMultiLine, setIsVisualMultiLine] = useState(false)
 
@@ -195,9 +210,10 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     textarea.scrollTop = 0
   }
 
+  // 글자 크기가 바뀌면 줄 높이·줄바꿈이 달라지므로 viewport를 다시 계산한다.
   useLayoutEffect(() => {
     syncViewport()
-  }, [value, hasText])
+  }, [value, hasText, chatTextScale])
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -251,6 +267,11 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     .filter(Boolean)
     .join(" ")
 
+  // textarea는 타이포 클래스만으로는 크기를 받지 못해 상속 16px로 떨어진다 — 클래스와
+  // 같은 단일 출처(ingameChatLayout.js의 clamp 식)를 인라인으로 그대로 얹어 막는다.
+  // 클래스 문자열을 정규식으로 되파싱하지 않는다(형태가 바뀌면 조용히 16px로 돌아간다).
+  const textareaFontSizeStyle = { fontSize: getInGameChatScaledFontSize(variant) }
+
   const textareaClass = [
     inputClass,
     hasText
@@ -264,6 +285,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     <div
       ref={wrapRef}
       className={wrapClass}
+      style={chatTextScaleStyle}
       onClick={() => textareaRef.current?.focus()}
     >
       {!hasText ? (
@@ -283,6 +305,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
         onCompositionEnd={syncViewport}
         placeholder=""
         className={textareaClass}
+        style={textareaFontSizeStyle}
         aria-label="채팅 입력"
       />
     </div>
@@ -290,3 +313,4 @@ const InGameChatInput = forwardRef(function InGameChatInput(
 })
 
 export default InGameChatInput
+

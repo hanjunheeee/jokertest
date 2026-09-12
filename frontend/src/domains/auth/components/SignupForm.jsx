@@ -8,7 +8,7 @@ export default function SignupForm({ formData, onChange, onSwitchToLogin }) {
   return (
     <>
       <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] font-subheading text-[13px] font-bold leading-relaxed text-text-body/90">
+        <p className="mt-[40px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
           새로운 모험을 위한 정보를 입력해주세요
         </p>
       </header>

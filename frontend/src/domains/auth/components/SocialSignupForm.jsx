@@ -57,7 +57,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
 
   if (status === "done") {
     return (
-      <p className="mt-8 text-center font-subheading text-[13px] font-bold text-text-body/90">
+      <p className="mt-8 text-center font-subheading app-text-scaled [--app-text-size:13px] font-bold text-text-body/90">
         가입이 완료되었습니다. 로비로 이동합니다...
       </p>
     )
@@ -66,7 +66,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
   if (BLOCKED_STATUSES.has(status)) {
     return (
       <div className="mt-8 flex flex-1 flex-col items-center gap-4 text-center">
-        <p role="alert" className="font-subheading text-[13px] font-bold text-red-300">{errorMessage}</p>
+        <p role="alert" className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-red-300">{errorMessage}</p>
         <AuthImageButton type="button" onClick={onCancel} src={LOGIN_ASSETS.loginButton} label="로그인 화면으로" />
       </div>
     )
@@ -77,7 +77,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
   return (
     <>
       <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] font-subheading text-[13px] font-bold leading-relaxed text-text-body/90">
+        <p className="mt-[40px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
           소셜 계정으로 처음 오셨네요. 닉네임과 생년월일을 알려주세요
         </p>
       </header>

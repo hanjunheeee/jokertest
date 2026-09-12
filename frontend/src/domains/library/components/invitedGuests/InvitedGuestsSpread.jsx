@@ -30,7 +30,7 @@ import {
 
 // F-10: 로딩·에러·빈 랭킹 상태 문구. 기존 표 텍스트 톤(font-subheading, #1a1008)을 그대로 쓴다.
 const INVITED_GUESTS_STATE_MESSAGE_CLASS =
-  "font-subheading text-[clamp(0.76rem,0.98vw,0.88rem)] leading-snug text-[#1a1008]/80"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.76rem,0.98vw,0.88rem)] leading-snug text-[#1a1008]/80"
 const INVITED_GUESTS_STATE_RETRY_BUTTON_CLASS =
   "mt-1 underline underline-offset-2 text-[#1a1008]"
 

@@ -22,7 +22,7 @@ export default function Stepper({
   ariaLabel, // 좌/우 버튼 접근성 라벨의 접두어 (예: "볼륨 감소"/"볼륨 증가")
   inputFieldSrc, // 가운데 값 표시 프레임 이미지
   arrowSrc, // 좌우 화살표 이미지 (오른쪽 화살표는 180도 회전해서 재사용)
-  valueClassName = "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.98rem,1.35vw,1.08rem)] text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]",
+  valueClassName = "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.98rem,1.35vw,1.08rem)] text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]",
   valueWidthClassName = "relative w-[clamp(7.25rem,13vw,9.25rem)]",
   buttonClassName = "block w-[clamp(1.9rem,2.55vw,2.15rem)] cursor-pointer border-0 bg-transparent p-0 opacity-90 hover:opacity-100 disabled:cursor-default disabled:opacity-40",
   arrowWrapClassName = "block",

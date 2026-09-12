@@ -4,8 +4,8 @@ export const SETUP_ROW_CLASS =
 
 /** 설정 항목 제목(라벨) 텍스트 스타일 */
 export const SETUP_TITLE_CLASS =
-  "font-subheading text-[clamp(1.22rem,1.75vw,1.42rem)] font-bold leading-tight text-[#1a1008]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.22rem,1.75vw,1.42rem)] font-bold leading-tight text-[#1a1008]"
 
 /** checkbox 항목 설명(description) 텍스트 스타일 */
 export const SETUP_DESC_CLASS =
-  "mt-0 font-subheading text-[clamp(1.02rem,1.38vw,1.16rem)] leading-snug text-[#2a1810]/85"
+  "mt-0 font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] leading-snug text-[#2a1810]/85"

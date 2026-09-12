@@ -12,21 +12,30 @@ import CheckBox from "@/shared/ui/CheckBox"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import RangeSlider from "@/shared/ui/RangeSlider"
 import { useFullscreen } from "@/shared/hooks/useFullscreen.js"
+import { useSettingsStore } from "../../store/settingsStore.js"
+
+// F-15(AC-01): 귓속말 알림 항목은 설정 화면에서 완전히 뺀다 — 나머지 알림(친구 초대·게임
+// 초대·시스템 알림)은 그대로 GENERAL_SETTING_CHECKBOXES 정의를 따른다.
+const HIDDEN_NOTIFICATION_IDS = new Set(["whisper"])
 
 const ROW_CLASS =
   "flex shrink-0 items-center justify-between gap-[clamp(1rem,2.5vw,2rem)] border-b border-[#c4a574]/35 py-[clamp(0.35rem,0.85vh,0.5rem)]"
 
+// F-15(AC-02): GENERAL_SETTING_TEXT_SIZE("텍스트 크기") 설정의 실제 적용 대상 — 앱 전체의
+// 명시적 font-size 선언과 같은 방식(app-text-scaled + --app-text-size)을 쓴다. 원래 clamp
+// 값을 그대로 두고 index.css의 .app-text-scaled가 --app-text-scale을 곱하므로 경계와 기본
+// 크기가 보존된다(index.css 주석 참고).
 const SECTION_TITLE_CLASS =
-  "shrink-0 pt-[clamp(0.45rem,1vh,0.65rem)] font-subheading text-[clamp(0.88rem,1.15vw,1rem)] font-black tracking-wide text-[#3d2a1c]/72 first:pt-0"
+  "shrink-0 pt-[clamp(0.45rem,1vh,0.65rem)] font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-black tracking-wide text-[#3d2a1c]/72 first:pt-0"
 
 const LABEL_CLASS =
-  "min-w-0 flex-1 font-subheading text-[clamp(1.02rem,1.5vw,1.18rem)] font-bold leading-snug text-[#140c08]"
+  "min-w-0 flex-1 font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.5vw,1.18rem)] font-bold leading-snug text-[#140c08]"
 
 const ACTION_BTN_CLASS =
   "interactive-scale relative block w-[clamp(7.1rem,15vw,9.5rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
 
 const ACTION_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center px-[0.35rem] text-center font-subheading text-[clamp(0.72rem,1vw,0.88rem)] font-bold leading-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center px-[0.35rem] text-center font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1vw,0.88rem)] font-bold leading-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 function SettingActionButton({ label, onClick }) {
   return (
@@ -58,19 +67,23 @@ function SettingCheckboxRow({ label, checked, onChange }) {
 
 export default function GeneralSettingsTab() {
   const { isFullscreen, setFullscreen } = useFullscreen()
-  const [checks, setChecks] = useState(() =>
-    Object.fromEntries(
-      GENERAL_SETTING_CHECKBOXES.filter(({ id }) => id !== "fullscreen").map(
-        ({ id, defaultChecked }) => [id, defaultChecked],
-      ),
-    ),
-  )
-  const [textSize, setTextSize] = useState(GENERAL_SETTING_TEXT_SIZE.defaultValue)
+  const checks = useSettingsStore((s) => s.generalChecks)
+  const setGeneralCheck = useSettingsStore((s) => s.setGeneralCheck)
+  const textSize = useSettingsStore((s) => s.generalTextSize)
+  const setGeneralTextSize = useSettingsStore((s) => s.setGeneralTextSize)
+  const resetSettings = useSettingsStore((s) => s.resetSettings)
   const [tutorialOpen, setTutorialOpen] = useState(false)
 
   const handleActionClick = (id) => {
     if (id === "replay-tutorial") {
       setTutorialOpen(true)
+      return
+    }
+    if (id === "reset-settings") {
+      // F-15(AC-05): 이 store는 볼륨·체크·텍스트 크기만 초기화한다 — 음악 재생 차단
+      // (MUSIC_PLAYBACK_ENABLED, useAudioControl)은 이 store와 연결되어 있지 않으므로
+      // 초기화가 음악을 다시 재생시킬 방법이 없다.
+      resetSettings()
     }
   }
 
@@ -79,14 +92,14 @@ export default function GeneralSettingsTab() {
       void setFullscreen(next)
       return
     }
-    setChecks((prev) => ({ ...prev, [id]: next }))
+    setGeneralCheck(id, next)
   }
 
-  const isChecked = (id) => (id === "fullscreen" ? isFullscreen : checks[id])
+  const isChecked = (id) => (id === "fullscreen" ? isFullscreen : Boolean(checks[id]))
 
   const screenItems = GENERAL_SETTING_CHECKBOXES.filter(({ section }) => section === "screen")
   const notificationItems = GENERAL_SETTING_CHECKBOXES.filter(
-    ({ section }) => section === "notification",
+    ({ section, id }) => section === "notification" && !HIDDEN_NOTIFICATION_IDS.has(id),
   )
 
   return (
@@ -109,7 +122,7 @@ export default function GeneralSettingsTab() {
           min={GENERAL_SETTING_TEXT_SIZE.min}
           max={GENERAL_SETTING_TEXT_SIZE.max}
           value={textSize}
-          onChange={setTextSize}
+          onChange={setGeneralTextSize}
         />
       </div>
 

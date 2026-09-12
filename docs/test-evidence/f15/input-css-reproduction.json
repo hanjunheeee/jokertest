@@ -1,0 +1,47 @@
+{
+  "kind": "isolated CSS diagnosis, not application acceptance",
+  "values": [
+    {
+      "font": "12.8px",
+      "style": null,
+      "tag": "SPAN",
+      "text": "Span text"
+    },
+    {
+      "font": "16px",
+      "style": null,
+      "tag": "TEXTAREA",
+      "text": "Typed text"
+    },
+    {
+      "font": "7.68px",
+      "style": null,
+      "tag": "SPAN",
+      "text": "Span text"
+    },
+    {
+      "font": "16px",
+      "style": null,
+      "tag": "TEXTAREA",
+      "text": "Typed text"
+    },
+    {
+      "font": "9px",
+      "style": "font-size:9px!important",
+      "tag": "TEXTAREA",
+      "text": "inline9px"
+    },
+    {
+      "font": "12px",
+      "style": "font-size:clamp(8px,3.2cqi,12px)!important",
+      "tag": "TEXTAREA",
+      "text": "inlineclamp"
+    },
+    {
+      "font": "7.68px",
+      "style": "font-size:clamp(calc(.72rem * var(--ingame-chat-text-scale,1)),calc(3.2cqi * var(--ingame-chat-text-scale,1)),calc(.92rem * var(--ingame-chat-text-scale,1)))",
+      "tag": "TEXTAREA",
+      "text": "inline production clamp"
+    }
+  ]
+}

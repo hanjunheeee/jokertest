@@ -53,22 +53,22 @@ export const STORE_SLOT_NAME_WRAP_CLASS =
 
 /** `-` 위 직업 접두 (예: 경비원) */
 export const STORE_SLOT_NAME_JOB_CLASS =
-  "line-clamp-1 w-full font-subheading text-[clamp(0.72rem,0.92vw,0.82rem)] font-bold leading-snug text-[#5c554d]"
+  "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,0.92vw,0.82rem)] font-bold leading-snug text-[#5c554d]"
 
 /** 상품명 본문 — 스킨명·단일 이름 */
 export const STORE_SLOT_NAME_TITLE_CLASS =
-  "line-clamp-1 w-full font-subheading text-[clamp(0.88rem,1.12vw,1rem)] font-extrabold leading-snug text-[#140c08]"
+  "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.12vw,1rem)] font-extrabold leading-snug text-[#140c08]"
 
 /** @deprecated STORE_SLOT_NAME_JOB_CLASS / STORE_SLOT_NAME_TITLE_CLASS 사용 */
 export const STORE_SLOT_NAME_LINE_CLASS = STORE_SLOT_NAME_TITLE_CLASS
 
 /** @deprecated StoreItemSlotName + STORE_SLOT_NAME_LINE_CLASS 사용 */
 export const STORE_SLOT_NAME_TEXT_CLASS =
-  "font-subheading text-[clamp(0.9rem,1.2vw,1.05rem)] font-extrabold leading-snug text-[#140c08] whitespace-nowrap"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.9rem,1.2vw,1.05rem)] font-extrabold leading-snug text-[#140c08] whitespace-nowrap"
 
 /** @deprecated StoreItemSlotName 사용 */
 export const STORE_SLOT_NAME_CLASS =
-  "line-clamp-1 w-full px-1 text-center font-subheading text-[clamp(0.9rem,1.2vw,1.05rem)] font-extrabold leading-snug text-[#140c08]"
+  "line-clamp-1 w-full px-1 text-center font-subheading app-text-scaled [--app-text-size:clamp(0.9rem,1.2vw,1.05rem)] font-extrabold leading-snug text-[#140c08]"
 
 export const STORE_SLOT_PRICE_CLASS =
   "flex w-full items-center justify-center gap-[clamp(0.2rem,0.4vw,0.3rem)] border-t border-[#2a1810]/14 bg-[#1a0f0a]/24 px-[clamp(0.35rem,0.75vw,0.55rem)] py-[clamp(0.3rem,0.65vh,0.45rem)] [box-shadow:inset_0_1px_0_rgba(245,240,230,0.08)]"
@@ -76,10 +76,10 @@ export const STORE_SLOT_PRICE_CLASS =
 export const STORE_SLOT_PRICE_SELECTED_CLASS = "bg-[#1a0f0a]/32"
 
 export const STORE_SLOT_PRICE_TEXT_CLASS =
-  "font-subheading text-[clamp(0.82rem,1.1vw,0.95rem)] font-bold text-white"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold text-white"
 
 export const STORE_SLOT_PRICE_AMOUNT_CLASS =
-  "font-subheading text-[clamp(0.82rem,1.1vw,0.95rem)] font-bold tabular-nums text-white"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold tabular-nums text-white"
 
 export const STORE_SLOT_PRICE_ICON_CLASS =
   "block h-[clamp(0.85rem,1.35vw,1rem)] w-auto shrink-0 select-none object-contain"
@@ -99,13 +99,13 @@ export const STORE_SKIN_NOTICE_ICON_CLASS =
   "block h-[clamp(0.95rem,1.35vw,1.12rem)] w-auto shrink-0 select-none object-contain"
 
 export const STORE_SKIN_NOTICE_TEXT_CLASS =
-  "font-subheading text-[clamp(0.7rem,0.92vw,0.82rem)] font-extrabold leading-snug text-[#2a0e08]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.7rem,0.92vw,0.82rem)] font-extrabold leading-snug text-[#2a0e08]"
 
 export const STORE_BULK_BTN_CLASS =
   "relative w-[clamp(5rem,8.5vw,6.75rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
 export const STORE_BULK_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.68rem,0.92vw,0.78rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.92vw,0.78rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const STORE_BULK_BTN_IMAGE_CLASS = "block h-auto w-full select-none"
 
@@ -113,7 +113,7 @@ export const STORE_EMPTY_GRID_CLASS =
   "flex min-h-[clamp(12rem,28vh,16rem)] w-full items-center justify-center px-[clamp(0.75rem,1.5vw,1.25rem)]"
 
 export const STORE_EMPTY_MESSAGE_CLASS =
-  "text-center font-display text-[clamp(1.35rem,2vw,1.65rem)] font-medium leading-snug text-[#2a1810]/55 antialiased"
+  "text-center font-display app-text-scaled [--app-text-size:clamp(1.35rem,2vw,1.65rem)] font-medium leading-snug text-[#2a1810]/55 antialiased"
 
 export const STORE_GRID_CLASS =
   "grid grid-cols-4 gap-x-[clamp(0.5rem,1.05vw,0.75rem)] gap-y-[clamp(0.85rem,1.75vh,1.2rem)] p-[clamp(0.15rem,0.35vw,0.25rem)]"
@@ -136,13 +136,13 @@ export const STORE_SIDEBAR_HEADER_WRAP_CLASS =
   "border-b border-[#2a1810]/28 px-[clamp(0.5rem,0.95vw,0.7rem)] pb-[clamp(0.35rem,0.75vh,0.5rem)]"
 
 export const STORE_SIDEBAR_HEADER_CLASS =
-  "text-left font-display text-[clamp(1.38rem,1.95vw,1.68rem)] font-medium text-text-body"
+  "text-left font-display app-text-scaled [--app-text-size:clamp(1.38rem,1.95vw,1.68rem)] font-medium text-text-body"
 
 export const STORE_SIDEBAR_LIST_CLASS =
   "flex min-h-0 flex-1 flex-col gap-[clamp(0.3rem,0.65vh,0.42rem)] overflow-hidden px-[clamp(0.5rem,0.95vw,0.75rem)] py-[clamp(0.45rem,0.9vh,0.65rem)]"
 
 export const STORE_CATEGORY_ROW_CLASS =
-  "w-full cursor-pointer rounded-sm px-[clamp(0.45rem,0.85vw,0.65rem)] py-[clamp(0.38rem,0.8vh,0.52rem)] text-left text-[clamp(0.95rem,1.25vw,1.1rem)] font-bold leading-snug transition-[background-color,color] bg-[#1a0f0a]/06 text-[#2a1810]/90 hover:bg-[#1a0f0a]/10"
+  "w-full cursor-pointer rounded-sm px-[clamp(0.45rem,0.85vw,0.65rem)] py-[clamp(0.38rem,0.8vh,0.52rem)] text-left app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.1rem)] font-bold leading-snug transition-[background-color,color] bg-[#1a0f0a]/06 text-[#2a1810]/90 hover:bg-[#1a0f0a]/10"
 
 export const STORE_CATEGORY_ROW_SELECTED_CLASS =
   "bg-[#1a0f0a]/32 text-white [box-shadow:inset_0_1px_0_rgba(245,240,230,0.08)]"
@@ -169,13 +169,13 @@ export const STORE_DETAIL_INFO_CLASS =
 export const STORE_DETAIL_NAME_ROW_CLASS = "flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
 
 export const STORE_DETAIL_NAME_CLASS =
-  "font-subheading text-[clamp(1rem,1.45vw,1.18rem)] font-extrabold leading-tight text-[#140c08]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1rem,1.45vw,1.18rem)] font-extrabold leading-tight text-[#140c08]"
 
 export const STORE_DETAIL_TAG_CLASS =
-  "rounded-sm bg-[#2a1810]/18 px-1.5 py-0.5 text-[clamp(0.65rem,0.9vw,0.75rem)] font-bold text-[#6b3a28]"
+  "rounded-sm bg-[#2a1810]/18 px-1.5 py-0.5 app-text-scaled [--app-text-size:clamp(0.65rem,0.9vw,0.75rem)] font-bold text-[#6b3a28]"
 
 export const STORE_DETAIL_META_CLASS =
-  "text-[clamp(0.78rem,1.05vw,0.9rem)] font-bold text-[#6b4a32]"
+  "app-text-scaled [--app-text-size:clamp(0.78rem,1.05vw,0.9rem)] font-bold text-[#6b4a32]"
 
 export const STORE_DETAIL_META_DIVIDER_CLASS = "mx-1.5 text-[#8b7355]/70"
 
@@ -186,13 +186,13 @@ export const STORE_DETAIL_PRICE_GROUP_CLASS =
   "flex flex-wrap items-center gap-[clamp(0.35rem,0.65vw,0.5rem)]"
 
 export const STORE_DETAIL_PRICE_LABEL_CLASS =
-  "text-[clamp(0.88rem,1.15vw,1rem)] font-bold text-[#3d1810]"
+  "app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-bold text-[#3d1810]"
 
 export const STORE_DETAIL_PRICE_TEXT_CLASS =
-  "text-[clamp(0.95rem,1.25vw,1.08rem)] font-bold text-white"
+  "app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.08rem)] font-bold text-white"
 
 export const STORE_DETAIL_PRICE_AMOUNT_CLASS =
-  "text-[clamp(0.95rem,1.25vw,1.08rem)] font-bold tabular-nums text-white"
+  "app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.08rem)] font-bold tabular-nums text-white"
 
 export const STORE_DETAIL_PRICE_ICON_CLASS =
   "block h-[clamp(1.15rem,1.9vw,1.45rem)] w-auto shrink-0 select-none object-contain"
@@ -201,7 +201,7 @@ export const STORE_PURCHASE_BTN_CLASS =
   "relative w-[clamp(4.5rem,8vw,6.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
 export const STORE_PURCHASE_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.75rem,1.05vw,0.88rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.75rem,1.05vw,0.88rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const STORE_PURCHASE_BTN_IMAGE_CLASS = "block h-auto w-full select-none"
 
@@ -223,4 +223,4 @@ export const STORE_CURRENCY_ICON_CLASS =
   "block h-[clamp(1.35rem,2.1vw,1.65rem)] w-auto shrink-0 select-none object-contain"
 
 export const STORE_CURRENCY_AMOUNT_CLASS =
-  "font-subheading text-[clamp(0.95rem,1.25vw,1.1rem)] font-bold tabular-nums text-[#2a1810]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.1rem)] font-bold tabular-nums text-[#2a1810]"

@@ -1,5 +1,5 @@
 const INVITED_GUESTS_TABLE_TEXT =
-  "font-subheading text-[clamp(0.76rem,0.98vw,0.88rem)] leading-snug text-[#1a1008]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.76rem,0.98vw,0.88rem)] leading-snug text-[#1a1008]"
 
 export const INVITED_GUESTS_TABLE_CLASS = "w-full border-collapse"
 
@@ -12,7 +12,7 @@ const INVITED_GUESTS_STATS_TABLE_CELL_BASE =
   "px-[0.35rem] py-[0.38rem] align-middle first:pl-0"
 
 export const INVITED_GUESTS_TABLE_HEAD_CLASS =
-  `${INVITED_GUESTS_TABLE_TEXT} border-b border-[#2a1810]/22 text-[clamp(0.8rem,1.05vw,0.92rem)] font-black text-[#120a06]`
+  `${INVITED_GUESTS_TABLE_TEXT} border-b border-[#2a1810]/22 app-text-scaled [--app-text-size:clamp(0.8rem,1.05vw,0.92rem)] font-black text-[#120a06]`
 
 export const INVITED_GUESTS_TABLE_HEAD_CELL_CLASS =
   "whitespace-nowrap px-[0.35rem] pb-[0.38rem] pt-[0.15rem] text-left align-bottom first:pl-0 last:pr-0"
@@ -37,10 +37,10 @@ const INVITED_GUESTS_RANK_CELL_BASE_CLASS =
   `${INVITED_GUESTS_TABLE_CELL_CLASS} w-[2rem] text-center font-display tabular-nums leading-none antialiased`
 
 export const INVITED_GUESTS_TABLE_RANK_CELL_TIER_CLASS = {
-  1: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} text-[clamp(0.92rem,1.12vw,1rem)] font-bold text-[#6b3a2a]`,
-  2: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} text-[clamp(0.88rem,1.06vw,0.96rem)] font-bold text-[#3d2a1c]`,
-  3: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} text-[clamp(0.88rem,1.06vw,0.96rem)] font-bold text-[#3d2a1c]`,
-  default: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} text-[clamp(0.82rem,1vw,0.9rem)] font-semibold text-[#1a1008]/85`,
+  1: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} app-text-scaled [--app-text-size:clamp(0.92rem,1.12vw,1rem)] font-bold text-[#6b3a2a]`,
+  2: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} app-text-scaled [--app-text-size:clamp(0.88rem,1.06vw,0.96rem)] font-bold text-[#3d2a1c]`,
+  3: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} app-text-scaled [--app-text-size:clamp(0.88rem,1.06vw,0.96rem)] font-bold text-[#3d2a1c]`,
+  default: `${INVITED_GUESTS_RANK_CELL_BASE_CLASS} app-text-scaled [--app-text-size:clamp(0.82rem,1vw,0.9rem)] font-semibold text-[#1a1008]/85`,
 }
 
 export function getInvitedGuestsRankCellClass(rank) {
@@ -69,10 +69,10 @@ export const INVITED_GUESTS_TABLE_WINRATE_CELL_CLASS =
   `${INVITED_GUESTS_TABLE_CELL_CLASS} w-[2.35rem] pr-0 text-right`
 
 export const INVITED_GUESTS_STAT_NUMBER_CLASS =
-  "font-display text-[clamp(0.92rem,1.15vw,1.04rem)] font-bold tabular-nums leading-none text-[#120a06] antialiased"
+  "font-display app-text-scaled [--app-text-size:clamp(0.92rem,1.15vw,1.04rem)] font-bold tabular-nums leading-none text-[#120a06] antialiased"
 
 export const INVITED_GUESTS_STAT_PERCENT_SUFFIX_CLASS =
-  "font-display text-[clamp(0.72rem,0.92vw,0.82rem)] font-semibold tabular-nums leading-none text-[#3d2a1c]/70"
+  "font-display app-text-scaled [--app-text-size:clamp(0.72rem,0.92vw,0.82rem)] font-semibold tabular-nums leading-none text-[#3d2a1c]/70"
 
 export const INVITED_GUESTS_STAT_CHIP_CLASS =
   "inline-flex min-w-[2.35rem] items-baseline justify-end gap-[0.04rem] rounded-[0.35rem] border border-[#2a1810]/16 bg-[#f5f0e6]/40 px-[clamp(0.38rem,0.75vw,0.52rem)] py-[clamp(0.18rem,0.38vh,0.26rem)]"

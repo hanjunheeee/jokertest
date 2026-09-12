@@ -84,7 +84,7 @@ function StoreItemSlot({
             // 이게 없으면 지갑/소유품 조회 결과가 실제로 화면에 반영됐는지 아무도 눈으로
             // 확인할 수 없다.
             <span
-              className="absolute left-1 top-1 z-10 rounded-sm bg-[#2a1810]/78 px-1.5 py-0.5 text-[clamp(0.6rem,0.82vw,0.68rem)] font-bold text-[#f5f0e6]"
+              className="absolute left-1 top-1 z-10 rounded-sm bg-[#2a1810]/78 px-1.5 py-0.5 app-text-scaled [--app-text-size:clamp(0.6rem,0.82vw,0.68rem)] font-bold text-[#f5f0e6]"
               aria-hidden="true"
             >
               보유중

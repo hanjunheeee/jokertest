@@ -29,6 +29,47 @@
 
   /* ViewportShell 기본값 — 런타임에 layouts/ViewportShell.jsx가 constants로 덮어씀 */
   --game-viewport-max-width: 1280px;
+
+  /* F-15(AC-02) — 런타임에 app/App.jsx(appTextScale.js)가 설정값으로 덮어씀 */
+  --app-text-scale: 1;
+
+  /* F-15(AC-02): 표준 Tailwind 글자 크기 유틸리티(text-xs·text-sm)도 같은 배율을 따른다.
+     기준값은 Tailwind 기본값과 동일하므로 배율 1에서는 크기가 그대로다. line-height는
+     비율(unitless)이라 font-size에 따라 함께 움직인다. */
+  --text-xs: calc(0.75rem * var(--app-text-scale, 1));
+  --text-sm: calc(0.875rem * var(--app-text-scale, 1));
+}
+
+/*
+ * F-15(AC-02) "텍스트 크기" — 스스로 font-size를 지정하는 실제 화면 텍스트를 설정 배율에
+ * 연결하는 공용 유틸리티.
+ *
+ * body의 font-size 선언은 "상속받는" 텍스트만 덮는다. 화면 대부분의 본문은 Tailwind
+ * 임의값 유틸리티(text-[clamp(...)])로 크기를 직접 지정하고 있어 상속을 받지 않으므로,
+ * 그 선언들을 이 유틸리티 + 원래 값을 담은 커스텀 속성으로 바꿔 배율을 태운다.
+ *
+ *   text-[clamp(0.72rem,3.2cqi,0.92rem)]
+ *   → app-text-scaled [--app-text-size:clamp(0.72rem,3.2cqi,0.92rem)]
+ *
+ * 원래 값을 한 글자도 바꾸지 않고 그대로 옮기므로 다음이 보장된다.
+ *   - 기본 배율 1에서 calc(x * 1) === x — 저장한 적 없는 화면의 크기가 정확히 보존된다.
+ *   - calc(clamp(a,b,c) * s) === clamp(a*s, b*s, c*s) (s > 0) 이라 반응형 clamp의
+ *     최소·선호·최대 경계 관계가 그대로 유지된다(경계를 버리지 않는다).
+ *   - font-size 한 속성만 바뀐다 — rem·%·cqi 기준 간격·프레임은 움직이지 않으므로
+ *     화면 전체 확대(zoom)가 아니다. html/:root의 font-size도 건드리지 않는다.
+ *
+ * 인게임 채팅 타이포는 이 유틸리티를 쓰지 않는다 — 채팅은 자체 설정
+ * (--ingame-chat-text-scale)을 쓰므로 두 배율이 겹쳐 곱해지면 안 된다.
+ *
+ * @layer utilities가 아니라 @utility로 선언하는 이유(F-15 AC-02 반송 수정):
+ * 손으로 쓴 .app-text-scaled는 Tailwind가 "모르는" 클래스라 variant·important를 붙인
+ * 후보(예: 스킨&카드 미리보기 명패의 [&_p]:!app-text-scaled)가 **아무 CSS도 만들지 못하고**
+ * 조용히 버려졌다 — 빌드 CSS에 [&_p] 선택자가 한 건도 없었다. @utility로 선언하면
+ * Tailwind가 이 유틸리티를 소유하므로 [&_p]: 같은 variant와 ! important가 정상 방출된다.
+ * 선언 본문은 그대로라 기존 소비자의 계산값은 전혀 달라지지 않는다.
+ */
+@utility app-text-scaled {
+  font-size: calc(var(--app-text-size, 1rem) * var(--app-text-scale, 1));
 }
 
 @layer base {
@@ -39,6 +80,14 @@
 
   body {
     @apply font-sans text-text-body antialiased;
+    /* F-15(AC-02) "텍스트 크기": 스스로 font-size를 지정하지 않고 상속받는 모든 본문
+       텍스트에 설정 배율을 적용한다. 기본 배율 1에서 calc(1rem*1) = 1rem = 브라우저
+       기본값이라 저장한 적 없는 화면은 기존과 동일하다. 간격·프레임은 rem·%·cqi
+       기준이라 이 값에 끌려가지 않는다(화면 전체 확대가 아니다). font-size를 직접
+       지정하는 요소는 그 선언에 var(--app-text-scale)를 곱해 배율을 따른다 —
+       .app-text-scalable 같은 별도 클래스는 Tailwind 유틸리티(@layer utilities)에
+       밀려 적용되지 않으므로 쓰지 않는다. */
+    font-size: calc(1rem * var(--app-text-scale, 1));
   }
 
   h1 {
@@ -81,7 +130,9 @@
 
   /* 텍스트 링크 굵기 */
   .auth-text-link {
-    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-[13px] text-amber-800 underline-offset-2 hover:underline;
+    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-amber-800 underline-offset-2 hover:underline;
+    /* F-15(AC-02): 13px 고정 대신 설정 배율을 곱한다 — 배율 1에서 calc(13px*1) = 13px. */
+    font-size: calc(13px * var(--app-text-scale, 1));
     font-weight: 700;
     -webkit-text-stroke: 0.35px currentColor;
     paint-order: stroke fill;

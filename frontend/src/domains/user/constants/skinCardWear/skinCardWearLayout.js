@@ -61,7 +61,7 @@ export const SKIN_CARD_WEAR_LIST_TITLE_ANCHOR_CLASS =
   "pointer-events-none absolute left-[clamp(1.92rem,5.35%,2.62rem)] top-[clamp(1.98rem,5.35%,2.38rem)] z-30"
 
 export const SKIN_CARD_WEAR_LIST_TITLE_CLASS =
-  "font-display text-[clamp(1.12rem,1.62vw,1.38rem)] font-medium tracking-wide text-[#d4af37] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.65)]"
+  "font-display app-text-scaled [--app-text-size:clamp(1.12rem,1.62vw,1.38rem)] font-medium tracking-wide text-[#d4af37] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.65)]"
 
 export const SKIN_CARD_WEAR_LIST_SCROLL_WRAP_CLASS =
   "relative min-h-0 flex-1 pr-0"
@@ -92,10 +92,10 @@ export const SKIN_CARD_WEAR_LIST_ITEM_TEXT_WRAP_CLASS =
   "flex min-w-0 flex-1 flex-col gap-[clamp(0.08rem,0.18vh,0.12rem)]"
 
 export const SKIN_CARD_WEAR_LIST_ITEM_NAME_CLASS =
-  "block truncate font-subheading text-[clamp(0.74rem,0.96vw,0.86rem)] font-bold text-[#ebe2cc] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "block truncate font-subheading app-text-scaled [--app-text-size:clamp(0.74rem,0.96vw,0.86rem)] font-bold text-[#ebe2cc] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const SKIN_CARD_WEAR_LIST_ITEM_KIND_CLASS =
-  "block font-subheading text-[clamp(0.6rem,0.75vw,0.68rem)] font-semibold tracking-wide text-[#c9a227]/82"
+  "block font-subheading app-text-scaled [--app-text-size:clamp(0.6rem,0.75vw,0.68rem)] font-semibold tracking-wide text-[#c9a227]/82"
 
 export const SKIN_CARD_WEAR_LIST_ITEM_EQUIPPED_CHECK_CLASS =
   "pointer-events-none ml-auto shrink-0 block h-[clamp(0.95rem,1.25vw,1.08rem)] w-[clamp(0.95rem,1.25vw,1.08rem)] select-none object-contain"
@@ -139,7 +139,7 @@ export const SKIN_CARD_WEAR_PREVIEW_STANDING_CLASS =
 
 /** 카드 미리보기 — 인게임 명패보다 한 단계 크게 (cqi는 InGamePlayerCard container 기준) */
 export const SKIN_CARD_WEAR_PREVIEW_NAMEPLATE_TEXT_CLASS =
-  "[&_p]:!text-[clamp(1.05rem,8.5cqi,1.42rem)]"
+  "[&_p]:!app-text-scaled [--app-text-size:clamp(1.05rem,8.5cqi,1.42rem)]"
 
 export const SKIN_CARD_WEAR_PREVIEW_CARD_WRAP_CLASS =
   "relative w-[clamp(10rem,24vw,14rem)] shrink-0 [container-type:inline-size] " +
@@ -162,7 +162,7 @@ export const SKIN_CARD_WEAR_CONFIRM_BTN_CLASS =
   "interactive-scale relative block w-[min(100%,14rem)] leading-none"
 
 export const SKIN_CARD_WEAR_CONFIRM_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.82rem,1.1vw,0.95rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const SKIN_CARD_WEAR_CONFIRM_BTN_IMAGE_CLASS = "block h-auto w-full select-none"
 

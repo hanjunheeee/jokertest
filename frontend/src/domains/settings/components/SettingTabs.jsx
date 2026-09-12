@@ -10,7 +10,7 @@ const TAB_IMG_CLASS =
   "block h-auto w-full select-none object-contain object-center"
 
 const TAB_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(1.05rem,1.5vw,1.28rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(1.05rem,1.5vw,1.28rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 const TAB_NAV_CLASS =
   "mb-[clamp(0.55rem,1.3vh,0.75rem)] flex items-center justify-center gap-[clamp(0.48rem,1.08vw,0.75rem)]"

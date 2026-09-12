@@ -4,7 +4,9 @@
  * InGameChatContent·InGameChatInput·InGameChatMessageList·InGameChatMessageRow에서 사용합니다.
  * 보드 전용: ingameChatBoardLayout.js — 클로즈업 전용: closeup/ingameChatCloseupLayout.js
  */
-import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
+// node:test는 "@/" Vite 별칭을 해석하지 못한다(useSocket.js의 같은 이유) — 이 시험이
+// 상대 경로로 실제 코드를 그대로 import해서 돌 수 있도록 상대 경로를 쓴다.
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../../shared/constants/customScrollbarStyles.js"
 import {
   INGAME_CHAT_MESSAGE_LIST_INSET,
   INGAME_CHAT_STATUS_LINE_INSET,
@@ -38,14 +40,115 @@ export function getInGameChatTextTypographyClass(variant = "board") {
     : INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS
 }
 
+/** F-15(AC-02): 채팅 글자 크기 배율을 싣는 CSS 사용자 지정 속성 — 채팅 행·입력 래퍼에
+ *  인라인으로 얹으면 자손 타이포가 상속받는다. */
+export const INGAME_CHAT_TEXT_SCALE_CSS_VAR = "--ingame-chat-text-scale"
+
+/**
+ * F-15(AC-02): 타이포 클래스의 "배율 적용본".
+ *
+ * clamp(min, 선호, max)의 세 항 **전부**에 같은 배율을 곱한다 — 선호값만 바꾸고 경계를
+ * 버리면(이전 구현) 배율을 낮춰도 원래 min에 걸려 작아지지 않고, 배율을 올려도 max에
+ * 막히는 등 설정이 실제로 반영되지 않는 구간이 생긴다. 세 항을 함께 곱하면 원래의
+ * 최소·최대 경계 관계(반응형 clamp 동작)를 그대로 유지한 채 크기만 이동한다.
+ *
+ * 인라인 font-size가 아니라 클래스로 두는 이유: Tailwind JIT는 소스를 정적으로 훑어
+ * 유틸리티 CSS를 생성하므로, 런타임에 조합한 클래스 문자열은 빌드 산출물에 존재하지
+ * 않는다. 그래서 여기서는 리터럴 문자열로 적고, 컴포넌트는 배율 숫자만
+ * INGAME_CHAT_TEXT_SCALE_CSS_VAR로 내려준다. 변수가 없으면 fallback 1이라
+ * calc(x*1) === x — 설정을 저장한 적 없는 화면은 기존과 완전히 동일하다.
+ *
+ * 아래 두 리터럴이 기본 타이포 클래스와 어긋나지 않는지는
+ * __tests__/ingameChatLayout.test.js가 기본 클래스의 clamp 항을 직접 파싱해 대조한다.
+ */
+export const INGAME_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS =
+  "font-subheading text-[clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+
+/** 클로즈업 타이포의 배율 적용본 — 원본은 closeup/ingameChatCloseupLayout.js */
+export const INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_SCALED_CLASS =
+  "font-subheading text-[clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+
+/**
+ * 위 타이포 클래스가 쓰는 배율 적용 clamp 식 — 클래스 리터럴과 textarea 인라인 font-size가
+ * 공유하는 **단일 출처**다.
+ *
+ * textarea는 이 클래스만으로는 크기를 못 받아 상속 16px로 떨어지는 문제가 있어
+ * 인라인 font-size를 함께 얹는다. 이전 구현은 그 값을 클래스 문자열에서 정규식으로
+ * 되파싱했는데(`inputClass.match(/text-\[(clamp\([^\]]+\))\]/)`), 값 안에 `]`가 없다는 가정과
+ * 유틸리티 순서에 기대고 있어 타이포 클래스를 조금만 손대도 조용히 undefined가 되어
+ * 16px 결함이 되살아난다. 그래서 식을 여기 한 번만 적고 클래스·인라인 양쪽이 이것을 쓴다.
+ *
+ * 클래스 리터럴은 Tailwind JIT가 소스를 정적으로 훑어야 하므로 템플릿으로 조립하지 않고
+ * 그대로 둔다 — 대신 리터럴이 정확히 `text-[이 값]`을 담고 있는지를
+ * __tests__/ingameChatLayout.test.js가 대조한다.
+ */
+export const INGAME_CHAT_TEXT_SCALED_FONT_SIZE =
+  "clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)))"
+
+/** 클로즈업 타이포의 배율 적용 clamp 식 */
+export const INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE =
+  "clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))"
+
+/** 타이포 클래스와 같은 값을 쓰는 font-size 식 — 인라인 style이 필요한 곳(textarea)이 쓴다.
+ *  @param {"board" | "closeup"} [variant] */
+export function getInGameChatScaledFontSize(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE
+    : INGAME_CHAT_TEXT_SCALED_FONT_SIZE
+}
+
+/** 채팅 본문·입력이 실제로 쓰는 타이포 클래스 — 배율 변수를 반영한다.
+ *  @param {"board" | "closeup"} [variant] */
+export function getInGameChatScaledTypographyClass(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_SCALED_CLASS
+    : INGAME_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS
+}
+
+/**
+ * 채팅 글자 크기 설정값을 배율 CSS 변수 인라인 스타일로 바꾼다 — 보드·클로즈업 어느
+ * variant든 같은 변수를 쓰므로 호출부는 행·입력 래퍼에 그대로 얹기만 하면 된다.
+ * @param {number} chatTextSize
+ * @returns {Record<string, string>}
+ */
+export function getInGameChatTextScaleStyle(chatTextSize) {
+  return { [INGAME_CHAT_TEXT_SCALE_CSS_VAR]: String(getInGameChatTextScale(chatTextSize)) }
+}
+
+const CHAT_TEXT_SCALE_MIN = 0.6
+const CHAT_TEXT_SCALE_MAX = 1
+
+/**
+ * F-15(AC-02): 채팅 글자 크기 설정(ingameSettingData.js의 INGAME_SETTING_CHAT_SLIDER,
+ * 0~100·기본값 100)을 실제 폰트 배율로 바꾼다. 슬라이더 최댓값(기본값)이 배율 1(기존
+ * 화면과 동일)이 되도록 해서, 이 설정을 저장한 적 없는 기존 사용자·시험에는 시각적
+ * 차이가 없다 — 슬라이더를 낮출수록 최대 40%까지만 줄어드는 좁은 범위로 제한한다.
+ * @param {number} chatTextSize
+ */
+export function getInGameChatTextScale(chatTextSize) {
+  const n = Number(chatTextSize)
+  if (!Number.isFinite(n)) return 1
+
+  const clamped = Math.min(100, Math.max(0, n))
+  const ratio = clamped / 100
+  return CHAT_TEXT_SCALE_MIN + (CHAT_TEXT_SCALE_MAX - CHAT_TEXT_SCALE_MIN) * ratio
+}
+
+/** F-15(AC-02): "채팅 시간 표시"가 켜졌을 때 sentAt을 그리는 시각 표기 — 발신자 접두사와
+ *  같은 타이포를 쓰되 흐리게 표시해 본문과 구분한다.
+ *  @param {"board" | "closeup"} [variant] */
+export function getInGameChatMessageTimeClass(variant = "board") {
+  return `shrink-0 opacity-60 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatScaledTypographyClass(variant)}`
+}
+
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatInputClass(variant = "board") {
-  return `block w-full resize-none border-0 bg-transparent p-0 outline-none placeholder:text-[#4a2814] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${getInGameChatTextTypographyClass(variant)}`
+  return `block w-full resize-none border-0 bg-transparent p-0 outline-none placeholder:text-[#4a2814] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${getInGameChatScaledTypographyClass(variant)}`
 }
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatInputPlaceholderClass(variant = "board") {
-  return `pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS} ${getInGameChatTextTypographyClass(variant)} text-[#4a2814]`
+  return `pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS} ${getInGameChatScaledTypographyClass(variant)} text-[#4a2814]`
 }
 
 /** @param {"board" | "closeup"} [variant] */
@@ -57,12 +160,12 @@ export function getInGameChatTextWrapTrimClass(variant = "board") {
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatMessageBodyClass(variant = "board") {
-  return `min-w-0 box-border ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatTextTypographyClass(variant)} ${INGAME_CHAT_TEXT_WRAP_CLASS} ${getInGameChatTextWrapTrimClass(variant)}`
+  return `min-w-0 box-border ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatScaledTypographyClass(variant)} ${INGAME_CHAT_TEXT_WRAP_CLASS} ${getInGameChatTextWrapTrimClass(variant)}`
 }
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatMessageSenderClass(variant = "board") {
-  return `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatTextTypographyClass(variant)}`
+  return `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatScaledTypographyClass(variant)}`
 }
 
 /** @param {"board" | "closeup"} [variant] */

@@ -19,7 +19,7 @@ export const ROOM_CODE_ACTION_BTN_CLASS =
 
 // 방코드 액션 버튼 이미지 위 텍스트 스타일입니다.
 export const ROOM_CODE_ACTION_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(1.05rem,1.55vw,1.3rem)] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(1.05rem,1.55vw,1.3rem)] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 // 방코드 프레임 이미지 스타일입니다.
 export const ROOM_CODE_FRAME_IMAGE_CLASS =
