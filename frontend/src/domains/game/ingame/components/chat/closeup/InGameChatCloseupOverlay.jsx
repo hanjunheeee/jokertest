@@ -12,6 +12,7 @@ import {
 } from "../../../constants/chat/closeup/ingameChatCloseupLayout.js"
 import InGameChatContent from "../InGameChatContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 /**
  * 인게임 채팅 클로즈업 — 전체 화면 오버레이
@@ -31,7 +32,11 @@ export default function InGameChatCloseupOverlay({
     if (!open) return undefined
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose()
+      if (event.key !== "Escape") return
+      // F-16(AC-01): 열린 상태에서 실제로 닫는 경로만 취소음. 채팅 타이핑(다른 keyDown)에는
+      // 아무 소리도 붙지 않는다.
+      dispatchUiSfx("ui-cancel", event)
+      onClose()
     }
 
     window.addEventListener("keydown", onKeyDown)
@@ -46,6 +51,7 @@ export default function InGameChatCloseupOverlay({
             type="button"
             aria-label="채팅 클로즈업 닫기"
             className={INGAME_CHAT_CLOSEUP_BACKDROP_CLASS}
+            data-sfx-kind="ui-cancel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -73,6 +79,7 @@ export default function InGameChatCloseupOverlay({
                 type="button"
                 aria-label="채팅 클로즈업 닫기"
                 onClick={onClose}
+                data-sfx-kind="ui-cancel"
                 className={INGAME_CHAT_CLOSEUP_CLOSE_BUTTON_CLASS}
               >
                 <PublicAsset

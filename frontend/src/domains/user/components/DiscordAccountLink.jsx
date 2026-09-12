@@ -9,6 +9,7 @@ import ConfirmButton from "@/domains/user/components/AccountPanel/ConfirmButton.
 import FeedbackMsg from "@/domains/user/components/AccountPanel/FeedbackMsg.jsx"
 import { resolveDiscordLinkMessage } from "@/domains/user/hooks/useDiscordAccountLink.js"
 import { API_BASE_URL } from "@/shared/env.js"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 // F-07 AC-04/D-01: 로그인한 사용자가 Discord 계정을 자기 계정에 명시적으로 연결하는
 // 컨트롤입니다. 연결 자체는 서버가 시작하는 페이지 이동(GET /auth/discord/link, 로그인한
@@ -40,7 +41,14 @@ export default function DiscordAccountLink() {
     // 소셜 계정 연결은 이 계정에 새 로그인 수단을 추가하는, 가볍게 되돌리기 어려운
     // 변경입니다 — 실제 Discord 동의 화면으로 페이지 전체가 이동하기 전에 한 번 더
     // 명시적으로 확인을 받습니다.
-    if (!window.confirm("Discord 계정을 이 계정에 연결하시겠습니까?")) return
+    //
+    // F-16(AC-01): 확인/취소의 단일 소유자는 이 native confirm의 **반환값**이다. form 자체는
+    // 제출 표식을 달지 않고(submit 버튼은 generic capture에서 이미 제외된다), 대화상자에는
+    // click 이벤트가 없으므로 호출마다 단일 actionId를 발급한다(dispatchUiSfx를 이벤트 없이
+    // 호출). 실제 페이지 이동·계정 변경은 아래 원래 동작이 그대로 수행한다.
+    const confirmed = window.confirm("Discord 계정을 이 계정에 연결하시겠습니까?")
+    dispatchUiSfx(confirmed ? "ui-confirm" : "ui-cancel")
+    if (!confirmed) return
     window.location.href = `${API_BASE_URL}/auth/discord/link`
   }
 

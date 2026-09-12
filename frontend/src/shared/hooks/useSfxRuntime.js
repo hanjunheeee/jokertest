@@ -15,6 +15,7 @@
 import { useEffect, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../socket/socketClient.js"
 import { createSfxPlayer } from "../audio/sfxPlayer.js"
+import { createSfxAssetLoader } from "../audio/loadSfxAsset.js"
 import { SFX_MANIFEST, SFX_SUPPRESSED_REASON } from "../audio/sfxManifest.js"
 import { useSettingsStore } from "../../domains/settings/store/settingsStore.js"
 import { useAuthStore } from "../../domains/auth/store/auth.store.js"
@@ -91,6 +92,30 @@ export function getSfxSilenceLog() {
 let uiActionSeq = 0
 const consumedNativeEvents = new WeakSet()
 
+/**
+ * 진행 중인 "일반 클릭" 예약 하나.
+ *
+ * document capture는 소리를 곧바로 내지 않고 microtask로 미룬다. 같은 task 안에서 실행되는
+ * React onClick 핸들러가 더 정확한 의미의 명시 소유자(대표적으로 native confirm의 **반환
+ * 경계** — DOM에 표식을 달 수 있는 요소가 아예 없는 경계다)를 부르면 이 예약을 취소한다.
+ *
+ * 그래서 "버튼 클릭 1 + 확인 1"로 두 번 울리지 않고, 의미가 더 정확한 쪽 하나만 남는다.
+ * DOM 표식(data-sfx-owner="explicit")을 달 수 있는 제어는 애초에 capture에서 제외되므로 이
+ * 경로를 타지 않는다 — 이 장치는 표식을 달 곳이 없는 경계만을 위한 것이다.
+ *
+ * microtask를 쓰는 이유: window.confirm은 **동기로 블로킹**하므로 클릭 task가 끝나기 전에
+ * 결과가 나온다. 그 결과를 보고 예약을 취소할 수 있는 가장 이른 시점이 task 종료 직후다.
+ */
+let pendingGenericClick = null
+
+const scheduleMicrotask =
+  typeof queueMicrotask === "function" ? queueMicrotask : (fn) => Promise.resolve().then(fn)
+
+/** 명시 소유자가 이 물리 활성화를 가져간다 — 예약된 일반 클릭음은 나지 않는다. */
+function claimPendingActivation() {
+  if (pendingGenericClick !== null) pendingGenericClick.claimed = true
+}
+
 function nextUiActionId(prefix) {
   uiActionSeq += 1
   return `${prefix}:${uiActionSeq}`
@@ -117,6 +142,12 @@ export function dispatchUiSfx(kind, event) {
     if (consumedNativeEvents.has(native)) return NO_RUNTIME
     consumedNativeEvents.add(native)
   }
+  // 실제로 소리를 낼 때만 소유권을 가져간다. 이 호출이 중복(이미 소비된 이벤트)이라 조용히
+  // 빠지는 경우까지 예약을 취소하면, 그 물리 입력에서 소리가 아예 사라진다.
+  //
+  // 표식을 달 수 없는 경계(native confirm 반환 등)에서 불렸다면 같은 물리 활성화로 예약된
+  // 일반 클릭음을 가져간다 — 한 입력에 두 번 울리지 않게 하는 소유권 이전이다.
+  claimPendingActivation()
   return dispatchSfxEvent({ kind, eventId: nextUiActionId(kind), origin: "live" })
 }
 
@@ -186,7 +217,20 @@ function installGenericClickOwner() {
       // 의미 표식이 있으면 그 의미로, 없으면 일반 클릭으로 낸다.
       const semantic = control.getAttribute?.("data-sfx-kind")
       const kind = semantic === "ui-confirm" || semantic === "ui-cancel" ? semantic : "ui-click"
-      dispatchSfxEvent({ kind, eventId: nextUiActionId(kind), origin: "live" })
+
+      // 곧바로 내지 않고 이 task가 끝난 직후로 미룬다 — 그 사이 실행되는 업무 핸들러가
+      // native confirm 같은 명시 경계에서 소유권을 가져가면 이 예약은 취소된다.
+      const activation = { claimed: false, kind }
+      pendingGenericClick = activation
+      scheduleMicrotask(() => {
+        if (pendingGenericClick === activation) pendingGenericClick = null
+        if (activation.claimed) return
+        dispatchSfxEvent({
+          kind: activation.kind,
+          eventId: nextUiActionId(activation.kind),
+          origin: "live",
+        })
+      })
     } catch {
       // 소리는 어떤 경우에도 업무 콜백을 막지 않는다.
     }
@@ -238,9 +282,11 @@ export function useSfxRuntime() {
       getSettings: readSettingsForSfx,
       subscribeSettings: (listener) => useSettingsStore.subscribe(listener),
       getScope: readScopeForSfx,
-      // 자산 로더. 현재 manifest는 모든 항목이 미검토라 이 경로에 도달하지 않는다 —
-      // 실제 자산이 승인되면 여기서 파일을 읽어 sha256과 함께 돌려준다.
-      loadAsset: (entry) => Promise.resolve({ sha256: entry.sha256, src: entry.src }),
+      // 자산 로더(AC-02). 실제 바이트를 받아 SHA-256을 계산하고 검토 기록과 대조한 뒤,
+      // **같은 바이트**로 만든 blob URL만 매체에 넘긴다 — 경로만 같고 내용이 바뀐 자산은
+      // 여기서 걸러진다. 현재 manifest는 모든 항목이 미검토라 재생기가 그 전에 이미
+      // 거부하므로 이 경로에 도달하지 않지만, 로더는 자산 승인과 무관하게 완성돼 있다.
+      loadAsset: createSfxAssetLoader(),
       createMedia: (src) => new Audio(src),
     })
     activePlayer = player

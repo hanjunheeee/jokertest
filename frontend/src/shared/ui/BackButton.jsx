@@ -30,6 +30,11 @@ const BackButton = forwardRef(function BackButton(
       // 이미지 버튼이라 화면 읽기 프로그램이 읽을 버튼 이름을 직접 넣습니다.
       aria-label={ariaLabel}
       onClick={onClick}
+      // F-16(AC-01): 뒤로가기는 의미상 "취소"다. 표식만 달면 런타임의 document capture 단일
+      // 소유자가 이 클릭을 취소음으로 낸다 — 마우스 클릭과 Enter/Space가 만든 click은 같은
+      // native Event 하나라 두 번 울리지 않는다. 호출부가 다른 의미를 주고 싶으면 아래
+      // {...props}로 덮어쓸 수 있다.
+      data-sfx-kind="ui-cancel"
       className={`group block cursor-pointer border-0 bg-transparent p-0 leading-none ${SIZE_CLASS[size]} ${className}`}
       // 기본 포커스 outline은 끄고, 호출하는 쪽에서 넘긴 style은 유지합니다.
       style={{ outline: "none", ...style }}

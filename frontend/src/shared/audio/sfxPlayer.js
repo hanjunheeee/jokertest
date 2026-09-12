@@ -318,6 +318,9 @@ export function createSfxPlayer(io) {
     let loadTimer = null
     let watchdog = null
     let detachListeners = null
+    // 로더가 검증한 바이트로 만든 임시 소스(blob URL 등)의 해제 함수. 어떤 정착 경로로 끝나도
+    // cleanup이 반드시 호출한다 — 해제하지 않으면 문서 수명 동안 URL이 남는다.
+    let releaseSrc = null
     let resolveCompletion
     const completion = new Promise((resolve) => {
       resolveCompletion = resolve
@@ -339,6 +342,12 @@ export function createSfxPlayer(io) {
       if (media !== null) {
         guard(() => media.pause(), undefined)
         media = null
+      }
+      // 매체를 먼저 멈춘 뒤에 소스를 해제한다.
+      if (releaseSrc !== null) {
+        const release = releaseSrc
+        releaseSrc = null
+        guard(release, undefined)
       }
     }
 
@@ -375,10 +384,15 @@ export function createSfxPlayer(io) {
 
     loading.then(
       (loaded) => {
+        // 로더가 임시 소스를 만들었다면, 이 사건이 이미 무효가 됐더라도 반드시 해제한다.
+        const release = typeof loaded?.release === "function" ? loaded.release : null
         if (isStale()) {
+          if (release !== null) guard(release, undefined)
           handle.settle(SFX_COMPLETION.STOPPED)
           return
         }
+        // 이 시점부터는 cleanup이 해제를 책임진다(아래 실패 경로들도 settle→cleanup을 거친다).
+        releaseSrc = release
         const verified = verifyLoadedSfxAsset(entry, loaded)
         if (!verified.ok) {
           record(verified.reason, event, { stage: "verify" })

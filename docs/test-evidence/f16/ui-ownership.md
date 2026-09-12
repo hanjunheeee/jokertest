@@ -1,15 +1,12 @@
-# F-16 · UI 입력 소유권 (미완료 — 전수 표식 전 상태)
+# F-16 · UI 입력 소유권 전수
 
-기준 HEAD 30432445.
+기준 HEAD f9805796 위의 후속 구현.
 
-> **이 문서는 완료 기록이 아니다.** 계획 메모는 확인/취소 의미를 가진 제어 전수에
-> `data-sfx-owner="explicit"` 표식을 달고 그 목록을 여기 남기라고 요구한다. 이번 슬라이스는
-> 승인된 수정 범위(파일 10 + 신규 6 + 따라오는 수정 4) 안에서 **소유권 계약과 일반 클릭
-> 단일 소유자까지만** 구현했고, 각 컴포넌트 표식은 `.pluto/expansion-request.json`의
-> F16-EXP-03 · F16-EXP-04로 올려 두었다. 표식이 없는 확인/취소 제어는 지금 일반 클릭
-> 의미로 울린다 — 그래서 AC-01을 완료로 판정하지 않는다.
+> **이 문서는 설계·연결 기록이며 시험 통과·실제 청음 증거가 아니다.** 현재 배포 manifest는
+> 모든 항목이 미검토라(`frontend/src/shared/audio/sfxManifest.js`) 아래 모든 입력은 "무음 +
+> 사유 기록"으로 끝난다. 자산과 이용 조건 검토는 외부 입력 의존으로 여전히 미제공이다.
 
-## 구현된 소유권 규칙 (`frontend/src/shared/hooks/useSfxRuntime.js`)
+## 소유권 규칙 (`frontend/src/shared/hooks/useSfxRuntime.js`)
 
 1. **일반 활성 버튼/링크는 document capture click 하나가 소유한다.**
    `composedPath()`에서 가장 가까운 활성 제어를 고른다. 활성 제어는
@@ -17,48 +14,62 @@
    `button|checkbox|radio|menuitem|tab`인 요소다.
 2. **제외 대상**: `disabled` · `aria-disabled="true"` · `inert` · submit 제어
    (`button[type=submit]`, form 안의 기본 `button`, `input[type=submit]`).
-   submit은 form submit 경계가 소유하므로 클릭으로 한 번 더 울리지 않는다.
+   submit은 form submit 경계가 소유한다.
 3. **명시 소유 영역 제외**: composedPath에 `data-sfx-owner="explicit"`가 하나라도 있으면
-   바깥 capture는 **무조건** 제외한다. 그 제어는 자기 자신이 `dispatchUiSfx`를 부른다.
+   바깥 capture는 **무조건** 제외한다. 그 제어가 직접 `dispatchUiSfx`를 부른다.
 4. **의미 표식**: `data-sfx-kind="ui-confirm" | "ui-cancel"`이 있으면 그 의미로, 없으면
-   `ui-click`으로 낸다.
+   `ui-click`으로 낸다. 일반 버튼에 의미만 필요한 경우 표식 하나로 충분하다(소유자는 그대로
+   capture 하나이므로 이중 dispatch가 구조적으로 불가능하다).
 5. **같은 물리 입력은 한 번만.** native Event를 `WeakSet`으로 한 번만 소비한다. 키보드
    Enter/Space가 만든 click도 같은 native Event 하나라서 별도 keydown 소리를 더하지 않는다.
    겹친 리스너(backdrop + Escape 등)가 같은 Event를 공유하면 두 번째는 조용히 무시된다.
-6. **이벤트 없는 native `confirm()`** 결과는 호출마다 단일 actionId를 발급한다
-   (`dispatchUiSfx(kind)`를 인자 없이 호출).
+6. **표식을 달 수 없는 경계의 소유권 이전.** capture는 소리를 곧바로 내지 않고 microtask로
+   **예약**한다. 같은 task 안에서 실행되는 업무 핸들러가 `dispatchUiSfx`를 부르면(대표적으로
+   `window.confirm`의 **반환 경계** — DOM 요소가 아예 없다) 그 예약을 취소한다. 그래서
+   "버튼 클릭 1 + 확인 1"로 두 번 울리지 않고 의미가 정확한 쪽 하나만 남는다.
+   `window.confirm`은 동기로 블로킹하므로 결과가 항상 그 task 안에서 나온다.
 7. **소리는 업무 콜백을 막지 않는다.** capture 핸들러 전체가 try/catch 안에 있고,
    예외·대기를 전파하지 않는다. 짧은 연타는 재생기 cooldown이 억제하지만 **입력 자체는
    막지 않는다.**
 
-## 현재 상태 — 제어별 소유자
+## 제어별 소유자 전수
 
-| 실제 파일/진입 | 계획이 정한 최종 의미 | 지금 상태 |
+| 실제 파일/진입 | 최종 의미 | 구현 방식 |
 | --- | --- | --- |
-| `shared/ui/BackButton.jsx` | cancel 명시 | ❌ 표식 없음 → generic `ui-click` |
-| `shared/ui/CheckBox.jsx` | generic click 하나 (`button role=checkbox`) | ✅ generic 소유자가 처리 |
-| `shared/ui/Stepper.jsx` | 실제 값 변경 시 click, 경계 clamp는 0 | ⚠️ generic click. 경계에서도 울림 |
-| `auth/components/AuthScene/AuthFrame.jsx` | form submit confirm 하나 | ❌ submit 제어는 제외되고 submit 경계 미연결 → 무음 |
-| `user/components/AccountPanel/NicknameSection.jsx`, `PasswordSection.jsx` | form submit confirm | ❌ 같음 |
-| `user/components/DiscordAccountLink.jsx` | `window.confirm` 결과만 confirm/cancel | ❌ 미연결 |
-| `ingame/utils/createExitConfirmController.js` + `hooks/useInGameExit.js` | confirm 반환에 confirm/cancel | ❌ F16-EXP-03 |
-| `game/setup/hooks/useGameSetupPage.js::goBackToMultiplay` | confirm 결과 단일 소유 | ❌ F16-EXP-03 |
-| `game/matching/hooks/useMatchingRoom.js::settleFailed` | dialog 결과 단일 소유 | ❌ 파일은 범위 안이나 F16-EXP-03과 함께 처리하기 위해 보류 |
-| `ingame/components/parchment/InGameParchmentModalBase.js`, `…Animated.jsx` | backdrop/Escape cancel, 확인 버튼 confirm | ❌ 표식 없음 |
-| `store/components/bulkPurchase/*` (Overlay·Panel·Summary) | Escape/backdrop/닫기 cancel, `onConfirm` confirm | ❌ 표식 없음 |
-| `shared/ui/profileBorderZoom/ProfileBorderZoomOverlay.jsx`, `tutorialGuide/TutorialGuideOverlay.jsx` | 열림 상태 Escape/backdrop/닫기 cancel | ❌ 표식 없음 |
-| `user/components/skinCardWear/SkinCardWearOverlay.jsx`, `profileEdit/ProfileEditOverlay.jsx` | Escape/backdrop/닫기 cancel, 장착/저장 confirm | ❌ 표식 없음 |
-| `store/components/skinZoom/StoreSkinZoomOverlay.jsx` | 열림 상태 Escape/backdrop/닫기 cancel | ❌ 표식 없음 |
-| `ingame/components/chat/closeup/InGameChatCloseupOverlay.jsx`, `vote/InGameVoteStatusPanel.jsx`, `controls/ingameSetting/kickPlayer/SettingKickPlayerModal.jsx` | Escape/닫기 cancel, 확인/강퇴 confirm | ❌ 표식 없음 |
-| 그 밖의 기존 button/link | generic click 단일 소유 | ✅ generic 소유자가 처리 |
+| `shared/ui/BackButton.jsx` | cancel | `data-sfx-kind="ui-cancel"` (capture 소유) |
+| `shared/ui/CheckBox.jsx` | generic click (`button role=checkbox`) | 표식 없음 — capture 기본 |
+| `shared/ui/Stepper.jsx` | 실제 값 변경 시 click, 경계·clamp는 0 | `data-sfx-owner="explicit"` + `updateIndex`가 `clamped !== index`일 때만 dispatch |
+| `auth/.../AuthFrame.jsx` | form submit confirm 하나 | `handleSubmit`이 `dispatchUiSfx("ui-confirm", event)`; `onSubmit`이 없으면 0 |
+| `user/.../NicknameSection.jsx`, `PasswordSection.jsx` | form submit confirm | 같음. `ConfirmButton`은 `type="submit"`이라 capture에서 제외 |
+| `user/components/DiscordAccountLink.jsx` | `window.confirm` 결과만 confirm/cancel | 반환 경계에서 dispatch(이벤트 없이). form에는 표식 없음 |
+| `ingame/utils/createExitConfirmController.js` + `hooks/useInGameExit.js` | confirm 반환에 confirm/cancel, trigger click 제외 | controller의 `onDecision` 주입 → 훅이 `dispatchUiSfx(kind)`. 규칙 6이 trigger 클릭음을 가져간다. 취소 leave 0 / 승인 leave 1 유지 |
+| `game/setup/hooks/useGameSetupPage.js::goBackToMultiplay` | 생성 중 confirm 결과 단일 소유, 평상시 cancel 하나 | 두 분기 모두 dispatch. 규칙 6이 BackButton 클릭음을 가져간다 |
+| `game/matching/hooks/useMatchingRoom.js::settleFailed` | dialog 결과 단일 소유, 오래된 series·중복 prompt는 0 | 기존 `cancelled`/`seriesId`/`hasPromptedRetry` 가드 **뒤**에서만 dispatch |
+| `ingame/.../InGameParchmentModalBase.js`, `…Animated.jsx` | backdrop/Escape cancel, 확인 버튼 confirm | backdrop `<button>`에 `data-sfx-kind="ui-cancel"`, Escape 핸들러가 명시 dispatch, 확인 버튼은 `InGameParchmentConfirmButton`의 `data-sfx-kind="ui-confirm"` |
+| `ingame/.../InGameParchmentConfirmButton.js` | confirm | `sfxKind` prop(기본 `ui-confirm`) → `data-sfx-kind` |
+| `store/.../StoreBulkPurchaseOverlay.jsx` | Escape/backdrop cancel | Escape 명시 dispatch + backdrop `data-sfx-kind` |
+| `store/.../StoreBulkPurchasePanel.jsx` | 닫기 cancel | `data-sfx-kind="ui-cancel"` |
+| `store/.../StoreBulkPurchaseSummary.jsx` | `onConfirm` confirm, disabled는 0 | `data-sfx-kind="ui-confirm"`; 기존 `disabled`(준비중 가격·pending/unknown/confirmed/blocked)를 capture가 제외 |
+| `store/components/StorePurchaseFeedback.jsx` | `onCheck`/`onRetry`는 **일반 click** | 표식 없음(분류 결과 — 파일에 주석으로 고정) |
+| `store/.../StoreSkinZoomOverlay.jsx` | 열림 상태 Escape/backdrop cancel | 같은 패턴 |
+| `shared/ui/profileBorderZoom/ProfileBorderZoomOverlay.jsx` | Escape/backdrop cancel | 같은 패턴 |
+| `shared/ui/tutorialGuide/TutorialGuideOverlay.jsx` | Escape/backdrop cancel, 화살표는 실제 page 변경 click·경계 0 | Escape 명시 dispatch + backdrop `data-sfx-kind`. 화살표는 `disabled={!canGoPrev/Next}`라 경계에서 capture가 제외. ArrowLeft/Right **키**에는 소리를 붙이지 않는다 |
+| `user/.../SkinCardWearOverlay.jsx` | Escape/backdrop/닫기 cancel, 장착 confirm | `handleClose`/`handleConfirm`이 명시 dispatch(첫 await 이전). backdrop은 `data-sfx-owner="explicit"` |
+| `user/.../ProfileEditOverlay.jsx` | Escape/backdrop/닫기 cancel, 저장 confirm | 같은 패턴(`handleClose` / `handleConfirmWithSfx`) |
+| `ingame/.../InGameChatCloseupOverlay.jsx` | Escape/backdrop/닫기 cancel | Escape 명시 + backdrop·닫기 `data-sfx-kind`. 채팅 타이핑 keyDown에는 소리 없음 |
+| `ingame/.../InGameVoteStatusPanel.jsx` | Escape/backdrop/닫기 cancel | 같은 패턴 |
+| `ingame/.../SettingKickPlayerModal.jsx` | Escape/backdrop/닫기 cancel | 같은 패턴 |
+| 그 밖의 기존 button/link | generic click 단일 소유 | 표식 없음 |
 
-범례: ✅ 계약대로 동작 · ⚠️ 소리는 나지만 계획이 요구한 정밀도에 미달 · ❌ 미연결
+**분류를 마치지 못한 확인/취소 제어는 없다.** 위 표에 없는 제어는 전부 "일반 클릭" 분류이며,
+`StorePurchaseFeedback`처럼 판단이 갈릴 수 있는 곳에는 그 이유를 소스 주석으로 남겼다.
 
-## 남은 일
+## 검증
 
-표식 작업이 승인되면 위 ❌/⚠️ 행마다 `data-sfx-owner="explicit"`와
-`dispatchUiSfx('ui-confirm' | 'ui-cancel')`를 달고, 실제 DOM capture와 production 컴포넌트
-콜백을 함께 실행하는 시험으로 mouse click · Enter · Space · form submit · backdrop · Escape ·
-native dialog true/false · disabled · 반복 입력 · unmount cleanup에서 **각 action당 최대 1**과
-업무 호출 횟수를 검사한다. 모든 dialog의 `onClose`를 전역 Escape로 대신 실행하지 않는다.
-기존 UI 닫힘 정책은 바꾸지 않는다.
+- `frontend/src/shared/hooks/__tests__/sfxUiOwnership.test.js` — 실제 런타임을 jsdom에
+  마운트해 mouse click · 같은 native Event 공유 · form submit · disabled/aria-disabled/inert/
+  submit 제외 · `data-sfx-owner=explicit` 제외 · native confirm 소유권 이전 · 반복 입력 ·
+  재생기 예외 격리 · 언마운트 cleanup을 검사한다. `createExitConfirmController`는 실제
+  코드로 확인/취소와 leave 호출 수를 함께 센다.
+- **미실행**: 이 시험은 구현자가 실행하지 못했다(테스트 명령 승인 거부, `.pluto/progress.md`).
+- 실제 Chrome 관문도 미실행이다.

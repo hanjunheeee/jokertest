@@ -26,7 +26,7 @@ import { getSocket, subscribeSocket } from '@/shared/socket/socketClient'
 import { useMatchingStore } from '../store/matchingStore'
 import { useInGameStore } from '../../ingame/store/ingameStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
-import { dispatchSfxEvent } from '@/shared/hooks/useSfxRuntime.js'
+import { dispatchSfxEvent, dispatchUiSfx } from '@/shared/hooks/useSfxRuntime.js'
 
 /**
  * F-16(AC-01/AC-04): 방 범위 사건 하나를 공통 재생기로 넘긴다.
@@ -253,7 +253,13 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       hasPromptedRetry = true
       // 기존 useGameSetupPage.js의 goBackToMultiplay와 동일한 네이티브 confirm 패턴을
       // 재사용한다 — 새 UI 없이, 실패 후 새로고침 외의 재시도 수단을 제공하기 위함이다.
-      if (window.confirm('방 상태를 확인하지 못했습니다. 다시 확인하시겠습니까?')) {
+      // F-16(AC-01): 이 대화상자의 **반환 경계**가 확인/취소음의 단일 소유자다. 위의
+      // series/hasPromptedRetry 가드를 이미 통과한 뒤이므로, 오래된 시리즈의 실패나 같은
+      // 에피소드의 중복 prompt에는 소리가 나지 않는다(그 경로는 여기 도달하지 않는다).
+      // 이 대화상자는 클릭이 아니라 네트워크 실패가 띄우므로 겹칠 일반 클릭음도 없다.
+      const confirmed = window.confirm('방 상태를 확인하지 못했습니다. 다시 확인하시겠습니까?')
+      dispatchUiSfx(confirmed ? 'ui-confirm' : 'ui-cancel')
+      if (confirmed) {
         // prompt 상태(hasPromptedRetry=true)는 유지한 채 같은 에피소드의 재시도로 시작한다.
         startCheckSeries({ resetPromptState: false })
       }

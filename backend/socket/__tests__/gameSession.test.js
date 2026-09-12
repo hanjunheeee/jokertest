@@ -373,16 +373,47 @@ function commitTribunalReadySession({ roomId = 'room-tribunal', uuidA = 'w1', uu
     return { session, socketA, socketB, socketC, io }
 }
 
-test('cast_tribunal_vote: 성공 ack는 정확히 {ok, gameId, dayIndex, vote}만 담고 broadcast가 없다', () => {
+test('cast_tribunal_vote: 성공 ack는 정확히 {ok, gameId, dayIndex, vote, sfxEvent}만 담고 broadcast가 없다', () => {
     const { session, socketA, io } = commitTribunalReadySession()
     const { callback, getResponse } = countingCallback()
 
     handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, callback)
 
-    assert.deepEqual(getResponse(), { ok: true, gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' })
-    assert.deepEqual(Object.keys(getResponse()).sort(), ['dayIndex', 'gameId', 'ok', 'vote'])
+    // F-16(AC-01): 성공 ack에 개인 사건 봉투가 하나 더 붙는다. 봉투에는 투표 내용
+    // (GUILTY/NOT_GUILTY)이 들어가지 않는다 — 소리로 표를 알려주지 않는다(AC-05).
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        vote: 'GUILTY',
+        sfxEvent: {
+            kind: 'tribunal-vote-submitted',
+            eventId: `game:${session.id}:day:${session.dayIndex}:actor:w1:tribunal-submitted`,
+            accountId: 'w1',
+            gameId: session.id,
+            dayIndex: session.dayIndex,
+            origin: 'live',
+        },
+    })
+    assert.deepEqual(Object.keys(getResponse()).sort(), ['dayIndex', 'gameId', 'ok', 'sfxEvent', 'vote'])
+    assert.equal(Object.hasOwn(getResponse().sfxEvent, 'vote'), false)
     assert.equal(io.broadcasts.length, 0)
     assert.equal(session.tribunal.votes.get('w1'), 'GUILTY')
+})
+
+test('cast_tribunal_vote(F-16): 중복 제출 실패 ack에는 사건 봉투가 없다', () => {
+    const { session, socketA, io } = commitTribunalReadySession()
+
+    const first = countingCallback()
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, first.callback)
+    assert.equal(first.getResponse().ok, true)
+
+    const duplicate = countingCallback()
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, duplicate.callback)
+
+    assert.equal(duplicate.getResponse().ok, false)
+    assert.equal(duplicate.getResponse().code, 'TRIBUNAL_VOTE_ALREADY_SUBMITTED')
+    assert.equal(Object.hasOwn(duplicate.getResponse(), 'sfxEvent'), false)
 })
 
 test('cast_tribunal_vote: payload 형태 오류(gameId/dayIndex 누락·타입 오류)는 INVALID_PAYLOAD이다', () => {
@@ -2976,6 +3007,29 @@ test('cast_day_vote: 토론 중(DAY_DISCUSSION) 제출은 INVALID_DAY_PHASE로 �
     assert.equal(io.broadcasts.length, 0)
 })
 
+/**
+ * F-16(AC-01/AC-04): cast_day_vote 성공 ack의 계약을 검증한다.
+ *
+ * ack는 ok와 개인 사건 봉투(sfxEvent) 두 키만 담는다. 봉투에는 투표 대상·역할이 들어가지
+ * 않고(AC-05), eventId는 (게임, 날짜, 라운드, actor, revision)에서만 유도된다 — 시각·난수를
+ * 쓰지 않으므로 같은 실제 사건은 언제 다시 만들어도 같은 문자열이다(AC-04).
+ */
+function assertDayVoteAck(response, { session, actor, round = 1, revision }) {
+    assert.deepEqual(Object.keys(response).sort(), ['ok', 'sfxEvent'])
+    assert.equal(response.ok, true)
+    assert.deepEqual(response.sfxEvent, {
+        kind: 'day-vote-submitted',
+        eventId: `game:${session.id}:day:${session.dayIndex}:round:${round}:actor:${actor}:vote:${revision}`,
+        accountId: actor,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        round,
+        origin: 'live',
+    })
+    // 봉투에 투표 대상이 새어나가지 않는다.
+    assert.equal(Object.hasOwn(response.sfxEvent, 'targetId'), false)
+}
+
 test('cast_day_vote: 정상 대상 투표는 ack {ok:true}이고 dayVotes에 저장되며 브로드캐스트가 없다', async () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-1' })
     const [actor, target] = uuids
@@ -2983,7 +3037,7 @@ test('cast_day_vote: 정상 대상 투표는 ack {ok:true}이고 dayVotes에 저
 
     await handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
 
-    assert.deepEqual(getResponse(), { ok: true })
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
     assert.equal(session.dayVotes.get(actor), target)
     assert.equal(io.broadcasts.length, 0)
 })
@@ -2995,9 +3049,49 @@ test('cast_day_vote: 기권(targetId:null) 제출은 ack {ok:true}이고 dayVote
 
     handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: null }, callback)
 
-    assert.deepEqual(getResponse(), { ok: true })
+    // 기권도 실제 제출이다 — 최초 제출이므로 revision 1이다.
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
     assert.equal(session.dayVotes.get(actor), null)
     assert.equal(session.dayVotes.has(actor), true)
+})
+
+test('cast_day_vote(F-16): 같은 대상 재제출은 같은 eventId, 대상 변경은 새 eventId다', async () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-sfx-1' })
+    const [actor, targetB, targetC] = uuids
+    const socket = socketByUuid.get(actor)
+
+    const first = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, first.callback)
+    assertDayVoteAck(first.getResponse(), { session, actor, revision: 1 })
+
+    // 같은 대상 재요청 — 실제 변경이 아니므로 revision이 오르지 않는다(중복 재생 0).
+    const again = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, again.callback)
+    assert.equal(again.getResponse().sfxEvent.eventId, first.getResponse().sfxEvent.eventId)
+
+    // B→C는 실제 변경이다.
+    const changed = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetC }, changed.callback)
+    assertDayVoteAck(changed.getResponse(), { session, actor, revision: 2 })
+
+    // C→B도 다시 실제 변경이다 — uuid+target 키였다면 첫 번째와 같은 ID로 묻혔을 사건이다.
+    const back = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, back.callback)
+    assertDayVoteAck(back.getResponse(), { session, actor, revision: 3 })
+    assert.notEqual(back.getResponse().sfxEvent.eventId, first.getResponse().sfxEvent.eventId)
+})
+
+test('cast_day_vote(F-16): 실패한 제출은 사건 메타데이터를 만들지 않는다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-sfx-2' })
+    const [actor] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    // 자기 자신에게 투표(SELF_TARGET_NOT_ALLOWED) — dayVotes도 dayVoteSfx도 불변이어야 한다.
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: actor }, callback)
+
+    assert.equal(getResponse().ok, false)
+    assert.equal(Object.hasOwn(getResponse(), 'sfxEvent'), false)
+    assert.equal(session.dayVoteSfx.size, 0)
 })
 
 test('cast_day_vote: payload의 위조 uuid/alive/role/phase는 전부 무시되고 인증된 uuid·registry 기준으로만 처리된다', async () => {

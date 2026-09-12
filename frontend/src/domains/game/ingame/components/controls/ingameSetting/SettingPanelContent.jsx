@@ -15,18 +15,26 @@ import SettingTabs from "./SettingTabs.jsx"
 import SidePanelHeader from "../SidePanelHeader.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
-function SettingTabPanel({ activeTab, onOpenKickPlayer, volumes, onVolumeChange }) {
+function SettingTabPanel({ activeTab, onOpenKickPlayer, volumes, onVolumeChange, sfxMuted, onSfxMutedChange }) {
   if (activeTab === "chat") return <SettingChatTab />
   if (activeTab === "room") return <SettingRoomTab onOpenKickPlayer={onOpenKickPlayer} />
-  return <SettingSoundTab volumes={volumes} onVolumeChange={onVolumeChange} />
+  return (
+    <SettingSoundTab
+      volumes={volumes}
+      onVolumeChange={onVolumeChange}
+      sfxMuted={sfxMuted}
+      onSfxMutedChange={onSfxMutedChange}
+    />
+  )
 }
 
 export default function SettingPanelContent({ onOpenKickPlayer }) {
   const scrollRef = useRef(null)
   const isHost = useInGameSettingIsHost()
-  const { activeTab, setActiveTab, visibleTabs, volumes, setVolume } = useInGameSettingPanel({
-    isHost,
-  })
+  // F-16(AC-03): 효과음 음소거는 설정 화면과 같은 store 값이다 — 두 UI 입력 → 하나의 store →
+  // settings-storage → 공통 재생기의 설정 구독 → 현재 매체와 mix 구독자 순서로 반영된다.
+  const { activeTab, setActiveTab, visibleTabs, volumes, setVolume, sfxMuted, setSfxMuted } =
+    useInGameSettingPanel({ isHost })
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -44,6 +52,8 @@ export default function SettingPanelContent({ onOpenKickPlayer }) {
             onOpenKickPlayer={onOpenKickPlayer}
             volumes={volumes}
             onVolumeChange={setVolume}
+            sfxMuted={sfxMuted}
+            onSfxMutedChange={setSfxMuted}
           />
         </div>
 

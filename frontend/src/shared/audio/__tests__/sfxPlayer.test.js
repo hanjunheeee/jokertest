@@ -14,7 +14,7 @@ import { JSDOM } from "jsdom"
 // 자산이 하나도 제공되지 않아 전 항목이 무음이며, 그 사실 자체를 아래에서 따로 검사한다.
 // ---------------------------------------------------------------------------
 
-const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
+const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true, url: "http://127.0.0.1:5183" })
 
 function installDomGlobal(name, value) {
   Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })

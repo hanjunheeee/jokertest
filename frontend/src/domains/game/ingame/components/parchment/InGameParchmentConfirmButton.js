@@ -18,6 +18,10 @@ export default function InGameParchmentConfirmButton({
   onClick,
   className = INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_TIGHT,
   buttonRef,
+  // F-16(AC-01): 이 버튼의 의미는 "확인"이다. 표식만 달면 런타임의 document capture 단일
+  // 소유자가 그 의미로 소리를 낸다 — 이 컴포넌트는 소리 코드를 직접 갖지 않는다(.js 테스트가
+  // 그대로 import할 수 있어야 하므로 추가 의존을 만들지 않는다).
+  sfxKind = "ui-confirm",
 }) {
   return createElement(
     "button",
@@ -27,6 +31,7 @@ export default function InGameParchmentConfirmButton({
       "aria-label": label,
       className,
       style: { outline: "none" },
+      "data-sfx-kind": sfxKind,
       onClick,
     },
     createElement("img", {

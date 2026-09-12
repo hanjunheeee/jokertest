@@ -12,6 +12,7 @@
  */
 import { useState } from "react"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 /** 화살표·입력창 이미지로 옵션 목록을 순환하는 스테퍼 */
 export default function Stepper({
@@ -39,10 +40,17 @@ export default function Stepper({
   const atMin = index === 0 // 첫 옵션이면 감소 버튼 비활성
   const atMax = index === options.length - 1 // 마지막 옵션이면 증가 버튼 비활성
 
-  /** 화살표 클릭 시 인덱스 계산·클램프 후 내부 state 또는 onIndexChange로 반영 */
-  const updateIndex = (next) => {
+  /**
+   * 화살표 클릭 시 인덱스 계산·클램프 후 내부 state 또는 onIndexChange로 반영.
+   *
+   * F-16(AC-01): 이 스테퍼는 **실제로 값이 바뀐 경우에만** 소리를 낸다. 두 화살표는
+   * data-sfx-owner="explicit" 표식을 달아 바깥 capture에서 제외되므로, 경계(disabled)
+   * 에서도·clamp 때문에 값이 그대로인 경우에도 소리가 0이다.
+   */
+  const updateIndex = (next, event) => {
     const resolved = typeof next === "function" ? next(index) : next
     const clamped = Math.max(0, Math.min(options.length - 1, resolved))
+    if (clamped !== index) dispatchUiSfx("ui-click", event)
     if (!isControlled) setInternalIndex(clamped)
     onIndexChange?.(clamped)
   }
@@ -53,7 +61,8 @@ export default function Stepper({
         type="button"
         aria-label={`${ariaLabel} 감소`}
         disabled={atMin}
-        onClick={() => updateIndex((prev) => prev - 1)}
+        data-sfx-owner="explicit"
+        onClick={(event) => updateIndex((prev) => prev - 1, event)}
         className={buttonClassName}
       >
         <span className={arrowWrapClassName}>
@@ -76,7 +85,8 @@ export default function Stepper({
         type="button"
         aria-label={`${ariaLabel} 증가`}
         disabled={atMax}
-        onClick={() => updateIndex((prev) => prev + 1)}
+        data-sfx-owner="explicit"
+        onClick={(event) => updateIndex((prev) => prev + 1, event)}
         className={buttonClassName}
       >
         <span className={arrowWrapClassName}>

@@ -144,6 +144,18 @@ function wireSession(session) {
     return { io, sockets, castVote, readyForVote }
 }
 
+/**
+ * F-16(AC-01): cast_day_vote 성공 ack는 ok와 개인 사건 봉투(sfxEvent) 두 키를 담는다.
+ * 이 스위트가 검증하는 것은 타이머·집계이므로 봉투의 세부 계약은 gameSession.test.js가
+ * 맡고, 여기서는 "성공 ack이고 봉투가 함께 온다"만 확인한다.
+ */
+function assertVoteAccepted(response) {
+    assert.deepEqual(Object.keys(response).sort(), ['ok', 'sfxEvent'])
+    assert.equal(response.ok, true)
+    assert.equal(typeof response.sfxEvent.eventId, 'string')
+    return response
+}
+
 /** 모든 참가자 소켓이 받은 이벤트를 [uuid, event] 쌍으로 모은다(개별 emit 경로 확인용). */
 function directEmits(sockets, event) {
     const received = []
@@ -299,7 +311,7 @@ test('day vote timer: 미투표 생존자의 표가 기권으로 집계되고 �
     })
 
     // 4명 중 한 명만 투표하고 나머지 세 명은 침묵한다 — 단독 최다 득표이므로 재판으로 간다.
-    assert.deepEqual(await castVote(uuids[0], uuids[1]), { ok: true })
+    assertVoteAccepted(await castVote(uuids[0], uuids[1]))
 
     clock.advance(30_000)
 
@@ -338,8 +350,8 @@ test('day vote timer: 1라운드 동점이면 재투표가 열리고 그 라운�
     })
 
     // uuids[2]와 uuids[3]이 각각 1표씩 — 1라운드 동점이다.
-    assert.deepEqual(await castVote(uuids[0], uuids[2]), { ok: true })
-    assert.deepEqual(await castVote(uuids[1], uuids[3]), { ok: true })
+    assertVoteAccepted(await castVote(uuids[0], uuids[2]))
+    assertVoteAccepted(await castVote(uuids[1], uuids[3]))
 
     clock.advance(30_000)
 
@@ -365,7 +377,7 @@ test('day vote timer: 만료 전에 전원이 투표해도 제한시간까지는
         settings: { dayVoteTime: 30 },
     })
 
-    for (const uuid of uuids) assert.deepEqual(await castVote(uuid, null), { ok: true })
+    for (const uuid of uuids) assertVoteAccepted(await castVote(uuid, null))
     assert.equal(session.dayVoteResolution, null)
 
     clock.advance(30_000)
@@ -378,7 +390,7 @@ test('day vote timer: 수동 판정이 먼저 끝나면 만료 타이머가 같�
         settings: { dayVoteTime: 30 },
     })
 
-    for (const uuid of uuids) assert.deepEqual(await castVote(uuid, uuids[1] === uuid ? null : uuids[1]), { ok: true })
+    for (const uuid of uuids) assertVoteAccepted(await castVote(uuid, uuids[1] === uuid ? null : uuids[1]))
 
     const { callback, getResponse } = countingCallback()
     sockets.get(uuids[0]).trigger('resolve_day_vote', { gameId: session.id, dayIndex: session.dayIndex }, callback)
@@ -408,7 +420,7 @@ test('day vote timer: 사망자는 기권 집계 분모에도 들어가지 않�
     const { session, uuids, castVote, clock } = startAtDayVote({ id: 'room-vote-dead', settings: { dayVoteTime: 30 } })
     session.players.get(uuids[3]).alive = false
 
-    assert.deepEqual(await castVote(uuids[0], uuids[1]), { ok: true })
+    assertVoteAccepted(await castVote(uuids[0], uuids[1]))
     clock.advance(30_000)
 
     const resolution = session.dayVoteResolution

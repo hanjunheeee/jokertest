@@ -21,7 +21,9 @@ export function useInGameSettingPanel({ isHost = false } = {}) {
   // store는 "아직 고른 적 없음"(null)만 보관하고, 기본 탭이 무엇인지는 이 도메인이 정한다.
   const storedTab = useSettingsStore((s) => s.inGameSettingTab)
   const setActiveTab = useSettingsStore((s) => s.setInGameSettingTab)
-  const { volumes, setVolume } = useSoundSettings()
+  // F-16(AC-03): 효과음 음소거도 볼륨과 같은 훅·같은 store에서 가져온다 — 설정 화면에서
+  // 바꾼 값이 인게임 패널에도 그대로 보이고, 그 반대도 같다(두 화면이 하나의 저장 키를 쓴다).
+  const { volumes, setVolume, sfxMuted, setSfxMuted } = useSoundSettings()
 
   const activeTab = storedTab ?? INGAME_SETTING_DEFAULT_TAB
 
@@ -35,5 +37,5 @@ export function useInGameSettingPanel({ isHost = false } = {}) {
     setActiveTab(INGAME_SETTING_DEFAULT_TAB)
   }, [activeTab, visibleTabs, setActiveTab])
 
-  return { activeTab, setActiveTab, visibleTabs, volumes, setVolume }
+  return { activeTab, setActiveTab, visibleTabs, volumes, setVolume, sfxMuted, setSfxMuted }
 }

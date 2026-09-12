@@ -22,6 +22,7 @@ import {
 } from "../../../../constants/controls/ingameSetting/kickPlayer/ingameKickPlayerLayout.js"
 import SettingKickPlayerModalContent from "./SettingKickPlayerModalContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 export default function SettingKickPlayerModal({ open, onClose }) {
   const [mounted, setMounted] = useState(false)
@@ -34,7 +35,10 @@ export default function SettingKickPlayerModal({ open, onClose }) {
     if (!open) return undefined
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose()
+      if (event.key !== "Escape") return
+      // F-16(AC-01): 열린 상태에서 실제로 닫는 경로만 취소음.
+      dispatchUiSfx("ui-cancel", event)
+      onClose()
     }
 
     window.addEventListener("keydown", onKeyDown)
@@ -49,6 +53,7 @@ export default function SettingKickPlayerModal({ open, onClose }) {
         type="button"
         aria-label={INGAME_KICK_PLAYER_MODAL_COPY.closeAriaLabel}
         className={INGAME_KICK_PLAYER_MODAL_BACKDROP_CLASS}
+        data-sfx-kind="ui-cancel"
         onClick={onClose}
       />
 
@@ -75,6 +80,7 @@ export default function SettingKickPlayerModal({ open, onClose }) {
             type="button"
             aria-label={INGAME_KICK_PLAYER_MODAL_COPY.closeAriaLabel}
             onClick={onClose}
+            data-sfx-kind="ui-cancel"
             className={INGAME_KICK_PLAYER_MODAL_CLOSE_BTN_CLASS}
             style={{ outline: "none" }}
           >

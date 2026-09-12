@@ -7,6 +7,9 @@ import {
 } from "../../constants/profileEditLayout.js"
 import { useProfileBorderEditor } from "./useProfileBorderEditor.js"
 import ProfileEditPanel from "./ProfileEditPanel.jsx"
+// 상대 경로로 둔다 — 이 오버레이는 node:test가 실제로 마운트하는 대상이고(`__tests__/
+// profileBorder.integration.test.js`), `@/` 별칭은 vite만 해석할 수 있다.
+import { dispatchUiSfx } from "../../../../shared/hooks/useSfxRuntime.js"
 
 export default function ProfileEditOverlay({ open, onClose }) {
   const {
@@ -27,11 +30,28 @@ export default function ProfileEditOverlay({ open, onClose }) {
     handleConfirm,
   } = useProfileBorderEditor({ open, onClose })
 
+  /**
+   * F-16(AC-01): backdrop·Escape·패널의 닫기 버튼이 공유하는 취소 경계다. 패널 버튼 클릭은
+   * 바깥 capture가 예약한 일반 클릭음을 이 호출이 가져가므로 두 번 울리지 않는다.
+   */
+  const handleClose = () => {
+    dispatchUiSfx("ui-cancel")
+    onClose()
+  }
+
+  /** 저장(확인)은 클릭과 같은 task에서 소리를 내고, 업무 경로는 원래대로 진행한다(AC-06). */
+  const handleConfirmWithSfx = (...args) => {
+    dispatchUiSfx("ui-confirm")
+    return handleConfirm(...args)
+  }
+
   useEffect(() => {
     if (!open) return undefined
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose()
+      if (event.key !== "Escape") return
+      dispatchUiSfx("ui-cancel", event)
+      onClose()
     }
 
     window.addEventListener("keydown", onKeyDown)
@@ -46,11 +66,12 @@ export default function ProfileEditOverlay({ open, onClose }) {
             type="button"
             aria-label="프로필 수정 닫기"
             className={PROFILE_EDIT_BACKDROP_CLASS}
+            data-sfx-owner="explicit"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={PROFILE_EDIT_TRANSITION}
-            onClick={onClose}
+            onClick={handleClose}
           />
 
           <div className={PROFILE_EDIT_PANEL_WRAP_CLASS} aria-hidden={!open}>
@@ -77,8 +98,8 @@ export default function ProfileEditOverlay({ open, onClose }) {
                 onRetryLoadBorders={retryLoadBorders}
                 onSelectPhoto={setDraftPhotoItemId}
                 onSelectBorder={setDraftBorderItemId}
-                onClose={onClose}
-                onConfirm={handleConfirm}
+                onClose={handleClose}
+                onConfirm={handleConfirmWithSfx}
                 confirmStatus={confirmStatus}
                 confirmError={confirmError}
               />

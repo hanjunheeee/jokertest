@@ -125,6 +125,12 @@ export const SFX_MANIFEST = Object.freeze({
   "day-phase-changed": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
   "night-turn-started": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
 
+  // --- 투표 제출(AC-01) ---------------------------------------------------
+  // 제출(내 ACK)과 판정(전체 방송)은 서로 다른 kind다 — 같은 kind로 묶으면 내 제출과 그
+  // 라운드의 판정이 같은 중복 키 공간을 공유하게 된다.
+  "day-vote-submitted": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "tribunal-vote-submitted": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+
   // --- 투표 판정(AC-01) ---------------------------------------------------
   "day-vote-resolved": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
   "tribunal-vote-resolved": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
