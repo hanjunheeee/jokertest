@@ -23,6 +23,10 @@ const addVoteParticipations = require('../../db/migrations/0008-add-vote-partici
 // 스위트가 이 테이블을 만들면, 그 사실을 모르는 다른 스위트의 resetSchema()가 "모르는
 // 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다.
 const addAchievementGrants = require('../../db/migrations/0009-add-achievement-grants');
+// F-17: notifications(0012)도 같은 이유로 항상 관리 목록에 포함시킨다 — f17 스위트가 이
+// 테이블을 만들면, 그 사실을 모르는 다른 스위트의 resetSchema()가 "모르는 테이블"로 오판해
+// 거부하지 않도록 여기서 한 번만 등록한다.
+const addNotifications = require('../../db/migrations/0012-add-notifications');
 
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
@@ -83,17 +87,20 @@ const buildManagedSchema = ({
     baseline, addRefreshTokenHistory, addSocialAuth, addEconomy: addEconomyOverride,
     addEconomyPurchaseRequests: addEconomyPurchaseRequestsOverride,
     addVoteParticipations: addVoteParticipationsOverride,
-    addAchievementGrants: addAchievementGrantsOverride, migrationRunner,
+    addAchievementGrants: addAchievementGrantsOverride,
+    addNotifications: addNotificationsOverride, migrationRunner,
 }) => {
     const resolvedAddEconomy = addEconomyOverride ?? addEconomy;
     const resolvedAddEconomyPurchaseRequests = addEconomyPurchaseRequestsOverride ?? addEconomyPurchaseRequests;
     const resolvedAddVoteParticipations = addVoteParticipationsOverride ?? addVoteParticipations;
     const resolvedAddAchievementGrants = addAchievementGrantsOverride ?? addAchievementGrants;
+    const resolvedAddNotifications = addNotificationsOverride ?? addNotifications;
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
     const economyTables = Object.values(resolvedAddEconomy.TABLE_NAMES);
     const purchaseRequestTables = Object.values(resolvedAddEconomyPurchaseRequests.TABLE_NAMES);
     const voteParticipationTables = Object.values(resolvedAddVoteParticipations.TABLE_NAMES);
     const achievementGrantTables = Object.values(resolvedAddAchievementGrants.TABLE_NAMES);
+    const notificationTables = Object.values(resolvedAddNotifications.TABLE_NAMES);
 
     const managedTables = [
         ...baseline.TABLE_ORDER,
@@ -103,10 +110,14 @@ const buildManagedSchema = ({
         ...purchaseRequestTables,
         ...voteParticipationTables,
         ...achievementGrantTables,
+        ...notificationTables,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        // notifications는 users를 참조하는 자식이라 baseline 역순(users가 마지막)보다 먼저
+        // 드롭해야 FK 제약에 걸리지 않는다 — achievement_grants와 같은 이유·같은 자리다.
+        ...notificationTables,
         ...achievementGrantTables,
         ...voteParticipationTables,
         ...purchaseRequestTables,

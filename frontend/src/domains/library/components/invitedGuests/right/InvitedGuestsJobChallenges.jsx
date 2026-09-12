@@ -10,7 +10,7 @@ import {
 } from "../../../../../domains/library/constants/invitedGuests/tableStyle.js"
 import { INVITED_GUESTS_CHALLENGES_SECTION_CLASS } from "../../../../../domains/library/constants/invitedGuests/layoutStyle.js"
 
-export default function InvitedGuestsJobChallenges({ challenges }) {
+export default function InvitedGuestsJobChallenges({ challenges, targetAchievementId = null }) {
   const [profileBorderZoomItem, setProfileBorderZoomItem] = useState(null)
 
   return (
@@ -31,11 +31,16 @@ export default function InvitedGuestsJobChallenges({ challenges }) {
             {challenges.map((challenge) => (
               <InvitedGuestsChallengeRow
                 key={challenge.id}
+                achievementId={challenge.id}
                 label={challenge.label}
                 rewards={challenge.rewards}
                 cleared={challenge.cleared}
                 current={challenge.current}
                 threshold={challenge.threshold}
+                // F-17(AC-02): 클리어·미클리어 **양쪽 행 모두**에 대상 표시를 전달한다 —
+                // 방금 달성한 업적은 클리어 행으로 렌더되므로, 미클리어 행에만 붙이면
+                // 정작 알림이 가리킨 행이 표시되지 않는다.
+                targeted={targetAchievementId !== null && challenge.id === targetAchievementId}
                 onOpenProfileBorderZoom={setProfileBorderZoomItem}
               />
             ))}

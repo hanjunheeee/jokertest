@@ -118,8 +118,63 @@ function registerConnectionHandlers(io, socket) {
 
     matchmaking.registerMatchmakingHandlers(io, socket, uuid);
     gameSession.registerGameHandlers(io, socket, uuid);
+    registerNotificationHandlers(socket, uuid);
 
     registerDisconnectHandler(io, socket, uuid);
+}
+
+/**
+ * F-17 AC-07 · 신규 시스템 알림의 실제 생산 경계.
+ *
+ * 클라이언트(useNotificationSocketEvents)가 **초기 목록 복원을 마친 뒤**에만 보내는
+ * notifications_ready를 받는다. 이 신호는 "이 계정의 알림 수신기가 준비됐다"는 사실만
+ * 전달한다 — 계정·내용·대상은 전부 서버가 정한다(A-01). payload는 읽지 않는다.
+ *
+ * 반드시 registerConnectionHandlers의 wrapSocketWithSessionGuard **이후**에 등록해야
+ * 한다(위 호출 순서) — 그래야 이 이벤트도 다른 이벤트와 같이 매번 sessionLifecycle로
+ * 세션을 재검증하고, 연결 후 로그아웃·정지된 소켓은 여기 도달하지 못한다(F-03 AC-05).
+ *
+ * 추가로 onlineUsers의 현재 소켓과 자기 자신이 같은지 확인한다 — 같은 계정의 새 로그인이
+ * 이 소켓을 교체한 뒤 도착한 늦은 ready가 생산을 트리거하지 않게 하는 이중 방어다.
+ *
+ * 저장·발행 실패는 여기서 끝난다. presence·친구 상태·게임/방 재접속 처리와 완전히 분리해,
+ * 알림 생산 실패가 접속 자체를 망가뜨리지 않게 한다(A-02). ACK는 실패해도 클라이언트의
+ * 조회·읽음·닫기를 잠그지 않는다 — 클라이언트는 재시도 상태로만 기록한다.
+ */
+function registerNotificationHandlers(socket, uuid) {
+    socket.on("notifications_ready", (_payload, ack) => {
+        const respond = (result) => {
+            if (typeof ack === "function") {
+                try { ack(result); } catch { /* ACK 전달 실패는 생산 결과를 바꾸지 않는다 */ }
+            }
+        };
+
+        // 세션 가드를 통과한 socket.data.user가 유일한 계정 출처다. 이 소켓이 더 이상 이
+        // 계정의 현재 소켓이 아니면 아무 것도 만들지 않는다.
+        if (socket.data?.user?.uuid !== uuid || onlineUsers.get(uuid) !== socket.id) {
+            respond({ ok: false, reason: "STALE_SOCKET" });
+            return;
+        }
+
+        // require를 호출 시점으로 미룬다 — notification.service는 models를 거쳐 이 모듈을
+        // 다시 require하는 순환 구조 위에 있다(achievementService의 emitToUser와 같은 이유).
+        let notificationService;
+        try {
+            notificationService = require("../service/notification.service");
+        } catch (err) {
+            console.error("\x1b[31m[알림 서비스 로드 실패]\x1b[0m", err);
+            respond({ ok: false, reason: "UNAVAILABLE" });
+            return;
+        }
+
+        notificationService.ensureSystemWelcome(uuid).then(
+            (result) => respond({ ok: true, created: result.created === true }),
+            (err) => {
+                console.error("\x1b[31m[시스템 알림 생산 실패]\x1b[0m", err);
+                respond({ ok: false, reason: "FAILED" });
+            },
+        );
+    });
 }
 
 // HTTP의 verifyToken(auth.middleware.js)과 같은 sessionLifecycle.resolveSession을 호출해,
@@ -210,6 +265,6 @@ module.exports = {
     __getOnlineUsersForTests,
     __testables: {
         registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect,
-        authenticateSocket, wrapSocketWithSessionGuard,
+        authenticateSocket, wrapSocketWithSessionGuard, registerNotificationHandlers,
     },
 };

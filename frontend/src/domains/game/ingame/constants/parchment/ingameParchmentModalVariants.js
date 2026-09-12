@@ -68,6 +68,25 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_TIGHT,
     focusConfirmOnMount: false,
   }),
+  // F-17(AC-06): 알림 모달. 인게임 전용 연출이 아니라 로비에서 열리지만, "양피지 셸 +
+  // 닫기 + 긍정 버튼"이라는 기존 리소스를 그대로 쓰기 위해 같은 variant 표를 공유한다 —
+  // 확인하지 않은 별도 알림 자산(벨 아이콘 등)을 있다고 가정하지 않는다.
+  // 목록이 길 수 있으므로 내용 영역은 위에서부터 채우고(justify-start) 안쪽에서만
+  // 스크롤한다(INGAME_PARCHMENT_CONTENT_CLASS가 이미 overflow-y-auto를 갖는다).
+  notifications: Object.freeze({
+    animation: "none",
+    backdropClass: "fixed inset-0 z-[70] w-full cursor-default border-0 bg-black/70 p-0",
+    wrapClass:
+      "pointer-events-none fixed inset-0 z-[71] flex items-center justify-center overflow-hidden px-[clamp(0.5rem,3vw,2rem)] py-[clamp(0.5rem,3vh,2rem)]",
+    panelClass: "pointer-events-auto max-w-full",
+    dialogLabel: "알림",
+    backdropLabel: "알림 닫기",
+    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
+    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentContentClass: "justify-start",
+    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
+    focusConfirmOnMount: true,
+  }),
   nightPrivateResult: Object.freeze({
     animation: "none",
     backdropClass: "fixed inset-0 z-[65] w-full cursor-default bg-black/70",

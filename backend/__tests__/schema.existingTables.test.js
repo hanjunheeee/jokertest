@@ -209,6 +209,10 @@ const NEW_MODELS = [
     'VoteParticipation',
     // F-12: 업적 지급 이력(0009-add-achievement-grants 마이그레이션).
     'AchievementGrant',
+    // F-17: 계정별 알림 원본(0012-add-notifications 마이그레이션). users를 참조하는 자식
+    // 테이블이며 users에 컬럼을 추가하지 않는다(아래 "신규 관계는 users에 컬럼을 만들지
+    // 않는다" 시험이 그 경계를 계속 지킨다).
+    'Notification',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {

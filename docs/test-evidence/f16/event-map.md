@@ -39,7 +39,7 @@
 
 | 항목 | 담당 | 상태 |
 | --- | --- | --- |
-| 신규 시스템 알림 연결 | F-17 (SFX-DEFER-17=BB) | 미완료 |
+| 신규 시스템 알림 연결 | F-17 (SFX-DEFER-17=BB) | **미완료** — 코드 연결·자동 시험은 끝났으나 실제 외부 Chrome 증거와 실 DB 시험이 없다(아래 F-17 절) |
 | 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | 미완료 |
 | 전체 개인 능력 영상 동기 · 승인 MOV 5개 내장음 실제 연결 | F-27 (SFX-DEFER-27=BL) | 미완료 |
 | 통합 인수 | F-28 (SFX-INTEGRATION-28=BN) | 미완료 |
@@ -48,6 +48,55 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 `subscribeMix()` 계약뿐이다. MOV 실제 변환·청음·동기 연결은 여기서 검증하지 않았고
 완료로 기록하지 않는다. 최대 2초 길이 제한은 **별도 SFX 전용**이며 4~5초 내장음에는
 적용하지 않는다.
+
+## F-17(SFX-DEFER-17) 이관 증거 — 신규 시스템 알림
+
+**상태: 미완료.** 아래는 이번 슬라이스에서 실제로 연결하고 자동 시험으로 확인한 것이며,
+**실제 청음도 외부 Chrome 확인도 아니다.** 배포 manifest의 `system-notification`은 여전히
+미검토라 매체를 만들지 않는다 — 아래 "재생 1회"는 전부 시험 전용 fixture + 주입 매체의
+`playCalls` 기록이고, 이것을 실제 청음 증거로 기록하지 않는다.
+
+| 항목 | 값 |
+| --- | --- |
+| kind | `system-notification` (scope=account, notificationKey=`system-notification`) |
+| 생산자 | `backend/service/notification.service.js::ensureSystemWelcome` |
+| 생산 트리거 | `backend/socket/socket.js::registerNotificationHandlers`의 `notifications_ready` (세션 가드 통과 + `onlineUsers`의 현재 소켓 일치일 때만) |
+| 안정 사건 ID | `notification:<notifications.id>` — 서버가 저장한 행 id (원본 중복 키는 `UNIQUE(user_id, source_key)`의 `system:notifications-available:v1`) |
+| 수신자 | `emitToUser(<검증된 계정 uuid>, 'notification_created', …)` |
+| 프런트 수신 | `frontend/src/domains/notifications/hooks/useNotificationSocketEvents.js` |
+| 최종 소비처 | `useNotificationsStore` → `NotificationModal.js` 목록 · `NotificationEntryButton.js` 미확인 수 |
+| 자산/무음 사유 | `sfxManifest.js`의 `pendingAsset` — `asset-unreviewed`, "자산 파일과 이용 조건 검토가 아직 제공되지 않았다" |
+| 담당 상태 | **미완료** (실제 청음·Chrome 미검증) |
+
+### 소리 소유권(한 사건에 한 번)
+
+- 친구·업적의 `notification_created`에는 서버가 **sfxEvent를 싣지 않는다** — 그 소리는 기존
+  `friend_request_received` · `achievement_granted`가 계속 소유한다. 알림 쪽은 목록만 바꾼다.
+- 세 종류 모두 `useNotificationsStore.consumeSoundEvent(accountId, sourceKey)`를 통과한다.
+  SFX 봉투의 `eventId`가 곧 서버 `source_key`와 같은 문자열이라 별도 매핑이 없다
+  (`friend-request:<id>:received` · `achievement:<id>:granted` · `notification:<행 id>`는
+  시스템만 행 id를 쓴다 — 시스템의 원본 키 소모는 `source_key`로 한다).
+- **목록 upsert는 소리 표식을 소모하지 않는다.** 그래야 친구 알림 행이 먼저 도착해도
+  뒤이은 `friend_request_received`가 최초 소리를 잃지 않는다.
+
+### 소리를 만들지 **않는** 경로 (F-17)
+
+`GET /notifications` · 초기 복원 · 복원 전 버퍼 병합 · 재접속 재동기화 · `PATCH …/read` ·
+`notifications_ready` 재시도 · 표시 설정 재활성화.
+
+### 이번에 확인한 것 / 확인하지 못한 것
+
+- 확인함(자동 시험): `frontend/src/domains/notifications/hooks/__tests__/notificationRuntime.test.js`,
+  `frontend/src/domains/notifications/components/__tests__/NotificationModal.test.js`,
+  `frontend/src/shared/audio/__tests__/sfxPlayer.test.js`의 F-17 절,
+  `backend/services/achievementService.test.js`의 F-17 절.
+  `npm test --prefix frontend` 1704/1704 통과, `npm test --prefix backend` 1371 통과·154 skip,
+  `npm run build --prefix frontend` 성공.
+- **확인하지 못함**: `backend/tests/db/f17-notifications.integration.test.js`는
+  `F01_TEST_DATABASE_URL`이 없어 전부 skip이다 — 실제 MySQL 유일 제약·트랜잭션 롤백·
+  권한 404는 **미검증**이다.
+- **확인하지 못함**: 실제 외부 Chrome에서의 A/B 계정 친구 요청·업적 획득·시스템 안내 수신·
+  재접속·off/mute·실패 중 이동 확인. 실제 자산 청음도 없다(자산 자체가 없다).
 
 ## 투표 제출 사건의 중복 규칙 (AC-04)
 

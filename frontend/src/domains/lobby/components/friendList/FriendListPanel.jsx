@@ -8,7 +8,7 @@ import {
   FRIEND_PANEL_INSET_STYLE,
   FRIEND_PANEL_TRANSITION,
 } from "@/domains/lobby/constants/friendListStyle.js"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { getFriendPanelAriaLabel } from "@/domains/lobby/utils/friendListPanelAria.js"
 import { useFriendListSync } from "@/domains/lobby/hooks/useFriendListSync.js"
 import FriendAcceptTab from "@/domains/lobby/components/friendList/accept/FriendAcceptTab.jsx"
@@ -73,6 +73,7 @@ function FriendListPanelContent({
   onAcceptRequest,
   onDeclineRequest,
   onAcceptAll,
+  targetRequestId,
 }) {
   return (
     <>
@@ -102,6 +103,7 @@ function FriendListPanelContent({
           onDecline={onDeclineRequest}
           onAcceptAll={onAcceptAll}
           onRefresh={onRefreshRequests}
+          targetRequestId={targetRequestId}
         />
       ) : null}
     </>
@@ -112,9 +114,17 @@ function FriendListPanelContent({
 // 친구 데이터/핸들러는 이 패널이 open 여부를 이미 알고 있으므로 여기서 직접
 // useFriendListSync로 구독합니다 — LobbyPage/LobbyFriendArea가 그대로 통과만
 // 시키던 8개의 prop을 두 파일에서 걷어냈습니다.
-export default function FriendListPanel({ open, onClose }) {
+export default function FriendListPanel({ open, onClose, targetRequestId = null }) {
   // 현재 친구 패널 화면입니다. list, request, accept 중 하나를 사용합니다.
   const [panelView, setPanelView] = useState("list")
+
+  // F-17(AC-02): 알림에서 특정 친구 요청을 보러 들어오면 "요청 수락" 탭으로 연다.
+  // panelView는 이 컴포넌트가 소유하므로(로비가 직접 바꿀 수 없다) 명시적인 선택 입력을
+  // 여기서 받아 반영한다. 대상이 사라져도 탭만 열고 아무 요청도 대신 처리하지 않는다.
+  useEffect(() => {
+    if (!open || targetRequestId == null) return
+    setPanelView("accept")
+  }, [open, targetRequestId])
 
   const {
     onlineFriends,
@@ -155,6 +165,7 @@ export default function FriendListPanel({ open, onClose }) {
               onAcceptRequest={handleAcceptRequest}
               onDeclineRequest={handleDeclineRequest}
               onAcceptAll={handleAcceptAll}
+              targetRequestId={targetRequestId}
             />
           </FriendListPanelFrame>
         </>

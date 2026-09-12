@@ -38,6 +38,7 @@ const {
   SFX_SUPPRESSED_REASON,
   SFX_SCOPE,
   MAX_SEPARATE_SFX_DURATION_MS,
+  SFX_LOAD_TIMEOUT_MS,
   checkSfxAssetAllowed,
   listSilencedSfxKinds,
 } = await import("../sfxManifest.js")
@@ -765,4 +766,106 @@ test("AC-06 playback watchdog installation failure settles before play",async()=
   const result=h.player.dispatch(gameEvent("timer-play"));await settleLoads(h)
   assert.equal(await Promise.race([result.completion,Promise.resolve("unsettled")]),SFX_COMPLETION.FAILED)
   assert.equal(h.media[0].playCalls,0);assert.ok(h.media[0].pauseCalls>=1)
+})
+
+// ---------------------------------------------------------------------------
+// F-17(SFX-DEFER-17) · 새 시스템 알림 kind가 기존 계정 사건 계약을 그대로 따른다.
+//
+// 아래 "재생됨" 확인은 여전히 fixture manifest + 가짜 매체다 — 배포 자산 검토도 실제
+// 청음도 아니다. 배포 manifest의 system-notification이 여전히 미검토라는 사실은 위
+// "AC-02 배포 manifest의 모든 항목은 아직 미검토이고…"가 전 항목에 대해 이미 강제한다.
+// ---------------------------------------------------------------------------
+
+const accountEvent = (eventId, extra = {}) => ({
+  kind: "test-account",
+  eventId,
+  accountId: "acct-1",
+  origin: "live",
+  ...extra,
+})
+
+test("F-17 배포 manifest의 system-notification은 계정 범위·시스템 알림 설정으로 등록돼 있다", () => {
+  const entry = SFX_MANIFEST["system-notification"]
+  assert.ok(entry, "F-17이 연결한 kind가 배포 manifest에 없다")
+  assert.equal(entry.scope, SFX_SCOPE.ACCOUNT, "시스템 알림은 계정 전역 사건이다")
+  assert.equal(entry.notificationKey, "system-notification")
+  assert.equal(checkSfxAssetAllowed(entry).allowed, false)
+})
+
+test("F-17 안정 알림 ID는 계정 범위에서 한 번만 처리되고 복원 봉투는 표식을 남기지 않는다", async () => {
+  const h = makePlayer()
+
+  // 복원(origin=restore)은 재생도 표식도 만들지 않는다 — 그래서 F-17 store가 snapshot에서
+  // 본 원본 키를 따로 기억해야 한다(재생기에만 맡기면 뒤이은 live가 울린다).
+  const restored = h.player.dispatch(accountEvent("notification:n1", { origin: "restore" }))
+  assert.equal(restored.reason, SFX_SUPPRESSED_REASON.RESTORE_ORIGIN)
+  assert.equal(h.media.length, 0)
+
+  const first = h.player.dispatch(accountEvent("notification:n1"))
+  assert.equal(first.status, "accepted")
+  await settleLoads(h)
+  assert.equal(h.media.length, 1)
+
+  // 같은 안정 ID의 재전달은 중복이다.
+  assert.equal(h.player.dispatch(accountEvent("notification:n1")).reason, SFX_SUPPRESSED_REASON.DUPLICATE)
+  assert.equal(h.media.length, 1)
+})
+
+test("F-17 시스템 알림 봉투는 계정 경계를 지키고 익명 범위에서는 아예 받지 않는다", () => {
+  const h = makePlayer()
+
+  assert.equal(
+    h.player.dispatch(accountEvent("notification:n2", { accountId: "other-account" })).reason,
+    SFX_SUPPRESSED_REASON.ACCOUNT_MISMATCH,
+  )
+  assert.equal(h.media.length, 0)
+
+  h.setScope({ accountId: null })
+  assert.equal(h.player.dispatch(accountEvent("notification:n2")).reason, SFX_SUPPRESSED_REASON.ANONYMOUS_SCOPE)
+  assert.equal(h.media.length, 0)
+})
+
+test("F-17 알림 off로 억제된 사건도 표식을 소모해 설정을 다시 켜도 울리지 않는다", async () => {
+  const h = makePlayer()
+  const notified = (eventId) => ({
+    kind: "test-notified",
+    eventId,
+    accountId: "acct-1",
+    origin: "live",
+  })
+
+  // 설정이 켜져 있는 동안은 정상 재생된다(대조군).
+  assert.equal(h.player.dispatch(notified("notification:n3")).status, "accepted")
+  await settleLoads(h)
+  assert.equal(h.media.length, 1)
+
+  // 설정을 끈 상태에서 온 **새** 사건은 억제되지만 표식은 소모된다.
+  h.setSettings({ notifications: { "friend-invite": false } })
+  assert.equal(
+    h.player.dispatch(notified("notification:n4")).reason,
+    SFX_SUPPRESSED_REASON.NOTIFICATION_DISABLED,
+  )
+
+  h.setSettings({ notifications: { "friend-invite": true } })
+  assert.equal(
+    h.player.dispatch(notified("notification:n4")).reason,
+    SFX_SUPPRESSED_REASON.DUPLICATE,
+    "설정을 다시 켰다고 과거 사건이 새 사건이 되면 안 된다",
+  )
+  assert.equal(h.media.length, 1)
+})
+
+test("F-17 시스템 알림의 로드가 영원히 정착하지 않아도 completion은 유한 시간에 끝난다", async () => {
+  const h = makePlayer({ loadAsset: () => new Promise(() => {}) })
+  const result = h.player.dispatch(accountEvent("notification:pending"))
+  assert.equal(result.status, "accepted")
+
+  // 호출자는 completion을 기다리지 않지만(A-06), 기다리더라도 제한 시간 안에 정착한다.
+  h.clock.advance(SFX_LOAD_TIMEOUT_MS + 1)
+  await flush()
+  assert.equal(
+    await Promise.race([result.completion, Promise.resolve("unsettled")]),
+    SFX_COMPLETION.TIMED_OUT,
+  )
+  assert.equal(h.media.length, 0)
 })

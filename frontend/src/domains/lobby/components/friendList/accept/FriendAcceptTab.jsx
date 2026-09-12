@@ -84,7 +84,7 @@ function FriendAcceptEmptyState({ isFiltering }) {
 }
 
 // 받은 친구 요청 목록을 렌더링합니다.
-function FriendAcceptRequestList({ incomingRequests, isFiltering, onAccept, onDecline }) {
+function FriendAcceptRequestList({ incomingRequests, isFiltering, onAccept, onDecline, targetRequestId }) {
   return (
     <ul className={FRIEND_ACCEPT_LIST_CLASS}>
       {incomingRequests.length === 0 ? (
@@ -97,10 +97,29 @@ function FriendAcceptRequestList({ incomingRequests, isFiltering, onAccept, onDe
             name={request.name}
             onAccept={onAccept}
             onDecline={onDecline}
+            targeted={targetRequestId != null && request.request_id === targetRequestId}
           />
         ))
       )}
     </ul>
+  )
+}
+
+/**
+ * F-17(AC-02): 알림에서 지정한 요청이 실제 받은 요청 목록에 더 이상 없을 때의 안내.
+ *
+ * 이미 수락·거절된(또는 취소된) 요청이라는 뜻이다 — 그 요청을 다시 만들거나 자동으로
+ * 수락하지 않는다. 사용자가 "왜 아무 것도 강조되지 않는지" 알 수 있게 사실만 알린다.
+ */
+function FriendAcceptTargetMissingNotice() {
+  return (
+    <p
+      role="status"
+      data-notification-target-missing="true"
+      className={FRIEND_ACCEPT_EMPTY_CLASS}
+    >
+      알림에서 찾던 친구 요청은 이미 처리되었습니다.
+    </p>
   )
 }
 
@@ -112,6 +131,7 @@ export default function FriendAcceptTab({
   onDecline,
   onAcceptAll,
   onRefresh,
+  targetRequestId = null,
 }) {
   const { query, setQuery, isFiltering, filteredItems } = useFriendListLocalFilter(
     incomingRequests,
@@ -119,6 +139,12 @@ export default function FriendAcceptTab({
   )
 
   const visibleRequests = isFiltering ? filteredItems : incomingRequests
+
+  // 대상 존재 여부는 **필터 이전의 실제 목록**으로 판단한다 — 검색어 때문에 잠시 가려진
+  // 요청을 "이미 처리됨"으로 잘못 안내하지 않기 위해서다.
+  const targetMissing =
+    targetRequestId != null &&
+    !incomingRequests.some((request) => request.request_id === targetRequestId)
 
   return (
     <div className={FRIEND_ACCEPT_TAB_CLASS}>
@@ -129,11 +155,13 @@ export default function FriendAcceptTab({
         onChange={(event) => setQuery(event.target.value)}
       />
       <FriendAcceptToolbar onAcceptAll={onAcceptAll} onRefresh={onRefresh} />
+      {targetMissing ? <FriendAcceptTargetMissingNotice /> : null}
       <FriendAcceptRequestList
         incomingRequests={visibleRequests}
         isFiltering={isFiltering}
         onAccept={onAccept}
         onDecline={onDecline}
+        targetRequestId={targetRequestId}
       />
       <BackButton
         size="compact"

@@ -71,7 +71,16 @@ exports.sendFriendRequest = async (req, res, next) => {
         // "어떤 요청이 왔는지" 구분할 방법이 없었다 — 실제 저장된 id를 안정 사건 ID로 쓴다.
         const created = await friendService.sendFriendRequest(req.user.uuid, receiverId);
         const sfxEvent = buildFriendSfxEvent('friend-request-received', 'received', receiverId, created?.id);
-        emitToUser(receiverId, 'friend_request_received', sfxEvent ? { sfxEvent } : {});
+        // F-17(A-02): 이 시점에서 원본 요청과 알림 행은 이미 커밋됐다. 소켓 전달이 던져도
+        // 커밋을 되돌릴 수 없고 되돌려서도 안 되므로, 예외가 응답을 실패로 바꾸지 않게
+        // 여기서 격리한다(notificationService.emitNotificationCreated의 격리와 별개다 —
+        // 두 전달은 서로의 실패를 전파하지 않는다). 놓친 전달은 GET /notifications와
+        // fetchIncomingRequests가 무음으로 복원한다.
+        try {
+            emitToUser(receiverId, 'friend_request_received', sfxEvent ? { sfxEvent } : {});
+        } catch (emitError) {
+            console.error('[친구 요청 통지 실패]', { code: 'FRIEND_REQUEST_NOTIFY_ERROR', receiverId });
+        }
 
         res.status(200).json({ success: true, message: '친구 신청을 보냈습니다.' });
     } catch (error) {

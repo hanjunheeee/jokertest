@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useFriendStore } from "@/domains/lobby/store/friend.store";
 import { useAuthStore } from "@/domains/auth/store/auth.store";
 import { dispatchSfxEvent } from "@/shared/hooks/useSfxRuntime.js";
+import { useNotificationsStore } from "@/domains/notifications/store/notifications.store.js";
 
 /**
  * 서버가 보낸 친구 사건 봉투를 공통 재생기로 넘긴다(F-16 AC-01/AC-04).
@@ -22,6 +23,14 @@ function playFriendSfx(sfxEvent) {
     if (accountId === null) return;
     // 서버가 수신 경계에서 확인한 계정과 현재 인증 계정이 모두 일치해야 한다.
     if (sfxEvent.accountId !== accountId) return;
+
+    // F-17(A-04): 이 사건의 원본 키로 "지금이 최초 처리인가"를 알림 store에 묻는다.
+    // 친구 사건의 eventId(friend-request:<id>:<stage>)는 서버가 저장한 알림 source_key와
+    // 같은 문자열이라 별도 매핑이 필요 없다. 목록 복원(GET)에서 이미 본 사건이면 false가
+    // 되어 무음이다 — 재로그인·재접속 뒤 서버가 놓친 전달을 다시 보내도 다시 울리지 않는다.
+    // true인 순간 표식을 소모하므로, 설정 off·mute로 실제 소리가 안 나도 나중에 설정을
+    // 켰다고 과거 사건이 울리지 않는다(A-03).
+    if (!useNotificationsStore.getState().consumeSoundEvent(accountId, sfxEvent.eventId)) return;
 
     dispatchSfxEvent({
         kind: sfxEvent.kind,

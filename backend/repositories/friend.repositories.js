@@ -73,12 +73,15 @@ exports.findExistingFriendship = async (uuidA, uuidB) => {
     });
 };
 
-exports.createFriendRequest = async (requesterId, receiverId) => {
+// F-17(A-02): options로 transaction을 받는다. 친구 요청 원본 행과 수신자 알림 행이 같은
+// 트랜잭션에서 확정되어야, 알림 삽입이 실패했을 때 원본 요청도 함께 롤백된다
+// (createFriendship·updateFriendRequestStatus가 이미 쓰는 것과 같은 options 관례).
+exports.createFriendRequest = async (requesterId, receiverId, options = {}) => {
     return await db.FriendRequest.create({
         requester_id: requesterId,
         receiver_id:  receiverId,
         status:       'PENDING',
-    });
+    }, options);
 };
 
 exports.findFriendRequestById = async (requestId, options = {}) => {

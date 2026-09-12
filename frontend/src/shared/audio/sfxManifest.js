@@ -116,6 +116,13 @@ export const SFX_MANIFEST = Object.freeze({
   // --- 업적 보상(AC-01) ---------------------------------------------------
   "achievement-granted": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "system-notification" }),
 
+  // --- 시스템 알림(F-17 AC-07) -------------------------------------------
+  // 서버가 생산하는 새 시스템 알림(notification.service.js의 ensureSystemWelcome)의 소리.
+  // 계정 전역 사건이라 scope=account이고, 표시 설정은 업적과 같은 "시스템 알림" 항목을
+  // 쓴다(A-03). 자산은 여전히 미검토라 재생기가 매체를 만들기 전에 asset-unreviewed로
+  // 거부한다 — 이 항목을 추가했다고 소리가 나는 것이 아니다(A-07).
+  "system-notification": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "system-notification" }),
+
   // --- 준비·시작(AC-01) ---------------------------------------------------
   "room-ready-changed": pendingAsset({ scope: SFX_SCOPE.ROOM, notificationKey: null }),
   "game-started": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),

@@ -25,6 +25,10 @@ export default function LibraryBookShell({
   canGoNext = false,
   onPrevPage,
   onNextPage,
+  // F-17(AC-02): 알림이 가리키는 업적과 그 업적이 속한 직업 선택. 표시 위치만 정한다.
+  jobIndex,
+  onJobChange,
+  targetAchievementId = null,
 }) {
   return (
     <div className={LIBRARY_BOOK_STAGE_CLASS}>
@@ -49,6 +53,9 @@ export default function LibraryBookShell({
             canGoNext={canGoNext}
             onPrevPage={onPrevPage}
             onNextPage={onNextPage}
+            jobIndex={jobIndex}
+            onJobChange={onJobChange}
+            targetAchievementId={targetAchievementId}
           />
         </div>
       </motion.div>
