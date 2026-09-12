@@ -200,7 +200,12 @@ test('AC-03: 유예 만료 사망 방송은 끊김 전용 공개 계약이고 �
     assert.equal(eliminated[0].roomId, session.channelId)
 
     const payload = eliminated[0].payload
-    assert.deepEqual(Object.keys(payload).sort(), ['dayIndex', 'gameId', 'phase', 'players', 'victimUuid'])
+    assert.deepEqual(Object.keys(payload).sort(), ['dayIndex', 'gameId', 'phase', 'players', 'sfxEvent', 'victimUuid'])
+    assert.deepEqual(payload.sfxEvent, {
+        eventId: `game:${session.id}:day:${session.dayIndex}:victim:${doctorUuid}:eliminated`,
+        gameId: session.id,
+        origin: 'live',
+    })
     assert.equal(payload.victimUuid, doctorUuid)
     assert.equal(Object.hasOwn(payload, 'deathReveals'), false)
     assert.equal(Object.hasOwn(session, 'nightResult'), false)

@@ -23,11 +23,7 @@
 5. **같은 물리 입력은 한 번만.** native Event를 `WeakSet`으로 한 번만 소비한다. 키보드
    Enter/Space가 만든 click도 같은 native Event 하나라서 별도 keydown 소리를 더하지 않는다.
    겹친 리스너(backdrop + Escape 등)가 같은 Event를 공유하면 두 번째는 조용히 무시된다.
-6. **표식을 달 수 없는 경계의 소유권 이전.** capture는 소리를 곧바로 내지 않고 microtask로
-   **예약**한다. 같은 task 안에서 실행되는 업무 핸들러가 `dispatchUiSfx`를 부르면(대표적으로
-   `window.confirm`의 **반환 경계** — DOM 요소가 아예 없다) 그 예약을 취소한다. 그래서
-   "버튼 클릭 1 + 확인 1"로 두 번 울리지 않고 의미가 정확한 쪽 하나만 남는다.
-   `window.confirm`은 동기로 블로킹하므로 결과가 항상 그 task 안에서 나온다.
+6. **native confirm의 호출 버튼도 명시 소유자를 표시한다.** Chrome은 document capture와 React 콜백 사이에 microtask를 실행할 수 있으므로 일반 클릭 예약을 나중에 취소하는 방법은 안전하지 않다. 실제 호출 버튼에 `data-sfx-owner="explicit"`를 달고 확인창 반환 콜백만 dispatch한다. 네트워크 실패가 띄우는 확인창은 클릭과 무관한 별도 입력이다.
 7. **소리는 업무 콜백을 막지 않는다.** capture 핸들러 전체가 try/catch 안에 있고,
    예외·대기를 전파하지 않는다. 짧은 연타는 재생기 cooldown이 억제하지만 **입력 자체는
    막지 않는다.**
@@ -42,8 +38,8 @@
 | `auth/.../AuthFrame.jsx` | form submit confirm 하나 | `handleSubmit`이 `dispatchUiSfx("ui-confirm", event)`; `onSubmit`이 없으면 0 |
 | `user/.../NicknameSection.jsx`, `PasswordSection.jsx` | form submit confirm | 같음. `ConfirmButton`은 `type="submit"`이라 capture에서 제외 |
 | `user/components/DiscordAccountLink.jsx` | `window.confirm` 결과만 confirm/cancel | 반환 경계에서 dispatch(이벤트 없이). form에는 표식 없음 |
-| `ingame/utils/createExitConfirmController.js` + `hooks/useInGameExit.js` | confirm 반환에 confirm/cancel, trigger click 제외 | controller의 `onDecision` 주입 → 훅이 `dispatchUiSfx(kind)`. 규칙 6이 trigger 클릭음을 가져간다. 취소 leave 0 / 승인 leave 1 유지 |
-| `game/setup/hooks/useGameSetupPage.js::goBackToMultiplay` | 생성 중 confirm 결과 단일 소유, 평상시 cancel 하나 | 두 분기 모두 dispatch. 규칙 6이 BackButton 클릭음을 가져간다 |
+| `ingame/utils/createExitConfirmController.js` + `hooks/useInGameExit.js` | confirm 반환에 confirm/cancel, trigger click 제외 | controller의 `onDecision` 주입 → 훅이 `dispatchUiSfx(kind)`. `InGameTopControls`의 실제 나가기 버튼을 explicit로 제외한다. 취소 leave 0 / 승인 leave 1 유지 |
+| `game/setup/hooks/useGameSetupPage.js::goBackToMultiplay` | 생성 중 confirm 결과 단일 소유, 평상시 cancel 하나 | 두 분기 모두 dispatch. `GameSetupPageControls`의 실제 뒤로가기 버튼을 explicit로 제외한다 |
 | `game/matching/hooks/useMatchingRoom.js::settleFailed` | dialog 결과 단일 소유, 오래된 series·중복 prompt는 0 | 기존 `cancelled`/`seriesId`/`hasPromptedRetry` 가드 **뒤**에서만 dispatch |
 | `ingame/.../InGameParchmentModalBase.js`, `…Animated.jsx` | backdrop/Escape cancel, 확인 버튼 confirm | backdrop `<button>`에 `data-sfx-kind="ui-cancel"`, Escape 핸들러가 명시 dispatch, 확인 버튼은 `InGameParchmentConfirmButton`의 `data-sfx-kind="ui-confirm"` |
 | `ingame/.../InGameParchmentConfirmButton.js` | confirm | `sfxKind` prop(기본 `ui-confirm`) → `data-sfx-kind` |
@@ -54,7 +50,7 @@
 | `store/.../StoreSkinZoomOverlay.jsx` | 열림 상태 Escape/backdrop cancel | 같은 패턴 |
 | `shared/ui/profileBorderZoom/ProfileBorderZoomOverlay.jsx` | Escape/backdrop cancel | 같은 패턴 |
 | `shared/ui/tutorialGuide/TutorialGuideOverlay.jsx` | Escape/backdrop cancel, 화살표는 실제 page 변경 click·경계 0 | Escape 명시 dispatch + backdrop `data-sfx-kind`. 화살표는 `disabled={!canGoPrev/Next}`라 경계에서 capture가 제외. ArrowLeft/Right **키**에는 소리를 붙이지 않는다 |
-| `user/.../SkinCardWearOverlay.jsx` | Escape/backdrop/닫기 cancel, 장착 confirm | `handleClose`/`handleConfirm`이 명시 dispatch(첫 await 이전). backdrop은 `data-sfx-owner="explicit"` |
+| `user/.../SkinCardWearOverlay.jsx` | Escape/backdrop/닫기 cancel, 장착 confirm | `handleClose`/`handleConfirm`이 명시 dispatch(첫 await 이전). backdrop·패널 닫기·확인 버튼 모두 `data-sfx-owner="explicit"` |
 | `user/.../ProfileEditOverlay.jsx` | Escape/backdrop/닫기 cancel, 저장 confirm | 같은 패턴(`handleClose` / `handleConfirmWithSfx`) |
 | `ingame/.../InGameChatCloseupOverlay.jsx` | Escape/backdrop/닫기 cancel | Escape 명시 + backdrop·닫기 `data-sfx-kind`. 채팅 타이핑 keyDown에는 소리 없음 |
 | `ingame/.../InGameVoteStatusPanel.jsx` | Escape/backdrop/닫기 cancel | 같은 패턴 |
@@ -68,8 +64,8 @@
 
 - `frontend/src/shared/hooks/__tests__/sfxUiOwnership.test.js` — 실제 런타임을 jsdom에
   마운트해 mouse click · 같은 native Event 공유 · form submit · disabled/aria-disabled/inert/
-  submit 제외 · `data-sfx-owner=explicit` 제외 · native confirm 소유권 이전 · 반복 입력 ·
+  submit 제외 · `data-sfx-owner=explicit` 제외 · native confirm 호출 버튼 제외 · 반복 입력 ·
   재생기 예외 격리 · 언마운트 cleanup을 검사한다. `createExitConfirmController`는 실제
   코드로 확인/취소와 leave 호출 수를 함께 센다.
-- **미실행**: 이 시험은 구현자가 실행하지 못했다(테스트 명령 승인 거부, `.pluto/progress.md`).
-- 실제 Chrome 관문도 미실행이다.
+- 구현자 단계에서는 미실행이었다. 운영자 수정 후 전체 frontend 1,643개 PASS, fail/skip 0 및 build PASS(2026-09-12).
+- 실제 Chrome에서 production 버튼·런타임을 사용하는 회귀 fixture로 중복을 재현했다. 수정 전 나가기 1회에 ui-click+ui-cancel 2건, 수정 후 나가기/생성 화면 뒤로가기 각각 ui-cancel 1건이다. fixture는 확인창 취소 이후 콜백을 사용하므로 native dialog UI 자체의 검증으로 주장하지 않는다. 전체 앱 검증 기록은 별도 기록한다.

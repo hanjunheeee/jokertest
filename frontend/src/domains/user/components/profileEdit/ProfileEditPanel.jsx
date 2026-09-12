@@ -41,6 +41,7 @@ export default function ProfileEditPanel({
       <button
         type="button"
         aria-label="프로필 수정 닫기"
+        data-sfx-owner="explicit"
         onClick={onClose}
         className={PROFILE_EDIT_CLOSE_BTN_CLASS}
         style={{ outline: "none" }}

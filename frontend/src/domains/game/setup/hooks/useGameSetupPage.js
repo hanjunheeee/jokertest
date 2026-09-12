@@ -144,8 +144,8 @@ export function useGameSetupPage() {
         "방 생성 요청이 진행 중입니다. 방이 생성될 수 있지만 현재 화면에서 나가시겠습니까?"
       )
       // F-16(AC-01): 생성 중에는 이 confirm 결과가 단일 소유자다 — 호출한 뒤로가기 버튼은
-      // 표식을 달지 않아(generic 제외 대상이 아니라 애초에 별도 음을 내지 않게) 두 번
-      // 울리지 않는다. 아래 평상시 경로와 달리 취소도 여기서 낸다.
+      // data-sfx-owner="explicit"로 일반 클릭 capture에서 제외한다.
+      // 아래 평상시 경로와 달리 취소도 여기서 낸다.
       dispatchUiSfx(confirmed ? "ui-confirm" : "ui-cancel")
       if (!confirmed) return
       navigate("/multiplay")

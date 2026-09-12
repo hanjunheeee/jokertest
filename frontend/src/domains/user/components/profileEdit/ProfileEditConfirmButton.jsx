@@ -19,6 +19,7 @@ export default function ProfileEditConfirmButton({ onClick, disabled = false }) 
         aria-label="수정하기"
         aria-busy={disabled}
         disabled={disabled}
+        data-sfx-owner="explicit"
         onClick={onClick}
       >
         <PublicAsset

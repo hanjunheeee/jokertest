@@ -1,0 +1,4 @@
+{
+  "at": "2026-09-12T11:23:29.426Z",
+  "snapshot": "- heading \"F16 실제 UI 소유자 회귀 검증\" [level=1]\n- paragraph: 실제 production runtime과 두 production 버튼을 사용한다. callback은 확인창에서 취소를 선택한 직후의 의미 처리를 재현한다. 실제 확인창 UI 자체의 검증은 아니다.\n- heading \"인게임 나가기 버튼\" [level=2]\n- generic \"인게임 컨트롤\":\n  - button \"게임 나가기\"\n  - button \"플레이어별 전적목록\"\n  - button \"인게임 설정\"\n- heading \"게임 생성 화면 뒤로가기 버튼\" [level=2]\n- group \"사운드 조절\":\n  - button \"배경음 사용 안 함\" [disabled] [pressed]\n  - slider \"배경음 볼륨\" [disabled]: \"0\"\n- button \"멀티플레이 선택으로 돌아가기\" [active]\n- generic: \"{ \\\"callbacks\\\": 1, \\\"events\\\": [ { \\\"reason\\\": \\\"asset-unreviewed\\\", \\\"kind\\\": \\\"ui-cancel\\\", \\\"eventId\\\": \\\"ui-cancel:1\\\", \\\"at\\\": 1789212209171, \\\"stage\\\": \\\"manifest\\\", \\\"note\\\": \\\"자산 파일과 이용 조건 검토가 아직 제공되지 않았다(외부 입력 의존).\\\" } ] }\""
+}

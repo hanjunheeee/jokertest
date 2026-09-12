@@ -31,8 +31,8 @@ export default function ProfileEditOverlay({ open, onClose }) {
   } = useProfileBorderEditor({ open, onClose })
 
   /**
-   * F-16(AC-01): backdrop·Escape·패널의 닫기 버튼이 공유하는 취소 경계다. 패널 버튼 클릭은
-   * 바깥 capture가 예약한 일반 클릭음을 이 호출이 가져가므로 두 번 울리지 않는다.
+   * F-16(AC-01): backdrop·패널 닫기 버튼은 explicit 표식으로 일반 capture에서 제외한다.
+   * Escape는 별도 키보드 리스너에서 취소음을 한 번 보낸다.
    */
   const handleClose = () => {
     dispatchUiSfx("ui-cancel")

@@ -59,6 +59,7 @@ export default function SkinCardWearPanel({
         <button
           type="button"
           aria-label="스킨&카드 착용 닫기"
+          data-sfx-owner="explicit"
           onClick={onClose}
           className={SKIN_CARD_WEAR_CLOSE_BTN_CLASS}
           style={{ outline: "none" }}
@@ -103,6 +104,7 @@ export default function SkinCardWearPanel({
         ) : null}
         <button
           type="button"
+          data-sfx-owner="explicit"
           onClick={onConfirm}
           disabled={isSaving}
           aria-busy={isSaving}

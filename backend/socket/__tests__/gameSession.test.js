@@ -2603,6 +2603,12 @@ test('resolve_night: 보호로 막힌 암살 — night_action_result는 광대�
         dayIndex: 0,
         actionType: 'ASSASSINATE',
         success: false,
+        sfxEvent: {
+            eventId: `game:${session.id}:night:0:ASSASSINATE`,
+            accountId: jokerUuid,
+            gameId: session.id,
+            origin: 'live',
+        },
     })
 
     // 의사·경비원·시민 전원에게는 개인 결과가 하나도 가지 않는다(경비원은 SKIP이었다).
@@ -3105,7 +3111,7 @@ test('cast_day_vote: payload의 위조 uuid/alive/role/phase는 전부 무시되
         callback,
     )
 
-    assert.deepEqual(getResponse(), { ok: true })
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
     assert.equal(session.dayVotes.get(actor), target)
     assert.equal(session.dayVotes.has('forged-uuid'), false)
 })
@@ -3244,7 +3250,7 @@ test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger�
     socket.trigger('cast_day_vote', { gameId: session.id, targetId: target }, callback)
     await flushAsync()
 
-    assert.deepEqual(getResponse(), { ok: true })
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
     assert.equal(session.dayVotes.get(actor), target)
 })
 

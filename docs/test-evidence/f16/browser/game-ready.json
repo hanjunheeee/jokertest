@@ -1,0 +1,4 @@
+{
+  "at": "2026-09-12T11:41:28.829Z",
+  "snapshot": "- complementary \"좌측 배너 영역\"\n- main:\n  - button \"초대코드 공유\":\n    - generic: 초대코드 공유\n  - img \"멀티 플레이 매칭\"\n  - paragraph: 멀티 플레이 매칭\n  - paragraph: 무도회 속에 숨어든 광대를 찾아 떠나시겠습니까?\n  - generic: 준비완료\n  - generic: 준비완료\n  - generic: 준비완료\n  - generic: 준비완료\n  - generic: 준비완료\n  - generic: 준비완료\n  - paragraph: 13초 남았습니다.\n  - generic: 키보드 입력 제한\n  - button \"준비취소\":\n    - generic: 준비취소\n  - button \"게임시작\":\n    - generic: 게임시작\n  - button \"방 삭제하기\":\n    - generic: 방 삭제하기\n  - generic \"파티 인원 6명\":\n    - generic: 파티 인원 6명\n  - group \"사운드 조절\":\n    - button \"배경음 사용 안 함\" [disabled] [pressed]\n    - slider \"배경음 볼륨\" [disabled]: \"0\"\n  - button \"멀티플레이 선택으로 돌아가기\"\n- complementary \"우측 배너 영역\""
+}

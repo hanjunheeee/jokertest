@@ -14,8 +14,7 @@ import { JSDOM } from "jsdom"
 //   - disabled/aria-disabled/inert/submit 제어와 data-sfx-owner="explicit" 영역은 제외한다.
 //   - data-sfx-kind 표식이 의미(확인/취소)를 정한다.
 //   - 같은 native Event는 한 번만 소비된다(키보드가 만든 click도 같은 이벤트 하나다).
-//   - 이벤트가 없는 native confirm 결과는 호출마다 단일 actionId이고, 같은 물리 활성화로
-//     예약된 일반 클릭음을 **가져간다**(한 입력에 두 번 울리지 않는다).
+//   - native confirm 호출 버튼은 explicit 표식으로 제외하고 결과 콜백만 소리를 낸다.
 //   - 소리는 업무 콜백의 예외를 전파하지 않고, 언마운트 뒤에는 아무것도 울리지 않는다.
 // ---------------------------------------------------------------------------
 
@@ -44,7 +43,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const { renderHook } = await import("@testing-library/react")
 const { useSfxRuntime, dispatchUiSfx, __setSfxPlayerForTests } = await import("../useSfxRuntime.js")
 const { createExitConfirmController } = await import(
-  "../../domains/game/ingame/utils/createExitConfirmController.js"
+  "../../../domains/game/ingame/utils/createExitConfirmController.js"
 )
 
 /** 재생기 대역 — dispatch된 사건만 기록한다(매체·자산과 무관하게 소유권만 본다). */
@@ -69,7 +68,7 @@ function recordingPlayer() {
   }
 }
 
-/** capture가 예약한 소리는 task가 끝난 직후(microtask)에 난다 — 그 시점까지 기다린다. */
+/** 비동기 후속 작업까지 완료한 뒤 사건 수를 확인한다. */
 async function flush() {
   for (let i = 0; i < 4; i += 1) await Promise.resolve()
 }
@@ -204,11 +203,11 @@ test("AC-01 form submit 경계가 확인음을 소유하고 같은 제출에 두
   runtime.unmount()
 })
 
-test("AC-01 native confirm 결과는 같은 물리 활성화의 일반 클릭음을 가져간다", async () => {
+test("AC-01 native confirm 호출 버튼을 제외하고 결과 콜백만 한 번 울린다", async () => {
   const runtime = mountRuntime()
-  // 표식을 달 DOM 요소가 없는 경계(window.confirm 반환)다 — 버튼 클릭 1 + 확인 1로 두 번
-  // 울리면 안 되고, 의미가 더 정확한 확인음 하나만 남아야 한다.
-  const button = withButton({}, () => {
+  // Chrome은 capture와 React 콜백 사이에 microtask를 실행할 수 있다.
+  // 실제 호출 버튼을 capture에서 제외해야 이벤트 루프 순서와 무관하게 한 번이다.
+  const button = withButton({ "data-sfx-owner": "explicit" }, () => {
     dispatchUiSfx("ui-confirm")
   })
 

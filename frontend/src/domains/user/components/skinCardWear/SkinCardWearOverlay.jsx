@@ -85,8 +85,8 @@ export default function SkinCardWearOverlay({ open, onClose }) {
   // 닫기·오류 표시 어느 쪽도 하지 않는다(그 계정 화면은 auth store 전환으로 별도 정리된다).
   /**
    * F-16(AC-01): 이 오버레이의 "닫기"는 backdrop·Escape·패널의 닫기 버튼 셋이 공유한다.
-   * 셋 다 이 함수를 거치게 해 취소음의 소유자를 한 곳으로 모은다 — 패널 버튼 클릭은 바깥
-   * capture가 예약한 일반 클릭음을 이 호출이 가져가므로(같은 물리 활성화) 두 번 울리지 않는다.
+   * backdrop·패널 버튼은 explicit 표식으로 일반 capture에서 제외한다.
+   * Escape는 별도 키보드 리스너에서 취소음을 한 번 보낸다.
    */
   const handleClose = () => {
     dispatchUiSfx("ui-cancel")
@@ -94,8 +94,8 @@ export default function SkinCardWearOverlay({ open, onClose }) {
   }
 
   const handleConfirm = async () => {
-    // 확인음은 **첫 await 이전**(= 클릭과 같은 task)에 낸다 — 그래야 패널 버튼의 일반
-    // 클릭음 예약을 가져가 소리가 하나로 남는다. 저장 성공 여부와 무관하게 "장착을 눌렀다"는
+    // 확인 버튼은 explicit 표식으로 일반 capture에서 제외한다.
+    // 저장 성공 여부와 무관하게 "장착을 눌렀다"는
     // 입력 자체에 대한 소리이고, 아래 업무 경로는 그대로 진행된다(AC-06).
     dispatchUiSfx("ui-confirm")
     const epoch = lifecycle.current
