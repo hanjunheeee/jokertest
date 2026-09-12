@@ -38,8 +38,8 @@ export const BLOOD_RECORD_CONTENT_INSET = {
   right: "15%",
 }
 
-export const BLOOD_RECORD_ROW_LABEL_CLASS = "font-subheading text-[3.6cqi] font-bold leading-none text-[#3d1810]"
-export const BLOOD_RECORD_ROW_VALUE_CLASS = "font-subheading text-[3.8cqi] font-bold leading-none tracking-wide text-[#2a0e08] tabular-nums"
+export const BLOOD_RECORD_ROW_LABEL_CLASS = "font-subheading app-text-scaled [--app-text-size:3.6cqi] font-bold leading-none text-[#3d1810]"
+export const BLOOD_RECORD_ROW_VALUE_CLASS = "font-subheading app-text-scaled [--app-text-size:3.8cqi] font-bold leading-none tracking-wide text-[#2a0e08] tabular-nums"
 
 export const BLOOD_RECORD_FRAME_IMG_CLASS = "block h-auto w-full shrink-0 select-none"
 
@@ -64,7 +64,8 @@ export const FATE_MASK_FOOTER_CLASS =
 export const FATE_MASK_FRAME_WRAP_CLASS =
   "relative mx-auto w-[min(100%,clamp(26rem,68vw,34rem))] [container-type:inline-size]"
 
-export const FATE_MASK_DESCRIPTION_CLASS = "pointer-events-none absolute flex items-end justify-center pb-[0.18em] text-center font-subheading text-[3.1cqi] font-bold leading-[1.55] text-[#e8e4dc]"
+export const FATE_MASK_DESCRIPTION_CLASS = "pointer-events-none absolute flex items-end justify-center pb-[0.18em] text-center font-subheading app-text-scaled [--app-text-size:3.1cqi] font-bold leading-[1.55] text-[#e8e4dc]"
 export const FATE_MASK_HIGHLIGHT_CLASS = "text-[#e8c878] [text-shadow:0_0_10px_rgba(232,200,120,0.45)]"
 
 export const FATE_MASK_FRAME_IMG_CLASS = "block h-auto w-full select-none"
+

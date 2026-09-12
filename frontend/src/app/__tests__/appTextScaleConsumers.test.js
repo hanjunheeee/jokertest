@@ -82,7 +82,7 @@ function assertScaledConsumer(element, originalFontSize, label) {
     `${label}: app-text-scaled가 없으면 설정을 바꿔도 크기가 변하지 않는다 — ${element.className}`,
   )
   assert.equal(
-    element.className.match(/(?:^|\s)text-\[(?:clamp\(|[0-9.]+(?:rem|px|em)\])/),
+    element.className.match(/(?:^|\s)text-\[(?:clamp\(|[0-9.]+(?:rem|px|em|vw|vh|vmin|vmax|cqi|cqw|cqh|cqb|cqmin|cqmax)\])/),
     null,
     `${label}: 배율 없는 기본 font-size 유틸리티가 남아 있으면 배율이 무시된다`,
   )
@@ -95,7 +95,7 @@ function assertScaledConsumer(element, originalFontSize, label) {
 }
 
 /**
- * 렌더된 요소의 실제 font-size를 px로 계산한다.
+ * 클래스와 설정 배율에서 예상 px 값을 계산한다. 실제 CSS 계산값 검증이 아니다.
  *
  * .app-text-scaled는 font-size: calc(var(--app-text-size) * var(--app-text-scale, 1))이므로,
  * 요소가 실제로 달고 있는 --app-text-size와 App이 documentElement에 써 넣은 배율을 읽어
@@ -103,7 +103,7 @@ function assertScaledConsumer(element, originalFontSize, label) {
  * 않으므로 px 단위 소비자로 확인하고, clamp 소비자는 배율이 곱해지는 형태까지만 본다 —
  * 실제 픽셀 확인은 operator의 Chrome 검증 몫이다.
  */
-function renderedFontSizePx(element) {
+function expectedFontSizePxFromWiring(element) {
   const declared = appTextSizeValue(element.className)
   const match = declared.match(/^([0-9.]+)px$/)
   assert.notEqual(match, null, `px 단위 소비자만 계산할 수 있다: ${declared}`)
@@ -170,13 +170,13 @@ test("F-15(AC-02): 텍스트 크기를 최소·기본·최대로 바꾸면 렌�
   const statusText = getByText("오프라인")
 
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.defaultValue)
-  const atDefault = renderedFontSizePx(statusText)
+  const atDefault = expectedFontSizePxFromWiring(statusText)
 
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.min)
-  const atMin = renderedFontSizePx(statusText)
+  const atMin = expectedFontSizePxFromWiring(statusText)
 
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.max)
-  const atMax = renderedFontSizePx(statusText)
+  const atMax = expectedFontSizePxFromWiring(statusText)
 
   // 기본값에서는 원래 크기(10px)가 그대로여야 한다 — 저장한 적 없는 사용자에게 변화가 없다.
   assert.equal(atDefault, 10, "기본값에서 원래 크기가 보존되어야 한다")
@@ -192,9 +192,9 @@ test("F-15(AC-02): 배율은 좁은 범위로 제한되어 레이아웃을 흔�
   const statusText = getByText("오프라인")
 
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.min)
-  const atMin = renderedFontSizePx(statusText)
+  const atMin = expectedFontSizePxFromWiring(statusText)
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.max)
-  const atMax = renderedFontSizePx(statusText)
+  const atMax = expectedFontSizePxFromWiring(statusText)
 
   // 부동소수 오차만 허용한다(px 기준 1e-9).
   assert.ok(
@@ -208,16 +208,16 @@ test("F-15(AC-02/AC-06): 설정 초기화는 배율을 기본값으로 되돌리
   const statusText = getByText("오프라인")
 
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.max)
-  assert.ok(renderedFontSizePx(statusText) > 10)
+  assert.ok(expectedFontSizePxFromWiring(statusText) > 10)
 
   act(() => {
     useSettingsStore.getState().resetSettings()
   })
-  assert.equal(renderedFontSizePx(statusText), 10, "초기화 후 원래 크기로 돌아와야 한다")
+  assert.equal(expectedFontSizePxFromWiring(statusText), 10, "초기화 후 원래 크기로 돌아와야 한다")
 
   // 새로고침 복원: 저장된 값으로 store를 다시 세우면 같은 배율이 즉시 반영된다.
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.min)
-  const atMin = renderedFontSizePx(statusText)
+  const atMin = expectedFontSizePxFromWiring(statusText)
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   const saved = JSON.parse(localStorage.getItem("settings-storage")).state
@@ -229,7 +229,7 @@ test("F-15(AC-02/AC-06): 설정 초기화는 배율을 기본값으로 되돌리
   act(() => {
     useSettingsStore.setState({ generalTextSize: saved.generalTextSize })
   })
-  assert.equal(renderedFontSizePx(statusText), atMin, "복원한 값이 그대로 반영돼야 한다")
+  assert.equal(expectedFontSizePxFromWiring(statusText), atMin, "복원한 값이 그대로 반영돼야 한다")
 })
 
 test("F-15(AC-02): 배율은 documentElement 변수 하나로만 전달되고 각 소비자는 인라인 font-size를 쓰지 않는다", () => {
@@ -261,7 +261,7 @@ test("F-15(AC-02): 배율은 documentElement 변수 하나로만 전달되고 �
 const GENERAL_TEXT_SCALE_EXCLUDED_PREFIX = "domains/game/ingame/"
 // variant 접두사(placeholder: 등)가 붙은 선언도 놓치지 않도록 앞을 고정하지 않는다.
 // "app-text-scaled"·"[--app-text-size:...]"에는 "text-[" 가 없어 스스로 걸리지 않는다.
-const EXPLICIT_FONT_SIZE = /text-\[(?:clamp\(|[0-9.]+(?:rem|px|em)\])/
+const EXPLICIT_FONT_SIZE = /text-\[(?:clamp\(|[0-9.]+(?:rem|px|em|vw|vh|vmin|vmax|cqi|cqw|cqh|cqb|cqmin|cqmax)\])/
 
 function sourceFiles() {
   const root = SRC_ROOT
@@ -342,3 +342,4 @@ test("F-15(AC-02): App이 배율 동기화 훅을 실제로 호출한다", () =>
 
   assert.match(appSource, /useAppTextScaleSync\(\)/)
 })
+

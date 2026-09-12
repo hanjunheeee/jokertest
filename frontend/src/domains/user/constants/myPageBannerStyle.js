@@ -39,8 +39,8 @@ export const MY_PAGE_BANNER_TEXT_INSET_LEFT = "-4%"
 
 export const MY_PAGE_BANNER_TEXT_ALIGN_LEFT_CLASS = "left-[-4%]"
 
-export const MY_PAGE_BANNER_LABEL_TEXT_CLASS = "font-subheading text-[4.4cqi] font-bold leading-tight text-[#ebe2cc]"
-export const MY_PAGE_BANNER_REPUTATION_TEXT_CLASS = "font-subheading text-[4cqi] font-bold leading-tight text-[#e5dcc4]"
+export const MY_PAGE_BANNER_LABEL_TEXT_CLASS = "font-subheading app-text-scaled [--app-text-size:4.4cqi] font-bold leading-tight text-[#ebe2cc]"
+export const MY_PAGE_BANNER_REPUTATION_TEXT_CLASS = "font-subheading app-text-scaled [--app-text-size:4cqi] font-bold leading-tight text-[#e5dcc4]"
 
 export const MY_PAGE_BANNER_ROOT_CLASS = "relative block [container-type:inline-size] leading-none"
 
@@ -55,3 +55,4 @@ export const MY_PAGE_BANNER_PROFILE_IMAGE_WRAP_CLASS =
   "absolute z-[1] overflow-hidden rounded-full"
 export const MY_PAGE_BANNER_PROFILE_IMAGE_CLASS =
   "block h-full w-full min-h-full min-w-full scale-[1.28] select-none object-cover object-center"
+
