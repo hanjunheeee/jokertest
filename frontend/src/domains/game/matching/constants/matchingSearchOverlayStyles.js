@@ -4,7 +4,7 @@ export const MATCHING_SEARCH_OVERLAY_CLASS =
 
 /** 매칭 중 안내 문구입니다. */
 export const MATCHING_SEARCH_OVERLAY_MESSAGE_CLASS =
-  "font-subheading text-[clamp(1.4rem,2.2vw,1.8rem)] font-bold text-[#f5f0e6] [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.4rem,2.2vw,1.8rem)] font-bold text-[#f5f0e6] [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]"
 
 /** 매칭 취소 버튼입니다. */
 export const MATCHING_SEARCH_OVERLAY_CANCEL_CLASS =
@@ -12,7 +12,7 @@ export const MATCHING_SEARCH_OVERLAY_CANCEL_CLASS =
 
 /** Chrome의 버튼 기본/확장 스타일과 분리한 취소 문구 스타일입니다. */
 export const MATCHING_SEARCH_OVERLAY_CANCEL_TEXT_CLASS =
-  "relative block font-subheading text-[clamp(1rem,1.4vw,1.15rem)] font-bold !text-[#e2c792] [-webkit-text-fill-color:#e2c792] opacity-100"
+  "relative block font-subheading app-text-scaled [--app-text-size:clamp(1rem,1.4vw,1.15rem)] font-bold !text-[#e2c792] [-webkit-text-fill-color:#e2c792] opacity-100"
 
 /** 별도 문구를 넘기지 않았을 때 보여줄 기본 메시지입니다. */
 export const MATCHING_SEARCH_OVERLAY_DEFAULT_MESSAGE = "매칭 중입니다..."

@@ -35,7 +35,7 @@ export default function SetupChoiceRow({ label, description, options, value, onC
         ariaLabel={label}
         inputFieldSrc={GAME_SETUP_ASSETS.inputField}
         arrowSrc={GAME_SETUP_ASSETS.arrow}
-        valueClassName="pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(1.02rem,1.45vw,1.18rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+        valueClassName="pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.45vw,1.18rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
         valueWidthClassName="relative w-[clamp(6.25rem,10.5vw,7.5rem)]"
         buttonClassName="group block w-[clamp(1.9rem,2.55vw,2.15rem)] cursor-pointer border-0 bg-transparent p-0 disabled:cursor-default disabled:opacity-40"
         arrowWrapClassName="interactive-scale-sm block"

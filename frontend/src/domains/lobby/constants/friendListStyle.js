@@ -31,14 +31,14 @@ export const FRIEND_SEARCH_ZONE_CLASS =
 
 // "친구 검색" 같은 검색 영역 제목 스타일입니다.
 export const FRIEND_SEARCH_LABEL_CLASS =
-  "mb-1.5 font-subheading text-[14px] font-bold tracking-wide text-[#ebe2cc]"
+  "mb-1.5 font-subheading app-text-scaled [--app-text-size:14px] font-bold tracking-wide text-[#ebe2cc]"
 
 // 검색 입력창 배경 이미지 스타일입니다.
 export const FRIEND_SEARCH_INPUT_FRAME_CLASS = "block h-auto w-full select-none"
 
 // 배경 이미지 위에 겹쳐지는 실제 input 스타일입니다.
 export const FRIEND_SEARCH_INPUT_CLASS =
-  "absolute inset-0 bg-transparent pl-[17%] pr-[6%] font-subheading text-[12px] leading-none text-white/85 outline-none placeholder:text-white/65"
+  "absolute inset-0 bg-transparent pl-[17%] pr-[6%] font-subheading app-text-scaled [--app-text-size:12px] leading-none text-white/85 outline-none placeholder:text-white/65"
 
 // 친구 목록 탭 버튼들을 가로로 배치하는 영역 스타일입니다.
 export const FRIEND_VIEW_TAB_LIST_CLASS =
@@ -54,7 +54,7 @@ export const FRIEND_VIEW_TAB_IMAGE_CLASS =
 
 // 탭 버튼 이미지 위에 올라가는 글자 스타일입니다.
 export const FRIEND_VIEW_TAB_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.68rem,0.95vw,0.82rem)] font-bold tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.95vw,0.82rem)] font-bold tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 // 접고 펼칠 수 있는 친구 그룹 전체 박스 스타일입니다.
 export const FRIEND_FOLDER_SECTION_CLASS =
@@ -74,7 +74,7 @@ export const FRIEND_FOLDER_HEADER_CLASS =
 export const FRIEND_FOLDER_ICON_CLASS = "h-4 w-4 shrink-0 select-none"
 
 // 폴더 제목 텍스트 스타일입니다.
-export const FRIEND_FOLDER_LABEL_CLASS = "font-subheading text-[13px] text-white/90"
+export const FRIEND_FOLDER_LABEL_CLASS = "font-subheading app-text-scaled [--app-text-size:13px] text-white/90"
 
 // 폴더 오른쪽 화살표 아이콘 스타일입니다.
 export const FRIEND_FOLDER_CHEVRON_CLASS = "ml-auto h-3 w-3 shrink-0 select-none opacity-90"
@@ -114,7 +114,7 @@ export const FRIEND_ROW_INFO_CLASS = "min-w-0 flex-1"
 
 // 친구 이름 텍스트 스타일입니다.
 export const FRIEND_ROW_NAME_CLASS =
-  "truncate font-subheading text-[clamp(0.8rem,1.05vw,0.95rem)] leading-tight text-white"
+  "truncate font-subheading app-text-scaled [--app-text-size:clamp(0.8rem,1.05vw,0.95rem)] leading-tight text-white"
 
 // 접속 상태 아이콘과 글자를 나란히 두는 영역 스타일입니다.
 export const FRIEND_ROW_STATUS_WRAP_CLASS = "mt-1 flex items-center gap-1.5"
@@ -127,7 +127,7 @@ export const FRIEND_ROW_OFFLINE_OVERLAY_CLASS =
   "pointer-events-none absolute inset-0 rounded-full bg-black/80"
 
 // 접속 상태 글자의 공통 스타일입니다.
-export const FRIEND_ROW_STATUS_TEXT_CLASS = "text-[10px] leading-none"
+export const FRIEND_ROW_STATUS_TEXT_CLASS = "app-text-scaled [--app-text-size:10px] leading-none"
 
 // 친구 목록 기본 탭 전체 레이아웃 스타일입니다.
 export const FRIEND_LIST_TAB_CLASS = "flex h-full min-h-0 flex-col"
@@ -137,7 +137,7 @@ export const FRIEND_LIST_FILTER_RESULT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 기본 탭 로컬 검색 결과가 없을 때 문구 스타일입니다.
-export const FRIEND_LIST_FILTER_EMPTY_CLASS = "mt-6 text-center text-[11px] text-white/50"
+export const FRIEND_LIST_FILTER_EMPTY_CLASS = "mt-6 text-center app-text-scaled [--app-text-size:11px] text-white/50"
 
 // 친구 그룹 안의 row 목록이 너무 길어질 때 스크롤되게 하는 스타일입니다.
 export const FRIEND_TAB_SCROLLABLE_LIST_CLASS =
@@ -154,7 +154,7 @@ export const FRIEND_REQUEST_RESULT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[clamp(2.6rem,4.2vw,3.1rem)] pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 검색 결과가 없거나 검색 전일 때 보여주는 문구 스타일입니다.
-export const FRIEND_REQUEST_EMPTY_CLASS = "mt-10 text-center text-[11px] text-white/50"
+export const FRIEND_REQUEST_EMPTY_CLASS = "mt-10 text-center app-text-scaled [--app-text-size:11px] text-white/50"
 
 // 친구 신청 탭 좌측 하단 고정 뒤로가기 버튼 스타일입니다.
 export const FRIEND_REQUEST_BACK_BUTTON_CLASS = "absolute bottom-0 left-0 z-10"
@@ -172,7 +172,7 @@ export const FRIEND_ACCEPT_ALL_BUTTON_CLASS =
 
 // "전부 수락" 버튼 안 글자 스타일입니다.
 export const FRIEND_ACCEPT_ALL_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.62rem,0.9vw,0.76rem)] font-bold tracking-wide text-[#e8f0dc] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,0.9vw,0.76rem)] font-bold tracking-wide text-[#e8f0dc] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
 
 // 새로고침 이미지 버튼 스타일입니다.
 export const FRIEND_ACCEPT_REFRESH_BUTTON_CLASS =
@@ -186,7 +186,7 @@ export const FRIEND_ACCEPT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 받은 요청이 없을 때 보여줄 문구 스타일입니다.
-export const FRIEND_ACCEPT_EMPTY_CLASS = "mt-10 text-center text-[11px] text-white/50"
+export const FRIEND_ACCEPT_EMPTY_CLASS = "mt-10 text-center app-text-scaled [--app-text-size:11px] text-white/50"
 
 // 수락 탭 아래쪽 뒤로가기 버튼 여백입니다.
 export const FRIEND_ACCEPT_BACK_BUTTON_CLASS = "mt-2"
@@ -218,7 +218,7 @@ export const RECOMMENDED_FRIEND_TEXT_WRAP_CLASS = "min-w-0"
 
 // 추천 친구 이름 텍스트 스타일입니다.
 export const RECOMMENDED_FRIEND_NAME_CLASS =
-  "truncate font-subheading text-[clamp(0.78rem,1vw,0.92rem)] leading-tight text-white"
+  "truncate font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1vw,0.92rem)] leading-tight text-white"
 
 // 추천 친구 접속 상태 영역 스타일입니다.
 export const RECOMMENDED_FRIEND_STATUS_WRAP_CLASS = "mt-0.5 flex items-center gap-1.5"
@@ -231,7 +231,7 @@ export const RECOMMENDED_FRIEND_OFFLINE_OVERLAY_CLASS =
   "pointer-events-none absolute inset-0 rounded-full bg-black/80"
 
 // 접속 상태 글자의 공통 스타일입니다.
-export const RECOMMENDED_FRIEND_STATUS_TEXT_CLASS = "text-[9px] leading-none"
+export const RECOMMENDED_FRIEND_STATUS_TEXT_CLASS = "app-text-scaled [--app-text-size:9px] leading-none"
 
 // 차단/친구 신청 버튼들을 묶는 오른쪽 영역 스타일입니다.
 export const RECOMMENDED_FRIEND_ACTIONS_CLASS =

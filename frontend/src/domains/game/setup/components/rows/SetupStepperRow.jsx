@@ -64,7 +64,7 @@ export default function SetupStepperRow({
         ariaLabel={label}
         inputFieldSrc={GAME_SETUP_ASSETS.inputField}
         arrowSrc={GAME_SETUP_ASSETS.arrow}
-        valueClassName="pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(1.02rem,1.45vw,1.18rem)] font-bold tabular-nums text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+        valueClassName="pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.45vw,1.18rem)] font-bold tabular-nums text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
         valueWidthClassName={
           unit
             ? "relative w-[clamp(6.25rem,10.5vw,7.5rem)]"

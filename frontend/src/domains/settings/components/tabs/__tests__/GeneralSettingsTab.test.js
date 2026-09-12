@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { readFileSync } from "node:fs"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
@@ -201,67 +202,72 @@ test("F-15(AC-06): 새로고침을 흉내내도(같은 store를 다시 마운트
 
 // F-15(AC-02): "텍스트 크기" 설정의 실제 소비자.
 //
-// 별도 클래스(.app-text-scalable { font-size: calc(1em * var(--app-text-scale)) })로
-// 배율을 얹던 이전 방식은 두 가지 이유로 실제 화면에 반영되지 않았다:
-//   (1) 그 규칙은 @layer components에 있어, 같은 요소의 Tailwind font-size 유틸리티
-//       (@layer utilities, 나중 레이어)에 밀린다.
-//   (2) font-size의 1em은 "부모의 글자 크기"라, 적용되더라도 원래 clamp() 크기가 아니라
-//       전혀 다른 기준으로 바뀐다(기본 배율에서도 크기가 달라진다).
-// 그래서 배율은 font-size 선언 자체에 곱한다. 아래 시험은 실제 렌더된 요소의 클래스가
-// 그 형태인지, 그리고 원래 clamp 경계값이 그대로 남아 있는지 확인한다.
-function fontSizeUtility(className) {
-  const match = className.match(/text-\[(clamp\(.+?\))\](?=\s|$)/)
-  assert.notEqual(match, null, `font-size 유틸리티가 없습니다: ${className}`)
+// 앱 전체(인게임 제외)의 명시적 font-size 선언은 공용 .app-text-scaled 유틸리티 +
+// --app-text-size 커스텀 속성으로 배율을 받는다(index.css 참고). 설정 화면도 다른 화면과
+// 완전히 같은 방식을 쓰며, 원래 크기 값을 한 글자도 바꾸지 않고 그대로 커스텀 속성에
+// 옮긴다 — 아래 시험은 실제 렌더된 요소가 그 형태인지 확인한다.
+//
+// 이전에 실패했던 방식들:
+//   - .app-text-scalable { font-size: calc(1em * var(--app-text-scale)) }: @layer components
+//     규칙이라 같은 요소의 Tailwind font-size 유틸리티(@layer utilities)에 밀렸고, 1em은
+//     "부모 크기"라 적용되더라도 원래 clamp 크기가 아닌 값이 됐다.
+//   - body의 font-size 상속만: 스스로 font-size를 지정하는 요소에는 닿지 않는다.
+function appTextSizeValue(className) {
+  const match = className.match(/\[--app-text-size:([^\]]+)\]/)
+  assert.notEqual(match, null, `--app-text-size 선언이 없습니다: ${className}`)
   return match[1]
 }
 
-function assertScaledFontSize(element, expectedTerms, label) {
+function assertScaledFontSize(element, originalFontSize, label) {
   const classNames = element.className.split(/\s+/)
+
+  assert.ok(
+    classNames.includes("app-text-scaled"),
+    `${label}: 배율 유틸리티(app-text-scaled)를 달아야 실제 크기가 설정을 따른다`,
+  )
   assert.ok(
     !classNames.includes("app-text-scalable"),
     `${label}: 유틸리티에 밀리는 .app-text-scalable에 다시 의존하면 안 된다`,
   )
-
-  const fontSize = fontSizeUtility(element.className)
-
   assert.equal(
-    (element.className.match(/text-\[clamp\(/g) ?? []).length,
+    (element.className.match(/\[--app-text-size:/g) ?? []).length,
     1,
-    `${label}: font-size 유틸리티가 둘 이상이면 어느 쪽이 이길지 알 수 없다`,
+    `${label}: --app-text-size가 둘 이상이면 어느 쪽이 이길지 알 수 없다`,
+  )
+  assert.equal(
+    element.className.match(/(?:^|\s)text-\[(?:clamp\(|[0-9.]+(?:rem|px|em)\])/),
+    null,
+    `${label}: 배율 없는 기본 font-size 유틸리티가 남아 있으면 배율이 무시된다`,
   )
 
-  for (const term of expectedTerms) {
-    assert.ok(
-      fontSize.includes(`calc(${term}*var(--app-text-scale,1))`),
-      `${label}: 원래 값 ${term}에 배율을 곱한 항이 있어야 한다 — ${fontSize}`,
-    )
-  }
+  // 원래 크기 값이 한 글자도 바뀌지 않아야 기본 배율(1)에서 기존 화면과 동일하다.
   assert.equal(
-    (fontSize.match(/var\(--app-text-scale,1\)/g) ?? []).length,
-    expectedTerms.length,
-    `${label}: clamp의 모든 항(최소·선호·최대)에 같은 배율을 곱해야 한다`,
+    appTextSizeValue(element.className),
+    originalFontSize,
+    `${label}: 원래 크기 값을 그대로 옮겨야 한다`,
   )
 }
 
-test("F-15(AC-02): 본문 라벨의 font-size 선언 자체가 --app-text-scale을 곱한다(경계값 보존)", () => {
+test("F-15(AC-02): 본문 라벨이 공용 배율 유틸리티로 원래 clamp 크기를 그대로 싣는다", () => {
   const { getByText } = render(React.createElement(GeneralSettingsTab))
 
-  // 원래 라벨 크기 clamp(1.02rem, 1.5vw, 1.18rem) — 세 항 모두 그대로 남아 있어야 한다.
-  assertScaledFontSize(getByText("친구 초대"), ["1.02rem", "1.5vw", "1.18rem"], "본문 라벨")
+  // 원래 라벨 크기 clamp(1.02rem,1.5vw,1.18rem) — 세 항 모두 그대로 남아 있어야 한다.
+  assertScaledFontSize(getByText("친구 초대"), "clamp(1.02rem,1.5vw,1.18rem)", "본문 라벨")
 })
 
 test("F-15(AC-02): 섹션 제목도 같은 방식으로 배율을 받는다", () => {
   const { getByText } = render(React.createElement(GeneralSettingsTab))
 
-  assertScaledFontSize(getByText("알림"), ["0.88rem", "1.15vw", "1rem"], "섹션 제목")
+  assertScaledFontSize(getByText("알림"), "clamp(0.88rem,1.15vw,1rem)", "섹션 제목")
 })
 
-test("F-15(AC-02): 배율 변수가 없으면 fallback 1이라 기존 크기와 같다", () => {
-  const { getByText } = render(React.createElement(GeneralSettingsTab))
+test("F-15(AC-02): 배율은 index.css의 한 규칙에서만 곱해지고 fallback이 1이다", () => {
+  const indexCss = readFileSync(new URL("../../../../../app/index.css", import.meta.url), "utf8")
 
-  // calc(x*var(--app-text-scale,1))에서 변수가 없을 때의 fallback이 1이어야
+  // calc(var(--app-text-size,...) * var(--app-text-scale,1)) — 배율 변수가 없을 때 1이어야
   // 설정을 저장한 적 없는 화면이 기존과 동일하다(calc(x*1) === x).
-  const fontSize = fontSizeUtility(getByText("친구 초대").className)
-  assert.ok(!fontSize.includes("var(--app-text-scale)"), "fallback 없는 var()는 값이 사라진다")
-  assert.match(fontSize, /var\(--app-text-scale,1\)/)
+  assert.match(
+    indexCss,
+    /\.app-text-scaled\s*\{\s*font-size:\s*calc\(var\(--app-text-size,\s*1rem\)\s*\*\s*var\(--app-text-scale,\s*1\)\);?\s*\}/,
+  )
 })

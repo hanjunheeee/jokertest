@@ -94,11 +94,150 @@ test("index.css: 유틸리티에 밀리던 .app-text-scalable 규칙은 남아 �
   )
 })
 
+// ── 화면 전체 확대 금지 검사 ────────────────────────────────────────────────
+//
+// html·:root의 font-size를 배율에 묶거나 zoom을 쓰면 rem 기반 간격·프레임까지 함께
+// 움직여 "텍스트 크기"가 아니라 화면 전체 확대가 된다. 이전 구현의 검사는 소스를 통째로
+// 정규식에 물려서 **주석 안의 "html"** 에서 시작해 그 다음 실제 규칙(.app-text-scaled)의
+// font-size까지 한 덩어리로 읽어 잘못 걸렸다. 그래서 주석을 먼저 걷어내고 규칙의
+// 선택자·선언을 실제로 갈라 본다.
+
+/** CSS 주석을 걷어낸다 — 주석 속 설명 문구가 규칙으로 오인되지 않게 한다. */
+function stripCssComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "")
+}
+
+/**
+ * `{ selector, declarations }` 목록으로 쪼갠다. 중첩 블록(@layer·@theme 안의 규칙)도 각각
+ * 하나의 규칙으로 펼치고, 각 규칙의 declarations에는 그 블록이 "직접" 가진 선언만 담는다
+ * (중첩 규칙의 선언이 바깥 규칙의 것으로 섞이지 않는다).
+ */
+function parseCssRules(css) {
+  const rules = []
+  const stack = []
+  let buffer = ""
+
+  for (const char of css) {
+    if (char === "{") {
+      stack.push({ selector: buffer.trim(), declarations: "" })
+      buffer = ""
+      continue
+    }
+    if (char === "}") {
+      const rule = stack.pop()
+      if (!rule) continue
+      rule.declarations += buffer
+      buffer = ""
+      rules.push(rule)
+      continue
+    }
+
+    buffer += char
+    if (char === ";") {
+      // 블록 안이면 그 블록의 선언으로, 최상위면(@import 등) 버린다 — 어느 쪽이든
+      // 다음 규칙의 선택자에 앞 문장이 섞이지 않게 여기서 끊는다.
+      if (stack.length > 0) stack[stack.length - 1].declarations += buffer
+      buffer = ""
+    }
+  }
+
+  return rules
+}
+
+/** `html`·`:root` 자체(의사 클래스가 붙은 형태 포함)를 가리키는 선택자인지. */
+const ROOT_COMPOUND = /^(?:html|:root)(?::[a-z-]+(?:\([^)]*\))?)*$/i
+
+function targetsRootElement(selector) {
+  return selector
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .some((part) => {
+      // 자손·자식 결합자로 끊어 마지막 compound만 본다 — `html:fullscreen body`가
+      // 가리키는 것은 body이지 root가 아니다.
+      const compounds = part.split(/\s*[>+~]\s*|\s+/).filter(Boolean)
+      return ROOT_COMPOUND.test(compounds[compounds.length - 1])
+    })
+}
+
+/** 선언 블록에서 `prop: value` 쌍을 뽑는다(@apply 같은 at-rule은 값 검사 대상이 아니다). */
+function declarationsOf(block) {
+  return block
+    .split(";")
+    .map((piece) => piece.trim())
+    .filter((piece) => piece && !piece.startsWith("@") && piece.includes(":"))
+    .map((piece) => {
+      const colon = piece.indexOf(":")
+      return { property: piece.slice(0, colon).trim().toLowerCase(), value: piece.slice(colon + 1) }
+    })
+    .filter(({ property }) => property)
+}
+
+/**
+ * 금지 사항을 어긴 선언 목록을 돌려준다.
+ *   (1) html·:root 자체의 font-size를 --app-text-* 변수에 묶는 것
+ *   (2) 어디서든 zoom을 --app-text-* 변수에 묶는 것(화면 전체 확대)
+ *   (3) html·:root에 zoom을 거는 것
+ */
+function findWholeScreenZoomViolations(css) {
+  const violations = []
+
+  for (const { selector, declarations } of parseCssRules(stripCssComments(css))) {
+    const isRoot = targetsRootElement(selector)
+
+    for (const { property, value } of declarationsOf(declarations)) {
+      const scaledByAppTextVar = value.includes("--app-text")
+
+      if (property === "zoom" && (isRoot || scaledByAppTextVar)) {
+        violations.push(`${selector} { ${property}:${value} }`)
+        continue
+      }
+      if (property === "font-size" && isRoot && scaledByAppTextVar) {
+        violations.push(`${selector} { ${property}:${value} }`)
+      }
+    }
+  }
+
+  return violations
+}
+
 test("index.css: 배율이 레이아웃 간격까지 확대하는 화면 전체 zoom이 아니다", () => {
-  // html 요소의 font-size나 zoom을 건드리면 rem 기반 간격·프레임이 함께 움직인다.
-  assert.ok(!/\bzoom:\s*var\(--app-text-scale/.test(indexCss))
-  assert.ok(
-    !/html[^{]*\{[^}]*font-size:\s*calc\([^}]*--app-text-scale/s.test(indexCss),
-    "html의 font-size를 배율로 바꾸면 rem 기반 레이아웃 전체가 확대된다",
+  assert.deepEqual(
+    findWholeScreenZoomViolations(indexCss),
+    [],
+    "html·:root의 font-size를 배율로 바꾸거나 zoom을 쓰면 rem 기반 레이아웃 전체가 확대된다",
   )
+})
+
+test("index.css: 화면 전체 확대 검사가 실제 금지 코드를 잡아낸다(검사 자체의 회귀 방지)", () => {
+  // 통과만 하는 검사는 아무것도 고정하지 못한다 — 금지된 형태를 직접 넣어 걸리는지 본다.
+  const forbidden = [
+    "html { font-size: calc(1rem * var(--app-text-scale, 1)); }",
+    ":root { font-size: calc(1rem * var(--app-text-scale, 1)); }",
+    "html:fullscreen { font-size: calc(16px * var(--app-text-scale)); }",
+    "body { zoom: var(--app-text-scale, 1); }",
+    "html { zoom: 1.1; }",
+    "@layer base { html { font-size: calc(1rem * var(--app-text-scale, 1)); } }",
+  ]
+  for (const css of forbidden) {
+    assert.equal(
+      findWholeScreenZoomViolations(css).length,
+      1,
+      `금지된 선언을 잡지 못했다: ${css}`,
+    )
+  }
+
+  // 반대로 지금의 구현 형태는 걸리지 않아야 한다.
+  const allowed = [
+    // 주석이 html을 언급해도 그 뒤의 실제 규칙과 이어 읽지 않는다(이 검사의 원래 결함).
+    "/* html/:root의 font-size는 건드리지 않는다 */\n" +
+      ".app-text-scaled { font-size: calc(var(--app-text-size, 1rem) * var(--app-text-scale, 1)); }",
+    "body { font-size: calc(1rem * var(--app-text-scale, 1)); }",
+    // html에 붙지만 실제로 크기를 받는 요소는 자손이다.
+    "html:fullscreen body { font-size: calc(1rem * var(--app-text-scale, 1)); }",
+    "html, body { background: black; }",
+  ]
+  for (const css of allowed) {
+    assert.deepEqual(findWholeScreenZoomViolations(css), [], `잘못 걸린 형태: ${css}`)
+  }
 })

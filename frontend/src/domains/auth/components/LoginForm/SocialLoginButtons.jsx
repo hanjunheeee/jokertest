@@ -19,7 +19,7 @@ export default function SocialLoginButtons({ rememberMe = false }) {
   return (
     <>
       {/* 기본 로그인과 외부 계정 로그인을 구분하는 문구입니다. */}
-      <p className="text-center font-subheading text-[11px] font-bold leading-none text-text-body/85">또는</p>
+      <p className="text-center font-subheading app-text-scaled [--app-text-size:11px] font-bold leading-none text-text-body/85">또는</p>
 
       {/* 각 서비스별 로그인 이미지 버튼입니다. */}
       <div className="flex flex-col gap-2">

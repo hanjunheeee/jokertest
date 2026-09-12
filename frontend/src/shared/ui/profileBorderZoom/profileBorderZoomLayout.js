@@ -22,7 +22,7 @@ export const PROFILE_BORDER_ZOOM_ILLUSTRATION_CLASS =
   "block h-[min(18rem,40vh)] w-[min(18rem,40vh)] select-none object-contain"
 
 export const PROFILE_BORDER_ZOOM_TITLE_CLASS =
-  "font-subheading border-t border-[#2a1810]/12 px-[clamp(0.85rem,1.6vw,1.1rem)] py-[clamp(0.55rem,1vh,0.75rem)] text-center text-[clamp(0.82rem,1.05vw,0.94rem)] font-black leading-snug text-[#120a06] antialiased"
+  "font-subheading border-t border-[#2a1810]/12 px-[clamp(0.85rem,1.6vw,1.1rem)] py-[clamp(0.55rem,1vh,0.75rem)] text-center app-text-scaled [--app-text-size:clamp(0.82rem,1.05vw,0.94rem)] font-black leading-snug text-[#120a06] antialiased"
 
 export const PROFILE_BORDER_ZOOM_CLOSE_BTN_CLASS =
   "interactive-scale absolute right-[clamp(0.35rem,2%,0.65rem)] top-[clamp(0.55rem,2.5%,0.85rem)] z-20 cursor-pointer border-0 bg-transparent p-0 leading-none"

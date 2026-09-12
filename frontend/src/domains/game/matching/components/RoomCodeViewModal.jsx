@@ -42,7 +42,7 @@ const POPUP_CLOSE_BUTTON = "/button/팝업 닫기 버튼.png"
 
 // 복사 실패 안내 문구 스타일입니다. 복사 버튼 바로 아래(프레임 하단 영역)에 놓입니다.
 const COPY_ERROR_CLASS =
-  "mx-auto mt-[0.6rem] max-w-[90%] text-center font-subheading text-[clamp(0.78rem,1.15vw,0.95rem)] font-semibold leading-snug text-[#ffb3a7] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
+  "mx-auto mt-[0.6rem] max-w-[90%] text-center font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.15vw,0.95rem)] font-semibold leading-snug text-[#ffb3a7] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
 
 const FRAME_VARIANTS = {
   hidden: {

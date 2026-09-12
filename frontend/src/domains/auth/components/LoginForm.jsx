@@ -10,7 +10,7 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
   return (
     <>
       <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] font-subheading text-[13px] font-bold leading-relaxed text-text-body/90">
+        <p className="mt-[40px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
           계정을 로그인 하여 모험을 계속하세요
         </p>
       </header>

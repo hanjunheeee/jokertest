@@ -33,11 +33,11 @@ const SUMMARY_CLASS =
 
 /** 합계·정원 등 파생 수치 한 줄 */
 const SUMMARY_LINE_CLASS =
-  "font-subheading text-[clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#2a1810]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#2a1810]"
 
 /** 검증 실패 안내 — 양피지 테마 위에서 읽히도록 붉은 계열만 다르게 쓴다. */
 const SUMMARY_ERROR_CLASS =
-  "font-subheading text-[clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#8c1c13]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#8c1c13]"
 
 export default function RoleCompositionSection({
   mode,

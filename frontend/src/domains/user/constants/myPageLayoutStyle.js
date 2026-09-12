@@ -26,7 +26,7 @@ export const MY_PAGE_SUMMARY_BLOOD_RECORD_CLASS =
 export const MY_PAGE_ACTION_BUTTONS_WRAP_CLASS = "absolute top-[2.5%] right-[0.5%] z-20 flex flex-col items-stretch gap-[clamp(0.35rem,0.75vh,0.55rem)] sm:top-[3%] sm:right-[1%]"
 export const MY_PAGE_ACTION_BUTTON_CLASS = "relative block w-[clamp(6.25rem,10vw,8.5rem)] cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-85"
 export const MY_PAGE_ACTION_BUTTON_IMG_CLASS = "block h-auto w-full select-none"
-export const MY_PAGE_ACTION_BUTTON_TEXT_CLASS = "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.78rem,1.05vw,0.92rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+export const MY_PAGE_ACTION_BUTTON_TEXT_CLASS = "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.05vw,0.92rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
 
 // 피의 기록 프레임
 export const BLOOD_RECORD_TEXT_SHADOW = "0 1px 2px rgba(255,255,255,0.35), 0 1px 3px rgba(0,0,0,0.5)"

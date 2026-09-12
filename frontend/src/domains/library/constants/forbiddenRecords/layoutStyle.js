@@ -18,10 +18,10 @@ export const LIBRARY_BOOK_RIGHT_PAGE_LOCKED_CLASS =
 export const LIBRARY_FORBIDDEN_SECTION_CLASS = "not-first:mt-[clamp(0.85rem,1.8vh,1.25rem)]"
 
 export const LIBRARY_FORBIDDEN_SECTION_TITLE_CLASS =
-  `${LIBRARY_TEXT_FONT_CLASS} text-[clamp(1.08rem,1.38vw,1.24rem)] font-extrabold leading-snug ${LIBRARY_INK_TITLE_COLOR_CLASS} ${LIBRARY_INK_READABILITY_CLASS}`
+  `${LIBRARY_TEXT_FONT_CLASS} app-text-scaled [--app-text-size:clamp(1.08rem,1.38vw,1.24rem)] font-extrabold leading-snug ${LIBRARY_INK_TITLE_COLOR_CLASS} ${LIBRARY_INK_READABILITY_CLASS}`
 
 export const LIBRARY_FORBIDDEN_SECTION_BODY_CLASS =
-  `whitespace-pre-line ${LIBRARY_TEXT_FONT_CLASS} text-[clamp(0.8rem,1.15vw,0.97rem)] font-medium leading-[1.7] ${LIBRARY_INK_BODY_COLOR_CLASS} ${LIBRARY_INK_READABILITY_CLASS}`
+  `whitespace-pre-line ${LIBRARY_TEXT_FONT_CLASS} app-text-scaled [--app-text-size:clamp(0.8rem,1.15vw,0.97rem)] font-medium leading-[1.7] ${LIBRARY_INK_BODY_COLOR_CLASS} ${LIBRARY_INK_READABILITY_CLASS}`
 
 export const LIBRARY_FORBIDDEN_SECTION_BODY_WRAP_CLASS =
   "mt-[clamp(0.35rem,0.8vh,0.55rem)] flex flex-col gap-[clamp(0.55rem,1.2vh,0.85rem)]"
@@ -45,13 +45,13 @@ export const LIBRARY_FORBIDDEN_UNLOCK_ROW_CLASS =
   "flex items-center justify-center gap-[clamp(0.12rem,0.35vw,0.22rem)]"
 
 export const LIBRARY_FORBIDDEN_UNLOCK_BRACKET_CLASS =
-  `${LIBRARY_FORBIDDEN_UNLOCK_INK_CLASS} shrink-0 text-[clamp(1.75rem,2.25vw,2.35rem)] leading-none`
+  `${LIBRARY_FORBIDDEN_UNLOCK_INK_CLASS} shrink-0 app-text-scaled [--app-text-size:clamp(1.75rem,2.25vw,2.35rem)] leading-none`
 
 export const LIBRARY_FORBIDDEN_UNLOCK_CONDITION_CLASS =
-  `${LIBRARY_FORBIDDEN_UNLOCK_INK_CLASS} shrink-0 whitespace-nowrap text-[clamp(1.15rem,1.55vw,1.75rem)] leading-none`
+  `${LIBRARY_FORBIDDEN_UNLOCK_INK_CLASS} shrink-0 whitespace-nowrap app-text-scaled [--app-text-size:clamp(1.15rem,1.55vw,1.75rem)] leading-none`
 
 export const LIBRARY_FORBIDDEN_UNLOCK_SUFFIX_CLASS =
-  `${LIBRARY_FORBIDDEN_UNLOCK_INK_CLASS} mt-[clamp(0.35rem,0.9vh,0.55rem)] text-[clamp(1.55rem,2vw,2.05rem)] leading-none`
+  `${LIBRARY_FORBIDDEN_UNLOCK_INK_CLASS} mt-[clamp(0.35rem,0.9vh,0.55rem)] app-text-scaled [--app-text-size:clamp(1.55rem,2vw,2.05rem)] leading-none`
 
 export const LIBRARY_FORBIDDEN_UNLOCK_CHALLENGE_GROUP_CLASS =
   "flex -translate-y-[clamp(0.55rem,1.35vh,0.9rem)] flex-col items-center"
@@ -63,16 +63,16 @@ const LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS =
   "antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.95),0_2px_10px_rgba(0,0,0,0.9)]"
 
 export const LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_LABEL_CLASS =
-  `${LIBRARY_TEXT_FONT_CLASS} ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} text-[clamp(0.9rem,1.15vw,1rem)] font-semibold leading-none text-[#f0e6d8]`
+  `${LIBRARY_TEXT_FONT_CLASS} ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} app-text-scaled [--app-text-size:clamp(0.9rem,1.15vw,1rem)] font-semibold leading-none text-[#f0e6d8]`
 
 export const LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_VALUE_CLASS =
-  `font-display ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} whitespace-nowrap text-[clamp(1.15rem,1.5vw,1.32rem)] font-medium leading-none text-white`
+  `font-display ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} whitespace-nowrap app-text-scaled [--app-text-size:clamp(1.15rem,1.5vw,1.32rem)] font-medium leading-none text-white`
 
 export const LIBRARY_FORBIDDEN_UNLOCK_REWARD_STACK_CLASS =
   "mt-[clamp(1.05rem,2.1vh,1.4rem)] flex flex-col items-center gap-[clamp(0.3rem,0.55vh,0.42rem)]"
 
 export const LIBRARY_FORBIDDEN_UNLOCK_REWARD_LABEL_CLASS =
-  `${LIBRARY_TEXT_FONT_CLASS} ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} text-[clamp(0.9rem,1.15vw,1rem)] font-semibold leading-none text-[#f0e6d8]`
+  `${LIBRARY_TEXT_FONT_CLASS} ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} app-text-scaled [--app-text-size:clamp(0.9rem,1.15vw,1rem)] font-semibold leading-none text-[#f0e6d8]`
 
 export const LIBRARY_FORBIDDEN_UNLOCK_REWARD_ROW_CLASS =
   "flex items-center justify-center gap-[clamp(0.75rem,1.35vw,1rem)]"
@@ -84,7 +84,7 @@ export const LIBRARY_FORBIDDEN_UNLOCK_REWARD_ICON_CLASS =
   "h-[clamp(1.4rem,1.9vw,1.7rem)] w-auto shrink-0 select-none object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]"
 
 export const LIBRARY_FORBIDDEN_UNLOCK_REWARD_COUNT_CLASS =
-  `font-display ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} text-[clamp(0.95rem,1.22vw,1.08rem)] font-medium leading-none text-white`
+  `font-display ${LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_INK_CLASS} app-text-scaled [--app-text-size:clamp(0.95rem,1.22vw,1.08rem)] font-medium leading-none text-white`
 
 export const LIBRARY_FORBIDDEN_UNLOCKED_BODY_CLASS =
-  `px-[8%] text-center ${LIBRARY_TEXT_FONT_CLASS} text-[clamp(0.9rem,1.15vw,1.02rem)] font-medium leading-[1.7] ${LIBRARY_INK_BODY_COLOR_CLASS} ${LIBRARY_INK_READABILITY_CLASS}`
+  `px-[8%] text-center ${LIBRARY_TEXT_FONT_CLASS} app-text-scaled [--app-text-size:clamp(0.9rem,1.15vw,1.02rem)] font-medium leading-[1.7] ${LIBRARY_INK_BODY_COLOR_CLASS} ${LIBRARY_INK_READABILITY_CLASS}`

@@ -38,7 +38,7 @@ export const GAME_RESULT_BANNER_WRAP_CLASS =
   "relative w-[clamp(16rem,34vw,28rem)] shrink-0 overflow-visible [container-type:inline-size]"
 
 export const GAME_RESULT_BANNER_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 z-[3] flex items-center justify-center px-[14%] pt-[2%] pb-[1%] font-display text-[clamp(2.5rem,10.5cqi,4.25rem)] font-medium leading-none tracking-normal antialiased [text-shadow:0_2px_6px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 z-[3] flex items-center justify-center px-[14%] pt-[2%] pb-[1%] font-display app-text-scaled [--app-text-size:clamp(2.5rem,10.5cqi,4.25rem)] font-medium leading-none tracking-normal antialiased [text-shadow:0_2px_6px_rgba(0,0,0,0.75)]"
 
 export const GAME_RESULT_BANNER_LABEL_WIN_CLASS = "text-[#f0d8a8]"
 export const GAME_RESULT_BANNER_LABEL_LOSE_CLASS = "text-[#d8d0c4]"
@@ -55,14 +55,14 @@ export const GAME_RESULT_PLAYER_LIST_INSET_CLASS =
   "absolute inset-0 z-[2] flex min-h-0 flex-col px-[9%] pb-[8%] pt-[7.5%]"
 
 export const GAME_RESULT_PLAYER_LIST_TITLE_CLASS =
-  "-mt-[0.35rem] mb-[clamp(0.35rem,1vh,0.55rem)] flex min-h-[clamp(2.75rem,10cqi,3.5rem)] shrink-0 items-center justify-center text-center font-display text-[clamp(1.5rem,3.5cqi,1.8rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "-mt-[0.35rem] mb-[clamp(0.35rem,1vh,0.55rem)] flex min-h-[clamp(2.75rem,10cqi,3.5rem)] shrink-0 items-center justify-center text-center font-display app-text-scaled [--app-text-size:clamp(1.5rem,3.5cqi,1.8rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 /** 승리 진영 뱃지 — 타이틀과 플레이어 목록 사이 */
 export const GAME_RESULT_WINNING_TEAM_BADGE_WRAP_CLASS =
   "mb-[clamp(0.55rem,1.4vh,0.85rem)] flex shrink-0 justify-center"
 
 export const GAME_RESULT_WINNING_TEAM_BADGE_CLASS =
-  "inline-flex items-center justify-center rounded-full border px-[clamp(0.7rem,3.2cqi,1rem)] py-[clamp(0.22rem,0.75vh,0.38rem)] font-subheading text-[clamp(0.72rem,2.9cqi,0.9rem)] font-bold leading-none tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "inline-flex items-center justify-center rounded-full border px-[clamp(0.7rem,3.2cqi,1rem)] py-[clamp(0.22rem,0.75vh,0.38rem)] font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,2.9cqi,0.9rem)] font-bold leading-none tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const GAME_RESULT_WINNING_TEAM_BADGE_CITIZEN_CLASS =
   "border-[#8fa8c8]/85 bg-[#152033]/85 text-[#d4e6ff]"
@@ -81,7 +81,7 @@ export const GAME_RESULT_ROSTER_CARD_WRAP_CLASS =
   "flex w-auto max-w-[min(88vw,26rem)] shrink-0 list-none flex-row items-center gap-[clamp(0.45rem,1.1vw,0.75rem)] rounded-md border border-[#3a2818]/70 bg-black/55 px-[clamp(0.45rem,1.1vw,0.7rem)] py-[clamp(0.35rem,0.85vh,0.52rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
 
 export const GAME_RESULT_ROSTER_JOB_LABEL_CLASS =
-  "shrink-0 font-subheading text-[clamp(0.78rem,1.65vw,0.92rem)] font-bold leading-none tracking-wide text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.65vw,0.92rem)] font-bold leading-none tracking-wide text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const GAME_RESULT_ROSTER_CARD_CLASS = "w-[clamp(4.25rem,7.2vw,5.35rem)] shrink-0"
 
@@ -89,10 +89,10 @@ export const GAME_RESULT_ROSTER_INFO_CLASS =
   "flex min-w-0 flex-col justify-center gap-[clamp(0.16rem,0.4vh,0.26rem)]"
 
 export const GAME_RESULT_ROSTER_NAME_CLASS =
-  "max-w-[clamp(6rem,18vw,9.5rem)] truncate font-subheading text-[clamp(0.95rem,2.25vw,1.15rem)] font-bold leading-tight text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]"
+  "max-w-[clamp(6rem,18vw,9.5rem)] truncate font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,2.25vw,1.15rem)] font-bold leading-tight text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]"
 
 export const GAME_RESULT_ROSTER_JOB_CLASS =
-  "max-w-[clamp(6rem,18vw,9.5rem)] truncate font-subheading text-[clamp(0.72rem,1.6vw,0.86rem)] font-bold leading-none text-[#c8a878] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "max-w-[clamp(6rem,18vw,9.5rem)] truncate font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1.6vw,0.86rem)] font-bold leading-none text-[#c8a878] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const GAME_RESULT_PLAYER_LIST_SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
 
@@ -114,10 +114,10 @@ export const GAME_RESULT_PLAYER_PROFILE_PHOTO_WRAP_CLASS =
   "absolute left-1/2 top-[46%] z-[1] aspect-square w-[67%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full"
 
 export const GAME_RESULT_PLAYER_NAME_CLASS =
-  "min-w-0 flex-1 truncate font-subheading text-[clamp(0.95rem,3.6cqi,1.18rem)] font-bold leading-tight text-white"
+  "min-w-0 flex-1 truncate font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,3.6cqi,1.18rem)] font-bold leading-tight text-white"
 
 export const GAME_RESULT_PLAYER_JOB_CLASS =
-  "shrink-0 font-subheading text-[clamp(0.86rem,3.2cqi,1.06rem)] font-bold leading-none text-[#c8a878] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.86rem,3.2cqi,1.06rem)] font-bold leading-none text-[#c8a878] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 /** 우측 MVP */
 export const GAME_RESULT_MVP_PANEL_CLASS =
@@ -127,7 +127,7 @@ export const GAME_RESULT_MVP_NAMEPLATE_WRAP_CLASS =
   "relative mb-[clamp(1rem,2.8vh,1.5rem)] w-[clamp(15rem,100cqi,20rem)] shrink-0 overflow-visible"
 
 export const GAME_RESULT_MVP_NAMEPLATE_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 z-[3] flex items-center justify-center px-[10%] pt-[3%] font-display text-[clamp(1.5rem,3.5cqi,1.8rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-0 z-[3] flex items-center justify-center px-[10%] pt-[3%] font-display app-text-scaled [--app-text-size:clamp(1.5rem,3.5cqi,1.8rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const GAME_RESULT_MVP_PORTRAIT_WRAP_CLASS =
   "relative w-[clamp(14rem,94cqi,19rem)] shrink-0 overflow-visible [container-type:inline-size]"
@@ -141,7 +141,7 @@ export const GAME_RESULT_MVP_PLAYER_NAME_INSET = {
 }
 
 export const GAME_RESULT_MVP_PLAYER_NAME_CLASS =
-  "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-display text-[clamp(1.15rem,8.8cqi,1.7rem)] font-medium leading-none tracking-normal text-black antialiased"
+  "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-display app-text-scaled [--app-text-size:clamp(1.15rem,8.8cqi,1.7rem)] font-medium leading-none tracking-normal text-black antialiased"
 
 /**
  * 로비 복귀 버튼 래퍼 — 게임 화면(viewport-shell__game) 우하단.

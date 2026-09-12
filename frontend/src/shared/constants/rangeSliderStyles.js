@@ -1,6 +1,6 @@
 /** RangeSlider 상단 — 현재 값 숫자 표시 */
 export const RANGE_SLIDER_VALUE_CLASS =
-  "mb-[0.12rem] pr-[clamp(0.5rem,0.9vw,0.7rem)] text-right font-subheading text-[clamp(1.22rem,1.75vw,1.42rem)] font-bold leading-none text-[#1a1008]"
+  "mb-[0.12rem] pr-[clamp(0.5rem,0.9vw,0.7rem)] text-right font-subheading app-text-scaled [--app-text-size:clamp(1.22rem,1.75vw,1.42rem)] font-bold leading-none text-[#1a1008]"
 
 /** 노브 반지름 — calc inset (트랙 밖으로 안 나가게) */
 export const RANGE_SLIDER_KNOB_HALF = "clamp(0.65rem,0.95vw,0.78rem)"

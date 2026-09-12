@@ -40,17 +40,17 @@ export const INVITED_GUESTS_JOB_TAB_BG_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill object-center"
 
 export const INVITED_GUESTS_JOB_TAB_LABEL_CLASS =
-  "relative z-10 font-subheading text-[clamp(0.62rem,0.82vw,0.74rem)] font-bold tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "relative z-10 font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,0.82vw,0.74rem)] font-bold tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const INVITED_GUESTS_JOB_TAB_LABEL_ACTIVE_CLASS = "text-[#e8f0dc]"
 
 export const INVITED_GUESTS_JOB_TAB_LABEL_INACTIVE_CLASS = "text-[#ebe2cc]/90"
 
 export const INVITED_GUESTS_JOB_TITLE_CLASS =
-  "font-display text-center text-[clamp(1.45rem,2.25vw,1.9rem)] font-medium leading-snug text-[#120a06] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.1)]"
+  "font-display text-center app-text-scaled [--app-text-size:clamp(1.45rem,2.25vw,1.9rem)] font-medium leading-snug text-[#120a06] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.1)]"
 
 export const INVITED_GUESTS_SECTION_TITLE_CLASS =
-  `${INVITED_GUESTS_TEXT} text-[clamp(1rem,1.32vw,1.14rem)] font-black leading-snug text-[#120a06]`
+  `${INVITED_GUESTS_TEXT} app-text-scaled [--app-text-size:clamp(1rem,1.32vw,1.14rem)] font-black leading-snug text-[#120a06]`
 
 export const INVITED_GUESTS_INTRO_SECTION_CLASS =
   "flex flex-col gap-[clamp(0.45rem,1vh,0.65rem)]"
@@ -61,7 +61,7 @@ export const INVITED_GUESTS_INTRO_ROW_CLASS =
 export const INVITED_GUESTS_INTRO_TEXT_STACK_CLASS = "flex min-w-0 flex-col gap-[clamp(0.35rem,0.75vh,0.5rem)]"
 
 export const INVITED_GUESTS_INTRO_TEXT_CLASS =
-  `${INVITED_GUESTS_TEXT} text-[clamp(0.68rem,0.92vw,0.8rem)] font-medium leading-[1.55]`
+  `${INVITED_GUESTS_TEXT} app-text-scaled [--app-text-size:clamp(0.68rem,0.92vw,0.8rem)] font-medium leading-[1.55]`
 
 export const INVITED_GUESTS_STANDING_IMAGE_WRAP_CLASS =
   "relative -translate-y-[clamp(0.55rem,1.2vh,0.85rem)] self-end"
@@ -91,7 +91,7 @@ export const INVITED_GUESTS_REWARD_ICON_CLASS =
   "h-[clamp(1.15rem,1.55vw,1.3rem)] w-auto shrink-0 select-none object-contain"
 
 export const INVITED_GUESTS_REWARD_COUNT_CLASS =
-  `${INVITED_GUESTS_TEXT} text-[clamp(0.74rem,0.98vw,0.86rem)] font-semibold tabular-nums`
+  `${INVITED_GUESTS_TEXT} app-text-scaled [--app-text-size:clamp(0.74rem,0.98vw,0.86rem)] font-semibold tabular-nums`
 
 export const INVITED_GUESTS_REWARD_BORDER_CLASS = "flex items-center gap-[0.2rem]"
 
@@ -102,4 +102,4 @@ export const INVITED_GUESTS_REWARD_BORDER_ICON_CLASS =
   "h-[clamp(1.25rem,1.65vw,1.45rem)] w-[clamp(1.25rem,1.65vw,1.45rem)] shrink-0 select-none object-contain"
 
 export const INVITED_GUESTS_REWARD_BORDER_LABEL_CLASS =
-  `${INVITED_GUESTS_TEXT} text-[clamp(0.72rem,0.94vw,0.82rem)] font-semibold leading-tight`
+  `${INVITED_GUESTS_TEXT} app-text-scaled [--app-text-size:clamp(0.72rem,0.94vw,0.82rem)] font-semibold leading-tight`

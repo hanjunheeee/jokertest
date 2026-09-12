@@ -14,7 +14,7 @@ export const ROOM_LIST_ACTION_BTN_CLASS =
 // 방 만들기/코드로 참가 라벨입니다. font-subheading(고딕 프레임과 어울리는 명조 계열),
 // 양피지색 텍스트, 한 단계 낮춘 굵기, 약한 그림자로 프레임보다 튀지 않게 합니다.
 export const ROOM_LIST_ACTION_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(1.05rem,1.5vw,1.28rem)] font-bold tracking-wide leading-none text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(1.05rem,1.5vw,1.28rem)] font-bold tracking-wide leading-none text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]"
 
 export const ROOM_LIST_ACTION_FRAME_CLASS = "block h-auto w-full select-none"
 
@@ -65,16 +65,16 @@ export const ROOM_LIST_ROW_TOP_ROW_CLASS = "flex items-center justify-between ga
 
 // 단계 배지: 방 이름보다 작고 대비가 낮은, 가장 눈에 덜 띄는 정보입니다.
 export const ROOM_LIST_ROW_STAGE_BADGE_CLASS =
-  "pointer-events-none shrink-0 font-subheading text-[clamp(0.58rem,0.78vw,0.68rem)] font-medium text-white/65 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
+  "pointer-events-none shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.58rem,0.78vw,0.68rem)] font-medium text-white/65 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
 
 export const ROOM_LIST_ROW_STATUS_BADGE_WRAP_CLASS = "flex shrink-0 items-center gap-[clamp(0.25rem,0.6vw,0.35rem)]"
 
 // 코드 방 배지입니다. 전용 자물쇠 아이콘 에셋이 없어 텍스트 배지로 대체합니다(별도 에셋 필요 사항).
 export const ROOM_LIST_ROW_LOCK_BADGE_CLASS =
-  "pointer-events-none rounded-sm border border-[#cbb27a]/50 bg-black/45 px-[0.4em] py-[0.05em] font-subheading text-[clamp(0.56rem,0.74vw,0.64rem)] font-bold text-[#e8d5a8] antialiased"
+  "pointer-events-none rounded-sm border border-[#cbb27a]/50 bg-black/45 px-[0.4em] py-[0.05em] font-subheading app-text-scaled [--app-text-size:clamp(0.56rem,0.74vw,0.64rem)] font-bold text-[#e8d5a8] antialiased"
 
 const ROOM_LIST_ROW_STATUS_BADGE_BASE_CLASS =
-  "pointer-events-none rounded-sm px-[0.4em] py-[0.05em] font-subheading text-[clamp(0.56rem,0.74vw,0.64rem)] font-bold antialiased"
+  "pointer-events-none rounded-sm px-[0.4em] py-[0.05em] font-subheading app-text-scaled [--app-text-size:clamp(0.56rem,0.74vw,0.64rem)] font-bold antialiased"
 
 export const ROOM_LIST_ROW_STATUS_BADGE_FULL_CLASS =
   `${ROOM_LIST_ROW_STATUS_BADGE_BASE_CLASS} border border-white/25 bg-black/55 text-white/70`
@@ -86,11 +86,11 @@ export const ROOM_LIST_ROW_BOTTOM_ROW_CLASS = "flex items-center justify-between
 
 // 방 이름: 카드에서 가장 눈에 띄어야 하는 정보입니다. 기존 #f0b45c보다 차분한 #f3d28d를 씁니다.
 export const ROOM_LIST_ROW_TITLE_CLASS =
-  "pointer-events-none min-w-0 flex-1 truncate text-left font-subheading text-[clamp(0.98rem,1.35vw,1.18rem)] font-bold leading-none text-[#f3d28d] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
+  "pointer-events-none min-w-0 flex-1 truncate text-left font-subheading app-text-scaled [--app-text-size:clamp(0.98rem,1.35vw,1.18rem)] font-bold leading-none text-[#f3d28d] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
 
 // 인원수: 작지만 명확하게 읽혀야 하는 정보입니다(semibold, tabular-nums로 자릿수 흔들림 방지).
 export const ROOM_LIST_ROW_COUNT_CLASS =
-  "pointer-events-none shrink-0 font-subheading text-[clamp(0.62rem,0.88vw,0.76rem)] font-semibold leading-none tabular-nums text-white/95 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,0.88vw,0.76rem)] font-semibold leading-none tabular-nums text-white/95 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 // 마감/진행중 카드를 어둡게 덮는 오버레이입니다.
 export const ROOM_LIST_ROW_DIM_OVERLAY_CLASS =
@@ -122,7 +122,7 @@ export const ROOM_LIST_PAGE_ARROW_IMG_CLASS = "block h-auto w-full select-none"
 
 // 현재 페이지 표시: 별도 막대 배경 없이 텍스트만 사용합니다(요구사항 8).
 export const ROOM_LIST_PAGE_TEXT_CLASS =
-  "shrink-0 px-1 font-subheading text-[clamp(0.95rem,1.25vw,1.1rem)] font-semibold tabular-nums text-[#e8d5a8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
+  "shrink-0 px-1 font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.1rem)] font-semibold tabular-nums text-[#e8d5a8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
 
 // pointer-events-auto: ROOM_LIST_FOOTER_CLASS가 빈 영역의 클릭을 흘려보내므로,
 // 실제 조작 대상인 이 버튼에서만 클릭을 다시 받습니다.
@@ -133,4 +133,4 @@ export const ROOM_LIST_ENTER_BTN_FRAME_CLASS = "block h-auto w-full select-none"
 
 // 입장하기 라벨도 방 만들기/코드로 참가와 같은 톤(양피지색, 한 단계 낮춘 굵기, 약한 그림자)으로 통일합니다.
 export const ROOM_LIST_ENTER_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.92rem,1.25vw,1.05rem)] font-bold tracking-wide leading-none text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.92rem,1.25vw,1.05rem)] font-bold tracking-wide leading-none text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]"

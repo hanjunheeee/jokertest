@@ -99,27 +99,44 @@ function resolveBrowserStorage() {
   }
 }
 
-function clampToRange(value, { min, max, fallback }) {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return fallback
-  return Math.min(max, Math.max(min, n))
+/**
+ * 저장된 값이 "실제로 숫자"인지 확인한다(AC-06).
+ *
+ * Number(value) 변환에 기대면 안 된다 — Number(null) === 0, Number("") === 0,
+ * Number("  ") === 0, Number([]) === 0, Number([50]) === 50, Number(true) === 1이라
+ * 손상된 localStorage 내용이 모두 "유효한 숫자"로 통과해 볼륨이 0으로 떨어지거나 엉뚱한
+ * 값이 된다. 숫자 타입이면서 유한한 값만 받아들이고, 나머지는 호출부가 현재값·기본값을
+ * 유지하게 한다.
+ * @param {unknown} value
+ */
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value)
 }
 
-/** 저장된 볼륨 맵 검증 — SOUND_SETTING_VOLUMES에 없는 id는 버리고, 숫자가 아닌 값은
- *  무시하며, 각 슬라이더의 min·max로 보정한다. 손상된 값이 그대로 슬라이더·오디오
- *  경로에 흘러들지 않게 한다(AC-06). */
+/** 숫자 타입·유한성 검증 후 min·max로 보정한다 — 검증에 실패하면 fallback을 그대로 쓴다. */
+function clampNumber(value, { min, max, fallback }) {
+  if (!isFiniteNumber(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+/** 저장된 볼륨 맵 검증 — SOUND_SETTING_VOLUMES에 없는 id는 버리고, 숫자가 아닌 값(null·
+ *  문자열·배열·boolean·NaN·Infinity)은 현재값(없으면 정의된 기본값)을 유지하며, 각
+ *  슬라이더의 min·max로 보정한다. 손상된 값이 그대로 슬라이더·오디오 경로에 흘러들지
+ *  않게 한다(AC-06). */
 function sanitizeVolumes(value, currentVolumes) {
-  if (typeof value !== "object" || value === null) return currentVolumes
+  // 현재값 자체가 손상됐을 수도 있으므로 먼저 "알려진 id + 유효한 숫자"만 남긴 기준을 만든다.
+  const base = {}
+  for (const { id, defaultValue } of SOUND_SETTING_VOLUMES) {
+    base[id] = isFiniteNumber(currentVolumes?.[id]) ? currentVolumes[id] : defaultValue
+  }
 
-  const next = { ...currentVolumes }
-  for (const { id, min, max, defaultValue } of SOUND_SETTING_VOLUMES) {
+  // 배열도 typeof === "object"라 따로 걸러낸다 — 볼륨 맵은 객체여야 한다.
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return base
+
+  const next = { ...base }
+  for (const { id, min, max } of SOUND_SETTING_VOLUMES) {
     if (!Object.hasOwn(value, id)) continue
-
-    const n = Number(value[id])
-    if (typeof value[id] === "boolean" || !Number.isFinite(n)) continue
-
-    next[id] = Math.min(max, Math.max(min, n))
-    if (!Number.isFinite(next[id])) next[id] = defaultValue
+    next[id] = clampNumber(value[id], { min, max, fallback: base[id] })
   }
   return next
 }
@@ -145,7 +162,9 @@ function mergePersistedSettings(persisted, current) {
       ? { ...current.generalChecks, ...sanitizeBooleanMap(persisted.generalChecks) }
       : current.generalChecks
 
-  const generalTextSize = clampToRange(persisted.generalTextSize, {
+  // 숫자 설정은 모두 clampNumber를 거친다 — Number 변환을 쓰면 null·""·[]·[3]·true가
+  // 전부 유효한 숫자로 통과해 저장값이 엉뚱하게 바뀐다(AC-06).
+  const generalTextSize = clampNumber(persisted.generalTextSize, {
     min: GENERAL_SETTING_TEXT_SIZE.min,
     max: GENERAL_SETTING_TEXT_SIZE.max,
     fallback: current.generalTextSize,
@@ -156,15 +175,10 @@ function mergePersistedSettings(persisted, current) {
   // 채팅 글자 크기는 인게임 도메인(INGAME_SETTING_CHAT_SLIDER)이 정의하지만, 설정
   // 도메인이 인게임 도메인을 거꾸로 import하지 않기 위해 저장 범위만 여기에 둔다 —
   // 두 값이 어긋나면 __tests__/settingsStore.test.js가 실제 슬라이더 정의와 대조해 잡는다.
-  const chatTextSize =
-    persisted.chatTextSize === null || persisted.chatTextSize === undefined
-      ? current.chatTextSize
-      : typeof persisted.chatTextSize === "boolean"
-        ? current.chatTextSize
-        : clampToRange(persisted.chatTextSize, {
-            ...CHAT_TEXT_SIZE_STORAGE_RANGE,
-            fallback: current.chatTextSize,
-          })
+  const chatTextSize = clampNumber(persisted.chatTextSize, {
+    ...CHAT_TEXT_SIZE_STORAGE_RANGE,
+    fallback: current.chatTextSize,
+  })
 
   return { ...current, volumes, generalChecks, generalTextSize, chatChecks, chatTextSize }
 }
@@ -243,3 +257,7 @@ export const useSettingsStore = create(
 
 /** 볼륨 초기값 — 테스트·초기화에서 store 기본 상태를 다시 만들 때 씁니다. */
 export { defaultVolumes as buildDefaultSoundVolumes, defaultGeneralChecks as buildDefaultGeneralChecks }
+
+/** 복원 검증 로직 — JSON으로는 표현할 수 없는 값(NaN 등)까지 회귀 시험이 직접 확인할 수
+ *  있도록 내보낸다(AC-06). */
+export { sanitizeVolumes as sanitizePersistedVolumes, clampNumber as clampPersistedNumber }

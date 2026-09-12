@@ -6,7 +6,7 @@ const TAB_BTN_CLASS =
   "interactive-scale relative w-[clamp(21rem,45vw,27rem)] shrink-0 leading-none"
 
 const TAB_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap px-1 font-subheading text-[clamp(1.35rem,1.95vw,1.58rem)] font-bold tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap px-1 font-subheading app-text-scaled [--app-text-size:clamp(1.35rem,1.95vw,1.58rem)] font-bold tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 const TAB_NAV_CLASS =
   "mb-[clamp(0.15rem,0.35vh,0.25rem)] flex shrink-0 flex-nowrap items-center justify-center gap-[clamp(0.25rem,0.5vw,0.4rem)] overflow-visible -translate-y-[clamp(0.6rem,1.6vh,0.95rem)]"

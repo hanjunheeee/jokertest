@@ -54,7 +54,7 @@ export default function InvitedGuestsMasteryRanking({ ranking, hideHeader = fals
         </tbody>
       </table>
       {pageCount > 1 && (
-        <div className="mt-1 flex items-center justify-center gap-3 font-subheading text-[0.78rem] text-[#1a1008]">
+        <div className="mt-1 flex items-center justify-center gap-3 font-subheading app-text-scaled [--app-text-size:0.78rem] text-[#1a1008]">
           <button
             type="button"
             disabled={safePage === 0}

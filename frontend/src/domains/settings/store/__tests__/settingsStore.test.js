@@ -30,6 +30,8 @@ const {
   buildDefaultSoundVolumes,
   buildDefaultGeneralChecks,
   CHAT_TEXT_SIZE_STORAGE_RANGE,
+  sanitizePersistedVolumes,
+  clampPersistedNumber,
 } = await freshSettingsModule()
 const { INGAME_SETTING_CHAT_SLIDER } = await import(
   "../../../game/ingame/constants/controls/ingameSetting/ingameSettingData.js"
@@ -200,6 +202,148 @@ test("F-15(AC-06): 저장된 채팅 글자 크기도 범위를 벗어나면 보�
     null,
     "숫자가 아니면 '아직 고른 적 없음'(null)을 유지한다",
   )
+})
+
+// F-15(AC-06) 반송 수정: 이전 구현은 Number(value) 변환으로 타입을 검증했다. Number(null),
+// Number(""), Number("   "), Number([]) 는 모두 0이고 Number([50]) 은 50이라, 손상된 값이
+// "유효한 숫자"로 통과해 볼륨이 0으로 떨어지거나 엉뚱한 값으로 바뀌었다. 아래 두 시험은
+// 그 결함을 직접 재현한다(수정 전에는 실패한다).
+const INVALID_PERSISTED_NUMBERS = [
+  ["null", null],
+  ["빈 문자열", ""],
+  ["공백 문자열", "   "],
+  ["숫자 문자열", "50"],
+  ["빈 배열", []],
+  ["숫자 하나가 든 배열", [50]],
+  ["true", true],
+  ["false", false],
+  ["객체", { value: 50 }],
+  ["NaN", Number.NaN],
+  ["Infinity", Number.POSITIVE_INFINITY],
+  ["-Infinity", Number.NEGATIVE_INFINITY],
+]
+
+test("F-15(AC-06): 숫자가 아닌 저장값은 현재 볼륨을 그대로 유지한다(0으로 강제 변환하지 않음)", () => {
+  const [first] = SOUND_SETTING_VOLUMES
+  const current = { ...buildDefaultSoundVolumes(), [first.id]: 7 }
+
+  for (const [label, invalid] of INVALID_PERSISTED_NUMBERS) {
+    const next = sanitizePersistedVolumes({ [first.id]: invalid }, current)
+
+    assert.equal(
+      next[first.id],
+      7,
+      `${label}: 잘못된 타입은 현재 볼륨(7)을 유지해야 한다 — 받은 값 ${next[first.id]}`,
+    )
+  }
+})
+
+test("F-15(AC-06): 볼륨 맵이 배열이면 통째로 버리고, 현재값이 손상됐으면 정의된 기본값을 쓴다", () => {
+  const [first] = SOUND_SETTING_VOLUMES
+
+  assert.deepEqual(
+    sanitizePersistedVolumes([], buildDefaultSoundVolumes()),
+    buildDefaultSoundVolumes(),
+  )
+  assert.deepEqual(
+    sanitizePersistedVolumes([{ [first.id]: 1 }], buildDefaultSoundVolumes()),
+    buildDefaultSoundVolumes(),
+  )
+  // 현재 상태 쪽이 손상된 경우에도 0이 아니라 슬라이더 정의의 기본값으로 되돌린다.
+  assert.deepEqual(
+    sanitizePersistedVolumes({}, { [first.id]: null }),
+    buildDefaultSoundVolumes(),
+  )
+})
+
+test("F-15(AC-06): 유효한 유한 숫자는 여전히 각 슬라이더의 min·max로 보정한다", () => {
+  const current = buildDefaultSoundVolumes()
+
+  for (const { id, min, max } of SOUND_SETTING_VOLUMES) {
+    const clampedHigh = sanitizePersistedVolumes({ [id]: max + 1 }, current)
+    const clampedLow = sanitizePersistedVolumes({ [id]: min - 1 }, current)
+    const kept = sanitizePersistedVolumes({ [id]: min }, current)
+
+    assert.equal(clampedHigh[id], max)
+    assert.equal(clampedLow[id], min)
+    assert.equal(kept[id], min, "범위 안의 값은 그대로 둔다")
+  }
+})
+
+test("F-15(AC-06): 복원한 숫자 설정 전체가 같은 타입 검증을 쓴다(Number 변환 금지)", () => {
+  for (const [label, invalid] of INVALID_PERSISTED_NUMBERS) {
+    assert.equal(
+      clampPersistedNumber(invalid, { min: 1, max: 5, fallback: 3 }),
+      3,
+      `${label}: 잘못된 타입이면 fallback을 그대로 써야 한다`,
+    )
+  }
+
+  assert.equal(clampPersistedNumber(9, { min: 1, max: 5, fallback: 3 }), 5)
+  assert.equal(clampPersistedNumber(-9, { min: 1, max: 5, fallback: 3 }), 1)
+  assert.equal(clampPersistedNumber(2, { min: 1, max: 5, fallback: 3 }), 2)
+  assert.equal(clampPersistedNumber(0, { min: 0, max: 5, fallback: 3 }), 0, "0은 유효한 값이다")
+})
+
+test("F-15(AC-06): 저장된 텍스트 크기·채팅 크기가 null·빈 문자열·배열이면 현재 값을 유지한다", async () => {
+  for (const invalid of [null, "", "   ", [], [2], true, { value: 2 }]) {
+    localStorage.setItem(
+      "settings-storage",
+      JSON.stringify({
+        state: { generalTextSize: invalid, chatTextSize: invalid },
+        version: 0,
+      }),
+    )
+
+    const restored = await freshSettingsModule()
+    const state = restored.useSettingsStore.getState()
+
+    assert.equal(
+      state.generalTextSize,
+      GENERAL_SETTING_TEXT_SIZE.defaultValue,
+      `${JSON.stringify(invalid)}: 텍스트 크기는 기본값을 유지해야 한다`,
+    )
+    assert.equal(
+      state.chatTextSize,
+      null,
+      `${JSON.stringify(invalid)}: 채팅 크기는 '아직 고른 적 없음'을 유지해야 한다`,
+    )
+  }
+})
+
+test("F-15(AC-06): JSON이 Infinity로 파싱되는 값(1e999)도 유효한 숫자로 받지 않는다", async () => {
+  const [first] = SOUND_SETTING_VOLUMES
+
+  // JSON.parse는 1e999를 Infinity로 만든다 — 실제 복원 경로에서 무한값을 재현할 수 있는
+  // 유일한 방법이라 손으로 만든 raw JSON을 쓴다.
+  localStorage.setItem(
+    "settings-storage",
+    `{"state":{"volumes":{"${first.id}":1e999},"generalTextSize":1e999},"version":0}`,
+  )
+
+  const restored = await freshSettingsModule()
+  const state = restored.useSettingsStore.getState()
+
+  assert.equal(state.volumes[first.id], first.defaultValue)
+  assert.equal(state.generalTextSize, GENERAL_SETTING_TEXT_SIZE.defaultValue)
+})
+
+test("F-15(AC-06): null 볼륨이 저장돼 있어도 0이 아니라 정의된 기본값으로 복원한다", async () => {
+  const [first, second] = SOUND_SETTING_VOLUMES
+
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({
+      state: { volumes: { [first.id]: null, [second.id]: [second.max] } },
+      version: 0,
+    }),
+  )
+
+  const restored = await freshSettingsModule()
+  const { volumes } = restored.useSettingsStore.getState()
+
+  assert.equal(volumes[first.id], first.defaultValue, "null이 0으로 변환되면 무음이 된다")
+  assert.equal(volumes[second.id], second.defaultValue, "배열이 숫자로 변환되면 안 된다")
 })
 
 test("F-15(AC-06): 채팅 글자 크기 저장 범위는 실제 인게임 슬라이더 정의와 같다", () => {

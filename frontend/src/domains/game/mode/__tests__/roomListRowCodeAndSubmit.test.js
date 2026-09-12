@@ -267,6 +267,52 @@ function markReindentedLines(hunk) {
 }
 
 /**
+ * F-15(AC-02) "텍스트 크기"가 인정하는 단 하나의 표현 변경 — 원래 font-size 값을 그대로
+ * 둔 채 배율 유틸리티로 옮긴 것.
+ *
+ *   text-[clamp(1.05rem,1.5vw,1.28rem)]
+ *   → app-text-scaled [--app-text-size:clamp(1.05rem,1.5vw,1.28rem)]
+ *
+ * 크기 값이 아닌 `text-[#f5e8c8]`(색)·`[text-shadow:…]`는 대상이 아니다.
+ */
+const F15_FONT_SIZE_UTILITY = /text-\[(clamp\([^\]]*\)|[0-9.]+(?:rem|px|em))\]/g
+
+function toF15ScaledTypography(text) {
+  return text.replace(F15_FONT_SIZE_UTILITY, "app-text-scaled [--app-text-size:$1]")
+}
+
+/**
+ * 같은 hunk 안에서 "F-15 배율 전환만" 일어난 줄끼리 1:1로 짝지어 표시한다.
+ *
+ * 지운 줄에 위 변환을 적용한 결과가 새 줄과 **글자 하나까지** 같을 때만 짝이 된다 — 크기
+ * 값이 달라지거나(예: clamp 경계 축소) 같은 줄의 다른 부분이 함께 바뀌면 짝이 만들어지지
+ * 않고 그대로 "설명되지 않은 차이"로 남는다. 들여쓰기 짝짓기(markReindentedLines)와 같은
+ * 이유로 hunk 안으로 한정하고 1:1로 소비한다.
+ */
+function markF15ScaledTypographyLines(hunk) {
+  const scaled = new Set()
+  const removedByScaledText = new Map()
+
+  for (const entry of hunk.removed) {
+    const converted = toF15ScaledTypography(entry.text)
+    if (converted === entry.text) continue // 배율 대상 font-size가 없던 줄
+    if (!removedByScaledText.has(converted)) removedByScaledText.set(converted, [])
+    removedByScaledText.get(converted).push(entry)
+  }
+
+  for (const entry of hunk.added) {
+    const candidates = removedByScaledText.get(entry.text)
+    if (!candidates?.length) continue
+
+    const [removed] = candidates.splice(0, 1)
+    scaled.add(`+${entry.lineNumber}`)
+    scaled.add(`-${removed.lineNumber}`)
+  }
+
+  return scaled
+}
+
+/**
  * 파일별로 "로컬 훅·API 계약을 지키느라 원격과 달라진" 줄과 그 이유다.
  * 여기 적히지 않은 변경은 이 테스트에서 그대로 실패한다.
  *
@@ -411,6 +457,7 @@ test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐�
 
       for (const hunk of hunks) {
         const reindented = markReindentedLines(hunk)
+        const f15Scaled = markF15ScaledTypographyLines(hunk)
 
         for (const { lineNumber, text } of pick(hunk)) {
           const trimmed = text.trim()
@@ -450,6 +497,7 @@ test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐�
             continue
           }
           if (reindented.has(`${sign}${lineNumber}`)) continue
+          if (f15Scaled.has(`${sign}${lineNumber}`)) continue
 
           unexplained.push(`${relativePath}:${lineNumber} ${sign}${text}`)
         }
@@ -466,6 +514,40 @@ test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐�
   }
 
   assert.deepEqual(unexplained, [], `원격 대비 설명되지 않은 차이:\n${unexplained.join("\n")}`)
+})
+
+test("AC-01: F-15 배율 전환 면제는 '값 보존 + 그 밖은 그대로'일 때만 성립한다", () => {
+  // 위 면제가 "이 파일들의 font-size 변경은 전부 봐준다"가 되면 이 테스트가 아무것도
+  // 고정하지 못한다 — 면제 조건을 직접 흔들어 실제로 걸러내는지 확인한다.
+  const base = '  "font-subheading text-[clamp(1.02rem,1.38vw,1.16rem)] font-bold text-[#2a1810]"'
+  const converted =
+    '  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold text-[#2a1810]"'
+
+  const mark = (removed, added) =>
+    markF15ScaledTypographyLines({
+      removed: removed.map((text, index) => ({ lineNumber: 10 + index, text })),
+      added: added.map((text, index) => ({ lineNumber: 20 + index, text })),
+    })
+
+  // (1) 값을 그대로 옮긴 전환만 짝지어진다 — 색(text-[#2a1810])은 건드리지 않은 채로 남는다.
+  assert.deepEqual([...mark([base], [converted])].sort(), ["+20", "-10"])
+
+  // (2) 크기 값이 달라지면(clamp 경계 축소·기본 크기 변경) 짝이 되지 않는다.
+  const shrunk = converted.replace("clamp(1.02rem,1.38vw,1.16rem)", "clamp(0.9rem,1.38vw,1.16rem)")
+  assert.deepEqual([...mark([base], [shrunk])], [])
+
+  // (3) 전환과 함께 같은 줄의 다른 부분이 바뀌면 짝이 되지 않는다.
+  assert.deepEqual([...mark([base], [converted.replace("font-bold", "font-black")])], [])
+  assert.deepEqual([...mark([base], [converted.replace("text-[#2a1810]", "text-[#8c1c13]")])], [])
+
+  // (4) 크기가 아닌 유틸리티(색)만 있는 줄은 애초에 전환 대상이 아니다.
+  const colorOnly = '  "font-subheading text-[#2a1810]"'
+  assert.deepEqual([...mark([colorOnly], ['  "font-subheading app-text-scaled text-[#2a1810]"'])], [])
+
+  // (5) 짝 없는 추가·삭제는 1:1 소비 뒤에도 남는다(같은 전환 두 줄 중 하나만 추가된 경우).
+  const other = base.replace("1.02rem", "1.2rem")
+  const marked = mark([base, other], [converted])
+  assert.deepEqual([...marked].sort(), ["+20", "-10"])
 })
 
 test("AC-01: 방코드 모달의 마크업 구조는 원격과 같다", () => {

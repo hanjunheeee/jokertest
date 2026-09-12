@@ -26,10 +26,10 @@ export const PROFILE_EDIT_TAB_BTN_CLASS =
 export const PROFILE_EDIT_TAB_BTN_IMAGE_CLASS = "block h-auto w-full select-none"
 
 export const PROFILE_EDIT_TAB_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.78rem,1.05vw,0.92rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.05vw,0.92rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const PROFILE_EDIT_TAB_BTN_LABEL_INACTIVE_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.78rem,1.05vw,0.92rem)] font-bold text-[#5c554d] [text-shadow:0_1px_1px_rgba(245,240,230,0.35)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.05vw,0.92rem)] font-bold text-[#5c554d] [text-shadow:0_1px_1px_rgba(245,240,230,0.35)]"
 
 export const PROFILE_EDIT_PREVIEW_SECTION_CLASS =
   "flex items-center justify-center border-b border-[#2a1810]/12 px-[clamp(0.85rem,1.5vw,1.15rem)] py-[clamp(0.85rem,1.8vh,1.15rem)]"
@@ -77,7 +77,7 @@ export const PROFILE_EDIT_CONFIRM_BTN_CLASS =
   "relative mx-auto block w-[min(100%,14rem)] cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
 export const PROFILE_EDIT_CONFIRM_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.82rem,1.1vw,0.95rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const PROFILE_EDIT_CONFIRM_BTN_IMAGE_CLASS = "block h-auto w-full select-none"
 
@@ -176,10 +176,10 @@ export const PROFILE_EDIT_TABS = [
 
 // F-12(AC-06): 테두리 그리드의 로딩/오류/빈 소유 목록 상태 표시(계획 메모 실행 순서 (2)).
 export const PROFILE_EDIT_GRID_STATUS_TEXT_CLASS =
-  "flex flex-col items-center gap-[0.5rem] px-[0.5rem] py-[1rem] text-center font-body text-[0.85rem] text-[#5c554d]"
+  "flex flex-col items-center gap-[0.5rem] px-[0.5rem] py-[1rem] text-center font-body app-text-scaled [--app-text-size:0.85rem] text-[#5c554d]"
 
 export const PROFILE_EDIT_GRID_RETRY_BTN_CLASS =
-  "cursor-pointer rounded-md border border-[#b83232]/40 bg-transparent px-[0.75rem] py-[0.3rem] font-body text-[0.82rem] text-[#b83232] transition-opacity hover:opacity-80"
+  "cursor-pointer rounded-md border border-[#b83232]/40 bg-transparent px-[0.75rem] py-[0.3rem] font-body app-text-scaled [--app-text-size:0.82rem] text-[#b83232] transition-opacity hover:opacity-80"
 
 export const PROFILE_EDIT_ERROR_TEXT_CLASS =
-  "px-[clamp(0.85rem,1.5vw,1.15rem)] pb-[0.35rem] text-center font-body text-[0.8rem] text-[#b83232]"
+  "px-[clamp(0.85rem,1.5vw,1.15rem)] pb-[0.35rem] text-center font-body app-text-scaled [--app-text-size:0.8rem] text-[#b83232]"

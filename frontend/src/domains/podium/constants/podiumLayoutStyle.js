@@ -12,7 +12,7 @@ export const PODIUM_HEADER_WRAP_CLASS =
 export const PODIUM_HEADER_PLATE_CLASS = "block h-auto w-full select-none"
 
 export const PODIUM_HEADER_TITLE_CLASS =
-  "pointer-events-none absolute inset-0 flex items-start justify-center px-[12%] pt-[3.8%] font-display text-[clamp(1.18rem,1.72vw,1.45rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-0 flex items-start justify-center px-[12%] pt-[3.8%] font-display app-text-scaled [--app-text-size:clamp(1.18rem,1.72vw,1.45rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const PODIUM_TOP_THREE_WRAP_CLASS =
   "relative mx-auto mt-[clamp(0.55rem,1.6vh,1rem)] mb-[clamp(0.45rem,1.3vh,0.75rem)] flex w-full max-w-[min(58rem,94vw)] shrink-0 items-end justify-center gap-[clamp(0.75rem,2.4vw,1.9rem)]"
@@ -42,13 +42,13 @@ export const PODIUM_TOP_PLAYER_NICKNAME_BASE_CLASS =
   "pointer-events-none absolute inset-x-[9%] z-20 text-center font-display font-bold leading-none text-[#1a1008] antialiased"
 
 export const PODIUM_TOP_PLAYER_NICKNAME_RANK1_CLASS =
-  `${PODIUM_TOP_PLAYER_NICKNAME_BASE_CLASS} bottom-[21.5%] text-[clamp(0.9rem,1.25vw,1.1rem)]`
+  `${PODIUM_TOP_PLAYER_NICKNAME_BASE_CLASS} bottom-[21.5%] app-text-scaled [--app-text-size:clamp(0.9rem,1.25vw,1.1rem)]`
 
 export const PODIUM_TOP_PLAYER_NICKNAME_RANK2_CLASS =
-  `${PODIUM_TOP_PLAYER_NICKNAME_BASE_CLASS} bottom-[20.5%] text-[clamp(0.84rem,1.18vw,1.02rem)]`
+  `${PODIUM_TOP_PLAYER_NICKNAME_BASE_CLASS} bottom-[20.5%] app-text-scaled [--app-text-size:clamp(0.84rem,1.18vw,1.02rem)]`
 
 export const PODIUM_TOP_PLAYER_NICKNAME_RANK3_CLASS =
-  `${PODIUM_TOP_PLAYER_NICKNAME_BASE_CLASS} bottom-[20.5%] text-[clamp(0.84rem,1.18vw,1.02rem)]`
+  `${PODIUM_TOP_PLAYER_NICKNAME_BASE_CLASS} bottom-[20.5%] app-text-scaled [--app-text-size:clamp(0.84rem,1.18vw,1.02rem)]`
 
 export const PODIUM_TABLE_SECTION_CLASS =
   "relative mx-auto h-[min(46vh,31rem)] w-[min(74vw,64rem)] max-w-[64rem] shrink-0"
@@ -72,7 +72,7 @@ export const PODIUM_TABLE_TBODY_OFFSET_CLASS =
   "[&>tr:first-child>td]:pt-[clamp(1.25rem,2.5vh,1.7rem)]"
 
 export const PODIUM_TABLE_HEAD_CLASS =
-  "font-subheading text-[clamp(0.8rem,1.05vw,0.92rem)] leading-snug font-black text-[#f5f0e6]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.8rem,1.05vw,0.92rem)] leading-snug font-black text-[#f5f0e6]"
 
 export const PODIUM_TABLE_HEAD_CELL_CLASS =
   "whitespace-nowrap px-[0.35rem] pb-[0.38rem] pt-[0.15rem] text-left align-bottom first:pl-0 last:pr-0 text-[#f5f0e6]"

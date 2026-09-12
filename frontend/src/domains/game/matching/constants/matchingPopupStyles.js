@@ -37,19 +37,19 @@ export const MATCHING_ACTION_BTN_CLASS =
 
 /** 게임시작·방 삭제 버튼 이미지 위 텍스트 라벨 */
 export const MATCHING_ACTION_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap font-subheading text-[clamp(0.88rem,1.25vw,1.05rem)] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.25vw,1.05rem)] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 /** 방코드 보기 버튼 이미지 위 텍스트 라벨 */
 export const MATCHING_ROOM_CODE_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap font-subheading text-[clamp(0.82rem,1.1vw,0.95rem)] font-bold tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 /** 매칭 팝업 프레임 상단 제목 ("멀티 플레이 매칭") */
 export const MATCHING_TITLE_CLASS =
-  "pointer-events-none absolute left-1/2 top-[5.85%] z-[2] w-[72%] -translate-x-1/2 text-center font-display text-[clamp(2rem,3.15vw,2.75rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_1px_rgba(0,0,0,0.45)]"
+  "pointer-events-none absolute left-1/2 top-[5.85%] z-[2] w-[72%] -translate-x-1/2 text-center font-display app-text-scaled [--app-text-size:clamp(2rem,3.15vw,2.75rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_1px_rgba(0,0,0,0.45)]"
 
 /** 팝업 본문 안내 문구 (prompt) */
 export const MATCHING_PROMPT_CLASS =
-  "text-center font-subheading text-[clamp(1.38rem,1.92vw,1.58rem)] font-bold leading-snug text-[#1a1008]"
+  "text-center font-subheading app-text-scaled [--app-text-size:clamp(1.38rem,1.92vw,1.58rem)] font-bold leading-snug text-[#1a1008]"
 
 /** 파티 슬롯 2행 그리드 wrapper — MatchingPartySlots */
 export const MATCHING_SLOTS_GRID_CLASS =
@@ -90,7 +90,7 @@ export const MATCHING_SLOT_WRAP_CLASS =
 
 /** 슬롯 준비 배지 공통(테두리·크기) */
 const MATCHING_SLOT_BADGE_BASE_CLASS =
-  "mt-[clamp(0.15rem,0.4vh,0.3rem)] rounded-full px-[clamp(0.4rem,0.8vw,0.55rem)] py-[clamp(0.05rem,0.15vh,0.1rem)] text-[clamp(0.6rem,0.85vw,0.7rem)] font-bold tracking-wide"
+  "mt-[clamp(0.15rem,0.4vh,0.3rem)] rounded-full px-[clamp(0.4rem,0.8vw,0.55rem)] py-[clamp(0.05rem,0.15vh,0.1rem)] app-text-scaled [--app-text-size:clamp(0.6rem,0.85vw,0.7rem)] font-bold tracking-wide"
 
 /** 준비 완료 슬롯 배지 */
 export const MATCHING_SLOT_BADGE_READY_CLASS =
@@ -110,7 +110,7 @@ export const MATCHING_TIMER_BLOCK_CLASS =
 
 /** "N초 남았습니다" 타이머 문구 */
 export const MATCHING_TIMER_TEXT_CLASS =
-  "mt-[clamp(0.25rem,0.52vh,0.4rem)] text-center font-subheading text-[clamp(1.08rem,1.42vw,1.22rem)] font-bold text-[#1a1008]"
+  "mt-[clamp(0.25rem,0.52vh,0.4rem)] text-center font-subheading app-text-scaled [--app-text-size:clamp(1.08rem,1.42vw,1.22rem)] font-bold text-[#1a1008]"
 
 /** 키보드 입력 제한 아이콘 + 문구 행 */
 export const MATCHING_RESTRICTION_BLOCK_CLASS =
@@ -118,7 +118,7 @@ export const MATCHING_RESTRICTION_BLOCK_CLASS =
 
 /** "키보드 입력 제한" 문구 */
 export const MATCHING_RESTRICTION_TEXT_CLASS =
-  "font-subheading text-[clamp(0.94rem,1.2vw,1.06rem)] font-bold text-[#2a1810]/90"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.94rem,1.2vw,1.06rem)] font-bold text-[#2a1810]/90"
 
 /** 제한 표시 아이콘 이미지 */
 export const MATCHING_RESTRICTION_ICON_CLASS =
@@ -130,11 +130,11 @@ export const MATCHING_PARTY_HEADER_CLASS =
 
 /** "파티 인원 N명" 텍스트 (숫자 제외) */
 export const MATCHING_PARTY_TEXT_CLASS =
-  "font-subheading text-[clamp(1.28rem,1.72vw,1.5rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.28rem,1.72vw,1.5rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
 
 /** 파티 인원 숫자만 — 신라문화체 + 골드 톤 강조 */
 export const MATCHING_PARTY_COUNT_CLASS =
-  "font-display text-[clamp(1.55rem,2.1vw,1.82rem)] font-medium leading-none text-text-main tabular-nums antialiased"
+  "font-display app-text-scaled [--app-text-size:clamp(1.55rem,2.1vw,1.82rem)] font-medium leading-none text-text-main tabular-nums antialiased"
 
 /** 파티 헤더 미준비 실루엣 아이콘 */
 export const MATCHING_PARTY_ICON_CLASS =
