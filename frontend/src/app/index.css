@@ -29,6 +29,9 @@
 
   /* ViewportShell 기본값 — 런타임에 layouts/ViewportShell.jsx가 constants로 덮어씀 */
   --game-viewport-max-width: 1280px;
+
+  /* F-15(AC-02) — 런타임에 app/App.jsx(appTextScale.js)가 설정값으로 덮어씀 */
+  --app-text-scale: 1;
 }
 
 @layer base {
@@ -77,6 +80,12 @@
 
   .lobby-menu-btn:hover .lobby-menu-btn__img {
     filter: url(#lobby-menu-red);
+  }
+
+  /* F-15(AC-02): "텍스트 크기" 설정 — 이 클래스를 쓰는 요소의 font-size에만 배율을
+     적용한다(레이아웃 간격은 그대로 둬서 전체 화면이 확대되지 않게 한다). */
+  .app-text-scalable {
+    font-size: calc(1em * var(--app-text-scale, 1));
   }
 
   /* 텍스트 링크 굵기 */

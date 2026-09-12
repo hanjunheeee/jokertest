@@ -4,7 +4,9 @@
  * InGameChatContent·InGameChatInput·InGameChatMessageList·InGameChatMessageRow에서 사용합니다.
  * 보드 전용: ingameChatBoardLayout.js — 클로즈업 전용: closeup/ingameChatCloseupLayout.js
  */
-import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
+// node:test는 "@/" Vite 별칭을 해석하지 못한다(useSocket.js의 같은 이유) — 이 시험이
+// 상대 경로로 실제 코드를 그대로 import해서 돌 수 있도록 상대 경로를 쓴다.
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../../shared/constants/customScrollbarStyles.js"
 import {
   INGAME_CHAT_MESSAGE_LIST_INSET,
   INGAME_CHAT_STATUS_LINE_INSET,
@@ -36,6 +38,69 @@ export function getInGameChatTextTypographyClass(variant = "board") {
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_CLASS
     : INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS
+}
+
+const CLAMP_FONT_SIZE_PATTERN = /text-\[clamp\(([^)]+)\)\]/
+
+function scaleClampTerm(term, scale) {
+  const match = term.trim().match(/^(-?[\d.]+)([a-z%]*)$/i)
+  if (!match) return term.trim()
+
+  const [, numberPart, unit] = match
+  const scaled = Math.round(Number(numberPart) * scale * 10000) / 10000
+  return `${scaled}${unit}`
+}
+
+/**
+ * F-15(AC-02): 채팅 타이포 클래스(text-[clamp(min,preferred,max)])의 "선호값"(가운데,
+ * 컨테이너 폭 기준 cqi 반응형 항)을 scale배 조정한 값을 돌려준다 — 컨테이너 쿼리 기준
+ * 반응형 동작은 그대로 두고 크기만 조정한다. 이 값은 인라인 스타일로 얹혀 기존 clamp()
+ * 클래스의 font-size를 완전히 대체하므로, 원래 clamp()의 최소·최대 경계는 이 오버라이드가
+ * 켜졌을 때(사용자가 채팅 글자 크기를 기본값에서 바꿨을 때)만 적용되지 않는다 — 사용자가
+ * 이미 명시적으로 고른 배율이 더 중요한 신호이기 때문이다. scale이 1이면(기본값) 기존
+ * Tailwind 클래스와 완전히 같으므로 null을 돌려주고, 호출부는 이 경우 인라인 스타일을
+ * 얹지 않는다(기존 화면과 픽셀 단위로 동일).
+ * @param {"board" | "closeup"} variant
+ * @param {number} scale
+ * @returns {string | null}
+ */
+export function getInGameChatScaledFontSize(variant, scale) {
+  if (!Number.isFinite(scale) || scale === 1) return null
+
+  const baseClass = getInGameChatTextTypographyClass(variant)
+  const match = baseClass.match(CLAMP_FONT_SIZE_PATTERN)
+  if (!match) return null
+
+  const terms = match[1].split(",")
+  if (terms.length !== 3) return null
+
+  return scaleClampTerm(terms[1], scale)
+}
+
+const CHAT_TEXT_SCALE_MIN = 0.6
+const CHAT_TEXT_SCALE_MAX = 1
+
+/**
+ * F-15(AC-02): 채팅 글자 크기 설정(ingameSettingData.js의 INGAME_SETTING_CHAT_SLIDER,
+ * 0~100·기본값 100)을 실제 폰트 배율로 바꾼다. 슬라이더 최댓값(기본값)이 배율 1(기존
+ * 화면과 동일)이 되도록 해서, 이 설정을 저장한 적 없는 기존 사용자·시험에는 시각적
+ * 차이가 없다 — 슬라이더를 낮출수록 최대 40%까지만 줄어드는 좁은 범위로 제한한다.
+ * @param {number} chatTextSize
+ */
+export function getInGameChatTextScale(chatTextSize) {
+  const n = Number(chatTextSize)
+  if (!Number.isFinite(n)) return 1
+
+  const clamped = Math.min(100, Math.max(0, n))
+  const ratio = clamped / 100
+  return CHAT_TEXT_SCALE_MIN + (CHAT_TEXT_SCALE_MAX - CHAT_TEXT_SCALE_MIN) * ratio
+}
+
+/** F-15(AC-02): "채팅 시간 표시"가 켜졌을 때 sentAt을 그리는 시각 표기 — 발신자 접두사와
+ *  같은 타이포를 쓰되 흐리게 표시해 본문과 구분한다.
+ *  @param {"board" | "closeup"} [variant] */
+export function getInGameChatMessageTimeClass(variant = "board") {
+  return `shrink-0 opacity-60 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatTextTypographyClass(variant)}`
 }
 
 /** @param {"board" | "closeup"} [variant] */
