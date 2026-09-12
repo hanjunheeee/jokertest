@@ -90,6 +90,17 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 (`friend-request:<id>:accepted|declined` 등)은 복원이 알 수 없으므로 그 구간에도 최초
 소리를 잃지 않는다(`notifications.store.js::isNotificationBackedSourceKey`).
 
+**복원 실패도 해소가 아니다(CODEX-2 보수).** 예전 구현은 `loadSnapshot`의 catch에서
+`restorePending`을 내렸다 — 그러면 서버 목록을 **한 번도 받지 못한** 상태인데도 경계가
+풀려서, 그 뒤 늦게 배달된 **과거** 업적·친구 수신 사건이 `useSfxRuntime` ·
+`useFriendSocketEvents`를 통해 다시 울렸다(알림 훅 자체는 `liveBuffer`가 막으므로 이
+구멍은 그 두 기존 소비처로만 드러난다). 실패한 GET의 "목록에 없음"은 새 사건의 증거가
+아니므로, 이제 `restorePending`은 **성공한 복원만** 내린다. 영구 무음은 아니다 — 화면의
+재시도가 성공하면 해소되고, snapshot에 담긴 과거 키는 `soundSeen`으로 확정되며, 그 뒤의
+진짜 새 사건은 정상적으로 1회 울린다. 수락·거절 같은 알림 행 없는 제어 사건은 애초에 이
+경계의 대상이 아니라 조회 실패와 무관하게 최초 소리를 유지한다. 이 경계는 소리 적격성에만
+쓰이므로 읽음·이동·닫기·재시도를 잠그지 않는다.
+
 ### 검증 기록 (누가 · 언제 · 무엇을)
 
 같은 명령이라도 **누가 어느 커밋에서 돌렸는지**를 구분해 남긴다. 앞선 성공 기록은 그
@@ -104,7 +115,15 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 | 구현자(worker), 이번 보수 세션(R-IMPL #1~#6) | `npm test --prefix frontend` | **1736 PASS 0 skip** |
 | 구현자(worker), 이번 보수 세션 | `npm run build --prefix frontend` | **PASS** |
 | 구현자(worker), 이번 보수 세션 | `npm test --prefix backend` | **1385 PASS · 161 skip**(격리 DB 없음) |
+| **운영자 공식 VERIFY-6..10, 후보 `e259a538`** | frontend · build · 격리 DB 직렬 backend | frontend **1736 PASS 0 skip** · build **PASS** · backend **1546 PASS 0 skip** |
+| 구현자(worker), CODEX-2 보수 세션(복원 실패 경계) | `npm test --prefix frontend` | **1737 PASS 0 fail 0 skip** |
+| 구현자(worker), CODEX-2 보수 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built`) |
+| 구현자(worker), CODEX-2 보수 세션 | 변이 검사(고친 줄을 되돌려 봄) | 새 마운트 시험이 `playCalls: ['/fixture/achievement-granted.wav']`로 **실패** — 경계가 실제로 들리는 회귀를 잡는다 |
 
+- 운영자 VERIFY-6..10의 결과는 **후보 `e259a538`의 코드**에 대한 것이다. CODEX-2 보수에서
+  바뀐 `notifications.store.js`와 시험 2건은 그 실행에 포함되지 않았다 — 운영자가 격리 DB
+  래퍼로 다시 돌리기 전까지 그 부분은 **미검증**이다. backend는 이번 보수에서 **바뀌지
+  않았다**(변경 파일 3개 전부 frontend).
 - 운영자 VERIFY의 backend 1525 PASS 0 skip은 **후보 0b04970f의 코드**를 검증한 것이다.
   이번 보수 세션에서 바뀐 코드와 새로 추가한 DB 시험 7건은 그 실행에 포함되지 않았다 —
   다시 돌리기 전까지 **미검증**이다.
@@ -118,8 +137,13 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 - 확인함(자동 시험, 격리 DB 불필요):
   `frontend/src/domains/notifications/hooks/__tests__/notificationSocketEvents.test.js`
   (실제 훅을 마운트해 connect/disconnect·접속 세대·늦은 ACK·ACK timeout 상한·소켓 교체·
-  cleanup·실제 `dispatchSfxEvent` 경로를 확인, 13건),
-  `.../hooks/__tests__/notificationRuntime.test.js`(store·재생기 계약, 40건),
+  cleanup·실제 `dispatchSfxEvent` 경로를 확인, **14건** — CODEX-2 보수로 "초기 복원 실패 →
+  늦게 배달된 과거 업적 사건" 1건 추가. 이 시험은 `useNotificationSocketEvents`와 **실제
+  업적 소리 소유자인 `useSfxRuntime`을 함께 마운트**하고 `socketClient.setSocket`으로 전송만
+  꽂아, 핸들러를 복제하지 않고 실제 라우팅을 태운다),
+  `.../hooks/__tests__/notificationRuntime.test.js`(store·재생기 계약, 40건 — 복원 실패 뒤
+  과거 키 거절·반복 지연 배달·수락/거절 제어 사건 유지·재시도 성공 후 억제 및 신규 1회를
+  한 시험에서 순서대로 확인),
   `frontend/src/domains/lobby/hooks/__tests__/lobbyNotificationPanels.test.js`
   (실제 모달·진입 버튼을 마운트한 계정 전환·지연 PATCH·같은 대상 재진입, 6건),
   `.../components/__tests__/NotificationModal.test.js`,

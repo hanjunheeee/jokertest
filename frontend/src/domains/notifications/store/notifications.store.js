@@ -161,11 +161,18 @@ const initialAccountState = () => ({
   /** 초기 목록 복원을 마쳤는가. 마치기 전에 온 live는 아래 버퍼에 둔다. */
   snapshotLoaded: false,
   /**
-   * 복원이 **지금 진행 중인가**(R-IMPL #5). beginResync와 loadSnapshot 시작이 세우고,
-   * 그 조회가 성공·실패로 정착할 때 내린다. 이 구간에 도착한 알림 사건은 곧 도착할
-   * snapshot과 겹칠 수 있으므로 소리 후보로 받지 않는다. 조회가 실패해 복원이 끝난
-   * 뒤에는(snapshotLoaded=false, restorePending=false) 다시 최초 소리를 허용한다 —
-   * 조회 실패로 기존 친구·업적 소리를 영구히 잃으면 그것이 F-16 회귀다.
+   * 복원이 **아직 해소되지 않았는가**(R-IMPL #5 · CODEX-2).
+   *
+   * beginResync와 loadSnapshot 시작이 세우고, **성공한 복원만** 내린다. 조회 실패는
+   * 해소가 아니다 — 실패한 GET은 "이 계정이 그 사건을 이미 알고 있었는지"를 알려주지
+   * 못하므로, 그 뒤에 도착한 알림 행 기반 사건을 최초 발생으로 인정할 근거가 없다.
+   * 예전 구현은 실패 시 이 값을 내려서, 조회가 실패한 뒤 늦게 배달된 **과거** 업적·친구
+   * 수신 사건이 다시 소리를 냈다(AC-07의 "복원은 재생 0회" 위반).
+   *
+   * 영구 무음이 되지는 않는다: 화면의 재시도가 복원에 성공하면 그때 해소되고, snapshot에
+   * 담긴 과거 키는 soundSeen으로 확정되며, 그 뒤의 진짜 새 사건은 정상적으로 울린다.
+   * 알림 행이 없는 기존 F-16 사건(수락·거절 등)은 애초에 이 경계의 대상이 아니다
+   * (isNotificationBackedSourceKey) — 조회 실패가 그 소리를 삼키지 않는다.
    */
   restorePending: false,
   /** 리스너를 먼저 달았기 때문에 snapshot보다 먼저 도착할 수 있는 사건들. */
@@ -248,9 +255,13 @@ export const useNotificationsStore = create((set, get) => ({
     } catch (error) {
       if (!get().isCurrent(accountGeneration, requestGeneration)) return { ok: false, reason: "stale" }
       // 실패를 빈 목록으로 위장하지 않는다 — 화면은 실패·재시도를 보여준다(AC-06).
-      // 복원이 끝났으므로(실패로) 복원 경계를 내린다 — 계속 세워 두면 조회가 실패한 동안
-      // 들어온 기존 친구·업적 사건이 영구히 무음이 된다(R-IMPL #5).
-      set({ status: "error", error: error?.message ?? "알림을 불러오지 못했습니다.", restorePending: false })
+      //
+      // restorePending은 **내리지 않는다**(CODEX-2). 실패한 조회는 복원을 해소하지 못한다 —
+      // 서버 목록을 받지 못했으므로 지금 도착하는 알림 행 기반 사건이 과거의 것인지 새
+      // 것인지 구분할 근거가 없고, 그것을 최초 발생으로 인정하면 복원 경계가 뚫린다.
+      // 대신 status="error"로 화면이 재시도를 제공하고, 그 재시도가 성공하면 경계가 정상
+      // 해소된다. 이 값은 소리 적격성에만 쓰이므로 읽음·이동·닫기·재시도를 잠그지 않는다.
+      set({ status: "error", error: error?.message ?? "알림을 불러오지 못했습니다." })
       return { ok: false, reason: "error" }
     }
 
@@ -299,11 +310,13 @@ export const useNotificationsStore = create((set, get) => ({
     if (typeof sourceKey !== "string" || sourceKey.length === 0) return false
     if (state.soundSeen.has(sourceKey)) return false
 
-    // 복원 경계(R-IMPL #5). 초기 복원·재접속 재동기화가 **진행 중인** 동안 도착한 알림
-    // 사건은 곧 도착할 snapshot이 이미 담고 있을 수 있다 — 그 사건을 여기서 최초 처리로
-    // 인정하면 "조회·복원·재접속은 재생 0회"(AC-07)가 깨진다. 표식을 소모하지 않고
-    // 거절하므로, 복원이 그 사건을 실제로 담고 있으면 soundSeen으로 확정되고, 담고 있지
-    // 않으면 다음 실제 live 전달이 최초 후보가 된다.
+    // 복원 경계(R-IMPL #5 · CODEX-2). 초기 복원·재접속 재동기화가 **아직 해소되지 않은**
+    // 동안 도착한 알림 사건은 곧 도착할(또는 실패해서 끝내 받지 못한) snapshot이 이미
+    // 담고 있을 수 있다 — 그 사건을 여기서 최초 처리로 인정하면 "조회·복원·재접속은 재생
+    // 0회"(AC-07)가 깨진다. 조회 실패도 해소가 아니다: 못 받은 목록의 부재를 "새 사건"의
+    // 증거로 쓰지 않는다. 표식을 소모하지 않고 거절하므로, 복원이 그 사건을 실제로 담고
+    // 있으면 soundSeen으로 확정되고, 담고 있지 않으면 복원이 성공한 뒤의 실제 live 전달이
+    // 최초 후보가 된다.
     //
     // 알림 행이 없는 기존 사건(친구 수락·거절 등)은 이 경계를 적용하지 않는다 — 복원이
     // 그 사건을 알 수 없으므로 삼키면 그대로 잃는다.

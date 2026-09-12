@@ -53,7 +53,8 @@ const {
 const { useAuthStore } = await import("../../../auth/store/auth.store.js")
 const { useSettingsStore, buildDefaultGeneralChecks, buildDefaultSoundVolumes, SFX_MUTED_DEFAULT } =
   await import("../../../settings/store/settingsStore.js")
-const { __setSfxPlayerForTests } = await import("../../../../shared/hooks/useSfxRuntime.js")
+const { __setSfxPlayerForTests, useSfxRuntime } = await import("../../../../shared/hooks/useSfxRuntime.js")
+const { setSocket } = await import("../../../../shared/socket/socketClient.js")
 const { createSfxPlayer } = await import("../../../../shared/audio/sfxPlayer.js")
 const { SFX_REVIEW_STATUS, SFX_CLASSIFICATION, SFX_SCOPE } = await import(
   "../../../../shared/audio/sfxManifest.js"
@@ -166,6 +167,22 @@ function approvedSystemManifest() {
       durationMs: 400,
       classification: SFX_CLASSIFICATION.SHORT_NON_MUSICAL,
     },
+    // 업적 소리는 F-16의 기존 소비처(useSfxRuntime)가 소유한다. 복원 경계가 그 경로까지
+    // 실제로 막는지 확인하려면 fixture에도 승인 항목이 있어야 한다 — 없으면 재생기가
+    // "모르는 kind"로 먼저 거부해서, 경계가 깨져 있어도 시험이 통과해 버린다.
+    "achievement-granted": {
+      scope: SFX_SCOPE.ACCOUNT,
+      notificationKey: "system-notification",
+      reviewStatus: SFX_REVIEW_STATUS.APPROVED,
+      silenceReason: null,
+      source: "fixture",
+      creator: "fixture",
+      usageTerms: "fixture-only",
+      sha256: "sha256-f17-fixture-achievement",
+      src: "/fixture/achievement-granted.wav",
+      durationMs: 400,
+      classification: SFX_CLASSIFICATION.SHORT_NON_MUSICAL,
+    },
   }
 }
 
@@ -227,6 +244,30 @@ function Harness({ socket }) {
   useNotificationSocketEvents(socket)
   return null
 }
+
+/**
+ * 알림 수신 훅과 **기존 업적 소리의 실제 소유자**(useSfxRuntime)를 함께 마운트한다.
+ *
+ * 복원 경계의 구멍은 알림 훅이 아니라 이 경로로 드러난다 — 알림 훅의 notification_created는
+ * 복원 전이면 receiveLiveNotification이 버퍼로 돌려보내 소리까지 가지도 않지만,
+ * useSfxRuntime의 achievement_granted는 store의 consumeSoundEvent만 통과하면 바로
+ * dispatchSfxEvent로 간다. 그래서 핸들러를 복제하지 않고 실제 훅을 마운트한다.
+ *
+ * useSfxRuntime은 socketClient 싱글턴에서 소켓을 읽으므로, 호출부가 setSocket으로 같은
+ * 대역 소켓을 꽂아 준다(주입하는 것은 전송뿐이다).
+ */
+function RuntimeHarness({ socket }) {
+  useNotificationSocketEvents(socket)
+  useSfxRuntime()
+  return null
+}
+
+const achievementEnvelope = (eventId, accountId = ACCOUNT_A) => ({
+  kind: "achievement-granted",
+  eventId,
+  accountId,
+  origin: "live",
+})
 
 function mount(element) {
   const container = document.createElement("div")
@@ -676,4 +717,91 @@ test("AC-07/R-IMPL#5: 재동기화 중 도착한 새 사건은 복원으로 취�
 
   assert.equal(items().some((item) => item.id === "during-resync"), true, "무음이어도 목록에는 남는다")
   assert.equal(playCalls.length, 0)
+})
+
+test("CODEX-2: 초기 복원이 실패로 끝나도 늦게 배달된 과거 업적 사건은 실제 재생기까지 가지 않는다", async (t) => {
+  const OLD_KEY = "achievement:noble-win-10:granted"
+  const NEW_KEY = "achievement:record-1-masquerade:granted"
+
+  const first = deferred()
+  let fetches = 0
+  __setNotificationsApiForTests({
+    fetchNotificationsApi: () => {
+      fetches += 1
+      // 1회차는 실패한다. 2회차(화면의 재시도)는 **그 과거 업적이 담긴** 목록을 준다.
+      if (fetches === 1) return first.promise
+      return Promise.resolve([
+        notification({
+          id: "restored-achievement",
+          type: "achievement",
+          sourceKey: OLD_KEY,
+          target: { kind: "achievement", achievementId: "noble-win-10" },
+          createdAt: "2026-09-12T00:00:00.000Z",
+        }),
+      ])
+    },
+  })
+
+  const socket = createFakeSocket({ connected: true })
+  // useSfxRuntime은 socketClient에서 소켓을 읽는다 — 전송만 꽂아 준다.
+  setSocket(socket)
+
+  const view = mount(React.createElement(RuntimeHarness, { socket }))
+  // 먼저 언마운트한 뒤 싱글턴을 비운다 — 순서가 반대면 아직 마운트된 useSyncExternalStore가
+  // act 밖에서 갱신된다.
+  t.after(() => {
+    view.unmount()
+    act(() => setSocket(null))
+  })
+
+  // useSfxRuntime의 effect가 진짜 재생기를 설치한 **뒤에** 기록용 재생기로 갈아끼운다
+  // (sfxUiOwnership.test.js와 같은 순서).
+  const { playCalls } = installRecordingPlayer(t)
+
+  await act(async () => {
+    first.reject(new Error("조회 실패"))
+    await first.promise.catch(() => {})
+  })
+  await settle()
+
+  assert.equal(useNotificationsStore.getState().status, "error")
+
+  // 예전 구현은 여기서 경계를 내려, 서버 목록을 한 번도 받지 못한 채 **과거** 지급이 울렸다.
+  // 들리는 결과부터 확인한다 — 내부 플래그가 아니라 이것이 AC-07이 금지하는 회귀다.
+  await act(async () => socket.__fire("achievement_granted", { sfxEvent: achievementEnvelope(OLD_KEY) }))
+  await settle()
+  assert.deepEqual(playCalls, [], "복원이 해소되지 않은 동안 과거 업적 사건은 무음이다")
+  assert.equal(
+    useNotificationsStore.getState().restorePending,
+    true,
+    "실패한 조회는 복원을 해소하지 못한다",
+  )
+
+  // 늦게 반복 배달돼도 마찬가지다(표식을 소모하지 않았으므로 상태도 그대로).
+  await act(async () => socket.__fire("achievement_granted", { sfxEvent: achievementEnvelope(OLD_KEY) }))
+  await settle()
+  assert.deepEqual(playCalls, [])
+
+  // 읽음·닫기·재시도는 잠기지 않는다 — 경계는 소리 적격성에만 쓰인다.
+  await act(async () => {
+    await useNotificationsStore.getState().loadSnapshot()
+  })
+  await settle()
+  assert.equal(fetches, 2)
+  assert.equal(useNotificationsStore.getState().status, "success")
+  assert.equal(useNotificationsStore.getState().restorePending, false, "성공한 복원만 경계를 해소한다")
+
+  // 복원이 담고 있던 과거 지급은 해소 뒤에도 계속 무음이다.
+  await act(async () => socket.__fire("achievement_granted", { sfxEvent: achievementEnvelope(OLD_KEY) }))
+  await settle()
+  assert.deepEqual(playCalls, [], "복원에 담긴 과거 지급은 재시도 성공 뒤에도 무음이다")
+
+  // 대조: 경계가 모든 것을 삼키지는 않는다. 복원 뒤의 진짜 새 지급은 최초 1회 울린다.
+  await act(async () => socket.__fire("achievement_granted", { sfxEvent: achievementEnvelope(NEW_KEY) }))
+  await settle()
+  assert.equal(playCalls.length, 1, "복원이 해소된 뒤의 새 지급은 한 번 울린다")
+
+  await act(async () => socket.__fire("achievement_granted", { sfxEvent: achievementEnvelope(NEW_KEY) }))
+  await settle()
+  assert.equal(playCalls.length, 1, "같은 새 지급의 재전달은 추가 0회")
 })

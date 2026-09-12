@@ -277,7 +277,7 @@ test("R-IMPL#5: 알림 행이 없는 기존 친구 수락·거절 사건은 복�
   await loading
 })
 
-test("R-IMPL#5: 복원이 실패해 끝나면 기존 사건의 최초 소리를 다시 허용한다", async () => {
+test("CODEX-2: 복원이 실패로 끝나도 알림 행 기반 사건은 소리 후보가 아니다", async () => {
   loginAs(ACCOUNT_A)
   __setNotificationsApiForTests({
     fetchNotificationsApi: async () => {
@@ -288,12 +288,62 @@ test("R-IMPL#5: 복원이 실패해 끝나면 기존 사건의 최초 소리를 
   const result = await useNotificationsStore.getState().loadSnapshot()
   assert.equal(result.ok, false)
   assert.equal(useNotificationsStore.getState().snapshotLoaded, false)
+  // 실패한 조회는 복원을 **해소하지 못한다**. 예전 구현은 여기서 경계를 내려서, 서버 목록을
+  // 한 번도 받지 못한 채 과거 업적·친구 수신 사건이 다시 울렸다.
+  assert.equal(useNotificationsStore.getState().restorePending, true)
 
-  // 조회가 실패한 상태로 복원 경계를 계속 세워 두면 기존 업적·친구 소리가 영구히 사라진다.
+  // 못 받은 목록의 부재를 "새 사건"의 증거로 쓰지 않는다.
   assert.equal(
     useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:noble-win-10:granted"),
+    false,
+    "조회 실패 후 과거 업적 사건을 최초 발생으로 인정하면 안 된다",
+  )
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:77:received"),
+    false,
+    "조회 실패 후 과거 친구 수신 사건도 마찬가지다",
+  )
+  // 같은 사건이 늦게 반복 배달돼도 계속 거절한다(표식을 소모하지 않았으므로 상태도 그대로).
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:noble-win-10:granted"),
+    false,
+  )
+  assert.equal(useNotificationsStore.getState().soundSeen.size, 0)
+
+  // 알림 행이 없는 기존 F-16 제어 사건은 조회 실패와 무관하게 최초 소리를 잃지 않는다 —
+  // 복원이 그 사건을 알 길이 없으므로 여기서 삼키면 그대로 잃는다.
+  assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), true)
+  assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:declined"), true)
+  assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), false)
+
+  // 재시도가 성공하면 경계가 해소된다. snapshot이 담고 있던 과거 키는 계속 무음이고,
+  // 진짜 새 사건만 한 번 울린다.
+  __setNotificationsApiForTests({
+    fetchNotificationsApi: async () => [
+      notification({
+        id: "restored",
+        type: "achievement",
+        sourceKey: "achievement:noble-win-10:granted",
+      }),
+    ],
+  })
+  const retried = await useNotificationsStore.getState().loadSnapshot()
+  assert.equal(retried.ok, true)
+  assert.equal(useNotificationsStore.getState().restorePending, false)
+
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:noble-win-10:granted"),
+    false,
+    "복원에 담긴 과거 사건은 재시도 성공 뒤에도 무음이다",
+  )
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "system:notifications-available:v1"),
     true,
-    "조회 실패가 기존 사건의 소리를 영구히 삼키면 안 된다",
+    "복원이 해소된 뒤의 진짜 새 사건은 한 번 울린다",
+  )
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "system:notifications-available:v1"),
+    false,
   )
 })
 
