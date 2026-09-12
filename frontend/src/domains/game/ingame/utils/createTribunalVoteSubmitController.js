@@ -19,7 +19,7 @@ const MALFORMED_ACK_PATCH = { status: "idle", submittedVote: null, error: "제�
  * 못하기 때문이다. isContextStale은 성공·실패 두 settle 경로 모두가 공유하므로 이 재검증은 둘
  * 다에 항상 적용된다.
  */
-export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIBUNAL_VOTE_ACK_TIMEOUT_MS, onStateChange, getLatestContext }) {
+export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIBUNAL_VOTE_ACK_TIMEOUT_MS, onStateChange, getLatestContext, onAccepted }) {
   let state = INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE
   let submitting = false
   let generation = 0
@@ -81,7 +81,13 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIB
         setState(patch)
       }
 
-      const settleSuccess = (patch, ackGameId, ackDayIndex) => {
+      /**
+       * F-16(AC-01): 기존 settleSuccess의 소켓 identity·컨텍스트·ack echo 검사를 **전부 통과해
+       * 실제로 정착한 뒤에만** 사건 봉투를 알린다. 실패·timeout·malformed ack 경로는
+       * settleFailure를 타므로 여기 도달하지 않는다. onAccepted가 던져도 이미 정착한 제출
+       * 성공을 되돌리지 않는다(AC-06).
+       */
+      const settleSuccess = (patch, ackGameId, ackDayIndex, sfxEvent) => {
         if (settled) return
         if (isSocketStale()) return
         if (ackGameId !== gameId || ackDayIndex !== dayIndex) return
@@ -90,6 +96,13 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIB
         clearActiveTimer()
         submitting = false
         setState(patch)
+        if (sfxEvent !== null && typeof sfxEvent === "object") {
+          try {
+            onAccepted?.(sfxEvent, { gameId, dayIndex })
+          } catch {
+            // 무시한다 — 상태는 이미 정착했다.
+          }
+        }
       }
 
       activeTimer = setTimeout(() => settleFailure(TIMEOUT_PATCH), timeoutMs)
@@ -103,7 +116,7 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIB
             return
           }
           if (ackResult.ok === true) {
-            settleSuccess(patch, ackResult.gameId, ackResult.dayIndex)
+            settleSuccess(patch, ackResult.gameId, ackResult.dayIndex, ackResult.sfxEvent ?? null)
           } else {
             settleFailure(patch)
           }

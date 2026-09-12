@@ -16,6 +16,21 @@ const buildDeps = (overrides = {}) => ({
     get gameResultRepository() { return overrides.gameResultRepository ?? require('../repositories/gameResult.repositories'); },
     get voteParticipationRepository() { return overrides.voteParticipationRepository ?? require('../repositories/voteParticipation.repositories'); },
     get economyService() { return overrides.economyService ?? require('../service/economy.service'); },
+    // F-16(AC-01): 지급 성공을 그 계정에게만 알리는 통로. 위 필드들과 같은 이유로 getter다
+    // — 읽는 순간에만 require한다. socket/socket.js는 gameSession.js를 거쳐 이 모듈을 다시
+    // require하는 순환 구조라, 모듈 최상단에서 부르면 로드 순서에 따라 부분 초기화된 객체를
+    // 잡을 수 있다. 호출 시점에는 양쪽이 모두 완성돼 있다.
+    //
+    // require 자체가 실패하면(소켓 계층을 아예 로드하지 않는 순수 단위 시험 등) null을
+    // 돌려준다 — 통지 통로가 없다는 것이 지급 실패는 아니므로 던지지 않는다.
+    get emitToUser() {
+        if (overrides.emitToUser) return overrides.emitToUser;
+        try {
+            return require('../socket/socket').emitToUser;
+        } catch {
+            return null;
+        }
+    },
 });
 
 let deps = buildDeps();
@@ -43,6 +58,39 @@ const currentValueOf = (definition, progress) => {
 };
 
 const meetsThreshold = (definition, progress) => currentValueOf(definition, progress) >= definition.threshold;
+
+/**
+ * F-16(AC-01/AC-06): 새로 지급된 업적 하나를 그 계정에게만 알린다.
+ *
+ * 호출 위치가 중요하다 — grantAchievement의 트랜잭션이 **커밋된 직후**, 즉 각 지급 성공마다
+ * 바로 부른다. 전체 평가가 끝난 뒤에 한꺼번에 알리면, 뒤쪽 업적 평가가 실패했을 때 이미
+ * 커밋된 앞쪽 지급의 통지를 통째로 잃는다.
+ *
+ * 통지 실패는 삼킨다(AC-06). 소켓이 아직 없거나(초기화 전) 수신자가 접속 중이 아니어도
+ * 그것이 "지급 실패"는 아니다 — 이미 커밋된 지급을 롤백하거나 재지급하지 않고, 호출자의
+ * 응답도 실패로 바꾸지 않는다. 소리는 게임/보상 진행의 선행 조건이 아니다.
+ *
+ * eventId는 계정 범위에서 안정적이다(같은 업적은 평생 한 번만 granted=true가 된다) —
+ * 재전달·재접속에도 같은 문자열이라 수신 측 중복 판정이 성립한다.
+ */
+const notifyAchievementGranted = (userId, definition) => {
+    try {
+        const emit = deps.emitToUser;
+        // 통지 통로가 없으면 조용히 넘어간다 — 접속 중이 아닌 수신자와 같은 취급이다.
+        if (typeof emit !== 'function') return;
+        emit(userId, 'achievement_granted', {
+            achievementId: definition.id,
+            sfxEvent: {
+                kind: 'achievement-granted',
+                eventId: `achievement:${definition.id}:granted`,
+                accountId: userId,
+                origin: 'live',
+            },
+        });
+    } catch (error) {
+        console.error('[업적 지급 통지 실패]', { code: 'ACHIEVEMENT_NOTIFY_ERROR', userId, achievementId: definition.id });
+    }
+};
 
 /**
  * userId의 업적 진행률 원천 데이터를 모은다. 두 저장소가 이미 AC-05 게이트(중단 경기·
@@ -142,6 +190,10 @@ const evaluateAndGrantForUser = async (userId) => {
             continue;
         }
         const { granted } = await grantAchievement(userId, definition);
+        // 이 시점에서 granted=true는 "트랜잭션이 커밋됐다"는 뜻이다(grantAchievement가
+        // db.sequelize.transaction의 resolve로만 여기 도달한다). 롤백된 지급은 granted=false
+        // 이거나 예외로 빠져나가므로 통지되지 않는다.
+        if (granted) notifyAchievementGranted(userId, definition);
         results.push({ id: definition.id, achieved: true, granted, current, threshold: definition.threshold });
     }
 

@@ -135,6 +135,16 @@ const submitVote = async (session, actor, targetId) => {
 
 const countVoteParticipations = async (gameId) => db.VoteParticipation.count({ where: { game_id: gameId } });
 
+/**
+ * F-16(AC-01): cast_day_vote 성공 ack는 ok와 개인 사건 봉투(sfxEvent) 두 키를 담는다.
+ * 이 스위트의 관심은 DB 저장 계약이므로 봉투의 세부 규칙은 socket/__tests__가 맡고,
+ * 여기서는 "성공 ack이고 정확히 그 두 키뿐"임만 확인한다(추가 필드 누출 방어).
+ */
+const assertVoteAckOk = (response, message) => {
+    assert.deepEqual(Object.keys(response).sort(), ['ok', 'sfxEvent'], message);
+    assert.equal(response.ok, true, message);
+};
+
 // ── AC-01/AC-03: 실제 소켓 경로 — 정상 투표는 저장되고, 기권은 저장되지 않는다 ─────
 
 test('AC-01/AC-03: 정상 대상 투표는 성공 ack 전에 vote_participations에 저장되고, 기권은 사건을 만들지 않는다', async (t) => {
@@ -146,9 +156,9 @@ test('AC-01/AC-03: 정상 대상 투표는 성공 ack 전에 vote_participations
     registerOnline([a, b, c]);
 
     const voteResponse = await submitVote(session, a, b);
-    assert.deepEqual(voteResponse, { ok: true });
+    assertVoteAckOk(voteResponse);
     const abstainResponse = await submitVote(session, c, null);
-    assert.deepEqual(abstainResponse, { ok: true });
+    assertVoteAckOk(abstainResponse);
 
     assert.equal(await countVoteParticipations(session.id), 1, '비기권 투표 하나만 사건으로 저장되어야 한다');
     const row = await db.VoteParticipation.findOne({ where: { game_id: session.id, user_id: a }, raw: true });
@@ -168,10 +178,12 @@ test('AC-02: 같은 (game_id, day_index, user_id) 재제출은 한 번만 반영
     registerOnline([a, b]);
 
     const first = await submitVote(session, a, b);
-    assert.deepEqual(first, { ok: true });
+    assertVoteAckOk(first);
     // 클라이언트가 첫 ack를 못 받았다고 믿고 똑같은 요청을 재시도하는 상황을 흉내낸다.
     const retry = await submitVote(session, a, b);
-    assert.deepEqual(retry, { ok: true });
+    // F-16: 같은 대상 재시도이므로 eventId도 첫 제출과 같아야 한다(중복 재생 0).
+    assertVoteAckOk(retry);
+    assert.equal(retry.sfxEvent.eventId, first.sfxEvent.eventId);
 
     assert.equal(await countVoteParticipations(session.id), 1, '재시도는 새 사건을 만들면 안 된다');
 });
@@ -221,7 +233,7 @@ test('AC-03: 3인 전원 동점 재투표(2라운드 전원 기권)에서도 day
     // (backend/game-core/__tests__/gameSession.dayVote.test.js의 기존 계약과 동일).
     for (const uuid of [a, b, c]) {
         const response = await submitVote(session, uuid, null);
-        assert.deepEqual(response, { ok: true });
+        assertVoteAckOk(response);
     }
 
     // 라운드 2는 전원 기권이므로 새 사건이 생기지 않는다 — 총 사건 수는 라운드 1의 3건 그대로다.
@@ -244,7 +256,7 @@ test('AC-03/A-01: 최초 라운드에서 기권한 참가자가 재투표에서 
     // 대상에서 제외된다). b는 기권이므로 이 라운드에서 사건이 생기지 않는다.
     await submitVote(session, a, b);
     const bAbstainResponse = await submitVote(session, b, null);
-    assert.deepEqual(bAbstainResponse, { ok: true });
+    assertVoteAckOk(bAbstainResponse);
     await submitVote(session, c, a);
     assert.equal(await countVoteParticipations(session.id), 2, '기권한 b를 제외한 a·c의 사건만 저장되어야 한다');
 
@@ -257,7 +269,9 @@ test('AC-03/A-01: 최초 라운드에서 기권한 참가자가 재투표에서 
     // 라운드 2: a와 b가 대상에서 제외되었으므로 유일한 유효 대상은 c다. b는 이제 기권이 아닌
     // c에게 투표한다 — 최초 라운드가 아니므로 이 제출은 새 사건을 만들면 안 된다.
     const bRevoteResponse = await submitVote(session, b, c);
-    assert.deepEqual(bRevoteResponse, { ok: true }, '재투표 제출 자체는 ack가 성공해야 한다');
+    assertVoteAckOk(bRevoteResponse, '재투표 제출 자체는 ack가 성공해야 한다');
+    // F-16: 재투표는 별도 라운드 범위다 — F-11의 DB 집계 기여가 없더라도 사건은 있다.
+    assert.equal(bRevoteResponse.sfxEvent.round, 2);
     await submitVote(session, a, c);
 
     assert.equal(await countVoteParticipations(session.id), 2, '재투표의 비기권 제출은 새 사건을 만들지 않는다');
@@ -307,7 +321,7 @@ test('재접속: 같은 계정이 새 소켓으로 재제출해도 집계 키는
     await gameSessionSocket.__testables.handleSubmitDayVote(
         fakeIo, { id: `sock-${a}-reconnected`, data: {} }, a, { gameId: session.id, targetId: b }, ack.callback,
     );
-    assert.deepEqual(ack.get(), { ok: true });
+    assertVoteAckOk(ack.get());
 
     assert.equal(await countVoteParticipations(session.id), 1, '연결이 바뀌어도 같은 계정의 같은 날 사건은 하나여야 한다');
 });
@@ -333,7 +347,7 @@ test('저장 실패는 VOTE_PERSIST_FAILED로 ack되고, 메모리 투표는 남
 
     db.VoteParticipation.findOrCreate = original;
     const retried = await submitVote(session, a, b);
-    assert.deepEqual(retried, { ok: true }, '저장이 복구되면 같은 요청의 재시도는 거절되지 않고 성공해야 한다');
+    assertVoteAckOk(retried, '저장이 복구되면 같은 요청의 재시도는 거절되지 않고 성공해야 한다');
     assert.equal(await countVoteParticipations(session.id), 1, '재시도 성공 후에도 사건은 하나여야 한다');
 });
 

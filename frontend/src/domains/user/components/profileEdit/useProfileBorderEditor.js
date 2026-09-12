@@ -51,6 +51,7 @@ export function useProfileBorderEditor({ open, onClose }) {
   // 수 있다. 편집기가 실제로 "열릴 때"마다(계정 전환으로 인한 재오픈 포함) 세션 id를 새로
   // 발급해, 비동기 응답이 도착했을 때 지금도 같은 세션인지 계정 세대와 별도로 확인한다.
   const editorSessionRef = useRef(0)
+  const pendingSaveRef = useRef(false)
   // F-13 AC-04 재검토(CORRECTION): 편집기가 열리는 바로 그 순간의 store.loadout은 계정
   // 전환 직후(reset() 직후)라면 아직 서버 조회가 끝나지 않은 빈/기본값일 수 있다 — 아래
   // 세션 효과가 그 순간의 값으로 초안을 고정해버리면, 실제 fetchSummary가 나중에 성공해도
@@ -65,6 +66,7 @@ export function useProfileBorderEditor({ open, onClose }) {
   // 시도한다 — GET은 반복해도 안전하다(A-09).
   useEffect(() => {
     editorSessionRef.current += 1
+    pendingSaveRef.current = false
     if (!open) return
     hasEditedRef.current = false
     setActiveTab(PROFILE_EDIT_TAB_PHOTO)
@@ -134,8 +136,8 @@ export function useProfileBorderEditor({ open, onClose }) {
   // 유지하고 편집기를 닫지 않는다(재시도 가능). 사진·테두리 어느 쪽도 바뀌지 않았으면
   // 불필요한 요청을 만들지 않는다. 바뀐 슬롯만 요청에 실어, 바뀌지 않은 슬롯이 검증
   // 과정에서 실수로 재검증·재저장되지 않게 한다.
-  const handleConfirm = useCallback(async () => {
-    if (confirmStatus === "saving") return // 중복 확인 방지
+  const handleConfirm = useCallback(async ({ onChanged } = {}) => {
+    if (confirmStatus === "saving" || pendingSaveRef.current) return // 중복 확인 방지
 
     const photoChanged = draftPhotoItemId !== currentPhotoItemId
     const borderChanged = draftBorderItemId !== currentBorderItemId
@@ -144,6 +146,8 @@ export function useProfileBorderEditor({ open, onClose }) {
       return
     }
 
+    pendingSaveRef.current = true
+    try { onChanged?.() } catch { /* Audio cannot block the accepted save. */ }
     setConfirmStatus("saving")
     setConfirmError(null)
     setConfirmUncertain(false)
@@ -199,6 +203,8 @@ export function useProfileBorderEditor({ open, onClose }) {
           ? "저장 결과를 확인하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해주세요."
           : (error?.message ?? "프로필 저장에 실패했습니다."),
       )
+    } finally {
+      if (editorSessionRef.current === startSession) pendingSaveRef.current = false
     }
   }, [confirmStatus, draftPhotoItemId, currentPhotoItemId, draftBorderItemId, currentBorderItemId, equipProfile, fetchSummary, onClose])
 

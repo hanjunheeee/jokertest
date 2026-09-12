@@ -7,6 +7,7 @@ import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js
 import { createLeaveGameSessionRequest } from "../utils/createLeaveGameSessionRequest.js"
 import { createExitConfirmController } from "../utils/createExitConfirmController.js"
 import { isPopNavigationBlocked } from "../utils/isPopNavigationBlocked.js"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 /**
  * 인게임 나가기 버튼과 앱 내부 뒤로가기(POP)를 같은 확인·leave_game_session 계약으로
@@ -33,7 +34,14 @@ export function useInGameExit() {
       getCurrentGameId: () => useInGameStore.getState().gameId,
       finalize,
     })
-    return createExitConfirmController({ confirm: window.confirm, requestLeave })()
+    // F-16(AC-01): native confirm에는 click 이벤트가 없으므로 호출마다 단일 actionId를
+    // 발급한다(이벤트 없이 dispatchUiSfx 호출). 버튼 클릭·POP 두 진입점 모두 이 컨트롤러
+    // 하나를 거치므로 각 진입당 정확히 한 번이다.
+    return createExitConfirmController({
+      confirm: window.confirm,
+      requestLeave,
+      onDecision: (kind) => dispatchUiSfx(kind),
+    })()
   }
 
   useEffect(() => {

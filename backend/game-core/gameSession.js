@@ -681,6 +681,11 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         dayVoteResolution: null,
         // TRIBUNAL 단계의 피고 정보. commitDayVoteResolution이 outcome:'TRIBUNAL'일 때만 채운다.
         tribunal: null,
+        // F-16(AC-01/AC-04): 낮 투표 "제출" 효과음 사건의 actor별 메타데이터.
+        // uuid → { dayIndex, round, targetId, revision, eventId(불변) }.
+        // dayVotes와 같은 이유로 세션 객체 안에 둔다 — 세션이 registry에서 지워지면 함께
+        // 사라지고, 다른 세션의 사건 번호와 절대 섞이지 않는다.
+        dayVoteSfx: new Map(),
         // 이 방의 제한시간 설정(초). 밤 턴 타이머와 낮 페이즈 타이머가 길이를 정할 때 읽는
         // 유일한 출처이며, 값이 없으면 소비하는 쪽이 canonical 기본 상수로 폴백한다.
         timerSettings: buildTimerSettings(room.settings),
@@ -944,6 +949,9 @@ function enterDayPhase(session) {
     session.dayVotes = new Map()
     session.dayVoteRound = 1
     session.dayVoteExcludedUuids = new Set()
+    // F-16: 지난 낮의 투표 제출 사건 메타데이터는 새 낮으로 이어지지 않는다. 남겨 두어도
+    // advanceDayVoteSfx가 dayIndex 불일치로 무시하지만, 세션 수명 동안 쌓이지 않게 함께 비운다.
+    session.dayVoteSfx = new Map()
 }
 
 /**
@@ -1940,8 +1948,79 @@ function submitDayVote(uuid, gameId, targetId) {
         }
     }
 
+    // 성공이 확정된 뒤에만 사건 메타데이터를 갱신한다 — 위의 모든 실패 경로는 dayVotes와
+    // 마찬가지로 dayVoteSfx도 건드리지 않는다.
+    const isFirstSubmission = !session.dayVotes.has(uuid)
     session.dayVotes.set(uuid, targetId)
+    advanceDayVoteSfx(session, uuid, targetId, isFirstSubmission)
     return { ok: true }
+}
+
+/**
+ * F-16(AC-01/AC-04): 낮 투표 제출 사건 ID를 actor별로 갱신한다(submitDayVote 성공 직후에만 호출).
+ *
+ * revision을 올리는 조건은 **실제 변경**뿐이다 — 최초 제출(기권 null 포함)이거나 대상이
+ * 바뀐 경우다. 같은 대상 재요청은 기존 revision·eventId를 그대로 유지하므로, 클라이언트가
+ * 같은 표를 다시 보내도 새 소리가 나지 않는다.
+ *
+ * A→B→A는 세 번의 실제 변경이므로 revision 1·2·3의 서로 다른 ID가 된다 — uuid+target만으로
+ * 키를 만들면 세 번째가 첫 번째와 같은 키가 되어 "중복"으로 묻힌다.
+ *
+ * eventId에는 target도 role도 넣지 않는다(AC-05) — 누가 누구를 찍었는지가 사건 ID나 로그로
+ * 새어나가면 안 된다.
+ *
+ * 라운드/날짜가 다른 이전 기록은 "없음"과 같게 취급한다 — 재투표(새 round)와 다음 낮은
+ * 각각 별도 범위이고, 그 안에서 revision은 1부터 다시 시작한다.
+ */
+function advanceDayVoteSfx(session, uuid, targetId, isFirstSubmission) {
+    const dayIndex = session.dayIndex
+    const round = getDayVoteRound(session)
+    const previous = session.dayVoteSfx instanceof Map ? session.dayVoteSfx.get(uuid) : undefined
+    const inSameScope =
+        previous !== undefined && previous.dayIndex === dayIndex && previous.round === round
+
+    if (inSameScope && !isFirstSubmission && previous.targetId === targetId) return
+
+    const revision = inSameScope ? previous.revision + 1 : 1
+    if (!(session.dayVoteSfx instanceof Map)) session.dayVoteSfx = new Map()
+    session.dayVoteSfx.set(
+        uuid,
+        Object.freeze({
+            dayIndex,
+            round,
+            targetId,
+            revision,
+            eventId: `game:${session.id}:day:${dayIndex}:round:${round}:actor:${uuid}:vote:${revision}`,
+        }),
+    )
+}
+
+/**
+ * F-16(AC-01): 방금 성공한 낮 투표 제출의 **불변** 사건 봉투를 돌려준다(순수 조회).
+ *
+ * submitDayVote의 반환값에 필드를 더하지 않는 이유는 이 파일이 이미 F-11에서 문서화한 것과
+ * 같다 — 기존 dayVote 시험들이 deepEqual({ok:true})로 정확한 키 집합을 검증하므로, 반환
+ * 계약을 바꾸는 대신 별도 조회 함수를 둔다(readDayVoteContext와 같은 관례).
+ *
+ * 소켓 핸들러는 submitDayVote 성공 **직후·어떤 await보다 먼저** 이 함수를 호출해 객체를
+ * 캡처한다. 나중에 같은 actor가 다시 제출하면 위 advanceDayVoteSfx가 **새 객체**로 교체하므로,
+ * 이미 캡처한 참조는 늦은 DB 완료 시점에도 다음 제출의 ID로 바뀌지 않는다.
+ *
+ * @returns {{dayIndex:number, round:number, revision:number, eventId:string}|null}
+ */
+function readDayVoteSubmitSfxEvent(uuid, gameId) {
+    if (typeof gameId !== 'string' || gameId.length === 0) return null
+    const session = gameSessions.get(gameId)
+    if (!session || !(session.dayVoteSfx instanceof Map)) return null
+    const record = session.dayVoteSfx.get(uuid)
+    if (record === undefined) return null
+    // targetId는 공개 경계로 나가지 않는다 — 누구에게 투표했는지는 사건 봉투에 담지 않는다.
+    return Object.freeze({
+        dayIndex: record.dayIndex,
+        round: record.round,
+        revision: record.revision,
+        eventId: record.eventId,
+    })
 }
 
 /**
@@ -2295,6 +2374,8 @@ function commitDayVoteResolution(session, resolution) {
         session.dayVoteRound = getResolutionRound(resolution) + 1
         session.dayVoteExcludedUuids = new Set(resolution.revoteExcludedUuids ?? [])
         session.dayVotes = new Map()
+        // F-16: 재투표는 별도 라운드 범위다 — revision이 1부터 다시 시작한다.
+        session.dayVoteSfx = new Map()
     } else {
         // TRIBUNAL/TIE/ABSTAINED는 phase가 DAY를 벗어나므로 dayPhase는 그 순간부터 어떤
         // 게이트의 입력도 아니다 — dayVoteResolution/tribunal을 남겨두는 기존 관례와 동일하게
@@ -2400,6 +2481,34 @@ function submitTribunalVote(uuid, gameId, dayIndex, vote) {
 
     tribunal.votes.set(uuid, vote)
     return { ok: true, gameId: session.id, dayIndex: session.dayIndex, vote: tribunal.votes.get(uuid) }
+}
+
+/**
+ * F-16(AC-01): 재판 투표 "제출" 사건의 불변 봉투(순수 조회).
+ *
+ * 재판 투표는 votes.has(uuid)면 TRIBUNAL_VOTE_ALREADY_SUBMITTED로 실패하므로 **최초 성공이
+ * 정확히 한 번**이다. 그래서 낮 투표와 달리 revision이 필요 없고, (게임, 날짜, actor) 하나로
+ * 이미 안정적이다 — 중복 실패에는 애초에 봉투가 붙지 않는다.
+ *
+ * castTribunalVote의 반환 계약(정확히 {ok,gameId,dayIndex,vote})은 시험이 키 집합까지
+ * 검증하므로 건드리지 않고, readDayVoteSubmitSfxEvent와 같은 관례로 별도 조회를 둔다.
+ * 투표 내용(GUILTY/NOT_GUILTY)은 봉투에 담지 않는다(AC-05).
+ *
+ * @returns {{dayIndex:number, eventId:string}|null}
+ */
+function readTribunalVoteSubmitSfxEvent(uuid, gameId) {
+    if (typeof gameId !== 'string' || gameId.length === 0) return null
+    const session = gameSessions.get(gameId)
+    if (!session) return null
+    const tribunal = session.tribunal
+    if (!tribunal || !(tribunal.votes instanceof Map)) return null
+    if (!tribunal.votes.has(uuid)) return null
+    const dayIndex = tribunal.dayIndex
+    if (!Number.isInteger(dayIndex)) return null
+    return Object.freeze({
+        dayIndex,
+        eventId: `game:${session.id}:day:${dayIndex}:actor:${uuid}:tribunal-submitted`,
+    })
 }
 
 // TRIBUNAL 판정 prepare/commit 사이 신뢰 경계를 지키기 위한 pending 레코드 저장소. session
@@ -3219,6 +3328,9 @@ module.exports = {
     submitDayVote,
     getSessionDayIndex,
     getSessionDayVoteRound,
+    // F-16(AC-01/AC-04): 투표 제출 사건 봉투 조회(순수). 소켓 핸들러가 성공 직후·await 전에 캡처한다.
+    readDayVoteSubmitSfxEvent,
+    readTribunalVoteSubmitSfxEvent,
     prepareJokerChatMessage,
     commitJokerChatMessage,
     prepareGameChatMessage,

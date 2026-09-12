@@ -16,6 +16,7 @@ import {
 } from "../../constants/vote/ingameVoteLayout.js"
 import InGameVoteStatusContent from "./InGameVoteStatusContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 /** 인게임 투표현황 팝업 — 중앙 모달 */
 export default function InGameVoteStatusPanel({ open, onClose }) {
@@ -23,7 +24,10 @@ export default function InGameVoteStatusPanel({ open, onClose }) {
     if (!open) return undefined
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose()
+      if (event.key !== "Escape") return
+      // F-16(AC-01): 열린 상태에서 실제로 닫는 경로만 취소음.
+      dispatchUiSfx("ui-cancel", event)
+      onClose()
     }
 
     window.addEventListener("keydown", onKeyDown)
@@ -38,6 +42,7 @@ export default function InGameVoteStatusPanel({ open, onClose }) {
             type="button"
             aria-label="투표 현황 닫기"
             className={INGAME_VOTE_BACKDROP_CLASS}
+            data-sfx-kind="ui-cancel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -70,6 +75,7 @@ export default function InGameVoteStatusPanel({ open, onClose }) {
                 type="button"
                 aria-label="투표 현황 닫기"
                 onClick={onClose}
+                data-sfx-kind="ui-cancel"
                 className={INGAME_VOTE_CLOSE_BTN_CLASS}
                 style={{ outline: "none" }}
               >

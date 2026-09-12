@@ -1,0 +1,4 @@
+{
+  "at": "2026-09-12T11:39:20.531Z",
+  "snapshot": "- complementary \"좌측 배너 영역\"\n- main:\n  - navigation \"설정 탭\":\n    - button \"일반\":\n      - generic: 일반\n    - button \"사운드\" [active] [pressed]:\n      - generic: 사운드\n  - region \"설정 목록\":\n    - generic: Master Volume\n    - paragraph: \"1\"\n    - slider \"Master Volume\": \"1\"\n    - generic: 배경음\n    - paragraph: \"80\"\n    - slider \"배경음\": \"80\"\n    - generic: 효과음\n    - paragraph: \"0\"\n    - slider \"효과음\": \"0\"\n    - generic: 효과음 음소거\n    - checkbox \"효과음 음소거\" [checked]\n  - button \"뒤로 가기\"\n- complementary \"우측 배너 영역\""
+}

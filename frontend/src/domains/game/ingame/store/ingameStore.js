@@ -1,6 +1,7 @@
 // 파일 역할: ingameStore.js - 전역 상태 store입니다.
 import { create } from "zustand"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
+import { applyPlayerEliminatedPure } from "./applyPlayerEliminated.js"
 import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "./applySessionSnapshot.js"
 import { getDayVoteRound, parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
 
@@ -130,6 +131,12 @@ export const useInGameStore = create((set) => ({
         ...(isLegacyFirstNight ? CLEARED_NIGHT_PRIVATE_RESULT : {}),
       }
     }),
+
+  // F-16(AC-01): player_eliminated 공개 방송을 반영한다(끊김 사망, 그리고 그 사망이 곧바로
+  // 승패를 확정한 terminal). 호출부가 parsePlayerEliminatedPayload로 이미 검증한 값만
+  // 넘기지만, 다른 reducer와 같은 이유로 순수 함수 안에서 gameId/종료 불변성을 다시 본다.
+  // 기존 외형 필드와 nightPrivateResult는 보존한다(applyPlayerEliminated.js 참고).
+  applyPlayerEliminated: (parsed) => set((current) => applyPlayerEliminatedPure(current, parsed)),
 
   // night_result_applied 방송을 반영한다. 호출부(useGameSessionSocketEvents)가 이미
   // parseNightResultAppliedPayload로 검증한 값만 넘기지만, applyPhaseChanged와 동일한 이유로

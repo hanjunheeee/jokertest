@@ -421,3 +421,16 @@ test('operator: pending save prevents later selection from being silently lost',
   assert.equal(button(alternatives[1]).getAttribute('aria-pressed'), 'false')
   await act(async () => release({ loadout: {} }))
 })
+
+
+test("F16 unchanged skin/card confirmation has zero UI SFX and zero equip requests",async()=>{
+  resetAll();getImpl=async endpoint=>endpoint.endsWith("/wallet")?{balanceGold:0,balanceDiamond:0}:flatLoadout()
+  let posts=0;postImpl=async()=>{posts++;throw Error("unexpected save")}
+  const {__setSfxPlayerForTests}=await import("../../../../../shared/hooks/useSfxRuntime.js")
+  const events=[];__setSfxPlayerForTests({dispatch:event=>events.push(event)})
+  try{
+    const view=render(React.createElement(SkinCardWearOverlay,{open:true,onClose:()=>{}}));await flushMicrotasks()
+    await act(async()=>{view.getByRole("button",{name:"적용",exact:true}).click()})
+    assert.equal(posts,0);assert.deepEqual(events,[])
+  }finally{__setSfxPlayerForTests(null)}
+})

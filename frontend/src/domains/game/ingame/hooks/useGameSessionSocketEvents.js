@@ -4,6 +4,8 @@ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClie
 // 상대 경로로 둔다 — 이 훅은 node:test에서 실제로 마운트해 검증하는 대상이고(store/__tests__/
 // nightPrivateResult.test.js), `@/` 별칭은 vite만 해석할 수 있어 그 실행을 막는다.
 import { useMatchingStore } from "../../matching/store/matchingStore.js"
+import { useAuthStore } from "../../../auth/store/auth.store.js"
+import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
@@ -15,7 +17,56 @@ import { parseDayPhaseChangedPayload } from "../utils/parseDayPhaseChangedPayloa
 import { parseNightTurnStartedPayload } from "../utils/parseNightTurnStartedPayload.js"
 import { parseNightTurnEndedPayload } from "../utils/parseNightTurnEndedPayload.js"
 import { attachNightTurnSocketListeners } from "../utils/attachNightTurnSocketListeners.js"
+import { parsePlayerEliminatedPayload } from "../utils/parsePlayerEliminatedPayload.js"
 import { parseDayVoteResolvedPayload } from "./useInGameActionPanel.js"
+
+// ---------------------------------------------------------------------------
+// F-16 효과음 연결
+//
+// 공통 원칙 세 가지가 아래 모든 dispatch에 똑같이 적용된다.
+//   1. **반영이 먼저다.** 각 핸들러는 기존 파서·store 검증을 그대로 통과시켜 canonical
+//      상태를 먼저 바꾸고, 그 뒤에 소리를 낸다. 소리의 성공·실패·지연은 상태 전이·타이머·
+//      결과 화면 진행에 영향을 주지 않는다(AC-06).
+//   2. **검증을 통과한 live 사건만.** 파서가 null을 돌려준 payload(중복·stale·잘못된 roster)
+//      에는 소리가 없다. applySessionSnapshot 같은 복원 경로는 이 핸들러들을 거치지 않으므로
+//      재접속에도 소리가 나지 않는다(A-05).
+//   3. **ID는 서버 canonical 값에서만 만든다.** 시각·난수·렌더 횟수를 쓰지 않으므로 같은
+//      사건을 다시 전달해도 같은 문자열이고, 재생기가 중복으로 거른다(AC-04).
+// ---------------------------------------------------------------------------
+
+/** 종료로 인정하는 승자. 이 둘이 아니면 결과 사건을 만들지 않는다. */
+const VALID_WINNERS = new Set(["CITIZEN", "JOKER"])
+
+/** 현재 인증 계정. 로그인 상태가 아니면 서버 사건을 받아들이지 않는다. */
+function currentAccountId() {
+  const { user, isLoggedIn } = useAuthStore.getState()
+  return isLoggedIn && user?.uuid ? user.uuid : null
+}
+
+/** 게임 범위 사건 하나를 공통 재생기로 넘긴다. 절대 던지지 않는다. */
+function playGameSfx(kind, eventId, gameId, origin = "live") {
+  if (typeof eventId !== "string" || eventId.length === 0) return
+  if (typeof gameId !== "string" || gameId.length === 0) return
+  const accountId = currentAccountId()
+  if (accountId === null) return
+  dispatchSfxEvent({ kind, eventId, accountId, gameId, origin })
+}
+
+/**
+ * 승패 결과음. 게임당 ID가 하나(game:<id>:result)뿐이라, 어느 terminal 경로(밤 결과·재판
+ * 판정·끊김 사망)로 끝나도 소리는 한 번이다.
+ *
+ * 승패는 game_ended가 아니다 — game_ended는 세션 정리 신호이고, 화면이 결과로 넘어가는
+ * 근거는 ENDED + winResult다(useInGameResultNavigation). 그래서 여기서도 그 두 값만 본다.
+ * GameResultPage 진입 자체나 ?outcome= 미리보기는 이 경로를 거치지 않으므로 소리가 없다.
+ */
+function dispatchResultSfxIfEnded(origin = "live") {
+  const current = useInGameStore.getState()
+  if (!current.gameId || !current.state) return
+  if (current.state.phase !== "ENDED") return
+  if (!VALID_WINNERS.has(current.state.winResult?.winner)) return
+  playGameSfx("game-result", `game:${current.gameId}:result`, current.gameId, origin)
+}
 
 /** 인게임 store와 matching store를 함께 초기화하고 로비로 이동하는 finalizer를 만든다. */
 function buildFinalizer(navigate) {
@@ -55,7 +106,17 @@ export function useGameSessionSocketEvents() {
     // 이벤트를 놓칠 수 있다. applyPhaseChanged 자체가 gameId 불일치를 걸러내므로 여기서는
     // store에 그대로 위임한다.
     const handlePhaseChanged = (payload) => {
+      const before = useInGameStore.getState().state
       useInGameStore.getState().applyPhaseChanged(payload)
+      const after = useInGameStore.getState()
+      // store가 참조를 그대로 돌려줬다면(stale·중복·형식 오류) 실제 전이가 아니다 — 소리도 없다.
+      if (after.state === before) return
+      playGameSfx(
+        "game-phase-changed",
+        `game:${after.gameId}:phase:${after.state.phase}:${after.state.dayIndex}`,
+        after.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
+      )
     }
 
     // NIGHT 결과 적용(사망 + DAY 전이) 방송이다. 검증에 필요한 canonical roster/gameId/dayIndex는
@@ -75,6 +136,9 @@ export function useGameSessionSocketEvents() {
       })
       if (!parsed) return
       useInGameStore.getState().applyNightResultAppliedPayload(parsed)
+      // 밤 결과로 승패가 확정될 수 있다. 사망 자체의 공개음은 player_eliminated가 담당하고,
+      // 여기서는 종료 전이만 결과음으로 잇는다(두 사건의 ID는 서로 다르다).
+      dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
     }
 
     // 밤 개인 결과(night_action_result)다. 세션 channel 방송이 아니라 결과가 있는 수신자
@@ -98,6 +162,20 @@ export function useGameSessionSocketEvents() {
       })
       if (!parsed) return
       useInGameStore.getState().setNightPrivateResult(parsed)
+
+      // F-16(AC-05): 개인 결과음. 서버가 이 결과를 보낼 수 있는 수신자 조건 전부를 위
+      // 파서가 이미 대조했고, 여기서는 서버가 명시한 허용 계정과 현재 인증 계정을 한 번 더
+      // 대조한다 — 둘 다 통과해야 소리가 난다. 봉투가 없으면 무음이다.
+      //
+      // ASSASSINATE success:false는 "실패 통지"이지 성공이 아니다 — 별도 kind로 보낸다.
+      // 대상 uuid·조사로 드러난 역할은 ID에도 재생기 입력에도 넣지 않는다.
+      const envelope = payload?.sfxEvent
+      if (envelope === null || typeof envelope !== "object") return
+      const accountId = currentAccountId()
+      if (accountId === null || envelope.accountId !== accountId) return
+      if (envelope.gameId !== current.gameId) return
+      const kind = parsed.actionType === "ASSASSINATE" ? "night-private-failure" : "night-private-result"
+      playGameSfx(kind, envelope.eventId, current.gameId, envelope.origin ?? "restore")
     }
 
     // DAY 투표 판정 방송이다(TRIBUNAL 전이 또는 TIE/ABSTAINED의 NIGHT 전이). 검증에 필요한
@@ -118,6 +196,17 @@ export function useGameSessionSocketEvents() {
           outcome: parsed.outcome,
           defendantUuid: parsed.tribunalTargetUuid,
         })
+
+      // 낮 판정음. 제출(ACK)과 판정(방송)은 서로 다른 kind이고, 한 (게임, 날짜, 라운드)는
+      // 정확히 한 번 판정되므로 중복 방송은 같은 ID로 걸러진다. round가 없는 legacy payload는
+      // 1라운드다(parseDayVoteRoundFields와 같은 기본값).
+      const round = Number.isInteger(parsed.round) ? parsed.round : 1
+      playGameSfx(
+        "day-vote-resolved",
+        `game:${current.gameId}:day:${parsed.dayIndex}:round:${round}:day-resolved`,
+        current.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
+      )
     }
 
     // 낮 하위 페이즈 전이(DAY_DISCUSSION→DAY_VOTE) 방송이다. 검증에 필요한 gameId/dayIndex는
@@ -132,6 +221,12 @@ export function useGameSessionSocketEvents() {
       })
       if (!parsed) return
       useInGameStore.getState().applyDayPhaseChanged(parsed)
+      playGameSfx(
+        "day-phase-changed",
+        `game:${current.gameId}:day:${parsed.dayIndex}:dayphase:${parsed.dayPhase}`,
+        current.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
+      )
     }
 
     // 밤 역할 턴 전이(어느 직업의 차례가 시작됐는가) 방송이다. 검증에 필요한 gameId/dayIndex는
@@ -150,6 +245,15 @@ export function useGameSessionSocketEvents() {
       })
       if (!parsed) return
       useInGameStore.getState().applyNightTurnStarted(parsed)
+      // 이 방송은 역할·생존과 무관하게 모든 참가자에게 똑같이 간다(위 주석 참고). 턴 전환
+      // 안내음도 마찬가지라, 여기서 역할별로 소리를 나누지 않는다 — role은 이미 공개된
+      // "지금 누구의 차례인가"이지 개인 비밀이 아니다.
+      playGameSfx(
+        "night-turn-started",
+        `game:${current.gameId}:day:${parsed.dayIndex}:nightturn:${parsed.role}`,
+        current.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
+      )
     }
 
     // 서버가 현재 역할 턴의 종료를 확정한 순간 role/deadline을 함께 비운다. 다음 started가
@@ -176,10 +280,62 @@ export function useGameSessionSocketEvents() {
     // 그대로 store에 넘긴다 — applyTribunalResolved(→applyTribunalResolvedPure)가 gameId/
     // dayIndex/phase/defendantUuid 4종을 canonical과 비교해 stale이면 참조를 그대로 보존한다.
     const handleTribunalVoteResolved = (payload) => {
+      const before = useInGameStore.getState().state
       useInGameStore.getState().applyTribunalResolved(payload)
+      const after = useInGameStore.getState()
+      // applyTribunalResolved는 stale payload에 참조를 그대로 보존한다 — 그 경우 소리도 없다.
+      if (after.state === before || !after.gameId || !after.state) return
+      playGameSfx(
+        "tribunal-vote-resolved",
+        `game:${after.gameId}:day:${after.state.dayIndex}:tribunal-resolved`,
+        after.gameId,
+        payload?.sfxEvent?.origin ?? payload?.origin ?? "live",
+      )
+      dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
+    }
+
+    /**
+     * F-16(AC-01): player_eliminated의 **누락돼 있던** 프런트 소비처다.
+     *
+     * 서버는 끊김 유예 만료(expireDisconnectGrace)에서 이 사건을 이미 방송하고 있었는데
+     * 받는 쪽이 하나도 없어서, 그 사망이 다른 참가자 화면의 roster에 반영되지 않았다.
+     * 여기서 검증 → store 반영 → 소리 순서로 잇는다. 이것은 이미 발생하는 현재 사건의
+     * 보완이며 종료 흐름 개편(F-22)이 아니다.
+     */
+    const handlePlayerEliminated = (payload) => {
+      const current = useInGameStore.getState()
+      if (!current.gameId || !current.state) return
+      const players = current.state.players ?? []
+      const canonicalPlayerIds = new Set(players.map((p) => p.uuid))
+      const previouslyDeadUuids = new Set(players.filter((p) => p.alive === false).map((p) => p.uuid))
+      const parsed = parsePlayerEliminatedPayload({
+        payload,
+        gameId: current.gameId,
+        dayIndex: current.state.dayIndex,
+        phase: current.state.phase,
+        canonicalPlayerIds,
+        previouslyDeadUuids,
+      })
+      if (!parsed) return
+
+      const before = current.state
+      useInGameStore.getState().applyPlayerEliminated(parsed)
+      // 중복 방송이면 reducer가 참조를 그대로 돌려준다 — 이미 반영된 사망에 소리를 더하지 않는다.
+      if (useInGameStore.getState().state === before) return
+
+      // 사망 사건과 결과 사건은 ID가 다르다. 끊김 사망이 곧바로 승패를 확정한 경우에는
+      // 둘 다 한 번씩 난다.
+      const envelope = payload?.sfxEvent
+      const eventId =
+        envelope !== null && typeof envelope === "object" && typeof envelope.eventId === "string"
+          ? envelope.eventId
+          : `game:${current.gameId}:day:${parsed.dayIndex}:victim:${parsed.victimUuid}:eliminated`
+      playGameSfx("player-eliminated", eventId, current.gameId, envelope ? (envelope.origin ?? "restore") : "live")
+      dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
     }
 
     socket.on("game_ended", handleGameEnded)
+    socket.on("player_eliminated", handlePlayerEliminated)
     socket.on("game_phase_changed", handlePhaseChanged)
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("night_action_result", handleNightActionResult)
@@ -188,6 +344,7 @@ export function useGameSessionSocketEvents() {
     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
     return () => {
       socket.off("game_ended", handleGameEnded)
+      socket.off("player_eliminated", handlePlayerEliminated)
       socket.off("game_phase_changed", handlePhaseChanged)
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("night_action_result", handleNightActionResult)

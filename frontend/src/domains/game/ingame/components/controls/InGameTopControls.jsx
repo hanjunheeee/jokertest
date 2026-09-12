@@ -15,10 +15,12 @@ function ControlButton({
   src,
   // onClick: 버튼 클릭 시 호출되는 콜백
   onClick,
+  sfxOwner,
 }) {
   return (
     <button
       type="button"
+      data-sfx-owner={sfxOwner}
       aria-label={ariaLabel}
       onClick={onClick}
       className={INGAME_CONTROL_BTN_CLASS}
@@ -42,6 +44,7 @@ export default function InGameTopControls({
   return (
     <div className={className} aria-label="인게임 컨트롤">
       <ControlButton
+        sfxOwner="explicit"
         ariaLabel="게임 나가기"
         src={NAVIGATION_ASSETS.backButton}
         onClick={onExitClick}

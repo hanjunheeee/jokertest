@@ -21,6 +21,7 @@ import {
 } from "@/shared/ui/tutorialGuide/tutorialGuideLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { publicAsset } from "@/shared/utils/publicAsset"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 /** 게임 플레이 튜토리얼/도움말 슬라이드(PPT) 전역 오버레이 */
 export default function TutorialGuideOverlay({
@@ -49,9 +50,13 @@ export default function TutorialGuideOverlay({
 
     const onKeyDown = (event) => {
       if (event.key === "Escape") {
+        // F-16(AC-01): 열린 상태에서 실제로 닫는 경로만 취소음.
+        dispatchUiSfx("ui-cancel", event)
         onClose()
         return
       }
+      // 화살표 키는 클릭이 아니다 — 같은 페이지 이동이라도 소리는 실제 click에만 붙인다
+      // (키보드 입력 자체에 별도 소리를 더하지 않는다는 규칙).
       if (event.key === "ArrowLeft") {
         setPageIndex((prev) => Math.max(0, prev - 1))
       }
@@ -74,6 +79,7 @@ export default function TutorialGuideOverlay({
             type="button"
             aria-label="튜토리얼 닫기"
             className={TUTORIAL_GUIDE_BACKDROP_CLASS}
+            data-sfx-kind="ui-cancel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

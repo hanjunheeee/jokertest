@@ -1,3 +1,7 @@
+// F-16(AC-01): 이 두 버튼(결과 확인·다시 시도)은 확인/취소가 아니라 **일반 클릭**이다 —
+// 구매를 확정하지도, 열린 것을 닫지도 않는다. 그래서 의미 표식을 달지 않고 런타임의
+// document capture 단일 소유자가 일반 클릭음으로 처리하게 둔다(계획의 UI 소유권 표 마지막
+// 행). 표식이 없는 것이 누락이 아니라 분류 결과라는 것을 남겨 둔다.
 export default function StorePurchaseFeedback({ state, onCheck, onRetry }) {
   const messages = {
     pending: "구매 결과를 확인하고 있습니다…",

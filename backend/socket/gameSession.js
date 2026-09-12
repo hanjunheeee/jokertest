@@ -990,6 +990,19 @@ function expireDisconnectGrace(run) {
         if (applied.terminal) {
             payload = { ...payload, ...gameSessionCore.buildTerminalFields(session) }
         }
+        // F-16(AC-04): 이 공개 사건의 안정 ID다. commit이 실제로 성공한 뒤(applied.ok)에만
+        // 만들고, 같은 사망을 다시 방송해도 같은 문자열이 나오도록 시각·난수를 쓰지 않는다.
+        // 사망 원인(DISCONNECT)이나 개인 역할은 넣지 않는다 — 공개 payload의 은닉 계약을
+        // ID로 우회하지 않는다. accountId는 수신자마다 다르므로 싣지 않는다(공개 방송이다)
+        // — 수신 클라이언트가 자신의 인증 계정으로 범위를 채운다.
+        payload = {
+            ...payload,
+            sfxEvent: {
+                eventId: `game:${session.id}:day:${session.dayIndex}:victim:${applied.victimUuid}:eliminated`,
+                gameId: session.id,
+                origin: 'live',
+            },
+        }
     } catch (err) {
         console.error('[재접속 유예 만료 처리 실패]', { code: 'PAYLOAD_BUILD_ERROR', uuid, gameId: session.id })
     }
@@ -1611,6 +1624,20 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
                     gameId: prepared.session.id,
                     dayIndex: prepared.resolution.dayIndex,
                     ...privateResult,
+                    // F-16(AC-04/AC-05): 이 개인 결과의 안정 사건 ID와 허용 수신 계정이다.
+                    // 수신자는 현재 인증 계정이 accountId와 같을 때만 소리를 낸다 — 전달
+                    // 경로(개별 emit)에 더해 클라이언트에서도 한 번 더 대조하는 이중 방어다.
+                    //
+                    // ID에는 게임·밤·본인 행동 종류만 넣는다. 대상 uuid나 조사로 드러난
+                    // 역할 같은 비밀 값은 ID에도 서버 로그에도 복제하지 않는다(AC-05).
+                    // actionType은 이 payload가 이미 담고 있는 "본인 자신의" 행동이라
+                    // 새로 노출되는 정보가 없다.
+                    sfxEvent: {
+                        eventId: `game:${prepared.session.id}:night:${prepared.resolution.dayIndex}:${privateResult.actionType}`,
+                        accountId: recipientUuid,
+                        gameId: prepared.session.id,
+                        origin: 'live',
+                    },
                 })
             } catch (err) {
                 console.error('[밤 행동 판정 오류]', { code: 'PRIVATE_DELIVERY_ERROR', uuid, gameId: prepared.session.id })
@@ -1653,6 +1680,55 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
  * 아니므로 새 사건을 만들면 안 됩니다. 최초 라운드의 비기권 제출은 이미 저장을 시도했으므로
  * (성공했든 DB 유일 제약에 막혔든) 그 뒤 라운드에서 다시 시도할 필요가 없습니다.
  */
+/**
+ * F-16(AC-01/AC-04): 낮 투표 제출 성공 ACK에 실을 개인 사건 봉투.
+ *
+ * 요청자 본인에게만 가는 ACK이므로 accountId는 인증된 uuid다 — 수신 클라이언트가 "현재
+ * 로그인 계정"과 다시 대조해 계정 전환 직후 도착한 늦은 ACK을 거부할 수 있게 한다.
+ * 투표 대상·역할은 담지 않는다(AC-05).
+ *
+ * game-core가 봉투를 만들지 못했으면(세션이 그 사이 사라진 경우 등) null을 싣는다 —
+ * 프런트는 봉투가 없으면 조용히 무음이고, 투표 성공 판정 자체는 달라지지 않는다(AC-06).
+ */
+function buildDayVoteSubmitSfxEvent(uuid, gameId) {
+    let record
+    try {
+        record = gameSessionCore.readDayVoteSubmitSfxEvent(uuid, gameId)
+    } catch (err) {
+        // 사건 봉투 조회 실패가 이미 성공한 투표 제출을 실패로 바꾸지 않는다.
+        return null
+    }
+    if (record === null) return null
+    return {
+        kind: 'day-vote-submitted',
+        eventId: record.eventId,
+        accountId: uuid,
+        gameId,
+        dayIndex: record.dayIndex,
+        round: record.round,
+        origin: 'live',
+    }
+}
+
+/** F-16(AC-01): 재판 투표 제출 성공 ACK 봉투. 최초 성공 1회뿐이라 revision이 없다. */
+function buildTribunalVoteSubmitSfxEvent(uuid, gameId) {
+    let record
+    try {
+        record = gameSessionCore.readTribunalVoteSubmitSfxEvent(uuid, gameId)
+    } catch (err) {
+        return null
+    }
+    if (record === null) return null
+    return {
+        kind: 'tribunal-vote-submitted',
+        eventId: record.eventId,
+        accountId: uuid,
+        gameId,
+        dayIndex: record.dayIndex,
+        origin: 'live',
+    }
+}
+
 async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     if (typeof callback !== 'function') return
     if (!isCurrentSocketForUuid(uuid, socket)) {
@@ -1693,18 +1769,26 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
         return
     }
 
+    // F-16(AC-01/AC-04): 동기 commit이 끝난 **바로 이 순간** 사건 봉투를 캡처한다. 아래 DB
+    // await가 아무리 늦게 끝나도, 그 사이 같은 actor가 다시 제출해 새 revision이 생겼더라도,
+    // 이 요청의 ack에는 이 요청이 만든 ID가 실린다(game-core가 매번 새 불변 객체로 교체한다).
+    const sfxEvent = buildDayVoteSubmitSfxEvent(uuid, gameId)
+
     if (targetId === null) {
         // 기권은 D-09가 세지 않는 참여다 — 저장을 시도하지 않으므로 어떤 await도 거치지
         // 않고 기존과 동일하게 동기적으로 ack한다.
-        respond(callback, { ok: true })
+        respond(callback, { ok: true, sfxEvent })
         return
     }
 
     // A-01: 재투표(2라운드 이상)의 비기권 제출은 최초 투표가 아니므로 새 사건을 만들지
     // 않는다 — 최초 라운드에서 기권했던 참가자가 재투표에서 비기권으로 돌아서는 경우가
     // 여기서 걸러진다.
+    //
+    // 이것은 **F-11의 DB 참여 집계** 규칙이며 F-16의 소리와는 별개다 — 재투표 제출도 실제
+    // 상태 변경이므로 sfxEvent는 그대로 싣는다(집계 기여만 없다).
     if (gameSessionCore.getSessionDayVoteRound(gameId) !== 1) {
-        respond(callback, { ok: true })
+        respond(callback, { ok: true, sfxEvent })
         return
     }
 
@@ -1721,7 +1805,7 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
         return
     }
 
-    respond(callback, { ok: true })
+    respond(callback, { ok: true, sfxEvent })
     // F-12: ack를 먼저 보낸 뒤 fire-and-forget으로 재평가한다 — 업적 평가(DB 조회 여러 건 +
     // 조건 충족 시 트랜잭션)가 투표 제출 응답 지연을 만들지 않게 한다.
     evaluateAchievementsForUsers([uuid], gameId)
@@ -1944,11 +2028,14 @@ function handleCastTribunalVote(io, socket, uuid, payload, callback) {
         return
     }
 
+    // F-16(AC-01): 최초 성공 1회에만 붙는다 — 중복 제출은 위에서 TRIBUNAL_VOTE_ALREADY_SUBMITTED로
+    // 이미 실패했으므로 여기 도달하지 않는다(중복 실패에 소리를 붙이지 않는다).
     respondCastTribunalVote(gameId, dayIndex, uuid, callback, {
         ok: true,
         gameId: result.gameId,
         dayIndex: result.dayIndex,
         vote: result.vote,
+        sfxEvent: buildTribunalVoteSubmitSfxEvent(uuid, gameId),
     })
 }
 

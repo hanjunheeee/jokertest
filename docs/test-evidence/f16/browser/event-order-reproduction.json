@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-12T11:05:12.403Z",
+  "url": "http://127.0.0.1:5184/",
+  "surface": "external Chrome real button click",
+  "snapshot": "- heading \"F16 클릭 이벤트 순서 검증\" [level=1]\n- paragraph: 실제 클릭에서 capture 예약과 버튼 callback의 실행 순서를 기록합니다.\n- button \"실제 클릭 순서 확인\" [active]\n- generic: capture generic dispatched semantic callback semantic dispatched",
+  "scope": "isolated reproduction of current capture queueMicrotask algorithm; not whole app acceptance"
+}

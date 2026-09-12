@@ -13,6 +13,7 @@ export default function GameSetupPageControls({ visible, onBack }) {
       </div>
 
       <MotionBackButton
+        data-sfx-owner="explicit"
         ariaLabel="멀티플레이 선택으로 돌아가기"
         initial={{ opacity: 0, y: 8 }}
         animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}

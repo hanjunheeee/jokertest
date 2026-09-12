@@ -1,10 +1,44 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
+import { useAuthStore } from "../../../auth/store/auth.store.js"
+import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { createTribunalVoteSubmitController } from "../utils/createTribunalVoteSubmitController.js"
 import { INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE } from "../utils/computeTribunalVoteSubmitPatch.js"
 
 const VALID_VOTES = new Set(["GUILTY", "NOT_GUILTY"])
+
+/**
+ * F-16(AC-01/AC-05): 재판 투표 제출 성공 ACK의 사건 봉투를 공통 재생기로 넘긴다.
+ *
+ * controller의 settleSuccess가 이미 소켓 identity·컨텍스트·ack echo를 검사했지만, "누구에게
+ * 재생하는가"는 여기서 현재 인증 계정으로 다시 확정한다 — 계정 전환 직후 도착한 늦은 ACK가
+ * 다른 계정의 화면에서 울리지 않게 하는 이중 방어다. 절대 던지지 않는다.
+ */
+function playTribunalVoteSubmitSfx(sfxEvent, requestScope) {
+  if (sfxEvent === null || typeof sfxEvent !== "object") return
+  if (sfxEvent.gameId !== requestScope.gameId) return
+  if (sfxEvent.dayIndex !== requestScope.dayIndex) return
+
+  const { user, isLoggedIn } = useAuthStore.getState()
+  const accountId = isLoggedIn && user?.uuid ? user.uuid : null
+  if (accountId === null) return
+  if (sfxEvent.accountId !== accountId) return
+
+  const latest = useInGameStore.getState()
+  if (latest.gameId !== requestScope.gameId) return
+  if (latest.state?.dayIndex !== requestScope.dayIndex) return
+  if (latest.state?.phase !== "TRIBUNAL") return
+  if (latest.state?.self?.uuid !== accountId) return
+
+  dispatchSfxEvent({
+    kind: "tribunal-vote-submitted",
+    eventId: sfxEvent.eventId,
+    accountId,
+    gameId: requestScope.gameId,
+    origin: sfxEvent.origin,
+  })
+}
 
 /**
  * cast_tribunal_vote ack settle 시점에 controller가 참조할 "지금 이 순간의" 컨텍스트를 만든다.
@@ -83,6 +117,7 @@ export function useInGameTribunalVoteSubmit() {
         if (isMountedRef.current) setState(next)
       },
       getLatestContext: () => buildLatestTribunalVoteContext(),
+      onAccepted: playTribunalVoteSubmitSfx,
     })
     controllerRef.current = controller
     setState(controller.getState())

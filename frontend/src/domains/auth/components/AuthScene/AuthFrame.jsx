@@ -1,8 +1,25 @@
 import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 // 중앙 프레임 이미지와 그 안에 들어가는 실제 form 영역을 담당합니다.
 export default function AuthFrame({ children, onSubmit }) {
+  /**
+   * F-16(AC-01): 로그인·회원가입의 "확인"은 이 form submit 하나가 소유한다.
+   *
+   * 제출 버튼(type="submit") 클릭은 런타임의 generic capture가 이미 제외하므로, 마우스로
+   * 버튼을 눌러도 Enter로 제출해도 소리는 정확히 한 번이다. 제출 핸들러가 없는(아직 배선되지
+   * 않았거나 no-op인) 폼에서는 소리를 내지 않는다 — 아무 일도 일어나지 않는 입력에
+   * 확인음을 붙이지 않는다.
+   *
+   * 소리는 업무 콜백보다 먼저 나가지만 그 결과·예외를 전파하지 않는다(AC-06).
+   */
+  const handleSubmit = (event) => {
+    if (typeof onSubmit !== "function") return
+    dispatchUiSfx("ui-confirm", event)
+    onSubmit(event)
+  }
+
   return (
     <div className="absolute inset-0 flex items-center justify-center px-4 py-6">
       <div className="relative w-full max-w-[min(26rem,94vw)]">
@@ -15,7 +32,7 @@ export default function AuthFrame({ children, onSubmit }) {
           style={{ paddingTop: "22%", paddingBottom: "9%", paddingLeft: "13%", paddingRight: "13%" }}
         >
           {/* children에는 로그인 폼이나 회원가입 폼의 실제 입력 요소들이 들어옵니다. */}
-          <form onSubmit={onSubmit} className="flex flex-1 flex-col">
+          <form onSubmit={handleSubmit} className="flex flex-1 flex-col">
             {children}
           </form>
         </div>

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import {
   CREATE_ROOM_ERROR_MESSAGES,
   CREATE_ROOM_TIMEOUT_MS,
@@ -142,8 +143,16 @@ export function useGameSetupPage() {
       const confirmed = window.confirm(
         "방 생성 요청이 진행 중입니다. 방이 생성될 수 있지만 현재 화면에서 나가시겠습니까?"
       )
+      // F-16(AC-01): 생성 중에는 이 confirm 결과가 단일 소유자다 — 호출한 뒤로가기 버튼은
+      // data-sfx-owner="explicit"로 일반 클릭 capture에서 제외한다.
+      // 아래 평상시 경로와 달리 취소도 여기서 낸다.
+      dispatchUiSfx(confirmed ? "ui-confirm" : "ui-cancel")
       if (!confirmed) return
+      navigate("/multiplay")
+      return
     }
+    // 평상시 나가기는 확인 대화상자 없이 곧바로 이동한다 — 의미는 "취소"다.
+    dispatchUiSfx("ui-cancel")
     navigate("/multiplay")
   }
 

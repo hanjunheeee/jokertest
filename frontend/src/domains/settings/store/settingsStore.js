@@ -40,6 +40,12 @@ function defaultGeneralChecks() {
 const GENERAL_CHECK_STORAGE_IDS = new Set(Object.keys(defaultGeneralChecks()))
 const CHAT_CHECK_STORAGE_ID_SET = new Set(CHAT_CHECK_STORAGE_IDS)
 
+/** F-16(AC-03): 효과음 음소거 기본값. 볼륨(master 100 × sfx 80 → gain 0.8)과 함께
+ *  기기 저장·초기화 대상이다. 이 값은 **효과음에만** 적용된다 — BGM은 별도 정책
+ *  (MUSIC_PLAYBACK_ENABLED)으로 차단되어 있고, 이 store의 어떤 조작도 그것을 되돌리지
+ *  못한다(useAudioControl·useBgmAutoplay는 이 store를 구독하지 않는다). */
+export const SFX_MUTED_DEFAULT = false
+
 /** 마지막 기기 저장 실패(용량 초과·프라이빗 모드 등). null이면 마지막 쓰기가 성공한
  *  것이다 — 저장에 실패했는데 성공한 것처럼 두지 않기 위해 여기에 남긴다(AC-06). */
 let lastStorageWriteError = null
@@ -244,6 +250,10 @@ function mergePersistedSettings(persisted, current) {
   // chatChecks는 "아직 고른 적 없음"(null)을 그대로 보존한다 — 기본값은 인게임 도메인이 정한다.
   const chatChecks = sanitizeBooleanMap(persisted.chatChecks, CHAT_CHECK_STORAGE_ID_SET)
 
+  // F-16(AC-03): 효과음 음소거는 진짜 boolean일 때만 복원한다 — 손상된 값("true", 1, null)이
+  // 통과해 "음소거인데 소리가 난다"거나 그 반대가 되지 않게 한다. 검증 실패는 현재값 유지다.
+  const sfxMuted = typeof persisted.sfxMuted === "boolean" ? persisted.sfxMuted : current.sfxMuted
+
   // 채팅 글자 크기는 인게임 도메인(INGAME_SETTING_CHAT_SLIDER)이 정의하지만, 설정
   // 도메인이 인게임 도메인을 거꾸로 import하지 않기 위해 저장 범위만 여기에 둔다 —
   // 두 값이 어긋나면 __tests__/settingsStore.test.js가 실제 슬라이더 정의와 대조해 잡는다.
@@ -252,7 +262,7 @@ function mergePersistedSettings(persisted, current) {
     fallback: current.chatTextSize,
   })
 
-  return { ...current, volumes, generalChecks, generalTextSize, chatChecks, chatTextSize }
+  return { ...current, volumes, generalChecks, generalTextSize, chatChecks, chatTextSize, sfxMuted }
 }
 
 /**
@@ -280,6 +290,16 @@ export const useSettingsStore = create(
       volumes: defaultVolumes(),
       setVolume: (id, next) =>
         set((s) => ({ volumes: { ...s.volumes, [id]: next } })),
+
+      // F-16(AC-03): 효과음 음소거. 설정 화면과 인게임 설정 패널이 같은 값을 조작하고,
+      // 공통 재생기(createSfxPlayer)가 getMix()에서 이 값을 읽어 유효 gain을 0으로 만든다.
+      // 볼륨과 독립이라 음소거 중에 볼륨을 바꿔도 음소거는 유지되고, 해제하면 그때의
+      // 최신 Master×SFX 곱이 그대로 적용된다.
+      sfxMuted: SFX_MUTED_DEFAULT,
+      setSfxMuted: (next) =>
+        // boolean이 아닌 값이 상태에 들어가면 이후 저장·복원 검증이 의미를 잃는다.
+        set((s) => (typeof next === "boolean" ? { sfxMuted: next } : s)),
+      toggleSfxMuted: () => set((s) => ({ sfxMuted: !s.sfxMuted })),
 
       inGameSettingTab: null,
       setInGameSettingTab: (tabId) => set({ inGameSettingTab: tabId }),
@@ -310,6 +330,9 @@ export const useSettingsStore = create(
           generalTextSize: GENERAL_SETTING_TEXT_SIZE.defaultValue,
           chatChecks: null,
           chatTextSize: null,
+          // F-16(AC-03): 효과음 음소거도 정해진 기본값으로 되돌린다. 초기화 결과는 persist
+          // 미들웨어가 곧바로 기기에 다시 쓰므로 다음 새로고침에서도 이 값이 복원된다(A-03).
+          sfxMuted: SFX_MUTED_DEFAULT,
         }),
     }),
     {
@@ -321,6 +344,7 @@ export const useSettingsStore = create(
         generalTextSize: s.generalTextSize,
         chatChecks: s.chatChecks,
         chatTextSize: s.chatTextSize,
+        sfxMuted: s.sfxMuted,
       }),
       merge: (persisted, current) => mergePersistedSettings(persisted, current),
     },

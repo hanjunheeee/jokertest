@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-12T12:51:11.946Z",
+  "head": "c73fcd6adfc6009440f0eb39b3c2f1f19d1c5a68",
+  "reason": "RESULT-2 AC-04 evidence-availability objection: exact unchanged production source and actual consumer regression, not a requested verdict. Other reviewer findings remain independent.",
+  "evidence": [
+    {
+      "file": "frontend/src/shared/hooks/useSfxRuntime.js",
+      "sha256": "5427d28abfb3757a266fcc8d1d8d2df10d2d68fb3d0246a8254ff96458ca6f3f",
+      "line": 281,
+      "source": "    const handleAchievementGranted = (payload) => {\n      const envelope = payload?.sfxEvent\n      if (envelope === null || typeof envelope !== \"object\") return\n      const auth = useAuthStore.getState()\n      const accountId = auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null\n      if (accountId === null || envelope.accountId !== accountId) return\n      dispatchSfxEvent({ kind: envelope.kind, eventId: envelope.eventId, accountId, origin: envelope.origin })\n    }\n\n"
+    },
+    {
+      "file": "frontend/src/domains/game/ingame/hooks/useGameSessionSocketEvents.js",
+      "sha256": "e71c4d34962b1a1453d0392d287eee7e0f3cb1c4b7a2d2360076c611d75cc151",
+      "line": 47,
+      "source": "function playGameSfx(kind, eventId, gameId, origin = \"live\") {\n  if (typeof eventId !== \"string\" || eventId.length === 0) return\n  if (typeof gameId !== \"string\" || gameId.length === 0) return\n  const accountId = currentAccountId()\n  if (accountId === null) return\n  dispatchSfxEvent({ kind, eventId, accountId, gameId, origin })\n}\n\n"
+    },
+    {
+      "file": "frontend/src/domains/game/ingame/hooks/useGameSessionSocketEvents.js",
+      "sha256": "e71c4d34962b1a1453d0392d287eee7e0f3cb1c4b7a2d2360076c611d75cc151",
+      "line": 150,
+      "source": "    const handleNightActionResult = (payload) => {\n      const current = useInGameStore.getState()\n      if (!current.gameId || !current.state) return\n      const parsed = parseInGameNightPrivateResultPayload({\n        payload,\n        gameId: current.gameId,\n        dayIndex: current.state.dayIndex,\n        phase: current.state.phase,\n        selfRole: current.state.self?.role ?? null,\n        selfUuid: current.state.self?.uuid ?? null,\n        // 생존은 roster가 유일한 canonical 출처다(self에는 alive가 없다 — selectInGameSelfAlive).\n        selfAlive: selectInGameSelfAlive(current.state),\n      })\n      if (!parsed) return\n      useInGameStore.getState().setNightPrivateResult(parsed)\n\n      // F-16(AC-05): 개인 결과음. 서버가 이 결과를 보낼 수 있는 수신자 조건 전부를 위\n      // 파서가 이미 대조했고, 여기서는 서버가 명시한 허용 계정과 현재 인증 계정을 한 번 더\n      // 대조한다 — 둘 다 통과해야 소리가 난다. 봉투가 없으면 무음이다.\n      //\n      // ASSASSINATE success:false는 \"실패 통지\"이지 성공이 아니다 — 별도 kind로 보낸다.\n      // 대상 uuid·조사로 드러난 역할은 ID에도 재생기 입력에도 넣지 않는다.\n      const envelope = payload?.sfxEvent\n      if (envelope === null || typeof envelope !== \"object\") return\n      const accountId = currentAccountId()\n      if (accountId === null || envelope.accountId !== accountId) return\n      if (envelope.gameId !== current.gameId) return\n      const kind = parsed.actionType === \"ASSASSINATE\" ? \"night-private-failure\" : \"night-private-result\"\n      playGameSfx(kind, envelope.eventId, current.gameId, envelope.origin ?? \"restore\")\n    }\n\n"
+    },
+    {
+      "file": "frontend/src/domains/game/ingame/store/__tests__/sfxConsumer.test.js",
+      "sha256": "f21627336e2a8e2fcd905d021f1e30cad58c8deed2fe83b7c7b4ff3f4cf9aad3",
+      "line": 236,
+      "source": "test(\"F16 private restore origin survives consumer forwarding and does not claim the live event\",()=>{\n  seedNightSession();const session=openSession();const player=recordProductionPlayer()\n  const payload={...GUARD_RESULT,sfxEvent:{eventId:\"restore-private\",accountId:SELF_UUID,gameId:GAME_ID,origin:\"restore\"}}\n  session.deliver(\"night_action_result\",payload)\n  assert.equal(player.getSilenceLog().filter(x=>x.reason===\"asset-unreviewed\").length,0)\n  session.deliver(\"night_action_result\",{...payload,sfxEvent:{...payload.sfxEvent,origin:\"live\"}})\n  assert.equal(player.getSilenceLog().filter(x=>x.reason===\"asset-unreviewed\").length,1)\n  session.close();player.dispose()\n})\n"
+    }
+  ]
+}

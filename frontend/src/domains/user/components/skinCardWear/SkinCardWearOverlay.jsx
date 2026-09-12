@@ -9,6 +9,9 @@ import { useSkinCardWearSelection } from "../../hooks/useSkinCardWearSelection.j
 import { useSkinCardWearStore } from "../../store/skinCardWear.store.js"
 import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import SkinCardWearPanel from "./SkinCardWearPanel.jsx"
+// 상대 경로로 둔다 — 이 오버레이는 node:test가 실제로 마운트하는 대상이고(`__tests__/
+// SkinCardWearOverlay.integration.test.js`), `@/` 별칭은 vite만 해석할 수 있다.
+import { dispatchUiSfx } from "../../../../shared/hooks/useSfxRuntime.js"
 
 export default function SkinCardWearOverlay({ open, onClose }) {
   const lifecycle = useRef(0)
@@ -63,7 +66,10 @@ export default function SkinCardWearOverlay({ open, onClose }) {
       })
     })
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onCloseRef.current()
+      if (event.key !== "Escape") return
+      // F-16(AC-01): 열린 상태에서 실제로 onCloseRef를 부르는 경로만 취소음.
+      dispatchUiSfx("ui-cancel", event)
+      onCloseRef.current()
     }
     window.addEventListener("keydown", onKeyDown)
     return () => {
@@ -77,12 +83,24 @@ export default function SkinCardWearOverlay({ open, onClose }) {
   // confirmStatus/confirmError로 오류·재시도 수단을 보여준다. 저장 도중 계정이 전환된
   // stale 결과는 성공도 실패도 아니므로 그대로 무시한다 — 이미 무효한 이전 계정 컨텍스트라
   // 닫기·오류 표시 어느 쪽도 하지 않는다(그 계정 화면은 auth store 전환으로 별도 정리된다).
+  /**
+   * F-16(AC-01): 이 오버레이의 "닫기"는 backdrop·Escape·패널의 닫기 버튼 셋이 공유한다.
+   * backdrop·패널 버튼은 explicit 표식으로 일반 capture에서 제외한다.
+   * Escape는 별도 키보드 리스너에서 취소음을 한 번 보낸다.
+   */
+  const handleClose = () => {
+    dispatchUiSfx("ui-cancel")
+    onCloseRef.current()
+  }
+
   const handleConfirm = async () => {
+    // 실제 변경·저장 잠금 검사를 통과한 입력만 훅의 onChanged 경계에서 소리를 낸다.
     const epoch = lifecycle.current
     dirty.current = true
     const result = await confirmLoadout({
       appliedSkinsByJob,
       appliedCardFrameId,
+      onChanged: () => dispatchUiSfx("ui-confirm"),
       isActive: () => epoch === lifecycle.current,
     })
     if (result.ok && epoch === lifecycle.current) onCloseRef.current()
@@ -96,11 +114,12 @@ export default function SkinCardWearOverlay({ open, onClose }) {
             type="button"
             aria-label="스킨&카드 착용 닫기"
             className={SKIN_CARD_WEAR_BACKDROP_CLASS}
+            data-sfx-owner="explicit"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={SKIN_CARD_WEAR_TRANSITION}
-            onClick={onClose}
+            onClick={handleClose}
           />
 
           <div className={SKIN_CARD_WEAR_PANEL_WRAP_CLASS} aria-hidden={!open}>
@@ -126,7 +145,7 @@ export default function SkinCardWearOverlay({ open, onClose }) {
                 preview={preview}
                 previewMode={previewMode}
                 onTogglePreviewMode={togglePreviewMode}
-                onClose={onClose}
+                onClose={handleClose}
                 onConfirm={handleConfirm}
                 confirmStatus={confirmStatus}
                 confirmError={confirmError}

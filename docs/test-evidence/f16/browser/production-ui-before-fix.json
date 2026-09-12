@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-12T11:16:25.948Z",
+  "head": "86b88c15",
+  "surface": "external Chrome",
+  "scope": "actual production InGameTopControls and useSfxRuntime; post-confirm callback test harness",
+  "visibleEvidence": "{\n  \"callbacks\": 1,\n  \"events\": [\n    {\n      \"reason\": \"asset-unreviewed\",\n      \"kind\": \"ui-click\",\n      \"eventId\": \"ui-click:1\",\n      \"at\": 1789211758744,\n      \"stage\": \"manifest\",\n      \"note\": \"자산 파일과 이용 조건 검토가 아직 제공되지 않았다(외부 입력 의존).\"\n    },\n    {\n      \"reason\": \"asset-unreviewed\",\n      \"kind\": \"ui-cancel\",\n      \"eventId\": \"ui-cancel:2\",\n      \"at\": 1789211758745,\n      \"stage\": \"manifest\",\n      \"note\": \"자산 파일과 이용 조건 검토가 아직 제공되지 않았다(외부 입력 의존).\"\n    }\n  ]\n}"
+}

@@ -26,6 +26,31 @@ import { getSocket, subscribeSocket } from '@/shared/socket/socketClient'
 import { useMatchingStore } from '../store/matchingStore'
 import { useInGameStore } from '../../ingame/store/ingameStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
+import { dispatchSfxEvent, dispatchUiSfx } from '@/shared/hooks/useSfxRuntime.js'
+
+/**
+ * F-16(AC-01/AC-04): 방 범위 사건 하나를 공통 재생기로 넘긴다.
+ *
+ * 서버가 준 봉투(eventId·roomId)를 그대로 쓰고 계정만 현재 인증 상태에서 채운다. 서버가
+ * 봉투를 주지 않았거나(멱등 재요청 등 실제 변경이 아닌 응답) 형태가 다르면 아무 소리도
+ * 내지 않는다 — 프런트가 ID를 지어내면 중복 전달마다 새 소리가 난다.
+ *
+ * 재생기 쪽에서 roomId를 현재 방과 다시 대조하므로, 방을 떠난 뒤 도착한 늦은 응답은
+ * 거부된다. 이 함수는 어떤 경우에도 던지지 않는다(업무 상태 반영을 막지 않는다).
+ */
+const playRoomSfx = (kind, sfxEvent) => {
+  if (sfxEvent === null || typeof sfxEvent !== 'object') return
+  const { user, isLoggedIn } = useAuthStore.getState()
+  const accountId = isLoggedIn && user?.uuid ? user.uuid : null
+  if (accountId === null) return
+  dispatchSfxEvent({
+    kind,
+    eventId: sfxEvent.eventId,
+    accountId,
+    roomId: sfxEvent.roomId,
+    origin: sfxEvent.origin,
+  })
+}
 
 // start_game/set_ready 모두 ack 기반이라 socket.timeout()으로 응답 유실(네트워크 등)에 대비한다.
 const START_GAME_TIMEOUT_MS = 8000
@@ -113,15 +138,17 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     const handleHostChanged = ({ hostUuid, canStart }) => updateHost(hostUuid, canStart)
     // 다른 참가자의 준비 상태 변경 알림이다. 본인의 변경은 setReady의 ack 응답으로 반영한다
     // (자기 자신에게는 이 이벤트가 오지 않는다 — 서버가 socket.to(roomId)로만 방송한다).
-    const handlePlayerReadyChanged = ({ uuid, isReady, canStart }) => {
+    const handlePlayerReadyChanged = ({ uuid, isReady, canStart, sfxEvent }) => {
+      // 업무 상태를 먼저 반영하고, 그 뒤에 독립적으로 소리를 낸다 — 소리의 성공·실패·지연이
+      // 준비 표시 갱신에 영향을 주지 않는다(AC-06).
       setPlayerReady(uuid, isReady, canStart)
+      playRoomSfx('room-ready-changed', sfxEvent)
     }
     const handleRoomDeleted = () => {
       clearRoom()
       onRoomDeleted?.()
     }
-    // 서버는 아직 이 이벤트를 어떤 경로로도 보내지 않는다(GameSession 미구현). 실제 성공
-    // 방송이 생길 다음 슬라이스를 위해 리스너 자체는 미리 등록해 둔다.
+    // 서버 handleStartGame이 참가자 각자에게 개인화된 payload로 실제 보내는 이벤트다.
     const handleGameStarted = (payload) => {
       clearStartState()
       // 서버 payload에는 hostUuid가 없다. 바로 아래 clearRoom()이 방 상태를 지우므로, 그 전에
@@ -131,6 +158,23 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       useInGameStore.getState().setGamePayload({ ...payload, hostUuid })
       clearRoom()
       onGameStarted?.(payload)
+
+      // F-16(AC-01/AC-04): 시작음은 한 게임당 1회다. store 반영 뒤 canonical gameId를 직접
+      // 읽어 사건 ID를 만든다 — 이 값이 곧 재생기의 현재 게임 범위이므로, 위 clearRoom()으로
+      // 방이 사라진 뒤에도 게임 범위는 이미 확보돼 있다. get_current_room 복원 경로는 이
+      // 핸들러를 거치지 않으므로 복원으로는 시작음이 나지 않는다(A-05).
+      const gameId = useInGameStore.getState().gameId
+      const { user, isLoggedIn } = useAuthStore.getState()
+      const accountId = isLoggedIn && user?.uuid ? user.uuid : null
+      if (typeof gameId === 'string' && gameId.length > 0 && accountId !== null) {
+        dispatchSfxEvent({
+          kind: 'game-started',
+          eventId: `game:${gameId}:started`,
+          accountId,
+          gameId,
+          origin: payload?.sfxEvent?.origin ?? payload?.origin ?? 'live',
+        })
+      }
     }
 
     socket.on('player_joined_room', handlePlayerJoinedRoom)
@@ -209,7 +253,13 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       hasPromptedRetry = true
       // 기존 useGameSetupPage.js의 goBackToMultiplay와 동일한 네이티브 confirm 패턴을
       // 재사용한다 — 새 UI 없이, 실패 후 새로고침 외의 재시도 수단을 제공하기 위함이다.
-      if (window.confirm('방 상태를 확인하지 못했습니다. 다시 확인하시겠습니까?')) {
+      // F-16(AC-01): 이 대화상자의 **반환 경계**가 확인/취소음의 단일 소유자다. 위의
+      // series/hasPromptedRetry 가드를 이미 통과한 뒤이므로, 오래된 시리즈의 실패나 같은
+      // 에피소드의 중복 prompt에는 소리가 나지 않는다(그 경로는 여기 도달하지 않는다).
+      // 이 대화상자는 클릭이 아니라 네트워크 실패가 띄우므로 겹칠 일반 클릭음도 없다.
+      const confirmed = window.confirm('방 상태를 확인하지 못했습니다. 다시 확인하시겠습니까?')
+      dispatchUiSfx(confirmed ? 'ui-confirm' : 'ui-cancel')
+      if (confirmed) {
         // prompt 상태(hasPromptedRetry=true)는 유지한 채 같은 에피소드의 재시도로 시작한다.
         startCheckSeries({ resetPromptState: false })
       }
@@ -493,6 +543,10 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
 
       if (response?.ok) {
         useMatchingStore.getState().setPlayerReady(requestUuid, response.isReady, response.canStart)
+        // 요청자 본인의 준비 변경은 방송이 아니라 이 ACK로 들어온다(서버가 socket.to로만
+        // 방송하므로 자기 자신에게는 오지 않는다). 상태를 반영한 뒤 독립적으로 소리를 낸다.
+        // 같은 값 재요청(멱등 성공)에는 서버가 sfxEvent를 싣지 않으므로 소리도 나지 않는다.
+        playRoomSfx('room-ready-changed', response.sfxEvent)
       } else {
         alert(response?.message ?? '준비 상태를 변경하지 못했습니다.')
       }

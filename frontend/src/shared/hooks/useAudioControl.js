@@ -2,6 +2,12 @@ import { useEffect, useState } from "react"
 import { MUSIC_PLAYBACK_ENABLED } from "../constants/bgmAssets.js"
 
 // audio 태그의 볼륨과 음소거 상태를 관리하는 커스텀 훅입니다.
+//
+// F-16(AC-03/AC-06): 이 훅은 **배경음(BGM) 전용**이며 settingsStore를 의도적으로 구독하지
+// 않습니다. 효과음 설정(Master × 효과음 볼륨, 효과음 음소거)은 createSfxPlayer의
+// getMix()/subscribeMix()만 읽고, 그 값은 이 경로로 절대 흘러들지 않습니다 — 그래서 어떤
+// 사운드 설정 조작(볼륨 최대, 음소거 해제, 설정 초기화)으로도 금지된 BGM이 다시 켜지지
+// 않습니다. 아래 MUSIC_PLAYBACK_ENABLED 분기가 그 잠금이며 F-16은 그것을 바꾸지 않습니다.
 export function useAudioControl(audioRef) {
     // 실제 볼륨 값입니다. 0은 무음, 1은 최대 볼륨입니다.
     const [ volume, setVolume ] = useState(0.6)

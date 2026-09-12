@@ -7,16 +7,25 @@ import {
 } from "@/domains/user/constants/accountPanelStyle.js"
 import ConfirmButton from "@/domains/user/components/AccountPanel/ConfirmButton.jsx"
 import FeedbackMsg from "@/domains/user/components/AccountPanel/FeedbackMsg.jsx"
+import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 // 비밀번호 변경 입력칸과 제출 버튼을 묶은 섹션입니다.
 // F-07: 이 섹션 아래에 DiscordAccountLink 섹션이 추가되어 더 이상 마지막 섹션이 아니므로,
 // 다른 섹션과의 경계를 보여주는 구분선 스타일을 씁니다(AccountPanel.jsx 참고).
 export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoading, onSubmit }) {
+  // F-16(AC-01): NicknameSection과 같은 계약 — 확인음은 form submit 하나가 소유하고,
+  // ConfirmButton(type="submit") 클릭은 generic capture에서 제외된다.
+  const handleSubmit = (event) => {
+    if (typeof onSubmit !== "function") return
+    dispatchUiSfx("ui-confirm", event)
+    onSubmit(event)
+  }
+
   return (
     <section className={ACCOUNT_PANEL_DIVIDER_SECTION_CLASS}>
       <h3 className={ACCOUNT_PANEL_HEADING_CLASS}>비밀번호 변경</h3>
 
-      <form onSubmit={onSubmit} className={ACCOUNT_PANEL_FORM_CLASS}>
+      <form onSubmit={handleSubmit} className={ACCOUNT_PANEL_FORM_CLASS}>
         {/* 현재 사용 중인 비밀번호를 입력하는 칸입니다. */}
         <AuthInputSlot
           name="currentPassword"
