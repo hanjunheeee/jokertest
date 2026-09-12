@@ -16,6 +16,11 @@ const HIDDEN_GENERAL_CHECK_IDS = new Set(["fullscreen", "whisper"])
  *  시험이 실제 슬라이더 정의와 대조한다. */
 export const CHAT_TEXT_SIZE_STORAGE_RANGE = { min: 0, max: 100 }
 
+/** 저장을 허용하는 채팅 체크박스 id — 인게임 설정(INGAME_SETTING_CHAT_CHECKBOXES)과 같아야
+ *  한다. 설정 도메인이 인게임 도메인을 거꾸로 import하지 않으므로(위 저장 범위와 같은 이유)
+ *  값을 여기 두고, 시험이 실제 정의와 대조한다. */
+export const CHAT_CHECK_STORAGE_IDS = ["show-time", "nickname-color"]
+
 function defaultVolumes() {
   return Object.fromEntries(
     SOUND_SETTING_VOLUMES.map(({ id, defaultValue }) => [id, defaultValue]),
@@ -30,6 +35,11 @@ function defaultGeneralChecks() {
   )
 }
 
+/** 복원을 허용하는 일반 체크박스 id — 기본값과 같은 출처(GENERAL_SETTING_CHECKBOXES)에서
+ *  만들어 숨김 항목·모르는 키가 저장값으로 되살아나지 않게 한다(AC-01/AC-06). */
+const GENERAL_CHECK_STORAGE_IDS = new Set(Object.keys(defaultGeneralChecks()))
+const CHAT_CHECK_STORAGE_ID_SET = new Set(CHAT_CHECK_STORAGE_IDS)
+
 /** 마지막 기기 저장 실패(용량 초과·프라이빗 모드 등). null이면 마지막 쓰기가 성공한
  *  것이다 — 저장에 실패했는데 성공한 것처럼 두지 않기 위해 여기에 남긴다(AC-06). */
 let lastStorageWriteError = null
@@ -42,6 +52,13 @@ export function getSettingsStorageWriteError() {
 /** 시험·재시도에서 실패 기록을 지운다. */
 export function clearSettingsStorageWriteError() {
   lastStorageWriteError = null
+}
+
+/** 기기 저장이 불가능하거나 실패했음을 기존 오류 채널로 보고한다 — 새 채널을 만들지 않고
+ *  getSettingsStorageWriteError()로 확인할 수 있게 한다(AC-06). */
+function reportStorageFailure(error, message) {
+  lastStorageWriteError = error
+  console.warn(`[settings] ${message}`, error)
 }
 
 /** localStorage에 접근할 수 없거나(SSR·프라이빗 모드 등) 손상된 값을 만나도 던지지 않는
@@ -59,23 +76,56 @@ function createMemoryStorage() {
   }
 }
 
+/** localStorage 자체에 접근할 수 없는 환경(프라이빗 모드·저장소 정책 차단 등)용 fallback.
+ *
+ *  화면은 계속 동작해야 하므로 메모리 저장소를 그대로 쓰되, 이 경로의 쓰기는 **한 번도**
+ *  기기에 남지 않는다. 그래서 resolve 시점에 한 번만 기록하지 않고 setItem마다 다시
+ *  보고한다 — 한 번만 기록하면 clearSettingsStorageWriteError() 이후로 영원히 null이 되어
+ *  "저장됐다"는 거짓 표시가 된다(AC-06). */
+function createUnavailableStorage(error) {
+  const memory = createMemoryStorage()
+  reportStorageFailure(error, "기기 저장소를 쓸 수 없습니다 — 이번 세션에만 유지됩니다.")
+
+  return {
+    getItem: memory.getItem,
+    removeItem: memory.removeItem,
+    setItem: (name, value) => {
+      memory.setItem(name, value)
+      reportStorageFailure(error, "기기 저장소를 쓸 수 없습니다 — 이번 세션에만 유지됩니다.")
+    },
+  }
+}
+
 function resolveBrowserStorage() {
   try {
+    // 저장소가 아예 없는 환경(SSR·비브라우저 러너)은 오류가 아니라 정상 조건이라 보고하지
+    // 않는다. 반대로 getter 자체가 던지는 것은 실제 저장소 사용 불가이므로 보고한다.
     if (typeof localStorage === "undefined") return createMemoryStorage()
-  } catch {
-    return createMemoryStorage()
+  } catch (error) {
+    return createUnavailableStorage(error)
   }
 
   return {
     getItem: (name) => {
+      let raw
       try {
-        const raw = localStorage.getItem(name)
-        if (raw === null) return null
-        JSON.parse(raw) // 손상된 JSON이면 여기서 걸러 초기 상태로 대체한다.
-        return raw
-      } catch {
+        raw = localStorage.getItem(name)
+      } catch (error) {
+        // 읽기 자체가 막혔다 — 저장소를 쓸 수 없다는 뜻이므로 조용히 넘기지 않는다.
+        reportStorageFailure(error, "기기 저장소를 읽지 못했습니다 — 기본값으로 시작합니다.")
         return null
       }
+
+      if (raw === null) return null
+
+      try {
+        JSON.parse(raw) // 손상된 JSON이면 여기서 걸러 초기 상태로 대체한다.
+      } catch {
+        // 저장소는 살아 있고 값만 손상된 경우다 — 다음 쓰기가 정상적으로 덮으므로
+        // 저장 실패로 보고하지 않는다(위의 사용 불가와 다른 사건이다).
+        return null
+      }
+      return raw
     },
     setItem: (name, value) => {
       try {
@@ -85,8 +135,7 @@ function resolveBrowserStorage() {
         // 쓰기 실패(용량 초과·프라이빗 모드 등) — 던지지 않아 화면은 계속 동작하지만,
         // "저장됐다"고 두지 않는다. 실패를 기록하고 경고를 남겨
         // getSettingsStorageWriteError()로 확인할 수 있게 한다(AC-06).
-        lastStorageWriteError = error
-        console.warn("[settings] 기기 저장에 실패했습니다 — 이번 세션에만 유지됩니다.", error)
+        reportStorageFailure(error, "기기 저장에 실패했습니다 — 이번 세션에만 유지됩니다.")
       }
     },
     removeItem: (name) => {
@@ -141,10 +190,28 @@ function sanitizeVolumes(value, currentVolumes) {
   return next
 }
 
-function sanitizeBooleanMap(value) {
-  if (typeof value !== "object" || value === null) return null
+/**
+ * 저장된 체크박스 맵 검증(AC-06).
+ *
+ * 이전 구현은 (a) 배열을 걸러내지 않아 `[]`가 `{}`로, `[true,false]`가 `{0:true,1:false}`로
+ * 통과했고 (b) 화이트리스트가 없어 손상·구버전 localStorage의 모르는 키가 그대로 상태에
+ * 남았다. generalChecks는 `{...current, ...sanitized}`로 병합되므로 그런 키가 축적된다.
+ *
+ * 알려진 id이면서 값이 진짜 boolean인 항목만 남긴다 — 유효한 `false`는 falsy라고 버리지
+ * 않고 그대로 보존한다(그러지 않으면 "전부 기본값"으로 퇴화한다).
+ *
+ * @param {unknown} value
+ * @param {Set<string>} allowedIds
+ * @returns {Record<string, boolean> | null} 맵이 아니면 null(호출부가 현재값을 유지한다)
+ */
+function sanitizeBooleanMap(value, allowedIds) {
+  // 배열도 typeof === "object"라 따로 걸러낸다 — 체크박스 맵은 객체여야 한다.
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null
+
   const next = {}
-  for (const [id, checked] of Object.entries(value)) {
+  for (const id of allowedIds) {
+    if (!Object.hasOwn(value, id)) continue
+    const checked = value[id]
     if (typeof checked === "boolean") next[id] = checked
   }
   return next
@@ -157,9 +224,13 @@ function mergePersistedSettings(persisted, current) {
 
   const volumes = sanitizeVolumes(persisted.volumes, current.volumes)
 
+  const restoredGeneralChecks = sanitizeBooleanMap(
+    persisted.generalChecks,
+    GENERAL_CHECK_STORAGE_IDS,
+  )
   const generalChecks =
-    sanitizeBooleanMap(persisted.generalChecks) !== null
-      ? { ...current.generalChecks, ...sanitizeBooleanMap(persisted.generalChecks) }
+    restoredGeneralChecks !== null
+      ? { ...current.generalChecks, ...restoredGeneralChecks }
       : current.generalChecks
 
   // 숫자 설정은 모두 clampNumber를 거친다 — Number 변환을 쓰면 null·""·[]·[3]·true가
@@ -170,7 +241,8 @@ function mergePersistedSettings(persisted, current) {
     fallback: current.generalTextSize,
   })
 
-  const chatChecks = sanitizeBooleanMap(persisted.chatChecks)
+  // chatChecks는 "아직 고른 적 없음"(null)을 그대로 보존한다 — 기본값은 인게임 도메인이 정한다.
+  const chatChecks = sanitizeBooleanMap(persisted.chatChecks, CHAT_CHECK_STORAGE_ID_SET)
 
   // 채팅 글자 크기는 인게임 도메인(INGAME_SETTING_CHAT_SLIDER)이 정의하지만, 설정
   // 도메인이 인게임 도메인을 거꾸로 import하지 않기 위해 저장 범위만 여기에 둔다 —
@@ -261,3 +333,6 @@ export { defaultVolumes as buildDefaultSoundVolumes, defaultGeneralChecks as bui
 /** 복원 검증 로직 — JSON으로는 표현할 수 없는 값(NaN 등)까지 회귀 시험이 직접 확인할 수
  *  있도록 내보낸다(AC-06). */
 export { sanitizeVolumes as sanitizePersistedVolumes, clampNumber as clampPersistedNumber }
+
+/** 복원 허용 id 집합 — 시험이 실제 체크박스 정의와 대조한다(AC-06). */
+export const GENERAL_CHECK_STORAGE_ID_LIST = [...GENERAL_CHECK_STORAGE_IDS]

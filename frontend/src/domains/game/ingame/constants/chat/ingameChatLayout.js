@@ -68,6 +68,35 @@ export const INGAME_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS =
 export const INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_SCALED_CLASS =
   "font-subheading text-[clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
 
+/**
+ * 위 타이포 클래스가 쓰는 배율 적용 clamp 식 — 클래스 리터럴과 textarea 인라인 font-size가
+ * 공유하는 **단일 출처**다.
+ *
+ * textarea는 이 클래스만으로는 크기를 못 받아 상속 16px로 떨어지는 문제가 있어
+ * 인라인 font-size를 함께 얹는다. 이전 구현은 그 값을 클래스 문자열에서 정규식으로
+ * 되파싱했는데(`inputClass.match(/text-\[(clamp\([^\]]+\))\]/)`), 값 안에 `]`가 없다는 가정과
+ * 유틸리티 순서에 기대고 있어 타이포 클래스를 조금만 손대도 조용히 undefined가 되어
+ * 16px 결함이 되살아난다. 그래서 식을 여기 한 번만 적고 클래스·인라인 양쪽이 이것을 쓴다.
+ *
+ * 클래스 리터럴은 Tailwind JIT가 소스를 정적으로 훑어야 하므로 템플릿으로 조립하지 않고
+ * 그대로 둔다 — 대신 리터럴이 정확히 `text-[이 값]`을 담고 있는지를
+ * __tests__/ingameChatLayout.test.js가 대조한다.
+ */
+export const INGAME_CHAT_TEXT_SCALED_FONT_SIZE =
+  "clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)))"
+
+/** 클로즈업 타이포의 배율 적용 clamp 식 */
+export const INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE =
+  "clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))"
+
+/** 타이포 클래스와 같은 값을 쓰는 font-size 식 — 인라인 style이 필요한 곳(textarea)이 쓴다.
+ *  @param {"board" | "closeup"} [variant] */
+export function getInGameChatScaledFontSize(variant = "board") {
+  return variant === "closeup"
+    ? INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE
+    : INGAME_CHAT_TEXT_SCALED_FONT_SIZE
+}
+
 /** 채팅 본문·입력이 실제로 쓰는 타이포 클래스 — 배율 변수를 반영한다.
  *  @param {"board" | "closeup"} [variant] */
 export function getInGameChatScaledTypographyClass(variant = "board") {

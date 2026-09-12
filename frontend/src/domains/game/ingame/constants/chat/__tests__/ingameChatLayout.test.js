@@ -16,11 +16,14 @@ import {
   getInGameChatMessageBodyClass,
   getInGameChatMessageSenderClass,
   getInGameChatMessageTimeClass,
+  getInGameChatScaledFontSize,
   getInGameChatScaledTypographyClass,
   getInGameChatTextScale,
   getInGameChatTextScaleStyle,
   getInGameChatTextTypographyClass,
+  INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE,
   INGAME_CHAT_TEXT_SCALE_CSS_VAR,
+  INGAME_CHAT_TEXT_SCALED_FONT_SIZE,
 } from "../ingameChatLayout.js"
 
 /** `text-[...]` 유틸리티의 인자 부분만 떼어낸다 — 중첩 괄호가 있어 끝까지 짝을 센다. */
@@ -76,6 +79,58 @@ function verticalBand(inset) {
   const start = 100 - toPercent(inset.bottom) - height
   return { start, end: start + height }
 }
+
+// ── 채팅 clamp 식의 단일 출처 ────────────────────────────────────────────────
+//
+// textarea는 타이포 클래스만으로 크기를 받지 못해 상속 16px로 떨어진다(884c3555가 고친
+// 결함). 그래서 같은 clamp 식을 인라인 font-size로도 얹는데, 이전 구현은 그 값을 클래스
+// 문자열에서 정규식으로 되파싱했다(`inputClass.match(/text-\[(clamp\([^\]]+\))\]/)`).
+// 값 안에 `]`가 없다는 가정과 유틸리티 순서에 기대는 형태라, 타이포 클래스를 조금만 손대면
+// 조용히 undefined가 되어 16px 결함이 되살아난다. 아래 시험이 "클래스 리터럴과 상수가 같은
+// 문자열"임을 강제해 되파싱 없이도 두 경로가 어긋나지 않게 한다.
+
+test("F-15(AC-02): 타이포 클래스가 공유 clamp 상수를 그대로 담는다(board)", () => {
+  assert.ok(
+    getInGameChatScaledTypographyClass("board").includes(
+      `text-[${INGAME_CHAT_TEXT_SCALED_FONT_SIZE}]`,
+    ),
+    "클래스와 상수가 어긋나면 textarea 인라인 크기가 본문과 달라진다",
+  )
+})
+
+test("F-15(AC-02): 타이포 클래스가 공유 clamp 상수를 그대로 담는다(closeup)", () => {
+  assert.ok(
+    getInGameChatScaledTypographyClass("closeup").includes(
+      `text-[${INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE}]`,
+    ),
+  )
+})
+
+test("F-15(AC-02): getInGameChatScaledFontSize가 variant별 상수를 돌려준다", () => {
+  assert.equal(getInGameChatScaledFontSize("board"), INGAME_CHAT_TEXT_SCALED_FONT_SIZE)
+  assert.equal(getInGameChatScaledFontSize("closeup"), INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE)
+  assert.equal(getInGameChatScaledFontSize(), INGAME_CHAT_TEXT_SCALED_FONT_SIZE)
+  assert.notEqual(INGAME_CHAT_TEXT_SCALED_FONT_SIZE, INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE)
+})
+
+test("F-15(AC-02): 공유 clamp 상수는 실제 측정된 크기를 유지한다(16px 결함 복원 금지)", () => {
+  // operator가 실제 Chrome에서 잰 값의 근거가 되는 항들이다 — 한 글자라도 바뀌면
+  // 재측정 없이는 증거가 무효가 된다.
+  for (const [fontSize, terms] of [
+    [INGAME_CHAT_TEXT_SCALED_FONT_SIZE, ["0.72rem", "3.2cqi", "0.92rem"]],
+    [INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE, ["0.95rem", "4.15cqi", "1.28rem"]],
+  ]) {
+    assert.deepEqual(clampTerms(fontSize), [
+      `calc(${terms[0]}*var(--ingame-chat-text-scale,1))`,
+      `calc(${terms[1]}*var(--ingame-chat-text-scale,1))`,
+      `calc(${terms[2]}*var(--ingame-chat-text-scale,1))`,
+    ])
+  }
+
+  // 상속 16px로 떨어지는 형태(단위 없는 값·빈 문자열)가 아니어야 한다.
+  assert.ok(INGAME_CHAT_TEXT_SCALED_FONT_SIZE.startsWith("clamp("))
+  assert.ok(INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE.startsWith("clamp("))
+})
 
 test("INGAME_CHAT_STATUS_LINE_INSET: 보드 상태·오류 문구 inset이 정의되어 있다", () => {
   assert.ok(INGAME_CHAT_STATUS_LINE_INSET)

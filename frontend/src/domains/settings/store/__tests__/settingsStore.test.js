@@ -30,10 +30,12 @@ const {
   buildDefaultSoundVolumes,
   buildDefaultGeneralChecks,
   CHAT_TEXT_SIZE_STORAGE_RANGE,
+  CHAT_CHECK_STORAGE_IDS,
+  GENERAL_CHECK_STORAGE_ID_LIST,
   sanitizePersistedVolumes,
   clampPersistedNumber,
 } = await freshSettingsModule()
-const { INGAME_SETTING_CHAT_SLIDER } = await import(
+const { INGAME_SETTING_CHAT_SLIDER, INGAME_SETTING_CHAT_CHECKBOXES } = await import(
   "../../../game/ingame/constants/controls/ingameSetting/ingameSettingData.js"
 )
 const { SOUND_SETTING_VOLUMES } = await import("../../constants/soundSettings.js")
@@ -393,6 +395,223 @@ test("F-15(AC-06): localStorage 쓰기가 실패하면 던지지 않되 실패�
   fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.defaultValue)
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(fresh.getSettingsStorageWriteError(), null)
+})
+
+// ── 저장소를 아예 쓸 수 없는 환경 ───────────────────────────────────────────
+//
+// 반송 지적: resolveBrowserStorage가 localStorage getter 예외를 잡아 메모리 저장소로
+// 조용히 넘어가, 새로고침 후 설정이 사라지는데도 getSettingsStorageWriteError()는 계속
+// null이었다 — "기기에 저장됐다"는 거짓 표시다. fallback으로 계속 동작하되 사실은 보고한다.
+
+/** globalThis.localStorage를 "접근하면 던지는" 속성으로 바꾼다(프라이빗 모드·정책 차단). */
+function installThrowingLocalStorageGetter(error) {
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    get() {
+      throw error
+    },
+  })
+}
+
+test("F-15(AC-06): localStorage 접근 자체가 막히면 fallback으로 동작하되 저장 실패를 보고한다", async () => {
+  const realLocalStorage = globalThis.localStorage
+  const originalWarn = console.warn
+  console.warn = () => {}
+  installThrowingLocalStorageGetter(
+    new DOMException("저장소 접근이 거부되었습니다", "SecurityError"),
+  )
+
+  try {
+    const fresh = await freshSettingsModule()
+
+    // (1) fallback은 그대로 쓸 수 있다 — 화면이 죽지 않는다.
+    assert.equal(
+      fresh.useSettingsStore.getState().generalTextSize,
+      GENERAL_SETTING_TEXT_SIZE.defaultValue,
+    )
+    // (2) 저장소를 쓸 수 없다는 사실이 기존 오류 채널로 보고된다.
+    assert.notEqual(
+      fresh.getSettingsStorageWriteError(),
+      null,
+      "메모리로 조용히 넘어가면 저장된 것처럼 보인다",
+    )
+
+    // (3) 기록을 지운 뒤 다시 저장해도 다시 보고된다 — 이번 세션 동안 한 번도 기기에
+    //     남지 않으므로 "저장됨"(null)으로 되돌아가면 안 된다.
+    fresh.clearSettingsStorageWriteError()
+    fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.max)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(
+      fresh.useSettingsStore.getState().generalTextSize,
+      GENERAL_SETTING_TEXT_SIZE.max,
+      "저장에 실패해도 이번 세션 값은 바뀌어야 한다",
+    )
+    assert.notEqual(
+      fresh.getSettingsStorageWriteError(),
+      null,
+      "한 번만 기록하면 이후 쓰기가 durable save처럼 보인다",
+    )
+  } finally {
+    installDomGlobal("localStorage", realLocalStorage)
+    console.warn = originalWarn
+  }
+})
+
+test("F-15(AC-06): 저장값 읽기가 막히면 기본값으로 시작하되 조용히 넘기지 않고, 복구 후에는 정상 저장한다", async () => {
+  const realLocalStorage = globalThis.localStorage
+  const originalWarn = console.warn
+  console.warn = () => {}
+  installDomGlobal("localStorage", {
+    getItem: () => {
+      throw new DOMException("읽기가 거부되었습니다", "SecurityError")
+    },
+    setItem: (key, value) => realLocalStorage.setItem(key, value),
+    removeItem: (key) => realLocalStorage.removeItem(key),
+  })
+
+  let fresh
+  try {
+    fresh = await freshSettingsModule()
+
+    assert.equal(
+      fresh.useSettingsStore.getState().generalTextSize,
+      GENERAL_SETTING_TEXT_SIZE.defaultValue,
+      "읽지 못했으면 기본값으로 시작한다",
+    )
+    assert.notEqual(fresh.getSettingsStorageWriteError(), null, "읽기 실패도 보고한다")
+  } finally {
+    installDomGlobal("localStorage", realLocalStorage)
+    console.warn = originalWarn
+  }
+
+  // 저장소가 정상으로 돌아오면 쓰기가 성공하고 실패 기록이 지워진다(정상 복구).
+  fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.min)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(fresh.getSettingsStorageWriteError(), null, "성공한 쓰기는 durable save다")
+  assert.equal(
+    JSON.parse(localStorage.getItem("settings-storage")).state.generalTextSize,
+    GENERAL_SETTING_TEXT_SIZE.min,
+  )
+})
+
+// ── 손상된 체크박스 맵 복원 ─────────────────────────────────────────────────
+//
+// 반송 지적: sanitizeBooleanMap이 배열을 거르지 않고 화이트리스트도 없어서, []는 {}로
+// [true,false]는 {0:true,1:false}로 통과했고 모르는 키가 상태에 그대로 남았다.
+
+test("F-15(AC-06): 저장 허용 체크박스 id는 실제 정의와 같다", () => {
+  assert.deepEqual(
+    [...CHAT_CHECK_STORAGE_IDS].sort(),
+    INGAME_SETTING_CHAT_CHECKBOXES.map(({ id }) => id).sort(),
+  )
+  assert.deepEqual(
+    [...GENERAL_CHECK_STORAGE_ID_LIST].sort(),
+    GENERAL_SETTING_CHECKBOXES.filter(({ id }) => id !== "fullscreen" && id !== "whisper")
+      .map(({ id }) => id)
+      .sort(),
+  )
+})
+
+/** 체크박스 맵이 아닌 값들 — 어느 것도 "고른 적 있음"으로 통과하면 안 된다. */
+const NON_MAP_PERSISTED_CHECKS = [[], [true], [true, false], "true", 0, 1, true, false]
+
+test("F-15(AC-06): 배열·원시값으로 저장된 chatChecks는 통째로 거부한다", async () => {
+  for (const value of NON_MAP_PERSISTED_CHECKS) {
+    localStorage.clear()
+    localStorage.setItem(
+      "settings-storage",
+      JSON.stringify({ state: { chatChecks: value }, version: 0 }),
+    )
+
+    const restored = await freshSettingsModule()
+    assert.equal(
+      restored.useSettingsStore.getState().chatChecks,
+      null,
+      `${JSON.stringify(value)}가 통과하면 모르는 키가 상태에 남는다`,
+    )
+  }
+})
+
+test("F-15(AC-06): 배열·원시값으로 저장된 generalChecks는 기본값을 유지한다", async () => {
+  for (const value of NON_MAP_PERSISTED_CHECKS) {
+    localStorage.clear()
+    localStorage.setItem(
+      "settings-storage",
+      JSON.stringify({ state: { generalChecks: value }, version: 0 }),
+    )
+
+    const restored = await freshSettingsModule()
+    assert.deepEqual(
+      restored.useSettingsStore.getState().generalChecks,
+      buildDefaultGeneralChecks(),
+      `${JSON.stringify(value)}가 통과하면 알림 설정이 엉뚱한 값이 된다`,
+    )
+  }
+})
+
+test("F-15(AC-06): chatChecks는 알려진 id만 남기고, 유효한 false는 그대로 복원한다", async () => {
+  // 객체 리터럴의 `__proto__`는 own 속성이 되지 않으므로 저장된 JSON 문자열을 그대로 쓴다 —
+  // 실제 손상된 localStorage 내용과 같은 형태로 검증한다.
+  localStorage.setItem(
+    "settings-storage",
+    '{"state":{"chatChecks":{"show-time":true,"nickname-color":false,' +
+      '"legacy-option":true,"__proto__":true,"":true}},"version":0}',
+  )
+
+  const restored = await freshSettingsModule()
+  const { chatChecks } = restored.useSettingsStore.getState()
+
+  assert.deepEqual(chatChecks, { "show-time": true, "nickname-color": false })
+  assert.equal(Object.getPrototypeOf(chatChecks), Object.prototype, "프로토타입이 오염되면 안 된다")
+})
+
+test("F-15(AC-06): chatChecks의 boolean 아닌 값은 그 항목만 버리고 나머지는 보존한다", async () => {
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({
+      state: { chatChecks: { "show-time": "true", "nickname-color": true } },
+      version: 0,
+    }),
+  )
+
+  const restored = await freshSettingsModule()
+
+  assert.deepEqual(restored.useSettingsStore.getState().chatChecks, { "nickname-color": true })
+})
+
+test("F-15(AC-01/AC-06): generalChecks 복원은 숨김·모르는 id를 되살리지 않는다", async () => {
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({
+      state: {
+        generalChecks: {
+          "friend-invite": false,
+          "game-invite": "true",
+          whisper: true,
+          fullscreen: true,
+          "legacy-option": false,
+        },
+      },
+      version: 0,
+    }),
+  )
+
+  const restored = await freshSettingsModule()
+  const { generalChecks } = restored.useSettingsStore.getState()
+
+  assert.equal(generalChecks["friend-invite"], false, "유효한 false는 보존해야 한다")
+  assert.equal(
+    generalChecks["game-invite"],
+    true,
+    "boolean이 아닌 값은 그 항목의 기본값을 유지한다",
+  )
+  assert.deepEqual(
+    Object.keys(generalChecks).sort(),
+    Object.keys(buildDefaultGeneralChecks()).sort(),
+    "귓속말·전체화면·모르는 id가 저장값으로 되살아나면 안 된다",
+  )
 })
 
 test("F-15(AC-02/AC-05): resetSettings는 volumes·generalChecks·generalTextSize·chatChecks·chatTextSize만 기본값으로 되돌린다", () => {

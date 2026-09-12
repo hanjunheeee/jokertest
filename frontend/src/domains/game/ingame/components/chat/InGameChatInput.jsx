@@ -5,6 +5,7 @@ import {
   getInGameChatInputPlaceholderClass,
   getInGameChatInputViewportFixedHeightClass,
   getInGameChatInputViewportSinglelineClass,
+  getInGameChatScaledFontSize,
   getInGameChatTextScale,
   getInGameChatTextScaleStyle,
   INGAME_CHAT_INPUT_VIEWPORT_EMPTY_CLASS,
@@ -266,6 +267,11 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     .filter(Boolean)
     .join(" ")
 
+  // textarea는 타이포 클래스만으로는 크기를 받지 못해 상속 16px로 떨어진다 — 클래스와
+  // 같은 단일 출처(ingameChatLayout.js의 clamp 식)를 인라인으로 그대로 얹어 막는다.
+  // 클래스 문자열을 정규식으로 되파싱하지 않는다(형태가 바뀌면 조용히 16px로 돌아간다).
+  const textareaFontSizeStyle = { fontSize: getInGameChatScaledFontSize(variant) }
+
   const textareaClass = [
     inputClass,
     hasText
@@ -299,7 +305,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
         onCompositionEnd={syncViewport}
         placeholder=""
         className={textareaClass}
-        style={{ fontSize: inputClass.match(/text-\[(clamp\([^\]]+\))\]/)?.[1] }}
+        style={textareaFontSizeStyle}
         aria-label="채팅 입력"
       />
     </div>

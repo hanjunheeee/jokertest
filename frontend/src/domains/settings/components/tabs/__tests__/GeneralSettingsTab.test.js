@@ -266,8 +266,18 @@ test("F-15(AC-02): 배율은 index.css의 한 규칙에서만 곱해지고 fallb
 
   // calc(var(--app-text-size,...) * var(--app-text-scale,1)) — 배율 변수가 없을 때 1이어야
   // 설정을 저장한 적 없는 화면이 기존과 동일하다(calc(x*1) === x).
+  //
+  // @layer utilities의 손수 클래스가 아니라 @utility로 선언해야 한다 — 손수 클래스에는
+  // Tailwind가 variant·important를 붙이지 못해 [&_p]:!app-text-scaled 같은 후보가 아무
+  // CSS도 만들지 못하고 버려진다(F-15 AC-02 반송 수정). 선언 본문은 그대로다.
   assert.match(
     indexCss,
-    /\.app-text-scaled\s*\{\s*font-size:\s*calc\(var\(--app-text-size,\s*1rem\)\s*\*\s*var\(--app-text-scale,\s*1\)\);?\s*\}/,
+    /@utility\s+app-text-scaled\s*\{\s*font-size:\s*calc\(var\(--app-text-size,\s*1rem\)\s*\*\s*var\(--app-text-scale,\s*1\)\);?\s*\}/,
   )
+
+  // 곱셈이 일어나는 곳은 여전히 한 군데뿐이어야 한다 — 여러 규칙이 각자 곱하면 같은
+  // 요소에 배율이 겹쳐 적용된다.
+  const multipliers =
+    indexCss.match(/var\(--app-text-size[^)]*\)\s*\*\s*var\(--app-text-scale/g) ?? []
+  assert.equal(multipliers.length, 1, "배율을 곱하는 규칙은 하나여야 한다")
 })
