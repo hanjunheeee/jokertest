@@ -14,7 +14,13 @@ mock.module("../utils/pickInGameJobPortrait.js", {
   namedExports: { pickInGameJobPortrait: (index) => `portrait-${index}` },
 })
 mock.module("../utils/pickInGamePlayerFrame.js", {
-  namedExports: { pickInGamePlayerFrame: (index) => `frame-${index}` },
+  namedExports: {
+    pickInGamePlayerFrame: (index) => `frame-${index}`,
+    // F-14: mergeSourcePlayerWithPreview.js가 이 모듈에서 resolveAccountCardFrameSrc도
+    // import한다 — 이 파일이 모듈 전체를 대체하므로 실제로 안 쓰더라도(이 시나리오는 계정
+    // 카드 프레임을 주입하지 않는다) named export 자체는 있어야 import가 깨지지 않는다.
+    resolveAccountCardFrameSrc: () => null,
+  },
 })
 
 const { InGamePlayerSessionContext } = await import("../components/InGamePlayerSessionContext.js")

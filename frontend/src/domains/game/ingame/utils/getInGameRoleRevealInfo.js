@@ -1,4 +1,5 @@
 import { getInGameRoleRevealDisplay } from "../constants/roleReveal/ingameRoleRevealData.js"
+import { getDefaultSkinIdForJob, getSkinCardWearItemById } from "../../../user/constants/skinCardWear/skinCardWearCatalog.js"
 
 // buildPlayerSessionSourceFromGameState.js·applySessionSnapshot.js와 동일한 role/team 화이트리스트
 // (백엔드 game-core ROLE_DEFINITIONS의 수동 동기화 사본).
@@ -8,6 +9,33 @@ const ROLE_TEAMS = {
   DOCTOR: "CITIZEN",
   GUARD: "CITIZEN",
   WITCH_HUNTER: "CITIZEN",
+}
+
+// F-14(AC-01/AC-04, R-IMPL P1 수정): 서버 역할 ↔ frontend skinCardWearCatalog.js의 직업별
+// 장착 스킨 탭(noble/clown/guard/doctor/witchHunter) 대응표 — backend/game-core/gameSession.js
+// ROLE_TO_SKIN_JOB_ID와 정확히 같은 매핑이다(공유 모듈이 없는 이 저장소의 관례대로 각
+// 런타임이 독립적으로 든다). self.accountSkinId는 buildViewerRoleFields가 뷰어 자신의 실제
+// role에 대응하는 값 하나만(own-property로 있을 때만) 실어 보낸다 — 다른 참가자·다른 직업의
+// 선택은 이 payload에 애초에 존재하지 않는다.
+const ROLE_TO_SKIN_JOB_ID = {
+  CITIZEN: "noble",
+  JOKER: "clown",
+  DOCTOR: "doctor",
+  GUARD: "guard",
+  WITCH_HUNTER: "witchHunter",
+}
+
+/** self.role에 대응하는 직업 스킨 standing 자산 경로. self.accountSkinId가 없으면(아직
+ *  그 직업을 한 번도 장착한 적 없는 계정, 또는 서버가 아직 이 필드를 보장하지 않는 낡은
+ *  payload) 그 직업의 기본 스킨으로 대체한다 — SkinCardWearOverlay를 연 적이 없어도 항상
+ *  값이 있는 초상을 보여준다(skinCardWear.store.js의 기본값 대체와 동일한 관례). 대응하는
+ *  직업이 없거나(알 수 없는 role) 카탈로그에서 id를 찾지 못하면 null이다. */
+function resolveInGameRoleRevealStandingSrc(role, accountSkinId) {
+  const skinJobId = ROLE_TO_SKIN_JOB_ID[role]
+  if (!skinJobId) return null
+  const resolvedSkinId = accountSkinId ?? getDefaultSkinIdForJob(skinJobId)
+  if (!resolvedSkinId) return null
+  return getSkinCardWearItemById(resolvedSkinId)?.standingSrc ?? null
 }
 
 function isNonEmptyString(value) {
@@ -47,5 +75,6 @@ export function getInGameRoleRevealInfo(self, { authUuid } = {}) {
     teamLabel: display.teamLabel,
     description: display.description,
     allies,
+    standingSrc: resolveInGameRoleRevealStandingSrc(self.role, self.accountSkinId ?? null),
   }
 }

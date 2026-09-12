@@ -705,3 +705,34 @@ test("winResult 검증: applySessionSnapshotPure/applyTribunalResolvedPure/parse
     assert.equal(parseNightResultAcceptsWinResult(value), expected, `parseNightResultAppliedPayload: ${label}`)
   }
 })
+
+
+test('F14 browser regression: snapshot preserves public cards and only own skin', () => {
+  const response = baseResponse({
+    players: basePlayers().map((p) => ({ ...p, accountCardFrameId: 'player-card-왕관', accountSkinsByJob: { noble: 'private-must-not-copy' }, accountSkinId: 'private-must-not-copy' })),
+    self: baseSelfObj({ accountSkinId: 'player-skin-귀족1-블러드', accountSkinsByJob: { noble: 'private-must-not-copy' } }),
+  })
+  const result = applySessionSnapshotPure(baseCurrent(), response)
+  assert.equal(result.state.self.accountSkinId, 'player-skin-귀족1-블러드')
+  assert.equal(Object.hasOwn(result.state.self, 'accountSkinsByJob'), false)
+  for (const p of result.state.players) {
+    assert.equal(p.accountCardFrameId, 'player-card-왕관')
+    assert.equal(Object.hasOwn(p, 'accountSkinId'), false)
+    assert.equal(Object.hasOwn(p, 'accountSkinsByJob'), false)
+  }
+})
+
+test('F14 snapshot: null own skin is retained and malformed equipment is rejected', () => {
+  assert.equal(applySessionSnapshotPure(baseCurrent(), baseResponse({self:baseSelfObj({accountSkinId:null})})).state.self.accountSkinId, null)
+  assertRejected(baseCurrent(), baseResponse({self:baseSelfObj({accountSkinId:{bad:true}})}))
+  assertRejected(baseCurrent(), baseResponse({players:basePlayers().map(p=>({...p,accountCardFrameId:42}))}))
+})
+
+
+test('F14 real QA roster: unequipped null cards coexist with a purchased card', () => {
+  const current=baseCurrent()
+  const response=baseResponse({players:basePlayers().map((p,i)=>({...p,accountCardFrameId:i===0?'player-card-왕관':null}))})
+  const result=applySessionSnapshotPure(current,response)
+  assert.notEqual(result,current)
+  assert.deepEqual(result.state.players.map(p=>p.accountCardFrameId),response.players.map(p=>p.accountCardFrameId))
+})

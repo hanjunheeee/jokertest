@@ -159,14 +159,159 @@ test("응답을 잃어버린(전송 불확실) 구매를 재시도하면 같은 
 
 test("equip은 서버가 돌려준 loadout으로 상태를 갱신한다", async () => {
   resetStore()
+  useEconomyStore.setState((state) => ({ loadout: { ...state.loadout, revision: "rev-known" } }))
   postImpl = async (endpoint, body) => {
     assert.equal(endpoint, "/economy/equip")
-    assert.deepEqual(body, { slot: "PROFILE_BORDER", itemId: "profile-border-남작" })
+    assert.deepEqual(body, { slot: "PROFILE_BORDER", itemId: "profile-border-남작", expectedRevision: "rev-known" })
     return { loadout: { selectedProfileBorderId: "profile-border-남작" } }
   }
 
   await useEconomyStore.getState().equip({ slot: "PROFILE_BORDER", itemId: "profile-border-남작" })
 
+  assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
+})
+
+// F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — revision을 아직 모르면
+// (초기 fetchSummary 완료 전) 버전 없이 POST하는 대신 authoritative GET을 먼저 시도한다.
+test("F-14 AC-01(R-IMPL2): revision을 아직 모르면 equip은 버전 없이 전송하지 않고 authoritative GET으로 먼저 읽은 뒤 그 revision으로 전송한다", async () => {
+  resetStore()
+  let getCalls = 0
+  let seenBody
+  getImpl = async (endpoint) => {
+    if (endpoint.endsWith("/wallet")) return { balanceGold: 0, balanceDiamond: 0 }
+    getCalls += 1
+    return { entitlements: [], loadout: { selectedSkinsByJob: {}, revision: "server-rev-initial" } }
+  }
+  postImpl = async (_, body) => { seenBody = body; return { loadout: {} } }
+
+  await useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+
+  assert.equal(getCalls, 1, "revision을 모르면 authoritative GET을 정확히 한 번 먼저 시도해야 한다")
+  assert.equal(seenBody.expectedRevision, "server-rev-initial", "방금 읽은 authoritative revision으로 전송해야 한다")
+})
+
+// F-14(AC-01, R-IMPL2 "Invalid/missing revision must demonstrably make NO DB mutation") —
+// 그 authoritative GET마저 실패하면 버전 없이 전송하지 않고 명확한 복구 가능 오류로 남는다.
+test("F-14 AC-01(R-IMPL2): revision을 모르는 채 authoritative GET마저 실패하면 POST를 시도하지 않고 LOADOUT_REVISION_UNAVAILABLE로 거부한다", async () => {
+  resetStore()
+  let postCalls = 0
+  getImpl = async (endpoint) => {
+    if (endpoint.endsWith("/wallet")) return { balanceGold: 0, balanceDiamond: 0 }
+    throw new Error("네트워크 오류(authoritative GET 실패)")
+  }
+  postImpl = async () => { postCalls += 1; return { loadout: {} } }
+
+  await assert.rejects(
+    () => useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" }),
+    { code: "LOADOUT_REVISION_UNAVAILABLE" },
+  )
+
+  assert.equal(postCalls, 0, "revision을 확인하지 못하면 서버로 어떤 POST도 전송하면 안 된다(버전 없는 커밋 금지)")
+})
+
+// ── F-14 AC-01(P1 PRIORITY, R-IMPL "coherent persisted write ordering"): equip() CAS ──
+// equip()(직업 스킨·카드 프레임)은 equipProfile과 같은 CAS·직렬 큐를 공유한다. 아래
+// 시험은 위 F-13 AC-02(A-09) 시험들과 같은 계약을 equip()에서도 그대로 고정한다.
+
+test("F-14 AC-01(P1): equip()은 현재 loadout.revision을 expectedRevision으로 함께 보낸다", async () => {
+  resetStore()
+  useEconomyStore.setState({ loadout: { ...useEconomyStore.getState().loadout, revision: "rev-known" } })
+  let seenBody
+  postImpl = async (_, body) => { seenBody = body; return { loadout: {} } }
+
+  await useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+
+  assert.equal(seenBody.expectedRevision, "rev-known")
+})
+
+test("F-14 AC-01(P1): 서버 CAS 충돌(409 SKIN_REVISION_CONFLICT) 후 authoritative GET이 요청한 스킨과 이미 같은 값을 보여주면 재전송 없이 그 서버 진실을 받아들인다", async () => {
+  resetStore()
+  let postCalls = 0
+  postImpl = async () => {
+    postCalls++
+    throw Object.assign(new Error("conflict"), { code: "SKIN_REVISION_CONFLICT" })
+  }
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : { entitlements: [], loadout: { selectedSkinsByJob: { guard: "player-skin-경비원1-바이올렛" }, revision: "server-rev-1" } })
+
+  const result = await useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+
+  assert.equal(postCalls, 1, "요청한 스킨이 이미 서버 값과 같으면 재전송하지 않아야 한다")
+  assert.equal(result.reconciled, true)
+  assert.equal(useEconomyStore.getState().loadout.selectedSkinsByJob.guard, "player-skin-경비원1-바이올렛")
+  assert.equal(useEconomyStore.getState().loadout.revision, "server-rev-1")
+})
+
+// F-14(AC-01, R-IMPL2 "MUST CLOSE STALE CONFLICT REPLAY", CODEX-2 반송) — 이전 버전은
+// 충돌 후 서버 값이 다르면 오래된 의도를 최신 revision으로 자동 재전송했다(아래 테스트가
+// 그 옛 계약을 고정하고 있었다). CAS만으로는 반려된 오래된 요청이 "현재 의도"로 재발행되는
+// 것을 막지 못한다 — 스킨/카드는 이제 자동 재전송하지 않고, 서버 진실을 보존한 채 명확한
+// 충돌 오류로 남는다(replayOnConflict:false). 프로필의 자동 재조정(F-13)은 별도로 그대로
+// 유지된다(아래 "F-13 AC-02(A-09)" 시험들 참고).
+test("F-14 AC-01(R-IMPL2, MUST CLOSE STALE CONFLICT REPLAY): 지연된 스킨 확정이 충돌하면 오래된 의도를 자동 재전송하지 않고, 서버 진실을 보존한 채 명확한 충돌 오류로 남는다", async () => {
+  resetStore()
+  let postCalls = 0
+  postImpl = async () => {
+    postCalls++
+    throw Object.assign(new Error("conflict"), { code: "SKIN_REVISION_CONFLICT" })
+  }
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    // 그 사이 다른 기기가 guard·noble을 모두 실제로 커밋해 두었다 — 이 요청이 원한 값
+    // (player-skin-경비원2-푸른서리)과는 다른 값이다.
+    : { entitlements: [], loadout: { selectedSkinsByJob: { guard: "player-skin-경비원1-바이올렛", noble: "player-skin-귀족1-블러드" }, revision: "server-rev-1" } })
+
+  await assert.rejects(
+    () => useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원2-푸른서리" }),
+    { code: "SKIN_REVISION_CONFLICT" },
+  )
+
+  assert.equal(postCalls, 1, "스킨/카드 충돌은 오래된 의도를 새 revision으로 자동 재전송하면 안 된다(재시도 POST 없음)")
+  const { selectedSkinsByJob, revision } = useEconomyStore.getState().loadout
+  assert.equal(selectedSkinsByJob.guard, "player-skin-경비원1-바이올렛", "재전송 없이 서버가 실제로 커밋한 최신 값을 그대로 보존해야 한다(요청한 오래된 값으로 되돌리지 않음)")
+  assert.equal(selectedSkinsByJob.noble, "player-skin-귀족1-블러드")
+  assert.equal(revision, "server-rev-1")
+})
+
+// F-14(AC-01, R-IMPL2 "also close/reopen and account change with old queued work") — 큐에
+// 오른 스킨 장착이 아직 실제로 전송되기 전에 계정이 바뀌면, 그 오래된 요청은 서버로
+// 전송조차 되면 안 된다(F-13 equipProfile의 "account switch cancels queued old-account
+// write before transport"와 같은 계약을 equip()에도 고정한다).
+test("F-14 AC-01(R-IMPL2): 스킨 장착 요청이 전송되기 전에 계정이 바뀌면 오래된 요청은 취소되고 서버로 전송되지 않는다", async () => {
+  resetStore()
+  useEconomyStore.setState((state) => ({ loadout: { ...state.loadout, revision: "rev-known" } }))
+  const gate = createDeferred(); let calls = 0
+  postImpl = async () => { calls++; await gate.promise; return { loadout: { selectedSkinsByJob: { guard: "player-skin-경비원1-바이올렛" } } } }
+
+  const a = useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+  const b = useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원2-푸른서리" })
+  const rejected = assert.rejects(b, { code: "SESSION_CHANGED" })
+  setCurrentUser({ uuid: "user-2" })
+  gate.resolve(); await a; await rejected
+
+  assert.equal(calls, 1, "계정 전환 뒤 대기 중이던 오래된 요청은 서버로 전송되면 안 된다")
+  assert.equal(useEconomyStore.getState().loadout.selectedSkinsByJob, null, "새 계정 화면에 이전 계정 요청의 결과가 남으면 안 된다")
+})
+
+test("F-14 AC-01(P1): equip()과 equipProfile()은 같은 직렬 큐를 공유한다 — 뒤이은 프로필 확정은 앞선 스킨 장착이 실제로 끝난 뒤에만 전송된다", async () => {
+  resetStore()
+  useEconomyStore.setState((state) => ({ loadout: { ...state.loadout, revision: "rev-known" } }))
+  const gate = createDeferred()
+  const calls = []
+  postImpl = async (endpoint, body) => {
+    calls.push(endpoint)
+    if (calls.length === 1) await gate.promise
+    if (endpoint === "/economy/equip") return { loadout: {} }
+    return { loadout: { selectedProfileBorderId: body.borderItemId } }
+  }
+
+  const a = useEconomyStore.getState().equip({ slot: "JOB_SKIN_GUARD", itemId: "player-skin-경비원1-바이올렛" })
+  const b = useEconomyStore.getState().equipProfile({ borderItemId: "profile-border-남작" })
+  assert.deepEqual(calls, ["/economy/equip"], "같은 큐를 공유하므로 A(스킨)가 실제로 서버에 전송될 때까지 B(프로필)는 전송되면 안 된다")
+  gate.resolve()
+  await Promise.all([a, b])
+  assert.deepEqual(calls, ["/economy/equip", "/economy/equip-profile"])
   assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
 })
 

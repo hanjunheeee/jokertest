@@ -98,6 +98,14 @@ export function buildPlayerSessionSourceFromGameState(state) {
     if (Object.hasOwn(player, "accountProfileBorderId")) {
       entry.accountProfileBorderId = player.accountProfileBorderId
     }
+    // F-14(AC-01/AC-04): 장착한 플레이어 카드 프레임도 계정 프로필 사진·테두리와 같은
+    // 공개 필드다(buildGameStartedPayload/buildSessionSnapshot의 공용 players[]가 이미
+    // 전원에게 같은 방식으로 내려준다) — mergeSourcePlayerWithPreview.js가 own-property일
+    // 때만 조건부로 쓰므로 여기서 전달하지 않으면 서버가 보낸 값이 있어도 보드에 반영되지
+    // 않는다.
+    if (Object.hasOwn(player, "accountCardFrameId")) {
+      entry.accountCardFrameId = player.accountCardFrameId
+    }
     return entry
   })
 

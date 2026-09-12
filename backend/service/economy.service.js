@@ -47,6 +47,37 @@ const { createError } = require('../utils/appError');
 
 const FREE_CARD_FRAME_ID = 'player-card-베이스';
 
+// F-14(AC-01/AC-02): frontend skinCardWearCatalog.js의 SKIN_CARD_WEAR_JOB_TABS(noble/clown/
+// guard/doctor/witchHunter) 5개 직업 탭과 1:1 대응하는 장착 슬롯. 카탈로그의 실제 구매 가능
+// 스킨(backend/economy/catalog.js SKIN_STANDING_STEMS)은 `player-skin-{stem}` id를 쓰고,
+// stem은 항상 해당 직업의 한글 이름으로 시작한다(경비원1-바이올렛 등) — 그 접두어가
+// JOB_SKIN_ID_PREFIX_BY_SLOT다. 이 접두어 검증이 없으면 한 직업에서 구매한 스킨을 다른
+// 직업 슬롯에 장착해 "그 역할에만 있어야 할 외형"이 엉뚱한 역할에 붙는 것을 막지 못한다.
+const SKIN_ITEM_ID_PREFIX = 'player-skin-';
+
+const JOB_SKIN_ID_PREFIX_BY_SLOT = Object.freeze({
+    JOB_SKIN_NOBLE: '귀족',
+    JOB_SKIN_CLOWN: '광대',
+    JOB_SKIN_GUARD: '경비원',
+    JOB_SKIN_DOCTOR: '주치의',
+    JOB_SKIN_WITCH_HUNTER: '마녀사냥꾼',
+});
+
+// F-14(AC-02) 반송 대응: 이전에는 "basic-skin-{직업}로 시작하면 무료"라는 접두어 허용을 썼는데,
+// 그러면 basic-skin-귀족garbage처럼 실제로 존재하지 않는 id도 통과했다. frontend
+// skinCardWearCatalog.js BASIC_SKIN_STEMS가 실제로 만드는 9개 id만 정확히 나열한 허용 목록
+// (exact allowlist)으로 바꿔, 카탈로그에 없는(구매 대상도 아닌) 무료 기본 스킨은 항상
+// 소유권 검사를 그대로 통과해야만(=애초에 존재하지 않으므로 통과할 수 없음) 장착된다.
+const FREE_JOB_SKIN_IDS_BY_SLOT = Object.freeze({
+    JOB_SKIN_NOBLE: Object.freeze(['basic-skin-귀족1', 'basic-skin-귀족2', 'basic-skin-귀족3']),
+    JOB_SKIN_CLOWN: Object.freeze(['basic-skin-광대1', 'basic-skin-광대2']),
+    JOB_SKIN_GUARD: Object.freeze(['basic-skin-경비원1', 'basic-skin-경비원2']),
+    JOB_SKIN_DOCTOR: Object.freeze(['basic-skin-주치의']),
+    JOB_SKIN_WITCH_HUNTER: Object.freeze(['basic-skin-마녀사냥꾼']),
+});
+
+const isFreeJobSkin = (slot, itemId) => (FREE_JOB_SKIN_IDS_BY_SLOT[slot] ?? []).includes(itemId);
+
 // F-08 요구사항: GOLD·DIAMOND 두 재화 모두 정수 잔액을 갖는다(초기값 0/0). 현재 구매
 // 가능한 코스메틱은 모두 GOLD로만 판매한다(현금 충전·재화 패키지 판매는 이 슬라이스
 // 범위 밖) — purchaseItem은 항상 CURRENCIES.GOLD로 applyLedgerTransaction을 호출한다.
@@ -70,13 +101,39 @@ const SLOT_TO_ITEM_TYPE = {
     PROFILE_PHOTO: ITEM_TYPES.PROFILE_PHOTO,
     PROFILE_BORDER: ITEM_TYPES.PROFILE_BORDER,
     PLAYER_CARD_FRAME: ITEM_TYPES.PLAYER_CARD_FRAME,
+    JOB_SKIN_NOBLE: ITEM_TYPES.SKIN,
+    JOB_SKIN_CLOWN: ITEM_TYPES.SKIN,
+    JOB_SKIN_GUARD: ITEM_TYPES.SKIN,
+    JOB_SKIN_DOCTOR: ITEM_TYPES.SKIN,
+    JOB_SKIN_WITCH_HUNTER: ITEM_TYPES.SKIN,
 };
 
 const SLOT_TO_LOADOUT_COLUMN = {
     PROFILE_PHOTO: 'selected_profile_photo_id',
     PROFILE_BORDER: 'selected_profile_border_id',
     PLAYER_CARD_FRAME: 'selected_card_frame_id',
+    JOB_SKIN_NOBLE: 'selected_skin_noble',
+    JOB_SKIN_CLOWN: 'selected_skin_clown',
+    JOB_SKIN_GUARD: 'selected_skin_guard',
+    JOB_SKIN_DOCTOR: 'selected_skin_doctor',
+    JOB_SKIN_WITCH_HUNTER: 'selected_skin_witch_hunter',
 };
+
+// F-14: 서버 loadout 컬럼 ↔ frontend skinCardWearCatalog.js job id. getWalletSummary·
+// getGameStartLoadouts가 selectedSkinsByJob/skinsByJob 객체를 조립할 때 이 표 하나로만
+// 컬럼 이름을 정한다(다른 곳에 문자열을 다시 나열하지 않는다).
+const JOB_SKIN_COLUMN_BY_JOB_ID = Object.freeze({
+    noble: 'selected_skin_noble',
+    clown: 'selected_skin_clown',
+    guard: 'selected_skin_guard',
+    doctor: 'selected_skin_doctor',
+    witchHunter: 'selected_skin_witch_hunter',
+});
+
+/** @param {{ [column: string]: string | null } | null | undefined} loadout */
+const buildSkinsByJob = (loadout) => Object.fromEntries(
+    Object.entries(JOB_SKIN_COLUMN_BY_JOB_ID).map(([jobId, column]) => [jobId, loadout?.[column] ?? null]),
+);
 
 const economyModels = (db) => ({
     sequelize: db.sequelize,
@@ -365,6 +422,9 @@ const getWalletSummary = async (userId, db = defaultDb()) => {
             selectedProfilePhotoId: loadout?.selected_profile_photo_id ?? null,
             selectedProfileBorderId: loadout?.selected_profile_border_id ?? null,
             selectedCardFrameId: loadout?.selected_card_frame_id ?? null,
+            // F-14(AC-01): 직업별 장착 스킨. 값이 없는 직업은 null — frontend
+            // skinCardWear.store.js가 그 직업의 기본 스킨으로 대체해 표시한다.
+            selectedSkinsByJob: buildSkinsByJob(loadout),
             // F-13 AC-02: 클라이언트가 다음 equipProfileAppearance 호출에 expectedRevision으로
             // 그대로 되돌려 보낼 CAS 토큰. ensureDefaultEntitlements가 이미 위에서 실행됐으므로
             // 이 시점의 loadout 행은 항상 존재하고 revision도 항상 채워져 있다.
@@ -647,8 +707,18 @@ const grantAchievementItem = async (
 
 /** 소유권·아이템 종류를 검증한 뒤에만 장착한다(AC-05). itemId가 카탈로그에 없는
  *  임의 문자열(파일 경로 등)이면 ITEM_TYPE_MISMATCH로 거부되고, 카탈로그에 있어도
- *  보유하지 않았으면 ITEM_NOT_OWNED(403)로 거부된다. */
-const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
+ *  보유하지 않았으면 ITEM_NOT_OWNED(403)로 거부된다.
+ *
+ *  F-14(AC-01, R-IMPL P1 "coherent persisted write ordering") — equipProfileAppearance와
+ *  같은 EconomyLoadout 행·같은 revision 컬럼을 갱신하므로, 이 함수도 같은 CAS 계약을
+ *  따른다: expectedRevision을 보내면 SELECT ... FOR UPDATE 행 잠금 안에서 지금 행의
+ *  revision과 정확히 같을 때만 커밋하고, 다르면(다른 확정이 그 사이 먼저 커밋됐다면)
+ *  어떤 컬럼도 건드리지 않고 즉시 409(SKIN_REVISION_CONFLICT)로 거부한다 — 지연되거나
+ *  응답 순서가 뒤바뀐 요청이 더 최신 저장을 조용히 덮어쓰는 일이 구조적으로 불가능하다.
+ *  expectedRevision을 아직 모르는 호출자(레거시 내부 호출·이 값을 넘기지 않는 기존
+ *  테스트)와의 호환을 위해 이 값은 선택이다 — 생략하면 CAS 비교 없이 이전과 동일하게
+ *  즉시 커밋한다(잠금 자체는 항상 걸어 동시 갱신을 직렬화한다). */
+const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaultDb()) => {
     const expectedType = SLOT_TO_ITEM_TYPE[slot];
     const column = SLOT_TO_LOADOUT_COLUMN[slot];
     if (!expectedType || !column) {
@@ -667,11 +737,20 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
     await ensureDefaultEntitlements(userId, db);
 
     const isFreeCardFrame = slot === 'PLAYER_CARD_FRAME' && itemId === FREE_CARD_FRAME_ID;
+    const isFreeSkin = isFreeJobSkin(slot, itemId);
     const models = economyModels(db);
 
-    if (!isFreeCardFrame) {
+    if (!isFreeCardFrame && !isFreeSkin) {
         const catalogItem = catalog.getCatalogItem(itemId);
         if (!catalogItem || catalogItem.type !== expectedType) {
+            throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
+        }
+
+        // F-14(AC-02): 직업 스킨 슬롯은 카탈로그 종류(SKIN) 일치만으로는 부족하다 — 다른
+        // 직업에서 구매한 스킨을 이 슬롯에 장착하려는 요청도 같은 코드로 거부한다(한 슬롯에
+        // 그 직업 접두어로 시작하는 itemId만 허용).
+        const requiredPrefix = JOB_SKIN_ID_PREFIX_BY_SLOT[slot];
+        if (requiredPrefix && !itemId.startsWith(`${SKIN_ITEM_ID_PREFIX}${requiredPrefix}`)) {
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }
 
@@ -681,16 +760,34 @@ const equipItem = async ({ userId, slot, itemId }, db = defaultDb()) => {
         }
     }
 
-    const [loadout] = await models.EconomyLoadout.findOrCreate({
+    await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
         defaults: { user_id: userId, revision: crypto.randomUUID() },
     });
-    // F-13 AC-02 설계 감사 — 이 경로(카드 프레임 등 일반 장착)도 equipProfileAppearance와
-    // 같은 EconomyLoadout 행을 갱신하므로, 값을 바꿀 때마다 revision도 함께 새로 발급해야
-    // 한다. 그래야 이 경로로 행이 바뀐 뒤에는 프로필 편집기가 들고 있던 이전 revision이
-    // 자동으로 무효화되어(CAS 비교 실패) 그 사이의 변경을 조용히 덮어쓰지 못한다.
-    await loadout.update({ [column]: itemId, revision: crypto.randomUUID() });
-    return loadout;
+
+    const hasExpectedRevision = typeof expectedRevision === 'string' && expectedRevision.length > 0;
+
+    // equipProfileAppearance와 같은 이유로 행 잠금 "안에서" 비교·갱신을 함께 한다(A-01) —
+    // 겹치는 두 확정(다른 슬롯의 equipItem, 또는 equipProfileAppearance)이 동시에 같은
+    // 행을 노려도 완전히 직렬화된다.
+    return db.sequelize.transaction(async (t) => {
+        const loadout = await models.EconomyLoadout.findOne({
+            where: { user_id: userId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+        });
+
+        if (hasExpectedRevision && loadout.revision !== expectedRevision) {
+            throw createError(
+                '장착 상태가 다른 곳에서 이미 변경되었습니다. 최신 상태를 다시 불러온 뒤 다시 시도하세요.',
+                409,
+                'SKIN_REVISION_CONFLICT',
+            );
+        }
+
+        await loadout.update({ [column]: itemId, revision: crypto.randomUUID() }, { transaction: t });
+        return loadout;
+    });
 };
 
 // F-13 AC-02 설계 감사(운영자, 2026-09-11) — CODEX-9가 도입했던 clientIntentAt(클라이언트
@@ -838,6 +935,44 @@ const getPublicProfileLoadouts = async (userIds, db = defaultDb()) => {
     return byUserId;
 };
 
+/** F-14(AC-04) 전제: 게임 시작 시점에만 쓰는 내부 전용 조회다 — 공개(사진·테두리·카드
+ *  프레임)와 비공개(직업별 스킨 선택 skinsByJob) 정보를 함께 돌려주지만, 이 함수 자체는
+ *  어떤 것이 공개이고 어떤 것이 비공개인지 판단하지 않는다. 그 판단은 호출부의 책임이다:
+ *  matchmaking.js captureRoomStartProfiles는 profilePhotoId/profileBorderId/cardFrameId만
+ *  room.players의 공개 필드로 옮기고, skinsByJob은 세션 내부 필드(accountSkinsByJob)에만
+ *  담아 game-core/gameSession.js buildViewerRoleFields가 뷰어 자신의 실제 역할에 해당하는
+ *  값 하나만 골라내게 한다(다른 참가자에게는 절대 그대로 노출하지 않는다) — skinsByJob
+ *  전체를 공개 목록(getPublicProfileLoadouts)에 옮기면 특정 참가자가 어떤 직업 스킨들을
+ *  가졌는지 전원에게 드러나고, 인게임에 실제로 그 중 하나만 렌더되는 순간 나머지 참가자가
+ *  "렌더된 스킨 = 그 직업"이라는 등식으로 역할을 역산할 수 있다(AC-04 위반). */
+const getGameStartLoadouts = async (userIds, db = defaultDb()) => {
+    const uniqueUserIds = [...new Set(userIds)].filter((id) => typeof id === 'string' && id.length > 0);
+    if (uniqueUserIds.length === 0) return {};
+
+    const models = economyModels(db);
+    await Promise.all(uniqueUserIds.map((userId) => ensureDefaultEntitlements(userId, db)));
+    const loadouts = await models.EconomyLoadout.findAll({ where: { user_id: uniqueUserIds } });
+
+    const byUserId = {};
+    for (const userId of uniqueUserIds) {
+        byUserId[userId] = {
+            profilePhotoId: null,
+            profileBorderId: null,
+            cardFrameId: null,
+            skinsByJob: buildSkinsByJob(null),
+        };
+    }
+    for (const loadout of loadouts) {
+        byUserId[loadout.user_id] = {
+            profilePhotoId: loadout.selected_profile_photo_id ?? null,
+            profileBorderId: loadout.selected_profile_border_id ?? null,
+            cardFrameId: loadout.selected_card_frame_id ?? null,
+            skinsByJob: buildSkinsByJob(loadout),
+        };
+    }
+    return byUserId;
+};
+
 module.exports = {
     CURRENCIES,
     FREE_CARD_FRAME_ID,
@@ -854,6 +989,12 @@ module.exports = {
     equipItem,
     equipProfileAppearance,
     getPublicProfileLoadouts,
+    getGameStartLoadouts,
+    // F-14(AC-01, R-IMPL2 "실제 endpoint가 authoritative loadout을 돌려줘야 한다") —
+    // economy.routes.js가 POST /economy/equip 응답에 selectedSkinsByJob을 실을 때 이 함수를
+    // 그대로 재사용한다(요청 필드를 되짚어 재구성하지 않고, equipItem이 실제로 돌려준 loadout
+    // 행에서 직접 읽는다).
+    buildSkinsByJob,
     // 테스트 전용 — 낮은 레벨 원장 적용 로직을 직접 검증할 때 사용한다.
     __internal: { applyLedgerTransaction, ensureWalletRow, ensureDefaultLoadout },
 };

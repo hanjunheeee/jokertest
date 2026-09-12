@@ -32,6 +32,15 @@ export const INGAME_ROLE_REVEAL_TEAM_BADGE_CLASS =
 export const INGAME_ROLE_REVEAL_DESCRIPTION_CLASS =
   "text-[clamp(0.88rem,2.2vw,1.02rem)] leading-relaxed text-[#4a2c14]"
 
+// F-14(AC-01/AC-04, R-IMPL P1 수정): 본인 역할에 대응하는 구매/장착 직업 스킨 standing
+// 일러스트 — SkinCardWearPreview.jsx의 스킨 미리보기 자리와 같은 성격이지만, 여기서는 이
+// 화면(본인만 보는 역할 공개)에서만 쓰는 별도 클래스로 둔다.
+export const INGAME_ROLE_REVEAL_STANDING_WRAP_CLASS =
+  "mx-auto flex w-full justify-center py-[clamp(0.35rem,1vw,0.55rem)]"
+
+export const INGAME_ROLE_REVEAL_STANDING_IMG_CLASS =
+  "h-[clamp(7rem,22vw,11rem)] w-auto object-contain drop-shadow-[0_6px_10px_rgba(0,0,0,0.35)]"
+
 export const INGAME_ROLE_REVEAL_ALLY_SECTION_CLASS =
   "w-full rounded border border-[#6b4321]/35 bg-black/5 p-[clamp(0.45rem,1.2vw,0.65rem)] text-[clamp(0.78rem,1.9vw,0.9rem)] text-[#4a2c14]"
 

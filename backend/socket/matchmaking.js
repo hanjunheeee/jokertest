@@ -466,18 +466,13 @@ async function loadRoomParticipantProfile(uuid) {
 }
 
 /**
- * F-13(AC-05): 게임 시작 직전 room의 모든 참가자에 대해 서버 loadout을 다시 확보해
- * room.players에 반영한다("게임 시작 시 스냅샷된 계정 프로필") — 대기방에 머무는 동안
- * 프로필을 바꿨을 수 있으므로, 참가 시점이 아니라 시작 시점의 최신값을 커밋한다.
- *
- * 조회 자체는 비동기라 그 사이 방 상태가 바뀔 수 있다 — 호출부(handleStartGame)가 이미
- * 통과시킨 조건(방 존재·방장 동일·참가자 구성·전원 준비)을 조회 완료 직후 다시 확인하고,
- * 하나라도 깨졌으면 room.players를 전혀 건드리지 않고 { ok:false, code } 만 돌려준다
- * (부분 반영 금지 — 일부 참가자만 새 값으로 덮이는 상태가 생기지 않는다).
+ * Capture current loadouts into a private session candidate. The public Room is
+ * never mutated: prepare, delivery preflight or payload creation may still fail.
+ * Only the game serializer may disclose the viewer's own role-specific skin.
  */
 async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture) {
     const uuids = [...uuidsAtCapture]
-    const loadouts = await economyServiceRef.getPublicProfileLoadouts(uuids)
+    const loadouts = await economyServiceRef.getGameStartLoadouts(uuids)
 
     const stillHost = room.hostUuid === hostUuid
     const sameParticipants = room.players.size === uuids.length && uuids.every((u) => room.players.has(u))
@@ -486,13 +481,18 @@ async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture) {
         return { ok: false, code: 'ROOM_STATE_CHANGED' }
     }
 
-    for (const uuid of uuids) {
-        const player = room.players.get(uuid)
-        const loadout = loadouts[uuid] ?? { profilePhotoId: null, profileBorderId: null }
-        player.accountProfilePhotoId = loadout.profilePhotoId
-        player.accountProfileBorderId = loadout.profileBorderId
-    }
-    return { ok: true }
+    const players = new Map(uuids.map((uuid) => {
+        const loadout = loadouts[uuid] ?? {}
+        return [uuid, {
+            ...room.players.get(uuid),
+            accountProfilePhotoId: loadout.profilePhotoId ?? null,
+            accountProfileBorderId: loadout.profileBorderId ?? null,
+            accountCardFrameId: loadout.cardFrameId ?? null,
+            accountSkinsByJob: { ...(loadout.skinsByJob
+                ?? { noble: null, clown: null, guard: null, doctor: null, witchHunter: null }) },
+        }]
+    }))
+    return { ok: true, room: { ...room, players } }
 }
 
 /** 공개 목록에 노출해도 되는 최소 Room 정보만 반환합니다. */
@@ -1180,7 +1180,7 @@ async function handleStartGame(io, socket, uuid, callback) {
     }
 
     // 0) 계정 외형 스냅샷(F-13 AC-05) — 시작 직전 참가자들의 서버 loadout을 다시 확보해
-    // room.players에 반영한다("게임 시작 시 스냅샷된 계정 프로필"은 참가 시점이 아니라
+    // 공개 room과 분리한 세션 후보에 반영한다(계정 프로필은 참가 시점이 아니라
     // 시작 시점 값이어야 한다). 조회는 비동기라 그 사이 방 상태가 바뀔 수 있으므로,
     // captureRoomStartProfiles가 위에서 이미 통과시킨 조건(방장·인원 구성·준비 상태)을
     // 다시 확인한다 — 깨졌으면 room.players를 건드리지 않고 그대로 실패로 응답한다.
@@ -1214,7 +1214,7 @@ async function handleStartGame(io, socket, uuid, callback) {
     // 1) prepare
     let prepared
     try {
-        prepared = gameSession.prepareGameSession(room)
+        prepared = gameSession.prepareGameSession(captured.room)
     } catch (err) {
         console.error('[GameSession prepare 에러]', err)
         respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })

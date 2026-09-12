@@ -12,6 +12,16 @@ let fakeFindByUuid = async (uuid) => ({ nickname: `user-${uuid}` })
 // 모두 미지정(null)으로 응답한다 — 이 기본값을 검증하는 테스트만 실제 값을 오버라이드한다.
 let fakeGetPublicProfileLoadouts = async (userIds) =>
     Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }]))
+// F-14(AC-01/AC-04): captureRoomStartProfiles(게임 시작 직전 스냅샷)는 loadRoomParticipantProfile
+// (참가 시점)과 달리 getGameStartLoadouts를 부른다 — 공개(사진·테두리·카드 프레임)와 비공개
+// (직업별 스킨) 정보를 함께 돌려준다. 기본값은 모든 필드 미지정(null/전부-null 맵)이다.
+let fakeGetGameStartLoadouts = async (userIds) =>
+    Object.fromEntries(userIds.map((id) => [id, {
+        profilePhotoId: null,
+        profileBorderId: null,
+        cardFrameId: null,
+        skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+    }]))
 
 const matchmaking = require('../matchmaking')
 matchmaking.__setUserRepositoryForTests({
@@ -19,6 +29,7 @@ matchmaking.__setUserRepositoryForTests({
 })
 matchmaking.__setEconomyServiceForTests({
     getPublicProfileLoadouts: (...args) => fakeGetPublicProfileLoadouts(...args),
+    getGameStartLoadouts: (...args) => fakeGetGameStartLoadouts(...args),
 })
 // game-core/gameSession.js는 matchmaking.js와 별도 모듈이라 자체 registry(gameSessions/
 // playerSession/roomGameSession)를 갖는다 — matchmaking.__resetStateForTests()로는 초기화되지
@@ -1496,8 +1507,11 @@ test('start_game: callback이 없는 요청은 어떤 상태도 바꾸지 않는
 const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
 
 test('start_game: 시작 직전 최신 서버 loadout으로 계정 외형을 다시 확보해 game_started에 반영한다(F-13 AC-05, 참가 시점이 아니라 시작 시점 값)', async () => {
-    fakeGetPublicProfileLoadouts = async (userIds) =>
-        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-금빛가면', profileBorderId: 'profile-border-평민' }]))
+    fakeGetGameStartLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, {
+            profilePhotoId: 'player-profile-금빛가면', profileBorderId: 'profile-border-평민', cardFrameId: null,
+            skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+        }]))
 
     const hostSocket = createFakeSocket('uuid-start-profile-host')
     const io = createFakeIo([hostSocket])
@@ -1505,8 +1519,11 @@ test('start_game: 시작 직전 최신 서버 loadout으로 계정 외형을 다
 
     // 대기방에 머무는 동안 방장이 프로필을 바꿨다고 가정한다 — game_started에는 참가
     // 시점 값이 아니라 지금(시작 시점) 값이 스냅샷되어야 한다.
-    fakeGetPublicProfileLoadouts = async (userIds) =>
-        Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-드워프', profileBorderId: 'profile-border-귀족' }]))
+    fakeGetGameStartLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, {
+            profilePhotoId: 'player-profile-드워프', profileBorderId: 'profile-border-귀족', cardFrameId: null,
+            skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+        }]))
 
     const { callback, getResponse } = countingCallback()
     await handleStartGame(io, hostSocket, 'uuid-start-profile-host', callback)
@@ -1518,12 +1535,57 @@ test('start_game: 시작 직전 최신 서버 loadout으로 계정 외형을 다
     assert.equal(hostSelf.accountProfileBorderId, 'profile-border-귀족')
 })
 
+// F-14(AC-04) — 직업별 장착 스킨(accountSkinId)은 gameSession.session.test.js가 makePlayer에
+// accountSkinsByJob을 직접 주입해 buildViewerRoleFields 계약만 검증한다. 그 계약이 실제
+// 서버 조회(getGameStartLoadouts) → captureRoomStartProfiles → buildSessionCandidate로
+// 이어지는지는 그 시험만으로는 보장되지 않는다 — 여기서는 합성 fixture 없이 실제
+// handleStartGame 생산 경로를 그대로 통과시켜 확인한다. 카드 프레임(accountCardFrameId)은
+// 직업 스킨과 달리 공개 필드라 players[] 전원에게 실린다(AC-01/AC-04) — 같은 경로로 함께 검증한다.
+const ROLE_TO_SKIN_JOB_ID = {
+    CITIZEN: 'noble', JOKER: 'clown', DOCTOR: 'doctor', GUARD: 'guard', WITCH_HUNTER: 'witchHunter',
+}
+
+test('start_game: 서버가 조회한 직업별 스킨은 자신의 실제 역할에 대응하는 accountSkinId 하나로만 self에 실리고, 카드 프레임은 players[] 전원에게 공개된다(F-14 AC-04, 실제 matchmaking 생산 경로)', async () => {
+    const SKINS_BY_JOB = {
+        noble: 'player-skin-귀족1-시험용',
+        clown: 'player-skin-광대1-시험용',
+        guard: 'player-skin-경비원1-시험용',
+        doctor: 'player-skin-주치의-시험용',
+        witchHunter: 'player-skin-마녀사냥꾼-시험용',
+    }
+    fakeGetGameStartLoadouts = async (userIds) =>
+        Object.fromEntries(userIds.map((id) => [id, {
+            profilePhotoId: null, profileBorderId: null, cardFrameId: 'player-card-시험용',
+            skinsByJob: SKINS_BY_JOB,
+        }]))
+
+    const hostSocket = createFakeSocket('uuid-start-skin-host')
+    const io = createFakeIo([hostSocket])
+    await setupReadyRoomForStart(io, 'uuid-start-skin-host', 'uuid-start-skin-joiner', readyRoomHandlers)
+
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, 'uuid-start-skin-host', callback)
+    assert.equal(getResponse().ok, true)
+
+    const hostPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
+    const expectedJobId = ROLE_TO_SKIN_JOB_ID[hostPayload.state.self.role]
+    assert.equal(hostPayload.state.self.accountSkinId, SKINS_BY_JOB[expectedJobId])
+
+    // 공용 players[]에는 어느 참가자의 accountSkinId·accountSkinsByJob도 실리면 안 된다
+    // (역할 역산 방지) — 반면 accountCardFrameId는 비밀이 아니므로 전원에게 공개된다.
+    for (const player of hostPayload.state.players) {
+        assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+        assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false)
+        assert.equal(player.accountCardFrameId, 'player-card-시험용')
+    }
+})
+
 test('start_game: 계정 외형 재조회가 실패하면 GameSession을 커밋하지 않고 실패로 응답한다', async () => {
     const hostSocket = createFakeSocket('uuid-start-econ-fail-host')
     const io = createFakeIo([hostSocket])
     const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-econ-fail-host', 'uuid-start-econ-fail-joiner', readyRoomHandlers)
 
-    fakeGetPublicProfileLoadouts = async () => { throw new Error('economy 조회 실패(테스트 주입)') }
+    fakeGetGameStartLoadouts = async () => { throw new Error('economy 조회 실패(테스트 주입)') }
 
     const { callback, getResponse } = countingCallback()
     await handleStartGame(io, hostSocket, 'uuid-start-econ-fail-host', callback)
@@ -1541,12 +1603,15 @@ test('start_game: 계정 외형 재조회 중 참가자가 준비를 해제하�
     const io = createFakeIo([hostSocket])
     const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-race-host', 'uuid-start-race-joiner', readyRoomHandlers)
 
-    // captureRoomStartProfiles의 조회(getPublicProfileLoadouts)가 끝나기 전에 방 상태가
+    // captureRoomStartProfiles의 조회(getGameStartLoadouts)가 끝나기 전에 방 상태가
     // 바뀌는 레이스를 재현한다 — deferred로 조회 완료 시점을 결정적으로 제어한다.
     const gate = deferred()
-    fakeGetPublicProfileLoadouts = async (userIds) => {
+    fakeGetGameStartLoadouts = async (userIds) => {
         await gate.promise
-        return Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: 'player-profile-기사', profileBorderId: 'profile-border-귀족' }]))
+        return Object.fromEntries(userIds.map((id) => [id, {
+            profilePhotoId: 'player-profile-기사', profileBorderId: 'profile-border-귀족', cardFrameId: null,
+            skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+        }]))
     }
 
     const { callback, getResponse } = countingCallback()
@@ -1900,3 +1965,47 @@ test('AC-07: 유예 중 방이 이미 사라졌다면 만료가 뒤늦은 방송
     assert.equal(io.broadcasts.length, 0, '이미 사라진 방에 대해 뒤늦은 방송이 나갔습니다')
     assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms.some(([id]) => id === created.room.roomId), false)
 })
+
+
+for (const failureStage of ['preflight', 'payload']) {
+    test('F14 private loadouts never enter public room after ' + failureStage + ' failure', async (t) => {
+        const hostId = 'uuid-private-host'
+        const guestId = 'uuid-private-guest'
+        const host = createFakeSocket(hostId)
+        const io = createFakeIo([host])
+        const { joinerSocket } = await setupReadyRoomForStart(io, hostId, guestId, readyRoomHandlers)
+        const before = JSON.parse(JSON.stringify(await callAsPromise(handleGetCurrentRoom, hostId)))
+        fakeGetGameStartLoadouts = async (ids) => Object.fromEntries(ids.map((id) => [id, {
+            profilePhotoId: 'player-profile-드워프', profileBorderId: 'profile-border-귀족',
+            cardFrameId: 'player-card-시험용',
+            skinsByJob: Object.fromEntries(Object.values(ROLE_TO_SKIN_JOB_ID).map((job) => [job, id + '-private-' + job])),
+        }]))
+        if (failureStage === 'preflight') joinerSocket.connected = false
+        else t.mock.method(gameSession, 'buildGameStartedPayload', () => { throw new Error('injected payload failure') })
+        const failed = await callAsPromise(handleStartGame, io, host, hostId)
+        assert.equal(failed.ok, false)
+        assert.equal(failed.code, failureStage === 'preflight' ? 'PARTICIPANT_UNAVAILABLE' : 'INTERNAL_ERROR')
+        for (const id of [hostId, guestId]) {
+            const current = await callAsPromise(handleGetCurrentRoom, id)
+            for (const player of current.room.players) {
+                assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false, 'private job map must never reach get_current_room')
+                assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+            }
+            assert.deepEqual(current, before, 'failed start leaves the original public room unchanged')
+        }
+        assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0)
+        joinerSocket.connected = true
+        t.mock.restoreAll()
+        const retried = await callAsPromise(handleStartGame, io, host, hostId)
+        assert.equal(retried.ok, true)
+        for (const socket of [host, joinerSocket]) {
+            const state = socket.emitted.find((event) => event.event === 'game_started').payload.state
+            assert.equal(state.self.accountSkinId, state.self.uuid + '-private-' + ROLE_TO_SKIN_JOB_ID[state.self.role])
+            for (const player of state.players) {
+                assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false)
+                assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+                assert.equal(player.accountCardFrameId, 'player-card-시험용')
+            }
+        }
+    })
+}

@@ -997,3 +997,161 @@ test('F-13 AC-05: 여러 계정을 한 번에 조회해도 계정별로 서로 �
     assert.equal(result[userA].profilePhotoId, 'player-profile-기사');
     assert.equal(result[userB].profilePhotoId, 'player-profile-드워프');
 });
+
+// ── F-14 AC-01/AC-02: 직업별 장착 스킨(JOB_SKIN_* 슬롯) ─────────────────────
+// 카탈로그(backend/economy/catalog.js SKIN_STANDING_STEMS)의 실제 구매 가능 스킨 id는
+// player-skin-{직업 한글 이름}{숫자}-{테마} 형태다 — 경비원(guard)·귀족(noble) 예시를 쓴다.
+const GUARD_SKIN_ITEM_ID = 'player-skin-경비원1-바이올렛';
+const NOBLE_SKIN_ITEM_ID = 'player-skin-귀족1-블러드';
+
+test('F-14 AC-01: 정당히 보유한 직업 스킨을 장착하면 해당 컬럼에 저장되고 getWalletSummary로 그대로 복원된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-ac01-owned';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: GUARD_SKIN_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+
+    const loadout = await economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID }, db);
+    assert.equal(loadout.selected_skin_guard, GUARD_SKIN_ITEM_ID);
+
+    // 재로그인 후 복원과 같은 경로(GET /entitlements가 부르는 함수)로도 그대로 보인다.
+    const summary = await economyService.getWalletSummary(userId, db);
+    assert.equal(summary.loadout.selectedSkinsByJob.guard, GUARD_SKIN_ITEM_ID);
+    assert.equal(summary.loadout.selectedSkinsByJob.noble, null, '건드리지 않은 다른 직업 슬롯은 null(미장착)이어야 한다');
+});
+
+test('F-14 AC-01: 무료 기본 스킨(basic-skin-*)은 구매 없이도 해당 직업 슬롯에 장착된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-ac01-free';
+
+    const loadout = await economyService.equipItem({ userId, slot: 'JOB_SKIN_NOBLE', itemId: 'basic-skin-귀족2' }, db);
+    assert.equal(loadout.selected_skin_noble, 'basic-skin-귀족2');
+});
+
+test('F-14 AC-02: 미보유 직업 스킨을 장착 요청하면 거부되고 장착값이 바뀌지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-ac02-unowned';
+
+    await assert.rejects(
+        () => economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID }, db),
+        (error) => error.status === 403 && error.code === 'ITEM_NOT_OWNED',
+    );
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout?.selected_skin_guard ?? null, null, '거부된 요청은 컬럼을 전혀 건드리면 안 된다');
+});
+
+test('F-14 AC-02: 다른 직업에서 구매한 스킨을 이 슬롯에 장착하면(직업 불일치) 거부된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-ac02-jobmismatch';
+    await grantBalance(db, userId, 1000);
+    // 귀족(noble) 스킨을 구매했지만, 경비원(guard) 슬롯에 장착을 시도한다.
+    await economyService.purchaseItem({ userId, itemId: NOBLE_SKIN_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+
+    await assert.rejects(
+        () => economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: NOBLE_SKIN_ITEM_ID }, db),
+        (error) => error.status === 400 && error.code === 'ITEM_TYPE_MISMATCH',
+    );
+});
+
+test('F-14 AC-02: 존재하지 않는 basic-skin-* 접두어 위조 id(basic-skin-귀족garbage)는 무료 예외로 통과하지 못하고 거부된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-ac02-forged-free';
+
+    await assert.rejects(
+        () => economyService.equipItem({ userId, slot: 'JOB_SKIN_NOBLE', itemId: 'basic-skin-귀족garbage' }, db),
+        (error) => error.status === 400 && error.code === 'ITEM_TYPE_MISMATCH',
+    );
+});
+
+test('F-14: getGameStartLoadouts는 공개(사진·테두리·카드 프레임)와 비공개(직업별 스킨) 정보를 함께 돌려준다(내부 전용 조회)', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-gamestart';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: GUARD_SKIN_ITEM_ID, referenceEventId: `buy-skin-${userId}` }, db);
+    await economyService.purchaseItem({ userId, itemId: 'player-card-왕관', referenceEventId: `buy-card-${userId}` }, db);
+    await economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID }, db);
+    await economyService.equipItem({ userId, slot: 'PLAYER_CARD_FRAME', itemId: 'player-card-왕관' }, db);
+
+    const result = await economyService.getGameStartLoadouts([userId], db);
+    assert.equal(result[userId].profilePhotoId, DEFAULT_PROFILE_PHOTO_ID);
+    assert.equal(result[userId].cardFrameId, 'player-card-왕관');
+    assert.equal(result[userId].skinsByJob.guard, GUARD_SKIN_ITEM_ID);
+    assert.equal(result[userId].skinsByJob.noble, null);
+});
+
+// ── F-14 AC-01(P1 PRIORITY, R-IMPL "coherent persisted write ordering"): equipItem CAS ──
+// equipItem은 equipProfileAppearance와 같은 EconomyLoadout 행·같은 revision 컬럼을
+// 갱신한다. 아래 시험은 그 CAS 계약(선택적 expectedRevision, 행 잠금, 409
+// SKIN_REVISION_CONFLICT)과 두 진입점이 같은 revision을 공유한다는 것을 함께 고정한다.
+
+test('F-14 AC-01(P1): expectedRevision을 보내지 않으면(레거시 호출) CAS 비교 없이 이전처럼 즉시 커밋된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-cas-legacy';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: GUARD_SKIN_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+
+    const loadout = await economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID }, db);
+    assert.equal(loadout.selected_skin_guard, GUARD_SKIN_ITEM_ID, 'expectedRevision을 생략해도 갱신은 정상 커밋되어야 한다');
+});
+
+test('F-14 AC-01(P1): 오래된(이미 다른 확정이 먼저 커밋한) revision으로 스킨 장착을 요청하면 409 SKIN_REVISION_CONFLICT로 거부되고 아무 컬럼도 바뀌지 않는다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-cas-stale';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: GUARD_SKIN_ITEM_ID, referenceEventId: `buy-guard-${userId}` }, db);
+    await economyService.purchaseItem({ userId, itemId: NOBLE_SKIN_ITEM_ID, referenceEventId: `buy-noble-${userId}` }, db);
+    const staleRevision = await currentRevision(db, userId);
+
+    // 다른 확정(다른 기기·다른 요청)이 먼저 커밋되어 revision이 이미 전진했다.
+    const committed = await economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID, expectedRevision: staleRevision }, db);
+    assert.notEqual(committed.revision, staleRevision);
+
+    await assert.rejects(
+        () => economyService.equipItem({ userId, slot: 'JOB_SKIN_NOBLE', itemId: NOBLE_SKIN_ITEM_ID, expectedRevision: staleRevision }, db),
+        (error) => error.status === 409 && error.code === 'SKIN_REVISION_CONFLICT',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_skin_guard, GUARD_SKIN_ITEM_ID, '충돌로 거부된 요청은 이미 커밋된 값을 바꾸면 안 된다');
+    assert.equal(loadout.selected_skin_noble ?? null, null, '충돌로 거부된 요청이 의도한 값이 실제로 커밋되면 안 된다(부분 저장 금지)');
+    assert.equal(loadout.revision, committed.revision, '거부된 요청은 revision도 바꾸면 안 된다');
+});
+
+test('F-14 AC-01(P1): 같은 오래된 revision을 들고 동시에 경쟁하는 두 스킨 장착 요청 중 정확히 하나만 성공한다(동시 CAS 경쟁)', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-cas-race';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: GUARD_SKIN_ITEM_ID, referenceEventId: `buy-guard-${userId}` }, db);
+    await economyService.purchaseItem({ userId, itemId: NOBLE_SKIN_ITEM_ID, referenceEventId: `buy-noble-${userId}` }, db);
+    const revision = await currentRevision(db, userId);
+
+    const [settledA, settledB] = await Promise.allSettled([
+        economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID, expectedRevision: revision }, db),
+        economyService.equipItem({ userId, slot: 'JOB_SKIN_NOBLE', itemId: NOBLE_SKIN_ITEM_ID, expectedRevision: revision }, db),
+    ]);
+
+    const fulfilled = [settledA, settledB].filter((r) => r.status === 'fulfilled');
+    const rejected = [settledA, settledB].filter((r) => r.status === 'rejected');
+    assert.equal(fulfilled.length, 1, '같은 오래된 revision으로 경쟁하는 두 스킨 장착 중 정확히 하나만 성공해야 한다');
+    assert.equal(rejected.length, 1);
+    assert.equal(rejected[0].reason.code, 'SKIN_REVISION_CONFLICT');
+});
+
+test('F-14 AC-01(P1): 직업 스킨 장착(equipItem)과 프로필 확정(equipProfileAppearance)은 같은 revision 컬럼을 공유하므로, 한쪽이 먼저 커밋되면 다른 쪽의 오래된 revision도 충돌로 거부된다', async () => {
+    const db = createFakeDb();
+    const userId = 'user-f14-cas-cross-write';
+    await grantBalance(db, userId, 1000);
+    await economyService.purchaseItem({ userId, itemId: GUARD_SKIN_ITEM_ID, referenceEventId: `buy-${userId}` }, db);
+    const staleRevision = await currentRevision(db, userId);
+
+    await economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID, expectedRevision: staleRevision }, db);
+
+    await assert.rejects(
+        () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision: staleRevision }, db),
+        (error) => error.status === 409 && error.code === 'PROFILE_REVISION_CONFLICT',
+        '스킨 장착이 이미 같은 행의 revision을 전진시켰으므로, 그 이전 revision을 든 프로필 확정은 거부되어야 한다',
+    );
+
+    const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '거부된 프로필 확정이 사진 선택을 바꾸면 안 된다');
+    assert.equal(loadout.selected_skin_guard, GUARD_SKIN_ITEM_ID, '먼저 커밋된 스킨 장착은 그대로 유지되어야 한다');
+});

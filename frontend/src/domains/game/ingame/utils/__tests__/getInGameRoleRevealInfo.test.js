@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { getInGameRoleRevealInfo } from "../getInGameRoleRevealInfo.js"
+import { getDefaultSkinIdForJob, getSkinCardWearItemById } from "../../../../user/constants/skinCardWear/skinCardWearCatalog.js"
 
 const AUTH_UUID = "player-1"
 
@@ -89,4 +90,70 @@ test("getInGameRoleRevealInfo: 각 역할은 서로 다른 roleName/description�
     names.add(result.roleName)
   }
   assert.equal(names.size, roles.length, "역할별 roleName은 서로 달라야 한다")
+})
+
+// ── F-14(AC-01/AC-04, R-IMPL P1 수정): 본인 역할 구매 스킨 standing 자산 ──────────────
+
+test("getInGameRoleRevealInfo: self.accountSkinId가 있으면 정확히 그 구매 스킨의 standing 자산을 반환한다(추측 없음)", () => {
+  const purchasedSkinId = "player-skin-경비원1-바이올렛" // GUARD 직업(guard 탭)의 실제 구매 가능 스킨 id
+  const self = buildSelf({ role: "GUARD", team: "CITIZEN", accountSkinId: purchasedSkinId })
+
+  const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
+
+  assert.ok(result)
+  assert.equal(result.standingSrc, getSkinCardWearItemById(purchasedSkinId).standingSrc)
+  assert.notEqual(
+    result.standingSrc,
+    getSkinCardWearItemById(getDefaultSkinIdForJob("guard")).standingSrc,
+    "구매한 스킨이 있으면 기본 스킨이 아니라 실제 구매한 스킨이 렌더돼야 한다",
+  )
+})
+
+test("getInGameRoleRevealInfo: self.accountSkinId가 없으면(own-property 자체가 없음, undefined) 그 직업의 기본 스킨으로 대체한다", () => {
+  const self = buildSelf({ role: "DOCTOR", team: "CITIZEN" }) // accountSkinId 필드 자체가 없음
+  const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
+
+  assert.ok(result)
+  assert.equal(result.standingSrc, getSkinCardWearItemById(getDefaultSkinIdForJob("doctor")).standingSrc)
+})
+
+test("getInGameRoleRevealInfo: self.accountSkinId가 명시적으로 null이어도(서버가 own-property를 만들었지만 미장착) 기본 스킨으로 대체한다", () => {
+  const self = buildSelf({ role: "WITCH_HUNTER", team: "CITIZEN", accountSkinId: null })
+  const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
+
+  assert.ok(result)
+  assert.equal(result.standingSrc, getSkinCardWearItemById(getDefaultSkinIdForJob("witchHunter")).standingSrc)
+})
+
+test("getInGameRoleRevealInfo: 각 역할은 그 역할에 대응하는 직업의 기본 스킨을 가리킨다(역할↔직업 매핑이 뒤섞이지 않음)", () => {
+  const expectations = [
+    ["CITIZEN", "noble"],
+    ["JOKER", "clown"],
+    ["DOCTOR", "doctor"],
+    ["GUARD", "guard"],
+    ["WITCH_HUNTER", "witchHunter"],
+  ]
+  for (const [role, jobId] of expectations) {
+    const self = buildSelf({ role, team: role === "JOKER" ? "JOKER" : "CITIZEN", ...(role === "JOKER" ? { allies: [] } : {}) })
+    const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
+    assert.ok(result, `role=${role}`)
+    assert.equal(result.standingSrc, getSkinCardWearItemById(getDefaultSkinIdForJob(jobId)).standingSrc, `role=${role} → job=${jobId}`)
+  }
+})
+
+test("getInGameRoleRevealInfo: self 객체에 다른 참가자의 직업별 장착 맵(accountSkinsByJob)이 섞여 있어도 그 필드는 결과에 전혀 나타나지 않는다(비공개 맵 유출 금지)", () => {
+  const self = buildSelf({
+    role: "CITIZEN",
+    team: "CITIZEN",
+    accountSkinId: "basic-skin-귀족1",
+    // 서버는 절대 이 필드를 self에 실어 보내지 않지만(buildViewerRoleFields), 방어적으로
+    // payload가 오염되어도 view-model이 그 맵을 그대로 통과시키지 않는지 확인한다.
+    accountSkinsByJob: { noble: "player-skin-귀족1-블러드", clown: "player-skin-광대1-테스트" },
+  })
+
+  const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
+
+  assert.ok(result)
+  assert.equal(Object.hasOwn(result, "accountSkinsByJob"), false, "직업별 전체 맵은 view-model에 어떤 키로도 존재하면 안 된다")
+  assert.equal(JSON.stringify(result).includes("accountSkinsByJob"), false)
 })

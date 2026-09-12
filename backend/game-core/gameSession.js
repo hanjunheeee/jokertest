@@ -42,6 +42,20 @@ const ROLE_TEAMS = Object.freeze(
     Object.fromEntries(Object.entries(ROLE_DEFINITIONS).map(([role, def]) => [role, def.team])),
 )
 
+// F-14(AC-04): 서버 역할 ↔ frontend skinCardWearCatalog.js의 직업별 장착 스킨 탭(noble/
+// clown/guard/doctor/witchHunter) 대응표. frontend/src/domains/library/store/
+// roleStatistics.store.js의 JOB_KEY_TO_ROLE_CODE와 정확히 반대 방향의 같은 매핑이다(그
+// 파일과 이 파일은 서로 다른 런타임이라 공유 모듈을 쓸 수 없어 각자 独립적으로 든다 —
+// ROLE_TEAMS 복제와 같은 관례). buildViewerRoleFields가 이 표로 뷰어 자신의 실제 역할에
+// 대응하는 직업 스킨 하나만 accountSkinsByJob에서 골라낸다.
+const ROLE_TO_SKIN_JOB_ID = Object.freeze({
+    CITIZEN: 'noble',
+    JOKER: 'clown',
+    DOCTOR: 'doctor',
+    GUARD: 'guard',
+    WITCH_HUNTER: 'witchHunter',
+})
+
 const MIN_SUPPORTED_PLAYERS = 2
 const MAX_SUPPORTED_PLAYERS = 10
 
@@ -868,11 +882,24 @@ function commitGameSession(session) {
 // 서버 측 계약).
 function buildViewerRoleFields(session, viewer) {
     if (!viewer) return null
+    // F-14(AC-04): accountSkinsByJob은 matchmaking.js captureRoomStartProfiles가 계정의
+    // 직업별 스킨 선택 전체를 세션 내부용으로 실어 둔 비공개 필드다(own-property 존재
+    // 여부로만 판정 — 아직 이 필드를 보장하지 않는 참가자도 있을 수 있다,
+    // buildPlayerAccountProfileFields의 관례와 동일). 여기서 뷰어 자신의 실제 role에
+    // 대응하는 값 하나만 꺼내 self에 싣는다 — 다른 4개 직업의 선택은(자신의 것이라도)
+    // 절대 내려보내지 않는다. 그 값 자체가 own-property로 없으면(아직 그 직업을 한 번도
+    // 장착한 적 없는 계정) accountSkinId 키 자체를 만들지 않는다 — undefined를 명시적으로
+    // 내려보내 "빈 문자열도 아니고 null도 아닌 이상한 값"을 클라이언트가 다뤄야 하는 일이
+    // 없게 한다.
+    const skinJobId = ROLE_TO_SKIN_JOB_ID[viewer.role]
+    const accountSkinsByJob = Object.hasOwn(viewer, 'accountSkinsByJob') ? viewer.accountSkinsByJob : null
+    const hasAccountSkin = Boolean(skinJobId) && Object.hasOwn(accountSkinsByJob ?? {}, skinJobId)
     return {
         uuid: viewer.uuid,
         nickname: viewer.nickname,
         role: viewer.role,
         team: ROLE_TEAMS[viewer.role],
+        ...(hasAccountSkin ? { accountSkinId: accountSkinsByJob[skinJobId] } : {}),
         ...(viewer.role === 'JOKER'
             ? {
                   allies: [...session.players.values()]
@@ -1023,6 +1050,12 @@ function buildPlayerAccountProfileFields(player) {
     return {
         ...(Object.hasOwn(player, 'accountProfilePhotoId') ? { accountProfilePhotoId: player.accountProfilePhotoId } : {}),
         ...(Object.hasOwn(player, 'accountProfileBorderId') ? { accountProfileBorderId: player.accountProfileBorderId } : {}),
+        // F-14(AC-01/AC-04): 장착한 플레이어 카드 프레임은 직업 스킨과 달리 비밀이 아니다 —
+        // 어떤 역할이든 같은 카드 프레임을 선택할 수 있으므로 이 값만으로는 역할을 추론할 수
+        // 없다(프로필 사진·테두리와 같은 공개 계약). accountSkinsByJob(직업별 전체 맵)은
+        // 절대 이 함수에 실지 않는다 — 그러면 본인이 아닌 참가자의 직업별 스킨 선택이
+        // 전원에게 노출되어, 인게임에 실제로 렌더되는 스킨과 대조해 역할을 역산할 수 있다.
+        ...(Object.hasOwn(player, 'accountCardFrameId') ? { accountCardFrameId: player.accountCardFrameId } : {}),
     }
 }
 

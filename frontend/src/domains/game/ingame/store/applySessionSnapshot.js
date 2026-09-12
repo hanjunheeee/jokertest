@@ -100,6 +100,7 @@ export function applySessionSnapshotPure(current, response) {
     // 문자열이어야 하고, 없는 참가자는 그대로 키 자체가 없어야 한다.
     if (Object.hasOwn(player, "accountProfilePhotoId") && !isNonEmptyString(player.accountProfilePhotoId)) return current
     if (Object.hasOwn(player, "accountProfileBorderId") && !isNonEmptyString(player.accountProfileBorderId)) return current
+    if (Object.hasOwn(player, "accountCardFrameId") && player.accountCardFrameId !== null && !isNonEmptyString(player.accountCardFrameId)) return current
     if (rosterByUuid.has(player.uuid)) return current
     rosterByUuid.set(player.uuid, player)
   }
@@ -117,6 +118,7 @@ export function applySessionSnapshotPure(current, response) {
   if (!isNonEmptyString(self.nickname)) return current
   if (!Object.hasOwn(ROLE_TEAMS, self.role)) return current
   if (self.team !== ROLE_TEAMS[self.role]) return current
+  if (Object.hasOwn(self, "accountSkinId") && self.accountSkinId !== null && !isNonEmptyString(self.accountSkinId)) return current
   if (typeof self.hasActedThisPhase !== "boolean") return current
   if (!rosterByUuid.has(self.uuid)) return current
   // 기대 본인(current.state.self.uuid)과 response.self.uuid가 일치해야 한다 — 다른 참가자의
@@ -279,6 +281,7 @@ export function applySessionSnapshotPure(current, response) {
     // mergeSourcePlayerWithPreview의 own-property 조건부 계약과 동일하게 여기서도 있을 때만 옮긴다).
     ...(Object.hasOwn(p, "accountProfilePhotoId") ? { accountProfilePhotoId: p.accountProfilePhotoId } : {}),
     ...(Object.hasOwn(p, "accountProfileBorderId") ? { accountProfileBorderId: p.accountProfileBorderId } : {}),
+    ...(Object.hasOwn(p, "accountCardFrameId") ? { accountCardFrameId: p.accountCardFrameId } : {}),
   }))
 
   const nextSelf = {
@@ -287,6 +290,7 @@ export function applySessionSnapshotPure(current, response) {
     role: self.role,
     team: self.team,
     hasActedThisPhase: self.hasActedThisPhase,
+    ...(Object.hasOwn(self, "accountSkinId") ? { accountSkinId: self.accountSkinId } : {}),
     ...(self.role === "JOKER" ? { allies } : {}),
   }
 

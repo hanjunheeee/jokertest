@@ -27,11 +27,11 @@
  * 백틱 템플릿(`${DIR}/파일.png`)의 보간이 "같은 파일 또는 로컬 import된 파일의 최상위
  * const"로 해석되면 그 값을 재구성해 존재를 검사한다(resolveExprToLiteral). 함수
  * 파라미터 보간(`${variant}`, `${config.folder}` 등)처럼 정적으로 못 푸는 경우는
- * frontend/src를 뒤져 정확히 3개 파일(storeItems.js, skinCardWearCatalog.js,
- * forbiddenRecords/assets.js)에만 있고, 이 세 파일은 아래에서 실제로 동적 import해
- * 계산된 진짜 문자열 값으로 검증한다(정규식 재현이 아니라 Node가 직접 실행). 그 외
- * 파일에서 새로 이런 템플릿이 생기면(TEMPLATE_VERIFIED_BY_IMPORT_FILES에 없으면)
- * 테스트가 실패해 사람이 봐야 한다.
+ * frontend/src를 뒤져 정확히 TEMPLATE_VERIFIED_BY_IMPORT_FILES에 나열된 파일(storeItems.js,
+ * skinCardWearCatalog.js, forbiddenRecords/assets.js, pickInGamePlayerFrame.js)에만 있고,
+ * 이 파일들은 아래에서 실제로 동적 import해(또는 함수를 직접 호출해) 계산된 진짜 문자열
+ * 값으로 검증한다(정규식 재현이 아니라 Node가 직접 실행). 그 외 파일에서 새로 이런 템플릿이
+ * 생기면(TEMPLATE_VERIFIED_BY_IMPORT_FILES에 없으면) 테스트가 실패해 사람이 봐야 한다.
  *
  * __tests__ 디렉터리·*.test.js는 스캔에서 뺀다 — 목(mock) 값으로 존재하지 않는 경로를
  * 일부러 쓰는 테스트가 있어서(예: profileCustomization.store.test.js의 임의 photoSrc),
@@ -367,6 +367,9 @@ const TEMPLATE_VERIFIED_BY_IMPORT_FILES = new Set(
     "domains/store/constants/storeItems.js",
     "domains/user/constants/skinCardWear/skinCardWearCatalog.js",
     "domains/library/constants/forbiddenRecords/assets.js",
+    // F-14(AC-01/AC-04): resolveAccountCardFrameSrc(itemId)의 variant는 함수 인자라
+    // 정적으로 못 푼다 — 아래 "동적 import 실값 검증"에서 실제로 호출해 검사한다.
+    "domains/game/ingame/utils/pickInGamePlayerFrame.js",
   ].map((rel) => path.join(SRC_DIR, ...rel.split("/"))),
 )
 
@@ -673,6 +676,36 @@ const forbiddenRecordsFailures = []
   }
 }
 
+// F-14(AC-01/AC-04): pickInGamePlayerFrame.js의 resolveAccountCardFrameSrc(itemId)는 variant를
+// 함수 인자로 받는다 — 실제 구매 가능한 카드 프레임 9종(베이스 + backend/economy/catalog.js
+// PLAYER_CARD_VARIANTS 8종)으로 직접 호출해 계산된 진짜 경로가 frontend/public에 존재하는지
+// 검사한다.
+const PICK_IN_GAME_PLAYER_FRAME_VARIANTS = ["베이스", "가고일", "가면", "그레이", "모래시계", "보석", "사슬", "악마", "왕관"]
+const pickInGamePlayerFrameFailures = []
+{
+  const file = path.join(SRC_DIR, "domains", "game", "ingame", "utils", "pickInGamePlayerFrame.js")
+  try {
+    const moduleNs = await import(pathToFileURL(file).href)
+    if (typeof moduleNs.resolveAccountCardFrameSrc !== "function") {
+      pickInGamePlayerFrameFailures.push(
+        `${relativeToSrc(file)}에 resolveAccountCardFrameSrc 함수 export가 없다 — ` +
+          `함수 이름이 바뀌었으면 이 테스트도 같이 고쳐야 한다.`,
+      )
+    } else {
+      for (const variant of PICK_IN_GAME_PLAYER_FRAME_VARIANTS) {
+        const value = moduleNs.resolveAccountCardFrameSrc(`player-card-${variant}`)
+        checkAssetPathExists(
+          value,
+          `${relativeToSrc(file)}:resolveAccountCardFrameSrc(player-card-${variant})`,
+          pickInGamePlayerFrameFailures,
+        )
+      }
+    }
+  } catch (err) {
+    pickInGamePlayerFrameFailures.push(`동적 import 실패: ${relativeToSrc(file)} — ${err.message}`)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 테스트
 // ---------------------------------------------------------------------------
@@ -695,7 +728,7 @@ test("frontend/src의 리터럴·정적 백틱·해석된 동적 템플릿 에�
   assertNoFailures(literalFailures, "일반 스캔")
 })
 
-test("함수 파라미터 보간이라 정적으로 못 푸는 템플릿은 TEMPLATE_VERIFIED_BY_IMPORT_FILES 3개 파일에만 있다", () => {
+test("함수 파라미터 보간이라 정적으로 못 푸는 템플릿은 TEMPLATE_VERIFIED_BY_IMPORT_FILES에 나열된 파일에만 있다", () => {
   assertNoFailures(unresolvedTemplateFailures, "해석 불가 동적 템플릿")
 })
 
@@ -721,6 +754,10 @@ test("storeItems.js / skinCardWearCatalog.js — 함수 파라미터 보간 경�
 
 test("forbiddenRecords/assets.js — getForbiddenRecordsChallengeClearIllust(1~7) 실값을 검증한다", () => {
   assertNoFailures(forbiddenRecordsFailures, "forbiddenRecords 실값")
+})
+
+test("pickInGamePlayerFrame.js — resolveAccountCardFrameSrc(player-card-*) 9종 실값을 검증한다", () => {
+  assertNoFailures(pickInGamePlayerFrameFailures, "resolveAccountCardFrameSrc 실값")
 })
 
 // --- 아래는 위 4가지 수정이 실제로 동작함을 코드베이스 상태와 무관하게 증명하는 합성 테스트 ---

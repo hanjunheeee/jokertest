@@ -959,6 +959,128 @@ test('F-13(AC-05): 재접속 스냅샷(buildSessionSnapshot)도 game_started와 
 })
 
 // ---------------------------------------------------------------------------
+// F-14(AC-04) — 직업별 장착 스킨(accountSkinId)의 자기 전용 노출, 공개 카드 프레임(accountCardFrameId)
+// ---------------------------------------------------------------------------
+
+const ROLE_TO_SKIN_JOB_ID_FOR_TESTS = {
+    CITIZEN: 'noble',
+    JOKER: 'clown',
+    DOCTOR: 'doctor',
+    GUARD: 'guard',
+    WITCH_HUNTER: 'witchHunter',
+}
+
+const FULL_ACCOUNT_SKINS_BY_JOB = Object.freeze({
+    noble: 'basic-skin-귀족1',
+    clown: 'basic-skin-광대1',
+    guard: 'basic-skin-경비원1',
+    doctor: 'basic-skin-주치의',
+    witchHunter: 'basic-skin-마녀사냥꾼',
+})
+
+test('F-14(AC-04): self는 자신의 실제 역할에 대응하는 accountSkinId 하나만 받는다(다른 4개 직업 선택은 노출되지 않음)', () => {
+    const room = makeRoom({
+        players: [
+            makePlayer('fj1', 'A', { accountSkinsByJob: FULL_ACCOUNT_SKINS_BY_JOB }),
+            makePlayer('fj2', 'B'),
+        ],
+        jokerCount: 1,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    const payload = buildGameStartedPayload(candidate.session, 'fj1')
+
+    const expectedSkinId = FULL_ACCOUNT_SKINS_BY_JOB[ROLE_TO_SKIN_JOB_ID_FOR_TESTS[payload.state.self.role]]
+    assert.equal(payload.state.self.accountSkinId, expectedSkinId)
+    // self 객체 자체에 전체 맵(accountSkinsByJob)이 그대로 실리면 안 된다 — 골라낸 값 하나만.
+    assert.equal(Object.hasOwn(payload.state.self, 'accountSkinsByJob'), false)
+})
+
+test('F-14(AC-04): 계정에 그 직업 스킨 선택이 아예 없으면(own-property 없음) accountSkinId 키 자체가 생기지 않는다', () => {
+    const room = makeRoom({
+        players: [
+            makePlayer('fj3', 'A'), // accountSkinsByJob 필드 자체가 없는 참가자
+            makePlayer('fj4', 'B'),
+        ],
+        jokerCount: 1,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    const payload = buildGameStartedPayload(candidate.session, 'fj3')
+
+    assert.equal(Object.hasOwn(payload.state.self, 'accountSkinId'), false)
+})
+
+test('F-14(AC-04): 공용 players[]와 타인 시점의 payload에는 어떤 참가자의 accountSkinId·accountSkinsByJob도 실리지 않는다(역할 역산 방지)', () => {
+    const room = makeRoom({
+        players: [
+            makePlayer('fj5', 'A', { accountSkinsByJob: FULL_ACCOUNT_SKINS_BY_JOB }),
+            makePlayer('fj6', 'B', { accountSkinsByJob: FULL_ACCOUNT_SKINS_BY_JOB }),
+        ],
+        jokerCount: 1,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+
+    // 두 참가자 각각의 시점 payload를 모두 확인한다 — 자신의 self에는 accountSkinId가
+    // 있어도, 공용 players[]와 "남의" 시점 payload 어디에도 다른 사람의 직업 스킨 정보가
+    // 새어 나오면 안 된다.
+    for (const viewerUuid of ['fj5', 'fj6']) {
+        const payload = buildGameStartedPayload(candidate.session, viewerUuid)
+        for (const player of payload.state.players) {
+            assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+            assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false)
+        }
+    }
+    // fj5 시점에서 fj6의 self는 애초에 만들어지지 않는다(self는 항상 본인 것) — fj6 시점의
+    // self에도 fj5의 정보가 섞여 들어올 수 없다.
+    const fj6Payload = buildGameStartedPayload(candidate.session, 'fj6')
+    assert.equal(fj6Payload.state.self.uuid, 'fj6')
+    assert.notEqual(fj6Payload.state.self.accountSkinId, undefined) // 자기 자신의 값은 정상 노출
+})
+
+test('F-14(AC-04): 공용 players[]는 계정 카드 프레임(accountCardFrameId)을 실제로 가진 참가자에게만 공개 필드로 담는다(직업 스킨과 달리 비밀 아님)', () => {
+    const room = makeRoom({
+        players: [
+            makePlayer('fc1', 'A', { accountCardFrameId: 'player-card-왕관' }),
+            makePlayer('fc2', 'B'),
+        ],
+        jokerCount: 1,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    const payload = buildGameStartedPayload(candidate.session, 'fc2') // 타인 시점에서도 공개된다
+
+    const p1 = payload.state.players.find((p) => p.uuid === 'fc1')
+    const p2 = payload.state.players.find((p) => p.uuid === 'fc2')
+    assert.equal(p1.accountCardFrameId, 'player-card-왕관')
+    assert.equal(Object.hasOwn(p2, 'accountCardFrameId'), false)
+})
+
+test('F-14(AC-04): 재접속 스냅샷(buildSessionSnapshot)도 self.accountSkinId 계약을 game_started와 동일하게 보존한다', () => {
+    const uuids = ['snap-fj-1', 'snap-fj-2']
+    const room = makeRoom({
+        players: [
+            makePlayer(uuids[0], 'A', { accountSkinsByJob: FULL_ACCOUNT_SKINS_BY_JOB }),
+            makePlayer(uuids[1], 'B'),
+        ],
+        jokerCount: 1,
+    })
+    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+    commitGameSession(candidate.session)
+    const session = candidate.session
+
+    const startedPayload = buildGameStartedPayload(session, uuids[0])
+    const snapshot = buildSessionSnapshot(session, uuids[0])
+
+    assert.equal(snapshot.self.accountSkinId, startedPayload.state.self.accountSkinId)
+    assert.notEqual(snapshot.self.accountSkinId, undefined)
+
+    // 재접속한 타인(uuids[1]) 시점에서도 공용 players[]에 스킨 정보가 새어 나오지 않는다.
+    const otherSnapshot = buildSessionSnapshot(session, uuids[1])
+    for (const player of otherSnapshot.players) {
+        assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+        assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false)
+    }
+})
+
+// ---------------------------------------------------------------------------
 // endGameSessionForPlayer — GameSession 정리(반대 방향 뮤테이터)
 // ---------------------------------------------------------------------------
 

@@ -1,0 +1,47 @@
+- complementary "좌측 배너 영역"
+- main:
+  - generic "인게임 컨트롤":
+    - button "게임 나가기"
+    - button "플레이어별 전적목록"
+    - button "인게임 설정"
+  - generic "제 0일 시간 흐름":
+    - generic: 제 0일
+    - button "투표 현황 열기":
+      - generic: 투표 현황
+  - paragraph:
+    - generic: 외형검증4
+  - paragraph:
+    - generic: 외형검증2
+  - paragraph:
+    - generic: 외형검증3
+  - paragraph:
+    - generic: 외형검증1
+  - generic "본인": 나
+  - paragraph:
+    - generic: 업적검증
+  - paragraph:
+    - generic: 초보검증
+  - complementary "채팅":
+    - log "채팅 내역":
+    - generic: TYPE HERE...
+    - textbox "채팅 입력":
+      - /placeholder: ""
+    - button "채팅 보내기":
+      - generic: 보내기
+  - complementary "게임 조작":
+    - generic: ROLE_REVEAL
+    - paragraph: 제 0일
+    - paragraph: 역할 CITIZEN · 참가자 6명
+    - button "컨트롤 패널 펼치기": 펼치기 ▴
+    - button "내 역할 보기":
+      - generic: ◆
+      - text: 내 역할 보기
+  - button "내 역할 보기 닫기"
+  - dialog "내 역할 보기":
+    - paragraph: 업적검증
+    - paragraph: 시민
+    - paragraph: 시민 진영
+    - paragraph: 특별한 능력은 없습니다. 낮 토론과 투표로 광대를 찾아내야 합니다.
+    - button "확인":
+      - generic: 확인
+- complementary "우측 배너 영역"

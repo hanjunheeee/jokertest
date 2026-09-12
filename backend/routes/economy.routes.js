@@ -36,6 +36,18 @@ const serializeLoadout = (loadout) => ({
     revision: loadout.revision,
 });
 
+// F-14(AC-01, R-IMPL2 "Return authoritative full loadout INCLUDING selectedSkinsByJob and
+// revision from actual endpoint, rather than reconstructing selected field from request") —
+// POST /economy/equip 응답만 economyService.equipItem이 실제로 돌려준 loadout 행에서
+// selectedSkinsByJob을 함께 실어 보낸다(economy.store.js가 요청 자체의 (slot,itemId)로
+// 미러를 재구성하지 않고 실제 응답을 신뢰할 수 있게 한다). equip-profile 응답은 F-13이 이미
+// 고정한 필드 4개만 유지한다(profileEquipment.publicResponses.test.js, 범위 밖 파일 — 건드리지
+// 않는다).
+const serializeEquipLoadout = (loadout) => ({
+    ...serializeLoadout(loadout),
+    selectedSkinsByJob: economyService.buildSkinsByJob(loadout),
+});
+
 // CODEX-2 재검토(AC-04): 이전 버전은 req.body에서 문서화된 필드만 "골라 읽어" 서비스로
 // 넘겼을 뿐, price·balance·amount·currency 같은 다른 필드가 함께 와도 조용히 무시하고
 // 201을 돌려줬다 — "무시"는 "거부"가 아니다. 변조 필드가 하나라도 있으면 서비스/DB를
@@ -148,14 +160,23 @@ router.get("/purchases/:referenceEventId", verifyToken, async (req, res, next) =
     } catch (error) { next(error); }
 });
 
+// F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — expectedRevision은 이 HTTP
+// 경로에서 더 이상 선택이 아니다: 생략하거나 빈 문자열이면 economyService.equipItem을
+// 호출하기도 전에 400(MISSING_EXPECTED_REVISION)으로 거부해, 버전 없는 덮어쓰기가 DB에
+// 닿을 방법 자체를 없앤다 — POST /economy/equip-profile과 정확히 같은 계약이다.
+// economyService.equipItem 자체는 여전히 expectedRevision을 선택으로 받는다(레거시 내부
+// 호출 호환, 예: 이관 스크립트·서버 전용 지급 경로) — 이 라우트만 그 값을 필수로 강제한다.
 router.post("/equip", verifyToken, async (req, res, next) => {
     try {
-        const { slot, itemId } = req.body ?? {};
+        const { slot, itemId, expectedRevision } = req.body ?? {};
         if (typeof slot !== "string" || typeof itemId !== "string") {
             throw createError("slot과 itemId가 필요합니다.", 400, "INVALID_EQUIP_REQUEST");
         }
-        const loadout = await economyService.equipItem({ userId: req.user.uuid, slot, itemId });
-        res.json({ loadout: serializeLoadout(loadout) });
+        if (typeof expectedRevision !== "string" || expectedRevision.length === 0) {
+            throw createError("expectedRevision이 필요합니다.", 400, "MISSING_EXPECTED_REVISION");
+        }
+        const loadout = await economyService.equipItem({ userId: req.user.uuid, slot, itemId, expectedRevision });
+        res.json({ loadout: serializeEquipLoadout(loadout) });
     } catch (error) { next(error); }
 });
 

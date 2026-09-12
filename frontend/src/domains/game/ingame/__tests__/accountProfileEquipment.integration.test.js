@@ -29,10 +29,15 @@ mock.module("../utils/pickInGameJobPortrait.js", {
 // mock.module은 모듈 전체를 대체하므로, 이 프로세스에서 InGamePlayerCard.jsx를 실제로
 // 마운트하는 아래 DOM 테스트를 위해 이 named export도 함께 채워야 한다(alive/dead 프레임
 // 실자산까지 재현할 필요는 없으므로, DEAD만 구분 가능한 결정적 값으로 돌려준다).
+// F-14(AC-01/AC-04): resolveAccountCardFrameSrc도 이 모듈에서 mergeSourcePlayerWithPreview.js가
+// 실제로 import한다 — 실제 카탈로그 규칙(player-card-{variant})을 그대로 흉내내 계정 카드
+// 프레임이 최종 카드까지 반영되는지도 같은 통합 경로로 검증할 수 있게 한다.
 mock.module("../utils/pickInGamePlayerFrame.js", {
   namedExports: {
     pickInGamePlayerFrame: (index) => `dummy-frame-${index}`,
     resolveInGamePlayerFrameSrc: (frameSrc, status) => (status === "dead" ? `${frameSrc}-dead-variant` : frameSrc),
+    resolveAccountCardFrameSrc: (itemId) =>
+      (typeof itemId === "string" && itemId.startsWith("player-card-") ? `dummy-card-frame-${itemId}` : null),
   },
 })
 
@@ -70,6 +75,11 @@ installDomGlobal("window", dom.window)
 installDomGlobal("document", dom.window.document)
 installDomGlobal("navigator", dom.window.navigator)
 installDomGlobal("HTMLElement", dom.window.HTMLElement)
+// F-14(AC-01/AC-04, R-IMPL P1 수정): 이 파일이 처음으로 framer-motion 기반 컴포넌트
+// (InGameRoleRevealOverlay의 AnimatePresence/motion.div)를 렌더한다 — motion-dom의 WAAPI
+// 지원 감지 코드가 전역 Element를 직접 참조하므로, 없으면 렌더 뒤 비동기 애니메이션
+// 콜백에서 "Element is not defined"로 이 파일의 테스트 프로세스 전체가 죽는다.
+installDomGlobal("Element", dom.window.Element)
 installDomGlobal("Node", dom.window.Node)
 installDomGlobal("Event", dom.window.Event)
 installDomGlobal("MutationObserver", dom.window.MutationObserver)
@@ -95,6 +105,13 @@ const { default: InGamePlayerBoard } = await import("../components/board/InGameP
 const { InGamePlayerSessionContext } = await import("../components/InGamePlayerSessionContext.js")
 const { default: MatchingPartySlots } = await import("../../matching/components/MatchingPartySlots.jsx")
 const { useInGameStore } = await import("../store/ingameStore.js")
+// F-14(AC-01/AC-04, R-IMPL P1 수정): 본인 역할 공개 화면의 구매 스킨 standing 자산 소비 경로
+// (self.accountSkinId → getInGameRoleRevealInfo → InGameRoleRevealOverlay 렌더)도 이 파일의
+// 다른 소비 경로와 같은 실제 함수·실제 DOM 계약으로 검증한다.
+const { getInGameRoleRevealInfo } = await import("../utils/getInGameRoleRevealInfo.js")
+const { default: InGameRoleRevealOverlay } = await import("../components/roleReveal/InGameRoleRevealOverlay.jsx")
+const { getSkinCardWearItemById, getDefaultSkinIdForJob } =
+  await import("../../../user/constants/skinCardWear/skinCardWearCatalog.js")
 
 // backend/game-core/gameSession.js를 실제 CJS 그대로 가져온다(default export = module.exports).
 // __testables.buildSessionCandidate/commitGameSession/buildGameStartedPayload/buildSessionSnapshot는
@@ -182,6 +199,129 @@ test("F-13 AC-05: 서버가 계정 테두리를 실어 보낸 참가자는 최�
 
   assert.equal(withBorder.accountBorderSrc, resolveAccountProfileBorderSrc("profile-border-귀족"))
   assert.equal(Object.hasOwn(withoutBorder, "accountBorderSrc"), false, "계정 테두리가 없는 참가자는 accountBorderSrc 키 자체가 생기면 안 된다")
+})
+
+test("F-14 AC-01/AC-04: 서버가 계정 카드 프레임을 실어 보낸 참가자는 최종 카드의 frameSrc가 더미 preview 대신 실제 장착 카드 프레임으로 대체된다(프로필 사진·테두리와 독립적으로)", () => {
+  const state = gameStartedState([
+    {
+      uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0,
+      accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족",
+      accountCardFrameId: "player-card-왕관",
+    },
+    { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
+  ])
+
+  const finalPlayers = renderFinalPlayers(state)
+  const withCard = finalPlayers.find((p) => p.id === "u1")
+  const withoutCard = finalPlayers.find((p) => p.id === "u2")
+
+  assert.equal(withCard.frameSrc, "dummy-card-frame-player-card-왕관")
+  assert.equal(withoutCard.frameSrc, "dummy-frame-1", "계정 카드 프레임이 없는 참가자는 기존 preview 더미 프레임을 그대로 유지해야 한다")
+  // 같은 참가자의 portraitSrc/accountBorderSrc가 카드 프레임과 무관하게 독립적으로 해석된다.
+  assert.equal(withCard.portraitSrc, resolveAccountProfilePhotoSrc("player-profile-기사"))
+  assert.equal(withCard.accountBorderSrc, resolveAccountProfileBorderSrc("profile-border-귀족"))
+})
+
+// ---------------------------------------------------------------------------
+// F-14(AC-01/AC-04, R-IMPL P1 수정) — 실제 backend 세션의 self.accountSkinId가 실제
+// getInGameRoleRevealInfo(view-model)를 거쳐 실제 InGameRoleRevealOverlay DOM에
+// 렌더되는지, 그리고 다른 참가자의 직업별 장착 맵이 함께 새어나가지 않는지 확인한다.
+// ---------------------------------------------------------------------------
+
+test("F-14 AC-01/AC-04: 실제 backend 세션의 self.accountSkinId가 실제 getInGameRoleRevealInfo와 InGameRoleRevealOverlay를 거쳐 정확히 그 구매 스킨의 standing 자산으로 렌더된다(합성 self 리터럴이 아니라 실제 buildGameStartedPayload 생산 경로)", () => {
+  const { buildSessionCandidate } = gameSessionCore.__testables
+  const { commitGameSession, buildGameStartedPayload } = gameSessionCore
+
+  // 실제 구매 가능한 카탈로그 id(귀족/광대 각각 하나씩) — jokerCount:1인 2인 방은 두 참가자가
+  // 각각 CITIZEN 아니면 JOKER 둘 중 하나로만 배정되므로(roleComposition 2~5명 구간은 특수
+  // 시민 역할 예산이 0), 실제로 배정된 역할이 어느 쪽이든 정확히 그 역할의 구매 스킨을
+  // 검증할 수 있게 둘 다 채운다.
+  const NOBLE_SKIN_ID = "player-skin-귀족1-블러드"
+  const CLOWN_SKIN_ID = "player-skin-광대1-불멸"
+  const room = {
+    id: "room-role-reveal-skin",
+    players: new Map([
+      ["rs1", {
+        uuid: "rs1", nickname: "호스트", isReady: true,
+        accountSkinsByJob: { noble: NOBLE_SKIN_ID, clown: CLOWN_SKIN_ID, guard: null, doctor: null, witchHunter: null },
+      }],
+      ["rs2", { uuid: "rs2", nickname: "참가자", isReady: true }],
+    ]),
+    settings: { jokerCount: 1 },
+  }
+
+  const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+  assert.equal(candidate.ok, true, "실제 세션 생성이 성공해야 시나리오를 구성할 수 있다")
+  commitGameSession(candidate.session)
+
+  const startedPayload = buildGameStartedPayload(candidate.session, "rs1")
+  const self = startedPayload.state.self
+  assert.ok(["CITIZEN", "JOKER"].includes(self.role), "2인·jokerCount:1 방은 CITIZEN 또는 JOKER로만 배정되어야 한다")
+
+  const expectedSkinId = self.role === "JOKER" ? CLOWN_SKIN_ID : NOBLE_SKIN_ID
+  assert.equal(self.accountSkinId, expectedSkinId, "실제 배정된 역할에 대응하는 구매 스킨 id 하나만 self에 실려야 한다")
+  assert.equal(Object.hasOwn(self, "accountSkinsByJob"), false, "직업별 전체 맵은 self에도 절대 실리면 안 된다(본인이라도 다른 직업 선택은 비공개)")
+
+  // 공용 players[]에는(본인 포함) accountSkinId·accountSkinsByJob 어느 키도 존재하면 안 된다
+  // (다른 참가자에게 전달되는 것과 동일한 payload이므로 역할 추론 정보가 섞이면 안 된다).
+  for (const player of startedPayload.state.players) {
+    assert.equal(Object.hasOwn(player, "accountSkinId"), false, `players[].${player.uuid}에 accountSkinId가 있으면 안 된다`)
+    assert.equal(Object.hasOwn(player, "accountSkinsByJob"), false, `players[].${player.uuid}에 accountSkinsByJob이 있으면 안 된다`)
+  }
+
+  // 실제 view-model 변환.
+  const roleInfo = getInGameRoleRevealInfo(self, { authUuid: "rs1" })
+  assert.ok(roleInfo)
+  assert.equal(roleInfo.standingSrc, getSkinCardWearItemById(expectedSkinId).standingSrc)
+  assert.notEqual(
+    roleInfo.standingSrc,
+    getSkinCardWearItemById(getDefaultSkinIdForJob(self.role === "JOKER" ? "clown" : "noble")).standingSrc,
+    "구매한 스킨이 있으므로 기본 스킨이 아니라 실제 구매한 스킨이 view-model에 실려야 한다",
+  )
+
+  // 실제 DOM 렌더 — <img>의 src가 view-model이 계산한 정확한 standing 자산과 같아야 한다.
+  const { container } = render(
+    React.createElement(InGameRoleRevealOverlay, { open: true, onClose: () => {}, roleInfo, players: [] }),
+  )
+  const imgSrcs = [...container.querySelectorAll("img")].map((img) => decodeURIComponent(img.getAttribute("src")))
+  assert.ok(
+    imgSrcs.includes(roleInfo.standingSrc.normalize("NFC")),
+    "실제 구매 스킨의 standing 자산이 실제 DOM <img>로 렌더되어야 한다",
+  )
+  cleanup()
+})
+
+test("F-14 AC-01/AC-04: self.accountSkinId가 없는(미장착) 참가자는 그 직업의 기본 스킨이 실제 DOM에 렌더된다(빈 화면 금지)", () => {
+  const { buildSessionCandidate } = gameSessionCore.__testables
+  const { commitGameSession, buildGameStartedPayload } = gameSessionCore
+
+  const room = {
+    id: "room-role-reveal-default-skin",
+    players: new Map([
+      ["rd1", { uuid: "rd1", nickname: "호스트", isReady: true }], // accountSkinsByJob 자체가 없음
+      ["rd2", { uuid: "rd2", nickname: "참가자", isReady: true }],
+    ]),
+    settings: { jokerCount: 1 },
+  }
+  const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
+  assert.equal(candidate.ok, true)
+  commitGameSession(candidate.session)
+
+  const startedPayload = buildGameStartedPayload(candidate.session, "rd1")
+  const self = startedPayload.state.self
+  assert.equal(Object.hasOwn(self, "accountSkinId"), false, "구매·장착 정보 자체가 없으면 accountSkinId 키가 생기면 안 된다")
+
+  const roleInfo = getInGameRoleRevealInfo(self, { authUuid: "rd1" })
+  assert.ok(roleInfo)
+  const expectedDefaultJob = self.role === "JOKER" ? "clown" : "noble"
+  assert.equal(roleInfo.standingSrc, getSkinCardWearItemById(getDefaultSkinIdForJob(expectedDefaultJob)).standingSrc)
+
+  const { container } = render(
+    React.createElement(InGameRoleRevealOverlay, { open: true, onClose: () => {}, roleInfo, players: [] }),
+  )
+  const imgSrcs = [...container.querySelectorAll("img")].map((img) => decodeURIComponent(img.getAttribute("src")))
+  assert.ok(imgSrcs.includes(roleInfo.standingSrc.normalize("NFC")), "미장착이어도 기본 스킨 자산이 실제 DOM에 렌더되어야 한다")
+  cleanup()
 })
 
 // ---------------------------------------------------------------------------

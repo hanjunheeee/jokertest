@@ -322,6 +322,21 @@ test("F-13 AC-05: accountProfilePhotoId/accountProfileBorderId가 null이어도(
   assert.equal(self.accountProfileBorderId, null)
 })
 
+test("F-14 AC-01/AC-04: accountCardFrameId가 있는 참가자 항목에는 그대로 복사되고 없는 항목엔 키 자체가 없다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountCardFrameId: "player-card-왕관" },
+        { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
+      ],
+    }),
+  )
+  const withCard = result.sourcePlayers.find((p) => p.id === "u1")
+  const withoutCard = result.sourcePlayers.find((p) => p.id === "u2")
+  assert.equal(withCard.accountCardFrameId, "player-card-왕관")
+  assert.equal(Object.hasOwn(withoutCard, "accountCardFrameId"), false)
+})
+
 test("R-IMPL(2026-09-11): player.isConnected이 boolean으로 있으면 connected에 그 값이 그대로 전달된다(하드코딩된 true가 아니다)", () => {
   const result = buildPlayerSessionSourceFromGameState(
     validState({

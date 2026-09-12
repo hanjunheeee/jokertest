@@ -34,7 +34,15 @@ export default function SkinCardWearPanel({
   onTogglePreviewMode,
   onClose,
   onConfirm,
+  // F-14(AC-05): 저장 요청의 로딩·실패·재시도 상태. "saving"|"error"|"uncertain"|"success"|
+  // "idle"(useSkinCardWearSelection.js SKIN_CARD_WEAR_CONFIRM_STATUS) — onConfirm 자체가
+  // 재시도 핸들러다(같은 draft로 다시 확인을 누르면 confirmLoadout이 다시 호출된다).
+  confirmStatus = "idle",
+  confirmError = null,
 }) {
+  const isSaving = confirmStatus === "saving"
+  const hasFailed = confirmStatus === "error" || confirmStatus === "uncertain"
+
   return (
     <div className={SKIN_CARD_WEAR_PANEL_STACK_CLASS}>
       <div className={SKIN_CARD_WEAR_PANEL_CLASS}>
@@ -62,7 +70,7 @@ export default function SkinCardWearPanel({
           />
         </button>
 
-        <div className={SKIN_CARD_WEAR_PANEL_CONTENT_CLASS} style={SKIN_CARD_WEAR_PANEL_INNER_PAD}>
+        <div className={SKIN_CARD_WEAR_PANEL_CONTENT_CLASS} style={SKIN_CARD_WEAR_PANEL_INNER_PAD} inert={isSaving} aria-disabled={isSaving}>
           <SkinCardWearJobTabs
             tabs={jobTabs}
             activeIndex={activeJobIndex}
@@ -88,18 +96,27 @@ export default function SkinCardWearPanel({
       </div>
 
       <div className={SKIN_CARD_WEAR_CONFIRM_WRAP_CLASS}>
+        {hasFailed ? (
+          <p role="alert" aria-live="assertive" style={{ color: "#ff6b6b", margin: 0 }}>
+            {confirmError}
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={onConfirm}
+          disabled={isSaving}
+          aria-busy={isSaving}
           className={SKIN_CARD_WEAR_CONFIRM_BTN_CLASS}
-          style={{ outline: "none" }}
+          style={{ outline: "none", opacity: isSaving ? 0.6 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}
         >
           <PublicAsset
             src={SKIN_CARD_WEAR_ASSETS.confirmButton}
             alt=""
             className={SKIN_CARD_WEAR_CONFIRM_BTN_IMAGE_CLASS}
           />
-          <span className={SKIN_CARD_WEAR_CONFIRM_BTN_LABEL_CLASS}>적용</span>
+          <span className={SKIN_CARD_WEAR_CONFIRM_BTN_LABEL_CLASS}>
+            {isSaving ? "저장 중..." : hasFailed ? "다시 시도" : "적용"}
+          </span>
         </button>
       </div>
     </div>
