@@ -1,0 +1,41 @@
+- complementary "좌측 배너 영역"
+- main:
+  - navigation "설정 탭":
+    - button "일반" [pressed]:
+      - generic: 일반
+    - button "사운드":
+      - generic: 사운드
+  - region "설정 목록":
+    - heading "화면 모드" [level=3]
+    - generic: 전체화면 전환
+    - checkbox "전체화면 전환"
+    - generic: 텍스트 크기
+    - paragraph: "3"
+    - slider "텍스트 크기": "3"
+    - heading "알림" [level=3]
+    - generic: 친구 초대
+    - checkbox "친구 초대" [checked]
+    - generic: 게임 초대
+    - checkbox "게임 초대" [checked]
+    - generic: 시스템 알림
+    - checkbox "시스템 알림" [checked]
+    - generic: 튜토리얼/도움말 다시 보기
+    - button "다시 보기":
+      - generic: 다시 보기
+    - generic: 설정 초기화
+    - button "초기화":
+      - generic: 초기화
+  - button "뒤로 가기"
+- complementary "우측 배너 영역"
+- button "튜토리얼 닫기" [active]
+- dialog "게임 플레이 튜토리얼":
+  - img "튜토리얼 1페이지"
+  - generic "튜토리얼 페이지 이동":
+    - button "이전 페이지" [disabled]
+    - tablist "페이지 선택":
+      - tab "1페이지" [selected]
+      - tab "2페이지"
+      - tab "3페이지"
+      - tab "4페이지"
+      - tab "5페이지"
+    - button "다음 페이지"

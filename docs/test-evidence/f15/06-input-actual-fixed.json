@@ -1,0 +1,26 @@
+{
+  "head": "884c3555",
+  "gameId": "ccd689db-75ac-44dc-bf03-4329c2480af9",
+  "values": [
+    {
+      "size": 0,
+      "values": [
+        {
+          "font": "7.581px",
+          "scale": "0.6",
+          "style": "font-size: clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)));"
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "values": [
+        {
+          "font": "12.635px",
+          "scale": "1",
+          "style": "font-size: clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)));"
+        }
+      ]
+    }
+  ]
+}

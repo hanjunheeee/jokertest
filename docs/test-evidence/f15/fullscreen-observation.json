@@ -1,0 +1,5 @@
+{
+  "head": "0e60ce04",
+  "observation": "Checkbox checked after real click; DOM evaluate reports fullscreen false; locator Escape did not clear checkbox. Not PASS, native escape needs confirmation.",
+  "snapshot": "- complementary \"좌측 배너 영역\"\n- main:\n  - navigation \"설정 탭\":\n    - button \"일반\" [pressed]:\n      - generic: 일반\n    - button \"사운드\":\n      - generic: 사운드\n  - region \"설정 목록\":\n    - heading \"화면 모드\" [level=3]\n    - generic: 전체화면 전환\n    - checkbox \"전체화면 전환\" [checked] [active]\n    - generic: 텍스트 크기\n    - paragraph: \"5\"\n    - slider \"텍스트 크기\": \"5\"\n    - heading \"알림\" [level=3]\n    - generic: 친구 초대\n    - checkbox \"친구 초대\"\n    - generic: 게임 초대\n    - checkbox \"게임 초대\" [checked]\n    - generic: 시스템 알림\n    - checkbox \"시스템 알림\" [checked]\n    - generic: 튜토리얼/도움말 다시 보기\n    - button \"다시 보기\":\n      - generic: 다시 보기\n    - generic: 설정 초기화\n    - button \"초기화\":\n      - generic: 초기화\n  - button \"뒤로 가기\"\n- complementary \"우측 배너 영역\""
+}
