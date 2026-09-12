@@ -990,6 +990,19 @@ function expireDisconnectGrace(run) {
         if (applied.terminal) {
             payload = { ...payload, ...gameSessionCore.buildTerminalFields(session) }
         }
+        // F-16(AC-04): 이 공개 사건의 안정 ID다. commit이 실제로 성공한 뒤(applied.ok)에만
+        // 만들고, 같은 사망을 다시 방송해도 같은 문자열이 나오도록 시각·난수를 쓰지 않는다.
+        // 사망 원인(DISCONNECT)이나 개인 역할은 넣지 않는다 — 공개 payload의 은닉 계약을
+        // ID로 우회하지 않는다. accountId는 수신자마다 다르므로 싣지 않는다(공개 방송이다)
+        // — 수신 클라이언트가 자신의 인증 계정으로 범위를 채운다.
+        payload = {
+            ...payload,
+            sfxEvent: {
+                eventId: `game:${session.id}:day:${session.dayIndex}:victim:${applied.victimUuid}:eliminated`,
+                gameId: session.id,
+                origin: 'live',
+            },
+        }
     } catch (err) {
         console.error('[재접속 유예 만료 처리 실패]', { code: 'PAYLOAD_BUILD_ERROR', uuid, gameId: session.id })
     }
@@ -1611,6 +1624,20 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
                     gameId: prepared.session.id,
                     dayIndex: prepared.resolution.dayIndex,
                     ...privateResult,
+                    // F-16(AC-04/AC-05): 이 개인 결과의 안정 사건 ID와 허용 수신 계정이다.
+                    // 수신자는 현재 인증 계정이 accountId와 같을 때만 소리를 낸다 — 전달
+                    // 경로(개별 emit)에 더해 클라이언트에서도 한 번 더 대조하는 이중 방어다.
+                    //
+                    // ID에는 게임·밤·본인 행동 종류만 넣는다. 대상 uuid나 조사로 드러난
+                    // 역할 같은 비밀 값은 ID에도 서버 로그에도 복제하지 않는다(AC-05).
+                    // actionType은 이 payload가 이미 담고 있는 "본인 자신의" 행동이라
+                    // 새로 노출되는 정보가 없다.
+                    sfxEvent: {
+                        eventId: `game:${prepared.session.id}:night:${prepared.resolution.dayIndex}:${privateResult.actionType}`,
+                        accountId: recipientUuid,
+                        gameId: prepared.session.id,
+                        origin: 'live',
+                    },
                 })
             } catch (err) {
                 console.error('[밤 행동 판정 오류]', { code: 'PRIVATE_DELIVERY_ERROR', uuid, gameId: prepared.session.id })

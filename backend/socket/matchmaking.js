@@ -1099,9 +1099,23 @@ function handleSetReady(io, socket, uuid, payload, callback) {
     }
 
     player.isReady = isReady
+    // F-16(AC-01/AC-04): 실제 상태가 바뀐 이 순간에만 사건 번호를 올린다. 위의 멱등 분기
+    // (같은 값 재요청)는 여기 도달하지 않으므로 재시도에 새 사건이 생기지 않는다.
+    //
+    // uuid + boolean만으로 키를 만들면 false→true→false→true의 두 번째 true가 첫 번째와
+    // 같은 키가 되어 "중복"으로 묻힌다. 그 둘은 서로 다른 실제 변경이므로 방마다·참가자마다
+    // 단조 증가하는 revision을 ID에 포함한다.
+    player.readyRevision = (Number.isInteger(player.readyRevision) ? player.readyRevision : 0) + 1
     const canStart = computeCanStart(room)
-    socket.to(roomId).emit('player_ready_changed', { uuid, isReady, canStart })
-    callback({ ok: true, isReady, canStart })
+    // 방송과 ACK가 같은 ID를 공유한다 — 요청자는 ACK로, 나머지는 방송으로 같은 사건 하나를
+    // 받는다(각자 자기 계정 범위에서 1회).
+    const sfxEvent = {
+        eventId: `room:${roomId}:ready:${uuid}:${player.readyRevision}`,
+        roomId,
+        origin: 'live',
+    }
+    socket.to(roomId).emit('player_ready_changed', { uuid, isReady, canStart, sfxEvent })
+    callback({ ok: true, isReady, canStart, sfxEvent })
 }
 
 /**

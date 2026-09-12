@@ -2,6 +2,11 @@ import { useEffect } from "react"
 import { MUSIC_PLAYBACK_ENABLED } from "../constants/bgmAssets.js"
 
 // 페이지에서 사용할 배경음악 자동 재생 훅입니다.
+//
+// F-16(AC-03/AC-06): 효과음 재생 경로(createSfxPlayer)와 완전히 분리돼 있습니다. 이 훅은
+// 사운드 설정 store를 구독하지 않으므로 효과음 볼륨·음소거·설정 초기화 중 어느 것도 아래
+// 차단 분기에 닿지 못합니다. 또 효과음 쪽의 자동재생 거절은 "다음 클릭에 재시도"하지 않아,
+// 효과음 실패가 이 파일의 클릭 재시도 경로를 되살리는 일도 없습니다.
 export function useBgmAutoplay(audioRef) {
     useEffect(() => {
         // 재생 차단 중에는 클릭으로 재시도하는 이벤트도 등록하지 않는다.
