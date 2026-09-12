@@ -3,8 +3,7 @@ import {
   getInGameChatMessageBodyClass,
   getInGameChatMessageSenderClass,
   getInGameChatMessageTimeClass,
-  getInGameChatScaledFontSize,
-  getInGameChatTextScale,
+  getInGameChatTextScaleStyle,
   INGAME_CHAT_MESSAGE_ROW_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
 import {
@@ -69,9 +68,10 @@ export default function InGameChatMessageRow({
     nicknameColorEnabled,
   )
 
-  const chatTextScale = getInGameChatTextScale(chatTextSize)
-  const scaledFontSize = getInGameChatScaledFontSize(variant, chatTextScale)
-  const scaledFontSizeStyle = scaledFontSize ? { fontSize: scaledFontSize } : undefined
+  // 배율은 행에 CSS 변수로 한 번만 얹고, 발신자·본문·시각 span의 타이포 클래스가 그
+  // 변수를 clamp 세 항에 곱해 쓴다 — font-size를 인라인으로 덮어써 clamp 경계를 버리지
+  // 않기 위해서다(ingameChatLayout.js 주석 참고).
+  const chatTextScaleStyle = getInGameChatTextScaleStyle(chatTextSize)
 
   const formattedTime = showTimeEnabled ? formatChatMessageTime(sentAt) : null
 
@@ -83,15 +83,13 @@ export default function InGameChatMessageRow({
       : 0
 
   return (
-    <li className={INGAME_CHAT_MESSAGE_ROW_CLASS}>
+    <li className={INGAME_CHAT_MESSAGE_ROW_CLASS} style={chatTextScaleStyle}>
       {formattedTime ? (
-        <span className={getInGameChatMessageTimeClass(variant)} style={scaledFontSizeStyle}>
-          {formattedTime}
-        </span>
+        <span className={getInGameChatMessageTimeClass(variant)}>{formattedTime}</span>
       ) : null}
       <span
         className={`${getInGameChatMessageSenderClass(variant)} ${themedTextClass}`.trim()}
-        style={{ ...themedTextStyle, ...scaledFontSizeStyle }}
+        style={themedTextStyle}
       >
         {senderName}:
       </span>
@@ -100,7 +98,6 @@ export default function InGameChatMessageRow({
         aria-readonly="true"
         style={{
           ...themedTextStyle,
-          ...scaledFontSizeStyle,
           ...(messageMaxWidth > 0 ? { maxWidth: messageMaxWidth } : undefined),
         }}
       >

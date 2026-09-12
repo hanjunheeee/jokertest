@@ -42,6 +42,14 @@
 
   body {
     @apply font-sans text-text-body antialiased;
+    /* F-15(AC-02) "텍스트 크기": 스스로 font-size를 지정하지 않고 상속받는 모든 본문
+       텍스트에 설정 배율을 적용한다. 기본 배율 1에서 calc(1rem*1) = 1rem = 브라우저
+       기본값이라 저장한 적 없는 화면은 기존과 동일하다. 간격·프레임은 rem·%·cqi
+       기준이라 이 값에 끌려가지 않는다(화면 전체 확대가 아니다). font-size를 직접
+       지정하는 요소는 그 선언에 var(--app-text-scale)를 곱해 배율을 따른다 —
+       .app-text-scalable 같은 별도 클래스는 Tailwind 유틸리티(@layer utilities)에
+       밀려 적용되지 않으므로 쓰지 않는다. */
+    font-size: calc(1rem * var(--app-text-scale, 1));
   }
 
   h1 {
@@ -80,12 +88,6 @@
 
   .lobby-menu-btn:hover .lobby-menu-btn__img {
     filter: url(#lobby-menu-red);
-  }
-
-  /* F-15(AC-02): "텍스트 크기" 설정 — 이 클래스를 쓰는 요소의 font-size에만 배율을
-     적용한다(레이아웃 간격은 그대로 둬서 전체 화면이 확대되지 않게 한다). */
-  .app-text-scalable {
-    font-size: calc(1em * var(--app-text-scale, 1));
   }
 
   /* 텍스트 링크 굵기 */

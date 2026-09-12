@@ -15,9 +15,9 @@ export default function App() {
     const socket = useSocket()
     useFriendSocketEvents(socket)
 
-    // F-15(AC-02): "텍스트 크기" 설정을 --app-text-scale로 반영한다. index.css의
-    // .app-text-scalable을 쓰는 요소만 이 배율을 적용받으므로 레이아웃 전체가 확대되지
-    // 않는다.
+    // F-15(AC-02): "텍스트 크기" 설정을 --app-text-scale로 반영한다. 이 변수는 font-size
+    // 선언에서만 곱해진다(index.css의 body 기본값 + 자체 font-size를 지정하는 요소의 calc
+    // 선언) — 간격·프레임은 rem·%·cqi 기준이라 레이아웃 전체가 확대되지 않는다.
     const generalTextSize = useSettingsStore((s) => s.generalTextSize)
     useEffect(() => {
         syncAppTextScale(generalTextSize)

@@ -25,8 +25,15 @@ async function freshSettingsModule() {
   return import(`${STORE_URL}?case=${Math.random()}`)
 }
 
-const { useSettingsStore, buildDefaultSoundVolumes, buildDefaultGeneralChecks } =
-  await freshSettingsModule()
+const {
+  useSettingsStore,
+  buildDefaultSoundVolumes,
+  buildDefaultGeneralChecks,
+  CHAT_TEXT_SIZE_STORAGE_RANGE,
+} = await freshSettingsModule()
+const { INGAME_SETTING_CHAT_SLIDER } = await import(
+  "../../../game/ingame/constants/controls/ingameSetting/ingameSettingData.js"
+)
 const { SOUND_SETTING_VOLUMES } = await import("../../constants/soundSettings.js")
 const { GENERAL_SETTING_CHECKBOXES, GENERAL_SETTING_TEXT_SIZE } = await import(
   "../../constants/generalSettings.js"
@@ -120,6 +127,128 @@ test("F-15(AC-06): 범위를 벗어나거나 잘못된 타입의 값은 검증 �
   )
   assert.deepEqual(state.generalChecks, buildDefaultGeneralChecks())
   assert.deepEqual(state.chatChecks, {}, "boolean이 아닌 값은 걸러내야 한다")
+})
+
+// F-15(AC-06): 볼륨은 슬라이더 정의(SOUND_SETTING_VOLUMES)의 타입·범위를 지켜야 한다 —
+// 손상된 값이 그대로 복원되면 슬라이더·사운드 경로에 범위 밖 값이 흘러든다.
+test("F-15(AC-06): 저장된 볼륨의 타입·범위를 검증한다(범위 밖은 보정, 잘못된 타입·모르는 id는 버림)", async () => {
+  const [first, second, third] = SOUND_SETTING_VOLUMES
+
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({
+      state: {
+        volumes: {
+          [first.id]: first.max + 500,
+          [second.id]: second.min - 500,
+          [third.id]: "시끄럽게",
+          "unknown-volume": 42,
+        },
+      },
+      version: 0,
+    }),
+  )
+
+  const restored = await freshSettingsModule()
+  const { volumes } = restored.useSettingsStore.getState()
+
+  assert.equal(volumes[first.id], first.max, "최댓값을 넘으면 최댓값으로 보정한다")
+  assert.equal(volumes[second.id], second.min, "최솟값 미만이면 최솟값으로 보정한다")
+  assert.equal(volumes[third.id], third.defaultValue, "숫자가 아니면 기본값을 유지한다")
+  assert.equal("unknown-volume" in volumes, false, "정의에 없는 id는 저장 대상이 아니다")
+})
+
+test("F-15(AC-06): 볼륨 맵 자체가 객체가 아니면 기본 볼륨을 유지한다", async () => {
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({ state: { volumes: "이건 객체가 아님" }, version: 0 }),
+  )
+
+  const restored = await freshSettingsModule()
+
+  assert.deepEqual(restored.useSettingsStore.getState().volumes, buildDefaultSoundVolumes())
+})
+
+test("F-15(AC-06): 저장된 채팅 글자 크기도 범위를 벗어나면 보정하고, 숫자가 아니면 버린다", async () => {
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({ state: { chatTextSize: 100000 }, version: 0 }),
+  )
+  const tooLarge = await freshSettingsModule()
+  assert.equal(
+    tooLarge.useSettingsStore.getState().chatTextSize,
+    CHAT_TEXT_SIZE_STORAGE_RANGE.max,
+  )
+
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({ state: { chatTextSize: -40 }, version: 0 }),
+  )
+  const tooSmall = await freshSettingsModule()
+  assert.equal(
+    tooSmall.useSettingsStore.getState().chatTextSize,
+    CHAT_TEXT_SIZE_STORAGE_RANGE.min,
+  )
+
+  localStorage.setItem(
+    "settings-storage",
+    JSON.stringify({ state: { chatTextSize: "크게" }, version: 0 }),
+  )
+  const notANumber = await freshSettingsModule()
+  assert.equal(
+    notANumber.useSettingsStore.getState().chatTextSize,
+    null,
+    "숫자가 아니면 '아직 고른 적 없음'(null)을 유지한다",
+  )
+})
+
+test("F-15(AC-06): 채팅 글자 크기 저장 범위는 실제 인게임 슬라이더 정의와 같다", () => {
+  assert.equal(CHAT_TEXT_SIZE_STORAGE_RANGE.min, INGAME_SETTING_CHAT_SLIDER.min)
+  assert.equal(CHAT_TEXT_SIZE_STORAGE_RANGE.max, INGAME_SETTING_CHAT_SLIDER.max)
+})
+
+// F-15(AC-06): 기기 저장이 실패(용량 초과·프라이빗 모드)해도 화면은 계속 동작하되,
+// 저장에 성공한 것처럼 두지 않는다.
+test("F-15(AC-06): localStorage 쓰기가 실패하면 던지지 않되 실패를 기록한다(성공으로 표시하지 않음)", async () => {
+  const fresh = await freshSettingsModule()
+  fresh.clearSettingsStorageWriteError()
+
+  // jsdom의 Storage는 setItem을 직접 덮어써도 반영되지 않는 경우가 있어, 전역 자체를
+  // "쓰기만 실패하는" 대역으로 바꾼다(읽기·삭제는 실제 저장소로 위임).
+  const realLocalStorage = globalThis.localStorage
+  const originalWarn = console.warn
+  console.warn = () => {}
+  installDomGlobal("localStorage", {
+    getItem: (key) => realLocalStorage.getItem(key),
+    removeItem: (key) => realLocalStorage.removeItem(key),
+    setItem: () => {
+      throw new DOMException("할당량 초과", "QuotaExceededError")
+    },
+  })
+
+  try {
+    fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.max)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // 저장은 실패했지만 이번 세션 상태는 그대로 쓸 수 있어야 한다.
+    assert.equal(
+      fresh.useSettingsStore.getState().generalTextSize,
+      GENERAL_SETTING_TEXT_SIZE.max,
+    )
+    assert.notEqual(
+      fresh.getSettingsStorageWriteError(),
+      null,
+      "쓰기 실패를 삼키면 저장된 것처럼 보인다",
+    )
+  } finally {
+    installDomGlobal("localStorage", realLocalStorage)
+    console.warn = originalWarn
+  }
+
+  // 다시 쓰기에 성공하면 실패 기록이 지워진다.
+  fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.defaultValue)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(fresh.getSettingsStorageWriteError(), null)
 })
 
 test("F-15(AC-02/AC-05): resetSettings는 volumes·generalChecks·generalTextSize·chatChecks·chatTextSize만 기본값으로 되돌린다", () => {

@@ -11,6 +11,11 @@ const SETTINGS_STORAGE_KEY = "settings-storage"
 // 저장된 선호값을 갖지 않는다(A-02).
 const HIDDEN_GENERAL_CHECK_IDS = new Set(["fullscreen", "whisper"])
 
+/** 채팅 글자 크기 저장 범위 — 인게임 설정 슬라이더(INGAME_SETTING_CHAT_SLIDER)와 같은
+ *  값이어야 한다. 설정 도메인이 인게임 도메인을 import하지 않으므로 값을 여기 두고,
+ *  시험이 실제 슬라이더 정의와 대조한다. */
+export const CHAT_TEXT_SIZE_STORAGE_RANGE = { min: 0, max: 100 }
+
 function defaultVolumes() {
   return Object.fromEntries(
     SOUND_SETTING_VOLUMES.map(({ id, defaultValue }) => [id, defaultValue]),
@@ -25,9 +30,22 @@ function defaultGeneralChecks() {
   )
 }
 
+/** 마지막 기기 저장 실패(용량 초과·프라이빗 모드 등). null이면 마지막 쓰기가 성공한
+ *  것이다 — 저장에 실패했는데 성공한 것처럼 두지 않기 위해 여기에 남긴다(AC-06). */
+let lastStorageWriteError = null
+
+/** 마지막 저장 실패를 돌려준다 — 실패 시 null이 아니다. */
+export function getSettingsStorageWriteError() {
+  return lastStorageWriteError
+}
+
+/** 시험·재시도에서 실패 기록을 지운다. */
+export function clearSettingsStorageWriteError() {
+  lastStorageWriteError = null
+}
+
 /** localStorage에 접근할 수 없거나(SSR·프라이빗 모드 등) 손상된 값을 만나도 던지지 않는
- *  최소 storage 어댑터. 저장이 실패해도 조용히 무시할 뿐 성공했다고 표시하지 않는다 —
- *  이 store는 저장 성공을 알리는 UI가 없으므로, 실패 시 그냥 현재 세션 상태만 유지된다. */
+ *  최소 storage 어댑터. 기기에 남기지 못할 뿐 현재 세션 상태는 그대로 유지된다. */
 function createMemoryStorage() {
   const memory = new Map()
   return {
@@ -62,8 +80,13 @@ function resolveBrowserStorage() {
     setItem: (name, value) => {
       try {
         localStorage.setItem(name, value)
-      } catch {
-        // 쓰기 실패(용량 초과·프라이빗 모드 등) — 현재 세션 상태만 유지하고 무시한다.
+        lastStorageWriteError = null
+      } catch (error) {
+        // 쓰기 실패(용량 초과·프라이빗 모드 등) — 던지지 않아 화면은 계속 동작하지만,
+        // "저장됐다"고 두지 않는다. 실패를 기록하고 경고를 남겨
+        // getSettingsStorageWriteError()로 확인할 수 있게 한다(AC-06).
+        lastStorageWriteError = error
+        console.warn("[settings] 기기 저장에 실패했습니다 — 이번 세션에만 유지됩니다.", error)
       }
     },
     removeItem: (name) => {
@@ -82,6 +105,25 @@ function clampToRange(value, { min, max, fallback }) {
   return Math.min(max, Math.max(min, n))
 }
 
+/** 저장된 볼륨 맵 검증 — SOUND_SETTING_VOLUMES에 없는 id는 버리고, 숫자가 아닌 값은
+ *  무시하며, 각 슬라이더의 min·max로 보정한다. 손상된 값이 그대로 슬라이더·오디오
+ *  경로에 흘러들지 않게 한다(AC-06). */
+function sanitizeVolumes(value, currentVolumes) {
+  if (typeof value !== "object" || value === null) return currentVolumes
+
+  const next = { ...currentVolumes }
+  for (const { id, min, max, defaultValue } of SOUND_SETTING_VOLUMES) {
+    if (!Object.hasOwn(value, id)) continue
+
+    const n = Number(value[id])
+    if (typeof value[id] === "boolean" || !Number.isFinite(n)) continue
+
+    next[id] = Math.min(max, Math.max(min, n))
+    if (!Number.isFinite(next[id])) next[id] = defaultValue
+  }
+  return next
+}
+
 function sanitizeBooleanMap(value) {
   if (typeof value !== "object" || value === null) return null
   const next = {}
@@ -96,10 +138,7 @@ function sanitizeBooleanMap(value) {
 function mergePersistedSettings(persisted, current) {
   if (typeof persisted !== "object" || persisted === null) return current
 
-  const volumes =
-    typeof persisted.volumes === "object" && persisted.volumes !== null
-      ? { ...current.volumes, ...persisted.volumes }
-      : current.volumes
+  const volumes = sanitizeVolumes(persisted.volumes, current.volumes)
 
   const generalChecks =
     sanitizeBooleanMap(persisted.generalChecks) !== null
@@ -114,12 +153,18 @@ function mergePersistedSettings(persisted, current) {
 
   const chatChecks = sanitizeBooleanMap(persisted.chatChecks)
 
+  // 채팅 글자 크기는 인게임 도메인(INGAME_SETTING_CHAT_SLIDER)이 정의하지만, 설정
+  // 도메인이 인게임 도메인을 거꾸로 import하지 않기 위해 저장 범위만 여기에 둔다 —
+  // 두 값이 어긋나면 __tests__/settingsStore.test.js가 실제 슬라이더 정의와 대조해 잡는다.
   const chatTextSize =
     persisted.chatTextSize === null || persisted.chatTextSize === undefined
       ? current.chatTextSize
-      : Number.isFinite(Number(persisted.chatTextSize))
-        ? Number(persisted.chatTextSize)
-        : current.chatTextSize
+      : typeof persisted.chatTextSize === "boolean"
+        ? current.chatTextSize
+        : clampToRange(persisted.chatTextSize, {
+            ...CHAT_TEXT_SIZE_STORAGE_RANGE,
+            fallback: current.chatTextSize,
+          })
 
   return { ...current, volumes, generalChecks, generalTextSize, chatChecks, chatTextSize }
 }

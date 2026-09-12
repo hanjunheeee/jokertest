@@ -21,13 +21,16 @@ const HIDDEN_NOTIFICATION_IDS = new Set(["whisper"])
 const ROW_CLASS =
   "flex shrink-0 items-center justify-between gap-[clamp(1rem,2.5vw,2rem)] border-b border-[#c4a574]/35 py-[clamp(0.35rem,0.85vh,0.5rem)]"
 
+// F-15(AC-02): GENERAL_SETTING_TEXT_SIZE("텍스트 크기") 설정의 실제 적용 대상 — App.jsx가
+// 반영한 --app-text-scale를 clamp의 세 항에 모두 곱해, 원래의 최소·최대 경계(반응형 vw
+// 동작)를 유지한 채 크기만 이동시킨다. 배율 변수가 없으면 fallback 1이라 calc(x*1) === x —
+// 기존 화면과 동일하다. 별도 클래스(.app-text-scalable)로 덮어쓰지 않는 이유는 그 방식이
+// 같은 요소의 Tailwind font-size 유틸리티에 밀려 적용되지 않기 때문이다(index.css 주석).
 const SECTION_TITLE_CLASS =
-  "app-text-scalable shrink-0 pt-[clamp(0.45rem,1vh,0.65rem)] font-subheading text-[clamp(0.88rem,1.15vw,1rem)] font-black tracking-wide text-[#3d2a1c]/72 first:pt-0"
+  "shrink-0 pt-[clamp(0.45rem,1vh,0.65rem)] font-subheading text-[clamp(calc(0.88rem*var(--app-text-scale,1)),calc(1.15vw*var(--app-text-scale,1)),calc(1rem*var(--app-text-scale,1)))] font-black tracking-wide text-[#3d2a1c]/72 first:pt-0"
 
-// F-15(AC-02): GENERAL_SETTING_TEXT_SIZE("텍스트 크기") 설정의 실제 적용 대상 — 이 화면의
-// 본문 라벨은 app-text-scalable로 App.jsx가 반영한 --app-text-scale 배율을 그대로 따른다.
 const LABEL_CLASS =
-  "app-text-scalable min-w-0 flex-1 font-subheading text-[clamp(1.02rem,1.5vw,1.18rem)] font-bold leading-snug text-[#140c08]"
+  "min-w-0 flex-1 font-subheading text-[clamp(calc(1.02rem*var(--app-text-scale,1)),calc(1.5vw*var(--app-text-scale,1)),calc(1.18rem*var(--app-text-scale,1)))] font-bold leading-snug text-[#140c08]"
 
 const ACTION_BTN_CLASS =
   "interactive-scale relative block w-[clamp(7.1rem,15vw,9.5rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"

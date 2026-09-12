@@ -5,8 +5,8 @@ import {
   getInGameChatInputPlaceholderClass,
   getInGameChatInputViewportFixedHeightClass,
   getInGameChatInputViewportSinglelineClass,
-  getInGameChatScaledFontSize,
   getInGameChatTextScale,
+  getInGameChatTextScaleStyle,
   INGAME_CHAT_INPUT_VIEWPORT_EMPTY_CLASS,
   INGAME_CHAT_INPUT_VIEWPORT_FILLED_CLASS,
   INGAME_CHAT_INPUT_VIEWPORT_MASK_CLASS,
@@ -151,13 +151,11 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   const wrapRef = useRef(null)
   const textareaRef = useRef(null)
 
-  // F-15(AC-02): 채팅 글자 크기 설정 — textarea 자체는 자식을 가질 수 없어 메시지 행처럼
-  // 안쪽 span으로 감쌀 수 없으므로, 같은 clamp() 기반 폰트 크기를 scale배로 재계산해
-  // 인라인 스타일로 덮어쓴다. 기본값(scale=1)이면 null이라 기존 클래스 그대로 쓴다.
+  // F-15(AC-02): 채팅 글자 크기 설정 — 배율은 래퍼에 CSS 변수로만 얹고, textarea·
+  // placeholder의 타이포 클래스가 그 변수를 clamp 세 항에 곱해 쓴다(경계 보존).
   const chatTextSize = useSettingsStore(selectChatTextSize)
   const chatTextScale = getInGameChatTextScale(chatTextSize)
-  const scaledFontSize = getInGameChatScaledFontSize(variant, chatTextScale)
-  const scaledFontSizeStyle = scaledFontSize ? { fontSize: scaledFontSize } : undefined
+  const chatTextScaleStyle = getInGameChatTextScaleStyle(chatTextSize)
 
   // 입력값이 실제 화면에서 두 줄 이상으로 보이는지 표시합니다.
   const [isVisualMultiLine, setIsVisualMultiLine] = useState(false)
@@ -211,9 +209,10 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     textarea.scrollTop = 0
   }
 
+  // 글자 크기가 바뀌면 줄 높이·줄바꿈이 달라지므로 viewport를 다시 계산한다.
   useLayoutEffect(() => {
     syncViewport()
-  }, [value, hasText, scaledFontSize])
+  }, [value, hasText, chatTextScale])
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -280,10 +279,11 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     <div
       ref={wrapRef}
       className={wrapClass}
+      style={chatTextScaleStyle}
       onClick={() => textareaRef.current?.focus()}
     >
       {!hasText ? (
-        <span className={placeholderClass} aria-hidden="true" style={scaledFontSizeStyle}>
+        <span className={placeholderClass} aria-hidden="true">
           TYPE HERE...
         </span>
       ) : null}
@@ -299,7 +299,6 @@ const InGameChatInput = forwardRef(function InGameChatInput(
         onCompositionEnd={syncViewport}
         placeholder=""
         className={textareaClass}
-        style={scaledFontSizeStyle}
         aria-label="채팅 입력"
       />
     </div>
