@@ -67,6 +67,49 @@ function isUsableNotification(value) {
   return true
 }
 
+/**
+ * 이 원본 사건 키가 **알림 행으로 남는** 사건인가(R-IMPL #5).
+ *
+ * 복원 경계(아래 consumeSoundEvent)는 "곧 도착할 snapshot이 이 사건을 이미 알고 있을 수
+ * 있다"는 경우에만 적용해야 한다. 서버가 알림 행을 만드는 사건은 세 가지뿐이고, 그 키
+ * 모양은 notification.service.js의 friendRequestSourceKey·achievementSourceKey·
+ * SYSTEM_WELCOME이 정한다:
+ *   - friend-request:<요청 id>:received
+ *   - achievement:<정의 id>:granted
+ *   - system:<...>
+ *
+ * 친구 요청 **수락·거절**(friend-request:<id>:accepted|declined)처럼 알림 행이 없는 기존
+ * F-16 사건은 복원으로 알 길이 없다 — 복원 중이라는 이유로 그 사건의 최초 소리를 삼키면
+ * 다시 전달되지 않으므로 그냥 잃어버린다. 그래서 경계를 이 키 모양으로 제한한다.
+ */
+export function isNotificationBackedSourceKey(sourceKey) {
+  if (typeof sourceKey !== "string") return false
+  if (sourceKey.startsWith("system:")) return true
+  if (/^friend-request:[^:]+:received$/.test(sourceKey)) return true
+  if (/^achievement:[^:]+:granted$/.test(sourceKey)) return true
+  return false
+}
+
+/**
+ * PATCH 응답이 "서버가 이 알림의 읽음을 확정했다"는 증거인가(R-IMPL #2).
+ *
+ * 요청한 id와 같은 행이어야 하고, read_at이 **실제로 확정된 시각**이어야 한다. null·빈
+ * 응답·다른 행·해석할 수 없는 시각은 성공이 아니다 — 그런 응답을 ok로 돌려주면 화면은
+ * 읽음으로 표시하거나 대상으로 이동하지만 서버에는 미확인으로 남아, 재로그인하면 미확인이
+ * 되돌아온다(AC-02 위반).
+ */
+export function isConfirmedReadRow(row, notificationId) {
+  if (!isUsableNotification(row)) return false
+  if (row.id !== notificationId) return false
+  const readAt = row.readAt ?? null
+  if (readAt === null) return false
+  // 서버 계약은 ISO 문자열(또는 Date)이다. 숫자·객체 같은 다른 모양은 확정 증거로 받지
+  // 않는다 — Date.parse는 숫자를 관대하게 해석해서 "확정됨"으로 통과시켜 버린다.
+  if (readAt instanceof Date) return Number.isFinite(readAt.getTime())
+  if (typeof readAt !== "string" || readAt.trim().length === 0) return false
+  return Number.isFinite(Date.parse(readAt))
+}
+
 /** 최신순(생성 시각 내림차순, 동시각은 id 내림차순)으로 안정 정렬한다. */
 function compareNotifications(a, b) {
   const at = Date.parse(a?.createdAt ?? "")
@@ -117,6 +160,14 @@ const initialAccountState = () => ({
   soundSeen: new Set(),
   /** 초기 목록 복원을 마쳤는가. 마치기 전에 온 live는 아래 버퍼에 둔다. */
   snapshotLoaded: false,
+  /**
+   * 복원이 **지금 진행 중인가**(R-IMPL #5). beginResync와 loadSnapshot 시작이 세우고,
+   * 그 조회가 성공·실패로 정착할 때 내린다. 이 구간에 도착한 알림 사건은 곧 도착할
+   * snapshot과 겹칠 수 있으므로 소리 후보로 받지 않는다. 조회가 실패해 복원이 끝난
+   * 뒤에는(snapshotLoaded=false, restorePending=false) 다시 최초 소리를 허용한다 —
+   * 조회 실패로 기존 친구·업적 소리를 영구히 잃으면 그것이 F-16 회귀다.
+   */
+  restorePending: false,
   /** 리스너를 먼저 달았기 때문에 snapshot보다 먼저 도착할 수 있는 사건들. */
   liveBuffer: [],
   open: false,
@@ -189,7 +240,7 @@ export const useNotificationsStore = create((set, get) => ({
     if (accountId === null) return { ok: false, reason: "anonymous" }
 
     const requestGeneration = get().requestGeneration + 1
-    set({ requestGeneration, status: "loading", error: null })
+    set({ requestGeneration, status: "loading", error: null, restorePending: true })
 
     let data
     try {
@@ -197,7 +248,9 @@ export const useNotificationsStore = create((set, get) => ({
     } catch (error) {
       if (!get().isCurrent(accountGeneration, requestGeneration)) return { ok: false, reason: "stale" }
       // 실패를 빈 목록으로 위장하지 않는다 — 화면은 실패·재시도를 보여준다(AC-06).
-      set({ status: "error", error: error?.message ?? "알림을 불러오지 못했습니다." })
+      // 복원이 끝났으므로(실패로) 복원 경계를 내린다 — 계속 세워 두면 조회가 실패한 동안
+      // 들어온 기존 친구·업적 사건이 영구히 무음이 된다(R-IMPL #5).
+      set({ status: "error", error: error?.message ?? "알림을 불러오지 못했습니다.", restorePending: false })
       return { ok: false, reason: "error" }
     }
 
@@ -218,6 +271,7 @@ export const useNotificationsStore = create((set, get) => ({
       soundSeen,
       liveBuffer: [],
       snapshotLoaded: true,
+      restorePending: false,
       status: "success",
       error: null,
     })
@@ -244,6 +298,18 @@ export const useNotificationsStore = create((set, get) => ({
     if (accountId === null || accountId !== state.accountId) return false
     if (typeof sourceKey !== "string" || sourceKey.length === 0) return false
     if (state.soundSeen.has(sourceKey)) return false
+
+    // 복원 경계(R-IMPL #5). 초기 복원·재접속 재동기화가 **진행 중인** 동안 도착한 알림
+    // 사건은 곧 도착할 snapshot이 이미 담고 있을 수 있다 — 그 사건을 여기서 최초 처리로
+    // 인정하면 "조회·복원·재접속은 재생 0회"(AC-07)가 깨진다. 표식을 소모하지 않고
+    // 거절하므로, 복원이 그 사건을 실제로 담고 있으면 soundSeen으로 확정되고, 담고 있지
+    // 않으면 다음 실제 live 전달이 최초 후보가 된다.
+    //
+    // 알림 행이 없는 기존 사건(친구 수락·거절 등)은 이 경계를 적용하지 않는다 — 복원이
+    // 그 사건을 알 수 없으므로 삼키면 그대로 잃는다.
+    if (!state.snapshotLoaded && state.restorePending && isNotificationBackedSourceKey(sourceKey)) {
+      return false
+    }
 
     const soundSeen = new Set(state.soundSeen)
     soundSeen.add(sourceKey)
@@ -316,10 +382,22 @@ export const useNotificationsStore = create((set, get) => ({
     if (!get().isCurrent(accountGeneration)) return { ok: false, reason: "stale" }
 
     clearPending()
-    if (isUsableNotification(row)) {
-      set((state) => ({ items: mergeNotifications(state.items, [row]) }))
+
+    // 서버가 **이 알림의** 읽음을 확정했다는 증거가 없으면 성공이 아니다(R-IMPL #2).
+    // null 응답·다른 id의 행·read_at 없는 행은 항목별 오류로 남기고 미확인 상태를 유지한다 —
+    // 다른 행을 병합하거나 이동을 허용하지 않는다.
+    if (!isConfirmedReadRow(row, notificationId)) {
+      set((state) => ({
+        readErrors: {
+          ...state.readErrors,
+          [notificationId]: "읽음 확정 응답을 받지 못했습니다. 다시 시도해 주세요.",
+        },
+      }))
+      return { ok: false, reason: "unconfirmed" }
     }
-    return { ok: true, notification: isUsableNotification(row) ? row : null }
+
+    set((state) => ({ items: mergeNotifications(state.items, [row]) }))
+    return { ok: true, notification: row }
   },
 
   /**
@@ -327,7 +405,8 @@ export const useNotificationsStore = create((set, get) => ({
    * 취급한다(A-04). 그래서 snapshotLoaded를 내리고 버퍼를 비운다. 이미 받아 둔 목록과
    * soundSeen은 그대로 둔다 — 같은 계정이므로 과거 사건이 다시 울려서는 안 된다.
    */
-  beginResync: () => set({ snapshotLoaded: false, liveBuffer: [], readyState: "pending" }),
+  beginResync: () =>
+    set({ snapshotLoaded: false, restorePending: true, liveBuffer: [], readyState: "pending" }),
 
   /** ready ACK 상태 기록. 실패해도 조회·읽음·닫기를 잠그지 않는다(AC-07). */
   setReadyState: (readyState) => set({ readyState }),

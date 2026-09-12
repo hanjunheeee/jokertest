@@ -61,6 +61,7 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 | kind | `system-notification` (scope=account, notificationKey=`system-notification`) |
 | 생산자 | `backend/service/notification.service.js::ensureSystemWelcome` |
 | 생산 트리거 | `backend/socket/socket.js::registerNotificationHandlers`의 `notifications_ready` (세션 가드 통과 + `onlineUsers`의 현재 소켓 일치일 때만) |
+| 준비 신호 조건 | 수신 훅이 **그 접속에서** 목록 복원을 마쳤을 때만 1회. 접속 세대별로 재동기화하고, ACK가 없으면 제한 시간 뒤 최대 3회까지만 재시도한다(`useNotificationSocketEvents.js`) |
 | 안정 사건 ID | `notification:<notifications.id>` — 서버가 저장한 행 id (원본 중복 키는 `UNIQUE(user_id, source_key)`의 `system:notifications-available:v1`) |
 | 수신자 | `emitToUser(<검증된 계정 uuid>, 'notification_created', …)` |
 | 프런트 수신 | `frontend/src/domains/notifications/hooks/useNotificationSocketEvents.js` |
@@ -81,22 +82,60 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 
 ### 소리를 만들지 **않는** 경로 (F-17)
 
-`GET /notifications` · 초기 복원 · 복원 전 버퍼 병합 · 재접속 재동기화 · `PATCH …/read` ·
-`notifications_ready` 재시도 · 표시 설정 재활성화.
+`GET /notifications` · 초기 복원 · 복원 전 버퍼 병합 · 재접속 재동기화(그 구간에 도착한
+알림 사건 포함) · `PATCH …/read` · `notifications_ready` 재시도 · 표시 설정 재활성화.
+
+복원 경계는 **알림 행으로 남는 사건 키**(`friend-request:<id>:received` ·
+`achievement:<id>:granted` · `system:*`)에만 적용한다. 알림 행이 없는 기존 사건
+(`friend-request:<id>:accepted|declined` 등)은 복원이 알 수 없으므로 그 구간에도 최초
+소리를 잃지 않는다(`notifications.store.js::isNotificationBackedSourceKey`).
+
+### 검증 기록 (누가 · 언제 · 무엇을)
+
+같은 명령이라도 **누가 어느 커밋에서 돌렸는지**를 구분해 남긴다. 앞선 성공 기록은 그
+시점의 코드에 대한 것이고, 이후 변경을 검증하지 않는다.
+
+| 주체 / 시점 | 대상 | 결과 |
+| --- | --- | --- |
+| 구현자(worker), 최초 구현 세션 | `npm test --prefix frontend` | 1704 PASS |
+| 구현자(worker), 최초 구현 세션 | `npm test --prefix backend` | 1371 PASS · **154 skip**(격리 DB 없음) |
+| 구현자(worker), 최초 구현 세션 | `npm run build --prefix frontend` | PASS |
+| **운영자 공식 VERIFY-1..5, 01:21–01:33 KST, 후보 `0b04970f6d7c34b89a6000750e9b5e36a6774a75`** | 설치 2건 · frontend · build · 격리 DB 직렬 backend | frontend **1704 PASS 0 skip** · build **PASS** · backend **1525 PASS 0 skip**(698914ms) |
+| 구현자(worker), 이번 보수 세션(R-IMPL #1~#6) | `npm test --prefix frontend` | **1736 PASS 0 skip** |
+| 구현자(worker), 이번 보수 세션 | `npm run build --prefix frontend` | **PASS** |
+| 구현자(worker), 이번 보수 세션 | `npm test --prefix backend` | **1385 PASS · 161 skip**(격리 DB 없음) |
+
+- 운영자 VERIFY의 backend 1525 PASS 0 skip은 **후보 0b04970f의 코드**를 검증한 것이다.
+  이번 보수 세션에서 바뀐 코드와 새로 추가한 DB 시험 7건은 그 실행에 포함되지 않았다 —
+  다시 돌리기 전까지 **미검증**이다.
+- 이번 보수 세션의 backend skip 161건에는 `f17-notifications.integration.test.js` 27건
+  (기존 20 + 신규 7)이 들어 있다. 신규 7건은 실제 세션 가드 경로(`wrapSocketWithSessionGuard`
+  → `registerNotificationHandlers`, `registerConnectionHandlers`)와 0012 verify의
+  인덱스 컬럼·FK 거부를 실제 MySQL에서 확인하는 시험이며, **아직 한 번도 실행되지 않았다.**
 
 ### 이번에 확인한 것 / 확인하지 못한 것
 
-- 확인함(자동 시험): `frontend/src/domains/notifications/hooks/__tests__/notificationRuntime.test.js`,
-  `frontend/src/domains/notifications/components/__tests__/NotificationModal.test.js`,
+- 확인함(자동 시험, 격리 DB 불필요):
+  `frontend/src/domains/notifications/hooks/__tests__/notificationSocketEvents.test.js`
+  (실제 훅을 마운트해 connect/disconnect·접속 세대·늦은 ACK·ACK timeout 상한·소켓 교체·
+  cleanup·실제 `dispatchSfxEvent` 경로를 확인, 13건),
+  `.../hooks/__tests__/notificationRuntime.test.js`(store·재생기 계약, 40건),
+  `frontend/src/domains/lobby/hooks/__tests__/lobbyNotificationPanels.test.js`
+  (실제 모달·진입 버튼을 마운트한 계정 전환·지연 PATCH·같은 대상 재진입, 6건),
+  `.../components/__tests__/NotificationModal.test.js`,
   `frontend/src/shared/audio/__tests__/sfxPlayer.test.js`의 F-17 절,
-  `backend/services/achievementService.test.js`의 F-17 절.
-  `npm test --prefix frontend` 1704/1704 통과, `npm test --prefix backend` 1371 통과·154 skip,
-  `npm run build --prefix frontend` 성공.
-- **확인하지 못함**: `backend/tests/db/f17-notifications.integration.test.js`는
-  `F01_TEST_DATABASE_URL`이 없어 전부 skip이다 — 실제 MySQL 유일 제약·트랜잭션 롤백·
-  권한 404는 **미검증**이다.
+  `backend/__tests__/notifications.migration.test.js`(0012 verify의 인덱스 컬럼·FK·
+  NULL 계약 거부와 데이터 보존, 14건), `backend/services/achievementService.test.js`의 F-17 절.
+- **확인하지 못함**: `backend/tests/db/f17-notifications.integration.test.js` 27건 전부.
+  `F01_TEST_DATABASE_URL`이 없어 skip이다 — 실제 MySQL 유일 제약·트랜잭션 롤백·권한 404·
+  세션 가드 통과 경로·0012의 실제 스키마 거부는 이 세션에서 **미검증**이다.
 - **확인하지 못함**: 실제 외부 Chrome에서의 A/B 계정 친구 요청·업적 획득·시스템 안내 수신·
   재접속·off/mute·실패 중 이동 확인. 실제 자산 청음도 없다(자산 자체가 없다).
+  Chrome은 운영자 관문이며, 단위·통합 시험 통과를 브라우저 확인으로 기록하지 않는다.
+- 위 "재생 1회" 기록은 전부 **시험 전용 승인 fixture + 주입 매체의 `playCalls`**다. 배포
+  manifest의 `system-notification`은 여전히 `needs-review`이며, 그 상태에서는 Audio 생성 0·
+  재생 0·`asset-unreviewed` 사유 기록으로 끝난다는 것을 별도 시험으로 확인했다.
+  모의 재생을 실제 청음으로 기록하지 않는다. **SFX-DEFER-17은 계속 미완료다.**
 
 ## 투표 제출 사건의 중복 규칙 (AC-04)
 

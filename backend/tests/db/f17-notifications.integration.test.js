@@ -469,18 +469,62 @@ test('A-04: GET은 알림을 만들지도, 읽음으로 바꾸지도 않는다',
 // AC-07: 실제 소켓 수신 경계
 // ---------------------------------------------------------------------------
 
-/** registerNotificationHandlers가 붙는 최소 소켓 대역 — 세션 가드를 실제로 통과시킨다. */
+/** registerNotificationHandlers가 붙는 최소 소켓 대역. */
 function fakeSocket(uuid, socketId) {
     const listeners = new Map();
+    const emitted = [];
+    const disconnects = [];
     return {
         id: socketId,
         data: { user: { uuid, role: 'USER', sessionId: `session-${uuid}` } },
         on(event, listener) { listeners.set(event, listener); return this; },
-        emit() {},
-        disconnect() {},
+        emit(event, payload) { emitted.push({ event, payload }); return this; },
+        disconnect(close) { disconnects.push(close); return this; },
+        // matchmaking/gameSession 핸들러가 쓰는 채널 조작은 이 시험의 관심사가 아니다.
+        join() { return this; },
+        leave() { return this; },
+        removeAllListeners() { listeners.clear(); return this; },
         __fire(event, ...args) { return listeners.get(event)?.(...args); },
+        __has(event) { return listeners.has(event); },
+        __emitted: emitted,
+        __disconnects: disconnects,
     };
 }
+
+/**
+ * **실제 등록 순서 그대로** 소켓을 만든다(R-IMPL #5).
+ *
+ * registerConnectionHandlers는 wrapSocketWithSessionGuard를 먼저 부른 뒤
+ * registerNotificationHandlers를 부른다 — 그래서 notifications_ready도 매 수신마다
+ * sessionLifecycle.resolveSession을 통과해야 한다. 가드를 건너뛰고 핸들러만 등록하면
+ * "연결 후 로그아웃·정지된 소켓이 생산을 트리거하지 못한다"는 계약을 전혀 검증하지 못한다.
+ */
+function guardedSocket(uuid, socketId) {
+    const s = fakeSocket(uuid, socketId);
+    socket.__testables.wrapSocketWithSessionGuard(s);
+    socket.__testables.registerNotificationHandlers(s, uuid);
+    return s;
+}
+
+/** 조건이 참이 될 때까지(또는 제한 시간까지) 기다린다. 실제 DB 왕복을 포함하므로 필요하다. */
+const waitFor = async (predicate, { timeoutMs = 3000, stepMs = 5 } = {}) => {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, stepMs));
+    }
+    return predicate();
+};
+
+/**
+ * notifications_ready를 실제 세션 가드를 통과시켜 보내고, 결과가 정착할 때까지 기다린다.
+ * 가드가 세션을 거부하면 ACK 없이 force_disconnect만 나가므로 둘 중 하나를 기다린다.
+ */
+const fireGuardedReady = async (s, payload = {}) => {
+    const state = { ack: null };
+    await s.__fire('notifications_ready', payload, (result) => { state.ack = result; });
+    await waitFor(() => state.ack !== null || s.__emitted.some((e) => e.event === 'force_disconnect'));
+    return state.ack;
+};
 
 test('AC-07: 현재 소켓의 첫 정상 ready만 행 1·발행 1을 만들고, 반복 ready는 추가 0이다', async (t) => {
     if (unavailable(t)) return;
@@ -552,6 +596,119 @@ test('AC-07/A-05: 이 소켓이 더 이상 그 계정의 현재 소켓이 아니
     assert.equal(await db.Notification.count({ where: { user_id: userId } }), 0);
 });
 
+// --- 실제 등록 경로(세션 가드 통과) ------------------------------------------
+
+test('AC-07/R-IMPL#5: 세션 가드를 통과한 첫 ready만 행 1·발행 1이고, 반복 ready는 추가 0이다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('grd');
+    const emitted = [];
+    notificationService.__internal.__setDepsForTests({
+        emitToUser: (uuid, event, payload) => emitted.push({ uuid, event, payload }),
+    });
+
+    const onlineUsers = socket.__getOnlineUsersForTests();
+    onlineUsers.set(userId, 'socket-guard');
+    t.after(() => onlineUsers.delete(userId));
+
+    // 실제 순서: wrapSocketWithSessionGuard → registerNotificationHandlers.
+    const s = guardedSocket(userId, 'socket-guard');
+
+    assert.deepEqual(await fireGuardedReady(s), { ok: true, created: true });
+    assert.deepEqual(await fireGuardedReady(s), { ok: true, created: false });
+
+    assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1);
+    assert.equal(emitted.filter((e) => e.event === 'notification_created').length, 1);
+    assert.equal(
+        s.__emitted.filter((e) => e.event === 'force_disconnect').length, 0,
+        '정상 세션을 가드가 끊으면 안 된다',
+    );
+});
+
+test('AC-07/R-IMPL#5: 세션이 폐기된 소켓의 ready는 가드에서 끊기고 생성 0·발행 0이다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('revk');
+    const emitted = [];
+    notificationService.__internal.__setDepsForTests({
+        emitToUser: (uuid, event, payload) => emitted.push({ uuid, event, payload }),
+    });
+
+    const onlineUsers = socket.__getOnlineUsersForTests();
+    onlineUsers.set(userId, 'socket-revoked');
+    t.after(() => onlineUsers.delete(userId));
+
+    const s = guardedSocket(userId, 'socket-revoked');
+
+    // 연결 이후의 로그아웃(세션 폐기)과 같은 상태 — HTTP와 같은 기준으로 거부돼야 한다.
+    await db.UserSession.update({ is_online: false }, { where: { id: `session-${userId}` } });
+
+    const ack = await fireGuardedReady(s);
+
+    assert.equal(ack, null, '가드가 거부한 이벤트는 핸들러에 닿지 않으므로 ACK도 없다');
+    assert.equal(s.__emitted.filter((e) => e.event === 'force_disconnect').length, 1);
+    assert.deepEqual(s.__disconnects, [true], '가드는 소켓을 실제로 끊는다');
+    assert.equal(await db.Notification.count({ where: { user_id: userId } }), 0, '무효 세션은 생성 0이다');
+    assert.equal(emitted.filter((e) => e.event === 'notification_created').length, 0);
+});
+
+test('AC-07/A-05: 가드를 통과해도 현재 소켓이 아니면 생성 0이다(실제 등록 경로)', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('gstl');
+    const onlineUsers = socket.__getOnlineUsersForTests();
+    // 같은 계정의 새 로그인이 소켓을 이미 교체한 상태.
+    onlineUsers.set(userId, 'socket-new');
+    t.after(() => onlineUsers.delete(userId));
+
+    const s = guardedSocket(userId, 'socket-old');
+    const ack = await fireGuardedReady(s);
+
+    assert.deepEqual(ack, { ok: false, reason: 'STALE_SOCKET' });
+    assert.equal(await db.Notification.count({ where: { user_id: userId } }), 0);
+    assert.equal(
+        s.__emitted.filter((e) => e.event === 'force_disconnect').length, 0,
+        '세션은 유효하므로 가드가 끊을 이유가 없다',
+    );
+});
+
+test('AC-07/R-IMPL#5: registerConnectionHandlers가 등록한 notifications_ready도 가드 뒤에 있다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('conn');
+    const emitted = [];
+    notificationService.__internal.__setDepsForTests({
+        emitToUser: (uuid, event, payload) => emitted.push({ uuid, event, payload }),
+    });
+
+    const onlineUsers = socket.__getOnlineUsersForTests();
+    t.after(() => onlineUsers.delete(userId));
+
+    const s = fakeSocket(userId, 'socket-conn');
+    // 실제 연결 진입점. presence·방·세션 재동기화는 fire-and-forget으로 따로 돌고(실패해도
+    // 삼켜진다), 우리가 보는 것은 "알림 생산이 그 경계에서 분리돼 있는가"다.
+    const io = { sockets: { sockets: new Map() }, to: () => ({ emit() {} }) };
+    socket.__testables.registerConnectionHandlers(io, s);
+
+    assert.equal(s.__has('notifications_ready'), true, '실제 진입점이 이 이벤트를 등록해야 한다');
+    // handleConnection이 onlineUsers를 이 소켓으로 갱신할 때까지 기다린다.
+    assert.equal(await waitFor(() => onlineUsers.get(userId) === 'socket-conn'), true);
+
+    assert.deepEqual(await fireGuardedReady(s), { ok: true, created: true });
+    assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1);
+
+    // 연결 이후 세션이 폐기되면 같은 소켓의 다음 ready는 가드에서 끊긴다.
+    await db.UserSession.update({ is_online: false }, { where: { id: `session-${userId}` } });
+    assert.equal(await fireGuardedReady(s), null);
+    assert.equal(s.__emitted.filter((e) => e.event === 'force_disconnect').length, 1);
+    assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1, '추가 생성 0');
+    assert.equal(emitted.filter((e) => e.event === 'notification_created').length, 1, '추가 발행 0');
+});
+
 test('AC-07: 생산이 실패해도 ACK만 실패로 돌아가고 예외가 접속 처리로 새지 않는다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -618,4 +775,85 @@ test('AC-03: verify는 유일 인덱스가 없는 스키마를 성공으로 넘�
     // up을 다시 부르면 빠진 인덱스를 복구한다(중간 실패 상태 회복).
     await addNotifications.up(queryInterface, Sequelize);
     await addNotifications.verify(queryInterface);
+});
+
+test('AC-03/R-IMPL#4: 이름만 같은 UNIQUE(id)는 실제 MySQL에서도 verify를 통과하지 못한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('shape');
+    const { notification } = await notificationService.ensureSystemWelcome(userId);
+
+    const queryInterface = sequelize.getQueryInterface();
+    // 같은 이름으로 id만 덮는 유일 인덱스를 세운다 — 예전 verify는 이름과 unique 플래그만
+    // 봤기 때문에 이 스키마를 "적용됨"으로 통과시켰고, 그 상태에서는 같은 계정·같은 원본
+    // 사건의 알림이 둘 이상 쌓인다.
+    await queryInterface.removeIndex('notifications', addNotifications.UNIQUE_INDEX_NAME);
+    await queryInterface.addIndex('notifications', ['id'], {
+        name: addNotifications.UNIQUE_INDEX_NAME, unique: true,
+    });
+
+    await assert.rejects(
+        () => addNotifications.verify(queryInterface),
+        /기대 \[user_id, source_key\]/,
+    );
+
+    // 실패가 사용자 데이터를 지우지 않는다.
+    assert.equal(await db.Notification.count({ where: { id: notification.id } }), 1);
+
+    // 잘못된 인덱스를 치우고 up을 다시 부르면 올바른 모양으로 복구된다.
+    await queryInterface.removeIndex('notifications', addNotifications.UNIQUE_INDEX_NAME);
+    await addNotifications.up(queryInterface, Sequelize);
+    await addNotifications.verify(queryInterface);
+    assert.equal(await db.Notification.count({ where: { id: notification.id } }), 1);
+});
+
+test('AC-03/R-IMPL#4: users.uuid 외래 키가 빠진 스키마도 verify가 거부한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('fk');
+    await notificationService.ensureSystemWelcome(userId);
+
+    const queryInterface = sequelize.getQueryInterface();
+    const references = await queryInterface.getForeignKeyReferencesForTable('notifications');
+    const target = references.find((reference) => String(reference.columnName).toLowerCase() === 'user_id');
+    assert.ok(target, '0012는 user_id 외래 키를 만든다');
+
+    await queryInterface.removeConstraint('notifications', target.constraintName);
+
+    await assert.rejects(() => addNotifications.verify(queryInterface), /외래 키가 없습니다/);
+    assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1, 'verify 실패가 행을 지우면 안 된다');
+});
+
+test('AC-03/R-IMPL#4: 재실행 뒤에도 인덱스 컬럼·FK·행이 모두 그대로다(멱등 + 데이터 보존)', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('idem');
+    const { notification } = await notificationService.ensureSystemWelcome(userId);
+    await notificationService.markRead(userId, notification.id);
+
+    const queryInterface = sequelize.getQueryInterface();
+    const fieldsOf = (indexes, name) => (indexes.find((index) => index.name === name)?.fields ?? [])
+        .map((field) => (typeof field === 'string' ? field : field.attribute));
+
+    await addNotifications.up(queryInterface, Sequelize);
+    await addNotifications.up(queryInterface, Sequelize);
+    await addNotifications.verify(queryInterface);
+
+    const indexes = await queryInterface.showIndex('notifications');
+    assert.deepEqual(fieldsOf(indexes, addNotifications.UNIQUE_INDEX_NAME), ['user_id', 'source_key']);
+    assert.deepEqual(fieldsOf(indexes, addNotifications.LIST_INDEX_NAME), ['user_id', 'created_at']);
+
+    const references = await queryInterface.getForeignKeyReferencesForTable('notifications');
+    assert.ok(references.some((reference) => (
+        String(reference.columnName).toLowerCase() === 'user_id'
+        && String(reference.referencedTableName).toLowerCase() === 'users'
+        && String(reference.referencedColumnName).toLowerCase() === 'uuid'
+    )));
+
+    const row = await db.Notification.findOne({ where: { id: notification.id }, raw: true });
+    assert.ok(row.read_at, '재실행이 읽음 시각을 지우면 안 된다');
+    assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1);
 });

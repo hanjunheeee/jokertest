@@ -32,6 +32,53 @@ const REQUIRED_COLUMNS = [
     'id', 'user_id', 'type', 'source_key', 'title', 'body', 'target', 'created_at', 'read_at',
 ];
 
+/**
+ * 컬럼별로 verify가 반드시 확인하는 계약(R-IMPL #4).
+ *
+ * 이름만 맞는 컬럼은 계약이 아니다 — user_id가 nullable이면 "소유자 없는 알림"이 들어올 수
+ * 있고, read_at이 NOT NULL이면 "미확인" 상태를 표현할 수 없어 AC-02가 통째로 깨진다.
+ * 타입 문자열은 방언마다 표기가 달라(char(36) vs uuid) 비교하지 않는다 — allowNull과
+ * primaryKey만 본다.
+ */
+const COLUMN_CONTRACTS = Object.freeze({
+    id: { allowNull: false, primaryKey: true },
+    user_id: { allowNull: false },
+    type: { allowNull: false },
+    source_key: { allowNull: false },
+    title: { allowNull: false },
+    body: { allowNull: false },
+    created_at: { allowNull: false },
+    // 미확인 알림을 표현하는 유일한 방법이다.
+    read_at: { allowNull: true },
+    // target은 없는 알림도 있으므로 nullable이어야 한다.
+    target: { allowNull: true },
+});
+
+/**
+ * 인덱스 이름별로 **정확히 어떤 컬럼을 어느 순서로** 덮어야 하는지(R-IMPL #4).
+ *
+ * 이전 verify는 이름과 unique 플래그만 봤다. 그러면 `UNIQUE(id)`에
+ * notifications_user_source_unique라는 이름만 붙여 둔 불일치 스키마가 "적용됨"으로 통과해,
+ * 같은 계정·같은 원본 사건의 알림이 둘 이상 쌓이는 상태(AC-03 위반)를 막지 못한다.
+ */
+const EXPECTED_INDEXES = Object.freeze({
+    [UNIQUE_INDEX_NAME]: { unique: true, fields: ['user_id', 'source_key'] },
+    [LIST_INDEX_NAME]: { unique: false, fields: ['user_id', 'created_at'] },
+});
+
+/** users.uuid 참조 — 없으면 사라진 계정의 알림이 고아로 남는다. */
+const EXPECTED_FOREIGN_KEY = Object.freeze({
+    column: 'user_id', referencedTable: 'users', referencedColumn: 'uuid',
+});
+
+/**
+ * showIndex 결과의 필드 이름만 뽑는다. MySQL은 [{ attribute, length, order }]를 주고,
+ * 인메모리 시험 대역은 문자열 배열을 줄 수 있어 양쪽을 모두 받는다.
+ */
+const indexFieldNames = (index) => (Array.isArray(index?.fields) ? index.fields : []).map((field) => (
+    typeof field === 'string' ? field : (field?.attribute ?? field?.name ?? '')
+));
+
 module.exports = {
     name: '0012-add-notifications',
 
@@ -100,26 +147,82 @@ module.exports = {
 
         // 테이블만 있고 컬럼·인덱스가 어긋난 상태를 성공으로 넘기지 않는다 — 이 확인이
         // 없으면 예전 스키마 위에서 "적용됨"으로 기록되어 유일 제약 없이 운영된다.
+        //
+        // 불일치를 발견하면 **던지기만 한다.** 테이블을 지우거나 다시 만들지 않는다 —
+        // 운영 복구를 알림 테이블 무조건 삭제로 처리하면 이미 쌓인 사용자 알림과 read_at이
+        // 사라진다. 복구는 runbook의 백업·수동 절차가 담당한다.
         const describe = await queryInterface.describeTable(TABLE_NAMES.NOTIFICATIONS);
         const missingColumns = REQUIRED_COLUMNS.filter((column) => !Object.hasOwn(describe, column));
         if (missingColumns.length > 0) {
             throw new Error(`0012-add-notifications 적용 후에도 누락된 컬럼: [${missingColumns.join(', ')}]`);
         }
 
-        const indexes = await queryInterface.showIndex(TABLE_NAMES.NOTIFICATIONS);
-        for (const name of [UNIQUE_INDEX_NAME, LIST_INDEX_NAME]) {
-            if (!indexes.some((index) => index.name === name)) {
-                throw new Error(`0012-add-notifications 적용 후에도 ${name} 인덱스가 없습니다`);
+        for (const [column, contract] of Object.entries(COLUMN_CONTRACTS)) {
+            const actual = describe[column];
+            // describeTable이 allowNull을 주지 않는 방언에서는 그 항목을 판정하지 않는다
+            // (없는 정보를 불일치로 단정하지 않는다).
+            if (actual.allowNull !== undefined && actual.allowNull !== contract.allowNull) {
+                throw new Error(
+                    `0012-add-notifications의 ${column} 컬럼 NULL 허용이 계약과 다릅니다: ` +
+                    `기대 allowNull=${contract.allowNull}, 실제 allowNull=${actual.allowNull}`,
+                );
+            }
+            if (contract.primaryKey === true && actual.primaryKey !== undefined && actual.primaryKey !== true) {
+                throw new Error(`0012-add-notifications의 ${column} 컬럼이 기본 키가 아닙니다`);
             }
         }
 
-        const unique = indexes.find((index) => index.name === UNIQUE_INDEX_NAME);
-        if (unique && unique.unique !== true) {
-            throw new Error(`0012-add-notifications의 ${UNIQUE_INDEX_NAME}가 유일 인덱스가 아닙니다 — 중복 알림을 막지 못합니다`);
+        const indexes = await queryInterface.showIndex(TABLE_NAMES.NOTIFICATIONS);
+        for (const [name, expected] of Object.entries(EXPECTED_INDEXES)) {
+            const index = indexes.find((candidate) => candidate.name === name);
+            if (!index) {
+                throw new Error(`0012-add-notifications 적용 후에도 ${name} 인덱스가 없습니다`);
+            }
+
+            // 이름이 같아도 **덮는 컬럼이 다르면** 중복 방지·목록 조회 어느 것도 보장하지
+            // 못한다(예: 같은 이름의 UNIQUE(id)). 순서까지 정확히 대조한다.
+            const actualFields = indexFieldNames(index);
+            if (actualFields.join(',') !== expected.fields.join(',')) {
+                throw new Error(
+                    `0012-add-notifications의 ${name} 인덱스가 기대한 컬럼을 덮지 않습니다: ` +
+                    `기대 [${expected.fields.join(', ')}], 실제 [${actualFields.join(', ')}]`,
+                );
+            }
+
+            const isUnique = index.unique === true;
+            if (isUnique !== expected.unique) {
+                throw new Error(
+                    `0012-add-notifications의 ${name} 인덱스 unique 여부가 계약과 다릅니다: ` +
+                    `기대 ${expected.unique}, 실제 ${isUnique}` +
+                    (expected.unique ? ' — 중복 알림을 막지 못합니다' : ''),
+                );
+            }
+        }
+
+        // FK는 방언이 조회를 지원할 때만 확인한다. 지원하지 않는 대역(인메모리 시험 대역 등)
+        // 에서는 "확인하지 못했다"를 "통과"로도 "실패"로도 단정하지 않는다.
+        if (typeof queryInterface.getForeignKeyReferencesForTable === 'function') {
+            const references = await queryInterface.getForeignKeyReferencesForTable(TABLE_NAMES.NOTIFICATIONS);
+            const matches = (reference) => {
+                const same = (left, right) => String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase();
+                return same(reference?.columnName, EXPECTED_FOREIGN_KEY.column)
+                    && same(reference?.referencedTableName, EXPECTED_FOREIGN_KEY.referencedTable)
+                    && same(reference?.referencedColumnName, EXPECTED_FOREIGN_KEY.referencedColumn);
+            };
+            if (!(Array.isArray(references) && references.some(matches))) {
+                throw new Error(
+                    '0012-add-notifications 적용 후에도 notifications.user_id → users.uuid 외래 키가 없습니다 — ' +
+                    '소유자 없는 알림을 막지 못합니다',
+                );
+            }
         }
     },
 
     TABLE_NAMES,
     UNIQUE_INDEX_NAME,
     LIST_INDEX_NAME,
+    REQUIRED_COLUMNS,
+    COLUMN_CONTRACTS,
+    EXPECTED_INDEXES,
+    EXPECTED_FOREIGN_KEY,
 };

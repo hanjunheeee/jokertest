@@ -3,11 +3,17 @@ import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
 
 // ---------------------------------------------------------------------------
-// F-17 알림 상태·수신 계약 시험.
+// F-17 알림 **상태 저장소와 F-16 재생기** 계약 시험.
 //
-// **실제 production store와 실제 F-16 재생기**를 그대로 돌린다 — 핸들러를 복제하거나
-// 소스를 정규식으로 훑지 않는다. 네트워크(api 모듈)와 매체·타이머만 시험이 소유해서
-// 순서·실패를 결정적으로 재현한다.
+// 실제 production store(notifications.store.js)와 실제 재생기(createSfxPlayer)를 그대로
+// 돌린다 — 소스를 정규식으로 훑지 않는다. 네트워크(api 모듈)와 매체·타이머만 시험이
+// 소유해서 순서·실패를 결정적으로 재현한다.
+//
+// 범위를 정확히 적는다(R-IMPL #5): **이 파일은 useNotificationSocketEvents를 마운트하지
+// 않는다.** 아래 receiveLiveEnvelope는 훅이 아니라, 훅과 같은 순서로 store·재생기를 부르는
+// 시험용 호출자다 — 그래서 이 파일로는 접속 수명(connect/disconnect·늦은 ACK·소켓 교체·
+// cleanup)을 증명할 수 없다. 그것은 실제 훅을 React 루트에 마운트하는
+// ./notificationSocketEvents.test.js가 담당한다.
 //
 // 중요(A-07): "재생됐다"를 확인하는 시험들은 **시험 전용 fixture manifest**와 가짜 매체를
 // 쓴다. 이것은 배포 자산 검토도, 실제 청음도 아니다. 실제 배포 manifest(SFX_MANIFEST)의
@@ -39,6 +45,8 @@ const {
   mergeNotifications,
   selectVisibleNotifications,
   selectUnreadCount,
+  isNotificationBackedSourceKey,
+  isConfirmedReadRow,
   __setNotificationsApiForTests,
 } = await import("../../store/notifications.store.js")
 const { useAuthStore } = await import("../../../auth/store/auth.store.js")
@@ -216,6 +224,91 @@ test("A-04: 복원 전에 도착한 live는 버퍼에 모였다가 복원과 함
   )
 })
 
+// ---------------------------------------------------------------------------
+// 복원 경계(R-IMPL #5) — 복원이 진행 중인 동안 알림 사건은 소리 후보가 아니다
+// ---------------------------------------------------------------------------
+
+test("R-IMPL#5: 복원이 진행 중이면 아직 못 본 업적·친구 수신 사건도 소리 후보가 아니다", async () => {
+  loginAs(ACCOUNT_A)
+  const slow = deferred()
+  __setNotificationsApiForTests({ fetchNotificationsApi: () => slow.promise })
+
+  const loading = useNotificationsStore.getState().loadSnapshot()
+
+  // 예전 구현은 snapshotLoaded=false면 아무 키나 최초 처리로 인정했다 — 그래서 복원이
+  // 끝나기 전에 도착한 기존 업적·친구 수신 사건이 소리를 냈고, 곧 도착한 snapshot이 같은
+  // 사건을 담고 있어도 이미 울린 뒤였다.
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:record-1-masquerade:granted"),
+    false,
+    "복원 중 업적 사건은 복원 경계 안이다",
+  )
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:11:received"),
+    false,
+    "복원 중 친구 수신 사건도 복원 경계 안이다",
+  )
+
+  slow.resolve([])
+  await loading
+
+  // 복원이 끝난 뒤 **새** 사건은 정상적으로 최초 처리다(경계가 사건을 영구히 삼키지 않는다).
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:record-1-masquerade:granted"),
+    true,
+  )
+})
+
+test("R-IMPL#5: 알림 행이 없는 기존 친구 수락·거절 사건은 복원 중에도 최초 소리를 잃지 않는다", async () => {
+  loginAs(ACCOUNT_A)
+  const slow = deferred()
+  __setNotificationsApiForTests({ fetchNotificationsApi: () => slow.promise })
+
+  const loading = useNotificationsStore.getState().loadSnapshot()
+
+  // 서버는 수락·거절로 알림 행을 만들지 않는다 — 복원이 그 사건을 알 길이 없으므로 여기서
+  // 삼키면 그대로 잃는다(F-16 회귀).
+  assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), true)
+  assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:declined"), true)
+  // 단, 같은 사건은 두 번째부터 막힌다.
+  assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), false)
+
+  slow.resolve([])
+  await loading
+})
+
+test("R-IMPL#5: 복원이 실패해 끝나면 기존 사건의 최초 소리를 다시 허용한다", async () => {
+  loginAs(ACCOUNT_A)
+  __setNotificationsApiForTests({
+    fetchNotificationsApi: async () => {
+      throw new Error("조회 실패")
+    },
+  })
+
+  const result = await useNotificationsStore.getState().loadSnapshot()
+  assert.equal(result.ok, false)
+  assert.equal(useNotificationsStore.getState().snapshotLoaded, false)
+
+  // 조회가 실패한 상태로 복원 경계를 계속 세워 두면 기존 업적·친구 소리가 영구히 사라진다.
+  assert.equal(
+    useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:noble-win-10:granted"),
+    true,
+    "조회 실패가 기존 사건의 소리를 영구히 삼키면 안 된다",
+  )
+})
+
+test("R-IMPL#5: 복원 경계는 알림 행으로 남는 키 모양에만 적용된다", () => {
+  assert.equal(isNotificationBackedSourceKey("system:notifications-available:v1"), true)
+  assert.equal(isNotificationBackedSourceKey("friend-request:42:received"), true)
+  assert.equal(isNotificationBackedSourceKey("achievement:record-1-masquerade:granted"), true)
+
+  assert.equal(isNotificationBackedSourceKey("friend-request:42:accepted"), false)
+  assert.equal(isNotificationBackedSourceKey("friend-request:42:declined"), false)
+  assert.equal(isNotificationBackedSourceKey("ui-click:7"), false)
+  assert.equal(isNotificationBackedSourceKey("game:1:day:2:round:1:actor:u:vote:1"), false)
+  assert.equal(isNotificationBackedSourceKey(null), false)
+})
+
 test("AC-03: 같은 봉투를 live 전후·조회 전후로 반복해도 행이 늘지 않는다", async () => {
   loginAs(ACCOUNT_A)
   const row = notification({ id: "dup" })
@@ -278,6 +371,83 @@ test("AC-02: 읽음 실패는 성공으로 위장하지 않고 항목별 오류�
     1,
     "실패했는데 미확인 표시를 지우면 안 된다",
   )
+})
+
+// ---------------------------------------------------------------------------
+// 읽음 확정(AC-02 / R-IMPL #2) — 확정 증거가 없는 응답을 성공으로 돌려주지 않는다
+// ---------------------------------------------------------------------------
+
+/** 확정되지 않은 PATCH 응답들. 어느 것도 "읽음 성공"이 아니다. */
+const UNCONFIRMED_RESPONSES = [
+  { label: "null 응답", make: () => null },
+  { label: "undefined 응답", make: () => undefined },
+  { label: "빈 객체", make: () => ({}) },
+  { label: "다른 알림 id", make: () => notification({ id: "other", readAt: "2026-09-13T03:00:00.000Z" }) },
+  { label: "readAt 없음", make: (id) => notification({ id, readAt: null }) },
+  { label: "해석할 수 없는 readAt", make: (id) => notification({ id, readAt: "언제쯤" }) },
+  { label: "readAt이 숫자", make: (id) => notification({ id, readAt: 0 }) },
+]
+
+for (const scenario of UNCONFIRMED_RESPONSES) {
+  test(`AC-02/R-IMPL#2: ${scenario.label}은 성공이 아니라 항목별 오류로 남고 미확인 수가 유지된다`, async () => {
+    loginAs(ACCOUNT_A)
+    const row = notification({ id: "target" })
+    __setNotificationsApiForTests({
+      fetchNotificationsApi: async () => [row],
+      markNotificationReadApi: async (id) => scenario.make(id),
+    })
+    await useNotificationsStore.getState().loadSnapshot()
+
+    const result = await useNotificationsStore.getState().markRead("target")
+
+    assert.equal(result.ok, false, scenario.label)
+    assert.equal(result.reason, "unconfirmed")
+    assert.ok(useNotificationsStore.getState().readErrors.target, "재시도할 수 있는 오류가 남아야 한다")
+    assert.deepEqual(useNotificationsStore.getState().readPendingIds, [])
+    assert.equal(
+      selectUnreadCount(useNotificationsStore.getState().items, buildDefaultGeneralChecks()),
+      1,
+      "확정되지 않은 응답으로 미확인 표시를 지우면 안 된다",
+    )
+    assert.equal(
+      useNotificationsStore.getState().items.some((item) => item.id === "other"),
+      false,
+      "요청하지 않은 다른 행을 병합하면 안 된다",
+    )
+  })
+}
+
+test("AC-02/R-IMPL#2: 확정되지 않은 응답 뒤 재시도가 성공하면 읽음이 확정된다", async () => {
+  loginAs(ACCOUNT_A)
+  const row = notification({ id: "retry-target" })
+  let attempts = 0
+  __setNotificationsApiForTests({
+    fetchNotificationsApi: async () => [row],
+    markNotificationReadApi: async (id) => {
+      attempts += 1
+      if (attempts === 1) return { ...row, readAt: null }
+      return { ...row, id, readAt: "2026-09-13T03:00:00.000Z" }
+    },
+  })
+  await useNotificationsStore.getState().loadSnapshot()
+
+  assert.equal((await useNotificationsStore.getState().markRead("retry-target")).ok, false)
+  useNotificationsStore.getState().clearReadError("retry-target")
+
+  const second = await useNotificationsStore.getState().markRead("retry-target")
+  assert.equal(second.ok, true)
+  assert.equal(second.notification.readAt, "2026-09-13T03:00:00.000Z")
+  assert.equal(selectUnreadCount(useNotificationsStore.getState().items, buildDefaultGeneralChecks()), 0)
+  assert.deepEqual(useNotificationsStore.getState().readErrors, {})
+})
+
+test("R-IMPL#2: isConfirmedReadRow는 요청한 id와 확정된 read_at만 인정한다", () => {
+  const ok = notification({ id: "x", readAt: "2026-09-13T03:00:00.000Z" })
+  assert.equal(isConfirmedReadRow(ok, "x"), true)
+  assert.equal(isConfirmedReadRow({ ...ok, readAt: new Date("2026-09-13T03:00:00.000Z") }, "x"), true)
+  assert.equal(isConfirmedReadRow(ok, "y"), false)
+  assert.equal(isConfirmedReadRow({ ...ok, readAt: null }, "x"), false)
+  assert.equal(isConfirmedReadRow(null, "x"), false)
 })
 
 test("A-04: GET 시작 → live 수신 → 읽음 성공 → 오래된 GET 완료 순서에서도 항목과 읽음이 유지된다", async () => {
@@ -520,8 +690,9 @@ function createRecordingRuntime({ manifest, loadAsset } = {}) {
 }
 
 /**
- * 실제 수신 경로를 그대로 재현한다 — useNotificationSocketEvents의 live 분기와 **같은
- * 순서**(목록 반영 → 계정/origin 대조 → 원본 키 소모 → dispatch)로 부른다.
+ * store·재생기를 훅과 **같은 순서**(목록 반영 → 계정/origin 대조 → 원본 키 소모 →
+ * dispatch)로 부르는 시험용 호출자다. **실제 훅이 아니다** — 접속 수명과 실제 dispatch
+ * 배선은 notificationSocketEvents.test.js가 실제 훅을 마운트해서 확인한다.
  */
 function receiveLiveEnvelope(player, accountId, payload) {
   const store = useNotificationsStore.getState()
