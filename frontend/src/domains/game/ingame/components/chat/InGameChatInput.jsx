@@ -299,6 +299,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
         onCompositionEnd={syncViewport}
         placeholder=""
         className={textareaClass}
+        style={{ fontSize: inputClass.match(/text-\[(clamp\([^\]]+\))\]/)?.[1] }}
         aria-label="채팅 입력"
       />
     </div>
@@ -306,3 +307,4 @@ const InGameChatInput = forwardRef(function InGameChatInput(
 })
 
 export default InGameChatInput
+
