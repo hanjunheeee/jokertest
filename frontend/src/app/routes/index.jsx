@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import ViewportShell from "@/shared/layouts/viewportShell";
 import LoginPage from "@/domains/auth/pages/LoginPage"
 import ProtectedRoute from "@/shared/ui/ProtectedRoute";
@@ -15,7 +15,9 @@ import GameResultPage from "@/domains/game/result/page/GameResultPage";
 import SettingPage from "@/domains/settings/pages/SettingPage.jsx";
 import StorePage from "@/domains/store/pages/StorePage.jsx";
 import LibraryPage from "@/domains/library/pages/LibraryPage.jsx";
-import PodiumPage from "@/domains/podium/pages/PodiumPage.jsx";
+// F-18(AC-05/AC-06): 명예의 전당(/podium) 진입은 비활성화합니다. PodiumPage를 더 이상
+// import하지 않으므로 어떤 화면도 이 페이지를 그리지 않지만, podium 도메인의 페이지·
+// 컴포넌트·이미지 소스는 저장소에 그대로 보존합니다(삭제하지 않습니다).
 
 // 앱 전체 라우터입니다.
 // ViewportShell이 공통 화면 폭과 좌우 배너를 담당하고, 로그인 이후 페이지는 ProtectedRoute 아래에 둡니다.
@@ -43,7 +45,9 @@ export const router = createBrowserRouter([
           { path: "/setting", element: <SettingPage /> },
           { path: "/store", element: <StorePage /> },
           { path: "/library", element: <LibraryPage /> },
-          { path: "/podium", element: <PodiumPage /> },
+          // 보호 경계는 그대로 둡니다 — 로그인하지 않은 사용자는 ProtectedRoute가 먼저
+          // /login으로 보내고, 로그인한 사용자만 여기서 /lobby로 되돌아갑니다.
+          { path: "/podium", element: <Navigate to="/lobby" replace /> },
         ],
       },
     ],

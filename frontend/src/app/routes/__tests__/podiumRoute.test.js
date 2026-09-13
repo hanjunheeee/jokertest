@@ -263,24 +263,38 @@ export function extractProtectedRouteChildrenBlock(src) {
   return src.slice(bracketStart, bracketEnd + 1)
 }
 
-test("index.jsx가 PodiumPage를 podium 도메인 경로에서 import한다", () => {
-  assert.match(
+// F-18(AC-05): /podium 진입은 비활성화됐다. index.jsx는 더 이상 PodiumPage를 import하지
+// 않고, 보호 구간 안의 /podium은 <Navigate to="/lobby" replace />로 등록된다. podium 도메인
+// 소스 자체는 보존되므로(AC-06), "파일이 없다"가 아니라 "라우터가 더 이상 그리지 않는다"를
+// 검사한다.
+const PODIUM_REDIRECT_PATTERN =
+  /\{\s*path:\s*"\/podium",\s*element:\s*<Navigate\s+to="\/lobby"\s+replace\s*\/>\s*\}/
+
+test("index.jsx가 PodiumPage를 더 이상 import하지 않고, 대신 react-router-dom의 Navigate를 import한다", () => {
+  assert.equal(
+    /import\s+PodiumPage\s+from\s+"@\/domains\/podium\/pages\/PodiumPage\.jsx"/.test(source),
+    false,
+    "비활성화된 /podium이 아직 PodiumPage를 import하고 있습니다.",
+  )
+
+  assertMatchInCode(
     source,
-    /import\s+PodiumPage\s+from\s+"@\/domains\/podium\/pages\/PodiumPage\.jsx"/,
+    /import\s*\{[^}]*\bNavigate\b[^}]*\}\s*from\s*"react-router-dom"/,
+    "리다이렉트에 쓸 Navigate를 react-router-dom에서 import하지 않았습니다.",
   )
 })
 
-test("/podium 경로가 ProtectedRoute의 children 배열 안에 등록되어 있다", () => {
+test("/podium 경로가 ProtectedRoute의 children 배열 안에서 /lobby로 replace 이동하도록 등록되어 있다", () => {
   const childrenBlock = extractProtectedRouteChildrenBlock(source)
 
   assertMatchInCode(
     childrenBlock,
-    /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/,
-    "ProtectedRoute 자식 목록에 /podium → <PodiumPage /> 등록이 없습니다.",
+    PODIUM_REDIRECT_PATTERN,
+    "ProtectedRoute 자식 목록에 /podium → <Navigate to=\"/lobby\" replace /> 등록이 없습니다.",
   )
 })
 
-test("/podium 경로 등록은 ProtectedRoute 밖(로그인 전 접근 가능 구간)에는 없다", () => {
+test("/podium 비활성 등록은 ProtectedRoute 밖(로그인 전 접근 가능 구간)에는 없고, 활성 PodiumPage 등록도 남아 있지 않다", () => {
   const protectedRouteIdx = source.indexOf("<ProtectedRoute")
   const beforeProtectedRoute = source.slice(0, protectedRouteIdx)
 
@@ -288,6 +302,13 @@ test("/podium 경로 등록은 ProtectedRoute 밖(로그인 전 접근 가능 �
 
   const podiumOccurrences = source.split('"/podium"').length - 1
   assert.equal(podiumOccurrences, 1, "/podium 경로가 중복 등록되어 있습니다.")
+
+  // 보호 경계를 옮기지 않았는지: 미인증 사용자는 여전히 ProtectedRoute가 먼저 가로챈다.
+  assert.equal(
+    /element:\s*<PodiumPage\s*\/>/.test(source),
+    false,
+    "어떤 라우트도 더 이상 <PodiumPage />를 그리면 안 됩니다.",
+  )
 })
 
 test("extractProtectedRouteChildrenBlock은 진짜 children: 앞에 있는 주석/문자열 속 가짜 children:·대괄호를 무시한다", () => {
@@ -303,7 +324,7 @@ test("extractProtectedRouteChildrenBlock은 진짜 children: 앞에 있는 주�
             element: <ProtectedRoute />,
             children: [
               { path: "/mypage", element: <MyPage /> },
-              { path: "/podium", element: <PodiumPage /> },
+              { path: "/podium", element: <Navigate to="/lobby" replace /> },
             ],
           },
         ],
@@ -313,7 +334,7 @@ test("extractProtectedRouteChildrenBlock은 진짜 children: 앞에 있는 주�
 
   const block = extractProtectedRouteChildrenBlock(decoySource)
 
-  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assertMatchInCode(block, PODIUM_REDIRECT_PATTERN)
   assert.equal(block.includes("decoy"), false)
   assert.ok(block.includes("/mypage"))
 })
@@ -330,7 +351,7 @@ test("extractProtectedRouteChildrenBlock은 ProtectedRoute와 무관한 형제 �
           },
           {
             element: <ProtectedRoute />,
-            children: [{ path: "/podium", element: <PodiumPage /> }],
+            children: [{ path: "/podium", element: <Navigate to="/lobby" replace /> }],
           },
         ],
       },
@@ -339,7 +360,7 @@ test("extractProtectedRouteChildrenBlock은 ProtectedRoute와 무관한 형제 �
 
   const block = extractProtectedRouteChildrenBlock(siblingSource)
 
-  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assertMatchInCode(block, PODIUM_REDIRECT_PATTERN)
   assert.equal(block.includes("/other"), false)
 })
 
@@ -350,7 +371,7 @@ test("extractProtectedRouteChildrenBlock은 children 배열 안 문자열에 들
         element: <ProtectedRoute />,
         children: [
           { path: "/weird", element: <Weird className="w-[10px]" /> },
-          { path: "/podium", element: <PodiumPage /> },
+          { path: "/podium", element: <Navigate to="/lobby" replace /> },
         ],
       },
     ])
@@ -358,7 +379,7 @@ test("extractProtectedRouteChildrenBlock은 children 배열 안 문자열에 들
 
   const block = extractProtectedRouteChildrenBlock(bracketInStringSource)
 
-  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assertMatchInCode(block, PODIUM_REDIRECT_PATTERN)
   assertMatchInCode(block, /\/weird/)
 })
 
@@ -373,7 +394,7 @@ test("extractProtectedRouteChildrenBlock은 ProtectedRoute 객체의 형제 속�
             meta: { children: ["decoy-nested-not-a-route-array"] },
             children: [
               { path: "/mypage", element: <MyPage /> },
-              { path: "/podium", element: <PodiumPage /> },
+              { path: "/podium", element: <Navigate to="/lobby" replace /> },
             ],
           },
         ],
@@ -383,7 +404,7 @@ test("extractProtectedRouteChildrenBlock은 ProtectedRoute 객체의 형제 속�
 
   const block = extractProtectedRouteChildrenBlock(nestedSiblingPropertySource)
 
-  assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+  assertMatchInCode(block, PODIUM_REDIRECT_PATTERN)
   assert.equal(block.includes("decoy-nested-not-a-route-array"), false)
   assert.ok(block.includes("/mypage"))
 })
@@ -394,7 +415,7 @@ test("assertMatchInCode는 주석 안에만 있는 가짜 경로 등록을 실�
       {
         element: <ProtectedRoute />,
         children: [
-          // { path: "/podium", element: <PodiumPage /> } -- 아직 실제로는 등록 안 함
+          // { path: "/podium", element: <Navigate to="/lobby" replace /> } -- 아직 실제로는 등록 안 함
           { path: "/mypage", element: <MyPage /> },
         ],
       },
@@ -404,6 +425,31 @@ test("assertMatchInCode는 주석 안에만 있는 가짜 경로 등록을 실�
   const block = extractProtectedRouteChildrenBlock(commentOnlyRegistrationSource)
 
   assert.throws(() => {
-    assertMatchInCode(block, /\{\s*path:\s*"\/podium",\s*element:\s*<PodiumPage\s*\/>\s*\}/)
+    assertMatchInCode(block, PODIUM_REDIRECT_PATTERN)
+  })
+})
+
+test("보호 라우트 밖에 등록된 /podium 리다이렉트는 ProtectedRoute 자식 검사에서 인정되지 않는다", () => {
+  // F-18(AC-05): "리다이렉트를 만들었다"만으로는 부족하다 — 보호 경계 밖에 두면 미인증
+  // 사용자가 /login을 거치지 않고 곧장 /lobby로 튕겨 나간다.
+  const outsideProtectedRouteSource = `
+    export const router = createBrowserRouter([
+      {
+        element: <ViewportShell />,
+        children: [
+          { path: "/podium", element: <Navigate to="/lobby" replace /> },
+          {
+            element: <ProtectedRoute />,
+            children: [{ path: "/mypage", element: <MyPage /> }],
+          },
+        ],
+      },
+    ])
+  `
+
+  const block = extractProtectedRouteChildrenBlock(outsideProtectedRouteSource)
+
+  assert.throws(() => {
+    assertMatchInCode(block, PODIUM_REDIRECT_PATTERN)
   })
 })

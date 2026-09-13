@@ -1,9 +1,10 @@
 // 파일 역할: LobbyProfileArea.jsx - 화면을 구성하는 컴포넌트입니다.
 import { LOBBY_PROFILE_SHORTCUT_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
 import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
+import ProfileEditButton from "@/domains/user/components/MyPageLayout/ProfileEditButton.jsx"
 
 // 로비 오른쪽 위의 마이프로필 배너 영역입니다.
-export default function LobbyProfileArea({ profile, loading, onMyPage, onAccount }) {
+export default function LobbyProfileArea({ profile, loading, onMyPage, onAccount, onEditProfile }) {
   if (loading || !profile) return null
 
   return (
@@ -19,6 +20,11 @@ export default function LobbyProfileArea({ profile, loading, onMyPage, onAccount
         showProfilePortrait
         profile={profile}
       />
+
+      {/* F-18(AC-04): 마이페이지가 쓰는 바로 그 프로필 수정 버튼을 배너와 형제 요소로
+          재사용한다 — 배너 클릭(마이페이지 이동)·톱니(계정 설정)와 겹치지 않게 배너 바깥에
+          둔다. 새 편집기를 만들지 않고, 클릭은 LobbyPage가 소유한 열림 상태만 바꾼다. */}
+      {typeof onEditProfile === "function" ? <ProfileEditButton onClick={onEditProfile} /> : null}
     </div>
   )
 }
