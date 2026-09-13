@@ -35,7 +35,10 @@ const addEconomyLoadoutRevision = require('../db/migrations/0010-add-economy-loa
 // F-14: 직업별 장착 스킨 컬럼도 실제 배포 명령에서 순서대로 적용한다(economy.service.js의
 // equipItem 확장 슬롯 참고).
 const addEconomyLoadoutJobSkins = require('../db/migrations/0011-add-economy-loadout-job-skins');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins];
+// F-17: 알림 원본 테이블과 (user_id, source_key) 유일 제약도 실제 배포 명령에서 순서대로
+// 적용한다(notification.service.js의 중복 방지 근거 — AC-03).
+const addNotifications = require('../db/migrations/0012-add-notifications');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

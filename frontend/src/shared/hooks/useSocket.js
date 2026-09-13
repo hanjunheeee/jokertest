@@ -17,6 +17,13 @@ export function useSocket() {
     // 로그인한 상태일 때만 socket 연결을 만듭니다.
     const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
 
+    // F-17(A-05): 계정 uuid도 함께 본다. 예전에는 effect dependency가 [isLoggedIn, logout]
+    // 뿐이라, A에서 로그아웃하지 않고 곧장 B로 바뀌는 전환(isLoggedIn이 계속 true)에서
+    // **A의 소켓이 그대로 살아남았다** — 그 소켓은 A의 쿠키로 handshake한 연결이므로 B의
+    // 화면이 A에게 가야 할 사건을 계속 받는다. uuid가 바뀌면 cleanup이 돌아 기존 소켓을
+    // 끊고 새 쿠키로 다시 연결한다.
+    const accountUuid = useAuthStore((state) => state.user?.uuid ?? null);
+
     // 서버가 강제 접속 종료를 알렸을 때 전역 로그인 상태를 비우기 위한 함수입니다.
     const logout = useAuthStore((state) => state.logout);
 
@@ -127,7 +134,7 @@ export function useSocket() {
             // App에 넘기던 socket 인스턴스도 비웁니다.
             setSocketInstance(null);
         };
-    }, [isLoggedIn, logout]);
+    }, [isLoggedIn, accountUuid, logout]);
 
     return socketInstance;
 }

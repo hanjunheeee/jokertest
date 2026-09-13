@@ -15,9 +15,16 @@ import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 받은 친구 요청 한 명을 보여주고 수락/거절 버튼을 제공합니다.
-export default function IncomingFriendRow({ requestId, name, onAccept, onDecline }) {
+export default function IncomingFriendRow({ requestId, name, onAccept, onDecline, targeted = false }) {
   return (
-    <li className={RECOMMENDED_FRIEND_ROW_CLASS}>
+    <li
+      className={RECOMMENDED_FRIEND_ROW_CLASS}
+      data-request-id={requestId}
+      // F-17(AC-02): 알림에서 이 요청을 보러 들어온 경우 그 행을 가리킨다. 표시만 바꾸고
+      // 수락·거절을 대신 수행하지 않는다.
+      data-notification-target={targeted ? "true" : undefined}
+      aria-current={targeted ? "true" : undefined}
+    >
       <PublicAsset
         src={FRIEND_LIST_ASSETS.rowFrame}
         alt=""

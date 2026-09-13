@@ -41,7 +41,7 @@ function ForbiddenRecordsOverlayArt({ pageIndex, src }) {
 }
 
 /** 금지된 기록 — 우측 반페이지(핏자국/클리어 일러스트 + 도전과제) */
-export default function ForbiddenRecordsRightPage({ pageIndex = 0 }) {
+export default function ForbiddenRecordsRightPage({ pageIndex = 0, targetAchievementId = null }) {
   const { id, right } = getForbiddenRecordsPage(pageIndex)
   const { locked, unlockCondition, unlockProgress, unlockRewards, progressUnit, clearIllust, body } = right
   // F-12 AC-01/AC-06: 서버 업적 상태로 연결한다 — 이 spread의 id가 곧 achievementDefinitions.js의
@@ -59,9 +59,18 @@ export default function ForbiddenRecordsRightPage({ pageIndex = 0 }) {
   const challengeClearIllustSrc =
     clearIllust ?? getForbiddenRecordsChallengeClearIllust(pageIndex + 1)
 
+  // F-17(AC-02): 알림이 가리킨 업적과 **지금 실제로 렌더되는 페이지의 id**를 직접 대조한다
+  // (매핑표를 믿지 않고 그 값을 쓰는 자리에서 확인한다). 표시만 바꾸고 진행률·지급에는
+  // 관여하지 않는다.
+  const targeted = targetAchievementId !== null && targetAchievementId === id
+  const pageMarkers = {
+    "data-record-id": id,
+    "data-notification-target": targeted ? "true" : undefined,
+  }
+
   if (!locked) {
     return (
-      <div className={LIBRARY_BOOK_RIGHT_PAGE_CLASS}>
+      <div className={LIBRARY_BOOK_RIGHT_PAGE_CLASS} {...pageMarkers}>
         <p className={LIBRARY_FORBIDDEN_UNLOCKED_BODY_CLASS}>
           {body ?? "해금된 기록 본문이 이 영역에 표시됩니다."}
         </p>
@@ -71,7 +80,7 @@ export default function ForbiddenRecordsRightPage({ pageIndex = 0 }) {
 
   if (challengeCleared) {
     return (
-      <div className={LIBRARY_BOOK_RIGHT_PAGE_LOCKED_CLASS}>
+      <div className={LIBRARY_BOOK_RIGHT_PAGE_LOCKED_CLASS} {...pageMarkers}>
         <div className={LIBRARY_FORBIDDEN_LOCK_LAYER_CLASS}>
           <ForbiddenRecordsOverlayArt
             pageIndex={pageIndex}
@@ -83,7 +92,7 @@ export default function ForbiddenRecordsRightPage({ pageIndex = 0 }) {
   }
 
   return (
-    <div className={LIBRARY_BOOK_RIGHT_PAGE_LOCKED_CLASS}>
+    <div className={LIBRARY_BOOK_RIGHT_PAGE_LOCKED_CLASS} {...pageMarkers}>
       <div className={LIBRARY_FORBIDDEN_LOCK_LAYER_CLASS}>
         <ForbiddenRecordsOverlayArt pageIndex={pageIndex} src={FORBIDDEN_RECORDS_ASSETS.bloodStain} />
         <motion.div

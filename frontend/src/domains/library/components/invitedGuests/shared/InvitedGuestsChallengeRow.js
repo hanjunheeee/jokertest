@@ -86,17 +86,29 @@ function InvitedGuestsChallengeRewards({ rewards, onOpenProfileBorderZoom }) {
 }
 
 export default function InvitedGuestsChallengeRow({
+  achievementId = null,
   label,
   rewards,
   cleared = false,
   current = null,
   threshold = null,
+  // F-17(AC-02): 알림이 가리키는 행인가. 표시만 바꾸고 진행률·지급에는 관여하지 않는다.
+  targeted = false,
   onOpenProfileBorderZoom,
 }) {
+  // 클리어 행과 미클리어 행이 같은 표식을 갖게 공통으로 만든다 — 방금 달성한 업적은
+  // 클리어 행으로 렌더되므로 여기서 갈라지면 정작 대상이 표시되지 않는다.
+  const rowProps = {
+    className: INVITED_GUESTS_TABLE_ROW_CLASS,
+    "data-achievement-id": achievementId ?? undefined,
+    "data-notification-target": targeted ? "true" : undefined,
+    "aria-current": targeted ? "true" : undefined,
+  }
+
   if (cleared) {
     return createElement(
       "tr",
-      { className: INVITED_GUESTS_TABLE_ROW_CLASS },
+      rowProps,
       createElement(
         "td",
         { colSpan: 2, className: INVITED_GUESTS_CHALLENGE_CLEARED_CELL_CLASS },
@@ -112,7 +124,7 @@ export default function InvitedGuestsChallengeRow({
 
   return createElement(
     "tr",
-    { className: INVITED_GUESTS_TABLE_ROW_CLASS },
+    rowProps,
     createElement(
       "td",
       { className: INVITED_GUESTS_CHALLENGE_LABEL_CELL_CLASS },

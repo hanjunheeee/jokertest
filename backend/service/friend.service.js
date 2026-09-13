@@ -1,6 +1,7 @@
 const db = require("../models");
 const friendRepository = require("../repositories/friend.repositories");
 const economyService = require("../service/economy.service");
+const notificationService = require("./notification.service");
 const { createError } = require("../utils/appError");
 
 exports.getFriendList = async (myUuid) => {
@@ -64,7 +65,34 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
     }
 
     try {
-        return await friendRepository.createFriendRequest(myUuid, receiverId);
+        // F-17(A-02): 원본 요청 행과 수신자 알림 행을 **하나의** 트랜잭션에서 확정한다.
+        // 알림 삽입이 실패하면 친구 요청도 함께 롤백되므로, "요청은 갔는데 알림만 없는"
+        // 상태가 남지 않는다. 반대로 소켓 전달 실패는 커밋을 되돌리지 않는다 — 전달은
+        // 커밋 **이후**에만 시도한다(아래).
+        const { request, notification } = await db.sequelize.transaction(async (t) => {
+            const created = await friendRepository.createFriendRequest(myUuid, receiverId, { transaction: t });
+
+            // 알림 본문에 넣을 닉네임은 서버가 원본 계정 행에서 직접 읽는다 — 요청 본문의
+            // 어떤 값도 알림 내용이 되지 않는다(A-01).
+            const requester = await db.User.findOne({
+                where: { uuid: myUuid }, attributes: ['nickname'], transaction: t,
+            });
+
+            const result = await notificationService.createFriendRequestNotification({
+                receiverId,
+                // create()가 채운 실제 PK를 쓴다. 값이 정수가 아니면 알림을 지어내지 않는다.
+                requestId: Number.isInteger(created?.id) ? created.id : Number(created?.id),
+                requesterNickname: requester?.nickname ?? null,
+            }, { db, transaction: t });
+
+            return { request: created, notification: result.created ? result.notification : null };
+        });
+
+        // 커밋 이후에만 전달한다(A-02: 롤백된 알림은 절대 전달되지 않는다). 예외는 서비스
+        // 안에서 삼켜지므로 이미 커밋된 요청이 실패 응답으로 바뀌지 않는다.
+        if (notification !== null) notificationService.emitNotificationCreated(receiverId, notification);
+
+        return request;
     } catch (error) {
         // 위 검사와 INSERT 사이의 레이스(빠른 중복 클릭 등)로 동시에 두 요청이 통과했을 때,
         // DB 유니크 인덱스(requester_id, receiver_id, status)가 최후 방어선 역할을 합니다.

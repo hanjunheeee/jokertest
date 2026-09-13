@@ -19,6 +19,7 @@ import { createSfxAssetLoader } from "../audio/loadSfxAsset.js"
 import { SFX_MANIFEST, SFX_SUPPRESSED_REASON } from "../audio/sfxManifest.js"
 import { useSettingsStore } from "../../domains/settings/store/settingsStore.js"
 import { useAuthStore } from "../../domains/auth/store/auth.store.js"
+import { useNotificationsStore } from "../../domains/notifications/store/notifications.store.js"
 import { useInGameStore } from "../../domains/game/ingame/store/ingameStore.js"
 import { useMatchingStore } from "../../domains/game/matching/store/matchingStore.js"
 
@@ -284,6 +285,10 @@ export function useSfxRuntime() {
       const auth = useAuthStore.getState()
       const accountId = auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null
       if (accountId === null || envelope.accountId !== accountId) return
+      // F-17(A-04): 업적 사건의 eventId(achievement:<id>:granted)는 서버가 저장한 알림
+      // source_key와 같은 문자열이다. 목록 복원에서 이미 본 지급이면 여기서 false가 되어
+      // 무음이다 — 재접속·재로그인 뒤 놓친 전달이 다시 와도 다시 울리지 않는다.
+      if (!useNotificationsStore.getState().consumeSoundEvent(accountId, envelope.eventId)) return
       dispatchSfxEvent({ kind: envelope.kind, eventId: envelope.eventId, accountId, origin: envelope.origin })
     }
 

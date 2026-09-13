@@ -30,6 +30,11 @@ export default function InGameParchmentPanelBase({
   contentClassName = "",
   frameClassName = INGAME_PARCHMENT_FRAME_CLASS,
   fallbackFrameClassName = INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+  // 안쪽 영역의 **기본** 레이아웃. 기본값은 기존 공용 상수라 기존 호출부는 그대로다.
+  // F-17 알림 모달만 자기 치수를 넘긴다 — 공용 클래스에 문자열을 덧붙이는 방식으로는
+  // overflow·inset·padding을 되돌릴 수 없기 때문이다(Tailwind 생성 순서가 승자를 정한다).
+  contentBaseClassName = INGAME_PARCHMENT_CONTENT_CLASS,
+  fallbackContentBaseClassName = INGAME_PARCHMENT_FALLBACK_CONTENT_CLASS,
   ...rest
 }) {
   const [backgroundFailed, setBackgroundFailed] = useState(false)
@@ -40,7 +45,10 @@ export default function InGameParchmentPanelBase({
       { className: fallbackFrameClassName, "data-parchment-fallback": "true", ...rest },
       createElement(
         "div",
-        { className: `${INGAME_PARCHMENT_FALLBACK_CONTENT_CLASS} ${contentClassName}`.trim() },
+        {
+          className: `${fallbackContentBaseClassName} ${contentClassName}`.trim(),
+          "data-parchment-content": "true",
+        },
         children,
       ),
     )
@@ -59,7 +67,10 @@ export default function InGameParchmentPanelBase({
     }),
     createElement(
       "div",
-      { className: `${INGAME_PARCHMENT_CONTENT_CLASS} ${contentClassName}`.trim() },
+      {
+        className: `${contentBaseClassName} ${contentClassName}`.trim(),
+        "data-parchment-content": "true",
+      },
       children,
     ),
   )

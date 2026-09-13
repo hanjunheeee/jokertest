@@ -33,6 +33,9 @@ const userRouter     = require("./routes/user.routes");
 const friendRouter   = require("./routes/friend.routes");
 const gameRouter     = require("./routes/game.routes");
 const economyRouter  = require("./routes/economy.routes");
+// F-17: 알림 목록 조회·읽음. 아래에서 오류 미들웨어보다 **먼저** 등록해야 404/401/400이
+// 기존 globalErrorHandler의 같은 응답 형태로 나간다.
+const notificationRouter = require("./routes/notification.routes");
 const { initSocket } = require("./socket/socket");
 
 // app은 Express 서버 객체입니다. 앞으로 라우터, 미들웨어, 서버 실행 설정을 여기에 붙입니다.
@@ -52,6 +55,7 @@ app.use("/user", userRouter);
 app.use("/friends", friendRouter);
 app.use("/game", gameRouter);
 app.use("/economy", economyRouter);
+app.use("/notifications", notificationRouter);
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);

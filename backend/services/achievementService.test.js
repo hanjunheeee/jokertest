@@ -16,14 +16,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const achievementService = require('./achievementService');
+const notificationService = require('../service/notification.service');
 const { ACHIEVEMENT_DEFINITIONS, getAchievementDefinition } = require('./achievementDefinitions');
 
 const { __internal } = achievementService;
 
 // ---- fake db: achievement_grants만 흉내 낸다 -------------------------------------------
 
-const createFakeDb = () => {
+const createFakeDb = ({ failNotificationFor = null } = {}) => {
     const achievementGrants = [];
+    const notifications = [];
     let nextId = 1;
     const pendingByKey = new Map();
 
@@ -71,6 +73,35 @@ const createFakeDb = () => {
         },
     };
 
+    // F-17(A-02): grantAchievement는 이제 **같은 트랜잭션 안에서** notifications 행도
+    // 넣는다. 여기서도 (user_id, source_key) 유일 제약과 롤백만 흉내 낸다 — 이 fake가
+    // 없으면 "알림 저장 실패 시 지급·보상이 함께 롤백되는가"를 실제 코드로 확인할 수 없다.
+    const Notification = {
+        async findOrCreate({ where, defaults, transaction }) {
+            if (failNotificationFor !== null && where.source_key === failNotificationFor) {
+                throw new Error(`simulated notification failure at ${where.source_key}`);
+            }
+            const existing = notifications.find(
+                (n) => n.user_id === where.user_id && n.source_key === where.source_key,
+            );
+            if (existing) return [existing, false];
+
+            const record = { ...defaults, get: undefined };
+            delete record.get;
+            notifications.push(record);
+            transaction._undo.push(() => {
+                const idx = notifications.indexOf(record);
+                if (idx !== -1) notifications.splice(idx, 1);
+            });
+            return [record, true];
+        },
+        async findOne({ where }) {
+            return notifications.find(
+                (n) => n.user_id === where.user_id && n.source_key === where.source_key,
+            ) ?? null;
+        },
+    };
+
     const sequelize = {
         async transaction(fn) {
             const transaction = { _undo: [], _releaseKeys: [] };
@@ -85,7 +116,7 @@ const createFakeDb = () => {
         },
     };
 
-    return { db: { sequelize, AchievementGrant }, achievementGrants };
+    return { db: { sequelize, AchievementGrant, Notification }, achievementGrants, notifications };
 };
 
 // ---- fake economyService: 호출만 기록한다(F-08 자체 계약은 economy.service.test.js가 이미 검증) ----
@@ -239,13 +270,37 @@ const createRacyFakeDb = () => {
         },
     };
 
+    // F-17(A-02): 이 경로에서도 지급 트랜잭션 안의 알림 저장이 함께 실행된다. 여기서는
+    // 유일 제약 충돌 흡수만 검증 대상이므로 알림은 단순 누적으로 흉내 낸다.
+    const notifications = [];
+    const Notification = {
+        async findOrCreate({ where, defaults }) {
+            const existing = notifications.find(
+                (n) => n.user_id === where.user_id && n.source_key === where.source_key,
+            );
+            if (existing) return [existing, false];
+            const record = { ...defaults };
+            notifications.push(record);
+            return [record, true];
+        },
+        async findOne({ where }) {
+            return notifications.find(
+                (n) => n.user_id === where.user_id && n.source_key === where.source_key,
+            ) ?? null;
+        },
+    };
+
     const sequelize = {
         async transaction(fn) {
             return fn({});
         },
     };
 
-    return { db: { sequelize, AchievementGrant, Sequelize: { UniqueConstraintError } }, achievementGrants };
+    return {
+        db: { sequelize, AchievementGrant, Notification, Sequelize: { UniqueConstraintError } },
+        achievementGrants,
+        notifications,
+    };
 };
 
 test('AC-04 CODEX-2 재검토: findOrCreate가 실제 유일 제약 충돌(db.Sequelize.UniqueConstraintError)을 던져도 예외 없이 granted:false로 처리한다', async () => {
@@ -287,6 +342,80 @@ test('A-03: 보상 지급 도중 실패하면 업적 달성 행도 함께 롤백
     const retry = await __internal.grantAchievement('user-a', noble10);
     assert.equal(retry.granted, true);
     assert.equal(retryEconomyService.calls.length, 2);
+});
+
+// ---- F-17 A-02: 지급과 알림의 원자성 -----------------------------------------------------
+
+test('F-17 A-02: 알림 저장이 실패하면 업적 지급 행과 보상이 함께 롤백된다(알림만 없는 지급이 남지 않는다)', async () => {
+    const { db, achievementGrants, notifications } = createFakeDb({
+        failNotificationFor: 'achievement:noble-win-10:granted',
+    });
+    const economyService = createFakeEconomyService();
+    __internal.__setDepsForTests({ db, economyService });
+
+    const noble10 = getAchievementDefinition('noble-win-10');
+    await assert.rejects(
+        () => __internal.grantAchievement('user-a', noble10),
+        /simulated notification failure/,
+    );
+
+    // 보상 호출은 실패 이전에 있었지만, 트랜잭션이 롤백되어 지급 이력·알림 모두 남지 않는다.
+    assert.equal(achievementGrants.length, 0, '알림 저장 실패 후 achievement_grants가 남으면 안 된다');
+    assert.equal(notifications.length, 0);
+
+    // 실패 원인이 사라지면 다음 평가가 처음부터 다시 시도해 지급·알림이 함께 확정된다.
+    const { db: healthyDb, achievementGrants: healthyGrants, notifications: healthyNotifications } = createFakeDb();
+    const retryEconomyService = createFakeEconomyService();
+    __internal.__setDepsForTests({ db: healthyDb, economyService: retryEconomyService });
+
+    const retry = await __internal.grantAchievement('user-a', noble10);
+    assert.equal(retry.granted, true);
+    assert.equal(healthyGrants.length, 1);
+    assert.equal(healthyNotifications.length, 1);
+    assert.equal(healthyNotifications[0].source_key, 'achievement:noble-win-10:granted');
+    assert.equal(healthyNotifications[0].user_id, 'user-a');
+    assert.equal(healthyNotifications[0].read_at, null);
+});
+
+test('F-17 AC-03: 이미 지급된 업적을 재평가해도 알림 행이 늘지 않고 notification_created도 다시 나가지 않는다', async (t) => {
+    const { db, notifications } = createFakeDb();
+    const economyService = createFakeEconomyService();
+    const emitted = [];
+    const emitToUser = (userId, event, payload) => emitted.push({ userId, event, payload });
+    __internal.__setDepsForTests({
+        db,
+        economyService,
+        emitToUser,
+        ...createFakeProgressRepos({ 'user-a': { roleWins: { CITIZEN: 10 } } }),
+    });
+    // notification_created는 notification.service가 자기 통로로 내보낸다 — 두 통지가 서로
+    // 독립이라는 것 자체가 계약이므로, 시험도 두 통로를 각각 주입한다.
+    notificationService.__internal.__setDepsForTests({ db, emitToUser });
+    t.after(() => notificationService.__internal.__setDepsForTests(null));
+
+    await achievementService.evaluateAndGrantForUser('user-a');
+    const afterFirst = notifications.length;
+    const firstEmits = emitted.filter((e) => e.event === 'notification_created').length;
+
+    await achievementService.evaluateAndGrantForUser('user-a');
+
+    assert.equal(notifications.length, afterFirst, '같은 사건에 알림 행이 두 번 쌓이면 안 된다');
+    assert.equal(
+        emitted.filter((e) => e.event === 'notification_created').length,
+        firstEmits,
+        '재평가는 이미 지급된 업적의 notification_created를 다시 보내지 않는다',
+    );
+    assert.equal(afterFirst, 1, 'noble-win-10 지급 하나에 알림 하나다');
+
+    // 업적 소리는 기존 F-16 경로(achievement_granted)가 소유한다 — notification_created에는
+    // sfxEvent를 싣지 않아 한 지급에 소리가 두 번 나지 않는다.
+    const notificationEmit = emitted.find((e) => e.event === 'notification_created');
+    assert.equal(notificationEmit.payload.sfxEvent, undefined);
+    assert.equal(notificationEmit.payload.notification.type, 'achievement');
+    assert.deepEqual(notificationEmit.payload.notification.target, {
+        kind: 'achievement', achievementId: 'noble-win-10',
+    });
+    assert.ok(emitted.some((e) => e.event === 'achievement_granted'), '기존 F-16 통지는 그대로 유지된다');
 });
 
 test('AC-02/AC-03: evaluateAndGrantForUser는 22개 전부를 평가하고 조건을 만족한 것만 지급한다', async () => {

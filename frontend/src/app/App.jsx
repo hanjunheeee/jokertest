@@ -4,6 +4,7 @@ import { router } from "@/app/routes/index"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
 import { getMeApi } from "@/domains/auth/api/auth.api"
 import { useFriendSocketEvents } from "@/domains/lobby/hooks/useFriendSocketEvents"
+import { useNotificationSocketEvents } from "@/domains/notifications/hooks/useNotificationSocketEvents.js"
 import { useSocket } from "@/shared/hooks/useSocket"
 import { useAppTextScaleSync } from "@/app/useAppTextScaleSync.js"
 import { useSfxRuntime } from "@/shared/hooks/useSfxRuntime.js"
@@ -14,6 +15,12 @@ const RELOAD_FLAG = 'app:was_reload'
 export default function App() {
     const socket = useSocket()
     useFriendSocketEvents(socket)
+
+    // F-17(AC-01/AC-05/AC-07): 알림은 계정 전역 사건이라 앱 수명에 붙인다 — 특정 화면에
+    // 묶으면 그 화면을 떠난 동안의 전달을 통째로 놓치고, 재진입할 때마다 초기 복원과 준비
+    // 신호가 다시 돌게 된다. 이 훅이 목록 복원·live 병합·계정 경계 정리·notifications_ready
+    // 생산 신호를 모두 소유한다.
+    useNotificationSocketEvents(socket)
 
     // F-15(AC-02): "텍스트 크기" 설정을 --app-text-scale로 반영한다. 이 변수는 font-size
     // 선언에서만 곱해진다(index.css의 body 기본값 + 자체 font-size를 지정하는 요소가 쓰는

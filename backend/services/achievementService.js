@@ -31,6 +31,10 @@ const buildDeps = (overrides = {}) => ({
             return null;
         }
     },
+    // F-17(AC-01/A-02): 지급 트랜잭션 안에서 알림 행을 저장하고, 커밋 후 경계에서 전달한다.
+    // 위 필드들과 같은 이유로 getter다 — notification.service.js도 socket/socket.js를
+    // 호출 시점에만 읽는 순환 구조 위에 있다.
+    get notificationService() { return overrides.notificationService ?? require('../service/notification.service'); },
 });
 
 let deps = buildDeps();
@@ -164,7 +168,19 @@ const grantAchievement = async (userId, definition) => {
             }
         }
 
-        return { granted: true };
+        // F-17(A-02): 알림 행도 **같은** 지급 트랜잭션에서 확정한다 — 이 삽입이 실패하면
+        // achievement_grants 삽입과 보상 지급까지 전부 롤백되어, 다음 평가 호출이 처음부터
+        // 다시 시도할 수 있다(재시도 안전). 반대로 알림 저장이 성공하면 지급과 알림이 항상
+        // 함께 존재한다. 전달(emit)은 여기서 하지 않는다 — 커밋 이후의
+        // evaluateAndGrantForUser 경계가 담당한다.
+        // db를 명시적으로 넘긴다 — economyService.grantAchievementCurrency(payload, db, opts)와
+        // 같은 관례다. 두 모듈이 서로 다른 Sequelize 인스턴스를 쥐면 이 transaction에 참여할
+        // 수 없어 원자성이 성립하지 않는다.
+        const { notification } = await deps.notificationService.createAchievementNotification({
+            userId, achievementId: definition.id,
+        }, { db, transaction });
+
+        return { granted: true, notification };
     });
 };
 
@@ -189,11 +205,18 @@ const evaluateAndGrantForUser = async (userId) => {
             results.push({ id: definition.id, achieved: false, granted: false, current, threshold: definition.threshold });
             continue;
         }
-        const { granted } = await grantAchievement(userId, definition);
+        const { granted, notification } = await grantAchievement(userId, definition);
         // 이 시점에서 granted=true는 "트랜잭션이 커밋됐다"는 뜻이다(grantAchievement가
         // db.sequelize.transaction의 resolve로만 여기 도달한다). 롤백된 지급은 granted=false
         // 이거나 예외로 빠져나가므로 통지되지 않는다.
-        if (granted) notifyAchievementGranted(userId, definition);
+        if (granted) {
+            // F-16의 기존 achievement_granted 통지는 그대로 유지한다 — 소리는 이쪽이
+            // 소유한다. F-17의 notification_created는 목록만 바꾼다(sfxEvent를 싣지
+            // 않으므로 한 지급에 소리가 두 번 나지 않는다).
+            notifyAchievementGranted(userId, definition);
+            // 두 전달은 서로의 실패를 전파하지 않는다 — 각자 내부에서 예외를 삼킨다.
+            if (notification) deps.notificationService.emitNotificationCreated(userId, notification);
+        }
         results.push({ id: definition.id, achieved: true, granted, current, threshold: definition.threshold });
     }
 
