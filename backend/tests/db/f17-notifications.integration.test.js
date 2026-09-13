@@ -32,7 +32,9 @@ const addEconomyPurchaseRequests = require('../../db/migrations/0007-add-economy
 const addVoteParticipations = require('../../db/migrations/0008-add-vote-participations');
 const addAchievementGrants = require('../../db/migrations/0009-add-achievement-grants');
 const addNotifications = require('../../db/migrations/0012-add-notifications');
-const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
+const {
+    buildManagedSchema, resetManagedSchema, resetManagedData, findNonEmptyManagedTables,
+} = require('../helpers/isolatedTestDb');
 
 const { MIGRATIONS } = require('../../scripts/migrate-db');
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
@@ -70,6 +72,9 @@ const resetSchema = async () => {
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
+/** 이력(schema_migrations)을 뺀 데이터 테이블. dropOrder의 "자식 → 부모" 순서를 그대로 쓴다. */
+const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
+
 const db = require('../../models');
 const friendService = require('../../service/friend.service');
 const notificationService = require('../../service/notification.service');
@@ -84,24 +89,157 @@ test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
 });
 
-const setUp = async () => {
-    await resetSchema();
-    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+// ---------------------------------------------------------------------------
+// 고정 장비 — 스키마 재구축과 데이터 격리를 분리한다
+// ---------------------------------------------------------------------------
+//
+// ── 실측 ────────────────────────────────────────────────────────────────────
+// 이전 판은 27 케이스 전부가 setUp에서 관리 스키마를 통째로 드롭하고 마이그레이션 13개를
+// 처음부터 다시 적용했다. 공식 전체 실행 실측
+// (.pluto/monitor/backend-full-2026-09-13T11-44-26.009Z.log): 이 파일 27건이 전부 완주하며
+// 187583.6408ms(약 3.13분)를 썼고, 느린 것들은 DDL 케이스가 아니라 **서비스 의미**만 보는
+// 케이스였다 — 자기 계정 목록 조회 10369ms, PATCH read_at 10005ms, 다른 계정 원본 키 9404ms.
+// 본문이 무거운 것이 아니라 같은 setUp이 반복 드롭/CREATE로 비싸진 것이다.
+//
+// ── 그래서 두 가지 setUp을 둔다 (F-19 스위트에서 이미 검증된 형태) ───────────
+//   setUpFreshSchema(t) — 0012의 up/verify·인덱스·외래 키를 직접 만지는 케이스. 스키마 계약
+//                         자체가 대상이라 매번 전체 드롭 + 전체 이관을 그대로 한다.
+//   setUp(t)            — 일반 서비스·API·소켓 케이스. 이미 완전히 이관된 스키마 위에서
+//                         데이터만 비운다.
+//
+// 일반 케이스는 스키마를 **신뢰하지 않는다**. 매번 (1) 승인된 전용 DB인지 (2) 관리 목록 밖
+// 테이블이 없는지 (3) 관리 테이블이 전부 존재하는지를 확인하고(resetManagedData가 셋 다
+// 담당한다), 그 위에 (4) 남은 행이 한 건도 없는지 (5) 0012의 컬럼·인덱스·외래 키 계약이
+// 그대로인지를 직접 단정한다. FOREIGN_KEY_CHECKS는 끄지 않는다 — 자식 → 부모 순서의 DELETE는
+// 제약을 그대로 지킨다. 스키마를 만지는 케이스는 자기 뒤를 'dirty'로 표시하므로 다음 일반
+// 케이스가 그 흔적을 물려받지 않고 스스로 전체 재구축으로 되돌아간다.
+
+/** 'unknown' = 아직 안 세움 · 'migrated' = 완전히 이관됨 · 'dirty' = DDL 케이스가 지나갔음 */
+let schemaState = 'unknown';
+
+/** setUp이 실제로 쓴 시간. 추측이 아니라 측정으로 보고하기 위한 장치다. */
+const fixtureCost = { rebuilds: 0, cleans: 0, schemaMs: 0, dataMs: 0 };
+
+/**
+ * 케이스가 바꿀 수 있는 **가변 의존성**을 전부 원래대로 돌린다.
+ *
+ * 스키마를 공유하게 되면서 이 초기화의 중요도가 올라갔다: 예전에는 매 케이스가 DB를 통째로
+ * 다시 만들었지만, 이제는 앞 케이스가 남긴 모듈 수준 대역(db.Notification 교체, 서비스 deps,
+ * onlineUsers 항목)이 그대로 살아 있으면 다음 케이스의 단정이 조용히 의미를 잃는다.
+ */
+const REAL_NOTIFICATION_MODEL = db.Notification;
+
+const resetRuntimeFixtures = () => {
+    db.Notification = REAL_NOTIFICATION_MODEL;
     notificationService.__internal.__setDepsForTests(null);
     achievementService.__internal.__setDepsForTests(null);
+    socket.__getOnlineUsersForTests().clear();
 };
 
-test.afterEach(() => {
-    notificationService.__internal.__setDepsForTests(null);
-    achievementService.__internal.__setDepsForTests(null);
+/** 관리 스키마를 통째로 드롭하고 마이그레이션 전부를 처음부터 적용한다. */
+const rebuildSchema = async () => {
+    const startedAt = performance.now();
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    fixtureCost.rebuilds += 1;
+    fixtureCost.schemaMs += performance.now() - startedAt;
+    schemaState = 'migrated';
+};
+
+/** 케이스별 setUp/본문 소요와 어떤 setUp을 썼는지를 TAP 진단으로 남긴다. */
+const beginCase = (t, mode, setupMs) => {
+    const startedAt = performance.now();
+    t.after(() => {
+        t.diagnostic(
+            `[f17-fixture] mode=${mode} setup=${setupMs.toFixed(1)}ms body=${(performance.now() - startedAt).toFixed(1)}ms`,
+        );
+    });
+};
+
+/** 0012의 DDL·인덱스·외래 키를 직접 만지는 케이스 전용. 전체 재구축하고, 뒤를 dirty로 남긴다. */
+const setUpFreshSchema = async (t) => {
+    const startedAt = performance.now();
+    await rebuildSchema();
+    // 이 케이스는 removeIndex/addIndex/removeConstraint로 스키마를 직접 바꾼다.
+    schemaState = 'dirty';
+    resetRuntimeFixtures();
+    beginCase(t, 'fresh-schema', performance.now() - startedAt);
+};
+
+/** 일반 서비스·API·소켓 케이스. 이미 이관된 스키마 위에서 데이터만 비우고 격리를 실제로 확인한다. */
+const setUp = async (t) => {
+    const startedAt = performance.now();
+    let mode = 'clean-data';
+
+    if (schemaState !== 'migrated') {
+        await rebuildSchema();
+        mode = 'rebuilt';
+    } else {
+        const cleanStartedAt = performance.now();
+        const result = await resetManagedData(sequelize, TEST_DB_URL, {
+            managedTables: MANAGED_TABLES,
+            dropOrder: DROP_ORDER,
+            // 이력 행은 남긴다 — 지우면 다음 applyMigrations가 이미 있는 테이블에 다시
+            // 이관을 시도하게 된다.
+            keepTables: [migrationRunner.META_TABLE],
+        });
+        if (!result.cleaned) {
+            await rebuildSchema();
+            mode = `rebuilt-missing:${result.missingTables.join(',')}`;
+        } else {
+            fixtureCost.cleans += 1;
+            fixtureCost.dataMs += performance.now() - cleanStartedAt;
+        }
+    }
+
+    // 격리 확인 1 — 앞 케이스의 행이 한 건도 넘어오지 않았다. 넘어왔다면 이 케이스의
+    // "행이 하나뿐이다" 류 단정은 전부 의미를 잃으므로 통과시키지 않는다.
+    assert.deepEqual(
+        await findNonEmptyManagedTables(sequelize, DATA_TABLES), [],
+        '앞 케이스의 행이 남아 있으면 이 케이스의 단정은 의미가 없다',
+    );
+
+    // 격리 확인 2 — 공유하는 스키마가 0012의 컬럼·유일 인덱스·외래 키 계약을 그대로 만족한다.
+    // 인덱스를 떼거나 FK를 지우는 케이스가 남긴 흔적 위에서 서비스 단정을 하지 않기 위한
+    // fail-closed다(그런 케이스는 fresh-schema로 표시돼 여기 오기 전에 재구축된다).
+    await addNotifications.verify(sequelize.getQueryInterface());
+
+    resetRuntimeFixtures();
+    beginCase(t, mode, performance.now() - startedAt);
+};
+
+test.after(() => {
+    if (!TEST_DB_URL) return;
+    console.log(
+        `# [f17-fixture] 전체 재구축 ${fixtureCost.rebuilds}회 ${fixtureCost.schemaMs.toFixed(0)}ms · `
+        + `데이터 격리 ${fixtureCost.cleans}회 ${fixtureCost.dataMs.toFixed(0)}ms`,
+    );
 });
+
+test.afterEach(() => {
+    resetRuntimeFixtures();
+});
+
+/**
+ * 실제 production hashPassword로 **프로세스당 한 번만** 만든 bcrypt 해시를 공유한다.
+ *
+ * 강도를 낮추지 않는다 — 같은 함수·같은 cost·같은 값이고, 계정마다 똑같은 평문을 다시
+ * 해싱하던 중복 계산만 없앤다. 이 스위트의 어떤 단정도 비밀번호 검증을 지나지 않는다
+ * (접근 토큰은 generateToken이 직접 만들고, 세션 가드는 user_sessions만 읽는다).
+ * 로그인 경로를 검증하는 스위트는 계속 자기 해시를 직접 만들어야 한다.
+ */
+let sharedPasswordHash = null;
+const testPasswordHash = async () => {
+    if (sharedPasswordHash === null) sharedPasswordHash = await hashPassword('correct-horse-battery-1');
+    return sharedPasswordHash;
+};
 
 const createLocalUser = async (label) => {
     const uuid = crypto.randomUUID();
     const nickname = `${label}${uuid.slice(0, Math.max(1, 8 - label.length))}`.slice(0, 8);
     await db.User.create({
         uuid,
-        password_hash: await hashPassword('correct-horse-battery-1'),
+        password_hash: await testPasswordHash(),
         nickname,
         email: `${label}-${uuid}@example.com`,
     });
@@ -140,7 +278,7 @@ const authPatch = (base, uuid, id) =>
 
 test('AC-01/A-02: 친구 요청 한 번이 원본 행 1 + 수신자 알림 1을 만들고, 보낸 쪽에는 알림이 생기지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('a');
     const b = await createLocalUser('b');
@@ -173,7 +311,7 @@ test('AC-01/A-02: 친구 요청 한 번이 원본 행 1 + 수신자 알림 1을 
 
 test('A-02: 알림 저장이 실패하면 친구 요청 원본 행도 함께 롤백된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('a2');
     const b = await createLocalUser('b2');
@@ -199,7 +337,7 @@ test('A-02: 알림 저장이 실패하면 친구 요청 원본 행도 함께 롤
 
 test('A-02: 소켓 전달이 던져도 이미 커밋된 친구 요청과 알림은 그대로 남고 호출자는 성공한다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('a3');
     const b = await createLocalUser('b3');
@@ -222,7 +360,7 @@ test('A-02: 소켓 전달이 던져도 이미 커밋된 친구 요청과 알림�
 
 test('AC-01/A-02: 신규 업적 지급은 grant·보상 원장과 같은 트랜잭션에서 알림 1을 남긴다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('ach');
     // 실제 확정 경기 3판 → record-1-masquerade 조건 충족.
@@ -266,7 +404,7 @@ test('AC-01/A-02: 신규 업적 지급은 grant·보상 원장과 같은 트랜�
 
 test('AC-03/A-01: 같은 계정·같은 원본 키를 동시에 저장해도 실제 유일 제약이 행 하나로 묶는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('dup');
     const payload = {
@@ -286,7 +424,7 @@ test('AC-03/A-01: 같은 계정·같은 원본 키를 동시에 저장해도 실
 
 test('A-01: 다른 계정의 같은 시스템 원본 키는 서로 충돌하지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('s1');
     const b = await createLocalUser('s2');
@@ -301,7 +439,7 @@ test('A-01: 다른 계정의 같은 시스템 원본 키는 서로 충돌하지 
 
 test('AC-03: ensureSystemWelcome을 동시에·반복 호출해도 행 1 · 발행 1이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('sys');
     const emitted = [];
@@ -335,7 +473,7 @@ test('AC-03: ensureSystemWelcome을 동시에·반복 호출해도 행 1 · 발�
 
 test('A-02: 시스템 알림 저장이 실패하면 행 0 · 발행 0이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('sysf');
     const emitted = [];
@@ -362,7 +500,7 @@ test('A-02: 시스템 알림 저장이 실패하면 행 0 · 발행 0이다', as
 
 test('AC-02: PATCH는 서버가 확정한 read_at을 돌려주고, 재시도해도 최초 시각이 유지된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('read');
     const { notification } = await notificationService.ensureSystemWelcome(userId);
@@ -390,7 +528,7 @@ test('AC-02: PATCH는 서버가 확정한 read_at을 돌려주고, 재시도해�
 
 test('A-05: 다른 계정의 알림 id로 PATCH하면 404이고 어떤 행도 바뀌지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const owner = await createLocalUser('own');
     const attacker = await createLocalUser('atk');
@@ -406,7 +544,7 @@ test('A-05: 다른 계정의 알림 id로 PATCH하면 404이고 어떤 행도 �
 
 test('A-05: 목록 조회는 자기 계정 행만 돌려준다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('la');
     const b = await createLocalUser('lb');
@@ -425,7 +563,7 @@ test('A-05: 목록 조회는 자기 계정 행만 돌려준다', async (t) => {
 
 test('익명 요청은 401, 잘못된 형태의 id는 400, 없는 id는 404다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('codes');
     const base = await startRouteServer(t);
@@ -442,7 +580,7 @@ test('익명 요청은 401, 잘못된 형태의 id는 400, 없는 id는 404다',
 
 test('AC-06: 조회 응답은 캐시되지 않는다(Cache-Control: no-store)', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('nostore');
     const base = await startRouteServer(t);
@@ -452,7 +590,7 @@ test('AC-06: 조회 응답은 캐시되지 않는다(Cache-Control: no-store)', 
 
 test('A-04: GET은 알림을 만들지도, 읽음으로 바꾸지도 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('getonly');
     await notificationService.ensureSystemWelcome(userId);
@@ -528,7 +666,7 @@ const fireGuardedReady = async (s, payload = {}) => {
 
 test('AC-07: 현재 소켓의 첫 정상 ready만 행 1·발행 1을 만들고, 반복 ready는 추가 0이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('rdy');
     const emitted = [];
@@ -554,7 +692,7 @@ test('AC-07: 현재 소켓의 첫 정상 ready만 행 1·발행 1을 만들고, 
 
 test('AC-07: 클라이언트가 보낸 payload는 대상·내용을 바꾸지 못한다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('forge');
     const victim = await createLocalUser('vic');
@@ -580,7 +718,7 @@ test('AC-07: 클라이언트가 보낸 payload는 대상·내용을 바꾸지 �
 
 test('AC-07/A-05: 이 소켓이 더 이상 그 계정의 현재 소켓이 아니면 생성 0이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('stale');
     const onlineUsers = socket.__getOnlineUsersForTests();
@@ -600,7 +738,7 @@ test('AC-07/A-05: 이 소켓이 더 이상 그 계정의 현재 소켓이 아니
 
 test('AC-07/R-IMPL#5: 세션 가드를 통과한 첫 ready만 행 1·발행 1이고, 반복 ready는 추가 0이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('grd');
     const emitted = [];
@@ -628,7 +766,7 @@ test('AC-07/R-IMPL#5: 세션 가드를 통과한 첫 ready만 행 1·발행 1이
 
 test('AC-07/R-IMPL#5: 세션이 폐기된 소켓의 ready는 가드에서 끊기고 생성 0·발행 0이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('revk');
     const emitted = [];
@@ -656,7 +794,7 @@ test('AC-07/R-IMPL#5: 세션이 폐기된 소켓의 ready는 가드에서 끊기
 
 test('AC-07/A-05: 가드를 통과해도 현재 소켓이 아니면 생성 0이다(실제 등록 경로)', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('gstl');
     const onlineUsers = socket.__getOnlineUsersForTests();
@@ -677,7 +815,7 @@ test('AC-07/A-05: 가드를 통과해도 현재 소켓이 아니면 생성 0이�
 
 test('AC-07/R-IMPL#5: registerConnectionHandlers가 등록한 notifications_ready도 가드 뒤에 있다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('conn');
     const emitted = [];
@@ -711,7 +849,7 @@ test('AC-07/R-IMPL#5: registerConnectionHandlers가 등록한 notifications_read
 
 test('AC-07: 생산이 실패해도 ACK만 실패로 돌아가고 예외가 접속 처리로 새지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('prodf');
     const onlineUsers = socket.__getOnlineUsersForTests();
@@ -736,12 +874,75 @@ test('AC-07: 생산이 실패해도 ACK만 실패로 돌아가고 예외가 접�
 });
 
 // ---------------------------------------------------------------------------
+// 고정 장비 자체의 회귀 — 데이터 격리가 실제로 일어나는가
+// ---------------------------------------------------------------------------
+
+test('격리: 일반 케이스의 데이터 정리는 관리 테이블의 행만 비우고 스키마·이관 이력·외래 키는 그대로 둔다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    // (1) 한 케이스가 남길 수 있는 것을 실제 경로로 전부 만든다. 하나라도 비어 있으면 이
+    //     시험은 "정리"가 아니라 "빈 DB"를 확인하는 것이 되므로 먼저 값으로 확인한다.
+    const a = await createLocalUser('iso-a');
+    const b = await createLocalUser('iso-b');
+    await notificationService.ensureSystemWelcome(a);
+    await friendService.sendFriendRequest(a, b);
+
+    const populated = [
+        [db.User, 'users'], [db.UserStats, 'user_stats'], [db.UserSession, 'user_sessions'],
+        [db.FriendRequest, 'friend_requests'], [db.Notification, 'notifications'],
+    ];
+    for (const [model, table] of populated) {
+        assert.ok(
+            await model.count({}) > 0,
+            `${table}에 행이 없으면 이 시험은 정리를 검증하는 것이 아니라 빈 DB를 확인하는 것이 된다`,
+        );
+    }
+
+    // (2) 일반 케이스의 setUp이 쓰는 바로 그 정리를 실행한다.
+    const result = await resetManagedData(sequelize, TEST_DB_URL, {
+        managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER,
+        keepTables: [migrationRunner.META_TABLE],
+    });
+    assert.equal(result.cleaned, true);
+    assert.deepEqual(
+        result.deleted, DATA_TABLES,
+        '관리 테이블 하나라도 빼놓으면 다음 케이스가 남은 행을 물려받는다',
+    );
+
+    // (3) 실제로 한 건도 남지 않았다 — 다음 케이스의 setUp이 하는 단정과 같은 질의다.
+    assert.deepEqual(await findNonEmptyManagedTables(sequelize, DATA_TABLES), []);
+
+    // 스키마·이관 이력은 그대로다 — 정리는 드롭이 아니다.
+    const [history] = await sequelize.query(
+        `SELECT COUNT(*) AS applied_count FROM ${migrationRunner.META_TABLE} WHERE status = 'applied'`,
+    );
+    assert.equal(
+        Number(history[0].applied_count), MIGRATIONS.length,
+        '데이터 정리가 이관 이력을 지우면 다음 실행이 이미 있는 스키마에 다시 이관을 시도한다',
+    );
+    await assert.doesNotReject(() => addNotifications.verify(sequelize.getQueryInterface()));
+
+    // 외래 키는 여전히 강제된다 — FOREIGN_KEY_CHECKS를 끄지 않았다는 값 수준의 증거다.
+    await assert.rejects(
+        () => db.Notification.create({
+            id: crypto.randomUUID(), user_id: crypto.randomUUID(), type: 'system',
+            source_key: 'system:isolation-probe:v1', title: '격리 확인', body: '본문',
+            target: { kind: 'settings' },
+        }),
+        '정리 뒤에도 없는 계정 앞으로의 알림은 외래 키가 막아야 한다',
+    );
+});
+
+// ---------------------------------------------------------------------------
 // 마이그레이션 재실행(AC-03)
 // ---------------------------------------------------------------------------
 
 test('AC-03: 0012를 다시 적용해도 기존 알림 행·id·read_at이 보존된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    // 아래 다섯 건은 0012의 up/verify·인덱스·외래 키 자체가 대상이다 — 데이터만 비운
+    // 공유 스키마가 아니라 매번 새로 이관한 스키마 위에서 돌아야 한다.
+    await setUpFreshSchema(t);
 
     const userId = await createLocalUser('mig');
     const { notification } = await notificationService.ensureSystemWelcome(userId);
@@ -762,7 +963,7 @@ test('AC-03: 0012를 다시 적용해도 기존 알림 행·id·read_at이 보�
 
 test('AC-03: verify는 유일 인덱스가 없는 스키마를 성공으로 넘기지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const queryInterface = sequelize.getQueryInterface();
     await queryInterface.removeIndex('notifications', addNotifications.UNIQUE_INDEX_NAME);
@@ -779,7 +980,7 @@ test('AC-03: verify는 유일 인덱스가 없는 스키마를 성공으로 넘�
 
 test('AC-03/R-IMPL#4: 이름만 같은 UNIQUE(id)는 실제 MySQL에서도 verify를 통과하지 못한다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const userId = await createLocalUser('shape');
     const { notification } = await notificationService.ensureSystemWelcome(userId);
@@ -810,7 +1011,7 @@ test('AC-03/R-IMPL#4: 이름만 같은 UNIQUE(id)는 실제 MySQL에서도 verif
 
 test('AC-03/R-IMPL#4: users.uuid 외래 키가 빠진 스키마도 verify가 거부한다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const userId = await createLocalUser('fk');
     await notificationService.ensureSystemWelcome(userId);
@@ -828,7 +1029,7 @@ test('AC-03/R-IMPL#4: users.uuid 외래 키가 빠진 스키마도 verify가 거
 
 test('AC-03/R-IMPL#4: 재실행 뒤에도 인덱스 컬럼·FK·행이 모두 그대로다(멱등 + 데이터 보존)', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const userId = await createLocalUser('idem');
     const { notification } = await notificationService.ensureSystemWelcome(userId);
