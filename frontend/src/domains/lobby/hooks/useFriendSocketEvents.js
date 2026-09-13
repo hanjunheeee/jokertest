@@ -171,8 +171,12 @@ export function shouldEnterRoomFromAccept(result) {
  * 서버가 그 초대에 기록해 둔 attempt로 답하므로 응답만 유실된 성공을 복구할 수 있다.
  */
 export async function requestGameInviteAccept(inviteId) {
-    const store = useGameInviteStore.getState();
     if (typeof inviteId !== "string" || inviteId.length === 0) return { ok: false, code: "INVALID_REQUEST" };
+
+    // 계정을 **먼저** 맞춘다 — 이전 계정에서 남은 진행 표시가 새 계정의 첫 시도를
+    // 가로막지 않게 한다(계정이 바뀌면 syncAccount가 표시와 소유 표식을 함께 버린다).
+    const accountGeneration = useGameInviteStore.getState().syncAccount();
+    const store = useGameInviteStore.getState();
     if (store.pendingInviteIds.has(inviteId)) return { ok: false, code: "IN_PROGRESS" };
 
     const socket = getSocket();
@@ -183,8 +187,9 @@ export async function requestGameInviteAccept(inviteId) {
 
     // 이 시도의 연결 신원을 고정한다. 이후 모든 판정은 이 값과 대조한다.
     const connectionId = socket.id ?? null;
-    const accountGeneration = store.syncAccount();
-    store.markAcceptPending(inviteId, true);
+    // 이 시도 하나의 소유 표식. 아래 finally는 **자기가 세운** 표시만 내린다.
+    const operationId = store.beginAcceptOperation();
+    store.markAcceptPending(inviteId, true, operationId);
     store.setInviteError(inviteId, null);
 
     let result;
@@ -206,7 +211,9 @@ export async function requestGameInviteAccept(inviteId) {
             }
         }
     } finally {
-        useGameInviteStore.getState().markAcceptPending(inviteId, false);
+        // 소유 표식을 함께 넘긴다 — 계정이 오간 사이에 도착한 옛 완료가 지금 진행 중인
+        // 새 시도의 잠금을 풀어 같은 초대에 두 번째 수락을 열지 않게 한다.
+        useGameInviteStore.getState().markAcceptPending(inviteId, false, operationId);
     }
 
     // 계정이 바뀐 뒤 도착한 결과는 새 계정의 화면을 건드리지 않는다.

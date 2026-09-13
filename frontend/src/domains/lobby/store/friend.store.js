@@ -39,6 +39,17 @@ function readAuthAccountId() {
 let writeSeq = 0;
 const nextSeq = () => (writeSeq += 1);
 
+/**
+ * 비동기 작업 하나를 식별하는 소유 표식(A-02).
+ *
+ * 계정 세대만으로는 부족합니다. A → B → A로 계정이 오간 사이에 **첫 A**에서 시작한 수락
+ * 응답이 도착하면, 그 완료의 `finally`가 지금 진행 중인 **두 번째 A**의 잠금을 풀어 버려
+ * 같은 요청에 두 번째 처리가 나갈 수 있습니다. 잠금에 "누가 잠갔는가"를 함께 기록해 두면
+ * 옛 완료의 해제가 그대로 무시됩니다.
+ */
+let operationSeq = 0;
+const nextOperationId = () => (operationSeq += 1);
+
 /** 전체 수락 집계의 초기값. 계정에 묶이므로 계정이 바뀌면 함께 사라집니다. */
 export const emptyAcceptAllResult = () => ({
     running: false,
@@ -91,6 +102,10 @@ const initialAccountState = () => ({
     // 요청을 새 화면이 다시 처리할 수 있었습니다. 공용 store로 옮기면 두 화면이 같은
     // 집합을 보고, 계정이 바뀌면 여기 있는 모든 잠금이 한 번에 정리됩니다.
     processingRequestIds: new Set(),
+
+    // 그 잠금을 **누가** 잡았는가(requestId → 작업 번호). 옛 계정에서 시작한 완료가
+    // 새 작업의 잠금을 풀지 못하게 하는 소유 대조입니다.
+    requestLockOwners: {},
 
     // 전체 수락 집계도 계정에 묶습니다 — 계정을 바꾸면 이전 계정의 집계가 남지 않습니다.
     acceptAllResult: emptyAcceptAllResult(),
@@ -337,24 +352,45 @@ export const useFriendStore = create((set, get) => ({
      * 이미 잠긴 id는 돌려주지 않으므로, 전체 수락과 단건 연타가 같은 요청을 두 번 처리하지
      * 않습니다. 읽기와 쓰기가 같은 동기 구간에 있어 두 호출이 끼어들 수 없습니다.
      *
+     * @param {Array} ids   잠글 요청 id들
+     * @param {number} [owner] 이 잠금의 소유 표식(beginOperation). 주면 그 작업만 풀 수 있습니다.
      * @returns {Array} 이번 호출이 **새로 잠근** id들. 빈 배열이면 아무것도 하면 안 됩니다.
      */
-    lockRequests: (ids) => {
+    lockRequests: (ids, owner = undefined) => {
         get().syncAccount();
         const state = get();
         const fresh = ids.filter((id) => !state.processingRequestIds.has(id));
         if (fresh.length === 0) return [];
         const next = new Set(state.processingRequestIds);
         for (const id of fresh) next.add(id);
-        set({ processingRequestIds: next });
+        if (owner === undefined) {
+            set({ processingRequestIds: next });
+            return fresh;
+        }
+        const owners = { ...state.requestLockOwners };
+        for (const id of fresh) owners[id] = owner;
+        set({ processingRequestIds: next, requestLockOwners: owners });
         return fresh;
     },
 
-    /** 잠금을 풉니다. 계정이 바뀌어 이미 비워졌다면 아무 일도 하지 않습니다. */
-    unlockRequests: (ids) => set((state) => {
+    /** 이 작업 하나를 식별하는 번호를 발급합니다. */
+    beginOperation: () => nextOperationId(),
+
+    /**
+     * 잠금을 풉니다. 계정이 바뀌어 이미 비워졌다면 아무 일도 하지 않습니다.
+     *
+     * owner를 주면 **자기가 잡은 잠금만** 풉니다. A → B → A 사이에 도착한 옛 응답이
+     * 같은 요청 id로 진행 중인 새 작업의 잠금을 풀어 중복 처리를 열지 않게 합니다.
+     */
+    unlockRequests: (ids, owner = undefined) => set((state) => {
         const next = new Set(state.processingRequestIds);
-        for (const id of ids) next.delete(id);
-        return { processingRequestIds: next };
+        const owners = { ...state.requestLockOwners };
+        for (const id of ids) {
+            if (owner !== undefined && owners[id] !== owner) continue;
+            next.delete(id);
+            delete owners[id];
+        }
+        return { processingRequestIds: next, requestLockOwners: owners };
     }),
 
     setAcceptAllResult: (result) => set({ acceptAllResult: result }),

@@ -94,6 +94,60 @@ function readAuthAccountId() {
         : null;
 }
 
+/**
+ * 이 계정 상태(store lifecycle) 하나를 식별하는 짧은 표식.
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────────────────────────
+ * 발송 멱등 키의 번호(sendKeys)는 계정 상태에 들어 있어 로그아웃·계정 전환·새로고침이면
+ * 통째로 1로 되돌아간다. 그런데 서버에 저장된 creation_key는 그대로 남는다. 그래서
+ * 범위와 번호만으로 키를 만들면:
+ *
+ *   A로 초대 발송(키 `room:friend:1`) → 상대가 거절해 종료 → 로그아웃/새로고침 →
+ *   다시 A로 로그인 → **새로운 의도적인 초대**가 또 `room:friend:1`로 나간다 →
+ *   서버는 "같은 키의 재시도"로 보고 끝난 옛 행을 그대로 돌려준다 → 아무 일도 안 일어난다.
+ *
+ * lifecycle 표식을 키에 넣으면 그 충돌이 사라진다. 표식은 계정 상태가 만들어질 때 **한 번**
+ * 정해지므로, 결과를 확정하지 못한 재시도는 여전히 **정확히 같은 키**로 나간다(같은
+ * lifecycle·같은 번호). 네트워크 시도마다 난수를 새로 뽑는 것과는 다르다.
+ *
+ * 새로고침 도중에 결과가 불확실해진 발송은 이 표식이 바뀌므로 키가 달라진다. 그 경우는
+ * 서버의 live-PENDING 중복 방지(createInvite)가 같은 발송자·같은 방 인스턴스로 살아 있는
+ * 초대를 그대로 돌려주며 막는다 — 어차피 새로고침 뒤에는 "재시도 중"이라는 사실 자체가
+ * 메모리에 남지 않는다.
+ *
+ * 길이 예산: creation_key는 서버에서 120자 제한이다. 범위(방 uuid 36 + ':' + 계정 uuid 36)
+ * 73자 + ':' + 표식 최대 12자 + ':' + 번호까지 90자 안쪽이다.
+ */
+let lifecycleCounter = 0;
+function newSendLifecycleId() {
+    lifecycleCounter += 1;
+    // 카운터만으로는 새로고침을 구분하지 못하고(모듈이 다시 로드되며 0으로 돌아간다),
+    // 난수만으로는 같은 밀리초의 연속 생성을 보장하지 못한다 — 둘을 합친다.
+    const random = Math.floor(Math.random() * 36 ** 4).toString(36).padStart(4, "0");
+    return `${lifecycleCounter.toString(36)}${random}`.slice(0, 12);
+}
+
+/**
+ * 이 오류가 "서버가 이 논리 발송을 확정해서 거부했다"를 증명하는가.
+ *
+ * 4xx는 서버가 요청을 읽고 판단해 거부했다는 뜻이라 이 논리 발송은 끝났다(특히 409는 그
+ * 키가 이미 다른 초대에 쓰였다는 뜻이라 반드시 다음 번호로 넘어가야 한다).
+ *
+ * 5xx는 다르다 — **정수 status가 있다는 것만으로 쓰기가 커밋되지 않았다고 말할 수 없다.**
+ * 커밋 뒤 응답을 만들다가 터졌을 수도 있으므로 결과는 여전히 모름이고, 같은 키를 유지해
+ * 재시도가 멱등하게 나가도록 한다. 408·425·429는 4xx지만 "처리하지 않았다"가 아니라
+ * "다시 오라"는 뜻이라 같이 보류한다.
+ */
+export function establishesTerminalRefusal(status) {
+    if (!Number.isInteger(status)) return false;
+    if (status === 408 || status === 425 || status === 429) return false;
+    return status >= 400 && status < 500;
+}
+
+/** 비동기 완료가 "자기가 시작한 일"인지 대조하는 소유 표식. */
+let operationCounter = 0;
+const nextOperationId = () => (operationCounter += 1);
+
 const initialAccountState = () => ({
     status: "idle", // idle | loading | success | error
     error: null,
@@ -111,6 +165,14 @@ const initialAccountState = () => ({
     soundConsumed: new Set(),
     /** 처리 중인 inviteId들(수락·거절 중복 클릭 방지). */
     pendingInviteIds: new Set(),
+    /**
+     * 그 진행 표시를 **누가** 세웠는가(inviteId → 시도 번호).
+     *
+     * A → B → A로 계정이 오간 사이에 옛 수락 시도의 응답이 도착하면, 소유 대조가 없을 때
+     * 그 완료가 지금 진행 중인 새 시도의 표시를 내려 버린다. 그러면 같은 초대에 두 번째
+     * 수락이 나갈 수 있다.
+     */
+    acceptOwners: {},
     /** 초대별 오류 메시지. 실패를 성공으로 위장하지 않는다. */
     inviteErrors: {},
     /** 발송 중인 대상 uuid들과 발송 결과(대기방 화면이 소비한다). */
@@ -123,8 +185,14 @@ const initialAccountState = () => ({
      * 서버가 결과를 확정한 뒤(성공이든 명시적 거부든)에만 다음 번호로 넘어간다. 그래서
      * 응답 유실 재시도는 두 번째 초대를 만들지 않고, 끝난 초대 뒤의 의도적인 재초대는
      * 막히지 않는다(AC-06).
+     *
+     * 번호만으로는 부족하다 — 계정 상태가 새로 만들어지면 번호가 1로 돌아가지만 서버의
+     * creation_key는 남기 때문이다. 그래서 아래 sendLifecycleId를 키에 함께 넣는다.
      */
     sendKeys: {},
+
+    /** 이 계정 상태 하나를 식별하는 값. 발송 키에 들어가 lifecycle 간 충돌을 없앤다. */
+    sendLifecycleId: newSendLifecycleId(),
 });
 
 const initialState = () => ({
@@ -352,7 +420,10 @@ export const useGameInviteStore = create((set, get) => ({
 
         const scope = typeof keyScope === "string" && keyScope.length > 0 ? keyScope : receiverId;
         const attempt = get().sendKeys[scope] ?? 1;
-        const creationKey = `${scope}:${attempt}`;
+        // lifecycle 표식이 함께 들어간다 — 로그아웃·계정 전환·새로고침으로 번호가 1로
+        // 돌아가도 서버에 남은 옛 키와 부딪히지 않는다. 같은 lifecycle 안의 재시도는
+        // 표식·번호가 모두 그대로라 **정확히 같은 키**다.
+        const creationKey = `${scope}:${get().sendLifecycleId}:${attempt}`;
 
         set((state) => ({
             sendingReceiverIds: new Set(state.sendingReceiverIds).add(receiverId),
@@ -382,9 +453,10 @@ export const useGameInviteStore = create((set, get) => ({
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             clearSending();
-            // status가 있으면 서버가 실제로 답한 거부다 — 이 논리 발송은 끝났다.
-            // 없으면 결과를 모르므로 같은 키를 남겨 다음 시도가 멱등하게 나가도록 한다.
-            if (Number.isInteger(error?.status)) advanceKey();
+            // 서버가 **확정해서 거부한** 경우에만 이 논리 발송을 끝낸다. 5xx나 응답 없음은
+            // 쓰기가 커밋되지 않았다는 증거가 아니므로 같은 키를 남겨 다음 시도가 멱등하게
+            // 나가도록 한다(establishesTerminalRefusal 참고).
+            if (establishesTerminalRefusal(error?.status)) advanceKey();
             set((state) => ({
                 sendErrors: { ...state.sendErrors, [receiverId]: error?.message ?? "초대를 보내지 못했습니다." },
             }));
@@ -392,11 +464,33 @@ export const useGameInviteStore = create((set, get) => ({
         }
     },
 
-    /** 수락 시도의 진행 표시. 실제 수락은 소켓 경계가 소유한다. */
-    markAcceptPending: (inviteId, pending) => set((state) => {
+    /** 이 시도 하나를 식별하는 번호. 완료 시 소유 대조에 쓴다. */
+    beginAcceptOperation: () => nextOperationId(),
+
+    /**
+     * 수락 시도의 진행 표시. 실제 수락은 소켓 경계가 소유한다.
+     *
+     * owner를 주면 **자기가 세운 표시만** 내린다. 계정이 A → B → A로 오간 사이에 도착한
+     * 옛 시도의 완료가 지금 진행 중인 새 시도의 잠금을 풀어 중복 수락을 열지 않게 하는
+     * 소유 대조다(owner 생략 시에는 예전처럼 무조건 반영한다).
+     */
+    markAcceptPending: (inviteId, pending, owner = undefined) => set((state) => {
+        if (pending) {
+            const next = new Set(state.pendingInviteIds).add(inviteId);
+            return owner === undefined
+                ? { pendingInviteIds: next }
+                : { pendingInviteIds: next, acceptOwners: { ...state.acceptOwners, [inviteId]: owner } };
+        }
+        // 지금 이 표시의 주인이 내가 아니면 아무것도 하지 않는다.
+        if (owner !== undefined && state.acceptOwners[inviteId] !== owner) return {};
         const next = new Set(state.pendingInviteIds);
-        if (pending) next.add(inviteId); else next.delete(inviteId);
-        return { pendingInviteIds: next };
+        next.delete(inviteId);
+        return {
+            pendingInviteIds: next,
+            acceptOwners: Object.fromEntries(
+                Object.entries(state.acceptOwners).filter(([id]) => id !== inviteId),
+            ),
+        };
     }),
 
     setInviteError: (inviteId, message) => set((state) => ({

@@ -949,6 +949,173 @@ test("AC-06: 발송 멱등 키는 결과가 확정되기 전까지 같은 번호
   await mounted.unmount()
 })
 
+test("AC-06: 5xx는 쓰기가 커밋되지 않았다는 증거가 아니므로 같은 키를 유지한다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  const keys = []
+  const respondWith = (status) => {
+    createInviteResponder = async (receiverId, creationKey) => {
+      keys.push(creationKey)
+      throw Object.assign(new Error(`status ${status}`), { status })
+    }
+  }
+  const send = () => act(async () => {
+    await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1")
+  })
+
+  // 500은 "서버가 답했다"일 뿐 "쓰기를 하지 않았다"가 아니다 — 커밋 뒤 응답을 만들다
+  // 터졌을 수도 있으므로 같은 키를 유지해야 재시도가 두 번째 초대를 만들지 않는다.
+  respondWith(500)
+  await send()
+  await send()
+  assert.equal(keys[1], keys[0], "정수 status가 있다는 이유만으로 키를 넘기면 초대가 두 개 생긴다")
+
+  // 503·408·429도 같다 — 결과를 모른다.
+  respondWith(503)
+  await send()
+  assert.equal(keys[2], keys[1])
+  respondWith(429)
+  await send()
+  assert.equal(keys[3], keys[2])
+
+  // 반대로 409는 그 키가 이미 다른 초대에 쓰였다는 확정 답이라 반드시 넘어가야 한다.
+  respondWith(409)
+  await send()
+  assert.equal(keys[4], keys[3], "확정 답 자체는 아직 같은 키로 나간다")
+  respondWith(409)
+  await send()
+  assert.notEqual(keys[5], keys[4], "키 충돌을 확인하고도 같은 키에 갇히면 영원히 초대할 수 없다")
+  await mounted.unmount()
+})
+
+test("AC-06: 종료된 발송 뒤 계정을 나갔다 돌아오면 새 발송이 옛 서버 키를 재사용하지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  // 서버는 creation_key를 영속으로 기억한다 — 같은 키가 다시 오면 새 초대를 만들지 않고
+  // 그때 만든 행을 그대로 돌려준다(실제 createInvite의 멱등 계약). 그 행이 이미 끝나
+  // 있으면 사용자는 "초대했는데 아무 일도 안 일어나는" 화면을 본다.
+  const keys = []
+  const serverRows = new Map()
+  createInviteResponder = async (receiverId, creationKey) => {
+    keys.push(creationKey)
+    if (!serverRows.has(creationKey)) {
+      serverRows.set(creationKey, invite({
+        inviteId: `row-${serverRows.size + 1}`, receiverId, status: "PENDING",
+      }))
+    }
+    return serverRows.get(creationKey)
+  }
+  const send = () => act(async () => {
+    await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1")
+  })
+
+  // 1) 발송이 확정되고, 2) 상대가 거절해 그 행이 종료됐다.
+  await send()
+  serverRows.get(keys[0]).status = "DECLINED"
+
+  // 3) 로그아웃 → 다시 같은 계정으로 로그인. 계정 상태가 새로 만들어져 발송 번호는 1로
+  //    돌아가지만 서버의 옛 키는 그대로 남아 있다.
+  useAuthStore.setState({ isLoggedIn: false, user: null })
+  useGameInviteStore.getState().syncAccount()
+  signIn(ACCOUNT_A)
+  useGameInviteStore.getState().syncAccount()
+
+  // 4) 새로운 **의도적인** 초대.
+  await send()
+
+  assert.equal(keys.length, 2)
+  assert.notEqual(keys[1], keys[0], "번호만 쓰면 로그아웃/로그인 뒤 옛 키가 그대로 되살아난다")
+  assert.notEqual(
+    serverRows.get(keys[1]).inviteId, serverRows.get(keys[0]).inviteId,
+    "새 발송이 끝난 옛 초대를 돌려받으면 사용자는 아무 일도 일어나지 않는 화면을 본다",
+  )
+  assert.equal(serverRows.get(keys[1]).status, "PENDING")
+
+  // 5) 새로고침(store 재구성)도 같은 lifecycle 경계다.
+  useGameInviteStore.getState().__resetForTests()
+  signIn(ACCOUNT_A)
+  await send()
+  assert.equal(keys.length, 3)
+  assert.notEqual(keys[2], keys[1])
+  assert.notEqual(keys[2], keys[0])
+
+  // 6) 같은 lifecycle 안의 결과 미확정 재시도는 여전히 **정확히 같은 키**다.
+  createInviteResponder = async (receiverId, creationKey) => {
+    keys.push(creationKey)
+    throw new Error("network down")
+  }
+  await send()
+  await send()
+  assert.equal(keys[4], keys[3], "lifecycle 표식이 재시도마다 바뀌면 멱등성이 깨진다")
+  await mounted.unmount()
+})
+
+test("AC-06: 계정이 오간 사이 도착한 옛 수락 완료가 새 시도의 진행 표시를 풀지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  /** ACK를 시험이 열어 줄 때까지 붙잡아 둔다. */
+  const holdAccept = () => {
+    const held = deferred()
+    socket.__setAckResponder((event, payload, ack) => {
+      if (event === "accept_game_invite") {
+        held.promise.then(() => ack({ ok: false, code: "REJECTED", message: "안 됩니다." }))
+        return
+      }
+      ack({ ok: false, code: "UNEXPECTED_EVENT" })
+    })
+    return held
+  }
+
+  // (1) A의 첫 수락 — 응답을 붙잡아 둔다.
+  const oldAck = holdAccept()
+  let firstResult = null
+  const first = requestGameInviteAccept("dup").then((r) => { firstResult = r })
+  await act(async () => { await flush() })
+  assert.equal(useGameInviteStore.getState().pendingInviteIds.has("dup"), true)
+
+  // (2) A → B → A.
+  useAuthStore.setState({ isLoggedIn: true, user: { uuid: ACCOUNT_B } })
+  useGameInviteStore.getState().syncAccount()
+  signIn(ACCOUNT_A)
+  useGameInviteStore.getState().syncAccount()
+  assert.equal(useGameInviteStore.getState().pendingInviteIds.has("dup"), false)
+
+  // (3) 돌아온 A에서 같은 초대에 새 시도를 건다.
+  const newAck = holdAccept()
+  const second = requestGameInviteAccept("dup")
+  await act(async () => { await flush() })
+  assert.equal(useGameInviteStore.getState().pendingInviteIds.has("dup"), true)
+
+  // (4) 이제 **옛** 시도의 응답이 도착한다.
+  await act(async () => { oldAck.resolve(); await first; await flush() })
+
+  assert.equal(firstResult.code, "STALE", "계정이 바뀐 뒤 도착한 결과는 새 화면을 건드리지 않는다")
+  assert.equal(
+    useGameInviteStore.getState().pendingInviteIds.has("dup"), true,
+    "옛 완료가 새 시도의 진행 표시를 풀면 같은 초대에 두 번째 수락이 나간다",
+  )
+
+  // 새 시도가 끝나면 정상적으로 풀린다 — 소유 대조가 정상 해제까지 막지는 않는다.
+  await act(async () => { newAck.resolve(); await second; await flush() })
+  assert.equal(useGameInviteStore.getState().pendingInviteIds.has("dup"), false)
+  await mounted.unmount()
+})
+
 test("AC-06: 실패·응답 유실 ACK는 이동하지 않고 사유를 남긴 뒤 서버 상태를 다시 읽는다", async () => {
   signIn(ACCOUNT_A)
   installPlayer()

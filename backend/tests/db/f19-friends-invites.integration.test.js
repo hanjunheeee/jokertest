@@ -1310,13 +1310,35 @@ test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번�
 
     const a = await createLocalUser('cur-a');
     const b = await createLocalUser('cur-b');
+    // 두 번째 초대는 **다른 발송자가 다른 방에서** 보낸다.
+    //
+    // 같은 발송자·같은 방으로 두 번 만들면 createInvite의 live-PENDING 중복 방지가 (옳게)
+    // 첫 행을 그대로 돌려준다 — 두 변수가 같은 행을 가리키게 되어 "두 번째를 거절"이 첫
+    // 초대까지 끝내고, 이 시험이 요구하는 서로 다른 두 행 자체가 서지 않는다. 중복 방지를
+    // 끄는 대신, 실제로 두 행이 생기는 정당한 상황(친구 두 명이 각자 자기 방으로 초대)을
+    // 쓴다.
+    const s = await createLocalUser('cur-s');
     await befriend(a, b);
+    await befriend(s, b);
     placeInRoom(a, 'room-cursor');
+    placeInRoom(s, 'room-cursor-2');
 
     const first = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'c1' });
-    const second = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'c2' });
+    const second = await gameInviteService.createInvite({ senderId: s, receiverId: b, creationKey: 'c2' });
 
-    // 두 번째를 거절해 종료시킨다.
+    // 커서 계약을 관찰하려면 **서로 다른 두 행**이고 뒤엣것의 순번이 더 커야 한다.
+    assert.equal(first.created, true);
+    assert.equal(second.created, true);
+    assert.notEqual(
+        second.invite.inviteId, first.invite.inviteId,
+        '두 초대가 같은 행이면 아래의 "종료된 초대까지 포함한 최대 순번" 단정이 성립하지 않는다',
+    );
+    assert.equal(
+        gameInviteService.compareSeq(second.invite.creationSeq, first.invite.creationSeq) > 0, true,
+        '나중에 만든 초대의 생성 순번이 더 커야 한다',
+    );
+
+    // **뒤에 만든 행만** 거절해 종료시킨다 — 앞의 PENDING은 그대로 살아 있어야 한다.
     await gameInviteService.declineInvite(b, second.invite.inviteId);
 
     const snapshot = await gameInviteService.getReceiverSnapshot(b);

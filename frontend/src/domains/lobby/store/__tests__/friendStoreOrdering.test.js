@@ -186,6 +186,47 @@ test("AC-02: 잠금은 공용 store가 소유해 화면이 바뀌어도 같은 �
   assert.equal(useFriendStore.getState().processingRequestIds.size, 0)
 })
 
+test("AC-02: 소유 표식이 있는 잠금은 그 작업만 풀 수 있다", () => {
+  signIn("account-a")
+  const older = useFriendStore.getState().beginOperation()
+  const newer = useFriendStore.getState().beginOperation()
+  assert.notEqual(older, newer, "작업 번호는 매번 새로 발급돼야 한다")
+
+  assert.deepEqual(useFriendStore.getState().lockRequests([7], older), [7])
+
+  // 다른 작업(또는 옛 계정에서 시작한 완료)의 해제는 무시된다.
+  useFriendStore.getState().unlockRequests([7], newer)
+  assert.deepEqual(
+    [...useFriendStore.getState().processingRequestIds], [7],
+    "남의 작업이 잠금을 풀면 같은 요청에 두 번째 처리가 나간다",
+  )
+
+  // 주인은 풀 수 있다.
+  useFriendStore.getState().unlockRequests([7], older)
+  assert.equal(useFriendStore.getState().processingRequestIds.size, 0)
+})
+
+test("AC-02: A→B→A로 돌아와 다시 잠근 요청을 옛 작업의 해제가 풀지 못한다", () => {
+  signIn("account-a")
+  const oldOperation = useFriendStore.getState().beginOperation()
+  useFriendStore.getState().lockRequests([7], oldOperation)
+
+  signIn("account-b")
+  signIn("account-a")
+
+  // 돌아온 A에서 같은 요청에 새 작업이 걸린다.
+  const newOperation = useFriendStore.getState().beginOperation()
+  assert.deepEqual(useFriendStore.getState().lockRequests([7], newOperation), [7])
+
+  // 이제 첫 A에서 시작했던 작업의 finally가 뒤늦게 도착한다.
+  useFriendStore.getState().unlockRequests([7], oldOperation)
+
+  assert.deepEqual(
+    [...useFriendStore.getState().processingRequestIds], [7],
+    "계정 세대만으로는 A→B→A를 구분하지 못한다 — 소유 표식이 새 작업을 지켜야 한다",
+  )
+})
+
 test("AC-02: 계정이 바뀌면 이전 계정의 잠금과 전체 수락 집계가 함께 사라진다", () => {
   signIn("account-a")
   useFriendStore.getState().lockRequests([1, 2])
