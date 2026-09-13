@@ -878,7 +878,10 @@ test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만�
 
     // 초대 행과 알림 행이 같은 트랜잭션에서 함께 확정됐다.
     assert.equal(await countRows(db.GameInvite, {}), 1);
-    const notification = await db.Notification.findOne({ where: { user_id: b } });
+    const inviteNotificationWhere = {
+        user_id: b, source_key: notificationService.gameInviteSourceKey(first.invite.inviteId),
+    };
+    const notification = await db.Notification.findOne({ where: inviteNotificationWhere });
     assert.equal(notification.type, 'game-invite');
     assert.equal(notification.source_key, notificationService.gameInviteSourceKey(first.invite.inviteId));
     assert.deepEqual(notification.target, { kind: 'game-invite', inviteId: first.invite.inviteId });
@@ -903,7 +906,8 @@ test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만�
     assert.equal(retry.created, false);
     assert.equal(retry.invite.inviteId, first.invite.inviteId);
     assert.equal(await countRows(db.GameInvite, {}), 1);
-    assert.equal(await countRows(db.Notification, { user_id: b }), 1);
+    assert.equal(await countRows(db.Notification, inviteNotificationWhere), 1);
+    assert.equal(await countRows(db.Notification, { user_id: b, type: 'friend-request' }), 1, '친구 신청 알림도 보존된다');
     assert.equal(emitted.length, 0, '재시도는 신규 수신 사건을 재발행하지 않는다');
 });
 
@@ -1169,6 +1173,30 @@ test('A-10/상태표 5: 두 번째 잠금 전에 차단이 커밋되면 역사�
     assert.equal(row.end_reason, 'BLOCKED_BEFORE_ENTRY');
 });
 
+test('AC-06: 조회 없이 만료 초대를 수락해도 EXPIRED가 커밋되고 재시도는 멱등하다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+    const a = await createLocalUser('ed-a');
+    const b = await createLocalUser('ed-b');
+    await befriend(a, b);
+    placeInRoom(a, 'room-expire-direct');
+    const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'expire-direct' });
+    clockMs += gameInviteService.INVITE_TTL_MS + 1000;
+    for (let retry = 0; retry < 2; retry += 1) {
+        await assert.rejects(
+            () => gameInviteService.recordAcceptDecision({ receiverId: b, inviteId: invite.inviteId,
+                attemptId: 'expired-attempt', bootEpoch: roomAccess.bootEpoch }),
+            (error) => error.status === 409 && error.code === 'EXPIRED',
+        );
+        const row = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
+        assert.equal(row.status, 'EXPIRED');
+        assert.equal(row.end_reason, 'EXPIRED');
+        assert.equal(row.revision, 2);
+        assert.equal(row.attempt_id, null);
+        assert.equal(row.entry_outcome, null);
+    }
+});
+
 test('A-11: 옛 boot epoch의 초대는 수락 결정 자체가 거부되고 CANCELLED로 확정된다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -1191,6 +1219,8 @@ test('A-11: 옛 boot epoch의 초대는 수락 결정 자체가 거부되고 CAN
     const row = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
     assert.equal(row.status, 'CANCELLED');
     assert.equal(row.end_reason, 'SERVER_RESTARTED');
+    assert.equal(row.revision, 2);
+    assert.equal(row.attempt_id, null);
     assert.equal(row.entry_outcome, null, '입장 영수증은 만들어지지 않는다');
 });
 

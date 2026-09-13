@@ -523,7 +523,7 @@ async function cancelPendingInvitesForRoom(roomId, reason) {
 async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch }) {
     const { db, now } = deps;
 
-    return await db.sequelize.transaction(async (t) => {
+    const decision = await db.sequelize.transaction(async (t) => {
         const row0 = await db.GameInvite.findOne({ where: { id: inviteId }, transaction: t });
         if (!row0) throw createError('초대를 찾을 수 없습니다.', 404);
         if (row0.receiver_id !== receiverId) throw createError('초대를 찾을 수 없습니다.', 404);
@@ -545,7 +545,7 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
             };
         }
         if (row.status !== INVITE_STATUS.PENDING) {
-            throw createError('이미 처리된 초대입니다.', 409, row.status);
+            return { rejection: createError('이미 처리된 초대입니다.', 409, row.status) };
         }
         if (row.boot_epoch !== bootEpoch) {
             // 서버가 재시작됐다 — 옛 방 인스턴스는 복원되지 않으므로 입장 근거가 없다(A-11).
@@ -553,7 +553,7 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
                 status: INVITE_STATUS.CANCELLED, end_reason: 'SERVER_RESTARTED',
                 decided_at: now(), revision: row.revision + 1,
             }, { transaction: t });
-            throw createError('초대가 더 이상 유효하지 않습니다.', 409, 'SERVER_RESTARTED');
+            return { rejection: createError('초대가 더 이상 유효하지 않습니다.', 409, 'SERVER_RESTARTED') };
         }
         if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t })) {
             throw createError('차단된 사용자의 초대는 수락할 수 없습니다.', 403, 'BLOCKED');
@@ -572,6 +572,10 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
             roomInstanceId: row.room_instance_id, resumed: false,
         };
     });
+    // Persist terminal expiry/cancellation before reporting a business rejection.
+    // SQL and commit failures still reject the transaction without claiming a decision.
+    if (decision.rejection) throw decision.rejection;
+    return decision;
 }
 
 // ── AC-06: 확정(두 번째 finalization 트랜잭션) ───────────────────────────────
