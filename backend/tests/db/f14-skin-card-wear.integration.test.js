@@ -26,7 +26,13 @@ const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-tok
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addEconomy = require('../../db/migrations/0006-add-economy');
 const addEconomyPurchaseRequests = require('../../db/migrations/0007-add-economy-purchase-requests');
-const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
+// 일반 케이스가 공유하는 스키마를 케이스마다 실제로 대조하기 위해 필요하다(아래 setUp 참고) —
+// F-14가 의존하는 계약은 selected_skin_* 5개 컬럼(0011)과 revision NOT NULL(0010)이다.
+const addEconomyLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
+const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
+const {
+    buildManagedSchema, resetManagedSchema, resetManagedData, findNonEmptyManagedTables,
+} = require('../helpers/isolatedTestDb');
 
 // 복제한 테스트 전용 목록 대신 실제 배포 CLI의 등록 순서를 검증한다(0011 포함) —
 // f08/f09/f12/f13과 같은 관례.
@@ -59,6 +65,9 @@ const resetSchema = async () => {
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
+/** 이력(schema_migrations)을 뺀 데이터 테이블. dropOrder의 "자식 → 부모" 순서를 그대로 쓴다. */
+const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
+
 // require 캐시 싱글턴이라, 파일 맨 위에서 맞춰둔 process.env.DATABASE_URL로 처음
 // require되는 이 시점에 격리 DB에 연결된다(f08/f13과 동일한 관례).
 const db = require('../../models');
@@ -69,9 +78,147 @@ test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
 });
 
-const setUp = async () => {
+// ---------------------------------------------------------------------------
+// 고정 장비 — 스키마 재구축과 데이터 격리를 분리한다
+// ---------------------------------------------------------------------------
+//
+// ── 실측 ────────────────────────────────────────────────────────────────────
+// 이전 판은 13 케이스 전부가 setUp에서 관리 스키마를 통째로 드롭하고 마이그레이션 13개를
+// 처음부터 다시 적용했다. 공식 전체 실행 실측
+// (.pluto/monitor/backend-full-2026-09-13T12-18-43.767Z.log): 이 파일 13건이 94891ms를 썼다.
+// 그중 스키마 계약 자체가 대상인 케이스는 **0011 재실행 한 건뿐**이고, 나머지 열두 건은
+// equipItem/purchaseItem/getWalletSummary/getGameStartLoadouts의 서비스 의미만 본다.
+//
+// ── 그래서 두 가지 setUp을 둔다 (F-17·F-19 스위트에서 이미 검증된 형태) ───────
+//   setUpFreshSchema(t) — 마이그레이션을 실제로 다시 적용하고 그 전후 스키마를 비교하는
+//                         케이스. 매번 전체 드롭 + 전체 이관을 예전과 똑같이 한다. 그리고
+//                         자기 뒤를 dirty로 표시해, 다음 일반 케이스가 그 케이스가 남긴
+//                         스키마를 물려받지 않고 스스로 전체 재구축으로 되돌아가게 한다.
+//   setUp(t)            — 일반 서비스 케이스. 이미 완전히 이관된 스키마 위에서 데이터만 비운다.
+//
+// 일반 케이스는 스키마를 **신뢰하지 않는다**. 매번 (1) 승인된 전용 DB인지 (2) 관리 목록 밖
+// 테이블이 없는지 (3) 관리 테이블이 전부 존재하는지를 확인하고(resetManagedData가 셋 다
+// 담당한다), 그 위에 (4) 남은 행이 한 건도 없는지 (5) 0010·0011의 컬럼 계약이 그대로인지를
+// 직접 단정한다. FOREIGN_KEY_CHECKS는 끄지 않는다 — dropOrder는 "자식 → 부모" 순서이므로
+// 같은 순서의 DELETE도 제약을 그대로 지킨다.
+
+/** 'unknown' = 아직 안 세움 · 'migrated' = 완전히 이관됨 · 'dirty' = 스키마를 만진 케이스가 지나갔음 */
+let schemaState = 'unknown';
+
+/** setUp이 실제로 쓴 시간. 추측이 아니라 측정으로 보고하기 위한 장치다. */
+const fixtureCost = { rebuilds: 0, cleans: 0, schemaMs: 0, dataMs: 0 };
+
+/**
+ * 케이스가 바꿀 수 있는 **가변 의존성**을 원래대로 돌린다.
+ *
+ * 롤백 케이스가 EconomyLoadout.prototype.update를 실패하는 함수로 갈아끼운다. 그 케이스는
+ * finally로 되돌리지만, 스키마를 공유하게 된 이상 "되돌리기가 반드시 실행된다"를 전제로
+ * 두지 않는다 — 되돌리기가 한 번이라도 건너뛰이면 뒤따르는 모든 케이스가 조용히 같은 주입된
+ * 실패를 물려받는다.
+ */
+const REAL_LOADOUT_UPDATE = db.sequelize.models.EconomyLoadout.prototype.update;
+
+const resetRuntimeFixtures = () => {
+    db.sequelize.models.EconomyLoadout.prototype.update = REAL_LOADOUT_UPDATE;
+};
+
+/** 관리 스키마를 통째로 드롭하고 마이그레이션 전부를 처음부터 적용한다. */
+const rebuildSchema = async () => {
+    const startedAt = performance.now();
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    fixtureCost.rebuilds += 1;
+    fixtureCost.schemaMs += performance.now() - startedAt;
+    schemaState = 'migrated';
+};
+
+/** 케이스별 setUp/본문 소요와 어떤 setUp을 썼는지를 TAP 진단으로 남긴다. */
+const beginCase = (t, mode, setupMs) => {
+    const startedAt = performance.now();
+    t.after(() => {
+        t.diagnostic(
+            `[f14-fixture] mode=${mode} setup=${setupMs.toFixed(1)}ms body=${(performance.now() - startedAt).toFixed(1)}ms`,
+        );
+    });
+};
+
+/** 마이그레이션을 실제로 다시 적용하는 케이스 전용. 전체 재구축하고, 뒤를 dirty로 남긴다. */
+const setUpFreshSchema = async (t) => {
+    const startedAt = performance.now();
+    await rebuildSchema();
+    // 이 케이스는 applyMigrations를 자기 본문에서 한 번 더 부르고 describeTable 결과를
+    // 그 전후로 비교한다 — 스키마를 대상으로 삼는 케이스이므로 뒤를 dirty로 표시한다.
+    schemaState = 'dirty';
+    resetRuntimeFixtures();
+    beginCase(t, 'fresh-schema', performance.now() - startedAt);
+};
+
+/** 일반 서비스 케이스. 이미 이관된 스키마 위에서 데이터만 비우고 격리를 실제로 확인한다. */
+const setUp = async (t) => {
+    const startedAt = performance.now();
+    let mode = 'clean-data';
+
+    if (schemaState !== 'migrated') {
+        await rebuildSchema();
+        mode = 'rebuilt';
+    } else {
+        const cleanStartedAt = performance.now();
+        const result = await resetManagedData(sequelize, TEST_DB_URL, {
+            managedTables: MANAGED_TABLES,
+            dropOrder: DROP_ORDER,
+            // 이력 행은 남긴다 — 지우면 다음 applyMigrations가 이미 있는 테이블에 다시
+            // 이관을 시도하게 된다.
+            keepTables: [migrationRunner.META_TABLE],
+        });
+        if (!result.cleaned) {
+            await rebuildSchema();
+            mode = `rebuilt-missing:${result.missingTables.join(',')}`;
+        } else {
+            fixtureCost.cleans += 1;
+            fixtureCost.dataMs += performance.now() - cleanStartedAt;
+        }
+    }
+
+    // 격리 확인 1 — 앞 케이스의 행이 한 건도 넘어오지 않았다. 넘어왔다면 이 케이스의
+    // "거부된 요청은 컬럼을 전혀 건드리지 않는다" 류 단정은 전부 의미를 잃는다.
+    assert.deepEqual(
+        await findNonEmptyManagedTables(sequelize, DATA_TABLES), [],
+        '앞 케이스의 행이 남아 있으면 이 케이스의 단정은 의미가 없다',
+    );
+
+    // 격리 확인 2 — 공유하는 스키마가 0010·0011의 컬럼 계약을 그대로 만족한다. 스킨 컬럼이
+    // 없거나 nullable이 아닌 상태에서 "장착이 저장됐다"를 단정하면 안 된다.
+    const queryInterface = sequelize.getQueryInterface();
+    await addEconomyLoadoutJobSkins.verify(queryInterface);
+    await addEconomyLoadoutRevision.verify(queryInterface);
+
+    resetRuntimeFixtures();
+    beginCase(t, mode, performance.now() - startedAt);
+};
+
+test.after(() => {
+    if (!TEST_DB_URL) return;
+    console.log(
+        `# [f14-fixture] 전체 재구축 ${fixtureCost.rebuilds}회 ${fixtureCost.schemaMs.toFixed(0)}ms · `
+        + `데이터 격리 ${fixtureCost.cleans}회 ${fixtureCost.dataMs.toFixed(0)}ms`,
+    );
+});
+
+test.afterEach(() => {
+    resetRuntimeFixtures();
+});
+
+/**
+ * 실제 production hashPassword로 **프로세스당 한 번만** 만든 bcrypt 해시를 공유한다.
+ *
+ * 강도를 낮추지 않는다 — 같은 함수·같은 cost(10)·같은 값이고, 계정마다 똑같은 평문을 다시
+ * 해싱하던 중복 계산만 없앤다. 이 스위트의 어떤 단정도 비밀번호 검증을 지나지 않는다
+ * (모든 케이스가 economyService를 직접 호출한다 — 로그인 경로가 없다).
+ */
+let sharedPasswordHash = null;
+const testPasswordHash = async () => {
+    if (sharedPasswordHash === null) sharedPasswordHash = await hashPassword('correct-horse-battery-1');
+    return sharedPasswordHash;
 };
 
 const createLocalUser = async (label) => {
@@ -79,7 +226,7 @@ const createLocalUser = async (label) => {
     const nickname = `${label}${uuid.slice(0, 8 - label.length)}`.slice(0, 8);
     await db.User.create({
         uuid,
-        password_hash: await hashPassword('correct-horse-battery-1'),
+        password_hash: await testPasswordHash(),
         nickname,
         email: `${label}-${uuid}@example.com`,
     });
@@ -102,7 +249,10 @@ const purchase = (userId, itemId) => economyService.purchaseItem({ userId, itemI
 
 test('0011: 재실행해도 오류 없이 동일한 스키마가 유지되고, 이미 저장된 직업별 스킨 값이 그대로 보존된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    // 이 케이스만 전체 재구축이다 — 본문이 마이그레이션을 실제로 다시 적용하고 그 전후
+    // describeTable을 비교하므로, 앞 케이스가 남긴 스키마 위에서 돌면 "재실행이 안전하다"는
+    // 단정의 대상이 달라진다.
+    await setUpFreshSchema(t);
 
     const userId = await createLocalUser('f14mig');
     await purchase(userId, GUARD_SKIN_ITEM_ID);
@@ -129,11 +279,101 @@ test('0011: 재실행해도 오류 없이 동일한 스키마가 유지되고, �
     assert.equal(loadout.selected_skin_noble, null, '건드리지 않은 다른 직업 슬롯은 계속 null이어야 한다');
 });
 
+// ---------------------------------------------------------------------------
+// 고정 장비 자체의 격리 계약 — 위 setUp이 실제로 무엇을 비우는지 값으로 확인한다
+// ---------------------------------------------------------------------------
+
+const countRows = async (model, where = {}) => await model.count({ where });
+
+test('격리: 데이터 정리는 스킨·카드 착용 행까지 실제로 비우고 스키마·제약·이관 이력은 남긴다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    // (1) 한 케이스가 남길 수 있는 것을 실제 서비스 경로로 전부 만든다 — 지급도 구매도
+    //     실제 원장(grantReward/purchaseItem)을 지나며, 가짜 잔액이나 직접 INSERT가 아니다.
+    const userId = await createLocalUser('f14iso');
+    await purchase(userId, GUARD_SKIN_ITEM_ID);
+    await purchase(userId, CARD_FRAME_ITEM_ID);
+    await economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: GUARD_SKIN_ITEM_ID });
+    await economyService.equipItem({ userId, slot: 'PLAYER_CARD_FRAME', itemId: CARD_FRAME_ITEM_ID });
+
+    const wornBefore = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
+    assert.equal(wornBefore.selected_skin_guard, GUARD_SKIN_ITEM_ID, '착용 행이 실제로 서 있어야 정리를 검증할 수 있다');
+    assert.equal(wornBefore.selected_card_frame_id, CARD_FRAME_ITEM_ID);
+
+    const populated = [
+        [db.User, 'users'],
+        [db.sequelize.models.EconomyWallet, 'economy_wallets'],
+        [db.sequelize.models.EconomyLedgerEntry, 'economy_ledger_entries'],
+        [db.sequelize.models.EconomyEntitlement, 'economy_entitlements'],
+        [db.sequelize.models.EconomyLoadout, 'economy_loadouts'],
+    ];
+    for (const [model, table] of populated) {
+        assert.ok(
+            await countRows(model) > 0,
+            `${table}에 행이 없으면 이 시험은 정리를 검증하는 것이 아니라 빈 DB를 확인하는 것이 된다`,
+        );
+    }
+
+    // (2) 일반 케이스의 setUp이 쓰는 바로 그 정리를 실행한다.
+    const result = await resetManagedData(sequelize, TEST_DB_URL, {
+        managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER,
+        keepTables: [migrationRunner.META_TABLE],
+    });
+    assert.equal(result.cleaned, true);
+    assert.deepEqual(
+        result.deleted, DATA_TABLES,
+        '관리 테이블 하나라도 빼놓으면 다음 케이스가 남은 행을 물려받는다',
+    );
+
+    // (3) 실제로 한 건도 남지 않았다 — 착용 행도 예외가 아니다.
+    assert.deepEqual(await findNonEmptyManagedTables(sequelize, DATA_TABLES), []);
+
+    // 스키마·이관 이력은 그대로다 — 정리는 드롭이 아니다.
+    const [history] = await sequelize.query(
+        `SELECT COUNT(*) AS applied_count FROM ${migrationRunner.META_TABLE} WHERE status = 'applied'`,
+    );
+    assert.equal(
+        Number(history[0].applied_count), MIGRATIONS.length,
+        '데이터 정리가 이관 이력을 지우면 다음 실행이 이미 있는 스키마에 다시 이관을 시도한다',
+    );
+    const queryInterface = sequelize.getQueryInterface();
+    await assert.doesNotReject(() => addEconomyLoadoutJobSkins.verify(queryInterface));
+    await assert.doesNotReject(() => addEconomyLoadoutRevision.verify(queryInterface));
+
+    // 외래 키는 여전히 강제된다 — FOREIGN_KEY_CHECKS를 끄지 않았다는 값 수준의 증거다.
+    // 오류 종류까지 단정한다: 다른 이유로 거부돼도 "막혔다"로 통과하면 외래 키가 사라진
+    // 것을 이 시험이 놓친다.
+    await assert.rejects(
+        () => db.sequelize.models.EconomyEntitlement.create({
+            user_id: crypto.randomUUID(), item_id: GUARD_SKIN_ITEM_ID, item_type: 'JOB_SKIN', source: 'TEST',
+        }),
+        (error) => error.name === 'SequelizeForeignKeyConstraintError',
+        '정리 뒤에도 없는 계정의 보유 항목은 외래 키가 막아야 한다',
+    );
+
+    // (4) 같은 스키마 위에서 실제 구매·장착 경로가 곧바로 다시 돌아가고, 유일 제약도 살아
+    //     있다 — 다음 케이스가 물려받는 것이 "비어 있고 제약이 온전한 스키마"임을 확인한다.
+    const nextUser = await createLocalUser('f14iso2');
+    await purchase(nextUser, NOBLE_SKIN_ITEM_ID);
+    const worn = await economyService.equipItem({ userId: nextUser, slot: 'JOB_SKIN_NOBLE', itemId: NOBLE_SKIN_ITEM_ID });
+    assert.equal(worn.selected_skin_noble, NOBLE_SKIN_ITEM_ID);
+    assert.equal(worn.selected_skin_guard, null, '앞 계정의 착용 값이 남아 있으면 안 된다');
+
+    await assert.rejects(
+        () => db.sequelize.models.EconomyEntitlement.create({
+            user_id: nextUser, item_id: NOBLE_SKIN_ITEM_ID, item_type: 'JOB_SKIN', source: 'TEST',
+        }),
+        (error) => error.name === 'SequelizeUniqueConstraintError',
+        '(user_id, item_id) 유일 제약이 데이터 정리로 사라지면 안 된다',
+    );
+});
+
 // ── 실제 구매 스킨·카드 장착·복원 ─────────────────────────────────────────────
 
 test('F-14 AC-01: 실제 구매한 직업 스킨을 장착하면 실제 DB 컬럼(selected_skin_guard)에 저장되고 getWalletSummary로 그대로 복원된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14own');
     await purchase(userId, GUARD_SKIN_ITEM_ID);
@@ -147,7 +387,7 @@ test('F-14 AC-01: 실제 구매한 직업 스킨을 장착하면 실제 DB 컬�
 
 test('F-14 AC-01: 실제 구매한 카드 프레임을 장착하면 실제 DB 컬럼(selected_card_frame_id)에 저장되고 그대로 복원된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14card');
     await purchase(userId, CARD_FRAME_ITEM_ID);
@@ -166,7 +406,7 @@ test('F-14 AC-01: 실제 구매한 카드 프레임을 장착하면 실제 DB �
 
 test('F-14 AC-01(R-IMPL2): 같은 revision을 노리는 두 동시 스킨 장착 요청 중 실제 DB에서 하나만 커밋되고 다른 하나는 SKIN_REVISION_CONFLICT로 거부된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14cas1');
     await purchase(userId, GUARD_SKIN_ITEM_ID);
@@ -201,7 +441,7 @@ test('F-14 AC-01(R-IMPL2): 같은 revision을 노리는 두 동시 스킨 장착
 
 test('F-14 AC-01(R-IMPL2): 다른 확정이 먼저 실제로 커밋된 뒤, 지연되어 도착한 오래된 revision의 스킨 장착 요청은 거부되고 최신 행(값·revision)이 그대로 보존된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14stale1');
     await purchase(userId, GUARD_SKIN_ITEM_ID);
@@ -230,7 +470,7 @@ test('F-14 AC-01(R-IMPL2): 다른 확정이 먼저 실제로 커밋된 뒤, 지�
 
 test('F-14 AC-01(R-IMPL2): 갱신 시도 중 트랜잭션이 실패하면 실제 DB에서 롤백되어 기존 선택 컬럼과 revision이 모두 그대로 보존된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14rollback1');
     await purchase(userId, GUARD_SKIN_ITEM_ID);
@@ -276,7 +516,7 @@ test('F-14 AC-01(R-IMPL2): 갱신 시도 중 트랜잭션이 실패하면 실제
 
 test('F-14 AC-02: 미보유 직업 스킨을 장착 요청하면 실제 DB에서도 거부되고 컬럼이 바뀌지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14unown');
 
@@ -291,7 +531,7 @@ test('F-14 AC-02: 미보유 직업 스킨을 장착 요청하면 실제 DB에서
 
 test('F-14 AC-02: 다른 직업에서 구매한 스킨을 이 슬롯에 장착하면(직업 불일치) 실제 DB에서도 거부되고 컬럼이 바뀌지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14mismatch');
     await purchase(userId, NOBLE_SKIN_ITEM_ID); // 귀족(noble) 스킨을 구매
@@ -308,7 +548,7 @@ test('F-14 AC-02: 다른 직업에서 구매한 스킨을 이 슬롯에 장착�
 
 test('F-14 AC-02: 존재하지 않는 basic-skin-* 접두어 위조 id는 실제 DB에서도 무료 예외로 통과하지 못하고 거부된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14forged');
 
@@ -323,7 +563,7 @@ test('F-14 AC-02: 존재하지 않는 basic-skin-* 접두어 위조 id는 실제
 
 test('F-14 AC-01: 무료 기본 스킨(basic-skin-*)은 구매 없이도 실제 DB 컬럼에 장착된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14free');
     const loadout = await economyService.equipItem({ userId, slot: 'JOB_SKIN_NOBLE', itemId: 'basic-skin-귀족2' });
@@ -334,7 +574,7 @@ test('F-14 AC-01: 무료 기본 스킨(basic-skin-*)은 구매 없이도 실제 
 
 test('F-14 AC-03: 서로 다른 두 계정의 직업별 스킨·카드 장착은 실제 DB에서 독립적으로 저장되고 서로 섞이지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userA = await createLocalUser('f14usra');
     const userB = await createLocalUser('f14usrb');
@@ -363,7 +603,7 @@ test('F-14 AC-03: 서로 다른 두 계정의 직업별 스킨·카드 장착은
 
 test('F-14 AC-04: getGameStartLoadouts는 실제 DB에 저장된 직업별 스킨 전체 맵과 카드 프레임을 함께 돌려주고, 미장착 직업은 null이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userId = await createLocalUser('f14start');
     await purchase(userId, GUARD_SKIN_ITEM_ID);
@@ -386,7 +626,7 @@ test('F-14 AC-04: getGameStartLoadouts는 실제 DB에 저장된 직업별 스�
 
 test('F-14 AC-04: getGameStartLoadouts는 실제 DB에서도 계정별로 독립적인 skinsByJob을 돌려주고 서로 섞이지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const userA = await createLocalUser('f14gsa');
     const userB = await createLocalUser('f14gsb');
