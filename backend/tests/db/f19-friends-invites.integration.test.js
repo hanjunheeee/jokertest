@@ -351,6 +351,178 @@ test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시
     assert.equal(await countRows(db.GameInvite, {}), 1);
 });
 
+/**
+ * 실측 두 번째 blocker의 실제 MySQL 회귀.
+ *
+ * 0001의 friend_requests는 requester_id·receiver_id에 각각 users.uuid 외래 키를 갖고, 그
+ * 위의 UNIQUE(requester_id, receiver_id, status)가 **requester_id 외래 키의 유일한 받침**이다.
+ * 받침을 먼저 세우지 않고 그 UNIQUE를 떼면 MySQL이 거부하고 0013이 failed로 멈춘다:
+ *
+ *   Cannot drop index 'friend_requests_requester_receiver_status': needed in a foreign key constraint
+ *
+ * (실측: .pluto/monitor/BD-focused-2026-09-13T08-11-19.923Z.log — 이 스위트의 setUp이 통째로
+ * 죽었다.) 그래서 이 시험은 0013 **이전까지만** 적용해 예전 UNIQUE가 실제로 존재하는 상태를
+ * 세우고, 그 위에서 0013이 처음 돌 때 인덱스가 갈아타는지·외래 키와 모든 행이 남는지를 본다.
+ * FOREIGN_KEY_CHECKS를 끄거나 제약을 떼는 우회는 어디에도 없다.
+ */
+test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 인덱스로 갈아타고 두 외래 키·모든 행을 보존한다', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+
+    // (1) 0013 직전 상태. 마지막 원소가 0013이다(scripts/migrate-db.js::MIGRATIONS).
+    assert.equal(
+        MIGRATIONS[MIGRATIONS.length - 1].name, '0013-f19-friends-invites',
+        '이 시험은 0013이 목록의 마지막이라는 전제에 의존한다',
+    );
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, -1) });
+
+    const queryInterface = sequelize.getQueryInterface();
+    const leftmostOf = (index) => (index.fields ?? []).map((field) => field.attribute ?? field)[0];
+
+    // 예전 UNIQUE가 실제로 있고, 그것이 외래 키의 **유일한 받침**이라는 전제를 실측한다.
+    //
+    // 받침이 하나뿐인지를 인덱스 이름으로 추론하지 않는다 — MySQL이 외래 키용 인덱스를 언제
+    // 자동 생성하는지는 CREATE TABLE과 ADD INDEX의 순서에 따라 달라진다. 대신 실제 MySQL에게
+    // 직접 물어본다: 받침 없이 예전 UNIQUE를 떼려 하면 거부하는가. 이것이 실측 실패를 그대로
+    // 재현하는 조건이고, 거부되므로 스키마는 이 확인으로 바뀌지 않는다.
+    {
+        const before = await queryInterface.showIndex('friend_requests');
+        const legacy = addF19FriendsInvites.findLegacyRequestUniqueIndexes(before);
+        assert.ok(legacy.length >= 1, '0013 이전에는 예전 3컬럼 UNIQUE가 있어야 한다');
+        assert.equal(
+            before.filter((index) => index.name === addF19FriendsInvites.PENDING_PAIR_INDEX).length, 0,
+            '0013 이전에는 계정쌍 유일 키가 없어야 한다',
+        );
+        await assert.rejects(
+            () => sequelize.query(`ALTER TABLE friend_requests DROP INDEX ${legacy[0].name}`),
+            /needed in a foreign key constraint/,
+            '받침을 세우지 않고 예전 UNIQUE를 떼는 것이 실제로 거부돼야 이 회귀가 재현된다',
+        );
+        assert.equal(
+            addF19FriendsInvites.findLegacyRequestUniqueIndexes(
+                await queryInterface.showIndex('friend_requests'),
+            ).length, legacy.length,
+            '거부된 DROP은 스키마를 바꾸지 않아야 한다',
+        );
+    }
+
+    // (2) 보존 대상 행을 실제로 심는다. 예전 UNIQUE가 아직 살아 있으므로 같은 방향의 terminal
+    //     중복은 아직 만들 수 없다 — 그것이 바로 0013이 푸는 문제다.
+    const u1 = await createLocalUser('fk-1');
+    const u2 = await createLocalUser('fk-2');
+    const u3 = await createLocalUser('fk-3');
+
+    const declined = await db.FriendRequest.create({ requester_id: u1, receiver_id: u2, status: 'DECLINED' });
+    const keptPending = await db.FriendRequest.create({ requester_id: u1, receiver_id: u3, status: 'PENDING' });
+    const otherPending = await db.FriendRequest.create({ requester_id: u2, receiver_id: u3, status: 'PENDING' });
+    // {u1,u3} 계정쌍의 교차 방향 PENDING — 예전 UNIQUE는 이것을 막지 못했다. 0013은 더 이른
+    //     id만 유효 대기로 남기고 나머지를 **지우지 않고** CANCELLED로 확정한다.
+    const crossPending = await db.FriendRequest.create({ requester_id: u3, receiver_id: u1, status: 'PENDING' });
+
+    // (3) 0013을 처음 적용한다. 받침을 먼저 세우지 않았다면 여기서 위 오류로 멈춘다.
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    // (4) 인덱스가 갈아탔다: 예전 UNIQUE는 없고, 계정쌍 유일 키와 두 받침이 있다.
+    const after = await queryInterface.showIndex('friend_requests');
+    assert.equal(
+        addF19FriendsInvites.findLegacyRequestUniqueIndexes(after).length, 0,
+        '예전 UNIQUE가 실제로 떨어져야 한다',
+    );
+    const pair = after.find((index) => index.name === addF19FriendsInvites.PENDING_PAIR_INDEX);
+    assert.ok(pair && pair.unique === true, 'PENDING 계정쌍 유일 키가 자리를 대신해야 한다');
+
+    for (const [column, indexName] of Object.entries(addF19FriendsInvites.REQUEST_FK_SUPPORT_INDEXES)) {
+        const support = after.find((index) => index.name === indexName);
+        assert.ok(support, `${indexName} 받침 인덱스가 실제로 만들어져야 한다`);
+        assert.equal(support.unique, false, '받침은 비유일이어야 요청 이력이 한 건으로 제한되지 않는다');
+        assert.equal(leftmostOf(support), column, `${indexName}의 선두 컬럼은 ${column}이어야 한다`);
+    }
+
+    // (5) 두 외래 키가 그대로 남았다 — 인덱스를 떼려고 제약을 희생하지 않았다.
+    const references = await queryInterface.getForeignKeyReferencesForTable('friend_requests');
+    for (const column of Object.keys(addF19FriendsInvites.REQUEST_FK_SUPPORT_INDEXES)) {
+        assert.ok(
+            references.some((reference) => reference.columnName === column
+                && String(reference.referencedTableName).toLowerCase() === 'users'
+                && String(reference.referencedColumnName).toLowerCase() === 'uuid'),
+            `${column} → users.uuid 외래 키가 보존돼야 한다`,
+        );
+    }
+    // 외래 키가 실제로 강제되는지 값으로도 확인한다(이름만 남은 제약이 아니다).
+    await assert.rejects(
+        () => db.FriendRequest.create({
+            requester_id: crypto.randomUUID(), receiver_id: u1, status: 'PENDING',
+        }),
+        '없는 계정의 요청은 외래 키가 막아야 한다',
+    );
+
+    // (6) 행은 한 건도 사라지지 않았고, 교차 중복만 사유를 남긴 채 CANCELLED로 확정됐다.
+    assert.equal(await countRows(db.FriendRequest, {}), 4, '이관이 행을 지우면 안 된다');
+    const statusOf = async (id) => (await db.FriendRequest.findByPk(id)).status;
+    assert.equal(await statusOf(declined.id), 'DECLINED', 'terminal 이력은 그대로다');
+    assert.equal(await statusOf(otherPending.id), 'PENDING', '다른 계정쌍의 대기는 영향이 없다');
+    assert.equal(await statusOf(keptPending.id), 'PENDING', '더 이른 id가 유효 대기로 남는다');
+    const cancelled = await db.FriendRequest.findByPk(crossPending.id);
+    assert.equal(cancelled.status, 'CANCELLED');
+    assert.match(
+        cancelled.message ?? '', new RegExp(addF19FriendsInvites.MIGRATION_CANCEL_REASON),
+        '어떤 행이 왜 취소됐는지 DB만 보고 답할 수 있어야 한다',
+    );
+
+    await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
+
+    // (7) 새 계약이 실제로 발효됐다: 같은 방향의 terminal 중복은 이제 허용되고,
+    //     같은 계정쌍의 교차 PENDING은 DB가 막는다.
+    await assert.doesNotReject(
+        () => db.FriendRequest.create({ requester_id: u1, receiver_id: u2, status: 'DECLINED' }),
+        '거절 후 재신청·재거절 이력이 두 행으로 남을 수 있어야 한다',
+    );
+    await assert.rejects(
+        () => db.FriendRequest.create({ requester_id: u1, receiver_id: u3, status: 'PENDING' }),
+        '같은 계정쌍의 두 번째 유효 대기는 계정쌍 유일 키가 막아야 한다',
+    );
+});
+
+test('AC-05: 받침 인덱스는 실제 MySQL에서 외래 키가 요구하는 인덱스가 되고, 빠지면 verify가 거부한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const queryInterface = sequelize.getQueryInterface();
+    const supportIndex = addF19FriendsInvites.REQUEST_REQUESTER_SUPPORT_INDEX;
+
+    // (1) 0013 적용 후 requester_id 외래 키를 받치는 것은 이 인덱스뿐이다 — 그래서 MySQL이
+    //     그냥 떼지 못한다. 이 거부가 곧 "받침이 실제로 제 역할을 하고 있다"는 증거다.
+    await assert.rejects(
+        () => sequelize.query(`ALTER TABLE friend_requests DROP INDEX ${supportIndex}`),
+        /needed in a foreign key constraint/,
+    );
+
+    // (2) 받침 누락 자체를 독립 검증하려면 임시 guard로 외래 키를 받쳐 둔 뒤 떼야 한다
+    //     (A-09 시험의 f19_seq_guard와 같은 관례).
+    await sequelize.query('ALTER TABLE friend_requests ADD INDEX f19_fk_guard (requester_id)');
+    await sequelize.query(`ALTER TABLE friend_requests DROP INDEX ${supportIndex}`);
+    await assert.rejects(
+        () => addF19FriendsInvites.verify(queryInterface),
+        new RegExp(`${supportIndex} 인덱스가 없습니다`),
+        'guard가 있어 외래 키는 멀쩡하더라도 계약된 받침이 없으면 통과시키지 않는다',
+    );
+
+    // (3) up을 다시 돌리면 빠진 받침만 메운다. 행도 예전 UNIQUE도 건드리지 않는다.
+    const a = await createLocalUser('sup-a');
+    const b = await createLocalUser('sup-b');
+    await friendService.sendFriendRequest(a, b);
+    await addF19FriendsInvites.up(queryInterface, Sequelize, sequelize);
+
+    const restored = (await queryInterface.showIndex('friend_requests'))
+        .find((index) => index.name === supportIndex);
+    assert.ok(restored, '빠진 받침은 복구돼야 한다');
+    assert.equal(restored.unique, false);
+    assert.equal(await countRows(db.FriendRequest, {}), 1, '복구가 기존 요청을 지우면 안 된다');
+
+    await sequelize.query('ALTER TABLE friend_requests DROP INDEX f19_fk_guard');
+    await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
+});
+
 test('AC-05: 거절 → 재신청 → 재거절이 terminal 이력을 두 행으로 보존한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();

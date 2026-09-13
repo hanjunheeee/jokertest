@@ -40,6 +40,42 @@ const FRIEND_REQUESTS_TABLE = 'friend_requests';
 const PENDING_PAIR_COLUMN = 'pending_pair_key';
 const PENDING_PAIR_INDEX = 'friend_requests_pending_pair_unique';
 
+/**
+ * 남겨 두는 두 외래 키를 받쳐 주는 독립 이름의 **비유일** 인덱스.
+ *
+ * ── 왜 필요한가 (실측 실패) ─────────────────────────────────────────────────
+ * 0001의 friend_requests는 requester_id·receiver_id 각각에 users.uuid 외래 키를 갖고,
+ * 그 위에 UNIQUE(requester_id, receiver_id, status)가 있다. InnoDB는 외래 키마다 그 컬럼을
+ * **선두로** 덮는 인덱스를 요구하고, 이미 쓸 수 있는 인덱스가 있으면 별도로 만들지 않는다:
+ *
+ *   requester_id → 예전 3컬럼 UNIQUE의 선두라서 그것이 **유일한 받침**이다(자동 생성 없음).
+ *   receiver_id  → 그 UNIQUE에서는 두 번째 컬럼이라 쓸 수 없어 MySQL이 자동 인덱스를 만든다.
+ *
+ * 그래서 받침을 먼저 만들지 않고 예전 UNIQUE를 떼면 MySQL이 아래처럼 거부하고 이 마이그레이션이
+ * failed로 멈춘다(실측: .pluto/monitor/BD-focused-2026-09-13T08-11-19.923Z.log):
+ *
+ *   Cannot drop index 'friend_requests_requester_receiver_status': needed in a foreign key constraint
+ *
+ * 이 자리를 새로 만든 PENDING 계정쌍 유일 키로 대신할 수는 없다 — 그 인덱스의 선두 컬럼은
+ * pending_pair_key여서 두 UUID 외래 키 어느 쪽도 받치지 못한다.
+ *
+ * 해결은 **제약을 끄거나 떼는 것이 아니라** 두 컬럼에 독립 이름의 비유일 인덱스를 먼저
+ * 세우는 것이다. FOREIGN_KEY_CHECKS를 건드리지 않고 외래 키도 그대로 남는다.
+ *
+ * receiver_id에는 MySQL이 자동으로 만든 인덱스가 이미 있을 수 있어 받침이 하나 늘어난다.
+ * 그래도 이름으로 확인할 수 있는 우리 인덱스를 항상 두는 편을 택했다 — 자동 생성 이름은
+ * 방언·생성 시점에 따라 달라지므로 그것에 verify를 걸면 계약이 환경마다 흔들린다.
+ * friend_requests는 요청 이력 테이블이라 인덱스 하나의 비용이 문제가 되는 규모가 아니다.
+ */
+const REQUEST_REQUESTER_SUPPORT_INDEX = 'friend_requests_requester_idx';
+const REQUEST_RECEIVER_SUPPORT_INDEX = 'friend_requests_receiver_idx';
+
+/** 외래 키 컬럼 → 그 컬럼을 선두로 덮어야 하는 받침 인덱스 이름. */
+const REQUEST_FK_SUPPORT_INDEXES = Object.freeze({
+    requester_id: REQUEST_REQUESTER_SUPPORT_INDEX,
+    receiver_id: REQUEST_RECEIVER_SUPPORT_INDEX,
+});
+
 /** 교차 PENDING 중복을 정리할 때 남기는 사유 — 어떤 행도 삭제하지 않는다는 증거다. */
 const MIGRATION_CANCEL_REASON = 'MIGRATION_0013_DUPLICATE_PENDING';
 
@@ -172,6 +208,30 @@ const findLegacyRequestUniqueIndexes = (indexes) => indexes.filter((index) => {
     if (fields.length !== 3) return false;
     return ['requester_id', 'receiver_id', 'status'].every((column) => fields.includes(column));
 });
+
+/**
+ * 이 인덱스가 해당 외래 키 컬럼을 받칠 수 있는가 — InnoDB 규칙 그대로 **선두 컬럼**만 본다.
+ * 뒤쪽에 같은 컬럼이 들어 있어도 받침이 되지 않는다(receiver_id가 예전 UNIQUE의 두 번째
+ * 컬럼이라서 MySQL이 별도 인덱스를 만들었던 것이 바로 이 이유다).
+ */
+const indexSupportsForeignKeyColumn = (index, column) => indexFieldNames(index)[0] === column;
+
+/**
+ * 남는 외래 키 받침 인덱스를 세운다. 예전 3컬럼 UNIQUE를 떼기 **전에** 반드시 호출한다.
+ *
+ * 이름으로만 멱등성을 판단하므로 재실행에서 중복 생성되지 않는다.
+ * @returns {Promise<string[]>} 이번 호출에서 새로 만든 인덱스 이름
+ */
+const ensureRequestForeignKeySupportIndexes = async (queryInterface) => {
+    const indexes = await queryInterface.showIndex(FRIEND_REQUESTS_TABLE);
+    const created = [];
+    for (const [column, indexName] of Object.entries(REQUEST_FK_SUPPORT_INDEXES)) {
+        if (indexes.some((index) => index.name === indexName)) continue;
+        await queryInterface.addIndex(FRIEND_REQUESTS_TABLE, [column], { name: indexName });
+        created.push(indexName);
+    }
+    return created;
+};
 
 /**
  * 교차 방향 PENDING 중복을 이력 보존 방식으로 정리한다.
@@ -364,8 +424,15 @@ module.exports = {
             });
         }
 
-        // 새 제약이 자리 잡은 **뒤에만** 예전 제약을 뗀다. 순서를 바꾸면 그 사이에 중복
-        // PENDING이 들어올 창이 생긴다.
+        // 예전 UNIQUE는 requester_id의 외래 키를 받치는 **유일한** 인덱스다. 떼기 전에 독립
+        // 이름의 비유일 받침을 세운다 — 이 순서가 뒤바뀌면 MySQL이 "needed in a foreign key
+        // constraint"로 거부하고 마이그레이션이 failed로 멈춘다(REQUEST_FK_SUPPORT_INDEXES 주석).
+        // 새 PENDING 계정쌍 유일 키는 선두 컬럼이 달라 이 역할을 대신하지 못한다.
+        await ensureRequestForeignKeySupportIndexes(queryInterface);
+
+        // 새 제약과 받침이 모두 자리 잡은 **뒤에만** 예전 제약을 뗀다. 순서를 바꾸면 그 사이에
+        // 중복 PENDING이 들어올 창이 생긴다. 외래 키 자체는 건드리지 않고, FOREIGN_KEY_CHECKS도
+        // 끄지 않는다 — 받침이 있으면 제약을 유지한 채로 인덱스만 떨어진다.
         for (const legacy of findLegacyRequestUniqueIndexes(
             await queryInterface.showIndex(FRIEND_REQUESTS_TABLE),
         )) {
@@ -394,6 +461,11 @@ module.exports = {
         }
         // 예전 UNIQUE(requester_id, receiver_id, status)는 되살리지 않는다 — 그 제약이
         // 정상 이력(거절 후 재신청)을 막았기 때문이다. down은 F-19가 추가한 것만 되돌린다.
+        //
+        // 외래 키 받침 인덱스(REQUEST_FK_SUPPORT_INDEXES)도 떼지 않는다. up이 예전 UNIQUE를
+        // 이미 제거했으므로 requester_id 외래 키를 받치는 것은 이제 이 인덱스뿐이고, 떼려고
+        // 하면 MySQL이 같은 "needed in a foreign key constraint"로 거부한다. 남겨 두는 편이
+        // 외래 키를 보존하는 유일한 선택이다 — 인덱스 하나가 남는 것은 무해하다.
     },
 
     async verify(queryInterface) {
@@ -492,6 +564,49 @@ module.exports = {
                 `[${legacy.map((index) => index.name).join(', ')}] — 거절 후 재신청이 계속 막힙니다`,
             );
         }
+
+        // 예전 UNIQUE를 뗀 뒤 두 외래 키가 여전히 받쳐지는지 확인한다. 이름 있는 받침 인덱스가
+        // 있어야 하고(비유일·해당 컬럼이 선두), 그것과 별개로 외래 키 자체도 남아 있어야 한다.
+        // 둘 중 하나라도 빠지면 "제약을 떼서 통과시킨" 상태이므로 fail-closed로 거부한다.
+        for (const [column, indexName] of Object.entries(REQUEST_FK_SUPPORT_INDEXES)) {
+            const support = requestIndexes.find((index) => index.name === indexName);
+            if (!support) {
+                throw new Error(
+                    `0013-f19-friends-invites 적용 후에도 ${FRIEND_REQUESTS_TABLE}.${indexName} 인덱스가 없습니다 — ` +
+                    `${column} 외래 키를 받칠 인덱스가 없으면 예전 UNIQUE를 뗄 수 없습니다`,
+                );
+            }
+            if (support.unique === true) {
+                throw new Error(
+                    `0013-f19-friends-invites의 ${indexName}은 비유일 받침 인덱스여야 합니다 — ` +
+                    `유일 제약이 되면 같은 계정의 요청 이력이 한 건으로 제한됩니다`,
+                );
+            }
+            if (!indexSupportsForeignKeyColumn(support, column)) {
+                throw new Error(
+                    `0013-f19-friends-invites의 ${indexName}이 ${column}을 선두 컬럼으로 덮지 않습니다: ` +
+                    `실제 [${indexFieldNames(support).join(', ')}] — 선두가 아니면 외래 키를 받치지 못합니다`,
+                );
+            }
+        }
+
+        if (typeof queryInterface.getForeignKeyReferencesForTable === 'function') {
+            const references = await queryInterface.getForeignKeyReferencesForTable(FRIEND_REQUESTS_TABLE);
+            const same = (left, right) => String(left ?? '').toLowerCase() === String(right ?? '').toLowerCase();
+            for (const column of Object.keys(REQUEST_FK_SUPPORT_INDEXES)) {
+                const found = Array.isArray(references) && references.some((reference) => (
+                    same(reference?.columnName, column)
+                    && same(reference?.referencedTableName, 'users')
+                    && same(reference?.referencedColumnName, 'uuid')
+                ));
+                if (!found) {
+                    throw new Error(
+                        `0013-f19-friends-invites 적용 후에 ${FRIEND_REQUESTS_TABLE}.${column} → users.uuid 외래 키가 ` +
+                        '사라졌습니다 — 인덱스를 떼려고 제약을 희생하면 안 됩니다',
+                    );
+                }
+            }
+        }
     },
 
     TABLE_NAMES,
@@ -500,6 +615,11 @@ module.exports = {
     FRIEND_REQUESTS_TABLE,
     PENDING_PAIR_COLUMN,
     PENDING_PAIR_INDEX,
+    REQUEST_FK_SUPPORT_INDEXES,
+    REQUEST_REQUESTER_SUPPORT_INDEX,
+    REQUEST_RECEIVER_SUPPORT_INDEX,
+    indexSupportsForeignKeyColumn,
+    ensureRequestForeignKeySupportIndexes,
     MIGRATION_CANCEL_REASON,
     REQUIRED_COLUMNS,
     COLUMN_CONTRACTS,
