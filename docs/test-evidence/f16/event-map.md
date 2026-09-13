@@ -430,7 +430,7 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 **"QA 진단 · 읽기 전용"** 상자가 보인다. 개발 서버가 아니면 나타나지 않는다.
 
 1. **신규 수신 1회** — 발신 계정이 대기방에서 초대를 보낸다. 수신 탭에서 `수신 +1`,
-   `적격 판정 +1`, `실제 청음 0`, 사유 `asset-unreviewed +1`을 확인한다.
+   `적격 판정 +1`, `재생 완료 0`, 사유 `asset-unreviewed +1`을 확인한다.
    → 미검토 자산이므로 **소리는 나지 않는 것이 정상**이다. 들렸다고 적지 않는다.
 2. **복원 0회** — 수신 탭을 새로고침(또는 연결을 끊었다 잇는다). 목록에는 그 초대가 다시
    보이지만 `적격 판정`은 **0**이어야 한다(새로고침으로 기록이 비워지므로 0에서 시작한다).
@@ -443,9 +443,9 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 5. **업무 경로 불변** — 위 전 과정에서 수락·거절·입장이 평소와 똑같이 동작하는지 확인한다.
    진단은 어떤 버튼도 막지 않는다.
 
-기록할 것: 각 단계의 `수신 / 적격 판정 / 실제 청음` 세 수와 사유 집계, 서버의 inviteId와의
+기록할 것: 각 단계의 `수신 / 적격 판정 / 재생 완료` 세 수와 사유 집계, 서버의 inviteId와의
 대응. **청음은 자산 검토가 제공되기 전까지 외부 자산 한계로 남는다** — 진단이 보여주는
-`실제 청음 0`은 그 한계의 증거이지 결함이 아니다.
+`재생 완료 0`은 그 한계의 증거이지 결함이 아니다.
 
 ### 자동 시험
 
@@ -463,3 +463,8 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 | 3 | `friend.store.js::removeIncomingRequest` | 한 행의 제거를 "전체 조회 성공"으로 기록하던 `bumpSeq`를 제거 표식으로 바꿨다 — 겹쳐 실패한 재조회가 성공으로 보고되지 않는다 | `friendStoreOrdering.test.js` 신규 3건(실패 재조회 안내 유지 / 성공 재조회 보고 유지 / 제거 뒤 조회 대조군) |
 | 4 | `gameInvite.store.js::loadSnapshot` | 순서 기준을 요청 **시작 순서**에서 서버가 확정한 **커서**로 바꿨다. 뒤처진 응답은 커서·지식을 되돌리지 않으면서 복원 보류는 해소하고, catch 경로도 더 새로운 성공을 오류로 덮지 않는다 | `friendInviteRuntime.test.js` 신규 3건(역전된 서버 읽기 순서 / 뒤처진 응답 후 신규 1회 / 오래된 실패가 최신 성공을 덮지 않음) |
 
+
+
+### Operator follow-up before review (2026-09-14)
+
+The diagnostic UI label is 재생 완료, a player completion report, never proof of audible output. Physical audibility remains unmeasured. Protected F19 DB on acf13e2c:32PASS0FAIL0SKIP29067.177ms. Operator found beginResync resets snapshotLoaded while preserving cursor50; a later snapshot20 must not roll it back. Added a mounted runtime regression that fails before the monotonic-cursor repair, then checks no old invitation revival and one new eligible dispatch. No live Chrome observation is claimed: the supported Chrome transport remains unavailable despite valid extension/native host and documented reconnect.

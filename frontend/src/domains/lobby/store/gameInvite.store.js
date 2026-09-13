@@ -337,7 +337,8 @@ export const useGameInviteStore = create((set, get) => ({
         // 서버가 확정한 지식의 순서는 커서가 말해 준다(A-09: 커서 이하 행은 뒤늦게 커밋되지
         // 않는다). 그래서 커서를 1차 기준으로, 같은 커서일 때만 ticket을 동점 처리에 쓴다.
         const cursorDelta = compareCreationSeq(cursor, state.cursor);
-        const knownWorse = state.snapshotLoaded && cursorDelta < 0;
+        // beginResync resets snapshotLoaded but preserves confirmed cursor knowledge.
+        const knownWorse = cursorDelta < 0;
         if (!knownWorse && cursorDelta <= 0 && get().snapshotSeq >= ticket) {
             // 같은 서버 경계를 본 두 응답 중 이미 더 나중 요청이 반영됐다.
             return { ok: false, reason: "superseded", superseded: true };

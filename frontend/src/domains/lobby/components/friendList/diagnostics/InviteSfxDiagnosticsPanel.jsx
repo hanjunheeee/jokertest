@@ -17,7 +17,7 @@ import {
  *
  * 두 수를 **분리해서** 보여주는 것이 핵심이다:
  *   · 적격 판정(dispatch 시도) — 커서 이후의 진짜 신규 수신으로 인정된 횟수
- *   · 실제 청음(played)        — 매체가 실제로 끝까지 재생된 횟수
+ *   · 재생 완료(played)        — 재생기의 완료 보고 횟수(실제 청음 증거가 아님)
  * 배포 자산이 미검토인 지금은 "적격 1 · 청음 0 · 사유 asset-unreviewed"가 정상이며,
  * 이것을 1회 청음으로 적지 않는다.
  */
@@ -48,9 +48,10 @@ export default function InviteSfxDiagnosticsPanel() {
         관찰 계정: {account === null ? "없음" : `…${account.slice(-6)}`}
       </p>
       <p data-testid="invite-sfx-diagnostics-summary">
-        수신 {summary.arrivals} · 적격 판정 {summary.eligibleDispatches} · 실제 청음{" "}
+        수신 {summary.arrivals} · 적격 판정 {summary.eligibleDispatches} · 재생 완료{" "}
         {summary.audiblePlaybacks}
       </p>
+      <p>재생 완료는 재생기 보고이며 실제 청음을 확인한 값이 아닙니다.</p>
       {suppressed.length > 0 ? (
         <ul data-testid="invite-sfx-diagnostics-reasons">
           {suppressed.map(([reason, count]) => (
