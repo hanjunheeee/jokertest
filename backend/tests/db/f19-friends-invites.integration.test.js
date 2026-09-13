@@ -550,6 +550,52 @@ test('AC-05: 거절 → 재신청 → 재거절이 terminal 이력을 두 행으
     assert.ok(Number.isInteger(third.id));
 });
 
+test('AC-05: 기동 sync()는 0013이 뗀 예전 UNIQUE를 실제 MySQL에서 되살리지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const queryInterface = sequelize.getQueryInterface();
+    const legacyCount = async () => addF19FriendsInvites
+        .findLegacyRequestUniqueIndexes(await queryInterface.showIndex('friend_requests')).length;
+
+    assert.equal(await legacyCount(), 0, '마이그레이션 직후에는 예전 UNIQUE가 없다');
+
+    // backend/index.js가 부팅마다 하는 일을 이 테이블 하나에 대해서만 그대로 재현한다.
+    // 전체 db.sequelize.sync()를 부르지 않는 이유는 관리 목록에 없는 테이블을 만들어 다른
+    // 격리 스위트의 resetManagedSchema를 깨뜨릴 수 있기 때문이다(isolatedTestDb.js 주석).
+    // 검증 대상인 "모델 선언 → 없는 인덱스 생성" 경로는 Model.sync가 그대로 소유한다.
+    await db.FriendRequest.sync();
+
+    assert.equal(
+        await legacyCount(),
+        0,
+        '모델이 예전 UNIQUE를 선언하고 있으면 sync가 다시 만들어 AC-05 계약이 부팅 한 번에 무효가 된다',
+    );
+
+    // 인덱스 이름 대조만으로는 부족하다 — 실제 값으로도 새 계약이 살아 있는지 본다.
+    const a = await createLocalUser('sync-a');
+    const b = await createLocalUser('sync-b');
+
+    const first = await friendService.sendFriendRequest(a, b);
+    await friendService.declineRequest(b, first.id);
+    const second = await friendService.sendFriendRequest(a, b);
+    await friendService.declineRequest(b, second.id);
+    assert.equal(
+        await countRows(db.FriendRequest, { requester_id: a, receiver_id: b, status: 'DECLINED' }),
+        2,
+        'sync 이후에도 거절 → 재신청 → 재거절이 두 행으로 남아야 한다',
+    );
+
+    await friendService.sendFriendRequest(a, b);
+    await assert.rejects(
+        () => friendService.sendFriendRequest(b, a),
+        (error) => error.status === 409,
+        'sync 이후에도 계정쌍 교차 PENDING은 하나로 좁혀져야 한다',
+    );
+
+    await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
+});
+
 test('AC-05: 교차 방향 동시 신청은 유효 PENDING 하나로 좁혀진다', async (t) => {
     if (unavailable(t)) return;
     await setUp();

@@ -616,3 +616,132 @@ test('up(): 받침 인덱스가 이미 있는 DB에 재실행해도 중복 생�
 
     await assert.doesNotReject(() => migration.verify(qi));
 });
+
+// ---------------------------------------------------------------------------
+// 4) 기동 sync()가 뗀 제약을 되살리지 않는가
+// ---------------------------------------------------------------------------
+//
+// 마이그레이션이 예전 UNIQUE를 떼어도, **모델이 같은 인덱스를 계속 선언하고 있으면** 다음
+// 기동에서 그대로 되살아난다. backend/index.js는 부팅마다 db.sequelize.sync({force:false})를
+// 부르고, sequelize 6.37.8의 Model.sync는 force/alter와 무관하게 언제나 아래를 실행한다
+// (backend/node_modules/sequelize/lib/model.js:988-1000):
+//
+//     const existingIndexes = await this.queryInterface.showIndex(tableName, options);
+//     const missingIndexes = this._indexes.filter(
+//         (item1) => !existingIndexes.some((item2) => item1.name === item2.name));
+//     for (const index of missingIndexes) await this.queryInterface.addIndex(...);
+//
+// 즉 "모델이 선언했는데 같은 **이름**의 인덱스가 DB에 없으면 만든다". 0013이 뗀 인덱스는
+// 정확히 그 조건에 들어맞으므로, 모델 선언을 그대로 두면 운영 DB에서 거절→재신청→재거절이
+// 다시 막힌다(AC-05 마이그레이션 계약이 부팅 한 번으로 무효가 된다).
+//
+// 아래 두 시험은 그 경로를 DB 없이 고정한다: 실제 모델 선언과, 실제 sync 규칙을 그대로 옮긴
+// 계산을 0013 적용 후 스키마에 적용해 본다.
+
+const modelsDb = require('../models');
+
+/** sequelize Model.sync의 missing index 계산 그대로 — 이름 일치만 본다. */
+const syncMissingIndexes = (modelIndexes, existingIndexes) => modelIndexes
+    .filter((declared) => !existingIndexes.some((existing) => existing.name === declared.name));
+
+const fieldNamesOf = (index) => (index.fields ?? [])
+    .map((field) => (typeof field === 'string' ? field : (field.attribute ?? field.name)));
+
+/** 예전 제약과 같은 것인가 — 이름이 아니라 "유일 + 세 컬럼"으로만 판정한다. */
+const isLegacyRequestUnique = (index) => index.unique === true
+    && fieldNamesOf(index).length === 3
+    && ['requester_id', 'receiver_id', 'status'].every((column) => fieldNamesOf(index).includes(column));
+
+test('FriendRequest 모델은 0013이 뗀 예전 3컬럼 UNIQUE를 더 이상 선언하지 않는다', () => {
+    const declared = modelsDb.FriendRequest._indexes ?? [];
+    const legacy = declared.filter(isLegacyRequestUnique);
+
+    assert.deepEqual(
+        legacy.map((index) => index.name),
+        [],
+        '모델이 선언하고 있으면 sync()가 부팅마다 다시 만들어 0013의 교체가 무효가 된다',
+    );
+
+    // 새 유일성은 generated 컬럼(PENDING일 때만 값이 있음) 위에 있어 모델로는 표현할 수
+    // 없다 — 그래서 friend_requests의 유일성은 0013이 유일한 소유자다. 모델이 이 테이블에
+    // 어떤 유일 인덱스도 선언하지 않는다는 것이 그 계약의 다른 면이다.
+    assert.deepEqual(
+        declared.filter((index) => index.unique === true).map((index) => index.name),
+        [],
+        'friend_requests의 유일 제약은 0013만 정의한다',
+    );
+});
+
+test('0013 적용 후 기동 sync()는 friend_requests에 예전 유일 제약을 되살리지 않는다', async () => {
+    const qi = createFakeQueryInterface();
+    await applyUp(qi);
+
+    const existing = await qi.showIndex(FRIEND_REQUESTS);
+    const wouldAdd = syncMissingIndexes(modelsDb.FriendRequest._indexes ?? [], existing);
+
+    assert.deepEqual(
+        wouldAdd.filter(isLegacyRequestUnique).map((index) => index.name),
+        [],
+        'sync()가 다시 만들면 거절 후 재신청이 운영에서 계속 막힌다',
+    );
+
+    // sync가 실제로 만들 인덱스를 전부 반영해도 계약이 유지되는지까지 본다 — 다른 이름의
+    // 유일 인덱스가 같은 컬럼 조합을 덮는 우회도 여기서 걸린다.
+    const requests = qi._tables.get(FRIEND_REQUESTS);
+    for (const index of wouldAdd) {
+        requests.indexes.push({
+            name: index.name,
+            unique: index.unique === true,
+            fields: fieldNamesOf(index).map((attribute) => ({ attribute })),
+        });
+    }
+    assert.equal(
+        migration.findLegacyRequestUniqueIndexes(requests.indexes).length,
+        0,
+        '부팅 sync 이후에도 예전 UNIQUE가 없어야 한다',
+    );
+    await assert.doesNotReject(() => migration.verify(qi), '부팅 sync 이후에도 verify는 통과해야 한다');
+});
+
+test('0013이 만든 스키마에는 세 신규 모델이 선언한 인덱스가 이름까지 모두 존재한다', async () => {
+    // 같은 결함의 일반형을 막는다: 모델과 마이그레이션의 인덱스 **이름**이 어긋나면 sync가
+    // 부팅마다 같은 컬럼을 덮는 인덱스를 하나 더 만든다. 이름이 정확히 일치할 때만 sync가
+    // 아무것도 하지 않는다(Model.sync의 missing 계산은 이름 비교뿐이다).
+    const qi = createFakeQueryInterface();
+    await applyUp(qi);
+
+    for (const [model, table] of [
+        [modelsDb.FriendFavorite, FRIEND_FAVORITES],
+        [modelsDb.FriendBlock, FRIEND_BLOCKS],
+        [modelsDb.GameInvite, GAME_INVITES],
+    ]) {
+        const existing = await qi.showIndex(table);
+        assert.deepEqual(
+            syncMissingIndexes(model._indexes ?? [], existing).map((index) => index.name),
+            [],
+            `${table}: 모델 선언과 0013의 인덱스 이름이 어긋나면 sync가 중복 인덱스를 만든다`,
+        );
+    }
+});
+
+test('up(): 예전 UNIQUE의 이름이 0001의 것이든 sync가 만든 것이든 똑같이 제거한다', async () => {
+    // 0001-legacy-baseline은 friend_requests_requester_receiver_status로, sync()는
+    // friend_requests_requester_id_receiver_id_status로 같은 제약을 만든다. 제거 판정이
+    // 이름에 걸려 있으면 둘 중 하나가 살아남는다.
+    const qi = createFakeQueryInterface();
+    const requests = qi._tables.get(FRIEND_REQUESTS);
+    requests.indexes = requests.indexes.map((index) => (
+        index.name === 'friend_requests_requester_id_receiver_id_status'
+            ? { ...index, name: 'friend_requests_requester_receiver_status' }
+            : index
+    ));
+
+    await applyUp(qi);
+
+    assert.equal(
+        migration.findLegacyRequestUniqueIndexes(qi._tables.get(FRIEND_REQUESTS).indexes).length,
+        0,
+        '0001이 만든 이름의 예전 UNIQUE도 제거해야 한다',
+    );
+    await assert.doesNotReject(() => migration.verify(qi));
+});
