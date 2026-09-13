@@ -254,6 +254,99 @@ test('AC-05: 0013 재실행은 스키마·행을 그대로 두고 이력을 한 
     }
 });
 
+/**
+ * 실제 MySQL이 만든 game_invites의 creation_seq 계약.
+ *
+ * 이 시험이 지키는 것은 "auto_increment 컬럼은 같은 CREATE TABLE 안에서 키에 덮여야 한다"는
+ * InnoDB 규칙이다. 그것을 어겼을 때 MySQL은 테이블을 만들지 않고
+ * "Incorrect table definition; there can be only one auto column and it must be defined as a
+ * key"로 실패하며, 0013을 적용하는 **모든** 격리 DB 스위트가 setUp에서 함께 죽는다.
+ * DDL 문자열 자체는 backend/__tests__/f19FriendsInvites.migration.test.js가 실제 sequelize
+ * generator로 대조하고, 여기서는 실제로 만들어진 스키마와 실제 순번 발급을 확인한다.
+ */
+test('A-09: 실제 MySQL의 creation_seq는 AUTO_INCREMENT이고 이름 있는 유일 키가 덮는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const queryInterface = sequelize.getQueryInterface();
+
+    const describe = await queryInterface.describeTable('game_invites');
+    assert.equal(describe.creation_seq.autoIncrement, true, 'creation_seq는 서버가 정하는 자동 증가 순번이어야 한다');
+    assert.equal(describe.creation_seq.allowNull, false);
+    assert.equal(describe.id.primaryKey, true, '기본 키는 노출용 UUID다');
+
+    const indexes = await queryInterface.showIndex('game_invites');
+    const seqIndex = indexes.find((index) => index.name === 'game_invites_creation_seq_unique');
+    assert.ok(seqIndex, 'creation_seq를 덮는 이름 있는 유일 키가 실제로 있어야 한다');
+    assert.equal(seqIndex.unique, true);
+    assert.deepEqual(
+        seqIndex.fields.map((field) => field.attribute ?? field),
+        ['creation_seq'],
+    );
+
+    // 그 키가 CREATE TABLE과 같은 DDL에 들어 있었다는 것은 테이블이 존재한다는 사실 자체가
+    // 증명한다(뒤늦게 붙였다면 CREATE가 실패했다). 실제 발급도 확인한다.
+    const a = await createLocalUser('seq-a');
+    const b = await createLocalUser('seq-b');
+    const makeRow = async (key) => await db.GameInvite.create({
+        id: crypto.randomUUID(),
+        sender_id: a, receiver_id: b,
+        room_id: 'room-seq', room_instance_id: 'room-seq-inst-1', boot_epoch: 'boot-f19-test',
+        creation_key: key, revision: 1, status: 'PENDING',
+        created_at: nowFn(), expires_at: new Date(clockMs + 60_000),
+    });
+
+    const first = await makeRow('seq-key-1');
+    const second = await makeRow('seq-key-2');
+    assert.ok(
+        BigInt(String(second.creation_seq)) > BigInt(String(first.creation_seq)),
+        '두 번째 초대의 순번이 더 커야 커서가 신규 수신을 판정할 수 있다',
+    );
+});
+
+test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시키지 않고, up은 빠진 키만 메운다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const queryInterface = sequelize.getQueryInterface();
+    const a = await createLocalUser('vrf-a');
+    const b = await createLocalUser('vrf-b');
+    await db.GameInvite.create({
+        id: crypto.randomUUID(),
+        sender_id: a, receiver_id: b,
+        room_id: 'room-vrf', room_instance_id: 'room-vrf-inst-1', boot_epoch: 'boot-f19-test',
+        creation_key: 'vrf-key-1', revision: 1, status: 'PENDING',
+        created_at: nowFn(), expires_at: new Date(clockMs + 60_000),
+    });
+
+    // (1) AUTO_INCREMENT만 사라진 스키마 — 이름·타입은 그대로다.
+    await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL');
+    await assert.rejects(() => addF19FriendsInvites.verify(queryInterface), /AUTO_INCREMENT가 아닙니다/);
+
+    // (2) 유일 키까지 사라진 부분 스키마. auto 컬럼이 아니게 된 뒤에야 MySQL이 DROP을 받아준다.
+    await sequelize.query('ALTER TABLE game_invites DROP INDEX game_invites_creation_seq_unique');
+    await assert.rejects(
+        () => addF19FriendsInvites.verify(queryInterface),
+        /game_invites_creation_seq_unique 인덱스가 없습니다/,
+    );
+
+    // (3) up을 다시 돌리면 빠진 키만 보탠다 — 테이블을 다시 만들지도, 행을 지우지도 않는다.
+    await addF19FriendsInvites.up(queryInterface, Sequelize, sequelize);
+    const restored = (await queryInterface.showIndex('game_invites'))
+        .find((index) => index.name === 'game_invites_creation_seq_unique');
+    assert.ok(restored && restored.unique === true, '빠진 유일 키는 복구돼야 한다');
+    assert.equal(await countRows(db.GameInvite, {}), 1, '복구가 기존 초대를 지우면 안 된다');
+
+    // (4) 컬럼 자체의 AUTO_INCREMENT는 조용히 되돌리지 않는다 — verify가 계속 거부해야
+    //     "인덱스만 붙였으니 통과"라는 잘못된 성공이 생기지 않는다.
+    await assert.rejects(() => addF19FriendsInvites.verify(queryInterface), /AUTO_INCREMENT가 아닙니다/);
+
+    // (5) 컬럼까지 계약대로 되돌리면 통과하고, 순번 발급도 이어진다.
+    await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL AUTO_INCREMENT');
+    await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
+    assert.equal(await countRows(db.GameInvite, {}), 1);
+});
+
 test('AC-05: 거절 → 재신청 → 재거절이 terminal 이력을 두 행으로 보존한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();

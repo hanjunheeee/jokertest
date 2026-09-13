@@ -52,6 +52,28 @@ const INVITE_RECEIVER_STATUS_INDEX = 'game_invites_receiver_status_idx';
 const INVITE_ROOM_INDEX = 'game_invites_room_idx';
 const INVITE_SEQ_UNIQUE_INDEX = 'game_invites_creation_seq_unique';
 
+/**
+ * creation_seq의 유일 키를 **CREATE TABLE과 같은 DDL 안에서** 만들기 위한 옵션.
+ *
+ * InnoDB는 AUTO_INCREMENT 컬럼이 어떤 키의 선두여야 하고, 그 판정은 CREATE TABLE 한 문장이
+ * 끝나는 시점에 이루어진다 — 나중에 addIndex로 붙이는 것은 too late라 테이블 생성 자체가
+ * "Incorrect table definition; there can be only one auto column and it must be defined as a
+ * key"로 실패한다.
+ *
+ * 컬럼 정의에 `unique: '<이름>'`을 적는 것으로는 이 키가 생기지 않는다. 실제 설치된
+ * sequelize 6.37.8의 mysql attributeToSQL은 `attribute.unique === true`일 때만 인라인
+ * UNIQUE를 붙이고(문자열은 무시한다), 이름 있는 유일 키는 오직 createTableQuery가
+ * `options.uniqueKeys`를 읽어 `, UNIQUE \`이름\` (컬럼…)` 절로 덧붙인다
+ * (lib/dialects/mysql/query-generator.js의 attributeToSQL / createTableQuery).
+ * model.sync()가 같은 정의로 잘 도는 것은 Model.init이 그 문자열을 model.uniqueKeys로
+ * 옮겨 주기 때문이고, queryInterface.createTable에는 그 변환이 없다.
+ */
+const GAME_INVITES_CREATE_OPTIONS = Object.freeze({
+    uniqueKeys: {
+        [INVITE_SEQ_UNIQUE_INDEX]: { fields: ['creation_seq'], customIndex: true },
+    },
+});
+
 const REQUIRED_COLUMNS = Object.freeze({
     [TABLE_NAMES.FRIEND_FAVORITES]: ['id', 'owner_id', 'friend_id', 'created_at'],
     [TABLE_NAMES.FRIEND_BLOCKS]: ['id', 'owner_id', 'blocked_id', 'created_at'],
@@ -83,7 +105,9 @@ const COLUMN_CONTRACTS = Object.freeze({
     },
     [TABLE_NAMES.GAME_INVITES]: {
         id: { allowNull: false, primaryKey: true },
-        creation_seq: { allowNull: false },
+        // AUTO_INCREMENT 여부는 계약이다 — 이 값이 서버가 정하는 단조 증가 순번이 아니면
+        // snapshot 커서(A-09)가 "이보다 큰 것만 신규"를 판정할 근거를 잃는다.
+        creation_seq: { allowNull: false, autoIncrement: true },
         sender_id: { allowNull: false },
         receiver_id: { allowNull: false },
         room_id: { allowNull: false },
@@ -110,6 +134,10 @@ const EXPECTED_INDEXES = Object.freeze({
         [BLOCK_BLOCKED_INDEX]: { unique: false, fields: ['blocked_id'] },
     },
     [TABLE_NAMES.GAME_INVITES]: {
+        // AUTO_INCREMENT인 creation_seq를 덮는 키. 이 인덱스가 없으면 애초에 테이블이
+        // 만들어지지 않으므로, verify가 이것을 확인하지 않으면 "왜 CREATE가 실패했는지"를
+        // 스키마 대조 단계에서 알려 줄 수 없다.
+        [INVITE_SEQ_UNIQUE_INDEX]: { unique: true, fields: ['creation_seq'] },
         [INVITE_SENDER_KEY_INDEX]: { unique: true, fields: ['sender_id', 'creation_key'] },
         [INVITE_RECEIVER_SEQ_INDEX]: { unique: false, fields: ['receiver_id', 'creation_seq'] },
         [INVITE_RECEIVER_STATUS_INDEX]: { unique: false, fields: ['receiver_id', 'status'] },
@@ -245,15 +273,14 @@ module.exports = {
 
         // ── 3) 게임 초대 ─────────────────────────────────────────────────────
         // creation_seq는 AUTO_INCREMENT지만 PK가 아니다(PK는 노출용 UUID). InnoDB는
-        // AUTO_INCREMENT 컬럼이 어떤 인덱스의 선두여야 하므로 unique 인덱스를 함께 만든다 —
-        // createTable의 unique 옵션이 그 인덱스를 생성한다.
+        // AUTO_INCREMENT 컬럼이 어떤 키의 선두여야 하고 그 검사는 CREATE TABLE 한 문장 안에서
+        // 끝난다 — 그래서 유일 키를 컬럼 정의가 아니라 세 번째 인자(GAME_INVITES_CREATE_OPTIONS)
+        // 로 넘겨 **같은 DDL**에 넣는다. 아래 addIndex 블록은 이미 존재하는 부분 스키마를
+        // 메우는 용도이지, 여기서 빠진 키를 나중에 붙이는 우회가 아니다.
         if (!existingTables.has(TABLE_NAMES.GAME_INVITES)) {
             await queryInterface.createTable(TABLE_NAMES.GAME_INVITES, {
                 id: { type: Sequelize.UUID, primaryKey: true, allowNull: false },
-                creation_seq: {
-                    type: Sequelize.BIGINT, allowNull: false, autoIncrement: true,
-                    unique: INVITE_SEQ_UNIQUE_INDEX,
-                },
+                creation_seq: { type: Sequelize.BIGINT, allowNull: false, autoIncrement: true },
                 sender_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
                 receiver_id: { type: Sequelize.UUID, allowNull: false, references: { model: 'users', key: 'uuid' } },
                 room_id: { type: Sequelize.STRING(64), allowNull: false },
@@ -268,11 +295,19 @@ module.exports = {
                 decided_at: { type: Sequelize.DATE, allowNull: true },
                 attempt_id: { type: Sequelize.STRING(64), allowNull: true },
                 entry_outcome: { type: Sequelize.STRING(20), allowNull: true },
-            });
+            }, GAME_INVITES_CREATE_OPTIONS);
         }
         {
             const indexes = await queryInterface.showIndex(TABLE_NAMES.GAME_INVITES);
             const hasIndex = (name) => indexes.some((index) => index.name === name);
+            // 부분 적용된 스키마(예: 이 마이그레이션 이전 판이 만든 테이블이나 손으로 만든
+            // 테이블)에 이 이름의 키가 없을 수 있다. 이미 있으면 건너뛰므로 재실행은 안전하고,
+            // 어느 경우에도 행을 지우지 않는다.
+            if (!hasIndex(INVITE_SEQ_UNIQUE_INDEX)) {
+                await queryInterface.addIndex(TABLE_NAMES.GAME_INVITES, ['creation_seq'], {
+                    name: INVITE_SEQ_UNIQUE_INDEX, unique: true,
+                });
+            }
             if (!hasIndex(INVITE_SENDER_KEY_INDEX)) {
                 await queryInterface.addIndex(TABLE_NAMES.GAME_INVITES, ['sender_id', 'creation_key'], {
                     name: INVITE_SENDER_KEY_INDEX, unique: true,
@@ -386,6 +421,14 @@ module.exports = {
                 if (contract.primaryKey === true && actual.primaryKey !== undefined && actual.primaryKey !== true) {
                     throw new Error(`0013-f19-friends-invites의 ${table}.${column}이 기본 키가 아닙니다`);
                 }
+                // MySQL의 describeTable은 Extra='auto_increment'를 autoIncrement 불리언으로
+                // 돌려준다. 이름·타입만 맞고 순번이 자동 증가하지 않는 컬럼은 계약이 아니다.
+                if (contract.autoIncrement === true && actual.autoIncrement !== undefined && actual.autoIncrement !== true) {
+                    throw new Error(
+                        `0013-f19-friends-invites의 ${table}.${column}이 AUTO_INCREMENT가 아닙니다 — ` +
+                        '서버가 정하는 단조 증가 순번이 없으면 수신자 snapshot 커서를 신뢰할 수 없습니다',
+                    );
+                }
             }
 
             const indexes = await queryInterface.showIndex(table);
@@ -452,6 +495,8 @@ module.exports = {
     },
 
     TABLE_NAMES,
+    INVITE_SEQ_UNIQUE_INDEX,
+    GAME_INVITES_CREATE_OPTIONS,
     FRIEND_REQUESTS_TABLE,
     PENDING_PAIR_COLUMN,
     PENDING_PAIR_INDEX,
