@@ -228,3 +228,5 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
   actor 본인/생존을 다시 확인한 뒤에만 dispatch한다. 어긋나면 **투표 상태의 의미는 그대로,
   소리만 0**이다.
 - 봉투에는 투표 대상·투표 내용·역할을 담지 않는다(AC-05).
+
+2026-09-13 operator update: corrected candidate ea9fbd2e actual external Chrome long-list/text3/text5/focus/Close recheck completed; see f17/browser-2026-09-13.md final section. Earlier corrected-layout pending statement is superseded for tested cases. SFX-DEFER-17 acceptance still awaits fresh normal independent reviews; F28 integration and audible unreviewed assets are not claimed complete.
