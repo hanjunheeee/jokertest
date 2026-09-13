@@ -323,7 +323,9 @@ test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시
     await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL');
     await assert.rejects(() => addF19FriendsInvites.verify(queryInterface), /AUTO_INCREMENT가 아닙니다/);
 
-    // (2) 유일 키까지 사라진 부분 스키마. auto 컬럼이 아니게 된 뒤에야 MySQL이 DROP을 받아준다.
+    // (2) AUTO_INCREMENT는 복원하고 보조 키로 유지하여, 이름 있는 유일 키 누락만 독립 검증한다.
+    await sequelize.query('ALTER TABLE game_invites ADD INDEX f19_seq_guard (creation_seq)');
+    await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL AUTO_INCREMENT');
     await sequelize.query('ALTER TABLE game_invites DROP INDEX game_invites_creation_seq_unique');
     await assert.rejects(
         () => addF19FriendsInvites.verify(queryInterface),
@@ -337,6 +339,8 @@ test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시
     assert.ok(restored && restored.unique === true, '빠진 유일 키는 복구돼야 한다');
     assert.equal(await countRows(db.GameInvite, {}), 1, '복구가 기존 초대를 지우면 안 된다');
 
+    await sequelize.query('ALTER TABLE game_invites DROP INDEX f19_seq_guard');
+    await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL');
     // (4) 컬럼 자체의 AUTO_INCREMENT는 조용히 되돌리지 않는다 — verify가 계속 거부해야
     //     "인덱스만 붙였으니 통과"라는 잘못된 성공이 생기지 않는다.
     await assert.rejects(() => addF19FriendsInvites.verify(queryInterface), /AUTO_INCREMENT가 아닙니다/);
