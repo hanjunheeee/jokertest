@@ -192,9 +192,12 @@ export async function requestGameInviteAccept(inviteId) {
     store.markAcceptPending(inviteId, true, operationId);
     store.setInviteError(inviteId, null);
 
-    let result;
+    // 진행 표시는 **수락 ACK로 끝나지 않는다**. 결과 복구와 현재 방 대조, 이동 결정까지가
+    // 한 번의 수락이다. 예전에는 ACK 직후 finally에서 표시를 내려, 확인 대기 중에 두 번째
+    // 클릭이 통과해 같은 초대에 수락이 두 번 나갈 수 있었다(CODEX-2). 그래서 아래 try는
+    // 전 구간을 감싸고, finally는 **자기가 세운 표시만** 내린다.
     try {
-        result = await emitWithAck(socket, "accept_game_invite", { inviteId }, INVITE_ACCEPT_TIMEOUT_MS);
+        let result = await emitWithAck(socket, "accept_game_invite", { inviteId }, INVITE_ACCEPT_TIMEOUT_MS);
 
         // ACK 유실 — 같은 시도의 서버 기록을 다시 읽는다. 여전히 진행 중(pending)이면
         // 성공으로도 실패로도 단정하지 않는다.
@@ -210,57 +213,58 @@ export async function requestGameInviteAccept(inviteId) {
                     : { ok: false, code: "NOT_ENTERED", message: "방에 입장하지 못했습니다." };
             }
         }
+
+        // 계정이 바뀐 뒤 도착한 결과는 새 계정의 화면을 건드리지 않는다.
+        if (!useGameInviteStore.getState().isCurrent(accountGeneration)) return { ok: false, code: "STALE" };
+
+        if (!shouldEnterRoomFromAccept(result)) {
+            useGameInviteStore.getState().setInviteError(
+                inviteId,
+                result?.unknown === true
+                    ? "입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요."
+                    : (result?.message ?? "초대를 수락하지 못했습니다."),
+            );
+            // 상태를 서버에서 다시 읽어 화면과 서버를 맞춘다(자동 재시도는 하지 않는다).
+            loadInviteSnapshotAndPlayNew();
+            return result ?? { ok: false, code: "UNKNOWN" };
+        }
+
+        // 성공 ACK라도 **지금 연결**의 결과가 아니면 이동하지 않는다.
+        if (!isSameConnection(socket, connectionId)) {
+            useGameInviteStore.getState().setInviteError(
+                inviteId, "연결이 바뀌어 입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.",
+            );
+            loadInviteSnapshotAndPlayNew();
+            return { ok: false, code: "STALE_CONNECTION", unknown: true };
+        }
+
+        // 역사적 성공이 아니라 **현재 소속**을 근거로 이동한다.
+        const currentRoom = await emitWithAck(socket, "get_current_room", {}, INVITE_VERIFY_TIMEOUT_MS);
+        const verifiedRoom = currentRoom?.ok === true ? currentRoom.room : null;
+        if (!useGameInviteStore.getState().isCurrent(accountGeneration)) return { ok: false, code: "STALE" };
+        if (!isSameConnection(socket, connectionId)
+            || verifiedRoom === null || typeof verifiedRoom !== "object"
+            || verifiedRoom.roomId !== result.room.roomId) {
+            useGameInviteStore.getState().setInviteError(
+                inviteId, "입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.",
+            );
+            loadInviteSnapshotAndPlayNew();
+            return { ok: false, code: "ROOM_NOT_CONFIRMED", unknown: true };
+        }
+
+        // matching store를 설정하기 전에 인게임 store의 이전 gameId를 먼저 무효화한다
+        // (useRoomInvitePage의 room_joined 처리와 같은 이유·같은 순서).
+        useInGameStore.getState().clearGame();
+        // 서버가 방금 확인해 준 **현재** 방을 그대로 쓴다(ACK 시점의 payload가 아니라).
+        useMatchingStore.getState().setRoom(verifiedRoom);
+        navigateToApp?.("/game-matching");
+        return { ...result, room: verifiedRoom };
     } finally {
         // 소유 표식을 함께 넘긴다 — 계정이 오간 사이에 도착한 옛 완료가 지금 진행 중인
-        // 새 시도의 잠금을 풀어 같은 초대에 두 번째 수락을 열지 않게 한다.
+        // 새 시도의 잠금을 풀어 같은 초대에 두 번째 수락을 열지 않게 한다. 어느 갈래로
+        // 끝나든(성공·실패·오류·계정 전환) 정확히 한 번 지난다.
         useGameInviteStore.getState().markAcceptPending(inviteId, false, operationId);
     }
-
-    // 계정이 바뀐 뒤 도착한 결과는 새 계정의 화면을 건드리지 않는다.
-    if (!useGameInviteStore.getState().isCurrent(accountGeneration)) return { ok: false, code: "STALE" };
-
-    if (!shouldEnterRoomFromAccept(result)) {
-        useGameInviteStore.getState().setInviteError(
-            inviteId,
-            result?.unknown === true
-                ? "입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요."
-                : (result?.message ?? "초대를 수락하지 못했습니다."),
-        );
-        // 상태를 서버에서 다시 읽어 화면과 서버를 맞춘다(자동 재시도는 하지 않는다).
-        loadInviteSnapshotAndPlayNew();
-        return result ?? { ok: false, code: "UNKNOWN" };
-    }
-
-    // 성공 ACK라도 **지금 연결**의 결과가 아니면 이동하지 않는다.
-    if (!isSameConnection(socket, connectionId)) {
-        useGameInviteStore.getState().setInviteError(
-            inviteId, "연결이 바뀌어 입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.",
-        );
-        loadInviteSnapshotAndPlayNew();
-        return { ok: false, code: "STALE_CONNECTION", unknown: true };
-    }
-
-    // 역사적 성공이 아니라 **현재 소속**을 근거로 이동한다.
-    const currentRoom = await emitWithAck(socket, "get_current_room", {}, INVITE_VERIFY_TIMEOUT_MS);
-    const verifiedRoom = currentRoom?.ok === true ? currentRoom.room : null;
-    if (!useGameInviteStore.getState().isCurrent(accountGeneration)) return { ok: false, code: "STALE" };
-    if (!isSameConnection(socket, connectionId)
-        || verifiedRoom === null || typeof verifiedRoom !== "object"
-        || verifiedRoom.roomId !== result.room.roomId) {
-        useGameInviteStore.getState().setInviteError(
-            inviteId, "입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.",
-        );
-        loadInviteSnapshotAndPlayNew();
-        return { ok: false, code: "ROOM_NOT_CONFIRMED", unknown: true };
-    }
-
-    // matching store를 설정하기 전에 인게임 store의 이전 gameId를 먼저 무효화한다
-    // (useRoomInvitePage의 room_joined 처리와 같은 이유·같은 순서).
-    useInGameStore.getState().clearGame();
-    // 서버가 방금 확인해 준 **현재** 방을 그대로 쓴다(ACK 시점의 payload가 아니라).
-    useMatchingStore.getState().setRoom(verifiedRoom);
-    navigateToApp?.("/game-matching");
-    return { ...result, room: verifiedRoom };
 }
 
 // 친구 도메인에서 사용하는 socket 이벤트만 연결하는 훅입니다.

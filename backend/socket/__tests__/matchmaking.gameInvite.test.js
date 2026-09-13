@@ -723,3 +723,43 @@ test('상태표 4: 소켓이 교체된 뒤의 늦은 가입은 새 소켓의 채
     assert.deepEqual(replacement.left, [], '새 소켓의 채널은 옛 시도가 건드리지 않는다')
     assert.equal(replacement.rooms.has(room.roomId), true)
 })
+
+test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛 소켓의 늦은 가입은 정리된다', async (t) => {
+    // CODEX-2 보수 회귀. 예전 판정은 playerRoom.get(uuid) === roomId만 보고 물러났다 —
+    // 그 소속을 만든 것이 **교체 소켓**인데도 옛 소켓의 채널이 그대로 남아, 두 연결이
+    // 같은 방 방송을 받는 유령 청취자가 생겼다.
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 40, total: 4000 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    const joinGate = deferred()
+    const { io, guestSocket, room } = await setupRoomWithInvite(t, {
+        guestSocketOptions: { joinGate: joinGate.promise },
+    })
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+    assert.equal(ack.unknown, true)
+
+    // 재접속한 새 소켓이 정상 경로로 그 방의 확정 참가자가 됐다 — 소속도 새 소켓의 것이다.
+    const replacement = createFakeSocket(GUEST, { id: 'sock-guest-2' })
+    io.sockets.sockets.set(replacement.id, replacement)
+    await replacement.join(room.roomId)
+    replacement.data.activeRoomId = room.roomId
+    matchmaking.__seedPlayerRoomForTests(GUEST, room.roomId)
+
+    joinGate.resolve()
+    await drainTicks()
+
+    assert.deepEqual(
+        guestSocket.left, [room.roomId],
+        '소속이 있다는 사실은 **옛** 소켓의 채널을 남길 근거가 아니다',
+    )
+    assert.equal(guestSocket.rooms.has(room.roomId), false)
+    assert.deepEqual(replacement.left, [], '새 연결의 채널은 그대로 남는다')
+    assert.equal(replacement.rooms.has(room.roomId), true)
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.find(([uuid]) => uuid === GUEST)?.[1],
+        room.roomId,
+        '유효한 새 소속 자체는 지우지 않는다',
+    )
+})

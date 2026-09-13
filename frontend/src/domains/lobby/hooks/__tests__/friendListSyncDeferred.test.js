@@ -344,3 +344,37 @@ test("AC-02: 결과 조회까지 실패하면 성공으로도 실패로도 단�
   assert.equal(result.unconfirmed, 1, "모르는 것을 실패로 바꾸지 않는다")
   await mounted.unmount()
 })
+
+test("AC-02: 전체 수락의 재조회가 더 최신 **실패**에 밀리면 재조회 오류를 그대로 안내한다", async () => {
+  // CODEX-2 보수 회귀. friend.store는 claimSeq가 밀리면 무조건 { ok: true }를 돌려줬다.
+  // 그러면 순번을 차지한 더 최신 조회가 실패했을 때도 전체 수락은 "재조회까지 성공"으로
+  // 안내해, 사용자는 낡은 목록을 최신으로 믿게 된다.
+  signIn(ACCOUNT_A)
+  incomingResponder = async () => [{ request_id: 4 }]
+  const mounted = await mountHook()
+
+  acceptResponder = async () => ({})
+  const slowFriends = gate()
+  friendsResponder = async () => { await slowFriends.promise; return [{ id: "f-1" }] }
+
+  const bulk = sync.handleAcceptAll()
+  await act(async () => { await flush() })
+
+  // 전체 수락의 친구 재조회가 도는 **사이에** 더 나중에 시작한 조회가 실패하며 순번을 차지한다.
+  friendsResponder = async () => { throw new Error("network down") }
+  await act(async () => { await useFriendStore.getState().fetchFriends(); await flush() })
+  assert.equal(useFriendStore.getState().friendsError, "network down")
+
+  await act(async () => { slowFriends.open(); await bulk; await flush() })
+
+  const result = useFriendStore.getState().acceptAllResult
+  assert.equal(result.accepted, 1, "처리 결과 자체는 그대로 안내한다")
+  assert.equal(result.failed, 0)
+  assert.ok(
+    result.refreshError,
+    "최신 재조회가 실패했는데 안내가 사라지면 사용자는 낡은 목록을 최신으로 믿는다",
+  )
+  assert.match(result.refreshError, /친구 목록/)
+  assert.equal(useFriendStore.getState().processingRequestIds.size, 0)
+  await mounted.unmount()
+})

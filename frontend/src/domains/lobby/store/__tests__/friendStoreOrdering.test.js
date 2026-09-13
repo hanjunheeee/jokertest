@@ -144,6 +144,75 @@ test("AC-01: 오래된 조회의 실패는 최신 조회의 성공을 오류로 
   assert.deepEqual(useFriendStore.getState().incomingRequests.map((r) => r.request_id), [7])
 })
 
+// ---------------------------------------------------------------------------
+// AC-02 · 밀려난(superseded) 호출은 **그때의 최신 사실**을 돌려준다
+//
+// 예전에는 claimSeq가 실패하면 무조건 { ok: true, superseded: true }였다. 그런데 순번을
+// 차지한 더 최신 요청도 **실패**했다면 화면에는 최신 목록이 없다 — 그런데도 오래된 호출이
+// 성공을 보고해 전체 수락의 "재조회 실패" 안내가 통째로 사라졌다(CODEX-2).
+// ---------------------------------------------------------------------------
+
+test("AC-02: 최신 조회도 실패했다면 밀려난 오래된 실패를 성공으로 보고하지 않는다", async () => {
+  signIn("account-a")
+  const first = gate()
+  friendsResponder = async () => { await first.promise; throw new Error("older down") }
+  const older = useFriendStore.getState().fetchFriends()
+
+  // 더 나중에 시작한 조회도 실패한다 — 이쪽이 먼저 끝나 순번을 차지한다.
+  friendsResponder = async () => { throw new Error("newer down") }
+  const newer = await useFriendStore.getState().fetchFriends()
+  assert.equal(newer.ok, false)
+
+  first.open()
+  const stale = await older
+
+  assert.equal(stale.ok, false, "최신 결과도 실패인데 오래된 호출이 성공을 보고했다")
+  assert.equal(stale.superseded, true)
+  assert.equal(stale.reason, "superseded-error")
+  assert.equal(
+    useFriendStore.getState().friendsError, "newer down",
+    "화면에는 최신 실패가 남아야 한다",
+  )
+})
+
+test("AC-02: 최신 조회가 실패했으면 밀려난 오래된 **성공**도 최신으로 주장하지 않는다", async () => {
+  signIn("account-a")
+  const first = gate()
+  incomingResponder = async () => { await first.promise; return [{ request_id: 1 }] }
+  const older = useFriendStore.getState().fetchIncomingRequests()
+
+  incomingResponder = async () => { throw new Error("newer down") }
+  await useFriendStore.getState().fetchIncomingRequests()
+
+  first.open()
+  const stale = await older
+
+  // 오래된 성공은 **반영되지 않았다**. 반영된 최신 사실은 실패다.
+  assert.equal(stale.ok, false)
+  assert.equal(stale.reason, "superseded-error")
+  assert.deepEqual(
+    useFriendStore.getState().incomingRequests, [],
+    "밀려난 호출이 목록을 쓰면 최신 실패와 화면이 어긋난다",
+  )
+})
+
+test("AC-02: 최신 조회가 성공했다면 밀려난 오래된 실패는 성공으로 보고한다(대조군)", async () => {
+  signIn("account-a")
+  const first = gate()
+  friendsResponder = async () => { await first.promise; throw new Error("older down") }
+  const older = useFriendStore.getState().fetchFriends()
+
+  friendsResponder = async () => [{ id: "fresh" }]
+  await useFriendStore.getState().fetchFriends()
+
+  first.open()
+  const stale = await older
+
+  assert.equal(stale.ok, true, "최신 목록이 실제로 있는데 재조회 실패로 안내하면 사실과 다르다")
+  assert.equal(stale.superseded, true)
+  assert.equal(useFriendStore.getState().friendsError, null)
+})
+
 test("AC-02: 처리로 목록에서 뺀 요청은 그 전에 시작한 조회가 되살리지 못한다", async () => {
   signIn("account-a")
   useFriendStore.setState({ incomingRequests: [{ request_id: 1 }, { request_id: 2 }] })

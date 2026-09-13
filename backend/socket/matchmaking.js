@@ -269,16 +269,42 @@ function removePublishedAdmission(io, socket, attempt) {
  *     끊지 않는다.
  *   - 같은 계정의 **다른(더 새로운)** 시도가 같은 방으로 진행 중이면 그 시도의 채널을
  *     뺏지 않는다.
+ *
+ * ── 소속만 보면 안 된다(CODEX-2 보수) ───────────────────────────────────────
+ * playerRoom은 **계정**에 묶인 값이라 "누구의 연결이 그 소속을 만들었는가"를 말해 주지
+ * 않는다. 옛 소켓의 가입이 timeout된 뒤 교체 소켓이 같은 방에 정상 입장하면
+ * playerRoom.get(uuid)가 그 방을 가리키게 되고, 그것만 보고 물러나면 **옛 소켓의 채널이
+ * 그대로 남아** 유령 청취자가 된다. 그래서 같은 계정의 다른 살아 있는 소켓이 이미 그 방
+ * 채널·소속을 소유하고 있으면 이 소켓은 무조건 obsolete로 보고 자기 채널만 정리한다.
+ * 새 소켓의 방·소속·roster와 **같은 소켓에서 갱신된** 시도는 건드리지 않는다.
  */
-function scheduleLateJoinCleanup(socket, roomId, uuid, attempt, joinPromise) {
+function isRoomOwnedByAnotherSocket(io, roomId, uuid, socket) {
+    const sockets = io?.sockets?.sockets
+    if (!sockets || typeof sockets.values !== 'function') return false
+    for (const other of sockets.values()) {
+        if (!other || other === socket || other.id === socket.id) continue
+        if (other.connected === false) continue
+        if (other.data?.user?.uuid !== uuid) continue
+        if (other.rooms?.has?.(roomId) || other.data?.activeRoomId === roomId) return true
+    }
+    return false
+}
+
+function scheduleLateJoinCleanup(io, socket, roomId, uuid, attempt, joinPromise) {
     if (!joinPromise || typeof joinPromise.then !== 'function') return
     joinPromise.then(() => {
         if (!socket || typeof socket.leave !== 'function') return
         if (socket.id !== attempt.socketId) return
+        const leaveNow = () => {
+            try { socket.leave(roomId) } catch (err) { console.error('[늦은 초대 채널 정리 실패]', err) }
+        }
+        // 교체 소켓이 이미 그 방을 소유했다면 아래의 소속·시도 검사는 전부 **그 소켓의
+        // 사실**이라 이 소켓을 남길 근거가 되지 못한다.
+        if (isRoomOwnedByAnotherSocket(io, roomId, uuid, socket)) { leaveNow(); return }
         if (playerRoom.get(uuid) === roomId) return
         const current = roomAdmissionAttempts.get(uuid)
-        if (current && current !== attempt && current.roomId === roomId) return
-        try { socket.leave(roomId) } catch (err) { console.error('[늦은 초대 채널 정리 실패]', err) }
+        if (current && current !== attempt && current.roomId === roomId && current.socketId === socket.id) return
+        leaveNow()
     }, () => {})
 }
 
@@ -2058,7 +2084,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             await step(joinPromise, 'JOIN_TIMEOUT')
             joinedRoomId = room.id
         } catch (joinError) {
-            scheduleLateJoinCleanup(socket, room.id, uuid, attempt, joinPromise)
+            scheduleLateJoinCleanup(io, socket, room.id, uuid, attempt, joinPromise)
             throw joinError
         }
 

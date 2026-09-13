@@ -112,6 +112,18 @@ const initialAccountState = () => ({
 
     // 목록별 "지금 반영돼 있는 값의 순번". 이보다 작은 번호의 결과는 버립니다.
     appliedSeq: { friends: 0, incoming: 0, favorites: 0, blocks: 0 },
+
+    /**
+     * 그 순번을 차지한 결과가 **성공이었는가**(목록별).
+     *
+     * 순번만으로는 부족합니다. 예전에는 claimSeq가 실패하면 무조건 `{ok:true,superseded:true}`를
+     * 돌려줬는데, 더 최신 요청도 **실패**했다면 지금 화면에는 최신 목록이 없습니다. 그런데도
+     * 오래된 요청이 성공을 보고해 전체 수락의 "재조회 실패" 안내가 사라졌습니다(CODEX-2).
+     *
+     * 그래서 순번을 차지할 때 그 결과가 성공인지 함께 기록하고, 밀려난 호출은 **그때의 최신
+     * 사실**을 그대로 돌려줍니다. null은 "아직 아무 결과도 반영된 적 없음"입니다.
+     */
+    appliedResult: { friends: null, incoming: null, favorites: null, blocks: null },
 });
 
 const initialState = () => ({
@@ -151,16 +163,40 @@ export const useFriendStore = create((set, get) => ({
      * 쓰지 않고 물러나야 합니다(오류 표시도 쓰지 않습니다 — 더 최신 결과가 성공이었다면
      * 오래된 실패로 그것을 덮으면 안 됩니다).
      */
-    claimSeq: (key, ticket) => {
+    claimSeq: (key, ticket, outcome = { ok: true }) => {
         if (get().appliedSeq[key] >= ticket) return false;
-        set((state) => ({ appliedSeq: { ...state.appliedSeq, [key]: ticket } }));
+        set((state) => ({
+            appliedSeq: { ...state.appliedSeq, [key]: ticket },
+            appliedResult: { ...state.appliedResult, [key]: outcome },
+        }));
         return true;
+    },
+
+    /**
+     * 밀려난(superseded) 호출이 돌려줄 **현재의 사실**.
+     *
+     * 더 최신 결과가 성공이었으면 목록은 최신이므로 성공으로 알립니다. 더 최신 결과도
+     * 실패였으면 그 실패를 그대로 전달합니다 — 오래된 호출의 성공 보고가 "지금 목록이
+     * 최신이다"라는 잘못된 안내로 바뀌지 않게 합니다.
+     */
+    supersededResult: (key) => {
+        const applied = get().appliedResult[key];
+        if (applied === null || applied === undefined) {
+            return { ok: false, reason: "superseded-unknown", superseded: true };
+        }
+        return applied.ok
+            ? { ok: true, superseded: true }
+            : { ok: false, reason: "superseded-error", superseded: true, message: applied.message };
     },
 
     /** 서버가 확정한 변경을 반영하면서 그 목록의 순번을 최신으로 올립니다. */
     bumpSeq: (key) => {
         const ticket = nextSeq();
-        set((state) => ({ appliedSeq: { ...state.appliedSeq, [key]: ticket } }));
+        set((state) => ({
+            appliedSeq: { ...state.appliedSeq, [key]: ticket },
+            // 서버가 확정한 변경이라 이 시점의 목록 상태는 최신입니다.
+            appliedResult: { ...state.appliedResult, [key]: { ok: true } },
+        }));
         return ticket;
     },
 
@@ -174,15 +210,16 @@ export const useFriendStore = create((set, get) => ({
         try {
             const friendsData = await fetchMyFriends();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            // 더 최신 조회·확정 변경이 이미 반영됐으면 덮지 않습니다. 목록 자체는 최신이므로
-            // 호출부에는 성공으로 알립니다(재조회 오류로 안내하면 사실과 다릅니다).
-            if (!get().claimSeq("friends", ticket)) return { ok: true, superseded: true };
+            // 더 최신 조회·확정 변경이 이미 반영됐으면 덮지 않습니다. 그때는 **그 최신
+            // 결과가 성공이었는지**를 그대로 전달합니다(성공으로 단정하지 않습니다).
+            if (!get().claimSeq("friends", ticket, { ok: true })) return get().supersededResult("friends");
             set({ friends: friendsData, friendsError: null });
             return { ok: true, friends: friendsData };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            if (!get().claimSeq("friends", ticket)) return { ok: true, superseded: true };
-            set({ friendsError: error?.message ?? "친구 목록을 불러오지 못했습니다." });
+            const message = error?.message ?? "친구 목록을 불러오지 못했습니다.";
+            if (!get().claimSeq("friends", ticket, { ok: false, message })) return get().supersededResult("friends");
+            set({ friendsError: message });
             return { ok: false, reason: "error", message: error?.message };
         }
     },
@@ -195,13 +232,14 @@ export const useFriendStore = create((set, get) => ({
         try {
             const requests = await fetchIncomingRequestsApi();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            if (!get().claimSeq("incoming", ticket)) return { ok: true, superseded: true };
+            if (!get().claimSeq("incoming", ticket, { ok: true })) return get().supersededResult("incoming");
             set({ incomingRequests: requests, incomingError: null });
             return { ok: true, requests };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            if (!get().claimSeq("incoming", ticket)) return { ok: true, superseded: true };
-            set({ incomingError: error?.message ?? "받은 친구 신청을 불러오지 못했습니다." });
+            const message = error?.message ?? "받은 친구 신청을 불러오지 못했습니다.";
+            if (!get().claimSeq("incoming", ticket, { ok: false, message })) return get().supersededResult("incoming");
+            set({ incomingError: message });
             return { ok: false, reason: "error", message: error?.message };
         }
     },
@@ -216,13 +254,14 @@ export const useFriendStore = create((set, get) => ({
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             // 이 조회보다 **나중에** 서버가 확정한 setFavorite이 있으면 그 값을 지키고
             // 오래된 목록은 버립니다 — 별 표시가 잠깐 예전 값으로 되돌아가지 않습니다.
-            if (!get().claimSeq("favorites", ticket)) return { ok: true, superseded: true };
+            if (!get().claimSeq("favorites", ticket, { ok: true })) return get().supersededResult("favorites");
             set({ favoriteFriendIds: new Set(Array.isArray(ids) ? ids : []), favoritesError: null });
             return { ok: true };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            if (!get().claimSeq("favorites", ticket)) return { ok: true, superseded: true };
-            set({ favoritesError: error?.message ?? "즐겨찾기를 불러오지 못했습니다." });
+            const message = error?.message ?? "즐겨찾기를 불러오지 못했습니다.";
+            if (!get().claimSeq("favorites", ticket, { ok: false, message })) return get().supersededResult("favorites");
+            set({ favoritesError: message });
             return { ok: false, reason: "error", message: error?.message };
         }
     },
@@ -288,13 +327,14 @@ export const useFriendStore = create((set, get) => ({
         try {
             const blocks = await fetchBlockedUsers();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            if (!get().claimSeq("blocks", ticket)) return { ok: true, superseded: true };
+            if (!get().claimSeq("blocks", ticket, { ok: true })) return get().supersededResult("blocks");
             set({ blockedUsers: Array.isArray(blocks) ? blocks : [], blocksStatus: "success", blocksError: null });
             return { ok: true };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            if (!get().claimSeq("blocks", ticket)) return { ok: true, superseded: true };
-            set({ blocksStatus: "error", blocksError: error?.message ?? "차단 목록을 불러오지 못했습니다." });
+            const message = error?.message ?? "차단 목록을 불러오지 못했습니다.";
+            if (!get().claimSeq("blocks", ticket, { ok: false, message })) return get().supersededResult("blocks");
+            set({ blocksStatus: "error", blocksError: message });
             return { ok: false, reason: "error", message: error?.message };
         }
     },

@@ -1229,3 +1229,177 @@ test("AC-01/A-02: 언마운트는 자기 리스너만 떼고 방코드 입장은
   })
   assert.equal(otherCalls, 1, "다른 구독자의 리스너까지 지워졌다")
 })
+
+// ---------------------------------------------------------------------------
+// AC-05 · 해소된 snapshot의 "처리 가능 목록"은 지식으로 남는다
+//
+// loadSnapshot이 유령 초대를 목록에서 내리기만 하고 그 사실을 기억하지 않으면, 뒤늦게
+// 배달된 **지연 생성 사건**이 receiveLiveInvite를 통해 그 행을 다시 넣는다. 사용자는 이미
+// 취소된 초대의 수락 버튼을 다시 보게 된다(CODEX-2).
+// ---------------------------------------------------------------------------
+
+const pendingIds = () =>
+  selectPendingInvites(useGameInviteStore.getState().invites).map((row) => row.inviteId).sort()
+
+test("AC-05: 취소가 확인된 뒤 지연 도착한 커서 이하 PENDING은 되살아나지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  const ghost = invite({ inviteId: "ghost", creationSeq: "40" })
+  snapshotResponder = async () => ({ invites: [ghost], cursor: "40" })
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+  assert.deepEqual(pendingIds(), ["ghost"])
+
+  // 차단으로 취소됐다 — 새 snapshot에는 없고 커서는 그대로다.
+  snapshotResponder = async () => ({ invites: [], cursor: "40" })
+  await act(async () => {
+    socket.__fire("friend_relation_invalidated", { reason: "BLOCKED" })
+    await flush()
+  })
+  assert.deepEqual(pendingIds(), [], "취소된 초대는 목록에서 내려가야 한다")
+
+  // 이제 그 초대의 **지연 생성 사건**이 뒤늦게 배달된다(커서 이하).
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(ghost))
+    await flush()
+  })
+  assert.deepEqual(
+    pendingIds(), [],
+    "snapshot이 없다고 확인해 준 행을 지연 사건이 처리 가능 상태로 되살렸다",
+  )
+
+  // 차단 해제로 다시 조회해도(과거 초대는 부활하지 않는다) 결과는 같다.
+  snapshotResponder = async () => ({ invites: [], cursor: "40" })
+  await act(async () => {
+    socket.__fire("friend_relation_invalidated", { reason: "UNBLOCKED" })
+    await flush()
+    socket.__fire("game_invite_received", invitePayload(ghost))
+    await flush()
+  })
+  assert.deepEqual(pendingIds(), [], "차단 해제만으로 과거 초대가 복원되면 안 된다")
+
+  // 커서 **이후**의 진짜 신규 초대는 그대로 들어온다 — 무차별 억제가 아니다.
+  const fresh = invite({ inviteId: "fresh", creationSeq: "41" })
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(fresh))
+    await flush()
+  })
+  assert.deepEqual(pendingIds(), ["fresh"])
+
+  // 종료 상태 갱신은 계속 반영된다(이력을 최신으로 맞춘다).
+  await act(async () => {
+    socket.__fire("game_invite_updated", {
+      invite: invite({ inviteId: "ghost", creationSeq: "40", status: "CANCELLED", revision: 3 }),
+    })
+    await flush()
+  })
+  assert.equal(
+    useGameInviteStore.getState().invites.find((row) => row.inviteId === "ghost")?.status,
+    "CANCELLED",
+    "종료 갱신까지 막으면 이력이 낡은 채로 남는다",
+  )
+  assert.deepEqual(pendingIds(), ["fresh"])
+  await mounted.unmount()
+})
+
+test("AC-05: 늦게 도착한 **오래된** snapshot이 커서와 처리 가능 지식을 되돌리지 못한다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  const ghost = invite({ inviteId: "ghost", creationSeq: "40" })
+
+  // 먼저 시작한 조회가 느리다 — 이 응답은 취소 **이전**의 사실을 담고 있다.
+  const slow = deferred()
+  snapshotResponder = () => slow.promise
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  // 그 사이 더 나중에 시작한 조회가 먼저 끝난다(이미 취소됨).
+  snapshotResponder = async () => ({ invites: [], cursor: "40" })
+  await act(async () => {
+    await useGameInviteStore.getState().loadSnapshot()
+    await flush()
+  })
+  assert.deepEqual(pendingIds(), [])
+
+  // 이제 오래된 응답이 도착한다.
+  await act(async () => {
+    slow.resolve({ invites: [ghost], cursor: "40" })
+    await flush()
+  })
+
+  assert.equal(useGameInviteStore.getState().cursor, "40")
+  assert.deepEqual(pendingIds(), [], "오래된 응답이 취소된 초대를 되살렸다")
+
+  // 그 뒤의 지연 사건도 여전히 막힌다 — 지식이 되돌아가지 않았다는 뜻이다.
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(ghost))
+    await flush()
+  })
+  assert.deepEqual(pendingIds(), [])
+  await mounted.unmount()
+})
+
+// ---------------------------------------------------------------------------
+// AC-06 · 진행 표시는 **현재 방 확인까지** 유지된다
+//
+// 예전에는 수락 ACK 직후 finally에서 표시를 내렸다. 그 뒤의 get_current_room 대조·이동
+// 결정 구간에서 두 번째 클릭이 통과해 같은 초대에 수락이 두 번 나갈 수 있었다(CODEX-2).
+// ---------------------------------------------------------------------------
+
+test("AC-06: 현재 방 확인을 기다리는 동안 두 번째 수락은 IN_PROGRESS이고 두 번째 emit이 없다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [], cursor: "0" })
+
+  const navigated = []
+  const mounted = await mountHook(socket, (path) => navigated.push(path))
+  await act(async () => { await flush() })
+
+  // 수락 ACK는 즉시 성공이지만 현재 방 확인은 시험이 열어 줄 때까지 붙잡아 둔다.
+  const roomGate = deferred()
+  socket.__setAckResponder((event, payload, ack) => {
+    if (event === "accept_game_invite") {
+      ack({ ok: true, room: { roomId: "room-1" }, inviteId: "invite-1" })
+      return
+    }
+    if (event === "get_current_room") {
+      roomGate.promise.then(() => ack({ ok: true, room: { roomId: "room-1" } }))
+      return
+    }
+    ack({ ok: false, code: "UNEXPECTED_EVENT" })
+  })
+
+  let firstResult = null
+  const first = requestGameInviteAccept("invite-1").then((r) => { firstResult = r })
+  await act(async () => { await flush() })
+
+  assert.equal(
+    useGameInviteStore.getState().pendingInviteIds.has("invite-1"), true,
+    "수락 ACK를 받았다고 끝난 것이 아니다 — 현재 방 확인까지가 한 번의 수락이다",
+  )
+
+  const second = await requestGameInviteAccept("invite-1")
+  assert.equal(second.code, "IN_PROGRESS")
+  assert.equal(
+    socket.__emits.filter((e) => e.event === "accept_game_invite").length, 1,
+    "확인 대기 중 두 번째 수락이 서버로 나갔다",
+  )
+
+  await act(async () => { roomGate.resolve(); await first; await flush() })
+
+  assert.equal(firstResult.ok, true)
+  assert.deepEqual(navigated, ["/game-matching"], "확정 입장은 정확히 한 번 이동한다")
+  assert.equal(
+    useGameInviteStore.getState().pendingInviteIds.has("invite-1"), false,
+    "끝난 뒤에는 정상적으로 풀려야 한다",
+  )
+  await mounted.unmount()
+})

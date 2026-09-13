@@ -148,6 +148,26 @@ export function establishesTerminalRefusal(status) {
 let operationCounter = 0;
 const nextOperationId = () => (operationCounter += 1);
 
+/** snapshot 응답의 도착 순서를 가르는 단조 증가 순번(조회 **시작** 시점에 발급한다). */
+let snapshotSeqCounter = 0;
+const nextSnapshotSeq = () => (snapshotSeqCounter += 1);
+
+/**
+ * 이 PENDING 행을 지금 처리 가능한 것으로 인정할 근거가 있는가(AC-05).
+ *
+ * 해소된 snapshot이 담고 있었으면 근거가 있다. 커서보다 **뒤에** 생긴 행이면 그 조회가
+ * 알 수 없었던 것이므로 역시 인정한다. 둘 다 아니면 — 커서 이하인데 snapshot에 없었다면 —
+ * 서버가 이미 종료시킨 행이다. 지연 도착한 생성 사건이 그것을 되살리지 못하게 막는다.
+ *
+ * 종료 상태(거절·만료·취소) 갱신은 이 판정을 거치지 않는다 — 이력은 계속 최신으로 맞춘다.
+ */
+export function isActionablePending(invite, snapshotPendingIds, cursor, snapshotLoaded) {
+    if (invite.status !== "PENDING") return true;
+    if (!snapshotLoaded) return true;
+    if (snapshotPendingIds.has(invite.inviteId)) return true;
+    return compareCreationSeq(invite.creationSeq, cursor) > 0;
+}
+
 const initialAccountState = () => ({
     status: "idle", // idle | loading | success | error
     error: null,
@@ -155,6 +175,18 @@ const initialAccountState = () => ({
     invites: [],
     /** 종료 초대까지 포함한 수신자 전체 최대 생성 순번. 이 값 이하 사건은 전부 무음이다. */
     cursor: "0",
+    /**
+     * 해소된 snapshot이 **처리 가능**이라고 확인해 준 inviteId들(AC-05).
+     *
+     * getReceiverSnapshot은 PENDING만 돌려주므로, 이 집합과 cursor를 함께 들고 있으면
+     * "커서 이하인데 이 집합에 없는 PENDING"은 서버가 이미 종료시킨 행이라고 단정할 수 있다.
+     * 예전에는 loadSnapshot이 그런 행을 목록에서 내리기만 하고 그 사실을 기억하지 않아,
+     * 뒤늦게 도착한 지연 PENDING 사건이 receiveLiveInvite를 통해 다시 들어와 취소된 초대가
+     * 수락 버튼과 함께 되살아났다(유령 초대).
+     */
+    snapshotPendingIds: new Set(),
+    /** snapshot 응답의 적용 순번. 늦게 도착한 **오래된** 응답이 커서·지식을 되돌리지 못한다. */
+    snapshotSeq: 0,
     /** 초기 복원을 마쳤는가. 마치기 전에 온 live는 버퍼에 둔다. */
     snapshotLoaded: false,
     /** 복원이 아직 해소되지 않았는가(실패는 해소가 아니다). */
@@ -233,6 +265,9 @@ export const useGameInviteStore = create((set, get) => ({
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
 
+        // 이 조회의 순번은 **시작할 때** 받는다. 겹쳐 도는 두 조회 중 늦게 도착한 오래된
+        // 응답이 커서와 snapshot 지식을 되돌리지 못하게 하는 근거다.
+        const ticket = nextSnapshotSeq();
         set({ status: "loading", error: null, restorePending: true });
 
         let data;
@@ -248,6 +283,9 @@ export const useGameInviteStore = create((set, get) => ({
         }
 
         if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+        // 더 최신 snapshot이 이미 반영됐으면 이 응답은 과거다 — 커서·지식·목록 어느 것도
+        // 되돌리지 않는다. 복원 해소 여부도 최신 응답이 이미 정했다.
+        if (get().snapshotSeq >= ticket) return { ok: false, reason: "superseded", superseded: true };
 
         const rows = Array.isArray(data?.invites) ? data.invites.filter(isUsableInvite) : [];
         const cursor = typeof data?.cursor === "string" && /^\d+$/.test(data.cursor) ? data.cursor : "0";
@@ -283,6 +321,10 @@ export const useGameInviteStore = create((set, get) => ({
         set({
             invites: mergeInvites(retained, [...rows, ...bufferedInvites]),
             cursor,
+            // 이 조회가 "처리 가능"이라고 확인해 준 전부. 이후 지연 도착한 커서 이하의
+            // PENDING은 이 집합에 없으면 이미 종료된 것으로 본다(AC-05).
+            snapshotPendingIds: snapshotIds,
+            snapshotSeq: ticket,
             soundConsumed,
             liveBuffer: [],
             snapshotLoaded: true,
@@ -315,6 +357,13 @@ export const useGameInviteStore = create((set, get) => ({
         if (!state.snapshotLoaded) {
             set({ liveBuffer: [...state.liveBuffer, { invite, sfxEvent }] });
             return { applied: false, reason: "buffered" };
+        }
+
+        // 해소된 snapshot이 "이 초대는 처리 가능한 목록에 없다"고 확인해 준 커서 이하의
+        // PENDING은 지연 도착한 과거 사건이다 — 다시 넣으면 취소된 초대가 수락 버튼과 함께
+        // 되살아난다(AC-05). 종료 상태 갱신은 그대로 반영해 이력을 최신으로 맞춘다.
+        if (!isActionablePending(invite, state.snapshotPendingIds, state.cursor, state.snapshotLoaded)) {
+            return { applied: false, reason: "known-terminal" };
         }
 
         set({ invites: mergeInvites(state.invites, [invite]) });
