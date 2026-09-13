@@ -8,6 +8,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localh
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const db = require('../models');
 const friendService = require('./friend.service');
 const friendRepository = require('../repositories/friend.repositories');
 const economyService = require('./economy.service');
@@ -32,6 +33,9 @@ const stubFriendRepository = (t, overrides) => {
         'findBlockedCounterpartUuids', 'findFavoriteFriendIds',
         'searchUsersByNickname', 'findExistingFriendship', 'setFriendFavorite',
         'findBlocksOwnedBy', 'deleteBlock',
+        // 차단·해제의 잠금 순서와 "되살림 없음"을 확인하는 경계들.
+        'lockAccountsInOrder', 'cancelPendingRequestsBetween',
+        'createFriendRequest', 'updateFriendRequestStatus', 'createFriendship',
     ];
     const originals = Object.fromEntries(keys.map((key) => [key, friendRepository[key]]));
     Object.assign(friendRepository, {
@@ -228,11 +232,39 @@ test('F-19 AC-03: 같은 값을 두 번 저장해도 결과가 뒤집히지 않�
     assert.deepEqual(calls, [['me', 'friend-a', true], ['me', 'friend-a', true]]);
 });
 
-test('F-19 AC-04: 차단 해제는 인증 owner의 행만 지운다', async (t) => {
-    const attempts = [];
+/**
+ * db.sequelize.transaction을 이 시험 동안만 "콜백을 그대로 실행하는" 대역으로 바꾼다.
+ *
+ * 실제 SQL 없이도 **트랜잭션 경계 안에서 무엇을 어떤 순서로 했는지**는 확인할 수 있다.
+ * 실제 잠금·격리 수준은 backend/tests/db/f19-friends-invites.integration.test.js가 실제
+ * MySQL로 검증한다.
+ */
+const stubTransaction = (t) => {
+    const original = db.sequelize.transaction;
+    const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+    let committed = false;
+    db.sequelize.transaction = async (callback) => {
+        const value = await callback(transaction);
+        committed = true;
+        return value;
+    };
+    t.after(() => { db.sequelize.transaction = original; });
+    return { transaction, didCommit: () => committed };
+};
+
+test('F-19 AC-04: 차단 해제는 인증 owner의 행만 지우고, 정렬 계정 잠금 안에서 수행된다', async (t) => {
+    const steps = [];
+    const tx = stubTransaction(t);
     stubFriendRepository(t, {
-        deleteBlock: async (ownerId, blockedId) => {
-            attempts.push([ownerId, blockedId]);
+        lockAccountsInOrder: async (uuids, options) => {
+            // 승인 계약: 계정쌍을 바꾸는 작업은 정규화 UUID **순서**로 잠근다. 순서가
+            // 다르면 blockUser와 교착할 수 있고, 잠금 자체가 없으면 차단 트랜잭션과
+            // 교차하는 창이 남는다.
+            steps.push(['lock', [...uuids].sort().join('|'), options.transaction === tx.transaction]);
+            return uuids.map((uuid) => ({ uuid, status: 'ACTIVE' }));
+        },
+        deleteBlock: async (ownerId, blockedId, options) => {
+            steps.push(['delete', ownerId, blockedId, options?.transaction === tx.transaction]);
             // 실제 WHERE에 owner가 들어가므로 남의 차단은 0행이다.
             return ownerId === 'owner' ? 1 : 0;
         },
@@ -243,5 +275,28 @@ test('F-19 AC-04: 차단 해제는 인증 owner의 행만 지운다', async (t) 
         () => friendService.unblockUser('someone-else', 'target'),
         (error) => error.status === 404,
     );
-    assert.deepEqual(attempts, [['owner', 'target'], ['someone-else', 'target']]);
+
+    assert.deepEqual(steps, [
+        ['lock', 'owner|target', true],
+        ['delete', 'owner', 'target', true],
+        ['lock', 'someone-else|target', true],
+        ['delete', 'someone-else', 'target', true],
+    ], '해제는 잠금을 먼저 잡고, 같은 트랜잭션 안에서 owner 한정으로 지워야 한다');
+});
+
+test('F-19 AC-05: 해제 트랜잭션은 취소된 요청·초대를 되살리는 어떤 쓰기도 하지 않는다', async (t) => {
+    stubTransaction(t);
+    const forbidden = [];
+    stubFriendRepository(t, {
+        lockAccountsInOrder: async (uuids) => uuids.map((uuid) => ({ uuid, status: 'ACTIVE' })),
+        deleteBlock: async () => 1,
+        // 되살림이 있다면 반드시 이 중 하나를 지나야 한다.
+        cancelPendingRequestsBetween: async () => { forbidden.push('requests'); },
+        createFriendRequest: async () => { forbidden.push('create-request'); },
+        updateFriendRequestStatus: async () => { forbidden.push('update-request'); },
+        createFriendship: async () => { forbidden.push('friendship'); },
+    });
+
+    await friendService.unblockUser('owner', 'target');
+    assert.deepEqual(forbidden, [], '해제만으로 CANCELLED가 PENDING으로 돌아가면 안 된다');
 });

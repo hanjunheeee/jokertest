@@ -394,11 +394,21 @@ exports.unblockUser = async (myUuid, targetId) => {
         throw createError('targetId가 필요합니다.', 400);
     }
 
-    // WHERE에 인증 owner를 강제한다 — 상대(B)가 A의 차단을 지우려 해도 조건에 맞는 행이
-    // 없어 아무것도 바뀌지 않는다. 존재하지 않는 차단과 남의 차단을 구분하지 않는다.
-    const removed = await friendRepository.deleteBlock(myUuid, targetId);
-    if (removed === 0) throw createError('차단 기록을 찾을 수 없습니다.', 404);
+    // AC-04 승인 계약: 계정쌍을 바꾸는 **모든** 작업은 정규화 UUID 순서의 User 행 잠금을
+    // 먼저 잡는다. 해제만 잠금 밖에 있으면 blockUser의 트랜잭션과 교차하는 창이 남는다 —
+    // 예컨대 "차단 커밋 직전에 해제가 행을 지운다"거나, 차단이 PENDING을 CANCELLED로
+    // 확정하는 중에 해제가 끝나 상대가 곧바로 신청을 다시 보내는 순서가 가능해진다.
+    // blockUser·acceptRequest·declineRequest·createInvite와 같은 순서를 쓰므로 교착도 없다.
+    return await db.sequelize.transaction(async (t) => {
+        await friendRepository.lockAccountsInOrder([myUuid, targetId], { transaction: t });
 
-    // 해제는 차단 관계만 없앤다. 차단 시점에 CANCELLED로 확정된 요청·초대는 그대로 둔다.
-    return { unblockedId: targetId };
+        // WHERE에 인증 owner를 강제한다 — 상대(B)가 A의 차단을 지우려 해도 조건에 맞는 행이
+        // 없어 아무것도 바뀌지 않는다. 존재하지 않는 차단과 남의 차단을 구분하지 않는다.
+        const removed = await friendRepository.deleteBlock(myUuid, targetId, { transaction: t });
+        if (removed === 0) throw createError('차단 기록을 찾을 수 없습니다.', 404);
+
+        // 해제는 차단 관계만 없앤다. 차단 시점에 CANCELLED로 확정된 요청·초대는 이 잠금
+        // 안에서도 건드리지 않는다(부활 없음 — AC-05).
+        return { unblockedId: targetId };
+    });
 };

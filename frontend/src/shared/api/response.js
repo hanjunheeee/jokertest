@@ -36,9 +36,16 @@ const handleUnauthorized = async (response) => {
 };
 
 // 401 외의 실패 응답을 공통 에러로 처리합니다.
+//
+// status를 함께 싣습니다 — "서버가 실제로 거부를 답했다"와 "응답 자체를 받지 못했다(fetch가
+// 던진 네트워크 오류)"는 호출하는 쪽에서 다르게 다뤄야 하기 때문입니다. 예: 멱등 키를 쓰는
+// 발송은 전자에서는 결과가 확정됐으므로 다음 논리 발송으로 넘어가고, 후자에서는 같은 키로
+// 재시도해야 두 번째 요청이 두 번째 행을 만들지 않습니다(F-19 AC-06).
 const handleErrorResponse = async (response) => {
     const errorData = await readErrorBody(response);
-    throw toApiError(errorData, "API 요청 중 에러가 발생했습니다.");
+    const error = toApiError(errorData, "API 요청 중 에러가 발생했습니다.");
+    error.status = response.status;
+    throw error;
 };
 
 // 성공 응답 body를 읽고, API 응답 형태에 맞게 필요한 값만 반환합니다.

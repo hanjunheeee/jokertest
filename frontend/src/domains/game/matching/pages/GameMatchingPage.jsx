@@ -19,7 +19,6 @@ import { useMatchingPage } from "../hooks/useMatchingPage.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import FriendListPanel from "@/domains/lobby/components/friendList/FriendListPanel.jsx"
 import FriendListToggleButton from "@/domains/lobby/components/friendList/FriendListToggleButton.jsx"
-import { LOBBY_RIGHT_CONTROLS_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
 
 export default function GameMatchingPage() {
   const {
@@ -73,14 +72,21 @@ export default function GameMatchingPage() {
         partyCount={partyCount}
         transition={UI_REVEAL_TRANSITION}
       />
-      <MatchingPageControls visible={uiVisible} onBack={handleBack} />
-
-      <div className={LOBBY_RIGHT_CONTROLS_CLASS}>
-        <FriendListToggleButton
-          open={friendListOpen}
-          onOpen={() => setFriendListOpen((open) => !open)}
-        />
-      </div>
+      {/*
+        친구 목록 버튼은 사운드 조절과 **같은 열**에 넣습니다. 별도의 absolute 박스로 두면
+        두 조작이 우하단 같은 자리에 겹치고, 사운드의 투명 range input이 위를 덮어 친구
+        버튼이 마우스로 눌리지 않습니다(실제 Chrome 확인 사항 — 키보드로만 열렸습니다).
+      */}
+      <MatchingPageControls
+        visible={uiVisible}
+        onBack={handleBack}
+        rightControls={(
+          <FriendListToggleButton
+            open={friendListOpen}
+            onOpen={() => setFriendListOpen((open) => !open)}
+          />
+        )}
+      />
 
       <FriendListPanel
         open={friendListOpen}

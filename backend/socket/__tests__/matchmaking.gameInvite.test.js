@@ -164,9 +164,11 @@ function createInviteServiceStub({ roomId, roomInstanceId, bootEpoch, gates = {}
  * maxPlayers는 실제 검증 범위(4~10)를 지켜야 하므로, "가득 찬 방"은 정원 축소가 아니라
  * 실제 참가자로 채워서 만든다(fillWith).
  */
-async function setupRoomWithInvite(t, { maxPlayers = 4, gates = {}, fillWith = [], allReady = false } = {}) {
+async function setupRoomWithInvite(t, {
+    maxPlayers = 4, gates = {}, fillWith = [], allReady = false, guestSocketOptions = {},
+} = {}) {
     const hostSocket = createFakeSocket(HOST)
-    const guestSocket = createFakeSocket(GUEST)
+    const guestSocket = createFakeSocket(GUEST, guestSocketOptions)
     const io = createFakeIo([hostSocket, guestSocket])
 
     const created = await callAsPromise(
@@ -624,4 +626,100 @@ test('AC-06: 잘못된 payload는 어떤 상태도 바꾸지 않고 거부된다
         assert.equal(ack.code, 'INVALID_REQUEST')
     }
     assert.equal(matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 0)
+})
+
+// ---------------------------------------------------------------------------
+// 상태표 4 · JOIN_TIMEOUT 뒤 늦게 성공한 채널 가입
+//
+// 제한 시간은 **애플리케이션 대기의 상한**일 뿐이다 — 어댑터의 socket.join은 그 뒤에
+// 성공할 수 있다. 그대로 두면 두 Map에는 없는데 실제 방송 room에만 남아 다른 참가자의
+// 사건을 계속 받는 "유령 청취자"가 된다. 반대로 무조건 leave하면 그 사이에 정상 경로로
+// 다시 들어온 **더 새로운 소속**의 채널을 끊는다. 세 경우를 모두 확인한다.
+// ---------------------------------------------------------------------------
+
+/** 늦은 join 완료 → 정리 콜백까지 실제로 돌게 이벤트 루프를 몇 틱 흘린다. */
+async function drainTicks(times = 4) {
+    for (let i = 0; i < times; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+test('상태표 4: JOIN_TIMEOUT 뒤 늦게 성공한 채널 가입은 정리된다', async (t) => {
+    // 실제 5초를 기다리지 않고 같은 timeout 경로를 돈다(판정 로직은 프로덕션 그대로).
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 40, total: 4000 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    const joinGate = deferred()
+    const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
+        guestSocketOptions: { joinGate: joinGate.promise },
+    })
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+    assert.equal(ack.unknown, true, 'timeout은 실패가 아니라 모름이다')
+
+    // 아직 가입 자체가 끝나지 않았다 — 어디에도 없다.
+    assert.equal(guestSocket.rooms.has(room.roomId), false)
+    assert.equal(matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 0)
+
+    // 이제 어댑터가 늦게 성공한다.
+    joinGate.resolve()
+    await drainTicks()
+
+    assert.equal(
+        guestSocket.rooms.has(room.roomId), false,
+        '두 Map에는 없는데 실제 방송 room에만 남으면 다른 참가자의 사건을 계속 받는다',
+    )
+    assert.deepEqual(guestSocket.left, [room.roomId], '늦게 성공한 가입은 정확히 한 번 정리된다')
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests()
+            .gameRooms.find(([id]) => id === room.roomId)[1].players.some(([uuid]) => uuid === GUEST),
+        false,
+    )
+    assert.equal(service.state.entryOutcome, 'INTERRUPTED')
+})
+
+test('상태표 4: 늦은 가입 정리가 그 사이 확정된 새 소속을 끊지 않는다', async (t) => {
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 40, total: 4000 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    const joinGate = deferred()
+    const { io, guestSocket, room } = await setupRoomWithInvite(t, {
+        guestSocketOptions: { joinGate: joinGate.promise },
+    })
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+
+    // timeout 뒤, 늦은 완료가 오기 전에 같은 계정이 정상 경로로 그 방의 확정 참가자가 됐다.
+    // 여기서는 정리 판정이 실제로 보는 사실 하나(canonical membership)만 세운다.
+    matchmaking.__seedPlayerRoomForTests(GUEST, room.roomId)
+
+    joinGate.resolve()
+    await drainTicks()
+
+    assert.deepEqual(guestSocket.left, [], '확정된 새 소속의 채널을 끊으면 방송을 못 받는다')
+})
+
+test('상태표 4: 소켓이 교체된 뒤의 늦은 가입은 새 소켓의 채널을 건드리지 않는다', async (t) => {
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 40, total: 4000 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    const joinGate = deferred()
+    const { io, guestSocket, room } = await setupRoomWithInvite(t, {
+        guestSocketOptions: { joinGate: joinGate.promise },
+    })
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+
+    // 재접속으로 canonical 소켓이 바뀌었다 — 옛 소켓의 늦은 완료는 옛 소켓만 정리한다.
+    const replacement = createFakeSocket(GUEST, { id: 'sock-guest-2' })
+    io.sockets.sockets.set(replacement.id, replacement)
+    await replacement.join(room.roomId)
+
+    joinGate.resolve()
+    await drainTicks()
+
+    assert.deepEqual(guestSocket.left, [room.roomId])
+    assert.deepEqual(replacement.left, [], '새 소켓의 채널은 옛 시도가 건드리지 않는다')
+    assert.equal(replacement.rooms.has(room.roomId), true)
 })

@@ -1187,6 +1187,123 @@ test('AC-06: 발송자에게 현재 방이 없으면 초대를 만들지 않는�
     assert.equal(await countRows(db.GameInvite, {}), 0);
 });
 
+test('AC-06: 잠금을 잡은 뒤 발송자의 방이 바뀌면 초대를 만들지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    const a = await createLocalUser('mid-a');
+    const b = await createLocalUser('mid-b');
+    await befriend(a, b);
+    placeInRoom(a, 'room-mid');
+
+    // registry는 소켓 콜백이 동기적으로 바꾸는 메모리 상태라, 이 서비스가 await할 때마다
+    // 값이 달라질 수 있다. 트랜잭션 **안에서** 발송자가 방을 나가는 순간을 재현한다 —
+    // preflight 값 하나를 권한 근거로 쓰면 여기서 없는 방의 초대가 만들어진다.
+    const originalAvailability = roomAccess.describeReceiverAvailability;
+    roomAccess.describeReceiverAvailability = () => {
+        roomAccess.userRoom.delete(a);
+        roomAccess.rooms.delete('room-mid');
+        return { available: true };
+    };
+    t.after(() => { roomAccess.describeReceiverAvailability = originalAvailability; });
+
+    emitted = [];
+    await assert.rejects(
+        () => gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'k-mid' }),
+        (error) => error.status === 409,
+    );
+    assert.equal(await countRows(db.GameInvite, {}), 0, '없는 방의 초대가 durable해지면 안 된다');
+    assert.equal(await countRows(db.Notification, { user_id: b, type: 'game-invite' }), 0);
+    assert.equal(eventsNamed('game_invite_received').length, 0);
+});
+
+test('AC-06: 같은 방으로 아직 살아 있는 초대가 있으면 새 키여도 두 번째 초대를 만들지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    const a = await createLocalUser('dup-a');
+    const b = await createLocalUser('dup-b');
+    await befriend(a, b);
+    placeInRoom(a, 'room-dup');
+
+    const first = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'send-1' });
+    assert.equal(first.created, true);
+
+    // 생성 키 멱등성은 "같은 논리 발송의 재시도"만 덮는다. 사용자가 새 키로 한 번 더
+    // 누르면(연타·다른 탭) 키 검사만으로는 두 번째 행·두 번째 알림·두 번째 소리가 생긴다.
+    emitted = [];
+    const second = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'send-2' });
+
+    assert.equal(second.created, false);
+    assert.equal(second.invite.inviteId, first.invite.inviteId, '살아 있는 초대를 그대로 돌려줘야 한다');
+    assert.equal(await countRows(db.GameInvite, {}), 1);
+    assert.equal(await countRows(db.Notification, { user_id: b, type: 'game-invite' }), 1);
+    assert.equal(eventsNamed('game_invite_received').length, 0, '두 번째 소리가 나면 안 된다');
+
+    // 끝난 뒤에는 같은 방이어도 **새 논리 발송**이 정상적으로 만들어진다.
+    await gameInviteService.declineInvite(b, first.invite.inviteId);
+    emitted = [];
+    const third = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'send-3' });
+
+    assert.equal(third.created, true, '종료된 초대 뒤의 재초대가 막히면 안 된다');
+    assert.notEqual(third.invite.inviteId, first.invite.inviteId);
+    assert.equal(await countRows(db.GameInvite, {}), 2);
+    assert.equal(eventsNamed('game_invite_received').length, 1);
+});
+
+test('AC-04/AC-06: 차단과 초대 생성이 겹쳐도 차단된 쌍에 PENDING 초대가 남지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    const a = await createLocalUser('race-a');
+    const b = await createLocalUser('race-b');
+    await befriend(a, b);
+    placeInRoom(a, 'room-race');
+
+    // 두 경로가 같은 정렬 계정 잠금을 잡으므로 직렬화된다. 결과는 둘 중 하나여야 한다:
+    //   - 초대가 먼저 → 차단 트랜잭션이 같은 트랜잭션에서 CANCELLED로 확정한다.
+    //   - 차단이 먼저 → 초대 생성이 403으로 거부된다.
+    // "차단이 있는데 PENDING 초대가 살아 있다"는 어느 순서로도 나오면 안 된다.
+    await Promise.allSettled([
+        gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'race-key' }),
+        friendService.blockUser(b, a),
+    ]);
+
+    const blocks = await countRows(db.FriendBlock, { owner_id: b, blocked_id: a });
+    assert.equal(blocks, 1, '차단은 확정돼야 한다');
+    assert.equal(
+        await countRows(db.GameInvite, { sender_id: a, receiver_id: b, status: 'PENDING' }), 0,
+        '차단된 쌍에 처리 가능한 초대가 남으면 차단이 무의미해진다',
+    );
+});
+
+test('AC-04/AC-05: 차단과 해제가 겹쳐도 취소된 요청이 PENDING으로 되살아나지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    const a = await createLocalUser('ub-a');
+    const b = await createLocalUser('ub-b');
+    await friendService.sendFriendRequest(a, b);
+    assert.equal(await countRows(db.FriendRequest, { status: 'PENDING' }), 1);
+
+    // 해제도 차단과 **같은 정렬 계정 잠금**에 참여한다. 잠금 밖이면 "차단 트랜잭션이
+    // PENDING을 CANCELLED로 바꾸는 사이에 해제가 끝나는" 창이 생긴다.
+    await friendService.blockUser(b, a);
+    await Promise.allSettled([
+        friendService.unblockUser(b, a),
+        friendService.blockUser(b, a).catch(() => null),
+    ]);
+
+    assert.equal(
+        await countRows(db.FriendRequest, { status: 'PENDING' }), 0,
+        '해제만으로 CANCELLED가 PENDING으로 돌아가면 안 된다',
+    );
+    assert.equal(await countRows(db.FriendRequest, { status: 'CANCELLED' }), 1, '이력 행은 지우지 않는다');
+
+    // 남의 차단은 어느 경로로도 해제되지 않는다.
+    await assert.rejects(() => friendService.unblockUser(a, b), (error) => error.status === 404);
+});
+
 test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번이다', async (t) => {
     if (unavailable(t)) return;
     await setUp(t);

@@ -196,26 +196,48 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     }
     const normalizedKey = creationKey.trim();
 
-    // 발송자의 현재 방은 **서버 registry**에서만 읽는다. 클라이언트가 보낸 방 코드·roomId는
-    // 쓰지 않는다(A-05).
-    const roomId = roomAccess.getRoomIdForUser(senderId);
-    const room = roomId ? roomAccess.describeRoomForInvite(roomId) : null;
-    if (!room) {
-        throw createError('초대를 보낼 대기방이 없습니다.', 409);
-    }
-    if (room.isFull) {
-        throw createError('방이 가득 차 초대를 보낼 수 없습니다.', 409);
-    }
+    /**
+     * 발송자의 **현재** 방을 registry에서 다시 읽는다(A-05).
+     *
+     * registry는 소켓 콜백이 동기적으로 바꾸는 메모리 상태라, 이 서비스가 await할 때마다
+     * 값이 달라질 수 있다 — 방을 나갔거나, 방이 삭제/시작됐거나, 다른 방으로 옮겼을 수 있다.
+     * 그래서 트랜잭션 **전에 한 번** 본 값을 권한 근거로 쓰지 않고, 계정 잠금을 잡은 뒤와
+     * 실제 INSERT 직전에 같은 방 인스턴스인지 다시 확인한다.
+     *
+     * @param {{roomId:string, roomInstanceId:string}|null} expected 같아야 하는 이전 관측값
+     */
+    const requireSenderRoom = (expected = null) => {
+        const currentId = roomAccess.getRoomIdForUser(senderId);
+        const current = currentId ? roomAccess.describeRoomForInvite(currentId) : null;
+        if (!current) throw createError('초대를 보낼 대기방이 없습니다.', 409);
+        if (current.isFull) throw createError('방이 가득 차 초대를 보낼 수 없습니다.', 409);
+        if (expected !== null
+            && (current.roomId !== expected.roomId || current.roomInstanceId !== expected.roomInstanceId)) {
+            throw createError('대기방 상태가 바뀌어 초대를 보내지 못했습니다.', 409, 'ROOM_STATE_CHANGED');
+        }
+        return current;
+    };
+
+    // 잠금을 잡기 전의 빠른 거부. **권한 근거가 아니다** — 아래 잠금 안에서 다시 본다.
+    requireSenderRoom();
 
     const createdAt = now();
     const expiresAt = new Date(createdAt.getTime() + INVITE_TTL_MS);
     const bootEpoch = roomAccess.bootEpoch;
 
     const result = await db.sequelize.transaction(async (t) => {
-        // 초대 생성과 snapshot 조회가 같은 수신자 잠금을 공유한다(A-09).
-        const receiver = await lockReceiver(db, receiverId, t);
+        // 계정쌍을 바꾸는 작업은 정규화 UUID 순서로 두 계정을 잠근다(AC-04의 잠금 순서 —
+        // blockUser·unblockUser·acceptRequest·recordAcceptDecision과 같다). 이 잠금에는
+        // 수신자 행이 반드시 포함되므로 snapshot 커서 계약(A-09)도 그대로 만족한다.
+        const locked = await friendRepository.lockAccountsInOrder([senderId, receiverId], { transaction: t });
+        const lockedByUuid = new Map(locked.filter(Boolean).map((row) => [row.uuid, row]));
+        if (!lockedByUuid.get(senderId)) throw createError('사용자를 찾을 수 없습니다.', 404);
+        const receiver = lockedByUuid.get(receiverId);
         if (!receiver) throw createError('초대할 사용자를 찾을 수 없습니다.', 404);
         if (receiver.status !== 'ACTIVE') throw createError('초대할 수 없는 계정입니다.', 403);
+
+        // 잠금을 기다리는 동안 발송자가 방을 옮겼을 수 있다 — 여기서 확정한 방이 근거다.
+        const room = requireSenderRoom();
 
         // 같은 생성 키의 재시도인지 먼저 본다 — 아래 검사들이 그 사이 상태 변화로 실패해도
         // 이미 성공했던 요청의 재시도는 같은 결과를 돌려줘야 한다.
@@ -235,9 +257,34 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             throw createError('차단된 사용자에게는 게임 초대를 보낼 수 없습니다.', 403);
         }
 
-        const friendship = await friendRepository.findExistingFriendship(senderId, receiverId);
+        // 친구 관계도 **잠금 안에서** 읽는다. 잠금 밖 조회는 "친구 끊김 커밋 → 초대 생성"의
+        // 교차를 막지 못한다(계정 잠금은 관계를 바꾸는 쪽도 함께 잡는다).
+        const friendship = await friendRepository.findExistingFriendship(senderId, receiverId, { transaction: t });
         if (!friendship || friendship.status !== 'ACCEPTED') {
             throw createError('친구만 게임에 초대할 수 있습니다.', 403);
+        }
+
+        // 같은 방 인스턴스로 아직 살아 있는 초대가 있으면 새로 만들지 않는다.
+        //
+        // 생성 키 멱등성은 "같은 논리 발송의 재시도"만 덮는다. 사용자가 새 키로 한 번 더
+        // 누르면(연타·다른 탭) 그건 다른 논리 발송이라 키 검사만으로는 두 번째 행·두 번째
+        // 알림·두 번째 소리가 생긴다. 유효한 PENDING이 이미 있으면 그 행을 그대로 돌려주고
+        // 아무 사건도 다시 발행하지 않는다.
+        const livePending = await db.GameInvite.findOne({
+            where: {
+                sender_id: senderId,
+                receiver_id: receiverId,
+                room_id: room.roomId,
+                room_instance_id: room.roomInstanceId,
+                boot_epoch: bootEpoch,
+                status: INVITE_STATUS.PENDING,
+                expires_at: { [db.Sequelize.Op.gt]: createdAt },
+            },
+            order: [['creation_seq', 'DESC']],
+            transaction: t,
+        });
+        if (livePending) {
+            return { invite: livePending, created: false, notification: null, senderNickname: null };
         }
 
         const availability = roomAccess.describeReceiverAvailability(receiverId);
@@ -248,6 +295,10 @@ async function createInvite({ senderId, receiverId, creationKey }) {
         const sender = await db.User.findOne({
             where: { uuid: senderId }, attributes: ['nickname'], transaction: t,
         });
+
+        // 마지막 await 뒤에도 같은 방 인스턴스인지 다시 확인한다 — 여기까지 오는 동안
+        // 방 삭제·시작·이탈이 registry에 반영됐을 수 있다.
+        requireSenderRoom(room);
 
         const invite = await db.GameInvite.create({
             id: deps.newId(),

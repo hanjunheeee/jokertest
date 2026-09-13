@@ -41,7 +41,7 @@
 | 항목 | 담당 | 상태 |
 | --- | --- | --- |
 | 신규 시스템 알림 연결 | F-17 (SFX-DEFER-17=BB) | **미완료** — 실 DB 시험과 실제 외부 Chrome은 수행됐으나(아래 F-17 절), 브라우저에서 재현된 시각 결함의 보수분 재확인과 실제 청음이 남았다 |
-| 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | **미완료** — 연결·자동 시험은 아래 F-19 절에 기록했으나 격리 DB 공식 실행과 실제 외부 Chrome, 실제 청음이 남았다 |
+| 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | **미완료** — 격리 DB 공식 실행은 이전 후보에서 실제로 수행돼 통과했고(아래 F-19 검증 기록), 이 보수 후보의 재실행·다중 계정 외부 Chrome·실제 청음이 남았다 |
 | 전체 개인 능력 영상 동기 · 승인 MOV 5개 내장음 실제 연결 | F-27 (SFX-DEFER-27=BL) | 미완료 |
 | 통합 인수 | F-28 (SFX-INTEGRATION-28=BN) | 미완료 |
 
@@ -234,11 +234,13 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 
 ## F-19(SFX-DEFER-19) 이관 증거 — 실제 게임 초대
 
-**상태: 미완료.** 아래 연결은 worker의 자동 시험으로만 확인했다. 격리 MySQL 공식 실행과
-실제 외부 Chrome 다중 계정 확인은 **아직 수행되지 않았다**(이 세션에서 운영자 래퍼 실행
-승인이 나지 않았다 — 아래 "검증 기록" 참고). **실제 청음도 아니다** — 배포 manifest의
-`game-invite`는 여전히 미검토라 매체를 만들지 않는다. 아래 "재생 1회"는 전부 시험 전용
-fixture + 주입 매체 기록이고, 이것을 청음 증거로 기록하지 않는다.
+**상태: 미완료.** 격리 MySQL 공식 실행은 **이제 실제로 수행됐다**(운영자, 후보 `caf79fa1`에서
+F-19 DB 26/26 PASS · 후보 `9ef9174f`에서 backend 전체 1628 PASS — 아래 "검증 기록"). 다만
+그것은 **이번 교차 검토 보수 이전**의 후보이므로 지금 후보의 근거가 아니고, 이 후보의 격리 DB
+실행은 다시 남아 있다. 실제 외부 Chrome 다중 계정 초대 확인도 **아직 수행되지 않았다**
+(로비 친구·즐겨찾기 범위는 일부 확인됐다 — 아래 검증 기록). **실제 청음도 아니다** — 배포
+manifest의 `game-invite`는 여전히 미검토라 매체를 만들지 않는다. 아래 "재생 1회"는 전부 시험
+전용 fixture + 주입 매체 기록이고, 이것을 청음 증거로 기록하지 않는다.
 
 | 항목 | 값 |
 | --- | --- |
@@ -246,6 +248,9 @@ fixture + 주입 매체 기록이고, 이것을 청음 증거로 기록하지 �
 | 생산자 | `backend/service/gameInvite.service.js::createInvite` — 커밋 **이후** `emitInviteReceived` |
 | 생산 권한 근거 | 전부 서버가 확인한다: 발송자의 현재 방 소속·방 인스턴스(matchmaking이 주입한 registry), 친구 관계, 양방향 차단 없음, 수신자 활성·수신 가능. 클라이언트가 보낸 방 코드·발송자·수신자는 권한 근거가 아니다(A-05) |
 | 멱등 키 | `UNIQUE(sender_id, creation_key)` — 같은 키 재시도는 기존 행을 돌려주고 `created=false`라 **어떤 사건도 재발행하지 않는다**. 같은 키에 다른 대상·방이면 409 충돌 |
+| 논리 발송 번호 | 키는 `${roomId}:${receiverId}:${n}`이고 `n`은 `gameInvite.store.js`가 소유한다. 결과를 확정하지 못한 재시도(네트워크·무응답)는 **같은 번호**, 서버가 결과를 답한 뒤(성공 또는 status 있는 거부)에만 다음 번호. 매 시도마다 난수 키를 쓰지 않는다 |
+| 중복 PENDING 방어 | 새 키로 다시 눌러도 같은 방 인스턴스에 살아 있는 PENDING이 있으면 `createInvite`가 그 행을 돌려준다(`created=false`) — 두 번째 알림·두 번째 소리가 생기지 않는다 |
+| 방 재확인 경계 | 발송자의 현재 방은 **정렬 계정 잠금 취득 직후**와 INSERT 직전에 각각 다시 읽는다. 트랜잭션 전 preflight 한 번은 권한 근거가 아니다(registry는 소켓 콜백이 동기적으로 바꾼다) |
 | 안정 사건 ID | `game-invite:<inviteId>:received` — 알림 `source_key`와 **같은 문자열** (`notification.service.js::gameInviteSourceKey`) |
 | 수신자 | `emitToUser(receiverId, 'game_invite_received', { invite, sfxEvent })` |
 | 프런트 수신 | `frontend/src/domains/lobby/hooks/useFriendSocketEvents.js` — 앱 전역 한 곳 |
@@ -253,7 +258,8 @@ fixture + 주입 매체 기록이고, 이것을 청음 증거로 기록하지 �
 | 최종 소비처 | `FriendListPanel.jsx` → `friendList/invite/GameInviteTab.jsx` (로비·대기방 **같은** 패널) |
 | 알림 경로 | 같은 트랜잭션의 `notifications` 행 → `/lobby?gameInviteId=<id>` → `useLobbyNotificationPanels` → `FriendListPanel targetInviteId` → 해당 행 강조. **자동 수락하지 않는다** |
 | 자산/무음 사유 | `sfxManifest.js`의 `pendingAsset` — `asset-unreviewed`, "자산 파일과 이용 조건 검토가 아직 제공되지 않았다" |
-| 담당 상태 | **미완료** — 격리 DB 공식 실행 미수행, 외부 Chrome 미수행, 실제 청음 없음 |
+| 복원 경계 | `loadSnapshot`은 authoritative하다 — snapshot에 없는 과거 PENDING은 목록에서 내리고(유령 초대 제거), 종료 이력과 커서 이후 신규는 남긴다. 복원 중 버퍼에 담긴 **커서 이후** 사건은 `soundCandidates`로 돌려받아 `useFriendSocketEvents`가 정확히 한 번 판정한다(사건을 재발행하지 않는다) |
+| 담당 상태 | **미완료** — 이 보수 후보의 격리 DB 재실행 미수행, 다중 계정 외부 Chrome 미수행, 실제 청음 없음(자산 미검토) |
 
 ### 소리 소유권(한 사건에 한 번)
 
@@ -287,9 +293,12 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 
 | 파일 | 무엇을 |
 | --- | --- |
-| `frontend/src/domains/lobby/hooks/__tests__/friendInviteRuntime.test.js` (12건) | 실제 `useFriendSocketEvents`를 JSDOM에 마운트 + 실제 `createSfxPlayer` + 실제 invite store. 복원 보류·커서 경계·중복·역순 terminal·만료·계정 전환·off/mute 표식 소모·이동 단일 소유자·재생 실패/영구 대기·리스너 수명·`room_joined` 무관. 배포 manifest의 `game-invite` 미검토 무음과 **매체 생성 0**을 따로 확인 |
-| `backend/socket/__tests__/matchmaking.gameInvite.test.js` (21건) | 예약·두 Map·실제 채널·영수증·정원·`canStart`/`start_game`·cleanup·canonical 교체·boot epoch·방 인스턴스·상태표 1·3·4·5·6 |
-| `backend/tests/db/f19-friends-invites.integration.test.js` (20건) | **격리 MySQL 전용.** 0013 재실행 멱등·이력 1건, 거절→재신청→재거절 terminal 2행, 교차 PENDING 1건, 결과 조회 권한, 즐겨찾기 멱등·권한, 차단 양방향 거부·소유자 해제, 차단 무효화와 Friendship/즐겨찾기 보존, 초대 생성 멱등(행·알림·사건 각 1), 키 충돌, 커서, 만료 멱등, 거절 멱등, 수락 결정 ↔ 영수증 2단계, 차단 개입 INTERRUPTED, boot epoch, 방 소멸 |
+| `frontend/src/domains/lobby/hooks/__tests__/friendInviteRuntime.test.js` (19건) | 실제 `useFriendSocketEvents`를 JSDOM에 마운트 + 실제 `createSfxPlayer` + 실제 invite store. 복원 보류·커서 경계·중복·역순 terminal·만료·계정 전환·off/mute 표식 소모·이동 단일 소유자·재생 실패/영구 대기·리스너 수명·`room_joined` 무관. 배포 manifest의 `game-invite` 미검토 무음과 **매체 생성 0**을 따로 확인 |
+| ↳ 2026-09-13 보수분 | **버퍼 drain을 사건 재발행 없이** 확인(복원이 끝나는 순간 커서 이후 버퍼 사건이 정확히 1회), snapshot이 취소된 과거 PENDING을 내리고 종료 이력·커서 이후 신규는 남김, ACK 유실 → 같은 시도 durable 결과 복구, 재조회 pending = 모름, 현재 소속 불일치·연결 교체 시 이동 0, 발송 멱등 키 전이 |
+| `frontend/src/domains/lobby/store/__tests__/friendStoreOrdering.test.js` (8건, 2026-09-13 신규) | 같은 계정 안의 조회/확정 변경 순서: 조회가 서버 확정 즐겨찾기를 덮지 않음, 오래된 목록 조회·실패가 최신 결과를 덮지 않음, 처리된 요청 부활 0, 공용 처리 잠금이 화면 교체에서 중복 처리 차단, 계정 전환 시 잠금·집계 초기화 |
+| `backend/socket/__tests__/matchmaking.gameInvite.test.js` (24건) | 예약·두 Map·실제 채널·영수증·정원·`canStart`/`start_game`·cleanup·canonical 교체·boot epoch·방 인스턴스·상태표 1·3·4·5·6. 2026-09-13 보수분: **JOIN_TIMEOUT 뒤 늦게 성공한 socket.join 정리**(유령 청취자 제거 / 더 새로운 확정 소속 보존 / 교체된 소켓 보존) |
+| `backend/service/friend.service.test.js` | 2026-09-13 보수분: `unblockUser`가 정렬 계정 잠금 → 같은 트랜잭션의 owner 한정 삭제 순서로 동작하고, 해제 경로가 취소된 요청을 되살리는 쓰기를 하지 않음 |
+| `backend/tests/db/f19-friends-invites.integration.test.js` (31건) | **격리 MySQL 전용.** 0013 재실행 멱등·이력 1건, 거절→재신청→재거절 terminal 2행, 교차 PENDING 1건, 결과 조회 권한, 즐겨찾기 멱등·권한, 차단 양방향 거부·소유자 해제, 차단 무효화와 Friendship/즐겨찾기 보존, 초대 생성 멱등(행·알림·사건 각 1), 키 충돌, 커서, 만료 멱등, 거절 멱등, 수락 결정 ↔ 영수증 2단계, 차단 개입 INTERRUPTED, boot epoch, 방 소멸. 2026-09-13 보수분 4건: 잠금 취득 후 방 변경 시 생성 거부, 살아 있는 PENDING의 중복 초대·중복 알림·중복 소리 0, 차단↔초대 생성 경합, 차단↔해제 경합에서 부활 0 |
 
 ### 검증 기록 (누가 · 언제 · 무엇을)
 
@@ -298,11 +307,26 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 | 구현자(worker), BD F-19 세션(2026-09-13) | `npm test --prefix frontend` | **1790 PASS · 0 fail · 0 skip** (기준선 1772) |
 | 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 1.22s`) |
 | 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1412 PASS · 0 fail · 181 skip** (기준선 1385 PASS · 161 skip) |
-| 구현자(worker), 같은 세션 | `node …/run-backend-tests.cjs test` (격리 MySQL) | **미수행** — 이 세션에서 명령 승인이 나지 않았다. `f19-friends-invites.integration.test.js` 20건은 그래서 **skip = 미검증**이다 |
-| 운영자 / VERIFY | 격리 DB 직렬 backend · 다중 계정 외부 Chrome | **남아 있음** |
+| 운영자(보호된 격리 MySQL), 후보 `caf79fa1` | F-19 DB 케이스 전체 | **26/26 PASS · 0 fail · 0 skip** (106615ms) — 이전 "미수행" 기록을 이 실측이 대체한다 |
+| 운영자 공식 VERIFY, 후보 `9ef9174f` | 격리 MySQL 직렬 backend 전체 | **1628 PASS · 0 fail · 0 skip** (882742ms, 900초 상한 이내) |
+| 구현자(worker), 교차 검토 보수 세션(2026-09-13) | `npm test --prefix frontend` | **1805 PASS · 0 fail · 0 skip** |
+| 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 1.34s`) |
+| 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1444 PASS · 0 fail · 192 skip** |
+| 운영자 / VERIFY | **이 보수 후보**의 격리 DB 직렬 backend · 다중 계정 외부 Chrome | **남아 있음** — 위 운영자 PASS는 보수 **이전** 후보의 것이라 이 후보의 근거가 아니다 |
 
-- worker의 `npm test --prefix backend` skip 181건은 `F01_TEST_DATABASE_URL`이 없어서다
-  (기존 161 + F-19 신규 20). **skip은 통과가 아니라 미검증이다.**
-- 실제 외부 Chrome(A 대기방 생성 → 친구 B 초대 수신 → 수락/거절 → 실제 참가자 일치, 중복·
-  새로고침·연결 끊김·off/mute·차단·만료·가득 참·방 삭제/시작)은 **아직 수행하지 않았다.**
-  모의 재생을 청음으로 기록하지 않는다.
+- worker의 `npm test --prefix backend` skip 192건은 `F01_TEST_DATABASE_URL`이 없어서다
+  (기존 161 + F-19 31). **skip은 통과가 아니라 미검증이다.**
+- **실제 Chrome에서 이미 확인된 것**(운영자 관측, `BD-CHROME-QA-20260913.md` ·
+  `BD-CHROME-REPAIR-FINDINGS.md`): 친구 신청·수락, 오프라인 행 표시, 즐겨찾기 저장 후
+  새로고침·재로그인 복원, 대기방에서 같은 즐겨찾기 공유(키보드 조작).
+- **실제 Chrome에서 발견된 결함과 이번 보수**: 대기방 친구 버튼이 사운드 볼륨 슬라이더
+  (`aria-label="배경음 볼륨"`)에 덮여 마우스로 눌리지 않았다 →
+  `MatchingPageControls`에 우측 조작 슬롯을 만들어 로비와 같은 한 열로 합쳤다(겹침 제거,
+  사운드는 그대로). 받은 요청의 거절·차단이 같은 이미지였다 → 거절은 취소/부정 버튼
+  자산으로 분리하고 둘 다 설명(title)을 붙였다. 이미 친구인 사람의 차단 진입이 없었다 →
+  `FriendListRow`에 차단 버튼을 추가해 폴더·즐겨찾기·검색 결과 모든 목록에 연결했다.
+  **이 세 보수의 브라우저 재확인은 아직 수행하지 않았다.**
+- 실제 외부 Chrome의 다중 계정 초대 흐름(A 대기방 생성 → 친구 B 초대 수신 → 수락/거절 →
+  실제 참가자 일치, 중복·새로고침·연결 끊김·off/mute·차단·만료·가득 참·방 삭제/시작)은
+  **아직 수행하지 않았다.** 모의 재생을 청음으로 기록하지 않는다. 배포 manifest의
+  `game-invite`는 여전히 미검토라 실제 청음 자체가 불가능하다(무음 + 사유 유지가 계약).

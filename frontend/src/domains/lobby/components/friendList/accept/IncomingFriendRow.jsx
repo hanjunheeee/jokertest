@@ -63,10 +63,15 @@ export default function IncomingFriendRow({
           </div>
         </div>
         <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
+          {/*
+            거절과 차단은 **서로 다른 그림·다른 이름·다른 설명**을 쓴다. 예전에는 둘 다
+            친구차단버튼.png라서 화면만 보고는 어느 쪽이 어느 작업인지 알 수 없었다.
+          */}
           <button
             type="button"
             className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
             aria-label={`${name} 요청 거절`}
+            title={`${name} 요청 거절 — 이 요청만 끝납니다`}
             aria-disabled={processing}
             disabled={processing}
             data-decline-request={requestId}
@@ -74,7 +79,7 @@ export default function IncomingFriendRow({
             style={{ outline: "none" }}
           >
             <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendBlockButton}
+              src={FRIEND_LIST_ASSETS.friendDeclineButton}
               alt=""
               className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
             />
@@ -84,6 +89,7 @@ export default function IncomingFriendRow({
               type="button"
               className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
               aria-label={`${name} 차단`}
+              title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다`}
               aria-disabled={processing}
               disabled={processing}
               // 거절과 달리 요청 id가 아니라 **상대 UUID**로 동작한다.

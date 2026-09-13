@@ -149,9 +149,22 @@ const BOOT_EPOCH = crypto.randomUUID()
  */
 const roomAdmissionAttempts = new Map()
 
-/** 애플리케이션 응답 대기 상한. 원격 SQL 잠금 해제 시간을 보장하지는 않는다. */
-const ADMISSION_STEP_TIMEOUT_MS = 5 * 1000
-const ADMISSION_TOTAL_TIMEOUT_MS = 15 * 1000
+/**
+ * 애플리케이션 응답 대기 상한. 원격 SQL 잠금 해제 시간을 보장하지는 않는다.
+ *
+ * 시험이 실제 5초/15초를 기다리지 않고 timeout 경로를 돌 수 있도록 값만 바꿀 수 있게
+ * 열어 둔다(__setAdmissionTimeoutsForTests). 판정 로직은 프로덕션 경로 그대로다.
+ */
+const ADMISSION_DEFAULT_STEP_TIMEOUT_MS = 5 * 1000
+const ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS = 15 * 1000
+let ADMISSION_STEP_TIMEOUT_MS = ADMISSION_DEFAULT_STEP_TIMEOUT_MS
+let ADMISSION_TOTAL_TIMEOUT_MS = ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS
+
+/** 테스트 전용: 인자 없이 부르면 실제 기본값으로 되돌린다. */
+function __setAdmissionTimeoutsForTests({ step, total } = {}) {
+    ADMISSION_STEP_TIMEOUT_MS = Number.isFinite(step) ? step : ADMISSION_DEFAULT_STEP_TIMEOUT_MS
+    ADMISSION_TOTAL_TIMEOUT_MS = Number.isFinite(total) ? total : ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS
+}
 
 let admissionAttemptSeq = 0
 
@@ -240,6 +253,33 @@ function removePublishedAdmission(io, socket, attempt) {
         })
     } catch (err) { console.error('[초대 입장 보상 방송 실패]', err) }
     emitPublicRoomList(io)
+}
+
+/**
+ * JOIN_TIMEOUT 뒤에 **늦게 성공한** socket.join을 정리한다(상태표 4).
+ *
+ * 제한 시간은 애플리케이션 대기의 상한일 뿐이라 어댑터의 join이 그 뒤에 성공할 수 있다.
+ * 그대로 두면 두 Map에는 없는데 실제 방송 room에는 남아 다른 참가자의 사건을 계속 받는
+ * "유령 청취자"가 된다. 그렇다고 무조건 leave하면 그 사이에 정상 경로로 다시 들어온 **더
+ * 새로운 소속**의 채널을 끊게 되므로, 늦은 완료 시점에 소유권을 다시 확인한다:
+ *
+ *   - socket.id가 달라졌으면(재접속·canonical 교체) 이 socket은 더 이상 그 계정의 채널이
+ *     아니다. 자기 시도가 쓰던 바로 그 socket일 때만 건드린다.
+ *   - 그 계정의 확정 소속이 이미 이 방이면(playerRoom이 이 방을 가리킨다) 정상 참가자다 —
+ *     끊지 않는다.
+ *   - 같은 계정의 **다른(더 새로운)** 시도가 같은 방으로 진행 중이면 그 시도의 채널을
+ *     뺏지 않는다.
+ */
+function scheduleLateJoinCleanup(socket, roomId, uuid, attempt, joinPromise) {
+    if (!joinPromise || typeof joinPromise.then !== 'function') return
+    joinPromise.then(() => {
+        if (!socket || typeof socket.leave !== 'function') return
+        if (socket.id !== attempt.socketId) return
+        if (playerRoom.get(uuid) === roomId) return
+        const current = roomAdmissionAttempts.get(uuid)
+        if (current && current !== attempt && current.roomId === roomId) return
+        try { socket.leave(roomId) } catch (err) { console.error('[늦은 초대 채널 정리 실패]', err) }
+    }, () => {})
 }
 
 /** 이 방과 묶인 모든 미확정 시도를 무효화한다(방 삭제·시작·소멸). */
@@ -2007,8 +2047,20 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         }
 
         // ── 확정 commit 이후에만 실제 방송 채널에 가입한다 ────────────────────
-        await step(socket.join(room.id), 'JOIN_TIMEOUT')
-        joinedRoomId = room.id
+        //
+        // socket.join은 어댑터에 따라 비동기다. 제한 시간 안에 끝나지 않으면 이 시도는
+        // 실패로 끝나지만 **가입 자체는 나중에 성공할 수 있다** — 그대로 두면 두 Map에는
+        // 없는데 실제 방송 room에는 남아 다른 참가자의 사건을 계속 받는다. 늦은 완료에
+        // 정리를 걸어 두되, 그 시점에 소유권을 다시 확인해 더 새로운 정상 소속은 건드리지
+        // 않는다.
+        const joinPromise = Promise.resolve(socket.join(room.id))
+        try {
+            await step(joinPromise, 'JOIN_TIMEOUT')
+            joinedRoomId = room.id
+        } catch (joinError) {
+            scheduleLateJoinCleanup(socket, room.id, uuid, attempt, joinPromise)
+            throw joinError
+        }
 
         const player = { uuid, nickname: user.nickname, isReady: false, ...accountProfile }
 
@@ -2283,6 +2335,7 @@ module.exports = {
     __setUserRepositoryForTests,
     __setEconomyServiceForTests,
     __setGameInviteServiceForTests,
+    __setAdmissionTimeoutsForTests,
     __setRandomMatchmakingEnabledForTests,
     // ALREADY_IN_GAME 응답을 검증하는 테스트가 문구를 복붙하지 않고 이 원본을 그대로
     // 참조하도록 노출합니다(런타임 코드에서는 참조하지 않습니다).

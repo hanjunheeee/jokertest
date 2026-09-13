@@ -22,6 +22,33 @@ function readAuthAccountId() {
         : null;
 }
 
+/**
+ * 같은 계정 안에서도 "누가 더 최신인가"를 가르는 단조 증가 순번입니다(A-01/A-03).
+ *
+ * 계정 세대(accountGeneration)는 **계정이 바뀐 것**만 잡습니다. 같은 계정에서 조회가 겹치면
+ * 세대는 똑같으므로, 먼저 시작한 조회가 늦게 끝나 나중 결과를 덮어쓸 수 있었습니다.
+ *
+ * 규칙은 하나입니다:
+ *   - 조회는 **시작할 때** 번호를 받는다.
+ *   - 서버가 확정한 변경은 **응답을 확인한 뒤에** 번호를 받는다.
+ *
+ * 그래서 조회보다 나중에 확정된 변경은 언제나 더 큰 번호를 갖고, 그 조회가 뒤늦게 도착해도
+ * 확정 값을 덮지 못합니다. 예: fetchFavorites 시작(1) → setFavorite 커밋(2) →
+ * fetchFavorites 도착(1 < 2) ⇒ 오래된 목록은 버려지고 서버 확정 별 상태가 남습니다.
+ */
+let writeSeq = 0;
+const nextSeq = () => (writeSeq += 1);
+
+/** 전체 수락 집계의 초기값. 계정에 묶이므로 계정이 바뀌면 함께 사라집니다. */
+export const emptyAcceptAllResult = () => ({
+    running: false,
+    accepted: 0,
+    failed: 0,
+    unconfirmed: 0,
+    refreshError: null,
+    completedAt: null,
+});
+
 /** 계정이 바뀔 때 통째로 버리는 값들. 계정에 묶이지 않은 값은 여기 두지 않습니다. */
 const initialAccountState = () => ({
     // 내 친구 목록입니다.
@@ -56,6 +83,20 @@ const initialAccountState = () => ({
     friendsError: null,
     incomingError: null,
     favoritesError: null,
+
+    // F-19(AC-02): 요청 단위 처리 잠금은 **계정 상태**입니다.
+    //
+    // 예전에는 useFriendListSync의 useRef/useState였습니다. 그러면 같은 계정에서도 패널이
+    // 언마운트·리마운트될 때(로비 → 대기방 이동, 탭 교체) 잠금이 사라져 이미 처리 중인
+    // 요청을 새 화면이 다시 처리할 수 있었습니다. 공용 store로 옮기면 두 화면이 같은
+    // 집합을 보고, 계정이 바뀌면 여기 있는 모든 잠금이 한 번에 정리됩니다.
+    processingRequestIds: new Set(),
+
+    // 전체 수락 집계도 계정에 묶습니다 — 계정을 바꾸면 이전 계정의 집계가 남지 않습니다.
+    acceptAllResult: emptyAcceptAllResult(),
+
+    // 목록별 "지금 반영돼 있는 값의 순번". 이보다 작은 번호의 결과는 버립니다.
+    appliedSeq: { friends: 0, incoming: 0, favorites: 0, blocks: 0 },
 });
 
 const initialState = () => ({
@@ -88,19 +129,44 @@ export const useFriendStore = create((set, get) => ({
     /** 이 비동기 결과가 아직 유효한가(계정이 그대로인가). */
     isCurrent: (accountGeneration) => get().accountGeneration === accountGeneration,
 
+    /**
+     * 이 번호가 해당 목록의 최신인가. 맞으면 그 번호를 "반영된 값"으로 기록합니다.
+     *
+     * false면 더 최신의 조회나 서버 확정 변경이 이미 반영돼 있다는 뜻이라, 호출자는 아무것도
+     * 쓰지 않고 물러나야 합니다(오류 표시도 쓰지 않습니다 — 더 최신 결과가 성공이었다면
+     * 오래된 실패로 그것을 덮으면 안 됩니다).
+     */
+    claimSeq: (key, ticket) => {
+        if (get().appliedSeq[key] >= ticket) return false;
+        set((state) => ({ appliedSeq: { ...state.appliedSeq, [key]: ticket } }));
+        return true;
+    },
+
+    /** 서버가 확정한 변경을 반영하면서 그 목록의 순번을 최신으로 올립니다. */
+    bumpSeq: (key) => {
+        const ticket = nextSeq();
+        set((state) => ({ appliedSeq: { ...state.appliedSeq, [key]: ticket } }));
+        return ticket;
+    },
+
     // 서버에서 내 친구 목록을 가져와 store에 저장합니다.
     // 오류를 삼키지 않고 명시적인 성공/실패를 돌려줍니다 — 호출부(전체 수락 등)가
     // "재조회까지 성공했는가"를 구분해 안내해야 하기 때문입니다(AC-02).
     fetchFriends: async () => {
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
+        const ticket = nextSeq();
         try {
             const friendsData = await fetchMyFriends();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            // 더 최신 조회·확정 변경이 이미 반영됐으면 덮지 않습니다. 목록 자체는 최신이므로
+            // 호출부에는 성공으로 알립니다(재조회 오류로 안내하면 사실과 다릅니다).
+            if (!get().claimSeq("friends", ticket)) return { ok: true, superseded: true };
             set({ friends: friendsData, friendsError: null });
             return { ok: true, friends: friendsData };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            if (!get().claimSeq("friends", ticket)) return { ok: true, superseded: true };
             set({ friendsError: error?.message ?? "친구 목록을 불러오지 못했습니다." });
             return { ok: false, reason: "error", message: error?.message };
         }
@@ -110,13 +176,16 @@ export const useFriendStore = create((set, get) => ({
     fetchIncomingRequests: async () => {
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
+        const ticket = nextSeq();
         try {
             const requests = await fetchIncomingRequestsApi();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            if (!get().claimSeq("incoming", ticket)) return { ok: true, superseded: true };
             set({ incomingRequests: requests, incomingError: null });
             return { ok: true, requests };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            if (!get().claimSeq("incoming", ticket)) return { ok: true, superseded: true };
             set({ incomingError: error?.message ?? "받은 친구 신청을 불러오지 못했습니다." });
             return { ok: false, reason: "error", message: error?.message };
         }
@@ -126,13 +195,18 @@ export const useFriendStore = create((set, get) => ({
     fetchFavorites: async () => {
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
+        const ticket = nextSeq();
         try {
             const ids = await fetchFavoriteFriendIds();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            // 이 조회보다 **나중에** 서버가 확정한 setFavorite이 있으면 그 값을 지키고
+            // 오래된 목록은 버립니다 — 별 표시가 잠깐 예전 값으로 되돌아가지 않습니다.
+            if (!get().claimSeq("favorites", ticket)) return { ok: true, superseded: true };
             set({ favoriteFriendIds: new Set(Array.isArray(ids) ? ids : []), favoritesError: null });
             return { ok: true };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            if (!get().claimSeq("favorites", ticket)) return { ok: true, superseded: true };
             set({ favoritesError: error?.message ?? "즐겨찾기를 불러오지 못했습니다." });
             return { ok: false, reason: "error", message: error?.message };
         }
@@ -168,6 +242,9 @@ export const useFriendStore = create((set, get) => ({
             clearPending();
             // 서버가 확정한 값만 반영합니다(요청한 값이 아니라).
             const confirmed = result?.favorite === true;
+            // 커밋을 **확인한 뒤에** 순번을 받습니다 — 이 저장보다 먼저 시작한 조회는 모두
+            // 더 작은 번호라서, 나중에 도착해도 이 확정 값을 덮지 못합니다(A-03).
+            get().bumpSeq("favorites");
             set((state) => {
                 const next = new Set(state.favoriteFriendIds);
                 if (confirmed) next.add(friendId); else next.delete(friendId);
@@ -191,14 +268,17 @@ export const useFriendStore = create((set, get) => ({
     fetchBlocks: async () => {
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
+        const ticket = nextSeq();
         set({ blocksStatus: "loading", blocksError: null });
         try {
             const blocks = await fetchBlockedUsers();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            if (!get().claimSeq("blocks", ticket)) return { ok: true, superseded: true };
             set({ blockedUsers: Array.isArray(blocks) ? blocks : [], blocksStatus: "success", blocksError: null });
             return { ok: true };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            if (!get().claimSeq("blocks", ticket)) return { ok: true, superseded: true };
             set({ blocksStatus: "error", blocksError: error?.message ?? "차단 목록을 불러오지 못했습니다." });
             return { ok: false, reason: "error", message: error?.message };
         }
@@ -236,12 +316,48 @@ export const useFriendStore = create((set, get) => ({
     },
 
     // 수락/거절한 친구 요청을 받은 요청 목록에서 제거합니다.
-    removeIncomingRequest: (requestId) => set((state) => ({
-        incomingRequests: state.incomingRequests.filter((request) => request.request_id !== requestId),
-    })),
+    // 서버가 확정한 처리의 결과이므로 순번을 올립니다 — 이 제거보다 먼저 시작한 조회가
+    // 뒤늦게 도착해 처리된 요청을 다시 살려 놓지 않습니다.
+    removeIncomingRequest: (requestId) => {
+        get().bumpSeq("incoming");
+        set((state) => ({
+            incomingRequests: state.incomingRequests.filter((request) => request.request_id !== requestId),
+        }));
+    },
 
     // 소켓 이벤트나 API 응답으로 받은 요청 목록을 통째로 교체합니다.
-    setIncomingRequests: (requests) => set({ incomingRequests: requests }),
+    setIncomingRequests: (requests) => {
+        get().bumpSeq("incoming");
+        set({ incomingRequests: requests });
+    },
+
+    /**
+     * F-19(AC-02): 요청 단위 처리 잠금을 취득합니다.
+     *
+     * 이미 잠긴 id는 돌려주지 않으므로, 전체 수락과 단건 연타가 같은 요청을 두 번 처리하지
+     * 않습니다. 읽기와 쓰기가 같은 동기 구간에 있어 두 호출이 끼어들 수 없습니다.
+     *
+     * @returns {Array} 이번 호출이 **새로 잠근** id들. 빈 배열이면 아무것도 하면 안 됩니다.
+     */
+    lockRequests: (ids) => {
+        get().syncAccount();
+        const state = get();
+        const fresh = ids.filter((id) => !state.processingRequestIds.has(id));
+        if (fresh.length === 0) return [];
+        const next = new Set(state.processingRequestIds);
+        for (const id of fresh) next.add(id);
+        set({ processingRequestIds: next });
+        return fresh;
+    },
+
+    /** 잠금을 풉니다. 계정이 바뀌어 이미 비워졌다면 아무 일도 하지 않습니다. */
+    unlockRequests: (ids) => set((state) => {
+        const next = new Set(state.processingRequestIds);
+        for (const id of ids) next.delete(id);
+        return { processingRequestIds: next };
+    }),
+
+    setAcceptAllResult: (result) => set({ acceptAllResult: result }),
 
     // 특정 사용자에게 친구 요청을 보냈다고 표시합니다.
     addSentRequest: (uuid) => set((state) => ({

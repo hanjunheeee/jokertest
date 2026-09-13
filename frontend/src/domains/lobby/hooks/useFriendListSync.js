@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect } from "react"
 import {
   acceptFriendRequest,
   declineFriendRequest,
   fetchFriendRequestResults,
 } from "@/domains/lobby/api/friend.api.js"
-import { useFriendStore } from "@/domains/lobby/store/friend.store"
+import { emptyAcceptAllResult, useFriendStore } from "@/domains/lobby/store/friend.store"
 import { applyFriendFavoriteFlags } from "@/domains/lobby/utils/applyFriendFavoriteFlags.js"
 import { groupFriends } from "@/domains/lobby/utils/groupFriends.js"
 
@@ -44,15 +44,6 @@ export function classifyAcceptResults(requestIds, settled, confirmedStatuses) {
   return { accepted, failed, unconfirmed }
 }
 
-const emptyAcceptAllResult = () => ({
-  running: false,
-  accepted: 0,
-  failed: 0,
-  unconfirmed: 0,
-  refreshError: null,
-  completedAt: null,
-})
-
 // 친구 목록 패널이 열릴 때 친구 목록과 받은 친구 요청을 동기화하는 훅입니다.
 export function useFriendListSync(friendListOpen) {
   const friends = useFriendStore((state) => state.friends)
@@ -71,24 +62,17 @@ export function useFriendListSync(friendListOpen) {
   const fetchBlocksFromStore = useFriendStore((state) => state.fetchBlocks)
   const removeIncomingRequest = useFriendStore((state) => state.removeIncomingRequest)
 
-  // 요청 단위 잠금. 단건 수락·거절과 전체 수락이 **같은** 집합을 공유해야 연타로 같은
-  // 요청이 두 번 처리되지 않는다.
-  const [processingRequestIds, setProcessingRequestIds] = useState(() => new Set())
-  const processingRef = useRef(new Set())
-  const [acceptAllResult, setAcceptAllResult] = useState(emptyAcceptAllResult)
-
-  const lockRequests = useCallback((ids) => {
-    const fresh = ids.filter((id) => !processingRef.current.has(id))
-    if (fresh.length === 0) return []
-    fresh.forEach((id) => processingRef.current.add(id))
-    setProcessingRequestIds(new Set(processingRef.current))
-    return fresh
-  }, [])
-
-  const unlockRequests = useCallback((ids) => {
-    ids.forEach((id) => processingRef.current.delete(id))
-    setProcessingRequestIds(new Set(processingRef.current))
-  }, [])
+  // 요청 단위 잠금과 전체 수락 집계는 **공용 store**가 소유한다(AC-02).
+  //
+  // 훅 지역 상태였을 때는 같은 계정이어도 패널이 언마운트·리마운트되면(로비 → 대기방
+  // 이동, 탭 교체) 잠금이 통째로 사라져 이미 처리 중인 요청을 새 화면이 다시 처리할 수
+  // 있었다. store로 옮기면 두 화면이 같은 집합을 보고, 계정이 바뀌면 syncAccount가 잠금과
+  // 집계를 함께 버린다 — 이전 계정의 처리 결과가 새 계정 화면에 남지 않는다.
+  const processingRequestIds = useFriendStore((state) => state.processingRequestIds)
+  const acceptAllResult = useFriendStore((state) => state.acceptAllResult)
+  const lockRequests = useFriendStore((state) => state.lockRequests)
+  const unlockRequests = useFriendStore((state) => state.unlockRequests)
+  const setAcceptAllResult = useFriendStore((state) => state.setAcceptAllResult)
 
   useEffect(() => {
     // 친구 목록 패널이 닫혀 있으면 서버 요청을 보내지 않습니다.
@@ -106,10 +90,15 @@ export function useFriendListSync(friendListOpen) {
     await Promise.all([fetchFriendsFromStore(), fetchIncomingFromStore(), fetchFavoritesFromStore()])
   }
 
+  /** 이 비동기 결과가 여전히 같은 계정의 것인가. 아니면 아무 상태도 건드리지 않는다. */
+  const stillSameAccount = (generation) => useFriendStore.getState().isCurrent(generation)
+
   const handleAcceptRequest = async (requestId) => {
+    const generation = useFriendStore.getState().syncAccount()
     if (lockRequests([requestId]).length === 0) return
     try {
       await acceptFriendRequest(requestId)
+      if (!stillSameAccount(generation)) return
 
       // 수락한 요청은 받은 요청 목록에서 바로 제거합니다.
       removeIncomingRequest(requestId)
@@ -117,22 +106,27 @@ export function useFriendListSync(friendListOpen) {
       // 친구가 새로 추가되었으므로 친구 목록도 다시 가져옵니다.
       await fetchFriendsFromStore()
     } catch (error) {
+      if (!stillSameAccount(generation)) return
       console.error("친구 수락 실패:", error.message)
       // 실패했으면 목록에서 지우지 않습니다 — 서버에는 아직 대기 중입니다.
       await fetchIncomingFromStore()
     } finally {
+      // 계정이 바뀌었다면 잠금 집합이 이미 통째로 비워져 있어 무해한 no-op입니다.
       unlockRequests([requestId])
     }
   }
 
   const handleDeclineRequest = async (requestId) => {
+    const generation = useFriendStore.getState().syncAccount()
     if (lockRequests([requestId]).length === 0) return
     try {
       await declineFriendRequest(requestId)
+      if (!stillSameAccount(generation)) return
 
       // 거절한 요청은 받은 요청 목록에서 바로 제거합니다.
       removeIncomingRequest(requestId)
     } catch (error) {
+      if (!stillSameAccount(generation)) return
       console.error("친구 거절 실패:", error.message)
       await fetchIncomingFromStore()
     } finally {
@@ -152,6 +146,7 @@ export function useFriendListSync(friendListOpen) {
    *     그대로 두고 별도의 조회 오류를 남긴다.
    */
   const handleAcceptAll = async () => {
+    const generation = useFriendStore.getState().syncAccount()
     const requestIds = incomingRequests
       .map((request) => request.request_id)
       .filter((id) => id !== undefined && id !== null)
@@ -163,6 +158,10 @@ export function useFriendListSync(friendListOpen) {
 
     // 요청별 독립 실행 — 한 요청의 실패가 다른 요청의 성공을 롤백하지 않는다.
     const settled = await Promise.allSettled(locked.map((id) => acceptFriendRequest(id)))
+
+    // 계정이 바뀐 뒤 정착한 결과는 **새 계정의 화면에 아무것도 쓰지 않는다**. 잠금은
+    // syncAccount가 이미 비웠고, 집계도 이전 계정의 것이라 여기서 끝낸다.
+    if (!stillSameAccount(generation)) return
 
     // 응답을 못 받은 요청만 서버에 되묻는다.
     const undeterminedIds = locked.filter((_, index) => settled[index].status === "rejected")
@@ -192,6 +191,7 @@ export function useFriendListSync(friendListOpen) {
     ].filter(Boolean)
 
     unlockRequests(locked)
+    if (!stillSameAccount(generation)) return
     setAcceptAllResult({
       running: false,
       accepted: accepted.length,

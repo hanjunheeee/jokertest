@@ -13,7 +13,10 @@ import { getFriendPanelAriaLabel } from "@/domains/lobby/utils/friendListPanelAr
 import { useFriendListSync } from "@/domains/lobby/hooks/useFriendListSync.js"
 import { useFriendStore } from "@/domains/lobby/store/friend.store.js"
 import { useGameInviteStore } from "@/domains/lobby/store/gameInvite.store.js"
-import { requestGameInviteAccept } from "@/domains/lobby/hooks/useFriendSocketEvents.js"
+import {
+  loadInviteSnapshotAndPlayNew,
+  requestGameInviteAccept,
+} from "@/domains/lobby/hooks/useFriendSocketEvents.js"
 import FriendAcceptTab from "@/domains/lobby/components/friendList/accept/FriendAcceptTab.jsx"
 import FriendBlockTab from "@/domains/lobby/components/friendList/block/FriendBlockTab.jsx"
 import FriendListTabContent from "@/domains/lobby/components/friendList/list/FriendListTabContent.jsx"
@@ -87,6 +90,7 @@ function FriendListPanelContent({
   onBlockUser,
   onUnblockUser,
   blockingIds,
+  friendBlock,
   blockedUsers,
   blocksStatus,
   blocksError,
@@ -115,6 +119,7 @@ function FriendListPanelContent({
           friendsError={friendsError}
           onRetry={onRefreshRequests}
           invite={invite}
+          block={friendBlock}
         />
       ) : null}
 
@@ -254,15 +259,15 @@ export default function FriendListPanel({
   const inviteError = useGameInviteStore((state) => state.error)
   const pendingInviteIds = useGameInviteStore((state) => state.pendingInviteIds)
   const inviteErrors = useGameInviteStore((state) => state.inviteErrors)
-  const loadInviteSnapshot = useGameInviteStore((state) => state.loadSnapshot)
   const declineInvite = useGameInviteStore((state) => state.declineInvite)
   const sendInvite = useGameInviteStore((state) => state.sendInvite)
 
   // 패널을 열 때 초대도 함께 복원한다 — 목록·요청과 같은 경계에서 같은 계정 상태를 본다.
+  // 복원 도중에 도착해 버퍼에 남은 **진짜 신규** 초대의 소리도 이 경로가 한 번 처리한다.
   useEffect(() => {
     if (!open) return
-    loadInviteSnapshot()
-  }, [open, loadInviteSnapshot])
+    loadInviteSnapshotAndPlayNew()
+  }, [open])
 
   const showListView = () => setPanelView("list")
   const showRequestView = () => setPanelView("request")
@@ -283,13 +288,20 @@ export default function FriendListPanel({
    *
    * 방 검증이 끝나기 전에는 **호출 경계에서도** 막는다 — 버튼 비활성만으로는 조작된
    * 클라이언트를 막지 못하고, 마지막 방어선은 서버가 발송자의 실제 방 소속을 다시 확인하는
-   * 것이다. creationKey는 이 클릭 하나를 식별하는 멱등 키다.
+   * 것이다.
+   *
+   * 여기서 넘기는 것은 완성된 키가 아니라 **논리 발송의 범위**(방+대상)다. 실제 멱등 키에
+   * 붙는 발송 번호는 store가 소유한다 — 결과를 확정하지 못한 재시도는 같은 번호를 유지하고,
+   * 서버가 결과를 확정한 뒤의 재초대만 다음 번호로 넘어간다(AC-06).
    */
   const handleSendInvite = useCallback((receiverId) => {
     if (roomId === null || !isRoomVerified) return
-    const creationKey = `${roomId}:${receiverId}`
-    return sendInvite(receiverId, creationKey)
+    return sendInvite(receiverId, `${roomId}:${receiverId}`)
   }, [roomId, isRoomVerified, sendInvite])
+
+  // F-19(AC-04): 이미 친구인 사람의 차단 진입. 검색은 친구를 후보에서 제외하므로 목록의
+  // 행 자체가 유일한 경로다. 해제는 기존 차단 목록 탭이 담당한다.
+  const friendBlock = { onBlock: handleBlockUser, blockingIds }
 
   const canInvite = roomId !== null
   const invite = canInvite
@@ -311,7 +323,7 @@ export default function FriendListPanel({
     pendingCount,
     onAccept: requestGameInviteAccept,
     onDecline: declineInvite,
-    onRefresh: loadInviteSnapshot,
+    onRefresh: loadInviteSnapshotAndPlayNew,
   }
 
   return (
@@ -342,6 +354,7 @@ export default function FriendListPanel({
               onBlockUser={handleBlockUser}
               onUnblockUser={handleUnblockUser}
               blockingIds={blockingIds}
+              friendBlock={friendBlock}
               blockedUsers={blockedUsers}
               blocksStatus={blocksStatus}
               blocksError={blocksError}

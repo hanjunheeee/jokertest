@@ -284,6 +284,25 @@ function invitePayload(row, accountId = row.receiverId) {
   }
 }
 
+/**
+ * 수락 경로의 서버 응답을 흉내 낸다.
+ *
+ * 수락 ACK 하나로는 이동하지 않는다 — 클라이언트가 get_current_room으로 **현재 소속**을
+ * 다시 확인하고, ACK가 유실되면 get_game_invite_result로 같은 시도의 durable 결과를 되묻는다.
+ * 그래서 세 응답을 함께 정해 줘야 실제 경로가 끝까지 돈다.
+ */
+function respondToAccept(socket, { accept, currentRoom = null, attemptResult = null }) {
+  socket.__setAckResponder((event, payload, ack) => {
+    if (event === "accept_game_invite") { accept(payload, ack); return }
+    if (event === "get_current_room") { ack({ ok: true, room: currentRoom }); return }
+    if (event === "get_game_invite_result") {
+      ack(attemptResult ?? { ok: false, code: "INVITE_NOT_FOUND" })
+      return
+    }
+    ack({ ok: false, code: "UNEXPECTED_EVENT" })
+  })
+}
+
 function deferred() {
   let resolve
   let reject
@@ -405,14 +424,94 @@ test("AC-07: 복원 중에 온 사건은 보류됐다가 커서 이후의 것만
     "버퍼에 있던 사건도 목록에는 반영된다",
   )
 
-  // 커서 이후의 진짜 신규 사건만 소리 후보다. 커서 이하(past)는 복원이 이미 알고 있었다.
+  // 여기가 핵심이다: 복원이 해소되는 **그 순간** 버퍼에 있던 커서 이후 사건이 정확히 한 번
+  // 울린다. 사건을 다시 쏘아 주지 않는다 — 재발행으로 소리를 만들면 "복원 중에 도착한
+  // 신규 초대는 영원히 무음"이라는 실제 결함을 시험이 가려 버린다.
+  assert.equal(h.media.length, 1, "복원이 끝나면 버퍼의 신규 초대가 재발행 없이 한 번 울려야 한다")
+  assert.equal(
+    useGameInviteStore.getState().soundConsumed.has("fresh"), true,
+    "후보로 인정한 순간 표식을 소모해야 한다",
+  )
+
+  // 커서 이하(past)는 복원이 이미 알고 있었고, 이미 울린 fresh도 다시 울리지 않는다.
   await act(async () => {
     socket.__fire("game_invite_received", invitePayload(past))
     socket.__fire("game_invite_received", invitePayload(fresh))
     await flush()
   })
 
-  assert.equal(h.media.length, 1, "커서 이후 신규 수신 한 건만 울려야 한다")
+  assert.equal(h.media.length, 1, "재배달로 소리가 늘면 안 된다")
+  await mounted.unmount()
+})
+
+test("AC-05: 복원은 취소된 과거 PENDING을 목록에서 내리고, 커서 이후 신규는 남긴다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  const cancelled = invite({ inviteId: "cancelled", creationSeq: "30" })
+  const alive = invite({ inviteId: "alive", creationSeq: "40" })
+  snapshotResponder = async () => ({ invites: [cancelled, alive], cursor: "40" })
+
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+  assert.equal(selectPendingInvites(useGameInviteStore.getState().invites).length, 2)
+
+  // 차단으로 cancelled가 무효화됐다 — 서버 snapshot은 이제 그 행을 돌려주지 않는다.
+  // 그 사이에 커서 **이후**의 새 초대가 하나 도착해 아직 조회 경계 밖에 있다.
+  const brandNew = invite({ inviteId: "brand-new", creationSeq: "99" })
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(brandNew))
+    await flush()
+  })
+
+  snapshotResponder = async () => ({ invites: [alive], cursor: "40" })
+  await act(async () => {
+    socket.__fire("friend_relation_invalidated", { reason: "BLOCKED" })
+    await flush()
+  })
+
+  const ids = useGameInviteStore.getState().invites.map((row) => row.inviteId).sort()
+  assert.deepEqual(
+    ids, ["alive", "brand-new"],
+    "snapshot에 없는 과거 PENDING은 처리 가능 상태로 남으면 안 된다(유령 초대)",
+  )
+  assert.deepEqual(
+    selectPendingInvites(useGameInviteStore.getState().invites).map((row) => row.inviteId).sort(),
+    ["alive", "brand-new"],
+  )
+  await mounted.unmount()
+})
+
+test("AC-05: 우리가 이미 아는 종료 이력은 복원이 지우지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [invite({ inviteId: "done", creationSeq: "10" })], cursor: "10" })
+
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  // 거절되어 terminal로 바뀌었다(무음 상태 변경).
+  await act(async () => {
+    socket.__fire("game_invite_updated", {
+      invite: invite({ inviteId: "done", creationSeq: "10", status: "DECLINED", revision: 2 }),
+    })
+    await flush()
+  })
+
+  snapshotResponder = async () => ({ invites: [], cursor: "10" })
+  await act(async () => {
+    await useGameInviteStore.getState().loadSnapshot()
+    await flush()
+  })
+
+  const row = useGameInviteStore.getState().invites.find((item) => item.inviteId === "done")
+  assert.ok(row, "종료 이력까지 사라지면 사용자는 무슨 일이 있었는지 알 수 없다")
+  assert.equal(row.status, "DECLINED")
+  assert.equal(selectPendingInvites(useGameInviteStore.getState().invites).length, 0)
   await mounted.unmount()
 })
 
@@ -660,10 +759,11 @@ test("AC-06: 확정 성공 ACK 하나에 대기방 이동이 정확히 한 번 �
   const mounted = await mountHook(socket, (path) => navigated.push(path))
   await act(async () => { await flush() })
 
-  socket.__setAckResponder((event, payload, ack) => {
-    assert.equal(event, "accept_game_invite")
-    assert.deepEqual(payload, { inviteId: "go" })
-    ack({ ok: true, room: { roomId: "room-9", roomCode: "ABCD", players: [] } })
+  const room9 = { roomId: "room-9", roomCode: "ABCD", players: [] }
+  const accepted = []
+  respondToAccept(socket, {
+    accept: (payload, ack) => { accepted.push(payload); ack({ ok: true, room: room9 }) },
+    currentRoom: room9,
   })
 
   let result
@@ -672,10 +772,180 @@ test("AC-06: 확정 성공 ACK 하나에 대기방 이동이 정확히 한 번 �
     await flush()
   })
 
+  assert.deepEqual(accepted, [{ inviteId: "go" }])
   assert.equal(shouldEnterRoomFromAccept(result), true)
   assert.deepEqual(navigated, ["/game-matching"], "이동 소유자가 둘이면 두 번 이동한다")
   assert.equal(useMatchingStore.getState().roomId, "room-9")
   assert.equal(useGameInviteStore.getState().pendingInviteIds.has("go"), false)
+  await mounted.unmount()
+})
+
+test("AC-06: ACK가 유실돼도 같은 시도의 durable 결과로 입장을 복구한다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [invite({ inviteId: "lost", creationSeq: "1" })], cursor: "1" })
+
+  const navigated = []
+  const mounted = await mountHook(socket, (path) => navigated.push(path))
+  await act(async () => { await flush() })
+
+  const room7 = { roomId: "room-7", roomCode: "ZZZZ", players: [] }
+  const lookups = []
+  respondToAccept(socket, {
+    // 서버는 실제로 입장시켰지만 응답 전달이 끊겼다 — 실패로 단정하면 안 된다.
+    accept: (payload, ack) => ack({ ok: false, code: "UNKNOWN", unknown: true }),
+    attemptResult: { ok: true, entered: true, room: room7 },
+    currentRoom: room7,
+  })
+  const originalEmit = socket.emit
+  socket.emit = (event, payload, ack) => { lookups.push(event); return originalEmit(event, payload, ack) }
+
+  await act(async () => {
+    await requestGameInviteAccept("lost")
+    await flush()
+  })
+
+  assert.ok(lookups.includes("get_game_invite_result"), "ACK 유실 뒤 같은 시도의 결과를 되물어야 한다")
+  assert.deepEqual(navigated, ["/game-matching"])
+  assert.equal(useMatchingStore.getState().roomId, "room-7")
+  await mounted.unmount()
+})
+
+test("AC-06: 재조회가 아직 진행 중이라고 답하면 성공으로도 실패로도 단정하지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [invite({ inviteId: "busy", creationSeq: "1" })], cursor: "1" })
+
+  const navigated = []
+  const mounted = await mountHook(socket, (path) => navigated.push(path))
+  await act(async () => { await flush() })
+
+  respondToAccept(socket, {
+    accept: (payload, ack) => ack({ ok: false, code: "UNKNOWN", unknown: true }),
+    attemptResult: { ok: true, pending: true, entered: false },
+  })
+
+  let result
+  await act(async () => {
+    result = await requestGameInviteAccept("busy")
+    await flush()
+  })
+
+  assert.deepEqual(navigated, [])
+  assert.equal(result.unknown, true, "진행 중은 실패가 아니라 모름이다")
+  assert.match(useGameInviteStore.getState().inviteErrors.busy, /확인하지 못했습니다/)
+  await mounted.unmount()
+})
+
+test("AC-06: 성공 ACK라도 현재 소속이 그 방이 아니면 이동하지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [invite({ inviteId: "gone", creationSeq: "1" })], cursor: "1" })
+
+  const navigated = []
+  const mounted = await mountHook(socket, (path) => navigated.push(path))
+  await act(async () => { await flush() })
+  const snapshotsBefore = apiCalls.snapshot
+
+  // 영수증은 확정됐지만 그 사이 방이 시작·삭제되어 현재 소속이 사라졌다(A-10).
+  respondToAccept(socket, {
+    accept: (payload, ack) => ack({ ok: true, room: { roomId: "room-9", players: [] } }),
+    currentRoom: null,
+  })
+
+  let result
+  await act(async () => {
+    result = await requestGameInviteAccept("gone")
+    await flush()
+  })
+
+  assert.deepEqual(navigated, [], "역사적 성공만으로 옛 대기방에 들어가면 안 된다")
+  assert.equal(result.code, "ROOM_NOT_CONFIRMED")
+  assert.equal(useMatchingStore.getState().roomId, null)
+  assert.ok(apiCalls.snapshot > snapshotsBefore, "확정하지 못했으면 서버 상태를 다시 읽는다")
+  await mounted.unmount()
+})
+
+test("AC-06: 응답이 오는 사이 연결이 교체되면 그 ACK로 이동하지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [invite({ inviteId: "swap", creationSeq: "1" })], cursor: "1" })
+
+  const navigated = []
+  const mounted = await mountHook(socket, (path) => navigated.push(path))
+  await act(async () => { await flush() })
+
+  const replacement = createFakeSocket()
+  socket.__setAckResponder((event, payload, ack) => {
+    if (event !== "accept_game_invite") { ack({ ok: false, code: "UNEXPECTED_EVENT" }); return }
+    // 서버의 canonical 교체와 같은 순간: 이 ACK는 더 이상 현재 연결의 결과가 아니다.
+    setSocket(replacement)
+    ack({ ok: true, room: { roomId: "room-9", players: [] } })
+  })
+
+  let result
+  await act(async () => {
+    result = await requestGameInviteAccept("swap")
+    await flush()
+  })
+
+  assert.deepEqual(navigated, [], "교체된 연결의 ACK로 이동하면 안 된다")
+  assert.equal(result.code, "STALE_CONNECTION")
+  assert.equal(useMatchingStore.getState().roomId, null)
+  await mounted.unmount()
+})
+
+test("AC-06: 발송 멱등 키는 결과가 확정되기 전까지 같은 번호를 유지하고, 확정 뒤에만 넘어간다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  const keys = []
+  // 1) 응답 자체를 받지 못했다(네트워크) — status가 없다.
+  createInviteResponder = async (receiverId, creationKey) => {
+    keys.push(creationKey)
+    throw new Error("network down")
+  }
+  await act(async () => { await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1") })
+  // 2) 같은 논리 발송의 재시도 — **같은 키**라야 서버가 두 번째 초대를 만들지 않는다.
+  await act(async () => { await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1") })
+  assert.equal(keys[0], keys[1], "결과를 모르는 재시도가 새 키를 쓰면 초대가 두 개 생긴다")
+
+  // 3) 서버가 결과를 확정했다 — 이 논리 발송은 끝났다.
+  createInviteResponder = async (receiverId, creationKey) => {
+    keys.push(creationKey)
+    return invite({ inviteId: "sent", receiverId })
+  }
+  await act(async () => { await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1") })
+  assert.equal(keys[2], keys[1], "확정 전 재시도는 여전히 같은 키다")
+
+  // 4) 초대가 끝난 뒤의 **의도적인 재초대**는 새 논리 발송이라 다음 번호로 넘어간다.
+  await act(async () => { await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1") })
+  assert.notEqual(keys[3], keys[2], "종료 뒤 재초대가 옛 키에 갇히면 아무 일도 일어나지 않는다")
+
+  // 5) 서버가 명시적으로 거부한 경우(status 있음)도 결과 확정이다.
+  createInviteResponder = async (receiverId, creationKey) => {
+    keys.push(creationKey)
+    throw Object.assign(new Error("차단된 사용자입니다."), { status: 403 })
+  }
+  await act(async () => { await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1") })
+  await act(async () => { await useGameInviteStore.getState().sendInvite("friend-1", "room-1:friend-1") })
+  assert.notEqual(keys[5], keys[4], "서버가 답한 거부 뒤에는 다음 논리 발송으로 넘어간다")
+
+  // 다른 방이면 범위 자체가 다르다.
+  await act(async () => { await useGameInviteStore.getState().sendInvite("friend-1", "room-2:friend-1") })
+  assert.ok(keys[6].startsWith("room-2:friend-1:"))
   await mounted.unmount()
 })
 

@@ -6,7 +6,7 @@ import {
 import FriendListRow from "@/domains/lobby/components/friendList/list/FriendListRow.jsx"
 
 // 기본 탭에서 검색어에 맞는 친구 목록을 검색창 아래에 보여줍니다.
-export default function FriendListFilterResults({ friends, invite = null }) {
+export default function FriendListFilterResults({ friends, invite = null, block = null }) {
   if (friends.length === 0) {
     return (
       <p className={FRIEND_LIST_FILTER_EMPTY_CLASS}>
@@ -28,6 +28,8 @@ export default function FriendListFilterResults({ friends, invite = null }) {
           onInvite={invite?.onInvite ?? null}
           inviteDisabled={invite?.disabled ?? false}
           inviteDisabledReason={invite?.disabledReason}
+          onBlock={block?.onBlock ?? null}
+          blocking={block?.blockingIds?.has(friend.id) ?? false}
         />
       ))}
     </ul>

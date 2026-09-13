@@ -52,6 +52,25 @@ export function isUsableInvite(value) {
 }
 
 /**
+ * snapshot에 없는 행을 계속 "처리 가능"으로 둘 근거가 있는가(AC-05).
+ *
+ * getReceiverSnapshot은 **PENDING만** 돌려준다. 즉 snapshot은 "지금 처리할 수 있는 초대의
+ * 전부"다. 예전에는 단순 병합이라, 차단·거절·만료로 취소된 초대가 이전 목록에 PENDING으로
+ * 남아 수락 버튼과 함께 계속 보였다(유령 초대).
+ *
+ * 남길 근거는 셋 중 하나다:
+ *   1) snapshot이 그 초대를 들고 있다 — 최신 값으로 병합하면 된다.
+ *   2) 우리가 아는 상태가 이미 종료다 — 처리 가능하지 않으니 이력으로 보존한다.
+ *   3) 순번이 커서보다 크다 — 이 조회가 읽은 경계 **이후에** 생긴 초대라 snapshot이 알 수
+ *      없다. 없앨 근거가 아니다(A-09: 커서 이하 행은 뒤늦게 커밋되지 않는다).
+ */
+export function survivesSnapshot(invite, snapshotIds, cursor) {
+    if (snapshotIds.has(invite.inviteId)) return true;
+    if (invite.status !== "PENDING") return true;
+    return compareCreationSeq(invite.creationSeq, cursor) > 0;
+}
+
+/**
  * inviteId별로 **최신 revision**만 남기는 병합.
  * 같은 revision이면 나중 것을 쓴다(같은 상태의 재전달이라 표시가 달라지지 않는다).
  */
@@ -86,6 +105,7 @@ const initialAccountState = () => ({
     snapshotLoaded: false,
     /** 복원이 아직 해소되지 않았는가(실패는 해소가 아니다). */
     restorePending: false,
+    /** 복원 전에 도착한 live 사건들. `{ invite, sfxEvent }` — 소리 봉투를 함께 보관한다. */
     liveBuffer: [],
     /** 소리 후보로 이미 소모한 inviteId들. off·mute여도 소모한다. */
     soundConsumed: new Set(),
@@ -96,6 +116,15 @@ const initialAccountState = () => ({
     /** 발송 중인 대상 uuid들과 발송 결과(대기방 화면이 소비한다). */
     sendingReceiverIds: new Set(),
     sendErrors: {},
+    /**
+     * 논리 발송별 멱등 키 번호(`${roomId}:${receiverId}` → 정수).
+     *
+     * 같은 번호 = 같은 논리 발송이다. **결과를 확정하지 못한 재시도는 번호를 그대로 두고**,
+     * 서버가 결과를 확정한 뒤(성공이든 명시적 거부든)에만 다음 번호로 넘어간다. 그래서
+     * 응답 유실 재시도는 두 번째 초대를 만들지 않고, 끝난 초대 뒤의 의도적인 재초대는
+     * 막히지 않는다(AC-06).
+     */
+    sendKeys: {},
 });
 
 const initialState = () => ({
@@ -155,19 +184,36 @@ export const useGameInviteStore = create((set, get) => ({
         const rows = Array.isArray(data?.invites) ? data.invites.filter(isUsableInvite) : [];
         const cursor = typeof data?.cursor === "string" && /^\d+$/.test(data.cursor) ? data.cursor : "0";
         const state = get();
+        const snapshotIds = new Set(rows.map((row) => row.inviteId));
 
         // snapshot에 담긴 초대는 전부 "이미 알고 있던 것"이다 — 소리 표식을 소모해 둔다.
         const soundConsumed = new Set(state.soundConsumed);
         for (const row of rows) soundConsumed.add(row.inviteId);
 
-        const buffered = state.liveBuffer.filter(isUsableInvite);
+        const buffered = state.liveBuffer.filter((item) => isUsableInvite(item?.invite));
         // 커서 **이하**의 버퍼 사건도 과거다(복원이 이미 알고 있는 범위).
-        for (const row of buffered) {
-            if (compareCreationSeq(row.creationSeq, cursor) <= 0) soundConsumed.add(row.inviteId);
+        for (const item of buffered) {
+            if (compareCreationSeq(item.invite.creationSeq, cursor) <= 0) soundConsumed.add(item.invite.inviteId);
         }
 
+        // 커서 **이후**의 실제 신규 수신은 복원이 아니라 진짜 새 사건이다. 복원 대기 중이라
+        // 판정을 미뤄 뒀던 것이므로, 여기서 호출자에게 돌려줘 정확히 한 번 소리 후보로
+        // 판정하게 한다(consumeInviteSound가 표식을 소모한다 — 여기서는 소모하지 않는다).
+        const soundCandidates = buffered.filter((item) => (
+            item.sfxEvent !== null && item.sfxEvent !== undefined
+            && compareCreationSeq(item.invite.creationSeq, cursor) > 0
+            && !soundConsumed.has(item.invite.inviteId)
+        ));
+
+        // snapshot은 "지금 처리 가능한 초대"의 authoritative한 전부다 — 여기 없는 PENDING은
+        // 이미 끝난 것이므로 목록에서 내린다(유령 초대 제거).
+        const retained = state.invites.filter((item) => survivesSnapshot(item, snapshotIds, cursor));
+        const bufferedInvites = buffered
+            .map((item) => item.invite)
+            .filter((invite) => survivesSnapshot(invite, snapshotIds, cursor));
+
         set({
-            invites: mergeInvites(state.invites, [...rows, ...buffered]),
+            invites: mergeInvites(retained, [...rows, ...bufferedInvites]),
             cursor,
             soundConsumed,
             liveBuffer: [],
@@ -176,7 +222,7 @@ export const useGameInviteStore = create((set, get) => ({
             status: "success",
             error: null,
         });
-        return { ok: true, count: rows.length, cursor };
+        return { ok: true, count: rows.length, cursor, soundCandidates };
     },
 
     /**
@@ -185,8 +231,12 @@ export const useGameInviteStore = create((set, get) => ({
      * **소리를 소모하지 않는다.** 소리 적격성은 호출자가 consumeInviteSound로 따로 묻는다 —
      * 그래야 notification_created와 game_invite_received가 어느 순서로 와도 최초 후보가
      * 한 번만 인정된다.
+     *
+     * 복원 전에 도착하면 소리 봉투(sfxEvent)까지 함께 버퍼에 담는다. 봉투를 버리면 복원이
+     * 끝난 뒤 그 사건을 소리 후보로 되살릴 방법이 없어, 복원 중에 온 **진짜 신규 초대**가
+     * 영원히 무음이 된다(AC-07).
      */
-    receiveLiveInvite: (accountId, invite) => {
+    receiveLiveInvite: (accountId, invite, sfxEvent = null) => {
         const state = get();
         if (accountId === null || accountId !== state.accountId) return { applied: false, reason: "account-mismatch" };
         if (!isUsableInvite(invite)) return { applied: false, reason: "invalid" };
@@ -195,7 +245,7 @@ export const useGameInviteStore = create((set, get) => ({
         if (invite.receiverId !== accountId) return { applied: false, reason: "receiver-mismatch" };
 
         if (!state.snapshotLoaded) {
-            set({ liveBuffer: [...state.liveBuffer, invite] });
+            set({ liveBuffer: [...state.liveBuffer, { invite, sfxEvent }] });
             return { applied: false, reason: "buffered" };
         }
 
@@ -280,14 +330,29 @@ export const useGameInviteStore = create((set, get) => ({
     /**
      * 대기방에서 친구에게 초대를 보낸다(AC-06).
      *
-     * creationKey는 이 호출을 식별하는 멱등 키다 — 응답이 유실돼 재시도해도 서버는 같은
-     * 초대를 돌려주고 새 수신 사건을 발행하지 않는다. 방 정보는 싣지 않는다(서버가 registry에서
-     * 확정한다).
+     * creationKey는 **논리 발송 하나**를 식별하는 멱등 키다. 매 네트워크 시도마다 새 키를
+     * 만들면 응답 유실 재시도가 두 번째 초대를 만들고, 반대로 (roomId,receiverId)로 영원히
+     * 고정하면 초대가 끝난(거절·만료) 뒤의 의도적인 재초대가 옛 종료 행을 성공으로 되돌려
+     * 받아 아무 일도 일어나지 않는다. 그래서 키에 논리 발송 번호를 붙이고,
+     *
+     *   - 서버가 결과를 확정하면(성공 또는 status가 있는 명시적 거부) 다음 번호로 넘어간다.
+     *   - 응답 자체를 받지 못했으면(네트워크·타임아웃) **같은 번호를 유지**해 재시도가 같은
+     *     키로 나간다.
+     *
+     * 중복 PENDING은 서버가 한 번 더 막는다 — 같은 방 인스턴스로 살아 있는 초대가 있으면
+     * 새 키로 와도 기존 행을 돌려주고 새 사건을 발행하지 않는다(createInvite).
+     *
+     * @param {string} receiverId 초대 대상 계정 uuid
+     * @param {string} keyScope   논리 발송의 범위(`${roomId}:${receiverId}`)
      */
-    sendInvite: async (receiverId, creationKey) => {
+    sendInvite: async (receiverId, keyScope) => {
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
         if (get().sendingReceiverIds.has(receiverId)) return { ok: false, reason: "in-progress" };
+
+        const scope = typeof keyScope === "string" && keyScope.length > 0 ? keyScope : receiverId;
+        const attempt = get().sendKeys[scope] ?? 1;
+        const creationKey = `${scope}:${attempt}`;
 
         set((state) => ({
             sendingReceiverIds: new Set(state.sendingReceiverIds).add(receiverId),
@@ -300,19 +365,30 @@ export const useGameInviteStore = create((set, get) => ({
             next.delete(receiverId);
             return { sendingReceiverIds: next };
         });
+        // 서버가 결과를 확정했을 때만 다음 논리 발송으로 넘어간다. 그 사이 다른 경로가 이미
+        // 번호를 올렸다면(동시 클릭) 뒤로 되돌리지 않는다.
+        const advanceKey = () => set((state) => (
+            (state.sendKeys[scope] ?? 1) !== attempt
+                ? {}
+                : { sendKeys: { ...state.sendKeys, [scope]: attempt + 1 } }
+        ));
 
         try {
             const invite = await createGameInviteApi(receiverId, creationKey);
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             clearSending();
-            return { ok: true, invite };
+            advanceKey();
+            return { ok: true, invite, creationKey };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             clearSending();
+            // status가 있으면 서버가 실제로 답한 거부다 — 이 논리 발송은 끝났다.
+            // 없으면 결과를 모르므로 같은 키를 남겨 다음 시도가 멱등하게 나가도록 한다.
+            if (Number.isInteger(error?.status)) advanceKey();
             set((state) => ({
                 sendErrors: { ...state.sendErrors, [receiverId]: error?.message ?? "초대를 보내지 못했습니다." },
             }));
-            return { ok: false, reason: "error", message: error?.message };
+            return { ok: false, reason: "error", message: error?.message, creationKey };
         }
     },
 

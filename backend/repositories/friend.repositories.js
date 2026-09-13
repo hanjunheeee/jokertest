@@ -62,7 +62,9 @@ exports.findPendingRequest = async (uuidA, uuidB) => {
     });
 };
 
-exports.findExistingFriendship = async (uuidA, uuidB) => {
+// options로 transaction을 받는다 — 친구 관계 확인이 계정 잠금 **안에서** 이뤄져야
+// "관계 변경 커밋 ↔ 초대 생성"의 교차를 막을 수 있다(gameInvite.service.createInvite).
+exports.findExistingFriendship = async (uuidA, uuidB, options = {}) => {
     return await db.Friendship.findOne({
         where: {
             [Op.or]: [
@@ -70,6 +72,7 @@ exports.findExistingFriendship = async (uuidA, uuidB) => {
                 { requester_id: uuidB, receiver_id: uuidA },
             ],
         },
+        ...options,
     });
 };
 

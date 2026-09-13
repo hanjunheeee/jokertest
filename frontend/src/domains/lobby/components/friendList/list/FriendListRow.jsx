@@ -74,6 +74,35 @@ function FriendInviteButton({ id, name, onInvite, disabled, sending, disabledRea
   )
 }
 
+/**
+ * F-19(AC-04): **이미 친구인 사람**을 차단하는 유일한 진입점.
+ *
+ * 친구 추가 탭의 검색은 이미 친구인 계정을 후보에서 제외하므로, 이 버튼이 없으면 친구가
+ * 된 뒤에는 차단할 방법이 화면에 전혀 없었다(받은 요청 탭의 차단은 아직 친구가 아닌 상대만
+ * 다룬다). 해제는 기존 차단 목록 탭에서 한다.
+ */
+function FriendBlockButton({ id, name, onBlock, processing }) {
+  return (
+    <button
+      type="button"
+      className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
+      aria-label={processing ? `${name} 차단 처리 중` : `${name} 차단`}
+      title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다(친구 관계는 남습니다)`}
+      aria-disabled={processing}
+      disabled={processing}
+      data-block-friend={id}
+      onClick={() => { if (!processing) onBlock(id) }}
+      style={{ outline: "none" }}
+    >
+      <PublicAsset
+        src={FRIEND_LIST_ASSETS.friendBlockButton}
+        alt=""
+        className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
+      />
+    </button>
+  )
+}
+
 // 친구 목록에서 친구 한 명을 보여주는 row 컴포넌트입니다.
 // F-13(AC-05): accountProfilePhotoId/accountProfileBorderId는 친구 목록 API가 실제로
 // 내려주는 값이다 — resolveAccountProfileAssets가 없는 값만 기본 자산으로 대체한다.
@@ -86,6 +115,8 @@ export default function FriendListRow({
   onInvite = null,
   inviteDisabled = false,
   inviteDisabledReason = undefined,
+  onBlock = null,
+  blocking = false,
 }) {
   // F-19(AC-03): 별 상태의 출처는 **서버에서 복원한** 즐겨찾기 집합이다. 저장이 확정되기
   // 전에는 값이 바뀌지 않고, 실패하면 이전 값이 그대로 남는다(성공으로 위장하지 않는다).
@@ -132,16 +163,21 @@ export default function FriendListRow({
             </p>
           ) : null}
         </div>
-        {onInvite !== null ? (
+        {onInvite !== null || onBlock !== null ? (
           <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
-            <FriendInviteButton
-              id={id}
-              name={name}
-              onInvite={onInvite}
-              disabled={inviteDisabled}
-              sending={isSendingInvite}
-              disabledReason={inviteDisabledReason}
-            />
+            {onInvite !== null ? (
+              <FriendInviteButton
+                id={id}
+                name={name}
+                onInvite={onInvite}
+                disabled={inviteDisabled}
+                sending={isSendingInvite}
+                disabledReason={inviteDisabledReason}
+              />
+            ) : null}
+            {onBlock !== null ? (
+              <FriendBlockButton id={id} name={name} onBlock={onBlock} processing={blocking} />
+            ) : null}
           </div>
         ) : null}
       </div>

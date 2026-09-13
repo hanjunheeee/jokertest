@@ -20,7 +20,7 @@ import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendLis
 import FriendListFolder from "@/domains/lobby/components/friendList/list/FriendListFolder.jsx"
 
 // 일반/오프라인/즐겨찾기 그룹을 폴더로 보여줍니다.
-function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends, invite }) {
+function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends, invite, block }) {
   return (
     <>
       <FriendListFolder
@@ -28,6 +28,7 @@ function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends
         friends={onlineFriends}
         defaultOpen
         invite={invite}
+        block={block}
       />
       <FriendListFolder
         className={FRIEND_TAB_GROUP_GAP_CLASS}
@@ -35,6 +36,7 @@ function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends
         friends={offlineFriends}
         listClassName={FRIEND_TAB_SCROLLABLE_LIST_CLASS}
         invite={invite}
+        block={block}
       />
       <FriendListFolder
         className={FRIEND_TAB_GROUP_GAP_CLASS}
@@ -42,6 +44,7 @@ function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends
         friends={favoriteFriends}
         listClassName={FRIEND_TAB_SCROLLABLE_LIST_CLASS}
         invite={invite}
+        block={block}
       />
     </>
   )
@@ -53,6 +56,7 @@ export default function FriendListTabContent({
   offlineFriends = [],
   favoriteFriends = [],
   invite = null,
+  block = null,
   friendsError = null,
   onRetry = null,
 }) {
@@ -86,13 +90,14 @@ export default function FriendListTabContent({
         </p>
       ) : null}
       {isFiltering ? (
-        <FriendListFilterResults friends={filteredItems} invite={invite} />
+        <FriendListFilterResults friends={filteredItems} invite={invite} block={block} />
       ) : (
         <FriendListGroupFolders
           onlineFriends={onlineFriends}
           offlineFriends={offlineFriends}
           favoriteFriends={favoriteFriends}
           invite={invite}
+          block={block}
         />
       )}
     </div>
