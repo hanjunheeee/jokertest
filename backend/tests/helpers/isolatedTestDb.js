@@ -170,6 +170,81 @@ const resetManagedSchema = async (sequelize, url, { managedTables, dropOrder }) 
     }
 };
 
+// 테이블 이름을 SQL에 직접 넣는 두 함수(resetManagedData/findNonEmptyManagedTables)가 쓰는
+// 최소 방어. 이름은 전부 이 저장소의 마이그레이션 상수에서 오지만, 호출부가 실수로 다른 값을
+// 넘겼을 때 조용히 SQL을 만들어 실행하지 않도록 여기서 막는다.
+const SAFE_TABLE_NAME = /^[A-Za-z0-9_]+$/;
+
+const assertSafeTableNames = (tables) => {
+    const unsafe = tables.filter((table) => typeof table !== 'string' || !SAFE_TABLE_NAME.test(table));
+    if (unsafe.length > 0) {
+        throw new Error(`식별자로 쓸 수 없는 테이블 이름입니다: [${unsafe.join(', ')}]`);
+    }
+};
+
+/**
+ * 스키마는 그대로 두고 관리 테이블의 **행만** 비운다(F-19 검증 시간 보수).
+ *
+ * ── 왜 필요한가 (실측) ──────────────────────────────────────────────────────
+ * 서비스 단정만 하는 통합 케이스가 실제로 필요한 것은 "행이 하나도 없는, 완전히 이관된
+ * 스키마"뿐이다. 그런데 지금까지는 케이스마다 관리 스키마를 통째로 드롭하고 마이그레이션
+ * 전부를 다시 적용했다. F-19 스위트 26 케이스의 실측 총시간은 106615ms였고, 케이스가
+ * 진행될수록 **같은** setUp이 2.4초에서 6.9초까지 느려졌다
+ * (.pluto/monitor/BD-db-suite-2026-09-13T08-49-32.388Z.log).
+ *
+ * ── 안전 계약 ───────────────────────────────────────────────────────────────
+ * resetManagedSchema와 **똑같다**: 승인된 전용 테스트 DB 이름인지, 실제 연결된 DATABASE()가
+ * 그 이름인지, 관리 목록 밖의 테이블이 없는지를 먼저 확인한다. 하나라도 어긋나면 DELETE를
+ * 단 한 번도 실행하지 않고 던진다.
+ *
+ * FOREIGN_KEY_CHECKS는 끄지 않는다. dropOrder는 이미 "자식 → 부모" 순서다(그래야 DROP
+ * TABLE이 FK에 걸리지 않는다) — 같은 순서의 DELETE도 제약을 그대로 지킨다.
+ *
+ * 스키마 자체는 보증하지 않는다. 관리 테이블 중 하나라도 없으면 DELETE를 실행하지 않고
+ * { cleaned: false }를 돌려준다 — 호출부는 그때 전체 재구축으로 되돌아가야 한다.
+ *
+ * @param {string[]} [options.keepTables] 비우지 않을 테이블(예: schema_migrations 이력).
+ */
+const resetManagedData = async (sequelize, url, { managedTables, dropOrder, keepTables = [] }) => {
+    assertSafeTableNames(dropOrder);
+    await assertDedicatedTestDatabase(sequelize, url);
+    const existing = await assertNoUnknownTables(sequelize, managedTables);
+
+    const missingTables = managedTables.filter((table) => !existing.has(table));
+    if (missingTables.length > 0) return { cleaned: false, missingTables, deleted: [] };
+
+    const keep = new Set(keepTables);
+    const deleted = [];
+    for (const table of dropOrder) {
+        if (keep.has(table)) continue;
+        await sequelize.query(`DELETE FROM \`${table}\``);
+        deleted.push(table);
+    }
+    return { cleaned: true, missingTables: [], deleted };
+};
+
+/**
+ * 관리 테이블 중 행이 남아 있는 것들을 한 번의 질의로 찾는다.
+ *
+ * 케이스 간 데이터 누수 검사용이다 — 스키마를 재사용하는 setUp은 "비웠다"는 주장만으로는
+ * 격리를 증명하지 못하므로, 케이스 시작 직전에 실제 COUNT를 읽어 대조한다.
+ */
+const findNonEmptyManagedTables = async (sequelize, tables) => {
+    if (tables.length === 0) return [];
+    assertSafeTableNames(tables);
+
+    // CAST를 두는 이유: UNION 결과 컬럼의 폭이 첫 분기의 리터럴 길이로 좁아지면 누수된
+    // 테이블 이름이 잘린 채 보고될 수 있다. 이름이 잘리면 "어느 케이스가 무엇을 남겼는가"를
+    // 답할 수 없으므로 폭을 명시한다.
+    const branches = tables.map((table) => (
+        `SELECT CAST('${table}' AS CHAR(128)) AS table_name, COUNT(*) AS row_count FROM \`${table}\``
+    ));
+    const [rows] = await sequelize.query(branches.join(' UNION ALL '));
+    return (rows ?? [])
+        .map((row) => ({ table: String(row.table_name), count: Number(row.row_count) }))
+        .filter((row) => row.count > 0);
+};
+
 module.exports = {
     ALLOWED_DATABASE_NAMES,
     databaseNameOf,
@@ -177,4 +252,6 @@ module.exports = {
     buildManagedSchema,
     assertNoUnknownTables,
     resetManagedSchema,
+    resetManagedData,
+    findNonEmptyManagedTables,
 };

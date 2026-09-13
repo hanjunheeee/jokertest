@@ -40,7 +40,9 @@ const addVoteParticipations = require('../../db/migrations/0008-add-vote-partici
 const addAchievementGrants = require('../../db/migrations/0009-add-achievement-grants');
 const addNotifications = require('../../db/migrations/0012-add-notifications');
 const addF19FriendsInvites = require('../../db/migrations/0013-f19-friends-invites');
-const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
+const {
+    buildManagedSchema, resetManagedSchema, resetManagedData, findNonEmptyManagedTables,
+} = require('../helpers/isolatedTestDb');
 
 const { MIGRATIONS } = require('../../scripts/migrate-db');
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
@@ -78,6 +80,9 @@ const unavailable = (t) => {
 const resetSchema = async () => {
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
+
+/** 이력(schema_migrations)을 뺀 데이터 테이블. dropOrder의 "자식 → 부모" 순서를 그대로 쓴다. */
+const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
 
 const db = require('../../models');
 const friendService = require('../../service/friend.service');
@@ -136,10 +141,38 @@ const placeInRoom = (uuid, roomId, overrides = {}) => {
     roomAccess.userRoom.set(uuid, roomId);
 };
 
-const setUp = async () => {
-    await resetSchema();
-    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+// ---------------------------------------------------------------------------
+// 고정 장비 — 스키마 재구축과 데이터 격리를 분리한다
+// ---------------------------------------------------------------------------
+//
+// ── 실측 ────────────────────────────────────────────────────────────────────
+// 이전 판은 26 케이스 전부가 setUp에서 관리 스키마를 통째로 드롭하고 13개 마이그레이션을
+// 다시 적용했다. 보호된 격리 MySQL 실측(.pluto/monitor/BD-db-suite-2026-09-13T08-49-32.388Z.log):
+// 26 PASS · 총 106615ms. 케이스별로는 앞의 15건이 2.4~3.0초, 뒤의 11건이 4.9~6.9초다 —
+// **본문이 더 무거워진 것이 아니라 같은 setUp이 느려졌다**(예: 3계정·단정 4개뿐인
+// "친구가 아니거나 차단 관계면 초대가 만들어지지 않는다"가 6144ms, 4계정·라우터 서버까지
+// 띄우는 "요청 당사자만 결과를 읽고"가 2772ms). 반복되는 드롭/CREATE 자체가 비용을 키운다.
+//
+// ── 그래서 두 가지 setUp을 둔다 ──────────────────────────────────────────────
+//   setUpFreshSchema(t) — 마이그레이션·DDL·기동 sync 케이스. 스키마 계약 자체가 대상이라
+//                         매번 전체 드롭 + 전체 이관을 그대로 한다.
+//   setUpBareSchema(t)  — 0013 직전 상태를 케이스가 직접 세우는 한 건 전용.
+//   setUp(t)            — 일반 서비스 케이스. 이미 완전히 이관된 스키마 위에서 데이터만 비운다.
+//
+// 일반 케이스는 스키마를 **신뢰하지 않는다**. 매번 (1) 승인된 전용 DB인지 (2) 관리 목록 밖
+// 테이블이 없는지 (3) 관리 테이블이 전부 존재하는지를 확인하고(resetManagedData가 셋 다
+// 담당한다), 그 위에 (4) 남은 행이 한 건도 없는지 (5) 0013의 컬럼·인덱스·외래 키 계약이
+// 그대로인지를 직접 단정한다. FOREIGN_KEY_CHECKS는 끄지 않는다 — 자식 → 부모 순서의 DELETE는
+// 제약을 그대로 지킨다. 스키마를 건드릴 수 있는 케이스는 자기 뒤를 'dirty'로 표시하므로
+// 다음 일반 케이스가 흔적을 물려받지 않고 스스로 전체 재구축으로 되돌아간다.
 
+/** 'unknown' = 아직 안 세움 · 'migrated' = 완전히 이관됨 · 'dirty' = DDL 케이스가 지나갔음 */
+let schemaState = 'unknown';
+
+/** setUp이 실제로 쓴 시간. 추측이 아니라 측정으로 보고하기 위한 장치다. */
+const fixtureCost = { rebuilds: 0, cleans: 0, schemaMs: 0, dataMs: 0 };
+
+const resetRuntimeFixtures = () => {
     clockMs = Date.UTC(2026, 8, 13, 0, 0, 0);
     emitted = [];
     roomAccess.rooms.clear();
@@ -151,18 +184,120 @@ const setUp = async () => {
     notificationService.__internal.__setDepsForTests({ emitToUser: recordingEmit, now: nowFn });
 };
 
+/** 관리 스키마를 통째로 드롭하고 마이그레이션 전부를 처음부터 적용한다. */
+const rebuildSchema = async () => {
+    const startedAt = performance.now();
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    fixtureCost.rebuilds += 1;
+    fixtureCost.schemaMs += performance.now() - startedAt;
+    schemaState = 'migrated';
+};
+
+/** 케이스별 setUp/본문 소요를 TAP 진단으로 남긴다. */
+const beginCase = (t, mode, setupMs) => {
+    const startedAt = performance.now();
+    t.after(() => {
+        t.diagnostic(
+            `[f19-fixture] mode=${mode} setup=${setupMs.toFixed(1)}ms body=${(performance.now() - startedAt).toFixed(1)}ms`,
+        );
+    });
+};
+
+/** 마이그레이션·DDL·기동 sync 케이스 전용. 전체 재구축하고, 뒤를 dirty로 남긴다. */
+const setUpFreshSchema = async (t) => {
+    const startedAt = performance.now();
+    await rebuildSchema();
+    // 이 케이스는 ALTER/DROP INDEX/sync로 스키마를 직접 바꿀 수 있다.
+    schemaState = 'dirty';
+    resetRuntimeFixtures();
+    beginCase(t, 'fresh-schema', performance.now() - startedAt);
+};
+
+/** 0013 이전 상태를 케이스가 직접 세우는 경우 — 드롭만 하고 이관은 케이스의 몫이다. */
+const setUpBareSchema = async (t) => {
+    const startedAt = performance.now();
+    await resetSchema();
+    schemaState = 'dirty';
+    resetRuntimeFixtures();
+    beginCase(t, 'bare-schema', performance.now() - startedAt);
+};
+
+/** 일반 서비스 케이스. 이미 이관된 스키마 위에서 데이터만 비우고 격리를 실제로 확인한다. */
+const setUp = async (t) => {
+    const startedAt = performance.now();
+    let mode = 'clean-data';
+
+    if (schemaState !== 'migrated') {
+        await rebuildSchema();
+        mode = 'rebuilt';
+    } else {
+        const cleanStartedAt = performance.now();
+        const result = await resetManagedData(sequelize, TEST_DB_URL, {
+            managedTables: MANAGED_TABLES,
+            dropOrder: DROP_ORDER,
+            // 이력 행은 남긴다 — 지우면 다음 applyMigrations가 이미 있는 테이블에 다시
+            // 이관을 시도하게 되고, "재실행 이력은 한 건"이라는 계약도 관찰할 수 없다.
+            keepTables: [migrationRunner.META_TABLE],
+        });
+        if (!result.cleaned) {
+            await rebuildSchema();
+            mode = `rebuilt-missing:${result.missingTables.join(',')}`;
+        } else {
+            fixtureCost.cleans += 1;
+            fixtureCost.dataMs += performance.now() - cleanStartedAt;
+        }
+    }
+
+    // 격리 확인 1 — 앞 케이스의 행이 한 건도 넘어오지 않았다. 넘어왔다면 이 케이스의
+    // "행이 하나뿐이다" 류 단정은 전부 의미를 잃으므로 통과시키지 않는다.
+    assert.deepEqual(
+        await findNonEmptyManagedTables(sequelize, DATA_TABLES), [],
+        '앞 케이스의 행이 남아 있으면 이 케이스의 단정은 의미가 없다',
+    );
+
+    // 격리 확인 2 — 공유하는 스키마가 0013의 컬럼·인덱스·외래 키 계약을 그대로 만족한다.
+    // 스키마를 만지는 케이스가 남긴 흔적 위에서 서비스 단정을 하지 않기 위한 fail-closed다.
+    await addF19FriendsInvites.verify(sequelize.getQueryInterface());
+
+    resetRuntimeFixtures();
+    beginCase(t, mode, performance.now() - startedAt);
+};
+
+test.after(() => {
+    if (!TEST_DB_URL) return;
+    console.log(
+        `# [f19-fixture] 전체 재구축 ${fixtureCost.rebuilds}회 ${fixtureCost.schemaMs.toFixed(0)}ms · `
+        + `데이터 격리 ${fixtureCost.cleans}회 ${fixtureCost.dataMs.toFixed(0)}ms`,
+    );
+});
+
 test.afterEach(() => {
     gameInviteService.__setRoomAccessForRuntime(null);
     gameInviteService.__internal.__setDepsForTests(null);
     notificationService.__internal.__setDepsForTests(null);
 });
 
+/**
+ * 실제 production hashPassword로 **프로세스당 한 번만** 만든 bcrypt 해시를 공유한다.
+ *
+ * 강도를 낮추지 않는다 — 같은 함수·같은 cost·같은 값이고, 계정마다 똑같은 평문을 다시
+ * 해싱하던 중복 계산만 없앤다. 이 스위트의 어떤 단정도 비밀번호 검증을 지나지 않는다
+ * (접근 토큰은 generateToken이 직접 만든다). 로그인 경로를 검증하는 스위트는 계속
+ * 자기 해시를 직접 만들어야 한다.
+ */
+let sharedPasswordHash = null;
+const testPasswordHash = async () => {
+    if (sharedPasswordHash === null) sharedPasswordHash = await hashPassword('correct-horse-battery-1');
+    return sharedPasswordHash;
+};
+
 const createLocalUser = async (label) => {
     const uuid = crypto.randomUUID();
     const nickname = `${label}${uuid.slice(0, Math.max(1, 8 - label.length))}`.slice(0, 8);
     await db.User.create({
         uuid,
-        password_hash: await hashPassword('correct-horse-battery-1'),
+        password_hash: await testPasswordHash(),
         nickname,
         email: `${label}-${uuid}@example.com`,
     });
@@ -213,7 +348,7 @@ const eventsNamed = (name) => emitted.filter((entry) => entry.event === name);
 
 test('AC-05: 0013 재실행은 스키마·행을 그대로 두고 이력을 한 건만 남긴다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const a = await createLocalUser('mig-a');
     const b = await createLocalUser('mig-b');
@@ -266,7 +401,7 @@ test('AC-05: 0013 재실행은 스키마·행을 그대로 두고 이력을 한 
  */
 test('A-09: 실제 MySQL의 creation_seq는 AUTO_INCREMENT이고 이름 있는 유일 키가 덮는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const queryInterface = sequelize.getQueryInterface();
 
@@ -306,7 +441,7 @@ test('A-09: 실제 MySQL의 creation_seq는 AUTO_INCREMENT이고 이름 있는 �
 
 test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시키지 않고, up은 빠진 키만 메운다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const queryInterface = sequelize.getQueryInterface();
     const a = await createLocalUser('vrf-a');
@@ -367,7 +502,7 @@ test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시
  */
 test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 인덱스로 갈아타고 두 외래 키·모든 행을 보존한다', async (t) => {
     if (unavailable(t)) return;
-    await resetSchema();
+    await setUpBareSchema(t);
 
     // (1) 0013 직전 상태. 마지막 원소가 0013이다(scripts/migrate-db.js::MIGRATIONS).
     assert.equal(
@@ -485,7 +620,7 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
 
 test('AC-05: 받침 인덱스는 실제 MySQL에서 외래 키가 요구하는 인덱스가 되고, 빠지면 verify가 거부한다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const queryInterface = sequelize.getQueryInterface();
     const supportIndex = addF19FriendsInvites.REQUEST_REQUESTER_SUPPORT_INDEX;
@@ -523,36 +658,9 @@ test('AC-05: 받침 인덱스는 실제 MySQL에서 외래 키가 요구하는 �
     await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
 });
 
-test('AC-05: 거절 → 재신청 → 재거절이 terminal 이력을 두 행으로 보존한다', async (t) => {
-    if (unavailable(t)) return;
-    await setUp();
-
-    const a = await createLocalUser('hist-a');
-    const b = await createLocalUser('hist-b');
-
-    const first = await friendService.sendFriendRequest(a, b);
-    await friendService.declineRequest(b, first.id);
-
-    // 예전 UNIQUE(requester_id, receiver_id, status)였다면 여기서 두 번째 DECLINED가 막혔다.
-    const second = await friendService.sendFriendRequest(a, b);
-    await friendService.declineRequest(b, second.id);
-
-    const declined = await db.FriendRequest.findAll({
-        where: { requester_id: a, receiver_id: b, status: 'DECLINED' },
-        order: [['id', 'ASC']],
-    });
-    assert.equal(declined.length, 2, '같은 방향의 거절 이력이 두 행 남아야 한다');
-    assert.notEqual(declined[0].id, declined[1].id);
-
-    // terminal 행이 둘이어도 새 PENDING은 여전히 하나만 가능하다.
-    const third = await friendService.sendFriendRequest(a, b);
-    assert.equal(await countRows(db.FriendRequest, { status: 'PENDING' }), 1);
-    assert.ok(Number.isInteger(third.id));
-});
-
 test('AC-05: 기동 sync()는 0013이 뗀 예전 UNIQUE를 실제 MySQL에서 되살리지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUpFreshSchema(t);
 
     const queryInterface = sequelize.getQueryInterface();
     const legacyCount = async () => addF19FriendsInvites
@@ -596,9 +704,115 @@ test('AC-05: 기동 sync()는 0013이 뗀 예전 UNIQUE를 실제 MySQL에서 �
     await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
 });
 
+// ── 여기부터는 스키마를 만지지 않는 일반 서비스 케이스다 ──────────────────────
+// 위의 스키마 케이스들을 한 덩어리로 모아 둔 것은 순서에 의존하는 단정이 있어서가 아니다
+// (모든 케이스는 자기 setUp만으로 자립한다). setUpFreshSchema가 지나간 직후의 첫 일반
+// 케이스는 스키마를 신뢰할 수 없어 한 번 더 전체 재구축을 하는데, DDL 케이스를 일반 케이스
+// 사이사이에 흩어 두면 그 재구축이 그만큼 여러 번 일어난다. 새 케이스를 넣을 때도 이 경계를
+// 지켜, 스키마 케이스는 위쪽 덩어리에 붙여라.
+
+/**
+ * 데이터 격리 자체를 실제 SQL로 검증한다.
+ *
+ * 일반 케이스의 setUp은 이제 스키마를 다시 만들지 않고 행만 비운다. 그 정리가 진짜로
+ * **모든** 관리 테이블을 비우는지, 그러면서 스키마·외래 키·이관 이력은 남기는지가 나머지
+ * 25개 케이스의 단정이 의미를 갖는 전제다. "비웠다"는 주장 대신 (1) 실제로 행을 만들고
+ * (2) 정리하고 (3) 다시 COUNT로 읽어 대조한다.
+ */
+test('격리: 데이터 정리는 모든 관리 테이블의 행을 실제로 비우고 스키마·외래 키·이관 이력은 남긴다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    // (1) 한 케이스가 남길 수 있는 것을 실제 경로로 전부 만든다.
+    const a = await createLocalUser('iso-a');
+    const b = await createLocalUser('iso-b');
+    await befriend(a, b);
+    await friendService.setFriendFavorite(a, b, true);
+    placeInRoom(a, 'room-iso');
+    await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'iso' });
+    // 차단은 초대를 CANCELLED로 확정한다 — 행은 남으므로 정리 대상으로 그대로 쓸 수 있다.
+    await friendService.blockUser(a, b);
+
+    const populated = [
+        [db.User, 'users'], [db.UserStats, 'user_stats'], [db.UserSession, 'user_sessions'],
+        [db.FriendRequest, 'friend_requests'], [db.Friendship, 'friendships'],
+        [db.FriendFavorite, 'friend_favorites'], [db.FriendBlock, 'friend_blocks'],
+        [db.GameInvite, 'game_invites'], [db.Notification, 'notifications'],
+    ];
+    for (const [model, table] of populated) {
+        assert.ok(
+            await countRows(model, {}) > 0,
+            `${table}에 행이 없으면 이 시험은 정리를 검증하는 것이 아니라 빈 DB를 확인하는 것이 된다`,
+        );
+    }
+
+    // (2) 일반 케이스의 setUp이 쓰는 바로 그 정리를 실행한다.
+    const result = await resetManagedData(sequelize, TEST_DB_URL, {
+        managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER,
+        keepTables: [migrationRunner.META_TABLE],
+    });
+    assert.equal(result.cleaned, true);
+    assert.deepEqual(
+        result.deleted, DATA_TABLES,
+        '관리 테이블 하나라도 빼놓으면 다음 케이스가 남은 행을 물려받는다',
+    );
+
+    // (3) 실제로 한 건도 남지 않았다.
+    assert.deepEqual(await findNonEmptyManagedTables(sequelize, DATA_TABLES), []);
+
+    // 스키마·이관 이력은 그대로다 — 정리는 드롭이 아니다.
+    const [history] = await sequelize.query(
+        `SELECT COUNT(*) AS applied_count FROM ${migrationRunner.META_TABLE} WHERE status = 'applied'`,
+    );
+    assert.equal(
+        Number(history[0].applied_count), MIGRATIONS.length,
+        '데이터 정리가 이관 이력을 지우면 다음 실행이 이미 있는 스키마에 다시 이관을 시도한다',
+    );
+    await assert.doesNotReject(() => addF19FriendsInvites.verify(sequelize.getQueryInterface()));
+
+    // 외래 키는 여전히 강제된다 — FOREIGN_KEY_CHECKS를 끄지 않았다는 값 수준의 증거다.
+    await assert.rejects(
+        () => db.FriendRequest.create({ requester_id: crypto.randomUUID(), receiver_id: b, status: 'PENDING' }),
+        '정리 뒤에도 없는 계정의 요청은 외래 키가 막아야 한다',
+    );
+
+    // 같은 스키마 위에서 실제 서비스 경로를 곧바로 다시 쓸 수 있다.
+    const c = await createLocalUser('iso-c');
+    const d = await createLocalUser('iso-d');
+    await befriend(c, d);
+    assert.equal(await countRows(db.Friendship, {}), 1);
+});
+
+test('AC-05: 거절 → 재신청 → 재거절이 terminal 이력을 두 행으로 보존한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    const a = await createLocalUser('hist-a');
+    const b = await createLocalUser('hist-b');
+
+    const first = await friendService.sendFriendRequest(a, b);
+    await friendService.declineRequest(b, first.id);
+
+    // 예전 UNIQUE(requester_id, receiver_id, status)였다면 여기서 두 번째 DECLINED가 막혔다.
+    const second = await friendService.sendFriendRequest(a, b);
+    await friendService.declineRequest(b, second.id);
+
+    const declined = await db.FriendRequest.findAll({
+        where: { requester_id: a, receiver_id: b, status: 'DECLINED' },
+        order: [['id', 'ASC']],
+    });
+    assert.equal(declined.length, 2, '같은 방향의 거절 이력이 두 행 남아야 한다');
+    assert.notEqual(declined[0].id, declined[1].id);
+
+    // terminal 행이 둘이어도 새 PENDING은 여전히 하나만 가능하다.
+    const third = await friendService.sendFriendRequest(a, b);
+    assert.equal(await countRows(db.FriendRequest, { status: 'PENDING' }), 1);
+    assert.ok(Number.isInteger(third.id));
+});
+
 test('AC-05: 교차 방향 동시 신청은 유효 PENDING 하나로 좁혀진다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('pair-a');
     const b = await createLocalUser('pair-b');
@@ -622,7 +836,7 @@ test('AC-05: 교차 방향 동시 신청은 유효 PENDING 하나로 좁혀진�
 
 test('AC-02: 요청 당사자만 결과를 읽고 남의 요청 id는 결과에 없다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
     const base = await startRouteServer(t);
 
     const a = await createLocalUser('res-a');
@@ -654,7 +868,7 @@ test('AC-02: 요청 당사자만 결과를 읽고 남의 요청 id는 결과에 
 
 test('AC-03: 같은 PUT을 두 번 보내도 행은 하나이고 다른 접속에서 그대로 복원된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
     const base = await startRouteServer(t);
 
     const a = await createLocalUser('fav-a');
@@ -687,7 +901,7 @@ test('AC-03: 같은 PUT을 두 번 보내도 행은 하나이고 다른 접속�
 
 test('AC-03: 친구가 아닌 계정은 즐겨찾기할 수 없고 다른 계정의 즐겨찾기는 바뀌지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
     const base = await startRouteServer(t);
 
     const a = await createLocalUser('fav2-a');
@@ -724,7 +938,7 @@ test('AC-03: 친구가 아닌 계정은 즐겨찾기할 수 없고 다른 계정
 
 test('AC-04: 차단하면 양방향 친구 신청이 거부되고 해제 권한은 소유자에게만 있다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
     const base = await startRouteServer(t);
 
     const a = await createLocalUser('blk-a');
@@ -766,7 +980,7 @@ test('AC-04: 차단하면 양방향 친구 신청이 거부되고 해제 권한�
 
 test('AC-05: 차단은 PENDING 요청·초대만 무효화하고 친구 관계·즐겨찾기 원본은 보존한다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
     const base = await startRouteServer(t);
 
     const a = await createLocalUser('inv-a');
@@ -829,7 +1043,7 @@ test('AC-05: 차단은 PENDING 요청·초대만 무효화하고 친구 관계·
 
 test('AC-05: 차단은 PENDING 친구 요청을 CANCELLED로 확정하고 행을 지우지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
     const base = await startRouteServer(t);
 
     const a = await createLocalUser('req-a');
@@ -858,7 +1072,7 @@ test('AC-05: 차단은 PENDING 친구 요청을 CANCELLED로 확정하고 행을
 
 test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만들고 같은 키 재시도는 늘리지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('crt-a');
     const b = await createLocalUser('crt-b');
@@ -913,7 +1127,7 @@ test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만�
 
 test('AC-06: 같은 생성 키에 다른 대상을 실어 보내면 충돌이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('key-a');
     const b = await createLocalUser('key-b');
@@ -933,7 +1147,7 @@ test('AC-06: 같은 생성 키에 다른 대상을 실어 보내면 충돌이다
 
 test('AC-04/AC-06: 친구가 아니거나 차단 관계면 초대가 만들어지지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('den-a');
     const b = await createLocalUser('den-b');
@@ -959,7 +1173,7 @@ test('AC-04/AC-06: 친구가 아니거나 차단 관계면 초대가 만들어�
 
 test('AC-06: 발송자에게 현재 방이 없으면 초대를 만들지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('nor-a');
     const b = await createLocalUser('nor-b');
@@ -975,7 +1189,7 @@ test('AC-06: 발송자에게 현재 방이 없으면 초대를 만들지 않는�
 
 test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번이다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('cur-a');
     const b = await createLocalUser('cur-b');
@@ -1007,7 +1221,7 @@ test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번�
 
 test('AC-06: 만료는 서버 시각으로 조회 경계에서 멱등하게 확정된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('exp-a');
     const b = await createLocalUser('exp-b');
@@ -1043,7 +1257,7 @@ test('AC-06: 만료는 서버 시각으로 조회 경계에서 멱등하게 확�
 
 test('AC-06: 거절은 멱등이고 이미 수락된 초대를 뒤집지 않는다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('dec-a');
     const b = await createLocalUser('dec-b');
@@ -1074,7 +1288,7 @@ test('AC-06: 거절은 멱등이고 이미 수락된 초대를 뒤집지 않는�
 
 test('A-10: 수락 결정과 영수증이 두 단계로 확정된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('acc-a');
     const b = await createLocalUser('acc-b');
@@ -1141,7 +1355,7 @@ test('A-10: 수락 결정과 영수증이 두 단계로 확정된다', async (t)
 
 test('A-10/상태표 5: 두 번째 잠금 전에 차단이 커밋되면 역사적 ACCEPTED는 남고 입장만 INTERRUPTED다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('int-a');
     const b = await createLocalUser('int-b');
@@ -1175,7 +1389,7 @@ test('A-10/상태표 5: 두 번째 잠금 전에 차단이 커밋되면 역사�
 
 test('AC-06: 조회 없이 만료 초대를 수락해도 EXPIRED가 커밋되고 재시도는 멱등하다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
     const a = await createLocalUser('ed-a');
     const b = await createLocalUser('ed-b');
     await befriend(a, b);
@@ -1199,7 +1413,7 @@ test('AC-06: 조회 없이 만료 초대를 수락해도 EXPIRED가 커밋되고
 
 test('A-11: 옛 boot epoch의 초대는 수락 결정 자체가 거부되고 CANCELLED로 확정된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('boot-a');
     const b = await createLocalUser('boot-b');
@@ -1226,7 +1440,7 @@ test('A-11: 옛 boot epoch의 초대는 수락 결정 자체가 거부되고 CAN
 
 test('AC-06: 방이 사라지면 그 방의 PENDING 초대가 종료된다', async (t) => {
     if (unavailable(t)) return;
-    await setUp();
+    await setUp(t);
 
     const a = await createLocalUser('rm-a');
     const b = await createLocalUser('rm-b');
