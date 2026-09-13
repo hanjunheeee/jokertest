@@ -468,3 +468,46 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 ### Operator follow-up before review (2026-09-14)
 
 The diagnostic UI label is 재생 완료, a player completion report, never proof of audible output. Physical audibility remains unmeasured. Protected F19 DB on acf13e2c:32PASS0FAIL0SKIP29067.177ms. Operator found beginResync resets snapshotLoaded while preserving cursor50; a later snapshot20 must not roll it back. Added a mounted runtime regression that fails before the monotonic-cursor repair, then checks no old invitation revival and one new eligible dispatch. No live Chrome observation is claimed: the supported Chrome transport remains unavailable despite valid extension/native host and documented reconnect.
+
+
+## Latest operator UI evidence — user-authorized in-app browser
+
+# F19 current candidate — actual in-app browser verification
+
+2026-09-14 KST. Production candidate `cd33c9051314efd48b6ea2a8cabc0efc2ca58d50`.
+
+The user explicitly changed the browser requirement in this task: “아아 그냥 챗gpt앱에서 열어서 체크하라고”. This run uses the supported Codex/ChatGPT in-app browser, not external Chrome. It is actual interactive UI evidence on the current production candidate, not a mock or a claim that Chrome transport recovered.
+
+## Environment
+
+- Existing batch unchanged: batch-0ea6f89b-9d6d-4a1d-a3ca-432c303afdcb, 18/32 completed, BD idle VERIFY/error R-SCOPE before QA.
+- Existing Pluto daemon preserved, PID27316/9500. No new daemon, batch, automation, or review model changes.
+- Existing bd-browser-server.cjs and bd-two-origin-vite.mjs: actual BD API4183, localhost proxy4184, Vite5183. Two independent hostnames share the same unmodified backend, sockets, and protected MySQL database `pluto_f01_20260909_al`.
+- Normal email/password login through the actual UI for the existing isolated veteran and rookie QA accounts. No browser state injection, synthetic invite, mocked business response, Audio replacement, authentication alteration, or asset approval.
+- No schema reset. API fixture startup only uses its existing isolated QA account initialization. No simultaneous implementation/full DB test. QA process identity and shutdown are recorded separately.
+- Raw observed DOM checkpoints: `.pluto/monitor/BD-IAB-20260914-DOM.json` in the main project.
+
+## Actual observations
+
+1. Both accounts were visibly signed in as 업적검증 and 초보검증. Host searched by nickname and Enter, sent a real friend request; receiver used 전부 수락. Settled result: **1건 수락**, no remaining friend requests.
+2. Host created a real default room. Waiting-room friend button opened normally; actual initial party count1, friend row online, real game invite button actionable.
+3. New invitation `f097a45a-ee82-44d5-b8b5-c2a1659e1333`: receiver diagnostics **received1 / eligible1 / player-completed0**, `asset-unreviewed ×1`. The actual invitation had accept/decline controls.
+4. Receiver full reload: old pending invitation restored with accept/decline controls, diagnostics **0/0/0**. No old eligible dispatch. Receiver declined it normally.
+5. Receiver unchecked **게임 초대** in General settings; unchecked state independently observed again on returning to settings. A new actual invitation `c4fe792d-75ba-43eb-8ec9-cf1ee792819a` yielded **1/1/0**, asset-unreviewed1. This is the current contract: asset approval is checked before settings. Rechecking 게임 초대 and browser Back to the existing flagged lobby preserved the same observation and **1/1/0**, without another dispatch of the old invitation. Decline completed normally.
+6. Receiver checked **효과음 음소거** in Sound settings. Browser Back retained the same document/runtime. New invitation `c669adae-10d7-4902-9d68-ad32bb9e9785` advanced cumulative diagnostics to **2/2/0**, asset-unreviewed2. The checked mute setting was observed again before unchecking it. Browser Back after unmute retained **2/2/0** and the same two invite IDs; no old replay.
+7. Receiver accepted the actionable invitation. Both actual pages settled at **파티 인원 2명**. Screenshot visually inspected: two player portraits and 2 participants. Receiver full reload restored2; clicking 방 나가기 restored the host to1 and public room list to1/10.
+8. New invitation `c0ee25a8-1489-4049-90ef-118e594f9a21` received normally. Receiver blocked host using the friend row; settled block list showed host and pending badge disappeared. Unblock then full reload showed **받은 게임 초대가 없습니다**, diagnostics0/0/0. Host reopened friends: friendship preserved1/1.
+9. Fresh invitation after unblock `cf418cc9-cba3-45d7-b3e1-3ddaa54b4f99` yielded1/1/0 and one pending row. Host deleted the disposable QA room through UI. Room list emptied; receiver accept/decline controls disappeared and terminal text became **더 이상 유효하지 않은 초대입니다**.
+10. Receiver normally logged out and signed into the other existing QA account in the same tab. Reopening the flagged diagnostic URL showed account suffix changed from …291027 to …11ef7b, **0/0/0** and no previous invite IDs. This includes a full document navigation to restore the diagnostic flag; it does not independently measure the immediate hidden reset timing during logout. Automated account-reset regressions remain separate evidence.
+
+## Boundaries and encountered UI state
+
+- Physical audibility is unmeasured. The shipped game-invite asset remains unreviewed and silent. Eligible dispatch and player completion are never claimed as one audible play. Off/mute observations do not isolate a settings-specific suppression branch because asset-unreviewed has precedence.
+- Turning settings on/off via ordinary Settings → back button drops the QA URL flag. For the paired off/on and mute/unmute measurements, browser Back restored the prior flagged SPA entry and preserved the counters. The initial off run was started after reopening the QA URL; its baseline was zero.
+- Switching the receiver tab into the account still open on the host caused an alert in the earlier host tab. During that alert, receiver friend-control actions produced no visible change. The supported getJsDialog/dismiss API closed the actual host alert; receiver panel then opened normally. No source was altered, and this is not recorded as an application-code repair or a proven root cause beyond the observed association.
+- Terminal cancelled/declined invitation rows still display **알 수 없는 사용자**, already noted in previous reviews. Pending sender names were correct. No sender-name persistence PASS is claimed.
+- Controlled delayed-response races, instant hidden logout reset, full-capacity/start/expiry races, and physical audio are not newly asserted as browser observations. Existing focused/whole-suite regressions and independent review remain the evidence for those boundaries.
+- Operator automatic results on this production candidate already recorded: frontend1846PASS/0FAIL/0SKIP; buildPASS; protected F19 DB32PASS/0FAIL/0SKIP; full protected backend1641PASS/0FAIL/0SKIP697985.6092ms. They do not replace normal official gates or either independent review.
+
+Next: stop the exact QA processes, attach this evidence with the prior 62-file scope audit, request official rescope, and let normal verification and both independent reviewers decide. No manual PASS, requirement weakening, or merge override.
+
