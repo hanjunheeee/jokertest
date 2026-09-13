@@ -22,7 +22,27 @@ import { buildNotificationTargetPath, notificationTargetLabel } from "../constan
 // (app-text-scaled + --app-text-size)를 지나야 한다 — 임의값 글자 크기 유틸리티를 직접
 // 쓰면 "텍스트 크기" 설정이 이 모달만 비켜간다(appTextScaleConsumers.test.js가 강제한다).
 const HEADING_CLASS =
-  "font-heading app-text-scaled [--app-text-size:clamp(0.95rem,2.1vw,1.2rem)] font-bold text-[#3a1a0c]"
+  "w-full shrink-0 font-heading app-text-scaled [--app-text-size:clamp(0.95rem,2.1vw,1.2rem)] font-bold text-[#3a1a0c]"
+
+// 실제 Chrome 1920x855에서 재현된 결함 보수(F-17 화면 확인).
+//
+// 예전에는 제목·목록·닫기 버튼이 **하나의** 스크롤 상자(양피지 안쪽 영역) 안에 있었다.
+// 알림이 4건만 돼도 그 상자가 넘쳤고, 셸의 focusConfirmOnMount가 맨 아래 닫기 버튼으로
+// 초점을 옮기면 브라우저가 상자를 scrollTop 270까지 끌어내려 제목과 가장 새 알림이 화면
+// 위로 사라지고 행들이 양피지 그림 밖에 그려졌다.
+//
+// 이제 스크롤하는 것은 이 가운데 영역뿐이다. 제목(shrink-0)과 셸의 닫기 버튼(variant의
+// shrink-0)은 스크롤되지 않는 고정 요소라 초점 이동이 바깥을 끌어내릴 수 없고, 목록이
+// 아무리 길어도 닫기 버튼이 화면 밖으로 밀리지 않는다.
+//
+// flex-auto(=flex:1 1 auto)를 쓰는 이유: 높이가 확정된 양피지 안쪽에서는 남은 공간을
+// 채우고, 높이가 내용으로 정해지는 대체 패널(이미지 실패)에서는 자기 내용만큼만 차지한다.
+// flex-1(basis:0)로 하면 대체 패널에서 목록이 0으로 접힌다. min-h-0이 없으면 flex 항목의
+// 기본 min-height:auto 때문에 줄어들지 못해 다시 바깥이 넘친다.
+const SCROLL_REGION_BASE = "w-full min-h-0 flex-auto overflow-y-auto overscroll-contain"
+const LIST_REGION_CLASS = `${SCROLL_REGION_BASE} text-left`
+// 로딩·실패·빈 상태는 짧은 한 덩어리라 예전처럼 가운데 정렬을 유지한다.
+const CENTERED_REGION_CLASS = `${SCROLL_REGION_BASE} flex flex-col items-center justify-center text-center`
 const MESSAGE_CLASS =
   "font-body app-text-scaled [--app-text-size:clamp(0.72rem,1.6vw,0.86rem)] text-[#4a2a16]"
 const LIST_CLASS = "flex w-full list-none flex-col gap-[clamp(0.35rem,1vw,0.6rem)] p-0 text-left"
@@ -126,9 +146,20 @@ function NotificationItem({ item, pending, error, onRead, onOpenTarget, onClearE
   )
 }
 
-/** 조회 상태별 본문. 로딩·실패를 "빈 목록"으로 위장하지 않는다(AC-06). */
-function renderBody({ status, error, visible, onRetry, itemProps }) {
-  if (status === "error") {
+/**
+ * 조회 상태를 화면 한 종류로 확정한다. 로딩·실패를 "빈 목록"으로 위장하지 않는다(AC-06).
+ * 목록일 때만 왼쪽 정렬 스크롤 영역을 쓰므로 렌더 전에 한 번 계산해 둔다.
+ */
+function resolveBodyState(status, visibleCount) {
+  if (status === "error") return "error"
+  if (status === "idle" || status === "loading") return "loading"
+  if (visibleCount === 0) return "empty"
+  return "list"
+}
+
+/** 확정된 상태별 본문. 상태 판정은 resolveBodyState 하나만 한다(두 곳에서 갈리지 않게). */
+function renderBody({ state, error, visible, onRetry, itemProps }) {
+  if (state === "error") {
     return createElement(
       "div",
       { className: "flex flex-col items-center gap-2", "data-notification-state": "error" },
@@ -141,7 +172,7 @@ function renderBody({ status, error, visible, onRetry, itemProps }) {
     )
   }
 
-  if (status === "idle" || status === "loading") {
+  if (state === "loading") {
     return createElement(
       "p",
       { className: MESSAGE_CLASS, "data-notification-state": "loading" },
@@ -149,7 +180,7 @@ function renderBody({ status, error, visible, onRetry, itemProps }) {
     )
   }
 
-  if (visible.length === 0) {
+  if (state === "empty") {
     return createElement(
       "p",
       { className: MESSAGE_CLASS, "data-notification-state": "empty" },
@@ -212,6 +243,7 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
   if (!open) return null
 
   const visible = selectVisibleNotifications(items, generalChecks)
+  const bodyState = resolveBodyState(status, visible.length)
 
   const handleRead = (item) => {
     // 결과를 기다리지 않고 닫아도 되도록 await하지 않는다. store가 pending·오류를 남긴다.
@@ -244,13 +276,21 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
       confirmButtonRef,
       wrapperProps: { "data-notification-modal": "true" },
     },
-    createElement("p", { className: HEADING_CLASS }, "알림"),
-    renderBody({
-      status,
-      error,
-      visible,
-      onRetry: () => useNotificationsStore.getState().loadSnapshot(),
-      itemProps,
-    }),
+    createElement("p", { className: HEADING_CLASS, "data-notification-heading": "true" }, "알림"),
+    // 스크롤은 이 영역 하나만 한다. 제목과 셸의 닫기 버튼은 형제로 남아 고정된다.
+    createElement(
+      "div",
+      {
+        className: bodyState === "list" ? LIST_REGION_CLASS : CENTERED_REGION_CLASS,
+        "data-notification-scroll": bodyState,
+      },
+      renderBody({
+        state: bodyState,
+        error,
+        visible,
+        onRetry: () => useNotificationsStore.getState().loadSnapshot(),
+        itemProps,
+      }),
+    ),
   )
 }

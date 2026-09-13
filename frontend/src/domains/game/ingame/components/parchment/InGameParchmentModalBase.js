@@ -80,6 +80,10 @@ export default function InGameParchmentModalBase({
             frameClassName: variant.parchmentFrameClass,
             fallbackFrameClassName: variant.parchmentFallbackFrameClass,
             contentClassName: variant.parchmentContentClass,
+            // variant가 자기 안쪽 영역 치수를 가진 경우에만 넘긴다. 없으면 undefined가
+            // 그대로 전달돼 패널이 기존 공용 기본값을 쓴다(다른 모달은 그대로다).
+            contentBaseClassName: variant.parchmentContentBaseClass,
+            fallbackContentBaseClassName: variant.parchmentFallbackContentBaseClass,
             ...parchmentProps,
           },
           children,

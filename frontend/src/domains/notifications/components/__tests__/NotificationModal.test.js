@@ -52,6 +52,9 @@ const { buildNotificationTargetPath, notificationTargetLabel } = await import(
 const { resolveAchievementLocation, ACHIEVEMENT_LOCATION_IDS } = await import(
   "../../../library/content/achievementLocation.js"
 )
+const { INGAME_PARCHMENT_MODAL_VARIANTS } = await import(
+  "../../../game/ingame/constants/parchment/ingameParchmentModalVariants.js"
+)
 
 const ACCOUNT = "11111111-1111-4111-8111-111111111111"
 
@@ -228,6 +231,145 @@ test("AC-06: 실패 → 재시도 성공 → 빈 상태 → live 행 도착 순�
     useNotificationsStore.getState().receiveLiveNotification(ACCOUNT, notification({ id: "live-1" }))
   })
   assert.equal(view.container.querySelectorAll("[data-notification-id]").length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// AC-06: 긴 목록 레이아웃 — 실제 외부 Chrome(1920x855)에서 재현된 결함의 회귀 시험.
+//
+// 재현된 것: 알림 4건이면 양피지 안쪽 영역 하나가 scrollHeight 743 / clientHeight 427로
+// 넘쳤고, 셸의 focusConfirmOnMount가 맨 아래 닫기 버튼으로 초점을 옮기자 그 상자가
+// scrollTop 270까지 끌려 내려가 제목과 가장 새 알림이 화면 밖으로 나가고 행이 양피지 그림
+// 밖에 그려졌다. JSDOM에는 레이아웃 엔진이 없으므로 픽셀이 아니라 **그 결함을 가능하게 한
+// 구조**를 고정한다: 스크롤 상자가 목록 하나뿐이고, 제목·닫기 버튼이 그 밖의 형제다.
+// ---------------------------------------------------------------------------
+
+function manyNotifications(count) {
+  return Array.from({ length: count }, (_, index) => notification({
+    id: `n${index}`,
+    sourceKey: `system:seed:${index}`,
+    title: `알림 ${index}`,
+    // 최신순 정렬이므로 index가 클수록 오래된 것이 된다 → 목록 첫 행이 가장 새 알림이다.
+    createdAt: new Date(Date.UTC(2026, 8, 13, 0, 0, count - index)).toISOString(),
+  }))
+}
+
+test("AC-06(Chrome 회귀): 긴 목록에서도 제목·닫기 버튼은 스크롤 영역 밖에 고정되고 목록만 스크롤한다", async (t) => {
+  __setNotificationsApiForTests({ fetchNotificationsApi: async () => manyNotifications(6) })
+  await act(async () => { await useNotificationsStore.getState().loadSnapshot() })
+
+  const view = mount(React.createElement(NotificationModal, { open: true, onClose: () => {} }))
+  t.after(view.unmount)
+
+  const content = view.container.querySelector('[data-parchment-content="true"]')
+  const scroll = view.container.querySelector("[data-notification-scroll]")
+  const heading = view.container.querySelector("[data-notification-heading]")
+  const confirm = view.container.querySelector('[aria-label="닫기"]')
+  assert.ok(content && scroll && heading && confirm)
+
+  // 1) 세 덩어리가 안쪽 영역의 형제다 — 제목/닫기가 목록과 같이 스크롤되지 않는다.
+  assert.equal(heading.parentElement, content)
+  assert.equal(scroll.parentElement, content)
+  assert.equal(confirm.parentElement, content)
+  assert.equal(scroll.contains(heading), false)
+  assert.equal(scroll.contains(confirm), false, "닫기 버튼이 목록과 함께 스크롤되면 화면 밖으로 밀린다")
+
+  // 2) 6건 전부가 스크롤 영역 **안에** 있다(목록은 잘리지 않고 접근 가능하다).
+  const rows = view.container.querySelectorAll("[data-notification-id]")
+  assert.equal(rows.length, 6)
+  for (const row of rows) assert.equal(scroll.contains(row), true)
+  assert.equal(scroll.getAttribute("data-notification-scroll"), "list")
+
+  // 3) 스크롤하는 상자는 목록 영역뿐이다. min-h-0이 없으면 flex 항목이 줄어들지 못해
+  //    예전처럼 바깥이 다시 넘친다.
+  for (const required of ["min-h-0", "flex-auto", "overflow-y-auto"]) {
+    assert.ok(scroll.className.includes(required), `목록 영역에 ${required}가 필요하다`)
+  }
+  assert.ok(content.className.includes("overflow-hidden"), "안쪽 영역 자체는 스크롤하지 않는다")
+  assert.equal(
+    content.className.includes("overflow-y-auto"),
+    false,
+    "안쪽 영역이 다시 스크롤 상자가 되면 초점 이동이 내용 전체를 끌어내린다",
+  )
+
+  // 4) 안쪽 영역은 양피지 그림의 종이 면적 안으로 제한된다(inset 백분율 — 높이 기준).
+  assert.ok(content.className.includes("inset-y-["), "세로 여백이 프레임 높이 기준이어야 한다")
+  assert.ok(content.className.includes("inset-x-["))
+
+  // 5) 초점은 모달 안(닫기 버튼)으로 들어오되, 그 버튼은 스크롤되지 않는 영역에 있다 —
+  //    이것이 scrollTop 270 결함의 직접 원인이었다.
+  assert.equal(document.activeElement, confirm)
+  assert.equal(scroll.scrollTop, 0, "열자마자 목록은 맨 위(가장 새 알림)를 보여준다")
+  assert.equal(rows[0].textContent.includes("알림 0"), true, "첫 행이 가장 새 알림이다")
+})
+
+test("AC-06(Chrome 회귀): 양피지 이미지가 실패한 대체 패널에서도 같은 3단 구조를 유지한다", async (t) => {
+  __setNotificationsApiForTests({ fetchNotificationsApi: async () => manyNotifications(6) })
+  await act(async () => { await useNotificationsStore.getState().loadSnapshot() })
+
+  const view = mount(React.createElement(NotificationModal, { open: true, onClose: () => {} }))
+  t.after(view.unmount)
+
+  act(() => {
+    view.container
+      .querySelector('img[aria-hidden="true"]')
+      .dispatchEvent(new dom.window.Event("error", { bubbles: false }))
+  })
+  assert.ok(view.container.querySelector('[data-parchment-fallback="true"]'), "대체 패널로 전환된다")
+
+  const content = view.container.querySelector('[data-parchment-content="true"]')
+  const scroll = view.container.querySelector("[data-notification-scroll]")
+  assert.equal(view.container.querySelector("[data-notification-heading]").parentElement, content)
+  assert.equal(view.container.querySelector('[aria-label="닫기"]').parentElement, content)
+  assert.equal(scroll.parentElement, content)
+  assert.equal(view.container.querySelectorAll("[data-notification-id]").length, 6)
+  // 높이가 내용으로 정해지는 대체 패널에서는 flex-1(basis:0)이면 목록이 0으로 접힌다.
+  assert.ok(scroll.className.includes("flex-auto"))
+  assert.ok(content.className.includes("max-h-[80svh]"), "대체 패널도 화면을 넘지 않는다")
+  assert.ok(content.className.includes("overflow-hidden"))
+})
+
+test("AC-06(Chrome 회귀): 짧은 상태(로딩·실패·빈 상태)는 가운데 정렬을 유지하고 닫기는 그대로다", async (t) => {
+  let calls = 0
+  __setNotificationsApiForTests({
+    fetchNotificationsApi: async () => {
+      calls += 1
+      if (calls === 1) throw new Error("조회 실패")
+      return []
+    },
+  })
+
+  let closes = 0
+  const view = mount(
+    React.createElement(NotificationModal, { open: true, onClose: () => { closes += 1 } }),
+  )
+  t.after(view.unmount)
+
+  const scrollOf = () => view.container.querySelector("[data-notification-scroll]")
+  assert.equal(scrollOf().getAttribute("data-notification-scroll"), "loading")
+  assert.ok(scrollOf().className.includes("justify-center"))
+
+  await act(async () => { await useNotificationsStore.getState().loadSnapshot() })
+  assert.equal(scrollOf().getAttribute("data-notification-scroll"), "error")
+  assert.ok(scrollOf().querySelector('[data-notification-action="retry-list"]'), "재시도는 스크롤 영역 안이다")
+
+  await act(async () => { await useNotificationsStore.getState().loadSnapshot() })
+  assert.equal(scrollOf().getAttribute("data-notification-scroll"), "empty")
+
+  click(view.container.querySelector('[aria-label="닫기"]'))
+  assert.equal(closes, 1, "레이아웃이 바뀌어도 닫기는 그대로 동작한다")
+})
+
+test("AC-06(Chrome 회귀): 알림 전용 치수는 다른 파치먼트 모달을 건드리지 않는다", () => {
+  const notifications = INGAME_PARCHMENT_MODAL_VARIANTS.notifications
+  assert.ok(notifications.parchmentContentBaseClass, "알림만 자기 안쪽 영역 치수를 갖는다")
+  assert.ok(notifications.parchmentFallbackContentBaseClass)
+  assert.ok(notifications.confirmButtonClass.includes("shrink-0"))
+
+  for (const key of ["roleReveal", "phaseEntrance", "nightTurn", "nightPrivateResult"]) {
+    const variant = INGAME_PARCHMENT_MODAL_VARIANTS[key]
+    assert.equal(variant.parchmentContentBaseClass, undefined, `${key}는 공용 기본값을 그대로 쓴다`)
+    assert.equal(variant.parchmentFallbackContentBaseClass, undefined, key)
+  }
 })
 
 // ---------------------------------------------------------------------------

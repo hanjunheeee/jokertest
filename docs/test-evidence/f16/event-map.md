@@ -39,7 +39,7 @@
 
 | 항목 | 담당 | 상태 |
 | --- | --- | --- |
-| 신규 시스템 알림 연결 | F-17 (SFX-DEFER-17=BB) | **미완료** — 코드 연결·자동 시험은 끝났으나 실제 외부 Chrome 증거와 실 DB 시험이 없다(아래 F-17 절) |
+| 신규 시스템 알림 연결 | F-17 (SFX-DEFER-17=BB) | **미완료** — 실 DB 시험과 실제 외부 Chrome은 수행됐으나(아래 F-17 절), 브라우저에서 재현된 시각 결함의 보수분 재확인과 실제 청음이 남았다 |
 | 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | 미완료 |
 | 전체 개인 능력 영상 동기 · 승인 MOV 5개 내장음 실제 연결 | F-27 (SFX-DEFER-27=BL) | 미완료 |
 | 통합 인수 | F-28 (SFX-INTEGRATION-28=BN) | 미완료 |
@@ -51,10 +51,12 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 
 ## F-17(SFX-DEFER-17) 이관 증거 — 신규 시스템 알림
 
-**상태: 미완료.** 아래는 이번 슬라이스에서 실제로 연결하고 자동 시험으로 확인한 것이며,
-**실제 청음도 외부 Chrome 확인도 아니다.** 배포 manifest의 `system-notification`은 여전히
-미검토라 매체를 만들지 않는다 — 아래 "재생 1회"는 전부 시험 전용 fixture + 주입 매체의
-`playCalls` 기록이고, 이것을 실제 청음 증거로 기록하지 않는다.
+**상태: 미완료.** 아래 연결은 자동 시험으로 확인했고, 실제 생산·수신·화면은 운영자의 실제
+외부 Chrome에서도 확인됐다(후보 `0c2cfe87`, `docs/test-evidence/f17/browser-2026-09-13.md`).
+그러나 **실제 청음은 아니다** — 배포 manifest의 `system-notification`은 여전히 미검토라
+매체를 만들지 않는다. 아래 "재생 1회"는 전부 시험 전용 fixture + 주입 매체의 `playCalls`
+기록이고, 이것을 실제 청음 증거로 기록하지 않는다. 브라우저에서 재생 횟수를 센 기록도 없다.
+그 Chrome 확인에서 **긴 목록 시각 결함 1건이 재현**됐고, 보수 후 **재확인이 아직 남아 있다.**
 
 | 항목 | 값 |
 | --- | --- |
@@ -67,7 +69,9 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 | 프런트 수신 | `frontend/src/domains/notifications/hooks/useNotificationSocketEvents.js` |
 | 최종 소비처 | `useNotificationsStore` → `NotificationModal.js` 목록 · `NotificationEntryButton.js` 미확인 수 |
 | 자산/무음 사유 | `sfxManifest.js`의 `pendingAsset` — `asset-unreviewed`, "자산 파일과 이용 조건 검토가 아직 제공되지 않았다" |
-| 담당 상태 | **미완료** (실제 청음·Chrome 미검증) |
+| 실 DB 시험 | 운영자 공식 VERIFY-11..15의 격리 DB 직렬 backend **1546 PASS 0 skip**(후보 `0c2cfe87`) — `f17-notifications.integration.test.js` 27건 포함 |
+| 실제 Chrome | 운영자 수행, 2026-09-13(후보 `0c2cfe87`) — 기능 13항목 통과 · 시각 결함 1건 재현 → `docs/test-evidence/f17/browser-2026-09-13.md` |
+| 담당 상태 | **미완료** — 실제 청음 없음(자산 미검토), 화면 결함 보수분의 브라우저 재확인 미수행 |
 
 ### 소리 소유권(한 사건에 한 번)
 
@@ -101,6 +105,30 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 경계의 대상이 아니라 조회 실패와 무관하게 최초 소리를 유지한다. 이 경계는 소리 적격성에만
 쓰이므로 읽음·이동·닫기·재시도를 잠그지 않는다.
 
+### 화면 결함 보수 (2026-09-13 실제 Chrome 재현분)
+
+운영자의 실제 Chrome(1920×855, 알림 4행)에서 모달을 열면 초점이 맨 아래 닫기 버튼으로 가고
+**안쪽 영역 전체**가 `scrollTop 270`까지 끌려 내려가, 제목과 가장 새 알림이 화면 위로 밀리고
+행들이 양피지 그림 밖에 그려졌다(`scrollHeight 743 / clientHeight 427`).
+
+고친 것은 **알림 레이아웃뿐**이다. 소리 경계·읽음·이동·계정 정리 계약은 건드리지 않았다.
+
+- `NotificationModal.js` — 제목(고정) · 목록(`min-h-0 flex-auto overflow-y-auto` 단독 스크롤) ·
+  닫기(고정)의 3단 구조. 스크롤하는 상자가 목록 하나뿐이라 초점 이동이 바깥을 끌어내리지 못한다.
+- `ingameParchmentModalVariants.js` — **알림 variant만** 자기 안쪽 영역 치수를 갖는다
+  (`inset-x-[15%] inset-y-[13.5%] overflow-hidden`). 공용 `py-[17%]`는 CSS 규칙상 세로 여백도
+  프레임 **가로폭**의 17%라 3:2 그림에서 높이의 25.5%를 먹었다 — inset은 높이 기준이라 같은
+  안전 영역을 지키면서 실제로 쓸 수 있는 높이가 늘어난다. 프레임은 역할 공개와 같은 48rem급.
+- `InGameParchmentModalBase.js` / `InGameParchmentPanelBase.js` — variant가 준 안쪽 영역 기본
+  클래스를 전달한다. **넘기지 않는 다른 모달 4종은 기존 공용 기본값 그대로**다(시험으로 고정).
+  클래스를 덧붙이는 방식으로는 못 고친다 — `overflow`·`inset`·`padding`은 Tailwind 생성 순서가
+  승자를 정해서 문자열 뒤에 붙여도 이기지 않는다(기존 `justify-start`가 실제로 무시되고 있었다).
+
+회귀 시험 4건을 `NotificationModal.test.js`에 추가했다(6행 목록에서 제목·닫기가 스크롤 영역
+**밖**의 형제인지, 6행 전부가 스크롤 영역 안인지, 초점이 스크롤되지 않는 닫기에 있고 목록이
+맨 위인지, 이미지 실패 대체 패널도 같은 3단 구조인지, 다른 variant가 그대로인지).
+브라우저 재확인은 운영자 관문으로 **남아 있다.**
+
 ### 검증 기록 (누가 · 언제 · 무엇을)
 
 같은 명령이라도 **누가 어느 커밋에서 돌렸는지**를 구분해 남긴다. 앞선 성공 기록은 그
@@ -119,6 +147,11 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 | 구현자(worker), CODEX-2 보수 세션(복원 실패 경계) | `npm test --prefix frontend` | **1737 PASS 0 fail 0 skip** |
 | 구현자(worker), CODEX-2 보수 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built`) |
 | 구현자(worker), CODEX-2 보수 세션 | 변이 검사(고친 줄을 되돌려 봄) | 새 마운트 시험이 `playCalls: ['/fixture/achievement-granted.wav']`로 **실패** — 경계가 실제로 들리는 회귀를 잡는다 |
+| **운영자 공식 VERIFY-11..15, 후보 `0c2cfe87`** | 설치 2건 · frontend · build · 격리 DB 직렬 backend | 설치 **PASS** · frontend **1737 PASS 0 fail 0 skip** · build **PASS** · backend **1546 PASS 0 fail 0 skip** |
+| **운영자, 실제 외부 Chrome, 2026-09-13 09:45–10:05 KST, 후보 `0c2cfe87`** | 실제 Vite 5183 · API 4183 · 격리 `pluto_f01_20260909_al` | 기능 관찰 13항목 통과 · **시각 결함 1건 재현**(아래) — `docs/test-evidence/f17/browser-2026-09-13.md` |
+| 구현자(worker), 화면 결함 보수 세션(2026-09-13) | `npm test --prefix frontend` | **1741 PASS 0 fail 0 skip**(직전 1737 → 긴 목록·초점·대체 패널·다른 variant 불변 시험 4건 추가) |
+| 구현자(worker), 화면 결함 보수 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built`) — 새 임의값 유틸리티(`inset-y-[13.5%]` 등)가 실제 산출 CSS에 생성된 것까지 확인 |
+| 구현자(worker), 화면 결함 보수 세션 | 변이 검사(`parchmentContentBaseClass`를 되돌려 봄) | 새 시험 2건이 "안쪽 영역 자체는 스크롤하지 않는다"·"알림만 자기 치수를 갖는다"로 **실패** — 결함 구조를 실제로 잡는다 |
 
 - 운영자 VERIFY-6..10의 결과는 **후보 `e259a538`의 코드**에 대한 것이다. CODEX-2 보수에서
   바뀐 `notifications.store.js`와 시험 2건은 그 실행에 포함되지 않았다 — 운영자가 격리 DB
@@ -127,10 +160,17 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 - 운영자 VERIFY의 backend 1525 PASS 0 skip은 **후보 0b04970f의 코드**를 검증한 것이다.
   이번 보수 세션에서 바뀐 코드와 새로 추가한 DB 시험 7건은 그 실행에 포함되지 않았다 —
   다시 돌리기 전까지 **미검증**이다.
-- 이번 보수 세션의 backend skip 161건에는 `f17-notifications.integration.test.js` 27건
-  (기존 20 + 신규 7)이 들어 있다. 신규 7건은 실제 세션 가드 경로(`wrapSocketWithSessionGuard`
-  → `registerNotificationHandlers`, `registerConnectionHandlers`)와 0012 verify의
-  인덱스 컬럼·FK 거부를 실제 MySQL에서 확인하는 시험이며, **아직 한 번도 실행되지 않았다.**
+- **위 worker skip 기록(154·161건)은 그 시점 작업 환경의 역사적 사실로 남긴다** — worker
+  환경에는 `F01_TEST_DATABASE_URL`이 없어 `f17-notifications.integration.test.js` 27건
+  (기존 20 + 신규 7)이 skip이었다. 그 27건은 실제 세션 가드 경로
+  (`wrapSocketWithSessionGuard` → `registerNotificationHandlers`,
+  `registerConnectionHandlers`)와 0012 verify의 인덱스 컬럼·FK 거부를 실제 MySQL에서
+  확인한다. **운영자 공식 VERIFY-11..15(후보 `0c2cfe87`)의 격리 DB 직렬 실행에서 backend
+  1546건이 0 skip으로 통과했으므로 그 27건은 실제로 실행됐다** — "한 번도 실행되지 않았다"는
+  더 이상 현재 상태가 아니다.
+- 다만 그 공식 실행은 **후보 `0c2cfe87`의 코드**에 대한 것이다. 그 뒤 화면 결함 보수에서 바뀐
+  파일(frontend 4 + 시험 1)은 포함되지 않았다 — 운영자가 다시 돌리기 전까지 그 부분은
+  **미검증**이다. 이번 보수에서 backend는 **바뀌지 않았다**.
 
 ### 이번에 확인한 것 / 확인하지 못한 것
 
@@ -150,12 +190,20 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
   `frontend/src/shared/audio/__tests__/sfxPlayer.test.js`의 F-17 절,
   `backend/__tests__/notifications.migration.test.js`(0012 verify의 인덱스 컬럼·FK·
   NULL 계약 거부와 데이터 보존, 14건), `backend/services/achievementService.test.js`의 F-17 절.
-- **확인하지 못함**: `backend/tests/db/f17-notifications.integration.test.js` 27건 전부.
-  `F01_TEST_DATABASE_URL`이 없어 skip이다 — 실제 MySQL 유일 제약·트랜잭션 롤백·권한 404·
-  세션 가드 통과 경로·0012의 실제 스키마 거부는 이 세션에서 **미검증**이다.
-- **확인하지 못함**: 실제 외부 Chrome에서의 A/B 계정 친구 요청·업적 획득·시스템 안내 수신·
-  재접속·off/mute·실패 중 이동 확인. 실제 자산 청음도 없다(자산 자체가 없다).
-  Chrome은 운영자 관문이며, 단위·통합 시험 통과를 브라우저 확인으로 기록하지 않는다.
+- **worker 환경에서 확인하지 못함**: `backend/tests/db/f17-notifications.integration.test.js`
+  27건. `F01_TEST_DATABASE_URL`이 없어 skip이었다. **운영자 공식 VERIFY-11..15가 격리 DB에서
+  이 27건을 포함해 backend 1546건을 0 skip으로 통과시켰다**(후보 `0c2cfe87`).
+- **운영자가 실제 외부 Chrome을 수행했다**(2026-09-13, 후보 `0c2cfe87`) —
+  `docs/test-evidence/f17/browser-2026-09-13.md`. 실제 시스템 안내 생산·수신, 친구 요청과
+  대상 이동·수락, 새로고침 없는 live 배지 갱신, 업적 지급 후 즉시 표시와 서고 이동,
+  조회 실패·읽음 실패 화면, 표시 off/mute와 **원본 데이터 보존**, 계정 경계까지 실제 화면에서
+  확인됐다. 동시에 **시각 결함 1건이 재현**됐다(긴 목록에서 초점이 안쪽 영역 전체를
+  `scrollTop 270`으로 끌어내려 제목·최신 행이 밀리고 닫기 버튼이 화면 밖으로 나감).
+  이번 보수는 그 결함만 고쳤다(알림 variant 치수 + 고정 제목/닫기 + 단독 스크롤 목록).
+  **고친 화면의 브라우저 재확인(같은 뷰포트·확대 글자)은 아직 수행되지 않았다** — 그 전까지
+  브라우저 확인을 완료로 기록하지 않는다.
+- **확인하지 못함**: 실제 자산 청음(자산 자체가 미검토다). 브라우저에서 Audio 생성·재생
+  횟수를 센 기록도 없다. 단위·통합 시험 통과를 청음으로 기록하지 않는다.
 - 위 "재생 1회" 기록은 전부 **시험 전용 승인 fixture + 주입 매체의 `playCalls`**다. 배포
   manifest의 `system-notification`은 여전히 `needs-review`이며, 그 상태에서는 Audio 생성 0·
   재생 0·`asset-unreviewed` 사유 기록으로 끝난다는 것을 별도 시험으로 확인했다.
