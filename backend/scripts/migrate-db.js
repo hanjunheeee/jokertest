@@ -38,7 +38,10 @@ const addEconomyLoadoutJobSkins = require('../db/migrations/0011-add-economy-loa
 // F-17: 알림 원본 테이블과 (user_id, source_key) 유일 제약도 실제 배포 명령에서 순서대로
 // 적용한다(notification.service.js의 중복 방지 근거 — AC-03).
 const addNotifications = require('../db/migrations/0012-add-notifications');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications];
+// F-19: 즐겨찾기·차단·게임 초대 테이블과 friend_requests의 PENDING 유일 제약 교체도 실제
+// 배포 명령에서 순서대로 적용한다(gameInvite.service.js·friend.service.js의 멱등·권한 근거).
+const addF19FriendsInvites = require('../db/migrations/0013-f19-friends-invites');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

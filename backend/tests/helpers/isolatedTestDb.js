@@ -27,6 +27,10 @@ const addAchievementGrants = require('../../db/migrations/0009-add-achievement-g
 // 테이블을 만들면, 그 사실을 모르는 다른 스위트의 resetSchema()가 "모르는 테이블"로 오판해
 // 거부하지 않도록 여기서 한 번만 등록한다.
 const addNotifications = require('../../db/migrations/0012-add-notifications');
+// F-19: friend_favorites/friend_blocks/game_invites(0013)도 같은 이유로 항상 관리 목록에
+// 포함시킨다 — f19 스위트가 이 세 테이블을 만들면, 그 사실을 모르는 다른 스위트의
+// resetSchema()가 "모르는 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다.
+const addF19FriendsInvites = require('../../db/migrations/0013-f19-friends-invites');
 
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
@@ -88,19 +92,22 @@ const buildManagedSchema = ({
     addEconomyPurchaseRequests: addEconomyPurchaseRequestsOverride,
     addVoteParticipations: addVoteParticipationsOverride,
     addAchievementGrants: addAchievementGrantsOverride,
-    addNotifications: addNotificationsOverride, migrationRunner,
+    addNotifications: addNotificationsOverride,
+    addF19FriendsInvites: addF19FriendsInvitesOverride, migrationRunner,
 }) => {
     const resolvedAddEconomy = addEconomyOverride ?? addEconomy;
     const resolvedAddEconomyPurchaseRequests = addEconomyPurchaseRequestsOverride ?? addEconomyPurchaseRequests;
     const resolvedAddVoteParticipations = addVoteParticipationsOverride ?? addVoteParticipations;
     const resolvedAddAchievementGrants = addAchievementGrantsOverride ?? addAchievementGrants;
     const resolvedAddNotifications = addNotificationsOverride ?? addNotifications;
+    const resolvedAddF19FriendsInvites = addF19FriendsInvitesOverride ?? addF19FriendsInvites;
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
     const economyTables = Object.values(resolvedAddEconomy.TABLE_NAMES);
     const purchaseRequestTables = Object.values(resolvedAddEconomyPurchaseRequests.TABLE_NAMES);
     const voteParticipationTables = Object.values(resolvedAddVoteParticipations.TABLE_NAMES);
     const achievementGrantTables = Object.values(resolvedAddAchievementGrants.TABLE_NAMES);
     const notificationTables = Object.values(resolvedAddNotifications.TABLE_NAMES);
+    const f19FriendTables = Object.values(resolvedAddF19FriendsInvites.TABLE_NAMES);
 
     const managedTables = [
         ...baseline.TABLE_ORDER,
@@ -111,10 +118,13 @@ const buildManagedSchema = ({
         ...voteParticipationTables,
         ...achievementGrantTables,
         ...notificationTables,
+        ...f19FriendTables,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        // F-19의 세 테이블도 users를 참조하는 자식이라 baseline 역순보다 먼저 드롭한다.
+        ...f19FriendTables,
         // notifications는 users를 참조하는 자식이라 baseline 역순(users가 마지막)보다 먼저
         // 드롭해야 FK 제약에 걸리지 않는다 — achievement_grants와 같은 이유·같은 자리다.
         ...notificationTables,

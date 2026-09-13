@@ -8,13 +8,18 @@ import {
   FRIEND_PANEL_INSET_STYLE,
   FRIEND_PANEL_TRANSITION,
 } from "@/domains/lobby/constants/friendListStyle.js"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { getFriendPanelAriaLabel } from "@/domains/lobby/utils/friendListPanelAria.js"
 import { useFriendListSync } from "@/domains/lobby/hooks/useFriendListSync.js"
+import { useFriendStore } from "@/domains/lobby/store/friend.store.js"
+import { useGameInviteStore } from "@/domains/lobby/store/gameInvite.store.js"
+import { requestGameInviteAccept } from "@/domains/lobby/hooks/useFriendSocketEvents.js"
 import FriendAcceptTab from "@/domains/lobby/components/friendList/accept/FriendAcceptTab.jsx"
+import FriendBlockTab from "@/domains/lobby/components/friendList/block/FriendBlockTab.jsx"
 import FriendListTabContent from "@/domains/lobby/components/friendList/list/FriendListTabContent.jsx"
 import FriendListViewTabs from "@/domains/lobby/components/friendList/FriendListViewTabs.jsx"
 import FriendRequestTab from "@/domains/lobby/components/friendList/request/FriendRequestTab.jsx"
+import GameInviteTab from "@/domains/lobby/components/friendList/invite/GameInviteTab.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 친구 패널 바깥을 덮는 배경 버튼입니다. 클릭하면 패널을 닫습니다.
@@ -65,15 +70,31 @@ function FriendListPanelContent({
   onListView,
   onRequestView,
   onAcceptView,
+  onInviteView,
+  onBlockView,
   onlineFriends,
   offlineFriends,
   favoriteFriends,
+  friendsError,
   incomingRequests,
+  incomingError,
+  processingRequestIds,
+  acceptAllResult,
   onRefreshRequests,
   onAcceptRequest,
   onDeclineRequest,
   onAcceptAll,
+  onBlockUser,
+  onUnblockUser,
+  blockingIds,
+  blockedUsers,
+  blocksStatus,
+  blocksError,
+  onRefreshBlocks,
+  invite,
+  inviteList,
   targetRequestId,
+  targetInviteId,
 }) {
   return (
     <>
@@ -81,6 +102,9 @@ function FriendListPanelContent({
         activeView={panelView}
         onRequestClick={onRequestView}
         onAcceptClick={onAcceptView}
+        onInviteClick={onInviteView}
+        onBlockClick={onBlockView}
+        inviteCount={inviteList.pendingCount}
       />
 
       {panelView === "list" ? (
@@ -88,34 +112,81 @@ function FriendListPanelContent({
           onlineFriends={onlineFriends}
           offlineFriends={offlineFriends}
           favoriteFriends={favoriteFriends}
+          friendsError={friendsError}
+          onRetry={onRefreshRequests}
+          invite={invite}
         />
       ) : null}
 
       {panelView === "request" ? (
-        <FriendRequestTab onBack={onListView} />
+        <FriendRequestTab onBack={onListView} onBlock={onBlockUser} blockingIds={blockingIds} />
       ) : null}
 
       {panelView === "accept" ? (
         <FriendAcceptTab
           onBack={onListView}
           incomingRequests={incomingRequests}
+          incomingError={incomingError}
+          processingRequestIds={processingRequestIds}
+          acceptAllResult={acceptAllResult}
           onAccept={onAcceptRequest}
           onDecline={onDeclineRequest}
+          onBlock={onBlockUser}
           onAcceptAll={onAcceptAll}
           onRefresh={onRefreshRequests}
           targetRequestId={targetRequestId}
+        />
+      ) : null}
+
+      {panelView === "invite" ? (
+        <GameInviteTab
+          onBack={onListView}
+          invites={inviteList.invites}
+          status={inviteList.status}
+          error={inviteList.error}
+          pendingInviteIds={inviteList.pendingInviteIds}
+          inviteErrors={inviteList.inviteErrors}
+          onAccept={inviteList.onAccept}
+          onDecline={inviteList.onDecline}
+          onRefresh={inviteList.onRefresh}
+          targetInviteId={targetInviteId}
+        />
+      ) : null}
+
+      {panelView === "block" ? (
+        <FriendBlockTab
+          onBack={onListView}
+          blockedUsers={blockedUsers}
+          status={blocksStatus}
+          error={blocksError}
+          processingIds={blockingIds}
+          onUnblock={onUnblockUser}
+          onRefresh={onRefreshBlocks}
         />
       ) : null}
     </>
   )
 }
 
-// 친구 목록, 친구 신청, 요청 수락 탭을 모두 조합하는 최종 패널입니다.
-// 친구 데이터/핸들러는 이 패널이 open 여부를 이미 알고 있으므로 여기서 직접
-// useFriendListSync로 구독합니다 — LobbyPage/LobbyFriendArea가 그대로 통과만
-// 시키던 8개의 prop을 두 파일에서 걷어냈습니다.
-export default function FriendListPanel({ open, onClose, targetRequestId = null }) {
-  // 현재 친구 패널 화면입니다. list, request, accept 중 하나를 사용합니다.
+/**
+ * 친구 목록·친구 신청·요청 수락·게임 초대·차단 목록을 모두 조합하는 최종 패널입니다.
+ *
+ * F-19(AC-01): 이 패널은 **로비와 게임 대기방이 함께 쓰는 하나의 경계**다. 두 화면은 같은
+ * 공용 store(friend.store · gameInvite.store)를 구독하므로 같은 계정의 친구·요청·초대
+ * 상태를 그대로 본다 — 화면마다 별도 목록을 만들지 않는다.
+ *
+ * roomId/isRoomVerified를 받으면 대기방 맥락이라는 뜻이고, 그때만 친구 행에 초대 버튼이
+ * 붙는다. 검증 전에는 조회는 허용하되 초대 발송은 비활성이고, 호출 경계에서도 다시 막는다.
+ */
+export default function FriendListPanel({
+  open,
+  onClose,
+  targetRequestId = null,
+  targetInviteId = null,
+  roomId = null,
+  isRoomVerified = false,
+}) {
+  // 현재 친구 패널 화면입니다. list, request, accept, invite, block 중 하나를 사용합니다.
   const [panelView, setPanelView] = useState("list")
 
   // F-17(AC-02): 알림에서 특정 친구 요청을 보러 들어오면 "요청 수락" 탭으로 연다.
@@ -126,24 +197,121 @@ export default function FriendListPanel({ open, onClose, targetRequestId = null 
     setPanelView("accept")
   }, [open, targetRequestId])
 
+  // F-19(AC-07): 초대 알림의 대상 이동도 같은 방식이다 — 탭만 열고 자동 수락하지 않는다.
+  useEffect(() => {
+    if (!open || targetInviteId === null) return
+    setPanelView("invite")
+  }, [open, targetInviteId])
+
   const {
     onlineFriends,
     offlineFriends,
     favoriteFriends,
     incomingRequests,
+    friendsError,
+    incomingError,
+    blockedUsers,
+    blocksStatus,
+    blocksError,
+    processingRequestIds,
+    acceptAllResult,
     handleRefreshFriends,
+    handleRefreshBlocks,
     handleAcceptRequest,
     handleDeclineRequest,
     handleAcceptAll,
   } = useFriendListSync(open)
 
+  const blockUser = useFriendStore((state) => state.blockUser)
+  const unblockUser = useFriendStore((state) => state.unblockUser)
+  const [blockingIds, setBlockingIds] = useState(() => new Set())
+
+  const runBlockAction = useCallback(async (targetId, action) => {
+    setBlockingIds((previous) => new Set(previous).add(targetId))
+    try {
+      await action(targetId)
+    } finally {
+      setBlockingIds((previous) => {
+        const next = new Set(previous)
+        next.delete(targetId)
+        return next
+      })
+    }
+  }, [])
+
+  const handleBlockUser = useCallback(
+    (targetId) => runBlockAction(targetId, blockUser),
+    [runBlockAction, blockUser],
+  )
+  const handleUnblockUser = useCallback(
+    (targetId) => runBlockAction(targetId, unblockUser),
+    [runBlockAction, unblockUser],
+  )
+
+  // ── 게임 초대 ────────────────────────────────────────────────────────────
+  const invites = useGameInviteStore((state) => state.invites)
+  const inviteStatus = useGameInviteStore((state) => state.status)
+  const inviteError = useGameInviteStore((state) => state.error)
+  const pendingInviteIds = useGameInviteStore((state) => state.pendingInviteIds)
+  const inviteErrors = useGameInviteStore((state) => state.inviteErrors)
+  const loadInviteSnapshot = useGameInviteStore((state) => state.loadSnapshot)
+  const declineInvite = useGameInviteStore((state) => state.declineInvite)
+  const sendInvite = useGameInviteStore((state) => state.sendInvite)
+
+  // 패널을 열 때 초대도 함께 복원한다 — 목록·요청과 같은 경계에서 같은 계정 상태를 본다.
+  useEffect(() => {
+    if (!open) return
+    loadInviteSnapshot()
+  }, [open, loadInviteSnapshot])
+
   const showListView = () => setPanelView("list")
   const showRequestView = () => setPanelView("request")
   const showAcceptView = () => setPanelView("accept")
+  const showInviteView = () => setPanelView("invite")
+  const showBlockView = () => {
+    setPanelView("block")
+    handleRefreshBlocks()
+  }
 
   const handleClose = () => {
     showListView()
     onClose()
+  }
+
+  /**
+   * 대기방에서 친구를 초대한다(AC-06).
+   *
+   * 방 검증이 끝나기 전에는 **호출 경계에서도** 막는다 — 버튼 비활성만으로는 조작된
+   * 클라이언트를 막지 못하고, 마지막 방어선은 서버가 발송자의 실제 방 소속을 다시 확인하는
+   * 것이다. creationKey는 이 클릭 하나를 식별하는 멱등 키다.
+   */
+  const handleSendInvite = useCallback((receiverId) => {
+    if (roomId === null || !isRoomVerified) return
+    const creationKey = `${roomId}:${receiverId}`
+    return sendInvite(receiverId, creationKey)
+  }, [roomId, isRoomVerified, sendInvite])
+
+  const canInvite = roomId !== null
+  const invite = canInvite
+    ? {
+        onInvite: handleSendInvite,
+        disabled: !isRoomVerified,
+        disabledReason: "대기방 상태를 확인하는 중입니다.",
+      }
+    : null
+
+  const pendingCount = invites.filter((item) => item.status === "PENDING").length
+
+  const inviteList = {
+    invites,
+    status: inviteStatus,
+    error: inviteError,
+    pendingInviteIds,
+    inviteErrors,
+    pendingCount,
+    onAccept: requestGameInviteAccept,
+    onDecline: declineInvite,
+    onRefresh: loadInviteSnapshot,
   }
 
   return (
@@ -157,15 +325,31 @@ export default function FriendListPanel({ open, onClose, targetRequestId = null 
               onListView={showListView}
               onRequestView={showRequestView}
               onAcceptView={showAcceptView}
+              onInviteView={showInviteView}
+              onBlockView={showBlockView}
               onlineFriends={onlineFriends}
               offlineFriends={offlineFriends}
               favoriteFriends={favoriteFriends}
+              friendsError={friendsError}
               incomingRequests={incomingRequests}
+              incomingError={incomingError}
+              processingRequestIds={processingRequestIds}
+              acceptAllResult={acceptAllResult}
               onRefreshRequests={handleRefreshFriends}
               onAcceptRequest={handleAcceptRequest}
               onDeclineRequest={handleDeclineRequest}
               onAcceptAll={handleAcceptAll}
+              onBlockUser={handleBlockUser}
+              onUnblockUser={handleUnblockUser}
+              blockingIds={blockingIds}
+              blockedUsers={blockedUsers}
+              blocksStatus={blocksStatus}
+              blocksError={blocksError}
+              onRefreshBlocks={handleRefreshBlocks}
+              invite={invite}
+              inviteList={inviteList}
               targetRequestId={targetRequestId}
+              targetInviteId={targetInviteId}
             />
           </FriendListPanelFrame>
         </>

@@ -14,7 +14,10 @@ const RELOAD_FLAG = 'app:was_reload'
 
 export default function App() {
     const socket = useSocket()
-    useFriendSocketEvents(socket)
+    // F-19(AC-06): 초대 수락 후 대기방 이동의 소유자는 이 훅 **하나뿐**이다. App은
+    // RouterProvider 밖이라 useNavigate를 쓸 수 없으므로 router.navigate를 주입한다 —
+    // 초대 UI·store는 결과를 이 경계로 넘길 뿐 스스로 이동하지 않는다.
+    useFriendSocketEvents(socket, { navigate: (path) => router.navigate(path) })
 
     // F-17(AC-01/AC-05/AC-07): 알림은 계정 전역 사건이라 앱 수명에 붙인다 — 특정 화면에
     // 묶으면 그 화면을 떠난 동안의 전달을 통째로 놓치고, 재진입할 때마다 초기 복원과 준비

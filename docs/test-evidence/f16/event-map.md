@@ -15,6 +15,7 @@
 | `friend-request-received` | `backend/controller/friend.controller.js::sendFriendRequest` | `friend-request:<requestId>:received` | `emitToUser(receiverId, …)` | `useFriendSocketEvents.js` |
 | `friend-request-accepted` | `…::acceptRequest` | `friend-request:<requestId>:accepted` | `emitToUser(requesterId, …)` | 같음 |
 | `friend-request-declined` | `…::declineRequest` | `friend-request:<requestId>:declined` | `emitToUser(requesterId, …)` | 같음 |
+| `game-invite` | `backend/service/gameInvite.service.js::createInvite`의 커밋 후 `emitInviteReceived` (F-19에서 추가) | `game-invite:<inviteId>:received` | `emitToUser(receiverId, 'game_invite_received', …)` | `useFriendSocketEvents.js::playGameInviteSfx` (커서 경계는 `gameInvite.store.js::consumeInviteSound`) |
 | `achievement-granted` | `backend/services/achievementService.js::notifyAchievementGranted` (각 commit 직후) | `achievement:<definitionId>:granted` | `emitToUser(userId, …)` | `useSfxRuntime.js`의 `achievement_granted` 구독 |
 | `room-ready-changed` | `backend/socket/matchmaking.js::handleSetReady` (실제 변경에만, revision 증분) | `room:<roomId>:ready:<uuid>:<revision>` | 방송(요청자 제외) + 요청자 ACK | `useMatchingRoom.js` `handlePlayerReadyChanged` / `setReady` 성공 ACK |
 | `game-started` | `backend/socket/matchmaking.js::handleStartGame`의 참가자별 `game_started` | `game:<gameId>:started` | 참가자 각자 | `useMatchingRoom.js` `handleGameStarted` |
@@ -40,7 +41,7 @@
 | 항목 | 담당 | 상태 |
 | --- | --- | --- |
 | 신규 시스템 알림 연결 | F-17 (SFX-DEFER-17=BB) | **미완료** — 실 DB 시험과 실제 외부 Chrome은 수행됐으나(아래 F-17 절), 브라우저에서 재현된 시각 결함의 보수분 재확인과 실제 청음이 남았다 |
-| 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | 미완료 |
+| 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | **미완료** — 연결·자동 시험은 아래 F-19 절에 기록했으나 격리 DB 공식 실행과 실제 외부 Chrome, 실제 청음이 남았다 |
 | 전체 개인 능력 영상 동기 · 승인 MOV 5개 내장음 실제 연결 | F-27 (SFX-DEFER-27=BL) | 미완료 |
 | 통합 인수 | F-28 (SFX-INTEGRATION-28=BN) | 미완료 |
 
@@ -230,3 +231,78 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 - 봉투에는 투표 대상·투표 내용·역할을 담지 않는다(AC-05).
 
 2026-09-13 operator update: corrected candidate ea9fbd2e actual external Chrome long-list/text3/text5/focus/Close recheck completed; see f17/browser-2026-09-13.md final section. Earlier corrected-layout pending statement is superseded for tested cases. SFX-DEFER-17 acceptance still awaits fresh normal independent reviews; F28 integration and audible unreviewed assets are not claimed complete.
+
+## F-19(SFX-DEFER-19) 이관 증거 — 실제 게임 초대
+
+**상태: 미완료.** 아래 연결은 worker의 자동 시험으로만 확인했다. 격리 MySQL 공식 실행과
+실제 외부 Chrome 다중 계정 확인은 **아직 수행되지 않았다**(이 세션에서 운영자 래퍼 실행
+승인이 나지 않았다 — 아래 "검증 기록" 참고). **실제 청음도 아니다** — 배포 manifest의
+`game-invite`는 여전히 미검토라 매체를 만들지 않는다. 아래 "재생 1회"는 전부 시험 전용
+fixture + 주입 매체 기록이고, 이것을 청음 증거로 기록하지 않는다.
+
+| 항목 | 값 |
+| --- | --- |
+| kind | `game-invite` (scope=account, notificationKey=`friend-invite`) |
+| 생산자 | `backend/service/gameInvite.service.js::createInvite` — 커밋 **이후** `emitInviteReceived` |
+| 생산 권한 근거 | 전부 서버가 확인한다: 발송자의 현재 방 소속·방 인스턴스(matchmaking이 주입한 registry), 친구 관계, 양방향 차단 없음, 수신자 활성·수신 가능. 클라이언트가 보낸 방 코드·발송자·수신자는 권한 근거가 아니다(A-05) |
+| 멱등 키 | `UNIQUE(sender_id, creation_key)` — 같은 키 재시도는 기존 행을 돌려주고 `created=false`라 **어떤 사건도 재발행하지 않는다**. 같은 키에 다른 대상·방이면 409 충돌 |
+| 안정 사건 ID | `game-invite:<inviteId>:received` — 알림 `source_key`와 **같은 문자열** (`notification.service.js::gameInviteSourceKey`) |
+| 수신자 | `emitToUser(receiverId, 'game_invite_received', { invite, sfxEvent })` |
+| 프런트 수신 | `frontend/src/domains/lobby/hooks/useFriendSocketEvents.js` — 앱 전역 한 곳 |
+| 소리 판정 소유자 | `gameInvite.store.js::consumeInviteSound` **한 경계뿐** |
+| 최종 소비처 | `FriendListPanel.jsx` → `friendList/invite/GameInviteTab.jsx` (로비·대기방 **같은** 패널) |
+| 알림 경로 | 같은 트랜잭션의 `notifications` 행 → `/lobby?gameInviteId=<id>` → `useLobbyNotificationPanels` → `FriendListPanel targetInviteId` → 해당 행 강조. **자동 수락하지 않는다** |
+| 자산/무음 사유 | `sfxManifest.js`의 `pendingAsset` — `asset-unreviewed`, "자산 파일과 이용 조건 검토가 아직 제공되지 않았다" |
+| 담당 상태 | **미완료** — 격리 DB 공식 실행 미수행, 외부 Chrome 미수행, 실제 청음 없음 |
+
+### 소리 소유권(한 사건에 한 번)
+
+- 초대 알림의 `notification_created`에는 **sfxEvent를 싣지 않는다**(`emitNotificationCreated`는
+  시스템 알림에만 봉투를 붙인다). 그래서 `notification_created` → `game_invite_received`든
+  그 반대 순서든 신규 후보는 **한 번**이다.
+- 초대는 `useNotificationsStore.consumeSoundEvent`를 **쓰지 않는다.** 친구·업적과 달리 초대는
+  "커서 이하 = 과거"라는 서버 순번 판정이 필요하고 그 커서는 초대 store만 알고 있다 — 두
+  경계가 각자 판정하면 같은 inviteId에 소리가 두 번 난다.
+- 커서는 **종료된 초대까지 포함한** 수신자 전체 최대 `creation_seq`다. PENDING만의 최댓값을
+  쓰면 이미 끝난 과거 초대가 "커서 이후"로 보여 새 사건으로 오인된다.
+- snapshot과 생성이 **같은 수신자 User 행 잠금**을 공유하므로(A-09) "커서 이하인데 나중에
+  커밋되는" 사건이 존재하지 않는다.
+- 후보로 인정하는 순간 표식을 **소모**한다 — 알림 off·mute여도 그렇다. 그래야 설정을 다시
+  켰을 때 과거 사건이 울리지 않는다.
+
+### 소리를 만들지 **않는** 경로 (F-19)
+
+`GET /friends/invites`(snapshot 복원) · 복원 전 버퍼 병합 · 재접속 재동기화(`beginResync`) ·
+`game_invite_updated`(거절·만료·차단 취소·방 소멸) · `POST …/decline` · 수락 ACK ·
+`get_game_invite_result` 재조회 · **방 코드 입장(`room_joined`)** · 만료된 초대 ·
+다른 계정·다른 수신자의 사건 · 복원 실패 구간(실패는 해소가 아니다).
+
+### 입장은 소리와 무관하다(AC-07)
+
+`playGameInviteSfx`는 던지지 않고 재생 완료를 기다리지 않는다. 재생이 throw하거나 영원히
+pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그대로 완료된다는 것을
+`friendInviteRuntime.test.js`가 실제 재생기와 실제 훅으로 확인한다.
+
+### 자동 시험
+
+| 파일 | 무엇을 |
+| --- | --- |
+| `frontend/src/domains/lobby/hooks/__tests__/friendInviteRuntime.test.js` (12건) | 실제 `useFriendSocketEvents`를 JSDOM에 마운트 + 실제 `createSfxPlayer` + 실제 invite store. 복원 보류·커서 경계·중복·역순 terminal·만료·계정 전환·off/mute 표식 소모·이동 단일 소유자·재생 실패/영구 대기·리스너 수명·`room_joined` 무관. 배포 manifest의 `game-invite` 미검토 무음과 **매체 생성 0**을 따로 확인 |
+| `backend/socket/__tests__/matchmaking.gameInvite.test.js` (21건) | 예약·두 Map·실제 채널·영수증·정원·`canStart`/`start_game`·cleanup·canonical 교체·boot epoch·방 인스턴스·상태표 1·3·4·5·6 |
+| `backend/tests/db/f19-friends-invites.integration.test.js` (20건) | **격리 MySQL 전용.** 0013 재실행 멱등·이력 1건, 거절→재신청→재거절 terminal 2행, 교차 PENDING 1건, 결과 조회 권한, 즐겨찾기 멱등·권한, 차단 양방향 거부·소유자 해제, 차단 무효화와 Friendship/즐겨찾기 보존, 초대 생성 멱등(행·알림·사건 각 1), 키 충돌, 커서, 만료 멱등, 거절 멱등, 수락 결정 ↔ 영수증 2단계, 차단 개입 INTERRUPTED, boot epoch, 방 소멸 |
+
+### 검증 기록 (누가 · 언제 · 무엇을)
+
+| 주체 / 시점 | 대상 | 결과 |
+| --- | --- | --- |
+| 구현자(worker), BD F-19 세션(2026-09-13) | `npm test --prefix frontend` | **1790 PASS · 0 fail · 0 skip** (기준선 1772) |
+| 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 1.22s`) |
+| 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1412 PASS · 0 fail · 181 skip** (기준선 1385 PASS · 161 skip) |
+| 구현자(worker), 같은 세션 | `node …/run-backend-tests.cjs test` (격리 MySQL) | **미수행** — 이 세션에서 명령 승인이 나지 않았다. `f19-friends-invites.integration.test.js` 20건은 그래서 **skip = 미검증**이다 |
+| 운영자 / VERIFY | 격리 DB 직렬 backend · 다중 계정 외부 Chrome | **남아 있음** |
+
+- worker의 `npm test --prefix backend` skip 181건은 `F01_TEST_DATABASE_URL`이 없어서다
+  (기존 161 + F-19 신규 20). **skip은 통과가 아니라 미검증이다.**
+- 실제 외부 Chrome(A 대기방 생성 → 친구 B 초대 수신 → 수락/거절 → 실제 참가자 일치, 중복·
+  새로고침·연결 끊김·off/mute·차단·만료·가득 참·방 삭제/시작)은 **아직 수행하지 않았다.**
+  모의 재생을 청음으로 기록하지 않는다.

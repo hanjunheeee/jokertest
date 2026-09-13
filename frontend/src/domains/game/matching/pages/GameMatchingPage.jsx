@@ -4,13 +4,22 @@
  *
  * 배경·중앙 방 패널·파티 인원·공통 조작 버튼만 조합합니다.
  * 방 상태 계산과 소켓 액션 연결은 useMatchingPage가 담당합니다.
+ *
+ * F-19(AC-01/AC-06): 로비의 **같은** FriendListPanel과 같은 토글 버튼을 여기서도 씁니다 —
+ * 새 친구창을 만들지 않습니다. 두 화면이 같은 공용 store(friend.store·gameInvite.store)를
+ * 구독하므로 같은 계정의 친구·요청·초대 상태를 그대로 봅니다. 대기방에서만 친구 행에
+ * 초대 버튼이 붙고, 방 검증(isRoomVerified) 전에는 조회는 되지만 발송은 비활성입니다.
  */
+import { useState } from "react"
 import MatchingBackground from "../components/MatchingBackground.jsx"
 import MatchingPartyHeader from "../components/MatchingPartyHeader.jsx"
 import MatchingPageControls from "../components/MatchingPageControls.jsx"
 import MatchingRoomPanelArea from "../components/MatchingRoomPanelArea.jsx"
 import { useMatchingPage } from "../hooks/useMatchingPage.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
+import FriendListPanel from "@/domains/lobby/components/friendList/FriendListPanel.jsx"
+import FriendListToggleButton from "@/domains/lobby/components/friendList/FriendListToggleButton.jsx"
+import { LOBBY_RIGHT_CONTROLS_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
 
 export default function GameMatchingPage() {
   const {
@@ -19,6 +28,7 @@ export default function GameMatchingPage() {
     openRoomCode,
     closeRoomCode,
     slots,
+    roomId,
     roomCode,
     partyCount,
     isHost,
@@ -32,6 +42,10 @@ export default function GameMatchingPage() {
     deleteRoom,
     handleBack,
   } = useMatchingPage()
+
+  // 로비와 같은 방식으로 패널 열림 상태만 화면이 소유합니다 — 친구 데이터·핸들러는
+  // FriendListPanel이 open 여부를 받아 직접 구독합니다.
+  const [friendListOpen, setFriendListOpen] = useState(false)
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -60,6 +74,20 @@ export default function GameMatchingPage() {
         transition={UI_REVEAL_TRANSITION}
       />
       <MatchingPageControls visible={uiVisible} onBack={handleBack} />
+
+      <div className={LOBBY_RIGHT_CONTROLS_CLASS}>
+        <FriendListToggleButton
+          open={friendListOpen}
+          onOpen={() => setFriendListOpen((open) => !open)}
+        />
+      </div>
+
+      <FriendListPanel
+        open={friendListOpen}
+        onClose={() => setFriendListOpen(false)}
+        roomId={roomId}
+        isRoomVerified={isRoomVerified}
+      />
     </div>
   )
 }

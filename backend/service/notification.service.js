@@ -31,6 +31,9 @@ let deps = buildDeps();
 /** 알림 종류. 프론트 표시 설정(A-03) 매핑의 유일한 출처다. */
 const NOTIFICATION_TYPES = Object.freeze({
     FRIEND_REQUEST: 'friend-request',
+    // F-19(AC-07): 게임 초대 수신. notifications.type은 STRING(40)이라 enum 확장
+    // 마이그레이션이 필요 없다(0012의 실제 컬럼 정의 참고) — 값 하나만 늘리면 된다.
+    GAME_INVITE: 'game-invite',
     ACHIEVEMENT: 'achievement',
     SYSTEM: 'system',
 });
@@ -55,6 +58,14 @@ const friendRequestSourceKey = (requestId) => `friend-request:${requestId}:recei
 
 /** 업적 정의 id로 만드는 안정 source_key. 한 계정이 한 업적을 평생 한 번만 지급받는다. */
 const achievementSourceKey = (achievementId) => `achievement:${achievementId}:granted`;
+
+/**
+ * 게임 초대 행 id로 만드는 안정 source_key(F-19 AC-07).
+ *
+ * 같은 생성 키로 재시도한 초대는 **같은 초대 행**을 돌려주므로 이 키도 같다 — 두 행·두
+ * 신규 사건이 생기지 않는다(A-05). 초대 id는 서버가 만든 UUID다.
+ */
+const gameInviteSourceKey = (inviteId) => `game-invite:${inviteId}:received`;
 
 /** 소켓·응답으로 나가는 형태. 내부 컬럼을 그대로 흘리지 않고 필요한 것만 고른다. */
 const toPublicNotification = (row) => {
@@ -206,6 +217,36 @@ const createFriendRequestNotification = async ({ receiverId, requestId, requeste
 };
 
 /**
+ * 게임 초대 알림을 **초대 생성 트랜잭션 안에서** 저장한다(F-19 AC-07 · A-02).
+ *
+ * 친구 요청과 같은 구조다: 대상·제목·본문은 전부 서버가 만들고, 닉네임만 원본 계정 행에서
+ * 읽어 끼운다. 클라이언트가 보낸 값은 어디에도 들어가지 않는다.
+ *
+ * target은 {kind:'game-invite', inviteId}다 — 이 값으로 초대를 새로 만들거나 자동 수락하지
+ * 않는다. 로비가 실제 초대 목록에서 같은 id를 찾아 강조할 뿐이다.
+ */
+const createGameInviteNotification = async ({ receiverId, inviteId, senderNickname }, options = {}) => {
+    // 초대 행 id를 확정하지 못했으면 알림을 지어내지 않는다 — 안정 키가 없는 알림은
+    // 재시도마다 새 행이 된다(친구 요청과 같은 이유).
+    if (typeof inviteId !== 'string' || inviteId.length === 0) {
+        return { created: false, notification: null };
+    }
+
+    const who = typeof senderNickname === 'string' && senderNickname.trim().length > 0
+        ? senderNickname.trim()
+        : '알 수 없는 사용자';
+
+    return createNotification({
+        userId: receiverId,
+        type: NOTIFICATION_TYPES.GAME_INVITE,
+        sourceKey: gameInviteSourceKey(inviteId),
+        title: '게임 초대',
+        body: `${who.slice(0, 40)} 님이 대기방으로 초대했습니다.`,
+        target: { kind: 'game-invite', inviteId },
+    }, options);
+};
+
+/**
  * 업적 지급 알림을 grantAchievement의 지급 트랜잭션 안에서 저장한다(A-02).
  * options.db로 호출부의 db 핸들을 받는다(생략하면 이 모듈의 기본 models).
  */
@@ -321,10 +362,12 @@ module.exports = {
     NOTIFICATION_TYPES,
     SYSTEM_WELCOME,
     friendRequestSourceKey,
+    gameInviteSourceKey,
     achievementSourceKey,
     toPublicNotification,
     createNotification,
     createFriendRequestNotification,
+    createGameInviteNotification,
     createAchievementNotification,
     emitNotificationCreated,
     ensureSystemWelcome,

@@ -15,6 +15,9 @@ export const NOTIFICATION_FRIEND_REQUEST_PARAM = "notificationRequestId"
 /** 업적 알림이 여는 곳: 기억의 서고에서 그 업적이 있는 페이지. */
 export const NOTIFICATION_ACHIEVEMENT_PARAM = "achievementId"
 
+/** F-19: 게임 초대 알림이 여는 곳 — 로비의 친구 패널 "게임 초대" 탭에서 그 초대 행. */
+export const NOTIFICATION_GAME_INVITE_PARAM = "gameInviteId"
+
 /**
  * @param {{kind?: string, requestId?: number, achievementId?: string}|null} target
  * @returns {string|null} 앱 내부 경로. 해석할 수 없으면 null.
@@ -27,6 +30,14 @@ export function buildNotificationTargetPath(target) {
     // 로비는 실제 incomingRequests에서 같은 request_id를 찾아 표시할 뿐이다.
     if (!Number.isInteger(target.requestId)) return null
     return `/lobby?${NOTIFICATION_FRIEND_REQUEST_PARAM}=${encodeURIComponent(String(target.requestId))}`
+  }
+
+  if (target.kind === "game-invite") {
+    // 서버가 만든 초대 id만 싣는다. 이 값으로 초대를 새로 만들거나 **자동 수락하지 않는다** —
+    // 로비는 실제 초대 목록에서 같은 id를 찾아 그 행을 가리킬 뿐이고, 종료·없는 초대면
+    // 그 사실을 표시한다.
+    if (typeof target.inviteId !== "string" || target.inviteId.length === 0) return null
+    return `/lobby?${NOTIFICATION_GAME_INVITE_PARAM}=${encodeURIComponent(target.inviteId)}`
   }
 
   if (target.kind === "achievement") {
@@ -43,6 +54,7 @@ export function buildNotificationTargetPath(target) {
 /** 이동 버튼 문구 — 대상 종류마다 무엇이 열리는지 분명히 한다. */
 export function notificationTargetLabel(target) {
   if (target?.kind === "friend-request") return "요청 보러 가기"
+  if (target?.kind === "game-invite") return "초대 보러 가기"
   if (target?.kind === "achievement") return "기억의 서고에서 보기"
   if (target?.kind === "settings") return "환경설정 열기"
   return null

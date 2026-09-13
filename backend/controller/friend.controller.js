@@ -1,4 +1,5 @@
 const friendService = require("../service/friend.service");
+const gameInviteService = require("../service/gameInvite.service");
 const { createError } = require("../utils/appError");
 const { emitToUser } = require("../socket/socket");
 
@@ -88,6 +89,21 @@ exports.sendFriendRequest = async (req, res, next) => {
     }
 };
 
+/**
+ * F-19 AC-02: 커밋된 DB 결과를 소켓 전달 실패가 뒤집지 못하게 격리한다.
+ *
+ * 예전 수락·거절 컨트롤러는 emitToUser를 try 밖에서 그냥 불렀다 — emit이 던지면 이미
+ * 커밋된 수락이 500 응답이 되어, 화면은 실패로 안내하는데 서버에는 친구가 생긴 상태가
+ * 남았다. 전달 실패는 로그로만 남긴다(놓친 전달은 목록 재조회가 무음으로 복원한다).
+ */
+function emitFriendEventSafely(userId, event, payload, code) {
+    try {
+        emitToUser(userId, event, payload);
+    } catch (emitError) {
+        console.error('[친구 사건 통지 실패]', { code, userId });
+    }
+}
+
 exports.acceptRequest = async (req, res, next) => {
     try {
         const requestId = parseInt(req.params.id, 10);
@@ -99,9 +115,13 @@ exports.acceptRequest = async (req, res, next) => {
         // 같은 수락을 다시 전달해도 같은 ID가 나온다(중복 재생 방지의 근거).
         const { requesterId } = await friendService.acceptRequest(req.user.uuid, requestId);
         const sfxEvent = buildFriendSfxEvent('friend-request-accepted', 'accepted', requesterId, requestId);
-        emitToUser(requesterId, 'friend_request_accepted', { byUuid: req.user.uuid, ...(sfxEvent ? { sfxEvent } : {}) });
+        emitFriendEventSafely(
+            requesterId, 'friend_request_accepted',
+            { byUuid: req.user.uuid, ...(sfxEvent ? { sfxEvent } : {}) },
+            'FRIEND_REQUEST_ACCEPT_NOTIFY_ERROR',
+        );
 
-        res.status(200).json({ success: true, message: '친구 요청을 수락했습니다.' });
+        res.status(200).json({ success: true, message: '친구 요청을 수락했습니다.', data: { request_id: requestId, status: 'ACCEPTED' } });
     } catch (error) {
         next(error);
     }
@@ -116,9 +136,140 @@ exports.declineRequest = async (req, res, next) => {
 
         const { requesterId } = await friendService.declineRequest(req.user.uuid, requestId);
         const sfxEvent = buildFriendSfxEvent('friend-request-declined', 'declined', requesterId, requestId);
-        emitToUser(requesterId, 'friend_request_declined', { byUuid: req.user.uuid, ...(sfxEvent ? { sfxEvent } : {}) });
+        emitFriendEventSafely(
+            requesterId, 'friend_request_declined',
+            { byUuid: req.user.uuid, ...(sfxEvent ? { sfxEvent } : {}) },
+            'FRIEND_REQUEST_DECLINE_NOTIFY_ERROR',
+        );
 
-        res.status(200).json({ success: true, message: '친구 요청을 거절했습니다.' });
+        res.status(200).json({ success: true, message: '친구 요청을 거절했습니다.', data: { request_id: requestId, status: 'DECLINED' } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * F-19 AC-02: 전체 수락의 응답이 유실됐을 때 화면이 되물을 수 있는 결과 조회.
+ * 요청 당사자만 자기 요청의 상태를 본다 — 남의 id를 섞어 보내도 그 행은 결과에 없다.
+ */
+exports.getRequestResults = async (req, res, next) => {
+    try {
+        const raw = typeof req.query.ids === 'string' ? req.query.ids : '';
+        const requestIds = raw.split(',').map((value) => value.trim()).filter(Boolean);
+        const results = await friendService.getRequestResults(req.user.uuid, requestIds);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).json({ success: true, data: results });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ── F-19 AC-03: 즐겨찾기 ─────────────────────────────────────────────────────
+
+exports.getFavorites = async (req, res, next) => {
+    try {
+        const ids = await friendService.getFavoriteFriendIds(req.user.uuid);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).json({ success: true, data: ids });
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.setFavorite = async (req, res, next) => {
+    try {
+        // 원하는 값을 그대로 받는다(toggle 아님). boolean이 아니면 400 — 서버가 임의로
+        // 뒤집지 않는다.
+        const { favorite } = req.body ?? {};
+        const result = await friendService.setFriendFavorite(req.user.uuid, req.params.friendId, favorite);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ── F-19 AC-04/AC-05: 차단 ───────────────────────────────────────────────────
+
+exports.getBlocks = async (req, res, next) => {
+    try {
+        const blocks = await friendService.getBlockedUsers(req.user.uuid);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).json({ success: true, data: blocks });
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.blockUser = async (req, res, next) => {
+    try {
+        const { targetId } = req.body ?? {};
+        const result = await friendService.blockUser(req.user.uuid, targetId);
+
+        // 커밋 이후에만 통지한다. 양쪽 모두 자기 화면의 친구·요청·초대 목록을 다시 읽어야
+        // 하므로 "무효화됐다"는 사실만 보낸다(소리 없음 — 신규 수신 사건이 아니다).
+        for (const userId of [req.user.uuid, targetId]) {
+            emitFriendEventSafely(userId, 'friend_relation_invalidated', { reason: 'BLOCKED' }, 'FRIEND_BLOCK_NOTIFY_ERROR');
+        }
+
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.unblockUser = async (req, res, next) => {
+    try {
+        const result = await friendService.unblockUser(req.user.uuid, req.params.targetId);
+        emitFriendEventSafely(req.user.uuid, 'friend_relation_invalidated', { reason: 'UNBLOCKED' }, 'FRIEND_UNBLOCK_NOTIFY_ERROR');
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ── F-19 AC-06/AC-07: 게임 초대 ──────────────────────────────────────────────
+
+/**
+ * 초대 목록 snapshot과 소리 커서를 함께 돌려준다(A-09).
+ * 커서는 종료된 초대까지 포함한 수신자 전체 최대 순번이라, 이 값 이하의 사건은 전부 무음이다.
+ */
+exports.getInviteSnapshot = async (req, res, next) => {
+    try {
+        const snapshot = await gameInviteService.getReceiverSnapshot(req.user.uuid);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).json({ success: true, data: snapshot });
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.createInvite = async (req, res, next) => {
+    try {
+        const { receiverId, creationKey } = req.body ?? {};
+        // 발송자·방은 서버가 registry에서 확정한다. 요청 본문의 방 정보는 읽지 않는다(A-05).
+        const result = await gameInviteService.createInvite({
+            senderId: req.user.uuid, receiverId, creationKey,
+        });
+        res.status(result.created ? 201 : 200).json({ success: true, data: result.invite });
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.getInvite = async (req, res, next) => {
+    try {
+        const invite = await gameInviteService.getInviteForUser(req.user.uuid, req.params.inviteId);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).json({ success: true, data: invite });
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.declineInvite = async (req, res, next) => {
+    try {
+        const invite = await gameInviteService.declineInvite(req.user.uuid, req.params.inviteId);
+        res.status(200).json({ success: true, data: invite });
     } catch (error) {
         next(error);
     }

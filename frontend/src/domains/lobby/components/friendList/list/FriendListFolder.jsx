@@ -43,7 +43,9 @@ function FriendListFolderHeader({ label, open, onToggle }) {
 }
 
 // 펼쳐진 폴더 안에 친구 row들을 렌더링합니다.
-function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLASS }) {
+// F-19(AC-06): 초대 콜백은 폴더·즐겨찾기·검색 결과 **모든** 목록에 같은 방식으로 전달된다 —
+// 한 곳만 빠지면 그 화면에서는 친구를 초대할 방법이 없어진다.
+function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLASS, invite }) {
   return (
     <ul className={listClassName}>
       {friends.map((friend) => (
@@ -54,6 +56,9 @@ function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLAS
           online={friend.online}
           accountProfilePhotoId={friend.accountProfilePhotoId}
           accountProfileBorderId={friend.accountProfileBorderId}
+          onInvite={invite?.onInvite ?? null}
+          inviteDisabled={invite?.disabled ?? false}
+          inviteDisabledReason={invite?.disabledReason}
         />
       ))}
     </ul>
@@ -67,6 +72,7 @@ export default function FriendListFolder({
   defaultOpen = false,
   className = "",
   listClassName,
+  invite = null,
 }) {
   const [open, setOpen] = useState(defaultOpen)
 
@@ -77,7 +83,7 @@ export default function FriendListFolder({
   return (
     <FriendListFolderSection className={className}>
       <FriendListFolderHeader label={label} open={open} onToggle={toggleOpen} />
-      {open ? <FriendListFolderRows friends={friends} listClassName={listClassName} /> : null}
+      {open ? <FriendListFolderRows friends={friends} listClassName={listClassName} invite={invite} /> : null}
     </FriendListFolderSection>
   )
 }

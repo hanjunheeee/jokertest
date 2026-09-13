@@ -21,6 +21,7 @@ export default function LobbyFriendArea({
   onCloseNotifications,
   onNotificationNavigate,
   friendRequestTargetId,
+  gameInviteTargetId = null,
 }) {
   return (
     <>
@@ -34,6 +35,7 @@ export default function LobbyFriendArea({
         open={friendListOpen}
         onClose={onCloseFriendList}
         targetRequestId={friendRequestTargetId}
+        targetInviteId={gameInviteTargetId}
       />
 
       <NotificationModal

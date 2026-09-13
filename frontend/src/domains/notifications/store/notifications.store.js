@@ -55,6 +55,10 @@ async function callNotificationsApi(name, ...args) {
  */
 export const NOTIFICATION_SETTING_KEY_BY_TYPE = Object.freeze({
   "friend-request": "friend-invite",
+  // F-19(AC-07): 게임 초대도 "친구 초대" 설정을 따른다. 이 설정을 끄면 **표시·미확인 수·
+  // 소리**만 사라지고, 원본 초대와 수동 처리 탭(게임 초대 탭)은 그대로 남는다 — 설정으로
+  // 실제 초대를 잃지 않는다.
+  "game-invite": "friend-invite",
   achievement: "system-notification",
   system: "system-notification",
 })
@@ -87,6 +91,11 @@ export function isNotificationBackedSourceKey(sourceKey) {
   if (sourceKey.startsWith("system:")) return true
   if (/^friend-request:[^:]+:received$/.test(sourceKey)) return true
   if (/^achievement:[^:]+:granted$/.test(sourceKey)) return true
+  // F-19: 게임 초대 수신도 알림 행이 함께 저장되는 사건이다(gameInviteSourceKey).
+  // 다만 초대 소리의 중복 판정은 이 store가 아니라 초대 store의 커서 경계가 소유한다 —
+  // 두 경계가 각자 판정하면 같은 초대에 소리가 두 번 날 수 있기 때문이다. 이 함수는
+  // 알림 목록 복원 경계에만 쓰인다.
+  if (/^game-invite:[^:]+:received$/.test(sourceKey)) return true
   return false
 }
 
