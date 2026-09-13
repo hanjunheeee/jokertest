@@ -355,3 +355,37 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 - 모의 재생을 청음으로 기록하지 않는다. 배포 manifest의 `game-invite`는 여전히 미검토라
   실제 청음 자체가 불가능하다(무음 + 사유 유지가 계약). Chrome에서 본 배지·알림 수 변화는
   **소리 증거가 아니다** — 소리 1회·무음 복원·설정 off/on은 측정되지 않았다.
+
+
+## Operator current-production-candidate rerun
+
+# F19 review 2 repair — actual external Chrome
+
+2026-09-13 22:50–22:59 KST. Production candidate b28309067a48884bb41feda436be55711bd625ad. Operator personally drove external Chrome using the supported Chrome browser-client. No browser-store injection, fake participant insertion, mocked business response, or source alteration.
+
+## Environment and measured precondition
+
+- Existing implementation finished and official scope gate was idle before QA.
+- Protected actual MySQL F19 integration file: 31 PASS, 0 FAIL, 0 SKIP, 30012.0725ms. Complete output BD-db-suite-review2-console.log.
+- Actual BD API4183 and QA-only second-origin proxy4184, UI5183. Both real accounts use the SAME backend, DB, sockets and room state. Isolated DB is pluto_f01_20260909_al only.
+- API38744 and UI28724 were started for this run and stopped after checking their exact script command lines. DB test finished before API startup; no concurrent worker/full verification/DB QA.
+
+## Personally observed actual UI
+
+1. Normal login via email/password input for veteran (업적검증) on 127.0.0.1 and rookie (초보검증) on localhost. Both distinct account names shown simultaneously.
+2. Host searched the other account using the friend-add screen and sent a real friend request. Guest used **전부 수락**. Result **1건 수락**, incoming list empty; host friendship appeared. This covers the successful bulk path, not forced newer-fetch failure.
+3. Host created a default room through game mode → room list → settings → create. Actual party count was 1. Waiting-room friend control responded to real mouse clicks.
+4. Host sent a real game invite. Guest's already-open invite panel received exactly one actionable row with sender 업적검증 and badge 1. Guest clicked accept. Both actual pages settled at **파티 인원 2명**, host had delete and guest had leave. Screenshot personally inspected: two actual visible player portraits and count 2.
+5. Guest navigated to the same current game-matching URL to perform a full page reload. Actual settled room restored 2. Guest then left: public list showed host room 1/10 and host showed party1.
+6. Host sent a new intentional invite after completed acceptance/leave. Guest saw badge1, then blocked host through the existing-friend row. Pending badge disappeared and visible friend count became0.
+7. Guest unblocked host from the block list. Game invite list remained empty. Guest full reloaded, logged-in account restored normally, then reopened invites: **받은 게임 초대가 없습니다.** Host reopened friend panel and after the real refresh settled, friendship returned1/1.
+8. A new intentional send after unblock produced one new actionable row; old cancelled invite did not reappear. Guest clicked decline: no room navigation, no pending badge/accept button, terminal message **이미 거절한 초대입니다.**
+9. Host sent another new invite; guest saw badge1 and one actionable row. Host deleted the QA room through actual UI. Public room list emptied, guest pending badge/accept button disappeared, terminal message **더 이상 유효하지 않은 초대입니다.**
+
+## Limits and observed presentation detail
+
+- The terminal rows after decline/delete display **알 수 없는 사용자** instead of preserving the previously shown sender name. Actionability and terminal status were correct. Record for independent review; do not describe sender-name persistence as passed.
+- This run does not simulate delayed old PENDING delivery, competing HTTP failures, deferred ACK/replaced socket race, full-capacity/start race, cross-account lost response, or TTL expiry in actual Chrome. Their controlled regressions and independent review remain separate evidence.
+- Audible SFX once/off/restore remains unmeasured; production game-invite asset is intentionally unreviewed/muted. Badge changes and screen transitions are not audio evidence. No mute-policy exception introduced.
+- Current-candidate full serial 900sec backend/frontend/build and both independent verdicts remain required. Previous efb443d6 full1639 PASS cannot be claimed as this candidate's full PASS.
+
