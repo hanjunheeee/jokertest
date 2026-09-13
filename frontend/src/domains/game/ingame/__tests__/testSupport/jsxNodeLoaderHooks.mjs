@@ -35,7 +35,28 @@ function resolveExtensionlessRelativePath(specifier, parentURL) {
   return withResolvedJsExtension(path.join(path.dirname(parentPath), specifier))
 }
 
+// F-18: vite의 `?raw` import(예: library/content/forbiddenRecords/pages.js가 읽는 .md 원고)를
+// 지원한다. Node ESM 기본 리졸버는 "?raw"를 파일명의 일부로 보아 ENOENT로 죽고, 설령 풀리더라도
+// .md는 "Unknown file extension"이 된다 — vite와 같은 의미(파일 내용을 문자열 default export)로
+// 직접 해석한다. 이게 없으면 실제 라우터를 import하는 시험이 이 한 줄 때문에 페이지 전체를
+// 흉내 내야 하고, 그러면 "실제 production을 렌더한다"는 목적이 사라진다.
+const RAW_QUERY = "?raw"
+
+function resolveRawSpecifierPath(specifier, parentURL) {
+  const bare = specifier.slice(0, -RAW_QUERY.length)
+  if (bare.startsWith("@/")) return path.join(SRC_ROOT, bare.slice(2))
+  return path.join(path.dirname(fileURLToPath(parentURL)), bare)
+}
+
 export async function resolve(specifier, context, nextResolve) {
+  if (specifier.endsWith(RAW_QUERY) && (specifier.startsWith("@/") || specifier.startsWith("./") || specifier.startsWith("../"))) {
+    const absolutePath = resolveRawSpecifierPath(specifier, context.parentURL)
+    return {
+      url: `${pathToFileURL(absolutePath).href}${RAW_QUERY}`,
+      format: "module",
+      shortCircuit: true,
+    }
+  }
   if (specifier.startsWith("@/")) {
     return nextResolve(pathToFileURL(resolveAliasedPath(specifier)).href, context)
   }
@@ -46,6 +67,11 @@ export async function resolve(specifier, context, nextResolve) {
 }
 
 export async function load(url, context, nextLoad) {
+  if (url.endsWith(RAW_QUERY)) {
+    const filePath = fileURLToPath(url.slice(0, -RAW_QUERY.length))
+    const raw = await readFile(filePath, "utf8")
+    return { format: "module", source: `export default ${JSON.stringify(raw)}`, shortCircuit: true }
+  }
   if (url.endsWith(".jsx")) {
     const filePath = fileURLToPath(url)
     const source = await readFile(filePath, "utf8")

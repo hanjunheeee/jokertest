@@ -1,12 +1,64 @@
 import assert from "node:assert/strict"
-import test from "node:test"
+import test, { mock } from "node:test"
 import { readFile } from "node:fs/promises"
+import { register } from "node:module"
+import { JSDOM } from "jsdom"
+import React from "react"
 
-// InvitedGuestsSpread.jsx/InvitedGuestsMasteryRanking.jsx는 JSX 문법을 그대로 쓰는 .jsx라
-// 이 저장소의 node:test 실행(변환기 없음)으로는 마운트할 수 없다 —
-// InGameParchmentModalWiring.test.js와 같은 이유로, 그 두 파일은 소스 배선을 텍스트로
-// 확인한다. mergeInvitedGuestsSpreads.js/pages.js는 JSX가 없는 순수 .js라 실제로 실행해
-// 검증한다 — 더미 대체 제거(AC-06)와 랭킹 전체 목록 보존(AC-03/A-10)의 핵심 로직이 여기 있다.
+// mergeInvitedGuestsSpreads.js/pages.js는 JSX가 없는 순수 .js라 실제로 실행해 검증한다 —
+// 더미 대체 제거(AC-06)와 랭킹 전체 목록 보존(AC-03/A-10)의 핵심 로직이 여기 있다.
+//
+// F-18(AC-06): InvitedGuestsSpread.jsx/InvitedGuestsMasteryRanking.jsx는 예전에 "이 저장소의
+// node:test로는 .jsx를 마운트할 수 없다"는 이유로 소스 텍스트 배선 검사로 대체돼 있었다.
+// testSupport/jsxNodeLoaderHooks.mjs가 그 제약을 없앴으므로, 명예의 전당 진입을 끊은 뒤에도
+// 기억의 서고의 직업별 판수·승률·랭킹이 계속 동작하는지를 **실제 소비처를 jsdom에 마운트해**
+// 확인하는 검증을 이 파일 아래쪽에 보완한다. 기존 소스 배선 검사는 잃지 않도록 그대로 남긴다.
+const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
+  url: "http://localhost/",
+  pretendToBeVisual: true,
+})
+
+function installDomGlobal(name, value) {
+  Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
+}
+
+installDomGlobal("window", dom.window)
+installDomGlobal("document", dom.window.document)
+installDomGlobal("navigator", dom.window.navigator)
+installDomGlobal("localStorage", dom.window.localStorage)
+installDomGlobal("HTMLElement", dom.window.HTMLElement)
+installDomGlobal("Element", dom.window.Element)
+installDomGlobal("Node", dom.window.Node)
+installDomGlobal("Event", dom.window.Event)
+installDomGlobal("MutationObserver", dom.window.MutationObserver)
+installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(dom.window))
+installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
+installDomGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })
+installDomGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} })
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+register(new URL("../../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
+
+// 서버 조회(/user/me/role-statistics · /user/role-statistics/ranking · 업적)만 경계에서
+// 갈아끼운다 — store·merge·탭·표는 전부 실제 production 코드가 돈다.
+let myRoleStatisticsHandler = async () => []
+let roleRankingHandler = async () => ({ ranking: [] })
+let achievementsHandler = async () => []
+let requestedRoles = []
+
+mock.module("../../../api/roleStatistics.api.js", {
+  namedExports: {
+    getMyRoleStatisticsApi: (...args) => myRoleStatisticsHandler(...args),
+    getRoleRankingApi: (role, ...rest) => {
+      requestedRoles.push(role)
+      return roleRankingHandler(role, ...rest)
+    },
+  },
+})
+mock.module("../../../api/achievements.api.js", {
+  namedExports: { getMyAchievementsApi: (...args) => achievementsHandler(...args) },
+})
 
 const { mergeInvitedGuestsSpreads } = await import("../../../content/invitedGuests/mergeInvitedGuestsSpreads.js")
 const { getInvitedGuestsPage, INVITED_GUESTS_PAGES } = await import("../../../content/invitedGuests/pages.js")
@@ -124,6 +176,147 @@ test("InvitedGuestsMasteryRanking.jsx: 전달받은 ranking 전체 길이를 기
   assert.equal(source.includes("useState"), true, "현재 페이지 상태가 있어야 한다")
   assert.equal(source.includes("pageCount"), true)
   assert.equal(source.includes("ranking.length"), true, "잘리지 않은 전체 길이를 기준으로 페이지 수를 계산해야 한다")
+})
+
+// ── F-18 AC-06: 실제 서고 소비처를 마운트한 통합 검증 ──────────────────────────────
+// 명예의 전당(/podium) 진입을 끊어도 기억의 서고의 직업별 판수·승률·랭킹은 그대로
+// 동작해야 한다. 아래는 소스 텍스트가 아니라 실제 렌더 결과로 그것을 확인한다.
+
+const { render, act, cleanup, waitFor, fireEvent } = await import("@testing-library/react")
+const { default: InvitedGuestsSpread } = await import("../InvitedGuestsSpread.jsx")
+const { useRoleStatisticsStore } = await import("../../../store/roleStatistics.store.js")
+
+/** "나의 직업 전적" 표에서 label 행의 전체 텍스트를 돌려준다(예: "승률60%"). */
+function statRowText(container, label) {
+  const labelCell = [...container.querySelectorAll("td")].find((td) => td.textContent === label)
+  return labelCell ? labelCell.parentElement.textContent : null
+}
+
+async function mountSpread() {
+  let view
+  await act(async () => {
+    view = render(React.createElement(InvitedGuestsSpread, null))
+  })
+  return view
+}
+
+test.beforeEach(() => {
+  useRoleStatisticsStore.getState().reset()
+  requestedRoles = []
+  myRoleStatisticsHandler = async () => []
+  roleRankingHandler = async () => ({ ranking: [] })
+  achievementsHandler = async () => []
+})
+
+test.afterEach(() => cleanup())
+
+test("F-18 AC-06: 초대받은 자들에 들어가면 선택한 직업의 전적을 실제로 조회해 판수·승률을 표시한다", async () => {
+  let resolveStats
+  myRoleStatisticsHandler = () =>
+    new Promise((resolve) => {
+      resolveStats = () => resolve([{ role: "CITIZEN", games: 10, wins: 6, survivalCount: 4, winRate: 0.6 }])
+    })
+
+  const view = await mountSpread()
+
+  // 응답이 오기 전에는 다른 직업 값이나 더미가 아니라 로딩 문구가 보인다.
+  assert.ok(
+    view.container.textContent.includes("전적을 불러오는 중입니다"),
+    "조회 중에는 로딩 상태가 보여야 한다(더미로 채우지 않는다).",
+  )
+  assert.deepEqual(requestedRoles, ["CITIZEN"], "첫 직업(귀족)의 서버 코드로 랭킹을 조회해야 한다.")
+
+  await act(async () => {
+    resolveStats()
+  })
+
+  await waitFor(() => assert.equal(statRowText(view.container, "플레이 횟수"), "플레이 횟수10"))
+  assert.equal(statRowText(view.container, "승률"), "승률60%")
+  assert.equal(statRowText(view.container, "생존 횟수"), "생존 횟수4")
+})
+
+test("F-18 AC-06: 직업 탭을 바꾸면 그 직업의 판수·승률로 바뀐다(다른 직업 값이 남지 않는다)", async () => {
+  myRoleStatisticsHandler = async () => [
+    { role: "CITIZEN", games: 10, wins: 6, survivalCount: 4, winRate: 0.6 },
+    { role: "JOKER", games: 20, wins: 5, survivalCount: 1, winRate: 0.25 },
+  ]
+
+  const view = await mountSpread()
+  await waitFor(() => assert.equal(statRowText(view.container, "플레이 횟수"), "플레이 횟수10"))
+
+  await act(async () => {
+    fireEvent.click(view.getByRole("tab", { name: "광대" }))
+  })
+
+  await waitFor(() => assert.equal(statRowText(view.container, "플레이 횟수"), "플레이 횟수20"))
+  assert.equal(statRowText(view.container, "승률"), "승률25%")
+  assert.deepEqual(requestedRoles, ["CITIZEN", "JOKER"])
+})
+
+test("F-18 AC-06: 0판 계정과 빈 랭킹은 0 그대로와 안내 문구로 표시된다(다른 값으로 메우지 않는다)", async () => {
+  myRoleStatisticsHandler = async () => [{ role: "CITIZEN", games: 0, wins: 0, survivalCount: 0, winRate: 0 }]
+  roleRankingHandler = async () => ({ ranking: [] })
+
+  const view = await mountSpread()
+
+  await waitFor(() => assert.equal(statRowText(view.container, "플레이 횟수"), "플레이 횟수0"))
+  assert.equal(statRowText(view.container, "승률"), "승률0%")
+  assert.ok(view.container.textContent.includes("최소 10판 이상 플레이한 사용자가 아직 없습니다."))
+})
+
+test("F-18 AC-06: 조회가 실패하면 안내와 다시 시도가 나오고, 다시 시도하면 실제 표가 복구된다", async () => {
+  let attempt = 0
+  myRoleStatisticsHandler = async () => {
+    attempt += 1
+    if (attempt === 1) throw new Error("전적을 불러오지 못했습니다.")
+    return [{ role: "CITIZEN", games: 12, wins: 6, survivalCount: 3, winRate: 0.5 }]
+  }
+  roleRankingHandler = async () => ({
+    ranking: [{ rank: 1, uuid: "u1", nickname: "일등", games: 30, wins: 24, winRate: 0.8 }],
+  })
+
+  const view = await mountSpread()
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("전적을 불러오지 못했습니다.")))
+  const retryButtons = view.getAllByRole("button", { name: "다시 시도" })
+  assert.ok(retryButtons.length > 0, "실패했으면 사용자가 다시 시도할 수단이 있어야 한다.")
+
+  await act(async () => {
+    fireEvent.click(retryButtons[0])
+  })
+
+  await waitFor(() => assert.equal(statRowText(view.container, "플레이 횟수"), "플레이 횟수12"))
+  assert.equal(view.queryAllByRole("button", { name: "다시 시도" }).length, 0)
+  assert.ok(view.getByText("일등"), "랭킹 표도 함께 복구되어야 한다.")
+})
+
+test("F-18 AC-06: 5명을 넘는 랭킹은 잘리지 않고 다음 페이지에서 나머지 행을 볼 수 있다", async () => {
+  myRoleStatisticsHandler = async () => [{ role: "CITIZEN", games: 10, wins: 6, survivalCount: 4, winRate: 0.6 }]
+  roleRankingHandler = async () => ({
+    ranking: Array.from({ length: 7 }, (_, index) => ({
+      rank: index + 1,
+      uuid: `u${index}`,
+      nickname: `유저${index + 1}`,
+      games: 20 - index,
+      wins: 10,
+      winRate: 0.5,
+    })),
+  })
+
+  const view = await mountSpread()
+
+  await waitFor(() => assert.ok(view.queryByText("유저1")))
+  assert.equal(view.queryByText("유저6"), null, "한 페이지에는 5명까지만 보인다.")
+  assert.ok(view.container.textContent.includes("1 / 2"))
+
+  await act(async () => {
+    fireEvent.click(view.getByRole("button", { name: "다음 랭킹 페이지" }))
+  })
+
+  await waitFor(() => assert.ok(view.queryByText("유저6")))
+  assert.ok(view.queryByText("유저7"), "마지막 페이지에 나머지 행이 모두 있어야 한다.")
+  assert.equal(view.queryByText("유저1"), null)
+  assert.ok(view.container.textContent.includes("2 / 2"))
 })
 
 test('new accounts without a portrait use the granted gold-mask asset instead of crashing PublicAsset', () => {
