@@ -80,10 +80,74 @@ test("AC-03: setFavorite보다 먼저 시작한 조회가 늦게 끝나도 서�
   const result = await fetching
 
   assert.equal(result.ok, true)
-  assert.equal(result.superseded, true, "오래된 조회는 반영되지 않았음을 알려야 한다")
   assert.deepEqual(
     [...useFriendStore.getState().favoriteFriendIds], ["f-1"],
     "서버가 확정한 별이 과거 조회값으로 되돌아갔다 — 정확한 복원이 깨진다",
+  )
+})
+
+// ---------------------------------------------------------------------------
+// AC-03 · 한 명의 확정 저장이 나머지 친구들의 저장된 별을 버리지 않는다 (RESULT-3)
+//
+// 예전에는 setFavorite이 성공하면 즐겨찾기 **목록 전체**의 순번을 올렸다. 그래서 그보다
+// 먼저 시작한 최초 전체 조회가 통째로 버려졌고, 한 명의 별 하나를 지키느라 서버에 저장된
+// 다른 친구들의 별이 전부 사라졌다. 재접속 직후(패널 열림 → fetchFavorites)에 별을 누르면
+// 그대로 재현된다.
+// ---------------------------------------------------------------------------
+
+test("AC-03: 조회 중에 한 명을 확정 저장해도 나머지 친구의 서버 저장 별을 잃지 않는다", async () => {
+  signIn("account-a")
+  // 서버에는 f-2·f-3이 이미 저장돼 있다. 이 조회가 그것을 복원해야 한다.
+  const slowFetch = gate()
+  favoriteIdsResponder = async () => { await slowFetch.promise; return ["f-2", "f-3"] }
+
+  const fetching = useFriendStore.getState().fetchFavorites()
+
+  // 복원이 도는 동안 사용자가 **다른 친구** f-1의 별을 눌렀고 서버가 확정했다.
+  await useFriendStore.getState().setFavorite("f-1", true)
+
+  slowFetch.open()
+  const result = await fetching
+  assert.equal(result.ok, true)
+
+  assert.deepEqual(
+    [...useFriendStore.getState().favoriteFriendIds].sort(), ["f-1", "f-2", "f-3"],
+    "확정 저장 한 건 때문에 조회 전체를 버리면 다른 친구들의 저장된 별이 사라진다",
+  )
+})
+
+test("AC-03: 조회 중에 확정한 해제는 그 조회가 담고 있던 켜짐을 이기고, 다른 친구는 그대로다", async () => {
+  signIn("account-a")
+  // 조회가 시작된 시점의 서버 사실: f-1·f-2 둘 다 켜짐.
+  const slowFetch = gate()
+  favoriteIdsResponder = async () => { await slowFetch.promise; return ["f-1", "f-2"] }
+
+  const fetching = useFriendStore.getState().fetchFavorites()
+
+  // 그 뒤 사용자가 f-1을 껐고 서버가 false로 확정했다.
+  favoriteResponder = async (friendId) => ({ friendId, favorite: false })
+  await useFriendStore.getState().setFavorite("f-1", false)
+
+  slowFetch.open()
+  await fetching
+
+  assert.deepEqual(
+    [...useFriendStore.getState().favoriteFriendIds], ["f-2"],
+    "나중에 확정된 해제가 과거 조회값으로 되살아나면 별이 저절로 켜진다",
+  )
+})
+
+test("AC-03: 저장보다 **나중에 시작한** 조회는 그 저장을 다시 덮어쓸 수 있다(대조군)", async () => {
+  signIn("account-a")
+  await useFriendStore.getState().setFavorite("f-1", true)
+
+  // 다른 브라우저에서 f-1을 끄고 f-9를 켠 뒤, 이쪽이 새로 조회한다.
+  favoriteIdsResponder = async () => ["f-9"]
+  await useFriendStore.getState().fetchFavorites()
+
+  assert.deepEqual(
+    [...useFriendStore.getState().favoriteFriendIds], ["f-9"],
+    "확정 표식이 영구히 남으면 다른 기기의 변경을 영영 복원하지 못한다",
   )
 })
 
@@ -230,6 +294,82 @@ test("AC-02: 처리로 목록에서 뺀 요청은 그 전에 시작한 조회가
   assert.deepEqual(
     useFriendStore.getState().incomingRequests.map((r) => r.request_id), [2],
     "처리된 요청이 화면에 되살아나면 사용자가 같은 요청을 다시 누른다",
+  )
+})
+
+// ---------------------------------------------------------------------------
+// AC-02 · 한 행의 확정 처리는 "전체 조회가 성공했다"가 아니다 (RESULT-3)
+//
+// 예전 removeIncomingRequest는 bumpSeq('incoming')을 불러 **한 건의 제거**를 전체 목록의
+// 최신 성공으로 기록했다. 그래서 그와 겹쳐 실패한 재조회가 밀려나며 supersededResult로
+// 성공을 보고했고, 전체 수락 화면의 "받은 요청 목록을 새로 불러오지 못했습니다" 안내가
+// 통째로 사라졌다 — 사용자는 실패한 목록을 최신으로 믿게 된다.
+// ---------------------------------------------------------------------------
+
+test("AC-02: 확정 처리로 한 행을 내린 것이 겹쳐 실패한 전체 재조회를 성공으로 바꾸지 않는다", async () => {
+  signIn("account-a")
+  useFriendStore.setState({ incomingRequests: [{ request_id: 1 }, { request_id: 2 }] })
+
+  const slow = gate()
+  incomingResponder = async () => { await slow.promise; throw new Error("refresh down") }
+  const failing = useFriendStore.getState().fetchIncomingRequests()
+
+  // 재조회가 도는 사이 단건 수락이 1번을 확정 처리해 목록에서 내렸다.
+  useFriendStore.getState().removeIncomingRequest(1)
+
+  slow.open()
+  const result = await failing
+
+  assert.equal(result.ok, false, "실패한 재조회가 성공으로 보고되면 화면이 낡은 목록을 최신으로 안내한다")
+  assert.equal(result.reason, "error")
+  assert.equal(useFriendStore.getState().incomingError, "refresh down")
+  assert.deepEqual(
+    useFriendStore.getState().incomingRequests.map((r) => r.request_id), [2],
+    "조회 실패가 확정 처리된 행을 되살리면 안 된다",
+  )
+})
+
+test("AC-02: 제거보다 먼저 시작한 조회가 성공해도 그 행은 되살아나지 않고, 조회 성공은 그대로 보고된다", async () => {
+  signIn("account-a")
+  const slow = gate()
+  incomingResponder = async () => { await slow.promise; return [{ request_id: 1 }, { request_id: 2 }] }
+  const fetching = useFriendStore.getState().fetchIncomingRequests()
+
+  useFriendStore.getState().removeIncomingRequest(1)
+
+  slow.open()
+  const result = await fetching
+
+  assert.equal(result.ok, true, "조회 자체는 성공했다 — 한 행의 제거가 그 사실을 바꾸지 않는다")
+  assert.equal(result.superseded, undefined)
+  assert.deepEqual(
+    useFriendStore.getState().incomingRequests.map((r) => r.request_id), [2],
+    "확정 처리된 요청이 되살아나면 사용자가 같은 요청을 다시 누른다",
+  )
+  assert.deepEqual(
+    Object.keys(useFriendStore.getState().incomingRemovals), ["1"],
+    "이 조회는 제거보다 먼저 시작했으므로 표식이 아직 남아 있어야 한다",
+  )
+
+  // 제거 **뒤에** 시작한 조회가 반영되면 표식은 정리된다 — 무한히 쌓이지 않는다.
+  incomingResponder = async () => [{ request_id: 2 }]
+  await useFriendStore.getState().fetchIncomingRequests()
+  assert.deepEqual(useFriendStore.getState().incomingRemovals, {})
+})
+
+test("AC-02: 제거 **뒤에** 시작한 조회가 같은 행을 다시 주면 그대로 보여준다(대조군)", async () => {
+  signIn("account-a")
+  useFriendStore.setState({ incomingRequests: [{ request_id: 1 }] })
+  useFriendStore.getState().removeIncomingRequest(1)
+  assert.deepEqual(useFriendStore.getState().incomingRequests, [])
+
+  // 서버 처리가 실패했거나 상대가 다시 신청해 같은 행이 살아 있는 경우.
+  incomingResponder = async () => [{ request_id: 1 }]
+  await useFriendStore.getState().fetchIncomingRequests()
+
+  assert.deepEqual(
+    useFriendStore.getState().incomingRequests.map((r) => r.request_id), [1],
+    "제거 표식이 영구히 남으면 서버에 실재하는 요청을 영영 보지 못한다",
   )
 })
 

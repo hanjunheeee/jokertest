@@ -333,6 +333,9 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 | 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 2.23s`) |
 | 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1445 PASS · 0 fail · 195 skip** |
 | 구현자(worker), 같은 세션 | 변이 검사 5건(고친 줄을 되돌려 봄) | 보수 회귀 5건이 각각 **실패** — superseded 의미·snapshot 지식·snapshot 순번·수락 잠금 범위·늦은 가입 소유 대조를 실제로 잡는다 |
+| 구현자(worker), RESULT-3 보수 세션(2026-09-14) | `npm test --prefix frontend` | **1845 PASS · 0 fail · 0 skip**(직전 1824 → 보수 회귀 + 진단 시험 21건 추가) |
+| 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 2.43s`) |
+| 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1445 PASS · 0 fail · 196 skip** — skip 196에는 이번에 추가한 F-19 DB 회귀 1건이 포함되며 **미검증**이다 |
 | 운영자 / VERIFY | **이 보수 후보**의 격리 DB 직렬 backend · 위 Chrome 흐름 재확인 | **남아 있음** — 위 운영자 PASS·Chrome은 이 보수 **이전** 후보(`efb443d6`)의 것이라 이 후보의 근거가 아니다 |
 
 - worker의 `npm test --prefix backend` skip 195건은 `F01_TEST_DATABASE_URL`이 없어서다
@@ -388,4 +391,75 @@ pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그�
 - This run does not simulate delayed old PENDING delivery, competing HTTP failures, deferred ACK/replaced socket race, full-capacity/start race, cross-account lost response, or TTL expiry in actual Chrome. Their controlled regressions and independent review remain separate evidence.
 - Audible SFX once/off/restore remains unmeasured; production game-invite asset is intentionally unreviewed/muted. Badge changes and screen transitions are not audio evidence. No mute-policy exception introduced.
 - Current-candidate full serial 900sec backend/frontend/build and both independent verdicts remain required. Previous efb443d6 full1639 PASS cannot be claimed as this candidate's full PASS.
+
+
+## RESULT-3 보수 — AC-07 소리 증거를 실제로 셀 수 있게 하는 QA 진단
+
+배포 `game-invite` 자산은 여전히 **미검토**라 실제 청음이 불가능하다. 그래서 운영자가 귀로
+"신규 1회 / 복원 0회"를 셀 수 없었고, 화면에도 그 판정이 드러나지 않아 AC-07의 남은 증거를
+만들 방법 자체가 없었다. 이번에 **읽기 전용 관찰 화면**을 추가해 그 병목을 푼다.
+
+### 무엇인가 (그리고 무엇이 아닌가)
+
+| 항목 | 값 |
+| --- | --- |
+| 모듈 | `frontend/src/domains/lobby/diagnostics/inviteSfxDiagnostics.js` |
+| 화면 | `frontend/src/domains/lobby/components/friendList/diagnostics/InviteSfxDiagnosticsPanel.jsx` (친구 패널 안쪽, 모든 탭에서 보임) |
+| 켜지는 조건 | **개발 번들**(`import.meta.env.DEV`) **그리고** URL에 `?qaInviteSfx=1` — 둘 다여야 한다 |
+| 관찰 지점 | `useFriendSocketEvents.js::playGameInviteSfx` — 이미 내려진 판정을 옮겨 적을 뿐이다 |
+| 보여주는 것 | 수신 건수 · **적격 판정(dispatch 시도)** · **실제 청음(played)** · 무음 사유별 집계 · 최근 관찰 목록(초대 id·사유) |
+
+**하지 않는 것(계약):** 초대를 만들거나 사건을 합성하지 않는다 · store를 바꾸지 않는다(소리
+표식도 소모하지 않는다) · `Audio`를 대체하지 않는다 · 자산을 승인하지 않는다 · 인증을
+우회하지 않는다 · 토큰·비밀값을 담지 않는다 · 판정 게이트 순서를 증거를 위해 바꾸지 않는다.
+기록이 실패해도 수락·거절·입장으로 전파되지 않는다(전부 try로 감싸고, 꺼져 있으면 기록할
+값을 만들지도 않는다).
+
+**적격 판정과 실제 청음을 절대 합산하지 않는다.** `sfxPlayer` 계약상 `status: accepted`는
+"재생 시도를 시작했다"일 뿐이고 실제 결과는 `completion`(played|failed|timed-out|stopped)이
+말한다. 지금처럼 자산이 미검토면 dispatch가 매체를 만들기 전에 `asset-unreviewed`로 거부하므로
+**적격 1 · 청음 0 · 사유 `asset-unreviewed`** 가 정상이고, 이것을 1회 청음으로 적지 않는다.
+
+계정이 바뀌거나 로그아웃하면 관찰을 통째로 버린다. 현재 계정 밖의 관찰은 "다른 계정"이라는
+사실만 남기고 초대 id·사건 id를 담지 않는다. 보관 상한은 40건이다.
+
+### 운영자 Chrome 절차 (실제 두 계정)
+
+두 계정 모두 같은 백엔드·DB·소켓을 쓰고, 수신자 쪽 탭만 `?qaInviteSfx=1`을 붙여 연다
+(예: `http://127.0.0.1:5183/lobby?qaInviteSfx=1`). 친구 패널을 열면 아래쪽에
+**"QA 진단 · 읽기 전용"** 상자가 보인다. 개발 서버가 아니면 나타나지 않는다.
+
+1. **신규 수신 1회** — 발신 계정이 대기방에서 초대를 보낸다. 수신 탭에서 `수신 +1`,
+   `적격 판정 +1`, `실제 청음 0`, 사유 `asset-unreviewed +1`을 확인한다.
+   → 미검토 자산이므로 **소리는 나지 않는 것이 정상**이다. 들렸다고 적지 않는다.
+2. **복원 0회** — 수신 탭을 새로고침(또는 연결을 끊었다 잇는다). 목록에는 그 초대가 다시
+   보이지만 `적격 판정`은 **0**이어야 한다(새로고침으로 기록이 비워지므로 0에서 시작한다).
+   같은 초대를 다시 배달받아도 사유가 `already-consumed` 또는 `at-or-below-cursor`로 남고
+   적격 판정은 늘지 않는다.
+3. **off/mute** — 설정에서 해당 알림을 끄거나 음소거한 뒤 **새 초대**를 받는다. 적격 판정은
+   1회 그대로이고 사유는 자산 미검토가 먼저 기록된다(자산 제한이 설정보다 앞선다). 설정을
+   다시 켜도 **과거 초대가 다시 적격이 되지 않는다**.
+4. **계정 전환** — 다른 계정으로 로그인하면 진단 상자의 관찰이 즉시 비고 관찰 계정이 바뀐다.
+5. **업무 경로 불변** — 위 전 과정에서 수락·거절·입장이 평소와 똑같이 동작하는지 확인한다.
+   진단은 어떤 버튼도 막지 않는다.
+
+기록할 것: 각 단계의 `수신 / 적격 판정 / 실제 청음` 세 수와 사유 집계, 서버의 inviteId와의
+대응. **청음은 자산 검토가 제공되기 전까지 외부 자산 한계로 남는다** — 진단이 보여주는
+`실제 청음 0`은 그 한계의 증거이지 결함이 아니다.
+
+### 자동 시험
+
+| 파일 | 무엇을 |
+| --- | --- |
+| `frontend/src/domains/lobby/diagnostics/__tests__/inviteSfxDiagnostics.test.js` (9건, 신규) | production 번들 제외(표식이 있어도 꺼짐) · 표식 없으면 기록 값 생성 자체가 0 · 개발+표식일 때만 켜짐 · 계정 전환/로그아웃 시 관찰 폐기 · 범위 밖 관찰의 식별자 제거 · 적격≠청음 · 사유 집계 보존 · 기록/구독자 예외가 호출자로 전파되지 않음 · 상한과 스냅샷 참조 안정성 |
+| `frontend/src/domains/lobby/hooks/__tests__/friendInviteRuntime.test.js` (신규 2건) | **배포 manifest 그대로** 실제 훅·store·재생기를 태워 `적격 1 · 청음 0 · asset-unreviewed 1`을 확인, 중복 전달은 `already-consumed`로 적격 0, 커서 이하는 `at-or-below-cursor`, 진단을 켠 채로 거절 ACK가 정상 완료. 진단이 꺼져 있으면 관찰 0이고 초대 처리는 동일 |
+
+### 같은 라운드의 경합 보수 (RESULT-3 1~4)
+
+| # | 대상 | 고친 것 | 회귀 |
+| --- | --- | --- | --- |
+| 1 | `backend/service/gameInvite.service.js::recordEntryInterrupted` | 읽고-확인-쓰기를 **조건부 UPDATE 한 문장**으로 합쳤다(`id`+`attempt_id`+`entry_outcome='UNCONFIRMED'`). 확정 커밋과 겹쳐도 PUBLISHED를 덮지 않고, 교체된 attempt도 건드리지 않는다 | `f19-friends-invites.integration.test.js` — 열린 트랜잭션으로 경합 창을 만들어 재현 + 정상 보상·멱등·attempt 교체 대조군 |
+| 2 | `friend.store.js::setFavorite` / `fetchFavorites` | 한 명의 확정 저장이 즐겨찾기 **목록 전체**의 순번을 올리던 것을 멈추고, 조회 결과와 한 명 단위 확정을 화해시킨다 — 다른 친구들의 저장된 별을 잃지 않는다 | `friendStoreOrdering.test.js` 신규 3건(두 친구 + 지연 최초 조회, 해제 확정, 나중 조회 대조군) |
+| 3 | `friend.store.js::removeIncomingRequest` | 한 행의 제거를 "전체 조회 성공"으로 기록하던 `bumpSeq`를 제거 표식으로 바꿨다 — 겹쳐 실패한 재조회가 성공으로 보고되지 않는다 | `friendStoreOrdering.test.js` 신규 3건(실패 재조회 안내 유지 / 성공 재조회 보고 유지 / 제거 뒤 조회 대조군) |
+| 4 | `gameInvite.store.js::loadSnapshot` | 순서 기준을 요청 **시작 순서**에서 서버가 확정한 **커서**로 바꿨다. 뒤처진 응답은 커서·지식을 되돌리지 않으면서 복원 보류는 해소하고, catch 경로도 더 새로운 성공을 오류로 덮지 않는다 | `friendInviteRuntime.test.js` 신규 3건(역전된 서버 읽기 순서 / 뒤처진 응답 후 신규 1회 / 오래된 실패가 최신 성공을 덮지 않음) |
 

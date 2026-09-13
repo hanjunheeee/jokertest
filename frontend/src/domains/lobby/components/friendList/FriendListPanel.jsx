@@ -23,6 +23,7 @@ import FriendListTabContent from "@/domains/lobby/components/friendList/list/Fri
 import FriendListViewTabs from "@/domains/lobby/components/friendList/FriendListViewTabs.jsx"
 import FriendRequestTab from "@/domains/lobby/components/friendList/request/FriendRequestTab.jsx"
 import GameInviteTab from "@/domains/lobby/components/friendList/invite/GameInviteTab.jsx"
+import InviteSfxDiagnosticsPanel from "@/domains/lobby/components/friendList/diagnostics/InviteSfxDiagnosticsPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 친구 패널 바깥을 덮는 배경 버튼입니다. 클릭하면 패널을 닫습니다.
@@ -169,6 +170,13 @@ function FriendListPanelContent({
           onRefresh={onRefreshBlocks}
         />
       ) : null}
+
+      {/*
+        F-19 AC-07 · QA 전용 읽기 전용 진단. 개발 번들 + `?qaInviteSfx=1`일 때만 자기 자신을
+        그리고, 그 외에는 null이라 일반 사용자 화면에 아무 영향이 없다. 업무 콜백을 감싸거나
+        막지 않는다 — 이미 내려진 판정을 옮겨 적기만 한다.
+      */}
+      <InviteSfxDiagnosticsPanel />
     </>
   )
 }

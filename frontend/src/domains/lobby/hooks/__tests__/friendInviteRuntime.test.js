@@ -105,6 +105,13 @@ const {
   SFX_SUPPRESSED_REASON,
   checkSfxAssetAllowed,
 } = await import("../../../../shared/audio/sfxManifest.js")
+const {
+  INVITE_SFX_QA_FLAG,
+  __setInviteSfxDiagnosticsEnvForTests,
+  getInviteSfxObservations,
+  resetInviteSfxDiagnostics,
+  summarizeInviteSfxObservations,
+} = await import("../../diagnostics/inviteSfxDiagnostics.js")
 
 const ACCOUNT_A = "11111111-1111-4111-8111-111111111111"
 const ACCOUNT_B = "22222222-2222-4222-8222-222222222222"
@@ -349,6 +356,8 @@ function resetAll() {
   useFriendStore.getState().__resetForTests()
   useAuthStore.setState({ isLoggedIn: false, user: null })
   useMatchingStore.setState({ roomId: null })
+  __setInviteSfxDiagnosticsEnvForTests(null)
+  resetInviteSfxDiagnostics()
 }
 
 test.beforeEach(resetAll)
@@ -1342,6 +1351,228 @@ test("AC-05: 늦게 도착한 **오래된** snapshot이 커서와 처리 가능 
     await flush()
   })
   assert.deepEqual(pendingIds(), [])
+  await mounted.unmount()
+})
+
+// ---------------------------------------------------------------------------
+// AC-07 · QA 진단은 실제 런타임을 **관찰만** 한다
+//
+// 배포 자산이 미검토라 실제 청음이 불가능하므로, 운영자가 브라우저에서 "신규 1회 판정 ·
+// 복원 0회 · 억제 사유"를 확인할 수 있어야 한다. 아래는 그 기록이 실제 경로(훅 → store →
+// F-16 재생기)가 내린 판정 그대로이고, 진단을 켜도 업무 경로가 그대로 끝나는지를 본다.
+// ---------------------------------------------------------------------------
+
+test("AC-07: QA 진단은 미검토 자산의 '적격 1 · 청음 0 · asset-unreviewed'를 그대로 적는다", async () => {
+  signIn(ACCOUNT_A)
+  // **배포 manifest 그대로** 쓴다 — fixture가 아니라 실제 미검토 자산 경로를 관찰한다.
+  const runtime = installPlayer({
+    manifest: SFX_MANIFEST,
+    settings: { notifications: { "friend-invite": true } },
+  })
+  __setInviteSfxDiagnosticsEnvForTests(() => ({ dev: true, search: `?${INVITE_SFX_QA_FLAG}=1` }))
+
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [], cursor: "5" })
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  const fresh = invite({ inviteId: "diag-1", creationSeq: "9" })
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(fresh))
+    await flush()
+  })
+
+  assert.equal(runtime.media.length, 0, "미검토 자산은 매체를 만들지 않는다")
+
+  const summary = summarizeInviteSfxObservations()
+  assert.equal(summary.arrivals, 1)
+  assert.equal(summary.eligibleDispatches, 1, "커서 이후의 진짜 신규 수신은 적격 1회여야 한다")
+  assert.equal(summary.audiblePlaybacks, 0, "미검토 자산을 청음 1회로 적으면 거짓 증거가 된다")
+  assert.equal(summary.suppressedByReason[SFX_SUPPRESSED_REASON.ASSET_UNREVIEWED], 1)
+
+  // 같은 초대가 다시 배달되면 적격 판정은 늘지 않고 사유만 남는다(복원·중복 0회의 근거).
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(fresh))
+    await flush()
+  })
+  const repeated = summarizeInviteSfxObservations()
+  assert.equal(repeated.eligibleDispatches, 1, "중복 전달이 적격 판정을 늘리면 1회 계약이 깨진다")
+  assert.equal(repeated.suppressedByReason["already-consumed"], 1)
+
+  // 커서 이하의 과거 초대도 사유와 함께 무음으로 기록된다.
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(invite({ inviteId: "old", creationSeq: "3" })))
+    await flush()
+  })
+  assert.equal(summarizeInviteSfxObservations().suppressedByReason["at-or-below-cursor"], 1)
+
+  // 진단을 켜 둔 채로도 거절이 정상적으로 끝난다.
+  declineResponder = async (inviteId) => ({
+    ...fresh, inviteId, status: "DECLINED", revision: 2,
+  })
+  const declined = await useGameInviteStore.getState().declineInvite("diag-1")
+  assert.equal(declined.ok, true, "진단이 업무 경로를 막으면 안 된다")
+  assert.equal(apiCalls.decline, 1)
+
+  await mounted.unmount()
+})
+
+test("AC-07: 진단이 꺼져 있으면 아무 기록도 남기지 않는다(기본값)", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [], cursor: "5" })
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(invite({ inviteId: "no-diag", creationSeq: "9" })))
+    await flush()
+  })
+
+  assert.deepEqual(
+    getInviteSfxObservations(), [],
+    "opt-in 없이 관찰이 쌓이면 일반 사용자 세션에 내부 식별자가 남는다",
+  )
+  assert.deepEqual(pendingIds(), ["no-diag"], "진단 여부와 무관하게 초대 처리는 그대로다")
+  await mounted.unmount()
+})
+
+// ---------------------------------------------------------------------------
+// AC-07/RESULT-3 · 복원 순서는 **서버가 읽은 경계**가 정한다
+//
+// 예전에는 클라이언트의 요청 **시작 순서**만으로 판정했다. 그러나 나중에 시작한 요청이
+// 서버에 먼저 도달해 먼저 읽힐 수 있다 — 그 응답의 커서가 더 작다. 시작 순서만 보면 그
+// 뒤에 도착한 **더 새로운 서버 지식**이 superseded로 버려져, 그 사이에 생긴 초대를 잃고
+// 커서도 낮은 값에 머문다(그러면 이후 사건 판정까지 어긋난다).
+// ---------------------------------------------------------------------------
+
+test("AC-07: 나중에 시작한 조회가 서버에서 먼저 읽혔어도 더 새로운 커서·행을 잃지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  const older = invite({ inviteId: "older", creationSeq: "10" })
+  const newer = invite({ inviteId: "newer", creationSeq: "40" })
+
+  // 첫 번째 조회(마운트가 시작한다)는 **서버에서 늦게 읽힌다** — 커서 40, 두 행을 본다.
+  const late = deferred()
+  snapshotResponder = () => late.promise
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  // 두 번째 조회는 나중에 시작했지만 **서버에서 먼저 읽혀** 커서 10, 한 행만 본다.
+  snapshotResponder = async () => ({ invites: [older], cursor: "10" })
+  await act(async () => {
+    await useGameInviteStore.getState().loadSnapshot()
+    await flush()
+  })
+  assert.equal(useGameInviteStore.getState().cursor, "10")
+  assert.deepEqual(pendingIds(), ["older"])
+
+  // 이제 첫 응답이 도착한다. 시작은 먼저였지만 서버 지식은 **더 새롭다**.
+  await act(async () => {
+    late.resolve({ invites: [older, newer], cursor: "40" })
+    await flush()
+  })
+
+  assert.equal(
+    useGameInviteStore.getState().cursor, "40",
+    "시작 순서로만 판정하면 더 새로운 서버 지식이 버려져 커서가 낮은 값에 머문다",
+  )
+  assert.deepEqual(
+    pendingIds().sort(), ["newer", "older"],
+    "더 새로운 응답이 담고 있던 초대를 잃으면 화면에서 처리할 수 없다",
+  )
+
+  // 커서가 앞서 나갔으므로 그 이하의 지연 생성 사건은 여전히 무음·무반영이다.
+  const cancelled = invite({ inviteId: "gone", creationSeq: "20" })
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(cancelled))
+    await flush()
+  })
+  assert.deepEqual(pendingIds().sort(), ["newer", "older"])
+  await mounted.unmount()
+})
+
+test("AC-07: 뒤처진 응답이 도착해도 복원 보류가 풀려 이후 신규 초대가 무음이 되지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  const runtime = installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  // 마운트 조회는 느리고(서버 읽기도 오래됨), 그 뒤 더 새로운 조회가 먼저 반영된다.
+  const stale = deferred()
+  snapshotResponder = () => stale.promise
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  snapshotResponder = async () => ({ invites: [], cursor: "50" })
+  await act(async () => {
+    await useGameInviteStore.getState().loadSnapshot()
+    await flush()
+  })
+
+  await act(async () => {
+    stale.resolve({ invites: [], cursor: "20" })
+    await flush()
+  })
+
+  const state = useGameInviteStore.getState()
+  assert.equal(state.cursor, "50", "뒤처진 응답이 커서를 되돌리면 과거 사건이 신규로 보인다")
+  assert.equal(state.restorePending, false, "복원 보류가 남으면 이후 신규 초대가 영원히 무음이다")
+  assert.equal(state.status, "success")
+
+  // 커서 이후의 진짜 신규 초대는 정상적으로 한 번 울린다.
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(invite({ inviteId: "fresh", creationSeq: "60" })))
+    await flush()
+  })
+  assert.equal(runtime.media.length, 1, "복원 보류가 풀리지 않으면 여기서 0이 된다")
+  assert.deepEqual(pendingIds(), ["fresh"])
+  await mounted.unmount()
+})
+
+test("AC-07: 늦게 도착한 오래된 조회 **실패**가 이미 성공한 복원을 오류로 덮지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  const runtime = installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  // 마운트 조회가 느리게 실패한다.
+  const failing = deferred()
+  snapshotResponder = () => failing.promise
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  // 그 사이 나중에 시작한 조회가 성공해 복원을 끝낸다.
+  snapshotResponder = async () => ({ invites: [], cursor: "30" })
+  await act(async () => {
+    await useGameInviteStore.getState().loadSnapshot()
+    await flush()
+  })
+  assert.equal(useGameInviteStore.getState().status, "success")
+
+  await act(async () => {
+    failing.reject(new Error("network down"))
+    await flush()
+  })
+
+  const state = useGameInviteStore.getState()
+  assert.equal(state.status, "success", "오래된 실패가 최신 성공을 오류로 덮었다")
+  assert.equal(state.error, null)
+  assert.equal(state.restorePending, false, "오래된 실패가 복원 보류를 다시 세우면 신규 초대가 무음이 된다")
+  assert.equal(state.cursor, "30")
+
+  // 복원이 살아 있으므로 커서 이후 신규 초대는 정상적으로 울린다.
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(invite({ inviteId: "after", creationSeq: "31" })))
+    await flush()
+  })
+  assert.equal(runtime.media.length, 1)
   await mounted.unmount()
 })
 

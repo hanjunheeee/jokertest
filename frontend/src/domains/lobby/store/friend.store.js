@@ -85,6 +85,32 @@ const initialAccountState = () => ({
     // 즐겨찾기 저장 실패(friendId → 메시지). 실패를 성공으로 위장하지 않습니다.
     favoriteErrors: {},
 
+    /**
+     * 서버가 **친구 한 명 단위로** 확정한 즐겨찾기(friendId → { seq, favorite }).
+     *
+     * 예전에는 setFavorite이 성공하면 즐겨찾기 목록 전체의 순번(appliedSeq.favorites)을
+     * 올렸습니다. 그러면 그보다 먼저 시작한 **전체 조회**가 통째로 버려져, 한 명의 별 하나를
+     * 지키느라 나머지 친구들의 서버 저장 별이 전부 사라졌습니다(재접속 직후 조회와 별 클릭이
+     * 겹치면 그대로 재현됩니다 — RESULT-3).
+     *
+     * 이제 한 명 단위의 확정 값을 여기에 순번과 함께 남기고, 전체 조회는 정상적으로 반영하되
+     * **그 조회보다 나중에 확정된 값만** 덮어씁니다. 조회가 이미 담고 있는 과거 쓰기
+     * (seq ≤ 조회 순번)는 목록에서 지웁니다.
+     */
+    favoriteWrites: {},
+
+    /**
+     * 서버 확정 처리로 화면에서 내린 받은 요청(requestId → seq).
+     *
+     * 예전에는 removeIncomingRequest가 bumpSeq('incoming')을 불러 **한 건의 제거**를 "전체
+     * 조회가 성공했다"로 기록했습니다. 그래서 그와 겹쳐 실패한 전체 재조회가 밀려날 때
+     * supersededResult가 성공을 보고했고, 전체 수락의 "재조회 실패" 안내가 사라졌습니다.
+     *
+     * 이제 제거는 이 표식만 남깁니다. 이 표식보다 **먼저 시작한** 조회가 늦게 도착해도 그
+     * 행을 되살리지 못하고, 조회 자체의 성공·실패는 appliedResult가 그대로 보고합니다.
+     */
+    incomingRemovals: {},
+
     // F-19(AC-04): 내가 차단한 사용자 목록입니다.
     blockedUsers: [],
     blocksStatus: "idle", // idle | loading | success | error
@@ -233,7 +259,18 @@ export const useFriendStore = create((set, get) => ({
             const requests = await fetchIncomingRequestsApi();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             if (!get().claimSeq("incoming", ticket, { ok: true })) return get().supersededResult("incoming");
-            set({ incomingRequests: requests, incomingError: null });
+            // 이 조회가 시작된 **뒤에** 확정 처리된 요청은 서버 목록에 아직 남아 있을 수
+            // 있습니다 — 그 행만 골라 내립니다. 조회 자체는 정상 반영입니다.
+            set((state) => {
+                const pending = {};
+                for (const [id, seq] of Object.entries(state.incomingRemovals)) {
+                    if (seq > ticket) pending[id] = seq;
+                }
+                const list = Array.isArray(requests)
+                    ? requests.filter((request) => !Object.hasOwn(pending, String(request?.request_id)))
+                    : requests;
+                return { incomingRequests: list, incomingRemovals: pending, incomingError: null };
+            });
             return { ok: true, requests };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
@@ -252,10 +289,21 @@ export const useFriendStore = create((set, get) => ({
         try {
             const ids = await fetchFavoriteFriendIds();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-            // 이 조회보다 **나중에** 서버가 확정한 setFavorite이 있으면 그 값을 지키고
-            // 오래된 목록은 버립니다 — 별 표시가 잠깐 예전 값으로 되돌아가지 않습니다.
             if (!get().claimSeq("favorites", ticket, { ok: true })) return get().supersededResult("favorites");
-            set({ favoriteFriendIds: new Set(Array.isArray(ids) ? ids : []), favoritesError: null });
+            // 서버 목록을 반영하되, 이 조회보다 **나중에** 서버가 확정한 한 명 단위의 저장은
+            // 그 값을 지킵니다(A-03). 조회를 통째로 버리면 그 한 명 때문에 나머지 친구들의
+            // 저장된 별까지 잃습니다.
+            set((state) => {
+                const next = new Set(Array.isArray(ids) ? ids : []);
+                const pending = {};
+                for (const [friendId, write] of Object.entries(state.favoriteWrites)) {
+                    // seq ≤ ticket: 이 조회가 시작되기 전에 커밋된 값이라 목록이 이미 담고 있습니다.
+                    if (write.seq <= ticket) continue;
+                    pending[friendId] = write;
+                    if (write.favorite) next.add(friendId); else next.delete(friendId);
+                }
+                return { favoriteFriendIds: next, favoriteWrites: pending, favoritesError: null };
+            });
             return { ok: true };
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
@@ -298,11 +346,18 @@ export const useFriendStore = create((set, get) => ({
             const confirmed = result?.favorite === true;
             // 커밋을 **확인한 뒤에** 순번을 받습니다 — 이 저장보다 먼저 시작한 조회는 모두
             // 더 작은 번호라서, 나중에 도착해도 이 확정 값을 덮지 못합니다(A-03).
-            get().bumpSeq("favorites");
+            //
+            // 목록 전체의 순번(appliedSeq.favorites)은 올리지 않습니다. 한 명의 확정 값이
+            // 다른 친구들의 서버 저장 별까지 버리게 하는 것이 RESULT-3의 결함이었습니다 —
+            // 대신 이 한 명분 확정을 favoriteWrites에 남겨 조회가 도착할 때 화해시킵니다.
+            const ticket = nextSeq();
             set((state) => {
                 const next = new Set(state.favoriteFriendIds);
                 if (confirmed) next.add(friendId); else next.delete(friendId);
-                return { favoriteFriendIds: next };
+                return {
+                    favoriteFriendIds: next,
+                    favoriteWrites: { ...state.favoriteWrites, [friendId]: { seq: ticket, favorite: confirmed } },
+                };
             });
             return { ok: true, favorite: confirmed };
         } catch (error) {
@@ -370,20 +425,34 @@ export const useFriendStore = create((set, get) => ({
         }
     },
 
-    // 수락/거절한 친구 요청을 받은 요청 목록에서 제거합니다.
-    // 서버가 확정한 처리의 결과이므로 순번을 올립니다 — 이 제거보다 먼저 시작한 조회가
-    // 뒤늦게 도착해 처리된 요청을 다시 살려 놓지 않습니다.
+    /**
+     * 수락/거절한 친구 요청을 받은 요청 목록에서 제거합니다.
+     *
+     * 이 제거보다 **먼저 시작한** 조회가 늦게 도착해도 그 행을 되살리지 못하도록 표식을
+     * 남깁니다. 다만 이것은 한 행의 확정일 뿐이라 "전체 목록이 최신이다"를 뜻하지 않습니다 —
+     * 예전처럼 bumpSeq('incoming')으로 전체 조회의 성공을 기록하면, 그와 겹쳐 **실패한**
+     * 재조회가 밀려나며 성공으로 보고되어 전체 수락의 재조회 실패 안내가 사라집니다.
+     */
     removeIncomingRequest: (requestId) => {
-        get().bumpSeq("incoming");
+        const ticket = nextSeq();
         set((state) => ({
+            incomingRemovals: { ...state.incomingRemovals, [requestId]: ticket },
             incomingRequests: state.incomingRequests.filter((request) => request.request_id !== requestId),
         }));
     },
 
     // 소켓 이벤트나 API 응답으로 받은 요청 목록을 통째로 교체합니다.
+    // 서버가 준 전체 목록이므로 이쪽은 조회와 같은 권위를 갖습니다 — 그보다 앞선 제거 표식은
+    // 이미 반영돼 있으니 함께 정리합니다.
     setIncomingRequests: (requests) => {
-        get().bumpSeq("incoming");
-        set({ incomingRequests: requests });
+        const ticket = get().bumpSeq("incoming");
+        set((state) => {
+            const pending = {};
+            for (const [id, seq] of Object.entries(state.incomingRemovals)) {
+                if (seq > ticket) pending[id] = seq;
+            }
+            return { incomingRequests: requests, incomingRemovals: pending };
+        });
     },
 
     /**

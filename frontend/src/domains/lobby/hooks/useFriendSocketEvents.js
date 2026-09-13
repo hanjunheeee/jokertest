@@ -10,6 +10,11 @@ import { useNotificationsStore } from "../../notifications/store/notifications.s
 import { getSocket } from "../../../shared/socket/socketClient.js";
 import { useMatchingStore } from "../../game/matching/store/matchingStore.js";
 import { useInGameStore } from "../../game/ingame/store/ingameStore.js";
+import {
+    recordInviteSfxObservation,
+    syncInviteSfxDiagnosticsAccount,
+    trackInviteSfxCompletion,
+} from "../diagnostics/inviteSfxDiagnostics.js";
 
 /**
  * 서버가 보낸 친구 사건 봉투를 공통 재생기로 넘긴다(F-16 AC-01/AC-04).
@@ -65,18 +70,45 @@ export function playGameInviteSfx(payload) {
     const { user, isLoggedIn } = useAuthStore.getState();
     const accountId = isLoggedIn && user?.uuid ? user.uuid : null;
     if (accountId === null) return;
-    if (sfxEvent.accountId !== accountId) return;
+    if (sfxEvent.accountId !== accountId) {
+        // 진단(AC-07). 꺼져 있으면 build 자체가 실행되지 않는다.
+        recordInviteSfxObservation(() => ({
+            phase: "received", accountId: sfxEvent.accountId, inviteId: invite?.inviteId ?? null,
+            eventId: sfxEvent.eventId ?? null, eligible: false, reason: "account-mismatch",
+        }));
+        return;
+    }
 
     // 커서 이후의 실제 신규 수신이고, 최신 상태가 유효한 PENDING일 때만 후보다.
     // true를 받는 순간 표식이 소모되므로 off·mute여도 과거 사건이 나중에 울리지 않는다.
-    if (!useGameInviteStore.getState().consumeInviteSound(accountId, invite)) return;
+    if (!useGameInviteStore.getState().consumeInviteSound(accountId, invite)) {
+        // 억제 사유는 판정을 소유한 store에 **읽기 전용으로** 되묻는다(표식을 소모하지 않는다).
+        recordInviteSfxObservation(() => ({
+            phase: "received", accountId, inviteId: invite?.inviteId ?? null,
+            eventId: sfxEvent.eventId ?? null, creationSeq: invite?.creationSeq ?? null,
+            eligible: false,
+            reason: useGameInviteStore.getState().explainInviteSound(accountId, invite).reason,
+        }));
+        return;
+    }
 
-    dispatchSfxEvent({
+    const result = dispatchSfxEvent({
         kind: sfxEvent.kind,
         eventId: sfxEvent.eventId,
         accountId,
         origin: sfxEvent.origin,
     });
+
+    // "적격 판정 1회"와 "실제 청음 1회"는 다른 사실이다 — 미검토 자산이면 적격이어도
+    // 매체가 만들어지지 않는다. 둘을 따로 적고, completion은 **기다리지 않는다**(AC-07).
+    const seq = recordInviteSfxObservation(() => ({
+        phase: "received", accountId, inviteId: invite?.inviteId ?? null,
+        eventId: sfxEvent.eventId ?? null, creationSeq: invite?.creationSeq ?? null,
+        eligible: true, reason: null,
+        dispatchStatus: result?.status ?? null,
+        dispatchReason: result?.reason ?? null,
+    }));
+    trackInviteSfxCompletion(seq, result?.completion);
 }
 
 // ── 초대 수락 → 대기방 이동의 단일 소유자 ───────────────────────────────────
@@ -298,6 +330,8 @@ export function useFriendSocketEvents(socket, { navigate } = {}) {
         const syncAll = () => {
             useFriendStore.getState().syncAccount();
             useGameInviteStore.getState().syncAccount();
+            // QA 진단도 같은 계정 경계를 따른다 — 로그아웃·계정 전환이면 기록을 버린다.
+            syncInviteSfxDiagnosticsAccount(useGameInviteStore.getState().accountId);
         };
         syncAll();
         return useAuthStore.subscribe(syncAll);

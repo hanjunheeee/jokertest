@@ -1492,6 +1492,111 @@ test('A-10: 수락 결정과 영수증이 두 단계로 확정된다', async (t)
     assert.equal(row.entry_outcome, 'PUBLISHED');
 });
 
+test('A-10/RESULT-3: 보상은 확정 커밋과 겹쳐도 PUBLISHED를 덮지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    // ── 재현하는 결함 ───────────────────────────────────────────────────────
+    // 예전 recordEntryInterrupted는 (1) 비잠금 SELECT로 attempt_id와 entry_outcome을
+    // 확인하고 (2) 그 뒤 row.update()를 불렀다. 두 문장 사이에 확정 트랜잭션이 PUBLISHED를
+    // 커밋하면, (1)에서 읽은 UNCONFIRMED를 근거로 (2)가 그 영수증을 INTERRUPTED로 덮었다 —
+    // 실제로 방에 들어간 참가자의 입장이 "중단됨"으로 기록된다.
+    //
+    // 아래는 그 창을 **결정적으로** 만든다: 확정 쓰기를 열린 트랜잭션 안에 두고 커밋하지
+    // 않은 채 보상을 시작한다. READ COMMITTED의 비잠금 SELECT는 이 시점에 UNCONFIRMED를
+    // 읽는다. 조건부 UPDATE는 대신 행 잠금을 기다렸다가 **커밋된 값**으로 조건을 평가한다.
+    const a = await createLocalUser('race-a');
+    const b = await createLocalUser('race-b');
+    await befriend(a, b);
+    placeInRoom(a, 'room-race');
+
+    const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'race' });
+    await gameInviteService.recordAcceptDecision({
+        receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-race', bootEpoch: roomAccess.bootEpoch,
+    });
+
+    const tx = await sequelize.transaction();
+    await db.GameInvite.update(
+        { entry_outcome: 'PUBLISHED' },
+        { where: { id: invite.inviteId }, transaction: tx },
+    );
+
+    // 비잠금 읽기는 아직 UNCONFIRMED를 본다 — 예전 구현이 근거로 삼던 바로 그 값이다.
+    const dirtyView = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
+    assert.equal(
+        dirtyView.entry_outcome, 'UNCONFIRMED',
+        '커밋 전 비잠금 읽기가 이미 PUBLISHED면 이 시험은 경합 창을 만들지 못한 것이다',
+    );
+
+    const compensating = gameInviteService.recordEntryInterrupted({
+        inviteId: invite.inviteId, attemptId: 'attempt-race', reason: 'JOIN_TIMEOUT',
+    });
+    await tx.commit();
+
+    assert.equal(
+        await compensating, false,
+        '확정된 영수증 위에 보상이 성공을 주장하면 안 된다',
+    );
+    let row = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
+    assert.equal(row.entry_outcome, 'PUBLISHED', '보상이 확정된 publication 영수증을 덮었다');
+
+    // 대조군 (1) — 실제로 아직 UNCONFIRMED인 시도는 정상적으로 보상된다.
+    const { invite: second } = await gameInviteService.createInvite({
+        senderId: a, receiverId: b, creationKey: 'race-2',
+    });
+    await gameInviteService.recordAcceptDecision({
+        receiverId: b, inviteId: second.inviteId, attemptId: 'attempt-live', bootEpoch: roomAccess.bootEpoch,
+    });
+    assert.equal(
+        await gameInviteService.recordEntryInterrupted({
+            inviteId: second.inviteId, attemptId: 'attempt-live', reason: 'JOIN_TIMEOUT',
+        }),
+        true,
+        '정상 보상까지 막으면 실패한 입장이 UNCONFIRMED로 영원히 남는다',
+    );
+    row = await db.GameInvite.findOne({ where: { id: second.inviteId } });
+    assert.equal(row.entry_outcome, 'INTERRUPTED');
+    assert.equal(row.end_reason, 'JOIN_TIMEOUT');
+    assert.equal(row.status, 'ACCEPTED', '역사적 수락 결정은 보상으로 되돌리지 않는다');
+
+    // 대조군 (2) — 같은 보상이 두 번 와도 한 번만 확정한다(멱등).
+    assert.equal(
+        await gameInviteService.recordEntryInterrupted({
+            inviteId: second.inviteId, attemptId: 'attempt-live', reason: 'OTHER',
+        }),
+        false,
+    );
+    assert.equal(
+        (await db.GameInvite.findOne({ where: { id: second.inviteId } })).end_reason, 'JOIN_TIMEOUT',
+        '두 번째 보상이 사유를 덮어쓰면 최초 중단 원인을 잃는다',
+    );
+
+    // 대조군 (3) — 교체된 새 attempt를 옛 보상이 건드리지 않는다.
+    await db.GameInvite.update(
+        { attempt_id: 'attempt-new', entry_outcome: 'UNCONFIRMED' },
+        { where: { id: second.inviteId } },
+    );
+    assert.equal(
+        await gameInviteService.recordEntryInterrupted({
+            inviteId: second.inviteId, attemptId: 'attempt-live', reason: 'LATE',
+        }),
+        false,
+    );
+    assert.equal(
+        (await db.GameInvite.findOne({ where: { id: second.inviteId } })).entry_outcome, 'UNCONFIRMED',
+        '옛 시도의 보상이 새 시도의 결과를 확정해 버리면 안 된다',
+    );
+
+    // attempt를 증명하지 못하는 호출은 아무것도 쓰지 않는다.
+    assert.equal(
+        await gameInviteService.recordEntryInterrupted({ inviteId: second.inviteId, reason: 'NO_ATTEMPT' }),
+        false,
+    );
+    assert.equal(
+        (await db.GameInvite.findOne({ where: { id: second.inviteId } })).entry_outcome, 'UNCONFIRMED',
+    );
+});
+
 test('A-10/상태표 5: 두 번째 잠금 전에 차단이 커밋되면 역사적 ACCEPTED는 남고 입장만 INTERRUPTED다', async (t) => {
     if (unavailable(t)) return;
     await setUp(t);

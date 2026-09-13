@@ -741,16 +741,45 @@ async function getAttemptOutcome({ receiverId, inviteId, attemptId }) {
 /**
  * 확정 실패를 durable 상태에 기록한다(보상). 실패해도 던지지 않는다 — 이미 제거된 stale
  * Map을 DB 결과에 따라 되살리지 않기 위해서다.
+ *
+ * ── 왜 조건부 UPDATE인가 (RESULT-3/CODEX-3) ─────────────────────────────────
+ * 예전 구현은 행을 읽어 attempt_id와 entry_outcome을 **확인한 뒤** row.update()를 불렀다.
+ * 두 문장 사이에는 잠금도 트랜잭션도 없어서, 그 사이에 finalizeAcceptedEntry가 PUBLISHED를
+ * 커밋하거나 새 수락 시도가 attempt_id를 교체하면 보상이 그것을 덮어썼다:
+ *
+ *   보상: SELECT → (UNCONFIRMED, 내 attempt) 확인
+ *   확정:                          UPDATE entry_outcome='PUBLISHED' COMMIT
+ *   보상:                                                UPDATE entry_outcome='INTERRUPTED'
+ *   ⇒ 실제로 입장한 참가자의 영수증이 INTERRUPTED로 뒤집힌다.
+ *
+ * 그래서 확인과 쓰기를 **한 문장**으로 합친다. WHERE에 id·attempt_id와 허용된 이전
+ * 결과(UNCONFIRMED)를 모두 넣으면 MySQL이 그 행을 잠근 상태에서 조건을 평가하므로 중간에
+ * 끼어들 창이 없다. PUBLISHED·다른 attempt·이미 INTERRUPTED인 행은 0행이 되어 그대로 남는다.
+ *
+ * 0행일 때만 이유를 알아보려고 한 번 더 읽는다 — 그 읽기는 보고용이며 판단에 쓰지 않는다.
+ *
+ * @returns {Promise<boolean>} 이 호출이 실제로 INTERRUPTED를 확정했는가
  */
 async function recordEntryInterrupted({ inviteId, attemptId, reason }) {
     const { db } = deps;
+    // attempt 소유를 증명하지 못하는 호출은 아무것도 쓰지 않는다. (undefined를 WHERE에
+    // 그대로 넣으면 조건이 통째로 사라져 남의 attempt까지 덮을 수 있다.)
+    if (typeof attemptId !== 'string' || attemptId.length === 0) return false;
     try {
-        const row = await db.GameInvite.findOne({ where: { id: inviteId } });
-        if (!row || row.attempt_id !== attemptId) return false;
-        // PUBLISHED를 보상으로 덮어쓰지 않는다 — 확정된 영수증은 역사다.
-        if (row.entry_outcome === ENTRY_OUTCOME.PUBLISHED) return false;
-        await row.update({ entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: reason ?? 'INTERRUPTED' });
-        return true;
+        // 확인과 쓰기를 하나의 조건부 UPDATE로 합친다(check-then-act 제거).
+        // 허용된 이전 결과는 UNCONFIRMED뿐이다 — PUBLISHED는 역사이고, 이미 INTERRUPTED인
+        // 행은 다시 쓸 필요가 없다.
+        const [affected] = await db.GameInvite.update(
+            { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: reason ?? 'INTERRUPTED' },
+            {
+                where: {
+                    id: inviteId,
+                    attempt_id: attemptId,
+                    entry_outcome: ENTRY_OUTCOME.UNCONFIRMED,
+                },
+            },
+        );
+        return Number(affected) > 0;
     } catch (error) {
         console.error('[초대 입장 보상 기록 실패]', error);
         return false;

@@ -168,6 +168,40 @@ export function isActionablePending(invite, snapshotPendingIds, cursor, snapshot
     return compareCreationSeq(invite.creationSeq, cursor) > 0;
 }
 
+/**
+ * 이 초대가 지금 소리 후보인가 — **그리고 아니라면 왜 아닌가**(읽기 전용).
+ *
+ * consumeInviteSound가 실제로 쓰는 판정이 여기 한 곳에 있다. 사유 문자열을 따로 내보내는
+ * 이유는 AC-07의 증거 때문이다: 운영자가 실제 Chrome에서 "왜 소리가 나지 않았는가"를
+ * 확인하려면 억제 사유가 화면에 보여야 하는데, 판정 로직을 진단 쪽에 복제하면 둘이
+ * 어긋나는 순간 증거가 거짓이 된다. 이 함수는 상태를 **바꾸지 않는다** — 표식 소모는
+ * consumeInviteSound만 한다.
+ *
+ * @returns {{ eligible: boolean, reason: string|null }}
+ */
+export function evaluateInviteSound(state, accountId, invite, now = Date.now()) {
+    if (accountId === null || accountId !== state.accountId) return { eligible: false, reason: "account-mismatch" };
+    if (!isUsableInvite(invite)) return { eligible: false, reason: "invalid-invite" };
+    if (invite.receiverId !== accountId) return { eligible: false, reason: "receiver-mismatch" };
+    if (state.soundConsumed.has(invite.inviteId)) return { eligible: false, reason: "already-consumed" };
+    // 복원이 아직 해소되지 않았으면 보류한다. 표식을 소모하지 않으므로, 복원이 실제로
+    // 그 사건을 담고 있으면 무음으로 확정되고 아니면 이후 live가 다시 후보가 된다.
+    if (!state.snapshotLoaded || state.restorePending) return { eligible: false, reason: "restore-pending" };
+    if (compareCreationSeq(invite.creationSeq, state.cursor) <= 0) {
+        return { eligible: false, reason: "at-or-below-cursor" };
+    }
+
+    // 최신으로 알고 있는 상태가 이미 종료됐으면 소리 후보가 아니다 — 지연 도착한
+    // 생성 사건이 terminal 상태를 되살리지 못한다.
+    const latest = state.invites.find((item) => item.inviteId === invite.inviteId);
+    const effective = latest !== undefined && latest.revision > invite.revision ? latest : invite;
+    if (effective.status !== "PENDING") return { eligible: false, reason: `terminal-${effective.status}` };
+    const expiresAt = Date.parse(effective.expiresAt ?? "");
+    if (Number.isFinite(expiresAt) && expiresAt <= now) return { eligible: false, reason: "expired" };
+
+    return { eligible: true, reason: null };
+}
+
 const initialAccountState = () => ({
     status: "idle", // idle | loading | success | error
     error: null,
@@ -265,8 +299,8 @@ export const useGameInviteStore = create((set, get) => ({
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
 
-        // 이 조회의 순번은 **시작할 때** 받는다. 겹쳐 도는 두 조회 중 늦게 도착한 오래된
-        // 응답이 커서와 snapshot 지식을 되돌리지 못하게 하는 근거다.
+        // 이 조회의 순번은 **시작할 때** 받는다. 다만 시작 순서는 서버가 실제로 읽은 순서를
+        // 보장하지 않는다 — 아래에서 커서(서버가 확정한 지식)를 우선 기준으로 쓴다.
         const ticket = nextSnapshotSeq();
         set({ status: "loading", error: null, restorePending: true });
 
@@ -275,6 +309,9 @@ export const useGameInviteStore = create((set, get) => ({
             data = await fetchGameInviteSnapshot();
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            // 더 새로운 조회가 이미 성공적으로 복원했다면 이 실패는 과거다 — 성공한 화면을
+            // 오류로 덮거나 restorePending을 다시 세우지 않는다(RESULT-3).
+            if (get().snapshotSeq >= ticket) return { ok: false, reason: "superseded", superseded: true };
             // 실패를 빈 목록으로 위장하지 않는다. restorePending은 **내리지 않는다** —
             // 실패한 조회는 "이 사건이 과거의 것인지"를 알려주지 못하므로, 그 뒤에 도착한
             // 사건을 최초 발생으로 인정할 근거가 없다.
@@ -283,14 +320,35 @@ export const useGameInviteStore = create((set, get) => ({
         }
 
         if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
-        // 더 최신 snapshot이 이미 반영됐으면 이 응답은 과거다 — 커서·지식·목록 어느 것도
-        // 되돌리지 않는다. 복원 해소 여부도 최신 응답이 이미 정했다.
-        if (get().snapshotSeq >= ticket) return { ok: false, reason: "superseded", superseded: true };
 
         const rows = Array.isArray(data?.invites) ? data.invites.filter(isUsableInvite) : [];
         const cursor = typeof data?.cursor === "string" && /^\d+$/.test(data.cursor) ? data.cursor : "0";
         const state = get();
-        const snapshotIds = new Set(rows.map((row) => row.inviteId));
+
+        // ── 어느 응답이 "더 최신 서버 지식"인가 (RESULT-3) ──────────────────
+        //
+        // 예전에는 클라이언트의 **요청 시작 순서**(ticket)만으로 판정했다. 그러나 나중에
+        // 시작한 요청이 서버에 먼저 도달해 먼저 읽힐 수 있다 — 그 응답의 커서가 더 작다.
+        // 그때 시작 순서만 보면:
+        //   · 먼저 도착한 늦게-시작 응답이 큰 ticket을 차지하고,
+        //   · 뒤이어 도착한 **더 새로운 서버 지식**이 superseded로 버려진다.
+        // 그러면 그 사이에 생긴 초대를 목록에서 잃고 커서도 낮은 값에 머문다.
+        //
+        // 서버가 확정한 지식의 순서는 커서가 말해 준다(A-09: 커서 이하 행은 뒤늦게 커밋되지
+        // 않는다). 그래서 커서를 1차 기준으로, 같은 커서일 때만 ticket을 동점 처리에 쓴다.
+        const cursorDelta = compareCreationSeq(cursor, state.cursor);
+        const knownWorse = state.snapshotLoaded && cursorDelta < 0;
+        if (!knownWorse && cursorDelta <= 0 && get().snapshotSeq >= ticket) {
+            // 같은 서버 경계를 본 두 응답 중 이미 더 나중 요청이 반영됐다.
+            return { ok: false, reason: "superseded", superseded: true };
+        }
+
+        // 지식이 뒤처진 응답은 커서·처리 가능 집합을 **되돌리지 않는다**. 그래도 복원 자체는
+        // 해소한다 — 안 그러면 restorePending이 영원히 남아 이후 신규 초대가 전부 무음이 된다.
+        const effectiveCursor = knownWorse ? state.cursor : cursor;
+        const effectivePendingIds = knownWorse
+            ? state.snapshotPendingIds
+            : new Set(rows.map((row) => row.inviteId));
 
         // snapshot에 담긴 초대는 전부 "이미 알고 있던 것"이다 — 소리 표식을 소모해 둔다.
         const soundConsumed = new Set(state.soundConsumed);
@@ -299,7 +357,9 @@ export const useGameInviteStore = create((set, get) => ({
         const buffered = state.liveBuffer.filter((item) => isUsableInvite(item?.invite));
         // 커서 **이하**의 버퍼 사건도 과거다(복원이 이미 알고 있는 범위).
         for (const item of buffered) {
-            if (compareCreationSeq(item.invite.creationSeq, cursor) <= 0) soundConsumed.add(item.invite.inviteId);
+            if (compareCreationSeq(item.invite.creationSeq, effectiveCursor) <= 0) {
+                soundConsumed.add(item.invite.inviteId);
+            }
         }
 
         // 커서 **이후**의 실제 신규 수신은 복원이 아니라 진짜 새 사건이다. 복원 대기 중이라
@@ -307,24 +367,32 @@ export const useGameInviteStore = create((set, get) => ({
         // 판정하게 한다(consumeInviteSound가 표식을 소모한다 — 여기서는 소모하지 않는다).
         const soundCandidates = buffered.filter((item) => (
             item.sfxEvent !== null && item.sfxEvent !== undefined
-            && compareCreationSeq(item.invite.creationSeq, cursor) > 0
+            && compareCreationSeq(item.invite.creationSeq, effectiveCursor) > 0
             && !soundConsumed.has(item.invite.inviteId)
         ));
 
         // snapshot은 "지금 처리 가능한 초대"의 authoritative한 전부다 — 여기 없는 PENDING은
-        // 이미 끝난 것이므로 목록에서 내린다(유령 초대 제거).
-        const retained = state.invites.filter((item) => survivesSnapshot(item, snapshotIds, cursor));
-        const bufferedInvites = buffered
-            .map((item) => item.invite)
-            .filter((invite) => survivesSnapshot(invite, snapshotIds, cursor));
+        // 이미 끝난 것이므로 목록에서 내린다(유령 초대 제거). 지식이 뒤처진 응답은 그 판정을
+        // 할 자격이 없으므로 **이미 확정된 집합**으로만 거른다(종료된 행을 되살리지 않으면서
+        // 더 새로운 지식이 남긴 행도 잃지 않는다).
+        const survives = (invite) => survivesSnapshot(invite, effectivePendingIds, effectiveCursor);
+        const retained = state.invites.filter(survives);
+        const incoming = knownWorse
+            // 뒤처진 응답의 행은 최신 지식이 인정하는 것만 받아들인다. mergeInvites가 revision
+            // 비교를 하므로 오래된 PENDING이 최신 terminal을 덮지도 않는다.
+            ? rows.filter(survives)
+            : rows;
+        const bufferedInvites = buffered.map((item) => item.invite).filter(survives);
 
         set({
-            invites: mergeInvites(retained, [...rows, ...bufferedInvites]),
-            cursor,
+            invites: mergeInvites(retained, [...incoming, ...bufferedInvites]),
+            cursor: effectiveCursor,
             // 이 조회가 "처리 가능"이라고 확인해 준 전부. 이후 지연 도착한 커서 이하의
             // PENDING은 이 집합에 없으면 이미 종료된 것으로 본다(AC-05).
-            snapshotPendingIds: snapshotIds,
-            snapshotSeq: ticket,
+            snapshotPendingIds: effectivePendingIds,
+            // 커서가 앞서 나간 응답만 순번을 차지한다 — 뒤처진 응답이 ticket만 크다는 이유로
+            // 더 새로운 지식을 밀어내지 못하게 한다.
+            snapshotSeq: knownWorse ? state.snapshotSeq : Math.max(state.snapshotSeq, ticket),
             soundConsumed,
             liveBuffer: [],
             snapshotLoaded: true,
@@ -332,7 +400,7 @@ export const useGameInviteStore = create((set, get) => ({
             status: "success",
             error: null,
         });
-        return { ok: true, count: rows.length, cursor, soundCandidates };
+        return { ok: true, count: rows.length, cursor: effectiveCursor, soundCandidates, stale: knownWorse };
     },
 
     /**
@@ -385,28 +453,18 @@ export const useGameInviteStore = create((set, get) => ({
     consumeInviteSound: (accountId, invite, now = Date.now()) => {
         get().syncAccount();
         const state = get();
-        if (accountId === null || accountId !== state.accountId) return false;
-        if (!isUsableInvite(invite)) return false;
-        if (invite.receiverId !== accountId) return false;
-        if (state.soundConsumed.has(invite.inviteId)) return false;
-        // 복원이 아직 해소되지 않았으면 보류한다. 표식을 소모하지 않으므로, 복원이 실제로
-        // 그 사건을 담고 있으면 무음으로 확정되고 아니면 이후 live가 다시 후보가 된다.
-        if (!state.snapshotLoaded || state.restorePending) return false;
-        if (compareCreationSeq(invite.creationSeq, state.cursor) <= 0) return false;
-
-        // 최신으로 알고 있는 상태가 이미 종료됐으면 소리 후보가 아니다 — 지연 도착한
-        // 생성 사건이 terminal 상태를 되살리지 못한다.
-        const latest = state.invites.find((item) => item.inviteId === invite.inviteId);
-        const effective = latest !== undefined && latest.revision > invite.revision ? latest : invite;
-        if (effective.status !== "PENDING") return false;
-        const expiresAt = Date.parse(effective.expiresAt ?? "");
-        if (Number.isFinite(expiresAt) && expiresAt <= now) return false;
+        if (!evaluateInviteSound(state, accountId, invite, now).eligible) return false;
 
         const soundConsumed = new Set(state.soundConsumed);
         soundConsumed.add(invite.inviteId);
         set({ soundConsumed });
         return true;
     },
+
+    /** 읽기 전용 사유 조회(진단 전용). 표식을 소모하지 않는다. */
+    explainInviteSound: (accountId, invite, now = Date.now()) => (
+        evaluateInviteSound(get(), accountId, invite, now)
+    ),
 
     /** 초대를 거절한다. 서버가 확정한 행만 반영한다. */
     declineInvite: async (inviteId) => {
