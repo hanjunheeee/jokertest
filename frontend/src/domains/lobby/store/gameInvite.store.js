@@ -339,17 +339,40 @@ export const useGameInviteStore = create((set, get) => ({
         const cursorDelta = compareCreationSeq(cursor, state.cursor);
         // beginResync resets snapshotLoaded but preserves confirmed cursor knowledge.
         const knownWorse = cursorDelta < 0;
-        if (!knownWorse && cursorDelta <= 0 && get().snapshotSeq >= ticket) {
-            // 같은 서버 경계를 본 두 응답 중 이미 더 나중 요청이 반영됐다.
-            return { ok: false, reason: "superseded", superseded: true };
-        }
+
+        // ── 같은 커서는 서버의 읽기 순서를 정하지 못한다 (review5 #6) ─────────
+        //
+        // 커서가 **다르면** 선후가 정해진다: 커서가 큰 응답은 그 초대가 생긴 뒤에 읽었으므로
+        // 반드시 나중이다. 그런데 커서가 **같으면** 어느 쪽이 나중인지 알 수 없다 — 차단·
+        // 거절·만료는 커서를 올리지 않기 때문이다.
+        //
+        // 예전에는 그 동점을 클라이언트의 요청 시작 순번(ticket)으로 갈랐다. 시작 순서는
+        // 서버가 읽은 순서가 아니므로, 서버에서 먼저 읽힌 오래된 응답이 더 큰 ticket을 가지면
+        // "취소됐다"는 나중 사실이 superseded로 버려지고 유령 초대가 처리 가능 상태로 남았다.
+        //
+        // 초대의 수명은 단조롭다(PENDING → terminal, 되돌아오지 않는다). 그래서 같은 커서의
+        // 어느 조회든 "이 행은 처리 가능 목록에 없다"고 말하면 그것은 확정 사실이고, 두
+        // 응답의 처리 가능 집합을 **교집합**으로 합치는 것이 도착 순서와 무관하게 옳다.
+        //
+        // 첫 복원(snapshotLoaded=false)과 재접속 복원은 비교할 이전 지식이 없으므로 그대로
+        // 받는다 — 안 그러면 빈 초기 집합과의 교집합이 정당한 PENDING을 전부 지운다.
+        const sameBoundary = cursorDelta === 0 && state.snapshotLoaded;
 
         // 지식이 뒤처진 응답은 커서·처리 가능 집합을 **되돌리지 않는다**. 그래도 복원 자체는
         // 해소한다 — 안 그러면 restorePending이 영원히 남아 이후 신규 초대가 전부 무음이 된다.
         const effectiveCursor = knownWorse ? state.cursor : cursor;
-        const effectivePendingIds = knownWorse
-            ? state.snapshotPendingIds
-            : new Set(rows.map((row) => row.inviteId));
+        const incomingPendingIds = new Set(rows.map((row) => row.inviteId));
+        let effectivePendingIds;
+        if (knownWorse) {
+            effectivePendingIds = state.snapshotPendingIds;
+        } else if (sameBoundary) {
+            effectivePendingIds = new Set();
+            for (const inviteId of state.snapshotPendingIds) {
+                if (incomingPendingIds.has(inviteId)) effectivePendingIds.add(inviteId);
+            }
+        } else {
+            effectivePendingIds = incomingPendingIds;
+        }
 
         // snapshot에 담긴 초대는 전부 "이미 알고 있던 것"이다 — 소리 표식을 소모해 둔다.
         const soundConsumed = new Set(state.soundConsumed);
@@ -378,9 +401,11 @@ export const useGameInviteStore = create((set, get) => ({
         // 더 새로운 지식이 남긴 행도 잃지 않는다).
         const survives = (invite) => survivesSnapshot(invite, effectivePendingIds, effectiveCursor);
         const retained = state.invites.filter(survives);
-        const incoming = knownWorse
-            // 뒤처진 응답의 행은 최신 지식이 인정하는 것만 받아들인다. mergeInvites가 revision
-            // 비교를 하므로 오래된 PENDING이 최신 terminal을 덮지도 않는다.
+        const incoming = knownWorse || sameBoundary
+            // 뒤처진 응답의 행은 최신 지식이 인정하는 것만 받아들인다. 같은 커서의 응답도
+            // 마찬가지다 — 교집합이 이미 종료됐다고 확정한 행을 그 응답의 목록으로 되살리면
+            // 교집합을 계산한 의미가 없다. mergeInvites가 revision 비교를 하므로 오래된
+            // PENDING이 최신 terminal을 덮지도 않는다.
             ? rows.filter(survives)
             : rows;
         const bufferedInvites = buffered.map((item) => item.invite).filter(survives);
@@ -435,7 +460,29 @@ export const useGameInviteStore = create((set, get) => ({
             return { applied: false, reason: "known-terminal" };
         }
 
-        set({ invites: mergeInvites(state.invites, [invite]) });
+        const invites = mergeInvites(state.invites, [invite]);
+
+        // ── 재조회 중이면 봉투를 보관한다 (review5 #3) ────────────────────────
+        //
+        // beginResync는 snapshotLoaded를 내리지만, **재조회**(패널 열기·새로고침이 부르는
+        // loadSnapshot)는 snapshotLoaded를 true로 둔 채 restorePending만 세운다. 그 구간의
+        // 소리 판정은 evaluateInviteSound가 "restore-pending"으로 보류하고 표식도 소모하지
+        // 않는다 — 곧 바뀔 수 있는 커서로는 신규 여부를 단정할 수 없기 때문이다.
+        //
+        // 그런데 예전에는 위 `!snapshotLoaded`에서만 버퍼에 담아서, 보류된 그 사건의 봉투를
+        // 여기서 그냥 버렸다. 그래서 복원이 끝난 뒤 후보로 되살릴 방법이 없어 **재조회 중에
+        // 도착한 진짜 신규 초대가 영원히 무음**이 됐다(AC-07).
+        //
+        // 목록 반영은 미루지 않는다 — 소리 경계 때문에 수락·거절이 막히면 안 된다. 봉투만
+        // 따로 남겨 두면 loadSnapshot이 새 커서로 다시 판정해 정확히 한 번 후보로 돌려준다.
+        if (state.restorePending
+            && sfxEvent !== null && sfxEvent !== undefined
+            && !state.soundConsumed.has(invite.inviteId)) {
+            set({ invites, liveBuffer: [...state.liveBuffer, { invite, sfxEvent }] });
+            return { applied: true, deferredSound: true };
+        }
+
+        set({ invites });
         return { applied: true };
     },
 

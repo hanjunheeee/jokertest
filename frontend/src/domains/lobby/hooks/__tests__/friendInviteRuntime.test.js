@@ -86,9 +86,12 @@ mock.module("../../api/friend.api.js", {
 const { act, createElement } = await import("react")
 const { createRoot } = await import("react-dom/client")
 
-const { useFriendSocketEvents, requestGameInviteAccept, shouldEnterRoomFromAccept } = await import(
-  "../useFriendSocketEvents.js"
-)
+const {
+  useFriendSocketEvents,
+  requestGameInviteAccept,
+  shouldEnterRoomFromAccept,
+  loadInviteSnapshotAndPlayNew,
+} = await import("../useFriendSocketEvents.js")
 const { useGameInviteStore, selectPendingInvites } = await import("../../store/gameInvite.store.js")
 const { useFriendStore } = await import("../../store/friend.store.js")
 const { useAuthStore } = await import("../../../auth/store/auth.store.js")
@@ -122,11 +125,20 @@ const ACCOUNT_B = "22222222-2222-4222-8222-222222222222"
 
 const FIXTURE_HASH = "sha256-fixture-invite"
 
+/**
+ * 게임 초대가 **실제로 따르는** 알림 설정 키.
+ *
+ * 하드코딩하지 않고 배포 manifest에서 읽는다 — fixture가 production과 다른 키를 쓰면
+ * off/mute 시험이 실제로는 존재하지 않는 억제를 확인하게 되고, 설정 배선이 잘못돼도
+ * 통과해 버린다(실제로 그랬다: 게임 초대가 "친구 초대" 키를 따랐다).
+ */
+const GAME_INVITE_NOTIFICATION_KEY = SFX_MANIFEST["game-invite"].notificationKey
+
 /** 시험 전용 승인 fixture. 배포 자산 검토가 아니다. */
 const FIXTURE_MANIFEST = {
   "game-invite": {
     scope: SFX_SCOPE.ACCOUNT,
-    notificationKey: "friend-invite",
+    notificationKey: GAME_INVITE_NOTIFICATION_KEY,
     reviewStatus: SFX_REVIEW_STATUS.APPROVED,
     silenceReason: null,
     source: "fixture://test",
@@ -188,7 +200,7 @@ function installPlayer(overrides = {}) {
     masterVolume: 100,
     sfxVolume: 80,
     sfxMuted: false,
-    notifications: { "friend-invite": true },
+    notifications: { "friend-invite": true, [GAME_INVITE_NOTIFICATION_KEY]: true },
     ...(overrides.settings ?? {}),
   }
   const settingsListeners = new Set()
@@ -371,7 +383,9 @@ test("A-07: 배포 manifest의 game-invite는 미검토 무음이고 매체를 �
   const entry = SFX_MANIFEST["game-invite"]
   assert.ok(entry, "배포 manifest에 game-invite 항목이 있어야 한다")
   assert.equal(entry.scope, SFX_SCOPE.ACCOUNT)
-  assert.equal(entry.notificationKey, "friend-invite")
+  // 게임 초대는 설정 화면의 "게임 초대"(game-invite) 항목을 따른다. "친구 초대"를 따르면
+  // 사용자가 게임 초대를 꺼도 계속 울리고, 친구 요청만 끄면 게임 초대까지 함께 조용해진다.
+  assert.equal(entry.notificationKey, "game-invite")
   assert.equal(entry.reviewStatus, SFX_REVIEW_STATUS.NEEDS_REVIEW, "미검토 자산을 근거 없이 승인하지 않는다")
   assert.equal(entry.src, null, "존재하지 않는 경로를 지어내지 않는다")
   assert.equal(entry.sha256, null, "지어낸 해시가 없어야 한다")
@@ -450,6 +464,118 @@ test("AC-07: 복원 중에 온 사건은 보류됐다가 커서 이후의 것만
   })
 
   assert.equal(h.media.length, 1, "재배달로 소리가 늘면 안 된다")
+  await mounted.unmount()
+})
+
+test("AC-07: 재조회 중에 도착한 커서 이후 신규 초대는 복원이 끝난 뒤 정확히 한 번 울린다", async () => {
+  // ── 실제 결함(review5 #3) ────────────────────────────────────────────────
+  // beginResync는 snapshotLoaded를 내리지만, **재조회**(FriendListPanel이 패널을 열거나
+  // 새로고침할 때 부르는 loadInviteSnapshotAndPlayNew)는 snapshotLoaded를 true로 둔 채
+  // restorePending만 세운다. 그 구간에 도착한 live는:
+  //   · playGameInviteSfx → consumeInviteSound가 "restore-pending"으로 **보류**하고(표식 미소모)
+  //   · receiveLiveInvite는 snapshotLoaded=true라 버퍼에 담지 않아 **봉투를 버렸다**.
+  // 그래서 복원이 끝나도 되살릴 봉투가 없어, 재조회 중에 온 진짜 신규 초대가 영원히 무음이었다.
+  signIn(ACCOUNT_A)
+  const h = installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  // 첫 복원은 즉시 끝난다 — 이 시점부터 snapshotLoaded=true다.
+  snapshotResponder = async () => ({ invites: [], cursor: "100" })
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+  assert.equal(useGameInviteStore.getState().snapshotLoaded, true)
+  assert.equal(useGameInviteStore.getState().restorePending, false)
+  assert.equal(useGameInviteStore.getState().cursor, "100")
+
+  // 패널을 여는 실제 재조회 경로다(FriendListPanel.jsx가 부르는 바로 그 함수).
+  const gate = deferred()
+  snapshotResponder = () => gate.promise
+  let requery
+  await act(async () => {
+    requery = loadInviteSnapshotAndPlayNew()
+    await flush()
+  })
+  assert.equal(useGameInviteStore.getState().restorePending, true, "재조회는 복원 보류를 세운다")
+  assert.equal(useGameInviteStore.getState().snapshotLoaded, true, "재조회는 snapshotLoaded를 내리지 않는다")
+
+  // 그 사이에 진짜 신규 초대(커서 이후)와 이미 종료된 과거 행(커서 이하)이 함께 도착한다.
+  const fresh = invite({ inviteId: "fresh-requery", creationSeq: "150" })
+  const historical = invite({ inviteId: "stale-row", creationSeq: "60" })
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(fresh))
+    socket.__fire("game_invite_received", invitePayload(historical))
+    await flush()
+  })
+  assert.equal(h.media.length, 0, "복원 보류 중에는 소리 판정을 미룬다")
+
+  // 서버는 그 초대가 생기기 **전에** 읽었다 — 커서가 그대로 돌아온다.
+  await act(async () => {
+    gate.resolve({ invites: [], cursor: "100" })
+    await requery
+    await flush()
+  })
+
+  const state = useGameInviteStore.getState()
+  assert.equal(state.restorePending, false)
+  assert.equal(h.media.length, 1, "재조회 중에 도착한 신규 초대의 소리 봉투를 잃었다")
+  assert.equal(state.soundConsumed.has("fresh-requery"), true, "후보로 인정한 순간 표식을 소모해야 한다")
+  assert.equal(
+    selectPendingInvites(state.invites).some((row) => row.inviteId === "fresh-requery"), true,
+    "보류가 목록 반영까지 막으면 재조회 중에 온 초대를 수락할 수 없다",
+  )
+  assert.equal(
+    state.invites.some((row) => row.inviteId === "stale-row"), false,
+    "커서 이하인데 snapshot에 없는 PENDING은 이미 종료된 행이다",
+  )
+
+  // 재배달·설정 토글로 과거가 다시 울리지 않는다.
+  h.setSettings({ notifications: { [GAME_INVITE_NOTIFICATION_KEY]: false } })
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(fresh))
+    await flush()
+  })
+  h.setSettings({ notifications: { [GAME_INVITE_NOTIFICATION_KEY]: true } })
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(fresh))
+    await flush()
+  })
+  assert.equal(h.media.length, 1, "off/mute 재배달로 소리가 늘면 안 된다")
+  await mounted.unmount()
+})
+
+test("AC-07: 재조회 중에 도착한 신규 초대의 보류된 봉투는 다른 계정으로 넘어가지 않는다", async () => {
+  signIn(ACCOUNT_A)
+  const h = installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [], cursor: "100" })
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  const gate = deferred()
+  snapshotResponder = () => gate.promise
+  let requery
+  await act(async () => { requery = loadInviteSnapshotAndPlayNew(); await flush() })
+
+  await act(async () => {
+    socket.__fire("game_invite_received", invitePayload(invite({ inviteId: "a-only", creationSeq: "150" })))
+    await flush()
+  })
+
+  // 복원이 끝나기 전에 계정이 바뀌었다 — A의 보류분은 B의 소리가 될 수 없다.
+  signIn(ACCOUNT_B)
+  await act(async () => {
+    gate.resolve({ invites: [], cursor: "100" })
+    await requery
+    await flush()
+  })
+
+  assert.equal(h.media.length, 0, "계정 전환 뒤에 이전 계정의 보류된 봉투가 울렸다")
+  assert.equal(
+    useGameInviteStore.getState().invites.some((row) => row.inviteId === "a-only"), false,
+    "이전 계정의 초대가 새 계정 상태에 남으면 안 된다",
+  )
   await mounted.unmount()
 })
 
@@ -722,7 +848,7 @@ test("A-02: 계정 전환이 이전 계정의 초대·커서·표식을 즉시 �
 
 test("A-03: 알림 off·mute여도 표식을 소모해 설정을 켠 뒤 과거 사건이 울리지 않는다", async () => {
   signIn(ACCOUNT_A)
-  const h = installPlayer({ settings: { notifications: { "friend-invite": false } } })
+  const h = installPlayer({ settings: { notifications: { [GAME_INVITE_NOTIFICATION_KEY]: false } } })
   const socket = createFakeSocket()
   setSocket(socket)
   snapshotResponder = async () => ({ invites: [], cursor: "0" })
@@ -744,13 +870,52 @@ test("A-03: 알림 off·mute여도 표식을 소모해 설정을 켠 뒤 과거 
     "off여도 표식을 소모해야 설정을 켠 뒤 과거 사건이 울리지 않는다",
   )
 
-  h.setSettings({ notifications: { "friend-invite": true } })
+  h.setSettings({ notifications: { [GAME_INVITE_NOTIFICATION_KEY]: true } })
   await act(async () => {
     socket.__fire("game_invite_received", invitePayload(row))
     await flush()
   })
   assert.equal(h.media.length, 0, "설정을 켜자 과거 사건이 울렸다")
   await mounted.unmount()
+})
+
+test("AC-07: 게임 초대 소리는 '게임 초대' 설정만 따르고 친구 요청 설정과 독립이다", async () => {
+  // 설정 화면에는 "친구 초대"(friend-invite)와 "게임 초대"(game-invite)가 **서로 다른**
+  // 항목으로 존재하고 각각 따로 저장된다(generalSettings.js). 그런데 게임 초대의 소리와
+  // 알림 표시가 둘 다 friend-invite 키로 해소되면 사용자가 조작한 항목과 실제 동작이
+  // 어긋난다. 여기서는 실제 재생기의 설정 해소 경로로 그 독립성을 확인한다.
+  signIn(ACCOUNT_A)
+
+  // (1) "게임 초대"를 끄면 게임 초대가 조용해진다.
+  const off = installPlayer({ settings: { notifications: { "game-invite": false, "friend-invite": true } } })
+  const socketOff = createFakeSocket()
+  setSocket(socketOff)
+  snapshotResponder = async () => ({ invites: [], cursor: "0" })
+  const mountedOff = await mountHook(socketOff)
+  await act(async () => { await flush() })
+  await act(async () => {
+    socketOff.__fire("game_invite_received", invitePayload(invite({ inviteId: "g-off", creationSeq: "11" })))
+    await flush()
+  })
+  assert.equal(off.media.length, 0, "'게임 초대'를 껐는데도 게임 초대가 울렸다")
+  await mountedOff.unmount()
+
+  // (2) "친구 초대"만 꺼도 게임 초대는 그대로 울린다 — 친구 요청 설정이 게임 초대를
+  //     대신 끄면 사용자가 끄지 않은 알림이 사라진다.
+  resetAll()
+  signIn(ACCOUNT_A)
+  const on = installPlayer({ settings: { notifications: { "game-invite": true, "friend-invite": false } } })
+  const socketOn = createFakeSocket()
+  setSocket(socketOn)
+  snapshotResponder = async () => ({ invites: [], cursor: "0" })
+  const mountedOn = await mountHook(socketOn)
+  await act(async () => { await flush() })
+  await act(async () => {
+    socketOn.__fire("game_invite_received", invitePayload(invite({ inviteId: "g-on", creationSeq: "11" })))
+    await flush()
+  })
+  assert.equal(on.media.length, 1, "'친구 초대'를 껐다는 이유로 게임 초대까지 조용해졌다")
+  await mountedOn.unmount()
 })
 
 // ---------------------------------------------------------------------------
@@ -1533,6 +1698,107 @@ test("AC-07: 뒤처진 응답이 도착해도 복원 보류가 풀려 이후 신
   })
   assert.equal(runtime.media.length, 1, "복원 보류가 풀리지 않으면 여기서 0이 된다")
   assert.deepEqual(pendingIds(), ["fresh"])
+  await mounted.unmount()
+})
+
+// ── review5 #6 · 같은 커서는 서버 상태 변화를 정렬하지 못한다 ────────────────
+//
+// 커서(생성 순번의 최댓값)가 **다르면** 두 조회의 선후가 정해진다: 커서가 큰 쪽은 그 초대가
+// 생긴 뒤에 읽었으므로 반드시 나중이다. 그런데 커서가 **같으면** 둘 중 어느 쪽이 나중에
+// 읽혔는지 알 수 없다 — 그 사이의 차단·거절·만료는 커서를 올리지 않기 때문이다.
+//
+// 예전 구현은 그 동점을 **클라이언트의 요청 시작 순번(ticket)**으로 갈랐다. 시작 순서는
+// 서버가 실제로 읽은 순서가 아니므로, 서버에서 먼저 읽힌(=오래된) 응답이 더 큰 ticket을
+// 가지면 "취소됐다"는 나중 사실이 밀려나고 유령 초대가 처리 가능 상태로 남았다.
+//
+// 초대의 수명은 단조롭다(PENDING → terminal, 되돌아오지 않는다). 그래서 같은 커서의 어느
+// 조회든 "이 행은 처리 가능 목록에 없다"고 말하면 그건 확정 사실이다 — 두 응답의 처리 가능
+// 집합을 **교집합**으로 합치는 것이 순서와 무관하게 옳다.
+
+async function reproduceSameCursorRace(order) {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  const ghost = invite({ inviteId: "ghost", creationSeq: "40" })
+  snapshotResponder = async () => ({ invites: [ghost], cursor: "40" })
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+  assert.equal(
+    selectPendingInvites(useGameInviteStore.getState().invites).length, 1,
+    "출발점에서 ghost가 처리 가능해야 이 시험이 의미가 있다",
+  )
+
+  // 두 조회를 띄운다. 시작 순서는 first → second다.
+  const first = deferred()
+  const second = deferred()
+  const queue = [first.promise, second.promise]
+  let index = 0
+  snapshotResponder = () => queue[index++]
+
+  let pFirst
+  let pSecond
+  await act(async () => {
+    pFirst = loadInviteSnapshotAndPlayNew()
+    pSecond = loadInviteSnapshotAndPlayNew()
+    await flush()
+  })
+
+  // 서버는 second를 **먼저** 읽었다(아직 차단 전이라 ghost가 PENDING). 그 뒤 차단이 커밋돼
+  // ghost가 취소됐고, first의 읽기는 빈 목록을 본다. 두 응답의 커서는 똑같이 "40"이다.
+  const stalePending = { promise: pSecond, gate: second, data: { invites: [ghost], cursor: "40" } }
+  const freshEmpty = { promise: pFirst, gate: first, data: { invites: [], cursor: "40" } }
+  const settle = order === "stale-first" ? [stalePending, freshEmpty] : [freshEmpty, stalePending]
+
+  for (const step of settle) {
+    await act(async () => {
+      step.gate.resolve(step.data)
+      await step.promise
+      await flush()
+    })
+  }
+
+  assert.deepEqual(
+    selectPendingInvites(useGameInviteStore.getState().invites), [],
+    "같은 커서의 다른 조회가 '없다'고 확인해 준 PENDING이 되살아났다",
+  )
+  assert.equal(useGameInviteStore.getState().cursor, "40", "커서를 되돌리면 안 된다")
+  await mounted.unmount()
+}
+
+test("review5 #6: 같은 커서의 두 조회가 역순으로 읽혀도 취소된 초대가 되살아나지 않는다(오래된 응답이 먼저 도착)", async () => {
+  await reproduceSameCursorRace("stale-first")
+})
+
+test("review5 #6: 같은 커서의 두 조회가 역순으로 읽혀도 취소된 초대가 되살아나지 않는다(오래된 응답이 나중에 도착)", async () => {
+  await reproduceSameCursorRace("stale-last")
+})
+
+test("review5 #6: 같은 커서 병합이 정당한 신규 초대나 더 새로운 커서를 잃지 않는다", async () => {
+  // 교집합은 **같은 커서**에서만 쓴다. 커서가 오르면 그 조회는 반드시 더 나중이므로 그대로
+  // 권위를 가진다 — 안 그러면 새 초대가 도착할 때마다 과거 교집합에 걸려 사라진다.
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+
+  const older = invite({ inviteId: "older", creationSeq: "40" })
+  snapshotResponder = async () => ({ invites: [older], cursor: "40" })
+  const mounted = await mountHook(socket)
+  await act(async () => { await flush() })
+
+  // 새 초대가 생겨 커서가 올랐다 — 이 응답이 권위다.
+  const fresh = invite({ inviteId: "fresh", creationSeq: "70" })
+  snapshotResponder = async () => ({ invites: [older, fresh], cursor: "70" })
+  await act(async () => { await loadInviteSnapshotAndPlayNew(); await flush() })
+
+  assert.deepEqual(
+    selectPendingInvites(useGameInviteStore.getState().invites).map((row) => row.inviteId).sort(),
+    ["fresh", "older"],
+    "커서가 오른 조회는 그대로 권위를 가져야 한다",
+  )
+  assert.equal(useGameInviteStore.getState().cursor, "70")
   await mounted.unmount()
 })
 

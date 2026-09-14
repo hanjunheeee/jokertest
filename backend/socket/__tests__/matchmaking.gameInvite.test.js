@@ -135,6 +135,10 @@ function createInviteServiceStub({ roomId, roomInstanceId, bootEpoch, gates = {}
                 return { ok: false, code: committed.code, published: false }
             }
 
+            // publish 직후 · durable 영수증 직전에서 멈춘다. 두 Map에는 들어갔지만 영수증은
+            // 아직 없는 구간을 결정적으로 재현한다(원격 SQL이 아직 응답하지 않은 상태).
+            if (gates.afterPublish) await gates.afterPublish
+
             if (gates.receiptShouldFail) {
                 // 영수증 쓰기/커밋 실패 — 방금 넣은 두 Map을 **동기적으로** 되돌려야 한다.
                 unpublish()
@@ -143,9 +147,20 @@ function createInviteServiceStub({ roomId, roomInstanceId, bootEpoch, gates = {}
             state.entryOutcome = 'PUBLISHED'
             return { ok: true, alreadyPublished: false }
         },
+        /**
+         * 실제 서비스의 **조건부 UPDATE 술어를 그대로** 옮긴다(review5 #2).
+         *
+         * gameInvite.service.js::recordEntryInterrupted는 한 문장으로
+         *   WHERE id=? AND attempt_id=? AND entry_outcome='UNCONFIRMED'
+         * 를 쓰고 영향받은 행 수를 돌려준다. 예전 대역은 attempt 소유와 UNCONFIRMED를
+         * 확인하지 않고 무조건 INTERRUPTED를 적어서, 실제로는 **0행이라 아무것도 기록되지
+         * 않는** 경우(결정이 아직 attempt_id를 설치하기 전)를 성공으로 위장했다.
+         */
         async recordEntryInterrupted({ attemptId, reason }) {
             state.interruptions.push({ attemptId, reason })
-            if (state.entryOutcome === 'PUBLISHED') return false
+            if (typeof attemptId !== 'string' || attemptId.length === 0) return false
+            if (state.attemptId !== attemptId) return false
+            if (state.entryOutcome !== 'UNCONFIRMED') return false
             state.entryOutcome = 'INTERRUPTED'
             state.endReason = reason
             return true
@@ -761,5 +776,196 @@ test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛
         matchmaking.__getStateSnapshotForTests().playerRoom.find(([uuid]) => uuid === GUEST)?.[1],
         room.roomId,
         '유효한 새 소속 자체는 지우지 않는다',
+    )
+})
+
+// ---------------------------------------------------------------------------
+// review5 #1 · 기한 경과와 publication 소유권
+//
+// 시도의 기한(ADMISSION_TOTAL_TIMEOUT_MS)은 **애플리케이션 대기의 상한**이다. Date.now()가
+// 그 값을 넘는 순간은 정확하지만, withAdmissionTimeout의 setTimeout은 이벤트 루프가 밀리면
+// 그보다 늦게 실행된다. 그 창에 들어오는 get_current_room·ready·start·인원 판정이 전부
+// getAdmissionAttempt를 지나므로, 기한 경과 처리가 "토큰만 버리는" 것이면:
+//
+//   · 영수증 없는 publication이 **정상 소속**으로 보이고,
+//   · 그 소속을 되돌릴 소유자가 사라져 뒤이은 timeout 정리가 아무것도 하지 못한다.
+// ---------------------------------------------------------------------------
+
+test('review5 #1: 영수증이 지연되는 동안 기한이 지나도 미확정 소속을 정상 소속으로 답하지 않는다', async (t) => {
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 200, total: 200 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    // 영수증 직전에서 멈춘다 — 두 Map에는 들어갔지만 durable 영수증은 아직 없다.
+    const afterPublish = deferred()
+    const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
+        gates: { afterPublish: afterPublish.promise },
+    })
+
+    const accepting = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    await drainTicks()
+
+    const published = matchmaking.__getStateSnapshotForTests()
+    assert.equal(published.roomAdmissionAttempts[0]?.[1].phase, 'published', 'publish까지 진행돼야 한다')
+    assert.equal(published.playerRoom.find(([uuid]) => uuid === GUEST)?.[1], room.roomId)
+
+    // 원격 SQL이 아직 응답하지 않은 채 기한만 지났다(가상 시계 전진).
+    matchmaking.__expireAdmissionAttemptForTests(GUEST)
+
+    const current = await callAsPromise(handleGetCurrentRoom, GUEST)
+    assert.deepEqual(
+        current, { ok: true, room: null, pending: true },
+        '영수증 없는 입장을 정상 소속으로 답하면 화면이 확정되지 않은 입장을 확정된 것으로 표시한다',
+    )
+
+    // 기한이 지났다는 이유로 토큰만 버리면 이 publication을 되돌릴 소유자가 사라진다.
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 1,
+        '미확정 publication의 소유권은 기한이 지나도 남아 있어야 되돌릴 수 있다',
+    )
+
+    // 이제 실제 RECEIPT_TIMEOUT이 정착한다 — 미확정 소속은 반드시 회수돼야 한다.
+    const ack = await accepting
+    assert.equal(ack.ok, false)
+    assert.equal(ack.unknown, true, 'timeout은 실패가 아니라 모름이다')
+
+    const after = matchmaking.__getStateSnapshotForTests()
+    assert.equal(after.playerRoom.find(([uuid]) => uuid === GUEST), undefined, '미확정 소속이 남았다')
+    assert.equal(
+        after.gameRooms.find(([id]) => id === room.roomId)[1].players.some(([uuid]) => uuid === GUEST),
+        false, '미확정 참가자가 방 목록에 남았다',
+    )
+    assert.equal(guestSocket.rooms.has(room.roomId), false, '미확정 채널이 남으면 유령 청취자가 된다')
+    assert.equal(after.roomAdmissionAttempts.length, 0)
+    assert.equal(service.state.entryOutcome, 'INTERRUPTED', '무효화된 시도의 durable 상태를 맞춰야 한다')
+
+    afterPublish.resolve()
+    await drainTicks()
+})
+
+test('review5 #1: 늦게 도착한 옛 시도의 보상이 그 사이 확정된 새 소속을 지우지 않는다', async (t) => {
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 120, total: 120 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    const afterPublish = deferred()
+    const { io, hostSocket, guestSocket, room, service } = await setupRoomWithInvite(t, {
+        gates: { afterPublish: afterPublish.promise, receiptShouldFail: true },
+    })
+
+    // 옛 시도는 publish까지 갔다가 RECEIPT_TIMEOUT으로 끝난다 — 소속은 회수된다.
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+    assert.equal(matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST), undefined)
+
+    // 그 뒤 같은 계정이 **정상 경로로** 같은 방의 확정 참가자가 됐다.
+    await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
+        '정상 입장이 성립해야 이 시험이 의미가 있다',
+    )
+    hostSocket.emitted.length = 0
+    guestSocket.left.length = 0
+
+    // 이제서야 옛 시도의 서비스가 깨어나 unpublish를 부른다(늦게 끝난 원격 트랜잭션).
+    afterPublish.resolve()
+    await drainTicks()
+
+    const after = matchmaking.__getStateSnapshotForTests()
+    assert.equal(
+        after.playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
+        '옛 시도의 늦은 보상이 더 새로운 확정 소속을 지웠다',
+    )
+    assert.equal(
+        after.gameRooms.find(([id]) => id === room.roomId)[1].players.some(([u]) => u === GUEST),
+        true, '확정 참가자가 방 목록에서 사라졌다',
+    )
+    assert.equal(guestSocket.rooms.has(room.roomId), true, '확정된 새 소속의 채널을 끊으면 방송을 못 받는다')
+    assert.deepEqual(guestSocket.left, [], '새 소속의 채널을 끊으면 안 된다')
+    assert.equal(
+        hostSocket.emitted.some((e) => e.event === 'player_left_room'), false,
+        '실제로 나가지 않은 참가자의 이탈을 방송하면 다른 참가자의 화면이 거짓이 된다',
+    )
+})
+
+// ---------------------------------------------------------------------------
+// review5 #2 · 늦게 커밋된 수락 결정의 정직한 정착
+//
+// recordEntryInterrupted는 id + attempt_id + entry_outcome='UNCONFIRMED' 한 문장이다(경합
+// 보호). 그래서 **결정이 아직 attempt_id를 설치하기 전**에 부르면 0행이라 아무것도 적히지
+// 않는다. 그 뒤 늦은 결정이 커밋되면 ACCEPTED/UNCONFIRMED가 영구히 남는다 — 아무도 입장하지
+// 않았는데 "입장 결과 미확정"으로 굳는다.
+// ---------------------------------------------------------------------------
+
+test('review5 #2: 결정이 늦게 커밋되면 실패한 시도를 뒤늦게라도 정직하게 정착시킨다', async (t) => {
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 60, total: 60 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    // 결정이 잠금을 얻거나 커밋하기 **전에** 멈춘다.
+    const beforeDecision = deferred()
+    const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
+        gates: { beforeDecision: beforeDecision.promise },
+    })
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+    assert.equal(ack.unknown, true)
+
+    // 이 시점의 보상은 조건부 UPDATE가 0행이다 — 아직 attempt_id가 설치되지 않았다.
+    assert.equal(service.state.attemptId, null)
+    assert.equal(service.state.entryOutcome, null)
+    assert.equal(matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 0)
+
+    // 이제 원격 트랜잭션이 늦게 깨어나 결정을 커밋한다.
+    beforeDecision.resolve()
+    await drainTicks(8)
+
+    assert.equal(service.state.status, 'ACCEPTED', '역사적 결정 자체는 그대로 보존한다')
+    assert.equal(
+        service.state.entryOutcome, 'INTERRUPTED',
+        '늦게 커밋된 결정이 ACCEPTED/UNCONFIRMED로 영구히 남으면 아무도 입장하지 않은 시도가 미확정으로 굳는다',
+    )
+
+    // 입장을 지어내지 않는다 — 어떤 Map에도, 어떤 채널에도 들어가지 않았다.
+    const after = matchmaking.__getStateSnapshotForTests()
+    assert.equal(after.playerRoom.find(([u]) => u === GUEST), undefined)
+    assert.equal(
+        after.gameRooms.find(([id]) => id === room.roomId)[1].players.some(([u]) => u === GUEST), false,
+    )
+    assert.equal(guestSocket.rooms.has(room.roomId), false)
+    assert.equal(service.state.finalizeCalls, 0, '결정이 정착하기 전에 끝난 시도는 finalize로 가지 않는다')
+})
+
+test('review5 #2: 늦은 보상이 더 새로운 시도나 확정된 영수증을 덮지 않는다', async (t) => {
+    matchmaking.__setAdmissionTimeoutsForTests({ step: 60, total: 60 })
+    t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
+
+    const beforeDecision = deferred()
+    const gates = { beforeDecision: beforeDecision.promise }
+    const { io, guestSocket, room, service } = await setupRoomWithInvite(t, { gates })
+
+    const first = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(first.ok, false)
+
+    // 옛 결정이 깨어나기 전에, 같은 초대가 **새 시도**로 확정 입장까지 마쳤다.
+    service.state.status = 'PENDING'
+    service.state.attemptId = null
+    service.state.entryOutcome = null
+    gates.beforeDecision = null
+    const second = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(second.ok, true, '새 시도는 정상적으로 확정돼야 한다')
+    assert.equal(service.state.entryOutcome, 'PUBLISHED')
+    const newAttemptId = service.state.attemptId
+
+    // 이제 옛 결정이 늦게 깨어난다.
+    beforeDecision.resolve()
+    await drainTicks(8)
+
+    assert.equal(service.state.attemptId, newAttemptId, '늦은 보상이 새 시도의 attempt를 덮었다')
+    assert.equal(
+        service.state.entryOutcome, 'PUBLISHED',
+        '확정된 영수증을 늦은 보상이 INTERRUPTED로 뒤집으면 실제 참가자의 입장이 거짓이 된다',
+    )
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
+        '확정된 소속은 그대로 남아야 한다',
     )
 })

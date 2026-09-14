@@ -55,10 +55,12 @@ async function callNotificationsApi(name, ...args) {
  */
 export const NOTIFICATION_SETTING_KEY_BY_TYPE = Object.freeze({
   "friend-request": "friend-invite",
-  // F-19(AC-07): 게임 초대도 "친구 초대" 설정을 따른다. 이 설정을 끄면 **표시·미확인 수·
-  // 소리**만 사라지고, 원본 초대와 수동 처리 탭(게임 초대 탭)은 그대로 남는다 — 설정으로
-  // 실제 초대를 잃지 않는다.
-  "game-invite": "friend-invite",
+  // F-19(AC-07): 게임 초대는 설정 화면의 **"게임 초대"(game-invite)** 항목을 따른다.
+  // "친구 초대"는 친구 요청 전용의 별개 항목이라(generalSettings.js에 둘 다 있고 각각
+  // 따로 저장된다) 그것으로 해소하면 사용자가 끄지 않은 알림이 사라지고, 실제로 끈 항목은
+  // 계속 울린다. 이 설정을 끄면 **표시·미확인 수·소리**만 사라지고, 원본 초대와 수동 처리
+  // 탭(게임 초대 탭)은 그대로 남는다 — 설정으로 실제 초대를 잃지 않는다.
+  "game-invite": "game-invite",
   achievement: "system-notification",
   system: "system-notification",
 })

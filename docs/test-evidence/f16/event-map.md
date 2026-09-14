@@ -15,7 +15,7 @@
 | `friend-request-received` | `backend/controller/friend.controller.js::sendFriendRequest` | `friend-request:<requestId>:received` | `emitToUser(receiverId, …)` | `useFriendSocketEvents.js` |
 | `friend-request-accepted` | `…::acceptRequest` | `friend-request:<requestId>:accepted` | `emitToUser(requesterId, …)` | 같음 |
 | `friend-request-declined` | `…::declineRequest` | `friend-request:<requestId>:declined` | `emitToUser(requesterId, …)` | 같음 |
-| `game-invite` | `backend/service/gameInvite.service.js::createInvite`의 커밋 후 `emitInviteReceived` (F-19에서 추가) | `game-invite:<inviteId>:received` | `emitToUser(receiverId, 'game_invite_received', …)` | `useFriendSocketEvents.js::playGameInviteSfx` (커서 경계는 `gameInvite.store.js::consumeInviteSound`) |
+| `game-invite` | `backend/service/gameInvite.service.js::createInvite`의 커밋 후 `emitInviteReceived` (F-19에서 추가) | `game-invite:<inviteId>:received` | `emitToUser(receiverId, 'game_invite_received', …)` | `useFriendSocketEvents.js::playGameInviteSfx` (커서 경계는 `gameInvite.store.js::consumeInviteSound`, 표시 설정은 **"게임 초대"**) |
 | `achievement-granted` | `backend/services/achievementService.js::notifyAchievementGranted` (각 commit 직후) | `achievement:<definitionId>:granted` | `emitToUser(userId, …)` | `useSfxRuntime.js`의 `achievement_granted` 구독 |
 | `room-ready-changed` | `backend/socket/matchmaking.js::handleSetReady` (실제 변경에만, revision 증분) | `room:<roomId>:ready:<uuid>:<revision>` | 방송(요청자 제외) + 요청자 ACK | `useMatchingRoom.js` `handlePlayerReadyChanged` / `setReady` 성공 ACK |
 | `game-started` | `backend/socket/matchmaking.js::handleStartGame`의 참가자별 `game_started` | `game:<gameId>:started` | 참가자 각자 | `useMatchingRoom.js` `handleGameStarted` |
@@ -258,7 +258,7 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 
 | 항목 | 값 |
 | --- | --- |
-| kind | `game-invite` (scope=account, notificationKey=`friend-invite`) |
+| kind | `game-invite` (scope=account, notificationKey=`game-invite`) |
 | 생산자 | `backend/service/gameInvite.service.js::createInvite` — 커밋 **이후** `emitInviteReceived` |
 | 생산 권한 근거 | 전부 서버가 확인한다: 발송자의 현재 방 소속·방 인스턴스(matchmaking이 주입한 registry), 친구 관계, 양방향 차단 없음, 수신자 활성·수신 가능. 클라이언트가 보낸 방 코드·발송자·수신자는 권한 근거가 아니다(A-05) |
 | 멱등 키 | `UNIQUE(sender_id, creation_key)` — 같은 키 재시도는 기존 행을 돌려주고 `created=false`라 **어떤 사건도 재발행하지 않는다**. 같은 키에 다른 대상·방이면 409 충돌 |
@@ -274,6 +274,33 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 | 자산/무음 사유 | `sfxManifest.js`의 `pendingAsset` — `asset-unreviewed`, "자산 파일과 이용 조건 검토가 아직 제공되지 않았다" |
 | 복원 경계 | `loadSnapshot`은 authoritative하다 — snapshot에 없는 과거 PENDING은 목록에서 내리고(유령 초대 제거), 종료 이력과 커서 이후 신규는 남긴다. 복원 중 버퍼에 담긴 **커서 이후** 사건은 `soundCandidates`로 돌려받아 `useFriendSocketEvents`가 정확히 한 번 판정한다(사건을 재발행하지 않는다) |
 | 담당 상태 | **미완료** — 다중 계정 외부 Chrome 초대 흐름은 후보 `efb443d6`에서 **수행돼 통과했고**(BD-CHROME-EFB443D6.md), 이 보수 후보의 격리 DB 재실행·해당 Chrome 재확인·실제 청음(자산 미검토)이 남았다 |
+
+### review5 보수(이 후보에서 바뀐 것) — 아직 화면 재확인 전
+
+이 라운드에서 고친 것은 **네 가지**다. 전부 실패를 먼저 재현한 뒤 고쳤고, 재현 전/후 기록은
+`.pluto/progress.md`에 있다. **아래 어느 것도 앱 내 브라우저에서 다시 확인하지 않았다.**
+
+| # | 고친 것 | 화면에서 달라지는 것 |
+| --- | --- | --- |
+| 1 | `matchmaking.js` — 기한이 지나도 `phase='published'` 시도를 버리지 않고, publication 소유자 등록부로 되돌림 소유권을 확인한다 | 영수증 없는 입장이 "정상 소속"으로 보이지 않는다(pending 유지). 늦게 깨어난 옛 시도가 더 새로운 확정 소속을 지우거나 없는 이탈을 방송하지 않는다 |
+| 2 | `matchmaking.js` — 늦게 커밋된 수락 결정을 기다렸다가 보상한다 | 아무도 입장하지 않은 시도가 `ACCEPTED/UNCONFIRMED`로 굳지 않는다. 조건부 UPDATE는 그대로라 새 시도·확정 영수증은 덮지 않는다 |
+| 3 | `gameInvite.store.js` — 재조회(`restorePending`) 중 도착한 신규 초대의 **소리 봉투**를 보관한다 | 패널 열기·새로고침 도중에 온 진짜 신규 초대가 영원히 무음이 되지 않는다. 목록 반영은 그대로 즉시 |
+| 4 | `sfxManifest.js` · `notifications.store.js` — 게임 초대가 **"게임 초대"** 설정을 따른다 | 설정의 "게임 초대"를 끄면 실제로 조용해지고, "친구 초대"만 꺼도 게임 초대는 울린다 |
+| 6 | `gameInvite.store.js` — 같은 커서의 두 응답을 처리 가능 집합의 **교집합**으로 합친다 | 서버가 역순으로 읽어도 취소된 초대가 수락 버튼과 함께 되살아나지 않는다 |
+
+**#4의 화면 관찰 주의:** 배포 자산이 여전히 미검토라 `asset-unreviewed`가 설정보다 **먼저**
+판정된다. 그래서 앱 내 브라우저의 진단 계수(적격 1 · 청음 0 · `asset-unreviewed`)는 이 수정
+**전후가 같다**. 바뀐 것은 "어느 설정 항목이 이 소리를 지배하는가"이고, 그 독립성은 실제
+재생기 경로의 자동 회귀(`friendInviteRuntime.test.js`)가 확인한다. 설정 분기만 따로 눈으로
+보려면 자산 검토가 먼저 끝나야 한다 — 그 전까지 "게임 초대 off를 화면에서 확인했다"고 적지
+않는다.
+
+### 아직 재현하지 못한 심사 가설(이 워커의 한계)
+
+`review5`의 가설 **#5(차단 경합)**·**#7(0013 이관 순서)**은 **보호된 격리 MySQL이 있어야**
+재현된다. 이 작업본에는 `F01_TEST_DATABASE_URL`이 없어 DB 스위트 196건이 전부 skip이다 —
+**skip은 통과가 아니라 미검증이다.** 소스 판독 결과만 아래에 남기고, 증거 없이 제품 코드를
+바꾸지 않았다(상세·재현 절차는 `.pluto/progress.md`).
 
 ### 소리 소유권(한 사건에 한 번)
 
