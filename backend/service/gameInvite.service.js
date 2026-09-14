@@ -606,7 +606,7 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
             }, { transaction: t });
             return { rejection: createError('초대가 더 이상 유효하지 않습니다.', 409, 'SERVER_RESTARTED') };
         }
-        if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t })) {
+        if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t, lock: t.LOCK.SHARE })) {
             throw createError('차단된 사용자의 초대는 수락할 수 없습니다.', 403, 'BLOCKED');
         }
 
@@ -681,7 +681,7 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
 
             // 두 번째 잠금 전에 차단이 커밋됐으면 **역사적 ACCEPTED는 유지**하고 entry만
             // INTERRUPTED로 끝낸다 — 결정 자체를 되돌리지 않는다(A-10).
-            if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t })) {
+            if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t, lock: t.LOCK.SHARE })) {
                 await row.update({ entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'BLOCKED_BEFORE_ENTRY' }, { transaction: t });
                 return { ok: false, code: 'BLOCKED', published: false };
             }

@@ -1718,3 +1718,85 @@ test('AC-06: 방이 사라지면 그 방의 PENDING 초대가 종료된다', asy
     }
     assert.equal(eventsNamed('game_invite_received').length, 0);
 });
+
+
+test('review5 RR: block committed after initial read must prevent finalization', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+    const a = await createLocalUser('rr-a');
+    const b = await createLocalUser('rr-b');
+    await befriend(a, b);
+    placeInRoom(a, 'room-rr-block');
+    const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'rr-block' });
+    await gameInviteService.recordAcceptDecision({ receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-rr', bootEpoch: roomAccess.bootEpoch });
+    const repository = require('../../repositories/friend.repositories');
+    const original = repository.lockAccountsInOrder;
+    let held = false;
+    // Pause after the real transaction's initial consistent read; another real
+    // transaction commits the block before the finalizer obtains account locks.
+    repository.lockAccountsInOrder = async function(...args) {
+        if (!held) {
+            held = true;
+            await friendService.blockUser(a, b);
+        }
+        return original.apply(this, args);
+    };
+    t.after(() => { repository.lockAccountsInOrder = original; });
+    let published = 0;
+    const result = await gameInviteService.finalizeAcceptedEntry({
+        receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-rr', bootEpoch: roomAccess.bootEpoch,
+        publish: () => { published++; return { ok: true }; }, unpublish: () => {},
+    });
+    assert.equal(held, true);
+    assert.equal(result.code, 'BLOCKED');
+    assert.equal(published, 0);
+    const row = await db.GameInvite.findByPk(invite.inviteId);
+    assert.equal(row.status, 'ACCEPTED');
+    assert.equal(row.entry_outcome, 'INTERRUPTED');
+});
+
+
+test('review5 migration: preserve existing CANCELLED history when normalizing cross pending', async (t) => {
+    if (unavailable(t)) return;
+    await setUpBareSchema(t);
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, -1) });
+    const a = await createLocalUser('mh-a');
+    const b = await createLocalUser('mh-b');
+    const history = await db.FriendRequest.create({ requester_id: b, receiver_id: a, status: 'CANCELLED' });
+    const keep = await db.FriendRequest.create({ requester_id: a, receiver_id: b, status: 'PENDING' });
+    const cross = await db.FriendRequest.create({ requester_id: b, receiver_id: a, status: 'PENDING' });
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    assert.equal(await countRows(db.FriendRequest, {}), 3);
+    assert.equal((await db.FriendRequest.findByPk(history.id)).status, 'CANCELLED');
+    assert.equal((await db.FriendRequest.findByPk(keep.id)).status, 'PENDING');
+    assert.equal((await db.FriendRequest.findByPk(cross.id)).status, 'CANCELLED');
+    await addF19FriendsInvites.up(sequelize.getQueryInterface(), Sequelize, sequelize);
+    await addF19FriendsInvites.verify(sequelize.getQueryInterface());
+    assert.equal(await countRows(db.FriendRequest, {}), 3, 'rerun retains every history row');
+});
+
+
+test('review5 RR: block during decision lock acquisition preserves cancellation', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+    const a = await createLocalUser('rd-a');
+    const b = await createLocalUser('rd-b');
+    await befriend(a, b);
+    placeInRoom(a, 'room-rr-decision');
+    const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'rr-decision' });
+    const repository = require('../../repositories/friend.repositories');
+    const original = repository.lockAccountsInOrder;
+    let paused = false;
+    repository.lockAccountsInOrder = async function(...args) {
+        if (!paused) { paused = true; await friendService.blockUser(a, b); }
+        return original.apply(this, args);
+    };
+    t.after(() => { repository.lockAccountsInOrder = original; });
+    await assert.rejects(() => gameInviteService.recordAcceptDecision({
+        receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-rd', bootEpoch: roomAccess.bootEpoch,
+    }));
+    assert.equal(paused, true);
+    const row = await db.GameInvite.findByPk(invite.inviteId);
+    assert.equal(row.status, 'CANCELLED');
+    assert.equal(row.attempt_id, null);
+});

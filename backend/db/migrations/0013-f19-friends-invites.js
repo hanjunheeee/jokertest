@@ -414,6 +414,21 @@ module.exports = {
             );
         }
 
+        // 예전 UNIQUE는 requester_id의 외래 키를 받치는 **유일한** 인덱스다. 떼기 전에 독립
+        // 이름의 비유일 받침을 세운다 — 이 순서가 뒤바뀌면 MySQL이 "needed in a foreign key
+        // constraint"로 거부하고 마이그레이션이 failed로 멈춘다(REQUEST_FK_SUPPORT_INDEXES 주석).
+        // 새 PENDING 계정쌍 유일 키는 선두 컬럼이 달라 이 역할을 대신하지 못한다.
+        await ensureRequestForeignKeySupportIndexes(queryInterface);
+
+        // Drop the historical status uniqueness before converting cross requests to CANCELLED.
+        // Otherwise an existing CANCELLED history row collides with normalization.
+        // Foreign keys stay supported; reruns finish normalization and pending-pair uniqueness.
+        for (const legacy of findLegacyRequestUniqueIndexes(
+            await queryInterface.showIndex(FRIEND_REQUESTS_TABLE),
+        )) {
+            await queryInterface.removeIndex(FRIEND_REQUESTS_TABLE, legacy.name);
+        }
+
         const requestIndexes = await queryInterface.showIndex(FRIEND_REQUESTS_TABLE);
         if (!requestIndexes.some((index) => index.name === PENDING_PAIR_INDEX)) {
             // 인덱스를 걸기 전에 반드시 기존 교차 PENDING 중복을 정리한다 — 남아 있으면
@@ -424,20 +439,7 @@ module.exports = {
             });
         }
 
-        // 예전 UNIQUE는 requester_id의 외래 키를 받치는 **유일한** 인덱스다. 떼기 전에 독립
-        // 이름의 비유일 받침을 세운다 — 이 순서가 뒤바뀌면 MySQL이 "needed in a foreign key
-        // constraint"로 거부하고 마이그레이션이 failed로 멈춘다(REQUEST_FK_SUPPORT_INDEXES 주석).
-        // 새 PENDING 계정쌍 유일 키는 선두 컬럼이 달라 이 역할을 대신하지 못한다.
-        await ensureRequestForeignKeySupportIndexes(queryInterface);
 
-        // 새 제약과 받침이 모두 자리 잡은 **뒤에만** 예전 제약을 뗀다. 순서를 바꾸면 그 사이에
-        // 중복 PENDING이 들어올 창이 생긴다. 외래 키 자체는 건드리지 않고, FOREIGN_KEY_CHECKS도
-        // 끄지 않는다 — 받침이 있으면 제약을 유지한 채로 인덱스만 떨어진다.
-        for (const legacy of findLegacyRequestUniqueIndexes(
-            await queryInterface.showIndex(FRIEND_REQUESTS_TABLE),
-        )) {
-            await queryInterface.removeIndex(FRIEND_REQUESTS_TABLE, legacy.name);
-        }
     },
 
     async down(queryInterface, Sequelize, sequelize) {

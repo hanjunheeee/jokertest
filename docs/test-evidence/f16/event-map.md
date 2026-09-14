@@ -538,3 +538,12 @@ The user explicitly changed the browser requirement in this task: “아아 그�
 
 Next: stop the exact QA processes, attach this evidence with the prior 62-file scope audit, request official rescope, and let normal verification and both independent reviewers decide. No manual PASS, requirement weakening, or merge override.
 
+
+
+## Review5 operator SQL evidence (2026-09-14)
+
+Current worker base ddd01ccc; operator reproduced a real MySQL REPEATABLE READ block race: initial consistent read, block committed by another transaction, then finalizer account locks. Before fix: focused SQL32PASS1FAIL; SHARE current reads for decision/finalization restore latest block visibility. A separate decision-path regression preserves CANCELLED without assigning attempt_id.
+
+Legacy migration reproduction with existing reverse-direction CANCELLED plus crossing PENDING rows failed in cancelDuplicatePendingRequests with SequelizeUniqueConstraintError (33PASS1FAIL). Preserve FK support, remove old status UNIQUE before cancellation normalization, then add pending-pair UNIQUE. After fix, all three historical rows survive and direct migration rerun succeeds. Initial fixture nickname collision was excluded from defect evidence.
+
+Protected F19 SQL now35PASS0FAIL0SKIP; migration unit20PASS0FAIL0SKIP. Logs in main .pluto/monitor/BD-db-review5-{reproduction,current-read,migration-before2,migration-after,final}.log and BD-migration-unit-review5.log. Normal full tests and both independent reviews remain required. Earlier IAB evidence belongs to the previous candidate; changed UI flows require new operator verification. Physical audibility remains unmeasured; asset remains unreviewed and silent.
