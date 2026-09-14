@@ -547,3 +547,25 @@ Current worker base ddd01ccc; operator reproduced a real MySQL REPEATABLE READ b
 Legacy migration reproduction with existing reverse-direction CANCELLED plus crossing PENDING rows failed in cancelDuplicatePendingRequests with SequelizeUniqueConstraintError (33PASS1FAIL). Preserve FK support, remove old status UNIQUE before cancellation normalization, then add pending-pair UNIQUE. After fix, all three historical rows survive and direct migration rerun succeeds. Initial fixture nickname collision was excluded from defect evidence.
 
 Protected F19 SQL now35PASS0FAIL0SKIP; migration unit20PASS0FAIL0SKIP. Logs in main .pluto/monitor/BD-db-review5-{reproduction,current-read,migration-before2,migration-after,final}.log and BD-migration-unit-review5.log. Normal full tests and both independent reviews remain required. Earlier IAB evidence belongs to the previous candidate; changed UI flows require new operator verification. Physical audibility remains unmeasured; asset remains unreviewed and silent.
+
+
+## Latest current-candidate UI evidence after review5 repairs
+
+# Current F19 operator in-app UI evidence, 2026-09-14
+
+Product candidate: e089dcdc6e41705a358745a5339179783d00b575. Actual observations collected 13:53–14:07 KST, raw DOM: BD-IAB-REVIEW5-DOM.json. User explicitly authorized the in-app browser in place of external Chrome. Two existing QA accounts were used through ordinary UI against the protected test database. Old error tabs were retained; new supported in-app tabs 3/4 connected successfully. All tabs retained and marked handoff.
+
+- Login both accounts, search nickname, send friend request, bulk accept: 1 accepted.
+- Host created waiting room, party 1, waiting-room friend invite button visible. New invite deb5aeab-f4ac-4050-947a-ff01090081e4: received 1, eligible 1, player completion 0, asset-unreviewed. Reload restored pending invite with 0/0/0, no old sound eligibility.
+- Turned game-invite notification OFF while friend-invite remained ON; persisted after navigation. New measured invite 1e091b35-5ae6-43a7-9a81-c9bba3ae668b still appears in game invitations, diagnostic 1/1/0 asset-unreviewed. Re-enabled game notifications then browser Back: same invite and counters 1/1/0, no replay.
+- Accepted invite: BOTH accounts show party 2; guest reload still party 2. Guest left: host party 1, public list 1/10.
+- Effect sound mute ON. New invite 28e95410-0c74-4352-9d85-1ccf391e00e1: 1/1/0 asset-unreviewed. Unmute then browser Back: same 1/1/0, no replay.
+- Block sender while invite pending: no received invitations. Unblock and reload: still no invitations, counters 0/0/0. Host's already-open friend list remained empty after unblock; host reload restored friend and invite button. Preserve this freshness observation for independent review.
+- New invite after unblock 306da67c-fa02-4563-81e9-68a6d55c5faa appeared with accept button. Deleting the QA room removed accept/decline controls and displayed invalid invitation. Terminal sender is shown as unknown; preserve presentation observation.
+- Guest logged out and logged in as the other QA account; reopening diagnostic URL showed changed account suffix b884db and 0/0/0 with no invitations. This measures state AFTER navigation, not immediate hidden reset timing.
+
+## Explicit limits
+
+Physical audibility was not measured. Assets remain unreviewed and silent. Asset guard runs before preference suppression, so these UI observations do NOT establish which settings-specific audio branch would suppress an approved asset. Eligibility/player completion are not listening evidence. Same-cursor snapshot races, delayed transaction compensation and ownership races are covered by actual automated regressions, not claimed as deterministic UI reproductions. Menu clicks immediately after closing a panel sometimes required a later click after the panel transition; no root cause asserted. QA diagnostic query is lost by ordinary Back button routing; browser Back preserved it in the measured re-enable/unmute cases.
+
+Protected SQL35 PASS/0FAIL/0SKIP and migration unit20 PASS are current-candidate focused checks. Worker frontend1852 PASS/build PASS predate the operator SQL-only changes. Worker backend1449 PASS/196 SKIP is NOT a full database PASS. Fresh official full tests and both independent reviews remain required. No acceptance relaxation or manual verdict override is requested.
