@@ -195,6 +195,9 @@ test('A-09: 조회 API를 반복 호출해도 achievement_grants 행이 생기�
     for (let i = 0; i < 3; i += 1) {
         const res = await fetch(`${base}/user/me/achievements`, { headers: { cookie: `accessToken=${tokenFor(userId)}` } });
         assert.equal(res.status, 200);
+        // Consume each response before the next request; do not leave connection cleanup to GC.
+        const body = await res.json();
+        assert.equal(body.data.length, 22);
     }
 
     const grantCount = await db.AchievementGrant.count({ where: { user_id: userId } });
