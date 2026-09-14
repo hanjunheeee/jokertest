@@ -354,9 +354,9 @@ export const useGameInviteStore = create((set, get) => ({
         // 어느 조회든 "이 행은 처리 가능 목록에 없다"고 말하면 그것은 확정 사실이고, 두
         // 응답의 처리 가능 집합을 **교집합**으로 합치는 것이 도착 순서와 무관하게 옳다.
         //
-        // 첫 복원(snapshotLoaded=false)과 재접속 복원은 비교할 이전 지식이 없으므로 그대로
-        // 받는다 — 안 그러면 빈 초기 집합과의 교집합이 정당한 PENDING을 전부 지운다.
-        const sameBoundary = cursorDelta === 0 && state.snapshotLoaded;
+        // Only the first successful snapshot has no prior knowledge. Reconnect keeps
+        // snapshotSeq and pending IDs even while snapshotLoaded temporarily becomes false.
+        const sameBoundary = cursorDelta === 0 && state.snapshotSeq > 0;
 
         // 지식이 뒤처진 응답은 커서·처리 가능 집합을 **되돌리지 않는다**. 그래도 복원 자체는
         // 해소한다 — 안 그러면 restorePending이 영원히 남아 이후 신규 초대가 전부 무음이 된다.
