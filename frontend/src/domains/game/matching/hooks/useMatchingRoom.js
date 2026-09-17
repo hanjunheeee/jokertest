@@ -236,7 +236,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   const [roomEventGeneration, setRoomEventGeneration] = useState(0)
 
   /**
-   * F-20(AC-04): **준비 집계 세대**. 적용 세대·소속 세대와 또 다른 것을 센다.
+   * F-20(AC-04): **준비·참가 인원 집계 세대**. 적용 세대·소속 세대와 또 다른 것을 센다.
    *
    * set_ready ACK는 두 가지 사실을 함께 싣는다 — 내 준비 결과(own outcome)와 방 전체 canStart다.
    * 앞의 것은 내 readyRevision이 정렬해 주지만, 뒤의 것은 **모든 참가자의 준비 상태를 입력으로
@@ -245,9 +245,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
    * revision은 어느 쪽에도 실려 있지 않다 — 내 revision이 현재라는 사실은 여기에 대해 아무것도
    * 말해 주지 않는다.
    *
-   * 그래서 "그 사이 **준비**에 관한 사실을 반영했는가"만 따로 센다. 방장 이전·조회 재확보처럼
-   * 준비를 바꾸지 않는 사건은 ACK의 집계를 낡게 만들지 않으므로 여기서 세지 않는다(그 경우
-   * ACK는 그 사건 뒤에 서버가 내보낸 더 새로운 값이다).
+   * 그래서 "그 사이 **준비·참가 인원**에 관한 사실을 반영했는가"만 따로 센다. 방장 이전·조회 재확보처럼
+   * 준비·참가 인원을 바꾸지 않는 사건과 구분한다. 참가자의 입장·퇴장도 집계 입력을
+   * 바꾸므로 준비 방송 및 설정 교체와 함께 이 세대를 올린다.
    */
   const readyAggregateGenerationRef = useRef(0)
 
@@ -356,10 +356,12 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
 
     const handlePlayerJoinedRoom = ({ player, canStart }) => {
       if (!isCurrentSource()) return
+      readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => addPlayer(player, canStart))
     }
     const handlePlayerLeftRoom = ({ uuid, canStart }) => {
       if (!isCurrentSource()) return
+      readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => removePlayer(uuid, canStart))
     }
     const handleHostChanged = ({ hostUuid, canStart, roomId: eventRoomId, settingsVersion }) => {

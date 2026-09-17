@@ -496,3 +496,40 @@ test("AC-05 · 보존 · 중간 사건이 없으면 결과에 실린 신선한 �
     "이미 최신 스냅샷을 적용했는데 조회가 또 나갔다")
   assert.equal(result.current.hasPendingSettingsResult, false)
 })
+
+
+for (const transition of ["join", "leave"]) {
+ test("operator: membership event keeps latest canStart after held ready ACK " + transition, async () => {
+  const players = [
+   {uuid:"host-a",nickname:"host",isReady:false,readyRevision:0},
+   ...["p1","p2","p3"].map(uuid=>({uuid,nickname:uuid,isReady:true,readyRevision:1})),
+   ...(transition==="leave" ? [{uuid:"p4",nickname:"p4",isReady:false,readyRevision:0}] : []),
+  ]
+  const { socket, result } = await mountVerified(serverRoom({players,canStart:false}))
+  socket.answer=()=>HOLD
+  const queriesBefore=socket.countOf("get_current_room")
+  let readyPromise
+  await act(async()=>{readyPromise=result.current.setReady(true)})
+  const latestCanStart=transition==="leave"
+  await act(async()=>{
+    if(transition==="join")socket.trigger("player_joined_room",{
+      player:{uuid:"p4",nickname:"p4",isReady:false,readyRevision:0},canStart:false})
+    else socket.trigger("player_left_room",{uuid:"p4",canStart:true})
+  })
+  assert.equal(useMatchingStore.getState().canStart,latestCanStart)
+  await act(async()=>{
+    socket.release("set_ready",{ok:true,isReady:true,canStart:!latestCanStart,
+      roomId:ROOM_ID,settingsVersion:1,readyRevision:1})
+    await readyPromise
+  })
+  assert.equal(playerOf("host-a").isReady,true)
+  assert.equal(useMatchingStore.getState().canStart,latestCanStart,
+    "old own ACK overwrote the membership event's room-wide start permission")
+  assert.equal(socket.countOf("get_current_room"),queriesBefore+1)
+  const current=useMatchingStore.getState()
+  await act(async()=>{socket.release("get_current_room",{ok:true,room:serverRoom({
+    players:current.players,canStart:latestCanStart})})})
+  assert.equal(result.current.isRoomVerified,true)
+  assert.equal(socket.countOf("get_current_room"),queriesBefore+1)
+ })
+}
