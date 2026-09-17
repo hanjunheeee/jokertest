@@ -49,6 +49,41 @@ const ROLE_TO_NIGHT_TIME_ID = Object.freeze(
   Object.fromEntries(ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ role, id }) => [role, id])),
 )
 
+/**
+ * 직업별 밤 시간 스테퍼 id → 역할 키(위 대응표의 역방향).
+ *
+ * 폼은 "어느 스테퍼를 건드렸는가"를 id로 안다. 그 사실을 서버 계약의 역할 키로 옮기려면
+ * 역방향 대응이 필요하고, 그 대응도 같은 정의 한 곳에서만 파생돼야 한다.
+ */
+export const NIGHT_TIME_ID_TO_ROLE = Object.freeze(
+  Object.fromEntries(ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ role, id }) => [id, role])),
+)
+
+/**
+ * 저장 요청에 실을 "지정한 직업" 목록을 만듭니다.
+ *
+ * 두 사실을 합친다:
+ *   - serverSpecified: 서버에 **이미** 지정돼 있던 직업. 편집을 열고 아무것도 바꾸지 않은
+ *     채 저장해도 없던 override가 생기지 않게 하는 근거다.
+ *   - editedRoleTimeIds: 이번 편집에서 방장이 **실제로 값을 바꾼** 스테퍼. 이것이 없으면
+ *     원래 지정돼 있지 않던 직업의 시간을 바꿔도 그 변경이 요청에 실리지 않아, 화면에서는
+ *     바뀐 값이 보이는데 서버에는 영영 전달되지 않는다.
+ *
+ * serverSpecified가 배열이 아니면(= 생성 화면처럼 "지정 목록"이라는 개념이 없는 출발점)
+ * undefined를 돌려준다 — 그러면 기존 생성 계약대로 스테퍼 전부가 실린다.
+ *
+ * @param {string[]|undefined} serverSpecified
+ * @param {Set<string>|undefined} editedRoleTimeIds - 값이 실제로 바뀐 스테퍼 id 집합
+ * @returns {string[]|undefined}
+ */
+export function mergeSpecifiedRoleNightActionTimes(serverSpecified, editedRoleTimeIds) {
+  if (!Array.isArray(serverSpecified)) return undefined
+  // 정의 순서대로 만들어 같은 입력이 언제나 같은 목록이 되게 한다(요청 지문의 안정성).
+  return ROLE_NIGHT_ACTION_TIME_OPTIONS
+    .filter(({ role, id }) => serverSpecified.includes(role) || editedRoleTimeIds?.has?.(id) === true)
+    .map(({ role }) => role)
+}
+
 export const ROOM_SETTINGS_FORM_ERROR_CODES = Object.freeze({
   NOT_OBJECT: "NOT_OBJECT",
   INVALID_ACCESS_TYPE: "INVALID_ACCESS_TYPE",

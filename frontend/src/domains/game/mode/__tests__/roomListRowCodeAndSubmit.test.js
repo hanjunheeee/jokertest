@@ -330,6 +330,21 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
       /rowCode|resolveRoomListRowCode|isCode|accessType/,
       "AC-04: 코드 방 배지가 고정 문구 대신 방 코드 값을 표시한다",
     ],
+    [
+      /settingsSummary|summarizeRoomListSettings|ROOM_LIST_ROW_SETTINGS_CLASS/,
+      "F-20 AC-03: 서버가 승인한 직업 구성·제한시간 요약을 목록 행과 aria-label에 표시한다" +
+        " — 요약 문자열은 utils/summarizeRoomListSettings.js가 만들고 이 행은 표시만 한다",
+    ],
+    [
+      /^statusLabel \? `, \$\{statusLabel\}` : ""$|^\}`\}$|^\}\$\{statusLabel \? `, \$\{statusLabel\}` : ""\}`\}$/,
+      "같은 계약: aria-label에 설정 요약을 끼워 넣으며 기존 마감/진행중 표시가 여러 줄로 나뉘었다" +
+        " — 읽어주는 내용의 순서와 값은 그대로다",
+    ],
+    [
+      /^import \{ ROOM_LIST_ROW_BOTTOM_ROW_CLASS[\s\S]*roomListLayout\.js"$/,
+      "같은 계약: 요약 표시용 스타일 상수(ROOM_LIST_ROW_SETTINGS_CLASS)가 같은 import 문장에 더해져" +
+        " 원격과 가져오는 이름 집합이 달라졌다(출처 파일은 그대로다)",
+    ],
   ],
   "domains/game/mode/components/roomList/RoomListShell.jsx": [
     [
@@ -381,9 +396,55 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
         " — 개수가 원격과 같다는 것은 아래 '마크업 구조는 원격과 같다' 테스트가 확인한다",
     ],
   ],
-  "domains/game/setup/components/GameSetupPanel.jsx": [],
+  // F-20: 이 패널은 이제 생성(create_room)과 대기방 설정 편집(update_room_settings) 두 모드를
+  // 함께 담당한다. 아래 근거는 그 계약에서 곧바로 나오는 차이만 면제한다 — 마크업 구조가
+  // 원격과 같다는 사실은 별도 테스트가 계속 확인한다.
+  "domains/game/setup/components/GameSetupPanel.jsx": [
+    [
+      /roomSettingsForm\.js"$/,
+      "F-20 AC-03/AC-06: 편집 모드가 쓰는 계약(비편집 항목 목록·직업별 시간 지정 병합)을 공용 변환기에서 가져온다",
+    ],
+    [
+      /^export default function GameSetupPanel\(\{$|^(visible|isCreating|onCreateGame|mode = "create"|initialFormState = null|formResetKey = null|submitLabel|submitBusyLabel|submitDisabled = false),$|^\}\) \{$|^export default function GameSetupPanel\(\{ visible, isCreating, onCreateGame \}\) \{$/,
+      "F-20 AC-01/AC-03: 한 패널을 생성·편집 두 모드로 쓰기 위해 props가 늘어 여러 줄 서명이 됐다",
+    ],
+    [
+      /isEditMode|hiddenItemIds|submitLabel|submitBusyLabel|submitDisabled/,
+      "F-20 A-06: 편집 모드는 D-12 추가 규칙 세 항목을 그리지 않고, 제출 버튼 라벨·진행 표시가 모드별로 다르다",
+    ],
+    [
+      /useSetupTabState\(ALL_SETUP_ITEMS|^(initialState: initialFormState|resetKey: formResetKey|initialComposition: initialFormState\?\.roleComposition \?\? null),$|^\}\)$/,
+      "F-20 AC-03/AC-05: 폼이 서버 확정 설정에서 시작하고, 방·설정 버전이 교체되면 이전 초안을 버린다",
+    ],
+    [
+      /editedRoleTimeIds|appliedResetKey|NIGHT_TIME_ID_TO_ROLE|handleSetRange|setRange=\{(handleSetRange|setRange)\}|^setRange\(id, next\)$/,
+      "F-20 AC-03: 이번 편집에서 실제로 값이 바뀐 직업별 밤 시간을 추적해 저장 요청에 싣는다",
+    ],
+    [
+      /handleSubmitClick|handleCreateClick/,
+      "F-20 AC-03: 같은 버튼이 생성·저장 두 제출을 담당해 핸들러 이름이 모드 중립으로 바뀌었다",
+    ],
+    [
+      /composition|specifiedRoleNightActionTimes|^onCreateGame\(\{$|^(checks|ranges),$/,
+      "F-20 AC-03: 편집 제출은 요청 조립 없이 폼 상태를 그대로 넘기고, 생성 제출은 기존 변환기를 그대로 쓴다",
+    ],
+    [
+      /^<MeetingGameSetupTab( checks=\{checks\} ranges=\{ranges\} setCheck=\{setCheck\} setRange=\{setRange\} \/>)?$|^(checks=\{checks\}|ranges=\{ranges\}|setCheck=\{setCheck\}|hiddenItemIds=\{hiddenItemIds\}|\/>)$/,
+      "같은 계약: 회의&투표 탭에도 숨김 항목을 넘기느라 한 줄 JSX가 여러 줄로 늘어났다(넘기는 값은 그대로)",
+    ],
+    [
+      /^(label=\{submitLabel|busyLabel=\{submitBusyLabel|busy=\{isCreating\}|disabled=\{isCreating \|\| submitDisabled)/,
+      "같은 계약: 제출 버튼의 라벨·진행 표시·비활성 조건이 모드별 값을 받는다",
+    ],
+  ],
   "domains/game/setup/components/RoleCompositionSection.jsx": [],
-  "domains/game/mode/constants/roomListLayout.js": [],
+  "domains/game/mode/constants/roomListLayout.js": [
+    [
+      /^export const ROOM_LIST_ROW_SETTINGS_CLASS =$|^"pointer-events-none min-w-0 shrink truncate font-subheading/,
+      "F-20 AC-03: 목록 행에 추가된 설정 요약 표시의 스타일 상수다" +
+        " — 기존 행 스타일 상수는 그대로 두고 새 상수만 덧붙였다",
+    ],
+  ],
   "domains/game/setup/hooks/useSetupContentScrollOnRoleModeChange.js": [],
 }
 
@@ -720,7 +781,9 @@ test("AC-02: 게임 설정 화면이 페이지→패널→일반 탭→역할 �
   assertWires("domains/game/setup/components/GameSetupPanel.jsx", [
     [/import GeneralGameSetupTab from "\.\/GeneralGameSetupTab\.jsx"/, "일반 탭을 import하지 않는다"],
     [/<GeneralGameSetupTab[\s\S]*?roleComposition=\{roleComposition\}/, "역할 구성 상태를 일반 탭에 넘기지 않는다"],
-    [/<GameSetupCreateButton[\s\S]*?onClick=\{handleCreateClick\}/, "생성 버튼이 handleCreateClick에 연결돼 있지 않다"],
+    // F-20 AC-03: 같은 버튼이 생성(create_room)과 저장(update_room_settings) 두 제출을 담당하게
+    // 되어 핸들러 이름이 모드 중립(handleSubmitClick)으로 바뀌었다. 연결 자체는 그대로 확인한다.
+    [/<GameSetupCreateButton[\s\S]*?onClick=\{handleSubmitClick\}/, "제출 버튼이 handleSubmitClick에 연결돼 있지 않다"],
     // 이식한 스크롤 훅이 실제 본문 ref에 연결돼 있어야 모드 전환 시 스크롤이 맞는다.
     [
       /useSetupContentScrollOnRoleModeChange\(setupContentRef, roleComposition\.mode, activeTab\)/,

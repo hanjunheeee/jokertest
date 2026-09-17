@@ -16,6 +16,14 @@ matchmaking.__setEconomyServiceForTests({
     getPublicProfileLoadouts: async (userIds) =>
         Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
 })
+// 방이 소멸할 때 fire-and-forget으로 도는 초대 정리(gameInvite.service)는 실제 MySQL을
+// 요구한다. 대역을 주입하지 않으면 이 순수 단위 시험이 실제 DB 접속을 시도해
+// AccessDenied 로그를 남긴다 — 단언은 실패하지 않지만 "SQL을 건드리지 않는다"는 이
+// 스위트의 전제가 사실이 아니게 된다. 호출 자체는 기록해 두고 시험이 확인할 수 있게 한다.
+const cancelledInviteRooms = []
+matchmaking.__setGameInviteServiceForTests({
+    cancelPendingInvitesForRoom: async (roomId, reason) => { cancelledInviteRooms.push({ roomId, reason }) },
+})
 
 const {
     handleCreateRoom,
@@ -189,6 +197,13 @@ test('방 삭제 후 public_rooms_updated 방송에서 해당 방이 사라진�
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
     assert.ok(broadcast, '방 삭제 후 목록 방송이 있어야 합니다')
     assert.equal(broadcast.payload.rooms.some((room) => room.id === created.room.roomId), false)
+    // 초대 정리는 주입한 대역으로만 흘러야 한다 — 실제 SQL 경계를 이 스위트가 건드리지 않는다.
+    // cancelInvitesForRoomAsync는 fire-and-forget(Promise.resolve().then)이라 한 틱 뒤에 도달한다.
+    await Promise.resolve()
+    assert.ok(
+        cancelledInviteRooms.some((entry) => entry.roomId === created.room.roomId),
+        '방 소멸 시 초대 정리가 주입된 대역으로 호출되지 않았다',
+    )
 })
 
 test('참가자 disconnect 후 public_rooms_updated 방송에 인원 감소가 반영된다', async () => {

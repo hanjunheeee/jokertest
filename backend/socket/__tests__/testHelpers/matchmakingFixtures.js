@@ -130,6 +130,39 @@ function validSettingsPayload(overrides = {}) {
     }
 }
 
+/**
+ * F-20(AC-04): 실제 클라이언트가 보내는 set_ready/start_game payload.
+ *
+ * roomId·expectedSettingsVersion은 서버가 **필수**로 요구한다(빠지면 INVALID_REQUEST).
+ * 테스트가 그 값을 서버 상태에서 몰래 읽어 채우면 계약을 검증하지 못하므로, 방을 만든
+ * 쪽이 알고 있는 방 응답(또는 명시한 roomId·버전)에서만 만든다.
+ *
+ * @param {{roomId:string, settingsVersion?:number}|string} room - 방 응답 또는 roomId
+ * @param {{isReady?:boolean, settingsVersion?:number}} [options]
+ */
+function roomRequestPayload(room, { isReady, settingsVersion } = {}) {
+    const isRoomObject = typeof room === 'object' && room !== null
+    const payload = {
+        roomId: isRoomObject ? room.roomId : room,
+        // 방 응답이 버전을 싣고 있으면 그 값이 곧 "이 화면이 보고 있는 설정"이다.
+        expectedSettingsVersion: settingsVersion
+            ?? (isRoomObject ? room.settingsVersion : undefined)
+            ?? 1,
+    }
+    if (isReady !== undefined) payload.isReady = isReady
+    return payload
+}
+
+/** set_ready payload — roomRequestPayload에 isReady를 더한 것이다. */
+function readyPayload(room, isReady = true, options = {}) {
+    return roomRequestPayload(room, { ...options, isReady })
+}
+
+/** start_game payload. */
+function startPayload(room, options = {}) {
+    return roomRequestPayload(room, options)
+}
+
 function countingCallback() {
     let calls = 0
     let response = null
@@ -152,8 +185,8 @@ async function setupReadyRoomForStart(io, hostUuid, joinerUuid, { handleCreateRo
     const joinerSocket = createFakeSocket(joinerUuid)
     io.sockets.sockets.set(joinerSocket.id, joinerSocket)
     await handleJoinRoomByCode(io, joinerSocket, joinerUuid, created.room.roomCode)
-    await callAsPromise(handleSetReady, io, hostSocket, hostUuid, { isReady: true })
-    await callAsPromise(handleSetReady, io, joinerSocket, joinerUuid, { isReady: true })
+    await callAsPromise(handleSetReady, io, hostSocket, hostUuid, readyPayload(created.room))
+    await callAsPromise(handleSetReady, io, joinerSocket, joinerUuid, readyPayload(created.room))
     return { hostSocket, joinerSocket, room: created.room }
 }
 
@@ -179,6 +212,9 @@ module.exports = {
     createFakeSocket,
     createFakeIo,
     validSettingsPayload,
+    roomRequestPayload,
+    readyPayload,
+    startPayload,
     countingCallback,
     setupReadyRoomForStart,
     seedActiveGameForAccount,

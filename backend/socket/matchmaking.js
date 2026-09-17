@@ -626,8 +626,10 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
     socket.on('delete_room',       () => handleDeleteRoom(io, uuid))
     // start_game은 acknowledgement로 응답한다(예전에는 실패 시 game_start_failed 이벤트를
     // 따로 emit했으나, 요청-응답을 한 쌍으로 명확히 묶기 위해 ack 계약으로 통일했다).
+    // F-20(AC-04): payload를 버리지 않는다 — 방·설정 버전이 이 요청의 필수 근거라서,
+    // 등록부가 흘려버리면 실제 소켓 경로만 검사를 통과하지 못한 채 시작될 수 있다.
     socket.on('start_game', (payload, callback) =>
-        handleStartGame(io, socket, uuid, callback).catch((err) =>
+        handleStartGame(io, socket, uuid, payload, callback).catch((err) =>
             console.error('\x1b[31m[게임 시작 에러]\x1b[0m', err)
         )
     )
@@ -1607,7 +1609,8 @@ function cancelInvitesForRoomAsync(roomId, reason) {
  * 인증된 사용자 본인의 준비 상태를 변경합니다(Socket.IO acknowledgement 방식).
  * payload에 대상 uuid를 받지 않는다 — 본인 외의 참가자 상태를 바꿀 방법 자체를 이벤트
  * 설계에서 없앤 것이다(신뢰 경계는 socket.data.user.uuid, 즉 이 함수의 uuid 인자 하나뿐).
- * @param {unknown} payload - { isReady: boolean } 형태만 허용(신뢰하지 않음, 상태 변경 전에 검증)
+ * @param {unknown} payload - { isReady: boolean, roomId: string, expectedSettingsVersion: number }
+ *   형태만 허용(신뢰하지 않음, 상태 변경 전에 검증). 세 필드는 모두 필수다 — F-20(AC-04).
  * @param {(response:{ok:true,isReady:boolean,canStart:boolean}|{ok:false,message:string})=>void} callback
  */
 function handleSetReady(io, socket, uuid, payload, callback) {
@@ -1625,15 +1628,16 @@ function handleSetReady(io, socket, uuid, payload, callback) {
         callback({ ok: false, message: '잘못된 요청입니다.' })
         return
     }
-    // F-20(AC-04): 방·설정 버전을 함께 보내는 것은 선택이지만, 보냈다면 반드시 맞아야 한다.
-    // 형태 검사는 상태를 바꾸기 전에 한다(아래 대조는 실제 방을 찾은 뒤에 한다).
-    if (expectedRoomId !== undefined && (typeof expectedRoomId !== 'string' || expectedRoomId.length === 0)) {
-        callback({ ok: false, message: '잘못된 요청입니다.' })
+    // F-20(AC-04): 방·설정 버전은 **필수**다. 선택으로 두면 그 값을 싣지 않은 요청만으로
+    // 늦은 준비가 새 설정의 전원 해제를 되돌릴 수 있어, 아래 대조 자체가 우회된다. 빠졌거나
+    // 형태가 틀린 요청은 상태를 보기도 전에 거부한다 — 서버가 현재 값으로 채워 주지 않는다
+    // (채우면 "요청자가 무엇을 보고 눌렀는가"라는 이 필드의 유일한 의미가 사라진다).
+    if (typeof expectedRoomId !== 'string' || expectedRoomId.length === 0) {
+        callback({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
         return
     }
-    if (expectedSettingsVersion !== undefined
-        && (!Number.isSafeInteger(expectedSettingsVersion) || expectedSettingsVersion < 1)) {
-        callback({ ok: false, message: '잘못된 요청입니다.' })
+    if (!Number.isSafeInteger(expectedSettingsVersion) || expectedSettingsVersion < 1) {
+        callback({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
         return
     }
 
@@ -1657,8 +1661,7 @@ function handleSetReady(io, socket, uuid, payload, callback) {
     // 않는다**. 설정이 바뀌면 서버가 전원 준비를 해제하는데, 그 해제 직전에 떠난 "준비 완료"
     // 요청이 뒤늦게 반영되면 해제 스냅샷이 조용히 되돌아간다. 요청자가 어느 방·어느 설정
     // 버전을 보고 눌렀는지 함께 보냈을 때만 대조할 수 있으므로, 보냈다면 반드시 맞아야 한다.
-    if ((expectedRoomId !== undefined && expectedRoomId !== roomId)
-        || (expectedSettingsVersion !== undefined && expectedSettingsVersion !== getSettingsVersion(room))) {
+    if (expectedRoomId !== roomId || expectedSettingsVersion !== getSettingsVersion(room)) {
         callback({
             ok: false,
             code: ROOM_SETTINGS_ERROR_CODES.SETTINGS_VERSION_CONFLICT,
@@ -1794,7 +1797,23 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
     const { roomId, requestId, expectedSettingsVersion, accessType, settings } = validated.value
     const fingerprint = fingerprintUpdateSettings(accessType, settings)
 
-    // 1) 같은 (계정·방·requestId) 키의 기록이 있으면 **재커밋하지 않는다**. 같은 입력이면
+    // 1) 이 소켓이 지금도 이 계정의 현재 연결인가. 세션 가드의 await 동안 같은 계정의 새
+    // 로그인이 소켓을 교체했을 수 있다 — 교체된 옛 소켓의 요청은 여기서 끝난다.
+    //
+    // 이 검사는 **기록 재생보다 반드시 먼저** 온다. 재생도 "지금 이 연결에게 저장 결과를
+    // 알려준다"는 응답이므로, 끊기거나 교체된 소켓이 ok:true를 받으면 인증되지 않은 연결이
+    // 서버 상태를 읽은 것이 된다. 재생이 상태를 바꾸지 않는다는 사실은 그 응답을 받을 자격과
+    // 무관하다 — 유효한 같은 계정의 멱등 재시도는 아래에서 그대로 살아 있다.
+    if (socket?.data?.user?.uuid !== uuid || socket?.connected === false) {
+        reject(ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
+        return
+    }
+    if (typeof getCurrentSocketId === 'function' && getCurrentSocketId(uuid) !== socket.id) {
+        reject(ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
+        return
+    }
+
+    // 2) 같은 (계정·방·requestId) 키의 기록이 있으면 **재커밋하지 않는다**. 같은 입력이면
     // 기록된 결과를 그대로 돌려주고(ACK 유실 재시도), 다른 입력이면 키 재사용으로 거부한다
     // — 같은 키로 서로 다른 두 저장이 일어나면 결과 조회가 어느 쪽을 말하는지 알 수 없다.
     pruneSettingsUpdateResults()
@@ -1813,17 +1832,6 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
             requestId,
             settingsVersion: recorded.settingsVersion,
         })
-        return
-    }
-
-    // 2) 이 소켓이 지금도 이 계정의 현재 연결인가. 세션 가드의 await 동안 같은 계정의 새
-    // 로그인이 소켓을 교체했을 수 있다 — 교체된 옛 소켓의 요청은 여기서 끝난다.
-    if (socket?.data?.user?.uuid !== uuid || socket?.connected === false) {
-        reject(ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
-        return
-    }
-    if (typeof getCurrentSocketId === 'function' && getCurrentSocketId(uuid) !== socket.id) {
-        reject(ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
         return
     }
 
@@ -2032,11 +2040,33 @@ function handleGetRoomSettingsUpdateResult(uuid, payload, callback, socket, getC
  *      방송 없음 — 참가자별 payload가 다르므로).
  *   6) ack: 요청한 host에게만 성공 여부를 응답한다.
  * callback은 어떤 경로로도 정확히 한 번만 호출된다.
+ *
+ * F-20(AC-04): payload의 roomId·expectedSettingsVersion은 **필수**다. "방장이 어느 방의 어느
+ * 설정을 보고 시작을 눌렀는가"를 서버가 알아야, 저장 직전에 발행됐다가 늦게 도착한 시작
+ * 요청이 새 설정으로 한 판을 열어버리는 일을 막을 수 있다. 서버가 현재 값으로 채워 주지
+ * 않는다 — 채우면 이 필드는 언제나 일치해 검사 자체가 무의미해진다.
+ *
+ * @param {{roomId:string, expectedSettingsVersion:number}} payload
  * @param {(response:{ok:boolean,code?:string,gameId?:string,message?:string})=>void} callback
  */
-async function handleStartGame(io, socket, uuid, callback) {
+async function handleStartGame(io, socket, uuid, payload, callback) {
     // 응답을 받을 수 없는 요청은 다른 검사보다 먼저 확인한다 — 어떤 상태도 바꾸지 않는다.
     if (typeof callback !== 'function') return
+
+    // 형태 검증은 상태를 보기 전에 끝낸다(handleSetReady와 같은 순서·같은 이유).
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        callback({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
+        return
+    }
+    const { roomId: expectedRoomId, expectedSettingsVersion } = payload
+    if (typeof expectedRoomId !== 'string' || expectedRoomId.length === 0) {
+        callback({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
+        return
+    }
+    if (!Number.isSafeInteger(expectedSettingsVersion) || expectedSettingsVersion < 1) {
+        callback({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
+        return
+    }
 
     const roomId = playerRoom.get(uuid)
     const room = roomId ? gameRooms.get(roomId) : null
@@ -2044,8 +2074,25 @@ async function handleStartGame(io, socket, uuid, callback) {
         callback({ ok: false, code: 'ROOM_NOT_FOUND', message: '참여 중인 방을 찾을 수 없습니다.' })
         return
     }
+    // 요청자가 보고 있던 방과 지금의 소속이 다르면 이 시작 요청은 지난 화면의 것이다.
+    if (expectedRoomId !== roomId) {
+        callback({ ok: false, code: 'ROOM_NOT_FOUND', message: '참여 중인 방을 찾을 수 없습니다.' })
+        return
+    }
     if (room.hostUuid !== uuid) {
         callback({ ok: false, code: 'NOT_HOST', message: '방장만 게임을 시작할 수 있습니다.' })
+        return
+    }
+    // 비동기 선행 작업(외형 조회)에 들어가기 **전**에 한 번, 복귀한 **뒤**에 다시 한 번
+    // 대조한다. 여기서 먼저 걸러야 이미 지난 설정을 근거로 한 요청이 조회 비용조차 쓰지 않는다.
+    if (expectedSettingsVersion !== getSettingsVersion(room)) {
+        callback({
+            ok: false,
+            code: 'ROOM_STATE_CHANGED',
+            roomId,
+            settingsVersion: getSettingsVersion(room),
+            message: '방 설정이 변경되었습니다. 최신 설정을 확인한 뒤 다시 시도해주세요.',
+        })
         return
     }
 
@@ -2102,10 +2149,10 @@ async function handleStartGame(io, socket, uuid, callback) {
     // 시작 시점 값이어야 한다). 조회는 비동기라 그 사이 방 상태가 바뀔 수 있으므로,
     // captureRoomStartProfiles가 위에서 이미 통과시킨 조건(방장·인원 구성·준비 상태)을
     // 다시 확인한다 — 깨졌으면 room.players를 건드리지 않고 그대로 실패로 응답한다.
-    // F-20(AC-04): 비동기 조회에 들어가기 전, 아직 동기 구간일 때 "이 시작 요청이 근거로 삼은
-    // 설정"의 버전을 캡처한다. 복귀 후 이 값과 다르면 그 사이 저장이 커밋된 것이므로 이
-    // 요청으로는 시작하지 않는다(captureRoomStartProfiles가 재검사한다).
-    const settingsVersionAtRequest = getSettingsVersion(room)
+    // F-20(AC-04): "이 시작 요청이 근거로 삼은 설정"의 버전은 요청자가 보낸 값 그 자체다
+    // (여기서 다시 읽은 값이 아니다 — 다시 읽으면 요청과 이 지점 사이의 변경을 놓친다).
+    // 위 동기 구간에서 이미 현재 버전과 일치함을 확인했고, 복귀 후 이 값으로 재검사한다.
+    const settingsVersionAtRequest = expectedSettingsVersion
     const uuidsAtCapture = players.map((player) => player.uuid)
     let captured
     try {
@@ -2125,6 +2172,19 @@ async function handleStartGame(io, socket, uuid, callback) {
     // 옛 요청이 사라진 방이나 새 방을 시작시키지 못하게 하는 마지막 관문이다.
     if (gameRooms.get(roomId) !== room || playerRoom.get(uuid) !== roomId || socket?.connected === false) {
         callback({ ok: false, code: 'ROOM_STATE_CHANGED', message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
+        return
+    }
+    // 설정 버전 재검사(비동기 선행 작업 **이후**). captureRoomStartProfiles가 캡처한 room
+    // 객체로 이미 같은 판정을 하지만, 그 함수가 어떤 이유로 통과시켜도 이 경계에서 registry의
+    // 현재 방을 기준으로 한 번 더 확인한다 — 커밋 직전의 마지막 관문은 여기다.
+    if (expectedSettingsVersion !== getSettingsVersion(room)) {
+        callback({
+            ok: false,
+            code: 'ROOM_STATE_CHANGED',
+            roomId,
+            settingsVersion: getSettingsVersion(room),
+            message: '방 설정이 변경되었습니다. 최신 설정을 확인한 뒤 다시 시도해주세요.',
+        })
         return
     }
     // 프로필 캡처(await) 동안 초대 수락이 예약에 진입했을 수 있다 — commit 직전에 다시 본다.

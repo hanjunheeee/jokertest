@@ -73,9 +73,15 @@ export const useMatchingStore = create((set) => ({
         set((s) => ({ hostUuid, canStart: canStart ?? s.canStart })),
 
     // set_ready ack(본인)와 player_ready_changed(다른 참가자) 양쪽에서 함께 쓰는 갱신 함수입니다.
-    setPlayerReady: (uuid, isReady, canStart) =>
+    //
+    // F-20(AC-04): 서버가 준 readyRevision을 함께 보관합니다. 이 값이 없으면 "지금 화면이 이미
+    // 더 새로운 준비 사실을 반영했는가"를 판정할 수 없어, 늦게 도착한 옛 ACK가 최신 해제
+    // 스냅샷을 되돌립니다. 서버가 싣지 않은 경우(최초 상태)에는 기존 값을 건드리지 않습니다.
+    setPlayerReady: (uuid, isReady, canStart, readyRevision) =>
         set((s) => ({
-            players: s.players.map((p) => (p.uuid === uuid ? { ...p, isReady } : p)),
+            players: s.players.map((p) => (p.uuid === uuid
+                ? { ...p, isReady, ...(Number.isInteger(readyRevision) ? { readyRevision } : {}) }
+                : p)),
             canStart: canStart ?? s.canStart,
         })),
 

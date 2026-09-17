@@ -17,7 +17,11 @@ import { useRoleCompositionState } from "../hooks/useRoleCompositionState.js"
 import { useSetupContentScrollOnRoleModeChange } from "../hooks/useSetupContentScrollOnRoleModeChange.js"
 import { useSetupTabState } from "../hooks/useSetupTabState.js"
 import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
-import { NON_EDITABLE_SETUP_ITEM_IDS } from "../utils/roomSettingsForm.js"
+import {
+  NIGHT_TIME_ID_TO_ROLE,
+  NON_EDITABLE_SETUP_ITEM_IDS,
+  mergeSpecifiedRoleNightActionTimes,
+} from "../utils/roomSettingsForm.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
 import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
@@ -97,6 +101,27 @@ export default function GameSetupPanel({
 
   useSetupContentScrollOnRoleModeChange(setupContentRef, roleComposition.mode, activeTab)
 
+  // F-20(AC-03): 이번 편집에서 **값이 실제로 바뀐** 직업별 밤 시간 스테퍼 id를 기억한다.
+  // 서버의 지정 목록만 그대로 돌려보내면 "없던 override가 생기지 않는다"는 성질은 지켜지지만,
+  // 방장이 새로 만든 override까지 함께 사라진다 — 화면에는 바뀐 값이 보이는데 요청에는
+  // 실리지 않는 상태가 된다. 두 사실을 합쳐야 둘 다 성립한다.
+  const [editedRoleTimeIds, setEditedRoleTimeIds] = useState(() => new Set())
+  // 폼을 서버 최신값으로 되맞추는 경계(방 교체·설정 버전 교체·방장 이전)에서는 편집 흔적도
+  // 함께 버린다 — 남기면 이전 방장의 초안이 다음 요청에 섞인다.
+  const [appliedResetKey, setAppliedResetKey] = useState(formResetKey)
+  if (appliedResetKey !== formResetKey) {
+    setAppliedResetKey(formResetKey)
+    setEditedRoleTimeIds(new Set())
+  }
+
+  /** 스테퍼 변경을 그대로 전달하면서, 직업별 밤 시간은 "건드렸다"는 사실도 함께 남긴다. */
+  const handleSetRange = (id, next) => {
+    if (NIGHT_TIME_ID_TO_ROLE[id] !== undefined && ranges[id] !== next) {
+      setEditedRoleTimeIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+    }
+    setRange(id, next)
+  }
+
   // 편집 모드에서는 D-12의 세 항목을 아예 그리지 않는다 — 이 슬라이스의 편집 대상이 아니고,
   // 서버도 수정 요청에서 그 값을 받지 않는다(기존 값은 서버가 보존한다).
   const hiddenItemIds = isEditMode ? NON_EDITABLE_SETUP_ITEM_IDS : undefined
@@ -113,9 +138,11 @@ export default function GameSetupPanel({
         checks,
         ranges,
         roleComposition: composition,
-        // 서버에 원래 지정돼 있던 직업만 넘긴다 — 편집을 열고 그대로 저장하는 것만으로
-        // 없던 직업별 override가 생기지 않게 한다.
-        specifiedRoleNightActionTimes: initialFormState?.specifiedRoleNightActionTimes ?? [],
+        // 서버에 원래 지정돼 있던 직업 + 이번에 실제로 바꾼 직업. 앞쪽 때문에 "열고 그대로
+        // 저장"이 없던 override를 만들지 않고, 뒤쪽 때문에 새로 만든 override가 누락되지 않는다.
+        specifiedRoleNightActionTimes: mergeSpecifiedRoleNightActionTimes(
+          initialFormState?.specifiedRoleNightActionTimes ?? [], editedRoleTimeIds,
+        ),
       })
       return
     }
@@ -124,7 +151,11 @@ export default function GameSetupPanel({
         checks,
         ranges,
         roleComposition: composition,
-        specifiedRoleNightActionTimes: initialFormState?.specifiedRoleNightActionTimes,
+        // 생성 화면에는 "지정 목록"이라는 출발점이 없다 — 이때 변환기는 undefined를 돌려주고
+        // 기존 생성 계약대로 스테퍼 전부가 실린다.
+        specifiedRoleNightActionTimes: mergeSpecifiedRoleNightActionTimes(
+          initialFormState?.specifiedRoleNightActionTimes, editedRoleTimeIds,
+        ),
       }),
     )
   }
@@ -159,7 +190,7 @@ export default function GameSetupPanel({
                   checks={checks}
                   ranges={ranges}
                   setCheck={setCheck}
-                  setRange={setRange}
+                  setRange={handleSetRange}
                   roleComposition={roleComposition}
                   hiddenItemIds={hiddenItemIds}
                 />
@@ -168,7 +199,7 @@ export default function GameSetupPanel({
                   checks={checks}
                   ranges={ranges}
                   setCheck={setCheck}
-                  setRange={setRange}
+                  setRange={handleSetRange}
                   hiddenItemIds={hiddenItemIds}
                 />
               )}

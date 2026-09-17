@@ -11,11 +11,17 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
+// 게임 시작·방 소멸에서 fire-and-forget으로 도는 초대 정리(gameInvite.service)는 실제 MySQL을
+// 요구한다. 대역이 없으면 이 스위트가 실제 DB 접속을 시도해 AccessDenied 로그를 남긴다
+// (단언은 실패하지 않지만 "SQL 경계를 건드리지 않는다"는 전제가 깨진다).
+matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
 const {
     callAsPromise,
     createFakeSocket,
     createFakeIo,
     validSettingsPayload,
+    // F-20(AC-04): start_game은 roomId·expectedSettingsVersion을 필수로 요구한다.
+    startPayload,
     countingCallback,
     setupReadyRoomForStart,
 } = require('./testHelpers/matchmakingFixtures')
@@ -562,10 +568,10 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     // --- Room A: host + joiner, 최소 인원/전원 준비/전원 channel 가입까지 setupReadyRoomForStart로 충족 ---
     const hostSocketA = createFakeSocket('uuid-cleanup-host')
     const ioA = createFakeIo([hostSocketA])
-    const { joinerSocket: joinerSocketA } = await setupReadyRoomForStart(ioA, 'uuid-cleanup-host', 'uuid-cleanup-joiner', readyRoomHandlers)
+    const { joinerSocket: joinerSocketA, room: roomA } = await setupReadyRoomForStart(ioA, 'uuid-cleanup-host', 'uuid-cleanup-joiner', readyRoomHandlers)
 
     const { callback: cbA, getResponse: getResponseA } = countingCallback()
-    await handleStartGame(ioA, hostSocketA, 'uuid-cleanup-host', cbA)
+    await handleStartGame(ioA, hostSocketA, 'uuid-cleanup-host', startPayload(roomA), cbA)
     assert.equal(getResponseA().ok, true) // Room A → GameSession 커밋 성공
 
     // 명시적 이탈은 disconnect 유예와 달리 기존 계약대로 즉시 세션 전체를 정리한다.
@@ -585,10 +591,10 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     // --- Room B: 정리된 uuid('uuid-cleanup-joiner')를 포함해 최소 인원/준비/channel 가입을 처음부터 다시 충족 ---
     const hostSocketB = createFakeSocket('uuid-cleanup-host2')
     const ioB = createFakeIo([hostSocketB])
-    await setupReadyRoomForStart(ioB, 'uuid-cleanup-host2', 'uuid-cleanup-joiner', readyRoomHandlers)
+    const { room: roomB } = await setupReadyRoomForStart(ioB, 'uuid-cleanup-host2', 'uuid-cleanup-joiner', readyRoomHandlers)
 
     const { callback: cbB, getResponse: getResponseB } = countingCallback()
-    await handleStartGame(ioB, hostSocketB, 'uuid-cleanup-host2', cbB)
+    await handleStartGame(ioB, hostSocketB, 'uuid-cleanup-host2', startPayload(roomB), cbB)
 
     assert.equal(getResponseB().ok, true)
     assert.notEqual(getResponseB().code, 'PLAYER_ALREADY_IN_SESSION')
@@ -2084,7 +2090,7 @@ async function startRealTwoPlayerSession(hostUuid, joinerUuid) {
     const io = createFakeIo([hostSocket])
     const { joinerSocket, room } = await setupReadyRoomForStart(io, hostUuid, joinerUuid, readyRoomHandlers)
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, hostUuid, callback)
+    await handleStartGame(io, hostSocket, hostUuid, startPayload(room), callback)
     const startResponse = getResponse()
     if (!startResponse.ok) throw new Error(`테스트 셋업 실패: ${JSON.stringify(startResponse)}`)
     return { io, hostSocket, joinerSocket, gameId: startResponse.gameId, channelId: room.roomId }
@@ -2176,9 +2182,9 @@ test('leave_game_session(ABA, 동일 Socket): 세션 A 종료 뒤 같은 Socket�
     // setupReadyRoomForStart는 io.sockets.sockets에 이미 등록된 `sock-${hostUuid}` 소켓을
     // 재사용하므로, 아래 두 번째 세션도 동일한 hostSocket 인스턴스로 시작된다.
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
-    await setupReadyRoomForStart(io, 'aba-same-host', 'aba-same-joinerB', readyRoomHandlers)
+    const { room: roomB } = await setupReadyRoomForStart(io, 'aba-same-host', 'aba-same-joinerB', readyRoomHandlers)
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'aba-same-host', callback)
+    await handleStartGame(io, hostSocket, 'aba-same-host', startPayload(roomB), callback)
     const gameIdB = getResponse().gameId
     assert.notEqual(gameIdB, gameIdA)
     assert.equal(hostSocket.data.activeGameId, gameIdB) // 같은 Socket이 새 세션을 시작하면 결합이 B로 갱신된다
@@ -2205,10 +2211,10 @@ test('leave_game_session(ABA, 다른 Socket): 세션 A 종료 후 같은 uuid가
     // 더 이상 io에 등록돼 있지 않은 "낡은" 소켓이 된다(실제로는 재연결로 교체되는 상황과 동등).
     const hostSocketB = createFakeSocket('aba-cross-host-b')
     io.sockets.sockets.set(hostSocketB.id, hostSocketB)
-    const { joinerSocket: freshSocket } = await setupReadyRoomForStart(io, 'aba-cross-host-b', targetUuid, readyRoomHandlers)
+    const { joinerSocket: freshSocket, room: roomB } = await setupReadyRoomForStart(io, 'aba-cross-host-b', targetUuid, readyRoomHandlers)
     assert.notEqual(freshSocket, staleSocket)
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocketB, 'aba-cross-host-b', callback)
+    await handleStartGame(io, hostSocketB, 'aba-cross-host-b', startPayload(roomB), callback)
     const gameIdB = getResponse().gameId
     assert.notEqual(gameIdB, gameIdA)
 

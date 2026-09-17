@@ -40,6 +40,15 @@ export function summarizeRoomListSettings(settings) {
   if (Number.isInteger(settings.dayDiscussionTime)) timeParts.push(`토론 ${settings.dayDiscussionTime}초`)
   if (Number.isInteger(settings.dayVoteTime)) timeParts.push(`투표 ${settings.dayVoteTime}초`)
   if (Number.isInteger(settings.nightActionTime)) timeParts.push(`밤 ${settings.nightActionTime}초`)
+  // 직업별 밤 시간은 전체 밤 시간을 덮는 값이라, 전체만 보여주면 목록이 실제로 적용될
+  // 시간과 다른 것을 말하게 된다. 서버가 지정한 직업만(폴백하는 직업은 값 자체가 없다)
+  // 전체 밤 시간 바로 뒤에 덧붙인다 — 그 관계가 읽는 순서에 드러나야 하기 때문이다.
+  if (isPlainObject(settings.roleNightActionTimes)) {
+    for (const role of Object.keys(ROLE_LABELS)) {
+      const value = settings.roleNightActionTimes[role]
+      if (Number.isInteger(value)) timeParts.push(`${ROLE_LABELS[role]} 밤 ${value}초`)
+    }
+  }
   const times = timeParts.length > 0 ? timeParts.join(" · ") : null
 
   const ariaParts = []

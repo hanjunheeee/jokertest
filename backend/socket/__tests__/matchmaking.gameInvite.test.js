@@ -53,6 +53,9 @@ const {
     createFakeSocket,
     createFakeIo,
     validSettingsPayload,
+    // F-20(AC-04): set_ready/start_game은 roomId·expectedSettingsVersion을 필수로 요구한다.
+    readyPayload,
+    startPayload,
 } = require('./testHelpers/matchmakingFixtures')
 
 function deferred() {
@@ -212,9 +215,9 @@ async function setupRoomWithInvite(t, {
     t.after(() => matchmaking.__setGameInviteServiceForTests(null))
 
     if (allReady) {
-        await callAsPromise(handleSetReady, io, hostSocket, HOST, { isReady: true })
+        await callAsPromise(handleSetReady, io, hostSocket, HOST, readyPayload(created.room))
         for (let i = 0; i < fillerSockets.length; i += 1) {
-            await callAsPromise(handleSetReady, io, fillerSockets[i], fillWith[i], { isReady: true })
+            await callAsPromise(handleSetReady, io, fillerSockets[i], fillWith[i], readyPayload(created.room))
         }
     }
 
@@ -356,7 +359,7 @@ test('AC-06: 예약 중에는 canStart=false이고 start_game이 ADMISSION_IN_PR
     const beforeDecision = deferred()
     // 광대 1 설정에서 시작하려면 실제 인원이 2명 이상이어야 한다 — 예약 때문이 아니라
     // 인원 조건 때문에 거부되는 경우와 구분하려고 filler를 함께 준비시킨다.
-    const { io, hostSocket, guestSocket } = await setupRoomWithInvite(t, {
+    const { io, hostSocket, guestSocket, room } = await setupRoomWithInvite(t, {
         maxPlayers: 4, fillWith: ['filler-1'], allReady: true,
         gates: { beforeDecision: beforeDecision.promise },
     })
@@ -370,7 +373,7 @@ test('AC-06: 예약 중에는 canStart=false이고 start_game이 ADMISSION_IN_PR
     const current = await callAsPromise(handleGetCurrentRoom, HOST)
     assert.equal(current.room.canStart, false, '확정되지 않은 입장이 있으면 시작할 수 없다')
 
-    const started = await callAsPromise(handleStartGame, io, hostSocket, HOST)
+    const started = await callAsPromise(handleStartGame, io, hostSocket, HOST, startPayload(room))
     assert.equal(started.ok, false)
     assert.equal(started.code, 'ADMISSION_IN_PROGRESS')
 
@@ -386,13 +389,13 @@ test('AC-06: 영수증 미확정 publication 상태의 계정은 ready를 바꿀
     // finalize 직전까지 microtask를 흘린다(publish는 아직 실행되지 않았다 — phase는 reserved).
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
 
-    const ready = await callAsPromise(handleSetReady, io, guestSocket, GUEST, { isReady: true })
+    const ready = await callAsPromise(handleSetReady, io, guestSocket, GUEST, readyPayload(room))
     assert.equal(ready.ok, false, '입장 확정 전에는 준비 상태를 바꿀 수 없다')
 
     beforeFinalize.resolve()
     await accepting
     // 확정 이후에는 정상적으로 바뀐다.
-    const readyAfter = await callAsPromise(handleSetReady, io, guestSocket, GUEST, { isReady: true })
+    const readyAfter = await callAsPromise(handleSetReady, io, guestSocket, GUEST, readyPayload(room))
     assert.equal(readyAfter.ok, true)
     assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms.find(([id]) => id === room.roomId)[1]
         .players.find(([uuid]) => uuid === GUEST)[1].isReady, true)
