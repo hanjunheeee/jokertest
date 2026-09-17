@@ -22,6 +22,8 @@ import FriendListToggleButton from "@/domains/lobby/components/friendList/Friend
 // F-20: 방 생성과 **같은** 설정 패널을 편집 모드로 장착한다 — 새 설정 화면을 만들지 않는다.
 // 같은 대기 페이지 안에 두어야 방 이벤트 구독(useMatchingRoom)이 끊기지 않는다.
 import GameSetupPanel from "@/domains/game/setup/components/GameSetupPanel.jsx"
+// F-20(AC-03): 방장만 편집할 수 있지만 **현재 설정은 참가자 전원이 읽을 수 있어야** 한다.
+import RoomSettingsSummaryPanel from "../components/RoomSettingsSummaryPanel.jsx"
 
 export default function GameMatchingPage() {
   const {
@@ -54,6 +56,8 @@ export default function GameMatchingPage() {
     hasPendingSettingsResult,
     verifyRoomSettingsResult,
     settingsError,
+    roomSettings,
+    roomAccessType,
   } = useMatchingPage()
 
   // 로비와 같은 방식으로 패널 열림 상태만 화면이 소유합니다 — 친구 데이터·핸들러는
@@ -107,6 +111,17 @@ export default function GameMatchingPage() {
         onClose={() => setFriendListOpen(false)}
         roomId={roomId}
         isRoomVerified={isRoomVerified}
+      />
+
+      {/*
+        F-20(AC-03): 서버가 확정한 현재 설정을 **비방장 포함 전원**이 읽는다. 편집 패널이
+        열려 있는 동안에는 가린다 — 같은 값을 두 벌로 보여주면 어느 쪽이 지금 설정인지
+        모호해진다(편집 중인 값은 아직 서버의 설정이 아니다).
+      */}
+      <RoomSettingsSummaryPanel
+        visible={uiVisible && !settingsOpen}
+        accessType={roomAccessType}
+        settings={roomSettings}
       />
 
       {/*

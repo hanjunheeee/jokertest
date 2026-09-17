@@ -22,6 +22,9 @@ import {
   MEETING_GAME_SETUP,
   ROLE_NIGHT_ACTION_TIME_OPTIONS,
 } from "../constants/gameSetupOptions.js"
+// 역할 구성의 성립 조건은 이 화면이 다시 정의하지 않는다 — 폼·버튼·서버 요청이 모두
+// 참조하는 그 한 규칙을 그대로 쓴다(사본을 만들면 편집 시작점만 다른 기준을 갖게 된다).
+import { validateRoleComposition } from "./roleComposition.js"
 
 /** 폼 상태 id ↔ 서버 설정 필드의 유일한 대응표(스테퍼). */
 const RANGE_ID_TO_SETTING_KEY = Object.freeze({
@@ -88,12 +91,39 @@ export const ROOM_SETTINGS_FORM_ERROR_CODES = Object.freeze({
   NOT_OBJECT: "NOT_OBJECT",
   INVALID_ACCESS_TYPE: "INVALID_ACCESS_TYPE",
   MISSING_FIELD: "MISSING_FIELD",
+  // 값은 있으나 이 화면의 스테퍼가 **표현할 수 없는** 값이다(범위 밖·step에 맞지 않음).
+  // MISSING_FIELD와 구분한다 — "서버가 안 줬다"와 "줬는데 우리가 못 그린다"는 다른 사실이고,
+  // 뒤쪽을 기본값으로 덮으면 방장이 건드리지도 않은 값을 저장하게 된다.
+  OUT_OF_RANGE: "OUT_OF_RANGE",
   INVALID_ROLE_COUNTS: "INVALID_ROLE_COUNTS",
   INVALID_ROLE_MODE: "INVALID_ROLE_MODE",
 })
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+/** id → 스테퍼 정의(min·max·step). 항목 정의가 곧 이 화면이 표현할 수 있는 값의 계약이다. */
+const STEPPER_ITEMS_BY_ID = Object.freeze(Object.fromEntries(
+  [...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP]
+    .filter((item) => item.type === "stepper")
+    .map((item) => [item.id, item]),
+))
+
+/**
+ * 이 스테퍼가 정말로 그 값을 가리킬 수 있는가.
+ *
+ * 정수 여부만 보면 "정원 7"이나 "토론 75초"처럼 화면에 보이기는 하지만 어느 클릭으로도
+ * 도달할 수 없고 서버 허용 목록에도 없는 값이 편집 시작점이 된다. min·max·step은 이미
+ * 화면·서버가 공유하는 계약이므로(gameSetupOptions.js 주석 참고) 그 계약으로 판정한다.
+ */
+function isRepresentableStepperValue(id, value) {
+  const item = STEPPER_ITEMS_BY_ID[id]
+  if (!item) return false
+  if (!Number.isInteger(value)) return false
+  if (value < item.min || value > item.max) return false
+  const step = Number.isInteger(item.step) && item.step > 0 ? item.step : 1
+  return (value - item.min) % step === 0
 }
 
 /** items 정의에서 생성 기본값 폼 상태를 만든다(기존 useSetupTabState.buildInitialState와 같은 규칙). */
@@ -137,8 +167,11 @@ export function buildRoomSettingsFormState(source) {
 
   for (const [id, key] of Object.entries(RANGE_ID_TO_SETTING_KEY)) {
     const value = settings[key]
-    if (!Number.isInteger(value)) {
+    if (value === undefined) {
       return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.MISSING_FIELD, field: key }
+    }
+    if (!isRepresentableStepperValue(id, value)) {
+      return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.OUT_OF_RANGE, field: key }
     }
     ranges[id] = value
   }
@@ -149,23 +182,35 @@ export function buildRoomSettingsFormState(source) {
     if (typeof settings[key] === "boolean") checks[id] = settings[key]
   }
 
-  // 직업별 밤 시간: 서버가 준 역할만 스테퍼 값을 덮고, 그 역할 목록을 그대로 보존한다.
-  // 지정하지 않은 역할의 스테퍼는 기본값으로 **보이기만** 하고 저장 대상이 아니다.
+  // 직업별 밤 시간.
+  //
+  // 지정한 역할은 그 값을 그대로 보여주고 "지정했다"는 사실을 보존한다. 지정하지 **않은**
+  // 역할은 서버에서 전체 밤 시간으로 폴백하므로, 화면도 그 **실제로 적용될 값**을 보여준다 —
+  // 생성 기본값(90)을 보여주면 전체 밤 시간이 60인 방에서 방장은 "이 직업은 90초"라고 읽는데
+  // 서버는 60초를 쓴다. 그러면서도 지정 목록에는 넣지 않으므로, 열고 그대로 저장하는 것만으로
+  // 없던 override가 생기지는 않는다(두 성질은 서로 독립이다).
   const specifiedRoleNightActionTimes = []
   const rawRoleTimes = settings.roleNightActionTimes
-  if (rawRoleTimes !== undefined) {
-    if (!isPlainObject(rawRoleTimes)) {
-      return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.MISSING_FIELD, field: "roleNightActionTimes" }
-    }
-    for (const { role, id } of ROLE_NIGHT_ACTION_TIME_OPTIONS) {
-      const value = rawRoleTimes[role]
-      if (value === undefined) continue
-      if (!Number.isInteger(value)) {
-        return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.MISSING_FIELD, field: "roleNightActionTimes" }
+  if (rawRoleTimes !== undefined && !isPlainObject(rawRoleTimes)) {
+    return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.MISSING_FIELD, field: "roleNightActionTimes" }
+  }
+  for (const { role, id } of ROLE_NIGHT_ACTION_TIME_OPTIONS) {
+    const value = rawRoleTimes?.[role]
+    if (value === undefined) {
+      // 폴백 대상은 방금 검사를 통과한 전체 밤 시간이다. 그 값이 이 스테퍼의 계약 안에 있는지는
+      // 다시 확인한다 — 두 항목의 범위가 어긋나면 조용히 넘기지 않고 실패로 본다.
+      const effective = ranges["night-action-time"]
+      if (!isRepresentableStepperValue(id, effective)) {
+        return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.OUT_OF_RANGE, field: "roleNightActionTimes" }
       }
-      ranges[id] = value
-      specifiedRoleNightActionTimes.push(role)
+      ranges[id] = effective
+      continue
     }
+    if (!isRepresentableStepperValue(id, value)) {
+      return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.OUT_OF_RANGE, field: "roleNightActionTimes" }
+    }
+    ranges[id] = value
+    specifiedRoleNightActionTimes.push(role)
   }
 
   // 역할 구성. 값이 없는 구버전 설정은 서버와 같은 규칙으로 AUTO로 본다.
@@ -198,6 +243,29 @@ export function buildRoomSettingsFormState(source) {
       return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.INVALID_ROLE_COUNTS }
     }
     roleCounts[key] = value
+  }
+  // 역할 상한·합계·광대 하한은 폼과 제출 버튼이 이미 쓰는 그 규칙으로 판정한다. 여기서
+  // 통과시키면 "편집 화면은 열리는데 저장 버튼은 영원히 비활성"인 시작점이 만들어진다.
+  const compositionCheck = validateRoleComposition({
+    mode: ROLE_COMPOSITION_MODES.CUSTOM,
+    roleCounts,
+    maxPlayers: settings.maxPlayers,
+  })
+  if (!compositionCheck.ok) {
+    return {
+      ok: false,
+      code: ROOM_SETTINGS_FORM_ERROR_CODES.INVALID_ROLE_COUNTS,
+      field: compositionCheck.code,
+    }
+  }
+  // CUSTOM에서 canonical한 광대 수는 roleCounts.JOKER다(서버도 두 값이 다르면 거부한다).
+  // 어긋난 채로 폼을 열면 두 스테퍼가 서로 다른 값을 보여준다.
+  if (settings.jokerCount !== roleCounts.JOKER) {
+    return {
+      ok: false,
+      code: ROOM_SETTINGS_FORM_ERROR_CODES.INVALID_ROLE_COUNTS,
+      field: "jokerCount",
+    }
   }
 
   return {

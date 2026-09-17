@@ -184,6 +184,22 @@ function fingerprintUpdateSettings(accessType, settings) {
 }
 
 /**
+ * **요청 전체**의 정규화 지문. 같은 requestId로 들어온 재시도가 정말 같은 요청인지 판정한다.
+ *
+ * expectedSettingsVersion을 포함하는 이유: 그 값은 "내가 어느 버전을 보고 눌렀는가"라는
+ * 승인된 요청의 일부이지 전송 부수 정보가 아니다. 설정 값만으로 지문을 만들면
+ *   v1 저장 성공 → 같은 requestId·같은 설정·expectedSettingsVersion=2 재전달
+ * 이 "같은 요청의 멱등 재시도"로 통과해, 서버가 v1 결과를 v2 요청의 답으로 돌려준다.
+ * 진짜 재시도(같은 버전·같은 값)는 지문이 그대로라 여전히 멱등이다.
+ *
+ * fingerprintUpdateSettings와 분리해 둔 이유: 그쪽은 "지금 저장된 설정과 달라지는가"
+ * (changed 판정)를 묻는 서로 다른 질문이고, 그 비교에는 버전이 들어가면 안 된다.
+ */
+function fingerprintUpdateRequest(expectedSettingsVersion, accessType, settings) {
+    return `v=${expectedSettingsVersion}|${fingerprintUpdateSettings(accessType, settings)}`
+}
+
+/**
  * update_room_settings payload를 검증합니다. 보정 없이 거부만 합니다.
  *
  * @param {unknown} payload - 클라이언트가 보낸 값(신뢰하지 않음)
@@ -291,6 +307,7 @@ module.exports = {
     buildEditableSettingsView,
     buildRoomSettingsView,
     fingerprintUpdateSettings,
+    fingerprintUpdateRequest,
     ROOM_SETTINGS_EVENTS,
     ROOM_SETTINGS_ERROR_CODES,
     EDITABLE_ROOM_SETTING_KEYS,

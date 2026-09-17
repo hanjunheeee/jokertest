@@ -74,13 +74,26 @@ const playRoomSfx = (kind, sfxEvent) => {
  * 서버가 값을 싣지 않았거나 화면에 비교 대상이 없으면 판정하지 않는다(기존 동작 유지) —
  * 없는 근거로 정상 사건을 버리지 않기 위함이다.
  */
-const isStaleReadyEvent = (state, uuid, { settingsVersion, readyRevision }) => {
-  if (Number.isSafeInteger(settingsVersion) && Number.isSafeInteger(state.settingsVersion)
-    && settingsVersion !== state.settingsVersion) return true
+const READY_EVENT = Object.freeze({ APPLY: 'apply', STALE: 'stale', NEWER: 'newer' })
+
+const classifyReadyEvent = (state, uuid, { settingsVersion, readyRevision }) => {
+  if (Number.isSafeInteger(settingsVersion)) {
+    // 우리가 **어떤 설정 위에 있는지 모르는** 상태에서는 준비를 반영하지 않는다. 그 사건이
+    // 지금 설정의 것인지 판단할 근거가 없고, 사건 자체를 소속·설정의 증거로 승격시키면
+    // 서버가 확정하지 않은 상태를 화면이 만들어내게 된다 — 대신 권위 있는 재조회를 건다.
+    if (!Number.isSafeInteger(state.settingsVersion)) return READY_EVENT.NEWER
+    if (settingsVersion > state.settingsVersion) {
+      // 우리가 아직 보지 못한 더 새로운 설정에서 일어난 준비 변경이다. 영원히 버리면 그
+      // 참가자의 준비 표시가 다음 전체 조회 때까지 굳는다 — 버리되, 최신 상태를 다시
+      // 확보하도록 **제한된** 재조회 한 번을 건다(방송을 그대로 믿지 않는다).
+      return READY_EVENT.NEWER
+    }
+    if (settingsVersion < state.settingsVersion) return READY_EVENT.STALE
+  }
   const player = state.players.find((p) => p.uuid === uuid)
   if (Number.isInteger(readyRevision) && Number.isInteger(player?.readyRevision)
-    && readyRevision <= player.readyRevision) return true
-  return false
+    && readyRevision <= player.readyRevision) return READY_EVENT.STALE
+  return READY_EVENT.APPLY
 }
 
 // start_game/set_ready 모두 ack 기반이라 socket.timeout()으로 응답 유실(네트워크 등)에 대비한다.
@@ -158,6 +171,26 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   const bumpRoomApplyGenerationRef = useRef(null)
   const requestRoomResyncRef = useRef(null)
   const requestRoomResync = () => requestRoomResyncRef.current?.()
+  /**
+   * 적용 세대를 올리는 **유일한 경계**. 동기화 effect가 살아 있으면 그쪽 구현을 쓴다(진행
+   * 중이던 조회를 대신할 새 조회까지 책임진다). 그 effect가 이미 정리됐어도 세대 자체는
+   * 반드시 올라가야 하므로 카운터만 올리는 폴백을 둔다 — 올리지 않으면 이 순간 이전에
+   * 발행된 전체 조회가 방금 반영한 사실을 덮는다.
+   */
+  const bumpRoomApplyGeneration = () => {
+    if (bumpRoomApplyGenerationRef.current) bumpRoomApplyGenerationRef.current()
+    else roomApplyGenerationRef.current += 1
+  }
+
+  /**
+   * F-20(AC-05): **소속 세대**. 적용 세대와 목적이 다르다.
+   *
+   * 적용 세대는 "화면이 아는 방 상태가 그 뒤로 바뀌었는가"를 말하고, 소속 세대는 "이 요청이
+   * 묶여 있던 그 소속이 지금도 같은 소속인가"를 말한다. R1→R2→R1이나 R1→방 없음→R1은
+   * roomId·계정·소켓이 전부 같아서 다른 어떤 값으로도 구분되지 않는다 — 저장·결과 조회의
+   * ACK·오류·timeout·finally는 전부 이 값으로 자기 소속을 확인해야 한다.
+   */
+  const roomMembershipGenerationRef = useRef(0)
 
   // 게임 시작 요청 잠금 해제를 한 곳에 모아, 성공(game_started 방송)/실패(ack)/timeout/
   // 언마운트 네 경로 모두 반드시 이 함수를 거치게 해서 해제를 빠뜨리는 경로가 생기지 않게
@@ -237,7 +270,14 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
       // 이미 더 새로운 설정 스냅샷이나 더 새로운 준비 사실을 반영했다면 이 사건은 과거다 —
       // 표시도 소리도 내지 않는다(소리만 남으면 없는 변경을 알리게 된다).
-      if (isStaleReadyEvent(useMatchingStore.getState(), uuid, { settingsVersion, readyRevision })) return
+      const verdict = classifyReadyEvent(useMatchingStore.getState(), uuid, { settingsVersion, readyRevision })
+      if (verdict === READY_EVENT.STALE) return
+      if (verdict === READY_EVENT.NEWER) {
+        // 우리가 아직 보지 못한 설정에서 온 사건이다. 그 값을 그대로 믿지 않고 최신 상태를
+        // 서버에서 다시 확보한다(재조회 자체가 제한된 시리즈다).
+        requestRoomResync()
+        return
+      }
       // 업무 상태를 먼저 반영하고, 그 뒤에 독립적으로 소리를 낸다 — 소리의 성공·실패·지연이
       // 준비 표시 갱신에 영향을 주지 않는다(AC-06).
       applyRoomEvent(() => setPlayerReady(uuid, isReady, canStart, readyRevision))
@@ -575,6 +615,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       const prevUuid = prevState?.user?.uuid ?? null
       if (nextUuid === prevUuid) return
       roomApplyGenerationRef.current += 1
+      // 계정이 갈리면 방 안에 있지 않았더라도(roomId가 계속 null이어도) 소속 자체가 다른
+      // 사람의 것이 된다 — store 구독만으로는 그 경우가 잡히지 않으므로 여기서 함께 올린다.
+      roomMembershipGenerationRef.current += 1
       settingsRequestVersionRef.current += 1
       // 계정이 바뀌면 이전 계정의 저장 요청은 "미확인"이 아니라 **적용될 수 없는 것**이다 —
       // 단절과 달리 여기서는 붙잡아 두지 않는다(다른 계정이 그 결과를 묻게 해서는 안 된다).
@@ -595,7 +638,15 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   useEffect(() => {
     const unsubscribe = useMatchingStore.subscribe((state, prevState) => {
       if (state.roomId === prevState.roomId) return
+      // 소속이 한 번이라도 갈리면 그 이전에 시작된 저장·결과 조회는 전부 지난 소속의 것이다.
+      // R1→R2→R1처럼 값이 되돌아오는 경우까지 구분하려면 단조 증가 세대가 유일한 근거다.
+      roomMembershipGenerationRef.current += 1
+      // 그 요청들의 세대도 함께 무효화하고 잠금을 푼다(단절 처리와 같은 이유·같은 방식).
+      // 풀지 않으면 새 방의 방장은 지난 소속의 응답이 도착할 때까지 저장 자체를 시작할 수
+      // 없고, 그 지난 요청의 finally가 나중에 새 요청의 잠금을 대신 풀게 된다.
+      settingsRequestVersionRef.current += 1
       inFlightSettingsRequestRef.current = null
+      clearSettingsState()
       if (!mountedRef.current) return
       setPendingSettingsRequest((prev) => (prev && prev.roomId !== state.roomId ? null : prev))
     })
@@ -754,10 +805,21 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
         // 순간 해제 스냅샷이 조용히 되돌아간다. 방·설정 버전·준비 revision을 함께 대조한다.
         const current = useMatchingStore.getState()
         if (response.roomId !== undefined && response.roomId !== current.roomId) return
-        if (isStaleReadyEvent(current, requestUuid, {
+        const verdict = classifyReadyEvent(current, requestUuid, {
           settingsVersion: response.settingsVersion, readyRevision: response.readyRevision,
-        })) return
+        })
+        if (verdict === READY_EVENT.STALE) return
+        if (verdict === READY_EVENT.NEWER) {
+          // 내 요청의 ACK라도 우리가 아직 보지 못한 설정 위의 결과다 — 추측으로 반영하지 않고
+          // 최신 상태를 다시 확보한다(방송 경로와 같은 판정이다).
+          requestRoomResync()
+          return
+        }
         current.setPlayerReady(requestUuid, response.isReady, response.canStart, response.readyRevision)
+        // F-20(AC-04): 내 준비가 실제로 반영된 순간도 **방 상태의 변경**이다. 세대를 올리지
+        // 않으면, 이 변경 이전에 발행돼 아직 돌아오지 않은 전체 방 조회가 도착해 방금 반영한
+        // 준비와 canStart를 옛 값으로 되돌린다(그 조회는 이 사실을 담고 있지 않다).
+        bumpRoomApplyGeneration()
         // 요청자 본인의 준비 변경은 방송이 아니라 이 ACK로 들어온다(서버가 socket.to로만
         // 방송하므로 자기 자신에게는 오지 않는다). 상태를 반영한 뒤 독립적으로 소리를 낸다.
         // 같은 값 재요청(멱등 성공)에는 서버가 sfxEvent를 싣지 않으므로 소리도 나지 않는다.
@@ -834,6 +896,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     settingsRequestVersionRef.current += 1
     const requestVersion = settingsRequestVersionRef.current
     const requestSocket = socket
+    // 이 저장이 묶여 있는 소속과, 응답의 방 스냅샷이 신선한지 판정할 기준을 함께 캡처한다.
+    const requestMembership = roomMembershipGenerationRef.current
+    const requestApplyGeneration = roomApplyGenerationRef.current
     // 응답을 기다리는 동안 연결이 끊기면 invalidateActionRequests가 이 값을 미확인으로
     // 승격시킨다. 응답을 실제로 받으면 아래에서 내린다.
     inFlightSettingsRequestRef.current = { roomId: requestRoomId, requestId }
@@ -842,8 +907,16 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       if (requestVersion !== settingsRequestVersionRef.current) return true
       if (requestSocket !== getSocket()) return true
       if (useAuthStore.getState().user?.uuid !== requestUuid) return true
+      // 소속이 갈렸으면 이 응답(성공·실패·timeout 무엇이든)은 지금 방과 무관하다. 소켓 세대는
+      // 단절만 보고 roomId 비교는 A→B→A를 구분하지 못한다 — 두 가지를 함께 본다.
+      if (requestMembership !== roomMembershipGenerationRef.current) return true
+      if (useMatchingStore.getState().roomId !== requestRoomId) return true
       return false
     }
+    // 요청의 **정착**(서버가 무엇을 했는가)과 응답에 실린 **방 스냅샷의 신선도**는 다른
+    // 사실이다. 정착은 소속이 같으면 유효하지만, 스냅샷은 그 사이에 더 새로운 사건을 이미
+    // 반영했다면 적용하면 안 된다.
+    const isRoomSnapshotFresh = () => roomApplyGenerationRef.current === requestApplyGeneration
 
     isSavingSettingsRef.current = true
     setIsSavingSettings(true)
@@ -873,10 +946,12 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       }
 
       // 버전 충돌·정원 하한 실패는 서버가 최신 방 상태를 함께 준다 — 그대로 반영해 방장이
-      // 곧바로 최신값에서 다시 편집할 수 있게 한다(추측으로 되돌리지 않는다).
-      if (response?.room && useMatchingStore.getState().roomId === response.room.roomId) {
-        roomApplyGenerationRef.current += 1
+      // 곧바로 최신값에서 다시 편집할 수 있게 한다(추측으로 되돌리지 않는다). 다만 이 스냅샷은
+      // 요청 시점의 것이라, 그 뒤에 더 새로운 사건을 이미 반영했다면 적용하지 않는다.
+      if (response?.room && isRoomSnapshotFresh()
+        && useMatchingStore.getState().roomId === response.room.roomId) {
         useMatchingStore.getState().setRoom(response.room)
+        bumpRoomApplyGeneration()
       }
       setSettingsError({ code: response?.code ?? ROOM_SETTINGS_ERROR_CODES.INTERNAL_ERROR, message: response?.message })
       return { ok: false, code: response?.code }
@@ -914,11 +989,16 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     settingsRequestVersionRef.current += 1
     const requestVersion = settingsRequestVersionRef.current
     const requestSocket = socket
+    // 저장 경로와 **같은 소유권 계약**이다 — 결과 조회도 그 소속에 묶인 요청이다.
+    const requestMembership = roomMembershipGenerationRef.current
+    const requestApplyGeneration = roomApplyGenerationRef.current
     const isStaleResponse = () =>
       !mountedRef.current
       || requestVersion !== settingsRequestVersionRef.current
       || requestSocket !== getSocket()
       || useAuthStore.getState().user?.uuid !== requestUuid
+      || requestMembership !== roomMembershipGenerationRef.current
+    const isRoomSnapshotFresh = () => roomApplyGenerationRef.current === requestApplyGeneration
 
     isSavingSettingsRef.current = true
     setIsSavingSettings(true)
@@ -929,9 +1009,13 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       if (isStaleResponse()) return { ok: false, code: 'STALE' }
       if (!response?.ok) return { ok: false, code: response?.code ?? ROOM_SETTINGS_ERROR_CODES.UNKNOWN }
 
-      if (response.room && response.room.roomId === useMatchingStore.getState().roomId) {
-        roomApplyGenerationRef.current += 1
+      // 결과(status)는 이 요청의 정착이고, room은 그 응답이 실어 보낸 스냅샷이다. 조회를
+      // 보낸 뒤에 설정 변경 방송 같은 더 새로운 사건을 이미 반영했다면, 정착은 그대로 받되
+      // 스냅샷은 적용하지 않는다 — 적용하면 방금 받은 새 설정이 옛 값으로 되돌아간다.
+      if (response.room && isRoomSnapshotFresh()
+        && response.room.roomId === useMatchingStore.getState().roomId) {
         useMatchingStore.getState().setRoom(response.room)
+        bumpRoomApplyGeneration()
       }
 
       if (response.status === 'UNKNOWN') {

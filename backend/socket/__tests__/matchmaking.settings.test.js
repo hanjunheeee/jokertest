@@ -341,16 +341,22 @@ test('AC-02 · 유효한 reserved 예약도 점유로 세고, 예약이 만료�
 
 test('AC-02 · published 입장은 room.players와 예약에서 중복으로 세지 않는다', async () => {
     const io = createFakeIo([])
-    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 1 })
-    await joinRoom(io, room.roomCode, 'p1') // 확정 2명
-    // 확정 명단에 이미 있는 계정의 published 시도 — 자리를 한 번만 차지해야 한다.
-    matchmaking.__seedAdmissionAttemptForTests('p1', { roomId: room.roomId, phase: 'published' })
+    // **정원과 꼭 같은 인원**으로 만든다. 여유가 한 자리라도 있으면 published를 두 번 세는
+    // 구현도 이 시험을 통과한다 — 자리가 정확히 다 찼을 때만 중복 계산이 거부로 드러난다.
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 4, jokerCount: 1 })
+    await joinRoom(io, room.roomCode, 'p1')
+    await joinRoom(io, room.roomCode, 'p2')
+    await joinRoom(io, room.roomCode, 'p3') // host 포함 확정 4명 = 정원 4
+    assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms[0][1].players.length, 4)
+    // 확정 명단에 **이미 있는** 계정의 published 시도 — 자리를 한 번만 차지해야 한다.
+    matchmaking.__seedAdmissionAttemptForTests('p3', { roomId: room.roomId, phase: 'published' })
 
     const res = await callAsPromise(
         handleUpdateRoomSettings, io, hostSocket, 'host-a',
         updatePayload(room.roomId, { maxPlayers: 4, jokerCount: 1 }),
     )
     assert.equal(res.ok, true, `published가 중복 계산됐다: ${JSON.stringify(res)}`)
+    assert.equal(res.occupancy, undefined)
 })
 
 // ── AC-03: 편집 결과가 참가자·방 목록에 반영된다 ────────────────────────────
@@ -508,7 +514,18 @@ test('AC-04 · 실제 설정 변경은 방장 포함 전원의 준비를 해제�
     }
 
     // 값이 그대로인 새 요청: 버전·준비·방송 무변경, changed=false.
+    //
+    // 여기서 **다시 전원 준비를 시킨 뒤** 저장한다. 전원이 이미 미준비인 상태에서 저장하면
+    // "해제했는데 아무도 바뀌지 않았다"와 "해제 자체를 하지 않았다"가 구별되지 않는다 —
+    // 되돌아갈 준비 상태가 실제로 있어야 무변경 단언이 판별력을 갖는다.
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room, true, { settingsVersion: 2 }))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room, true, { settingsVersion: 2 }))
+    const reReady = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].players
+    assert.ok(reReady.every(([, p]) => p.isReady === true), '재준비가 반영되지 않았다')
+    const revisionsAfterReReady = Object.fromEntries(reReady.map(([u, p]) => [u, p.readyRevision]))
+
     const broadcastsBefore = io.broadcasts.length
+    const roomsBeforeNoop = snapshotRooms()
     const noop = await callAsPromise(
         handleUpdateRoomSettings, io, hostSocket, 'host-a',
         updatePayload(room.roomId, { maxPlayers: 6, jokerCount: 1, expectedSettingsVersion: 2 }),
@@ -517,10 +534,13 @@ test('AC-04 · 실제 설정 변경은 방장 포함 전원의 준비를 해제�
     assert.equal(noop.changed, false)
     assert.equal(noop.settingsVersion, 2)
     assert.equal(io.broadcasts.length, broadcastsBefore, '변경이 없는데 목록 방송이 나갔다')
+    assert.equal(snapshotRooms(), roomsBeforeNoop, '변경이 없는 저장이 방 상태를 바꿨다')
 
     const afterNoop = matchmaking.__getStateSnapshotForTests().gameRooms[0][1]
+    assert.equal(afterNoop.settingsVersion, 2, '변경이 없는데 버전이 올라갔다')
     for (const [u, p] of afterNoop.players) {
-        assert.equal(p.readyRevision, revisionsBefore[u] + 1, `${u}의 준비가 다시 해제됐다`)
+        assert.equal(p.isReady, true, `${u}의 준비가 변경 없는 저장으로 해제됐다`)
+        assert.equal(p.readyRevision, revisionsAfterReReady[u], `${u}의 readyRevision이 다시 올라갔다`)
     }
 })
 
@@ -552,6 +572,111 @@ test('AC-04 · 같은 requestId 재전달은 재커밋 없이 기록된 결과�
     assert.equal(reused.ok, false)
     assert.equal(reused.code, ROOM_SETTINGS_ERROR_CODES.REQUEST_ID_REUSED)
     assert.equal(snapshotRooms(), afterFirst)
+})
+
+test('AC-04 · 같은 requestId를 다른 기대 버전으로 다시 보내면 같은 요청이 아니므로 거부된다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
+
+    const requestId = 'req-version-reuse'
+    const first = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { requestId, maxPlayers: 6 }))
+    assert.equal(first.ok, true, first.message)
+    assert.equal(first.settingsVersion, 2)
+
+    const afterFirst = snapshotRooms()
+    const broadcastsBefore = io.broadcasts.length
+
+    // expectedSettingsVersion은 "내가 무엇을 보고 눌렀는가"라는 요청의 일부다. 설정 값이
+    // 같아도 근거로 삼은 버전이 다르면 같은 요청이 아니므로, v1의 결과를 v2 요청의 답으로
+    // 돌려줘서는 안 된다.
+    const differentVersion = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { requestId, maxPlayers: 6, expectedSettingsVersion: 2 }))
+    assert.equal(differentVersion.ok, false, '기대 버전이 다른 재전달이 멱등 재시도로 처리됐다')
+    assert.equal(differentVersion.code, ROOM_SETTINGS_ERROR_CODES.REQUEST_ID_REUSED)
+    assert.equal(differentVersion.settingsVersion, undefined)
+
+    // 진짜 재시도(같은 버전·같은 값)는 그대로 멱등이다.
+    const trueRetry = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { requestId, maxPlayers: 6 }))
+    assert.equal(trueRetry.ok, true, trueRetry.message)
+    assert.equal(trueRetry.replayed, true)
+    assert.equal(trueRetry.settingsVersion, 2)
+
+    assert.equal(snapshotRooms(), afterFirst, '재전달이 방 상태를 바꿨다')
+    assert.equal(io.broadcasts.length, broadcastsBefore, '재전달이 방송을 다시 냈다')
+})
+
+test('AC-05 · 결과 기록은 삽입 시점에도 상한을 지키고, 가장 오래된 기록부터 버린다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
+
+    const results = () => matchmaking.__getStateSnapshotForTests().roomSettingsUpdateResults
+    const MAX = 500
+
+    // 상한까지 실제 핸들러로 채운다(전부 값이 같은 요청이라 버전은 1에 머문다 — 기록만 쌓인다).
+    for (let i = 0; i < MAX; i += 1) {
+        const res = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',
+            updatePayload(room.roomId, { requestId: `cap-${i}` }))
+        assert.equal(res.ok, true, res.message)
+    }
+    assert.equal(results().length, MAX)
+    const oldestKeyBefore = results()[0][0]
+
+    // 한 건 더. 진입 시점에만 걷어내면 여기서 size가 상한을 넘은 채 남는다.
+    const overflow = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { requestId: 'cap-overflow' }))
+    assert.equal(overflow.ok, true, overflow.message)
+    assert.equal(results().length, MAX, '삽입 시점에 상한이 집행되지 않았다')
+
+    // 버려진 것은 가장 오래된 기록이고, 방금 넣은 기록은 남아 있어야 한다.
+    const keysAfter = results().map(([key]) => key)
+    assert.equal(keysAfter.includes(oldestKeyBefore), false, '가장 오래된 기록이 남았다')
+    const lookupNew = await callAsPromise(handleGetRoomSettingsUpdateResult, 'host-a',
+        { roomId: room.roomId, requestId: 'cap-overflow' })
+    assert.notEqual(lookupNew.status, 'UNKNOWN', '방금 넣은 기록이 대신 버려졌다')
+    const lookupOld = await callAsPromise(handleGetRoomSettingsUpdateResult, 'host-a',
+        { roomId: room.roomId, requestId: 'cap-0' })
+    assert.equal(lookupOld.status, 'UNKNOWN')
+})
+
+test('AC-05 · 미확정 입장 되돌림으로 방이 비어 사라져도 그 방의 결과 기록은 함께 사라진다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
+    const guestSocket = await joinRoom(io, room.roomCode, 'guest')
+
+    const requestId = 'req-unpublish-room-gone'
+    const saved = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { requestId, maxPlayers: 6 }))
+    assert.equal(saved.ok, true, saved.message)
+    assert.equal(matchmaking.__getStateSnapshotForTests().roomSettingsUpdateResults.length, 1)
+
+    // guest는 아직 영수증이 확정되지 않은 미확정 소속(published)이다.
+    matchmaking.__seedAdmissionAttemptForTests('guest', {
+        roomId: room.roomId, phase: 'published', socketId: guestSocket.id,
+    })
+    // 방장이 먼저 떠난다 — 방은 아직 비어 있지 않으므로 이 경로는 기록을 지우지 않는다.
+    matchmaking.__testables.removeFromRoom(io, hostSocket, 'host-a')
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().roomSettingsUpdateResults.length, 1,
+        '방이 아직 살아 있는데 기록이 사라졌다',
+    )
+
+    // guest의 연결이 끊기면 미확정 소속이 동기적으로 되돌아가고, 방은 그 순간 비어 사라진다.
+    matchmaking.onDisconnect(io, guestSocket, 'guest')
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().gameRooms.length, 0,
+        '미확정 소속 되돌림이 빈 방을 정리하지 않았다(전제가 깨졌다)',
+    )
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().roomSettingsUpdateResults.length, 0,
+        '방이 사라졌는데 그 방의 결과 기록이 남았다',
+    )
+
+    const lookup = await callAsPromise(handleGetRoomSettingsUpdateResult, 'host-a',
+        { roomId: room.roomId, requestId })
+    assert.equal(lookup.status, 'UNKNOWN')
+    assert.equal(lookup.room, null)
 })
 
 test('AC-04 · 같은 버전으로 들어온 두 저장은 하나만 성공하고 나머지는 충돌이다', async () => {
@@ -634,6 +759,83 @@ function gameRoomStillExists(roomId) {
     return matchmaking.__getStateSnapshotForTests().gameRooms.some(([id]) => id === roomId)
 }
 
+test('AC-04 · 외형 조회 중 참가자가 나갔다가 같은 방에 다시 들어와 준비해도 옛 시작은 실패한다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 4, jokerCount: 1 })
+    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+
+    startLoadoutGate = createStartGate()
+    const startPromise = new Promise((resolve) =>
+        handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
+    await startLoadoutGate.entered
+
+    // 참가자가 실제로 나갔다가 **같은 방**에 다시 들어와 다시 준비한다. uuid 집합·인원·
+    // 준비 상태·설정 버전은 전부 조회 시작 시점과 같아진다 — 그 값들만 보면 구별할 수 없다.
+    matchmaking.__testables.removeFromRoom(io, joinerSocket, 'p1')
+    const rejoined = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, rejoined, 'p1', readyPayload(room))
+    const beforeRelease = matchmaking.__getStateSnapshotForTests().gameRooms[0][1]
+    assert.deepEqual(beforeRelease.players.map(([u]) => u).sort(), ['host-a', 'p1'])
+    assert.ok(beforeRelease.players.every(([, p]) => p.isReady === true))
+    assert.equal(beforeRelease.settingsVersion ?? 1, 1, '이 사건은 설정 변경 없이 성립해야 한다')
+
+    startLoadoutGate.release()
+    const startResult = await startPromise
+    assert.equal(startResult.ok, false, '이탈·재입장 사이에 걸쳐 있던 옛 시작이 커밋됐다')
+    assert.equal(startResult.code, 'ROOM_STATE_CHANGED')
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null)
+    assert.ok(gameRoomStillExists(room.roomId), '실패한 시작이 방을 없앴다')
+
+    // 새 시작 요청은 지금의 참가자 구성으로 정상적으로 성공한다(모든 시작을 막은 것이 아니다).
+    startLoadoutGate = null
+    const restarted = await new Promise((resolve) =>
+        handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
+    assert.equal(restarted.ok, true, restarted.message)
+})
+
+test('AC-04 · 외형 조회 중 canonical 소켓이 교체되면 옛 소켓이 연결돼 있어도 시작이 커밋되지 않는다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 4, jokerCount: 1 })
+    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+
+    // 실제 이벤트 등록부를 거친다 — 등록부가 접근자를 흘려버리면 이 사건은 재현되지 않는다.
+    let canonicalHostSocketId = hostSocket.id
+    matchmaking.registerMatchmakingHandlers(io, hostSocket, 'host-a', {
+        getCurrentSocketId: (u) => (u === 'host-a' ? canonicalHostSocketId : `sock-${u}`),
+    })
+
+    startLoadoutGate = createStartGate()
+    const startPromise = new Promise((resolve) =>
+        hostSocket.trigger('start_game', startPayload(room), resolve))
+    await startLoadoutGate.entered
+
+    // 같은 계정의 새 로그인이 canonical 소켓을 가져간다. 옛 소켓은 아직 connected===true다 —
+    // 연결 여부만 보는 검사로는 이 상황이 걸러지지 않는다.
+    const replacement = createFakeSocket('host-a', { id: 'sock-host-a-2' })
+    io.sockets.sockets.set(replacement.id, replacement)
+    await replacement.join(room.roomId)
+    canonicalHostSocketId = replacement.id
+    assert.equal(hostSocket.connected, true, '이 사건의 전제는 옛 소켓이 아직 연결돼 있다는 것이다')
+
+    startLoadoutGate.release()
+    const startResult = await startPromise
+    assert.equal(startResult.ok, false, '교체된 옛 소켓의 시작이 커밋됐다')
+    assert.equal(startResult.code, ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null)
+    assert.ok(gameRoomStillExists(room.roomId))
+
+    // 현재 연결이 보낸 시작은 정상적으로 성공한다.
+    startLoadoutGate = null
+    const byCurrent = await new Promise((resolve) =>
+        handleStartGame(io, replacement, 'host-a', startPayload(room), resolve,
+            (u) => (u === 'host-a' ? canonicalHostSocketId : `sock-${u}`)))
+    assert.equal(byCurrent.ok, true, byCurrent.message)
+})
+
 test('AC-04 · 게임이 먼저 시작되면 이후 설정 저장은 거부되고 시작된 판의 설정은 그대로다', async () => {
     const io = createFakeIo([])
     const { hostSocket, room } = await createRoom(io, 'host-a', {
@@ -652,12 +854,11 @@ test('AC-04 · 게임이 먼저 시작되면 이후 설정 저장은 거부되�
         updatePayload(room.roomId, { maxPlayers: 6, dayDiscussionTime: 150 }),
     )
     assert.equal(rejected.ok, false)
-    // 대기방이 사라졌고 요청자는 활성 세션 참가자다 — 어느 쪽 사유든 저장은 일어나지 않는다.
-    assert.ok([
-        ROOM_SETTINGS_ERROR_CODES.ALREADY_IN_GAME,
-        ROOM_SETTINGS_ERROR_CODES.NOT_IN_ROOM,
-        ROOM_SETTINGS_ERROR_CODES.ROOM_NOT_FOUND,
-    ].includes(rejected.code), `예상 밖 사유: ${rejected.code}`)
+    // 사유는 결정적이다. handleUpdateRoomSettings는 소속을 보기 **전에** 활성 세션 게이트를
+    // 지나고(3단계), 시작 커밋이 이 계정의 playerSession을 이미 세워 두었으므로 언제나
+    // ALREADY_IN_GAME이다 — "어느 쪽이든 저장은 안 된다"로 뭉뚱그리면 순서가 뒤바뀌어도
+    // 시험이 통과한다.
+    assert.equal(rejected.code, ROOM_SETTINGS_ERROR_CODES.ALREADY_IN_GAME)
     // 저장이 거부됐으므로 이 계정의 활성 세션은 그대로 그 게임 하나다.
     assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a')?.gameId, started.gameId)
 })

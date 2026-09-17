@@ -117,6 +117,14 @@ async function clickSubmit(container, ariaLabel) {
   await act(async () => { submit.click() })
 }
 
+/** 라벨로 실제 스테퍼 행을 찾아 **화면에 그려진** 값을 읽는다. */
+function readStepperRow(container, label) {
+  const row = [...container.querySelectorAll("[data-setup-row]")]
+    .find((node) => node.querySelector("p")?.textContent.trim() === label)
+  assert.ok(row, `${label} 행이 없다`)
+  return row.textContent.replace(label, "").trim()
+}
+
 test.afterEach(() => { cleanup() })
 
 test("AC-03 · 편집을 열고 그대로 저장하면 서버의 부분 지정이 그대로 유지된다", async () => {
@@ -235,6 +243,91 @@ test("AC-03 · 일반 탭에서 바꾼 값과 직업별 밤 시간 편집이 한
   const current = await new Promise((resolve) => handleGetCurrentRoom("host-a", resolve))
   assert.equal(current.room.settings.maxPlayers, 7)
   assert.deepEqual(current.room.settings.roleNightActionTimes, { DOCTOR: 120, GUARD: 120 })
+})
+
+test("AC-03 · 지정하지 않은 직업의 밤 시간은 생성 기본값이 아니라 실제로 적용될 전체 밤 시간으로 보인다", async () => {
+  // 전체 밤 시간 60초, 직업별 지정 없음 — 서버는 네 직업 모두 60초를 쓴다.
+  const { room } = await createRoom({ nightActionTime: 60 })
+  assert.equal(room.settings.roleNightActionTimes, undefined, "이 사건의 전제는 '지정 없음'이다")
+
+  const formState = buildRoomSettingsFormState({ accessType: room.accessType, settings: room.settings })
+  assert.equal(formState.ok, true, formState.code)
+  assert.deepEqual(formState.specifiedRoleNightActionTimes, [],
+    "지정하지 않은 직업이 지정 목록에 들어갔다")
+
+  const { container, getSubmitted } = await mountPanel({ mode: "edit", initialFormState: formState })
+  await clickTab(container, "회의&투표")
+
+  // 화면이 말하는 값과 서버가 실제로 쓰는 값이 같아야 한다 — 생성 기본값 90초가 보이면
+  // 방장은 "이 직업은 90초"라고 읽는데 서버는 60초를 쓴다.
+  assert.equal(readStepperRow(container, "밤 행동 시간 조절"), "60초")
+  for (const label of ["광대 밤 시간 조절", "의사 밤 시간 조절", "경비원 밤 시간 조절", "마녀사냥꾼 밤 시간 조절"]) {
+    assert.equal(readStepperRow(container, label), "60초",
+      `${label}이 실제 적용될 값이 아니라 생성 기본값을 보여준다`)
+  }
+
+  // 그런데도 열고 그대로 저장하면 없던 override는 생기지 않는다(두 성질은 서로 독립이다).
+  await clickSubmit(container, "설정 저장")
+  const untouched = buildUpdateRoomSettingsPayload({
+    ...getSubmitted(), roomId: room.roomId, requestId: "req-fallback-untouched", expectedSettingsVersion: 1,
+  })
+  assert.equal(Object.hasOwn(untouched, "roleNightActionTimes"), false,
+    "열고 그대로 저장했을 뿐인데 override가 생겼다")
+
+  // 실제 편집은 그 **실효값**에서 출발한다 — 60에서 한 칸 올리면 90이다(90에서 120이 아니다).
+  await clickStepper(container, "광대 밤 시간 조절 증가")
+  assert.equal(readStepperRow(container, "광대 밤 시간 조절"), "90초")
+  await clickSubmit(container, "설정 저장")
+  const edited = buildUpdateRoomSettingsPayload({
+    ...getSubmitted(), roomId: room.roomId, requestId: "req-fallback-edited", expectedSettingsVersion: 1,
+  })
+  assert.deepEqual(edited.roleNightActionTimes, { JOKER: 90 })
+})
+
+test("AC-03 · 이 화면이 표현할 수 없는 서버 설정은 기본값으로 덮지 않고 명시적 실패로 돌려준다", async () => {
+  const base = {
+    maxPlayers: 8, jokerCount: 2, roleCompositionMode: "auto",
+    dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90,
+  }
+  const form = (settings) => buildRoomSettingsFormState({ accessType: "open", settings: { ...base, ...settings } })
+
+  // 정상값은 그대로 통과한다(모든 것을 거부해서 통과시킨 것이 아니다).
+  assert.equal(form({}).ok, true)
+
+  // 정원: 허용 범위(4~10) 밖.
+  assert.deepEqual(
+    { code: form({ maxPlayers: 11 }).code, field: form({ maxPlayers: 11 }).field },
+    { code: "OUT_OF_RANGE", field: "maxPlayers" },
+  )
+  assert.equal(form({ maxPlayers: 3 }).code, "OUT_OF_RANGE")
+  // 값이 아예 없는 것과 "있는데 표현할 수 없는 것"은 다른 사실이다.
+  assert.equal(form({ maxPlayers: undefined }).code, "MISSING_FIELD")
+
+  // 시간: step(30초)에 맞지 않는 값.
+  assert.equal(form({ dayDiscussionTime: 75 }).code, "OUT_OF_RANGE")
+  assert.equal(form({ dayVoteTime: 120 }).code, "OUT_OF_RANGE") // 투표는 30~90초다
+  assert.equal(form({ nightActionTime: 150 }).code, "OUT_OF_RANGE")
+  assert.equal(form({ roleNightActionTimes: { JOKER: 45 } }).code, "OUT_OF_RANGE")
+
+  // 광대 수: 역할 계약의 상한(2명)을 넘는 값.
+  assert.equal(form({ jokerCount: 3 }).code, "OUT_OF_RANGE")
+
+  // CUSTOM 역할 구성: 상한 초과·합계 초과·광대 수 불일치.
+  const custom = (roleCounts, extra = {}) =>
+    form({ roleCompositionMode: "custom", jokerCount: roleCounts.JOKER, roleCounts, ...extra })
+  assert.equal(custom({ JOKER: 1, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 }).ok, true)
+  assert.equal(custom({ JOKER: 1, DOCTOR: 3, GUARD: 0, WITCH_HUNTER: 0 }).code, "INVALID_ROLE_COUNTS")
+  assert.equal(
+    custom({ JOKER: 2, DOCTOR: 2, GUARD: 2, WITCH_HUNTER: 2 }, { maxPlayers: 4 }).code,
+    "INVALID_ROLE_COUNTS",
+  )
+  // jokerCount와 roleCounts.JOKER가 어긋나면 두 스테퍼가 서로 다른 값을 보여주게 된다.
+  const mismatched = form({
+    roleCompositionMode: "custom", jokerCount: 2,
+    roleCounts: { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
+  })
+  assert.equal(mismatched.ok, false)
+  assert.equal(mismatched.field, "jokerCount")
 })
 
 test("AC-03 · 생성 화면은 지정 목록이라는 출발점이 없어 기존 계약대로 네 직업을 모두 싣는다", async () => {
