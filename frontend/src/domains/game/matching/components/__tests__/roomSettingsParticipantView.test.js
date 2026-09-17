@@ -10,13 +10,13 @@
  *     → 실제 백엔드 handleUpdateRoomSettings
  *     → 서버가 **참가자 소켓에 실제로 emit한** room_settings_updated 사건
  *     → 실제 useMatchingRoom 구독 → 실제 matchingStore
- *     → 실제 RoomSettingsSummaryPanel DOM (비방장이 읽는 화면)
+ *     → 실제 GameMatchingPage/useMatchingPage가 구독하는 동일한 DOM 트리
  *     → 실제 get_public_rooms → 실제 RoomListRow DOM
  *
  * 소켓은 모듈 목업이 아니라 실제 socketClient.setSocket으로 대역 인스턴스를 꽂는다 —
- * 그래서 이 파일은 `--experimental-test-module-mocks` 없이 그대로 돈다.
+ * 실제 페이지의 Vite 환경 경계를 위해 공식 npm test와 같은 --experimental-test-module-mocks가 필요하다.
  */
-import test from "node:test"
+import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
@@ -47,7 +47,24 @@ register(new URL(
   import.meta.url,
 ))
 
-const { render, act, cleanup, renderHook } = await import("@testing-library/react")
+// Operator: run with the package's --experimental-test-module-mocks flag.
+// Only the Vite environment and external HTTP boundary are replaced; the actual
+// page, page hook, room hook, store and settings panel all remain production code.
+mock.module("../../../../../shared/env.js", {
+  namedExports: { API_BASE_URL: "http://localhost:4000", DISCORD_SUPPORT_URL: undefined },
+})
+const rejectNetwork = async () => { throw new Error("Unexpected HTTP call in room settings test") }
+mock.module("../../../../../shared/api/client.js", {
+  namedExports: {
+    api: { get: rejectNetwork, post: rejectNetwork, put: rejectNetwork, patch: rejectNetwork, delete: rejectNetwork },
+    apiClient: rejectNetwork,
+    refreshAccessToken: rejectNetwork,
+  },
+})
+const { render, act, cleanup, waitFor } = await import("@testing-library/react")
+const { MemoryRouter } = await import("react-router-dom")
+const { default: GameMatchingPage } = await import("../../pages/GameMatchingPage.jsx")
+let participantPageView = null
 const { default: GameSetupPanel } = await import("../../../setup/components/GameSetupPanel.jsx")
 const { default: RoomSettingsSummaryPanel } = await import("../RoomSettingsSummaryPanel.jsx")
 const { default: RoomListRow } = await import("../../../mode/components/roomList/RoomListRow.jsx")
@@ -57,7 +74,7 @@ const { SOCKET_EVENTS } = await import("../../../setup/constants/gameSetupSocket
 const { setSocket } = await import("../../../../../shared/socket/socketClient.js")
 const { useMatchingStore } = await import("../../store/matchingStore.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
-const { useMatchingRoom } = await import("../../hooks/useMatchingRoom.js")
+
 
 const { default: matchmaking } =
   await import("../../../../../../../backend/socket/matchmaking.js")
@@ -144,28 +161,29 @@ async function mountParticipantRoom(currentRoom) {
     },
   }
   setSocket(socket)
-  const rendered = renderHook(() => useMatchingRoom({ onRoomDeleted: () => {}, onGameStarted: () => {} }))
-  await act(async () => { await Promise.resolve(); await Promise.resolve() })
-  assert.equal(rendered.result.current.isRoomVerified, true, "참가자 방 검증이 끝나지 않았다")
+  await act(async () => {
+    participantPageView = render(React.createElement(MemoryRouter, { initialEntries: ["/matching"] },
+      React.createElement(GameMatchingPage)))
+  })
+  await waitFor(() => assert.ok(participantPageView.container.querySelector("[aria-label='현재 방 설정']")))
+  assert.equal(participantPageView.container.querySelector("[aria-label='방 설정 변경']"), null,
+    "비방장에게 설정 편집 버튼이 노출됐다")
   assert.equal(useMatchingStore.getState().hostUuid, "host-a")
   assert.notEqual(useMatchingStore.getState().hostUuid, "p1", "이 시험의 전제는 비방장 참가자다")
-  return { socket, ...rendered }
+  return { socket, view: participantPageView }
 }
 
-/** store가 들고 있는 서버 확정 설정을 실제 표시 패널로 그린다(GameMatchingPage와 같은 연결). */
-async function renderSummaryFromStore() {
-  const { accessType, settings } = useMatchingStore.getState()
-  let container
-  await act(async () => {
-    ;({ container } = render(React.createElement(RoomSettingsSummaryPanel, {
-      visible: true, accessType, settings,
-    })))
-  })
-  return container
+/** Read the SAME mounted production page; never re-render a fresh snapshot from getState. */
+async function currentParticipantSummary() {
+  await act(async () => { await Promise.resolve() })
+  assert.ok(participantPageView.container.querySelector("[aria-label='현재 방 설정']"),
+    "실제 대기 페이지의 설정 표시가 없다")
+  return participantPageView.container
 }
 
 test.afterEach(() => {
   cleanup()
+  participantPageView = null
   setSocket(null)
   useMatchingStore.getState().clearRoom()
 })
@@ -178,7 +196,7 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   // 참가자는 저장 **이전**의 방을 보고 있다.
   const before = await new Promise((resolve) => handleGetCurrentRoom("p1", resolve))
   const { socket: clientSocket } = await mountParticipantRoom(before.room)
-  const beforeDom = await renderSummaryFromStore()
+  const beforeDom = await currentParticipantSummary()
   assert.ok(beforeDom.textContent.includes("공개 참가"), beforeDom.textContent)
   assert.ok(beforeDom.textContent.includes("8명"), beforeDom.textContent)
   // 여기서 전역 cleanup을 부르면 참가자 훅까지 함께 언마운트돼 이후 사건을 받지 못한다 —
@@ -241,8 +259,9 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   assert.equal(stored.settings.maxPlayers, 6)
 
   // ── 비방장 참가자가 실제로 읽는 화면 ────────────────────────────────────
-  const summary = await renderSummaryFromStore()
-  const text = summary.textContent
+  const summary = await currentParticipantSummary()
+  assert.equal(summary, beforeDom, "서버 방송 뒤 실제 페이지를 새로 마운트했다")
+  const text = summary.querySelector("[aria-label='현재 방 설정']").textContent
   assert.ok(text.includes("코드로만 참가"), `입장 방식이 없다: ${text}`)
   assert.ok(text.includes("6명"), `정원이 없다: ${text}`)
   assert.ok(text.includes("광대 2"), `직업 구성이 없다: ${text}`)
@@ -278,11 +297,8 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
 })
 
 test("AC-03 · 실제 대기 페이지가 useMatchingPage의 서버 확정 설정을 그 패널에 연결한다", async () => {
-  // 이 배선만 실제 페이지를 렌더해 확인하지 못한다: GameMatchingPage는 친구 패널을 거쳐
-  // shared/env.js(import.meta.env)에 닿는데, 그 경계를 갈아끼우려면 mock.module이 필요하고
-  // 이 실행기는 --experimental-test-module-mocks를 켜지 못한다(공식 npm test에는 있다).
-  // 그래서 페이지 **소스**에서 배선 자체를 고정한다 — 값의 흐름은 위 시험이 실제 DOM으로
-  // 이미 확인했고, 여기서 확인할 것은 "페이지가 그 값을 패널에 넘기는가" 하나다.
+  // Supplemental source wiring guard. The preceding test now mounts the actual
+  // GameMatchingPage and asserts updates in the same DOM tree after server events.
   const { readFileSync } = await import("node:fs")
   const { fileURLToPath } = await import("node:url")
   const pagePath = fileURLToPath(new URL("../../pages/GameMatchingPage.jsx", import.meta.url))
