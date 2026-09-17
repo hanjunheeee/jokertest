@@ -678,6 +678,16 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
         return
     }
 
+    // F-21(AC-03): 낮 투표 제출과 **같은 이유**의 갱신이다. 이탈이 한 번 일어난 뒤 화면은 서버가
+    // 실어 준 공개 진행 수·본인 값을 canonical로 쓰므로, 준비가 서버 값을 갱신하지 않으면
+    // 준비 인원이 이탈 당시의 수에 멈춘 채 남는다(ACK의 수치는 그 뒤의 이탈을 모른다).
+    // 전이 방송보다 먼저 보내 이 제출 시점의 사실을 그대로 전달한다.
+    try {
+        emitSelfSubmissionProgress(io, result.session, uuid)
+    } catch (err) {
+        console.error('[개인 진행 상태 전송 실패]', { code: 'SELF_PROGRESS_AFTER_READY', gameId })
+    }
+
     respond(callback, { ok: true, readyCount: result.readyCount, requiredCount: result.requiredCount })
 
     if (result.transitioned) {
@@ -1312,6 +1322,66 @@ function expireDisconnectGrace(run) {
 }
 
 /**
+ * F-21(AC-03): **수신자 본인의** 제출 상태를 개인 전송한다(session_self_progress).
+ *
+ * 두 자리에서 부른다:
+ *   1. 이탈 직후 — 표적이 사라진 표가 기권으로 정규화됐다는 사실을 각자에게 알린다.
+ *   2. **평범한 제출 직후** — 이것이 없으면 이탈 이후의 화면이 영영 미제출로 남는다. 서버가
+ *      마지막으로 말한 본인 값이 이탈 당시의 `false`이고, 그 뒤의 제출은 로컬 ACK로만
+ *      존재하기 때문이다(화면은 서버 값이 있으면 그것을 canonical로 쓴다 — 그래야 늦은
+ *      ACK가 정규화를 되돌리지 못한다). 제출이 서버 값을 갱신하지 않으면 그 두 계약이
+ *      서로를 무력화한다: 투표는 커밋됐는데 화면은 "아직 안 냄"이고 버튼은 다시 눌린다.
+ *
+ * 순서값(selfProgressSeq)을 함께 싣는다 — 제출은 참여 세대를 올리지 않으므로 세대만으로는
+ * 이탈 당시의 값과 그 뒤의 제출을 구별할 수 없다.
+ *
+ * 공개 방송에 본인 값을 실을 수는 없다(누가 누구를 찍었는지가 드러난다). 통지마다 격리한다 —
+ * 한 수신자의 전달 실패가 나머지를 막지 않는다. 절대 던지지 않는다.
+ *
+ * @param {string|null} [onlyUuid] - 주면 그 한 명에게만 보낸다(자기 제출 직후의 갱신).
+ */
+function emitSelfSubmissionProgress(io, session, onlyUuid = null) {
+    if (!session || !(session.players instanceof Map)) return
+    let seq = null
+    let progress = null
+    try {
+        seq = gameSessionCore.bumpSelfProgressSeq(session)
+        progress = gameSessionCore.buildPublicPhaseProgress(session)
+    } catch (err) {
+        console.error('[개인 진행 상태 전송 실패]', {
+            code: 'SELF_PROGRESS_BUILD_ERROR', gameId: session.id,
+        })
+        return
+    }
+    const participationRevision = Number.isSafeInteger(session.participationRevision)
+        ? session.participationRevision
+        : 0
+
+    for (const player of session.players.values()) {
+        if (onlyUuid !== null && player.uuid !== onlyUuid) continue
+        // 이미 빠진 참가자에게는 이 판의 개인 상태를 더 보내지 않는다.
+        if (player.isParticipating === false) continue
+        const targetSocket = getSocketForUuid(io, player.uuid)
+        if (!targetSocket) continue
+        try {
+            targetSocket.emit('session_self_progress', {
+                gameId: session.id,
+                phase: session.phase,
+                dayIndex: session.dayIndex,
+                participationRevision,
+                selfProgressSeq: seq,
+                progress,
+                self: gameSessionCore.buildSelfSubmissionFields(session, player.uuid),
+            })
+        } catch (err) {
+            console.error('[개인 진행 상태 전송 실패]', {
+                code: 'SELF_PROGRESS_DELIVERY_ERROR', uuid: player.uuid, gameId: session.id,
+            })
+        }
+    }
+}
+
+/**
  * F-21(AC-03/AC-05): 방장 추방 · 진행 중 명시적 이탈 · 재접속 유예 만료가 **공유하는** 이탈
  * 처리 경계다. core의 commitParticipantDeparture로 개인 전이를 끝낸 뒤, 그 결과에 따라 공개
  * 사건·단계 진행·타이머·종결 저장을 연결한다.
@@ -1397,39 +1467,35 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     }
 
     // ── 2) 참여 상태 변화 — 생존과 별개의 사실이라 사망 사건과 합치지 않는다 ────────
-    const participationPayload = gameSessionCore.buildParticipationChangedPayload(session, applied.victimUuid)
+    //
+    // **payload 조립도 격리한다.** 예전에는 이 한 줄이 try 밖에 있었다 — 조립이 던지면
+    // 아래의 개인 진행 상태·재판 취소·종결 저장·타이머 정리·그리고 호출부의 추방 ACK까지
+    // 전부 실행되지 않은 채 예외가 올라갔다. 커밋과 영수증은 이미 확정된 뒤이므로, 그 순간
+    // 서버가 확정한 결과와 실제로 일어난 후속 처리가 갈라진다. 선택적 통지 하나의 실패가
+    // 확정된 결과를 지우지 못하게 한다.
+    let participationPayload = null
     try {
-        emitToGameChannel(io, session.channelId, 'session_participation_changed', participationPayload)
+        participationPayload = gameSessionCore.buildParticipationChangedPayload(session, applied.victimUuid)
     } catch (err) {
-        console.error('[참가자 이탈 처리 실패]', { code: 'PARTICIPATION_DELIVERY_ERROR', uuid, gameId: session.id })
+        console.error('[참가자 이탈 처리 실패]', {
+            code: 'PARTICIPATION_PAYLOAD_BUILD_ERROR', uuid, gameId: session.id,
+        })
+    }
+    if (participationPayload) {
+        try {
+            emitToGameChannel(io, session.channelId, 'session_participation_changed', participationPayload)
+        } catch (err) {
+            console.error('[참가자 이탈 처리 실패]', { code: 'PARTICIPATION_DELIVERY_ERROR', uuid, gameId: session.id })
+        }
     }
 
     // ── 2b) 각자의 **본인** 제출 상태 ────────────────────────────────────────
     //
     // 이탈은 남의 표를 기권으로 정규화한다(표적이 사라졌으므로). 그 사실을 공개 방송에 실을
-    // 수는 없다 — 누가 누구를 찍었는지가 드러난다. 그래서 같은 revision을 달아 **각자에게만**
-    // 자기 값을 보낸다. 받은 화면은 revision으로 늦은 ACK를 무효화하고 표시를 되돌린다.
+    // 수는 없다 — 누가 누구를 찍었는지가 드러난다. 그래서 **각자에게만** 자기 값을 보낸다.
     //
-    // 통지마다 격리한다 — 한 수신자의 전달 실패가 나머지를 막지 않는다.
-    for (const player of session.players.values()) {
-        if (player.isParticipating === false) continue
-        const targetSocket = getSocketForUuid(io, player.uuid)
-        if (!targetSocket) continue
-        try {
-            targetSocket.emit('session_self_progress', {
-                gameId: session.id,
-                phase: session.phase,
-                dayIndex: session.dayIndex,
-                participationRevision: participationPayload.participationRevision,
-                progress: participationPayload.progress,
-                self: gameSessionCore.buildSelfSubmissionFields(session, player.uuid),
-            })
-        } catch (err) {
-            console.error('[참가자 이탈 처리 실패]', {
-                code: 'SELF_PROGRESS_DELIVERY_ERROR', uuid: player.uuid, gameId: session.id,
-            })
-        }
-    }
+    // 위 공개 payload 조립이 실패했더라도 이 전송은 그대로 일어난다(각자 독립적으로 조립한다).
+    emitSelfSubmissionProgress(io, session)
 
     // ── 3) 피고 이탈로 취소된 재판 ────────────────────────────────────────────
     if (applied.tribunalCancelled) {
@@ -2474,6 +2540,18 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
      * "core에 표가 커밋됐는가"이고, 여기까지 온 요청은 어느 쪽이든 이미 커밋된 뒤다.
      */
     const ackThenResolve = (ackPayload) => {
+        // F-21(AC-03): **커밋된 표를 서버가 다시 말해 준다.** 이탈 이후의 화면은 서버가 실어 준
+        // 본인 값을 canonical로 쓰므로(늦은 ACK가 정규화를 되돌리지 못하게 하려고), 이 갱신이
+        // 없으면 방금 커밋된 표가 화면에서 미제출로 남고 버튼이 다시 눌린다. 판정 재평가보다
+        // **먼저** 보내 이 제출 시점의 사실을 그대로 전달한다(그 뒤의 전이는 자기 방송을 낸다).
+        try {
+            // 제출자 본인의 canonical 세션으로만 조회한다 — 옛 gameId의 늦은 제출이 새 판의
+            // 개인 상태를 건드리지 못한다(resolveAfterDepartureOnSubmit과 같은 경계).
+            const committed = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
+            if (committed) emitSelfSubmissionProgress(io, committed, uuid)
+        } catch (err) {
+            console.error('[개인 진행 상태 전송 실패]', { code: 'SELF_PROGRESS_AFTER_SUBMIT', gameId })
+        }
         respond(callback, ackPayload)
         try {
             resolveAfterDepartureOnSubmit(io, uuid, gameId)
@@ -2755,6 +2833,16 @@ function handleCastTribunalVote(io, socket, uuid, payload, callback) {
         vote: result.vote,
         sfxEvent: buildTribunalVoteSubmitSfxEvent(uuid, gameId),
     })
+
+    // F-21(AC-03): 낮 투표·토론 준비와 **같은 이유**의 갱신이다. 이탈 이후의 화면은 서버가 실어
+    // 준 본인 값(hasSubmittedTribunalVote)을 canonical로 쓰므로, 제출이 그 값을 갱신하지 않으면
+    // 방금 커밋된 표가 화면에서 미제출로 남는다. 판정 재평가보다 먼저 보낸다.
+    try {
+        const committed = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
+        if (committed) emitSelfSubmissionProgress(io, committed, uuid)
+    } catch (err) {
+        console.error('[개인 진행 상태 전송 실패]', { code: 'SELF_PROGRESS_AFTER_TRIBUNAL_VOTE', gameId })
+    }
 
     // F-21(AC-03): 유권자 이탈로 분모가 줄어든 재판이라면 이 제출이 마지막일 수 있다 —
     // 표식이 있는 경우에만 기존 prepare/commit 경로를 한 번 태운다(이탈이 없던 재판의 기존

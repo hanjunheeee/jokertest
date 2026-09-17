@@ -292,6 +292,29 @@ export const useInGameStore = create((set) => ({
       if (payload.participationRevision < (current.state.participationRevision ?? 0)) return current
       if (payload.self === null || typeof payload.self !== "object" || Array.isArray(payload.self)) return current
 
+      /**
+       * F-21(AC-03/AC-05): **개인 값의 순서는 개인 값의 시계로 정한다.**
+       *
+       * participationRevision은 참여가 바뀔 때만 오른다 — 이탈 이후의 평범한 제출은 세대를
+       * 올리지 않으므로, 세대만 보면 "이탈 당시의 미제출(false)"과 "그 뒤의 제출(true)"이 같은
+       * 세대의 사건이 되어 도착 순서가 뒤집혀도 알 수 없다. 그래서 서버는 개인 전송마다 1씩
+       * 오르는 selfProgressSeq를 함께 싣고, 이 store는 **적용한 값을 기억**한다.
+       *
+       * 그 기억이 없으면(이전 구현) 더 낮은 세대의 옛 개인 사건·옛 스냅샷이 정규화된 제출
+       * 상태를 되돌릴 수 있었다. 같은 세대의 공개 사건은 이 값과 무관하게 그대로 적용된다
+       * (공개 경로는 자기 세대 검사를 따로 갖는다).
+       *
+       * 순서값을 싣지 않은 구버전 payload는 막지 않는다 — 다만 이미 순서를 아는 화면은
+       * 그보다 옛것으로 보고 되돌리지 않는다(fail-closed).
+       */
+      const appliedSeq = current.state.selfProgressSeq ?? 0
+      const incomingSeq = payload.selfProgressSeq
+      if (Number.isInteger(incomingSeq)) {
+        if (incomingSeq <= appliedSeq) return current
+      } else if (appliedSeq > 0) {
+        return current
+      }
+
       const nextSelf = { ...current.state.self }
       for (const key of SELF_SUBMISSION_KEYS) {
         if (Object.hasOwn(payload.self, key)) nextSelf[key] = payload.self[key]
@@ -301,6 +324,7 @@ export const useInGameStore = create((set) => ({
         state: {
           ...current.state,
           self: nextSelf,
+          ...(Number.isInteger(incomingSeq) ? { selfProgressSeq: incomingSeq } : {}),
           // 개인 전송에도 같은 공개 진행 수가 실린다(수신자가 둘을 따로 기다리지 않게).
           ...(isPublicProgressShape(payload.progress) ? { progress: { ...payload.progress } } : {}),
         },

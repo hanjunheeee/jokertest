@@ -361,6 +361,19 @@ export function applySessionSnapshotPure(current, response) {
   if (participationRevision < currentRevision) return current
   if (!isNonNegativeInteger(response.participationRevision) && currentRevision > 0) return current
 
+  /**
+   * F-21(AC-03/AC-05): **본인 제출 상태가 뒷걸음질치는 스냅샷도 적용하지 않는다.**
+   *
+   * 참여 세대는 이탈에서만 오른다. 스냅샷 조회를 보낸 뒤에 낸 평범한 제출은 세대를 바꾸지
+   * 않으므로, 위 검사를 통과한 옛 스냅샷이 방금 낸 표를 "미제출"로 되돌릴 수 있었다. 개인
+   * 값의 순서는 개인 값의 시계(selfProgressSeq)로만 판정한다 — 같은 값의 재적용(멱등 복원)은
+   * 그대로 허용하고, 순서값을 싣지 않은 스냅샷은 이미 순서를 아는 화면에서만 막는다.
+   */
+  const selfProgressSeq = isNonNegativeInteger(response.selfProgressSeq) ? response.selfProgressSeq : 0
+  const currentSelfProgressSeq = current.state.selfProgressSeq ?? 0
+  if (selfProgressSeq < currentSelfProgressSeq) return current
+  if (!isNonNegativeInteger(response.selfProgressSeq) && currentSelfProgressSeq > 0) return current
+
   const nextState = {
     id: response.gameId,
     phase: response.phase,
@@ -373,6 +386,9 @@ export function applySessionSnapshotPure(current, response) {
     roomInstanceId: isNonEmptyString(response.roomInstanceId) ? response.roomInstanceId : null,
     bootEpoch: isNonEmptyString(response.bootEpoch) ? response.bootEpoch : null,
     participationRevision,
+    // 개인 제출 상태의 순서값. 이 값을 이어 두지 않으면 다음에 도착하는 옛 개인 사건이
+    // 복원된 상태를 되돌릴 수 있다(store의 applySelfProgress가 같은 값을 본다).
+    selfProgressSeq,
     players: nextPlayers,
     self: nextSelf,
     tribunal,

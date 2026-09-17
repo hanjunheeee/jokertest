@@ -30,6 +30,17 @@ export const useUserProfileStore = create((set, get) => ({
     loading: true,
     requestGeneration: 0,
 
+    /**
+     * F-21(A-10): **지금 들고 있는 값이 확인된 값인가.** 마지막 조회가 실패했으면 그 사실이다.
+     *
+     * 이 값이 없으면 실패하는 경우가 있다: 무효화 신호를 놓친 채(끊겨 있던 사이의 커밋, 다른
+     * 탭에서 지나간 신호, CLI 복구 지급) 재진입 refresh가 실패하면, invalidationRevision이
+     * 오르지 않았으므로 staleness 판정은 false이고 캐시는 그대로다 — 화면은 낡았을 수 있는
+     * 숫자를 아무 표시 없이 계속 보여주고 다시 읽을 경로도 내놓지 않는다. 캐시는 그대로 두되
+     * (쓸 수 있는 값을 지우지 않는다) 실패했다는 사실만 함께 남긴다.
+     */
+    error: null,
+
     // F-21(A-10): 서버가 "이 계정의 전적이 방금 커밋됐다"고 알려준 횟수다. requestGeneration과
     // 나누는 이유는 묻는 것이 다르기 때문이다 — 그쪽은 "아직 같은 계정인가"이고, 이쪽은
     // "이 응답이 무효화보다 **나중에 시작된** 조회인가"다.
@@ -65,7 +76,8 @@ export const useUserProfileStore = create((set, get) => ({
             // 더 나중에 시작된 조회가 이미 반영됐다면 이 응답은 그보다 오래된 사실이다.
             if (sequence < appliedProfileFetchSequence) return;
             appliedProfileFetchSequence = sequence;
-            set({ data, loading: false, appliedRevision: startedAtRevision });
+            // 성공은 이전 실패를 지운다 — 더 새로운 조회가 확인해 준 값이기 때문이다.
+            set({ data, loading: false, appliedRevision: startedAtRevision, error: null });
         } catch (error) {
             if (get().requestGeneration !== generation) return;
             if (get().invalidationRevision !== startedAtRevision) return;
@@ -74,7 +86,13 @@ export const useUserProfileStore = create((set, get) => ({
             // 로딩 해제/오류 표시로 되돌리지 않는다.
             appliedProfileFetchSequence = sequence;
             console.error("프로필 불러오기 실패", error);
-            set({ loading: false });
+            // **캐시는 지우지 않는다.** 마지막으로 확인된 값은 여전히 쓸 수 있는 값이고,
+            // 비우면 실패 하나로 화면이 빈 숫자가 된다. 대신 "확인하지 못했다"는 사실을 남겨
+            // 화면이 그 상태를 표시하고 다시 읽는 경로를 내놓게 한다.
+            //
+            // 순서 규칙은 성공과 같다(위 세 검사) — 더 나중에 시작된 조회가 이미 성공해 반영됐다면
+            // 이 실패는 그보다 오래된 사실이므로 여기까지 오지 못한다.
+            set({ loading: false, error: { message: "프로필을 불러오지 못했습니다." } });
         }
     },
 
@@ -132,6 +150,8 @@ export const useUserProfileStore = create((set, get) => ({
         return {
             data: null,
             loading: true,
+            // 이전 계정의 실패는 새 계정의 사실이 아니다.
+            error: null,
             requestGeneration: state.requestGeneration + 1,
             // 무효화 세대는 되돌리지 않는다 — 단조 증가해야 A→B→A 계정 전환 뒤에 도착한 옛
             // 응답이 "세대가 같다"는 이유로 되살아나지 않는다.

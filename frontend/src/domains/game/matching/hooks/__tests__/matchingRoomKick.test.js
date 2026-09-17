@@ -339,6 +339,34 @@ test("AC-02/AC-05: 이미 빠진 소속의 늦은 player_left_room은 옛 canSta
   assert.equal(state.canStart, true, "이미 지나온 사건의 옛 canStart가 현재 집계를 덮었다")
 })
 
+test("AC-05: 옛 방 인스턴스의 늦은 host_changed는 현재 방장·집계를 되돌리지 않는다", async () => {
+  const { socket } = await mountRoomAndKick()
+
+  // 정상 승계는 그대로 반영된다(같은 인스턴스·같은 기동).
+  act(() => socket.trigger("host_changed", {
+    hostUuid: OTHER, canStart: true, roomId: "room-1",
+    roomInstanceId: "inst-1", bootEpoch: "boot-1", settingsVersion: 1,
+  }))
+  assert.equal(useMatchingStore.getState().hostUuid, OTHER)
+  assert.equal(useMatchingStore.getState().canStart, true)
+
+  // 추방당했다 같은 방에 다시 들어왔거나 서버가 재시작한 뒤라면, roomId가 같은 **옛 방**의
+  // 사건이 지금 도착할 수 있다. 예전에는 roomId만 보고 통과시켜 옛 방장·옛 canStart가
+  // 현재 화면을 덮었다.
+  act(() => socket.trigger("host_changed", {
+    hostUuid: HOST, canStart: false, roomId: "room-1",
+    roomInstanceId: "inst-0", bootEpoch: "boot-1", settingsVersion: 1,
+  }))
+  act(() => socket.trigger("host_changed", {
+    hostUuid: HOST, canStart: false, roomId: "room-1",
+    roomInstanceId: "inst-1", bootEpoch: "boot-0", settingsVersion: 1,
+  }))
+
+  const state = useMatchingStore.getState()
+  assert.equal(state.hostUuid, OTHER, "옛 방 인스턴스의 사건이 현재 방장을 되돌렸다")
+  assert.equal(state.canStart, true, "옛 사건의 canStart가 현재 집계를 덮었다")
+})
+
 test("AC-05/AC-06: 같은 계정이 새 소속으로 다시 앉은 뒤 도착한 옛 이탈 사건은 새 참가자를 지우지 않는다", async () => {
   const { socket } = await mountRoomAndKick()
 

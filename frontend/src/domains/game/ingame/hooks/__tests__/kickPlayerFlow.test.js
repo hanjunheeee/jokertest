@@ -47,6 +47,9 @@ const { useInGameStore } = await import("../../store/ingameStore.js")
 const { applyTribunalResolvedPure } = await import("../../store/applyTribunalResolved.js")
 const { setSocket } = await import("../../../../../shared/socket/socketClient.js")
 const { useKickPlayerRequest, KICK_REQUEST_STATUS } = await import("../useKickPlayerRequest.js")
+// AC-03: 이탈·스냅샷 이후의 **실제 제출 표시**를 소유하는 훅이다(대역이 아니라 이것을 띄운다).
+const { useInGameDayVoteSubmit } = await import("../useInGameDayVoteSubmit.js")
+const { applySessionSnapshotPure } = await import("../../store/applySessionSnapshot.js")
 // 진행 중 추방의 **실제 소비 경계**다(주입한 대역이 아니라 이 컴포넌트의 verifyMembership이 돈다).
 const { default: SettingKickPlayerModal } = await import(
   "../../components/controls/ingameSetting/kickPlayer/SettingKickPlayerModal.jsx")
@@ -554,12 +557,105 @@ test("AC-02/AC-04: 결과를 모르는 전송이 남아 있으면 안내를 닫�
   act(() => result.current.confirmKick(currentTargets()))
   assert.equal(socket.emitted.length, 1, "닫기·열기만으로 미확인 전송이 우회됐다")
 
-  // 결과를 실제로 알게 되면(조회 응답) 그때 비로소 잠금이 풀린다.
+  // 결과를 실제로 알게 되면 그때 비로소 잠금이 풀린다. **기록된 거부의 재생**은 서버가
+  // replayed:true로 표시한다 — 그 표시가 "이 요청은 실행되지 않았다"는 역사적 사실이다
+  // (표시 없는 ok:false는 조회 자체의 실패이고, 원 요청에 대해서는 아무 것도 말하지 않는다 —
+  // 아래 별도 시험이 그 구분을 고정한다).
   act(() => result.current.lookupResult())
-  act(() => socket.emitted[1].ack({ ok: false, code: "ALREADY_LEFT" }))
+  act(() => socket.emitted[1].ack({ ok: false, replayed: true, code: "ALREADY_LEFT" }))
   assert.equal(result.current.status, KICK_REQUEST_STATUS.FAILED)
   act(() => result.current.requestConfirm(currentTargets()[0]))
   assert.equal(result.current.pendingTarget?.uuid, TARGET)
+})
+
+test("AC-04: 조회 자체가 실패하면(STALE_SOCKET) 미확정 요청의 보호가 풀리지 않는다", () => {
+  const socket = setUp()
+  const { result } = mountKick()
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(socket.emitted.length, 1)
+
+  // 결과 조회가 **전송·인증 사유로** 실패했다. 원 추방이 실행됐는지는 여전히 모른다.
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[1].ack({ ok: false, code: "STALE_SOCKET" }))
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.FAILED)
+  assert.equal(result.current.errorCode, "STALE_SOCKET")
+
+  // 그러므로 새 requestId의 두 번째 추방이 열리지 않는다(잠금은 결과를 알게 될 때만 풀린다).
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(socket.emitted.length, 2, "조회 실패 뒤에 새 추방이 나갔다")
+
+  // 회복 경로는 남아 있다 — **같은 영수증**으로 다시 물으면 된다.
+  assert.equal(result.current.canLookupResult, true)
+  act(() => result.current.lookupResult())
+  assert.equal(socket.emitted[2].event, "get_kick_result")
+  assert.equal(socket.emitted[2].payload.requestId, socket.emitted[1].payload.requestId)
+  act(() => socket.emitted[2].ack({ ok: true, status: "KICKED", replayed: true }))
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.SUCCEEDED)
+})
+
+test("AC-05: 같은 Socket 객체의 재연결(id 교체) 뒤 도착한 옛 ACK는 상태도 잠금도 바꾸지 않는다", () => {
+  const socket = setUp()
+  const { result } = mountKick()
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.SENDING)
+
+  // Socket.IO의 재연결은 **객체를 유지하고 id만 새로 받는다** — 객체 비교만으로는 못 잡는다.
+  socket.id = "sock-ingame-reconnected"
+  act(() => socket.emitted[0].ack({ ok: true }))
+
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.SENDING, "옛 연결의 ACK가 성공으로 반영됐다")
+  // 결과를 여전히 모르므로 잠금도 그대로다 — 두 번째 추방이 나가지 않는다.
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(socket.emitted.length, 1, "옛 연결의 ACK가 전송 잠금을 풀었다")
+})
+
+test("AC-05: A→B→A 계정 전환이 한 번에 처리돼도 그 사이의 ACK는 현재 화면을 바꾸지 않는다", () => {
+  const socket = setUp()
+  const { result } = mountKick()
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+
+  // 같은 act 안에서 로그아웃→재로그인이 끝난다. uuid는 제자리로 돌아오므로 값 비교로는
+  // 잡히지 않고, 훅의 계정 세대 effect도 authUuid가 바뀌어 보이지 않아 오르지 않는다.
+  // 전이 횟수(identityGeneration)만이 그 사이에 다른 계정이 있었다는 사실을 남긴다.
+  act(() => {
+    useAuthStore.getState().logout()
+    useAuthStore.getState().login({ uuid: HOST })
+  })
+  act(() => socket.emitted[0].ack({ ok: true }))
+
+  assert.notEqual(result.current.status, KICK_REQUEST_STATUS.SUCCEEDED)
+})
+
+test("AC-04: UNKNOWN 재확인이 끝나도 그 사이 시작된 **새 요청**의 잠금은 풀리지 않는다", () => {
+  const socket = setUp()
+  let release = null
+  const verifyMembership = () => new Promise((resolve) => { release = resolve })
+  const { result } = mountKick({ verifyMembership })
+
+  // 요청 A — ACK 유실 → 조회 → UNKNOWN → 재확인 시작(A의 요청 세대).
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[1].ack({ ok: true, status: "UNKNOWN" }))
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.UNKNOWN)
+  assert.equal(result.current.isAwaitingResolution, true)
+
+  // 재확인 A가 도는 사이에 조회를 한 번 더 보낸다(= 더 새로운 요청 세대 B).
+  act(() => result.current.lookupResult())
+  assert.equal(socket.emitted.length, 3)
+
+  // 이제 A의 재확인이 끝난다 — 이것은 B의 결과가 아니므로 잠금을 풀 근거가 아니다.
+  return act(async () => { release(true) }).then(() => {
+    assert.equal(result.current.isAwaitingResolution, true, "옛 재확인이 더 새로운 요청의 잠금을 풀었다")
+  })
 })
 
 test("AC-02: 같은 렌더 안에서 confirmKick을 두 번 불러도 요청은 한 번뿐이다", () => {
@@ -773,6 +869,92 @@ test("AC-03: 정상 GUILTY/NOT_GUILTY 판정 계약은 그대로 유지된다(�
 })
 
 // ── AC-01: 서버 hostUuid가 방관리 권한의 유일한 원천이다 ──────────────────────
+
+// ── AC-03: 이탈 이후의 **본인 제출 표시** ────────────────────────────────────
+//
+// 화면은 서버가 실어 준 본인 값을 canonical로 쓴다(늦은 ACK가 정규화를 되돌리지 못하게 하려고).
+// 그래서 이탈 뒤의 평범한 제출이 서버 값을 갱신하지 않으면 그 두 계약이 서로를 무력화한다 —
+// 표는 커밋됐는데 화면은 "아직 안 냄"이고 제출 액션이 다시 열린다.
+
+/** DAY_VOTE 구간의 게임 상태(본인 제출 표시를 보려는 것이 목적이다). */
+function dayVoteState() {
+  return gameState({ phase: "DAY", dayPhase: "DAY_VOTE" })
+}
+
+function selfProgress({ seq, hasSubmitted, targetUuid = null, revision = 1, doneCount = 0 }) {
+  return {
+    gameId: "game-1",
+    phase: "DAY",
+    dayIndex: 1,
+    participationRevision: revision,
+    selfProgressSeq: seq,
+    progress: { kind: "DAY_VOTE", doneCount, requiredCount: 2 },
+    self: { hasSubmittedDayVote: hasSubmitted, dayVoteTargetUuid: targetUuid, dayVoteRound: 1 },
+  }
+}
+
+test("AC-03: 이탈 뒤 새로 낸 표가 화면에 반영되고 제출 액션이 다시 열리지 않는다", () => {
+  setUp()
+  act(() => {
+    useInGameStore.getState().setGamePayload({ gameId: "game-1", state: dayVoteState() })
+    // 추방이 일어난 순간의 개인 전송 — 이 사람은 아직 내지 않았다.
+    useInGameStore.getState().applySelfProgress(selfProgress({ seq: 1, hasSubmitted: false }))
+  })
+
+  const { result } = renderHook(() => useInGameDayVoteSubmit())
+  assert.equal(result.current.hasSubmitted, false)
+
+  // 그 뒤 평범하게 한 표를 낸다 — 서버가 본인 값을 다시 말해 준다(더 새로운 순서값).
+  act(() => {
+    useInGameStore.getState().applySelfProgress(
+      selfProgress({ seq: 2, hasSubmitted: true, targetUuid: TARGET, doneCount: 1 }),
+    )
+  })
+  assert.equal(result.current.hasSubmitted, true, "낸 표가 화면에서 미제출로 남았다")
+  assert.equal(result.current.lastSubmittedTargetId, TARGET)
+
+  // 그 뒤에 도착한 **옛** 개인 사건(같은 참여 세대, 더 낮은 순서값)은 되돌리지 못한다.
+  act(() => {
+    useInGameStore.getState().applySelfProgress(selfProgress({ seq: 1, hasSubmitted: false }))
+  })
+  assert.equal(result.current.hasSubmitted, true, "옛 개인 사건이 제출 상태를 되돌렸다")
+  assert.equal(result.current.lastSubmittedTargetId, TARGET)
+})
+
+test("AC-03: 제출보다 먼저 발행된 옛 스냅샷도 낸 표를 되돌리지 못한다", () => {
+  setUp()
+  act(() => {
+    useInGameStore.getState().setGamePayload({ gameId: "game-1", state: dayVoteState() })
+    useInGameStore.getState().applySelfProgress(selfProgress({ seq: 3, hasSubmitted: false }))
+    useInGameStore.getState().applySelfProgress(
+      selfProgress({ seq: 4, hasSubmitted: true, targetUuid: TARGET, doneCount: 1 }),
+    )
+  })
+  const { result } = renderHook(() => useInGameDayVoteSubmit())
+  assert.equal(result.current.hasSubmitted, true)
+
+  // 스냅샷 조회는 제출보다 먼저 발행됐다 — 참여 세대는 같으므로 그 검사로는 걸러지지 않는다.
+  const current = useInGameStore.getState()
+  const stale = applySessionSnapshotPure(current, {
+    ok: true,
+    gameId: "game-1",
+    phase: "DAY",
+    dayPhase: "DAY_VOTE",
+    dayIndex: 1,
+    hostUuid: HOST,
+    participationRevision: 1,
+    selfProgressSeq: 3,
+    players: [
+      { uuid: HOST, nickname: "호스트", isAlive: true, isConnected: true, isParticipating: true },
+      { uuid: TARGET, nickname: "대상", isAlive: true, isConnected: true, isParticipating: true },
+    ],
+    self: {
+      uuid: HOST, nickname: "호스트", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false,
+      hasSubmittedDayVote: false, dayVoteTargetUuid: null, dayVoteRound: 1,
+    },
+  })
+  assert.equal(stale, current, "옛 스냅샷이 방금 낸 표를 되돌렸다")
+})
 
 test("AC-01: setGamePayload는 서버 state.hostUuid를 쓰고 전원 생존 단정을 더 이상 하지 않는다", () => {
   act(() => {

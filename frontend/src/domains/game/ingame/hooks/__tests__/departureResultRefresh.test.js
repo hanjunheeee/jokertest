@@ -280,6 +280,57 @@ test("A-10: 조회 실패는 로딩을 풀고 화면이 재시도할 수 있는 
   view.unmount()
 })
 
+test("A-10: 무효화를 놓친 뒤의 재조회 실패는 캐시를 지우지 않되 그 사실을 화면에 남긴다", async () => {
+  profileResponses[0] = profile(3)
+  profileResponses[1] = new Error("네트워크 실패") // 재진입 조회가 실패한다
+  profileResponses[2] = profile(7)
+
+  const view = renderHook(() => useMyProfile())
+  await flush()
+  assert.equal(view.result.current.stats[0].value, "3")
+  assert.equal(view.result.current.isStale, false)
+  assert.equal(view.result.current.error, null)
+
+  // 무효화 신호는 **오지 않았다**(끊겨 있던 사이의 커밋·다른 탭·CLI 복구). 창 재활성화로
+  // 다시 읽어 보지만 그 조회가 실패한다.
+  await flush(() => dom.window.dispatchEvent(new dom.window.Event("focus")))
+
+  // 쓸 수 있는 값은 그대로 남는다(실패 하나로 화면을 빈 숫자로 만들지 않는다).
+  assert.equal(view.result.current.stats[0].value, "3")
+  // 그러나 그 값이 **확인된 값이 아니라는 사실**은 남아야 한다 — 예전에는 무효화 세대가
+  // 오르지 않았다는 이유로 isStale이 false였고 화면에 아무 표시도 없었다.
+  assert.notEqual(view.result.current.error, null, "실패했는데 화면이 그 사실을 모른다")
+  assert.equal(view.result.current.isStale, true)
+  assert.equal(typeof view.result.current.retry, "function")
+
+  // 재시도가 성공하면 실패 표시는 사라지고 숫자가 확인된 값으로 바뀐다.
+  await flush(() => view.result.current.retry())
+  assert.equal(view.result.current.stats[0].value, "7")
+  assert.equal(view.result.current.error, null)
+  assert.equal(view.result.current.isStale, false)
+  view.unmount()
+})
+
+test("A-10: 더 새로운 성공이 반영된 뒤 도착한 옛 실패는 그 성공을 실패로 되돌리지 못한다", async () => {
+  profileResponses[0] = profile(3)
+  await useUserProfileStore.getState().fetchProfile()
+
+  const gate = makeGate()
+  pendingGates[1] = gate
+  profileResponses[1] = new Error("네트워크 실패") // 먼저 시작했지만 늦게 끝난다
+  profileResponses[2] = profile(8)
+
+  const failing = useUserProfileStore.getState().fetchProfile()
+  await Promise.resolve()
+  await useUserProfileStore.getState().fetchProfile() // 더 나중에 시작해 먼저 끝난 성공
+
+  gate.release()
+  await failing
+
+  assert.equal(useUserProfileStore.getState().data.total_games, 8)
+  assert.equal(useUserProfileStore.getState().error, null, "옛 실패가 최신 성공을 덮었다")
+})
+
 // ── 앱 진입점이 꽂는 실제 경계 ───────────────────────────────────────────────
 
 test("A-10: 등록된 실제 store를 통해 무효화와 단순 확인이 구분되어 전달된다", async () => {

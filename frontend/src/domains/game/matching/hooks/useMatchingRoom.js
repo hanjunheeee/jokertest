@@ -381,9 +381,27 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => removePlayer(uuid, canStart))
     }
-    const handleHostChanged = ({ hostUuid, canStart, roomId: eventRoomId, settingsVersion }) => {
+    const handleHostChanged = ({
+      hostUuid, canStart, roomId: eventRoomId, settingsVersion, roomInstanceId, bootEpoch,
+    }) => {
       if (!isCurrentSource()) return
       if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
+      /**
+       * F-21(AC-05): roomId만으로는 **같은 식별자로 다시 만들어진 방**을 구별하지 못한다.
+       *
+       * 나갔다(추방당했다) 같은 방에 다시 들어오거나 서버가 재시작한 뒤라면, 그 사이에 발행된
+       * 옛 host_changed가 지금 화면에 도착할 수 있다. roomId가 같으니 여기를 통과하고, 함께
+       * 실린 **옛 canStart**가 그 뒤에 반영된 더 새로운 인원·준비 집계를 되돌린다(방장 표시도
+       * 이전 방의 것으로 바뀐다). 서버는 이 두 값을 모든 host_changed에 싣는다 —
+       * player_left_room·추방 사건이 쓰는 것과 같은 신원이다.
+       *
+       * 값을 싣지 않는 구버전 사건은 예전처럼 roomId만으로 처리한다(조용히 막지 않는다).
+       */
+      const identity = useMatchingStore.getState()
+      if (typeof roomInstanceId === "string" && typeof identity.roomInstanceId === "string"
+        && roomInstanceId !== identity.roomInstanceId) return
+      if (typeof bootEpoch === "string" && typeof identity.bootEpoch === "string"
+        && bootEpoch !== identity.bootEpoch) return
       applyRoomEvent(() => updateHost(hostUuid, canStart))
       // F-20(AC-05): 방장이 바뀌면 이전 방장의 편집 초안은 더 이상 유효한 시작점이 아니다.
       // 서버가 알려준 버전이 우리가 아는 것과 다르면 최신 설정을 다시 확보한다 — 같은

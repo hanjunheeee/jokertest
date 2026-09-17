@@ -221,6 +221,43 @@ test("AC-03: 두 필드가 없는 구버전 스냅샷도 그대로 복원된다(
   }
 })
 
+// ── 개인 제출 상태의 순서(selfProgressSeq) ──────────────────────────────────
+//
+// 참여 세대는 **이탈에서만** 오른다. 스냅샷 조회를 보낸 뒤에 낸 평범한 제출은 세대를 바꾸지
+// 않으므로, 세대 검사만으로는 그 제출보다 옛 스냅샷을 구별할 수 없다.
+
+test("AC-03/AC-05: 개인 제출 순서값이 뒷걸음질치는 스냅샷은 적용하지 않는다", () => {
+  const current = snapshotCurrent()
+  current.state.participationRevision = 4
+  current.state.selfProgressSeq = 7
+
+  // 같은 참여 세대라 기존 검사는 전부 통과한다 — 순서값만이 이것을 옛것으로 판정한다.
+  const stale = applySessionSnapshotPure(current, snapshotResponse({ selfProgressSeq: 6 }))
+  assert.equal(stale, current, "방금 낸 제출을 옛 스냅샷이 되돌렸다")
+
+  // 같은 값의 재적용(멱등 복원)은 그대로 허용한다.
+  const same = applySessionSnapshotPure(current, snapshotResponse({ selfProgressSeq: 7 }))
+  assert.notEqual(same, current)
+  assert.equal(same.state.selfProgressSeq, 7)
+
+  // 더 새로운 값은 당연히 적용되고, 그 값이 store에 남아 다음 판정의 기준이 된다.
+  const newer = applySessionSnapshotPure(current, snapshotResponse({ selfProgressSeq: 9 }))
+  assert.equal(newer.state.selfProgressSeq, 9)
+})
+
+test("AC-03/AC-05: 순서값을 싣지 않은 스냅샷은 이미 순서를 아는 화면에서만 막힌다", () => {
+  const fresh = snapshotCurrent()
+  // 아직 아무 개인 사건도 받지 않은 화면은 구버전 스냅샷도 그대로 복원한다.
+  const applied = applySessionSnapshotPure(fresh, snapshotResponse())
+  assert.notEqual(applied, fresh)
+  assert.equal(applied.state.selfProgressSeq, 0)
+
+  const known = snapshotCurrent()
+  known.state.participationRevision = 4
+  known.state.selfProgressSeq = 2
+  assert.equal(applySessionSnapshotPure(known, snapshotResponse()), known)
+})
+
 test("AC-01: 새로고침 부트스트랩도 hostUuid와 세 식별자를 함께 복원한다", () => {
   const patch = bootstrapSessionSnapshotPure(snapshotResponse())
 

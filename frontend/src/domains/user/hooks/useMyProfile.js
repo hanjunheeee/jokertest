@@ -8,6 +8,7 @@ export function useMyProfile() {
     const appliedRevision = useUserProfileStore((s) => s.appliedRevision)
     const data = useUserProfileStore((s) => s.data)
     const loading = useUserProfileStore((s) => s.loading)
+    const error = useUserProfileStore((s) => s.error)
     const refresh = useUserProfileStore((s) => s.refresh)
 
     useEffect(() => {
@@ -42,14 +43,22 @@ export function useMyProfile() {
         }
     }, [refresh])
 
-    // 값이 있어도 마지막 무효화보다 오래됐다면 화면이 그 사실을 알 수 있어야 한다.
-    const isStale = appliedRevision < invalidationRevision
+    /**
+     * 값이 있어도 그 값이 **확인된 값이 아니면** 화면이 그 사실을 알 수 있어야 한다.
+     *
+     * 두 가지가 그 사실을 만든다:
+     *   - 마지막 무효화보다 오래된 값이다(서버가 새 전적을 알렸는데 아직 못 받았다).
+     *   - 마지막 조회가 **실패**했다. 무효화 신호를 놓친 채 재진입 조회가 실패하면 세대는
+     *     오르지 않으므로 위 판정만으로는 false다 — 그때 화면은 낡았을 수 있는 숫자를 아무
+     *     표시 없이 보여주고 다시 읽을 경로도 내놓지 않았다.
+     */
+    const isStale = appliedRevision < invalidationRevision || error !== null
 
     if(!data) {
         // 아직 데이터가 없으면 화면에서 안전하게 처리할 수 있도록 null 값을 반환합니다.
         // retry는 조회가 실패한 화면이 사용자의 명시적 요청으로 다시 읽을 수 있는 경로다
         // (자동 재시도를 무한히 돌리지 않는다 — 실패는 화면에 남고 결정은 사용자가 한다).
-        return { profile: null, stats: null, description: null, loading, isStale, retry: refresh }
+        return { profile: null, stats: null, description: null, loading, isStale, error, retry: refresh }
     }
 
     // 화면 상단 프로필 영역에서 사용할 값입니다.
@@ -77,5 +86,5 @@ export function useMyProfile() {
         suffix:    hasHighestWinRateRole ? "의 가면을 쓸 때 가장 잔혹합니다." : "아직 어떤 가면도 증명하지 못했습니다.",
     }
 
-    return { profile, stats, description, loading, isStale, retry: refresh }
+    return { profile, stats, description, loading, isStale, error, retry: refresh }
 }

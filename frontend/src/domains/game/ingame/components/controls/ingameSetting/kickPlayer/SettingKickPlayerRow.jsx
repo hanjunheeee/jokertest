@@ -54,7 +54,7 @@ export default function SettingKickPlayerRow({
           type="button"
           aria-label={
             isPending
-              ? INGAME_KICK_PLAYER_MODAL_COPY.cancelPendingAriaLabel
+              ? INGAME_KICK_PLAYER_MODAL_COPY.pendingAriaLabel
               : INGAME_KICK_PLAYER_MODAL_COPY.kickActionLabel
           }
           onClick={onKick}

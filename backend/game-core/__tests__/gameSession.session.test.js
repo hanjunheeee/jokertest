@@ -489,7 +489,7 @@ test('슬라이스1: 초기 DAY 상태 — dayVotes/nightActions는 빈 Map, tri
     // 비밀 필드는 여전히 self 아래에만 있다.
     assert.deepEqual(
         Object.keys(snapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self'],
+        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq'],
     )
     assert.equal(snapshot.dayPhase, 'DAY_DISCUSSION')
 })
@@ -1510,7 +1510,7 @@ test('getSessionSnapshotForPlayer: ROLE_REVEAL 단계 — top-level 키가 정�
 
     const before = getSessionSnapshotForPlayer('snR1', session.id)
     assert.equal(before.ok, true)
-    assert.deepEqual(Object.keys(before.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self'])
+    assert.deepEqual(Object.keys(before.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq'])
     assert.equal(before.snapshot.phase, 'ROLE_REVEAL')
     assert.equal(before.snapshot.dayIndex, 0)
     assert.equal(before.snapshot.self.hasActedThisPhase, false)
@@ -1530,7 +1530,7 @@ test('getSessionSnapshotForPlayer: NIGHT(판정 전) — nightResult/dayVoteReso
     const result = getSessionSnapshotForPlayer('snN1', session.id)
 
     assert.equal(result.ok, true)
-    assert.deepEqual(Object.keys(result.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self'])
+    assert.deepEqual(Object.keys(result.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq'])
     assert.equal(Object.hasOwn(result.snapshot, 'nightResult'), false)
     assert.equal(Object.hasOwn(result.snapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(result.snapshot, 'tribunal'), false)
@@ -1681,7 +1681,7 @@ test('getSessionSnapshotForPlayer: TRIBUNAL 유죄 처형으로 CITIZEN 승리 �
     const snapshot = result.snapshot
     assert.deepEqual(
         Object.keys(snapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'tribunal', 'winResult'],
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq', 'tribunal', 'winResult'],
     )
     assert.equal(snapshot.phase, 'ENDED')
     assert.equal(snapshot.dayIndex, 1)
@@ -1712,7 +1712,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     // --- 1) 활성 NIGHT(판정 전) ---
     const nightSnapshotJoker = getSessionSnapshotForPlayer('snB2', session.id)
     assert.equal(nightSnapshotJoker.ok, true)
-    assert.deepEqual(Object.keys(nightSnapshotJoker.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self'])
+    assert.deepEqual(Object.keys(nightSnapshotJoker.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq'])
     assert.equal(nightSnapshotJoker.snapshot.phase, 'NIGHT')
     assert.equal(nightSnapshotJoker.snapshot.self.hasActedThisPhase, false)
     assert.deepEqual(nightSnapshotJoker.snapshot.self.allies, [])
@@ -1729,7 +1729,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.equal(daySnapshot.ok, true)
     assert.deepEqual(
         Object.keys(daySnapshot.snapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self'],
+        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq'],
     )
     assert.equal(daySnapshot.snapshot.phase, 'DAY')
     // 밤을 넘겨 들어온 낮도 토론부터 시작한다.
@@ -1768,7 +1768,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.equal(tribunalSnapshot.ok, true)
     assert.deepEqual(
         Object.keys(tribunalSnapshot.snapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'tribunal'],
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq', 'tribunal'],
     )
     assert.equal(tribunalSnapshot.snapshot.phase, 'TRIBUNAL')
     assert.deepEqual(tribunalSnapshot.snapshot.tribunal, { defendantUuid: 'snB1', resolved: false })
@@ -1792,7 +1792,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.equal(session.tribunal.dayIndex, session.dayIndex)
     const postTribunalNightSnapshot = getSessionSnapshotForPlayer('snB1', session.id)
     assert.equal(postTribunalNightSnapshot.ok, true)
-    assert.deepEqual(Object.keys(postTribunalNightSnapshot.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self'])
+    assert.deepEqual(Object.keys(postTribunalNightSnapshot.snapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq'])
     assert.equal(postTribunalNightSnapshot.snapshot.phase, 'NIGHT')
     assert.equal(Object.hasOwn(postTribunalNightSnapshot.snapshot, 'nightResult'), false)
     assert.equal(Object.hasOwn(postTribunalNightSnapshot.snapshot, 'dayVoteResolution'), false)
@@ -1812,7 +1812,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.equal(endedSnapshot.ok, true)
     assert.deepEqual(
         Object.keys(endedSnapshot.snapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'winResult'],
+        ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightResult', 'participationRevision', 'phase', 'players', 'progress', 'roomId', 'roomInstanceId', 'self', 'selfProgressSeq', 'winResult'],
     )
     assert.deepEqual(endedSnapshot.snapshot.nightResult, {
         dayIndex: 1,

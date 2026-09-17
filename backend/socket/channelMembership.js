@@ -255,12 +255,51 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
         socket.rooms && typeof socket.rooms.has === 'function' ? socket.rooms.has(channelId) : false
 
     /**
+     * **떼기를 시작하기 전에 먼저 전달에서 뺀다.**
+     *
+     * socket.leave는 adapter에 따라 Promise다. 예전에는 그 Promise가 풀릴 때까지 아무 제외도
+     * 없었다 — 그 사이에 나가는 커밋 이후의 공개 방송(player_left_room·player_eliminated·
+     * session_participation_changed…)은 아직 채널에 남아 있는 이 소켓에게 그대로 갔다. 서버는
+     * 이미 소속을 지웠는데 배제된 계정이 그 방/판의 방송을 받는 구간이 열려 있었던 것이다.
+     *
+     * 지금 소속이 아닐 때만 뺀다 — 이 정리가 이미 지난 소속의 것이고 지금은 정당한 새 소속인
+     * 경우(ownsChannel)까지 빼면 방금 들어온 참가자가 자기 채널의 방송을 잃는다.
+     *
+     * 이 제외는 **사실로만** 풀린다: leave가 실제로 끝났거나(handleSettled), 그 채널의 정당한
+     * 소속이 됐거나, 연결이 끝났을 때(releaseSocketFromAllChannels).
+     */
+    if (socketId && !ownsChannel()) excludeSocketFromChannel(channelId, socketId)
+
+    /**
      * 되돌린 가입이 **완료된 뒤** 소유권을 다시 묻는다.
      *
      * 이 재검사가 없으면: 옛 이탈이 끝나며 새 소속의 가입을 되돌리는 join을 걸고, 그 join이
      * 완료되기 전에 그 새 소속마저 추방/이탈하면, 마지막에 완료된 join이 **권한을 잃은**
      * 소켓을 채널에 다시 남긴다(그 뒤 아무도 치우지 않는다).
      */
+    /**
+     * 왕복 예산이 끝난 자리의 **마지막 판정**. 어떤 경우에도 다시 leave/restore를 부르지 않는다.
+     *
+     * 이전 구현은 상한에서 `runLeave(1, MAX_CHANNEL_RESTORE_DEPTH)`를 불렀고, 그 leave가 끝나면
+     * 다시 `restoreIfSuperseded` → `settleRestore` → 또 같은 상한 분기로 돌아왔다 — 상한이
+     * 있는데도 실제 작업은 무한히 재진입할 수 있었다. 예산은 여기서 **끝난다**:
+     *
+     *   - 지금 정당한 소속이면: 가입을 남기고 제외를 푼다. 여기서 또 떼면 방금 성립한 참가자가
+     *     자기 채널을 잃는다(더 새로운 같은 채널·다른 채널 소속을 보존한다는 계약).
+     *   - 소속이 아니면: 가입이 남아 있을 수 있으므로 **전달 제외를 유지한 채** 끝낸다. 제외는
+     *     즉시 효력이 있고 연결 종료까지 남으므로 방송이 새지 않는다(fail-closed).
+     */
+    const finishReconcile = () => {
+        if (ownsChannel()) {
+            if (socketId) releaseChannelExclusion(channelId, socketId)
+            return
+        }
+        if (socketId) excludeSocketFromChannel(channelId, socketId)
+        console.error(logLabel, {
+            code: 'CHANNEL_RECONCILE_BUDGET_EXHAUSTED', channelId, ...logFields,
+        })
+    }
+
     const settleRestore = (depth) => {
         if (ownsChannel()) {
             // 정당한 소속이 다시 채널을 가졌다 — 전달 제외가 남아 있으면 푼다.
@@ -268,8 +307,8 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
             return
         }
         if (depth >= MAX_CHANNEL_RESTORE_DEPTH) {
-            // 상한에 닿았다. 되돌린 가입을 마지막으로 한 번 떼되 다시 되돌리지는 않는다.
-            runLeave(1, MAX_CHANNEL_RESTORE_DEPTH)
+            // 예산이 끝났다 — 되돌린 가입을 그대로 두되 전달에서는 뺀 채로 종료한다.
+            finishReconcile()
             return
         }
         runLeave(1, depth + 1)
@@ -323,8 +362,18 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
         //    않는다 — 그 새 소속의 피해는 끊기와 같다.
         if (!keepsConnection()) {
             console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', channelId, ...logFields })
+            // **끊긴 것을 확인한 뒤에만** 제외를 푼다. 예전에는 disconnect보다 먼저 전부 풀었고,
+            // 그래서 disconnect가 던지면(= 연결이 그대로 남으면) 떼지도 끊지도 못한 소켓이
+            // 아무 제외 없이 채널에 남아 방송을 계속 받았다. 순서를 뒤집으면 실패는 fail-closed다.
+            if (socketId) excludeSocketFromChannel(channelId, socketId)
+            try {
+                socket.disconnect(true)
+            } catch (err) {
+                // 끊지 못했다 — 제외를 남긴 채로 끝낸다(여기서 푸는 것은 근거가 없다).
+                console.error(logLabel, { code: 'CHANNEL_DISCONNECT_ERROR', channelId, ...logFields })
+                return
+            }
             if (socketId) releaseSocketFromAllChannels(socketId)
-            try { socket.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
             return
         }
         // ③ 그렇다고 옛 채널을 그대로 두면 배제된 계정이 그 방송을 계속 받는다. 전달에서 먼저

@@ -106,6 +106,45 @@ export function captureVerificationGuard({ socket, getMembershipScopeId, getRevi
   }
 }
 
+/**
+ * F-21(AC-04/AC-05): **ACK를 받은 그 자리에서** "이 응답이 아직 이 요청의 것인가"를 묻는다.
+ *
+ * captureVerificationGuard와 묻는 것은 같지만 쓰이는 자리가 다르다 — 저쪽은 store를 덮어쓰는
+ * 서버 재확인의 경계이고, 이쪽은 **소켓 ACK 콜백**의 경계다. 예전에는 ACK 콜백이 계정 uuid도
+ * socket.id도 묻지 않고 계정 세대·요청 세대·소켓 객체·scopeId만 봤다. 그 네 값으로는 다음 두
+ * 가지가 그대로 통과한다:
+ *
+ *   - **같은 Socket 객체의 재연결.** Socket.IO는 재연결에서 객체를 유지하고 id만 새로 받는다.
+ *     끊긴 사이에 보낸 요청의 ACK가 새 연결의 화면에서 상태와 잠금을 바꿨다.
+ *   - **A→B→A 계정 전환이 한 번에 처리된 경우.** uuid는 제자리로 돌아오므로 값 비교로는 잡히지
+ *     않는다 — identityGeneration(전이 횟수)만이 그 사이에 다른 계정이 있었다는 사실을 남긴다.
+ *     계정 세대(generationRef)는 authUuid가 **바뀌어 보일 때만** effect로 오르므로 A→B→A가
+ *     같은 렌더 배치로 합쳐지면 한 번도 오르지 않을 수 있다.
+ *
+ * 어긋나면 호출부는 **아무 것도 하지 않는다** — 상태도, 잠금도 건드리지 않는다. 그 요청의
+ * 결과를 여전히 모르기 때문이다(잠금을 푸는 것은 결과를 알게 됐다는 뜻이다).
+ */
+function captureAckGuard({ socket, scopeId, requestGeneration, generation, refs, getMembershipScopeId }) {
+  const auth = useAuthStore.getState()
+  const identityGeneration = auth.identityGeneration
+  const authUuid = auth.user?.uuid ?? null
+  const socketId = typeof socket?.id === "string" && socket.id ? socket.id : null
+
+  return function isStillCurrent() {
+    if (!refs.mountedRef.current) return false
+    if (generation !== refs.generationRef.current) return false
+    if (requestGeneration !== refs.requestGenerationRef.current) return false
+    const now = useAuthStore.getState()
+    if (now.identityGeneration !== identityGeneration) return false
+    if ((now.user?.uuid ?? null) !== authUuid) return false
+    if (getSocket() !== socket) return false
+    // 캡처 시점에 id가 없었으면 판정할 근거 자체가 없다(fail-closed).
+    if (socketId === null || socket.id !== socketId) return false
+    if (scopeId !== getMembershipScopeId()) return false
+    return true
+  }
+}
+
 let requestSeq = 0
 function nextRequestId() {
   requestSeq += 1
@@ -282,14 +321,20 @@ export function useKickPlayerRequest({
     setStatus(KICK_REQUEST_STATUS.SENDING)
     setErrorCode(null)
 
+    // 계정 신원(uuid·전이 세대)·소켓 객체·socket.id·소속·요청 세대를 **emit 이전에** 캡처한다.
+    const isStillCurrent = captureAckGuard({
+      socket,
+      scopeId,
+      requestGeneration,
+      generation,
+      refs: { mountedRef, generationRef, requestGenerationRef },
+      getMembershipScopeId,
+    })
+
     socket.emit(scope === "GAME" ? KICK_EVENTS.GAME : KICK_EVENTS.ROOM, request, (response) => {
-      // 계정·연결·소속·요청 세대가 그 사이 바뀌었으면 이 응답은 현재 화면의 것이 아니다.
-      // 잠금도 풀지 않는다 — 이 요청의 결과를 **여전히 모르기** 때문이다.
-      if (!mountedRef.current) return
-      if (generation !== generationRef.current) return
-      if (requestGeneration !== requestGenerationRef.current) return
-      if (getSocket() !== socket) return
-      if (scopeId !== getMembershipScopeId()) return
+      // 계정 신원·연결(객체와 id)·소속·요청 세대가 그 사이 바뀌었으면 이 응답은 현재 화면의
+      // 것이 아니다. 잠금도 풀지 않는다 — 이 요청의 결과를 **여전히 모르기** 때문이다.
+      if (!isStillCurrent()) return
 
       // 답을 받았다 — 이 전송은 끝났다.
       sendLockRef.current = false
@@ -324,14 +369,41 @@ export function useKickPlayerRequest({
     // 조회도 **그 화면의 것**이다. 조회를 보낸 뒤 방/게임을 옮기면 그 답은 지금 화면의
     // pendingTarget·상태를 건드려서는 안 된다(전송 경로와 같은 계약이었는데 빠져 있었다).
     const scopeId = getMembershipScopeId()
+    // 전송 경로와 **같은** 신원 경계다(계정 uuid·전이 세대·소켓 객체·socket.id 포함).
+    const isStillCurrent = captureAckGuard({
+      socket,
+      scopeId,
+      requestGeneration,
+      generation,
+      refs: { mountedRef, generationRef, requestGenerationRef },
+      getMembershipScopeId,
+    })
+
     socket.emit(KICK_EVENTS.RESULT, { bootEpoch: receipt.bootEpoch, requestId: receipt.requestId }, (response) => {
-      if (!mountedRef.current) return
-      if (generation !== generationRef.current) return
-      // 이 조회를 보낸 뒤에 새 요청·새 조회가 시작됐다면 이 응답은 지난 요청의 것이다 —
-      // 진행 중인 전송을 남의 결과로 덮지 않는다.
-      if (requestGeneration !== requestGenerationRef.current) return
-      if (getSocket() !== socket) return
-      if (scopeId !== getMembershipScopeId()) return
+      // 이 조회를 보낸 뒤에 새 요청·새 조회가 시작됐거나 계정·연결이 바뀌었다면 이 응답은
+      // 지난 요청의 것이다 — 진행 중인 전송을 남의 결과로 덮지 않는다.
+      if (!isStillCurrent()) return
+
+      /**
+       * **조회가 실패한 것과 결과가 거부로 확정된 것은 다르다.**
+       *
+       * 서버의 결과 조회 응답은 세 종류다:
+       *   - `{ok:true, status:'KICKED'|'UNKNOWN'}` — 서버가 답한 **결과**다.
+       *   - `{ok:false, replayed:true, code}` — 기록된 **확정 거부**의 재생이다(그 요청은
+       *     실행되지 않았다는 역사적 사실).
+       *   - `{ok:false}` (replayed 없음) — 조회 자체가 실패했다(STALE_SOCKET·잘못된 입력 등).
+       *     원 추방의 결과에 대해서는 **아무 것도 알려주지 않는다.**
+       *
+       * 마지막 경우에 잠금을 풀면, 실행됐을지도 모르는 요청이 미확정으로 남아 있는데 화면이
+       * 새 추방을 지목할 수 있게 된다. 그래서 여기서는 잠금도 확인도 건드리지 않고 실패만
+       * 표시한다 — 영수증 키는 그대로 남으므로 같은 키로 다시 조회해 회복할 수 있다.
+       */
+      const decided = response?.ok === true || response?.replayed === true
+      if (!decided) {
+        applyStatus(KICK_REQUEST_STATUS.FAILED)
+        setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
+        return
+      }
 
       // 결과가 확정됐든 알 수 없든, 그 답을 받은 순간 옛 확인은 끝난 것이다. 확인을 남겨
       // 두면 ACK를 놓친 요청의 대상에게 **새 requestId로** 두 번째 추방이 나갈 수 있다 —
@@ -356,7 +428,20 @@ export function useKickPlayerRequest({
         if (typeof verifyMembership !== "function") return
         needsVerificationRef.current = true
         setNeedsVerification(true)
-        const verifyGeneration = generationRef.current
+        /**
+         * 재확인의 완료도 **그 조회의 것**이다. 예전에는 계정 세대만 봤다 — 재확인 A가 도는
+         * 사이에 새 추방 B가 나가고 그 B도 UNKNOWN이 되면, 뒤늦게 끝난 A의 완료가 B를 위해
+         * 걸어 둔 잠금을 풀어 버린다(결과를 모르는 B가 남았는데 새 확인이 열린다).
+         * 이 조회가 시작할 때 올린 **요청 세대**가 그 둘을 구별하는 유일한 값이다.
+         */
+        const isVerificationStillCurrent = captureAckGuard({
+          socket,
+          scopeId,
+          requestGeneration,
+          generation,
+          refs: { mountedRef, generationRef, requestGenerationRef },
+          getMembershipScopeId,
+        })
         // **동기적으로** 시작한다 — 마이크로태스크로 미루면 "UNKNOWN이면 서버에서 다시
         // 확인한다"가 같은 턴 안에서 관측되지 않는다(그 사이 화면이 바뀌면 영영 안 일어난다).
         let verification
@@ -367,10 +452,7 @@ export function useKickPlayerRequest({
         }
         Promise.resolve(verification)
           .then((ok) => {
-            if (!mountedRef.current) return
-            if (verifyGeneration !== generationRef.current) return
-            if (getSocket() !== socket) return
-            if (scopeId !== getMembershipScopeId()) return
+            if (!isVerificationStillCurrent()) return
             if (ok === false) return // 실패하면 잠긴 채로 둔다 — 사용자가 다시 시도한다.
             needsVerificationRef.current = false
             setNeedsVerification(false)

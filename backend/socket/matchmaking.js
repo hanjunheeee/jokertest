@@ -837,6 +837,44 @@ async function resyncRoomChannelOnReconnect(socket, uuid) {
     const room = gameRooms.get(roomId)
     if (!room || !room.players.has(uuid)) return
 
+    /**
+     * F-21(AC-06): **가입이 끝난 뒤에도 그 소속이 아직 자기 것인지 다시 묻는다.**
+     *
+     * socket.join은 Promise다. 예전에는 await만 하고 끝냈으므로, 가입이 완료되기 전에 이 계정이
+     * 그 방에서 **추방**되면(또는 방이 사라지거나 같은 방이 새 인스턴스로 다시 만들어지면)
+     * 마지막에 완료된 join이 권한 없는 소켓을 그 채널에 남겼다 — 그 뒤 아무도 치우지 않는다.
+     * 추방된 계정이 그 방의 방송을 계속 받는 경로가 정확히 이것이다.
+     *
+     * 그래서 가입 **이전에** 지금의 소속을 구성하는 값들을 통째로 캡처한다: 방 객체 동일성,
+     * 방 인스턴스, 서버 기동, 그 참가자 항목(재입장은 항상 새 membershipId를 받는다), 그리고
+     * 이 소켓이 이 계정의 canonical 연결이라는 사실. 완료 시점에 하나라도 어긋나면 이 재가입은
+     * 지난 소속의 것이므로 **내가 남긴 그 가입만** 되돌린다.
+     */
+    const seatAtCapture = room.players.get(uuid)
+    const capturedMembershipId = seatAtCapture?.membershipId ?? null
+    const capturedInstanceId = room.instanceId ?? room.id
+    const capturedBootEpoch = kickReceiptStore.BOOT_EPOCH
+    const io = socket.server ?? null
+
+    /** 지금도 "캡처한 바로 그 소속"인가. 더 새로운 정상 소속은 이 판정을 통과하지 못한다. */
+    const stillOwnsCapturedSeat = () => {
+        if (playerRoom.get(uuid) !== roomId) return false
+        const current = gameRooms.get(roomId)
+        // 같은 id로 다시 만들어진 **다른** 방은 같은 소속이 아니다(객체·인스턴스 동일성).
+        if (current !== room) return false
+        if ((current.instanceId ?? current.id) !== capturedInstanceId) return false
+        if (kickReceiptStore.BOOT_EPOCH !== capturedBootEpoch) return false
+        const seat = current.players.get(uuid)
+        if (!seat) return false
+        // 나갔다 다시 들어온 새 소속은 다른 membershipId다 — 그 가입은 이 재가입이 만든 것이
+        // 아니므로 여기서 떼면 방금 성립한 정상 참가자가 자기 채널을 잃는다.
+        if (capturedMembershipId !== null && (seat.membershipId ?? null) !== capturedMembershipId) return false
+        return isCanonicalSocketForAccount(io, uuid, socket, roomId)
+    }
+
+    // 이미 canonical이 아니면 채널을 되살릴 근거 자체가 없다(유령 청취자를 만들지 않는다).
+    if (!stillOwnsCapturedSeat()) return
+
     // 이 소켓의 뒤늦은 disconnect도 아래 onDisconnect의 ABA 가드를 통과하도록 결합해 둔다.
     if (socket.data) socket.data.activeRoomId = roomId
 
@@ -844,7 +882,23 @@ async function resyncRoomChannelOnReconnect(socket, uuid) {
         await socket.join(roomId)
     } catch (err) {
         console.error('\x1b[31m[방 채널 재가입 실패]\x1b[0m', err)
+        return
     }
+
+    if (stillOwnsCapturedSeat()) return
+
+    // 가입이 끝나는 사이 그 소속이 사라졌다(추방·방 소멸·소켓 교체·새 소속으로 교체). 이
+    // 재가입이 남긴 것만 되돌린다 — 공용 정리 경계를 쓰므로 더 새로운 정상 소속의 채널은
+    // 떼지 않고, 다른 곳에 살아 있는 소속이 있으면 연결도 끊지 않는다.
+    detachSocketFromChannel(
+        socket, roomId, '[방 채널 재가입 보상 실패]',
+        {
+            ownsChannel: () =>
+                isAccountSeatedInRoom(uuid, roomId)
+                && isCanonicalSocketForAccount(io, uuid, socket, roomId),
+            keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+        },
+    )
 }
 
 /**

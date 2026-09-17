@@ -677,6 +677,12 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // 참여가 끝난다. 두 사실을 한 필드로 합치면 사망자 추방이 구조적으로 불가능해진다.
         // 값이 바뀔 때마다 1씩 오르며, 옛 snapshot·ACK가 최신 상태를 되돌리지 못하게 한다.
         participationRevision: 0,
+        // F-21(AC-03): **본인 제출 상태 전용** 순서값. participationRevision과 나눈 이유는 그
+        // 둘이 다른 사실을 말하기 때문이다 — 이탈은 참여 세대를 올리지만, 그 뒤의 평범한 제출은
+        // 참여를 바꾸지 않으므로 세대가 그대로다. 세대만으로 순서를 정하면 그 제출이 이탈 당시의
+        // "미제출"을 이길 수 없어 화면이 영영 미제출로 남는다. 개인 전송·스냅샷에 함께 실려
+        // 옛 개인 사건·옛 스냅샷이 더 새로운 제출 상태를 되돌리지 못하게 한다.
+        selfProgressSeq: 0,
         phase: INITIAL_GAME_PHASE,
         dayIndex: INITIAL_DAY_INDEX,
         // commit 경계(assertValidSessionForCommit)에서 실제 역할 분포와 대조하기 위해
@@ -2202,6 +2208,21 @@ function buildPublicPhaseProgress(session) {
 }
 
 /**
+ * F-21(AC-03): 개인 제출 상태 전송 한 묶음마다 1씩 오르는 순서값을 발급한다.
+ *
+ * 이 값이 없으면 "이탈 당시의 미제출"과 "그 뒤의 평범한 제출"을 화면이 구별하지 못한다 —
+ * 둘 다 같은 participationRevision을 달고 오기 때문이다(제출은 참여를 바꾸지 않는다). 개인
+ * 값의 순서는 개인 값의 시계로 정해야 한다.
+ *
+ * 세션 객체 하나당 단조 증가이므로 어느 수신자 관점에서도 순서가 뒤집히지 않는다.
+ */
+function bumpSelfProgressSeq(session) {
+    const next = (Number.isSafeInteger(session.selfProgressSeq) ? session.selfProgressSeq : 0) + 1
+    session.selfProgressSeq = next
+    return next
+}
+
+/**
  * F-21(AC-03): **수신자 본인의** 제출 상태. 다른 참가자의 선택은 하나도 담지 않는다.
  *
  * 표적이 이탈로 기권(null)으로 정규화된 뒤에도 화면이 옛 선택을 그대로 그리고 있으면, 사용자는
@@ -3323,6 +3344,10 @@ function buildSessionSnapshot(session, uuid) {
         // 참여 상태의 세대. 이 사건 이전에 캡처된 snapshot·ACK가 최신 참여 상태를 되돌리지
         // 못하도록 프론트가 적용 세대와 함께 검사한다(AC-03/AC-05).
         participationRevision: session.participationRevision ?? 0,
+        // F-21(AC-03): 이 스냅샷이 말하는 **개인 제출 상태**의 순서값. 재접속 스냅샷 조회는
+        // 비동기라, 조회가 발행된 뒤에 낸 제출이 먼저 반영되고 그 뒤에 옛 스냅샷이 도착하면
+        // 방금 낸 표가 화면에서 사라진다(참여 세대는 같으므로 기존 검사로는 잡히지 않는다).
+        selfProgressSeq: session.selfProgressSeq ?? 0,
         // dayPhase는 낮에서만 의미가 있으므로 phase가 DAY일 때만 키 자체를 만든다
         // (nightResult/tribunal의 선택 필드 관례와 동일). 이 값이 없으면 재접속 클라이언트가
         // 토론과 투표를 구분하지 못해 그 낮에 갇힌다.
@@ -3895,6 +3920,8 @@ module.exports = {
     // 상태. 소켓 계층이 각각 공개 방송과 개인 전송에 싣는다.
     buildPublicPhaseProgress,
     buildSelfSubmissionFields,
+    // 개인 제출 상태 전송의 순서값 발급. 소켓 계층이 한 묶음마다 한 번 부른다.
+    bumpSelfProgressSeq,
     advanceStalledPhaseAfterDeparture,
     isParticipatingInSession,
     getActiveSessionForDeparture,
