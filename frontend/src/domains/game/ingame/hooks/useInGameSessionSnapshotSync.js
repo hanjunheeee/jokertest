@@ -88,6 +88,22 @@ export function useInGameSessionSnapshotSync() {
         })
         .catch(() => {
           // 타임아웃/전송 오류: 조용히 무시한다. 다음 재연결이 새 세대로 다시 요청한다.
+          //
+          // F-21(AC-05): 실패도 **성공과 같은 세대 검사**를 통과해야 한다. 옛 bootstrap 조회가
+          // 늦게 실패하는 동안 이미 새 게임·새 계정·새 연결이 들어와 있을 수 있는데, 그때
+          // failed로 덮으면 방금 복원된 화면이 "세션 없음"으로 되돌아간다.
+          const stale = isStaleSessionSnapshotAckResponse({
+            mounted: mountedRef.current,
+            requestEpochVersion,
+            currentEpochVersion: epochVersionRef.current,
+            requestGameId,
+            currentGameId: useInGameStore.getState().gameId,
+            requestAuthUuid,
+            currentAuthUuid: useAuthStore.getState().user?.uuid ?? null,
+            requestSocket,
+            currentSocket: getSocket(),
+          })
+          if (stale) return
           if (!requestGameId) setBootstrapStatus("failed")
         })
     }

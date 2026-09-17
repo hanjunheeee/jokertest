@@ -6,6 +6,30 @@ import {
     useAuthStore,
 } from "@/domains/auth/store/auth.store"
 import { useGameSessionSocketEvents } from "@/domains/game/ingame/hooks/useGameSessionSocketEvents"
+// F-21(A-10): 전적 커밋 이후의 개인 무효화와 재진입·재연결·창 재활성화 재조회가 실제로 닿는
+// 세 store를 여기서 꽂는다. 수신기가 이 store들을 직접 import하지 않는 이유는
+// accountCacheRefresh.js의 주석에 있다(그러면 수신기가 플레인 Node에서 로드되지 않는다).
+import { registerAccountCacheStores } from "@/domains/user/utils/accountCacheRefresh.js"
+import { useUserProfileStore } from "@/domains/user/store/user.store"
+import { useEconomyStore } from "@/domains/economy/store/economy.store"
+import { useAchievementsStore } from "@/domains/library/store/achievements.store"
+
+// 앱이 이 모듈을 로드하는 순간(=보호 라우트가 존재하는 순간) 한 번 등록한다. 어댑터가 얇은
+// 이유는 각 store의 기존 계약(계정 세대·조회 순서·합치기)을 그대로 두기 위함이다.
+registerAccountCacheStores({
+    profile: {
+        invalidate: () => useUserProfileStore.getState().invalidate(),
+        refresh: () => useUserProfileStore.getState().refresh(),
+    },
+    economy: {
+        fetch: () => useEconomyStore.getState().fetchSummary(),
+        isLoading: () => useEconomyStore.getState().status === "loading",
+    },
+    achievements: {
+        fetch: () => useAchievementsStore.getState().fetchAchievements(),
+        isLoading: () => useAchievementsStore.getState().status === "loading",
+    },
+})
 
 // 로그인한 사용자만 통과시켜야 하는 라우트를 감싸는 컴포넌트입니다.
 export default function ProtectedRoute() {

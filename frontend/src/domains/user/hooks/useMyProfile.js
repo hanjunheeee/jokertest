@@ -8,26 +8,48 @@ export function useMyProfile() {
     const appliedRevision = useUserProfileStore((s) => s.appliedRevision)
     const data = useUserProfileStore((s) => s.data)
     const loading = useUserProfileStore((s) => s.loading)
-    const fetchProfile = useUserProfileStore((s) => s.fetchProfile)
+    const refresh = useUserProfileStore((s) => s.refresh)
 
     useEffect(() => {
-        // 캐시에 데이터가 있으면 재요청하지 않는다(로비→마이페이지 이동 시 중복 fetch 방지).
+        // F-21(A-10): **캐시가 있다는 이유로 조회를 생략하지 않는다.**
         //
-        // F-21(A-10): 단, **캐시가 있다는 사실만으로 영구히 생략하지는 않는다.** 서버가 전적
-        // 커밋을 알려오면(invalidationRevision 증가) 그 캐시는 이미 낡은 값이므로, 화면에
-        // 다시 들어오거나 재연결·창 재활성화로 이 훅이 다시 도는 순간 최신 값을 읽어야 한다.
-        // 그러지 않으면 방금 끝난 판의 전적이 새로고침 전까지 영영 반영되지 않는다.
-        const store = useUserProfileStore.getState()
-        if (store.data && store.appliedRevision >= store.invalidationRevision) return
-        fetchProfile()
-    }, [generation, invalidationRevision, appliedRevision, fetchProfile])
+        // 예전에는 data가 있으면 그대로 돌아갔다. 그러면 개인 무효화 신호를 받지 못한 경우
+        // (끊겨 있는 동안 커밋된 전적, 다른 탭에서 지나간 신호, 웹 프로세스 밖의 복구 지급)에
+        // 방금 끝난 판의 전적이 **새로고침 전까지 영영** 반영되지 않는다.
+        //
+        // 중복 요청은 생략이 아니라 합치기로 막는다 — store.refresh가 같은 계정·같은 무효화
+        // 세대의 조회를 하나로 합치므로, 로비와 마이페이지가 함께 떠 있어도 요청은 한 번이다.
+        // 화면 재진입은 이 effect를 다시 돌려 최신 값을 한 번 확인한다.
+        refresh()
+    }, [generation, invalidationRevision, refresh])
+
+    // 창 재활성화·탭 가시화에서도 이 화면이 보고 있는 값을 다시 확인한다. 전역 수신기
+    // (ProtectedRoute의 useGameSessionSocketEvents)가 같은 전이에서 세 캐시를 함께 수렴시키지만,
+    // 이 화면 자체도 자기 데이터에 대해 같은 보장을 갖는다 — 위 refresh의 합치기가 있으므로
+    // 둘이 같은 순간에 돌아도 요청은 한 번이다.
+    useEffect(() => {
+        if (typeof window === "undefined") return undefined
+        const onFocus = () => { refresh() }
+        const onVisible = () => {
+            if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+            refresh()
+        }
+        window.addEventListener("focus", onFocus)
+        if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisible)
+        return () => {
+            window.removeEventListener("focus", onFocus)
+            if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible)
+        }
+    }, [refresh])
 
     // 값이 있어도 마지막 무효화보다 오래됐다면 화면이 그 사실을 알 수 있어야 한다.
     const isStale = appliedRevision < invalidationRevision
 
     if(!data) {
         // 아직 데이터가 없으면 화면에서 안전하게 처리할 수 있도록 null 값을 반환합니다.
-        return { profile: null, stats: null, description: null, loading, isStale }
+        // retry는 조회가 실패한 화면이 사용자의 명시적 요청으로 다시 읽을 수 있는 경로다
+        // (자동 재시도를 무한히 돌리지 않는다 — 실패는 화면에 남고 결정은 사용자가 한다).
+        return { profile: null, stats: null, description: null, loading, isStale, retry: refresh }
     }
 
     // 화면 상단 프로필 영역에서 사용할 값입니다.
@@ -55,5 +77,5 @@ export function useMyProfile() {
         suffix:    hasHighestWinRateRole ? "의 가면을 쓸 때 가장 잔혹합니다." : "아직 어떤 가면도 증명하지 못했습니다.",
     }
 
-    return { profile, stats, description, loading, isStale }
+    return { profile, stats, description, loading, isStale, retry: refresh }
 }

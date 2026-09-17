@@ -949,3 +949,91 @@ test('AC-06(게임): 추방된 계정은 다른 새 게임에는 참여할 수 �
         newSession.id,
     )
 })
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AC-05/AC-06 — 비동기 채널 재동기화(resyncSessionRouting)와 추방의 경합
+//
+// socket.join은 adapter에 따라 비동기다. 그 사이에 이 계정이 세션에서 빠지면(추방·이탈),
+// 완료 뒤 다시 검사하지 않는 한 **배제된 계정이 그 경기의 모든 방송을 계속 받는 채널에
+// 남는다**. 아래 시험들은 그 재검사를 재현 순서로 고정한다.
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('AC-05: 재동기화의 join이 끝나기 전에 추방이 확정되면 그 채널 가입은 되돌려진다', async () => {
+    const session = commitDeterministicSession({
+        roomId: 'room-rs1', gameId: 'game-rs1', hostUuid: 'rs1-a', uuids: ['rs1-a', 'rs1-b', 'rs1-c', 'rs1-d'],
+    })
+
+    // 대상이 재접속해 채널 재가입을 시작한다 — join은 gate가 풀릴 때까지 끝나지 않는다.
+    let releaseJoin
+    const joinGate = new Promise((resolve) => { releaseJoin = resolve })
+    const targetSocket = createFakeSocket('rs1-d', { joinGate })
+    const io = createFakeIo([targetSocket])
+    const resyncing = gameSessionSocketLayer.resyncSessionRouting(targetSocket, 'rs1-d')
+    await targetSocket.joinCalled
+
+    // 그 사이 방장이 대상을 추방한다(커밋은 동기 구간에서 끝난다).
+    const kicked = kickGamePlayer(io, createFakeSocket('rs1-a'), 'rs1-a', gameKickPayload(session, 'rs1-a', 'rs1-d'))
+    assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
+
+    // 이제서야 join이 완료된다. 재검사가 자신이 남긴 가입만 되돌려야 한다.
+    releaseJoin()
+    await resyncing
+
+    // 추방의 채널 정리는 join이 아직 끝나지 않은 그 순간에 이미 지나갔다(그때는 가입 상태가
+    // 아니었다) — 그래서 join 완료 뒤의 재검사가 없으면 이 소켓은 채널에 그대로 남는다.
+    assert.equal(targetSocket.rooms.has(session.channelId), false, '배제된 계정이 경기 채널에 남았다')
+    assert.ok(targetSocket.left.includes(session.channelId))
+    assert.equal(targetSocket.data.activeGameId ?? null, null)
+})
+
+test('AC-05: 그 사이 아무 일도 없었다면 재동기화는 채널 가입을 그대로 유지한다', async () => {
+    const session = commitDeterministicSession({
+        roomId: 'room-rs2', gameId: 'game-rs2', hostUuid: 'rs2-a', uuids: ['rs2-a', 'rs2-b', 'rs2-c', 'rs2-d'],
+    })
+
+    let releaseJoin
+    const joinGate = new Promise((resolve) => { releaseJoin = resolve })
+    const socket = createFakeSocket('rs2-d', { joinGate })
+    const resyncing = gameSessionSocketLayer.resyncSessionRouting(socket, 'rs2-d')
+    await socket.joinCalled
+    releaseJoin()
+    await resyncing
+
+    assert.equal(socket.rooms.has(session.channelId), true)
+    assert.deepEqual(socket.left, [])
+    assert.equal(socket.data.activeGameId, session.id)
+})
+
+test('AC-05: join 완료 전에 canonical 소켓이 교체되면 남이 된 연결의 가입은 되돌려진다', async () => {
+    const session = commitDeterministicSession({
+        roomId: 'room-rs3', gameId: 'game-rs3', hostUuid: 'rs3-a', uuids: ['rs3-a', 'rs3-b', 'rs3-c', 'rs3-d'],
+    })
+
+    let releaseJoin
+    const joinGate = new Promise((resolve) => { releaseJoin = resolve })
+    // 규약상 canonical socket.id는 `sock-<uuid>`다 — 다른 id의 연결은 이미 교체된 옛 연결이다.
+    const oldSocket = createFakeSocket('rs3-d', { id: 'sock-rs3-d-old', joinGate })
+    const resyncing = gameSessionSocketLayer.resyncSessionRouting(oldSocket, 'rs3-d')
+    await oldSocket.joinCalled
+    releaseJoin()
+    await resyncing
+
+    assert.equal(oldSocket.rooms.has(session.channelId), false, '남이 된 연결이 경기 채널에 남았다')
+    assert.deepEqual(oldSocket.left, [session.channelId])
+})
+
+test('AC-06: 이미 배제된 계정의 재접속은 채널 가입 자체를 시작하지 않는다', async () => {
+    const session = commitDeterministicSession({
+        roomId: 'room-rs4', gameId: 'game-rs4', hostUuid: 'rs4-a', uuids: ['rs4-a', 'rs4-b', 'rs4-c', 'rs4-d'],
+    })
+    const io = createFakeIo([])
+    kickGamePlayer(io, createFakeSocket('rs4-a'), 'rs4-a', gameKickPayload(session, 'rs4-a', 'rs4-d'))
+
+    const socket = createFakeSocket('rs4-d')
+    await gameSessionSocketLayer.resyncSessionRouting(socket, 'rs4-d')
+
+    assert.deepEqual(socket.joined, [])
+    assert.deepEqual(socket.left, [])
+    assert.equal(socket.data.activeGameId ?? null, null)
+    assert.equal(session.phase !== 'ENDED', true)
+})

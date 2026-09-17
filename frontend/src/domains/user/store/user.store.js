@@ -8,6 +8,9 @@ import { useAuthStore } from '../../auth/store/auth.store.js';
 // F-10 A-08: economy.store.js와 같은 이유로 requestGeneration을 둔다 — 이전에는 reset()이
 // data만 비울 뿐 진행 중이던 fetchProfile 요청을 무효화하지 않아서, 계정 전환/로그아웃 뒤에
 // 늦게 도착한 이전 계정의 응답이 새 계정 화면을 덮어쓸 수 있었다.
+// F-21(A-10): 지금 날아가 있는 조회 하나. { generation, revision, promise } 또는 null.
+let inFlightProfileFetch = null;
+
 export const useUserProfileStore = create((set, get) => ({
     data: null,
     loading: true,
@@ -24,6 +27,12 @@ export const useUserProfileStore = create((set, get) => ({
     // "무효화 이후 서버 조회가 한 번은 있었는가"의 근거다.
     appliedRevision: 0,
 
+    // F-21(A-10): 지금 진행 중인 조회 하나(같은 계정·같은 무효화 세대)를 합치기 위한 핸들이다.
+    // store 상태가 아니라 클로저 변수로 두는 이유는 렌더 입력이 아니기 때문이다 — 이 값이
+    // 바뀌었다고 화면이 다시 그려질 이유는 없다.
+    //
+    // 합치는 범위를 **같은 무효화 세대**로 한정한다. 무효화 이후의 refresh까지 이전 in-flight에
+    // 합치면 "무효화가 새 서버 조회를 보장한다"가 깨진다(이미 낡은 응답을 그대로 재사용하게 된다).
     fetchProfile: async () => {
         const generation = get().requestGeneration;
         // 이 조회가 시작된 시점의 무효화 세대를 함께 캡처한다.
@@ -52,7 +61,32 @@ export const useUserProfileStore = create((set, get) => ({
      */
     invalidate: () => {
         set((state) => ({ invalidationRevision: state.invalidationRevision + 1 }));
-        return get().fetchProfile();
+        // 세대를 올린 **뒤에** 조회한다 — 그래야 아직 날아가 있던 이전 세대의 조회에 합쳐지지
+        // 않고, 무효화 이후의 서버 조회가 반드시 한 번 일어난다.
+        return get().refresh();
+    },
+
+    /**
+     * F-21(A-10): 재진입·재연결·창 재활성화가 부르는 **합쳐지는** 조회다.
+     *
+     * 무효화와 다른 점은 세대를 올리지 않는다는 것뿐이다 — 이 전이들은 "서버가 새 사실을
+     * 알려줬다"가 아니라 "그 신호를 못 받았을 수도 있다"이므로, 캐시를 낡았다고 선언하지 않고
+     * 값만 다시 확인한다. 같은 계정·같은 무효화 세대의 조회가 이미 날아가 있으면 그것을
+     * 그대로 돌려준다(마이페이지와 로비가 동시에 뜨는 흔한 경우에 요청이 두 번 나가지 않는다).
+     */
+    refresh: () => {
+        const generation = get().requestGeneration;
+        const revision = get().invalidationRevision;
+        if (inFlightProfileFetch
+            && inFlightProfileFetch.generation === generation
+            && inFlightProfileFetch.revision === revision) {
+            return inFlightProfileFetch.promise;
+        }
+        const promise = get().fetchProfile().finally(() => {
+            if (inFlightProfileFetch && inFlightProfileFetch.promise === promise) inFlightProfileFetch = null;
+        });
+        inFlightProfileFetch = { generation, revision, promise };
+        return promise;
     },
 
     /** 지금 들고 있는 값이 마지막 무효화보다 오래됐는가(화면이 stale 표시를 붙일 근거). */
@@ -64,15 +98,20 @@ export const useUserProfileStore = create((set, get) => ({
     })),
 
     // 계정 경계를 넘는 상태를 지우고 진행 중이던 요청을 전부 무효화한다(requestGeneration 증가).
-    reset: () => set((state) => ({
-        data: null,
-        loading: true,
-        requestGeneration: state.requestGeneration + 1,
-        // 무효화 세대는 되돌리지 않는다 — 단조 증가해야 A→B→A 계정 전환 뒤에 도착한 옛
-        // 응답이 "세대가 같다"는 이유로 되살아나지 않는다.
-        invalidationRevision: state.invalidationRevision + 1,
-        appliedRevision: state.invalidationRevision + 1,
-    })),
+    // 진행 중이던 조회 핸들도 함께 버린다 — 남기면 새 계정의 refresh가 **이전 계정의** 응답을
+    // 기다리는 promise를 그대로 돌려받는다(그 응답 자체는 아래 세대 검사가 버린다).
+    reset: () => set((state) => {
+        inFlightProfileFetch = null;
+        return {
+            data: null,
+            loading: true,
+            requestGeneration: state.requestGeneration + 1,
+            // 무효화 세대는 되돌리지 않는다 — 단조 증가해야 A→B→A 계정 전환 뒤에 도착한 옛
+            // 응답이 "세대가 같다"는 이유로 되살아나지 않는다.
+            invalidationRevision: state.invalidationRevision + 1,
+            appliedRevision: state.invalidationRevision + 1,
+        };
+    }),
 }));
 
 // 로그아웃이든 계정 전환이든 계정 식별자가 바뀌는 순간 즉시 리셋한다(economy.store.js와 동일 계약).

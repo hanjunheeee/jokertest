@@ -11,7 +11,27 @@ import assert from "node:assert/strict"
  * 대역은 HTTP 하나뿐이다(getMyProfileApi). 세대·무효화·재조회 판정은 전부 프로덕션 store
  * 코드 그대로 돈다.
  */
-// DOM은 필요 없다 — 이 파일은 컴포넌트를 렌더하지 않고 store의 순서 계약만 본다.
+// 뒷부분은 **실제 화면 훅**(useMyProfile)을 마운트해 화면에 실제로 표시되는 값까지 본다 —
+// store 단위 단언만으로는 "재진입·재활성화에서 최신 값을 읽는가"가 증명되지 않는다.
+import { act } from "react"
+import { JSDOM } from "jsdom"
+
+const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
+
+function installDomGlobal(name, value) {
+  Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
+}
+
+installDomGlobal("window", dom.window)
+installDomGlobal("document", dom.window.document)
+installDomGlobal("navigator", dom.window.navigator)
+installDomGlobal("HTMLElement", dom.window.HTMLElement)
+installDomGlobal("Node", dom.window.Node)
+installDomGlobal("Event", dom.window.Event)
+installDomGlobal("MutationObserver", dom.window.MutationObserver)
+installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(dom.window))
+installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 /**
  * GET을 원하는 시점까지 붙잡아 둘 수 있는 대역. gate가 있으면 그 Promise가 풀릴 때까지
@@ -35,8 +55,23 @@ mock.module("../../../../user/api/user.api.js", {
   },
 })
 
+const { renderHook } = await import("@testing-library/react")
 const { useUserProfileStore } = await import("../../../../user/store/user.store.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
+const { useMyProfile } = await import("../../../../user/hooks/useMyProfile.js")
+const { refreshAccountCaches, registerAccountCacheStores, clearAccountCacheStores } =
+  await import("../../../../user/utils/accountCacheRefresh.js")
+
+/**
+ * 렌더 이후의 비동기 조회가 전부 끝날 때까지 흘린다. 마이크로태스크만 비우면 await 단계가
+ * 하나만 늘어도 흔들리므로 매크로태스크 한 번으로 고정한다.
+ */
+async function flush(before) {
+  await act(async () => {
+    before?.()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+}
 
 function makeGate() {
   let release
@@ -61,9 +96,13 @@ test.beforeEach(() => {
   profileResponses = []
   pendingGates = []
   requestLog.length = 0
+  // reset()은 진행 중이던 조회 핸들(합치기 대상)까지 버린다 — 그래야 앞 시험이 남긴 조회에
+  // 다음 시험의 refresh가 합쳐지지 않는다. 세대는 그 뒤에 0으로 되돌려 시험을 고정한다.
+  useUserProfileStore.getState().reset()
   useUserProfileStore.setState({
     data: null, loading: true, requestGeneration: 0, invalidationRevision: 0, appliedRevision: 0,
   })
+  clearAccountCacheStores()
   useAuthStore.setState({ user: { uuid: "u-1" }, isLoggedIn: true })
 })
 
@@ -151,17 +190,124 @@ test("A-10: 조회 실패도 무효화 세대를 통과한 경우에만 반영�
   assert.equal(useUserProfileStore.getState().loading, false)
 })
 
-test("A-10: 무효화 이후에는 캐시가 있어도 서버 조회를 한 번 더 한다(useMyProfile의 생략 조건)", async () => {
+// ── 실제 화면 훅(useMyProfile)의 수렴 ─────────────────────────────────────────
+
+test("A-10: 화면 재진입은 캐시가 있어도 서버를 다시 읽고, 표시 숫자가 최신 값으로 바뀐다", async () => {
   profileResponses[0] = profile(3)
-  await useUserProfileStore.getState().fetchProfile()
+  profileResponses[1] = profile(4) // 그 사이 서버가 전적을 커밋했다(신호는 못 받았다)
 
-  // useMyProfile의 생략 조건과 **같은 술어**다 — 캐시가 있어도 낡았으면 생략하지 않는다.
-  const shouldSkip = () => {
-    const store = useUserProfileStore.getState()
-    return Boolean(store.data) && store.appliedRevision >= store.invalidationRevision
-  }
-  assert.equal(shouldSkip(), true, "무효화 전에는 중복 조회를 하지 않는다")
+  const first = renderHook(() => useMyProfile())
+  await flush()
+  assert.equal(first.result.current.stats[0].value, "3")
+  first.unmount()
 
-  useUserProfileStore.setState((s) => ({ invalidationRevision: s.invalidationRevision + 1 }))
-  assert.equal(shouldSkip(), false, "무효화 뒤에는 캐시가 있어도 다시 읽어야 한다")
+  // 다른 화면에 갔다가 돌아온다. 무효화 신호는 한 번도 오지 않았다.
+  const second = renderHook(() => useMyProfile())
+  await flush()
+
+  assert.equal(requestLog.length, 2, "재진입은 서버 조회를 한 번 더 해야 한다")
+  assert.equal(second.result.current.stats[0].value, "4", "화면에 최신 전적이 표시되지 않았다")
+  second.unmount()
+})
+
+test("A-10: 같은 순간에 뜬 두 화면의 조회는 하나로 합쳐진다(중복 요청 없음)", async () => {
+  const gate = makeGate()
+  pendingGates[0] = gate
+  profileResponses[0] = profile(5)
+
+  const lobby = renderHook(() => useMyProfile())
+  const myPage = renderHook(() => useMyProfile())
+  await flush()
+
+  assert.equal(requestLog.length, 1, "동시에 뜬 두 화면이 각자 요청을 보냈다")
+
+  await flush(() => gate.release())
+  assert.equal(lobby.result.current.stats[0].value, "5")
+  assert.equal(myPage.result.current.stats[0].value, "5")
+  lobby.unmount()
+  myPage.unmount()
+})
+
+test("A-10: 창 재활성화는 그 화면의 값을 다시 확인한다(신호를 놓친 경우의 수렴)", async () => {
+  profileResponses[0] = profile(3)
+  profileResponses[1] = profile(9)
+
+  const view = renderHook(() => useMyProfile())
+  await flush()
+  assert.equal(view.result.current.stats[0].value, "3")
+
+  await flush(() => dom.window.dispatchEvent(new dom.window.Event("focus")))
+
+  assert.equal(requestLog.length, 2)
+  assert.equal(view.result.current.stats[0].value, "9")
+  view.unmount()
+})
+
+test("A-10: 무효화가 도착하면 화면은 stale을 표시하고, 새 값이 오면 해제된다", async () => {
+  profileResponses[0] = profile(3)
+  const view = renderHook(() => useMyProfile())
+  await flush()
+  assert.equal(view.result.current.isStale, false)
+
+  const gate = makeGate()
+  pendingGates[1] = gate
+  profileResponses[1] = profile(4)
+
+  await flush(() => { useUserProfileStore.getState().invalidate() })
+  // 값은 남아 있고(깜빡이지 않는다) 낡았다는 사실만 표시된다.
+  assert.equal(view.result.current.stats[0].value, "3")
+  assert.equal(view.result.current.isStale, true)
+
+  await flush(() => gate.release())
+  assert.equal(view.result.current.stats[0].value, "4")
+  assert.equal(view.result.current.isStale, false)
+  view.unmount()
+})
+
+test("A-10: 조회 실패는 로딩을 풀고 화면이 재시도할 수 있는 상태로 남긴다", async () => {
+  profileResponses[0] = new Error("네트워크 실패")
+  profileResponses[1] = profile(2)
+
+  const view = renderHook(() => useMyProfile())
+  await flush()
+  assert.equal(view.result.current.profile, null)
+  assert.equal(view.result.current.loading, false)
+  // 실패를 성공으로 바꾸지 않는다 — 화면에는 다시 읽을 경로만 있다(MyPageLayout이 이 값을 쓴다).
+  assert.equal(typeof view.result.current.retry, "function")
+
+  await flush(() => view.result.current.retry())
+  assert.equal(view.result.current.stats[0].value, "2")
+  view.unmount()
+})
+
+// ── 앱 진입점이 꽂는 실제 경계 ───────────────────────────────────────────────
+
+test("A-10: 등록된 실제 store를 통해 무효화와 단순 확인이 구분되어 전달된다", async () => {
+  profileResponses[0] = profile(3)
+  profileResponses[1] = profile(4)
+  profileResponses[2] = profile(5)
+
+  // ProtectedRoute가 꽂는 것과 **같은 어댑터**다.
+  registerAccountCacheStores({
+    profile: {
+      invalidate: () => useUserProfileStore.getState().invalidate(),
+      refresh: () => useUserProfileStore.getState().refresh(),
+    },
+  })
+
+  await flush(() => refreshAccountCaches(["profile"]))
+  assert.equal(useUserProfileStore.getState().data.total_games, 3)
+  assert.equal(useUserProfileStore.getState().isStale(), false, "단순 확인은 캐시를 낡았다고 선언하지 않는다")
+
+  await flush(() => refreshAccountCaches(["profile"], { invalidate: true }))
+  assert.equal(useUserProfileStore.getState().data.total_games, 4)
+  assert.equal(requestLog.length, 2)
+
+  // 등록되지 않은 범위는 조용히 아무 일도 하지 않는다(다른 범위의 전달을 막지 않는다).
+  await flush(() => refreshAccountCaches(["economy", "achievements"]))
+  assert.equal(requestLog.length, 2)
+
+  clearAccountCacheStores()
+  await flush(() => refreshAccountCaches(["profile"], { invalidate: true }))
+  assert.equal(requestLog.length, 2, "등록을 비우면 이후 호출은 no-op이다")
 })

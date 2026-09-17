@@ -367,7 +367,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 새 참가자를 화면에서 지운다. 서버가 소속 식별자를 싣지 않는 구버전 사건은 예전처럼
       // uuid만으로 처리한다.
       if (typeof membershipId === "string" && membershipId.length > 0) {
-        const seated = useMatchingStore.getState().room?.players?.find((player) => player.uuid === uuid)
+        // matchingStore는 방 상태를 **최상위 필드**로 들고 있다(room 객체가 없다) — players를
+        // 그대로 읽는다. 여기서 없는 경로를 읽으면 이 소속 검사가 조용히 통과해 버린다.
+        const seated = useMatchingStore.getState().players?.find((player) => player.uuid === uuid)
         if (seated && typeof seated.membershipId === "string" && seated.membershipId !== membershipId) return
       }
       readyAggregateGenerationRef.current += 1

@@ -5,6 +5,9 @@ import {
   MATCHING_ROOM_CODE_DUMMY,
 } from "../constants/gameMatchingAssets.js"
 import { useMatchingRoom } from "./useMatchingRoom"
+// F-21(AC-02): 대기방 추방의 실제 소비 경계다. 목록·확인·전송·결과 재조회는 전부 이 훅이
+// 소유하고(인게임과 같은 useKickPlayerRequest를 쓴다), 이 페이지 훅은 그 값을 그대로 넘긴다.
+import { useMatchingRoomKick } from "./useMatchingRoomKick.js"
 import { useMatchingStore } from "../store/matchingStore"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
 import { getSocket } from "@/shared/socket/socketClient"
@@ -47,6 +50,14 @@ export function useMatchingPage() {
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
   })
+
+  // F-21(AC-02): 방장만 추방 진입을 갖는다. 방 검증 전에는 열리지 않는다 — 아직 서버가
+  // 확정해 주지 않은 소속으로 남을 내보내면 화면만 성공한 것처럼 보인다.
+  const {
+    canKick, kickModalOpen, openKickModal, closeKickModal,
+    kickTargets, kickPendingTarget, kickStatus, kickErrorCode, isKicking, canLookupKickResult,
+    requestKickConfirm, cancelKickConfirm, confirmKick, lookupKickResult,
+  } = useMatchingRoomKick({ isRoomVerified })
 
   // F-20(AC-03/AC-05): 서버가 확정한 설정을 폼 상태로 변환한다. 변환이 실패하면(서버 설정이
   // 이 화면이 표현할 수 없는 값) 기본값으로 덮어 "저장 가능한 것처럼" 보이게 하지 않고
@@ -138,6 +149,22 @@ export function useMatchingPage() {
     // 결과 확인까지 마쳤는데도 적용 여부를 알 수 없을 때 대기방에 남는 안내(A-07).
     settingsResultNotice,
     dismissSettingsResultNotice,
+    // F-21(AC-02): 대기방 추방. 비방장에게는 canKick이 false라 진입 자체가 없고, 확인 취소는
+    // 소켓 요청 0회이며, 미확인 결과는 성공으로 바꾸지 않고 기존 키 조회만 제공한다.
+    canKick,
+    kickModalOpen,
+    openKickModal,
+    closeKickModal,
+    kickTargets,
+    kickPendingTarget,
+    kickStatus,
+    kickErrorCode,
+    isKicking,
+    canLookupKickResult,
+    requestKickConfirm,
+    cancelKickConfirm,
+    confirmKick,
+    lookupKickResult,
     // 비방장도 현재 설정을 읽을 수 있도록 서버 확정값을 그대로 노출한다(편집은 불가).
     roomSettings: settings,
     roomSettingsVersion: settingsVersion,

@@ -171,7 +171,32 @@ async function resyncSessionRouting(socket, uuid) {
 
     socket.data.activeGameId = routing.gameId
     if (!socket.rooms.has(routing.channelId)) {
-        socket.join(routing.channelId)
+        // F-21(AC-05/AC-06): socket.join은 adapter에 따라 비동기다. 그 사이에 이 계정이 그
+        // 세션에서 빠질 수 있다(추방·이탈·유예 만료) — 완료 뒤 **다시** 검사하지 않으면,
+        // 이미 배제된 계정이 그 경기의 모든 방송을 계속 받는 채널에 남는다.
+        await socket.join(routing.channelId)
+
+        const current = gameSessionCore.getActiveSessionRoutingInfo(uuid)
+        const stillMine = current !== null
+            && current.gameId === routing.gameId
+            && current.channelId === routing.channelId
+            && !gameSessionCore.isForfeitedFromSession(routing.gameId, uuid)
+            // 그 사이 같은 계정의 새 연결이 canonical 소켓을 교체했다면 이 채널 가입은 남의
+            // 것을 흉내 내는 셈이다(권한은 여전히 isCurrentSocketForUuid만 판정한다).
+            && isCurrentSocketForUuid(uuid, socket)
+        if (stillMine) return
+
+        // **자신이 방금 남긴 잘못된 가입만** 되돌린다. 그 사이 다른 경로가 이 소켓을 새
+        // 세션의 채널에 넣었다면 그 채널은 건드리지 않는다.
+        try {
+            socket.leave(routing.channelId)
+        } catch (err) {
+            console.error('\x1b[31m[세션 채널 정리 실패]\x1b[0m', { gameId: routing.gameId })
+        }
+        // activeGameId도 그 사이 갱신되지 않은 경우에만 되돌린다.
+        if (socket.data.activeGameId === routing.gameId) {
+            socket.data.activeGameId = current !== null ? current.gameId : null
+        }
     }
 }
 

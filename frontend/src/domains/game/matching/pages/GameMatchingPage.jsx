@@ -27,6 +27,10 @@ import RoomSettingsSummaryPanel from "../components/RoomSettingsSummaryPanel.jsx
 // F-20(AC-05): 저장 결과를 끝내 확인하지 못했다는 결론은 대기 표시·편집 패널과 함께 사라지면
 // 안 된다 — 둘 중 어느 쪽에도 묶이지 않은 자리에서 계속 보인다.
 import RoomSettingsResultNotice from "../components/RoomSettingsResultNotice.jsx"
+// F-21(AC-02): 인게임과 **같은** 추방 목록 본문을 그대로 쓴다 — 새 목록 UI를 만들지 않는다.
+// 이 본문은 목록·액션을 props로만 받으므로 InGamePlayerSessionProvider도 인게임 store도
+// 필요하지 않다(대기방에는 둘 다 없다). 상태는 useMatchingPage→useMatchingRoomKick이 소유한다.
+import SettingKickPlayerModalContent from "@/domains/game/ingame/components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalContent.jsx"
 
 export default function GameMatchingPage() {
   const {
@@ -63,6 +67,20 @@ export default function GameMatchingPage() {
     dismissSettingsResultNotice,
     roomSettings,
     roomAccessType,
+    canKick,
+    kickModalOpen,
+    openKickModal,
+    closeKickModal,
+    kickTargets,
+    kickPendingTarget,
+    kickStatus,
+    kickErrorCode,
+    isKicking,
+    canLookupKickResult,
+    requestKickConfirm,
+    cancelKickConfirm,
+    confirmKick,
+    lookupKickResult,
   } = useMatchingPage()
 
   // 로비와 같은 방식으로 패널 열림 상태만 화면이 소유합니다 — 친구 데이터·핸들러는
@@ -143,6 +161,55 @@ export default function GameMatchingPage() {
         >
           방 설정 변경
         </button>
+      ) : null}
+
+      {/*
+        F-21(AC-01/AC-02): 추방 진입은 방장에게만 있다. 비방장에게는 버튼 자체가 없고, 서버도
+        같은 판정을 독립적으로 다시 한다(버튼 상태는 권한 경계가 아니다). 설정 편집과 같은
+        자리를 쓰지 않도록 한 줄 아래에 둔다.
+      */}
+      {canKick && !settingsOpen && !kickModalOpen ? (
+        <button
+          type="button"
+          onClick={openKickModal}
+          aria-label="참가자 추방"
+          className="interactive-scale absolute left-1/2 top-[calc(50%+21rem)] z-30 -translate-x-1/2 cursor-pointer rounded-md border border-[#c9b892]/60 bg-black/55 px-4 py-2 font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,1.3vw,1.1rem)] font-bold text-[#f5f0e6]"
+        >
+          참가자 추방
+        </button>
+      ) : null}
+
+      {/*
+        확인 단계·실패 코드·결과 재조회는 전부 본문이 그리고, 상태는 공용 훅이 소유한다.
+        취소는 소켓 요청 0회이고, 성공하면 서버의 player_left_room이 남은 인원·준비를 갱신한다
+        (화면이 스스로 명단을 고치지 않는다).
+      */}
+      {kickModalOpen ? (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70">
+          <div className="relative flex max-h-[80vh] w-[min(38rem,90vw)] flex-col gap-2 overflow-hidden rounded-md border border-[#c9b892]/60 bg-black/85 p-6 text-[#f5f0e6]">
+            <SettingKickPlayerModalContent
+              targets={kickTargets}
+              pendingTarget={kickPendingTarget}
+              status={kickStatus}
+              errorCode={kickErrorCode}
+              isSending={isKicking}
+              canLookupResult={canLookupKickResult}
+              onRequestConfirm={requestKickConfirm}
+              onCancelConfirm={cancelKickConfirm}
+              onConfirmKick={confirmKick}
+              onLookupResult={lookupKickResult}
+            />
+            <button
+              type="button"
+              onClick={closeKickModal}
+              aria-label="추방 창 닫기"
+              data-sfx-kind="ui-cancel"
+              className="interactive-scale absolute right-4 top-4 cursor-pointer rounded-md border border-[#c9b892]/60 px-3 py-1 font-bold"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {/* ACK를 잃은 저장이 있으면 새 저장 대신 그 결과를 먼저 확인하게 한다 — 적용 여부를

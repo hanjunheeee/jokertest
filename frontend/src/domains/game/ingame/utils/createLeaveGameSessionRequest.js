@@ -8,17 +8,42 @@
  * game_ended나 다른 경로로 이미 세션이 바뀌었다면(늦게 도착한 이전 요청의 ack) store를
  * 건드리지 않는다. 서버 ack가 { ok:false }여도, 그리고 그 사이 이미 세션이 바뀌어 있어도
  * finalize는 호출하지 않는다 — 오직 "지금 이 gameId에 대한" 성공 ack만 finalize를 트리거한다.
+ *
+ * F-21(AC-05): gameId만으로는 부족하다. 같은 gameId가 그대로여도 그 사이에 **계정이 바뀌거나**
+ * (A→B→A) **연결이 교체되거나**(재로그인·재연결) **내 소속이 바뀔** 수 있다. 그때 도착한 옛
+ * ack로 현재 화면을 끝내면, 지금 진행 중인 판이 남의 요청 결과로 정리된다. 그래서 요청을 보낸
+ * 그 순간의 계정·소켓·소속을 함께 캡처하고, ack에서 넷을 모두 다시 확인한다.
+ *
+ * @param {object} deps
+ * @param {() => object|null} deps.getSocket - 현재 연결. ack 시점에 다시 불러 교체를 확인한다.
+ * @param {() => string|null} deps.getCurrentGameId - 현재 게임.
+ * @param {() => string|null} [deps.getCurrentAccountId] - 현재 인증 계정.
+ * @param {() => string|null} [deps.getCurrentMembershipId] - 그 게임에서의 내 소속 식별자.
  */
-export function createLeaveGameSessionRequest({ getSocket, getCurrentGameId, finalize, onFailure }) {
+export function createLeaveGameSessionRequest({
+  getSocket,
+  getCurrentGameId,
+  getCurrentAccountId = () => null,
+  getCurrentMembershipId = () => null,
+  finalize,
+  onFailure,
+}) {
   return () => {
     const socket = getSocket()
     if (!socket) return
 
     const requestedGameId = getCurrentGameId()
     if (!requestedGameId) return
+    const requestedAccountId = getCurrentAccountId()
+    const requestedMembershipId = getCurrentMembershipId()
 
     socket.emit("leave_game_session", { gameId: requestedGameId }, (response) => {
+      // 넷 중 하나라도 달라졌으면 이 ack는 더 이상 "지금 이 화면"의 것이 아니다. 실패 안내도
+      // 띄우지 않는다 — 그 실패는 이미 지나간 소속의 사실이다.
       if (getCurrentGameId() !== requestedGameId) return
+      if (getCurrentAccountId() !== requestedAccountId) return
+      if (getSocket() !== socket) return
+      if (getCurrentMembershipId() !== requestedMembershipId) return
       if (response?.ok) {
         finalize()
         return
