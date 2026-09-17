@@ -35,26 +35,28 @@ function clearNightPrivateResultOnNightEntry(current) {
  * 발행된 명령, 같은 roomId로 다시 만들어진 방의 옛 판, 나갔다 다시 들어온 같은 계정의 새
  * 소속. 서버는 이 값들을 제거 **전에** 캡처해 싣는다.
  *
- * 구버전 payload·구버전 스냅샷을 위해 값이 **양쪽 모두에 있을 때만** 대조한다(한쪽이 없으면
- * 그 항목은 판정에 쓰지 않는다) — 없는 값을 불일치로 보면 정상 추방이 전달되지 않는다.
+ * 네 값은 **전부 있어야 하고 전부 같아야 한다**(matchingStore의 isCurrentRoomKickEvent와 같은
+ * 엄격함이다). 한쪽이 없을 때 통과시키면 그 항목은 판정에서 사라지는 것과 같다 — 서버 기동
+ * 식별자가 빠진 사건 하나가 재시작 전 명령을 현재 판정으로 통과시키고, 소속이 빠진 사건 하나가
+ * 나갔다 다시 들어온 새 소속을 지운다. 서버는 game_started·snapshot·추방 사건 모두에 이 값들을
+ * 싣는다(buildGameStartedPayload·buildSessionSnapshot·kick_game_player) — 없는 값을 관대하게
+ * 봐 줄 옛 권한을 만들지 않는다.
  */
 export function isCurrentGameKickEvent(store, payload) {
-  if (payload === null || typeof payload !== "object") return false
-  if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return false
-  if (store?.gameId !== payload.gameId) return false
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return false
+  const sameId = (mine, theirs) =>
+    typeof mine === "string" && mine.length > 0 && mine === theirs
+
+  if (!sameId(payload.gameId, store?.gameId)) return false
 
   const state = store?.state ?? null
-  const matches = (mine, theirs) =>
-    typeof mine !== "string" || mine.length === 0
-    || typeof theirs !== "string" || theirs.length === 0
-    || mine === theirs
-  if (!matches(state?.roomInstanceId, payload.roomInstanceId)) return false
-  if (!matches(state?.bootEpoch, payload.bootEpoch)) return false
+  if (!sameId(payload.roomInstanceId, state?.roomInstanceId)) return false
+  if (!sameId(payload.bootEpoch, state?.bootEpoch)) return false
 
   const seated = (state?.players ?? []).find((player) => player?.uuid === payload.targetUuid)
   // roster에 없는 계정에 대한 사건은 이 판의 사실이 아니다.
   if (!seated) return false
-  return matches(seated.membershipId, payload.targetMembershipId)
+  return sameId(payload.targetMembershipId, seated.membershipId)
 }
 
 /**

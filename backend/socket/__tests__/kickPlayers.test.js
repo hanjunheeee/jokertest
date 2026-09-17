@@ -1187,20 +1187,177 @@ test('AC-04: 본인 추방·이미 나간 대상의 거부도 같은 ID로는 �
     assert.equal(goneReplay.replayed, true)
 })
 
-test('AC-04(A-08): 거부 기록이 표를 다 채워 실제 추방을 막지는 못한다', async () => {
+/** 남의 결정으로 표를 count개까지 채운다(전부 유효·미만료). 판정은 프로덕션 경로 그대로다. */
+function seedForeignReceipts(count, prefix) {
+    const now = Date.now()
+    const expiresAt = now + kickReceiptStore.KICK_RECEIPT_TTL_MS
+    for (let index = 0; index < count; index += 1) {
+        kickReceiptStore.__seedKickReceiptForTests(
+            kickReceiptStore.kickReceiptKey(BOOT, 'someone-else', `${prefix}-${index}`),
+            {
+                command: 'ROOM',
+                fingerprint: `fp-${prefix}-${index}`,
+                result: { ok: true, status: 'KICKED' },
+                decidedAt: now,
+                expiresAt,
+            },
+        )
+    }
+}
+
+/** 진행 중 세션의 관측 가능한 전부(깊은 복사본) — 참조 비교로 무변경을 오판하지 않는다. */
+function snapshotSession(session) {
+    return JSON.stringify({
+        phase: session.phase,
+        hostUuid: session.hostUuid,
+        dayIndex: session.dayIndex,
+        participationRevision: session.participationRevision ?? 0,
+        players: [...session.players.values()].map((player) => ({
+            uuid: player.uuid,
+            alive: player.alive,
+            deathReason: player.deathReason ?? null,
+            isParticipating: player.isParticipating !== false,
+            membershipId: player.membershipId ?? null,
+        })),
+    })
+}
+
+const REJECTION_LIMIT = kickReceiptStore.KICK_REJECTION_RECEIPT_MAX_ENTRIES
+
+test('AC-04(대기방·마지막 거부 자리): 기록된 NOT_HOST는 방장 승계 뒤에도 그대로이고 아무 것도 실행되지 않는다', async () => {
+    const { io, sockets, room } = await setupRoom('rk-8', ['rk-9', 'rk-10'])
+    // 거부 수위의 **바로 아래**까지 남의 결정으로 채운다 — 이 거부가 마지막 한 자리를 쓴다.
+    // 포화 직전에도 결정은 반드시 보존돼야 한다는 것이 이 시험의 전부다.
+    seedForeignReceipts(REJECTION_LIMIT - 1, 'sat-room')
+
+    const payload = roomKickPayload(room, 'rk-8', 'rk-10', {
+        requesterMembershipId: seatOf(room, 'rk-9').membershipId,
+    })
+    const first = kickRoomPlayer(io, sockets['rk-9'], 'rk-9', payload)
+    assert.equal(first.response.code, CODES.NOT_HOST)
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT, '거부가 기록되지 않았다')
+
+    // 방장이 나가 요청자가 새 방장이 된다.
+    matchmaking.__testables.removeFromRoom(io, sockets['rk-8'], 'rk-8')
+    assert.equal((await callAsPromise(handleGetCurrentRoom, 'rk-9')).room.hostUuid, 'rk-9')
+
+    const before = snapshotRooms()
+    const broadcastsBefore = io.broadcasts.length
+    const replay = kickRoomPlayer(io, sockets['rk-9'], 'rk-9', payload)
+
+    assert.equal(replay.response.ok, false)
+    assert.equal(replay.response.code, CODES.NOT_HOST, '포화 근처의 거부가 승계 뒤에 실행됐다')
+    assert.equal(replay.response.replayed, true)
+    assert.equal(snapshotRooms(), before)
+    assert.equal(io.broadcasts.length, broadcastsBefore)
+    // 조회도 같은 결정을 그대로 돌려주고, 유효 기록은 하나도 축출되지 않았다.
+    const looked = getKickResult(io, sockets['rk-9'], 'rk-9', { bootEpoch: BOOT, requestId: payload.requestId })
+    assert.equal(looked.code, CODES.NOT_HOST)
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
+})
+
+test('AC-04(대기방·포화): 거부를 보존할 수 없으면 확정 거부 대신 **미결정**으로 답한다', async () => {
+    const { io, sockets, room } = await setupRoom('rk-11', ['rk-12', 'rk-13'])
+    seedForeignReceipts(REJECTION_LIMIT, 'full-room')
+    const before = snapshotRooms()
+
+    const payload = roomKickPayload(room, 'rk-11', 'rk-13', {
+        requesterMembershipId: seatOf(room, 'rk-12').membershipId,
+    })
+    const { response } = kickRoomPlayer(io, sockets['rk-12'], 'rk-12', payload)
+
+    // 기록되지 않는 NOT_HOST는 그 자리에서 거짓이 된다(승계 뒤 같은 요청이 실행될 수 있고,
+    // 기한 안의 재조회도 UNKNOWN이다). 결정하지 못했다면 결정했다고 답하지 않는다.
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.RECEIPT_CAPACITY, '보존되지 않는 확정 거부를 돌려줬다')
+    assert.equal(snapshotRooms(), before)
+    // 유효 기록은 축출되지 않았고 새 기록도 생기지 않았다.
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
+    const looked = getKickResult(io, sockets['rk-12'], 'rk-12', { bootEpoch: BOOT, requestId: payload.requestId })
+    assert.equal(looked.status, 'UNKNOWN', '미결정인데 결과가 확정된 것처럼 보인다')
+})
+
+test('AC-04(게임·마지막 거부 자리): 기록된 NOT_HOST는 방장 승계 뒤에도 그대로이고 판은 그대로다', () => {
+    const session = commitDeterministicSession({
+        roomId: 'room-gr1', gameId: 'game-gr1', hostUuid: 'gr1-a', uuids: ['gr1-a', 'gr1-b', 'gr1-c', 'gr1-d'],
+    })
+    const io = createFakeIo([])
+    seedForeignReceipts(REJECTION_LIMIT - 1, 'sat-game')
+
+    const payload = gameKickPayload(session, 'gr1-b', 'gr1-d')
+    const first = kickGamePlayer(io, createFakeSocket('gr1-b'), 'gr1-b', payload)
+    assert.equal(first.response.code, CODES.NOT_HOST)
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT, '거부가 기록되지 않았다')
+
+    // 방장이 스스로 나가 요청자가 새 방장이 된다.
+    handleLeaveGameSession(io, createFakeSocket('gr1-a'), 'gr1-a', { gameId: session.id }, countingCallback().callback)
+    assert.equal(session.hostUuid, 'gr1-b')
+
+    const before = snapshotSession(session)
+    const broadcastsBefore = io.broadcasts.length
+    const replay = kickGamePlayer(io, createFakeSocket('gr1-b'), 'gr1-b', payload)
+
+    assert.equal(replay.response.ok, false)
+    assert.equal(replay.response.code, CODES.NOT_HOST, '포화 근처의 거부가 승계 뒤에 실행됐다')
+    assert.equal(replay.response.replayed, true)
+    assert.equal(snapshotSession(session), before)
+    assert.equal(io.broadcasts.length, broadcastsBefore)
+    assert.equal(gameSessionCore.isParticipatingInSession(session, 'gr1-d'), true)
+
+    const looked = getKickResult(io, createFakeSocket('gr1-b'), 'gr1-b', { bootEpoch: BOOT, requestId: payload.requestId })
+    assert.equal(looked.code, CODES.NOT_HOST)
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
+})
+
+test('AC-04(게임·포화): 거부를 보존할 수 없으면 확정 거부 대신 **미결정**으로 답하고 판은 그대로다', () => {
+    const session = commitDeterministicSession({
+        roomId: 'room-gr2', gameId: 'game-gr2', hostUuid: 'gr2-a', uuids: ['gr2-a', 'gr2-b', 'gr2-c', 'gr2-d'],
+    })
+    const io = createFakeIo([])
+    seedForeignReceipts(REJECTION_LIMIT, 'full-game')
+    const before = snapshotSession(session)
+
+    const payload = gameKickPayload(session, 'gr2-b', 'gr2-d')
+    const { response } = kickGamePlayer(io, createFakeSocket('gr2-b'), 'gr2-b', payload)
+
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.RECEIPT_CAPACITY, '보존되지 않는 확정 거부를 돌려줬다')
+    assert.equal(snapshotSession(session), before)
+    assert.equal(io.broadcasts.length, 0)
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
+    const looked = getKickResult(io, createFakeSocket('gr2-b'), 'gr2-b', { bootEpoch: BOOT, requestId: payload.requestId })
+    assert.equal(looked.status, 'UNKNOWN')
+})
+
+test('AC-04(A-08): 거부 기록은 커밋 자리를 잠식하지 않는다 — 수위를 넘어도 실제 추방은 그대로 성공한다', async () => {
     const { io, sockets, room } = await setupRoom('rk-6', ['rk-7'])
 
     // 인증만 된 계정이면 누구나 무효한 요청을 무한히 보낼 수 있다 — 거부 기록이 커밋용
-    // 자리까지 먹으면 그 자체가 추방 차단 수단이 된다.
-    const rejectionLimit = kickReceiptStore.KICK_REJECTION_RECEIPT_MAX_ENTRIES
-    for (let index = 0; index < rejectionLimit + 50; index += 1) {
+    // 자리까지 먹으면 그 자체가 추방 차단 수단이 된다. 수위를 넘은 요청은 **결정하지 않고**
+    // 미결정으로 답하므로(위 두 시험), 기록되지 않은 확정 거부는 하나도 생기지 않는다.
+    let decided = 0
+    let firstDecidedRequestId = null
+    for (let index = 0; index < REJECTION_LIMIT + 50; index += 1) {
         const selfPayload = roomKickPayload(room, 'rk-6', 'rk-7', {
             targetUuid: 'rk-6',
             targetMembershipId: seatOf(room, 'rk-6').membershipId,
         })
-        assert.equal(kickRoomPlayer(io, sockets['rk-6'], 'rk-6', selfPayload).response.code, CODES.SELF_KICK)
+        const { response } = kickRoomPlayer(io, sockets['rk-6'], 'rk-6', selfPayload)
+        assert.equal(response.ok, false)
+        if (response.code === CODES.SELF_KICK) {
+            decided += 1
+            if (firstDecidedRequestId === null) firstDecidedRequestId = selfPayload.requestId
+        } else {
+            assert.equal(response.code, CODES.RECEIPT_CAPACITY)
+        }
     }
-    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), rejectionLimit, '거부가 수위를 넘겨 기록됐다')
+    assert.equal(decided, REJECTION_LIMIT, '거부가 수위를 넘겨 기록됐거나 모자라게 기록됐다')
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
+    // 맨 처음의 결정은 그 뒤 2000여 건의 요청에도 축출되지 않았다.
+    assert.equal(
+        getKickResult(io, sockets['rk-6'], 'rk-6', { bootEpoch: BOOT, requestId: firstDecidedRequestId }).code,
+        CODES.SELF_KICK,
+    )
 
     // 그 뒤에도 실제 추방은 그대로 성공한다.
     const { response } = kickRoomPlayer(io, sockets['rk-6'], 'rk-6', roomKickPayload(room, 'rk-6', 'rk-7'))
@@ -1258,6 +1415,96 @@ test('AC-05(게임): 추방 대상의 채널 leave가 비동기로 거부되면 
 })
 
 // ═════════════════════════════════════════════════════════════════════════════
+// AC-05/AC-06 — 옛 채널 정리의 **늦은 완료·늦은 거부**는 새 소속의 것이 아니다
+//
+// leave가 비동기면 그 결과는 정리를 시작한 순간의 사실이 아니다. 기다리는 사이 같은 소켓이
+// 새 소속(같은 방 재입장·새 대기방)을 가지면, 늦은 거부의 disconnect는 **새 소속의 연결**을
+// 끊고 늦은 완료는 **새 소속의 채널 가입**을 대신 떼어 간다.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** 바깥에서 결말을 정하는 Promise 하나. */
+function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+}
+
+test('AC-05(게임): 추방된 대상이 **새 대기방**을 가진 뒤 도착한 옛 채널 정리 실패는 그 연결을 끊지 않는다', async () => {
+    const session = commitDeterministicSession({
+        roomId: 'room-own1', gameId: 'game-own1', hostUuid: 'own1-a', uuids: ['own1-a', 'own1-b', 'own1-c', 'own1-d'],
+    })
+    const targetSocket = createFakeSocket('own1-d')
+    const gate = deferred()
+    // 비동기 adapter: 이탈의 성패는 **나중에** 알려진다.
+    targetSocket.leave = () => gate.promise
+    const disconnects = trackDisconnect(targetSocket)
+    const io = createFakeIo([targetSocket])
+
+    const kicked = kickGamePlayer(io, createFakeSocket('own1-a'), 'own1-a', gameKickPayload(session, 'own1-a', 'own1-d'))
+    assert.equal(kicked.response.ok, true)
+
+    // 추방된 계정이 로비로 돌아가 **새 방**을 만들었다 — 지금 이 연결은 그 방의 것이다.
+    const created = await callAsPromise(
+        handleCreateRoom, io, targetSocket, 'own1-d', validSettingsPayload({ maxPlayers: 8, jokerCount: 1 }),
+    )
+    assert.equal(created.ok, true, JSON.stringify(created))
+
+    // 이제서야 옛 게임 채널 이탈이 거부된다.
+    gate.reject(new Error('leave 실패(테스트 주입)'))
+    await flushMicrotasks()
+
+    assert.deepEqual(disconnects, [], '옛 이탈의 늦은 거부가 새 소속의 연결을 끊었다')
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.playerRoom.find(([u]) => u === 'own1-d')?.[1], created.room.roomId)
+})
+
+test('AC-06(대기방): 옛 이탈의 leave가 **늦게 끝나며** 새 소속의 채널까지 떼면 그 가입을 되돌린다', async () => {
+    const { io, sockets, room } = await setupRoom('own2-h', ['own2-t'])
+    const targetSocket = sockets['own2-t']
+    const gate = deferred()
+    // 실제 채널 제거가 완료 시점에 일어나는 adapter를 재현한다.
+    targetSocket.leave = (channelId) => gate.promise.then(() => { targetSocket.rooms.delete(channelId) })
+    const disconnects = trackDisconnect(targetSocket)
+
+    const kicked = kickRoomPlayer(io, sockets['own2-h'], 'own2-h', roomKickPayload(room, 'own2-h', 'own2-t'))
+    assert.equal(kicked.response.ok, true)
+    assert.equal(targetSocket.rooms.has(room.roomId), true, '아직 이탈이 끝나지 않았다')
+
+    // 추방된 계정이 **같은 방에 새 소속으로** 다시 들어왔다(새 membershipId를 받는다).
+    await handleJoinRoomByCode(io, targetSocket, 'own2-t', room.roomCode)
+    const reseated = (await callAsPromise(handleGetCurrentRoom, 'own2-t')).room
+    assert.equal(reseated.roomId, room.roomId)
+    assert.notEqual(seatOf(reseated, 'own2-t').membershipId, seatOf(room, 'own2-t').membershipId)
+
+    // 이제서야 옛 이탈이 끝나며 채널에서 뗀다 — 그 대상은 이미 새 소속의 가입이다.
+    gate.resolve()
+    await flushMicrotasks()
+
+    assert.deepEqual(disconnects, [])
+    assert.equal(targetSocket.rooms.has(room.roomId), true, '옛 이탈의 늦은 완료가 새 소속의 채널을 떼어 갔다')
+})
+
+test('AC-06(대기방): 같은 방에 다시 앉은 뒤 도착한 옛 이탈의 **거부**도 그 연결을 끊지 않는다', async () => {
+    const { io, sockets, room } = await setupRoom('own3-h', ['own3-t'])
+    const targetSocket = sockets['own3-t']
+    const gate = deferred()
+    targetSocket.leave = () => gate.promise
+    const disconnects = trackDisconnect(targetSocket)
+
+    kickRoomPlayer(io, sockets['own3-h'], 'own3-h', roomKickPayload(room, 'own3-h', 'own3-t'))
+    await handleJoinRoomByCode(io, targetSocket, 'own3-t', room.roomCode)
+
+    gate.reject(new Error('leave 실패(테스트 주입)'))
+    await flushMicrotasks()
+
+    assert.deepEqual(disconnects, [], '늦은 거부가 새 소속의 연결을 끊었다')
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.playerRoom.find(([u]) => u === 'own3-t')?.[1], room.roomId)
+    assert.equal(targetSocket.rooms.has(room.roomId), true)
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
 // AC-03 — 이탈로 분모가 줄어든 낮 투표·재판의 완료 재평가
 //
 // 두 시점이 있다: **이탈 직후**(이미 전원 제출인 경우)와 **뒤따르는 마지막 제출 직후**.
@@ -1311,6 +1558,89 @@ test('AC-03: 이탈 뒤 **마지막 제출**이 들어오면 그 제출 직후 �
     assert.equal(session.dayVoteResolution.tribunalTargetUuid, 'dv2-c')
     assert.equal(session.phase, 'TRIBUNAL')
     assert.equal(deliveredCount(sockets, 'day_vote_resolved'), 3)
+})
+
+/**
+ * 지정한 계정의 투표 참여 저장만 거부하는 대역. 나머지 계정은 그대로 성공한다 —
+ * "마지막 한 표의 저장만 실패했다"를 정확히 재현하기 위함이다(실제 DB는 쓰지 않는다).
+ */
+function failVotePersistenceFor(failingUuid) {
+    const attempts = []
+    gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests(async ({ userId }) => {
+        attempts.push(userId)
+        if (userId === failingUuid) throw new Error('투표 참여 저장 실패(테스트 주입)')
+        return { recorded: true }
+    })
+    return attempts
+}
+
+test('AC-03: 이탈 뒤 마지막 제출이 **비기권**이면 그 제출 직후 한 번 판정된다(저장 성공)', async () => {
+    const { session, io, sockets } = setupSessionAtDayVote({
+        roomId: 'room-dv4', gameId: 'game-dv4', hostUuid: 'dv4-h',
+        uuids: ['dv4-t', 'dv4-h', 'dv4-b', 'dv4-c'],
+    })
+
+    await castDayVote(io, sockets, 'dv4-h', session.id, 'dv4-c')
+    await castDayVote(io, sockets, 'dv4-b', session.id, 'dv4-c')
+    kickGamePlayer(io, sockets['dv4-h'], 'dv4-h', gameKickPayload(session, 'dv4-h', 'dv4-t'))
+    assert.equal(session.dayVoteResolution, null, '아직 dv4-c가 제출하지 않았다')
+
+    // 비기권 최초 라운드 제출은 참여 저장을 **await한 뒤에** ack된다(기권 경로와 다른 길이다).
+    const ack = await castDayVote(io, sockets, 'dv4-c', session.id, 'dv4-b')
+
+    assert.equal(ack.ok, true)
+    assert.notEqual(session.dayVoteResolution, null, '비기권 마지막 제출 직후 재평가가 일어나지 않았다')
+    assert.equal(session.dayVoteResolution.tribunalTargetUuid, 'dv4-c')
+    assert.equal(session.phase, 'TRIBUNAL')
+    assert.equal(deliveredCount(sockets, 'day_vote_resolved'), 3, '판정 결과는 참가자마다 한 번씩이다')
+})
+
+test('AC-03: 마지막 비기권 제출의 **참여 저장이 실패해도** 이탈로 짧아진 라운드는 그 자리에서 판정된다', async () => {
+    const { session, io, sockets } = setupSessionAtDayVote({
+        roomId: 'room-dv5', gameId: 'game-dv5', hostUuid: 'dv5-h',
+        uuids: ['dv5-t', 'dv5-h', 'dv5-b', 'dv5-c'],
+    })
+    const attempts = failVotePersistenceFor('dv5-c')
+
+    await castDayVote(io, sockets, 'dv5-h', session.id, 'dv5-c')
+    await castDayVote(io, sockets, 'dv5-b', session.id, 'dv5-c')
+    kickGamePlayer(io, sockets['dv5-h'], 'dv5-h', gameKickPayload(session, 'dv5-h', 'dv5-t'))
+    assert.equal(session.dayVoteResolution, null)
+
+    const ack = await castDayVote(io, sockets, 'dv5-c', session.id, 'dv5-b')
+
+    // 실패 ACK의 사실은 그대로다 — 재시도 가능한 저장 실패다(성공으로 바꾸지 않는다).
+    assert.equal(ack.ok, false)
+    assert.equal(ack.code, 'VOTE_PERSIST_FAILED')
+    assert.deepEqual(attempts, ['dv5-h', 'dv5-b', 'dv5-c'], '저장은 세 번 시도됐어야 한다')
+
+    // 표는 이미 core에 커밋됐으므로 완료 재평가는 저장 성패와 무관하게 똑같이 일어난다 —
+    // 그러지 않으면 이 라운드는 DB 사정 하나로 deadline까지 멈춘 채 남는다.
+    assert.notEqual(session.dayVoteResolution, null, '저장 실패가 이탈 후 완료 재평가를 삼켰다')
+    assert.equal(session.dayVoteResolution.tribunalTargetUuid, 'dv5-c')
+    assert.equal(session.phase, 'TRIBUNAL')
+    // 판정·방송은 성공 경로와 **같은 한 번**이다(중복 판정·중복 방송이 없다).
+    assert.equal(deliveredCount(sockets, 'day_vote_resolved'), 3)
+})
+
+test('AC-03(경계): 이탈이 없던 라운드는 마지막 비기권 제출의 저장이 실패해도 판정되지 않는다', async () => {
+    const { session, io, sockets } = setupSessionAtDayVote({
+        roomId: 'room-dv6', gameId: 'game-dv6', hostUuid: 'dv6-h',
+        uuids: ['dv6-h', 'dv6-b', 'dv6-c', 'dv6-d'],
+    })
+    failVotePersistenceFor('dv6-d')
+
+    await castDayVote(io, sockets, 'dv6-h', session.id, 'dv6-c')
+    await castDayVote(io, sockets, 'dv6-b', session.id, 'dv6-c')
+    await castDayVote(io, sockets, 'dv6-c', session.id, 'dv6-b')
+    const ack = await castDayVote(io, sockets, 'dv6-d', session.id, 'dv6-c')
+
+    assert.equal(ack.ok, false)
+    assert.equal(ack.code, 'VOTE_PERSIST_FAILED')
+    // 저장 실패 경로를 재평가에 이은 것이 이탈 없는 라운드의 기존 대기 계약을 건드리지 않는다.
+    assert.equal(session.dayVoteResolution, null, '이탈이 없는 라운드의 기존 대기 계약이 깨졌다')
+    assert.equal(session.phase, 'DAY')
+    assert.equal(deliveredCount(sockets, 'day_vote_resolved'), 0)
 })
 
 test('AC-03(경계): 이탈이 없던 라운드는 전원이 투표해도 제출 직후에 판정되지 않는다', async () => {

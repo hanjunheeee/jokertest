@@ -206,7 +206,7 @@ test("AC-02: 확정된 개인 퇴장은 그 방만 비우고 로비로 한 번 �
   view.unmount()
 })
 
-test("AC-05: 대기방 추방은 진행 중인 게임 상태를 건드리지 않는다", () => {
+test("AC-05: 대기방 추방은 진행 중인 게임 상태도, 그 게임을 보고 있는 화면도 건드리지 않는다", () => {
   const socket = createFakeSocket()
   seedRoom()
   act(() => {
@@ -226,6 +226,9 @@ test("AC-05: 대기방 추방은 진행 중인 게임 상태를 건드리지 않
 
   assert.equal(useMatchingStore.getState().isInRoom, false)
   assert.equal(useInGameStore.getState().gameId, "game-9", "그 방이 소유하지 않은 게임은 그대로다")
+  // 상태만 좁게 비우고 이동은 그대로 하면, 진행 중인 판을 보던 사용자가 옛 대기방 사건
+  // 하나로 그 화면에서 쫓겨난다(상태는 남았는데 화면만 로비인 어긋남이다).
+  assert.deepEqual(view.paths, ["/game-matching"], "별개인 진행 중 게임의 화면에서 쫓아냈다")
   view.unmount()
 })
 
@@ -265,6 +268,46 @@ test("AC-05: 옛 게임의 추방 사건이 그 사이 들어간 **새 대기방
   assert.equal(room.players.length, 2)
   // 그 사건이 소유한 것은 게임뿐이다.
   assert.equal(useInGameStore.getState().gameId, null)
+  // 이동도 마찬가지다 — 지금 이 사용자가 보고 있는 것은 그 새 대기방이다.
+  assert.deepEqual(view.paths, ["/game-matching"], "옛 게임 사건이 새 대기방 화면에서 쫓아냈다")
+  view.unmount()
+})
+
+test("AC-05/AC-06: 신원(방 인스턴스·서버 기동·내 소속)이 하나라도 빠진 추방 사건은 적용되지 않는다", () => {
+  const socket = createFakeSocket()
+  seedGame()
+  act(() => setSocket(socket))
+  const view = mountReceiver()
+
+  // 값이 없을 때 통과시키면 그 항목은 판정에서 사라지는 것과 같다 — 재시작 전 명령, 같은
+  // roomId로 다시 만들어진 방의 옛 판, 나갔다 다시 들어온 새 소속이 전부 통과한다.
+  const incomplete = [
+    gameKickedEvent({ roomInstanceId: undefined }),
+    gameKickedEvent({ roomInstanceId: "" }),
+    gameKickedEvent({ bootEpoch: undefined }),
+    gameKickedEvent({ bootEpoch: null }),
+    gameKickedEvent({ targetMembershipId: undefined }),
+    gameKickedEvent({ gameId: "" }),
+  ]
+  for (const event of incomplete) act(() => socket.deliver("game_kicked", event))
+
+  assert.equal(useInGameStore.getState().gameId, "game-9")
+  assert.deepEqual(view.paths, ["/game-matching"])
+  view.unmount()
+})
+
+test("AC-05/AC-06: 서버가 신원을 싣지 않은 옛 스냅샷 위에서는 어떤 추방 사건도 적용되지 않는다", () => {
+  const socket = createFakeSocket()
+  // roomInstanceId·bootEpoch가 없는 상태(구버전 적재)다. 여기서 관대하게 통과시키면 없는
+  // 신원이 곧 권한이 된다 — 그런 옛 권한은 만들지 않는다.
+  seedGame({ roomInstanceId: null, bootEpoch: null })
+  act(() => setSocket(socket))
+  const view = mountReceiver()
+
+  act(() => socket.deliver("game_kicked", gameKickedEvent()))
+
+  assert.equal(useInGameStore.getState().gameId, "game-9")
+  assert.deepEqual(view.paths, ["/game-matching"])
   view.unmount()
 })
 

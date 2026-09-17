@@ -300,6 +300,79 @@ test("AC-05: 응답이 돌아오기 전에 소켓이 교체되면 그 응답은 
   assert.equal(result.current.status, KICK_REQUEST_STATUS.SENDING)
 })
 
+test("AC-05: 결과 조회를 보낸 뒤 시작된 새 요청을 옛 조회의 늦은 ACK가 덮지 않는다", () => {
+  const socket = setUp()
+  const { result } = mountKick()
+
+  // 1) 첫 추방의 ACK를 놓쳐 결과를 조회한다(응답은 아직 오지 않는다).
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  act(() => result.current.lookupResult())
+  const staleLookup = socket.emitted[1]
+
+  // 2) 사용자가 목록에서 대상을 다시 확인하고 새 추방을 보낸다.
+  act(() => result.current.reset())
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(socket.emitted.length, 3)
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.SENDING)
+
+  // 3) 이제서야 옛 조회가 답한다 — 이 답은 **지난 요청**의 것이다.
+  act(() => staleLookup.ack({ ok: true, status: "KICKED", replayed: true }))
+
+  assert.equal(
+    result.current.status, KICK_REQUEST_STATUS.SENDING,
+    "옛 조회의 결과가 진행 중인 새 요청을 성공으로 덮었다",
+  )
+  // 진행 중 잠금도 풀리지 않는다 — 풀리면 같은 대상에게 세 번째 요청이 나갈 수 있다.
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(socket.emitted.length, 3)
+
+  // 새 요청 자신의 ACK는 그대로 반영된다.
+  act(() => socket.emitted[2].ack({ ok: false, code: "ALREADY_LEFT" }))
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.FAILED)
+  assert.equal(result.current.errorCode, "ALREADY_LEFT")
+})
+
+test("AC-04: UNKNOWN을 받으면 확인이 풀려 같은 확인으로 두 번째 추방이 나가지 않는다", () => {
+  const socket = setUp()
+  const { result } = mountKick()
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  // ACK를 놓친 상태 — 확인 대상이 아직 남아 있다.
+  assert.equal(result.current.pendingTarget?.uuid, TARGET)
+
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[1].ack({ ok: true, status: "UNKNOWN" }))
+
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.UNKNOWN)
+  assert.equal(result.current.pendingTarget, null, "UNKNOWN 뒤에는 지금 목록에서 다시 확인해야 한다")
+
+  // 확인이 없으므로 승인은 요청을 만들지 않는다(자동 재전송도 없다).
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(socket.emitted.length, 2, "UNKNOWN 상태에서 옛 확인으로 새 추방이 나갔다")
+})
+
+test("AC-05: 안내를 닫은 뒤 도착한 옛 ACK는 닫힌 안내를 되살리지 않는다", () => {
+  const socket = setUp()
+  const { result } = mountKick()
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  const pending = socket.emitted[0]
+
+  act(() => result.current.reset())
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.IDLE)
+
+  act(() => pending.ack({ ok: false, code: "NOT_HOST" }))
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.IDLE)
+  assert.equal(result.current.errorCode, null)
+  // 재조회 키는 그대로 남는다 — 서버 기록은 안내를 닫았다고 사라지지 않는다.
+  assert.equal(result.current.canLookupResult, true)
+})
+
 // ── AC-03: 참여 상태와 재판 취소의 실제 store 반영 ────────────────────────────
 
 test("AC-03: session_participation_changed는 생존을 건드리지 않고 참여만 바꾸며 방장 승계를 반영한다", () => {

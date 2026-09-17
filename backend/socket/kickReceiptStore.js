@@ -146,8 +146,12 @@ function hasKickReceiptCapacity() {
 
 /**
  * **거부 결정**을 담을 자리가 있는가. 커밋용 자리를 남겨 두기 위해 더 낮은 수위를 쓴다
- * (KICK_REJECTION_RECEIPT_MAX_ENTRIES 참고). false여도 호출부는 그대로 거부 응답을 한다 —
- * 기록하지 못했다는 것뿐이고, 거부는 아무 상태도 바꾸지 않았다.
+ * (KICK_REJECTION_RECEIPT_MAX_ENTRIES 참고).
+ *
+ * false이면 호출부는 **거부를 결정하지 않는다** — 보존되지 않는 확정 거부는 그 자리에서
+ * 거짓이 되기 때문이다(같은 요청이 나중에 다시 판정돼 실행될 수 있고, 기한 안의 재조회도
+ * UNKNOWN이다). 그 대신 명시적으로 미결정인 RECEIPT_CAPACITY로 답한다. 이 함수는 유효 기록을
+ * 축출하지 않으며, 수위는 성공 커밋의 자리를 남기기 위한 것이지 역사를 지우기 위한 것이 아니다.
  */
 function hasKickRejectionCapacity() {
     pruneKickReceipts()

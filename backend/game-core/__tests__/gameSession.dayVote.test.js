@@ -478,6 +478,44 @@ test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_
     assert.equal(session.phase, 'DAY')
 })
 
+// F-21(AC-03): 커밋 직전 재검증은 집계 수치만이 아니라 **동률 후보 집합**까지 본다.
+// outcome·대상·표수·기권 수가 모두 같으면서 공동 최다 득표자만 달라지는 표 변화가 가능한데,
+// 재투표 제외 목록은 바로 그 집합에서 나온다 — 준비된 목록을 그대로 커밋하면 지금의 동률과
+// **다른 후보**가 다음 라운드에서 배제된다.
+test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합이 달라진 준비 결과는 커밋되지 않는다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-tie-set' })
+
+    // 1) A·C 동점(각 2표, 기권 0)으로 재투표 판정을 준비한다.
+    submitDayVote(uuidA, session.id, uuidC)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+    submitDayVote(uuidD, session.id, uuidA)
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(prepared.resolution.outcome, 'REVOTE')
+    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [uuidA, uuidC].sort())
+
+    // 2) 커밋 전에 표가 바뀌어 **B·D 동점**이 됐다 — 집계 수치(4표·기권 0)와 outcome·대상은 그대로다.
+    submitDayVote(uuidA, session.id, uuidD)
+    submitDayVote(uuidB, session.id, uuidD)
+    submitDayVote(uuidC, session.id, uuidB)
+    submitDayVote(uuidD, session.id, uuidB)
+
+    const committed = commitDayVoteResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(committed, { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' })
+    // 아무 것도 바뀌지 않는다 — 라운드도, 제외 집합도, 표도 그대로다.
+    assert.equal(session.dayVoteResolution, null)
+    assert.equal(session.dayVoteRound ?? 1, 1)
+    assert.equal(session.dayVotes.size, 4)
+    assert.equal(session.phase, 'DAY')
+
+    // 지금의 표로 다시 준비하면 지금의 동률 후보가 배제된다.
+    const reprepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.deepEqual(reprepared.resolution.revoteExcludedUuids, [uuidB, uuidD].sort())
+    assert.equal(commitDayVoteResolution(reprepared.session, reprepared.resolution).ok, true)
+    assert.deepEqual([...session.dayVoteExcludedUuids].sort(), [uuidB, uuidD].sort())
+})
+
 test('commitDayVoteResolution: ABSTAINED 결과도 phase를 NIGHT로 전이한다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-abstain-1' })
     submitDayVote(uuidA, session.id, null)

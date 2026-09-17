@@ -68,6 +68,14 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
   // 응답이 돌아왔을 때 "이 응답이 아직 내 것인가"를 판정하는 세대들이다. 렌더 시점 클로저를
   // 캡처하지 않고 호출 시점에 다시 읽는다(전역 소켓 수신기들과 같은 이유).
   const generationRef = useRef(0)
+  /**
+   * **요청 세대.** 계정 세대(generationRef)만으로는 부족하다 — 같은 계정·같은 연결·같은 방
+   * 안에서도 요청은 여러 번 오간다. 결과 조회를 보내 놓고 응답 전에 새 추방을 보내면, 뒤늦게
+   * 도착한 옛 조회의 ACK가 진행 중인 SENDING을 SUCCEEDED/FAILED로 덮어써 화면이 다른 요청의
+   * 결과를 말하게 되고, SENDING이 풀린 틈에 같은 대상에게 두 번째 요청까지 나갈 수 있다.
+   * 전송·조회를 시작할 때마다 올리고, 응답은 자기 세대일 때만 화면을 바꾼다.
+   */
+  const requestGenerationRef = useRef(0)
   const lastReceiptRef = useRef(null)
   const mountedRef = useRef(true)
   // status의 현재 값을 렌더 밖(콜백·수신기)에서 읽기 위한 거울. 상태 자체는 위 useState가
@@ -83,6 +91,7 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
   // 계정이 바뀌면 진행 중인 확인·결과는 전부 이 화면의 것이 아니다.
   useEffect(() => {
     generationRef.current += 1
+    requestGenerationRef.current += 1
     lastReceiptRef.current = null
     setHasReceipt(false)
     setPendingTarget(null)
@@ -165,6 +174,8 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
     lastReceiptRef.current = { bootEpoch: request.bootEpoch, requestId, socket }
     setHasReceipt(true)
     const generation = generationRef.current
+    requestGenerationRef.current += 1
+    const requestGeneration = requestGenerationRef.current
     const scopeId = target.scopeId
     setStatus(KICK_REQUEST_STATUS.SENDING)
     setErrorCode(null)
@@ -173,6 +184,7 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
       // 계정·연결·소속·요청 세대가 그 사이 바뀌었으면 이 응답은 현재 화면의 것이 아니다.
       if (!mountedRef.current) return
       if (generation !== generationRef.current) return
+      if (requestGeneration !== requestGenerationRef.current) return
       if (getSocket() !== socket) return
       if (scopeId !== getMembershipScopeId()) return
 
@@ -202,11 +214,20 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
       return
     }
     const generation = generationRef.current
+    requestGenerationRef.current += 1
+    const requestGeneration = requestGenerationRef.current
     socket.emit(KICK_EVENTS.RESULT, { bootEpoch: receipt.bootEpoch, requestId: receipt.requestId }, (response) => {
       if (!mountedRef.current) return
       if (generation !== generationRef.current) return
+      // 이 조회를 보낸 뒤에 새 요청·새 조회가 시작됐다면 이 응답은 지난 요청의 것이다 —
+      // 진행 중인 전송을 남의 결과로 덮지 않는다.
+      if (requestGeneration !== requestGenerationRef.current) return
       if (getSocket() !== socket) return
 
+      // 결과가 확정됐든 알 수 없든, 그 답을 받은 순간 옛 확인은 끝난 것이다. 확인을 남겨
+      // 두면 ACK를 놓친 요청의 대상에게 **새 requestId로** 두 번째 추방이 나갈 수 있다 —
+      // UNKNOWN의 올바른 다음 행동은 지금 목록에서 대상을 다시 확인하는 것이다.
+      setPendingTarget(null)
       if (response && response.ok === true && response.status === "KICKED") {
         setStatus(KICK_REQUEST_STATUS.SUCCEEDED)
         setErrorCode(null)
@@ -222,8 +243,13 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
     })
   }, [])
 
-  /** 안내를 닫는다(상태만 초기화 — 서버 기록은 그대로다). */
+  /**
+   * 안내를 닫는다(상태만 초기화 — 서버 기록은 그대로다. 재조회 키도 남겨 둔다).
+   *
+   * 요청 세대는 올린다 — 닫은 뒤에 도착한 옛 ACK가 이미 정리된 안내를 되살리지 않게 한다.
+   */
   const reset = useCallback(() => {
+    requestGenerationRef.current += 1
     setPendingTarget(null)
     setStatus(KICK_REQUEST_STATUS.IDLE)
     setErrorCode(null)

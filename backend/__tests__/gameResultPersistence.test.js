@@ -724,11 +724,15 @@ test("F-21 A-09: 첫 저장이 실패하면 **같은 레코드**로 1초 뒤 한
     assert.equal(__getTerminalPersistRunsForTests().length, 0);
     assert.equal(timers.scheduled.length, 0);
 
-    // 5) 뒤늦은 중복 종료 훅은 새 저장을 만들지 않는다.
+    // 5) 뒤늦은 중복 종료 훅은 **레코드를 다시 조립하지도, 다시 쓰지도 않는다.**
+    //    이 시점의 session은 이미 비워져 있어(위 2단계) 다시 조립하면 ended_at·roster·통계
+    //    delta가 처음 것과 다른 **두 번째 레코드**가 만들어진다. DB PK가 그 쓰기를 막아
+    //    주더라도 "gameId마다 결과 레코드는 하나"라는 계약은 조립 시점에서 지켜져야 한다(A-09).
     persistTerminalSession(session, { completed: true });
     await flushAsync();
-    assert.equal(calls.length, 3, "성공 후의 새 훅은 새 작업을 만든다(pending이 비었으므로)");
-    assert.equal(calls[2].record.result.id, session.id);
+    assert.equal(calls.length, 2, "커밋을 확인한 판의 레코드를 다시 조립했다");
+    assert.equal(__getTerminalPersistRunsForTests().length, 0);
+    assert.equal(timers.scheduled.length, 0);
 });
 
 test("F-21 A-09: 재시도 간격은 1초→5초→30초→60초로 늘고 실패 중에는 pending을 지우지 않는다", async (t) => {

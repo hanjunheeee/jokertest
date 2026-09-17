@@ -2483,6 +2483,16 @@ function buildDayPhaseChangedPayload(session) {
 // "publicAbstainCount ≤ publicVoteCount"도 그대로 유지된다).
 // @param {object} session - canonical GameSession(dayVotes/players/제외 집합을 읽기만 한다)
 // @flow eligible voter를 순회해 표를 세고, 최다 득표를 찾은 뒤 공동 최다가 둘 이상인지로 분기한다.
+/** 정렬된 uuid 목록 두 개가 같은가(판정 재검증 전용 — 어떤 상태도 읽지 않는 순수 비교다). */
+function uuidListsEqual(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false
+    if (left.length !== right.length) return false
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) return false
+    }
+    return true
+}
+
 function tallyDayVoteOutcome(session) {
     const eligibleVoterUuids = getEligibleDayVoterUuids(session)
     const excludedUuids = getDayVoteExcludedUuids(session)
@@ -2700,6 +2710,17 @@ function commitDayVoteResolution(session, resolution) {
         recheck.publicVoteCount !== resolution.publicVoteCount ||
         recheck.publicAbstainCount !== resolution.publicAbstainCount
     ) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+    // 집계 수치만 대조하면 **동률 후보 집합**이 빠진다. outcome·대상·표수·기권 수가 모두
+    // 같으면서 공동 최다 득표자만 달라지는 표 변화가 가능한데, 재투표 제외 목록은 바로 그
+    // 집합에서 나온다 — 준비된 목록을 그대로 쓰면 지금의 동률과 다른 후보를 다음 라운드에서
+    // 배제하게 된다. 이번 라운드에 적용된 제외 목록도 같은 이유로 함께 확인한다.
+    const recheckRevoteExcluded = recheckOutcome === 'REVOTE' ? [...recheck.tiedTargetUuids].sort() : []
+    if (!uuidListsEqual(recheckRevoteExcluded, resolution.revoteExcludedUuids ?? [])) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+    if (!uuidListsEqual([...getDayVoteExcludedUuids(session)].sort(), resolution.excludedUuids ?? [])) {
         return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
     // 재판 대상이 지금도 살아 있는 참가자인지 마지막으로 확인한다.

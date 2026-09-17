@@ -380,6 +380,11 @@ export function useGameSessionSocketEvents() {
       // (추방 뒤 로비로 돌아가 방에 참가했는데 옛 사건이 늦게 도착하는 경우) 방금 성립한
       // 새 소속이 옛 게임 사건 하나로 화면에서 사라진다.
       useInGameStore.getState().clearGame()
+      // 이동도 **그 게임의 화면일 때만** 한다. 지우는 범위를 그 게임으로 좁혀 놓고 이동은
+      // 무조건 하면, 새 대기방을 보고 있던 사용자가 옛 게임 사건 하나로 그 화면에서 쫓겨난다
+      // (상태는 남았는데 화면만 로비인 어긋남이다). 그 사이 성립한 새 대기방 소속이 있으면
+      // 그 화면이 지금 사용자가 있는 곳이므로 그대로 둔다.
+      if (useMatchingStore.getState().isInRoom) return
       // clearGame 이후 같은 사건이 다시 전달돼도 위 판정이 실패하므로 이동은 한 번뿐이다.
       navigate("/multiplay", { replace: true })
     }
@@ -399,8 +404,11 @@ export function useGameSessionSocketEvents() {
       const accountId = currentAccountId()
       if (accountId === null || payload.targetUuid !== accountId) return
       if (!isCurrentRoomKickEvent(useMatchingStore.getState(), payload)) return
-      // clearRoom 이후 같은 사건이 다시 전달돼도 위 판정이 실패하므로 이동은 한 번뿐이다.
       useMatchingStore.getState().clearRoom()
+      // handleGameKicked와 대칭이다 — 시작 커밋이 먼저 끝나 이미 인게임 화면에 있는데 옛
+      // 대기방 사건이 늦게 도착하면, 그 방 상태만 비우고 진행 중인 판의 화면은 그대로 둔다.
+      if (useInGameStore.getState().gameId !== null) return
+      // clearRoom 이후 같은 사건이 다시 전달돼도 위 판정이 실패하므로 이동은 한 번뿐이다.
       navigate("/multiplay", { replace: true })
     }
 

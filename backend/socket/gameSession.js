@@ -157,25 +157,100 @@ function isCurrentSocketForUuid(uuid, socket) {
  *
  * 절대 던지지 않는다 — 이미 확정된 커밋 뒤의 best-effort 정리이고, 여기서 새는 예외는
  * 뒤따르는 다른 통지를 멈춘다.
+ *
+ * ── 늦은 완료·늦은 거부의 소유권(AC-05/AC-06) ────────────────────────────────
+ * leave가 비동기면 그 결과는 **이 정리가 시작된 순간의 사실이 아니다.** 기다리는 사이 같은
+ * 소켓이 새 소속으로 그 채널에 정상 입장할 수 있다(같은 방에서 시작된 새 판은 channelId가
+ * 같다). 그 상태에서
+ *   - 늦은 거부에 무조건 disconnect하면 **새 소속의 연결**을 끊고,
+ *   - 늦은 완료를 그대로 두면 옛 이탈이 **새 소속의 채널 가입**을 대신 지운다.
+ * 그래서 두 경우 모두 완료 시점에 소유권을 다시 묻는다. 끊기의 기준(keepsConnection)은 채널
+ * 소유권보다 넓다 — 그 소켓이 **다른** 새 소속(새 판·새 대기방)을 가졌더라도 이 옛 정리가 그
+ * 연결을 끊어서는 안 되기 때문이다. 채널 되돌리기(ownsChannel)는 바로 그 채널일 때만 한다.
+ *
+ * @param {object} [ownership]
+ * @param {() => boolean} [ownership.ownsChannel] - "이 소켓이 지금 **그 채널**의 정상 소속인가".
+ * @param {() => boolean} [ownership.keepsConnection] - "이 소켓이 지금 살아 있는 소속을 가졌는가"
+ *   (기본값: ownsChannel). 참이면 실패해도 연결을 끊지 않는다.
  */
-function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}) {
+function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ownership = null) {
     if (!socket || typeof socket.leave !== 'function') return
-    const disconnectQuietly = () => {
+    const ask = (predicate) => {
+        if (typeof predicate !== 'function') return false
+        try { return predicate() === true } catch (err) { return false }
+    }
+    const ownsChannel = () => ask(ownership?.ownsChannel)
+    const keepsConnection = () => ask(ownership?.keepsConnection ?? ownership?.ownsChannel)
+    const handleFailure = () => {
+        if (keepsConnection()) {
+            // 이 실패는 이미 지난 소속의 것이다 — 새 소속의 연결을 끊지 않는다.
+            console.error(logLabel, { code: 'CHANNEL_LEAVE_SUPERSEDED', ...logFields })
+            return
+        }
+        console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', ...logFields })
         try { socket.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
+    }
+    const restoreIfSuperseded = () => {
+        if (!ownsChannel()) return
+        if (socket.rooms && typeof socket.rooms.has === 'function' && socket.rooms.has(channelId)) return
+        try {
+            const rejoined = socket.join(channelId)
+            if (rejoined && typeof rejoined.then === 'function') {
+                Promise.resolve(rejoined).catch(() => {
+                    console.error(logLabel, { code: 'CHANNEL_REJOIN_ERROR', ...logFields })
+                })
+            }
+        } catch (err) {
+            console.error(logLabel, { code: 'CHANNEL_REJOIN_ERROR', ...logFields })
+        }
     }
     let pending
     try {
         pending = socket.leave(channelId)
     } catch (err) {
-        console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', ...logFields })
-        disconnectQuietly()
+        handleFailure()
         return
     }
     if (pending && typeof pending.then === 'function') {
-        Promise.resolve(pending).catch(() => {
-            console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', ...logFields })
-            disconnectQuietly()
-        })
+        Promise.resolve(pending).then(restoreIfSuperseded, handleFailure)
+    }
+}
+
+/**
+ * F-21(AC-05/AC-06): 이 소켓이 **지금** 그 채널의 정상 소속인가.
+ *
+ * 옛 정리(채널 이탈)의 늦은 완료·거부가 새 소속을 건드리지 않게 하는 유일한 근거다. 계정의
+ * 현재 canonical 연결이고, 그 계정이 지금 라우팅되는 판의 채널이 바로 그 채널이며, 그 판에서
+ * 배제되지 않았을 때만 참이다. 셋 중 하나라도 어긋나면 이 소켓은 그 채널의 주인이 아니다.
+ */
+function ownsSessionChannelNow(socket, uuid, channelId) {
+    const routing = liveSessionRoutingFor(socket, uuid)
+    return routing !== null && routing.channelId === channelId
+}
+
+/** 이 소켓·이 계정의 현재 살아 있는 세션 라우팅(배제된 판은 제외). 없으면 null. */
+function liveSessionRoutingFor(socket, uuid) {
+    if (!isCurrentSocketForUuid(uuid, socket)) return null
+    const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
+    if (!routing) return null
+    return gameSessionCore.isForfeitedFromSession(routing.gameId, uuid) ? null : routing
+}
+
+/**
+ * F-21(AC-05/AC-06): 이 소켓이 **지금** 살아 있는 소속을 하나라도 가졌는가(판이든 대기방이든).
+ *
+ * 옛 채널 정리의 늦은 실패로 연결을 끊어도 되는지를 판정하는 유일한 기준이다. 끊기는 "그
+ * 채널에서 뗄 수 없었다"의 최후 수단인데, 그 사이 이 소켓이 새 판이나 새 대기방에 정상
+ * 입장했다면 끊는 순간 **그 새 소속**이 방송 경로를 잃는다. 채널이 같은지는 따지지 않는다 —
+ * 새 소속이 다른 채널이어도 끊기의 피해는 똑같기 때문이다.
+ */
+function socketHasLiveMembership(socket, uuid) {
+    if (liveSessionRoutingFor(socket, uuid) !== null) return true
+    if (!isCurrentSocketForUuid(uuid, socket)) return false
+    try {
+        return matchmaking.hasRoomMembership(uuid) === true
+    } catch (err) {
+        return false
     }
 }
 
@@ -227,6 +302,12 @@ async function resyncSessionRouting(socket, uuid) {
         // 정리로 잇는다.
         detachSocketFromChannel(
             socket, routing.channelId, '\x1b[31m[세션 채널 정리 실패]\x1b[0m', { gameId: routing.gameId },
+            // 되돌리기가 늦게 끝나는 사이 이 소켓이 그 채널의 정상 소속이 됐다면(새 판·재입장)
+            // 이 정리가 떼어낸 새 가입은 되돌려 놓고, 어떤 새 소속이든 있으면 끊지 않는다.
+            {
+                ownsChannel: () => ownsSessionChannelNow(socket, uuid, routing.channelId),
+                keepsConnection: () => socketHasLiveMembership(socket, uuid),
+            },
         )
         // activeGameId도 그 사이 갱신되지 않은 경우에만 되돌린다.
         if (socket.data.activeGameId === routing.gameId) {
@@ -261,6 +342,7 @@ function __resetStateForTests() {
         run.timerId = null
     }
     terminalPersistRuns.clear()
+    terminalPersistConfirmed.clear()
     __setTerminalPersistTimersForTests()
 }
 
@@ -285,6 +367,12 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     // gameId당 정확히 하나여야, 동시 종료(밤 판정 terminal과 세션 정리가 겹치는 등)가 같은
     // 레코드를 향한 타이머를 두 개 만들어 지수적으로 늘어나는 일이 생기지 않는다.
     if (terminalPersistRuns.has(gameId)) return
+    // 이미 DB 커밋을 확인한 판이면 **다시 조립하지 않는다.** 확인 뒤 작업 항목은 사라지므로,
+    // 뒤늦은 중복 종결 훅(세션 정리 등)이 그 사이 비워진 session으로 새 레코드를 만들어 낼 수
+    // 있었다 — 그 레코드는 ended_at·roster·통계 delta가 처음 것과 다르다. DB PK가 그 두 번째
+    // 쓰기를 막아 주더라도, "gameId마다 결과 레코드는 하나"라는 계약(A-09)은 조립 시점에서
+    // 지켜져야 한다(같은 판의 업적 평가·개인 무효화도 커밋 확인 1회에 묶인다).
+    if (terminalPersistConfirmed.has(gameId)) return
 
     // 레코드는 **지금 여기서 한 번만** 조립한다. 재시도마다 다시 만들면 ended_at이 시도
     // 시각으로 밀리고, 그 사이 세션이 정리됐다면 roster·통계 delta까지 달라진다 — 그러면
@@ -317,6 +405,16 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
  * 함께 사라진다: 그것은 **미저장/미확인**이며, 이번 범위는 새 영속 복구 체계를 만들지 않는다.
  */
 const terminalPersistRuns = new Map()
+
+/**
+ * F-21(A-09): **이 프로세스에서 DB 커밋을 확인한** gameId들. 확인 이후 도착하는 중복 종결
+ * 훅이 같은 판의 레코드를 다시 조립하지 못하게 막는 유일한 근거다.
+ *
+ * 무한정 쌓지 않는다 — 가장 오래된 것부터 버린다. 버려진 gameId의 아주 늦은 중복 훅은 예전처럼
+ * 한 번 더 조립해 보겠지만, 그 쓰기는 game_results PK가 막는다(안전한 쪽으로 퇴화한다).
+ */
+const terminalPersistConfirmed = new Set()
+const TERMINAL_PERSIST_CONFIRMED_MAX = 4096
 
 /** 최초 1회 → 1초 → 5초 → 30초 → 이후 계속 60초. 단일 타이머로만 진행한다. */
 const TERMINAL_PERSIST_RETRY_DELAYS_MS = [1_000, 5_000, 30_000]
@@ -377,6 +475,11 @@ function scheduleTerminalPersistRetry(run) {
  */
 function finishTerminalPersist(run) {
     if (terminalPersistRuns.get(run.gameId) === run) terminalPersistRuns.delete(run.gameId)
+    // 커밋을 확인했다 — 이 판의 레코드는 이제 영원히 이 하나다.
+    terminalPersistConfirmed.add(run.gameId)
+    if (terminalPersistConfirmed.size > TERMINAL_PERSIST_CONFIRMED_MAX) {
+        terminalPersistConfirmed.delete(terminalPersistConfirmed.values().next().value)
+    }
     if (run.timerId !== null) {
         terminalPersistClearTimeout(run.timerId)
         run.timerId = null
@@ -2324,6 +2427,9 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
      * F-21(AC-03): ack를 먼저 보낸 뒤, **이탈로 분모가 줄어든 라운드**라면 이 제출이 마지막일
      * 수 있으므로 완료를 한 번 재평가한다. 표식이 없는 라운드에서는 아무 일도 하지 않는다 —
      * 기존 "전원 투표해도 deadline 또는 명시적 판정까지 대기" 계약이 그대로 남는다.
+     *
+     * 성공 ack와 참여 저장 실패 ack **양쪽**이 이 경계를 지난다. 기준은 ack의 성패가 아니라
+     * "core에 표가 커밋됐는가"이고, 여기까지 온 요청은 어느 쪽이든 이미 커밋된 뒤다.
      */
     const ackThenResolve = (ackPayload) => {
         respond(callback, ackPayload)
@@ -2357,7 +2463,15 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
         await recordVoteParticipationImpl({ gameId, dayIndex, userId: uuid })
     } catch (err) {
         console.error('[투표 참여 사건 저장 실패]', { code: 'VOTE_PERSIST_ERROR', uuid, gameId })
-        respond(callback, {
+        // F-21(AC-03): **표는 이미 core에 커밋돼 있다.** 저장 실패는 D-09의 참여 집계가
+        // 실패했다는 뜻일 뿐, 이 라운드의 제출 자체를 되돌리지 않는다(A-03 조건 2 — 메모리
+        // 투표는 반영된 채로 남긴다). 그러므로 이탈로 분모가 줄어든 라운드에서 이 제출이
+        // 마지막이었다면 완료 재평가는 저장 성공 여부와 무관하게 똑같이 일어나야 한다 —
+        // 그러지 않으면 그 라운드는 DB 사정 하나로 deadline까지 멈춘 채 남는다.
+        //
+        // 실패 ACK의 사실은 바꾸지 않는다(재시도 가능한 실패 그대로다). 재평가 자체는 성공
+        // 경로와 **같은 한 번의** prepare/commit·방송·저장 경로를 쓰므로 중복이 생기지 않는다.
+        ackThenResolve({
             ok: false,
             code: 'VOTE_PERSIST_FAILED',
             message: '투표 저장에 실패했습니다. 다시 시도해 주세요.',
@@ -2868,6 +2982,13 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
             // 나간 본인의 소켓만 채널에서 내보낸다 — 남은 참가자의 방송 경로는 그대로다.
             detachSocketFromChannel(
                 socket, activeSession.channelId, '[게임 이탈 채널 정리 실패]', { gameId: activeSession.id },
+                // 이 이탈의 채널 정리가 늦게 끝나는 사이 같은 소켓이 같은 방의 **새 판**에
+                // 정상 입장했을 수 있다(channelId는 roomId라 값이 같다). 그때의 늦은 거부로
+                // 새 소속의 연결을 끊지 않는다.
+                {
+                    ownsChannel: () => ownsSessionChannelNow(socket, uuid, activeSession.channelId),
+                    keepsConnection: () => socketHasLiveMembership(socket, uuid),
+                },
             )
             try {
                 matchmaking.cleanupRoomStateForSessionParticipants(io, [uuid])
@@ -3037,16 +3158,22 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
     // 형태·연결·boot 실패와 달리 아래 검사들은 "이 요청은 실행되지 않는다"를 서버가 확정한
     // 것이다. 기록하지 않으면 같은 requestId의 재전달이 그때의 현재 상태로 다시 판정된다 —
     // NOT_HOST로 거부된 요청이 방장 승계 뒤에 그대로 실행되는 것이 그 결과다(AC-04).
-    // 자리가 없으면 기록 없이 거부만 한다(거부는 아무 상태도 바꾸지 않았다). 거부 기록에는
-    // 커밋용 자리를 남겨 두는 더 낮은 수위를 쓴다 — 대기방 추방과 같은 규칙이다.
+    //
+    // 그래서 **결정을 보존할 수 없으면 결정하지 않는다.** 기록할 자리가 없을 때 확정 거부를
+    // 그대로 돌려주면 그 답은 10분 뒤가 아니라 즉시 거짓이 된다(재조회는 UNKNOWN인데 응답은
+    // 확정 거부였다). 그 경우에는 명시적으로 **미결정**인 용량 결과를 돌려준다 — 결정된
+    // 결과를 조용히 다른 코드로 바꾸는 것이 아니라, 아직 결정하지 않았다고 답하는 것이다.
+    // 거부 기록에는 커밋용 자리를 남겨 두는 더 낮은 수위를 쓴다(대기방 추방과 같은 규칙).
     const decideReject = (code, message) => {
-        if (kickReceiptStore.hasKickRejectionCapacity()) {
-            kickReceiptStore.recordKickReceipt(receiptKey, {
-                command: kickReceiptStore.KICK_COMMANDS.GAME,
-                fingerprint,
-                result: { ok: false, code, message },
-            })
+        if (!kickReceiptStore.hasKickRejectionCapacity()) {
+            reject(CODES.RECEIPT_CAPACITY, '잠시 후 다시 시도해주세요.')
+            return
         }
+        kickReceiptStore.recordKickReceipt(receiptKey, {
+            command: kickReceiptStore.KICK_COMMANDS.GAME,
+            fingerprint,
+            result: { ok: false, code, message },
+        })
         reject(code, message)
     }
 
@@ -3145,6 +3272,12 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
             // 개인 통지(game_kicked)는 채널이 아니라 그 소켓에 직접 보내므로 영향받지 않는다.
             detachSocketFromChannel(
                 targetSocket, session.channelId, '[추방 채널 이탈 실패]', { gameId: session.id },
+                // 추방된 대상이 그 사이 같은 방의 새 판에 정상 입장했다면(옛 판은 이미 끝나
+                // 정리된 뒤다) 그 연결은 더 이상 이 정리의 것이 아니다. 새 대기방 소속도 같다.
+                {
+                    ownsChannel: () => ownsSessionChannelNow(targetSocket, input.targetUuid, session.channelId),
+                    keepsConnection: () => socketHasLiveMembership(targetSocket, input.targetUuid),
+                },
             )
         },
     })
