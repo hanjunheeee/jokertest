@@ -221,8 +221,11 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   await clickTab(container, "회의&투표")
   await clickByAriaLabel(container, "낮 토론 시간 조절 증가")
   await clickByAriaLabel(container, "밤 행동 시간 조절 감소")
+  // Unspecified role time now follows the overall 90 -> 60 change. One click reaches 30.
+  const jokerTimeRow = container.querySelector('[aria-label="광대 밤 시간 조절 감소"]').parentElement
+  assert.ok(jokerTimeRow.textContent.includes("60초"), "미지정 광대 시간이 전체 밤 60초를 따라오지 않았다")
   await clickByAriaLabel(container, "광대 밤 시간 조절 감소")
-  await clickByAriaLabel(container, "광대 밤 시간 조절 감소")
+  assert.ok(jokerTimeRow.textContent.includes("30초"), "광대 시간을 한 번 줄여 30초로 편집하지 못했다")
   await clickByAriaLabel(container, "설정 저장")
 
   assert.equal(getSubmitted()?.checks?.["private-lobby"], true,
