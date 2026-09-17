@@ -11,4 +11,7 @@ export const INGAME_KICK_PLAYER_MODAL_COPY = {
   cancelPendingAriaLabel: "추방 취소",
   closeAriaLabel: "플레이어 추방 닫기",
   listAriaLabel: "추방 대상 플레이어 목록",
+  // F-21(AC-02): 대상이 없다는 것은 **명시적인 상태**다. 빈 목록만 그리면 아직 못 불러온
+  // 것인지 정말 아무도 없는 것인지 화면이 말하지 못한다.
+  emptyTargets: "추방할 수 있는 참가자가 없습니다.",
 }

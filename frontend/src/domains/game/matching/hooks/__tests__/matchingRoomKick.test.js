@@ -449,7 +449,18 @@ test("AC-04: ACK를 놓치면 성공으로 표시하지 않고, 결과 조회의
 
   act(() => lookup.ack({ ok: true, status: "UNKNOWN" }))
   assert.equal(result.current.kickStatus, KICK_REQUEST_STATUS.UNKNOWN)
-  assert.equal(socket.emitted.length, 2, "UNKNOWN이 자동 재전송을 만들지 않는다")
+
+  // UNKNOWN의 올바른 다음 행동은 **서버에서 현재 소속을 다시 받아오는 것**이고, 그것은
+  // 추방 재전송이 아니다(AC-04). 둘을 함께 단언한다 — 재조회가 정확히 한 번 나가고,
+  // kick_room_player는 처음 그 한 번뿐이다.
+  assert.equal(socket.emitted.length, 3)
+  assert.equal(socket.emitted[2].event, "get_current_room")
+  assert.equal(
+    socket.emitted.filter((e) => e.event === "kick_room_player").length, 1,
+    "UNKNOWN이 자동 추방 재전송을 만들지 않는다",
+  )
+  // 재조회가 끝나기 전에는 새 확인을 열 수 없다(이미 실행됐을 수 있는 추방을 되풀이하지 않는다).
+  assert.equal(result.current.isAwaitingKickResolution, true)
 })
 
 test("AC-04: 서버 거부 코드는 그대로 표시되고 확인은 되돌아간다", () => {
@@ -489,6 +500,162 @@ test("AC-05: 응답이 오기 전에 소켓이 교체되면 그 응답은 현재
   act(() => socket.emitted[0].ack({ ok: true, status: "KICKED" }))
 
   assert.notEqual(result.current.kickStatus, KICK_REQUEST_STATUS.SUCCEEDED)
+})
+
+// ── AC-04/AC-05: 붙잡아 둔 **실제** 재확인 ACK의 소유권 ──────────────────────
+//
+// 여기서 도는 verifyMembership은 useMatchingRoomKick의 **프로덕션 구현**이다(주입한 대역이
+// 아니다). 그 콜백은 setRoom을 부르므로 되돌릴 수 없고, 따라서 판정은 그 자리에 있어야 한다.
+// 아래 네 경우는 각각 다른 값 하나만으로 구별된다 — 하나라도 빠지면 그 경우가 통과한다.
+
+/** 추방을 보내고 ACK를 유실시킨 뒤, UNKNOWN으로 시작된 **실제** 서버 재확인을 붙잡아 둔다. */
+function sendKickAndHoldVerification(result, socket) {
+  act(() => result.current.requestKickConfirm(result.current.kickTargets[0]))
+  act(() => result.current.confirmKick())
+  act(() => result.current.lookupKickResult())
+  const lookup = socket.emitted.find((e) => e.event === "get_kick_result")
+  assert.ok(lookup, "결과 조회가 나가지 않았다")
+  act(() => lookup.ack({ ok: true, status: "UNKNOWN" }))
+  const verify = socket.emitted.find((e) => e.event === "get_current_room")
+  assert.ok(verify, "UNKNOWN 뒤 실제 서버 재확인이 시작되지 않았다")
+  return verify
+}
+
+/**
+ * 붙잡아 둔 재확인 ACK를 흘려보낸다. **await가 필요하다** — 잠금 해제는 verifyMembership가
+ * 돌려준 Promise의 continuation에서 일어나므로, 마이크로태스크를 비우지 않으면 성공 경로의
+ * 최종 상태(잠금 해제)를 관측하지 못한다. 거부 경로도 같은 방식으로 흘려보내야 "정말로
+ * 아무 일도 일어나지 않았다"를 같은 조건에서 비교할 수 있다.
+ */
+async function releaseVerification(verify, response) {
+  await act(async () => { verify.ack(response) })
+}
+
+/** 대상(TARGET)이 이미 빠진 최신 서버 명단. */
+const roomWithoutTarget = () =>
+  serverRoom({ players: serverRoom().players.filter((p) => p.uuid !== TARGET) })
+
+test("AC-04: 아무것도 바뀌지 않았으면 재확인 ACK는 실제로 적용되고 새 확인이 다시 열린다", async () => {
+  const socket = setUp()
+  const { result } = mountKick()
+  const verify = sendKickAndHoldVerification(result, socket)
+  assert.equal(result.current.isAwaitingKickResolution, true)
+
+  // 서버가 준 최신 명단(대상이 이미 빠진 상태)을 그대로 적재한다.
+  await releaseVerification(verify, { ok: true, room: roomWithoutTarget() })
+
+  assert.deepEqual(useMatchingStore.getState().players.map((p) => p.uuid), [HOST, OTHER])
+  // 재확인이 성공했으므로 잠금이 풀리고 새 확인 절차를 밟을 수 있다.
+  assert.equal(result.current.isAwaitingKickResolution, false)
+  assert.deepEqual(result.current.kickTargets.map((t) => t.uuid), [OTHER])
+})
+
+test("AC-05: 붙잡아 둔 재확인 ACK는 A→B→A 계정 전이 뒤에 store를 덮지 않는다(소속이 그대로여도)", async () => {
+  const socket = setUp()
+  const { result } = mountKick()
+  const verify = sendKickAndHoldVerification(result, socket)
+
+  // 로그아웃 → **같은** 계정으로 재로그인. uuid도 방도 내 소속도 그대로라 값 비교로는
+  // 구별되지 않는다 — identityGeneration만이 그 사이에 다른 신원이 있었음을 남긴다.
+  act(() => useAuthStore.getState().logout())
+  act(() => useAuthStore.getState().login({ uuid: HOST }))
+
+  const revisionBefore = useMatchingStore.getState().roomRevision
+  await releaseVerification(verify, { ok: true, room: roomWithoutTarget() })
+
+  assert.equal(useMatchingStore.getState().roomRevision, revisionBefore, "옛 재확인 ACK가 store를 덮었다")
+  assert.deepEqual(useMatchingStore.getState().players.map((p) => p.uuid), [HOST, TARGET, OTHER])
+})
+
+test("AC-05: 같은 Socket 객체가 재연결되면(id만 새로) 붙잡아 둔 재확인 ACK는 적용되지 않는다", async () => {
+  const socket = setUp()
+  const { result } = mountKick()
+  const verify = sendKickAndHoldVerification(result, socket)
+
+  // Socket.IO 재연결은 **객체를 유지하고 id만** 새로 발급한다 — 객체 동일성 비교만으로는
+  // 이 경우가 통과한다(getSocket() === socket이 여전히 참이다).
+  socket.id = "sock-test-reconnected"
+
+  const revisionBefore = useMatchingStore.getState().roomRevision
+  await releaseVerification(verify, { ok: true, room: roomWithoutTarget() })
+
+  assert.equal(useMatchingStore.getState().roomRevision, revisionBefore, "재연결 뒤 옛 ACK가 store를 덮었다")
+  assert.deepEqual(useMatchingStore.getState().players.map((p) => p.uuid), [HOST, TARGET, OTHER])
+  // 확인은 여전히 무효다 — 성공한 재확인이 새로 필요하다.
+  assert.equal(result.current.isAwaitingKickResolution, true)
+  act(() => result.current.requestKickConfirm(result.current.kickTargets[0]))
+  assert.equal(result.current.kickPendingTarget, null, "잠긴 상태에서 새 확인이 열렸다")
+})
+
+test("AC-05/AC-06: 같은 방에 내가 새 소속으로 다시 앉은 뒤 도착한 재확인 ACK는 적용되지 않는다", async () => {
+  const socket = setUp()
+  const { result } = mountKick()
+  const verify = sendKickAndHoldVerification(result, socket)
+
+  // 같은 방·같은 인스턴스·같은 기동이고 계정도 소켓도 그대로다. 바뀐 것은 **내 소속**뿐이다.
+  act(() => useMatchingStore.getState().setRoom(serverRoom({
+    players: serverRoom().players.map((p) => (p.uuid === HOST ? { ...p, membershipId: "mem-host-2" } : p)),
+  })))
+
+  const revisionBefore = useMatchingStore.getState().roomRevision
+  // 옛 소속이 실린 응답을 그대로 흘려보낸다.
+  await releaseVerification(verify, { ok: true, room: serverRoom() })
+
+  assert.equal(useMatchingStore.getState().roomRevision, revisionBefore)
+  assert.equal(
+    selectRoomMembershipId(useMatchingStore.getState(), HOST), "mem-host-2",
+    "옛 ACK가 새 소속을 옛 소속으로 되돌렸다",
+  )
+  assert.equal(result.current.isAwaitingKickResolution, true)
+})
+
+test("AC-05: 재확인을 보낸 뒤 도착한 **더 새로운** 퇴장 사건은 옛 ACK에 덮이지 않는다", async () => {
+  const socket = setUp()
+  const { result } = mountKick()
+  const verify = sendKickAndHoldVerification(result, socket)
+
+  // 계정·소켓·방 인스턴스·내 소속이 전부 그대로다. 오직 명단만 더 새로워졌다 —
+  // 이 경우를 잡는 값은 적용 세대(roomRevision) 하나뿐이다.
+  act(() => useMatchingStore.getState().removePlayer(TARGET, false))
+  const revisionBefore = useMatchingStore.getState().roomRevision
+
+  // 그보다 **먼저** 만들어진 응답(대상이 아직 앉아 있다)이 이제 도착한다.
+  await releaseVerification(verify, { ok: true, room: serverRoom() })
+
+  assert.equal(useMatchingStore.getState().roomRevision, revisionBefore)
+  assert.deepEqual(
+    useMatchingStore.getState().players.map((p) => p.uuid), [HOST, OTHER],
+    "옛 재확인 ACK가 이미 빠진 참가자를 되살렸다",
+  )
+  assert.equal(result.current.isAwaitingKickResolution, true)
+})
+
+test("AC-05: 다른 방을 가리키는 재확인 응답은 화면을 그 방으로 옮기지 않는다", async () => {
+  const socket = setUp()
+  const { result } = mountKick()
+  const verify = sendKickAndHoldVerification(result, socket)
+
+  const revisionBefore = useMatchingStore.getState().roomRevision
+  await releaseVerification(verify, { ok: true, room: serverRoom({ roomId: "room-9", roomInstanceId: "inst-9" }) })
+
+  assert.equal(useMatchingStore.getState().roomId, "room-1")
+  assert.equal(useMatchingStore.getState().roomRevision, revisionBefore)
+  assert.equal(result.current.isAwaitingKickResolution, true)
+})
+
+test("AC-04: pending·실패 응답은 적재하지 않고 잠금을 유지한다", async () => {
+  const socket = setUp()
+  const { result } = mountKick()
+  const verify = sendKickAndHoldVerification(result, socket)
+
+  const revisionBefore = useMatchingStore.getState().roomRevision
+  await releaseVerification(verify, { ok: true, pending: true, room: serverRoom() })
+  assert.equal(useMatchingStore.getState().roomRevision, revisionBefore)
+  assert.equal(result.current.isAwaitingKickResolution, true)
+
+  await releaseVerification(verify, { ok: false, code: "ROOM_NOT_FOUND" })
+  assert.equal(useMatchingStore.getState().roomRevision, revisionBefore)
+  assert.equal(result.current.isAwaitingKickResolution, true)
 })
 
 // ── AC-06: 개인 퇴장 사건 판정(순수 계약) ────────────────────────────────────

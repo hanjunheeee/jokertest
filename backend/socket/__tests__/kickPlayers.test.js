@@ -18,6 +18,7 @@ const matchmaking = require('../matchmaking')
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const kickReceiptStore = require('../kickReceiptStore')
+const channelMembership = require('../channelMembership')
 
 const {
     createFakeSocket,
@@ -1729,4 +1730,524 @@ test('AC-06: 빠른 매칭으로 확정된 참가자도 새 소속·준비 false
     } finally {
         matchmaking.__setRandomMatchmakingEnabledForTests(null)
     }
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AC-05/AC-06 — 채널 소유권: 비동기 **완료 이후**의 재검사와 전달 제외
+//
+// 이 블록이 보려는 것은 "연결이 끊겼는가"가 아니라 **실제 채널 가입과 실제 수신자**다.
+// disconnect 0회만 단언하면, 떼지 못한 옛 채널이 그대로 남아 배제된 계정이 방송을 계속
+// 받는 상태를 그대로 통과시킨다.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** 그 방송이 실제로 닿는 소켓 id들 — 채널 가입자에서 전달 제외를 뺀 집합이다. */
+function recipientsOf(io, broadcast) {
+    const excluded = new Set(broadcast.excluded ?? [])
+    return [...io.sockets.sockets.values()]
+        .filter((socket) => socket.rooms?.has?.(broadcast.roomId) && !excluded.has(socket.id))
+        .map((socket) => socket.id)
+        .sort()
+}
+
+test('AC-06(대기방): 떼지 못한 옛 채널은 연결을 끊지 않고 **전달에서 제외**된다', async () => {
+    const { io, sockets, room } = await setupRoom('own-h', ['own-t', 'own-k'])
+    const target = sockets['own-t']
+    const disconnects = trackDisconnect(target)
+
+    // 채널 이탈이 **실제로 실패**한다(비동기 거부). 제한된 재시도도 전부 실패한다.
+    target.leave = async () => { throw new Error('leave 실패(테스트 주입)') }
+
+    const { response } = kickRoomPlayer(io, sockets['own-h'], 'own-h', roomKickPayload(room, 'own-h', 'own-t'))
+    assert.equal(response.ok, true, JSON.stringify(response))
+
+    // 그 사이 이 계정이 **다른 방**의 참가자가 됐다 — 이 연결을 끊으면 새 소속이 방송을 잃는다.
+    matchmaking.__seedRoomForTests({
+        id: 'own-other', instanceId: 'own-other-inst', hostUuid: 'own-t',
+        players: new Map([['own-t', { uuid: 'own-t', nickname: 'n', isReady: false, membershipId: 'mem-other' }]]),
+        settings: { maxPlayers: 8 },
+    })
+    matchmaking.__seedPlayerRoomForTests('own-t', 'own-other')
+
+    await flushMicrotasks()
+    await flushMicrotasks()
+    await flushMicrotasks()
+
+    // 1) 새 소속이 있으므로 연결은 살아 있다.
+    assert.equal(disconnects.length, 0, '새 소속을 가진 연결을 옛 정리가 끊었다')
+    // 2) 그런데 옛 채널 가입은 **실제로 남아 있다**(leave가 끝내 실패했다).
+    assert.equal(target.rooms.has(room.roomId), true)
+    // 3) 그래서 그 방의 이후 방송은 이 소켓을 빼고 나가야 한다. 남아 있다는 이유로 배제된
+    //    계정이 계속 받으면, SUPERSEDED를 기록한 것만으로는 아무것도 막지 못한 것이다.
+    const before = io.broadcasts.length
+    matchmaking.__testables.removeFromRoom(io, sockets['own-k'], 'own-k')
+    const after = io.broadcasts.slice(before).filter((b) => b.roomId === room.roomId)
+    assert.ok(after.length > 0, '이후 방 방송이 하나도 없어 제외를 관측할 수 없다')
+    for (const broadcast of after) {
+        assert.ok(
+            (broadcast.excluded ?? []).includes(target.id),
+            `${broadcast.event} 방송이 배제된 옛 채널 구독을 제외하지 않았다`,
+        )
+        assert.equal(
+            recipientsOf(io, broadcast).includes(target.id), false,
+            `${broadcast.event}가 배제된 계정에게 실제로 전달된다`,
+        )
+    }
+    // 4) 잔류자는 그대로 받는다 — 제외가 정상 참가자의 방송을 잠식하지 않는다.
+    assert.ok(recipientsOf(io, after[0]).includes(sockets['own-h'].id))
+})
+
+test('AC-05(대기방): 옛 소켓의 이탈 정리는 **새 canonical 소켓**의 채널 가입을 되살리지 않는다', async () => {
+    const { io, sockets, room } = await setupRoom('can-h', ['can-t'])
+    const oldSocket = sockets['can-t']
+
+    // 같은 계정의 새 로그인이 canonical 소켓을 가져갔고, 그 새 소켓이 같은 방에 앉아 있다.
+    const newSocket = createFakeSocket('can-t', { id: 'sock-can-t-new' })
+    io.sockets.sockets.set(newSocket.id, newSocket)
+    newSocket.rooms.add(room.roomId)
+    // canonical 등록부도 새 소켓을 가리킨다.
+    matchmaking.setOnlineUsersRegistry(new Map([['can-t', newSocket.id]]))
+
+    try {
+        // 옛 소켓의 leave가 늦게 끝난다. 계정 소속만 보면 "아직 앉아 있다"이므로 예전 구현은
+        // **옛 소켓의** 가입을 되돌려 놓았다(유령 청취자가 된다).
+        const departed = matchmaking.__testables.commitRoomDeparture(io, oldSocket, 'can-t', 'LEFT_ROOM')
+        // 제거 직후 같은 계정이 새 소속으로 그 방에 다시 앉은 상태를 만든다.
+        matchmaking.__seedRoomForTests({
+            id: room.roomId, instanceId: room.roomInstanceId, hostUuid: 'can-h',
+            players: new Map([
+                ['can-h', { uuid: 'can-h', nickname: 'n', isReady: false, membershipId: 'mem-h' }],
+                ['can-t', { uuid: 'can-t', nickname: 'n', isReady: false, membershipId: 'mem-new' }],
+            ]),
+            settings: { maxPlayers: 8 },
+        })
+        matchmaking.__seedPlayerRoomForTests('can-t', room.roomId)
+
+        matchmaking.__testables.notifyRoomDeparture(io, departed, [oldSocket])
+        await flushMicrotasks()
+        await flushMicrotasks()
+
+        assert.equal(
+            oldSocket.rooms.has(room.roomId), false,
+            'canonical이 아닌 옛 소켓의 채널 가입이 되살아났다',
+        )
+        assert.equal(newSocket.rooms.has(room.roomId), true, '새 canonical 소켓의 가입이 사라졌다')
+    } finally {
+        matchmaking.setOnlineUsersRegistry(null)
+    }
+})
+
+test('AC-05(게임): 되돌린 가입이 완료되기 전에 그 소속마저 배제되면 채널에 남지 않는다', async () => {
+    const uuids = ['rj-h', 'rj-t']
+    const session = commitDeterministicSession({
+        roomId: 'room-rj', gameId: 'game-rj', hostUuid: 'rj-h', uuids,
+    })
+    const target = createFakeSocket('rj-t')
+    const io = createFakeIo([createFakeSocket('rj-h'), target])
+    target.rooms.add(session.channelId)
+
+    // leave는 성공한다. 그 완료 시점에 이 소켓이 **아직 정상 소속**이라 가입을 되돌리는데,
+    // 그 되돌리는 join은 우리가 풀어 줄 때까지 매달려 있다.
+    let releaseJoin
+    const joinGate = new Promise((resolve) => { releaseJoin = resolve })
+    target.join = async (channelId) => {
+        await joinGate
+        target.joined.push(channelId)
+        target.rooms.add(channelId)
+    }
+
+    gameSessionSocketLayer.__testables.detachSocketFromChannel(
+        target, session.channelId, '[테스트 채널 정리]', { gameId: session.id },
+        // 되돌리기 판정은 "지금 이 판에서 배제되지 않았는가"다 — 아래에서 실제로 배제한다.
+        {
+            ownsChannel: () => !gameSessionCore.isForfeitedFromSession(session.id, 'rj-t'),
+            keepsConnection: () => true,
+        },
+    )
+    await flushMicrotasks()
+    assert.equal(target.rooms.has(session.channelId), false, 'leave가 끝나지 않았다')
+
+    // join이 매달려 있는 사이 그 소속이 배제된다(추방/이탈).
+    const departed = gameSessionCore.commitParticipantDeparture(session, 'rj-t', { reason: 'KICKED_BY_HOST' })
+    assert.equal(departed.ok, true, JSON.stringify(departed))
+
+    // 이제 join이 완료된다 — 완료 후 재검사가 없으면 **권한을 잃은 소켓이 채널에 남는다**.
+    releaseJoin()
+    await flushMicrotasks()
+    await flushMicrotasks()
+    await flushMicrotasks()
+
+    assert.equal(
+        target.rooms.has(session.channelId), false,
+        '되돌린 가입이 완료된 뒤 배제된 소켓이 채널에 그대로 남았다',
+    )
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AC-02/AC-05 — 잔류자 사건의 방 인스턴스·기동 경계
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('AC-02/AC-05: player_left_room·host_changed는 방 인스턴스와 서버 기동을 함께 싣는다', async () => {
+    const { io, sockets, room } = await setupRoom('res-h', ['res-a', 'res-b'])
+
+    const before = io.broadcasts.length
+    const kicked = kickRoomPlayer(io, sockets['res-h'], 'res-h', roomKickPayload(room, 'res-h', 'res-a'))
+    assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
+
+    const left = io.broadcasts.slice(before).find((b) => b.event === 'player_left_room')
+    assert.ok(left, 'player_left_room이 방송되지 않았다')
+    assert.equal(left.payload.roomId, room.roomId)
+    assert.equal(left.payload.roomInstanceId, room.roomInstanceId)
+    assert.equal(left.payload.bootEpoch, room.bootEpoch)
+    assert.equal(left.payload.membershipId, seatOf(room, 'res-a').membershipId)
+
+    // 방장이 나가면 승계 → host_changed도 같은 경계를 실어야 한다.
+    const beforeHost = io.broadcasts.length
+    matchmaking.__testables.removeFromRoom(io, sockets['res-h'], 'res-h')
+    const hostChanged = io.broadcasts.slice(beforeHost).find((b) => b.event === 'host_changed')
+    assert.ok(hostChanged, 'host_changed가 방송되지 않았다')
+    assert.equal(hostChanged.payload.roomId, room.roomId)
+    assert.equal(hostChanged.payload.roomInstanceId, room.roomInstanceId)
+    assert.equal(hostChanged.payload.bootEpoch, room.bootEpoch)
+    // F-20 설정 사건 호환은 그대로 — 기존 필드를 뺏지 않는다.
+    assert.equal(typeof hostChanged.payload.settingsVersion, 'number')
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AC-03 — 이탈이 바꾼 분모와 **본인** 제출 상태
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('AC-03: 이탈 방송은 공개 진행 수를 싣고, 정규화된 본인 표는 개인 전송으로만 간다', async () => {
+    const uuids = ['pg-h', 'pg-a', 'pg-b', 'pg-c']
+    const { session, io, sockets } = setupSessionAtDayVote({
+        roomId: 'room-pg', gameId: 'game-pg', hostUuid: 'pg-h', uuids,
+    })
+
+    // pg-a가 pg-c를 찍는다. 그 뒤 pg-c가 추방되면 이 표는 기권으로 정규화된다.
+    await castDayVote(io, sockets, 'pg-a', session.id, 'pg-c')
+    clearDelivered(sockets)
+    const beforeBroadcasts = io.broadcasts.length
+
+    const kicked = kickGamePlayer(io, sockets['pg-h'], 'pg-h', gameKickPayload(session, 'pg-h', 'pg-c'))
+    assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
+
+    // 1) 공개 방송에는 진행 수만 있고 누가 무엇을 냈는지는 없다.
+    const changed = io.broadcasts.slice(beforeBroadcasts)
+        .find((b) => b.event === 'session_participation_changed')
+    assert.ok(changed, 'session_participation_changed가 방송되지 않았다')
+    assert.equal(changed.payload.progress.kind, 'DAY_VOTE')
+    // 이탈자를 뺀 생존 투표자가 분모다(3명) — 화면이 스스로 세면 4로 남는다.
+    assert.equal(changed.payload.progress.requiredCount, 3)
+    assert.equal(changed.payload.progress.doneCount, 1)
+    assert.equal(JSON.stringify(changed.payload).includes('dayVoteTargetUuid'), false)
+
+    // 2) 본인 표는 개인 전송으로만 간다 — 그 값이 canonical하게 기권(null)이다.
+    const selfEvents = sockets['pg-a'].emitted.filter((e) => e.event === 'session_self_progress')
+    assert.equal(selfEvents.length, 1)
+    assert.equal(selfEvents[0].payload.self.hasSubmittedDayVote, true)
+    assert.equal(selfEvents[0].payload.self.dayVoteTargetUuid, null, '사라진 표적이 그대로 남았다')
+    assert.equal(selfEvents[0].payload.participationRevision, changed.payload.participationRevision)
+
+    // 3) 아직 내지 않은 사람에게도 자기 값만 간다(남의 표는 어디에도 없다).
+    const otherSelf = sockets['pg-b'].emitted.filter((e) => e.event === 'session_self_progress')
+    assert.equal(otherSelf.length, 1)
+    assert.equal(otherSelf[0].payload.self.hasSubmittedDayVote, false)
+    assert.equal(otherSelf[0].payload.self.dayVoteTargetUuid, null)
+    // 추방된 당사자에게는 이 개인 전송을 보내지 않는다(이미 참여가 끝났다).
+    assert.equal(sockets['pg-c'].emitted.filter((e) => e.event === 'session_self_progress').length, 0)
+})
+
+test('AC-03: 스냅샷도 같은 공개 진행 수와 **본인** 정규화 표를 복원한다', async () => {
+    const uuids = ['sn-h', 'sn-a', 'sn-b', 'sn-c']
+    const { session, io, sockets } = setupSessionAtDayVote({
+        roomId: 'room-sn', gameId: 'game-sn', hostUuid: 'sn-h', uuids,
+    })
+    await castDayVote(io, sockets, 'sn-a', session.id, 'sn-c')
+    kickGamePlayer(io, sockets['sn-h'], 'sn-h', gameKickPayload(session, 'sn-h', 'sn-c'))
+
+    const snapshot = gameSessionCore.getSessionSnapshotForPlayer('sn-a', session.id).snapshot
+    assert.equal(snapshot.progress.kind, 'DAY_VOTE')
+    assert.equal(snapshot.progress.requiredCount, 3)
+    assert.equal(snapshot.self.hasSubmittedDayVote, true)
+    assert.equal(snapshot.self.dayVoteTargetUuid, null)
+
+    // 남의 스냅샷에는 남의 표가 없다 — 본인 필드만 실린다.
+    const otherSnapshot = gameSessionCore.getSessionSnapshotForPlayer('sn-b', session.id).snapshot
+    assert.equal(otherSnapshot.self.hasSubmittedDayVote, false)
+    assert.equal(JSON.stringify(otherSnapshot.players).includes('dayVoteTargetUuid'), false)
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AC-05/AC-06 — 채널 전달 제외의 수명 · fail-closed 전달 · 실패 처리 분기
+//
+// 대상은 socket/channelMembership.js다. 여기서 만들어지는 "배제"는 곧 **거부의 증거**다 —
+// leave가 실제로 실패했고 그 연결을 끊을 수도 없을 때(새 소속이 있다) 그 (채널, 소켓) 쌍을
+// 전달에서 빼는 것이 남은 유일한 수단이다. 그래서 그 증거는 용량을 이유로 사라져서는 안 되고,
+// 제외할 수 없는 adapter에서는 보내지 않는 쪽을 택해야 한다.
+//
+// 배제는 손으로 Set에 심지 않는다 — **실제 leave 거부**로 만든다(그것이 유일한 생산 경로다).
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** leave가 **항상 거부되는** 소켓. 배제가 만들어지는 실제 조건을 그대로 재현한다. */
+function createLeaveDenyingSocket(id, { joinedChannels = [] } = {}) {
+    const rooms = new Set(joinedChannels)
+    const socket = {
+        id,
+        rooms,
+        currentRooms: rooms,
+        emitted: [],
+        disconnectCalls: 0,
+        leaveCalls: 0,
+        joinCalls: 0,
+        async leave() {
+            socket.leaveCalls += 1
+            throw new Error('leave 실패(테스트 주입)')
+        },
+        async join(channelId) {
+            socket.joinCalls += 1
+            rooms.add(channelId)
+        },
+        emit(event, payload) { socket.emitted.push({ event, payload }) },
+        disconnect() { socket.disconnectCalls += 1 },
+    }
+    return socket
+}
+
+/** 대기 중인 leave 거부 연쇄(최대 3회 재시도)가 모두 정착할 때까지 비운다. */
+async function settleChannelRetries(times = 8) {
+    for (let i = 0; i < times; i += 1) await flushMicrotasks()
+}
+
+test('AC-06: 유효한 전달 제외는 수위(1024)를 넘어도 하나도 축출되지 않는다', async () => {
+    const channelId = 'chan-capacity'
+    const total = channelMembership.CHANNEL_EXCLUSION_ALARM_ENTRIES + 1 // 1025
+    const sockets = []
+
+    // 각각 이 채널의 소속은 아니지만(ownsChannel=false) 다른 채널의 새 소속을 가졌다
+    // (keepsConnection=true) — 끊을 수 없으므로 배제가 유일한 수단인 상태다.
+    for (let i = 0; i < total; i += 1) {
+        const socket = createLeaveDenyingSocket(`cap-sock-${i}`, { joinedChannels: [channelId] })
+        sockets.push(socket)
+        channelMembership.detachSocketFromChannel(socket, channelId, '[테스트 채널 정리]', {}, {
+            ownsChannel: () => false,
+            keepsConnection: () => true,
+        })
+    }
+    await settleChannelRetries()
+
+    // 축출이 있었다면 여기가 1024로 깎인다(이전 구현의 실제 동작이다).
+    assert.equal(channelMembership.getChannelExclusions(channelId).length, total,
+        '수위를 넘긴 유효 배제가 축출됐다(무단 전달이 다시 열린다)')
+    for (const socket of sockets) {
+        assert.equal(channelMembership.isSocketExcludedFromChannel(channelId, socket.id), true,
+            `${socket.id}의 배제가 사라졌다`)
+        // 새 소속이 있으므로 끊지 않는다 — 배제는 끊기의 대체 수단이다.
+        assert.equal(socket.disconnectCalls, 0)
+    }
+
+    // 실제 방송에서도 전원이 빠진다.
+    const allowed = createLeaveDenyingSocket('cap-allowed', { joinedChannels: [channelId] })
+    const io = createFakeIo([allowed, ...sockets])
+    channelMembership.emitToChannel(io, channelId, 'player_left_room', { roomId: channelId })
+    const broadcast = io.broadcasts.find((b) => b.event === 'player_left_room')
+    assert.ok(broadcast, '방송이 발생하지 않았다')
+    assert.equal(broadcast.excluded.length, total)
+})
+
+test('AC-06: 연결이 끝나면 그 소켓의 모든 배제가 해제된다(목록의 실제 상한은 생명주기다)', async () => {
+    const socket = createLeaveDenyingSocket('life-sock', { joinedChannels: ['chan-a', 'chan-b'] })
+    for (const channelId of ['chan-a', 'chan-b']) {
+        channelMembership.detachSocketFromChannel(socket, channelId, '[테스트 채널 정리]', {}, {
+            ownsChannel: () => false,
+            keepsConnection: () => true,
+        })
+    }
+    await settleChannelRetries()
+    assert.equal(channelMembership.isSocketExcludedFromChannel('chan-a', 'life-sock'), true)
+    assert.equal(channelMembership.isSocketExcludedFromChannel('chan-b', 'life-sock'), true)
+
+    // 프로덕션에서는 matchmaking.js::onDisconnect가 모든 소켓에서 이것을 부른다.
+    channelMembership.releaseSocketFromAllChannels('life-sock')
+
+    assert.deepEqual(channelMembership.getChannelExclusions('chan-a'), [])
+    assert.deepEqual(channelMembership.getChannelExclusions('chan-b'), [])
+})
+
+test('AC-06: except을 지원하지 않는 adapter에서는 허용된 수신자에게만 개별 전달하고 배제된 소켓에는 보내지 않는다', async () => {
+    const channelId = 'chan-noexcept'
+    const denied = createLeaveDenyingSocket('ne-denied', { joinedChannels: [channelId] })
+    const allowedA = createLeaveDenyingSocket('ne-allowed-a', { joinedChannels: [channelId] })
+    const allowedB = createLeaveDenyingSocket('ne-allowed-b', { joinedChannels: [channelId] })
+    const outsider = createLeaveDenyingSocket('ne-outsider', { joinedChannels: ['other-chan'] })
+
+    channelMembership.detachSocketFromChannel(denied, channelId, '[테스트 채널 정리]', {}, {
+        ownsChannel: () => false,
+        keepsConnection: () => true,
+    })
+    await settleChannelRetries()
+    assert.equal(channelMembership.isSocketExcludedFromChannel(channelId, denied.id), true)
+
+    // except을 제공하지 않는 adapter(채널 전체 방송만 가능하다).
+    const channelWideEmits = []
+    const io = {
+        sockets: { sockets: new Map([denied, allowedA, allowedB, outsider].map((s) => [s.id, s])) },
+        to: () => ({ emit: (event, payload) => channelWideEmits.push({ event, payload }) }),
+    }
+
+    const errors = []
+    const originalError = console.error
+    console.error = (...args) => errors.push(args)
+    try {
+        channelMembership.emitToChannel(io, channelId, 'player_left_room', { roomId: channelId })
+    } finally {
+        console.error = originalError
+    }
+
+    // 채널 전체 방송은 일어나지 않았다 — 그것이 곧 배제된 소켓에 흘려보내는 경로였다.
+    assert.equal(channelWideEmits.length, 0, '배제를 적용할 수 없는데 채널 전체로 방송했다')
+    assert.equal(denied.emitted.length, 0, '배제된 소켓이 방송을 받았다')
+    // 정상 참가자는 **실제로** 받는다(fail-closed가 정상 전달을 없애지 않는다).
+    assert.equal(allowedA.emitted.filter((e) => e.event === 'player_left_room').length, 1)
+    assert.equal(allowedB.emitted.filter((e) => e.event === 'player_left_room').length, 1)
+    // 그 채널에 없는 소켓에는 가지 않는다.
+    assert.equal(outsider.emitted.length, 0)
+    assert.equal(errors.some(([, fields]) => fields?.code === 'CHANNEL_EXCLUDE_FALLBACK'), true,
+        '제외 우회 경로가 기록되지 않았다')
+})
+
+test('AC-06: 제외도 열거도 불가능하면 그 방송을 버린다(fail-closed)', async () => {
+    const channelId = 'chan-blind'
+    const denied = createLeaveDenyingSocket('blind-denied', { joinedChannels: [channelId] })
+    channelMembership.detachSocketFromChannel(denied, channelId, '[테스트 채널 정리]', {}, {
+        ownsChannel: () => false,
+        keepsConnection: () => true,
+    })
+    await settleChannelRetries()
+
+    const channelWideEmits = []
+    // except도 없고 구성원을 훑을 registry도 없다.
+    const io = { to: () => ({ emit: (event, payload) => channelWideEmits.push({ event, payload }) }) }
+
+    const errors = []
+    const originalError = console.error
+    console.error = (...args) => errors.push(args)
+    try {
+        channelMembership.emitToChannel(io, channelId, 'player_left_room', { roomId: channelId })
+    } finally {
+        console.error = originalError
+    }
+
+    assert.equal(channelWideEmits.length, 0, '배제를 적용할 수 없는데 방송을 보냈다')
+    assert.equal(denied.emitted.length, 0)
+    assert.equal(errors.some(([, fields]) => fields?.code === 'CHANNEL_EMIT_DROPPED_FAIL_CLOSED'), true)
+})
+
+test('AC-06: 배제가 없는 정상 경로의 방송은 기존과 완전히 같다(발신자 제외 포함)', () => {
+    const channelId = 'chan-normal'
+    const sender = createLeaveDenyingSocket('normal-sender', { joinedChannels: [channelId] })
+    const io = createFakeIo([sender])
+    const senderBroadcasts = []
+    sender.to = () => ({ emit: (event, payload) => senderBroadcasts.push({ event, payload }) })
+
+    channelMembership.emitToChannel(io, channelId, 'player_ready_changed', { uuid: 'x' },
+        { senderSocket: sender })
+
+    // senderSocket.to(channelId) 경로를 그대로 쓴다 — io 전체 방송으로 바뀌지 않는다.
+    assert.equal(senderBroadcasts.length, 1)
+    assert.equal(senderBroadcasts[0].event, 'player_ready_changed')
+    assert.equal(io.broadcasts.length, 0)
+})
+
+// ── handleFailure: ownsChannel과 keepsConnection은 서로 다른 질문이다 ─────────
+
+test('AC-06: 같은 채널에 정당하게 다시 들어온 소속은 옛 leave가 거부돼도 제외·끊기 대상이 아니다', async () => {
+    const channelId = 'chan-readmit'
+    const socket = createLeaveDenyingSocket('readmit-sock', { joinedChannels: [channelId] })
+
+    // 옛 이탈의 정리가 도는 사이 이 소켓은 **같은 채널**의 정상 소속이 됐다.
+    channelMembership.detachSocketFromChannel(socket, channelId, '[테스트 채널 정리]', {}, {
+        ownsChannel: () => true,
+        keepsConnection: () => true,
+    })
+    await settleChannelRetries()
+
+    assert.equal(channelMembership.isSocketExcludedFromChannel(channelId, socket.id), false,
+        '정당한 같은 채널 재입장이 전달에서 제외됐다')
+    assert.deepEqual(channelMembership.getChannelExclusions(channelId), [])
+    assert.equal(socket.disconnectCalls, 0)
+    // 재시도로 자기 소속을 다시 떼려 들지 않는다(1회 시도 후 소유권을 보고 멈춘다).
+    assert.equal(socket.leaveCalls, 1)
+    assert.equal(socket.rooms.has(channelId), true, '정상 소속의 채널 가입이 사라졌다')
+})
+
+test('AC-06: 같은 채널 재입장에서 가입이 떨어져 있으면 되돌려 놓는다(끊지 않는다)', async () => {
+    const channelId = 'chan-readmit-restore'
+    // leave가 가입을 떼어낸 뒤 거부된 상태를 재현한다(rooms에 채널이 없다).
+    const socket = createLeaveDenyingSocket('readmit-restore-sock')
+
+    channelMembership.detachSocketFromChannel(socket, channelId, '[테스트 채널 정리]', {}, {
+        ownsChannel: () => true,
+        keepsConnection: () => true,
+    })
+    await settleChannelRetries()
+
+    assert.equal(socket.rooms.has(channelId), true, '정당한 새 소속의 가입이 되돌려지지 않았다')
+    assert.equal(socket.joinCalls, 1)
+    assert.equal(channelMembership.isSocketExcludedFromChannel(channelId, socket.id), false)
+    assert.equal(socket.disconnectCalls, 0)
+})
+
+test('AC-06: **다른** 채널의 새 소속은 연결을 지키고 옛 채널의 전달에서만 빠진다', async () => {
+    const oldChannel = 'chan-old'
+    const socket = createLeaveDenyingSocket('other-chan-sock', { joinedChannels: [oldChannel, 'chan-new'] })
+
+    channelMembership.detachSocketFromChannel(socket, oldChannel, '[테스트 채널 정리]', {}, {
+        // 옛 채널의 소속은 아니다. 하지만 다른 채널의 새 소속이 있다.
+        ownsChannel: () => false,
+        keepsConnection: () => true,
+    })
+    await settleChannelRetries()
+
+    assert.equal(socket.disconnectCalls, 0, '다른 채널의 새 소속을 가진 연결을 끊었다')
+    assert.equal(channelMembership.isSocketExcludedFromChannel(oldChannel, socket.id), true)
+    // 새 채널은 건드리지 않는다.
+    assert.equal(channelMembership.isSocketExcludedFromChannel('chan-new', socket.id), false)
+    assert.equal(socket.leaveCalls, channelMembership.MAX_CHANNEL_LEAVE_ATTEMPTS)
+})
+
+test('AC-06: 방 채널 방송(player_ready_changed)도 배제된 소켓에는 전달되지 않고 잔류자에게는 실제로 전달된다', async () => {
+    const { io, sockets, room } = await setupRoom('ready-x-h', ['ready-x-a', 'ready-x-b'])
+
+    // 떼지 못한 옛 소속이 이 방 채널에 남아 있는 상태(배제의 생산 경로 자체는 위 시험들이 덮는다).
+    channelMembership.excludeSocketFromChannel(room.roomId, sockets['ready-x-a'].id)
+    for (const socket of Object.values(sockets)) socket.emitted.length = 0
+
+    const ack = await callAsPromise(
+        handleSetReady, io, sockets['ready-x-h'], 'ready-x-h', readyPayload(room))
+    assert.equal(ack.ok, true, JSON.stringify(ack))
+
+    const received = (uuid) => sockets[uuid].emitted.filter((e) => e.event === 'player_ready_changed').length
+    // 배제된 소켓에는 가지 않는다 — 추방된 계정이 자기가 쫓겨난 방의 준비 상태를 계속 받지 않는다.
+    assert.equal(received('ready-x-a'), 0, '배제된 소켓이 방 채널 방송을 받았다')
+    // 정상 잔류자는 **실제로** 받는다(fail-closed가 정상 전달을 없애지 않는다).
+    assert.equal(received('ready-x-b'), 1)
+    // 발신자 제외는 그대로다 — 요청자는 ACK로만 결과를 안다.
+    assert.equal(received('ready-x-h'), 0)
+})
+
+test('AC-06: 살아 있는 소속이 하나도 없으면 떼지 못한 연결을 끊고 배제를 정리한다', async () => {
+    const channelId = 'chan-dead'
+    const socket = createLeaveDenyingSocket('dead-sock', { joinedChannels: [channelId] })
+    // 먼저 다른 채널의 배제를 하나 만들어 둔다.
+    channelMembership.excludeSocketFromChannel('chan-stale', socket.id)
+
+    channelMembership.detachSocketFromChannel(socket, channelId, '[테스트 채널 정리]', {}, {
+        ownsChannel: () => false,
+        keepsConnection: () => false,
+    })
+    await settleChannelRetries()
+
+    assert.equal(socket.disconnectCalls, 1, '남은 근거가 없는 연결을 끊지 않았다')
+    // 끊은 뒤에는 더 뺄 대상 자체가 없다 — 목록을 남기지 않는다.
+    assert.deepEqual(channelMembership.getChannelExclusions('chan-stale'), [])
+    assert.deepEqual(channelMembership.getChannelExclusions(channelId), [])
 })

@@ -31,6 +31,22 @@ const gameInviteModule = require('../service/gameInvite.service')
 // 진행 중 추방이 같은 표를 공유해야 원 요청자의 재조회가 명령 종류와 무관하게 하나의 답을
 // 갖는다(공통 영수증 계약). 이 모듈은 방 registry를 알지 못하므로 순환이 생기지 않는다.
 const kickReceiptStore = require('./kickReceiptStore')
+// F-21(AC-05/AC-06): 채널 이탈·되돌리기·전달 제외의 단일 소유자(socket/gameSession.js와 공유).
+const channelMembership = require('./channelMembership')
+
+/**
+ * F-21(AC-05/AC-06): uuid → 현재 canonical socket.id(socket.js의 onlineUsers). 복제하지 않고
+ * 참조만 들고 있으며 이 파일은 절대 쓰지 않는다 — 쓰기는 socket.js의 책임이다.
+ *
+ * 주입 전에는 null이고, 그때는 canonical 판정이 "같은 계정의 다른 소켓이 이미 그 방을
+ * 소유했는가"로 퇴화한다(fail-safe: 옛 소켓을 되살리지 않는 쪽).
+ */
+let onlineUsersRegistry = null
+
+/** 런타임 진입점(socket.js의 모듈 초기화)에서 onlineUsers registry를 주입한다. */
+function setOnlineUsersRegistry(registry) {
+    onlineUsersRegistry = registry
+}
 
 // userRepositoryRef·economyServiceRef와 **같은 이유**의 최소 의존성 주입이다: 초대 서비스는
 // 호출 시 실제 MySQL 트랜잭션을 열므로, DB 없이 입장 상태 기계(예약·publication·영수증·
@@ -326,7 +342,17 @@ function removePublishedAdmission(io, socket, attempt) {
     const accountStillSeated = isAccountSeatedInRoom(attempt.accountUuid, attempt.roomId)
     if (socket && typeof socket.leave === 'function' && socket.id === attempt.socketId
         && (stillMine || !accountStillSeated)) {
-        try { socket.leave(attempt.roomId) } catch (err) { console.error('[초대 입장 채널 정리 실패]', err) }
+        // F-21(AC-05/AC-06): 예전에는 raw socket.leave를 부르고 **동기 예외만** 잡았다.
+        // adapter가 Promise를 돌려주면 그 거부는 잡히지 않고(채널이 그대로 남는다), 완료가
+        // 늦어지는 사이 같은 계정·같은 소켓이 그 방에 정상 입장하면 뒤늦은 완료가 방금 성립한
+        // 소속의 채널을 대신 떼어 간다. 공통 경계가 완료 후 소유권을 다시 묻게 한다.
+        detachSocketFromChannel(socket, attempt.roomId, '[초대 입장 채널 정리 실패]', {
+            ownsChannel: () =>
+                isAccountSeatedInRoom(attempt.accountUuid, attempt.roomId)
+                && isCanonicalSocketForAccount(io, attempt.accountUuid, socket, attempt.roomId),
+            keepsConnection: () =>
+                hasRoomMembership(attempt.accountUuid) || hasLiveGameMembership(attempt.accountUuid),
+        })
     }
     if (!stillMine || !room) return
     if (room.players.size === 0) {
@@ -341,9 +367,11 @@ function removePublishedAdmission(io, socket, attempt) {
     if (!room.players.has(room.hostUuid)) {
         room.hostUuid = room.players.keys().next().value
         try {
-            io?.to?.(attempt.roomId)?.emit?.('host_changed', {
+            channelMembership.emitToChannel(io, attempt.roomId, 'host_changed', {
                 hostUuid: room.hostUuid,
                 canStart: computeCanStart(room),
+                roomInstanceId: room.instanceId ?? null,
+                bootEpoch: BOOT_EPOCH,
                 // F-20(AC-05): 새 방장이 "지금 서버가 확정한 설정"을 편집 시작점으로 삼을 수
                 // 있도록 현재 버전을 함께 알린다. 값 자체는 싣지 않는다 — 방장이 된 클라이언트는
                 // get_current_room으로 최신 설정을 다시 확보한 뒤에만 편집할 수 있다.
@@ -353,8 +381,13 @@ function removePublishedAdmission(io, socket, attempt) {
         } catch (err) { console.error('[초대 입장 보상 방송 실패]', err) }
     }
     try {
-        io?.to?.(attempt.roomId)?.emit?.('player_left_room', {
-            uuid: attempt.accountUuid, canStart: computeCanStart(room),
+        channelMembership.emitToChannel(io, attempt.roomId, 'player_left_room', {
+            uuid: attempt.accountUuid,
+            membershipId: attempt.publicationMembershipId ?? null,
+            roomId: attempt.roomId,
+            roomInstanceId: room.instanceId ?? null,
+            bootEpoch: BOOT_EPOCH,
+            canStart: computeCanStart(room),
         })
     } catch (err) { console.error('[초대 입장 보상 방송 실패]', err) }
     emitPublicRoomList(io)
@@ -826,6 +859,9 @@ async function resyncRoomChannelOnReconnect(socket, uuid) {
  * 구분할 수 없으므로, 판단을 유예로 미룬다(scheduleRoomRetentionOnDisconnect).
  */
 function onDisconnect(io, socket, uuid) {
+    // F-21(AC-05/AC-06): 연결이 끝나면 그 소켓을 향한 채널 전달 제외는 더 이상 의미가 없다.
+    // 제외 목록이 무한히 자라지 않게 하는 실제 생명주기 경계다(모든 소켓이 이 경로를 지난다).
+    if (typeof socket?.id === 'string') channelMembership.releaseSocketFromAllChannels(socket.id)
     const queuedEntry = matchmakingQueue.get(uuid)
     if (queuedEntry && queuedEntry.socketId === socket?.id) {
         matchmakingQueue.delete(uuid)
@@ -1615,7 +1651,13 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         socket.data.activeRoomId = room.id
 
         socket.emit('room_joined', buildRoomPayload(room))
-        socket.to(room.id).emit('player_joined_room', { player: { ...player }, canStart: computeCanStart(room) })
+        // 전달 제외 경계를 지난다(player_ready_changed와 같은 이유) — 떼지 못한 옛 소속이
+        // 이 채널에 남아 있으면 새 참가자의 명단이 그 연결로 흘러간다.
+        channelMembership.emitToChannel(
+            io, room.id, 'player_joined_room',
+            { player: { ...player }, canStart: computeCanStart(room) },
+            { senderSocket: socket },
+        )
         emitPublicRoomList(io)
     } catch (err) {
         console.error('[코드 참가 에러]', err)
@@ -1699,7 +1741,7 @@ function handleDeleteRoom(io, uuid) {
     const room = gameRooms.get(roomId)
     if (!room || room.hostUuid !== uuid) return
 
-    io.to(roomId).emit('room_deleted', {})
+    channelMembership.emitToChannel(io, roomId, 'room_deleted', {})
 
     room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     gameRooms.delete(roomId)
@@ -1827,7 +1869,15 @@ function handleSetReady(io, socket, uuid, payload, callback) {
         settingsVersion: getSettingsVersion(room),
         readyRevision: player.readyRevision,
     }
-    socket.to(roomId).emit('player_ready_changed', { uuid, isReady, canStart, sfxEvent, ...readyEnvelope })
+    // F-21(AC-05/AC-06): 방 채널 방송도 전달 제외 경계를 지난다. senderSocket을 주므로 정상
+    // 경로(제외 없음)에서는 기존 `socket.to(roomId).emit`과 **완전히 같은** 한 번의 방송이고,
+    // 떼지 못한 옛 소속이 이 채널에 남아 있을 때만 그 소켓을 빼고 보낸다 — 그러지 않으면
+    // 추방된 계정이 자기가 쫓겨난 방의 준비 상태를 계속 받는다.
+    channelMembership.emitToChannel(
+        io, roomId, 'player_ready_changed',
+        { uuid, isReady, canStart, sfxEvent, ...readyEnvelope },
+        { senderSocket: socket },
+    )
     callback({ ok: true, isReady, canStart, sfxEvent, ...readyEnvelope })
 }
 
@@ -2562,61 +2612,31 @@ function commitRoomDeparture(io, socket, uuid, reason) {
 }
 
 /**
- * F-21(공통 커밋·통지 경계): 제거된 소켓을 방송 채널에서 뗀다. **실패하면 그 연결을 끊는다.**
+ * F-21(공통 커밋·통지 경계): 제거된 소켓을 방송 채널에서 뗀다.
  *
- * socket.leave는 adapter에 따라 Promise를 돌려주고, 그 거부는 try/catch로 잡히지 않는다 —
- * 동기 throw만 처리하면 비동기 adapter에서 채널에 남은 연결이 조용히 방송을 계속 받는다
- * (서버 상태에서는 이미 제거된 계정이다). 두 실패 모양을 **같은 정리**로 잇는다: 연결을
- * 끊고, 재접속은 서버의 소속·forfeited 검사가 다시 막는다.
- *
- * 절대 던지지 않는다 — 이 함수는 이미 확정된 커밋 뒤의 best-effort 정리이고, 여기서 새는
- * 예외는 뒤따르는 다른 통지를 멈춘다.
+ * 실제 구현은 socket/channelMembership.js가 소유한다 — 진행 중 세션(socket/gameSession.js)과
+ * **같은** 계약이어야 하고, 비동기 완료 후 재검사·제한된 재시도·전달 제외처럼 틀리기 쉬운
+ * 부분이 두 벌로 갈라지면 한쪽만 고쳐진다. 이 파일은 "무엇이 소유권인가"만 정한다.
  */
 function detachSocketFromChannel(socket, channelId, logLabel, ownership = null) {
-    if (!socket || typeof socket.leave !== 'function') return
-    const ask = (predicate) => {
-        if (typeof predicate !== 'function') return false
-        try { return predicate() === true } catch (err) { return false }
-    }
-    const ownsChannel = () => ask(ownership?.ownsChannel)
-    // 끊기의 기준은 채널 소유권보다 넓다 — 그 소켓이 **다른** 새 소속(다른 방·새 판)을
-    // 가졌더라도 옛 정리가 그 연결을 끊어서는 안 된다.
-    const keepsConnection = () => ask(ownership?.keepsConnection ?? ownership?.ownsChannel)
-    const handleFailure = () => {
-        if (keepsConnection()) {
-            // 그 사이 이 계정이 같은 방에 **새 소속으로** 다시 앉았다. 이 실패는 지난 소속의
-            // 것이므로 연결을 끊지 않는다 — 끊으면 방금 성립한 소속이 방송을 받지 못한다.
-            console.error(logLabel, { code: 'CHANNEL_LEAVE_SUPERSEDED', channelId })
-            return
-        }
-        console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', channelId })
-        try { socket.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
-    }
-    const restoreIfSuperseded = () => {
-        if (!ownsChannel()) return
-        if (socket.rooms && typeof socket.rooms.has === 'function' && socket.rooms.has(channelId)) return
-        // 옛 이탈이 늦게 끝나면서 새 소속의 채널 가입까지 함께 떼어냈다 — 되돌려 놓는다.
-        try {
-            const rejoined = socket.join(channelId)
-            if (rejoined && typeof rejoined.then === 'function') {
-                Promise.resolve(rejoined).catch(() => {
-                    console.error(logLabel, { code: 'CHANNEL_REJOIN_ERROR', channelId })
-                })
-            }
-        } catch (err) {
-            console.error(logLabel, { code: 'CHANNEL_REJOIN_ERROR', channelId })
-        }
-    }
-    let pending
-    try {
-        pending = socket.leave(channelId)
-    } catch (err) {
-        handleFailure()
-        return
-    }
-    if (pending && typeof pending.then === 'function') {
-        Promise.resolve(pending).then(restoreIfSuperseded, handleFailure)
-    }
+    channelMembership.detachSocketFromChannel(socket, channelId, logLabel, { channelId }, ownership)
+}
+
+/**
+ * F-21(AC-05/AC-06): 그 소켓이 **지금** 이 계정의 canonical 연결인가.
+ *
+ * 계정이 그 방에 앉아 있다는 사실만으로는 "떠나는 이 소켓이 아직 그 소속의 주인"임을 말하지
+ * 못한다 — 같은 계정의 새 로그인이 소켓을 교체한 뒤 같은 방에 다시 앉으면 계정 단위 검사는
+ * 전부 통과하고, 그 결과 **옛 소켓**의 채널 가입이 되돌려진다(유령 청취자가 된다).
+ *
+ * onlineUsers registry가 주입돼 있으면 그것이 유일한 근거다. 주입 전(순수 단위 시험 등)에는
+ * 같은 계정의 다른 살아 있는 소켓이 그 방을 이미 소유했는지로 대신 판정한다.
+ */
+function isCanonicalSocketForAccount(io, uuid, socket, roomId) {
+    if (!socket) return false
+    const canonicalId = onlineUsersRegistry?.get?.(uuid)
+    if (typeof canonicalId === 'string') return canonicalId === socket.id
+    return !isRoomOwnedByAnotherSocket(io, roomId, uuid, socket)
 }
 
 /**
@@ -2670,8 +2690,14 @@ function notifyRoomDeparture(io, outcome, departingSockets = []) {
             // 이탈 정리가 늦게 끝나는 사이 같은 계정이 그 방에 **새 소속으로** 다시 앉았다면
             // 그 채널은 더 이상 이 이탈의 잔여물이 아니다. 다른 방·새 판으로 옮겨 갔더라도
             // 그 연결을 끊지는 않는다.
+            //
+            // 계정 소속만으로는 부족하다 — 그 새 소속을 만든 것이 **이 소켓**이라는 증거가
+            // 있어야 한다. 새 로그인이 canonical 소켓을 가져갔다면 이 옛 소켓의 가입을
+            // 되돌리는 것은 유령 청취자를 만드는 일이다.
             {
-                ownsChannel: () => isAccountSeatedInRoom(outcome.uuid, roomId),
+                ownsChannel: () =>
+                    isAccountSeatedInRoom(outcome.uuid, roomId)
+                    && isCanonicalSocketForAccount(io, outcome.uuid, departing, roomId),
                 keepsConnection: () =>
                     hasRoomMembership(outcome.uuid) || hasLiveGameMembership(outcome.uuid),
             },
@@ -2685,10 +2711,16 @@ function notifyRoomDeparture(io, outcome, departingSockets = []) {
 
     if (hostChanged) {
         try {
-            io.to(roomId).emit('host_changed', {
+            channelMembership.emitToChannel(io, roomId, 'host_changed', {
                 hostUuid: room.hostUuid,
                 canStart: computeCanStart(room),
                 roomId,
+                // F-21(AC-02/AC-05): 잔류자 사건도 **어느 방 인스턴스의 어느 기동**에서 난
+                // 것인지 함께 싣는다. roomId만으로는 같은 식별자로 다시 만들어진 방에서
+                // 늦게 도착한 옛 사건을 구별할 수 없다. 기존 settingsVersion은 그대로 둔다
+                // (F-20 설정 사건 호환).
+                roomInstanceId: room.instanceId ?? null,
+                bootEpoch: BOOT_EPOCH,
                 settingsVersion: getSettingsVersion(room),
             })
         } catch (err) {
@@ -2697,12 +2729,14 @@ function notifyRoomDeparture(io, outcome, departingSockets = []) {
     }
 
     try {
-        io.to(roomId).emit('player_left_room', {
+        channelMembership.emitToChannel(io, roomId, 'player_left_room', {
             uuid: outcome.uuid,
             // F-21(AC-02/AC-05): 어느 **소속**이 빠졌는지 함께 싣는다. uuid만 보내면 같은
             // 계정이 곧바로 다시 들어온 경우 잔류자 화면이 새 참가자를 지워 버린다.
             membershipId: outcome.removedPlayer?.membershipId ?? null,
             roomId,
+            roomInstanceId: room.instanceId ?? null,
+            bootEpoch: BOOT_EPOCH,
             canStart: computeCanStart(room),
         })
     } catch (err) {
@@ -3016,10 +3050,12 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
             }
             if (!room.players.has(room.hostUuid)) {
                 room.hostUuid = room.players.keys().next().value
-                io.to(entry.roomId).emit('host_changed', {
+                channelMembership.emitToChannel(io, entry.roomId, 'host_changed', {
                     hostUuid: room.hostUuid,
                     canStart: computeCanStart(room),
                     roomId: entry.roomId,
+                    roomInstanceId: room.instanceId ?? null,
+                    bootEpoch: BOOT_EPOCH,
                     settingsVersion: getSettingsVersion(room),
                 })
             }
@@ -3032,7 +3068,13 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
         // 실패가 나머지 참가자의 알림을 막지 않도록 각각 독립된 try/catch로 격리한다.
         for (const removedUuid of removedUuidsByRoomId.get(entry.roomId) ?? []) {
             try {
-                io.to(entry.roomId).emit('player_left_room', { uuid: removedUuid, canStart: computeCanStart(room) })
+                channelMembership.emitToChannel(io, entry.roomId, 'player_left_room', {
+                    uuid: removedUuid,
+                    canStart: computeCanStart(room),
+                    roomId: entry.roomId,
+                    roomInstanceId: room.instanceId ?? null,
+                    bootEpoch: BOOT_EPOCH,
+                })
             } catch (err) {
                 console.error('[세션 종료 Room 정리 실패]', err)
             }
@@ -3331,13 +3373,24 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         roomAdmissionAttempts.delete(uuid)
         releasePublishedAdmission(attempt)
         const current = gameRooms.get(attempt.roomId)
-        if (current !== room || playerRoom.get(uuid) !== room.id || !room.players.has(uuid)) {
+        const seated = room.players.get(uuid)
+        // F-21(AC-06): 소속 식별자까지 대조한다. 방 참조·계정→방 매핑·참가자 존재는 **같은
+        // 계정이 그 사이 다시 들어온 경우에도 전부 통과한다** — 이 시도의 publication이 이미
+        // 제거된 뒤 같은 방에 정상 재입장했다면, 여기서 성공을 주장하는 것은 옛 초대가 만든
+        // 결과라고 거짓말하는 것이고 방송하는 player도 이미 사라진 소속이다.
+        if (current !== room || playerRoom.get(uuid) !== room.id || !seated
+            || (attempt.publicationMembershipId !== undefined
+                && seated.membershipId !== attempt.publicationMembershipId)) {
             // 확정 영수증은 있지만 현재 소속이 없다 — 성공으로 주장하지 않는다(A-10).
             respond({ ok: false, code: 'UNKNOWN', unknown: true, message: '입장 결과를 확인하지 못했습니다.' })
             return
         }
 
-        socket.to(room.id).emit('player_joined_room', { player: { ...player }, canStart: computeCanStart(room) })
+        channelMembership.emitToChannel(
+            io, room.id, 'player_joined_room',
+            { player: { ...seated }, canStart: computeCanStart(room) },
+            { senderSocket: socket },
+        )
         emitPublicRoomList(io)
         respond({ ok: true, room: buildRoomPayload(room), inviteId, attemptId })
     } catch (error) {
@@ -3444,6 +3497,9 @@ function __resetStateForTests() {
     // F-21: 추방 영수증도 같은 이유로 비운다 — 남으면 다음 테스트의 같은 requestId가
     // "이미 결정된 요청"으로 재생된다.
     kickReceiptStore.__resetKickReceiptsForTests()
+    // F-21(AC-05/AC-06): 채널 전달 제외도 비운다 — 남으면 다음 테스트의 정상 방송이 이전
+    // 테스트가 남긴 소켓 id 때문에 제외 경로를 탄다.
+    channelMembership.__resetChannelExclusionsForTests()
     // 예약된 타이머를 지우지 않으면 다음 테스트가 도는 도중에 이전 테스트의 제거가 끼어든다.
     for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
     pendingRoomRemovals.clear()
@@ -3582,6 +3638,7 @@ function __expireAdmissionAttemptForTests(uuid) {
 
 module.exports = {
     registerMatchmakingHandlers,
+    setOnlineUsersRegistry,
     onDisconnect,
     resyncRoomChannelOnReconnect,
     cleanupRoomStateForSessionParticipants,

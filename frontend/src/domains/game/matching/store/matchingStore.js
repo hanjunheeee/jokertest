@@ -74,6 +74,21 @@ export const useMatchingStore = create((set) => ({
     settings: null,
     settingsVersion: null,
 
+    /**
+     * F-21(AC-04/AC-05): **방 상태 적용 세대.** 이 store의 방 관련 상태가 실제로 바뀔 때마다
+     * 단조 증가한다(적재·참가·퇴장·방장 변경·준비·설정·초기화).
+     *
+     * 값이 아니라 **횟수**여야 하는 이유: 어떤 조회를 보낸 뒤 그 응답을 기다리는 사이 더 새로운
+     * 사건(퇴장·방장 승계·재입장)이 도착했는지는 방 식별자 비교로는 알 수 없다 — 같은 방 안에서
+     * 일어난 변화는 roomId·roomInstanceId를 바꾸지 않고, 나갔다 다시 들어온 A→B→A는 값이
+     * 원래대로 돌아온다. 늦게 도착한 조회 ACK가 그 사이의 사건을 덮어쓰지 못하게 하려면
+     * "내가 보낸 뒤에 무슨 일이든 있었는가"를 물어야 한다.
+     *
+     * 소비처: useMatchingRoomKick.verifyMembership이 get_current_room을 **보내기 전에** 이 값을
+     * 캡처하고, setRoom을 부르는 자리에서 다시 읽어 같은지 확인한다.
+     */
+    roomRevision: 0,
+
     startSearch: () => set({ isSearching: true}),
     stopSearch: () => set({isSearching: false}),
 
@@ -85,10 +100,11 @@ export const useMatchingStore = create((set) => ({
         accessType = null, settings = null, settingsVersion = null,
         roomInstanceId = null, bootEpoch = null,
     }) =>
-        set({
+        set((s) => ({
             isSearching: false, isInRoom: true, roomId, roomCode, players, hostUuid, canStart,
             accessType, settings, settingsVersion, roomInstanceId, bootEpoch,
-        }),
+            roomRevision: s.roomRevision + 1,
+        })),
 
     /**
      * room_settings_updated 스냅샷 하나를 통째로 적용합니다.
@@ -104,6 +120,7 @@ export const useMatchingStore = create((set) => ({
             players: Array.isArray(players) ? players : s.players,
             canStart: canStart ?? s.canStart,
             hostUuid: hostUuid ?? s.hostUuid,
+            roomRevision: s.roomRevision + 1,
         })),
 
     // canStart는 참가 시점 서버 계산값을 그대로 반영합니다(생략 시 기존 값 유지).
@@ -111,16 +128,18 @@ export const useMatchingStore = create((set) => ({
         set((s) => ({
             players: [...s.players, player],
             canStart: canStart ?? s.canStart,
+            roomRevision: s.roomRevision + 1,
         })),
 
     removePlayer: (uuid, canStart) =>
         set((s) => ({
             players: s.players.filter((p) => p.uuid !== uuid),
             canStart: canStart ?? s.canStart,
+            roomRevision: s.roomRevision + 1,
         })),
 
     updateHost: (hostUuid, canStart) =>
-        set((s) => ({ hostUuid, canStart: canStart ?? s.canStart })),
+        set((s) => ({ hostUuid, canStart: canStart ?? s.canStart, roomRevision: s.roomRevision + 1 })),
 
     // set_ready ack(본인)와 player_ready_changed(다른 참가자) 양쪽에서 함께 쓰는 갱신 함수입니다.
     //
@@ -133,10 +152,11 @@ export const useMatchingStore = create((set) => ({
                 ? { ...p, isReady, ...(Number.isInteger(readyRevision) ? { readyRevision } : {}) }
                 : p)),
             canStart: canStart ?? s.canStart,
+            roomRevision: s.roomRevision + 1,
         })),
 
     clearRoom: () =>
-        set({
+        set((s) => ({
             isSearching: false, isInRoom: false, roomId: null, roomCode: null, players: [], hostUuid: null,
             canStart: false,
             // 방 식별자도 함께 지운다 — 남으면 다음 방의 사건·요청이 이전 방의 인스턴스를
@@ -145,5 +165,8 @@ export const useMatchingStore = create((set) => ({
             // 설정도 반드시 함께 지운다 — 남으면 계정 전환·방 이동 뒤에 이전 방의 설정이
             // 새 편집 화면의 시작점으로 되살아난다(AC-05).
             accessType: null, settings: null, settingsVersion: null,
-        }),
+            // 세대는 **되돌리지 않는다**(0으로 초기화하면 방을 나갔다 들어온 뒤의 값이 이전
+            // 방에서 캡처된 값과 같아질 수 있고, 그것이 바로 이 값이 막으려는 A→B→A다).
+            roomRevision: s.roomRevision + 1,
+        })),
 }))

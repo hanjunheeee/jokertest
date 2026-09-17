@@ -136,5 +136,21 @@ export function useInGameDayDiscussionReady() {
       })
   }
 
-  return { status, error, readyCount, requiredCount, submitReady }
+  /**
+   * F-21(AC-03): 이탈은 준비의 **분모**를 바꾼다.
+   *
+   * ACK가 실어 준 수치는 그 제출 순간의 사실이다 — 그 뒤 누군가 추방되면 요구 인원이 줄지만
+   * 이 화면은 새 ACK를 받을 일이 없어 3/4에 멈춘 채로 남는다(그 낮은 영원히 끝나지 않는 것처럼
+   * 보인다). 서버가 참여 변화와 함께 보낸 공개 진행 수가 있으면 그것이 canonical이다.
+   */
+  const serverProgress = useInGameStore((s) => s.state?.progress ?? null)
+  const serverOwnsProgress = serverProgress?.kind === "DAY_DISCUSSION"
+
+  return {
+    status,
+    error,
+    readyCount: serverOwnsProgress ? serverProgress.doneCount : readyCount,
+    requiredCount: serverOwnsProgress ? serverProgress.requiredCount : requiredCount,
+    submitReady,
+  }
 }

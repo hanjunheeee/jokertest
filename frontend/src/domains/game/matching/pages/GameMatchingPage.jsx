@@ -77,6 +77,7 @@ export default function GameMatchingPage() {
     kickErrorCode,
     isKicking,
     canLookupKickResult,
+    isAwaitingKickResolution,
     requestKickConfirm,
     cancelKickConfirm,
     confirmKick,
@@ -194,6 +195,7 @@ export default function GameMatchingPage() {
               errorCode={kickErrorCode}
               isSending={isKicking}
               canLookupResult={canLookupKickResult}
+              isAwaitingResolution={isAwaitingKickResolution}
               onRequestConfirm={requestKickConfirm}
               onCancelConfirm={cancelKickConfirm}
               onConfirmKick={confirmKick}

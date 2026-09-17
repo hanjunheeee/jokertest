@@ -516,6 +516,84 @@ test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합�
     assert.deepEqual([...session.dayVoteExcludedUuids].sort(), [uuidB, uuidD].sort())
 })
 
+test('commitDayVoteResolution: 집계도 동률 집합도 그대로인 **표 교환**은 커밋되지 않는다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-ballot-swap' })
+
+    // 1) A→B, B→A, C→D, D→C. 득표는 A·B·C·D 각 1표씩이라 4자 동률 → 1라운드 REVOTE.
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidA)
+    submitDayVote(uuidC, session.id, uuidD)
+    submitDayVote(uuidD, session.id, uuidC)
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(prepared.resolution.outcome, 'REVOTE')
+    const preparedTie = [...prepared.resolution.revoteExcludedUuids].sort()
+
+    // 2) 커밋 전에 표가 **서로 교환**된다: A→C, B→D, C→A, D→B.
+    //    네 표가 전부 달라졌는데도 득표(각 1표)·총 투표 수·기권 수·동률 후보 집합이 모두 같다.
+    //    집계에서 파생된 값만 대조하는 재검증은 이 변화를 하나도 보지 못한다.
+    //    (자기 자신 지목은 SELF_TARGET_NOT_ALLOWED로 애초에 저장되지 않으므로 쓰지 않는다.)
+    assert.equal(submitDayVote(uuidA, session.id, uuidC).ok, true)
+    assert.equal(submitDayVote(uuidB, session.id, uuidD).ok, true)
+    assert.equal(submitDayVote(uuidC, session.id, uuidA).ok, true)
+    assert.equal(submitDayVote(uuidD, session.id, uuidB).ok, true)
+
+    const nowPrepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(nowPrepared.resolution.outcome, prepared.resolution.outcome)
+    assert.equal(nowPrepared.resolution.publicVoteCount, prepared.resolution.publicVoteCount)
+    assert.equal(nowPrepared.resolution.publicAbstainCount, prepared.resolution.publicAbstainCount)
+    assert.equal(nowPrepared.resolution.tribunalTargetUuid, prepared.resolution.tribunalTargetUuid)
+    assert.deepEqual(
+        [...nowPrepared.resolution.revoteExcludedUuids].sort(), preparedTie,
+        '이 시험이 의도한 경계가 아니다 — 동률 집합까지 같아야 표 대조만이 유일한 방어가 된다',
+    )
+
+    // 3) 그래도 옛 판정은 커밋되지 않는다 — 준비된 **표 자체**가 지금의 표와 다르기 때문이다.
+    const committed = commitDayVoteResolution(prepared.session, prepared.resolution)
+    assert.deepEqual(committed, { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' })
+    assert.equal(session.dayVoteResolution, null)
+    assert.equal(session.dayVoteRound ?? 1, 1)
+    assert.equal(session.phase, 'DAY')
+
+    // 4) 지금의 표로 준비한 판정은 그대로 커밋된다(방어가 정상 경로를 막지 않는다).
+    assert.equal(commitDayVoteResolution(nowPrepared.session, nowPrepared.resolution).ok, true)
+})
+
+test('commitDayVoteResolution: ballotSnapshot이 없는 resolution은 커밋되지 않는다(fail-closed)', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-ballot-missing' })
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidB)
+
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    // prepare가 항상 만드는 값이다 — 없다는 것은 이 함수가 소비해서는 안 되는 값이라는 뜻이다.
+    const forged = { ...prepared.resolution }
+    delete forged.ballotSnapshot
+
+    assert.deepEqual(
+        commitDayVoteResolution(prepared.session, forged),
+        { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' },
+    )
+    assert.equal(session.dayVoteResolution, null)
+    assert.equal(session.phase, 'DAY')
+})
+
+test('buildDayVoteResolvedPayload/스냅샷 어디에도 준비된 표 내용이 실리지 않는다', () => {
+    const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-ballot-secret' })
+    submitDayVote(uuidA, session.id, uuidB)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidB)
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.equal(commitDayVoteResolution(prepared.session, prepared.resolution).ok, true)
+
+    const payload = buildDayVoteResolvedPayload(session, session.dayVoteResolution)
+    assert.equal(Object.hasOwn(payload, 'ballotSnapshot'), false)
+    assert.equal(JSON.stringify(payload).includes('ballotSnapshot'), false)
+
+    // 재접속 스냅샷도 마찬가지다 — 남의 표는 어느 경계에도 나타나지 않는다.
+    const snapshot = getSessionSnapshotForPlayer(uuidC, session.id).snapshot
+    assert.equal(JSON.stringify(snapshot).includes('ballotSnapshot'), false)
+})
+
 test('commitDayVoteResolution: ABSTAINED 결과도 phase를 NIGHT로 전이한다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-abstain-1' })
     submitDayVote(uuidA, session.id, null)

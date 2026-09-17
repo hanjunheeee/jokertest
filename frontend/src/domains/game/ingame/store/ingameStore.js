@@ -27,6 +27,27 @@ function clearNightPrivateResultOnNightEntry(current) {
 }
 
 /**
+ * F-21(AC-03): 서버가 소유하는 **본인** 제출 필드. 개인 전송과 스냅샷 복원이 같은 목록을
+ * 쓰므로 한쪽만 늘어나 갈라지지 않는다(applySessionSnapshot.js의 같은 이름 상수와 짝이다).
+ */
+const SELF_SUBMISSION_KEYS = Object.freeze([
+  "hasAcknowledgedRoleReveal",
+  "isDayVoteReady",
+  "hasSubmittedDayVote",
+  "dayVoteTargetUuid",
+  "dayVoteRound",
+  "hasSubmittedTribunalVote",
+])
+
+/** 공개 진행 수의 모양 검사(두 수는 음이 아닌 정수이거나 null — NIGHT은 null이다). */
+function isPublicProgressShape(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
+  if (typeof value.kind !== "string" || value.kind.length === 0) return false
+  const okCount = (n) => n === null || (Number.isInteger(n) && n >= 0)
+  return okCount(value.doneCount) && okCount(value.requiredCount)
+}
+
+/**
  * F-21(AC-02/AC-05/AC-06): 진행 중 추방 사건(game_kicked)이 **지금 이 화면이 들고 있는 바로
  * 그 판의 내 소속**을 가리키는지 판정한다(순수 함수 — 어떤 상태도 바꾸지 않는다).
  *
@@ -239,6 +260,49 @@ export const useInGameStore = create((set) => ({
             ...p,
             isParticipating: participationByUuid.get(p.uuid),
           })),
+          // F-21(AC-03): 이탈은 준비·투표의 **분모**를 바꾼다. 화면이 스스로 세면 "이탈자를
+          // 언제 빼는가"가 서버와 어긋나 준비 3/4가 영원히 채워지지 않는다. 모양이 맞을
+          // 때만 갱신하고, 없으면 지금 값을 지킨다(모르는 값으로 덮지 않는다).
+          ...(isPublicProgressShape(payload.progress)
+            ? { progress: { ...payload.progress } }
+            : {}),
+        },
+      }
+    }),
+
+  /**
+   * F-21(AC-03): **본인** 제출 상태 개인 전송(session_self_progress)을 반영한다.
+   *
+   * 공개 방송과 나눈 이유는 내용이 비밀이기 때문이다 — 표적이 이탈로 기권으로 정규화됐다는
+   * 사실을 채널에 실으면 누가 누구를 찍었는지가 드러난다. 같은 participationRevision을 달고
+   * 오므로 세대 판정은 공개 사건과 동일하다(더 낮은 세대는 완전한 no-op).
+   *
+   * 여기서 실린 값이 canonical이다 — 화면의 로컬 제출 controller는 이 값을 받으면 자기
+   * 낙관적 상태를 버린다(늦은 ACK가 되살리지 못하도록 revision을 함께 본다).
+   */
+  applySelfProgress: (payload) =>
+    set((current) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
+      if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (!Number.isInteger(payload.participationRevision) || payload.participationRevision < 0) return current
+      // 공개 사건이 먼저 도착해 같은 세대를 이미 반영했을 수 있다 — 개인 값은 그 세대에서도
+      // 처음 받는 것이므로 `<`만 막는다(공개 경로의 `<=`와 다른 이유).
+      if (payload.participationRevision < (current.state.participationRevision ?? 0)) return current
+      if (payload.self === null || typeof payload.self !== "object" || Array.isArray(payload.self)) return current
+
+      const nextSelf = { ...current.state.self }
+      for (const key of SELF_SUBMISSION_KEYS) {
+        if (Object.hasOwn(payload.self, key)) nextSelf[key] = payload.self[key]
+      }
+
+      return {
+        state: {
+          ...current.state,
+          self: nextSelf,
+          // 개인 전송에도 같은 공개 진행 수가 실린다(수신자가 둘을 따로 기다리지 않게).
+          ...(isPublicProgressShape(payload.progress) ? { progress: { ...payload.progress } } : {}),
         },
       }
     }),

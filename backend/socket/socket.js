@@ -14,6 +14,10 @@ const concurrencyService = require("../service/concurrency.service");
 
 const onlineUsers = new Map();
 gameSession.setOnlineUsersRegistry(onlineUsers);
+// F-21(AC-05/AC-06): 대기방 채널 정리도 "떠나는 이 소켓이 아직 이 계정의 canonical 연결인가"를
+// 물어야 한다 — 계정이 그 방에 앉아 있다는 사실만으로는 옛 소켓의 가입을 되살리는 것을 막지
+// 못한다. gameSession과 **같은 방향**(socket.js → 하위 모듈)으로 주입한다.
+matchmaking.setOnlineUsersRegistry(onlineUsers);
 
 let _io = null;
 

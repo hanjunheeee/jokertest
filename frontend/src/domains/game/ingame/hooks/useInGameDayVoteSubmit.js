@@ -73,6 +73,18 @@ export function useInGameDayVoteSubmit() {
   const [state, setState] = useState(INITIAL_DAY_VOTE_SUBMIT_STATE)
   const controllerRef = useRef(null)
 
+  /**
+   * F-21(AC-03): 서버가 확정한 **본인** 제출 상태와 그 참여 세대.
+   *
+   * 이탈로 표적이 사라지면 서버가 그 표를 기권(null)으로 정규화한다. controller의 로컬 상태만
+   * 보여주면 화면은 서버가 이미 지운 선택을 그대로 그린 채 남고, 사용자는 자기 표가 아직 그
+   * 사람을 향하고 있다고 믿는다. 서버 값이 실려 있으면 그것이 canonical이다.
+   */
+  const serverHasSubmitted = useInGameStore((s) => s.state?.self?.hasSubmittedDayVote)
+  const serverSubmittedTargetId = useInGameStore((s) => s.state?.self?.dayVoteTargetUuid)
+  const serverSubmissionRound = useInGameStore((s) => s.state?.self?.dayVoteRound)
+  const participationRevision = useInGameStore((s) => s.state?.participationRevision ?? 0)
+
   // socket 하나당 controller 하나 — socket이 바뀌면 이전 controller를 dispose()하고 새로 만든다.
   useEffect(() => {
     if (!socket) return undefined
@@ -109,15 +121,34 @@ export function useInGameDayVoteSubmit() {
     }
   }, [socket])
 
+  /**
+   * F-21(AC-03): 서버 정규화가 도착하면 **그 순간 이후의 로컬 낙관값을 버린다.**
+   *
+   * 참여 세대가 오를 때마다 controller를 무효화한다 — 그래야 그 전에 날아간 제출의 늦은 ACK가
+   * 정규화된 상태를 되돌리지 못한다(controller의 기존 세대 검사가 그 ACK를 버린다). 이탈이
+   * 없으면 세대가 오르지 않으므로 기존 제출 흐름은 그대로다.
+   */
+  useEffect(() => {
+    if (participationRevision <= 0) return
+    controllerRef.current?.invalidate("PARTICIPATION_CHANGE")
+  }, [participationRevision])
+
   const submitDayVote = (targetId) => {
     controllerRef.current?.submit({ gameId, dayIndex, targetId })
   }
 
+  // 서버 값이 이 라운드의 것일 때만 canonical로 쓴다. 다른 라운드의 값은 이 화면의 사실이
+  // 아니므로 로컬 상태를 그대로 둔다(서버가 값을 싣지 않은 경우도 같다).
+  const serverOwnsSubmission = typeof serverHasSubmitted === "boolean"
+    && (!Number.isInteger(serverSubmissionRound) || serverSubmissionRound === dayVoteRound)
+
   return {
     status: state.status,
     error: state.error,
-    hasSubmitted: state.hasSubmitted,
-    lastSubmittedTargetId: state.lastSubmittedTargetId,
+    hasSubmitted: serverOwnsSubmission ? serverHasSubmitted : state.hasSubmitted,
+    lastSubmittedTargetId: serverOwnsSubmission
+      ? (serverHasSubmitted ? (serverSubmittedTargetId ?? null) : null)
+      : state.lastSubmittedTargetId,
     submitDayVote,
   }
 }

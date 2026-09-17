@@ -11,6 +11,20 @@ import { useAuthStore } from '../../auth/store/auth.store.js';
 // F-21(A-10): 지금 날아가 있는 조회 하나. { generation, revision, promise } 또는 null.
 let inFlightProfileFetch = null;
 
+/**
+ * F-21(A-10): 이 프로세스에서 시작된 프로필 조회의 순번. **같은 계정·같은 무효화 세대** 안의
+ * 순서를 구별하는 유일한 근거다.
+ *
+ * requestGeneration은 "아직 같은 계정인가", invalidationRevision은 "무효화보다 나중에 시작된
+ * 조회인가"를 묻는다. 둘 다 같은 두 조회가 동시에 날아가는 경우(로비와 마이페이지가 refresh를
+ * 거치지 않고 fetchProfile을 직접 부르는 등)는 어느 쪽도 걸러내지 못한다 — 먼저 시작한 조회의
+ * 응답이 나중에 도착하면 옛 값이 최신 값을 덮는다. refresh()의 single-flight는 **자기 경로로
+ * 들어온 호출만** 합치므로 직접 호출자를 보호하지 못한다.
+ */
+let profileFetchSequence = 0;
+/** 마지막으로 화면에 반영된 조회의 순번. 이보다 이른 조회의 응답은 이미 낡은 값이다. */
+let appliedProfileFetchSequence = 0;
+
 export const useUserProfileStore = create((set, get) => ({
     data: null,
     loading: true,
@@ -37,6 +51,9 @@ export const useUserProfileStore = create((set, get) => ({
         const generation = get().requestGeneration;
         // 이 조회가 시작된 시점의 무효화 세대를 함께 캡처한다.
         const startedAtRevision = get().invalidationRevision;
+        // 같은 계정·같은 세대 안의 순서. 늦게 도착한 **이른** 조회를 버리는 근거다.
+        profileFetchSequence += 1;
+        const sequence = profileFetchSequence;
         try {
             const data = await getMyProfileApi();
             // 응답이 도착하기 전에 로그아웃했거나 다른 계정으로 전환됐다면 더 이상 "지금 이
@@ -45,10 +62,17 @@ export const useUserProfileStore = create((set, get) => ({
             // 이 조회가 시작된 뒤에 무효화가 왔다면 이 응답은 이미 낡은 값이다. 버리고,
             // 그 무효화가 요구한 서버 조회는 따로 수행된다(아래 invalidate가 건다).
             if (get().invalidationRevision !== startedAtRevision) return;
+            // 더 나중에 시작된 조회가 이미 반영됐다면 이 응답은 그보다 오래된 사실이다.
+            if (sequence < appliedProfileFetchSequence) return;
+            appliedProfileFetchSequence = sequence;
             set({ data, loading: false, appliedRevision: startedAtRevision });
         } catch (error) {
             if (get().requestGeneration !== generation) return;
             if (get().invalidationRevision !== startedAtRevision) return;
+            if (sequence < appliedProfileFetchSequence) return;
+            // 실패도 같은 순서 규칙을 따른다 — 이미 최신 값을 받아 둔 화면을 옛 실패가
+            // 로딩 해제/오류 표시로 되돌리지 않는다.
+            appliedProfileFetchSequence = sequence;
             console.error("프로필 불러오기 실패", error);
             set({ loading: false });
         }
@@ -102,6 +126,9 @@ export const useUserProfileStore = create((set, get) => ({
     // 기다리는 promise를 그대로 돌려받는다(그 응답 자체는 아래 세대 검사가 버린다).
     reset: () => set((state) => {
         inFlightProfileFetch = null;
+        // 순번도 함께 끊는다 — 계정이 바뀌면 이전 계정의 조회 순서는 더 이상 의미가 없고,
+        // 새 계정의 첫 조회가 "이미 더 나중 것이 반영됐다"는 이유로 버려져서도 안 된다.
+        appliedProfileFetchSequence = profileFetchSequence;
         return {
             data: null,
             loading: true,

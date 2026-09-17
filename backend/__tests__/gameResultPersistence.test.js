@@ -810,3 +810,85 @@ test("F-21 A-09/A-10: 업적 평가와 개인 캐시 무효화는 **DB 커밋을
         }
     }
 });
+
+test("F-21 A-09: 4096개를 넘겨 확인해도 **그 session의** 늦은 훅은 레코드를 다시 조립하지 않는다", async (t) => {
+    withSocketLayer(t);
+
+    const evaluated = [];
+    __setEvaluateAchievementsForTests(async (userId) => { evaluated.push(userId); });
+    t.after(() => __setEvaluateAchievementsForTests());
+
+    const invalidations = [];
+    gameSessionSocket.setEmitToUser((uuid, event, payload) => invalidations.push({ uuid, event, payload }));
+
+    const persisted = [];
+    stubPersistGameResult(t, (record) => {
+        persisted.push(record);
+        return Promise.resolve({ persisted: true, gameId: record.result.id });
+    });
+
+    // 1) 이 판을 저장하고 커밋을 확인한다.
+    const session = makeEndedSession({ id: "game-evicted" });
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+    assert.equal(persisted.length, 1);
+    const firstRecord = persisted[0];
+    assert.equal(evaluated.length, 3);
+    const invalidationsAfterFirst = invalidations.length;
+
+    // 2) 그 뒤 4096개가 넘는 다른 판이 커밋을 확인한다 — gameId 집합만으로 막던 시절에는
+    //    여기서 이 판의 gameId가 축출됐다(상한 FIFO).
+    for (let i = 0; i < 4200; i += 1) {
+        const other = makeEndedSession({ id: `game-filler-${i}` });
+        persistTerminalSession(other, { completed: true });
+    }
+    await flushAsync();
+    assert.equal(persisted.length, 4201);
+
+    // 3) 이제 **그 판의 session을 아직 들고 있는** 늦은 중복 종결 훅이 도착한다. 그 사이 세션은
+    //    정리돼 비어 있다 — 다시 조립하면 ended_at·roster·통계 delta가 다른 두 번째 레코드가 된다.
+    session.players.clear();
+    session.endedAt = 999_999_999;
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+
+    assert.equal(persisted.length, 4201, "축출된 gameId의 늦은 훅이 레코드를 다시 조립했다");
+    assert.equal(evaluated.length, 3 + 4201 * 3 - 3, "같은 판의 업적 평가가 두 번 일어났다");
+    // 두 번째 무효화도 없다 — 확인은 판당 한 번이다.
+    const mine = invalidations.slice(invalidationsAfterFirst).filter((e) => e.payload.gameId === session.id);
+    assert.deepEqual(mine, []);
+
+    // 처음 조립한 레코드는 그대로다(재시도가 값을 바꾸지 못하도록 동결돼 있다).
+    assert.equal(new Date(firstRecord.result.ended_at).getTime(), 61_000);
+    assert.equal(firstRecord.players.length, 3);
+    assert.throws(() => { "use strict"; firstRecord.result.ended_at = 1; }, TypeError);
+    assert.equal(new Date(firstRecord.result.ended_at).getTime(), 61_000);
+});
+
+test("F-21 A-09: 같은 session 객체의 중복 훅은 확인 **이전**에도 두 번째 작업을 만들지 않는다", async (t) => {
+    withSocketLayer(t);
+    const timers = useManualPersistTimers(t);
+
+    const attempts = [];
+    stubPersistGameResult(t, (record) => {
+        attempts.push(record);
+        return Promise.reject(new Error("DB 다운"));
+    });
+
+    const session = makeEndedSession({ id: "game-inflight" });
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+    assert.equal(attempts.length, 1);
+
+    // 저장이 아직 실패 중인(미확인) 상태에서 같은 판의 두 번째 종결 훅이 도착한다.
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+    assert.equal(attempts.length, 1, "미확인 상태에서 두 번째 저장 작업이 생겼다");
+    assert.equal(__getTerminalPersistRunsForTests().length, 1);
+
+    // 재시도는 **같은 레코드**로만 이어진다.
+    timers.fire();
+    await flushAsync();
+    assert.equal(attempts.length, 2);
+    assert.equal(attempts[1], attempts[0], "재시도가 새 레코드를 조립했다");
+});

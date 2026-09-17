@@ -55,7 +55,7 @@ export function useMatchingPage() {
   // 확정해 주지 않은 소속으로 남을 내보내면 화면만 성공한 것처럼 보인다.
   const {
     canKick, kickModalOpen, openKickModal, closeKickModal,
-    kickTargets, kickPendingTarget, kickStatus, kickErrorCode, isKicking, canLookupKickResult,
+    kickTargets, kickPendingTarget, kickStatus, kickErrorCode, isKicking, canLookupKickResult, isAwaitingKickResolution,
     requestKickConfirm, cancelKickConfirm, confirmKick, lookupKickResult,
   } = useMatchingRoomKick({ isRoomVerified })
 
@@ -161,6 +161,7 @@ export function useMatchingPage() {
     kickErrorCode,
     isKicking,
     canLookupKickResult,
+    isAwaitingKickResolution,
     requestKickConfirm,
     cancelKickConfirm,
     confirmKick,

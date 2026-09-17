@@ -12,7 +12,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import { useAuthStore } from "../../../../../../auth/store/auth.store.js"
 import { useInGameStore } from "../../../../store/ingameStore.js"
-import { useKickPlayerRequest } from "../../../../hooks/useKickPlayerRequest.js"
+import { getSocket } from "../../../../../../../shared/socket/socketClient.js"
+import { useKickPlayerRequest, captureVerificationGuard } from "../../../../hooks/useKickPlayerRequest.js"
 import { INGAME_KICK_PLAYER_MODAL_ASSETS } from "../../../../constants/controls/ingameSetting/kickPlayer/ingameKickPlayerAssets.js"
 import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../../constants/controls/ingameSetting/kickPlayer/ingameKickPlayerData.js"
 import {
@@ -48,8 +49,70 @@ export default function SettingKickPlayerModal({ open, onClose }) {
       membershipId: player.membershipId ?? null,
     })), [state, authUuid])
 
-  // 확인이 열린 뒤 이 화면이 다른 판으로 옮겨갔는지 판정하는 값이다.
-  const getMembershipScopeId = useCallback(() => gameId ?? null, [gameId])
+  /**
+   * 확인이 열린 뒤 이 화면이 다른 판·다른 소속으로 옮겨갔는지 판정하는 값이다.
+   *
+   * gameId만으로는 부족하다 — 서버 기동과 **요청자 자신의 소속**까지 넣어야 "그 기동의, 그
+   * 판의, 그 소속이었던 나"가 된다(대기방 경로와 같은 계약).
+   */
+  const getMembershipScopeId = useCallback(() => {
+    const current = useInGameStore.getState()
+    if (!current.gameId || !current.state) return null
+    const myMembershipId = (current.state.players ?? [])
+      .find((player) => player.uuid === authUuid)?.membershipId ?? null
+    return `${current.state.bootEpoch ?? ""}:${current.gameId}:${myMembershipId ?? ""}`
+  }, [authUuid])
+
+  /**
+   * F-21(AC-04): UNKNOWN 이후 **서버에서** 현재 판 상태를 다시 받아온다. 화면이 들고 있는
+   * roster는 놓친 사건만큼 낡아 있을 수 있고, 결과를 모르는 요청이 남은 상태에서 그 목록으로
+   * 새 대상을 지목하면 이미 실행된 추방을 되풀이하게 된다. 조회일 뿐 자동 재전송이 아니다.
+   *
+   * applySessionSnapshot도 대기방의 setRoom과 같은 **되돌릴 수 없는 mutation**이다. 스냅샷
+   * 자체에도 participationRevision 역행 방어가 있지만(applySessionSnapshotPure), 그것은 "더 옛
+   * roster로 덮지 않는다"만 보장한다 — 계정 전이(A→B→A)·소켓 교체·같은 소켓 재연결·같은 판의
+   * 내 소속 교체는 세대가 같아도 통과한다. 그래서 대기방과 **같은** 경계를 여기서도 적용하고,
+   * 어긋나면 적용하지 않고 검증을 실패로 돌린다(확인은 무효로 남는다).
+   */
+  const verifyMembership = useCallback(() => new Promise((resolve) => {
+    const socket = getSocket()
+    const current = useInGameStore.getState()
+    if (!socket || !current.gameId) { resolve(false); return }
+    const gameIdAtRequest = current.gameId
+    let settled = false
+    const finish = (ok) => { if (!settled) { settled = true; resolve(ok) } }
+    const isStillCurrent = captureVerificationGuard({
+      socket,
+      getMembershipScopeId,
+      getRevision: () => useInGameStore.getState().state?.participationRevision ?? 0,
+    })
+    try {
+      socket.emit("get_session_snapshot", { gameId: gameIdAtRequest }, (response) => {
+        // 적용 **전에** 전부 묻는다.
+        if (!isStillCurrent()) { finish(false); return }
+        if (!response || response.ok !== true) { finish(false); return }
+        // 보낸 그 판의 스냅샷인가(서버 응답과 현재 화면 양쪽 모두).
+        if (response.gameId !== gameIdAtRequest) { finish(false); return }
+        if (useInGameStore.getState().gameId !== gameIdAtRequest) { finish(false); return }
+
+        // 서버 응답은 `{ ok, ...snapshot }` **평면** 구조다(handleGetSessionSnapshot의
+        // `respond(callback, { ok: true, ...result.snapshot, players })`). 그래서 응답을 그대로
+        // 넘긴다 — 재접속 복원 경로(useInGameSessionSnapshotSync)와 **같은 호출 형태**다.
+        // `response.snapshot`을 넘기던 이전 구현은 그런 키가 없어 항상 undefined를 적용했고,
+        // 그 결과 이 재확인은 한 번도 성공하지 못했다(그래서 UNKNOWN 뒤 잠금이 영구히 남았다).
+        //
+        // 적용 경계는 형태·세대·roster가 어긋나면 **참조 보존 no-op**이다. 그 no-op을 성공으로
+        // 읽으면 낡은 목록 위에서 새 확인이 열리므로, 실제로 반영됐을 때만(snapshotSeq가
+        // 올랐을 때만) 재확인 성공으로 본다.
+        const seqBefore = useInGameStore.getState().snapshotSeq
+        useInGameStore.getState().applySessionSnapshot(response)
+        if (useInGameStore.getState().snapshotSeq === seqBefore) { finish(false); return }
+        finish(true)
+      })
+    } catch {
+      finish(false)
+    }
+  }), [getMembershipScopeId])
 
   const buildRequest = useCallback(({ target, requestId }) => {
     const current = useInGameStore.getState()
@@ -72,7 +135,7 @@ export default function SettingKickPlayerModal({ open, onClose }) {
     }
   }, [authUuid])
 
-  const kick = useKickPlayerRequest({ scope: "GAME", buildRequest, getMembershipScopeId })
+  const kick = useKickPlayerRequest({ scope: "GAME", buildRequest, getMembershipScopeId, verifyMembership })
 
   useEffect(() => {
     setMounted(true)
@@ -155,6 +218,7 @@ export default function SettingKickPlayerModal({ open, onClose }) {
               errorCode={kick.errorCode}
               isSending={kick.isSending}
               canLookupResult={kick.canLookupResult}
+              isAwaitingResolution={kick.isAwaitingResolution}
               onRequestConfirm={kick.requestConfirm}
               onCancelConfirm={kick.cancelConfirm}
               onConfirmKick={kick.confirmKick}

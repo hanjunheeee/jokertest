@@ -36,6 +36,9 @@ export function useInGameExit() {
       // F-21(AC-05): 계정·소속도 함께 캡처한다 — gameId만 비교하면 A→B→A 계정 전환이나 같은
       // 판에 다시 들어온 새 소속 위로 옛 ack가 그대로 내려앉는다.
       getCurrentAccountId: () => useAuthStore.getState().user?.uuid ?? null,
+      // 계정 **값**만으로는 A→B→A를 구별할 수 없다(uuid가 원래대로 돌아온다). 전이 횟수를
+      // 함께 캡처해야 그 사이 오간 요청의 늦은 ack를 걸러낼 수 있다.
+      getIdentityGeneration: () => useAuthStore.getState().identityGeneration ?? null,
       getCurrentMembershipId: () => {
         const { state } = useInGameStore.getState()
         const me = useAuthStore.getState().user?.uuid ?? null

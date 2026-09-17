@@ -35,6 +35,8 @@ export default function SettingKickPlayerModalContent({
   errorCode = null,
   isSending = false,
   canLookupResult = false,
+  /** 결과를 모르는 전송이 남아 서버 재확인을 기다리는 중인가(새 확인이 잠긴 상태). */
+  isAwaitingResolution = false,
   onRequestConfirm,
   onCancelConfirm,
   onConfirmKick,
@@ -87,6 +89,19 @@ export default function SettingKickPlayerModalContent({
         <button type="button" data-testid="kick-lookup-result" onClick={() => onLookupResult?.()}>
           결과 확인
         </button>
+      ) : null}
+      {isAwaitingResolution ? (
+        <p role="status" data-testid="kick-awaiting-resolution">
+          현재 참가자 목록을 서버에서 다시 확인하는 중입니다. 확인이 끝나야 새로 지목할 수 있습니다.
+        </p>
+      ) : null}
+
+      {/* 내보낼 수 있는 사람이 없다는 것은 **상태**다. 빈 목록만 그리면 화면은 아직 못
+          불러온 것인지 아무도 없는 것인지 말하지 못한다. */}
+      {targets.length === 0 ? (
+        <p role="status" data-testid="kick-empty-targets">
+          {INGAME_KICK_PLAYER_MODAL_COPY.emptyTargets}
+        </p>
       ) : null}
 
       <div className={INGAME_KICK_PLAYER_MODAL_SCROLL_WRAP_CLASS}>

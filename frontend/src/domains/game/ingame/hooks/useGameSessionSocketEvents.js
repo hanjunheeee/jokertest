@@ -360,6 +360,19 @@ export function useGameSessionSocketEvents() {
     }
 
     /**
+     * F-21(AC-03): 이탈로 **내 표가 기권으로 정규화**됐다는 개인 전송. 공개 방송과 나눈 이유는
+     * 내용이 비밀이기 때문이다(누가 누구를 찍었는지를 채널에 실을 수 없다).
+     *
+     * 이 사건은 그 자리에서 **현재 인증 계정의 것**이어야 한다 — 개인 전송이지만 계정 전환
+     * 중에 도착할 수 있고, 그때 반영하면 남의 제출 상태가 지금 화면에 남는다. 게임·세대 검증은
+     * store가 소유한다. 소리는 없다(제출도 전이도 아니다).
+     */
+    const handleSelfProgress = (payload) => {
+      if (currentAccountId() === null) return
+      useInGameStore.getState().applySelfProgress(payload)
+    }
+
+    /**
      * F-21(AC-02): 방장이 나를 내보냈다. 이 수신기는 ProtectedRoute에 장착돼 라우트와 무관하게
      * 계속 살아 있으므로, 사건이 **지금 이 화면의 것인지**를 직접 판정해야 한다.
      *
@@ -428,6 +441,7 @@ export function useGameSessionSocketEvents() {
     socket.on("game_ended", handleGameEnded)
     socket.on("player_eliminated", handlePlayerEliminated)
     socket.on("session_participation_changed", handleParticipationChanged)
+    socket.on("session_self_progress", handleSelfProgress)
     socket.on("game_kicked", handleGameKicked)
     socket.on("room_kicked", handleRoomKicked)
     socket.on("account_cache_invalidated", handleAccountCacheInvalidated)
@@ -441,6 +455,7 @@ export function useGameSessionSocketEvents() {
       socket.off("game_ended", handleGameEnded)
       socket.off("player_eliminated", handlePlayerEliminated)
       socket.off("session_participation_changed", handleParticipationChanged)
+      socket.off("session_self_progress", handleSelfProgress)
       socket.off("game_kicked", handleGameKicked)
       socket.off("room_kicked", handleRoomKicked)
       socket.off("account_cache_invalidated", handleAccountCacheInvalidated)

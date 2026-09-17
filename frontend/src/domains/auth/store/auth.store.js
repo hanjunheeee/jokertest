@@ -36,16 +36,32 @@ export const useAuthStore = create(
             // 자동 로그아웃/초기 진입과 직접 로그아웃을 구분할 때 사용할 수 있습니다.
             loggedOutIntentionally: false,
 
+            /**
+             * F-21(AC-05): **인증 전이 세대.** 로그인·로그아웃마다 단조 증가한다.
+             *
+             * "지금 계정이 같은가"는 A→B→A를 구별하지 못한다 — uuid가 원래대로 돌아오기 때문이다.
+             * 그 사이에 날아간 요청의 늦은 ACK는 지금 화면의 것이 아니므로, 계정 값이 아니라
+             * **전이 횟수**를 캡처해 비교해야 한다. 이 값은 persist하지 않는다(새로고침은 새
+             * 프로세스이고, 이전 세대의 in-flight 요청도 함께 사라진다).
+             */
+            identityGeneration: 0,
+
             // 로그인 성공 시 호출합니다.
             // 로그인 상태와 사용자 정보를 저장하고, 직접 로그아웃 플래그는 꺼둡니다.
             login: (user) => {
-                return set({ isLoggedIn: true, user, loggedOutIntentionally: false});
+                return set((state) => ({
+                    isLoggedIn: true, user, loggedOutIntentionally: false,
+                    identityGeneration: state.identityGeneration + 1,
+                }));
             },
 
             // 로그아웃 시 호출합니다.
             // 로그인 상태와 사용자 정보를 비우고, 사용자가 직접 로그아웃했다는 표시를 남깁니다.
             logout: () => {
-                return set({ isLoggedIn: false, user: null, loggedOutIntentionally: true});
+                return set((state) => ({
+                    isLoggedIn: false, user: null, loggedOutIntentionally: true,
+                    identityGeneration: state.identityGeneration + 1,
+                }));
             },
 
             // 직접 로그아웃 표시를 다시 초기화합니다.

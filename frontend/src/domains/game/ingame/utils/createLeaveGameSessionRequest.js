@@ -19,12 +19,16 @@
  * @param {() => string|null} deps.getCurrentGameId - 현재 게임.
  * @param {() => string|null} [deps.getCurrentAccountId] - 현재 인증 계정.
  * @param {() => string|null} [deps.getCurrentMembershipId] - 그 게임에서의 내 소속 식별자.
+ * @param {() => number|null} [deps.getIdentityGeneration] - 인증 전이 세대(로그인·로그아웃마다
+ *   증가). **현재 값 비교만으로는 A→B→A를 구별할 수 없다** — 계정 uuid가 원래대로 돌아오고
+ *   소속과 소켓 객체가 그대로면 네 검사가 전부 통과한다. 전이 횟수가 그 구간을 드러낸다.
  */
 export function createLeaveGameSessionRequest({
   getSocket,
   getCurrentGameId,
   getCurrentAccountId = () => null,
   getCurrentMembershipId = () => null,
+  getIdentityGeneration = () => null,
   finalize,
   onFailure,
 }) {
@@ -36,13 +40,19 @@ export function createLeaveGameSessionRequest({
     if (!requestedGameId) return
     const requestedAccountId = getCurrentAccountId()
     const requestedMembershipId = getCurrentMembershipId()
+    const requestedIdentityGeneration = getIdentityGeneration()
+    // 같은 Socket 객체가 재연결되면 객체 동일성은 유지되고 **id만** 바뀐다 — 그 재연결 이전에
+    // 보낸 요청의 ack는 지금 연결의 것이 아니다.
+    const requestedSocketId = socket?.id ?? null
 
     socket.emit("leave_game_session", { gameId: requestedGameId }, (response) => {
-      // 넷 중 하나라도 달라졌으면 이 ack는 더 이상 "지금 이 화면"의 것이 아니다. 실패 안내도
+      // 하나라도 달라졌으면 이 ack는 더 이상 "지금 이 화면"의 것이 아니다. 실패 안내도
       // 띄우지 않는다 — 그 실패는 이미 지나간 소속의 사실이다.
       if (getCurrentGameId() !== requestedGameId) return
       if (getCurrentAccountId() !== requestedAccountId) return
+      if (getIdentityGeneration() !== requestedIdentityGeneration) return
       if (getSocket() !== socket) return
+      if ((socket?.id ?? null) !== requestedSocketId) return
       if (getCurrentMembershipId() !== requestedMembershipId) return
       if (response?.ok) {
         finalize()

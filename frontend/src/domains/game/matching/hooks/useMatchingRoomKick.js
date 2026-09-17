@@ -4,7 +4,8 @@ import { useCallback, useMemo, useState } from "react"
 // useGameSessionSocketEvents와 같은 관례).
 import { useMatchingStore, selectRoomMembershipId } from "../store/matchingStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
-import { useKickPlayerRequest } from "../../ingame/hooks/useKickPlayerRequest.js"
+import { getSocket } from "../../../../shared/socket/socketClient.js"
+import { useKickPlayerRequest, captureVerificationGuard } from "../../ingame/hooks/useKickPlayerRequest.js"
 
 /**
  * F-21(AC-02/AC-04/AC-05/AC-06): **대기방** 추방의 실제 화면 경계.
@@ -39,12 +40,70 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   // 내보내려 하면, 그 요청은 어차피 거부되고 화면만 성공한 것처럼 보인다(F-19 초대와 같은 경계).
   const canKick = Boolean(isHost && isRoomVerified)
 
-  /** 지금 이 화면이 붙어 있는 방 인스턴스. 바뀌면 진행 중인 확인·응답은 이 화면의 것이 아니다. */
+  /**
+   * 지금 이 화면이 붙어 있는 **소속**. 바뀌면 진행 중인 확인·응답은 이 화면의 것이 아니다.
+   *
+   * 방 인스턴스만으로는 부족하다. 요청자 본인이 같은 방을 나갔다 **새 소속으로** 다시 들어와도
+   * roomId·roomInstanceId는 그대로이므로 scope가 같아지고, 그러면 옛 확인이 새 소속으로 전송되고
+   * 옛 ACK가 새 화면의 상태를 덮는다. 서버 기동(bootEpoch)과 **요청자 자신의 membershipId**까지
+   * 넣어야 "그 방의, 그 기동의, 그 소속이었던 나"가 된다.
+   */
   const getMembershipScopeId = useCallback(() => {
     const state = useMatchingStore.getState()
     if (!state.isInRoom || !state.roomId) return null
-    return `${state.roomId}:${state.roomInstanceId ?? ""}`
+    const authUuid = useAuthStore.getState().user?.uuid ?? null
+    const myMembershipId = authUuid ? selectRoomMembershipId(state, authUuid) : null
+    return `${state.bootEpoch ?? ""}:${state.roomId}:${state.roomInstanceId ?? ""}:${myMembershipId ?? ""}`
   }, [])
+
+  /**
+   * F-21(AC-04): UNKNOWN 이후 **서버에서** 현재 방 상태를 다시 받아온다.
+   *
+   * 화면이 들고 있는 목록은 그 사이 놓친 사건만큼 낡아 있을 수 있고, 결과를 모르는 요청이
+   * 남은 상태에서 그 목록으로 새 대상을 지목하면 이미 실행된 추방을 되풀이하게 된다.
+   * get_current_room은 방 조회일 뿐 서버 상태를 바꾸지 않는다(자동 재전송이 아니다).
+   *
+   * ── setRoom은 되돌릴 수 없다 ──────────────────────────────────────────────────
+   * 이 콜백의 setRoom은 **이 화면의 canonical 상태를 갈아끼운다**. 그래서 판정은 전부 그
+   * mutation **앞**에 있어야 한다 — 뒤에서 useKickPlayerRequest가 세대를 비교해 "이 응답은
+   * 내 것이 아니었다"고 판정해도 이미 덮인 store를 되돌릴 수 없고, 그 store에서 scope를 읽는
+   * 비교 자체가 오염된다. captureVerificationGuard가 **보내기 전에** 캡처한 근거로 계정 전이·
+   * 소켓 교체·같은 소켓 재연결·소속 변경·더 새로운 방 사건을 여기서 함께 거른다.
+   */
+  const verifyMembership = useCallback(() => new Promise((resolve) => {
+    const socket = getSocket()
+    if (!socket) { resolve(false); return }
+    let settled = false
+    const finish = (ok) => { if (!settled) { settled = true; resolve(ok) } }
+    // 보내기 **전에** 동기적으로 캡처한다(응답 시점에는 이미 늦다).
+    const isStillCurrent = captureVerificationGuard({
+      socket,
+      getMembershipScopeId,
+      getRevision: () => useMatchingStore.getState().roomRevision,
+    })
+    try {
+      // 서버는 (payload, callback) 형태로 등록돼 있다 — 빈 payload를 함께 보낸다.
+      socket.emit("get_current_room", {}, (response) => {
+        // ① 이 응답이 아직 이 화면의 것인가 — setRoom보다 먼저 묻는다.
+        if (!isStillCurrent()) { finish(false); return }
+        if (!response || response.ok !== true) { finish(false); return }
+        // pending(미확정 입장 처리 중)은 "확인됐다"가 아니다 — 잠금을 풀지 않는다.
+        if (response.pending === true || !response.room) { finish(false); return }
+        // ② 서버가 돌려준 방이 지금 이 화면이 붙어 있는 바로 그 방인가. 다른 방이면 이
+        //    조회는 이 확인의 근거가 아니다 — 추방 결과 재확인이 화면을 다른 방으로 옮기는
+        //    부작용을 내서는 안 된다.
+        const state = useMatchingStore.getState()
+        const room = response.room
+        if (room.roomId !== state.roomId) { finish(false); return }
+        if (room.roomInstanceId !== state.roomInstanceId) { finish(false); return }
+        if (room.bootEpoch !== state.bootEpoch) { finish(false); return }
+        useMatchingStore.getState().setRoom(room)
+        finish(true)
+      })
+    } catch {
+      finish(false)
+    }
+  }), [getMembershipScopeId])
 
   /**
    * 확정된 대상으로 서버 payload를 만든다. 여기서 읽는 값은 **호출 시점의** canonical store다
@@ -77,7 +136,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     }
   }, [])
 
-  const kick = useKickPlayerRequest({ scope: "ROOM", buildRequest, getMembershipScopeId })
+  const kick = useKickPlayerRequest({ scope: "ROOM", buildRequest, getMembershipScopeId, verifyMembership })
 
   /** 추방할 수 있는 실제 대상들. 본인은 빠지고, 서버 소속이 없는 항목은 지목할 수 없다. */
   const targets = useMemo(() => (players ?? [])
@@ -116,6 +175,8 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     kickErrorCode: kick.errorCode,
     isKicking: kick.isSending,
     canLookupKickResult: kick.canLookupResult,
+    // UNKNOWN 뒤 서버 재확인이 끝나기 전에는 새 확인을 열 수 없다(화면 안내의 근거).
+    isAwaitingKickResolution: kick.isAwaitingResolution,
     requestKickConfirm: kick.requestConfirm,
     cancelKickConfirm: kick.cancelConfirm,
     // 승인 시점의 목록을 그대로 넘긴다 — 확인 당시의 소속이 아직 그대로인지 훅이 대조한다.

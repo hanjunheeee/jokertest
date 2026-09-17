@@ -32,6 +32,37 @@ function isNonEmptyString(value) {
 }
 
 /**
+ * F-21(AC-03): 서버가 실어 준 **본인** 제출 필드만 그대로 옮긴다.
+ *
+ * 없는 값을 만들어내지 않는다 — 키가 없으면 "모른다"이고, 화면은 기존 로컬 controller 상태를
+ * 그대로 쓴다. 있으면 그것이 canonical이다(이탈로 기권 정규화된 표는 dayVoteTargetUuid=null).
+ */
+const SELF_SUBMISSION_KEYS = Object.freeze([
+  "hasAcknowledgedRoleReveal",
+  "isDayVoteReady",
+  "hasSubmittedDayVote",
+  "dayVoteTargetUuid",
+  "dayVoteRound",
+  "hasSubmittedTribunalVote",
+])
+
+function copySelfSubmissionFields(self) {
+  const fields = {}
+  for (const key of SELF_SUBMISSION_KEYS) {
+    if (Object.hasOwn(self, key)) fields[key] = self[key]
+  }
+  return fields
+}
+
+/** 공개 진행 수의 모양 검사. kind는 문자열이고 두 수는 음이 아닌 정수이거나 null이다. */
+function isPublicProgress(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
+  if (!isNonEmptyString(value.kind)) return false
+  const okCount = (n) => n === null || isNonNegativeInteger(n)
+  return okCount(value.doneCount) && okCount(value.requiredCount)
+}
+
+/**
  * 새로고침으로 메모리 store가 완전히 비었을 때 서버 스냅샷 자체를 신뢰 경계의 씨앗으로
  * 삼아 기존의 엄격한 applySessionSnapshotPure 검증을 재사용한다. 인증된 socket의 서버가
  * 돌려준 self/roster만으로 최소 current를 만든 뒤, 최종 store 형태는 한 경로에서 조립한다.
@@ -299,6 +330,10 @@ export function applySessionSnapshotPure(current, response) {
     team: self.team,
     hasActedThisPhase: self.hasActedThisPhase,
     ...(Object.hasOwn(self, "accountSkinId") ? { accountSkinId: self.accountSkinId } : {}),
+    // F-21(AC-03): **본인의** 정규화된 제출 상태. hasActedThisPhase는 "무언가 했다"만 말하므로,
+    // 표적이 이탈로 기권(null)으로 정규화된 뒤 새로고침하면 화면이 서버가 이미 지운 선택을
+    // 그대로 그린 채 남는다. 서버가 실어 준 필드만 옮긴다(없으면 키도 만들지 않는다).
+    ...copySelfSubmissionFields(self),
     ...(self.role === "JOKER" ? { allies } : {}),
   }
 
@@ -309,6 +344,22 @@ export function applySessionSnapshotPure(current, response) {
   const participationRevision = isNonNegativeInteger(response.participationRevision)
     ? response.participationRevision
     : 0
+
+  /**
+   * F-21(AC-03/AC-05): **참여 세대가 뒷걸음질치는 스냅샷은 적용하지 않는다.**
+   *
+   * 여기까지 오는 검사(gameId·phase·dayIndex·roster uuid 집합)는 전부 "같은 판의 같은 단계"를
+   * 확인할 뿐이다. 추방 **직전에** 서버가 만든 스냅샷이 추방 사건보다 늦게 도착하면 그 값들이
+   * 전부 일치하므로 통과하고, 이미 반영된 참여 종료·방장 승계·정규화된 본인 표를 옛 roster와
+   * 옛 host로 되돌린다. 세대가 그것을 구별하는 유일한 값이다.
+   *
+   * 같은 세대의 재적용은 막지 않는다(멱등 복원은 정상 경로다). 세대를 싣지 않은 스냅샷도
+   * 막지 않는다 — 다만 현재 화면이 이미 세대를 갖고 있으면 그 스냅샷은 그보다 옛것이므로
+   * 되돌릴 수 없다(fail-closed).
+   */
+  const currentRevision = current.state.participationRevision ?? 0
+  if (participationRevision < currentRevision) return current
+  if (!isNonNegativeInteger(response.participationRevision) && currentRevision > 0) return current
 
   const nextState = {
     id: response.gameId,
@@ -330,6 +381,9 @@ export function applySessionSnapshotPure(current, response) {
     dayVoteResolution,
     dayVoteRound: dayVoteResolution?.outcome === "REVOTE" ? dayVoteResolution.round + 1 : (dayVoteResolution?.round ?? 1),
     dayVoteExcludedUuids: dayVoteResolution?.outcome === "REVOTE" ? [...dayVoteResolution.revoteExcludedUuids] : [],
+    // F-21(AC-03): 이탈로 분모가 줄어든 단계의 공개 진행 수. 서버가 싣지 않았으면 키를 만들지
+    // 않는다(화면이 스스로 세지 않고 "모른다"로 둔다).
+    ...(isPublicProgress(response.progress) ? { progress: { ...response.progress } } : {}),
   }
 
   // 최상위 hostUuid도 함께 돌려준다 — useInGameSettingIsHost가 읽는 값이고, 스냅샷 복원이

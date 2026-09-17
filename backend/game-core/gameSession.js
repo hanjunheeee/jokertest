@@ -2150,7 +2150,91 @@ function buildParticipationChangedPayload(session, departedUuid) {
             alive: player.alive === true,
             isParticipating: player.isParticipating !== false,
         })),
+        // 이탈로 **분모가 줄어든** 단계의 공개 진행 수. 화면이 스스로 계산하면 이탈자를 언제
+        // 빼는지가 서버와 어긋난다(준비 3/4가 영원히 안 채워지는 화면이 된다).
+        progress: buildPublicPhaseProgress(session),
     }
+}
+
+/**
+ * F-21(AC-03): 지금 단계의 **공개** 진행 수. 이미 각 단계의 기존 방송이 공개하고 있는 값과
+ * 같은 범위다 — 누가 했는지는 담지 않고 몇 명이 했는지만 담는다.
+ *
+ * NIGHT은 의도적으로 비어 있다. 밤의 행동자 수·제출자 목록은 역할 구성을 역산할 수 있는
+ * 정보라 공개 계약이 아니다(계획 메모: "밤의 행동자 수·제출자 목록은 공개하지 않는다").
+ */
+function buildPublicPhaseProgress(session) {
+    if (session.phase === 'ROLE_REVEAL') {
+        const pending = [...session.players.values()].filter((p) => p.isParticipating !== false)
+        const acks = session.roleRevealAcks instanceof Set ? session.roleRevealAcks : new Set()
+        return {
+            kind: 'ROLE_REVEAL',
+            doneCount: pending.filter((p) => acks.has(p.uuid)).length,
+            requiredCount: pending.length,
+        }
+    }
+    if (session.phase === 'DAY') {
+        const eligible = getEligibleDayVoterUuids(session)
+        if (getDayPhase(session) === DAY_PHASES.DISCUSSION) {
+            const ready = session.dayVoteReadyUuids instanceof Set ? session.dayVoteReadyUuids : new Set()
+            return {
+                kind: 'DAY_DISCUSSION',
+                doneCount: eligible.filter((uuid) => ready.has(uuid)).length,
+                requiredCount: eligible.length,
+            }
+        }
+        return {
+            kind: 'DAY_VOTE',
+            doneCount: eligible.filter((uuid) => session.dayVotes.has(uuid)).length,
+            requiredCount: eligible.length,
+        }
+    }
+    if (session.phase === 'TRIBUNAL' && session.tribunal) {
+        const eligible = getEligibleTribunalVoterUuids(session, session.tribunal.defendantUuid)
+        const votes = session.tribunal.votes instanceof Map ? session.tribunal.votes : new Map()
+        return {
+            kind: 'TRIBUNAL',
+            doneCount: eligible.filter((uuid) => votes.has(uuid)).length,
+            requiredCount: eligible.length,
+        }
+    }
+    return { kind: session.phase === 'NIGHT' ? 'NIGHT' : 'NONE', doneCount: null, requiredCount: null }
+}
+
+/**
+ * F-21(AC-03): **수신자 본인의** 제출 상태. 다른 참가자의 선택은 하나도 담지 않는다.
+ *
+ * 표적이 이탈로 기권(null)으로 정규화된 뒤에도 화면이 옛 선택을 그대로 그리고 있으면, 사용자는
+ * 자기 표가 아직 그 사람을 향하고 있다고 믿는다. 그래서 서버가 확정한 현재 값을 그대로 준다 —
+ * 제출하지 않았으면 hasSubmitted:false이고 targetUuid는 null이다.
+ */
+function buildSelfSubmissionFields(session, uuid) {
+    const fields = {}
+    if (session.phase === 'ROLE_REVEAL') {
+        fields.hasAcknowledgedRoleReveal = session.roleRevealAcks instanceof Set
+            && session.roleRevealAcks.has(uuid)
+        return fields
+    }
+    if (session.phase === 'DAY') {
+        if (getDayPhase(session) === DAY_PHASES.DISCUSSION) {
+            fields.isDayVoteReady = session.dayVoteReadyUuids instanceof Set
+                && session.dayVoteReadyUuids.has(uuid)
+            return fields
+        }
+        const submitted = session.dayVotes.has(uuid)
+        fields.hasSubmittedDayVote = submitted
+        const target = submitted ? session.dayVotes.get(uuid) : null
+        // 기권으로 정규화된 표는 null이다 — 화면이 옛 표적을 남겨두지 않게 한다.
+        fields.dayVoteTargetUuid = target === undefined ? null : target
+        fields.dayVoteRound = getDayVoteRound(session)
+        return fields
+    }
+    if (session.phase === 'TRIBUNAL' && session.tribunal) {
+        fields.hasSubmittedTribunalVote = session.tribunal.votes instanceof Map
+            && session.tribunal.votes.has(uuid)
+        return fields
+    }
+    return fields
 }
 
 /** 끊김 사망 전용 공개 payload. 밤 결과와 원인 필드를 공유하지 않고 공개 생존 상태만 전달한다. */
@@ -2541,6 +2625,38 @@ function tallyDayVoteOutcome(session) {
 }
 
 /**
+ * F-21(AC-03): 준비 시점의 **표 내용 그 자체**를 동결해 둔다.
+ *
+ * 집계 수치(득표·기권·동률 집합)만 대조하면 표가 서로 **교환**된 변화를 잡지 못한다. 예를
+ * 들어 A→B·B→A가 A→A·B→B로 바뀌면 두 표 모두 달라졌는데도 득표(각 1표)·기권 수·동률
+ * 집합({A,B})이 전부 같다. 그 상태로 옛 판정을 커밋하면 "지금 표"가 아닌 판정이 확정된다 —
+ * 재투표 제외 목록도, 방송되는 공개 수치도 이미 존재하지 않는 표의 산물이다.
+ *
+ * 그래서 (투표자, 표적) 쌍을 투표자 uuid로 정렬해 그대로 보관한다. 이 값은 resolution 안에만
+ * 있고 어떤 공개 payload에도 실리지 않는다(buildDayVoteResolvedPayload는 필드를 명시적으로
+ * 골라 담는다) — 남의 표를 드러내지 않는다.
+ */
+function buildDayVoteBallotSnapshot(session) {
+    const ballots = getEligibleDayVoterUuids(session)
+        .slice()
+        .sort()
+        .map((voterUuid) => {
+            const target = session.dayVotes.get(voterUuid)
+            return Object.freeze([voterUuid, target === undefined ? null : target])
+        })
+    return Object.freeze(ballots)
+}
+
+/** 두 표 스냅샷이 투표자·표적까지 정확히 같은가(순서는 이미 정렬돼 있다). */
+function dayVoteBallotSnapshotsEqual(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) {
+        if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false
+    }
+    return true
+}
+
+/**
  * DAY 투표 판정을 준비합니다(어떤 상태도 바꾸지 않는 순수 함수) — prepareNightResolution과
  * 동일한 prepare 경계입니다. 인증된 uuid와 클라이언트가 알고 있는 gameId·dayIndex만 입력으로
  * 받습니다.
@@ -2641,6 +2757,9 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
             // 둘 다 정렬·동결된 복사본이라 판정 이후 누구도 바꿀 수 없다.
             excludedUuids: Object.freeze([...getDayVoteExcludedUuids(session)].sort()),
             revoteExcludedUuids: Object.freeze(isRevote ? [...tally.tiedTargetUuids] : []),
+            // F-21(AC-03): 이 판정이 근거로 삼은 표 전체. 커밋 직전에 지금의 표와 정확히
+            // 대조한다(집계가 우연히 같아도 표가 달라졌으면 다른 판정이다).
+            ballotSnapshot: buildDayVoteBallotSnapshot(session),
         },
     }
 }
@@ -2721,6 +2840,16 @@ function commitDayVoteResolution(session, resolution) {
         return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
     if (!uuidListsEqual([...getDayVoteExcludedUuids(session)].sort(), resolution.excludedUuids ?? [])) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+    // 마지막으로 **표 자체**를 대조한다. 위 검사들은 전부 집계에서 파생된 값이라, 표가 서로
+    // 교환되기만 한 변화(A→B·B→A ⇒ A→A·B→B)는 전부 통과한다 — 득표·기권·동률 집합이 그대로이기
+    // 때문이다. 그런 판정을 커밋하면 이미 존재하지 않는 표로 그 낮을 끝내게 된다. 준비 시점에
+    // 동결해 둔 (투표자, 표적) 쌍과 지금의 쌍이 정확히 같을 때만 통과한다.
+    //
+    // ballotSnapshot이 없는 resolution은 이 재검증을 건너뛰지 않는다 — prepare가 항상 함께
+    // 만들므로, 없다는 것은 이 함수가 소비해서는 안 되는 값이 들어왔다는 뜻이다(fail-closed).
+    if (!dayVoteBallotSnapshotsEqual(buildDayVoteBallotSnapshot(session), resolution.ballotSnapshot)) {
         return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
     // 재판 대상이 지금도 살아 있는 참가자인지 마지막으로 확인한다.
@@ -3218,7 +3347,14 @@ function buildSessionSnapshot(session, uuid) {
         self: {
             ...buildViewerRoleFields(session, viewer),
             hasActedThisPhase: computeHasActedThisPhase(session, uuid),
+            // F-21(AC-03): hasActedThisPhase만으로는 **무엇을** 제출했는지 복원하지 못한다.
+            // 표적이 이탈로 기권(null)으로 정규화된 뒤 재접속하면, 화면은 서버가 이미 지운
+            // 선택을 그대로 그린 채로 남는다. 수신자 본인의 값만 담는다(남의 선택은 없다).
+            ...buildSelfSubmissionFields(session, uuid),
         },
+        // 이탈로 분모가 바뀌는 단계의 공개 진행 수. 화면이 스스로 세면 "이탈자를 언제 빼는가"가
+        // 서버와 어긋나 준비 3/4가 영원히 채워지지 않는다. NIGHT은 비어 있다(공개 계약 아님).
+        progress: buildPublicPhaseProgress(session),
     }
 
     if (session.nightResolution) {
@@ -3755,6 +3891,10 @@ module.exports = {
     // 소켓 계층이 직접 부르는 진입점이라 __testables가 아니라 정식 export다.
     commitParticipantDeparture,
     buildParticipationChangedPayload,
+    // F-21(AC-03): 이탈로 분모·본인 표가 바뀐 단계의 공개 진행 수와 **수신자 본인의** 제출
+    // 상태. 소켓 계층이 각각 공개 방송과 개인 전송에 싣는다.
+    buildPublicPhaseProgress,
+    buildSelfSubmissionFields,
     advanceStalledPhaseAfterDeparture,
     isParticipatingInSession,
     getActiveSessionForDeparture,
@@ -3827,6 +3967,8 @@ module.exports = {
         buildNightDeathReveals,
         getEligibleDayVoterUuids,
         tallyDayVoteOutcome,
+        buildDayVoteBallotSnapshot,
+        dayVoteBallotSnapshotsEqual,
         __deleteGameSessionOnlyForTests,
     },
 }

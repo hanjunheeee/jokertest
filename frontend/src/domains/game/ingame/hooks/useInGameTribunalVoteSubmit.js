@@ -161,12 +161,28 @@ export function useInGameTribunalVoteSubmit() {
     controllerRef.current?.submit({ gameId, dayIndex, vote, defendantUuid, actorUuid: canonicalActorUuid })
   }
 
+  /**
+   * F-21(AC-03): 유권자 이탈은 재판의 **분모**를 바꾸고, 그 사실은 서버만 안다. 공개 진행 수는
+   * 누가 어떻게 투표했는지를 담지 않는다(유죄/무죄 내용은 여전히 판정 방송에서만 드러난다).
+   *
+   * hasSubmitted는 서버가 실어 준 본인 값이 있으면 그것이 canonical이다 — 이탈로 라운드 상태가
+   * 바뀐 뒤에도 로컬 낙관값이 "이미 냈다"로 남지 않게 한다.
+   */
+  const serverProgress = useInGameStore((s) => s.state?.progress ?? null)
+  const serverHasSubmitted = useInGameStore((s) => s.state?.self?.hasSubmittedTribunalVote)
+  const serverOwnsProgress = serverProgress?.kind === "TRIBUNAL"
+
   return {
     status: state.status,
     submittedVote: state.submittedVote,
     error: state.error,
     alive,
     isDefendant,
+    hasSubmitted: typeof serverHasSubmitted === "boolean"
+      ? serverHasSubmitted
+      : state.submittedVote !== null,
+    voteCount: serverOwnsProgress ? serverProgress.doneCount : null,
+    requiredCount: serverOwnsProgress ? serverProgress.requiredCount : null,
     submitTribunalVote,
   }
 }

@@ -31,6 +31,9 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
  *   수 없는 상태라는 뜻이다(요청 0회).
  * @param {() => string|null} [options.getMembershipScopeId] - 지금 이 화면이 붙어 있는
  *   방/게임 식별자. 값이 바뀌면 진행 중인 확인과 결과가 이 화면의 것이 아니게 된다.
+ * @param {() => Promise<boolean>|boolean} [options.verifyMembership] - **서버에서** 현재 소속과
+ *   참가자 목록을 다시 받아오는 실제 조회. UNKNOWN 뒤에는 이것이 성공해야만 새 확인을 시작할
+ *   수 있다("결과를 모른다"는 상태에서 화면이 들고 있는 목록은 근거가 아니다).
  */
 export const KICK_EVENTS = Object.freeze({
   ROOM: "kick_room_player",
@@ -48,6 +51,61 @@ export const KICK_REQUEST_STATUS = Object.freeze({
   UNKNOWN: "UNKNOWN",
 })
 
+/**
+ * F-21(AC-04/AC-05): **상태를 바꾸는 그 자리에서** "이 응답이 아직 이 화면의 것인가"를 묻는다.
+ *
+ * 왜 이것이 별도 경계여야 하는가 — 서버 재확인(verifyMembership)은 응답을 받자마자 store를
+ * 갈아끼운다(setRoom·applySessionSnapshot). 그 mutation은 **되돌릴 수 없다**: 이 훅이 나중에
+ * `.then()`에서 세대를 비교해 "이 응답은 내 것이 아니었다"고 판정해도, store는 이미 옛 응답으로
+ * 덮여 있고 더 나쁘게는 getMembershipScopeId()가 그 덮인 store에서 값을 읽으므로 비교 자체가
+ * 오염된다. 그래서 판정 근거를 **보내기 전에 동기적으로 캡처**해 두고, mutation 직전에 묻는다.
+ *
+ * 묻는 네 가지는 각각 다른 사건을 잡는다:
+ *   - identityGeneration — 로그아웃→재로그인(A→B→A). uuid는 원래대로 돌아오므로 값 비교로는
+ *     잡히지 않고, **전이 횟수**만이 그 사이에 다른 계정이 있었다는 사실을 남긴다.
+ *   - socket 객체 **와** socket.id — 객체 교체(새 연결)는 객체 비교로, 같은 객체의 재연결
+ *     (Socket.IO는 객체를 유지하고 id만 새로 받는다)은 id 비교로만 잡힌다.
+ *   - scopeId — 요청자 자신의 소속·방/판 인스턴스·서버 기동(호출부가 조립한다). 같은 방에
+ *     다시 들어온 새 소속을 옛 확인이 자기 것으로 착각하지 않게 한다.
+ *   - revision — 보낸 뒤 도착한 **더 새로운 사건**(퇴장·방장 승계·참여 종료). 위 세 값이 모두
+ *     그대로여도 그 사이에 명단이 바뀌었으면 이 응답은 그보다 옛것이다.
+ *
+ * 하나라도 어긋나면 mutation을 하지 않고 검증을 **실패**로 돌린다 — 확인은 무효로 남고,
+ * 새 확인을 열기 위해서는 성공한 재확인이 새로 필요하다(lookupResult의 잠금 계약).
+ *
+ * @param {object} options
+ * @param {object} options.socket - emit에 쓴 그 소켓(객체 동일성까지 비교한다).
+ * @param {() => string|null} options.getMembershipScopeId
+ * @param {() => number|null} options.getRevision
+ * @returns {() => boolean} mutation 직전에 **동기적으로** 부르는 판정 함수.
+ */
+export function captureVerificationGuard({ socket, getMembershipScopeId, getRevision }) {
+  const readScopeId = () => (typeof getMembershipScopeId === "function" ? getMembershipScopeId() : null)
+  const readRevision = () => (typeof getRevision === "function" ? getRevision() : null)
+
+  const auth = useAuthStore.getState()
+  const identityGeneration = auth.identityGeneration
+  const authUuid = auth.user?.uuid ?? null
+  const socketId = typeof socket?.id === "string" && socket.id ? socket.id : null
+  const scopeId = readScopeId()
+  const revision = readRevision()
+
+  return function isStillCurrent() {
+    // 캡처 자체가 불완전했으면 통과시키지 않는다(fail-closed).
+    if (!authUuid || !socketId || !scopeId) return false
+    if (!Number.isInteger(revision)) return false
+
+    const now = useAuthStore.getState()
+    if (now.identityGeneration !== identityGeneration) return false
+    if ((now.user?.uuid ?? null) !== authUuid) return false
+    if (getSocket() !== socket) return false
+    if (socket.id !== socketId) return false
+    if (readScopeId() !== scopeId) return false
+    if (readRevision() !== revision) return false
+    return true
+  }
+}
+
 let requestSeq = 0
 function nextRequestId() {
   requestSeq += 1
@@ -56,11 +114,22 @@ function nextRequestId() {
   return `kick-${requestSeq}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId = () => null }) {
+export function useKickPlayerRequest({
+  scope,
+  buildRequest,
+  getMembershipScopeId = () => null,
+  verifyMembership = null,
+}) {
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const [pendingTarget, setPendingTarget] = useState(null)
   const [status, setStatus] = useState(KICK_REQUEST_STATUS.IDLE)
   const [errorCode, setErrorCode] = useState(null)
+  /**
+   * UNKNOWN 이후 "서버에서 현재 소속을 다시 확인하기 전"인가. 참인 동안은 새 확인을 열 수
+   * 없다 — 결과를 모르는 요청이 남아 있는데 화면이 들고 있는 목록만 보고 두 번째 추방을
+   * 지목하게 두면, 이미 실행된 추방을 사용자가 다시 시도하게 된다.
+   */
+  const [needsVerification, setNeedsVerification] = useState(false)
   // "재조회할 키가 있는가"는 화면에 버튼을 띄우는 근거라 state여야 한다(ref는 리렌더를
   // 일으키지 않아 ACK를 놓친 화면에 결과 확인 버튼이 끝내 나타나지 않는다).
   const [hasReceipt, setHasReceipt] = useState(false)
@@ -78,10 +147,29 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
   const requestGenerationRef = useRef(0)
   const lastReceiptRef = useRef(null)
   const mountedRef = useRef(true)
+  /**
+   * **전송 잠금.** 이전에는 statusRef(=렌더 시점의 status 거울)만 봤다. status는 setState로
+   * 바뀌고 statusRef는 **다음 렌더에서야** 갱신되므로, 같은 렌더 안에서 confirmKick을 두 번
+   * 부르면 두 호출 모두 이전 값을 읽고 서로 다른 requestId의 추방을 **둘 다** 보냈다.
+   *
+   * 그래서 emit **직전에 동기적으로** 잠근다. 푸는 것은 그 요청의 결과를 실제로 알게 됐을
+   * 때뿐이다 — ACK가 도착했거나, 결과 조회가 답을 돌려줬거나, 계정이 바뀌었을 때.
+   * reset()(안내 닫기·모달 닫기)은 **풀지 않는다**: 미확인 전송이 남아 있는데 모달을 닫았다
+   * 다시 여는 것만으로 두 번째 추방이 나가서는 안 된다.
+   */
+  const sendLockRef = useRef(false)
   // status의 현재 값을 렌더 밖(콜백·수신기)에서 읽기 위한 거울. 상태 자체는 위 useState가
-  // 소유하고, 이 ref는 판정에만 쓴다.
+  // 소유하고, 이 ref는 판정에만 쓴다. 전이 시점에도 **동기적으로** 맞춰 둔다.
   const statusRef = useRef(KICK_REQUEST_STATUS.IDLE)
   statusRef.current = status
+  /** 검증 대기 여부의 동기 거울(위 needsVerification과 같은 이유). */
+  const needsVerificationRef = useRef(false)
+
+  /** 상태 전이의 단일 경계 — state와 거울을 항상 함께 옮긴다. */
+  const applyStatus = useCallback((next) => {
+    statusRef.current = next
+    setStatus(next)
+  }, [])
 
   useEffect(() => {
     mountedRef.current = true
@@ -93,20 +181,26 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
     generationRef.current += 1
     requestGenerationRef.current += 1
     lastReceiptRef.current = null
+    // 계정이 바뀌면 그 전송은 더 이상 이 화면의 책임이 아니다 — 잠금도 함께 끊는다.
+    sendLockRef.current = false
+    needsVerificationRef.current = false
+    setNeedsVerification(false)
     setHasReceipt(false)
     setPendingTarget(null)
-    setStatus(KICK_REQUEST_STATUS.IDLE)
+    applyStatus(KICK_REQUEST_STATUS.IDLE)
     setErrorCode(null)
-  }, [authUuid])
+  }, [authUuid, applyStatus])
 
   /** 확인 단계로 들어간다. 소켓 요청은 일어나지 않는다. */
   const requestConfirm = useCallback((target) => {
     if (!target || typeof target.uuid !== "string" || !target.uuid) return
     if (typeof target.membershipId !== "string" || !target.membershipId) return
-    // 이미 보내는 중이면 새 확인을 받지 않는다 — 연속 클릭이 두 번째 요청을 만들지 않게 한다.
-    // 판정은 ref로 한다(setState 갱신 함수 안에서 다른 setState를 부르면 StrictMode의 이중
-    // 호출이 그대로 부수효과 두 번이 된다).
+    // 결과를 모르는 전송이 남아 있으면 새 확인을 열지 않는다. 판정은 **잠금**으로 한다 —
+    // status만 보면 안내를 닫은 뒤(IDLE) 미확인 요청이 그대로 남은 상태를 통과시킨다.
+    if (sendLockRef.current) return
     if (statusRef.current === KICK_REQUEST_STATUS.SENDING) return
+    // UNKNOWN 뒤에는 서버 재확인이 성공해야만 새 확인을 연다.
+    if (needsVerificationRef.current) return
     setPendingTarget({
       uuid: target.uuid,
       membershipId: target.membershipId,
@@ -115,15 +209,14 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
       scopeId: getMembershipScopeId(),
     })
     setErrorCode(null)
-    setStatus(KICK_REQUEST_STATUS.CONFIRMING)
-  }, [getMembershipScopeId])
+    applyStatus(KICK_REQUEST_STATUS.CONFIRMING)
+  }, [getMembershipScopeId, applyStatus])
 
   /** 확인을 취소한다. 어떤 요청도 보내지 않고 어떤 결과도 남기지 않는다. */
   const cancelConfirm = useCallback(() => {
     setPendingTarget(null)
-    setStatus((currentStatus) =>
-      currentStatus === KICK_REQUEST_STATUS.CONFIRMING ? KICK_REQUEST_STATUS.IDLE : currentStatus)
-  }, [])
+    if (statusRef.current === KICK_REQUEST_STATUS.CONFIRMING) applyStatus(KICK_REQUEST_STATUS.IDLE)
+  }, [applyStatus])
 
   /**
    * 확인된 대상을 실제로 추방한다. 여기서만 소켓 요청이 일어난다.
@@ -134,29 +227,33 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
   const confirmKick = useCallback((currentTargets = null) => {
     const target = pendingTarget
     if (!target) return
+    // **가장 먼저** 잠금을 본다. 같은 렌더 안의 두 번째 호출은 여기서 끝난다.
+    if (sendLockRef.current) return
     if (statusRef.current === KICK_REQUEST_STATUS.SENDING) return
+
+    const fail = (code) => {
+      setPendingTarget(null)
+      applyStatus(KICK_REQUEST_STATUS.FAILED)
+      setErrorCode(code)
+    }
 
     // 확인 당시의 방/게임과 지금이 같은가.
     if (target.scopeId !== getMembershipScopeId()) {
-      setPendingTarget(null)
-      setStatus(KICK_REQUEST_STATUS.FAILED)
-      setErrorCode("STALE_MEMBERSHIP")
+      fail("STALE_MEMBERSHIP")
       return
     }
     // 확인 당시의 **소속**이 그대로인가. 같은 uuid로 다시 들어온 새 소속은 다른 사람이다.
     if (Array.isArray(currentTargets)) {
       const seated = currentTargets.find((entry) => entry?.uuid === target.uuid)
       if (!seated || seated.membershipId !== target.membershipId) {
-        setPendingTarget(null)
-        setStatus(KICK_REQUEST_STATUS.FAILED)
-        setErrorCode("STALE_MEMBERSHIP")
+        fail("STALE_MEMBERSHIP")
         return
       }
     }
 
     const socket = getSocket()
     if (!socket) {
-      setStatus(KICK_REQUEST_STATUS.FAILED)
+      applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode("NOT_CONNECTED")
       return
     }
@@ -164,40 +261,48 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
     const requestId = nextRequestId()
     const request = buildRequest({ target, requestId })
     if (!request) {
-      setStatus(KICK_REQUEST_STATUS.FAILED)
+      applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode("NOT_READY")
       return
     }
 
-    // 영수증 키는 **요청을 보내기 전에** 남긴다 — ACK를 못 받아도 이 키로 결과를 물을 수
+    // ── 여기서부터 되돌릴 수 없다 ──────────────────────────────────────────────
+    // 잠금과 영수증 키를 emit **이전에·동기적으로** 확정한다. 이 사이에는 어떤 await도,
+    // 어떤 setState 경유 판정도 없다 — 그래야 같은 렌더의 두 번째 호출이 반드시 막힌다.
+    sendLockRef.current = true
+    // 영수증 키는 요청을 보내기 전에 남긴다 — ACK를 못 받아도 이 키로 결과를 물을 수
     // 있어야 한다. bootEpoch는 서버가 준 값을 그대로 되돌려보낸다.
     lastReceiptRef.current = { bootEpoch: request.bootEpoch, requestId, socket }
-    setHasReceipt(true)
     const generation = generationRef.current
     requestGenerationRef.current += 1
     const requestGeneration = requestGenerationRef.current
     const scopeId = target.scopeId
+    statusRef.current = KICK_REQUEST_STATUS.SENDING
+    setHasReceipt(true)
     setStatus(KICK_REQUEST_STATUS.SENDING)
     setErrorCode(null)
 
     socket.emit(scope === "GAME" ? KICK_EVENTS.GAME : KICK_EVENTS.ROOM, request, (response) => {
       // 계정·연결·소속·요청 세대가 그 사이 바뀌었으면 이 응답은 현재 화면의 것이 아니다.
+      // 잠금도 풀지 않는다 — 이 요청의 결과를 **여전히 모르기** 때문이다.
       if (!mountedRef.current) return
       if (generation !== generationRef.current) return
       if (requestGeneration !== requestGenerationRef.current) return
       if (getSocket() !== socket) return
       if (scopeId !== getMembershipScopeId()) return
 
+      // 답을 받았다 — 이 전송은 끝났다.
+      sendLockRef.current = false
       setPendingTarget(null)
       if (response && response.ok === true) {
-        setStatus(KICK_REQUEST_STATUS.SUCCEEDED)
+        applyStatus(KICK_REQUEST_STATUS.SUCCEEDED)
         setErrorCode(null)
         return
       }
-      setStatus(KICK_REQUEST_STATUS.FAILED)
+      applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
     })
-  }, [pendingTarget, buildRequest, getMembershipScopeId, scope])
+  }, [pendingTarget, buildRequest, getMembershipScopeId, scope, applyStatus])
 
   /**
    * ACK를 놓쳤을 때 **기존 키**의 결과만 다시 묻는다. 새 추방을 보내지 않는다.
@@ -209,13 +314,16 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
     if (!receipt) return
     const socket = getSocket()
     if (!socket) {
-      setStatus(KICK_REQUEST_STATUS.FAILED)
+      applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode("NOT_CONNECTED")
       return
     }
     const generation = generationRef.current
     requestGenerationRef.current += 1
     const requestGeneration = requestGenerationRef.current
+    // 조회도 **그 화면의 것**이다. 조회를 보낸 뒤 방/게임을 옮기면 그 답은 지금 화면의
+    // pendingTarget·상태를 건드려서는 안 된다(전송 경로와 같은 계약이었는데 빠져 있었다).
+    const scopeId = getMembershipScopeId()
     socket.emit(KICK_EVENTS.RESULT, { bootEpoch: receipt.bootEpoch, requestId: receipt.requestId }, (response) => {
       if (!mountedRef.current) return
       if (generation !== generationRef.current) return
@@ -223,37 +331,73 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
       // 진행 중인 전송을 남의 결과로 덮지 않는다.
       if (requestGeneration !== requestGenerationRef.current) return
       if (getSocket() !== socket) return
+      if (scopeId !== getMembershipScopeId()) return
 
       // 결과가 확정됐든 알 수 없든, 그 답을 받은 순간 옛 확인은 끝난 것이다. 확인을 남겨
       // 두면 ACK를 놓친 요청의 대상에게 **새 requestId로** 두 번째 추방이 나갈 수 있다 —
       // UNKNOWN의 올바른 다음 행동은 지금 목록에서 대상을 다시 확인하는 것이다.
+      //
+      // 그 답이 곧 "이 전송의 결과를 알게 됐다"이므로 잠금도 여기서 푼다.
+      sendLockRef.current = false
       setPendingTarget(null)
       if (response && response.ok === true && response.status === "KICKED") {
-        setStatus(KICK_REQUEST_STATUS.SUCCEEDED)
+        applyStatus(KICK_REQUEST_STATUS.SUCCEEDED)
         setErrorCode(null)
         return
       }
       if (response && response.ok === true && response.status === "UNKNOWN") {
-        setStatus(KICK_REQUEST_STATUS.UNKNOWN)
+        applyStatus(KICK_REQUEST_STATUS.UNKNOWN)
         setErrorCode(null)
+        // ── UNKNOWN의 실제 다음 행동 ────────────────────────────────────────
+        // 상태만 바꾸고 끝내면 "목록을 다시 확인하라"는 안내문만 남고 아무도 다시 확인하지
+        // 않는다. 서버에서 현재 소속·참가자 목록을 **실제로** 다시 받아오고, 그것이 성공할
+        // 때까지 새 확인을 잠근다. 자동 재전송은 하지 않는다 — 이미 실행됐을 수 있는
+        // 추방을 화면이 대신 되풀이해서는 안 된다.
+        if (typeof verifyMembership !== "function") return
+        needsVerificationRef.current = true
+        setNeedsVerification(true)
+        const verifyGeneration = generationRef.current
+        // **동기적으로** 시작한다 — 마이크로태스크로 미루면 "UNKNOWN이면 서버에서 다시
+        // 확인한다"가 같은 턴 안에서 관측되지 않는다(그 사이 화면이 바뀌면 영영 안 일어난다).
+        let verification
+        try {
+          verification = verifyMembership()
+        } catch {
+          return // 재확인을 시작조차 못 했다 — 잠긴 채로 둔다.
+        }
+        Promise.resolve(verification)
+          .then((ok) => {
+            if (!mountedRef.current) return
+            if (verifyGeneration !== generationRef.current) return
+            if (getSocket() !== socket) return
+            if (scopeId !== getMembershipScopeId()) return
+            if (ok === false) return // 실패하면 잠긴 채로 둔다 — 사용자가 다시 시도한다.
+            needsVerificationRef.current = false
+            setNeedsVerification(false)
+          })
+          .catch(() => { /* 재확인 실패는 잠금을 유지한다(모르는 상태를 풀지 않는다) */ })
         return
       }
-      setStatus(KICK_REQUEST_STATUS.FAILED)
+      applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
     })
-  }, [])
+  }, [applyStatus, getMembershipScopeId, verifyMembership])
 
   /**
    * 안내를 닫는다(상태만 초기화 — 서버 기록은 그대로다. 재조회 키도 남겨 둔다).
    *
    * 요청 세대는 올린다 — 닫은 뒤에 도착한 옛 ACK가 이미 정리된 안내를 되살리지 않게 한다.
+   *
+   * **전송 잠금은 풀지 않는다.** 모달을 닫았다 여는 것은 "결과를 알게 됐다"가 아니다 —
+   * 풀어 주면 ACK를 놓친 요청이 미확인인 채로 두 번째 추방이 나갈 수 있다(닫기·열기만으로
+   * 우회되는 잠금은 잠금이 아니다). 같은 이유로 UNKNOWN 이후의 재확인 요구도 남긴다.
    */
   const reset = useCallback(() => {
     requestGenerationRef.current += 1
     setPendingTarget(null)
-    setStatus(KICK_REQUEST_STATUS.IDLE)
+    applyStatus(KICK_REQUEST_STATUS.IDLE)
     setErrorCode(null)
-  }, [])
+  }, [applyStatus])
 
   return {
     pendingTarget,
@@ -261,6 +405,8 @@ export function useKickPlayerRequest({ scope, buildRequest, getMembershipScopeId
     errorCode,
     isSending: status === KICK_REQUEST_STATUS.SENDING,
     canLookupResult: hasReceipt,
+    /** 결과를 모르는 전송이 남아 새 확인을 열 수 없는가(화면이 안내에 쓴다). */
+    isAwaitingResolution: needsVerification,
     requestConfirm,
     cancelConfirm,
     confirmKick,

@@ -6,6 +6,8 @@ const voteParticipationRepository = require('../repositories/voteParticipation.r
 const achievementService = require('../services/achievementService')
 // F-21: 추방 입력 검증·프로세스 기동 식별·영수증의 단일 소유자(matchmaking.js와 공유한다).
 const kickReceiptStore = require('./kickReceiptStore')
+// F-21(AC-05/AC-06): 채널 이탈·되돌리기·전달 제외의 단일 소유자(socket/matchmaking.js와 공유).
+const channelMembership = require('./channelMembership')
 
 // F-11: handleSubmitDayVote가 실제로 호출하는 참조입니다. __setRecordVoteParticipationForTests로만
 // 바꿀 수 있고, 런타임 코드 경로는 항상 이 변수를 통해서만 저장소를 호출합니다(직접
@@ -172,48 +174,22 @@ function isCurrentSocketForUuid(uuid, socket) {
  * @param {() => boolean} [ownership.ownsChannel] - "이 소켓이 지금 **그 채널**의 정상 소속인가".
  * @param {() => boolean} [ownership.keepsConnection] - "이 소켓이 지금 살아 있는 소속을 가졌는가"
  *   (기본값: ownsChannel). 참이면 실패해도 연결을 끊지 않는다.
+ *
+ * ── 떼지 못한 채널(AC-06) ────────────────────────────────────────────────────
+ * 끊지 않기로 한 실패를 그대로 두면 배제된 계정이 옛 판의 방송을 계속 받는다. 공통 경계가
+ * 제한된 횟수만 다시 떼고, 그래도 실패하면 그 (채널, 소켓)을 전달 제외 목록에 넣는다 —
+ * emitToGameChannel이 그 소켓을 빼고 보낸다. 새 소속의 연결은 그대로 산다.
  */
 function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ownership = null) {
-    if (!socket || typeof socket.leave !== 'function') return
-    const ask = (predicate) => {
-        if (typeof predicate !== 'function') return false
-        try { return predicate() === true } catch (err) { return false }
-    }
-    const ownsChannel = () => ask(ownership?.ownsChannel)
-    const keepsConnection = () => ask(ownership?.keepsConnection ?? ownership?.ownsChannel)
-    const handleFailure = () => {
-        if (keepsConnection()) {
-            // 이 실패는 이미 지난 소속의 것이다 — 새 소속의 연결을 끊지 않는다.
-            console.error(logLabel, { code: 'CHANNEL_LEAVE_SUPERSEDED', ...logFields })
-            return
-        }
-        console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', ...logFields })
-        try { socket.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
-    }
-    const restoreIfSuperseded = () => {
-        if (!ownsChannel()) return
-        if (socket.rooms && typeof socket.rooms.has === 'function' && socket.rooms.has(channelId)) return
-        try {
-            const rejoined = socket.join(channelId)
-            if (rejoined && typeof rejoined.then === 'function') {
-                Promise.resolve(rejoined).catch(() => {
-                    console.error(logLabel, { code: 'CHANNEL_REJOIN_ERROR', ...logFields })
-                })
-            }
-        } catch (err) {
-            console.error(logLabel, { code: 'CHANNEL_REJOIN_ERROR', ...logFields })
-        }
-    }
-    let pending
-    try {
-        pending = socket.leave(channelId)
-    } catch (err) {
-        handleFailure()
-        return
-    }
-    if (pending && typeof pending.then === 'function') {
-        Promise.resolve(pending).then(restoreIfSuperseded, handleFailure)
-    }
+    channelMembership.detachSocketFromChannel(socket, channelId, logLabel, logFields, ownership)
+}
+
+/**
+ * F-21(AC-06): 세션 채널 방송의 유일한 경계. 전달 제외가 없으면 기존 io.to(channelId).emit과
+ * 완전히 같다 — 정상 경로의 동작은 바뀌지 않는다.
+ */
+function emitToGameChannel(io, channelId, event, payload) {
+    channelMembership.emitToChannel(io, channelId, event, payload)
 }
 
 /**
@@ -343,6 +319,9 @@ function __resetStateForTests() {
     }
     terminalPersistRuns.clear()
     terminalPersistConfirmed.clear()
+    // WeakMap은 비울 수 없으므로 새 것으로 갈아끼운다 — 같은 session 객체를 재사용하는 스위트가
+    // 이전 테스트의 표식에 막히지 않게 한다(프로덕션에는 이 경로가 없다).
+    terminalPersistBySession = new WeakMap()
     __setTerminalPersistTimersForTests()
 }
 
@@ -372,6 +351,15 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     // 있었다 — 그 레코드는 ended_at·roster·통계 delta가 처음 것과 다르다. DB PK가 그 두 번째
     // 쓰기를 막아 주더라도, "gameId마다 결과 레코드는 하나"라는 계약(A-09)은 조립 시점에서
     // 지켜져야 한다(같은 판의 업적 평가·개인 무효화도 커밋 확인 1회에 묶인다).
+    //
+    // ── 왜 gameId 집합 하나로는 부족한가 ─────────────────────────────────────
+    // 그 집합은 상한(4096)을 넘으면 가장 오래된 항목을 버린다. 늦은 중복 훅이 **살아 있는**
+    // session 객체를 그대로 들고 있는데 그 gameId만 축출됐다면, 판정이 통과해 이미 비워진
+    // session으로 두 번째 레코드가 조립된다. 그래서 판정의 1차 근거를 **session 객체 자체**에
+    // 둔다(아래 WeakMap) — 늦은 콜백이 도달할 수 있는 session이라면 그 표식도 반드시 살아
+    // 있고, session이 수거되면 표식도 함께 사라진다(전역 보존을 무한히 키우지 않는다).
+    // gameId 집합은 "같은 판을 가리키는 **다른** session 객체"를 위한 보조 경로로 남는다.
+    if (terminalPersistBySession.get(session)) return
     if (terminalPersistConfirmed.has(gameId)) return
 
     // 레코드는 **지금 여기서 한 번만** 조립한다. 재시도마다 다시 만들면 ended_at이 시도
@@ -392,9 +380,24 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
         return
     }
 
-    const run = { gameId, record, participantUuids, attempt: 0, timerId: null }
+    // 레코드를 동결한다 — 재시도는 **같은 값**을 다시 쓰는 일이어야 하고, 그 사이 누구도
+    // ended_at·roster·통계 delta를 바꿀 수 없어야 한다(A-09).
+    const run = { gameId, record: deepFreezeRecord(record), participantUuids, attempt: 0, timerId: null }
     terminalPersistRuns.set(gameId, run)
+    // 이 session 객체로 오는 어떤 늦은 훅도 이제부터 위 판정에 걸린다(축출과 무관하다).
+    terminalPersistBySession.set(session, run)
     attemptTerminalPersist(run)
+}
+
+/**
+ * 저장 레코드를 제자리에서 동결한다(중첩 배열·객체까지). 새 객체를 만들지 않으므로 저장소가
+ * 받는 값의 모양은 그대로다 — 바꿀 수 없게만 한다.
+ */
+function deepFreezeRecord(value) {
+    if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value
+    Object.freeze(value)
+    for (const nested of Object.values(value)) deepFreezeRecord(nested)
+    return value
 }
 
 /**
@@ -415,6 +418,20 @@ const terminalPersistRuns = new Map()
  */
 const terminalPersistConfirmed = new Set()
 const TERMINAL_PERSIST_CONFIRMED_MAX = 4096
+
+/**
+ * F-21(A-09): session 객체 → 그 판의 종결 저장 작업(진행 중이든 확인 완료든).
+ *
+ * 위 Set과 나누는 이유는 **생명주기**다. Set은 상한을 넘으면 오래된 gameId를 버리는데, 버려진
+ * 그 판의 session을 아직 붙잡고 있는 늦은 콜백이 도착하면 레코드가 다시 조립된다(그때 session은
+ * 이미 비워져 있어 ended_at·roster·delta가 다른 **두 번째 레코드**가 된다).
+ *
+ * WeakMap은 그 상황 자체를 없앤다 — 늦은 콜백이 session에 도달할 수 있다면 표식도 반드시 살아
+ * 있고, 아무도 그 session을 참조하지 않게 되면 표식도 함께 수거된다. 축출도 없고 무한히 자라는
+ * 전역 보존도 없다. (프로세스가 죽으면 이 표도 함께 사라진다 — 그것은 **미저장/미확인**이며,
+ * 이 구조가 프로세스 소실에 대한 durability를 주장하지는 않는다.)
+ */
+let terminalPersistBySession = new WeakMap()
 
 /** 최초 1회 → 1초 → 5초 → 30초 → 이후 계속 60초. 단일 타이머로만 진행한다. */
 const TERMINAL_PERSIST_RETRY_DELAYS_MS = [1_000, 5_000, 30_000]
@@ -590,7 +607,7 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
 
     if (result.transitioned) {
         try {
-            io.to(result.session.channelId).emit('game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session))
+            emitToGameChannel(io, result.session.channelId,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session))
         } catch (err) {
             console.error('[phase 변경 알림 전송 실패]', err)
         }
@@ -665,7 +682,7 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
 
     if (result.transitioned) {
         try {
-            io.to(result.session.channelId).emit(
+            emitToGameChannel(io, result.session.channelId,
                 'day_phase_changed',
                 gameSessionCore.buildDayPhaseChangedPayload(result.session),
             )
@@ -745,7 +762,7 @@ function resolveNightTurnDurationMs(run, role) {
 /** 밤 턴 방송은 참가자 전원이 이미 가입해 있는 세션 channel에 한 번만 보낸다(수신자별로 달라지는 값이 없다). */
 function emitNightTurnEvent(run, event, payload) {
     try {
-        run.io.to(run.session.channelId).emit(event, payload)
+        emitToGameChannel(run.io, run.session.channelId,event, payload)
     } catch (err) {
         console.error('[밤 턴 방송 실패]', { code: 'DELIVERY_ERROR', event, gameId: run.session.id })
     }
@@ -930,7 +947,7 @@ const dayPhaseRuns = new Map()
 /** 낮 하위 구간 전이는 참가자 전원이 이미 가입해 있는 세션 channel에 한 번만 방송한다. */
 function emitDayPhaseEvent(run, event, payload) {
     try {
-        run.io.to(run.session.channelId).emit(event, payload)
+        emitToGameChannel(run.io, run.session.channelId,event, payload)
     } catch (err) {
         console.error('[낮 페이즈 방송 실패]', { code: 'DELIVERY_ERROR', event, gameId: run.session.id })
     }
@@ -1372,7 +1389,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
         }
         if (payload) {
             try {
-                io.to(session.channelId).emit('player_eliminated', payload)
+                emitToGameChannel(io, session.channelId,'player_eliminated', payload)
             } catch (err) {
                 console.error('[참가자 이탈 처리 실패]', { code: 'DELIVERY_ERROR', uuid, gameId: session.id })
             }
@@ -1380,19 +1397,44 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     }
 
     // ── 2) 참여 상태 변화 — 생존과 별개의 사실이라 사망 사건과 합치지 않는다 ────────
+    const participationPayload = gameSessionCore.buildParticipationChangedPayload(session, applied.victimUuid)
     try {
-        io.to(session.channelId).emit(
-            'session_participation_changed',
-            gameSessionCore.buildParticipationChangedPayload(session, applied.victimUuid),
-        )
+        emitToGameChannel(io, session.channelId, 'session_participation_changed', participationPayload)
     } catch (err) {
         console.error('[참가자 이탈 처리 실패]', { code: 'PARTICIPATION_DELIVERY_ERROR', uuid, gameId: session.id })
+    }
+
+    // ── 2b) 각자의 **본인** 제출 상태 ────────────────────────────────────────
+    //
+    // 이탈은 남의 표를 기권으로 정규화한다(표적이 사라졌으므로). 그 사실을 공개 방송에 실을
+    // 수는 없다 — 누가 누구를 찍었는지가 드러난다. 그래서 같은 revision을 달아 **각자에게만**
+    // 자기 값을 보낸다. 받은 화면은 revision으로 늦은 ACK를 무효화하고 표시를 되돌린다.
+    //
+    // 통지마다 격리한다 — 한 수신자의 전달 실패가 나머지를 막지 않는다.
+    for (const player of session.players.values()) {
+        if (player.isParticipating === false) continue
+        const targetSocket = getSocketForUuid(io, player.uuid)
+        if (!targetSocket) continue
+        try {
+            targetSocket.emit('session_self_progress', {
+                gameId: session.id,
+                phase: session.phase,
+                dayIndex: session.dayIndex,
+                participationRevision: participationPayload.participationRevision,
+                progress: participationPayload.progress,
+                self: gameSessionCore.buildSelfSubmissionFields(session, player.uuid),
+            })
+        } catch (err) {
+            console.error('[참가자 이탈 처리 실패]', {
+                code: 'SELF_PROGRESS_DELIVERY_ERROR', uuid: player.uuid, gameId: session.id,
+            })
+        }
     }
 
     // ── 3) 피고 이탈로 취소된 재판 ────────────────────────────────────────────
     if (applied.tribunalCancelled) {
         try {
-            io.to(session.channelId).emit(
+            emitToGameChannel(io, session.channelId,
                 'tribunal_vote_resolved',
                 gameSessionCore.buildTribunalVoteResolvedPayload(session),
             )
@@ -1446,7 +1488,7 @@ function advancePhaseAfterDeparture(io, session, applied) {
 
     if (advanced.transitioned === 'DAY') {
         try {
-            io.to(session.channelId).emit('game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session))
+            emitToGameChannel(io, session.channelId,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session))
         } catch (err) {
             console.error('[이탈 후 단계 진행 실패]', { code: 'PHASE_DELIVERY_ERROR', gameId: session.id })
         }
@@ -1460,7 +1502,7 @@ function advancePhaseAfterDeparture(io, session, applied) {
 
     if (advanced.transitioned === 'DAY_VOTE') {
         try {
-            io.to(session.channelId).emit('day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
+            emitToGameChannel(io, session.channelId,'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
         } catch (err) {
             console.error('[이탈 후 단계 진행 실패]', { code: 'DAY_PHASE_DELIVERY_ERROR', gameId: session.id })
         }
@@ -2916,7 +2958,7 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     }
 
     try {
-        io.to(session.channelId).emit('game_ended', { gameId: session.id, reason })
+        emitToGameChannel(io, session.channelId,'game_ended', { gameId: session.id, reason })
     } catch (err) {
         console.error('[GameSession 종료 알림 전송 실패]', err)
     }
@@ -3031,9 +3073,20 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
  * delivery-target 개념)와는 다른 목적이라 재사용하지 않는다.
  */
 function isUuidConnected(io, uuid) {
+    return getSocketForUuid(io, uuid) !== null
+}
+
+/**
+ * F-21(AC-03): 그 계정의 **현재 canonical 소켓**(연결돼 있을 때만). 없으면 null.
+ *
+ * 개인 전송(본인 제출 상태 등)의 유일한 대상 결정 경계다. 채널 가입 여부는 묻지 않는다 —
+ * 개인 사건은 채널이 아니라 그 연결로 직접 간다.
+ */
+function getSocketForUuid(io, uuid) {
     const socketId = onlineUsersRegistry instanceof Map ? onlineUsersRegistry.get(uuid) : undefined
-    if (!socketId) return false
-    return io?.sockets?.sockets?.get(socketId)?.connected === true
+    if (!socketId) return null
+    const socket = io?.sockets?.sockets?.get(socketId)
+    return socket?.connected === true ? socket : null
 }
 
 /**
@@ -3478,6 +3531,9 @@ module.exports = {
         applyParticipantDeparture,
         finalizeGameSessionEnd,
         persistTerminalSession,
+        // F-21(AC-05/AC-06): 채널 이탈의 완료 후 재검사·되돌리기·전달 제외를 실제 경로로
+        // 재현하기 위한 경계(구현은 socket/channelMembership.js가 소유한다).
+        detachSocketFromChannel,
         // F-21(A-09): 불변 레코드의 재시도 작업 표와 그 타이머 주입구. 시험이 실제 1/5/30초를
         // 기다리지 않고도 "같은 record로 다시 저장한다"를 확인할 수 있게 한다.
         __getTerminalPersistRunsForTests: () => [...terminalPersistRuns.values()],

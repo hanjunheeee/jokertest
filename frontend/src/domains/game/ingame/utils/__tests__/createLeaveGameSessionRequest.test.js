@@ -21,14 +21,16 @@ function harness(overrides = {}) {
     membershipId: "mem-1",
     ...overrides,
   }
-  const socket = { emit: (event, payload, ack) => emitted.push({ event, payload, ack }) }
-  const state = { socket }
+  // 실제 Socket.IO처럼 id를 갖는다 — 재연결은 **객체를 바꾸지 않고** id만 바꾼다.
+  const socket = { id: "sock-1", emit: (event, payload, ack) => emitted.push({ event, payload, ack }) }
+  const state = { socket, identityGeneration: 1 }
 
   const request = createLeaveGameSessionRequest({
     getSocket: () => state.socket,
     getCurrentGameId: () => current.gameId,
     getCurrentAccountId: () => current.accountId,
     getCurrentMembershipId: () => current.membershipId,
+    getIdentityGeneration: () => state.identityGeneration,
     finalize: () => finalized.push(true),
     onFailure: (response) => failures.push(response),
   })
@@ -79,6 +81,34 @@ test("AC-05: A→B→A로 돌아와도 옛 ack는 되살아나지 않는다(소�
   h.emitted[0].ack({ ok: true })
 
   assert.equal(h.finalized.length, 0)
+})
+
+test("AC-05: A→B→A인데 **소속도 소켓도 그대로**여도 옛 ack는 되살아나지 않는다(전이 세대)", () => {
+  const h = harness()
+  h.request()
+
+  // 로그아웃 → 다른 계정 로그인 → 다시 원래 계정. 값으로만 비교하면 accountId도 membershipId도
+  // 소켓 객체도 전부 원래대로라 네 검사가 모두 통과한다 — 전이 **횟수**만이 그 구간을 드러낸다.
+  h.state.identityGeneration = 2
+  h.state.identityGeneration = 3
+  h.state.identityGeneration = 4
+  h.emitted[0].ack({ ok: true })
+
+  assert.equal(h.finalized.length, 0, "A→B→A 구간을 지난 옛 ack가 현재 판을 끝냈다")
+  assert.equal(h.failures.length, 0)
+})
+
+test("AC-05: **같은 Socket 객체가 재연결**돼도(id만 교체) 그 이전 요청의 ack는 무시된다", () => {
+  const h = harness()
+  h.request()
+
+  // socket.io는 재연결에서 같은 Socket 인스턴스를 재사용하고 id만 새로 받는다.
+  // 객체 동일성 검사(getSocket() !== socket)만으로는 이 구간을 전혀 구별하지 못한다.
+  h.socket.id = "sock-2"
+  h.emitted[0].ack({ ok: true })
+
+  assert.equal(h.finalized.length, 0, "재연결 이전 요청의 ack가 현재 연결의 것으로 처리됐다")
+  assert.equal(h.failures.length, 0)
 })
 
 test("AC-05: ack가 오기 전에 연결이 교체되면 그 ack는 무시된다", () => {
