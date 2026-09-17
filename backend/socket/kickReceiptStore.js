@@ -27,6 +27,19 @@ const KICK_RECEIPT_TTL_MS = 10 * 60 * 1000
 /** 유효 영수증 상한. 이 수를 넘으면 유효 기록을 **축출하지 않고** 새 커밋을 거부한다(A-08). */
 const KICK_RECEIPT_MAX_ENTRIES = 4096
 
+/**
+ * **거부 결정**에만 적용하는 더 낮은 수위.
+ *
+ * 거부도 결정이므로 기록해야 한다(그래야 NOT_HOST로 막힌 요청이 방장 승계 뒤에 실행되지
+ * 않는다 — AC-04). 하지만 거부는 아무 권한도 필요 없다: 인증만 된 계정이면 누구나 무효한
+ * 요청을 연달아 보내 표를 가득 채울 수 있고, 그러면 **실제 추방**이 RECEIPT_CAPACITY로
+ * 막힌다. 그래서 거부 기록은 절반까지만 쓰게 하고 나머지 절반은 커밋에 남겨 둔다.
+ *
+ * 수위를 넘어 기록하지 못한 거부는 그대로 거부로 응답한다 — 거부는 아무 상태도 바꾸지
+ * 않았으므로 같은 요청을 나중에 다시 판정해도 잃는 것이 없다(커밋과 결정적으로 다른 점이다).
+ */
+const KICK_REJECTION_RECEIPT_MAX_ENTRIES = Math.floor(KICK_RECEIPT_MAX_ENTRIES / 2)
+
 /** 식별자 최대 길이 — updateRoomSettingsValidation과 같은 기준이다. */
 const MAX_IDENTIFIER_LENGTH = 128
 
@@ -129,6 +142,16 @@ function lookupKickReceipt(key) {
 function hasKickReceiptCapacity() {
     pruneKickReceipts()
     return kickReceipts.size < KICK_RECEIPT_MAX_ENTRIES
+}
+
+/**
+ * **거부 결정**을 담을 자리가 있는가. 커밋용 자리를 남겨 두기 위해 더 낮은 수위를 쓴다
+ * (KICK_REJECTION_RECEIPT_MAX_ENTRIES 참고). false여도 호출부는 그대로 거부 응답을 한다 —
+ * 기록하지 못했다는 것뿐이고, 거부는 아무 상태도 바꾸지 않았다.
+ */
+function hasKickRejectionCapacity() {
+    pruneKickReceipts()
+    return kickReceipts.size < KICK_REJECTION_RECEIPT_MAX_ENTRIES
 }
 
 /**
@@ -248,6 +271,7 @@ module.exports = {
     BOOT_EPOCH,
     KICK_RECEIPT_TTL_MS,
     KICK_RECEIPT_MAX_ENTRIES,
+    KICK_REJECTION_RECEIPT_MAX_ENTRIES,
     KICK_COMMANDS,
     KICK_EVENTS,
     KICK_ERROR_CODES,
@@ -255,6 +279,7 @@ module.exports = {
     pruneKickReceipts,
     lookupKickReceipt,
     hasKickReceiptCapacity,
+    hasKickRejectionCapacity,
     recordKickReceipt,
     fingerprintKickRequest,
     validateKickPayload,

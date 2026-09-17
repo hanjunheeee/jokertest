@@ -915,18 +915,25 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     // F-21(AC-06): 네 입장 생산자 중 하나다. 큐에서 방으로 확정되는 참가자마다 **여기서**
     // 새 membershipId를 발급한다 — 발급 지점이 실제 Map 커밋과 같은 동기 구간이어야, 늦게
     // 깨어난 옛 요청이 "같은 계정"이라는 이유로 새 소속을 자기 것으로 오인할 수 없다.
+    // F-21(AC-06): 새 소속의 준비는 **항상 false**다. 다른 세 생산자(생성·코드 참가·초대
+    // 수락)는 이미 그렇게 커밋하는데 이 경로만 키를 아예 두지 않아, 같은 계정이 추방된 뒤
+    // 큐로 돌아오면 computeCanStart의 `isReady === true` 검사만 통과하지 못할 뿐 화면에는
+    // "준비 여부를 알 수 없는 참가자"로 남았다. 재입장은 언제나 준비하지 않은 상태다.
     const playersMap = new Map(players.map((p) => [p.uuid, {
         uuid: p.uuid,
         nickname: p.nickname,
+        isReady: false,
         membershipId: kickReceiptStore.nextMembershipId(),
     }]))
 
-    gameRooms.set(roomId, { id: roomId, instanceId: crypto.randomUUID(), code: roomCode, hostUuid, players: playersMap })
+    const room = { id: roomId, instanceId: crypto.randomUUID(), code: roomCode, hostUuid, players: playersMap }
+    gameRooms.set(roomId, room)
     players.forEach((p) => playerRoom.set(p.uuid, roomId))
 
-    // match_found도 buildRoomPayload와 같은 참가자 직렬화 계약을 쓴다 — 이 화면이 곧 대기방
-    // 화면이라, 여기서만 membershipId가 빠지면 방장이 추방 대상을 지목할 근거를 잃는다.
-    const playerList = [...playersMap.values()].map((p) => ({ ...p }))
+    // match_found는 **공통 방 payload 그대로**다. 이 화면이 곧 대기방 화면이라, 여기서만
+    // 직렬화를 손으로 다시 적으면 membershipId·canStart·설정 같은 값이 한쪽에서만 빠진다
+    // (방장이 추방 대상을 지목할 근거를 잃는 것이 그 결과다).
+    const payload = buildRoomPayload(room)
 
     players.forEach(({ socketId }) => {
         const s = io.sockets.sockets.get(socketId)
@@ -934,14 +941,9 @@ async function handleJoinMatchmaking(io, socket, uuid) {
         s.join(roomId)
         // ABA 방지 결합: create_room/join_room_by_code와 동일한 이유(onDisconnect 참고).
         s.data.activeRoomId = roomId
-        s.emit('match_found', {
-            roomId,
-            roomCode,
-            roomInstanceId: gameRooms.get(roomId).instanceId,
-            bootEpoch: BOOT_EPOCH,
-            players: playerList,
-            hostUuid,
-        })
+        // 수신자마다 새 복사본을 준다 — 한 참가자가 payload를 변형해도 다른 참가자의 응답이
+        // 함께 바뀌지 않는다(buildRoomPayload의 참가자 복사와 같은 이유).
+        s.emit('match_found', { ...payload, players: payload.players.map((p) => ({ ...p })) })
     })
 }
 
@@ -2561,6 +2563,38 @@ function commitRoomDeparture(io, socket, uuid, reason) {
 }
 
 /**
+ * F-21(공통 커밋·통지 경계): 제거된 소켓을 방송 채널에서 뗀다. **실패하면 그 연결을 끊는다.**
+ *
+ * socket.leave는 adapter에 따라 Promise를 돌려주고, 그 거부는 try/catch로 잡히지 않는다 —
+ * 동기 throw만 처리하면 비동기 adapter에서 채널에 남은 연결이 조용히 방송을 계속 받는다
+ * (서버 상태에서는 이미 제거된 계정이다). 두 실패 모양을 **같은 정리**로 잇는다: 연결을
+ * 끊고, 재접속은 서버의 소속·forfeited 검사가 다시 막는다.
+ *
+ * 절대 던지지 않는다 — 이 함수는 이미 확정된 커밋 뒤의 best-effort 정리이고, 여기서 새는
+ * 예외는 뒤따르는 다른 통지를 멈춘다.
+ */
+function detachSocketFromChannel(socket, channelId, logLabel) {
+    if (!socket || typeof socket.leave !== 'function') return
+    const disconnectQuietly = () => {
+        try { socket.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
+    }
+    let pending
+    try {
+        pending = socket.leave(channelId)
+    } catch (err) {
+        console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', channelId })
+        disconnectQuietly()
+        return
+    }
+    if (pending && typeof pending.then === 'function') {
+        Promise.resolve(pending).catch(() => {
+            console.error(logLabel, { code: 'CHANNEL_LEAVE_ERROR', channelId })
+            disconnectQuietly()
+        })
+    }
+}
+
+/**
  * F-21(공통 커밋·통지 경계): 커밋이 끝난 뒤의 채널 정리와 방송이다.
  *
  * 통지마다 예외를 격리한다 — 하나가 던져도 나머지 통지가 멈추지 않아야, 서버가 확정한 상태와
@@ -2576,13 +2610,7 @@ function notifyRoomDeparture(io, outcome, departingSockets = []) {
     const { roomId, room, roomDeleted, hostChanged } = outcome
 
     for (const departing of departingSockets) {
-        if (!departing || typeof departing.leave !== 'function') continue
-        try {
-            departing.leave(roomId)
-        } catch (err) {
-            console.error('[대기방 채널 이탈 실패]', { code: 'CHANNEL_LEAVE_ERROR', roomId })
-            try { departing.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
-        }
+        detachSocketFromChannel(departing, roomId, '[대기방 채널 이탈 실패]')
     }
 
     if (roomDeleted) {
@@ -2691,47 +2719,69 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
         reject(CODES.STALE_BOOT, '서버가 재시작되었습니다. 방 정보를 다시 불러와주세요.')
         return
     }
+    // ── 여기부터의 거부는 **결정**이다 ───────────────────────────────────────────
+    //
+    // 형태·연결·boot 실패와 달리 아래 검사들은 "이 요청은 실행되지 않는다"를 서버가 확정한
+    // 것이다. 기록하지 않으면 같은 requestId의 재전달이 **그때의 현재 상태**로 다시 판정된다 —
+    // NOT_HOST로 거부된 요청이 방장 승계 뒤에 그대로 실행되는 것이 그 결과다(AC-04). 영수증의
+    // 계약은 "현재 방장 여부·방 존속을 이유로 과거 결과를 바꾸지 않는다"이고, 그것은 성공만이
+    // 아니라 거부에도 똑같이 적용된다.
+    //
+    // 자리가 없으면 기록 없이 거부만 한다 — 거부는 아무 상태도 바꾸지 않았으므로 같은 요청을
+    // 다시 판정해도 잃는 것이 없다(성공 커밋과 결정적으로 다른 점이다). 거부 기록에는 더 낮은
+    // 수위를 쓴다: 무효한 요청을 연달아 보내 표를 채워 **실제 추방**을 막을 수 없게 한다.
+    const decideReject = (code, message) => {
+        if (kickReceiptStore.hasKickRejectionCapacity()) {
+            kickReceiptStore.recordKickReceipt(receiptKey, {
+                command: kickReceiptStore.KICK_COMMANDS.ROOM,
+                fingerprint,
+                result: { ok: false, code, message },
+            })
+        }
+        reject(code, message)
+    }
+
     if (input.targetUuid === uuid) {
-        reject(CODES.SELF_KICK, '자신을 추방할 수 없습니다.')
+        decideReject(CODES.SELF_KICK, '자신을 추방할 수 없습니다.')
         return
     }
     if (getAdmissionAttempt(uuid)) {
-        reject(CODES.ADMISSION_PENDING, '입장 처리가 아직 끝나지 않았습니다.')
+        decideReject(CODES.ADMISSION_PENDING, '입장 처리가 아직 끝나지 않았습니다.')
         return
     }
     // 시작 커밋이 먼저 끝난 방의 옛 대기방 추방은 게임 추방으로 해석하지 않는다(AC-05).
-    if (rejectIfInActiveGame(uuid, ({ message }) => reject(CODES.ALREADY_IN_GAME, message))) return
+    if (rejectIfInActiveGame(uuid, ({ message }) => decideReject(CODES.ALREADY_IN_GAME, message))) return
 
     const currentRoomId = playerRoom.get(uuid)
     if (!currentRoomId) {
-        reject(CODES.NOT_IN_ROOM, '참여 중인 방이 없습니다.')
+        decideReject(CODES.NOT_IN_ROOM, '참여 중인 방이 없습니다.')
         return
     }
     if (currentRoomId !== input.roomId) {
-        reject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        decideReject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
         return
     }
     const room = gameRooms.get(input.roomId)
     if (!room) {
-        reject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        decideReject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
         return
     }
     // 같은 문자열 roomId로 다시 만들어진 방의 옛 명령을 여기서 끝낸다(A-04).
     if ((room.instanceId ?? room.id) !== input.roomInstanceId) {
-        reject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        decideReject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
         return
     }
     const requester = room.players.get(uuid)
     if (!requester) {
-        reject(CODES.NOT_IN_ROOM, '참여 중인 방이 없습니다.')
+        decideReject(CODES.NOT_IN_ROOM, '참여 중인 방이 없습니다.')
         return
     }
     if (requester.membershipId !== input.requesterMembershipId) {
-        reject(CODES.STALE_MEMBERSHIP, '방 정보가 변경되었습니다. 다시 불러와주세요.')
+        decideReject(CODES.STALE_MEMBERSHIP, '방 정보가 변경되었습니다. 다시 불러와주세요.')
         return
     }
     if (room.hostUuid !== uuid) {
-        reject(CODES.NOT_HOST, '방장만 추방할 수 있습니다.')
+        decideReject(CODES.NOT_HOST, '방장만 추방할 수 있습니다.')
         return
     }
 
@@ -2739,16 +2789,16 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
     if (!target || playerRoom.get(input.targetUuid) !== room.id) {
         // 신규 kick은 일반 leave와 달리 멱등 성공으로 답하지 않는다 — "이미 없는 대상"을
         // 성공으로 답하면 방장이 자기 명령이 실제로 누군가를 내보냈다고 믿게 된다(AC-04).
-        reject(CODES.ALREADY_LEFT, '이미 방에서 나간 참가자입니다.')
+        decideReject(CODES.ALREADY_LEFT, '이미 방에서 나간 참가자입니다.')
         return
     }
     if (target.membershipId !== input.targetMembershipId) {
         // 확인하는 사이 대상이 나갔다가 다시 들어왔다. 새 소속을 옛 확인으로 추방하지 않는다.
-        reject(CODES.STALE_MEMBERSHIP, '대상이 변경되었습니다. 다시 확인해주세요.')
+        decideReject(CODES.STALE_MEMBERSHIP, '대상이 변경되었습니다. 다시 확인해주세요.')
         return
     }
     if (getAdmissionAttempt(input.targetUuid)) {
-        reject(CODES.ADMISSION_PENDING, '상대의 입장 처리가 아직 끝나지 않았습니다.')
+        decideReject(CODES.ADMISSION_PENDING, '상대의 입장 처리가 아직 끝나지 않았습니다.')
         return
     }
 

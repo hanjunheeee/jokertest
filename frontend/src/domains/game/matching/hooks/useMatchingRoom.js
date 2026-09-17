@@ -370,7 +370,13 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
         // matchingStore는 방 상태를 **최상위 필드**로 들고 있다(room 객체가 없다) — players를
         // 그대로 읽는다. 여기서 없는 경로를 읽으면 이 소속 검사가 조용히 통과해 버린다.
         const seated = useMatchingStore.getState().players?.find((player) => player.uuid === uuid)
-        if (seated && typeof seated.membershipId === "string" && seated.membershipId !== membershipId) return
+        // 이 화면이 그 소속을 **지금 들고 있을 때만** 적용한다. 이미 빠져 명단에 없거나
+        // (같은 사건의 재전달·추방 뒤 도착한 늦은 이탈) 같은 계정의 다른 소속이면, 이 사건은
+        // 이 화면이 이미 지나온 과거다 — 그대로 통과시키면 함께 실린 **옛 canStart**가 그 뒤에
+        // 반영된 더 새로운 인원·준비 집계를 되돌린다(제거 자체는 이미 끝나 무해해 보이지만
+        // canStart는 그렇지 않다).
+        if (!seated) return
+        if (typeof seated.membershipId === "string" && seated.membershipId !== membershipId) return
       }
       readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => removePlayer(uuid, canStart))

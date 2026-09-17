@@ -99,6 +99,41 @@ function kickedEvent(overrides = {}) {
   }
 }
 
+/** 서버가 제거 **전에** 캡처해 싣는 진행 중 추방 사건(kick_game_player의 개인 통지). */
+function gameKickedEvent(overrides = {}) {
+  return {
+    gameId: "game-9",
+    roomId: "room-1",
+    roomInstanceId: "inst-1",
+    bootEpoch: "boot-1",
+    targetUuid: ME,
+    targetMembershipId: "g-me",
+    hostUuid: OTHER,
+    requestId: "kick-g-1",
+    ...overrides,
+  }
+}
+
+/** 서버 buildGameStartedPayload와 같은 모양의 진행 중 세션 하나를 적재한다. */
+function seedGame(overrides = {}) {
+  act(() => {
+    useAuthStore.setState({ user: { uuid: ME }, isLoggedIn: true })
+    useInGameStore.getState().setGamePayload({
+      gameId: "game-9",
+      state: {
+        id: "game-9", phase: "DAY", dayIndex: 1, hostUuid: OTHER,
+        roomId: "room-1", roomInstanceId: "inst-1", bootEpoch: "boot-1",
+        players: [
+          { uuid: OTHER, nickname: "방장", isAlive: true, isParticipating: true, membershipId: "g-other" },
+          { uuid: ME, nickname: "나", isAlive: true, isParticipating: true, membershipId: "g-me" },
+        ],
+        self: { uuid: ME, nickname: "나", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
+        ...overrides,
+      },
+    })
+  })
+}
+
 /** 기록용 계정 캐시 어댑터. 앱 진입점(ProtectedRoute)이 꽂는 자리에 그대로 들어간다. */
 function installCacheRecorder() {
   const calls = []
@@ -191,6 +226,66 @@ test("AC-05: 대기방 추방은 진행 중인 게임 상태를 건드리지 않
 
   assert.equal(useMatchingStore.getState().isInRoom, false)
   assert.equal(useInGameStore.getState().gameId, "game-9", "그 방이 소유하지 않은 게임은 그대로다")
+  view.unmount()
+})
+
+// ── AC-02/AC-05: 진행 중 추방(game_kicked) ───────────────────────────────────
+
+test("AC-02: 확정된 진행 중 추방은 그 게임만 비우고 로비로 한 번 이동한다", () => {
+  const socket = createFakeSocket()
+  seedGame()
+  act(() => setSocket(socket))
+  const view = mountReceiver()
+
+  act(() => socket.deliver("game_kicked", gameKickedEvent()))
+
+  assert.equal(useInGameStore.getState().gameId, null)
+  assert.equal(useInGameStore.getState().state, null)
+  assert.deepEqual(view.paths, ["/game-matching", "/multiplay"])
+
+  // 같은 사건이 다시 전달돼도 이동은 더 늘지 않는다(판정이 이미 실패한다).
+  act(() => socket.deliver("game_kicked", gameKickedEvent()))
+  assert.deepEqual(view.paths, ["/game-matching", "/multiplay"])
+  view.unmount()
+})
+
+test("AC-05: 옛 게임의 추방 사건이 그 사이 들어간 **새 대기방**까지 지우지 않는다", () => {
+  const socket = createFakeSocket()
+  seedGame()
+  // 추방 뒤 로비로 돌아가 새 방에 들어갔는데, 그 게임의 사건이 이제야 도착하는 순서다.
+  seedRoom(serverRoom({ roomId: "room-2", roomInstanceId: "inst-2" }))
+  act(() => setSocket(socket))
+  const view = mountReceiver()
+
+  act(() => socket.deliver("game_kicked", gameKickedEvent()))
+
+  const room = useMatchingStore.getState()
+  assert.equal(room.isInRoom, true, "옛 게임 사건이 새 대기방 소속을 지웠다")
+  assert.equal(room.roomId, "room-2")
+  assert.equal(room.players.length, 2)
+  // 그 사건이 소유한 것은 게임뿐이다.
+  assert.equal(useInGameStore.getState().gameId, null)
+  view.unmount()
+})
+
+test("AC-05/AC-06: 다른 게임·옛 인스턴스·옛 기동·다른 소속·남의 사건은 전부 무시된다", () => {
+  const socket = createFakeSocket()
+  seedGame()
+  act(() => setSocket(socket))
+  const view = mountReceiver()
+
+  const ignored = [
+    gameKickedEvent({ gameId: "game-10" }),
+    gameKickedEvent({ roomInstanceId: "inst-2" }),
+    gameKickedEvent({ bootEpoch: "boot-2" }),
+    gameKickedEvent({ targetMembershipId: "g-me-2" }),
+    gameKickedEvent({ targetUuid: OTHER, targetMembershipId: "g-other" }),
+  ]
+  for (const event of ignored) act(() => socket.deliver("game_kicked", event))
+
+  assert.equal(useInGameStore.getState().gameId, "game-9")
+  assert.equal(useInGameStore.getState().state.players.length, 2)
+  assert.deepEqual(view.paths, ["/game-matching"])
   view.unmount()
 })
 

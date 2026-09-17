@@ -12,7 +12,7 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
 // 같은 신호를 받는다.
 import { refreshAccountCaches, ACCOUNT_CACHE_SCOPES } from "../../../user/utils/accountCacheRefresh.js"
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
-import { useInGameStore } from "../store/ingameStore.js"
+import { useInGameStore, isCurrentGameKickEvent } from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
@@ -372,9 +372,16 @@ export function useGameSessionSocketEvents() {
       if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
       const accountId = currentAccountId()
       if (accountId === null || payload.targetUuid !== accountId) return
-      if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return
-      if (useInGameStore.getState().gameId !== payload.gameId) return
-      finalize()
+      // 판정은 store가 소유한 canonical 적재값으로만 한다 — 게임·방 인스턴스·서버 기동·내
+      // 소속이 전부 맞아야 한다(대기방 추방과 같은 계약).
+      if (!isCurrentGameKickEvent(useInGameStore.getState(), payload)) return
+      // **그 게임만** 비운다. 진행 중 추방은 대기방을 끝내는 사건이 아니다 — 공용 finalize는
+      // matching store까지 함께 지우므로, 이 계정이 그 사이 새 대기방에 들어가 있었다면
+      // (추방 뒤 로비로 돌아가 방에 참가했는데 옛 사건이 늦게 도착하는 경우) 방금 성립한
+      // 새 소속이 옛 게임 사건 하나로 화면에서 사라진다.
+      useInGameStore.getState().clearGame()
+      // clearGame 이후 같은 사건이 다시 전달돼도 위 판정이 실패하므로 이동은 한 번뿐이다.
+      navigate("/multiplay", { replace: true })
     }
 
     /**

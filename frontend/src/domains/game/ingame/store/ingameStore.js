@@ -27,6 +27,37 @@ function clearNightPrivateResultOnNightEntry(current) {
 }
 
 /**
+ * F-21(AC-02/AC-05/AC-06): 진행 중 추방 사건(game_kicked)이 **지금 이 화면이 들고 있는 바로
+ * 그 판의 내 소속**을 가리키는지 판정한다(순수 함수 — 어떤 상태도 바꾸지 않는다).
+ *
+ * matchingStore의 isCurrentRoomKickEvent와 같은 네 가지를 본다: 같은 게임 · 같은 방 인스턴스 ·
+ * 같은 서버 기동 · 같은 소속. gameId 하나만 보면 다음이 전부 통과한다 — 서버 재시작 전에
+ * 발행된 명령, 같은 roomId로 다시 만들어진 방의 옛 판, 나갔다 다시 들어온 같은 계정의 새
+ * 소속. 서버는 이 값들을 제거 **전에** 캡처해 싣는다.
+ *
+ * 구버전 payload·구버전 스냅샷을 위해 값이 **양쪽 모두에 있을 때만** 대조한다(한쪽이 없으면
+ * 그 항목은 판정에 쓰지 않는다) — 없는 값을 불일치로 보면 정상 추방이 전달되지 않는다.
+ */
+export function isCurrentGameKickEvent(store, payload) {
+  if (payload === null || typeof payload !== "object") return false
+  if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return false
+  if (store?.gameId !== payload.gameId) return false
+
+  const state = store?.state ?? null
+  const matches = (mine, theirs) =>
+    typeof mine !== "string" || mine.length === 0
+    || typeof theirs !== "string" || theirs.length === 0
+    || mine === theirs
+  if (!matches(state?.roomInstanceId, payload.roomInstanceId)) return false
+  if (!matches(state?.bootEpoch, payload.bootEpoch)) return false
+
+  const seated = (state?.players ?? []).find((player) => player?.uuid === payload.targetUuid)
+  // roster에 없는 계정에 대한 사건은 이 판의 사실이 아니다.
+  if (!seated) return false
+  return matches(seated.membershipId, payload.targetMembershipId)
+}
+
+/**
  * 서버 인게임 상태를 보관하는 클라이언트 store.
  * 도메인 판정은 서버 game-core가 담당하고, 프론트는 동기화된 상태를 렌더링만 합니다.
  *

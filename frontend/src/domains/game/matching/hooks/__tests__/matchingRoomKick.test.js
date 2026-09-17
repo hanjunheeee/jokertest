@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { act } from "react"
+import { register } from "node:module"
 import { JSDOM } from "jsdom"
 
 /**
@@ -31,28 +32,58 @@ installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+// 실제 화면 코드가 쓰는 확인 대화상자/경고는 기록만 한다(사용자 입력을 기다리면 멈춘다).
+installDomGlobal("alert", () => {})
+installDomGlobal("confirm", () => false)
 
-const { renderHook } = await import("@testing-library/react")
+// useMatchingRoom은 `@/` 별칭을 쓰는 실제 화면 코드다 — Node ESM 기본 리졸버가 풀지 못하므로
+// 기존 프론트 훅 시험들과 같은 로더를 등록한다(모듈 목킹이 아니라 경로 해석뿐이다).
+register(new URL("../../../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
+
+const { renderHook, cleanup } = await import("@testing-library/react")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { setSocket } = await import("../../../../../shared/socket/socketClient.js")
 const { useMatchingStore, selectRoomMembershipId, isCurrentRoomKickEvent } =
   await import("../../store/matchingStore.js")
 const { useMatchingRoomKick } = await import("../useMatchingRoomKick.js")
+const { useMatchingRoom } = await import("../useMatchingRoom.js")
 const { KICK_REQUEST_STATUS } = await import("../../../ingame/hooks/useKickPlayerRequest.js")
 
 const HOST = "uuid-host"
 const TARGET = "uuid-target"
 const OTHER = "uuid-other"
 
-/** emit을 기록하고 ack를 원하는 시점에 부를 수 있는 최소 소켓. */
-function createFakeSocket() {
+/**
+ * emit을 기록하고 ack를 원하는 시점에 부를 수 있는 최소 소켓.
+ *
+ * useMatchingRoom도 이 대역으로 마운트한다 — 그쪽은 emitWithAck(get_current_room)와 이벤트
+ * 구독(on/off)을 쓰므로 둘 다 갖춘다. trigger는 **서버가 보낸 사건**을 실제 수신기에
+ * 흘려보내는 통로다(store를 직접 호출하는 대신 프로덕션 핸들러를 지나게 한다).
+ */
+function createFakeSocket({ answer = () => ({ ok: true, room: serverRoom() }) } = {}) {
   const emitted = []
-  return {
+  const listeners = new Map()
+  const socket = {
+    id: "sock-test",
+    connected: true,
     emitted,
+    answer,
     emit(event, payload, ack) { emitted.push({ event, payload, ack }) },
-    on() {},
-    off() {},
+    on(event, handler) {
+      if (!listeners.has(event)) listeners.set(event, new Set())
+      listeners.get(event).add(handler)
+    },
+    off(event, handler) { listeners.get(event)?.delete(handler) },
+    trigger(event, payload) {
+      for (const handler of [...(listeners.get(event) ?? [])]) handler(payload)
+    },
+    timeout() { return socket },
+    emitWithAck(event, payload) {
+      emitted.push({ event, payload })
+      return Promise.resolve(socket.answer(event, payload))
+    },
   }
+  return socket
 }
 
 /**
@@ -93,7 +124,30 @@ function mountKick({ isRoomVerified = true } = {}) {
   return renderHook(() => useMatchingRoomKick({ isRoomVerified }))
 }
 
+/** useMatchingPage처럼 메모된 콜백을 쓴다 — 렌더마다 방 동기화를 다시 시작하지 않게 한다. */
+const roomCallbacks = { onRoomDeleted: () => {}, onGameStarted: () => {} }
+
+/**
+ * **실제 대기방 페이지의 두 훅을 함께** 띄운다(useMatchingPage가 하는 것과 같은 조합).
+ *
+ * 서버 사건은 useMatchingRoom이 구독하므로, 그 수신기를 지나지 않고 store를 직접 부르면
+ * 화면이 실제로 통과시키는 소속·출처·세대 검사를 전혀 검증하지 못한다.
+ */
+async function mountRoomAndKick({ me = HOST } = {}) {
+  const socket = setUp({ me })
+  const rendered = renderHook(() => {
+    const room = useMatchingRoom(roomCallbacks)
+    const kick = useMatchingRoomKick({ isRoomVerified: room.isRoomVerified })
+    return { ...room, ...kick }
+  })
+  // 최초 get_current_room 확인이 끝나야 이 화면이 그 방의 사건을 받아들인다.
+  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  assert.equal(rendered.result.current.isRoomVerified, true, "최초 방 검증이 끝나지 않았다")
+  return { socket, ...rendered }
+}
+
 test.afterEach(() => {
+  cleanup()
   act(() => {
     useMatchingStore.getState().clearRoom()
     useAuthStore.setState({ user: null, isLoggedIn: false })
@@ -247,17 +301,14 @@ test("AC-02: 전송 중 연속 클릭은 두 번째 요청을 만들지 않는�
   assert.equal(socket.emitted.length, 1)
 })
 
-test("AC-02: 성공 뒤 서버 player_left_room 반영은 잔류자의 준비값을 그대로 두고 인원만 줄인다", () => {
-  const socket = setUp()
-  const { result } = mountKick()
+test("AC-02: 성공 뒤 서버 player_left_room 반영은 잔류자의 준비값을 그대로 두고 인원만 줄인다", async () => {
+  // 명단은 화면이 고치지 않는다 — 서버 사건이 **실제 수신기를 지나** canStart와 함께 반영한다.
+  const { socket } = await mountRoomAndKick()
 
-  act(() => result.current.requestKickConfirm(result.current.kickTargets[0]))
-  act(() => result.current.confirmKick())
-  act(() => socket.emitted[0].ack({ ok: true, status: "KICKED", targetUuid: TARGET }))
-  assert.equal(result.current.kickStatus, KICK_REQUEST_STATUS.SUCCEEDED)
+  act(() => socket.trigger("player_left_room", {
+    uuid: TARGET, membershipId: "mem-target", roomId: "room-1", canStart: true,
+  }))
 
-  // 명단은 화면이 고치지 않는다 — 서버 사건(player_left_room)이 canStart와 함께 반영한다.
-  act(() => useMatchingStore.getState().removePlayer(TARGET, true))
   const state = useMatchingStore.getState()
   assert.deepEqual(state.players.map((p) => p.uuid), [HOST, OTHER])
   assert.equal(state.players.find((p) => p.uuid === OTHER).isReady, true)
@@ -266,6 +317,59 @@ test("AC-02: 성공 뒤 서버 player_left_room 반영은 잔류자의 준비값
   // 추방된 대상만 빠졌고 방장 자신의 소속·준비는 그대로다.
   assert.equal(selectRoomMembershipId(state, HOST), "mem-host")
   assert.equal(selectRoomMembershipId(state, TARGET), null)
+})
+
+test("AC-02/AC-05: 이미 빠진 소속의 늦은 player_left_room은 옛 canStart로 현재 집계를 되돌리지 않는다", async () => {
+  const { socket } = await mountRoomAndKick()
+
+  // 서버가 확정한 제거가 먼저 반영된다(추방 직후의 정상 사건).
+  act(() => socket.trigger("player_left_room", {
+    uuid: TARGET, membershipId: "mem-target", roomId: "room-1", canStart: true,
+  }))
+  assert.equal(useMatchingStore.getState().canStart, true)
+
+  // 그 뒤 **같은 소속**의 사건이 한 번 더 도착한다(재전달, 또는 추방과 겹친 자발적 이탈).
+  // 명단에서는 이미 사라졌으므로 제거 자체는 무해해 보이지만, 함께 실린 옛 canStart는 아니다.
+  act(() => socket.trigger("player_left_room", {
+    uuid: TARGET, membershipId: "mem-target", roomId: "room-1", canStart: false,
+  }))
+
+  const state = useMatchingStore.getState()
+  assert.deepEqual(state.players.map((p) => p.uuid), [HOST, OTHER])
+  assert.equal(state.canStart, true, "이미 지나온 사건의 옛 canStart가 현재 집계를 덮었다")
+})
+
+test("AC-05/AC-06: 같은 계정이 새 소속으로 다시 앉은 뒤 도착한 옛 이탈 사건은 새 참가자를 지우지 않는다", async () => {
+  const { socket } = await mountRoomAndKick()
+
+  act(() => socket.trigger("player_left_room", {
+    uuid: TARGET, membershipId: "mem-target", roomId: "room-1", canStart: true,
+  }))
+  act(() => socket.trigger("player_joined_room", {
+    player: { uuid: TARGET, nickname: "대상", isReady: false, membershipId: "mem-target-2" },
+    canStart: false,
+  }))
+
+  // 옛 소속을 가리키는 사건이 이제야 도착한다.
+  act(() => socket.trigger("player_left_room", {
+    uuid: TARGET, membershipId: "mem-target", roomId: "room-1", canStart: true,
+  }))
+
+  const state = useMatchingStore.getState()
+  assert.equal(selectRoomMembershipId(state, TARGET), "mem-target-2", "새 소속이 옛 사건으로 사라졌다")
+  assert.equal(state.canStart, false, "옛 사건의 canStart가 새 참가자 이후의 집계를 덮었다")
+})
+
+test("AC-02: 다른 방을 가리키는 이탈 사건은 이 방의 명단·집계를 건드리지 않는다", async () => {
+  const { socket } = await mountRoomAndKick()
+
+  act(() => socket.trigger("player_left_room", {
+    uuid: TARGET, membershipId: "mem-target", roomId: "room-2", canStart: true,
+  }))
+
+  const state = useMatchingStore.getState()
+  assert.deepEqual(state.players.map((p) => p.uuid), [HOST, TARGET, OTHER])
+  assert.equal(state.canStart, false)
 })
 
 // ── AC-04: 거부 · 미확인 결과 ────────────────────────────────────────────────
