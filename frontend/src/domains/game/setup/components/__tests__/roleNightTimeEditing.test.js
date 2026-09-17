@@ -284,6 +284,123 @@ test("AC-03 · 지정하지 않은 직업의 밤 시간은 생성 기본값이 �
   assert.deepEqual(edited.roleNightActionTimes, { JOKER: 90 })
 })
 
+const ROLE_TIME_LABELS = Object.freeze({
+  JOKER: "광대 밤 시간 조절",
+  DOCTOR: "의사 밤 시간 조절",
+  GUARD: "경비원 밤 시간 조절",
+  WITCH_HUNTER: "마녀사냥꾼 밤 시간 조절",
+})
+const OVERALL_NIGHT_LABEL = "밤 행동 시간 조절"
+
+test("AC-03 · 편집 중 전체 밤 시간을 바꾸면 지정하지 않은 직업 행도 함께 따라가고, 지정·편집한 값은 그대로다", async () => {
+  // 전체 60초 · GUARD만 서버 지정. 나머지 세 직업은 "지정 없음 = 전체 시간으로 폴백"이다.
+  const { io, hostSocket, room } = await createRoom({
+    nightActionTime: 60, roleNightActionTimes: { GUARD: 120 },
+  })
+  const formState = buildRoomSettingsFormState({ accessType: room.accessType, settings: room.settings })
+  assert.equal(formState.ok, true, formState.code)
+  assert.deepEqual(formState.specifiedRoleNightActionTimes, ["GUARD"])
+
+  const { container, getSubmitted } = await mountPanel({ mode: "edit", initialFormState: formState })
+  await clickTab(container, "회의&투표")
+  assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "60초")
+  for (const role of ["JOKER", "DOCTOR", "WITCH_HUNTER"]) {
+    assert.equal(readStepperRow(container, ROLE_TIME_LABELS[role]), "60초", `${role} 초기 폴백`)
+  }
+  assert.equal(readStepperRow(container, ROLE_TIME_LABELS.GUARD), "120초")
+
+  // 의사만 방장이 **직접** 60 → 120으로 바꾼다(이 값은 이제 전체 시간과 독립이다).
+  await clickStepper(container, "의사 밤 시간 조절 증가")
+  await clickStepper(container, "의사 밤 시간 조절 증가")
+  assert.equal(readStepperRow(container, ROLE_TIME_LABELS.DOCTOR), "120초")
+
+  // 전체 밤 시간을 60 → 90으로 올린다. 서버는 이 순간부터 지정 없는 직업에 90초를 쓴다.
+  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`)
+  assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "90초")
+  for (const role of ["JOKER", "WITCH_HUNTER"]) {
+    assert.equal(readStepperRow(container, ROLE_TIME_LABELS[role]), "90초",
+      `${role} 행이 전체 밤 시간을 따라가지 않아 서버가 쓸 값과 다른 값을 보여준다`)
+  }
+  assert.equal(readStepperRow(container, ROLE_TIME_LABELS.DOCTOR), "120초",
+    "방장이 직접 지정한 값이 전체 시간 변경에 덮였다")
+  assert.equal(readStepperRow(container, ROLE_TIME_LABELS.GUARD), "120초",
+    "서버가 명시한 override가 전체 시간 변경에 덮였다")
+
+  // 전체 시간을 한 번 더 바꿔도 같은 관계가 유지된다.
+  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`)
+  assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "120초")
+  for (const role of ["JOKER", "WITCH_HUNTER"]) {
+    assert.equal(readStepperRow(container, ROLE_TIME_LABELS[role]), "120초",
+      `${role} 행이 두 번째 전체 시간 변경을 따라가지 않았다`)
+  }
+
+  // 따라간 것은 표시일 뿐 "지정했다"는 사실이 아니다 — 저장에는 override가 실리지 않는다.
+  await clickSubmit(container, "설정 저장")
+  const submitted = getSubmitted()
+  assert.deepEqual(submitted.specifiedRoleNightActionTimes, ["DOCTOR", "GUARD"],
+    "전체 시간을 따라간 행이 지정 목록에 들어갔다")
+
+  const payload = buildUpdateRoomSettingsPayload({
+    ...submitted, roomId: room.roomId, requestId: "req-overall-follow", expectedSettingsVersion: 1,
+  })
+  assert.equal(payload.nightActionTime, 120)
+  assert.deepEqual(payload.roleNightActionTimes, { DOCTOR: 120, GUARD: 120 },
+    "따라가기만 한 직업이 override로 저장됐다")
+
+  // 실제 서버가 받아 저장한 값도 같다(따라간 직업은 전체 시간으로 폴백한 채로 남는다).
+  const saved = await new Promise((resolve) =>
+    handleUpdateRoomSettings(io, hostSocket, "host-a", payload, resolve))
+  assert.equal(saved.ok, true, saved.message)
+  const current = await new Promise((resolve) => handleGetCurrentRoom("host-a", resolve))
+  assert.equal(current.room.settings.nightActionTime, 120)
+  assert.deepEqual(current.room.settings.roleNightActionTimes, { DOCTOR: 120, GUARD: 120 })
+})
+
+test("AC-03 · 전체 밤 시간을 바꾼 뒤 직업 행을 처음 누르면 그 새 값에서 출발한다", async () => {
+  const { room } = await createRoom({ nightActionTime: 60 })
+  assert.equal(room.settings.roleNightActionTimes, undefined, "이 사건의 전제는 '지정 없음'이다")
+  const formState = buildRoomSettingsFormState({ accessType: room.accessType, settings: room.settings })
+
+  const { container, getSubmitted } = await mountPanel({ mode: "edit", initialFormState: formState })
+  await clickTab(container, "회의&투표")
+  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`) // 60 → 90
+  assert.equal(readStepperRow(container, ROLE_TIME_LABELS.JOKER), "90초")
+
+  // 한 칸 올리면 120이어야 한다. 행이 아직 60에 머물러 있었다면 여기서 90이 된다 —
+  // 방장이 "한 칸 올렸을 뿐"인데 실효값과 같은 값을 override로 박아 넣게 된다.
+  await clickStepper(container, "광대 밤 시간 조절 증가")
+  assert.equal(readStepperRow(container, ROLE_TIME_LABELS.JOKER), "120초",
+    "직업 행의 편집이 따라간 실효값이 아니라 옛 값에서 출발했다")
+
+  await clickSubmit(container, "설정 저장")
+  const payload = buildUpdateRoomSettingsPayload({
+    ...getSubmitted(), roomId: room.roomId, requestId: "req-follow-then-edit", expectedSettingsVersion: 1,
+  })
+  assert.equal(payload.nightActionTime, 90)
+  assert.deepEqual(payload.roleNightActionTimes, { JOKER: 120 })
+})
+
+test("AC-03 · 생성 화면에서는 전체 밤 시간을 바꿔도 직업 행이 따라가지 않는다(기존 계약 보존)", async () => {
+  // 생성 화면에는 "지정하지 않음"이라는 상태가 없다 — 네 직업 모두 명시값이고 그대로 실린다.
+  const { container, getSubmitted } = await mountPanel({ mode: "create", initialFormState: null })
+  await clickTab(container, "회의&투표")
+  assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "90초")
+  assert.equal(readStepperRow(container, ROLE_TIME_LABELS.JOKER), "90초")
+
+  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`) // 90 → 120
+  assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "120초")
+  for (const role of Object.keys(ROLE_TIME_LABELS)) {
+    assert.equal(readStepperRow(container, ROLE_TIME_LABELS[role]), "90초",
+      `생성 화면의 ${role} 기본값이 전체 시간을 따라가 바뀌었다`)
+  }
+
+  await clickSubmit(container, "게임 만들기")
+  const payload = getSubmitted()
+  assert.equal(payload.nightActionTime, 120)
+  assert.deepEqual(payload.roleNightActionTimes,
+    { JOKER: 90, DOCTOR: 90, GUARD: 90, WITCH_HUNTER: 90 })
+})
+
 test("AC-03 · 이 화면이 표현할 수 없는 서버 설정은 기본값으로 덮지 않고 명시적 실패로 돌려준다", async () => {
   const base = {
     maxPlayers: 8, jokerCount: 2, roleCompositionMode: "auto",

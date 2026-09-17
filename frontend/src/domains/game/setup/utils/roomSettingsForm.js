@@ -26,13 +26,22 @@ import {
 // 참조하는 그 한 규칙을 그대로 쓴다(사본을 만들면 편집 시작점만 다른 기준을 갖게 된다).
 import { validateRoleComposition } from "./roleComposition.js"
 
+/**
+ * 전체 밤 제한시간 스테퍼의 id.
+ *
+ * 지정하지 않은 직업의 **실효값**이 곧 이 값이라, 초기 변환(아래 폴백)과 편집 중 따라가기
+ * (GameSetupPanel.handleSetRange)가 같은 항목을 가리켜야 한다 — 두 곳이 문자열을 따로 적으면
+ * 한쪽만 바뀌어도 화면과 서버가 서로 다른 밤 시간을 말하게 된다.
+ */
+export const OVERALL_NIGHT_ACTION_TIME_ID = "night-action-time"
+
 /** 폼 상태 id ↔ 서버 설정 필드의 유일한 대응표(스테퍼). */
 const RANGE_ID_TO_SETTING_KEY = Object.freeze({
   "max-players": "maxPlayers",
   "joker-count": "jokerCount",
   "day-discussion-time": "dayDiscussionTime",
   "day-vote-time": "dayVoteTime",
-  "night-action-time": "nightActionTime",
+  [OVERALL_NIGHT_ACTION_TIME_ID]: "nightActionTime",
 })
 
 /** 폼 상태 id ↔ 서버 설정 필드의 유일한 대응표(체크박스). */
@@ -199,7 +208,7 @@ export function buildRoomSettingsFormState(source) {
     if (value === undefined) {
       // 폴백 대상은 방금 검사를 통과한 전체 밤 시간이다. 그 값이 이 스테퍼의 계약 안에 있는지는
       // 다시 확인한다 — 두 항목의 범위가 어긋나면 조용히 넘기지 않고 실패로 본다.
-      const effective = ranges["night-action-time"]
+      const effective = ranges[OVERALL_NIGHT_ACTION_TIME_ID]
       if (!isRepresentableStepperValue(id, effective)) {
         return { ok: false, code: ROOM_SETTINGS_FORM_ERROR_CODES.OUT_OF_RANGE, field: "roleNightActionTimes" }
       }

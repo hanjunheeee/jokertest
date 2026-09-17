@@ -37,16 +37,43 @@ function createStartGate() {
     return { entered, release: () => release(), onEnter: () => { signalEntered(); return blocked } }
 }
 
+/**
+ * captureRoomStartProfiles가 **내부 검사를 통과한 뒤** loadout을 읽는 바로 그 순간에 부른다.
+ *
+ * 그 함수는 조회 결과를 기다린 뒤 방장·참가자·준비·설정 버전을 검사하고, **통과한 다음에야**
+ * loadouts[uuid]를 읽어 세션 후보를 조립한다(backend/socket/matchmaking.js의 해당 본문).
+ * 그래서 이 hook이 실제로 불렸다는 사실 자체가 "내부 검사가 통과했다"는 증거이고, 여기서
+ * 건 마이크로태스크는 capture가 반환해 바깥 await가 재개되기 **직전**에 실행된다 —
+ * 반려 문서가 지목한 "내부 검사 이후·바깥 재개 이전" 창이 바로 이 구간이다.
+ */
+let onStartLoadoutsRead = null
+
 matchmaking.__setEconomyServiceForTests({
     getPublicProfileLoadouts: async (userIds) =>
         Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
     getGameStartLoadouts: async (userIds) => {
         startLoadoutCalls += 1
         if (startLoadoutGate) await startLoadoutGate.onEnter()
-        return Object.fromEntries(userIds.map((id) => [id, {
+        const base = Object.fromEntries(userIds.map((id) => [id, {
             profilePhotoId: null, profileBorderId: null, cardFrameId: null,
             skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
         }]))
+        if (!onStartLoadoutsRead) return base
+        const hook = onStartLoadoutsRead
+        onStartLoadoutsRead = null
+        let fired = false
+        return new Proxy(base, {
+            get(target, prop, receiver) {
+                // **uuid 키를 읽을 때만** 부른다. await가 이 객체를 결과로 확정할 때 `then`을
+                // 먼저 읽는데, 그 시점은 아직 내부 검사 **이전**이라 여기서 hook을 부르면
+                // 재현하려던 창이 아니라 그 앞 구간을 재현하게 된다(실제로 그렇게 어긋났다).
+                if (!fired && typeof prop === 'string' && Object.hasOwn(target, prop)) {
+                    fired = true
+                    hook()
+                }
+                return Reflect.get(target, prop, receiver)
+            },
+        })
     },
 })
 matchmaking.__setGameInviteServiceForTests({
@@ -75,6 +102,8 @@ const {
 } = matchmaking.__testables
 
 const { ROOM_SETTINGS_ERROR_CODES, ROOM_SETTINGS_EVENTS } = matchmaking
+// 식별자 상한은 저장·조회가 공유하는 계약이다 — 시험이 사본 상수를 만들면 그 공유가 깨져도 모른다.
+const { MAX_IDENTIFIER_LENGTH } = require('../../utils/updateRoomSettingsValidation')
 
 /** 현재 서버가 들고 있는 방 상태의 **깊은** 복사본. 같은 참조 비교로 무변경을 오판하지 않는다. */
 function snapshotRooms() {
@@ -120,6 +149,7 @@ async function joinRoom(io, roomCode, uuid) {
 test.beforeEach(() => {
     startLoadoutGate = null
     startLoadoutCalls = 0
+    onStartLoadoutsRead = null
     matchmaking.__resetStateForTests()
     // game-core는 별도 registry(gameSessions/playerSession/roomGameSession)를 갖는다 —
     // matchmaking 초기화로는 비워지지 않아 여기서 따로 비운다(matchmaking.test.js와 같은 관례).
@@ -836,6 +866,48 @@ test('AC-04 · 외형 조회 중 canonical 소켓이 교체되면 옛 소켓이 
     assert.equal(byCurrent.ok, true, byCurrent.message)
 })
 
+test('AC-04 · 내부 검사 통과 뒤·바깥 재개 전에 준비가 취소되면 그 시작은 커밋되지 않는다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 4, jokerCount: 1 })
+    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+
+    // 설정 버전은 **바뀌지 않는다** — 그 값만 다시 보는 검사로는 이 사건이 걸러지지 않는다.
+    let innerCheckPassed = false
+    let cancelAck = null
+    onStartLoadoutsRead = () => {
+        innerCheckPassed = true
+        Promise.resolve().then(() => {
+            handleSetReady(io, joinerSocket, 'p1', readyPayload(room, false), (res) => { cancelAck = res })
+        })
+    }
+
+    const startResult = await new Promise((resolve) =>
+        handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
+
+    assert.equal(innerCheckPassed, true,
+        '내부 검사가 통과하기 전에 준비가 취소됐다 — 재현하려던 창이 아니다')
+    assert.equal(cancelAck?.ok, true, '준비 취소 자체가 성립하지 않았다(전제가 깨졌다)')
+
+    assert.equal(startResult.ok, false, '준비가 취소된 뒤에도 시작이 커밋됐다')
+    assert.equal(startResult.code, 'ROOM_STATE_CHANGED')
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null, '게임 세션이 만들어졌다')
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('p1'), null)
+    assert.ok(gameRoomStillExists(room.roomId), '실패한 시작이 방을 없앴다')
+
+    const afterFailure = matchmaking.__getStateSnapshotForTests().gameRooms[0][1]
+    assert.equal(afterFailure.settingsVersion ?? 1, 1, '이 사건은 설정 버전 변화 없이 성립해야 한다')
+    assert.equal(afterFailure.players.find(([u]) => u === 'p1')[1].isReady, false,
+        '실패한 시작이 취소된 준비를 되돌렸다')
+
+    // 다시 준비하고 보낸 새 시작 요청은 정상적으로 성공한다(모든 시작을 막아서 푼 것이 아니다).
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+    const restarted = await new Promise((resolve) =>
+        handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
+    assert.equal(restarted.ok, true, restarted.message)
+})
+
 test('AC-04 · 게임이 먼저 시작되면 이후 설정 저장은 거부되고 시작된 판의 설정은 그대로다', async () => {
     const io = createFakeIo([])
     const { hostSocket, room } = await createRoom(io, 'host-a', {
@@ -1074,6 +1146,70 @@ test('AC-05 · 재접속 재조회는 최신 서버 설정을 돌려주고, 방�
     assert.equal(asNewHost.room.hostUuid, 'p1')
     assert.equal(asNewHost.room.settingsVersion, 2)
     assert.equal(asNewHost.room.settings.dayDiscussionTime, 120)
+})
+
+test('AC-05 · 결과 조회의 식별자 계약은 저장 요청과 같다(공백만·과길이는 기록을 읽기 전에 거부된다)', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
+
+    const requestId = 'req-shared-contract'
+    const saved = await callAsPromise(
+        handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { requestId, maxPlayers: 6 }),
+    )
+    assert.equal(saved.ok, true, saved.message)
+
+    const tooLong = 'x'.repeat(MAX_IDENTIFIER_LENGTH + 1)
+    const invalidCases = [
+        { roomId: '   ', requestId, label: '공백만 있는 roomId' },
+        { roomId: room.roomId, requestId: '\t\n ', label: '공백만 있는 requestId' },
+        { roomId: tooLong, requestId, label: '길이 상한을 넘는 roomId' },
+        { roomId: room.roomId, requestId: tooLong, label: '길이 상한을 넘는 requestId' },
+    ]
+
+    const before = snapshotRooms()
+    const broadcastsBefore = io.broadcasts.length
+    for (const { roomId, requestId: rid, label } of invalidCases) {
+        // 같은 값을 저장 요청으로 보내면 거부된다 — 조회만 통과하면 두 경로의 계약이 갈린다.
+        const asSave = await callAsPromise(
+            handleUpdateRoomSettings, io, hostSocket, 'host-a',
+            updatePayload(room.roomId, { roomId, requestId: rid, expectedSettingsVersion: 2 }),
+        )
+        assert.equal(asSave.ok, false, `${label}: 저장 경로가 받아들였다(전제가 깨졌다)`)
+        assert.equal(asSave.code, ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST)
+
+        const asQuery = await callAsPromise(
+            handleGetRoomSettingsUpdateResult, 'host-a', { roomId, requestId: rid },
+        )
+        assert.equal(asQuery.ok, false, `${label}: 조회 경로가 정상 응답을 돌려줬다`)
+        assert.equal(asQuery.code, ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, label)
+        // 거부는 기록을 읽지도, 방 상태를 알려 주지도 않는다.
+        assert.equal(asQuery.status, undefined, `${label}: 거부가 기록 상태를 노출했다`)
+        assert.equal(asQuery.room, undefined, `${label}: 거부가 방 상태를 노출했다`)
+    }
+    assert.equal(snapshotRooms(), before, '거부된 조회가 방 상태를 바꿨다')
+    assert.equal(io.broadcasts.length, broadcastsBefore, '거부된 조회가 방송을 냈다')
+
+    // 상한 **경계 안**의 유효한 식별자는 그대로(보정 없이) 키로 쓰인다.
+    const longButValid = 'r'.repeat(MAX_IDENTIFIER_LENGTH)
+    const savedLong = await callAsPromise(
+        handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { requestId: longButValid, expectedSettingsVersion: 2, maxPlayers: 5 }),
+    )
+    assert.equal(savedLong.ok, true, savedLong.message)
+    const lookupLong = await callAsPromise(
+        handleGetRoomSettingsUpdateResult, 'host-a', { roomId: room.roomId, requestId: longButValid },
+    )
+    assert.equal(lookupLong.ok, true)
+    assert.equal(lookupLong.status, 'APPLIED')
+    assert.equal(lookupLong.requestId, longButValid, '유효한 식별자가 그대로 보존되지 않았다')
+
+    // 형태는 유효하지만 기록이 없는 요청은 여전히 UNKNOWN이다(거부와 구분된다).
+    const unknown = await callAsPromise(
+        handleGetRoomSettingsUpdateResult, 'host-a', { roomId: room.roomId, requestId: 'never-sent' },
+    )
+    assert.equal(unknown.ok, true)
+    assert.equal(unknown.status, 'UNKNOWN')
 })
 
 test('AC-05 · ACK를 잃은 원 요청자는 같은 requestId 조회로 적용 여부를 확인하고, 타 계정 조회는 거부된다', async () => {

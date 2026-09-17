@@ -454,6 +454,10 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // F-20(AC-05): 이 조회가 근거로 삼은 적용 세대. 응답이 돌아왔을 때 세대가 올라가 있다면
       // 그 사이에 설정 방송·소속 변경·계정 전환이 있었다는 뜻이므로 이 응답은 버린다.
       const requestApplyGeneration = roomApplyGenerationRef.current
+      // F-20(AC-05): **소속 세대**도 함께 캡처한다. R1→R2→R1이나 R1→방 없음→R1은 roomId·계정·
+      // 소켓·설정 버전이 전부 요청 시점과 같아져 위 값들만으로는 구별되지 않는다 — 그 사이
+      // 서버가 준 새 스냅샷을, 그보다 먼저 떠난 조회가 옛 값(또는 "방 없음")으로 덮는다.
+      const requestMembership = roomMembershipGenerationRef.current
 
       // 응답을 store에 반영하기 직전(비동기, ack 도착 시점)의 2차 검사다. 위 진입 가드(동기,
       // 호출 시점)와는 다른 순간을 방어한다 — setSocket(newSocket)이 구독자에게 알린 시점과
@@ -468,7 +472,8 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
         !mountedRef.current ||
         useMatchingStore.getState().roomId !== requestRoomId ||
         useAuthStore.getState().user?.uuid !== requestUuid ||
-        roomApplyGenerationRef.current !== requestApplyGeneration
+        roomApplyGenerationRef.current !== requestApplyGeneration ||
+        roomMembershipGenerationRef.current !== requestMembership
 
       checkInFlight = true
       requestSocket.timeout(CURRENT_ROOM_CHECK_TIMEOUT_MS).emitWithAck('get_current_room', {})
@@ -623,6 +628,11 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 단절과 달리 여기서는 붙잡아 두지 않는다(다른 계정이 그 결과를 묻게 해서는 안 된다).
       inFlightSettingsRequestRef.current = null
       clearSettingsState()
+      // 시작·준비도 같은 경계를 지난다(방 변경 구독과 같은 이유).
+      startRequestVersionRef.current += 1
+      readyRequestVersionRef.current += 1
+      clearStartState()
+      clearReadyState()
       if (!mountedRef.current) return
       setPendingSettingsRequest(null)
       setSettingsError(null)
@@ -647,6 +657,13 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       settingsRequestVersionRef.current += 1
       inFlightSettingsRequestRef.current = null
       clearSettingsState()
+      // 시작·준비도 **같은 경계**를 지나야 한다. 소속이 갈리면 그 요청들도 지난 소속의
+      // 것이고, 잠금을 풀지 않으면 새 소속에서는 요청 자체가 시작되지 않는다
+      // (isStartingRef/isSettingReadyRef의 진입 가드에 걸린다).
+      startRequestVersionRef.current += 1
+      readyRequestVersionRef.current += 1
+      clearStartState()
+      clearReadyState()
       if (!mountedRef.current) return
       setPendingSettingsRequest((prev) => (prev && prev.roomId !== state.roomId ? null : prev))
     })
@@ -693,6 +710,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 요청 시점의 방/사용자를 캡처해 두고, 응답이 왔을 때 그 사이 바뀌지 않았는지 다시 확인한다.
     const { roomId: requestRoomId, settingsVersion: requestSettingsVersion } = useMatchingStore.getState()
     const requestUuid = useAuthStore.getState().user?.uuid
+    // F-20(AC-04/AC-05): 이 요청이 묶여 있는 **소속**. roomId가 같은 값으로 되돌아와도
+    // (R1→R2→R1, R1→방 없음→R1) 그 사이의 소속 교체를 단조 증가 세대가 구별해 준다.
+    const requestMembership = roomMembershipGenerationRef.current
     // F-20(AC-04): 어느 방·어느 설정 버전을 보고 눌렀는지는 시작 요청의 필수 근거다. 아직
     // 확보하지 못했다면 요청 자체를 보내지 않는다 — 서버가 현재 값으로 채워 주지 않으므로
     // 빈 값을 보내면 그대로 거부될 뿐이고, 사용자에게는 이유를 알 수 없는 실패로 보인다.
@@ -703,6 +723,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     const isStaleResponse = () => {
       if (!mountedRef.current) return true
       if (requestVersion !== startRequestVersionRef.current) return true
+      if (requestMembership !== roomMembershipGenerationRef.current) return true
       if (requestSocket !== getSocket()) return true
       if (!requestSocket.connected) return true
       if (!window.navigator.onLine) return true
@@ -739,7 +760,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // invalidateActionRequests가 세대를 이미 올리고 잠금도 풀어놨다면(또는 그 뒤 사용자가
       // 새 요청을 또 시작했다면) 여기서는 아무것도 하지 않는다 — 그래야 이 늦은 finally가
       // 이후에 시작된 새 요청의 잠금을 실수로 풀어버리는 일이 생기지 않는다.
-      if (requestVersion === startRequestVersionRef.current) {
+      // 소속이 갈렸다면 이 요청은 이미 지난 소속의 것이다(세대 교체가 잠금도 함께 풀었다).
+      if (requestVersion === startRequestVersionRef.current
+        && requestMembership === roomMembershipGenerationRef.current) {
         clearStartState()
       }
     }
@@ -770,6 +793,8 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 캡처해 두고, 응답이 왔을 때 그 사이 바뀌지 않았는지 다시 확인한다.
     const { roomId: requestRoomId, settingsVersion: requestSettingsVersion } = useMatchingStore.getState()
     const requestUuid = useAuthStore.getState().user?.uuid
+    // F-20(AC-04/AC-05): 이 요청이 묶여 있는 소속(startGame과 같은 이유·같은 경계).
+    const requestMembership = roomMembershipGenerationRef.current
     // F-20(AC-04): 방·설정 버전은 준비 요청의 필수 근거다(startGame과 같은 이유).
     if (!requestRoomId || !Number.isSafeInteger(requestSettingsVersion)) {
       alert('현재 방 상태를 확인하고 있습니다. 잠시 후 다시 시도해주세요.')
@@ -778,6 +803,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     const isStaleResponse = () => {
       if (!mountedRef.current) return true
       if (requestVersion !== readyRequestVersionRef.current) return true
+      if (requestMembership !== roomMembershipGenerationRef.current) return true
       if (requestSocket !== getSocket()) return true
       if (!requestSocket.connected) return true
       if (!window.navigator.onLine) return true
@@ -835,8 +861,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     } catch {
       if (!isStaleResponse()) alert('준비 상태를 변경하지 못했습니다. 잠시 후 다시 시도해주세요.')
     } finally {
-      // startGame과 동일하게, 이 요청이 아직 자기 세대를 소유할 때만 잠금을 해제한다.
-      if (requestVersion === readyRequestVersionRef.current) {
+      // startGame과 동일하게, 이 요청이 아직 자기 세대·자기 소속을 소유할 때만 해제한다.
+      if (requestVersion === readyRequestVersionRef.current
+        && requestMembership === roomMembershipGenerationRef.current) {
         clearReadyState()
       }
     }

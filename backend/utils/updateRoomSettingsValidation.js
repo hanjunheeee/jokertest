@@ -97,7 +97,14 @@ function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** 비어 있지 않고 길이가 제한된 문자열인지. 공백만 있는 값도 식별자가 아니다. */
+/**
+ * 비어 있지 않고 길이가 제한된 문자열인지. 공백만 있는 값도 식별자가 아니다.
+ *
+ * 저장 요청(update_room_settings)과 결과 조회(get_room_settings_update_result)는 **같은 키**를
+ * 만드는 같은 식별자를 다룬다 — 두 경로가 서로 다른 기준을 쓰면 저장에서는 거부된 값이
+ * 조회에서는 통과해, 어느 쪽도 만들 수 없는 키를 묻는 요청이 정상 응답을 받는다.
+ * 값 자체는 보정하지 않는다(trim하지 않는다) — 통과한 식별자는 받은 그대로 키가 된다.
+ */
 function isIdentifier(value) {
     return typeof value === 'string' && value.length > 0 && value.length <= MAX_IDENTIFIER_LENGTH
         && value.trim().length > 0
@@ -314,4 +321,6 @@ module.exports = {
     PRESERVED_ROOM_SETTING_KEYS,
     UPDATE_REQUEST_TOP_LEVEL_KEYS,
     MAX_IDENTIFIER_LENGTH,
+    // 저장·조회 두 경로가 같은 식별자 계약을 쓰도록 술어 자체를 공유한다(사본 금지).
+    isRoomSettingsIdentifier: isIdentifier,
 }

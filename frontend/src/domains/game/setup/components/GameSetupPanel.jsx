@@ -20,6 +20,7 @@ import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
 import {
   NIGHT_TIME_ID_TO_ROLE,
   NON_EDITABLE_SETUP_ITEM_IDS,
+  OVERALL_NIGHT_ACTION_TIME_ID,
   mergeSpecifiedRoleNightActionTimes,
 } from "../utils/roomSettingsForm.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
@@ -116,10 +117,28 @@ export default function GameSetupPanel({
 
   /** 스테퍼 변경을 그대로 전달하면서, 직업별 밤 시간은 "건드렸다"는 사실도 함께 남긴다. */
   const handleSetRange = (id, next) => {
-    if (NIGHT_TIME_ID_TO_ROLE[id] !== undefined && ranges[id] !== next) {
+    const changed = ranges[id] !== next
+    if (NIGHT_TIME_ID_TO_ROLE[id] !== undefined && changed) {
       setEditedRoleTimeIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
     }
     setRange(id, next)
+
+    // F-20(AC-03): 편집 화면에서 **아직 아무도 지정하지 않은** 직업 행은 전체 밤 시간을
+    // 그대로 따라간다. 폼을 열 때의 폴백(buildRoomSettingsFormState)만 고치고 여기를 두면,
+    // 전체 밤 시간을 60→90으로 바꾼 순간부터 그 행들은 60을 계속 보여준다 — 서버는 90을
+    // 쓰는데 방장은 60이라고 읽고, 그 행의 다음 클릭도 60에서 출발해 의도하지 않은 override가
+    // 만들어진다. "지정했다"는 사실 자체는 여기서 만들지 않으므로(editedRoleTimeIds 불변),
+    // 손대지 않은 저장은 여전히 override를 싣지 않는다.
+    //
+    // 생성 화면(mode='create')에는 "지정하지 않음"이라는 상태가 없다 — 네 직업 모두 명시값이고
+    // 그대로 실린다. 그래서 이 따라가기는 편집 모드에만 적용한다(기존 생성 계약 보존).
+    if (!isEditMode || id !== OVERALL_NIGHT_ACTION_TIME_ID || !changed) return
+    const serverSpecified = initialFormState?.specifiedRoleNightActionTimes ?? []
+    for (const [roleTimeId, role] of Object.entries(NIGHT_TIME_ID_TO_ROLE)) {
+      // 서버가 명시한 override와 이번에 방장이 직접 바꾼 값은 전체 시간과 독립이다.
+      if (serverSpecified.includes(role) || editedRoleTimeIds.has(roleTimeId)) continue
+      setRange(roleTimeId, next)
+    }
   }
 
   // 편집 모드에서는 D-12의 세 항목을 아예 그리지 않는다 — 이 슬라이스의 편집 대상이 아니고,

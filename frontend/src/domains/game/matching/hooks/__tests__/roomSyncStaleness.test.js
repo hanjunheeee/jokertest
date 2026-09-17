@@ -647,6 +647,150 @@ test("AC-05 · 결과 조회 중 방이 바뀌면 그 응답은 새 소속의 �
     "지난 소속의 결과 조회가 새 소속의 방 상태를 갱신했다")
 })
 
+// ── AC-04/AC-05: 소속 세대는 저장뿐 아니라 전체 조회·준비·시작에도 적용된다 ──────────
+//
+// 아래 세 사건은 roomId·계정·소켓·설정 버전이 **전부 요청 시점과 같아진다**. 소속이 한 번
+// 갈렸다는 사실 말고는 그 응답이 지난 소속의 것임을 말해 주는 값이 없다.
+
+test("AC-05 · R1→R2→R1로 돌아온 뒤 도착한 옛 전체 방 조회는 새 소속의 상태를 덮지 않는다", async () => {
+  const { socket, result } = await mountVerified()
+
+  // 재접속 조회 하나를 띄워 붙잡아 둔다.
+  socket.answer = () => HOLD
+  await act(async () => { socket.trigger("connect") })
+  assert.equal(result.current.isRoomVerified, false, "재조회 중에는 검증이 풀려야 한다")
+  const heldQuery = socket.holds.find((hold) => hold.event === "get_current_room")
+  assert.ok(heldQuery, "조회를 붙잡아 두지 못했다(전제가 깨졌다)")
+
+  // 방을 옮겼다가 같은 방으로 되돌아온다. 돌아온 R1은 서버가 새로 준 v7 스냅샷이다.
+  await act(async () => { useMatchingStore.getState().setRoom(otherRoom()) })
+  await act(async () => { useMatchingStore.getState().setRoom(serverRoom({ settingsVersion: 7 })) })
+  assert.equal(useMatchingStore.getState().roomId, ROOM_ID)
+  assert.equal(useMatchingStore.getState().settingsVersion, 7)
+
+  // 이제야 지난 소속의 조회 응답(v1)이 도착한다.
+  await act(async () => {
+    socket.release("get_current_room", { ok: true, room: serverRoom({ settingsVersion: 1 }) })
+    await Promise.resolve(); await Promise.resolve()
+  })
+
+  assert.equal(useMatchingStore.getState().settingsVersion, 7,
+    "지난 소속의 전체 조회가 새 소속의 방 상태를 덮었다")
+})
+
+test("AC-05 · R1→방 없음→R1 뒤에 도착한 옛 전체 방 조회는 '방 없음'으로 화면을 정리하지 않는다", async () => {
+  let roomDeletedCalls = 0
+  const callbacks = { onRoomDeleted: () => { roomDeletedCalls += 1 }, onGameStarted: () => {} }
+  useMatchingStore.getState().clearRoom()
+  useAuthStore.setState({ user: { uuid: "host-a" }, isLoggedIn: true })
+  alerts.length = 0
+
+  const socket = createFakeSocket()
+  socket.answer = (event) => (event === "get_current_room" ? { ok: true, room: serverRoom() } : HOLD)
+  setSocket(socket)
+  const { result } = renderHook(() => useMatchingRoom(callbacks))
+  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  assert.equal(result.current.isRoomVerified, true)
+
+  socket.answer = () => HOLD
+  await act(async () => { socket.trigger("connect") })
+  assert.ok(socket.holds.some((hold) => hold.event === "get_current_room"))
+
+  // 방을 떠났다가 **같은 방**으로 돌아온다.
+  await act(async () => { useMatchingStore.getState().clearRoom() })
+  await act(async () => { useMatchingStore.getState().setRoom(serverRoom({ settingsVersion: 4 })) })
+
+  // 지난 소속의 조회가 "참여 중인 방 없음"을 확정해 돌아온다 — 그 사실은 그때의 것이다.
+  await act(async () => {
+    socket.release("get_current_room", { ok: true, room: null })
+    await Promise.resolve(); await Promise.resolve()
+  })
+
+  assert.equal(useMatchingStore.getState().roomId, ROOM_ID,
+    "지난 소속의 '방 없음' 응답이 새 소속을 지웠다")
+  assert.equal(useMatchingStore.getState().settingsVersion, 4)
+  assert.equal(roomDeletedCalls, 0, "지난 소속의 응답이 방 삭제 콜백을 불렀다")
+})
+
+test("AC-04 · 같은 방으로 다시 들어온 뒤 도착한 옛 준비 ACK는 새 소속의 표시를 바꾸지 못한다", async () => {
+  const { socket, result } = await mountVerified()
+
+  socket.answer = (event) => (event === "set_ready" ? HOLD : { ok: true, room: serverRoom() })
+  let readyPromise
+  await act(async () => { readyPromise = result.current.setReady(true) })
+  assert.equal(socket.countOf("set_ready"), 1)
+
+  // 소속이 한 번 갈렸다가 같은 방으로 돌아온다(설정 버전도 그대로 1이다).
+  await act(async () => { useMatchingStore.getState().setRoom(otherRoom()) })
+  await act(async () => { useMatchingStore.getState().setRoom(serverRoom()) })
+  assert.equal(
+    useMatchingStore.getState().players.find((p) => p.uuid === "host-a").isReady, false,
+    "새 소속의 서버 스냅샷은 미준비다(전제)",
+  )
+
+  // 지난 소속의 ACK가 지금 도착한다. revision·설정 버전만 보면 정상적으로 보인다.
+  await act(async () => {
+    socket.release("set_ready", {
+      ok: true, isReady: true, canStart: true,
+      roomId: ROOM_ID, settingsVersion: 1, readyRevision: 5,
+      sfxEvent: { eventId: "room:room-1:ready:host-a:5", roomId: ROOM_ID, origin: "live" },
+    })
+    await readyPromise
+  })
+
+  const after = useMatchingStore.getState()
+  assert.equal(after.players.find((p) => p.uuid === "host-a").isReady, false,
+    "지난 소속의 준비 ACK가 새 소속의 준비 표시를 바꿨다")
+  assert.equal(after.canStart, false, "지난 소속의 ACK가 canStart를 바꿨다")
+
+  // 지금 소속에서 보낸 준비는 정상적으로 반영된다(모든 완료를 막아서 푼 것이 아니다).
+  socket.answer = (event) => (event === "set_ready"
+    ? {
+      ok: true, isReady: true, canStart: true,
+      roomId: ROOM_ID, settingsVersion: 1, readyRevision: 6,
+      sfxEvent: { eventId: "room:room-1:ready:host-a:6", roomId: ROOM_ID, origin: "live" },
+    }
+    : { ok: true, room: serverRoom() })
+  await act(async () => { await result.current.setReady(true) })
+  assert.equal(useMatchingStore.getState().players.find((p) => p.uuid === "host-a").isReady, true,
+    "지금 소속의 정상 ACK까지 버려졌다")
+})
+
+test("AC-04 · 소속이 갈리면 진행 중이던 시작 잠금이 풀리고, 그 옛 응답이 새 시작의 잠금을 대신 풀지 않는다", async () => {
+  const { socket, result } = await mountVerified()
+
+  socket.answer = (event) => (event === "start_game" ? HOLD : { ok: true, room: serverRoom() })
+  let oldStart
+  await act(async () => { oldStart = result.current.startGame() })
+  assert.equal(socket.countOf("start_game"), 1)
+  assert.equal(result.current.isStarting, true)
+
+  await act(async () => { useMatchingStore.getState().setRoom(otherRoom()) })
+  await act(async () => { useMatchingStore.getState().setRoom(serverRoom()) })
+  assert.equal(result.current.isStarting, false,
+    "지난 소속의 시작 요청이 새 소속의 시작을 계속 막고 있다")
+
+  // 새 소속에서 새 시작 요청이 진행 중이다.
+  let newStart
+  await act(async () => { newStart = result.current.startGame() })
+  assert.equal(socket.countOf("start_game"), 2, "새 소속에서 시작 요청을 보내지 못했다")
+  assert.equal(result.current.isStarting, true)
+
+  // 지난 소속의 실패 ACK가 지금 도착한다.
+  await act(async () => {
+    socket.release("start_game", { ok: false, message: "지난 소속의 실패" })
+    await oldStart
+  })
+  assert.equal(alerts.includes("지난 소속의 실패"), false, "지난 소속의 실패가 지금 화면에 안내됐다")
+  assert.equal(result.current.isStarting, true, "옛 요청의 finally가 새 요청의 잠금을 대신 풀었다")
+
+  await act(async () => {
+    socket.release("start_game", { ok: false, message: "지금 소속의 실패" })
+    await newStart
+  })
+  assert.equal(result.current.isStarting, false, "정상 완료가 잠금을 풀지 못했다")
+})
+
 test("AC-05 · 계정이 바뀌면 이전 계정의 미확정 저장 요청은 남지 않는다", async () => {
   const { socket, result } = await mountVerified()
 

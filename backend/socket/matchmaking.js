@@ -11,6 +11,7 @@ const {
     buildRoomSettingsView,
     fingerprintUpdateSettings,
     fingerprintUpdateRequest,
+    isRoomSettingsIdentifier,
     ROOM_SETTINGS_EVENTS,
     ROOM_SETTINGS_ERROR_CODES,
     PRESERVED_ROOM_SETTING_KEYS,
@@ -969,32 +970,47 @@ async function loadRoomParticipantProfile(uuid) {
 }
 
 /**
+ * F-20(AC-04): "이 시작 요청이 근거로 삼은 방 상태가 **지금도** 그대로인가".
+ *
+ * 방장·참가자 신원·소속·전원 준비·설정 버전을 한 술어로 묶는다. 같은 판정을 두 곳에서
+ * 각자 적어 두면 한쪽만 고쳐져 갈라진다 — 실제로 내부(외형 조회 직후)와 바깥(await 복귀
+ * 직후)은 **서로 다른 마이크로태스크**라, 그 사이에 끼어든 준비 취소는 내부 검사만으로는
+ * 잡히지 않는다. 그래서 바깥 최종 동기 경계에서 이 술어를 다시 부른다.
+ *
+ * @param {Map<string,object>} playersAtCapture - 요청 시점의 uuid → 참가자 **객체**.
+ *   uuid 집합만 비교하면 "나갔다가 같은 방에 다시 들어온" 참가자를 구분할 수 없다.
+ */
+function isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVersionAtCapture) {
+    if (room.hostUuid !== hostUuid) return false
+    if (room.players.size !== playersAtCapture.size) return false
+    for (const [u, player] of playersAtCapture) {
+        // 같은 계정이라도 **같은 참가자 객체**여야 한다(이탈·재입장은 새 객체를 만든다).
+        if (room.players.get(u) !== player) return false
+        // 계정→방 매핑도 함께 본다. 참가자 객체가 남아 있어도 소속이 이미 다른 방이면
+        // 그 계정은 이 방의 참가자가 아니다.
+        if (playerRoom.get(u) !== room.id) return false
+        // 준비는 캡처해 둔 복사본이 아니라 **살아 있는 참가자 객체**에서 읽는다.
+        if (player.isReady !== true) return false
+    }
+    // 외형 조회를 기다리는 동안 방장이 설정을 바꿨다면(전원 준비가 해제됐다가 다시
+    // 준비했더라도) 이 시작 요청은 **이전 설정**을 보고 시작된 것이다. 버전이 달라지면
+    // 여기서 끝낸다 — 방장이 새로 시작 요청을 보내야 새 설정으로 한 판이 만들어진다.
+    if (settingsVersionAtCapture !== undefined && settingsVersionAtCapture !== getSettingsVersion(room)) {
+        return false
+    }
+    return true
+}
+
+/**
  * Capture current loadouts into a private session candidate. The public Room is
  * never mutated: prepare, delivery preflight or payload creation may still fail.
  * Only the game serializer may disclose the viewer's own role-specific skin.
  */
 async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settingsVersionAtCapture) {
-    // playersAtCapture는 uuid 목록이 아니라 **그 순간의 참가자 객체**까지 담은 Map이다.
-    // uuid 집합만 비교하면 "나갔다가 같은 방에 다시 들어온" 참가자를 구분할 수 없다 —
-    // 이름표는 같지만 그 사람의 소속·준비는 이 시작 요청이 검사한 그것이 아니다.
-    const entries = [...playersAtCapture]
-    const uuids = entries.map(([u]) => u)
+    const uuids = [...playersAtCapture.keys()]
     const loadouts = await economyServiceRef.getGameStartLoadouts(uuids)
 
-    const stillHost = room.hostUuid === hostUuid
-    const sameParticipants = room.players.size === uuids.length
-        // 같은 계정이라도 **같은 참가자 객체**여야 한다(이탈·재입장은 새 객체를 만든다).
-        && entries.every(([u, player]) => room.players.get(u) === player)
-        // 계정→방 매핑도 함께 본다. 참가자 객체가 남아 있어도 소속이 이미 다른 방이면
-        // 그 계정은 이 방의 참가자가 아니다.
-        && uuids.every((u) => playerRoom.get(u) === room.id)
-    const stillReady = sameParticipants && uuids.every((u) => room.players.get(u).isReady === true)
-    // F-20(AC-04): 외형 조회를 기다리는 동안 방장이 설정을 바꿨다면(전원 준비가 해제됐다가
-    // 다시 준비했더라도) 이 시작 요청은 **이전 설정**을 보고 시작된 것이다. 버전이 달라지면
-    // 여기서 끝낸다 — 방장이 새로 시작 요청을 보내야 새 설정으로 한 판이 만들어진다.
-    const sameSettings = settingsVersionAtCapture === undefined
-        || settingsVersionAtCapture === getSettingsVersion(room)
-    if (!stillHost || !sameParticipants || !stillReady || !sameSettings) {
+    if (!isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVersionAtCapture)) {
         return { ok: false, code: 'ROOM_STATE_CHANGED' }
     }
 
@@ -2004,7 +2020,10 @@ function handleGetRoomSettingsUpdateResult(uuid, payload, callback, socket, getC
         return
     }
     const { roomId, requestId } = payload
-    if (typeof roomId !== 'string' || !roomId || typeof requestId !== 'string' || !requestId) {
+    // 저장 요청과 **같은 술어**로 검사한다. 조회만 느슨하면(길이 상한 없음·공백만 허용)
+    // 저장이 만들 수 없는 키를 묻는 요청이 정상 응답(UNKNOWN)을 받고, 임의 길이 문자열이
+    // 조회 경로로 그대로 흘러든다. 통과한 값은 보정 없이 그대로 키가 된다.
+    if (!isRoomSettingsIdentifier(roomId) || !isRoomSettingsIdentifier(requestId)) {
         respond({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
         return
     }
@@ -2252,6 +2271,17 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
             settingsVersion: getSettingsVersion(room),
             message: '방 설정이 변경되었습니다. 최신 설정을 확인한 뒤 다시 시도해주세요.',
         })
+        return
+    }
+    // F-20(AC-04): 방장·참가자 신원·소속·**전원 준비**의 최종 재검사.
+    //
+    // captureRoomStartProfiles의 내부 검사는 그 함수가 반환하기 전의 사실이고, 여기(바깥
+    // await의 재개)는 **그 다음 마이크로태스크**다. 그 사이에 실행된 준비 취소는 내부 검사를
+    // 지나간 뒤에 일어나므로, captured.room에 복사된 isReady=true는 이미 과거의 값이다.
+    // 그래서 복사본이 아니라 registry의 살아 있는 참가자 객체로 다시 판정한다.
+    // 이 지점부터 커밋까지는 await가 없어, 여기서 통과한 조건이 그대로 커밋된다.
+    if (!isStartRequestStillValid(room, uuid, playersAtCapture, expectedSettingsVersion)) {
+        callback({ ok: false, code: 'ROOM_STATE_CHANGED', message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
         return
     }
     // 프로필 캡처(await) 동안 초대 수락이 예약에 진입했을 수 있다 — commit 직전에 다시 본다.
