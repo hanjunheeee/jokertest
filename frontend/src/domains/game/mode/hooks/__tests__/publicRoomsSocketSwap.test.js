@@ -155,8 +155,7 @@ test("AC-03 · 교체된 옛 소켓의 늦은 조회 응답과 늦은 방송은 
   await settle()
   assert.deepEqual(result.current.rooms.map((r) => r.id), ["new"])
 
-  // (a) 옛 소켓의 방송. React가 cleanup을 실행하기 **전**에도 도착할 수 있는 구간이라,
-  //     리스너 해제만으로는 막히지 않는다 — 방송을 받은 쪽이 자기 출처를 확인해야 한다.
+  // (a) cleanup 이후 옛 소켓의 방송은 해제된 리스너로 전달되지 않는다.
   await act(async () => {
     socketA.trigger(ROOM_LIST_SOCKET_EVENTS.PUBLIC_ROOMS_UPDATED,
       { rooms: [room("stale-broadcast", { max: 10 })] })
@@ -264,3 +263,57 @@ test("AC-03 · 입장 성공·실패는 그대로 동작한다", async () => {
   assert.equal(result.current.isJoining, false)
   assert.equal(useMatchingStore.getState().roomId, "r1")
 })
+
+
+test("AC-03 · cleanup 이전의 옛 방송도 새 목록 조회가 보류된 동안 무시한다", async () => {
+  const socketA = createFakeSocket("A")
+  socketA.answer = () => ({ ok: true, rooms: [room("baseline")] })
+  setSocket(socketA)
+  const { result } = mount()
+  await settle()
+  const socketB = createFakeSocket("B") // 새 조회를 보류해 잘못된 방송을 덮어 가리지 않는다.
+  await act(async () => {
+    setSocket(socketB)
+    assert.equal(socketA.listenerCount(ROOM_LIST_SOCKET_EVENTS.PUBLIC_ROOMS_UPDATED), 1,
+      "반드시 cleanup 전에 재현해야 한다")
+    socketA.trigger(ROOM_LIST_SOCKET_EVENTS.PUBLIC_ROOMS_UPDATED, { rooms: [room("stale")] })
+  })
+  assert.deepEqual(result.current.rooms.map((r) => r.id), ["baseline"])
+  await act(async () => {
+    socketB.release(ROOM_LIST_SOCKET_EVENTS.GET_PUBLIC_ROOMS, { ok: true, rooms: [room("current")] })
+  })
+  assert.deepEqual(result.current.rooms.map((r) => r.id), ["current"])
+})
+
+for (const outcome of ["success", "failure"]) {
+  test("AC-03 · cleanup 이전의 옛 입장 응답 무시: " + outcome, async () => {
+    const socketA = createFakeSocket("A")
+    socketA.answer = () => ({ ok: true, rooms: [room("old-room")] })
+    setSocket(socketA)
+    const { result } = mount()
+    await settle()
+    await act(async () => { result.current.joinPublicRoom("old-room") })
+    assert.equal(result.current.isJoining, true)
+    const socketB = createFakeSocket("B")
+    const event = outcome === "success"
+      ? ROOM_LIST_SOCKET_EVENTS.ROOM_JOINED : ROOM_LIST_SOCKET_EVENTS.ROOM_JOIN_FAILED
+    await act(async () => {
+      setSocket(socketB)
+      assert.equal(socketA.listenerCount(event), 1, "반드시 cleanup 전에 재현해야 한다")
+      socketA.trigger(event, outcome === "success"
+        ? { roomId: "old-room", roomCode: "OLD123", hostUuid: "old-host", players: [], settingsVersion: 1 }
+        : { message: "stale failure" })
+    })
+    assert.equal(useMatchingStore.getState().roomId, null, "옛 연결의 입장 성공이 현재 방을 바꿨다")
+    assert.deepEqual(alerts, [], "옛 연결의 입장 실패가 현재 사용자에게 표시됐다")
+    assert.equal(result.current.isJoining, false)
+    await act(async () => { result.current.joinPublicRoom("new-room") })
+    assert.equal(socketB.countOf(ROOM_LIST_SOCKET_EVENTS.JOIN_PUBLIC_ROOM), 1)
+    assert.equal(result.current.isJoining, true)
+    await act(async () => {
+      socketB.trigger(ROOM_LIST_SOCKET_EVENTS.ROOM_JOIN_FAILED, { message: "current failure" })
+    })
+    assert.deepEqual(alerts, ["current failure"])
+    assert.equal(result.current.isJoining, false)
+  })
+}

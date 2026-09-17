@@ -95,6 +95,7 @@ export function usePublicRooms() {
       setRooms(nextRooms)
     }
     const handleRoomJoined = (room) => {
+      if (!isCurrentSource()) return
       clearJoinState()
       // matching store를 설정하기 전에 인게임 store의 이전 gameId를 먼저 무효화한다
       // (useGameSetupPage.js의 enterRoom과 동일한 이유).
@@ -103,6 +104,7 @@ export function usePublicRooms() {
       navigate("/game-matching")
     }
     const handleRoomJoinFailed = ({ message } = {}) => {
+      if (!isCurrentSource()) return
       clearJoinState()
       alert(message ?? "공개 방에 참여할 수 없습니다.")
     }
