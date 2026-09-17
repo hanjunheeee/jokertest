@@ -1333,6 +1333,84 @@ function rawRoom(roomId) {
     return { ...room, players: new Map(room.players) }
 }
 
+test('AC-06 · 값이 달라지지 않는 저장도 저장값의 관전자 키를 걷어내고, 버전·준비·방송은 그대로다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
+    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+
+    // 전원 준비까지 마친 상태에서 시작한다 — 이 저장이 준비를 건드리지 않는다는 사실은
+    // 준비한 사람이 실제로 있을 때만 확인할 수 있다.
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+
+    // 예전 데이터에 관전자 키·알 수 없는 키가 최상위와 중첩 양쪽에 남아 있는 방을 재현한다.
+    const legacy = rawRoom(room.roomId)
+    legacy.settings = {
+        ...legacy.settings,
+        allowSpectators: true,
+        'allow-spectators': true,
+        spectator: 'x',
+        spectatorMode: 'all',
+        roleNightActionTimes: { ...(legacy.settings.roleNightActionTimes ?? {}), SPECTATOR: 30 },
+    }
+    matchmaking.__seedRoomForTests(legacy)
+
+    const storedBefore = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
+    assert.equal(Object.hasOwn(storedBefore, 'allowSpectators'), true, '이 시험의 전제는 오염된 저장값이다')
+
+    const readyBefore = [...matchmaking.__getStateSnapshotForTests().gameRooms[0][1].players]
+        .map(([uuid, p]) => [uuid, p.isReady, p.readyRevision])
+    const broadcastsBefore = io.broadcasts.length
+    const deliveredBefore = joinerSocket.emitted.filter(
+        (e) => e.event === ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED).length
+
+    // 지금 저장된 값과 **똑같은** 허용 설정을 다시 저장한다(no-change).
+    const res = await callAsPromise(
+        handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { maxPlayers: 8, jokerCount: 2 }),
+    )
+    assert.equal(res.ok, true, res.message)
+    assert.equal(res.changed, false, '값이 같은 저장이 변경으로 처리됐다')
+    assert.equal(res.settingsVersion, 1)
+
+    // 저장값에서 관전자·미지의 키가 사라졌다(최상위·중첩 모두).
+    const stored = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
+    assert.equal(JSON.stringify(stored).includes('pectator'), false, '저장값에 관전자 키가 남았다')
+    assert.equal(Object.hasOwn(stored.roleNightActionTimes ?? {}, 'SPECTATOR'), false)
+    // 정상 설정 수치와 서버 보존 값은 그대로다.
+    assert.equal(stored.maxPlayers, 8)
+    assert.equal(stored.jokerCount, 2)
+    assert.equal(stored.dayDiscussionTime, 60)
+    assert.equal(stored.dayVoteTime, 60)
+    assert.equal(stored.nightActionTime, 90)
+    assert.equal(stored.voteReveal, true)
+
+    // 버전·준비 상태·변경 방송은 no-change 계약 그대로다.
+    assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settingsVersion, 1)
+    const readyAfter = [...matchmaking.__getStateSnapshotForTests().gameRooms[0][1].players]
+        .map(([uuid, p]) => [uuid, p.isReady, p.readyRevision])
+    assert.deepEqual(readyAfter, readyBefore, 'no-change 저장이 준비 상태를 건드렸다')
+    assert.equal(io.broadcasts.length, broadcastsBefore, 'no-change 저장이 방송을 발생시켰다')
+    assert.equal(
+        joinerSocket.emitted.filter((e) => e.event === ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED).length,
+        deliveredBefore, 'no-change 저장이 설정 변경 사건을 전달했다',
+    )
+})
+
+test('AC-06 · 오염이 없는 방의 no-change 저장은 저장 객체를 교체하지 않는다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
+
+    const before = snapshotRooms()
+    const res = await callAsPromise(
+        handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { maxPlayers: 8, jokerCount: 2 }),
+    )
+    assert.equal(res.ok, true, res.message)
+    assert.equal(res.changed, false)
+    assert.equal(snapshotRooms(), before, '정상 방의 no-change 저장이 저장값을 바꿨다')
+})
+
 test('AC-06 · 저장 뒤 입력 객체를 변형해도 서버 저장값은 바뀌지 않는다', async () => {
     const io = createFakeIo([])
     const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })

@@ -9,6 +9,7 @@ const {
     validateUpdateRoomSettingsPayload,
     buildEditableSettingsView,
     buildRoomSettingsView,
+    settingsContainNonAllowlistedKeys,
     fingerprintUpdateSettings,
     fingerprintUpdateRequest,
     isRoomSettingsIdentifier,
@@ -1951,6 +1952,16 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
     const changed = currentFingerprint !== settingsFingerprint
 
     if (!changed) {
+        // AC-06: 값이 그대로여도 **저장값에 남은 허용 목록 밖 키**(예전 데이터의 관전자 필드)는
+        // 이 저장 경계에서 걷어낸다. 아래 커밋 경로는 새 객체를 만들어 이미 그렇게 하지만,
+        // 여기서 그냥 돌아가면 관전자 키가 저장값에 계속 살아남는다.
+        //
+        // 편집 가능한 값과 accessType은 정의상 지금과 같고(changed=false), D-12 세 값은
+        // buildRoomSettingsView가 그대로 옮긴다 — 그래서 이 교체는 버전·준비 상태·방송 어느
+        // 것도 건드리지 않는다. 오염이 없는 방은 아예 교체하지 않는다.
+        if (settingsContainNonAllowlistedKeys(room.settings)) {
+            room.settings = buildRoomSettingsView(room.settings)
+        }
         recordSettingsUpdateResult(resultKey, {
             roomId, fingerprint, changed: false, settingsVersion: currentVersion,
             expiresAt: Date.now() + SETTINGS_UPDATE_RESULT_TTL_MS,

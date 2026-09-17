@@ -64,8 +64,12 @@ mock.module("@/shared/hooks/useSfxRuntime.js", {
   namedExports: { dispatchSfxEvent: () => {}, dispatchUiSfx: () => {} },
 })
 
-const { render, act, cleanup, renderHook } = await import("@testing-library/react")
+const { render, act, cleanup, renderHook, waitFor } = await import("@testing-library/react")
+const { MemoryRouter } = await import("react-router-dom")
 const { default: GameSetupPanel } = await import("../../../setup/components/GameSetupPanel.jsx")
+// AC-06: 생성 경로도 실제 페이지·실제 훅으로 검사한다 — 변환기나 훅을 대역으로 바꾸면
+// "관전자 키가 없다"가 production 경로의 사실이 아니라 대역의 사실이 된다.
+const { default: GameSetupPage } = await import("../../../setup/pages/GameSetupPage.jsx")
 const { useMatchingStore } = await import("../../store/matchingStore.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { useMatchingRoom } = await import("../useMatchingRoom.js")
@@ -86,7 +90,8 @@ matchmaking.__setEconomyServiceForTests({
 matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
 
 const { createFakeSocket, createFakeIo, validSettingsPayload } = matchmakingFixtures
-const { handleCreateRoom, handleUpdateRoomSettings, handleGetCurrentRoom } = matchmaking.__testables
+const { handleCreateRoom, handleUpdateRoomSettings, handleGetCurrentRoom, handleGetPublicRooms } =
+  matchmaking.__testables
 
 /**
  * 프런트가 쓰는 소켓 대역을 만든다.
@@ -115,6 +120,10 @@ function createBridgedSocket(io, serverSocket, uuid) {
         if (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS) {
           // 서버가 방송한 사건을 클라이언트 리스너로 되돌리기 위해 서버 소켓의 emit을 감싼다.
           handleUpdateRoomSettings(io, serverSocket, uuid, payload, resolve)
+          return
+        }
+        if (event === SOCKET_EVENTS.CREATE_ROOM) {
+          handleCreateRoom(io, serverSocket, uuid, payload, resolve)
           return
         }
         reject(new Error(`시험 대역이 알지 못하는 이벤트: ${event}`))
@@ -154,9 +163,128 @@ async function setupRoom(hostUuid, payloadOverrides = {}) {
   return { io, serverSocket, room: created.room }
 }
 
+/**
+ * AC-06 생성 경로: 실제 GameSetupPage(→ useGameSetupPage → create_room)를 서버 핸들러에 잇는다.
+ *
+ * setupRoom과 달리 **방을 미리 만들지 않는다** — 이 시험이 검사하려는 것이 바로 그 생성
+ * 요청 자체이기 때문이다. 소켓 대역은 같은 createBridgedSocket을 쓰므로 create_room도
+ * 실제 handleCreateRoom으로 흘러간다.
+ */
+async function mountCreationPage(hostUuid) {
+  matchmaking.__resetStateForTests()
+  socketState.listeners = new Map()
+  alerts.length = 0
+
+  const io = createFakeIo([])
+  const serverSocket = createFakeSocket(hostUuid)
+  io.sockets.sockets.set(serverSocket.id, serverSocket)
+  bridgeServerEmits(serverSocket)
+  socketState.socket = createBridgedSocket(io, serverSocket, hostUuid)
+
+  useAuthStore.setState({ user: { uuid: hostUuid }, isLoggedIn: true })
+  useMatchingStore.getState().clearRoom()
+
+  let view
+  await act(async () => {
+    view = render(React.createElement(MemoryRouter, { initialEntries: ["/game-setup"] },
+      React.createElement(GameSetupPage)))
+  })
+  // 입장 연출(requestAnimationFrame)이 끝나야 실제 버튼이 눌린다.
+  await waitFor(() => {
+    const button = view.container.querySelector("button[aria-label='게임 만들기']")
+    assert.ok(button && button.disabled === false, "게임 만들기 버튼이 아직 활성화되지 않았다")
+  })
+  return { io, serverSocket, view }
+}
+
+async function clickSetupTab(container, label) {
+  const button = [...container.querySelectorAll("button")]
+    .find((node) => node.textContent.trim() === label)
+  assert.ok(button, `${label} 탭 버튼이 없다`)
+  await act(async () => { button.click() })
+}
+
 test.afterEach(() => {
   cleanup()
   useMatchingStore.getState().clearRoom()
+})
+
+test("AC-06 · 실제 생성 화면의 두 탭·요청·저장값·조회·store·공개 목록 어디에도 관전자 항목이 없다", async () => {
+  const { view } = await mountCreationPage("host-create")
+  const container = view.container
+
+  // (1) 생성 화면의 두 탭 DOM — 관전자 항목 자체가 없다.
+  assert.equal(container.textContent.includes("관전"), false, "일반 탭에 관전자 항목이 있다")
+  assert.equal(container.textContent.includes("최대 플레이어 수"), true, "일반 탭 항목이 사라졌다")
+  await clickSetupTab(container, "회의&투표")
+  assert.equal(container.textContent.includes("관전"), false, "회의&투표 탭에 관전자 항목이 있다")
+  // 편집 화면과 달리 생성 화면에는 D-12의 세 항목이 그대로 있어야 한다(기존 생성 계약).
+  assert.equal(container.textContent.includes("투표 공개"), true, "생성 화면의 D-12 항목이 사라졌다")
+  await clickSetupTab(container, "일반")
+
+  // (2) 실제 "게임 만들기" 클릭 → production 훅이 실제로 보낸 create_room 요청.
+  await act(async () => {
+    container.querySelector("button[aria-label='게임 만들기']").click()
+  })
+  await waitFor(() => assert.ok(useMatchingStore.getState().roomId, "생성 뒤 store에 방이 들어오지 않았다"))
+  assert.deepEqual(alerts, [], alerts.join(" / "))
+
+  const created = socketState.socket.emittedToServer
+    .filter((e) => e.event === SOCKET_EVENTS.CREATE_ROOM)
+  assert.equal(created.length, 1, "생성 요청이 정확히 한 번 나가지 않았다")
+  const sentPayload = created[0].payload
+  assert.equal(JSON.stringify(sentPayload).includes("pectator"), false, "생성 요청에 관전자 키가 실렸다")
+  for (const key of ["allowSpectators", "allow-spectators", "spectator", "spectatorMode"]) {
+    assert.equal(Object.hasOwn(sentPayload, key), false, `생성 요청에 ${key}가 실렸다`)
+  }
+
+  // (3) 서버가 실제로 들고 있는 원본 저장 스냅샷.
+  const [[storedRoomId, storedRoom]] = matchmaking.__getStateSnapshotForTests().gameRooms
+  assert.equal(JSON.stringify(storedRoom.settings).includes("pectator"), false, "저장값에 관전자 키가 들어갔다")
+  assert.equal(storedRoom.settings.maxPlayers, sentPayload.maxPlayers, "정상 설정 수치가 보존되지 않았다")
+
+  // (4) ACK로 store에 들어간 방 + 현재 방 재조회 응답.
+  const state = useMatchingStore.getState()
+  assert.equal(storedRoomId, state.roomId)
+  assert.equal(JSON.stringify(state.settings).includes("pectator"), false, "store 설정에 관전자 키가 있다")
+  const current = await new Promise((resolve) => handleGetCurrentRoom("host-create", resolve))
+  assert.equal(current.ok, true)
+  assert.equal(JSON.stringify(current.room).includes("pectator"), false, "현재 방 조회 응답에 관전자 키가 있다")
+
+  // (5) 공개 목록 응답.
+  const list = await new Promise((resolve) => handleGetPublicRooms(resolve))
+  assert.equal(JSON.stringify(list.rooms).includes("pectator"), false, "공개 목록에 관전자 키가 있다")
+})
+
+test("AC-06 · 생성 요청에 관전자 키를 실어 보내면 서버가 거부하고 아무 방도 만들지 않는다", async () => {
+  await mountCreationPage("host-reject")
+
+  // production 화면은 이 키를 만들지 않는다(위 시험). 여기서는 그 앞단이 뚫렸다고 가정하고
+  // 서버 경계 자체를 본다 — 최상위 키를 하나씩 넣어 각각 확인한다.
+  //
+  // 생성 검증은 최상위 미허용 키를 **읽지 않는다**(서버 권한 필드를 구조적으로 차단하는 기존
+  // 계약). 그래서 요청은 통과하지만 그 키는 저장값·응답 어디에도 들어가지 않아야 한다.
+  for (const key of ["allowSpectators", "allow-spectators", "spectator", "spectatorMode"]) {
+    matchmaking.__resetStateForTests()
+    const res = await socketState.socket.emitWithAck(
+      SOCKET_EVENTS.CREATE_ROOM, { ...validSettingsPayload(), [key]: true },
+    )
+    assert.equal(res.ok, true, `${key}: ${res.message}`)
+    const [, storedRoom] = matchmaking.__getStateSnapshotForTests().gameRooms[0]
+    assert.equal(JSON.stringify(storedRoom.settings).includes("pectator"), false,
+      `${key}가 저장값으로 새어 들어갔다`)
+    assert.equal(storedRoom.settings.maxPlayers, 8, "정상 설정 수치가 훼손됐다")
+    assert.equal(storedRoom.settings.voteReveal, true, "정상 설정 수치가 훼손됐다")
+    assert.equal(JSON.stringify(res.room).includes("pectator"), false, `${key}가 생성 응답에 실렸다`)
+  }
+  matchmaking.__resetStateForTests()
+
+  // 중첩 오염 키는 조용히 버려지지 않고 생성 자체가 거부돼야 한다.
+  const nested = await socketState.socket.emitWithAck(SOCKET_EVENTS.CREATE_ROOM, {
+    ...validSettingsPayload(), roleNightActionTimes: { JOKER: 30, SPECTATOR: 30 },
+  })
+  assert.equal(nested.ok, false, "중첩 관전자 키가 거부되지 않았다")
+  assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms.length, 0, "거부된 요청이 방을 만들었다")
 })
 
 test("편집 패널은 서버 확정 설정에서 시작하고, D-12·관전자 항목을 어디에도 그리지 않는다", async () => {

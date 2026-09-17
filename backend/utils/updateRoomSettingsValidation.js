@@ -163,6 +163,37 @@ function buildRoomSettingsView(settings) {
 }
 
 /**
+ * 저장된 room.settings에 허용 목록 밖의 키가 남아 있는가(최상위 + 중첩).
+ *
+ * 왜 필요한가: 응답 경계(buildRoomSettingsView)는 나가는 값만 거른다 — 서버가 **들고 있는**
+ * 값은 그대로다. 실제로 값이 달라지는 저장은 아래 커밋에서 새 객체를 만들어 자연히 걸러지지만,
+ * 값이 같은 저장(changed:false)은 커밋 자체를 하지 않으므로 예전 데이터에 섞인 관전자 키가
+ * 저장값에 계속 남는다. 그 한 경우만 정확히 짚어내기 위한 술어다(AC-06).
+ *
+ * 오염이 없으면 false를 돌려주므로 정상 방의 저장 객체는 건드려지지 않는다 — 같은 값을
+ * 새 객체로 다시 만들어 키 순서만 바꾸는 무의미한 교체를 피하기 위한 조건이다.
+ *
+ * @param {unknown} settings - 저장된(신뢰하지 않는) 설정 객체
+ */
+function settingsContainNonAllowlistedKeys(settings) {
+    if (!isPlainObject(settings)) return false
+    for (const key of Object.keys(settings)) {
+        if (EDITABLE_ROOM_SETTING_KEYS.includes(key)) continue
+        if (PRESERVED_ROOM_SETTING_KEYS.includes(key)) continue
+        return true
+    }
+    if (isPlainObject(settings.roleCounts)
+        && Object.keys(settings.roleCounts).some((role) => !CUSTOM_ROLE_KEYS.includes(role))) {
+        return true
+    }
+    if (isPlainObject(settings.roleNightActionTimes)
+        && Object.keys(settings.roleNightActionTimes).some((role) => !ROLE_NIGHT_ACTION_TIME_KEYS.includes(role))) {
+        return true
+    }
+    return false
+}
+
+/**
  * 같은 requestId로 들어온 재시도가 **정말 같은 요청**인지 판정하기 위한 결정적 지문.
  * 키 순서에 흔들리지 않도록 허용 목록 순서로만 직렬화한다.
  */
@@ -313,6 +344,7 @@ module.exports = {
     validateUpdateRoomSettingsPayload,
     buildEditableSettingsView,
     buildRoomSettingsView,
+    settingsContainNonAllowlistedKeys,
     fingerprintUpdateSettings,
     fingerprintUpdateRequest,
     ROOM_SETTINGS_EVENTS,
