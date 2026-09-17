@@ -1023,3 +1023,260 @@ test("AC-04 · 같은 버전의 설정 스냅샷이 다시 도착해도 그 뒤�
   assert.equal(after.settingsVersion, 2)
   assert.equal(after.settings.maxPlayers, 6, "같은 버전인데 설정이 달라졌다")
 })
+
+// ── AC-05: 권위 있는 **같은 방** 조회와 그보다 먼저 떠난 요청의 방 스냅샷 ─────────
+//
+// 소속이 갈리는 경우는 소속 세대가 잡아낸다. 잡히지 않는 것은 **같은 방을 그대로 확인해 준**
+// 조회다 — roomId·계정·소켓이 전부 그대로라, 그 조회가 가져온 더 새로운 사실(설정 버전이
+// 올랐거나, 같은 버전 위에서 방장·준비가 바뀌었거나)을 다른 어떤 값도 말해 주지 않는다.
+// 저장 실패 응답과 결과 조회 응답은 자기 요청 시점의 방 스냅샷을 함께 싣고 오므로, 그 사이에
+// 들어온 권위 있는 조회를 낡은 값으로 덮을 수 있다.
+
+test("AC-05 · 권위 있는 같은 방 조회로 더 새로운 설정을 확보한 뒤 도착한 옛 저장 실패 스냅샷은 그것을 덮지 못한다", async () => {
+  const { socket, result } = await mountVerified()
+  const queriesAfterMount = socket.countOf("get_current_room")
+
+  // (1) 저장 요청을 보내고 응답을 붙잡아 둔다. 이 요청의 방 스냅샷 기준은 v1이다.
+  socket.answer = (event) => (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS
+    ? HOLD
+    : { ok: true, room: serverRoom() })
+  let savePromise
+  await act(async () => { savePromise = result.current.saveRoomSettings(formStateFromStore()) })
+  assert.equal(socket.countOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS), 1)
+
+  // (2) 재연결이 권위 있는 재조회를 발행하고, 서버가 **같은 방**의 더 새로운 설정(v3)을 준다.
+  //     소속은 그대로이므로 소속 세대는 움직이지 않는다.
+  socket.answer = (event) => (event === "get_current_room"
+    ? { ok: true, room: serverRoom({ settingsVersion: 3 }) }
+    : HOLD)
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  assert.equal(useMatchingStore.getState().settingsVersion, 3, "재조회가 최신 설정을 적용하지 않았다")
+  assert.equal(result.current.isRoomVerified, true)
+  // 자기 자신의 성공적인 완료 때문에 조회가 다시 돌아서는 안 된다(재귀 조회 금지).
+  assert.equal(socket.countOf("get_current_room"), queriesAfterMount + 1,
+    "성공한 조회가 또 다른 조회를 불렀다")
+
+  // (3) 이제야 저장 실패 ACK가 도착한다 — 서버가 실어 보낸 방은 이 요청이 떠날 때의 v1이다.
+  await act(async () => {
+    socket.release(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS, {
+      ok: false,
+      code: "SETTINGS_VERSION_CONFLICT",
+      message: "설정이 이미 변경되었습니다.",
+      room: serverRoom({ settingsVersion: 1 }),
+    })
+    await savePromise
+  })
+
+  assert.equal(useMatchingStore.getState().settingsVersion, 3,
+    "옛 저장 실패 스냅샷이 권위 있는 조회로 확보한 최신 설정을 덮었다")
+  // 스냅샷은 버리되 요청 자체는 정상적으로 정착해야 한다(실패 사유는 그대로 남는다).
+  assert.equal(result.current.settingsError?.code, "SETTINGS_VERSION_CONFLICT",
+    "스냅샷을 버리면서 요청의 정착까지 함께 버렸다")
+  assert.equal(result.current.isSavingSettings, false, "잠금이 풀리지 않았다")
+})
+
+test("AC-05 · 같은 설정 버전이어도 조회가 확보한 더 새로운 방장·준비를 옛 저장 실패 스냅샷이 되돌리지 못한다", async () => {
+  const { socket, result } = await mountVerified()
+
+  socket.answer = (event) => (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS
+    ? HOLD
+    : { ok: true, room: serverRoom() })
+  let savePromise
+  await act(async () => { savePromise = result.current.saveRoomSettings(formStateFromStore()) })
+
+  // 설정 버전은 그대로(v1)인데 그 위에서 방장이 바뀌고 p1이 준비했다 — 설정 버전만으로는
+  // 이 조회가 더 새롭다는 사실을 말할 수 없다.
+  const newerSameVersion = serverRoom({
+    settingsVersion: 1,
+    hostUuid: "p1",
+    canStart: true,
+    players: [
+      { uuid: "host-a", nickname: "host", isReady: true, readyRevision: 2 },
+      { uuid: "p1", nickname: "p1", isReady: true, readyRevision: 3 },
+    ],
+  })
+  socket.answer = (event) => (event === "get_current_room" ? { ok: true, room: newerSameVersion } : HOLD)
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  assert.equal(useMatchingStore.getState().hostUuid, "p1", "재조회가 새 방장을 적용하지 않았다")
+
+  await act(async () => {
+    socket.release(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS, {
+      ok: false,
+      code: "MAX_PLAYERS_BELOW_OCCUPANCY",
+      message: "현재 인원보다 작은 정원으로는 저장할 수 없습니다.",
+      room: serverRoom({ settingsVersion: 1 }),
+    })
+    await savePromise
+  })
+
+  const after = useMatchingStore.getState()
+  assert.equal(after.hostUuid, "p1", "옛 실패 스냅샷이 방장 이전을 되돌렸다")
+  assert.equal(after.players.find((p) => p.uuid === "p1").isReady, true,
+    "옛 실패 스냅샷이 그 뒤에 확보한 준비 상태를 되돌렸다")
+  assert.equal(after.canStart, true, "옛 실패 스냅샷이 canStart를 되돌렸다")
+  assert.equal(result.current.settingsError?.code, "MAX_PLAYERS_BELOW_OCCUPANCY")
+})
+
+test("AC-05 · 조회 뒤에 시작한 저장의 실패 스냅샷과 결과 조회 스냅샷은 그대로 적용된다", async () => {
+  const { socket, result } = await mountVerified()
+
+  // 권위 있는 조회를 먼저 끝낸다(v3).
+  socket.answer = (event) => (event === "get_current_room"
+    ? { ok: true, room: serverRoom({ settingsVersion: 3 }) }
+    : HOLD)
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  assert.equal(useMatchingStore.getState().settingsVersion, 3)
+
+  // (a) 그 **뒤에** 시작한 저장의 실패 스냅샷은 신선하므로 그대로 적용된다.
+  socket.answer = (event) => (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS ? HOLD : HOLD)
+  let savePromise
+  await act(async () => { savePromise = result.current.saveRoomSettings(formStateFromStore()) })
+  await act(async () => {
+    socket.release(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS, {
+      ok: false,
+      code: "MAX_PLAYERS_BELOW_OCCUPANCY",
+      message: "현재 인원보다 작은 정원으로는 저장할 수 없습니다.",
+      room: { ...serverRoom({ settingsVersion: 4 }), settings: { ...serverRoom().settings, maxPlayers: 6 } },
+    })
+    await savePromise
+  })
+  assert.equal(useMatchingStore.getState().settingsVersion, 4,
+    "신선한 실패 스냅샷까지 함께 버려졌다")
+  assert.equal(useMatchingStore.getState().settings.maxPlayers, 6)
+
+  // (b) 결과 조회의 스냅샷도 마찬가지다 — 먼저 timeout으로 미확정 요청을 하나 만든다.
+  socket.answer = () => HOLD
+  let timedOutSave
+  await act(async () => { timedOutSave = result.current.saveRoomSettings(formStateFromStore()) })
+  const requestId = socket.lastOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).payload.requestId
+  await act(async () => { socket.failHold(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS); await timedOutSave })
+  assert.equal(result.current.hasPendingSettingsResult, true)
+
+  socket.answer = (event, payload) => (event === SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT
+    ? {
+      ok: true, status: "APPLIED", changed: true, settingsVersion: 5,
+      roomId: payload.roomId, requestId: payload.requestId,
+      room: serverRoom({ settingsVersion: 5 }),
+    }
+    : HOLD)
+  await act(async () => { await result.current.verifyRoomSettingsResult() })
+  assert.equal(useMatchingStore.getState().settingsVersion, 5,
+    "신선한 결과 조회 스냅샷까지 함께 버려졌다")
+  assert.equal(result.current.hasPendingSettingsResult, false)
+})
+
+// ── AC-05: 확인이 끝난 저장의 소유권 ────────────────────────────────────────
+//
+// 단절은 진행 중이던 저장을 "미확정"으로 **승격**시킨다. 그 순간 그 요청의 미확정 상태를
+// 들고 있는 것은 pendingSettingsRequest이고, 결말을 확정하는 것은 결과 조회다. 진행 중
+// 표시를 그대로 남겨 두면, 결과가 확정된 **뒤에** 다시 끊길 때 이미 끝난 요청이 다시
+// 미확정으로 되살아나 편집이 영문 없이 잠긴다.
+
+test("AC-05 · 결과가 APPLIED로 확정된 저장은 그 뒤 다시 끊겨도 미확정으로 되살아나지 않는다", async () => {
+  const { socket, result } = await mountVerified()
+
+  socket.answer = (event) => (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS
+    ? HOLD
+    : { ok: true, room: serverRoom() })
+  let savePromise
+  await act(async () => { savePromise = result.current.saveRoomSettings(formStateFromStore()) })
+  const requestId = socket.lastOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).payload.requestId
+
+  // (1) 응답을 기다리는 동안 끊긴다 — 미확정으로 승격된다.
+  await act(async () => { socket.trigger("disconnect") })
+  assert.equal(result.current.hasPendingSettingsResult, true)
+
+  // (2) 재연결 후 결과를 묻는다. **원래 저장 Promise는 아직 정착하지 않은 채**다.
+  socket.answer = (event, payload) => {
+    if (event === "get_current_room") return { ok: true, room: serverRoom({ settingsVersion: 2 }) }
+    if (event === SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT) {
+      return {
+        ok: true, status: "APPLIED", changed: true, settingsVersion: 2,
+        roomId: payload.roomId, requestId: payload.requestId,
+      }
+    }
+    return HOLD
+  }
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  await act(async () => { await result.current.verifyRoomSettingsResult() })
+  assert.equal(result.current.hasPendingSettingsResult, false, "확정된 결과가 미확정을 풀지 못했다")
+  assert.equal(result.current.settingsError, null)
+  assert.equal(socket.holds.some((hold) => hold.event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS), true,
+    "전제가 깨졌다(원래 저장 응답이 이미 정착했다)")
+
+  // (3) 다시 끊긴다. 이미 결말이 확정된 요청은 여기서 되살아나면 안 된다.
+  await act(async () => { socket.trigger("disconnect") })
+  assert.equal(result.current.hasPendingSettingsResult, false,
+    "확정이 끝난 저장이 다음 단절에서 미확정으로 되살아났다")
+  assert.equal(result.current.settingsError, null,
+    "확정이 끝난 저장이 다음 단절에서 오류 표시를 되살렸다")
+  assert.equal(result.current.isSavingSettings, false)
+
+  // (4) 뒤늦게 도착한 원래 ACK도 아무것도 되살리지 않는다.
+  await act(async () => {
+    socket.release(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS,
+      { ok: true, changed: true, roomId: ROOM_ID, requestId, settingsVersion: 2 })
+    await savePromise
+  })
+  assert.equal(result.current.hasPendingSettingsResult, false)
+  assert.equal(result.current.settingsError, null)
+})
+
+test("AC-05 · 확정 뒤에 시작한 새 저장은 자기 요청으로 미확정에 오르고, 끝내 확인하지 못한 요청은 반복 단절에도 남는다", async () => {
+  const { socket, result } = await mountVerified()
+
+  // (1) 첫 저장 → 단절 → 결과 확인(APPLIED)까지 끝낸다.
+  socket.answer = (event) => (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS ? HOLD : HOLD)
+  let firstSave
+  await act(async () => { firstSave = result.current.saveRoomSettings(formStateFromStore()) })
+  const firstRequestId = socket.lastOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).payload.requestId
+  await act(async () => { socket.trigger("disconnect") })
+  socket.answer = (event, payload) => {
+    if (event === "get_current_room") return { ok: true, room: serverRoom({ settingsVersion: 2 }) }
+    if (event === SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT) {
+      return { ok: true, status: "APPLIED", changed: true, settingsVersion: 2, roomId: payload.roomId, requestId: payload.requestId }
+    }
+    return HOLD
+  }
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  await act(async () => { await result.current.verifyRoomSettingsResult() })
+  assert.equal(result.current.hasPendingSettingsResult, false)
+
+  // (2) 그 뒤의 **새** 저장은 자기 식별자로 진행 중이 되고, 단절에서 그 식별자가 승격된다.
+  socket.answer = () => HOLD
+  let secondSave
+  await act(async () => { secondSave = result.current.saveRoomSettings(formStateFromStore()) })
+  const secondRequestId = socket.lastOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).payload.requestId
+  assert.notEqual(secondRequestId, firstRequestId)
+
+  await act(async () => { socket.trigger("disconnect") })
+  assert.equal(result.current.hasPendingSettingsResult, true,
+    "새 저장이 단절에서 미확정으로 승격되지 않았다")
+
+  // (3) 결과 조회가 실패하면 그 요청은 **여전히** 미확정이다 — 반복 단절에도 남아야 한다.
+  socket.answer = (event) => (event === "get_current_room" ? { ok: true, room: serverRoom({ settingsVersion: 2 }) } : HOLD)
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  let verifyPromise
+  await act(async () => { verifyPromise = result.current.verifyRoomSettingsResult() })
+  assert.deepEqual(socket.lastOf(SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT).payload,
+    { roomId: ROOM_ID, requestId: secondRequestId },
+    "승격된 식별자가 새 저장의 것이 아니다")
+  await act(async () => {
+    socket.failHold(SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT)
+    await verifyPromise
+  })
+  assert.equal(result.current.hasPendingSettingsResult, true)
+
+  await act(async () => { socket.trigger("disconnect") })
+  assert.equal(result.current.hasPendingSettingsResult, true,
+    "끝내 확인하지 못한 요청이 반복 단절에서 사라졌다")
+  assert.equal(result.current.settingsError?.code, "UNKNOWN")
+
+  // 붙잡아 둔 두 저장 응답을 정리한다(다음 시험으로 새지 않게).
+  await act(async () => {
+    socket.failHold(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS)
+    socket.failHold(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS)
+    await firstSave
+    await secondSave
+  })
+})

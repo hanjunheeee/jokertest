@@ -406,6 +406,22 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 그 응답은 버려지는데, 버리기만 하면 검증이 'checking'에 영원히 머문다 — 그 경우에만
     // 새 조회를 한 번 다시 건다(방송이 소속을 증명한다고 가정하지 않는다).
     let checkInFlight = false
+
+    /**
+     * F-20(AC-05): **이 조회가 확보한 사실보다 오래된 방 스냅샷을 전부 낡은 것으로 만든다.**
+     *
+     * 소속이 갈리는 경우는 소속 세대가 잡아내지만, 서버가 **같은 방**을 그대로 확인해 준
+     * 응답은 roomId·계정·소켓이 전부 그대로라 어떤 값으로도 구별되지 않는다. 그런데 그
+     * 응답은 이 조회가 떠난 뒤의 사실까지 담은 최신 상태다 — 설정 버전이 올랐을 수도 있고,
+     * 같은 버전 위에서 방장·준비만 바뀌었을 수도 있다. 이 조회보다 **먼저** 떠난 저장 실패
+     * 응답·결과 조회 응답은 자기 요청 시점의 방을 함께 싣고 오므로, 세대를 올려 두지 않으면
+     * 그 옛 스냅샷이 방금 확보한 최신 상태를 조용히 덮는다.
+     *
+     * bumpRoomApplyGeneration을 쓰지 않고 카운터만 올린다 — 그쪽은 진행 중인 조회가 있으면
+     * 새 시리즈를 시작하는데, 여기서 "진행 중인 조회"는 방금 성공한 이 요청 자신이라
+     * 성공할 때마다 조회가 한 번 더 도는 재귀가 된다.
+     */
+    const markRoomStateAdvanced = () => { roomApplyGenerationRef.current += 1 }
     // "확인 에피소드"(최초 연결/재연결/소켓 교체/확인 성공마다 새로 시작)당 confirm을 1회만
     // 띄우기 위한 플래그다. effect 전체 수명 동안 한 번만 true로 고정되지 않는다(5절 정책).
     let hasPromptedRetry = false
@@ -444,6 +460,15 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
           code: ROOM_SETTINGS_ERROR_CODES.UNKNOWN,
           message: ROOM_SETTINGS_ERROR_MESSAGES.RESULT_UNKNOWN,
         })
+        // 여기서 이 요청의 **소유권이 넘어간다**. 미확정 상태는 이제 pendingSettingsRequest가
+        // 들고 있고, 그 결말은 결과 조회가 확정한다(확정되면 pending이 내려간다). 진행 중
+        // 표시를 그대로 남겨 두면 그 확정 뒤에 다시 끊길 때 이미 끝난 요청이 또 승격되어,
+        // 방장은 결말을 확인했는데도 편집이 다시 잠긴 채 같은 요청을 또 묻게 된다.
+        // 넘긴 바로 그 요청일 때만 내린다 — 그 사이 시작된 더 새로운 저장의 것이면 그
+        // 저장은 아직 진행 중이므로 자기 승격 기회를 잃으면 안 된다.
+        if (inFlightSettingsRequestRef.current === inFlightSave) {
+          inFlightSettingsRequestRef.current = null
+        }
       }
       roomApplyGenerationRef.current += 1
       clearStartState()
@@ -536,6 +561,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
             // 이 응답 자체가 이 소속의 권위 있는 근거이므로, 여기서 소속이 바뀌더라도
             // (최초 발견 null→방, 서버가 알려준 다른 방) 재확인을 새로 걸지 않는다.
             applyVerifiedRoom(() => useMatchingStore.getState().setRoom(response.room))
+            markRoomStateAdvanced()
             setRoomSyncStatus('verified')
             hasPromptedRetry = false // Room 확인 성공도 새 에피소드의 시작점이다.
             return
@@ -558,6 +584,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
           // room:null, pending 아님 → 서버가 "참여 중인 방 없음"을 명시적으로 확정했다.
           // 클라이언트가 가진 roomId를 신뢰하지 않고 이 서버 판단만을 기준으로 정리한다.
           applyVerifiedRoom(() => useMatchingStore.getState().clearRoom())
+          markRoomStateAdvanced()
           onRoomDeleted?.() // 곧 이 컴포넌트가 언마운트되므로 별도의 "no_room" 지속 상태는 두지 않는다.
         })
         .catch(() => {
