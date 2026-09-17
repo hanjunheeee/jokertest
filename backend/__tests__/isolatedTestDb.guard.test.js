@@ -14,6 +14,8 @@ const {
     assertDedicatedTestDatabase,
     buildManagedSchema,
     resetManagedSchema,
+    resetManagedData,
+    findNonEmptyManagedTables,
 } = require('../tests/helpers/isolatedTestDb');
 
 const [APPROVED_DB_NAME] = ALLOWED_DATABASE_NAMES;
@@ -154,4 +156,153 @@ test('존재하지 않는 관리 테이블은 drop을 시도하지 않는다', a
     });
     await resetManagedSchema(sequelize, APPROVED_URL, SCHEMA);
     assert.deepEqual(sequelize.dropCalls, ['users']);
+});
+
+// ── resetManagedData: 스키마를 두고 행만 비우는 경로도 같은 안전 확인을 먼저 지난다 ────
+//
+// F-19 검증 시간 보수로 추가된 경로다. 드롭보다 덜 파괴적으로 보이지만 "전용 테스트 DB의
+// 모든 행을 지운다"는 점에서 위험도는 같으므로, 대상 DB 확인·미지 테이블 거부가 DELETE보다
+// 반드시 먼저 실행되는지를 resetManagedSchema와 똑같이 검증한다.
+
+// DELETE/SELECT를 기록하는 스텁. rowCounts는 COUNT(*) UNION 응답을 흉내낸다.
+const makeDataStubSequelize = ({ connectedDatabaseName, existingTables = [], rowCounts = {} }) => {
+    const deleteCalls = [];
+    const countQueries = [];
+    return {
+        query: async (sql) => {
+            const statement = String(sql);
+            if (statement.includes('DATABASE()')) return [[{ name: connectedDatabaseName }]];
+            if (statement.startsWith('DELETE FROM')) {
+                deleteCalls.push(statement.replace(/^DELETE FROM `(.+)`$/, '$1'));
+                return [[], {}];
+            }
+            if (statement.startsWith('SELECT')) {
+                countQueries.push(statement);
+                const rows = [...statement.matchAll(/CAST\('([^']+)' AS CHAR\(\d+\)\)/g)]
+                    .map(([, table]) => ({ table_name: table, row_count: rowCounts[table] ?? 0 }));
+                return [rows, {}];
+            }
+            throw new Error(`이 테스트는 예상치 못한 쿼리를 호출했습니다: ${statement}`);
+        },
+        getQueryInterface: () => ({
+            showAllTables: async () => existingTables,
+            dropTable: async () => { throw new Error('resetManagedData는 dropTable을 호출하면 안 됩니다'); },
+        }),
+        deleteCalls,
+        countQueries,
+    };
+};
+
+// 위의 SCHEMA는 economy/notifications/f19 인자를 생략해 **실제** 마이그레이션 모듈의 테이블
+// 이름까지 관리 목록에 넣는다(isolatedTestDb.js가 기본값으로 require한다). resetManagedData는
+// "관리 테이블이 전부 존재한다"를 요구하므로, 여기서는 그 확장 목록을 모두 빈 객체로 덮어
+// 스텁이 흉내낼 수 있는 최소 스키마만 남긴다.
+const EMPTY_TABLES = { TABLE_NAMES: {} };
+const DATA_SCHEMA = buildManagedSchema({
+    baseline: { TABLE_ORDER: ['users', 'user_sessions'] },
+    addRefreshTokenHistory: { TABLE_NAME: 'refresh_token_history' },
+    addSocialAuth: { TABLE_NAMES: { EXTERNAL_IDENTITIES: 'external_identities', OAUTH_STATES: 'oauth_states', SOCIAL_SIGNUP_INTENTS: 'social_signup_intents' } },
+    addEconomy: EMPTY_TABLES,
+    addEconomyPurchaseRequests: EMPTY_TABLES,
+    addVoteParticipations: EMPTY_TABLES,
+    addAchievementGrants: EMPTY_TABLES,
+    addNotifications: EMPTY_TABLES,
+    addF19FriendsInvites: EMPTY_TABLES,
+    migrationRunner: { META_TABLE: 'schema_migrations' },
+});
+
+const ALL_MANAGED = [...DATA_SCHEMA.managedTables];
+
+test('전용 DB가 아니면 resetManagedData가 DELETE를 전혀 실행하지 않는다', async () => {
+    const sequelize = makeDataStubSequelize({ connectedDatabaseName: 'irrelevant', existingTables: ALL_MANAGED });
+    await assert.rejects(
+        () => resetManagedData(sequelize, 'mysql://user:pass@127.0.0.1:3306/not-approved', DATA_SCHEMA),
+        /전용 테스트 DB 대상이 아닙니다/,
+    );
+    assert.deepEqual(sequelize.deleteCalls, []);
+});
+
+test('연결된 DB 이름이 URL과 다르면 resetManagedData가 DELETE를 전혀 실행하지 않는다', async () => {
+    const sequelize = makeDataStubSequelize({ connectedDatabaseName: 'mismatch', existingTables: ALL_MANAGED });
+    await assert.rejects(() => resetManagedData(sequelize, APPROVED_URL, DATA_SCHEMA), /실제 연결된 DB/);
+    assert.deepEqual(sequelize.deleteCalls, []);
+});
+
+test('관리 목록에 없는 미지의 테이블이 있으면 resetManagedData가 DELETE를 전혀 실행하지 않는다', async () => {
+    const sequelize = makeDataStubSequelize({
+        connectedDatabaseName: APPROVED_DB_NAME,
+        existingTables: [...ALL_MANAGED, 'some_unrelated_app_table'],
+    });
+    await assert.rejects(
+        () => resetManagedData(sequelize, APPROVED_URL, DATA_SCHEMA),
+        /관리 목록이 모르는 테이블이 있습니다.*some_unrelated_app_table/,
+    );
+    assert.deepEqual(sequelize.deleteCalls, []);
+});
+
+// 데이터만 비우는 경로는 "스키마가 이미 완전하다"를 전제로 한다. 하나라도 없으면 그 전제가
+// 깨진 것이므로 DELETE로 얼버무리지 않고 호출부에 전체 재구축을 되돌려 준다.
+test('관리 테이블이 하나라도 없으면 resetManagedData는 DELETE 없이 cleaned=false를 돌려준다', async () => {
+    const sequelize = makeDataStubSequelize({
+        connectedDatabaseName: APPROVED_DB_NAME,
+        existingTables: ALL_MANAGED.filter((table) => table !== 'oauth_states'),
+    });
+    const result = await resetManagedData(sequelize, APPROVED_URL, DATA_SCHEMA);
+    assert.equal(result.cleaned, false);
+    assert.deepEqual(result.missingTables, ['oauth_states']);
+    assert.deepEqual(sequelize.deleteCalls, []);
+});
+
+test('정상 경로에서는 keepTables를 뺀 모든 관리 테이블이 자식 → 부모 순서로 비워진다', async () => {
+    const sequelize = makeDataStubSequelize({
+        connectedDatabaseName: APPROVED_DB_NAME,
+        existingTables: ALL_MANAGED,
+    });
+    const result = await resetManagedData(sequelize, APPROVED_URL, { ...DATA_SCHEMA, keepTables: ['schema_migrations'] });
+
+    assert.equal(result.cleaned, true);
+    assert.deepEqual(sequelize.deleteCalls, [
+        'external_identities', 'oauth_states', 'social_signup_intents',
+        'refresh_token_history',
+        'user_sessions', 'users',
+    ]);
+    assert.ok(
+        !sequelize.deleteCalls.includes('schema_migrations'),
+        'keepTables로 지정한 이력 테이블은 비우지 않아야 한다',
+    );
+    // FOREIGN_KEY_CHECKS를 끄지 않고도 제약을 지킬 수 있는 근거가 이 순서다.
+    const usersIndex = sequelize.deleteCalls.indexOf('users');
+    for (const child of ['external_identities', 'oauth_states', 'social_signup_intents', 'refresh_token_history', 'user_sessions']) {
+        assert.ok(sequelize.deleteCalls.indexOf(child) < usersIndex, `${child}는 users보다 먼저 비워져야 합니다`);
+    }
+});
+
+test('식별자로 쓸 수 없는 테이블 이름은 DB 조회 이전에 거부된다', async () => {
+    const sequelize = {
+        query: async () => { throw new Error('이름 검사에서 이미 막혀야 합니다'); },
+        getQueryInterface: () => ({ showAllTables: async () => { throw new Error('이름 검사에서 이미 막혀야 합니다'); } }),
+    };
+    await assert.rejects(
+        () => resetManagedData(sequelize, APPROVED_URL, {
+            managedTables: ['users'], dropOrder: ['users; DROP DATABASE x'],
+        }),
+        /식별자로 쓸 수 없는 테이블 이름입니다/,
+    );
+});
+
+// ── findNonEmptyManagedTables: 케이스 간 데이터 누수 검사 ────────────────────────
+
+test('findNonEmptyManagedTables는 행이 남은 테이블만 한 번의 질의로 돌려준다', async () => {
+    const sequelize = makeDataStubSequelize({
+        connectedDatabaseName: APPROVED_DB_NAME,
+        rowCounts: { users: 2, user_sessions: 0 },
+    });
+    const nonEmpty = await findNonEmptyManagedTables(sequelize, ['users', 'user_sessions']);
+    assert.deepEqual(nonEmpty, [{ table: 'users', count: 2 }]);
+    assert.equal(sequelize.countQueries.length, 1, '테이블 수만큼 왕복하지 않아야 한다');
+});
+
+test('모든 테이블이 비어 있으면 findNonEmptyManagedTables는 빈 목록을 돌려준다', async () => {
+    const sequelize = makeDataStubSequelize({ connectedDatabaseName: APPROVED_DB_NAME });
+    assert.deepEqual(await findNonEmptyManagedTables(sequelize, ['users', 'user_sessions']), []);
 });

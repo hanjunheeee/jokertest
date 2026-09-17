@@ -19,7 +19,10 @@ export function useMatchingPage() {
   // 초대코드 공유 모달이 열려 있는지 표시합니다.
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
 
-  const { isInRoom, players, roomCode, hostUuid, canStart, clearRoom } = useMatchingStore()
+  // F-19(AC-01/AC-06): 대기방의 친구 패널이 초대를 보내려면 **검증된 방 식별자**가 필요하다.
+  // useMatchingPage는 지금까지 roomId를 노출하지 않았다 — matchingStore의 실제 값을 그대로
+  // 내보내고, isRoomVerified와 함께 패널에 넘긴다(검증 전에는 초대 발송이 비활성이다).
+  const { isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom } = useMatchingStore()
   const myUuid = useAuthStore((s) => s.user?.uuid)
   const isHost = isInRoom && myUuid === hostUuid
   // canStart는 서버가 계산해 store에 내려준 값을 그대로 쓴다(여기서 재계산하지 않음).
@@ -69,6 +72,8 @@ export function useMatchingPage() {
     openRoomCode: () => setRoomCodeOpen(true),
     closeRoomCode: () => setRoomCodeOpen(false),
     slots,
+    // 실제 방 식별자다(화면 표시용 displayRoomCode와 다르다) — 방에 들어가 있지 않으면 null.
+    roomId: isInRoom ? roomId : null,
     roomCode: displayRoomCode,
     partyCount: slots.length,
     isHost,

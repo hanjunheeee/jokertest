@@ -15,6 +15,7 @@
 | `friend-request-received` | `backend/controller/friend.controller.js::sendFriendRequest` | `friend-request:<requestId>:received` | `emitToUser(receiverId, …)` | `useFriendSocketEvents.js` |
 | `friend-request-accepted` | `…::acceptRequest` | `friend-request:<requestId>:accepted` | `emitToUser(requesterId, …)` | 같음 |
 | `friend-request-declined` | `…::declineRequest` | `friend-request:<requestId>:declined` | `emitToUser(requesterId, …)` | 같음 |
+| `game-invite` | `backend/service/gameInvite.service.js::createInvite`의 커밋 후 `emitInviteReceived` (F-19에서 추가) | `game-invite:<inviteId>:received` | `emitToUser(receiverId, 'game_invite_received', …)` | `useFriendSocketEvents.js::playGameInviteSfx` (커서 경계는 `gameInvite.store.js::consumeInviteSound`, 표시 설정은 **"게임 초대"**) |
 | `achievement-granted` | `backend/services/achievementService.js::notifyAchievementGranted` (각 commit 직후) | `achievement:<definitionId>:granted` | `emitToUser(userId, …)` | `useSfxRuntime.js`의 `achievement_granted` 구독 |
 | `room-ready-changed` | `backend/socket/matchmaking.js::handleSetReady` (실제 변경에만, revision 증분) | `room:<roomId>:ready:<uuid>:<revision>` | 방송(요청자 제외) + 요청자 ACK | `useMatchingRoom.js` `handlePlayerReadyChanged` / `setReady` 성공 ACK |
 | `game-started` | `backend/socket/matchmaking.js::handleStartGame`의 참가자별 `game_started` | `game:<gameId>:started` | 참가자 각자 | `useMatchingRoom.js` `handleGameStarted` |
@@ -40,7 +41,7 @@
 | 항목 | 담당 | 상태 |
 | --- | --- | --- |
 | 신규 시스템 알림 연결 | F-17 (SFX-DEFER-17=BB) | **미완료** — 실 DB 시험과 실제 외부 Chrome은 수행됐으나(아래 F-17 절), 브라우저에서 재현된 시각 결함의 보수분 재확인과 실제 청음이 남았다 |
-| 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | 미완료 |
+| 실제 게임 초대 | F-19 (SFX-DEFER-19=BD) | **미완료** — 격리 DB 공식 실행과 **실제 외부 Chrome 다중 계정 초대 흐름**이 이전 후보(`efb443d6`)에서 실제로 수행돼 통과했다(아래 F-19 검증 기록). 이 보수 후보의 재실행·해당 Chrome 재확인과 **실제 청음**이 남았다 |
 | 전체 개인 능력 영상 동기 · 승인 MOV 5개 내장음 실제 연결 | F-27 (SFX-DEFER-27=BL) | 미완료 |
 | 통합 인수 | F-28 (SFX-INTEGRATION-28=BN) | 미완료 |
 
@@ -230,3 +231,341 @@ F-16이 F-27에 제공하는 것은 `claimAudio(event, { mode: 'embedded' })` ·
 - 봉투에는 투표 대상·투표 내용·역할을 담지 않는다(AC-05).
 
 2026-09-13 operator update: corrected candidate ea9fbd2e actual external Chrome long-list/text3/text5/focus/Close recheck completed; see f17/browser-2026-09-13.md final section. Earlier corrected-layout pending statement is superseded for tested cases. SFX-DEFER-17 acceptance still awaits fresh normal independent reviews; F28 integration and audible unreviewed assets are not claimed complete.
+
+## F-19(SFX-DEFER-19) 이관 증거 — 실제 게임 초대
+
+**상태: 미완료.** 다만 남은 항목이 이전 기록보다 **좁아졌다**. 실제로 수행된 것은 둘이다:
+
+1. **격리 MySQL 공식 실행** — 운영자, 후보 `caf79fa1`에서 F-19 DB 26/26 PASS, 후보
+   `efb443d6`에서 **격리 MySQL 직렬 backend 전체 1639 PASS · 0 fail · 0 skip**(763361ms,
+   900초 상한 이내). 같은 후보의 frontend 1817 PASS·build PASS.
+2. **실제 외부 Chrome 다중 계정 초대 흐름** — 운영자, 2026-09-13 22:03–22:14 KST, 후보
+   `efb443d6`(`.pluto/monitor/BD-CHROME-EFB443D6.md`). 서로 다른 loopback origin의 두 실제
+   계정이 **같은** API·DB·소켓·방 권한을 쓰며 실제 클릭으로 초대 발송 → 수신 → 수락 →
+   양쪽 대기방 2인 일치 → 새로고침 복원 → 이탈 후 방장 1인, 즐겨찾기 지속, 종료된 발송
+   뒤 새 의도적 초대, 차단으로 대기 초대 무효화, 해제+새로고침 뒤 부활 0을 확인했다.
+
+아직 **남아 있는 것**은 셋이다:
+
+- **이 보수 후보의 재검증.** 위 두 기록은 모두 이번 CODEX-2 보수 **이전** 후보(`efb443d6`)의
+  것이다. 이번 후보의 격리 DB 직렬 실행과 해당 Chrome 흐름 재확인은 다시 필요하다.
+- **실제 청음.** 배포 manifest의 `game-invite`는 여전히 미검토라 매체를 하나도 만들지
+  않는다. 아래 "재생 1회"는 전부 시험 전용 fixture + 주입 매체 기록이고 청음 증거가 아니다.
+  Chrome에서 확인된 것은 배지·알림 수·화면 전이이며, **소리 1회·무음 복원·설정 off/on은
+  측정되지 않았다**(BD-CHROME-EFB443D6.md "Still not established").
+- **Chrome에서 아직 태우지 않은 경합** — 전체 수락 부분 실패, 가득 참·시작된 방 입장 경합,
+  계정 전환·새로고침을 가로지르는 응답 유실. 자동 회귀와 독립 심사가 대신하지 않는다.
+
+| 항목 | 값 |
+| --- | --- |
+| kind | `game-invite` (scope=account, notificationKey=`game-invite`) |
+| 생산자 | `backend/service/gameInvite.service.js::createInvite` — 커밋 **이후** `emitInviteReceived` |
+| 생산 권한 근거 | 전부 서버가 확인한다: 발송자의 현재 방 소속·방 인스턴스(matchmaking이 주입한 registry), 친구 관계, 양방향 차단 없음, 수신자 활성·수신 가능. 클라이언트가 보낸 방 코드·발송자·수신자는 권한 근거가 아니다(A-05) |
+| 멱등 키 | `UNIQUE(sender_id, creation_key)` — 같은 키 재시도는 기존 행을 돌려주고 `created=false`라 **어떤 사건도 재발행하지 않는다**. 같은 키에 다른 대상·방이면 409 충돌 |
+| 논리 발송 번호 | 키는 `${roomId}:${receiverId}:${n}`이고 `n`은 `gameInvite.store.js`가 소유한다. 결과를 확정하지 못한 재시도(네트워크·무응답)는 **같은 번호**, 서버가 결과를 답한 뒤(성공 또는 status 있는 거부)에만 다음 번호. 매 시도마다 난수 키를 쓰지 않는다 |
+| 중복 PENDING 방어 | 새 키로 다시 눌러도 같은 방 인스턴스에 살아 있는 PENDING이 있으면 `createInvite`가 그 행을 돌려준다(`created=false`) — 두 번째 알림·두 번째 소리가 생기지 않는다 |
+| 방 재확인 경계 | 발송자의 현재 방은 **정렬 계정 잠금 취득 직후**와 INSERT 직전에 각각 다시 읽는다. 트랜잭션 전 preflight 한 번은 권한 근거가 아니다(registry는 소켓 콜백이 동기적으로 바꾼다) |
+| 안정 사건 ID | `game-invite:<inviteId>:received` — 알림 `source_key`와 **같은 문자열** (`notification.service.js::gameInviteSourceKey`) |
+| 수신자 | `emitToUser(receiverId, 'game_invite_received', { invite, sfxEvent })` |
+| 프런트 수신 | `frontend/src/domains/lobby/hooks/useFriendSocketEvents.js` — 앱 전역 한 곳 |
+| 소리 판정 소유자 | `gameInvite.store.js::consumeInviteSound` **한 경계뿐** |
+| 최종 소비처 | `FriendListPanel.jsx` → `friendList/invite/GameInviteTab.jsx` (로비·대기방 **같은** 패널) |
+| 알림 경로 | 같은 트랜잭션의 `notifications` 행 → `/lobby?gameInviteId=<id>` → `useLobbyNotificationPanels` → `FriendListPanel targetInviteId` → 해당 행 강조. **자동 수락하지 않는다** |
+| 자산/무음 사유 | `sfxManifest.js`의 `pendingAsset` — `asset-unreviewed`, "자산 파일과 이용 조건 검토가 아직 제공되지 않았다" |
+| 복원 경계 | `loadSnapshot`은 authoritative하다 — snapshot에 없는 과거 PENDING은 목록에서 내리고(유령 초대 제거), 종료 이력과 커서 이후 신규는 남긴다. 복원 중 버퍼에 담긴 **커서 이후** 사건은 `soundCandidates`로 돌려받아 `useFriendSocketEvents`가 정확히 한 번 판정한다(사건을 재발행하지 않는다) |
+| 담당 상태 | **미완료** — 다중 계정 외부 Chrome 초대 흐름은 후보 `efb443d6`에서 **수행돼 통과했고**(BD-CHROME-EFB443D6.md), 이 보수 후보의 격리 DB 재실행·해당 Chrome 재확인·실제 청음(자산 미검토)이 남았다 |
+
+### review5 보수(이 후보에서 바뀐 것) — 아직 화면 재확인 전
+
+이 라운드에서 고친 것은 **네 가지**다. 전부 실패를 먼저 재현한 뒤 고쳤고, 재현 전/후 기록은
+`.pluto/progress.md`에 있다. **아래 어느 것도 앱 내 브라우저에서 다시 확인하지 않았다.**
+
+| # | 고친 것 | 화면에서 달라지는 것 |
+| --- | --- | --- |
+| 1 | `matchmaking.js` — 기한이 지나도 `phase='published'` 시도를 버리지 않고, publication 소유자 등록부로 되돌림 소유권을 확인한다 | 영수증 없는 입장이 "정상 소속"으로 보이지 않는다(pending 유지). 늦게 깨어난 옛 시도가 더 새로운 확정 소속을 지우거나 없는 이탈을 방송하지 않는다 |
+| 2 | `matchmaking.js` — 늦게 커밋된 수락 결정을 기다렸다가 보상한다 | 아무도 입장하지 않은 시도가 `ACCEPTED/UNCONFIRMED`로 굳지 않는다. 조건부 UPDATE는 그대로라 새 시도·확정 영수증은 덮지 않는다 |
+| 3 | `gameInvite.store.js` — 재조회(`restorePending`) 중 도착한 신규 초대의 **소리 봉투**를 보관한다 | 패널 열기·새로고침 도중에 온 진짜 신규 초대가 영원히 무음이 되지 않는다. 목록 반영은 그대로 즉시 |
+| 4 | `sfxManifest.js` · `notifications.store.js` — 게임 초대가 **"게임 초대"** 설정을 따른다 | 설정의 "게임 초대"를 끄면 실제로 조용해지고, "친구 초대"만 꺼도 게임 초대는 울린다 |
+| 6 | `gameInvite.store.js` — 같은 커서의 두 응답을 처리 가능 집합의 **교집합**으로 합친다 | 서버가 역순으로 읽어도 취소된 초대가 수락 버튼과 함께 되살아나지 않는다 |
+
+**#4의 화면 관찰 주의:** 배포 자산이 여전히 미검토라 `asset-unreviewed`가 설정보다 **먼저**
+판정된다. 그래서 앱 내 브라우저의 진단 계수(적격 1 · 청음 0 · `asset-unreviewed`)는 이 수정
+**전후가 같다**. 바뀐 것은 "어느 설정 항목이 이 소리를 지배하는가"이고, 그 독립성은 실제
+재생기 경로의 자동 회귀(`friendInviteRuntime.test.js`)가 확인한다. 설정 분기만 따로 눈으로
+보려면 자산 검토가 먼저 끝나야 한다 — 그 전까지 "게임 초대 off를 화면에서 확인했다"고 적지
+않는다.
+
+### 아직 재현하지 못한 심사 가설(이 워커의 한계)
+
+`review5`의 가설 **#5(차단 경합)**·**#7(0013 이관 순서)**은 **보호된 격리 MySQL이 있어야**
+재현된다. 이 작업본에는 `F01_TEST_DATABASE_URL`이 없어 DB 스위트 196건이 전부 skip이다 —
+**skip은 통과가 아니라 미검증이다.** 소스 판독 결과만 아래에 남기고, 증거 없이 제품 코드를
+바꾸지 않았다(상세·재현 절차는 `.pluto/progress.md`).
+
+### 소리 소유권(한 사건에 한 번)
+
+- 초대 알림의 `notification_created`에는 **sfxEvent를 싣지 않는다**(`emitNotificationCreated`는
+  시스템 알림에만 봉투를 붙인다). 그래서 `notification_created` → `game_invite_received`든
+  그 반대 순서든 신규 후보는 **한 번**이다.
+- 초대는 `useNotificationsStore.consumeSoundEvent`를 **쓰지 않는다.** 친구·업적과 달리 초대는
+  "커서 이하 = 과거"라는 서버 순번 판정이 필요하고 그 커서는 초대 store만 알고 있다 — 두
+  경계가 각자 판정하면 같은 inviteId에 소리가 두 번 난다.
+- 커서는 **종료된 초대까지 포함한** 수신자 전체 최대 `creation_seq`다. PENDING만의 최댓값을
+  쓰면 이미 끝난 과거 초대가 "커서 이후"로 보여 새 사건으로 오인된다.
+- snapshot과 생성이 **같은 수신자 User 행 잠금**을 공유하므로(A-09) "커서 이하인데 나중에
+  커밋되는" 사건이 존재하지 않는다.
+- 후보로 인정하는 순간 표식을 **소모**한다 — 알림 off·mute여도 그렇다. 그래야 설정을 다시
+  켰을 때 과거 사건이 울리지 않는다.
+
+### 소리를 만들지 **않는** 경로 (F-19)
+
+`GET /friends/invites`(snapshot 복원) · 복원 전 버퍼 병합 · 재접속 재동기화(`beginResync`) ·
+`game_invite_updated`(거절·만료·차단 취소·방 소멸) · `POST …/decline` · 수락 ACK ·
+`get_game_invite_result` 재조회 · **방 코드 입장(`room_joined`)** · 만료된 초대 ·
+다른 계정·다른 수신자의 사건 · 복원 실패 구간(실패는 해소가 아니다).
+
+### 입장은 소리와 무관하다(AC-07)
+
+`playGameInviteSfx`는 던지지 않고 재생 완료를 기다리지 않는다. 재생이 throw하거나 영원히
+pending이어도 수락 ACK·거절 ACK·상태 갱신·대기방 이동이 그대로 완료된다는 것을
+`friendInviteRuntime.test.js`가 실제 재생기와 실제 훅으로 확인한다.
+
+### 자동 시험
+
+| 파일 | 무엇을 |
+| --- | --- |
+| `frontend/src/domains/lobby/hooks/__tests__/friendInviteRuntime.test.js` (26건) | 실제 `useFriendSocketEvents`를 JSDOM에 마운트 + 실제 `createSfxPlayer` + 실제 invite store. 복원 보류·커서 경계·중복·역순 terminal·만료·계정 전환·off/mute 표식 소모·이동 단일 소유자·재생 실패/영구 대기·리스너 수명·`room_joined` 무관. 배포 manifest의 `game-invite` 미검토 무음과 **매체 생성 0**을 따로 확인 |
+| ↳ 2026-09-13 보수분 | **버퍼 drain을 사건 재발행 없이** 확인(복원이 끝나는 순간 커서 이후 버퍼 사건이 정확히 1회), snapshot이 취소된 과거 PENDING을 내리고 종료 이력·커서 이후 신규는 남김, ACK 유실 → 같은 시도 durable 결과 복구, 재조회 pending = 모름, 현재 소속 불일치·연결 교체 시 이동 0, 발송 멱등 키 전이 |
+| `frontend/src/domains/lobby/store/__tests__/friendStoreOrdering.test.js` (13건, 2026-09-13 신규) | 같은 계정 안의 조회/확정 변경 순서: 조회가 서버 확정 즐겨찾기를 덮지 않음, 오래된 목록 조회·실패가 최신 결과를 덮지 않음, 처리된 요청 부활 0, 공용 처리 잠금이 화면 교체에서 중복 처리 차단, 계정 전환 시 잠금·집계 초기화. **CODEX-2 보수분 3건**: 밀려난(superseded) 호출이 "지금 반영된 최신 사실"을 그대로 돌려준다 — 최신도 실패면 실패, 최신이 실패면 오래된 성공도 최신으로 주장하지 않음, 최신이 성공이면 오래된 실패를 성공으로 보고(대조군) |
+| `frontend/src/domains/lobby/hooks/__tests__/friendListSyncDeferred.test.js` (8건) | 실제 훅 마운트 + 실제 store. 단건/전체 수락의 A→B→A 소유 대조, 결과 조회 대기 중 계정 전환, 정상 해제. **CODEX-2 보수분 1건**: 전체 수락의 재조회가 더 최신 **실패**에 밀리면 재조회 오류를 그대로 안내(낡은 목록을 최신으로 안내하지 않음) |
+| `backend/socket/__tests__/matchmaking.gameInvite.test.js` (25건) | 예약·두 Map·실제 채널·영수증·정원·`canStart`/`start_game`·cleanup·canonical 교체·boot epoch·방 인스턴스·상태표 1·3·4·5·6. 2026-09-13 보수분: **JOIN_TIMEOUT 뒤 늦게 성공한 socket.join 정리**(유령 청취자 제거 / 더 새로운 확정 소속 보존 / 교체된 소켓 보존). **CODEX-2 보수분 1건**: 교체 소켓이 같은 방의 **확정 참가자**가 돼도 옛 소켓의 늦은 가입은 정리된다(`playerRoom`은 계정 값이라 "누구의 연결이 그 소속을 만들었는가"를 말해 주지 않는다) |
+| `backend/service/friend.service.test.js` | 2026-09-13 보수분: `unblockUser`가 정렬 계정 잠금 → 같은 트랜잭션의 owner 한정 삭제 순서로 동작하고, 해제 경로가 취소된 요청을 되살리는 쓰기를 하지 않음 |
+| `backend/tests/db/f19-friends-invites.integration.test.js` (31건) | **격리 MySQL 전용.** 0013 재실행 멱등·이력 1건, 거절→재신청→재거절 terminal 2행, 교차 PENDING 1건, 결과 조회 권한, 즐겨찾기 멱등·권한, 차단 양방향 거부·소유자 해제, 차단 무효화와 Friendship/즐겨찾기 보존, 초대 생성 멱등(행·알림·사건 각 1), 키 충돌, 커서, 만료 멱등, 거절 멱등, 수락 결정 ↔ 영수증 2단계, 차단 개입 INTERRUPTED, boot epoch, 방 소멸. 2026-09-13 보수분 4건: 잠금 취득 후 방 변경 시 생성 거부, 살아 있는 PENDING의 중복 초대·중복 알림·중복 소리 0, 차단↔초대 생성 경합, 차단↔해제 경합에서 부활 0 |
+
+### 검증 기록 (누가 · 언제 · 무엇을)
+
+| 주체 / 시점 | 대상 | 결과 |
+| --- | --- | --- |
+| 구현자(worker), BD F-19 세션(2026-09-13) | `npm test --prefix frontend` | **1790 PASS · 0 fail · 0 skip** (기준선 1772) |
+| 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 1.22s`) |
+| 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1412 PASS · 0 fail · 181 skip** (기준선 1385 PASS · 161 skip) |
+| 운영자(보호된 격리 MySQL), 후보 `caf79fa1` | F-19 DB 케이스 전체 | **26/26 PASS · 0 fail · 0 skip** (106615ms) — 이전 "미수행" 기록을 이 실측이 대체한다 |
+| 운영자 공식 VERIFY, 후보 `9ef9174f` | 격리 MySQL 직렬 backend 전체 | **1628 PASS · 0 fail · 0 skip** (882742ms, 900초 상한 이내) |
+| 구현자(worker), 교차 검토 보수 세션(2026-09-13) | `npm test --prefix frontend` | **1805 PASS · 0 fail · 0 skip** |
+| 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 1.34s`) |
+| 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1444 PASS · 0 fail · 192 skip** |
+| **운영자 공식 VERIFY, 후보 `efb443d6`** | 격리 MySQL 직렬 backend 전체 · frontend · build | backend **1639 PASS · 0 fail · 0 skip**(763361ms, 900초 상한 이내) · frontend **1817 PASS** · build **PASS** |
+| **운영자, 실제 외부 Chrome, 2026-09-13 22:03–22:14 KST, 후보 `efb443d6`** | 두 실제 계정(업적검증 / 초보검증), 같은 API 4183 · DB `pluto_f01_20260909_al` · 소켓 · 방 권한 | 초대 발송→수신→수락→**양쪽 대기방 2인 일치**, 새로고침 복원 2인, 이탈 후 방장 1인, 즐겨찾기 계정별 지속, 종료된 발송 뒤 새 의도적 초대 생성, 차단으로 대기 초대 무효화, 해제+새로고침 뒤 부활 0 — `.pluto/monitor/BD-CHROME-EFB443D6.md` |
+| 구현자(worker), CODEX-2 보수 세션(2026-09-13) | `npm test --prefix frontend` | **1824 PASS · 0 fail · 0 skip**(직전 1817 → 보수 회귀 7건 추가) |
+| 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 2.23s`) |
+| 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1445 PASS · 0 fail · 195 skip** |
+| 구현자(worker), 같은 세션 | 변이 검사 5건(고친 줄을 되돌려 봄) | 보수 회귀 5건이 각각 **실패** — superseded 의미·snapshot 지식·snapshot 순번·수락 잠금 범위·늦은 가입 소유 대조를 실제로 잡는다 |
+| 구현자(worker), RESULT-3 보수 세션(2026-09-14) | `npm test --prefix frontend` | **1845 PASS · 0 fail · 0 skip**(직전 1824 → 보수 회귀 + 진단 시험 21건 추가) |
+| 구현자(worker), 같은 세션 | `npm run build --prefix frontend` | **PASS** (`✓ built in 2.43s`) |
+| 구현자(worker), 같은 세션 | `npm test --prefix backend` | **1445 PASS · 0 fail · 196 skip** — skip 196에는 이번에 추가한 F-19 DB 회귀 1건이 포함되며 **미검증**이다 |
+| 운영자 / VERIFY | **이 보수 후보**의 격리 DB 직렬 backend · 위 Chrome 흐름 재확인 | **남아 있음** — 위 운영자 PASS·Chrome은 이 보수 **이전** 후보(`efb443d6`)의 것이라 이 후보의 근거가 아니다 |
+
+- worker의 `npm test --prefix backend` skip 195건은 `F01_TEST_DATABASE_URL`이 없어서다
+  (기존 + F-19 31). **skip은 통과가 아니라 미검증이다.**
+- **실제 Chrome에서 이미 확인된 것**(운영자 관측): 위 `efb443d6` 초대 흐름 전부, 그리고
+  `BD-CHROME-QA-20260913.md` · `BD-CHROME-REPAIR-FINDINGS.md` · `BD-CHROME-470f704a.md`의
+  친구 신청·수락, 오프라인 행 표시, 즐겨찾기 저장 후 새로고침·재로그인 복원, 대기방에서
+  같은 즐겨찾기 공유, 마우스 조작·차단 진입 보수 확인.
+- **실제 Chrome에서 발견된 결함과 이번 보수**: 대기방 친구 버튼이 사운드 볼륨 슬라이더
+  (`aria-label="배경음 볼륨"`)에 덮여 마우스로 눌리지 않았다 →
+  `MatchingPageControls`에 우측 조작 슬롯을 만들어 로비와 같은 한 열로 합쳤다(겹침 제거,
+  사운드는 그대로). 받은 요청의 거절·차단이 같은 이미지였다 → 거절은 취소/부정 버튼
+  자산으로 분리하고 둘 다 설명(title)을 붙였다. 이미 친구인 사람의 차단 진입이 없었다 →
+  `FriendListRow`에 차단 버튼을 추가해 폴더·즐겨찾기·검색 결과 모든 목록에 연결했다.
+  **이 세 보수의 브라우저 재확인은 `BD-CHROME-470f704a.md`에서 수행돼 통과했다.**
+- 실제 외부 Chrome의 다중 계정 초대 흐름(A 대기방 생성 → 친구 B 초대 수신 → 수락 → 실제
+  참가자 일치, 새로고침 복원, 이탈, 차단·해제)은 후보 `efb443d6`에서 **수행돼 통과했다**.
+  아직 Chrome에서 태우지 않은 것은 **거절·만료·가득 참·방 삭제/시작·연결 끊김·off/mute와
+  전체 수락 부분 실패**다.
+- 모의 재생을 청음으로 기록하지 않는다. 배포 manifest의 `game-invite`는 여전히 미검토라
+  실제 청음 자체가 불가능하다(무음 + 사유 유지가 계약). Chrome에서 본 배지·알림 수 변화는
+  **소리 증거가 아니다** — 소리 1회·무음 복원·설정 off/on은 측정되지 않았다.
+
+
+## Operator current-production-candidate rerun
+
+# F19 review 2 repair — actual external Chrome
+
+2026-09-13 22:50–22:59 KST. Production candidate b28309067a48884bb41feda436be55711bd625ad. Operator personally drove external Chrome using the supported Chrome browser-client. No browser-store injection, fake participant insertion, mocked business response, or source alteration.
+
+## Environment and measured precondition
+
+- Existing implementation finished and official scope gate was idle before QA.
+- Protected actual MySQL F19 integration file: 31 PASS, 0 FAIL, 0 SKIP, 30012.0725ms. Complete output BD-db-suite-review2-console.log.
+- Actual BD API4183 and QA-only second-origin proxy4184, UI5183. Both real accounts use the SAME backend, DB, sockets and room state. Isolated DB is pluto_f01_20260909_al only.
+- API38744 and UI28724 were started for this run and stopped after checking their exact script command lines. DB test finished before API startup; no concurrent worker/full verification/DB QA.
+
+## Personally observed actual UI
+
+1. Normal login via email/password input for veteran (업적검증) on 127.0.0.1 and rookie (초보검증) on localhost. Both distinct account names shown simultaneously.
+2. Host searched the other account using the friend-add screen and sent a real friend request. Guest used **전부 수락**. Result **1건 수락**, incoming list empty; host friendship appeared. This covers the successful bulk path, not forced newer-fetch failure.
+3. Host created a default room through game mode → room list → settings → create. Actual party count was 1. Waiting-room friend control responded to real mouse clicks.
+4. Host sent a real game invite. Guest's already-open invite panel received exactly one actionable row with sender 업적검증 and badge 1. Guest clicked accept. Both actual pages settled at **파티 인원 2명**, host had delete and guest had leave. Screenshot personally inspected: two actual visible player portraits and count 2.
+5. Guest navigated to the same current game-matching URL to perform a full page reload. Actual settled room restored 2. Guest then left: public list showed host room 1/10 and host showed party1.
+6. Host sent a new intentional invite after completed acceptance/leave. Guest saw badge1, then blocked host through the existing-friend row. Pending badge disappeared and visible friend count became0.
+7. Guest unblocked host from the block list. Game invite list remained empty. Guest full reloaded, logged-in account restored normally, then reopened invites: **받은 게임 초대가 없습니다.** Host reopened friend panel and after the real refresh settled, friendship returned1/1.
+8. A new intentional send after unblock produced one new actionable row; old cancelled invite did not reappear. Guest clicked decline: no room navigation, no pending badge/accept button, terminal message **이미 거절한 초대입니다.**
+9. Host sent another new invite; guest saw badge1 and one actionable row. Host deleted the QA room through actual UI. Public room list emptied, guest pending badge/accept button disappeared, terminal message **더 이상 유효하지 않은 초대입니다.**
+
+## Limits and observed presentation detail
+
+- The terminal rows after decline/delete display **알 수 없는 사용자** instead of preserving the previously shown sender name. Actionability and terminal status were correct. Record for independent review; do not describe sender-name persistence as passed.
+- This run does not simulate delayed old PENDING delivery, competing HTTP failures, deferred ACK/replaced socket race, full-capacity/start race, cross-account lost response, or TTL expiry in actual Chrome. Their controlled regressions and independent review remain separate evidence.
+- Audible SFX once/off/restore remains unmeasured; production game-invite asset is intentionally unreviewed/muted. Badge changes and screen transitions are not audio evidence. No mute-policy exception introduced.
+- Current-candidate full serial 900sec backend/frontend/build and both independent verdicts remain required. Previous efb443d6 full1639 PASS cannot be claimed as this candidate's full PASS.
+
+
+## RESULT-3 보수 — AC-07 소리 증거를 실제로 셀 수 있게 하는 QA 진단
+
+배포 `game-invite` 자산은 여전히 **미검토**라 실제 청음이 불가능하다. 그래서 운영자가 귀로
+"신규 1회 / 복원 0회"를 셀 수 없었고, 화면에도 그 판정이 드러나지 않아 AC-07의 남은 증거를
+만들 방법 자체가 없었다. 이번에 **읽기 전용 관찰 화면**을 추가해 그 병목을 푼다.
+
+### 무엇인가 (그리고 무엇이 아닌가)
+
+| 항목 | 값 |
+| --- | --- |
+| 모듈 | `frontend/src/domains/lobby/diagnostics/inviteSfxDiagnostics.js` |
+| 화면 | `frontend/src/domains/lobby/components/friendList/diagnostics/InviteSfxDiagnosticsPanel.jsx` (친구 패널 안쪽, 모든 탭에서 보임) |
+| 켜지는 조건 | **개발 번들**(`import.meta.env.DEV`) **그리고** URL에 `?qaInviteSfx=1` — 둘 다여야 한다 |
+| 관찰 지점 | `useFriendSocketEvents.js::playGameInviteSfx` — 이미 내려진 판정을 옮겨 적을 뿐이다 |
+| 보여주는 것 | 수신 건수 · **적격 판정(dispatch 시도)** · **실제 청음(played)** · 무음 사유별 집계 · 최근 관찰 목록(초대 id·사유) |
+
+**하지 않는 것(계약):** 초대를 만들거나 사건을 합성하지 않는다 · store를 바꾸지 않는다(소리
+표식도 소모하지 않는다) · `Audio`를 대체하지 않는다 · 자산을 승인하지 않는다 · 인증을
+우회하지 않는다 · 토큰·비밀값을 담지 않는다 · 판정 게이트 순서를 증거를 위해 바꾸지 않는다.
+기록이 실패해도 수락·거절·입장으로 전파되지 않는다(전부 try로 감싸고, 꺼져 있으면 기록할
+값을 만들지도 않는다).
+
+**적격 판정과 실제 청음을 절대 합산하지 않는다.** `sfxPlayer` 계약상 `status: accepted`는
+"재생 시도를 시작했다"일 뿐이고 실제 결과는 `completion`(played|failed|timed-out|stopped)이
+말한다. 지금처럼 자산이 미검토면 dispatch가 매체를 만들기 전에 `asset-unreviewed`로 거부하므로
+**적격 1 · 청음 0 · 사유 `asset-unreviewed`** 가 정상이고, 이것을 1회 청음으로 적지 않는다.
+
+계정이 바뀌거나 로그아웃하면 관찰을 통째로 버린다. 현재 계정 밖의 관찰은 "다른 계정"이라는
+사실만 남기고 초대 id·사건 id를 담지 않는다. 보관 상한은 40건이다.
+
+### 운영자 Chrome 절차 (실제 두 계정)
+
+두 계정 모두 같은 백엔드·DB·소켓을 쓰고, 수신자 쪽 탭만 `?qaInviteSfx=1`을 붙여 연다
+(예: `http://127.0.0.1:5183/lobby?qaInviteSfx=1`). 친구 패널을 열면 아래쪽에
+**"QA 진단 · 읽기 전용"** 상자가 보인다. 개발 서버가 아니면 나타나지 않는다.
+
+1. **신규 수신 1회** — 발신 계정이 대기방에서 초대를 보낸다. 수신 탭에서 `수신 +1`,
+   `적격 판정 +1`, `재생 완료 0`, 사유 `asset-unreviewed +1`을 확인한다.
+   → 미검토 자산이므로 **소리는 나지 않는 것이 정상**이다. 들렸다고 적지 않는다.
+2. **복원 0회** — 수신 탭을 새로고침(또는 연결을 끊었다 잇는다). 목록에는 그 초대가 다시
+   보이지만 `적격 판정`은 **0**이어야 한다(새로고침으로 기록이 비워지므로 0에서 시작한다).
+   같은 초대를 다시 배달받아도 사유가 `already-consumed` 또는 `at-or-below-cursor`로 남고
+   적격 판정은 늘지 않는다.
+3. **off/mute** — 설정에서 해당 알림을 끄거나 음소거한 뒤 **새 초대**를 받는다. 적격 판정은
+   1회 그대로이고 사유는 자산 미검토가 먼저 기록된다(자산 제한이 설정보다 앞선다). 설정을
+   다시 켜도 **과거 초대가 다시 적격이 되지 않는다**.
+4. **계정 전환** — 다른 계정으로 로그인하면 진단 상자의 관찰이 즉시 비고 관찰 계정이 바뀐다.
+5. **업무 경로 불변** — 위 전 과정에서 수락·거절·입장이 평소와 똑같이 동작하는지 확인한다.
+   진단은 어떤 버튼도 막지 않는다.
+
+기록할 것: 각 단계의 `수신 / 적격 판정 / 재생 완료` 세 수와 사유 집계, 서버의 inviteId와의
+대응. **청음은 자산 검토가 제공되기 전까지 외부 자산 한계로 남는다** — 진단이 보여주는
+`재생 완료 0`은 그 한계의 증거이지 결함이 아니다.
+
+### 자동 시험
+
+| 파일 | 무엇을 |
+| --- | --- |
+| `frontend/src/domains/lobby/diagnostics/__tests__/inviteSfxDiagnostics.test.js` (9건, 신규) | production 번들 제외(표식이 있어도 꺼짐) · 표식 없으면 기록 값 생성 자체가 0 · 개발+표식일 때만 켜짐 · 계정 전환/로그아웃 시 관찰 폐기 · 범위 밖 관찰의 식별자 제거 · 적격≠청음 · 사유 집계 보존 · 기록/구독자 예외가 호출자로 전파되지 않음 · 상한과 스냅샷 참조 안정성 |
+| `frontend/src/domains/lobby/hooks/__tests__/friendInviteRuntime.test.js` (신규 2건) | **배포 manifest 그대로** 실제 훅·store·재생기를 태워 `적격 1 · 청음 0 · asset-unreviewed 1`을 확인, 중복 전달은 `already-consumed`로 적격 0, 커서 이하는 `at-or-below-cursor`, 진단을 켠 채로 거절 ACK가 정상 완료. 진단이 꺼져 있으면 관찰 0이고 초대 처리는 동일 |
+
+### 같은 라운드의 경합 보수 (RESULT-3 1~4)
+
+| # | 대상 | 고친 것 | 회귀 |
+| --- | --- | --- | --- |
+| 1 | `backend/service/gameInvite.service.js::recordEntryInterrupted` | 읽고-확인-쓰기를 **조건부 UPDATE 한 문장**으로 합쳤다(`id`+`attempt_id`+`entry_outcome='UNCONFIRMED'`). 확정 커밋과 겹쳐도 PUBLISHED를 덮지 않고, 교체된 attempt도 건드리지 않는다 | `f19-friends-invites.integration.test.js` — 열린 트랜잭션으로 경합 창을 만들어 재현 + 정상 보상·멱등·attempt 교체 대조군 |
+| 2 | `friend.store.js::setFavorite` / `fetchFavorites` | 한 명의 확정 저장이 즐겨찾기 **목록 전체**의 순번을 올리던 것을 멈추고, 조회 결과와 한 명 단위 확정을 화해시킨다 — 다른 친구들의 저장된 별을 잃지 않는다 | `friendStoreOrdering.test.js` 신규 3건(두 친구 + 지연 최초 조회, 해제 확정, 나중 조회 대조군) |
+| 3 | `friend.store.js::removeIncomingRequest` | 한 행의 제거를 "전체 조회 성공"으로 기록하던 `bumpSeq`를 제거 표식으로 바꿨다 — 겹쳐 실패한 재조회가 성공으로 보고되지 않는다 | `friendStoreOrdering.test.js` 신규 3건(실패 재조회 안내 유지 / 성공 재조회 보고 유지 / 제거 뒤 조회 대조군) |
+| 4 | `gameInvite.store.js::loadSnapshot` | 순서 기준을 요청 **시작 순서**에서 서버가 확정한 **커서**로 바꿨다. 뒤처진 응답은 커서·지식을 되돌리지 않으면서 복원 보류는 해소하고, catch 경로도 더 새로운 성공을 오류로 덮지 않는다 | `friendInviteRuntime.test.js` 신규 3건(역전된 서버 읽기 순서 / 뒤처진 응답 후 신규 1회 / 오래된 실패가 최신 성공을 덮지 않음) |
+
+
+
+### Operator follow-up before review (2026-09-14)
+
+The diagnostic UI label is 재생 완료, a player completion report, never proof of audible output. Physical audibility remains unmeasured. Protected F19 DB on acf13e2c:32PASS0FAIL0SKIP29067.177ms. Operator found beginResync resets snapshotLoaded while preserving cursor50; a later snapshot20 must not roll it back. Added a mounted runtime regression that fails before the monotonic-cursor repair, then checks no old invitation revival and one new eligible dispatch. No live Chrome observation is claimed: the supported Chrome transport remains unavailable despite valid extension/native host and documented reconnect.
+
+
+## Latest operator UI evidence — user-authorized in-app browser
+
+# F19 current candidate — actual in-app browser verification
+
+2026-09-14 KST. Production candidate `cd33c9051314efd48b6ea2a8cabc0efc2ca58d50`.
+
+The user explicitly changed the browser requirement in this task: “아아 그냥 챗gpt앱에서 열어서 체크하라고”. This run uses the supported Codex/ChatGPT in-app browser, not external Chrome. It is actual interactive UI evidence on the current production candidate, not a mock or a claim that Chrome transport recovered.
+
+## Environment
+
+- Existing batch unchanged: batch-0ea6f89b-9d6d-4a1d-a3ca-432c303afdcb, 18/32 completed, BD idle VERIFY/error R-SCOPE before QA.
+- Existing Pluto daemon preserved, PID27316/9500. No new daemon, batch, automation, or review model changes.
+- Existing bd-browser-server.cjs and bd-two-origin-vite.mjs: actual BD API4183, localhost proxy4184, Vite5183. Two independent hostnames share the same unmodified backend, sockets, and protected MySQL database `pluto_f01_20260909_al`.
+- Normal email/password login through the actual UI for the existing isolated veteran and rookie QA accounts. No browser state injection, synthetic invite, mocked business response, Audio replacement, authentication alteration, or asset approval.
+- No schema reset. API fixture startup only uses its existing isolated QA account initialization. No simultaneous implementation/full DB test. QA process identity and shutdown are recorded separately.
+- Raw observed DOM checkpoints: `.pluto/monitor/BD-IAB-20260914-DOM.json` in the main project.
+
+## Actual observations
+
+1. Both accounts were visibly signed in as 업적검증 and 초보검증. Host searched by nickname and Enter, sent a real friend request; receiver used 전부 수락. Settled result: **1건 수락**, no remaining friend requests.
+2. Host created a real default room. Waiting-room friend button opened normally; actual initial party count1, friend row online, real game invite button actionable.
+3. New invitation `f097a45a-ee82-44d5-b8b5-c2a1659e1333`: receiver diagnostics **received1 / eligible1 / player-completed0**, `asset-unreviewed ×1`. The actual invitation had accept/decline controls.
+4. Receiver full reload: old pending invitation restored with accept/decline controls, diagnostics **0/0/0**. No old eligible dispatch. Receiver declined it normally.
+5. Receiver unchecked **게임 초대** in General settings; unchecked state independently observed again on returning to settings. A new actual invitation `c4fe792d-75ba-43eb-8ec9-cf1ee792819a` yielded **1/1/0**, asset-unreviewed1. This is the current contract: asset approval is checked before settings. Rechecking 게임 초대 and browser Back to the existing flagged lobby preserved the same observation and **1/1/0**, without another dispatch of the old invitation. Decline completed normally.
+6. Receiver checked **효과음 음소거** in Sound settings. Browser Back retained the same document/runtime. New invitation `c669adae-10d7-4902-9d68-ad32bb9e9785` advanced cumulative diagnostics to **2/2/0**, asset-unreviewed2. The checked mute setting was observed again before unchecking it. Browser Back after unmute retained **2/2/0** and the same two invite IDs; no old replay.
+7. Receiver accepted the actionable invitation. Both actual pages settled at **파티 인원 2명**. Screenshot visually inspected: two player portraits and 2 participants. Receiver full reload restored2; clicking 방 나가기 restored the host to1 and public room list to1/10.
+8. New invitation `c0ee25a8-1489-4049-90ef-118e594f9a21` received normally. Receiver blocked host using the friend row; settled block list showed host and pending badge disappeared. Unblock then full reload showed **받은 게임 초대가 없습니다**, diagnostics0/0/0. Host reopened friends: friendship preserved1/1.
+9. Fresh invitation after unblock `cf418cc9-cba3-45d7-b3e1-3ddaa54b4f99` yielded1/1/0 and one pending row. Host deleted the disposable QA room through UI. Room list emptied; receiver accept/decline controls disappeared and terminal text became **더 이상 유효하지 않은 초대입니다**.
+10. Receiver normally logged out and signed into the other existing QA account in the same tab. Reopening the flagged diagnostic URL showed account suffix changed from …291027 to …11ef7b, **0/0/0** and no previous invite IDs. This includes a full document navigation to restore the diagnostic flag; it does not independently measure the immediate hidden reset timing during logout. Automated account-reset regressions remain separate evidence.
+
+## Boundaries and encountered UI state
+
+- Physical audibility is unmeasured. The shipped game-invite asset remains unreviewed and silent. Eligible dispatch and player completion are never claimed as one audible play. Off/mute observations do not isolate a settings-specific suppression branch because asset-unreviewed has precedence.
+- Turning settings on/off via ordinary Settings → back button drops the QA URL flag. For the paired off/on and mute/unmute measurements, browser Back restored the prior flagged SPA entry and preserved the counters. The initial off run was started after reopening the QA URL; its baseline was zero.
+- Switching the receiver tab into the account still open on the host caused an alert in the earlier host tab. During that alert, receiver friend-control actions produced no visible change. The supported getJsDialog/dismiss API closed the actual host alert; receiver panel then opened normally. No source was altered, and this is not recorded as an application-code repair or a proven root cause beyond the observed association.
+- Terminal cancelled/declined invitation rows still display **알 수 없는 사용자**, already noted in previous reviews. Pending sender names were correct. No sender-name persistence PASS is claimed.
+- Controlled delayed-response races, instant hidden logout reset, full-capacity/start/expiry races, and physical audio are not newly asserted as browser observations. Existing focused/whole-suite regressions and independent review remain the evidence for those boundaries.
+- Operator automatic results on this production candidate already recorded: frontend1846PASS/0FAIL/0SKIP; buildPASS; protected F19 DB32PASS/0FAIL/0SKIP; full protected backend1641PASS/0FAIL/0SKIP697985.6092ms. They do not replace normal official gates or either independent review.
+
+Next: stop the exact QA processes, attach this evidence with the prior 62-file scope audit, request official rescope, and let normal verification and both independent reviewers decide. No manual PASS, requirement weakening, or merge override.
+
+
+
+## Review5 operator SQL evidence (2026-09-14)
+
+Current worker base ddd01ccc; operator reproduced a real MySQL REPEATABLE READ block race: initial consistent read, block committed by another transaction, then finalizer account locks. Before fix: focused SQL32PASS1FAIL; SHARE current reads for decision/finalization restore latest block visibility. A separate decision-path regression preserves CANCELLED without assigning attempt_id.
+
+Legacy migration reproduction with existing reverse-direction CANCELLED plus crossing PENDING rows failed in cancelDuplicatePendingRequests with SequelizeUniqueConstraintError (33PASS1FAIL). Preserve FK support, remove old status UNIQUE before cancellation normalization, then add pending-pair UNIQUE. After fix, all three historical rows survive and direct migration rerun succeeds. Initial fixture nickname collision was excluded from defect evidence.
+
+Protected F19 SQL now35PASS0FAIL0SKIP; migration unit20PASS0FAIL0SKIP. Logs in main .pluto/monitor/BD-db-review5-{reproduction,current-read,migration-before2,migration-after,final}.log and BD-migration-unit-review5.log. Normal full tests and both independent reviews remain required. Earlier IAB evidence belongs to the previous candidate; changed UI flows require new operator verification. Physical audibility remains unmeasured; asset remains unreviewed and silent.
+
+
+## Latest current-candidate UI evidence after review5 repairs
+
+# Current F19 operator in-app UI evidence, 2026-09-14
+
+Product candidate: e089dcdc6e41705a358745a5339179783d00b575. Actual observations collected 13:53–14:07 KST, raw DOM: BD-IAB-REVIEW5-DOM.json. User explicitly authorized the in-app browser in place of external Chrome. Two existing QA accounts were used through ordinary UI against the protected test database. Old error tabs were retained; new supported in-app tabs 3/4 connected successfully. All tabs retained and marked handoff.
+
+- Login both accounts, search nickname, send friend request, bulk accept: 1 accepted.
+- Host created waiting room, party 1, waiting-room friend invite button visible. New invite deb5aeab-f4ac-4050-947a-ff01090081e4: received 1, eligible 1, player completion 0, asset-unreviewed. Reload restored pending invite with 0/0/0, no old sound eligibility.
+- Turned game-invite notification OFF while friend-invite remained ON; persisted after navigation. New measured invite 1e091b35-5ae6-43a7-9a81-c9bba3ae668b still appears in game invitations, diagnostic 1/1/0 asset-unreviewed. Re-enabled game notifications then browser Back: same invite and counters 1/1/0, no replay.
+- Accepted invite: BOTH accounts show party 2; guest reload still party 2. Guest left: host party 1, public list 1/10.
+- Effect sound mute ON. New invite 28e95410-0c74-4352-9d85-1ccf391e00e1: 1/1/0 asset-unreviewed. Unmute then browser Back: same 1/1/0, no replay.
+- Block sender while invite pending: no received invitations. Unblock and reload: still no invitations, counters 0/0/0. Host's already-open friend list remained empty after unblock; host reload restored friend and invite button. Preserve this freshness observation for independent review.
+- New invite after unblock 306da67c-fa02-4563-81e9-68a6d55c5faa appeared with accept button. Deleting the QA room removed accept/decline controls and displayed invalid invitation. Terminal sender is shown as unknown; preserve presentation observation.
+- Guest logged out and logged in as the other QA account; reopening diagnostic URL showed changed account suffix b884db and 0/0/0 with no invitations. This measures state AFTER navigation, not immediate hidden reset timing.
+
+## Explicit limits
+
+Physical audibility was not measured. Assets remain unreviewed and silent. Asset guard runs before preference suppression, so these UI observations do NOT establish which settings-specific audio branch would suppress an approved asset. Eligibility/player completion are not listening evidence. Same-cursor snapshot races, delayed transaction compensation and ownership races are covered by actual automated regressions, not claimed as deterministic UI reproductions. Menu clicks immediately after closing a panel sometimes required a later click after the panel transition; no root cause asserted. QA diagnostic query is lost by ordinary Back button routing; browser Back preserved it in the measured re-enable/unmute cases.
+
+Protected SQL35 PASS/0FAIL/0SKIP and migration unit20 PASS are current-candidate focused checks. Worker frontend1852 PASS/build PASS predate the operator SQL-only changes. Worker backend1449 PASS/196 SKIP is NOT a full database PASS. Fresh official full tests and both independent reviews remain required. No acceptance relaxation or manual verdict override is requested.

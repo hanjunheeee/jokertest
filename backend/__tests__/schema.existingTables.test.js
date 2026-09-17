@@ -213,6 +213,11 @@ const NEW_MODELS = [
     // 테이블이며 users에 컬럼을 추가하지 않는다(아래 "신규 관계는 users에 컬럼을 만들지
     // 않는다" 시험이 그 경계를 계속 지킨다).
     'Notification',
+    // F-19: 즐겨찾기·차단·게임 초대(0013-f19-friends-invites 마이그레이션). 셋 다 users를
+    // 참조하는 자식 테이블이며 users에도 friendships/friend_requests에도 컬럼을 추가하지
+    // 않는다 — friend_requests에 늘어난 것은 status에서 파생되는 generated 컬럼 하나뿐이고
+    // 그것은 모델이 아니라 마이그레이션이 소유한다.
+    'FriendFavorite', 'FriendBlock', 'GameInvite',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {

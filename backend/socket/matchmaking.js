@@ -9,6 +9,21 @@ const {
     validateCreateRoomRoleComposition,
     resolveRoleComposition,
 } = require('../game-core/roleComposition')
+// F-19(AC-06): 초대의 SQL 결정(수락 선형화·영수증)은 이 서비스가 소유하고, 방 registry와
+// 실제 입장은 이 파일이 소유한다. require 방향은 matchmaking → service 한쪽뿐이라
+// 순환이 생기지 않는다(서비스는 아래 __setRoomAccessForRuntime으로 registry를 주입받는다).
+const gameInviteModule = require('../service/gameInvite.service')
+
+// userRepositoryRef·economyServiceRef와 **같은 이유**의 최소 의존성 주입이다: 초대 서비스는
+// 호출 시 실제 MySQL 트랜잭션을 열므로, DB 없이 입장 상태 기계(예약·publication·영수증·
+// timeout·무효화)를 결정적으로 재현하려면 이 참조를 교체할 수 있어야 한다.
+// 런타임에는 항상 실제 모듈을 쓴다.
+let gameInviteService = gameInviteModule
+
+/** 테스트 전용: gameInvite 서비스 구현을 교체합니다. 인자 없이 호출하면 실제 모듈로 되돌립니다. */
+function __setGameInviteServiceForTests(fakeService) {
+    gameInviteService = fakeService ?? gameInviteModule
+}
 
 // 테스트에서 실제 DB 모듈 대신 교체할 수 있도록 참조를 변수로 감싼다.
 // node:test의 mock.module()을 시도했으나 이 프로젝트에서는 user.repositories가
@@ -85,7 +100,316 @@ const playerRoom = new Map()
 // create_room과 join_room_by_code가 함께 쓰는 "방 전환 처리 중" 잠금이다. 생성 전용으로
 // 좁게 두지 않고 두 작업이 공유해야, 같은 사용자가 두 요청을 동시에 보내도(예: 다른 탭에서
 // 만들기와 코드 참가를 동시에 시도) 한쪽만 통과시킬 수 있다.
-const pendingRoomTransitions = new Set()
+//
+// F-19(AC-06): Set에서 uuid→소유 token Map으로 바꿨다. 예전에는 오래 걸린 요청의 finally가
+// `delete(uuid)`만 해서, 그 사이에 시작된 **새** 요청의 잠금까지 풀어 버릴 수 있었다.
+// 이제 해제는 자기 token이 아직 걸려 있을 때만 일어난다.
+const pendingRoomTransitions = new Map()
+
+let roomTransitionTokenSeq = 0
+
+/** 잠금을 잡는다. 이미 다른 요청이 잡고 있으면 null. 반드시 첫 await 이전 동기 구간에서 부른다. */
+function acquireRoomTransition(uuid) {
+    if (pendingRoomTransitions.has(uuid)) return null
+    roomTransitionTokenSeq += 1
+    const token = `rt-${roomTransitionTokenSeq}`
+    pendingRoomTransitions.set(uuid, token)
+    return token
+}
+
+/** 자기 token일 때만 해제한다 — 늦게 끝난 옛 요청이 새 요청의 잠금을 풀지 못하게 한다. */
+function releaseRoomTransition(uuid, token) {
+    if (pendingRoomTransitions.get(uuid) === token) pendingRoomTransitions.delete(uuid)
+}
+
+// ── F-19 AC-06: 초대 입장 예약(private admission reservation) ────────────────
+//
+// 이 프로세스 기동을 식별한다. 재시작하면 값이 달라지므로, 옛 boot에서 만들어진 초대의
+// 입장 재실행이 허용되지 않는다(A-11). 서버는 방을 영속 복원하지 않으므로 "같은 문자열
+// 방 코드"를 과거 방 인스턴스로 인정할 근거도 없다.
+const BOOT_EPOCH = crypto.randomUUID()
+
+/**
+ * uuid → {
+ *   attemptId, roomId, room(참조), roomInstanceId, bootEpoch, generation,
+ *   socketId, inviteId, phase: 'reserved' | 'published', expiresAt
+ * }
+ *
+ * 한 계정은 동시에 하나의 시도만 가진다. 두 국면을 **같은 Map**으로 다루는 이유는 둘 다
+ * "아직 확정되지 않은 입장"이라는 하나의 사실이기 때문이다:
+ *
+ *   phase='reserved'  — SQL 수락 결정 중. room.players/playerRoom/실제 방송 room 어디에도
+ *                       없지만 **정원은 한 자리 차지한다**(마지막 자리 경합 방지).
+ *   phase='published' — 두 Map에는 들어갔지만 durable 영수증이 아직 없다. get_current_room은
+ *                       pending으로 답하고 ready·start는 거부한다.
+ *
+ * 어느 국면이든 buildRoomPayload·buildPublicRoomList의 참가자 목록에는 나타나지 않는다
+ * (phase='published'는 room.players에 실제로 있으므로 나타난다 — 그건 확정 전이지만 실제
+ * 소속이므로 숨기면 다른 참가자가 정원을 잘못 본다).
+ */
+const roomAdmissionAttempts = new Map()
+
+/**
+ * 애플리케이션 응답 대기 상한. 원격 SQL 잠금 해제 시간을 보장하지는 않는다.
+ *
+ * 시험이 실제 5초/15초를 기다리지 않고 timeout 경로를 돌 수 있도록 값만 바꿀 수 있게
+ * 열어 둔다(__setAdmissionTimeoutsForTests). 판정 로직은 프로덕션 경로 그대로다.
+ */
+const ADMISSION_DEFAULT_STEP_TIMEOUT_MS = 5 * 1000
+const ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS = 15 * 1000
+let ADMISSION_STEP_TIMEOUT_MS = ADMISSION_DEFAULT_STEP_TIMEOUT_MS
+let ADMISSION_TOTAL_TIMEOUT_MS = ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS
+
+/** 테스트 전용: 인자 없이 부르면 실제 기본값으로 되돌린다. */
+function __setAdmissionTimeoutsForTests({ step, total } = {}) {
+    ADMISSION_STEP_TIMEOUT_MS = Number.isFinite(step) ? step : ADMISSION_DEFAULT_STEP_TIMEOUT_MS
+    ADMISSION_TOTAL_TIMEOUT_MS = Number.isFinite(total) ? total : ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS
+}
+
+let admissionAttemptSeq = 0
+
+function nextAttemptId() {
+    admissionAttemptSeq += 1
+    return `adm-${BOOT_EPOCH.slice(0, 8)}-${admissionAttemptSeq}`
+}
+
+/**
+ * uuid → 아직 durable 영수증이 없는 **publication의 현재 소유자**(attempt).
+ *
+ * roomAdmissionAttempts와 따로 두는 이유는 "토큰의 수명"과 "두 Map에 실제로 넣은 항목의
+ * 소유권"이 서로 다른 사실이기 때문이다. 이 값이 있어야 늦게 깨어난 옛 시도가 자기가 넣은
+ * 것만 되돌리고, 그 사이에 정상 경로로 성립한 **더 새로운 소속**은 건드리지 않는다.
+ */
+const publishedAdmissions = new Map()
+
+/** 이 시도가 publication 소유자에서 물러난다(확정 성공·되돌림 양쪽에서 부른다). */
+function releasePublishedAdmission(attempt) {
+    if (attempt && publishedAdmissions.get(attempt.accountUuid) === attempt) {
+        publishedAdmissions.delete(attempt.accountUuid)
+    }
+}
+
+/**
+ * 이 계정의 현재 시도(있으면). 만료된 시도는 여기서 정리하고 없는 것으로 본다.
+ *
+ * **단, phase='published'는 기한이 지나도 버리지 않는다(review5 #1).** 그 시도는 두 Map에
+ * 실제로 들어간 미확정 소속이라, 토큰만 버리면 두 가지가 동시에 깨진다:
+ *
+ *   · get_current_room이 영수증 없는 입장을 **정상 소속**으로 답한다(pending 우회).
+ *   · 그 소속을 되돌릴 소유자가 사라져, 뒤이은 RECEIPT_TIMEOUT 정리가 자기 시도를 알아보지
+ *     못하고 아무것도 회수하지 못한다 — 유령 참가자가 영구히 남는다.
+ *
+ * 기한은 애플리케이션 대기의 상한일 뿐 원격 SQL의 종료를 보장하지 않는다. 미확정 소속의
+ * 수명은 그 시도를 소유한 흐름(withAdmissionTimeout)이 끝맺는다.
+ */
+function getAdmissionAttempt(uuid) {
+    const attempt = roomAdmissionAttempts.get(uuid)
+    if (!attempt) return null
+    if (attempt.phase !== 'published' && attempt.expiresAt <= Date.now()) {
+        roomAdmissionAttempts.delete(uuid)
+        return null
+    }
+    return attempt
+}
+
+/**
+ * 이 계정의 시도를 즉시 무효화한다(소유권 동기 회수).
+ *
+ * disconnect·canonical 교체·세션 종료 정리·방 삭제·명시적 이탈이 전부 이 함수를 지난다.
+ * SQL 보상이나 room mutex를 기다리지 않는다 — 늦게 끝난 SQL은 역사적 결과 조회로만 다룬다.
+ *
+ * @returns {object|null} 무효화된 시도(있으면). 호출자가 필요하면 보상에 쓴다.
+ */
+function invalidateAdmissionAttempt(uuid, reason) {
+    const attempt = roomAdmissionAttempts.get(uuid)
+    if (!attempt) return null
+    roomAdmissionAttempts.delete(uuid)
+    attempt.invalidated = reason ?? 'INVALIDATED'
+    return attempt
+}
+
+/**
+ * 무효화된 시도의 durable 상태를 뒤늦게 INTERRUPTED로 맞춘다(지연 보상).
+ *
+ * fire-and-forget이다 — 실패해도 메모리 정리를 되돌리지 않는다. 입장 검사는 언제나 현재 방
+ * 상태로 다시 하므로, 이 보상이 실패해도 사라진 방으로 들어갈 수는 없다(상태표 12).
+ */
+function compensateInvalidatedAttempt(attempt, reason) {
+    if (!attempt || typeof attempt.inviteId !== 'string') return
+
+    // ── 늦게 커밋된 결정과의 화해 (review5 #2) ───────────────────────────────
+    //
+    // recordEntryInterrupted는 id + attempt_id + entry_outcome='UNCONFIRMED' 한 문장이다.
+    // 이 조건부 UPDATE가 경합 보호의 핵심이므로 그대로 둔다 — 대신 **부르는 시점**을 고친다.
+    //
+    // 결정(recordAcceptDecision)이 아직 잠금을 얻지 못했거나 커밋 전이면 그 행에는 attempt_id가
+    // 없다. 그 상태에서 보상을 부르면 0행이라 아무것도 적히지 않고, 뒤늦게 결정이 커밋되면
+    // ACCEPTED/UNCONFIRMED가 영구히 남는다 — 아무도 입장하지 않은 시도가 "입장 결과 미확정"
+    // 으로 굳는다.
+    //
+    // 그래서 결정이 아직 정착하지 않았으면 **정착을 기다렸다가** 기록한다. 여전히 조건부
+    // UPDATE이므로 그 사이에 새 시도가 attempt_id를 가져갔거나 PUBLISHED가 확정됐으면 0행이
+    // 되어 역사를 덮지 않는다. 결정이 실패로 끝났으면 설치된 attempt_id가 없어 역시 0행이다.
+    const settled = attempt.decisionSettled === true || !attempt.decisionPromise
+    const waitForDecision = settled
+        ? Promise.resolve()
+        : Promise.resolve(attempt.decisionPromise).then(() => null, () => null)
+
+    waitForDecision
+        .then(() => gameInviteService.recordEntryInterrupted({
+            inviteId: attempt.inviteId, attemptId: attempt.attemptId, reason,
+        }))
+        .catch((err) => console.error('[초대 입장 보상 실패]', err))
+}
+
+/**
+ * 확정되지 않은 publication을 **동기적으로** 되돌린다(상태표 4·6).
+ *
+ * 자기 attempt가 넣은 항목만 지운다 — room 객체 참조와 인스턴스가 모두 같을 때만 건드리므로,
+ * 그 사이에 사용자가 정상 경로로 다른 방(또는 같은 코드의 새 방)에 들어갔다면 그 새 소속을
+ * 지우지 않는다. DB 결과를 기다리지 않는다.
+ */
+function removePublishedAdmission(io, socket, attempt) {
+    if (!attempt || attempt.phase !== 'published') return
+    const room = gameRooms.get(attempt.roomId)
+
+    // ── 소유권 (review5 #1) ──────────────────────────────────────────────────
+    //
+    // 방 참조·인스턴스·계정→방 매핑이 전부 같아도, 그 소속을 만든 것이 **이 시도**라는
+    // 증거는 되지 못한다. 같은 계정이 같은 방에 다시 들어오면 세 값이 모두 일치하기 때문이다.
+    // 그래서 늦게 깨어난 옛 시도가 정상 경로로 성립한 새 소속을 지우고 있지도 않은 이탈을
+    // 방송했다. publication 소유자 등록부로 "지금 이 미확정 소속의 주인이 나인가"를 묻는다.
+    const ownsPublication = publishedAdmissions.get(attempt.accountUuid) === attempt
+    const stillMine = ownsPublication
+        && room === attempt.room
+        && room?.instanceId === attempt.roomInstanceId
+        && playerRoom.get(attempt.accountUuid) === attempt.roomId
+    if (stillMine) {
+        releasePublishedAdmission(attempt)
+        room.players.delete(attempt.accountUuid)
+        playerRoom.delete(attempt.accountUuid)
+    }
+
+    // 채널도 같은 기준으로 뗀다. 내가 되돌린 경우이거나, 그 계정이 애초에 이 방의 확정
+    // 참가자가 아닐 때만 뗀다 — 더 새로운 정상 소속의 채널을 끊으면 그 참가자가 방송을
+    // 받지 못한다.
+    const accountStillSeated = playerRoom.get(attempt.accountUuid) === attempt.roomId
+        && gameRooms.get(attempt.roomId)?.players.has(attempt.accountUuid) === true
+    if (socket && typeof socket.leave === 'function' && socket.id === attempt.socketId
+        && (stillMine || !accountStillSeated)) {
+        try { socket.leave(attempt.roomId) } catch (err) { console.error('[초대 입장 채널 정리 실패]', err) }
+    }
+    if (!stillMine || !room) return
+    if (room.players.size === 0) {
+        gameRooms.delete(attempt.roomId)
+        emitPublicRoomList(io)
+        return
+    }
+    if (!room.players.has(room.hostUuid)) {
+        room.hostUuid = room.players.keys().next().value
+        try {
+            io?.to?.(attempt.roomId)?.emit?.('host_changed', { hostUuid: room.hostUuid, canStart: computeCanStart(room) })
+        } catch (err) { console.error('[초대 입장 보상 방송 실패]', err) }
+    }
+    try {
+        io?.to?.(attempt.roomId)?.emit?.('player_left_room', {
+            uuid: attempt.accountUuid, canStart: computeCanStart(room),
+        })
+    } catch (err) { console.error('[초대 입장 보상 방송 실패]', err) }
+    emitPublicRoomList(io)
+}
+
+/**
+ * JOIN_TIMEOUT 뒤에 **늦게 성공한** socket.join을 정리한다(상태표 4).
+ *
+ * 제한 시간은 애플리케이션 대기의 상한일 뿐이라 어댑터의 join이 그 뒤에 성공할 수 있다.
+ * 그대로 두면 두 Map에는 없는데 실제 방송 room에는 남아 다른 참가자의 사건을 계속 받는
+ * "유령 청취자"가 된다. 그렇다고 무조건 leave하면 그 사이에 정상 경로로 다시 들어온 **더
+ * 새로운 소속**의 채널을 끊게 되므로, 늦은 완료 시점에 소유권을 다시 확인한다:
+ *
+ *   - socket.id가 달라졌으면(재접속·canonical 교체) 이 socket은 더 이상 그 계정의 채널이
+ *     아니다. 자기 시도가 쓰던 바로 그 socket일 때만 건드린다.
+ *   - 그 계정의 확정 소속이 이미 이 방이면(playerRoom이 이 방을 가리킨다) 정상 참가자다 —
+ *     끊지 않는다.
+ *   - 같은 계정의 **다른(더 새로운)** 시도가 같은 방으로 진행 중이면 그 시도의 채널을
+ *     뺏지 않는다.
+ *
+ * ── 소속만 보면 안 된다(CODEX-2 보수) ───────────────────────────────────────
+ * playerRoom은 **계정**에 묶인 값이라 "누구의 연결이 그 소속을 만들었는가"를 말해 주지
+ * 않는다. 옛 소켓의 가입이 timeout된 뒤 교체 소켓이 같은 방에 정상 입장하면
+ * playerRoom.get(uuid)가 그 방을 가리키게 되고, 그것만 보고 물러나면 **옛 소켓의 채널이
+ * 그대로 남아** 유령 청취자가 된다. 그래서 같은 계정의 다른 살아 있는 소켓이 이미 그 방
+ * 채널·소속을 소유하고 있으면 이 소켓은 무조건 obsolete로 보고 자기 채널만 정리한다.
+ * 새 소켓의 방·소속·roster와 **같은 소켓에서 갱신된** 시도는 건드리지 않는다.
+ */
+function isRoomOwnedByAnotherSocket(io, roomId, uuid, socket) {
+    const sockets = io?.sockets?.sockets
+    if (!sockets || typeof sockets.values !== 'function') return false
+    for (const other of sockets.values()) {
+        if (!other || other === socket || other.id === socket.id) continue
+        if (other.connected === false) continue
+        if (other.data?.user?.uuid !== uuid) continue
+        if (other.rooms?.has?.(roomId) || other.data?.activeRoomId === roomId) return true
+    }
+    return false
+}
+
+function scheduleLateJoinCleanup(io, socket, roomId, uuid, attempt, joinPromise) {
+    if (!joinPromise || typeof joinPromise.then !== 'function') return
+    joinPromise.then(() => {
+        if (!socket || typeof socket.leave !== 'function') return
+        if (socket.id !== attempt.socketId) return
+        const leaveNow = () => {
+            try { socket.leave(roomId) } catch (err) { console.error('[늦은 초대 채널 정리 실패]', err) }
+        }
+        // 교체 소켓이 이미 그 방을 소유했다면 아래의 소속·시도 검사는 전부 **그 소켓의
+        // 사실**이라 이 소켓을 남길 근거가 되지 못한다.
+        if (isRoomOwnedByAnotherSocket(io, roomId, uuid, socket)) { leaveNow(); return }
+        if (playerRoom.get(uuid) === roomId) return
+        const current = roomAdmissionAttempts.get(uuid)
+        if (current && current !== attempt && current.roomId === roomId && current.socketId === socket.id) return
+        leaveNow()
+    }, () => {})
+}
+
+/** 이 방과 묶인 모든 미확정 시도를 무효화한다(방 삭제·시작·소멸). */
+function invalidateAdmissionAttemptsForRoom(roomId, reason) {
+    for (const [uuid, attempt] of [...roomAdmissionAttempts]) {
+        if (attempt.roomId !== roomId) continue
+        roomAdmissionAttempts.delete(uuid)
+        compensateInvalidatedAttempt(attempt, reason)
+    }
+}
+
+/** 이 방에 미확정 시도가 하나라도 있는가(ready·start·인원 판정에 쓴다). */
+function hasPendingAdmissionForRoom(roomId) {
+    for (const [uuid] of roomAdmissionAttempts) {
+        const attempt = getAdmissionAttempt(uuid)
+        if (attempt && attempt.roomId === roomId) return true
+    }
+    return false
+}
+
+/**
+ * 이 방이 지금 실제로 차지하고 있는 자리 수.
+ *
+ * 확정 참가자(room.players) + phase='reserved' 예약이다. phase='published'는 이미
+ * room.players에 있으므로 두 번 세지 않는다. excludeUuid는 "자기 자신을 제외한" 계산
+ * (마지막 자리 판정)에 쓴다.
+ */
+function countRoomOccupancy(room, excludeUuid = null) {
+    let count = 0
+    for (const uuid of room.players.keys()) {
+        if (uuid !== excludeUuid) count += 1
+    }
+    for (const [uuid] of roomAdmissionAttempts) {
+        if (uuid === excludeUuid) continue
+        const attempt = getAdmissionAttempt(uuid)
+        if (!attempt || attempt.roomId !== room.id) continue
+        if (attempt.phase === 'reserved') count += 1
+    }
+    return count
+}
 
 // uuid → 방 전환 세대(generation) 카운터. create_room/코드·공개방 참가/join_matchmaking은
 // 자신의 첫 await 이전(동기 구간)에 이 값을 캡처해 두고, 실제 Room/queue Map에 커밋하기
@@ -223,6 +547,26 @@ function registerMatchmakingHandlers(io, socket, uuid) {
     )
     socket.on('set_ready', (payload, callback) => handleSetReady(io, socket, uuid, payload, callback))
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
+    // F-19(AC-06): 실제 초대 수락은 인증·세션 guard를 통과한 이 소켓 경계에서만 일어난다
+    // (REST로는 수락하지 않는다 — 입장은 이 프로세스의 방 registry와 이 소켓의 채널 가입을
+    // 동시에 확정해야 하기 때문). 응답은 언제나 ack 한 번이다.
+    socket.on('accept_game_invite', (payload, callback) =>
+        handleAcceptGameInvite(io, socket, uuid, payload, callback).catch((err) => {
+            console.error('\x1b[31m[초대 수락 에러]\x1b[0m', err)
+            if (typeof callback === 'function') {
+                try { callback({ ok: false, code: 'INTERNAL_ERROR', message: '초대를 처리하지 못했습니다.' }) } catch { /* ack 실패는 상태를 바꾸지 않는다 */ }
+            }
+        })
+    )
+    // 같은 시도의 결과를 다시 묻는다(ACK 유실 재조회). 새 수락을 만들지 않는다.
+    socket.on('get_game_invite_result', (payload, callback) =>
+        handleGetGameInviteResult(uuid, payload, callback).catch((err) => {
+            console.error('\x1b[31m[초대 결과 조회 에러]\x1b[0m', err)
+            if (typeof callback === 'function') {
+                try { callback({ ok: false, code: 'UNKNOWN' }) } catch { /* 위와 같음 */ }
+            }
+        })
+    )
 }
 
 // ── 재접속 유예(새로고침 대비) ───────────────────────────────────────────────
@@ -307,6 +651,16 @@ function scheduleRoomRetentionOnDisconnect(io, socket, uuid) {
 async function resyncRoomChannelOnReconnect(socket, uuid) {
     if (!socket) return
 
+    // F-19(AC-06): 새 소켓이 canonical이 되는 순간, 옛 소켓이 소유하던 미확정 입장 시도는
+    // 무효다. 확정되지 않은 채널은 **복구하지 않는다** — 복구하면 영수증 없는 입장이
+    // 정상 소속처럼 되살아난다(상태표 4). 이미 확정된 일반 소속만 아래에서 재가입한다.
+    const attempt = roomAdmissionAttempts.get(uuid)
+    if (attempt && attempt.socketId !== socket.id) {
+        invalidateAdmissionAttempt(uuid, 'CANONICAL_SOCKET_REPLACED')
+        removePublishedAdmission(socket.server ?? null, null, attempt)
+        compensateInvalidatedAttempt(attempt, 'CANONICAL_SOCKET_REPLACED')
+    }
+
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
 
@@ -340,6 +694,16 @@ function onDisconnect(io, socket, uuid) {
         matchmakingQueue.delete(uuid)
     }
 
+    // F-19(AC-06): 자기 소켓의 미확정 입장 시도는 playerRoom 유무와 **무관하게**, 그리고
+    // 아래 조기 return보다 **먼저** 무효화한다. 확정되지 않은 입장에는 재접속 유예가 없다 —
+    // 유예는 이미 확정된 소속에만 적용된다.
+    const ownAttempt = roomAdmissionAttempts.get(uuid)
+    if (ownAttempt && (socket?.id === undefined || ownAttempt.socketId === socket.id)) {
+        const invalidated = invalidateAdmissionAttempt(uuid, 'DISCONNECTED')
+        if (invalidated?.phase === 'published') removePublishedAdmission(io, socket, invalidated)
+        compensateInvalidatedAttempt(invalidated, 'DISCONNECTED')
+    }
+
     const currentRoomId = playerRoom.get(uuid)
     if (!currentRoomId) return
 
@@ -366,15 +730,28 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     // 무반응은 "진행 중인 게임을 정리하라"는 조치로 이어질 수 없기 때문이다. 큐 등록 이전의
     // 동기 구간이라 되돌릴 상태도 남지 않는다.
     if (playerRoom.has(uuid)) return
+    // F-19(AC-06): 이 경로에는 예약 잠금이 없었다 — 같은 계정의 큐 진입과 create_room/코드
+    // 참가가 동시에 통과해 큐와 방 양쪽에 소속될 수 있었다. 다른 세 진입점과 같은 잠금을
+    // 공유하고, 확정되지 않은 초대 입장 중에도 거부한다.
+    if (getAdmissionAttempt(uuid)) return
 
     // 유일한 await(사용자 조회) 이전, 동기 구간에서 세대를 캡처한다. 대기 중 GameSession
     // 종료 정리가 이 uuid의 세대를 증가시켰으면(세션 종료), 조회가 끝나도 큐에 등록하지
     // 않고 기존 `!user` 실패 경로와 동일하게 조용히 반환한다.
     const generationAtRequest = getRoomTransitionGeneration(uuid)
+    const transitionToken = acquireRoomTransition(uuid)
+    if (transitionToken === null) return
 
-    const user = await userRepositoryRef.findByUuid(uuid)
+    let user
+    try {
+        user = await userRepositoryRef.findByUuid(uuid)
+    } finally {
+        releaseRoomTransition(uuid, transitionToken)
+    }
     if (!user) return
     if (getRoomTransitionGeneration(uuid) !== generationAtRequest) return
+    // 조회를 기다리는 동안 다른 경로로 방에 들어갔거나 초대 입장이 시작됐을 수 있다.
+    if (playerRoom.has(uuid) || getAdmissionAttempt(uuid)) return
 
     matchmakingQueue.set(uuid, { uuid, nickname: user.nickname, socketId: socket.id, generation: generationAtRequest })
     socket.emit('matchmaking_queued', { position: matchmakingQueue.size })
@@ -399,7 +776,7 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     const hostUuid   = players[0].uuid
     const playersMap = new Map(players.map((p) => [p.uuid, { uuid: p.uuid, nickname: p.nickname }]))
 
-    gameRooms.set(roomId, { id: roomId, code: roomCode, hostUuid, players: playersMap })
+    gameRooms.set(roomId, { id: roomId, instanceId: crypto.randomUUID(), code: roomCode, hostUuid, players: playersMap })
     players.forEach((p) => playerRoom.set(p.uuid, roomId))
 
     const playerList = players.map((p) => ({ uuid: p.uuid, nickname: p.nickname }))
@@ -437,6 +814,11 @@ function computeCanStart(room) {
     // 구성이 성립하는지도 함께 본다(고정 역할 합 > 현재 인원이면 시작할 수 없다).
     // AUTO에서는 바로 위 jokerCount 검사와 동일한 판정이라 기존 동작이 그대로 유지된다.
     if (!resolveRoleComposition(room.settings, players.length).ok) return false
+    // F-19(AC-06): 확정되지 않은 초대 입장이 이 방에 하나라도 있으면 시작할 수 없다.
+    // 예약만 있는 계정은 room.players에 없어 "전원 준비"를 통과해 버리고, 영수증 미확정
+    // publication은 곧 보상으로 제거될 수 있다 — 어느 쪽이든 시작 시점의 참가자 명단이
+    // 확정되지 않은 상태다.
+    if (hasPendingAdmissionForRoom(room.id)) return false
     return players.every((player) => player.isReady === true)
 }
 
@@ -602,15 +984,19 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
     // await(사용자 조회) 이전, 아직 동기 실행 구간에서 예약한다. JS는 단일 스레드라 이
     // 지점까지는 다른 요청이 끼어들 수 없어, 같은 uuid의 두 번째 create_room/join_room_by_code도
     // 반드시 위의 pendingRoomTransitions.has(uuid) 검사에서 걸러진다(더블클릭/동시 요청 방지).
-    pendingRoomTransitions.add(uuid)
+    const transitionToken = acquireRoomTransition(uuid)
+    if (transitionToken === null) {
+        callback({ ok: false, message: '이미 처리 중인 요청이 있습니다.' })
+        return
+    }
     // 같은 동기 구간에서 세대를 캡처해 둔다. GameSession 종료 정리가 이 uuid의 세대를
     // 이 요청이 대기하는 동안 증가시키면, 재개된 뒤의 재검사에서 걸러진다.
     const generationAtReservation = getRoomTransitionGeneration(uuid)
 
-    handleCreateRoomAfterReservation(io, socket, uuid, validatedValue, callback, generationAtReservation)
+    handleCreateRoomAfterReservation(io, socket, uuid, validatedValue, callback, generationAtReservation, transitionToken)
 }
 
-async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation) {
+async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation, transitionToken) {
     let roomId = null
     let joined = false
     let room = null
@@ -654,6 +1040,10 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
         roomId = crypto.randomUUID()
         room = {
             id: roomId,
+            // F-19(AC-06): 같은 문자열 id/코드가 재사용되더라도 "그때 그 방"인지 구분하는
+            // 인스턴스 식별자다. 초대는 이 값과 boot epoch를 함께 저장해, 방이 사라졌다가
+            // 우연히 같은 식별자로 다시 생겨도 옛 초대로 입장하지 못하게 한다.
+            instanceId: crypto.randomUUID(),
             code: null, // Socket room 가입 이후에 확정한다(아래 참고)
             hostUuid: uuid,
             title: `${user.nickname}의 방`,
@@ -718,7 +1108,8 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
     } finally {
         // 성공/실패/예외 어떤 경로로 끝나든 반드시 해제해야 한다. 여기서 빠지면 이 사용자는
         // 이후 create_room/join_room_by_code를 영원히 "처리 중"으로 거부당하게 된다.
-        pendingRoomTransitions.delete(uuid)
+        // 자기 token일 때만 푼다 — 늦게 끝난 이 요청이 그 사이 시작된 새 요청을 풀지 않는다.
+        releaseRoomTransition(uuid, transitionToken)
     }
 
     // 성공 callback은 Map 커밋을 감싼 try/catch 밖에서 호출한다. 그 안에 두면 callback
@@ -813,7 +1204,11 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     }
 
     // create_room과 같은 잠금을 공유한다 — await 이전 동기 구간에서 예약해야 동시 요청을 막을 수 있다.
-    pendingRoomTransitions.add(uuid)
+    const transitionToken = acquireRoomTransition(uuid)
+    if (transitionToken === null) {
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS, '이미 처리 중인 요청이 있습니다.')
+        return
+    }
     // create_room과 같은 이유로 같은 동기 구간에서 세대를 캡처한다.
     const generationAtReservation = getRoomTransitionGeneration(uuid)
 
@@ -960,7 +1355,10 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         const maxRoomSize = room.settings?.maxPlayers ?? getSupportedRoomSizes()[0]
         // join 이후의 최신 인원 수로 마지막 한 자리를 다시 검사한다 — 여러 명이 동시에
         // 마지막 자리를 두고 경쟁할 때 정원을 넘기지 않기 위한 마지막 방어선이다.
-        if (room.players.size >= maxRoomSize) {
+        //
+        // F-19(AC-06): 확정 참가자뿐 아니라 **유효한 초대 입장 예약**도 자리를 차지한다.
+        // 예약을 세지 않으면 초대 수락과 마지막 자리 일반 입장이 동시에 통과해 정원을 넘긴다.
+        if (countRoomOccupancy(room, uuid) >= maxRoomSize) {
             await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
             joinedRoomId = null
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_FULL, '방이 가득 찼습니다.')
@@ -994,7 +1392,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             '방에 참여하지 못했습니다. 잠시 후 다시 시도해주세요.',
         )
     } finally {
-        pendingRoomTransitions.delete(uuid)
+        releaseRoomTransition(uuid, transitionToken)
     }
 }
 
@@ -1005,6 +1403,16 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
  */
 function handleGetCurrentRoom(uuid, callback) {
     if (typeof callback !== 'function') return
+
+    // F-19(AC-06): 미확정 초대 입장 시도를 **Map 조회보다 먼저** 본다. 예전 구현은
+    // playerRoom에 값이 있으면 곧바로 방을 돌려줬는데, phase='published'인 시도는 두 Map에는
+    // 들어갔지만 durable 영수증이 아직 없다 — 그 상태를 "정상 소속"으로 답하면 화면이
+    // 확정되지 않은 입장을 확정된 것으로 표시하고, 뒤이은 보상 제거와 어긋난다.
+    const attempt = getAdmissionAttempt(uuid)
+    if (attempt) {
+        callback({ ok: true, room: null, pending: true })
+        return
+    }
 
     const roomId = playerRoom.get(uuid)
 
@@ -1056,7 +1464,20 @@ function handleDeleteRoom(io, uuid) {
 
     room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     gameRooms.delete(roomId)
+    // F-19(AC-06): 삭제된 방을 향한 미확정 입장 시도와 PENDING 초대를 함께 끝낸다.
+    invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_DELETED')
+    cancelInvitesForRoomAsync(roomId, 'ROOM_DELETED')
     emitPublicRoomList(io)
+}
+
+/**
+ * 사라진 방의 PENDING 초대를 뒤늦게 종료한다(fire-and-forget).
+ * 실패해도 입장이 열리지 않는다 — 입장 검사는 언제나 현재 방 상태를 다시 본다.
+ */
+function cancelInvitesForRoomAsync(roomId, reason) {
+    Promise.resolve()
+        .then(() => gameInviteService.cancelPendingInvitesForRoom(roomId, reason))
+        .catch((err) => console.error('[방 소멸 초대 정리 실패]', err))
 }
 
 /**
@@ -1079,6 +1500,14 @@ function handleSetReady(io, socket, uuid, payload, callback) {
     const { isReady } = payload
     if (typeof isReady !== 'boolean') {
         callback({ ok: false, message: '잘못된 요청입니다.' })
+        return
+    }
+
+    // F-19(AC-06): 자기 입장이 아직 확정되지 않았으면 준비 상태를 바꿀 수 없다. 예약만 있는
+    // 계정은 애초에 room.players에 없어 아래에서 걸리지만, 영수증 미확정 publication은
+    // room.players에 있으므로 여기서 따로 막아야 한다.
+    if (getAdmissionAttempt(uuid)) {
+        callback({ ok: false, message: '입장 처리가 아직 끝나지 않았습니다. 잠시 후 다시 시도해주세요.' })
         return
     }
 
@@ -1192,6 +1621,16 @@ async function handleStartGame(io, socket, uuid, callback) {
         })
         return
     }
+    // F-19(AC-06): 확정되지 않은 초대 입장이 있으면 시작하지 않는다. 이 시점까지 어떤
+    // 상태도 바뀌지 않았다 — 방장은 입장이 끝난 뒤 다시 시작하면 된다.
+    if (hasPendingAdmissionForRoom(roomId)) {
+        callback({
+            ok: false,
+            code: 'ADMISSION_IN_PROGRESS',
+            message: '입장 처리 중인 참가자가 있습니다. 잠시 후 다시 시도해주세요.',
+        })
+        return
+    }
 
     // 0) 계정 외형 스냅샷(F-13 AC-05) — 시작 직전 참가자들의 서버 loadout을 다시 확보해
     // 공개 room과 분리한 세션 후보에 반영한다(계정 프로필은 참가 시점이 아니라
@@ -1209,6 +1648,16 @@ async function handleStartGame(io, socket, uuid, callback) {
     }
     if (!captured.ok) {
         callback({ ok: false, code: captured.code, message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
+        return
+    }
+    // 프로필 캡처(await) 동안 초대 수락이 예약에 진입했을 수 있다 — commit 직전에 다시 본다.
+    // 여기서 거부해도 아직 어떤 상태도 바뀌지 않았다.
+    if (hasPendingAdmissionForRoom(roomId)) {
+        callback({
+            ok: false,
+            code: 'ADMISSION_IN_PROGRESS',
+            message: '입장 처리 중인 참가자가 있습니다. 잠시 후 다시 시도해주세요.',
+        })
         return
     }
 
@@ -1276,6 +1725,9 @@ async function handleStartGame(io, socket, uuid, callback) {
         gameSession.commitGameSession(prepared.session)
         room.players.forEach((_, u) => playerRoom.delete(u))
         gameRooms.delete(roomId)
+        // 방이 게임으로 전환됐으므로 이 방을 향한 미확정 시도·PENDING 초대를 끝낸다.
+        invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_STARTED')
+        cancelInvitesForRoomAsync(roomId, 'ROOM_STARTED')
         // 방을 지우기 전에 알고 있던 코드/roomId만 표식으로 남긴다 — 뒤늦게 이 방에
         // 들어오려는 요청에 "없는 방"이 아니라 "이미 시작됨"으로 답하기 위한 근거다.
         // 이 표식은 참가를 허용하지 않는다(살아있는 방을 못 찾았을 때만 읽힌다).
@@ -1341,6 +1793,14 @@ function removeFromRoom(io, socket, uuid) {
     // (명시적 leave_room·방 삭제·세션 종료 정리로 먼저 빠지는 경우도 모두 여기를 지난다).
     cancelRoomRetention(uuid)
 
+    // F-19(AC-06): 자기 미확정 시도도 playerRoom 유무와 무관하게 조기 return **이전에**
+    // 무효화한다(예약 단계에서는 아직 playerRoom이 없다).
+    const ownAttempt = invalidateAdmissionAttempt(uuid, 'LEFT_ROOM')
+    if (ownAttempt) {
+        removePublishedAdmission(io, socket, ownAttempt)
+        compensateInvalidatedAttempt(ownAttempt, 'LEFT_ROOM')
+    }
+
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
 
@@ -1353,6 +1813,9 @@ function removeFromRoom(io, socket, uuid) {
 
     if (room.players.size === 0) {
         gameRooms.delete(roomId)
+        // 방이 사라졌으므로 이 방을 향한 미확정 시도와 PENDING 초대를 모두 끝낸다.
+        invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_GONE')
+        cancelInvitesForRoomAsync(roomId, 'ROOM_GONE')
         emitPublicRoomList(io)
         return
     }
@@ -1397,6 +1860,14 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
     // 재개돼도 커밋되지 않도록 무효화한다.
     for (const uuid of uuids) {
         bumpRoomTransitionGeneration(uuid)
+        // F-19(AC-06): 세대 증가와 **같은 동기 구간에서** 미확정 입장 시도까지 무효화한다.
+        // playerRoom이 없어도(아직 예약 단계) 반드시 지운다 — SQL 보상이나 room mutex를
+        // 기다리지 않는다.
+        const attempt = invalidateAdmissionAttempt(uuid, 'SESSION_ENDED')
+        if (attempt) {
+            removePublishedAdmission(io, null, attempt)
+            compensateInvalidatedAttempt(attempt, 'SESSION_ENDED')
+        }
     }
 
     const affected = []
@@ -1478,12 +1949,385 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
     }
 }
 
+// ── F-19 AC-06: 초대 수락 → 실제 입장 ────────────────────────────────────────
+
+/**
+ * gameInvite.service에 canonical registry 접근자를 주입한다.
+ *
+ * 새 registry를 만들지 않는다 — 서비스는 여기 있는 gameRooms/playerRoom을 읽기 전용으로만
+ * 본다. 이 방향(matchmaking → service)만 있으므로 require 순환이 없다.
+ */
+gameInviteModule.__setRoomAccessForRuntime({
+    bootEpoch: BOOT_EPOCH,
+
+    getRoomIdForUser: (uuid) => playerRoom.get(uuid) ?? null,
+
+    describeRoomForInvite: (roomId) => {
+        const room = gameRooms.get(roomId)
+        if (!room) return null
+        const maxPlayers = room.settings?.maxPlayers ?? getSupportedRoomSizes()[0]
+        return {
+            roomId: room.id,
+            // 구버전 랜덤 매칭 방에는 instanceId가 없을 수 있다 — 그때는 방 id를 인스턴스로
+            // 쓴다(같은 프로세스 안에서 room id는 재사용되지 않는다).
+            roomInstanceId: room.instanceId ?? room.id,
+            hostUuid: room.hostUuid,
+            occupancy: countRoomOccupancy(room),
+            maxPlayers,
+            isFull: countRoomOccupancy(room) >= maxPlayers,
+        }
+    },
+
+    /** 수신자가 지금 초대를 받을 수 있는 상태인가. 이유 코드는 발송자에게 노출하지 않는다. */
+    describeReceiverAvailability: (uuid) => {
+        const routing = gameSession.getActiveSessionRoutingInfo(uuid)
+        if (routing && !gameSession.isForfeitedFromSession(routing.gameId, uuid)) {
+            return { available: false, code: 'RECEIVER_IN_GAME' }
+        }
+        if (playerRoom.has(uuid)) return { available: false, code: 'RECEIVER_IN_ROOM' }
+        if (matchmakingQueue.has(uuid)) return { available: false, code: 'RECEIVER_IN_QUEUE' }
+        if (pendingRoomTransitions.has(uuid)) return { available: false, code: 'RECEIVER_TRANSITIONING' }
+        if (getAdmissionAttempt(uuid)) return { available: false, code: 'RECEIVER_TRANSITIONING' }
+        return { available: true, code: null }
+    },
+})
+
+/**
+ * 애플리케이션 응답 대기 상한을 건다.
+ *
+ * 이 시간은 **우리 코드가 기다리는 시간**의 상한이지, 원격 SQL 잠금이 그 안에 풀린다는
+ * 보장이 아니다. timeout이 나면 소유권을 동기 회수하고, 늦게 끝난 SQL은 이후 역사적 결과
+ * 조회(get_game_invite_result)로만 다룬다.
+ */
+function withAdmissionTimeout(promise, ms, code) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(Object.assign(new Error(code), { admissionTimeout: code })), ms)
+        if (typeof timer.unref === 'function') timer.unref()
+        promise.then(
+            (value) => { clearTimeout(timer); resolve(value) },
+            (error) => { clearTimeout(timer); reject(error) },
+        )
+    })
+}
+
+/**
+ * 초대 수락 → 실제 대기방 입장.
+ *
+ * 두 트랜잭션으로 나뉜다(A-10):
+ *   1) recordAcceptDecision  — 역사적 수락 결정을 선형화한다. 아직 어떤 Map에도 없다.
+ *   2) finalizeAcceptedEntry — 같은 잠금을 다시 잡고, 그 안의 **동기 구간**에서 두 Map과
+ *      메모리 영수증을 함께 기록한 뒤 durable 영수증(PUBLISHED)을 쓴다.
+ *
+ * 성공 ACK는 확정 영수증과 현재 소속이 **둘 다** 맞을 때만 room payload를 담는다.
+ * room_joined는 발행하지 않는다 — 초대 입장의 navigation 소유자는 클라이언트의 한 경계
+ * (App 전역 useFriendSocketEvents)뿐이다.
+ */
+async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+
+    let answered = false
+    const respond = (result) => {
+        if (answered) return
+        answered = true
+        try { callback(result) } catch (ackError) { console.error('[초대 수락 ack 실패]', ackError) }
+    }
+
+    const inviteId = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
+        ? payload.inviteId : null
+    if (typeof inviteId !== 'string' || inviteId.length === 0) {
+        respond({ ok: false, code: 'INVALID_REQUEST', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    // 진입 동기 검사 — 여기서 걸리면 예약도 만들지 않는다.
+    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) => respond({ ok: false, code, message, gameId }))) return
+    if (playerRoom.has(uuid)) {
+        respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, message: '이미 참여 중인 방이 있습니다.' })
+        return
+    }
+    if (matchmakingQueue.has(uuid)) {
+        respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.IN_MATCHMAKING_QUEUE, message: '매칭 대기열에 남아있는 요청이 있습니다. 먼저 취소해주세요.' })
+        return
+    }
+    if (getAdmissionAttempt(uuid)) {
+        respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS, message: '이미 처리 중인 요청이 있습니다.' })
+        return
+    }
+    const transitionToken = acquireRoomTransition(uuid)
+    if (transitionToken === null) {
+        respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS, message: '이미 처리 중인 요청이 있습니다.' })
+        return
+    }
+
+    const generationAtRequest = getRoomTransitionGeneration(uuid)
+    const attemptId = nextAttemptId()
+    const startedAt = Date.now()
+    const remaining = () => Math.max(0, ADMISSION_TOTAL_TIMEOUT_MS - (Date.now() - startedAt))
+    const step = (promise, code) => withAdmissionTimeout(
+        promise, Math.min(ADMISSION_STEP_TIMEOUT_MS, remaining() || 1), code,
+    )
+
+    let attempt = null
+    let joinedRoomId = null
+
+    try {
+        // 초대가 가리키는 방을 먼저 확인한다. 이 읽기는 **식별용**이고 권한 근거가 아니다 —
+        // 권한은 아래 두 트랜잭션의 잠금 안에서만 판정한다.
+        const peek = await step(
+            gameInviteService.getAttemptOutcome({ receiverId: uuid, inviteId }), 'PEEK_TIMEOUT',
+        )
+        if (!peek.known) {
+            respond({ ok: false, code: 'INVITE_NOT_FOUND', message: '초대를 찾을 수 없습니다.' })
+            return
+        }
+        if (peek.bootEpoch !== BOOT_EPOCH) {
+            respond({ ok: false, code: 'SERVER_RESTARTED', message: '초대가 더 이상 유효하지 않습니다.' })
+            return
+        }
+
+        // ── 예약(동기 구간) — 여기서 자리를 잡는다 ────────────────────────────
+        const room = gameRooms.get(peek.roomId)
+        if (!room || (room.instanceId ?? room.id) !== peek.roomInstanceId) {
+            respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, message: '방을 찾을 수 없습니다.' })
+            return
+        }
+        const maxPlayers = room.settings?.maxPlayers ?? getSupportedRoomSizes()[0]
+        if (countRoomOccupancy(room, uuid) >= maxPlayers) {
+            respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_FULL, message: '방이 가득 찼습니다.' })
+            return
+        }
+        attempt = {
+            attemptId,
+            accountUuid: uuid,
+            inviteId,
+            roomId: room.id,
+            room,
+            roomInstanceId: room.instanceId ?? room.id,
+            bootEpoch: BOOT_EPOCH,
+            generation: generationAtRequest,
+            socketId: socket.id,
+            phase: 'reserved',
+            expiresAt: startedAt + ADMISSION_TOTAL_TIMEOUT_MS,
+        }
+        roomAdmissionAttempts.set(uuid, attempt)
+
+        // ── 1) 역사적 수락 결정 ───────────────────────────────────────────────
+        //
+        // 제한 시간이 지나도 이 트랜잭션 자체는 계속 살아 있을 수 있다(원격 잠금 대기).
+        // 늦게 끝난 결정을 정직하게 정착시키려면 그 완료를 놓치지 않아야 하므로 시도에
+        // 매달아 둔다 — compensateInvalidatedAttempt가 이것을 기다렸다가 보상한다(review5 #2).
+        attempt.decisionPromise = Promise.resolve(
+            gameInviteService.recordAcceptDecision({ receiverId: uuid, inviteId, attemptId, bootEpoch: BOOT_EPOCH }),
+        ).then(
+            (value) => { attempt.decisionSettled = true; return value },
+            (error) => { attempt.decisionSettled = true; throw error },
+        )
+        // 이 시도가 timeout으로 끝나면 아래 await는 사라지므로, 거부가 처리되지 않은 채
+        // 남지 않도록 별도 소비자를 붙여 둔다(보상 경로가 실제 판단을 한다).
+        attempt.decisionPromise.catch(() => {})
+        await step(attempt.decisionPromise, 'DECISION_TIMEOUT')
+        if (getAdmissionAttempt(uuid) !== attempt) {
+            respond({ ok: false, code: 'INTERRUPTED', message: '입장이 중단되었습니다.' })
+            return
+        }
+
+        // 참가자 payload에 필요한 계정 외형은 join 이전에 확보한다(동기 publish 안에서는
+        // 어떤 await도 할 수 없기 때문).
+        const [user, accountProfile] = await step(Promise.all([
+            userRepositoryRef.findByUuid(uuid),
+            loadRoomParticipantProfile(uuid),
+        ]), 'PROFILE_TIMEOUT')
+        if (!user) {
+            respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, message: '사용자 정보를 찾을 수 없습니다.' })
+            return
+        }
+        if (getAdmissionAttempt(uuid) !== attempt || !socket.connected) {
+            respond({ ok: false, code: 'INTERRUPTED', message: '입장이 중단되었습니다.' })
+            return
+        }
+
+        // ── 확정 commit 이후에만 실제 방송 채널에 가입한다 ────────────────────
+        //
+        // socket.join은 어댑터에 따라 비동기다. 제한 시간 안에 끝나지 않으면 이 시도는
+        // 실패로 끝나지만 **가입 자체는 나중에 성공할 수 있다** — 그대로 두면 두 Map에는
+        // 없는데 실제 방송 room에는 남아 다른 참가자의 사건을 계속 받는다. 늦은 완료에
+        // 정리를 걸어 두되, 그 시점에 소유권을 다시 확인해 더 새로운 정상 소속은 건드리지
+        // 않는다.
+        const joinPromise = Promise.resolve(socket.join(room.id))
+        try {
+            await step(joinPromise, 'JOIN_TIMEOUT')
+            joinedRoomId = room.id
+        } catch (joinError) {
+            scheduleLateJoinCleanup(io, socket, room.id, uuid, attempt, joinPromise)
+            throw joinError
+        }
+
+        const player = { uuid, nickname: user.nickname, isReady: false, ...accountProfile }
+
+        // ── 2) finalization — 아래 publish는 **동기**여야 한다 ────────────────
+        const publish = () => {
+            if (getAdmissionAttempt(uuid) !== attempt) return { ok: false, code: 'INTERRUPTED' }
+            if (getRoomTransitionGeneration(uuid) !== generationAtRequest) return { ok: false, code: 'SESSION_ENDED' }
+            if (!socket.connected || attempt.socketId !== socket.id) return { ok: false, code: 'DISCONNECTED' }
+            if (socket.rooms && !socket.rooms.has(room.id)) return { ok: false, code: 'CHANNEL_LOST' }
+            const current = gameRooms.get(attempt.roomId)
+            if (current !== room || (current.instanceId ?? current.id) !== attempt.roomInstanceId) {
+                return { ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND }
+            }
+            if (playerRoom.has(uuid)) return { ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM }
+            const routing = gameSession.getActiveSessionRoutingInfo(uuid)
+            if (routing && !gameSession.isForfeitedFromSession(routing.gameId, uuid)) {
+                return { ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME }
+            }
+            if (countRoomOccupancy(current, uuid) >= (current.settings?.maxPlayers ?? getSupportedRoomSizes()[0])) {
+                return { ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_FULL }
+            }
+            // await 없는 한 구간에서 두 Map과 메모리 영수증을 함께 기록한다.
+            current.players.set(uuid, player)
+            playerRoom.set(uuid, current.id)
+            attempt.phase = 'published'
+            // 이 미확정 소속의 주인이 누구인지 함께 남긴다 — 늦게 깨어난 옛 시도가 남의
+            // 소속을 되돌리지 못하게 하는 유일한 근거다(review5 #1).
+            publishedAdmissions.set(uuid, attempt)
+            socket.data.activeRoomId = current.id
+            return { ok: true }
+        }
+        const unpublish = () => removePublishedAdmission(io, socket, attempt)
+
+        const finalized = await withAdmissionTimeout(
+            gameInviteService.finalizeAcceptedEntry({
+                receiverId: uuid, inviteId, attemptId, bootEpoch: BOOT_EPOCH, publish, unpublish,
+            }),
+            Math.max(1, remaining()),
+            'RECEIPT_TIMEOUT',
+        )
+
+        if (!finalized.ok) {
+            // publish까지 갔다면 unpublish가 이미 두 Map을 되돌렸다.
+            if (attempt.phase === 'published') removePublishedAdmission(io, socket, attempt)
+            roomAdmissionAttempts.delete(uuid)
+            if (joinedRoomId) {
+                await leaveSocketRoomSafely(socket, joinedRoomId, '[초대 입장 정리 실패]')
+                joinedRoomId = null
+            }
+            respond({
+                ok: false,
+                code: finalized.code,
+                unknown: finalized.unknown === true,
+                message: finalized.unknown === true
+                    ? '입장 결과를 확인하지 못했습니다. 잠시 후 다시 확인해주세요.'
+                    : '방에 입장하지 못했습니다.',
+            })
+            return
+        }
+
+        // 영수증이 durable해졌다 — 이제부터 정상 소속이다. 더 이상 "미확정 publication"이
+        // 아니므로 소유자 등록부에서도 물러난다.
+        roomAdmissionAttempts.delete(uuid)
+        releasePublishedAdmission(attempt)
+        const current = gameRooms.get(attempt.roomId)
+        if (current !== room || playerRoom.get(uuid) !== room.id || !room.players.has(uuid)) {
+            // 확정 영수증은 있지만 현재 소속이 없다 — 성공으로 주장하지 않는다(A-10).
+            respond({ ok: false, code: 'UNKNOWN', unknown: true, message: '입장 결과를 확인하지 못했습니다.' })
+            return
+        }
+
+        socket.to(room.id).emit('player_joined_room', { player, canStart: computeCanStart(room) })
+        emitPublicRoomList(io)
+        respond({ ok: true, room: buildRoomPayload(room), inviteId, attemptId })
+    } catch (error) {
+        const timedOut = typeof error?.admissionTimeout === 'string'
+        if (!timedOut) console.error('[초대 수락 처리 실패]', error)
+
+        // 등록부에 그대로 있으면 내 것이다. 이미 사라졌더라도 **명시적으로 무효화된 것이
+        // 아니라면**(기한 경과로 토큰만 버려진 경우) 아무도 보상하지 않으므로 여기서
+        // 책임진다 — 그래야 늦게 커밋된 결정이 UNCONFIRMED로 굳지 않는다(review5 #2).
+        const registered = roomAdmissionAttempts.get(uuid) === attempt
+        const own = registered || (attempt && !attempt.invalidated) ? attempt : null
+        if (own) {
+            if (registered) roomAdmissionAttempts.delete(uuid)
+            if (own.phase === 'published') removePublishedAdmission(io, socket, own)
+            compensateInvalidatedAttempt(own, timedOut ? error.admissionTimeout : 'ACCEPT_FAILED')
+        }
+        if (joinedRoomId) {
+            await leaveSocketRoomSafely(socket, joinedRoomId, '[초대 입장 정리 실패]')
+            joinedRoomId = null
+        }
+        respond({
+            ok: false,
+            code: timedOut ? 'UNKNOWN' : (error?.code ?? 'INTERNAL_ERROR'),
+            unknown: timedOut,
+            message: error?.status && error?.message ? error.message : '방에 입장하지 못했습니다.',
+        })
+    } finally {
+        releaseRoomTransition(uuid, transitionToken)
+        // 성공/실패 어느 경로로 끝나든 자기 시도는 남기지 않는다.
+        if (attempt && roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
+    }
+}
+
+/**
+ * 같은 시도의 결과를 다시 묻는다(ACK 유실 재조회).
+ *
+ * durable 영수증(PUBLISHED)과 **현재 canonical membership**이 함께 맞을 때만 성공이다.
+ * 과거 PUBLISHED만 보고 옛 방으로 이동시키지 않는다(A-10).
+ */
+async function handleGetGameInviteResult(uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+    const inviteId = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
+        ? payload.inviteId : null
+    const attemptId = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
+        ? payload.attemptId : undefined
+    if (typeof inviteId !== 'string' || inviteId.length === 0) {
+        callback({ ok: false, code: 'INVALID_REQUEST' })
+        return
+    }
+
+    // 아직 진행 중인 시도가 있으면 결과를 단정하지 않는다.
+    if (getAdmissionAttempt(uuid)) {
+        callback({ ok: true, pending: true, entered: false })
+        return
+    }
+
+    const outcome = await gameInviteService.getAttemptOutcome({ receiverId: uuid, inviteId, attemptId })
+    if (!outcome.known) {
+        callback({ ok: false, code: 'INVITE_NOT_FOUND' })
+        return
+    }
+    if (outcome.staleAttempt) {
+        callback({ ok: true, entered: false, invite: outcome.invite, staleAttempt: true })
+        return
+    }
+
+    const roomId = playerRoom.get(uuid)
+    const room = roomId ? gameRooms.get(roomId) : null
+    const entered = outcome.entryOutcome === 'PUBLISHED'
+        && outcome.bootEpoch === BOOT_EPOCH
+        && room !== null && room !== undefined
+        && room.id === outcome.roomId
+        && (room.instanceId ?? room.id) === outcome.roomInstanceId
+        && room.players.has(uuid)
+
+    callback({
+        ok: true,
+        entered,
+        invite: outcome.invite,
+        room: entered ? buildRoomPayload(room) : null,
+    })
+}
+
 /** 테스트 전용: 모듈 내부 상태를 초기화합니다. 런타임 코드에서는 호출하지 마세요. */
 function __resetStateForTests() {
     matchmakingQueue.clear()
     gameRooms.clear()
     playerRoom.clear()
     pendingRoomTransitions.clear()
+    // F-19(AC-06): 미확정 입장 시도도 함께 비운다 — 남으면 다음 테스트의 인원·ready·start
+    // 판정이 이전 테스트의 예약에 오염된다.
+    roomAdmissionAttempts.clear()
+    // 미확정 publication의 소유자 등록부도 함께 비운다 — 남으면 다음 테스트의 되돌림
+    // 판정이 이전 테스트의 시도를 소유자로 인정하거나 거부한다.
+    publishedAdmissions.clear()
     startedRoomMarks.clear()
     // 예약된 타이머를 지우지 않으면 다음 테스트가 도는 도중에 이전 테스트의 제거가 끼어든다.
     for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
@@ -1520,7 +2364,18 @@ function __getStateSnapshotForTests() {
             { ...room, players: [...room.players.entries()] },
         ]),
         playerRoom: [...playerRoom.entries()],
-        pendingRoomTransitions: [...pendingRoomTransitions],
+        // Map으로 바뀌었지만 스냅샷 계약(uuid 배열)은 그대로 유지한다.
+        pendingRoomTransitions: [...pendingRoomTransitions.keys()],
+        // F-19(AC-06): 미확정 입장 시도. 라이브 참조를 넘기지 않도록 필요한 값만 복제한다.
+        roomAdmissionAttempts: [...roomAdmissionAttempts.entries()].map(([uuid, attempt]) => [uuid, {
+            attemptId: attempt.attemptId,
+            inviteId: attempt.inviteId,
+            roomId: attempt.roomId,
+            roomInstanceId: attempt.roomInstanceId,
+            phase: attempt.phase,
+            socketId: attempt.socketId,
+        }]),
+        bootEpoch: BOOT_EPOCH,
     }
 }
 
@@ -1546,6 +2401,46 @@ function __removeRoomForTests(roomId) {
         room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     }
     gameRooms.delete(roomId)
+    // 실제 방 소멸 경로와 같은 협조를 한다 — 그렇지 않으면 시험이 만든 "사라진 방"에
+    // 예약이 남아 정원·시작 판정을 오염시킨다.
+    invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_GONE')
+}
+
+/** 테스트 전용: 이 프로세스의 boot epoch(초대 유효성 판정 기준)입니다. */
+function __getBootEpochForTests() {
+    return BOOT_EPOCH
+}
+
+/** 테스트 전용: 미확정 입장 시도를 직접 심습니다(정원·ready·start 협조 재현용). */
+function __seedAdmissionAttemptForTests(uuid, attempt) {
+    roomAdmissionAttempts.set(uuid, {
+        attemptId: attempt.attemptId ?? nextAttemptId(),
+        accountUuid: uuid,
+        inviteId: attempt.inviteId ?? null,
+        roomId: attempt.roomId,
+        room: gameRooms.get(attempt.roomId) ?? null,
+        roomInstanceId: attempt.roomInstanceId ?? gameRooms.get(attempt.roomId)?.instanceId ?? attempt.roomId,
+        bootEpoch: BOOT_EPOCH,
+        generation: getRoomTransitionGeneration(uuid),
+        socketId: attempt.socketId ?? null,
+        phase: attempt.phase ?? 'reserved',
+        expiresAt: Date.now() + ADMISSION_TOTAL_TIMEOUT_MS,
+    })
+}
+
+/**
+ * 테스트 전용: 이 계정의 시도 기한이 **이미 지난 것으로** 만든다(가상 시계 전진).
+ *
+ * 실제 5초/15초를 기다리지 않고 기한 경과 판정을 결정적으로 돌기 위한 seam이다
+ * (__setAdmissionTimeoutsForTests와 같은 이유). 판정 로직은 프로덕션 그대로다.
+ *
+ * 이 창은 실제로 존재한다: Date.now()가 기한을 넘는 순간은 정확하지만, withAdmissionTimeout의
+ * setTimeout은 이벤트 루프가 밀리면 그보다 늦게 실행된다. 그 사이에 도착한 get_current_room·
+ * ready·start·인원 판정이 전부 getAdmissionAttempt를 지난다.
+ */
+function __expireAdmissionAttemptForTests(uuid) {
+    const attempt = roomAdmissionAttempts.get(uuid)
+    if (attempt) attempt.expiresAt = Date.now() - 1
 }
 
 module.exports = {
@@ -1562,8 +2457,13 @@ module.exports = {
     __seedRoomForTests,
     __seedPlayerRoomForTests,
     __removeRoomForTests,
+    __getBootEpochForTests,
+    __seedAdmissionAttemptForTests,
+    __expireAdmissionAttemptForTests,
     __setUserRepositoryForTests,
     __setEconomyServiceForTests,
+    __setGameInviteServiceForTests,
+    __setAdmissionTimeoutsForTests,
     __setRandomMatchmakingEnabledForTests,
     // ALREADY_IN_GAME 응답을 검증하는 테스트가 문구를 복붙하지 않고 이 원본을 그대로
     // 참조하도록 노출합니다(런타임 코드에서는 참조하지 않습니다).
@@ -1581,5 +2481,9 @@ module.exports = {
         handleStartGame,
         handleSetReady,
         leaveSocketRoomSafely,
+        handleAcceptGameInvite,
+        handleGetGameInviteResult,
+        countRoomOccupancy,
+        hasPendingAdmissionForRoom,
     },
 }

@@ -25,7 +25,10 @@ function FriendRequestEmptyState({ searching, errorMsg }) {
 }
 
 // 친구 검색 결과 목록을 보여줍니다.
-function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSend, isSearching }) {
+// F-19(AC-01): 서버가 내려준 status(ONLINE/OFFLINE/UNKNOWN)를 **그대로** 넘긴다. 예전에는
+// `friend.online || friend.status === "ONLINE"`으로 boolean 하나를 만들어, 서버가 구분해
+// 내려준 "모름"을 오프라인으로 뭉갰다.
+function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSend, onBlock, blockingIds, isSearching }) {
   // 검색어가 비어 있으면 결과 목록 자체를 그리지 않습니다.
   if (!isSearching) return null
 
@@ -39,8 +42,12 @@ function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSen
             key={friend.id}
             id={friend.id}
             name={friend.name}
-            online={friend.online || friend.status === "ONLINE"}
+            status={friend.status}
+            accountProfilePhotoId={friend.accountProfilePhotoId}
+            accountProfileBorderId={friend.accountProfileBorderId}
             onSend={onSend}
+            onBlock={onBlock}
+            blocking={blockingIds.has(friend.id)}
             sent={sentIds.has(friend.id)}
           />
         ))
@@ -50,7 +57,7 @@ function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSen
 }
 
 // 친구를 검색하고 친구 신청을 보내는 탭 화면입니다.
-export default function FriendRequestTab({ onBack }) {
+export default function FriendRequestTab({ onBack, onBlock, blockingIds = new Set() }) {
   const {
     query,
     setQuery,
@@ -79,6 +86,8 @@ export default function FriendRequestTab({ onBack }) {
         errorMsg={errorMsg}
         sentIds={sentIds}
         onSend={handleSend}
+        onBlock={onBlock}
+        blockingIds={blockingIds}
       />
       <BackButton
         size="compact"

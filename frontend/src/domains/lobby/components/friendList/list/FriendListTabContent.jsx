@@ -20,25 +20,31 @@ import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendLis
 import FriendListFolder from "@/domains/lobby/components/friendList/list/FriendListFolder.jsx"
 
 // 일반/오프라인/즐겨찾기 그룹을 폴더로 보여줍니다.
-function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends }) {
+function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends, invite, block }) {
   return (
     <>
       <FriendListFolder
         label={getNormalFriendLabel(onlineFriends)}
         friends={onlineFriends}
         defaultOpen
+        invite={invite}
+        block={block}
       />
       <FriendListFolder
         className={FRIEND_TAB_GROUP_GAP_CLASS}
         label={getOfflineFriendLabel(offlineFriends)}
         friends={offlineFriends}
         listClassName={FRIEND_TAB_SCROLLABLE_LIST_CLASS}
+        invite={invite}
+        block={block}
       />
       <FriendListFolder
         className={FRIEND_TAB_GROUP_GAP_CLASS}
         label={getFavoriteFriendLabel(favoriteFriends)}
         friends={favoriteFriends}
         listClassName={FRIEND_TAB_SCROLLABLE_LIST_CLASS}
+        invite={invite}
+        block={block}
       />
     </>
   )
@@ -49,6 +55,10 @@ export default function FriendListTabContent({
   onlineFriends = [],
   offlineFriends = [],
   favoriteFriends = [],
+  invite = null,
+  block = null,
+  friendsError = null,
+  onRetry = null,
 }) {
   const allFriends = useMemo(
     () => mergeFriendGroups({ onlineFriends, offlineFriends, favoriteFriends }),
@@ -68,13 +78,26 @@ export default function FriendListTabContent({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
+      {/* 조회 실패를 빈 목록으로 위장하지 않는다 — 사실과 재시도를 함께 보여준다(AC-02). */}
+      {friendsError !== null ? (
+        <p role="status" data-friend-list-error="true" className="px-2 app-text-scaled [--app-text-size:11px] text-red-300/90">
+          {friendsError}
+          {onRetry !== null ? (
+            <button type="button" onClick={onRetry} className="ml-2 underline" style={{ outline: "none" }}>
+              다시 시도
+            </button>
+          ) : null}
+        </p>
+      ) : null}
       {isFiltering ? (
-        <FriendListFilterResults friends={filteredItems} />
+        <FriendListFilterResults friends={filteredItems} invite={invite} block={block} />
       ) : (
         <FriendListGroupFolders
           onlineFriends={onlineFriends}
           offlineFriends={offlineFriends}
           favoriteFriends={favoriteFriends}
+          invite={invite}
+          block={block}
         />
       )}
     </div>

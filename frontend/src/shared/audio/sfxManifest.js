@@ -123,6 +123,19 @@ export const SFX_MANIFEST = Object.freeze({
   // 거부한다 — 이 항목을 추가했다고 소리가 나는 것이 아니다(A-07).
   "system-notification": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "system-notification" }),
 
+  // --- 게임 초대 수신(F-19 AC-07) -----------------------------------------
+  // 서버가 만든 새 게임 초대(gameInvite.service.js의 createInvite)의 소리. 계정 전역
+  // 사건이라 scope=account이다.
+  //
+  // 표시 설정은 **"게임 초대"(game-invite)** 항목을 쓴다. 설정 화면에는 "친구 초대"와
+  // "게임 초대"가 서로 다른 항목으로 존재하고 각각 따로 저장되므로(generalSettings.js),
+  // 예전처럼 friend-invite로 해소하면 사용자가 조작한 항목과 실제 동작이 어긋났다 —
+  // "게임 초대"를 꺼도 계속 울리고, 친구 요청만 꺼도 게임 초대까지 조용해졌다.
+  //
+  // **자산은 여전히 미검토다** — 재생기가 매체를 만들기 전에 asset-unreviewed로 거부하므로
+  // 이 항목을 추가했다고 소리가 나지 않는다(A-07). 경로·해시를 지어내지 않는다.
+  "game-invite": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "game-invite" }),
+
   // --- 준비·시작(AC-01) ---------------------------------------------------
   "room-ready-changed": pendingAsset({ scope: SFX_SCOPE.ROOM, notificationKey: null }),
   "game-started": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),

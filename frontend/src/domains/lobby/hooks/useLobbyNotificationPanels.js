@@ -18,7 +18,10 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { useNotificationsStore } from "../../notifications/store/notifications.store.js"
-import { NOTIFICATION_FRIEND_REQUEST_PARAM } from "../../notifications/constants/notificationTargets.js"
+import {
+  NOTIFICATION_FRIEND_REQUEST_PARAM,
+  NOTIFICATION_GAME_INVITE_PARAM,
+} from "../../notifications/constants/notificationTargets.js"
 
 /**
  * ?notificationRequestId=<양의 정수>만 대상으로 인정한다. 이 값으로 요청을 새로 만들거나
@@ -30,6 +33,20 @@ export function parseFriendRequestTargetId(searchParams) {
     ? searchParams.get(NOTIFICATION_FRIEND_REQUEST_PARAM)
     : null
   return /^\d+$/.test(raw ?? "") ? Number(raw) : null
+}
+
+/**
+ * F-19(AC-07): ?gameInviteId=<서버 초대 id>만 대상으로 인정한다.
+ *
+ * 친구 요청과 같은 계약이다 — 이 값으로 초대를 새로 만들거나 **자동 수락하지 않는다**.
+ * 실제 초대 목록에서 같은 id를 찾아 그 행을 가리킬 뿐이고, 종료·없는 초대면 패널이
+ * "더 이상 유효하지 않다"를 표시한다.
+ */
+export function parseGameInviteTargetId(searchParams) {
+  const raw = typeof searchParams?.get === "function"
+    ? searchParams.get(NOTIFICATION_GAME_INVITE_PARAM)
+    : null
+  return typeof raw === "string" && raw.length > 0 ? raw : null
 }
 
 /**
@@ -48,11 +65,12 @@ export function useLobbyNotificationPanels({ searchParams, navigate } = {}) {
   const [friendRequestOpenSignal, setFriendRequestOpenSignal] = useState(0)
 
   const friendRequestTargetId = parseFriendRequestTargetId(searchParams)
+  const gameInviteTargetId = parseGameInviteTargetId(searchParams)
 
   useEffect(() => {
-    if (friendRequestTargetId === null) return
+    if (friendRequestTargetId === null && gameInviteTargetId === null) return
     setFriendListOpen(true)
-  }, [friendRequestTargetId, friendRequestOpenSignal])
+  }, [friendRequestTargetId, gameInviteTargetId, friendRequestOpenSignal])
 
   const openNotifications = useCallback(() => {
     useNotificationsStore.getState().openModal()
@@ -81,6 +99,7 @@ export function useLobbyNotificationPanels({ searchParams, navigate } = {}) {
     openFriendList,
     closeFriendList,
     friendRequestTargetId,
+    gameInviteTargetId,
     handleNotificationNavigate,
   }
 }

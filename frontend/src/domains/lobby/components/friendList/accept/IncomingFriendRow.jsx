@@ -13,9 +13,30 @@ import {
 } from "@/domains/lobby/constants/friendListStyle.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
-// 받은 친구 요청 한 명을 보여주고 수락/거절 버튼을 제공합니다.
-export default function IncomingFriendRow({ requestId, name, onAccept, onDecline, targeted = false }) {
+/**
+ * 받은 친구 요청 한 명을 보여주고 거절/수락 버튼을 제공합니다.
+ *
+ * F-19(AC-04): 예전에는 **차단 아이콘·"차단" 레이블**이 붙은 버튼이 실제로는 요청 거절
+ * (declineRequest)을 호출했다. 두 동작은 대상도(요청 id vs 상대 UUID) 결과도(요청 하나만
+ * 끝남 vs 양방향 신청·초대 차단) 다르다. 이제 거절 버튼은 거절이라고 말하고 거절만 하며,
+ * 차단은 상대 UUID를 쓰는 별도 버튼이다.
+ */
+export default function IncomingFriendRow({
+  requestId,
+  requesterId,
+  name,
+  onAccept,
+  onDecline,
+  onBlock = null,
+  processing = false,
+  targeted = false,
+  accountProfilePhotoId,
+  accountProfileBorderId,
+}) {
+  const { portraitSrc, frameSrc } = resolveAccountProfileAssets({ accountProfilePhotoId, accountProfileBorderId })
+
   return (
     <li
       className={RECOMMENDED_FRIEND_ROW_CLASS}
@@ -32,30 +53,65 @@ export default function IncomingFriendRow({ requestId, name, onAccept, onDecline
       />
       <div className={RECOMMENDED_FRIEND_ROW_CONTENT_CLASS}>
         <div className={RECOMMENDED_FRIEND_INFO_WRAP_CLASS}>
-          <PlayerProfilePortrait wrapClassName={FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS} />
+          <PlayerProfilePortrait
+            photoSrc={portraitSrc}
+            frameSrc={frameSrc}
+            wrapClassName={FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS}
+          />
           <div className={RECOMMENDED_FRIEND_TEXT_WRAP_CLASS}>
             <p className={RECOMMENDED_FRIEND_NAME_CLASS}>{name}</p>
           </div>
         </div>
         <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
+          {/*
+            거절과 차단은 **서로 다른 그림·다른 이름·다른 설명**을 쓴다. 예전에는 둘 다
+            친구차단버튼.png라서 화면만 보고는 어느 쪽이 어느 작업인지 알 수 없었다.
+          */}
           <button
             type="button"
             className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
-            aria-label={`${name} 차단`}
-            onClick={() => onDecline?.(requestId)}
+            aria-label={`${name} 요청 거절`}
+            title={`${name} 요청 거절 — 이 요청만 끝납니다`}
+            aria-disabled={processing}
+            disabled={processing}
+            data-decline-request={requestId}
+            onClick={() => { if (!processing) onDecline?.(requestId) }}
             style={{ outline: "none" }}
           >
             <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendBlockButton}
+              src={FRIEND_LIST_ASSETS.friendDeclineButton}
               alt=""
               className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
             />
           </button>
+          {onBlock !== null && typeof requesterId === "string" ? (
+            <button
+              type="button"
+              className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
+              aria-label={`${name} 차단`}
+              title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다`}
+              aria-disabled={processing}
+              disabled={processing}
+              // 거절과 달리 요청 id가 아니라 **상대 UUID**로 동작한다.
+              data-block-target={requesterId}
+              onClick={() => { if (!processing) onBlock(requesterId) }}
+              style={{ outline: "none" }}
+            >
+              <PublicAsset
+                src={FRIEND_LIST_ASSETS.friendBlockButton}
+                alt=""
+                className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
+              />
+            </button>
+          ) : null}
           <button
             type="button"
             className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
             aria-label={`${name} 수락`}
-            onClick={() => onAccept?.(requestId)}
+            aria-disabled={processing}
+            disabled={processing}
+            data-accept-request={requestId}
+            onClick={() => { if (!processing) onAccept?.(requestId) }}
             style={{ outline: "none" }}
           >
             <PublicAsset

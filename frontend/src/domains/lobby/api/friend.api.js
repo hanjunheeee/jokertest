@@ -35,3 +35,54 @@ export const acceptFriendRequest = async (requestId) => {
 export const declineFriendRequest = async (requestId) => {
     return await api.put(`/friends/requests/${requestId}/decline`);
 };
+
+// F-19(AC-02): 전체 수락 응답이 유실됐을 때 "성공인지 실패인지"를 서버에 되묻습니다.
+// 요청 당사자만 자기 요청의 상태를 볼 수 있고, 이 조회는 아무 상태도 바꾸지 않습니다.
+export const fetchFriendRequestResults = async (requestIds) => {
+    const ids = requestIds.map((id) => String(id)).join(",");
+    return await api.get(`/friends/requests/results?ids=${encodeURIComponent(ids)}`);
+};
+
+// F-19(AC-03): 즐겨찾기는 계정별 서버 값입니다. 재접속·다른 브라우저에서도 이 조회로 복원됩니다.
+export const fetchFavoriteFriendIds = async () => {
+    return await api.get("/friends/favorites");
+};
+
+// 원하는 값(true/false)을 그대로 저장합니다 — toggle 명령이 아니라서 재전송이 상태를
+// 뒤집지 않습니다(멱등).
+export const setFriendFavoriteApi = async (friendId, favorite) => {
+    return await api.put(`/friends/favorites/${encodeURIComponent(friendId)}`, { favorite });
+};
+
+// F-19(AC-04): 차단 목록·차단·해제.
+export const fetchBlockedUsers = async () => {
+    return await api.get("/friends/blocks");
+};
+
+export const blockUserApi = async (targetId) => {
+    return await api.post("/friends/blocks", { targetId });
+};
+
+export const unblockUserApi = async (targetId) => {
+    return await api.delete(`/friends/blocks/${encodeURIComponent(targetId)}`);
+};
+
+// F-19(AC-06/AC-07): 초대 목록 snapshot과 소리 커서를 한 번에 받습니다.
+// 커서는 종료된 초대까지 포함한 전체 최대 순번이라, 이 값 이하 사건은 전부 무음입니다.
+export const fetchGameInviteSnapshot = async () => {
+    return await api.get("/friends/invites");
+};
+
+// 초대를 보냅니다. 발송자와 방은 서버가 registry에서 확정하므로 여기서 방 정보를 싣지
+// 않습니다 — creationKey는 응답 유실 재시도가 두 번째 초대를 만들지 않게 하는 멱등 키입니다.
+export const createGameInviteApi = async (receiverId, creationKey) => {
+    return await api.post("/friends/invites", { receiverId, creationKey });
+};
+
+export const fetchGameInviteApi = async (inviteId) => {
+    return await api.get(`/friends/invites/${encodeURIComponent(inviteId)}`);
+};
+
+export const declineGameInviteApi = async (inviteId) => {
+    return await api.post(`/friends/invites/${encodeURIComponent(inviteId)}/decline`);
+};

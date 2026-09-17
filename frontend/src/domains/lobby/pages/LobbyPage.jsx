@@ -39,6 +39,7 @@ export default function LobbyPage() {
     openFriendList,
     closeFriendList,
     friendRequestTargetId,
+    gameInviteTargetId,
     handleNotificationNavigate,
   } = useLobbyNotificationPanels({ searchParams, navigate })
 
@@ -70,6 +71,7 @@ export default function LobbyPage() {
           onCloseNotifications={closeNotifications}
           onNotificationNavigate={handleNotificationNavigate}
           friendRequestTargetId={friendRequestTargetId}
+          gameInviteTargetId={gameInviteTargetId}
         />
       </LobbyContentLayer>
 
