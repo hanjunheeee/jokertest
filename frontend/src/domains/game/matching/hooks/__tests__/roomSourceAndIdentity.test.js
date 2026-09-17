@@ -219,7 +219,7 @@ for (const status of ["APPLIED", "NO_CHANGE"]) {
     const queriesBefore = socket.countOf("get_current_room")
 
     // 서버는 역사적 결과를 알고 있지만, 지금 이 계정은 그 방의 확정 참가자가 아니다
-    // (그 사이 이탈·방장 이전·방 삭제·게임 시작). 실제 handleGetRoomSettingsUpdateResult가
+    // (그 사이 이탈·방 삭제·게임 시작). 실제 handleGetRoomSettingsUpdateResult가
     // 그 경우 room:null을 함께 돌려준다.
     socket.answer = (event) => (event === SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT
       ? { ok: true, status, changed: status === "APPLIED", settingsVersion: 2, roomId: ROOM_ID, requestId, room: null }
@@ -548,4 +548,78 @@ test("AC-05 · 최초 방 발견은 조회 한 번으로 끝난다(신원 가드
   assert.equal(socket.countOf("get_current_room"), 1, "최초 발견이 조회를 여러 번 돌았다")
   assert.equal(result.current.isRoomVerified, true)
   assert.equal(useMatchingStore.getState().roomId, ROOM_ID)
+})
+
+
+test("operator: account ABA recovery keeps current room broadcasts alive", async () => {
+  const { socket, result } = await mountVerified()
+  await act(async () => {
+    useAuthStore.setState({ user: { uuid: "account-b" }, isLoggedIn: true })
+    useAuthStore.setState({ user: { uuid: HOST }, isLoggedIn: true })
+  })
+  await settle()
+  assert.equal(result.current.isRoomVerified, true)
+  assert.equal(useMatchingStore.getState().roomId, ROOM_ID)
+  await act(async () => {
+    socket.trigger("player_ready_changed", {
+      uuid: "p1", isReady: true, canStart: false, roomId: ROOM_ID,
+      settingsVersion: 1, readyRevision: 7,
+    })
+  })
+  assert.equal(useMatchingStore.getState().players.find(p => p.uuid === "p1").isReady, true,
+    "authoritative ABA recovery permanently suppressed current-source events")
+})
+
+for (const status of ["APPLIED", "NO_CHANGE"]) {
+  test("operator: intervening ready event cannot validate missing-room result " + status, async () => {
+    const { socket, result } = await mountVerified()
+    const requestId = await makePendingSave(socket, result)
+    const queriesBefore = socket.countOf("get_current_room")
+    let verifyPromise
+    await act(async () => { verifyPromise = result.current.verifyRoomSettingsResult() })
+    await act(async () => {
+      socket.trigger("player_ready_changed", {
+        uuid: "p1", isReady: true, canStart: false, roomId: ROOM_ID,
+        settingsVersion: 1, readyRevision: 7,
+      })
+    })
+    // A ready event sent earlier is delivered while the result query is pending.
+    // Server membership may subsequently have ended; historical result is still valid.
+    await act(async () => {
+      socket.release(SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT,
+        { ok: true, status, roomId: ROOM_ID, requestId, settingsVersion: 2, room: null })
+      await verifyPromise
+    })
+    assert.equal(result.current.hasPendingSettingsResult, false)
+    assert.equal(socket.countOf("get_current_room"), queriesBefore + 1,
+      "an intervening ready event is not proof of current membership")
+    assert.equal(result.current.isRoomVerified, false)
+    assert.equal(socket.countOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS), 1)
+    await act(async () => { socket.release("get_current_room", { ok: true, room: null }) })
+    assert.equal(useMatchingStore.getState().roomId, null)
+    assert.equal(navigations.roomDeleted, 1)
+  })
+}
+
+test("operator: same-batch membership ABA recovery keeps current events alive", async () => {
+ const { socket, result } = await mountVerified()
+ socket.answer = () => HOLD
+ await act(async () => {
+   useMatchingStore.getState().setRoom(serverRoom({roomId:"room-2"}))
+   useMatchingStore.getState().setRoom(serverRoom())
+ })
+ assert.equal(result.current.isRoomVerified, false)
+ await act(async () => {
+   while(socket.holds.some(h=>h.event==="get_current_room")) {
+     socket.release("get_current_room", {ok:true, room:serverRoom()})
+   }
+ })
+ await settle()
+ assert.equal(result.current.isRoomVerified, true)
+ await act(async () => {
+   socket.trigger("player_ready_changed", {uuid:"p1", isReady:true, canStart:false,
+     roomId:ROOM_ID, settingsVersion:1, readyRevision:8})
+ })
+ assert.equal(useMatchingStore.getState().players.find(p=>p.uuid==="p1").isReady,true,
+   "membership ABA verification must renew the event subscription")
 })

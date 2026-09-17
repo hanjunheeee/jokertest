@@ -200,6 +200,8 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
    * ACK·오류·timeout·finally는 전부 이 값으로 자기 소속을 확인해야 한다.
    */
   const roomMembershipGenerationRef = useRef(0)
+  // 같은 렌더 배치에서 방 ID가 되돌아와도 새 소속의 이벤트 구독을 다시 붙인다.
+  const [roomEventGeneration, setRoomEventGeneration] = useState(0)
 
   /**
    * F-20(AC-05): **지금 소켓이 어느 계정으로 handshake한 연결인가.**
@@ -433,7 +435,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       socket.off('game_started', handleGameStarted)
       socket.off(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, handleRoomSettingsUpdated)
     }
-  }, [socket, roomId, onRoomDeleted, onGameStarted])
+  }, [socket, roomId, roomEventGeneration, onRoomDeleted, onGameStarted])
 
   // Room 상태 재동기화 effect. 위 이벤트 리스너 effect와 의도적으로 분리했다 — 저 effect는
   // roomId가 있어야만(이미 방에 있다는 전제) 의미가 있지만, 이 effect는 roomId가 없어도(오히려
@@ -781,6 +783,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 계정이 갈리면 방 안에 있지 않았더라도(roomId가 계속 null이어도) 소속 자체가 다른
       // 사람의 것이 된다 — store 구독만으로는 그 경우가 잡히지 않으므로 여기서 함께 올린다.
       roomMembershipGenerationRef.current += 1
+      setRoomEventGeneration(roomMembershipGenerationRef.current)
       settingsRequestVersionRef.current += 1
       // 계정이 바뀌면 이전 계정의 저장 요청은 "미확인"이 아니라 **적용될 수 없는 것**이다 —
       // 단절과 달리 여기서는 붙잡아 두지 않는다(다른 계정이 그 결과를 묻게 해서는 안 된다).
@@ -825,6 +828,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 소속이 한 번이라도 갈리면 그 이전에 시작된 저장·결과 조회는 전부 지난 소속의 것이다.
       // R1→R2→R1처럼 값이 되돌아오는 경우까지 구분하려면 단조 증가 세대가 유일한 근거다.
       roomMembershipGenerationRef.current += 1
+      setRoomEventGeneration(roomMembershipGenerationRef.current)
       // 그 요청들의 세대도 함께 무효화하고 잠금을 푼다(단절 처리와 같은 이유·같은 방식).
       // 풀지 않으면 새 방의 방장은 지난 소속의 응답이 도착할 때까지 저장 자체를 시작할 수
       // 없고, 그 지난 요청의 finally가 나중에 새 요청의 잠금을 대신 풀게 된다.
@@ -1261,15 +1265,17 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       //
       // 서버(handleGetRoomSettingsUpdateResult)는 요청자가 **지금도 그 방의 확정 참가자일
       // 때만** room을 싣는다. 역사적 결과(APPLIED/NO_CHANGE)는 알려주면서 room을 비웠다면,
-      // 그 사이 이탈·방장 이전·방 삭제·게임 시작으로 서버는 더 이상 이 계정을 그 방에 두고
+      // 그 사이 이탈·방 삭제·게임 시작으로 서버는 더 이상 이 계정을 그 방에 두고
       // 있지 않다는 뜻이다. 그런데 이 화면은 여전히 옛 방·옛 설정·옛 권한을 들고 있고,
       // 검증도 'verified'로 남아 있다 — 그 위에서 준비·시작·저장이 계속 열린다.
       //
       // 그래서 이 요청의 정착은 그대로 보존하되(다시 저장하지 않는다 — 다시 저장할지는 최신
       // 설정을 본 방장이 정한다), 행동을 열어 두기 전에 권위 있는 소속·설정을 다시 확보한다.
-      // 이미 더 새로운 사건을 반영해 스냅샷이 낡아 버려진 경우에는 묻지 않는다 — 그쪽이 이미
+      // 응답에 스냅샷이 있고 더 새로운 사건을 반영해 낡아 버려진 경우에는 묻지 않는다 — 그쪽이 이미
       // 최신이고, 여기서 또 물으면 조회가 꼬리를 문다.
-      if (!appliedAuthoritativeRoom && isRoomSnapshotFresh()) requestRoomResync()
+      // 방 스냅샷이 없으면 중간에 준비 방송이 왔어도 현재 소속을 증명하지 못한다.
+      // 스냅샷이 있는 옛 응답만 적용 세대로 걸러 추가 조회를 생략한다.
+      if (!response.room || (!appliedAuthoritativeRoom && isRoomSnapshotFresh())) requestRoomResync()
       return { ok: true, status: response.status, settingsVersion: response.settingsVersion }
     } catch {
       if (!isStaleResponse()) {
