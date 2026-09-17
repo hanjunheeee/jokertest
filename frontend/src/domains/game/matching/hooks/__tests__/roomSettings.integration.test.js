@@ -253,6 +253,9 @@ test("AC-06 · 실제 생성 화면의 두 탭·요청·저장값·조회·store
 
   // (5) 공개 목록 응답.
   const list = await new Promise((resolve) => handleGetPublicRooms(resolve))
+  assert.equal(list.ok, true)
+  assert.equal(list.rooms.length, 1, "생성한 방이 공개 목록에 있어야 한다")
+  assert.ok(list.rooms.some((room) => room.id === storedRoomId), "생성한 방의 공개 응답을 검사해야 한다")
   assert.equal(JSON.stringify(list.rooms).includes("pectator"), false, "공개 목록에 관전자 키가 있다")
 })
 
@@ -301,6 +304,25 @@ test("편집 패널은 서버 확정 설정에서 시작하고, D-12·관전자 
   assert.equal(Object.hasOwn(formState.checks, "allow-spectators"), false)
   assert.equal(Object.hasOwn(formState.ranges, "allow-spectators"), false)
   assert.equal(JSON.stringify(formState).includes("pectator"), false)
+
+  // 실제 공용 변환기의 중첩 오염 제거와 정상값 보존을 함께 검증한다.
+  const nestedForm = buildRoomSettingsFormState({
+    accessType: room.accessType,
+    settings: { ...room.settings, roleCompositionMode: "custom",
+      roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, SPECTATOR: 1 },
+      roleNightActionTimes: { JOKER: 30, SPECTATOR: 30 },
+    },
+  })
+  assert.equal(nestedForm.ok, true, nestedForm.code)
+  assert.deepEqual(nestedForm.roleComposition.roleCounts, { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
+  assert.deepEqual(nestedForm.specifiedRoleNightActionTimes, ["JOKER"])
+  assert.equal(JSON.stringify(nestedForm).includes("SPECTATOR"), false)
+  const nestedPayload = buildUpdateRoomSettingsPayload({ ...nestedForm,
+    roomId: room.roomId, requestId: "nested-form-proof", expectedSettingsVersion: room.settingsVersion,
+  })
+  assert.equal(nestedPayload.roleNightActionTimes.JOKER, 30)
+  assert.equal(nestedPayload.roleCounts.DOCTOR, 1)
+  assert.equal(JSON.stringify(nestedPayload).includes("SPECTATOR"), false)
 
   // 서버 값이 그대로 폼 값이 됐는가.
   assert.equal(formState.ranges["max-players"], 6)
