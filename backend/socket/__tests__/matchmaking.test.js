@@ -1,3 +1,11 @@
+// backend/models는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지 않는다).
+// npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이 비어 있어 require
+// 자체가 죽으므로, 같은 디렉터리의 gameSession.test.js·gameSession.dayTimers.test.js·
+// matchmaking.gameInvite.test.js와 **같은 관례**로 더미 폴백을 둔다(값도 .env.test와 동일).
+// 이미 설정돼 있으면 덮지 않으므로 공식 명령의 동작은 그대로다. SQL 경계는 아래에서 전부
+// 대역으로 교체되므로 이 파일에서 실제 쿼리는 한 번도 실행되지 않는다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -102,7 +110,25 @@ test('create_room: 정상 생성 시 Socket room 가입과 Map 반영이 이루�
     const res = await callAsPromise(handleCreateRoom, io, socket, 'uuid-B', validSettingsPayload())
 
     assert.equal(res.ok, true)
-    assert.deepEqual(Object.keys(res.room).sort(), ['canStart', 'hostUuid', 'players', 'roomCode', 'roomId'])
+    // F-20(AC-03/AC-06): 참가자용 방 응답의 **승인된** 최상위 계약이다. accessType·
+    // settingsVersion·settings가 새로 추가됐지만 이 목록이 여전히 전부여야 한다 — 즉
+    // 이 단언은 "새 필드가 들어왔다"가 아니라 "허용한 것 말고는 아무것도 안 나간다"를 고정한다.
+    assert.deepEqual(Object.keys(res.room).sort(),
+        ['accessType', 'canStart', 'hostUuid', 'players', 'roomCode', 'roomId', 'settings', 'settingsVersion'])
+    // 서버 내부 필드 비공개(이 시험의 원래 핵심). 위 exact-key 단언과 중복이지만, 어떤 이름이
+    // 왜 금지인지를 이름으로 남겨 둬야 나중에 목록을 넓힐 때 실수로 함께 통과하지 않는다.
+    for (const internal of ['id', 'code', 'title', 'status', 'createdAt',
+        'roomInstanceId', 'generation', 'readyRevision']) {
+        assert.equal(Object.hasOwn(res.room, internal), false, `내부 필드 ${internal}가 ack에 실렸다`)
+    }
+    // F-20(AC-06): 새로 공개되는 중첩 settings도 승인된 키만 담는다 — 저장 값을 그대로
+    // 내보내지 않는 경계(buildRoomSettingsView)가 실제로 동작하는지 여기서 고정한다.
+    assert.deepEqual(Object.keys(res.room.settings).sort(),
+        ['dayDiscussionTime', 'dayVoteTime', 'jokerCount', 'lightsOut', 'maxPlayers',
+            'nightActionTime', 'roleCompositionMode', 'soulBetting', 'voteReveal'])
+    assert.equal(JSON.stringify(res.room).includes('pectator'), false, '관전자 필드가 응답에 실렸다')
+    assert.equal(res.room.accessType, 'open')
+    assert.equal(res.room.settingsVersion, 1) // 생성 시 서버가 부여하는 최초 확정본
     assert.equal(socket.joined.length, 1)
     assert.equal(socket.joined[0], res.room.roomId)
 
@@ -860,10 +886,22 @@ test('join_room_by_code: join 이후 커밋 전 예상 못한 예외가 나면 S
     const io = createFakeIo([])
     const roomId = 'room-exc'
     const roomCode = 'EXC123'
-    // settings 접근 자체가 예외를 던지도록 만들어, "join은 성공했지만 정원 검사(커밋 전) 단계에서
-    // 예상 못한 예외가 발생하는" 상황을 흉내낸다.
+    // "join은 성공했지만 정원 검사(커밋 전) 단계에서 예상 못한 예외가 발생하는" 상황을 흉내낸다.
+    // 그 정원 검사가 읽는 값은 room.settings.maxPlayers 하나이므로(handleJoinRoomByCode의
+    // `room.settings?.maxPlayers ?? ...`), 바로 그 속성 접근만 던지게 한다 — 예외가 주입되는
+    // 지점은 예전(모든 접근에서 throw)과 **동일한 그 줄**이고, join 이후·커밋 이전이라는
+    // 조건도 그대로다.
+    //
+    // 모든 접근에서 던지지 않는 이유: F-20에서 __getStateSnapshotForTests가 settings를 깊게
+    // 복사하게 됐다(스냅샷이 라이브 참조를 가리키면 "저장 전후가 같다"는 무변경 단언이 같은
+    // 객체를 비교하며 항상 통과해 버리므로). 모든 접근이 던지면 아래 롤백 단언이 스냅샷을
+    // 읽는 순간 주입한 예외가 되살아나, 정작 검증하려던 롤백 결과를 볼 수 없다. 주입을
+    // 없애거나 깊은 복사를 되돌리는 대신 주입 범위를 실제 실패 지점으로 좁힌다.
     const brokenSettings = new Proxy({}, {
-        get() { throw new Error('설정 조회 실패(테스트 주입)') },
+        get(target, prop, receiver) {
+            if (prop === 'maxPlayers') throw new Error('설정 조회 실패(테스트 주입)')
+            return Reflect.get(target, prop, receiver)
+        },
     })
     matchmaking.__seedRoomForTests({
         id: roomId,
@@ -877,11 +915,17 @@ test('join_room_by_code: join 이후 커밋 전 예상 못한 예외가 나면 S
     io.sockets.sockets.set(joiner.id, joiner)
     await handleJoinRoomByCode(io, joiner, 'uuid-excjoin', roomCode)
 
-    assert.match(joiner.emitted.find((e) => e.event === 'room_join_failed').payload.message, /참여하지 못했습니다/)
+    const failed = joiner.emitted.find((e) => e.event === 'room_join_failed')
+    assert.match(failed.payload.message, /참여하지 못했습니다/)
+    // 주입한 예외가 정말 "예상 못한 예외" 경로로 떨어졌는지 고정한다 — 이 단언이 없으면
+    // 주입이 언젠가 발동하지 않게 돼도 ROOM_FULL 같은 **정상** 거부로 조용히 통과한다.
+    assert.equal(failed.payload.code, ROOM_JOIN_ERROR_CODES.INTERNAL_ERROR)
     assert.equal(joiner.left.length, 1) // join 후 커밋 전 예외 → Socket room에서 정리됨
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms.find(([id]) => id === roomId)
     assert.equal(room.players.length, 1) // 새 참가자는 반영되지 않음
+    // 두 Map 중 한쪽만 되돌아가는 일이 없어야 한다(역방향 소속도 커밋되지 않았다).
+    assert.equal(snapshot.playerRoom.some(([u]) => u === 'uuid-excjoin'), false)
 })
 
 // ── P1: 정원 레이스 — 실제 동시 참가 시나리오 ───────────────────────────────

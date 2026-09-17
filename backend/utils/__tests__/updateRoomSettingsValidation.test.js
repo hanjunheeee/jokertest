@@ -1,3 +1,8 @@
+// 아래에서 backend/socket/matchmaking을 require해 이벤트명·오류 코드 상수의 단일 원천을
+// 대조한다. 그 체인이 backend/models를 끌고 오며 require 시점에 DATABASE_URL을 **파싱만**
+// 한다(연결은 시도하지 않는다). 이 파일만 직접 실행해도 되도록 같은 관례의 더미 폴백을 둔다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 

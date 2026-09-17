@@ -1,3 +1,8 @@
+// backend/models는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지 않는다).
+// 이 파일만 직접 실행해도 되도록 같은 디렉터리의 다른 스위트와 같은 관례로 더미 폴백을 둔다
+// (값은 .env.test와 동일하며, 이미 설정돼 있으면 덮지 않는다).
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
