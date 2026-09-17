@@ -202,6 +202,18 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   const roomMembershipGenerationRef = useRef(0)
 
   /**
+   * F-20(AC-05): **지금 소켓이 어느 계정으로 handshake한 연결인가.**
+   *
+   * 신원이 갈리는 순간과 그 신원의 연결이 생기는 순간은 같지 않다. useSocket은 accountUuid를
+   * deps로 둔 effect에서 소켓을 만들므로, 계정이 바뀌면 zustand 구독(동기)이 먼저 돌고 그
+   * **뒤에** 비로소 setSocket(새 소켓)이 일어난다. 그 사이의 getSocket()은 아직 이전 계정의
+   * 쿠키로 인증된 연결이라, 그 통로로 새 신원의 방을 묻고 그 응답을 믿으면 남의 소속을 내
+   * 것으로 받아들이게 된다. 그래서 "소켓 참조가 바뀐 순간의 로그인 계정"을 그 연결의 신원으로
+   * 각인해 두고, 현재 신원과 일치할 때만 조회를 내보낸다.
+   */
+  const socketIdentityRef = useRef({ socket: null, uuid: null })
+
+  /**
    * F-20(AC-05): 지금 일어나는 방 교체가 **서버가 이미 확정해 준 것**인지 표시한다.
    *
    * 소속이 바뀌면 그 소속을 서버에 다시 물어야 하지만(아래 구독), 그 교체 자체가 권위 있는
@@ -260,6 +272,29 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     const { addPlayer, removePlayer, updateHost, setPlayerReady, clearRoom, applyRoomSettings } =
       useMatchingStore.getState()
 
+    /**
+     * F-20(AC-05): **이 사건이 지금 이 화면의 통로에서 온 것인가.**
+     *
+     * 리스너를 해제하는 것만으로는 부족하다. setSocket(B)가 구독자에게 알리는 시점은 React가
+     * 이 effect의 cleanup을 실행하는 시점보다 **먼저**라, 그 사이에 이미 남이 된 A로 도착한
+     * 사건은 아직 살아 있는 이 리스너로 그대로 들어온다 — 받는 쪽이 자기 출처를 직접
+     * 확인해야 한다(usePublicRooms가 쓰는 것과 같은 경계다).
+     *
+     * 출처와 함께 **신원·소속**도 본다. 계정이 갈리거나 소속이 갈리는 순간에도 소켓 참조는
+     * 아직 그대로일 수 있는데, 그때 도착한 사건은 이전 계정·이전 소속의 사실이다. 소속 세대는
+     * store 구독이 set() 안에서 동기적으로 올리므로, 이 effect가 붙는 시점에는 이미 새 값이다
+     * — 정상적인 방 발견 이후의 사건을 영구히 막지 않는다.
+     */
+    const attachedSocket = socket
+    const attachedUuid = useAuthStore.getState().user?.uuid ?? null
+    const attachedMembership = roomMembershipGenerationRef.current
+    let owned = true
+    const isCurrentSource = () =>
+      owned
+      && attachedSocket === getSocket()
+      && (useAuthStore.getState().user?.uuid ?? null) === attachedUuid
+      && roomMembershipGenerationRef.current === attachedMembership
+
     // F-20(AC-05): 확정된 방 사건을 적용할 때마다 **적용 세대**를 올린다. 설정 버전만 올리면,
     // 같은 설정 버전에서 일어난 방장 이전·참가·이탈·준비 변경 뒤에 도착한 "그 이전에 발행된"
     // 전체 방 조회가 옛 방장·옛 명단·옛 준비 상태로 화면을 되돌린다 — 그 조회들은 이 세대가
@@ -269,11 +304,16 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       bumpRoomApplyGenerationRef.current?.()
     }
 
-    const handlePlayerJoinedRoom = ({ player, canStart }) =>
+    const handlePlayerJoinedRoom = ({ player, canStart }) => {
+      if (!isCurrentSource()) return
       applyRoomEvent(() => addPlayer(player, canStart))
-    const handlePlayerLeftRoom = ({ uuid, canStart }) =>
+    }
+    const handlePlayerLeftRoom = ({ uuid, canStart }) => {
+      if (!isCurrentSource()) return
       applyRoomEvent(() => removePlayer(uuid, canStart))
+    }
     const handleHostChanged = ({ hostUuid, canStart, roomId: eventRoomId, settingsVersion }) => {
+      if (!isCurrentSource()) return
       if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
       applyRoomEvent(() => updateHost(hostUuid, canStart))
       // F-20(AC-05): 방장이 바뀌면 이전 방장의 편집 초안은 더 이상 유효한 시작점이 아니다.
@@ -284,6 +324,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     }
     // F-20(AC-03/AC-04): 설정 변경 스냅샷은 설정·참가자 준비·canStart를 한 번에 적용한다.
     const handleRoomSettingsUpdated = (payload) => {
+      if (!isCurrentSource()) return
       if (!payload || payload.roomId !== roomId) return // 다른 방의 늦은 사건은 적용하지 않는다
       // 이 스냅샷은 설정만 싣고 있지 않다 — 같은 버전 시점의 **명단·준비·방장·canStart**를 통째로
       // 싣는다. 그래서 "설정이 같으니 다시 적용해도 무해하다"가 성립하지 않는다. 적용 여부는
@@ -309,6 +350,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     const handlePlayerReadyChanged = ({
       uuid, isReady, canStart, sfxEvent, roomId: eventRoomId, settingsVersion, readyRevision,
     }) => {
+      if (!isCurrentSource()) return
       if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
       // 이미 더 새로운 설정 스냅샷이나 더 새로운 준비 사실을 반영했다면 이 사건은 과거다 —
       // 표시도 소리도 내지 않는다(소리만 남으면 없는 변경을 알리게 된다).
@@ -326,12 +368,17 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       playRoomSfx('room-ready-changed', sfxEvent)
     }
     const handleRoomDeleted = () => {
+      // 이미 남이 된 연결의 "방이 사라졌다"는 지금 이 화면을 이동시킬 근거가 아니다.
+      if (!isCurrentSource()) return
       // 서버가 "이 방은 사라졌다"를 확정한 사건이다 — 소속 교체를 다시 물을 이유가 없다.
       applyVerifiedRoom(clearRoom)
       onRoomDeleted?.()
     }
     // 서버 handleStartGame이 참가자 각자에게 개인화된 payload로 실제 보내는 이벤트다.
     const handleGameStarted = (payload) => {
+      // 옛 연결·이전 계정의 시작 사건으로 인게임 세션을 만들지 않는다(잠금도 건드리지 않는다 —
+      // 그 잠금은 이미 소속·세대 교체 경계에서 풀렸거나 지금 요청의 것이다).
+      if (!isCurrentSource()) return
       clearStartState()
       // 서버 payload에는 hostUuid가 없다. 바로 아래 clearRoom()이 방 상태를 지우므로, 그 전에
       // 지금 방의 방장을 읽어 이 게임 세션의 값으로 함께 넘긴다 — 인게임 설정의 방관리 탭이
@@ -375,6 +422,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 각 off는 등록할 때와 동일한 함수 참조로 호출한다 — event명만으로 off하면 같은
     // 이벤트에 대한 다른 구독자의 리스너까지 함께 지워질 수 있다.
     return () => {
+      // 소유권을 먼저 내려놓는다 — 아래 off가 도는 사이에도 이 핸들러들은 더 이상 지금
+      // 화면의 것이 아니다. 해제는 등록할 때와 **같은 참조로 자기 리스너만** 걷는다.
+      owned = false
       socket.off('player_joined_room', handlePlayerJoinedRoom)
       socket.off('player_left_room', handlePlayerLeftRoom)
       socket.off('host_changed', handleHostChanged)
@@ -395,6 +445,17 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       setRoomSyncStatus('waiting_socket')
       return
     }
+
+    // 이 소켓 참조가 처음 보이는 것이면 지금 로그인한 계정을 그 연결의 신원으로 각인한다.
+    // 같은 소켓으로 effect가 다시 도는 경우(onRoomDeleted 교체 등)에는 다시 찍지 않는다 —
+    // 그러면 이전 계정의 연결이 새 신원의 것으로 둔갑한다.
+    if (socketIdentityRef.current.socket !== socket) {
+      socketIdentityRef.current = { socket, uuid: useAuthStore.getState().user?.uuid ?? null }
+    }
+    /** 이 연결이 **지금 로그인한 그 계정으로** 인증된 것인가. */
+    const isConnectionIdentityCurrent = () =>
+      socketIdentityRef.current.socket === socket
+      && socketIdentityRef.current.uuid === (useAuthStore.getState().user?.uuid ?? null)
 
     // 이 effect 인스턴스(현재 socket)에 속한 모든 진행 중 요청·예약된 timer를 무효화하는 데
     // 쓰는 지역 변수들이다. socket이 바뀌거나 컴포넌트가 사라지면 cleanup에서 즉시 갱신된다.
@@ -512,6 +573,14 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 이벤트가 아직 발생하지 않았더라도(예: DevTools Offline 직후) window.navigator.onLine은
       // 즉시 false가 되므로, socket.connected만으로는 놓치는 구간을 이 검사로 막는다.
       if (socket !== getSocket() || !socket.connected || !window.navigator.onLine) {
+        setRoomSyncStatus('waiting_socket')
+        return
+      }
+      // 신원이 이미 갈렸는데 연결은 아직 이전 계정의 것이다. 이 통로로 물으면 서버는 그 소켓의
+      // 인증 신원(= 이전 계정)으로 답하므로, 그 응답은 지금 계정의 소속에 대한 증거가 될 수
+      // 없다. 조회 자체를 보내지 않고 기다린다 — useSocket이 새 쿠키로 연결을 교체하면 이
+      // effect가 다시 돌면서 그 통로로 새 시리즈를 시작한다.
+      if (!isConnectionIdentityCurrent()) {
         setRoomSyncStatus('waiting_socket')
         return
       }
@@ -730,6 +799,18 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 계정이 갈려서 방을 비우는 것은 이 훅이 내리는 확정 판단이다. 아래 소속 구독이 이것을
       // "확인이 필요한 소속 교체"로 오해해 지금 계정도 아닌 신원으로 조회를 걸면 안 된다.
       applyVerifiedRoom(() => useMatchingStore.getState().clearRoom())
+
+      // 이전 계정에서 받은 **검증 자체**도 이 신원의 것이 아니다. 그대로 두면 한 번도 확인한
+      // 적 없는 신원에서 준비·시작·저장이 곧바로 열린다(세 경로 모두 roomSyncStatus만 본다).
+      // 반대로 확인 중이던 조회는 신원이 달라 폐기되는데, 새 조회를 걸지 않으면 검증이
+      // 'checking'에 갇힌 채 아무도 그것을 끝내 주지 않는다 — 소켓 교체가 아예 일어나지 않는
+      // A→B→A에서는 동기화 effect가 다시 돌 계기조차 없다.
+      //
+      // 그래서 내리는 것과 이 신원의 조회를 새로 거는 것을 함께 한다. 다만 그 조회가 실제로
+      // 나가는지는 위 신원 가드가 정한다 — 아직 이전 계정의 연결뿐이면 waiting_socket으로
+      // 되돌아가고, 지금도 이 계정으로 인증된 연결이면(A→B→A) 그 통로로 정상 확인한다.
+      if (invalidateRoomVerificationRef.current) invalidateRoomVerificationRef.current()
+      else setRoomSyncStatus('waiting_socket')
     })
     return () => unsubscribe?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1150,8 +1231,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 결과(status)는 이 요청의 정착이고, room은 그 응답이 실어 보낸 스냅샷이다. 조회를
       // 보낸 뒤에 설정 변경 방송 같은 더 새로운 사건을 이미 반영했다면, 정착은 그대로 받되
       // 스냅샷은 적용하지 않는다 — 적용하면 방금 받은 새 설정이 옛 값으로 되돌아간다.
-      if (response.room && isRoomSnapshotFresh()
-        && response.room.roomId === useMatchingStore.getState().roomId) {
+      const appliedAuthoritativeRoom = Boolean(response.room) && isRoomSnapshotFresh()
+        && response.room.roomId === useMatchingStore.getState().roomId
+      if (appliedAuthoritativeRoom) {
         useMatchingStore.getState().setRoom(response.room)
         bumpRoomApplyGeneration()
       }
@@ -1174,6 +1256,20 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       setPendingSettingsRequest(null)
       setSettingsError(null)
       setSettingsResultNotice(null)
+
+      // **스냅샷이 없다는 사실은 지금 소속이 유효하다는 증거가 아니다.**
+      //
+      // 서버(handleGetRoomSettingsUpdateResult)는 요청자가 **지금도 그 방의 확정 참가자일
+      // 때만** room을 싣는다. 역사적 결과(APPLIED/NO_CHANGE)는 알려주면서 room을 비웠다면,
+      // 그 사이 이탈·방장 이전·방 삭제·게임 시작으로 서버는 더 이상 이 계정을 그 방에 두고
+      // 있지 않다는 뜻이다. 그런데 이 화면은 여전히 옛 방·옛 설정·옛 권한을 들고 있고,
+      // 검증도 'verified'로 남아 있다 — 그 위에서 준비·시작·저장이 계속 열린다.
+      //
+      // 그래서 이 요청의 정착은 그대로 보존하되(다시 저장하지 않는다 — 다시 저장할지는 최신
+      // 설정을 본 방장이 정한다), 행동을 열어 두기 전에 권위 있는 소속·설정을 다시 확보한다.
+      // 이미 더 새로운 사건을 반영해 스냅샷이 낡아 버려진 경우에는 묻지 않는다 — 그쪽이 이미
+      // 최신이고, 여기서 또 물으면 조회가 꼬리를 문다.
+      if (!appliedAuthoritativeRoom && isRoomSnapshotFresh()) requestRoomResync()
       return { ok: true, status: response.status, settingsVersion: response.settingsVersion }
     } catch {
       if (!isStaleResponse()) {
