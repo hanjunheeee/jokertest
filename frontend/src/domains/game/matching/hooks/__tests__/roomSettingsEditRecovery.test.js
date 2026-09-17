@@ -1,22 +1,11 @@
 /**
- * F-20 AC-03/AC-05: 편집 초기값이 서버 응답으로 되맞춰질 때의 **의도 경계**와,
- * 저장 결과를 끝내 확인하지 못했을 때 화면에 남는 **결론**.
- *
- * 두 가지 모두 훅 상태만 보아서는 말할 수 없다. 그래서 실제 useMatchingPage와 실제
- * GameSetupPanel을 같은 트리에 올리고, 실제 백엔드 handleUpdateRoomSettings가 돌려준 응답을
- * 그대로 통과시킨다. 대역은 SQL 경계와 소켓 전송뿐이다.
- *
- *   실제 스테퍼 클릭 → GameSetupPanel 제출 → useMatchingPage.submitSettings
- *     → useMatchingRoom.saveRoomSettings → buildUpdateRoomSettingsPayload
- *     → 실제 handleUpdateRoomSettings → 그 거부 응답의 room → 실제 matchingStore
- *     → 같은 트리의 DOM과 **다음 제출 payload**
- *
- * 소켓 모듈을 목업하지 않고 실제 socketClient.setSocket으로 대역 인스턴스를 꽂으므로 이 파일은
- * `--experimental-test-module-mocks` 없이 그대로 돈다. 실제 GameMatchingPage 자체는 Vite 전용
- * 모듈(shared/env.js의 import.meta.env)을 끌고 와 이 조건에서 마운트할 수 없어, 페이지가 이
- * 값들을 실제로 연결하는지는 아래 배선 시험이 소스로 함께 고정한다.
+ * F20 recovery through the actual GameMatchingPage, useMatchingPage, room hook,
+ * settings panel and store in one mounted tree. Save requests use the real backend
+ * handler; socket transport and SQL dependencies are controlled test boundaries.
+ * Requires the package's --experimental-test-module-mocks flag for Vite env and
+ * external HTTP only. No production page/hook/panel is mocked or reconstructed.
  */
-import test from "node:test"
+import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
@@ -48,14 +37,23 @@ register(new URL(
   import.meta.url,
 ))
 
-const { render, act, cleanup } = await import("@testing-library/react")
+mock.module("../../../../../shared/env.js", {
+  namedExports: { API_BASE_URL: "http://localhost:4000", DISCORD_SUPPORT_URL: undefined },
+})
+const rejectNetwork = async () => { throw new Error("Unexpected HTTP call in room recovery test") }
+mock.module("../../../../../shared/api/client.js", {
+  namedExports: {
+    api: { get: rejectNetwork, post: rejectNetwork, put: rejectNetwork, patch: rejectNetwork, delete: rejectNetwork },
+    apiClient: rejectNetwork,
+    refreshAccessToken: rejectNetwork,
+  },
+})
+const { render, act, cleanup, waitFor } = await import("@testing-library/react")
+const { default: GameMatchingPage } = await import("../../pages/GameMatchingPage.jsx")
 const { MemoryRouter } = await import("react-router-dom")
 const { setSocket } = await import("../../../../../shared/socket/socketClient.js")
 const { useMatchingStore } = await import("../../store/matchingStore.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
-const { useMatchingPage } = await import("../useMatchingPage.js")
-const { default: GameSetupPanel } = await import("../../../setup/components/GameSetupPanel.jsx")
-const { default: RoomSettingsResultNotice } = await import("../../components/RoomSettingsResultNotice.jsx")
 const { SOCKET_EVENTS, ROOM_SETTINGS_ERROR_MESSAGES } =
   await import("../../../setup/constants/gameSetupSocket.js")
 
@@ -78,46 +76,6 @@ const { handleCreateRoom, handleJoinRoomByCode, handleUpdateRoomSettings, handle
 
 /** 응답을 붙잡아 두라는 표식(결과 미확인 재현용). */
 const HOLD = Symbol("hold")
-
-/**
- * GameMatchingPage가 편집·안내에 대해 하는 것과 **같은 배선**을 올린다.
- *
- * 실제 페이지 자체는 Vite 전용 모듈 때문에 이 조건에서 마운트할 수 없다. 그래서 페이지가
- * 소유한 조건(방장만 편집 진입 / 편집 중에는 안내를 가림 / 대기 표시와 안내의 분리)을 같은
- * 값으로 재현하고, 페이지가 실제로 그렇게 연결돼 있는지는 아래 배선 시험이 소스로 고정한다.
- */
-function SettingsHarness() {
-  const page = useMatchingPage()
-  return React.createElement(
-    "div",
-    null,
-    page.canEditSettings && !page.settingsOpen
-      ? React.createElement("button", {
-        type: "button", "aria-label": "방 설정 변경", onClick: page.openSettings,
-      }, "방 설정 변경")
-      : null,
-    page.hasPendingSettingsResult
-      ? React.createElement("div", { role: "status", "aria-label": "설정 저장 결과 확인 대기" },
-        React.createElement("button", {
-          type: "button", "aria-label": "설정 저장 결과 확인", onClick: page.verifyRoomSettingsResult,
-        }, "결과 확인"))
-      : null,
-    React.createElement(RoomSettingsResultNotice, {
-      message: page.settingsOpen ? null : page.settingsResultNotice,
-      onDismiss: page.dismissSettingsResultNotice,
-    }),
-    page.settingsOpen
-      ? React.createElement(GameSetupPanel, {
-        visible: true,
-        mode: "edit",
-        initialFormState: page.settingsForm.ok ? page.settingsForm : null,
-        formResetKey: page.settingsFormResetKey,
-        isCreating: page.isSavingSettings,
-        onCreateGame: page.submitSettings,
-      })
-      : null,
-  )
-}
 
 /**
  * 실제 서버 방을 만들고(방장 + guestCount명), 그 방을 실제로 다루는 클라이언트 소켓 대역을
@@ -193,10 +151,11 @@ async function mountHost({ guestCount = 0, settings = {} } = {}) {
   let view
   await act(async () => {
     view = render(React.createElement(MemoryRouter, { initialEntries: ["/game-matching"] },
-      React.createElement(SettingsHarness)))
+      React.createElement(GameMatchingPage)))
   })
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 
+  await waitFor(() => assert.ok(view.container.querySelector('button[aria-label="방 설정 변경"]')))
   return { io, serverSocket, socket, room: created.room, container: view.container }
 }
 
@@ -324,6 +283,7 @@ test("AC-03 · 되맞춘 뒤 다시 지정한 직업별 밤 시간은 그대로 
 
 test("AC-05 · 결과 확인까지 마쳤는데도 적용 여부를 모르면 대기 표시가 사라진 뒤에도 그 결론이 대기방에 남는다", async () => {
   const { socket, container } = await mountHost({ settings: { maxPlayers: 8, jokerCount: 1 } })
+  const originalPageRoot = container.firstElementChild
   await clickByLabel(container, "방 설정 변경")
 
   // (1) 저장 응답을 붙잡아 두고 timeout으로 끝낸다 — "실패"가 아니라 "결과를 모른다"이다.
@@ -341,7 +301,7 @@ test("AC-05 · 결과 확인까지 마쳤는데도 적용 여부를 모르면 �
   })
 
   // 결과가 미확인이면 편집 진입이 잠기고 편집 패널이 닫힌다(기존 계약).
-  assert.ok(container.querySelector("[aria-label='설정 저장 결과 확인 대기']"),
+  assert.ok(container.querySelector("button[aria-label='설정 저장 결과 확인']"),
     "결과 확인 대기 표시가 없다")
   assert.equal(container.querySelector("button[aria-label='설정 저장']"), null,
     "결과 미확인 중에 편집 패널이 열린 채로 남았다")
@@ -360,8 +320,9 @@ test("AC-05 · 결과 확인까지 마쳤는데도 적용 여부를 모르면 �
     "결과를 모른다는 이유로 저장을 자동으로 다시 보냈다")
 
   // (3) 대기 표시는 사라진다. 그 순간 결론이 화면에서 통째로 사라지면 안 된다.
-  assert.equal(container.querySelector("[aria-label='설정 저장 결과 확인 대기']"), null,
+  assert.equal(container.querySelector("button[aria-label='설정 저장 결과 확인']"), null,
     "결과가 확정됐는데 대기 표시가 남았다")
+  assert.equal(container.firstElementChild, originalPageRoot, "결과 확인 중 실제 페이지가 교체됐다")
   const notice = container.querySelector("[aria-label='설정 저장 결과 안내']")
   assert.ok(notice, "확인을 마쳤는데 결론이 화면 어디에도 남지 않았다")
   assert.equal(notice.getAttribute("role"), "alert")
@@ -423,8 +384,7 @@ test("AC-05 · 그 안내는 새 저장·닫기·소속 교체에서 각각 사�
 })
 
 test("AC-05 · 실제 대기 페이지가 그 안내를 대기 표시·편집 패널과 독립된 자리에 연결한다", async () => {
-  // 실제 GameMatchingPage는 Vite 전용 모듈 때문에 이 조건에서 마운트할 수 없다(파일 상단 참고).
-  // 그래서 위 시험들이 고정한 배선을 페이지가 실제로 그대로 갖는지 소스로 확인한다.
+  // Supplemental wiring check; preceding tests mount the real page and exercise the actual DOM.
   const { readFileSync } = await import("node:fs")
   const { fileURLToPath } = await import("node:url")
   const source = readFileSync(
