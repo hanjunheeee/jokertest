@@ -92,6 +92,12 @@ export const ROOM_LIST_ROW_TITLE_CLASS =
 export const ROOM_LIST_ROW_COUNT_CLASS =
   "pointer-events-none shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,0.88vw,0.76rem)] font-semibold leading-none tabular-nums text-white/95 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// F-20: 서버가 승인한 직업 구성·제한시간 요약입니다. 제목보다 낮은 대비·작은 크기로 두어
+// 기존 행 위계(제목 > 인원 > 부가 정보)를 흔들지 않고, 좁은 폭에서는 잘라 인원 표시가
+// 밀려나지 않게 합니다(인원·마감 배지는 언제나 보여야 하는 정보입니다).
+export const ROOM_LIST_ROW_SETTINGS_CLASS =
+  "pointer-events-none min-w-0 shrink truncate font-subheading app-text-scaled [--app-text-size:clamp(0.58rem,0.82vw,0.7rem)] font-medium leading-none text-white/65 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+
 // 마감/진행중 카드를 어둡게 덮는 오버레이입니다.
 export const ROOM_LIST_ROW_DIM_OVERLAY_CLASS =
   "pointer-events-none absolute inset-0 rounded-sm bg-black/55 [filter:grayscale(0.6)]"

@@ -116,7 +116,15 @@ function registerConnectionHandlers(io, socket) {
         console.error("\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m", err);
     });
 
-    matchmaking.registerMatchmakingHandlers(io, socket, uuid);
+    // F-20(AC-01): onlineUsers는 이 파일이 소유하는 canonical 소켓 등록부다. matchmaking이
+    // 그 Map을 직접 들고 있게 하지 않고 "지금 이 계정의 socket.id" 하나만 읽는 접근자를
+    // 넘긴다 — 세션 재검증 await 사이에 같은 계정의 새 로그인이 소켓을 교체하면, 교체된 옛
+    // 소켓의 설정 저장 요청이 진입 시점에 거부된다(notifications_ready의 STALE_SOCKET와
+    // 같은 이중 방어다). handleConnection이 onlineUsers를 자신의 첫 await 이전에 교체하므로
+    // 이 접근자는 언제나 최신 값을 본다.
+    matchmaking.registerMatchmakingHandlers(io, socket, uuid, {
+        getCurrentSocketId: (accountUuid) => onlineUsers.get(accountUuid) ?? null,
+    });
     gameSession.registerGameHandlers(io, socket, uuid);
     registerNotificationHandlers(socket, uuid);
 

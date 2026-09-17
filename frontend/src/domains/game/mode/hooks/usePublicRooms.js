@@ -29,13 +29,19 @@ export function usePublicRooms() {
     if (!socket) return
 
     const requestVersion = ++fetchVersionRef.current
+    // F-20(AC-03): 조회와 방송은 서로 다른 통로지만 **같은 목록**을 말한다. 방송은 지금까지
+    // fetchVersionRef를 건드리지 않아, 방송보다 먼저 발행된 조회의 늦은 ack이 새 목록을
+    // 덮을 수 있었다(설정을 바꾼 직후 옛 정원·입장 방식이 되살아나는 경로다). 두 통로를
+    // 하나의 적용 세대로 묶고, 요청 시점의 세대가 아직 유효할 때만 반영한다.
+    const requestSocket = socket
     try {
       const response = await socket
         .timeout(PUBLIC_ROOM_LIST_TIMEOUT_MS)
         .emitWithAck(ROOM_LIST_SOCKET_EVENTS.GET_PUBLIC_ROOMS, {})
 
-      // 언마운트됐거나, 그 사이 더 최근 조회가 시작됐다면 이 응답은 버립니다.
+      // 언마운트됐거나, 그 사이 더 최근 조회·방송이 적용됐거나, 소켓이 교체됐다면 버립니다.
       if (disposedRef.current || fetchVersionRef.current !== requestVersion) return
+      if (requestSocket !== getSocket()) return
       if (response?.ok && Array.isArray(response.rooms)) setRooms(response.rooms)
     } catch {
       // 다음 서버 갱신 이벤트에서 다시 동기화될 수 있으므로 기존 목록을 유지합니다.
@@ -59,7 +65,11 @@ export function usePublicRooms() {
     let attachedSocket = null
 
     const handleRoomsUpdated = ({ rooms: nextRooms } = {}) => {
-      if (Array.isArray(nextRooms)) setRooms(nextRooms)
+      if (!Array.isArray(nextRooms)) return
+      // 방송은 언제나 "지금 이 순간"의 목록이다 — 적용 세대를 올려, 이 방송보다 먼저
+      // 발행돼 아직 돌아오지 않은 조회의 ack이 이 목록을 덮지 못하게 한다.
+      fetchVersionRef.current += 1
+      setRooms(nextRooms)
     }
     const handleRoomJoined = (room) => {
       clearJoinState()

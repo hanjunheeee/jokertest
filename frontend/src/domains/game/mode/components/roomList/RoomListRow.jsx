@@ -14,6 +14,7 @@ import {
   ROOM_LIST_ROW_FRAME_SELECTED_CLASS,
   ROOM_LIST_ROW_LOCK_BADGE_CLASS,
   ROOM_LIST_ROW_OVERLAY_CLASS,
+  ROOM_LIST_ROW_SETTINGS_CLASS,
   ROOM_LIST_ROW_STAGE_BADGE_CLASS,
   ROOM_LIST_ROW_STATUS_BADGE_FULL_CLASS,
   ROOM_LIST_ROW_STATUS_BADGE_IN_PROGRESS_CLASS,
@@ -22,6 +23,7 @@ import {
   ROOM_LIST_ROW_TOP_ROW_CLASS,
 } from "../../constants/roomListLayout.js"
 import { resolveRoomListRowCode } from "../../utils/resolveRoomListRowCode.js"
+import { summarizeRoomListSettings } from "../../utils/summarizeRoomListSettings.js"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 
 // 더미 stage 값을 화면에 보여줄 짧은 라벨로 바꿉니다(실제 게임 모드 체계가 아직 없어 임시 라벨).
@@ -30,7 +32,9 @@ const STAGE_LABELS = { 1: "1단계", 2: "2단계", 3: "3단계" }
 // 공개 방 목록에서 방 하나를 보여주는 표시 전용 row입니다.
 // room.displayStatus는 상위(RoomListShell)에서 deriveRoomDisplayStatus로 미리 계산해 내려줍니다.
 export default function RoomListRow({ room, selected, onSelect }) {
-  const { stage, current, max, title, displayStatus } = room
+  const { stage, current, max, title, displayStatus, settings } = room
+  // F-20(AC-03): 서버가 승인한 직업 구성·제한시간 요약. 값이 없으면 아무것도 그리지 않는다.
+  const settingsSummary = summarizeRoomListSettings(settings)
 
   const isFull = displayStatus === "full"
   const isInProgress = displayStatus === "in_progress"
@@ -49,7 +53,9 @@ export default function RoomListRow({ room, selected, onSelect }) {
         aria-pressed={selected}
         aria-label={`${stageLabel ? `${stageLabel} ` : ""}${title}, ${current}/${max}명${
           rowCode.ariaText ? `, ${rowCode.ariaText}` : ""
-        }${statusLabel ? `, ${statusLabel}` : ""}`}
+        }${settingsSummary.ariaText ? `, ${settingsSummary.ariaText}` : ""}${
+          statusLabel ? `, ${statusLabel}` : ""
+        }`}
         className={`${ROOM_LIST_ROW_BUTTON_BASE_CLASS} ${
           isJoinable ? ROOM_LIST_ROW_BUTTON_INTERACTIVE_CLASS : ROOM_LIST_ROW_BUTTON_DISABLED_CLASS
         }`}
@@ -77,6 +83,13 @@ export default function RoomListRow({ room, selected, onSelect }) {
 
           <div className={ROOM_LIST_ROW_BOTTOM_ROW_CLASS}>
             <span className={ROOM_LIST_ROW_TITLE_CLASS}>{title}</span>
+            {/* 설정 요약은 기존 제목과 인원 사이에 둔다 — 인원·마감 표시의 자리는 그대로다.
+                전체 aria-label이 이미 같은 내용을 읽어주므로 이 시각 표시는 장식이다. */}
+            {settingsSummary.roles || settingsSummary.times ? (
+              <span className={ROOM_LIST_ROW_SETTINGS_CLASS}>
+                {[settingsSummary.roles, settingsSummary.times].filter(Boolean).join(" / ")}
+              </span>
+            ) : null}
             <span className={ROOM_LIST_ROW_COUNT_CLASS}>
               {current}/{max}
             </span>

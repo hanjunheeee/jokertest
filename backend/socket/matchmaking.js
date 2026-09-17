@@ -3,6 +3,17 @@ const userRepository = require('../repositories/user.repositories')
 const economyService = require('../service/economy.service')
 const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
 const { validateCreateRoomPayload } = require('../utils/createRoomValidation')
+// F-20(AC-01~AC-06): 대기방 설정 변경의 입력 검증·허용 필드·이벤트/오류 코드는 전부 이
+// 모듈이 소유한다. 이 파일은 "권한·현재 상태·커밋"만 판단하고 값의 모양은 판단하지 않는다.
+const {
+    validateUpdateRoomSettingsPayload,
+    buildEditableSettingsView,
+    buildRoomSettingsView,
+    fingerprintUpdateSettings,
+    ROOM_SETTINGS_EVENTS,
+    ROOM_SETTINGS_ERROR_CODES,
+    PRESERVED_ROOM_SETTING_KEYS,
+} = require('../utils/updateRoomSettingsValidation')
 const { ROOM_JOIN_ERROR_CODES } = require('./roomJoinErrors')
 const gameSession = require('../game-core/gameSession')
 const {
@@ -308,7 +319,15 @@ function removePublishedAdmission(io, socket, attempt) {
     if (!room.players.has(room.hostUuid)) {
         room.hostUuid = room.players.keys().next().value
         try {
-            io?.to?.(attempt.roomId)?.emit?.('host_changed', { hostUuid: room.hostUuid, canStart: computeCanStart(room) })
+            io?.to?.(attempt.roomId)?.emit?.('host_changed', {
+                hostUuid: room.hostUuid,
+                canStart: computeCanStart(room),
+                // F-20(AC-05): 새 방장이 "지금 서버가 확정한 설정"을 편집 시작점으로 삼을 수
+                // 있도록 현재 버전을 함께 알린다. 값 자체는 싣지 않는다 — 방장이 된 클라이언트는
+                // get_current_room으로 최신 설정을 다시 확보한 뒤에만 편집할 수 있다.
+                roomId: attempt.roomId,
+                settingsVersion: getSettingsVersion(room),
+            })
         } catch (err) { console.error('[초대 입장 보상 방송 실패]', err) }
     }
     try {
@@ -411,6 +430,66 @@ function countRoomOccupancy(room, excludeUuid = null) {
     return count
 }
 
+// ── F-20: 대기방 설정 버전과 설정 변경 요청 결과 기록 ──────────────────────────
+//
+// settingsVersion은 "이 방의 설정이 몇 번째 확정본인가"를 말하는 서버 소유 값이다. 생성 시
+// 1을 부여하고 **실제 설정 교체**에서만 1씩 올린다. 클라이언트가 보내는 값이 아니므로
+// 어떤 검증 경로에서도 payload에서 읽지 않는다.
+const INITIAL_SETTINGS_VERSION = 1
+
+/**
+ * 이 방의 현재 설정 버전. settingsVersion이 없는 구버전/직접 심은 방은 1로 본다 — 없다고
+ * 해서 편집을 막으면 기존 방이 영구히 수정 불가가 되고, 0/음수로 보면 클라이언트의 기대
+ * 버전과 영원히 어긋난다.
+ */
+function getSettingsVersion(room) {
+    const version = room?.settingsVersion
+    return Number.isSafeInteger(version) && version > 0 ? version : INITIAL_SETTINGS_VERSION
+}
+
+/**
+ * `${uuid}:${roomId}:${requestId}` → 그 요청의 확정 결과.
+ *
+ * ACK가 유실된 방장이 "내 저장이 반영됐는가"를 **새 저장을 만들지 않고** 확인할 수 있게
+ * 하는 유일한 근거다. 메모리 대기방과 같은 수명의 제한된 기록이라(A-07) 크기·TTL 상한을
+ * 두고 방이 사라질 때 함께 지운다. 기록이 없으면 UNKNOWN이며, 없다는 사실로 적용/미적용을
+ * 확정하지 않는다.
+ */
+const roomSettingsUpdateResults = new Map()
+
+// 한 계정이 requestId를 바꿔가며 무한히 기록을 쌓지 못하게 하는 상한이다. 대기방 하나의
+// 편집 재시도 횟수를 넉넉히 덮으면 충분하다.
+const SETTINGS_UPDATE_RESULT_TTL_MS = 10 * 60 * 1000
+const SETTINGS_UPDATE_RESULT_MAX_ENTRIES = 500
+
+// 세 값을 구분자 문자열로 이어 붙이면 식별자에 그 구분자가 섞였을 때 서로 다른 세 쌍이
+// 같은 키가 될 수 있다('a:b'+'c'와 'a'+'b:c'). JSON 배열로 직렬화하면 각 조각의 경계가
+// 따옴표로 보존되므로 그런 충돌이 생기지 않는다.
+function settingsUpdateResultKey(uuid, roomId, requestId) {
+    return JSON.stringify([uuid, roomId, requestId])
+}
+
+/** 기한이 지난 기록을 걷어낸다(조회·기록 양쪽에서 부른다). */
+function pruneSettingsUpdateResults(now = Date.now()) {
+    for (const [key, entry] of roomSettingsUpdateResults) {
+        if (entry.expiresAt <= now) roomSettingsUpdateResults.delete(key)
+    }
+    // TTL만으로는 짧은 시간에 몰린 요청을 막지 못한다 — 삽입 순서(Map의 보장)대로
+    // 가장 오래된 것부터 버려 상한을 지킨다.
+    while (roomSettingsUpdateResults.size > SETTINGS_UPDATE_RESULT_MAX_ENTRIES) {
+        const oldest = roomSettingsUpdateResults.keys().next().value
+        if (oldest === undefined) break
+        roomSettingsUpdateResults.delete(oldest)
+    }
+}
+
+/** 방이 사라질 때(삭제·시작·전원 이탈) 그 방의 요청 결과 기록도 함께 버린다. */
+function forgetSettingsUpdateResultsForRoom(roomId) {
+    for (const [key, entry] of roomSettingsUpdateResults) {
+        if (entry.roomId === roomId) roomSettingsUpdateResults.delete(key)
+    }
+}
+
 // uuid → 방 전환 세대(generation) 카운터. create_room/코드·공개방 참가/join_matchmaking은
 // 자신의 첫 await 이전(동기 구간)에 이 값을 캡처해 두고, 실제 Room/queue Map에 커밋하기
 // 직전에 다시 비교한다. GameSession 종료 정리(cleanupRoomStateForSessionParticipants)는
@@ -505,7 +584,14 @@ function rejectIfInActiveGame(uuid, respond) {
     return true
 }
 
-function registerMatchmakingHandlers(io, socket, uuid) {
+/**
+ * @param {(uuid:string)=>string|null} [getCurrentSocketId] - onlineUsers의 현재 socket.id
+ *   접근자(backend/socket/socket.js가 주입한다). F-20(AC-01): 세션 재검증 await 사이에
+ *   같은 계정의 새 로그인이 canonical 소켓을 교체했다면, 교체된 옛 소켓의 설정 저장·결과
+ *   조회는 진입 시점에 거부돼야 한다. 주입이 없으면(테스트·구형 호출부) 이 이중 방어만
+ *   비활성화되고 나머지 권한 검사는 그대로 적용된다.
+ */
+function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = {}) {
     socket.on('join_matchmaking', () =>
         handleJoinMatchmaking(io, socket, uuid).catch((err) =>
             console.error('\x1b[31m[매칭 진입 에러]\x1b[0m', err)
@@ -546,6 +632,12 @@ function registerMatchmakingHandlers(io, socket, uuid) {
         )
     )
     socket.on('set_ready', (payload, callback) => handleSetReady(io, socket, uuid, payload, callback))
+    // F-20: 대기방 설정 저장과 그 결과 재조회. 둘 다 ack 한 번으로만 응답하고, 신원은 위에서
+    // 캡처한 uuid(서버가 인증한 값)만 쓴다 — payload의 어떤 필드도 신원이 되지 않는다.
+    socket.on(ROOM_SETTINGS_EVENTS.UPDATE_ROOM_SETTINGS, (payload, callback) =>
+        handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurrentSocketId))
+    socket.on(ROOM_SETTINGS_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT, (payload, callback) =>
+        handleGetRoomSettingsUpdateResult(uuid, payload, callback, socket, getCurrentSocketId))
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
     // F-19(AC-06): 실제 초대 수락은 인증·세션 guard를 통과한 이 소켓 경계에서만 일어난다
     // (REST로는 수락하지 않는다 — 입장은 이 프로세스의 방 registry와 이 소켓의 채널 가입을
@@ -829,6 +921,12 @@ function buildRoomPayload(room) {
         players: [...room.players.values()],
         hostUuid: room.hostUuid,
         canStart: computeCanStart(room),
+        // F-20(AC-03/AC-05/AC-06): 참가자는 여기서만 현재 설정을 본다. 저장된 room.settings를
+        // 그대로 내보내지 않고 허용 필드로 다시 조립한다 — 예전 데이터에 관전자 키가 섞여
+        // 있어도 이 경계를 지나면 응답·편집 초안 어디에도 나타나지 않는다.
+        accessType: room.accessType ?? null,
+        settingsVersion: getSettingsVersion(room),
+        settings: buildRoomSettingsView(room.settings),
     }
 }
 
@@ -852,14 +950,19 @@ async function loadRoomParticipantProfile(uuid) {
  * never mutated: prepare, delivery preflight or payload creation may still fail.
  * Only the game serializer may disclose the viewer's own role-specific skin.
  */
-async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture) {
+async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture, settingsVersionAtCapture) {
     const uuids = [...uuidsAtCapture]
     const loadouts = await economyServiceRef.getGameStartLoadouts(uuids)
 
     const stillHost = room.hostUuid === hostUuid
     const sameParticipants = room.players.size === uuids.length && uuids.every((u) => room.players.has(u))
     const stillReady = sameParticipants && uuids.every((u) => room.players.get(u).isReady === true)
-    if (!stillHost || !sameParticipants || !stillReady) {
+    // F-20(AC-04): 외형 조회를 기다리는 동안 방장이 설정을 바꿨다면(전원 준비가 해제됐다가
+    // 다시 준비했더라도) 이 시작 요청은 **이전 설정**을 보고 시작된 것이다. 버전이 달라지면
+    // 여기서 끝낸다 — 방장이 새로 시작 요청을 보내야 새 설정으로 한 판이 만들어진다.
+    const sameSettings = settingsVersionAtCapture === undefined
+        || settingsVersionAtCapture === getSettingsVersion(room)
+    if (!stillHost || !sameParticipants || !stillReady || !sameSettings) {
         return { ok: false, code: 'ROOM_STATE_CHANGED' }
     }
 
@@ -874,7 +977,17 @@ async function captureRoomStartProfiles(room, hostUuid, uuidsAtCapture) {
                 ?? { noble: null, clown: null, guard: null, doctor: null, witchHunter: null }) },
         }]
     }))
-    return { ok: true, room: { ...room, players } }
+    // F-20(AC-05): 세션 후보에는 방금 검사를 통과한 설정의 **중첩 복사본**을 넘긴다. 이후
+    // 대기방 설정 객체가 바뀌거나(다음 저장) 같은 객체를 누가 변형해도, 이미 시작된 판의
+    // 역할·제한시간이 소급해서 달라지지 않게 하기 위함이다.
+    const settings = {
+        ...room.settings,
+        ...(room.settings?.roleCounts ? { roleCounts: { ...room.settings.roleCounts } } : {}),
+        ...(room.settings?.roleNightActionTimes
+            ? { roleNightActionTimes: { ...room.settings.roleNightActionTimes } }
+            : {}),
+    }
+    return { ok: true, room: { ...room, players, settings } }
 }
 
 /** 공개 목록에 노출해도 되는 최소 Room 정보만 반환합니다. */
@@ -892,6 +1005,11 @@ function buildPublicRoomList() {
             title: room.title,
             accessType: room.accessType,
             status: room.players.size >= room.settings.maxPlayers ? 'full' : 'waiting',
+            // F-20(AC-03): 목록에도 승인된 설정 요약을 싣는다. **편집 가능한 구성 수치만**
+            // 담는다 — roomCode·hostUuid·players·준비 상태·개인별 배정 역할은 여기 없고,
+            // 서버가 보존하는 D-12 세 플래그도 목록 요약에는 넣지 않는다(A-05).
+            settingsVersion: getSettingsVersion(room),
+            settings: buildEditableSettingsView(room.settings),
         }))
 }
 
@@ -1052,6 +1170,9 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
             // (방장이라고 자동으로 준비된 것으로 취급하지 않는다).
             players: new Map([[uuid, { uuid, nickname: user.nickname, isReady: false, ...accountProfile }]]),
             settings,
+            // F-20: 이 방 설정의 첫 확정본. 실제 설정 교체(handleUpdateRoomSettings)에서만
+            // 증가하며 클라이언트 입력으로는 절대 설정되지 않는다.
+            settingsVersion: INITIAL_SETTINGS_VERSION,
         }
 
         // 공유 Map에 쓰기 전에 실제 Socket.IO room 가입부터 끝낸다. 이렇게 하면 join이
@@ -1466,6 +1587,8 @@ function handleDeleteRoom(io, uuid) {
     gameRooms.delete(roomId)
     // F-19(AC-06): 삭제된 방을 향한 미확정 입장 시도와 PENDING 초대를 함께 끝낸다.
     invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_DELETED')
+    // F-20(A-07): 설정 변경 결과 기록의 수명은 그 대기방의 수명을 넘지 않는다.
+    forgetSettingsUpdateResultsForRoom(roomId)
     cancelInvitesForRoomAsync(roomId, 'ROOM_DELETED')
     emitPublicRoomList(io)
 }
@@ -1497,8 +1620,19 @@ function handleSetReady(io, socket, uuid, payload, callback) {
         callback({ ok: false, message: '잘못된 요청입니다.' })
         return
     }
-    const { isReady } = payload
+    const { isReady, roomId: expectedRoomId, expectedSettingsVersion } = payload
     if (typeof isReady !== 'boolean') {
+        callback({ ok: false, message: '잘못된 요청입니다.' })
+        return
+    }
+    // F-20(AC-04): 방·설정 버전을 함께 보내는 것은 선택이지만, 보냈다면 반드시 맞아야 한다.
+    // 형태 검사는 상태를 바꾸기 전에 한다(아래 대조는 실제 방을 찾은 뒤에 한다).
+    if (expectedRoomId !== undefined && (typeof expectedRoomId !== 'string' || expectedRoomId.length === 0)) {
+        callback({ ok: false, message: '잘못된 요청입니다.' })
+        return
+    }
+    if (expectedSettingsVersion !== undefined
+        && (!Number.isSafeInteger(expectedSettingsVersion) || expectedSettingsVersion < 1)) {
         callback({ ok: false, message: '잘못된 요청입니다.' })
         return
     }
@@ -1519,11 +1653,34 @@ function handleSetReady(io, socket, uuid, payload, callback) {
         return
     }
 
+    // F-20(AC-04): 저장 이전에 발행됐으나 늦게 도착한 준비 요청을 **새 설정에 적용하지
+    // 않는다**. 설정이 바뀌면 서버가 전원 준비를 해제하는데, 그 해제 직전에 떠난 "준비 완료"
+    // 요청이 뒤늦게 반영되면 해제 스냅샷이 조용히 되돌아간다. 요청자가 어느 방·어느 설정
+    // 버전을 보고 눌렀는지 함께 보냈을 때만 대조할 수 있으므로, 보냈다면 반드시 맞아야 한다.
+    if ((expectedRoomId !== undefined && expectedRoomId !== roomId)
+        || (expectedSettingsVersion !== undefined && expectedSettingsVersion !== getSettingsVersion(room))) {
+        callback({
+            ok: false,
+            code: ROOM_SETTINGS_ERROR_CODES.SETTINGS_VERSION_CONFLICT,
+            roomId,
+            settingsVersion: getSettingsVersion(room),
+            message: '방 설정이 변경되었습니다. 최신 설정을 확인한 뒤 다시 시도해주세요.',
+        })
+        return
+    }
+
     // 요청한 값이 이미 현재 값과 같으면 상태 변경도 방송도 하지 않는다(멱등 계약) — 같은
     // 요청이 여러 번 와도 결과가 달라지지 않고, 불필요한 알림으로 다른 참가자 화면이
     // 깜빡이는 것도 막는다.
     if (player.isReady === isReady) {
-        callback({ ok: true, isReady: player.isReady, canStart: computeCanStart(room) })
+        callback({
+            ok: true,
+            isReady: player.isReady,
+            canStart: computeCanStart(room),
+            roomId,
+            settingsVersion: getSettingsVersion(room),
+            readyRevision: Number.isInteger(player.readyRevision) ? player.readyRevision : 0,
+        })
         return
     }
 
@@ -1543,8 +1700,316 @@ function handleSetReady(io, socket, uuid, payload, callback) {
         roomId,
         origin: 'live',
     }
-    socket.to(roomId).emit('player_ready_changed', { uuid, isReady, canStart, sfxEvent })
-    callback({ ok: true, isReady, canStart, sfxEvent })
+    // F-20(AC-04/AC-05): 준비 사건에도 방·설정 버전·준비 revision을 함께 싣는다. 수신자는
+    // 이 값으로 "지금 내가 보고 있는 설정에서 일어난 준비 변경인지"를 판정할 수 있고,
+    // 오래된 준비 응답이 새 해제 스냅샷을 되돌리는 일을 막는다.
+    const readyEnvelope = {
+        roomId,
+        settingsVersion: getSettingsVersion(room),
+        readyRevision: player.readyRevision,
+    }
+    socket.to(roomId).emit('player_ready_changed', { uuid, isReady, canStart, sfxEvent, ...readyEnvelope })
+    callback({ ok: true, isReady, canStart, sfxEvent, ...readyEnvelope })
+}
+
+// ── F-20 AC-01~AC-06: 대기방 설정 변경 ───────────────────────────────────────
+
+/**
+ * 설정 변경 사건 하나를 **확정 참가자에게만** 전달한다.
+ *
+ * io.to(roomId)를 쓰지 않는 이유: Socket.IO 채널 가입은 소속의 근거가 아니다. 초대 수락의
+ * 미확정 입장(phase='published')은 채널에 들어와 있지만 아직 영수증이 없고, 늦게 성공한
+ * join이 남긴 유령 청취자도 같은 채널에 있을 수 있다. 참가자 전체 명단·준비 상태가 담긴
+ * 응답을 그런 연결에 흘리지 않도록, room.players의 확정 참가자 + 이 방 채널에 실제로
+ * 들어와 있는 현재 소켓만 골라 개별 전달한다.
+ *
+ * 전달을 놓친 정상 참가자는 get_current_room 재조회로 회복한다 — 전달 실패가 이미 커밋된
+ * 설정을 되돌리지는 않는다.
+ */
+function emitRoomSettingsUpdated(io, room) {
+    const confirmedUuids = [...room.players.keys()].filter((playerUuid) => !getAdmissionAttempt(playerUuid))
+    let sockets
+    try {
+        sockets = resolveParticipantSockets(io, confirmedUuids, room.id)
+    } catch (err) {
+        console.error('[설정 변경 수신자 조회 실패]', err)
+        return
+    }
+
+    const payload = {
+        roomId: room.id,
+        settingsVersion: getSettingsVersion(room),
+        accessType: room.accessType ?? null,
+        settings: buildRoomSettingsView(room.settings),
+        hostUuid: room.hostUuid,
+        // 같은 버전의 참가자 준비 상태·canStart를 함께 싣는다 — 설정 변경이 전원 준비를
+        // 해제하므로, 설정만 내려보내면 화면의 준비 표시가 한 박자 어긋난다.
+        players: [...room.players.values()],
+        canStart: computeCanStart(room),
+    }
+
+    for (const uuid of confirmedUuids) {
+        for (const s of sockets.get(uuid) ?? []) {
+            try {
+                s.emit(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED, payload)
+            } catch (err) {
+                console.error('[설정 변경 전달 실패]', err)
+            }
+        }
+    }
+}
+
+/**
+ * 방장의 대기방 설정 변경을 검증하고 커밋합니다(Socket.IO acknowledgement 방식).
+ *
+ * 절차는 "형태 검증 → 재시도 판정 → 권한·현재 상태 검사 → 커밋 → 방송 → ack"이고,
+ * **권한 검사부터 커밋·결과 기록까지 어떤 await도 두지 않는다**. 그래야 검사 시점과 커밋
+ * 시점 사이에 다른 요청(입장·시작·이탈)이 끼어들 수 없어, 통과한 조건 그대로 저장된다.
+ *
+ * @param {string} uuid - 서버가 캡처한 인증 신원. payload의 어떤 값도 신원으로 쓰지 않는다.
+ * @param {(uuid:string)=>string|null} [getCurrentSocketId] - 이 계정의 현재(canonical) socket.id
+ *   접근자. 세션 재검증 await 사이에 같은 계정의 새 로그인이 소켓을 교체했다면 이 요청은
+ *   더 이상 그 계정의 현재 연결이 아니므로 아무 상태도 바꾸지 않는다.
+ */
+function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurrentSocketId) {
+    // 응답을 받을 수 없는 요청은 어떤 상태도 바꾸지 않는다 — 다른 검사보다 먼저 확인한다.
+    if (typeof callback !== 'function') return
+
+    const respond = (result) => {
+        try {
+            callback(result)
+        } catch (ackErr) {
+            // 이미 커밋한 결과를 ACK 실패로 되돌리거나 실패로 다시 기록하지 않는다.
+            console.error('[설정 변경 ack 실패]', ackErr)
+        }
+    }
+    const reject = (code, message, extra = {}) => respond({ ok: false, code, message, ...extra })
+
+    // 0) 형태 검증 — 상태를 보기 전에 끝낸다. 허용 목록 밖 필드(관전자 키 포함)는 여기서 걸린다.
+    const validated = validateUpdateRoomSettingsPayload(payload)
+    if (!validated.ok) {
+        reject(validated.code, validated.message)
+        return
+    }
+    const { roomId, requestId, expectedSettingsVersion, accessType, settings } = validated.value
+    const fingerprint = fingerprintUpdateSettings(accessType, settings)
+
+    // 1) 같은 (계정·방·requestId) 키의 기록이 있으면 **재커밋하지 않는다**. 같은 입력이면
+    // 기록된 결과를 그대로 돌려주고(ACK 유실 재시도), 다른 입력이면 키 재사용으로 거부한다
+    // — 같은 키로 서로 다른 두 저장이 일어나면 결과 조회가 어느 쪽을 말하는지 알 수 없다.
+    pruneSettingsUpdateResults()
+    const resultKey = settingsUpdateResultKey(uuid, roomId, requestId)
+    const recorded = roomSettingsUpdateResults.get(resultKey)
+    if (recorded) {
+        if (recorded.fingerprint !== fingerprint) {
+            reject(ROOM_SETTINGS_ERROR_CODES.REQUEST_ID_REUSED, '이미 사용한 요청 식별자입니다.')
+            return
+        }
+        respond({
+            ok: true,
+            replayed: true,
+            changed: recorded.changed,
+            roomId,
+            requestId,
+            settingsVersion: recorded.settingsVersion,
+        })
+        return
+    }
+
+    // 2) 이 소켓이 지금도 이 계정의 현재 연결인가. 세션 가드의 await 동안 같은 계정의 새
+    // 로그인이 소켓을 교체했을 수 있다 — 교체된 옛 소켓의 요청은 여기서 끝난다.
+    if (socket?.data?.user?.uuid !== uuid || socket?.connected === false) {
+        reject(ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
+        return
+    }
+    if (typeof getCurrentSocketId === 'function' && getCurrentSocketId(uuid) !== socket.id) {
+        reject(ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
+        return
+    }
+
+    // 3) 활성 세션 참가자는 대기방 설정을 바꿀 수 없다(애초에 대기 상태가 아니다).
+    if (rejectIfInActiveGame(uuid, ({ message }) =>
+        reject(ROOM_SETTINGS_ERROR_CODES.ALREADY_IN_GAME, message)
+    )) return
+
+    // 4) 자기 입장이 아직 확정되지 않았으면 방장일 수 없다. 다른 사람의 예약은 여기서 막지
+    // 않는다 — 그건 아래 정원 하한(AC-02)이 다룰 사실이지 편집 권한의 문제가 아니다.
+    if (getAdmissionAttempt(uuid)) {
+        reject(ROOM_SETTINGS_ERROR_CODES.ADMISSION_PENDING, '입장 처리가 아직 끝나지 않았습니다.')
+        return
+    }
+
+    // 5) 소속·방 객체·방장 — playerRoom의 현재 값을 유일한 근거로 삼고, payload의 roomId는
+    // "요청자가 어느 방을 보고 눌렀는가"를 확인하는 용도로만 쓴다.
+    const currentRoomId = playerRoom.get(uuid)
+    if (!currentRoomId) {
+        reject(ROOM_SETTINGS_ERROR_CODES.NOT_IN_ROOM, '참여 중인 방이 없습니다.')
+        return
+    }
+    if (currentRoomId !== roomId) {
+        reject(ROOM_SETTINGS_ERROR_CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        return
+    }
+    const room = gameRooms.get(roomId)
+    if (!room || !room.players.has(uuid)) {
+        reject(ROOM_SETTINGS_ERROR_CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        return
+    }
+    if (room.hostUuid !== uuid) {
+        reject(ROOM_SETTINGS_ERROR_CODES.NOT_HOST, '방장만 설정을 변경할 수 있습니다.')
+        return
+    }
+
+    // 6) 기대 버전. 값이 우연히 현재와 같아지더라도 버전이 다르면 충돌이다 — 방장이 보지
+    // 못한 변경이 그 사이에 있었다는 사실 자체가 바뀌지 않기 때문이다.
+    const currentVersion = getSettingsVersion(room)
+    if (expectedSettingsVersion !== currentVersion) {
+        reject(
+            ROOM_SETTINGS_ERROR_CODES.SETTINGS_VERSION_CONFLICT,
+            '설정이 이미 변경되었습니다. 최신 설정을 불러온 뒤 다시 시도해주세요.',
+            { room: buildRoomPayload(room) },
+        )
+        return
+    }
+
+    // 7) AC-02: 정원은 지금 이 방이 차지한 자리 수(확정 참가자 + 유효한 reserved 예약)보다
+    // 작을 수 없다. 반대로 "현재 인원으로 역할 구성이 성립하는가"는 여기서 보지 않는다 —
+    // 저장은 정원 기준으로 검증하고, 실제 인원 기준 재검증은 시작 시점의 몫이다(A-03).
+    const occupancy = countRoomOccupancy(room)
+    if (settings.maxPlayers < occupancy) {
+        reject(
+            ROOM_SETTINGS_ERROR_CODES.MAX_PLAYERS_BELOW_OCCUPANCY,
+            `현재 인원(${occupancy}명)보다 적은 정원으로는 변경할 수 없습니다.`,
+            { occupancy, room: buildRoomPayload(room) },
+        )
+        return
+    }
+
+    // 8) 실제로 달라지는 것이 없으면 버전도 준비 상태도 건드리지 않고 방송도 하지 않는다.
+    // 같은 설정을 다른 requestId로 다시 저장해도 준비가 풀리면 안 되기 때문이다(A-02).
+    const currentFingerprint = fingerprintUpdateSettings(
+        room.accessType, buildEditableSettingsView(room.settings),
+    )
+    const changed = currentFingerprint !== fingerprint
+
+    if (!changed) {
+        roomSettingsUpdateResults.set(resultKey, {
+            roomId, fingerprint, changed: false, settingsVersion: currentVersion,
+            expiresAt: Date.now() + SETTINGS_UPDATE_RESULT_TTL_MS,
+        })
+        respond({ ok: true, changed: false, roomId, requestId, settingsVersion: currentVersion })
+        return
+    }
+
+    // 9) 커밋. 여기부터 결과 기록까지 await가 없다.
+    //
+    // 기존 room.settings를 통째로 spread하지 않는다 — 그러면 예전 데이터에 남은 관전자 키나
+    // 알 수 없는 필드가 계속 살아남는다. 승인된 편집 필드의 새 복사본에, 서버가 보존하는
+    // D-12 세 값만 골라 얹어 새 객체를 만든다(AC-06 / A-06).
+    const nextSettings = { ...settings }
+    for (const key of PRESERVED_ROOM_SETTING_KEYS) {
+        if (room.settings?.[key] !== undefined) nextSettings[key] = room.settings[key]
+    }
+    room.settings = nextSettings
+    room.accessType = accessType
+
+    // AC-04: 방장을 포함한 전원의 준비를 해제한다. 실제로 준비가 바뀐 참가자만 revision을
+    // 올린다 — 이미 준비하지 않은 참가자에게 "변경됐다"는 사건 번호를 새로 발급하면
+    // 준비 효과음이 전원 해제용으로 중복 발생한다.
+    for (const player of room.players.values()) {
+        if (player.isReady !== true) continue
+        player.isReady = false
+        player.readyRevision = (Number.isInteger(player.readyRevision) ? player.readyRevision : 0) + 1
+    }
+
+    room.settingsVersion = currentVersion + 1
+    roomSettingsUpdateResults.set(resultKey, {
+        roomId,
+        fingerprint,
+        changed: true,
+        settingsVersion: room.settingsVersion,
+        expiresAt: Date.now() + SETTINGS_UPDATE_RESULT_TTL_MS,
+    })
+
+    // 10) 방송 — 이미 커밋된 뒤라 전달 실패가 저장을 되돌리지 않는다.
+    emitRoomSettingsUpdated(io, room)
+    emitPublicRoomList(io)
+
+    respond({ ok: true, changed: true, roomId, requestId, settingsVersion: room.settingsVersion })
+}
+
+/**
+ * ACK를 놓친 **원 요청자**가 자기 설정 변경이 반영됐는지 확인합니다. 새 저장을 만들지 않고
+ * 기록만 읽으며, 기록이 없으면 성공/실패를 추측하지 않고 UNKNOWN을 돌려줍니다(A-07).
+ *
+ * 기록은 (계정·방·requestId)에 묶여 있어 다른 계정은 같은 requestId로도 조회할 수 없다.
+ * 조회 성공 자체가 현재 방 소속 권한을 주지도 않는다 — room은 지금 이 계정이 실제로 그 방의
+ * 확정 참가자일 때만 덧붙는다.
+ */
+function handleGetRoomSettingsUpdateResult(uuid, payload, callback, socket, getCurrentSocketId) {
+    if (typeof callback !== 'function') return
+
+    const respond = (result) => {
+        try {
+            callback(result)
+        } catch (ackErr) {
+            console.error('[설정 변경 결과 조회 ack 실패]', ackErr)
+        }
+    }
+
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        respond({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
+        return
+    }
+    const { roomId, requestId } = payload
+    if (typeof roomId !== 'string' || !roomId || typeof requestId !== 'string' || !requestId) {
+        respond({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
+        return
+    }
+
+    // 저장 경로와 같은 현재 소켓 검사를 적용한다 — 교체된 옛 소켓은 결과도 읽지 못한다.
+    if (socket && (socket.data?.user?.uuid !== uuid || socket.connected === false)) {
+        respond({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, message: '연결이 만료되었습니다.' })
+        return
+    }
+    if (socket && typeof getCurrentSocketId === 'function' && getCurrentSocketId(uuid) !== socket.id) {
+        respond({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET, message: '연결이 만료되었습니다.' })
+        return
+    }
+
+    pruneSettingsUpdateResults()
+    const recorded = roomSettingsUpdateResults.get(settingsUpdateResultKey(uuid, roomId, requestId))
+
+    // 현재 방 상태는 결과 기록과 **별개로** 검증한다. 기록이 있다는 사실이 지금도 그 방의
+    // 참가자라는 뜻은 아니다(그 사이 이탈·시작·삭제가 있을 수 있다).
+    const currentRoomId = playerRoom.get(uuid)
+    const currentRoom = currentRoomId ? gameRooms.get(currentRoomId) : null
+    const isConfirmedMember = !getAdmissionAttempt(uuid)
+        && currentRoomId === roomId
+        && !!currentRoom
+        && currentRoom.players.has(uuid)
+
+    if (!recorded) {
+        // 기록 만료·삭제·서버 재시작 뒤다. 자동으로 새 requestId를 만들어 재저장하지 않는다.
+        respond({
+            ok: true,
+            status: 'UNKNOWN',
+            roomId,
+            requestId,
+            room: isConfirmedMember ? buildRoomPayload(currentRoom) : null,
+        })
+        return
+    }
+
+    respond({
+        ok: true,
+        status: recorded.changed ? 'APPLIED' : 'NO_CHANGE',
+        changed: recorded.changed,
+        settingsVersion: recorded.settingsVersion,
+        roomId,
+        requestId,
+        room: isConfirmedMember ? buildRoomPayload(currentRoom) : null,
+    })
 }
 
 /**
@@ -1637,10 +2102,14 @@ async function handleStartGame(io, socket, uuid, callback) {
     // 시작 시점 값이어야 한다). 조회는 비동기라 그 사이 방 상태가 바뀔 수 있으므로,
     // captureRoomStartProfiles가 위에서 이미 통과시킨 조건(방장·인원 구성·준비 상태)을
     // 다시 확인한다 — 깨졌으면 room.players를 건드리지 않고 그대로 실패로 응답한다.
+    // F-20(AC-04): 비동기 조회에 들어가기 전, 아직 동기 구간일 때 "이 시작 요청이 근거로 삼은
+    // 설정"의 버전을 캡처한다. 복귀 후 이 값과 다르면 그 사이 저장이 커밋된 것이므로 이
+    // 요청으로는 시작하지 않는다(captureRoomStartProfiles가 재검사한다).
+    const settingsVersionAtRequest = getSettingsVersion(room)
     const uuidsAtCapture = players.map((player) => player.uuid)
     let captured
     try {
-        captured = await captureRoomStartProfiles(room, uuid, uuidsAtCapture)
+        captured = await captureRoomStartProfiles(room, uuid, uuidsAtCapture, settingsVersionAtRequest)
     } catch (err) {
         console.error('[게임 시작 계정 외형 조회 에러]', err)
         callback({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
@@ -1648,6 +2117,14 @@ async function handleStartGame(io, socket, uuid, callback) {
     }
     if (!captured.ok) {
         callback({ ok: false, code: captured.code, message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
+        return
+    }
+    // F-20(AC-04): 외형 조회 사이에 방이 삭제·시작되거나 요청자의 소속·연결이 바뀌었을 수
+    // 있다. captureRoomStartProfiles는 캡처해 둔 room 객체만 보므로, 그 객체가 아직 이
+    // registry의 현재 방인지와 요청자의 현재 소속·연결을 여기서 함께 대조한다 — 늦게 깨어난
+    // 옛 요청이 사라진 방이나 새 방을 시작시키지 못하게 하는 마지막 관문이다.
+    if (gameRooms.get(roomId) !== room || playerRoom.get(uuid) !== roomId || socket?.connected === false) {
+        callback({ ok: false, code: 'ROOM_STATE_CHANGED', message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
         return
     }
     // 프로필 캡처(await) 동안 초대 수락이 예약에 진입했을 수 있다 — commit 직전에 다시 본다.
@@ -1727,6 +2204,8 @@ async function handleStartGame(io, socket, uuid, callback) {
         gameRooms.delete(roomId)
         // 방이 게임으로 전환됐으므로 이 방을 향한 미확정 시도·PENDING 초대를 끝낸다.
         invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_STARTED')
+        // 방이 게임으로 전환됐으므로 이후 설정 저장은 거부된다 — 그 방의 결과 기록도 함께 끝난다.
+        forgetSettingsUpdateResultsForRoom(roomId)
         cancelInvitesForRoomAsync(roomId, 'ROOM_STARTED')
         // 방을 지우기 전에 알고 있던 코드/roomId만 표식으로 남긴다 — 뒤늦게 이 방에
         // 들어오려는 요청에 "없는 방"이 아니라 "이미 시작됨"으로 답하기 위한 근거다.
@@ -1815,6 +2294,7 @@ function removeFromRoom(io, socket, uuid) {
         gameRooms.delete(roomId)
         // 방이 사라졌으므로 이 방을 향한 미확정 시도와 PENDING 초대를 모두 끝낸다.
         invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_GONE')
+    forgetSettingsUpdateResultsForRoom(roomId)
         cancelInvitesForRoomAsync(roomId, 'ROOM_GONE')
         emitPublicRoomList(io)
         return
@@ -1824,7 +2304,12 @@ function removeFromRoom(io, socket, uuid) {
         // 방장이 바뀌어도 남은 참가자들의 isReady는 손대지 않는다 — 방장 권한 이전과
         // 준비 상태는 서로 독립적인 개념이라, 새 방장도 이전에 준비했던 상태 그대로 유지된다.
         room.hostUuid = room.players.keys().next().value
-        io.to(roomId).emit('host_changed', { hostUuid: room.hostUuid, canStart: computeCanStart(room) })
+        io.to(roomId).emit('host_changed', {
+            hostUuid: room.hostUuid,
+            canStart: computeCanStart(room),
+            roomId,
+            settingsVersion: getSettingsVersion(room),
+        })
     }
 
     io.to(roomId).emit('player_left_room', { uuid, canStart: computeCanStart(room) })
@@ -1923,12 +2408,18 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
         try {
             if (room.players.size === 0) {
                 gameRooms.delete(entry.roomId)
+                forgetSettingsUpdateResultsForRoom(entry.roomId)
                 emitPublicRoomList(io)
                 continue
             }
             if (!room.players.has(room.hostUuid)) {
                 room.hostUuid = room.players.keys().next().value
-                io.to(entry.roomId).emit('host_changed', { hostUuid: room.hostUuid, canStart: computeCanStart(room) })
+                io.to(entry.roomId).emit('host_changed', {
+                    hostUuid: room.hostUuid,
+                    canStart: computeCanStart(room),
+                    roomId: entry.roomId,
+                    settingsVersion: getSettingsVersion(room),
+                })
             }
         } catch (err) {
             console.error('[세션 종료 Room 정리 실패]', err)
@@ -2329,6 +2820,9 @@ function __resetStateForTests() {
     // 판정이 이전 테스트의 시도를 소유자로 인정하거나 거부한다.
     publishedAdmissions.clear()
     startedRoomMarks.clear()
+    // F-20: 설정 변경 결과 기록도 비운다 — 남으면 다음 테스트의 재시도 판정이 이전 테스트의
+    // requestId를 "이미 처리한 요청"으로 오인한다.
+    roomSettingsUpdateResults.clear()
     // 예약된 타이머를 지우지 않으면 다음 테스트가 도는 도중에 이전 테스트의 제거가 끼어든다.
     for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
     pendingRoomRemovals.clear()
@@ -2361,9 +2855,24 @@ function __getStateSnapshotForTests() {
         matchmakingQueue: [...matchmakingQueue.entries()],
         gameRooms: [...gameRooms.entries()].map(([id, room]) => [
             id,
-            { ...room, players: [...room.players.entries()] },
+            {
+                ...room,
+                players: [...room.players.entries()],
+                // F-20: settings는 중첩 객체(roleCounts·roleNightActionTimes)를 품으므로 얕게
+                // 복제하면 스냅샷이 라이브 값을 계속 가리킨다 — 그러면 "저장 전후가 같다"는
+                // 무변경 단언이 실제로는 같은 참조를 비교하며 항상 통과해 버린다.
+                settings: room.settings === undefined || room.settings === null
+                    ? room.settings
+                    : JSON.parse(JSON.stringify(room.settings)),
+            },
         ]),
         playerRoom: [...playerRoom.entries()],
+        // F-20: 설정 변경 결과 기록. 라이브 참조를 넘기지 않도록 값만 복제한다.
+        roomSettingsUpdateResults: [...roomSettingsUpdateResults.entries()].map(([key, entry]) => [key, {
+            roomId: entry.roomId,
+            changed: entry.changed,
+            settingsVersion: entry.settingsVersion,
+        }]),
         // Map으로 바뀌었지만 스냅샷 계약(uuid 배열)은 그대로 유지한다.
         pendingRoomTransitions: [...pendingRoomTransitions.keys()],
         // F-19(AC-06): 미확정 입장 시도. 라이브 참조를 넘기지 않도록 필요한 값만 복제한다.
@@ -2404,6 +2913,7 @@ function __removeRoomForTests(roomId) {
     // 실제 방 소멸 경로와 같은 협조를 한다 — 그렇지 않으면 시험이 만든 "사라진 방"에
     // 예약이 남아 정원·시작 판정을 오염시킨다.
     invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_GONE')
+    forgetSettingsUpdateResultsForRoom(roomId)
 }
 
 /** 테스트 전용: 이 프로세스의 boot epoch(초대 유효성 판정 기준)입니다. */
@@ -2468,6 +2978,10 @@ module.exports = {
     // ALREADY_IN_GAME 응답을 검증하는 테스트가 문구를 복붙하지 않고 이 원본을 그대로
     // 참조하도록 노출합니다(런타임 코드에서는 참조하지 않습니다).
     ALREADY_IN_GAME_MESSAGE,
+    // F-20: 이벤트명·오류 코드는 이 파일이 아니라 검증 모듈이 소유한다. 소켓 계층을 쓰는
+    // 호출부·시험이 문자열을 복붙하지 않도록 그대로 다시 내보낸다.
+    ROOM_SETTINGS_EVENTS,
+    ROOM_SETTINGS_ERROR_CODES,
     // 테스트에서 개별 핸들러를 실제 socket.io 이벤트 배선 없이 직접 호출하기 위한 통로입니다.
     // 런타임 코드(index.js 등)에서는 참조하지 않습니다.
     __testables: {
@@ -2480,6 +2994,8 @@ module.exports = {
         handleDeleteRoom,
         handleStartGame,
         handleSetReady,
+        handleUpdateRoomSettings,
+        handleGetRoomSettingsUpdateResult,
         leaveSocketRoomSafely,
         handleAcceptGameInvite,
         handleGetGameInviteResult,

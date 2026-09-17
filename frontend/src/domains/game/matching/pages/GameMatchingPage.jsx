@@ -19,6 +19,9 @@ import { useMatchingPage } from "../hooks/useMatchingPage.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import FriendListPanel from "@/domains/lobby/components/friendList/FriendListPanel.jsx"
 import FriendListToggleButton from "@/domains/lobby/components/friendList/FriendListToggleButton.jsx"
+// F-20: 방 생성과 **같은** 설정 패널을 편집 모드로 장착한다 — 새 설정 화면을 만들지 않는다.
+// 같은 대기 페이지 안에 두어야 방 이벤트 구독(useMatchingRoom)이 끊기지 않는다.
+import GameSetupPanel from "@/domains/game/setup/components/GameSetupPanel.jsx"
 
 export default function GameMatchingPage() {
   const {
@@ -40,6 +43,17 @@ export default function GameMatchingPage() {
     startGame,
     deleteRoom,
     handleBack,
+    settingsOpen,
+    openSettings,
+    closeSettings,
+    canEditSettings,
+    settingsForm,
+    settingsFormResetKey,
+    submitSettings,
+    isSavingSettings,
+    hasPendingSettingsResult,
+    verifyRoomSettingsResult,
+    settingsError,
   } = useMatchingPage()
 
   // 로비와 같은 방식으로 패널 열림 상태만 화면이 소유합니다 — 친구 데이터·핸들러는
@@ -94,6 +108,67 @@ export default function GameMatchingPage() {
         roomId={roomId}
         isRoomVerified={isRoomVerified}
       />
+
+      {/*
+        F-20: 방장에게만 편집 진입을 제공한다. 비방장·미검증·오프라인·결과 확인 중에는
+        버튼이 아예 나타나지 않으므로 화면에서 편집을 시작할 수 없고, 서버도 같은 판정을
+        독립적으로 다시 한다(버튼 상태는 권한 경계가 아니다).
+      */}
+      {canEditSettings && !settingsOpen ? (
+        <button
+          type="button"
+          onClick={openSettings}
+          aria-label="방 설정 변경"
+          className="interactive-scale absolute left-1/2 top-[calc(50%+18rem)] z-30 -translate-x-1/2 cursor-pointer rounded-md border border-[#c9b892]/60 bg-black/55 px-4 py-2 font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,1.3vw,1.1rem)] font-bold text-[#f5f0e6]"
+        >
+          방 설정 변경
+        </button>
+      ) : null}
+
+      {/* ACK를 잃은 저장이 있으면 새 저장 대신 그 결과를 먼저 확인하게 한다 — 적용 여부를
+          추측하지 않는다(A-07). */}
+      {hasPendingSettingsResult ? (
+        <div
+          role="status"
+          className="absolute left-1/2 top-[calc(50%+18rem)] z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#c9b892]/60 bg-black/70 px-4 py-2 text-[#f5f0e6]"
+        >
+          <span>{settingsError?.message ?? "저장 결과를 확인하는 중입니다."}</span>
+          <button
+            type="button"
+            onClick={verifyRoomSettingsResult}
+            aria-label="설정 저장 결과 확인"
+            className="interactive-scale cursor-pointer rounded border border-[#c9b892]/60 px-2 py-1 font-bold"
+          >
+            결과 확인
+          </button>
+        </div>
+      ) : null}
+
+      {settingsOpen ? (
+        <div className="absolute inset-0 z-40 bg-black/70">
+          <GameSetupPanel
+            visible
+            mode="edit"
+            initialFormState={settingsForm.ok ? settingsForm : null}
+            formResetKey={settingsFormResetKey}
+            isCreating={isSavingSettings}
+            onCreateGame={submitSettings}
+          />
+          <button
+            type="button"
+            onClick={closeSettings}
+            aria-label="설정 변경 취소"
+            className="interactive-scale absolute right-6 top-6 z-50 cursor-pointer rounded-md border border-[#c9b892]/60 bg-black/55 px-4 py-2 font-subheading font-bold text-[#f5f0e6]"
+          >
+            취소
+          </button>
+          {settingsError && !hasPendingSettingsResult ? (
+            <p role="alert" className="absolute bottom-8 left-1/2 z-50 -translate-x-1/2 text-[#ffd9d9]">
+              {settingsError.message ?? "설정을 저장하지 못했습니다."}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
