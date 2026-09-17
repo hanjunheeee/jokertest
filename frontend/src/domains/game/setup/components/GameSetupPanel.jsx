@@ -107,11 +107,21 @@ export default function GameSetupPanel({
   // 방장이 새로 만든 override까지 함께 사라진다 — 화면에는 바뀐 값이 보이는데 요청에는
   // 실리지 않는 상태가 된다. 두 사실을 합쳐야 둘 다 성립한다.
   const [editedRoleTimeIds, setEditedRoleTimeIds] = useState(() => new Set())
-  // 폼을 서버 최신값으로 되맞추는 경계(방 교체·설정 버전 교체·방장 이전)에서는 편집 흔적도
-  // 함께 버린다 — 남기면 이전 방장의 초안이 다음 요청에 섞인다.
-  const [appliedResetKey, setAppliedResetKey] = useState(formResetKey)
-  if (appliedResetKey !== formResetKey) {
-    setAppliedResetKey(formResetKey)
+  // 폼을 서버 최신값으로 되맞추는 경계에서는 편집 흔적도 함께 버린다 — 남기면 이전 방장의
+  // 초안이 다음 요청에 섞인다.
+  //
+  // 그 경계는 resetKey **하나가 아니다**. 값 상태를 소유한 useSetupTabState/useRoleCompositionState는
+  // `initialState 객체의 교체`와 `resetKey 교체` 두 가지에서 모두 초기값으로 되돌아간다. 편집
+  // 의도를 resetKey에만 묶어 두면 두 경계가 갈린다 — 같은 방·같은 설정 버전인데 서버가 돌려준
+  // 현재 방으로 값만 되돌아가는 경우(정원 하한 등 저장 거부 응답의 room, 현재 방 재조회)에
+  // 값은 서버값으로 돌아가는데 "이 직업 시간을 지정했다"는 의도만 살아남는다. 그 상태로 다시
+  // 저장하면, 방장이 지정한 적 없는 폴백 값이 새 override로 요청에 실린다.
+  //
+  // 두 훅과 **같은 조건**으로 판정해 값과 의도를 함께 되돌린다. 초기 상태 객체의 참조가 그대로인
+  // 무관한 리렌더(부모의 다른 상태 변화)에서는 어느 쪽도 버리지 않는다.
+  const [appliedFormSource, setAppliedFormSource] = useState({ key: formResetKey, state: initialFormState })
+  if (appliedFormSource.key !== formResetKey || appliedFormSource.state !== initialFormState) {
+    setAppliedFormSource({ key: formResetKey, state: initialFormState })
     setEditedRoleTimeIds(new Set())
   }
 

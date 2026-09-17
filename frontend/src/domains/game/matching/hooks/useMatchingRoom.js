@@ -150,6 +150,15 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   // 결과를 다시 묻는다(A-07). 확인이 끝나면 비운다.
   const [pendingSettingsRequest, setPendingSettingsRequest] = useState(null)
   const [settingsError, setSettingsError] = useState(null)
+  /**
+   * F-20(AC-05): 저장 결과를 **끝내 확인하지 못했다**는 결론.
+   *
+   * pendingSettingsRequest(확인 대기)와 수명이 다르다. 결과 조회가 UNKNOWN으로 끝나면 대기가
+   * 풀리고 편집 패널도 이미 닫혀 있어, 그 결론을 여기에 남기지 않으면 "적용됐는지 알 수 없다"는
+   * 사실이 화면에서 통째로 사라진다 — 방장은 아무 안내도 없이 저장이 됐다고 오해하게 된다.
+   * 확인 절차가 끝난 뒤에도 남아야 하므로 settingsError(편집 패널 안의 실패 사유)와도 분리한다.
+   */
+  const [settingsResultNotice, setSettingsResultNotice] = useState(null)
   // F-20(AC-05): **지금 서버 응답을 기다리는** 저장의 식별자. timeout만이 결과 미확인을 만드는
   // 것이 아니다 — 응답을 기다리는 동안 연결이 끊기면 그 저장은 이미 커밋됐을 수도 있고 서버에
   // 닿지 못했을 수도 있다. 그 requestId를 여기 붙잡아 두었다가 단절 시점에 "미확인"으로
@@ -191,6 +200,24 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
    * ACK·오류·timeout·finally는 전부 이 값으로 자기 소속을 확인해야 한다.
    */
   const roomMembershipGenerationRef = useRef(0)
+
+  /**
+   * F-20(AC-05): 지금 일어나는 방 교체가 **서버가 이미 확정해 준 것**인지 표시한다.
+   *
+   * 소속이 바뀌면 그 소속을 서버에 다시 물어야 하지만(아래 구독), 그 교체 자체가 권위 있는
+   * 응답(현재 방 조회 결과·room_deleted·game_started)에서 온 것이라면 다시 물을 이유가 없다 —
+   * 그 응답이 곧 이 소속의 근거다. 구분하지 않으면 최초 방 발견(null→방)마다 조회가 한 번 더
+   * 돌고, 게임 시작·방 삭제 뒤의 여분 조회가 "방 없음"을 다시 확정해 이미 진행 중인 화면
+   * 이동을 덮어쓴다. zustand 구독은 set() 안에서 **동기적으로** 실행되므로 이 플래그는 구독
+   * 콜백이 읽는 시점에 정확히 참이다.
+   */
+  const applyingVerifiedRoomRef = useRef(false)
+  const applyVerifiedRoom = (apply) => {
+    applyingVerifiedRoomRef.current = true
+    try { apply() } finally { applyingVerifiedRoomRef.current = false }
+  }
+  // 소속이 갈렸을 때 "이 소속만의 검증을 새로 받아라"를 실행하는 경계. 동기화 effect가 심는다.
+  const invalidateRoomVerificationRef = useRef(null)
 
   // 게임 시작 요청 잠금 해제를 한 곳에 모아, 성공(game_started 방송)/실패(ack)/timeout/
   // 언마운트 네 경로 모두 반드시 이 함수를 거치게 해서 해제를 빠뜨리는 경로가 생기지 않게
@@ -258,6 +285,21 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // F-20(AC-03/AC-04): 설정 변경 스냅샷은 설정·참가자 준비·canStart를 한 번에 적용한다.
     const handleRoomSettingsUpdated = (payload) => {
       if (!payload || payload.roomId !== roomId) return // 다른 방의 늦은 사건은 적용하지 않는다
+      // 이 스냅샷은 설정만 싣고 있지 않다 — 같은 버전 시점의 **명단·준비·방장·canStart**를 통째로
+      // 싣는다. 그래서 "설정이 같으니 다시 적용해도 무해하다"가 성립하지 않는다. 적용 여부는
+      // 서버가 보장하는 단조 증가 값(settingsVersion — 실제 설정 교체에서만 오른다)으로 판정한다.
+      const known = useMatchingStore.getState().settingsVersion
+      const incoming = payload.settingsVersion
+      if (Number.isSafeInteger(incoming) && Number.isSafeInteger(known)) {
+        // 우리가 아는 것보다 낮은 버전은 이 화면이 이미 지나온 과거다. 그대로 적용하면 설정뿐
+        // 아니라 그 안의 명단·준비까지 함께 되돌아간다.
+        if (incoming < known) return
+        // 같은 버전은 **설정에 대해서는** 우리가 이미 아는 것과 같은 사실이고(서버는 값이 실제로
+        // 달라질 때만 버전을 올린다), 명단·준비·방장에 대해서는 아무 새 정보도 아니다 — 그 버전이
+        // 확정된 **뒤에** 일어난 준비 변경·방장 이전은 이 스냅샷에 담겨 있지 않다. 다시 적용하면
+        // 그 사이에 받은 더 새로운 준비 상태가 조용히 옛 값으로 되돌아간다.
+        if (incoming === known) return
+      }
       // 이 방송 이후에 도착하는 "그 이전에 발행된" 전체 방 조회가 이 스냅샷을 덮지 못하게
       // 한다(usePublicRooms의 적용 세대와 같은 원리).
       applyRoomEvent(() => applyRoomSettings(payload))
@@ -284,7 +326,8 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       playRoomSfx('room-ready-changed', sfxEvent)
     }
     const handleRoomDeleted = () => {
-      clearRoom()
+      // 서버가 "이 방은 사라졌다"를 확정한 사건이다 — 소속 교체를 다시 물을 이유가 없다.
+      applyVerifiedRoom(clearRoom)
       onRoomDeleted?.()
     }
     // 서버 handleStartGame이 참가자 각자에게 개인화된 payload로 실제 보내는 이벤트다.
@@ -295,7 +338,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 읽는 방장 정보는 이 경로로만 들어오고 세션과 함께 사라진다(ingameStore.hostUuid 참고).
       const { hostUuid } = useMatchingStore.getState()
       useInGameStore.getState().setGamePayload({ ...payload, hostUuid })
-      clearRoom()
+      // 게임이 시작돼 대기방이 사라진 것도 서버가 확정한 사실이다. 여기서 소속 재확인을 걸면
+      // 그 조회가 "방 없음"을 다시 확정해 방금 시작한 인게임 이동을 대기방 이탈로 덮어쓴다.
+      applyVerifiedRoom(clearRoom)
       onGameStarted?.(payload)
 
       // F-16(AC-01/AC-04): 시작음은 한 게임당 1회다. store 반영 뒤 canonical gameId를 직접
@@ -488,7 +533,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
 
           if (response.room) {
             // 서버가 현재 Room이 있음을 확인했다 — payload 전체로 store를 최신화한다.
-            useMatchingStore.getState().setRoom(response.room)
+            // 이 응답 자체가 이 소속의 권위 있는 근거이므로, 여기서 소속이 바뀌더라도
+            // (최초 발견 null→방, 서버가 알려준 다른 방) 재확인을 새로 걸지 않는다.
+            applyVerifiedRoom(() => useMatchingStore.getState().setRoom(response.room))
             setRoomSyncStatus('verified')
             hasPromptedRetry = false // Room 확인 성공도 새 에피소드의 시작점이다.
             return
@@ -510,7 +557,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
 
           // room:null, pending 아님 → 서버가 "참여 중인 방 없음"을 명시적으로 확정했다.
           // 클라이언트가 가진 roomId를 신뢰하지 않고 이 서버 판단만을 기준으로 정리한다.
-          useMatchingStore.getState().clearRoom()
+          applyVerifiedRoom(() => useMatchingStore.getState().clearRoom())
           onRoomDeleted?.() // 곧 이 컴포넌트가 언마운트되므로 별도의 "no_room" 지속 상태는 두지 않는다.
         })
         .catch(() => {
@@ -544,6 +591,20 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       if (!cancelled && checkInFlight) startCheckSeries({ resetPromptState: false })
     }
     requestRoomResyncRef.current = () => {
+      if (cancelled) return
+      roomApplyGenerationRef.current += 1
+      startCheckSeries({ resetPromptState: false })
+    }
+    /**
+     * F-20(AC-05): 소속이 갈렸다 — 이 소속만을 위한 **권위 있는 조회**를 새로 건다.
+     *
+     * 이전 소속의 검증 결과(verified)를 물려받으면 준비·시작·저장이 한 번도 확인한 적 없는
+     * 방에 대해 열린다. 반대로 진행 중이던 조회를 버리기만 하면(그 응답은 소속 세대가 달라
+     * isStale로 폐기된다) 검증이 'checking'에 갇힌 채 아무 조회도 남지 않는다. 그래서 버리는
+     * 것과 새로 거는 것을 한 경계에서 함께 한다. 연결이 없으면 runCheckAttempt가
+     * waiting_socket으로 되돌리고, 재연결·online이 새 시리즈를 다시 시작한다.
+     */
+    invalidateRoomVerificationRef.current = () => {
       if (cancelled) return
       roomApplyGenerationRef.current += 1
       startCheckSeries({ resetPromptState: false })
@@ -599,6 +660,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       cancelled = true
       bumpRoomApplyGenerationRef.current = null
       requestRoomResyncRef.current = null
+      invalidateRoomVerificationRef.current = null
       invalidateActiveCheck()
       // 이 effect가 재실행되거나(socket 참조 교체) 컴포넌트가 사라질 때도 진행 중이던
       // start_game/set_ready 요청을 무효화한다 — 그 소켓과 결부된 요청이 더 이상 지금
@@ -636,7 +698,11 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       if (!mountedRef.current) return
       setPendingSettingsRequest(null)
       setSettingsError(null)
-      useMatchingStore.getState().clearRoom()
+      // 이전 계정의 "확인하지 못했다"는 안내도 함께 내린다 — 다른 계정에게 보여줄 결론이 아니다.
+      setSettingsResultNotice(null)
+      // 계정이 갈려서 방을 비우는 것은 이 훅이 내리는 확정 판단이다. 아래 소속 구독이 이것을
+      // "확인이 필요한 소속 교체"로 오해해 지금 계정도 아닌 신원으로 조회를 걸면 안 된다.
+      applyVerifiedRoom(() => useMatchingStore.getState().clearRoom())
     })
     return () => unsubscribe?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -666,6 +732,21 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       clearReadyState()
       if (!mountedRef.current) return
       setPendingSettingsRequest((prev) => (prev && prev.roomId !== state.roomId ? null : prev))
+      // 지난 소속의 저장 결과 안내는 새 소속의 화면에 남기지 않는다.
+      setSettingsResultNotice(null)
+
+      // F-20(AC-05): 세대를 올리고 잠금을 푸는 것만으로는 부족하다. roomSyncStatus는 **이전
+      // 소속에서** 'verified'가 된 값이라, 그대로 두면 한 번도 확인한 적 없는 새 소속에서
+      // 준비·시작·저장이 곧바로 열린다(세 경로 모두 roomSyncStatus === 'verified'만 본다).
+      // 반대로 확인 중이던 조회는 소속 세대가 달라 폐기되므로, 새 조회를 걸지 않으면 검증이
+      // 'checking'에 갇힌다. 그래서 상태를 내리는 것과 이 소속의 조회를 새로 거는 것을 함께 한다.
+      //
+      // 다만 그 교체 자체가 권위 있는 응답에서 왔다면(최초 방 발견·room_deleted·game_started·
+      // 계정 전환) 그 응답이 이미 이 소속의 근거다 — 다시 묻지 않는다. 그러지 않으면 최초 방
+      // 발견마다 조회가 한 번 더 돌고, 방이 사라진 뒤의 여분 조회가 진행 중인 화면 이동을 덮는다.
+      if (applyingVerifiedRoomRef.current) return
+      if (invalidateRoomVerificationRef.current) invalidateRoomVerificationRef.current()
+      else setRoomSyncStatus('waiting_socket')
     })
     return () => unsubscribe?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -948,6 +1029,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     isSavingSettingsRef.current = true
     setIsSavingSettings(true)
     setSettingsError(null)
+    // 새 저장을 시작했으므로 이전 저장의 "확인하지 못했다"는 결론은 더 이상 지금 화면의
+    // 미해결 사항이 아니다(그 요청의 식별자는 이미 내려졌고, 이 저장은 새 요청이다).
+    setSettingsResultNotice(null)
     try {
       const response = await requestSocket
         .timeout(UPDATE_ROOM_SETTINGS_TIMEOUT_MS)
@@ -1048,14 +1132,21 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       if (response.status === 'UNKNOWN') {
         // 기록이 없다 — 적용됐는지 알 수 없다. 자동으로 다시 저장하지 않고 현재 소속·설정을
         // 다시 확인하도록만 안내한다.
-        setSettingsError({ code: ROOM_SETTINGS_ERROR_CODES.UNKNOWN, message: ROOM_SETTINGS_ERROR_MESSAGES.RESULT_UNKNOWN })
+        //
+        // 이 순간 확인 대기(pending)가 풀리면서 대기 표시가 사라지고, 편집 패널은 저장 직후의
+        // 잠금으로 이미 닫혀 있다. 그래서 결론을 **대기와 무관한 자리**에 남긴다 — 여기에
+        // 남기지 않으면 "성공도 실패도 알 수 없다"가 화면 어디에도 표시되지 않는다.
+        setSettingsError(null)
         setPendingSettingsRequest(null)
+        setSettingsResultNotice(ROOM_SETTINGS_ERROR_MESSAGES.RESULT_UNRESOLVED)
         requestRoomResync()
         return { ok: true, status: 'UNKNOWN' }
       }
 
+      // 서버가 적용 여부를 확정해 줬다 — 미해결 안내가 남아 있었다면 그 결론이 대체한다.
       setPendingSettingsRequest(null)
       setSettingsError(null)
+      setSettingsResultNotice(null)
       return { ok: true, status: response.status, settingsVersion: response.settingsVersion }
     } catch {
       if (!isStaleResponse()) {
@@ -1080,5 +1171,8 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 저장 결과가 미확인인 동안에는 새 저장을 잠근다(원 요청자만 그 결과를 확인할 수 있다).
     hasPendingSettingsResult: pendingSettingsRequest !== null,
     settingsError,
+    // 확인 절차까지 마쳤는데도 적용 여부를 알 수 없을 때 대기방에 남는 안내다(자동 재저장 없음).
+    settingsResultNotice,
+    dismissSettingsResultNotice: () => setSettingsResultNotice(null),
   }
 }

@@ -42,6 +42,7 @@ export function useMatchingPage() {
   const {
     deleteRoom, startGame, setReady, isStarting, isSettingReady, isRoomVerified,
     saveRoomSettings, verifyRoomSettingsResult, isSavingSettings, hasPendingSettingsResult, settingsError,
+    settingsResultNotice, dismissSettingsResultNotice,
   } = useMatchingRoom({
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
@@ -134,6 +135,9 @@ export function useMatchingPage() {
     hasPendingSettingsResult,
     verifyRoomSettingsResult,
     settingsError,
+    // 결과 확인까지 마쳤는데도 적용 여부를 알 수 없을 때 대기방에 남는 안내(A-07).
+    settingsResultNotice,
+    dismissSettingsResultNotice,
     // 비방장도 현재 설정을 읽을 수 있도록 서버 확정값을 그대로 노출한다(편집은 불가).
     roomSettings: settings,
     roomSettingsVersion: settingsVersion,

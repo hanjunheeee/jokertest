@@ -811,3 +811,215 @@ test("AC-05 · 계정이 바뀌면 이전 계정의 미확정 저장 요청은 �
     await savePromise
   })
 })
+
+// ── AC-05: 소속이 갈리면 그 소속의 검증을 새로 받는다 ────────────────────────
+//
+// 소속 교체는 지금까지 세대를 올리고 잠금을 푸는 일만 했다. roomSyncStatus는 **이전 소속에서**
+// 'verified'가 된 값이라 그대로 남았고, 준비·시작·저장은 셋 다 그 값 하나만 본다 — 한 번도
+// 확인한 적 없는 방에 대해 세 요청이 전부 열려 있었다. 반대로 확인 중이던 조회는 소속 세대가
+// 달라 폐기되므로, 새 조회를 걸지 않으면 검증이 'checking'에 갇힌 채 아무 조회도 남지 않았다.
+
+test("AC-05 · 다른 방으로 소속이 갈리면 이전 방의 검증을 물려받지 않고 그 소속을 서버에 다시 확인한다", async () => {
+  const { socket, result } = await mountVerified()
+  const queriesBefore = socket.countOf("get_current_room")
+
+  // R1에서 검증된 상태 그대로 R2로 옮긴다(조회 응답은 붙잡아 둔다).
+  socket.answer = () => HOLD
+  await act(async () => { useMatchingStore.getState().setRoom(otherRoom()) })
+
+  assert.equal(result.current.isRoomVerified, false,
+    "이전 방에서 받은 검증이 새 소속에 그대로 남았다")
+  assert.equal(socket.countOf("get_current_room"), queriesBefore + 1,
+    "새 소속을 확인하는 조회가 나가지 않았다")
+
+  // 검증되지 않은 소속에서는 준비·시작 요청이 서버로 나가지 않는다.
+  const readyBefore = socket.countOf("set_ready")
+  const startBefore = socket.countOf("start_game")
+  await act(async () => { await result.current.setReady(true) })
+  await act(async () => { await result.current.startGame() })
+  assert.equal(socket.countOf("set_ready"), readyBefore, "미검증 소속에서 준비 요청이 나갔다")
+  assert.equal(socket.countOf("start_game"), startBefore, "미검증 소속에서 시작 요청이 나갔다")
+
+  // 그 소속의 조회가 돌아오면 정상적으로 검증된다(막아 두기만 한 것이 아니다).
+  await act(async () => {
+    socket.release("get_current_room", { ok: true, room: otherRoom() })
+    await Promise.resolve(); await Promise.resolve()
+  })
+  assert.equal(result.current.isRoomVerified, true, "새 소속의 조회가 검증으로 이어지지 않았다")
+  assert.equal(useMatchingStore.getState().roomId, "room-2")
+})
+
+test("AC-05 · 확인 중에 R1→방 없음→R1을 지나면 옛 조회는 버려지고 각 소속이 자기 조회를 받는다", async () => {
+  const { socket, result } = await mountVerified()
+
+  // (1) 재접속 조회 하나를 띄워 붙잡아 둔다 — 이 조회는 곧 지난 소속의 것이 된다.
+  socket.answer = () => HOLD
+  await act(async () => { socket.trigger("connect") })
+  assert.equal(result.current.isRoomVerified, false)
+  const afterConnect = socket.countOf("get_current_room")
+
+  // (2) 방을 떠났다가 **같은 방**으로 다시 들어온다. roomId·계정·소켓이 전부 되돌아와
+  //     소속 세대 말고는 두 소속을 구별할 값이 없다.
+  await act(async () => { useMatchingStore.getState().clearRoom() })
+  await act(async () => { useMatchingStore.getState().setRoom(serverRoom({ settingsVersion: 4 })) })
+  assert.equal(socket.countOf("get_current_room"), afterConnect + 2,
+    "소속이 두 번 갈렸는데 그 소속들의 조회가 나가지 않았다")
+
+  // (3) 지난 소속의 조회가 이제야 도착한다 — 검증으로 이어지면 안 된다.
+  await act(async () => {
+    socket.release("get_current_room", { ok: true, room: serverRoom({ settingsVersion: 1 }) })
+    await Promise.resolve(); await Promise.resolve()
+  })
+  assert.equal(useMatchingStore.getState().settingsVersion, 4, "지난 소속의 조회가 새 소속을 덮었다")
+  assert.equal(result.current.isRoomVerified, false,
+    "지난 소속의 응답으로 지금 소속이 검증됐다")
+
+  // (4) "방 없음" 구간의 조회도 마찬가지로 지난 것이다.
+  await act(async () => {
+    socket.release("get_current_room", { ok: true, room: null })
+    await Promise.resolve(); await Promise.resolve()
+  })
+  assert.equal(useMatchingStore.getState().roomId, ROOM_ID, "지난 소속의 '방 없음'이 적용됐다")
+
+  // (5) 지금 소속의 조회가 돌아오면 검증된다 — checking에 갇히지 않는다.
+  await act(async () => {
+    socket.release("get_current_room", { ok: true, room: serverRoom({ settingsVersion: 4 }) })
+    await Promise.resolve(); await Promise.resolve()
+  })
+  assert.equal(result.current.isRoomVerified, true, "지금 소속의 검증이 끝나지 않고 멈췄다")
+})
+
+test("AC-05 · 서버가 확정해 준 방 교체는 같은 사실을 다시 묻지 않는다", async () => {
+  // 최초 방 발견(null→서버가 알려준 방)은 그 조회 **자체가** 근거다. 여기서 재확인을 걸면
+  // 조회가 끝없이 한 번씩 더 돌고, 방이 사라지는 확정 사건 뒤의 여분 조회는 "방 없음"을
+  // 다시 확정해 이미 진행 중인 화면 이동을 덮는다.
+  let roomDeletedCalls = 0
+  const callbacks = { onRoomDeleted: () => { roomDeletedCalls += 1 }, onGameStarted: () => {} }
+  useMatchingStore.getState().clearRoom()
+  useAuthStore.setState({ user: { uuid: "host-a" }, isLoggedIn: true })
+
+  const socket = createFakeSocket()
+  socket.answer = (event) => (event === "get_current_room" ? { ok: true, room: serverRoom() } : HOLD)
+  setSocket(socket)
+  const { result } = renderHook(() => useMatchingRoom(callbacks))
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+
+  assert.equal(result.current.isRoomVerified, true)
+  assert.equal(useMatchingStore.getState().roomId, ROOM_ID)
+  assert.equal(socket.countOf("get_current_room"), 1,
+    "최초 방 발견이 스스로 재확인을 불러 조회가 반복됐다")
+
+  // 같은 방을 다시 확인하는 것(재연결)은 소속 교체가 아니다 — 조회는 정확히 한 번 더다.
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  assert.equal(socket.countOf("get_current_room"), 2, "같은 방 재확인이 조회를 중복으로 만들었다")
+  assert.equal(result.current.isRoomVerified, true)
+
+  // 서버가 방 소멸을 확정한 사건도 "방 없음"을 다시 묻지 않는다.
+  await act(async () => { socket.trigger("room_deleted", {}) })
+  assert.equal(useMatchingStore.getState().roomId, null)
+  assert.equal(roomDeletedCalls, 1)
+  assert.equal(socket.countOf("get_current_room"), 2,
+    "방이 사라진 뒤 여분의 조회가 나갔다")
+})
+
+// ── AC-03/AC-04: 설정 변경 스냅샷의 적용 순서 ────────────────────────────────
+//
+// room_settings_updated는 설정만 싣지 않는다 — 그 버전 시점의 명단·준비·방장·canStart를 통째로
+// 싣는다. 그래서 "설정이 같으니 다시 적용해도 무해하다"가 성립하지 않는다.
+
+test("AC-03 · 이미 아는 것보다 낮은 버전의 설정 스냅샷은 설정도 명단도 되돌리지 못한다", async () => {
+  const { socket } = await mountVerified()
+
+  // 권위 있는 조회로 v9를 확보한다(p1은 준비 완료, 방장은 p1).
+  const v9Room = serverRoom({ settingsVersion: 9, hostUuid: "p1", canStart: true })
+  v9Room.settings = { ...v9Room.settings, maxPlayers: 10 }
+  v9Room.players = [
+    { uuid: "host-a", nickname: "host", isReady: true, readyRevision: 3 },
+    { uuid: "p1", nickname: "p1", isReady: true, readyRevision: 4 },
+  ]
+  socket.answer = (event) => (event === "get_current_room" ? { ok: true, room: v9Room } : HOLD)
+  await act(async () => { socket.trigger("connect"); await Promise.resolve(); await Promise.resolve() })
+  assert.equal(useMatchingStore.getState().settingsVersion, 9, "전제가 깨졌다(v9를 확보하지 못했다)")
+
+  // 그 뒤에 v7 스냅샷이 도착한다 — 설정·명단·준비·방장·canStart를 전부 되돌리려 한다.
+  await act(async () => {
+    socket.trigger(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, {
+      roomId: ROOM_ID, settingsVersion: 7, accessType: "code",
+      settings: { ...serverRoom().settings, maxPlayers: 4 },
+      hostUuid: "host-a", canStart: false,
+      players: [
+        { uuid: "host-a", nickname: "host", isReady: false, readyRevision: 1 },
+        { uuid: "p1", nickname: "p1", isReady: false, readyRevision: 1 },
+      ],
+    })
+  })
+
+  const after = useMatchingStore.getState()
+  assert.equal(after.settingsVersion, 9, "낮은 버전의 스냅샷이 설정 버전을 되돌렸다")
+  assert.equal(after.settings.maxPlayers, 10, "낮은 버전의 스냅샷이 설정을 되돌렸다")
+  assert.equal(after.accessType, "open", "낮은 버전의 스냅샷이 입장 방식을 되돌렸다")
+  assert.equal(after.hostUuid, "p1", "낮은 버전의 스냅샷이 방장을 되돌렸다")
+  assert.equal(after.canStart, true, "낮은 버전의 스냅샷이 canStart를 되돌렸다")
+  assert.equal(after.players.find((p) => p.uuid === "p1").isReady, true,
+    "낮은 버전의 스냅샷이 준비 표시를 되돌렸다")
+
+  // 더 새로운 버전은 그대로 적용된다(정상 경로를 막아서 통과한 것이 아니다).
+  await act(async () => {
+    socket.trigger(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, {
+      roomId: ROOM_ID, settingsVersion: 10, accessType: "code",
+      settings: { ...serverRoom().settings, maxPlayers: 6 },
+      hostUuid: "p1", canStart: false,
+      players: [
+        { uuid: "host-a", nickname: "host", isReady: false, readyRevision: 4 },
+        { uuid: "p1", nickname: "p1", isReady: false, readyRevision: 5 },
+      ],
+    })
+  })
+  const applied = useMatchingStore.getState()
+  assert.equal(applied.settingsVersion, 10, "정상적인 새 버전 스냅샷까지 버려졌다")
+  assert.equal(applied.settings.maxPlayers, 6)
+  assert.equal(applied.accessType, "code")
+  assert.equal(applied.players.every((p) => p.isReady !== true), true,
+    "새 설정의 전원 준비 해제가 반영되지 않았다")
+})
+
+test("AC-04 · 같은 버전의 설정 스냅샷이 다시 도착해도 그 뒤에 받은 준비 상태를 되돌리지 않는다", async () => {
+  const { socket } = await mountVerified()
+
+  const v2Snapshot = {
+    roomId: ROOM_ID, settingsVersion: 2, accessType: "open",
+    settings: { ...serverRoom().settings, maxPlayers: 6 },
+    hostUuid: "host-a", canStart: false,
+    players: [
+      { uuid: "host-a", nickname: "host", isReady: false, readyRevision: 1 },
+      { uuid: "p1", nickname: "p1", isReady: false, readyRevision: 1 },
+    ],
+  }
+
+  // (1) 설정 변경 스냅샷이 정상적으로 적용된다(전원 준비 해제 포함).
+  await act(async () => { socket.trigger(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, v2Snapshot) })
+  assert.equal(useMatchingStore.getState().settingsVersion, 2)
+  assert.equal(useMatchingStore.getState().settings.maxPlayers, 6)
+
+  // (2) 그 버전 **위에서** p1이 다시 준비한다 — 이 사실은 v2 스냅샷에 담겨 있지 않다.
+  await act(async () => {
+    socket.trigger("player_ready_changed", {
+      uuid: "p1", isReady: true, canStart: true,
+      roomId: ROOM_ID, settingsVersion: 2, readyRevision: 5,
+    })
+  })
+  assert.equal(useMatchingStore.getState().players.find((p) => p.uuid === "p1").isReady, true,
+    "전제가 깨졌다(준비가 반영되지 않았다)")
+
+  // (3) 같은 버전의 스냅샷이 한 번 더 도착한다(중복 전달·늦은 재전달).
+  await act(async () => { socket.trigger(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, { ...v2Snapshot }) })
+
+  const after = useMatchingStore.getState()
+  assert.equal(after.players.find((p) => p.uuid === "p1").isReady, true,
+    "같은 버전의 중복 스냅샷이 그 뒤에 받은 준비를 되돌렸다")
+  assert.equal(after.players.find((p) => p.uuid === "p1").readyRevision, 5,
+    "같은 버전의 중복 스냅샷이 준비 revision을 되돌렸다")
+  assert.equal(after.canStart, true, "같은 버전의 중복 스냅샷이 canStart를 되돌렸다")
+  assert.equal(after.settingsVersion, 2)
+  assert.equal(after.settings.maxPlayers, 6, "같은 버전인데 설정이 달라졌다")
+})

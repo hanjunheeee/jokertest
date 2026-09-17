@@ -24,6 +24,9 @@ import FriendListToggleButton from "@/domains/lobby/components/friendList/Friend
 import GameSetupPanel from "@/domains/game/setup/components/GameSetupPanel.jsx"
 // F-20(AC-03): 방장만 편집할 수 있지만 **현재 설정은 참가자 전원이 읽을 수 있어야** 한다.
 import RoomSettingsSummaryPanel from "../components/RoomSettingsSummaryPanel.jsx"
+// F-20(AC-05): 저장 결과를 끝내 확인하지 못했다는 결론은 대기 표시·편집 패널과 함께 사라지면
+// 안 된다 — 둘 중 어느 쪽에도 묶이지 않은 자리에서 계속 보인다.
+import RoomSettingsResultNotice from "../components/RoomSettingsResultNotice.jsx"
 
 export default function GameMatchingPage() {
   const {
@@ -56,6 +59,8 @@ export default function GameMatchingPage() {
     hasPendingSettingsResult,
     verifyRoomSettingsResult,
     settingsError,
+    settingsResultNotice,
+    dismissSettingsResultNotice,
     roomSettings,
     roomAccessType,
   } = useMatchingPage()
@@ -158,6 +163,13 @@ export default function GameMatchingPage() {
           </button>
         </div>
       ) : null}
+
+      {/* 결과 확인까지 마쳤는데도 적용 여부를 알 수 없을 때의 결론이다. 대기 표시가 사라지고
+          편집 패널이 닫힌 뒤에도 남아, 방장이 현재 설정을 보고 다시 저장할지 정할 수 있게 한다. */}
+      <RoomSettingsResultNotice
+        message={settingsOpen ? null : settingsResultNotice}
+        onDismiss={dismissSettingsResultNotice}
+      />
 
       {settingsOpen ? (
         <div className="absolute inset-0 z-40 bg-black/70">
