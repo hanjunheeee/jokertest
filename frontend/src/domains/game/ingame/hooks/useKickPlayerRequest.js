@@ -210,6 +210,26 @@ export function useKickPlayerRequest({
     setStatus(next)
   }, [])
 
+  /**
+   * F-21(AC-04): **결과를 알게 된 그 순간** 재확인 요구를 해소한다.
+   *
+   * 재확인 요구는 "이 요청이 실행됐는지 모른다"에서만 생긴다(UNKNOWN). 그러므로 그 요청의
+   * 결과가 **확정으로** 돌아오면 — 실행됐다(KICKED)든, 실행되지 않았다는 기록된 거부의
+   * 재생이든 — 요구의 근거 자체가 사라진다. 이 해소가 없으면 다음이 영구 교착이 된다:
+   *
+   *   조회① UNKNOWN → 재확인 시작(요청 세대 G) → 조회②가 KICKED를 확정(요청 세대 G+1)
+   *   → 뒤늦게 끝난 재확인①은 **옳게** 폐기되지만(세대 불일치) 아무도 요구를 내리지 않는다
+   *   → requestConfirm이 needsVerification으로 영영 막힌다.
+   *
+   * 해소는 **확정된 결과**에서만 한다 — 조회 자체의 실패(STALE_SOCKET 등)는 원 요청에 대해
+   * 아무 것도 말하지 않으므로 여기에 오지 않는다. 신원·연결·소속·요청 세대 검사를 통과한
+   * 호출부에서만 부른다(옛 응답이 현재 요구를 내리지 못한다).
+   */
+  const settleVerification = useCallback(() => {
+    needsVerificationRef.current = false
+    setNeedsVerification(false)
+  }, [])
+
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
@@ -415,6 +435,8 @@ export function useKickPlayerRequest({
       if (response && response.ok === true && response.status === "KICKED") {
         applyStatus(KICK_REQUEST_STATUS.SUCCEEDED)
         setErrorCode(null)
+        // 이 영수증의 결과를 알게 됐다 — 앞선 UNKNOWN이 걸어 둔 재확인 요구도 함께 내린다.
+        settleVerification()
         return
       }
       if (response && response.ok === true && response.status === "UNKNOWN") {
@@ -460,10 +482,13 @@ export function useKickPlayerRequest({
           .catch(() => { /* 재확인 실패는 잠금을 유지한다(모르는 상태를 풀지 않는다) */ })
         return
       }
+      // 기록된 **확정 거부**의 재생(replayed:true) — "그 요청은 실행되지 않았다"는 역사적
+      // 사실이므로 이것도 결과를 알게 된 것이다. 앞선 UNKNOWN의 재확인 요구를 내린다.
       applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
+      settleVerification()
     })
-  }, [applyStatus, getMembershipScopeId, verifyMembership])
+  }, [applyStatus, getMembershipScopeId, verifyMembership, settleVerification])
 
   /**
    * 안내를 닫는다(상태만 초기화 — 서버 기록은 그대로다. 재조회 키도 남겨 둔다).

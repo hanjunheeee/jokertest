@@ -741,6 +741,115 @@ test("AC-04: 서버 재확인이 실패하면 잠긴 채로 남는다(모르는 
   assert.equal(socket.emitted.length, 2)
 })
 
+/**
+ * F-21(AC-04): 재확인 요구는 "결과를 모른다"에서만 생기므로, 그 영수증의 결과가 **확정으로**
+ * 돌아오면 요구도 함께 내려가야 한다. 예전에는 두 번째 조회가 잠금만 풀고 요구는 남겼고,
+ * 먼저 시작된 재확인은 (옳게) 세대 불일치로 폐기되므로 아무도 요구를 내리지 못해 새 확인이
+ * 영영 열리지 않았다.
+ */
+test("AC-04: 재확인 대기 중이라도 다음 조회가 KICKED를 확정하면 요구가 풀리고 현재 목록의 다른 대상을 확인할 수 있다", async () => {
+  const OTHER = "uuid-other"
+  const socket = setUp()
+  let release = null
+  const verifyMembership = () => new Promise((resolve) => { release = resolve })
+  const { result } = mountKick({ verifyMembership })
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  const first = socket.emitted[0]
+  assert.equal(first.event, "kick_game_player")
+
+  // ACK 유실 → 조회① UNKNOWN → 재확인이 실제로 시작되고 새 확인이 잠긴다.
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[1].ack({ ok: true, status: "UNKNOWN" }))
+  assert.equal(result.current.isAwaitingResolution, true)
+  assert.ok(release, "UNKNOWN인데 서버 재확인이 시작되지 않았다")
+
+  // 조회② — 서버가 **그 영수증의 결과**를 확정해서 답한다.
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[2].ack({ ok: true, status: "KICKED", replayed: true }))
+
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.SUCCEEDED)
+  assert.equal(result.current.isAwaitingResolution, false, "결과를 알게 됐는데 재확인 요구가 남았다")
+
+  // 뒤늦게 끝난 재확인①은 더 새로운 세대의 상태를 건드리지 않는다(자동 재전송도 없다).
+  await act(async () => { release(true) })
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.SUCCEEDED)
+  assert.equal(result.current.isAwaitingResolution, false)
+  assert.equal(socket.emitted.length, 3, "옛 재확인의 완료가 새 요청을 만들었다")
+
+  // 이제 **현재 목록의 다른 유효한 대상**을 새 확인 절차로 추방할 수 있다.
+  act(() => {
+    useInGameStore.setState((s) => ({
+      state: {
+        ...s.state,
+        players: [
+          ...s.state.players.filter((p) => p.uuid !== TARGET),
+          { uuid: OTHER, nickname: "다른 대상", alive: true, isParticipating: true, membershipId: "mem-other" },
+        ],
+      },
+    }))
+  })
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  assert.equal(result.current.pendingTarget?.uuid, OTHER)
+  act(() => result.current.confirmKick(currentTargets()))
+
+  assert.equal(socket.emitted.length, 4)
+  assert.equal(socket.emitted[3].event, "kick_game_player")
+  assert.equal(socket.emitted[3].payload.targetUuid, OTHER)
+  assert.equal(socket.emitted[3].payload.targetMembershipId, "mem-other")
+  assert.notEqual(socket.emitted[3].payload.requestId, first.payload.requestId)
+})
+
+test("AC-04: 재확인 대기 중의 조회가 기록된 거부를 재생해도 요구가 풀리고, 뒤늦은 재확인 실패가 되돌리지 못한다", async () => {
+  const socket = setUp()
+  let release = null
+  const verifyMembership = () => new Promise((resolve) => { release = resolve })
+  const { result } = mountKick({ verifyMembership })
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[1].ack({ ok: true, status: "UNKNOWN" }))
+  assert.equal(result.current.isAwaitingResolution, true)
+
+  // "그 요청은 실행되지 않았다"는 역사적 사실도 결과를 알게 된 것이다.
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[2].ack({ ok: false, replayed: true, code: "ALREADY_LEFT" }))
+
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.FAILED)
+  assert.equal(result.current.errorCode, "ALREADY_LEFT")
+  assert.equal(result.current.isAwaitingResolution, false)
+
+  await act(async () => { release(false) })
+  assert.equal(result.current.isAwaitingResolution, false, "옛 재확인의 실패가 확정된 결과를 다시 잠갔다")
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  assert.equal(result.current.pendingTarget?.uuid, TARGET)
+  assert.equal(socket.emitted.length, 3, "확인 단계가 요청을 보냈다")
+})
+
+test("AC-04: 재확인 대기 중의 조회가 전송 사유로 실패하면 요구도 잠금도 풀리지 않는다", async () => {
+  const socket = setUp()
+  const { result } = mountKick({ verifyMembership: () => new Promise(() => {}) })
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[1].ack({ ok: true, status: "UNKNOWN" }))
+  assert.equal(result.current.isAwaitingResolution, true)
+
+  // 조회 자체의 실패는 원 요청의 결과에 대해 아무 것도 말하지 않는다 — 요구를 내릴 근거가 아니다.
+  act(() => result.current.lookupResult())
+  act(() => socket.emitted[2].ack({ ok: false, code: "STALE_SOCKET" }))
+
+  assert.equal(result.current.isAwaitingResolution, true, "조회 실패가 재확인 요구를 풀었다")
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  assert.equal(result.current.pendingTarget, null)
+  act(() => result.current.confirmKick(currentTargets()))
+  assert.equal(socket.emitted.length, 3, "조회 실패 뒤에 새 추방이 나갔다")
+})
+
 test("AC-05: 안내를 닫은 뒤 도착한 옛 ACK는 닫힌 안내를 되살리지 않는다", () => {
   const socket = setUp()
   const { result } = mountKick()
@@ -881,14 +990,17 @@ function dayVoteState() {
   return gameState({ phase: "DAY", dayPhase: "DAY_VOTE" })
 }
 
-function selfProgress({ seq, hasSubmitted, targetUuid = null, revision = 1, doneCount = 0 }) {
+function selfProgress({
+  seq, hasSubmitted, targetUuid = null, revision = 1, doneCount = 0,
+  phase = "DAY", dayIndex = 1, progressKind = "DAY_VOTE",
+}) {
   return {
     gameId: "game-1",
-    phase: "DAY",
-    dayIndex: 1,
+    phase,
+    dayIndex,
     participationRevision: revision,
     selfProgressSeq: seq,
-    progress: { kind: "DAY_VOTE", doneCount, requiredCount: 2 },
+    progress: { kind: progressKind, doneCount, requiredCount: 2 },
     self: { hasSubmittedDayVote: hasSubmitted, dayVoteTargetUuid: targetUuid, dayVoteRound: 1 },
   }
 }
@@ -919,6 +1031,50 @@ test("AC-03: 이탈 뒤 새로 낸 표가 화면에 반영되고 제출 액션�
   })
   assert.equal(result.current.hasSubmitted, true, "옛 개인 사건이 제출 상태를 되돌렸다")
   assert.equal(result.current.lastSubmittedTargetId, TARGET)
+})
+
+/**
+ * F-21(AC-03): **옛 단계·옛 날짜의 개인 사건**이 새 단계의 값을 덮지 못하는지를 본다.
+ *
+ * 방어는 단계 비교가 아니라 **단조 증가하는 순서값**이 한다. 서버는 개인 전송마다 값을 올리고
+ * 같은 연결의 전달 순서는 보존되므로, 더 옛 사건은 언제나 더 작은 순서값을 갖는다. 반대로
+ * "내가 아는 phase와 같을 때만 적용한다"로 막으면 **정당한 갱신이 버려진다** — 피고 이탈의
+ * 개인 전송은 화면이 아직 모르는 새 단계(NIGHT)를 싣고 취소 사건보다 먼저 도착한다
+ * (backend/socket/__tests__/kickPlayers.test.js의 같은 계약 시험과 짝이다).
+ */
+test("AC-03: 옛 단계·옛 날짜의 개인 사건은 완전한 no-op이고, 화면이 아직 모르는 새 단계의 개인 사건은 버려지지 않는다", () => {
+  setUp()
+  act(() => {
+    useInGameStore.getState().setGamePayload({ gameId: "game-1", state: dayVoteState() })
+    useInGameStore.getState().applySelfProgress(selfProgress({ seq: 1, hasSubmitted: false }))
+    useInGameStore.getState().applySelfProgress(
+      selfProgress({ seq: 2, hasSubmitted: true, targetUuid: TARGET, doneCount: 1 }),
+    )
+  })
+  const applied = useInGameStore.getState().state
+  assert.equal(applied.self.hasSubmittedDayVote, true)
+  assert.equal(applied.progress.kind, "DAY_VOTE")
+
+  // 늦게 도착한 **옛 날짜·옛 단계**의 개인 사건 — 순서값이 더 작으므로 아무 것도 바꾸지 않는다.
+  act(() => {
+    useInGameStore.getState().applySelfProgress(selfProgress({
+      seq: 1, hasSubmitted: false, phase: "ROLE_REVEAL", dayIndex: 0, progressKind: "ROLE_REVEAL",
+    }))
+  })
+  assert.deepEqual(useInGameStore.getState().state, applied, "옛 단계의 개인 사건이 상태를 바꿨다")
+
+  // 반대로 **더 새로운 단계**를 실은 개인 사건은 화면이 그 단계를 아직 모르더라도 적용된다.
+  act(() => {
+    useInGameStore.getState().applySelfProgress(selfProgress({
+      seq: 3, hasSubmitted: false, phase: "NIGHT", dayIndex: 1, progressKind: "NIGHT", doneCount: 1,
+    }))
+  })
+  const next = useInGameStore.getState().state
+  assert.equal(next.selfProgressSeq, 3, "새 단계의 개인 사건이 버려졌다")
+  assert.equal(next.progress.kind, "NIGHT")
+  assert.equal(next.self.hasSubmittedDayVote, false)
+  // 단계 자체는 개인 사건이 옮기지 않는다(그 일은 단계 사건의 몫이다).
+  assert.equal(next.phase, "DAY")
 })
 
 test("AC-03: 제출보다 먼저 발행된 옛 스냅샷도 낸 표를 되돌리지 못한다", () => {

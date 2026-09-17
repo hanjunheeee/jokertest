@@ -1699,6 +1699,71 @@ test('AC-03: 재판 유권자 이탈 뒤 마지막 제출이 들어오면 그 �
     assert.equal(deliveredCount(sockets, 'tribunal_vote_resolved'), 4, '판정 결과는 참가자마다 한 번씩이다')
 })
 
+/**
+ * AC-03: **개인 진행 사건의 phase/dayIndex는 "언제나 현재 단계"이고, 그 단계 사건보다 먼저
+ * 나간다.** 피고 이탈은 core에서 이미 같은 날 NIGHT로 넘긴 뒤이므로, 개인 전송이 싣는 단계는
+ * 수신자가 아직 모르는 **새 단계**다(취소 사건은 그 다음에 나간다).
+ *
+ * 이 순서를 고정해 두는 이유는 수신 측 경계 때문이다 — 프론트의 applySelfProgress에 "내가
+ * 아는 phase와 같을 때만 적용한다"는 검사를 넣으면 이 정당한 갱신이 통째로 버려진다. 옛
+ * 사건의 방어는 단계 비교가 아니라 **단조 증가하는 selfProgressSeq**가 한다(같은 연결의
+ * 전달 순서는 보존되므로, 더 옛 사건은 언제나 더 작은 순서값을 갖는다).
+ */
+test('AC-03: 피고 이탈의 개인 진행 사건은 새 단계(NIGHT)를 싣고 취소 사건보다 먼저·더 큰 순서값으로 나간다', async () => {
+    const { session, io, sockets } = setupSessionAtDayVote({
+        roomId: 'room-sp1', gameId: 'game-sp1', hostUuid: 'sp1-h',
+        uuids: ['sp1-h', 'sp1-b', 'sp1-c', 'sp1-d'],
+    })
+
+    // 정상 경로로 재판까지 간다 — 전원이 sp1-d를 지목하고 방장이 판정을 요청한다.
+    for (const voter of ['sp1-h', 'sp1-b', 'sp1-c']) {
+        await castDayVote(io, sockets, voter, session.id, 'sp1-d')
+    }
+    await castDayVote(io, sockets, 'sp1-d', session.id, null)
+    await callAsPromise(
+        gameSessionSocketLayer.__testables.handleResolveDayVote,
+        io, sockets['sp1-h'], 'sp1-h', { gameId: session.id, dayIndex: session.dayIndex },
+    )
+    assert.equal(session.phase, 'TRIBUNAL')
+    assert.equal(session.tribunal.defendantUuid, 'sp1-d')
+
+    const dayIndexAtTribunal = session.dayIndex
+    const seqBefore = session.selfProgressSeq
+    clearDelivered(sockets)
+    io.broadcasts.length = 0
+
+    // 개인 전송(소켓 직접)과 단계 사건(채널 방송)은 서로 다른 경로라 배열 하나로는 순서를 볼
+    // 수 없다 — 개인 전송이 일어난 **그 순간의 방송 수**를 같이 적어 둔다.
+    const hostSocket = sockets['sp1-h']
+    const originalEmit = hostSocket.emit.bind(hostSocket)
+    const timeline = []
+    hostSocket.emit = (...args) => {
+        timeline.push({ event: args[0], broadcastsBefore: io.broadcasts.length })
+        return originalEmit(...args)
+    }
+
+    // 피고를 추방한다 — 비종결이므로 같은 날 NIGHT로 넘어간다.
+    const { response } = kickGamePlayer(io, hostSocket, 'sp1-h', gameKickPayload(session, 'sp1-h', 'sp1-d'))
+    assert.equal(response.ok, true, JSON.stringify(response))
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, dayIndexAtTribunal, '취소는 같은 날의 밤으로만 넘긴다')
+
+    const selfEntry = timeline.find((e) => e.event === 'session_self_progress')
+    const cancelIndex = io.broadcasts.findIndex((b) => b.event === 'tribunal_vote_resolved')
+    assert.ok(selfEntry, '개인 진행 사건이 나가지 않았다')
+    assert.ok(cancelIndex >= 0, '재판 취소 사건이 나가지 않았다')
+    assert.ok(cancelIndex >= selfEntry.broadcastsBefore, '개인 진행 사건이 단계 사건보다 뒤에 나갔다')
+
+    const selfPayload = hostSocket.emitted.find((e) => e.event === 'session_self_progress').payload
+    // 싣는 단계는 **현재 서버 단계**다 — 수신자가 아직 모르는 값이라도 그대로 싣는다.
+    assert.equal(selfPayload.phase, 'NIGHT')
+    assert.equal(selfPayload.dayIndex, dayIndexAtTribunal)
+    assert.ok(selfPayload.selfProgressSeq > seqBefore, '개인 순서값이 오르지 않았다')
+
+    // 이탈한 피고에게는 이 판의 개인 상태를 더 보내지 않는다.
+    assert.equal(sockets['sp1-d'].emitted.filter((e) => e.event === 'session_self_progress').length, 0)
+})
+
 // ═════════════════════════════════════════════════════════════════════════════
 // AC-06 — 큐 생산자도 다른 세 생산자와 같은 소속·준비·응답 계약을 쓴다
 // ═════════════════════════════════════════════════════════════════════════════
