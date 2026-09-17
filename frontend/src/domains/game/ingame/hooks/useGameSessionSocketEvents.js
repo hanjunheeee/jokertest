@@ -5,6 +5,11 @@ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClie
 // nightPrivateResult.test.js), `@/` 별칭은 vite만 해석할 수 있어 그 실행을 막는다.
 import { useMatchingStore } from "../../matching/store/matchingStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
+// F-21(A-10): 전적 커밋 이후의 개인 캐시 무효화가 실제로 닿는 세 store다. 이 훅은
+// ProtectedRoute에 장착돼 로비에서도 살아 있으므로, 먼저 퇴장한 계정도 같은 신호를 받는다.
+import { useUserProfileStore } from "../../../user/store/user.store.js"
+import { useEconomyStore } from "../../../economy/store/economy.store.js"
+import { useAchievementsStore } from "../../../library/store/achievements.store.js"
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
@@ -334,8 +339,85 @@ export function useGameSessionSocketEvents() {
       dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
     }
 
+    /**
+     * F-21(AC-03/AC-05): 참여 상태 변화 공개 방송. 생존(player_eliminated)·단계
+     * (game_phase_changed)와 **분리된** 사실이라 별도 reducer가 소유한다. 형태·게임 일치·
+     * 세대 단조성 검증은 전부 store가 하므로 여기서는 그대로 넘긴다. 소리는 없다 — 이 사건은
+     * 사망도 전이도 아니다.
+     */
+    const handleParticipationChanged = (payload) => {
+      useInGameStore.getState().applyParticipationChanged(payload)
+    }
+
+    /**
+     * F-21(AC-02): 방장이 나를 내보냈다. 이 수신기는 ProtectedRoute에 장착돼 라우트와 무관하게
+     * 계속 살아 있으므로, 사건이 **지금 이 화면의 것인지**를 직접 판정해야 한다.
+     *
+     *   - 인증 계정이 대상인가(공개 방송이 아니라 개인 전송이지만, 계정 전환 중에 도착할 수 있다)
+     *   - 그 게임/방이 지금 내가 들고 있는 것인가
+     *
+     * 둘 다 맞을 때만 그 상태를 비우고 로비로 보낸다. 새 게임이나 다른 방은 건드리지 않는다.
+     */
+    const handleGameKicked = (payload) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      const accountId = currentAccountId()
+      if (accountId === null || payload.targetUuid !== accountId) return
+      if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return
+      if (useInGameStore.getState().gameId !== payload.gameId) return
+      finalize()
+    }
+
+    const handleRoomKicked = (payload) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      const accountId = currentAccountId()
+      if (accountId === null || payload.targetUuid !== accountId) return
+      if (typeof payload.roomId !== "string" || payload.roomId.length === 0) return
+      const room = useMatchingStore.getState().room
+      // 같은 방의 **그 소속**이 맞아야 한다 — 이미 나갔다가 다시 들어온 새 소속을 옛 사건이
+      // 지우면, 방금 정상적으로 입장한 사용자가 이유 없이 로비로 튕긴다.
+      if (!room || room.roomId !== payload.roomId) return
+      if (typeof payload.roomInstanceId === "string" && room.roomInstanceId
+        && room.roomInstanceId !== payload.roomInstanceId) return
+      finalize()
+    }
+
+    /**
+     * F-21(A-10): 전적이 실제로 커밋된 뒤 서버가 보내는 개인 신호다. 게임 상태는 전혀 건드리지
+     * 않고(복원도 이동도 하지 않는다) 계정 캐시만 다시 읽게 한다 — 먼저 추방·이탈해 로비에
+     * 있는 계정도 이 신호를 받는다(현재 경기 채널 가입 여부는 조건이 아니다).
+     *
+     * payload에는 gameId와 무효화 종류만 있다. 여기서 승패·역할을 추론하지 않는다.
+     */
+    const handleAccountCacheInvalidated = (payload) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      if (currentAccountId() === null) return
+      const scopes = Array.isArray(payload.scopes) ? payload.scopes : []
+      if (scopes.length === 0) return
+      // 실제 재조회는 각 store가 소유한다 — 이 수신기는 "다시 읽어라"를 전달만 하고, 어느
+      // 하나의 실패가 나머지를 막지 않게 각각 격리한다(게임 진행과도 무관하다).
+      if (scopes.includes("profile")) {
+        try {
+          Promise.resolve(useUserProfileStore.getState().invalidate()).catch(() => {})
+        } catch { /* 조회 실패는 화면의 stale/재시도 경로가 다룬다 */ }
+      }
+      if (scopes.includes("economy")) {
+        try {
+          Promise.resolve(useEconomyStore.getState().fetchSummary()).catch(() => {})
+        } catch { /* 위와 같다 */ }
+      }
+      if (scopes.includes("achievements")) {
+        try {
+          Promise.resolve(useAchievementsStore.getState().fetchAchievements()).catch(() => {})
+        } catch { /* 위와 같다 */ }
+      }
+    }
+
     socket.on("game_ended", handleGameEnded)
     socket.on("player_eliminated", handlePlayerEliminated)
+    socket.on("session_participation_changed", handleParticipationChanged)
+    socket.on("game_kicked", handleGameKicked)
+    socket.on("room_kicked", handleRoomKicked)
+    socket.on("account_cache_invalidated", handleAccountCacheInvalidated)
     socket.on("game_phase_changed", handlePhaseChanged)
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("night_action_result", handleNightActionResult)
@@ -345,6 +427,10 @@ export function useGameSessionSocketEvents() {
     return () => {
       socket.off("game_ended", handleGameEnded)
       socket.off("player_eliminated", handlePlayerEliminated)
+      socket.off("session_participation_changed", handleParticipationChanged)
+      socket.off("game_kicked", handleGameKicked)
+      socket.off("room_kicked", handleRoomKicked)
+      socket.off("account_cache_invalidated", handleAccountCacheInvalidated)
       socket.off("game_phase_changed", handlePhaseChanged)
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("night_action_result", handleNightActionResult)

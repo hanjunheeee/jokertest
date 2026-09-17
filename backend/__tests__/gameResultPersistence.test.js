@@ -24,6 +24,10 @@ const {
     finalizeGameSessionEnd,
     handleResolveNight,
     handleResolveTribunalVote,
+    persistTerminalSession,
+    __getTerminalPersistRunsForTests,
+    __setTerminalPersistTimersForTests,
+    __setEvaluateAchievementsForTests,
 } = gameSessionSocket.__testables;
 
 // ── 픽스처 ───────────────────────────────────────────────────────────────────
@@ -246,15 +250,20 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
 };
 
 // 소켓 계층이 부르는 저장소를 가로챕니다(모듈 객체를 그대로 참조하므로 속성 교체로 충분합니다).
+//
+// F-21(A-09): 소켓 계층이 부르는 경계가 persistGameResult(살아 있는 session)에서
+// persistGameResultRecord(**이미 조립된 불변 레코드**)로 옮겨졌다. 재시도가 같은 값을 다시
+// 쓴다는 것을 보장하려면 저장소가 session을 다시 읽어서는 안 되기 때문이다. 이 대역도 같은
+// 경계를 가로채므로, 아래 단언들은 "무엇이 저장되는가"를 레코드에서 직접 읽는다.
 const stubPersistGameResult = (t, impl) => {
-    const original = gameResultRepository.persistGameResult;
+    const original = gameResultRepository.persistGameResultRecord;
     const calls = [];
-    gameResultRepository.persistGameResult = (session, options) => {
-        calls.push({ session, options });
-        return impl ? impl(session, options) : Promise.resolve({ persisted: true, gameId: session.id });
+    gameResultRepository.persistGameResultRecord = (record) => {
+        calls.push({ record });
+        return impl ? impl(record) : Promise.resolve({ persisted: true, gameId: record.result.id });
     };
     t.after(() => {
-        gameResultRepository.persistGameResult = original;
+        gameResultRepository.persistGameResultRecord = original;
     });
     return calls;
 };
@@ -351,8 +360,8 @@ test("AC-02: 밤 판정 종료 경로에서 저장이 정확히 1회 일어난�
     await flushAsync();
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].session, session);
-    assert.equal(calls[0].options.completed, true);
+    assert.equal(calls[0].record.result.id, session.id);
+    assert.equal(calls[0].record.result.completed, true);
 });
 
 test("AC-02: 종결되지 않은 밤 판정은 저장하지 않는다", async (t) => {
@@ -391,11 +400,11 @@ test("AC-02: 재판 판정 종료 경로에서 저장이 정확히 1회 일어�
     await flushAsync();
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].session, session);
-    assert.equal(calls[0].options.completed, true);
+    assert.equal(calls[0].record.result.id, session.id);
+    assert.equal(calls[0].record.result.completed, true);
 });
 
-test("AC-02/03: 같은 종료 세션의 중복 훅은 DB 멱등 함수에 그대로 위임한다", async (t) => {
+test("AC-02/03(F-21 A-09): 같은 종료 세션의 중복 훅은 두 번째 저장 작업을 만들지 않는다", async (t) => {
     withSocketLayer(t);
     const calls = stubPersistGameResult(t);
     const session = makeEndedSession();
@@ -408,13 +417,19 @@ test("AC-02/03: 같은 종료 세션의 중복 훅은 DB 멱등 함수에 그대
     };
 
     handleResolveNight(io, socket, "u1", { gameId: session.id }, countingCallback().callback, deps);
-    // 완주한 판은 마지막 참가자 이탈로 세션이 정리될 때 저장 훅을 다시 밟는다.
+    // 완주한 판은 마지막 참가자 이탈로 세션이 정리될 때 저장 훅을 다시 밟는다. 예전에는 그
+    // 두 번째 훅이 곧바로 두 번째 저장을 시작하고 DB PK의 멱등성에 기댔다.
+    //
+    // F-21(A-09): 이제 gameId당 작업은 하나뿐이다. 두 번째 훅은 진행 중인 작업을 보고 조용히
+    // 돌아간다 — 그래야 두 개의 재시도 타이머가 같은 레코드를 향해 따로 돌지 않는다. DB
+    // 멱등성 자체는 여전히 game_results PK가 보장하며, 그 계약은 아래 AC-03 시험이 저장소를
+    // 직접 두 번 호출해 확인한다.
     finalizeGameSessionEnd(io, session, "PLAYER_LEFT", "u1");
     await flushAsync();
 
-    assert.equal(calls.length, 2);
-    assert.ok(calls.every((call) => call.session === session));
-    assert.ok(calls.every((call) => call.options.completed === true));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].record.result.id, session.id);
+    assert.equal(calls[0].record.result.completed, true);
 });
 
 test("AC-02: 끊김 사망으로 승패가 확정되면 결과 화면 이탈을 기다리지 않고 저장한다", async (t) => {
@@ -426,18 +441,28 @@ test("AC-02: 끊김 사망으로 승패가 확정되면 결과 화면 이탈을 
     victim.deathReason = null;
     const io = createFakeIo();
 
+    // F-21(AC-03): 유예 만료도 추방·명시적 이탈과 **같은 경계**(commitParticipantDeparture)를
+    // 지난다. 이 시험이 고정하려는 것은 "종결이 확정되면 결과 화면 이탈을 기다리지 않고
+    // 저장한다"이므로, 대역도 그 경계에 맞춘다.
     const originals = {
         getDisconnectGraceTarget: gameSessionCore.getDisconnectGraceTarget,
-        commitDisconnectElimination: gameSessionCore.commitDisconnectElimination,
+        commitParticipantDeparture: gameSessionCore.commitParticipantDeparture,
     };
     gameSessionCore.getDisconnectGraceTarget = () => ({ session });
-    gameSessionCore.commitDisconnectElimination = () => {
+    gameSessionCore.commitParticipantDeparture = () => {
         victim.alive = false;
         victim.deathReason = "DISCONNECT";
+        victim.isParticipating = false;
         session.phase = "ENDED";
         session.winResult = { winner: "CITIZEN" };
         session.endedAt = 62_000;
-        return { ok: true, victimUuid: "u3", terminal: { winner: "CITIZEN" } };
+        return {
+            ok: true,
+            victimUuid: "u3",
+            eliminated: true,
+            terminal: { winner: "CITIZEN" },
+            tribunalCancelled: false,
+        };
     };
     t.after(() => Object.assign(gameSessionCore, originals));
 
@@ -449,8 +474,8 @@ test("AC-02: 끊김 사망으로 승패가 확정되면 결과 화면 이탈을 
     await flushAsync();
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].session, session);
-    assert.equal(calls[0].options.completed, true);
+    assert.equal(calls[0].record.result.id, session.id);
+    assert.equal(calls[0].record.result.completed, true);
 });
 
 // ── AC-03 ────────────────────────────────────────────────────────────────────
@@ -619,4 +644,165 @@ test("AC-05: 밤 판정 저장이 실패해도 night_result_applied 방송은 �
     assert.equal(applied.length, 1);
     assert.equal(applied[0].payload.phase, "ENDED");
     assert.deepEqual(applied[0].payload.winResult, { winner: "CITIZEN" });
+});
+
+// ── F-21 A-09/A-10: 불변 레코드·단일 재시도·커밋 후 개인 무효화 ────────────────
+
+/** 실제 1/5/30/60초를 기다리지 않도록 예약된 콜백만 모으는 수동 시계. */
+const useManualPersistTimers = (t) => {
+    const scheduled = [];
+    let seq = 0;
+    __setTerminalPersistTimersForTests({
+        setTimeoutFn: (fn, delay) => {
+            seq += 1;
+            scheduled.push({ id: seq, fn, delay });
+            return seq;
+        },
+        clearTimeoutFn: (id) => {
+            const index = scheduled.findIndex((entry) => entry.id === id);
+            if (index >= 0) scheduled.splice(index, 1);
+        },
+    });
+    t.after(() => __setTerminalPersistTimersForTests());
+    return {
+        scheduled,
+        /** 가장 최근에 예약된 재시도를 발화시킨다. */
+        fire() {
+            const next = scheduled.shift();
+            assert.ok(next, "예약된 재시도가 없다");
+            next.fn();
+            return next;
+        },
+    };
+};
+
+test("F-21 A-09: 첫 저장이 실패하면 **같은 레코드**로 1초 뒤 한 번만 재시도하고, 그 사이 세션이 정리돼도 ended_at·roster는 변하지 않는다", async (t) => {
+    withSocketLayer(t);
+    const timers = useManualPersistTimers(t);
+
+    let failNext = true;
+    const calls = stubPersistGameResult(t, (record) => {
+        if (failNext) {
+            failNext = false;
+            return Promise.reject(new Error("DB 다운"));
+        }
+        return Promise.resolve({ persisted: true, gameId: record.result.id });
+    });
+
+    const session = makeEndedSession();
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+
+    // 1) 첫 시도는 실패했고, 작업은 사라지지 않았다 — 실패한 판이 아무도 다시 쓰지 않는
+    //    미저장 상태로 남으면 안 된다.
+    assert.equal(calls.length, 1);
+    assert.equal(__getTerminalPersistRunsForTests().length, 1);
+    assert.equal(timers.scheduled.length, 1);
+    assert.equal(timers.scheduled[0].delay, 1_000);
+
+    // 2) 저장을 기다리는 동안 세션이 정리되고 같은 방에서 새 판이 시작된 상황을 재현한다.
+    //    레코드가 session을 다시 읽는다면 여기서 값이 무너진다.
+    const endedAtBefore = calls[0].record.result.ended_at.getTime();
+    const playerCountBefore = calls[0].record.result.player_count;
+    session.players.clear();
+    session.endedAt = 999_999;
+    session.dayIndex = 99;
+    session.winResult = { winner: "JOKER" };
+
+    timers.fire();
+    await flushAsync();
+
+    // 3) 재시도는 **문자 그대로 같은 객체**를 다시 쓴다.
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].record, calls[0].record);
+    assert.equal(calls[1].record.result.ended_at.getTime(), endedAtBefore);
+    assert.equal(calls[1].record.result.player_count, playerCountBefore);
+    assert.equal(calls[1].record.result.winner, "CITIZEN");
+    assert.equal(calls[1].record.players.length, 3);
+
+    // 4) 커밋을 확인했으므로 작업도 타이머도 남지 않는다.
+    assert.equal(__getTerminalPersistRunsForTests().length, 0);
+    assert.equal(timers.scheduled.length, 0);
+
+    // 5) 뒤늦은 중복 종료 훅은 새 저장을 만들지 않는다.
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+    assert.equal(calls.length, 3, "성공 후의 새 훅은 새 작업을 만든다(pending이 비었으므로)");
+    assert.equal(calls[2].record.result.id, session.id);
+});
+
+test("F-21 A-09: 재시도 간격은 1초→5초→30초→60초로 늘고 실패 중에는 pending을 지우지 않는다", async (t) => {
+    withSocketLayer(t);
+    const timers = useManualPersistTimers(t);
+    stubPersistGameResult(t, () => Promise.reject(new Error("DB 다운")));
+
+    persistTerminalSession(makeEndedSession(), { completed: true });
+    await flushAsync();
+
+    const observed = [timers.scheduled[0].delay];
+    for (let i = 0; i < 4; i += 1) {
+        timers.fire();
+        await flushAsync();
+        // 실패가 이어지는 동안에도 작업은 정확히 하나 — 타이머가 갈라지지 않는다.
+        assert.equal(__getTerminalPersistRunsForTests().length, 1);
+        assert.equal(timers.scheduled.length, 1);
+        observed.push(timers.scheduled[0].delay);
+    }
+
+    assert.deepEqual(observed, [1_000, 5_000, 30_000, 60_000, 60_000]);
+});
+
+test("F-21 A-09/A-10: 업적 평가와 개인 캐시 무효화는 **DB 커밋을 확인한 뒤에만** 일어난다", async (t) => {
+    withSocketLayer(t);
+    const timers = useManualPersistTimers(t);
+
+    const evaluated = [];
+    __setEvaluateAchievementsForTests(async (userId) => { evaluated.push(userId); });
+    t.after(() => __setEvaluateAchievementsForTests());
+
+    const invalidations = [];
+    gameSessionSocket.setEmitToUser((uuid, event, payload) => invalidations.push({ uuid, event, payload }));
+
+    let failNext = true;
+    stubPersistGameResult(t, (record) => {
+        if (failNext) {
+            failNext = false;
+            return Promise.reject(new Error("DB 다운"));
+        }
+        return Promise.resolve({ persisted: true, gameId: record.result.id });
+    });
+
+    const session = makeEndedSession();
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+
+    // 실패한 저장은 업적도 무효화도 만들지 않는다 — DB에 없는 경기의 지급을 평가할 수 없다.
+    assert.deepEqual(evaluated, []);
+    assert.deepEqual(invalidations, []);
+
+    timers.fire();
+    await flushAsync();
+
+    // 원 참가자 전원이 대상이다(현재 경기 채널 가입 여부는 조건이 아니다).
+    assert.deepEqual(evaluated.sort(), ["u1", "u2", "u3"]);
+
+    assert.ok(invalidations.length > 0);
+    assert.ok(invalidations.every((entry) => entry.event === "account_cache_invalidated"));
+    // 전적 무효화가 먼저, 업적 평가가 끝난 뒤의 경제·업적 무효화가 나중이다.
+    const profileFirst = invalidations.slice(0, 3);
+    assert.deepEqual(profileFirst.map((e) => e.uuid).sort(), ["u1", "u2", "u3"]);
+    assert.ok(profileFirst.every((e) => e.payload.scopes.includes("profile")));
+    const later = invalidations.slice(3);
+    assert.deepEqual(later.map((e) => e.uuid).sort(), ["u1", "u2", "u3"]);
+    assert.ok(later.every((e) => e.payload.scopes.includes("economy") && e.payload.scopes.includes("achievements")));
+
+    // payload에는 gameId와 무효화 종류만 담긴다 — 역할·진영·승패는 이 신호로 새어나가지 않는다.
+    for (const entry of invalidations) {
+        assert.deepEqual(Object.keys(entry.payload).sort(), ["gameId", "scopes"]);
+        assert.equal(entry.payload.gameId, session.id);
+        const serialized = JSON.stringify(entry.payload);
+        for (const secret of ["JOKER", "CITIZEN", "winner", "role", "team", "won"]) {
+            assert.equal(serialized.includes(secret), false, `${secret}가 무효화 payload에 실렸다`);
+        }
+    }
 });

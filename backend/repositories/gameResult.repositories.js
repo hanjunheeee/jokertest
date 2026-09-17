@@ -33,7 +33,27 @@ function __setEconomyServiceForTests(fakeEconomyService) {
  *          아무 것도 쓰지 않았다"는 뜻입니다(실패가 아닙니다).
  */
 exports.persistGameResult = async (session, { completed, disconnectedUuid } = {}) => {
-    const record = gameSessionCore.buildGameResultRecord(session, { completed, disconnectedUuid });
+    // F-21(A-09): 조립과 저장을 나눈다. 여기서 record를 만드는 것은 **이 호출이 처음이자
+    // 마지막인 경우**뿐이고, 재시도가 필요한 소켓 계층은 record를 한 번만 만들어 두고
+    // persistGameResultRecord를 직접 부른다 — 재시도마다 다시 조립하면 ended_at·roster·
+    // 통계 delta가 시도마다 달라져 "같은 판을 다시 저장한다"는 말 자체가 성립하지 않는다.
+    return exports.persistGameResultRecord(
+        gameSessionCore.buildGameResultRecord(session, { completed, disconnectedUuid }),
+    );
+};
+
+/**
+ * F-21(A-09): **이미 조립된 불변 레코드**를 저장합니다. 위 persistGameResult와 같은 트랜잭션·
+ * 같은 멱등 규칙을 쓰며, 차이는 단 하나 — 입력이 살아 있는 session이 아니라 값이라는 점입니다.
+ *
+ * 그래서 재시도가 안전합니다. 저장을 기다리는 동안 그 세션이 정리되거나 같은 방에서 새 판이
+ * 시작돼도 이 레코드의 ended_at·참가자 행·통계 증분은 바뀌지 않습니다.
+ *
+ * @param {{result:object, players?:object[], stats?:object[]}} record - buildGameResultRecord의 반환값
+ * @returns {Promise<{ persisted: boolean, gameId: string }>} persisted=false는 "이미 저장돼 있어
+ *          아무 것도 쓰지 않았다"는 뜻입니다(실패가 아닙니다).
+ */
+exports.persistGameResultRecord = async (record) => {
     const { result, players = [], stats = [] } = record;
 
     try {

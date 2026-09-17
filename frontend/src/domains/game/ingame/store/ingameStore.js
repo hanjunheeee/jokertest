@@ -67,26 +67,43 @@ export const useInGameStore = create((set) => ({
   // night_result_applied나 같은 게임의 일반 스냅샷 적용으로는 절대 비우지 않는다.
   nightPrivateResult: null,
 
-  // 백엔드 buildGameStartedPayload는 alive를 보내지 않으므로(계약 불변) 스토어가 정규화
-  // 시점에 기본값을 채운다 — 신규 세션은 항상 전원 생존 상태로 시작한다는 game-core의
-  // assertValidSessionForCommit 불변조건과 대응한다.
+  // F-21(AC-01/AC-03): buildGameStartedPayload가 이제 isAlive·isParticipating·membershipId·
+  // hostUuid·participationRevision을 함께 내려준다. 예전에는 스토어가 "신규 세션은 전원 생존"
+  // 이라고 **스스로 단정**해 players[].alive를 true로 덮어썼는데, 그 단정은 서버가 보낸 값과
+  // 어긋날 수 있는 순간이 실제로 있다(시작 직후 도착한 이 payload를 늦게 적용하는 경우 등).
+  // 이제는 서버 값을 그대로 쓰고, 값이 없는 구버전 payload만 예전 기본값으로 메운다.
   //
   // players[].themeIndex(표시 색상)는 반대다 — 서버가 게임당 한 번 배정해 모든 참가자에게
   // 같은 값을 내려주므로 스토어는 정규화 없이 그대로 통과시키고(아래 {...p} 스프레드),
   // 값의 유효성은 소비 지점인 buildPlayerSessionSourceFromGameState가 fail-closed로 검증한다.
   //
-  // hostUuid는 서버 payload가 아니라 호출부(useMatchingRoom)가 방 단계에서 알던 값을 얹어
-  // 보내는 것이라 형태를 여기서 다시 검증한다 — 문자열이 아니거나 비어 있으면 null로 두어
-  // "방장을 모른다"와 "방장이다"를 섞지 않는다.
+  // hostUuid는 이제 **서버 state.hostUuid가 유일한 원천**이다. 호출부(useMatchingRoom)가
+  // 넘기는 값은 그 필드가 없는 구버전 payload를 위한 폴백으로만 남는다 — 방 단계의 복사본을
+  // 권한 근거로 쓰면 새로고침 한 번에 방관리 권한이 사라지거나 옛 방장에게 남는다.
   setGamePayload: ({ gameId, state, hostUuid }) =>
     set((current) => {
       const nextGameId = gameId ?? state?.id ?? null
+      const serverHostUuid = typeof state?.hostUuid === "string" && state.hostUuid.trim().length > 0
+        ? state.hostUuid
+        : null
       return {
         gameId: nextGameId,
         state: state
-          ? { ...state, players: Array.isArray(state.players) ? state.players.map((p) => ({ ...p, alive: true })) : state.players }
+          ? {
+              ...state,
+              players: Array.isArray(state.players)
+                ? state.players.map((p) => ({
+                    ...p,
+                    // 생존과 참여는 끝까지 분리된 사실이다 — 사망자도 참여 중일 수 있고,
+                    // 참여가 끝난 참가자도 roster에는 남는다.
+                    alive: typeof p?.isAlive === "boolean" ? p.isAlive : p?.alive !== false,
+                    isParticipating: p?.isParticipating !== false,
+                  }))
+                : state.players,
+            }
           : null,
-        hostUuid: typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null,
+        hostUuid: serverHostUuid
+          ?? (typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null),
         error: null,
         // 개인 결과는 gameId가 실제로 바뀔 때만 비운다 — 이전 게임의 결과가 새 세션으로 넘어오는
         // 것은 막아야 하지만, 같은 게임에 대한 재적용(중복 game_started 등)까지 비우면 아직
@@ -137,6 +154,61 @@ export const useInGameStore = create((set) => ({
   // 넘기지만, 다른 reducer와 같은 이유로 순수 함수 안에서 gameId/종료 불변성을 다시 본다.
   // 기존 외형 필드와 nightPrivateResult는 보존한다(applyPlayerEliminated.js 참고).
   applyPlayerEliminated: (parsed) => set((current) => applyPlayerEliminatedPure(current, parsed)),
+
+  /**
+   * F-21(AC-03/AC-05): session_participation_changed 공개 방송을 반영한다.
+   *
+   * 이 사건이 말하는 것은 **참여 여부와 방장뿐**이다. 생존은 player_eliminated가, 단계는
+   * game_phase_changed가 각각 소유한다 — 한 사건이 여러 사실을 함께 바꾸면 그중 하나만
+   * 도착한 화면이 조용히 어긋난다.
+   *
+   * participationRevision이 세대다. 이 사건 **이전에** 캡처된 payload가 나중에 도착해 최신
+   * 참여 상태를 되돌리지 못하도록, 현재 값보다 크지 않은 revision은 완전한 no-op이다.
+   * roster uuid 집합이 다르면 아예 반영하지 않는다(참가자가 조용히 늘거나 줄지 않는다).
+   */
+  applyParticipationChanged: (payload) =>
+    set((current) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
+      if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (!Number.isInteger(payload.participationRevision) || payload.participationRevision < 0) return current
+      if (payload.participationRevision <= (current.state.participationRevision ?? 0)) return current
+      if (!Array.isArray(payload.players) || payload.players.length === 0) return current
+
+      const participationByUuid = new Map()
+      for (const entry of payload.players) {
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return current
+        if (typeof entry.uuid !== "string" || entry.uuid.length === 0) return current
+        if (typeof entry.isParticipating !== "boolean") return current
+        if (participationByUuid.has(entry.uuid)) return current
+        participationByUuid.set(entry.uuid, entry.isParticipating)
+      }
+      const canonicalUuids = new Set((current.state.players ?? []).map((p) => p.uuid))
+      if (participationByUuid.size !== canonicalUuids.size) return current
+      for (const uuid of participationByUuid.keys()) {
+        if (!canonicalUuids.has(uuid)) return current
+      }
+
+      // hostUuid는 승계됐을 수 있다. 모양이 맞을 때만 갱신하고, 그 외에는 지금 값을 지킨다 —
+      // 알 수 없는 값으로 덮으면 "방장을 모른다"와 "방장이 아니다"가 섞인다.
+      const nextHostUuid = typeof payload.hostUuid === "string" && payload.hostUuid.length > 0
+        ? payload.hostUuid
+        : current.hostUuid
+
+      return {
+        hostUuid: nextHostUuid,
+        state: {
+          ...current.state,
+          hostUuid: nextHostUuid,
+          participationRevision: payload.participationRevision,
+          players: (current.state.players ?? []).map((p) => ({
+            ...p,
+            isParticipating: participationByUuid.get(p.uuid),
+          })),
+        },
+      }
+    }),
 
   // night_result_applied 방송을 반영한다. 호출부(useGameSessionSocketEvents)가 이미
   // parseNightResultAppliedPayload로 검증한 값만 넘기지만, applyPhaseChanged와 동일한 이유로

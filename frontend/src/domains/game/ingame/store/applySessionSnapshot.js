@@ -94,6 +94,10 @@ export function applySessionSnapshotPure(current, response) {
     if (!isNonEmptyString(player.nickname)) return current
     if (typeof player.isAlive !== "boolean") return current
     if (typeof player.isConnected !== "boolean") return current
+    // F-21(AC-03/AC-06): 생존과 분리된 사실이다. 없는 구버전 스냅샷은 "참여 중"으로 본다
+    // (그 서버에는 아직 이탈 개념이 없었으므로 roster에 있다는 사실이 곧 참여다).
+    if (Object.hasOwn(player, "isParticipating") && typeof player.isParticipating !== "boolean") return current
+    if (Object.hasOwn(player, "membershipId") && player.membershipId !== null && !isNonEmptyString(player.membershipId)) return current
     if (Object.hasOwn(player, "themeIndex") && !isNonNegativeInteger(player.themeIndex)) return current
     // F-13(AC-05): 계정 프로필 사진·테두리는 backend buildPlayerAccountProfileFields와 동일한
     // own-property 조건부 계약이다(비밀이 아니라 조건부 노출) — 있으면 반드시 비어있지 않은
@@ -270,6 +274,10 @@ export function applySessionSnapshotPure(current, response) {
     nickname: p.nickname,
     alive: p.isAlive,
     isConnected: p.isConnected,
+    // F-21(AC-01/AC-03): 새로고침 뒤에도 "사망했지만 아직 참여 중"과 "빠졌다"를 구분할 수
+    // 있어야 추방 목록과 보드 사망 표시가 갈라지지 않는다.
+    isParticipating: p.isParticipating !== false,
+    ...(Object.hasOwn(p, "membershipId") ? { membershipId: p.membershipId } : {}),
     ...(isNonNegativeInteger(p.themeIndex)
       ? { themeIndex: p.themeIndex }
       : themeIndexByUuid.has(p.uuid)
@@ -294,11 +302,26 @@ export function applySessionSnapshotPure(current, response) {
     ...(self.role === "JOKER" ? { allies } : {}),
   }
 
+  // F-21(AC-01): 방장과 참여 세대는 서버가 유일한 원천이다. 새로고침으로 메모리 store가
+  // 비어도 이 값으로 방관리 권한이 복원되고, 모양이 틀린 값은 null로 두어 "모른다"와
+  // "방장이다"를 섞지 않는다(fail-closed).
+  const hostUuid = isNonEmptyString(response.hostUuid) ? response.hostUuid : null
+  const participationRevision = isNonNegativeInteger(response.participationRevision)
+    ? response.participationRevision
+    : 0
+
   const nextState = {
     id: response.gameId,
     phase: response.phase,
     dayIndex: response.dayIndex,
     dayPhase,
+    hostUuid,
+    // 진행 중 추방 요청이 "내가 보고 있던 그 판"을 가리킨다는 것을 서버가 확인하는 입력이다.
+    // 새로고침으로 이 세 값이 사라지면 방장이 추방 요청 자체를 만들 수 없다.
+    roomId: isNonEmptyString(response.roomId) ? response.roomId : null,
+    roomInstanceId: isNonEmptyString(response.roomInstanceId) ? response.roomInstanceId : null,
+    bootEpoch: isNonEmptyString(response.bootEpoch) ? response.bootEpoch : null,
+    participationRevision,
     players: nextPlayers,
     self: nextSelf,
     tribunal,
@@ -309,5 +332,7 @@ export function applySessionSnapshotPure(current, response) {
     dayVoteExcludedUuids: dayVoteResolution?.outcome === "REVOTE" ? [...dayVoteResolution.revoteExcludedUuids] : [],
   }
 
-  return { state: nextState }
+  // 최상위 hostUuid도 함께 돌려준다 — useInGameSettingIsHost가 읽는 값이고, 스냅샷 복원이
+  // 그 값을 채우지 않으면 새로고침한 방장이 방관리 탭을 잃는다(이 계약 이전의 실제 동작이다).
+  return { state: nextState, hostUuid }
 }

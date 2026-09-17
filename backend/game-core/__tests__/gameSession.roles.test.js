@@ -251,7 +251,12 @@ test('공개 payload 화이트리스트: game-started 타인 player 키 무변�
     const payload = buildGameStartedPayload(candidate.session, 'u1')
     for (const player of payload.state.players) {
         // themeIndex는 표시 색상 배정이라 공개 필드다(role/team과 달리 비밀이 아니다).
-        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'themeIndex', 'uuid'])
+        // F-21(AC-01/AC-03): isAlive·isParticipating·membershipId는 새로 승인된 **공개** 필드다
+        // (생존/참여/소속은 전원이 같은 답을 봐야 하는 값이다). role/team은 여전히 없다.
+        assert.deepEqual(
+            Object.keys(player).sort(),
+            ['isAlive', 'isParticipating', 'membershipId', 'nickname', 'themeIndex', 'uuid'],
+        )
     }
 })
 
@@ -533,7 +538,12 @@ test('CUSTOM: 커밋된 세션의 공개 payload에는 역할 구성이 노출�
     assert.equal(Object.hasOwn(payload.state, 'roleComposition'), false)
     // 다른 참가자 목록에는 여전히 role/team이 없다(themeIndex는 비밀이 아닌 표시 색상이다).
     for (const player of payload.state.players) {
-        assert.deepEqual(Object.keys(player).sort(), ['nickname', 'themeIndex', 'uuid'])
+        // F-21(AC-01/AC-03): isAlive·isParticipating·membershipId는 새로 승인된 **공개** 필드다
+        // (생존/참여/소속은 전원이 같은 답을 봐야 하는 값이다). role/team은 여전히 없다.
+        assert.deepEqual(
+            Object.keys(player).sort(),
+            ['isAlive', 'isParticipating', 'membershipId', 'nickname', 'themeIndex', 'uuid'],
+        )
     }
 })
 

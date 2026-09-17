@@ -24,6 +24,11 @@ function emitToUser(uuid, event, payload) {
     }
 }
 
+// F-21(A-10): 전적 커밋 이후 개인 캐시 무효화를 보내는 경로다. registry와 **같은 방향**으로
+// 주입한다 — gameSession.js가 이 파일을 지연 require하면 그 시점에 위 초기화가 함께 실행돼
+// 주입된 registry를 덮어쓰게 되므로, 의존 방향을 socket.js → gameSession.js 한쪽으로 고정한다.
+gameSession.setEmitToUser(emitToUser);
+
 function initSocket(httpServer) {
     const io = new Server(httpServer, {
         cors: {

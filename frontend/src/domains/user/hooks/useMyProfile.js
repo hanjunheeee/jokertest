@@ -4,19 +4,30 @@ import { useUserProfileStore } from "../store/user.store.js"
 // 내 프로필 화면에서 필요한 프로필/통계/소개 문구 데이터를 준비하는 훅입니다.
 export function useMyProfile() {
     const generation = useUserProfileStore((s) => s.requestGeneration)
+    const invalidationRevision = useUserProfileStore((s) => s.invalidationRevision)
+    const appliedRevision = useUserProfileStore((s) => s.appliedRevision)
     const data = useUserProfileStore((s) => s.data)
     const loading = useUserProfileStore((s) => s.loading)
     const fetchProfile = useUserProfileStore((s) => s.fetchProfile)
 
     useEffect(() => {
-        // 캐시에 이미 데이터가 있으면 재요청하지 않습니다 (로비→마이페이지 이동 시 중복 fetch 방지).
-        if (useUserProfileStore.getState().data) return
+        // 캐시에 데이터가 있으면 재요청하지 않는다(로비→마이페이지 이동 시 중복 fetch 방지).
+        //
+        // F-21(A-10): 단, **캐시가 있다는 사실만으로 영구히 생략하지는 않는다.** 서버가 전적
+        // 커밋을 알려오면(invalidationRevision 증가) 그 캐시는 이미 낡은 값이므로, 화면에
+        // 다시 들어오거나 재연결·창 재활성화로 이 훅이 다시 도는 순간 최신 값을 읽어야 한다.
+        // 그러지 않으면 방금 끝난 판의 전적이 새로고침 전까지 영영 반영되지 않는다.
+        const store = useUserProfileStore.getState()
+        if (store.data && store.appliedRevision >= store.invalidationRevision) return
         fetchProfile()
-    }, [generation, fetchProfile])
+    }, [generation, invalidationRevision, appliedRevision, fetchProfile])
+
+    // 값이 있어도 마지막 무효화보다 오래됐다면 화면이 그 사실을 알 수 있어야 한다.
+    const isStale = appliedRevision < invalidationRevision
 
     if(!data) {
         // 아직 데이터가 없으면 화면에서 안전하게 처리할 수 있도록 null 값을 반환합니다.
-        return { profile: null, stats: null, description: null, loading}
+        return { profile: null, stats: null, description: null, loading, isStale }
     }
 
     // 화면 상단 프로필 영역에서 사용할 값입니다.
@@ -44,5 +55,5 @@ export function useMyProfile() {
         suffix:    hasHighestWinRateRole ? "의 가면을 쓸 때 가장 잔혹합니다." : "아직 어떤 가면도 증명하지 못했습니다.",
     }
 
-    return { profile, stats, description, loading }
+    return { profile, stats, description, loading, isStale }
 }

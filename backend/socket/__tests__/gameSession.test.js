@@ -574,12 +574,28 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     await handleStartGame(ioA, hostSocketA, 'uuid-cleanup-host', startPayload(roomA), cbA)
     assert.equal(getResponseA().ok, true) // Room A → GameSession 커밋 성공
 
-    // 명시적 이탈은 disconnect 유예와 달리 기존 계약대로 즉시 세션 전체를 정리한다.
+    // F-21(AC-03): 명시적 이탈은 더 이상 **세션 전체**를 지우지 않는다 — 이탈자 개인만 그 판에서
+    // 빠진다(추방과 정확히 같은 경계를 쓴다). 2인 세션에서는 그 사망이 곧 승패를 확정하므로
+    // 세션은 ENDED로 남고, 잔류자가 결과를 확인하고 나갈 때 비로소 registry에서 사라진다.
     handleLeaveGameSession(
         ioA,
         joinerSocketA,
         'uuid-cleanup-joiner',
         { gameId: joinerSocketA.data.activeGameId },
+        countingCallback().callback,
+    )
+
+    const afterLeave = gameSessionCore.__getStateSnapshotForTests()
+    // 이탈한 계정의 소속만 풀린다 — 이것이 "다시 새 게임을 시작할 수 있다"의 실제 근거다.
+    assert.equal(afterLeave.playerSession.some(([uuid]) => uuid === 'uuid-cleanup-joiner'), false)
+    assert.equal(afterLeave.playerSession.some(([uuid]) => uuid === 'uuid-cleanup-host'), true)
+
+    // 잔류자가 결과 화면에서 나가면 그때 세션이 실제로 정리된다(ENDED 개인 detach 경로).
+    handleLeaveGameSession(
+        ioA,
+        hostSocketA,
+        'uuid-cleanup-host',
+        { gameId: hostSocketA.data.activeGameId },
         countingCallback().callback,
     )
 
@@ -2121,22 +2137,34 @@ test('leave_game_session: callback이 함수가 아니면 완전한 no-op이다(
     assert.equal(io.broadcasts.length, broadcastsBefore)
 })
 
-test('leave_game_session: 정상 이탈은 ack {ok:true}이고 game_ended가 정확히 한 번 {gameId, reason:"PLAYER_LEFT"}로 방송되며 참가자 전원의 channel과 registry가 정리된다', async () => {
-    const { io, hostSocket, joinerSocket, gameId, channelId } = await startRealTwoPlayerSession('leave-ok-host', 'leave-ok-joiner')
+test('leave_game_session: 명시적 이탈은 ack {ok:true}이고 이탈자만 참여 종료된다 — roster·잔류자 채널은 그대로이고 game_ended는 방송되지 않는다(F-21 AC-03)', async () => {
+    const { io, joinerSocket, gameId, channelId } = await startRealTwoPlayerSession('leave-ok-host', 'leave-ok-joiner')
     const { callback, getResponse } = countingCallback()
 
     handleLeaveGameSession(io, createFakeSocket('leave-ok-host'), 'leave-ok-host', { gameId }, callback)
 
     assert.deepEqual(getResponse(), { ok: true })
-    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
-    assert.equal(ended.length, 1)
-    assert.deepEqual(ended[0].payload, { gameId, reason: 'PLAYER_LEFT' })
-    assert.equal(hostSocket.rooms.has(channelId), false)
-    assert.equal(joinerSocket.rooms.has(channelId), false)
+    // 개인 이탈은 판을 지우는 사건이 아니다 — 남은 참가자의 세션은 그대로 살아 있다.
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
+    // 이탈자의 사망은 추방과 같은 규칙으로 정확히 한 번 공개된다.
+    const eliminated = io.broadcasts.filter((b) => b.event === 'player_eliminated')
+    assert.equal(eliminated.length, 1)
+    assert.equal(eliminated[0].payload.victimUuid, 'leave-ok-host')
+    // 참여 상태 변화도 생존과 별개의 사건으로 한 번 전달된다.
+    const participation = io.broadcasts.filter((b) => b.event === 'session_participation_changed')
+    assert.equal(participation.length, 1)
+    assert.equal(participation[0].payload.departedUuid, 'leave-ok-host')
+    // 잔류자는 채널에 남는다(결과 화면까지 방송을 계속 받아야 한다).
+    assert.equal(joinerSocket.rooms.has(channelId), true)
 
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
-    assert.equal(snapshot.gameSessions.some(([id]) => id === gameId), false)
-    assert.equal(snapshot.playerSession.length, 0)
+    // roster는 유지된다 — 전적 레코드와 snapshot의 명단이 판마다 달라지면 안 된다.
+    const stored = snapshot.gameSessions.find(([id]) => id === gameId)
+    assert.notEqual(stored, undefined)
+    assert.equal(stored[1].players.length, 2)
+    // 소속이 풀리는 것은 이탈자뿐이다.
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-host'), false)
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-joiner'), true)
 })
 
 test('leave_game_session: 이미 종료된 세션에 대한 뒤늦은 이탈 요청은 멱등하게 {ok:true}이고 추가 game_ended 방송이 없다', async () => {
@@ -2152,26 +2180,33 @@ test('leave_game_session: 이미 종료된 세션에 대한 뒤늦은 이탈 요
     assert.equal(after, before)
 })
 
-test('leave_game_session: 명시적 이탈 성공 뒤 같은 Socket의 disconnect가 중첩되어도 game_ended는 정확히 한 번뿐이다', async () => {
+test('leave_game_session: 명시적 이탈 성공 뒤 같은 Socket의 disconnect가 중첩되어도 사망은 정확히 한 번뿐이다(F-21 AC-05)', async () => {
     const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-overlap-a-host', 'leave-overlap-a-joiner')
 
     handleLeaveGameSession(io, createFakeSocket('leave-overlap-a-host'), 'leave-overlap-a-host', { gameId }, countingCallback().callback)
     await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'leave-overlap-a-host') // 뒤늦게 도착한 disconnect
 
-    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
-    assert.equal(ended.length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'session_participation_changed').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
 })
 
-test('leave_game_session: disconnect가 먼저 처리된 뒤 도착한 명시적 이탈 요청도 game_ended는 정확히 한 번뿐이고 이탈 ack는 여전히 {ok:true}다', async () => {
+test('leave_game_session: disconnect가 먼저 처리된 뒤 도착한 명시적 이탈 요청도 사망은 한 번뿐이고 이탈 ack는 여전히 {ok:true}다(F-21 AC-05)', async () => {
     const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-overlap-b-host', 'leave-overlap-b-joiner')
 
+    // disconnect는 세션을 끝내지 않고 재접속 유예만 건다 — 그 뒤 도착한 명시적 이탈이
+    // 실제 개인 전이를 수행하고, 남아 있던 유예는 함께 정리돼 두 번째 사망을 만들지 않는다.
     await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'leave-overlap-b-host')
     const { callback, getResponse } = countingCallback()
     handleLeaveGameSession(io, createFakeSocket('leave-overlap-b-host'), 'leave-overlap-b-host', { gameId }, callback)
 
     assert.deepEqual(getResponse(), { ok: true })
-    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
-    assert.equal(ended.length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
+    assert.equal(
+        gameSessionSocketLayer.__testables.getDisconnectGraceRun(gameId, 'leave-overlap-b-host'),
+        undefined,
+    )
 })
 
 test('leave_game_session(ABA, 동일 Socket): 세션 A 종료 뒤 같은 Socket의 세션 B disconnect는 B를 종료하지 않고 유예한다', async () => {
@@ -2243,7 +2278,7 @@ test('leave_game_session: core가 예외를 던지면 ack는 INTERNAL_ERROR이�
     assert.equal(serialized.includes('SECRET'), false)
 })
 
-test('leave_game_session: callback이 throw해도 registry 정리·matchmaking 정리·game_ended 방송은 정상적으로 완료된다', async () => {
+test('leave_game_session: callback이 throw해도 개인 이탈 커밋·공개 사건·matchmaking 정리는 정상적으로 완료된다', async () => {
     const { io, gameId } = await startRealTwoPlayerSession('leave-cbthrow-host', 'leave-cbthrow-joiner')
 
     assert.doesNotThrow(() =>
@@ -2252,10 +2287,11 @@ test('leave_game_session: callback이 throw해도 registry 정리·matchmaking �
         }),
     )
 
-    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
-    assert.equal(ended.length, 1)
+    // ACK throw는 이미 기록된 성공을 실패로 바꾸지 않는다 — 커밋도 방송도 그대로 끝난다.
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
-    assert.equal(snapshot.gameSessions.some(([id]) => id === gameId), false)
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-cbthrow-host'), false)
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameId), true)
 })
 
 test('leave_game_session: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', async () => {
@@ -2266,8 +2302,8 @@ test('leave_game_session: registerGameHandlers로 실제 배선하면 socket.tri
     hostSocket.trigger('leave_game_session', { gameId }, callback)
 
     assert.deepEqual(getResponse(), { ok: true })
-    const ended = io.broadcasts.filter((b) => b.event === 'game_ended')
-    assert.equal(ended.length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
 })
 
 // ---------------------------------------------------------------------------
@@ -2336,7 +2372,11 @@ test('세션 종료 시 한 참가자의 Socket leave 실패가 다른 참가자
         throw new Error('leave 실패(테스트 주입)')
     }
 
+    // F-21(AC-03): 세션 전체 정리는 이제 **마지막 참가자의 detach**에서 일어난다. 첫 이탈은
+    // 개인 전이(2인 세션이라 승패까지 확정)이고, 잔류자가 결과 화면에서 나갈 때 종료 정리가
+    // 실행된다 — 이 시험이 지키려는 것은 그 정리 도중의 leave 실패 격리다.
     assert.doesNotThrow(() => handleLeaveGameSession(io, createFakeSocket('cleanup-iso-host'), 'cleanup-iso-host', { gameId }, countingCallback().callback))
+    assert.doesNotThrow(() => handleLeaveGameSession(io, joinerSocket, 'cleanup-iso-joiner', { gameId }, countingCallback().callback))
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.gameRooms.some(([id]) => id === createdHostRoom.id), false)
@@ -4146,7 +4186,7 @@ test('get_session_snapshot: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — 소�
 
     assert.deepEqual(
         Object.keys(snapshot).sort(),
-        ['dayIndex', 'dayVoteResolution', 'gameId', 'nightResult', 'ok', 'phase', 'players', 'self', 'tribunal', 'winResult'],
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'ok', 'participationRevision', 'phase', 'players', 'roomId', 'roomInstanceId', 'self', 'tribunal', 'winResult'],
     )
     assert.deepEqual(snapshot.winResult, { winner: 'CITIZEN' })
     assert.equal(snapshot.tribunal.executedUuid, jokerUuid)
@@ -4163,7 +4203,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     handleGetSessionSnapshot(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, nightAck.callback)
     const nightSnapshot = nightAck.getResponse()
     assert.equal(nightSnapshot.ok, true)
-    assert.deepEqual(Object.keys(nightSnapshot).sort(), ['dayIndex', 'gameId', 'ok', 'phase', 'players', 'self'])
+    assert.deepEqual(Object.keys(nightSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'ok', 'participationRevision', 'phase', 'players', 'roomId', 'roomInstanceId', 'self'])
     assert.equal(nightSnapshot.phase, 'NIGHT')
     assertNoForbiddenPrivateData(nightSnapshot, collectOtherPlayerRoleSecrets(session, jokerUuid))
 
@@ -4176,7 +4216,10 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, dayAck.callback)
     const daySnapshot = dayAck.getResponse()
     // 낮 스냅샷에만 dayPhase가 실린다 — 재접속 클라이언트가 토론/투표를 구분해야 하기 때문이다.
-    assert.deepEqual(Object.keys(daySnapshot).sort(), ['dayIndex', 'dayPhase', 'gameId', 'nightResult', 'ok', 'phase', 'players', 'self'])
+    assert.deepEqual(
+        Object.keys(daySnapshot).sort(),
+        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'nightResult', 'ok', 'participationRevision', 'phase', 'players', 'roomId', 'roomInstanceId', 'self'],
+    )
     assert.equal(daySnapshot.dayPhase, 'DAY_DISCUSSION')
     assert.deepEqual(daySnapshot.nightResult, {
         dayIndex: session.dayIndex,
@@ -4196,7 +4239,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const tribunalSnapshot = tribunalAck.getResponse()
     assert.deepEqual(
         Object.keys(tribunalSnapshot).sort(),
-        ['dayIndex', 'dayVoteResolution', 'gameId', 'nightResult', 'ok', 'phase', 'players', 'self', 'tribunal'],
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'ok', 'participationRevision', 'phase', 'players', 'roomId', 'roomInstanceId', 'self', 'tribunal'],
     )
     assert.deepEqual(tribunalSnapshot.tribunal, { defendantUuid: citizenB, resolved: false })
     assertNoForbiddenPrivateData(tribunalSnapshot, collectOtherPlayerRoleSecrets(session, jokerUuid))
@@ -4213,7 +4256,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const postTribunalAck = countingCallback()
     handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, postTribunalAck.callback)
     const postTribunalSnapshot = postTribunalAck.getResponse()
-    assert.deepEqual(Object.keys(postTribunalSnapshot).sort(), ['dayIndex', 'gameId', 'ok', 'phase', 'players', 'self'])
+    assert.deepEqual(Object.keys(postTribunalSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'ok', 'participationRevision', 'phase', 'players', 'roomId', 'roomInstanceId', 'self'])
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'nightResult'), false)
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'tribunal'), false)
@@ -4228,7 +4271,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const endedSnapshot = endedAck.getResponse()
     assert.deepEqual(
         Object.keys(endedSnapshot).sort(),
-        ['dayIndex', 'gameId', 'nightResult', 'ok', 'phase', 'players', 'self', 'winResult'],
+        ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightResult', 'ok', 'participationRevision', 'phase', 'players', 'roomId', 'roomInstanceId', 'self', 'winResult'],
     )
     assert.deepEqual(endedSnapshot.nightResult, {
         dayIndex: session.dayIndex,

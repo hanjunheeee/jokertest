@@ -4,6 +4,8 @@ const matchmaking = require('./matchmaking')
 const gameResultRepository = require('../repositories/gameResult.repositories')
 const voteParticipationRepository = require('../repositories/voteParticipation.repositories')
 const achievementService = require('../services/achievementService')
+// F-21: 추방 입력 검증·프로세스 기동 식별·영수증의 단일 소유자(matchmaking.js와 공유한다).
+const kickReceiptStore = require('./kickReceiptStore')
 
 // F-11: handleSubmitDayVote가 실제로 호출하는 참조입니다. __setRecordVoteParticipationForTests로만
 // 바꿀 수 있고, 런타임 코드 경로는 항상 이 변수를 통해서만 저장소를 호출합니다(직접
@@ -24,13 +26,20 @@ let evaluateAchievementsImpl = achievementService.evaluateAndGrantForUser
  * 독립적으로 catch합니다.
  */
 function evaluateAchievementsForUsers(userIds, gameId) {
+    const settled = []
     for (const userId of userIds) {
         if (typeof userId !== 'string' || !userId) continue
-        Promise.resolve(evaluateAchievementsImpl(userId))
-            .catch(() => {
-                console.error('[업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId, userId })
-            })
+        settled.push(
+            Promise.resolve(evaluateAchievementsImpl(userId))
+                .catch(() => {
+                    console.error('[업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId, userId })
+                }),
+        )
     }
+    // F-21(AC-03): 호출부가 "평가가 끝났다"는 시점을 알 수 있어야 경제·업적 캐시 무효화를 그
+    // 뒤에 붙일 수 있다. 개별 실패는 위에서 이미 삼켰으므로 이 Promise는 거부되지 않는다 —
+    // fire-and-forget 계약(게임 진행을 막지 않는다)은 그대로다.
+    return Promise.all(settled)
 }
 
 // game-core가 내부 진단용으로만 반환하는 코드다(registry 불일치 등, 정상 경로에서는
@@ -111,6 +120,23 @@ function setOnlineUsersRegistry(registry) {
 }
 
 /**
+ * F-21(A-10): 개인 전송기(socket.js의 emitToUser)도 registry와 **같은 방향으로** 주입받는다.
+ *
+ * 여기서 `require('./socket')`을 지연 호출하지 않는 이유가 있다. socket.js는 이 모듈을
+ * require하는 쪽이고, 그 모듈 초기화가 `setOnlineUsersRegistry(onlineUsers)`를 부른다 —
+ * 지연 require가 처음 실행되는 순간 그 초기화가 함께 일어나, 시험이 주입해 둔 registry를
+ * 조용히 덮어쓴다. 주입 방향을 한쪽으로 고정하면 그런 일이 구조적으로 생기지 않는다.
+ *
+ * 주입 전에는 null이라 전송이 조용히 생략된다(순수 단위 시험에서 소켓 계층을 요구하지 않는다).
+ */
+let emitToUserImpl = null
+
+/** 런타임 진입점(socket.js의 모듈 초기화)에서 개인 전송기를 주입한다. */
+function setEmitToUser(emit) {
+    emitToUserImpl = typeof emit === 'function' ? emit : null
+}
+
+/**
  * mutation·disconnect 권한을 판정하는 유일한 canonical predicate다. registry에 uuid가
  * 매핑돼 있고 그 값이 정확히 이 socket의 id와 같을 때만 true다 — registry가 아직 주입되지
  * 않았거나(null) Map이 아니거나 socket이 undefined여도 절대 throw하지 않고 항상 false로
@@ -156,11 +182,23 @@ async function resyncSessionRouting(socket, uuid) {
  */
 function __resetStateForTests() {
     onlineUsersRegistry = null
+    emitToUserImpl = null
+    // F-21: 추방 영수증도 비운다 — 남으면 다음 테스트의 같은 requestId가 "이미 결정된 요청"으로
+    // 재생돼, 실제로는 실행되지 않은 명령이 성공으로 보인다.
+    kickReceiptStore.__resetKickReceiptsForTests()
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
     for (const [gameId, pending] of [...disconnectGraceRuns]) {
         for (const [uuid, run] of [...pending]) detachDisconnectGraceRun(gameId, uuid, run)
     }
+    // F-21(A-09): 저장 재시도 작업도 함께 끝낸다 — 남기면 다음 테스트가 도는 도중 이전
+    // 테스트의 재시도가 깨어나 그 테스트의 저장소 대역을 호출한다.
+    for (const run of [...terminalPersistRuns.values()]) {
+        if (run.timerId !== null) terminalPersistClearTimeout(run.timerId)
+        run.timerId = null
+    }
+    terminalPersistRuns.clear()
+    __setTerminalPersistTimersForTests()
 }
 
 /**
@@ -180,24 +218,136 @@ function __resetStateForTests() {
 function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     const gameId = session?.id
     if (typeof gameId !== 'string' || !gameId) return
-    // session은 클로저로 캡처만 한다(동기 스냅샷) — 세션이 곧 정리돼도 참가자 uuid 목록은
-    // 이미 배열로 고정돼 있어 안전하다(buildGameResultRecord가 session.players를 읽는 것과
-    // 같은 이유).
-    const participantUuids = session?.players instanceof Map ? [...session.players.values()].map((p) => p.uuid) : []
+    // F-21(A-09): 같은 gameId의 두 번째 종결 훅은 **새 작업을 만들지 않는다**. 재시도 타이머가
+    // gameId당 정확히 하나여야, 동시 종료(밤 판정 terminal과 세션 정리가 겹치는 등)가 같은
+    // 레코드를 향한 타이머를 두 개 만들어 지수적으로 늘어나는 일이 생기지 않는다.
+    if (terminalPersistRuns.has(gameId)) return
+
+    // 레코드는 **지금 여기서 한 번만** 조립한다. 재시도마다 다시 만들면 ended_at이 시도
+    // 시각으로 밀리고, 그 사이 세션이 정리됐다면 roster·통계 delta까지 달라진다 — 그러면
+    // "같은 판을 다시 저장한다"는 말 자체가 성립하지 않는다(A-09).
+    //
+    // 참가자 uuid도 같은 이유로 지금 배열로 고정한다 — 저장이 성공한 뒤 업적을 평가할 대상은
+    // "그 판의 원 참가자"이지 그때까지 남아 있는 사람이 아니다.
+    let record
+    let participantUuids
     try {
-        // repository 호출 자체는 동기적으로 시작돼 세션 스냅샷을 먼저 만든다. 반환 Promise는
-        // 기다리지 않아 방송/정리를 막지 않으며, 중복 호출은 GameResult.id PK가 판정한다.
-        // F-12: 저장 성공/실패와 무관하게(이미 커밋된 과거 경기가 있을 수 있으므로) 참가자
-        // 전원의 업적을 재평가한다 — persistGameResult 자체가 중단 경기·개발 경기를 걸러내지
-        // 않아도, achievementService는 항상 DB에 실제로 커밋된 정상 확정 경기만 집계하므로
-        // 안전하다(AC-05).
-        Promise.resolve(gameResultRepository.persistGameResult(session, { completed, disconnectedUuid }))
-            .catch(() => {
-                console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId })
-            })
-            .then(() => evaluateAchievementsForUsers(participantUuids, gameId))
+        record = gameSessionCore.buildGameResultRecord(session, { completed, disconnectedUuid })
+        participantUuids = session?.players instanceof Map
+            ? [...session.players.values()].map((p) => p.uuid)
+            : []
     } catch (err) {
-        console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId })
+        console.error('[전적 저장 실패]', { code: 'RECORD_BUILD_ERROR', gameId })
+        return
+    }
+
+    const run = { gameId, record, participantUuids, attempt: 0, timerId: null }
+    terminalPersistRuns.set(gameId, run)
+    attemptTerminalPersist(run)
+}
+
+/**
+ * F-21(A-09): gameId → 아직 **DB 커밋을 확인하지 못한** 종결 저장 작업.
+ *
+ * 성공(또는 "이미 같은 gameId로 저장돼 있음")을 확인하기 전에는 이 항목을 지우지 않는다 —
+ * 지우면 그 판은 아무도 다시 시도하지 않는 미저장 상태로 남는다. 프로세스가 죽으면 이 표도
+ * 함께 사라진다: 그것은 **미저장/미확인**이며, 이번 범위는 새 영속 복구 체계를 만들지 않는다.
+ */
+const terminalPersistRuns = new Map()
+
+/** 최초 1회 → 1초 → 5초 → 30초 → 이후 계속 60초. 단일 타이머로만 진행한다. */
+const TERMINAL_PERSIST_RETRY_DELAYS_MS = [1_000, 5_000, 30_000]
+const TERMINAL_PERSIST_MAX_DELAY_MS = 60_000
+
+let terminalPersistSetTimeout = setTimeout
+let terminalPersistClearTimeout = clearTimeout
+
+/** 테스트 전용: 실제 1/5/30/60초를 기다리지 않도록 타이머 구현만 교체한다(판정은 그대로). */
+function __setTerminalPersistTimersForTests({ setTimeoutFn, clearTimeoutFn } = {}) {
+    terminalPersistSetTimeout = setTimeoutFn ?? setTimeout
+    terminalPersistClearTimeout = clearTimeoutFn ?? clearTimeout
+}
+
+/**
+ * 한 번의 저장 시도. DB 왕복을 await하지 않으므로 방송·정리·게임 진행을 막지 않는다.
+ *
+ * 성공 판정은 "예외 없이 돌아왔다"이다 — repository는 이미 저장된 판을 `persisted:false`로
+ * 돌려주는데, 그것은 실패가 아니라 **확인**이다(다른 프로세스가 먼저 썼거나 이 판의 앞선
+ * 시도가 실제로는 성공했던 경우). 어느 쪽이든 그 gameId의 행은 DB에 있다.
+ */
+function attemptTerminalPersist(run) {
+    run.attempt += 1
+    let pending
+    try {
+        pending = Promise.resolve(gameResultRepository.persistGameResultRecord(run.record))
+    } catch (err) {
+        // 동기적으로 던지는 저장소(테스트 대역 등)도 비동기 실패와 같은 재시도 경로를 탄다.
+        pending = Promise.reject(err)
+    }
+    pending
+        .then(() => finishTerminalPersist(run))
+        .catch(() => {
+            console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId: run.gameId, attempt: run.attempt })
+            scheduleTerminalPersistRetry(run)
+        })
+}
+
+function scheduleTerminalPersistRetry(run) {
+    // 이 작업이 그 사이 다른 경로로 끝났거나(성공) 테스트 정리로 치워졌다면 다시 걸지 않는다.
+    if (terminalPersistRuns.get(run.gameId) !== run) return
+    const delay = TERMINAL_PERSIST_RETRY_DELAYS_MS[run.attempt - 1] ?? TERMINAL_PERSIST_MAX_DELAY_MS
+    run.timerId = terminalPersistSetTimeout(() => {
+        run.timerId = null
+        if (terminalPersistRuns.get(run.gameId) !== run) return
+        attemptTerminalPersist(run)
+    }, delay)
+    // 저장 재시도가 프로세스를 붙잡아 두지 않게 한다(있는 구현에서만 — 테스트 대역에는 없다).
+    if (typeof run.timerId?.unref === 'function') run.timerId.unref()
+}
+
+/**
+ * DB 커밋을 확인한 뒤의 마무리. **이 순서에만** 의미가 있다:
+ *   pending 제거 → 개인 프로필 무효화 → 업적 평가 → 경제·업적 무효화
+ *
+ * 프로필 무효화를 업적 평가보다 먼저 보내는 이유는, 전적 숫자는 이 시점에 이미 DB에 있고
+ * 업적·지급은 아직 진행 중이기 때문이다 — 화면이 두 사실을 각각 확정되는 대로 반영한다.
+ */
+function finishTerminalPersist(run) {
+    if (terminalPersistRuns.get(run.gameId) === run) terminalPersistRuns.delete(run.gameId)
+    if (run.timerId !== null) {
+        terminalPersistClearTimeout(run.timerId)
+        run.timerId = null
+    }
+
+    invalidateAccountCaches(run.participantUuids, run.gameId, ['profile'])
+    Promise.resolve(evaluateAchievementsForUsers(run.participantUuids, run.gameId))
+        .then(() => invalidateAccountCaches(run.participantUuids, run.gameId, ['economy', 'achievements']))
+        .catch(() => {
+            console.error('[업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId: run.gameId })
+        })
+}
+
+/**
+ * F-21(A-10): 이 판의 **원 참가자 전원**에게 개인 캐시 무효화를 보낸다.
+ *
+ * 현재 경기 채널에 남아 있는지는 조건이 아니다 — 먼저 추방·이탈한 계정이야말로 로비에서 옛
+ * 전적을 보고 있는 쪽이다. 대상은 socket.js의 emitToUser가 조회하는 **현재 인증 소켓**이고,
+ * 연결이 없으면 그냥 전달되지 않는다(그 계정은 재진입·재연결·창 재활성화 시의 서버 조회로
+ * 수렴한다 — 이 신호는 수렴을 앞당길 뿐 유일한 경로가 아니다).
+ *
+ * payload에는 gameId와 무효화 종류만 담는다. 역할·진영·승패는 싣지 않는다 — 이 신호는 "다시
+ * 읽어라"는 말이지 결과의 전달이 아니다.
+ */
+function invalidateAccountCaches(uuids, gameId, scopes) {
+    const emit = emitToUserImpl
+    if (typeof emit !== 'function') return
+    for (const uuid of uuids) {
+        if (typeof uuid !== 'string' || !uuid) continue
+        try {
+            emit(uuid, 'account_cache_invalidated', { gameId, scopes: [...scopes] })
+        } catch (err) {
+            console.error('[캐시 무효화 전달 실패]', { code: 'INVALIDATION_DELIVERY_ERROR', gameId })
+        }
     }
 }
 
@@ -972,75 +1122,225 @@ function expireDisconnectGrace(run) {
     const target = gameSessionCore.getDisconnectGraceTarget(uuid, session.id)
     if (!target || target.session !== session) return
 
+    // F-21(AC-03/AC-05): 사망 확정·공개 사건·종결 저장·타이머 정리는 이제 추방·명시적 이탈과
+    // **같은 경계**가 소유한다. 예전에는 이 함수가 그 전부를 직접 적고 있었고, 그래서 나중에
+    // 생긴 추방 경로가 같은 일을 다시 적으면 두 경로의 사망·전적이 조용히 갈릴 수 있었다.
+    applyParticipantDeparture(io, session, uuid, { reason: 'DISCONNECT_GRACE_EXPIRED' })
+}
+
+/**
+ * F-21(AC-03/AC-05): 방장 추방 · 진행 중 명시적 이탈 · 재접속 유예 만료가 **공유하는** 이탈
+ * 처리 경계다. core의 commitParticipantDeparture로 개인 전이를 끝낸 뒤, 그 결과에 따라 공개
+ * 사건·단계 진행·타이머·종결 저장을 연결한다.
+ *
+ * 세 경로를 한 함수로 묶는 이유는 AC-03 그 자체다 — 추방과 일반 이탈의 사망·전적·보상이
+ * 같아야 한다는 요구는, 두 경로가 **같은 코드**를 지날 때만 구조적으로 보장된다.
+ *
+ * 커밋 이후의 통지는 각각 독립된 try 블록에 둔다. 하나가 던져도 나머지 통지와 타이머 정리가
+ * 막히지 않아야, 서버가 확정한 상태와 클라이언트가 보는 상태의 어긋남이 한 곳에 몰리지 않는다.
+ *
+ * @returns core 결과 그대로(실패면 {ok:false, code}). 호출자는 이 값으로 ACK를 만든다.
+ */
+function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LEFT' } = {}) {
     let applied
     try {
-        applied = gameSessionCore.commitDisconnectElimination(session, uuid)
+        applied = gameSessionCore.commitParticipantDeparture(session, uuid, { reason })
     } catch (err) {
-        // 로그에는 고정 구조만 남긴다(밤 턴 만료 기권 기록 실패와 같은 관례 — role/원본 Error는
-        // 남기지 않는다). 사망 확정에 실패한 참가자는 유예 없이 끊긴 상태로 남을 뿐이고,
-        // 나머지 참가자의 진행은 이 실패에 막히지 않는다.
-        console.error('[재접속 유예 만료 처리 실패]', { code: 'COMMIT_ERROR', uuid, gameId: session.id })
-        return
+        // 로그에는 고정 구조만 남긴다(밤 턴 만료 기권 기록 실패와 같은 관례 — 원본 Error와
+        // role은 남기지 않는다). 커밋이 실패했다는 것은 아무 상태도 바뀌지 않았다는 뜻이다.
+        console.error('[참가자 이탈 처리 실패]', { code: 'COMMIT_ERROR', uuid, gameId: session?.id })
+        return { ok: false, code: 'INTERNAL_ERROR' }
     }
-    if (!applied.ok) return
+    if (!applied.ok) return applied
 
-    let payload = null
+    // 이 참가자를 기다리던 유예가 남아 있으면 함께 끝낸다 — 이미 빠진 사람의 타이머가 나중에
+    // 발화해 두 번째 사망을 시도하지 않게 한다(core가 멱등이라 중복은 어차피 거부되지만,
+    // 타이머 자체를 남겨 두면 세션이 사라진 뒤 발화하는 콜백이 된다).
     try {
-        payload = gameSessionCore.buildDisconnectEliminationPayload(session, applied.victimUuid)
-        if (applied.terminal) {
-            payload = { ...payload, ...gameSessionCore.buildTerminalFields(session) }
-        }
-        // F-16(AC-04): 이 공개 사건의 안정 ID다. commit이 실제로 성공한 뒤(applied.ok)에만
-        // 만들고, 같은 사망을 다시 방송해도 같은 문자열이 나오도록 시각·난수를 쓰지 않는다.
-        // 사망 원인(DISCONNECT)이나 개인 역할은 넣지 않는다 — 공개 payload의 은닉 계약을
-        // ID로 우회하지 않는다. accountId는 수신자마다 다르므로 싣지 않는다(공개 방송이다)
-        // — 수신 클라이언트가 자신의 인증 계정으로 범위를 채운다.
-        payload = {
-            ...payload,
-            sfxEvent: {
-                eventId: `game:${session.id}:day:${session.dayIndex}:victim:${applied.victimUuid}:eliminated`,
-                gameId: session.id,
-                origin: 'live',
-            },
-        }
+        cancelDisconnectGrace(session.id, uuid)
     } catch (err) {
-        console.error('[재접속 유예 만료 처리 실패]', { code: 'PAYLOAD_BUILD_ERROR', uuid, gameId: session.id })
+        console.error('[참가자 이탈 처리 실패]', { code: 'GRACE_CANCEL_ERROR', uuid, gameId: session.id })
     }
 
-    if (payload) {
+    // ── 1) 사망 공개 사건 — 생존자였을 때만. 사망자 이탈은 사망을 다시 방송하지 않는다 ──
+    if (applied.eliminated) {
+        let payload = null
         try {
-            io.to(session.channelId).emit('player_eliminated', payload)
+            payload = gameSessionCore.buildDisconnectEliminationPayload(session, applied.victimUuid)
+            if (applied.terminal) {
+                payload = { ...payload, ...gameSessionCore.buildTerminalFields(session) }
+            }
+            // 유예 만료 경로와 **같은 규칙**의 안정 ID다 — 같은 사망은 어느 경로로 들어와도
+            // 같은 문자열이 된다. 사망 원인이나 개인 역할은 넣지 않는다.
+            payload = {
+                ...payload,
+                sfxEvent: {
+                    eventId: `game:${session.id}:day:${session.dayIndex}:victim:${applied.victimUuid}:eliminated`,
+                    gameId: session.id,
+                    origin: 'live',
+                },
+            }
         } catch (err) {
-            console.error('[재접속 유예 만료 처리 실패]', { code: 'DELIVERY_ERROR', uuid, gameId: session.id })
+            console.error('[참가자 이탈 처리 실패]', { code: 'PAYLOAD_BUILD_ERROR', uuid, gameId: session.id })
+        }
+        if (payload) {
+            try {
+                io.to(session.channelId).emit('player_eliminated', payload)
+            } catch (err) {
+                console.error('[참가자 이탈 처리 실패]', { code: 'DELIVERY_ERROR', uuid, gameId: session.id })
+            }
         }
     }
 
+    // ── 2) 참여 상태 변화 — 생존과 별개의 사실이라 사망 사건과 합치지 않는다 ────────
+    try {
+        io.to(session.channelId).emit(
+            'session_participation_changed',
+            gameSessionCore.buildParticipationChangedPayload(session, applied.victimUuid),
+        )
+    } catch (err) {
+        console.error('[참가자 이탈 처리 실패]', { code: 'PARTICIPATION_DELIVERY_ERROR', uuid, gameId: session.id })
+    }
+
+    // ── 3) 피고 이탈로 취소된 재판 ────────────────────────────────────────────
+    if (applied.tribunalCancelled) {
+        try {
+            io.to(session.channelId).emit(
+                'tribunal_vote_resolved',
+                gameSessionCore.buildTribunalVoteResolvedPayload(session),
+            )
+        } catch (err) {
+            console.error('[참가자 이탈 처리 실패]', { code: 'TRIBUNAL_CANCEL_ERROR', uuid, gameId: session.id })
+        }
+    }
+
+    // ── 4) 종결 / 비종결 ─────────────────────────────────────────────────────
     if (applied.terminal) {
-        // 끊김 사망으로 자연 승패가 확정된 판도 정상 완주다. 참가자가 결과 화면에서 나갈 때까지
-        // 기다리지 않고 ENDED 전이 직후 저장한다.
+        // 이탈 사망으로 자연 승패가 확정된 판도 정상 완주다(유예 만료와 같은 규칙).
         persistTerminalSession(session, { completed: true })
         try {
-            // 승리가 확정돼 ENDED가 됐으므로 밤 턴 시퀀스와 낮 타이머를 모두 정리한다.
             syncSessionPhaseTimers(io, session)
         } catch (err) {
-            console.error('[재접속 유예 만료 처리 실패]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: session.id })
+            console.error('[참가자 이탈 처리 실패]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: session.id })
+        }
+        return applied
+    }
+
+    advancePhaseAfterDeparture(io, session, applied)
+    return applied
+}
+
+/**
+ * 이탈 직후의 단계 진행. **비종결일 때만** 호출된다.
+ *
+ * 같은 구간에 머무는 이탈에서는 syncSessionPhaseTimers를 부르지 않는다 — 그러면 낮 타이머가
+ * 다시 걸려 남은 참가자에게 없던 시간이 생긴다(유예 만료 경로가 이미 지키던 규칙과 같다).
+ * 실제 전이나 종결이 일어난 경우에만 타이머를 다시 맞춘다.
+ */
+function advancePhaseAfterDeparture(io, session, applied) {
+    // 재판 취소로 이미 그날 밤에 들어섰다 — 정상 무죄 전이와 같은 경로로 밤을 시작한다.
+    if (applied.tribunalCancelled) {
+        try {
+            syncSessionPhaseTimers(io, session)
+        } catch (err) {
+            console.error('[이탈 후 단계 진행 실패]', { code: 'TIMER_SYNC_ERROR', gameId: session.id })
         }
         return
     }
 
-    // 승자가 없으면 진행 중이던 구간의 타이머는 손대지 않는다 — 한 명의 사망은 페이즈 전이가
-    // 아니므로 여기서 syncSessionPhaseTimers를 부르면 안 된다(낮에는 startDayPhaseTimer가
-    // 현재 구간을 "다시 걸어" 남은 참가자에게 없던 시간을 더 주게 된다).
-    //
-    // 밤이면 턴 완료만 한 번 다시 확인한다 — 죽은 참가자는 더 이상 생존 actor가 아니므로,
-    // 같은 직업의 남은 생존자가 이미 제출을 마쳤다면 그 턴은 제한시간을 기다리지 않고 그
-    // 자리에서 확정된다.
+    let advanced = { transitioned: null }
+    try {
+        advanced = gameSessionCore.advanceStalledPhaseAfterDeparture(session)
+    } catch (err) {
+        console.error('[이탈 후 단계 진행 실패]', { code: 'ADVANCE_ERROR', gameId: session.id })
+    }
+
+    if (advanced.transitioned === 'DAY') {
+        try {
+            io.to(session.channelId).emit('game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session))
+        } catch (err) {
+            console.error('[이탈 후 단계 진행 실패]', { code: 'PHASE_DELIVERY_ERROR', gameId: session.id })
+        }
+        try {
+            startDayPhaseTimer(io, session)
+        } catch (err) {
+            console.error('[이탈 후 단계 진행 실패]', { code: 'TIMER_START_ERROR', gameId: session.id })
+        }
+        return
+    }
+
+    if (advanced.transitioned === 'DAY_VOTE') {
+        try {
+            io.to(session.channelId).emit('day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
+        } catch (err) {
+            console.error('[이탈 후 단계 진행 실패]', { code: 'DAY_PHASE_DELIVERY_ERROR', gameId: session.id })
+        }
+        try {
+            startDayPhaseTimer(io, session)
+        } catch (err) {
+            console.error('[이탈 후 단계 진행 실패]', { code: 'TIMER_START_ERROR', gameId: session.id })
+        }
+        return
+    }
+
+    // 표가 정규화돼 남은 사람만으로 이미 전원 제출인 낮이라면, deadline을 기다리지 않고
+    // 기존 판정 경로를 한 번 태운다(이탈이 없는 라운드의 기존 대기 계약은 건드리지 않는다).
+    if (session.phase === 'DAY' && gameSessionCore.getDayPhase(session) === gameSessionCore.DAY_PHASES.VOTE) {
+        try {
+            maybeResolveDayVoteAfterDeparture(io, session)
+        } catch (err) {
+            console.error('[이탈 후 단계 진행 실패]', { code: 'DAY_VOTE_RESOLVE_ERROR', gameId: session.id })
+        }
+        return
+    }
+
     if (session.phase === 'NIGHT') {
+        // 죽은 참가자는 더 이상 생존 actor가 아니다 — 같은 직업의 남은 생존자가 이미 제출을
+        // 마쳤다면 그 턴은 제한시간을 기다리지 않고 끝난다. 행동자가 1→0이 된 경우에는
+        // 기존 run/deadline을 그대로 두고 그 run의 정상 만료에 맡긴다(A-07).
         try {
             maybeEndNightTurnOnCompletion(session.id)
         } catch (err) {
-            console.error('[재접속 유예 만료 처리 실패]', { code: 'TURN_COMPLETION_ERROR', uuid, gameId: session.id })
+            console.error('[이탈 후 단계 진행 실패]', { code: 'TURN_COMPLETION_ERROR', gameId: session.id })
         }
+    }
+}
+
+/**
+ * 이탈로 분모가 줄어 이미 전원 제출이 된 DAY_VOTE를 기존 prepare/commit 경로로 한 번 판정한다.
+ * 아직 미제출자가 있으면 core가 ACTIONS_PENDING으로 돌려주므로 조용히 아무 일도 하지 않는다 —
+ * "이탈 직후 재평가"가 새 판정 규칙을 만들지 않는 이유다.
+ */
+function maybeResolveDayVoteAfterDeparture(io, session) {
+    const requesterUuid = session.players.keys().next().value
+    if (!requesterUuid) return
+
+    const prepared = gameSessionCore.prepareDayVoteResolution(requesterUuid, session.id, session.dayIndex)
+    if (!prepared.ok || prepared.alreadyResolved) return
+
+    const committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution)
+    if (!committed.ok) return
+
+    const resolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution)
+    let recipients = []
+    try {
+        recipients = resolveSessionParticipantSockets(io, session)
+    } catch (err) {
+        console.error('[이탈 후 낮 투표 판정 실패]', { code: 'RECIPIENT_RESOLVE_ERROR', gameId: session.id })
+    }
+    for (const recipientSocket of recipients) {
+        try {
+            recipientSocket.emit('day_vote_resolved', resolvedPayload)
+        } catch (err) {
+            console.error('[이탈 후 낮 투표 판정 실패]', { code: 'DELIVERY_ERROR', gameId: session.id })
+        }
+    }
+
+    // 실제 phase/round 전이가 일어난 경우다 — 여기서는 타이머를 다시 맞추는 것이 정확하다.
+    try {
+        syncSessionPhaseTimers(io, session)
+    } catch (err) {
+        console.error('[이탈 후 낮 투표 판정 실패]', { code: 'TIMER_SYNC_ERROR', gameId: session.id })
     }
 }
 
@@ -2278,6 +2578,36 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
         return
     }
 
+    // ── F-21(AC-03/AC-05): 비종결 세션의 명시적 이탈은 **개인 전이**다 ──────────
+    //
+    // 예전에는 이 경로가 곧바로 endGameSessionForPlayer를 불러, 한 명이 나가면 남은 참가자의
+    // 세션까지 통째로 사라졌다. 그래서 "추방은 개인 사망, 이탈은 판 전체 소멸"이라는 비대칭이
+    // 생기고 그 차이가 그대로 전적의 차이가 됐다(AC-03이 금지하는 바로 그 상태다).
+    //
+    // ENDED는 그대로 기존 개인 detach를 쓴다 — 결과가 확정된 판에서 "나간다"는 것은 결과
+    // 화면을 닫는 일이고, 마지막 참가자가 나갈 때 세션을 지우는 기존 계약이 정확하다.
+    const activeSession = gameSessionCore.getActiveSessionForDeparture(uuid, normalizedGameId)
+    if (activeSession && activeSession.phase !== 'ENDED') {
+        const departed = applyParticipantDeparture(io, activeSession, uuid, { reason: 'PLAYER_LEFT' })
+        // 이미 그 판에서 빠져 있었다면(중복 나가기) 기존 멱등 성공 계약을 그대로 유지한다.
+        respond(callback, { ok: true })
+        if (departed.ok) {
+            // 나간 본인의 소켓만 채널에서 내보낸다 — 남은 참가자의 방송 경로는 그대로다.
+            try {
+                socket.leave(activeSession.channelId)
+            } catch (err) {
+                console.error('[게임 이탈 채널 정리 실패]', { code: 'CHANNEL_LEAVE_ERROR', gameId: activeSession.id })
+                try { socket.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
+            }
+            try {
+                matchmaking.cleanupRoomStateForSessionParticipants(io, [uuid])
+            } catch (err) {
+                console.error('[게임 이탈 시 matchmaking 정리 실패]', err)
+            }
+        }
+        return
+    }
+
     let result
     try {
         result = gameSessionCore.endGameSessionForPlayer(uuid, 'PLAYER_LEFT', normalizedGameId)
@@ -2386,6 +2716,212 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
     respond(callback, { ok: true, ...result.snapshot, players })
 }
 
+/**
+ * F-21(AC-01/AC-03/AC-04): 진행 중인 판에서 방장이 참가자를 추방한다.
+ *
+ * 대기방 추방(matchmaking.js::handleKickRoomPlayer)과 **같은 순서**를 지킨다:
+ * 형태 → canonical 소켓 → 영수증 → boot → 본인 → 세션/방장/양쪽 소속 → 대상 → 용량 →
+ * 커밋 → 영수증 확정 → 통지. 두 명령이 같은 영수증 표를 공유하므로, 방장이 대기방에서
+ * 시작해 게임으로 넘어간 뒤에도 자기 요청의 결과를 하나의 조회로 확인할 수 있다.
+ *
+ * alive=false이지만 아직 참여 중인 대상도 추방할 수 있다 — 사망은 추방 거부 사유가 아니다
+ * (A-06). 그 경우 core가 사망을 다시 만들지 않고 참여 종료만 기록한다.
+ */
+function handleKickGamePlayer(io, socket, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+
+    const CODES = kickReceiptStore.KICK_ERROR_CODES
+    const reject = (code, message) => respond(callback, { ok: false, code, message })
+
+    const validated = kickReceiptStore.validateKickPayload(payload, kickReceiptStore.KICK_COMMANDS.GAME)
+    if (!validated.ok) {
+        reject(validated.code, validated.message)
+        return
+    }
+    const input = validated.value
+    const fingerprint = kickReceiptStore.fingerprintKickRequest(kickReceiptStore.KICK_COMMANDS.GAME, input)
+
+    // 권한 판정의 유일한 술어다(다른 9개 핸들러와 같은 것을 쓴다).
+    if (!isCurrentSocketForUuid(uuid, socket)) {
+        reject(CODES.STALE_SOCKET, '요청을 처리할 수 없습니다.')
+        return
+    }
+
+    const receiptKey = kickReceiptStore.kickReceiptKey(input.bootEpoch, uuid, input.requestId)
+    const recorded = kickReceiptStore.lookupKickReceipt(receiptKey)
+    if (recorded) {
+        if (recorded.fingerprint !== fingerprint) {
+            reject(CODES.REQUEST_ID_REUSED, '이미 사용한 요청 식별자입니다.')
+            return
+        }
+        respond(callback, { ...recorded.result, replayed: true })
+        return
+    }
+
+    if (input.bootEpoch !== kickReceiptStore.BOOT_EPOCH) {
+        reject(CODES.STALE_BOOT, '서버가 재시작되었습니다. 게임 정보를 다시 불러와주세요.')
+        return
+    }
+    if (input.targetUuid === uuid) {
+        reject(CODES.SELF_KICK, '자신을 추방할 수 없습니다.')
+        return
+    }
+
+    const session = gameSessionCore.getActiveSessionForDeparture(uuid, input.gameId)
+    if (!session) {
+        reject(CODES.SESSION_NOT_FOUND, '참여 중인 게임을 찾을 수 없습니다.')
+        return
+    }
+    if (session.phase === 'ENDED') {
+        // 결과가 확정된 판에서는 추방할 것이 없다. 이미 끝난 판의 roster를 바꾸면 그 판의
+        // 전적 레코드와 결과 화면이 서로 다른 명단을 말하게 된다.
+        reject(CODES.GAME_ALREADY_ENDED, '이미 종료된 게임입니다.')
+        return
+    }
+    // 같은 roomId로 다시 만들어진 방에서 시작된 새 판의 옛 명령을 여기서 끝낸다.
+    if ((session.roomInstanceId ?? session.roomId) !== input.roomInstanceId || session.roomId !== input.roomId) {
+        reject(CODES.SESSION_NOT_FOUND, '참여 중인 게임을 찾을 수 없습니다.')
+        return
+    }
+
+    const requester = session.players.get(uuid)
+    if (!requester) {
+        reject(CODES.NOT_A_PARTICIPANT, '참여 중인 게임을 찾을 수 없습니다.')
+        return
+    }
+    if ((requester.membershipId ?? null) !== input.requesterMembershipId) {
+        reject(CODES.STALE_MEMBERSHIP, '게임 정보가 변경되었습니다. 다시 불러와주세요.')
+        return
+    }
+    if (session.hostUuid !== uuid) {
+        reject(CODES.NOT_HOST, '방장만 추방할 수 있습니다.')
+        return
+    }
+
+    const target = session.players.get(input.targetUuid)
+    if (!target) {
+        // 이 판의 roster에 애초에 없던 계정이다("이미 나간 사람"과 구분되는 사유다).
+        reject(CODES.NOT_A_PARTICIPANT, '이 게임의 참가자가 아닙니다.')
+        return
+    }
+    if (!gameSessionCore.isParticipatingInSession(session, input.targetUuid)) {
+        reject(CODES.ALREADY_LEFT, '이미 게임에서 나간 참가자입니다.')
+        return
+    }
+    if ((target.membershipId ?? null) !== input.targetMembershipId) {
+        reject(CODES.STALE_MEMBERSHIP, '대상이 변경되었습니다. 다시 확인해주세요.')
+        return
+    }
+
+    if (!kickReceiptStore.hasKickReceiptCapacity()) {
+        reject(CODES.RECEIPT_CAPACITY, '잠시 후 다시 시도해주세요.')
+        return
+    }
+
+    // ── 커밋 ─────────────────────────────────────────────────────────────────
+    const kickedEvent = {
+        gameId: session.id,
+        roomId: session.roomId,
+        roomInstanceId: session.roomInstanceId ?? session.roomId,
+        bootEpoch: kickReceiptStore.BOOT_EPOCH,
+        targetUuid: input.targetUuid,
+        targetMembershipId: target.membershipId ?? null,
+        hostUuid: uuid,
+        requestId: input.requestId,
+    }
+    const targetSocket = getCurrentSocketForUuid(io, input.targetUuid)
+
+    const departed = applyParticipantDeparture(io, session, input.targetUuid, { reason: 'KICKED_BY_HOST' })
+    if (!departed.ok) {
+        // 커밋이 실패했다는 것은 아무 상태도 바뀌지 않았다는 뜻이다 — 영수증을 남기지 않는다.
+        reject(
+            departed.code === 'ALREADY_LEFT' ? CODES.ALREADY_LEFT : CODES.INTERNAL_ERROR,
+            departed.code === 'ALREADY_LEFT' ? '이미 게임에서 나간 참가자입니다.' : '요청을 처리하지 못했습니다.',
+        )
+        return
+    }
+
+    const result = {
+        ok: true,
+        status: 'KICKED',
+        gameId: session.id,
+        requestId: input.requestId,
+        targetUuid: input.targetUuid,
+        targetMembershipId: input.targetMembershipId,
+    }
+    kickReceiptStore.recordKickReceipt(receiptKey, {
+        command: kickReceiptStore.KICK_COMMANDS.GAME,
+        fingerprint,
+        result,
+    })
+
+    // ── 통지 — 각각 격리한다 ─────────────────────────────────────────────────
+    respond(callback, result)
+    if (targetSocket) {
+        try {
+            targetSocket.emit(kickReceiptStore.KICK_EVENTS.GAME_KICKED, kickedEvent)
+        } catch (err) {
+            console.error('[추방 개인 통지 실패]', { code: 'KICK_NOTIFY_ERROR', gameId: session.id })
+        }
+        try {
+            targetSocket.leave(session.channelId)
+        } catch (err) {
+            console.error('[추방 채널 이탈 실패]', { code: 'CHANNEL_LEAVE_ERROR', gameId: session.id })
+            // 채널에서 못 뗀 연결은 제거된 뒤에도 방송을 계속 받는다 — 그 연결을 끊는다.
+            // 재접속은 forfeited 검사가 다시 막는다(resyncSessionRouting).
+            try { targetSocket.disconnect(true) } catch { /* 더 할 수 있는 일이 없다 */ }
+        }
+    }
+    try {
+        // 추방된 계정이 이 판 때문에 잡고 있던 대기방 소속·큐를 함께 정리한다.
+        matchmaking.cleanupRoomStateForSessionParticipants(io, [input.targetUuid])
+    } catch (err) {
+        console.error('[추방 시 matchmaking 정리 실패]', err)
+    }
+}
+
+/**
+ * F-21(AC-04): ACK를 놓친 **원 요청자**가 자기 추방 명령의 결과를 확인한다.
+ *
+ * 새 추방을 만들지 않고 기록만 읽으며, 현재 방장인지·방이 아직 있는지로 과거 결과를 바꾸지
+ * 않는다. 기록이 없으면(만료·재시작·알 수 없는 키) 성공도 미실행도 단정하지 않고 UNKNOWN이다.
+ * 대기방·게임 두 명령이 같은 표를 쓰므로 조회 경로도 하나뿐이다.
+ */
+function handleGetKickResult(io, socket, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+
+    const CODES = kickReceiptStore.KICK_ERROR_CODES
+    if (!isCurrentSocketForUuid(uuid, socket)) {
+        respond(callback, { ok: false, code: CODES.STALE_SOCKET, message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    const validated = kickReceiptStore.validateKickResultQuery(payload)
+    if (!validated.ok) {
+        respond(callback, { ok: false, code: validated.code, message: validated.message })
+        return
+    }
+    const { bootEpoch, requestId } = validated.value
+
+    // 키에 인증된 uuid가 들어가므로 다른 계정은 같은 requestId로도 남의 결과를 읽을 수 없다.
+    const recorded = kickReceiptStore.lookupKickReceipt(
+        kickReceiptStore.kickReceiptKey(bootEpoch, uuid, requestId),
+    )
+    if (!recorded) {
+        respond(callback, { ok: true, status: 'UNKNOWN', bootEpoch, requestId })
+        return
+    }
+    respond(callback, { ...recorded.result, replayed: true, bootEpoch, requestId })
+}
+
+/** 이 계정의 현재 canonical 소켓(연결돼 있을 때만). 개인 사건 전달 대상 판정에만 쓴다. */
+function getCurrentSocketForUuid(io, uuid) {
+    const socketId = onlineUsersRegistry instanceof Map ? onlineUsersRegistry.get(uuid) : undefined
+    if (!socketId) return null
+    const socket = io?.sockets?.sockets?.get(socketId)
+    return socket?.connected === true ? socket : null
+}
+
 /** ROLE_REVEAL 확인·낮 투표 준비·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
 function registerGameHandlers(io, socket, uuid) {
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
@@ -2400,6 +2936,13 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('resolve_tribunal_vote', (payload, callback) => handleResolveTribunalVote(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, socket, uuid, payload, callback))
     socket.on('get_session_snapshot', (payload, callback) => handleGetSessionSnapshot(io, socket, uuid, payload, callback))
+    // F-21: 진행 중 추방과, 대기방·게임 공용 결과 재조회. 결과 조회를 여기 한 번만 등록하는
+    // 이유는 registerGameHandlers가 게임 참가 여부와 무관하게 모든 연결에 걸리기 때문이다 —
+    // 방금 방을 떠난 대기방 방장도 같은 이벤트로 자기 명령의 결과를 확인할 수 있다.
+    socket.on(kickReceiptStore.KICK_EVENTS.KICK_GAME_PLAYER, (payload, callback) =>
+        handleKickGamePlayer(io, socket, uuid, payload, callback))
+    socket.on(kickReceiptStore.KICK_EVENTS.GET_KICK_RESULT, (payload, callback) =>
+        handleGetKickResult(io, socket, uuid, payload, callback))
 }
 
 /**
@@ -2472,9 +3015,15 @@ module.exports = {
     registerGameHandlers,
     onDisconnect,
     setOnlineUsersRegistry,
+    // F-21(A-10): 전적 커밋 이후의 개인 캐시 무효화 전송기. registry와 같은 곳에서 주입된다.
+    setEmitToUser,
     isCurrentSocketForUuid,
     resyncSessionRouting,
     getActiveGamePresenceSnapshot,
+    // F-21: 이벤트명·오류 코드는 kickReceiptStore가 소유한다. 호출부·시험이 문자열을 복붙하지
+    // 않도록 그대로 다시 내보낸다(matchmaking.js의 ROOM_SETTINGS_* 관례와 동일).
+    KICK_EVENTS: kickReceiptStore.KICK_EVENTS,
+    KICK_ERROR_CODES: kickReceiptStore.KICK_ERROR_CODES,
     __resetStateForTests,
     __getOnlineUsersRegistryForTests,
     // 테스트에서 socket.on 배선 없이 핸들러를 직접 호출하기 위한 통로입니다(matchmaking.js의
@@ -2492,8 +3041,16 @@ module.exports = {
         handleResolveTribunalVote,
         handleLeaveGameSession,
         handleGetSessionSnapshot,
+        // F-21: kick_game_player / get_kick_result가 그대로 부르는 실제 경로와 공통 이탈 경계.
+        handleKickGamePlayer,
+        handleGetKickResult,
+        applyParticipantDeparture,
         finalizeGameSessionEnd,
         persistTerminalSession,
+        // F-21(A-09): 불변 레코드의 재시도 작업 표와 그 타이머 주입구. 시험이 실제 1/5/30초를
+        // 기다리지 않고도 "같은 record로 다시 저장한다"를 확인할 수 있게 한다.
+        __getTerminalPersistRunsForTests: () => [...terminalPersistRuns.values()],
+        __setTerminalPersistTimersForTests,
         resolveJokerTeammateSockets,
         resolveChatRecipientSockets,
         resolveSessionParticipantSockets,

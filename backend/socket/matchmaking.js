@@ -27,6 +27,10 @@ const {
 // 실제 입장은 이 파일이 소유한다. require 방향은 matchmaking → service 한쪽뿐이라
 // 순환이 생기지 않는다(서비스는 아래 __setRoomAccessForRuntime으로 registry를 주입받는다).
 const gameInviteModule = require('../service/gameInvite.service')
+// F-21: 프로세스 기동 식별(BOOT_EPOCH)·추방 입력 검증·영수증의 단일 소유자다. 대기방과
+// 진행 중 추방이 같은 표를 공유해야 원 요청자의 재조회가 명령 종류와 무관하게 하나의 답을
+// 갖는다(공통 영수증 계약). 이 모듈은 방 registry를 알지 못하므로 순환이 생기지 않는다.
+const kickReceiptStore = require('./kickReceiptStore')
 
 // userRepositoryRef·economyServiceRef와 **같은 이유**의 최소 의존성 주입이다: 초대 서비스는
 // 호출 시 실제 MySQL 트랜잭션을 열므로, DB 없이 입장 상태 기계(예약·publication·영수증·
@@ -141,7 +145,11 @@ function releaseRoomTransition(uuid, token) {
 // 이 프로세스 기동을 식별한다. 재시작하면 값이 달라지므로, 옛 boot에서 만들어진 초대의
 // 입장 재실행이 허용되지 않는다(A-11). 서버는 방을 영속 복원하지 않으므로 "같은 문자열
 // 방 코드"를 과거 방 인스턴스로 인정할 근거도 없다.
-const BOOT_EPOCH = crypto.randomUUID()
+//
+// F-21(A-08): 값의 소유를 kickReceiptStore로 옮겼다. 초대 경로와 추방 경로가 각자
+// randomUUID()를 만들면 같은 서버 기동인데도 두 값이 달라, 한 화면에서 두 계약을 함께 쓰는
+// 클라이언트가 어느 쪽을 boot 식별자로 믿어야 할지 알 수 없다. 여기서는 이름만 유지한다.
+const BOOT_EPOCH = kickReceiptStore.BOOT_EPOCH
 
 /**
  * uuid → {
@@ -293,11 +301,19 @@ function removePublishedAdmission(io, socket, attempt) {
     // 증거는 되지 못한다. 같은 계정이 같은 방에 다시 들어오면 세 값이 모두 일치하기 때문이다.
     // 그래서 늦게 깨어난 옛 시도가 정상 경로로 성립한 새 소속을 지우고 있지도 않은 이탈을
     // 방송했다. publication 소유자 등록부로 "지금 이 미확정 소속의 주인이 나인가"를 묻는다.
+    //
+    // F-21(AC-05/AC-06): 소속 식별자까지 함께 대조한다. 소유자 등록부만으로도 대부분은
+    // 걸러지지만, 이 시도가 넣은 참가자 항목이 그 사이 제거되고(추방·이탈) 같은 계정이 같은
+    // 방에 다시 들어온 경우 등록부 항목이 미처 정리되지 못한 채 남아 있을 수 있다 — 그때
+    // 현재 참가자 항목의 membershipId는 이 시도가 발급한 값이 아니다.
     const ownsPublication = publishedAdmissions.get(attempt.accountUuid) === attempt
+    const seatedMembershipId = room?.players.get(attempt.accountUuid)?.membershipId
     const stillMine = ownsPublication
         && room === attempt.room
         && room?.instanceId === attempt.roomInstanceId
         && playerRoom.get(attempt.accountUuid) === attempt.roomId
+        && (attempt.publicationMembershipId === undefined
+            || seatedMembershipId === attempt.publicationMembershipId)
     if (stillMine) {
         releasePublishedAdmission(attempt)
         room.players.delete(attempt.accountUuid)
@@ -664,6 +680,11 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
     socket.on(ROOM_SETTINGS_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT, (payload, callback) =>
         handleGetRoomSettingsUpdateResult(uuid, payload, callback, socket, getCurrentSocketId))
     socket.on('leave_room',        () => removeFromRoom(io, socket, uuid))
+    // F-21(AC-01/AC-02): 대기방 추방의 **실제 등록 지점**이다. 인증 uuid와 이 소켓, 그리고
+    // canonical 소켓 접근자를 그대로 넘긴다 — 세 값 중 어느 것도 payload에서 오지 않는다.
+    // 결과 재조회(get_kick_result)는 대기방·게임 공용이라 gameSession 쪽에 한 번만 등록한다.
+    socket.on(kickReceiptStore.KICK_EVENTS.KICK_ROOM_PLAYER, (payload, callback) =>
+        handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSocketId))
     // F-19(AC-06): 실제 초대 수락은 인증·세션 guard를 통과한 이 소켓 경계에서만 일어난다
     // (REST로는 수락하지 않는다 — 입장은 이 프로세스의 방 registry와 이 소켓의 채널 가입을
     // 동시에 확정해야 하기 때문). 응답은 언제나 ack 한 번이다.
@@ -891,12 +912,21 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     const roomId     = crypto.randomUUID()
     const roomCode   = generateRoomCode()
     const hostUuid   = players[0].uuid
-    const playersMap = new Map(players.map((p) => [p.uuid, { uuid: p.uuid, nickname: p.nickname }]))
+    // F-21(AC-06): 네 입장 생산자 중 하나다. 큐에서 방으로 확정되는 참가자마다 **여기서**
+    // 새 membershipId를 발급한다 — 발급 지점이 실제 Map 커밋과 같은 동기 구간이어야, 늦게
+    // 깨어난 옛 요청이 "같은 계정"이라는 이유로 새 소속을 자기 것으로 오인할 수 없다.
+    const playersMap = new Map(players.map((p) => [p.uuid, {
+        uuid: p.uuid,
+        nickname: p.nickname,
+        membershipId: kickReceiptStore.nextMembershipId(),
+    }]))
 
     gameRooms.set(roomId, { id: roomId, instanceId: crypto.randomUUID(), code: roomCode, hostUuid, players: playersMap })
     players.forEach((p) => playerRoom.set(p.uuid, roomId))
 
-    const playerList = players.map((p) => ({ uuid: p.uuid, nickname: p.nickname }))
+    // match_found도 buildRoomPayload와 같은 참가자 직렬화 계약을 쓴다 — 이 화면이 곧 대기방
+    // 화면이라, 여기서만 membershipId가 빠지면 방장이 추방 대상을 지목할 근거를 잃는다.
+    const playerList = [...playersMap.values()].map((p) => ({ ...p }))
 
     players.forEach(({ socketId }) => {
         const s = io.sockets.sockets.get(socketId)
@@ -904,7 +934,14 @@ async function handleJoinMatchmaking(io, socket, uuid) {
         s.join(roomId)
         // ABA 방지 결합: create_room/join_room_by_code와 동일한 이유(onDisconnect 참고).
         s.data.activeRoomId = roomId
-        s.emit('match_found', { roomId, roomCode, players: playerList, hostUuid })
+        s.emit('match_found', {
+            roomId,
+            roomCode,
+            roomInstanceId: gameRooms.get(roomId).instanceId,
+            bootEpoch: BOOT_EPOCH,
+            players: playerList,
+            hostUuid,
+        })
     })
 }
 
@@ -943,8 +980,16 @@ function buildRoomPayload(room) {
     return {
         roomId: room.id,
         roomCode: room.code,
-        players: [...room.players.values()],
+        // F-21(AC-02/AC-04/AC-06): 참가자 항목에는 서버가 발급한 membershipId가 들어 있다.
+        // 추방 요청은 "누구를"이 아니라 "지금 이 방의 **이 소속을**" 지목해야 한다 — uuid만
+        // 보내면 확인 도중 대상이 나갔다가 다시 들어온 경우 새 소속이 추방된다.
+        // 복사본을 만들어 내보낸다(수신자가 변형해도 canonical 참가자 객체가 오염되지 않게).
+        players: [...room.players.values()].map((player) => ({ ...player })),
         hostUuid: room.hostUuid,
+        // 방 인스턴스와 프로세스 기동. 추방 요청이 "내가 보고 있던 그 방"을 서버가 확인할 수
+        // 있게 하는 값이며, 같은 roomId로 다시 만들어진 방의 옛 명령을 거부하는 근거다.
+        roomInstanceId: room.instanceId ?? null,
+        bootEpoch: BOOT_EPOCH,
         canStart: computeCanStart(room),
         // F-20(AC-03/AC-05/AC-06): 참가자는 여기서만 현재 설정을 본다. 저장된 room.settings를
         // 그대로 내보내지 않고 허용 필드로 다시 조립한다 — 예전 데이터에 관전자 키가 섞여
@@ -990,6 +1035,10 @@ function isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVers
         // 계정→방 매핑도 함께 본다. 참가자 객체가 남아 있어도 소속이 이미 다른 방이면
         // 그 계정은 이 방의 참가자가 아니다.
         if (playerRoom.get(u) !== room.id) return false
+        // F-21(AC-05): 서버 소속 식별자도 함께 본다. 객체 동일성이 이미 대부분을 잡지만,
+        // 그 검사는 "같은 객체를 제자리에서 갈아 끼우지 않는다"는 관례에 기대고 있다 —
+        // 추방·재입장이 그 관례를 깨는 순간 조용히 통과하지 않도록 명시적으로 확인한다.
+        if (player.membershipId !== room.players.get(u)?.membershipId) return false
         // 준비는 캡처해 둔 복사본이 아니라 **살아 있는 참가자 객체**에서 읽는다.
         if (player.isReady !== true) return false
     }
@@ -1036,7 +1085,10 @@ async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settin
             ? { roleNightActionTimes: { ...room.settings.roleNightActionTimes } }
             : {}),
     }
-    return { ok: true, room: { ...room, players, settings } }
+    // F-21: 세션이 승계할 프로세스 기동 식별자를 여기서 함께 넘긴다. 방 객체에 상시 두지 않는
+    // 이유는 그 값이 방의 속성이 아니라 이 프로세스의 속성이기 때문이다 — 승계 지점 하나에서만
+    // 실어 보내면 대기방과 게임이 같은 boot을 말한다는 것이 구조적으로 보장된다.
+    return { ok: true, room: { ...room, players, settings, bootEpoch: BOOT_EPOCH } }
 }
 
 /** 공개 목록에 노출해도 되는 최소 Room 정보만 반환합니다. */
@@ -1260,6 +1312,11 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
 
         // 코드 확정과 Map 커밋 사이에는 await를 두지 않는다 — 그 틈에 다른 요청이 같은
         // 코드를 먼저 가져가면 두 방이 같은 코드를 공유하는 상태가 될 수 있기 때문이다.
+        //
+        // F-21(AC-06): 방장 소속 식별자도 **이 마지막 동기 구간에서** 발급한다. 위에서 방
+        // 객체를 조립할 때 미리 발급하면, 연결 끊김·세대 변경·코드 생성 실패로 커밋되지
+        // 않은 시도가 만든 식별자가 클라이언트에 먼저 새어 나갈 수 있다.
+        room.players.get(uuid).membershipId = kickReceiptStore.nextMembershipId()
         gameRooms.set(roomId, room)
         playerRoom.set(uuid, roomId)
         // ABA 방지 결합: 이 Socket이 지금 이 Room의 정당한 소유자임을 표시해 둔다
@@ -1538,7 +1595,18 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // 마지막 검사와 Map 커밋 사이에는 await를 두지 않는다 — 그 틈에 다른 요청이
         // 끼어들면 방금 한 정원 검사가 무의미해지기 때문이다.
         // 새로 참가하는 사용자도 항상 준비 안 됨 상태로 시작한다(이전 방 참여 이력과 무관).
-        const player = { uuid, nickname: user.nickname, isReady: false, ...accountProfile }
+        //
+        // F-21(AC-06): 새 소속 식별자도 이 동기 커밋 구간에서 발급한다. 추방됐던 계정이 같은
+        // 방에 다시 들어와도 **다른** membershipId를 받으므로, 뒤늦게 도착한 옛 추방 명령·
+        // 이탈 방송이 이 새 소속을 자기 대상으로 오인할 수 없다(A-04). 단순 재연결은 이
+        // 경로를 지나지 않으므로 기존 식별자를 그대로 유지한다.
+        const player = {
+            uuid,
+            nickname: user.nickname,
+            isReady: false,
+            membershipId: kickReceiptStore.nextMembershipId(),
+            ...accountProfile,
+        }
         room.players.set(uuid, player)
         playerRoom.set(uuid, room.id)
         committed = true
@@ -1546,7 +1614,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         socket.data.activeRoomId = room.id
 
         socket.emit('room_joined', buildRoomPayload(room))
-        socket.to(room.id).emit('player_joined_room', { player, canStart: computeCanStart(room) })
+        socket.to(room.id).emit('player_joined_room', { player: { ...player }, canStart: computeCanStart(room) })
         emitPublicRoomList(io)
     } catch (err) {
         console.error('[코드 참가 에러]', err)
@@ -2435,53 +2503,299 @@ function resolveParticipantSockets(io, uuids, roomId) {
     return map
 }
 
-function removeFromRoom(io, socket, uuid) {
+/**
+ * F-21(공통 커밋·통지 경계): 대기방 이탈의 **상태 변경만** 수행하는 동기 구간이다.
+ *
+ * 예전에는 Map 삭제와 socket.leave·emit이 한 함수에 섞여 있어, 통지 하나가 던지면 이미
+ * 끝난 제거까지 실패처럼 보였다(호출자는 어디까지 반영됐는지 알 수 없다). 이 함수는 어떤
+ * 소켓도 건드리지 않고 어떤 방송도 하지 않으며, await도 두지 않는다 — 여기를 지나면 서버
+ * 상태는 확정이고, 전달 실패는 관측 가능한 오류로만 남는다.
+ *
+ * @returns {{removed:boolean, roomId?:string, room?:object, removedPlayer?:object,
+ *            roomDeleted?:boolean, hostChanged?:boolean}}
+ */
+function commitRoomDeparture(io, socket, uuid, reason) {
     // 실제 제거가 일어나는 유일한 지점이므로, 유예 중인 예약은 여기서 항상 정리한다
     // (명시적 leave_room·방 삭제·세션 종료 정리로 먼저 빠지는 경우도 모두 여기를 지난다).
     cancelRoomRetention(uuid)
 
     // F-19(AC-06): 자기 미확정 시도도 playerRoom 유무와 무관하게 조기 return **이전에**
     // 무효화한다(예약 단계에서는 아직 playerRoom이 없다).
-    const ownAttempt = invalidateAdmissionAttempt(uuid, 'LEFT_ROOM')
+    const ownAttempt = invalidateAdmissionAttempt(uuid, reason)
     if (ownAttempt) {
         removePublishedAdmission(io, socket, ownAttempt)
-        compensateInvalidatedAttempt(ownAttempt, 'LEFT_ROOM')
+        compensateInvalidatedAttempt(ownAttempt, reason)
     }
 
     const roomId = playerRoom.get(uuid)
-    if (!roomId) return
+    if (!roomId) return { removed: false }
 
     const room = gameRooms.get(roomId)
-    if (!room) return
+    if (!room) return { removed: false }
 
+    const removedPlayer = room.players.get(uuid)
     room.players.delete(uuid)
     playerRoom.delete(uuid)
-    if (socket) socket.leave(roomId)
 
     if (room.players.size === 0) {
         gameRooms.delete(roomId)
         // 방이 사라졌으므로 이 방을 향한 미확정 시도와 PENDING 초대를 모두 끝낸다.
+        //
+        // F-21(A-08): 추방 영수증은 여기서 지우지 않는다. 설정 변경 기록과 달리 추방 결과는
+        // "그 방이 아직 있는가"와 무관하게 원 요청자가 확인할 수 있어야 한다 — 마지막 참가자를
+        // 추방해 방이 사라진 경우가 바로 재조회가 가장 필요한 상황이다.
         invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_GONE')
         forgetSettingsUpdateResultsForRoom(roomId)
         cancelInvitesForRoomAsync(roomId, 'ROOM_GONE')
-        emitPublicRoomList(io)
-        return
+        return { removed: true, uuid, roomId, room, removedPlayer, roomDeleted: true, hostChanged: false }
     }
 
+    let hostChanged = false
     if (room.hostUuid === uuid) {
         // 방장이 바뀌어도 남은 참가자들의 isReady는 손대지 않는다 — 방장 권한 이전과
         // 준비 상태는 서로 독립적인 개념이라, 새 방장도 이전에 준비했던 상태 그대로 유지된다.
         room.hostUuid = room.players.keys().next().value
-        io.to(roomId).emit('host_changed', {
-            hostUuid: room.hostUuid,
-            canStart: computeCanStart(room),
-            roomId,
-            settingsVersion: getSettingsVersion(room),
-        })
+        hostChanged = true
+    }
+    return { removed: true, uuid, roomId, room, removedPlayer, roomDeleted: false, hostChanged }
+}
+
+/**
+ * F-21(공통 커밋·통지 경계): 커밋이 끝난 뒤의 채널 정리와 방송이다.
+ *
+ * 통지마다 예외를 격리한다 — 하나가 던져도 나머지 통지가 멈추지 않아야, 서버가 확정한 상태와
+ * 클라이언트가 보는 상태의 어긋남이 한 곳에 몰리지 않는다. 어떤 실패도 커밋 결과를 되돌리지
+ * 않는다.
+ *
+ * @param {object[]} [departingSockets] - 방 채널에서 내보낼 소켓들(추방은 대상의 소켓이라
+ *   요청자의 socket과 다르다). 채널 이탈에 실패한 연결은 제거된 뒤에도 방송을 계속 받으므로
+ *   그 연결을 끊어 정리한다 — 재접속은 서버의 소속 검사가 다시 막는다.
+ */
+function notifyRoomDeparture(io, outcome, departingSockets = []) {
+    if (!outcome.removed) return
+    const { roomId, room, roomDeleted, hostChanged } = outcome
+
+    for (const departing of departingSockets) {
+        if (!departing || typeof departing.leave !== 'function') continue
+        try {
+            departing.leave(roomId)
+        } catch (err) {
+            console.error('[대기방 채널 이탈 실패]', { code: 'CHANNEL_LEAVE_ERROR', roomId })
+            try { departing.disconnect(true) } catch { /* 끊기 실패는 더 할 수 있는 일이 없다 */ }
+        }
     }
 
-    io.to(roomId).emit('player_left_room', { uuid, canStart: computeCanStart(room) })
-    emitPublicRoomList(io)
+    if (roomDeleted) {
+        try { emitPublicRoomList(io) } catch (err) { console.error('[공개 방 목록 갱신 실패]', err) }
+        return
+    }
+
+    if (hostChanged) {
+        try {
+            io.to(roomId).emit('host_changed', {
+                hostUuid: room.hostUuid,
+                canStart: computeCanStart(room),
+                roomId,
+                settingsVersion: getSettingsVersion(room),
+            })
+        } catch (err) {
+            console.error('[방장 변경 방송 실패]', err)
+        }
+    }
+
+    try {
+        io.to(roomId).emit('player_left_room', {
+            uuid: outcome.uuid,
+            // F-21(AC-02/AC-05): 어느 **소속**이 빠졌는지 함께 싣는다. uuid만 보내면 같은
+            // 계정이 곧바로 다시 들어온 경우 잔류자 화면이 새 참가자를 지워 버린다.
+            membershipId: outcome.removedPlayer?.membershipId ?? null,
+            roomId,
+            canStart: computeCanStart(room),
+        })
+    } catch (err) {
+        console.error('[참가자 이탈 방송 실패]', err)
+    }
+
+    try { emitPublicRoomList(io) } catch (err) { console.error('[공개 방 목록 갱신 실패]', err) }
+}
+
+function removeFromRoom(io, socket, uuid) {
+    const outcome = commitRoomDeparture(io, socket, uuid, 'LEFT_ROOM')
+    notifyRoomDeparture(io, outcome, socket ? [socket] : [])
+}
+
+/**
+ * F-21(AC-01/AC-02/AC-04/AC-05): 방장의 **대기방** 추방 요청.
+ *
+ * 신원은 인증 경계가 넘겨준 uuid 하나뿐이다 — payload의 requesterMembershipId는 "방장이
+ * 어느 소속으로 보고 눌렀는가"를 확인하는 근거일 뿐 권한의 원천이 아니다. 검사 순서에는
+ * 이유가 있다:
+ *
+ *   형태 → canonical 소켓 → **영수증** → boot → 본인 → 입장 확정 → 방/방장/소속 → 대상 →
+ *   용량 → 커밋 → 영수증 확정 → 통지
+ *
+ * 영수증을 권한 검사 **뒤**, 현재 상태 검사 **앞**에 두는 것이 핵심이다. 역사적 결과는 지금
+ * 방장인지·방이 아직 있는지와 무관하게 같은 답이어야 하고(A-08), 동시에 끊기거나 교체된
+ * 소켓이 그 답을 읽어서는 안 된다(설정 변경 결과 조회와 같은 이유).
+ *
+ * 용량 확인은 **상태를 바꾸기 직전**에 온다 — 자리가 없는데 소속을 먼저 제거하면 실제로는
+ * 추방됐는데 결과를 영영 알 수 없는 요청이 생긴다.
+ */
+function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSocketId) {
+    // 응답을 받을 수 없는 요청은 어떤 상태도 바꾸지 않는다 — 다른 검사보다 먼저 확인한다.
+    if (typeof callback !== 'function') return
+
+    const CODES = kickReceiptStore.KICK_ERROR_CODES
+    const respond = (result) => {
+        try {
+            callback(result)
+        } catch (ackErr) {
+            // 이미 커밋한 결과를 ACK 실패로 되돌리거나 실패로 다시 기록하지 않는다.
+            console.error('[추방 ack 실패]', ackErr)
+        }
+    }
+    const reject = (code, message, extra = {}) => respond({ ok: false, code, message, ...extra })
+
+    const validated = kickReceiptStore.validateKickPayload(payload, kickReceiptStore.KICK_COMMANDS.ROOM)
+    if (!validated.ok) {
+        reject(validated.code, validated.message)
+        return
+    }
+    const input = validated.value
+    const fingerprint = kickReceiptStore.fingerprintKickRequest(kickReceiptStore.KICK_COMMANDS.ROOM, input)
+
+    if (socket?.data?.user?.uuid !== uuid || socket?.connected === false) {
+        reject(CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
+        return
+    }
+    if (typeof getCurrentSocketId === 'function' && getCurrentSocketId(uuid) !== socket.id) {
+        reject(CODES.STALE_SOCKET, '연결이 만료되었습니다. 다시 시도해주세요.')
+        return
+    }
+
+    const receiptKey = kickReceiptStore.kickReceiptKey(input.bootEpoch, uuid, input.requestId)
+    const recorded = kickReceiptStore.lookupKickReceipt(receiptKey)
+    if (recorded) {
+        if (recorded.fingerprint !== fingerprint) {
+            reject(CODES.REQUEST_ID_REUSED, '이미 사용한 요청 식별자입니다.')
+            return
+        }
+        // 같은 입력의 재전달은 **재방송하지 않는다**. 역사적 결과만 돌려준다.
+        respond({ ...recorded.result, replayed: true })
+        return
+    }
+
+    // 옛 boot의 명령은 새 상태에 실행하지 않는다. 위 영수증 조회보다 뒤에 두는 이유는, 옛
+    // boot의 기록은 애초에 이 프로세스에 없어 여기까지 오면 언제나 실행 거부이기 때문이다.
+    if (input.bootEpoch !== BOOT_EPOCH) {
+        reject(CODES.STALE_BOOT, '서버가 재시작되었습니다. 방 정보를 다시 불러와주세요.')
+        return
+    }
+    if (input.targetUuid === uuid) {
+        reject(CODES.SELF_KICK, '자신을 추방할 수 없습니다.')
+        return
+    }
+    if (getAdmissionAttempt(uuid)) {
+        reject(CODES.ADMISSION_PENDING, '입장 처리가 아직 끝나지 않았습니다.')
+        return
+    }
+    // 시작 커밋이 먼저 끝난 방의 옛 대기방 추방은 게임 추방으로 해석하지 않는다(AC-05).
+    if (rejectIfInActiveGame(uuid, ({ message }) => reject(CODES.ALREADY_IN_GAME, message))) return
+
+    const currentRoomId = playerRoom.get(uuid)
+    if (!currentRoomId) {
+        reject(CODES.NOT_IN_ROOM, '참여 중인 방이 없습니다.')
+        return
+    }
+    if (currentRoomId !== input.roomId) {
+        reject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        return
+    }
+    const room = gameRooms.get(input.roomId)
+    if (!room) {
+        reject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        return
+    }
+    // 같은 문자열 roomId로 다시 만들어진 방의 옛 명령을 여기서 끝낸다(A-04).
+    if ((room.instanceId ?? room.id) !== input.roomInstanceId) {
+        reject(CODES.ROOM_NOT_FOUND, '참여 중인 방을 찾을 수 없습니다.')
+        return
+    }
+    const requester = room.players.get(uuid)
+    if (!requester) {
+        reject(CODES.NOT_IN_ROOM, '참여 중인 방이 없습니다.')
+        return
+    }
+    if (requester.membershipId !== input.requesterMembershipId) {
+        reject(CODES.STALE_MEMBERSHIP, '방 정보가 변경되었습니다. 다시 불러와주세요.')
+        return
+    }
+    if (room.hostUuid !== uuid) {
+        reject(CODES.NOT_HOST, '방장만 추방할 수 있습니다.')
+        return
+    }
+
+    const target = room.players.get(input.targetUuid)
+    if (!target || playerRoom.get(input.targetUuid) !== room.id) {
+        // 신규 kick은 일반 leave와 달리 멱등 성공으로 답하지 않는다 — "이미 없는 대상"을
+        // 성공으로 답하면 방장이 자기 명령이 실제로 누군가를 내보냈다고 믿게 된다(AC-04).
+        reject(CODES.ALREADY_LEFT, '이미 방에서 나간 참가자입니다.')
+        return
+    }
+    if (target.membershipId !== input.targetMembershipId) {
+        // 확인하는 사이 대상이 나갔다가 다시 들어왔다. 새 소속을 옛 확인으로 추방하지 않는다.
+        reject(CODES.STALE_MEMBERSHIP, '대상이 변경되었습니다. 다시 확인해주세요.')
+        return
+    }
+    if (getAdmissionAttempt(input.targetUuid)) {
+        reject(CODES.ADMISSION_PENDING, '상대의 입장 처리가 아직 끝나지 않았습니다.')
+        return
+    }
+
+    if (!kickReceiptStore.hasKickReceiptCapacity()) {
+        reject(CODES.RECEIPT_CAPACITY, '잠시 후 다시 시도해주세요.')
+        return
+    }
+
+    // ── 커밋 — 여기부터 영수증 확정까지 await·외부 callback·emit이 없다 ──────────
+    //
+    // 개인 사건에 실을 값은 **제거 전에** 캡처한다. 제거한 뒤에 room에서 읽으면 이미 사라진
+    // 참가자의 소속 식별자를 다시 만들 수 없다.
+    const kickedEvent = {
+        roomId: room.id,
+        roomInstanceId: room.instanceId ?? room.id,
+        bootEpoch: BOOT_EPOCH,
+        targetUuid: input.targetUuid,
+        targetMembershipId: target.membershipId,
+        hostUuid: uuid,
+        requestId: input.requestId,
+    }
+    const targetSockets = resolveParticipantSockets(io, [input.targetUuid], room.id).get(input.targetUuid) ?? []
+    const outcome = commitRoomDeparture(io, null, input.targetUuid, 'KICKED_FROM_ROOM')
+    const result = {
+        ok: true,
+        status: 'KICKED',
+        roomId: input.roomId,
+        requestId: input.requestId,
+        targetUuid: input.targetUuid,
+        targetMembershipId: input.targetMembershipId,
+    }
+    kickReceiptStore.recordKickReceipt(receiptKey, {
+        command: kickReceiptStore.KICK_COMMANDS.ROOM,
+        fingerprint,
+        result,
+    })
+
+    // ── 통지 — 각각 독립적으로 시도한다. 하나의 throw가 나머지를 멈추지 않는다 ────
+    respond(result)
+    for (const targetSocket of targetSockets) {
+        try {
+            targetSocket.emit(kickReceiptStore.KICK_EVENTS.ROOM_KICKED, kickedEvent)
+        } catch (err) {
+            console.error('[추방 개인 통지 실패]', { code: 'KICK_NOTIFY_ERROR', roomId: room.id })
+        }
+    }
+    notifyRoomDeparture(io, outcome, targetSockets)
 }
 
 /**
@@ -2842,6 +3156,12 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
                 return { ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_FULL }
             }
             // await 없는 한 구간에서 두 Map과 메모리 영수증을 함께 기록한다.
+            //
+            // F-21(AC-06): 소속 식별자는 이 최종 동기 publish에서 발급한다 — 위에서 player
+            // 객체를 만들 때 미리 발급하면 publish에 실패한 시도의 식별자가 남는다. attempt에
+            // 함께 보관해, 늦은 실패·채널 정리가 "내가 넣은 그 소속"만 되돌릴 수 있게 한다.
+            player.membershipId = kickReceiptStore.nextMembershipId()
+            attempt.publicationMembershipId = player.membershipId
             current.players.set(uuid, player)
             playerRoom.set(uuid, current.id)
             attempt.phase = 'published'
@@ -2891,7 +3211,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             return
         }
 
-        socket.to(room.id).emit('player_joined_room', { player, canStart: computeCanStart(room) })
+        socket.to(room.id).emit('player_joined_room', { player: { ...player }, canStart: computeCanStart(room) })
         emitPublicRoomList(io)
         respond({ ok: true, room: buildRoomPayload(room), inviteId, attemptId })
     } catch (error) {
@@ -2991,6 +3311,9 @@ function __resetStateForTests() {
     // F-20: 설정 변경 결과 기록도 비운다 — 남으면 다음 테스트의 재시도 판정이 이전 테스트의
     // requestId를 "이미 처리한 요청"으로 오인한다.
     roomSettingsUpdateResults.clear()
+    // F-21: 추방 영수증도 같은 이유로 비운다 — 남으면 다음 테스트의 같은 requestId가
+    // "이미 결정된 요청"으로 재생된다.
+    kickReceiptStore.__resetKickReceiptsForTests()
     // 예약된 타이머를 지우지 않으면 다음 테스트가 도는 도중에 이전 테스트의 제거가 끼어든다.
     for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
     pendingRoomRemovals.clear()
@@ -3156,6 +3479,9 @@ module.exports = {
     // 호출부·시험이 문자열을 복붙하지 않도록 그대로 다시 내보낸다.
     ROOM_SETTINGS_EVENTS,
     ROOM_SETTINGS_ERROR_CODES,
+    // F-21: 같은 이유로 추방 이벤트·코드도 kickReceiptStore 소유값을 그대로 다시 내보낸다.
+    KICK_EVENTS: kickReceiptStore.KICK_EVENTS,
+    KICK_ERROR_CODES: kickReceiptStore.KICK_ERROR_CODES,
     // 테스트에서 개별 핸들러를 실제 socket.io 이벤트 배선 없이 직접 호출하기 위한 통로입니다.
     // 런타임 코드(index.js 등)에서는 참조하지 않습니다.
     __testables: {
@@ -3177,5 +3503,9 @@ module.exports = {
         hasPendingAdmissionForRoom,
         // leave_room 이벤트가 그대로 부르는 실제 이탈 경로다(방 소멸 경계 검증용).
         removeFromRoom,
+        // F-21: kick_room_player 이벤트가 그대로 부르는 실제 추방 경로와, 그 커밋/통지 경계.
+        handleKickRoomPlayer,
+        commitRoomDeparture,
+        notifyRoomDeparture,
     },
 }

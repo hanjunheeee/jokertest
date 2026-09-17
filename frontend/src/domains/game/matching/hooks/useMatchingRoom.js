@@ -359,8 +359,17 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => addPlayer(player, canStart))
     }
-    const handlePlayerLeftRoom = ({ uuid, canStart }) => {
+    const handlePlayerLeftRoom = ({ uuid, canStart, membershipId, roomId: eventRoomId }) => {
       if (!isCurrentSource()) return
+      if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
+      // F-21(AC-02/AC-05): **어느 소속이 빠졌는가**를 함께 본다. uuid만 보고 지우면, 그 계정이
+      // 곧바로 다시 들어온 경우(추방→재입장, 이탈→재입장) 늦게 도착한 이 사건이 방금 성립한
+      // 새 참가자를 화면에서 지운다. 서버가 소속 식별자를 싣지 않는 구버전 사건은 예전처럼
+      // uuid만으로 처리한다.
+      if (typeof membershipId === "string" && membershipId.length > 0) {
+        const seated = useMatchingStore.getState().room?.players?.find((player) => player.uuid === uuid)
+        if (seated && typeof seated.membershipId === "string" && seated.membershipId !== membershipId) return
+      }
       readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => removePlayer(uuid, canStart))
     }

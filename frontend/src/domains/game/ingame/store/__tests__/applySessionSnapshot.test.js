@@ -79,10 +79,12 @@ test("applySessionSnapshotPure: 유효한 ROLE_REVEAL 스냅샷을 반영하고 
   assert.equal(result.state.id, "game-1")
   assert.equal(result.state.phase, "ROLE_REVEAL")
   assert.equal(result.state.dayIndex, 0)
+  // F-21(AC-03): isParticipating은 새로 승인된 **공개** 필드다. 스냅샷에 그 키가 없는
+  // 구버전 응답은 "참여 중"으로 본다(그 서버에는 아직 이탈 개념이 없었다).
   assert.deepEqual(result.state.players, [
-    { uuid: "p1", nickname: "P1", alive: true, isConnected: true },
-    { uuid: "p2", nickname: "P2", alive: true, isConnected: true },
-    { uuid: "p3", nickname: "P3", alive: true, isConnected: true },
+    { uuid: "p1", nickname: "P1", alive: true, isConnected: true, isParticipating: true },
+    { uuid: "p2", nickname: "P2", alive: true, isConnected: true, isParticipating: true },
+    { uuid: "p3", nickname: "P3", alive: true, isConnected: true, isParticipating: true },
   ])
   assert.deepEqual(result.state.self, { uuid: "p1", nickname: "P1", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false })
   assert.equal(result.state.tribunal, null)
@@ -503,7 +505,9 @@ test("applySessionSnapshotPure: 공개 roster 항목에 비공개 필드(role �
 
   assert.notEqual(result, current)
   const p2 = result.state.players.find((p) => p.uuid === "p2")
-  assert.deepEqual(Object.keys(p2).sort(), ["alive", "isConnected", "nickname", "uuid"])
+  // F-21: isParticipating이 승인 목록에 더해졌다 — 이 단언의 핵심(role/team/임의 필드가
+  // 절대 복사되지 않는다)은 그대로다. membershipId는 응답에 그 키가 있을 때만 생긴다.
+  assert.deepEqual(Object.keys(p2).sort(), ["alive", "isConnected", "isParticipating", "nickname", "uuid"])
 })
 
 // --- 방어적 복사 ---
