@@ -96,6 +96,30 @@ const classifyReadyEvent = (state, uuid, { settingsVersion, readyRevision }) => 
   return READY_EVENT.APPLY
 }
 
+/**
+ * F-20(AC-05): 응답에 실린 방 스냅샷이 **우리가 아직 보지 못한 더 새로운 설정 버전**을
+ * 드러내는가.
+ *
+ * 적용 세대가 올라갔다는 사실은 "그 사이 무언가를 반영했다"만 말할 뿐, 그것이 **설정**이었다는
+ * 뜻이 아니다. v1에서 발행된 준비 방송 하나가 늦게 끼어들었다는 이유로 응답이 실어 온 v2를
+ * 통째로 버리면, 화면은 v1에 머문 채 그 버전을 기대 버전으로 삼아 편집을 계속 허용한다.
+ *
+ * 스냅샷을 **통째로 적용하는 것**(그 뒤에 일어난 방장 이전·준비 변경까지 되돌릴 위험이 있다)과
+ * **더 새로운 설정이 존재한다는 사실을 아는 것**은 다른 일이다. 여기서는 후자만 판정하고,
+ * 실제 값은 권위 있는 조회로 다시 확보한다. 같거나 더 낮은 버전·다른 방·버전이 없는 응답은
+ * 아무것도 드러내지 않으므로 여분의 조회를 만들지 않는다.
+ */
+const revealsNewerSettingsVersion = (room) => {
+  if (room === null || typeof room !== 'object') return false
+  const { roomId, settingsVersion: known } = useMatchingStore.getState()
+  if (room.roomId !== roomId) return false
+  const incoming = room.settingsVersion
+  if (!Number.isSafeInteger(incoming)) return false
+  // 우리가 어떤 설정 위에 있는지조차 모르는 상태라면, 버전을 실은 응답은 그 자체로 더 새로운 사실이다.
+  if (!Number.isSafeInteger(known)) return true
+  return incoming > known
+}
+
 // start_game/set_ready 모두 ack 기반이라 socket.timeout()으로 응답 유실(네트워크 등)에 대비한다.
 const START_GAME_TIMEOUT_MS = 8000
 const SET_READY_TIMEOUT_MS = 5000
@@ -179,7 +203,15 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   // 동기화 effect가 여기에 심어 둔다(두 effect는 의도적으로 분리돼 있다 — 기존 주석 참고).
   const bumpRoomApplyGenerationRef = useRef(null)
   const requestRoomResyncRef = useRef(null)
-  const requestRoomResync = () => requestRoomResyncRef.current?.()
+  /**
+   * 권위 있는 현재 방을 다시 확보한다. 동기화 effect가 살아 있으면 그쪽이 제한된 조회 시리즈를
+   * 시작하고, 이미 정리된 뒤라면 **적어도 세대는 올린다** — 올리지 않으면 이 순간 이전에
+   * 발행된 응답이 방금 확정한 사실을 나중에 덮는다(bumpRoomApplyGeneration과 같은 이유의 폴백).
+   */
+  const requestRoomResync = () => {
+    if (requestRoomResyncRef.current) requestRoomResyncRef.current()
+    else roomApplyGenerationRef.current += 1
+  }
   /**
    * 적용 세대를 올리는 **유일한 경계**. 동기화 effect가 살아 있으면 그쪽 구현을 쓴다(진행
    * 중이던 조회를 대신할 새 조회까지 책임진다). 그 effect가 이미 정리됐어도 세대 자체는
@@ -202,6 +234,22 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   const roomMembershipGenerationRef = useRef(0)
   // 같은 렌더 배치에서 방 ID가 되돌아와도 새 소속의 이벤트 구독을 다시 붙인다.
   const [roomEventGeneration, setRoomEventGeneration] = useState(0)
+
+  /**
+   * F-20(AC-04): **준비 집계 세대**. 적용 세대·소속 세대와 또 다른 것을 센다.
+   *
+   * set_ready ACK는 두 가지 사실을 함께 싣는다 — 내 준비 결과(own outcome)와 방 전체 canStart다.
+   * 앞의 것은 내 readyRevision이 정렬해 주지만, 뒤의 것은 **모든 참가자의 준비 상태를 입력으로
+   * 삼는 집계**라 서버가 이 요청을 처리한 그 순간의 값이다. 그 사이 다른 참가자의 준비가
+   * 바뀌었다면 이 ACK의 집계는 그 사실을 보지 못한 것일 수 있는데, 두 집계를 정렬해 줄 방 전체
+   * revision은 어느 쪽에도 실려 있지 않다 — 내 revision이 현재라는 사실은 여기에 대해 아무것도
+   * 말해 주지 않는다.
+   *
+   * 그래서 "그 사이 **준비**에 관한 사실을 반영했는가"만 따로 센다. 방장 이전·조회 재확보처럼
+   * 준비를 바꾸지 않는 사건은 ACK의 집계를 낡게 만들지 않으므로 여기서 세지 않는다(그 경우
+   * ACK는 그 사건 뒤에 서버가 내보낸 더 새로운 값이다).
+   */
+  const readyAggregateGenerationRef = useRef(0)
 
   /**
    * F-20(AC-05): **지금 소켓이 어느 계정으로 handshake한 연결인가.**
@@ -345,6 +393,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       }
       // 이 방송 이후에 도착하는 "그 이전에 발행된" 전체 방 조회가 이 스냅샷을 덮지 못하게
       // 한다(usePublicRooms의 적용 세대와 같은 원리).
+      // 설정 교체 스냅샷은 전원 준비 해제까지 함께 싣는다 — 준비에 관한 사실이므로, 이 시점
+      // 이전에 발행된 준비 ACK의 방 전체 집계는 이것을 보지 못했다.
+      readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => applyRoomSettings(payload))
     }
     // 다른 참가자의 준비 상태 변경 알림이다. 본인의 변경은 setReady의 ack 응답으로 반영한다
@@ -366,6 +417,9 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       }
       // 업무 상태를 먼저 반영하고, 그 뒤에 독립적으로 소리를 낸다 — 소리의 성공·실패·지연이
       // 준비 표시 갱신에 영향을 주지 않는다(AC-06).
+      // 다른 참가자의 준비가 실제로 바뀌었다 — 이 사실을 입력으로 삼지 못한 방 전체 집계는
+      // 이제 낡은 것이다(내 준비 ACK가 싣고 오는 canStart가 바로 그런 집계일 수 있다).
+      readyAggregateGenerationRef.current += 1
       applyRoomEvent(() => setPlayerReady(uuid, isReady, canStart, readyRevision))
       playRoomSfx('room-ready-changed', sfxEvent)
     }
@@ -988,6 +1042,10 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     const requestUuid = useAuthStore.getState().user?.uuid
     // F-20(AC-04/AC-05): 이 요청이 묶여 있는 소속(startGame과 같은 이유·같은 경계).
     const requestMembership = roomMembershipGenerationRef.current
+    // F-20(AC-04): 이 요청이 근거로 삼은 **준비 집계 세대**. ACK의 own outcome(내 준비 값·내
+    // revision)과 달리 canStart는 모든 참가자의 준비를 입력으로 삼는 집계라, 요청을 보낸 뒤
+    // 준비에 관한 사실을 한 번이라도 반영했다면 이 ACK의 집계는 그것을 보지 못한 것일 수 있다.
+    const requestReadyAggregate = readyAggregateGenerationRef.current
     // F-20(AC-04): 방·설정 버전은 준비 요청의 필수 근거다(startGame과 같은 이유).
     if (!requestRoomId || !Number.isSafeInteger(requestSettingsVersion)) {
       alert('현재 방 상태를 확인하고 있습니다. 잠시 후 다시 시도해주세요.')
@@ -1034,11 +1092,34 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
           requestRoomResync()
           return
         }
-        current.setPlayerReady(requestUuid, response.isReady, response.canStart, response.readyRevision)
-        // F-20(AC-04): 내 준비가 실제로 반영된 순간도 **방 상태의 변경**이다. 세대를 올리지
-        // 않으면, 이 변경 이전에 발행돼 아직 돌아오지 않은 전체 방 조회가 도착해 방금 반영한
-        // 준비와 canStart를 옛 값으로 되돌린다(그 조회는 이 사실을 담고 있지 않다).
-        bumpRoomApplyGeneration()
+        // F-20(AC-04): **내 준비 revision이 현재라는 것은 방 전체 집계가 현재라는 뜻이 아니다.**
+        //
+        // 위 판정(classifyReadyEvent)이 확인한 것은 이 ACK의 own outcome — 내 isReady와 내
+        // readyRevision — 이 최신이라는 사실뿐이다. 같은 응답에 실린 canStart는 서버가 이 요청을
+        // 처리한 **그 시점의** 방 전체 집계라, 그 사이 다른 참가자가 준비하거나 취소했다면(같은
+        // 설정 버전에서 일어나므로 버전으로도 내 revision으로도 구별되지 않는다) 이미 과거다.
+        // 그대로 반영하면 더 새로운 시작 권한을 지우거나, 이미 사라진 권한을 되살린다.
+        const roomWideFresh = readyAggregateGenerationRef.current === requestReadyAggregate
+        // own outcome은 어느 경우에도 잃지 않는다. canStart를 생략하면 store가 현재 값을
+        // 그대로 둔다 — 방 전체 값에 대해 이 ACK는 아무 말도 하지 않는 것이 된다.
+        current.setPlayerReady(
+          requestUuid,
+          response.isReady,
+          roomWideFresh ? response.canStart : undefined,
+          response.readyRevision,
+        )
+        if (roomWideFresh) {
+          // F-20(AC-04): 내 준비가 실제로 반영된 순간도 **방 상태의 변경**이다. 세대를 올리지
+          // 않으면, 이 변경 이전에 발행돼 아직 돌아오지 않은 전체 방 조회가 도착해 방금 반영한
+          // 준비와 canStart를 옛 값으로 되돌린다(그 조회는 이 사실을 담고 있지 않다).
+          bumpRoomApplyGeneration()
+        } else {
+          // 방 전체 값을 이 ACK로 정할 수 없다. 옛 집계를 그대로 두고 끝내면 시작 권한 표시가
+          // 다음 사건까지 낡은 채로 굳고, 로컬에서 "전원 준비"를 세어 추측하면 서버의 입장
+          // 조건(미확정 초대 입장 등)을 빠뜨린 권한을 만들어낸다 — 둘 다 하지 않고 권위 있는
+          // 현재 방을 제한된 조회 한 번으로 다시 확보한다(이 호출이 세대도 함께 올린다).
+          requestRoomResync()
+        }
         // 요청자 본인의 준비 변경은 방송이 아니라 이 ACK로 들어온다(서버가 socket.to로만
         // 방송하므로 자기 자신에게는 오지 않는다). 상태를 반영한 뒤 독립적으로 소리를 낸다.
         // 같은 값 재요청(멱등 성공)에는 서버가 sfxEvent를 싣지 않으므로 소리도 나지 않는다.
@@ -1175,6 +1256,12 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
         && useMatchingStore.getState().roomId === response.room.roomId) {
         useMatchingStore.getState().setRoom(response.room)
         bumpRoomApplyGeneration()
+      } else if (revealsNewerSettingsVersion(response?.room)) {
+        // 스냅샷을 통째로 적용하기에는 낡았다(그 사이의 준비·방장 변경을 되돌릴 수 있다).
+        // 하지만 그 사이 끼어든 사건이 준비 방송이었다면 **설정**에 대해서는 새 정보가 아니고,
+        // 이 거부 응답은 우리가 아직 모르는 더 새로운 설정 버전을 드러냈다. 그 사실을 버리면
+        // 방장은 낡은 기대 버전으로 계속 저장을 시도하게 된다 — 최신 설정만 다시 확보한다.
+        requestRoomResync()
       }
       setSettingsError({ code: response?.code ?? ROOM_SETTINGS_ERROR_CODES.INTERNAL_ERROR, message: response?.message })
       return { ok: false, code: response?.code }
@@ -1271,11 +1358,22 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       //
       // 그래서 이 요청의 정착은 그대로 보존하되(다시 저장하지 않는다 — 다시 저장할지는 최신
       // 설정을 본 방장이 정한다), 행동을 열어 두기 전에 권위 있는 소속·설정을 다시 확보한다.
-      // 응답에 스냅샷이 있고 더 새로운 사건을 반영해 낡아 버려진 경우에는 묻지 않는다 — 그쪽이 이미
-      // 최신이고, 여기서 또 물으면 조회가 꼬리를 문다.
       // 방 스냅샷이 없으면 중간에 준비 방송이 왔어도 현재 소속을 증명하지 못한다.
-      // 스냅샷이 있는 옛 응답만 적용 세대로 걸러 추가 조회를 생략한다.
-      if (!response.room || (!appliedAuthoritativeRoom && isRoomSnapshotFresh())) requestRoomResync()
+      //
+      // 스냅샷이 있는데도 적용하지 않은 경우는 두 가지를 갈라 봐야 한다. **끼어든 사건이 적용
+      // 세대를 올렸다는 사실 자체는 "더 새로운 설정을 이미 받았다"의 증거가 아니다** — v1에서
+      // 발행된 준비 방송이 늦게 도착한 것뿐일 수 있고, 그동안 우리가 놓친 설정 방송의 v2가
+      // 바로 이 응답에 실려 있을 수 있다. 그것을 통째로 버리고 끝내면 화면은 v1에 머문 채
+      // 그 버전을 기대 버전으로 삼아 편집을 계속 허용한다. 스냅샷을 그대로 덮어쓰지는 않되
+      // (그 뒤의 방장·준비를 되돌릴 수 있다), 더 새로운 설정이 드러났으면 권위 있는 조회로
+      // 최신 값을 다시 확보한다.
+      //
+      // 반대로 그 사이 **진짜 더 새로운 설정 방송**을 이미 반영했다면 이 응답은 그보다 옛것이라
+      // 아무것도 드러내지 못하고, 여기서 또 물으면 조회가 꼬리를 문다 — 그때는 묻지 않는다.
+      if (!appliedAuthoritativeRoom
+        && (!response.room || isRoomSnapshotFresh() || revealsNewerSettingsVersion(response.room))) {
+        requestRoomResync()
+      }
       return { ok: true, status: response.status, settingsVersion: response.settingsVersion }
     } catch {
       if (!isStaleResponse()) {
