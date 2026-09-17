@@ -17,6 +17,12 @@ import { useRoleCompositionState } from "../hooks/useRoleCompositionState.js"
 import { useSetupContentScrollOnRoleModeChange } from "../hooks/useSetupContentScrollOnRoleModeChange.js"
 import { useSetupTabState } from "../hooks/useSetupTabState.js"
 import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
+import {
+  NIGHT_TIME_ID_TO_ROLE,
+  NON_EDITABLE_SETUP_ITEM_IDS,
+  OVERALL_NIGHT_ACTION_TIME_ID,
+  mergeSpecifiedRoleNightActionTimes,
+} from "../utils/roomSettingsForm.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
 import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
@@ -50,30 +56,135 @@ const SETUP_CONTENT_CLASS =
 // 입력한 값을 잃어버리므로, 이 패널에서 두 탭의 항목을 합쳐 한 번만 상태를 만든다.
 const ALL_SETUP_ITEMS = [...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP]
 
-/** 프레임·탭·본문·게임 만들기 버튼을 묶는 설정 패널 */
-export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
+/**
+ * 프레임·탭·본문·제출 버튼을 묶는 설정 패널.
+ *
+ * F-20: 같은 패널을 두 모드에서 쓴다.
+ *   - 'create'(기본): 지금까지와 동일. items 기본값에서 시작해 create_room payload를 만든다.
+ *   - 'edit': 서버가 확정한 설정(initialFormState)에서 시작하고, D-12의 추가 규칙 세 항목을
+ *     그리지 않으며, 제출은 폼 상태를 그대로 부모에게 넘긴다(요청 조립은 부모가 한다 —
+ *     roomId·requestId·expectedSettingsVersion은 화면이 아니라 방 상태가 아는 값이기 때문).
+ *
+ * @param {'create'|'edit'} [mode]
+ * @param {{checks:object, ranges:object,
+ *          roleComposition:{mode:string,roleCounts:object|null},
+ *          specifiedRoleNightActionTimes:string[]}} [initialFormState]
+ * @param {unknown} [formResetKey] - 이 값이 바뀌면 폼을 initialFormState로 다시 맞춘다
+ *   (방 교체·설정 버전 교체·방장 이전 시 이전 초안을 남기지 않기 위한 명시적 경계).
+ */
+export default function GameSetupPanel({
+  visible,
+  isCreating,
+  onCreateGame,
+  mode = "create",
+  initialFormState = null,
+  formResetKey = null,
+  submitLabel,
+  submitBusyLabel,
+  submitDisabled = false,
+}) {
   const setupContentRef = useRef(null)
+  const isEditMode = mode === "edit"
   // 현재 선택된 설정 탭 id입니다.
   const [activeTab, setActiveTab] = useState("general")
-  const { checks, ranges, setCheck, setRange } = useSetupTabState(ALL_SETUP_ITEMS)
+  const { checks, ranges, setCheck, setRange } = useSetupTabState(ALL_SETUP_ITEMS, {
+    initialState: initialFormState,
+    resetKey: formResetKey,
+  })
   // 역할 구성은 "최대 플레이어 수"에 의존하므로(파생 시민 수·합계 검증) 같은 패널에서
   // 함께 소유한다 — max-players가 바뀌면 다음 렌더에서 곧바로 다시 계산된다.
   const roleComposition = useRoleCompositionState({
     maxPlayers: ranges["max-players"],
     autoJokerCount: ranges["joker-count"],
+    initialComposition: initialFormState?.roleComposition ?? null,
+    resetKey: formResetKey,
   })
 
   useSetupContentScrollOnRoleModeChange(setupContentRef, roleComposition.mode, activeTab)
 
-  const handleCreateClick = () => {
+  // F-20(AC-03): 이번 편집에서 **값이 실제로 바뀐** 직업별 밤 시간 스테퍼 id를 기억한다.
+  // 서버의 지정 목록만 그대로 돌려보내면 "없던 override가 생기지 않는다"는 성질은 지켜지지만,
+  // 방장이 새로 만든 override까지 함께 사라진다 — 화면에는 바뀐 값이 보이는데 요청에는
+  // 실리지 않는 상태가 된다. 두 사실을 합쳐야 둘 다 성립한다.
+  const [editedRoleTimeIds, setEditedRoleTimeIds] = useState(() => new Set())
+  // 폼을 서버 최신값으로 되맞추는 경계에서는 편집 흔적도 함께 버린다 — 남기면 이전 방장의
+  // 초안이 다음 요청에 섞인다.
+  //
+  // 그 경계는 resetKey **하나가 아니다**. 값 상태를 소유한 useSetupTabState/useRoleCompositionState는
+  // `initialState 객체의 교체`와 `resetKey 교체` 두 가지에서 모두 초기값으로 되돌아간다. 편집
+  // 의도를 resetKey에만 묶어 두면 두 경계가 갈린다 — 같은 방·같은 설정 버전인데 서버가 돌려준
+  // 현재 방으로 값만 되돌아가는 경우(정원 하한 등 저장 거부 응답의 room, 현재 방 재조회)에
+  // 값은 서버값으로 돌아가는데 "이 직업 시간을 지정했다"는 의도만 살아남는다. 그 상태로 다시
+  // 저장하면, 방장이 지정한 적 없는 폴백 값이 새 override로 요청에 실린다.
+  //
+  // 두 훅과 **같은 조건**으로 판정해 값과 의도를 함께 되돌린다. 초기 상태 객체의 참조가 그대로인
+  // 무관한 리렌더(부모의 다른 상태 변화)에서는 어느 쪽도 버리지 않는다.
+  const [appliedFormSource, setAppliedFormSource] = useState({ key: formResetKey, state: initialFormState })
+  if (appliedFormSource.key !== formResetKey || appliedFormSource.state !== initialFormState) {
+    setAppliedFormSource({ key: formResetKey, state: initialFormState })
+    setEditedRoleTimeIds(new Set())
+  }
+
+  /** 스테퍼 변경을 그대로 전달하면서, 직업별 밤 시간은 "건드렸다"는 사실도 함께 남긴다. */
+  const handleSetRange = (id, next) => {
+    const changed = ranges[id] !== next
+    if (NIGHT_TIME_ID_TO_ROLE[id] !== undefined && changed) {
+      setEditedRoleTimeIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+    }
+    setRange(id, next)
+
+    // F-20(AC-03): 편집 화면에서 **아직 아무도 지정하지 않은** 직업 행은 전체 밤 시간을
+    // 그대로 따라간다. 폼을 열 때의 폴백(buildRoomSettingsFormState)만 고치고 여기를 두면,
+    // 전체 밤 시간을 60→90으로 바꾼 순간부터 그 행들은 60을 계속 보여준다 — 서버는 90을
+    // 쓰는데 방장은 60이라고 읽고, 그 행의 다음 클릭도 60에서 출발해 의도하지 않은 override가
+    // 만들어진다. "지정했다"는 사실 자체는 여기서 만들지 않으므로(editedRoleTimeIds 불변),
+    // 손대지 않은 저장은 여전히 override를 싣지 않는다.
+    //
+    // 생성 화면(mode='create')에는 "지정하지 않음"이라는 상태가 없다 — 네 직업 모두 명시값이고
+    // 그대로 실린다. 그래서 이 따라가기는 편집 모드에만 적용한다(기존 생성 계약 보존).
+    if (!isEditMode || id !== OVERALL_NIGHT_ACTION_TIME_ID || !changed) return
+    const serverSpecified = initialFormState?.specifiedRoleNightActionTimes ?? []
+    for (const [roleTimeId, role] of Object.entries(NIGHT_TIME_ID_TO_ROLE)) {
+      // 서버가 명시한 override와 이번에 방장이 직접 바꾼 값은 전체 시간과 독립이다.
+      if (serverSpecified.includes(role) || editedRoleTimeIds.has(roleTimeId)) continue
+      setRange(roleTimeId, next)
+    }
+  }
+
+  // 편집 모드에서는 D-12의 세 항목을 아예 그리지 않는다 — 이 슬라이스의 편집 대상이 아니고,
+  // 서버도 수정 요청에서 그 값을 받지 않는다(기존 값은 서버가 보존한다).
+  const hiddenItemIds = isEditMode ? NON_EDITABLE_SETUP_ITEM_IDS : undefined
+
+  const handleSubmitClick = () => {
     // 검증에 실패한 구성은 애초에 버튼이 비활성화돼 여기까지 오지 않지만, 상태가 바뀌는
     // 사이의 클릭까지 막기 위해 emit 직전에 한 번 더 확인한다(최종 판단은 서버가 한다).
     if (!roleComposition.validation.ok) return
+    if (isCreating || submitDisabled) return
+
+    const composition = { mode: roleComposition.mode, roleCounts: roleComposition.roleCounts }
+    if (isEditMode) {
+      onCreateGame({
+        checks,
+        ranges,
+        roleComposition: composition,
+        // 서버에 원래 지정돼 있던 직업 + 이번에 실제로 바꾼 직업. 앞쪽 때문에 "열고 그대로
+        // 저장"이 없던 override를 만들지 않고, 뒤쪽 때문에 새로 만든 override가 누락되지 않는다.
+        specifiedRoleNightActionTimes: mergeSpecifiedRoleNightActionTimes(
+          initialFormState?.specifiedRoleNightActionTimes ?? [], editedRoleTimeIds,
+        ),
+      })
+      return
+    }
     onCreateGame(
       buildCreateRoomPayload({
         checks,
         ranges,
-        roleComposition: { mode: roleComposition.mode, roleCounts: roleComposition.roleCounts },
+        roleComposition: composition,
+        // 생성 화면에는 "지정 목록"이라는 출발점이 없다 — 이때 변환기는 undefined를 돌려주고
+        // 기존 생성 계약대로 스테퍼 전부가 실린다.
+        specifiedRoleNightActionTimes: mergeSpecifiedRoleNightActionTimes(
+          initialFormState?.specifiedRoleNightActionTimes, editedRoleTimeIds,
+        ),
       }),
     )
   }
@@ -108,11 +219,18 @@ export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
                   checks={checks}
                   ranges={ranges}
                   setCheck={setCheck}
-                  setRange={setRange}
+                  setRange={handleSetRange}
                   roleComposition={roleComposition}
+                  hiddenItemIds={hiddenItemIds}
                 />
               ) : ( // 회의&투표 탭
-                <MeetingGameSetupTab checks={checks} ranges={ranges} setCheck={setCheck} setRange={setRange} />
+                <MeetingGameSetupTab
+                  checks={checks}
+                  ranges={ranges}
+                  setCheck={setCheck}
+                  setRange={handleSetRange}
+                  hiddenItemIds={hiddenItemIds}
+                />
               )}
             </div>
           </div>
@@ -121,8 +239,11 @@ export default function GameSetupPanel({ visible, isCreating, onCreateGame }) {
         {/* 역할 구성이 유효하지 않은 동안에는 생성 자체를 막는다(회의&투표 탭에 있어도
             동일하게 적용된다 — 잘못된 설정이 탭 전환으로 가려지면 안 되기 때문). */}
         <GameSetupCreateButton
-          onClick={handleCreateClick}
-          disabled={isCreating || !roleComposition.validation.ok}
+          onClick={handleSubmitClick}
+          disabled={isCreating || submitDisabled || !roleComposition.validation.ok}
+          label={submitLabel ?? (isEditMode ? "설정 저장" : "게임 만들기")}
+          busy={isCreating}
+          busyLabel={submitBusyLabel ?? (isEditMode ? "저장 중…" : null)}
         />
       </motion.div>
     </div>

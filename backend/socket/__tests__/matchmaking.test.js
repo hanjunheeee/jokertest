@@ -1,3 +1,11 @@
+// backend/models는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지 않는다).
+// npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이 비어 있어 require
+// 자체가 죽으므로, 같은 디렉터리의 gameSession.test.js·gameSession.dayTimers.test.js·
+// matchmaking.gameInvite.test.js와 **같은 관례**로 더미 폴백을 둔다(값도 .env.test와 동일).
+// 이미 설정돼 있으면 덮지 않으므로 공식 명령의 동작은 그대로다. SQL 경계는 아래에서 전부
+// 대역으로 교체되므로 이 파일에서 실제 쿼리는 한 번도 실행되지 않는다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -31,6 +39,12 @@ matchmaking.__setEconomyServiceForTests({
     getPublicProfileLoadouts: (...args) => fakeGetPublicProfileLoadouts(...args),
     getGameStartLoadouts: (...args) => fakeGetGameStartLoadouts(...args),
 })
+// 방 소멸·시작 시 fire-and-forget으로 도는 초대 정리(gameInvite.service)는 실제 MySQL을
+// 요구한다. 대역이 없으면 이 순수 단위 스위트가 실제 DB 접속을 시도해 AccessDenied 로그를
+// 남긴다 — 단언이 실패하지는 않지만 "SQL 경계를 건드리지 않는다"는 전제가 깨진다.
+matchmaking.__setGameInviteServiceForTests({
+    cancelPendingInvitesForRoom: async () => {},
+})
 // game-core/gameSession.js는 matchmaking.js와 별도 모듈이라 자체 registry(gameSessions/
 // playerSession/roomGameSession)를 갖는다 — matchmaking.__resetStateForTests()로는 초기화되지
 // 않으므로 이 파일의 beforeEach에서 별도로 초기화한다(테스트 간 상태 누수 방지).
@@ -63,6 +77,10 @@ const {
     createFakeSocket,
     createFakeIo,
     validSettingsPayload,
+    // F-20(AC-04): set_ready/start_game은 roomId·expectedSettingsVersion을 필수로 요구한다.
+    // 실제 클라이언트가 보내는 것과 같은 모양을 이 두 헬퍼가 만든다.
+    readyPayload,
+    startPayload,
     countingCallback,
     setupReadyRoomForStart,
 } = require('./testHelpers/matchmakingFixtures')
@@ -102,7 +120,25 @@ test('create_room: 정상 생성 시 Socket room 가입과 Map 반영이 이루�
     const res = await callAsPromise(handleCreateRoom, io, socket, 'uuid-B', validSettingsPayload())
 
     assert.equal(res.ok, true)
-    assert.deepEqual(Object.keys(res.room).sort(), ['canStart', 'hostUuid', 'players', 'roomCode', 'roomId'])
+    // F-20(AC-03/AC-06): 참가자용 방 응답의 **승인된** 최상위 계약이다. accessType·
+    // settingsVersion·settings가 새로 추가됐지만 이 목록이 여전히 전부여야 한다 — 즉
+    // 이 단언은 "새 필드가 들어왔다"가 아니라 "허용한 것 말고는 아무것도 안 나간다"를 고정한다.
+    assert.deepEqual(Object.keys(res.room).sort(),
+        ['accessType', 'canStart', 'hostUuid', 'players', 'roomCode', 'roomId', 'settings', 'settingsVersion'])
+    // 서버 내부 필드 비공개(이 시험의 원래 핵심). 위 exact-key 단언과 중복이지만, 어떤 이름이
+    // 왜 금지인지를 이름으로 남겨 둬야 나중에 목록을 넓힐 때 실수로 함께 통과하지 않는다.
+    for (const internal of ['id', 'code', 'title', 'status', 'createdAt',
+        'roomInstanceId', 'generation', 'readyRevision']) {
+        assert.equal(Object.hasOwn(res.room, internal), false, `내부 필드 ${internal}가 ack에 실렸다`)
+    }
+    // F-20(AC-06): 새로 공개되는 중첩 settings도 승인된 키만 담는다 — 저장 값을 그대로
+    // 내보내지 않는 경계(buildRoomSettingsView)가 실제로 동작하는지 여기서 고정한다.
+    assert.deepEqual(Object.keys(res.room.settings).sort(),
+        ['dayDiscussionTime', 'dayVoteTime', 'jokerCount', 'lightsOut', 'maxPlayers',
+            'nightActionTime', 'roleCompositionMode', 'soulBetting', 'voteReveal'])
+    assert.equal(JSON.stringify(res.room).includes('pectator'), false, '관전자 필드가 응답에 실렸다')
+    assert.equal(res.room.accessType, 'open')
+    assert.equal(res.room.settingsVersion, 1) // 생성 시 서버가 부여하는 최초 확정본
     assert.equal(socket.joined.length, 1)
     assert.equal(socket.joined[0], res.room.roomId)
 
@@ -448,6 +484,7 @@ test('입장 거부 사유(코드 불일치·방 없음·이미 시작됨·정�
     })
     const startAck = await callAsPromise(
         handleStartGame, io, io.sockets.sockets.get('sock-uuid-reason-host'), 'uuid-reason-host',
+        startPayload(startedRoom),
     )
     assert.equal(startAck.ok, true, '이 검증의 전제인 게임 시작이 실패했습니다')
 
@@ -860,10 +897,22 @@ test('join_room_by_code: join 이후 커밋 전 예상 못한 예외가 나면 S
     const io = createFakeIo([])
     const roomId = 'room-exc'
     const roomCode = 'EXC123'
-    // settings 접근 자체가 예외를 던지도록 만들어, "join은 성공했지만 정원 검사(커밋 전) 단계에서
-    // 예상 못한 예외가 발생하는" 상황을 흉내낸다.
+    // "join은 성공했지만 정원 검사(커밋 전) 단계에서 예상 못한 예외가 발생하는" 상황을 흉내낸다.
+    // 그 정원 검사가 읽는 값은 room.settings.maxPlayers 하나이므로(handleJoinRoomByCode의
+    // `room.settings?.maxPlayers ?? ...`), 바로 그 속성 접근만 던지게 한다 — 예외가 주입되는
+    // 지점은 예전(모든 접근에서 throw)과 **동일한 그 줄**이고, join 이후·커밋 이전이라는
+    // 조건도 그대로다.
+    //
+    // 모든 접근에서 던지지 않는 이유: F-20에서 __getStateSnapshotForTests가 settings를 깊게
+    // 복사하게 됐다(스냅샷이 라이브 참조를 가리키면 "저장 전후가 같다"는 무변경 단언이 같은
+    // 객체를 비교하며 항상 통과해 버리므로). 모든 접근이 던지면 아래 롤백 단언이 스냅샷을
+    // 읽는 순간 주입한 예외가 되살아나, 정작 검증하려던 롤백 결과를 볼 수 없다. 주입을
+    // 없애거나 깊은 복사를 되돌리는 대신 주입 범위를 실제 실패 지점으로 좁힌다.
     const brokenSettings = new Proxy({}, {
-        get() { throw new Error('설정 조회 실패(테스트 주입)') },
+        get(target, prop, receiver) {
+            if (prop === 'maxPlayers') throw new Error('설정 조회 실패(테스트 주입)')
+            return Reflect.get(target, prop, receiver)
+        },
     })
     matchmaking.__seedRoomForTests({
         id: roomId,
@@ -877,11 +926,17 @@ test('join_room_by_code: join 이후 커밋 전 예상 못한 예외가 나면 S
     io.sockets.sockets.set(joiner.id, joiner)
     await handleJoinRoomByCode(io, joiner, 'uuid-excjoin', roomCode)
 
-    assert.match(joiner.emitted.find((e) => e.event === 'room_join_failed').payload.message, /참여하지 못했습니다/)
+    const failed = joiner.emitted.find((e) => e.event === 'room_join_failed')
+    assert.match(failed.payload.message, /참여하지 못했습니다/)
+    // 주입한 예외가 정말 "예상 못한 예외" 경로로 떨어졌는지 고정한다 — 이 단언이 없으면
+    // 주입이 언젠가 발동하지 않게 돼도 ROOM_FULL 같은 **정상** 거부로 조용히 통과한다.
+    assert.equal(failed.payload.code, ROOM_JOIN_ERROR_CODES.INTERNAL_ERROR)
     assert.equal(joiner.left.length, 1) // join 후 커밋 전 예외 → Socket room에서 정리됨
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms.find(([id]) => id === roomId)
     assert.equal(room.players.length, 1) // 새 참가자는 반영되지 않음
+    // 두 Map 중 한쪽만 되돌아가는 일이 없어야 한다(역방향 소속도 커밋되지 않았다).
+    assert.equal(snapshot.playerRoom.some(([u]) => u === 'uuid-excjoin'), false)
 })
 
 // ── P1: 정원 레이스 — 실제 동시 참가 시나리오 ───────────────────────────────
@@ -1108,14 +1163,14 @@ test('set_ready: 새로 생성/참가한 플레이어는 기본적으로 준비 
 test('set_ready: 동일한 목표 상태로 두 번 요청해도 결과가 같고 두 번째 요청은 방송하지 않는다', async () => {
     const socket = createFakeSocket('uuid-ready-idem')
     const io = createFakeIo([socket])
-    await callAsPromise(handleCreateRoom, io, socket, 'uuid-ready-idem', validSettingsPayload())
+    const created = await callAsPromise(handleCreateRoom, io, socket, 'uuid-ready-idem', validSettingsPayload())
 
-    const res1 = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-idem', { isReady: true })
+    const res1 = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-idem', readyPayload(created.room))
     assert.equal(res1.ok, true)
     assert.equal(res1.isReady, true)
     assert.equal(socket.emitted.filter((e) => e.event === 'player_ready_changed').length, 1)
 
-    const res2 = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-idem', { isReady: true })
+    const res2 = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-idem', readyPayload(created.room))
     assert.equal(res2.ok, true)
     assert.equal(res2.isReady, true)
     // 값이 이미 같으므로 두 번째 요청에서는 방송이 추가로 발생하지 않는다(멱등성).
@@ -1125,10 +1180,13 @@ test('set_ready: 동일한 목표 상태로 두 번 요청해도 결과가 같�
 test('set_ready: isReady가 boolean이 아니면 상태 변경 없이 거부한다', async () => {
     const socket = createFakeSocket('uuid-ready-badtype')
     const io = createFakeIo([socket])
-    await callAsPromise(handleCreateRoom, io, socket, 'uuid-ready-badtype', validSettingsPayload())
+    const created = await callAsPromise(handleCreateRoom, io, socket, 'uuid-ready-badtype', validSettingsPayload())
 
     for (const badValue of ['true', 1, null, undefined, {}, []]) {
-        const res = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-badtype', { isReady: badValue })
+        // 방·버전은 정상으로 두고 isReady만 잘못된 값으로 덮는다 — 거부 사유가 isReady의
+        // 형태임을 분명히 하기 위함이다(readyPayload의 기본값이 끼어들지 않게 직접 얹는다).
+        const res = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-badtype',
+            { ...readyPayload(created.room), isReady: badValue })
         assert.equal(res.ok, false)
     }
 
@@ -1166,7 +1224,7 @@ test('set_ready: payload에 다른 uuid를 넣어도 무시되고 요청자(인�
     // hostSocket으로 요청하면서 payload에는 joiner의 uuid를 흉내낸 값을 함께 보낸다.
     const res = await callAsPromise(
         handleSetReady, io, hostSocket, 'uuid-ready-self-host',
-        { isReady: true, uuid: 'uuid-ready-self-joiner' },
+        { ...readyPayload(created.room), uuid: 'uuid-ready-self-joiner' },
     )
     assert.equal(res.ok, true)
 
@@ -1181,7 +1239,9 @@ test('set_ready: payload에 다른 uuid를 넣어도 무시되고 요청자(인�
 test('set_ready: 방에 참여하지 않은 사용자의 요청은 거부된다', async () => {
     const io = createFakeIo([])
     const socket = createFakeSocket('uuid-ready-outside')
-    const res = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-outside', { isReady: true })
+    const res = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-outside', {
+        isReady: true, roomId: 'room-not-joined', expectedSettingsVersion: 1,
+    })
     assert.equal(res.ok, false)
     assert.match(res.message, /참여 중인 방이 없습니다/)
 })
@@ -1192,7 +1252,7 @@ test('set_ready: 방이 이미 삭제된 뒤 도착한 요청은 안전하게 �
     const created = await callAsPromise(handleCreateRoom, io, socket, 'uuid-ready-deleted', validSettingsPayload())
     matchmaking.__removeRoomForTests(created.room.roomId)
 
-    const res = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-deleted', { isReady: true })
+    const res = await callAsPromise(handleSetReady, io, socket, 'uuid-ready-deleted', readyPayload(created.room))
     assert.equal(res.ok, false)
 })
 
@@ -1202,7 +1262,7 @@ test('set_ready: callback이 없는 요청은 실제 Room·참가자가 있어�
     const created = await callAsPromise(handleCreateRoom, io, socket, 'uuid-ready-nocb', validSettingsPayload())
 
     const before = matchmaking.__getStateSnapshotForTests()
-    handleSetReady(io, socket, 'uuid-ready-nocb', { isReady: true }, undefined)
+    handleSetReady(io, socket, 'uuid-ready-nocb', readyPayload(created.room), undefined)
     const after = matchmaking.__getStateSnapshotForTests()
 
     assert.deepEqual(after, before)
@@ -1243,7 +1303,7 @@ test('set_ready: 요청자는 ack만 받고, 같은 방의 다른 참가자는 p
     hostSocket.emitted.length = 0 // room_joined 등 이전 이벤트는 이번 검증과 무관하므로 비운다
     joiner.emitted.length = 0
 
-    const ack = await callAsPromise(handleSetReady, io, hostSocket, 'uuid-ready-recv-host', { isReady: true })
+    const ack = await callAsPromise(handleSetReady, io, hostSocket, 'uuid-ready-recv-host', readyPayload(created.room))
     assert.equal(ack.ok, true)
 
     // 요청자(host) 자신은 player_ready_changed를 받지 않는다 — ack로만 결과를 안다.
@@ -1272,8 +1332,8 @@ test('canStart: 전원 준비된 방에 새 참가자가 들어오면(기본 미
     io.sockets.sockets.set(joinerA.id, joinerA)
     await handleJoinRoomByCode(io, joinerA, 'uuid-canstart-a-joinerA', created.room.roomCode)
 
-    await callAsPromise(handleSetReady, io, hostSocket, 'uuid-canstart-a-host', { isReady: true })
-    const joinerAReady = await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-a-joinerA', { isReady: true })
+    await callAsPromise(handleSetReady, io, hostSocket, 'uuid-canstart-a-host', readyPayload(created.room))
+    const joinerAReady = await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-a-joinerA', readyPayload(created.room))
     assert.equal(joinerAReady.canStart, true) // host+joinerA 2명 모두 준비 완료 → 시작 가능
 
     const joinerB = createFakeSocket('uuid-canstart-a-joinerB')
@@ -1293,8 +1353,8 @@ test('canStart: 미준비 참가자가 나가면 canStart가 다시 true로 재�
     const joinerA = createFakeSocket('uuid-canstart-b-joinerA')
     io.sockets.sockets.set(joinerA.id, joinerA)
     await handleJoinRoomByCode(io, joinerA, 'uuid-canstart-b-joinerA', created.room.roomCode)
-    await callAsPromise(handleSetReady, io, hostSocket, 'uuid-canstart-b-host', { isReady: true })
-    await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-b-joinerA', { isReady: true })
+    await callAsPromise(handleSetReady, io, hostSocket, 'uuid-canstart-b-host', readyPayload(created.room))
+    await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-b-joinerA', readyPayload(created.room))
     // 여기까지 host+joinerA 모두 준비 완료 → canStart는 true인 상태다.
 
     const joinerB = createFakeSocket('uuid-canstart-b-joinerB')
@@ -1325,8 +1385,8 @@ test('canStart: 방장이 종료로 바뀌어도 남은 참가자의 준비 상�
 
     // 곧 새 방장이 될 joinerA와 나머지 joinerB를 준비 완료 상태로 만든다.
     // 곧 사라질 host는 미준비 상태로 둔다(방장 변경과 준비 상태가 무관함을 함께 확인).
-    await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-c-joinerA', { isReady: true })
-    await callAsPromise(handleSetReady, io, joinerB, 'uuid-canstart-c-joinerB', { isReady: true })
+    await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-c-joinerA', readyPayload(created.room))
+    await callAsPromise(handleSetReady, io, joinerB, 'uuid-canstart-c-joinerB', readyPayload(created.room))
 
     matchmaking.onDisconnect(io, hostSocket, 'uuid-canstart-c-host') // 방장 종료 → joinerA가 새 방장
     matchmaking.__flushRoomRetentionForTests() // 재접속 없이 유예 만료 → 실제 제거
@@ -1350,7 +1410,8 @@ test('start_game: 참여 중인 방이 없으면 ROOM_NOT_FOUND로 ack가 정확
     const beforeSession = gameSession.__getStateSnapshotForTests()
     const { callback, getCalls, getResponse } = countingCallback()
 
-    await handleStartGame(io, socket, 'uuid-start-noroom', callback)
+    await handleStartGame(io, socket, 'uuid-start-noroom',
+        { roomId: 'room-not-joined', expectedSettingsVersion: 1 }, callback)
 
     assert.equal(getCalls(), 1)
     assert.equal(getResponse().ok, false)
@@ -1365,7 +1426,7 @@ test('start_game: 방이 이미 삭제된 상태에서의 요청은 ROOM_NOT_FOU
     matchmaking.__removeRoomForTests(created.room.roomId)
 
     const beforeSession = gameSession.__getStateSnapshotForTests()
-    const res = await callAsPromise(handleStartGame, io, socket, 'uuid-start-deleted')
+    const res = await callAsPromise(handleStartGame, io, socket, 'uuid-start-deleted', startPayload(created.room))
     assert.equal(res.ok, false)
     assert.equal(res.code, 'ROOM_NOT_FOUND')
     assert.deepEqual(gameSession.__getStateSnapshotForTests(), beforeSession)
@@ -1382,7 +1443,7 @@ test('start_game: 방장이 아닌 사용자의 요청은 NOT_HOST로 ack가 정
 
     const beforeSession = gameSession.__getStateSnapshotForTests()
     const { callback, getCalls, getResponse } = countingCallback()
-    await handleStartGame(io, joiner, 'uuid-start-joiner', callback)
+    await handleStartGame(io, joiner, 'uuid-start-joiner', startPayload(created.room), callback)
 
     assert.equal(getCalls(), 1)
     assert.equal(getResponse().ok, false)
@@ -1396,12 +1457,12 @@ test('start_game: 운영 최소 인원 기준으로 인원이 미달이면 MIN_P
     try {
         const hostSocket = createFakeSocket('uuid-start-min')
         const io = createFakeIo([hostSocket])
-        await callAsPromise(
+        const created = await callAsPromise(
             handleCreateRoom, io, hostSocket, 'uuid-start-min', validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
         )
         const beforeSession = gameSession.__getStateSnapshotForTests()
         const { callback, getCalls, getResponse } = countingCallback()
-        await handleStartGame(io, hostSocket, 'uuid-start-min', callback)
+        await handleStartGame(io, hostSocket, 'uuid-start-min', startPayload(created.room), callback)
 
         assert.equal(getCalls(), 1)
         assert.equal(getResponse().ok, false)
@@ -1417,11 +1478,11 @@ test('start_game: 실제 참가 인원이 광대 수 이하이면(비-광대 0�
     const hostSocket = createFakeSocket('uuid-start-joker')
     const io = createFakeIo([hostSocket])
     // maxPlayers=4, jokerCount=1로 생성한 뒤 host 1명만 있는 상태(참가 인원 1 <= jokerCount 1)를 재현한다.
-    await callAsPromise(
+    const created = await callAsPromise(
         handleCreateRoom, io, hostSocket, 'uuid-start-joker', validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
     )
     const beforeSession = gameSession.__getStateSnapshotForTests()
-    const res = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-start-joker')
+    const res = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-start-joker', startPayload(created.room))
     assert.equal(res.ok, false)
     assert.equal(res.code, 'MIN_PLAYERS_NOT_MET')
     assert.deepEqual(gameSession.__getStateSnapshotForTests(), beforeSession)
@@ -1448,10 +1509,10 @@ test('start_game: 정원(4)이 운영 최소 인원(5)보다 작아도 정원만
         // host + 3명 = 정원 4명, 운영 최소 인원(5)에는 못 미치지만 정원 기준으로는 충족해야 한다.
 
         for (const [uuid, s] of Object.entries(sockets)) {
-            await callAsPromise(handleSetReady, io, s, uuid, { isReady: true })
+            await callAsPromise(handleSetReady, io, s, uuid, readyPayload(created.room))
         }
 
-        const res = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-cap-host')
+        const res = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-cap-host', startPayload(created.room))
         assert.equal(res.ok, true) // 인원 미달로 막히지 않고 GameSession 전환까지 성공한다
     } finally {
         if (originalMin === undefined) delete process.env.GAME_DEV_MIN_PLAYERS
@@ -1470,11 +1531,11 @@ test('start_game: 준비하지 않은 참가자가 있으면 PLAYERS_NOT_READY�
     await handleJoinRoomByCode(io, joiner, 'uuid-start-notready-joiner', created.room.roomCode)
 
     // 호스트만 준비하고 joiner는 준비하지 않은 채로 둔다.
-    await callAsPromise(handleSetReady, io, hostSocket, 'uuid-start-notready-host', { isReady: true })
+    await callAsPromise(handleSetReady, io, hostSocket, 'uuid-start-notready-host', readyPayload(created.room))
 
     const beforeSession = gameSession.__getStateSnapshotForTests()
     const { callback, getCalls, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-start-notready-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-start-notready-host', startPayload(created.room), callback)
 
     assert.equal(getCalls(), 1)
     assert.equal(getResponse().ok, false)
@@ -1487,11 +1548,11 @@ test('start_game: callback이 없는 요청은 어떤 상태도 바꾸지 않는
     // 없어 응답도 상태 변경도 하지 않는지"를 확인한다(가장 앞단 검사가 우선임을 재확인).
     const hostSocket = createFakeSocket('uuid-start-nocb')
     const io = createFakeIo([hostSocket])
-    await callAsPromise(handleCreateRoom, io, hostSocket, 'uuid-start-nocb', validSettingsPayload())
+    const created = await callAsPromise(handleCreateRoom, io, hostSocket, 'uuid-start-nocb', validSettingsPayload())
 
     const before = matchmaking.__getStateSnapshotForTests()
     const beforeSession = gameSession.__getStateSnapshotForTests()
-    await handleStartGame(io, hostSocket, 'uuid-start-nocb', undefined)
+    await handleStartGame(io, hostSocket, 'uuid-start-nocb', startPayload(created.room), undefined)
     const after = matchmaking.__getStateSnapshotForTests()
 
     assert.deepEqual(after, before)
@@ -1515,7 +1576,7 @@ test('start_game: 시작 직전 최신 서버 loadout으로 계정 외형을 다
 
     const hostSocket = createFakeSocket('uuid-start-profile-host')
     const io = createFakeIo([hostSocket])
-    await setupReadyRoomForStart(io, 'uuid-start-profile-host', 'uuid-start-profile-joiner', readyRoomHandlers)
+    const { room } = await setupReadyRoomForStart(io, 'uuid-start-profile-host', 'uuid-start-profile-joiner', readyRoomHandlers)
 
     // 대기방에 머무는 동안 방장이 프로필을 바꿨다고 가정한다 — game_started에는 참가
     // 시점 값이 아니라 지금(시작 시점) 값이 스냅샷되어야 한다.
@@ -1526,7 +1587,7 @@ test('start_game: 시작 직전 최신 서버 loadout으로 계정 외형을 다
         }]))
 
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-start-profile-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-start-profile-host', startPayload(room), callback)
     assert.equal(getResponse().ok, true)
 
     const hostPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
@@ -1561,10 +1622,10 @@ test('start_game: 서버가 조회한 직업별 스킨은 자신의 실제 역�
 
     const hostSocket = createFakeSocket('uuid-start-skin-host')
     const io = createFakeIo([hostSocket])
-    await setupReadyRoomForStart(io, 'uuid-start-skin-host', 'uuid-start-skin-joiner', readyRoomHandlers)
+    const { room } = await setupReadyRoomForStart(io, 'uuid-start-skin-host', 'uuid-start-skin-joiner', readyRoomHandlers)
 
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-start-skin-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-start-skin-host', startPayload(room), callback)
     assert.equal(getResponse().ok, true)
 
     const hostPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
@@ -1583,12 +1644,12 @@ test('start_game: 서버가 조회한 직업별 스킨은 자신의 실제 역�
 test('start_game: 계정 외형 재조회가 실패하면 GameSession을 커밋하지 않고 실패로 응답한다', async () => {
     const hostSocket = createFakeSocket('uuid-start-econ-fail-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-econ-fail-host', 'uuid-start-econ-fail-joiner', readyRoomHandlers)
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-start-econ-fail-host', 'uuid-start-econ-fail-joiner', readyRoomHandlers)
 
     fakeGetGameStartLoadouts = async () => { throw new Error('economy 조회 실패(테스트 주입)') }
 
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-start-econ-fail-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-start-econ-fail-host', startPayload(room), callback)
 
     assert.equal(getResponse().ok, false)
     assert.equal(getResponse().code, 'INTERNAL_ERROR')
@@ -1601,7 +1662,7 @@ test('start_game: 계정 외형 재조회가 실패하면 GameSession을 커밋�
 test('start_game: 계정 외형 재조회 중 참가자가 준비를 해제하면 ROOM_STATE_CHANGED로 거부하고 room.players를 부분 반영하지 않는다', async () => {
     const hostSocket = createFakeSocket('uuid-start-race-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-race-host', 'uuid-start-race-joiner', readyRoomHandlers)
+    const { joinerSocket, room: startedRoom } = await setupReadyRoomForStart(io, 'uuid-start-race-host', 'uuid-start-race-joiner', readyRoomHandlers)
 
     // captureRoomStartProfiles의 조회(getGameStartLoadouts)가 끝나기 전에 방 상태가
     // 바뀌는 레이스를 재현한다 — deferred로 조회 완료 시점을 결정적으로 제어한다.
@@ -1615,10 +1676,10 @@ test('start_game: 계정 외형 재조회 중 참가자가 준비를 해제하�
     }
 
     const { callback, getResponse } = countingCallback()
-    const startPromise = handleStartGame(io, hostSocket, 'uuid-start-race-host', callback)
+    const startPromise = handleStartGame(io, hostSocket, 'uuid-start-race-host', startPayload(startedRoom), callback)
 
     // 조회가 아직 끝나지 않은 사이 참가자가 준비를 해제한다.
-    await callAsPromise(handleSetReady, io, joinerSocket, 'uuid-start-race-joiner', { isReady: false })
+    await callAsPromise(handleSetReady, io, joinerSocket, 'uuid-start-race-joiner', readyPayload(startedRoom, false))
     gate.resolve()
     await startPromise
 
@@ -1639,10 +1700,10 @@ test('start_game: 계정 외형 재조회 중 참가자가 준비를 해제하�
 test('start_game: 모든 조건을 충족하면 GameSession을 생성하고 참가자별로 역할이 다른 개별 game_started를 전달한다', async () => {
     const hostSocket = createFakeSocket('uuid-start-ok-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-start-ok-host', 'uuid-start-ok-joiner', readyRoomHandlers)
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-start-ok-host', 'uuid-start-ok-joiner', readyRoomHandlers)
 
     const { callback, getCalls, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-start-ok-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-start-ok-host', startPayload(room), callback)
 
     // (a) ack 정확히 1회, ok:true
     assert.equal(getCalls(), 1)
@@ -1694,7 +1755,7 @@ test('start_game: 모든 조건을 충족하면 GameSession을 생성하고 참�
 test('start_game: 참가자 중 한 명의 소켓이 connected:false이면 PARTICIPANT_UNAVAILABLE로 거부되고 모든 상태가 불변이다', async () => {
     const hostSocket = createFakeSocket('uuid-pu-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-pu-host', 'uuid-pu-joiner', readyRoomHandlers)
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-pu-host', 'uuid-pu-joiner', readyRoomHandlers)
     joinerSocket.connected = false // 참가자 중 한 명의 연결이 끊긴 상태를 재현
 
     const before = matchmaking.__getStateSnapshotForTests()
@@ -1703,7 +1764,7 @@ test('start_game: 참가자 중 한 명의 소켓이 connected:false이면 PARTI
     // 방송하므로, "이 실패 요청이 새 방송을 만들지 않는지"는 호출 전 개수와 비교해야 한다.
     const broadcastCountBefore = io.broadcasts.length
     const { callback, getCalls, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-pu-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-pu-host', startPayload(room), callback)
 
     assert.equal(getCalls(), 1)
     assert.equal(getResponse().ok, false)
@@ -1724,7 +1785,7 @@ test('start_game: 참가자 중 한 명의 소켓이 Room channel에 join되어 
 
     const before = matchmaking.__getStateSnapshotForTests()
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-nc-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-nc-host', startPayload(room), callback)
 
     assert.equal(getResponse().ok, false)
     assert.equal(getResponse().code, 'PARTICIPANT_UNAVAILABLE')
@@ -1742,7 +1803,7 @@ test('start_game: 동일 uuid의 정상적인 복수 소켓 모두에게 game_st
     io.sockets.sockets.set(joinerSecondSocket.id, joinerSecondSocket)
 
     const { getResponse, callback } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-multi-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-multi-host', startPayload(room), callback)
 
     assert.equal(getResponse().ok, true)
     assert.equal(joinerSocket.emitted.filter((e) => e.event === 'game_started').length, 1)
@@ -1752,7 +1813,7 @@ test('start_game: 동일 uuid의 정상적인 복수 소켓 모두에게 game_st
 test('start_game: payload 사전 생성 단계에서 예외가 나면 INTERNAL_ERROR로 응답하고 모든 상태가 불변이며 game_started가 전달되지 않는다', async (t) => {
     const hostSocket = createFakeSocket('uuid-payloaderr-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-payloaderr-host', 'uuid-payloaderr-joiner', readyRoomHandlers)
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-payloaderr-host', 'uuid-payloaderr-joiner', readyRoomHandlers)
 
     // node:test의 MockTracker는 테스트 종료 시 자동으로 원래 함수를 복원하므로, 이 mock이
     // 같은 프로세스의 후속 테스트로 새어 나가지 않는다(수동 try/finally 복원 불필요).
@@ -1763,7 +1824,7 @@ test('start_game: payload 사전 생성 단계에서 예외가 나면 INTERNAL_E
     const before = matchmaking.__getStateSnapshotForTests()
     const beforeSession = gameSession.__getStateSnapshotForTests()
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-payloaderr-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-payloaderr-host', startPayload(room), callback)
 
     assert.equal(getResponse().ok, false)
     assert.equal(getResponse().code, 'INTERNAL_ERROR')
@@ -1776,11 +1837,11 @@ test('start_game: payload 사전 생성 단계에서 예외가 나면 INTERNAL_E
 test('start_game: notify 중 한 참가자의 emit이 실패해도 나머지는 정상 수신하고 host ack은 성공한다', async () => {
     const hostSocket = createFakeSocket('uuid-notifyerr-host')
     const io = createFakeIo([hostSocket])
-    const { joinerSocket } = await setupReadyRoomForStart(io, 'uuid-notifyerr-host', 'uuid-notifyerr-joiner', readyRoomHandlers)
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-notifyerr-host', 'uuid-notifyerr-joiner', readyRoomHandlers)
     joinerSocket.emit = () => { throw new Error('emit 실패(테스트 주입)') }
 
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, hostSocket, 'uuid-notifyerr-host', callback)
+    await handleStartGame(io, hostSocket, 'uuid-notifyerr-host', startPayload(room), callback)
 
     assert.equal(getResponse().ok, true)
     assert.equal(hostSocket.emitted.some((e) => e.event === 'game_started'), true)
@@ -1792,7 +1853,7 @@ test('start_game: 참가자 중 한 명이 이미 다른 GameSession에 속해 �
     // 인게임인 계정이 새 Room에 참가할 수 없으므로 이 순서만 계약상 가능한 회귀 시나리오다.
     const newHost = createFakeSocket('uuid-pais-new-host')
     const io = createFakeIo([newHost])
-    const { joinerSocket: sharedSocket } = await setupReadyRoomForStart(
+    const { joinerSocket: sharedSocket, room } = await setupReadyRoomForStart(
         io, 'uuid-pais-new-host', 'uuid-pais-shared', readyRoomHandlers,
     )
     const prepared = gameSession.prepareGameSession({
@@ -1809,7 +1870,7 @@ test('start_game: 참가자 중 한 명이 이미 다른 GameSession에 속해 �
     const before = matchmaking.__getStateSnapshotForTests()
     const beforeSession = gameSession.__getStateSnapshotForTests()
     const { callback, getResponse } = countingCallback()
-    await handleStartGame(io, newHost, 'uuid-pais-new-host', callback)
+    await handleStartGame(io, newHost, 'uuid-pais-new-host', startPayload(room), callback)
 
     assert.equal(getResponse().ok, false)
     assert.equal(getResponse().code, 'PLAYER_ALREADY_IN_SESSION')
@@ -1820,9 +1881,9 @@ test('start_game: 참가자 중 한 명이 이미 다른 GameSession에 속해 �
 test('start_game: 성공 후 같은 uuid로 get_current_room을 조회하면 room:null이 온다', async () => {
     const hostSocket = createFakeSocket('uuid-gcr-host')
     const io = createFakeIo([hostSocket])
-    await setupReadyRoomForStart(io, 'uuid-gcr-host', 'uuid-gcr-joiner', readyRoomHandlers)
+    const { room } = await setupReadyRoomForStart(io, 'uuid-gcr-host', 'uuid-gcr-joiner', readyRoomHandlers)
 
-    const startResult = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-gcr-host')
+    const startResult = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-gcr-host', startPayload(room))
     assert.equal(startResult.ok, true)
 
     const current = await callAsPromise(handleGetCurrentRoom, 'uuid-gcr-host')
@@ -1834,7 +1895,7 @@ test('start_game: 게임 시작 후 공개방 목록에 그 방이 더 이상 �
     const io = createFakeIo([hostSocket])
     const { room } = await setupReadyRoomForStart(io, 'uuid-list-host', 'uuid-list-joiner', readyRoomHandlers)
 
-    const startResult = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-list-host')
+    const startResult = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-list-host', startPayload(room))
     assert.equal(startResult.ok, true)
 
     const list = await callAsPromise(handleGetPublicRooms)
@@ -1973,7 +2034,7 @@ for (const failureStage of ['preflight', 'payload']) {
         const guestId = 'uuid-private-guest'
         const host = createFakeSocket(hostId)
         const io = createFakeIo([host])
-        const { joinerSocket } = await setupReadyRoomForStart(io, hostId, guestId, readyRoomHandlers)
+        const { joinerSocket, room } = await setupReadyRoomForStart(io, hostId, guestId, readyRoomHandlers)
         const before = JSON.parse(JSON.stringify(await callAsPromise(handleGetCurrentRoom, hostId)))
         fakeGetGameStartLoadouts = async (ids) => Object.fromEntries(ids.map((id) => [id, {
             profilePhotoId: 'player-profile-드워프', profileBorderId: 'profile-border-귀족',
@@ -1982,7 +2043,7 @@ for (const failureStage of ['preflight', 'payload']) {
         }]))
         if (failureStage === 'preflight') joinerSocket.connected = false
         else t.mock.method(gameSession, 'buildGameStartedPayload', () => { throw new Error('injected payload failure') })
-        const failed = await callAsPromise(handleStartGame, io, host, hostId)
+        const failed = await callAsPromise(handleStartGame, io, host, hostId, startPayload(room))
         assert.equal(failed.ok, false)
         assert.equal(failed.code, failureStage === 'preflight' ? 'PARTICIPANT_UNAVAILABLE' : 'INTERNAL_ERROR')
         for (const id of [hostId, guestId]) {
@@ -1996,7 +2057,7 @@ for (const failureStage of ['preflight', 'payload']) {
         assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0)
         joinerSocket.connected = true
         t.mock.restoreAll()
-        const retried = await callAsPromise(handleStartGame, io, host, hostId)
+        const retried = await callAsPromise(handleStartGame, io, host, hostId, startPayload(room))
         assert.equal(retried.ok, true)
         for (const socket of [host, joinerSocket]) {
             const state = socket.emitted.find((event) => event.event === 'game_started').payload.state

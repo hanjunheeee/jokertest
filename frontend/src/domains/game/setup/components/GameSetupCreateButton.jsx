@@ -13,11 +13,23 @@ const CREATE_GAME_LABEL_CLASS =
  * 생성 요청이 진행 중인 동안 disabled로 중복 클릭을 막습니다 — 이건 UX 보조일 뿐이고,
  * 실제 동시 요청 방지는 서버의 pendingRoomTransitions 잠금이 담당한다.
  */
-export default function GameSetupCreateButton({ onClick, disabled = false }) {
+export default function GameSetupCreateButton({
+  onClick,
+  disabled = false,
+  // F-20: 같은 버튼을 방 생성과 설정 저장 두 모드에서 쓴다. 라벨과 aria-label을 갈라 두면
+  // 저장 화면에서 "게임 만들기"를 읽어주는 어긋남이 생기므로 호출부가 함께 넘긴다.
+  label = "게임 만들기",
+  ariaLabel = label,
+  // 진행 중일 때 보여줄 라벨. 주지 않으면 라벨은 그대로 두고 disabled로만 표시한다.
+  busy = false,
+  busyLabel = null,
+}) {
+  const displayLabel = busy && busyLabel ? busyLabel : label
   return (
     <button
       type="button"
-      aria-label="게임 만들기"
+      aria-label={ariaLabel}
+      aria-busy={busy || undefined}
       onClick={onClick}
       disabled={disabled}
       className={CREATE_GAME_BTN_CLASS}
@@ -28,7 +40,7 @@ export default function GameSetupCreateButton({ onClick, disabled = false }) {
         alt=""
         className="block h-auto w-full select-none"
       />
-      <span className={CREATE_GAME_LABEL_CLASS}>게임 만들기</span>
+      <span className={CREATE_GAME_LABEL_CLASS}>{displayLabel}</span>
     </button>
   )
 }

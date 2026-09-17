@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   MATCHING_PARTY_SLOTS_DUMMY_10,
@@ -8,6 +8,7 @@ import { useMatchingRoom } from "./useMatchingRoom"
 import { useMatchingStore } from "../store/matchingStore"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
 import { getSocket } from "@/shared/socket/socketClient"
+import { buildRoomSettingsFormState } from "@/domains/game/setup/utils/roomSettingsForm.js"
 
 /** 매칭 대기 페이지에서 필요한 상태 계산과 페이지 이동을 묶습니다. */
 export function useMatchingPage() {
@@ -22,7 +23,13 @@ export function useMatchingPage() {
   // F-19(AC-01/AC-06): 대기방의 친구 패널이 초대를 보내려면 **검증된 방 식별자**가 필요하다.
   // useMatchingPage는 지금까지 roomId를 노출하지 않았다 — matchingStore의 실제 값을 그대로
   // 내보내고, isRoomVerified와 함께 패널에 넘긴다(검증 전에는 초대 발송이 비활성이다).
-  const { isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom } = useMatchingStore()
+  // 설정 편집 패널이 열려 있는지(방장만 열 수 있다).
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const {
+    isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom,
+    accessType, settings, settingsVersion,
+  } = useMatchingStore()
   const myUuid = useAuthStore((s) => s.user?.uuid)
   const isHost = isInRoom && myUuid === hostUuid
   // canStart는 서버가 계산해 store에 내려준 값을 그대로 쓴다(여기서 재계산하지 않음).
@@ -32,10 +39,40 @@ export function useMatchingPage() {
   const handleRoomDeleted = useCallback(() => navigate("/multiplay"), [navigate])
   const handleGameStarted = useCallback(() => navigate("/ingame"), [navigate])
 
-  const { deleteRoom, startGame, setReady, isStarting, isSettingReady, isRoomVerified } = useMatchingRoom({
+  const {
+    deleteRoom, startGame, setReady, isStarting, isSettingReady, isRoomVerified,
+    saveRoomSettings, verifyRoomSettingsResult, isSavingSettings, hasPendingSettingsResult, settingsError,
+    settingsResultNotice, dismissSettingsResultNotice,
+  } = useMatchingRoom({
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
   })
+
+  // F-20(AC-03/AC-05): 서버가 확정한 설정을 폼 상태로 변환한다. 변환이 실패하면(서버 설정이
+  // 이 화면이 표현할 수 없는 값) 기본값으로 덮어 "저장 가능한 것처럼" 보이게 하지 않고
+  // 편집 자체를 막는다 — 덮으면 방장이 건드리지도 않은 값을 저장하게 된다.
+  const settingsForm = useMemo(
+    () => buildRoomSettingsFormState({ accessType, settings }),
+    [accessType, settings],
+  )
+  // 방·설정 버전이 바뀌면 폼을 서버 최신값으로 다시 맞춘다(이전 초안을 남기지 않는다).
+  const settingsFormResetKey = `${roomId ?? ""}:${settingsVersion ?? ""}`
+
+  const canEditSettings = isInRoom && isHost && isRoomVerified && settingsForm.ok && !hasPendingSettingsResult
+  const openSettings = () => { if (canEditSettings) setSettingsOpen(true) }
+  const closeSettings = () => setSettingsOpen(false)
+
+  // 방장이 아니게 되거나 검증이 풀리면 편집 패널을 닫는다 — 열린 채로 두면 이미 권한이 없는
+  // 초안을 계속 보게 된다(저장은 서버가 어차피 거부한다).
+  useEffect(() => {
+    if (settingsOpen && !canEditSettings) setSettingsOpen(false)
+  }, [settingsOpen, canEditSettings])
+
+  const submitSettings = async (formState) => {
+    const result = await saveRoomSettings(formState)
+    if (result.ok) setSettingsOpen(false)
+    return result
+  }
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
@@ -86,5 +123,24 @@ export function useMatchingPage() {
     startGame,
     deleteRoom,
     handleBack,
+    // F-20: 대기방 설정 편집. 비방장·미검증·결과 미확인 중에는 진입 자체가 열리지 않는다.
+    settingsOpen,
+    openSettings,
+    closeSettings,
+    canEditSettings,
+    settingsForm,
+    settingsFormResetKey,
+    submitSettings,
+    isSavingSettings,
+    hasPendingSettingsResult,
+    verifyRoomSettingsResult,
+    settingsError,
+    // 결과 확인까지 마쳤는데도 적용 여부를 알 수 없을 때 대기방에 남는 안내(A-07).
+    settingsResultNotice,
+    dismissSettingsResultNotice,
+    // 비방장도 현재 설정을 읽을 수 있도록 서버 확정값을 그대로 노출한다(편집은 불가).
+    roomSettings: settings,
+    roomSettingsVersion: settingsVersion,
+    roomAccessType: accessType,
   }
 }

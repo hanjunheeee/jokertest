@@ -9,25 +9,11 @@
  * @returns {object} create_room emit에 실릴 payload
  */
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
-import { ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../constants/gameSetupOptions.js"
+// F-20: 직업별 밤 시간의 "지정 여부" 판정은 생성·수정 두 경로가 같아야 한다 — 그 규칙 하나를
+// roomSettingsForm.js가 소유하고 여기서는 그대로 쓴다.
+import { collectSpecifiedRoleNightActionTimes } from "./roomSettingsForm.js"
 
-/**
- * 직업별 밤 제한시간 스테퍼 값을 서버 payload 형태({역할키: 초})로 모읍니다.
- * 스테퍼 자체가 없는 상태(구버전 화면·직업별 설정을 아예 그리지 않는 호출부)에서는 키를 하나도
- * 만들지 않고, 그러면 payload에 필드가 실리지 않아 서버가 nightActionTime으로 폴백합니다.
- * roleCounts와 같은 원칙으로 값은 보정하지 않고 그대로 싣습니다 — 잘못된 값은 서버가 거부해야
- * 하며, 여기서 조용히 고치면 사용자가 지정한 값과 달라집니다.
- */
-function collectRoleNightActionTimes(ranges) {
-  const roleNightActionTimes = {}
-  for (const { role, id } of ROLE_NIGHT_ACTION_TIME_OPTIONS) {
-    if (!Object.hasOwn(ranges ?? {}, id)) continue
-    roleNightActionTimes[role] = ranges[id]
-  }
-  return roleNightActionTimes
-}
-
-export function buildCreateRoomPayload({ checks, ranges, roleComposition }) {
+export function buildCreateRoomPayload({ checks, ranges, roleComposition, specifiedRoleNightActionTimes }) {
   const mode =
     roleComposition?.mode === ROLE_COMPOSITION_MODES.CUSTOM
       ? ROLE_COMPOSITION_MODES.CUSTOM
@@ -48,10 +34,11 @@ export function buildCreateRoomPayload({ checks, ranges, roleComposition }) {
     roleCompositionMode: mode,
   }
 
-  const roleNightActionTimes = collectRoleNightActionTimes(ranges)
-  // 하나도 없으면 필드 자체를 만들지 않는다 — 빈 객체를 보내면 "전 직업 폴백"과 "지정했지만
-  // 아무 직업도 고르지 않음"이 서버 입장에서 구별되지 않는다.
-  if (Object.keys(roleNightActionTimes).length > 0) payload.roleNightActionTimes = roleNightActionTimes
+  // specifiedRoleNightActionTimes를 주지 않으면(초기 생성 화면) 지금까지처럼 화면에 있는
+  // 스테퍼 전부를 싣는다 — 기존 생성 기본값 계약이 그대로 유지된다. 서버 설정에서 복원한
+  // 폼(F-20 편집·F-24 복원)만 "원래 지정돼 있던 역할"을 넘겨 없던 override가 생기지 않게 한다.
+  const roleNightActionTimes = collectSpecifiedRoleNightActionTimes(ranges, specifiedRoleNightActionTimes)
+  if (roleNightActionTimes !== null) payload.roleNightActionTimes = roleNightActionTimes
 
   if (mode === ROLE_COMPOSITION_MODES.AUTO) {
     // AUTO에서는 roleCounts를 아예 만들지 않는다 — CUSTOM으로 갔다가 되돌아온 경우에도
