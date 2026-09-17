@@ -34,6 +34,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 // 실제 화면 코드가 쓰는 확인 대화상자/경고는 시험에서 기록만 한다(사용자 입력을 기다리면
 // 프로세스가 멈춘다). 기록해 두고 "경고가 났는가"도 함께 단언한다.
 const alerts = []
+// Match useMatchingPage's memoized navigation callbacks: do not restart room sync on each render.
+const roomCallbacks = { onRoomDeleted: () => {}, onGameStarted: () => {} }
 installDomGlobal("alert", (message) => alerts.push(message))
 installDomGlobal("confirm", () => false)
 
@@ -247,7 +249,7 @@ test("편집 화면의 제출은 실제 서버 계약을 통과해 저장되고 
 test("useMatchingRoom 저장은 서버를 거쳐 store의 설정·버전·준비 상태를 갱신한다", async () => {
   const { room } = await setupRoom("host-a", { maxPlayers: 8, jokerCount: 2 })
 
-  const { result } = renderHook(() => useMatchingRoom({ onRoomDeleted: () => {}, onGameStarted: () => {} }))
+  const { result } = renderHook(() => useMatchingRoom(roomCallbacks))
   // 화면 진입 시 get_current_room으로 검증 상태가 된다.
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
   assert.equal(result.current.isRoomVerified, true, "방 검증이 끝나지 않았다")
@@ -281,7 +283,7 @@ test("비방장·미검증 상태에서는 저장 요청이 서버로 나가지 
   // 방장이 아닌 계정으로 바꾼다 — 화면 버튼과 무관하게 요청 경계 자체가 막혀야 한다.
   useAuthStore.setState({ user: { uuid: "not-host" }, isLoggedIn: true })
 
-  const { result } = renderHook(() => useMatchingRoom({ onRoomDeleted: () => {}, onGameStarted: () => {} }))
+  const { result } = renderHook(() => useMatchingRoom(roomCallbacks))
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 
   const before = socketState.socket.emittedToServer.filter(
