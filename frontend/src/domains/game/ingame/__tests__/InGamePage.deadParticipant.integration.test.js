@@ -327,6 +327,115 @@ test("F-23(SPLIT-1/AC-02): 실제 라우터에 외부 관전 경로가 없고 �
   }
 })
 
+// ── F-23(SPLIT-1/AC-02): 생산 원문 감사 ─────────────────────────────────────
+//
+// 라우트 이름만 보면 "다른 이름의 관전 버튼·모달·상태"가 남아 있어도 통과한다. 그래서 실제
+// 생산 원문(frontend/src·backend의 .js/.jsx, 시험 제외)을 전부 훑어 관전 어휘가 **실행되는
+// 코드**에 남아 있지 않은지 본다. 주석은 제거 이유·정제 정책을 설명하는 기록이므로 대상이
+// 아니고, 확정 사망한 **기존 참가자**의 선택(A-01이 보존을 명시)은 아래 허용 목록으로 남긴다.
+//
+// 어휘에서 observer 계열은 제외한다 — 이 저장소의 `observer`는 전부 DOM ResizeObserver의 지역
+// 변수이고(스크롤바·채팅 입력), 관전 기능과 무관하다. 그래서 관전 어휘와 폐기 식별자만 본다.
+const PRODUCTION_SOURCE_ROOTS = ["frontend/src", "backend"]
+const SKIPPED_DIRECTORY_NAMES = new Set(["node_modules", "__tests__", "dist", "build", "coverage", ".git"])
+const SPECTATOR_VOCABULARY = /spectat|관전|watch-?only|allowSpectators/i
+
+/** 이 줄은 주석인가(제거 이유·정책 기록은 감사 대상이 아니다). */
+function isCommentLine(line) {
+  const trimmed = line.trim()
+  return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")
+    || trimmed.startsWith("{/*") || trimmed.startsWith("*/")
+}
+
+/** 그 원문에서 **주석이 아닌** 관전 어휘 줄만 골라낸다. */
+function spectatorCodeHits(source, file) {
+  return source.split(/\r?\n/).flatMap((line, index) =>
+    (!isCommentLine(line) && SPECTATOR_VOCABULARY.test(line)
+      ? [{ file, line: index + 1, text: line.trim() }]
+      : []))
+}
+
+/**
+ * 보존 대상 — 확정 사망한 **기존 참가자**의 선택 문구다(외부 관전자 기능이 아니다).
+ * 이 목록이 비면 그 선택이 사라졌다는 뜻이므로, 아래 시험은 존재 자체도 함께 고정한다.
+ */
+const PRESERVED_SPECTATOR_TEXT_LINES = [
+  {
+    file: "frontend/src/domains/game/ingame/components/deadChoice/InGameDeadParticipantChoice.jsx",
+    text: "관전 계속하기",
+  },
+]
+
+const REPO_ROOT = new URL("../../../../../../", import.meta.url)
+
+async function collectProductionSources() {
+  const { readdir, readFile } = await import("node:fs/promises")
+  const files = []
+  const walk = async (relativeDir) => {
+    const entries = await readdir(new URL(`${relativeDir}/`, REPO_ROOT), { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (SKIPPED_DIRECTORY_NAMES.has(entry.name)) continue
+        await walk(`${relativeDir}/${entry.name}`)
+        continue
+      }
+      if (!/\.(jsx|js)$/.test(entry.name)) continue
+      const file = `${relativeDir}/${entry.name}`
+      files.push({ file, source: await readFile(new URL(file, REPO_ROOT), "utf8") })
+    }
+  }
+  for (const root of PRODUCTION_SOURCE_ROOTS) await walk(root)
+  return files
+}
+
+test("F-23(SPLIT-1/AC-02): 생산 원문 어디에도 외부 관전 UI·모달·상태가 없고 사망 참가자 선택만 남는다", async () => {
+  // 검출기 자신의 양성·음성 대조부터. 주석만 걸러 내는 구현으로 퇴화하면 아래 0건 단언이
+  // 조용히 통과하므로, 실제 코드 줄을 반드시 잡는지 먼저 고정한다.
+  assert.deepEqual(
+    spectatorCodeHits("const allowSpectators = true", "x.js").map((hit) => hit.line), [1],
+    "실행되는 코드의 관전 식별자를 검출하지 못했다",
+  )
+  assert.deepEqual(
+    spectatorCodeHits('  <button aria-label="관전 입장">관전</button>', "x.jsx").map((hit) => hit.line), [1],
+    "실행되는 코드의 관전 문구를 검출하지 못했다",
+  )
+  assert.deepEqual(spectatorCodeHits("// 관전자 허용 체크박스는 제거했다", "x.js"), [])
+  assert.deepEqual(spectatorCodeHits(" * spectatorMode는 허용 목록에 없다", "x.js"), [])
+
+  const sources = await collectProductionSources()
+  assert.ok(sources.length > 300, `생산 원문을 충분히 읽지 못했다(${sources.length}개 — 이 감사가 무력하다)`)
+  for (const root of PRODUCTION_SOURCE_ROOTS) {
+    assert.ok(sources.some((entry) => entry.file.startsWith(`${root}/`)), `${root}를 훑지 못했다`)
+  }
+  // 실제 라우터·보호 라우트·대기방 페이지가 이 감사 범위 안에 있다(감사가 비켜 가지 않았다).
+  for (const covered of [
+    "frontend/src/app/routes/index.jsx",
+    "frontend/src/shared/ui/ProtectedRoute.jsx",
+    "frontend/src/domains/game/matching/pages/GameMatchingPage.jsx",
+    "frontend/src/domains/game/ingame/pages/InGamePage.jsx",
+    "backend/socket/matchmaking.js",
+  ]) {
+    assert.ok(sources.some((entry) => entry.file === covered), `${covered}가 감사 범위 밖이다`)
+  }
+
+  const hits = sources.flatMap(({ file, source }) => spectatorCodeHits(source, file))
+  const allowed = (hit) => PRESERVED_SPECTATOR_TEXT_LINES.some(
+    (entry) => entry.file === hit.file && hit.text.includes(entry.text))
+  const leftovers = hits.filter((hit) => !allowed(hit))
+  assert.deepEqual(
+    leftovers, [],
+    `생산 코드에 외부 관전 흔적이 남아 있다:\n${leftovers.map((h) => `${h.file}:${h.line} ${h.text}`).join("\n")}`,
+  )
+
+  // 보존 대상은 실제로 남아 있어야 한다 — 관전 문자열을 일괄 삭제해 통과시키는 길을 막는다.
+  for (const entry of PRESERVED_SPECTATOR_TEXT_LINES) {
+    assert.ok(
+      hits.some((hit) => hit.file === entry.file && hit.text.includes(entry.text)),
+      `보존해야 할 사망 참가자 선택 문구(${entry.text})가 사라졌다`,
+    )
+  }
+})
+
 test("F-23(AC-06): 생존 중인 참가자에게는 사망 선택이 보이지 않는다", async () => {
   seedLiveGame({ selfAlive: true })
   const { container } = await mountInGame()
