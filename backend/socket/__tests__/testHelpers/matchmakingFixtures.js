@@ -31,6 +31,16 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
         id,
         data: { user: { uuid } },
         emitted: [],
+        /**
+         * F-23(AC-04): 이 소켓이 **실제로 받은** 사건. emitted(발신자의 전송/방송 시도 기록)와
+         * 엄격히 구분한다 — 예전 fixture는 방송을 broadcasts에만 적고 수신 소켓에는 전혀
+         * 전달하지 않아서, "제외된 소켓의 수신 0"이 프로덕션의 사실이 아니라 fixture의 사실이었다.
+         */
+        received: [],
+        /** 지정 이벤트를 실제로 몇 번 받았는가. */
+        countReceived(event) {
+            return socket.received.filter((entry) => entry.event === event).length
+        },
         joined: [],
         left: [],
         joinCalled,
@@ -62,11 +72,33 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
                 throw new Error(`emit 실패(테스트 주입): ${event}`)
             }
             socket.emitted.push({ event, payload })
+            // F-23(AC-04): 직접 전달도 **실제 수신**으로 기록한다. 방송 시도 기록(emitted의
+            // broadcastTo, io.broadcasts)과 구분되는 별도 목록이라, "이 소켓이 실제로 받았는가"를
+            // 시험이 한 기준으로 셀 수 있다.
+            socket.received.push({ event, payload })
+        },
+        /**
+         * F-23(AC-04): io/발신 소켓의 **방송**으로 이 소켓에 도착한 사건.
+         *
+         * 수신 기록은 남기되 `viaBroadcast: true`로 표시한다 — "이 사건이 특정 소켓에만 개별
+         * 전달됐는가"를 보는 기존 은폐 시험(gameSession.nightTurns)이 방송과 표적 전달을
+         * 계속 구별할 수 있어야 하기 때문이다. 전달 자체는 실제 emit과 동일하게 기록된다.
+         */
+        receiveBroadcast(event, payload) {
+            if (socket.emitShouldThrowOn === event) {
+                throw new Error(`emit 실패(테스트 주입): ${event}`)
+            }
+            socket.emitted.push({ event, payload, viaBroadcast: true })
+            socket.received.push({ event, payload, viaBroadcast: true })
         },
         to(roomId) {
             return {
                 emit(event, payload) {
+                    // 발신자의 **방송 시도** 기록이다(기존 계약 그대로 보존한다). 실제 수신자
+                    // 전달은 아래 io가 담당한다 — 여기서 기록만 남기고 socket.io를 통해
+                    // 연결된 수신자에게도 실제로 흘려보낸다.
                     socket.emitted.push({ event, payload, broadcastTo: roomId })
+                    socket.deliverBroadcast?.(roomId, event, payload, socket.id)
                 },
             }
         },
@@ -90,13 +122,45 @@ function createFakeSocket(uuid, { id = `sock-${uuid}`, joinShouldReject = false,
 function createFakeIo(sockets = []) {
     const socketMap = new Map(sockets.map((s) => [s.id, s]))
     const broadcasts = []
-    return {
+
+    /**
+     * F-23(AC-04): 방송을 **실제 수신자에게 전달**한다.
+     *
+     * 예전 fixture는 broadcasts 배열에 기록만 남기고 어떤 소켓의 emit도 부르지 않았다. 그래서
+     * "제외된 소켓은 받지 않는다"는 시험이 프로덕션의 사실이 아니라 fixture의 사실이었고,
+     * 반대로 제외 로직이 통째로 사라져도 시험은 그대로 통과했다.
+     *
+     * 지금은 현재 채널 가입자·연결 상태·except 제외·발신자 제외를 실제로 반영해 각 수신자의
+     * emit을 부른다. 같은 사건은 한 수신자에게 한 번만 간다. 한 수신자의 전송 예외가 다른
+     * 정상 수신자를 누락시키지 않는다(프로덕션의 개별 전달 관례와 같다).
+     *
+     * @param {string|null} roomId null이면 연결된 모든 소켓(io.emit)이 대상이다.
+     */
+    const deliver = (roomId, event, payload, excludedIds = new Set(), senderId = null) => {
+        for (const s of [...socketMap.values()]) {
+            if (typeof s?.id !== 'string') continue
+            if (s.id === senderId) continue
+            if (excludedIds.has(s.id)) continue
+            if (s.connected === false) continue
+            if (roomId !== null && !s.rooms?.has?.(roomId)) continue
+            const receive = typeof s.receiveBroadcast === 'function' ? s.receiveBroadcast : s.emit
+            if (typeof receive !== 'function') continue
+            try {
+                receive.call(s, event, payload)
+            } catch {
+                // 한 수신자의 실패가 나머지 전달을 멈추지 않는다(emitShouldThrowOn 주입 포함).
+            }
+        }
+    }
+
+    const io = {
         sockets: { sockets: socketMap },
         broadcasts,
         emit(event, payload) {
             // io.emit()은 특정 room이 아니라 연결된 모든 소켓에 보내는 전역 브로드캐스트다.
             // roomId를 null로 남겨 room 단위 브로드캐스트(to().emit())와 구분해서 기록한다.
             broadcasts.push({ roomId: null, event, payload })
+            deliver(null, event, payload)
         },
         to(roomId) {
             // F-21(AC-06): 실제 Socket.IO의 BroadcastOperator처럼 except()로 좁힐 수 있다.
@@ -114,6 +178,7 @@ function createFakeIo(sockets = []) {
                         roomId, event, payload,
                         ...(excluded.size > 0 ? { excluded: [...excluded].sort() } : {}),
                     })
+                    deliver(roomId, event, payload, excluded)
                 },
             })
             return makeOperator(new Set())
@@ -126,6 +191,24 @@ function createFakeIo(sockets = []) {
             }
         },
     }
+
+    /**
+     * socket.to(room).emit()의 실제 전달을 io가 대신 수행한다(발신자는 제외).
+     *
+     * 소켓은 자기 혼자서는 다른 수신자를 알 수 없으므로, io에 등록될 때 이 연결기를 심는다.
+     * 시험 중간에 io.sockets.sockets.set(...)으로 추가·교체되는 소켓도 같은 전달기를 갖는다.
+     */
+    const attach = (socket) => {
+        if (!socket || typeof socket !== 'object') return socket
+        socket.deliverBroadcast = (roomId, event, payload, senderId) =>
+            deliver(roomId, event, payload, new Set(), senderId)
+        return socket
+    }
+    for (const s of socketMap.values()) attach(s)
+    const originalSet = socketMap.set.bind(socketMap)
+    socketMap.set = (id, socket) => originalSet(id, attach(socket))
+
+    return io
 }
 
 function validSettingsPayload(overrides = {}) {

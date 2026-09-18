@@ -188,8 +188,72 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
  * F-21(AC-06): 세션 채널 방송의 유일한 경계. 전달 제외가 없으면 기존 io.to(channelId).emit과
  * 완전히 같다 — 정상 경로의 동작은 바뀌지 않는다.
  */
-function emitToGameChannel(io, channelId, event, payload) {
-    channelMembership.emitToChannel(io, channelId, event, payload)
+/**
+ * F-23(AC-04): **지금 이 소켓이 그 판의 공개 상태를 받을 자격이 있는가.**
+ *
+ * 다섯 가지를 모두 물어야 한다. 하나라도 빼면 그 자리가 곧 "게임 참가자가 아닌 사용자가
+ * 공개 상태를 구독하는" 통로가 된다:
+ *
+ *   1. **참여 중인가**(core). roster에 남아 있다는 것만으로는 부족하다 — 사망자의 roster는
+ *      결과·재접속을 위해 보존되므로, 방금 이탈을 커밋한 계정도 여전히 players에 있다.
+ *      isParticipatingInSession은 roster·isParticipating·forfeiture를 보고 **alive는 보지
+ *      않는다** — 그래서 "관전 중인 사망 참가자"는 그대로 통과한다(AC-05).
+ *   2. 연결돼 있는가.
+ *   3. 그 계정의 **canonical 소켓**인가. 같은 계정의 옛 소켓이 채널에 남아 있어도 받지 못한다.
+ *      registry가 아직 주입되지 않은 환경에서는 이 축을 묻지 않는다(그 축이 없다는 뜻이지
+ *      "자격 없음"이라는 뜻이 아니다 — 여기서 fail-closed하면 정상 전달이 전부 끊긴다).
+ *   4. 그 판의 채널에 실제로 가입해 있는가.
+ *   5. 그 채널의 **전달 제외** 목록에 있지 않은가(떼지 못한 옛 구독·확정 전 입장자).
+ */
+function isEligibleSessionRecipient(session, socket, uuid) {
+    if (!session || !socket) return false
+    if (typeof uuid !== 'string' || uuid.length === 0) return false
+    if (!gameSessionCore.isParticipatingInSession(session, uuid)) return false
+    if (socket.connected !== true) return false
+    if (onlineUsersRegistry instanceof Map && !isCurrentSocketForUuid(uuid, socket)) return false
+    if (!socket.rooms?.has?.(session.channelId)) return false
+    if (typeof socket.id === 'string'
+        && channelMembership.isSocketExcludedFromChannel(session.channelId, socket.id)) {
+        return false
+    }
+    return true
+}
+
+/**
+ * 채널에는 물리적으로 가입해 있지만 위 자격을 잃은 소켓들의 id.
+ *
+ * 채널 가입만으로 방송을 받게 두면, 이탈 커밋 직후 채널 정리(비동기 leave)가 끝나기 전의
+ * 첫 공개 사건이 그대로 이탈자에게 간다 — AC-04가 막으려는 바로 그 구간이다.
+ */
+function collectIneligibleChannelSocketIds(io, session) {
+    const ineligible = []
+    const registry = io?.sockets?.sockets
+    if (!registry || typeof registry.values !== 'function') return ineligible
+    for (const s of registry.values()) {
+        if (typeof s?.id !== 'string') continue
+        if (!s.rooms?.has?.(session.channelId)) continue
+        if (isEligibleSessionRecipient(session, s, s.data?.user?.uuid ?? null)) continue
+        ineligible.push(s.id)
+    }
+    return ineligible
+}
+
+/**
+ * 게임 방송의 유일한 경계.
+ *
+ * session을 받으면(정상 경로) 그 판의 자격 없는 채널 구성원을 **명시적으로 제외**한 뒤
+ * 공통 채널 경계로 넘긴다. channelId 문자열만 받는 옛 호출 형태도 그대로 받아들이되, 그
+ * 경로에는 세션 문맥이 없어 제외를 계산하지 못한다.
+ */
+function emitToGameChannel(io, sessionOrChannelId, event, payload) {
+    const session = typeof sessionOrChannelId === 'string' ? null : sessionOrChannelId
+    const channelId = session ? session.channelId : sessionOrChannelId
+    if (typeof channelId !== 'string' || channelId.length === 0) return
+    const exceptSocketIds = session ? collectIneligibleChannelSocketIds(io, session) : []
+    channelMembership.emitToChannel(
+        io, channelId, event, payload,
+        exceptSocketIds.length > 0 ? { exceptSocketIds } : null,
+    )
 }
 
 /**
@@ -607,7 +671,7 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
 
     if (result.transitioned) {
         try {
-            emitToGameChannel(io, result.session.channelId,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session))
+            emitToGameChannel(io, result.session,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session))
         } catch (err) {
             console.error('[phase 변경 알림 전송 실패]', err)
         }
@@ -692,7 +756,7 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
 
     if (result.transitioned) {
         try {
-            emitToGameChannel(io, result.session.channelId,
+            emitToGameChannel(io, result.session,
                 'day_phase_changed',
                 gameSessionCore.buildDayPhaseChangedPayload(result.session),
             )
@@ -772,7 +836,7 @@ function resolveNightTurnDurationMs(run, role) {
 /** 밤 턴 방송은 참가자 전원이 이미 가입해 있는 세션 channel에 한 번만 보낸다(수신자별로 달라지는 값이 없다). */
 function emitNightTurnEvent(run, event, payload) {
     try {
-        emitToGameChannel(run.io, run.session.channelId,event, payload)
+        emitToGameChannel(run.io, run.session, event, payload)
     } catch (err) {
         console.error('[밤 턴 방송 실패]', { code: 'DELIVERY_ERROR', event, gameId: run.session.id })
     }
@@ -957,7 +1021,7 @@ const dayPhaseRuns = new Map()
 /** 낮 하위 구간 전이는 참가자 전원이 이미 가입해 있는 세션 channel에 한 번만 방송한다. */
 function emitDayPhaseEvent(run, event, payload) {
     try {
-        emitToGameChannel(run.io, run.session.channelId,event, payload)
+        emitToGameChannel(run.io, run.session, event, payload)
     } catch (err) {
         console.error('[낮 페이즈 방송 실패]', { code: 'DELIVERY_ERROR', event, gameId: run.session.id })
     }
@@ -1363,6 +1427,9 @@ function emitSelfSubmissionProgress(io, session, onlyUuid = null) {
         if (player.isParticipating === false) continue
         const targetSocket = getSocketForUuid(io, player.uuid)
         if (!targetSocket) continue
+        // F-23(AC-04): 개인 진행 상태도 같은 자격 경계를 **전송 시점에** 다시 통과해야 한다 —
+        // canonical 소켓이더라도 그 판의 채널을 잃었거나 전달에서 배제된 연결이면 보내지 않는다.
+        if (!isEligibleSessionRecipient(session, targetSocket, player.uuid)) continue
         try {
             targetSocket.emit('session_self_progress', {
                 gameId: session.id,
@@ -1459,7 +1526,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
         }
         if (payload) {
             try {
-                emitToGameChannel(io, session.channelId,'player_eliminated', payload)
+                emitToGameChannel(io, session,'player_eliminated', payload)
             } catch (err) {
                 console.error('[참가자 이탈 처리 실패]', { code: 'DELIVERY_ERROR', uuid, gameId: session.id })
             }
@@ -1483,7 +1550,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     }
     if (participationPayload) {
         try {
-            emitToGameChannel(io, session.channelId, 'session_participation_changed', participationPayload)
+            emitToGameChannel(io, session, 'session_participation_changed', participationPayload)
         } catch (err) {
             console.error('[참가자 이탈 처리 실패]', { code: 'PARTICIPATION_DELIVERY_ERROR', uuid, gameId: session.id })
         }
@@ -1500,7 +1567,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     // ── 3) 피고 이탈로 취소된 재판 ────────────────────────────────────────────
     if (applied.tribunalCancelled) {
         try {
-            emitToGameChannel(io, session.channelId,
+            emitToGameChannel(io, session,
                 'tribunal_vote_resolved',
                 gameSessionCore.buildTribunalVoteResolvedPayload(session),
             )
@@ -1554,7 +1621,7 @@ function advancePhaseAfterDeparture(io, session, applied) {
 
     if (advanced.transitioned === 'DAY') {
         try {
-            emitToGameChannel(io, session.channelId,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session))
+            emitToGameChannel(io, session,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session))
         } catch (err) {
             console.error('[이탈 후 단계 진행 실패]', { code: 'PHASE_DELIVERY_ERROR', gameId: session.id })
         }
@@ -1568,7 +1635,7 @@ function advancePhaseAfterDeparture(io, session, applied) {
 
     if (advanced.transitioned === 'DAY_VOTE') {
         try {
-            emitToGameChannel(io, session.channelId,'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
+            emitToGameChannel(io, session,'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
         } catch (err) {
             console.error('[이탈 후 단계 진행 실패]', { code: 'DAY_PHASE_DELIVERY_ERROR', gameId: session.id })
         }
@@ -1900,11 +1967,12 @@ function resolveChatRecipientSockets(io, session, channel) {
     const eligibleUuids = new Set(gameSessionCore.getChatRecipientUuids(session, channel))
     const sockets = []
     for (const s of io.sockets.sockets.values()) {
-        const uuid = s.data?.user?.uuid
-        if (!uuid) continue
+        const uuid = s.data?.user?.uuid ?? null
+        // F-23(AC-04): 같은 판의 **참가 자격**을 먼저 적용하고(이탈자·옛 소켓·제외된 구독을
+        // 걸러낸 뒤) 그 위에 core의 채널별 수신 권한을 교차한다. 역할별 권한(사망한 광대의 팀
+        // 대화 등) 자체는 core가 그대로 소유한다 — 여기서 새로 넓히거나 좁히지 않는다.
+        if (!isEligibleSessionRecipient(session, s, uuid)) continue
         if (!eligibleUuids.has(uuid)) continue
-        if (s.connected !== true) continue
-        if (!s.rooms?.has(session.channelId)) continue
         sockets.push(s)
     }
     return sockets
@@ -1926,11 +1994,11 @@ function resolveJokerTeammateSockets(io, session, channel = gameSessionCore.CHAT
 function resolveSessionParticipantSockets(io, session) {
     const sockets = []
     for (const s of io.sockets.sockets.values()) {
-        const uuid = s.data?.user?.uuid
-        if (!uuid) continue
-        if (!session.players.has(uuid)) continue
-        if (s.connected !== true) continue
-        if (!s.rooms?.has(session.channelId)) continue
+        // F-23(AC-04): 예전에는 `session.players.has(uuid)`만 물었다. 사망자의 roster는 결과·
+        // 재접속을 위해 보존되므로, **방금 이탈을 커밋한 계정**도 여전히 players에 있었고 채널
+        // 정리(비동기 leave)가 끝나기 전의 첫 공개 판정이 그대로 전달됐다. 공통 자격 경계는
+        // 참여 여부·canonical 소켓·전달 제외까지 함께 묻되 alive는 묻지 않는다(AC-05 보존).
+        if (!isEligibleSessionRecipient(session, s, s.data?.user?.uuid ?? null)) continue
         sockets.push(s)
     }
     return sockets
@@ -3046,7 +3114,7 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     }
 
     try {
-        emitToGameChannel(io, session.channelId,'game_ended', { gameId: session.id, reason })
+        emitToGameChannel(io, session,'game_ended', { gameId: session.id, reason })
     } catch (err) {
         console.error('[GameSession 종료 알림 전송 실패]', err)
     }
@@ -3074,6 +3142,14 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
  * 동치로 보고 멱등하게 성공 응답한다 — 다른(어쩌면 새로 시작된) 세션을 여기서 잘못
  * 건드리지 않는다.
  */
+/**
+ * F-23(AC-06): 이탈 커밋이 실패했지만 **요청자가 원한 최종 상태에는 이미 도달한** 코드들.
+ *
+ * 이 둘만 성공 ACK로 바꾼다 — 나머지(INTERNAL_ERROR 등)는 실제 실패이고, 성공으로 답하면
+ * 클라이언트가 아직 참여 중인 판을 정리하고 로비로 간다.
+ */
+const IDEMPOTENT_DEPARTURE_CODES = new Set(['ALREADY_LEFT', 'NOT_A_PARTICIPANT'])
+
 function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     if (typeof callback !== 'function') return
     if (!isCurrentSocketForUuid(uuid, socket)) {
@@ -3106,8 +3182,26 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     const activeSession = gameSessionCore.getActiveSessionForDeparture(uuid, normalizedGameId)
     if (activeSession && activeSession.phase !== 'ENDED') {
         const departed = applyParticipantDeparture(io, activeSession, uuid, { reason: 'PLAYER_LEFT' })
-        // 이미 그 판에서 빠져 있었다면(중복 나가기) 기존 멱등 성공 계약을 그대로 유지한다.
-        respond(callback, { ok: true })
+        /**
+         * F-23(AC-06): **실패를 성공 ACK로 바꾸지 않는다.**
+         *
+         * 예전에는 결과와 무관하게 항상 { ok: true }였다. 그래서 커밋이 실제로 실패한 경우
+         * (core 예외 → INTERNAL_ERROR, 사망 커밋 실패)에도 클라이언트는 성공으로 읽고 화면을
+         * 정리한 뒤 로비로 갔다 — 서버에는 여전히 참여 중인 참가자가 남는다.
+         *
+         * 다만 "이미 빠져 있었다"는 실패가 아니다. 중복 나가기·유예 만료 뒤의 재시도·늦은
+         * 재전송은 모두 요청자가 원한 최종 상태에 이미 도달해 있으므로 기존 멱등 성공 계약을
+         * 그대로 유지한다(그 구분이 없으면 정상적인 재시도가 오류로 보인다).
+         */
+        if (departed.ok || IDEMPOTENT_DEPARTURE_CODES.has(departed.code)) {
+            respond(callback, { ok: true })
+        } else {
+            respond(callback, {
+                ok: false,
+                code: departed.code ?? 'INTERNAL_ERROR',
+                message: '요청을 처리하지 못했습니다.',
+            })
+        }
         if (departed.ok) {
             // 나간 본인의 소켓만 채널에서 내보낸다 — 남은 참가자의 방송 경로는 그대로다.
             detachSocketFromChannel(
@@ -3629,6 +3723,10 @@ module.exports = {
         resolveJokerTeammateSockets,
         resolveChatRecipientSockets,
         resolveSessionParticipantSockets,
+        // F-23(AC-04): 게임 방송의 유일한 경계와 그 자격 판정. 시험이 원시 io.to()로 흉내내면
+        // 어떤 제외도 지나지 않아 "제외가 동작하는가"를 전혀 검사하지 못한다.
+        emitToGameChannel,
+        isEligibleSessionRecipient,
         startNightTurnSequence,
         stopNightTurnSequence,
         computeEmptyTurnDelayMs,

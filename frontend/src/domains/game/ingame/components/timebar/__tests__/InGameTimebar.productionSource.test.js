@@ -133,6 +133,11 @@ test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연
   }
 
   // 두 오버레이가 떠 있는 동안에도 아래 게임 표면은 잠긴다(오버레이 스택의 판단에 더해서만).
-  assert.match(source, /const surfaceLocked = interactionBlocked \|\| killReveal\.open \|\| nightPrivateResult\.open/)
+  // F-23(AC-06): 확정 사망 선택창도 같은 잠금에 참여한다 — 선택을 받는 동안 뒤의 보드·채팅·
+  // 투표가 눌리면 안 된다. 줄바꿈이 들어갈 수 있으므로 공백을 유연하게 본다.
+  assert.match(
+    source,
+    /const surfaceLocked =\s*interactionBlocked \|\| killReveal\.open \|\| nightPrivateResult\.open \|\| deadChoiceOpen/,
+  )
   assert.match(source, /inert=\{surfaceLocked \|\| undefined\}/)
 })

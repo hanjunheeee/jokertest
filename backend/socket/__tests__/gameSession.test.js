@@ -1753,12 +1753,26 @@ test('submit_game_chat_message: 사망 발신자는 NOT_ELIGIBLE로 거부되고
     assert.equal(io.broadcasts.length, 0)
 })
 
-test('submit_game_chat_message: 같은 uuid의 정상 소켓이 여럿이어도 각 소켓이 정확히 1건씩 받고 중복 전달이 없다', () => {
+/**
+ * F-23(AC-04) 계약 변경: **canonical 소켓 하나에만** 전달한다.
+ *
+ * 이전 계약은 "같은 uuid의 소켓이 여럿이면 각각 1건씩"이었다. 그 계약은 같은 계정의 **교체된
+ * 옛 소켓**이 채널에 남아 있는 동안 그 판의 공개 상태를 계속 받는 통로였다 — 재접속으로
+ * registry가 새 소켓을 가리킨 뒤에도, 옛 소켓의 채널 가입이 (비동기 leave가 끝나기 전까지)
+ * 그대로 남아 있기 때문이다.
+ *
+ * 이 저장소의 모든 명령 핸들러는 이미 isCurrentSocketForUuid로 비-canonical 소켓을 거부한다
+ * (그 소켓으로는 투표도 채팅 전송도 나가기도 할 수 없다). 수신만 열어 두면 "아무 것도 할 수
+ * 없지만 모든 것을 보는" 연결이 남는데, 그것이 AC-04가 막으려는 구독 그 자체다. 이제 전달도
+ * 같은 기준을 쓴다.
+ */
+test('submit_game_chat_message: 같은 uuid라도 canonical이 아닌 소켓은 받지 않고, canonical 소켓은 정확히 1건씩 받는다', () => {
     const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs5a', 'gcs5b', 'gcs5c'], {
         roomId: 'room-gcs-5',
         phase: 'DAY',
     })
-    // 같은 참가자의 두 번째 소켓(다른 socket id)도 같은 channel에 들어와 있다.
+    // 같은 참가자의 두 번째 소켓(다른 socket id)도 같은 channel에 들어와 있다 — 그러나 registry가
+    // 가리키는 canonical 소켓은 여전히 `sock-gcs5b`다.
     const secondSocket = createFakeSocket('gcs5b', { id: 'sock-gcs5b-2' })
     secondSocket.rooms.add(session.channelId)
     io.sockets.sockets.set(secondSocket.id, secondSocket)
@@ -1771,10 +1785,11 @@ test('submit_game_chat_message: 같은 uuid의 정상 소켓이 여럿이어도 
     for (const uuid of ['gcs5a', 'gcs5b', 'gcs5c']) {
         assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1)
     }
-    assert.equal(deliveredCount(secondSocket, DAY_CHAT_EVENT), 1)
-    // 전체 전달 건수가 수신 소켓 수와 정확히 같다 — 어느 소켓도 두 번 받지 않는다.
+    assert.equal(deliveredCount(secondSocket, DAY_CHAT_EVENT), 0,
+        'canonical이 아닌 같은 계정의 소켓이 공개 채팅을 받았다')
+    // 전체 전달 건수가 canonical 수신 소켓 수와 정확히 같다 — 어느 소켓도 두 번 받지 않는다.
     const total = [...io.sockets.sockets.values()].reduce((sum, s) => sum + deliveredCount(s, DAY_CHAT_EVENT), 0)
-    assert.equal(total, 4)
+    assert.equal(total, 3)
 })
 
 test('submit_game_chat_message: 다른 GameSession의 소켓에는 전달되지 않는다(교차 오염 없음)', () => {
@@ -2165,6 +2180,101 @@ test('leave_game_session: 명시적 이탈은 ack {ok:true}이고 이탈자만 �
     // 소속이 풀리는 것은 이탈자뿐이다.
     assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-host'), false)
     assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-joiner'), true)
+})
+
+// ---------------------------------------------------------------------------
+// F-23(AC-04/AC-06) — 이탈 커밋 직후의 전달 경계와 실패 ACK
+// ---------------------------------------------------------------------------
+
+test('F-23(AC-04): 이탈 커밋 직후 첫 공개 사건부터 이탈자의 실제 수신은 0이고, 잔류자는 정상 수신한다', async () => {
+    const { io, joinerSocket, gameId, channelId } =
+        await startRealTwoPlayerSession('leave-deliver-host', 'leave-deliver-joiner')
+    // 실제 registry가 가리키는 canonical 소켓을 그대로 쓴다(관례상 `sock-${uuid}`).
+    const leaverSocket = io.sockets.sockets.get('sock-leave-deliver-host')
+    assert.ok(leaverSocket, '이탈자 소켓이 io에 등록돼 있어야 한다')
+
+    /**
+     * **채널에서 떼는 일을 붙잡아 둔다.**
+     *
+     * 실제 adapter의 leave는 비동기다. 그 완료 전에 커밋 직후의 공개 사건이 먼저 나가는
+     * 구간이 존재하고, 그 구간이 바로 "이미 빠진 참가자가 그 판의 공개 상태를 계속 받는"
+     * 자리다. 여기서는 leave를 영영 끝내지 않아 그 최악의 구간을 고정한다.
+     */
+    leaverSocket.leave = () => new Promise(() => {})
+
+    // 커밋 뒤에도 그 판을 가리킬 수 있도록 **살아 있는 세션 객체**를 미리 잡아 둔다
+    // (상태 스냅샷은 players가 배열이라 프로덕션 경계의 입력이 될 수 없다).
+    const session = gameSessionCore.getActiveSessionForDeparture('leave-deliver-host', gameId)
+    assert.ok(session, '전제: 이탈 전에는 활성 세션이 있어야 한다')
+
+    const receivedBefore = leaverSocket.received.length
+    handleLeaveGameSession(io, leaverSocket, 'leave-deliver-host', { gameId }, countingCallback().callback)
+
+    // 커밋 직후의 공개 사건(사망·참여 변화)은 이미 나갔다 — 그 어느 것도 이탈자에게 닿지 않아야 한다.
+    assert.equal(leaverSocket.rooms.has(channelId), true, '전제: leave가 아직 끝나지 않아 채널에 남아 있다')
+    assert.equal(
+        leaverSocket.received.length, receivedBefore,
+        '이탈 커밋 직후의 공개 사건이 이탈자에게 전달됐다',
+    )
+    // 잔류자는 같은 사건을 실제로 받는다(양성 대조 — fixture가 아무에게도 안 보내는 것이 아니다).
+    assert.ok(
+        joinerSocket.received.some((entry) => entry.event === 'player_eliminated'),
+        '잔류자가 공개 사망 사건을 받지 못했다',
+    )
+    assert.ok(
+        joinerSocket.received.some((entry) => entry.event === 'session_participation_changed'),
+        '잔류자가 참여 변화 사건을 받지 못했다',
+    )
+
+    // 이후의 어떤 공개 방송도 마찬가지다 — 프로덕션 방송 경계를 그대로 쓴다.
+    gameSessionSocketLayer.__testables.emitToGameChannel(io, session, 'probe_after_departure', { gameId })
+    assert.equal(
+        leaverSocket.received.filter((e) => e.event === 'probe_after_departure').length, 0,
+        '이탈자가 이후 공개 방송을 받았다',
+    )
+    assert.equal(
+        joinerSocket.received.filter((e) => e.event === 'probe_after_departure').length, 1,
+        '잔류자가 이후 공개 방송을 받지 못했다',
+    )
+})
+
+test('F-23(AC-06): 이탈 커밋이 실제로 실패하면 성공 ACK로 바꾸지 않는다(멱등 성공과 구분)', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-fail-host', 'leave-fail-joiner')
+    const socket = io.sockets.sockets.get('sock-leave-fail-host')
+
+    // core 커밋이 던지는 상황을 재현한다 — applyParticipantDeparture는 INTERNAL_ERROR를 돌려준다.
+    const originalCommit = gameSessionCore.commitParticipantDeparture
+    gameSessionCore.commitParticipantDeparture = () => { throw new Error('커밋 실패(테스트 주입)') }
+    try {
+        const { callback, getResponse } = countingCallback()
+        handleLeaveGameSession(io, socket, 'leave-fail-host', { gameId }, callback)
+        const response = getResponse()
+        assert.equal(response.ok, false, '실제 커밋 실패가 성공 ACK로 전달됐다')
+        assert.equal(response.code, 'INTERNAL_ERROR')
+    } finally {
+        gameSessionCore.commitParticipantDeparture = originalCommit
+    }
+
+    // 서버 상태는 그대로다 — 아직 참여 중이다.
+    const stored = gameSessionCore.__getStateSnapshotForTests().gameSessions.find(([id]) => id === gameId)[1]
+    const me = stored.players.find(([uuid]) => uuid === 'leave-fail-host')[1]
+    assert.notEqual(me.isParticipating, false, '실패했는데 참여가 종료됐다')
+
+    // 정상 재시도는 멱등 성공으로 이어진다.
+    const { callback: retryCallback, getResponse: getRetry } = countingCallback()
+    handleLeaveGameSession(io, socket, 'leave-fail-host', { gameId }, retryCallback)
+    assert.deepEqual(getRetry(), { ok: true }, '재시도가 성공하지 않았다')
+})
+
+test('F-23(AC-06): 이미 빠진 참가자의 중복 나가기는 여전히 멱등 성공이다', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-dup-host', 'leave-dup-joiner')
+    const socket = io.sockets.sockets.get('sock-leave-dup-host')
+
+    handleLeaveGameSession(io, socket, 'leave-dup-host', { gameId }, countingCallback().callback)
+
+    const { callback, getResponse } = countingCallback()
+    handleLeaveGameSession(io, socket, 'leave-dup-host', { gameId }, callback)
+    assert.deepEqual(getResponse(), { ok: true }, '중복 나가기가 실패로 바뀌었다')
 })
 
 test('leave_game_session: 이미 종료된 세션에 대한 뒤늦은 이탈 요청은 멱등하게 {ok:true}이고 추가 game_ended 방송이 없다', async () => {

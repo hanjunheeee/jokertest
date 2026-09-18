@@ -7,6 +7,20 @@ import { isStaleSessionSnapshotAckResponse } from "../utils/isStaleSessionSnapsh
 const SESSION_SNAPSHOT_TIMEOUT_MS = 5000
 
 /**
+ * F-23(AC-05/AC-06): 지금 이 화면이 들고 있는 **내 소속 식별자**.
+ *
+ * 같은 판에서 이탈→재입장·추방→재입장하면 gameId·계정·소켓 객체가 전부 그대로인 채 이 값만
+ * 바뀐다 — 그 구간을 지나온 옛 응답을 걸러내는 유일한 값이다. 요청 시점과 응답 시점 모두
+ * 같은 함수로 읽어 기준이 갈리지 않게 한다(createLeaveGameSessionRequest와 같은 계산).
+ */
+function readCurrentMembershipId() {
+  const { state } = useInGameStore.getState()
+  const me = useAuthStore.getState().user?.uuid ?? null
+  if (!state || !me) return null
+  return (state.players ?? []).find((player) => player.uuid === me)?.membershipId ?? null
+}
+
+/**
  * 인게임 진입/재접속 시 get_session_snapshot을 요청해 3A의 원자적 복원(useInGameStore의
  * applySessionSnapshot)에 먹인다. 이미 연결된 상태로 활성화되면 즉시 한 번, 이후 매 실제
  * "connect"(재연결)마다 한 번씩만 요청한다 — useInGameRoleRevealAck의 mounted/generation
@@ -17,11 +31,17 @@ export function useInGameSessionSnapshotSync() {
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
   const gameId = useInGameStore((s) => s.gameId)
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
+  // F-23(AC-05/AC-06): 인증 전이 횟수도 **구독**한다. 계정 값만 보면 A→B→A는 deps가 그대로라
+  // 새 세대가 열리지 않는다 — 그러면 그 구간을 지나온 옛 응답을 거부한 뒤 현재 신원의 새 요청도
+  // 영영 나가지 않아 bootstrapStatus가 'checking'에 갇힌다. 전이 횟수가 그 경계를 만든다.
+  const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
   const [bootstrapStatus, setBootstrapStatus] = useState(gameId ? "ready" : "checking")
 
   const mountedRef = useRef(true)
   const epochVersionRef = useRef(0)
-  const epochBaseRef = useRef({ socket: undefined, gameId: undefined, authUuid: undefined })
+  const epochBaseRef = useRef({
+    socket: undefined, gameId: undefined, authUuid: undefined, identityGeneration: undefined,
+  })
   const requestedVersionRef = useRef(-1)
 
   useEffect(() => {
@@ -39,9 +59,10 @@ export function useInGameSessionSnapshotSync() {
     // socket/gameId/authUuid 중 하나라도 실제로 바뀐 재실행은 진짜 새 세대다.
     const base = epochBaseRef.current
     const isNewEpoch = base.socket !== socket || base.gameId !== gameId || base.authUuid !== authUuid
+      || base.identityGeneration !== identityGeneration
     if (isNewEpoch) {
       epochVersionRef.current += 1
-      epochBaseRef.current = { socket, gameId, authUuid }
+      epochBaseRef.current = { socket, gameId, authUuid, identityGeneration }
     }
 
     const requestSnapshot = () => {
@@ -55,23 +76,36 @@ export function useInGameSessionSnapshotSync() {
       const requestSocket = socket
       const requestGameId = gameId
       const requestAuthUuid = authUuid
+      // F-23(AC-05/AC-06): 요청을 **보내는 그 순간**의 신원을 함께 캡처한다. 같은 Socket 객체가
+      // 재연결되면 객체 동일성은 유지되고 id만 바뀌므로 id를 따로 들고 있어야 한다.
+      const requestIdentityGeneration = identityGeneration
+      const requestMembershipId = readCurrentMembershipId()
+      const requestSocketId = requestSocket?.id ?? null
+
+      /** 응답·실패·예외 어느 경로에서도 같은 기준으로 묻는다(한쪽만 느슨하면 그쪽으로 샌다). */
+      const isStaleNow = () => isStaleSessionSnapshotAckResponse({
+        mounted: mountedRef.current,
+        requestEpochVersion,
+        currentEpochVersion: epochVersionRef.current,
+        requestGameId,
+        currentGameId: useInGameStore.getState().gameId,
+        requestAuthUuid,
+        currentAuthUuid: useAuthStore.getState().user?.uuid ?? null,
+        requestSocket,
+        currentSocket: getSocket(),
+        requestIdentityGeneration,
+        currentIdentityGeneration: useAuthStore.getState().identityGeneration ?? null,
+        requestMembershipId,
+        currentMembershipId: readCurrentMembershipId(),
+        requestSocketId,
+        currentSocketId: getSocket()?.id ?? null,
+      })
 
       requestSocket
         .timeout(SESSION_SNAPSHOT_TIMEOUT_MS)
         .emitWithAck("get_session_snapshot", requestGameId ? { gameId: requestGameId } : {})
         .then((response) => {
-          const stale = isStaleSessionSnapshotAckResponse({
-            mounted: mountedRef.current,
-            requestEpochVersion,
-            currentEpochVersion: epochVersionRef.current,
-            requestGameId,
-            currentGameId: useInGameStore.getState().gameId,
-            requestAuthUuid,
-            currentAuthUuid: useAuthStore.getState().user?.uuid ?? null,
-            requestSocket,
-            currentSocket: getSocket(),
-          })
-          if (stale) return
+          if (isStaleNow()) return
           if (!requestGameId) {
             if (response?.ok !== true) {
               setBootstrapStatus("missing")
@@ -92,18 +126,7 @@ export function useInGameSessionSnapshotSync() {
           // F-21(AC-05): 실패도 **성공과 같은 세대 검사**를 통과해야 한다. 옛 bootstrap 조회가
           // 늦게 실패하는 동안 이미 새 게임·새 계정·새 연결이 들어와 있을 수 있는데, 그때
           // failed로 덮으면 방금 복원된 화면이 "세션 없음"으로 되돌아간다.
-          const stale = isStaleSessionSnapshotAckResponse({
-            mounted: mountedRef.current,
-            requestEpochVersion,
-            currentEpochVersion: epochVersionRef.current,
-            requestGameId,
-            currentGameId: useInGameStore.getState().gameId,
-            requestAuthUuid,
-            currentAuthUuid: useAuthStore.getState().user?.uuid ?? null,
-            requestSocket,
-            currentSocket: getSocket(),
-          })
-          if (stale) return
+          if (isStaleNow()) return
           if (!requestGameId) setBootstrapStatus("failed")
         })
     }
@@ -127,7 +150,7 @@ export function useInGameSessionSnapshotSync() {
     return () => {
       socket.off("connect", handleConnect)
     }
-  }, [socket, gameId, authUuid])
+  }, [socket, gameId, authUuid, identityGeneration])
 
   return bootstrapStatus
 }

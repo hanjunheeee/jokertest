@@ -2,6 +2,11 @@
 // 공유하는 상수 모듈이 없어 수동으로 동기화한다(buildPlayerSessionSourceFromGameState.js와 동일한
 // 관례로 이 파일에도 독립적으로 복제한다).
 import { parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
+// F-23(AC-05): 공개 밤 사망 연출은 라이브 방송(night_result_applied)과 재접속 스냅샷이 **같은**
+// 공개 데이터를 싣는다(game-core buildNightResultAppliedPayload / buildSessionSnapshot). 두
+// 경로가 서로 다른 정규화를 쓰면 같은 사망이 다른 모양으로 들어와 연출이 갈라지므로, 라이브
+// 경로가 이미 쓰는 정규화기를 그대로 재사용한다.
+import { normalizeInGameNightDeathReveals } from "../utils/normalizeInGameNightDeathReveals.js"
 
 const ROLE_TEAMS = {
   JOKER: "JOKER",
@@ -193,6 +198,23 @@ export function applySessionSnapshotPure(current, response) {
     if (raw.victimUuid !== null && !isNonEmptyString(raw.victimUuid)) return current
     if (raw.victimUuid !== null && !rosterByUuid.has(raw.victimUuid)) return current
     nightResult = { dayIndex: raw.dayIndex, victimUuid: raw.victimUuid }
+    /**
+     * F-23(AC-05): **공개 사망 연출의 복구.**
+     *
+     * 서버는 예전부터 이 필드를 스냅샷에 실어 보냈지만 여기서 버려졌다 — 그래서 사망 연출이
+     * 재생되기 전에 새로고침·재연결한 참가자는 그 밤의 공개 사망을 끝내 보지 못했다. 여기서
+     * 옮겨 두면 useInGameKillReveal이 라이브 방송과 **같은 id 형식**으로 큐에 넣어, 같은 사망이
+     * 두 경로로 들어와도 한 번만 재생된다.
+     *
+     * 키 자체가 없는 옛 스냅샷은 그대로 둔다(호환). 있다면 배열이어야 하고, 원소는 라이브
+     * 경로와 똑같이 허용된 victimUuid/source만 통과시킨 뒤 **현재 roster 안**의 것만 남긴다 —
+     * roster 밖 uuid는 화면이 닉네임조차 만들 수 없는 값이라 연출로 삼지 않는다.
+     */
+    if (Object.hasOwn(raw, "deathReveals")) {
+      if (!Array.isArray(raw.deathReveals)) return current
+      nightResult.deathReveals = normalizeInGameNightDeathReveals(raw.deathReveals)
+        .filter((reveal) => rosterByUuid.has(reveal.victimUuid))
+    }
   }
 
   let dayVoteResolution = null

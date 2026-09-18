@@ -564,6 +564,109 @@ test("socket 인스턴스가 리렌더 전에 교체되면, epoch가 그대로�
   hook.unmount()
 })
 
+// ── F-23(AC-05/AC-06): 기존 네 축이 전부 같은 채로 지나가는 세 전이 ──────────────
+//
+// 아래 세 경우는 gameId·계정 uuid·socket **객체**가 모두 그대로다. 각 축을 하나씩만 움직여,
+// 옛 응답이 거부되면서도 현재 신원의 요청은 영구히 막히지 않는지 함께 본다.
+
+test("F-23: 계정 A→B→A를 지나온 옛 응답은 거부되고, 현재 신원의 새 요청은 정상 반영된다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("user-a")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  setFakeSocket(fake.socket)
+
+  const applyCalls = wrapApplySessionSnapshot()
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  const pendingFromA = fake.emitWithAckCalls[0]
+
+  // 같은 배치 안에서 A→B→A. 계정 **값**은 원래대로 돌아오지만 전이 세대는 두 번 올랐다.
+  await act(async () => {
+    useAuthStore.setState((s) => ({
+      user: { uuid: "user-b" }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
+    }))
+    useAuthStore.setState((s) => ({
+      user: { uuid: "user-a" }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
+    }))
+    await flushMicrotasks()
+  })
+
+  assert.equal(useAuthStore.getState().user.uuid, "user-a", "전제: 계정 값은 원래대로 돌아왔다")
+  assert.equal(
+    fake.emitWithAckCalls.length, 2,
+    "전이 세대가 바뀌었는데 새 요청이 나가지 않으면 화면이 영영 확인 중에 갇힌다",
+  )
+
+  await act(async () => {
+    pendingFromA.resolve(buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1" }))
+    await flushMicrotasks()
+  })
+  assert.equal(applyCalls.length, 0, "A→B→A를 지나온 옛 응답이 현재 화면에 반영됐다")
+
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1" }))
+    await flushMicrotasks()
+  })
+  assert.equal(applyCalls.length, 1, "현재 신원의 새 요청까지 영구히 막혔다")
+
+  hook.unmount()
+})
+
+test("F-23: 같은 판에서 내 소속만 교체되면(이탈→재입장) 그 사이 도착한 옛 응답은 반영되지 않는다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  // 요청을 보내는 시점의 내 소속.
+  useInGameStore.getState().state.players[0].membershipId = "mem-1"
+
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  setFakeSocket(fake.socket)
+
+  const applyCalls = wrapApplySessionSnapshot()
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  const pending = fake.emitWithAckCalls[0]
+
+  // 구독자에게 알리지 않고 소속만 바꾼다 — 리렌더도 epoch 무효화도 없는 순간을 재현한다.
+  useInGameStore.getState().state.players[0].membershipId = "mem-2"
+
+  await act(async () => {
+    pending.resolve(buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1" }))
+    await flushMicrotasks()
+  })
+
+  assert.equal(
+    applyCalls.length, 0,
+    "gameId·계정·소켓이 모두 그대로라 소속 비교가 없으면 옛 응답이 그대로 내려앉는다",
+  )
+
+  hook.unmount()
+})
+
+test("F-23: 같은 Socket 객체가 재연결되어 id만 바뀌면 그 이전 요청의 응답은 반영되지 않는다", async () => {
+  seedStore({ gameId: "g1" })
+  seedAuth("user-a")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = "sock-1"
+  setFakeSocket(fake.socket)
+
+  const applyCalls = wrapApplySessionSnapshot()
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  const pending = fake.emitWithAckCalls[0]
+
+  // 객체 동일성은 그대로 유지되고 id만 바뀐다(실제 Socket.IO 재연결의 모습).
+  fake.socket.id = "sock-2"
+
+  await act(async () => {
+    pending.resolve(buildValidSnapshotResponse({ gameId: "g1" }))
+    await flushMicrotasks()
+  })
+
+  assert.equal(applyCalls.length, 0, "socket 객체 비교만으로는 같은 객체의 재연결을 구별하지 못한다")
+
+  hook.unmount()
+})
+
 test("cleanup은 이 훅이 등록한 connect 핸들러만 정확한 참조로 제거하고, 다른 이벤트 리스너는 그대로 둔다", () => {
   seedStore({ gameId: "g1" })
   seedAuth("user-a")

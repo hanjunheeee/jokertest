@@ -9,6 +9,7 @@ import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseE
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
 import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/InGameNightPrivateResultOverlay.jsx"
 import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.jsx"
+import InGameDeadParticipantChoice from "../components/deadChoice/InGameDeadParticipantChoice.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
@@ -23,6 +24,8 @@ import {
   shouldRedirectOutOfInGame,
 } from "../utils/selectInGameSessionGuard.js"
 import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarStatusMessage.js"
+import { selectInGameDeadParticipantChoice } from "../utils/selectInGameDeadParticipantChoice.js"
+import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameKillReveal } from "../hooks/useInGameKillReveal.js"
@@ -45,7 +48,11 @@ export default function InGamePage() {
   const gameId = useInGameStore((s) => s.gameId)
   const gameState = useInGameStore((s) => s.state)
   const navigate = useNavigate()
-  const { requestExit } = useInGameExit()
+  const { requestExit, retryExit, resolveExitOutcome, exitStatus, exitErrorCode } = useInGameExit()
+  const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
+  // F-23(AC-06): 확정 사망한 참가자에게만 여는 선택창. 한 번 "계속 보기"를 고르면 이 판이
+  // 끝날 때까지 다시 묻지 않는다(선택 자체는 화면 상태일 뿐 서버에 아무 요청도 보내지 않는다).
+  const [keepWatchingChosen, setKeepWatchingChosen] = useState(false)
   // 재접속/재연결 시 get_session_snapshot으로 현재 phase까지의 상태를 원자적으로 복원한다.
   // 이후 이벤트 단위 실시간 동기화(night_result_applied 등)는 useGameSessionSocketEvents가
   // 별도로 담당한다 — 이 훅은 그 사이에 놓친 스냅샷만 재접속 시점에 채워 넣는다.
@@ -71,9 +78,21 @@ export default function InGamePage() {
   // 연출이 재생 중이거나 큐에 남아 있는 동안은 기다린다(연출이 통째로 잘리지 않게).
   useInGameResultNavigation({ hold: killReveal.open || killReveal.pending })
 
+  // F-23(AC-06): 확정 사망한 참가자에게만 여는 선택창.
+  //
+  // 자기 사망 연출이 재생 중이거나 큐에 남아 있는 동안에는 띄우지 않는다 — 선택창이 그 위를
+  // 덮으면 연출이 통째로 잘린다(기존 연출 우선순위를 그대로 따른다). 판정 근거는 잠정 피격
+  // 표식이 아니라 canonical roster의 확정 alive=false다(selectInGameDeadParticipantChoice).
+  const deadChoiceOpen = selectInGameDeadParticipantChoice(gameState, authUuid)
+    && !keepWatchingChosen
+    && !roleReveal.open
+    && !killReveal.open
+    && !killReveal.pending
+
   // 사망 연출·개인 결과가 떠 있는 동안에도 아래 게임 표면의 입력을 함께 잠근다. 잠금 판단만
   // 여기서 합치고, 오버레이 스택이 내는 interactionBlocked 자체는 그대로 아래로 흘려보낸다.
-  const surfaceLocked = interactionBlocked || killReveal.open || nightPrivateResult.open
+  const surfaceLocked =
+    interactionBlocked || killReveal.open || nightPrivateResult.open || deadChoiceOpen
 
   // 상태바에 상시로 띄우는 밤 역할 턴의 남은 시간. 서버가 실어 보낸 deadline 하나에서만 만든다.
   const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
@@ -87,6 +106,10 @@ export default function InGamePage() {
   // 판단 자체는 selectInGameSessionGuard의 순수 함수 두 개가 들고 있다 — 이 페이지는 .jsx라
   // node:test로 렌더링해 검증할 수 없어, 실제 값으로 시험할 수 있는 곳으로 떼어 두었다.
   const isValidGameSession = isValidInGameSession(gameId, gameState)
+
+  // 이 판이 바뀌면 이전 판의 "계속 보기" 선택은 더 이상 유효하지 않다 — 새 판에서 사망하면
+  // 다시 물어야 한다(계정·소속 전환도 gameId 또는 self 교체로 함께 걸러진다).
+  useEffect(() => { setKeepWatchingChosen(false) }, [gameId])
 
   useEffect(() => {
     if (!shouldRedirectOutOfInGame({ snapshotSyncStatus, gameId, gameState })) return
@@ -169,6 +192,17 @@ export default function InGamePage() {
         revealId={killReveal.revealId}
         message={killReveal.message}
         onConsume={killReveal.consume}
+      />
+      {/* F-23(AC-06): 확정 사망한 참가자의 두 선택. "관전 계속하기"는 서버 요청 0회이며
+          소속·역할을 바꾸지 않는다 — 접은 뒤에도 상단 나가기 버튼은 그대로 쓸 수 있다. */}
+      <InGameDeadParticipantChoice
+        open={deadChoiceOpen}
+        onKeepWatching={() => setKeepWatchingChosen(true)}
+        onLeave={requestExit}
+        onRetry={retryExit}
+        onResolveOutcome={resolveExitOutcome}
+        exitStatus={exitStatus}
+        exitErrorCode={exitErrorCode}
       />
     </div>
   )

@@ -362,6 +362,157 @@ test("AC-03: 사망 연출 구독은 전역 훅과 별개의 리스너이고, �
   assert.equal(session.socket.listenerCount("tribunal_vote_resolved"), 0)
 })
 
+// ── F-23(AC-05): 재접속 스냅샷이 복원한 공개 사망 연출 ────────────────────────
+//
+// 라이브 방송을 놓친 연결(새로고침·재연결)이 그 밤의 공개 사망을 회복한다. 라이브 경로와
+// **같은 id 형식**을 쓰므로 어느 순서로 같은 사망이 들어와도 큐 증가는 한 번뿐이다.
+
+/** get_session_snapshot 응답 한 벌. phase/nightResult만 시험이 정한다. */
+function snapshotResponse({ phase = "DAY", dayIndex = 1, deadUuids = [], nightResult = null } = {}) {
+  const dead = new Set(deadUuids)
+  return {
+    ok: true,
+    gameId: GAME_ID,
+    phase,
+    dayIndex,
+    ...(phase === "DAY" ? { dayPhase: "DAY_DISCUSSION" } : {}),
+    ...(phase === "ENDED" ? { winResult: WIN_RESULT } : {}),
+    players: ROSTER.map((p) => ({
+      uuid: p.uuid, nickname: p.nickname, isAlive: !dead.has(p.uuid), isConnected: true,
+    })),
+    self: { uuid: SELF, nickname: "나", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
+    ...(nightResult ? { nightResult } : {}),
+  }
+}
+
+test("F-23(AC-05): 라이브 방송을 놓쳐도 스냅샷만으로 그 밤의 공개 사망 연출이 복원된다", () => {
+  seedSession()
+  const session = open()
+
+  assert.equal(session.killReveal.pending, false, "전제: 아직 아무 연출도 없다")
+
+  act(() => {
+    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+      deadUuids: [V1],
+      nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
+    }))
+  })
+
+  assert.equal(session.killReveal.open, true, "스냅샷 복원 연출이 뜨지 않았다")
+  assert.equal(session.killReveal.message, "광대들이 첫째 님을 죽였습니다.")
+
+  session.consumeActive()
+  assert.equal(session.killReveal.pending, false)
+
+  session.close()
+})
+
+test("F-23(AC-05): 같은 사망이 라이브→스냅샷으로 두 번 들어와도 연출은 한 번뿐이다", () => {
+  seedSession()
+  const session = open()
+
+  session.deliver("night_result_applied", {
+    gameId: GAME_ID, phase: "DAY", dayIndex: 1,
+    players: ROSTER.map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== V1 })),
+    victimUuid: V1,
+    deathReveals: [{ victimUuid: V1, source: "JOKER" }],
+  })
+  assert.equal(session.killReveal.open, true)
+
+  session.consumeActive()
+  assert.equal(session.killReveal.pending, false, "라이브 연출을 이미 소비했다")
+
+  // 같은 밤의 스냅샷이 뒤늦게 도착한다(재조회·ACK 지연).
+  act(() => {
+    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+      deadUuids: [V1],
+      nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
+    }))
+  })
+
+  assert.equal(session.killReveal.open, false, "이미 본 연출이 다시 재생됐다")
+  assert.equal(session.killReveal.pending, false)
+
+  session.close()
+})
+
+test("F-23(AC-05): 스냅샷 먼저 → 같은 사망의 라이브 방송이 뒤따라도 큐가 늘지 않는다", () => {
+  seedSession()
+  const session = open()
+
+  act(() => {
+    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+      deadUuids: [V1],
+      nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
+    }))
+  })
+  assert.equal(session.killReveal.open, true)
+
+  session.deliver("night_result_applied", {
+    gameId: GAME_ID, phase: "DAY", dayIndex: 1,
+    players: ROSTER.map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== V1 })),
+    victimUuid: V1,
+    deathReveals: [{ victimUuid: V1, source: "JOKER" }],
+  })
+
+  session.consumeActive()
+  assert.equal(session.killReveal.open, false, "같은 사망이 두 번 큐에 들어갔다")
+  assert.equal(session.killReveal.pending, false)
+
+  session.close()
+})
+
+test("F-23(AC-05): ENDED 스냅샷으로 복원해도 복구된 연출을 다 본 뒤에야 결과 페이지로 이동한다", () => {
+  seedSession()
+  const session = open()
+
+  act(() => {
+    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+      phase: "ENDED", deadUuids: [V1, V2],
+      nightResult: {
+        dayIndex: 1, victimUuid: V1,
+        deathReveals: [
+          { victimUuid: V1, source: "JOKER" },
+          { victimUuid: V2, source: "WITCH_HUNTER" },
+        ],
+      },
+    }))
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "ENDED")
+  assert.equal(session.killReveal.message, "광대들이 첫째 님을 죽였습니다.")
+  assert.equal(navigated(), false, "복원된 연출이 재생되기도 전에 결과 페이지로 넘어갔다")
+
+  session.consumeActive()
+  assert.equal(session.killReveal.message, "마녀사냥꾼이 둘째 님을 처단했습니다.")
+  assert.equal(navigated(), false)
+
+  session.consumeActive()
+  assert.equal(session.killReveal.pending, false)
+  assert.deepEqual(navigateCalls, [["/gameresult", { replace: true }]], "마지막 연출 뒤 이동은 정확히 한 번이다")
+
+  session.close()
+})
+
+test("F-23(AC-05): 스냅샷 복구도 roster 밖 희생자는 연출로 만들지 않는다", () => {
+  seedSession()
+  const session = open()
+
+  act(() => {
+    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+      nightResult: {
+        dayIndex: 1, victimUuid: null,
+        deathReveals: [{ victimUuid: OUTSIDER, source: "JOKER" }],
+      },
+    }))
+  })
+
+  assert.equal(session.killReveal.open, false)
+  assert.equal(session.killReveal.pending, false, "roster 밖 희생자가 연출 큐에 들어갔다")
+
+  session.close()
+})
+
 test("AC-03: 다른 게임·roster 밖 희생자는 큐에 들어가지 않는다(신뢰 경계)", () => {
   seedSession()
   const session = open()

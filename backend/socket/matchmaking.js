@@ -433,8 +433,16 @@ function scheduleLateJoinCleanup(io, socket, roomId, uuid, attempt, joinPromise)
     joinPromise.then(() => {
         if (!socket || typeof socket.leave !== 'function') return
         if (socket.id !== attempt.socketId) return
+        // F-23(AC-04): 예전에는 raw socket.leave를 부르고 동기 예외만 잡았다 — adapter가 Promise를
+        // 돌려주면 그 거부는 잡히지 않아 채널이 그대로 남고, 남은 동안 이 소켓은 그 방의 방송을
+        // 계속 받는다. 공통 경계가 완료·실패를 조정하고, 떼지 못하면 자기 토큰으로 전달에서 뺀다.
         const leaveNow = () => {
-            try { socket.leave(roomId) } catch (err) { console.error('[늦은 초대 채널 정리 실패]', err) }
+            detachSocketFromChannel(socket, roomId, '[늦은 초대 채널 정리 실패]', { uuid }, {
+                ownsChannel: () =>
+                    isAccountSeatedInRoom(uuid, roomId)
+                    && isCanonicalSocketForAccount(io, uuid, socket, roomId),
+                keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+            })
         }
         // 교체 소켓이 이미 그 방을 소유했다면 아래의 소속·시도 검사는 전부 **그 소켓의
         // 사실**이라 이 소켓을 남길 근거가 되지 못한다.
@@ -1535,6 +1543,41 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     let joinedRoomId = null
     let committed = false
 
+    /**
+     * F-23(AC-04): **채널 가입부터 Map 커밋까지**의 전달 제외를 소유하는 토큰.
+     *
+     * 이 경로도 초대 수락과 같은 모양의 구간을 갖는다 — socket.join을 먼저 끝내고(1617행)
+     * 그 **뒤에** 방 인스턴스·전이 세대·정원·소속을 다시 검사한다. 그 재검사 구간의 입장자는
+     * 아직 참가자가 아닌데, 예전에는 아무 제외도 없어 join 완료 직후부터 그 방의 방송이
+     * 그대로 전달됐다(재검사에서 거부돼 결국 들어가지 못한 요청도 마찬가지다).
+     *
+     * 토큰을 쓰는 이유는 같은 (채널, 소켓)에 대해 **다른** 흐름이 자기 제외를 들고 있을 수
+     * 있기 때문이다 — 그쪽이 먼저 끝나도 이 커밋 전 제외는 남아야 한다.
+     */
+    const joinExclusionOwner = channelMembership.createChannelExclusionOwner('join-by-code')
+    let joinExclusionChannelId = null
+    const releaseJoinExclusion = () => {
+        if (joinExclusionChannelId === null) return
+        channelMembership.releaseChannelExclusion(joinExclusionChannelId, socket.id, joinExclusionOwner)
+        joinExclusionChannelId = null
+    }
+    /**
+     * 커밋 전 실패 경로의 채널 정리.
+     *
+     * raw leave(leaveSocketRoomSafely)는 실패를 로그로만 남기고 삼킨다 — 그러면 떼지 못한
+     * 소켓이 **아무 제외 없이** 채널에 남아 그 방의 방송을 계속 받는다. 공통 경계는 완료·
+     * 실패를 조정하고, 끝내 떼지 못하면 **자기 토큰으로** 전달에서 빼 둔다(fail-closed).
+     * 그 토큰은 이 계정이 그 채널을 정당하게 다시 소유하면 공통 경계가 스스로 푼다.
+     */
+    const detachJoinedRoomChannel = (channelId) => {
+        detachSocketFromChannel(socket, channelId, '[코드 참가 정리 실패]', { uuid }, {
+            ownsChannel: () =>
+                isAccountSeatedInRoom(uuid, channelId)
+                && isCanonicalSocketForAccount(io, uuid, socket, channelId),
+            keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+        })
+    }
+
     try {
         // F-13(AC-05): handleCreateRoomAfterReservation과 같은 이유로 사용자 조회와 함께
         // 공개 프로필도 확보한다.
@@ -1607,12 +1650,16 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         }
 
         // Map 커밋 전에 실제 Socket.IO room 가입부터 끝낸다(create_room과 동일한 이유).
+        // F-23(AC-04): 가입을 **시작하기 전에** 전달에서 뺀다 — join 완료 → 재검사 → 커밋
+        // 직전까지 이 제외가 유지되므로, 확정되지 않은 입장자에게는 어떤 방송도 닿지 않는다.
+        joinExclusionChannelId = room.id
+        channelMembership.excludeSocketFromChannel(room.id, socket.id, joinExclusionOwner)
         await socket.join(room.id)
         joinedRoomId = room.id
 
         // create_room과 같은 이유로, join을 기다리는 동안 연결이 끊겼을 가능성을 확인한다.
         if (!socket.connected) {
-            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.DISCONNECTED, '연결이 끊어져 방에 참여하지 못했습니다.')
             return
@@ -1621,7 +1668,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // join 대기 중 방이 삭제됐거나(예: 방장이 delete_room) 같은 id로 다른 객체가
         // 들어섰을 가능성을 점검한다 — playerRoom 매핑만으로는 이 변화를 알 수 없다.
         if (gameRooms.get(room.id) !== room) {
-            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             // 코드로 찾을 때는 분명히 있던 방이 지금은 없거나 다른 객체로 바뀐 상황이다 —
             // "입력한 코드가 틀렸다"가 아니라 "그 방이 사라졌다"가 정확한 사유다.
@@ -1639,7 +1686,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // 있음)이 새로 생겼다면, 위의 id 동일성 검사만으로는 걸러지지 않는다 — 그 다른
         // 방도 새로 찾은 room 참조와 gameRooms의 참조가 일치해 정상 방처럼 보이기 때문이다.
         if (expectedRoom && (room.id !== expectedRoom.roomId || room.accessType !== expectedRoom.accessType)) {
-            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
             return
@@ -1647,7 +1694,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
 
         // join 대기 중 다른 경로로 이미 다른 방에 들어갔을 수 있어 다시 확인한다.
         if (playerRoom.has(uuid)) {
-            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, '이미 참여 중인 방이 있습니다.')
             return
@@ -1657,7 +1704,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // 있다 — Map 커밋 직전 마지막 재검사다. 이미 Socket room에는 가입했으므로 leave까지
         // 마친 뒤 기존 실패 계약으로 응답한다.
         if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
-            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(
                 socket,
@@ -1677,7 +1724,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // F-19(AC-06): 확정 참가자뿐 아니라 **유효한 초대 입장 예약**도 자리를 차지한다.
         // 예약을 세지 않으면 초대 수락과 마지막 자리 일반 입장이 동시에 통과해 정원을 넘긴다.
         if (countRoomOccupancy(room, uuid) >= maxRoomSize) {
-            await leaveSocketRoomSafely(socket, room.id, '[코드 참가 정리 실패]')
+            detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_FULL, '방이 가득 찼습니다.')
             return
@@ -1704,6 +1751,10 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // ABA 방지 결합: create_room과 동일한 이유(onDisconnect 참고).
         socket.data.activeRoomId = room.id
 
+        // F-23(AC-04): 여기서부터만 확정 참가자다 — 이제 전달 제외를 푼다. 아래
+        // player_joined_room부터 정상 수신이 시작되고, 그 이전의 어떤 방송도 닿지 않았다.
+        releaseJoinExclusion()
+
         socket.emit('room_joined', buildRoomPayload(room))
         // 전달 제외 경계를 지난다(player_ready_changed와 같은 이유) — 떼지 못한 옛 소속이
         // 이 채널에 남아 있으면 새 참가자의 명단이 그 연결로 흘러간다.
@@ -1719,7 +1770,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // 예외라는 뜻이므로, join은 됐지만(joinedRoomId 존재) 아직 커밋 전이라면 Socket
         // room에 남아있는 상태다 — 커밋 여부와 무관하게 정리를 놓치지 않도록 확인한다.
         if (joinedRoomId && !committed) {
-            await leaveSocketRoomSafely(socket, joinedRoomId, '[코드 참가 정리 실패]')
+            detachJoinedRoomChannel(joinedRoomId)
         }
         emitRoomJoinFailed(
             socket,
@@ -1728,6 +1779,15 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         )
     } finally {
         releaseRoomTransition(uuid, transitionToken)
+        /**
+         * F-23(AC-04): 이 시도의 **커밋 전 제외**는 여기서 끝난다.
+         *
+         * 실패 경로는 이미 채널 정리를 마쳤고, 그 정리가 끝내 실패한 경우의 fail-closed는
+         * detachSocketFromChannel이 **자기 토큰으로** 따로 들고 있다. 그러므로 이 토큰을
+         * 남길 이유가 없고, 남기면 같은 계정·같은 소켓의 다음 정상 입장이 그 방의 방송을
+         * 영영 받지 못한다(폐기된 옛 토큰의 영구 잔류).
+         */
+        releaseJoinExclusion()
     }
 }
 
@@ -2594,6 +2654,24 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
 // delivery target: 인증 uuid가 일치하고, connected===true이고, Room의 기존 Socket.IO
 // channel(roomId)에 실제로 join되어 있는(socket.rooms.has(roomId)) 소켓만 인정한다.
 // Socket.IO 의존이라 game-core가 아니라 이 파일(소켓 계층)에 둔다.
+//
+// ── F-23(AC-04): 채널 가입만으로는 수신 자격이 되지 못한다 ────────────────────
+//
+// 위 세 조건은 "그 채널에 물리적으로 들어와 있는가"만 묻는다. 그런데 채널 가입은 **확정
+// 소속보다 먼저** 일어나고(초대 수락·코드 참가 모두 join → 재검사 → 커밋 순서다), 떼지
+// 못한 옛 구독도 한동안 남는다. 그 두 구간이 곧 "참가자가 아닌 연결이 방 상태를 구독하는"
+// 자리라 두 축을 더 묻는다:
+//
+//   · **확정 소속** — playerRoom과 room.players가 모두 그 방을 가리켜야 한다. 아직 durable
+//     영수증이 없는 미확정 입장(phase='published')과 깨진 매핑이 여기서 걸러진다.
+//   · **전달 제외** — 커밋 전 입장·떼지 못한 옛 구독이 자기 토큰으로 걸어 둔 제외.
+//   · **canonical 소켓** — 단, registry가 주입된 환경에서만 묻는다. 주입되지 않았다는 것은
+//     "그 축을 알 수 없다"는 뜻이지 "자격 없음"이 아니다 — 여기서 fail-closed하면 같은 계정의
+//     정상 소켓이 서로를 배제해 **아무도** 시작·설정 사건을 받지 못한다(A-03의 반증 조건).
+//     같은 계정의 다른 탭은 참가자 본인이므로 이 축이 없을 때의 복수 전달은 유출이 아니다.
+//
+// alive·활성 세션 유무는 묻지 않는다 — 이 경계는 **대기방** 전달용이고, 세션 커밋 **전**의
+// 정상 start_game 수신자를 "아직 게임이 없다"는 이유로 거부하면 시작 자체가 전달되지 않는다.
 function resolveParticipantSockets(io, uuids, roomId) {
     const targets = new Set(uuids)
     const map = new Map()
@@ -2602,6 +2680,11 @@ function resolveParticipantSockets(io, uuids, roomId) {
         if (!u || !targets.has(u)) continue
         if (s.connected !== true) continue
         if (!s.rooms?.has(roomId)) continue
+        if (!isAccountSeatedInRoom(u, roomId)) continue
+        if (typeof s.id === 'string'
+            && channelMembership.isSocketExcludedFromChannel(roomId, s.id)) continue
+        if (onlineUsersRegistry instanceof Map
+            && !isCanonicalSocketForAccount(io, u, s, roomId)) continue
         if (!map.has(u)) map.set(u, [])
         map.get(u).push(s)
     }
@@ -3258,6 +3341,25 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
 
     let attempt = null
     let joinedRoomId = null
+    /**
+     * F-23(AC-04): **채널 가입부터 durable 확정까지**의 전달 제외를 소유하는 토큰.
+     *
+     * 이 흐름은 socket.join을 publish·영수증보다 **먼저** 한다. 그 구간의 입장자는 아직 확정
+     * 참가자가 아니므로 그 방의 방송을 받으면 안 되는데, 예전에는 아무 제외도 없어 join 완료
+     * 직후부터 설정 변경·준비·시작 같은 사건이 그대로 전달됐다.
+     *
+     * 토큰을 쓰는 이유는 같은 (채널, 소켓)에 대해 **다른** 흐름(옛 이탈 정리)이 자기 제외를
+     * 들고 있을 수 있기 때문이다 — 그쪽이 먼저 끝나도 이 확정 전 제외는 남아야 한다.
+     */
+    const admissionExclusionOwner = channelMembership.createChannelExclusionOwner('admission')
+    let admissionExclusionChannelId = null
+    const releaseAdmissionExclusion = () => {
+        if (admissionExclusionChannelId === null) return
+        channelMembership.releaseChannelExclusion(
+            admissionExclusionChannelId, socket.id, admissionExclusionOwner,
+        )
+        admissionExclusionChannelId = null
+    }
 
     try {
         // 초대가 가리키는 방을 먼저 확인한다. 이 읽기는 **식별용**이고 권한 근거가 아니다 —
@@ -3342,6 +3444,10 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         // 없는데 실제 방송 room에는 남아 다른 참가자의 사건을 계속 받는다. 늦은 완료에
         // 정리를 걸어 두되, 그 시점에 소유권을 다시 확인해 더 새로운 정상 소속은 건드리지
         // 않는다.
+        // 가입을 **시작하기 전에** 전달에서 뺀다. join 완료 → publish 전 → publish 후 영수증
+        // 대기까지 이 제외가 유지되므로, durable 확정 이전에는 어떤 방송도 이 소켓에 닿지 않는다.
+        admissionExclusionChannelId = room.id
+        channelMembership.excludeSocketFromChannel(room.id, socket.id, admissionExclusionOwner)
         const joinPromise = Promise.resolve(socket.join(room.id))
         try {
             await step(joinPromise, 'JOIN_TIMEOUT')
@@ -3407,7 +3513,14 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
                 // 끝나는 사이 같은 계정·같은 소켓이 그 방에 **정상 입장**했다면 방금 성립한
                 // 소속의 방송 경로를 이 정리가 끊는다. 같은 술어로 소유권을 먼저 묻는다.
                 if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
-                    await leaveSocketRoomSafely(socket, joinedRoomId, '[초대 입장 정리 실패]')
+                    // F-23(AC-04): raw leave 대신 공통 경계를 쓴다 — 비동기 거부까지 조정하고,
+                    // 끝내 떼지 못하면 **자기 토큰으로** 전달에서 뺀 채 끝낸다(fail-closed).
+                    detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', { uuid }, {
+                        ownsChannel: () =>
+                            isAccountSeatedInRoom(uuid, joinedRoomId)
+                            && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
+                        keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+                    })
                 }
                 joinedRoomId = null
             }
@@ -3440,6 +3553,10 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             return
         }
 
+        // 여기서부터만 확정 참가자다 — 이제 전달 제외를 푼다. 아래 player_joined_room부터
+        // 정상 수신이 시작되고, 그 이전의 어떤 방송도 이 소켓에 닿지 않았다.
+        releaseAdmissionExclusion()
+
         channelMembership.emitToChannel(
             io, room.id, 'player_joined_room',
             { player: { ...seated }, canStart: computeCanStart(room) },
@@ -3465,7 +3582,14 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             // 위 실패 경로와 같은 이유다 — 늦게 도착한 옛 시도의 실패 정리가 새 소속의 채널을
             // 떼지 못하게 소유권을 먼저 묻는다.
             if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
-                await leaveSocketRoomSafely(socket, joinedRoomId, '[초대 입장 정리 실패]')
+                // F-23(AC-04): 위 실패 경로와 같은 이유로 공통 경계를 쓴다(비동기 거부 조정 +
+                // 떼지 못하면 자기 토큰으로 전달 제외).
+                detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', { uuid }, {
+                    ownsChannel: () =>
+                        isAccountSeatedInRoom(uuid, joinedRoomId)
+                        && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
+                    keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+                })
             }
             joinedRoomId = null
         }
@@ -3479,6 +3603,15 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         releaseRoomTransition(uuid, transitionToken)
         // 성공/실패 어느 경로로 끝나든 자기 시도는 남기지 않는다.
         if (attempt && roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
+        /**
+         * F-23(AC-04): 이 시도의 **확정 전 제외**는 여기서 끝난다.
+         *
+         * 위 실패 경로들이 이미 채널 정리를 마쳤고, 그 정리가 끝내 실패한 경우의 fail-closed는
+         * detachSocketFromChannel이 **자기 토큰으로** 따로 들고 있다. 그러므로 이 토큰을 남길
+         * 이유가 없고, 남기면 같은 계정·같은 소켓의 다음 정상 입장이 그 방의 방송을 영영 받지
+         * 못한다(폐기된 옛 토큰의 영구 잔류).
+         */
+        releaseAdmissionExclusion()
     }
 }
 
