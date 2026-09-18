@@ -156,17 +156,38 @@ function commitTerminalReadySession({ roomId, gameId, hostUuid, uuids }) {
     return prepared.session;
 }
 
-/** 저장은 fire-and-forget이다 — 그 gameId의 작업이 실제로 끝날 때까지 기다린다. */
-async function waitForPersistSettled({ tries = 200 } = {}) {
-    for (let i = 0; i < tries; i += 1) {
+/**
+ * 저장은 fire-and-forget이다 — 그 판의 작업이 실제로 끝날 때까지 **실제 시간**으로 기다린다.
+ *
+ * ── 왜 턴 수가 아니라 시간인가 (실측) ────────────────────────────────────────
+ * 예전에는 setImmediate를 200번 돌렸다. 200턴은 실제 시간으로 몇 ms일 뿐이라 실제 MySQL
+ * 트랜잭션보다 **먼저** 끝난다. 그래서 "저장이 끝나지 않았다"로 실패 판정을 낸 **뒤에** 로그에
+ * 그 판의 INSERT와 COMMIT이 이어졌다 — 기능이 고장난 것이 아니라 대기가 짧았다
+ * (docs/requirements/2026-09-18-f21-persist-wait-finding.md). 저장 경로
+ * (attemptTerminalPersist)는 run 객체에 pending Promise를 노출하지 않으므로, 시험이 붙잡을 수
+ * 있는 유일한 신호는 terminalPersistRuns가 비는 것이고 그 대기는 시간으로 재야 한다.
+ *
+ * false는 "기한 안에 실제로 끝나지 않았다"이며 그때의 실패 판정은 옳다 — 재시도 지연
+ * (1s·5s·30s)이 걸린 실패 저장은 기한 안에 끝나지 않을 수 있고, 그것이야말로 시험이 잡아야 할
+ * 사실이다. 기한을 넉넉히 두는 것과 통과를 꾸미는 것은 다르다.
+ *
+ * ── 이 대기가 **보장하지 않는 것** ───────────────────────────────────────────
+ * finishTerminalPersist(backend/socket/gameSession.js)는 pending 항목을 **먼저** 지우고, 그
+ * 다음에 업적 평가를 fire-and-forget으로 던진다. 그러므로 이 함수가 true를 돌려준 시점에
+ * 업적·재화·소유권 트랜잭션은 아직 진행 중일 수 있다 — 그 세 축을 읽거나 스키마를 다시
+ * 만드는 쪽은 반드시 captureAchievementEvaluations().settled()를 함께 기다려야 한다.
+ */
+async function waitForPersistSettled({ timeoutMs = 15_000, stepMs = 10 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
         if (__getTerminalPersistRunsForTests().length === 0) {
-            // 성공 뒤의 업적 평가·무효화까지 마이크로태스크를 한 번 더 비운다.
+            // 커밋 확인 직후의 동기 후속(개인 무효화·평가 호출 등록)까지 한 번 비운다.
             await new Promise((resolve) => setImmediate(resolve));
             return true;
         }
-        await new Promise((resolve) => setImmediate(resolve));
+        if (Date.now() >= deadline) return false;
+        await new Promise((resolve) => setTimeout(resolve, stepMs));
     }
-    return false;
 }
 
 /**
@@ -414,6 +435,12 @@ test('A-09: 첫 저장이 실패해도 재시도가 **같은 레코드**를 실�
     });
     t.after(() => gameSessionSocketLayer.__testables.__setTerminalPersistTimersForTests());
 
+    // 이 판도 커밋이 확인되면 업적 평가를 fire-and-forget으로 던진다. 그 평가는 실제 격리 DB에
+    // 질의·기록하는데, 저장 대기(waitForPersistSettled)는 그 완료를 **보장하지 않는다** —
+    // pending 항목이 먼저 지워지고 평가가 그 뒤에 시작하기 때문이다. 붙잡지 않으면 이 시험이
+    // 끝난 뒤에도 남아, 다음 시험의 setUp()이 관리 스키마를 드롭·재생성하는 도중에 돈다.
+    // 그래서 여기서도 평가를 포착해 두고 시험 경계에서 실제 완료를 기다린다.
+    const evaluations = captureAchievementEvaluations(t);
     const io = createFakeIo();
     const session = commitTerminalReadySession({
         roomId: 'db-room-retry', gameId: crypto.randomUUID(), hostUuid: host, uuids: [host, stay, gone],
@@ -454,6 +481,11 @@ test('A-09: 첫 저장이 실패해도 재시도가 **같은 레코드**를 실�
     // 실패한 시도가 남긴 흔적은 없다 — 성공한 커밋이 유일한 행이다.
     assert.equal(await db.GameResult.count({ where: { id: session.id } }), 1);
     // (중복 종료의 DB 멱등성은 아래 A-05 시험이 원 세션 그대로 다시 밟아 확인한다.)
+
+    // 시험 경계: 커밋 확인 뒤에 시작된 업적 평가가 **실제로** 끝난 것을 확인하고 나간다.
+    // 재시도로 커밋된 판도 원 참가자 전원의 평가를 한 번 돌린다(finishTerminalPersist).
+    assert.ok(evaluations.count() > 0, '커밋을 확인했으면 원 참가자들의 업적 평가가 시작돼야 한다');
+    assert.ok(await evaluations.settled(), '업적 평가가 끝나지 않은 채 시험을 끝내면 다음 시험의 스키마 재생성과 겹친다');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

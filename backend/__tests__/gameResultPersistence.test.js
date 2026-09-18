@@ -811,6 +811,65 @@ test("F-21 A-09/A-10: 업적 평가와 개인 캐시 무효화는 **DB 커밋을
     }
 });
 
+/**
+ * F-21(A-09/A-05) — **시험이 무엇을 기다려야 하는가**의 경계.
+ *
+ * finishTerminalPersist는 pending 항목을 **먼저** 지우고, 그 다음에 업적 평가를
+ * fire-and-forget으로 던진다. 그러므로 "terminalPersistRuns가 비었다"는 저장 완료이지 평가
+ * 완료가 아니다 — 그 둘을 같은 것으로 보고 업적·원장·소유권을 읽거나 스키마를 다시 만들면
+ * 아직 도는 평가와 겹친다.
+ *
+ * 실제 격리 DB 시험(backend/tests/db/f21-participant-departure.integration.test.js)의
+ * waitForPersistSettled가 저장만 뜻하고 평가 완료는 captureAchievementEvaluations().settled()로
+ * 따로 기다리는 근거가 이것이다. 그 사실 자체는 DB 없이 여기서 고정해 둔다.
+ */
+test("F-21 A-09: pending 항목이 비는 시점과 업적 평가가 끝나는 시점은 다르다", async (t) => {
+    withSocketLayer(t);
+
+    let releaseEvaluation;
+    const evaluationGate = new Promise((resolve) => { releaseEvaluation = resolve; });
+    const pendingWhenEvaluationStarted = [];
+    __setEvaluateAchievementsForTests(async (userId) => {
+        // 평가가 시작되는 그 순간의 저장 작업 수를 기록한다.
+        pendingWhenEvaluationStarted.push(__getTerminalPersistRunsForTests().length);
+        await evaluationGate;
+        return userId;
+    });
+    t.after(() => {
+        releaseEvaluation();
+        __setEvaluateAchievementsForTests();
+    });
+
+    const invalidations = [];
+    gameSessionSocket.setEmitToUser((uuid, event, payload) => invalidations.push({ uuid, payload }));
+
+    stubPersistGameResult(t);
+    const session = makeEndedSession();
+    persistTerminalSession(session, { completed: true });
+    await flushAsync();
+
+    // 저장은 끝났다 — 작업 항목이 비었고, 저장 대기는 여기서 true를 돌려준다.
+    assert.equal(__getTerminalPersistRunsForTests().length, 0);
+    // 그런데 평가는 **그 뒤에** 시작했고 아직 끝나지 않았다(평가 시작 시점의 pending은 이미 0이다).
+    assert.deepEqual(pendingWhenEvaluationStarted, [0, 0, 0]);
+    assert.deepEqual(invalidations.map((e) => e.uuid).sort(), ["u1", "u2", "u3"]);
+    assert.ok(invalidations.every((e) => e.payload.scopes.includes("profile")));
+    assert.equal(
+        invalidations.some((e) => e.payload.scopes.includes("achievements")),
+        false,
+        "평가가 끝나기 전에는 업적·경제 무효화가 나가지 않는다 — 저장 완료만으로는 지급이 끝나지 않았다",
+    );
+
+    // 평가가 실제로 끝난 뒤에야 업적·경제 무효화가 이어진다.
+    releaseEvaluation();
+    await flushAsync();
+
+    assert.deepEqual(
+        invalidations.filter((e) => e.payload.scopes.includes("achievements")).map((e) => e.uuid).sort(),
+        ["u1", "u2", "u3"],
+    );
+});
+
 test("F-21 A-09: 4096개를 넘겨 확인해도 **그 session의** 늦은 훅은 레코드를 다시 조립하지 않는다", async (t) => {
     withSocketLayer(t);
 
