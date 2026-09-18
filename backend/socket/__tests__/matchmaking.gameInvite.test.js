@@ -889,6 +889,54 @@ test('review5 #1: 늦게 도착한 옛 시도의 보상이 그 사이 확정된 
     )
 })
 
+/**
+ * F-21(AC-05/AC-06) 소유권 경계의 고정.
+ *
+ * "실패한 초대 시도의 채널 정리가 그 사이 정상 입장한 **새 소속**의 채널을 뗀다"는 지적을
+ * 실제 경로로 재현하려 한 시험이다. 재현되지 않는다 — 그 이유를 여기서 고정한다:
+ * handleAcceptGameInvite는 계정 단위 전이 잠금(pendingRoomTransitions)을 **핸들러 전체**
+ * 동안 쥐고 있고(finally에서만 놓는다), 다른 입장 생산자는 전부 그 잠금을 먼저 본다.
+ * 그래서 publish와 실패 정리 사이에 같은 계정의 새 소속이 성립할 수 없다.
+ *
+ * 이 시험은 그 잠금 자체를 단언한다 — 잠금이 사라지면(또는 정리가 잠금 밖으로 나가면) 여기서
+ * 먼저 깨진다. 정리 경로의 소유권 검사(isAccountSeatedInRoom)는 그 경우를 대비한 방어다.
+ */
+test('F-21(AC-05/AC-06): 초대 수락이 진행 중인 계정은 새 소속을 만들 수 없다(실패 정리가 겨눌 새 소속이 없다)', async (t) => {
+    const afterPublish = deferred()
+    const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
+        gates: { afterPublish: afterPublish.promise, receiptShouldFail: true },
+    })
+
+    const accepting = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    await drainTicks()
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
+        'publish까지는 가야 이 시험이 의미를 갖는다',
+    )
+
+    // 원격 영수증을 기다리는 동안 그 미확정 소속이 회수됐다(명시적 이탈).
+    matchmaking.__testables.removeFromRoom(io, guestSocket, GUEST)
+    assert.equal(matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST), undefined)
+    guestSocket.emitted.length = 0
+
+    // 그래도 같은 계정은 새 소속을 만들 수 없다 — 시도는 아직 끝나지 않았다.
+    await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
+    const failed = guestSocket.emitted.find((e) => e.event === 'room_join_failed')
+    assert.equal(failed?.payload?.code, ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS)
+    assert.equal(matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST), undefined)
+
+    // 이제 옛 시도가 실패로 끝난다. 겨눌 새 소속이 없으므로 정리는 자기 잔여물만 건드린다.
+    afterPublish.resolve()
+    const ack = await accepting
+    await drainTicks()
+
+    assert.equal(ack.ok, false, '실패한 시도를 성공으로 바꾸지 않는다')
+    const after = matchmaking.__getStateSnapshotForTests()
+    assert.equal(after.playerRoom.find(([u]) => u === GUEST), undefined)
+    assert.equal(guestSocket.rooms.has(room.roomId), false, '미확정 채널이 남으면 유령 청취자가 된다')
+    assert.equal(service.state.entryOutcome, 'INTERRUPTED', '실패한 시도의 durable 상태는 그대로 맞춘다')
+})
+
 // ---------------------------------------------------------------------------
 // review5 #2 · 늦게 커밋된 수락 결정의 정직한 정착
 //
@@ -971,4 +1019,61 @@ test('review5 #2: 늦은 보상이 더 새로운 시도나 확정된 영수증�
         matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
         '확정된 소속은 그대로 남아야 한다',
     )
+})
+
+/**
+ * F-21(AC-06): **늦은 성공**도 publication 소유권을 물어야 한다.
+ *
+ * 영수증이 확정된 뒤 성공을 주장하기 전의 검사는 방 참조·playerRoom·participants.has(uuid)
+ * 세 가지였다. 그 셋은 **같은 계정이 그 사이 같은 방에 다시 앉은 경우에도 전부 통과한다** —
+ * 이 시도가 넣은 소속이 제거되고 새 소속이 생긴 상태다. 그때 성공을 주장하면
+ *   · 옛 초대가 만든 결과라고 거짓말하고,
+ *   · 이미 사라진 player 객체로 player_joined_room을 방송한다.
+ * 소속 식별자(publicationMembershipId)만이 그 둘을 구별한다.
+ */
+test('F-21(AC-06): 영수증 확정 뒤 소속이 **다른 membership**으로 바뀌었으면 성공을 주장하지 않는다', async (t) => {
+    const afterPublish = deferred()
+    const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
+        gates: { afterPublish: afterPublish.promise },
+    })
+
+    const pending = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    await drainTicks(8)
+
+    // publish는 끝났다 — 이 시도가 발급한 소속이 들어가 있다.
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    const [, seatedRoom] = snapshot.gameRooms.find(([id]) => id === room.roomId)
+    const publishedMembershipId = seatedRoom.players.find(([u]) => u === GUEST)?.[1]?.membershipId
+    assert.ok(publishedMembershipId, 'publish가 소속 식별자를 발급하지 않았다')
+
+    // 영수증을 기다리는 사이 그 소속이 제거되고 같은 계정이 **새 소속으로** 다시 앉았다.
+    // (실제 경로에서는 계정 단위 전이 잠금이 이 구간을 막는다 — 이 시험은 그 잠금이 사라졌을
+    //  때 늦은 성공 분기가 스스로 버티는지를 본다.)
+    matchmaking.__seedRoomForTests({
+        id: room.roomId,
+        instanceId: seatedRoom.instanceId,
+        hostUuid: HOST,
+        players: new Map([
+            [HOST, { uuid: HOST, nickname: 'host', isReady: false, membershipId: 'mem-host' }],
+            [GUEST, { uuid: GUEST, nickname: 'guest', isReady: false, membershipId: 'mem-guest-new' }],
+        ]),
+        settings: seatedRoom.settings,
+    })
+    matchmaking.__seedPlayerRoomForTests(GUEST, room.roomId)
+
+    const beforeBroadcasts = io.broadcasts.length
+    afterPublish.resolve()
+    const response = await pending
+
+    assert.equal(response.ok, false, '옛 초대가 남의 소속을 자기 성공으로 주장했다')
+    assert.equal(response.unknown, true)
+    // 이미 사라진 소속으로 입장을 방송하지도 않는다.
+    const joined = io.broadcasts.slice(beforeBroadcasts).filter((b) => b.event === 'player_joined_room')
+    assert.deepEqual(joined, [])
+    assert.equal(guestSocket.emitted.filter((e) => e.event === 'player_joined_room').length, 0)
+    // 그 사이 성립한 새 소속은 그대로 살아 있다(옛 정리가 지우지 않는다).
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
+    )
+    assert.equal(service.state.entryOutcome, 'PUBLISHED')
 })

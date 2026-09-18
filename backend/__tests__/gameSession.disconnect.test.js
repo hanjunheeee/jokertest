@@ -1,3 +1,10 @@
+// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지
+// 않는다). npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이 비어 있어
+// require 자체가 죽으므로, 같은 저장소의 다른 스위트(gameResultPersistence.test.js·
+// socket/__tests__/gameSession.test.js·matchmaking.test.js)와 **같은 관례**로 더미 폴백을 둔다.
+// 이미 설정돼 있으면 덮지 않으므로 공식 명령의 동작은 그대로다.
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 

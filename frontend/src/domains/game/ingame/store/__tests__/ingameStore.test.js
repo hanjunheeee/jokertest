@@ -406,10 +406,13 @@ test("applySessionSnapshot: 유효한 스냅샷은 정확히 한 번의 상태 �
   assert.equal(after.error, null)
   assert.equal(after.state.phase, "ROLE_REVEAL")
   assert.equal(after.state.dayIndex, 0)
+  // F-21(AC-03/AC-06): 스냅샷 복원은 생존과 **참여**를 분리해 되살린다 — 사망했지만 아직
+  // 참여 중인 참가자와 빠진 참가자를 새로고침 뒤에도 구별할 수 있어야 하기 때문이다(그 값이
+  // 없으면 추방 목록과 보드 사망 표시가 갈라진다). 값을 싣지 않은 스냅샷은 "참여 중"이다.
   assert.deepEqual(after.state.players, [
-    { uuid: "p1", nickname: "P1", alive: true, isConnected: true },
-    { uuid: "p2", nickname: "P2", alive: true, isConnected: true },
-    { uuid: "p3", nickname: "P3", alive: true, isConnected: true },
+    { uuid: "p1", nickname: "P1", alive: true, isConnected: true, isParticipating: true },
+    { uuid: "p2", nickname: "P2", alive: true, isConnected: true, isParticipating: true },
+    { uuid: "p3", nickname: "P3", alive: true, isConnected: true, isParticipating: true },
   ])
   assert.deepEqual(after.state.self, {
     uuid: "p1",

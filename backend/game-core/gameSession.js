@@ -460,6 +460,24 @@ function isForfeitedFromSession(gameId, uuid) {
 }
 
 /**
+ * F-21(AC-04): 이 uuid가 **그 세션에 아직 참여 중인가**(순수 조회 — 절대 throw하지 않는다).
+ *
+ * isForfeitedFromSession과 짝이지만 묻는 것이 다르다. 그쪽은 "다시 들어올 수 있는가"이고
+ * 이쪽은 "지금 이 판의 구성원인가"다. 추방 대상 판정은 후자여야 한다 — 사망했지만 참여 중인
+ * 참가자는 추방할 수 있고(A-06), 이미 빠진 참가자에 대한 신규 추방은 거부해야 한다.
+ *
+ * isParticipating 키가 없는 구버전 세션 객체는 "참여 중"으로 본다(fail-open) — 그 세션에는
+ * 아직 이탈 개념이 없었으므로 roster에 있다는 사실이 곧 참여다.
+ */
+function isParticipatingInSession(session, uuid) {
+    const player = session?.players?.get(uuid)
+    if (!player) return false
+    if (player.isParticipating === false) return false
+    if (session.forfeitedUuids instanceof Set && session.forfeitedUuids.has(uuid)) return false
+    return true
+}
+
+/**
  * 이 disconnect가 "세션 종료"가 아니라 "재접속 유예"로 처리돼야 하는지 판정하고, 그렇다면
  * 대상 세션을 돌려준다(순수 조회). 소켓 계층이 gameSessions에 직접 손대지 않고도 유예 타이머를
  * 걸 수 있게 하는 유일한 통로다.
@@ -486,6 +504,24 @@ function getDisconnectGraceTarget(uuid, expectedGameId) {
     if (isForfeitedFromSession(gameId, uuid)) return null
 
     return { session }
+}
+
+/**
+ * F-21(AC-03/AC-05): 이 uuid의 **현재 세션**을 이탈/추방 처리 대상으로 돌려준다(순수 조회 —
+ * 어떤 상태도 바꾸지 않고 절대 throw하지 않는다).
+ *
+ * endGameSessionForPlayer와 같은 ABA 가드를 쓴다: 요청이 가리키는 gameId가 이 계정의 현재
+ * 활성 세션과 다르면 null이다 — 그래야 옛 게임을 향한 요청이 새로 시작된 다른 판을 건드리지
+ * 않는다. 이미 참여가 끝난 참가자도 null이다(신규 이탈/추방의 대상이 아니다).
+ */
+function getActiveSessionForDeparture(uuid, expectedGameId) {
+    const gameId = playerSession.get(uuid)
+    if (!gameId) return null
+    if (expectedGameId !== undefined && gameId !== expectedGameId) return null
+    const session = gameSessions.get(gameId)
+    if (!session) return null
+    if (!isParticipatingInSession(session, uuid)) return null
+    return session
 }
 
 // 순수 계산 — 어떤 Map도 읽지 않는다. randomFn을 주입하면 완전히 결정적이다.
@@ -613,6 +649,10 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
     }
 
     const assigned = assignRoles(players, resolved.composition, randomFn)
+    // F-21(AC-03): 시작 시점에는 전원이 참여 중이다. assignRoles가 이미 새 객체를 만들었으므로
+    // 제자리에서 표시해도 room.players의 참가자 객체는 오염되지 않는다(키를 여기서 붙이는
+    // 이유는 assignRoles의 반환 셰이프가 역할 배정 시험의 계약이기 때문이다).
+    for (const player of assigned) player.isParticipating = true
     const session = {
         id: gameIdFn(),
         // 전적 저장(game_results.started_at)의 유일한 원천이다. 세션 객체가 만들어지는 이
@@ -620,6 +660,29 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         startedAt: Date.now(),
         roomId: room.id,
         channelId: room.id, // 기존 Socket.IO room(roomId)을 그대로 승계
+        // F-21(AC-01): 방장 권한은 시작과 함께 사라지지 않는다 — 진행 중 추방의 유일한 권한
+        // 원천이므로 대기방의 현재 방장을 그대로 승계한다. 클라이언트가 임시로 들고 있던 값을
+        // 쓰지 않는다. 승계가 없으면 프론트가 store 복사본에 의존해, 새로고침 한 번에 방관리
+        // 권한이 사라지거나(복사본 유실) 옛 방장에게 남는다.
+        hostUuid: room.hostUuid ?? null,
+        // 방 인스턴스와 프로세스 기동도 함께 승계한다. 추방 명령이 "내가 보고 있던 그 판"을
+        // 가리키는지 서버가 확인하는 근거이며, 재시작 이후의 옛 명령을 거부하는 값이다.
+        roomInstanceId: room.instanceId ?? room.id,
+        // 프로세스 기동 식별자. 이 값을 core가 만들지 않고 방에서 승계하는 이유는, 그 값의
+        // 소유자가 소켓 계층(kickReceiptStore)이기 때문이다 — core가 따로 만들면 같은 서버
+        // 기동인데도 대기방과 게임이 서로 다른 boot을 말하게 된다.
+        bootEpoch: room.bootEpoch ?? null,
+        // F-21(AC-03/AC-06): "아직 이 판에 참여 중인가"는 생존과 **다른 사실**이다. 사망자도
+        // 결과·roster·관전 자격을 위해 참여 중일 수 있고, 추방·이탈한 참가자는 살아 있었더라도
+        // 참여가 끝난다. 두 사실을 한 필드로 합치면 사망자 추방이 구조적으로 불가능해진다.
+        // 값이 바뀔 때마다 1씩 오르며, 옛 snapshot·ACK가 최신 상태를 되돌리지 못하게 한다.
+        participationRevision: 0,
+        // F-21(AC-03): **본인 제출 상태 전용** 순서값. participationRevision과 나눈 이유는 그
+        // 둘이 다른 사실을 말하기 때문이다 — 이탈은 참여 세대를 올리지만, 그 뒤의 평범한 제출은
+        // 참여를 바꾸지 않으므로 세대가 그대로다. 세대만으로 순서를 정하면 그 제출이 이탈 당시의
+        // "미제출"을 이길 수 없어 화면이 영영 미제출로 남는다. 개인 전송·스냅샷에 함께 실려
+        // 옛 개인 사건·옛 스냅샷이 더 새로운 제출 상태를 되돌리지 못하게 한다.
+        selfProgressSeq: 0,
         phase: INITIAL_GAME_PHASE,
         dayIndex: INITIAL_DAY_INDEX,
         // commit 경계(assertValidSessionForCommit)에서 실제 역할 분포와 대조하기 위해
@@ -1084,12 +1147,28 @@ function buildGameStartedPayload(session, viewerUuid) {
             id: session.id,
             phase: session.phase,
             dayIndex: session.dayIndex,
+            // F-21(AC-01): 방장과 참여 세대는 공개 값이다 — snapshot과 **같은 필드**를 실어,
+            // 시작 직후 화면과 새로고침 후 화면이 같은 근거로 방관리 권한을 판정하게 한다.
+            //
+            // roomId·roomInstanceId·bootEpoch는 진행 중 추방 요청이 "내가 보고 있던 그 판"을
+            // 가리킨다는 것을 서버가 확인하는 입력이다(kick_game_player의 필수 필드). 방 코드나
+            // 참가자 명단이 아니라 식별자뿐이라 새로 드러나는 비밀이 없다.
+            hostUuid: session.hostUuid ?? null,
+            roomId: session.roomId ?? null,
+            roomInstanceId: session.roomInstanceId ?? null,
+            bootEpoch: session.bootEpoch ?? null,
+            participationRevision: session.participationRevision ?? 0,
             // session.players는 Map이라 순회 순서가 모든 뷰어에게 동일하다 — 같은 index는
             // 곧 같은 참가자이므로 뷰어끼리 배정이 갈리지 않는다.
             players: [...session.players.values()].map((player, index) => ({
                 uuid: player.uuid,
                 nickname: player.nickname,
                 themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
+                // 생존과 참여를 처음부터 함께 내려보낸다. 예전에는 프론트가 "시작 시점에는
+                // 전원 생존"이라고 스스로 단정했고, 그 단정이 재접속·이탈과 어긋났다.
+                isAlive: player.alive === true,
+                isParticipating: player.isParticipating !== false,
+                membershipId: player.membershipId ?? null,
                 ...buildPlayerAccountProfileFields(player),
             })), // role 없음
             self: buildViewerRoleFields(session, viewer),
@@ -1142,11 +1221,49 @@ function acknowledgeRoleReveal(uuid, gameId) {
     // phase가 더 이상 ROLE_REVEAL이 아니므로 위쪽 phase 가드가 모든 후속 확인(중복·재요청·
     // 늦게 도착한 동시 요청)을 INVALID_PHASE로 되돌린다 — transitioned:true는 세션당 정확히
     // 한 번만 나올 수 있고, DAY 상태가 다시 초기화되거나 dayIndex가 또 오르는 경로는 없다.
-    if (session.roleRevealAcks.size === session.players.size) {
+    // F-21(AC-03): 분모는 roster 전체가 아니라 **아직 참여 중인** 참가자다. 추방·이탈한
+    // 참가자는 session.players에 남지만 확인을 보낼 수 없으므로, roster 크기와 비교하면 그
+    // 세션은 영영 ROLE_REVEAL에 갇힌다(사람 수만 세던 예전 비교의 유일한 실패 모드다).
+    if (isRoleRevealComplete(session)) {
         enterDayPhase(session)
         return { ok: true, transitioned: true, session }
     }
     return { ok: true, transitioned: false, session }
+}
+
+/** 아직 참여 중인 참가자 전원이 역할 확인을 마쳤는가(순수 계산). 참여자가 없으면 false다. */
+function isRoleRevealComplete(session) {
+    const pending = [...session.players.values()].filter((player) => isParticipatingInSession(session, player.uuid))
+    if (pending.length === 0) return false
+    return pending.every((player) => session.roleRevealAcks.has(player.uuid))
+}
+
+/**
+ * F-21(AC-03): 이탈로 분모가 줄어 **이미 충족된** 단계 완료를 정확히 한 번 진행시킨다.
+ *
+ * 이탈 자체는 페이즈 전이가 아니다 — 그래서 여기서는 "남은 사람만으로 이미 조건이 찼는가"만
+ * 묻고, 차 있으면 기존 전이 헬퍼(enterDayPhase·enterDayVotePhase)를 그대로 부른다. 새 전이
+ * 규칙을 만들지 않으므로 이탈이 없는 라운드의 기존 계약(전원 투표해도 deadline까지 대기 등)은
+ * 그대로다. DAY_VOTE 집계와 밤 턴 완료는 이미 소켓 계층의 prepare/commit·방송 기계가
+ * 소유하므로 여기서 건드리지 않는다.
+ *
+ * @returns {{transitioned: null|'DAY'|'DAY_VOTE'}}
+ */
+function advanceStalledPhaseAfterDeparture(session) {
+    if (session.phase === 'ROLE_REVEAL') {
+        if (!isRoleRevealComplete(session)) return { transitioned: null }
+        enterDayPhase(session)
+        return { transitioned: 'DAY' }
+    }
+    if (session.phase === 'DAY' && getDayPhase(session) === DAY_PHASES.DISCUSSION) {
+        const eligibleUuids = getEligibleDayVoterUuids(session)
+        if (eligibleUuids.length === 0) return { transitioned: null }
+        const readyUuids = session.dayVoteReadyUuids instanceof Set ? session.dayVoteReadyUuids : new Set()
+        if (!eligibleUuids.every((uuid) => readyUuids.has(uuid))) return { transitioned: null }
+        enterDayVotePhase(session)
+        return { transitioned: 'DAY_VOTE' }
+    }
+    return { transitioned: null }
 }
 
 /** ROLE_REVEAL→DAY 전이를 참가자 전체에게 알리는 공용 payload. 참가자 식별·비밀 정보를 전혀 포함하지 않는다. */
@@ -1839,6 +1956,308 @@ function commitDisconnectElimination(session, uuid) {
     return { ok: true, victimUuid: uuid, terminal: null }
 }
 
+/**
+ * F-21(AC-03/AC-05/AC-06): 진행 중인 세션에서 **참가자 한 명만** 빠지는 유일한 canonical
+ * mutation이다. 방장 추방과 명시적 이탈, 재접속 유예 만료가 전부 이 함수 하나를 지난다 —
+ * 세 경로가 각자 상태를 만지면 "추방은 사망으로, 이탈은 세션 삭제로" 같은 비대칭이 조용히
+ * 생기고, 그 차이가 그대로 전적·보상의 차이가 된다(AC-03의 핵심).
+ *
+ * 생존자는 기존 `commitDisconnectElimination`을 **그대로 재사용한다** — 사망 원인·잔여 효과
+ * 소멸·승패 재평가의 순서를 여기서 다시 적지 않는다. 이미 죽은 참가자는 사망을 다시 만들지
+ * 않고 참여 종료만 기록한다: 기존 EXECUTION/ASSASSINATION을 DISCONNECT로 덮어쓰면 그 판의
+ * 전적이 거짓이 되고, 사망 사건·효과음·승패 평가가 두 번 일어난다(A-06).
+ *
+ * "살아 있는가"와 "참여 중인가"는 끝까지 분리한다. 사망자도 결과·roster를 위해 참여 중일 수
+ * 있고, 참여가 끝난 참가자도 session.players에는 남는다 — roster를 지우면 전적 레코드와
+ * snapshot의 명단이 판마다 달라진다.
+ *
+ * 이 함수는 어떤 소켓도 알지 못하고 await도 두지 않는다. 방송·타이머·저장은 전부 호출부
+ * (backend/socket/gameSession.js의 applyParticipantDeparture)의 몫이다.
+ *
+ * @param {object} session - canonical GameSession(이 함수가 직접 변형한다)
+ * @param {string} uuid - 빠지는 참가자
+ * @param {{reason?:string}} [options]
+ * @returns {{ok:false,code:string}|{ok:true,...}}
+ */
+function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT' } = {}) {
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    // ENDED는 이 경계의 대상이 아니다 — 결과가 이미 확정된 판에서 "빠진다"는 것은 결과 화면을
+    // 닫는 일이고, 그 정리는 endGameSessionForPlayer의 개인 detach가 이미 소유한다.
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    const player = session.players.get(uuid)
+    if (!player) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    if (player.isParticipating === false) return { ok: false, code: 'ALREADY_LEFT' }
+    // 유예 만료로 이미 배제된 참가자도 "이미 빠진" 사람이다. isParticipating이 없는 구버전
+    // 세션 객체까지 같은 답을 내도록 두 근거를 함께 본다.
+    if (session.forfeitedUuids instanceof Set && session.forfeitedUuids.has(uuid)) {
+        return { ok: false, code: 'ALREADY_LEFT' }
+    }
+
+    const wasAlive = player.alive === true
+    const phaseAtDeparture = session.phase
+    const wasDefendant = session.phase === 'TRIBUNAL'
+        && session.tribunal?.defendantUuid === uuid
+        && session.tribunal?.resolved !== true
+
+    // ── 1) 사망(또는 사망 없음) ────────────────────────────────────────────────
+    let eliminated = false
+    let terminal = null
+    if (wasAlive) {
+        const applied = commitDisconnectElimination(session, uuid)
+        // 위에서 ENDED·참가자 존재·생존을 모두 확인했으므로 정상 경로에서는 실패하지 않는다.
+        // 실패를 그대로 돌려주는 이유는, 실패했다는 것은 아직 **아무 상태도 바뀌지 않았다**는
+        // 뜻이고(그 함수의 계약) 그럴 때 참여 종료만 따로 기록하면 사망 없는 유령이 남기 때문이다.
+        if (!applied.ok) return applied
+        eliminated = true
+        terminal = applied.terminal
+    } else {
+        // 사망자: 원인·역할·roster를 그대로 두고 배제와 이탈만 기록한다(사망 사건 0회).
+        if (!session.forfeitedUuids) session.forfeitedUuids = new Set()
+        session.forfeitedUuids.add(uuid)
+        if (!session.detachedUuids) session.detachedUuids = new Set()
+        session.detachedUuids.add(uuid)
+    }
+
+    // ── 2) 참여 종료 ──────────────────────────────────────────────────────────
+    player.isParticipating = false
+    session.participationRevision =
+        (Number.isSafeInteger(session.participationRevision) ? session.participationRevision : 0) + 1
+
+    // 계정→세션 매핑은 **그 값이 이 게임일 때만** 지운다. 이 참가자가 이미 다른 새 게임에
+    // 들어가 있다면 그 매핑은 이 판의 소유가 아니다(A-04).
+    const released = playerSession.get(uuid) === session.id
+    if (released) playerSession.delete(uuid)
+
+    // ── 3) 방장 승계 — 아직 참여 중인 첫 참가자. 사망 여부는 보지 않는다 ─────────
+    let hostChanged = false
+    let newHostUuid = session.hostUuid ?? null
+    if (session.hostUuid === uuid) {
+        newHostUuid = null
+        for (const candidate of session.players.values()) {
+            if (candidate.uuid === uuid) continue
+            if (candidate.isParticipating === false) continue
+            newHostUuid = candidate.uuid
+            break
+        }
+        session.hostUuid = newHostUuid
+        hostChanged = true
+    }
+
+    // ── 4) 비종결 단계 정리 ───────────────────────────────────────────────────
+    //
+    // terminal이면 아무 것도 전이하지 않는다 — 이미 ENDED인 판의 준비·표·턴은 의미가 없고,
+    // 여기서 건드리면 결과 화면이 읽는 최종 상태가 흔들린다.
+    const cleanup = {
+        removedRoleRevealAck: false,
+        removedDayVoteReady: false,
+        removedDayVote: false,
+        normalizedVoterUuids: [],
+        removedTribunalVote: false,
+    }
+    let tribunalCancelled = false
+
+    if (!terminal) {
+        if (session.roleRevealAcks instanceof Set) {
+            cleanup.removedRoleRevealAck = session.roleRevealAcks.delete(uuid)
+        }
+        if (session.dayVoteReadyUuids instanceof Set) {
+            cleanup.removedDayVoteReady = session.dayVoteReadyUuids.delete(uuid)
+        }
+        if (session.dayVotes instanceof Map) {
+            cleanup.removedDayVote = session.dayVotes.delete(uuid)
+            // 이탈자를 지목했던 **생존 잔류자**의 표만 기권(null)으로 정규화한다. 다른 표는
+            // 그대로 둔다 — 정규화는 "이미 던진 표의 대상이 사라졌다"는 사실의 반영이지 새
+            // 투표가 아니므로, 투표 참여 저장·제출 효과음을 새로 만들지 않는다.
+            for (const [voterUuid, targetUuid] of session.dayVotes) {
+                if (targetUuid !== uuid) continue
+                session.dayVotes.set(voterUuid, null)
+                cleanup.normalizedVoterUuids.push(voterUuid)
+            }
+        }
+        if (session.nightActions instanceof Map) {
+            session.nightActions.delete(uuid)
+            // 이탈자를 겨눈 밤 행동도 함께 거둔다 — 사라진 대상을 향한 지목이 그대로 남으면
+            // 밤 판정이 참가자 아님/사망 대상으로 거부돼 그 밤 전체가 멈춘다.
+            for (const [actorUuid, targetId] of session.nightActions) {
+                if (targetId === uuid) session.nightActions.set(actorUuid, null)
+            }
+        }
+
+        if (session.tribunal && session.tribunal.resolved !== true) {
+            if (session.tribunal.votes instanceof Map) {
+                cleanup.removedTribunalVote = session.tribunal.votes.delete(uuid)
+            }
+            if (wasDefendant) {
+                // 피고가 빠졌으므로 이 재판은 유죄도 무죄도 아니다. 진행 중이던 판정 준비를
+                // 무효화하고(옛 prepare 결과로 커밋할 수 없게) 같은 날 밤으로 **한 번만**
+                // 넘긴다 — 정상 무죄 전이와 같은 모양이라 뒤따르는 밤이 특별해지지 않는다.
+                TRIBUNAL_PENDING.delete(session)
+                const counts = tallyTribunalBallots(
+                    buildTribunalBallotSnapshot(session, session.tribunal),
+                    session.tribunal.defendantUuid,
+                ).counts
+                session.tribunal.outcome = TRIBUNAL_CANCELLED_OUTCOME
+                session.tribunal.cancelReason = TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT
+                // 취소 순간의 유효 제출표다. 유죄/무죄의 확정이 아니라 "여기까지 모인 표"다.
+                session.tribunal.counts = { guilty: counts.guilty, notGuilty: counts.notGuilty }
+                session.tribunal.executedUuid = null
+                session.tribunal.resolved = true
+                session.phase = 'NIGHT'
+                session.nightActions = new Map()
+                session.nightResolution = null
+                tribunalCancelled = true
+            }
+        }
+    }
+
+    return {
+        ok: true,
+        reason,
+        victimUuid: uuid,
+        eliminated,
+        terminal,
+        wasAlive,
+        phaseAtDeparture,
+        hostChanged,
+        newHostUuid,
+        participationRevision: session.participationRevision,
+        released,
+        tribunalCancelled,
+        cleanup,
+    }
+}
+
+/** 피고 이탈로 취소된 재판의 outcome. GUILTY/NOT_GUILTY 어느 쪽도 아니라는 뜻이다. */
+const TRIBUNAL_CANCELLED_OUTCOME = 'CANCELLED'
+
+/** 재판 취소 사유의 단일 원천(지금은 하나뿐이지만 프런트가 문자열을 복붙하지 않게 한다). */
+const TRIBUNAL_CANCEL_REASONS = Object.freeze({
+    DEFENDANT_LEFT: 'DEFENDANT_LEFT',
+})
+
+/**
+ * F-21(AC-03): 참여 상태 변화 공개 payload. 역할·진영·밤 행동자 수·개별 제출자는 싣지 않는다 —
+ * 이 사건은 "누가 더 이상 이 판에 없는가"만 말한다. 낮/재판/역할확인의 **공개** 진행 수는
+ * 이미 각 단계의 기존 방송이 공개하는 값이라 새로 드러나는 비밀이 없다.
+ */
+function buildParticipationChangedPayload(session, departedUuid) {
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        hostUuid: session.hostUuid ?? null,
+        participationRevision: session.participationRevision ?? 0,
+        departedUuid,
+        players: [...session.players.values()].map((player) => ({
+            uuid: player.uuid,
+            membershipId: player.membershipId ?? null,
+            alive: player.alive === true,
+            isParticipating: player.isParticipating !== false,
+        })),
+        // 이탈로 **분모가 줄어든** 단계의 공개 진행 수. 화면이 스스로 계산하면 이탈자를 언제
+        // 빼는지가 서버와 어긋난다(준비 3/4가 영원히 안 채워지는 화면이 된다).
+        progress: buildPublicPhaseProgress(session),
+    }
+}
+
+/**
+ * F-21(AC-03): 지금 단계의 **공개** 진행 수. 이미 각 단계의 기존 방송이 공개하고 있는 값과
+ * 같은 범위다 — 누가 했는지는 담지 않고 몇 명이 했는지만 담는다.
+ *
+ * NIGHT은 의도적으로 비어 있다. 밤의 행동자 수·제출자 목록은 역할 구성을 역산할 수 있는
+ * 정보라 공개 계약이 아니다(계획 메모: "밤의 행동자 수·제출자 목록은 공개하지 않는다").
+ */
+function buildPublicPhaseProgress(session) {
+    if (session.phase === 'ROLE_REVEAL') {
+        const pending = [...session.players.values()].filter((p) => p.isParticipating !== false)
+        const acks = session.roleRevealAcks instanceof Set ? session.roleRevealAcks : new Set()
+        return {
+            kind: 'ROLE_REVEAL',
+            doneCount: pending.filter((p) => acks.has(p.uuid)).length,
+            requiredCount: pending.length,
+        }
+    }
+    if (session.phase === 'DAY') {
+        const eligible = getEligibleDayVoterUuids(session)
+        if (getDayPhase(session) === DAY_PHASES.DISCUSSION) {
+            const ready = session.dayVoteReadyUuids instanceof Set ? session.dayVoteReadyUuids : new Set()
+            return {
+                kind: 'DAY_DISCUSSION',
+                doneCount: eligible.filter((uuid) => ready.has(uuid)).length,
+                requiredCount: eligible.length,
+            }
+        }
+        return {
+            kind: 'DAY_VOTE',
+            doneCount: eligible.filter((uuid) => session.dayVotes.has(uuid)).length,
+            requiredCount: eligible.length,
+        }
+    }
+    if (session.phase === 'TRIBUNAL' && session.tribunal) {
+        const eligible = getEligibleTribunalVoterUuids(session, session.tribunal.defendantUuid)
+        const votes = session.tribunal.votes instanceof Map ? session.tribunal.votes : new Map()
+        return {
+            kind: 'TRIBUNAL',
+            doneCount: eligible.filter((uuid) => votes.has(uuid)).length,
+            requiredCount: eligible.length,
+        }
+    }
+    return { kind: session.phase === 'NIGHT' ? 'NIGHT' : 'NONE', doneCount: null, requiredCount: null }
+}
+
+/**
+ * F-21(AC-03): 개인 제출 상태 전송 한 묶음마다 1씩 오르는 순서값을 발급한다.
+ *
+ * 이 값이 없으면 "이탈 당시의 미제출"과 "그 뒤의 평범한 제출"을 화면이 구별하지 못한다 —
+ * 둘 다 같은 participationRevision을 달고 오기 때문이다(제출은 참여를 바꾸지 않는다). 개인
+ * 값의 순서는 개인 값의 시계로 정해야 한다.
+ *
+ * 세션 객체 하나당 단조 증가이므로 어느 수신자 관점에서도 순서가 뒤집히지 않는다.
+ */
+function bumpSelfProgressSeq(session) {
+    const next = (Number.isSafeInteger(session.selfProgressSeq) ? session.selfProgressSeq : 0) + 1
+    session.selfProgressSeq = next
+    return next
+}
+
+/**
+ * F-21(AC-03): **수신자 본인의** 제출 상태. 다른 참가자의 선택은 하나도 담지 않는다.
+ *
+ * 표적이 이탈로 기권(null)으로 정규화된 뒤에도 화면이 옛 선택을 그대로 그리고 있으면, 사용자는
+ * 자기 표가 아직 그 사람을 향하고 있다고 믿는다. 그래서 서버가 확정한 현재 값을 그대로 준다 —
+ * 제출하지 않았으면 hasSubmitted:false이고 targetUuid는 null이다.
+ */
+function buildSelfSubmissionFields(session, uuid) {
+    const fields = {}
+    if (session.phase === 'ROLE_REVEAL') {
+        fields.hasAcknowledgedRoleReveal = session.roleRevealAcks instanceof Set
+            && session.roleRevealAcks.has(uuid)
+        return fields
+    }
+    if (session.phase === 'DAY') {
+        if (getDayPhase(session) === DAY_PHASES.DISCUSSION) {
+            fields.isDayVoteReady = session.dayVoteReadyUuids instanceof Set
+                && session.dayVoteReadyUuids.has(uuid)
+            return fields
+        }
+        const submitted = session.dayVotes.has(uuid)
+        fields.hasSubmittedDayVote = submitted
+        const target = submitted ? session.dayVotes.get(uuid) : null
+        // 기권으로 정규화된 표는 null이다 — 화면이 옛 표적을 남겨두지 않게 한다.
+        fields.dayVoteTargetUuid = target === undefined ? null : target
+        fields.dayVoteRound = getDayVoteRound(session)
+        return fields
+    }
+    if (session.phase === 'TRIBUNAL' && session.tribunal) {
+        fields.hasSubmittedTribunalVote = session.tribunal.votes instanceof Map
+            && session.tribunal.votes.has(uuid)
+        return fields
+    }
+    return fields
+}
+
 /** 끊김 사망 전용 공개 payload. 밤 결과와 원인 필드를 공유하지 않고 공개 생존 상태만 전달한다. */
 function buildDisconnectEliminationPayload(session, victimUuid) {
     return {
@@ -2169,6 +2588,16 @@ function buildDayPhaseChangedPayload(session) {
 // "publicAbstainCount ≤ publicVoteCount"도 그대로 유지된다).
 // @param {object} session - canonical GameSession(dayVotes/players/제외 집합을 읽기만 한다)
 // @flow eligible voter를 순회해 표를 세고, 최다 득표를 찾은 뒤 공동 최다가 둘 이상인지로 분기한다.
+/** 정렬된 uuid 목록 두 개가 같은가(판정 재검증 전용 — 어떤 상태도 읽지 않는 순수 비교다). */
+function uuidListsEqual(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false
+    if (left.length !== right.length) return false
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) return false
+    }
+    return true
+}
+
 function tallyDayVoteOutcome(session) {
     const eligibleVoterUuids = getEligibleDayVoterUuids(session)
     const excludedUuids = getDayVoteExcludedUuids(session)
@@ -2214,6 +2643,38 @@ function tallyDayVoteOutcome(session) {
         publicVoteCount,
         publicAbstainCount,
     }
+}
+
+/**
+ * F-21(AC-03): 준비 시점의 **표 내용 그 자체**를 동결해 둔다.
+ *
+ * 집계 수치(득표·기권·동률 집합)만 대조하면 표가 서로 **교환**된 변화를 잡지 못한다. 예를
+ * 들어 A→B·B→A가 A→A·B→B로 바뀌면 두 표 모두 달라졌는데도 득표(각 1표)·기권 수·동률
+ * 집합({A,B})이 전부 같다. 그 상태로 옛 판정을 커밋하면 "지금 표"가 아닌 판정이 확정된다 —
+ * 재투표 제외 목록도, 방송되는 공개 수치도 이미 존재하지 않는 표의 산물이다.
+ *
+ * 그래서 (투표자, 표적) 쌍을 투표자 uuid로 정렬해 그대로 보관한다. 이 값은 resolution 안에만
+ * 있고 어떤 공개 payload에도 실리지 않는다(buildDayVoteResolvedPayload는 필드를 명시적으로
+ * 골라 담는다) — 남의 표를 드러내지 않는다.
+ */
+function buildDayVoteBallotSnapshot(session) {
+    const ballots = getEligibleDayVoterUuids(session)
+        .slice()
+        .sort()
+        .map((voterUuid) => {
+            const target = session.dayVotes.get(voterUuid)
+            return Object.freeze([voterUuid, target === undefined ? null : target])
+        })
+    return Object.freeze(ballots)
+}
+
+/** 두 표 스냅샷이 투표자·표적까지 정확히 같은가(순서는 이미 정렬돼 있다). */
+function dayVoteBallotSnapshotsEqual(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) {
+        if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false
+    }
+    return true
 }
 
 /**
@@ -2317,6 +2778,9 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
             // 둘 다 정렬·동결된 복사본이라 판정 이후 누구도 바꿀 수 없다.
             excludedUuids: Object.freeze([...getDayVoteExcludedUuids(session)].sort()),
             revoteExcludedUuids: Object.freeze(isRevote ? [...tally.tiedTargetUuids] : []),
+            // F-21(AC-03): 이 판정이 근거로 삼은 표 전체. 커밋 직전에 지금의 표와 정확히
+            // 대조한다(집계가 우연히 같아도 표가 달라졌으면 다른 판정이다).
+            ballotSnapshot: buildDayVoteBallotSnapshot(session),
         },
     }
 }
@@ -2354,6 +2818,65 @@ function commitDayVoteResolution(session, resolution) {
 
     if (resolution.dayIndex !== session.dayIndex || getResolutionRound(resolution) !== getDayVoteRound(session)) {
         return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+
+    // ── F-21(AC-03): 커밋 직전 재검증 ─────────────────────────────────────────
+    //
+    // 예전에는 dayIndex와 라운드만 봤다. 그 둘은 **참가자 이탈로 바뀌지 않는 값**이라, 판정을
+    // 준비한 뒤 대상이 추방되거나 그 대상을 겨눈 표가 기권으로 정규화돼도 옛 판정이 그대로
+    // 커밋됐다 — 사라진 사람을 재판에 세우거나, 이미 달라진 집계로 밤을 열 수 있었다.
+    // TRIBUNAL 커밋이 이미 쓰고 있던 것과 같은 재검증을 여기에도 둔다.
+    if (gameSessions.get(session.id) !== session) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    if (session.phase !== 'DAY') return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    if (getDayPhase(session) !== DAY_PHASES.VOTE) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+
+    const eligibleVoterUuids = getEligibleDayVoterUuids(session)
+    for (const voterUuid of eligibleVoterUuids) {
+        // 준비된 표가 그대로인가 — 그 사이 투표자가 빠졌다면 남은 사람의 제출이 비어 있을 수 있다.
+        if (!session.dayVotes.has(voterUuid)) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+        const target = session.dayVotes.get(voterUuid)
+        if (target === null) continue
+        const targetPlayer = session.players.get(target)
+        if (!targetPlayer || !targetPlayer.alive) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+
+    // 현재 표로 다시 집계해 준비된 판정과 대조한다. prepare와 **같은 재투표 승격 규칙**을
+    // 여기서도 적용해야 REVOTE 경로가 스스로 어긋났다고 판정하지 않는다.
+    const recheck = tallyDayVoteOutcome(session)
+    const recheckOutcome = recheck.outcome === 'TIE' && getDayVoteRound(session) === 1 ? 'REVOTE' : recheck.outcome
+    if (
+        recheckOutcome !== resolution.outcome ||
+        recheck.tribunalTargetUuid !== resolution.tribunalTargetUuid ||
+        recheck.publicVoteCount !== resolution.publicVoteCount ||
+        recheck.publicAbstainCount !== resolution.publicAbstainCount
+    ) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+    // 집계 수치만 대조하면 **동률 후보 집합**이 빠진다. outcome·대상·표수·기권 수가 모두
+    // 같으면서 공동 최다 득표자만 달라지는 표 변화가 가능한데, 재투표 제외 목록은 바로 그
+    // 집합에서 나온다 — 준비된 목록을 그대로 쓰면 지금의 동률과 다른 후보를 다음 라운드에서
+    // 배제하게 된다. 이번 라운드에 적용된 제외 목록도 같은 이유로 함께 확인한다.
+    const recheckRevoteExcluded = recheckOutcome === 'REVOTE' ? [...recheck.tiedTargetUuids].sort() : []
+    if (!uuidListsEqual(recheckRevoteExcluded, resolution.revoteExcludedUuids ?? [])) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+    if (!uuidListsEqual([...getDayVoteExcludedUuids(session)].sort(), resolution.excludedUuids ?? [])) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+    // 마지막으로 **표 자체**를 대조한다. 위 검사들은 전부 집계에서 파생된 값이라, 표가 서로
+    // 교환되기만 한 변화(A→B·B→A ⇒ A→A·B→B)는 전부 통과한다 — 득표·기권·동률 집합이 그대로이기
+    // 때문이다. 그런 판정을 커밋하면 이미 존재하지 않는 표로 그 낮을 끝내게 된다. 준비 시점에
+    // 동결해 둔 (투표자, 표적) 쌍과 지금의 쌍이 정확히 같을 때만 통과한다.
+    //
+    // ballotSnapshot이 없는 resolution은 이 재검증을 건너뛰지 않는다 — prepare가 항상 함께
+    // 만들므로, 없다는 것은 이 함수가 소비해서는 안 되는 값이 들어왔다는 뜻이다(fail-closed).
+    if (!dayVoteBallotSnapshotsEqual(buildDayVoteBallotSnapshot(session), resolution.ballotSnapshot)) {
+        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
+    }
+    // 재판 대상이 지금도 살아 있는 참가자인지 마지막으로 확인한다.
+    if (resolution.outcome === 'TRIBUNAL') {
+        const defendant = session.players.get(resolution.tribunalTargetUuid)
+        if (!defendant || defendant.alive !== true) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
 
     session.dayVoteResolution = resolution
@@ -2726,12 +3249,19 @@ function commitTribunalVoteResolution(session, resolution) {
  * 이 저장소에서 최상위 role 키가 "이 payload를 보는 본인의 역할"을 뜻하는 예약된 의미이기
  * 때문입니다(buildViewerRoleFields). 처형이 없었다면(NOT_GUILTY) executedUuid와 함께 null입니다.
  *
+ * F-21(AC-03): outcome은 CANCELLED일 수도 있습니다 — 피고가 이 판에서 빠져 재판 자체가 성립하지
+ * 않은 경우입니다. 그때 counts는 **취소 순간까지 모인 유효 제출표**일 뿐 유죄/무죄의 확정이
+ * 아니며 executedUuid는 언제나 null입니다. reason 키는 취소일 때만 만듭니다(선택 필드 관례).
+ *
  * @param {object} session - canonical GameSession(id/phase/tribunal/players를 읽기만 한다)
  */
 function buildTribunalVoteResolvedPayload(session) {
     const tribunal = session.tribunal
     const executedUuid = tribunal.executedUuid
     return {
+        ...(tribunal.outcome === TRIBUNAL_CANCELLED_OUTCOME
+            ? { reason: tribunal.cancelReason ?? TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT }
+            : {}),
         gameId: session.id,
         dayIndex: tribunal.dayIndex,
         phase: session.phase,
@@ -2802,6 +3332,22 @@ function buildSessionSnapshot(session, uuid) {
         gameId: session.id,
         phase: session.phase,
         dayIndex: session.dayIndex,
+        // F-21(AC-01): 방장은 공개 정보다(대기방에서도 그랬다). 새로고침 한 번에 방관리 권한이
+        // 사라지거나 옛 방장에게 남는 일이 없도록 서버 값을 그대로 싣는다. 비밀 필드(self)와
+        // 섞지 않는다 — 이 값은 전원이 같은 답을 본다.
+        hostUuid: session.hostUuid ?? null,
+        // game_started와 **같은 세 식별자**다. 새로고침으로 메모리 store가 비어도 방장이
+        // 추방 요청을 만들 수 있어야 한다(그 값들이 없으면 새로고침 한 번에 방관리가 멈춘다).
+        roomId: session.roomId ?? null,
+        roomInstanceId: session.roomInstanceId ?? null,
+        bootEpoch: session.bootEpoch ?? null,
+        // 참여 상태의 세대. 이 사건 이전에 캡처된 snapshot·ACK가 최신 참여 상태를 되돌리지
+        // 못하도록 프론트가 적용 세대와 함께 검사한다(AC-03/AC-05).
+        participationRevision: session.participationRevision ?? 0,
+        // F-21(AC-03): 이 스냅샷이 말하는 **개인 제출 상태**의 순서값. 재접속 스냅샷 조회는
+        // 비동기라, 조회가 발행된 뒤에 낸 제출이 먼저 반영되고 그 뒤에 옛 스냅샷이 도착하면
+        // 방금 낸 표가 화면에서 사라진다(참여 세대는 같으므로 기존 검사로는 잡히지 않는다).
+        selfProgressSeq: session.selfProgressSeq ?? 0,
         // dayPhase는 낮에서만 의미가 있으므로 phase가 DAY일 때만 키 자체를 만든다
         // (nightResult/tribunal의 선택 필드 관례와 동일). 이 값이 없으면 재접속 클라이언트가
         // 토론과 투표를 구분하지 못해 그 낮에 갇힌다.
@@ -2810,6 +3356,11 @@ function buildSessionSnapshot(session, uuid) {
             uuid: player.uuid,
             nickname: player.nickname,
             isAlive: player.alive,
+            // F-21(AC-03/AC-06): 생존과 분리된 사실이다. 보드의 사망 표시는 isAlive가, 추방
+            // 목록의 포함 여부는 이 값이 결정한다 — 사망했어도 참여 중이면 추방할 수 있다.
+            isParticipating: player.isParticipating !== false,
+            // 이 판에서의 서버 소속 식별자. 추방 요청이 대상을 지목하는 근거다.
+            membershipId: player.membershipId ?? null,
             // game_started와 같은 session-id 기반 순열을 다시 계산한다. 메모리 store가 사라진
             // 새로고침에서도 참가자별 색·보드 슬롯이 최초 진입과 정확히 같아진다.
             themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
@@ -2821,7 +3372,14 @@ function buildSessionSnapshot(session, uuid) {
         self: {
             ...buildViewerRoleFields(session, viewer),
             hasActedThisPhase: computeHasActedThisPhase(session, uuid),
+            // F-21(AC-03): hasActedThisPhase만으로는 **무엇을** 제출했는지 복원하지 못한다.
+            // 표적이 이탈로 기권(null)으로 정규화된 뒤 재접속하면, 화면은 서버가 이미 지운
+            // 선택을 그대로 그린 채로 남는다. 수신자 본인의 값만 담는다(남의 선택은 없다).
+            ...buildSelfSubmissionFields(session, uuid),
         },
+        // 이탈로 분모가 바뀌는 단계의 공개 진행 수. 화면이 스스로 세면 "이탈자를 언제 빼는가"가
+        // 서버와 어긋나 준비 3/4가 영원히 채워지지 않는다. NIGHT은 비어 있다(공개 계약 아님).
+        progress: buildPublicPhaseProgress(session),
     }
 
     if (session.nightResolution) {
@@ -2892,7 +3450,18 @@ function buildSessionSnapshot(session, uuid) {
  */
 function getSessionSnapshotForPlayer(uuid, expectedGameId) {
     const gameId = playerSession.get(uuid)
-    if (!gameId) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    if (!gameId) {
+        // F-21(AC-06): 이탈·추방·유예 만료로 배제된 계정은 playerSession 매핑이 풀린다(그래야
+        // 다른 새 게임에 들어갈 수 있다). 그 상태에서 옛 gameId로 스냅샷을 물으면 "참가자가
+        // 아님"(내부 오류로 정규화된다)이 아니라 **참여 불가 사유**를 알려야 한다 — 그 안내를
+        // 받은 클라이언트만 재시도를 멈추고 로비로 돌아갈 수 있다. 여기서 세션을 직접 찾더라도
+        // 스냅샷은 절대 만들지 않는다(복귀를 허용하지 않는다).
+        const normalized = typeof expectedGameId === 'string' ? expectedGameId.trim() : ''
+        if (normalized && isForfeitedFromSession(normalized, uuid)) {
+            return { ok: false, code: 'FORFEITED_FROM_SESSION' }
+        }
+        return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    }
 
     const session = gameSessions.get(gameId)
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
@@ -3343,6 +3912,21 @@ module.exports = {
     // 진입점이므로, 밤 판정 3인방과 나란히 정식 export로 둔다.
     commitDisconnectElimination,
     buildDisconnectEliminationPayload,
+    // F-21(AC-03): 추방·명시적 이탈·유예 만료가 공유하는 개인 이탈 커밋과 그 공개 사건.
+    // 소켓 계층이 직접 부르는 진입점이라 __testables가 아니라 정식 export다.
+    commitParticipantDeparture,
+    buildParticipationChangedPayload,
+    // F-21(AC-03): 이탈로 분모·본인 표가 바뀐 단계의 공개 진행 수와 **수신자 본인의** 제출
+    // 상태. 소켓 계층이 각각 공개 방송과 개인 전송에 싣는다.
+    buildPublicPhaseProgress,
+    buildSelfSubmissionFields,
+    // 개인 제출 상태 전송의 순서값 발급. 소켓 계층이 한 묶음마다 한 번 부른다.
+    bumpSelfProgressSeq,
+    advanceStalledPhaseAfterDeparture,
+    isParticipatingInSession,
+    getActiveSessionForDeparture,
+    TRIBUNAL_CANCELLED_OUTCOME,
+    TRIBUNAL_CANCEL_REASONS,
     getDisconnectGraceTarget,
     isForfeitedFromSession,
     buildNightResultAppliedPayload,
@@ -3410,6 +3994,8 @@ module.exports = {
         buildNightDeathReveals,
         getEligibleDayVoterUuids,
         tallyDayVoteOutcome,
+        buildDayVoteBallotSnapshot,
+        dayVoteBallotSnapshotsEqual,
         __deleteGameSessionOnlyForTests,
     },
 }

@@ -77,14 +77,24 @@ test("데이터가 없으면 null 계약을 돌려주고 fetchProfile을 한 번
   assert.equal(getMyProfileCallCount, 1)
 })
 
-test("캐시에 데이터가 있으면 fetchProfile을 다시 호출하지 않는다", async () => {
+test("F-21(A-10): 캐시가 있어도 화면 진입은 서버를 한 번 다시 읽는다(중복은 생략이 아니라 합치기로 막는다)", async () => {
   resetStore()
+  profileResponse = PROFILE_ROW
   useUserProfileStore.setState({ data: PROFILE_ROW, loading: false })
 
-  renderHook(() => useMyProfile())
+  // **기대값을 계약 쪽으로 바꿨다.** 예전 기대("캐시가 있으면 조회하지 않는다")는 개인 무효화
+  // 신호를 놓친 경우(끊겨 있던 사이의 커밋, 다른 탭에서 지나간 신호, 웹 프로세스 밖의 복구
+  // 지급)에 방금 끝난 판의 전적이 새로고침 전까지 영영 반영되지 않게 한다 — F-21(A-10)이
+  // 요구하는 수렴과 정면으로 어긋난다.
+  // 중복 요청은 생략이 아니라 **합치기**로 막는다 — 같은 순간에 뜬 로비와 마이페이지의
+  // 조회는 하나로 묶인다(요청 두 번이 아니라 한 번이다).
+  const lobby = renderHook(() => useMyProfile())
+  const myPage = renderHook(() => useMyProfile())
+  await waitFor(() => assert.equal(myPage.result.current.loading, false))
 
-  // 로비→마이페이지 이동 시 중복 fetch를 막는 기존 흐름입니다.
-  assert.equal(getMyProfileCallCount, 0)
+  assert.equal(getMyProfileCallCount, 1, "재진입이 서버를 다시 읽지 않았거나 요청이 두 번 나갔다")
+  lobby.unmount()
+  myPage.unmount()
 })
 
 test("profile은 닉네임·명성과 함께 title을 그대로 유지한다", () => {

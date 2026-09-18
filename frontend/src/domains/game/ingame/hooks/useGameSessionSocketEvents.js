@@ -3,10 +3,16 @@ import { useNavigate } from "react-router-dom"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 // 상대 경로로 둔다 — 이 훅은 node:test에서 실제로 마운트해 검증하는 대상이고(store/__tests__/
 // nightPrivateResult.test.js), `@/` 별칭은 vite만 해석할 수 있어 그 실행을 막는다.
-import { useMatchingStore } from "../../matching/store/matchingStore.js"
+import { useMatchingStore, isCurrentRoomKickEvent } from "../../matching/store/matchingStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
+// F-21(A-10): 전적 커밋 이후의 개인 캐시 무효화가 닿는 경계다. 세 store를 직접 import하지
+// 않는 이유는 그쪽이 api 계층(shared/env.js의 import.meta.env)에 닿아 있어, 이 훅 자체가
+// 플레인 Node에서 로드되지 않게 되기 때문이다 — 실제 store는 앱 진입점(ProtectedRoute)이
+// 등록한다. 이 훅은 ProtectedRoute에 장착돼 로비에서도 살아 있으므로, 먼저 퇴장한 계정도
+// 같은 신호를 받는다.
+import { refreshAccountCaches, ACCOUNT_CACHE_SCOPES } from "../../../user/utils/accountCacheRefresh.js"
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
-import { useInGameStore } from "../store/ingameStore.js"
+import { useInGameStore, isCurrentGameKickEvent } from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
@@ -66,6 +72,15 @@ function dispatchResultSfxIfEnded(origin = "live") {
   if (current.state.phase !== "ENDED") return
   if (!VALID_WINNERS.has(current.state.winResult?.winner)) return
   playGameSfx("game-result", `game:${current.gameId}:result`, current.gameId, origin)
+}
+
+/**
+ * 인증된 계정이 있을 때만 계정 캐시 재조회를 전달한다. 실제 재조회는 등록된 store가
+ * 소유하고(accountCacheRefresh), 이 훅은 "다시 읽어라"만 넘긴다.
+ */
+function requestAccountCacheRefresh(scopes, options) {
+  if (currentAccountId() === null) return
+  refreshAccountCaches(scopes, options)
 }
 
 /** 인게임 store와 matching store를 함께 초기화하고 로비로 이동하는 finalizer를 만든다. */
@@ -334,8 +349,102 @@ export function useGameSessionSocketEvents() {
       dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
     }
 
+    /**
+     * F-21(AC-03/AC-05): 참여 상태 변화 공개 방송. 생존(player_eliminated)·단계
+     * (game_phase_changed)와 **분리된** 사실이라 별도 reducer가 소유한다. 형태·게임 일치·
+     * 세대 단조성 검증은 전부 store가 하므로 여기서는 그대로 넘긴다. 소리는 없다 — 이 사건은
+     * 사망도 전이도 아니다.
+     */
+    const handleParticipationChanged = (payload) => {
+      useInGameStore.getState().applyParticipationChanged(payload)
+    }
+
+    /**
+     * F-21(AC-03): 이탈로 **내 표가 기권으로 정규화**됐다는 개인 전송. 공개 방송과 나눈 이유는
+     * 내용이 비밀이기 때문이다(누가 누구를 찍었는지를 채널에 실을 수 없다).
+     *
+     * 이 사건은 그 자리에서 **현재 인증 계정의 것**이어야 한다 — 개인 전송이지만 계정 전환
+     * 중에 도착할 수 있고, 그때 반영하면 남의 제출 상태가 지금 화면에 남는다. 게임·세대 검증은
+     * store가 소유한다. 소리는 없다(제출도 전이도 아니다).
+     */
+    const handleSelfProgress = (payload) => {
+      if (currentAccountId() === null) return
+      useInGameStore.getState().applySelfProgress(payload)
+    }
+
+    /**
+     * F-21(AC-02): 방장이 나를 내보냈다. 이 수신기는 ProtectedRoute에 장착돼 라우트와 무관하게
+     * 계속 살아 있으므로, 사건이 **지금 이 화면의 것인지**를 직접 판정해야 한다.
+     *
+     *   - 인증 계정이 대상인가(공개 방송이 아니라 개인 전송이지만, 계정 전환 중에 도착할 수 있다)
+     *   - 그 게임/방이 지금 내가 들고 있는 것인가
+     *
+     * 둘 다 맞을 때만 그 상태를 비우고 로비로 보낸다. 새 게임이나 다른 방은 건드리지 않는다.
+     */
+    const handleGameKicked = (payload) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      const accountId = currentAccountId()
+      if (accountId === null || payload.targetUuid !== accountId) return
+      // 판정은 store가 소유한 canonical 적재값으로만 한다 — 게임·방 인스턴스·서버 기동·내
+      // 소속이 전부 맞아야 한다(대기방 추방과 같은 계약).
+      if (!isCurrentGameKickEvent(useInGameStore.getState(), payload)) return
+      // **그 게임만** 비운다. 진행 중 추방은 대기방을 끝내는 사건이 아니다 — 공용 finalize는
+      // matching store까지 함께 지우므로, 이 계정이 그 사이 새 대기방에 들어가 있었다면
+      // (추방 뒤 로비로 돌아가 방에 참가했는데 옛 사건이 늦게 도착하는 경우) 방금 성립한
+      // 새 소속이 옛 게임 사건 하나로 화면에서 사라진다.
+      useInGameStore.getState().clearGame()
+      // 이동도 **그 게임의 화면일 때만** 한다. 지우는 범위를 그 게임으로 좁혀 놓고 이동은
+      // 무조건 하면, 새 대기방을 보고 있던 사용자가 옛 게임 사건 하나로 그 화면에서 쫓겨난다
+      // (상태는 남았는데 화면만 로비인 어긋남이다). 그 사이 성립한 새 대기방 소속이 있으면
+      // 그 화면이 지금 사용자가 있는 곳이므로 그대로 둔다.
+      if (useMatchingStore.getState().isInRoom) return
+      // clearGame 이후 같은 사건이 다시 전달돼도 위 판정이 실패하므로 이동은 한 번뿐이다.
+      navigate("/multiplay", { replace: true })
+    }
+
+    /**
+     * F-21(AC-02/AC-05/AC-06): 방장이 **대기방에서** 나를 내보냈다.
+     *
+     * 판정은 matchingStore의 canonical 적재값으로만 한다(isCurrentRoomKickEvent) — 방·방
+     * 인스턴스·서버 기동·내 소속이 전부 맞아야 한다. 하나라도 빼면 같은 방에 다시 들어온 뒤
+     * 도착한 옛 사건이 방금 성립한 새 소속을 지운다.
+     *
+     * 지우는 것은 **그 방뿐이다.** 대기방 추방은 게임을 끝내지 않으므로 인게임 store를
+     * 건드리지 않는다(시작 커밋이 먼저 일어난 경우 그 게임은 이 사건의 소유가 아니다).
+     */
+    const handleRoomKicked = (payload) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      const accountId = currentAccountId()
+      if (accountId === null || payload.targetUuid !== accountId) return
+      if (!isCurrentRoomKickEvent(useMatchingStore.getState(), payload)) return
+      useMatchingStore.getState().clearRoom()
+      // handleGameKicked와 대칭이다 — 시작 커밋이 먼저 끝나 이미 인게임 화면에 있는데 옛
+      // 대기방 사건이 늦게 도착하면, 그 방 상태만 비우고 진행 중인 판의 화면은 그대로 둔다.
+      if (useInGameStore.getState().gameId !== null) return
+      // clearRoom 이후 같은 사건이 다시 전달돼도 위 판정이 실패하므로 이동은 한 번뿐이다.
+      navigate("/multiplay", { replace: true })
+    }
+
+    /**
+     * F-21(A-10): 전적이 실제로 커밋된 뒤 서버가 보내는 개인 신호다. 게임 상태는 전혀 건드리지
+     * 않고(복원도 이동도 하지 않는다) 계정 캐시만 다시 읽게 한다 — 먼저 추방·이탈해 로비에
+     * 있는 계정도 이 신호를 받는다(현재 경기 채널 가입 여부는 조건이 아니다).
+     *
+     * payload에는 gameId와 무효화 종류만 있다. 여기서 승패·역할을 추론하지 않는다.
+     */
+    const handleAccountCacheInvalidated = (payload) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      // 실제 재조회는 각 store가 소유한다 — 이 수신기는 "다시 읽어라"를 전달만 한다.
+      requestAccountCacheRefresh(payload.scopes, { invalidate: true })
+    }
+
     socket.on("game_ended", handleGameEnded)
     socket.on("player_eliminated", handlePlayerEliminated)
+    socket.on("session_participation_changed", handleParticipationChanged)
+    socket.on("session_self_progress", handleSelfProgress)
+    socket.on("game_kicked", handleGameKicked)
+    socket.on("room_kicked", handleRoomKicked)
+    socket.on("account_cache_invalidated", handleAccountCacheInvalidated)
     socket.on("game_phase_changed", handlePhaseChanged)
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("night_action_result", handleNightActionResult)
@@ -345,6 +454,11 @@ export function useGameSessionSocketEvents() {
     return () => {
       socket.off("game_ended", handleGameEnded)
       socket.off("player_eliminated", handlePlayerEliminated)
+      socket.off("session_participation_changed", handleParticipationChanged)
+      socket.off("session_self_progress", handleSelfProgress)
+      socket.off("game_kicked", handleGameKicked)
+      socket.off("room_kicked", handleRoomKicked)
+      socket.off("account_cache_invalidated", handleAccountCacheInvalidated)
       socket.off("game_phase_changed", handlePhaseChanged)
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("night_action_result", handleNightActionResult)
@@ -354,6 +468,44 @@ export function useGameSessionSocketEvents() {
       socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
     }
   }, [socket, navigate])
+
+  /**
+   * F-21(AC-03/A-10): **신호를 못 받았을 수 있는 전이**에서 계정 캐시를 서버 값으로 수렴시킨다.
+   *
+   * 개인 무효화(account_cache_invalidated)는 그 순간 연결돼 있는 소켓으로만 간다. 끊겨 있는
+   * 동안 커밋된 전적, 다른 탭·다른 창에서 지나간 신호, 웹 프로세스 밖의 복구 작업
+   * (backfill-achievements CLI는 웹서버의 onlineUsers를 공유하지 않는다)은 이 브라우저에
+   * 도달하지 않는다. 그래서 세 가지 전이에서 한 번씩 다시 읽는다.
+   *
+   *   - 재연결(connect): 끊겨 있던 구간에 지나간 사실을 여기서 확인한다.
+   *   - 창 재활성화(focus) · 탭 가시화(visibilitychange → visible): 다른 곳에서 일어난 커밋과
+   *     별도 프로세스의 복구 지급을 확인한다.
+   *
+   * 이 훅은 ProtectedRoute에 장착돼 로비·상점·서고·마이페이지 어디에 있든 살아 있으므로,
+   * 먼저 추방·이탈해 경기 채널에 없는 계정도 같은 수렴을 받는다. 게임 상태는 건드리지 않고
+   * 어떤 화면 이동도 하지 않는다(게임 복원은 이 경로의 책임이 아니다).
+   */
+  useEffect(() => {
+    // 로그인하지 않았으면 읽을 계정이 없다. socket이 아직 없어도 창 전이는 구독한다 —
+    // 연결 없이 열어 둔 화면도 재활성화 시 HTTP 조회로 수렴할 수 있어야 한다.
+    const refresh = () => requestAccountCacheRefresh(ACCOUNT_CACHE_SCOPES)
+
+    const handleVisibility = () => {
+      if (typeof document === "undefined") return
+      if (document.visibilityState !== "visible") return
+      refresh()
+    }
+
+    if (socket) socket.on("connect", refresh)
+    if (typeof window !== "undefined") window.addEventListener("focus", refresh)
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", handleVisibility)
+
+    return () => {
+      if (socket) socket.off("connect", refresh)
+      if (typeof window !== "undefined") window.removeEventListener("focus", refresh)
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", handleVisibility)
+    }
+  }, [socket])
 
   useEffect(() => {
     // 활성 GameSession이 없으면(gameId 없음) disconnect가 와도 정리할 것이 없다 — 로비 등

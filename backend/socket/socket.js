@@ -14,6 +14,10 @@ const concurrencyService = require("../service/concurrency.service");
 
 const onlineUsers = new Map();
 gameSession.setOnlineUsersRegistry(onlineUsers);
+// F-21(AC-05/AC-06): 대기방 채널 정리도 "떠나는 이 소켓이 아직 이 계정의 canonical 연결인가"를
+// 물어야 한다 — 계정이 그 방에 앉아 있다는 사실만으로는 옛 소켓의 가입을 되살리는 것을 막지
+// 못한다. gameSession과 **같은 방향**(socket.js → 하위 모듈)으로 주입한다.
+matchmaking.setOnlineUsersRegistry(onlineUsers);
 
 let _io = null;
 
@@ -23,6 +27,11 @@ function emitToUser(uuid, event, payload) {
         _io.to(socketId).emit(event, payload);
     }
 }
+
+// F-21(A-10): 전적 커밋 이후 개인 캐시 무효화를 보내는 경로다. registry와 **같은 방향**으로
+// 주입한다 — gameSession.js가 이 파일을 지연 require하면 그 시점에 위 초기화가 함께 실행돼
+// 주입된 registry를 덮어쓰게 되므로, 의존 방향을 socket.js → gameSession.js 한쪽으로 고정한다.
+gameSession.setEmitToUser(emitToUser);
 
 function initSocket(httpServer) {
     const io = new Server(httpServer, {

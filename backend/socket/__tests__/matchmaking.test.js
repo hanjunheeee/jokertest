@@ -123,12 +123,21 @@ test('create_room: 정상 생성 시 Socket room 가입과 Map 반영이 이루�
     // F-20(AC-03/AC-06): 참가자용 방 응답의 **승인된** 최상위 계약이다. accessType·
     // settingsVersion·settings가 새로 추가됐지만 이 목록이 여전히 전부여야 한다 — 즉
     // 이 단언은 "새 필드가 들어왔다"가 아니라 "허용한 것 말고는 아무것도 안 나간다"를 고정한다.
+    // F-21(AC-02/AC-04): bootEpoch·roomInstanceId가 승인 목록에 더해졌다 — 추방 요청이 "내가
+    // 보고 있던 그 방, 그 서버 기동"을 가리키는지 서버가 확인하는 유일한 근거다.
     assert.deepEqual(Object.keys(res.room).sort(),
-        ['accessType', 'canStart', 'hostUuid', 'players', 'roomCode', 'roomId', 'settings', 'settingsVersion'])
+        ['accessType', 'bootEpoch', 'canStart', 'hostUuid', 'players', 'roomCode', 'roomId',
+            'roomInstanceId', 'settings', 'settingsVersion'])
     // 서버 내부 필드 비공개(이 시험의 원래 핵심). 위 exact-key 단언과 중복이지만, 어떤 이름이
     // 왜 금지인지를 이름으로 남겨 둬야 나중에 목록을 넓힐 때 실수로 함께 통과하지 않는다.
+    //
+    // F-21: roomInstanceId는 이 목록에서 빠졌다 — 더 이상 내부 값이 아니라 **승인된 공개
+    // 계약**이기 때문이다. 방장의 추방 요청이 "같은 문자열 roomId로 다시 만들어진 방"이
+    // 아니라 자기가 보고 있던 그 방을 가리킨다는 것을 서버가 확인하려면, 클라이언트가 그
+    // 값을 알고 되돌려 보낼 수 있어야 한다(AC-04). 비밀이 아니다 — roomId·roomCode와 같은
+    // 수준의 방 식별자다. 나머지 이름은 그대로 금지다.
     for (const internal of ['id', 'code', 'title', 'status', 'createdAt',
-        'roomInstanceId', 'generation', 'readyRevision']) {
+        'generation', 'readyRevision']) {
         assert.equal(Object.hasOwn(res.room, internal), false, `내부 필드 ${internal}가 ack에 실렸다`)
     }
     // F-20(AC-06): 새로 공개되는 중첩 settings도 승인된 키만 담는다 — 저장 값을 그대로
@@ -224,7 +233,9 @@ test('create_room: room.players 항목은 알려진 안전한 키만 갖는다(e
     const [host] = res.room.players
     assert.deepEqual(
         Object.keys(host).sort(),
-        ['accountProfileBorderId', 'accountProfilePhotoId', 'isReady', 'nickname', 'uuid'],
+        // F-21(AC-06): membershipId는 서버가 발급하는 이 방에서의 소속 식별자다(추방 대상 지목의
+        // 근거). 잔액 등 계정 내부 값은 여전히 하나도 새어나가지 않는다.
+        ['accountProfileBorderId', 'accountProfilePhotoId', 'isReady', 'membershipId', 'nickname', 'uuid'],
     )
 })
 

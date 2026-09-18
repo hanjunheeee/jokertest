@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import { useBlocker, useNavigate } from "react-router-dom"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
+import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createLeaveGameSessionRequest } from "../utils/createLeaveGameSessionRequest.js"
@@ -32,6 +33,18 @@ export function useInGameExit() {
     const requestLeave = createLeaveGameSessionRequest({
       getSocket,
       getCurrentGameId: () => useInGameStore.getState().gameId,
+      // F-21(AC-05): 계정·소속도 함께 캡처한다 — gameId만 비교하면 A→B→A 계정 전환이나 같은
+      // 판에 다시 들어온 새 소속 위로 옛 ack가 그대로 내려앉는다.
+      getCurrentAccountId: () => useAuthStore.getState().user?.uuid ?? null,
+      // 계정 **값**만으로는 A→B→A를 구별할 수 없다(uuid가 원래대로 돌아온다). 전이 횟수를
+      // 함께 캡처해야 그 사이 오간 요청의 늦은 ack를 걸러낼 수 있다.
+      getIdentityGeneration: () => useAuthStore.getState().identityGeneration ?? null,
+      getCurrentMembershipId: () => {
+        const { state } = useInGameStore.getState()
+        const me = useAuthStore.getState().user?.uuid ?? null
+        if (!state || !me) return null
+        return (state.players ?? []).find((player) => player.uuid === me)?.membershipId ?? null
+      },
       finalize,
     })
     // F-16(AC-01): native confirm에는 click 이벤트가 없으므로 호출마다 단일 actionId를

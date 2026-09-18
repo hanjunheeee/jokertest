@@ -1,5 +1,11 @@
 const TRIBUNAL_RESOLVED_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 
+// F-21(AC-03): 피고가 이 판에서 빠져 재판 자체가 성립하지 않은 경우다. 유죄도 무죄도 아니라는
+// 뜻이라 위 집합에 넣지 않는다 — 두 정상 판정의 검증(처형 대상·집계 의미)을 그대로 통과시키면
+// 취소가 조용히 판정처럼 다뤄진다.
+const TRIBUNAL_CANCELLED_OUTCOME = "CANCELLED"
+const TRIBUNAL_CANCEL_REASONS = new Set(["DEFENDANT_LEFT"])
+
 function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0
 }
@@ -17,6 +23,41 @@ export function applyTribunalResolvedPure(current, payload) {
   if (!Number.isInteger(payload.dayIndex)) return current
   if (typeof payload.phase !== "string") return current
   if (typeof payload.defendantUuid !== "string" || payload.defendantUuid.length === 0) return current
+
+  // ── F-21(AC-03): 피고 이탈로 취소된 재판 ─────────────────────────────────
+  //
+  // 정상 판정과 **같은 조합만** 받아들이는 별도의 엄격 분기다. 아래 GUILTY/NOT_GUILTY 검증을
+  // 재사용하지 않는 이유는, 그 검증이 "누가 처형됐는가"와 "집계가 판정을 뜻한다"를 전제하기
+  // 때문이다 — 취소에는 처형이 없고, counts는 취소 순간까지 모인 표일 뿐이다.
+  //
+  // 이 분기는 tribunal UI를 비우고 그날 밤으로 넘어가는 것까지만 한다. 이탈자의 사망은
+  // player_eliminated가, 참여 종료는 session_participation_changed가 각각 따로 전달한다 —
+  // 한 사건이 세 가지 사실을 함께 바꾸면 그중 하나만 도착한 화면이 어긋난다.
+  if (payload.outcome === TRIBUNAL_CANCELLED_OUTCOME) {
+    if (payload.phase !== "NIGHT") return current
+    if (!TRIBUNAL_CANCEL_REASONS.has(payload.reason)) return current
+    if (payload.executedUuid !== null) return current
+
+    const cancelCounts = payload.counts
+    if (!cancelCounts || typeof cancelCounts !== "object" || Array.isArray(cancelCounts)) return current
+    if (!isNonNegativeInteger(cancelCounts.guilty) || !isNonNegativeInteger(cancelCounts.notGuilty)) return current
+
+    if (!current.gameId || !current.state) return current
+    if (payload.gameId !== current.gameId) return current
+    if (payload.dayIndex !== current.state.dayIndex) return current
+    if (current.state.phase !== "TRIBUNAL") return current
+    if (current.state.tribunal?.defendantUuid !== payload.defendantUuid) return current
+
+    return {
+      state: {
+        ...current.state,
+        phase: "NIGHT",
+        tribunal: null,
+        // players는 건드리지 않는다 — 생존 변화는 이 사건의 사실이 아니다.
+      },
+    }
+  }
+
   if (!TRIBUNAL_RESOLVED_OUTCOMES.has(payload.outcome)) return current
 
   const counts = payload.counts

@@ -32,6 +32,37 @@ function isNonEmptyString(value) {
 }
 
 /**
+ * F-21(AC-03): 서버가 실어 준 **본인** 제출 필드만 그대로 옮긴다.
+ *
+ * 없는 값을 만들어내지 않는다 — 키가 없으면 "모른다"이고, 화면은 기존 로컬 controller 상태를
+ * 그대로 쓴다. 있으면 그것이 canonical이다(이탈로 기권 정규화된 표는 dayVoteTargetUuid=null).
+ */
+const SELF_SUBMISSION_KEYS = Object.freeze([
+  "hasAcknowledgedRoleReveal",
+  "isDayVoteReady",
+  "hasSubmittedDayVote",
+  "dayVoteTargetUuid",
+  "dayVoteRound",
+  "hasSubmittedTribunalVote",
+])
+
+function copySelfSubmissionFields(self) {
+  const fields = {}
+  for (const key of SELF_SUBMISSION_KEYS) {
+    if (Object.hasOwn(self, key)) fields[key] = self[key]
+  }
+  return fields
+}
+
+/** 공개 진행 수의 모양 검사. kind는 문자열이고 두 수는 음이 아닌 정수이거나 null이다. */
+function isPublicProgress(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
+  if (!isNonEmptyString(value.kind)) return false
+  const okCount = (n) => n === null || isNonNegativeInteger(n)
+  return okCount(value.doneCount) && okCount(value.requiredCount)
+}
+
+/**
  * 새로고침으로 메모리 store가 완전히 비었을 때 서버 스냅샷 자체를 신뢰 경계의 씨앗으로
  * 삼아 기존의 엄격한 applySessionSnapshotPure 검증을 재사용한다. 인증된 socket의 서버가
  * 돌려준 self/roster만으로 최소 current를 만든 뒤, 최종 store 형태는 한 경로에서 조립한다.
@@ -94,6 +125,10 @@ export function applySessionSnapshotPure(current, response) {
     if (!isNonEmptyString(player.nickname)) return current
     if (typeof player.isAlive !== "boolean") return current
     if (typeof player.isConnected !== "boolean") return current
+    // F-21(AC-03/AC-06): 생존과 분리된 사실이다. 없는 구버전 스냅샷은 "참여 중"으로 본다
+    // (그 서버에는 아직 이탈 개념이 없었으므로 roster에 있다는 사실이 곧 참여다).
+    if (Object.hasOwn(player, "isParticipating") && typeof player.isParticipating !== "boolean") return current
+    if (Object.hasOwn(player, "membershipId") && player.membershipId !== null && !isNonEmptyString(player.membershipId)) return current
     if (Object.hasOwn(player, "themeIndex") && !isNonNegativeInteger(player.themeIndex)) return current
     // F-13(AC-05): 계정 프로필 사진·테두리는 backend buildPlayerAccountProfileFields와 동일한
     // own-property 조건부 계약이다(비밀이 아니라 조건부 노출) — 있으면 반드시 비어있지 않은
@@ -270,6 +305,10 @@ export function applySessionSnapshotPure(current, response) {
     nickname: p.nickname,
     alive: p.isAlive,
     isConnected: p.isConnected,
+    // F-21(AC-01/AC-03): 새로고침 뒤에도 "사망했지만 아직 참여 중"과 "빠졌다"를 구분할 수
+    // 있어야 추방 목록과 보드 사망 표시가 갈라지지 않는다.
+    isParticipating: p.isParticipating !== false,
+    ...(Object.hasOwn(p, "membershipId") ? { membershipId: p.membershipId } : {}),
     ...(isNonNegativeInteger(p.themeIndex)
       ? { themeIndex: p.themeIndex }
       : themeIndexByUuid.has(p.uuid)
@@ -291,14 +330,65 @@ export function applySessionSnapshotPure(current, response) {
     team: self.team,
     hasActedThisPhase: self.hasActedThisPhase,
     ...(Object.hasOwn(self, "accountSkinId") ? { accountSkinId: self.accountSkinId } : {}),
+    // F-21(AC-03): **본인의** 정규화된 제출 상태. hasActedThisPhase는 "무언가 했다"만 말하므로,
+    // 표적이 이탈로 기권(null)으로 정규화된 뒤 새로고침하면 화면이 서버가 이미 지운 선택을
+    // 그대로 그린 채 남는다. 서버가 실어 준 필드만 옮긴다(없으면 키도 만들지 않는다).
+    ...copySelfSubmissionFields(self),
     ...(self.role === "JOKER" ? { allies } : {}),
   }
+
+  // F-21(AC-01): 방장과 참여 세대는 서버가 유일한 원천이다. 새로고침으로 메모리 store가
+  // 비어도 이 값으로 방관리 권한이 복원되고, 모양이 틀린 값은 null로 두어 "모른다"와
+  // "방장이다"를 섞지 않는다(fail-closed).
+  const hostUuid = isNonEmptyString(response.hostUuid) ? response.hostUuid : null
+  const participationRevision = isNonNegativeInteger(response.participationRevision)
+    ? response.participationRevision
+    : 0
+
+  /**
+   * F-21(AC-03/AC-05): **참여 세대가 뒷걸음질치는 스냅샷은 적용하지 않는다.**
+   *
+   * 여기까지 오는 검사(gameId·phase·dayIndex·roster uuid 집합)는 전부 "같은 판의 같은 단계"를
+   * 확인할 뿐이다. 추방 **직전에** 서버가 만든 스냅샷이 추방 사건보다 늦게 도착하면 그 값들이
+   * 전부 일치하므로 통과하고, 이미 반영된 참여 종료·방장 승계·정규화된 본인 표를 옛 roster와
+   * 옛 host로 되돌린다. 세대가 그것을 구별하는 유일한 값이다.
+   *
+   * 같은 세대의 재적용은 막지 않는다(멱등 복원은 정상 경로다). 세대를 싣지 않은 스냅샷도
+   * 막지 않는다 — 다만 현재 화면이 이미 세대를 갖고 있으면 그 스냅샷은 그보다 옛것이므로
+   * 되돌릴 수 없다(fail-closed).
+   */
+  const currentRevision = current.state.participationRevision ?? 0
+  if (participationRevision < currentRevision) return current
+  if (!isNonNegativeInteger(response.participationRevision) && currentRevision > 0) return current
+
+  /**
+   * F-21(AC-03/AC-05): **본인 제출 상태가 뒷걸음질치는 스냅샷도 적용하지 않는다.**
+   *
+   * 참여 세대는 이탈에서만 오른다. 스냅샷 조회를 보낸 뒤에 낸 평범한 제출은 세대를 바꾸지
+   * 않으므로, 위 검사를 통과한 옛 스냅샷이 방금 낸 표를 "미제출"로 되돌릴 수 있었다. 개인
+   * 값의 순서는 개인 값의 시계(selfProgressSeq)로만 판정한다 — 같은 값의 재적용(멱등 복원)은
+   * 그대로 허용하고, 순서값을 싣지 않은 스냅샷은 이미 순서를 아는 화면에서만 막는다.
+   */
+  const selfProgressSeq = isNonNegativeInteger(response.selfProgressSeq) ? response.selfProgressSeq : 0
+  const currentSelfProgressSeq = current.state.selfProgressSeq ?? 0
+  if (selfProgressSeq < currentSelfProgressSeq) return current
+  if (!isNonNegativeInteger(response.selfProgressSeq) && currentSelfProgressSeq > 0) return current
 
   const nextState = {
     id: response.gameId,
     phase: response.phase,
     dayIndex: response.dayIndex,
     dayPhase,
+    hostUuid,
+    // 진행 중 추방 요청이 "내가 보고 있던 그 판"을 가리킨다는 것을 서버가 확인하는 입력이다.
+    // 새로고침으로 이 세 값이 사라지면 방장이 추방 요청 자체를 만들 수 없다.
+    roomId: isNonEmptyString(response.roomId) ? response.roomId : null,
+    roomInstanceId: isNonEmptyString(response.roomInstanceId) ? response.roomInstanceId : null,
+    bootEpoch: isNonEmptyString(response.bootEpoch) ? response.bootEpoch : null,
+    participationRevision,
+    // 개인 제출 상태의 순서값. 이 값을 이어 두지 않으면 다음에 도착하는 옛 개인 사건이
+    // 복원된 상태를 되돌릴 수 있다(store의 applySelfProgress가 같은 값을 본다).
+    selfProgressSeq,
     players: nextPlayers,
     self: nextSelf,
     tribunal,
@@ -307,7 +397,12 @@ export function applySessionSnapshotPure(current, response) {
     dayVoteResolution,
     dayVoteRound: dayVoteResolution?.outcome === "REVOTE" ? dayVoteResolution.round + 1 : (dayVoteResolution?.round ?? 1),
     dayVoteExcludedUuids: dayVoteResolution?.outcome === "REVOTE" ? [...dayVoteResolution.revoteExcludedUuids] : [],
+    // F-21(AC-03): 이탈로 분모가 줄어든 단계의 공개 진행 수. 서버가 싣지 않았으면 키를 만들지
+    // 않는다(화면이 스스로 세지 않고 "모른다"로 둔다).
+    ...(isPublicProgress(response.progress) ? { progress: { ...response.progress } } : {}),
   }
 
-  return { state: nextState }
+  // 최상위 hostUuid도 함께 돌려준다 — useInGameSettingIsHost가 읽는 값이고, 스냅샷 복원이
+  // 그 값을 채우지 않으면 새로고침한 방장이 방관리 탭을 잃는다(이 계약 이전의 실제 동작이다).
+  return { state: nextState, hostUuid }
 }

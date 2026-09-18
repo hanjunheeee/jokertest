@@ -99,11 +99,24 @@ function createFakeIo(sockets = []) {
             broadcasts.push({ roomId: null, event, payload })
         },
         to(roomId) {
-            return {
-                emit(event, payload) {
-                    broadcasts.push({ roomId, event, payload })
+            // F-21(AC-06): 실제 Socket.IO의 BroadcastOperator처럼 except()로 좁힐 수 있다.
+            // 떼지 못한 채널 구독을 전달에서 빼는 경로(channelMembership.emitToChannel)를
+            // 시험이 **실제로 관측**할 수 있어야 한다 — 없으면 프로덕션이 제외 불가 경로로
+            // 퇴화하고 시험은 그것을 정상으로 읽는다.
+            const makeOperator = (excluded) => ({
+                except(ids) {
+                    const next = new Set(excluded)
+                    for (const id of Array.isArray(ids) ? ids : [ids]) next.add(id)
+                    return makeOperator(next)
                 },
-            }
+                emit(event, payload) {
+                    broadcasts.push({
+                        roomId, event, payload,
+                        ...(excluded.size > 0 ? { excluded: [...excluded].sort() } : {}),
+                    })
+                },
+            })
+            return makeOperator(new Set())
         },
         in(roomId) {
             return {

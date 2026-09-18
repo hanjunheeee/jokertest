@@ -25,7 +25,7 @@ import { useMyProfile } from "../hooks/useMyProfile.js"
 // 프로필 조회는 여기서 하고, 실제 화면 조각은 하위 컴포넌트에 맡깁니다.
 export default function MyPageLayout() {
   const navigate = useNavigate()
-  const { profile, stats, description, loading } = useMyProfile()
+  const { profile, stats, description, loading, isStale, error, retry } = useMyProfile()
   const [profileEditOpen, setProfileEditOpen] = useState(false)
   const [skinCardWearOpen, setSkinCardWearOpen] = useState(false)
 
@@ -41,6 +41,33 @@ export default function MyPageLayout() {
             아무 탭·모달도 열리지 않는 미연결 상태를 유지한다. */}
         <EmoticonEntryButton />
       </div>
+
+      {/*
+        F-21(A-10): 서버가 전적 커밋을 알려왔는데 아직 최신 값을 받지 못했거나(재조회 실패),
+        조회 자체가 실패해 보여줄 값이 없는 상태다. 여기서 **추측한 숫자를 보여주지 않는다** —
+        지금 화면의 값이 낡았다는 사실과 다시 읽는 경로만 제공한다.
+      */}
+      {isStale || (!loading && !profile) ? (
+        <div role="status" className="absolute left-1/2 top-4 z-40 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#c9b892]/60 bg-black/70 px-4 py-2 text-[#f5f0e6]">
+          <span>
+            {!profile
+              ? "전적을 불러오지 못했습니다."
+              // 조회가 실패한 것과 아직 못 받은 것은 사용자가 할 일이 다르다 — 실패는 다시
+              // 읽어야 하고, 지연은 기다리면 된다. 두 경우를 같은 문장으로 말하지 않는다.
+              : error
+                ? "최신 전적을 불러오지 못했습니다. 아래 값은 갱신 전 값일 수 있습니다."
+                : "전적이 갱신되었습니다. 최신 값을 불러오는 중입니다."}
+          </span>
+          <button
+            type="button"
+            onClick={() => retry?.()}
+            aria-label="전적 다시 불러오기"
+            className="interactive-scale cursor-pointer rounded border border-[#c9b892]/60 px-2 py-1 font-bold"
+          >
+            다시 불러오기
+          </button>
+        </div>
+      ) : null}
 
       <ProfileEditOverlay open={profileEditOpen} onClose={() => setProfileEditOpen(false)} />
       <SkinCardWearOverlay open={skinCardWearOpen} onClose={() => setSkinCardWearOpen(false)} />
