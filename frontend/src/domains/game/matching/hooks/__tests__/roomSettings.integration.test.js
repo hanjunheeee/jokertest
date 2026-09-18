@@ -56,10 +56,29 @@ register(new URL(
 //
 // 여기서 흉내내는 것은 "전송"뿐이다. 검증·권한·버전·점유·커밋 판정은 전부 실제 서버 코드가
 // 한다. 그래서 프런트가 만든 payload가 서버 계약과 어긋나면 이 시험이 곧바로 깨진다.
-const socketState = { socket: null, listeners: new Map() }
+const socketState = { socket: null, listeners: new Map(), clientReceived: [] }
 
+/** 참조 공유 때문에 나중 변형이 과거 기록을 바꾸지 못하게 깊은 사본을 뜬다. */
+function deepSnapshot(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
+}
+
+/**
+ * 서버가 보낸 사건을 **실제로 등록된 클라이언트 listener**로 흘려보낸다.
+ *
+ * F-23(SPLIT-2): 전달된 사건을 clientReceived에 따로 적는다. 서버의 전송 시도
+ * (serverSocket.emitted)와 클라이언트의 실제 수신은 다른 사실이라, 한 배열로 세면
+ * "방송이 나갔다"와 "화면이 받았다"를 구별할 수 없다.
+ */
 function emitToClient(event, payload) {
-  for (const handler of socketState.listeners.get(event) ?? []) handler(payload)
+  const handlers = [...(socketState.listeners.get(event) ?? [])]
+  socketState.clientReceived.push({ event, payload: deepSnapshot(payload), handlers: handlers.length })
+  for (const handler of handlers) handler(payload)
+}
+
+/** 클라이언트가 그 사건을 실제로 몇 번 받았는가. */
+function clientReceiptsOf(event) {
+  return socketState.clientReceived.filter((entry) => entry.event === event)
 }
 
 mock.module("@/shared/socket/socketClient", {
@@ -105,9 +124,45 @@ matchmaking.__setEconomyServiceForTests({
 })
 matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
 
-const { createFakeSocket, createFakeIo, validSettingsPayload } = matchmakingFixtures
-const { handleCreateRoom, handleUpdateRoomSettings, handleGetCurrentRoom, handleGetPublicRooms } =
-  matchmaking.__testables
+const { createFakeSocket, createFakeIo, validSettingsPayload, readyPayload } = matchmakingFixtures
+const {
+  handleCreateRoom, handleUpdateRoomSettings, handleGetCurrentRoom, handleGetPublicRooms,
+  handleJoinRoomByCode, handleSetReady, handleGetRoomSettingsUpdateResult,
+} = matchmaking.__testables
+
+/**
+ * F-23(SPLIT-2): **폐기된 관전 키를 대소문자 무시·중첩 포함으로** 찾아 그 경로 목록을 돌려준다.
+ *
+ * 이 파일의 원래 검사는 `JSON.stringify(x).includes("pectator")` 하나였다. 그 술어는
+ * 대소문자를 구분하므로 `SPECTATOR`(중첩 역할 키가 실제로 쓰는 표기)를 그대로 통과시킨다 —
+ * roleCounts.SPECTATOR나 roleNightActionTimes.SPECTATOR만 남은 응답은 "관전자 키 0개"로
+ * 판정됐다. 여기서는 **키 이름만** 소문자로 낮춰 보고(값에 든 문자열은 키가 아니다),
+ * 객체와 배열을 끝까지 내려가며 검사한다.
+ *
+ * @returns {string[]} 검출된 키의 경로(예: "$.roleCounts.SPECTATOR"). 깨끗하면 빈 배열.
+ */
+function findSpectatorKeys(value, path = "$") {
+  if (value === null || typeof value !== "object") return []
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => findSpectatorKeys(item, `${path}[${index}]`))
+  }
+  const found = []
+  for (const [key, child] of Object.entries(value)) {
+    const here = `${path}.${key}`
+    if (key.toLowerCase().includes("spectator")) found.push(here)
+    found.push(...findSpectatorKeys(child, here))
+  }
+  return found
+}
+
+/** 이 경계에 폐기 관전 키가 하나도 없어야 한다. 검출되면 경로를 그대로 실패 메시지에 싣는다. */
+function assertNoSpectatorKeys(value, where) {
+  const found = findSpectatorKeys(value)
+  assert.deepEqual(found, [], `${where}에 폐기된 관전 키가 남아 있다: ${found.join(", ")}`)
+}
+
+/** 정상 역할 키 집합 — 정제가 폐기 키만 걷어내고 정상 키를 함께 지우지 않았는지 대조한다. */
+const NORMAL_ROLE_KEYS = ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"]
 
 /**
  * 프런트가 쓰는 소켓 대역을 만든다.
@@ -117,6 +172,14 @@ const { handleCreateRoom, handleUpdateRoomSettings, handleGetCurrentRoom, handle
  */
 function createBridgedSocket(io, serverSocket, uuid) {
   const emittedToServer = []
+  // F-23(SPLIT-2): 요청과 응답을 **각각 깊은 사본으로** 따로 적는다. emittedToServer에 실린
+  // payload는 프로덕션 코드가 그대로 들고 있는 객체라, 나중에 그 참조가 변형되면 과거 요청
+  // 기록까지 함께 바뀌어 "그때 무엇을 보냈는가"를 더 이상 검사할 수 없다.
+  const requests = []
+  const responses = []
+  // ACK를 유실시킬 이벤트 집합. 서버는 정상적으로 처리·커밋하고, 그 응답만 클라이언트에
+  // 도달하지 못한다(실제 유실과 같은 모양 — "실패"가 아니라 "결과를 모른다").
+  const droppedAcks = new Set()
   const socket = {
     connected: true,
     on(event, handler) {
@@ -128,24 +191,43 @@ function createBridgedSocket(io, serverSocket, uuid) {
     timeout() { return socket },
     emitWithAck(event, payload) {
       emittedToServer.push({ event, payload })
+      requests.push({ event, payload: deepSnapshot(payload) })
       return new Promise((resolve, reject) => {
+        // ACK를 클라이언트 Promise로 넘기기 **직전에** 응답을 포착한다 — 서버가 무엇을
+        // 답했는지와 화면이 무엇을 받았는지를 따로 볼 수 있어야 한다.
+        const settle = (response) => {
+          responses.push({ event, response: deepSnapshot(response) })
+          if (droppedAcks.has(event)) return // 유실: 서버는 이미 처리했고 응답만 도착하지 않는다.
+          resolve(response)
+        }
         if (event === SOCKET_EVENTS.GET_CURRENT_ROOM) {
-          handleGetCurrentRoom(uuid, resolve)
+          handleGetCurrentRoom(uuid, settle)
           return
         }
         if (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS) {
           // 서버가 방송한 사건을 클라이언트 리스너로 되돌리기 위해 서버 소켓의 emit을 감싼다.
-          handleUpdateRoomSettings(io, serverSocket, uuid, payload, resolve)
+          handleUpdateRoomSettings(io, serverSocket, uuid, payload, settle)
+          return
+        }
+        if (event === SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT) {
+          // ACK를 잃은 저장의 결과를 **같은 requestId로** 다시 묻는 실제 서버 경로다.
+          handleGetRoomSettingsUpdateResult(uuid, payload, settle)
           return
         }
         if (event === SOCKET_EVENTS.CREATE_ROOM) {
-          handleCreateRoom(io, serverSocket, uuid, payload, resolve)
+          handleCreateRoom(io, serverSocket, uuid, payload, settle)
           return
         }
         reject(new Error(`시험 대역이 알지 못하는 이벤트: ${event}`))
       })
     },
     emittedToServer,
+    requests,
+    responses,
+    requestsOf: (event) => requests.filter((entry) => entry.event === event),
+    responsesOf: (event) => responses.filter((entry) => entry.event === event),
+    dropAcksFor: (event) => droppedAcks.add(event),
+    restoreAcksFor: (event) => droppedAcks.delete(event),
   }
   return socket
 }
@@ -162,6 +244,7 @@ function bridgeServerEmits(serverSocket) {
 async function setupRoom(hostUuid, payloadOverrides = {}) {
   matchmaking.__resetStateForTests()
   socketState.listeners = new Map()
+  socketState.clientReceived = []
   alerts.length = 0
 
   const io = createFakeIo([])
@@ -189,6 +272,7 @@ async function setupRoom(hostUuid, payloadOverrides = {}) {
 async function mountCreationPage(hostUuid) {
   matchmaking.__resetStateForTests()
   socketState.listeners = new Map()
+  socketState.clientReceived = []
   alerts.length = 0
 
   const io = createFakeIo([])
@@ -223,6 +307,49 @@ async function clickSetupTab(container, label) {
 test.afterEach(() => {
   cleanup()
   useMatchingStore.getState().clearRoom()
+})
+
+/**
+ * F-23(SPLIT-2): **검출기 자신의 양성 대조.**
+ *
+ * 아래 시험들은 전부 "폐기 키가 0개"라는 부재 단언이다. 검출기가 무엇도 찾지 못하는
+ * 구현으로 퇴화하면 그 단언은 전부 조용히 통과한다 — 깨끗한 객체만 넣어 보는 것으로는
+ * 그것을 구별할 수 없다. 그래서 폐기 키를 **하나씩 단독으로** 주입해 반드시 검출되는지
+ * 먼저 고정한다. 이 시험이 깨지지 않는 한 아래의 0개 단언들은 의미를 갖는다.
+ */
+test("F-23(SPLIT-2) · 폐기 키 검출기는 중첩·대문자 SPECTATOR까지 각각 단독 주입에서 검출한다", () => {
+  // 다섯 최상위 표기를 하나씩. 대문자만 다른 표기도 같은 키로 잡아야 한다.
+  for (const key of ["allowSpectators", "allow-spectators", "spectator", "spectatorMode", "SPECTATOR"]) {
+    assert.deepEqual(
+      findSpectatorKeys({ maxPlayers: 8, [key]: true }), [`$.${key}`],
+      `최상위 ${key}를 검출하지 못했다`,
+    )
+  }
+
+  // 두 중첩 역할 객체의 SPECTATOR도 각각 단독으로. 예전의 includes("pectator")는 대소문자를
+  // 구분해 이 둘을 그대로 통과시켰다 — 이 조각이 고치는 바로 그 구멍이다.
+  assert.deepEqual(
+    findSpectatorKeys({ roleCounts: { JOKER: 2, DOCTOR: 1, SPECTATOR: 1 } }),
+    ["$.roleCounts.SPECTATOR"], "roleCounts.SPECTATOR를 검출하지 못했다",
+  )
+  assert.deepEqual(
+    findSpectatorKeys({ roleNightActionTimes: { JOKER: 30, SPECTATOR: 30 } }),
+    ["$.roleNightActionTimes.SPECTATOR"], "roleNightActionTimes.SPECTATOR를 검출하지 못했다",
+  )
+  // 배열 안에 들어 있어도 내려간다(players 같은 목록 응답).
+  assert.deepEqual(
+    findSpectatorKeys({ players: [{ uuid: "a" }, { uuid: "b", allowSpectators: true }] }),
+    ["$.players[1].allowSpectators"], "배열 안의 폐기 키를 검출하지 못했다",
+  )
+
+  // 정상 설정은 깨끗하다 — 부재 단언이 항상 실패하는 검출기도 아니다.
+  assert.deepEqual(findSpectatorKeys({
+    maxPlayers: 8, jokerCount: 2, voteReveal: true,
+    roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 },
+    roleNightActionTimes: { JOKER: 30 },
+  }), [])
+  // **키**만 본다. 값에 우연히 그 낱말이 들어간 정상 데이터를 오탐하지 않는다.
+  assert.deepEqual(findSpectatorKeys({ nickname: "spectator-fan", title: "SPECTATOR" }), [])
 })
 
 test("F-23(AC-01/AC-02) · 실제 인게임 방관리 탭에 관전자 항목이 없고 나머지 방관리 기능은 그대로다", async () => {
@@ -305,33 +432,39 @@ test("AC-06 · 실제 생성 화면의 두 탭·요청·저장값·조회·store
     .filter((e) => e.event === SOCKET_EVENTS.CREATE_ROOM)
   assert.equal(created.length, 1, "생성 요청이 정확히 한 번 나가지 않았다")
   const sentPayload = created[0].payload
-  assert.equal(JSON.stringify(sentPayload).includes("pectator"), false, "생성 요청에 관전자 키가 실렸다")
+  assertNoSpectatorKeys(sentPayload, "생성 요청")
   for (const key of ["allowSpectators", "allow-spectators", "spectator", "spectatorMode"]) {
     assert.equal(Object.hasOwn(sentPayload, key), false, `생성 요청에 ${key}가 실렸다`)
   }
 
   // (3) 서버가 실제로 들고 있는 원본 저장 스냅샷.
   const [[storedRoomId, storedRoom]] = matchmaking.__getStateSnapshotForTests().gameRooms
-  assert.equal(JSON.stringify(storedRoom.settings).includes("pectator"), false, "저장값에 관전자 키가 들어갔다")
+  assertNoSpectatorKeys(storedRoom.settings, "서버 저장값")
   assert.equal(storedRoom.settings.maxPlayers, sentPayload.maxPlayers, "정상 설정 수치가 보존되지 않았다")
 
   // (4) ACK로 store에 들어간 방 + 현재 방 재조회 응답.
   const state = useMatchingStore.getState()
   assert.equal(storedRoomId, state.roomId)
-  assert.equal(JSON.stringify(state.settings).includes("pectator"), false, "store 설정에 관전자 키가 있다")
+  assertNoSpectatorKeys(state.settings, "store 설정")
   const current = await new Promise((resolve) => handleGetCurrentRoom("host-create", resolve))
   assert.equal(current.ok, true)
-  assert.equal(JSON.stringify(current.room).includes("pectator"), false, "현재 방 조회 응답에 관전자 키가 있다")
+  assertNoSpectatorKeys(current.room, "현재 방 조회 응답")
 
   // (5) 공개 목록 응답.
   const list = await new Promise((resolve) => handleGetPublicRooms(resolve))
   assert.equal(list.ok, true)
   assert.equal(list.rooms.length, 1, "생성한 방이 공개 목록에 있어야 한다")
   assert.ok(list.rooms.some((room) => room.id === storedRoomId), "생성한 방의 공개 응답을 검사해야 한다")
-  assert.equal(JSON.stringify(list.rooms).includes("pectator"), false, "공개 목록에 관전자 키가 있다")
+  assertNoSpectatorKeys(list.rooms, "공개 목록 응답")
 })
 
-test("AC-06 · 생성 요청에 관전자 키를 실어 보내면 서버가 거부하고 아무 방도 만들지 않는다", async () => {
+/**
+ * F-23(SPLIT-2): 생성 요청의 두 오염은 **서로 다른 계약**을 갖는다. 예전 제목은 둘 다
+ * "거부하고 아무 방도 만들지 않는다"고 말했지만, 본문이 실제로 고정하는 것은 최상위 키의
+ * 경우 `ok:true`(정상 생성 + 키 제거)다. 제목이 본문과 다르면 나중에 계약이 바뀌었을 때
+ * 어느 쪽이 의도였는지 판단할 근거가 사라지므로, 제목을 실제 계약에 맞춘다.
+ */
+test("AC-06 · 생성 요청의 최상위 관전자 키는 무시돼 정상 생성되고, 중첩 역할 키는 생성 자체가 거부된다", async () => {
   await mountCreationPage("host-reject")
 
   // production 화면은 이 키를 만들지 않는다(위 시험). 여기서는 그 앞단이 뚫렸다고 가정하고
@@ -339,27 +472,38 @@ test("AC-06 · 생성 요청에 관전자 키를 실어 보내면 서버가 거�
   //
   // 생성 검증은 최상위 미허용 키를 **읽지 않는다**(서버 권한 필드를 구조적으로 차단하는 기존
   // 계약). 그래서 요청은 통과하지만 그 키는 저장값·응답 어디에도 들어가지 않아야 한다.
-  for (const key of ["allowSpectators", "allow-spectators", "spectator", "spectatorMode"]) {
+  for (const key of ["allowSpectators", "allow-spectators", "spectator", "spectatorMode", "SPECTATOR"]) {
     matchmaking.__resetStateForTests()
     const res = await socketState.socket.emitWithAck(
       SOCKET_EVENTS.CREATE_ROOM, { ...validSettingsPayload(), [key]: true },
     )
     assert.equal(res.ok, true, `${key}: ${res.message}`)
-    const [, storedRoom] = matchmaking.__getStateSnapshotForTests().gameRooms[0]
-    assert.equal(JSON.stringify(storedRoom.settings).includes("pectator"), false,
-      `${key}가 저장값으로 새어 들어갔다`)
+    // 정상 생성은 방을 **정확히 하나** 만든다(무시가 중복 생성으로 새지 않았다).
+    const rooms = matchmaking.__getStateSnapshotForTests().gameRooms
+    assert.equal(rooms.length, 1, `${key}: 정상 생성이 방을 정확히 하나 만들지 않았다`)
+    const [, storedRoom] = rooms[0]
+    assertNoSpectatorKeys(storedRoom.settings, `${key}를 실은 생성의 저장값`)
     assert.equal(storedRoom.settings.maxPlayers, 8, "정상 설정 수치가 훼손됐다")
     assert.equal(storedRoom.settings.voteReveal, true, "정상 설정 수치가 훼손됐다")
-    assert.equal(JSON.stringify(res.room).includes("pectator"), false, `${key}가 생성 응답에 실렸다`)
+    assertNoSpectatorKeys(res.room, `${key}를 실은 생성의 응답`)
+  }
+
+  // 중첩 오염 키는 조용히 버려지지 않고 생성 자체가 거부돼야 한다 — 두 역할 객체를 각각
+  // 단독으로 넣어 확인한다(하나만 막혀 있어도 다른 하나가 통과하면 방이 만들어진다).
+  for (const nestedSettings of [
+    { roleNightActionTimes: { JOKER: 30, SPECTATOR: 30 } },
+    { roleCompositionMode: "custom", roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, SPECTATOR: 1 } },
+  ]) {
+    matchmaking.__resetStateForTests()
+    const nested = await socketState.socket.emitWithAck(SOCKET_EVENTS.CREATE_ROOM, {
+      ...validSettingsPayload(), ...nestedSettings,
+    })
+    const where = Object.keys(nestedSettings).join("+")
+    assert.equal(nested.ok, false, `중첩 관전자 키(${where})가 거부되지 않았다`)
+    assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms.length, 0,
+      `거부된 요청(${where})이 방을 만들었다`)
   }
   matchmaking.__resetStateForTests()
-
-  // 중첩 오염 키는 조용히 버려지지 않고 생성 자체가 거부돼야 한다.
-  const nested = await socketState.socket.emitWithAck(SOCKET_EVENTS.CREATE_ROOM, {
-    ...validSettingsPayload(), roleNightActionTimes: { JOKER: 30, SPECTATOR: 30 },
-  })
-  assert.equal(nested.ok, false, "중첩 관전자 키가 거부되지 않았다")
-  assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms.length, 0, "거부된 요청이 방을 만들었다")
 })
 
 test("편집 패널은 서버 확정 설정에서 시작하고, D-12·관전자 항목을 어디에도 그리지 않는다", async () => {
@@ -535,7 +679,7 @@ test("F-23(AC-03) · 오염된 저장 설정은 조회·store·폼·저장·방�
   assert.equal(result.current.isRoomVerified, true, "방 검증이 끝나지 않았다")
 
   const storeSettings = useMatchingStore.getState().settings
-  assert.equal(JSON.stringify(storeSettings).includes("pectator"), false, "store에 관전자 키가 들어왔다")
+  assertNoSpectatorKeys(storeSettings, "조회 뒤 store 설정")
   assert.equal(storeSettings.maxPlayers, 8, "정상 설정값이 함께 사라졌다")
 
   // ② store → 폼 변환기. 오염 키를 옮기지 않으면서 정상 값은 그대로 온다.
@@ -544,7 +688,7 @@ test("F-23(AC-03) · 오염된 저장 설정은 조회·store·폼·저장·방�
     settings: storeSettings,
   })
   assert.equal(formState.ok, true, formState.code)
-  assert.equal(JSON.stringify(formState).includes("pectator"), false, "폼 상태에 관전자 키가 생겼다")
+  assertNoSpectatorKeys(formState, "폼 상태")
 
   // ③ 실제 저장(값 하나만 바꾼다) → 서버 저장값에서 오염 키가 사라진다.
   let saveResult
@@ -558,7 +702,7 @@ test("F-23(AC-03) · 오염된 저장 설정은 조회·store·폼·저장·방�
   assert.equal(saveResult.changed, true)
 
   const stored = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
-  assert.equal(JSON.stringify(stored).includes("pectator"), false, "저장값에 관전자 키가 남았다")
+  assertNoSpectatorKeys(stored, "저장 뒤 서버 저장값")
   assert.equal(Object.hasOwn(stored.roleNightActionTimes ?? {}, "SPECTATOR"), false)
   assert.equal(stored.maxPlayers, 6)
 
@@ -568,11 +712,20 @@ test("F-23(AC-03) · 오염된 저장 설정은 조회·store·폼·저장·방�
 
   // ④ **이전 버전** 방송이 늦게 도착한다 — 관전자 키를 실은 v1 스냅샷이다. 버전이 낮으므로
   //    적용되지 않아야 하고, 그래서 오염도 설정 되돌림도 일어나지 않는다.
+  //
+  //    최상위 표기만 실으면 대소문자를 구분하던 예전 검사로도 잡혔다. 여기서는 **두 중첩
+  //    대문자 SPECTATOR**를 함께 실어, 중첩 경로로 들어오는 재오염까지 막히는지 본다.
   await act(async () => {
     emitToClient(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, {
       roomId: room.roomId,
       settingsVersion: 1,
-      settings: { ...stored, maxPlayers: 8, allowSpectators: true },
+      settings: {
+        ...stored,
+        maxPlayers: 8,
+        allowSpectators: true,
+        roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, SPECTATOR: 1 },
+        roleNightActionTimes: { ...(stored.roleNightActionTimes ?? {}), SPECTATOR: 30 },
+      },
       players: afterSave.players,
       hostUuid: "host-a",
       canStart: false,
@@ -581,10 +734,7 @@ test("F-23(AC-03) · 오염된 저장 설정은 조회·store·폼·저장·방�
   const afterStale = useMatchingStore.getState()
   assert.equal(afterStale.settingsVersion, 2, "이전 버전 방송이 설정 버전을 되돌렸다")
   assert.equal(afterStale.settings.maxPlayers, 6, "이전 버전 방송이 설정값을 되돌렸다")
-  assert.equal(
-    JSON.stringify(afterStale.settings).includes("pectator"), false,
-    "이전 버전 방송이 store를 관전자 키로 되오염시켰다",
-  )
+  assertNoSpectatorKeys(afterStale.settings, "이전 버전 방송을 받은 뒤의 store 설정")
 
   // ⑤ 계정 전이 — 계정이 바뀌면 이 화면은 이전 계정의 방을 놓는다(clearRoom). 그 뒤 도착한
   //    **더 높은 버전**의 오염 방송은 이전 계정·이전 소속의 사실이므로, 설정을 되살리지도
@@ -601,7 +751,13 @@ test("F-23(AC-03) · 오염된 저장 설정은 조회·store·폼·저장·방�
     emitToClient(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, {
       roomId: room.roomId,
       settingsVersion: 99,
-      settings: { ...stored, maxPlayers: 10, allowSpectators: true },
+      settings: {
+        ...stored,
+        maxPlayers: 10,
+        allowSpectators: true,
+        roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, SPECTATOR: 1 },
+        roleNightActionTimes: { ...(stored.roleNightActionTimes ?? {}), SPECTATOR: 30 },
+      },
       players: afterStale.players,
       hostUuid: "host-a",
       canStart: false,
@@ -612,9 +768,9 @@ test("F-23(AC-03) · 오염된 저장 설정은 조회·store·폼·저장·방�
     afterAccountSwap.settings, null,
     "계정 전이 뒤 도착한 옛 사건이 이전 계정의 설정을 되살렸다",
   )
-  assert.equal(
-    JSON.stringify(afterAccountSwap).includes("pectator"), false,
-    "계정 전이 뒤 도착한 옛 사건이 관전자 키를 store에 심었다",
+  assertNoSpectatorKeys(
+    { accessType: afterAccountSwap.accessType, settings: afterAccountSwap.settings, players: afterAccountSwap.players },
+    "계정 전이 뒤 도착한 옛 사건을 받은 store",
   )
 })
 
@@ -643,4 +799,251 @@ test("비방장·미검증 상태에서는 저장 요청이 서버로 나가지 
   const after = socketState.socket.emittedToServer.filter(
     (e) => e.event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).length
   assert.equal(after, before, "권한 없는 계정의 저장 요청이 서버로 나갔다")
+})
+
+/**
+ * 실제 참가·CUSTOM 전환·전원 준비까지 마친 방을 만든다.
+ *
+ * 중첩 오염(roleCounts.SPECTATOR·roleNightActionTimes.SPECTATOR)을 얹으려면 그 두 키가
+ * 실제로 존재하는 CUSTOM 저장값이 있어야 하고, "저장이 준비를 건드리지 않았다"는 준비한
+ * 사람이 실제로 있을 때만 관측된다 — 둘 다 실제 서버 경로로 만든다.
+ */
+async function setupCustomRoomWithReadyJoiner(hostUuid = "host-custom", joinerUuid = "guest-custom") {
+  const { io, serverSocket, room } = await setupRoom(hostUuid, { maxPlayers: 8, jokerCount: 2 })
+
+  const joinerSocket = createFakeSocket(joinerUuid)
+  io.sockets.sockets.set(joinerSocket.id, joinerSocket)
+  await handleJoinRoomByCode(io, joinerSocket, joinerUuid, room.roomCode)
+
+  // 역할 구성을 CUSTOM으로 확정한다(v1 → v2). 이 저장이 roleCounts·roleNightActionTimes를
+  // 실제 저장값에 만든다 — 계획이 명시한 정상 기대값이 여기서 고정된다.
+  const toCustom = await new Promise((resolve) => handleUpdateRoomSettings(io, serverSocket, hostUuid, {
+    roomId: room.roomId, requestId: "custom-setup", expectedSettingsVersion: 1,
+    accessType: "open", maxPlayers: 8, jokerCount: 2,
+    roleCompositionMode: "custom",
+    roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 },
+    dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90,
+    roleNightActionTimes: { JOKER: 30 },
+  }, resolve))
+  assert.equal(toCustom.ok, true, toCustom.message)
+  assert.equal(toCustom.changed, true, "전제: CUSTOM 전환은 실제 변경이어야 한다")
+
+  // 설정 변경이 준비를 해제하므로, 준비는 그 **뒤에** 세운다.
+  for (const [socket, uuid] of [[serverSocket, hostUuid], [joinerSocket, joinerUuid]]) {
+    const ready = await new Promise((resolve) =>
+      handleSetReady(io, socket, uuid, readyPayload(room, true, { settingsVersion: 2 }), resolve))
+    assert.equal(ready.ok, true, `${uuid} 준비 실패: ${ready.message}`)
+  }
+
+  return { io, serverSocket, joinerSocket, room, hostUuid, joinerUuid }
+}
+
+/** 현재 서버가 들고 있는 방의 원본(스냅샷은 players를 배열로 준다 — Map으로 되돌린다). */
+function rawStoredRoom(roomId) {
+  const [, room] = matchmaking.__getStateSnapshotForTests().gameRooms.find(([id]) => id === roomId)
+  return { ...room, players: new Map(room.players) }
+}
+
+/** 최상위 + 두 중첩 대문자 SPECTATOR를 한꺼번에 얹은 "오래된 저장값"을 만든다. */
+function seedContaminatedSettings(roomId) {
+  const legacy = rawStoredRoom(roomId)
+  legacy.settings = {
+    ...legacy.settings,
+    allowSpectators: true,
+    "allow-spectators": true,
+    spectator: "x",
+    spectatorMode: "all",
+    SPECTATOR: true,
+    roleCounts: { ...(legacy.settings.roleCounts ?? {}), SPECTATOR: 1 },
+    roleNightActionTimes: { ...(legacy.settings.roleNightActionTimes ?? {}), SPECTATOR: 30 },
+  }
+  matchmaking.__seedRoomForTests(legacy)
+
+  // 전제 확인 — 주입이 실제로 저장값에 들어갔는가. 검출기의 양성 대조이기도 하다.
+  const seeded = matchmaking.__getStateSnapshotForTests().gameRooms.find(([id]) => id === roomId)[1].settings
+  const found = findSpectatorKeys(seeded)
+  assert.ok(found.includes("$.roleCounts.SPECTATOR"), "전제: 중첩 roleCounts 오염이 심어져야 한다")
+  assert.ok(found.includes("$.roleNightActionTimes.SPECTATOR"), "전제: 중첩 밤 시간 오염이 심어져야 한다")
+  assert.ok(found.includes("$.allowSpectators"), "전제: 최상위 오염이 심어져야 한다")
+}
+
+/**
+ * F-23(SPLIT-2): **값이 달라지지 않는 저장**은 오염만 걷어내고 나머지는 전부 보존한다.
+ *
+ * 기존 통합 시험은 오염 제거를 **값을 바꾸는** 저장으로만 확인했다. 그 경로는 어차피 버전을
+ * 올리고 준비를 해제하므로, "정제가 버전·준비를 함부로 건드리지 않는가"를 구별하지 못한다 —
+ * 정제만으로 settingsVersion이 오르거나 준비가 풀리는 퇴화가 그대로 통과한다. 그래서 값이
+ * 같은 저장 하나를 실제 조회 → store → 폼 → 저장 순서로 돌려 그 경계를 따로 고정한다.
+ */
+test("F-23(SPLIT-2) · 동일값 저장은 중첩 오염만 걷어내고 버전·준비·방송·수신을 전부 보존한다", async () => {
+  const { room, joinerSocket } = await setupCustomRoomWithReadyJoiner()
+  seedContaminatedSettings(room.roomId)
+
+  // ① 실제 조회 → store. 응답 경계가 이미 두 중첩 오염을 걷어내야 한다.
+  const { result } = renderHook(() => useMatchingRoom(roomCallbacks))
+  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  assert.equal(result.current.isRoomVerified, true, "방 검증이 끝나지 않았다")
+
+  const storeSettings = useMatchingStore.getState().settings
+  assertNoSpectatorKeys(storeSettings, "오염된 CUSTOM 방의 조회 뒤 store 설정")
+  assert.deepEqual(Object.keys(storeSettings.roleCounts).sort(), [...NORMAL_ROLE_KEYS].sort(),
+    "정제가 roleCounts의 정상 역할 키를 함께 지웠다")
+  assert.deepEqual(storeSettings.roleCounts, { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
+  assert.deepEqual(storeSettings.roleNightActionTimes, { JOKER: 30 })
+  assert.equal(useMatchingStore.getState().settingsVersion, 2)
+
+  // ② store → 폼. 폼의 역할 목록도 정상 역할 집합과 정확히 같아야 한다.
+  const formState = buildRoomSettingsFormState({
+    accessType: useMatchingStore.getState().accessType, settings: storeSettings,
+  })
+  assert.equal(formState.ok, true, formState.code)
+  assertNoSpectatorKeys(formState, "오염된 CUSTOM 방의 폼 상태")
+  assert.deepEqual(Object.keys(formState.roleComposition.roleCounts).sort(), [...NORMAL_ROLE_KEYS].sort())
+  assert.deepEqual(formState.specifiedRoleNightActionTimes, ["JOKER"],
+    "지정된 밤 시간 목록이 정상 역할만 담고 있지 않다")
+
+  // ③ 값을 **하나도 바꾸지 않고** 저장한다.
+  const versionBefore = useMatchingStore.getState().settingsVersion
+  const readyBefore = [...rawStoredRoom(room.roomId).players]
+    .map(([uuid, p]) => [uuid, p.isReady, p.readyRevision])
+  assert.ok(readyBefore.every(([, isReady]) => isReady === true), "전제: 전원이 준비 상태여야 한다")
+  const receiptsBefore = clientReceiptsOf(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED).length
+  const joinerReceiptsBefore = joinerSocket.countReceived(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED)
+
+  let saveResult
+  await act(async () => { saveResult = await result.current.saveRoomSettings(formState) })
+  assert.equal(saveResult.ok, true, JSON.stringify(saveResult))
+  assert.equal(saveResult.changed, false, "값이 같은 저장이 변경으로 처리됐다")
+
+  // 제출한 요청 자체에도 폐기 키가 없다(폼이 원본을 spread해 되살리지 않았다).
+  const sent = socketState.socket.requestsOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).at(-1).payload
+  assertNoSpectatorKeys(sent, "동일값 저장 요청")
+  assert.deepEqual(sent.roleCounts, { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
+  assert.deepEqual(sent.roleNightActionTimes, { JOKER: 30 })
+
+  // 저장값: 오염만 사라지고 정상값은 전부 그대로다.
+  const stored = rawStoredRoom(room.roomId)
+  assertNoSpectatorKeys(stored.settings, "동일값 저장 뒤 서버 저장값")
+  assert.equal(stored.settings.maxPlayers, 8)
+  assert.equal(stored.settings.jokerCount, 2)
+  assert.equal(stored.settings.dayDiscussionTime, 60)
+  assert.equal(stored.settings.dayVoteTime, 60)
+  assert.equal(stored.settings.nightActionTime, 90)
+  assert.deepEqual(stored.settings.roleCounts, { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
+  assert.deepEqual(stored.settings.roleNightActionTimes, { JOKER: 30 })
+  // D-12 세 값은 편집에서 보내지 않았는데 정제 과정에서 달라지면 안 된다.
+  assert.equal(stored.settings.lightsOut, false)
+  assert.equal(stored.settings.soulBetting, false)
+  assert.equal(stored.settings.voteReveal, true)
+
+  // 버전·준비·readyRevision·방송·실제 수신은 전부 불변이다.
+  assert.equal(stored.settingsVersion, versionBefore, "정제만으로 설정 버전이 올랐다")
+  assert.equal(useMatchingStore.getState().settingsVersion, versionBefore)
+  assert.deepEqual(
+    [...stored.players].map(([uuid, p]) => [uuid, p.isReady, p.readyRevision]), readyBefore,
+    "동일값 저장이 준비 상태나 readyRevision을 건드렸다",
+  )
+  assert.equal(
+    clientReceiptsOf(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED).length, receiptsBefore,
+    "동일값 저장이 설정 변경 사건을 방장 화면에 전달했다",
+  )
+  assert.equal(
+    joinerSocket.countReceived(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED), joinerReceiptsBefore,
+    "동일값 저장이 설정 변경 사건을 참가자에게 전달했다",
+  )
+
+  // ④ **양성 대조**: 실제로 값을 바꾸는 저장은 같은 경로로 버전을 올리고 준비를 풀며
+  //    정제된 설정 사건을 방장·참가자 양쪽에 실제로 전달한다. 위의 "0회"가 전달 경로 자체가
+  //    끊겨서 나온 결과가 아님을 이 단언이 보증한다.
+  let changedSave
+  await act(async () => {
+    changedSave = await result.current.saveRoomSettings({
+      ...formState, ranges: { ...formState.ranges, "max-players": 6 },
+    })
+  })
+  assert.equal(changedSave.ok, true, JSON.stringify(changedSave))
+  assert.equal(changedSave.changed, true)
+
+  const afterChange = rawStoredRoom(room.roomId)
+  assert.equal(afterChange.settingsVersion, versionBefore + 1, "실제 변경이 버전을 올리지 않았다")
+  assert.ok([...afterChange.players].every(([, p]) => p.isReady !== true), "실제 변경이 준비를 풀지 않았다")
+  for (const [uuid, , revisionBefore] of readyBefore) {
+    const seated = afterChange.players.get(uuid)
+    assert.equal(seated.readyRevision, revisionBefore + 1, `${uuid}의 readyRevision이 오르지 않았다`)
+  }
+  assert.equal(
+    clientReceiptsOf(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED).length, receiptsBefore + 1,
+    "실제 변경 저장의 설정 사건이 방장 화면에 전달되지 않았다",
+  )
+  assert.equal(
+    joinerSocket.countReceived(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED), joinerReceiptsBefore + 1,
+    "실제 변경 저장의 설정 사건이 참가자에게 전달되지 않았다",
+  )
+  // 실제로 전달된 그 사건도 정제돼 있어야 한다(방송 경계의 되오염 0).
+  const delivered = clientReceiptsOf(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED).at(-1)
+  assertNoSpectatorKeys(delivered.payload, "실제로 전달된 설정 변경 사건")
+  assert.equal(delivered.payload.settings.maxPlayers, 6)
+  assert.equal(useMatchingStore.getState().settings.maxPlayers, 6, "store가 최신값을 반영하지 않았다")
+  assertNoSpectatorKeys(useMatchingStore.getState().settings, "변경 저장 수신 뒤 store 설정")
+})
+
+/**
+ * F-23(SPLIT-2): ACK를 잃어도 **같은 requestId**로 결과를 확인하며, 새 저장도 재커밋도 없다.
+ *
+ * 저장 자체는 서버에서 정상 커밋되고 응답만 도달하지 않는다. 그 상태에서 새 requestId로
+ * 다시 저장하면 이미 반영된 변경이 두 번 일어난다 — 그래서 화면은 결과 조회만 보내야 하고,
+ * 그 조회는 실제 서버의 결과 기록 경로(handleGetRoomSettingsUpdateResult)를 지나야 한다.
+ */
+test("F-23(SPLIT-2) · 저장 ACK가 유실돼도 같은 요청 식별자로만 확인하고 재저장·재커밋은 0이다", async () => {
+  const { room } = await setupCustomRoomWithReadyJoiner("host-ack", "guest-ack")
+  seedContaminatedSettings(room.roomId)
+
+  const { result } = renderHook(() => useMatchingRoom(roomCallbacks))
+  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  assert.equal(result.current.isRoomVerified, true)
+
+  const formState = buildRoomSettingsFormState({
+    accessType: useMatchingStore.getState().accessType,
+    settings: useMatchingStore.getState().settings,
+  })
+  assert.equal(formState.ok, true, formState.code)
+
+  // 커밋은 정상적으로 일어나되 ACK만 도달하지 않는다 → 훅의 timeout 경로로 미확인이 된다.
+  socketState.socket.dropAcksFor(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS)
+  let lost
+  await act(async () => {
+    lost = await Promise.race([
+      result.current.saveRoomSettings({ ...formState, ranges: { ...formState.ranges, "max-players": 6 } }),
+      // 실제 8초 timeout을 기다리지 않는다 — 이 시험이 보는 것은 "응답을 받지 못한 화면"이다.
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, code: "TEST_NO_ACK" }), 0)),
+    ])
+  })
+  assert.equal(lost.ok, false, "유실된 ACK가 성공으로 처리됐다")
+  socketState.socket.restoreAcksFor(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS)
+
+  // 서버에는 이미 커밋돼 있다(그래서 "실패"라고 단정하면 안 된다).
+  const committed = rawStoredRoom(room.roomId)
+  assert.equal(committed.settings.maxPlayers, 6, "전제: 서버는 이미 커밋했어야 한다")
+  assertNoSpectatorKeys(committed.settings, "ACK 유실 저장 뒤 서버 저장값")
+  const versionAfterCommit = committed.settingsVersion
+  const saveRequests = socketState.socket.requestsOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS)
+  assert.equal(saveRequests.length, 1, "ACK 유실이 자동 재저장을 만들었다")
+  const lostRequestId = saveRequests[0].payload.requestId
+
+  // 같은 requestId로 결과만 다시 묻는다 — 실제 서버 결과 기록 경로를 지난다.
+  const lookup = await new Promise((resolve) =>
+    handleGetRoomSettingsUpdateResult("host-ack", { roomId: room.roomId, requestId: lostRequestId }, resolve))
+  assert.equal(lookup.ok, true, lookup.message)
+  assert.equal(lookup.status, "APPLIED", "서버가 그 요청의 정착을 알려주지 않았다")
+  assert.equal(lookup.settingsVersion, versionAfterCommit)
+  assertNoSpectatorKeys(lookup, "결과 조회 응답")
+
+  // 확인을 마친 뒤에도 새 저장은 0이고, 저장값은 다시 커밋되지 않았다.
+  assert.equal(
+    socketState.socket.requestsOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).length, 1,
+    "결과 확인이 새 저장 요청을 만들었다",
+  )
+  const afterLookup = rawStoredRoom(room.roomId)
+  assert.equal(afterLookup.settingsVersion, versionAfterCommit, "결과 확인이 저장을 다시 커밋했다")
+  assert.equal(afterLookup.settings.maxPlayers, 6)
 })

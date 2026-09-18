@@ -194,6 +194,9 @@ mock.module("@/shared/socket/socketClient.js", {
 const { render, act, cleanup, waitFor } = await import("@testing-library/react")
 const { RouterProvider } = await import("react-router-dom")
 const { router } = await import("../../../../app/routes/index.jsx")
+// SPLIT-1(AC-02): 라우트 선언에서 "인증 보호 구간"을 식별하려면 그 가드 컴포넌트 자체가
+// 필요하다 — 문자열이 아니라 실제 element 타입으로 대조한다.
+const { default: ProtectedRoute } = await import("../../../../shared/ui/ProtectedRoute.jsx")
 const { useInGameStore } = await import("../store/ingameStore.js")
 const { useMatchingStore } = await import("../../matching/store/matchingStore.js")
 const { useAuthStore } = await import("../../../auth/store/auth.store.js")
@@ -293,6 +296,37 @@ test.afterEach(async () => {
   useMatchingStore.getState().clearRoom()
 })
 
+/**
+ * F-23(SPLIT-1/AC-02): **외부 관전 진입 라우트가 없다**는 사실을 실제 라우터 선언에서 본다.
+ *
+ * 화면 문자열만 검사하면 "그 버튼이 지금 렌더되지 않는다"까지만 알 수 있고, 주소를 직접 쳐서
+ * 들어가는 경로가 남아 있어도 통과한다. 여기서는 실제 router 객체의 선언된 경로를 전부 펼쳐
+ * 관전 전용 경로가 없음을 고정하고, 동시에 정상 참가 화면 세 개는 보호 라우트 **아래에**
+ * 그대로 남아 있는지 함께 본다(제거가 정상 진입까지 지우지 않았다).
+ */
+test("F-23(SPLIT-1/AC-02): 실제 라우터에 외부 관전 경로가 없고 정상 참가 경로는 보호 아래 그대로다", () => {
+  const collectPaths = (routes, guarded = false) => routes.flatMap((route) => {
+    // ProtectedRoute를 element로 갖는 레이아웃 라우트 아래가 곧 "인증 보호 구간"이다.
+    const isGuard = route.element?.type === ProtectedRoute
+    const here = route.path ? [{ path: route.path, guarded }] : []
+    return [...here, ...collectPaths(route.children ?? [], guarded || isGuard)]
+  })
+
+  const declared = collectPaths(router.routes)
+  assert.ok(declared.length > 0, "라우터에서 경로를 하나도 읽지 못했다(이 검사가 무력하다)")
+
+  // 관전 전용 진입 경로가 하나도 없다.
+  const spectatorRoutes = declared.filter(({ path }) => /spectat|watch-only|observer|관전/i.test(path))
+  assert.deepEqual(spectatorRoutes, [], `외부 관전 라우트가 남아 있다: ${JSON.stringify(spectatorRoutes)}`)
+
+  // 정상 참가 화면은 보호 라우트 아래에 그대로 선언돼 있다.
+  for (const path of ["/game-setup", "/game-matching", "/ingame"]) {
+    const found = declared.find((route) => route.path === path)
+    assert.ok(found, `${path} 경로가 사라졌다`)
+    assert.equal(found.guarded, true, `${path}가 인증 보호 밖으로 나왔다`)
+  }
+})
+
 test("F-23(AC-06): 생존 중인 참가자에게는 사망 선택이 보이지 않는다", async () => {
   seedLiveGame({ selfAlive: true })
   const { container } = await mountInGame()
@@ -328,8 +362,9 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
   assert.ok(findButton(container, "관전 계속하기"), "관전 계속하기 버튼이 없다")
   assert.ok(findButton(container, "게임 나가기"), "게임 나가기 버튼이 없다")
 
-  // 계속 보기: 네트워크 요청 0, 소속·참여 자격 그대로, 선택창만 접힌다.
+  // 계속 보기: 네트워크 요청 0, 소속·참여 자격·역할 그대로, 선택창만 접힌다.
   const emitsBefore = socket.emitted.length
+  const roleBefore = useInGameStore.getState().state.self.role
   await act(async () => { findButton(container, "관전 계속하기").click() })
 
   assert.equal(socket.emitted.length, emitsBefore, "계속 보기가 서버 요청을 만들었다")
@@ -337,12 +372,37 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
   const seated = useInGameStore.getState().state.players.find((p) => p.uuid === SELF)
   assert.equal(seated.membershipId, MY_MEMBERSHIP, "계속 보기로 소속이 바뀌었다")
   assert.equal(seated.isParticipating, true, "계속 보기로 참여 자격이 바뀌었다")
+  // 계속 보기는 **로컬 선택**이다 — 역할이 관전자 같은 다른 값으로 바뀌면 안 된다.
+  assert.equal(useInGameStore.getState().state.self.role, roleBefore, "계속 보기가 역할을 바꿨다")
+  assert.equal(useInGameStore.getState().state.self.uuid, SELF, "계속 보기가 신원을 바꿨다")
 
-  // 계속 보기 뒤에도 공개 진행은 계속 들어오고 화면이 갱신된다.
+  // 전제: 지금은 토론 구간이고, 그 구간의 화면만 떠 있다.
+  assert.equal(useInGameStore.getState().state.dayPhase, "DAY_DISCUSSION")
+  assert.ok(findButton(container, "투표 시작 준비"), "전제: 토론 구간 화면이어야 한다")
+  assert.equal(container.textContent.includes("투표 대상 선택"), false)
+
+  // 계속 보기 뒤에도 공개 진행은 계속 들어오고 화면이 실제로 갱신된다.
+  //
+  // "선택창이 다시 뜨지 않는다"만으로는 갱신을 증명하지 못한다 — 사건을 통째로 무시해도 그
+  // 단언은 통과한다. 그래서 store의 낮 하위 구간과 **그 구간에서만 그려지는 DOM**을 함께 본다.
   await act(async () => {
-    socket.deliver("day_phase_changed", { gameId: GAME_ID, phase: "DAY", dayPhase: "DAY_VOTE", dayIndex: 1 })
+    // 실제 서버가 보내는 그대로다(game-core/gameSession.js::buildDayPhaseChangedPayload):
+    // gameId·dayIndex·dayPhase·round 네 필드뿐이고, round는 파서가 요구하는 필수 값이다
+    // (빠지면 parseDayPhaseChangedPayload가 null을 돌려줘 이 사건이 통째로 무시된다).
+    socket.deliver("day_phase_changed", {
+      gameId: GAME_ID, dayIndex: 1, dayPhase: "DAY_VOTE", round: 1,
+    })
   })
   assert.equal(choicePanel(container), null, "공개 사건이 접힌 선택창을 되살렸다")
+  assert.equal(
+    useInGameStore.getState().state.dayPhase, "DAY_VOTE",
+    "공개 진행 사건이 store의 낮 구간을 갱신하지 않았다",
+  )
+  await waitFor(() => assert.equal(
+    container.textContent.includes("투표 대상 선택"), true,
+    "공개 진행 사건이 화면에 반영되지 않았다",
+  ))
+  assert.equal(findButton(container, "투표 시작 준비"), null, "이전 구간 화면이 그대로 남아 있다")
 
   // 그리고 상단 나가기 수단은 그대로 남아 있다.
   assert.ok(container.querySelector("button[aria-label='게임 나가기']"), "상단 나가기 버튼이 사라졌다")
