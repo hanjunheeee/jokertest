@@ -59,14 +59,6 @@ export const INGAME_SETTING_ROOM_ROWS = [
     description: "방 코드를 확인하고 복사할 수 있습니다.",
     actionLabel: "방 코드 보기",
   },
-  {
-    kind: "action",
-    id: "force-end-game",
-    title: "게임 강제 종료",
-    description: "현재 게임을 강제로 종료합니다.",
-    actionLabel: "게임 강제종료",
-    actionTone: "danger",
-  },
 ]
 
 /** @type {InGameSettingTabId} */
