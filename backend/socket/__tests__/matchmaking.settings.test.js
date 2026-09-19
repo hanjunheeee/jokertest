@@ -105,6 +105,144 @@ const { ROOM_SETTINGS_ERROR_CODES, ROOM_SETTINGS_EVENTS } = matchmaking
 // 식별자 상한은 저장·조회가 공유하는 계약이다 — 시험이 사본 상수를 만들면 그 공유가 깨져도 모른다.
 const { MAX_IDENTIFIER_LENGTH } = require('../../utils/updateRoomSettingsValidation')
 
+/**
+ * F-23(SPLIT-2): 폐기된 관전 키를 **대소문자 무시·중첩 포함**으로 찾아 경로 목록을 돌려준다.
+ *
+ * 이 파일의 기존 부재 검사는 `JSON.stringify(x).includes('pectator')`였다. 그 술어는
+ * 대소문자를 구분하므로 중첩 역할 객체가 실제로 쓰는 표기(`SPECTATOR`)를 그대로 통과시킨다 —
+ * roleCounts.SPECTATOR만 남은 저장값은 "관전자 키 0개"로 판정됐다. 키 이름만 낮춰 보고
+ * (값에 든 문자열은 키가 아니다) 객체·배열을 끝까지 내려간다.
+ */
+function findSpectatorKeys(value, path = '$') {
+    if (value === null || typeof value !== 'object') return []
+    if (Array.isArray(value)) {
+        return value.flatMap((item, index) => findSpectatorKeys(item, `${path}[${index}]`))
+    }
+    const found = []
+    for (const [key, child] of Object.entries(value)) {
+        const here = `${path}.${key}`
+        if (key.toLowerCase().includes('spectator')) found.push(here)
+        found.push(...findSpectatorKeys(child, here))
+    }
+    return found
+}
+
+/** 이 경계에 폐기 관전 키가 하나도 없어야 한다. 검출되면 경로를 실패 메시지에 싣는다. */
+function assertNoSpectatorKeys(value, where) {
+    const found = findSpectatorKeys(value)
+    assert.deepEqual(found, [], `${where}에 폐기된 관전 키가 남아 있다: ${found.join(', ')}`)
+}
+
+/** 정상 역할 키 집합 — 정제가 폐기 키만 걷어냈는지(정상 키를 함께 지우지 않았는지) 대조한다. */
+const NORMAL_ROLE_KEYS = ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']
+
+/**
+ * F-23(SPLIT-2): **검출기 자신의 양성 대조.**
+ *
+ * 아래 관전자 시험들은 전부 "폐기 키가 0개"라는 부재 단언이다. 검출기가 아무것도 찾지 못하는
+ * 구현으로 퇴화하면 그 단언은 전부 조용히 통과한다 — 깨끗한 객체만 넣어서는 그것을 구별할 수
+ * 없다. 그래서 폐기 키를 하나씩 **단독으로** 주입해 반드시 검출되는지 먼저 고정한다.
+ */
+test('AC-06 · 폐기 키 검출기는 중첩·대문자 SPECTATOR까지 각각 단독 주입에서 검출한다', () => {
+    for (const key of ['allowSpectators', 'allow-spectators', 'spectator', 'spectatorMode', 'SPECTATOR']) {
+        assert.deepEqual(
+            findSpectatorKeys({ maxPlayers: 8, [key]: true }), [`$.${key}`],
+            `최상위 ${key}를 검출하지 못했다`,
+        )
+    }
+    assert.deepEqual(
+        findSpectatorKeys({ roleCounts: { JOKER: 2, DOCTOR: 1, SPECTATOR: 1 } }),
+        ['$.roleCounts.SPECTATOR'], 'roleCounts.SPECTATOR를 검출하지 못했다',
+    )
+    assert.deepEqual(
+        findSpectatorKeys({ roleNightActionTimes: { JOKER: 30, SPECTATOR: 30 } }),
+        ['$.roleNightActionTimes.SPECTATOR'], 'roleNightActionTimes.SPECTATOR를 검출하지 못했다',
+    )
+    assert.deepEqual(
+        findSpectatorKeys({ players: [{ uuid: 'a' }, { uuid: 'b', allowSpectators: true }] }),
+        ['$.players[1].allowSpectators'], '배열 안의 폐기 키를 검출하지 못했다',
+    )
+    // 정상 설정은 깨끗하다 — 항상 무언가를 찾아내는 검출기도 아니다.
+    assert.deepEqual(findSpectatorKeys({
+        maxPlayers: 8, jokerCount: 2, voteReveal: true,
+        roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 },
+        roleNightActionTimes: { JOKER: 30 },
+    }), [])
+    // **키**만 본다 — 값에 우연히 그 낱말이 든 정상 데이터를 오탐하지 않는다.
+    assert.deepEqual(findSpectatorKeys({ nickname: 'spectator-fan', title: 'SPECTATOR' }), [])
+})
+
+/**
+ * F-23(AC-02): **방 설정 허용 목록과 저장 키의 전수 고정.**
+ *
+ * 위 검출기 시험들은 "관전이라는 낱말의 키가 없다"만 본다. 그것만으로는 열거 가능한 범위가
+ * 잠기지 않는다 — 허용 목록이나 저장 키가 늘어나면(이름이 무엇이든) 아무 시험도 깨지지
+ * 않는다. 여기서는 서버가 **소유한 목록 자체**를 그대로 적어 고정하고, 그 목록으로 실제
+ * 방을 만들어 저장된 키 집합까지 함께 본다. 항목이 하나라도 늘거나 줄면 이 시험이 깨진다.
+ */
+test('AC-02 · 방 설정 허용 목록·요청 허용 키·역할 키·실제 저장 키가 전수로 고정된다', async () => {
+    const validation = require('../../utils/updateRoomSettingsValidation')
+    const { CUSTOM_ROLE_KEYS } = require('../../game-core/roleComposition')
+    const { ROLE_NIGHT_ACTION_TIME_KEYS } = require('../../utils/createRoomValidation')
+
+    // (1) 편집 가능한 설정 필드 — 조회 응답·공개 목록 요약·F-24 복원 입력의 공통 원천이다.
+    assert.deepEqual([...validation.EDITABLE_ROOM_SETTING_KEYS], [
+        'maxPlayers', 'jokerCount', 'roleCompositionMode', 'roleCounts',
+        'dayDiscussionTime', 'dayVoteTime', 'nightActionTime', 'roleNightActionTimes',
+    ], '편집 가능 설정 허용 목록이 바뀌었다')
+    // (2) 서버가 보존하는 D-12 세 값(수정 요청으로 바뀌지 않는다).
+    assert.deepEqual([...validation.PRESERVED_ROOM_SETTING_KEYS],
+        ['lightsOut', 'soulBetting', 'voteReveal'], '보존 설정 목록이 바뀌었다')
+    // (3) update_room_settings 요청이 실을 수 있는 최상위 키 전부.
+    assert.deepEqual([...validation.UPDATE_REQUEST_TOP_LEVEL_KEYS], [
+        'roomId', 'requestId', 'expectedSettingsVersion', 'accessType',
+        ...validation.EDITABLE_ROOM_SETTING_KEYS,
+    ], '수정 요청 허용 키 목록이 바뀌었다')
+    // (4) 두 중첩 역할 객체의 허용 키 전부(여기에 SPECTATOR가 끼어들 자리가 없다).
+    assert.deepEqual([...CUSTOM_ROLE_KEYS], [...NORMAL_ROLE_KEYS])
+    assert.deepEqual([...ROLE_NIGHT_ACTION_TIME_KEYS], [...NORMAL_ROLE_KEYS])
+    // (5) 이 소켓 계약이 쓰는 사건 이름 전부.
+    assert.deepEqual(ROOM_SETTINGS_EVENTS, {
+        UPDATE_ROOM_SETTINGS: 'update_room_settings',
+        GET_ROOM_SETTINGS_UPDATE_RESULT: 'get_room_settings_update_result',
+        ROOM_SETTINGS_UPDATED: 'room_settings_updated',
+    })
+
+    // 위 목록 어디에도 관전 어휘가 없다(이름이 바뀌어 들어오는 경우까지 본다).
+    const enumerated = [
+        ...validation.EDITABLE_ROOM_SETTING_KEYS,
+        ...validation.PRESERVED_ROOM_SETTING_KEYS,
+        ...validation.UPDATE_REQUEST_TOP_LEVEL_KEYS,
+        ...CUSTOM_ROLE_KEYS, ...ROLE_NIGHT_ACTION_TIME_KEYS,
+        ...Object.values(ROOM_SETTINGS_EVENTS),
+    ]
+    assert.deepEqual(enumerated.filter((name) => /spectat|관전/i.test(name)), [],
+        '허용 목록·사건 이름에 관전 항목이 있다')
+    // 대조: 같은 필터가 관전 항목을 실제로 잡아낸다(항상 빈 배열을 돌려주는 검사가 아니다).
+    assert.deepEqual(['maxPlayers', 'allowSpectators'].filter((name) => /spectat|관전/i.test(name)),
+        ['allowSpectators'])
+
+    // (6) **실제로 저장되는 키**. 목록만 보면 저장 경로가 다른 키를 덧붙여도 알 수 없다.
+    const io = createFakeIo([])
+    const { room } = await createRoom(io, 'host-keys', { maxPlayers: 8, jokerCount: 2 })
+    const stored = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
+    assert.deepEqual(Object.keys(stored).sort(), [
+        'dayDiscussionTime', 'dayVoteTime', 'jokerCount', 'lightsOut', 'maxPlayers',
+        'nightActionTime', 'roleCompositionMode', 'soulBetting', 'voteReveal',
+    ], '서버가 저장하는 설정 키 집합이 바뀌었다')
+    assertNoSpectatorKeys(stored, '생성 직후 서버 저장값')
+
+    // (7) 그 방을 실제로 조회한 응답의 설정 키 — 저장 키와 나가는 키는 다른 사실이다.
+    const current = await callAsPromise(handleGetCurrentRoom, 'host-keys')
+    assert.equal(current.ok, true, current.message)
+    assert.equal(current.room.roomId, room.roomId, '조회가 방금 만든 방을 돌려주지 않았다')
+    assert.deepEqual(Object.keys(current.room.settings).sort(), [
+        'dayDiscussionTime', 'dayVoteTime', 'jokerCount', 'lightsOut', 'maxPlayers',
+        'nightActionTime', 'roleCompositionMode', 'soulBetting', 'voteReveal',
+    ], '조회 응답의 설정 키 집합이 바뀌었다')
+    assertNoSpectatorKeys(current.room, '생성 직후 조회 응답')
+})
+
 /** 현재 서버가 들고 있는 방 상태의 **깊은** 복사본. 같은 참조 비교로 무변경을 오판하지 않는다. */
 function snapshotRooms() {
     return JSON.stringify(matchmaking.__getStateSnapshotForTests().gameRooms)
@@ -1306,10 +1444,10 @@ test('AC-06 · 관전자 키는 수정 요청에서 거부되고, 예전 저장�
     const current = await callAsPromise(handleGetCurrentRoom, 'p1')
     assert.equal(Object.hasOwn(current.room.settings, 'allowSpectators'), false)
     assert.equal(Object.hasOwn(current.room.settings, 'unknownLegacyKey'), false)
-    assert.equal(JSON.stringify(current.room).includes('pectator'), false)
+    assertNoSpectatorKeys(current.room, '오염된 저장값의 현재 방 조회 응답')
 
     const list = await callAsPromise(handleGetPublicRooms)
-    assert.equal(JSON.stringify(list.rooms).includes('pectator'), false)
+    assertNoSpectatorKeys(list.rooms, '오염된 저장값의 공개 목록 응답')
 
     // 정상 저장을 한 번 더 하면 그 관전자 키는 저장에서도 사라진다.
     const saved = await callAsPromise(
@@ -1318,7 +1456,7 @@ test('AC-06 · 관전자 키는 수정 요청에서 거부되고, 예전 저장�
     )
     assert.equal(saved.ok, true, saved.message)
     const storedSettings = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
-    assert.equal(Object.hasOwn(storedSettings, 'allowSpectators'), false)
+    assertNoSpectatorKeys(storedSettings, '정상 저장 뒤 서버 저장값')
     assert.equal(Object.hasOwn(storedSettings, 'unknownLegacyKey'), false)
     // D-12의 세 값은 편집 대상이 아니지만 서버가 그대로 보존한다.
     assert.equal(storedSettings.lightsOut, false)
@@ -1338,12 +1476,26 @@ test('AC-06 · 값이 달라지지 않는 저장도 저장값의 관전자 키�
     const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
     const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
 
-    // 전원 준비까지 마친 상태에서 시작한다 — 이 저장이 준비를 건드리지 않는다는 사실은
-    // 준비한 사람이 실제로 있을 때만 확인할 수 있다.
-    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
-    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+    // 역할 구성을 CUSTOM으로 확정한다(v1 → v2). 중첩 오염을 **두 역할 객체 모두**에 얹으려면
+    // roleCounts·roleNightActionTimes가 실제로 존재하는 저장값이 있어야 한다.
+    const toCustom = await callAsPromise(
+        handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, {
+            roleCompositionMode: 'custom',
+            roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 },
+            roleNightActionTimes: { JOKER: 30 },
+        }),
+    )
+    assert.equal(toCustom.ok, true, toCustom.message)
+    assert.equal(toCustom.changed, true, '전제: CUSTOM 전환은 실제 변경이어야 한다')
 
-    // 예전 데이터에 관전자 키·알 수 없는 키가 최상위와 중첩 양쪽에 남아 있는 방을 재현한다.
+    // 전원 준비까지 마친 상태에서 시작한다 — 이 저장이 준비를 건드리지 않는다는 사실은
+    // 준비한 사람이 실제로 있을 때만 확인할 수 있다(설정 변경이 준비를 풀므로 그 뒤에 세운다).
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room, true, { settingsVersion: 2 }))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room, true, { settingsVersion: 2 }))
+
+    // 예전 데이터에 관전자 키·알 수 없는 키가 최상위와 **두 중첩 역할 객체** 양쪽에 남아 있는
+    // 방을 재현한다. 중첩 대문자 SPECTATOR는 예전의 대소문자 구분 검사가 놓치던 표기다.
     const legacy = rawRoom(room.roomId)
     legacy.settings = {
         ...legacy.settings,
@@ -1351,50 +1503,159 @@ test('AC-06 · 값이 달라지지 않는 저장도 저장값의 관전자 키�
         'allow-spectators': true,
         spectator: 'x',
         spectatorMode: 'all',
+        SPECTATOR: true,
+        roleCounts: { ...(legacy.settings.roleCounts ?? {}), SPECTATOR: 1 },
         roleNightActionTimes: { ...(legacy.settings.roleNightActionTimes ?? {}), SPECTATOR: 30 },
     }
     matchmaking.__seedRoomForTests(legacy)
 
     const storedBefore = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
-    assert.equal(Object.hasOwn(storedBefore, 'allowSpectators'), true, '이 시험의 전제는 오염된 저장값이다')
+    const seeded = findSpectatorKeys(storedBefore)
+    assert.ok(seeded.includes('$.allowSpectators'), '이 시험의 전제는 오염된 저장값이다')
+    assert.ok(seeded.includes('$.roleCounts.SPECTATOR'), '전제: 중첩 roleCounts 오염이 심어져야 한다')
+    assert.ok(seeded.includes('$.roleNightActionTimes.SPECTATOR'), '전제: 중첩 밤 시간 오염이 심어져야 한다')
 
     const readyBefore = [...matchmaking.__getStateSnapshotForTests().gameRooms[0][1].players]
         .map(([uuid, p]) => [uuid, p.isReady, p.readyRevision])
+    assert.ok(readyBefore.every(([, isReady]) => isReady === true), '전제: 전원이 준비 상태여야 한다')
     const broadcastsBefore = io.broadcasts.length
-    const deliveredBefore = joinerSocket.emitted.filter(
-        (e) => e.event === ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED).length
+    // 설정 사건은 개별 socket.emit으로 전달된다 — **방장·참가자 양쪽**의 실제 수신을 센다.
+    const deliveredBefore = {
+        host: hostSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED),
+        joiner: joinerSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED),
+    }
 
     // 지금 저장된 값과 **똑같은** 허용 설정을 다시 저장한다(no-change).
     const res = await callAsPromise(
         handleUpdateRoomSettings, io, hostSocket, 'host-a',
-        updatePayload(room.roomId, { maxPlayers: 8, jokerCount: 2 }),
+        updatePayload(room.roomId, {
+            expectedSettingsVersion: 2,
+            maxPlayers: 8,
+            jokerCount: 2,
+            roleCompositionMode: 'custom',
+            roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 },
+            roleNightActionTimes: { JOKER: 30 },
+        }),
     )
     assert.equal(res.ok, true, res.message)
     assert.equal(res.changed, false, '값이 같은 저장이 변경으로 처리됐다')
-    assert.equal(res.settingsVersion, 1)
+    assert.equal(res.settingsVersion, 2)
 
     // 저장값에서 관전자·미지의 키가 사라졌다(최상위·중첩 모두).
     const stored = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
-    assert.equal(JSON.stringify(stored).includes('pectator'), false, '저장값에 관전자 키가 남았다')
-    assert.equal(Object.hasOwn(stored.roleNightActionTimes ?? {}, 'SPECTATOR'), false)
+    assertNoSpectatorKeys(stored, '동일값 저장 뒤 서버 저장값')
+    assert.equal(Object.hasOwn(stored, 'unknownLegacyKey'), false)
+    // 정상 역할 키는 함께 지워지지 않았다 — 폐기 키만 걷어낸다.
+    assert.deepEqual(Object.keys(stored.roleCounts).sort(), [...NORMAL_ROLE_KEYS].sort())
+    assert.deepEqual(stored.roleCounts, { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
+    assert.deepEqual(stored.roleNightActionTimes, { JOKER: 30 })
     // 정상 설정 수치와 서버 보존 값은 그대로다.
     assert.equal(stored.maxPlayers, 8)
     assert.equal(stored.jokerCount, 2)
     assert.equal(stored.dayDiscussionTime, 60)
     assert.equal(stored.dayVoteTime, 60)
     assert.equal(stored.nightActionTime, 90)
+    assert.equal(stored.lightsOut, false)
+    assert.equal(stored.soulBetting, false)
     assert.equal(stored.voteReveal, true)
 
     // 버전·준비 상태·변경 방송은 no-change 계약 그대로다.
-    assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settingsVersion, 1)
+    assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settingsVersion, 2,
+        '정제만으로 설정 버전이 올랐다')
     const readyAfter = [...matchmaking.__getStateSnapshotForTests().gameRooms[0][1].players]
         .map(([uuid, p]) => [uuid, p.isReady, p.readyRevision])
-    assert.deepEqual(readyAfter, readyBefore, 'no-change 저장이 준비 상태를 건드렸다')
+    assert.deepEqual(readyAfter, readyBefore, 'no-change 저장이 준비 상태나 readyRevision을 건드렸다')
     assert.equal(io.broadcasts.length, broadcastsBefore, 'no-change 저장이 방송을 발생시켰다')
     assert.equal(
-        joinerSocket.emitted.filter((e) => e.event === ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED).length,
-        deliveredBefore, 'no-change 저장이 설정 변경 사건을 전달했다',
+        hostSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED), deliveredBefore.host,
+        'no-change 저장이 설정 변경 사건을 방장에게 전달했다',
     )
+    assert.equal(
+        joinerSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED), deliveredBefore.joiner,
+        'no-change 저장이 설정 변경 사건을 참가자에게 전달했다',
+    )
+
+    // **양성 대조**: 실제로 값을 바꾸는 저장은 같은 경로로 버전을 올리고 준비를 풀며, 정제된
+    // 설정 사건을 방장·참가자 양쪽에 실제로 전달한다. 위의 "0회"가 전달 경로 자체가 끊겨서
+    // 나온 결과가 아님을 이것이 보증한다.
+    const changedRes = await callAsPromise(
+        handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, {
+            expectedSettingsVersion: 2,
+            maxPlayers: 6,
+            jokerCount: 2,
+            roleCompositionMode: 'custom',
+            roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 },
+            roleNightActionTimes: { JOKER: 30 },
+        }),
+    )
+    assert.equal(changedRes.ok, true, changedRes.message)
+    assert.equal(changedRes.changed, true)
+    assert.equal(changedRes.settingsVersion, 3, '실제 변경이 버전을 올리지 않았다')
+
+    const afterChange = matchmaking.__getStateSnapshotForTests().gameRooms[0][1]
+    assert.ok(afterChange.players.every(([, p]) => p.isReady !== true), '실제 변경이 준비를 풀지 않았다')
+    for (const [uuid, , revisionBefore] of readyBefore) {
+        const seated = afterChange.players.find(([id]) => id === uuid)[1]
+        assert.equal(seated.readyRevision, revisionBefore + 1, `${uuid}의 readyRevision이 오르지 않았다`)
+    }
+    for (const [label, socket, before] of [
+        ['방장', hostSocket, deliveredBefore.host], ['참가자', joinerSocket, deliveredBefore.joiner],
+    ]) {
+        assert.equal(
+            socket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED), before + 1,
+            `실제 변경 저장의 설정 사건이 ${label}에게 전달되지 않았다`,
+        )
+        const delivered = socket.received
+            .filter((e) => e.event === ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED).at(-1)
+        assertNoSpectatorKeys(delivered.payload, `${label}에게 실제로 전달된 설정 변경 사건`)
+        assert.equal(delivered.payload.settings.maxPlayers, 6)
+    }
+})
+
+test('AC-06 · 중첩 역할 키에 관전자가 섞인 수정 요청은 거부되고 저장·버전·준비·방송이 불변이다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
+    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+
+    const before = snapshotRooms()
+    const broadcastsBefore = io.broadcasts.length
+    const deliveredBefore = {
+        host: hostSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED),
+        joiner: joinerSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED),
+    }
+
+    // 최상위 키는 이미 다른 시험이 덮는다. 여기서는 **중첩 역할 객체**를 각각 단독으로 넣는다 —
+    // 한쪽만 막혀 있어도 다른 쪽이 통과하면 폐기 키가 저장값에 들어간다.
+    for (const nested of [
+        { roleNightActionTimes: { JOKER: 30, SPECTATOR: 30 } },
+        {
+            roleCompositionMode: 'custom',
+            roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, SPECTATOR: 1 },
+        },
+    ]) {
+        const where = Object.keys(nested).join('+')
+        const res = await callAsPromise(
+            handleUpdateRoomSettings, io, hostSocket, 'host-a',
+            updatePayload(room.roomId, { requestId: `nested-${where}`, ...nested }),
+        )
+        assert.equal(res.ok, false, `중첩 관전자 키(${where})가 거부되지 않았다`)
+        assert.equal(res.code, ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, where)
+    }
+
+    // 거부는 어떤 상태도 바꾸지 않는다 — 저장값·버전·준비·방송·수신 전부 그대로다.
+    assert.equal(snapshotRooms(), before, '거부된 요청이 저장값을 바꿨다')
+    assert.equal(io.broadcasts.length, broadcastsBefore, '거부된 요청이 방송을 냈다')
+    assert.equal(hostSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED), deliveredBefore.host)
+    assert.equal(joinerSocket.countReceived(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED), deliveredBefore.joiner)
+
+    // 조회·공개 목록 응답에도 그 키가 생기지 않았다.
+    const current = await callAsPromise(handleGetCurrentRoom, 'p1')
+    assertNoSpectatorKeys(current.room, '거부 뒤 현재 방 조회 응답')
+    const list = await callAsPromise(handleGetPublicRooms)
+    assertNoSpectatorKeys(list.rooms, '거부 뒤 공개 목록 응답')
 })
 
 test('AC-06 · 오염이 없는 방의 no-change 저장은 저장 객체를 교체하지 않는다', async () => {
