@@ -183,17 +183,28 @@ function isSocketExcludedFromChannel(channelId, socketId) {
  * except을 제공하므로 이 경로는 단일 노드 fake/커스텀 adapter에서만 쓰인다 — 그래서 원격 노드의
  * 소켓을 열거하지 못하는 한계는 이 경로의 문제가 아니다(그 환경은 except 경로를 탄다).
  *
+ * @param {(socket:object) => boolean} [recipientFilter] - **각 전송 직전에** 다시 묻는 자격
+ *   판정. 앞선 수신자의 emit이 다음 수신자의 소속을 바꿀 수 있으므로(한 번 계산해 둔 제외
+ *   목록은 그 사이의 전이를 모른다), 이 경계는 목록이 아니라 매 전송 직전의 사실을 본다.
+ *   던지면 그 수신자는 자격 없음으로 본다(fail-closed).
  * @returns {boolean} 구성원을 실제로 열거할 수 있었는가. false면 호출부가 방송을 **버린다**.
  */
-function emitToChannelMembersIndividually(io, channelId, event, payload, skipSocketIds) {
+function emitToChannelMembersIndividually(io, channelId, event, payload, skipSocketIds, recipientFilter = null) {
     const registry = io?.sockets?.sockets
     if (!registry || typeof registry.values !== 'function') return false
-    for (const member of registry.values()) {
+    for (const member of [...registry.values()]) {
         const memberId = typeof member?.id === 'string' ? member.id : null
         if (!memberId || skipSocketIds.has(memberId)) continue
         const rooms = member.rooms
         if (!rooms || typeof rooms.has !== 'function' || !rooms.has(channelId)) continue
         if (typeof member.emit !== 'function') continue
+        if (typeof recipientFilter === 'function') {
+            let allowed = false
+            try { allowed = recipientFilter(member) === true } catch (err) { allowed = false }
+            // 전송 직전에 자격을 잃었다면(앞 수신자의 emit이 이 계정을 새 소속으로 옮겼거나
+            // 이 판에서 뺐다면) 보내지 않는다. 그 판단은 이 루프 시작 시점이 아니라 지금의 사실이다.
+            if (!allowed) continue
+        }
         try {
             member.emit(event, payload)
         } catch (err) {
@@ -214,6 +225,10 @@ function emitToChannelMembersIndividually(io, channelId, event, payload, skipSoc
  * @param {object} [options.senderSocket] - 주면 `senderSocket.to(channelId)`로 보낸다 —
  *   "채널 전체에서 발신자만 빼고"라는 기존 `socket.to(room).emit` 의미를 그대로 보존한다.
  * @param {string[]} [options.exceptSocketIds] - 이 방송에서만 추가로 빼는 소켓들.
+ * @param {(socket:object) => boolean} [options.recipientFilter] - **각 전송 직전에** 다시 묻는
+ *   자격 판정(F-23 AC-04). 주면 한 번의 방송으로 끝내지 않고 반드시 구성원을 훑어 개별
+ *   전달한다 — 한 수신자의 emit 도중 다음 수신자의 소속이 바뀌는 구간을 목록 계산 한 번으로는
+ *   막을 수 없기 때문이다. 열거할 수 없으면 그 방송을 **버린다**(fail-closed).
  *
  * 절대 던지지 않는다 — 호출부는 이미 각자 예외를 격리하고 있지만, 방송 하나의 실패가 커밋
  * 결과를 되돌리지 않는다는 계약을 이 함수도 스스로 지킨다.
@@ -221,6 +236,8 @@ function emitToChannelMembersIndividually(io, channelId, event, payload, skipSoc
 function emitToChannel(io, channelId, event, payload, options = null) {
     try {
         const senderSocket = options?.senderSocket ?? null
+        const recipientFilter = typeof options?.recipientFilter === 'function'
+            ? options.recipientFilter : null
         // 소유 토큰이 하나라도 남아 있는 소켓은 전부 제외 대상이다.
         const denied = getChannelExclusions(channelId)
         const extra = (Array.isArray(options?.exceptSocketIds) ? options.exceptSocketIds : [])
@@ -229,6 +246,19 @@ function emitToChannel(io, channelId, event, payload, options = null) {
         const operator = senderSocket
             ? senderSocket.to?.(channelId)
             : io?.to?.(channelId)
+
+        if (recipientFilter) {
+            // 전송 직전 재검사가 필요한 방송은 except 한 번으로 끝낼 수 없다 — 어댑터의 방송은
+            // 수신자별 시점을 갖지 않는다. 구성원을 직접 훑는 경로만 그 시점을 가진다.
+            const skipSet = new Set([...denied, ...extra])
+            if (senderSocket && typeof senderSocket.id === 'string') skipSet.add(senderSocket.id)
+            if (emitToChannelMembersIndividually(io, channelId, event, payload, skipSet, recipientFilter)) return
+            console.error('[채널 전달 재검사 불가 · 방송 폐기]', {
+                code: 'CHANNEL_EMIT_DROPPED_FAIL_CLOSED', channelId, event, excluded: skipSet.size,
+            })
+            return
+        }
+
         if (!operator || typeof operator.emit !== 'function') return
 
         // 정상 경로: 이 채널에 배제된 소켓이 없다. 발신자 제외는 senderSocket.to()가 이미

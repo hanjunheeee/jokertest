@@ -206,6 +206,10 @@ function assertNoSpectatorKeys(value, where) {
 /** 정상 역할 키 집합 — 정제가 폐기 키만 걷어내고 정상 키를 함께 지우지 않았는지 대조한다. */
 const NORMAL_ROLE_KEYS = ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"]
 
+// useMatchingRoom이 실제로 구독하는 이름이다(shared SOCKET_EVENTS에는 이 키가 없다 —
+// 훅이 문자열을 직접 쓴다). 시험이 다른 이름을 쓰면 배선이 끊겨도 통과한다.
+const PLAYER_READY_CHANGED = "player_ready_changed"
+
 /**
  * 프런트가 쓰는 소켓 대역을 만든다.
  *
@@ -290,13 +294,44 @@ function createBridgedSocket(io, serverSocket, uuid) {
   return socket
 }
 
-/** 서버 fake socket이 이 계정에게 보낸 사건을 클라이언트 리스너로 전달한다. */
-function bridgeServerEmits(serverSocket) {
+/**
+ * 서버 fake socket이 이 계정에게 보낸 사건을 **그 연결의** 클라이언트 리스너로 전달한다.
+ *
+ * F-23(A-08): 대상 클라이언트를 **쌍으로 고정**한다. 예전에는 전달 대상이 "지금의 전역
+ * 클라이언트 소켓"이었다 — 그러면 연결이 교체된 뒤 **옛 서버 소켓**으로 나간 사건이 새
+ * 연결의 listener로 옮겨 가, "옛 연결이 제대로 떨어졌는가"를 시험이 전혀 구별하지 못한다.
+ * 실제 재연결은 서버 연결과 클라이언트 연결이 함께 바뀌므로, 대역도 그 쌍을 지킨다.
+ */
+function bridgeServerEmits(serverSocket, clientSocket) {
+  assert.ok(clientSocket, "bridgeServerEmits에는 이 서버 연결과 짝지을 클라이언트 연결이 필요하다")
   const original = serverSocket.emit.bind(serverSocket)
   serverSocket.emit = (event, payload) => {
     original(event, payload)
-    emitToClient(event, payload)
+    emitToClient(event, payload, clientSocket)
   }
+}
+
+/**
+ * 실제 재연결을 흉내낸다 — **서버 연결과 클라이언트 연결이 쌍으로 교체된다**.
+ *
+ * 옛 서버 소켓은 실제 Socket.IO의 종료 순서대로 namespace에서 빠지고 채널 가입도 잃는다.
+ * 그래야 "옛 연결로 나가던 사건이 새 listener로 둔갑하지 않는다"가 시험 가능한 사실이 된다.
+ */
+let reconnectSeq = 0
+function reconnectPair(io, uuid, previousServerSocket) {
+  reconnectSeq += 1
+  const nextServerSocket = createFakeSocket(uuid, { id: `${previousServerSocket.id}-r${reconnectSeq}` })
+  io.sockets.sockets.set(nextServerSocket.id, nextServerSocket)
+  for (const channel of previousServerSocket.rooms) nextServerSocket.rooms.add(channel)
+  nextServerSocket.data.activeRoomId = previousServerSocket.data.activeRoomId
+
+  io.sockets.sockets.delete(previousServerSocket.id)
+  previousServerSocket.rooms.clear()
+  previousServerSocket.connected = false
+
+  const nextClientSocket = createBridgedSocket(io, nextServerSocket, uuid)
+  bridgeServerEmits(nextServerSocket, nextClientSocket)
+  return { serverSocket: nextServerSocket, clientSocket: nextClientSocket }
 }
 
 async function setupRoom(hostUuid, payloadOverrides = {}) {
@@ -311,12 +346,13 @@ async function setupRoom(hostUuid, payloadOverrides = {}) {
     handleCreateRoom(io, serverSocket, hostUuid, validSettingsPayload(payloadOverrides), resolve))
   assert.equal(created.ok, true, created.message)
 
-  bridgeServerEmits(serverSocket)
-  setTestSocket(createBridgedSocket(io, serverSocket, hostUuid))
+  const clientSocket = createBridgedSocket(io, serverSocket, hostUuid)
+  bridgeServerEmits(serverSocket, clientSocket)
+  setTestSocket(clientSocket)
 
   useAuthStore.setState({ user: { uuid: hostUuid }, isLoggedIn: true })
   useMatchingStore.getState().setRoom(created.room)
-  return { io, serverSocket, room: created.room }
+  return { io, serverSocket, clientSocket, room: created.room }
 }
 
 /**
@@ -334,8 +370,9 @@ async function mountCreationPage(hostUuid) {
   const io = createFakeIo([])
   const serverSocket = createFakeSocket(hostUuid)
   io.sockets.sockets.set(serverSocket.id, serverSocket)
-  bridgeServerEmits(serverSocket)
-  setTestSocket(createBridgedSocket(io, serverSocket, hostUuid))
+  const clientSocket = createBridgedSocket(io, serverSocket, hostUuid)
+  bridgeServerEmits(serverSocket, clientSocket)
+  setTestSocket(clientSocket)
 
   useAuthStore.setState({ user: { uuid: hostUuid }, isLoggedIn: true })
   useMatchingStore.getState().clearRoom()
@@ -1401,8 +1438,10 @@ test("F-23(SPLIT-2) · 연결이 교체되면 옛 소켓의 오염된 설정 사
   assert.ok(firstSocket.handlerCountOf(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED) > 0,
     "전제: 첫 연결에 설정 사건 구독이 붙어야 한다")
 
-  // 재연결 — 같은 계정의 새 소켓으로 갈아끼우고 구독자에게 알린다.
-  const secondSocket = createBridgedSocket(io, serverSocket, "host-swap")
+  // 재연결 — 서버 연결과 클라이언트 연결을 **쌍으로** 갈아끼우고 구독자에게 알린다.
+  // (전역 하나만 바꾸면 옛 서버 소켓의 사건이 새 listener로 옮겨 가 계약이 흐려진다 — A-08.)
+  const { serverSocket: nextServerSocket, clientSocket: secondSocket } =
+    reconnectPair(io, "host-swap", serverSocket)
   await act(async () => {
     setTestSocket(secondSocket)
     await Promise.resolve(); await Promise.resolve()
@@ -1476,4 +1515,59 @@ test("F-23(SPLIT-2) · 연결이 교체되면 옛 소켓의 오염된 설정 사
   assertNoSpectatorKeys(useMatchingStore.getState().settings, "새 연결의 방송을 받은 뒤의 store 설정")
   assertNoSpectatorKeys(rawStoredRoom(room.roomId).settings, "새 연결로 보낸 저장 뒤 서버 저장값")
   assert.equal(rawStoredRoom(room.roomId).settings.maxPlayers, 7)
+  // 옛 서버 연결로 나가던 사건은 새 listener로 옮겨 가지 않는다(쌍 고정의 직접 증거).
+  const strayBefore = clientReceiptsOf("player_ready_changed", secondSocket).length
+  serverSocket.emit("player_ready_changed", { uuid: "guest-swap", isReady: true })
+  assert.equal(clientReceiptsOf("player_ready_changed", secondSocket).length, strayBefore,
+    "옛 서버 소켓의 사건이 새 클라이언트 연결로 전달됐다")
+  assert.ok(nextServerSocket)
+})
+
+/**
+ * SPLIT-1 — **실제 방송 한 건이 화면까지 닿는가.**
+ *
+ * 설정 저장 경로(room_settings_updated)는 방장 자신의 소켓으로 나가는 **개별 전달**이라,
+ * 그것만으로는 "io/socket 방송이 소비됐다"를 주장할 수 없다. 여기서는 상대 참가자의 실제
+ * set_ready 요청이 만든 player_ready_changed 방송을 쓴다 — 그 경로는
+ *   handleSetReady → channelMembership.emitToChannel → fixture deliver(채널 구성원 판정)
+ *   → 방장 serverSocket.emit → 고정된 bridge → emitToClient → useMatchingRoom의
+ *   handlePlayerReadyChanged → matchingStore.setPlayerReady
+ * 전부를 지난다. 준비/해제 양방향을 확인해 한쪽만 도는 우연을 배제한다.
+ */
+test("F-23(SPLIT-1) · 상대의 실제 준비 변경 방송이 방장 화면의 store까지 정확히 한 번 닿는다", async () => {
+  const { io, joinerSocket, room, joinerUuid } =
+    await setupCustomRoomWithReadyJoiner("host-ready", "guest-ready")
+
+  const { result } = renderHook(() => useMatchingRoom(roomCallbacks))
+  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  assert.equal(result.current.isRoomVerified, true, "방 검증이 끝나지 않았다")
+
+  const hostClient = socketState.socket
+  assert.ok(hostClient.handlerCountOf(PLAYER_READY_CHANGED) > 0,
+    "전제: 화면이 준비 변경 사건을 구독해야 한다")
+
+  const readyStateOf = (uuid) =>
+    useMatchingStore.getState().players.find((player) => player.uuid === uuid)?.isReady
+
+  for (const nextIsReady of [false, true]) {
+    const before = clientReceiptsOf(PLAYER_READY_CHANGED, hostClient).length
+    let ack
+    await act(async () => {
+      ack = await new Promise((resolve) => handleSetReady(
+        io, joinerSocket, joinerUuid,
+        readyPayload(room, nextIsReady, { settingsVersion: useMatchingStore.getState().settingsVersion }),
+        resolve,
+      ))
+      await Promise.resolve(); await Promise.resolve()
+    })
+    assert.equal(ack.ok, true, `${nextIsReady} 준비 전환 실패: ${ack.message}`)
+
+    const receipts = clientReceiptsOf(PLAYER_READY_CHANGED, hostClient)
+    assert.equal(receipts.length, before + 1,
+      `실제 방송이 클라이언트 연결에 정확히 한 번 닿지 않았다(isReady=${nextIsReady})`)
+    assert.ok(receipts.at(-1).handlers > 0, "도착한 방송을 처리할 구독이 없다")
+    assert.equal(receipts.at(-1).payload.uuid, joinerUuid)
+    assert.equal(readyStateOf(joinerUuid), nextIsReady,
+      `store가 준비 상태를 반영하지 않았다(isReady=${nextIsReady})`)
+  }
 })

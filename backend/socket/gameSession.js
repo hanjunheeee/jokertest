@@ -116,9 +116,129 @@ const RESOLVE_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 
 // 않는다(읽기 전용) — 쓰기는 socket.js(연결/해제 처리)의 책임이다.
 let onlineUsersRegistry = null
 
+/**
+ * F-23(AC-04): registry **주입 세대**.
+ *
+ * 등록 당시의 연결 소유권(아래)이 어느 registry를 근거로 검증됐는지 구분하는 유일한 값이다.
+ * registry가 교체되면(런타임 재초기화·시험 간 주입) 그 이전에 기록된 소유권은 더 이상 어떤
+ * 사실도 증명하지 못한다 — 다른 시험 또는 다른 등록부의 기록이 재사용되면, 지금은 존재하지도
+ * 않는 연결이 "등록된 소유자"로 통과한다.
+ */
+let registryGeneration = 0
+
+/**
+ * F-23(AC-04): **등록 시점에 검증한** 서버 내부 연결 소유권.
+ *
+ * 왜 필요한가: 실제 Socket.IO의 `_onclose`는 `disconnecting` → `_cleanup` → **namespace에서
+ * 제거** → `connected=false` → `disconnect` 순서다. 그래서 정상적인 새로고침·탭 종료의
+ * disconnect는 "namespace에서 조회하면 없는 소켓"으로 도착한다. 활성 요청과 같은 기준
+ * (namespace에 있고 그 객체가 바로 나)을 그대로 적용하면 **모든 정상 disconnect가 stale**이 돼
+ * 유예도 종료도 일어나지 않는다.
+ *
+ * 그렇다고 "namespace에 없으면 통과"로 두면 그것이 곧 우회로다. 그래서 제거 **전에** 이미
+ * 검증해 둔 사실만 근거로 쓴다 — registerGameHandlers가 연결 시점에 (인증 uuid · socket 객체 ·
+ * socket.id · 그때의 registry 참조와 주입 세대 · namespace 등록)을 전부 확인해 기록한다.
+ * 클라이언트 payload나 socket.data의 클라이언트 입력은 이 기록의 입력이 아니다.
+ *
+ * 두 표를 **따로** 둔다: 소켓 객체별 기록(그 객체가 무엇을 등록했는가)과 uuid별 **최신** 기록
+ * (그 계정의 현재 소유자는 누구인가). 같은 id의 다른 객체가 등록되면 최신 소유권은 새 객체로
+ * 교체되고, 옛 기록은 되살아나지 않는다.
+ *
+ * 이 증거는 **활성 요청 권한으로 절대 재사용하지 않는다** — 제거된 소켓의 snapshot·행동 요청은
+ * 언제나 STALE_SOCKET이다.
+ */
+const connectionOwnershipBySocket = new WeakMap()
+const connectionOwnershipByUuid = new Map()
+
 /** 런타임 진입점(socket.js의 모듈 초기화)에서 onlineUsers registry를 주입한다. */
 function setOnlineUsersRegistry(registry) {
     onlineUsersRegistry = registry
+    // 세대를 올려 이전 등록부로 검증된 소유권을 전부 무효화한다(위 registryGeneration 참고).
+    registryGeneration += 1
+    connectionOwnershipByUuid.clear()
+}
+
+/**
+ * 이 소켓이 속한 namespace의 socket registry(실제 Socket.IO의 `socket.nsp.sockets`).
+ *
+ * io를 받은 소비처는 그 registry와 대조하고, io 인자가 없는 경계(resyncSessionRouting·요청
+ * 핸들러)는 소켓 자신의 namespace를 쓴다. **둘 다 없으면 null**이다 — 그때 "id만 비교"로
+ * 물러나면 어느 namespace에도 없는 위조 소켓이 그대로 canonical이 된다.
+ */
+function namespaceRegistryFor(socket, io = null) {
+    const fromIo = io?.sockets?.sockets
+    if (fromIo && typeof fromIo.get === 'function') return fromIo
+    const fromSocket = socket?.nsp?.sockets
+    if (fromSocket && typeof fromSocket.get === 'function') return fromSocket
+    return null
+}
+
+/**
+ * 연결 소유권을 기록한다(registerGameHandlers 전용). 검증에 실패하면 아무것도 기록하지 않는다.
+ *
+ * @returns {object|null} 기록한 소유권(없으면 null).
+ */
+function recordConnectionOwnership(io, socket, uuid) {
+    if (!socket || typeof socket.id !== 'string' || socket.id.length === 0) return null
+    if (typeof uuid !== 'string' || uuid.length === 0) return null
+    // 인증된 신원만 근거다 — 클라이언트가 채운 값이 아니라 소켓 인증이 심은 값이다.
+    if (socket.data?.user?.uuid !== uuid) return null
+    if (!(onlineUsersRegistry instanceof Map)) return null
+    if (onlineUsersRegistry.get(uuid) !== socket.id) return null
+    const namespace = namespaceRegistryFor(socket, io)
+    if (!namespace || namespace.get(socket.id) !== socket) return null
+
+    const record = {
+        socket,
+        socketId: socket.id,
+        uuid,
+        registry: onlineUsersRegistry,
+        generation: registryGeneration,
+    }
+    connectionOwnershipBySocket.set(socket, record)
+    connectionOwnershipByUuid.set(uuid, record)
+    return record
+}
+
+/**
+ * F-23(AC-04): **disconnect 처리 권한**. 활성 요청 권한(isCurrentSocketForUuid)과 다르다.
+ *
+ *   · namespace에 아직 그 id의 객체가 있다 → 정확히 **이 객체**여야 하고 registry도 이 id를
+ *     가리켜야 한다. connected===true는 요구하지 않는다(정리 순서상 이미 false일 수 있다).
+ *   · namespace에서 제거됐다 → 등록 시 검증해 둔 소유권만이 근거다. 같은 socket 객체·같은
+ *     등록 id·같은 uuid·같은 registry와 세대여야 하고, 그 계정의 **최신** 소유권이 여전히 이
+ *     기록이어야 하며, connected===false이고 registry가 아직 그 등록 id를 가리켜야 한다.
+ *     부재만으로는 절대 허용하지 않는다.
+ */
+function canProcessDisconnectFor(io, socket, uuid) {
+    if (!socket || typeof socket.id !== 'string' || socket.id.length === 0) return false
+    if (typeof uuid !== 'string' || uuid.length === 0) return false
+    if (socket.data?.user?.uuid !== uuid) return false
+    if (!(onlineUsersRegistry instanceof Map)) return false
+
+    const namespace = namespaceRegistryFor(socket, io)
+    const present = namespace ? namespace.get(socket.id) : undefined
+    if (present !== undefined) {
+        return present === socket && onlineUsersRegistry.get(uuid) === socket.id
+    }
+
+    const owned = connectionOwnershipBySocket.get(socket)
+    if (!owned) return false
+    if (owned.socket !== socket || owned.socketId !== socket.id || owned.uuid !== uuid) return false
+    if (owned.registry !== onlineUsersRegistry || owned.generation !== registryGeneration) return false
+    // 같은 계정에 **새 등록**이 생겼으면 이 옛 기록은 더 이상 그 계정의 소유권이 아니다.
+    if (connectionOwnershipByUuid.get(uuid) !== owned) return false
+    if (socket.connected !== false) return false
+    if (onlineUsersRegistry.get(uuid) !== owned.socketId) return false
+    return true
+}
+
+/** 종료 처리에 진입하며 **자기 기록만** 소비한다(새 연결의 기록은 건드리지 않는다). */
+function consumeConnectionOwnership(socket, uuid) {
+    const owned = connectionOwnershipBySocket.get(socket)
+    if (!owned) return
+    connectionOwnershipBySocket.delete(socket)
+    if (connectionOwnershipByUuid.get(uuid) === owned) connectionOwnershipByUuid.delete(uuid)
 }
 
 /**
@@ -145,8 +265,25 @@ function setEmitToUser(emit) {
  * fail-closed한다. forcedLogout 플래그는 이 predicate의 입력이 아니다(socket.js의
  * handleDisconnect 자체 presence/logout 정리에서만 쓰인다).
  */
-function isCurrentSocketForUuid(uuid, socket) {
-    return onlineUsersRegistry instanceof Map && onlineUsersRegistry.get(uuid) === socket?.id
+function isCurrentSocketForUuid(uuid, socket, io = null) {
+    if (!socket || typeof socket.id !== 'string' || socket.id.length === 0) return false
+    if (typeof uuid !== 'string' || uuid.length === 0) return false
+    // 인증이 심은 신원과 다른 계정을 자처하는 소켓은 어떤 축도 통과하지 못한다.
+    if (socket.data?.user?.uuid !== undefined && socket.data.user.uuid !== uuid) return false
+    if (!(onlineUsersRegistry instanceof Map)) return false
+    if (onlineUsersRegistry.get(uuid) !== socket.id) return false
+    if (socket.connected !== true) return false
+    /**
+     * F-23(AC-04): **id 일치만으로는 부족하다.**
+     *
+     * registry는 id만 들고 있다. 같은 id를 가진 **다른 객체**(교체된 연결의 잔재, 시험이
+     * 임의로 만든 소켓, 관례적 id를 돌려주는 registry 대역)는 그 비교를 그대로 통과한다.
+     * namespace에서 그 id로 조회한 객체가 **바로 이 소켓**일 때만 현재 연결이다. namespace를
+     * 전혀 알 수 없으면 false다 — 여기서 id 비교로 물러나는 것이 곧 우회로다.
+     */
+    const namespace = namespaceRegistryFor(socket, io)
+    if (!namespace) return false
+    return namespace.get(socket.id) === socket
 }
 
 /**
@@ -205,10 +342,11 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
  *   4. 그 판의 채널에 실제로 가입해 있는가.
  *   5. 그 채널의 **전달 제외** 목록에 있지 않은가(떼지 못한 옛 구독·확정 전 입장자).
  */
-function isEligibleSessionRecipient(session, socket, uuid) {
+function isEligibleSessionRecipient(session, socket, uuid, endContext = null) {
     if (!session || !socket) return false
     if (typeof uuid !== 'string' || uuid.length === 0) return false
     if (!gameSessionCore.isParticipatingInSession(session, uuid)) return false
+    if (endContext && !isEligibleSessionEndRecipient(session, uuid, endContext)) return false
     if (socket.connected !== true) return false
     if (onlineUsersRegistry instanceof Map && !isCurrentSocketForUuid(uuid, socket)) return false
     if (!socket.rooms?.has?.(session.channelId)) return false
@@ -220,19 +358,91 @@ function isEligibleSessionRecipient(session, socket, uuid) {
 }
 
 /**
+ * F-23(AC-04): resolver가 돌려준 목록은 **계산 시점의 사실**이다.
+ *
+ * 직접 전달(밤/낮/재판 결과·채팅·개인 진행)은 목록을 한 번 만든 뒤 그 위를 순회한다. 그런데
+ * 한 수신자의 emit이 다음 수신자를 그 판에서 빼거나(이탈 커밋) 새 소속으로 옮길 수 있다 —
+ * 그러면 목록은 이미 과거다. 실제 전송 직전에 같은 자격을 다시 묻는 것이 유일한 방어다.
+ */
+function stillEligibleForDelivery(session, recipientSocket) {
+    return isEligibleSessionRecipient(session, recipientSocket, recipientSocket?.data?.user?.uuid ?? null)
+}
+
+/**
+ * F-23(AC-04): 그 계정이 **지금** 이 판이 아닌 다른 소속(다른 경기 · 대기방)을 가졌는가.
+ *
+ * 종료 알림의 수명 판정에만 쓴다. 먼저 나간 계정이 새 방·새 판에 들어간 뒤 옛 종료 알림을
+ * 받으면, 클라이언트의 game_ended 소비(useGameSessionSocketEvents → createSessionEndFinalizer)가
+ * **지금 보고 있는 새 화면**을 정리하고 로비로 보낸다.
+ */
+function hasMembershipOutsideSession(session, uuid) {
+    const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
+    if (routing && routing.gameId !== session.id) return true
+    try {
+        if (matchmaking.hasRoomMembership(uuid) === true) return true
+    } catch (err) {
+        // 대기방 계층을 물을 수 없으면 그 축은 알 수 없다 — 다른 축으로만 판정한다.
+    }
+    return false
+}
+
+/**
+ * game_ended **전용** 수신 자격.
+ *
+ * 일반 사건은 현재 gameId/channelId routing 일치를 요구하지만, 종료 알림은 그럴 수 없다 —
+ * core의 endGameSessionForPlayer가 이미 registry(gameSessions/roomGameSession/playerSession)를
+ * 지운 뒤라 routing이 **정상 수신자에게도** 없기 때문이다. 그래서 종료 알림만 명시적 문맥을
+ * 근거로 쓰고, 그 문맥에 담긴 후보가 아니면 예외를 적용하지 않는다.
+ */
+function isEligibleSessionEndRecipient(session, uuid, endContext) {
+    if (endContext.gameId !== session.id) return false
+    // 이 종료가 풀어 준 계정만이 후보다(cleanupUuids). 없거나 비었으면 후보도 없다 —
+    // roster 전체 허용으로 대체하지 않는다.
+    if (!endContext.allowed.has(uuid)) return false
+    // 정리 **전에** 이미 다른 소속이었다는 사실은 matchmaking 정리가 방 정보를 지워도 되돌리지 않는다.
+    if (endContext.preExcluded.has(uuid)) return false
+    // 실제 전송 직전의 사실도 다시 묻는다(앞 수신자의 emit이 이 계정을 옮겼을 수 있다).
+    if (hasMembershipOutsideSession(session, uuid)) return false
+    return true
+}
+
+/**
+ * F-23(AC-04): 종료 알림 전용 수신 문맥을 **정리 전에** 고정한다.
+ *
+ * cleanupUuids는 방어 복사한다 — core가 돌려준 배열/Set을 그대로 들고 있으면 뒤이은 정리가
+ * 그것을 바꿀 때 수신 후보가 조용히 달라진다. leftUuid(이 종료를 촉발한 이탈자)는 제외하고,
+ * 이미 참여를 마쳤거나(detached·forfeited) **정리 전에** 이미 다른 소속이던 계정도 함께 뺀다.
+ */
+function buildSessionEndContext(session, leftUuid, cleanupUuids) {
+    const allowed = new Set()
+    const preExcluded = new Set()
+    for (const candidate of cleanupUuids ?? []) {
+        if (typeof candidate !== 'string' || candidate.length === 0) continue
+        if (candidate === leftUuid) continue
+        if (!gameSessionCore.isParticipatingInSession(session, candidate)) continue
+        if (hasMembershipOutsideSession(session, candidate)) {
+            preExcluded.add(candidate)
+            continue
+        }
+        allowed.add(candidate)
+    }
+    return { gameId: session.id, channelId: session.channelId, allowed, preExcluded }
+}
+
+/**
  * 채널에는 물리적으로 가입해 있지만 위 자격을 잃은 소켓들의 id.
  *
  * 채널 가입만으로 방송을 받게 두면, 이탈 커밋 직후 채널 정리(비동기 leave)가 끝나기 전의
  * 첫 공개 사건이 그대로 이탈자에게 간다 — AC-04가 막으려는 바로 그 구간이다.
  */
-function collectIneligibleChannelSocketIds(io, session) {
+function collectIneligibleChannelSocketIds(io, session, endContext = null) {
     const ineligible = []
     const registry = io?.sockets?.sockets
     if (!registry || typeof registry.values !== 'function') return ineligible
-    for (const s of registry.values()) {
+    for (const s of [...registry.values()]) {
         if (typeof s?.id !== 'string') continue
         if (!s.rooms?.has?.(session.channelId)) continue
-        if (isEligibleSessionRecipient(session, s, s.data?.user?.uuid ?? null)) continue
+        if (isEligibleSessionRecipient(session, s, s.data?.user?.uuid ?? null, endContext)) continue
         ineligible.push(s.id)
     }
     return ineligible
@@ -241,18 +451,32 @@ function collectIneligibleChannelSocketIds(io, session) {
 /**
  * 게임 방송의 유일한 경계.
  *
- * session을 받으면(정상 경로) 그 판의 자격 없는 채널 구성원을 **명시적으로 제외**한 뒤
- * 공통 채널 경계로 넘긴다. channelId 문자열만 받는 옛 호출 형태도 그대로 받아들이되, 그
- * 경로에는 세션 문맥이 없어 제외를 계산하지 못한다.
+ * **session 객체만** 받는다. channelId 문자열만 받던 옛 호출 형태는 더 이상 허용하지 않는다 —
+ * 그 경로에는 세션 문맥이 없어 어떤 자격도 계산하지 못하고, 그대로 두면 "제외를 계산할 수 없는
+ * 무검증 방송"이 AC-04의 우회로로 남는다.
+ *
+ * @param {object|null} [endContext] - game_ended 전용 수신 문맥(buildSessionEndContext).
+ *   주면 한 번의 방송 대신 **수신자별 전송 직전 재검사**를 거치는 개별 전달 경계를 소비한다.
  */
-function emitToGameChannel(io, sessionOrChannelId, event, payload) {
-    const session = typeof sessionOrChannelId === 'string' ? null : sessionOrChannelId
-    const channelId = session ? session.channelId : sessionOrChannelId
+function emitToGameChannel(io, session, event, payload, endContext = null) {
+    if (!session || typeof session !== 'object') {
+        console.error('[게임 방송 폐기 · 세션 문맥 없음]', { code: 'GAME_EMIT_NO_SESSION_CONTEXT', event })
+        return
+    }
+    const channelId = session.channelId
     if (typeof channelId !== 'string' || channelId.length === 0) return
-    const exceptSocketIds = session ? collectIneligibleChannelSocketIds(io, session) : []
+    const exceptSocketIds = collectIneligibleChannelSocketIds(io, session, endContext)
+    const options = {}
+    if (exceptSocketIds.length > 0) options.exceptSocketIds = exceptSocketIds
+    if (endContext) {
+        // 한 수신자의 emit이 다음 수신자의 소속을 바꿀 수 있다 — 위에서 한 번 계산한 제외
+        // 목록만으로는 그 전이를 막지 못한다. 개별 전달 경계가 매 전송 직전에 다시 묻는다.
+        options.recipientFilter = (s) =>
+            isEligibleSessionRecipient(session, s, s.data?.user?.uuid ?? null, endContext)
+    }
     channelMembership.emitToChannel(
         io, channelId, event, payload,
-        exceptSocketIds.length > 0 ? { exceptSocketIds } : null,
+        Object.keys(options).length > 0 ? options : null,
     )
 }
 
@@ -363,6 +587,10 @@ async function resyncSessionRouting(socket, uuid) {
  */
 function __resetStateForTests() {
     onlineUsersRegistry = null
+    // registry 교체와 같은 이유로 세대를 올린다 — 앞 시험이 기록한 연결 소유권이 다음 시험의
+    // 제거된 소켓을 정당화하지 못하게 한다.
+    registryGeneration += 1
+    connectionOwnershipByUuid.clear()
     emitToUserImpl = null
     // F-21: 추방 영수증도 비운다 — 남으면 다음 테스트의 같은 requestId가 "이미 결정된 요청"으로
     // 재생돼, 실제로는 실행되지 않은 명령이 성공으로 보인다.
@@ -1160,6 +1388,7 @@ function expireDayVoteWithAbstentions(run) {
         console.error('[낮 투표 만료 판정 실패]', { code: 'RECIPIENT_RESOLVE_ERROR', gameId: session.id })
     }
     for (const recipientSocket of recipients) {
+        if (!stillEligibleForDelivery(session, recipientSocket)) continue
         try {
             recipientSocket.emit('day_vote_resolved', resolvedPayload)
         } catch (err) {
@@ -1786,6 +2015,7 @@ function maybeResolveDayVoteAfterDeparture(io, session) {
         console.error('[이탈 후 낮 투표 판정 실패]', { code: 'RECIPIENT_RESOLVE_ERROR', gameId: session.id })
     }
     for (const recipientSocket of recipients) {
+        if (!stillEligibleForDelivery(session, recipientSocket)) continue
         try {
             recipientSocket.emit('day_vote_resolved', resolvedPayload)
         } catch (err) {
@@ -1853,6 +2083,7 @@ function maybeResolveTribunalVoteAfterDeparture(io, session) {
     }
     if (broadcastPayload) {
         for (const recipientSocket of recipients) {
+            if (!stillEligibleForDelivery(session, recipientSocket)) continue
             try {
                 recipientSocket.emit('tribunal_vote_resolved', broadcastPayload)
             } catch (err) {
@@ -2117,6 +2348,7 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
     respondJokerChat(uuid, prepared.session.id, callback, { ok: true })
 
     for (const teammateSocket of teammateSockets) {
+        if (!stillEligibleForDelivery(prepared.session, teammateSocket)) continue
         try {
             teammateSocket.emit('joker_chat_message', {
                 gameId: prepared.session.id,
@@ -2277,6 +2509,7 @@ function handleSubmitGameChatMessage(io, socket, uuid, payload, callback, deps =
     respondGameChat(uuid, prepared.session.id, callback, { ok: true })
 
     for (const recipientSocket of recipientSockets) {
+        if (!stillEligibleForDelivery(prepared.session, recipientSocket)) continue
         try {
             // 수신자마다 새 객체를 만든다 — 한 수신자가 받은 payload를 변형해도 다른 수신자나
             // canonical 세션 상태에 영향이 없다(방어적 payload).
@@ -2435,6 +2668,7 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
     }
 
     for (const recipientSocket of recipients) {
+        if (!stillEligibleForDelivery(prepared.session, recipientSocket)) continue
         try {
             recipientSocket.emit('night_actions_resolved', { gameId: prepared.session.id, dayIndex: prepared.resolution.dayIndex })
         } catch (err) {
@@ -2787,6 +3021,7 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
     const dayVoteResolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
 
     for (const recipientSocket of recipients) {
+        if (!stillEligibleForDelivery(prepared.session, recipientSocket)) continue
         try {
             recipientSocket.emit('day_vote_resolved', dayVoteResolvedPayload)
         } catch (err) {
@@ -3048,6 +3283,7 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
 
     if (broadcastPayload) {
         for (const recipientSocket of recipients) {
+            if (!stillEligibleForDelivery(prepared.session, recipientSocket)) continue
             try {
                 recipientSocket.emit('tribunal_vote_resolved', broadcastPayload)
             } catch (err) {
@@ -3078,6 +3314,20 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
  * endGameSessionForPlayer 성공 직후 await 없이 즉시 호출해야 한다.
  */
 function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
+    /**
+     * F-23(AC-04): 종료 수신 후보와 **정리 전 제외 사실**을 여기서 고정한다.
+     *
+     * 아래 matchmaking 정리는 새 대기방 소속 정보까지 지울 수 있다 — 전송 시점에 처음 물으면
+     * "먼저 나가 새 방에 들어간 계정"이 그 정리 때문에 다시 후보로 보인다. cleanupUuids도
+     * 방어 복사한다(호출자의 값이 이후 바뀌어도 후보 집합은 달라지지 않는다).
+     */
+    let endContext = null
+    try {
+        endContext = buildSessionEndContext(session, leftUuid, cleanupUuids)
+    } catch (err) {
+        console.error('[GameSession 종료 수신 문맥 구성 실패]', { code: 'END_CONTEXT_ERROR', gameId: session?.id })
+    }
+
     // 전적 저장을 가장 먼저 시도한다 — 아래 정리 단계가 세션에서 읽어갈 값을 지우기 전에
     // 레코드를 동기적으로 확보하기 위함이다(DB 왕복 자체는 기다리지 않는다). 이 경로로 처음
     // 들어온 세션은 승패가 확정되지 않은 중단 경기이고, 이미 저장된 세션(밤/재판 판정으로
@@ -3114,17 +3364,42 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     }
 
     try {
-        emitToGameChannel(io, session,'game_ended', { gameId: session.id, reason })
+        // endContext가 없으면(구성 실패) 이 방송은 자격을 판정할 근거가 없다 — 보내지 않는다.
+        // 놓친 정상 참가자는 재조회로 회복하지만, 새 소속에 흘러간 종료 알림은 그 화면을
+        // 정리하고 로비로 보낸 뒤라 회수할 수 없다(fail-closed).
+        if (endContext) {
+            emitToGameChannel(io, session, 'game_ended', { gameId: session.id, reason }, endContext)
+        } else {
+            console.error('[GameSession 종료 알림 폐기]', { code: 'END_EMIT_DROPPED', gameId: session?.id })
+        }
     } catch (err) {
         console.error('[GameSession 종료 알림 전송 실패]', err)
     }
 
     try {
-        // 명시적 이탈의 경우 이탈한 소켓 자신도 아직 channel에 남아있어 이 호출로 함께
-        // 정리된다. disconnect의 경우 그 소켓은 Socket.IO가 이미 자동으로 모든 room에서
-        // 내보낸 뒤라 이 호출과 무관하다 — 두 경로 모두 아직 channel에 남아있는 나머지
-        // 참가자들의 소켓을 명시적으로 내보내 승계했던 channel 멤버십을 정리한다.
-        io.in(session.channelId).socketsLeave(session.channelId)
+        /**
+         * F-23(AC-04): 채널 정리도 **현재 소유권**을 확인한다.
+         *
+         * 예전에는 `io.in(channelId).socketsLeave(channelId)`로 그 이름의 채널 가입을 일괄
+         * 제거했다. channelId는 roomId와 같은 값이라, 같은 방에서 **새 판**이 이미 시작된
+         * 경우 그 새 소유자들의 가입까지 함께 지워 새 경기의 방송 경로가 끊긴다. 공통 detach
+         * 경계는 지금 그 채널의 정당한 소속이면 되돌리고, 아니면 전달 제외를 유지한 채 끝낸다.
+         */
+        const registry = io?.sockets?.sockets
+        if (registry && typeof registry.values === 'function') {
+            for (const member of [...registry.values()]) {
+                if (!member?.rooms?.has?.(session.channelId)) continue
+                const memberUuid = member.data?.user?.uuid ?? null
+                if (typeof memberUuid !== 'string') continue
+                detachSocketFromChannel(
+                    member, session.channelId, '[GameSession channel 정리 실패]', { gameId: session.id },
+                    {
+                        ownsChannel: () => ownsSessionChannelNow(member, memberUuid, session.channelId),
+                        keepsConnection: () => socketHasLiveMembership(member, memberUuid),
+                    },
+                )
+            }
+        }
     } catch (err) {
         console.error('[GameSession channel 정리 실패]', err)
     }
@@ -3590,6 +3865,15 @@ function getCurrentSocketForUuid(io, uuid) {
 
 /** ROLE_REVEAL 확인·낮 투표 준비·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
 function registerGameHandlers(io, socket, uuid) {
+    /**
+     * F-23(AC-04): 배선과 **같은 동기 구간**에서 이 연결의 소유권을 기록한다.
+     *
+     * socket.js의 registerConnectionHandlers는 handleConnection(첫 await 이전 동기 구간에서
+     * onlineUsers를 이 소켓으로 교체한다)을 먼저 부른 뒤 이 함수를 부른다 — 그래서 여기서는
+     * registry 매핑과 namespace 등록이 모두 이미 사실이고, 그 사실을 그대로 검증해 남긴다.
+     * 실패하면 아무것도 기록하지 않는다(기록 없음 = 제거 후 disconnect 처리 근거 없음).
+     */
+    recordConnectionOwnership(io, socket, uuid)
     socket.on('acknowledge_role_reveal', (payload, callback) => handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback))
     socket.on('ready_for_day_vote', (payload, callback) => handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback))
     socket.on('submit_night_action', (payload, callback) => handleSubmitNightAction(socket, uuid, payload, callback))
@@ -3637,7 +3921,18 @@ function registerGameHandlers(io, socket, uuid) {
  * 더 단순하고 정확합니다.
  */
 async function onDisconnect(io, socket, uuid) {
-    if (!isCurrentSocketForUuid(uuid, socket)) return
+    /**
+     * F-23(AC-04): 활성 요청 권한을 **무조건 재사용하지 않는다**.
+     *
+     * 실제 Socket.IO는 disconnect를 emit하기 전에 이미 namespace에서 이 소켓을 제거하고
+     * connected=false로 바꾼다 — 활성 요청과 같은 기준(namespace에 있고 그 객체가 나)을 그대로
+     * 쓰면 정상적인 새로고침·탭 종료가 전부 stale이 되어 유예도 종료도 일어나지 않는다.
+     * 제거 후에는 **등록 시 검증해 둔 연결 소유권**만이 근거다(canProcessDisconnectFor 참고).
+     */
+    if (!canProcessDisconnectFor(io, socket, uuid)) return
+    // 이 기록은 여기서 한 번만 소비한다 — 같은 옛 연결의 늦은 중복 disconnect는 두 번
+    // 처리되지 않고, 그 사이 생긴 새 연결의 기록은 건드리지 않는다.
+    consumeConnectionOwnership(socket, uuid)
 
     const expectedGameId = socket?.data?.activeGameId
     if (expectedGameId === undefined) return
@@ -3727,6 +4022,11 @@ module.exports = {
         // 어떤 제외도 지나지 않아 "제외가 동작하는가"를 전혀 검사하지 못한다.
         emitToGameChannel,
         isEligibleSessionRecipient,
+        // F-23(AC-04): 종료 전용 수신 문맥과 disconnect 처리 권한. 시험이 core→finalizer
+        // 수명 계약과 "제거된 소켓의 disconnect"를 실제 경계로 확인할 수 있게 한다.
+        buildSessionEndContext,
+        canProcessDisconnectFor,
+        recordConnectionOwnership,
         startNightTurnSequence,
         stopNightTurnSequence,
         computeEmptyTurnDelayMs,

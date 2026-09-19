@@ -437,7 +437,12 @@ function scheduleLateJoinCleanup(io, socket, roomId, uuid, attempt, joinPromise)
         // 돌려주면 그 거부는 잡히지 않아 채널이 그대로 남고, 남은 동안 이 소켓은 그 방의 방송을
         // 계속 받는다. 공통 경계가 완료·실패를 조정하고, 떼지 못하면 자기 토큰으로 전달에서 뺀다.
         const leaveNow = () => {
-            detachSocketFromChannel(socket, roomId, '[늦은 초대 채널 정리 실패]', { uuid }, {
+            // F-23(AC-04): 지역 detachSocketFromChannel의 4번째 인자는 **ownership**이다.
+            // 예전에는 여기에 로그 필드({ uuid })를 넘기고 실제 ownership을 5번째로 보냈다 —
+            // 지역 래퍼는 그것을 받지 않으므로 ownsChannel·keepsConnection이 **둘 다 없는**
+            // 상태가 됐다. 그러면 늦게 끝난 옛 정리가 정당한 새 소속의 채널을 되돌려 주지도
+            // 않고, 실패하면 그 연결을 끊기까지 한다.
+            detachSocketFromChannel(socket, roomId, '[늦은 초대 채널 정리 실패]', {
                 ownsChannel: () =>
                     isAccountSeatedInRoom(uuid, roomId)
                     && isCanonicalSocketForAccount(io, uuid, socket, roomId),
@@ -1556,11 +1561,24 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
      */
     const joinExclusionOwner = channelMembership.createChannelExclusionOwner('join-by-code')
     let joinExclusionChannelId = null
+    /**
+     * F-23(AC-04): 제외를 **건 시점의 socket.id**를 함께 기억한다.
+     *
+     * 해제에 현재 socket.id를 쓰면 그 사이 id가 바뀐 경우 두 가지가 동시에 깨진다 — 옛 id에
+     * 걸어 둔 토큰은 영영 풀리지 않고(그 연결이 그 방의 방송을 영구히 잃는다), 새 id에 다른
+     * 흐름이 걸어 둔 토큰을 대신 푼다(확정되지 않은 입장자가 방송을 받기 시작한다).
+     */
+    let joinExclusionSocketId = null
     const releaseJoinExclusion = () => {
-        if (joinExclusionChannelId === null) return
-        channelMembership.releaseChannelExclusion(joinExclusionChannelId, socket.id, joinExclusionOwner)
+        if (joinExclusionChannelId === null || joinExclusionSocketId === null) return
+        channelMembership.releaseChannelExclusion(
+            joinExclusionChannelId, joinExclusionSocketId, joinExclusionOwner,
+        )
         joinExclusionChannelId = null
+        joinExclusionSocketId = null
     }
+    // 요청 시작 시점의 신원 — join 이후 재검사의 기준이다(아래 참고).
+    const socketIdAtRequest = socket.id
     /**
      * 커밋 전 실패 경로의 채널 정리.
      *
@@ -1570,7 +1588,9 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
      * 그 토큰은 이 계정이 그 채널을 정당하게 다시 소유하면 공통 경계가 스스로 푼다.
      */
     const detachJoinedRoomChannel = (channelId) => {
-        detachSocketFromChannel(socket, channelId, '[코드 참가 정리 실패]', { uuid }, {
+        // 지역 래퍼의 4번째 인자는 ownership이다(로그 필드가 아니다) — 5 인자로 부르면
+        // ownsChannel·keepsConnection이 사라져 늦은 정리가 새 소속의 연결을 끊는다.
+        detachSocketFromChannel(socket, channelId, '[코드 참가 정리 실패]', {
             ownsChannel: () =>
                 isAccountSeatedInRoom(uuid, channelId)
                 && isCanonicalSocketForAccount(io, uuid, socket, channelId),
@@ -1653,6 +1673,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // F-23(AC-04): 가입을 **시작하기 전에** 전달에서 뺀다 — join 완료 → 재검사 → 커밋
         // 직전까지 이 제외가 유지되므로, 확정되지 않은 입장자에게는 어떤 방송도 닿지 않는다.
         joinExclusionChannelId = room.id
+        joinExclusionSocketId = socket.id
         channelMembership.excludeSocketFromChannel(room.id, socket.id, joinExclusionOwner)
         await socket.join(room.id)
         joinedRoomId = room.id
@@ -1662,6 +1683,31 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.DISCONNECTED, '연결이 끊어져 방에 참여하지 못했습니다.')
+            return
+        }
+
+        /**
+         * F-23(AC-04): join 이후 **신원**도 다시 묻는다.
+         *
+         * 방 객체·전이 세대·정원·소속은 이미 재검사하지만, 그 전부는 **계정**의 사실이다.
+         * 그 사이 같은 계정의 새 연결이 canonical 소켓을 가져갔거나 이 소켓의 id·인증 신원이
+         * 바뀌었다면, 여기서 커밋하는 소속은 지금 살아 있는 연결의 것이 아니다 — 옛 연결이
+         * 그 방의 참가자로 등록되고 새 연결은 자기 소속을 갖지 못한다.
+         */
+        if (socket.id !== socketIdAtRequest
+            || socket.data?.user?.uuid !== uuid
+            || !isCanonicalSocketWhenObservable(io, uuid, socket, room.id)) {
+            detachJoinedRoomChannel(room.id)
+            joinedRoomId = null
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.DISCONNECTED, '연결이 끊어져 방에 참여하지 못했습니다.')
+            return
+        }
+
+        // 가입 자체가 실제로 남아 있는지도 확인한다 — 어댑터가 성공을 돌려줬어도 그 사이
+        // 다른 정리가 이 소켓을 그 채널에서 떼었을 수 있다.
+        if (socket.rooms && typeof socket.rooms.has === 'function' && !socket.rooms.has(room.id)) {
+            joinedRoomId = null
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.INTERNAL_ERROR, '방에 참여하지 못했습니다. 잠시 후 다시 시도해주세요.')
             return
         }
 
@@ -2769,6 +2815,20 @@ function detachSocketFromChannel(socket, channelId, logLabel, ownership = null) 
  * onlineUsers registry가 주입돼 있으면 그것이 유일한 근거다. 주입 전(순수 단위 시험 등)에는
  * 같은 계정의 다른 살아 있는 소켓이 그 방을 이미 소유했는지로 대신 판정한다.
  */
+/**
+ * F-23(AC-04): canonical 축을 **관측할 수 있을 때만** 묻는다.
+ *
+ * registry가 주입되지 않은 환경에서 isCanonicalSocketForAccount는 "같은 계정의 다른 소켓이 그
+ * 방을 이미 소유했는가"라는 휴리스틱으로 퇴화한다. 그 휴리스틱은 *정리*(옛 소켓의 채널을 떼도
+ * 되는가)에는 안전한 쪽이지만, *입장 커밋*의 전제 조건으로 쓰면 반대로 작동한다 — 방금 나갔다
+ * 다시 들어오는 계정의 옛 소켓이 아직 살아 있기만 해도 새 입장을 거부한다.
+ * 그래서 입장 경로는 resolveParticipantSockets와 같은 관례를 따른다: registry가 있을 때만 묻는다.
+ */
+function isCanonicalSocketWhenObservable(io, uuid, socket, roomId) {
+    if (!(onlineUsersRegistry instanceof Map)) return true
+    return isCanonicalSocketForAccount(io, uuid, socket, roomId)
+}
+
 function isCanonicalSocketForAccount(io, uuid, socket, roomId) {
     if (!socket) return false
     const canonicalId = onlineUsersRegistry?.get?.(uuid)
@@ -3353,13 +3413,24 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
      */
     const admissionExclusionOwner = channelMembership.createChannelExclusionOwner('admission')
     let admissionExclusionChannelId = null
+    /**
+     * F-23(AC-04): 제외를 **건 시점의 socket.id**(해제도 그 id로만 한다).
+     *
+     * 현재 socket.id로 풀면 그 사이 id가 바뀐 경우 옛 토큰은 영영 남고(그 연결이 그 방의
+     * 방송을 영구히 잃는다) 새 id에 걸린 **다른 흐름의** 토큰을 대신 푼다(미확정 입장자가
+     * 방송을 받기 시작한다).
+     */
+    let admissionExclusionSocketId = null
     const releaseAdmissionExclusion = () => {
-        if (admissionExclusionChannelId === null) return
+        if (admissionExclusionChannelId === null || admissionExclusionSocketId === null) return
         channelMembership.releaseChannelExclusion(
-            admissionExclusionChannelId, socket.id, admissionExclusionOwner,
+            admissionExclusionChannelId, admissionExclusionSocketId, admissionExclusionOwner,
         )
         admissionExclusionChannelId = null
+        admissionExclusionSocketId = null
     }
+    // 호출 시작 시점의 신원 — 아래 await 구간마다 이 값과 대조한다.
+    const socketIdAtRequest = socket.id
 
     try {
         // 초대가 가리키는 방을 먼저 확인한다. 이 읽기는 **식별용**이고 권한 근거가 아니다 —
@@ -3447,6 +3518,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         // 가입을 **시작하기 전에** 전달에서 뺀다. join 완료 → publish 전 → publish 후 영수증
         // 대기까지 이 제외가 유지되므로, durable 확정 이전에는 어떤 방송도 이 소켓에 닿지 않는다.
         admissionExclusionChannelId = room.id
+        admissionExclusionSocketId = socket.id
         channelMembership.excludeSocketFromChannel(room.id, socket.id, admissionExclusionOwner)
         const joinPromise = Promise.resolve(socket.join(room.id))
         try {
@@ -3457,13 +3529,49 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             throw joinError
         }
 
+        /**
+         * F-23(AC-04): join 직후 **신원**을 다시 묻는다(publish 직전 검사와 별개다).
+         *
+         * publish는 attempt.socketId === socket.id까지 보지만, 그것만으로는 "같은 계정의 새
+         * 연결이 canonical을 가져갔다"를 알 수 없다 — 그 경우 이 채널 가입과 뒤따르는 소속은
+         * 지금 살아 있는 연결의 것이 아니다.
+         */
+        if (socket.id !== socketIdAtRequest
+            || socket.data?.user?.uuid !== uuid
+            || !isCanonicalSocketWhenObservable(io, uuid, socket, room.id)) {
+            // 아직 아무것도 커밋하지 않았다 — 방금 만든 가입만 되돌리고 자기 시도를 보상한다.
+            if (!isAccountSeatedInRoom(uuid, room.id)) {
+                detachSocketFromChannel(socket, room.id, '[초대 입장 정리 실패]', {
+                    ownsChannel: () =>
+                        isAccountSeatedInRoom(uuid, room.id)
+                        && isCanonicalSocketForAccount(io, uuid, socket, room.id),
+                    keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+                })
+            }
+            joinedRoomId = null
+            if (roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
+            compensateInvalidatedAttempt(attempt, 'CANONICAL_SOCKET_REPLACED')
+            respond({ ok: false, code: 'INTERRUPTED', message: '입장이 중단되었습니다.' })
+            return
+        }
+
         const player = { uuid, nickname: user.nickname, isReady: false, ...accountProfile }
 
         // ── 2) finalization — 아래 publish는 **동기**여야 한다 ────────────────
         const publish = () => {
             if (getAdmissionAttempt(uuid) !== attempt) return { ok: false, code: 'INTERRUPTED' }
+            // 명시적으로 무효화된 시도는 등록부에서 이미 빠졌을 수도, 아직 남아 있을 수도 있다 —
+            // 어느 쪽이든 그 시도로는 커밋하지 않는다.
+            if (attempt.invalidated) return { ok: false, code: 'INTERRUPTED' }
+            if (attempt.bootEpoch !== BOOT_EPOCH) return { ok: false, code: 'SERVER_RESTARTED' }
             if (getRoomTransitionGeneration(uuid) !== generationAtRequest) return { ok: false, code: 'SESSION_ENDED' }
-            if (!socket.connected || attempt.socketId !== socket.id) return { ok: false, code: 'DISCONNECTED' }
+            if (!socket.connected || attempt.socketId !== socket.id || socket.id !== socketIdAtRequest) {
+                return { ok: false, code: 'DISCONNECTED' }
+            }
+            // 인증 신원과 canonical 연결까지 함께 본다 — 계정 단위 검사는 같은 계정의 **새**
+            // 연결이 가져간 소유권을 구별하지 못한다.
+            if (socket.data?.user?.uuid !== uuid) return { ok: false, code: 'DISCONNECTED' }
+            if (!isCanonicalSocketWhenObservable(io, uuid, socket, room.id)) return { ok: false, code: 'DISCONNECTED' }
             if (socket.rooms && !socket.rooms.has(room.id)) return { ok: false, code: 'CHANNEL_LOST' }
             const current = gameRooms.get(attempt.roomId)
             if (current !== room || (current.instanceId ?? current.id) !== attempt.roomInstanceId) {
@@ -3515,7 +3623,8 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
                 if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
                     // F-23(AC-04): raw leave 대신 공통 경계를 쓴다 — 비동기 거부까지 조정하고,
                     // 끝내 떼지 못하면 **자기 토큰으로** 전달에서 뺀 채 끝낸다(fail-closed).
-                    detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', { uuid }, {
+                    // 지역 래퍼의 4번째 인자는 ownership이다(위 detachJoinedRoomChannel 참고).
+                    detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', {
                         ownsChannel: () =>
                             isAccountSeatedInRoom(uuid, joinedRoomId)
                             && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
@@ -3545,7 +3654,15 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         // 계정이 그 사이 다시 들어온 경우에도 전부 통과한다** — 이 시도의 publication이 이미
         // 제거된 뒤 같은 방에 정상 재입장했다면, 여기서 성공을 주장하는 것은 옛 초대가 만든
         // 결과라고 거짓말하는 것이고 방송하는 player도 이미 사라진 소속이다.
-        if (current !== room || playerRoom.get(uuid) !== room.id || !seated
+        // F-23(AC-04): durable 성공은 **현재 연결의 유효성**까지 확인한 뒤에만 입장 성공과
+        // 공개 수신으로 전환된다 — afterPublish 동안 연결 객체·ID·계정·채널이 바뀌었다면
+        // 그 영수증은 지금 살아 있는 연결의 입장을 증명하지 못한다.
+        if (socket.id !== socketIdAtRequest
+            || socket.data?.user?.uuid !== uuid
+            || !socket.connected
+            || !isCanonicalSocketWhenObservable(io, uuid, socket, room.id)
+            || (socket.rooms && typeof socket.rooms.has === 'function' && !socket.rooms.has(room.id))
+            || current !== room || playerRoom.get(uuid) !== room.id || !seated
             || (attempt.publicationMembershipId !== undefined
                 && seated.membershipId !== attempt.publicationMembershipId)) {
             // 확정 영수증은 있지만 현재 소속이 없다 — 성공으로 주장하지 않는다(A-10).
@@ -3584,7 +3701,8 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
                 // F-23(AC-04): 위 실패 경로와 같은 이유로 공통 경계를 쓴다(비동기 거부 조정 +
                 // 떼지 못하면 자기 토큰으로 전달 제외).
-                detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', { uuid }, {
+                // 지역 래퍼의 4번째 인자는 ownership이다(위 실패 경로와 같은 이유).
+                detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', {
                     ownsChannel: () =>
                         isAccountSeatedInRoom(uuid, joinedRoomId)
                         && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
