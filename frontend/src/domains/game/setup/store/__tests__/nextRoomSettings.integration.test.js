@@ -57,6 +57,13 @@ installDomGlobal("ResizeObserver", class {
   unobserve() {}
   disconnect() {}
 })
+// 실제 인게임 화면(InGamePage)의 공용 Scrollbar·채팅 영역이 두 관측자를 모두 요구한다 —
+// 이 시험이 보는 것은 치수가 아니므로 아무것도 하지 않는 껍데기로 충분하다.
+installDomGlobal("IntersectionObserver", class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+})
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 // 확인 대화상자·경고는 **window**의 것을 실제 화면 코드가 읽는다(globalThis만 바꾸면
@@ -95,7 +102,7 @@ mock.module("@/shared/socket/socketClient", {
   },
 })
 mock.module("@/shared/hooks/useSfxRuntime.js", {
-  namedExports: { dispatchSfxEvent: () => {}, dispatchUiSfx: () => {} },
+  namedExports: { dispatchSfxEvent: () => {}, dispatchUiSfx: () => {}, useSfxRuntime: () => {} },
 })
 mock.module("../../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "http://localhost:4000", DISCORD_SUPPORT_URL: undefined },
@@ -110,9 +117,11 @@ mock.module("../../../../../shared/api/client.js", {
 })
 
 const { render, act, cleanup, waitFor } = await import("@testing-library/react")
-const { MemoryRouter, RouterProvider, createMemoryRouter } = await import("react-router-dom")
+const { MemoryRouter, Outlet, RouterProvider, createMemoryRouter, useNavigate } =
+  await import("react-router-dom")
 const { default: GameSetupPage } = await import("../../pages/GameSetupPage.jsx")
 const { default: GameResultPage } = await import("../../../result/page/GameResultPage.jsx")
+const { default: InGamePage } = await import("../../../ingame/pages/InGamePage.jsx")
 const { default: SettingPanelContent } =
   await import("../../../ingame/components/controls/ingameSetting/SettingPanelContent.jsx")
 const { useInGameStore } = await import("../../../ingame/store/ingameStore.js")
@@ -277,9 +286,16 @@ function liveSession(uuid) {
   return target.session
 }
 
-/** ACK 하나를 Promise로 받는다(등록된 리스너를 지난다). */
-function ack(connection, event, payload) {
-  return connection.clientSocket.emitWithAck(event, payload)
+/**
+ * ACK 하나를 Promise로 받는다(등록된 리스너를 지난다).
+ *
+ * 서버가 이 요청을 처리하며 내보내는 방송은 실제 화면의 구독자에게 그대로 전달되므로, 요청
+ * 전체를 act로 감싸 그 수신이 만드는 렌더까지 함께 정착시킨다.
+ */
+async function ack(connection, event, payload) {
+  let response
+  await act(async () => { response = await connection.clientSocket.emitWithAck(event, payload) })
+  return response
 }
 
 /**
@@ -378,15 +394,15 @@ async function playToCitizenVictory(connections) {
 
 /** 실제 인게임 설정 패널을 마운트하고 방관리 탭을 연다. */
 async function mountRoomTab() {
-  let container
+  let view
   await act(async () => {
-    ;({ container } = render(React.createElement(SettingPanelContent, { onOpenKickPlayer: () => {} })))
+    view = render(React.createElement(SettingPanelContent, { onOpenKickPlayer: () => {} }))
   })
-  const roomTab = [...container.querySelectorAll("button")]
+  const roomTab = [...view.container.querySelectorAll("button")]
     .find((node) => node.textContent.trim() === "방관리")
   assert.ok(roomTab, "방장인데 방관리 탭이 없다")
   await act(async () => { roomTab.click() })
-  return container
+  return view
 }
 
 /** 회의&투표 탭으로 전환한다(낮/밤 시간 행은 그 탭에 있다). */
@@ -397,21 +413,182 @@ async function openMeetingTab(container) {
   await act(async () => { button.click() })
 }
 
-/**
- * 실제 게임 사건 구독자를 화면 수명 동안 살려 두는 최소 껍데기.
- *
- * useMatchingRoom은 game_started의 실제 구독자이고, useGameSessionSocketEvents는 정상 종료
- * 방송(tribunal_vote_resolved)·game_ended의 실제 구독자다. 둘 다 production이 페이지·
- * ProtectedRoute에서 부르는 바로 그 훅이며, 여기서는 그 훅을 대역 없이 그대로 마운트한다.
- */
-const roomCallbacks = { onRoomDeleted: () => {}, onGameStarted: () => {} }
-function SessionSubscribers() {
+// ── 실제 화면 흐름 하나 ──────────────────────────────────────────────────────
+//
+// 결과 화면을 **직접 마운트하지 않는다.** production에서 결과로 들어가는 길은 하나뿐이다:
+//
+//   대기방(useMatchingPage → useMatchingRoom)이 game_started를 받아 /ingame으로 옮기고,
+//   그 화면의 InGamePage가 useInGameResultNavigation으로 /gameresult로 옮긴다.
+//
+// 그래서 이 시험도 라우트를 app/routes/index.jsx와 **같은 path**로 세우고 인게임으로 가는
+// 그 입구에서 시작한다. 시험 코드는 결과 경로로 한 번도 이동하지 않는다 — 이동이 일어났다는
+// 사실만 router의 현재 위치로 관찰한다(아래 enterResultScreen).
+//
+// 레이아웃 자리에는 ProtectedRoute가 부르는 그 훅(useGameSessionSocketEvents) 하나만 둔다.
+// 실제 ProtectedRoute를 그대로 쓰면 계정 캐시 무효화 수신기가 함께 붙어 이 시험이 막아 둔
+// HTTP 경계를 두드린다 — 그 수신기는 이 시험의 관측 대상이 아니다.
+function SessionEventsLayout() {
   useGameSessionSocketEvents()
-  useMatchingRoom(roomCallbacks)
-  return null
+  return React.createElement(Outlet)
 }
 
-/** 실제 생성 페이지를 마운트한다(방은 미리 만들지 않는다 — 그 요청 자체가 관측 대상이다). */
+/**
+ * 대기방 자리. GameMatchingPage가 useMatchingPage를 통해 만드는 **그 연결**만 그대로 만든다 —
+ * 실제 useMatchingRoom을 마운트하고, game_started를 받으면 /ingame으로 옮긴다
+ * (useMatchingPage의 handleGameStarted와 같은 이동이다).
+ *
+ * 방 삭제 이동(onRoomDeleted)은 이 시험이 관측하는 경로가 아니라 비워 둔다 — 그 경로를
+ * 흉내내지 않는다.
+ */
+function MatchingRoomRoute() {
+  const navigate = useNavigate()
+  const onGameStarted = React.useCallback(() => { navigate("/ingame") }, [navigate])
+  const onRoomDeleted = React.useCallback(() => {}, [])
+  useMatchingRoom({ onRoomDeleted, onGameStarted })
+  return React.createElement("div", null, "matching")
+}
+
+/**
+ * 시험이 **사용자 대신** 한 이동만 이 목록에 남는다. 생산 훅이 한 이동(결과 화면 진입·이탈
+ * 후 로비 복귀)은 여기 들어오지 않는다 — 그래서 이 목록에 결과 경로가 없다는 사실이
+ * "그 이동은 시험이 만들지 않았다"의 근거가 된다.
+ */
+const userNavigations = []
+
+async function navigateAsUser(router, path) {
+  userNavigations.push(path)
+  await act(async () => { await router.navigate(path) })
+}
+
+function createAppRouter() {
+  return createMemoryRouter(
+    [
+      {
+        element: React.createElement(SessionEventsLayout),
+        children: [
+          { path: "/game-matching", element: React.createElement(MatchingRoomRoute) },
+          { path: "/ingame", element: React.createElement(InGamePage) },
+          { path: "/gameresult", element: React.createElement(GameResultPage) },
+          { path: "/game-setup", element: React.createElement(GameSetupPage) },
+          { path: "/multiplay", element: React.createElement("div", null, "lobby") },
+        ],
+      },
+    ],
+    // 대기방에서 시작한다 — 아직 판이 없고, 시작 방송을 받을 자리가 먼저 있어야 한다.
+    { initialEntries: ["/game-matching"] },
+  )
+}
+
+/** 실제 앱 화면을 대기방 자리에 띄운다. 이후의 모든 이동은 한 router 안에서 일어난다. */
+async function mountApp(connection) {
+  setTestSocket(connection.clientSocket)
+  const router = createAppRouter()
+  let view
+  await act(async () => { view = render(React.createElement(RouterProvider, { router })) })
+  return { router, view }
+}
+
+/** 화면에 떠 있는 양피지 오버레이(역할 공개·진입 연출)의 "확인"을 차례로 눌러 닫는다. */
+async function dismissParchmentOverlays(container) {
+  for (let i = 0; i < 5; i += 1) {
+    const confirmButton = [...container.querySelectorAll("button")]
+      .find((node) => node.textContent.trim() === "확인")
+    if (!confirmButton) return
+    await act(async () => { confirmButton.click() })
+  }
+}
+
+/**
+ * 실제 start_game → 서버의 개인화된 game_started 방송 → 실제 useMatchingRoom 구독 →
+ * **생산 콜백**이 만드는 인게임 화면 이동까지.
+ */
+async function startGameFromMatchingRoom({ host, created, router, view }) {
+  const started = await ack(host, "start_game", startPayload({
+    roomId: created.room.roomId,
+    settingsVersion: liveSettingsVersion(created.room.roomId),
+  }))
+  assert.equal(started.ok, true, JSON.stringify(started))
+  assert.equal(clientReceiptsOf("game_started", host).length, 1, "호스트가 실제 game_started를 받지 못했다")
+  await waitFor(() => {
+    assert.equal(router.state.location.pathname, "/ingame", "시작 방송이 인게임 화면으로 옮기지 못했다")
+  })
+  // 역할 공개는 사용자가 닫는다. 닫기 전에는 사망 연출이 뜨지 않고(오버레이 우선순위), 그
+  // 연출이 남아 있는 동안 결과 이동도 보류된다 — 실제 화면과 같은 순서를 그대로 지난다.
+  await dismissParchmentOverlays(view.container)
+  return started
+}
+
+/**
+ * 재판 처형의 공개 사망 연출을 실제로 끝까지 재생하고, **생산 훅이** 결과 화면으로 옮기는
+ * 것을 관찰한다.
+ *
+ * 연출이 큐에 남아 있는 동안 결과 이동은 useInGameResultNavigation이 보류한다(hold). 시험은
+ * 결과 경로로 이동하지 않으므로, 이 연출을 끝내는 것이 그 이동을 여는 유일한 입력이다 —
+ * 실제 사용자가 하는 일과 같다.
+ */
+async function enterResultScreen({ router, view }) {
+  assert.equal(router.state.location.pathname, "/ingame", "종료 직전인데 인게임 화면이 아니다")
+  // 낮/밤 진입 연출이 떠 있으면 사용자가 닫는다(역할 공개가 아직 열려 있었다면 그것도) —
+  // 실제 화면에서 사망 연출은 그 다음 차례다.
+  await dismissParchmentOverlays(view.container)
+  await waitFor(() => {
+    assert.ok(
+      view.container.querySelector("[data-ingame-kill-reveal] video"),
+      "처형 사망 연출이 인게임 화면에 뜨지 않았다",
+    )
+  })
+  const reveal = view.container.querySelector("[data-ingame-kill-reveal] video")
+  await act(async () => { reveal.dispatchEvent(new dom.window.Event("ended")) })
+
+  await waitFor(() => {
+    assert.equal(
+      router.state.location.pathname, "/gameresult",
+      "생산 훅(InGamePage → useInGameResultNavigation)이 결과 화면으로 옮기지 않았다",
+    )
+  })
+  assert.equal(
+    userNavigations.includes("/gameresult"), false,
+    "시험이 결과 경로로 직접 이동했다 — 그러면 실제 진입 연결을 우회한다",
+  )
+
+  const intro = view.container.querySelector("video")
+  assert.ok(intro, "결과 연출 영상이 없다")
+  await act(async () => { intro.dispatchEvent(new dom.window.Event("ended")) })
+}
+
+/** 결과 화면의 로비 버튼 → 실제 useInGameExit → 실제 leave_game_session → 로비 이동. */
+async function leaveFromResultScreen({ router, view, connection }) {
+  confirmAnswer = true
+  const lobbyButton = [...view.container.querySelectorAll("button")]
+    .find((node) => node.textContent.includes("로비로"))
+  assert.ok(lobbyButton, "결과 화면에 로비 버튼이 없다")
+  await act(async () => { lobbyButton.click() })
+  await waitFor(() => {
+    assert.equal(useInGameStore.getState().gameId, null, "실제 이탈 뒤에도 인게임 세션이 남아 있다")
+  })
+  assert.ok(
+    connection.clientSocket.requestsOf("leave_game_session").length >= 1,
+    "결과 화면의 로비 버튼이 실제 이탈 요청을 보내지 않았다",
+  )
+  await waitFor(() => {
+    assert.equal(router.state.location.pathname, "/multiplay", "이탈이 로비로 옮기지 않았다")
+  })
+  confirmAnswer = false
+}
+
+/** 같은 흐름 안에서 다음 방 생성 화면으로 간다(로비에서 사용자가 누르는 그 이동이다). */
+async function goToCreationPage({ router, view }) {
+  await navigateAsUser(router, "/game-setup")
+  await waitFor(() => {
+    const button = view.container.querySelector("button[aria-label='게임 만들기']")
+    assert.ok(button && button.disabled === false, "게임 만들기 버튼이 아직 활성화되지 않았다")
+  })
+}
+
+/**
+ * 생성 화면만 따로 띄운다. 판을 거치지 않는 경우(다른 계정의 첫 화면, 손상 레코드 안내)에만
+ * 쓴다 — 결과 화면을 지나는 흐름은 위 한 router로만 간다.
+ */
 async function mountCreationPage(connection) {
   setTestSocket(connection.clientSocket)
   let view
@@ -467,6 +644,7 @@ test.beforeEach(() => {
   socketState.clientReceived = []
   persistedGameResults.length = 0
   alerts.length = 0
+  userNavigations.length = 0
 })
 
 test.afterEach(() => {
@@ -494,20 +672,13 @@ test("F-24(AC-04) · 실제 시작 방송 → 유지 체크 → 정상 종료 �
   // (useGameSetupPage.enterRoom). 그 소속이 있어야 아래 구독자가 이 방의 사건을 받는다.
   act(() => { useMatchingStore.getState().setRoom(created.room) })
 
-  // 2) **실제 구독자**를 마운트한다 — 시작·종료 payload는 이 구독으로만 store에 들어온다.
-  await act(async () => {
-    render(React.createElement(MemoryRouter, { initialEntries: ["/game-matching"] },
-      React.createElement(SessionSubscribers)))
-  })
+  // 2) **실제 화면**을 대기방 자리에 띄운다 — 시작·종료 payload는 이 화면들이 실제로 부르는
+  //    구독으로만 store에 들어오고, 화면 이동도 그 구독과 생산 훅이 만든다.
+  const { router, view: app } = await mountApp(host)
 
-  // 3) 실제 start_game. 서버가 참가자 각자에게 개인화된 game_started를 보내고, 호스트의
-  //    그 사건은 위 useMatchingRoom 구독을 지나 ingameStore로 들어간다.
-  const started = await ack(host, "start_game", startPayload({
-    roomId: created.room.roomId,
-    settingsVersion: liveSettingsVersion(created.room.roomId),
-  }))
-  assert.equal(started.ok, true, JSON.stringify(started))
-  assert.equal(clientReceiptsOf("game_started", host).length, 1, "호스트가 실제 game_started를 받지 못했다")
+  // 3) 실제 start_game. 서버가 참가자 각자에게 개인화된 game_started를 보내고, 호스트의 그
+  //    사건은 useMatchingRoom 구독을 지나 ingameStore로 들어가며 화면을 /ingame으로 옮긴다.
+  await startGameFromMatchingRoom({ host, created, router, view: app })
 
   await waitFor(() => {
     const source = useInGameStore.getState().state?.roomSettingsSource
@@ -518,7 +689,8 @@ test("F-24(AC-04) · 실제 시작 방송 → 유지 체크 → 정상 종료 �
   assert.deepEqual(inStore.settings.roleNightActionTimes, { DOCTOR: 120 })
 
   // 4) 실제 방관리 탭의 체크박스를 누른다.
-  const container = await mountRoomTab()
+  const roomTab = await mountRoomTab()
+  const container = roomTab.container
   const keepBox = container.querySelector("[aria-label='다음 게임 동일 설정 유지']")
   assert.ok(keepBox, "유지 체크박스가 없다")
   await act(async () => { keepBox.click() })
@@ -553,35 +725,22 @@ test("F-24(AC-04) · 실제 시작 방송 → 유지 체크 → 정상 종료 �
   })
   assert.equal(persistedGameResults.length, 1, "정상 종료의 전적 저장이 실제로 시작되지 않았다")
 
-  // 7) 실제 결과 화면 → 로비 버튼 → 실제 leave_game_session.
-  confirmAnswer = true
-  const router = createMemoryRouter(
-    [{ path: "/gameresult", element: React.createElement(GameResultPage) },
-      { path: "/multiplay", element: React.createElement("div", null, "lobby") }],
-    { initialEntries: ["/gameresult"] },
-  )
-  let resultView
-  await act(async () => { resultView = render(React.createElement(RouterProvider, { router })) })
-  const intro = resultView.container.querySelector("video")
-  assert.ok(intro, "결과 연출 영상이 없다")
-  await act(async () => { intro.dispatchEvent(new dom.window.Event("ended")) })
+  // 7) **인게임 화면에서** 결과 화면으로 넘어간다 — 이 이동은 시험이 하지 않는다.
+  //    사망 연출을 끝내면 InGamePage의 useInGameResultNavigation이 /gameresult로 옮긴다.
+  await enterResultScreen({ router, view: app })
 
-  const lobbyButton = [...resultView.container.querySelectorAll("button")]
-    .find((node) => node.textContent.includes("로비로"))
-  assert.ok(lobbyButton, "결과 화면에 로비 버튼이 없다")
-  await act(async () => { lobbyButton.click() })
-  await waitFor(() => {
-    assert.equal(useInGameStore.getState().gameId, null, "실제 이탈 뒤에도 인게임 세션이 남아 있다")
-  })
+  // 8) 결과 화면의 로비 버튼 → 실제 useInGameExit → 실제 leave_game_session.
+  await leaveFromResultScreen({ router, view: app, connection: host })
   assert.equal(
     host.clientSocket.requestsOf("leave_game_session").length, 1,
-    "결과 화면의 로비 버튼이 실제 이탈 요청을 보내지 않았다",
+    "이탈 요청이 정확히 한 번이 아니다",
   )
   assert.equal(gameSessionCore.getRoomCodeSessionState({ roomCode: created.room.roomCode })?.gameId, gameId)
-  cleanup()
+  roomTab.unmount()
 
-  // 8) **같은 서버 상태 위에서** 다음 방을 만든다(registry를 초기화하지 않는다).
-  const { view } = await mountCreationPage(host)
+  // 9) **같은 서버 상태·같은 화면 흐름 위에서** 다음 방을 만든다(registry를 초기화하지 않는다).
+  const view = app
+  await goToCreationPage({ router, view })
   assert.equal(stepperValue(view.container, "최대 플레이어 수"), "6", "정원이 복원되지 않았다")
   await openMeetingTab(view.container)
   assert.equal(stepperValue(view.container, "낮 토론 시간 조절"), "120초")
@@ -590,7 +749,7 @@ test("F-24(AC-04) · 실제 시작 방송 → 유지 체크 → 정상 종료 �
   assert.equal(stepperValue(view.container, "의사 밤 시간 조절"), "120초", "지정된 override가 사라졌다")
   assert.equal(stepperValue(view.container, "광대 밤 시간 조절"), "60초", "미지정 직업이 전체 밤 시간을 따라가지 않았다")
 
-  // 9) 실제 생성 요청과 서버가 저장한 새 방 설정까지 같은 값이다.
+  // 10) 실제 생성 요청과 서버가 저장한 새 방 설정까지 같은 값이다.
   await act(async () => { view.container.querySelector("button[aria-label='게임 만들기']").click() })
   await waitFor(() => assert.equal(host.clientSocket.requestsOf(SOCKET_EVENTS.CREATE_ROOM).length, 2))
   const request = host.clientSocket.requestsOf(SOCKET_EVENTS.CREATE_ROOM)[1].payload
@@ -637,7 +796,7 @@ test("F-24(AC-04) · 원본이 도착하지 않았거나 이 판의 참가자가
     })
   })
 
-  const container = await mountRoomTab()
+  const { container } = await mountRoomTab()
   const keepBox = container.querySelector("[aria-label='다음 게임 동일 설정 유지']")
   await act(async () => { keepBox.click() })
 
@@ -658,31 +817,26 @@ test("F-24(AC-05) · 유지를 끄면 영속 레코드가 사라지고 다음 �
 
   const { created } = await createAndStartRealRoom(host, joiners)
   act(() => { useMatchingStore.getState().setRoom(created.room) })
-  await act(async () => {
-    render(React.createElement(MemoryRouter, { initialEntries: ["/game-matching"] },
-      React.createElement(SessionSubscribers)))
-  })
-  const started = await ack(host, "start_game", startPayload({
-    roomId: created.room.roomId, settingsVersion: liveSettingsVersion(created.room.roomId),
-  }))
-  assert.equal(started.ok, true, JSON.stringify(started))
+  const { router, view } = await mountApp(host)
+  await startGameFromMatchingRoom({ host, created, router, view })
   await waitFor(() => assert.ok(useInGameStore.getState().state?.roomSettingsSource))
 
-  const container = await mountRoomTab()
-  const keepBox = container.querySelector("[aria-label='다음 게임 동일 설정 유지']")
+  const roomTab = await mountRoomTab()
+  const keepBox = roomTab.container.querySelector("[aria-label='다음 게임 동일 설정 유지']")
   await act(async () => { keepBox.click() })
   assert.ok(readStoredRecord(hostUuid), "먼저 켜지지 않았다")
 
   await act(async () => { keepBox.click() })
   assert.equal(readStoredRecord(hostUuid), null, "해제했는데 레코드가 남았다")
 
-  // 실제 종료·이탈까지 거친 뒤 생성 화면이 기본값에서 시작한다.
+  // 실제 종료 → **인게임 화면이 만드는** 결과 진입 → 실제 이탈까지 거친 뒤 생성 화면으로 간다.
   await playToCitizenVictory([host, ...joiners])
   await waitFor(() => assert.equal(useInGameStore.getState().state?.phase, "ENDED"))
-  await leaveFromResultScreen(host)
-  cleanup()
+  await enterResultScreen({ router, view })
+  await leaveFromResultScreen({ router, view, connection: host })
+  roomTab.unmount()
 
-  const { view } = await mountCreationPage(host)
+  await goToCreationPage({ router, view })
   await act(async () => { view.container.querySelector("button[aria-label='게임 만들기']").click() })
   await waitFor(() => assert.equal(host.clientSocket.requestsOf(SOCKET_EVENTS.CREATE_ROOM).length, 2))
   const request = host.clientSocket.requestsOf(SOCKET_EVENTS.CREATE_ROOM)[1].payload
@@ -696,30 +850,6 @@ test("F-24(AC-05) · 유지를 끄면 영속 레코드가 사라지고 다음 �
   // 지정 목록 없는 기본 create는 예전 계약대로 네 직업을 명시한다.
   assert.deepEqual(request.roleNightActionTimes, { JOKER: 90, DOCTOR: 90, GUARD: 90, WITCH_HUNTER: 90 })
 })
-
-/** 실제 결과 화면을 띄워 로비 버튼으로 이탈한다(core를 직접 부르지 않는다). */
-async function leaveFromResultScreen(connection) {
-  confirmAnswer = true
-  const router = createMemoryRouter(
-    [{ path: "/gameresult", element: React.createElement(GameResultPage) },
-      { path: "/multiplay", element: React.createElement("div", null, "lobby") }],
-    { initialEntries: ["/gameresult"] },
-  )
-  let view
-  await act(async () => { view = render(React.createElement(RouterProvider, { router })) })
-  const intro = view.container.querySelector("video")
-  if (intro) await act(async () => { intro.dispatchEvent(new dom.window.Event("ended")) })
-  const lobbyButton = [...view.container.querySelectorAll("button")]
-    .find((node) => node.textContent.includes("로비로"))
-  assert.ok(lobbyButton, "결과 화면에 로비 버튼이 없다")
-  await act(async () => { lobbyButton.click() })
-  await waitFor(() => assert.equal(useInGameStore.getState().gameId, null))
-  assert.ok(
-    connection.clientSocket.requestsOf("leave_game_session").length >= 1,
-    "결과 화면이 실제 이탈 요청을 보내지 않았다",
-  )
-  confirmAnswer = false
-}
 
 test("F-24(AC-05) · 비활성 레코드는 복원 원본으로 쓰이지 않고 source도 남기지 않는다", async () => {
   const hostUuid = "f24-host-disabled"
@@ -812,7 +942,7 @@ test("F-24(AC-05) · 서버 원본이 없어도 유지 **해제**는 할 수 있
     })
   })
 
-  const container = await mountRoomTab()
+  const { container } = await mountRoomTab()
   const keepBox = container.querySelector("[aria-label='다음 게임 동일 설정 유지']")
   assert.equal(keepBox.getAttribute("aria-checked"), "true", "전제: 이전 판의 유지가 켜져 있어야 한다")
   await act(async () => { keepBox.click() })
@@ -834,22 +964,16 @@ test("RESTORE-24 · 실제로 생산한 레코드를 오염시켜도 저장 매�
 
   const { created } = await createAndStartRealRoom(host, joiners)
   act(() => { useMatchingStore.getState().setRoom(created.room) })
-  await act(async () => {
-    render(React.createElement(MemoryRouter, { initialEntries: ["/game-matching"] },
-      React.createElement(SessionSubscribers)))
-  })
-  const started = await ack(host, "start_game", startPayload({
-    roomId: created.room.roomId, settingsVersion: liveSettingsVersion(created.room.roomId),
-  }))
-  assert.equal(started.ok, true, JSON.stringify(started))
+  const { router, view } = await mountApp(host)
+  await startGameFromMatchingRoom({ host, created, router, view })
   await waitFor(() => assert.ok(useInGameStore.getState().state?.roomSettingsSource))
 
   // 서버가 폐기된 키를 실어 보내도 **store 경계에서** 이미 걸러진다(전 경로 배제).
   assertNoSpectatorKeys(useInGameStore.getState().state.roomSettingsSource, "store에 들어온 복원 원본")
 
-  const container = await mountRoomTab()
+  const roomTab = await mountRoomTab()
   await act(async () => {
-    container.querySelector("[aria-label='다음 게임 동일 설정 유지']").click()
+    roomTab.container.querySelector("[aria-label='다음 게임 동일 설정 유지']").click()
   })
 
   // 실제로 생산된 레코드를 먼저 확보한다(직접 주입한 레코드가 아니다).
@@ -870,13 +994,15 @@ test("RESTORE-24 · 실제로 생산한 레코드를 오염시켜도 저장 매�
   dom.window.localStorage.setItem(nextRoomSettingsStorageKey(hostUuid), JSON.stringify(contaminated))
   assert.notDeepEqual(findSpectatorKeys(readStoredRecord(hostUuid)), [], "오염 자체가 실패했다")
 
-  // 실제 종료·이탈 뒤 생성 페이지가 그 레코드를 읽는다 — 읽기만으로 매체가 정제돼야 한다.
+  // 실제 종료 → 인게임 화면이 만드는 결과 진입 → 실제 이탈 뒤 생성 화면이 그 레코드를
+  // 읽는다 — 읽기만으로 매체가 정제돼야 한다.
   await playToCitizenVictory([host, ...joiners])
   await waitFor(() => assert.equal(useInGameStore.getState().state?.phase, "ENDED"))
-  await leaveFromResultScreen(host)
-  cleanup()
+  await enterResultScreen({ router, view })
+  await leaveFromResultScreen({ router, view, connection: host })
+  roomTab.unmount()
 
-  const { view } = await mountCreationPage(host)
+  await goToCreationPage({ router, view })
   assertNoSpectatorKeys(readStoredRecord(hostUuid), "정제 재저장 뒤의 저장 매체")
 
   // 정상 값은 함께 지워지지 않는다.
@@ -945,25 +1071,20 @@ test("RESTORE-24 · 계정 간 복원값이 섞이지 않는다(A 저장 → B �
 
   const { created } = await createAndStartRealRoom(hostA, joiners)
   act(() => { useMatchingStore.getState().setRoom(created.room) })
-  await act(async () => {
-    render(React.createElement(MemoryRouter, { initialEntries: ["/game-matching"] },
-      React.createElement(SessionSubscribers)))
-  })
-  const started = await ack(hostA, "start_game", startPayload({
-    roomId: created.room.roomId, settingsVersion: liveSettingsVersion(created.room.roomId),
-  }))
-  assert.equal(started.ok, true, JSON.stringify(started))
+  const { router, view } = await mountApp(hostA)
+  await startGameFromMatchingRoom({ host: hostA, created, router, view })
   await waitFor(() => assert.ok(useInGameStore.getState().state?.roomSettingsSource))
 
-  const container = await mountRoomTab()
+  const roomTab = await mountRoomTab()
   await act(async () => {
-    container.querySelector("[aria-label='다음 게임 동일 설정 유지']").click()
+    roomTab.container.querySelector("[aria-label='다음 게임 동일 설정 유지']").click()
   })
   assert.ok(readStoredRecord(accountA), "A의 레코드가 저장되지 않았다")
 
   await playToCitizenVictory([hostA, ...joiners])
   await waitFor(() => assert.equal(useInGameStore.getState().state?.phase, "ENDED"))
-  await leaveFromResultScreen(hostA)
+  await enterResultScreen({ router, view })
+  await leaveFromResultScreen({ router, view, connection: hostA })
   cleanup()
 
   // B로 전환 — A의 키는 그대로 남아 있어야 하고(로그아웃은 삭제 명령이 아니다),
