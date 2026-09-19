@@ -110,19 +110,35 @@ const createLocalUser = async (label) => {
 
 // ── 소켓 대역 ────────────────────────────────────────────────────────────────
 
-function createFakeSocket(uuid) {
+/**
+ * 실제 연결 등록 경로와 **같은 모양**의 소켓을 만들어 namespace registry에 넣는다.
+ *
+ * 서버의 canonical 판정은 "onlineUsers가 가리키는 id"만 보지 않는다 — 그 id로 namespace를
+ * 조회한 **객체**가 바로 이 소켓이어야 한다(backend/socket/gameSession.js의
+ * isCurrentSocketForUuid). 실제 Socket.IO에서는 연결이 성립하는 순간 그 등록이 이미 사실이고
+ * socket.nsp.sockets가 그 registry를 가리킨다. 예전 대역은 소켓을 **어느 registry에도 넣지
+ * 않았으므로**, 지금 계약에서는 정상 참가자가 아니라 "어디에도 없는 위조 소켓"이다.
+ *
+ * 그래서 시험의 기대값을 낮추는 대신 **누락된 등록 절차**를 실제 경로대로 채운다: io가
+ * 소유한 하나의 Map에 등록하고, 그 Map을 그대로 socket.nsp.sockets로 둔다.
+ */
+function connectSocket(io, uuid) {
     const rooms = new Set();
-    return {
+    const socket = {
         id: `sock-${uuid}`,
         data: { user: { uuid } },
         connected: true,
         rooms,
+        // 실제 Socket.IO의 socket.nsp.sockets와 같은 자리 — io의 registry와 **같은 객체**다.
+        nsp: io.sockets,
         emitted: [],
         async join(roomId) { rooms.add(roomId); },
         async leave(roomId) { rooms.delete(roomId); },
         emit(event, payload) { this.emitted.push({ event, payload }); },
         to() { return { emit: () => {} }; },
     };
+    io.sockets.sockets.set(socket.id, socket);
+    return socket;
 }
 
 function createFakeIo() {
@@ -449,7 +465,7 @@ test('AC-03: 추방으로 끝난 판과 일반 이탈로 끝난 판은 식별자
         hostUuid: kickHost, uuids: [kickHost, kickStay, kickGone],
     });
     makeSessionRewardEligible(kicked);
-    handleKickGamePlayer(io, createFakeSocket(kickHost), kickHost, kickPayload(kicked, kickHost, kickGone), () => {});
+    handleKickGamePlayer(io, connectSocket(io, kickHost), kickHost, kickPayload(kicked, kickHost, kickGone), () => {});
     assert.equal(kicked.phase, 'ENDED', '3인 판에서 한 명이 빠지면 parity로 종결돼야 한다');
     assert.ok(await waitForPersistSettled(), '추방 판의 저장이 끝나지 않았다');
 
@@ -458,7 +474,7 @@ test('AC-03: 추방으로 끝난 판과 일반 이탈로 끝난 판은 식별자
         hostUuid: leaveHost, uuids: [leaveHost, leaveStay, leaveGone],
     });
     makeSessionRewardEligible(left);
-    handleLeaveGameSession(io, createFakeSocket(leaveGone), leaveGone, { gameId: left.id }, () => {});
+    handleLeaveGameSession(io, connectSocket(io, leaveGone), leaveGone, { gameId: left.id }, () => {});
     assert.equal(left.phase, 'ENDED');
     assert.ok(await waitForPersistSettled(), '이탈 판의 저장이 끝나지 않았다');
     assert.ok(await evaluations.settled(), '업적 평가가 끝나지 않았다');
@@ -595,7 +611,7 @@ test('A-09: 첫 저장이 실패해도 재시도가 **같은 레코드**를 실�
     // Date.now()로 endedAt을 찍으므로, 그 동기 구간에서만 시계를 초 경계에 묶는다. 불변성
     // 단언(같은 record 객체·같은 ended_at·roster·통계)은 하나도 낮추지 않는다.
     withClockOnSecondBoundary(() => {
-        handleKickGamePlayer(io, createFakeSocket(host), host, kickPayload(session, host, gone), () => {});
+        handleKickGamePlayer(io, connectSocket(io, host), host, kickPayload(session, host, gone), () => {});
     });
     assert.equal(session.phase, 'ENDED');
     assert.equal(
@@ -667,7 +683,7 @@ test('A-05: 재시도와 중복 종료를 거쳐도 업적 지급·원장 항목
         roomId: 'db-room-ach', gameId: crypto.randomUUID(), hostUuid: host, uuids: participants,
     });
     makeSessionRewardEligible(session);
-    handleKickGamePlayer(io, createFakeSocket(host), host, kickPayload(session, host, gone), () => {});
+    handleKickGamePlayer(io, connectSocket(io, host), host, kickPayload(session, host, gone), () => {});
     assert.ok(await waitForPersistSettled(), '저장이 끝나지 않았다');
     // 고정 턴 수로 "충분히 기다렸겠지"를 하지 않는다 — 평가 Promise가 **실제로 끝날** 때까지다.
     assert.ok(await evaluations.settled(), '업적 평가가 끝나지 않았다');
