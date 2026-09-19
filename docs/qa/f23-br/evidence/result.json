@@ -1,0 +1,119 @@
+{
+  "at": "2026-09-19T04:52:06.002Z",
+  "candidate": "BR worktree (pluto/BR)",
+  "verdict": "PASS",
+  "results": [
+    {
+      "screen": "1-game-setup-default-tab",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 14,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/1-game-setup-default-tab.png"
+    },
+    {
+      "screen": "1-game-setup-tab-1",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 14,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/1-game-setup-tab-1.png"
+    },
+    {
+      "screen": "1-game-setup-tab-2",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 20,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/1-game-setup-tab-2.png"
+    },
+    {
+      "screen": "1-game-setup-tab-3",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 20,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/1-game-setup-tab-3.png"
+    },
+    {
+      "screen": "2-matching-host",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 9,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/2-matching-host.png"
+    },
+    {
+      "screen": "2-matching-settings-panel",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 18,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/2-matching-settings-panel.png"
+    },
+    {
+      "screen": "2-matching-settings-panel-vote-tab",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 25,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/2-matching-settings-panel-vote-tab.png"
+    },
+    {
+      "screen": "3-ingame-settings-default-tab",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 15,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/3-ingame-settings-default-tab.png"
+    },
+    {
+      "screen": "3-ingame-settings-room-tab",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 16,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/3-ingame-settings-room-tab.png"
+    },
+    {
+      "screen": "3-room-tab-kept-items",
+      "ok": true,
+      "kept": [
+        {
+          "label": "플레이어 추방",
+          "present": true
+        },
+        {
+          "label": "다음 게임 동일 설정 유지",
+          "present": true
+        },
+        {
+          "label": "방 코드 복사",
+          "present": true
+        }
+      ]
+    },
+    {
+      "screen": "3-ingame-settings-guest",
+      "ok": true,
+      "textHits": [],
+      "controlHits": [],
+      "controls": 14,
+      "shot": "C:/Users/minsa/jokertest/docs/qa/f23-br/evidence/3-ingame-settings-guest.png"
+    }
+  ],
+  "log": [
+    "[04:51:42] logged in 3",
+    "[04:51:44] PASS 1-game-setup-default-tab — 금지 어휘 0건 · 컨트롤 14개",
+    "[04:51:45] PASS 1-game-setup-tab-1 — 금지 어휘 0건 · 컨트롤 14개",
+    "[04:51:46] PASS 1-game-setup-tab-2 — 금지 어휘 0건 · 컨트롤 20개",
+    "[04:51:48] PASS 1-game-setup-tab-3 — 금지 어휘 0건 · 컨트롤 20개",
+    "[04:51:49] PASS 2-matching-host — 금지 어휘 0건 · 컨트롤 9개",
+    "[04:51:50] PASS 2-matching-settings-panel — 금지 어휘 0건 · 컨트롤 18개",
+    "[04:51:51] PASS 2-matching-settings-panel-vote-tab — 금지 어휘 0건 · 컨트롤 25개",
+    "[04:52:03] PASS 3-ingame-settings-default-tab — 금지 어휘 0건 · 컨트롤 15개",
+    "[04:52:04] PASS 3-ingame-settings-room-tab — 금지 어휘 0건 · 컨트롤 16개",
+    "[04:52:04] PASS 방관리 정상 항목 — 플레이어 추방:있음 · 다음 게임 동일 설정 유지:있음 · 방 코드 복사:있음",
+    "[04:52:05] PASS 3-ingame-settings-guest — 금지 어휘 0건 · 컨트롤 14개"
+  ]
+}
