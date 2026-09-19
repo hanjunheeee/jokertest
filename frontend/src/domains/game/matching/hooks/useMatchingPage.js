@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  MATCHING_PARTY_SLOTS_DUMMY_10,
-  MATCHING_ROOM_CODE_DUMMY,
-} from "../constants/gameMatchingAssets.js"
+import { MATCHING_PARTY_SLOTS_DUMMY_10 } from "../constants/gameMatchingAssets.js"
 import { useMatchingRoom } from "./useMatchingRoom"
 // F-21(AC-02): 대기방 추방의 실제 소비 경계다. 목록·확인·전송·결과 재조회는 전부 이 훅이
 // 소유하고(인게임과 같은 useKickPlayerRequest를 쓴다), 이 페이지 훅은 그 값을 그대로 넘긴다.
@@ -112,12 +109,25 @@ export function useMatchingPage() {
       }))
     : MATCHING_PARTY_SLOTS_DUMMY_10
 
-  const displayRoomCode = isInRoom ? roomCode : MATCHING_ROOM_CODE_DUMMY
+  /**
+   * F-24(AC-01): **미소속 상태의 더미 코드를 쓰지 않는다.**
+   *
+   * 예전에는 방에 들어가 있지 않으면 MATCHING_ROOM_CODE_DUMMY를 보여줬다. 그 값은 형식이
+   * 멀쩡한 6자 코드라 모달이 "복사 가능"으로 판단했고, 사용자는 아무 방도 가리키지 않는
+   * 코드를 복사해 친구에게 보낼 수 있었다. 확인된 소속(isInRoom)과 서버 검증(isRoomVerified)이
+   * 함께 성립할 때만 실제 코드를 제공하고, 그 밖에는 null이다 — 모달이 "확인할 수 없음"과
+   * 비활성 복사를 보여준다.
+   */
+  const canViewRoomCode = isInRoom && isRoomVerified
+  const displayRoomCode = canViewRoomCode ? roomCode : null
 
   return {
     uiVisible,
-    roomCodeOpen,
-    openRoomCode: () => setRoomCodeOpen(true),
+    // 코드를 제공할 수 없는 상태에서는 모달 자체를 열지 않는다 — 열어 두고 실패만 보여주는
+    // 것보다, 진입이 아직 없다는 사실이 더 정확하다.
+    roomCodeOpen: roomCodeOpen && canViewRoomCode,
+    canViewRoomCode,
+    openRoomCode: () => { if (canViewRoomCode) setRoomCodeOpen(true) },
     closeRoomCode: () => setRoomCodeOpen(false),
     slots,
     // 실제 방 식별자다(화면 표시용 displayRoomCode와 다르다) — 방에 들어가 있지 않으면 null.

@@ -155,6 +155,11 @@ const { SOCKET_EVENTS, ROOM_SETTINGS_ERROR_CODES, ROOM_SETTINGS_ERROR_MESSAGES }
   await import("../../../setup/constants/gameSetupSocket.js")
 
 const { default: matchmaking } = await import("../../../../../../../backend/socket/matchmaking.js")
+// F-24(AC-04): 실제 **등록 경계**까지 잇기 위해 게임 소켓 계층도 함께 든다. 이 대역은 더 이상
+// 핸들러를 직접 부르지 않고 registerMatchmakingHandlers/registerGameHandlers가 등록한 리스너를
+// 통해서만 요청을 보낸다 — 등록부가 payload를 흘리거나 다른 핸들러에 물려 있으면 그 사실이
+// 여기서 드러나야 한다(직접 호출만 하면 등록부가 통째로 빠져 있어도 시험이 통과한다).
+const { default: gameSessionSocketLayer } = await import("../../../../../../../backend/socket/gameSession.js")
 const { default: matchmakingFixtures } =
   await import("../../../../../../../backend/socket/__tests__/testHelpers/matchmakingFixtures.js")
 
@@ -218,6 +223,12 @@ const PLAYER_READY_CHANGED = "player_ready_changed"
  */
 let bridgedSocketSeq = 0
 function createBridgedSocket(io, serverSocket, uuid) {
+  // F-24(AC-04): 이 서버 연결의 **실제 등록 경계**를 한 번 세운다. 아래 emitWithAck은 핸들러를
+  // 직접 부르지 않고 여기서 등록된 리스너(serverSocket.trigger)로만 요청을 보낸다. 연결이
+  // 교체될 때마다 새 서버 소켓으로 다시 부르므로(reconnectPair), 실제 연결마다 한 번이라는
+  // 등록 계약도 그대로다.
+  matchmaking.registerMatchmakingHandlers(io, serverSocket, uuid)
+  gameSessionSocketLayer.registerGameHandlers(io, serverSocket, uuid)
   const emittedToServer = []
   // 이 연결만의 구독 목록이다(전역 공유 아님) — 교체된 뒤 옛 연결에 남은 구독을 관측할 수 있다.
   const listeners = new Map()
@@ -262,22 +273,24 @@ function createBridgedSocket(io, serverSocket, uuid) {
           }
           resolve(response)
         }
-        if (event === SOCKET_EVENTS.GET_CURRENT_ROOM) {
-          handleGetCurrentRoom(uuid, settle)
-          return
-        }
-        if (event === SOCKET_EVENTS.UPDATE_ROOM_SETTINGS) {
-          // 서버가 방송한 사건을 클라이언트 리스너로 되돌리기 위해 서버 소켓의 emit을 감싼다.
-          handleUpdateRoomSettings(io, serverSocket, uuid, payload, settle)
-          return
-        }
-        if (event === SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT) {
-          // ACK를 잃은 저장의 결과를 **같은 requestId로** 다시 묻는 실제 서버 경로다.
-          handleGetRoomSettingsUpdateResult(uuid, payload, settle)
-          return
-        }
-        if (event === SOCKET_EVENTS.CREATE_ROOM) {
-          handleCreateRoom(io, serverSocket, uuid, payload, settle)
+        // F-24(AC-04): 네 요청 모두 **등록된 리스너**를 통해서만 서버에 닿는다. 예전에는 이
+        // 네 분기가 핸들러를 직접 불렀는데, 그러면 등록부(registerMatchmakingHandlers)가 통째로
+        // 빠지거나 payload를 흘려버려도 이 시험은 그대로 통과한다 — 실제 클라이언트가 지나는
+        // 경로는 등록부이므로, 그 경계를 건너뛰면 "서버와 이어져 있다"는 말이 반쯤만 참이다.
+        // createFakeSocket.trigger는 등록된 핸들러에 인자를 그대로 넘기므로 ACK callback도
+        // 같은 자리로 간다.
+        const BRIDGED_EVENTS = [
+          SOCKET_EVENTS.GET_CURRENT_ROOM,
+          SOCKET_EVENTS.UPDATE_ROOM_SETTINGS,
+          SOCKET_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT,
+          SOCKET_EVENTS.CREATE_ROOM,
+        ]
+        if (BRIDGED_EVENTS.includes(event)) {
+          assert.ok(
+            serverSocket.listenerCount(event) > 0,
+            `등록부가 ${event} 리스너를 만들지 않았다 — 실제 클라이언트도 이 요청을 보낼 수 없다`,
+          )
+          serverSocket.trigger(event, payload, settle)
           return
         }
         reject(new Error(`시험 대역이 알지 못하는 이벤트: ${event}`))

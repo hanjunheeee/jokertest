@@ -618,6 +618,17 @@ function rememberStartedRoom(room) {
     if (typeof room?.id === 'string' && room.id) startedRoomMarks.set(`id:${room.id}`, now)
 }
 
+/**
+ * 테스트 전용: 시작 표식을 전부 지운다.
+ *
+ * F-24(AC-02): "표식이 만료된 뒤에도 진행 중인 판의 코드는 그대로 예약된다"는 계약을 확인하려면
+ * 실제 30분을 기다리지 않고 표식만 사라진 상태를 만들 수 있어야 한다(__resetStateForTests는
+ * 세션 registry까지 함께 지우므로 그 상태를 만들 수 없다). 런타임 코드는 부르지 않는다.
+ */
+function __resetStartedRoomMarksForTests() {
+    startedRoomMarks.clear()
+}
+
 /** 해당 식별자가 "방금 시작돼 사라진 방"의 것인지 확인한다. mark는 'code:...' 또는 'id:...' 형식이다. */
 function isStartedRoomMark(mark) {
     const startedAt = startedRoomMarks.get(mark)
@@ -667,6 +678,91 @@ function rejectIfInActiveGame(uuid, respond) {
 }
 
 /**
+ * F-24(AC-03): join_room_by_code payload의 최상위 허용 키 전체. 이 밖의 키는 거부 사유다
+ * (update_room_settings의 UPDATE_REQUEST_TOP_LEVEL_KEYS와 같은 관례).
+ */
+const JOIN_ROOM_BY_CODE_TOP_LEVEL_KEYS = Object.freeze(['roomCode', 'roomId'])
+
+/**
+ * F-24(AC-03): 코드 참가 거부 안내의 유일한 원본.
+ *
+ * 문구에 "방 코드로는 일반 참가만 할 수 있다"는 사실을 그대로 적는다. F-23이 제품 전체에서
+ * 지운 어휘를 안내 문구로 되살리지 않으면서도(그 제거는 회귀로 잠겨 있다), 사용자가 알아야
+ * 할 것 — 이 경로에 일반 참가 말고 다른 입장 방식은 없다 — 은 정확히 전달된다.
+ */
+const JOIN_REQUEST_INVALID_MESSAGE = '잘못된 참가 요청입니다. 방 코드로는 일반 참가만 할 수 있습니다.'
+
+/**
+ * F-24(AC-03): 코드 참가 요청의 형태를 등록 경계에서 **한 번** 판정한다(순수 함수).
+ *
+ * roomCode의 **값** 검증(빈 문자열 등)은 여기서 하지 않는다 — 그 판정은 기존
+ * handleJoinRoomByCode의 CODE_REQUIRED 경로가 이미 소유하고 있고, 두 곳이 같은 사실을 서로
+ * 다른 코드로 답하면 화면의 분기가 갈린다. 여기서 보는 것은 "무엇을 보냈는가"뿐이다.
+ *
+ * @param {unknown} payload
+ * @returns {{ok:true, roomCode:unknown, roomId:string|null}|{ok:false, code:string, message:string}}
+ */
+function validateJoinRoomByCodeRequest(payload) {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+        return {
+            ok: false,
+            code: ROOM_JOIN_ERROR_CODES.INVALID_REQUEST,
+            message: JOIN_REQUEST_INVALID_MESSAGE,
+        }
+    }
+    for (const key of Object.keys(payload)) {
+        if (!JOIN_ROOM_BY_CODE_TOP_LEVEL_KEYS.includes(key)) {
+            return {
+                ok: false,
+                code: ROOM_JOIN_ERROR_CODES.INVALID_REQUEST,
+                message: JOIN_REQUEST_INVALID_MESSAGE,
+            }
+        }
+    }
+    // roomId는 선택이지만, **보냈다면** 방을 가리킬 수 있는 값이어야 한다. 빈 문자열·숫자·
+    // null을 조용히 버리면 "특정 방을 지목한 요청"이 일반 코드 참가로 조용히 바뀐다.
+    if (Object.hasOwn(payload, 'roomId')) {
+        if (typeof payload.roomId !== 'string' || payload.roomId.length === 0) {
+            return {
+                ok: false,
+                code: ROOM_JOIN_ERROR_CODES.INVALID_REQUEST,
+                message: JOIN_REQUEST_INVALID_MESSAGE,
+            }
+        }
+    }
+    return { ok: true, roomCode: payload.roomCode, roomId: payload.roomId ?? null }
+}
+
+/**
+ * F-24(AC-02): 이 코드가 **지금 어떤 형태로든 쓰이고 있는가**(대기방 밖의 예약).
+ *
+ * 두 근거를 합친다.
+ *   1. 진행/종료 세션 registry — TTL이 없고 실제 세션이 살아 있는 동안만 참이다. 종료(ENDED)
+ *      세션도 registry에 남아 있는 동안은 예약이다(결과 화면이 그 코드를 보여주고 있다).
+ *   2. 유효한 시작 표식 — 세션이 이미 정리됐지만 아직 "방금 시작됐다"고 답해야 하는 창.
+ *
+ * 세션 수명·정리 정책은 이 판정 때문에 늘어나지 않는다(A-09) — 남아 있는 동안만 읽을 뿐이다.
+ */
+/**
+ * F-24(AC-02): 그 코드의 세션 단계를 입장 실패 (code, message) 쌍으로 옮긴다.
+ *
+ * 진행 중과 종료를 나누는 이유는 사용자가 할 수 있는 일이 다르기 때문이다 — 진행 중이면
+ * 그 판이 끝나기를 기다리면 되고, 끝났으면 새 방을 만들어야 한다. 두 경우 모두 **신규 참가는
+ * 거부**된다(기존 참가자의 재접속은 코드가 아니라 서버 참가 매핑으로 복원한다).
+ */
+function describeStartedRoomJoinFailure(phase) {
+    if (phase === 'ENDED') {
+        return [ROOM_JOIN_ERROR_CODES.SESSION_ENDED, '이미 끝난 게임의 방입니다.']
+    }
+    return [ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.']
+}
+
+function isRoomCodeReserved(code) {
+    if (gameSession.getRoomCodeSessionState({ roomCode: code }) !== null) return true
+    return isStartedRoomMark(`code:${code}`)
+}
+
+/**
  * @param {(uuid:string)=>string|null} [getCurrentSocketId] - onlineUsers의 현재 socket.id
  *   접근자(backend/socket/socket.js가 주입한다). F-20(AC-01): 세션 재검증 await 사이에
  *   같은 계정의 새 로그인이 canonical 소켓을 교체했다면, 교체된 옛 소켓의 설정 저장·결과
@@ -681,15 +777,28 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
     )
     socket.on('leave_matchmaking', () => handleLeaveMatchmaking(uuid))
     socket.on('join_room_by_code', (payload = {}) => {
-        const { roomCode, roomId } = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
-            ? payload
-            : {}
+        // F-24(AC-03): 코드 참가 입력의 **유일한 형태 경계**다. 예전에는 알 수 없는 최상위 키를
+        // 조용히 버렸는데, 조용히 버리는 것과 거부하는 것은 다른 사실을 말한다 — 버리면
+        // `spectator: true`를 보낸 클라이언트가 "관전자로 들어갔다"고 믿은 채 **일반 참가자로**
+        // 성공하고, 그 화면은 자기가 무엇으로 앉아 있는지 모른다. 별도 관전자 입장은 설정·
+        // 라우트·권한 어디에도 없으므로(F-23), 그런 의도를 담은 요청은 성공시키지 않고 거부해
+        // 사유를 알려야 한다(spectator=false·role·mode·options도 똑같이 거부한다 — 허용 목록은
+        // "무엇을 보냈는가"만 보고 값으로 예외를 만들지 않는다).
+        //
+        // 거부는 socket.join·room_joined·playerRoom 변경을 하나도 만들지 않는다 — 여기서
+        // 그대로 돌아가므로 핸들러 자체가 시작되지 않는다.
+        const validated = validateJoinRoomByCodeRequest(payload)
+        if (!validated.ok) {
+            emitRoomJoinFailed(socket, validated.code, validated.message)
+            return undefined
+        }
+        const { roomCode, roomId } = validated
         return handleJoinRoomByCode(
             io,
             socket,
             uuid,
             roomCode,
-            typeof roomId === 'string' && roomId ? { roomId, accessType: 'code' } : null,
+            roomId ? { roomId, accessType: 'code' } : null,
         ).catch((err) =>
             console.error('\x1b[31m[방 코드 참가 에러]\x1b[0m', err)
         )
@@ -1405,7 +1514,11 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
 
         // roomCode는 join을 기다린 뒤, 그 시점의 최신 gameRooms를 기준으로 생성한다 —
         // join을 기다리는 짧은 시간 동안 다른 요청이 방을 먼저 커밋했을 수 있기 때문이다.
-        const code = generateUniqueRoomCode(gameRooms)
+        // F-24(AC-02): 대기방 Map만 비교하면 **진행 중인 판의 코드**가 새 방에 재발급된다 —
+        // 그러면 그 코드를 아는 사람이 엉뚱한 대기방으로 들어가고, 진행 중 화면이 보여주는
+        // 코드가 더 이상 그 판을 가리키지 않는다. 대기방 밖의 예약(진행/종료 세션·시작 표식)을
+        // 함께 배제한다. 모든 예약이 소멸한 뒤의 재발급은 그대로 허용된다.
+        const code = generateUniqueRoomCode(gameRooms, { isReserved: isRoomCodeReserved })
         if (!code) {
             await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
             joined = false
@@ -1634,8 +1747,17 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (expectedRoom?.accessType === 'code') {
             room = gameRooms.get(expectedRoom.roomId)
             if (!room) {
-                if (isStartedRoomMark(`id:${expectedRoom.roomId}`)) {
-                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+                // F-24(AC-02): 표식보다 **세션 registry**를 먼저 본다 — 표식은 30분 TTL이라
+                // 그보다 긴 판에서는 "이미 시작됨"이 "방 없음"으로 바뀌어 버린다. 코드와
+                // roomId가 같은 세션을 가리킬 때만 그 세션의 사유를 쓴다.
+                const sessionState = gameSession.getRoomCodeSessionState({
+                    roomCode: normalizedCode,
+                    roomId: expectedRoom.roomId,
+                })
+                if (sessionState !== null) {
+                    emitRoomJoinFailed(socket, ...describeStartedRoomJoinFailure(sessionState.phase))
+                } else if (isStartedRoomMark(`id:${expectedRoom.roomId}`)) {
+                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.SESSION_ENDED, '이미 끝난 게임의 방입니다.')
                 } else {
                     emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
                 }
@@ -1657,8 +1779,17 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             //  - 그 코드의 방이 방금 게임을 시작했다면 "이미 시작됨"
             //  - roomId를 지목해 들어온 요청(공개방 목록 경유)이면 그 방이 사라진 것이므로 "방 없음"
             //  - 사용자가 직접 코드를 입력한 요청이면 입력한 코드가 어느 방과도 맞지 않는 것이므로 "코드 불일치"
+            // F-24(AC-02): 진행 중인 판의 코드는 표식 만료와 무관하게 "이미 시작됨"이고,
+            // 종료된 판의 코드는 "이미 끝난 게임"이다 — 둘을 한 코드로 답하면 결과 화면에서
+            // 코드를 복사해 준 참가자의 친구가 왜 못 들어오는지 알 수 없다.
+            const sessionState = gameSession.getRoomCodeSessionState({ roomCode: normalizedCode })
+            if (sessionState !== null) {
+                emitRoomJoinFailed(socket, ...describeStartedRoomJoinFailure(sessionState.phase))
+                return
+            }
             if (isStartedRoomMark(`code:${normalizedCode}`)) {
-                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+                // 세션은 이미 정리됐는데 표식만 남았다 — 그 판은 끝난 것이다.
+                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.SESSION_ENDED, '이미 끝난 게임의 방입니다.')
                 return
             }
             if (expectedRoom) {
@@ -4011,6 +4142,7 @@ module.exports = {
     __getBootEpochForTests,
     __seedAdmissionAttemptForTests,
     __expireAdmissionAttemptForTests,
+    __resetStartedRoomMarksForTests,
     __setUserRepositoryForTests,
     __setEconomyServiceForTests,
     __setGameInviteServiceForTests,
@@ -4023,6 +4155,8 @@ module.exports = {
     // 호출부·시험이 문자열을 복붙하지 않도록 그대로 다시 내보낸다.
     ROOM_SETTINGS_EVENTS,
     ROOM_SETTINGS_ERROR_CODES,
+    // F-24(AC-03): 코드 참가 거부 안내의 원본. 시험이 문구를 복붙하지 않게 노출한다.
+    JOIN_REQUEST_INVALID_MESSAGE,
     // F-21: 같은 이유로 추방 이벤트·코드도 kickReceiptStore 소유값을 그대로 다시 내보낸다.
     KICK_EVENTS: kickReceiptStore.KICK_EVENTS,
     KICK_ERROR_CODES: kickReceiptStore.KICK_ERROR_CODES,
@@ -4031,6 +4165,10 @@ module.exports = {
     __testables: {
         handleCreateRoom,
         handleJoinRoomByCode,
+        // F-24(AC-02/AC-03): 등록 경계의 형태 판정과 코드 예약 판정. 실제 등록 경로를 거치는
+        // 시험과 나란히, 판정 자체의 경계 조건도 직접 확인할 수 있게 한다.
+        validateJoinRoomByCodeRequest,
+        isRoomCodeReserved,
         handleGetCurrentRoom,
         handleGetPublicRooms,
         handleJoinPublicRoom,

@@ -59,6 +59,38 @@ function copySelfSubmissionFields(self) {
   return fields
 }
 
+/**
+ * F-24(AC-04/RESTORE-24): 서버가 실어 준 복원 원본을 **새 구조로** 옮긴다.
+ *
+ * 응답 객체를 그대로 들고 있으면 두 가지가 깨진다 — 호출부가 응답을 변형하면 store가 함께
+ * 오염되고, 서버가 허용 목록 밖 키를 실어 보낸 경우(구버전·오염 데이터) 그 키가 그대로
+ * 복원 경로로 흘러든다. settings는 store의 관심사가 아니므로 값 자체를 재해석하지 않되,
+ * **새 객체로 복사**해 참조를 끊는다(허용 목록 정제는 영속 경계인 nextRoomSettingsStore가
+ * 마지막으로 한 번 더 한다 — 두 경계가 모두 정제해야 어느 한쪽만 지나온 값이 없다).
+ *
+ * 모양이 아니면 null이다(fail-closed) — 그때 인게임 훅은 "복원 불가"로 표시한다.
+ */
+export function normalizeRoomSettingsSourceForStore(raw) {
+  return normalizeRoomSettingsSource(raw)
+}
+
+function normalizeRoomSettingsSource(raw) {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null
+  if (raw.settings === null || typeof raw.settings !== "object" || Array.isArray(raw.settings)) return null
+  if (raw.accessType !== "open" && raw.accessType !== "code") return null
+  const settings = {}
+  for (const [key, value] of Object.entries(raw.settings)) {
+    settings[key] = value !== null && typeof value === "object" && !Array.isArray(value)
+      ? { ...value }
+      : value
+  }
+  return {
+    accessType: raw.accessType,
+    settingsVersion: isNonNegativeInteger(raw.settingsVersion) ? raw.settingsVersion : null,
+    settings,
+  }
+}
+
 /** 공개 진행 수의 모양 검사. kind는 문자열이고 두 수는 음이 아닌 정수이거나 null이다. */
 function isPublicProgress(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false
@@ -407,6 +439,12 @@ export function applySessionSnapshotPure(current, response) {
     roomId: isNonEmptyString(response.roomId) ? response.roomId : null,
     roomInstanceId: isNonEmptyString(response.roomInstanceId) ? response.roomInstanceId : null,
     bootEpoch: isNonEmptyString(response.bootEpoch) ? response.bootEpoch : null,
+    // F-24(AC-01): 진행 중·종료 직후의 "방 코드 보기"가 새로고침 뒤에도 같은 값을 얻는다.
+    // 모양이 틀린 값은 null이다 — 화면은 그때 "확인할 수 없음"을 보여준다(더미를 만들지 않는다).
+    roomCode: isNonEmptyString(response.roomCode) ? response.roomCode : null,
+    // F-24(AC-04/RESTORE-24): 다음 방 설정 복원의 원본. 응답을 통째로 참조하지 않고 세 값만
+    // 새 구조로 옮긴다 — 허용 목록 밖의 폐기된 키는 여기서 상태로 만들어지지 않는다.
+    roomSettingsSource: normalizeRoomSettingsSource(response.roomSettingsSource),
     participationRevision,
     // 개인 제출 상태의 순서값. 이 값을 이어 두지 않으면 다음에 도착하는 옛 개인 사건이
     // 복원된 상태를 되돌릴 수 있다(store의 applySelfProgress가 같은 값을 본다).

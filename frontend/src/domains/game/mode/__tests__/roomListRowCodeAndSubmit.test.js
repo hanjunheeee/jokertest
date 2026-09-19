@@ -375,8 +375,22 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
   ],
   "domains/game/matching/components/RoomCodeViewModal.jsx": [
     [
-      /^import \{ (useId, )?useRef, useState \} from "react"$/,
+      /^import \{ (useEffect, )?(useId, )?useRef, useState \} from "react"$/,
       "로컬 복사 계약: 복사 오류 문구와 복사 버튼을 잇는 id를 useId로 만든다",
+    ],
+    [
+      /copyGenerationRef|invalidateCopyFeedback|^useEffect\(\(\) => \{$|^return \(\) => \{$|^const generation = |^\/\/ eslint-disable-next-line react-hooks\/exhaustive-deps$/,
+      "F-24 AC-01: 복사 완료는 비동기다 — 닫힘·코드 교체·언마운트마다 세대를 올려, 늦게 도착한" +
+        " 옛 완료가 지금 화면의 '복사됨'과 타이머를 건드리지 못하게 한다",
+    ],
+    [
+      /isValidRoomCode|canCopy|ROOM_CODE_COPY_RESULTS|resolveRoomCodeCopyStatus|[cC]opyStatus|COPY_BTN_(DISABLED_)?CLASS/,
+      "F-24 AC-01: 확인할 수 없는 코드에는 복사 진입 자체를 열지 않고, 도달한 상태를 흔들리지" +
+        " 않는 코드로 노출한다",
+    ],
+    [
+      /^const handleClose = \(\) => \{$|^\}$|^\},$|^\)$/,
+      "같은 두 계약: 세대 무효화를 effect·공통 핸들러로 묶으며 블록 경계 줄이 옮겨졌다",
     ],
     [
       /resolveRoomCodeCopy|normalizeRoomCode|displayRoomCode|ROOM_CODE_COPY_ERRORS|outcome/,
