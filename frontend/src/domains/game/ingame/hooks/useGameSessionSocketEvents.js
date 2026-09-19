@@ -370,6 +370,10 @@ export function useGameSessionSocketEvents() {
     // 그대로 store에 넘긴다 — applyTribunalResolved(→applyTribunalResolvedPure)가 gameId/
     // dayIndex/phase/defendantUuid 4종을 canonical과 비교해 stale이면 참조를 그대로 보존한다.
     const handleTribunalVoteResolved = (payload) => {
+      // F-23(AC-05 보수): handleNightResultApplied·handleParticipationChanged와 **똑같이**
+      // 등록 범위를 먼저 본다. 재판 판정은 사망과 승패를 함께 확정하는 공개 사건이라, 교체되기
+      // 전 옛 소켓·옛 신원의 구독이 늦게 받은 것을 지금 화면(종료 결과 포함)에 실으면 안 된다.
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const before = useInGameStore.getState().state
       // 유죄 판정도 승패를 확정할 수 있다 — 위 handleNightResultApplied와 같은 이유로 수신
       // 범위를 함께 넘긴다.
@@ -395,6 +399,10 @@ export function useGameSessionSocketEvents() {
      * 보완이며 종료 흐름 개편(F-22)이 아니다.
      */
     const handlePlayerEliminated = (payload) => {
+      // F-23(AC-05 보수): 위 공개 사건 핸들러들과 **똑같이** 등록 범위를 먼저 본다. 끊김 사망도
+      // 곧바로 승패를 확정할 수 있으므로, 옛 연결·옛 신원의 구독이 늦게 받은 사망 사건이 현재
+      // 화면의 canonical roster와 종료 결과를 바꾸지 못하게 한다.
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const players = current.state.players ?? []

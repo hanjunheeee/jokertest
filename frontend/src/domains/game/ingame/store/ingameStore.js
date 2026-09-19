@@ -256,12 +256,35 @@ let observedWinResult = null
  */
 let commitReceiptScope = null
 
-/** 이 커밋 동안만 수신 범위를 세워 둔다(중첩·예외에도 원래 값으로 되돌린다). */
-function commitWithReceipt(receipt, run) {
+/**
+ * 이 커밋 동안만 수신 범위를 세워 둔다(중첩·예외에도 원래 값으로 되돌린다).
+ *
+ * F-23(AC-05 보수): 세워 두기만 하는 것으로는 부족하다. **넘겨받은 수신 범위가 커밋하는 그
+ * 순간에도 현재 범위인가**를 set() updater 안에서 다시 확인한다 — 사건이 캡처된 뒤 소켓이
+ * 교체되거나 재연결됐거나 내 소속이 바뀌었으면, 교체되기 전 옛 구독이 늦게 받은 사건은 지금
+ * 화면의 사실이 아니다. 공개 사망·재판 결과는 그대로 승패(winResult)를 실을 수 있으므로 이
+ * 경계는 fail-closed여야 한다. 범위가 지났으면 updater를 **부르지 않고** current를 그대로
+ * 돌려주므로 state도 부수 기록(snapshotSeq·수신 증거)도 전부 참조 보존 no-op이다.
+ *
+ * 수신 범위를 **아예 넘기지 않은**(null) 호출은 예전 계약 그대로다. 그런 커밋은 계정 축을
+ * 모르는 기록으로만 남고, 그 기록은 isTerminalResultScopeCurrent가 현재로 인정하지 않는다
+ * (아래 참조 — "누가 받았는지 모른다"는 "지금 이 계정이 받았다"의 증거가 아니다). 여기서
+ * 커밋 자체까지 막으면 receipt를 쓰지 않는 기존 직접 호출부(추방 모달의 스냅샷 재적용 등)가
+ * 조용히 멈춘다 — applySessionSnapshot이 쓰던 `receiptContext !== null &&` 규칙을 그대로
+ * 이 한 곳으로 옮긴 것이다.
+ *
+ * @param {object|null} receipt 호출부가 사건·응답을 받은 그 순간에 캡처한 수신 범위.
+ * @param {Function} set zustand set(이 store를 만드는 클로저가 넘긴다).
+ * @param {Function} updater 기존 set() updater. 범위가 현재일 때만 불린다.
+ */
+function commitWithReceipt(receipt, set, updater) {
   const previous = commitReceiptScope
   commitReceiptScope = receipt ?? null
   try {
-    return run()
+    return set((current) => {
+      if (receipt !== null && receipt !== undefined && !isReceiptScopeCurrent(receipt, current)) return current
+      return updater(current)
+    })
   } finally {
     commitReceiptScope = previous
   }
@@ -529,7 +552,7 @@ export const useInGameStore = create((set) => ({
   // 전부 수신 범위(receipt)를 함께 받는다. 호출부(useGameSessionSocketEvents)가 사건 도착
   // 시점에 캡처한 범위이고, 없으면 계정 축을 모르는 기록으로 남는다(fail-closed).
   applyPlayerEliminated: (parsed, receipt = null) =>
-    commitWithReceipt(receipt, () => set((current) => applyPlayerEliminatedPure(current, parsed))),
+    commitWithReceipt(receipt, set, (current) => applyPlayerEliminatedPure(current, parsed)),
 
   /**
    * F-21(AC-03/AC-05): session_participation_changed 공개 방송을 반영한다.
@@ -662,7 +685,7 @@ export const useInGameStore = create((set) => ({
   // 넘긴다 — payload에서 읽지 않는다). ENDED 분기가 winResult를 실으면 아래 store 구독자가 그
   // 범위를 종료 결과의 수신 증거로 함께 적어 둔다.
   applyNightResultAppliedPayload: (payload, receipt = null) =>
-    commitWithReceipt(receipt, () => set((current) => {
+    commitWithReceipt(receipt, set, (current) => {
       if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
       if (typeof payload.gameId !== "string" || payload.gameId.trim().length === 0) return current
       if (!current.gameId || !current.state) return current
@@ -725,7 +748,7 @@ export const useInGameStore = create((set) => ({
           players: nextPlayers,
         },
       }
-    })),
+    }),
 
   // night_turn_started 방송(밤 안의 역할 턴 전이)을 반영한다. 호출부
   // (useGameSessionSocketEvents)가 이미 parseNightTurnStartedPayload로 검증한 값만 넘기지만,
@@ -857,12 +880,12 @@ export const useInGameStore = create((set) => ({
   // F-23(SPLIT-1): 유죄 판정이 곧바로 승패를 확정할 수 있다 — applyNightResultAppliedPayload와
   // 같은 이유로 수신 범위를 함께 받는다.
   applyTribunalResolved: (payload, receipt = null) =>
-    commitWithReceipt(receipt, () => set((current) => {
+    commitWithReceipt(receipt, set, (current) => {
       const patch = applyTribunalResolvedPure(current, payload)
       if (patch === current) return current
       if (patch.state?.phase !== "NIGHT") return patch
       return { ...patch, ...clearNightPrivateResultOnNightEntry(current) }
-    })),
+    }),
 
   // get_session_snapshot 재접속 응답을 반영한다. 검증·병합은 순수 함수 applySessionSnapshotPure에
   // 전부 위임하고(store 참조 보존 no-op 포함), 여기서는 실제로 반영된 경우에만 snapshotSeq를
@@ -878,8 +901,9 @@ export const useInGameStore = create((set) => ({
   // snapshotSeq·snapshotResultOwner를 **같은 set에서** 함께 저장한다. 형태 오류·ok:false·
   // 범위 불일치는 셋 모두 참조 보존 no-op이다.
   applySessionSnapshot: (response, receiptContext = null) =>
-    commitWithReceipt(receiptContext, () => set((current) => {
-      if (receiptContext !== null && !isReceiptScopeCurrent(receiptContext, current)) return current
+    // 범위 재확인은 commitWithReceipt가 소유한다(이 액션에 있던 검사를 그 한 곳으로 옮겼다 —
+    // 같은 규칙이 공개 사망·재판 결과 커밋에도 똑같이 걸리게 하기 위해서다).
+    commitWithReceipt(receiptContext, set, (current) => {
       const patch = applySessionSnapshotPure(current, response)
       if (patch === current) return current
       // F-23(AC-05): 기존 non-null 소속과 **다른 소속**을 주장하는 응답은 여기서 끝난다 —
@@ -894,7 +918,7 @@ export const useInGameStore = create((set) => ({
         snapshotSeq,
         snapshotResultOwner: buildSnapshotResultOwner(receiptContext, current.gameId ?? null, patch.state, snapshotSeq),
       }
-    })),
+    }),
 
   // 브라우저 새로고침으로 메모리 store가 비었어도 인증된 서버의 현재 세션 스냅샷을 한 번에
   // 복원한다. 이미 게임 상태가 있으면 기존 신뢰 경계를 우회하지 않도록 반드시 no-op 한다.
@@ -904,12 +928,12 @@ export const useInGameStore = create((set) => ({
   // 승격하지 못하게 막고, 응답이 주장하는 본인이 요청 계정과 다르면 아예 반영하지 않는다.
   // 이 커밋이 만드는 gameId/소속은 **후속 범위**로 원자적으로 채택한다.
   bootstrapSessionSnapshot: (response, receiptContext = null) =>
-    commitWithReceipt(receiptContext, () => set((current) => {
+    // 범위 재확인(빈 store이므로 요청의 gameId·membershipId는 둘 다 null이어야 한다)은
+    // commitWithReceipt가 소유한다 — 소속을 들고 있던 요청은 거기서 그대로 걸린다(그 화면은
+    // 이미 다른 판에 앉아 있었다는 뜻이다). 여기 남는 것은 이 액션 고유의 본인 일치 검사뿐이다.
+    commitWithReceipt(receiptContext, set, (current) => {
       if (current.gameId || current.state) return current
       if (receiptContext !== null) {
-        // 빈 store이므로 현재 소속은 반드시 null이다 — 소속을 들고 있던 요청은 이 검사에서
-        // 그대로 걸린다(그 화면은 이미 다른 판에 앉아 있었다는 뜻이다).
-        if (!isReceiptScopeCurrent(receiptContext, current)) return current
         if (receiptContext.accountId !== null && response?.self?.uuid !== receiptContext.accountId) return current
       }
       const patch = bootstrapSessionSnapshotPure(response)
@@ -925,7 +949,7 @@ export const useInGameStore = create((set) => ({
         snapshotResultOwner: buildSnapshotResultOwner(receiptContext, patch.gameId ?? null, patch.state, snapshotSeq),
         ...CLEARED_NIGHT_PRIVATE_RESULT,
       }
-    })),
+    }),
 
   /**
    * F-23(SPLIT-1): **확인하지 못한 종료 결과의 이동 근거만 걷어낸다.**
