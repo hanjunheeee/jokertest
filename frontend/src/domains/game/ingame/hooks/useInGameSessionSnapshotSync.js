@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import {
   getInGameIdentityScopeVersion,
+  isSameInGameReceiptScope,
   readInGameReceiptScope,
   subscribeInGameIdentityScope,
   useInGameStore,
@@ -165,12 +166,60 @@ export function useInGameSessionSnapshotSync() {
 
     const requestSnapshot = () => {
       const requestEpochVersion = epochVersionRef.current
+      // 이 세대에서 이미 요청을 보냈다면 다시 보내지 않는다 — StrictMode 이중 호출과, 같은
+      // 세대 안에서 connect 핸들러와 "이미 연결됨" 분기가 동시에 조건을 만족하는 경우를
+      // 하나의 네트워크 호출로 합친다.
+      if (requestedVersionRef.current === requestEpochVersion) return
+      requestedVersionRef.current = requestEpochVersion
+
+      const requestSocket = socket
+      const requestGameId = gameId
+      const requestAuthUuid = authUuid
+      // F-23(AC-05/AC-06): 요청을 **보내는 그 순간**의 신원을 함께 캡처한다. 같은 Socket 객체가
+      // 재연결되면 객체 동일성은 유지되고 id만 바뀌므로 id를 따로 들고 있어야 한다.
+      const requestIdentityGeneration = identityGeneration
+      const requestMembershipId = readCurrentMembershipId()
+      const requestSocketId = requestSocket?.id ?? null
+      // F-23(SPLIT-1): store에 그대로 건네 줄 수신 문맥. 응답 payload에서 읽지 않는다 —
+      // 이 한 벌이 "누가·어느 연결에서 요청했는가"의 유일한 근거다.
+      const receiptContext = readInGameReceiptScope({
+        accountId: requestAuthUuid, identityGeneration: requestIdentityGeneration,
+      })
+
+      /** 지금 이 순간의 범위. 요청 캡처와 끝맺기 판정이 같은 함수를 쓴다(기준이 갈리지 않는다). */
+      const readScopeNow = () => readInGameReceiptScope(readCurrentAuthScope())
+
       /**
-       * 이 세대의 요청이 현재 신원의 스냅샷을 **실제로 적용하고** 끝났다 — 보류를 그냥 푼다.
-       * 더 새로운 세대가 열려 있으면 그쪽 보류는 그쪽 요청이 끝맺는다(건드리지 않는다).
+       * F-23(AC-05 보수): **이 응답을 낳은 요청이 아직 현재의 것인가.**
+       *
+       * 예전에는 아래 두 끝맺기가 요청 세대(epochVersionRef)만 확인했다. 그 세대는 effect가
+       * 다시 돌아야 오르는 값이라, "재결속 도중 신원이 전이했지만 아직 React가 리렌더하지
+       * 않은" 창에서는 **옛 값 그대로**다 — 그 창에 도착한 옛 요청의 응답이 현재 신원이
+       * 짊어진 재결속 보류를 풀고 현재 종료 결과까지 무효화할 수 있었다(같은 판에서 소속만
+       * 교체되는 전이, 끊김, sid 재발급이 전부 이 창을 지난다).
+       *
+       * 그래서 판정의 기준을 ref가 아니라 **범위**로 옮긴다: 요청 시점에 캡처한 receipt
+       * scope(계정·인증 전이 세대·판·소속·소속 전이 세대·소켓 세대·sid·연결 상태)가 끝맺는
+       * 그 순간의 현재 범위와 **여덟 축 모두** 같을 때만 상태를 바꾼다. 하나라도 다르면 아무
+       * 것도 하지 않는다 — 그 보류는 현재 범위의 요청이 스스로 끝맺는다.
+       *
+       * 세대 검사는 그대로 함께 둔다(더 느슨해지지 않게 한다). 범위가 우연히 같은 채로 새
+       * 세대가 열리는 경우(같은 sid로 다시 열린 connect 등)는 세대만이 가른다.
+       *
+       * @param scopeAtDecision 끝맺기를 결정한 그 순간의 현재 범위. **이 요청 자신이 만든
+       *   store 변경 이전** 값이어야 한다 — 정상 복원이 gameId·소속을 채우면 범위가 바뀌는데,
+       *   그것을 이유로 자기 보류를 못 풀면 화면이 영영 갇힌다.
        */
-      const finishRebindApplied = () => {
-        if (epochVersionRef.current !== requestEpochVersion) return
+      const ownsCurrentScope = (scopeAtDecision) =>
+        epochVersionRef.current === requestEpochVersion
+        && isSameInGameReceiptScope(receiptContext, scopeAtDecision)
+
+      /**
+       * 이 요청이 현재 신원의 스냅샷을 **실제로 적용하고** 끝났다 — 보류를 그냥 푼다.
+       * 더 새로운 세대·다른 범위가 열려 있으면 그쪽 보류는 그쪽 요청이 끝맺는다(건드리지 않는다).
+       */
+      const finishRebindApplied = (scopeAtDecision) => {
+        if (!ownsCurrentScope(scopeAtDecision)) return
         setIdentityRebindPending(false)
       }
 
@@ -198,37 +247,17 @@ export function useInGameSessionSnapshotSync() {
        * 끝났다"와 **지금 이 순간의 인증 범위**만 알리고, 실제로 걷어낼지는 winResult에 함께
        * 적힌 수신 범위를 아는 invalidateUnconfirmedTerminalResult가 결정한다.
        *
-       * 현재 범위는 요청 시점 값이 아니라 **끝맺는 이 순간**에 다시 읽는다 — 요청을 보낸 뒤
-       * 인증이 A→B→A로 왕복했더라도 계정 값은 원래대로 돌아오므로, 그 구간을 드러내는 것은
-       * 지금 읽은 인증 전이 세대뿐이다(store도 연결도 그대로인 경우가 바로 그 자리다).
+       * 현재 범위는 요청 시점 값이 아니라 **끝맺는 이 순간**에 읽은 값(scopeAtDecision)이다 —
+       * 요청을 보낸 뒤 인증이 A→B→A로 왕복했더라도 계정 값은 원래대로 돌아오므로, 그 구간을
+       * 드러내는 것은 그때 읽은 인증 전이 세대뿐이다(store도 연결도 그대로인 경우가 바로 그
+       * 자리다). 그 범위가 이 요청의 범위와 다르면 여기서는 **아무것도 바꾸지 않는다**.
        */
-      const finishRebindUnapplied = () => {
-        if (epochVersionRef.current !== requestEpochVersion) return
+      const finishRebindUnapplied = (scopeAtDecision) => {
+        if (!ownsCurrentScope(scopeAtDecision)) return
         if (!getInGameSnapshotRebindPending()) return
-        useInGameStore
-          .getState()
-          .invalidateUnconfirmedTerminalResult(readInGameReceiptScope(readCurrentAuthScope()))
+        useInGameStore.getState().invalidateUnconfirmedTerminalResult(scopeAtDecision)
         setIdentityRebindPending(false)
       }
-      // 이 세대에서 이미 요청을 보냈다면 다시 보내지 않는다 — StrictMode 이중 호출과, 같은
-      // 세대 안에서 connect 핸들러와 "이미 연결됨" 분기가 동시에 조건을 만족하는 경우를
-      // 하나의 네트워크 호출로 합친다.
-      if (requestedVersionRef.current === requestEpochVersion) return
-      requestedVersionRef.current = requestEpochVersion
-
-      const requestSocket = socket
-      const requestGameId = gameId
-      const requestAuthUuid = authUuid
-      // F-23(AC-05/AC-06): 요청을 **보내는 그 순간**의 신원을 함께 캡처한다. 같은 Socket 객체가
-      // 재연결되면 객체 동일성은 유지되고 id만 바뀌므로 id를 따로 들고 있어야 한다.
-      const requestIdentityGeneration = identityGeneration
-      const requestMembershipId = readCurrentMembershipId()
-      const requestSocketId = requestSocket?.id ?? null
-      // F-23(SPLIT-1): store에 그대로 건네 줄 수신 문맥. 응답 payload에서 읽지 않는다 —
-      // 이 한 벌이 "누가·어느 연결에서 요청했는가"의 유일한 근거다.
-      const receiptContext = readInGameReceiptScope({
-        accountId: requestAuthUuid, identityGeneration: requestIdentityGeneration,
-      })
 
       /** 응답·실패·예외 어느 경로에서도 같은 기준으로 묻는다(한쪽만 느슨하면 그쪽으로 샌다). */
       const isStaleNow = () => {
@@ -279,11 +308,12 @@ export function useInGameSessionSnapshotSync() {
           .timeout(SESSION_SNAPSHOT_TIMEOUT_MS)
           .emitWithAck("get_session_snapshot", requestGameId ? { gameId: requestGameId } : {})
       } catch {
-        // 동기 전송 예외도 실패와 **같은 세대 검사**를 거친다(한쪽만 느슨하면 그쪽으로 샌다).
+        // 동기 전송 예외도 실패와 **같은 세대·범위 검사**를 거친다(한쪽만 느슨하면 그쪽으로 샌다).
         // 이 세대에는 더 이상 올 응답이 없다 — 적용하지 못한 채 끝났으므로 이동 근거를
         // 걷어낸 뒤 재결속 보류를 끝맺는다(무한 보류도, 옛 상태로의 이동도 만들지 않는다).
+        const scopeNow = readScopeNow()
         const stale = isStaleNow()
-        finishRebindUnapplied()
+        finishRebindUnapplied(scopeNow)
         if (stale) return
         if (!requestGameId) setBootstrapStatus("failed")
         return
@@ -291,14 +321,18 @@ export function useInGameSessionSnapshotSync() {
 
       ackPromise
         .then((response) => {
+          // 끝맺기 판정의 기준이 되는 현재 범위는 **이 요청이 store를 건드리기 전**에 읽는다 —
+          // 정상 복원이 gameId·소속을 채우면 범위가 바뀌는데, 그것을 자기 자신의 실격 근거로
+          // 삼으면 방금 성공한 요청이 자기 보류를 못 풀어 화면이 갇힌다.
+          const scopeOnArrival = readScopeNow()
           if (isStaleNow()) {
             // 이 응답은 지금 화면의 사실이 아니다 — 아무것도 적용하지 않는다.
-            finishRebindUnapplied()
+            finishRebindUnapplied(scopeOnArrival)
             return
           }
           if (!requestGameId) {
             if (response?.ok !== true) {
-              finishRebindUnapplied()
+              finishRebindUnapplied(scopeOnArrival)
               setBootstrapStatus("missing")
               return
             }
@@ -306,9 +340,9 @@ export function useInGameSessionSnapshotSync() {
             const recovered = Boolean(useInGameStore.getState().gameId)
             if (recovered) {
               rememberFulfilled()
-              finishRebindApplied()
+              finishRebindApplied(scopeOnArrival)
             } else {
-              finishRebindUnapplied()
+              finishRebindUnapplied(scopeOnArrival)
             }
             setBootstrapStatus(recovered ? "recovered" : "missing")
             return
@@ -324,10 +358,10 @@ export function useInGameSessionSnapshotSync() {
           useInGameStore.getState().applySessionSnapshot(response, receiptContext)
           if (useInGameStore.getState().snapshotSeq !== seqBefore) {
             rememberFulfilled()
-            finishRebindApplied()
+            finishRebindApplied(scopeOnArrival)
             return
           }
-          finishRebindUnapplied()
+          finishRebindUnapplied(scopeOnArrival)
         })
         .catch(() => {
           // 타임아웃/전송 오류: 조용히 무시한다. 다음 재연결이 새 세대로 다시 요청한다.
@@ -336,10 +370,11 @@ export function useInGameSessionSnapshotSync() {
           // 늦게 실패하는 동안 이미 새 게임·새 계정·새 연결이 들어와 있을 수 있는데, 그때
           // failed로 덮으면 방금 복원된 화면이 "세션 없음"으로 되돌아간다.
           //
-          // 세대 판정을 store 변경보다 **먼저** 읽는다 — 아래 무효화는 이 판정의 입력을 바꾸지
-          // 않지만, 두 읽기의 순서가 결과를 가르지 않는다는 사실을 코드에 남겨 둔다.
+          // 세대·범위 판정을 store 변경보다 **먼저** 읽는다 — 아래 무효화는 이 판정의 입력을
+          // 바꾸지 않지만, 두 읽기의 순서가 결과를 가르지 않는다는 사실을 코드에 남겨 둔다.
+          const scopeNow = readScopeNow()
           const stale = isStaleNow()
-          finishRebindUnapplied()
+          finishRebindUnapplied(scopeNow)
           if (stale) return
           if (!requestGameId) setBootstrapStatus("failed")
         })

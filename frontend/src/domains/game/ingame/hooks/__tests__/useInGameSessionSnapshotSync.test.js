@@ -84,6 +84,7 @@ const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const {
   useInGameSessionSnapshotSync,
   getInGameSnapshotRebindPending,
+  subscribeInGameSnapshotRebindPending,
 } = await import("../useInGameSessionSnapshotSync.js")
 
 function createFakeSessionSnapshotSocket() {
@@ -1393,6 +1394,99 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
     await flushMicrotasks()
   })
   assert.equal(hasResultNavigationBasis(), true, "현재 신원의 정상 스냅샷 뒤에도 결과 이동이 막혀 있다")
+
+  hook.unmount()
+})
+
+/**
+ * F-23(AC-05 보수): **끝맺기도 요청의 범위에 묶인다 — 세대 ref만으로는 부족하다.**
+ *
+ * 재결속 보류를 끝맺는 두 함수는 요청 세대(epochVersionRef)만 확인했다. 그 값은 effect가 다시
+ * 돌아야 오르므로, **신원이 전이했지만 아직 React가 리렌더하지 않은 창**에서는 옛 값 그대로다.
+ * 그 창에 도착한 **옛 요청의 stale 응답**은 그래서 "내 세대다"라고 판정하고, 현재 신원이 짊어진
+ * 재결속 보류를 풀면서 현재 범위의 종료 결과까지 무효화할 수 있었다.
+ *
+ * 그 창을 그대로 재현한다. 같은 판에서 내 소속만 바뀌는 전이(이탈→재입장)를 **리렌더 없이**
+ * 일으키고(같은 파일의 다른 시험들과 같은 기법이다 — 값만 바꾸면 훅의 deps는 아무것도 움직이지
+ * 않는다), 그 창에 옛 요청의 실패 응답을 떨어뜨린다. 옛 응답은 보류도 종료 결과도 건드리지
+ * 못해야 하고, 뒤이어 React가 그 전이를 따라잡아 보낸 **현재 요청**은 정상적으로 끝맺어야 한다
+ * (앞만 지키면 화면이 영영 갇히고, 뒤만 지키면 옛 응답이 현재 상태를 바꾼다).
+ */
+test("F-23(AC-05 보수): 재결속 중 effect 이전의 신원 전이 — 옛 요청의 stale 응답은 보류도 종료 결과도 바꾸지 못한다", async () => {
+  seedEndedStore({ gameId: "g-rebind" })
+  seedAuth("player-1")
+  setMyMembership("mem-1")
+  assert.equal(hasResultNavigationBasis(), true, "전제: 잔존 ENDED가 이동 근거를 갖고 있어야 한다")
+
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = "sock-1"
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  assert.equal(getInGameSnapshotRebindPending(), false, "전제: 마운트 자체는 전이가 아니다")
+
+  // 실제 재연결이 재결속 보류를 연다 — 이 요청이 곧 "옛 요청"이 된다.
+  act(() => {
+    fake.socket.id = "sock-2"
+    fake.socket.triggerConnect()
+  })
+  assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
+  assert.equal(fake.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
+  const staleRequest = fake.emitWithAckCalls[1]
+
+  // 그 응답을 기다리는 동안 소속이 바뀐다. 훅의 deps(socket·gameId·계정·인증 세대·소속 전이
+  // 세대)는 하나도 움직이지 않으므로 effect는 아직 돌지 않았고, 요청 세대도 그대로다 —
+  // 바로 이 창이 결함이 살던 자리다.
+  useInGameStore.getState().state.players[0].membershipId = "mem-2"
+
+  // 보류는 **최종값이 아니라 전이 기록**으로 본다. 옛 응답이 보류를 풀면 그 store 변경이
+  // 곧바로 새 effect를 돌려 보류를 다시 올리므로, 나중에 읽은 최종값은 양쪽이 똑같이 true다 —
+  // 그 값에 기대면 "풀렸다가 되돌아온" 경로가 조용히 통과한다. 옛 응답은 이 값을 한 번도
+  // 건드리지 않아야 한다.
+  const pendingTransitions = []
+  const unsubscribePending = subscribeInGameSnapshotRebindPending(
+    () => pendingTransitions.push(getInGameSnapshotRebindPending()),
+  )
+  const before = snapshotStoreFacts()
+  await act(async () => {
+    staleRequest.reject(new Error("operation has timed out"))
+    await flushMicrotasks()
+  })
+  unsubscribePending()
+
+  assert.deepEqual(
+    pendingTransitions, [],
+    "전이 이전 범위의 옛 응답이 현재 신원의 재결속 보류를 건드렸다",
+  )
+  assert.equal(getInGameSnapshotRebindPending(), true, "전제: 보류는 그대로 열려 있어야 한다")
+  assert.equal(
+    hasResultNavigationBasis(), true,
+    "전이 이전 범위의 옛 응답이 현재 범위의 종료 결과를 무효화했다",
+  )
+  assertStoreFactsUnchanged(before, "전이 이전 범위의 옛 응답")
+  assert.equal(fake.emitWithAckCalls.length, 2, "옛 응답이 아무것도 바꾸지 않았다면 새 요청도 없다")
+
+  // 이제 React가 그 전이를 따라잡는다(store의 전이 관측을 지나는 정상 커밋이다) — 현재 범위의
+  // 요청이 새로 나가고, 그 응답이 보류를 끝맺는다.
+  await act(async () => {
+    setMyMembership("mem-2")
+    await flushMicrotasks()
+  })
+  assert.equal(
+    fake.emitWithAckCalls.length, 3,
+    "전이 뒤 현재 신원의 요청이 재개되지 않으면 화면이 영영 확인 중에 갇힌다",
+  )
+  assert.equal(getInGameSnapshotRebindPending(), true, "전제: 전이 구간의 보류는 아직 열려 있다")
+
+  await act(async () => {
+    fake.emitWithAckCalls[2].resolve(endedSnapshotResponse({ gameId: "g-rebind" }))
+    await flushMicrotasks()
+  })
+
+  assert.equal(getInGameSnapshotRebindPending(), false, "보류가 남아 화면이 영영 갇힌다")
+  assert.equal(hasResultNavigationBasis(), true, "현재 요청의 정상 응답 뒤에도 결과 이동이 막혀 있다")
+  assert.equal(fake.emitWithAckCalls.length, 3, "정상 복원이 곧바로 다음 요청을 만들어 되먹임이 된다")
 
   hook.unmount()
 })
