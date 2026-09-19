@@ -12,7 +12,13 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
 // 같은 신호를 받는다.
 import { refreshAccountCaches, ACCOUNT_CACHE_SCOPES } from "../../../user/utils/accountCacheRefresh.js"
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
-import { useInGameStore, isCurrentGameKickEvent } from "../store/ingameStore.js"
+import {
+  getInGameIdentityScopeVersion,
+  isCurrentGameKickEvent,
+  readInGameReceiptScope,
+  subscribeInGameIdentityScope,
+  useInGameStore,
+} from "../store/ingameStore.js"
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
@@ -47,6 +53,42 @@ const VALID_WINNERS = new Set(["CITIZEN", "JOKER"])
 function currentAccountId() {
   const { user, isLoggedIn } = useAuthStore.getState()
   return isLoggedIn && user?.uuid ? user.uuid : null
+}
+
+/** 지금 이 순간의 수신 범위(계정 축 + store가 소유한 게임·소속·연결 축). */
+function currentReceiptScope() {
+  return readInGameReceiptScope({
+    accountId: currentAccountId(),
+    identityGeneration: useAuthStore.getState().identityGeneration ?? null,
+  })
+}
+
+/**
+ * F-23(AC-05/SPLIT-1): 이 구독이 **등록된 그 순간**의 범위와 지금이 같은가.
+ *
+ * 이 훅은 ProtectedRoute에 장착돼 **로그인 직후의 로비에서도** 살아 있다. 그래서 계정이나
+ * 게임이 아직 없던 시점에 등록된 구독이 그대로 남아 있을 수 있는데, 그때는 그 축으로 판정할
+ * 것이 없다 — "아직 모른다"와 "이미 지나갔다"는 다른 사실이고, 앞의 것을 stale로 다루면
+ * 정상 진입의 첫 사건들이 통째로 사라진다. 아래 effect가 계정·소속 축의 전이마다 현재 범위로
+ * 다시 등록하므로, 비어 있던 축은 그 재등록에서 채워진다.
+ *
+ * 연결 축은 등록 시점이 언제든 항상 본다 — 소켓이 교체됐거나 그 사이 끊겼거나 재연결로 id가
+ * 바뀐 뒤 도착한 사건은 이 화면이 보고 있는 연결의 사실이 아니다.
+ */
+function isRegistrationScopeCurrent(registered) {
+  const now = currentReceiptScope()
+  if (registered.socketEpoch !== now.socketEpoch) return false
+  if (registered.socketId !== now.socketId) return false
+  if (registered.socketConnected !== now.socketConnected) return false
+  if (registered.accountId !== null) {
+    if (registered.accountId !== now.accountId) return false
+    if (registered.identityGeneration !== now.identityGeneration) return false
+  }
+  if (registered.gameId === null) return true
+  if (registered.gameId !== now.gameId) return false
+  if (registered.membershipId !== now.membershipId) return false
+  if (registered.membershipEpoch !== now.membershipEpoch) return false
+  return true
 }
 
 /** 게임 범위 사건 하나를 공통 재생기로 넘긴다. 절대 던지지 않는다. */
@@ -105,9 +147,20 @@ export function useGameSessionSocketEvents() {
   // 참고) 구독 대상으로 필요하다 — game_ended/phase_changed 핸들러는 호출 시점에 store를
   // 직접 다시 읽으므로 이 값에 의존하지 않는다.
   const gameId = useInGameStore((s) => s.gameId)
+  // F-23(AC-05/SPLIT-1): 계정·소속 축이 바뀌면 이 구독도 **현재 범위로 다시** 등록한다.
+  // 그러지 않으면 전이 뒤에도 옛 범위의 콜백만 남아, 새 신원의 정상 사건까지 거부된다.
+  const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
+  const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
+  const identityScopeVersion = useSyncExternalStore(
+    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+  )
 
   useEffect(() => {
     if (!socket) return
+    // 이 구독이 등록된 그 순간의 범위. 아래 공개 결과·개인 결과·참여 변경 핸들러는 사건이
+    // 도착할 때마다 이 값과 현재를 대조한다 — effect 정리가 아직 돌지 않은 구간에 옛 연결·
+    // 옛 계정의 사건이 canonical 사망·참여·종료를 저장하지 못하게 한다.
+    const registeredScope = currentReceiptScope()
     const finalize = buildFinalizer(navigate)
     const handleGameEnded = createGameEndedHandler({
       // 클로저로 렌더 시점 gameId를 캡처하지 않고, 이벤트가 실제로 도착한 시점에
@@ -138,6 +191,7 @@ export function useGameSessionSocketEvents() {
     // 호출 시점의 store에서 직접 읽는다(렌더 시점 클로저를 캡처하지 않음 — 위 handleGameEnded와
     // 동일한 이유). 파서를 통과한 값만 store action으로 넘긴다.
     const handleNightResultApplied = (payload) => {
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const canonicalPlayerIds = new Set((current.state.players ?? []).map((p) => p.uuid))
@@ -163,6 +217,7 @@ export function useGameSessionSocketEvents() {
     // 검증에 필요한 gameId/dayIndex/phase/self는 호출 시점의 store에서 직접 읽는다(위
     // handleNightResultApplied와 동일한 이유 — 렌더 시점 클로저를 캡처하지 않는다).
     const handleNightActionResult = (payload) => {
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const parsed = parseInGameNightPrivateResultPayload({
@@ -356,6 +411,9 @@ export function useGameSessionSocketEvents() {
      * 사망도 전이도 아니다.
      */
     const handleParticipationChanged = (payload) => {
+      // F-23(SPLIT-1): 참여 변경은 소속 그 자체를 말하는 사건이다 — 등록 당시와 다른 신원·
+      // 다른 연결에서 온 것이면 지금 화면의 참여 상태를 바꿀 근거가 되지 않는다.
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       useInGameStore.getState().applyParticipationChanged(payload)
     }
 
@@ -467,7 +525,7 @@ export function useGameSessionSocketEvents() {
       detachNightTurnListeners()
       socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
     }
-  }, [socket, navigate])
+  }, [socket, navigate, authUuid, identityGeneration, identityScopeVersion])
 
   /**
    * F-21(AC-03/A-10): **신호를 못 받았을 수 있는 전이**에서 계정 캐시를 서버 값으로 수렴시킨다.

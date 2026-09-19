@@ -34,7 +34,12 @@ installDomGlobal(
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-const { renderHook } = await import("@testing-library/react")
+const { renderHook, cleanup } = await import("@testing-library/react")
+
+// 이 파일의 시험들은 각자 마지막에 unmount한다. 다만 단언이 먼저 실패하면 그 줄에 닿지 못해
+// 훅이 마운트된 채로 남고, 그 훅은 이후 시험의 setFakeSocket에 반응해 **남의 소켓으로** 요청을
+// 보낸다 — 실패 하나가 뒤따르는 시험들의 요청 수를 전부 오염시킨다. 실패를 그 시험 안에 가둔다.
+test.afterEach(() => cleanup())
 
 // useInGameSessionSnapshotSync이 module 최상단에서 import하는 socketClient(getSocket/subscribeSocket)를
 // 실제 mount 테스트에서 제어 가능한 fake로 교체한다. mock.module은 아직 로드되지 않은 specifier에만
@@ -74,7 +79,7 @@ mock.module("../../../../../shared/socket/socketClient.js", {
   },
 })
 
-const { useInGameStore } = await import("../../store/ingameStore.js")
+const { useInGameStore, readInGameReceiptScope } = await import("../../store/ingameStore.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { useInGameSessionSnapshotSync } = await import("../useInGameSessionSnapshotSync.js")
 
@@ -156,20 +161,64 @@ function seedAuth(uuid) {
   useAuthStore.setState({ user: { uuid }, isLoggedIn: true, loggedOutIntentionally: false })
 }
 
+/**
+ * F-23(SPLIT-1): 같은 판·같은 계정에서 **내 소속만** 바꾼다(이탈→재입장과 같은 전이다).
+ * 실제 store 액션 경로(setState)로 바꿔 store가 소유한 전이 관측을 그대로 통과시킨다 —
+ * 값을 몰래 mutate하면 그 전이 자체가 일어나지 않은 것이 되어 시험이 무력해진다.
+ */
+function setMyMembership(membershipId) {
+  useInGameStore.setState((s) => ({
+    state: { ...s.state, players: s.state.players.map((p) => ({ ...p, membershipId })) },
+  }))
+}
+
+const readMyMembership = () =>
+  useInGameStore.getState().state?.players?.[0]?.membershipId ?? null
+
+/** 공개 결과 하나가 실린 정상 응답(수신 증거가 실제로 만들어지는지 보기 위한 fixture). */
+function buildSnapshotResponseWithNightResult({ gameId, playerUuid = "player-1", dayIndex = 1 }) {
+  return {
+    ...buildValidSnapshotResponse({ gameId, playerUuid, phase: "DAY", dayIndex }),
+    dayPhase: "DAY_DISCUSSION",
+    nightResult: {
+      dayIndex, victimUuid: playerUuid,
+      deathReveals: [{ victimUuid: playerUuid, source: "JOKER" }],
+    },
+  }
+}
+
 // applySessionSnapshot 호출을 실제 구현을 그대로 위임하며 세면서, 이후 캡처하는 wrapper가
 // 이전 wrapper를 감싸는 형태로 쌓여도(파일 안 여러 테스트가 각자 wrapApplySessionSnapshot을
 // 부르므로) 실제 병합 로직은 항상 정확히 한 번만 실행된다 — 각 테스트는 자기 자신의 calls
 // 배열만 관찰한다.
+//
+// F-23(SPLIT-1): wrapper는 호출부가 넘긴 **수신 문맥까지** 원래 액션에 그대로 전달해야 한다.
+// 그러지 않으면 wrapper를 끼운 시험에서만 store가 문맥 없이 적용하게 되어, 실제 화면과 다른
+// 경로를 검사하게 된다(공개 결과의 수신 증거가 시험에서만 사라진다).
 function wrapApplySessionSnapshot() {
   const calls = []
   const original = useInGameStore.getState().applySessionSnapshot
   useInGameStore.setState({
-    applySessionSnapshot: (response) => {
+    applySessionSnapshot: (response, receiptContext) => {
       calls.push(response)
-      return original(response)
+      return original(response, receiptContext)
     },
   })
   return calls
+}
+
+/** 그 시험이 관찰할 수 있는 "바뀌면 안 되는 것" 전부를 한 번에 찍어 둔다. */
+function snapshotStoreFacts() {
+  const { state, snapshotSeq, snapshotResultOwner, gameId } = useInGameStore.getState()
+  return { state, snapshotSeq, snapshotResultOwner, gameId }
+}
+
+function assertStoreFactsUnchanged(before, message) {
+  const after = snapshotStoreFacts()
+  assert.equal(after.state, before.state, `${message}: state 참조가 바뀌었다`)
+  assert.equal(after.snapshotSeq, before.snapshotSeq, `${message}: snapshotSeq가 올랐다`)
+  assert.equal(after.snapshotResultOwner, before.snapshotResultOwner, `${message}: 수신 증거가 바뀌었다`)
+  assert.equal(after.gameId, before.gameId, `${message}: gameId가 바뀌었다`)
 }
 
 test("이미 연결된 socket으로 활성화하면 connect 리스너 1개 등록 + get_session_snapshot을 정확히 { gameId }로 1회 요청한다", () => {
@@ -737,4 +786,185 @@ test("빈 인게임 store에 활성 게임이 없다는 응답이 오면 missing
   assert.equal(useInGameStore.getState().gameId, null)
   assert.equal(hook.result.current, "missing")
   hook.unmount()
+})
+
+// ── F-23(SPLIT-1): 값이 원래대로 돌아오는 전이와 요청 재개 ────────────────────
+//
+// 아래 시험들이 함께 고정하는 것은 두 가지다. 옛 응답은 **아무것도** 바꾸지 못하고(state 참조·
+// snapshotSeq·수신 증거·bootstrapStatus), 그러면서도 현재 신원의 요청은 반드시 재개된다.
+// 앞의 것만 지키면 화면이 영영 확인 중에 갇히고, 뒤의 것만 지키면 옛 사실이 내려앉는다.
+
+test("F-23(SPLIT-1): 소속 A→B→A 왕복을 지나온 옛 응답은 아무것도 바꾸지 못하고, 현재 신원의 요청은 재개된다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  setMyMembership("mem-a")
+
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = "sock-1"
+  setFakeSocket(fake.socket)
+
+  const applyCalls = wrapApplySessionSnapshot()
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  const pendingFromA = fake.emitWithAckCalls[0]
+  assert.ok(pendingFromA, "전제: 첫 요청이 나가야 한다")
+
+  // 같은 act 배치 안에서 A→B→A. 값은 원래대로 돌아오지만 전이는 두 번 일어났다.
+  await act(async () => {
+    setMyMembership("mem-b")
+    setMyMembership("mem-a")
+    await flushMicrotasks()
+  })
+
+  assert.equal(readMyMembership(), "mem-a", "전제: 소속 값은 원래대로 돌아왔다")
+  assert.equal(
+    fake.emitWithAckCalls.length, 2,
+    "소속 전이 뒤 현재 신원의 요청이 재개되지 않으면 화면이 영영 확인 중에 갇힌다",
+  )
+
+  const before = snapshotStoreFacts()
+  await act(async () => {
+    pendingFromA.resolve(buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 3 }))
+    await flushMicrotasks()
+  })
+  assert.equal(applyCalls.length, 0, "왕복을 지나온 옛 응답이 반영됐다")
+  assertStoreFactsUnchanged(before, "A→B→A를 지나온 옛 응답")
+
+  // 현재 신원의 요청은 정상 반영되고, 그 결과에는 이 신원의 수신 증거가 붙는다.
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 4 }))
+    await flushMicrotasks()
+  })
+  assert.equal(applyCalls.length, 1, "현재 신원의 요청까지 막혔다")
+  assert.equal(useInGameStore.getState().state.dayIndex, 4)
+  const owner = useInGameStore.getState().snapshotResultOwner
+  assert.ok(owner, "검증된 공개 결과에 수신 증거가 붙지 않았다")
+  assert.equal(owner.accountId, "player-1")
+  assert.equal(owner.gameId, "g1")
+  assert.equal(owner.snapshotSeq, useInGameStore.getState().snapshotSeq)
+
+  hook.unmount()
+})
+
+test("F-23(SPLIT-1): 연결이 끊긴 뒤 도착한 응답은 반영되지 않고, 다시 연결되면 현재 요청이 재개된다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = "sock-1"
+  setFakeSocket(fake.socket)
+
+  const applyCalls = wrapApplySessionSnapshot()
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  const pending = fake.emitWithAckCalls[0]
+
+  // 끊김: 객체도 id도 그대로일 수 있지만 이 연결은 이미 죽었다.
+  fake.socket.connected = false
+  const before = snapshotStoreFacts()
+  await act(async () => {
+    pending.resolve(buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 2 }))
+    await flushMicrotasks()
+  })
+  assert.equal(applyCalls.length, 0, "끊긴 연결에서 온 응답이 반영됐다")
+  assertStoreFactsUnchanged(before, "끊긴 연결의 응답")
+
+  // 실제 재연결: 새 id가 발급되고 그 연결에서 다시 요청한다.
+  act(() => {
+    fake.socket.connected = true
+    fake.socket.id = "sock-2"
+    fake.socket.triggerConnect()
+  })
+  assert.equal(fake.emitWithAckCalls.length, 2, "재연결에서 현재 요청이 재개되지 않았다")
+
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 2 }))
+    await flushMicrotasks()
+  })
+  assert.equal(applyCalls.length, 1, "재연결 뒤의 정상 응답까지 막혔다")
+  assert.equal(useInGameStore.getState().snapshotResultOwner.socketId, "sock-2",
+    "수신 증거가 응답을 실제로 받은 연결을 가리키지 않는다")
+
+  hook.unmount()
+})
+
+test("F-23(SPLIT-1): 전송 자체가 동기 예외로 실패해도 같은 세대 검사를 거쳐 유한 상태로 끝맺는다", () => {
+  useInGameStore.setState({ gameId: null, state: null, error: null })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.emitWithAck = () => { throw new Error("transport closed") }
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+
+  assert.equal(hook.result.current, "failed", "동기 전송 예외가 확인 중으로 남았다")
+  assert.equal(useInGameStore.getState().gameId, null)
+
+  hook.unmount()
+})
+
+test("F-23(SPLIT-1): 형태 오류·실패 응답은 state·snapshotSeq·수신 증거를 모두 참조 보존한다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  const before = snapshotStoreFacts()
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve({ ok: true, gameId: "g1", phase: "NOT_A_PHASE" })
+    await flushMicrotasks()
+  })
+  assertStoreFactsUnchanged(before, "형태가 잘못된 응답")
+
+  act(() => fake.socket.triggerConnect())
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve({ ok: false, code: "INTERNAL_ERROR" })
+    await flushMicrotasks()
+  })
+  assertStoreFactsUnchanged(before, "ok:false 응답")
+
+  hook.unmount()
+})
+
+test("F-23(SPLIT-1): 빈 store bootstrap은 요청 계정과 다른 본인을 주장하는 응답을 반영하지 않는다", async () => {
+  useInGameStore.setState({ gameId: null, state: null, error: null })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  await act(async () => {
+    // 서버가 돌려준 self가 이 요청을 보낸 계정이 아니다 — 남의 세션을 내 화면으로 복원하지 않는다.
+    fake.emitWithAckCalls[0].resolve(buildValidSnapshotResponse({
+      gameId: "g-other", playerUuid: "player-9", phase: "ROLE_REVEAL",
+    }))
+    await flushMicrotasks()
+  })
+
+  assert.equal(useInGameStore.getState().gameId, null, "남의 본인을 주장하는 응답으로 복원됐다")
+  assert.equal(hook.result.current, "missing")
+  hook.unmount()
+})
+
+test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권위로 승격되지 않는다", () => {
+  useInGameStore.setState({
+    gameId: null, state: null, error: null, snapshotSeq: 0, snapshotResultOwner: null,
+  })
+  // 빈 store에서 만든 정상 문맥에 "그 사이 이미 소속이 붙었다"는 사실만 얹는다.
+  const receipt = {
+    ...readInGameReceiptScope({ accountId: "player-1", identityGeneration: null }),
+    membershipId: "mem-already-seated",
+  }
+  const before = snapshotStoreFacts()
+
+  useInGameStore.getState().bootstrapSessionSnapshot(
+    buildValidSnapshotResponse({ gameId: "g-b", playerUuid: "player-1", phase: "ROLE_REVEAL" }),
+    receipt,
+  )
+
+  assertStoreFactsUnchanged(before, "이미 소속을 가진 요청의 bootstrap 응답")
 })

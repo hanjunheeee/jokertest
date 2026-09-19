@@ -15,6 +15,17 @@
  * 세 축은 createLeaveGameSessionRequest가 이미 쓰는 것과 **같은 신원 축**이다(두 흐름이 같은
  * 늦은 응답을 두고 경합하므로 판정 기준이 갈리면 한쪽만 통과한다).
  *
+ * F-23(SPLIT-1): 값 비교로는 끝내 드러나지 않는 전이가 셋 더 있다. 값이 **원래대로 돌아오는**
+ * 왕복이다:
+ *
+ *   - 소속 A→B→A: membershipId가 같은 값으로 돌아온다. 그 사이 두 번 전이했다는 사실은
+ *     단조 전이 **횟수**(membershipEpoch)에만 남는다.
+ *   - 소켓 객체 교체 뒤 원래 객체로의 복귀: 참조 비교가 다시 같아진다(socketEpoch).
+ *   - 연결이 끊긴 채 도착한 응답: id·객체는 그대로여도 이 연결은 이미 죽었다(socketConnected).
+ *
+ * 세 값은 전부 ingameStore가 store 수명에서 한 벌만 유지하는 관측에서 나온다 — 요청과 응답이
+ * 같은 원천을 읽어야 기준이 갈리지 않는다.
+ *
  * 전달되지 않은 축은 양쪽 모두 undefined라 항상 같다 — 옛 호출부를 깨지 않는다.
  */
 export function isStaleSessionSnapshotAckResponse({
@@ -33,6 +44,12 @@ export function isStaleSessionSnapshotAckResponse({
   currentMembershipId,
   requestSocketId,
   currentSocketId,
+  requestMembershipEpoch,
+  currentMembershipEpoch,
+  requestSocketEpoch,
+  currentSocketEpoch,
+  requestSocketConnected,
+  currentSocketConnected,
 }) {
   if (!mounted) return true
   if (requestEpochVersion !== currentEpochVersion) return true
@@ -42,5 +59,8 @@ export function isStaleSessionSnapshotAckResponse({
   if (requestIdentityGeneration !== currentIdentityGeneration) return true
   if (requestMembershipId !== currentMembershipId) return true
   if (requestSocketId !== currentSocketId) return true
+  if (requestMembershipEpoch !== currentMembershipEpoch) return true
+  if (requestSocketEpoch !== currentSocketEpoch) return true
+  if (requestSocketConnected !== currentSocketConnected) return true
   return false
 }

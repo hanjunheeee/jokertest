@@ -1,5 +1,6 @@
 // 파일 역할: ingameStore.js - 전역 상태 store입니다.
 import { create } from "zustand"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
 import { applyPlayerEliminatedPure } from "./applyPlayerEliminated.js"
 import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "./applySessionSnapshot.js"
@@ -24,6 +25,180 @@ const CLEARED_NIGHT_PRIVATE_RESULT = Object.freeze({ nightPrivateResult: null })
  */
 function clearNightPrivateResultOnNightEntry(current) {
   return current.state?.phase === "NIGHT" ? null : CLEARED_NIGHT_PRIVATE_RESULT
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// F-23(AC-05/AC-06/SPLIT-1/SPLIT-2): **지금 이 화면의 신원 범위**
+//
+// 이 store가 소유하는 "범위"는 두 축으로 나뉜다. 둘을 한 값으로 뭉치면 둘 중 하나는 반드시
+// 틀린 쪽으로 새어 나간다.
+//
+//   1. 계정/소속 축 — gameId · 이 세션이 말하는 본인(state.self.uuid) · 그 본인의
+//      membershipId · 그 셋이 실제로 바뀐 횟수(membershipEpoch).
+//      값 비교만으로는 같은 판의 이탈→재입장(A→B→A)을 구별할 수 없다. 값이 원래대로
+//      돌아오기 때문이다 — 전이 **횟수**만이 그 구간을 드러낸다. zustand의 구독은 set마다
+//      동기적으로 불리므로, 같은 React 배치 안의 A→B→A도 두 전이로 남는다.
+//
+//   2. 연결 축 — 소켓 객체 세대(socketEpoch) · 실제 connect/disconnect 세대(connectEpoch) ·
+//      그 순간의 socket.id. 같은 Socket 객체가 재연결되면 객체 동일성은 유지되고 id만 바뀐다.
+//
+// 화면 선택(사망 후 계속 보기)은 1번 축에만 묶이고(연결이 끊겼다고 다시 묻지 않는다), 공개
+// 결과의 **수신 증거**는 두 축 모두에 묶인다(다른 연결에서 받은 것은 이 연결의 사실이 아니다).
+//
+// 소켓 **객체 참조**는 이 모듈 안에만 둔다 — store 상태 트리에 넣으면 직렬화도 순회도 불가능한
+// 값이 들어가고, 그 아래로 감사가 지나갈 수 없다. 상태에 남기는 것은 세대 수와 id 문자열뿐이다.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** 이 세션이 말하는 본인의 소속 식별자. 본인을 모르면 null이다. */
+function readSelfMembershipId(state) {
+  const me = state?.self?.uuid ?? null
+  if (!me) return null
+  return (state?.players ?? []).find((player) => player?.uuid === me)?.membershipId ?? null
+}
+
+let membershipEpoch = 0
+let observedGameId
+let observedSelfUuid
+let observedMembershipId
+
+let identityScopeVersion = 0
+const identityScopeListeners = new Set()
+
+/**
+ * 계정/소속 축의 전이를 한 번 기록한다. 실제로 바뀐 경우에만 세대가 오르고, 그 세대는
+ * **단조**다 — clearGame으로도 0으로 되돌리지 않는다(되돌리면 그 사이에 날아간 옛 요청이
+ * 다시 현재처럼 보인다).
+ *
+ * 같은 전이를 두 번 세지 않는다: 스냅샷 적용처럼 자기 커밋 안에서 먼저 기록한 전이는 그
+ * 직후 store 구독자가 같은 값을 다시 관측하므로 변화가 없어 그대로 지나간다.
+ */
+function adoptIdentityScope(gameId, state) {
+  const selfUuid = state?.self?.uuid ?? null
+  const membershipId = readSelfMembershipId(state)
+  if (observedGameId === gameId && observedSelfUuid === selfUuid && observedMembershipId === membershipId) {
+    return membershipEpoch
+  }
+  observedGameId = gameId
+  observedSelfUuid = selfUuid
+  observedMembershipId = membershipId
+  membershipEpoch += 1
+  identityScopeVersion += 1
+  for (const listener of [...identityScopeListeners]) listener()
+  return membershipEpoch
+}
+
+/**
+ * 계정/소속 축이 바뀔 때마다 오르는 단조 값. useSyncExternalStore의 getSnapshot으로 그대로
+ * 쓸 수 있도록 원시값을 돌려준다(같은 범위에서는 몇 번을 물어도 같은 값이다).
+ */
+export function getInGameIdentityScopeVersion() {
+  return identityScopeVersion
+}
+
+export function subscribeInGameIdentityScope(listener) {
+  identityScopeListeners.add(listener)
+  return () => identityScopeListeners.delete(listener)
+}
+
+// ── 연결 축 관측(모듈 수명에서 한 벌) ────────────────────────────────────────
+//
+// React 컴포넌트가 아니라 모듈이 소유한다. StrictMode의 setup→cleanup→setup은 컴포넌트의
+// 일이므로 이 관측을 다시 만들지 않고, 따라서 그것만으로 세대가 오르지 않는다.
+//
+// 연결 수명은 **소켓 자체에 리스너를 걸지 않고** 읽는다. 걸어야 할 이유가 없기 때문이다:
+// 한 연결을 다른 연결과 가르는 값이 이미 소켓 안에 있다(교체는 객체 참조, 재연결은 새 id,
+// 끊김은 connected=false — socket.io는 재연결마다 새 sid를 발급하고 끊길 때 id를 지운다).
+// 세 값을 요청 시점과 응답 시점에 그대로 비교하면 "다른 연결에서 받은 증거"는 전부 걸린다.
+// 대신 이 모듈이 다른 기능의 리스너 집합을 늘리지 않으므로, 같은 소켓을 쓰는 화면들의
+// "자기 리스너만 해제한다"는 기존 계약을 한 줄도 건드리지 않는다.
+const NO_SOCKET_OBSERVED = Symbol("no-socket-observed")
+let socketEpoch = 0
+let observedSocket = NO_SOCKET_OBSERVED
+
+function rebindConnectionScope() {
+  const next = getSocket() ?? null
+  if (observedSocket === next) return
+  observedSocket = next
+  // 객체가 바뀌면 연결 수명도 새로 열린다 — 옛 연결에서 받은 증거는 여기서 끊긴다.
+  socketEpoch += 1
+}
+
+subscribeSocket(rebindConnectionScope)
+rebindConnectionScope()
+
+/**
+ * 요청을 **보내는 그 순간**의 범위를 한 벌로 캡처한다.
+ *
+ * 계정 축(accountId·identityGeneration)은 이 store가 읽을 수 없으므로 호출부(인증을 아는 훅)가
+ * 넣어 준다. 나머지는 전부 이 모듈이 소유한 관측에서 읽는다 — 요청 시점과 응답 시점이 같은
+ * 함수를 쓰므로 판정 기준이 갈리지 않는다.
+ */
+export function readInGameReceiptScope({ accountId = null, identityGeneration = null } = {}) {
+  const { gameId, state } = useInGameStore.getState()
+  const socket = getSocket()
+  return {
+    accountId,
+    identityGeneration,
+    gameId: gameId ?? null,
+    membershipId: readSelfMembershipId(state),
+    membershipEpoch,
+    socketEpoch,
+    socketId: socket?.id ?? null,
+    socketConnected: socket?.connected === true,
+  }
+}
+
+/** 두 범위가 모든 축에서 같은가. 하나라도 없거나 다르면 false다(fail-closed). */
+export function isSameInGameReceiptScope(a, b) {
+  if (a === null || typeof a !== "object" || b === null || typeof b !== "object") return false
+  return a.accountId === b.accountId
+    && a.identityGeneration === b.identityGeneration
+    && a.gameId === b.gameId
+    && a.membershipId === b.membershipId
+    && a.membershipEpoch === b.membershipEpoch
+    && a.socketEpoch === b.socketEpoch
+    && a.socketId === b.socketId
+    && a.socketConnected === b.socketConnected
+}
+
+/**
+ * 적용 직전에 이 store가 소유한 축만 다시 맞춰 본다(계정 축은 인증을 아는 호출부가 응답
+ * 직전에 같은 기준으로 확인하고, 그 값은 아래 소유권에 그대로 기록된다).
+ *
+ * @param {object} current set() updater가 받은 **아직 커밋되지 않은** 현재 상태.
+ */
+function isReceiptScopeCurrent(receipt, current) {
+  if (receipt === null || typeof receipt !== "object") return false
+  if (receipt.gameId !== (current.gameId ?? null)) return false
+  if (receipt.membershipId !== readSelfMembershipId(current.state)) return false
+  if (receipt.membershipEpoch !== membershipEpoch) return false
+  if (receipt.socketEpoch !== socketEpoch) return false
+  if (receipt.socketId !== (getSocket()?.id ?? null)) return false
+  if (receipt.socketConnected !== (getSocket()?.connected === true)) return false
+  return true
+}
+
+/**
+ * 방금 저장한 **공개 밤 결과**가 어느 신원·어느 연결에서 검증된 것인지를 기록한다.
+ *
+ * 이것은 서버 권한도, 영구 시청 이력도 아니다 — 이 화면이 "그 결과를 실제로 받았다"는 로컬
+ * 수신 증거(provenance)일 뿐이다. 연출을 만드는 쪽은 이 증거가 지금 범위와 정확히 같을 때만
+ * 큐를 만든다. 검증된 공개 결과가 없으면 증거도 없다(null).
+ */
+function buildSnapshotResultOwner(receipt, gameId, state, snapshotSeq) {
+  if (receipt === null || typeof receipt !== "object") return null
+  if (!state?.nightResult) return null
+  return Object.freeze({
+    accountId: receipt.accountId ?? null,
+    identityGeneration: receipt.identityGeneration ?? null,
+    gameId: gameId ?? null,
+    membershipId: readSelfMembershipId(state),
+    membershipEpoch,
+    socketEpoch: receipt.socketEpoch,
+    socketId: receipt.socketId,
+    socketConnected: receipt.socketConnected,
+    snapshotSeq,
+  })
 }
 
 /**
@@ -109,6 +284,14 @@ export const useInGameStore = create((set) => ({
   // 하이드레이션이 거부되면(참조 보존 no-op) 이 값도 오르지 않는다.
   snapshotSeq: 0,
 
+  // F-23(AC-05/SPLIT-1): 방금 복원된 **공개 밤 결과의 수신 증거**. 어느 계정·어느 소속·어느
+  // 연결에서 검증한 응답으로 저장됐는지를 직렬화 가능한 세대·id로만 적어 둔다(소켓 객체
+  // 참조는 들어가지 않는다). 공개 사망 연출은 이 증거가 지금 범위와 정확히 같을 때만 만든다 —
+  // 그래서 이전 신분이 남긴 state.nightResult가 새 신분의 연출로 재등록되지 않는다.
+  // 증거 없는 직접 적용(receipt 없이 부른 applySessionSnapshot)은 상태 호환성만 유지하고
+  // 연출 증거는 만들지 않는다(null).
+  snapshotResultOwner: null,
+
   // 이 밤에 나에게만 온 개인 결과(night_action_result). state 안이 아니라 최상위에 두는 이유는
   // canonical 세션 상태가 아니기 때문이다 — 서버 스냅샷·방송이 실어 나르는 값이 아니라 이
   // 클라이언트 한 대가 받은 1회성 통지라, state를 통째로 교체하는 스냅샷 복원이 지나가도
@@ -159,6 +342,9 @@ export const useInGameStore = create((set) => ({
         hostUuid: serverHostUuid
           ?? (typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null),
         error: null,
+        // F-23(AC-05): 세션 교체 경계다 — 이전 스냅샷의 수신 증거를 새 payload가 만든
+        // state로 이월하지 않는다(이월하면 옛 연결에서 본 사망이 새 세션의 연출이 된다).
+        snapshotResultOwner: null,
         // 개인 결과는 gameId가 실제로 바뀔 때만 비운다 — 이전 게임의 결과가 새 세션으로 넘어오는
         // 것은 막아야 하지만, 같은 게임에 대한 재적용(중복 game_started 등)까지 비우면 아직
         // 확인하지 않은 이번 밤의 결과가 조용히 사라진다("비워지는 시점은 정확히 셋" 계약).
@@ -543,23 +729,57 @@ export const useInGameStore = create((set) => ({
   // nightPrivateResult는 여기서 절대 건드리지 않는다 — applySessionSnapshotPure가 만드는 patch는
   // state(+snapshotSeq)뿐이고, 하이드레이션은 "새 밤에 들어갔다"가 아니라 "지금까지의 상태를
   // 다시 받았다"이므로 아직 확인하지 않은 개인 결과를 지울 근거가 되지 않는다.
-  applySessionSnapshot: (response) =>
+  //
+  // F-23(AC-05/SPLIT-1): 두 번째 인자 receiptContext는 요청을 **보낸 그 순간**의 범위다
+  // (readInGameReceiptScope가 만든다 — 응답 payload에서 읽지 않는다). 적용 직전에 이 store가
+  // 소유한 축을 다시 맞춰 보고, 기존 pure 검증이 실제 patch를 돌려준 경우에만 state·
+  // snapshotSeq·snapshotResultOwner를 **같은 set에서** 함께 저장한다. 형태 오류·ok:false·
+  // 범위 불일치는 셋 모두 참조 보존 no-op이다.
+  applySessionSnapshot: (response, receiptContext = null) =>
     set((current) => {
+      if (receiptContext !== null && !isReceiptScopeCurrent(receiptContext, current)) return current
       const patch = applySessionSnapshotPure(current, response)
       if (patch === current) return current
-      return { ...patch, snapshotSeq: current.snapshotSeq + 1 }
+      const snapshotSeq = current.snapshotSeq + 1
+      // 이 커밋이 만든 소속을 같은 자리에서 관측 기준으로 채택한다 — 자기 복원을 외부 소속
+      // 교체로 오인하지 않게 한다(아래 store 구독자는 같은 값을 다시 보므로 세지 않는다).
+      adoptIdentityScope(current.gameId ?? null, patch.state)
+      return {
+        ...patch,
+        snapshotSeq,
+        snapshotResultOwner: buildSnapshotResultOwner(receiptContext, current.gameId ?? null, patch.state, snapshotSeq),
+      }
     }),
 
   // 브라우저 새로고침으로 메모리 store가 비었어도 인증된 서버의 현재 세션 스냅샷을 한 번에
   // 복원한다. 이미 게임 상태가 있으면 기존 신뢰 경계를 우회하지 않도록 반드시 no-op 한다.
-  bootstrapSessionSnapshot: (response) =>
+  //
+  // F-23(SPLIT-1): 빈 store에서 시작하므로 요청 시점의 gameId·membershipId는 둘 다 null이어야
+  // 한다. 그렇지 않은 요청(그 사이 이미 다른 판·다른 소속이 붙은 화면)이 응답을 현재 권위로
+  // 승격하지 못하게 막고, 응답이 주장하는 본인이 요청 계정과 다르면 아예 반영하지 않는다.
+  // 이 커밋이 만드는 gameId/소속은 **후속 범위**로 원자적으로 채택한다.
+  bootstrapSessionSnapshot: (response, receiptContext = null) =>
     set((current) => {
       if (current.gameId || current.state) return current
+      if (receiptContext !== null) {
+        // 빈 store이므로 현재 소속은 반드시 null이다 — 소속을 들고 있던 요청은 이 검사에서
+        // 그대로 걸린다(그 화면은 이미 다른 판에 앉아 있었다는 뜻이다).
+        if (!isReceiptScopeCurrent(receiptContext, current)) return current
+        if (receiptContext.accountId !== null && response?.self?.uuid !== receiptContext.accountId) return current
+      }
       const patch = bootstrapSessionSnapshotPure(response)
       if (!patch) return current
+      const snapshotSeq = current.snapshotSeq + 1
+      adoptIdentityScope(patch.gameId ?? null, patch.state)
       // 빈 store에 gameId가 처음 붙는 경로다(gameId 변경) — 개인 결과도 이 세션 기준으로
       // 새로 시작한다. 어차피 비어 있지만, gameId가 바뀌는 모든 경로가 같은 규칙을 따르게 한다.
-      return { ...patch, error: null, snapshotSeq: current.snapshotSeq + 1, ...CLEARED_NIGHT_PRIVATE_RESULT }
+      return {
+        ...patch,
+        error: null,
+        snapshotSeq,
+        snapshotResultOwner: buildSnapshotResultOwner(receiptContext, patch.gameId ?? null, patch.state, snapshotSeq),
+        ...CLEARED_NIGHT_PRIVATE_RESULT,
+      }
     }),
 
   // night_action_result를 반영한다. 형태·게임/밤 일치·본인 여부 검증은 호출부
@@ -580,7 +800,25 @@ export const useInGameStore = create((set) => ({
   setGameError: (error) => set({ error }),
 
   clearGame: () =>
-    set({ gameId: null, state: null, hostUuid: null, error: null, ...CLEARED_NIGHT_PRIVATE_RESULT }),
+    set({
+      gameId: null, state: null, hostUuid: null, error: null,
+      // 세션 정리는 수신 증거의 끝이기도 하다 — 남겨 두면 뒤이어 도착한 옛 응답이 되살아난
+      // 화면에서 다시 연출이 된다. 단조 세대는 여기서도 되돌리지 않는다(아래 구독자 참고).
+      snapshotResultOwner: null,
+      ...CLEARED_NIGHT_PRIVATE_RESULT,
+    }),
 }))
+
+// 최초 관측 기준. 이후로는 **실제 전이만** 세대를 올린다(초기값 자체는 전이가 아니다).
+adoptIdentityScope(null, null)
+
+/**
+ * 계정/소속 축의 유일한 관측 지점. 액션이든 setState든 어떤 경로로 바뀌어도 여기를 지난다.
+ * zustand는 set마다 구독자를 **동기적으로** 부르므로, 같은 React 배치 안의 A→B→A도 두 전이로
+ * 남는다(값 비교만으로는 구별할 수 없는 바로 그 구간이다).
+ */
+useInGameStore.subscribe((next) => {
+  adoptIdentityScope(next.gameId ?? null, next.state ?? null)
+})
 
 export const selectInGameState = (store) => store.state
