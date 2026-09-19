@@ -1,5 +1,6 @@
 // 파일 역할: ingameStore.js - 전역 상태 store입니다.
 import { create } from "zustand"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
 import { applyPlayerEliminatedPure } from "./applyPlayerEliminated.js"
 import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "./applySessionSnapshot.js"
@@ -24,6 +25,312 @@ const CLEARED_NIGHT_PRIVATE_RESULT = Object.freeze({ nightPrivateResult: null })
  */
 function clearNightPrivateResultOnNightEntry(current) {
   return current.state?.phase === "NIGHT" ? null : CLEARED_NIGHT_PRIVATE_RESULT
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// F-23(AC-05/AC-06/SPLIT-1/SPLIT-2): **지금 이 화면의 신원 범위**
+//
+// 이 store가 소유하는 "범위"는 두 축으로 나뉜다. 둘을 한 값으로 뭉치면 둘 중 하나는 반드시
+// 틀린 쪽으로 새어 나간다.
+//
+//   1. 계정/소속 축 — gameId · 이 세션이 말하는 본인(state.self.uuid) · 그 본인의
+//      membershipId · 그 셋이 실제로 바뀐 횟수(membershipEpoch).
+//      값 비교만으로는 같은 판의 이탈→재입장(A→B→A)을 구별할 수 없다. 값이 원래대로
+//      돌아오기 때문이다 — 전이 **횟수**만이 그 구간을 드러낸다. zustand의 구독은 set마다
+//      동기적으로 불리므로, 같은 React 배치 안의 A→B→A도 두 전이로 남는다.
+//
+//   2. 연결 축 — 소켓 객체 세대(socketEpoch) · 실제 connect/disconnect 세대(connectEpoch) ·
+//      그 순간의 socket.id. 같은 Socket 객체가 재연결되면 객체 동일성은 유지되고 id만 바뀐다.
+//
+// 화면 선택(사망 후 계속 보기)은 1번 축에만 묶이고(연결이 끊겼다고 다시 묻지 않는다), 공개
+// 결과의 **수신 증거**는 두 축 모두에 묶인다(다른 연결에서 받은 것은 이 연결의 사실이 아니다).
+//
+// 소켓 **객체 참조**는 이 모듈 안에만 둔다 — store 상태 트리에 넣으면 직렬화도 순회도 불가능한
+// 값이 들어가고, 그 아래로 감사가 지나갈 수 없다. 상태에 남기는 것은 세대 수와 id 문자열뿐이다.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** 이 세션이 말하는 본인의 소속 식별자. 본인을 모르면 null이다. */
+function readSelfMembershipId(state) {
+  const me = state?.self?.uuid ?? null
+  if (!me) return null
+  return (state?.players ?? []).find((player) => player?.uuid === me)?.membershipId ?? null
+}
+
+let membershipEpoch = 0
+let observedGameId
+let observedSelfUuid
+let observedMembershipId
+
+let identityScopeVersion = 0
+const identityScopeListeners = new Set()
+
+/**
+ * 계정/소속 축의 전이를 한 번 기록한다. 실제로 바뀐 경우에만 세대가 오르고, 그 세대는
+ * **단조**다 — clearGame으로도 0으로 되돌리지 않는다(되돌리면 그 사이에 날아간 옛 요청이
+ * 다시 현재처럼 보인다).
+ *
+ * 같은 전이를 두 번 세지 않는다: 스냅샷 적용처럼 자기 커밋 안에서 먼저 기록한 전이는 그
+ * 직후 store 구독자가 같은 값을 다시 관측하므로 변화가 없어 그대로 지나간다.
+ */
+function adoptIdentityScope(gameId, state) {
+  const selfUuid = state?.self?.uuid ?? null
+  const membershipId = readSelfMembershipId(state)
+  if (observedGameId === gameId && observedSelfUuid === selfUuid && observedMembershipId === membershipId) {
+    return membershipEpoch
+  }
+  observedGameId = gameId
+  observedSelfUuid = selfUuid
+  observedMembershipId = membershipId
+  membershipEpoch += 1
+  identityScopeVersion += 1
+  for (const listener of [...identityScopeListeners]) listener()
+  return membershipEpoch
+}
+
+/**
+ * 계정/소속 축이 바뀔 때마다 오르는 단조 값. useSyncExternalStore의 getSnapshot으로 그대로
+ * 쓸 수 있도록 원시값을 돌려준다(같은 범위에서는 몇 번을 물어도 같은 값이다).
+ */
+export function getInGameIdentityScopeVersion() {
+  return identityScopeVersion
+}
+
+export function subscribeInGameIdentityScope(listener) {
+  identityScopeListeners.add(listener)
+  return () => identityScopeListeners.delete(listener)
+}
+
+// ── 연결 축 관측(모듈 수명에서 한 벌) ────────────────────────────────────────
+//
+// React 컴포넌트가 아니라 모듈이 소유한다. StrictMode의 setup→cleanup→setup은 컴포넌트의
+// 일이므로 이 관측을 다시 만들지 않고, 따라서 그것만으로 세대가 오르지 않는다.
+//
+// 연결 수명은 **소켓 자체에 리스너를 걸지 않고** 읽는다. 걸어야 할 이유가 없기 때문이다:
+// 한 연결을 다른 연결과 가르는 값이 이미 소켓 안에 있다(교체는 객체 참조, 재연결은 새 id,
+// 끊김은 connected=false — socket.io는 재연결마다 새 sid를 발급하고 끊길 때 id를 지운다).
+// 세 값을 요청 시점과 응답 시점에 그대로 비교하면 "다른 연결에서 받은 증거"는 전부 걸린다.
+// 대신 이 모듈이 다른 기능의 리스너 집합을 늘리지 않으므로, 같은 소켓을 쓰는 화면들의
+// "자기 리스너만 해제한다"는 기존 계약을 한 줄도 건드리지 않는다.
+const NO_SOCKET_OBSERVED = Symbol("no-socket-observed")
+let socketEpoch = 0
+let observedSocket = NO_SOCKET_OBSERVED
+
+function rebindConnectionScope() {
+  const next = getSocket() ?? null
+  if (observedSocket === next) return
+  observedSocket = next
+  // 객체가 바뀌면 연결 수명도 새로 열린다 — 옛 연결에서 받은 증거는 여기서 끊긴다.
+  socketEpoch += 1
+}
+
+subscribeSocket(rebindConnectionScope)
+rebindConnectionScope()
+
+/**
+ * 요청을 **보내는 그 순간**의 범위를 한 벌로 캡처한다.
+ *
+ * 계정 축(accountId·identityGeneration)은 이 store가 읽을 수 없으므로 호출부(인증을 아는 훅)가
+ * 넣어 준다. 나머지는 전부 이 모듈이 소유한 관측에서 읽는다 — 요청 시점과 응답 시점이 같은
+ * 함수를 쓰므로 판정 기준이 갈리지 않는다.
+ */
+export function readInGameReceiptScope({ accountId = null, identityGeneration = null } = {}) {
+  const { gameId, state } = useInGameStore.getState()
+  const socket = getSocket()
+  return {
+    accountId,
+    identityGeneration,
+    gameId: gameId ?? null,
+    membershipId: readSelfMembershipId(state),
+    membershipEpoch,
+    socketEpoch,
+    socketId: socket?.id ?? null,
+    socketConnected: socket?.connected === true,
+  }
+}
+
+/** 두 범위가 모든 축에서 같은가. 하나라도 없거나 다르면 false다(fail-closed). */
+export function isSameInGameReceiptScope(a, b) {
+  if (a === null || typeof a !== "object" || b === null || typeof b !== "object") return false
+  return a.accountId === b.accountId
+    && a.identityGeneration === b.identityGeneration
+    && a.gameId === b.gameId
+    && a.membershipId === b.membershipId
+    && a.membershipEpoch === b.membershipEpoch
+    && a.socketEpoch === b.socketEpoch
+    && a.socketId === b.socketId
+    && a.socketConnected === b.socketConnected
+}
+
+/**
+ * 적용 직전에 이 store가 소유한 축만 다시 맞춰 본다(계정 축은 인증을 아는 호출부가 응답
+ * 직전에 같은 기준으로 확인하고, 그 값은 아래 소유권에 그대로 기록된다).
+ *
+ * @param {object} current set() updater가 받은 **아직 커밋되지 않은** 현재 상태.
+ */
+function isReceiptScopeCurrent(receipt, current) {
+  if (receipt === null || typeof receipt !== "object") return false
+  if (receipt.gameId !== (current.gameId ?? null)) return false
+  if (receipt.membershipId !== readSelfMembershipId(current.state)) return false
+  if (receipt.membershipEpoch !== membershipEpoch) return false
+  if (receipt.socketEpoch !== socketEpoch) return false
+  if (receipt.socketId !== (getSocket()?.id ?? null)) return false
+  if (receipt.socketConnected !== (getSocket()?.connected === true)) return false
+  return true
+}
+
+/**
+ * F-23(AC-05): 응답이 **다른 소속의 것**인가.
+ *
+ * 스냅샷 응답은 자기가 어느 소속의 자리에서 만들어졌는지를 roster의 membershipId로 말한다.
+ * 지금 화면이 이미 소속을 알고 있는데(non-null) 응답이 그와 **다른 소속**을 주장하면, 그것은
+ * 같은 판·같은 계정이라도 이 화면이 앉아 있는 자리의 사실이 아니다 — 이탈→재입장으로 생긴
+ * 다른 참여 기록이거나, 그 전이 구간을 지나온 응답이다. 그런 응답을 현재 복원 권위로
+ * 승격하면 adoptIdentityScope가 남의 소속을 관측 기준으로 채택하고 buildSnapshotResultOwner가
+ * 거기에 공개 결과의 수신 증거까지 붙여 준다(승인된 복원 권위 계약 위반).
+ *
+ * **모른다고 말하는 응답은 다르다고 말하는 응답이 아니다.** membershipId를 싣지 않는 구버전
+ * 스냅샷은 값을 주장하지 않으므로 여기서 막지 않는다(기존 호환 계약 그대로). 현재 소속이
+ * 아직 null인 화면의 정상 보충(null→X)도 막지 않는다 — 그것이 이 값이 처음 채워지는 경로다.
+ */
+function claimsForeignMembership(current, nextState) {
+  const currentMembershipId = readSelfMembershipId(current.state)
+  if (currentMembershipId === null) return false
+  const nextMembershipId = readSelfMembershipId(nextState)
+  if (nextMembershipId === null) return false
+  return nextMembershipId !== currentMembershipId
+}
+
+/**
+ * 방금 저장한 **공개 밤 결과**가 어느 신원·어느 연결에서 검증된 것인지를 기록한다.
+ *
+ * 이것은 서버 권한도, 영구 시청 이력도 아니다 — 이 화면이 "그 결과를 실제로 받았다"는 로컬
+ * 수신 증거(provenance)일 뿐이다. 연출을 만드는 쪽은 이 증거가 지금 범위와 정확히 같을 때만
+ * 큐를 만든다. 검증된 공개 결과가 없으면 증거도 없다(null).
+ */
+function buildSnapshotResultOwner(receipt, gameId, state, snapshotSeq) {
+  if (receipt === null || typeof receipt !== "object") return null
+  if (!state?.nightResult) return null
+  return Object.freeze({
+    accountId: receipt.accountId ?? null,
+    identityGeneration: receipt.identityGeneration ?? null,
+    gameId: gameId ?? null,
+    membershipId: readSelfMembershipId(state),
+    membershipEpoch,
+    socketEpoch: receipt.socketEpoch,
+    socketId: receipt.socketId,
+    socketConnected: receipt.socketConnected,
+    snapshotSeq,
+  })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// F-23(SPLIT-1): **종료 결과의 수신 범위**
+//
+// state.winResult는 "이 화면이 결과 페이지로 가도 되는가"의 유일한 근거다. 그런데 그 값이
+// **누가·언제·어느 연결에서** 받은 것인지는 state 자체에 남지 않는다 — 이전 신원·이전 연결이
+// 받아 둔 잔존 종료 결과와, 방금 이 연결에서 정상으로 받은 종료 결과가 모양으로는 똑같다.
+//
+// 그 둘을 가르는 값이 여기 있다. winResult가 새로 실릴 때마다 그 순간의 범위를 한 벌 적어
+// 두고(snapshotResultOwner와 같은 provenance 개념이다), 확인하지 못한 재결속을 끝맺을 때는
+// **그 범위가 이미 지나간 경우에만** 이동 근거를 걷어낸다.
+//
+// **계정 축이 반드시 함께 적혀야 한다.** 이 모듈이 소유한 관측(gameId·소속·소속 전이 세대·
+// 소켓 세대)은 인증 계정이 바뀌어도 그대로일 수 있다 — adoptIdentityScope가 세는 self.uuid는
+// 마지막으로 적용된 snapshot이 말하는 본인이지 인증 계정이 아니다. 그래서 store와 연결을
+// 유지한 채 인증이 A→B→A로 왕복하면, 이전 계정이 받아 둔 종료 결과가 "지금 범위의 것"으로
+// 통과해 버린다. 계정 축은 이 store가 읽을 수 없으므로 snapshotResultOwner와 **똑같이**
+// 인증을 아는 호출부가 넣어 준다(아래 commitReceiptScope).
+//
+// store 상태 트리가 아니라 모듈이 소유한다 — 소켓 세대·소속 세대와 같은 성질의 관측값이고,
+// 상태 키를 늘리면 화면이 읽지도 않을 값이 감사 대상 트리에 들어간다.
+// ───────────────────────────────────────────────────────────────────────────
+let terminalResultScope = null
+let observedWinResult = null
+
+/**
+ * **지금 커밋을 만든 호출부가 넘긴 수신 범위.** 계정 축의 유일한 출처다.
+ *
+ * zustand의 set()은 구독자를 **동기적으로** 부르므로, 액션이 이 값을 세운 채 set()을 호출하면
+ * 아래 구독자가 같은 커밋의 범위를 그대로 읽는다. 액션 밖(직접 setState 등)에서 들어온 커밋은
+ * 계정 축을 모르는 채로 남고, 그런 기록은 현재 범위로 인정되지 않는다(fail-closed).
+ */
+let commitReceiptScope = null
+
+/** 이 커밋 동안만 수신 범위를 세워 둔다(중첩·예외에도 원래 값으로 되돌린다). */
+function commitWithReceipt(receipt, run) {
+  const previous = commitReceiptScope
+  commitReceiptScope = receipt ?? null
+  try {
+    return run()
+  } finally {
+    commitReceiptScope = previous
+  }
+}
+
+/**
+ * winResult가 실제로 실린 그 순간의 범위.
+ *
+ * 계정 축은 호출부가 넘긴 수신 범위에서, 나머지는 이 모듈이 소유한 관측에서 읽는다
+ * (buildSnapshotResultOwner와 같은 분담이다 — readInGameReceiptScope와 같은 모양이므로
+ * isSameInGameReceiptScope로 그대로 대조할 수 있다).
+ */
+function buildTerminalResultScope(receipt, gameId, state) {
+  const socket = getSocket()
+  return Object.freeze({
+    accountId: receipt?.accountId ?? null,
+    identityGeneration: receipt?.identityGeneration ?? null,
+    gameId: gameId ?? null,
+    membershipId: readSelfMembershipId(state),
+    membershipEpoch,
+    socketEpoch,
+    socketId: socket?.id ?? null,
+    socketConnected: socket?.connected === true,
+  })
+}
+
+/**
+ * 적어 둔 종료 결과 범위가 **지금 이 신원·이 연결의 것**인가.
+ *
+ * 계정 축은 이 store가 읽을 수 없으므로 호출부가 넘긴 현재 범위(currentScope)와 맞춘다 —
+ * 두 범위는 같은 모양이므로 isSameInGameReceiptScope로 여덟 축을 한 번에 대조하고, 이 store가
+ * 소유한 축은 커밋 직전의 살아 있는 값으로 한 번 더 확인한다(호출부의 읽기에만 의존하지 않는다).
+ *
+ * 계정 축을 모르는 기록(null)은 현재로 인정하지 않는다. "누가 받았는지 모른다"는 "지금 이
+ * 계정이 받았다"의 증거가 아니고, 그것을 관대하게 봐 주면 인증 왕복 구간의 잔존 종료 결과가
+ * 그대로 이동 근거로 남는다.
+ */
+function isTerminalResultScopeCurrent(recorded, currentScope, current) {
+  if (recorded === null || typeof recorded !== "object") return false
+  if (recorded.accountId === null || recorded.identityGeneration === null) return false
+  if (!isSameInGameReceiptScope(recorded, currentScope)) return false
+  return isReceiptScopeCurrent(recorded, current)
+}
+
+/**
+ * F-23(SPLIT-1): 지금 들고 있는 종료 결과를 **다른 인증 신원이 받았다는 것이 확인**되는가.
+ *
+ * 결과 화면 이동 여부는 그 렌더에서 계산된 보류값으로 판단된다(InGamePage →
+ * useInGameResultNavigation). 그런데 **인증** 전이를 관측해 재결속 보류를 올리는 것은 그 렌더
+ * **뒤에** 도는 effect다 — 그 한 틈에서 사망 연출 큐는 이미 버려졌고(연출 범위에는 계정 축이
+ * 있다) 잔존 winResult는 그대로 남아 있어, 확인이 시작되기도 전에 화면이 떠날 수 있다.
+ * 연결 전이(재연결·소켓 교체)는 이 틈이 없다 — 그 보류는 렌더가 아니라 소켓 사건 처리 중에
+ * 동기적으로 올라간다. 그래서 이 문턱은 **계정 축만** 본다(연결 축 판단을 두 벌로 만들지 않는다).
+ *
+ * 여기서는 **확실히 남의 것일 때만** true다. 기록이 없거나(직접 setState 등) 이 winResult의 것이
+ * 아니거나 계정 축을 모르는 기록은 "모른다"이므로 이동을 막지 않는다 — 모르는 것을 근거로 화면을
+ * 붙잡아 두면 정상 종료가 결과 화면에 못 가는 쪽으로 넘어간다. 확인하지 못한 재결속을 끝맺을 때의
+ * 무효화(invalidateUnconfirmedTerminalResult)는 그 반대로 fail-closed이고, 두 문턱은 그렇게 나뉜다.
+ */
+export function isTerminalResultFromOtherAccount(currentScope) {
+  const winResult = useInGameStore.getState().state?.winResult ?? null
+  if (!winResult) return false
+  // 적어 둔 기록이 **바로 이 값**의 것이어야 판단할 수 있다.
+  if (winResult !== observedWinResult) return false
+  if (terminalResultScope === null) return false
+  if (terminalResultScope.accountId === null || terminalResultScope.identityGeneration === null) return false
+  if (currentScope === null || typeof currentScope !== "object") return false
+  return terminalResultScope.accountId !== currentScope.accountId
+    || terminalResultScope.identityGeneration !== currentScope.identityGeneration
 }
 
 /**
@@ -109,6 +416,14 @@ export const useInGameStore = create((set) => ({
   // 하이드레이션이 거부되면(참조 보존 no-op) 이 값도 오르지 않는다.
   snapshotSeq: 0,
 
+  // F-23(AC-05/SPLIT-1): 방금 복원된 **공개 밤 결과의 수신 증거**. 어느 계정·어느 소속·어느
+  // 연결에서 검증한 응답으로 저장됐는지를 직렬화 가능한 세대·id로만 적어 둔다(소켓 객체
+  // 참조는 들어가지 않는다). 공개 사망 연출은 이 증거가 지금 범위와 정확히 같을 때만 만든다 —
+  // 그래서 이전 신분이 남긴 state.nightResult가 새 신분의 연출로 재등록되지 않는다.
+  // 증거 없는 직접 적용(receipt 없이 부른 applySessionSnapshot)은 상태 호환성만 유지하고
+  // 연출 증거는 만들지 않는다(null).
+  snapshotResultOwner: null,
+
   // 이 밤에 나에게만 온 개인 결과(night_action_result). state 안이 아니라 최상위에 두는 이유는
   // canonical 세션 상태가 아니기 때문이다 — 서버 스냅샷·방송이 실어 나르는 값이 아니라 이
   // 클라이언트 한 대가 받은 1회성 통지라, state를 통째로 교체하는 스냅샷 복원이 지나가도
@@ -159,6 +474,9 @@ export const useInGameStore = create((set) => ({
         hostUuid: serverHostUuid
           ?? (typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null),
         error: null,
+        // F-23(AC-05): 세션 교체 경계다 — 이전 스냅샷의 수신 증거를 새 payload가 만든
+        // state로 이월하지 않는다(이월하면 옛 연결에서 본 사망이 새 세션의 연출이 된다).
+        snapshotResultOwner: null,
         // 개인 결과는 gameId가 실제로 바뀔 때만 비운다 — 이전 게임의 결과가 새 세션으로 넘어오는
         // 것은 막아야 하지만, 같은 게임에 대한 재적용(중복 game_started 등)까지 비우면 아직
         // 확인하지 않은 이번 밤의 결과가 조용히 사라진다("비워지는 시점은 정확히 셋" 계약).
@@ -207,7 +525,11 @@ export const useInGameStore = create((set) => ({
   // 승패를 확정한 terminal). 호출부가 parsePlayerEliminatedPayload로 이미 검증한 값만
   // 넘기지만, 다른 reducer와 같은 이유로 순수 함수 안에서 gameId/종료 불변성을 다시 본다.
   // 기존 외형 필드와 nightPrivateResult는 보존한다(applyPlayerEliminated.js 참고).
-  applyPlayerEliminated: (parsed) => set((current) => applyPlayerEliminatedPure(current, parsed)),
+  // F-23(SPLIT-1): 이 사망이 곧바로 승패를 확정할 수 있다 — 종료 결과를 실을 수 있는 경로는
+  // 전부 수신 범위(receipt)를 함께 받는다. 호출부(useGameSessionSocketEvents)가 사건 도착
+  // 시점에 캡처한 범위이고, 없으면 계정 축을 모르는 기록으로 남는다(fail-closed).
+  applyPlayerEliminated: (parsed, receipt = null) =>
+    commitWithReceipt(receipt, () => set((current) => applyPlayerEliminatedPure(current, parsed))),
 
   /**
    * F-21(AC-03/AC-05): session_participation_changed 공개 방송을 반영한다.
@@ -335,8 +657,12 @@ export const useInGameStore = create((set) => ({
   // parseNightResultAppliedPayload로 검증한 값만 넘기지만, applyPhaseChanged와 동일한 이유로
   // 여기서도 독립적으로 gameId/dayIndex 단조성을 재확인한다 — phase/dayIndex/players[].alive를
   // 하나의 set()으로 함께 반영해 중간 렌더에서 상태가 어긋나지 않게 한다.
-  applyNightResultAppliedPayload: (payload) =>
-    set((current) => {
+  //
+  // F-23(SPLIT-1): 두 번째 인자 receipt는 이 사건이 도착한 순간의 수신 범위다(호출부가 캡처해
+  // 넘긴다 — payload에서 읽지 않는다). ENDED 분기가 winResult를 실으면 아래 store 구독자가 그
+  // 범위를 종료 결과의 수신 증거로 함께 적어 둔다.
+  applyNightResultAppliedPayload: (payload, receipt = null) =>
+    commitWithReceipt(receipt, () => set((current) => {
       if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current
       if (typeof payload.gameId !== "string" || payload.gameId.trim().length === 0) return current
       if (!current.gameId || !current.state) return current
@@ -399,7 +725,7 @@ export const useInGameStore = create((set) => ({
           players: nextPlayers,
         },
       }
-    }),
+    })),
 
   // night_turn_started 방송(밤 안의 역할 턴 전이)을 반영한다. 호출부
   // (useGameSessionSocketEvents)가 이미 parseNightTurnStartedPayload로 검증한 값만 넘기지만,
@@ -528,13 +854,15 @@ export const useInGameStore = create((set) => ({
   // set()에 그대로 전달하기만 한다.
   // 무죄·비종결 판정은 TRIBUNAL에서 곧장 NIGHT로 넘어간다 — 그 경로만 개인 결과를 함께
   // 비운다(참조 보존 no-op이나 ENDED 전이에서는 건드리지 않는다).
-  applyTribunalResolved: (payload) =>
-    set((current) => {
+  // F-23(SPLIT-1): 유죄 판정이 곧바로 승패를 확정할 수 있다 — applyNightResultAppliedPayload와
+  // 같은 이유로 수신 범위를 함께 받는다.
+  applyTribunalResolved: (payload, receipt = null) =>
+    commitWithReceipt(receipt, () => set((current) => {
       const patch = applyTribunalResolvedPure(current, payload)
       if (patch === current) return current
       if (patch.state?.phase !== "NIGHT") return patch
       return { ...patch, ...clearNightPrivateResultOnNightEntry(current) }
-    }),
+    })),
 
   // get_session_snapshot 재접속 응답을 반영한다. 검증·병합은 순수 함수 applySessionSnapshotPure에
   // 전부 위임하고(store 참조 보존 no-op 포함), 여기서는 실제로 반영된 경우에만 snapshotSeq를
@@ -543,23 +871,112 @@ export const useInGameStore = create((set) => ({
   // nightPrivateResult는 여기서 절대 건드리지 않는다 — applySessionSnapshotPure가 만드는 patch는
   // state(+snapshotSeq)뿐이고, 하이드레이션은 "새 밤에 들어갔다"가 아니라 "지금까지의 상태를
   // 다시 받았다"이므로 아직 확인하지 않은 개인 결과를 지울 근거가 되지 않는다.
-  applySessionSnapshot: (response) =>
-    set((current) => {
+  //
+  // F-23(AC-05/SPLIT-1): 두 번째 인자 receiptContext는 요청을 **보낸 그 순간**의 범위다
+  // (readInGameReceiptScope가 만든다 — 응답 payload에서 읽지 않는다). 적용 직전에 이 store가
+  // 소유한 축을 다시 맞춰 보고, 기존 pure 검증이 실제 patch를 돌려준 경우에만 state·
+  // snapshotSeq·snapshotResultOwner를 **같은 set에서** 함께 저장한다. 형태 오류·ok:false·
+  // 범위 불일치는 셋 모두 참조 보존 no-op이다.
+  applySessionSnapshot: (response, receiptContext = null) =>
+    commitWithReceipt(receiptContext, () => set((current) => {
+      if (receiptContext !== null && !isReceiptScopeCurrent(receiptContext, current)) return current
       const patch = applySessionSnapshotPure(current, response)
       if (patch === current) return current
-      return { ...patch, snapshotSeq: current.snapshotSeq + 1 }
-    }),
+      // F-23(AC-05): 기존 non-null 소속과 **다른 소속**을 주장하는 응답은 여기서 끝난다 —
+      // state·snapshotSeq·수신 증거 셋 모두 참조 보존 no-op이고, 관측 기준도 채택하지 않는다.
+      if (claimsForeignMembership(current, patch.state)) return current
+      const snapshotSeq = current.snapshotSeq + 1
+      // 이 커밋이 만든 소속을 같은 자리에서 관측 기준으로 채택한다 — 자기 복원을 외부 소속
+      // 교체로 오인하지 않게 한다(아래 store 구독자는 같은 값을 다시 보므로 세지 않는다).
+      adoptIdentityScope(current.gameId ?? null, patch.state)
+      return {
+        ...patch,
+        snapshotSeq,
+        snapshotResultOwner: buildSnapshotResultOwner(receiptContext, current.gameId ?? null, patch.state, snapshotSeq),
+      }
+    })),
 
   // 브라우저 새로고침으로 메모리 store가 비었어도 인증된 서버의 현재 세션 스냅샷을 한 번에
   // 복원한다. 이미 게임 상태가 있으면 기존 신뢰 경계를 우회하지 않도록 반드시 no-op 한다.
-  bootstrapSessionSnapshot: (response) =>
-    set((current) => {
+  //
+  // F-23(SPLIT-1): 빈 store에서 시작하므로 요청 시점의 gameId·membershipId는 둘 다 null이어야
+  // 한다. 그렇지 않은 요청(그 사이 이미 다른 판·다른 소속이 붙은 화면)이 응답을 현재 권위로
+  // 승격하지 못하게 막고, 응답이 주장하는 본인이 요청 계정과 다르면 아예 반영하지 않는다.
+  // 이 커밋이 만드는 gameId/소속은 **후속 범위**로 원자적으로 채택한다.
+  bootstrapSessionSnapshot: (response, receiptContext = null) =>
+    commitWithReceipt(receiptContext, () => set((current) => {
       if (current.gameId || current.state) return current
+      if (receiptContext !== null) {
+        // 빈 store이므로 현재 소속은 반드시 null이다 — 소속을 들고 있던 요청은 이 검사에서
+        // 그대로 걸린다(그 화면은 이미 다른 판에 앉아 있었다는 뜻이다).
+        if (!isReceiptScopeCurrent(receiptContext, current)) return current
+        if (receiptContext.accountId !== null && response?.self?.uuid !== receiptContext.accountId) return current
+      }
       const patch = bootstrapSessionSnapshotPure(response)
       if (!patch) return current
+      const snapshotSeq = current.snapshotSeq + 1
+      adoptIdentityScope(patch.gameId ?? null, patch.state)
       // 빈 store에 gameId가 처음 붙는 경로다(gameId 변경) — 개인 결과도 이 세션 기준으로
       // 새로 시작한다. 어차피 비어 있지만, gameId가 바뀌는 모든 경로가 같은 규칙을 따르게 한다.
-      return { ...patch, error: null, snapshotSeq: current.snapshotSeq + 1, ...CLEARED_NIGHT_PRIVATE_RESULT }
+      return {
+        ...patch,
+        error: null,
+        snapshotSeq,
+        snapshotResultOwner: buildSnapshotResultOwner(receiptContext, patch.gameId ?? null, patch.state, snapshotSeq),
+        ...CLEARED_NIGHT_PRIVATE_RESULT,
+      }
+    })),
+
+  /**
+   * F-23(SPLIT-1): **확인하지 못한 종료 결과의 이동 근거만 걷어낸다.**
+   *
+   * 신원(계정·소속)이나 연결이 바뀐 뒤 현재 신원의 스냅샷을 끝내 받지 못하면(타임아웃·전송
+   * 오류·거부·ok:false), 지금 화면이 들고 있는 종료 상태는 **이전 신원·이전 연결이 받아 둔
+   * 사실**이다. 그 값을 그대로 둔 채 재결속 보류만 풀면 화면은 옛 사실로 결과 화면에
+   * 들어간다 — 그 보류가 막으려던 바로 그 결함이 실패 경로로 되살아난다.
+   *
+   * 그래서 이동 근거인 winResult만 비운다. phase는 건드리지 않는다 — ENDED는 서버가 한 번
+   * 확정하면 되돌릴 수 없는 잠금이고(applySessionSnapshotPure의 종료 잠금), 우리가 확인하지
+   * 못한 것은 "지금 결과 화면으로 가도 되는가" 하나뿐이다. winResult 없는 ENDED는 이 store가
+   * 이미 만드는 모양이다(applyNightResultAppliedPayload의 ENDED 분기는 payload에 승패가 실려
+   * 있을 때만 채운다).
+   *
+   * **영구 무효가 아니다.** 현재 연결의 정상 스냅샷이 ENDED를 다시 실으면 winResult도 함께
+   * 복원되어(applySessionSnapshotPure는 ENDED 응답에 winResult를 강제한다) 결과 이동이 그대로
+   * 재개된다 — 사용자가 인게임 화면에 갇히지 않는다.
+   *
+   * 걷어낼 근거가 없으면 참조 보존 no-op이다(불필요한 리렌더를 만들지 않는다).
+   *
+   * ── **이 연결에서 받은 결과는 잔존물이 아니다** ───────────────────────────────
+   *
+   * 예전에는 이 액션이 winResult가 **언제·어느 연결에서** 들어왔는지를 구분하지 않고 지웠다.
+   * 그래서 "재연결 → 그 연결에서 정상 공개 종료(night_result_applied) 수신 → 그 재결속
+   * 스냅샷이 실패" 순서에서는, 방금 이 연결이 직접 받은 정상 결과까지 함께 지워져 화면이
+   * 결과로 넘어가지 못했다(막으려던 결함을 고치면서 반대쪽으로 넘어간 자리다).
+   *
+   * 이제는 winResult가 실릴 때 함께 적어 둔 수신 범위(terminalResultScope)를 본다. 그 범위가
+   * 지금과 정확히 같으면 — 같은 계정·같은 인증 전이 세대·같은 판·같은 소속·같은 소속 전이
+   * 세대·같은 소켓 세대·같은 sid·같은 연결 상태 — 그 결과는 이전 신원의 잔존물이 아니라
+   * **지금 이 화면이 직접 받은 사실**이므로 스냅샷 실패와 무관하게 그대로 남는다. 범위를
+   * 모르거나(null) 하나라도 다르면 지운다(fail-closed).
+   *
+   * **계정 축은 호출부가 넘긴다.** 이 store는 인증을 읽을 수 없고, 이 모듈이 소유한 관측만으로는
+   * 인증 A→B→A 왕복이 드러나지 않는다(store도 연결도 그대로이므로 어느 세대도 오르지 않는다).
+   * 그래서 호출부(useInGameSessionSnapshotSync의 finishRebindUnapplied)가 **지금 이 순간의 인증
+   * 범위**를 readInGameReceiptScope로 만들어 건네주고, 그 값과 적어 둔 범위를 대조한다.
+   * 현재 범위를 받지 못하면 남길 근거가 없으므로 지운다(fail-closed).
+   *
+   * @param {object|null} currentScope 호출부가 만든 현재 수신 범위(계정 축을 포함한다).
+   */
+  invalidateUnconfirmedTerminalResult: (currentScope = null) =>
+    set((current) => {
+      if (!current.gameId || !current.state) return current
+      if (current.state.phase !== "ENDED") return current
+      if (!current.state.winResult) return current
+      // 적어 둔 범위가 **바로 이 winResult의 것**이어야 한다(다른 값의 범위를 빌려 쓰지 않는다).
+      if (current.state.winResult === observedWinResult
+        && isTerminalResultScopeCurrent(terminalResultScope, currentScope, current)) return current
+      return { state: { ...current.state, winResult: null } }
     }),
 
   // night_action_result를 반영한다. 형태·게임/밤 일치·본인 여부 검증은 호출부
@@ -580,7 +997,43 @@ export const useInGameStore = create((set) => ({
   setGameError: (error) => set({ error }),
 
   clearGame: () =>
-    set({ gameId: null, state: null, hostUuid: null, error: null, ...CLEARED_NIGHT_PRIVATE_RESULT }),
+    set({
+      gameId: null, state: null, hostUuid: null, error: null,
+      // 세션 정리는 수신 증거의 끝이기도 하다 — 남겨 두면 뒤이어 도착한 옛 응답이 되살아난
+      // 화면에서 다시 연출이 된다. 단조 세대는 여기서도 되돌리지 않는다(아래 구독자 참고).
+      snapshotResultOwner: null,
+      ...CLEARED_NIGHT_PRIVATE_RESULT,
+    }),
 }))
+
+// 최초 관측 기준. 이후로는 **실제 전이만** 세대를 올린다(초기값 자체는 전이가 아니다).
+adoptIdentityScope(null, null)
+
+/**
+ * 계정/소속 축의 유일한 관측 지점. 액션이든 setState든 어떤 경로로 바뀌어도 여기를 지난다.
+ * zustand는 set마다 구독자를 **동기적으로** 부르므로, 같은 React 배치 안의 A→B→A도 두 전이로
+ * 남는다(값 비교만으로는 구별할 수 없는 바로 그 구간이다).
+ */
+useInGameStore.subscribe((next) => {
+  adoptIdentityScope(next.gameId ?? null, next.state ?? null)
+
+  // F-23(SPLIT-1): 종료 결과의 수신 범위도 여기서 한 곳에서만 기록한다. 공개 밤 판정
+  // (applyNightResultAppliedPayload)·재판 판정(applyTribunalResolved)·끊김 사망
+  // (applyPlayerEliminated)·스냅샷 복원 — winResult를 싣는 모든 경로가 이 구독을 지나므로,
+  // 액션마다 따로 적어 두어 한쪽만 빠뜨리는 일이 생기지 않는다.
+  //
+  // 순서가 중요하다: 위 adoptIdentityScope가 이미 이번 커밋의 소속 전이를 반영했으므로,
+  // 아래에서 읽는 membershipEpoch는 **이 결과가 실린 그 범위**의 값이다.
+  //
+  // 계정 축은 이 커밋을 만든 호출부가 넘긴 수신 범위(commitReceiptScope)에서만 온다 — 액션 밖의
+  // 직접 setState로 실린 종료 결과는 "누가 받았는지 모르는" 기록으로 남고, 그런 기록은 현재
+  // 범위로 인정되지 않는다(isTerminalResultScopeCurrent 참고).
+  const nextWinResult = next.state?.winResult ?? null
+  if (nextWinResult === observedWinResult) return
+  observedWinResult = nextWinResult
+  terminalResultScope = nextWinResult
+    ? buildTerminalResultScope(commitReceiptScope, next.gameId ?? null, next.state ?? null)
+    : null
+})
 
 export const selectInGameState = (store) => store.state

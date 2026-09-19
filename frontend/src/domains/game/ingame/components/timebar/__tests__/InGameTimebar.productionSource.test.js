@@ -103,7 +103,14 @@ test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연
   // 사망 연출: 로컬 훅에서 받아 오버레이로 넘기고, 결과 페이지 이동을 큐가 빌 때까지 보류한다.
   assert.match(source, /import \{ useInGameKillReveal \} from "\.\.\/hooks\/useInGameKillReveal\.js"/)
   assert.match(source, /const killReveal = useInGameKillReveal\(\{ hold: roleReveal\.open \}\)/)
-  assert.match(source, /useInGameResultNavigation\(\{ hold: killReveal\.open \|\| killReveal\.pending \}\)/)
+  // F-23(SPLIT-1): 기존 두 보류 조건은 그대로 두고, 신원 재결속 보류가 **같은 자리에** 더해진다.
+  // 신원·연결 전이로 큐가 버려지는 순간 잔존 ENDED로 넘어가지 않게 하는 조건이다.
+  assert.match(
+    source,
+    /useInGameResultNavigation\(\{\s*hold: killReveal\.open \|\| killReveal\.pending \|\| identityRebindPending,\s*\}\)/,
+  )
+  assert.match(source, /const identityRebindPending = useInGameSnapshotRebindPending\(\)/)
+  assert.match(source, /useInGameSnapshotRebindPending,\s*\} from "\.\.\/hooks\/useInGameSessionSnapshotSync\.js"/)
 
   // 밤 개인 결과: 사망 연출 뒤 순서로 열리고, 확인 콜백은 store를 비우는 훅의 것을 그대로 쓴다.
   assert.match(

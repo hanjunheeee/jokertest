@@ -43,7 +43,7 @@ mock.module("react-router-dom", {
 })
 
 const { renderHook } = await import("@testing-library/react")
-const { useInGameStore } = await import("../../store/ingameStore.js")
+const { useInGameStore, readInGameReceiptScope } = await import("../../store/ingameStore.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { setSocket } = await import("../../../../../shared/socket/socketClient.js")
 const { useGameSessionSocketEvents } = await import("../useGameSessionSocketEvents.js")
@@ -64,9 +64,12 @@ const ROSTER = [
 
 const WIN_RESULT = Object.freeze({ winner: "CITIZEN" })
 
-function createFakeSocket() {
+function createFakeSocket({ id = "sock-1" } = {}) {
   const listeners = new Map()
   return {
+    // 실제 Socket.IO처럼 연결마다 새 sid를 갖는다 — 수신 범위의 연결 축이 이 값을 읽는다.
+    id,
+    connected: true,
     on(event, handler) {
       if (!listeners.has(event)) listeners.set(event, new Set())
       listeners.get(event).add(handler)
@@ -79,6 +82,14 @@ function createFakeSocket() {
     },
     listenerCount(event) {
       return listeners.get(event)?.size ?? 0
+    },
+    /**
+     * 지금 **등록되어 있는 실제 콜백들**. effect 정리가 아직 돌지 않은 구간을 재현하려면
+     * deliver()로 현재 목록을 부르는 것으로는 부족하다 — 전이 전에 이 참조들을 손에 쥐고
+     * 있다가 전이 후에 직접 불러야 "옛 콜백이 살아 있는 창"을 실제로 만들 수 있다.
+     */
+    handlersOf(event) {
+      return [...(listeners.get(event) ?? [])]
     },
   }
 }
@@ -163,6 +174,25 @@ function endedNightResult({ dayIndex = 1, deathReveals = [], deadUuids = [] } = 
 }
 
 const navigated = () => navigateCalls.length > 0
+
+/**
+ * F-23(SPLIT-1): 재접속 복원을 **실제 요청 경로와 같은 모양으로** 흘려 넣는다.
+ *
+ * 프로덕션에서 이 호출을 만드는 것은 useInGameSessionSnapshotSync이고, 그때 두 번째 인자로
+ * "요청을 보낸 그 순간의 범위"가 함께 들어간다. 시험이 그 인자를 빼고 부르면 store는 수신
+ * 증거 없이 상태만 바꾸고(그 자체는 호환 동작이다) 연출은 만들어지지 않는다 — 그러면 이
+ * 파일의 복구 시험들이 "연출이 복원된다"가 아니라 "연출이 없다"를 검사하게 된다.
+ *
+ * 그래서 소유권 필드를 직접 주입하지 않고, 실제 캡처 함수가 만든 현재 범위를 그대로 넘겨
+ * store의 문맥 검사와 기존 pure 검증을 모두 통과시킨다.
+ */
+function applySnapshotAsCurrentRequest(response) {
+  const receipt = readInGameReceiptScope({
+    accountId: useAuthStore.getState().user?.uuid ?? null,
+    identityGeneration: useAuthStore.getState().identityGeneration ?? null,
+  })
+  useInGameStore.getState().applySessionSnapshot(response, receipt)
+}
 
 test("AC-03: 밤 사망 0명 — 큐가 비어 이동을 보류하지 않고 곧바로 결과로 넘어간다", () => {
   seedSession()
@@ -392,7 +422,7 @@ test("F-23(AC-05): 라이브 방송을 놓쳐도 스냅샷만으로 그 밤의 �
   assert.equal(session.killReveal.pending, false, "전제: 아직 아무 연출도 없다")
 
   act(() => {
-    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+    applySnapshotAsCurrentRequest(snapshotResponse({
       deadUuids: [V1],
       nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
     }))
@@ -424,7 +454,7 @@ test("F-23(AC-05): 같은 사망이 라이브→스냅샷으로 두 번 들어�
 
   // 같은 밤의 스냅샷이 뒤늦게 도착한다(재조회·ACK 지연).
   act(() => {
-    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+    applySnapshotAsCurrentRequest(snapshotResponse({
       deadUuids: [V1],
       nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
     }))
@@ -441,7 +471,7 @@ test("F-23(AC-05): 스냅샷 먼저 → 같은 사망의 라이브 방송이 뒤
   const session = open()
 
   act(() => {
-    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+    applySnapshotAsCurrentRequest(snapshotResponse({
       deadUuids: [V1],
       nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
     }))
@@ -467,7 +497,7 @@ test("F-23(AC-05): ENDED 스냅샷으로 복원해도 복구된 연출을 다 �
   const session = open()
 
   act(() => {
-    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+    applySnapshotAsCurrentRequest(snapshotResponse({
       phase: "ENDED", deadUuids: [V1, V2],
       nightResult: {
         dayIndex: 1, victimUuid: V1,
@@ -499,7 +529,7 @@ test("F-23(AC-05): 스냅샷 복구도 roster 밖 희생자는 연출로 만들�
   const session = open()
 
   act(() => {
-    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+    applySnapshotAsCurrentRequest(snapshotResponse({
       nightResult: {
         dayIndex: 1, victimUuid: null,
         deathReveals: [{ victimUuid: OUTSIDER, source: "JOKER" }],
@@ -509,6 +539,182 @@ test("F-23(AC-05): 스냅샷 복구도 roster 밖 희생자는 연출로 만들�
 
   assert.equal(session.killReveal.open, false)
   assert.equal(session.killReveal.pending, false, "roster 밖 희생자가 연출 큐에 들어갔다")
+
+  session.close()
+})
+
+// ── F-23(SPLIT-1): 신원 전이와 공개 연출의 경합 ──────────────────────────────
+//
+// 아래 세 시험이 함께 고정하는 사실은 하나다: **공개 결과가 상태에 남아 있다는 것만으로는
+// 연출이 되지 않는다.** 그 결과를 누가·어느 연결에서 받았는지가 지금과 같아야 한다.
+
+/** 밤 공개 결과가 실린 스냅샷 한 벌(그 밤 첫째의 사망). */
+const RESTORED_NIGHT = Object.freeze({
+  dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }],
+})
+
+/** 같은 판·같은 계정에서 **내 소속만** 교체한다(이탈→재입장과 같은 전이다). */
+function swapMyMembership(next) {
+  useInGameStore.setState((s) => ({
+    state: {
+      ...s.state,
+      players: s.state.players.map((p) => (p.uuid === SELF ? { ...p, membershipId: next } : p)),
+    },
+  }))
+}
+
+test("F-23(SPLIT-1): 수신 증거 없이 적용된 공개 결과는 상태만 복원하고 연출을 만들지 않는다", () => {
+  seedSession()
+  const session = open()
+
+  // 요청 문맥 없이 부른 경로다(옛 호출부·직접 주입). 상태 호환성은 그대로 유지된다.
+  act(() => {
+    useInGameStore.getState().applySessionSnapshot(snapshotResponse({
+      deadUuids: [V1], nightResult: RESTORED_NIGHT,
+    }))
+  })
+
+  assert.equal(useInGameStore.getState().state.nightResult.deathReveals.length, 1,
+    "전제: 공개 결과 자체는 상태에 그대로 복원돼야 한다")
+  assert.equal(useInGameStore.getState().snapshotResultOwner, null, "증거 없는 적용이 증거를 만들었다")
+  assert.equal(session.killReveal.open, false, "수신 증거 없는 값이 연출이 됐다")
+  assert.equal(session.killReveal.pending, false)
+
+  session.close()
+})
+
+test("F-23(SPLIT-1): 소속이 교체되면 잔존 공개 결과가 새 신분의 연출로 재등록되지 않고, 현재 신원의 복구는 정상 동작한다", () => {
+  seedSession()
+  const session = open()
+
+  // 1) 지금 신원·지금 연결에서 검증된 복원. 연출이 실제로 떠 있다(양성 대조).
+  act(() => {
+    applySnapshotAsCurrentRequest(snapshotResponse({ deadUuids: [V1], nightResult: RESTORED_NIGHT }))
+  })
+  assert.equal(session.killReveal.open, true, "전제: 현재 신원의 복원은 연출이 되어야 한다")
+  const staleRevealId = session.killReveal.revealId
+  const staleConsume = session.killReveal.consume
+  // effect 정리가 돌기 전의 **실제 등록 콜백**을 손에 쥔다.
+  const staleNightHandlers = session.socket.handlersOf("night_result_applied")
+  assert.equal(staleNightHandlers.length, 2, "전제: 전역 수신 훅과 연출 훅이 각각 하나씩 등록돼 있어야 한다")
+
+  // 2) 소속 교체.
+  act(() => { swapMyMembership("mem-after") })
+
+  // 3) 정리 뒤에도 **참조가 살아 있는** 옛 콜백을 직접 부른다. 구독 해제 시점에 기대지 않고,
+  //    등록이 그대로 남아 있었더라도 아무 일도 하지 않는다는 사실 자체를 확인한다.
+  act(() => {
+    for (const handler of staleNightHandlers) {
+      handler({
+        gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
+        players: ROSTER.map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== V2 })),
+        victimUuid: V2, winResult: WIN_RESULT,
+        deathReveals: [{ victimUuid: V2, source: "WITCH_HUNTER" }],
+      })
+    }
+    // 옛 consume도 마찬가지다(이전 오버레이가 들고 있던 콜백이다).
+    staleConsume(staleRevealId)
+  })
+
+  assert.notEqual(useInGameStore.getState().state.phase, "ENDED",
+    "옛 연결의 콜백이 canonical 종료를 저장했다")
+  assert.equal(session.killReveal.open, false, "이전 신분의 연출이 새 신분 화면에 남았다")
+  assert.equal(session.killReveal.pending, false, "잔존 공개 결과가 새 범위의 큐로 재등록됐다")
+  assert.equal(navigated(), false)
+
+  // 4) 현재 신원이 **다시 요청해 검증한** 같은 공개 사망은 정상 복구된다(영구 차단이 아니다).
+  act(() => {
+    applySnapshotAsCurrentRequest(snapshotResponse({ deadUuids: [V1], nightResult: RESTORED_NIGHT }))
+  })
+  assert.equal(session.killReveal.open, true, "새 소속의 정상 복구까지 막혔다")
+  assert.equal(session.killReveal.message, "광대들이 첫째 님을 죽였습니다.")
+
+  // 그리고 그 복구된 연출은 이 신분의 consume으로만 소비된다(옛 콜백은 여전히 무력하다).
+  const restoredRevealId = session.killReveal.revealId
+  act(() => { staleConsume(restoredRevealId) })
+  assert.equal(session.killReveal.open, true, "이전 신분의 consume이 새 연출을 대신 소비했다")
+  assert.equal(session.killReveal.revealId, restoredRevealId)
+
+  session.consumeActive()
+  assert.equal(session.killReveal.pending, false)
+
+  session.close()
+})
+
+test("F-23(SPLIT-1): 소켓이 교체되면 이전 연결의 수신 증거는 연출이 되지 않는다", () => {
+  seedSession()
+  const session = open()
+
+  act(() => {
+    applySnapshotAsCurrentRequest(snapshotResponse({ deadUuids: [V1], nightResult: RESTORED_NIGHT }))
+  })
+  assert.equal(session.killReveal.open, true, "전제: 이 연결의 복원은 연출이 되어야 한다")
+
+  // 연결 교체. 공개 결과 값은 그대로 남지만, 그 값을 받은 연결은 이미 사라졌다.
+  const next = createFakeSocket({ id: "sock-next" })
+  act(() => setSocket(next))
+
+  assert.ok(useInGameStore.getState().state.nightResult, "전제: 공개 결과 값 자체는 남아 있다")
+  assert.equal(session.killReveal.open, false, "옛 연결에서 받은 증거가 새 연결의 연출이 됐다")
+  assert.equal(session.killReveal.pending, false)
+
+  // 새 연결에서 다시 요청해 검증한 같은 사망은 그 연결의 증거로 복구된다.
+  act(() => {
+    applySnapshotAsCurrentRequest(snapshotResponse({ deadUuids: [V1], nightResult: RESTORED_NIGHT }))
+  })
+  assert.equal(session.killReveal.open, true, "새 연결의 정상 복구가 막혔다")
+
+  session.consumeActive()
+  assert.equal(session.killReveal.pending, false, "새 연결에서도 같은 사망은 한 번만 재생된다")
+
+  session.close()
+  act(() => setSocket(null))
+})
+
+/**
+ * F-23(AC-05/SPLIT-1): **같은 객체의 재연결은 구독을 죽이지 않는다.**
+ *
+ * 수신 범위는 옛 연결에서 온 사건을 걸러내기 위해 socket.id까지 본다. 그런데 Socket.IO의
+ * 재연결은 객체를 바꾸지 않고 sid만 새로 발급하므로, 구독 effect가 그 전이를 보지 못하면
+ * 등록 문맥은 영영 옛 id를 들고 있게 되고 — 그 뒤의 **정상** 공개 사건까지 전부 거부된다
+ * (재연결 한 번으로 사망·종료가 화면에 반영되지 않는다). 거부와 재개는 한 시험에서 함께
+ * 고정해야 한다: 앞만 지키면 화면이 먹통이 되고, 뒤만 지키면 옛 사실이 내려앉는다.
+ */
+test("F-23(AC-05/SPLIT-1): 같은 소켓 객체가 재연결해도 그 연결의 정상 공개 사건은 1회 수신된다", () => {
+  seedSession()
+  const session = open()
+
+  // 실제 재연결: 객체 동일성은 그대로이고 sid만 새로 발급된다.
+  act(() => {
+    session.socket.id = "sock-2"
+    session.socket.deliver("connect")
+  })
+
+  session.deliver(
+    "night_result_applied",
+    endedNightResult({ deathReveals: [{ victimUuid: V1, source: "JOKER" }], deadUuids: [V1] }),
+  )
+
+  // 전역 수신 훅(ProtectedRoute 위치)이 현재 연결의 문맥으로 다시 등록되지 않으면 이 사건은
+  // 통째로 거부되어 store가 그대로 남는다.
+  assert.equal(useInGameStore.getState().state.phase, "ENDED",
+    "재연결 뒤 도착한 정상 공개 사건이 거부됐다")
+  assert.equal(
+    useInGameStore.getState().state.players.find((p) => p.uuid === V1).alive, false,
+    "재연결 뒤의 canonical 사망이 반영되지 않았다",
+  )
+  assert.equal(session.killReveal.open, true, "재연결 뒤의 공개 사망 연출이 만들어지지 않았다")
+  assert.equal(session.killReveal.message, "광대들이 첫째 님을 죽였습니다.")
+  assert.equal(navigated(), false, "연출이 재생되기도 전에 결과 페이지로 넘어갔다")
+
+  // 같은 사건이 한 번 더 전달돼도(중복 방송) 연출은 늘지 않는다.
+  session.deliver(
+    "night_result_applied",
+    endedNightResult({ deathReveals: [{ victimUuid: V1, source: "JOKER" }], deadUuids: [V1] }),
+  )
+  session.consumeActive()
+  assert.equal(session.killReveal.pending, false, "재연결 뒤 같은 사건이 두 번 큐에 들어갔다")
+  assert.deepEqual(navigateCalls, [["/gameresult", { replace: true }]])
 
   session.close()
 })
