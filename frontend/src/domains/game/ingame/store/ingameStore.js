@@ -807,6 +807,34 @@ export const useInGameStore = create((set) => ({
       }
     }),
 
+  /**
+   * F-23(SPLIT-1): **확인하지 못한 종료 결과의 이동 근거만 걷어낸다.**
+   *
+   * 신원(계정·소속)이나 연결이 바뀐 뒤 현재 신원의 스냅샷을 끝내 받지 못하면(타임아웃·전송
+   * 오류·거부·ok:false), 지금 화면이 들고 있는 종료 상태는 **이전 신원·이전 연결이 받아 둔
+   * 사실**이다. 그 값을 그대로 둔 채 재결속 보류만 풀면 화면은 옛 사실로 결과 화면에
+   * 들어간다 — 그 보류가 막으려던 바로 그 결함이 실패 경로로 되살아난다.
+   *
+   * 그래서 이동 근거인 winResult만 비운다. phase는 건드리지 않는다 — ENDED는 서버가 한 번
+   * 확정하면 되돌릴 수 없는 잠금이고(applySessionSnapshotPure의 종료 잠금), 우리가 확인하지
+   * 못한 것은 "지금 결과 화면으로 가도 되는가" 하나뿐이다. winResult 없는 ENDED는 이 store가
+   * 이미 만드는 모양이다(applyNightResultAppliedPayload의 ENDED 분기는 payload에 승패가 실려
+   * 있을 때만 채운다).
+   *
+   * **영구 무효가 아니다.** 현재 연결의 정상 스냅샷이 ENDED를 다시 실으면 winResult도 함께
+   * 복원되어(applySessionSnapshotPure는 ENDED 응답에 winResult를 강제한다) 결과 이동이 그대로
+   * 재개된다 — 사용자가 인게임 화면에 갇히지 않는다.
+   *
+   * 걷어낼 근거가 없으면 참조 보존 no-op이다(불필요한 리렌더를 만들지 않는다).
+   */
+  invalidateUnconfirmedTerminalResult: () =>
+    set((current) => {
+      if (!current.gameId || !current.state) return current
+      if (current.state.phase !== "ENDED") return current
+      if (!current.state.winResult) return current
+      return { state: { ...current.state, winResult: null } }
+    }),
+
   // night_action_result를 반영한다. 형태·게임/밤 일치·본인 여부 검증은 호출부
   // (useGameSessionSocketEvents → parseInGameNightPrivateResultPayload)가 이미 끝냈지만,
   // 다른 apply* 액션과 동일한 이유로 여기서도 gameId 일치만은 독립적으로 재확인한다.

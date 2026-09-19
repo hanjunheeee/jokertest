@@ -165,9 +165,37 @@ export function useInGameSessionSnapshotSync() {
 
     const requestSnapshot = () => {
       const requestEpochVersion = epochVersionRef.current
-      /** 이 세대의 요청이 끝났다 — 더 새로운 세대가 열려 있으면 그쪽 보류를 건드리지 않는다. */
-      const finishRebind = () => {
+      /**
+       * 이 세대의 요청이 현재 신원의 스냅샷을 **실제로 적용하고** 끝났다 — 보류를 그냥 푼다.
+       * 더 새로운 세대가 열려 있으면 그쪽 보류는 그쪽 요청이 끝맺는다(건드리지 않는다).
+       */
+      const finishRebindApplied = () => {
         if (epochVersionRef.current !== requestEpochVersion) return
+        setIdentityRebindPending(false)
+      }
+
+      /**
+       * F-23(SPLIT-1): 이 세대의 요청이 **스냅샷을 적용하지 못한 채** 끝났다(타임아웃·전송
+       * 오류·동기 예외·거부·ok:false·범위 불일치).
+       *
+       * 여기서 보류만 풀면 화면은 아직 **이전 신원·이전 연결이 받아 둔** state를 들고 있는
+       * 채로 결과 이동 보류가 풀린다 — 잔존 ENDED·winResult가 그대로 이동 근거가 되어
+       * (InGamePage → useInGameResultNavigation), 이 보류가 막으려던 바로 그 결함이 실패
+       * 경로로 되살아난다. 그래서 푸는 **대신**이 아니라 푸는 **전에** 그 이동 근거를
+       * 무효화한다.
+       *
+       * 보류를 계속 붙들어 두지는 않는다 — 실패가 이어져도 화면은 인게임에 남아 기존 상단
+       * 나가기·복구 UI를 그대로 쓸 수 있고, 다음 연결의 정상 스냅샷이 종료 결과를 다시
+       * 실으면 이동이 재개된다(useInGameStore.invalidateUnconfirmedTerminalResult 참고).
+       *
+       * 애초에 보류를 짊어지지 않은 요청(첫 진입의 평범한 동기화)은 이전 신원의 잔존 상태를
+       * 들고 있지 않으므로 아무것도 무효화하지 않는다 — 일시적인 조회 실패가 방금 받은
+       * 정상 종료 결과를 지우면 안 된다.
+       */
+      const finishRebindUnapplied = () => {
+        if (epochVersionRef.current !== requestEpochVersion) return
+        if (!getInGameSnapshotRebindPending()) return
+        useInGameStore.getState().invalidateUnconfirmedTerminalResult()
         setIdentityRebindPending(false)
       }
       // 이 세대에서 이미 요청을 보냈다면 다시 보내지 않는다 — StrictMode 이중 호출과, 같은
@@ -240,25 +268,36 @@ export function useInGameSessionSnapshotSync() {
           .emitWithAck("get_session_snapshot", requestGameId ? { gameId: requestGameId } : {})
       } catch {
         // 동기 전송 예외도 실패와 **같은 세대 검사**를 거친다(한쪽만 느슨하면 그쪽으로 샌다).
-        // 이 세대에는 더 이상 올 응답이 없다 — 재결속 보류를 여기서 끝맺는다(무한 보류 방지).
-        finishRebind()
-        if (isStaleNow()) return
+        // 이 세대에는 더 이상 올 응답이 없다 — 적용하지 못한 채 끝났으므로 이동 근거를
+        // 걷어낸 뒤 재결속 보류를 끝맺는다(무한 보류도, 옛 상태로의 이동도 만들지 않는다).
+        const stale = isStaleNow()
+        finishRebindUnapplied()
+        if (stale) return
         if (!requestGameId) setBootstrapStatus("failed")
         return
       }
 
       ackPromise
         .then((response) => {
-          finishRebind()
-          if (isStaleNow()) return
+          if (isStaleNow()) {
+            // 이 응답은 지금 화면의 사실이 아니다 — 아무것도 적용하지 않는다.
+            finishRebindUnapplied()
+            return
+          }
           if (!requestGameId) {
             if (response?.ok !== true) {
+              finishRebindUnapplied()
               setBootstrapStatus("missing")
               return
             }
             useInGameStore.getState().bootstrapSessionSnapshot(response, receiptContext)
             const recovered = Boolean(useInGameStore.getState().gameId)
-            if (recovered) rememberFulfilled()
+            if (recovered) {
+              rememberFulfilled()
+              finishRebindApplied()
+            } else {
+              finishRebindUnapplied()
+            }
             setBootstrapStatus(recovered ? "recovered" : "missing")
             return
           }
@@ -266,18 +305,30 @@ export function useInGameSessionSnapshotSync() {
           // 형태가 잘못됐거나 ok:false인 응답은 그 함수 내부에서 참조 보존 no-op으로 처리되므로
           // 여기서 별도로 응답 형태를 분기하지 않는다. 수신 문맥은 store가 적용 직전에 한 번 더
           // 맞춰 보고, 실제로 반영된 경우에만 공개 결과의 수신 증거로 기록한다.
+          //
+          // snapshotSeq가 실제로 올랐는가가 "적용됐는가"의 유일한 판정이다 — 거부된 응답으로
+          // 재결속을 끝맺으면 확인하지 못한 옛 종료 상태가 그대로 이동 근거로 남는다.
           const seqBefore = useInGameStore.getState().snapshotSeq
           useInGameStore.getState().applySessionSnapshot(response, receiptContext)
-          if (useInGameStore.getState().snapshotSeq !== seqBefore) rememberFulfilled()
+          if (useInGameStore.getState().snapshotSeq !== seqBefore) {
+            rememberFulfilled()
+            finishRebindApplied()
+            return
+          }
+          finishRebindUnapplied()
         })
         .catch(() => {
-          finishRebind()
           // 타임아웃/전송 오류: 조용히 무시한다. 다음 재연결이 새 세대로 다시 요청한다.
           //
           // F-21(AC-05): 실패도 **성공과 같은 세대 검사**를 통과해야 한다. 옛 bootstrap 조회가
           // 늦게 실패하는 동안 이미 새 게임·새 계정·새 연결이 들어와 있을 수 있는데, 그때
           // failed로 덮으면 방금 복원된 화면이 "세션 없음"으로 되돌아간다.
-          if (isStaleNow()) return
+          //
+          // 세대 판정을 store 변경보다 **먼저** 읽는다 — 아래 무효화는 이 판정의 입력을 바꾸지
+          // 않지만, 두 읽기의 순서가 결과를 가르지 않는다는 사실을 코드에 남겨 둔다.
+          const stale = isStaleNow()
+          finishRebindUnapplied()
+          if (stale) return
           if (!requestGameId) setBootstrapStatus("failed")
         })
     }
