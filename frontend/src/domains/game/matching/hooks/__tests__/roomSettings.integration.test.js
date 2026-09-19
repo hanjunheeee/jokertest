@@ -495,6 +495,90 @@ test("F-23(AC-01/AC-02) · 실제 인게임 방관리 탭에 관전자 항목이
   useInGameStore.getState().clearGame()
 })
 
+/**
+ * F-23(AC-02): **설정 항목 정의와 store 상태 키의 전수 고정.**
+ *
+ * 위 시험들은 "관전자 항목이 없다"는 부재를 화면과 응답에서 본다. 그것만으로는 열거 가능한
+ * 범위가 잠기지 않는다 — 항목 정의나 store 키가 늘어나도(이름이 무엇이든) 아무 시험도 깨지지
+ * 않기 때문이다. 여기서는 인게임 방관리·생성/편집 탭의 **항목 목록 자체**와 matchingStore의
+ * **상태 키 전부**, 그리고 폼·요청 변환의 키를 그대로 적어 고정한다.
+ */
+test("F-23(AC-02) · 설정 항목 정의·폼/요청 키·store 상태 키가 전수로 고정된다", async () => {
+  const { GAME_SETUP_TABS, GENERAL_GAME_SETUP, MEETING_GAME_SETUP } =
+    await import("../../../setup/constants/gameSetupOptions.js")
+  const { INGAME_SETTING_TABS } =
+    await import("../../../ingame/constants/controls/ingameSetting/ingameSettingData.js")
+
+  // (1) 인게임 설정 탭과 방관리 행 — 이 두 목록이 곧 인게임 설정 화면의 항목 정의 전부다.
+  assert.deepEqual(INGAME_SETTING_TABS.map((tab) => tab.id), ["chat", "sound", "room"],
+    "인게임 설정 탭 목록이 바뀌었다")
+  assert.deepEqual(
+    INGAME_SETTING_ROOM_ROWS.map((row) => `${row.kind}:${row.id}`),
+    ["action:kick-player", "checkbox:keep-settings-next-game", "action:view-room-code"],
+    "인게임 방관리 항목 정의가 바뀌었다",
+  )
+  assert.deepEqual(
+    INGAME_SETTING_ROOM_ROWS.map((row) => row.title),
+    ["플레이어 추방", "다음 게임 동일 설정 유지", "방 코드 복사"],
+    "인게임 방관리 항목 문구가 바뀌었다",
+  )
+
+  // (2) 방 생성·대기방 편집이 공유하는 설정 탭 항목 정의 전부.
+  assert.deepEqual(GAME_SETUP_TABS.map((tab) => tab.id), ["general", "meeting"])
+  assert.deepEqual(GENERAL_GAME_SETUP.map((item) => item.id),
+    ["private-lobby", "max-players", "joker-count", "lights-out", "soul-betting"],
+    "일반 탭 설정 항목 정의가 바뀌었다")
+  assert.deepEqual(MEETING_GAME_SETUP.map((item) => item.id), [
+    "day-discussion-time", "day-vote-time", "night-action-time",
+    "night-action-time-joker", "night-action-time-doctor",
+    "night-action-time-guard", "night-action-time-witch-hunter",
+    "vote-reveal",
+  ], "회의&투표 탭 설정 항목 정의가 바뀌었다")
+
+  // (3) 위 항목의 id·라벨·설명 어디에도 관전 어휘가 없다(문구로 되살아나는 경우까지 본다).
+  const definitionText = [
+    ...INGAME_SETTING_TABS, ...INGAME_SETTING_ROOM_ROWS,
+    ...GAME_SETUP_TABS, ...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP,
+  ].map((item) => `${item.id}|${item.label ?? ""}|${item.title ?? ""}|${item.description ?? ""}`)
+  assert.deepEqual(definitionText.filter((text) => /spectat|관전/i.test(text)), [],
+    "설정 항목 정의에 관전 항목이 있다")
+  // 대조: 같은 필터가 관전 항목을 실제로 잡는다(항상 빈 배열을 돌려주는 검사가 아니다).
+  assert.deepEqual(["max-players||최대 플레이어 수|", "allow-spectators||관전자 허용|"]
+    .filter((text) => /spectat|관전/i.test(text)), ["allow-spectators||관전자 허용|"])
+
+  // (4) matchingStore의 상태 키 전부. 설정은 서버 값을 그대로 보관하므로(A-02) 이 store에
+  //     관전 상태가 새로 생기는 것을 막으려면 키 목록 자체를 고정해야 한다.
+  useMatchingStore.getState().clearRoom()
+  const state = useMatchingStore.getState()
+  const dataKeys = Object.keys(state).filter((key) => typeof state[key] !== "function")
+  assert.deepEqual(dataKeys.sort(), [
+    "accessType", "bootEpoch", "canStart", "hostUuid", "isInRoom", "isSearching",
+    "players", "roomCode", "roomId", "roomInstanceId", "roomRevision",
+    "settings", "settingsVersion",
+  ], "matchingStore의 상태 키가 바뀌었다")
+  assert.deepEqual(Object.keys(state).filter((key) => /spectat|관전/i.test(key)), [],
+    "store에 관전 관련 키가 있다")
+
+  // (5) 폼 변환과 요청 조립의 키 — 서버 응답이 화면으로, 화면이 요청으로 건너가는 두 경계다.
+  const serverSettings = {
+    maxPlayers: 8, jokerCount: 2, roleCompositionMode: "auto",
+    dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90,
+    lightsOut: false, soulBetting: false, voteReveal: true,
+  }
+  const form = buildRoomSettingsFormState({ accessType: "open", settings: serverSettings })
+  assert.equal(form.ok, true, "정상 설정이 폼으로 변환되지 않았다")
+  assertNoSpectatorKeys(form, "공용 폼 변환 결과")
+  const payload = buildUpdateRoomSettingsPayload({
+    ...form, roomId: "room-keys", requestId: "req-keys", expectedSettingsVersion: 1,
+  })
+  assert.deepEqual(Object.keys(payload).sort(), [
+    "accessType", "dayDiscussionTime", "dayVoteTime", "expectedSettingsVersion",
+    "jokerCount", "maxPlayers", "nightActionTime", "roleCompositionMode",
+    "requestId", "roomId",
+  ].sort(), "저장 요청의 키 집합이 바뀌었다")
+  assertNoSpectatorKeys(payload, "저장 요청 payload")
+})
+
 test("AC-06 · 실제 생성 화면의 두 탭·요청·저장값·조회·store·공개 목록 어디에도 관전자 항목이 없다", async () => {
   const { view } = await mountCreationPage("host-create")
   const container = view.container

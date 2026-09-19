@@ -172,6 +172,77 @@ test('AC-06 · 폐기 키 검출기는 중첩·대문자 SPECTATOR까지 각각 
     assert.deepEqual(findSpectatorKeys({ nickname: 'spectator-fan', title: 'SPECTATOR' }), [])
 })
 
+/**
+ * F-23(AC-02): **방 설정 허용 목록과 저장 키의 전수 고정.**
+ *
+ * 위 검출기 시험들은 "관전이라는 낱말의 키가 없다"만 본다. 그것만으로는 열거 가능한 범위가
+ * 잠기지 않는다 — 허용 목록이나 저장 키가 늘어나면(이름이 무엇이든) 아무 시험도 깨지지
+ * 않는다. 여기서는 서버가 **소유한 목록 자체**를 그대로 적어 고정하고, 그 목록으로 실제
+ * 방을 만들어 저장된 키 집합까지 함께 본다. 항목이 하나라도 늘거나 줄면 이 시험이 깨진다.
+ */
+test('AC-02 · 방 설정 허용 목록·요청 허용 키·역할 키·실제 저장 키가 전수로 고정된다', async () => {
+    const validation = require('../../utils/updateRoomSettingsValidation')
+    const { CUSTOM_ROLE_KEYS } = require('../../game-core/roleComposition')
+    const { ROLE_NIGHT_ACTION_TIME_KEYS } = require('../../utils/createRoomValidation')
+
+    // (1) 편집 가능한 설정 필드 — 조회 응답·공개 목록 요약·F-24 복원 입력의 공통 원천이다.
+    assert.deepEqual([...validation.EDITABLE_ROOM_SETTING_KEYS], [
+        'maxPlayers', 'jokerCount', 'roleCompositionMode', 'roleCounts',
+        'dayDiscussionTime', 'dayVoteTime', 'nightActionTime', 'roleNightActionTimes',
+    ], '편집 가능 설정 허용 목록이 바뀌었다')
+    // (2) 서버가 보존하는 D-12 세 값(수정 요청으로 바뀌지 않는다).
+    assert.deepEqual([...validation.PRESERVED_ROOM_SETTING_KEYS],
+        ['lightsOut', 'soulBetting', 'voteReveal'], '보존 설정 목록이 바뀌었다')
+    // (3) update_room_settings 요청이 실을 수 있는 최상위 키 전부.
+    assert.deepEqual([...validation.UPDATE_REQUEST_TOP_LEVEL_KEYS], [
+        'roomId', 'requestId', 'expectedSettingsVersion', 'accessType',
+        ...validation.EDITABLE_ROOM_SETTING_KEYS,
+    ], '수정 요청 허용 키 목록이 바뀌었다')
+    // (4) 두 중첩 역할 객체의 허용 키 전부(여기에 SPECTATOR가 끼어들 자리가 없다).
+    assert.deepEqual([...CUSTOM_ROLE_KEYS], [...NORMAL_ROLE_KEYS])
+    assert.deepEqual([...ROLE_NIGHT_ACTION_TIME_KEYS], [...NORMAL_ROLE_KEYS])
+    // (5) 이 소켓 계약이 쓰는 사건 이름 전부.
+    assert.deepEqual(ROOM_SETTINGS_EVENTS, {
+        UPDATE_ROOM_SETTINGS: 'update_room_settings',
+        GET_ROOM_SETTINGS_UPDATE_RESULT: 'get_room_settings_update_result',
+        ROOM_SETTINGS_UPDATED: 'room_settings_updated',
+    })
+
+    // 위 목록 어디에도 관전 어휘가 없다(이름이 바뀌어 들어오는 경우까지 본다).
+    const enumerated = [
+        ...validation.EDITABLE_ROOM_SETTING_KEYS,
+        ...validation.PRESERVED_ROOM_SETTING_KEYS,
+        ...validation.UPDATE_REQUEST_TOP_LEVEL_KEYS,
+        ...CUSTOM_ROLE_KEYS, ...ROLE_NIGHT_ACTION_TIME_KEYS,
+        ...Object.values(ROOM_SETTINGS_EVENTS),
+    ]
+    assert.deepEqual(enumerated.filter((name) => /spectat|관전/i.test(name)), [],
+        '허용 목록·사건 이름에 관전 항목이 있다')
+    // 대조: 같은 필터가 관전 항목을 실제로 잡아낸다(항상 빈 배열을 돌려주는 검사가 아니다).
+    assert.deepEqual(['maxPlayers', 'allowSpectators'].filter((name) => /spectat|관전/i.test(name)),
+        ['allowSpectators'])
+
+    // (6) **실제로 저장되는 키**. 목록만 보면 저장 경로가 다른 키를 덧붙여도 알 수 없다.
+    const io = createFakeIo([])
+    const { room } = await createRoom(io, 'host-keys', { maxPlayers: 8, jokerCount: 2 })
+    const stored = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
+    assert.deepEqual(Object.keys(stored).sort(), [
+        'dayDiscussionTime', 'dayVoteTime', 'jokerCount', 'lightsOut', 'maxPlayers',
+        'nightActionTime', 'roleCompositionMode', 'soulBetting', 'voteReveal',
+    ], '서버가 저장하는 설정 키 집합이 바뀌었다')
+    assertNoSpectatorKeys(stored, '생성 직후 서버 저장값')
+
+    // (7) 그 방을 실제로 조회한 응답의 설정 키 — 저장 키와 나가는 키는 다른 사실이다.
+    const current = await callAsPromise(handleGetCurrentRoom, 'host-keys')
+    assert.equal(current.ok, true, current.message)
+    assert.equal(current.room.roomId, room.roomId, '조회가 방금 만든 방을 돌려주지 않았다')
+    assert.deepEqual(Object.keys(current.room.settings).sort(), [
+        'dayDiscussionTime', 'dayVoteTime', 'jokerCount', 'lightsOut', 'maxPlayers',
+        'nightActionTime', 'roleCompositionMode', 'soulBetting', 'voteReveal',
+    ], '조회 응답의 설정 키 집합이 바뀌었다')
+    assertNoSpectatorKeys(current.room, '생성 직후 조회 응답')
+})
+
 /** 현재 서버가 들고 있는 방 상태의 **깊은** 복사본. 같은 참조 비교로 무변경을 오판하지 않는다. */
 function snapshotRooms() {
     return JSON.stringify(matchmaking.__getStateSnapshotForTests().gameRooms)

@@ -378,106 +378,138 @@ function isProductionSourceFileName(name) {
 // 반려가 지정한 그대로다 — 이 두 낱말이 어느 자리에든 나오면 일단 잡고, 자리에 따라 판정한다.
 const SPECTATOR_VOCABULARY = /spectat|관전/i
 
-// 여러 줄 블록 주석의 **본문 줄**인가(" * …"). 닫는 줄(별표+슬래시로 시작하는 줄)은 제외한다
-// — 그것까지 주석으로 통과시키면 닫은 뒤에 붙은 `const spectator = true`가 함께 숨는다.
-// 그 줄은 아래 splitCodeAndComment가 상태와 함께 갈라 코드 부분을 실제로 검사한다.
-function isBlockCommentBodyLine(line) {
-  const trimmed = line.trim()
-  return trimmed.startsWith("*") && !trimmed.startsWith("*/")
-}
+// ── 코드/주석 분리: 파일 전체를 훑는 문자 단위 상태 기계 ────────────────────
+//
+// 예전 판은 줄 하나를 보고 "이 줄은 주석인가"를 휴리스틱으로 판정했다(classifySpectatorLine
+// 계열). 규칙을 아무리 덧붙여도 줄 안에서 주석이 **끝난 뒤에 붙은 코드**가 계속 빠져나갔다 —
+// 마지막까지 남은 구멍이 `' * 설명 */ const spectator = true'`였다(블록 주석 본문처럼 생겨
+// 통째로 주석으로 통과했다, CODEX-11 지적). 줄 단위 규칙을 더 고치는 대신 **방식을 바꾼다**:
+// 파일 전체 문자열을 한 문자씩 읽어 상태를 옮기고, 그 문자가 코드인지 주석인지를 위치
+// 하나하나에 대해 정한다. 줄 하나를 통째로 어느 한쪽에 몰아주는 판정 자체가 사라진다.
+//
+// 산출물은 길이가 원문과 정확히 같은 두 본문이다(줄 번호·열 위치가 보존된다):
+//   - code     : 주석 자리를 공백으로 지운 **코드 전용 본문**
+//   - comments : 코드 자리를 공백으로 지운 **주석 전용 본문**
+//
+// 문자열·템플릿 리터럴·JSX 텍스트는 **지우지 않는다** — 화면 문구도 잠금 대상이기 때문이다
+// (`aria-label="관전자 허용"`이나 JSX 본문 "관전 계속하기"가 코드 본문에 그대로 남아야 한다).
+// 정규식 리터럴도 코드로 남긴다: `/spectat|관전/i` 안의 슬래시를 주석 시작으로 오인하면 그
+// 뒤에 오는 코드가 통째로 숨는다.
 
-// 한 줄을 **코드 부분**과 **주석 부분**으로 가른다.
-//
-// 예전 판은 블록 주석 시작 기호가 나오면 줄 끝까지를 통째로 주석으로 버렸다. 그래서 주석을
-// 닫은 **뒤에 붙은 코드**(설명 주석 한 칸 뒤의 `const spectator = true`)가 검사에서 통째로
-// 사라졌다(CODEX-9 AC-02 지적). 이제 실제 스캐너가 블록 주석의 닫힘을 찾아 그 자리부터 다시
-// 코드로 읽고, 문자열 리터럴 안의 슬래시 두 개나 블록 주석 기호는 주석으로 오인하지 않는다
-// ("https://…" 같은 값이 코드를 통째로 지우지 않는다).
-//
-// 닫히지 않은 블록 주석은 insideBlockComment=true로 돌려주어 **파일 단위**로 상태가 이어지게
-// 한다(호출부 spectatorOccurrences가 그 값을 다음 줄로 넘긴다).
-function splitCodeAndComment(line, startsInsideBlockComment) {
-  let code = ""
-  let comment = ""
-  let insideBlock = startsInsideBlockComment
+/** 이 문자 뒤의 `/`는 나눗셈이 아니라 정규식 리터럴의 시작이다. */
+const REGEX_LITERAL_PRECEDING_CHAR = /[([{,;:=!&|?+\-*%~^<>]$/
+/** 이 낱말 뒤의 `/`도 마찬가지다(`return /re/.test(x)`). */
+const REGEX_LITERAL_PRECEDING_WORD =
+  /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|void|do|else|case|yield|await)$/
+
+function splitSourceIntoCodeAndComments(source) {
+  const code = []
+  const comments = []
+  // 두 본문은 같은 길이를 유지한다 — 한쪽이 문자를 가져가면 다른 쪽은 공백을 받는다.
+  // 줄바꿈만 양쪽에 그대로 들어가 줄 번호가 어긋나지 않는다.
+  const takeAsCode = (ch) => { code.push(ch); comments.push(ch === "\n" ? "\n" : " ") }
+  const takeAsComment = (ch) => { comments.push(ch); code.push(ch === "\n" ? "\n" : " ") }
+
   let index = 0
-  while (index < line.length) {
-    if (insideBlock) {
-      const end = line.indexOf("*/", index)
-      if (end === -1) { comment += line.slice(index); break }
-      comment += line.slice(index, end + 2)
-      index = end + 2
-      insideBlock = false
+  let state = "code"
+  // 직전까지 읽은 코드 문자들의 꼬리(공백 제외). `/`가 정규식인지 나눗셈인지 가른다.
+  let codeTail = ""
+  const rememberCodeChar = (ch) => {
+    if (/\s/.test(ch)) return
+    codeTail = `${codeTail}${ch}`.slice(-24)
+  }
+
+  while (index < source.length) {
+    const char = source[index]
+    const next = source[index + 1]
+
+    if (state === "line-comment") {
+      // 줄 주석은 줄바꿈에서 끝난다. 그 줄바꿈 자체는 코드 쪽 구조다.
+      if (char === "\n") { state = "code"; takeAsCode(char) } else takeAsComment(char)
+      index += 1
       continue
     }
-    const char = line[index]
-    // 문자열 리터럴은 **코드 쪽에 그대로 남긴다** — 자리 분류(route-path·object-key·
-    // string-literal)가 그 내용을 봐야 한다.
-    if (char === '"' || char === "'" || char === "`") {
-      let cursor = index + 1
-      while (cursor < line.length) {
-        if (line[cursor] === "\\") { cursor += 2; continue }
-        if (line[cursor] === char) { cursor += 1; break }
-        cursor += 1
+    if (state === "block-comment") {
+      if (char === "*" && next === "/") {
+        takeAsComment("*"); takeAsComment("/")
+        index += 2
+        state = "code"
+        continue
       }
-      code += line.slice(index, cursor)
-      index = cursor
+      takeAsComment(char)
+      index += 1
       continue
     }
-    if (char === "/" && line[index + 1] === "/") { comment += line.slice(index); break }
-    if (char === "/" && line[index + 1] === "*") { comment += "/*"; index += 2; insideBlock = true; continue }
-    code += char
+
+    if (char === "/" && next === "/") {
+      state = "line-comment"; takeAsComment("/"); takeAsComment("/"); index += 2; continue
+    }
+    if (char === "/" && next === "*") {
+      state = "block-comment"; takeAsComment("/"); takeAsComment("*"); index += 2; continue
+    }
+
+    // 문자열·템플릿 리터럴: 닫는 따옴표까지 통째로 코드다. 안쪽의 `//`나 `/*`는 주석이 아니다
+    // ("https://…" 같은 값이 그 줄의 코드를 통째로 지우지 않는다).
+    if (char === '"' || char === "'" || char === "`") {
+      takeAsCode(char)
+      index += 1
+      while (index < source.length) {
+        const inner = source[index]
+        if (inner === "\\") {
+          takeAsCode(inner)
+          if (index + 1 < source.length) takeAsCode(source[index + 1])
+          index += 2
+          continue
+        }
+        takeAsCode(inner)
+        index += 1
+        if (inner === char) break
+      }
+      codeTail = char
+      continue
+    }
+
+    // 정규식 리터럴: 직전 코드 문자가 값이 올 자리를 여는 것이면 `/`는 나눗셈이 아니다.
+    if (char === "/"
+      && (codeTail === ""
+        || REGEX_LITERAL_PRECEDING_CHAR.test(codeTail)
+        || REGEX_LITERAL_PRECEDING_WORD.test(codeTail))) {
+      takeAsCode(char)
+      index += 1
+      let insideClass = false
+      while (index < source.length) {
+        const inner = source[index]
+        if (inner === "\n") break // 닫히지 않은 채 줄이 끝났다면 정규식이 아니었다
+        if (inner === "\\") {
+          takeAsCode(inner)
+          if (index + 1 < source.length) takeAsCode(source[index + 1])
+          index += 2
+          continue
+        }
+        takeAsCode(inner)
+        index += 1
+        if (inner === "[") insideClass = true
+        else if (inner === "]") insideClass = false
+        else if (inner === "/" && !insideClass) break
+      }
+      codeTail = "/"
+      continue
+    }
+
+    takeAsCode(char)
+    rememberCodeChar(char)
     index += 1
   }
-  return { code, comment, insideBlockComment: insideBlock }
+  return { code: code.join(""), comments: comments.join("") }
 }
 
-/** 문자열 리터럴을 비운 코드(식별자 자리 판정용). */
-function stripStringLiterals(code) {
-  return code.replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""')
-}
-
-/**
- * 관전 어휘가 그 줄의 **어느 자리**에 나타났는지, 그리고 그 줄이 끝난 뒤에도 블록 주석이
- * 이어지는지를 함께 돌려준다.
- *
- * kind: null(출현 없음) · "comment" · "route-path" · "socket-event" · "object-key" ·
- * "identifier" · "jsx-text" · "string-literal". 통과하는 것은 comment와, 사망 참가자
- * 선택 파일의 jsx-text("관전 계속하기") 하나뿐이다.
- */
-function classifySpectatorLineWithState(line, insideBlockComment = false) {
-  const split = splitCodeAndComment(line, insideBlockComment)
-  const nextInsideBlockComment = split.insideBlockComment
-  const withState = (kind) => ({ kind, insideBlockComment: nextInsideBlockComment })
-  if (!SPECTATOR_VOCABULARY.test(line)) return withState(null)
-  if (isBlockCommentBodyLine(line)) return withState("comment")
-  // 주석을 걷어낸 **나머지 코드 부분**에 어휘가 없을 때만 주석 출현으로 본다.
-  const code = split.code
-  if (!SPECTATOR_VOCABULARY.test(code)) return withState("comment")
-  return withState(classifySpectatorCode(code))
-}
-
-/** 단일 줄 판정(블록 주석 바깥에서 시작한다고 본다) — 검출기 대조와 단발 호출용. */
-function classifySpectatorLine(line) {
-  return classifySpectatorLineWithState(line, false).kind
-}
-
-/** 코드 부분 안에서 관전 어휘가 어느 자리에 있는지 이름 붙인다. */
-function classifySpectatorCode(code) {
-  // 라우트 path — `path: "/…"` 또는 "/"로 시작하는 문자열.
-  if (/path\s*:\s*["'`][^"'`]*(?:spectat|관전)/i.test(code)
-    || /["'`]\/[^"'`]*(?:spectat|관전)[^"'`]*["'`]/i.test(code)) return "route-path"
-  // 소켓 사건 이름 — emit/emitWithAck/on/off의 첫 인자.
-  if (/\.(?:emit|emitWithAck|on|off)\(\s*["'`][^"'`]*(?:spectat|관전)/i.test(code)) return "socket-event"
-  // 객체(store·설정) 키 — 식별자 키와 문자열 키 양쪽.
-  if (/(?:["'`][^"'`]*(?:spectat|관전)[^"'`]*["'`]|[\w$]*spectat[\w$]*)\s*:/i.test(code)) return "object-key"
-  const outsideStrings = stripStringLiterals(code)
-  if (SPECTATOR_VOCABULARY.test(outsideStrings)) {
-    // 문자열 밖에 남았다면 식별자·속성·마크업이다. 단, JS 구문 문자가 전혀 없는 줄은
-    // JSX 본문 텍스트다(사망 참가자 버튼 문구가 이 자리에 있다).
-    return /[<>{}()[\]=;,]/.test(code) ? "identifier" : "jsx-text"
-  }
-  return "string-literal"
+/** 그 본문에서 관전 어휘가 나온 줄 번호들. */
+function vocabularyLineNumbers(body) {
+  const lines = []
+  body.split(/\r?\n/).forEach((line, index) => {
+    if (SPECTATOR_VOCABULARY.test(line)) lines.push(index + 1)
+  })
+  return lines
 }
 
 /**
@@ -506,12 +538,18 @@ const SPECTATOR_SOURCE_ALLOWLIST = [
   "backend/game-core/gameSession.js",
 ]
 
-/** 코드 자리 출현이 허용되는 단 하나의 경우(확정 사망한 기존 참가자의 버튼 문구). */
-const PRESERVED_SPECTATOR_TEXT_LINES = [
+/**
+ * **코드 전용 본문**에 관전 어휘가 남아도 되는 줄 전부. 지금 실제로 남아 있는 허용 출현만
+ * 담는다 — 확정 사망한 기존 참가자의 선택 버튼 문구 하나뿐이다(A-01 보존 대상).
+ *
+ * 이 목록과 실제 수집 결과가 **완전히 같아야** 통과한다. 새 코드 출현이 하나라도 생기면
+ * (라우트·사건 이름·식별자·객체 키·화면 문구 어느 자리든) 그 줄이 목록에 없어 실패하고,
+ * 반대로 여기 적힌 보존 문구가 사라져도 실패한다.
+ */
+const EXPECTED_CODE_SPECTATOR_LINES = [
   {
     file: "frontend/src/domains/game/ingame/components/deadChoice/InGameDeadParticipantChoice.jsx",
     text: "관전 계속하기",
-    kind: "jsx-text",
   },
 ]
 
@@ -538,74 +576,77 @@ async function collectProductionSources() {
 }
 
 /**
- * 그 원문에서 관전 어휘가 나온 줄 전부를 자리 분류와 함께 돌려준다.
+ * 원문 하나를 코드/주석으로 가르고, 양쪽에서 관전 어휘가 나온 자리를 따로 돌려준다.
  *
- * 블록 주석 상태를 **파일 단위로** 이어 붙인다 — 줄 하나만 보면 여러 줄 주석의 본문과
- * 닫힌 뒤의 코드를 구분할 수 없다.
+ * - codeHits    : 코드 전용 본문의 출현. `text`는 **그 줄의 코드 부분만** trim한 값이라
+ *                 같은 줄 끝에 붙은 주석 문구가 기대 목록을 흔들지 않는다.
+ * - commentHits : 주석 전용 본문의 출현(허용 목록 파일에서만 허용된다).
+ * - rawLines    : 원문 줄에서 어휘가 보이는 줄 번호. codeHits ∪ commentHits와 같아야 한다 —
+ *                 스캐너가 출현을 어느 쪽에도 넣지 않고 삼키는 일을 막는 불변식이다.
  */
-function spectatorOccurrences(source, file) {
-  const hits = []
-  let insideBlockComment = false
-  source.split(/\r?\n/).forEach((line, index) => {
-    const result = classifySpectatorLineWithState(line, insideBlockComment)
-    insideBlockComment = result.insideBlockComment
-    if (result.kind !== null) hits.push({ file, line: index + 1, kind: result.kind, text: line.trim() })
-  })
-  return hits
+function auditSpectatorSource(source, file) {
+  const { code, comments } = splitSourceIntoCodeAndComments(source)
+  const codeLines = code.split(/\r?\n/)
+  const codeHits = vocabularyLineNumbers(code)
+    .map((line) => ({ file, line, text: codeLines[line - 1].trim() }))
+  const commentHits = vocabularyLineNumbers(comments).map((line) => ({ file, line }))
+  return { code, comments, codeHits, commentHits, rawLines: vocabularyLineNumbers(source) }
 }
 
+/**
+ * 상태 기계 대조용 표본. 줄 단위 휴리스틱이 놓쳤던 자리들을 한 파일 안에 모아 둔다 —
+ * 특히 3·4·14줄이 "주석이 끝난 뒤에 붙은 코드"다.
+ */
+const SCANNER_PROBE_SOURCE = [
+  /*  1 */ "/**",
+  /*  2 */ " * 관전 진입은 제거했다.",
+  /*  3 */ " * 설명 */ const spectator = true",
+  /*  4 */ "/* x */ const allowSpectators = false",
+  /*  5 */ 'const url = "https://example.test" // 관전 메모',
+  /*  6 */ 'const label = "관전자 허용"',
+  /*  7 */ "const re = /spectat|관전/i",
+  /*  8 */ "          관전 계속하기",
+  /*  9 */ "const t = `관전 ${count}`",
+  /* 10 */ "{/* 관전 계속하기는 보존한다 */}",
+  /* 11 */ "const ready = true /* 관전자 허용은 제거했다 */",
+  /* 12 */ "/* 여기서 열고",
+  /* 13 */ "   관전 설명을 적고",
+  /* 14 */ "*/ const spectatorMode = true",
+].join("\n")
+
 test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 파일과 자리가 잠긴다", async () => {
-  // (1) 검출기 자신의 양성·음성 대조. 네 금지 자리를 각각 실제로 구분해 내는지 먼저 고정한다
-  //     — 전부 "위반"으로 뭉뚱그리면 나중에 분류가 퇴화해도 아래 단언이 조용히 통과한다.
-  const kindOf = classifySpectatorLine
-  assert.equal(kindOf("const allowSpectators = true"), "identifier")
-  assert.equal(kindOf("  const spectatorMode = useSpectatorState()"), "identifier")
-  assert.equal(kindOf('  { path: "/spectate", element: <SpectatorPage /> },'), "route-path")
-  assert.equal(kindOf('  navigate("/game-spectator")'), "route-path")
-  assert.equal(kindOf('  socket.emit("join_as_spectator", { roomId })'), "socket-event")
-  assert.equal(kindOf('  socket.on("spectator_state_changed", handler)'), "socket-event")
-  assert.equal(kindOf("  { allowSpectators: true }"), "object-key")
-  assert.equal(kindOf('  "allow-spectators": true,'), "object-key")
-  assert.equal(kindOf('  <span aria-label="관전자 허용" />'), "string-literal")
-  assert.equal(kindOf("            관전 계속하기"), "jsx-text")
-  assert.equal(kindOf("// 관전자 허용 체크박스는 제거했다"), "comment")
-  assert.equal(kindOf(" * spectatorMode는 허용 목록에 없다"), "comment")
-  assert.equal(kindOf("  {/* \"관전 계속하기\"는 보존한다 */}"), "comment")
-  assert.equal(kindOf("  const total = players.length // 관전과 무관하다"), "comment")
-  assert.equal(kindOf("const ready = true"), null)
-
-  // (1a) 주석 **뒤에 붙은 코드**는 주석이 아니다(CODEX-9 AC-02 지적).
-  //      예전 판은 블록 주석 기호부터 줄 끝까지를 버려 이 줄들이 전부 "comment"였다.
-  assert.equal(kindOf("/* 설명 */ const spectator = true"), "identifier")
-  assert.equal(kindOf("  /* 제거 기록 */ const allowSpectators = false"), "identifier")
-  assert.equal(kindOf("const spectatorMode = true /* 뒤에 붙은 설명 */"), "identifier")
-  assert.equal(kindOf('/* x */ socket.emit("join_as_spectator", {})'), "socket-event")
-  assert.equal(kindOf('/* x */ { path: "/spectate" },'), "route-path")
-  assert.equal(kindOf("*/ const spectator = true"), "identifier")
-  // 반대로 코드 뒤에 온 진짜 주석은 그대로 주석이다(오탐으로 감사를 못 쓰게 만들지 않는다).
-  assert.equal(kindOf("const ready = true /* 관전자 허용은 제거했다 */"), "comment")
-  assert.equal(kindOf("  {/* 관전 계속하기는 보존한다 */} <Row />"), "comment")
-  // 문자열 안의 슬래시 두 개는 줄 주석이 아니다 — 코드가 통째로 사라지면 뒤가 숨는다.
-  assert.equal(kindOf('const doc = "https://x" ; const spectator = 1'), "identifier")
-
-  // (1b) 여러 줄 블록 주석의 상태는 **파일 단위**로 이어진다. 줄 하나만 보면 주석 본문과
-  //      주석을 닫은 뒤의 코드를 구분할 수 없다.
-  const blockCommentProbe = [
-    "/**",
-    " * 관전 진입은 제거했다.",
-    "관전 정책을 이어서 설명하는 줄(별표 없이 시작한다).",
-    " */",
-    "const readyOnly = true",
-    "/* 설명 */ const spectator = true",
-    "/* 여기서 열고",
-    "   관전 설명을 적고",
-    "*/ const spectatorMode = true",
-  ].join("\n")
+  // (1) 상태 기계 자신의 대조. "주석이 끝난 뒤에 붙은 코드"를 실제로 코드로 읽는지, 문자열·
+  //     템플릿·JSX 텍스트·정규식을 지우지 않는지, 진짜 주석은 주석으로 두는지를 한 번에 본다.
+  const probe = auditSpectatorSource(SCANNER_PROBE_SOURCE, "probe.ts")
   assert.deepEqual(
-    spectatorOccurrences(blockCommentProbe, "probe.ts").map((hit) => `${hit.line}:${hit.kind}`),
-    ["2:comment", "3:comment", "6:identifier", "8:comment", "9:identifier"],
-    "여러 줄 블록 주석의 상태 추적이 주석과 코드를 가르지 못했다",
+    probe.codeHits.map((hit) => `${hit.line}:${hit.text}`),
+    [
+      // 여러 줄 블록 주석을 닫은 **바로 뒤**의 코드 — 예전 줄 단위 판정의 마지막 구멍이다.
+      "3:const spectator = true",
+      "4:const allowSpectators = false",
+      // 문자열 리터럴(화면 문구)·정규식·JSX 텍스트·템플릿 리터럴은 코드로 남는다.
+      '6:const label = "관전자 허용"',
+      "7:const re = /spectat|관전/i",
+      "8:관전 계속하기",
+      "9:const t = `관전 ${count}`",
+      "14:const spectatorMode = true",
+    ],
+    "코드 전용 본문이 주석 뒤 코드나 화면 문구를 놓쳤다",
   )
+  assert.deepEqual(
+    probe.commentHits.map((hit) => hit.line),
+    [2, 5, 10, 11, 13],
+    "주석 전용 본문이 실제 주석 출현과 다르다",
+  )
+  // 어떤 출현도 양쪽 중 어디에도 들어가지 않고 사라지지 않는다.
+  assert.deepEqual(
+    [...new Set([...probe.codeHits, ...probe.commentHits].map((hit) => hit.line))].sort((a, b) => a - b),
+    probe.rawLines,
+    "원문에 보이는 출현이 코드·주석 어느 쪽에도 담기지 않았다",
+  )
+  // 두 본문은 원문을 문자 단위로 나눠 가진다(줄 번호·열 위치가 보존된다).
+  assert.equal(probe.code.length, SCANNER_PROBE_SOURCE.length)
+  assert.equal(probe.comments.length, SCANNER_PROBE_SOURCE.length)
 
   // (1c) 수집 확장자. js·jsx만 모으면 같은 디렉터리의 .ts/.tsx/.mjs/.cjs가 감사 밖이 된다.
   assert.deepEqual(
@@ -637,43 +678,50 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
   // 허용 목록에 적힌 파일이 전부 실재한다(오타로 잠금이 헐거워지지 않는다).
   assert.equal(new Set(SPECTATOR_SOURCE_ALLOWLIST).size, 10, "허용 목록의 파일 수가 10개가 아니다")
 
-  const occurrences = sources.flatMap(({ file, source }) => spectatorOccurrences(source, file))
+  const audited = sources.map(({ file, source }) => ({
+    source, ...auditSpectatorSource(source, file),
+  }))
+  const codeHits = audited.flatMap((entry) => entry.codeHits)
+  const commentHits = audited.flatMap((entry) => entry.commentHits)
 
-  // (3) 출현 **파일 집합**이 허용 목록과 정확히 같다. 목록 밖 파일에 한 줄이라도 나오면
-  //     실패하고, 목록 안 파일에서 기록·보존 문구가 사라져도 실패한다.
+  // (2a) 스캐너가 출현을 삼키지 않았다 — 원문 줄에서 보이는 어휘는 전부 코드나 주석 중
+  //      한쪽에 담겼다. 이 불변식이 깨지면 아래 "0개" 단언들이 조용히 통과할 수 있다.
+  for (const entry of audited) {
+    const covered = [...new Set([...entry.codeHits, ...entry.commentHits].map((hit) => hit.line))]
+      .sort((a, b) => a - b)
+    assert.deepEqual(covered, entry.rawLines,
+      `${entry.codeHits[0]?.file ?? entry.commentHits[0]?.file}의 어휘 출현이 코드·주석 어디에도 담기지 않았다`)
+    assert.equal(entry.code.length, entry.source.length, "코드 본문의 길이가 원문과 다르다")
+  }
+
+  // (3) **코드 전용 본문**의 출현이 기대 목록과 정확히 같다. 새 코드 출현이 하나라도 생기면
+  //     (자리가 어디든, 어느 파일이든) 목록에 없어 실패하고, 보존 문구가 사라져도 실패한다.
+  const codeOccurrences = codeHits
+    .map(({ file, text }) => ({ file, text }))
+    .sort((a, b) => `${a.file}${a.text}`.localeCompare(`${b.file}${b.text}`))
   assert.deepEqual(
-    [...new Set(occurrences.map((hit) => hit.file))].sort(),
+    codeOccurrences,
+    [...EXPECTED_CODE_SPECTATOR_LINES]
+      .sort((a, b) => `${a.file}${a.text}`.localeCompare(`${b.file}${b.text}`)),
+    `생산 코드의 관전 어휘 출현이 기대 목록과 다르다:\n${
+      codeHits.map((h) => `${h.file}:${h.line} ${h.text}`).join("\n")}`,
+  )
+
+  // (4) 주석 안의 관전 어휘는 **허용 목록 파일에서만** 허용된다. 목록 밖 파일에서는 주석
+  //     한 줄이라도 실패한다 — 관전 기능을 되살리는 변경은 대개 설명 주석부터 남긴다.
+  const strayComments = commentHits.filter((hit) => !SPECTATOR_SOURCE_ALLOWLIST.includes(hit.file))
+  assert.deepEqual(
+    strayComments, [],
+    `허용 목록 밖 파일의 주석에 관전 어휘가 있다:\n${
+      strayComments.map((h) => `${h.file}:${h.line}`).join("\n")}`,
+  )
+
+  // (5) 출현 **파일 집합**이 허용 목록과 정확히 같다(정책 기록이 조용히 지워져도 실패한다).
+  assert.deepEqual(
+    [...new Set([...codeHits, ...commentHits].map((hit) => hit.file))].sort(),
     [...SPECTATOR_SOURCE_ALLOWLIST].sort(),
-    `관전 어휘가 나오는 파일 집합이 허용 목록과 다르다:\n${
-      occurrences.filter((hit) => !SPECTATOR_SOURCE_ALLOWLIST.includes(hit.file))
-        .map((h) => `${h.file}:${h.line} [${h.kind}] ${h.text}`).join("\n")}`,
+    "관전 어휘가 나오는 파일 집합이 허용 목록과 다르다",
   )
-
-  // (4) 허용 파일 **안에서도** 자리를 본다: 주석이거나, 사망 참가자 선택의 JSX 문구뿐이다.
-  const isPreserved = (hit) => PRESERVED_SPECTATOR_TEXT_LINES.some(
-    (entry) => entry.file === hit.file && entry.kind === hit.kind && hit.text === entry.text)
-  const misplaced = occurrences.filter((hit) => hit.kind !== "comment" && !isPreserved(hit))
-  assert.deepEqual(
-    misplaced, [],
-    `허용 파일 안에서도 관전 어휘가 코드 자리에 있다:\n${
-      misplaced.map((h) => `${h.file}:${h.line} [${h.kind}] ${h.text}`).join("\n")}`,
-  )
-
-  // (5) 네 금지 자리는 생산 원문 어디에도 하나도 없다(위 단언들의 결과를 자리별로 재확인한다).
-  for (const forbidden of ["identifier", "route-path", "socket-event", "object-key", "string-literal"]) {
-    assert.deepEqual(
-      occurrences.filter((hit) => hit.kind === forbidden), [],
-      `관전 어휘가 ${forbidden} 자리에 남아 있다`,
-    )
-  }
-
-  // (6) 보존 대상은 실제로 남아 있다 — 관전 문자열을 일괄 삭제해 통과시키는 길을 막는다.
-  for (const entry of PRESERVED_SPECTATOR_TEXT_LINES) {
-    assert.equal(
-      occurrences.filter((hit) => hit.file === entry.file && hit.text === entry.text).length, 1,
-      `보존해야 할 사망 참가자 선택 문구(${entry.text})가 사라졌거나 늘었다`,
-    )
-  }
 })
 
 // ── F-23(SPLIT-1/AC-02): 라우트 path·백엔드 수신 사건 전수 열거 ─────────────
@@ -816,13 +864,10 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
  * 블록 주석은 **줄 수를 유지한 채** 비운다 — 아래 감사가 근거로 남기는 file:line이 어긋나면
  * 추적이 불가능해진다.
  */
+// 위 어휘 잠금과 **같은 상태 기계**를 쓴다. 정규식으로 주석을 지우는 두 번째 구현을 따로
+// 두면 두 감사의 "주석이란 무엇인가"가 서로 달라지고, 한쪽에만 생긴 구멍을 알아채지 못한다.
 function stripComments(source) {
-  return source
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .split(/\r?\n/)
-    .map((line) => line.replace(/(^|\s)\/\/.*$/, ""))
-    .join("\n")
+  return splitSourceIntoCodeAndComments(source).code
 }
 
 /** 사건 이름을 상수로 쓰는 전송·구독 지점을 실제 값으로 풀기 위한 표들. */
