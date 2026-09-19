@@ -1920,6 +1920,64 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 
   ))
 })
 
+/**
+ * F-23(SPLIT-1/AC-05): **재결속 중이라고 해서 이 연결이 직접 받은 종료까지 잃지는 않는다.**
+ *
+ * 위 시험은 "이전 연결이 받아 둔 잔존 ENDED로는 떠나지 않는다"를 고정한다. 그 방어가
+ * 수신 범위를 보지 않으면 곧바로 반대쪽으로 넘어간다 — 재연결한 **바로 그 연결**에서 정상
+ * 공개 종료(night_result_applied)를 받았는데 뒤이어 그 재결속 스냅샷이 실패하면, 방금 받은
+ * 정상 결과까지 함께 지워져 화면이 결과로 가지 못한다.
+ *
+ * 그래서 실제 라우터·페이지 위에서 "재연결 → 현재 연결의 정상 공개 종료 → 스냅샷 실패 →
+ * 결과 화면으로 **이동한다**"를 그대로 고정한다.
+ */
+test("F-23(SPLIT-1): 재연결 뒤 현재 연결에서 받은 정상 종료는 재결속 스냅샷이 실패해도 결과 화면으로 이어진다", async () => {
+  seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
+  await mountInGame()
+  const socket = currentSocket
+
+  // 실제 재연결(같은 객체·새 sid). 여기서부터가 재결속 구간이다.
+  await act(async () => {
+    socket.id = "sock-2"
+    socket.deliver("connect")
+  })
+  assert.equal(router.state.location.pathname, "/ingame", "전제: 아직 종료가 아니다")
+  const pending = socket.takeAck("get_session_snapshot")
+  assert.ok(pending, "전제: 재연결이 현재 신원의 스냅샷을 다시 물어야 한다")
+
+  // 그 스냅샷을 기다리는 동안 **이 연결에서** 정상 공개 종료가 도착한다.
+  // 이 판정에는 공개 사망이 없어 연출 큐가 생기지 않는다 — 이동을 붙잡는 조건은 재결속뿐이다.
+  await act(async () => {
+    socket.deliver("night_result_applied", {
+      gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
+      players: [{ uuid: SELF, isAlive: true }, { uuid: OTHER, isAlive: true }],
+      victimUuid: null,
+      winResult: { winner: "CITIZEN" },
+      deathReveals: [],
+    })
+  })
+  assert.equal(
+    useInGameStore.getState().state.phase, "ENDED",
+    "전제: 이 연결의 정상 공개 종료가 실제로 반영돼야 한다",
+  )
+  assert.equal(
+    router.state.location.pathname, "/ingame",
+    "전제: 재결속이 끝나기 전에는 아직 기다린다",
+  )
+
+  // 그리고 그 재결속 스냅샷이 실패한다.
+  await act(async () => { pending.ack({ ok: false, code: "INTERNAL_ERROR" }) })
+
+  assert.ok(
+    useInGameStore.getState().state.winResult,
+    "현재 연결에서 직접 받은 정상 종료 결과가 스냅샷 실패로 지워졌다",
+  )
+  await waitFor(() => assert.notEqual(
+    router.state.location.pathname, "/ingame",
+    "현재 연결이 받은 정상 종료인데도 결과 화면으로 넘어가지 못했다",
+  ))
+})
+
 test("F-23(SPLIT-2): 계정이 왕복한 뒤에는 이전 신원의 계속 보기 선택이 새 신원에 적용되지 않는다", async () => {
   seedLiveGame({ selfAlive: false })
   const { container } = await mountInGame()

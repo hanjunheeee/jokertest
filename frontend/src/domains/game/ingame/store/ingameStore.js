@@ -223,6 +223,36 @@ function buildSnapshotResultOwner(receipt, gameId, state, snapshotSeq) {
   })
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// F-23(SPLIT-1): **종료 결과의 수신 범위**
+//
+// state.winResult는 "이 화면이 결과 페이지로 가도 되는가"의 유일한 근거다. 그런데 그 값이
+// **언제·어느 연결에서** 들어왔는지는 state 자체에 남지 않는다 — 이전 신원·이전 연결이 받아
+// 둔 잔존 종료 결과와, 방금 이 연결에서 정상으로 받은 종료 결과가 모양으로는 똑같다.
+//
+// 그 둘을 가르는 값이 여기 있다. winResult가 새로 실릴 때마다 그 순간의 범위를 한 벌 적어
+// 두고(snapshotResultOwner와 같은 provenance 개념이다), 확인하지 못한 재결속을 끝맺을 때는
+// **그 범위가 이미 지나간 경우에만** 이동 근거를 걷어낸다.
+//
+// store 상태 트리가 아니라 모듈이 소유한다 — 소켓 세대·소속 세대와 같은 성질의 관측값이고,
+// 상태 키를 늘리면 화면이 읽지도 않을 값이 감사 대상 트리에 들어간다.
+// ───────────────────────────────────────────────────────────────────────────
+let terminalResultScope = null
+let observedWinResult = null
+
+/** winResult가 실제로 실린 그 순간의 범위(이 store가 소유한 축만 적는다). */
+function buildTerminalResultScope(gameId, state) {
+  const socket = getSocket()
+  return Object.freeze({
+    gameId: gameId ?? null,
+    membershipId: readSelfMembershipId(state),
+    membershipEpoch,
+    socketEpoch,
+    socketId: socket?.id ?? null,
+    socketConnected: socket?.connected === true,
+  })
+}
+
 /**
  * F-21(AC-03): 서버가 소유하는 **본인** 제출 필드. 개인 전송과 스냅샷 복원이 같은 목록을
  * 쓰므로 한쪽만 늘어나 갈라지지 않는다(applySessionSnapshot.js의 같은 이름 상수와 짝이다).
@@ -826,12 +856,27 @@ export const useInGameStore = create((set) => ({
    * 재개된다 — 사용자가 인게임 화면에 갇히지 않는다.
    *
    * 걷어낼 근거가 없으면 참조 보존 no-op이다(불필요한 리렌더를 만들지 않는다).
+   *
+   * ── **이 연결에서 받은 결과는 잔존물이 아니다** ───────────────────────────────
+   *
+   * 예전에는 이 액션이 winResult가 **언제·어느 연결에서** 들어왔는지를 구분하지 않고 지웠다.
+   * 그래서 "재연결 → 그 연결에서 정상 공개 종료(night_result_applied) 수신 → 그 재결속
+   * 스냅샷이 실패" 순서에서는, 방금 이 연결이 직접 받은 정상 결과까지 함께 지워져 화면이
+   * 결과로 넘어가지 못했다(막으려던 결함을 고치면서 반대쪽으로 넘어간 자리다).
+   *
+   * 이제는 winResult가 실릴 때 함께 적어 둔 수신 범위(terminalResultScope)를 본다. 그 범위가
+   * 지금과 정확히 같으면 — 같은 판·같은 소속·같은 소속 전이 세대·같은 소켓 세대·같은 sid·같은
+   * 연결 상태 — 그 결과는 이전 신원의 잔존물이 아니라 **지금 이 화면이 직접 받은 사실**이므로
+   * 스냅샷 실패와 무관하게 그대로 남는다. 범위를 모르거나(null) 하나라도 다르면 지운다(fail-closed).
    */
   invalidateUnconfirmedTerminalResult: () =>
     set((current) => {
       if (!current.gameId || !current.state) return current
       if (current.state.phase !== "ENDED") return current
       if (!current.state.winResult) return current
+      // 적어 둔 범위가 **바로 이 winResult의 것**이어야 한다(다른 값의 범위를 빌려 쓰지 않는다).
+      if (current.state.winResult === observedWinResult
+        && isReceiptScopeCurrent(terminalResultScope, current)) return current
       return { state: { ...current.state, winResult: null } }
     }),
 
@@ -872,6 +917,20 @@ adoptIdentityScope(null, null)
  */
 useInGameStore.subscribe((next) => {
   adoptIdentityScope(next.gameId ?? null, next.state ?? null)
+
+  // F-23(SPLIT-1): 종료 결과의 수신 범위도 여기서 한 곳에서만 기록한다. 공개 밤 판정
+  // (applyNightResultAppliedPayload)·재판 판정(applyTribunalResolved)·끊김 사망
+  // (applyPlayerEliminated)·스냅샷 복원 — winResult를 싣는 모든 경로가 이 구독을 지나므로,
+  // 액션마다 따로 적어 두어 한쪽만 빠뜨리는 일이 생기지 않는다.
+  //
+  // 순서가 중요하다: 위 adoptIdentityScope가 이미 이번 커밋의 소속 전이를 반영했으므로,
+  // 아래에서 읽는 membershipEpoch는 **이 결과가 실린 그 범위**의 값이다.
+  const nextWinResult = next.state?.winResult ?? null
+  if (nextWinResult === observedWinResult) return
+  observedWinResult = nextWinResult
+  terminalResultScope = nextWinResult
+    ? buildTerminalResultScope(next.gameId ?? null, next.state ?? null)
+    : null
 })
 
 export const selectInGameState = (store) => store.state

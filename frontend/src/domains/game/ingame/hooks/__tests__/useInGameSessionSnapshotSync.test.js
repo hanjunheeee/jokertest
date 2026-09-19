@@ -1211,6 +1211,94 @@ test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 �
   hook.unmount()
 })
 
+/**
+ * F-23(SPLIT-1): **같은 실패인데 결말이 갈린다 — 그 결과를 어디서 받았는가.**
+ *
+ * 재결속 스냅샷이 실패했을 때 걷어내야 하는 것은 "이전 신원·이전 연결이 받아 둔 잔존
+ * 종료 상태"뿐이다. 그런데 재결속 구간은 시간이 걸리고, 그 사이에 **현재 연결**이 정상 공개
+ * 종료(night_result_applied)를 직접 받아 둘 수 있다 — 그 결과는 확인하지 못한 잔존물이
+ * 아니라 지금 이 화면의 사실이므로, 뒤이은 스냅샷 실패로 지워지면 결과 화면에 영영 가지
+ * 못한다(막으려던 결함을 고치다 반대쪽으로 넘어가는 자리다).
+ *
+ * 두 경우를 **같은 실패 경로로 나란히** 통과시켜, 판정 기준이 "실패했는가"가 아니라
+ * "어느 범위에서 받았는가"임을 한 시험에 고정한다.
+ */
+test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDED는 제거되고, 현재 연결에서 받은 종료 결과는 보존된다", async () => {
+  // ── (가) 이전 연결이 받아 둔 잔존 ENDED ──────────────────────────────────────
+  seedEndedStore({ gameId: "g-stale" })
+  seedAuth("player-1")
+  const stale = createFakeSessionSnapshotSocket()
+  stale.socket.connected = true
+  stale.socket.id = "stale-1"
+  setFakeSocket(stale.socket)
+
+  const staleHook = renderHook(() => useInGameSessionSnapshotSync())
+  act(() => {
+    stale.socket.id = "stale-2"
+    stale.socket.triggerConnect()
+  })
+  assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
+
+  await act(async () => {
+    stale.emitWithAckCalls[1].reject(new Error("operation has timed out"))
+    await flushMicrotasks()
+  })
+
+  assert.equal(
+    hasResultNavigationBasis(), false,
+    "이전 연결이 받아 둔 잔존 ENDED가 확인 없이 그대로 이동 근거로 남았다",
+  )
+  assert.equal(
+    useInGameStore.getState().state.phase, "ENDED",
+    "종료 잠금 자체는 서버가 확정한 사실이다 — 실패했다고 되돌리지 않는다",
+  )
+  staleHook.unmount()
+
+  // ── (나) 재결속 중에 **현재 연결**이 직접 받은 정상 종료 결과 ─────────────────
+  seedStore({ gameId: "g-live", playerUuid: "player-1", phase: "NIGHT", dayIndex: 1 })
+  seedAuth("player-1")
+  const live = createFakeSessionSnapshotSocket()
+  live.socket.connected = true
+  live.socket.id = "live-1"
+  setFakeSocket(live.socket)
+
+  const liveHook = renderHook(() => useInGameSessionSnapshotSync())
+  act(() => {
+    live.socket.id = "live-2"
+    live.socket.triggerConnect()
+  })
+  assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
+  assert.equal(live.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
+
+  // 아직 그 스냅샷을 기다리는 동안, 이 연결의 정상 공개 종료가 도착한다. 실제 수신 경로가
+  // 부르는 바로 그 store 액션을 그대로 쓴다 — 값을 직접 주입하면 수신 범위가 기록되지 않아
+  // 이 시험이 검사하려는 것을 건너뛴다.
+  act(() => {
+    useInGameStore.getState().applyNightResultAppliedPayload({
+      gameId: "g-live",
+      phase: "ENDED",
+      dayIndex: 1,
+      players: [{ uuid: "player-1", isAlive: true }],
+      victimUuid: null,
+      winResult: { winner: "CITIZEN" },
+    })
+  })
+  assert.equal(hasResultNavigationBasis(), true, "전제: 이 연결의 정상 종료 결과가 반영돼야 한다")
+
+  // 그리고 (가)와 **똑같은** 실패가 그 재결속 요청에 도착한다.
+  await act(async () => {
+    live.emitWithAckCalls[1].reject(new Error("operation has timed out"))
+    await flushMicrotasks()
+  })
+
+  assert.equal(getInGameSnapshotRebindPending(), false, "보류가 남아 화면이 영영 갇힌다")
+  assert.equal(
+    hasResultNavigationBasis(), true,
+    "현재 연결에서 직접 받은 정상 종료 결과까지 스냅샷 실패로 지워졌다",
+  )
+  liveHook.unmount()
+})
+
 test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권위로 승격되지 않는다", () => {
   useInGameStore.setState({
     gameId: null, state: null, error: null, snapshotSeq: 0, snapshotResultOwner: null,

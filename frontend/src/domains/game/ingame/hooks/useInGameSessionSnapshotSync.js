@@ -191,6 +191,12 @@ export function useInGameSessionSnapshotSync() {
        * 애초에 보류를 짊어지지 않은 요청(첫 진입의 평범한 동기화)은 이전 신원의 잔존 상태를
        * 들고 있지 않으므로 아무것도 무효화하지 않는다 — 일시적인 조회 실패가 방금 받은
        * 정상 종료 결과를 지우면 안 된다.
+       *
+       * **무엇이 잔존물인지는 store가 판정한다.** 재결속 구간이라도 그 사이에 현재 연결이
+       * 정상 공개 종료(night_result_applied)를 직접 받았을 수 있다 — 그 결과는 이전 신원의
+       * 잔존물이 아니므로 스냅샷 실패로 지워지면 안 된다. 그래서 여기서는 "확인하지 못한 채
+       * 끝났다"만 알리고, 실제로 걷어낼지는 winResult에 함께 적힌 수신 범위를 아는
+       * invalidateUnconfirmedTerminalResult가 결정한다.
        */
       const finishRebindUnapplied = () => {
         if (epochVersionRef.current !== requestEpochVersion) return
