@@ -334,42 +334,112 @@ test("F-23(SPLIT-1/AC-02): 실제 라우터에 외부 관전 경로가 없고 �
   }
 })
 
-// ── F-23(SPLIT-1/AC-02): 생산 원문 감사 ─────────────────────────────────────
+// ── F-23(SPLIT-1/AC-02): 생산 원문 전체 잠금 ────────────────────────────────
 //
 // 라우트 이름만 보면 "다른 이름의 관전 버튼·모달·상태"가 남아 있어도 통과한다. 그래서 실제
-// 생산 원문(frontend/src·backend의 .js/.jsx, 시험 제외)을 전부 훑어 관전 어휘가 **실행되는
-// 코드**에 남아 있지 않은지 본다. 주석은 제거 이유·정제 정책을 설명하는 기록이므로 대상이
-// 아니고, 확정 사망한 **기존 참가자**의 선택(A-01이 보존을 명시)은 아래 허용 목록으로 남긴다.
+// 생산 원문(frontend/src·backend의 .js/.jsx, 시험 제외)을 **한 줄도 빼놓지 않고** 읽어
+// /spectat|관전/i의 출현 자체를 파일 단위 허용 목록으로 묶는다.
 //
-// 어휘에서 observer 계열은 제외한다 — 이 저장소의 `observer`는 전부 DOM ResizeObserver의 지역
-// 변수이고(스크롤바·채팅 입력), 관전 기능과 무관하다. 그래서 관전 어휘와 폐기 식별자만 본다.
+// 왜 어휘 **출현**까지 묶는가(이전 판의 "주석은 무조건 통과"와 다른 점):
+//   - 허용 목록 밖 파일에서는 주석이든 코드든 한 줄이라도 나오면 실패한다. 관전 기능을
+//     되살리는 변경은 대개 그 파일에 설명 주석부터 남기므로, 주석을 전부 눈감으면 감사가
+//     "새 관전 화면이 생겼다"는 가장 이른 신호를 놓친다.
+//   - 허용 목록 안에서도 그 줄은 **주석이거나** 확정 사망한 기존 참가자의 UI 문구
+//     ("관전 계속하기", A-01 보존 대상)여야 한다. 식별자·라우트 path·소켓 사건 이름·
+//     객체(store) 키에 나타나면 실패한다 — 아래 classifySpectatorLine이 그 네 자리를
+//     각각 이름 붙여 구분하고, 양성 대조로 검출력을 먼저 고정한다.
+//
+// 이 잠금이 아래 두 좁은 검사(collectRenderedComponents의 **InGamePage 직계 JSX** 목록,
+// shapeOf의 **두 store 최상위 키** 목록)를 대체하는 근거:
+//   (a) 범위 — 두 검사는 파일 하나의 직계 JSX와 store 두 개의 1단계 키만 본다. 하위
+//       컴포넌트가 자기 안에서 여는 모달, 로비·대기방 등 다른 화면의 진입 버튼, 중첩 객체
+//       안의 상태 키는 구조상 그 범위 밖이다. 이 잠금은 같은 저장소의 **모든** 생산 원문을
+//       읽으므로 화면·컴포넌트 깊이와 무관하게 잡는다(파일이 몇 단계 아래에 있든 같다).
+//   (b) 보강 — 중첩 상태는 원문 검사만으로는 값까지 보지 못하므로, 아래 시험이 실제 마운트
+//       뒤 두 store의 **전체 상태 트리**를 재귀로 훑어 키 이름까지 함께 검사한다.
+//   (c) 보존 — 두 좁은 검사는 그대로 남긴다. 그것들은 "관전"이라는 낱말과 무관하게 목록이
+//       늘거나 주는 변화를 잡는 구조 잠금이고, 이 어휘 잠금과 서로를 대체하지 않는다.
 const PRODUCTION_SOURCE_ROOTS = ["frontend/src", "backend"]
 const SKIPPED_DIRECTORY_NAMES = new Set(["node_modules", "__tests__", "dist", "build", "coverage", ".git"])
-const SPECTATOR_VOCABULARY = /spectat|관전|watch-?only|allowSpectators/i
+// 반려가 지정한 그대로다 — 이 두 낱말이 어느 자리에든 나오면 일단 잡고, 자리에 따라 판정한다.
+const SPECTATOR_VOCABULARY = /spectat|관전/i
 
-/** 이 줄은 주석인가(제거 이유·정책 기록은 감사 대상이 아니다). */
+/** 이 줄은 주석인가(제거 이유·정책 기록은 허용 파일에서만 통과한다). */
 function isCommentLine(line) {
   const trimmed = line.trim()
   return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")
     || trimmed.startsWith("{/*") || trimmed.startsWith("*/")
 }
 
-/** 그 원문에서 **주석이 아닌** 관전 어휘 줄만 골라낸다. */
-function spectatorCodeHits(source, file) {
-  return source.split(/\r?\n/).flatMap((line, index) =>
-    (!isCommentLine(line) && SPECTATOR_VOCABULARY.test(line)
-      ? [{ file, line: index + 1, text: line.trim() }]
-      : []))
+/** 문자열 리터럴을 비운 코드(식별자 자리 판정용). */
+function stripStringLiterals(code) {
+  return code.replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""')
 }
 
 /**
- * 보존 대상 — 확정 사망한 **기존 참가자**의 선택 문구다(외부 관전자 기능이 아니다).
- * 이 목록이 비면 그 선택이 사라졌다는 뜻이므로, 아래 시험은 존재 자체도 함께 고정한다.
+ * 관전 어휘가 그 줄의 **어느 자리**에 나타났는지 분류한다.
+ *
+ * 반환값: null(출현 없음) · "comment" · "route-path" · "socket-event" · "object-key" ·
+ * "identifier" · "jsx-text" · "string-literal". 통과하는 것은 comment와, 사망 참가자
+ * 선택 파일의 jsx-text("관전 계속하기") 하나뿐이다.
  */
+function classifySpectatorLine(line) {
+  if (!SPECTATOR_VOCABULARY.test(line)) return null
+  if (isCommentLine(line)) return "comment"
+  // 줄 끝 주석(코드 뒤에 붙은 //, /*, {/*)은 코드가 아니다.
+  const code = line
+    .replace(/\{\/\*[\s\S]*$/, "")
+    .replace(/\/\*[\s\S]*$/, "")
+    .replace(/\/\/.*$/, "")
+  if (!SPECTATOR_VOCABULARY.test(code)) return "comment"
+  // 라우트 path — `path: "/…"` 또는 "/"로 시작하는 문자열.
+  if (/path\s*:\s*["'`][^"'`]*(?:spectat|관전)/i.test(code)
+    || /["'`]\/[^"'`]*(?:spectat|관전)[^"'`]*["'`]/i.test(code)) return "route-path"
+  // 소켓 사건 이름 — emit/emitWithAck/on/off의 첫 인자.
+  if (/\.(?:emit|emitWithAck|on|off)\(\s*["'`][^"'`]*(?:spectat|관전)/i.test(code)) return "socket-event"
+  // 객체(store·설정) 키 — 식별자 키와 문자열 키 양쪽.
+  if (/(?:["'`][^"'`]*(?:spectat|관전)[^"'`]*["'`]|[\w$]*spectat[\w$]*)\s*:/i.test(code)) return "object-key"
+  const outsideStrings = stripStringLiterals(code)
+  if (SPECTATOR_VOCABULARY.test(outsideStrings)) {
+    // 문자열 밖에 남았다면 식별자·속성·마크업이다. 단, JS 구문 문자가 전혀 없는 줄은
+    // JSX 본문 텍스트다(사망 참가자 버튼 문구가 이 자리에 있다).
+    return /[<>{}()[\]=;,]/.test(code) ? "identifier" : "jsx-text"
+  }
+  return "string-literal"
+}
+
+/**
+ * 관전 어휘가 나타나도 되는 **파일 전부**(현재 10개)와 그 이유.
+ *
+ * 이 목록은 "이 파일에는 관전 기능이 있다"가 아니라 "이 파일에는 관전을 **제거했다는 기록**
+ * 또는 사망 참가자 선택 문구가 있다"는 뜻이다. 목록 밖 파일에 한 줄이라도 나오면 실패하고,
+ * 목록 안 파일에서 출현이 아예 사라져도 실패한다(정책 기록·보존 UI가 조용히 지워지는 것을
+ * 막는다 — 특히 사망 참가자 선택은 A-01이 보존을 명시한다).
+ */
+const SPECTATOR_SOURCE_ALLOWLIST = [
+  // 사망 참가자 선택 UI 본문 — 유일하게 코드(JSX 텍스트) 출현이 허용되는 파일이다.
+  "frontend/src/domains/game/ingame/components/deadChoice/InGameDeadParticipantChoice.jsx",
+  // 그 선택을 띄우는 페이지·판정기(주석으로 "외부 관전이 아니다"를 기록한다).
+  "frontend/src/domains/game/ingame/pages/InGamePage.jsx",
+  "frontend/src/domains/game/ingame/utils/selectInGameDeadParticipantChoice.js",
+  // 인게임 방관리 행 정의 — "관전자 허용" 체크박스를 제거했다는 기록이 주석으로 남는다.
+  "frontend/src/domains/game/ingame/constants/controls/ingameSetting/ingameSettingData.js",
+  // 폼·역할 구성 정제 — 허용 목록 밖 키(관전자 키 포함)를 만들지 않는다는 정책 주석.
+  "frontend/src/domains/game/setup/utils/roomSettingsForm.js",
+  "frontend/src/domains/game/setup/hooks/useRoleCompositionState.js",
+  // 서버 정제 경계·사망자 수신 정책 주석.
+  "backend/utils/updateRoomSettingsValidation.js",
+  "backend/socket/matchmaking.js",
+  "backend/socket/gameSession.js",
+  "backend/game-core/gameSession.js",
+]
+
+/** 코드 자리 출현이 허용되는 단 하나의 경우(확정 사망한 기존 참가자의 버튼 문구). */
 const PRESERVED_SPECTATOR_TEXT_LINES = [
   {
     file: "frontend/src/domains/game/ingame/components/deadChoice/InGameDeadParticipantChoice.jsx",
     text: "관전 계속하기",
+    kind: "jsx-text",
   },
 ]
 
@@ -387,6 +457,8 @@ async function collectProductionSources() {
         continue
       }
       if (!/\.(jsx|js)$/.test(entry.name)) continue
+      // __tests__ 밖에 놓인 시험 파일도 생산 원문이 아니다(backend/socket/socket.authSession.test.js).
+      if (/\.test\.(jsx|js)$/.test(entry.name)) continue
       const file = `${relativeDir}/${entry.name}`
       files.push({ file, source: await readFile(new URL(file, REPO_ROOT), "utf8") })
     }
@@ -395,52 +467,214 @@ async function collectProductionSources() {
   return files
 }
 
-test("F-23(SPLIT-1/AC-02): 생산 원문 어디에도 외부 관전 UI·모달·상태가 없고 사망 참가자 선택만 남는다", async () => {
-  // 검출기 자신의 양성·음성 대조부터. 주석만 걸러 내는 구현으로 퇴화하면 아래 0건 단언이
-  // 조용히 통과하므로, 실제 코드 줄을 반드시 잡는지 먼저 고정한다.
-  assert.deepEqual(
-    spectatorCodeHits("const allowSpectators = true", "x.js").map((hit) => hit.line), [1],
-    "실행되는 코드의 관전 식별자를 검출하지 못했다",
-  )
-  assert.deepEqual(
-    spectatorCodeHits('  <button aria-label="관전 입장">관전</button>', "x.jsx").map((hit) => hit.line), [1],
-    "실행되는 코드의 관전 문구를 검출하지 못했다",
-  )
-  assert.deepEqual(spectatorCodeHits("// 관전자 허용 체크박스는 제거했다", "x.js"), [])
-  assert.deepEqual(spectatorCodeHits(" * spectatorMode는 허용 목록에 없다", "x.js"), [])
+/** 그 원문에서 관전 어휘가 나온 줄 전부를 자리 분류와 함께 돌려준다. */
+function spectatorOccurrences(source, file) {
+  return source.split(/\r?\n/).flatMap((line, index) => {
+    const kind = classifySpectatorLine(line)
+    return kind === null ? [] : [{ file, line: index + 1, kind, text: line.trim() }]
+  })
+}
 
+test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 파일과 자리가 잠긴다", async () => {
+  // (1) 검출기 자신의 양성·음성 대조. 네 금지 자리를 각각 실제로 구분해 내는지 먼저 고정한다
+  //     — 전부 "위반"으로 뭉뚱그리면 나중에 분류가 퇴화해도 아래 단언이 조용히 통과한다.
+  const kindOf = classifySpectatorLine
+  assert.equal(kindOf("const allowSpectators = true"), "identifier")
+  assert.equal(kindOf("  const spectatorMode = useSpectatorState()"), "identifier")
+  assert.equal(kindOf('  { path: "/spectate", element: <SpectatorPage /> },'), "route-path")
+  assert.equal(kindOf('  navigate("/game-spectator")'), "route-path")
+  assert.equal(kindOf('  socket.emit("join_as_spectator", { roomId })'), "socket-event")
+  assert.equal(kindOf('  socket.on("spectator_state_changed", handler)'), "socket-event")
+  assert.equal(kindOf("  { allowSpectators: true }"), "object-key")
+  assert.equal(kindOf('  "allow-spectators": true,'), "object-key")
+  assert.equal(kindOf('  <span aria-label="관전자 허용" />'), "string-literal")
+  assert.equal(kindOf("            관전 계속하기"), "jsx-text")
+  assert.equal(kindOf("// 관전자 허용 체크박스는 제거했다"), "comment")
+  assert.equal(kindOf(" * spectatorMode는 허용 목록에 없다"), "comment")
+  assert.equal(kindOf("  {/* \"관전 계속하기\"는 보존한다 */}"), "comment")
+  assert.equal(kindOf("  const total = players.length // 관전과 무관하다"), "comment")
+  assert.equal(kindOf("const ready = true"), null)
+
+  // (2) 감사 범위. 실제로 수백 개 파일을 읽었고, 두 루트와 핵심 파일이 그 안에 있다.
   const sources = await collectProductionSources()
   assert.ok(sources.length > 300, `생산 원문을 충분히 읽지 못했다(${sources.length}개 — 이 감사가 무력하다)`)
   for (const root of PRODUCTION_SOURCE_ROOTS) {
     assert.ok(sources.some((entry) => entry.file.startsWith(`${root}/`)), `${root}를 훑지 못했다`)
   }
-  // 실제 라우터·보호 라우트·대기방 페이지가 이 감사 범위 안에 있다(감사가 비켜 가지 않았다).
   for (const covered of [
     "frontend/src/app/routes/index.jsx",
     "frontend/src/shared/ui/ProtectedRoute.jsx",
     "frontend/src/domains/game/matching/pages/GameMatchingPage.jsx",
     "frontend/src/domains/game/ingame/pages/InGamePage.jsx",
+    "frontend/src/domains/game/setup/pages/GameSetupPage.jsx",
+    "frontend/src/domains/lobby/pages/LobbyPage.jsx",
     "backend/socket/matchmaking.js",
+    "backend/socket/gameSession.js",
+    ...SPECTATOR_SOURCE_ALLOWLIST,
   ]) {
     assert.ok(sources.some((entry) => entry.file === covered), `${covered}가 감사 범위 밖이다`)
   }
+  // 허용 목록에 적힌 파일이 전부 실재한다(오타로 잠금이 헐거워지지 않는다).
+  assert.equal(new Set(SPECTATOR_SOURCE_ALLOWLIST).size, 10, "허용 목록의 파일 수가 10개가 아니다")
 
-  const hits = sources.flatMap(({ file, source }) => spectatorCodeHits(source, file))
-  const allowed = (hit) => PRESERVED_SPECTATOR_TEXT_LINES.some(
-    (entry) => entry.file === hit.file && hit.text.includes(entry.text))
-  const leftovers = hits.filter((hit) => !allowed(hit))
+  const occurrences = sources.flatMap(({ file, source }) => spectatorOccurrences(source, file))
+
+  // (3) 출현 **파일 집합**이 허용 목록과 정확히 같다. 목록 밖 파일에 한 줄이라도 나오면
+  //     실패하고, 목록 안 파일에서 기록·보존 문구가 사라져도 실패한다.
   assert.deepEqual(
-    leftovers, [],
-    `생산 코드에 외부 관전 흔적이 남아 있다:\n${leftovers.map((h) => `${h.file}:${h.line} ${h.text}`).join("\n")}`,
+    [...new Set(occurrences.map((hit) => hit.file))].sort(),
+    [...SPECTATOR_SOURCE_ALLOWLIST].sort(),
+    `관전 어휘가 나오는 파일 집합이 허용 목록과 다르다:\n${
+      occurrences.filter((hit) => !SPECTATOR_SOURCE_ALLOWLIST.includes(hit.file))
+        .map((h) => `${h.file}:${h.line} [${h.kind}] ${h.text}`).join("\n")}`,
   )
 
-  // 보존 대상은 실제로 남아 있어야 한다 — 관전 문자열을 일괄 삭제해 통과시키는 길을 막는다.
-  for (const entry of PRESERVED_SPECTATOR_TEXT_LINES) {
-    assert.ok(
-      hits.some((hit) => hit.file === entry.file && hit.text.includes(entry.text)),
-      `보존해야 할 사망 참가자 선택 문구(${entry.text})가 사라졌다`,
+  // (4) 허용 파일 **안에서도** 자리를 본다: 주석이거나, 사망 참가자 선택의 JSX 문구뿐이다.
+  const isPreserved = (hit) => PRESERVED_SPECTATOR_TEXT_LINES.some(
+    (entry) => entry.file === hit.file && entry.kind === hit.kind && hit.text === entry.text)
+  const misplaced = occurrences.filter((hit) => hit.kind !== "comment" && !isPreserved(hit))
+  assert.deepEqual(
+    misplaced, [],
+    `허용 파일 안에서도 관전 어휘가 코드 자리에 있다:\n${
+      misplaced.map((h) => `${h.file}:${h.line} [${h.kind}] ${h.text}`).join("\n")}`,
+  )
+
+  // (5) 네 금지 자리는 생산 원문 어디에도 하나도 없다(위 단언들의 결과를 자리별로 재확인한다).
+  for (const forbidden of ["identifier", "route-path", "socket-event", "object-key", "string-literal"]) {
+    assert.deepEqual(
+      occurrences.filter((hit) => hit.kind === forbidden), [],
+      `관전 어휘가 ${forbidden} 자리에 남아 있다`,
     )
   }
+
+  // (6) 보존 대상은 실제로 남아 있다 — 관전 문자열을 일괄 삭제해 통과시키는 길을 막는다.
+  for (const entry of PRESERVED_SPECTATOR_TEXT_LINES) {
+    assert.equal(
+      occurrences.filter((hit) => hit.file === entry.file && hit.text === entry.text).length, 1,
+      `보존해야 할 사망 참가자 선택 문구(${entry.text})가 사라졌거나 늘었다`,
+    )
+  }
+})
+
+// ── F-23(SPLIT-1/AC-02): 라우트 path·백엔드 수신 사건 전수 열거 ─────────────
+//
+// 위 어휘 잠금은 "관전"이라는 낱말이 원문 어디에 남았는가만 본다. 진입은 낱말 없이도 만들 수
+// 있으므로, 주소로 열리는 **path 전부**와 서버가 받아 주는 **사건 이름 전부**를 각각 열거해
+// 그 목록 자체를 고정하고, 그 안에 관전 계열 이름이 하나도 없음을 함께 단언한다.
+
+/** 백엔드가 실제로 수신 등록하는 사건 전부(backend/socket의 socket.on/io.on). */
+const BACKEND_SOCKET_ON_EVENTS_LOCK = [
+  // 연결 수명(backend/socket/socket.js)
+  "connection", "disconnect", "notifications_ready",
+  // 대기방·방 설정·초대(backend/socket/matchmaking.js)
+  "accept_game_invite", "create_room", "delete_room", "get_current_room",
+  "get_game_invite_result", "get_public_rooms", "get_room_settings_update_result",
+  "join_matchmaking", "join_public_room", "join_room_by_code", "kick_room_player",
+  "leave_matchmaking", "leave_room", "set_ready", "start_game", "update_room_settings",
+  // 진행 중 게임(backend/socket/gameSession.js)
+  "acknowledge_role_reveal", "cast_day_vote", "cast_tribunal_vote", "get_kick_result",
+  "get_session_snapshot", "kick_game_player", "leave_game_session", "ready_for_day_vote",
+  "resolve_day_vote", "resolve_night", "resolve_tribunal_vote", "submit_game_chat_message",
+  "submit_joker_chat_message", "submit_night_action",
+]
+
+/** 이름만 바꾼 관전 진입까지 잡기 위해 넓힌 어휘(경로·사건 이름 검사 전용). */
+const SPECTATOR_NAME_VOCABULARY = /spectat|관전|watch|observ|viewer|onlook/i
+
+/** 그 원문의 `.on(` 수신 등록에서 사건 이름을 실제 값으로 푼다(상수 표 참조 포함). */
+function collectSocketOnEventNames(sources, tables) {
+  const resolved = []
+  const unresolved = []
+  for (const { file, source } of sources) {
+    stripComments(source).split(/\r?\n/).forEach((line, index) => {
+      const re = /\.on\(\s*([^,)]+)/g
+      let match
+      while ((match = re.exec(line)) !== null) {
+        const expr = match[1].trim()
+        const where = `${file}:${index + 1}`
+        const fromTables = [...expr.matchAll(/\b([A-Z][A-Z0-9_]*)\.([A-Za-z_]\w*)/g)]
+          .map(([, table, key]) => tables[table]?.[key])
+          .filter((value) => typeof value === "string")
+        const literals = [...expr.matchAll(/["']([^"']+)["']/g)].map((m) => m[1])
+        const names = fromTables.length > 0 ? fromTables : literals
+        if (names.length === 0) unresolved.push({ where, expr })
+        else for (const name of names) resolved.push({ where, name })
+      }
+    })
+  }
+  return { resolved, unresolved }
+}
+
+test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 전체에 관전 관련 이름이 없다", async () => {
+  const { readFile } = await import("node:fs/promises")
+  const { createRequire } = await import("node:module")
+
+  // (1) app/routes/index.jsx의 **모든** path. 원문 선언과 실행 중 라우터가 같은 집합이어야
+  //     한다 — 한쪽에만 있으면 그 열거는 실제로 열리는 화면을 대표하지 못한다.
+  const routerSource = stripComments(
+    await readFile(new URL("frontend/src/app/routes/index.jsx", REPO_ROOT), "utf8"))
+  const declaredPaths = [...routerSource.matchAll(/path\s*:\s*"([^"]*)"/g)].map((m) => m[1])
+  assert.ok(declaredPaths.length > 0, "라우터 원문에서 path를 하나도 읽지 못했다")
+  const runtimePaths = flattenRoutes(router.routes, ProtectedRoute)
+    .filter((entry) => entry.path !== undefined).map((entry) => entry.path)
+  assert.deepEqual([...declaredPaths].sort(), [...runtimePaths].sort(),
+    "원문 선언과 실행 중 라우터의 path 집합이 다르다")
+  const spectatorPaths = declaredPaths.filter((path) => SPECTATOR_NAME_VOCABULARY.test(path))
+  assert.deepEqual(spectatorPaths, [],
+    `관전 계열 이름의 라우트가 있다: ${spectatorPaths.join(", ")}`)
+  // 리다이렉트 목적지도 함께 본다(경로 선언 없이 다른 화면으로 보내는 우회를 막는다).
+  const redirectTargets = [...routerSource.matchAll(/<Navigate\s+to="([^"]+)"/g)].map((m) => m[1])
+  assert.deepEqual(redirectTargets, ["/lobby"], "리다이렉트 목적지가 바뀌었다")
+  // 검출기 대조: 관전 경로가 실제로 있으면 위 필터가 잡는다.
+  assert.deepEqual(
+    ["/lobby", "/spectate", "/watch/:roomId"].filter((path) => SPECTATOR_NAME_VOCABULARY.test(path)),
+    ["/spectate", "/watch/:roomId"], "관전 계열 경로 이름을 검출하지 못했다")
+
+  // (2) backend/socket의 **모든** 수신 등록. 상수 표 참조는 실제 백엔드 모듈에서 값을 읽어
+  //     푼다(시험 안에 값을 다시 적으면 두 목록이 갈릴 수 있다).
+  const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
+  const tables = {
+    KICK_EVENTS: backendRequire("./kickReceiptStore").KICK_EVENTS,
+    ROOM_SETTINGS_EVENTS: backendRequire("../utils/updateRoomSettingsValidation").ROOM_SETTINGS_EVENTS,
+  }
+  assert.equal(tables.KICK_EVENTS.KICK_ROOM_PLAYER, "kick_room_player", "추방 사건 표를 읽지 못했다")
+  assert.equal(tables.ROOM_SETTINGS_EVENTS.UPDATE_ROOM_SETTINGS, "update_room_settings",
+    "설정 사건 표를 읽지 못했다")
+
+  // 검출기 대조: 다른 이름의 관전 수신·상수 표 참조를 실제로 잡아내는지 먼저 고정한다.
+  const probe = collectSocketOnEventNames([{
+    file: "probe.js",
+    source: [
+      "socket.on('spectator_joined', handler)",
+      "socket.on(KICK_EVENTS.KICK_ROOM_PLAYER, handler)",
+      "socket.on(eventName, handler)",
+      "// socket.on('commented_out', handler)",
+    ].join("\n"),
+  }], tables)
+  assert.deepEqual(probe.resolved.map((entry) => entry.name),
+    ["spectator_joined", "kick_room_player"], "다른 이름의 수신 등록을 검출하지 못했다")
+  assert.deepEqual(probe.unresolved.map((entry) => entry.expr), ["eventName"],
+    "변수로 받는 수신 등록을 간접 지점으로 남기지 못했다")
+
+  const backendSocketSources = (await collectProductionSources())
+    .filter(({ file }) => file.startsWith("backend/socket/"))
+  assert.deepEqual(
+    backendSocketSources.map((entry) => entry.file).sort(),
+    [
+      "backend/socket/channelMembership.js", "backend/socket/gameSession.js",
+      "backend/socket/kickReceiptStore.js", "backend/socket/matchmaking.js",
+      "backend/socket/roomJoinErrors.js", "backend/socket/socket.js",
+    ],
+    "backend/socket의 생산 파일 목록이 바뀌었다",
+  )
+  const { resolved, unresolved } = collectSocketOnEventNames(backendSocketSources, tables)
+  assert.deepEqual(unresolved, [], "사건 이름을 변수로 받는 서버 수신 등록이 생겼다")
+  assert.deepEqual([...new Set(resolved.map((entry) => entry.name))].sort(),
+    [...BACKEND_SOCKET_ON_EVENTS_LOCK].sort(),
+    "서버가 수신하는 사건 목록이 잠금과 다르다")
+  const spectatorEvents = resolved.filter((entry) => SPECTATOR_NAME_VOCABULARY.test(entry.name))
+  assert.deepEqual(spectatorEvents, [],
+    `관전 계열 이름의 서버 수신 사건이 있다: ${spectatorEvents.map((e) => `${e.where} ${e.name}`).join(", ")}`)
 })
 
 // ── F-23(SPLIT-1/AC-02): 구조적 목록 감사 ───────────────────────────────────
@@ -809,6 +1043,32 @@ const MATCHING_STORE_DATA_KEYS = [
   "roomCode", "roomId", "roomInstanceId", "roomRevision", "settings", "settingsVersion",
 ]
 
+/**
+ * 객체 트리의 **모든** 키 경로(중첩 객체·배열 포함). 최상위 키만 보는 검사가 놓치는
+ * `state.self.*`·`players[i].*` 같은 중첩 자리까지 이름을 훑기 위한 것이다.
+ */
+function deepKeyPaths(value, path = "$") {
+  if (Array.isArray(value)) return value.flatMap((item, index) => deepKeyPaths(item, `${path}[${index}]`))
+  if (value === null || typeof value !== "object") return []
+  return Object.entries(value).flatMap(([key, child]) => [`${path}.${key}`, ...deepKeyPaths(child, `${path}.${key}`)])
+}
+
+/**
+ * 아래 두 검사(직계 JSX 마운트 목록 · store 최상위 키 목록)의 범위 한계와 그 보완.
+ *
+ * collectRenderedComponents는 InGamePage.jsx **한 파일의 직계 JSX**만 보고, shapeOf는 두
+ * store의 **1단계 키**만 본다. 하위 컴포넌트가 자기 안에서 여는 모달, 다른 화면의 진입
+ * 버튼, 중첩 객체 안의 상태 키는 구조상 그 두 검사의 범위 밖이다(CODEX-5의 AC-02/SPLIT-1
+ * 지적이 가리킨 공백이 정확히 이것이다).
+ *
+ * 그 공백은 이 파일 위쪽의 **생산 원문 전체 잠금**이 덮는다 — frontend/src·backend의 모든
+ * 비시험 js/jsx를 한 줄씩 읽어 관전 어휘의 출현 파일과 자리를 고정하므로, 화면·컴포넌트
+ * 깊이와 무관하게 잡힌다. 그리고 이름이 아니라 **연결의 목록**은 라우트 path 전수·서버 수신
+ * 사건 전수·클라이언트 전송/구독 전수 잠금이 각각 고정한다.
+ *
+ * 여기서는 그 둘로도 값까지는 보지 못하는 **중첩 상태**를 실제 마운트 뒤 재귀로 훑어 덧댄다.
+ * 아래 두 좁은 검사는 그대로 보존한다(관전과 무관한 목록 증감을 잡는 구조 잠금이다).
+ */
 test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양이 잠긴다(관전 모달·상태가 다른 이름으로도 없다)", async () => {
   const { readFile } = await import("node:fs/promises")
   const pageSource = await readFile(
@@ -858,6 +1118,34 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     "addPlayer", "applyRoomSettings", "clearRoom", "removePlayer", "setPlayerReady", "setRoom",
     "startSearch", "stopSearch", "updateHost",
   ], "대기방 store의 액션 목록이 바뀌었다")
+
+  // ── 중첩 상태 보완 ────────────────────────────────────────────────────────
+  // 위 shapeOf는 1단계 키만 본다. 실제 /ingame을 마운트한 뒤 두 store의 **전체 상태 트리**를
+  // 재귀로 훑어, 중첩된 자리에 관전 계열 키가 없다는 사실까지 같은 시험에서 고정한다.
+  // 검출기 대조부터 — 중첩·배열 안의 키를 실제로 잡는다.
+  assert.deepEqual(
+    deepKeyPaths({ room: { spectators: [{ watchOnly: true }] } })
+      .filter((path) => SPECTATOR_NAME_VOCABULARY.test(path)),
+    // 배열 원소 자체는 키가 아니므로 경로로 세지 않는다 — 그 **안의 키**가 잡혀야 한다.
+    ["$.room.spectators", "$.room.spectators[0].watchOnly"],
+    "중첩·배열 안의 관전 계열 키를 검출하지 못했다",
+  )
+
+  seedLiveGame({ selfAlive: false })
+  await mountInGame()
+  const nestedKeys = [
+    ...deepKeyPaths(useInGameStore.getState()),
+    ...deepKeyPaths(useMatchingStore.getState()),
+  ]
+  assert.ok(
+    nestedKeys.some((path) => path.startsWith("$.state.players[0].")),
+    "중첩 상태를 훑지 못했다(이 보완 검사가 무력하다)",
+  )
+  assert.ok(nestedKeys.includes("$.state.self.role"), "자기 상태의 중첩 키를 훑지 못했다")
+  assert.deepEqual(
+    nestedKeys.filter((path) => SPECTATOR_NAME_VOCABULARY.test(path)), [],
+    "두 store의 중첩 상태에 관전 계열 키가 있다",
+  )
 })
 
 test("F-23(AC-06): 생존 중인 참가자에게는 사망 선택이 보이지 않는다", async () => {
