@@ -1090,6 +1090,29 @@ function endedSnapshotResponse({ gameId = "g1", playerUuid = "player-1", dayInde
 }
 
 /**
+ * F-23(SPLIT-1): **현재 연결에서 정상 공개 종료를 받는다** — 실제 수신 경로와 같은 인자로.
+ *
+ * 프로덕션에서 이 호출을 만드는 것은 useGameSessionSocketEvents의 handleNightResultApplied이고,
+ * 그때 두 번째 인자로 그 순간의 수신 범위(계정 축 + store·연결 축)가 함께 들어간다. 시험이 그
+ * 인자를 빼고 부르면 store는 "누가 받았는지 모르는" 종료 결과로 적어 두게 되어, 이 파일이
+ * 검사하려는 "어느 범위에서 받았는가"가 시험에서만 사라진다.
+ */
+function deliverTerminalNightResult({ gameId, accountId, playerUuid = "player-1", dayIndex = 1 }) {
+  const receipt = readInGameReceiptScope({
+    accountId,
+    identityGeneration: useAuthStore.getState().identityGeneration ?? null,
+  })
+  useInGameStore.getState().applyNightResultAppliedPayload({
+    gameId,
+    phase: "ENDED",
+    dayIndex,
+    players: [{ uuid: playerUuid, isAlive: true }],
+    victimUuid: null,
+    winResult: { winner: "CITIZEN" },
+  }, receipt)
+}
+
+/**
  * F-23(SPLIT-1): **실패는 성공이 아니다.**
  *
  * 재결속 구간에서 현재 신원의 스냅샷을 끝내 받지 못했는데 보류만 풀면, 화면은 이전 신원·
@@ -1271,17 +1294,10 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   assert.equal(live.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
 
   // 아직 그 스냅샷을 기다리는 동안, 이 연결의 정상 공개 종료가 도착한다. 실제 수신 경로가
-  // 부르는 바로 그 store 액션을 그대로 쓴다 — 값을 직접 주입하면 수신 범위가 기록되지 않아
-  // 이 시험이 검사하려는 것을 건너뛴다.
+  // 부르는 바로 그 store 액션을 **같은 인자로** 쓴다 — 값을 직접 주입하거나 수신 범위를 빼고
+  // 부르면 그 기록이 남지 않아 이 시험이 검사하려는 것을 건너뛴다.
   act(() => {
-    useInGameStore.getState().applyNightResultAppliedPayload({
-      gameId: "g-live",
-      phase: "ENDED",
-      dayIndex: 1,
-      players: [{ uuid: "player-1", isAlive: true }],
-      victimUuid: null,
-      winResult: { winner: "CITIZEN" },
-    })
+    deliverTerminalNightResult({ gameId: "g-live", accountId: "player-1" })
   })
   assert.equal(hasResultNavigationBasis(), true, "전제: 이 연결의 정상 종료 결과가 반영돼야 한다")
 
@@ -1297,6 +1313,88 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
     "현재 연결에서 직접 받은 정상 종료 결과까지 스냅샷 실패로 지워졌다",
   )
   liveHook.unmount()
+})
+
+/**
+ * F-23(SPLIT-1): **인증 왕복은 store도 연결도 건드리지 않는다 — 그래서 계정 축이 필요하다.**
+ *
+ * 같은 화면이 판과 연결을 그대로 들고 있는 채로 인증만 A→B→A로 왕복하는 구간이 있다. 이때
+ * store가 소유한 관측은 하나도 움직이지 않는다: gameId·roster·내 소속은 그대로이고(소속 전이
+ * 세대가 세는 self.uuid는 마지막으로 적용된 snapshot의 본인이지 인증 계정이 아니다), 소켓 객체와
+ * sid도 그대로다. 계정 값 자체도 원래대로 돌아온다.
+ *
+ * 그래서 계정 축(accountId·인증 전이 세대)을 함께 적어 두고 함께 대조하지 않으면, **이전 계정이**
+ * 받아 둔 종료 결과가 "지금 이 화면이 직접 받은 사실"로 통과한다 — 현재 신원의 스냅샷이
+ * 실패했는데도 보류가 풀리고, 화면은 남의 판 결과로 넘어간다.
+ *
+ * 같은 파일의 "현재 연결에서 받은 종료 결과는 보존된다"(위)와 이 시험은 **같은 실패 경로**를
+ * 쓴다. 판정 기준이 "실패했는가"도 "연결이 바뀌었는가"도 아니라 "그 결과를 받은 범위가 아직
+ * 현재인가"임을 두 시험이 함께 고정한다.
+ */
+test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이전 계정이 받아 둔 종료 결과는 이동 근거로 남지 않는다", async () => {
+  seedStore({ gameId: "g-auth", playerUuid: "player-1", phase: "NIGHT", dayIndex: 1 })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = "sock-1"
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  assert.equal(fake.emitWithAckCalls.length, 1, "전제: 마운트가 한 번 물어야 한다")
+
+  // 계정 A가 **이 연결에서** 정상 공개 종료를 받는다(실제 수신 경로와 같은 인자다).
+  act(() => {
+    deliverTerminalNightResult({ gameId: "g-auth", accountId: "player-1" })
+  })
+  assert.equal(hasResultNavigationBasis(), true, "전제: 계정 A의 종료 결과가 반영돼야 한다")
+  const generationBefore = useAuthStore.getState().identityGeneration
+
+  // A→B→A. 실제 인증 전이(login)로 왕복시킨다 — 계정 값은 원래대로 돌아오고 판·소속·소켓 객체·
+  // sid·연결 상태는 하나도 바뀌지 않는다. 전이 **횟수**만이 이 구간을 남긴다.
+  await act(async () => {
+    useAuthStore.getState().login({ uuid: "player-2" })
+    useAuthStore.getState().login({ uuid: "player-1" })
+  })
+  assert.equal(useAuthStore.getState().user.uuid, "player-1", "전제: 계정 값은 원래대로 돌아온다")
+  assert.equal(
+    useAuthStore.getState().identityGeneration, generationBefore + 2,
+    "전제: 두 전이가 모두 세대로 남아야 한다",
+  )
+  assert.equal(useInGameStore.getState().gameId, "g-auth", "전제: 판은 그대로 남아 있어야 한다")
+  assert.equal(fake.socket.id, "sock-1", "전제: 연결은 교체되지 않는다(이 시험이 보는 축은 계정뿐이다)")
+  assert.equal(getInGameSnapshotRebindPending(), true, "전제: 인증 왕복이 재결속 보류를 열어야 한다")
+  assert.equal(fake.emitWithAckCalls.length, 2, "전제: 현재 신원의 스냅샷을 다시 물어야 한다")
+
+  // 그 요청이 실패한다 — 현재 신원의 사실을 끝내 확인하지 못했다.
+  await act(async () => {
+    fake.emitWithAckCalls[1].reject(new Error("operation has timed out"))
+    await flushMicrotasks()
+  })
+
+  assert.equal(
+    getInGameSnapshotRebindPending() === false && hasResultNavigationBasis(),
+    false,
+    "인증이 왕복한 뒤 스냅샷도 실패했는데, 이전 계정이 받아 둔 종료 결과가 이동 근거로 남았다",
+  )
+  assert.equal(hasResultNavigationBasis(), false, "이전 계정의 종료 결과가 그대로 남았다")
+  assert.equal(getInGameSnapshotRebindPending(), false, "보류가 남아 화면이 영영 갇힌다")
+  assert.equal(
+    useInGameStore.getState().state.phase, "ENDED",
+    "종료 잠금 자체는 서버가 확정한 사실이다 — 실패했다고 되돌리지 않는다",
+  )
+
+  // 영구 무효가 아니다: 현재 신원의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다.
+  act(() => {
+    fake.socket.id = "sock-2"
+    fake.socket.triggerConnect()
+  })
+  await act(async () => {
+    fake.emitWithAckCalls[2].resolve(endedSnapshotResponse({ gameId: "g-auth" }))
+    await flushMicrotasks()
+  })
+  assert.equal(hasResultNavigationBasis(), true, "현재 신원의 정상 스냅샷 뒤에도 결과 이동이 막혀 있다")
+
+  hook.unmount()
 })
 
 test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권위로 승격되지 않는다", () => {

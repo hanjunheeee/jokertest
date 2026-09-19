@@ -195,13 +195,19 @@ export function useInGameSessionSnapshotSync() {
        * **무엇이 잔존물인지는 store가 판정한다.** 재결속 구간이라도 그 사이에 현재 연결이
        * 정상 공개 종료(night_result_applied)를 직접 받았을 수 있다 — 그 결과는 이전 신원의
        * 잔존물이 아니므로 스냅샷 실패로 지워지면 안 된다. 그래서 여기서는 "확인하지 못한 채
-       * 끝났다"만 알리고, 실제로 걷어낼지는 winResult에 함께 적힌 수신 범위를 아는
-       * invalidateUnconfirmedTerminalResult가 결정한다.
+       * 끝났다"와 **지금 이 순간의 인증 범위**만 알리고, 실제로 걷어낼지는 winResult에 함께
+       * 적힌 수신 범위를 아는 invalidateUnconfirmedTerminalResult가 결정한다.
+       *
+       * 현재 범위는 요청 시점 값이 아니라 **끝맺는 이 순간**에 다시 읽는다 — 요청을 보낸 뒤
+       * 인증이 A→B→A로 왕복했더라도 계정 값은 원래대로 돌아오므로, 그 구간을 드러내는 것은
+       * 지금 읽은 인증 전이 세대뿐이다(store도 연결도 그대로인 경우가 바로 그 자리다).
        */
       const finishRebindUnapplied = () => {
         if (epochVersionRef.current !== requestEpochVersion) return
         if (!getInGameSnapshotRebindPending()) return
-        useInGameStore.getState().invalidateUnconfirmedTerminalResult()
+        useInGameStore
+          .getState()
+          .invalidateUnconfirmedTerminalResult(readInGameReceiptScope(readCurrentAuthScope()))
         setIdentityRebindPending(false)
       }
       // 이 세대에서 이미 요청을 보냈다면 다시 보내지 않는다 — StrictMode 이중 호출과, 같은

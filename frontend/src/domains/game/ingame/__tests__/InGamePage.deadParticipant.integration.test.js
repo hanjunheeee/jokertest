@@ -1978,6 +1978,101 @@ test("F-23(SPLIT-1): 재연결 뒤 현재 연결에서 받은 정상 종료는 �
   ))
 })
 
+/**
+ * F-23(SPLIT-1): **인증 왕복도 같은 경합이다 — 실제 화면에서 이동 0회.**
+ *
+ * 위 두 시험의 전이는 연결 교체(재연결)였다. 인증 A→B→A 왕복은 그 축을 하나도 건드리지
+ * 않는다: 같은 판·같은 소속·같은 소켓 객체·같은 sid이고 계정 값마저 원래대로 돌아온다. 그래도
+ * 그 사이에 오간 것은 **다른 계정의 화면**이므로, 이전 계정이 받아 둔 종료 결과를 현재 신원의
+ * 스냅샷으로 확인하지 못한 채 결과 화면으로 넘어가면 안 된다.
+ *
+ * 실제 router·ProtectedRoute·InGamePage·store 위에서 그 순서를 그대로 재현하고 **이동 0회**를
+ * 고정한다. 기존 단언(연결 교체 경합·현재 연결 종료 보존)은 그대로 둔다.
+ */
+test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이전 계정의 종료 결과로 결과 화면에 넘어가지 않는다", async () => {
+  seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
+  const { container } = await mountInGame()
+  const socket = currentSocket
+
+  // 계정 A가 **이 연결에서** 정상 공개 종료를 받는다(공개 사망 연출이 이동을 붙잡는다).
+  await act(async () => {
+    socket.deliver("night_result_applied", {
+      gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
+      players: [{ uuid: SELF, isAlive: true }, { uuid: OTHER, isAlive: false }],
+      victimUuid: OTHER,
+      winResult: { winner: "CITIZEN" },
+      deathReveals: [{ victimUuid: OTHER, source: "JOKER" }],
+    })
+  })
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
+  assert.ok(
+    container.querySelector("[data-ingame-kill-reveal]"),
+    "전제: 그 판정의 공개 사망 연출이 실제로 떠 있어야 한다",
+  )
+  assert.equal(router.state.location.pathname, "/ingame", "전제: 연출 중에는 넘어가지 않는다")
+
+  // A→B→A. 계정 값은 원래대로 돌아오지만 전이 세대는 두 번 올랐다. 판·소속·소켓 객체·sid·
+  // 연결 상태는 하나도 바뀌지 않는다 — 이 시험이 보는 축은 계정뿐이다.
+  await act(async () => {
+    useAuthStore.setState((s) => ({
+      user: { uuid: OTHER }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
+    }))
+    useAuthStore.setState((s) => ({
+      user: { uuid: SELF, nickname: "나" }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
+    }))
+  })
+  assert.equal(myMembership(), MY_MEMBERSHIP, "전제: 소속은 그대로다")
+  assert.equal(socket.id, "sock-1", "전제: 연결은 교체되지 않는다")
+  // 왕복 그 자체로도 넘어가지 않는다 — 전이로 연출 큐가 버려진 렌더에서 잔존 종료 결과가
+  // 곧바로 이동 근거가 되면, 뒤이은 확인은 아무것도 막을 수 없다.
+  assert.equal(
+    router.state.location.pathname, "/ingame",
+    "인증 왕복 직후의 렌더에서 이전 계정의 종료 결과로 결과 화면에 들어갔다",
+  )
+
+  // 그 왕복이 만든 현재 신원의 스냅샷 요청이 실패한다.
+  const failed = socket.takeAck("get_session_snapshot")
+  assert.ok(failed, "전제: 인증 왕복이 현재 신원의 스냅샷을 다시 물어야 한다")
+  await act(async () => { failed.ack({ ok: false, code: "INTERNAL_ERROR" }) })
+
+  assert.equal(
+    router.state.location.pathname, "/ingame",
+    "인증이 왕복하고 스냅샷도 실패했는데 이전 계정의 종료 결과로 결과 화면에 들어갔다",
+  )
+  // 실패 직후의 한 틱만 보고 통과시키지 않는다 — 이후 렌더에서도 이동이 없어야 한다.
+  await act(async () => { await Promise.resolve() })
+  assert.equal(router.state.location.pathname, "/ingame", "뒤이은 렌더에서 결과 화면으로 넘어갔다")
+  assert.equal(
+    useInGameStore.getState().state.winResult, null,
+    "확인하지 못한 이전 계정의 종료 결과가 이동 근거로 그대로 남았다",
+  )
+  assert.equal(useInGameStore.getState().gameId, GAME_ID, "실패가 세션 자체를 지웠다")
+
+  // 영구히 갇히지 않는다: 현재 신원의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다.
+  await act(async () => {
+    socket.id = "sock-2"
+    socket.deliver("connect")
+  })
+  const recovered = socket.takeAck("get_session_snapshot")
+  assert.ok(recovered, "다음 재연결이 현재 신원의 스냅샷을 다시 묻지 않았다")
+  await act(async () => {
+    recovered.ack({
+      ok: true, gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
+      winResult: { winner: "CITIZEN" },
+      players: rosterPlayers({ selfAlive: true }).map((p) => ({
+        uuid: p.uuid, nickname: p.nickname, isAlive: p.uuid === SELF,
+        isConnected: true, isParticipating: true, membershipId: p.membershipId,
+      })),
+      self: { uuid: SELF, nickname: "나", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
+    })
+  })
+
+  await waitFor(() => assert.notEqual(
+    router.state.location.pathname, "/ingame",
+    "정상 스냅샷을 받았는데도 결과 이동이 영영 막혔다",
+  ))
+})
+
 test("F-23(SPLIT-2): 계정이 왕복한 뒤에는 이전 신원의 계속 보기 선택이 새 신원에 적용되지 않는다", async () => {
   seedLiveGame({ selfAlive: false })
   const { container } = await mountInGame()

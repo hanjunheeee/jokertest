@@ -220,7 +220,11 @@ export function useGameSessionSocketEvents() {
         previouslyDeadUuids,
       })
       if (!parsed) return
-      useInGameStore.getState().applyNightResultAppliedPayload(parsed)
+      // F-23(SPLIT-1): 이 판정이 승패를 확정할 수 있다 — 그 종료 결과가 **누가·어느 연결에서**
+      // 받은 것인지를 store가 함께 적어 두도록 지금 이 순간의 수신 범위를 넘긴다. 그래야 뒤이은
+      // 재결속 스냅샷 실패가 이 연결이 직접 받은 결과까지 걷어내지 않고, 반대로 인증이 왕복한
+      // 뒤의 옛 결과는 현재 범위로 통과하지 못한다.
+      useInGameStore.getState().applyNightResultAppliedPayload(parsed, currentReceiptScope())
       // 밤 결과로 승패가 확정될 수 있다. 사망 자체의 공개음은 player_eliminated가 담당하고,
       // 여기서는 종료 전이만 결과음으로 잇는다(두 사건의 ID는 서로 다르다).
       dispatchResultSfxIfEnded(payload?.sfxEvent?.origin ?? payload?.origin ?? "live")
@@ -367,7 +371,9 @@ export function useGameSessionSocketEvents() {
     // dayIndex/phase/defendantUuid 4종을 canonical과 비교해 stale이면 참조를 그대로 보존한다.
     const handleTribunalVoteResolved = (payload) => {
       const before = useInGameStore.getState().state
-      useInGameStore.getState().applyTribunalResolved(payload)
+      // 유죄 판정도 승패를 확정할 수 있다 — 위 handleNightResultApplied와 같은 이유로 수신
+      // 범위를 함께 넘긴다.
+      useInGameStore.getState().applyTribunalResolved(payload, currentReceiptScope())
       const after = useInGameStore.getState()
       // applyTribunalResolved는 stale payload에 참조를 그대로 보존한다 — 그 경우 소리도 없다.
       if (after.state === before || !after.gameId || !after.state) return
@@ -405,7 +411,8 @@ export function useGameSessionSocketEvents() {
       if (!parsed) return
 
       const before = current.state
-      useInGameStore.getState().applyPlayerEliminated(parsed)
+      // 끊김 사망도 곧바로 승패를 확정할 수 있다 — 위 두 핸들러와 같은 이유로 수신 범위를 넘긴다.
+      useInGameStore.getState().applyPlayerEliminated(parsed, currentReceiptScope())
       // 중복 방송이면 reducer가 참조를 그대로 돌려준다 — 이미 반영된 사망에 소리를 더하지 않는다.
       if (useInGameStore.getState().state === before) return
 
