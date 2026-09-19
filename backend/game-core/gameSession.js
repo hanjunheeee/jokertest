@@ -1509,12 +1509,19 @@ const NIGHT_ACTION_RESOLUTION_POLICY = Object.freeze({
  * 미제출(entry 없음)은 SKIP(null)과 같은 null로 접힌다 — 판정에 도달한 밤은 eligible actor
  * 전원의 제출이 이미 확인된 상태라(ACTIONS_PENDING) 둘을 가를 실익이 없고, 기존 집계 함수들도
  * 모두 두 값을 같게 다뤄왔다.
+ *
+ * excludedActorUuids(F-25a)는 기본값이 빈 Set이라 기존 2-인자 호출은 전혀 영향받지 않는다 —
+ * prepareNightResolution의 순차 처리만 이 인자로 "이번 밤 공격받고 아직 치료받지 못한" 행위자를
+ * 그 단계의 집계에서 뺀다(회복 여부는 canonical player.alive가 아니라 그 판정 호출 안의
+ * recoveryStates가 가른다). 대상(target) 선택 규칙에는 영향이 없고 행위자 쪽만 좁힌다.
  */
-function collectRoleNightSubmissions(session, role) {
-    return getAliveActorUuidsForRole(session, role).map((actorUuid) => ({
-        actorUuid,
-        target: session.nightActions.get(actorUuid) ?? null,
-    }))
+function collectRoleNightSubmissions(session, role, excludedActorUuids = new Set()) {
+    return getAliveActorUuidsForRole(session, role)
+        .filter((actorUuid) => !excludedActorUuids.has(actorUuid))
+        .map((actorUuid) => ({
+            actorUuid,
+            target: session.nightActions.get(actorUuid) ?? null,
+        }))
 }
 
 /**
@@ -1531,10 +1538,12 @@ function collectRoleNightSubmissions(session, role) {
  *
  * @param {object} session - canonical GameSession(players/nightActions/dayIndex를 읽기만 한다)
  * @param {string} role - 판정할 역할 키
+ * @param {Set<string>} [excludedActorUuids] - 이번 집계에서 뺄 행위자(F-25a 회복 대기 배제).
+ *   기본값은 빈 Set이라 이 인자를 생략하는 기존 호출의 결과는 전혀 달라지지 않는다.
  * @returns {string|null} canonical 대상 uuid 또는 null
  */
-function resolveRoleNightAction(session, role) {
-    const targets = collectRoleNightSubmissions(session, role)
+function resolveRoleNightAction(session, role, excludedActorUuids = new Set()) {
+    const targets = collectRoleNightSubmissions(session, role, excludedActorUuids)
         .map((submission) => submission.target)
         .filter((target) => target !== null)
     if (targets.length === 0) return null
@@ -1781,12 +1790,81 @@ function prepareNightResolution(uuid, gameId) {
         }
     }
 
-    // 네 직업의 밤 행동이 모두 같은 리졸버를 지난다 — 대상을 하나 고르는 규칙(다수결·만장일치,
-    // SKIP 제외, 사망자 표 제외)은 여기서 역할별로 갈리지 않고 정책 표 하나로만 갈린다.
-    const assassinationTargetId = resolveRoleNightAction(session, 'JOKER')
-    const protectionTargetId = resolveRoleNightAction(session, 'DOCTOR')
-    const investigationTargetId = resolveRoleNightAction(session, 'GUARD')
-    const confirmationTargetId = resolveRoleNightAction(session, 'WITCH_HUNTER')
+    // F-25a: 네 역할을 NIGHT_TURN_ORDER 순서로 하나씩 처리한다(병렬 집계가 아니다). canonical
+    // player.alive는 이 함수 안에서 절대 바뀌지 않는다 — 대신 이번 판정 호출에서만 유효한 임시
+    // 상태(recoveryStates)로 "누가 공격받아 회복 대기 중인지·치료로 회복됐는지"를 추적해, 뒤
+    // 역할(GUARD/WITCH_HUNTER)의 집계가 아직 치료받지 못한 행위자의 제출을 성공한 결과로 세지
+    // 않게 한다. DOCTOR 단계만 예외다 — 광대에게 공격받은 의사 본인의 자기 치료를 막지 않기
+    // 위해 그 단계에는 배제를 적용하지 않는다(A-03).
+    //
+    // roleSteps는 네 역할 전부를 항상 기록한다 — 실패·기권·상충·역할 부재도 다음 역할 처리를
+    // 막지 않는다는 사실 자체가 이 배열로 남는다(AC-04). events는 킬·치료를 순서가 있는 사건으로
+    // 보존해, 치료가 앞선 킬 사건을 지우지 않는다(AC-01).
+    const recoveryStates = new Map() // uuid → 'PENDING_RECOVERY' | 'RECOVERED' | 'DEATH_CANDIDATE'
+    const events = []
+    const roleSteps = []
+
+    let assassinationTargetId = null
+    let protectionTargetId = null
+    let investigationTargetId = null
+    let confirmationTargetId = null
+
+    for (const role of NIGHT_TURN_ORDER) {
+        const hasRoleInGame = [...session.players.values()].some((player) => player.role === role)
+        if (!hasRoleInGame) {
+            roleSteps.push({ role, targetId: null, status: 'NO_ROLE' })
+            continue
+        }
+
+        const actors = getAliveActorUuidsForRole(session, role)
+        if (actors.length === 0) {
+            // 그 역할 보유자가 전멸했거나(사망), dayIndex 때문에 아직 활동할 수 없다
+            // (WITCH_HUNTER의 첫 밤). 둘 다 "역할은 있으나 지금은 행동할 수 없음"으로 같이
+            // 묶인다 — NO_ROLE(애초에 이 판에 없음)과는 구분된다.
+            roleSteps.push({ role, targetId: null, status: 'NO_ACTOR' })
+            continue
+        }
+
+        const excludedActorUuids = role === 'DOCTOR'
+            ? new Set()
+            : new Set(actors.filter((actorUuid) => recoveryStates.get(actorUuid) === 'PENDING_RECOVERY'))
+
+        const targetId = resolveRoleNightAction(session, role, excludedActorUuids)
+        if (targetId === null) {
+            // 배제된 행위자가 있었는데도 결과가 없다면 "회복하지 못해 막힌" 것과 "애초에 기권·
+            // 상충으로 합의가 안 된" 것을 구분해 남긴다(AC-04).
+            roleSteps.push({ role, targetId: null, status: excludedActorUuids.size > 0 ? 'RECOVERY_BLOCKED' : 'NO_RESULT' })
+            continue
+        }
+
+        roleSteps.push({ role, targetId, status: 'RESOLVED' })
+
+        if (role === 'JOKER') {
+            assassinationTargetId = targetId
+            recoveryStates.set(targetId, 'PENDING_RECOVERY')
+            events.push({ type: 'KILL', targetId })
+        } else if (role === 'DOCTOR') {
+            protectionTargetId = targetId
+            // "치료 성공" 사건은 실제로 회복 대기 중이던 대상을 되살렸을 때만 만든다(A-03) —
+            // 공격받지 않은 생존자를 보호해도 사건은 생기지 않는다(대신 protectedTargetIds에는
+            // 그대로 담겨 기존 assassinationBlocked 계약을 그대로 지킨다).
+            if (recoveryStates.get(targetId) === 'PENDING_RECOVERY') {
+                recoveryStates.set(targetId, 'RECOVERED')
+                events.push({ type: 'HEAL', targetId })
+            }
+        } else if (role === 'GUARD') {
+            investigationTargetId = targetId
+        } else if (role === 'WITCH_HUNTER') {
+            confirmationTargetId = targetId
+        }
+    }
+
+    // 끝까지 치료받지 못한 암살 대상은 이번 판정의 사망 후보다. commitNightResolution의
+    // pendingEliminationTargetId 소비 계약은 그대로이며, 이 상태는 그 계산과 별개로 서버 내부
+    // 기록용이다.
+    if (assassinationTargetId !== null && recoveryStates.get(assassinationTargetId) === 'PENDING_RECOVERY') {
+        recoveryStates.set(assassinationTargetId, 'DEATH_CANDIDATE')
+    }
 
     // 보호 대상은 canonical 하나(또는 없음)다. 필드 이름과 Set 타입은 그대로 두어 이 값을
     // 소비하는 쪽(assassinationBlocked·테스트)의 모양이 바뀌지 않게 하고, 원소 수만 0 또는 1이 된다.
@@ -1848,6 +1926,12 @@ function prepareNightResolution(uuid, gameId) {
             protectedTargetIds,
             pendingEliminationTargetId,
             privateResults,
+            // F-25a: 서버 내부 전용 기록이다(A-05) — buildNightResultAppliedPayload/
+            // buildSessionSnapshot 어느 쪽도 이 세 필드를 읽지 않으므로 공개 payload에는
+            // 노출되지 않는다.
+            roleSteps,
+            events,
+            recoveryStates,
             resolved: true,
         },
     }

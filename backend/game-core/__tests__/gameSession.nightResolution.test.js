@@ -33,6 +33,7 @@ const {
     nightSessionOf4NoWin,
     commitAssassinationNight,
     nightSessionWithDoctor,
+    nightSessionWithDuplicateRole,
     castAllVotes,
     buildSnapQuadSession,
     ackAll,
@@ -586,6 +587,334 @@ test('prepareNightResolution: 사망한 GUARD에게는 개인 결과(privateResu
 
     assert.equal(deadPrepared.ok, true)
     assert.equal(deadPrepared.resolution.privateResults.has(guardUuid), false)
+})
+
+// ---------------------------------------------------------------------------
+// F-25a: 밤 역할별 순차 판정 core — 킬·치료 사건 보존(events) · 회복 대기/회복/사망 후보
+// (recoveryStates) · 네 역할 순차 진행(roleSteps).
+// ---------------------------------------------------------------------------
+
+// --- AC-01: 킬 후 같은 대상 치료 → 킬·치료 사건 모두 보존 + 최종 생존 ---
+
+test('AC-01(F-25a): 광대 킬 후 같은 대상을 의사가 치료하면 KILL·HEAL 사건이 모두 보존되고 대상은 최종 생존한다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = nightSessionWithDoctor({ id: 'room-f25a-kill-heal' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    submitNightAction(doctorUuid, session.id, targetUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(prepared.resolution.events, [
+        { type: 'KILL', targetId: targetUuid },
+        { type: 'HEAL', targetId: targetUuid },
+    ])
+    assert.equal(prepared.resolution.recoveryStates.get(targetUuid), 'RECOVERED')
+    assert.equal(prepared.resolution.pendingEliminationTargetId, null)
+    // GUARD/WITCH_HUNTER는 이 세션 구성(roleCounts GUARD:0/WITCH_HUNTER:0)에 아예 없다 — 그래도
+    // 두 단계 모두 roleSteps에 기록되고 판정을 막지 않는다(AC-04와 겹치는 회귀 확인).
+    assert.deepEqual(prepared.resolution.roleSteps, [
+        { role: 'JOKER', targetId: targetUuid, status: 'RESOLVED' },
+        { role: 'DOCTOR', targetId: targetUuid, status: 'RESOLVED' },
+        { role: 'GUARD', targetId: null, status: 'NO_ROLE' },
+        { role: 'WITCH_HUNTER', targetId: null, status: 'NO_ROLE' },
+    ])
+
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: null, terminal: null })
+    assert.equal(session.players.get(targetUuid).alive, true)
+})
+
+// --- AC-02: 킬 후 미치료 → 회복 대기를 거쳐 사망 후보로 판정 ---
+
+test('AC-02(F-25a): 치료 없는 광대 킬은 회복 대기를 거쳐 사망 후보(DEATH_CANDIDATE)로 판정되고 실제로 사망한다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = nightSessionWithDoctor({ id: 'room-f25a-kill-only' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    submitNightAction(doctorUuid, session.id, null)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(prepared.resolution.events, [{ type: 'KILL', targetId: targetUuid }])
+    assert.equal(prepared.resolution.recoveryStates.get(targetUuid), 'DEATH_CANDIDATE')
+    assert.equal(prepared.resolution.pendingEliminationTargetId, targetUuid)
+
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: targetUuid, terminal: null })
+    assert.equal(session.players.get(targetUuid).alive, false)
+})
+
+test('AC-02(F-25a): 의사가 다른 대상을 치료해도(공격받지 않음) HEAL 사건은 생기지 않고 공격 대상은 그대로 사망 후보다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = nightSessionWithDoctor({
+        id: 'room-f25a-heal-wrong-target',
+    })
+    const [attackedUuid, healedUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, attackedUuid)
+    submitNightAction(doctorUuid, session.id, healedUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    // 실제로 공격받지 않은 대상을 보호해도 "치료 성공" 사건은 만들어지지 않는다(A-03).
+    assert.deepEqual(prepared.resolution.events, [{ type: 'KILL', targetId: attackedUuid }])
+    assert.equal(prepared.resolution.recoveryStates.get(attackedUuid), 'DEATH_CANDIDATE')
+    assert.equal(prepared.resolution.recoveryStates.has(healedUuid), false)
+    assert.equal(prepared.resolution.pendingEliminationTargetId, attackedUuid)
+})
+
+// --- AC-03: 의사 자기 치료 + 회복된 참가자의 같은 밤 후속 행동 ---
+
+test('AC-03(F-25a): 의사가 자기 자신을 치료 대상으로 지정해도 정상 처리되고 자기 치료로 회복되어 생존한다', () => {
+    const { session, doctorUuid, jokerUuid } = nightSessionWithDoctor({ id: 'room-f25a-self-heal' })
+    submitNightAction(jokerUuid, session.id, doctorUuid)
+    submitNightAction(doctorUuid, session.id, doctorUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(prepared.resolution.events, [
+        { type: 'KILL', targetId: doctorUuid },
+        { type: 'HEAL', targetId: doctorUuid },
+    ])
+    assert.equal(prepared.resolution.recoveryStates.get(doctorUuid), 'RECOVERED')
+    assert.equal(prepared.resolution.pendingEliminationTargetId, null)
+
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+    assert.equal(session.players.get(doctorUuid).alive, true)
+})
+
+test('AC-03(F-25a): 공격받은 경비원이 치료로 회복되면 같은 밤 자신의 조사 차례를 정상 수행한다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-guard-recover',
+    })
+    submitNightAction(jokerUuid, session.id, guardUuid)
+    submitNightAction(doctorUuid, session.id, guardUuid)
+    submitNightAction(guardUuid, session.id, citizenUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.recoveryStates.get(guardUuid), 'RECOVERED')
+    assert.deepEqual(prepared.resolution.privateResults.get(guardUuid), {
+        actionType: 'INVESTIGATE',
+        targetId: citizenUuid,
+        role: 'CITIZEN',
+    })
+    assert.equal(prepared.resolution.pendingEliminationTargetId, null)
+})
+
+test('AC-03(F-25a) 대조: 공격받고 치료받지 못한 경비원의 조사는 성공한 결과를 만들지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-guard-unrecovered',
+    })
+    submitNightAction(jokerUuid, session.id, guardUuid)
+    submitNightAction(doctorUuid, session.id, null) // 치료하지 않는다
+    submitNightAction(guardUuid, session.id, citizenUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.recoveryStates.get(guardUuid), 'DEATH_CANDIDATE')
+    assert.equal(prepared.resolution.privateResults.has(guardUuid), false, '회복하지 못한 경비원은 조사 결과를 받지 못한다')
+    assert.deepEqual(
+        prepared.resolution.roleSteps.find((step) => step.role === 'GUARD'),
+        { role: 'GUARD', targetId: null, status: 'RECOVERY_BLOCKED' },
+    )
+    assert.equal(prepared.resolution.pendingEliminationTargetId, guardUuid)
+})
+
+test('AC-03(F-25a): 공격받은 마녀사냥꾼이 치료로 회복되면 같은 밤 기존 사망자를 정상적으로 확인한다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-wh-recover',
+    })
+    session.dayIndex = 2
+    const citizenUuids = [...session.players.values()].filter((p) => p.role === 'CITIZEN').map((p) => p.uuid)
+    const [deadCitizen, aliveCitizen] = citizenUuids
+    session.players.get(deadCitizen).alive = false // 이전에 이미 사망한(재판/이전 밤) 확인 대상
+
+    submitNightAction(jokerUuid, session.id, witchHunterUuid)
+    submitNightAction(doctorUuid, session.id, witchHunterUuid)
+    submitNightAction(guardUuid, session.id, aliveCitizen)
+    submitNightAction(witchHunterUuid, session.id, deadCitizen)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.recoveryStates.get(witchHunterUuid), 'RECOVERED')
+    assert.deepEqual(prepared.resolution.privateResults.get(witchHunterUuid), {
+        actionType: 'CONFIRM',
+        targetId: deadCitizen,
+        role: 'CITIZEN',
+    })
+    assert.equal(prepared.resolution.pendingEliminationTargetId, null)
+})
+
+test('AC-03(F-25a) 대조: 공격받고 치료받지 못한 마녀사냥꾼의 확인은 성공한 결과를 만들지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-wh-unrecovered',
+    })
+    session.dayIndex = 2
+    const citizenUuids = [...session.players.values()].filter((p) => p.role === 'CITIZEN').map((p) => p.uuid)
+    const [deadCitizen, aliveCitizen] = citizenUuids
+    session.players.get(deadCitizen).alive = false
+
+    submitNightAction(jokerUuid, session.id, witchHunterUuid)
+    submitNightAction(doctorUuid, session.id, null) // 치료하지 않는다
+    submitNightAction(guardUuid, session.id, aliveCitizen)
+    submitNightAction(witchHunterUuid, session.id, deadCitizen)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.recoveryStates.get(witchHunterUuid), 'DEATH_CANDIDATE')
+    assert.equal(prepared.resolution.privateResults.has(witchHunterUuid), false)
+    assert.deepEqual(
+        prepared.resolution.roleSteps.find((step) => step.role === 'WITCH_HUNTER'),
+        { role: 'WITCH_HUNTER', targetId: null, status: 'RECOVERY_BLOCKED' },
+    )
+})
+
+// --- AC-04: 실패·기권·대상 없음·합의 실패·역할 부재가 각각 다음 역할로 정상 진행 ---
+
+test('AC-04(F-25a): 광대·의사 모두 SKIP해도 부재한 GUARD/WITCH_HUNTER까지 포함해 네 단계 전부가 기록되고 판정은 정상 완료된다', () => {
+    const { session, doctorUuid, jokerUuid } = nightSessionWithDoctor({ id: 'room-f25a-roleSteps-abstain' })
+    submitNightAction(jokerUuid, session.id, null)
+    submitNightAction(doctorUuid, session.id, null)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.resolved, true)
+    assert.deepEqual(prepared.resolution.roleSteps, [
+        { role: 'JOKER', targetId: null, status: 'NO_RESULT' },
+        { role: 'DOCTOR', targetId: null, status: 'NO_RESULT' },
+        { role: 'GUARD', targetId: null, status: 'NO_ROLE' },
+        { role: 'WITCH_HUNTER', targetId: null, status: 'NO_ROLE' },
+    ])
+    assert.deepEqual(prepared.resolution.events, [])
+    assert.equal(prepared.resolution.pendingEliminationTargetId, null)
+})
+
+test('AC-04(F-25a): 광대 두 명이 다른 대상을 지목하면 동률로 NO_RESULT이고 부재 역할까지 정상 진행된다', () => {
+    const { session, roleUuids: jokerUuids, citizenUuids } = nightSessionWithDuplicateRole({
+        id: 'room-f25a-joker-tie',
+        role: 'JOKER',
+    })
+    submitNightAction(jokerUuids[0], session.id, citizenUuids[0])
+    submitNightAction(jokerUuids[1], session.id, citizenUuids[1])
+
+    const prepared = prepareNightResolution(jokerUuids[0], session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(
+        prepared.resolution.roleSteps.find((s) => s.role === 'JOKER'),
+        { role: 'JOKER', targetId: null, status: 'NO_RESULT' },
+    )
+    assert.equal(prepared.resolution.assassinationTargetId, null)
+    assert.equal(prepared.resolution.pendingEliminationTargetId, null)
+    for (const role of ['DOCTOR', 'GUARD', 'WITCH_HUNTER']) {
+        assert.equal(prepared.resolution.roleSteps.find((s) => s.role === role).status, 'NO_ROLE')
+    }
+})
+
+test('AC-04(F-25a): GUARD 두 명이 상충하는 대상을 지목하면 만장일치 실패로 NO_RESULT이고 WITCH_HUNTER 단계까지 정상 기록된다', () => {
+    const { session, roleUuids: guardUuids, jokerUuids, citizenUuids } = nightSessionWithDuplicateRole({
+        id: 'room-f25a-guard-split',
+        role: 'GUARD',
+    })
+    submitNightAction(jokerUuids[0], session.id, null)
+    submitNightAction(guardUuids[0], session.id, citizenUuids[0])
+    submitNightAction(guardUuids[1], session.id, citizenUuids[1])
+
+    const prepared = prepareNightResolution(jokerUuids[0], session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(
+        prepared.resolution.roleSteps.find((s) => s.role === 'GUARD'),
+        { role: 'GUARD', targetId: null, status: 'NO_RESULT' },
+    )
+    assert.equal(prepared.resolution.roleSteps.find((s) => s.role === 'WITCH_HUNTER').status, 'NO_ROLE')
+    assert.equal(prepared.resolution.privateResults.has(guardUuids[0]), false)
+    assert.equal(prepared.resolution.privateResults.has(guardUuids[1]), false)
+})
+
+test('AC-04(F-25a): WITCH_HUNTER가 존재해도 dayIndex 활성화 전이면 NO_ACTOR로 기록되고 판정은 막히지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-wh-inactive',
+    })
+    submitNightAction(jokerUuid, session.id, null)
+    submitNightAction(doctorUuid, session.id, null)
+    submitNightAction(guardUuid, session.id, citizenUuid)
+    // WITCH_HUNTER는 dayIndex 0에서 애초에 eligible actor가 아니므로 제출하지 않는다.
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(
+        prepared.resolution.roleSteps.find((s) => s.role === 'WITCH_HUNTER'),
+        { role: 'WITCH_HUNTER', targetId: null, status: 'NO_ACTOR' },
+    )
+})
+
+test('AC-04(F-25a): 그 역할 보유자가 전멸하면 NO_ACTOR로 기록되고 판정은 막히지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-doctor-dead',
+    })
+    session.players.get(doctorUuid).alive = false
+    submitNightAction(jokerUuid, session.id, null)
+    submitNightAction(guardUuid, session.id, citizenUuid)
+
+    const prepared = prepareNightResolution(jokerUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.deepEqual(
+        prepared.resolution.roleSteps.find((s) => s.role === 'DOCTOR'),
+        { role: 'DOCTOR', targetId: null, status: 'NO_ACTOR' },
+    )
+})
+
+// --- AC-05: 경비원(생존 대상 조사)·마녀사냥꾼(사망자 직업 확인) 회귀 ---
+
+test('AC-05(F-25a) 회귀: 같은 밤 미치료 사망 후보를 조사해도(canonical alive 기준) GUARD 결과는 그대로 생성된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-guard-investigates-death-candidate',
+    })
+    submitNightAction(guardUuid, session.id, citizenUuid)
+    submitNightAction(jokerUuid, session.id, citizenUuid)
+    submitNightAction(doctorUuid, session.id, null)
+
+    const prepared = prepareNightResolution(guardUuid, session.id)
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.recoveryStates.get(citizenUuid), 'DEATH_CANDIDATE')
+    assert.deepEqual(prepared.resolution.privateResults.get(guardUuid), {
+        actionType: 'INVESTIGATE',
+        targetId: citizenUuid,
+        role: 'CITIZEN',
+    })
+    assert.deepEqual(
+        prepared.resolution.roleSteps.find((s) => s.role === 'GUARD'),
+        { role: 'GUARD', targetId: citizenUuid, status: 'RESOLVED' },
+    )
+})
+
+test('AC-05(F-25a) 회귀: 같은 밤 광대에게 공격받은 대상은(치료 여부와 무관하게) canonical alive:true라 마녀사냥꾼이 지목하면 TARGET_NOT_DEAD다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight({
+        id: 'room-f25a-wh-cannot-target-same-night',
+    })
+    session.dayIndex = 2
+    submitNightAction(jokerUuid, session.id, citizenUuid)
+    submitNightAction(doctorUuid, session.id, null)
+    submitNightAction(guardUuid, session.id, citizenUuid)
+
+    const before = new Map(session.nightActions)
+    const result = submitNightAction(witchHunterUuid, session.id, citizenUuid)
+
+    assert.deepEqual(result, { ok: false, code: 'TARGET_NOT_DEAD' })
+    assert.deepEqual(session.nightActions, before)
 })
 
 // "밤 도중 사망"이라는 상태가 구조적으로 존재하지 않음을 코드 수준에서 고정한다 — alive를
