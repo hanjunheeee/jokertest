@@ -81,7 +81,10 @@ mock.module("../../../../../shared/socket/socketClient.js", {
 
 const { useInGameStore, readInGameReceiptScope } = await import("../../store/ingameStore.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
-const { useInGameSessionSnapshotSync } = await import("../useInGameSessionSnapshotSync.js")
+const {
+  useInGameSessionSnapshotSync,
+  getInGameSnapshotRebindPending,
+} = await import("../useInGameSessionSnapshotSync.js")
 
 function createFakeSessionSnapshotSocket() {
   const onCalls = []
@@ -948,6 +951,122 @@ test("F-23(SPLIT-1): 빈 store bootstrap은 요청 계정과 다른 본인을 �
   assert.equal(useInGameStore.getState().gameId, null, "남의 본인을 주장하는 응답으로 복원됐다")
   assert.equal(hook.result.current, "missing")
   hook.unmount()
+})
+
+/**
+ * F-23(AC-05): **다른 소속을 주장하는 응답은 복원 권위가 아니다.**
+ *
+ * 스냅샷 응답은 roster의 membershipId로 자기가 어느 자리의 사실인지를 말한다. 지금 화면이
+ * 이미 소속을 알고 있는데 응답이 그와 다른 소속을 주장하면, 같은 판·같은 계정이라도 이
+ * 화면이 앉아 있는 자리의 사실이 아니다(이탈→재입장으로 생긴 다른 참여 기록이다). 그대로
+ * 반영하면 관측 기준이 남의 소속으로 채택되고 공개 결과의 수신 증거까지 거기 붙는다.
+ *
+ * "모른다"는 "다르다"가 아니다 — membershipId를 싣지 않는 응답은 이 검사에 걸리지 않는다
+ * (기존 호환 계약). 아래 양성 대조가 그 경계를 함께 고정한다.
+ */
+test("F-23(AC-05): 기존 non-null 소속과 다른 소속을 주장하는 응답은 복원 권위로 승격되지 않는다", () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  setMyMembership("mem-a")
+
+  const receipt = readInGameReceiptScope({
+    accountId: "player-1",
+    identityGeneration: useAuthStore.getState().identityGeneration ?? null,
+  })
+  const before = snapshotStoreFacts()
+
+  const foreign = buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 3 })
+  foreign.players = foreign.players.map((p) => ({ ...p, membershipId: "mem-b" }))
+  useInGameStore.getState().applySessionSnapshot(foreign, receipt)
+
+  assertStoreFactsUnchanged(before, "다른 소속을 주장하는 응답")
+  assert.equal(readMyMembership(), "mem-a", "다른 소속을 주장하는 응답이 현재 소속을 덮었다")
+
+  // 양성 대조 1: 같은 소속을 주장하는 응답은 그대로 반영되고 그 신원의 수신 증거가 붙는다.
+  const mine = buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 4 })
+  mine.players = mine.players.map((p) => ({ ...p, membershipId: "mem-a" }))
+  useInGameStore.getState().applySessionSnapshot(mine, receipt)
+
+  assert.equal(useInGameStore.getState().state.dayIndex, 4, "같은 소속의 정상 응답까지 막혔다")
+  assert.equal(useInGameStore.getState().snapshotSeq, before.snapshotSeq + 1)
+  const owner = useInGameStore.getState().snapshotResultOwner
+  assert.ok(owner, "검증된 공개 결과에 수신 증거가 붙지 않았다")
+  assert.equal(owner.membershipId, "mem-a")
+})
+
+test("F-23(AC-05): 소속을 싣지 않은(모른다고 말하는) 응답은 이 검사에 걸리지 않는다", () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  setMyMembership("mem-a")
+
+  const receipt = readInGameReceiptScope({
+    accountId: "player-1",
+    identityGeneration: useAuthStore.getState().identityGeneration ?? null,
+  })
+  const seqBefore = useInGameStore.getState().snapshotSeq
+
+  // players[].membershipId 자체가 없는 응답이다(구버전 스냅샷).
+  useInGameStore.getState().applySessionSnapshot(
+    buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 5 }), receipt,
+  )
+
+  assert.equal(useInGameStore.getState().state.dayIndex, 5, "값을 주장하지 않는 응답까지 막혔다")
+  assert.equal(useInGameStore.getState().snapshotSeq, seqBefore + 1)
+})
+
+/**
+ * F-23(SPLIT-1): 재결속 보류는 **열리고 반드시 닫힌다.**
+ *
+ * 열리지 않으면 신원 전이로 연출 큐가 버려지는 순간 잔존 ENDED로 결과 화면에 들어가고,
+ * 닫히지 않으면 화면이 영영 인게임에 갇힌다. 두 사실을 한 시험에서 함께 고정한다.
+ */
+test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 실패여도 반드시 닫는다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = "sock-1"
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  assert.equal(
+    getInGameSnapshotRebindPending(), false,
+    "마운트 자체는 전이가 아니다 — 그것만으로 결과 이동이 막히면 안 된다",
+  )
+
+  act(() => {
+    fake.socket.id = "sock-2"
+    fake.socket.triggerConnect()
+  })
+  assert.equal(fake.emitWithAckCalls.length, 2, "전제: 재연결이 현재 신원의 스냅샷을 다시 물어야 한다")
+  assert.equal(getInGameSnapshotRebindPending(), true, "재연결 구간에 재결속 보류가 열리지 않았다")
+
+  await act(async () => {
+    fake.emitWithAckCalls[1].reject(new Error("operation has timed out"))
+    await flushMicrotasks()
+  })
+  assert.equal(getInGameSnapshotRebindPending(), false, "응답이 끝났는데 보류가 남아 화면이 갇힌다")
+
+  // 정상 응답으로 끝나는 경우도 같다.
+  act(() => {
+    fake.socket.id = "sock-3"
+    fake.socket.triggerConnect()
+  })
+  assert.equal(getInGameSnapshotRebindPending(), true)
+  await act(async () => {
+    fake.emitWithAckCalls[2].resolve(buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1" }))
+    await flushMicrotasks()
+  })
+  assert.equal(getInGameSnapshotRebindPending(), false)
+
+  // 보류 중에 화면이 사라져도 그 보류를 다음 화면으로 넘기지 않는다.
+  act(() => {
+    fake.socket.id = "sock-4"
+    fake.socket.triggerConnect()
+  })
+  assert.equal(getInGameSnapshotRebindPending(), true, "전제: 아직 응답을 기다리는 중이어야 한다")
+  hook.unmount()
+  assert.equal(getInGameSnapshotRebindPending(), false, "언마운트가 보류를 다음 화면으로 넘겼다")
 })
 
 test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권위로 승격되지 않는다", () => {

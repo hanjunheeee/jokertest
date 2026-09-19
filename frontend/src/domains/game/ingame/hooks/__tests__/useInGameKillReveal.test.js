@@ -64,9 +64,12 @@ const ROSTER = [
 
 const WIN_RESULT = Object.freeze({ winner: "CITIZEN" })
 
-function createFakeSocket() {
+function createFakeSocket({ id = "sock-1" } = {}) {
   const listeners = new Map()
   return {
+    // 실제 Socket.IO처럼 연결마다 새 sid를 갖는다 — 수신 범위의 연결 축이 이 값을 읽는다.
+    id,
+    connected: true,
     on(event, handler) {
       if (!listeners.has(event)) listeners.set(event, new Set())
       listeners.get(event).add(handler)
@@ -648,7 +651,7 @@ test("F-23(SPLIT-1): 소켓이 교체되면 이전 연결의 수신 증거는 �
   assert.equal(session.killReveal.open, true, "전제: 이 연결의 복원은 연출이 되어야 한다")
 
   // 연결 교체. 공개 결과 값은 그대로 남지만, 그 값을 받은 연결은 이미 사라졌다.
-  const next = createFakeSocket()
+  const next = createFakeSocket({ id: "sock-next" })
   act(() => setSocket(next))
 
   assert.ok(useInGameStore.getState().state.nightResult, "전제: 공개 결과 값 자체는 남아 있다")
@@ -666,6 +669,54 @@ test("F-23(SPLIT-1): 소켓이 교체되면 이전 연결의 수신 증거는 �
 
   session.close()
   act(() => setSocket(null))
+})
+
+/**
+ * F-23(AC-05/SPLIT-1): **같은 객체의 재연결은 구독을 죽이지 않는다.**
+ *
+ * 수신 범위는 옛 연결에서 온 사건을 걸러내기 위해 socket.id까지 본다. 그런데 Socket.IO의
+ * 재연결은 객체를 바꾸지 않고 sid만 새로 발급하므로, 구독 effect가 그 전이를 보지 못하면
+ * 등록 문맥은 영영 옛 id를 들고 있게 되고 — 그 뒤의 **정상** 공개 사건까지 전부 거부된다
+ * (재연결 한 번으로 사망·종료가 화면에 반영되지 않는다). 거부와 재개는 한 시험에서 함께
+ * 고정해야 한다: 앞만 지키면 화면이 먹통이 되고, 뒤만 지키면 옛 사실이 내려앉는다.
+ */
+test("F-23(AC-05/SPLIT-1): 같은 소켓 객체가 재연결해도 그 연결의 정상 공개 사건은 1회 수신된다", () => {
+  seedSession()
+  const session = open()
+
+  // 실제 재연결: 객체 동일성은 그대로이고 sid만 새로 발급된다.
+  act(() => {
+    session.socket.id = "sock-2"
+    session.socket.deliver("connect")
+  })
+
+  session.deliver(
+    "night_result_applied",
+    endedNightResult({ deathReveals: [{ victimUuid: V1, source: "JOKER" }], deadUuids: [V1] }),
+  )
+
+  // 전역 수신 훅(ProtectedRoute 위치)이 현재 연결의 문맥으로 다시 등록되지 않으면 이 사건은
+  // 통째로 거부되어 store가 그대로 남는다.
+  assert.equal(useInGameStore.getState().state.phase, "ENDED",
+    "재연결 뒤 도착한 정상 공개 사건이 거부됐다")
+  assert.equal(
+    useInGameStore.getState().state.players.find((p) => p.uuid === V1).alive, false,
+    "재연결 뒤의 canonical 사망이 반영되지 않았다",
+  )
+  assert.equal(session.killReveal.open, true, "재연결 뒤의 공개 사망 연출이 만들어지지 않았다")
+  assert.equal(session.killReveal.message, "광대들이 첫째 님을 죽였습니다.")
+  assert.equal(navigated(), false, "연출이 재생되기도 전에 결과 페이지로 넘어갔다")
+
+  // 같은 사건이 한 번 더 전달돼도(중복 방송) 연출은 늘지 않는다.
+  session.deliver(
+    "night_result_applied",
+    endedNightResult({ deathReveals: [{ victimUuid: V1, source: "JOKER" }], deadUuids: [V1] }),
+  )
+  session.consumeActive()
+  assert.equal(session.killReveal.pending, false, "재연결 뒤 같은 사건이 두 번 큐에 들어갔다")
+  assert.deepEqual(navigateCalls, [["/gameresult", { replace: true }]])
+
+  session.close()
 })
 
 test("AC-03: 다른 게임·roster 밖 희생자는 큐에 들어가지 않는다(신뢰 경계)", () => {

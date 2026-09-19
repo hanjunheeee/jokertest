@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { useNavigate } from "react-router-dom"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 // 상대 경로로 둔다 — 이 훅은 node:test에서 실제로 마운트해 검증하는 대상이고(store/__tests__/
@@ -74,6 +74,12 @@ function currentReceiptScope() {
  *
  * 연결 축은 등록 시점이 언제든 항상 본다 — 소켓이 교체됐거나 그 사이 끊겼거나 재연결로 id가
  * 바뀐 뒤 도착한 사건은 이 화면이 보고 있는 연결의 사실이 아니다.
+ *
+ * **그래서 연결 세대도 구독 대상이어야 한다.** 같은 Socket 객체가 재연결되면 객체 동일성은
+ * 그대로이고 id만 바뀐다 — 구독 effect가 그 전이를 보지 못하면 등록 문맥은 영영 옛 id를 들고
+ * 있고, 이 함수는 그 뒤의 **정상** night_result_applied·night_action_result까지 전부 거부한다
+ * (재연결 한 번으로 화면이 조용히 먹통이 된다). 아래 effect는 실제 connect마다 오르는 세대를
+ * deps에 두어 현재 연결의 문맥으로 다시 등록한다.
  */
 function isRegistrationScopeCurrent(registered) {
   const now = currentReceiptScope()
@@ -154,6 +160,16 @@ export function useGameSessionSocketEvents() {
   const identityScopeVersion = useSyncExternalStore(
     subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
   )
+  // F-23(AC-05/SPLIT-1): 실제 "connect" 세대. 같은 Socket 객체의 재연결은 위 socket 참조도
+  // 계정·소속 축도 바꾸지 않으므로, 이 값이 없으면 구독은 옛 socket.id를 등록 문맥으로 계속
+  // 들고 있게 된다 — 그 문맥은 재연결 이후의 정상 사건을 전부 거부한다.
+  const [connectSeq, setConnectSeq] = useState(0)
+  useEffect(() => {
+    if (!socket) return undefined
+    const handleConnect = () => setConnectSeq((current) => current + 1)
+    socket.on("connect", handleConnect)
+    return () => socket.off("connect", handleConnect)
+  }, [socket])
 
   useEffect(() => {
     if (!socket) return
@@ -525,7 +541,7 @@ export function useGameSessionSocketEvents() {
       detachNightTurnListeners()
       socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
     }
-  }, [socket, navigate, authUuid, identityGeneration, identityScopeVersion])
+  }, [socket, navigate, authUuid, identityGeneration, identityScopeVersion, connectSeq])
 
   /**
    * F-21(AC-03/A-10): **신호를 못 받았을 수 있는 전이**에서 계정 캐시를 서버 값으로 수렴시킨다.

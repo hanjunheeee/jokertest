@@ -296,6 +296,25 @@ function choicePanel(container) {
   return container.querySelector(`[aria-label='${CHOICE_LABEL}']`)
 }
 
+/**
+ * 같은 판·같은 계정에서 **내 소속만** 교체한다(이탈→재입장과 같은 전이다).
+ *
+ * 실제 store 경로(setState)로 바꾼다 — 값을 몰래 mutate하면 store가 소유한 전이 관측 자체가
+ * 일어나지 않아 "왕복을 지나왔다"는 사실이 시험에서 사라진다.
+ */
+function swapMyMembership(next) {
+  useInGameStore.setState((s) => ({
+    state: {
+      ...s.state,
+      players: s.state.players.map((p) => (p.uuid === SELF ? { ...p, membershipId: next } : p)),
+    },
+  }))
+}
+
+function myMembership() {
+  return useInGameStore.getState().state?.players?.find((p) => p.uuid === SELF)?.membershipId ?? null
+}
+
 test.afterEach(async () => {
   cleanup()
   await act(async () => { await router.navigate("/lobby") })
@@ -1632,6 +1651,189 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기의 ACK가 유실되면 �
     })
   }
   assert.equal(useInGameStore.getState().gameId, null, "정리 뒤 도착한 배경 스냅샷이 게임을 되살렸다")
+})
+
+/**
+ * F-23(AC-06): **안내에도 닫는 길이 있어야 한다.**
+ *
+ * 계속 보기를 고른 뒤 상단 나가기가 실패하면 같은 창이 이유와 복구 수단을 띄운다(위 시험).
+ * 그런데 그 창의 "관전 계속하기"가 선택 범위만 저장하면, 복구 필요 여부는 그대로 참이라
+ * 창도 본문 inert도 풀리지 않는다 — 버튼은 눌리는데 아무 일도 일어나지 않고 화면이 잠긴다.
+ * 재시도를 미루고 계속 관전하는 것은 사용자의 정당한 선택이므로, 그 선택이 실제로 화면을
+ * 되돌려 주어야 한다. 동시에 재시도 경로는 살아 있어야 한다.
+ */
+test("F-23(AC-06): 나가기 실패 상태에서도 관전 계속하기가 창을 닫고 관전을 이어가며, 재시도 경로는 남는다", async () => {
+  const { container, socket } = await arriveAtTopExitAfterKeepWatching()
+
+  const pending = socket.takeAck("leave_game_session")
+  await act(async () => { pending.ack({ ok: false, code: "INTERNAL_ERROR" }) })
+
+  assert.ok(choicePanel(container), "전제: 실패 안내가 떠 있어야 한다")
+  const keepWatching = findButton(container, "관전 계속하기")
+  assert.ok(keepWatching, "실패 안내에 관전 계속하기가 없다")
+  assert.equal(keepWatching.disabled, false, "실패 상태인데 관전 계속하기가 비활성이다")
+  assert.equal(keepWatching.closest("[inert]"), null, "관전 계속하기가 inert 영역 안에 있다")
+
+  await act(async () => { keepWatching.click() })
+
+  assert.equal(choicePanel(container), null, "관전 계속하기를 눌렀는데 창이 닫히지 않았다")
+  const topExit = container.querySelector("button[aria-label='게임 나가기']")
+  assert.ok(topExit, "상단 나가기 버튼이 사라졌다")
+  assert.equal(topExit.closest("[inert]"), null, "창을 닫았는데 게임 표면이 inert로 잠긴 채다")
+  // 접은 것은 안내뿐이다 — 이탈은 일어나지 않았고 이 판에 그대로 남아 있다.
+  assert.equal(useInGameStore.getState().gameId, GAME_ID, "안내를 접었더니 인게임 store가 정리됐다")
+  assert.equal(router.state.location.pathname, "/ingame")
+  assert.equal(myMembership(), MY_MEMBERSHIP, "안내를 접는 것이 소속을 바꿨다")
+
+  // 재시도 경로 보존: 상단 나가기가 **새 시도**를 열면 안내와 복구 버튼이 다시 뜬다.
+  await act(async () => { topExit.click() })
+  assert.equal(socket.countEmits("leave_game_session"), 2, "접은 뒤 상단 나가기가 새 요청을 보내지 못했다")
+
+  const second = socket.takeAck("leave_game_session")
+  await act(async () => { second.ack({ ok: false, code: "INTERNAL_ERROR" }) })
+
+  const reopened = choicePanel(container)
+  assert.ok(reopened, "새 시도의 실패 안내가 다시 뜨지 않았다(접은 선택이 새 시도까지 덮었다)")
+  assert.ok(reopened.textContent.includes("실패"), "새 시도의 실패 문구가 없다")
+  assert.ok(findButton(container, "다시 시도"), "새 시도의 복구 버튼이 없다")
+})
+
+/**
+ * F-23(SPLIT-2): **소속 왕복은 effect보다 먼저 지나간다.**
+ *
+ * 소속 전이는 store의 set에서 동기적으로 일어나고, 그것을 보는 effect는 그 뒤 커밋에서야
+ * 돈다. 그래서 A→B→A 직후 **effect가 돌기 전에** 도착한 옛 성공 ACK는, 계정·게임·소켓·소속
+ * **값**이 전부 원래대로라 기존 값 비교를 모두 통과했다 — 지금 참가 중인 판이 이미 지나간
+ * 소속의 요청 결과로 정리됐다. 판정 기준은 요청 자체에 묶여야 한다.
+ */
+test("F-23(SPLIT-2): 소속 A→B→A 직후(효과 실행 전) 도착한 옛 성공 ACK는 현재 판을 정리하지 못한다", async () => {
+  seedLiveGame({ selfAlive: false })
+  const { container } = await mountInGame()
+  const socket = currentSocket
+
+  await act(async () => { findButton(container, "게임 나가기").click() })
+  assert.equal(socket.countEmits("leave_game_session"), 1, "전제: 요청이 나가야 한다")
+  const stale = socket.takeAck("leave_game_session")
+
+  // 한 배치 안에서 전이 두 번과 옛 ACK가 함께 지나간다(effect는 이 act가 끝나야 돈다).
+  await act(async () => {
+    swapMyMembership("mem-self-2")
+    swapMyMembership(MY_MEMBERSHIP)
+    stale.ack({ ok: true })
+  })
+
+  assert.equal(myMembership(), MY_MEMBERSHIP, "전제: 소속 값은 원래대로 돌아왔다")
+  assert.equal(
+    useInGameStore.getState().gameId, GAME_ID,
+    "소속 왕복을 지나온 옛 성공 ACK가 지금 참가 중인 판을 정리했다",
+  )
+  assert.equal(router.state.location.pathname, "/ingame", "옛 ACK로 로비로 이동했다")
+})
+
+/**
+ * F-23(SPLIT-2): **상한을 넘긴 시도는 만료된다.**
+ *
+ * 미확정으로 끝맺은 뒤에도 그 시도의 토큰이 살아 있으면, 늦게 도착한 ACK가 여전히 "지금
+ * 화면이 기다리는 응답"으로 통과해 화면을 성공(정리·이동)이나 실패로 뒤집는다. 미확정은
+ * 권위 있는 확인으로만 끝난다.
+ */
+test("F-23(SPLIT-2): 상한을 넘겨 미확정으로 끝난 시도의 늦은 ACK는 화면을 뒤집지 못한다", async () => {
+  seedLiveGame({ selfAlive: false })
+  const { container } = await mountInGame()
+  const socket = currentSocket
+
+  await act(async () => { findButton(container, "게임 나가기").click() })
+  const late = socket.takeAck("leave_game_session")
+
+  await act(async () => { globalThis.__fireExitTimeouts() })
+  assert.ok(
+    choicePanel(container).textContent.includes("확인하지 못했습니다"),
+    "전제: 상한을 넘기면 미확정으로 끝맺어야 한다",
+  )
+
+  await act(async () => { late.ack({ ok: true }) })
+
+  assert.equal(useInGameStore.getState().gameId, GAME_ID, "만료된 시도의 늦은 ACK가 판을 정리했다")
+  assert.equal(router.state.location.pathname, "/ingame", "만료된 시도의 늦은 ACK로 로비로 이동했다")
+  assert.ok(
+    choicePanel(container).textContent.includes("확인하지 못했습니다"),
+    "늦은 ACK가 미확정 안내를 덮었다",
+  )
+
+  // 그리고 결말은 여전히 권위 확인으로만 난다.
+  await act(async () => { findButton(container, "나가기 결과 확인").click() })
+  const check = socket.takeAck("get_session_snapshot")
+  await act(async () => { check.ack({ ok: false, code: "FORFEITED_FROM_SESSION" }) })
+
+  assert.equal(useInGameStore.getState().gameId, null, "권위 확인 뒤에도 정리되지 않았다")
+  await waitFor(() => assert.equal(router.state.location.pathname, "/multiplay"))
+})
+
+/**
+ * F-23(SPLIT-1): **재결속 중에는 결과 화면으로 넘어가지 않는다.**
+ *
+ * 재연결은 연결 축의 전이다. 그 순간 사망 연출 큐는 "이전 연결이 받은 것"이라 통째로
+ * 버려지는데, 결과 이동이 큐가 비었다는 사실만 보고 넘어가면 새 연결에서 복구될 연출이 잘린
+ * 채 잔존 ENDED로 화면이 떠난다. 보류는 유한해야 한다 — 그 연결의 스냅샷이 도착하면 풀린다.
+ */
+test("F-23(SPLIT-1): 재연결로 연출 큐가 버려져도 재결속이 끝나기 전에는 결과 화면으로 넘어가지 않는다", async () => {
+  seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
+  const { container } = await mountInGame()
+  const socket = currentSocket
+
+  // 그 밤의 판정이 곧 승패를 확정한다 — 종료와 공개 사망 연출이 같은 사건에서 함께 온다.
+  await act(async () => {
+    socket.deliver("night_result_applied", {
+      gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
+      players: [{ uuid: SELF, isAlive: true }, { uuid: OTHER, isAlive: false }],
+      victimUuid: OTHER,
+      winResult: { winner: "CITIZEN" },
+      deathReveals: [{ victimUuid: OTHER, source: "JOKER" }],
+    })
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
+  assert.ok(
+    container.querySelector("[data-ingame-kill-reveal]"),
+    "전제: 그 판정의 공개 사망 연출이 실제로 떠 있어야 한다",
+  )
+  assert.equal(
+    router.state.location.pathname, "/ingame",
+    "전제: 연출이 남아 있는 동안에는 결과 화면으로 넘어가지 않는다",
+  )
+
+  // 실제 재연결(같은 객체·새 sid). 연출 큐는 이전 연결의 것이라 여기서 버려진다.
+  await act(async () => {
+    socket.id = "sock-2"
+    socket.deliver("connect")
+  })
+
+  assert.equal(container.querySelector("[data-ingame-kill-reveal]"), null,
+    "전제: 재연결로 이전 연결의 연출 큐가 버려져야 한다")
+  assert.equal(
+    router.state.location.pathname, "/ingame",
+    "재결속이 끝나기 전에 잔존 ENDED로 결과 화면에 들어갔다",
+  )
+
+  // 이 연결의 스냅샷이 도착하면 보류가 풀린다(무한 보류가 아니다).
+  const resync = socket.takeAck("get_session_snapshot")
+  assert.ok(resync, "재연결이 현재 신원의 스냅샷을 다시 묻지 않았다")
+  await act(async () => {
+    resync.ack({
+      ok: true, gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
+      winResult: { winner: "CITIZEN" },
+      players: rosterPlayers({ selfAlive: true }).map((p) => ({
+        uuid: p.uuid, nickname: p.nickname, isAlive: p.uuid === SELF,
+        isConnected: true, isParticipating: true, membershipId: p.membershipId,
+      })),
+      self: { uuid: SELF, nickname: "나", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
+    })
+  })
+
+  await waitFor(() => assert.notEqual(
+    router.state.location.pathname, "/ingame",
+    "재결속이 끝났는데도 결과 이동이 영영 막혔다",
+  ))
 })
 
 test("F-23(SPLIT-2): 계정이 왕복한 뒤에는 이전 신원의 계속 보기 선택이 새 신원에 적용되지 않는다", async () => {

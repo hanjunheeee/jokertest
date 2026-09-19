@@ -31,7 +31,10 @@ import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarSt
 import { selectInGameDeadParticipantChoice } from "../utils/selectInGameDeadParticipantChoice.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
-import { useInGameSessionSnapshotSync } from "../hooks/useInGameSessionSnapshotSync.js"
+import {
+  useInGameSessionSnapshotSync,
+  useInGameSnapshotRebindPending,
+} from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameKillReveal } from "../hooks/useInGameKillReveal.js"
 import { useInGameNightPrivateResult } from "../hooks/useInGameNightPrivateResult.js"
 import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
@@ -52,7 +55,9 @@ export default function InGamePage() {
   const gameId = useInGameStore((s) => s.gameId)
   const gameState = useInGameStore((s) => s.state)
   const navigate = useNavigate()
-  const { requestExit, retryExit, resolveExitOutcome, exitStatus, exitErrorCode } = useInGameExit()
+  const {
+    requestExit, retryExit, resolveExitOutcome, exitStatus, exitErrorCode, exitAttemptId,
+  } = useInGameExit()
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
   // F-23(SPLIT-2): 계정/소속 축의 전이 세대. 같은 판에서 이탈→재입장한 **새 소속**과, 계정 값이
@@ -79,6 +84,10 @@ export default function InGamePage() {
   // 이후 이벤트 단위 실시간 동기화(night_result_applied 등)는 useGameSessionSocketEvents가
   // 별도로 담당한다 — 이 훅은 그 사이에 놓친 스냅샷만 재접속 시점에 채워 넣는다.
   const snapshotSyncStatus = useInGameSessionSnapshotSync()
+  // F-23(SPLIT-1): 지금 이 화면이 **현재 신원의 스냅샷으로 다시 묶이는 중**인가. 신원·연결이
+  // 바뀌면 사망 연출 큐는 그 즉시 버려지는데(이전 연결의 사실이므로), 그 순간 잔존 ENDED만
+  // 보고 결과 화면으로 넘어가면 새 연결에서 복구될 연출이 통째로 잘린다.
+  const identityRebindPending = useInGameSnapshotRebindPending()
   // 인게임 오버레이 스택 — 역할 공개, DAY/NIGHT 진입 연출, 밤 역할 턴 안내의 표시 순서를
   // 한 곳에서 결정한다(useInGameOverlayStack 참고). 각 오버레이가 서로의 상태를 알아야 하므로
   // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
@@ -98,7 +107,14 @@ export default function InGamePage() {
 
   // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다 — 단, 이 판정의 사망
   // 연출이 재생 중이거나 큐에 남아 있는 동안은 기다린다(연출이 통째로 잘리지 않게).
-  useInGameResultNavigation({ hold: killReveal.open || killReveal.pending })
+  //
+  // F-23(SPLIT-1): 신원 재결속 중에도 기다린다. 그 구간의 killReveal은 "보여줄 연출이 없다"가
+  // 아니라 "이 신원이 받은 것인지 아직 모른다"이므로, 큐가 비었다는 사실만으로 넘어가면 옛
+  // 신원의 잔존 ENDED로 결과 화면에 들어간다. 이 보류는 유한하다 — 스냅샷 요청이 성공·실패·
+  // 거부 어느 쪽으로 끝나도 해제된다(useInGameSessionSnapshotSync).
+  useInGameResultNavigation({
+    hold: killReveal.open || killReveal.pending || identityRebindPending,
+  })
 
   // F-23(AC-06): 확정 사망한 참가자에게만 여는 선택창.
   //
@@ -115,8 +131,22 @@ export default function InGamePage() {
    * 그런지 알 수 없고, 다시 시도할 수단도 없었다. 나가기 요청이 idle이 아닌 동안에는 계속
    * 보기 선택과 무관하게 같은 창이 상태 안내와 복구 버튼을 띄운다(그 창이 이미 inert 본문
    * 바깥에 있으므로 실제로 조작할 수 있다).
+   *
+   * 다만 그 안내에도 **닫는 길**이 있어야 한다. 실패·미확정은 사용자가 재시도를 미루고 계속
+   * 관전할 수 있는 상태인데, 예전에는 "관전 계속하기"가 선택 범위만 저장해 needsExitRecovery가
+   * 계속 참이었고 — 버튼은 눌리는데 창도 본문 inert도 풀리지 않아 화면이 잠겼다. 이제 그
+   * 버튼은 **지금 시도의 안내를 확인했다**는 사실까지 함께 기록한다. 재시도 경로는 그대로다:
+   * 상단 나가기가 새 시도를 열면 exitAttemptId가 달라져 안내와 복구 버튼이 다시 뜬다.
    */
-  const needsExitRecovery = exitStatus !== "idle"
+  const exitRecoveryKey = `${choiceScopeKey}|${exitAttemptId}`
+  const [acknowledgedExitRecovery, setAcknowledgedExitRecovery] = useState(null)
+  const needsExitRecovery = exitStatus !== "idle" && acknowledgedExitRecovery !== exitRecoveryKey
+
+  /** 계속 보기 = 이 신원·이 판에서 다시 묻지 않는다 + 지금 시도의 나가기 안내를 접는다. */
+  const handleKeepWatching = () => {
+    setKeepWatchingScope(choiceScopeKey)
+    setAcknowledgedExitRecovery(exitRecoveryKey)
+  }
 
   const deadChoiceOpen = (needsDeadChoice || needsExitRecovery)
     && !roleReveal.open
@@ -229,7 +259,7 @@ export default function InGamePage() {
           소속·역할을 바꾸지 않는다 — 접은 뒤에도 상단 나가기 버튼은 그대로 쓸 수 있다. */}
       <InGameDeadParticipantChoice
         open={deadChoiceOpen}
-        onKeepWatching={() => setKeepWatchingScope(choiceScopeKey)}
+        onKeepWatching={handleKeepWatching}
         onLeave={requestExit}
         onRetry={retryExit}
         onResolveOutcome={resolveExitOutcome}

@@ -11,6 +11,50 @@ import { isStaleSessionSnapshotAckResponse } from "../utils/isStaleSessionSnapsh
 
 const SESSION_SNAPSHOT_TIMEOUT_MS = 5000
 
+// ───────────────────────────────────────────────────────────────────────────
+// F-23(SPLIT-1): **신원 재결속이 진행 중인가**
+//
+// 신원(계정·소속)이나 연결이 바뀌면 지금 화면이 들고 있는 state는 아직 **이전 신원이 받아
+// 둔 사실**이다. 그 구간에는 표시 상태들이 각자 조심스럽게 자기를 접는데(사망 연출 큐는
+// scope가 달라지는 즉시 버려진다), 정작 결과 화면 이동은 잔존 ENDED만 보고 그대로 넘어갈 수
+// 있다 — 그러면 새 연결에서 복구될 연출이 통째로 잘린 채 화면이 떠난다.
+//
+// 그래서 이 훅이 "현재 신원의 스냅샷을 다시 묻는 중"이라는 사실을 한 값으로 내보낸다. 이
+// 값은 **유한하다** — 요청은 5초 상한을 갖고, 성공·실패·거부 어느 경로로 끝나도 같은 자리에서
+// 내려간다(무한 보류가 생기지 않는다). 요청이 실제로 나갈 수 있는 순간(연결됨)에만 올린다.
+//
+// 반환 문자열(bootstrapStatus)은 기존 소비처(shouldRedirectOutOfInGame)의 계약이므로 건드리지
+// 않고, 이 값은 같은 파일이 소유한 별도 읽기로 노출한다.
+// ───────────────────────────────────────────────────────────────────────────
+let identityRebindPending = false
+const identityRebindListeners = new Set()
+
+function setIdentityRebindPending(next) {
+  if (identityRebindPending === next) return
+  identityRebindPending = next
+  for (const listener of [...identityRebindListeners]) listener()
+}
+
+export function getInGameSnapshotRebindPending() {
+  return identityRebindPending
+}
+
+export function subscribeInGameSnapshotRebindPending(listener) {
+  identityRebindListeners.add(listener)
+  return () => identityRebindListeners.delete(listener)
+}
+
+/**
+ * 신원 재결속 진행 여부를 읽는다. InGamePage가 결과 화면 이동의 보류 조건으로 소비한다.
+ */
+export function useInGameSnapshotRebindPending() {
+  return useSyncExternalStore(
+    subscribeInGameSnapshotRebindPending,
+    getInGameSnapshotRebindPending,
+    getInGameSnapshotRebindPending,
+  )
+}
+
 /**
  * F-23(AC-05/AC-06): 지금 이 화면이 들고 있는 **내 소속 식별자**.
  *
@@ -74,6 +118,9 @@ export function useInGameSessionSnapshotSync() {
     identityGeneration: undefined, identityScopeVersion: undefined,
   })
   const requestedVersionRef = useRef(-1)
+  // 이 훅 인스턴스가 기준값을 한 번이라도 관측했는가. 첫 실행은 "전이"가 아니다 — 비교할
+  // 이전 신원이 아직 없으므로 재결속 보류를 만들지 않는다(마운트마다 이동이 막히지 않는다).
+  const observedBaseRef = useRef(false)
   // 우리 자신의 정상 복원이 만든 후속 범위. 이 범위로의 전이는 새 요청을 만들지 않는다.
   const fulfilledRef = useRef(null)
 
@@ -81,6 +128,8 @@ export function useInGameSessionSnapshotSync() {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
+      // 이 화면이 사라지면 재결속도 끝난다 — 보류 상태를 다음 화면으로 넘기지 않는다.
+      setIdentityRebindPending(false)
     }
   }, [])
 
@@ -92,6 +141,8 @@ export function useInGameSessionSnapshotSync() {
     // socket/gameId/authUuid/인증 세대/소속 전이 세대 중 하나라도 실제로 바뀐 재실행은
     // 진짜 새 세대다.
     const base = epochBaseRef.current
+    const isFirstRun = !observedBaseRef.current
+    observedBaseRef.current = true
     const fulfilled = fulfilledRef.current
     const isSelfCommitted = fulfilled !== null
       && fulfilled.socket === socket
@@ -106,10 +157,19 @@ export function useInGameSessionSnapshotSync() {
     epochBaseRef.current = { socket, gameId, authUuid, identityGeneration, identityScopeVersion }
     if (changed && !isSelfCommitted) {
       epochVersionRef.current += 1
+      // 이미 판을 들고 있는 화면의 신원 전이다 — 현재 신원의 스냅샷으로 다시 묶일 때까지
+      // 결과 화면 이동을 보류시킨다. 요청이 실제로 나갈 수 있을 때만 올린다(끊긴 화면을
+      // 영원히 붙잡아 두지 않는다).
+      if (!isFirstRun && gameId && socket.connected) setIdentityRebindPending(true)
     }
 
     const requestSnapshot = () => {
       const requestEpochVersion = epochVersionRef.current
+      /** 이 세대의 요청이 끝났다 — 더 새로운 세대가 열려 있으면 그쪽 보류를 건드리지 않는다. */
+      const finishRebind = () => {
+        if (epochVersionRef.current !== requestEpochVersion) return
+        setIdentityRebindPending(false)
+      }
       // 이 세대에서 이미 요청을 보냈다면 다시 보내지 않는다 — StrictMode 이중 호출과, 같은
       // 세대 안에서 connect 핸들러와 "이미 연결됨" 분기가 동시에 조건을 만족하는 경우를
       // 하나의 네트워크 호출로 합친다.
@@ -180,6 +240,8 @@ export function useInGameSessionSnapshotSync() {
           .emitWithAck("get_session_snapshot", requestGameId ? { gameId: requestGameId } : {})
       } catch {
         // 동기 전송 예외도 실패와 **같은 세대 검사**를 거친다(한쪽만 느슨하면 그쪽으로 샌다).
+        // 이 세대에는 더 이상 올 응답이 없다 — 재결속 보류를 여기서 끝맺는다(무한 보류 방지).
+        finishRebind()
         if (isStaleNow()) return
         if (!requestGameId) setBootstrapStatus("failed")
         return
@@ -187,6 +249,7 @@ export function useInGameSessionSnapshotSync() {
 
       ackPromise
         .then((response) => {
+          finishRebind()
           if (isStaleNow()) return
           if (!requestGameId) {
             if (response?.ok !== true) {
@@ -208,6 +271,7 @@ export function useInGameSessionSnapshotSync() {
           if (useInGameStore.getState().snapshotSeq !== seqBefore) rememberFulfilled()
         })
         .catch(() => {
+          finishRebind()
           // 타임아웃/전송 오류: 조용히 무시한다. 다음 재연결이 새 세대로 다시 요청한다.
           //
           // F-21(AC-05): 실패도 **성공과 같은 세대 검사**를 통과해야 한다. 옛 bootstrap 조회가
@@ -222,6 +286,9 @@ export function useInGameSessionSnapshotSync() {
       // 실제 "connect"는 최초 연결이든 재연결이든 항상 새 세대다(이미 열린 연결에는 절대
       // 다시 발생하지 않는다) — manager 수준의 "reconnect" 리스너는 별도로 두지 않는다.
       epochVersionRef.current += 1
+      // 재연결은 연결 축의 전이다 — 그 순간 사망 연출 큐는 이전 연결의 것이라 버려지므로,
+      // 이 연결의 스냅샷이 도착할 때까지 결과 화면 이동을 보류시킨다.
+      if (useInGameStore.getState().gameId) setIdentityRebindPending(true)
       requestSnapshot()
     }
 

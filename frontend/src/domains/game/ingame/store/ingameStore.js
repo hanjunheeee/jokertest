@@ -179,6 +179,28 @@ function isReceiptScopeCurrent(receipt, current) {
 }
 
 /**
+ * F-23(AC-05): 응답이 **다른 소속의 것**인가.
+ *
+ * 스냅샷 응답은 자기가 어느 소속의 자리에서 만들어졌는지를 roster의 membershipId로 말한다.
+ * 지금 화면이 이미 소속을 알고 있는데(non-null) 응답이 그와 **다른 소속**을 주장하면, 그것은
+ * 같은 판·같은 계정이라도 이 화면이 앉아 있는 자리의 사실이 아니다 — 이탈→재입장으로 생긴
+ * 다른 참여 기록이거나, 그 전이 구간을 지나온 응답이다. 그런 응답을 현재 복원 권위로
+ * 승격하면 adoptIdentityScope가 남의 소속을 관측 기준으로 채택하고 buildSnapshotResultOwner가
+ * 거기에 공개 결과의 수신 증거까지 붙여 준다(승인된 복원 권위 계약 위반).
+ *
+ * **모른다고 말하는 응답은 다르다고 말하는 응답이 아니다.** membershipId를 싣지 않는 구버전
+ * 스냅샷은 값을 주장하지 않으므로 여기서 막지 않는다(기존 호환 계약 그대로). 현재 소속이
+ * 아직 null인 화면의 정상 보충(null→X)도 막지 않는다 — 그것이 이 값이 처음 채워지는 경로다.
+ */
+function claimsForeignMembership(current, nextState) {
+  const currentMembershipId = readSelfMembershipId(current.state)
+  if (currentMembershipId === null) return false
+  const nextMembershipId = readSelfMembershipId(nextState)
+  if (nextMembershipId === null) return false
+  return nextMembershipId !== currentMembershipId
+}
+
+/**
  * 방금 저장한 **공개 밤 결과**가 어느 신원·어느 연결에서 검증된 것인지를 기록한다.
  *
  * 이것은 서버 권한도, 영구 시청 이력도 아니다 — 이 화면이 "그 결과를 실제로 받았다"는 로컬
@@ -740,6 +762,9 @@ export const useInGameStore = create((set) => ({
       if (receiptContext !== null && !isReceiptScopeCurrent(receiptContext, current)) return current
       const patch = applySessionSnapshotPure(current, response)
       if (patch === current) return current
+      // F-23(AC-05): 기존 non-null 소속과 **다른 소속**을 주장하는 응답은 여기서 끝난다 —
+      // state·snapshotSeq·수신 증거 셋 모두 참조 보존 no-op이고, 관측 기준도 채택하지 않는다.
+      if (claimsForeignMembership(current, patch.state)) return current
       const snapshotSeq = current.snapshotSeq + 1
       // 이 커밋이 만든 소속을 같은 자리에서 관측 기준으로 채택한다 — 자기 복원을 외부 소속
       // 교체로 오인하지 않게 한다(아래 store 구독자는 같은 값을 다시 보므로 세지 않는다).
