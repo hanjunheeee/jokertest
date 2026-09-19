@@ -1429,7 +1429,8 @@ test("F-23(AC-01/AC-03) · 실제 대기방 화면의 설정 열기·저장·재
  * 이 계약을 시험으로 재현할 수 없었다. 여기서는 구독을 소켓별로 나누고 교체를 실제로 통지한다.
  */
 test("F-23(SPLIT-2) · 연결이 교체되면 옛 소켓의 오염된 설정 사건은 화면에 닿지 않고 새 연결만 동작한다", async () => {
-  const { io, serverSocket, room } = await setupCustomRoomWithReadyJoiner("host-swap", "guest-swap")
+  const { io, serverSocket, joinerSocket, room, joinerUuid } =
+    await setupCustomRoomWithReadyJoiner("host-swap", "guest-swap")
   const firstSocket = socketState.socket
 
   const { result } = renderHook(() => useMatchingRoom(roomCallbacks))
@@ -1515,11 +1516,48 @@ test("F-23(SPLIT-2) · 연결이 교체되면 옛 소켓의 오염된 설정 사
   assertNoSpectatorKeys(useMatchingStore.getState().settings, "새 연결의 방송을 받은 뒤의 store 설정")
   assertNoSpectatorKeys(rawStoredRoom(room.roomId).settings, "새 연결로 보낸 저장 뒤 서버 저장값")
   assert.equal(rawStoredRoom(room.roomId).settings.maxPlayers, 7)
+  // ③ **실제 서버 방송**이 교체된 연결의 구독까지 정확히 한 번 닿는다.
+  //
+  //    ②의 room_settings_updated는 방장 자신의 소켓으로 나가는 개별 전달이라, 그것만으로는
+  //    "채널 방송이 새 연결에 도달한다"를 주장할 수 없다. 여기서는 상대 참가자의 **진짜**
+  //    set_ready 요청이 만든 player_ready_changed를 쓴다 — handleSetReady →
+  //    channelMembership.emitToChannel → fixture deliver(채널 구성원 판정) → 새 serverSocket.emit
+  //    → 고정된 bridge → emitToClient → handlePlayerReadyChanged → matchingStore까지 지난다.
+  //    수동 emit이 옮겨가지 않는다는 음성 대조만 두면, 전달 경로가 통째로 끊긴 경우도 통과한다(A-05).
+  const readyOnNewBefore = clientReceiptsOf(PLAYER_READY_CHANGED, secondSocket).length
+  const readyOnOldBefore = clientReceiptsOf(PLAYER_READY_CHANGED, firstSocket).length
+  let readyAck
+  await act(async () => {
+    readyAck = await new Promise((resolve) => handleSetReady(
+      io, joinerSocket, joinerUuid,
+      readyPayload(room, true, { settingsVersion: useMatchingStore.getState().settingsVersion }),
+      resolve,
+    ))
+    await Promise.resolve(); await Promise.resolve()
+  })
+  assert.equal(readyAck.ok, true, `상대 준비 전환 실패: ${readyAck.message}`)
+
+  const readyReceipts = clientReceiptsOf(PLAYER_READY_CHANGED, secondSocket)
+  assert.equal(readyReceipts.length, readyOnNewBefore + 1,
+    "실제 서버 방송이 교체된 연결에 정확히 한 번 닿지 않았다")
+  assert.ok(readyReceipts.at(-1).handlers > 0, "새 연결의 구독이 그 방송을 처리하지 못했다")
+  assert.equal(readyReceipts.at(-1).payload.uuid, joinerUuid)
+  assert.equal(clientReceiptsOf(PLAYER_READY_CHANGED, firstSocket).length, readyOnOldBefore,
+    "옛 연결이 교체 후의 실제 방송을 함께 받았다")
+  assert.equal(
+    useMatchingStore.getState().players.find((player) => player.uuid === joinerUuid)?.isReady, true,
+    "교체된 연결로 온 실제 방송이 store까지 닿지 않았다",
+  )
+
   // 옛 서버 연결로 나가던 사건은 새 listener로 옮겨 가지 않는다(쌍 고정의 직접 증거).
-  const strayBefore = clientReceiptsOf("player_ready_changed", secondSocket).length
-  serverSocket.emit("player_ready_changed", { uuid: "guest-swap", isReady: true })
-  assert.equal(clientReceiptsOf("player_ready_changed", secondSocket).length, strayBefore,
+  const strayBefore = clientReceiptsOf(PLAYER_READY_CHANGED, secondSocket).length
+  serverSocket.emit(PLAYER_READY_CHANGED, { uuid: "guest-swap", isReady: false })
+  assert.equal(clientReceiptsOf(PLAYER_READY_CHANGED, secondSocket).length, strayBefore,
     "옛 서버 소켓의 사건이 새 클라이언트 연결로 전달됐다")
+  assert.equal(
+    useMatchingStore.getState().players.find((player) => player.uuid === joinerUuid)?.isReady, true,
+    "옛 서버 소켓의 사건이 새 연결의 store를 바꿨다",
+  )
   assert.ok(nextServerSocket)
 })
 

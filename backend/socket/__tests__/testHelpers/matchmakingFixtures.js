@@ -188,11 +188,15 @@ function createFakeIo(sockets = []) {
      *
      * @param {string|null} roomId null이면 연결된 모든 소켓(io.emit)이 대상이다.
      * @param {Set<string>} exceptChannels except()로 넘어온 **채널 이름들**(아래 isMember 참고).
+     * @param {string|null} senderId socket.to(...)의 발신자. 실제 Socket.IO에서 이 제외는
+     *   `except(socket.id)`이고 except의 인자는 **채널 이름**이다 — 그래서 발신 id와 같은
+     *   이름의 채널에 가입한 소켓도 함께 빠진다. id 한 개만 대조하면 fixture가 실제 어댑터보다
+     *   **더 많이** 전달해, 그 경계를 검사하는 시험이 통과할 수 없는 사실을 통과시킨다.
      */
     const deliver = (roomId, event, payload, exceptChannels = new Set(), senderId = null) => {
         for (const s of [...socketMap.values()]) {
             if (typeof s?.id !== 'string') continue
-            if (s.id === senderId) continue
+            if (typeof senderId === 'string' && isMember(s, senderId)) continue
             if (s.connected === false) continue
             if (roomId !== null && !isMember(s, roomId)) continue
             let excluded = false
@@ -280,7 +284,26 @@ function createFakeIo(sockets = []) {
     }
     for (const s of socketMap.values()) attach(s)
     const originalSet = socketMap.set.bind(socketMap)
-    socketMap.set = (id, socket) => originalSet(id, attach(socket))
+    const originalDelete = socketMap.delete.bind(socketMap)
+    /**
+     * SPLIT-1: 같은 **객체**가 이전에 다른 id로 등록돼 있었다면 그 옛 키를 먼저 지운다.
+     *
+     * 동일 객체의 socket.id가 바뀐 뒤 새 id로 다시 등록되는 경우(시험이 재연결·ID 교체를
+     * 흉내내는 자리)가 실제로 있다. 옛 키를 남겨 두면 registry 하나에 같은 객체가 두 번
+     * 들어가고, deliver는 values()를 훑으므로 **한 번의 방송을 그 소켓에 두 번** 전달한다 —
+     * "정상 수신 정확히 1회"라는 이 fixture의 기본 계약이 그 자리에서 깨진다. canonical
+     * 판정(registry의 id로 조회한 객체가 이 소켓인가)도 폐기된 옛 id로 계속 통과한다.
+     *
+     * 지우는 것은 **fixture가 소유한 registry 항목**뿐이다 — rooms(채널 가입)는 건드리지
+     * 않는다. 자기 id 채널 가입은 이 파일이 isMember 판정에 내장하고 있어 id가 바뀌면 그
+     * 의미도 함께 따라오기 때문이다.
+     */
+    socketMap.set = (id, socket) => {
+        for (const [key, existing] of [...socketMap]) {
+            if (existing === socket && key !== id) originalDelete(key)
+        }
+        return originalSet(id, attach(socket))
+    }
 
     return io
 }

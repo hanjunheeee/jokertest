@@ -3644,12 +3644,20 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             return
         }
 
-        // 영수증이 durable해졌다 — 이제부터 정상 소속이다. 더 이상 "미확정 publication"이
-        // 아니므로 소유자 등록부에서도 물러난다.
-        roomAdmissionAttempts.delete(uuid)
-        releasePublishedAdmission(attempt)
+        // 영수증이 durable해졌다 — 그러나 **검증이 끝나기 전에는** 시도 등록도 publication
+        // 소유권도 놓지 않는다(A-07).
+        //
+        // 예전에는 여기서 곧바로 roomAdmissionAttempts.delete + releasePublishedAdmission을
+        // 했다. 그 순서에서는 두 가지가 함께 무너진다:
+        //   · "지금 등록된 시도가 여전히 나인가"를 아래에서 **물을 수 없다**(방금 내가 지웠다).
+        //   · 아래 검사가 실패해도 removePublishedAdmission의 소유권 술어
+        //     (publishedAdmissions.get(uuid) === attempt)가 이미 거짓이라 자기 publication을
+        //     **아무것도 되돌리지 못한다** — 확정되지 않은 소속이 room.players/playerRoom에
+        //     그대로 남고 UNKNOWN만 응답된다.
         const current = gameRooms.get(attempt.roomId)
         const seated = room.players.get(uuid)
+        const stillCurrentAttempt = roomAdmissionAttempts.get(uuid) === attempt && !attempt.invalidated
+        const stillOwnsPublication = publishedAdmissions.get(uuid) === attempt
         // F-21(AC-06): 소속 식별자까지 대조한다. 방 참조·계정→방 매핑·참가자 존재는 **같은
         // 계정이 그 사이 다시 들어온 경우에도 전부 통과한다** — 이 시도의 publication이 이미
         // 제거된 뒤 같은 방에 정상 재입장했다면, 여기서 성공을 주장하는 것은 옛 초대가 만든
@@ -3657,7 +3665,8 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         // F-23(AC-04): durable 성공은 **현재 연결의 유효성**까지 확인한 뒤에만 입장 성공과
         // 공개 수신으로 전환된다 — afterPublish 동안 연결 객체·ID·계정·채널이 바뀌었다면
         // 그 영수증은 지금 살아 있는 연결의 입장을 증명하지 못한다.
-        if (socket.id !== socketIdAtRequest
+        if (!stillCurrentAttempt || !stillOwnsPublication
+            || socket.id !== socketIdAtRequest
             || socket.data?.user?.uuid !== uuid
             || !socket.connected
             || !isCanonicalSocketWhenObservable(io, uuid, socket, room.id)
@@ -3665,13 +3674,39 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             || current !== room || playerRoom.get(uuid) !== room.id || !seated
             || (attempt.publicationMembershipId !== undefined
                 && seated.membershipId !== attempt.publicationMembershipId)) {
-            // 확정 영수증은 있지만 현재 소속이 없다 — 성공으로 주장하지 않는다(A-10).
+            // 확정 영수증은 있지만 지금 살아 있는 연결의 소속이 아니다 — 성공으로 주장하지
+            // 않는다(A-10). 그리고 **자기 publication은 반드시 보상한다**(A-07): 미확정인 채로
+            // 남은 내 소속을 되돌리고(자기 attempt·자기 membershipId가 맞을 때만), 그 정리가
+            // 방 인원·방장 승계·공개 목록까지 다른 실패 경로와 똑같이 잇는다.
+            if (attempt.phase === 'published') removePublishedAdmission(io, socket, attempt)
+            if (roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
+            releasePublishedAdmission(attempt)
+            if (joinedRoomId) {
+                // removePublishedAdmission은 자기 소유일 때만 채널을 뗐다. 소유권이 이미 넘어간
+                // 경우에도 이 소켓이 확정 참가자가 아니라면 그 채널에 남겨 둘 수 없다 —
+                // 다른 실패 경로와 같은 술어로 한 번 더 묻는다.
+                if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
+                    detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', {
+                        ownsChannel: () =>
+                            isAccountSeatedInRoom(uuid, joinedRoomId)
+                            && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
+                        keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+                    })
+                }
+                joinedRoomId = null
+            }
+            // 역사적 PUBLISHED를 임의로 INTERRUPTED로 바꾸지 않는다 — durable 영수증 자체는
+            // 정직하게 남기고, 지금 이 연결의 입장만 주장하지 않는다(재조회가 현재 소속과
+            // 함께 판정한다).
             respond({ ok: false, code: 'UNKNOWN', unknown: true, message: '입장 결과를 확인하지 못했습니다.' })
             return
         }
 
-        // 여기서부터만 확정 참가자다 — 이제 전달 제외를 푼다. 아래 player_joined_room부터
+        // 검증을 통과했다 — 이제부터 정상 소속이다. 더 이상 "미확정 publication"이 아니므로
+        // 시도 등록과 소유자 등록부에서 물러나고 전달 제외를 푼다. 아래 player_joined_room부터
         // 정상 수신이 시작되고, 그 이전의 어떤 방송도 이 소켓에 닿지 않았다.
+        roomAdmissionAttempts.delete(uuid)
+        releasePublishedAdmission(attempt)
         releaseAdmissionExclusion()
 
         channelMembership.emitToChannel(

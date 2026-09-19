@@ -154,6 +154,66 @@ test('SPLIT-1: 발신 소켓의 socket.to는 발신자를 빼고 실제 수신�
     assert.ok(io)
 })
 
+test('SPLIT-1: socket.to의 발신자 제외는 발신 id **채널의 구성원 전체**에 적용된다', () => {
+    const sender = createFakeSocket('sender')
+    const peer = createFakeSocket('peer')
+    // 발신자의 id와 같은 이름의 채널에 가입한 수신자. 실제 Socket.IO에서 socket.to(room)은
+    // except(socket.id)이고 except의 인자는 room 이름이므로, 이 소켓도 함께 빠진다.
+    const joinedToSenderChannel = createFakeSocket('shadow')
+    const io = createFakeIo([sender, peer, joinedToSenderChannel])
+    for (const s of [sender, peer, joinedToSenderChannel]) s.rooms.add('room-1')
+    joinedToSenderChannel.rooms.add(sender.id)
+
+    sender.to('room-1').emit('player_ready_changed', {})
+
+    assert.equal(joinedToSenderChannel.countReceived('player_ready_changed'), 0,
+        '발신 id를 소켓 id 하나로만 대조하면 fixture가 실제 어댑터보다 더 많이 전달한다')
+    assert.equal(sender.countReceived('player_ready_changed'), 0)
+    // 양성 대조 — 그 채널과 무관한 정상 참가자는 그대로 한 번 받는다.
+    assert.equal(peer.countReceived('player_ready_changed'), 1)
+    assert.ok(io)
+})
+
+// ── A-01: 같은 객체의 중복 등록은 중복 전달을 만들지 않는다 ─────────────────────
+
+test('SPLIT-1: 같은 객체의 id가 바뀌어 다시 등록되면 옛 키가 사라져 한 방송을 한 번만 받는다', () => {
+    const moving = createFakeSocket('moving')
+    const peer = createFakeSocket('peer')
+    const io = createFakeIo([moving, peer])
+    moving.rooms.add('room-1')
+    peer.rooms.add('room-1')
+    const oldId = moving.id
+
+    // 연결 교체·ID 재발급을 흉내낸다 — **같은 객체**가 새 id로 다시 등록된다.
+    moving.id = 'sock-moving-r2'
+    io.sockets.sockets.set(moving.id, moving)
+
+    assert.equal(io.sockets.sockets.get(oldId), undefined,
+        '옛 키가 남으면 registry 하나에 같은 객체가 두 번 들어간다')
+    assert.equal(io.sockets.sockets.get(moving.id), moving)
+    assert.equal(io.sockets.sockets.size, 2)
+
+    const movingCalls = spyOnEmit(moving)
+    io.to('room-1').emit('player_ready_changed', {})
+
+    assert.equal(movingCalls.length, 1, '같은 객체가 두 키로 남으면 한 방송을 두 번 전달한다')
+    assert.equal(moving.countReceived('player_ready_changed'), 1)
+    assert.equal(peer.countReceived('player_ready_changed'), 1)
+})
+
+test('SPLIT-1: id가 바뀐 뒤 옛 id는 더 이상 canonical 조회에 쓰이지 못한다', () => {
+    const moving = createFakeSocket('moving')
+    const io = createFakeIo([moving])
+    const oldId = moving.id
+
+    moving.id = 'sock-moving-r2'
+    io.sockets.sockets.set(moving.id, moving)
+
+    assert.equal(moving.nsp.sockets.get(oldId), undefined,
+        '폐기된 옛 id로 자기 자신을 조회할 수 있으면 canonical 판정의 우회로가 된다')
+    assert.equal(moving.nsp.sockets.get(moving.id), moving)
+})
+
 test('SPLIT-1: 연결이 끊긴 소켓은 방송을 받지 않는다', () => {
     const live = createFakeSocket('live')
     const dead = createFakeSocket('dead')

@@ -27,7 +27,9 @@ const {
     countingCallback,
 } = require('./testHelpers/matchmakingFixtures')
 
-const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables
+const {
+    handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame, handleAcceptGameInvite,
+} = matchmaking.__testables
 const {
     handleLeaveGameSession,
     handleGetSessionSnapshot,
@@ -334,6 +336,21 @@ test('AC-04: 먼저 이탈해 새 대기방에 들어간 계정은 옛 종료 �
     assert.equal(newRoom.ok, true, JSON.stringify(newRoom))
     assert.equal(hostSocket.rooms.has(newRoom.room.roomId), true, '새 소속의 채널 가입이 먼저 성립해 있어야 한다')
 
+    /**
+     * SPLIT-2 양성 대조 — 새 소속의 **정상 사건이 실제로 도착한다**.
+     *
+     * 채널 가입만 확인하면 아래 "옛 종료 0"은 전달 경로가 통째로 끊긴 경우에도 그대로
+     * 참이다(A-05). 새 방의 실제 생산 방송(다른 계정의 코드 참가 → player_joined_room)을
+     * 한 번 받는 것으로만 "이 연결이 지금 살아 있는 수신자"임이 증명된다.
+     */
+    // 옛 방에서 이미 받은 같은 이름의 사건이 있으므로 **증가분**으로 센다.
+    const joinedBefore = hostSocket.countReceived('player_joined_room')
+    const newcomer = connect(io, 'spec-n13')
+    await handleJoinRoomByCode(io, newcomer, 'spec-n13', newRoom.room.roomCode)
+    assert.equal(newcomer.countReceived('room_joined'), 1, '전제: 새 참가자의 입장 자체가 성립해야 한다')
+    assert.equal(hostSocket.countReceived('player_joined_room') - joinedBefore, 1,
+        '새 소속의 정상 사건이 실제로 도착하지 않으면 "옛 종료 0"은 전달 불능과 구별되지 않는다')
+
     // 그 뒤 판이 종료된다. cleanupUuids에 이미 나가 새 소속을 가진 계정이 섞여 들어와도,
     // **정리 전에 고정한 제외 사실**이 그를 종료 수신 후보에서 뺀다.
     const result = gameSessionCore.endGameSessionForPlayer('spec-j13', 'PARTICIPANT_LEFT', gameId)
@@ -344,6 +361,131 @@ test('AC-04: 먼저 이탈해 새 대기방에 들어간 계정은 옛 종료 �
         '새 소속으로 옮긴 계정이 옛 종료 알림을 받으면 지금 보고 있는 화면이 정리되고 로비로 쫓겨난다')
     // 양성 대조 — 같은 종료 전달에서 적격 잔류자는 정확히 한 번 받는다.
     assert.equal(joinerSocket.countReceived('game_ended'), 1)
+    // 그 전달이 새 소속 쪽 수신을 건드리지도 않았다(양성 대조가 한 번에 머문다).
+    assert.equal(hostSocket.countReceived('player_joined_room') - joinedBefore, 1)
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC-04 — 초대 수락의 durable 확정 뒤 신원 검증과 자기 publication 보상 (A-07)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SPEC_INVITE_ID = 'spec-invite-1'
+
+/**
+ * 초대 SQL 경계의 최소 대역 — **publish 직후·durable 영수증 직전**에서 멈출 수 있다.
+ *
+ * 실제 서비스와 같은 계약만 지킨다: finalizeAcceptedEntry가 잠금 안에서 동기 publish()를
+ * 부르고, 그 뒤에 durable 영수증을 쓴다. recordEntryInterrupted는 실제 구현의 조건부 UPDATE
+ * 술어(attempt 소유 + entry_outcome='UNCONFIRMED')를 그대로 옮긴다 — 그래야 "역사적
+ * PUBLISHED를 임의로 INTERRUPTED로 바꾸지 않는다"를 시험이 실제로 구별한다.
+ */
+function createAcceptGateStub({ roomId, roomInstanceId, afterPublish }) {
+    let signalPublished
+    const published = new Promise((resolve) => { signalPublished = resolve })
+    const state = { attemptId: null, entryOutcome: null, interruptions: [] }
+    return {
+        state,
+        published,
+        async getAttemptOutcome({ inviteId }) {
+            if (inviteId !== SPEC_INVITE_ID) return { known: false }
+            return {
+                known: true,
+                staleAttempt: false,
+                invite: { inviteId, status: 'PENDING', entryOutcome: state.entryOutcome },
+                roomId,
+                roomInstanceId,
+                bootEpoch: matchmaking.__getBootEpochForTests(),
+                entryOutcome: state.entryOutcome,
+            }
+        },
+        async recordAcceptDecision({ attemptId }) {
+            state.attemptId = attemptId
+            state.entryOutcome = 'UNCONFIRMED'
+            return { ok: true, roomId, roomInstanceId }
+        },
+        async finalizeAcceptedEntry({ attemptId, publish }) {
+            if (state.attemptId !== attemptId) return { ok: false, code: 'STALE_ATTEMPT', published: false }
+            const committed = publish()
+            if (!committed.ok) {
+                state.entryOutcome = 'INTERRUPTED'
+                return { ok: false, code: committed.code, published: false }
+            }
+            signalPublished()
+            await afterPublish
+            state.entryOutcome = 'PUBLISHED'
+            return { ok: true, alreadyPublished: false }
+        },
+        async recordEntryInterrupted({ attemptId, reason }) {
+            state.interruptions.push({ attemptId, reason })
+            if (state.attemptId !== attemptId) return false
+            if (state.entryOutcome !== 'UNCONFIRMED') return false
+            state.entryOutcome = 'INTERRUPTED'
+            return true
+        },
+        async cancelPendingInvitesForRoom() { return [] },
+        async cancelPendingInvitesBetween() { return [] },
+    }
+}
+
+test('AC-04: durable 확정 뒤 신원이 어긋나면 성공 ACK가 0이고 자기 publication이 반드시 보상된다', async (t) => {
+    const io = createFakeIo([])
+    const hostSocket = connect(io, 'spec-h15')
+    const created = await callAsPromise(
+        handleCreateRoom, io, hostSocket, 'spec-h15', validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
+    )
+    assert.equal(created.ok, true, JSON.stringify(created))
+    const guestSocket = connect(io, 'spec-g15')
+    const guestSocketIdAtRequest = guestSocket.id
+
+    const [, storedRoom] = matchmaking.__getStateSnapshotForTests()
+        .gameRooms.find(([id]) => id === created.room.roomId)
+
+    let releaseAfterPublish
+    const afterPublish = new Promise((resolve) => { releaseAfterPublish = resolve })
+    const service = createAcceptGateStub({
+        roomId: created.room.roomId, roomInstanceId: storedRoom.instanceId, afterPublish,
+    })
+    matchmaking.__setGameInviteServiceForTests(service)
+    t.after(() => matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} }))
+
+    const accepting = callAsPromise(
+        handleAcceptGameInvite, io, guestSocket, 'spec-g15', { inviteId: SPEC_INVITE_ID },
+    )
+
+    // publish는 끝났고 영수증은 아직 없다 — 두 Map에 들어간 **미확정 소속**의 구간이다.
+    await service.published
+    const midway = matchmaking.__getStateSnapshotForTests()
+    assert.deepEqual(midway.playerRoom.find(([uuid]) => uuid === 'spec-g15'), ['spec-g15', created.room.roomId],
+        '전제: publish가 실제로 두 Map에 소속을 넣어야 이 회귀가 의미를 갖는다')
+
+    // 영수증을 기다리는 사이 이 연결의 신원이 어긋난다(연결 객체의 id 교체).
+    guestSocket.id = `${guestSocketIdAtRequest}-r2`
+    releaseAfterPublish()
+    const ack = await accepting
+
+    // ① 성공 ACK는 0이다.
+    assert.equal(ack.ok, false)
+    assert.equal(ack.unknown, true)
+
+    // ② 자기 publication이 실제로 보상됐다 — 미확정 소속이 두 Map 어디에도 남지 않는다.
+    const after = matchmaking.__getStateSnapshotForTests()
+    assert.equal(after.playerRoom.some(([uuid]) => uuid === 'spec-g15'), false,
+        '검증 실패 경로가 자기 publication을 되돌리지 않으면 유령 참가자가 방에 남는다')
+    const [, roomAfter] = after.gameRooms.find(([id]) => id === created.room.roomId)
+    assert.equal(new Map(roomAfter.players).has('spec-g15'), false)
+    assert.equal(after.roomAdmissionAttempts.some(([uuid]) => uuid === 'spec-g15'), false)
+
+    // ③ 그 연결은 방송 채널에도 남지 않고 확정 사건을 한 건도 받지 못한다.
+    assert.equal(guestSocket.rooms.has(created.room.roomId), false)
+    assert.equal(guestSocket.countReceived('player_joined_room'), 0)
+
+    // ④ 양성 대조 — 정상 참가자(방장)는 그 보상 방송을 실제로 한 번 받는다.
+    assert.equal(hostSocket.countReceived('player_left_room'), 1,
+        '보상이 방 인원 변화를 기존 참가자에게 알리지 않았다')
+
+    // ⑤ 역사적 PUBLISHED는 그대로 둔다 — 영수증은 정직하게 남기고 지금 연결의 입장만 주장하지 않는다.
+    assert.equal(service.state.entryOutcome, 'PUBLISHED')
+    assert.deepEqual(service.state.interruptions, [])
 })
 
 test('AC-04: 한 수신자의 emit 도중 다음 대상의 참여가 끝나면 그 다음 대상은 옛 종료를 받지 않는다', async () => {
