@@ -19,7 +19,7 @@ const RETRY_CLASS =
 
 export default function SettingRoomTab({ onOpenKickPlayer, onOpenRoomCode }) {
   const {
-    enabled, canToggle, setKeepSettings, statusMessage, canRetry, retry, scopeNotice,
+    enabled, canToggle, canDisable, setKeepSettings, statusMessage, canRetry, retry, scopeNotice,
   } = useNextRoomSettings()
 
   const handleRoomAction = (rowId) => {
@@ -56,7 +56,8 @@ export default function SettingRoomTab({ onOpenKickPlayer, onOpenRoomCode }) {
               checked={row.id === "keep-settings-next-game" ? enabled : row.defaultChecked}
               onChange={(next) => {
                 if (row.id !== "keep-settings-next-game") return
-                if (!canToggle) return
+                // 켜기와 끄기의 조건이 다르다(AC-05) — 원본이 없어도 **끄기**는 열어 둔다.
+                if (next ? !canToggle : !canDisable) return
                 setKeepSettings(next)
               }}
             />

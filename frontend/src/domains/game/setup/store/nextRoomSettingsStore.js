@@ -30,8 +30,15 @@
  *   않는다 — 키만 믿으면 손으로 옮겨 붙인 레코드가 남의 값을 그대로 복원한다.
  */
 import { create } from "zustand"
-import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
-import { ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../constants/gameSetupOptions.js"
+import {
+  isPlainObject,
+  sanitizeRestoreSource,
+  sanitizeRoomSettings,
+} from "../utils/roomSettingsSourceSanitize.js"
+
+// 정제 자체는 순수 모듈이 소유한다(같은 정제를 스냅샷 경계도 쓴다). 기존 호출부·시험이 이
+// 모듈 경로로 참조하고 있으므로 이름은 그대로 다시 내보낸다.
+export { sanitizeRestoreSource, sanitizeRoomSettings }
 
 /** 저장 스키마 버전. 모양이 바뀌면 올리고, 다른 버전의 레코드는 복원하지 않는다. */
 export const NEXT_ROOM_SETTINGS_SCHEMA_VERSION = 1
@@ -40,28 +47,10 @@ export const NEXT_ROOM_SETTINGS_SCHEMA_VERSION = 1
 const KEY_PREFIX = "joker:next-room-settings:v1:"
 
 /**
- * 복원 원본 settings의 최상위 허용 키.
- *
- * backend/utils/updateRoomSettingsValidation.js의 EDITABLE_ROOM_SETTING_KEYS +
- * PRESERVED_ROOM_SETTING_KEYS와 같은 값이어야 한다 — 이 저장소에는 백엔드/프런트가 공유하는
- * 상수 모듈이 없어 수동으로 동기화한다(roleComposition.js와 동일한 관례).
+ * 저장 레코드의 최상위 허용 키. 레코드 **자체**에 붙은 폐기된 키(과거 버전이 남긴 잔재)도
+ * 정제 대상이다 — source 안만 훑으면 그 키가 매체에 그대로 남는다.
  */
-const ALLOWED_SETTING_KEYS = Object.freeze([
-  "maxPlayers",
-  "jokerCount",
-  "roleCompositionMode",
-  "roleCounts",
-  "dayDiscussionTime",
-  "dayVoteTime",
-  "nightActionTime",
-  "roleNightActionTimes",
-  "lightsOut",
-  "soulBetting",
-  "voteReveal",
-])
-
-/** 직업별 밤 시간의 허용 역할 키(항목 정의에서 파생 — 두 목록이 갈리지 않는다). */
-const ALLOWED_ROLE_TIME_KEYS = Object.freeze(ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ role }) => role))
+const ALLOWED_RECORD_KEYS = Object.freeze(["schemaVersion", "accountId", "enabled", "source"])
 
 /** 영속 계층의 상태 코드. 화면·시험이 분기에 쓰는 안정적 식별자다. */
 export const NEXT_ROOM_SETTINGS_STATUS = Object.freeze({
@@ -84,6 +73,14 @@ export const NEXT_ROOM_SETTINGS_RESTORE_CODES = Object.freeze({
   NONE: "NONE",
   /** 유지가 꺼져 있다(정상 — 기본값으로 시작한다). */
   DISABLED: "DISABLED",
+  /**
+   * 이 탭에서 유지를 **껐는데** 그 해제를 매체에 남기지 못했고, 옛 레코드가 아직 남아 있다.
+   *
+   * 복원하지 않는다는 점에서는 DISABLED와 같지만(해제 의도가 저장 실패보다 우선한다),
+   * 새로고침하면 이전 설정이 다시 보일 수 있다는 사실이 다르다 — 그 차이를 화면이 알려야
+   * 하므로 같은 코드로 뭉개지 않는다(A-11).
+   */
+  DISABLED_PERSIST_FAILED: "DISABLED_PERSIST_FAILED",
   /** 정상 복원. */
   RESTORED: "RESTORED",
   /** 레코드가 깨졌다(JSON 손상·스키마 불일치·필수값 누락·계정 불일치). */
@@ -93,10 +90,6 @@ export const NEXT_ROOM_SETTINGS_RESTORE_CODES = Object.freeze({
   /** 저장 매체 자체를 읽을 수 없다(사생활 모드·차단 등). */
   STORAGE_UNAVAILABLE: "STORAGE_UNAVAILABLE",
 })
-
-function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.length > 0
@@ -117,93 +110,6 @@ function getStorage() {
     return globalThis.localStorage ?? null
   } catch {
     return null
-  }
-}
-
-/**
- * 설정 객체를 허용 목록 사본으로 만든다(RESTORE-24의 핵심 경계).
- *
- * 최상위·roleCounts·roleNightActionTimes를 **각각** 허용 목록으로 새로 만든다. 통째 spread를
- * 쓰지 않으므로 어떤 이름의 폐기된 키도 통과하지 못하고, 반환값은 입력과 독립된 객체라
- * 이후 어느 쪽을 변형해도 다른 쪽이 오염되지 않는다.
- *
- * @returns {{settings:object, dropped:boolean}} dropped는 버려진 키가 있었는지(오염 신호)다.
- */
-export function sanitizeRoomSettings(settings) {
-  const source = isPlainObject(settings) ? settings : {}
-  let dropped = false
-  const view = {}
-
-  for (const key of Object.keys(source)) {
-    if (!ALLOWED_SETTING_KEYS.includes(key)) dropped = true
-  }
-
-  for (const key of ALLOWED_SETTING_KEYS) {
-    if (key === "roleCounts" || key === "roleNightActionTimes") continue
-    if (source[key] !== undefined) view[key] = source[key]
-  }
-
-  if (isPlainObject(source.roleCounts)) {
-    const roleCounts = {}
-    for (const role of Object.keys(source.roleCounts)) {
-      if (!CUSTOM_ROLE_KEYS.includes(role)) dropped = true
-    }
-    for (const role of CUSTOM_ROLE_KEYS) {
-      if (source.roleCounts[role] !== undefined) roleCounts[role] = source.roleCounts[role]
-    }
-    view.roleCounts = roleCounts
-  }
-
-  if (isPlainObject(source.roleNightActionTimes)) {
-    const roleNightActionTimes = {}
-    for (const role of Object.keys(source.roleNightActionTimes)) {
-      if (!ALLOWED_ROLE_TIME_KEYS.includes(role)) dropped = true
-    }
-    for (const role of ALLOWED_ROLE_TIME_KEYS) {
-      if (source.roleNightActionTimes[role] !== undefined) {
-        roleNightActionTimes[role] = source.roleNightActionTimes[role]
-      }
-    }
-    view.roleNightActionTimes = roleNightActionTimes
-  }
-
-  return { settings: view, dropped }
-}
-
-/**
- * 복원 원본 하나를 정제한다. accessType·settingsVersion·settings 세 값만 남긴다(A-02) —
- * roomId·gameId·code·명단·membership·준비·배정 역할·결과는 어느 경계에서도 만들지 않는다.
- *
- * @returns {{ok:true, source:object, dropped:boolean}|{ok:false}}
- */
-export function sanitizeRestoreSource(source) {
-  if (!isPlainObject(source)) return { ok: false }
-  const { accessType, settingsVersion } = source
-  if (accessType !== "open" && accessType !== "code") return { ok: false }
-  if (!isPlainObject(source.settings)) return { ok: false }
-
-  const { settings, dropped } = sanitizeRoomSettings(source.settings)
-  // 폼이 반드시 필요로 하는 다섯 스테퍼가 하나라도 없으면 복원 원본으로 쓸 수 없다. 여기서
-  // 기본값으로 메우면 "복원했다"는 말이 거짓이 된다(A-01/A-11).
-  for (const key of ["maxPlayers", "jokerCount", "dayDiscussionTime", "dayVoteTime", "nightActionTime"]) {
-    if (!Number.isInteger(settings[key])) return { ok: false }
-  }
-  const mode = settings.roleCompositionMode ?? ROLE_COMPOSITION_MODES.AUTO
-  if (mode !== ROLE_COMPOSITION_MODES.AUTO && mode !== ROLE_COMPOSITION_MODES.CUSTOM) return { ok: false }
-
-  // 버려진 키가 있었다는 사실은 위로 전달한다 — 호출부가 정제본을 다시 저장해야 하는 신호다.
-  const topLevelDropped = Object.keys(source).some(
-    (key) => key !== "accessType" && key !== "settingsVersion" && key !== "settings",
-  )
-
-  return {
-    ok: true,
-    source: {
-      accessType,
-      settingsVersion: Number.isInteger(settingsVersion) ? settingsVersion : null,
-      settings,
-    },
-    dropped: dropped || topLevelDropped,
   }
 }
 
@@ -239,11 +145,15 @@ function parseRecord(raw, accountId) {
   if (parsed.schemaVersion !== NEXT_ROOM_SETTINGS_SCHEMA_VERSION) return { kind: "corrupted" }
   // 키의 계정과 레코드의 계정이 다르면 복원하지 않는다 — 계정 간 값 혼입의 마지막 방어다.
   if (parsed.accountId !== accountId) return { kind: "corrupted" }
-  if (parsed.enabled !== true) return { kind: "disabled" }
+  // 레코드 **최상위**의 폐기된 키도 정제 대상이다. source 안만 훑으면 네 허용 키 옆에
+  // 나란히 붙은 과거 오염(레코드 자체에 달린 잔재 필드)이 매체에 그대로 남는다 —
+  // 정제본을 다시 저장할 이유가 여기서 만들어진다(RESTORE-24).
+  const recordDropped = Object.keys(parsed).some((key) => !ALLOWED_RECORD_KEYS.includes(key))
+  if (parsed.enabled !== true) return { kind: "disabled", dropped: recordDropped }
 
   const sanitized = sanitizeRestoreSource(parsed.source)
   if (!sanitized.ok) return { kind: "corrupted" }
-  return { kind: "enabled", source: sanitized.source, dropped: sanitized.dropped }
+  return { kind: "enabled", source: sanitized.source, dropped: sanitized.dropped || recordDropped }
 }
 
 /** 실제 쓰기 + 재읽기 확인. 확인 전에는 성공이라고 말하지 않는다(A-11). */
@@ -291,6 +201,14 @@ const INITIAL_STATE = Object.freeze({
   status: NEXT_ROOM_SETTINGS_STATUS.IDLE,
   /** 마지막 실패에서 재시도할 때 쓰는 대상(계정·원본). 성공하면 비운다. */
   pendingRetry: null,
+  /**
+   * F-24(AC-05): 이 계정이 **이 탭에서 유지를 껐다**는 사실. 영속 성공 여부와 별개다.
+   *
+   * 해제 의도는 저장 실패보다 우선한다 — 삭제도 비활성 쓰기도 실패해 옛 레코드가 매체에
+   * 남아 있을 때, 그 레코드를 읽어 과거 설정을 복원하면 사용자가 방금 끈 설정으로 다음 방이
+   * 만들어진다. 의도는 메모리에서 이미 확정됐으므로 읽기 경로가 그 의도를 존중한다.
+   */
+  clearIntent: false,
 })
 
 export const useNextRoomSettingsStore = create((set, get) => ({
@@ -351,7 +269,13 @@ export const useNextRoomSettingsStore = create((set, get) => ({
       })
       return { ok: false, status: NEXT_ROOM_SETTINGS_STATUS.SAVE_FAILED }
     }
-    set({ status: NEXT_ROOM_SETTINGS_STATUS.SAVED, enabled: true, pendingRetry: null })
+    // 켜기가 확인됐으므로 이 계정의 해제 의도는 더 이상 현재가 아니다.
+    set({
+      status: NEXT_ROOM_SETTINGS_STATUS.SAVED,
+      enabled: true,
+      pendingRetry: null,
+      clearIntent: false,
+    })
     return { ok: true, status: NEXT_ROOM_SETTINGS_STATUS.SAVED }
   },
 
@@ -369,9 +293,11 @@ export const useNextRoomSettingsStore = create((set, get) => ({
       return { ok: false, status: current.status }
     }
     const key = nextRoomSettingsStorageKey(accountId)
-    // 해제 의도는 즉시 현재가 된다 — 이 시점 이후의 옛 생산자 쓰기는 전부 무효다.
+    // 해제 의도는 즉시 현재가 된다 — 이 시점 이후의 옛 생산자 쓰기는 전부 무효다. clearIntent도
+    // 여기서 켠다(영속 결과와 무관하다): 아래 두 저장 작업이 모두 실패해도 "껐다"는 사실은
+    // 이미 확정이고, 읽기 경로가 그 사실을 남은 레코드보다 우선한다(AC-05).
     const generation = current.selectionGeneration + 1
-    set({ selectionGeneration: generation, enabled: false, pendingRetry: null })
+    set({ selectionGeneration: generation, enabled: false, pendingRetry: null, clearIntent: true })
 
     if (key === null) {
       set({ status: NEXT_ROOM_SETTINGS_STATUS.CLEAR_FAILED })
@@ -418,6 +344,11 @@ export const useNextRoomSettingsStore = create((set, get) => ({
    * 건드리면 안 된다). 오염된 레코드는 정제본을 다시 저장하되, 그 재저장이 실패하면
    * SANITIZE_WRITE_FAILED로 알린다 — 실패를 정상 복원 완료로 바꾸지 않는다(A-11).
    *
+   * **해제 의도가 저장 실패보다 우선한다**(AC-05). 이 탭에서 유지를 껐는데 삭제도 비활성
+   * 쓰기도 실패해 옛 레코드가 남아 있다면, 그 레코드를 읽어 과거 설정을 복원하지 않는다 —
+   * 사용자가 방금 끈 설정으로 다음 방이 만들어지는 쪽이 새로고침 뒤 값이 되살아나는 것보다
+   * 나쁘다. 대신 남은 레코드를 한 번 더 정리해 보고, 끝내 남으면 그 사실을 코드로 알린다.
+   *
    * @returns {{code:string, source:object|null}}
    */
   readRestoreSource: (accountId) => {
@@ -434,10 +365,36 @@ export const useNextRoomSettingsStore = create((set, get) => ({
       return { code: NEXT_ROOM_SETTINGS_RESTORE_CODES.STORAGE_UNAVAILABLE, source: null }
     }
 
+    const memory = get()
+    const hasClearIntent = memory.clearIntent === true && memory.accountId === accountId
+
     const record = parseRecord(raw, accountId)
+
+    if (hasClearIntent) {
+      if (record.kind === "none") return { code: NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED, source: null }
+      if (record.kind === "disabled" && !record.dropped) {
+        return { code: NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED, source: null }
+      }
+      // 해제가 매체에 남지 못했다(또는 오염이 남았다). 복원은 하지 않고 정리만 다시 시도한다.
+      const cleaned = removeRecordVerified(key) || writeRecordVerified(key, buildDisabledRecord(accountId))
+      return {
+        code: cleaned
+          ? NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED
+          : NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED_PERSIST_FAILED,
+        source: null,
+      }
+    }
+
     if (record.kind === "none") return { code: NEXT_ROOM_SETTINGS_RESTORE_CODES.NONE, source: null }
-    if (record.kind === "disabled") return { code: NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED, source: null }
+    if (record.kind === "disabled") {
+      // 비활성 레코드에 붙은 폐기된 키도 매체에서 걷어낸다(복원하지 않더라도 남기지 않는다).
+      if (record.dropped) writeRecordVerified(key, buildDisabledRecord(accountId))
+      return { code: NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED, source: null }
+    }
     if (record.kind === "corrupted") {
+      // 쓸 수 없는 레코드를 매체에 그대로 두면 그 안의 폐기된 키도 함께 남는다. 복원 근거로
+      // 삼을 수 없는 값이므로 지우고, 지우지 못하면 source 없는 비활성 표식으로 덮는다.
+      if (!removeRecordVerified(key)) writeRecordVerified(key, buildDisabledRecord(accountId))
       return { code: NEXT_ROOM_SETTINGS_RESTORE_CODES.CORRUPTED, source: null }
     }
 

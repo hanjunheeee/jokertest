@@ -111,10 +111,20 @@ export function useNextRoomSettings() {
     return NEXT_ROOM_SETTINGS_AVAILABILITY.READY
   }, [accountId, isParticipating, roomSettingsSource])
 
-  const canToggle = availability === NEXT_ROOM_SETTINGS_AVAILABILITY.READY
-    // 계정 전환 직후 한 프레임 동안 store가 아직 옛 계정을 들고 있을 수 있다 — 그 프레임의
-    // 클릭이 남의 키를 건드리지 않도록 렌더 경계에서도 대조한다.
-    && storeAccountId === accountId
+  // 계정 전환 직후 한 프레임 동안 store가 아직 옛 계정을 들고 있을 수 있다 — 그 프레임의
+  // 클릭이 남의 키를 건드리지 않도록 렌더 경계에서도 대조한다.
+  const isAccountScopeCurrent = Boolean(accountId) && storeAccountId === accountId
+
+  /** **켤** 수 있는가. 서버가 확정한 이 판의 원본이 있어야 한다. */
+  const canToggle = availability === NEXT_ROOM_SETTINGS_AVAILABILITY.READY && isAccountScopeCurrent
+  /**
+   * F-24(AC-05): **끌** 수 있는가 — 켜는 조건과 같지 않다.
+   *
+   * 해제는 이 판의 설정을 말하는 행위가 아니라 "저장해 두지 마라"는 명령이다. 서버 원본이
+   * 아직 안 왔거나 손상됐다는 이유로 해제까지 막으면, 이전 판에서 켜 둔 유지를 끌 방법이
+   * 사라져 다음 방이 계속 옛 설정으로 만들어진다. 필요한 것은 계정 범위뿐이다.
+   */
+  const canDisable = isAccountScopeCurrent
 
   /**
    * F-24(AC-04): **유지가 이미 켜진 채로 다음 판이 시작된 경우**의 원본 갱신.
@@ -141,11 +151,15 @@ export function useNextRoomSettings() {
    */
   const setKeepSettings = useCallback(
     (next) => {
-      if (!canToggle) return { ok: false, status }
-      if (next) return keepSettings({ accountId, source: roomSettingsSource })
+      if (next) {
+        if (!canToggle) return { ok: false, status }
+        return keepSettings({ accountId, source: roomSettingsSource })
+      }
+      // 해제는 원본 없이도 가능하다(위 canDisable 주석 참고).
+      if (!canDisable) return { ok: false, status }
       return clearSettings({ accountId })
     },
-    [canToggle, accountId, roomSettingsSource, keepSettings, clearSettings, status],
+    [canToggle, canDisable, accountId, roomSettingsSource, keepSettings, clearSettings, status],
   )
 
   const retry = useCallback(() => retryPersist(), [retryPersist])
@@ -157,6 +171,8 @@ export function useNextRoomSettings() {
     /** 화면 체크 상태. 영속 확인까지 끝난 사실만 true다. */
     enabled,
     canToggle,
+    /** 해제만 가능한 상태(원본 없음·손상)에서도 체크를 끌 수 있어야 한다(AC-05). */
+    canDisable,
     availability,
     setKeepSettings,
     status,

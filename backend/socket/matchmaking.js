@@ -776,7 +776,12 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         )
     )
     socket.on('leave_matchmaking', () => handleLeaveMatchmaking(uuid))
-    socket.on('join_room_by_code', (payload = {}) => {
+    // payload에 **기본값을 주지 않는다**(A-07). `(payload = {})`로 두면 무인자 호출과
+    // undefined가 등록 경계에서 조용히 빈 객체로 바뀌어, 형태 자체가 잘못된 요청이
+    // INVALID_REQUEST가 아니라 "코드를 안 보냈다"(CODE_REQUIRED)로 답해진다 — 두 사실은
+    // 사용자가 할 일이 다르다(형태를 고쳐야 하는가 vs 코드를 채워야 하는가). 원래 입력을
+    // 그대로 검증기에 넘겨 판정이 한 곳에서만 일어나게 한다.
+    socket.on('join_room_by_code', (payload) => {
         // F-24(AC-03): 코드 참가 입력의 **유일한 형태 경계**다. 예전에는 알 수 없는 최상위 키를
         // 조용히 버렸는데, 조용히 버리는 것과 거부하는 것은 다른 사실을 말한다 — 버리면
         // `spectator: true`를 보낸 클라이언트가 "관전자로 들어갔다"고 믿은 채 **일반 참가자로**
@@ -4169,6 +4174,9 @@ module.exports = {
         // 시험과 나란히, 판정 자체의 경계 조건도 직접 확인할 수 있게 한다.
         validateJoinRoomByCodeRequest,
         isRoomCodeReserved,
+        // 시작 표식의 TTL 만료는 표식을 지우는 것과 **다른 사건**이다. 가짜 시계로 시간을 흘린 뒤
+        // 이 판정기가 스스로 표식을 걷어내는지 확인할 수 있어야 그 구분이 시험에 남는다.
+        isStartedRoomMark,
         handleGetCurrentRoom,
         handleGetPublicRooms,
         handleJoinPublicRoom,

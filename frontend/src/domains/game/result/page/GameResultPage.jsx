@@ -36,6 +36,24 @@ const RESULT_BOOTSTRAP_HOLD_MS = 6000
 const ROOM_CODE_BUTTON_CLASS =
   "cursor-pointer border-0 bg-transparent p-0 font-subheading app-text-scaled [--app-text-size:clamp(0.85rem,1.2vw,1.05rem)] font-semibold text-[#f5e6c8] underline decoration-dotted underline-offset-4 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
 
+/** 확인 불가 화면의 안내 문구 스타일. 결과 연출 없이 사실만 읽어 준다. */
+const UNAVAILABLE_WRAP_CLASS =
+  "absolute inset-0 z-10 flex flex-col items-center justify-center gap-[1.1rem] px-[clamp(1rem,5vw,3rem)] text-center"
+const UNAVAILABLE_TITLE_CLASS =
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.05rem,2vw,1.6rem)] font-bold text-[#f5e6c8] [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]"
+const UNAVAILABLE_BODY_CLASS =
+  "max-w-[36rem] font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.25vw,1rem)] leading-relaxed text-[#f0e0c8]/85"
+
+/**
+ * F-24(A-14): 결과·코드를 확인할 수 없을 때 화면이 말하는 문장.
+ *
+ * "없는 것을 꾸미지 않는다"와 "실패 경로를 숨기지 않는다"를 동시에 지킨다 — 결과·명단·코드를
+ * 지어내지 않고, 대신 무엇을 확인할 수 없는지와 왜 그런지를 그대로 읽어 준다.
+ */
+const RESULT_UNAVAILABLE_TITLE = "게임 결과를 확인할 수 없습니다"
+const RESULT_UNAVAILABLE_BODY =
+  "이 판의 결과와 방 코드는 화면이 종료까지 받아 둔 값으로만 보여드립니다. 새로고침 등으로 그 값이 사라졌거나 이 계정의 참가 자격이 이미 정리된 경우에는 다시 불러올 수 없습니다."
+
 /**
  * 결과 페이지 최상위 — 실데이터를 우선하고, 없으면 `?outcome=` 미리보기, 둘 다 없으면 로비로 보낸다.
  *
@@ -85,34 +103,51 @@ export default function GameResultPage() {
     return () => window.clearTimeout(timer)
   }, [view, bootstrapStatus])
 
-  useEffect(() => {
-    if (view) return
-    // F-24(A-14): **확인이 끝나기 전에는 보내지 않는다.** 예전에는 첫 렌더에서 곧바로
-    // 로비로 replace했는데, 새로고침 직후에는 store가 비어 있는 것이 정상이라 정상 참가자도
-    // 그 한 프레임에 쫓겨났다. 조회가 끝나 결과가 없다는 것이 확인된 뒤에만 이동한다.
-    if (bootstrapStatus === "checking" && !holdExpired) return
-    navigate("/multiplay", { replace: true })
-  }, [view, bootstrapStatus, holdExpired, navigate])
+  /**
+   * F-24(A-14): 확인이 끝났는데도 보여줄 결과가 없다 = **확인 불가**다.
+   *
+   * 예전에는 이 상태에서 null을 그리고 곧바로 /multiplay로 replace했다. 그러면 사용자는
+   * 아무 안내도 보지 못한 채 로비에 서 있게 되고, "코드를 확인할 수 없음"이라는 실패 경로가
+   * 화면에서 통째로 사라진다 — A-14가 명시적으로 금지하는 동작이다. 자동 이동을 걷어내고,
+   * 확인 불가 상태를 **화면으로** 보여준 뒤 로비 이동은 사용자의 입력으로 남긴다.
+   *
+   * 조회가 진행 중인 동안에는(그리고 상한 전까지는) 아직 아무것도 단정하지 않는다.
+   */
+  const bootstrapPending = bootstrapStatus === "checking" && !holdExpired
 
   useEffect(() => {
     if (!view) return
     setIntroComplete(false)
   }, [view?.outcome])
 
-  if (!view) return null
+  // 아직 확인 중이면 아무것도 단정하지 않는다(결과도, 확인 불가도 아니다).
+  if (!view && bootstrapPending) return null
 
-  if (!introComplete) {
-    return (
-      <GameResultIntroVideo
-        outcome={view.outcome}
-        onComplete={() => setIntroComplete(true)}
-      />
-    )
+  if (view) {
+    if (!introComplete) {
+      return (
+        <GameResultIntroVideo
+          outcome={view.outcome}
+          onComplete={() => setIntroComplete(true)}
+        />
+      )
+    }
   }
 
   return (
     <>
-      <GameResultShell {...view} />
+      {view ? (
+        <GameResultShell {...view} />
+      ) : (
+        /*
+          F-24(A-14): 확인 불가 화면. 결과·명단·코드를 **꾸미지 않고** 무엇을 확인할 수 없는지만
+          읽어 준다. 연출(GameResultIntroVideo)도 재생하지 않는다 — 없는 승패를 연출할 수 없다.
+        */
+        <div className={UNAVAILABLE_WRAP_CLASS}>
+          <p role="alert" className={UNAVAILABLE_TITLE_CLASS}>{RESULT_UNAVAILABLE_TITLE}</p>
+          <p className={UNAVAILABLE_BODY_CLASS}>{RESULT_UNAVAILABLE_BODY}</p>
+        </div>
+      )}
       <motion.div
         className={GAME_RESULT_LOBBY_BUTTON_WRAP_CLASS}
         initial={{ opacity: 0, y: 8 }}
@@ -128,19 +163,37 @@ export default function GameResultPage() {
           않는다. 값이 없으면 진입 자체가 "확인 불가"이고, 눌러도 모달이 그 사실과 비활성
           복사를 그대로 보여준다.
 
-          preview(`?outcome=`) 진입에는 실제 코드 진입을 주지 않는다 — 더미 결과 화면에서
+          확인 불가 화면(view 없음)에서도 같은 진입을 준다 — 실패 경로를 버튼째 숨기면 사용자는
+          "코드를 확인할 수 없다"는 사실 자체를 어디서도 볼 수 없다.
+
+          preview(`?outcome=`) 진입에만 실제 코드 진입을 주지 않는다 — 더미 결과 화면에서
           복사되는 코드는 어느 방도 가리키지 않는다.
         */}
-        {live ? (
+        {live || !view ? (
           <button type="button" className={ROOM_CODE_BUTTON_CLASS} onClick={() => setRoomCodeOpen(true)}>
             {canViewRoomCode ? "방 코드 보기" : "방 코드 확인 불가"}
           </button>
         ) : null}
-        <LabelledActionButton
-          src={GAME_RESULT_ASSETS.lobbyButton}
-          label="로비로"
-          onClick={requestExit}
-        />
+        {/*
+          로비 이동은 결과가 있을 때만 **실제 이탈**이다 — 그때만 기존 종료 경로(useInGameExit)를
+          부른다. 확인 불가 화면에는 정리할 참가 소속도, 확인을 물을 것도 없으므로 결과 화면의
+          장식 버튼 대신 화면 이동만 하는 평범한 버튼을 둔다(이탈 요청은 만들지 않는다).
+        */}
+        {view ? (
+          <LabelledActionButton
+            src={GAME_RESULT_ASSETS.lobbyButton}
+            label="로비로"
+            onClick={requestExit}
+          />
+        ) : (
+          <button
+            type="button"
+            className={ROOM_CODE_BUTTON_CLASS}
+            onClick={() => navigate("/multiplay", { replace: true })}
+          >
+            로비로 돌아가기
+          </button>
+        )}
       </motion.div>
 
       <RoomCodeViewModal

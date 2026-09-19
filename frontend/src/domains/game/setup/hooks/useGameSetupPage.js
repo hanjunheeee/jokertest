@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
-import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import {
+  readInGameReceiptScope,
+  useInGameStore,
+} from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import {
@@ -20,6 +23,42 @@ import {
 } from "../constants/gameSetupSocket.js"
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * F-24(AC-04, A-04): 지금 이 순간의 **소속 축**(방·게임·참가 소속).
+ *
+ * 계정·연결만 보던 예전 범위로는 "R1 조회가 R2 생성 후 현재 소속을 되돌린다"를 막을 수 없었다 —
+ * 같은 계정·같은 연결에서 R1을 보낸 뒤 R2가 방을 만들면, 계정·연결 축은 하나도 바뀌지 않은
+ * 채로 R1의 늦은 ACK가 그 방 위에 옛 방을 덮어쓴다. 소속 자체를 축으로 삼아야 그 전이가 보인다.
+ *
+ *   - 대기방: roomId만으로는 부족하다(같은 roomId로 다시 만들어질 수 있다) — 서버가 방마다
+ *     새로 발급하는 roomInstanceId와 "방에 있는가"를 함께 본다.
+ *   - 게임: gameId와 참가 소속 세대(membershipEpoch)를 본다. membershipEpoch는 값이 원래대로
+ *     돌아오는 왕복(이탈→같은 판 재입장)까지 드러낸다.
+ */
+function readMembershipScope() {
+  const matching = useMatchingStore.getState()
+  const receipt = readInGameReceiptScope()
+  return {
+    isInRoom: matching.isInRoom === true,
+    roomId: matching.roomId ?? null,
+    roomInstanceId: matching.roomInstanceId ?? null,
+    gameId: receipt.gameId,
+    membershipId: receipt.membershipId,
+    membershipEpoch: receipt.membershipEpoch,
+  }
+}
+
+/** 두 소속 축이 모든 값에서 같은가. 하나라도 다르면 false다(fail-closed). */
+function isSameMembershipScope(a, b) {
+  if (a === null || typeof a !== "object" || b === null || typeof b !== "object") return false
+  return a.isInRoom === b.isInRoom
+    && a.roomId === b.roomId
+    && a.roomInstanceId === b.roomInstanceId
+    && a.gameId === b.gameId
+    && a.membershipId === b.membershipId
+    && a.membershipEpoch === b.membershipEpoch
+}
 
 /**
  * 게임 만들기 페이지의 입장 애니메이션, 방 생성 요청(ack), ack 유실 복구, 대기방 이동을 관리합니다.
@@ -61,6 +100,15 @@ export function useGameSetupPage() {
       // AC-05: 유지가 꺼져 있거나 저장된 원본이 없으면 **항목 정의의 기본값**으로 시작한다.
       // initialFormState=null이 곧 그 계약이다(useSetupTabState.buildInitialState).
       return { formState: null, resetKey: key, notice: "" }
+    }
+    if (read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED_PERSIST_FAILED) {
+      // AC-05/A-11: 해제 의도가 이겨 **이 화면은 기본값으로 시작한다**. 다만 그 해제를 매체에
+      // 남기지 못했다는 사실까지 감추지는 않는다 — 새로고침하면 이전 값이 다시 보일 수 있다.
+      return {
+        formState: null,
+        resetKey: key,
+        notice: "설정 유지 해제를 저장하지 못했습니다. 이 화면은 기본값으로 시작하지만 새로고침하면 이전 설정이 다시 보일 수 있습니다.",
+      }
     }
     if (read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.CORRUPTED) {
       return {
@@ -132,6 +180,9 @@ export function useGameSetupPage() {
     identityGeneration,
     socket,
     socketId: socket?.id ?? null,
+    // 요청을 보낸 시점의 소속. 응답·복구 조회·finally가 전부 이 값과 **그때의 살아 있는 값**을
+    // 맞춘다 — 그래야 R1→R2 사이에 생긴 소속을 R1의 늦은 답이 되돌리지 못한다.
+    membership: readMembershipScope(),
   })
 
   /**
@@ -139,6 +190,9 @@ export function useGameSetupPage() {
    *
    * 소켓은 객체 동일성과 id를 함께 본다 — 같은 객체가 재연결되면 참조는 그대로이고 id만
    * 바뀌므로, 둘 중 하나만 보면 한쪽 전이가 판정에서 사라진다.
+   *
+   * 소속(방·게임·참가)도 같은 축이다. 계정·연결이 그대로여도 그 사이 다른 방·다른 판에
+   * 앉았다면 이 요청의 답은 지금 화면의 답이 아니다(A-04).
    */
   const isScopeCurrent = (scope) => {
     if (scope === null || requestScopeRef.current !== scope) return false
@@ -147,7 +201,8 @@ export function useGameSetupPage() {
     if (auth.identityGeneration !== scope.identityGeneration) return false
     const socket = getSocket()
     if (socket !== scope.socket) return false
-    return (socket?.id ?? null) === scope.socketId
+    if ((socket?.id ?? null) !== scope.socketId) return false
+    return isSameMembershipScope(readMembershipScope(), scope.membership)
   }
 
   const enterRoom = (room, scope = null) => {

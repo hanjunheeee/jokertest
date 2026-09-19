@@ -16,7 +16,9 @@
  * role="alert" 영역으로 이유를 읽어줍니다.
  */
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
+import { useAuthStore } from "../../../auth/store/auth.store.js"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 // 경로 별칭(@/) 대신 상대 경로를 쓰는 이유는 RoomListRow.jsx 맨 위 주석과 같습니다.
 import RoomCodeFrame from "../../mode/components/RoomCodeFrame.jsx"
 import { ROOM_INVITE_ASSETS } from "../../mode/constants/roomInviteAssets.js"
@@ -113,6 +115,21 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
   // 그대로 보여주고 복사 버튼을 비활성화합니다.
   const canCopy = isValidRoomCode(displayRoomCode)
 
+  /**
+   * F-24(AC-01): 복사 세대를 무효화해야 하는 **계정·연결 축**.
+   *
+   * 코드 문자열만 보면 전이를 놓친다 — 같은 6자를 표시하는 동안에도 계정이 갈아끼워지거나
+   * (로그아웃→다른 계정 로그인, A→B→A 왕복) 연결이 교체될 수 있고, 그 뒤에 도착한 옛 복사
+   * 완료가 지금 화면의 "복사됨"을 켜면 사용자는 **지금 이 계정·이 연결에서** 복사됐다고 믿게
+   * 된다. uuid만으로는 A→B→A가 드러나지 않아 identityGeneration을 함께 본다.
+   *
+   * 연결은 객체 동일성과 id를 둘 다 본다 — 교체는 참조가, 재연결은 id가 바뀐다.
+   */
+  const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
+  const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
+  const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
+  const socketId = socket?.id ?? null
+
   /** 예약된 복사 피드백 타이머를 취소합니다(중복 취소해도 안전). */
   const clearCopyFeedbackTimer = () => {
     if (!copyFeedbackTimerRef.current) return
@@ -132,9 +149,10 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
     setCopyStatus("")
   }
 
-  // 열림 상태와 표시 코드가 바뀔 때마다 이전 복사 결과를 버립니다. 언마운트도 같은 경계라
-  // cleanup에서 세대를 올려, 마지막 요청의 늦은 완료가 다시 마운트된 모달에 끼어들 수 없게
-  // 합니다(타이머도 함께 풀어 둡니다 — 남기면 사라진 컴포넌트를 향해 울립니다).
+  // 열림 상태·표시 코드·계정·연결 중 **무엇이 바뀌어도** 이전 복사 결과를 버립니다. 같은
+  // 코드라도 계정이나 연결이 갈렸다면 그 복사는 지금 화면의 사실이 아닙니다. 언마운트도 같은
+  // 경계라 cleanup에서 세대를 올려, 마지막 요청의 늦은 완료가 다시 마운트된 모달에 끼어들 수
+  // 없게 합니다(타이머도 함께 풀어 둡니다 — 남기면 사라진 컴포넌트를 향해 울립니다).
   useEffect(() => {
     invalidateCopyFeedback()
     return () => {
@@ -142,7 +160,7 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
       clearCopyFeedbackTimer()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, displayRoomCode])
+  }, [open, displayRoomCode, authUuid, identityGeneration, socket, socketId])
 
   /** 모달 닫기 시 복사 피드백·오류 안내와 예약된 타이머를 함께 정리합니다. */
   const handleClose = () => {

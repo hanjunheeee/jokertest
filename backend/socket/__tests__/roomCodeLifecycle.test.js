@@ -33,8 +33,35 @@ const {
 
 const {
     handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame,
-    validateJoinRoomByCodeRequest, isRoomCodeReserved,
+    validateJoinRoomByCodeRequest, isRoomCodeReserved, isStartedRoomMark,
 } = matchmaking.__testables
+
+/**
+ * 시작 표식의 유효 기간(backend/socket/matchmaking.js의 STARTED_ROOM_MARK_TTL_MS와 같은 값).
+ *
+ * 생산 상수를 export해 시험이 그 값을 그대로 따라가면 "TTL이 늘어났다"는 변경이 이 시험을
+ * 조용히 통과한다. 여기서는 **시험이 아는 기간**을 적고 그보다 조금 더 흘려 보낸다 — 생산
+ * 기간이 늘어나면 만료 단언이 실패해 그 변경이 드러난다.
+ */
+const KNOWN_STARTED_ROOM_MARK_TTL_MS = 30 * 60 * 1000
+
+/**
+ * 가짜 시계로 시작 표식의 TTL을 **실제로** 넘긴다(표식을 손으로 지우지 않는다).
+ *
+ * 30분을 진짜로 기다릴 수는 없지만, 만료 판정 코드 자체는 실제로 돌아야 한다 — 표식을 지우는
+ * 것과 시간이 지나는 것은 다른 사건이고, 전자로는 "만료 판정이 동작하는가"를 물을 수 없다.
+ * Date.now 하나만 바꾸고 끝나면 반드시 되돌린다(실패해도 되돌아온다).
+ */
+async function withClockAdvancedPastMarkTtl(run) {
+    const realNow = Date.now
+    const advancedTo = realNow() + KNOWN_STARTED_ROOM_MARK_TTL_MS + 60 * 1000
+    Date.now = () => advancedTo
+    try {
+        await run()
+    } finally {
+        Date.now = realNow
+    }
+}
 
 /** spectatorAccess.test.js와 같은 관례의 registry(권한의 근거가 아니라 id 조회일 뿐이다). */
 function createConventionFollowingRegistry() {
@@ -101,6 +128,21 @@ async function startRealSession(hostUuid, joinerUuid, settings = {}) {
     gameSessionSocketLayer.registerGameHandlers(io, hostSocket, hostUuid)
     gameSessionSocketLayer.registerGameHandlers(io, joinerSocket, joinerUuid)
     return { io, hostSocket, joinerSocket, room: created.room, roomCode: created.room.roomCode }
+}
+
+/**
+ * 등록된 leave_game_session 리스너로 **실제** 이탈을 요청한다.
+ *
+ * core의 이탈 함수를 직접 부르면 소켓 권한 검사·채널 정리·matchmaking 정리가 통째로 빠진다 —
+ * "마지막 참가자가 나가면 세션이 registry에서 사라진다"는 사실은 그 경로 전체가 돌아야 성립한다.
+ */
+async function leaveGameSession(socket, gameId) {
+    const { callback, getResponse } = countingCallback()
+    socket.trigger('leave_game_session', { gameId }, callback)
+    await new Promise((resolve) => setImmediate(resolve))
+    const response = getResponse()
+    assert.equal(response?.ok, true, `이탈 요청이 실패했다: ${JSON.stringify(response)}`)
+    return true
 }
 
 /** 이 소켓이 받은 room_join_failed 중 마지막 것. */
@@ -181,34 +223,103 @@ test('F-24(AC-02): 진행 중인 판의 코드로 들어오려는 외부 계정�
     assert.equal(matchmakingState().playerRoom.has('ac02-outsider'), false)
 })
 
-test('F-24(AC-02): 시작 표식이 만료돼도 진행 중인 판의 코드는 여전히 ROOM_ALREADY_STARTED다', async () => {
+test('F-24(AC-02): 실제 TTL이 지나 시작 표식이 스스로 만료돼도 진행 중인 판의 코드는 여전히 ROOM_ALREADY_STARTED다', async () => {
     const { io, roomCode } = await startRealSession('ac02b-host', 'ac02b-join')
 
-    // 표식만 지운다(세션은 그대로 진행 중이다) — TTL 만료와 같은 상태를 만든다.
-    matchmaking.__resetStartedRoomMarksForTests()
+    // 표식이 아직 유효한 상태를 먼저 확인한다 — 그래야 아래 만료가 "정말 지나간 시간" 때문임이
+    // 드러난다(표식이 애초에 없었다면 이 시험은 아무것도 증명하지 못한다).
+    assert.equal(isStartedRoomMark(`code:${roomCode}`), true, '전제: 시작 표식이 남아 있어야 한다')
 
-    const outsider = connect(io, 'ac02b-outsider')
-    await handleJoinRoomByCode(io, outsider, 'ac02b-outsider', roomCode)
+    await withClockAdvancedPastMarkTtl(async () => {
+        // 표식을 지우지 않는다. **시간만** 흘린다 — 만료 판정(isStartedRoomMark)의 실제 코드가
+        // 돌아 스스로 표식을 걷어내야 한다.
+        assert.equal(isStartedRoomMark(`code:${roomCode}`), false, 'TTL이 지났는데 표식이 살아 있다')
 
-    const failure = lastJoinFailure(outsider)
-    assert.equal(
-        failure?.code, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED,
-        '표식이 사라지자 진행 중인 판이 "코드 불일치"로 바뀌었다',
-    )
+        const outsider = connect(io, 'ac02b-outsider')
+        await handleJoinRoomByCode(io, outsider, 'ac02b-outsider', roomCode)
+
+        const failure = lastJoinFailure(outsider)
+        assert.equal(
+            failure?.code, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED,
+            '표식이 만료되자 진행 중인 판이 "코드 불일치"로 바뀌었다',
+        )
+    })
 })
 
-test('F-24(AC-02): 진행 중인 판의 코드는 새 방에 재발급되지 않고, 모든 예약이 사라진 뒤에는 다시 쓸 수 있다', async () => {
-    const { roomCode } = await startRealSession('ac02c-host', 'ac02c-join')
+test('F-24(AC-02): 종료 뒤 첫 이탈은 코드 예약을 풀지 않고, 마지막 이탈과 표식 만료가 모두 지나야 재발급된다', async () => {
+    const { io, hostSocket, joinerSocket, roomCode } =
+        await startRealSession('ac02c-host', 'ac02c-join')
+    const gameId = liveSession('ac02c-join').id
 
     // 생성기를 고정해 "그 코드밖에 못 뽑는" 상황을 만든다 — 예약이 있으면 retry를 소진하고
     // null이 나와야 하고(그 경우 방 생성 자체가 실패한다), 예약이 없으면 그대로 발급된다.
+    // isReserved는 handleCreateRoomAfterReservation이 실제로 넘기는 바로 그 판정기다.
     const fixed = { generator: () => roomCode, isReserved: isRoomCodeReserved }
     assert.equal(generateUniqueRoomCode(new Map(), fixed), null, '진행 중인 판의 코드가 재발급됐다')
 
-    // 세션과 표식이 모두 사라지면 예약도 사라진다.
-    gameSessionCore.__resetStateForTests()
-    matchmaking.__resetStartedRoomMarksForTests()
-    assert.equal(generateUniqueRoomCode(new Map(), fixed), roomCode, '예약이 없는데도 재발급되지 않았다')
+    // 실제 종결 경로로 ENDED를 만든다(결과 화면이 그 코드를 보여주고 있는 상태다).
+    gameSessionCore.__testables.finalizeGameSession(liveSession('ac02c-join'), { winner: 'CITIZEN' })
+
+    // --- 첫 이탈: 등록된 leave_game_session 리스너를 실제로 부른다 ---
+    assert.equal(await leaveGameSession(hostSocket, gameId), true)
+    assert.notEqual(
+        gameSessionCore.getRoomCodeSessionState({ roomCode }), null,
+        '한 명이 나갔다고 세션이 사라졌다 — 남은 참가자의 결과 화면이 코드를 잃는다',
+    )
+    assert.equal(generateUniqueRoomCode(new Map(), fixed), null, '첫 이탈만으로 코드 예약이 풀렸다')
+
+    // --- 마지막 이탈: 이제 세션이 registry에서 사라진다 ---
+    assert.equal(await leaveGameSession(joinerSocket, gameId), true)
+    assert.equal(
+        gameSessionCore.getRoomCodeSessionState({ roomCode }), null,
+        '마지막 참가자가 나갔는데 세션이 남아 있다',
+    )
+    // 세션은 사라졌지만 시작 표식이 아직 유효하므로 예약은 유지된다(A-09).
+    assert.equal(isStartedRoomMark(`code:${roomCode}`), true)
+    assert.equal(generateUniqueRoomCode(new Map(), fixed), null, '표식이 유효한데 코드가 재발급됐다')
+
+    // --- 표식까지 만료되면 그제서야 같은 코드를 다시 쓸 수 있다 ---
+    await withClockAdvancedPastMarkTtl(async () => {
+        assert.equal(
+            generateUniqueRoomCode(new Map(), fixed), roomCode,
+            '모든 예약이 사라졌는데도 코드가 재발급되지 않았다',
+        )
+    })
+})
+
+test('F-24(AC-02): 연결이 교체돼도 기존 참가자는 코드 없이 같은 판으로 복원되고, 교체된 옛 연결은 거부된다', async () => {
+    const { io, joinerSocket, roomCode } = await startRealSession('ac02f-host', 'ac02f-join')
+    const gameId = liveSession('ac02f-join').id
+    const channelId = liveSession('ac02f-join').channelId
+
+    // 같은 계정의 **새 연결**(새 socket.id)이 붙는다 — 새로고침·재연결의 실제 모양이다.
+    const replacement = createFakeSocket('ac02f-join', { id: 'sock-ac02f-join-reconnected' })
+    io.sockets.sockets.delete(joinerSocket.id)
+    io.sockets.sockets.set(replacement.id, replacement)
+    gameSessionSocketLayer.setOnlineUsersRegistry(new Map([
+        ['ac02f-host', 'sock-ac02f-host'],
+        ['ac02f-join', replacement.id],
+    ]))
+
+    // 실제 재동기화 경로. 코드는 어디에도 등장하지 않는다 — 근거는 서버 참가 매핑뿐이다.
+    await gameSessionSocketLayer.resyncSessionRouting(replacement, 'ac02f-join')
+    gameSessionSocketLayer.registerGameHandlers(io, replacement, 'ac02f-join')
+
+    const restored = countingCallback()
+    replacement.trigger('get_session_snapshot', { gameId }, restored.callback)
+    const snapshot = restored.getResponse()
+    assert.equal(snapshot.ok, true, JSON.stringify(snapshot))
+    assert.equal(snapshot.gameId, gameId)
+    assert.equal(snapshot.roomCode, roomCode, '교체 연결이 그 판의 코드를 되찾지 못했다')
+    assert.equal(replacement.rooms.has(channelId), true, '교체 연결이 게임 채널에 다시 붙지 않았다')
+
+    // 교체된 옛 연결은 같은 요청을 해도 거부된다(두 연결이 같은 자리를 동시에 갖지 않는다).
+    const stale = countingCallback()
+    gameSessionSocketLayer.__testables.handleGetSessionSnapshot(
+        io, joinerSocket, 'ac02f-join', { gameId }, stale.callback,
+    )
+    assert.equal(stale.getResponse().ok, false)
+    assert.equal(stale.getResponse().code, 'STALE_SOCKET')
 })
 
 test('F-24(AC-02): 종료된 판의 코드는 진행 중과 구분되는 SESSION_ENDED로 거부된다', async () => {
@@ -257,7 +368,7 @@ test('F-24(AC-02): 기존 참가자는 코드가 아니라 서버 참가 매핑�
 
 // ── AC-03: 등록 경계의 형태 판정 ──────────────────────────────────────────────
 
-test('F-24(AC-03): 등록된 join_room_by_code는 roomCode·roomId 외 최상위 키를 INVALID_REQUEST로 거부한다', async () => {
+test('F-24(AC-03): 등록된 join_room_by_code는 비객체·무인자·관전 의도 입력을 INVALID_REQUEST로 거부하고 socket.join을 한 번도 부르지 않는다', async () => {
     const hostSocket = createFakeSocket('ac03-host')
     const io = createFakeIo([hostSocket])
     const created = await callAsPromise(
@@ -265,32 +376,51 @@ test('F-24(AC-03): 등록된 join_room_by_code는 roomCode·roomId 외 최상위
     )
     assert.equal(created.ok, true)
 
+    // 각 항목은 [설명, 그 요청을 실제로 보내는 방법]이다. **무인자 호출**은 값으로 표현할 수
+    // 없으므로(undefined를 넘기는 것과 인자를 안 넘기는 것은 등록 리스너 입장에서 다르다)
+    // 호출 자체를 항목으로 들고 있는다.
     const rejected = [
-        { roomCode: created.room.roomCode, spectator: true },
-        { roomCode: created.room.roomCode, spectator: false },
-        { roomCode: created.room.roomCode, role: 'spectator' },
-        { roomCode: created.room.roomCode, mode: 'spectator' },
-        { roomCode: created.room.roomCode, options: {} },
-        { roomCode: created.room.roomCode, roomId: '' },
-        null,
-        [],
-        'AB2C3D',
+        ['spectator=true', (socket) => socket.trigger('join_room_by_code', { roomCode: created.room.roomCode, spectator: true })],
+        ['spectator=false', (socket) => socket.trigger('join_room_by_code', { roomCode: created.room.roomCode, spectator: false })],
+        ['role', (socket) => socket.trigger('join_room_by_code', { roomCode: created.room.roomCode, role: 'spectator' })],
+        ['mode', (socket) => socket.trigger('join_room_by_code', { roomCode: created.room.roomCode, mode: 'spectator' })],
+        ['options', (socket) => socket.trigger('join_room_by_code', { roomCode: created.room.roomCode, options: {} })],
+        ['빈 roomId', (socket) => socket.trigger('join_room_by_code', { roomCode: created.room.roomCode, roomId: '' })],
+        ['null', (socket) => socket.trigger('join_room_by_code', null)],
+        ['배열', (socket) => socket.trigger('join_room_by_code', [])],
+        ['문자열', (socket) => socket.trigger('join_room_by_code', 'AB2C3D')],
+        // A-07: 아래 둘이 이 시험의 핵심이다. 등록 리스너가 `(payload = {})`처럼 기본값을 주면
+        // 이 두 요청이 조용히 빈 객체가 되어 **형태 오류가 아니라 "코드를 안 보냈다"**로
+        // 답해진다 — 사용자가 고쳐야 할 것이 달라진다.
+        ['undefined', (socket) => socket.trigger('join_room_by_code', undefined)],
+        ['무인자', (socket) => socket.trigger('join_room_by_code')],
     ]
 
-    for (const payload of rejected) {
-        const socket = connect(io, `ac03-outsider-${rejected.indexOf(payload)}`)
+    for (const [index, [label, send]] of rejected.entries()) {
+        const socket = connect(io, `ac03-outsider-${index}`)
         const uuid = socket.id.replace('sock-', '')
+        // socket.join **호출 자체**를 센다. rooms.size는 "지금 어느 채널에 남아 있는가"라서,
+        // 들어갔다가 곧바로 나온 경로를 0으로 보고한다 — 거부가 채널을 건드리지 않았다는 주장을
+        // rooms.size로 하면 그 구멍이 그대로 남는다.
+        const joinCalls = []
+        const originalJoin = socket.join.bind(socket)
+        socket.join = (roomId) => {
+            joinCalls.push(roomId)
+            return originalJoin(roomId)
+        }
+
         matchmaking.registerMatchmakingHandlers(io, socket, uuid)
-        socket.trigger('join_room_by_code', payload)
+        send(socket)
         // 등록 경계의 거부는 동기다 — await 없이 이미 응답이 나가 있어야 한다.
         const failure = lastJoinFailure(socket)
         assert.equal(
             failure?.code, ROOM_JOIN_ERROR_CODES.INVALID_REQUEST,
-            `거부되지 않았다: ${JSON.stringify(payload)} → ${JSON.stringify(failure)}`,
+            `거부되지 않았다: ${label} → ${JSON.stringify(failure)}`,
         )
         assert.equal(failure.message, matchmaking.JOIN_REQUEST_INVALID_MESSAGE)
         // 거부가 socket.join·room_joined·소속을 하나도 만들지 않았다.
-        assert.equal(socket.rooms.size, 0, `거부된 요청이 채널에 가입했다: ${JSON.stringify(payload)}`)
+        assert.deepEqual(joinCalls, [], `거부된 요청(${label})이 socket.join을 불렀다`)
+        assert.equal(socket.rooms.size, 0, `거부된 요청이 채널에 가입했다: ${label}`)
         assert.equal(socket.emitted.filter((e) => e.event === 'room_joined').length, 0)
         assert.equal(matchmakingState().playerRoom.has(uuid), false)
     }

@@ -384,6 +384,11 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
         " 옛 완료가 지금 화면의 '복사됨'과 타이머를 건드리지 못하게 한다",
     ],
     [
+      /useSyncExternalStore|useAuthStore|subscribeSocket|authUuid|identityGeneration|socketId/,
+      "F-24 AC-01: 무효화 경계는 코드 문자열만이 아니다 — 같은 코드를 표시하는 동안에도 계정이" +
+        " 갈아끼워지거나(A→B→A 포함) 연결이 교체되면 보류 중인 복사 결과를 버린다",
+    ],
+    [
       /isValidRoomCode|canCopy|ROOM_CODE_COPY_RESULTS|resolveRoomCodeCopyStatus|[cC]opyStatus|COPY_BTN_(DISABLED_)?CLASS/,
       "F-24 AC-01: 확인할 수 없는 코드에는 복사 진입 자체를 열지 않고, 도달한 상태를 흔들리지" +
         " 않는 코드로 노출한다",

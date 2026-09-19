@@ -7,6 +7,9 @@ import { parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
 // 경로가 서로 다른 정규화를 쓰면 같은 사망이 다른 모양으로 들어와 연출이 갈라지므로, 라이브
 // 경로가 이미 쓰는 정규화기를 그대로 재사용한다.
 import { normalizeInGameNightDeathReveals } from "../utils/normalizeInGameNightDeathReveals.js"
+// F-24(RESTORE-24): 복원 원본 설정의 허용 목록은 한 곳(setup/utils)이 소유한다. 그 모듈은
+// 순수 함수만 담고 있어(zustand·React 없음) 스냅샷 경로가 저장소 모듈을 끌어오지 않는다.
+import { sanitizeRoomSettings } from "../../setup/utils/roomSettingsSourceSanitize.js"
 
 const ROLE_TEAMS = {
   JOKER: "JOKER",
@@ -64,9 +67,14 @@ function copySelfSubmissionFields(self) {
  *
  * 응답 객체를 그대로 들고 있으면 두 가지가 깨진다 — 호출부가 응답을 변형하면 store가 함께
  * 오염되고, 서버가 허용 목록 밖 키를 실어 보낸 경우(구버전·오염 데이터) 그 키가 그대로
- * 복원 경로로 흘러든다. settings는 store의 관심사가 아니므로 값 자체를 재해석하지 않되,
- * **새 객체로 복사**해 참조를 끊는다(허용 목록 정제는 영속 경계인 nextRoomSettingsStore가
- * 마지막으로 한 번 더 한다 — 두 경계가 모두 정제해야 어느 한쪽만 지나온 값이 없다).
+ * 복원 경로로 흘러든다.
+ *
+ * 예전에는 settings의 모든 키를 얕게 복사해 참조만 끊었다. 그것으로는 두 번째 문제가 남는다 —
+ * 폐기된 키가 이 경계를 그대로 통과해 **인게임 store까지** 들어오고,
+ * 영속 경계가 걷어내기 전까지 화면이 그 값을 들고 있게 된다. 정제는 영속 경계 하나가 아니라
+ * **이 경계에서도** 일어나야 한다(RESTORE-24: 전 경로 배제). 그래서 설정 허용 목록의 단일
+ * 소유자(setup/utils/roomSettingsSourceSanitize.js)를 그대로 쓴다 — 두 경계가 같은 목록을
+ * 보므로 한쪽만 고쳐져 갈라질 수 없다.
  *
  * 모양이 아니면 null이다(fail-closed) — 그때 인게임 훅은 "복원 불가"로 표시한다.
  */
@@ -78,12 +86,9 @@ function normalizeRoomSettingsSource(raw) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null
   if (raw.settings === null || typeof raw.settings !== "object" || Array.isArray(raw.settings)) return null
   if (raw.accessType !== "open" && raw.accessType !== "code") return null
-  const settings = {}
-  for (const [key, value] of Object.entries(raw.settings)) {
-    settings[key] = value !== null && typeof value === "object" && !Array.isArray(value)
-      ? { ...value }
-      : value
-  }
+  // sanitizeRoomSettings는 허용 목록 밖의 키, 허용 키에 숨은 객체 값, 중첩 역할 맵의 폐기된
+  // 항목을 전부 버리고 **새 구조**를 만든다(참조 끊기와 정제가 같은 한 번의 작업이다).
+  const { settings } = sanitizeRoomSettings(raw.settings)
   return {
     accessType: raw.accessType,
     settingsVersion: isNonNegativeInteger(raw.settingsVersion) ? raw.settingsVersion : null,
