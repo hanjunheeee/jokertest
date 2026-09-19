@@ -113,11 +113,36 @@ const createRunningSessionAtDayVote = (uuids, { jokerCount = 1 } = {}) => {
     return session;
 };
 
-const fakeIo = { to: () => ({ emit: () => {} }) };
-const createFakeSocket = (uuid) => ({ id: `sock-${uuid}`, data: {} });
+// 실제 Socket.IO의 namespace registry(io.sockets.sockets)와 같은 자리를 가진 io 대역이다.
+// 서버의 canonical 판정은 onlineUsers가 가리키는 id뿐 아니라 **그 id로 namespace를 조회한
+// 객체가 바로 이 소켓인지**까지 묻는다(backend/socket/gameSession.js의 isCurrentSocketForUuid).
+// 예전 대역의 소켓은 어느 registry에도 없었으므로 지금 계약에서는 정상 연결이 아니다 —
+// 기대값을 낮추는 대신 아래 connectSocket이 **누락된 등록 절차**를 실제 경로대로 채운다.
+const fakeIo = { sockets: { sockets: new Map() }, to: () => ({ emit: () => {} }) };
+
+/** 이 계정의 연결을 namespace registry에 등록한다(실제 연결 성립과 같은 사실을 만든다). */
+const connectSocket = (uuid, id = `sock-${uuid}`) => {
+    const socket = {
+        id,
+        data: { user: { uuid } },
+        connected: true,
+        rooms: new Set(),
+        // io가 소유한 registry와 **같은 객체**여야 한다(교체·제거가 그대로 판정에 반영된다).
+        nsp: fakeIo.sockets,
+        emit() {},
+        to: () => ({ emit: () => {} }),
+    };
+    fakeIo.sockets.sockets.set(id, socket);
+    return socket;
+};
+
+/** 지금 그 계정의 연결(없으면 undefined) — 요청마다 새 객체를 만들지 않는다. */
+const socketFor = (uuid) => fakeIo.sockets.sockets.get(`sock-${uuid}`);
 
 const registerOnline = (uuids) => {
+    fakeIo.sockets.sockets.clear();
     gameSessionSocket.setOnlineUsersRegistry(new Map(uuids.map((uuid) => [uuid, `sock-${uuid}`])));
+    for (const uuid of uuids) connectSocket(uuid);
 };
 
 const captureAck = () => {
@@ -128,7 +153,7 @@ const captureAck = () => {
 const submitVote = async (session, actor, targetId) => {
     const ack = captureAck();
     await gameSessionSocket.__testables.handleSubmitDayVote(
-        fakeIo, createFakeSocket(actor), actor, { gameId: session.id, targetId }, ack.callback,
+        fakeIo, socketFor(actor), actor, { gameId: session.id, targetId }, ack.callback,
     );
     return ack.get();
 };
@@ -315,11 +340,14 @@ test('재접속: 같은 계정이 새 소켓으로 재제출해도 집계 키는
 
     await submitVote(session, a, b);
 
-    // 재접속을 흉내낸다 — 같은 uuid가 새 소켓 id로 등록되고, 그 새 연결로 같은 대상에 재제출한다.
+    // 재접속을 흉내낸다 — 옛 연결이 namespace에서 빠지고, 같은 uuid가 새 소켓 id로 등록되며,
+    // 그 새 연결로 같은 대상에 재제출한다(실제 재접속이 registry에 남기는 사실 그대로다).
+    fakeIo.sockets.sockets.delete(`sock-${a}`);
     gameSessionSocket.setOnlineUsersRegistry(new Map([[a, `sock-${a}-reconnected`], [b, `sock-${b}`]]));
+    const reconnected = connectSocket(a, `sock-${a}-reconnected`);
     const ack = captureAck();
     await gameSessionSocket.__testables.handleSubmitDayVote(
-        fakeIo, { id: `sock-${a}-reconnected`, data: {} }, a, { gameId: session.id, targetId: b }, ack.callback,
+        fakeIo, reconnected, a, { gameId: session.id, targetId: b }, ack.callback,
     );
     assertVoteAckOk(ack.get());
 

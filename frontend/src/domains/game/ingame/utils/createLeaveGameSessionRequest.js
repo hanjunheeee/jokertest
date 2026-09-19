@@ -32,12 +32,21 @@ export function createLeaveGameSessionRequest({
   finalize,
   onFailure,
 }) {
+  /**
+   * F-23(AC-06): **요청이 실제로 나갔는지**를 돌려준다.
+   *
+   * 호출부(useInGameExit)는 이 값으로만 "지금 응답을 기다리는 중"이라는 상태와 유한
+   * timeout을 시작한다. 예전처럼 항상 undefined면, 미연결·게임 없음으로 아무것도 보내지
+   * 않은 경우까지 대기 상태가 되어 화면이 영원히 진행 중으로 남는다.
+   *
+   * @returns {boolean} emit이 실제로 일어났는가.
+   */
   return () => {
     const socket = getSocket()
-    if (!socket) return
+    if (!socket) return false
 
     const requestedGameId = getCurrentGameId()
-    if (!requestedGameId) return
+    if (!requestedGameId) return false
     const requestedAccountId = getCurrentAccountId()
     const requestedMembershipId = getCurrentMembershipId()
     const requestedIdentityGeneration = getIdentityGeneration()
@@ -60,5 +69,6 @@ export function createLeaveGameSessionRequest({
       }
       onFailure?.(response)
     })
+    return true
   }
 }

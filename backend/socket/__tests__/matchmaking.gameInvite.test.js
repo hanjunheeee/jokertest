@@ -782,6 +782,66 @@ test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛
     )
 })
 
+test('AC-04(보수): 실패 정리의 늦은 소유권 재검사는 같은 채널에 정상 재소속한 소켓의 가입을 복원한다', async (t) => {
+    // CODEX-9(AC-04) 회귀. 실패 정리가 detachSocketFromChannel에 넘기는 ownsChannel 콜백이
+    // **이후 null로 바뀌는 joinedRoomId 변수**를 참조하면, leave가 끝난 뒤의 소유권 재검사가
+    // isAccountSeatedInRoom(uuid, null)을 묻게 되어 언제나 거짓이다 — 그 사이 같은 채널에
+    // 정상 입장한 소켓의 가입을 되돌려 주지 못하고(channelMembership의 restoreIfSuperseded가
+    // 열리지 않는다), 서버가 참가자로 인정하는 계정이 그 방의 방송을 받지 못한 채 남는다.
+    //
+    // publish 이전에 막는다(blockBeforeEntry) — 그래야 removePublishedAdmission 경로가 돌지
+    // 않는다. 그 경로는 attempt.roomId(끝까지 안 바뀌는 값)로 정리하므로 같은 복원을 대신
+    // 해 주고, 그러면 이 시험이 보려는 joinedRoomId 콜백의 결함이 가려진다.
+    const { io, hostSocket, guestSocket, room } = await setupRoomWithInvite(t, {
+        gates: { blockBeforeEntry: true },
+    })
+    t.after(() => channelMembership.__resetChannelExclusionsForTests())
+
+    // leave의 **완료 시점**을 시험이 쥔다. 이 시험의 대상은 완료 뒤의 재검사다.
+    const leaveGate = deferred()
+    const originalLeave = guestSocket.leave.bind(guestSocket)
+    guestSocket.leave = async (channelId) => {
+        await leaveGate.promise
+        return originalLeave(channelId)
+    }
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+    assert.equal(guestSocket.rooms.has(room.roomId), true, '전제: 실패 시점에 채널 가입은 아직 남아 있다')
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.some(([uuid]) => uuid === GUEST), false,
+        '전제: 실패한 시도는 소속을 남기지 않는다',
+    )
+
+    // 정리가 끝나기 전에 **같은 소켓이 정상 경로로** 그 방의 확정 참가자가 된다.
+    await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.find(([uuid]) => uuid === GUEST)?.[1],
+        room.roomId, '전제: 정상 입장이 성립해야 한다',
+    )
+
+    // 늦은 leave가 끝난다 — 이 leave는 방금 성립한 새 소속의 채널 가입까지 함께 떼어 간다.
+    leaveGate.resolve()
+    await drainTicks()
+
+    assert.equal(
+        guestSocket.rooms.has(room.roomId), true,
+        '늦은 실패 정리가 정상 재소속의 채널 가입을 되돌려 주지 않았다',
+    )
+    assert.equal(
+        channelMembership.isSocketExcludedFromChannel(room.roomId, guestSocket.id), false,
+        '정상 참가자가 전달 제외에 남았다',
+    )
+
+    // 그리고 실제 방송이 그 소켓에 닿는다 — 가입 기록만 보고 수신을 주장하지 않는다.
+    const before = guestSocket.countReceived('player_ready_changed')
+    await callAsPromise(handleSetReady, io, hostSocket, HOST, readyPayload(room))
+    assert.equal(
+        guestSocket.countReceived('player_ready_changed') - before, 1,
+        '복원된 채널로 방송이 전달되지 않았다',
+    )
+})
+
 // ---------------------------------------------------------------------------
 // review5 #1 · 기한 경과와 publication 소유권
 //
@@ -793,6 +853,98 @@ test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛
 //   · 영수증 없는 publication이 **정상 소속**으로 보이고,
 //   · 그 소속을 되돌릴 소유자가 사라져 뒤이은 timeout 정리가 아무것도 하지 못한다.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// F-23(AC-04) — durable 확정 **이전**의 입장자는 그 방의 방송을 한 번도 받지 않는다
+// ---------------------------------------------------------------------------
+
+/** 이 소켓이 실제로 받은(방송 포함) 그 이벤트의 건수. 방송 시도 기록과 구분된다. */
+function received(socket, event) {
+    return socket.received.filter((entry) => entry.event === event).length
+}
+
+/**
+ * 방 채널 방송을 **프로덕션 경계 그대로** 낸다.
+ *
+ * 시험이 io.to(room).emit을 직접 부르면 그것은 어떤 제외도 지나지 않는 원시 방송이라,
+ * "제외가 동작하는가"를 전혀 검사하지 못한다 — 모든 방 방송이 실제로 지나는 그 함수를 쓴다.
+ */
+const channelMembership = require('../channelMembership')
+function broadcastThroughProductionBoundary(io, roomId, event, payload) {
+    channelMembership.emitToChannel(io, roomId, event, payload)
+}
+
+test('F-23(AC-04): join 완료 → publish 전 → 영수증 대기 구간의 방송은 확정 전 입장자에게 한 번도 닿지 않는다', async (t) => {
+    const beforeFinalize = deferred()
+    const afterPublish = deferred()
+    const { io, hostSocket, guestSocket, room } = await setupRoomWithInvite(t, {
+        maxPlayers: 6,
+        fillWith: ['invite-delivery-peer'],
+        gates: { beforeFinalize: beforeFinalize.promise, afterPublish: afterPublish.promise },
+    })
+    const peerSocket = io.sockets.sockets.get('sock-invite-delivery-peer')
+    assert.ok(peerSocket, '양성 대조로 쓸 정상 참가자 소켓이 있어야 한다')
+
+    const accepting = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    await drainTicks()
+
+    // ① join은 끝났지만 publish 전이다.
+    assert.equal(guestSocket.rooms.has(room.roomId), true, '전제: 채널에는 이미 가입돼 있다')
+    broadcastThroughProductionBoundary(io, room.roomId, 'probe_before_publish', { roomId: room.roomId })
+    // 프로덕션 방송 경계를 거치는 실제 사건도 함께 낸다.
+    await callAsPromise(handleSetReady, io, hostSocket, HOST, readyPayload(room))
+
+    beforeFinalize.resolve()
+    await drainTicks()
+
+    // ② publish는 끝났지만 durable 영수증은 아직 없다.
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts[0]?.[1].phase, 'published',
+        '전제: publish까지 진행된 상태여야 한다',
+    )
+    broadcastThroughProductionBoundary(io, room.roomId, 'probe_after_publish', { roomId: room.roomId })
+    await callAsPromise(handleSetReady, io, hostSocket, HOST, readyPayload(room, false))
+
+    assert.equal(received(guestSocket, 'probe_before_publish'), 0, 'publish 전 방송이 확정 전 입장자에게 닿았다')
+    assert.equal(received(guestSocket, 'probe_after_publish'), 0, '영수증 대기 중 방송이 확정 전 입장자에게 닿았다')
+    assert.equal(received(guestSocket, 'player_ready_changed'), 0, '확정 전 입장자가 준비 변경을 받았다')
+    // 양성 대조 — 정상 참가자는 같은 방송을 실제로 받는다(fixture가 그냥 아무에게도 안 보내는 것이 아니다).
+    assert.equal(received(peerSocket, 'probe_before_publish'), 1, '정상 참가자가 방송을 받지 못했다')
+    assert.equal(received(peerSocket, 'probe_after_publish'), 1, '정상 참가자가 방송을 받지 못했다')
+    assert.ok(received(peerSocket, 'player_ready_changed') >= 1, '정상 참가자가 준비 변경을 받지 못했다')
+
+    // ③ durable 확정 이후에는 정상 수신이 시작된다.
+    afterPublish.resolve()
+    const ack = await accepting
+    assert.equal(ack.ok, true, ack.message)
+
+    broadcastThroughProductionBoundary(io, room.roomId, 'probe_after_confirm', { roomId: room.roomId })
+    assert.equal(received(guestSocket, 'probe_after_confirm'), 1, '확정된 참가자가 방송을 받지 못했다')
+    // 확정 전 구간의 사건은 소급해서 도착하지 않는다.
+    assert.equal(received(guestSocket, 'probe_before_publish'), 0)
+    assert.equal(received(guestSocket, 'probe_after_publish'), 0)
+})
+
+test('F-23(AC-04): 영수증 실패로 끝난 시도는 성공 ACK도 없고, 같은 소켓의 다음 정상 입장은 방송을 정상 수신한다', async (t) => {
+    const { io, guestSocket, room } = await setupRoomWithInvite(t, {
+        maxPlayers: 6, gates: { receiptShouldFail: true },
+    })
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false, '영수증 실패가 성공 ACK로 전달됐다')
+
+    broadcastThroughProductionBoundary(io, room.roomId, 'probe_after_failure', { roomId: room.roomId })
+    assert.equal(received(guestSocket, 'probe_after_failure'), 0, '실패한 입장자가 방송을 받았다')
+
+    // 폐기된 옛 토큰이 남아 있으면 같은 소켓의 **정상** 입장이 영구히 차단된다.
+    const joined = await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
+    assert.equal(joined?.ok ?? true, true, `정상 재입장이 거부됐다: ${JSON.stringify(joined)}`)
+    broadcastThroughProductionBoundary(io, room.roomId, 'probe_after_rejoin', { roomId: room.roomId })
+    assert.equal(
+        received(guestSocket, 'probe_after_rejoin'), 1,
+        '폐기된 옛 제외 토큰이 남아 새 정상 소속이 방송을 받지 못한다',
+    )
+})
 
 test('review5 #1: 영수증이 지연되는 동안 기한이 지나도 미확정 소속을 정상 소속으로 답하지 않는다', async (t) => {
     matchmaking.__setAdmissionTimeoutsForTests({ step: 200, total: 200 })

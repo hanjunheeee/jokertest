@@ -1103,8 +1103,27 @@ test('night turn: [은폐] 전멸 여부는 개별 소켓 emit으로도 새지 �
 
     for (const [label, captured] of [['전멸', wiped], ['건너뛰기', skipped]]) {
         for (const socket of captured.sockets.values()) {
-            const turnEmits = socket.emitted.filter((e) => NIGHT_TURN_EVENTS.includes(e.event))
-            assert.deepEqual(turnEmits, [], `${label}: 턴 이벤트가 개별 소켓으로 나갔다(${socket.id})`)
+            // F-23(AC-04): 공용 fixture가 이제 방송을 실제 수신자에게도 전달한다(viaBroadcast로
+            // 표시). 이 시험이 잡으려는 것은 **표적 개별 전달**이므로 방송 도착분은 제외한다 —
+            // 채널 전체에 똑같이 간 방송은 어떤 직업 조합도 드러내지 않는다(위 스트림 대조가
+            // 그 동일성을 이미 확인한다).
+            const targetedTurnEmits = socket.emitted
+                .filter((e) => NIGHT_TURN_EVENTS.includes(e.event) && e.viaBroadcast !== true)
+            assert.deepEqual(targetedTurnEmits, [], `${label}: 턴 이벤트가 개별 소켓으로 나갔다(${socket.id})`)
+        }
+    }
+
+    // 그리고 방송으로 도착한 턴 스트림 자체도 소켓마다 완전히 같아야 한다 — 어느 한 소켓만
+    // 더 받거나 덜 받으면 그 차이가 곧 직업 조합의 누출이다.
+    for (const [label, captured] of [['전멸', wiped], ['건너뛰기', skipped]]) {
+        const streams = [...captured.sockets.values()].map((socket) => ({
+            id: socket.id,
+            turns: socket.received.filter((e) => NIGHT_TURN_EVENTS.includes(e.event)),
+        }))
+        assert.ok(streams.length > 1, '대조할 소켓이 둘 이상이어야 한다')
+        for (const stream of streams) {
+            assert.deepEqual(stream.turns, streams[0].turns,
+                `${label}: 소켓마다 받은 턴 이벤트가 다르다(${stream.id})`)
         }
     }
 })

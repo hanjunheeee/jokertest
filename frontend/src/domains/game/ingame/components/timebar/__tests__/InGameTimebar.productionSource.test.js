@@ -103,7 +103,14 @@ test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연
   // 사망 연출: 로컬 훅에서 받아 오버레이로 넘기고, 결과 페이지 이동을 큐가 빌 때까지 보류한다.
   assert.match(source, /import \{ useInGameKillReveal \} from "\.\.\/hooks\/useInGameKillReveal\.js"/)
   assert.match(source, /const killReveal = useInGameKillReveal\(\{ hold: roleReveal\.open \}\)/)
-  assert.match(source, /useInGameResultNavigation\(\{ hold: killReveal\.open \|\| killReveal\.pending \}\)/)
+  // F-23(SPLIT-1): 기존 두 보류 조건은 그대로 두고, 신원 재결속 보류가 **같은 자리에** 더해진다.
+  // 신원·연결 전이로 큐가 버려지는 순간 잔존 ENDED로 넘어가지 않게 하는 조건이다.
+  assert.match(
+    source,
+    /useInGameResultNavigation\(\{\s*hold: killReveal\.open \|\| killReveal\.pending \|\| identityRebindPending,\s*\}\)/,
+  )
+  assert.match(source, /const identityRebindPending = useInGameSnapshotRebindPending\(\)/)
+  assert.match(source, /useInGameSnapshotRebindPending,\s*\} from "\.\.\/hooks\/useInGameSessionSnapshotSync\.js"/)
 
   // 밤 개인 결과: 사망 연출 뒤 순서로 열리고, 확인 콜백은 store를 비우는 훅의 것을 그대로 쓴다.
   assert.match(
@@ -133,6 +140,11 @@ test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연
   }
 
   // 두 오버레이가 떠 있는 동안에도 아래 게임 표면은 잠긴다(오버레이 스택의 판단에 더해서만).
-  assert.match(source, /const surfaceLocked = interactionBlocked \|\| killReveal\.open \|\| nightPrivateResult\.open/)
+  // F-23(AC-06): 확정 사망 선택창도 같은 잠금에 참여한다 — 선택을 받는 동안 뒤의 보드·채팅·
+  // 투표가 눌리면 안 된다. 줄바꿈이 들어갈 수 있으므로 공백을 유연하게 본다.
+  assert.match(
+    source,
+    /const surfaceLocked =\s*interactionBlocked \|\| killReveal\.open \|\| nightPrivateResult\.open \|\| deadChoiceOpen/,
+  )
   assert.match(source, /inert=\{surfaceLocked \|\| undefined\}/)
 })

@@ -2454,6 +2454,72 @@ test('AC-06: 방 채널 방송(player_ready_changed)도 배제된 소켓에는 �
     assert.equal(received('ready-x-h'), 0)
 })
 
+// ═════════════════════════════════════════════════════════════════════════════
+// F-23(AC-04) — 전달 제외의 **소유 토큰**
+//
+// 같은 (채널, 소켓)에 대해 서로 다른 두 흐름이 동시에 제외를 들고 있을 수 있다:
+// 옛 이탈 정리(detach)와, 채널 가입은 끝났지만 durable 확정을 기다리는 입장(admission).
+// 예전에는 해제가 쌍 전체를 지워, 먼저 끝난 쪽이 아직 유효한 다른 쪽의 제외까지 지웠다.
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('F-23(AC-04): 한 소유자가 제외를 풀어도 다른 소유자의 제외는 남는다', () => {
+    const channelId = 'chan-owner-tokens'
+    const socketId = 'sock-owner-tokens'
+    const detachOwner = channelMembership.createChannelExclusionOwner('detach')
+    const admissionOwner = channelMembership.createChannelExclusionOwner('admission')
+    assert.notEqual(detachOwner, admissionOwner, '토큰은 시도마다 달라야 한다')
+
+    channelMembership.excludeSocketFromChannel(channelId, socketId, detachOwner)
+    channelMembership.excludeSocketFromChannel(channelId, socketId, admissionOwner)
+    assert.equal(channelMembership.isSocketExcludedFromChannel(channelId, socketId), true)
+
+    // 옛 이탈이 끝났다 — 그러나 확정 전 입장의 제외는 그대로여야 한다.
+    channelMembership.releaseChannelExclusion(channelId, socketId, detachOwner)
+    assert.equal(
+        channelMembership.isSocketExcludedFromChannel(channelId, socketId), true,
+        '한 흐름의 해제가 아직 유효한 다른 흐름의 제외까지 지웠다',
+    )
+    assert.deepEqual(channelMembership.getChannelExclusions(channelId), [socketId])
+
+    // 입장까지 확정되면 그때 비로소 풀린다.
+    channelMembership.releaseChannelExclusion(channelId, socketId, admissionOwner)
+    assert.equal(channelMembership.isSocketExcludedFromChannel(channelId, socketId), false)
+    assert.deepEqual(channelMembership.getChannelExclusions(channelId), [])
+})
+
+test('F-23(AC-04): 같은 소유자의 중복 제외는 한 번만 세고, 남의 토큰으로는 풀 수 없다', () => {
+    const channelId = 'chan-owner-idempotent'
+    const socketId = 'sock-owner-idempotent'
+    const owner = channelMembership.createChannelExclusionOwner('detach')
+    const stranger = channelMembership.createChannelExclusionOwner('detach')
+
+    channelMembership.excludeSocketFromChannel(channelId, socketId, owner)
+    channelMembership.excludeSocketFromChannel(channelId, socketId, owner)
+    // 남의 토큰으로 푸는 것은 근거가 없다.
+    channelMembership.releaseChannelExclusion(channelId, socketId, stranger)
+    assert.equal(channelMembership.isSocketExcludedFromChannel(channelId, socketId), true)
+
+    channelMembership.releaseChannelExclusion(channelId, socketId, owner)
+    assert.equal(
+        channelMembership.isSocketExcludedFromChannel(channelId, socketId), false,
+        '같은 소유자의 중복 등록이 두 번 세어져 한 번의 해제로 풀리지 않았다',
+    )
+})
+
+test('F-23(AC-04): 연결이 끝나면 소유자와 무관하게 그 소켓의 모든 제외가 사라진다', () => {
+    const socketId = 'sock-owner-disconnect'
+    const ownerA = channelMembership.createChannelExclusionOwner('detach')
+    const ownerB = channelMembership.createChannelExclusionOwner('admission')
+    channelMembership.excludeSocketFromChannel('chan-own-1', socketId, ownerA)
+    channelMembership.excludeSocketFromChannel('chan-own-1', socketId, ownerB)
+    channelMembership.excludeSocketFromChannel('chan-own-2', socketId, ownerA)
+
+    channelMembership.releaseSocketFromAllChannels(socketId)
+
+    assert.deepEqual(channelMembership.getChannelExclusions('chan-own-1'), [])
+    assert.deepEqual(channelMembership.getChannelExclusions('chan-own-2'), [])
+})
+
 test('AC-06: 살아 있는 소속이 하나도 없으면 떼지 못한 연결을 끊고 배제를 정리한다', async () => {
     const channelId = 'chan-dead'
     const socket = createLeaveDenyingSocket('dead-sock', { joinedChannels: [channelId] })

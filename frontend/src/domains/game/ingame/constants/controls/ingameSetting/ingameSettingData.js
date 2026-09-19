@@ -39,12 +39,10 @@ export const INGAME_SETTING_ROOM_ROWS = [
     description: "추방할 플레이어를 선택 후 추방할 수 있습니다.",
     actionLabel: "추방하기",
   },
-  {
-    kind: "checkbox",
-    id: "allow-spectators",
-    title: "관전자 허용",
-    defaultChecked: false,
-  },
+  // F-23(AC-01/AC-02): "관전자 허용" 체크박스는 여기서 제거했다. 외부 관전자 입장은 설정·
+  // 라우트·서버 권한 어디에도 두지 않는다(GAME-03). 이미 그 판에 참가한 **사망자**가 계속
+  // 보는 것은 별도 관전 기능이 아니라 기존 참가자 신분 그대로이므로(InGamePage의 사망 선택),
+  // 이 제거가 그 수신을 건드리지 않는다.
   {
     kind: "checkbox",
     id: "keep-settings-next-game",

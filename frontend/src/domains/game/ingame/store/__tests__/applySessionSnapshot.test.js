@@ -158,6 +158,91 @@ test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영
   assert.equal(result.state.tribunal, null)
 })
 
+// ── F-23(AC-05): 공개 밤 사망 연출(deathReveals)의 스냅샷 복구 ──────────────────
+//
+// 서버는 예전부터 이 필드를 스냅샷에 실었지만 store가 버려서, 연출이 재생되기 전에
+// 새로고침·재연결한 참가자는 그 밤의 공개 사망을 끝내 보지 못했다.
+
+test("F-23(AC-05) DAY 스냅샷의 공개 deathReveals를 정규화해 그대로 옮긴다", () => {
+  const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
+  const response = baseResponse({
+    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
+    nightResult: {
+      dayIndex: 1, victimUuid: "p3",
+      deathReveals: [{ victimUuid: "p3", source: "JOKER" }],
+    },
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.notEqual(result, current)
+  assert.deepEqual(result.state.nightResult, {
+    dayIndex: 1, victimUuid: "p3", deathReveals: [{ victimUuid: "p3", source: "JOKER" }],
+  })
+})
+
+test("F-23(AC-05) 허용되지 않은 source·roster 밖 uuid·형태가 틀린 원소는 연출에서 제외되고 정상 원소만 남는다", () => {
+  const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
+  const response = baseResponse({
+    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
+    nightResult: {
+      dayIndex: 1, victimUuid: "p3",
+      deathReveals: [
+        { victimUuid: "p3", source: "WITCH_HUNTER" },
+        // roster 밖 — 화면이 닉네임조차 만들 수 없다.
+        { victimUuid: "outsider", source: "JOKER" },
+        // 허용 목록 밖 source.
+        { victimUuid: "p2", source: "MADE_UP" },
+        // 형태가 틀린 원소.
+        null,
+        // 살해자 identity 같은 예상치 못한 필드는 통과하지 않는다.
+        { victimUuid: "p2", source: "OTHER", killerUuid: "p1" },
+      ],
+    },
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.notEqual(result, current)
+  assert.deepEqual(result.state.nightResult.deathReveals, [
+    { victimUuid: "p3", source: "WITCH_HUNTER" },
+    { victimUuid: "p2", source: "OTHER" },
+  ])
+})
+
+test("F-23(AC-05) deathReveals 키가 없는 옛 스냅샷은 그대로 복원되고 그 키를 만들지도 않는다", () => {
+  const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
+  const response = baseResponse({
+    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
+    nightResult: { dayIndex: 1, victimUuid: "p3" },
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  assert.notEqual(result, current)
+  assert.equal(Object.hasOwn(result.state.nightResult, "deathReveals"), false)
+})
+
+test("F-23(AC-05) 복원된 deathReveals는 원본 응답과 독립이다(응답을 나중에 바꿔도 store가 변하지 않는다)", () => {
+  const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
+  const reveals = [{ victimUuid: "p3", source: "JOKER" }]
+  const response = baseResponse({
+    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
+    nightResult: { dayIndex: 1, victimUuid: "p3", deathReveals: reveals },
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+
+  reveals.push({ victimUuid: "p2", source: "OTHER" })
+  reveals[0].source = "OTHER"
+
+  assert.deepEqual(result.state.nightResult.deathReveals, [{ victimUuid: "p3", source: "JOKER" }])
+})
+
 test("applySessionSnapshotPure: 유효한 TRIBUNAL(미확정) 스냅샷은 dayVoteResolution/tribunal을 함께 반영한다", () => {
   const current = baseCurrent({ phase: "DAY", dayIndex: 1 })
   const response = baseResponse({
@@ -392,6 +477,14 @@ const rejectionCases = [
     "NIGHT에서 nightResult가 있으면 거부된다",
     () => baseCurrent(),
     () => baseResponse({ phase: "NIGHT", nightResult: { dayIndex: 0, victimUuid: null } }),
+  ],
+  [
+    "F-23(AC-05) deathReveals가 배열이 아니면 거부된다(구조는 엄격하게 본다)",
+    () => baseCurrent({ phase: "NIGHT", dayIndex: 1 }),
+    () => baseResponse({
+      phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+      nightResult: { dayIndex: 1, victimUuid: "p3", deathReveals: { victimUuid: "p3", source: "JOKER" } },
+    }),
   ],
   [
     "NIGHT에서 dayVoteResolution이 있으면 거부된다",

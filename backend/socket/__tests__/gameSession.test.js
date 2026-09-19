@@ -36,6 +36,7 @@ const {
     handleSubmitDayVote,
     handleResolveDayVote,
     handleCastTribunalVote,
+    handleResolveTribunalVote,
     handleLeaveGameSession,
     handleGetSessionSnapshot,
     handleSubmitGameChatMessage,
@@ -1753,12 +1754,26 @@ test('submit_game_chat_message: 사망 발신자는 NOT_ELIGIBLE로 거부되고
     assert.equal(io.broadcasts.length, 0)
 })
 
-test('submit_game_chat_message: 같은 uuid의 정상 소켓이 여럿이어도 각 소켓이 정확히 1건씩 받고 중복 전달이 없다', () => {
+/**
+ * F-23(AC-04) 계약 변경: **canonical 소켓 하나에만** 전달한다.
+ *
+ * 이전 계약은 "같은 uuid의 소켓이 여럿이면 각각 1건씩"이었다. 그 계약은 같은 계정의 **교체된
+ * 옛 소켓**이 채널에 남아 있는 동안 그 판의 공개 상태를 계속 받는 통로였다 — 재접속으로
+ * registry가 새 소켓을 가리킨 뒤에도, 옛 소켓의 채널 가입이 (비동기 leave가 끝나기 전까지)
+ * 그대로 남아 있기 때문이다.
+ *
+ * 이 저장소의 모든 명령 핸들러는 이미 isCurrentSocketForUuid로 비-canonical 소켓을 거부한다
+ * (그 소켓으로는 투표도 채팅 전송도 나가기도 할 수 없다). 수신만 열어 두면 "아무 것도 할 수
+ * 없지만 모든 것을 보는" 연결이 남는데, 그것이 AC-04가 막으려는 구독 그 자체다. 이제 전달도
+ * 같은 기준을 쓴다.
+ */
+test('submit_game_chat_message: 같은 uuid라도 canonical이 아닌 소켓은 받지 않고, canonical 소켓은 정확히 1건씩 받는다', () => {
     const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs5a', 'gcs5b', 'gcs5c'], {
         roomId: 'room-gcs-5',
         phase: 'DAY',
     })
-    // 같은 참가자의 두 번째 소켓(다른 socket id)도 같은 channel에 들어와 있다.
+    // 같은 참가자의 두 번째 소켓(다른 socket id)도 같은 channel에 들어와 있다 — 그러나 registry가
+    // 가리키는 canonical 소켓은 여전히 `sock-gcs5b`다.
     const secondSocket = createFakeSocket('gcs5b', { id: 'sock-gcs5b-2' })
     secondSocket.rooms.add(session.channelId)
     io.sockets.sockets.set(secondSocket.id, secondSocket)
@@ -1771,10 +1786,11 @@ test('submit_game_chat_message: 같은 uuid의 정상 소켓이 여럿이어도 
     for (const uuid of ['gcs5a', 'gcs5b', 'gcs5c']) {
         assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1)
     }
-    assert.equal(deliveredCount(secondSocket, DAY_CHAT_EVENT), 1)
-    // 전체 전달 건수가 수신 소켓 수와 정확히 같다 — 어느 소켓도 두 번 받지 않는다.
+    assert.equal(deliveredCount(secondSocket, DAY_CHAT_EVENT), 0,
+        'canonical이 아닌 같은 계정의 소켓이 공개 채팅을 받았다')
+    // 전체 전달 건수가 canonical 수신 소켓 수와 정확히 같다 — 어느 소켓도 두 번 받지 않는다.
     const total = [...io.sockets.sockets.values()].reduce((sum, s) => sum + deliveredCount(s, DAY_CHAT_EVENT), 0)
-    assert.equal(total, 4)
+    assert.equal(total, 3)
 })
 
 test('submit_game_chat_message: 다른 GameSession의 소켓에는 전달되지 않는다(교차 오염 없음)', () => {
@@ -2165,6 +2181,101 @@ test('leave_game_session: 명시적 이탈은 ack {ok:true}이고 이탈자만 �
     // 소속이 풀리는 것은 이탈자뿐이다.
     assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-host'), false)
     assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-joiner'), true)
+})
+
+// ---------------------------------------------------------------------------
+// F-23(AC-04/AC-06) — 이탈 커밋 직후의 전달 경계와 실패 ACK
+// ---------------------------------------------------------------------------
+
+test('F-23(AC-04): 이탈 커밋 직후 첫 공개 사건부터 이탈자의 실제 수신은 0이고, 잔류자는 정상 수신한다', async () => {
+    const { io, joinerSocket, gameId, channelId } =
+        await startRealTwoPlayerSession('leave-deliver-host', 'leave-deliver-joiner')
+    // 실제 registry가 가리키는 canonical 소켓을 그대로 쓴다(관례상 `sock-${uuid}`).
+    const leaverSocket = io.sockets.sockets.get('sock-leave-deliver-host')
+    assert.ok(leaverSocket, '이탈자 소켓이 io에 등록돼 있어야 한다')
+
+    /**
+     * **채널에서 떼는 일을 붙잡아 둔다.**
+     *
+     * 실제 adapter의 leave는 비동기다. 그 완료 전에 커밋 직후의 공개 사건이 먼저 나가는
+     * 구간이 존재하고, 그 구간이 바로 "이미 빠진 참가자가 그 판의 공개 상태를 계속 받는"
+     * 자리다. 여기서는 leave를 영영 끝내지 않아 그 최악의 구간을 고정한다.
+     */
+    leaverSocket.leave = () => new Promise(() => {})
+
+    // 커밋 뒤에도 그 판을 가리킬 수 있도록 **살아 있는 세션 객체**를 미리 잡아 둔다
+    // (상태 스냅샷은 players가 배열이라 프로덕션 경계의 입력이 될 수 없다).
+    const session = gameSessionCore.getActiveSessionForDeparture('leave-deliver-host', gameId)
+    assert.ok(session, '전제: 이탈 전에는 활성 세션이 있어야 한다')
+
+    const receivedBefore = leaverSocket.received.length
+    handleLeaveGameSession(io, leaverSocket, 'leave-deliver-host', { gameId }, countingCallback().callback)
+
+    // 커밋 직후의 공개 사건(사망·참여 변화)은 이미 나갔다 — 그 어느 것도 이탈자에게 닿지 않아야 한다.
+    assert.equal(leaverSocket.rooms.has(channelId), true, '전제: leave가 아직 끝나지 않아 채널에 남아 있다')
+    assert.equal(
+        leaverSocket.received.length, receivedBefore,
+        '이탈 커밋 직후의 공개 사건이 이탈자에게 전달됐다',
+    )
+    // 잔류자는 같은 사건을 실제로 받는다(양성 대조 — fixture가 아무에게도 안 보내는 것이 아니다).
+    assert.ok(
+        joinerSocket.received.some((entry) => entry.event === 'player_eliminated'),
+        '잔류자가 공개 사망 사건을 받지 못했다',
+    )
+    assert.ok(
+        joinerSocket.received.some((entry) => entry.event === 'session_participation_changed'),
+        '잔류자가 참여 변화 사건을 받지 못했다',
+    )
+
+    // 이후의 어떤 공개 방송도 마찬가지다 — 프로덕션 방송 경계를 그대로 쓴다.
+    gameSessionSocketLayer.__testables.emitToGameChannel(io, session, 'probe_after_departure', { gameId })
+    assert.equal(
+        leaverSocket.received.filter((e) => e.event === 'probe_after_departure').length, 0,
+        '이탈자가 이후 공개 방송을 받았다',
+    )
+    assert.equal(
+        joinerSocket.received.filter((e) => e.event === 'probe_after_departure').length, 1,
+        '잔류자가 이후 공개 방송을 받지 못했다',
+    )
+})
+
+test('F-23(AC-06): 이탈 커밋이 실제로 실패하면 성공 ACK로 바꾸지 않는다(멱등 성공과 구분)', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-fail-host', 'leave-fail-joiner')
+    const socket = io.sockets.sockets.get('sock-leave-fail-host')
+
+    // core 커밋이 던지는 상황을 재현한다 — applyParticipantDeparture는 INTERNAL_ERROR를 돌려준다.
+    const originalCommit = gameSessionCore.commitParticipantDeparture
+    gameSessionCore.commitParticipantDeparture = () => { throw new Error('커밋 실패(테스트 주입)') }
+    try {
+        const { callback, getResponse } = countingCallback()
+        handleLeaveGameSession(io, socket, 'leave-fail-host', { gameId }, callback)
+        const response = getResponse()
+        assert.equal(response.ok, false, '실제 커밋 실패가 성공 ACK로 전달됐다')
+        assert.equal(response.code, 'INTERNAL_ERROR')
+    } finally {
+        gameSessionCore.commitParticipantDeparture = originalCommit
+    }
+
+    // 서버 상태는 그대로다 — 아직 참여 중이다.
+    const stored = gameSessionCore.__getStateSnapshotForTests().gameSessions.find(([id]) => id === gameId)[1]
+    const me = stored.players.find(([uuid]) => uuid === 'leave-fail-host')[1]
+    assert.notEqual(me.isParticipating, false, '실패했는데 참여가 종료됐다')
+
+    // 정상 재시도는 멱등 성공으로 이어진다.
+    const { callback: retryCallback, getResponse: getRetry } = countingCallback()
+    handleLeaveGameSession(io, socket, 'leave-fail-host', { gameId }, retryCallback)
+    assert.deepEqual(getRetry(), { ok: true }, '재시도가 성공하지 않았다')
+})
+
+test('F-23(AC-06): 이미 빠진 참가자의 중복 나가기는 여전히 멱등 성공이다', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-dup-host', 'leave-dup-joiner')
+    const socket = io.sockets.sockets.get('sock-leave-dup-host')
+
+    handleLeaveGameSession(io, socket, 'leave-dup-host', { gameId }, countingCallback().callback)
+
+    const { callback, getResponse } = countingCallback()
+    handleLeaveGameSession(io, socket, 'leave-dup-host', { gameId }, callback)
+    assert.deepEqual(getResponse(), { ok: true }, '중복 나가기가 실패로 바뀌었다')
 })
 
 test('leave_game_session: 이미 종료된 세션에 대한 뒤늦은 이탈 요청은 멱등하게 {ok:true}이고 추가 game_ended 방송이 없다', async () => {
@@ -4331,3 +4442,177 @@ for (const phase of ['DAY', 'TRIBUNAL', 'NIGHT']) {
         assert.equal(restored.themeIndex, originalTheme)
     })
 }
+
+// ---------------------------------------------------------------------------
+// F-23(AC-05) — 사망해도 참가자 신분은 유지된다: 공개 수신 · 행동 거부 · 이탈 후 차단
+//
+// 위 회귀는 "재접속이 판을 부수지 않는다"까지만 본다. 여기서는 그 뒤를 잇는다 — 교체 연결이
+// **다음 공개 판정을 실제로 받고**(방송 시도 기록이 아니라 수신자의 실제 수신으로 센다),
+// 그러면서도 생존이 필요한 행동은 전부 거부되며, 명시적 이탈을 커밋한 뒤에는 더 받지 않는다.
+//
+// 4인 시민 fixture로는 "능력 거부"를 증명할 수 없다(DOCTOR·GUARD가 아예 배정되지 않는다).
+// 그래서 8인 fixture를 쓰고, 사망시키는 대상도 **능력 보유자(GUARD)**로 고른다.
+// ---------------------------------------------------------------------------
+
+test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판정을 실제로 받고, 낮·재판·밤 행동은 모두 거부된다', async () => {
+    const { session, io, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-ac05-dead' })
+
+    // --- 1) 실제 밤 판정으로 능력 보유자(GUARD)를 확정 사망시킨다 ---
+    gameSessionCore.submitNightAction(jokerUuid, session.id, guardUuid)
+    gameSessionCore.submitNightAction(guardUuid, session.id, null)
+    gameSessionCore.submitNightAction(doctorUuid, session.id, null)
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, countingCallback().callback)
+    assert.equal(session.players.get(guardUuid).alive, false, '전제: 실제 판정으로 사망이 확정돼야 한다')
+    assert.equal(session.phase, 'DAY')
+
+    // --- 2) 끊김 → 교체 연결. 유예도 종료 방송도 없고 잔류자 routing은 그대로다 ---
+    const oldSocket = socketByUuid.get(guardUuid)
+    oldSocket.data.activeGameId = session.id
+    oldSocket.connected = false
+    await gameSessionSocketLayer.onDisconnect(io, oldSocket, guardUuid)
+    assert.equal(io.broadcasts.some((event) => event.event === 'game_ended'), false)
+    assert.equal(gameSessionSocketLayer.__testables.getDisconnectGraceRun(session.id, guardUuid), undefined)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo(citizenUuids[0]).gameId, session.id)
+
+    const replacement = createFakeSocket(guardUuid)
+    replacement.id = 'reconnected-' + guardUuid
+    io.sockets.sockets.delete(oldSocket.id)
+    io.sockets.sockets.set(replacement.id, replacement)
+    gameSessionSocketLayer.setOnlineUsersRegistry(new Map(
+        uuids.map((id) => [id, id === guardUuid ? replacement.id : socketByUuid.get(id).id]),
+    ))
+    await gameSessionSocketLayer.resyncSessionRouting(replacement, guardUuid)
+    socketByUuid.set(guardUuid, replacement)
+
+    const snapshotAck = countingCallback()
+    handleGetSessionSnapshot(io, replacement, guardUuid, { gameId: session.id }, snapshotAck.callback)
+    const snapshot = snapshotAck.getResponse()
+    assert.equal(snapshot.ok, true, '사망이 재접속 자격을 없앴다')
+    const seated = snapshot.players.find((entry) => entry.uuid === guardUuid)
+    assert.equal(seated.isAlive, false)
+    assert.notEqual(seated.isParticipating, false, '사망과 참여 종료는 별개의 사실이다')
+
+    const witness = citizenUuids[0]
+    const aliveUuids = uuids.filter((uuid) => session.players.get(uuid).alive)
+    assert.equal(aliveUuids.length, 7, '전제: 사망자 한 명을 제외한 7명이 살아 있어야 한다')
+
+    // --- 3) 낮 투표: 사망자는 제출할 수 없고, 판정 방송은 실제로 받는다 ---
+    for (const uuid of aliveUuids) {
+        handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuid), uuid, { gameId: session.id }, countingCallback().callback)
+    }
+    assert.equal(session.dayPhase, 'DAY_VOTE', '전제: 생존자 전원 준비로 투표가 열려야 한다')
+
+    const votesBefore = session.dayVotes.size
+    const deadVoteAck = countingCallback()
+    handleSubmitDayVote(
+        io, replacement, guardUuid,
+        { gameId: session.id, targetId: witness },
+        deadVoteAck.callback,
+    )
+    await flushAsync()
+    assert.equal(deadVoteAck.getResponse().ok, false, '사망자의 낮 투표가 받아들여졌다')
+    assert.equal(session.dayVotes.size, votesBefore, '사망자의 낮 투표가 표 집계를 바꿨다')
+
+    // 생존자들의 실제 제출·판정으로 다음 공개 사건을 만든다(방송을 손으로 쏘지 않는다).
+    const defendant = citizenUuids[1]
+    for (const uuid of aliveUuids) {
+        // 피고 본인은 자기를 찍을 수 없다 — 기권으로 제출해 생존자 전원의 제출을 채운다.
+        handleSubmitDayVote(
+            io, socketByUuid.get(uuid), uuid,
+            { gameId: session.id, targetId: uuid === defendant ? null : defendant },
+            countingCallback().callback,
+        )
+    }
+    await flushAsync()
+    assert.equal(session.dayVotes.size, aliveUuids.length, '전제: 생존자 전원의 표가 모여야 판정할 수 있다')
+    const dayResolveAck = countingCallback()
+    handleResolveDayVote(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id, dayIndex: session.dayIndex }, dayResolveAck.callback)
+    assert.equal(dayResolveAck.getResponse().outcome, 'TRIBUNAL')
+    assert.equal(session.phase, 'TRIBUNAL')
+
+    assert.equal(
+        replacement.countReceived('day_vote_resolved'), 1,
+        '사망 참가자의 교체 연결이 다음 공개 판정을 받지 못했다',
+    )
+    assert.equal(
+        socketByUuid.get(witness).countReceived('day_vote_resolved'), 1,
+        '양성 대조: 정상 잔류자도 받지 못했다면 이 계수가 무의미하다',
+    )
+
+    // --- 4) 재판 투표: 사망자는 표를 넣을 수 없고, 판정 방송은 실제로 받는다 ---
+    const tribunalVotesBefore = session.tribunal.votes.size
+    const deadTribunalAck = countingCallback()
+    handleCastTribunalVote(
+        io, replacement, guardUuid,
+        { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' },
+        deadTribunalAck.callback,
+    )
+    assert.equal(deadTribunalAck.getResponse().ok, false, '사망자의 재판 표가 받아들여졌다')
+    assert.equal(session.tribunal.votes.size, tribunalVotesBefore, '사망자의 재판 표가 집계를 바꿨다')
+
+    for (const uuid of aliveUuids) {
+        if (uuid === defendant) continue // 피고는 자기 재판에 투표하지 않는다
+        handleCastTribunalVote(
+            io, socketByUuid.get(uuid), uuid,
+            { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' },
+            countingCallback().callback,
+        )
+    }
+    const tribunalResolveAck = countingCallback()
+    handleResolveTribunalVote(
+        io, socketByUuid.get(jokerUuid), jokerUuid,
+        { gameId: session.id, dayIndex: session.dayIndex },
+        tribunalResolveAck.callback,
+    )
+    assert.equal(tribunalResolveAck.getResponse().ok, true)
+    assert.equal(session.players.get(defendant).alive, true, '전제: 무죄 판정이라 처형이 없어야 한다')
+    assert.equal(session.phase, 'NIGHT', '전제: 무죄 판정은 곧바로 밤으로 넘어간다')
+    assert.equal(
+        replacement.countReceived('tribunal_vote_resolved'), 1,
+        '사망 참가자의 교체 연결이 재판 판정을 받지 못했다',
+    )
+    assert.equal(socketByUuid.get(witness).countReceived('tribunal_vote_resolved'), 1)
+
+    // --- 5) 밤 능력: 사망한 GUARD의 제출은 거부되고 행동 Map은 불변이다 ---
+    const nightActionsBefore = session.nightActions.size
+    const deadNightAck = countingCallback()
+    handleSubmitNightAction(
+        replacement, guardUuid,
+        { gameId: session.id, targetId: witness },
+        deadNightAck.callback,
+    )
+    assert.deepEqual(
+        deadNightAck.getResponse(),
+        { ok: false, code: 'ACTOR_NOT_ALIVE', message: '요청을 처리할 수 없습니다.' },
+        '사망한 능력 보유자의 밤 행동이 거부되지 않았다',
+    )
+    assert.equal(session.nightActions.size, nightActionsBefore, '사망자의 밤 행동이 행동 Map을 바꿨다')
+
+    // --- 6) 명시적 이탈: 그 순간부터 같은 참가자의 실제 수신이 끊긴다 ---
+    // 채널에서 떼는 일을 영영 붙잡아 둬, "이미 빠졌는데 아직 채널에 남아 있는" 최악의 구간을 고정한다.
+    replacement.leave = () => new Promise(() => {})
+    const receivedBeforeLeave = replacement.received.length
+    handleLeaveGameSession(io, replacement, guardUuid, { gameId: session.id }, countingCallback().callback)
+    assert.equal(
+        replacement.received.length, receivedBeforeLeave,
+        '이탈 커밋 직후의 첫 공개 사건이 이탈자에게 전달됐다',
+    )
+    assert.ok(
+        socketByUuid.get(witness).received.some((entry) => entry.event === 'session_participation_changed'),
+        '양성 대조: 잔류자가 참여 변화 사건을 받지 못했다',
+    )
+
+    // 이후의 공개 방송도 마찬가지다 — 프로덕션 방송 경계를 그대로 쓴다.
+    const beforeProbe = replacement.countReceived('probe_after_departure')
+    gameSessionSocketLayer.__testables.emitToGameChannel(io, session, 'probe_after_departure', { gameId: session.id })
+    assert.equal(replacement.countReceived('probe_after_departure'), beforeProbe, '이탈자가 이후 공개 방송을 받았다')
+    assert.equal(socketByUuid.get(witness).countReceived('probe_after_departure'), 1, '잔류자가 이후 공개 방송을 받지 못했다')
+
+    // roster·역할·사망 원인은 그대로 보존되고, 잔류 세션도 살아 있다.
+    assert.equal(session.players.get(guardUuid).role, 'GUARD', '이탈이 roster의 역할을 지웠다')
+    assert.equal(session.players.get(guardUuid).alive, false)
+    assert.equal(session.players.get(guardUuid).isParticipating, false)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo(witness).gameId, session.id, '이탈이 잔류자의 세션까지 끝냈다')
+    assert.equal(io.broadcasts.some((event) => event.event === 'game_ended'), false, '개인 이탈이 판을 끝냈다')
+})

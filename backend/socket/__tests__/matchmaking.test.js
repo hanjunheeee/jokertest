@@ -1085,6 +1085,137 @@ test('join_room_by_code: join 대기 중 같은 id의 다른 Room 객체로 교�
     assert.equal(joiner.left.length, 1)
 })
 
+// ---------------------------------------------------------------------------
+// F-23(AC-04) — 코드 참가의 join → 재검사 → 커밋 구간은 수신 자격이 아니다
+//
+// handleJoinRoomByCode는 socket.join을 **먼저** 끝내고 그 뒤에 방 인스턴스·정원·소속·전이
+// 세대를 다시 검사한다. 그 구간(과 거부된 뒤 채널을 떼는 구간)의 소켓은 아직/끝내 참가자가
+// 아닌데, 예전에는 아무 제외도 없어 그 방의 방송을 그대로 받았다.
+// ---------------------------------------------------------------------------
+
+const channelMembership = require('../channelMembership')
+
+/** 이 소켓이 실제로 받은(방송 포함) 그 이벤트의 건수 — 방송 **시도** 기록과 구분된다. */
+function receivedCount(socket, event) {
+    return socket.received.filter((entry) => entry.event === event).length
+}
+
+/**
+ * 방 채널 방송을 **프로덕션 경계 그대로** 낸다.
+ *
+ * 시험이 io.to(room).emit을 직접 부르면 그것은 어떤 제외도 지나지 않는 원시 방송이라
+ * "제외가 동작하는가"를 전혀 검사하지 못한다 — 모든 방 방송이 실제로 지나는 그 함수를 쓴다.
+ */
+function broadcastThroughProductionBoundary(io, roomId, event, payload = {}) {
+    channelMembership.emitToChannel(io, roomId, event, payload)
+}
+
+test('F-23(AC-04): join 뒤 재검사에서 거부된 입장자는 채널을 떼지 못해도 그 방의 방송을 받지 않는다', async (t) => {
+    t.after(() => channelMembership.__resetChannelExclusionsForTests())
+
+    const hostSocket = createFakeSocket('uuid-jbc-host')
+    const io = createFakeIo([hostSocket])
+    const created = await callAsPromise(
+        handleCreateRoom, io, hostSocket, 'uuid-jbc-host', validSettingsPayload(),
+    )
+    const { roomCode, roomId } = created.room
+
+    const gate = deferred()
+    const joiner = createFakeSocket('uuid-jbc-reject', { joinGate: gate.promise })
+    io.sockets.sockets.set(joiner.id, joiner)
+    const joinPromise = handleJoinRoomByCode(io, joiner, 'uuid-jbc-reject', roomCode)
+
+    await joiner.joinCalled
+    /**
+     * **채널에서 떼는 일을 붙잡아 둔다.**
+     *
+     * 실제 adapter의 leave는 비동기다. 거부 판정 직후 그 완료 전까지 이 소켓은 여전히 채널에
+     * 남아 있고, 그 구간이 바로 "참가자가 아닌 연결이 방 상태를 구독하는" 자리다. 여기서는
+     * leave를 영영 끝내지 않아 그 최악의 구간을 고정한다.
+     */
+    joiner.leave = () => new Promise(() => {})
+    // join이 대기하는 동안 방장이 방을 삭제한다 — join 완료 뒤 재검사가 이 입장을 거부한다.
+    matchmaking.__removeRoomForTests(roomId)
+    gate.resolve()
+    await joinPromise
+
+    assert.match(
+        joiner.emitted.find((e) => e.event === 'room_join_failed').payload.message, /찾을 수 없습니다/,
+    )
+    assert.equal(joiner.rooms.has(roomId), true, '전제: leave가 끝나지 않아 채널에 남아 있다')
+
+    broadcastThroughProductionBoundary(io, roomId, 'probe_after_reject')
+    assert.equal(
+        receivedCount(joiner, 'probe_after_reject'), 0,
+        '거부된 입장자가 그 방의 방송을 받았다',
+    )
+    // 양성 대조 — 정상 참가자(방장)는 같은 방송을 실제로 받는다.
+    assert.equal(
+        receivedCount(hostSocket, 'probe_after_reject'), 1,
+        '정상 참가자가 방송을 받지 못했다',
+    )
+})
+
+test('F-23(AC-04): 거부됐던 소켓의 다음 정상 입장은 방송을 정상 수신한다(옛 토큰이 남지 않는다)', async (t) => {
+    t.after(() => channelMembership.__resetChannelExclusionsForTests())
+
+    const hostSocket = createFakeSocket('uuid-jbc2-host')
+    const io = createFakeIo([hostSocket])
+    const created = await callAsPromise(
+        handleCreateRoom, io, hostSocket, 'uuid-jbc2-host', validSettingsPayload(),
+    )
+    const { roomCode, roomId } = created.room
+
+    // ① 정원을 넘겨 한 번 거부당한다(방은 그대로 남는다).
+    const gate = deferred()
+    const joiner = createFakeSocket('uuid-jbc2-join', { joinGate: gate.promise })
+    io.sockets.sockets.set(joiner.id, joiner)
+    const rejected = handleJoinRoomByCode(io, joiner, 'uuid-jbc2-join', roomCode)
+    await joiner.joinCalled
+    matchmaking.__removeRoomForTests(roomId)
+    gate.resolve()
+    await rejected
+
+    // ② 같은 코드의 방을 다시 만들고 정상 입장한다.
+    const recreated = await callAsPromise(
+        handleCreateRoom, io, hostSocket, 'uuid-jbc2-host', validSettingsPayload(),
+    )
+    await handleJoinRoomByCode(io, joiner, 'uuid-jbc2-join', recreated.room.roomCode)
+
+    broadcastThroughProductionBoundary(io, recreated.room.roomId, 'probe_after_rejoin')
+    assert.equal(
+        receivedCount(joiner, 'probe_after_rejoin'), 1,
+        '폐기된 옛 제외 토큰이 남아 새 정상 소속이 방송을 받지 못한다',
+    )
+})
+
+test('F-23(AC-04): 전달에서 제외된 소켓은 확정 참가자의 소켓이어도 game_started를 받지 않는다', async (t) => {
+    t.after(() => channelMembership.__resetChannelExclusionsForTests())
+
+    const hostSocket = createFakeSocket('uuid-excl-host')
+    const io = createFakeIo([hostSocket])
+    const { joinerSocket, room } = await setupReadyRoomForStart(
+        io, 'uuid-excl-host', 'uuid-excl-joiner', readyRoomHandlers,
+    )
+
+    // 같은 계정의 **떼지 못한 옛 소켓**이 채널에 남아 자기 토큰으로 제외돼 있는 상태를 만든다.
+    const staleSocket = createFakeSocket('uuid-excl-joiner', { id: 'sock-uuid-excl-joiner-stale' })
+    staleSocket.rooms.add(room.roomId)
+    io.sockets.sockets.set(staleSocket.id, staleSocket)
+    channelMembership.excludeSocketFromChannel(room.roomId, staleSocket.id, 'stale-detach')
+
+    const { getResponse, callback } = countingCallback()
+    await handleStartGame(io, hostSocket, 'uuid-excl-host', startPayload(room), callback)
+
+    assert.equal(getResponse().ok, true)
+    assert.equal(
+        staleSocket.emitted.filter((e) => e.event === 'game_started').length, 0,
+        '전달에서 제외된 소켓이 game_started를 받았다',
+    )
+    // 양성 대조 — 제외되지 않은 정상 소켓은 그대로 받는다.
+    assert.equal(joinerSocket.emitted.filter((e) => e.event === 'game_started').length, 1)
+})
+
 // ── leaveSocketRoomSafely: leave의 다양한 반환/예외 형태를 모두 흡수한다 ────
 
 test('leaveSocketRoomSafely: leave가 undefined/resolved Promise/동기 예외/reject 무엇을 반환해도 예외를 던지지 않는다', async () => {
@@ -1563,12 +1694,17 @@ test('start_game: callback이 없는 요청은 어떤 상태도 바꾸지 않는
 
     const before = matchmaking.__getStateSnapshotForTests()
     const beforeSession = gameSession.__getStateSnapshotForTests()
+    // F-23(AC-04): 공용 fixture가 이제 방송을 **실제 수신자에게 전달**한다 — 방 생성이 이미
+    // 낸 공개 목록 갱신이 이 소켓에도 기록돼 있다. 이 시험이 보는 것은 "start_game이 추가로
+    // 무엇을 보냈는가"이므로 기준선을 잡고 그 증가분을 센다(단언의 의미는 그대로다).
+    const emittedBefore = hostSocket.emitted.length
     await handleStartGame(io, hostSocket, 'uuid-start-nocb', startPayload(created.room), undefined)
     const after = matchmaking.__getStateSnapshotForTests()
 
     assert.deepEqual(after, before)
     assert.deepEqual(gameSession.__getStateSnapshotForTests(), beforeSession)
-    assert.equal(hostSocket.emitted.length, 0) // 이제 start_game은 ack로만 응답하므로 emit 자체가 없어야 한다
+    // 이제 start_game은 ack로만 응답하므로 emit 자체가 없어야 한다.
+    assert.equal(hostSocket.emitted.length, emittedBefore)
 })
 
 // ── start_game: 성공 경로(GameSession 전환) ─────────────────────────────

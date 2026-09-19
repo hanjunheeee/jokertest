@@ -80,18 +80,51 @@ const makeAbortedSession = (overrides = {}) => ({
     ...overrides,
 });
 
-const createFakeIo = () => ({
-    emitted: [],
-    left: [],
-    to(channelId) {
-        const emitted = this.emitted;
-        return { emit: (event, payload) => emitted.push({ channelId, event, payload }) };
-    },
-    in(channelId) {
-        const left = this.left;
-        return { socketsLeave: (room) => left.push({ channelId, room }) };
-    },
-});
+/**
+ * F-23(AC-04): 채널에 실제로 가입해 있는 **수신자**.
+ *
+ * 종료 알림은 이제 수신자별 자격(참여 중·연결·canonical 연결 객체·채널 가입·전달 제외)을
+ * 거쳐 개별 전달된다. 전달 대상이 하나도 없는 io로는 "방송이 나갔다"를 확인할 수 없으므로,
+ * 이 파일의 종료 시험도 실제 수신자를 세워 둔다.
+ */
+const makeMemberSocket = (uuid, channelId, id = `socket-${uuid}`) => {
+    const rooms = new Set([channelId]);
+    const socket = {
+        id,
+        data: { user: { uuid } },
+        connected: true,
+        rooms,
+        received: [],
+        left: [],
+        emit(event, payload) { socket.received.push({ event, payload }); },
+        join(room) { rooms.add(room); },
+        leave(room) { rooms.delete(room); socket.left.push(room); },
+    };
+    return socket;
+};
+
+/** 지정 이벤트를 실제로 몇 번 받았는가. */
+const receivedCount = (socket, event) => socket.received.filter((e) => e.event === event).length;
+
+const createFakeIo = (members = []) => {
+    const sockets = new Map(members.map((m) => [m.id, m]));
+    // 실제 Socket.IO처럼 각 연결이 같은 namespace registry를 가리키게 한다 — canonical 판정이
+    // "그 id로 조회한 객체가 바로 이 소켓인가"까지 묻기 때문이다.
+    for (const m of members) m.nsp = { sockets };
+    return {
+        emitted: [],
+        left: [],
+        sockets: { sockets },
+        to(channelId) {
+            const emitted = this.emitted;
+            return { emit: (event, payload) => emitted.push({ channelId, event, payload }) };
+        },
+        in(channelId) {
+            const left = this.left;
+            return { socketsLeave: (room) => left.push({ channelId, room }) };
+        },
+    };
+};
 
 const countingCallback = () => {
     const calls = [];
@@ -336,20 +369,27 @@ test("AC-01: 저장 후 프로필 조회에 stats 변경이 반영된다", async
 
 // ── AC-02 ────────────────────────────────────────────────────────────────────
 
-const withSocketLayer = (t) => {
+const withSocketLayer = (t, members = []) => {
     gameSessionSocket.__resetStateForTests();
-    gameSessionSocket.setOnlineUsersRegistry(new Map([["u1", "socket-1"]]));
+    const registry = new Map([["u1", "socket-1"]]);
+    for (const m of members) registry.set(m.data.user.uuid, m.id);
+    gameSessionSocket.setOnlineUsersRegistry(registry);
+    // 업적 평가는 실제 DB를 친다. 그 거부가 **다음 시험이 도는 동안** 늦게 정착하면 그때의
+    // emitToUser로 무효화 사건이 흘러 들어가, 아무 관계도 없는 시험이 자기 것이 아닌 전송을
+    // 관측한다. 이 파일의 소켓 계층 시험은 저장 경로를 검증하므로 즉시 끝나는 대역으로 고정한다.
+    __setEvaluateAchievementsForTests(async () => {});
     t.after(() => {
         gameSessionSocket.__resetStateForTests();
+        __setEvaluateAchievementsForTests();
     });
 };
 
 test("AC-02: 밤 판정 종료 경로에서 저장이 정확히 1회 일어난다", async (t) => {
-    withSocketLayer(t);
-    const calls = stubPersistGameResult(t);
     const session = makeEndedSession();
-    const io = createFakeIo();
-    const socket = { id: "socket-1", data: { user: { uuid: "u1" } }, emit: () => {} };
+    const socket = makeMemberSocket("u1", session.channelId, "socket-1");
+    withSocketLayer(t, [socket]);
+    const calls = stubPersistGameResult(t);
+    const io = createFakeIo([socket]);
     const deps = {
         prepare: () => ({ ok: true, session, resolution: { dayIndex: 2, privateResults: new Map(), publicDeathReveals: [] } }),
         commit: () => ({ ok: true, victimUuid: "u3", terminal: { winner: "CITIZEN" } }),
@@ -368,8 +408,8 @@ test("AC-02: 종결되지 않은 밤 판정은 저장하지 않는다", async (t
     withSocketLayer(t);
     const calls = stubPersistGameResult(t);
     const session = makeEndedSession({ phase: "DAY", dayPhase: "DAY_DISCUSSION", winResult: undefined, endedAt: undefined });
-    const io = createFakeIo();
-    const socket = { id: "socket-1", data: { user: { uuid: "u1" } }, emit: () => {} };
+    const socket = makeMemberSocket("u1", session.channelId, "socket-1");
+    const io = createFakeIo([socket]);
     const deps = {
         prepare: () => ({ ok: true, session, resolution: { dayIndex: 2, privateResults: new Map(), publicDeathReveals: [] } }),
         commit: () => ({ ok: true, victimUuid: "u3", terminal: null }),
@@ -383,13 +423,13 @@ test("AC-02: 종결되지 않은 밤 판정은 저장하지 않는다", async (t
 });
 
 test("AC-02: 재판 판정 종료 경로에서 저장이 정확히 1회 일어난다", async (t) => {
-    withSocketLayer(t);
-    const calls = stubPersistGameResult(t);
     const session = makeEndedSession({
         tribunal: { dayIndex: 2, defendantUuid: "u3", outcome: "GUILTY", counts: { guilty: 2, notGuilty: 0 }, executedUuid: "u3", resolved: true },
     });
-    const io = createFakeIo();
-    const socket = { id: "socket-1", data: { user: { uuid: "u1" } }, emit: () => {} };
+    const socket = makeMemberSocket("u1", session.channelId, "socket-1");
+    withSocketLayer(t, [socket]);
+    const calls = stubPersistGameResult(t);
+    const io = createFakeIo([socket]);
     const deps = {
         prepare: () => ({ ok: true, session, resolution: { dayIndex: 2, defendantUuid: "u3", outcome: "GUILTY", counts: { guilty: 2, notGuilty: 0 }, executedUuid: "u3" } }),
         commit: () => ({ ok: true, terminal: { winner: "CITIZEN" } }),
@@ -405,11 +445,11 @@ test("AC-02: 재판 판정 종료 경로에서 저장이 정확히 1회 일어�
 });
 
 test("AC-02/03(F-21 A-09): 같은 종료 세션의 중복 훅은 두 번째 저장 작업을 만들지 않는다", async (t) => {
-    withSocketLayer(t);
-    const calls = stubPersistGameResult(t);
     const session = makeEndedSession();
-    const io = createFakeIo();
-    const socket = { id: "socket-1", data: { user: { uuid: "u1" } }, emit: () => {} };
+    const socket = makeMemberSocket("u1", session.channelId, "socket-1");
+    withSocketLayer(t, [socket]);
+    const calls = stubPersistGameResult(t);
+    const io = createFakeIo([socket]);
     const deps = {
         prepare: () => ({ ok: true, session, resolution: { dayIndex: 2, privateResults: new Map(), publicDeathReveals: [] } }),
         commit: () => ({ ok: true, victimUuid: "u3", terminal: { winner: "CITIZEN" } }),
@@ -424,7 +464,7 @@ test("AC-02/03(F-21 A-09): 같은 종료 세션의 중복 훅은 두 번째 저�
     // 돌아간다 — 그래야 두 개의 재시도 타이머가 같은 레코드를 향해 따로 돌지 않는다. DB
     // 멱등성 자체는 여전히 game_results PK가 보장하며, 그 계약은 아래 AC-03 시험이 저장소를
     // 직접 두 번 호출해 확인한다.
-    finalizeGameSessionEnd(io, session, "PLAYER_LEFT", "u1");
+    finalizeGameSessionEnd(io, session, "PLAYER_LEFT", "u1", ["u1", "u2", "u3"]);
     await flushAsync();
 
     assert.equal(calls.length, 1);
@@ -589,35 +629,49 @@ test("AC-07: 결과 헤더와 참가자 필드 및 사망 사유 문자열을 �
 // ── AC-05 ────────────────────────────────────────────────────────────────────
 
 test("AC-05: DB 저장이 실패해도 game_ended 방송과 registry 정리는 그대로 진행된다", async (t) => {
-    withSocketLayer(t);
+    const session = makeAbortedSession();
+    const a1 = makeMemberSocket("a1", session.channelId);
+    const a2 = makeMemberSocket("a2", session.channelId);
+    const a3 = makeMemberSocket("a3", session.channelId);
+    withSocketLayer(t, [a1, a2, a3]);
     const calls = stubPersistGameResult(t, () => {
         throw new Error("DB 다운");
     });
-    const session = makeAbortedSession();
-    const io = createFakeIo();
+    const io = createFakeIo([a1, a2, a3]);
 
-    finalizeGameSessionEnd(io, session, "PLAYER_LEFT", "a3");
+    // F-23(AC-04): cleanupUuids가 곧 이 종료가 풀어 준 계정 집합이다 — 종료 알림의 수신
+    // 후보는 그 집합에서만 나온다(roster 전체가 아니다).
+    finalizeGameSessionEnd(io, session, "PLAYER_LEFT", "a3", ["a1", "a2", "a3"]);
     await flushAsync();
 
     assert.equal(calls.length, 1);
-    const ended = io.emitted.filter((e) => e.event === "game_ended");
-    assert.equal(ended.length, 1);
-    assert.deepEqual(ended[0].payload, { gameId: session.id, reason: "PLAYER_LEFT" });
-    assert.deepEqual(io.left, [{ channelId: session.channelId, room: session.channelId }]);
+    // 양성 대조: 잔류 참가자 둘은 각각 정확히 한 번 받는다.
+    assert.equal(receivedCount(a1, "game_ended"), 1);
+    assert.equal(receivedCount(a2, "game_ended"), 1);
+    assert.deepEqual(a1.received[0].payload, { gameId: session.id, reason: "PLAYER_LEFT" });
+    // 이 종료를 촉발한 이탈자는 받지 않는다.
+    assert.equal(receivedCount(a3, "game_ended"), 0);
+    // 채널 정리도 그대로 진행된다(일괄 socketsLeave가 아니라 소유권을 확인하는 개별 detach다).
+    assert.equal(a1.rooms.has(session.channelId), false);
+    assert.equal(a2.rooms.has(session.channelId), false);
 });
 
 test("AC-05: 저장 훅이 동기적으로 던져도 종료 처리는 멈추지 않는다", async (t) => {
-    withSocketLayer(t);
+    const session = makeAbortedSession();
+    const a1 = makeMemberSocket("a1", session.channelId);
+    const a2 = makeMemberSocket("a2", session.channelId);
+    withSocketLayer(t, [a1, a2]);
     const calls = stubPersistGameResult(t, () => {
         throw new Error("레코드 조립 실패");
     });
-    const io = createFakeIo();
+    const io = createFakeIo([a1, a2]);
 
-    finalizeGameSessionEnd(io, makeAbortedSession(), "PARTICIPANT_LEFT", "a3");
+    finalizeGameSessionEnd(io, session, "PARTICIPANT_LEFT", "a3", ["a1", "a2", "a3"]);
     await flushAsync();
 
     assert.equal(calls.length, 1);
-    assert.equal(io.emitted.filter((e) => e.event === "game_ended").length, 1);
+    assert.equal(receivedCount(a1, "game_ended"), 1);
+    assert.equal(receivedCount(a2, "game_ended"), 1);
 });
 
 test("AC-05: 밤 판정 저장이 실패해도 night_result_applied 방송은 나간다", async (t) => {
@@ -626,9 +680,9 @@ test("AC-05: 밤 판정 저장이 실패해도 night_result_applied 방송은 �
         throw new Error("DB 다운");
     });
     const session = makeEndedSession();
-    const io = createFakeIo();
-    const emitted = [];
-    const socket = { id: "socket-1", data: { user: { uuid: "u1" } }, emit: (event, payload) => emitted.push({ event, payload }) };
+    const socket = makeMemberSocket("u1", session.channelId, "socket-1");
+    const io = createFakeIo([socket]);
+    const emitted = socket.received;
     const deps = {
         prepare: () => ({ ok: true, session, resolution: { dayIndex: 2, privateResults: new Map(), publicDeathReveals: [] } }),
         commit: () => ({ ok: true, victimUuid: "u3", terminal: { winner: "CITIZEN" } }),

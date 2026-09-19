@@ -49,12 +49,34 @@ const MAX_CHANNEL_LEAVE_ATTEMPTS = 3
 const MAX_CHANNEL_RESTORE_DEPTH = 1
 
 /**
- * channelId → Set<socketId> — **떼지 못한** 채널 구독의 전달 제외 목록.
+ * channelId → socketId → Set<ownerToken> — **떼지 못한/아직 확정되지 않은** 채널 구독의 전달 제외.
  *
- * 항목은 leave가 실제로 실패했고 그 연결을 끊을 수도 없을 때만 생긴다(정상 경로에서는 비어
- * 있다). 해제 근거는 **사실뿐**이다 — 성공적인 이탈·정당한 재소유·소켓 종료.
+ * ── F-23(AC-04): 왜 소유 토큰이 필요한가 ──────────────────────────────────────
+ *
+ * 예전에는 channelId → Set<socketId>였고, 해제는 (채널, 소켓) **쌍 전체**를 지웠다. 그래서
+ * 서로 다른 두 흐름이 같은 (채널, 소켓)에 대해 동시에 제외를 들고 있으면, 먼저 끝난 쪽의
+ * 해제가 아직 유효한 다른 쪽의 제외까지 함께 지웠다.
+ *
+ * 실제로 그런 구간이 있다. 초대 수락(handleAcceptGameInvite)은 채널에 join한 **뒤에** publish와
+ * durable 영수증을 기다리는데, 그 대기 동안 이 입장자는 아직 확정 참가자가 아니므로 방송을
+ * 받으면 안 된다. 그 사이 옛 이탈 정리(detachSocketFromChannel)의 leave가 끝나면, 쌍 전체
+ * 해제가 "확정 전 입장" 제외까지 지워 미확정 입장자가 그 방의 방송을 받기 시작했다.
+ *
+ * 토큰은 그 둘을 분리한다 — 각 흐름은 **자기 토큰만** 해제하고, 남은 토큰이 하나라도 있으면
+ * 그 소켓은 여전히 전달에서 빠진다. 해제 근거는 여전히 사실뿐이다(성공적인 이탈·정당한
+ * 재소유·확정·소켓 종료).
  */
 const channelExclusions = new Map()
+
+/** 소유자를 밝히지 않은 옛 호출부의 기본 토큰(쌍 전체 해제와 같은 의미를 유지한다). */
+const DEFAULT_EXCLUSION_OWNER = '__default__'
+
+/** 이 시도만의 제외 소유 토큰을 만든다(초대 입장·채널 이탈이 각각 자기 것을 들고 있는다). */
+let exclusionOwnerSeq = 0
+function createChannelExclusionOwner(label = 'owner') {
+    exclusionOwnerSeq += 1
+    return `${label}#${exclusionOwnerSeq}`
+}
 
 /**
  * 경보 수위. **축출 기준이 아니다** — 이 값을 넘어도 항목은 하나도 버리지 않는다.
@@ -70,17 +92,25 @@ let channelExclusionCount = 0
 /** 수위 경보를 넘을 때 한 번만 기록하기 위한 표식(로그 폭주를 만들지 않는다). */
 let channelExclusionAlarmRaised = false
 
-/** 그 소켓을 그 채널의 방송 대상에서 뺀다. 이미 있으면 아무 일도 하지 않는다. */
-function excludeSocketFromChannel(channelId, socketId) {
+/**
+ * 그 소켓을 그 채널의 방송 대상에서 뺀다. 같은 소유자가 이미 걸어 둔 제외면 아무 일도 하지
+ * 않는다. **다른** 소유자의 제외는 서로 독립적으로 쌓인다(하나가 풀려도 나머지는 남는다).
+ */
+function excludeSocketFromChannel(channelId, socketId, owner = DEFAULT_EXCLUSION_OWNER) {
     if (typeof channelId !== 'string' || !channelId) return
     if (typeof socketId !== 'string' || !socketId) return
-    let excluded = channelExclusions.get(channelId)
-    if (!excluded) {
-        excluded = new Set()
-        channelExclusions.set(channelId, excluded)
+    let bySocket = channelExclusions.get(channelId)
+    if (!bySocket) {
+        bySocket = new Map()
+        channelExclusions.set(channelId, bySocket)
     }
-    if (excluded.has(socketId)) return
-    excluded.add(socketId)
+    let owners = bySocket.get(socketId)
+    if (!owners) {
+        owners = new Set()
+        bySocket.set(socketId, owners)
+    }
+    if (owners.has(owner)) return
+    owners.add(owner)
     channelExclusionCount += 1
     // 유효한 배제는 하나도 버리지 않는다. 수위를 넘으면 관측 가능한 경보만 남긴다 —
     // "떼지도 끊지도 못한 연결"이 이만큼 쌓였다는 사실 자체가 운영 신호다.
@@ -101,12 +131,19 @@ function rearmExclusionAlarm() {
     }
 }
 
-/** 그 소켓의 전달 제외를 푼다(이탈이 끝내 성공했거나 정당한 소속이 됐을 때). */
-function releaseChannelExclusion(channelId, socketId) {
-    const excluded = channelExclusions.get(channelId)
-    if (!excluded || !excluded.delete(socketId)) return
+/**
+ * **자기 토큰만** 푼다(이탈이 끝내 성공했거나 정당한 소속이 됐거나 입장이 확정됐을 때).
+ *
+ * 다른 흐름이 같은 (채널, 소켓)에 대해 아직 제외를 들고 있으면 그 소켓은 계속 빠져 있다 —
+ * 쌍 전체를 지우던 이전 동작이 곧 "아직 확정되지 않은 입장자가 방송을 받는" 구멍이었다.
+ */
+function releaseChannelExclusion(channelId, socketId, owner = DEFAULT_EXCLUSION_OWNER) {
+    const bySocket = channelExclusions.get(channelId)
+    const owners = bySocket?.get(socketId)
+    if (!owners || !owners.delete(owner)) return
     channelExclusionCount -= 1
-    if (excluded.size === 0) channelExclusions.delete(channelId)
+    if (owners.size === 0) bySocket.delete(socketId)
+    if (bySocket.size === 0) channelExclusions.delete(channelId)
     rearmExclusionAlarm()
 }
 
@@ -114,26 +151,29 @@ function releaseChannelExclusion(channelId, socketId) {
  * 그 소켓의 모든 채널 제외를 푼다(연결이 끝나면 더 뺄 대상 자체가 없다).
  *
  * 이것이 목록 크기의 **실제 상한**이다 — socket/matchmaking.js의 onDisconnect가 모든 소켓에서
- * 이 함수를 부르므로, 항목은 살아 있는 연결보다 오래 남지 못한다.
+ * 이 함수를 부르므로, 항목은 살아 있는 연결보다 오래 남지 못한다. 연결이 실제로 끝났다는
+ * 사실은 소유자와 무관하므로 여기서만 그 소켓의 토큰을 전부 비운다.
  */
 function releaseSocketFromAllChannels(socketId) {
     if (typeof socketId !== 'string' || !socketId) return
-    for (const [channelId, excluded] of [...channelExclusions]) {
-        if (!excluded.delete(socketId)) continue
-        channelExclusionCount -= 1
-        if (excluded.size === 0) channelExclusions.delete(channelId)
+    for (const [channelId, bySocket] of [...channelExclusions]) {
+        const owners = bySocket.get(socketId)
+        if (!owners) continue
+        channelExclusionCount -= owners.size
+        bySocket.delete(socketId)
+        if (bySocket.size === 0) channelExclusions.delete(channelId)
     }
     rearmExclusionAlarm()
 }
 
 /** 지금 그 채널의 전달에서 빠져 있는 소켓 id들(없으면 빈 배열). */
 function getChannelExclusions(channelId) {
-    const excluded = channelExclusions.get(channelId)
-    return excluded ? [...excluded] : []
+    const bySocket = channelExclusions.get(channelId)
+    return bySocket ? [...bySocket.keys()] : []
 }
 
 function isSocketExcludedFromChannel(channelId, socketId) {
-    return channelExclusions.get(channelId)?.has(socketId) === true
+    return (channelExclusions.get(channelId)?.get(socketId)?.size ?? 0) > 0
 }
 
 /**
@@ -143,17 +183,28 @@ function isSocketExcludedFromChannel(channelId, socketId) {
  * except을 제공하므로 이 경로는 단일 노드 fake/커스텀 adapter에서만 쓰인다 — 그래서 원격 노드의
  * 소켓을 열거하지 못하는 한계는 이 경로의 문제가 아니다(그 환경은 except 경로를 탄다).
  *
+ * @param {(socket:object) => boolean} [recipientFilter] - **각 전송 직전에** 다시 묻는 자격
+ *   판정. 앞선 수신자의 emit이 다음 수신자의 소속을 바꿀 수 있으므로(한 번 계산해 둔 제외
+ *   목록은 그 사이의 전이를 모른다), 이 경계는 목록이 아니라 매 전송 직전의 사실을 본다.
+ *   던지면 그 수신자는 자격 없음으로 본다(fail-closed).
  * @returns {boolean} 구성원을 실제로 열거할 수 있었는가. false면 호출부가 방송을 **버린다**.
  */
-function emitToChannelMembersIndividually(io, channelId, event, payload, skipSocketIds) {
+function emitToChannelMembersIndividually(io, channelId, event, payload, skipSocketIds, recipientFilter = null) {
     const registry = io?.sockets?.sockets
     if (!registry || typeof registry.values !== 'function') return false
-    for (const member of registry.values()) {
+    for (const member of [...registry.values()]) {
         const memberId = typeof member?.id === 'string' ? member.id : null
         if (!memberId || skipSocketIds.has(memberId)) continue
         const rooms = member.rooms
         if (!rooms || typeof rooms.has !== 'function' || !rooms.has(channelId)) continue
         if (typeof member.emit !== 'function') continue
+        if (typeof recipientFilter === 'function') {
+            let allowed = false
+            try { allowed = recipientFilter(member) === true } catch (err) { allowed = false }
+            // 전송 직전에 자격을 잃었다면(앞 수신자의 emit이 이 계정을 새 소속으로 옮겼거나
+            // 이 판에서 뺐다면) 보내지 않는다. 그 판단은 이 루프 시작 시점이 아니라 지금의 사실이다.
+            if (!allowed) continue
+        }
         try {
             member.emit(event, payload)
         } catch (err) {
@@ -174,6 +225,10 @@ function emitToChannelMembersIndividually(io, channelId, event, payload, skipSoc
  * @param {object} [options.senderSocket] - 주면 `senderSocket.to(channelId)`로 보낸다 —
  *   "채널 전체에서 발신자만 빼고"라는 기존 `socket.to(room).emit` 의미를 그대로 보존한다.
  * @param {string[]} [options.exceptSocketIds] - 이 방송에서만 추가로 빼는 소켓들.
+ * @param {(socket:object) => boolean} [options.recipientFilter] - **각 전송 직전에** 다시 묻는
+ *   자격 판정(F-23 AC-04). 주면 한 번의 방송으로 끝내지 않고 반드시 구성원을 훑어 개별
+ *   전달한다 — 한 수신자의 emit 도중 다음 수신자의 소속이 바뀌는 구간을 목록 계산 한 번으로는
+ *   막을 수 없기 때문이다. 열거할 수 없으면 그 방송을 **버린다**(fail-closed).
  *
  * 절대 던지지 않는다 — 호출부는 이미 각자 예외를 격리하고 있지만, 방송 하나의 실패가 커밋
  * 결과를 되돌리지 않는다는 계약을 이 함수도 스스로 지킨다.
@@ -181,14 +236,29 @@ function emitToChannelMembersIndividually(io, channelId, event, payload, skipSoc
 function emitToChannel(io, channelId, event, payload, options = null) {
     try {
         const senderSocket = options?.senderSocket ?? null
-        const excluded = channelExclusions.get(channelId)
-        const denied = excluded && excluded.size > 0 ? [...excluded] : []
+        const recipientFilter = typeof options?.recipientFilter === 'function'
+            ? options.recipientFilter : null
+        // 소유 토큰이 하나라도 남아 있는 소켓은 전부 제외 대상이다.
+        const denied = getChannelExclusions(channelId)
         const extra = (Array.isArray(options?.exceptSocketIds) ? options.exceptSocketIds : [])
             .filter((id) => typeof id === 'string' && id.length > 0)
 
         const operator = senderSocket
             ? senderSocket.to?.(channelId)
             : io?.to?.(channelId)
+
+        if (recipientFilter) {
+            // 전송 직전 재검사가 필요한 방송은 except 한 번으로 끝낼 수 없다 — 어댑터의 방송은
+            // 수신자별 시점을 갖지 않는다. 구성원을 직접 훑는 경로만 그 시점을 가진다.
+            const skipSet = new Set([...denied, ...extra])
+            if (senderSocket && typeof senderSocket.id === 'string') skipSet.add(senderSocket.id)
+            if (emitToChannelMembersIndividually(io, channelId, event, payload, skipSet, recipientFilter)) return
+            console.error('[채널 전달 재검사 불가 · 방송 폐기]', {
+                code: 'CHANNEL_EMIT_DROPPED_FAIL_CLOSED', channelId, event, excluded: skipSet.size,
+            })
+            return
+        }
+
         if (!operator || typeof operator.emit !== 'function') return
 
         // 정상 경로: 이 채널에 배제된 소켓이 없다. 발신자 제외는 senderSocket.to()가 이미
@@ -250,6 +320,13 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
     const ownsChannel = () => ask(ownership?.ownsChannel)
     const keepsConnection = () => ask(ownership?.keepsConnection ?? ownership?.ownsChannel)
     const socketId = typeof socket.id === 'string' ? socket.id : null
+    /**
+     * F-23(AC-04): 이 정리 흐름만의 제외 소유 토큰.
+     *
+     * 이 함수가 거는 제외와 푸는 제외는 전부 이 토큰 하나에 묶인다 — 그래서 이 leave가 끝나도
+     * 같은 (채널, 소켓)에 대해 **다른** 흐름(확정 전 입장 대기 등)이 들고 있는 제외는 남는다.
+     */
+    const detachOwner = createChannelExclusionOwner('detach')
 
     const isJoined = () =>
         socket.rooms && typeof socket.rooms.has === 'function' ? socket.rooms.has(channelId) : false
@@ -268,7 +345,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
      * 이 제외는 **사실로만** 풀린다: leave가 실제로 끝났거나(handleSettled), 그 채널의 정당한
      * 소속이 됐거나, 연결이 끝났을 때(releaseSocketFromAllChannels).
      */
-    if (socketId && !ownsChannel()) excludeSocketFromChannel(channelId, socketId)
+    if (socketId && !ownsChannel()) excludeSocketFromChannel(channelId, socketId, detachOwner)
 
     /**
      * 되돌린 가입이 **완료된 뒤** 소유권을 다시 묻는다.
@@ -291,10 +368,10 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
      */
     const finishReconcile = () => {
         if (ownsChannel()) {
-            if (socketId) releaseChannelExclusion(channelId, socketId)
+            if (socketId) releaseChannelExclusion(channelId, socketId, detachOwner)
             return
         }
-        if (socketId) excludeSocketFromChannel(channelId, socketId)
+        if (socketId) excludeSocketFromChannel(channelId, socketId, detachOwner)
         console.error(logLabel, {
             code: 'CHANNEL_RECONCILE_BUDGET_EXHAUSTED', channelId, ...logFields,
         })
@@ -303,7 +380,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
     const settleRestore = (depth) => {
         if (ownsChannel()) {
             // 정당한 소속이 다시 채널을 가졌다 — 전달 제외가 남아 있으면 푼다.
-            if (socketId) releaseChannelExclusion(channelId, socketId)
+            if (socketId) releaseChannelExclusion(channelId, socketId, detachOwner)
             return
         }
         if (depth >= MAX_CHANNEL_RESTORE_DEPTH) {
@@ -317,7 +394,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
     const restoreIfSuperseded = (depth) => {
         if (!ownsChannel()) return
         if (isJoined()) {
-            if (socketId) releaseChannelExclusion(channelId, socketId)
+            if (socketId) releaseChannelExclusion(channelId, socketId, detachOwner)
             return
         }
         // 옛 이탈이 늦게 끝나면서 새 소속의 채널 가입까지 함께 떼어냈다 — 되돌려 놓는다.
@@ -344,7 +421,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
             return
         }
         // 정상적으로 떨어졌다 — 전달 제외가 남아 있으면 더 이상 필요 없다.
-        if (socketId) releaseChannelExclusion(channelId, socketId)
+        if (socketId) releaseChannelExclusion(channelId, socketId, detachOwner)
     }
 
     const handleFailure = (attempt, depth) => {
@@ -353,7 +430,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
         //    다시 떼면 방금 성립한 정상 참가자가 자기 채널의 방송을 잃는다. keepsConnection만
         //    먼저 물으면(이전 구현) 이 경우도 "다른 소속"과 똑같이 제외돼 버린다.
         if (ownsChannel()) {
-            if (socketId) releaseChannelExclusion(channelId, socketId)
+            if (socketId) releaseChannelExclusion(channelId, socketId, detachOwner)
             // leave가 부분적으로 적용됐을 수 있으니 가입만 되돌려 놓는다(끊지 않는다).
             restoreIfSuperseded(depth)
             return
@@ -365,7 +442,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
             // **끊긴 것을 확인한 뒤에만** 제외를 푼다. 예전에는 disconnect보다 먼저 전부 풀었고,
             // 그래서 disconnect가 던지면(= 연결이 그대로 남으면) 떼지도 끊지도 못한 소켓이
             // 아무 제외 없이 채널에 남아 방송을 계속 받았다. 순서를 뒤집으면 실패는 fail-closed다.
-            if (socketId) excludeSocketFromChannel(channelId, socketId)
+            if (socketId) excludeSocketFromChannel(channelId, socketId, detachOwner)
             try {
                 socket.disconnect(true)
             } catch (err) {
@@ -378,7 +455,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
         }
         // ③ 그렇다고 옛 채널을 그대로 두면 배제된 계정이 그 방송을 계속 받는다. 전달에서 먼저
         //    빼고(즉시 효력), 제한된 횟수만 다시 떼어 본다.
-        if (socketId) excludeSocketFromChannel(channelId, socketId)
+        if (socketId) excludeSocketFromChannel(channelId, socketId, detachOwner)
         if (attempt < MAX_CHANNEL_LEAVE_ATTEMPTS) {
             runLeave(attempt + 1, depth)
             return
@@ -415,6 +492,7 @@ function __resetChannelExclusionsForTests() {
 module.exports = {
     detachSocketFromChannel,
     emitToChannel,
+    createChannelExclusionOwner,
     excludeSocketFromChannel,
     releaseChannelExclusion,
     releaseSocketFromAllChannels,

@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { useInGameStore } from "../ingameStore.js"
+import { readInGameReceiptScope, useInGameStore } from "../ingameStore.js"
 
 function seedState(overrides = {}) {
   const state = {
@@ -470,4 +470,102 @@ test("applySessionSnapshot: dayVoteResolution/tribunal outcome이 서로 모순�
       tribunal: { defendantUuid: "p2", resolved: false },
     }),
   )
+})
+
+// ---------------------------------------------------------------------------
+// F-23(AC-05 보수) · commitWithReceipt — **수신 증거가 지금도 현재 범위인가**
+//
+// 공개 사망·재판 결과는 그대로 승패(winResult)를 실을 수 있다. 그런데 그 커밋 경로는 예전에
+// 넘겨받은 수신 범위를 "누가 받았는지"의 기록으로만 쓰고, **커밋하는 그 순간에도 그 범위가
+// 현재인지**는 묻지 않았다 — 캡처 뒤 내 소속이나 판이 바뀌어도 그대로 반영됐다.
+//
+// 아래 두 시험은 그 경계를 양쪽에서 고정한다: 현재 범위의 증거는 예전과 똑같이 커밋되고,
+// 지나간 범위의 같은 증거는 store를 한 글자도 바꾸지 않는다.
+// ---------------------------------------------------------------------------
+
+/** 본인(p1)이 소속 식별자를 갖는 진행 중 세션. 소속 축이 실제로 움직일 수 있어야 한다. */
+function seedSeatedState({ membershipId = "mem-a", phase = "DAY", dayIndex = 1 } = {}) {
+  return seedState({
+    phase,
+    dayIndex,
+    players: [
+      { uuid: "p1", nickname: "P1", alive: true, membershipId },
+      { uuid: "p2", nickname: "P2", alive: true, membershipId: "mem-b" },
+    ],
+    self: { uuid: "p1", nickname: "P1", role: "CITIZEN" },
+  })
+}
+
+/** parsePlayerEliminatedPayload가 통과시킨 뒤의 값과 같은 모양(끊김 사망이 승패를 확정한 경우). */
+function parsedTerminalElimination() {
+  return {
+    gameId: "game-1",
+    phase: "ENDED",
+    dayIndex: 1,
+    victimUuid: "p2",
+    players: [{ uuid: "p1", alive: true }, { uuid: "p2", alive: false }],
+    terminal: true,
+    winResult: { winner: "JOKER" },
+  }
+}
+
+test("commitWithReceipt: 현재 범위에서 캡처한 수신 증거는 예전과 똑같이 커밋된다", () => {
+  seedSeatedState()
+  const receipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), receipt)
+
+  const after = useInGameStore.getState().state
+  assert.equal(after.phase, "ENDED")
+  assert.deepEqual(after.winResult, { winner: "JOKER" })
+  assert.equal(after.players.find((p) => p.uuid === "p2").alive, false)
+})
+
+test("commitWithReceipt: 소속이 교체된 뒤 도착한 같은 수신 증거는 거절되어 store가 전혀 변경되지 않는다", () => {
+  seedSeatedState({ membershipId: "mem-a" })
+  const receipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+
+  // 같은 판·같은 계정이지만 내 자리가 바뀌었다(이탈→재입장). 캡처한 증거는 여기서 지나간다.
+  seedSeatedState({ membershipId: "mem-after" })
+
+  const before = useInGameStore.getState()
+  const stateBefore = before.state
+  let notifyCount = 0
+  const unsubscribe = useInGameStore.subscribe(() => { notifyCount += 1 })
+
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), receipt)
+
+  unsubscribe()
+
+  assert.equal(useInGameStore.getState(), before, "지난 범위의 증거가 store 최상위 참조를 바꿨다")
+  assert.equal(useInGameStore.getState().state, stateBefore, "지난 범위의 증거가 game state를 바꿨다")
+  assert.equal(notifyCount, 0, "거절된 커밋이 구독자를 깨웠다")
+  assert.equal(stateBefore.phase, "DAY")
+  assert.equal(stateBefore.winResult ?? null, null, "지난 범위의 증거가 종료 결과를 실었다")
+})
+
+test("commitWithReceipt: 같은 자리로 되돌아온 A→B→A 뒤에도 그 사이의 수신 증거는 거절되고, 새 증거는 정상 커밋된다", () => {
+  // 이 시험이 따로 있는 이유: 값 비교만으로는 이 구간이 드러나지 않는다. 이탈→재입장을 지나면
+  // 소속 식별자는 원래 값으로 **돌아오므로**, 캡처 당시와 커밋 시점의 membershipId·gameId·
+  // 계정이 전부 같다. 그 사이에 실제로 두 번 전이했다는 사실을 아는 값은 전이 세대뿐이다.
+  seedSeatedState({ membershipId: "mem-a" })
+  const staleReceipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+
+  seedSeatedState({ membershipId: "mem-b" }) // 이탈(다른 자리)
+  seedSeatedState({ membershipId: "mem-a" }) // 재입장 — 값은 캡처 당시와 똑같아졌다
+
+  const current = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+  assert.equal(current.membershipId, staleReceipt.membershipId, "전제: 소속 식별자 값은 되돌아와 있어야 한다")
+  assert.equal(current.gameId, staleReceipt.gameId, "전제: 판도 그대로여야 한다")
+  assert.notEqual(current.membershipEpoch, staleReceipt.membershipEpoch, "전제: 전이 세대만이 두 범위를 가른다")
+
+  const before = useInGameStore.getState()
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), staleReceipt)
+  assert.equal(useInGameStore.getState(), before, "왕복 이전에 캡처된 증거가 그대로 커밋됐다")
+  assert.equal(useInGameStore.getState().state.winResult ?? null, null)
+
+  // 같은 사건이라도 **지금 자리에서** 캡처한 증거는 그대로 커밋된다(영구 차단이 아니다).
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), current)
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "현재 범위의 증거까지 막혔다")
+  assert.deepEqual(useInGameStore.getState().state.winResult, { winner: "JOKER" })
 })
