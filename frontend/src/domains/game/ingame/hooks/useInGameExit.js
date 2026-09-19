@@ -125,6 +125,21 @@ export function useInGameExit() {
     return () => {
       mountedRef.current = false
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+      timerRef.current = null
+      /**
+       * F-23(AC-06 보수): **진행 중이던 요청을 여기서 만료시킨다.**
+       *
+       * 예전에는 cleanup이 mounted 표식과 타이머만 내렸다. 요청 토큰은 그대로여서, 화면이
+       * 사라진 뒤 같은 신원·같은 게임·같은 소속으로 늦게 도착한 성공 ACK가
+       * createLeaveGameSessionRequest의 신원 가드를 전부 통과하고 finalize까지 내려가
+       * **이미 없는 화면**의 store 정리와 navigate를 실행했다. 토큰을 올려 두면 그 늦은
+       * 응답·타이머는 "지금 화면이 기다리는 시도"가 아니므로 아무 상태도 바꾸지 못한다.
+       *
+       * pending도 함께 내린다 — StrictMode의 재설정처럼 같은 훅이 다시 살아나는 경우,
+       * 만료된 시도의 pending이 남아 있으면 새 화면의 나가기가 영영 잠긴다.
+       */
+      requestTokenRef.current += 1
+      pendingRef.current = false
     }
   }, [])
 
@@ -153,6 +168,10 @@ export function useInGameExit() {
 
   /** 실제 정리·이동. 어떤 근거로 도달했든 여기서 한 번만 일어난다. */
   const settle = useCallback(() => {
+    // F-23(AC-06 보수): 화면이 없으면 정리할 화면도, 이동할 곳도 없다. 이 경계는 성공
+    // ACK·권위 확인·중복 ACK가 **전부** 지나는 한 곳이라, 늦은 응답의 store 정리와 navigate를
+    // 여기서 한 번에 막는다(각 호출부의 토큰·범위 검사와 겹쳐 두 겹으로 닫는다).
+    if (!mountedRef.current) return
     if (settledRef.current) return
     settledRef.current = true
     pendingRef.current = false
@@ -207,6 +226,10 @@ export function useInGameExit() {
       return (state.players ?? []).find((player) => player.uuid === me)?.membershipId ?? null
     },
     finalize: () => {
+      // F-23(AC-06 보수): 실패 경로(onFailure)와 **같은 세 가지**를 본다. 예전에는 성공
+      // 경로에만 mounted 검사가 없어서, 화면이 사라진 뒤 도착한 성공 ACK가 그대로 정리·이동을
+      // 실행했다(cleanup이 토큰도 올리지 않았으므로 아래 토큰 검사도 통과했다).
+      if (!mountedRef.current) return
       if (requestTokenRef.current !== requestToken) return
       if (!isExitRequestScopeCurrent(requestScope)) return
       settle()

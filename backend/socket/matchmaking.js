@@ -3620,14 +3620,22 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
                 // 채널을 뗐는데, 이 정리는 그 판단을 건너뛰고 무조건 나갔다 — 옛 시도가 실패로
                 // 끝나는 사이 같은 계정·같은 소켓이 그 방에 **정상 입장**했다면 방금 성립한
                 // 소속의 방송 경로를 이 정리가 끊는다. 같은 술어로 소유권을 먼저 묻는다.
-                if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
+                //
+                // F-23(AC-04 보수): 채널 id를 **값으로** 붙잡는다. 아래 ownsChannel/
+                // keepsConnection은 leave·restore가 끝난 **뒤에** 불리는데, 이 블록은 그 전에
+                // joinedRoomId를 null로 되돌린다. 변수를 그대로 참조하면 늦은 재검사가
+                // isAccountSeatedInRoom(uuid, null)을 물어 언제나 거짓이 되고, 그 사이 같은
+                // 채널에 정상 재소속한 소켓의 가입을 되돌려 주지 못한다(channelMembership의
+                // restoreIfSuperseded가 영영 열리지 않는다).
+                const cleanupChannelId = joinedRoomId
+                if (!isAccountSeatedInRoom(uuid, cleanupChannelId)) {
                     // F-23(AC-04): raw leave 대신 공통 경계를 쓴다 — 비동기 거부까지 조정하고,
                     // 끝내 떼지 못하면 **자기 토큰으로** 전달에서 뺀 채 끝낸다(fail-closed).
                     // 지역 래퍼의 4번째 인자는 ownership이다(위 detachJoinedRoomChannel 참고).
-                    detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', {
+                    detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
                         ownsChannel: () =>
-                            isAccountSeatedInRoom(uuid, joinedRoomId)
-                            && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
+                            isAccountSeatedInRoom(uuid, cleanupChannelId)
+                            && isCanonicalSocketForAccount(io, uuid, socket, cleanupChannelId),
                         keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
                     })
                 }
@@ -3685,11 +3693,14 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
                 // removePublishedAdmission은 자기 소유일 때만 채널을 뗐다. 소유권이 이미 넘어간
                 // 경우에도 이 소켓이 확정 참가자가 아니라면 그 채널에 남겨 둘 수 없다 —
                 // 다른 실패 경로와 같은 술어로 한 번 더 묻는다.
-                if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
-                    detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', {
+                // F-23(AC-04 보수): 위 실패 경로와 같은 이유로 채널 id를 값으로 붙잡는다
+                // (늦은 소유권 재검사가 null을 묻지 않게 한다).
+                const cleanupChannelId = joinedRoomId
+                if (!isAccountSeatedInRoom(uuid, cleanupChannelId)) {
+                    detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
                         ownsChannel: () =>
-                            isAccountSeatedInRoom(uuid, joinedRoomId)
-                            && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
+                            isAccountSeatedInRoom(uuid, cleanupChannelId)
+                            && isCanonicalSocketForAccount(io, uuid, socket, cleanupChannelId),
                         keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
                     })
                 }
@@ -3733,14 +3744,17 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         if (joinedRoomId) {
             // 위 실패 경로와 같은 이유다 — 늦게 도착한 옛 시도의 실패 정리가 새 소속의 채널을
             // 떼지 못하게 소유권을 먼저 묻는다.
-            if (!isAccountSeatedInRoom(uuid, joinedRoomId)) {
+            // F-23(AC-04 보수): 위 두 실패 경로와 같은 이유로 채널 id를 값으로 붙잡는다
+            // (늦은 소유권 재검사가 null을 묻지 않게 한다).
+            const cleanupChannelId = joinedRoomId
+            if (!isAccountSeatedInRoom(uuid, cleanupChannelId)) {
                 // F-23(AC-04): 위 실패 경로와 같은 이유로 공통 경계를 쓴다(비동기 거부 조정 +
                 // 떼지 못하면 자기 토큰으로 전달 제외).
                 // 지역 래퍼의 4번째 인자는 ownership이다(위 실패 경로와 같은 이유).
-                detachSocketFromChannel(socket, joinedRoomId, '[초대 입장 정리 실패]', {
+                detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
                     ownsChannel: () =>
-                        isAccountSeatedInRoom(uuid, joinedRoomId)
-                        && isCanonicalSocketForAccount(io, uuid, socket, joinedRoomId),
+                        isAccountSeatedInRoom(uuid, cleanupChannelId)
+                        && isCanonicalSocketForAccount(io, uuid, socket, cleanupChannelId),
                     keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
                 })
             }

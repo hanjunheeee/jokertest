@@ -768,17 +768,100 @@ const BACKEND_SOCKET_ON_EVENTS_LOCK = [
 /** 이름만 바꾼 관전 진입까지 잡기 위해 넓힌 어휘(경로·사건 이름 검사 전용). */
 const SPECTATOR_NAME_VOCABULARY = /spectat|관전|watch|observ|viewer|onlook/i
 
+/**
+ * F-23(AC-02 보수): 문자 offset → 1-기반 줄 번호.
+ *
+ * 아래 수집기들은 예전에 **줄 단위**로 정규식을 돌렸다(`source.split(/\r?\n/).forEach(...)`).
+ * 그 방식은 인자가 다음 줄로 넘어가는 호출을 통째로 놓친다 — 이 저장소에 실제로 그런 모양이
+ * 여럿 있다(backend/socket/matchmaking.js의 `channelMembership.emitToChannel(` 줄바꿈 뒤
+ * `io, room.id, 'player_joined_room',`이 대표적이다). 그래서 수집을 **파일 전체 본문** 기준으로
+ * 바꾸고, 근거로 남길 줄 번호만 이 표로 되돌린다(stripComments가 위치를 보존하므로 한 줄짜리
+ * 호출의 줄 번호는 예전과 정확히 같다).
+ */
+function makeLineLookup(text) {
+  const starts = [0]
+  for (let i = 0; i < text.length; i += 1) if (text[i] === "\n") starts.push(i + 1)
+  return (index) => {
+    let lo = 0
+    let hi = starts.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (starts[mid] <= index) lo = mid
+      else hi = mid - 1
+    }
+    return lo + 1
+  }
+}
+
+/** 여러 줄에 걸친 인자는 한 줄로 눌러 기록한다(잠금 문자열이 줄바꿈에 흔들리지 않게 한다). */
+function normalizeExpr(expr) {
+  return expr.replace(/\s+/g, " ").trim()
+}
+
 /** 그 원문의 `.on(` 수신 등록에서 사건 이름을 실제 값으로 푼다(상수 표 참조 포함). */
 function collectSocketOnEventNames(sources, tables) {
   const resolved = []
   const unresolved = []
   for (const { file, source } of sources) {
-    stripComments(source).split(/\r?\n/).forEach((line, index) => {
-      const re = /\.on\(\s*([^,)]+)/g
+    // 여러 줄 호출을 놓치지 않도록 **본문 전체**를 한 번에 훑는다(위 makeLineLookup 참고).
+    const body = stripComments(source)
+    const lineOf = makeLineLookup(body)
+    const re = /\.on\(\s*([^,)]+)/g
+    let match
+    while ((match = re.exec(body)) !== null) {
+      const expr = normalizeExpr(match[1])
+      const where = `${file}:${lineOf(match.index)}`
+      const fromTables = [...expr.matchAll(/\b([A-Z][A-Z0-9_]*)\.([A-Za-z_]\w*)/g)]
+        .map(([, table, key]) => tables[table]?.[key])
+        .filter((value) => typeof value === "string")
+      const literals = [...expr.matchAll(/["']([^"']+)["']/g)].map((m) => m[1])
+      const names = fromTables.length > 0 ? fromTables : literals
+      if (names.length === 0) unresolved.push({ where, expr })
+      else for (const name of names) resolved.push({ where, name })
+    }
+  }
+  return { resolved, unresolved }
+}
+
+/**
+ * F-23(AC-02 보수): 서버가 **보내는** 사건 이름을 찾는 호출 모양.
+ *
+ * 위 `.on(` 감사는 서버가 **받는** 이름만 고정한다. 관전 전용 상태를 밖으로 흘리는 통로는
+ * 수신이 아니라 **송신**이므로, 서버가 보낼 수 있는 이름도 전수로 고정해야 한다.
+ * 직접 전송·방 방송·namespace 방송은 결국 전부 `.emit(`으로 끝나고(io.emit · socket.emit ·
+ * io.to(ch).emit · socket.to(ch).emit · nsp.to(ch).emit · operator.except(x).emit),
+ * 그 위에 이 저장소가 쓰는 방송 래퍼 네 가지가 사건 이름을 인자로 받는다.
+ */
+const SERVER_EMIT_PATTERNS = [
+  /\.emit\(\s*([^,)]+)/g,
+  // emitToChannel(io, channelId, '사건', …) — `channelMembership.` 접두도 같이 잡는다.
+  /(?<!function\s)\bemitToChannel\(\s*[^,()]+,\s*[^,()]+,\s*([^,)]+)/g,
+  // emitToGameChannel(io, session, '사건', …)
+  /(?<!function\s)\bemitToGameChannel\(\s*[^,()]+,\s*[^,()]+,\s*([^,)]+)/g,
+  // emitNightTurnEvent(run, '사건', …) · emitDayPhaseEvent(run, '사건', …)
+  /(?<!function\s)\bemit(?:NightTurn|DayPhase)Event\(\s*[^,()]+,\s*([^,)]+)/g,
+  // emitToUser(uuid, '사건', payload) — 서비스·컨트롤러의 개인 전송기.
+  /(?<!function\s)\bemitToUser\(\s*[^,()]+,\s*([^,)]+)/g,
+  // emitFriendEventSafely(uuid, '사건', payload, code) — friend.controller의 안전 전송 래퍼.
+  /(?<!function\s)\bemitFriendEventSafely\(\s*[^,()]+,\s*([^,)]+)/g,
+  // `const emit = deps.emitToUser`로 받은 지역 별칭: emit(uuid, '사건', payload).
+  // 알림·업적·초대 서비스가 이 모양으로 개인 전송을 한다(점 접두가 없는 호출만 잡는다).
+  /(?<![.\w$])emit\(\s*[^,()]+,\s*([^,)]+)/g,
+]
+
+/** 서버 원문에서 **송신** 사건 이름을 모은다(변수로 받는 자리는 unresolved로 남긴다). */
+function collectServerEmitEventNames(sources, tables) {
+  const resolved = []
+  const unresolved = []
+  for (const { file, source } of sources) {
+    const body = stripComments(source)
+    const lineOf = makeLineLookup(body)
+    for (const pattern of SERVER_EMIT_PATTERNS) {
+      pattern.lastIndex = 0
       let match
-      while ((match = re.exec(line)) !== null) {
-        const expr = match[1].trim()
-        const where = `${file}:${index + 1}`
+      while ((match = pattern.exec(body)) !== null) {
+        const expr = normalizeExpr(match[1])
+        const where = `${file}:${lineOf(match.index)}`
         const fromTables = [...expr.matchAll(/\b([A-Z][A-Z0-9_]*)\.([A-Za-z_]\w*)/g)]
           .map(([, table, key]) => tables[table]?.[key])
           .filter((value) => typeof value === "string")
@@ -787,7 +870,7 @@ function collectSocketOnEventNames(sources, tables) {
         if (names.length === 0) unresolved.push({ where, expr })
         else for (const name of names) resolved.push({ where, name })
       }
-    })
+    }
   }
   return { resolved, unresolved }
 }
@@ -829,19 +912,42 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
     "설정 사건 표를 읽지 못했다")
 
   // 검출기 대조: 다른 이름의 관전 수신·상수 표 참조를 실제로 잡아내는지 먼저 고정한다.
+  //
+  // F-23(AC-02 보수): **여러 줄에 걸친 호출**을 함께 넣는다. 예전 수집기는 줄 단위 정규식이라
+  // 인자가 다음 줄로 넘어가면 그 등록을 통째로 놓쳤다 — 관전 수신을 한 줄 띄워 적기만 해도
+  // 이 감사가 조용히 비어 버린다. 줄 번호는 **호출이 시작된 줄**로 남아야 근거가 된다.
   const probe = collectSocketOnEventNames([{
     file: "probe.js",
     source: [
-      "socket.on('spectator_joined', handler)",
-      "socket.on(KICK_EVENTS.KICK_ROOM_PLAYER, handler)",
-      "socket.on(eventName, handler)",
-      "// socket.on('commented_out', handler)",
+      /* 1 */ "socket.on('spectator_joined', handler)",
+      /* 2 */ "socket.on(KICK_EVENTS.KICK_ROOM_PLAYER, handler)",
+      /* 3 */ "socket.on(eventName, handler)",
+      /* 4 */ "// socket.on('commented_out', handler)",
+      /* 5 */ "socket.on(",
+      /* 6 */ "    'spectator_state_multiline',",
+      /* 7 */ "    handler,",
+      /* 8 */ ")",
+      /* 9 */ "socket.on(",
+      /* 10 */ "    KICK_EVENTS.KICK_ROOM_PLAYER,",
+      /* 11 */ "    handler,",
+      /* 12 */ ")",
+      /* 13 */ "socket.on(",
+      /* 14 */ "    lateEventName,",
+      /* 15 */ "    handler,",
+      /* 16 */ ")",
     ].join("\n"),
   }], tables)
-  assert.deepEqual(probe.resolved.map((entry) => entry.name),
-    ["spectator_joined", "kick_room_player"], "다른 이름의 수신 등록을 검출하지 못했다")
-  assert.deepEqual(probe.unresolved.map((entry) => entry.expr), ["eventName"],
-    "변수로 받는 수신 등록을 간접 지점으로 남기지 못했다")
+  assert.deepEqual(probe.resolved.map((entry) => `${entry.where} ${entry.name}`),
+    [
+      "probe.js:1 spectator_joined",
+      "probe.js:2 kick_room_player",
+      "probe.js:5 spectator_state_multiline",
+      "probe.js:9 kick_room_player",
+    ],
+    "다른 이름의 수신 등록(여러 줄 호출 포함)을 검출하지 못했다")
+  assert.deepEqual(probe.unresolved.map((entry) => `${entry.where} ${entry.expr}`),
+    ["probe.js:3 eventName", "probe.js:13 lateEventName"],
+    "변수로 받는 수신 등록(여러 줄 호출 포함)을 간접 지점으로 남기지 못했다")
 
   const backendSocketSources = (await collectProductionSources())
     .filter(({ file }) => file.startsWith("backend/socket/"))
@@ -862,6 +968,168 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
   const spectatorEvents = resolved.filter((entry) => SPECTATOR_NAME_VOCABULARY.test(entry.name))
   assert.deepEqual(spectatorEvents, [],
     `관전 계열 이름의 서버 수신 사건이 있다: ${spectatorEvents.map((e) => `${e.where} ${e.name}`).join(", ")}`)
+})
+
+/**
+ * F-23(AC-02 보수): 서버가 **보내는** 사건 이름 전부.
+ *
+ * 위 BACKEND_SOCKET_ON_EVENTS_LOCK은 서버가 **받는** 이름만 고정한다. 관전 전용 상태를 밖으로
+ * 흘리는 통로는 수신이 아니라 송신이므로, 이 목록이 없으면 "서버가 관전 전용 사건을 보내지
+ * 않는다"가 어디에서도 고정되지 않는다(프런트 구독 잠금은 **프런트가 듣는 것**만 본다 —
+ * 서버가 보내는데 프런트가 아직 듣지 않는 사건은 그 잠금 밖이다).
+ */
+const SERVER_EMIT_EVENTS_LOCK = [
+  // 연결 수명·계정 경계(backend/socket/socket.js)
+  "force_disconnect", "friend_status_change",
+  // 대기방·매칭·방 설정(backend/socket/matchmaking.js)
+  "host_changed", "match_found", "matchmaking_disabled", "matchmaking_queued",
+  "player_joined_room", "player_left_room", "player_ready_changed", "public_rooms_updated",
+  "room_deleted", "room_join_failed", "room_joined", "room_kicked", "room_settings_updated",
+  "game_started",
+  // 진행 중 게임(backend/socket/gameSession.js)
+  "day_phase_changed", "day_vote_resolved", "game_ended", "game_kicked", "game_phase_changed",
+  "joker_chat_message", "night_action_result", "night_actions_resolved", "night_result_applied",
+  "night_turn_ended", "night_turn_started", "player_eliminated",
+  "session_participation_changed", "session_self_progress", "tribunal_vote_resolved",
+  // 개인 전송기(emitToUser 계열) — 친구·초대·알림·업적·전적 커밋 뒤 캐시 무효화
+  "account_cache_invalidated", "achievement_granted", "friend_relation_invalidated",
+  "friend_request_accepted", "friend_request_declined", "friend_request_received",
+  "game_invite_received", "game_invite_updated", "notification_created",
+]
+
+/**
+ * 사건 이름을 변수로 받아 보내는 서버 측 간접 전송 지점 전부.
+ * 각 지점이 무엇을 전달하는지는 아래 시험이 그 호출부에서 확인한다.
+ */
+const SERVER_INDIRECT_EMIT_SITES_LOCK = [
+  // friend.controller의 안전 전송 래퍼 — 자기 호출 지점의 리터럴만 넘긴다(아래에서 확인).
+  "backend/controller/friend.controller.js:101 event",
+  // 채널 방송 경계 — emitToChannel(io, channelId, event, …)의 event 파라미터를 그대로 넘긴다.
+  "backend/socket/channelMembership.js:209 event",
+  "backend/socket/channelMembership.js:267 event",
+  "backend/socket/channelMembership.js:275 event",
+  // 게임 방송 경계·밤 턴·낮 페이즈 래퍼 — 전부 호출 지점의 리터럴을 받아 넘긴다.
+  "backend/socket/gameSession.js:477 event",
+  "backend/socket/gameSession.js:1067 event",
+  "backend/socket/gameSession.js:1252 event",
+  // 게임 채팅 — CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다(아래에서 그 표를 확인한다).
+  "backend/socket/gameSession.js:2516 eventName",
+  // 개인 전송기 — emitToUser(uuid, event, payload)의 event 파라미터.
+  "backend/socket/socket.js:27 event",
+]
+
+test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기고 관전 전용 이름이 없다", async () => {
+  const { createRequire } = await import("node:module")
+  const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
+  const tables = {
+    KICK_EVENTS: backendRequire("./kickReceiptStore").KICK_EVENTS,
+    ROOM_SETTINGS_EVENTS: backendRequire("../utils/updateRoomSettingsValidation").ROOM_SETTINGS_EVENTS,
+  }
+
+  // 검출기 대조부터. 직접 전송·방 방송·namespace 방송·방송 래퍼·개인 전송기를 전부,
+  // 그리고 **여러 줄에 걸친 호출**까지 실제로 잡아내는지 먼저 고정한다.
+  const probe = collectServerEmitEventNames([{
+    file: "probe.js",
+    source: [
+      /*  1 */ "io.emit('spectator_rooms_updated', payload)",
+      /*  2 */ "socket.emit('spectator_joined', payload)",
+      /*  3 */ "io.to(channelId).emit('spectator_state', payload)",
+      /*  4 */ "socket.to(channelId).emit('spectator_left', payload)",
+      /*  5 */ "nsp.to(channelId).except(skip).emit('spectator_relay', payload)",
+      /*  6 */ "targetSocket.emit(KICK_EVENTS.ROOM_KICKED, kickedEvent)",
+      /*  7 */ "channelMembership.emitToChannel(",
+      /*  8 */ "    io, room.id, 'spectator_multiline',",
+      /*  9 */ "    { player }, null,",
+      /* 10 */ ")",
+      /* 11 */ "emitToGameChannel(io, session, 'spectator_game_multiline', payload)",
+      /* 12 */ "emitNightTurnEvent(run, 'night_turn_started', payload)",
+      /* 13 */ "emitDayPhaseEvent(run, 'day_phase_changed', payload)",
+      /* 14 */ "emitToUser(receiverId, 'spectator_notice', payload)",
+      /* 15 */ "// io.emit('commented_out', payload)",
+      /* 16 */ "recipientSocket.emit(",
+      /* 17 */ "    eventName,",
+      /* 18 */ "    outbound,",
+      /* 19 */ ")",
+    ].join("\n"),
+  }], tables)
+  assert.deepEqual(
+    probe.resolved.map((entry) => entry.name).sort(),
+    [
+      "day_phase_changed", "night_turn_started", "room_kicked",
+      "spectator_game_multiline", "spectator_joined", "spectator_left",
+      "spectator_multiline", "spectator_notice", "spectator_relay",
+      "spectator_rooms_updated", "spectator_state",
+    ],
+    "서버 송신 지점(직접 전송·방송·래퍼·여러 줄 호출)을 검출하지 못했다",
+  )
+  assert.deepEqual(probe.unresolved.map((entry) => `${entry.where} ${entry.expr}`),
+    ["probe.js:16 eventName"], "변수로 받는 서버 송신을 간접 지점으로 남기지 못했다")
+  assert.deepEqual(
+    probe.resolved.filter((entry) => SPECTATOR_NAME_VOCABULARY.test(entry.name)).map((e) => e.name).sort(),
+    [
+      "spectator_game_multiline", "spectator_joined", "spectator_left", "spectator_multiline",
+      "spectator_notice", "spectator_relay", "spectator_rooms_updated", "spectator_state",
+    ],
+    "관전 계열 송신 이름을 검출하지 못했다",
+  )
+
+  // 실제 백엔드 생산 원문 전체(backend/, 시험 제외).
+  const backendSources = (await collectProductionSources())
+    .filter(({ file }) => file.startsWith("backend/"))
+  assert.ok(backendSources.length > 40, `백엔드 원문을 충분히 읽지 못했다(${backendSources.length}개)`)
+  const { resolved, unresolved } = collectServerEmitEventNames(backendSources, tables)
+
+  assert.deepEqual([...new Set(resolved.map((entry) => entry.name))].sort(),
+    [...SERVER_EMIT_EVENTS_LOCK].sort(),
+    "서버가 송신하는 사건 목록이 잠금과 다르다")
+  assert.deepEqual(unresolved.map((entry) => `${entry.where} ${entry.expr}`).sort(),
+    [...SERVER_INDIRECT_EMIT_SITES_LOCK].sort(),
+    "사건 이름을 변수로 받는 서버 송신 지점이 새로 생겼다")
+
+  const spectatorEmits = resolved.filter((entry) => SPECTATOR_NAME_VOCABULARY.test(entry.name))
+  assert.deepEqual(spectatorEmits, [],
+    `관전 계열 이름의 서버 송신 사건이 있다: ${spectatorEmits.map((e) => `${e.where} ${e.name}`).join(", ")}`)
+
+  // 간접 지점이 실제로 무엇을 전달하는지 출처에서 확인한다(조용히 넘기지 않는다).
+  //
+  // (a) 게임 채팅의 eventName은 CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다 — 낮·사망 두
+  //     채널뿐이고, 사망 채널은 **기존 사망 참가자**의 것이다(외부 관전자 채널이 아니다).
+  const gameSessionSource = backendSources
+    .find(({ file }) => file === "backend/socket/gameSession.js").source
+  const chatEventMap = /CHAT_EVENT_BY_CHANNEL\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/.exec(gameSessionSource)
+  assert.ok(chatEventMap, "서버 채팅 송신 사건 표를 찾지 못했다")
+  assert.deepEqual(
+    [...chatEventMap[1].matchAll(/:\s*'([^']+)'/g)].map((m) => m[1]).sort(),
+    ["day_chat_message_received", "dead_chat_message_received"],
+    "서버 채팅 송신 사건이 바뀌었다",
+  )
+
+  // (b) 나머지 간접 지점은 전부 "호출 지점이 준 이름을 그대로 넘기는 경계"다. 그 경계가 새
+  //     이름을 만들지 않는다는 근거는 **호출 지점들이 위 목록에 잡혀 있다**는 사실이다.
+  //     player_joined_room은 matchmaking.js에서 오직 **여러 줄 emitToChannel 호출**로만
+  //     나가므로(1807·3712행), 줄 단위 수집기로 퇴화하면 이 단언이 먼저 깨진다.
+  const whereOf = (name) => resolved.filter((entry) => entry.name === name).map((entry) => entry.where)
+  assert.ok(
+    whereOf("player_joined_room").some((where) => where.startsWith("backend/socket/matchmaking.js")),
+    "채널 방송 래퍼(emitToChannel) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
+  )
+  assert.ok(
+    whereOf("night_turn_started").some((where) => where.startsWith("backend/socket/gameSession.js")),
+    "밤 턴 래퍼(emitNightTurnEvent) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
+  )
+  assert.ok(
+    whereOf("game_ended").some((where) => where.startsWith("backend/socket/gameSession.js")),
+    "게임 방송 래퍼(emitToGameChannel) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
+  )
+  assert.ok(
+    whereOf("friend_request_accepted")
+      .some((where) => where.startsWith("backend/controller/friend.controller.js")),
+    "개인 전송 래퍼(emitFriendEventSafely) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
+  )
+  assert.ok(
+    whereOf("notification_created").some((where) => where.startsWith("backend/service/")),
+    "개인 전송기 별칭(emit = deps.emitToUser) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
+  )
 })
 
 // ── F-23(SPLIT-1/AC-02): 구조적 목록 감사 ───────────────────────────────────
@@ -914,32 +1182,34 @@ function collectSocketEventRefs(sources) {
   const resolved = { emit: new Map(), on: new Map() }
   const unresolved = []
   for (const { file, source } of sources) {
-    stripComments(source).split(/\r?\n/).forEach((line, index) => {
-      for (const { kind, re } of EVENT_REF_PATTERNS) {
-        re.lastIndex = 0
-        let match
-        while ((match = re.exec(line)) !== null) {
-          const expr = match[1].trim()
-          const where = `${file}:${index + 1}`
-          // 표 참조가 있으면 그것만 쓴다 — 삼항 조건의 비교 문자열("GAME")을 사건 이름으로
-          // 오인하지 않기 위함이다(useKickPlayerRequest.js:354가 실제로 그 모양이다).
-          const fromTables = [...expr.matchAll(/\b([A-Z][A-Z0-9_]*)\.([A-Za-z_]\w*)/g)]
-            .map(([, table, key]) => EVENT_CONSTANT_TABLES[table]?.[key])
-            .filter((value) => typeof value === "string")
-          const names = fromTables.length > 0
-            ? fromTables
-            : [...expr.matchAll(/["']([^"']+)["']/g)].map((m) => m[1])
-          if (names.length === 0) {
-            unresolved.push({ where, kind, expr })
-            continue
-          }
-          for (const name of names) {
-            if (!resolved[kind].has(name)) resolved[kind].set(name, [])
-            resolved[kind].get(name).push(where)
-          }
+    // 위 collectSocketOnEventNames와 **같은 이유**로 본문 전체를 한 번에 훑는다 — 줄 단위
+    // 정규식은 인자가 다음 줄로 넘어가는 socket.on/emit 호출을 통째로 놓친다.
+    const body = stripComments(source)
+    const lineOf = makeLineLookup(body)
+    for (const { kind, re } of EVENT_REF_PATTERNS) {
+      re.lastIndex = 0
+      let match
+      while ((match = re.exec(body)) !== null) {
+        const expr = normalizeExpr(match[1])
+        const where = `${file}:${lineOf(match.index)}`
+        // 표 참조가 있으면 그것만 쓴다 — 삼항 조건의 비교 문자열("GAME")을 사건 이름으로
+        // 오인하지 않기 위함이다(useKickPlayerRequest.js:354가 실제로 그 모양이다).
+        const fromTables = [...expr.matchAll(/\b([A-Z][A-Z0-9_]*)\.([A-Za-z_]\w*)/g)]
+          .map(([, table, key]) => EVENT_CONSTANT_TABLES[table]?.[key])
+          .filter((value) => typeof value === "string")
+        const names = fromTables.length > 0
+          ? fromTables
+          : [...expr.matchAll(/["']([^"']+)["']/g)].map((m) => m[1])
+        if (names.length === 0) {
+          unresolved.push({ where, kind, expr })
+          continue
+        }
+        for (const name of names) {
+          if (!resolved[kind].has(name)) resolved[kind].set(name, [])
+          resolved[kind].get(name).push(where)
         }
       }
-    })
+    }
   }
   return { resolved, unresolved }
 }
@@ -1097,7 +1367,11 @@ test("F-23(SPLIT-1/AC-02): 비로그인 /ingame 직접 진입은 로그인으로
  */
 const CLIENT_EMIT_EVENTS_LOCK = [
   "accept_game_invite", "acknowledge_role_reveal", "cast_day_vote", "cast_tribunal_vote",
-  "create_room", "delete_room", "get_current_room", "get_kick_result", "get_public_rooms",
+  "create_room", "delete_room", "get_current_room",
+  // F-23(AC-02 보수): 초대 ACK 유실 재조회. useFriendSocketEvents.js:239의 emitWithAck 호출이
+  // **여러 줄**이라 줄 단위 수집기가 통째로 놓치고 있던 액션이다(그래서 예전 잠금에 없었다).
+  "get_game_invite_result",
+  "get_kick_result", "get_public_rooms",
   "get_room_settings_update_result", "get_session_snapshot", "join_matchmaking",
   "join_public_room", "join_room_by_code", "kick_game_player", "kick_room_player",
   "leave_game_session", "leave_matchmaking", "leave_room", "notifications_ready",
@@ -1135,26 +1409,47 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
   // 검출기 자신의 대조부터. 관전을 다른 이름으로 만든 전송·구독·상수 표를 실제로 잡아내는지,
   // 그리고 주석 속 예시 코드를 사건으로 오인하지 않는지 함께 고정한다(후자는 실재하는 경우다:
   // parsePlayerEliminatedPayload.js:5의 `io.to(channel).emit('player_eliminated', ...)`).
+  //
+  // F-23(AC-02 보수): 여기에도 **여러 줄에 걸친 호출**을 넣는다. 줄 단위 수집기는 인자가
+  // 다음 줄로 넘어가는 전송·구독을 전부 놓쳤고, 그러면 아래의 "목록이 잠금과 같다"는 단언이
+  // 관전 전송을 한 줄 띄워 적은 코드 앞에서 조용히 통과한다.
   const probe = collectSocketEventRefs([{
     file: "probe.js",
     source: [
-      'socket.emit("join_as_watcher", { roomId })',
-      'socket.on("viewer_state_changed", handler)',
-      'socket.emit(WATCH_EVENTS.ENTER, {})',
-      'socket.emit(scope === "GAME" ? KICK_EVENTS.GAME : KICK_EVENTS.ROOM, request, cb)',
-      "/**",
-      " * io.to(channel).emit('player_eliminated', payload)",
-      " */",
-      '// socket.on("commented_out_event", handler)',
+      /*  1 */ 'socket.emit("join_as_watcher", { roomId })',
+      /*  2 */ 'socket.on("viewer_state_changed", handler)',
+      /*  3 */ 'socket.emit(WATCH_EVENTS.ENTER, {})',
+      /*  4 */ 'socket.emit(scope === "GAME" ? KICK_EVENTS.GAME : KICK_EVENTS.ROOM, request, cb)',
+      /*  5 */ "/**",
+      /*  6 */ " * io.to(channel).emit('player_eliminated', payload)",
+      /*  7 */ " */",
+      /*  8 */ '// socket.on("commented_out_event", handler)',
+      /*  9 */ "socket.emit(",
+      /* 10 */ '    "join_as_watcher_multiline",',
+      /* 11 */ "    { roomId },",
+      /* 12 */ ")",
+      /* 13 */ "socket.on(",
+      /* 14 */ '    "viewer_state_multiline",',
+      /* 15 */ "    handler,",
+      /* 16 */ ")",
+      /* 17 */ "socket.emit(",
+      /* 18 */ "    lateEventName,",
+      /* 19 */ "    {},",
+      /* 20 */ ")",
     ].join("\n"),
   }])
   assert.deepEqual([...probe.resolved.emit.keys()].sort(),
-    ["join_as_watcher", "kick_game_player", "kick_room_player"],
-    "다른 이름의 전송 액션 또는 상수 표 참조를 검출하지 못했다")
-  assert.deepEqual([...probe.resolved.on.keys()], ["viewer_state_changed"],
-    "다른 이름의 구독 사건을 검출하지 못했다")
-  assert.deepEqual(probe.unresolved.map((entry) => `${entry.kind}:${entry.expr}`),
-    ["emit:WATCH_EVENTS.ENTER"], "모르는 상수 표 참조를 간접 지점으로 남기지 못했다")
+    ["join_as_watcher", "join_as_watcher_multiline", "kick_game_player", "kick_room_player"],
+    "다른 이름의 전송 액션(여러 줄 호출 포함) 또는 상수 표 참조를 검출하지 못했다")
+  assert.deepEqual([...probe.resolved.on.keys()].sort(),
+    ["viewer_state_changed", "viewer_state_multiline"],
+    "다른 이름의 구독 사건(여러 줄 호출 포함)을 검출하지 못했다")
+  assert.deepEqual(probe.unresolved.map((entry) => `${entry.where} ${entry.kind}:${entry.expr}`),
+    ["probe.js:3 emit:WATCH_EVENTS.ENTER", "probe.js:17 emit:lateEventName"],
+    "모르는 상수 표 참조·여러 줄 간접 전송을 간접 지점으로 남기지 못했다")
+  // 여러 줄 호출의 근거 줄 번호는 **호출이 시작된 줄**이다(줄 번호가 어긋나면 추적이 불가능하다).
+  assert.deepEqual(probe.resolved.emit.get("join_as_watcher_multiline"), ["probe.js:9"])
+  assert.deepEqual(probe.resolved.on.get("viewer_state_multiline"), ["probe.js:13"])
 
   // 실제 생산 원문 전체(frontend/src, 시험 제외).
   const frontendSources = (await collectProductionSources())
@@ -1453,6 +1748,38 @@ test("F-23(AC-06): 나가기 성공 ACK는 정확히 한 번 정리하고 로비
   // 뒤늦은 중복 ACK는 아무 일도 하지 않는다(정리·이동은 이미 한 번 끝났다).
   await act(async () => { pending.ack({ ok: true }) })
   assert.equal(router.state.location.pathname, "/multiplay")
+})
+
+test("F-23(AC-06 보수): 언마운트 뒤 도착한 늦은 성공 ACK는 store를 정리하지도 이동하지도 않는다", async () => {
+  // CODEX-9(AC-06) 회귀. useInGameExit의 cleanup은 진행 중이던 요청을 만료시키지 않았고,
+  // 성공 경로(finalize→settle)에는 mounted 검사가 없었다. 그래서 화면이 사라진 뒤 같은 신원으로
+  // 늦게 도착한 성공 ACK가 **이미 없는 화면**의 store 정리와 navigate를 실행할 수 있었다.
+  seedLiveGame({ selfAlive: false })
+  const view = await mountInGame()
+  const socket = currentSocket
+
+  await act(async () => { findButton(view.container, "게임 나가기").click() })
+  assert.equal(socket.countEmits("leave_game_session"), 1, "전제: 나가기 요청이 실제로 나가야 한다")
+  const pending = socket.takeAck("leave_game_session")
+
+  // 응답이 오기 전에 화면이 사라진다. 신원·게임·소속은 하나도 바뀌지 않았다 —
+  // createLeaveGameSessionRequest의 기존 신원 가드는 전부 통과하는 상태다.
+  await act(async () => { view.unmount() })
+  const pathAfterUnmount = router.state.location.pathname
+  const stateBefore = useInGameStore.getState().state
+
+  await act(async () => { pending.ack({ ok: true }) })
+
+  assert.equal(useInGameStore.getState().gameId, GAME_ID, "언마운트 뒤 늦은 성공 ACK가 인게임 store를 정리했다")
+  assert.equal(useInGameStore.getState().state, stateBefore, "언마운트 뒤 늦은 성공 ACK가 게임 상태를 바꿨다")
+  assert.equal(myMembership(), MY_MEMBERSHIP, "언마운트 뒤 늦은 ACK가 내 소속을 지웠다")
+  assert.equal(router.state.location.pathname, pathAfterUnmount,
+    "언마운트 뒤 늦은 성공 ACK가 화면을 이동시켰다")
+
+  // 중복으로 한 번 더 도착해도 같다(만료된 시도는 끝까지 아무 일도 하지 않는다).
+  await act(async () => { pending.ack({ ok: true }) })
+  assert.equal(useInGameStore.getState().gameId, GAME_ID)
+  assert.equal(router.state.location.pathname, pathAfterUnmount)
 })
 
 test("F-23(AC-06): 나가기 취소는 아무것도 보내지 않고 화면에 남는다", async () => {

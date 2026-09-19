@@ -190,6 +190,11 @@ export function useGameSessionSocketEvents() {
     // 이벤트를 놓칠 수 있다. applyPhaseChanged 자체가 gameId 불일치를 걸러내므로 여기서는
     // store에 그대로 위임한다.
     const handlePhaseChanged = (payload) => {
+      // F-23(AC-05 보수): 같은 effect의 다른 공개 사건 핸들러와 **똑같이** 등록 범위를 먼저
+      // 본다. 단계 전이는 그 자체로 밤·낮·재판의 입력 창을 여닫는 공개 사실이라, 재연결·신원
+      // 전이 직후 effect 재등록 전 구간에서 옛 소켓·옛 신원의 구독이 늦게 받은 것을 현재
+      // store에 실으면 지금 판의 단계가 지나간 판의 사실로 덮인다.
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const before = useInGameStore.getState().state
       useInGameStore.getState().applyPhaseChanged(payload)
       const after = useInGameStore.getState()
@@ -271,6 +276,10 @@ export function useGameSessionSocketEvents() {
     // DAY 투표 판정 방송이다(TRIBUNAL 전이 또는 TIE/ABSTAINED의 NIGHT 전이). 검증에 필요한
     // gameId/dayIndex는 호출 시점의 store에서 직접 읽는다(위 handleNightResultApplied와 동일한 이유).
     const handleDayVoteResolved = (payload) => {
+      // F-23(AC-05 보수): 위 공개 사건 핸들러들과 **똑같은** 등록 범위 가드다. 낮 판정은 재판
+      // 진입(피고 확정)과 다음 밤 전이를 함께 확정하므로, 옛 연결·옛 신원의 구독이 늦게 받은
+      // 판정이 현재 화면의 단계와 피고를 바꾸지 못하게 한다.
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const parsed = parseDayVoteResolvedPayload({
@@ -302,6 +311,10 @@ export function useGameSessionSocketEvents() {
     // 낮 하위 페이즈 전이(DAY_DISCUSSION→DAY_VOTE) 방송이다. 검증에 필요한 gameId/dayIndex는
     // 호출 시점의 store에서 직접 읽는다(위 handleNightResultApplied와 동일한 이유).
     const handleDayPhaseChanged = (payload) => {
+      // F-23(AC-05 보수): 위 공개 사건 핸들러들과 **똑같은** 등록 범위 가드다. 낮 하위 페이즈는
+      // 투표 입력 창 자체를 여는 공개 사실이라, 지나간 범위의 구독이 늦게 받은 전이가 현재
+      // 화면의 투표 단계를 열거나 닫게 두지 않는다.
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const parsed = parseDayPhaseChangedPayload({

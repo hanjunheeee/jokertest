@@ -127,9 +127,12 @@ function storeFacts() {
   return JSON.stringify({
     gameId,
     phase: state?.phase ?? null,
+    // 낮 하위 구간도 공개 사실이다 — day_phase_changed가 여는 투표 창이 여기에 드러난다.
+    dayPhase: state?.dayPhase ?? null,
     dayIndex: state?.dayIndex ?? null,
     players: (state?.players ?? []).map((p) => ({ uuid: p.uuid, alive: p.alive })),
     tribunal: state?.tribunal ?? null,
+    dayVoteResolution: state?.dayVoteResolution ?? null,
     winResult: state?.winResult ?? null,
   })
 }
@@ -290,6 +293,188 @@ test("F-23(AC-05 보수): 가드는 정상 경로를 막지 않는다 — 전이
   assert.deepEqual(afterEliminated.winResult, { winner: "CITIZEN" })
   assert.equal(afterEliminated.players.find((p) => p.uuid === V1).alive, false)
   assert.equal(afterEliminated.players.find((p) => p.uuid === V2).alive, false)
+
+  session.close()
+})
+
+// ── F-23(AC-05 보수 · 2회차): 단계 계열 세 사건에도 같은 가드가 걸려 있는가 ─────
+//
+// 앞의 시험들이 덮은 것은 사망·재판 두 사건이다. 같은 effect 안에서 **등록 범위를 전혀 보지
+// 않던** 공개 사건이 셋 더 있었다: game_phase_changed · day_vote_resolved · day_phase_changed.
+// 이 셋은 사망을 말하지는 않지만 지금 판의 **단계와 입력 창**을 직접 연다(밤 진입, 재판 진입과
+// 피고 확정, 낮 투표 창). 재연결·신원 전이 직후 effect가 다시 등록되기 전 구간에서 옛 소켓·
+// 옛 신원의 구독이 늦게 받은 이 사건들이 현재 store에 실리면, 지금 보고 있는 판의 단계가
+// 지나간 판의 사실로 덮인다.
+//
+// 앞의 시험들과 **같은 방식**으로 두 축을 나란히 고정한다 — 옛 구독 0 / 현재 구독 1.
+
+/** ROLE_REVEAL → 첫 낮 전이 방송(applyPhaseChanged가 받는 유일한 정상 형태). */
+function firstDayPhasePayload() {
+  return { gameId: GAME_ID, phase: "DAY", dayIndex: 1 }
+}
+
+/** 낮 투표 판정(재판 진입 · 피고 확정). */
+function tribunalDayVotePayload({ tribunalTargetUuid = V1, dayIndex = 1 } = {}) {
+  return {
+    gameId: GAME_ID,
+    dayIndex,
+    phase: "TRIBUNAL",
+    outcome: "TRIBUNAL",
+    tribunalTargetUuid,
+    publicVoteCount: 2,
+    publicAbstainCount: 0,
+  }
+}
+
+/** 낮 하위 구간 전이(토론 → 투표 창 열림). */
+function dayVoteOpenPayload({ dayIndex = 1 } = {}) {
+  return { gameId: GAME_ID, dayIndex, dayPhase: "DAY_VOTE", round: 1 }
+}
+
+test("F-23(AC-05 보수): 연결 교체 뒤 옛 구독이 받은 game_phase_changed는 store를 바꾸지 않고, 현재 구독이 받은 같은 사건은 1회 반영된다", () => {
+  seedSession({ phase: "ROLE_REVEAL", dayIndex: 0 })
+  const session = open()
+
+  const staleHandlers = session.socket.handlersOf("game_phase_changed")
+  assert.equal(staleHandlers.length, 1, "전제: 전역 수신 훅이 이 사건을 구독하고 있어야 한다")
+
+  const next = createFakeSocket({ id: "sock-next" })
+  act(() => setSocket(next))
+
+  const before = storeFacts()
+  act(() => {
+    for (const handler of staleHandlers) handler(firstDayPhasePayload())
+  })
+
+  assert.equal(storeFacts(), before, "옛 연결의 구독이 받은 단계 전이가 현재 화면의 사실을 바꿨다")
+  assert.equal(useInGameStore.getState().state.phase, "ROLE_REVEAL", "옛 구독의 사건이 단계를 진행시켰다")
+
+  act(() => next.deliver("game_phase_changed", firstDayPhasePayload()))
+
+  const applied = useInGameStore.getState().state
+  assert.equal(applied.phase, "DAY", "현재 구독의 정상 사건까지 막혔다")
+  assert.equal(applied.dayIndex, 1)
+  assert.equal(applied.dayPhase, "DAY_DISCUSSION")
+
+  // 중복 방송은 이미 ROLE_REVEAL이 아니므로 그대로 no-op이다(1회 반영).
+  const afterFirst = storeFacts()
+  act(() => next.deliver("game_phase_changed", firstDayPhasePayload()))
+  assert.equal(storeFacts(), afterFirst, "같은 사건이 두 번 반영됐다")
+
+  session.close()
+})
+
+test("F-23(AC-05 보수): 연결 교체 뒤 옛 구독이 받은 day_vote_resolved는 store를 바꾸지 않고, 현재 구독이 받은 같은 사건은 1회 반영된다", () => {
+  seedSession({ phase: "DAY", dayIndex: 1 })
+  const session = open()
+
+  const staleHandlers = session.socket.handlersOf("day_vote_resolved")
+  assert.equal(staleHandlers.length, 1, "전제: 전역 수신 훅이 이 사건을 구독하고 있어야 한다")
+
+  const next = createFakeSocket({ id: "sock-next" })
+  act(() => setSocket(next))
+
+  const before = storeFacts()
+  act(() => {
+    for (const handler of staleHandlers) handler(tribunalDayVotePayload())
+  })
+
+  assert.equal(storeFacts(), before, "옛 연결의 구독이 받은 낮 판정이 현재 화면의 사실을 바꿨다")
+  assert.equal(useInGameStore.getState().state.phase, "DAY", "옛 구독의 사건이 재판으로 진입시켰다")
+  assert.equal(useInGameStore.getState().state.tribunal ?? null, null, "옛 구독의 사건이 피고를 확정했다")
+
+  act(() => next.deliver("day_vote_resolved", tribunalDayVotePayload()))
+
+  const applied = useInGameStore.getState().state
+  assert.equal(applied.phase, "TRIBUNAL", "현재 구독의 정상 사건까지 막혔다")
+  assert.equal(applied.tribunal.defendantUuid, V1)
+  assert.equal(applied.dayVoteResolution.outcome, "TRIBUNAL")
+
+  const afterFirst = storeFacts()
+  act(() => next.deliver("day_vote_resolved", tribunalDayVotePayload()))
+  assert.equal(storeFacts(), afterFirst, "같은 판정이 두 번 반영됐다")
+
+  session.close()
+})
+
+test("F-23(AC-05 보수): 연결 교체 뒤 옛 구독이 받은 day_phase_changed는 store를 바꾸지 않고, 현재 구독이 받은 같은 사건은 1회 반영된다", () => {
+  seedSession({ phase: "DAY", dayIndex: 1 })
+  const session = open()
+  assert.equal(useInGameStore.getState().state.dayPhase, "DAY_DISCUSSION", "전제: 토론 구간에서 시작한다")
+
+  const staleHandlers = session.socket.handlersOf("day_phase_changed")
+  assert.equal(staleHandlers.length, 1, "전제: 전역 수신 훅이 이 사건을 구독하고 있어야 한다")
+
+  const next = createFakeSocket({ id: "sock-next" })
+  act(() => setSocket(next))
+
+  const before = storeFacts()
+  act(() => {
+    for (const handler of staleHandlers) handler(dayVoteOpenPayload())
+  })
+
+  assert.equal(storeFacts(), before, "옛 연결의 구독이 받은 낮 하위 전이가 현재 화면의 사실을 바꿨다")
+  assert.equal(useInGameStore.getState().state.dayPhase, "DAY_DISCUSSION", "옛 구독의 사건이 투표 창을 열었다")
+
+  act(() => next.deliver("day_phase_changed", dayVoteOpenPayload()))
+
+  assert.equal(useInGameStore.getState().state.dayPhase, "DAY_VOTE", "현재 구독의 정상 사건까지 막혔다")
+
+  const afterFirst = storeFacts()
+  act(() => next.deliver("day_phase_changed", dayVoteOpenPayload()))
+  assert.equal(storeFacts(), afterFirst, "같은 사건이 두 번 반영됐다")
+
+  session.close()
+})
+
+test("F-23(AC-05 보수): 계정이 교체되면 옛 신원의 구독이 받은 단계 계열 세 사건도 현재 화면을 바꾸지 못한다", () => {
+  // 연결 축이 아니라 **계정 축**만 움직인다 — 같은 소켓, 같은 판, 다른 인증 신원이다.
+  seedSession({ phase: "ROLE_REVEAL", dayIndex: 0 })
+  const session = open()
+
+  const stalePhase = session.socket.handlersOf("game_phase_changed")
+  const staleDayVote = session.socket.handlersOf("day_vote_resolved")
+  const staleDayPhase = session.socket.handlersOf("day_phase_changed")
+
+  act(() => {
+    useAuthStore.setState({
+      isLoggedIn: true,
+      user: { uuid: "uuid-other-account", nickname: "남" },
+      identityGeneration: (useAuthStore.getState().identityGeneration ?? 0) + 1,
+    })
+  })
+
+  const before = storeFacts()
+  act(() => {
+    for (const handler of stalePhase) handler(firstDayPhasePayload())
+    for (const handler of staleDayPhase) handler(dayVoteOpenPayload())
+    for (const handler of staleDayVote) handler(tribunalDayVotePayload())
+  })
+
+  assert.equal(storeFacts(), before, "이전 신원의 구독이 받은 단계 사건이 현재 화면의 사실을 바꿨다")
+  assert.equal(useInGameStore.getState().state.phase, "ROLE_REVEAL")
+
+  session.close()
+})
+
+test("F-23(AC-05 보수): 단계 계열 가드도 정상 경로를 막지 않는다 — 전이 없이 도착한 세 사건은 순서대로 반영된다", () => {
+  // 퇴화 대조. 위 네 시험이 전부 "바뀌지 않는다"이므로, 세 핸들러가 아무것도 하지 않는 구현이
+  // 조용히 통과할 수 있다. 전이가 하나도 없는 정상 진행을 같은 파일에서 함께 고정한다.
+  seedSession({ phase: "ROLE_REVEAL", dayIndex: 0 })
+  const session = open()
+
+  session.deliver("game_phase_changed", firstDayPhasePayload())
+  assert.equal(useInGameStore.getState().state.phase, "DAY")
+  assert.equal(useInGameStore.getState().state.dayPhase, "DAY_DISCUSSION")
+
+  session.deliver("day_phase_changed", dayVoteOpenPayload())
+  assert.equal(useInGameStore.getState().state.dayPhase, "DAY_VOTE")
+
+  session.deliver("day_vote_resolved", tribunalDayVotePayload())
+  const resolved = useInGameStore.getState().state
+  assert.equal(resolved.phase, "TRIBUNAL")
+  assert.equal(resolved.tribunal.defendantUuid, V1)
+  assert.equal(resolved.dayPhase ?? null, null, "재판으로 넘어갔는데 낮 하위 구간이 남았다")
 
   session.close()
 })

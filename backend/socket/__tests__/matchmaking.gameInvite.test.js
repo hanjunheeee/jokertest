@@ -782,6 +782,66 @@ test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛
     )
 })
 
+test('AC-04(보수): 실패 정리의 늦은 소유권 재검사는 같은 채널에 정상 재소속한 소켓의 가입을 복원한다', async (t) => {
+    // CODEX-9(AC-04) 회귀. 실패 정리가 detachSocketFromChannel에 넘기는 ownsChannel 콜백이
+    // **이후 null로 바뀌는 joinedRoomId 변수**를 참조하면, leave가 끝난 뒤의 소유권 재검사가
+    // isAccountSeatedInRoom(uuid, null)을 묻게 되어 언제나 거짓이다 — 그 사이 같은 채널에
+    // 정상 입장한 소켓의 가입을 되돌려 주지 못하고(channelMembership의 restoreIfSuperseded가
+    // 열리지 않는다), 서버가 참가자로 인정하는 계정이 그 방의 방송을 받지 못한 채 남는다.
+    //
+    // publish 이전에 막는다(blockBeforeEntry) — 그래야 removePublishedAdmission 경로가 돌지
+    // 않는다. 그 경로는 attempt.roomId(끝까지 안 바뀌는 값)로 정리하므로 같은 복원을 대신
+    // 해 주고, 그러면 이 시험이 보려는 joinedRoomId 콜백의 결함이 가려진다.
+    const { io, hostSocket, guestSocket, room } = await setupRoomWithInvite(t, {
+        gates: { blockBeforeEntry: true },
+    })
+    t.after(() => channelMembership.__resetChannelExclusionsForTests())
+
+    // leave의 **완료 시점**을 시험이 쥔다. 이 시험의 대상은 완료 뒤의 재검사다.
+    const leaveGate = deferred()
+    const originalLeave = guestSocket.leave.bind(guestSocket)
+    guestSocket.leave = async (channelId) => {
+        await leaveGate.promise
+        return originalLeave(channelId)
+    }
+
+    const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
+    assert.equal(ack.ok, false)
+    assert.equal(guestSocket.rooms.has(room.roomId), true, '전제: 실패 시점에 채널 가입은 아직 남아 있다')
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.some(([uuid]) => uuid === GUEST), false,
+        '전제: 실패한 시도는 소속을 남기지 않는다',
+    )
+
+    // 정리가 끝나기 전에 **같은 소켓이 정상 경로로** 그 방의 확정 참가자가 된다.
+    await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
+    assert.equal(
+        matchmaking.__getStateSnapshotForTests().playerRoom.find(([uuid]) => uuid === GUEST)?.[1],
+        room.roomId, '전제: 정상 입장이 성립해야 한다',
+    )
+
+    // 늦은 leave가 끝난다 — 이 leave는 방금 성립한 새 소속의 채널 가입까지 함께 떼어 간다.
+    leaveGate.resolve()
+    await drainTicks()
+
+    assert.equal(
+        guestSocket.rooms.has(room.roomId), true,
+        '늦은 실패 정리가 정상 재소속의 채널 가입을 되돌려 주지 않았다',
+    )
+    assert.equal(
+        channelMembership.isSocketExcludedFromChannel(room.roomId, guestSocket.id), false,
+        '정상 참가자가 전달 제외에 남았다',
+    )
+
+    // 그리고 실제 방송이 그 소켓에 닿는다 — 가입 기록만 보고 수신을 주장하지 않는다.
+    const before = guestSocket.countReceived('player_ready_changed')
+    await callAsPromise(handleSetReady, io, hostSocket, HOST, readyPayload(room))
+    assert.equal(
+        guestSocket.countReceived('player_ready_changed') - before, 1,
+        '복원된 채널로 방송이 전달되지 않았다',
+    )
+})
+
 // ---------------------------------------------------------------------------
 // review5 #1 · 기한 경과와 publication 소유권
 //
