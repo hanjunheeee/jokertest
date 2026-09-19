@@ -45,6 +45,24 @@ export const ROOM_CODE_COPY_ERRORS = {
 }
 
 /**
+ * F-24(AC-01): 복사 요청의 **상태 코드**입니다. 문구(ROOM_CODE_COPY_ERRORS)와 나누는 이유는
+ * 문구가 계약이 될 수 없기 때문입니다 — 안내는 언제든 다듬을 수 있지만, 화면과 시험이
+ * "무슨 일이 일어났는가"로 분기하려면 흔들리지 않는 식별자가 있어야 합니다.
+ *
+ * COPY_PENDING은 여기 없습니다. 그것은 "요청을 보냈다"는 화면의 진행 상태이지 이 판정기가
+ * 돌려주는 결과가 아닙니다 — 판정기는 클립보드를 건드리기 **전에** 한 번 답하고, 그 뒤의
+ * 성공·실패는 실제 클립보드 완료가 정합니다.
+ */
+export const ROOM_CODE_COPY_RESULTS = Object.freeze({
+  /** 실제 클립보드 쓰기가 완료됐다. */
+  COPY_SUCCEEDED: "COPY_SUCCEEDED",
+  /** 표시할 코드 자체가 없거나 형식이 깨졌다 — 클립보드를 건드리지 않는다. */
+  CODE_UNAVAILABLE: "CODE_UNAVAILABLE",
+  /** 코드는 정상인데 클립보드 접근이 거부됐다(권한·비보안 컨텍스트·API 부재). */
+  CLIPBOARD_FAILED: "CLIPBOARD_FAILED",
+})
+
+/**
  * 문자열이 아닌 방코드(null·undefined·숫자 등)를 빈 문자열로 바꿔 줍니다.
  * 방코드 표시 칸은 value[index]로 글자를 꺼내므로, null이 그대로 흘러가면
  * "Cannot read properties of null" 예외로 모달 전체가 깨집니다.
@@ -110,4 +128,25 @@ export function resolveRoomCodeCopy(code) {
   // 표시값과 복사값이 갈라지지 않도록, 잘라내거나 대문자로 바꾸는 등의 가공을 하지 않고
   // 화면에 보이는 문자열을 그대로 돌려줍니다.
   return { ok: true, value, error: "" }
+}
+
+/**
+ * F-24(AC-01): 복사 **시도 이전** 판정의 안정적 상태 코드를 돌려줍니다.
+ *
+ * resolveRoomCodeCopy의 반환 모양(ok/value/error)은 그대로 둡니다 — 그 계약은 이미 고정돼
+ * 있고, 필드를 덧붙이면 그 모양을 확인하는 기존 회귀가 깨집니다. 코드가 필요한 호출부는
+ * 같은 입력으로 이 함수를 한 번 더 부르면 됩니다(두 함수 모두 순수하고 같은 술어를 씁니다 —
+ * 판정이 갈릴 여지가 없습니다).
+ *
+ * 돌려주는 값이 COPY_SUCCEEDED라도 **아직 성공이 아닙니다** — "이 값으로 클립보드를 시도해도
+ * 된다"는 뜻이고, 실제 성공 표시는 writeText가 완료된 뒤에만 화면이 붙입니다. 클립보드가
+ * 거부된 경우의 CLIPBOARD_FAILED도 이 함수가 아니라 그 완료 지점에서 나옵니다.
+ *
+ * @param {unknown} code 화면에 표시 중인 방코드
+ * @returns {string} ROOM_CODE_COPY_RESULTS의 값
+ */
+export function resolveRoomCodeCopyStatus(code) {
+  return isValidRoomCode(code)
+    ? ROOM_CODE_COPY_RESULTS.COPY_SUCCEEDED
+    : ROOM_CODE_COPY_RESULTS.CODE_UNAVAILABLE
 }

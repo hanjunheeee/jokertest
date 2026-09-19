@@ -9,6 +9,11 @@ const {
     resolveRoleComposition,
     validateResolvedComposition,
 } = require('./roleComposition')
+// F-24(AC-04/RESTORE-24): "다음 방 설정 복원"의 원본은 **시작에 실제로 쓰인 서버 확정 설정**의
+// 허용 목록 사본이어야 한다. 그 허용 목록의 소유자는 F-20의 설정 모듈 하나뿐이다 — 여기서
+// 직접 키를 다시 나열하면 한쪽만 바뀌었을 때 관전자 키 같은 허용 목록 밖 값이 복원 경로로
+// 새어 든다(RESTORE-24). 이 모듈은 game-core/roleComposition만 참조하므로 순환이 없다.
+const { buildRoomSettingsView } = require('../utils/updateRoomSettingsValidation')
 
 // 5개 역할의 단일 canonical 정의. GAME_ROLES/ROLE_TEAMS는 모두 이 정의에서 파생된다
 // (역할명을 여러 상수에 손으로 나열하면 하나만 바뀌었을 때 조용히 어긋날 수 있음).
@@ -445,6 +450,38 @@ function getActiveSessionRoutingInfo(uuid) {
 }
 
 /**
+ * F-24(AC-02): 방 코드가 가리키는 **세션**의 상태만 돌려준다(순수 조회 — 어떤 상태도 바꾸지
+ * 않고 절대 throw하지 않는다).
+ *
+ * 왜 필요한가: 대기방은 시작과 함께 registry에서 사라진다. 그 뒤 그 코드로 들어오려는 요청은
+ * 지금까지 **시작 표식**(startedRoomMarks, TTL 30분)만 근거로 사유를 갈랐다 — 표식이 만료되면
+ * 아직 진행 중인 판의 코드가 "코드 불일치"가 되고, 같은 코드가 새 방에 재발급될 수도 있었다.
+ * 세션 registry는 표식보다 정확하고 TTL도 없다(A-09).
+ *
+ * 돌려주는 것은 식별자와 단계뿐이다. 참가자·역할·가변 세션 참조는 어디에도 싣지 않는다 —
+ * 이 함수는 **입장 판정과 코드 예약**의 입력이지 상태 조회 권한이 아니다.
+ *
+ * roomId를 함께 주면 코드와 roomId가 **같은 세션**을 가리켜야 한다. 그래야 모든 예약이
+ * 소멸한 뒤 같은 코드가 새 방에 재발급됐을 때, 옛 roomId를 들고 온 요청이 새 방으로 흘러
+ * 들어가지 않는다.
+ *
+ * @param {{roomCode?:string, roomId?:string}} [query]
+ * @returns {{gameId:string, roomId:string|null, phase:string}|null}
+ */
+function getRoomCodeSessionState({ roomCode, roomId } = {}) {
+    const normalizedCode = typeof roomCode === 'string' ? roomCode.trim() : ''
+    if (!normalizedCode) return null
+    const expectedRoomId = typeof roomId === 'string' && roomId ? roomId : null
+
+    for (const session of gameSessions.values()) {
+        if (session?.roomCode !== normalizedCode) continue
+        if (expectedRoomId !== null && session.roomId !== expectedRoomId) continue
+        return { gameId: session.id, roomId: session.roomId ?? null, phase: session.phase }
+    }
+    return null
+}
+
+/**
  * 재접속 유예가 만료돼 그 세션에서 배제된 uuid인지 판정한다(순수 조회 — 어떤 상태도 바꾸지
  * 않고 절대 throw하지 않는다). 배제 사실은 session.forfeitedUuids(commitDisconnectElimination이
  * 채우는 Set)에만 존재한다 — playerSession 매핑을 지우는 것만으로는 "한 번도 없던 사람"과
@@ -633,6 +670,31 @@ function buildTimerSettings(settings) {
     }
 }
 
+/**
+ * F-24(AC-04/RESTORE-24): 시작에 실제로 쓰인 서버 확정 설정의 **복원 원본**을 만든다.
+ *
+ * 세 값만 담는다 — accessType(공개/코드), settingsVersion(그 설정의 확정 버전), settings(허용
+ * 목록 사본). 이 셋이 "다음 방을 같은 설정으로 다시 만든다"에 필요한 전부다. 방 식별자·코드·
+ * 명단·준비 상태·배정 역할·결과는 담지 않는다(A-02) — 다음 방은 설정만 물려받고 그 밖의
+ * 과거 사실은 하나도 물려받지 않는다.
+ *
+ * 실제 배정 역할이나 실효 타이머를 역산하지 않는다(A-01). 원본은 언제나 **시작 시점의 방
+ * 설정**이지, 그 설정을 해석한 결과가 아니다 — 해석 결과를 저장하면 AUTO로 만든 방이 다음
+ * 번에는 CUSTOM 고정 구성으로 되살아난다.
+ *
+ * settings는 buildRoomSettingsView가 허용 목록으로 새로 만든 객체다. room.settings를 그대로
+ * 참조하면 그 뒤의 설정 교체가 이미 시작한 판의 원본을 바꾸고, 예전 데이터에 섞인 관전자
+ * 키가 그대로 실려 나간다(RESTORE-24).
+ *
+ * @param {object|undefined} room - 시작에 사용한 대기방(읽기만 한다)
+ * @returns {{accessType:string|null, settingsVersion:number|null, settings:object}}
+ */
+function buildRoomSettingsSource(room) {
+    const accessType = room?.accessType === 'open' || room?.accessType === 'code' ? room.accessType : null
+    const settingsVersion = Number.isInteger(room?.settingsVersion) ? room.settingsVersion : null
+    return { accessType, settingsVersion, settings: buildRoomSettingsView(room?.settings) }
+}
+
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {
     const players = [...room.players.values()]
     const jokerCount = room.settings?.jokerCount ?? 0
@@ -659,6 +721,12 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // 시점 말고는 "이 판이 언제 시작됐는가"를 나중에 복원할 방법이 없으므로 여기서 찍는다.
         startedAt: Date.now(),
         roomId: room.id,
+        // F-24(AC-01/AC-02): 방 코드는 시작과 함께 사라지지 않는다 — 진행 중·종료 직후 화면이
+        // "현재 방의 코드"를 보여주는 유일한 원천이고, 코드 재발급 예약(AC-02)의 근거이기도
+        // 하다. 대기방이 registry에서 지워진 뒤에는 이 값 말고 그 코드를 아는 곳이 없다.
+        roomCode: typeof room.code === 'string' && room.code ? room.code : null,
+        // F-24(AC-04): 시작에 실제로 쓰인 서버 확정 설정의 복원 원본(허용 목록 사본).
+        roomSettingsSource: buildRoomSettingsSource(room),
         channelId: room.id, // 기존 Socket.IO room(roomId)을 그대로 승계
         // F-21(AC-01): 방장 권한은 시작과 함께 사라지지 않는다 — 진행 중 추방의 유일한 권한
         // 원천이므로 대기방의 현재 방장을 그대로 승계한다. 클라이언트가 임시로 들고 있던 값을
@@ -1138,6 +1206,29 @@ function buildPlayerAccountProfileFields(player) {
  * @param {object} session - commit된(또는 candidate) GameSession
  * @param {string} viewerUuid - 이 payload를 받을 참가자 uuid
  */
+/**
+ * F-24(AC-04/RESTORE-24): 세션이 들고 있는 복원 원본을 **매 호출마다 새 구조**로 꺼낸다.
+ *
+ * game_started와 get_session_snapshot이 같은 함수를 쓰므로, 최초 진입과 재접속이 서로 다른
+ * 모양의 원본을 받는 일이 없다. 중첩 객체(roleCounts·roleNightActionTimes)까지 허용 목록으로
+ * 다시 만들기 때문에, 응답을 변형해도 세션이 오염되지 않고 오염된 세션 값이 나가지도 않는다.
+ *
+ * 원본이 없는(구버전) 세션은 키 자체를 만들지 않는다 — undefined를 명시적으로 내려보내
+ * "없다"와 "빈 설정"을 클라이언트가 구별해야 하는 상황을 만들지 않는다. 없는 원본은 복원
+ * 불가이고, 지난 게임의 원본으로 보충하지 않는다.
+ */
+function buildRoomSettingsSourceFields(session) {
+    const source = session?.roomSettingsSource
+    if (source === null || typeof source !== 'object' || Array.isArray(source)) return {}
+    return {
+        roomSettingsSource: {
+            accessType: source.accessType ?? null,
+            settingsVersion: Number.isInteger(source.settingsVersion) ? source.settingsVersion : null,
+            settings: buildRoomSettingsView(source.settings),
+        },
+    }
+}
+
 function buildGameStartedPayload(session, viewerUuid) {
     const viewer = session.players.get(viewerUuid)
     const themeIndices = buildPlayerThemeIndices(session)
@@ -1157,6 +1248,13 @@ function buildGameStartedPayload(session, viewerUuid) {
             roomId: session.roomId ?? null,
             roomInstanceId: session.roomInstanceId ?? null,
             bootEpoch: session.bootEpoch ?? null,
+            // F-24(AC-01): 진행 중 "방 코드 보기"의 유일한 원천. 대기방 payload와 달리 이 값은
+            // 참가자 본인에게만 가는 개인 payload에 실린다 — 그 판의 참가자는 이미 코드를 알고
+            // 들어왔거나 방장이므로 새로 드러나는 비밀이 없다.
+            roomCode: session.roomCode ?? null,
+            // F-24(AC-04/RESTORE-24): 다음 방 설정 복원의 원본. 다른 참가자의 비밀 역할은
+            // 여기에도 self에도 추가하지 않는다 — 설정값만 담긴 허용 목록 사본이다.
+            ...buildRoomSettingsSourceFields(session),
             participationRevision: session.participationRevision ?? 0,
             // session.players는 Map이라 순회 순서가 모든 뷰어에게 동일하다 — 같은 index는
             // 곧 같은 참가자이므로 뷰어끼리 배정이 갈리지 않는다.
@@ -3341,6 +3439,10 @@ function buildSessionSnapshot(session, uuid) {
         roomId: session.roomId ?? null,
         roomInstanceId: session.roomInstanceId ?? null,
         bootEpoch: session.bootEpoch ?? null,
+        // F-24(AC-01/AC-04): game_started와 **같은 두 필드**다. 새로고침으로 메모리 store가
+        // 비어도 진행 중 방 코드 보기와 다음 방 설정 유지가 같은 근거를 다시 얻는다.
+        roomCode: session.roomCode ?? null,
+        ...buildRoomSettingsSourceFields(session),
         // 참여 상태의 세대. 이 사건 이전에 캡처된 snapshot·ACK가 최신 참여 상태를 되돌리지
         // 못하도록 프론트가 적용 세대와 함께 검사한다(AC-03/AC-05).
         participationRevision: session.participationRevision ?? 0,
@@ -3954,6 +4056,9 @@ module.exports = {
     getSessionSnapshotForPlayer,
     buildSessionSnapshot,
     getActiveSessionRoutingInfo,
+    // F-24(AC-02): 방 코드 → 세션 상태 조회. 소켓 계층(matchmaking)의 입장 판정과 코드 재발급
+    // 예약이 직접 부르는 진입점이라 __testables가 아니라 정식 export다.
+    getRoomCodeSessionState,
     getActiveGamePresenceSnapshot,
     __resetStateForTests,
     __getStateSnapshotForTests,
@@ -3970,6 +4075,7 @@ module.exports = {
         validateSessionInput,
         buildTimerSettings,
         buildSessionCandidate,
+        buildRoomSettingsSource,
         resolveGameSource,
         checkGameSessionPreconditions,
         assertValidSessionForCommit,

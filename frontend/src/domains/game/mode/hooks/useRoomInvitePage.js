@@ -16,6 +16,14 @@ const ROOM_JOIN_FAILURE_MESSAGES = {
   ROOM_ALREADY_STARTED: "이미 게임이 시작된 방이라 입장할 수 없습니다.",
   ROOM_FULL: "방 정원이 가득 찼습니다.",
   CODE_REQUIRED: "입장 코드를 입력해주세요.",
+  // F-24(AC-02): 진행 중(ROOM_ALREADY_STARTED)과 다른 사유다 — 그 판은 이미 끝났으므로
+  // 기다려도 들어갈 수 없고, 새 방을 만들어야 한다. 두 경우를 한 문구로 합치면 결과 화면에서
+  // 코드를 복사해 준 참가자의 친구가 왜 못 들어오는지 알 수 없다.
+  SESSION_ENDED: "이미 끝난 게임의 방이라 입장할 수 없습니다. 새 방을 만들어주세요.",
+  // F-24(AC-03): 이 경로에 일반 참가 말고 다른 입장 방식은 없다. F-23이 제품에서 지운 어휘를
+  // 안내 문구로 되살리지 않으면서 같은 사실을 말한다(backend/socket/matchmaking.js의
+  // JOIN_REQUEST_INVALID_MESSAGE와 같은 문구여야 한다).
+  INVALID_REQUEST: "잘못된 참가 요청입니다. 방 코드로는 일반 참가만 할 수 있습니다.",
 }
 
 /** 방코드 입력 페이지의 애니메이션 상태와 방 참여 소켓 이벤트를 관리합니다. */

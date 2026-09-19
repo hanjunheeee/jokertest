@@ -532,10 +532,31 @@ test('CUSTOM: 커밋된 세션의 공개 payload에는 역할 구성이 노출�
     commitGameSession(prepared.session)
 
     const payload = buildGameStartedPayload(prepared.session, 'c1')
-    const serialized = JSON.stringify(payload)
-    assert.equal(serialized.includes('roleComposition'), false)
-    assert.equal(serialized.includes('roleCounts'), false)
+    // 비밀은 **세션에 실제로 배정된 구성**(session.roleComposition)이다 — 그 값은 payload 어디에도
+    // 없어야 한다. 이름이 어디에도 나타나지 않는다는 것만으로는 그 사실을 말하지 못하므로,
+    // 키 자체의 부재와 값의 부재를 나눠 확인한다.
     assert.equal(Object.hasOwn(payload.state, 'roleComposition'), false)
+    assert.equal(Object.hasOwn(payload.state, 'roleCounts'), false)
+
+    // F-24(AC-04): state.roomSettingsSource는 **방장이 정한 방 설정**의 허용 목록 사본이다.
+    // 그 값은 대기방에서 이미 전원에게 공개돼 있던 설정이고(buildRoomPayload의 settings),
+    // 여기서 새로 드러나는 비밀이 아니다. 대신 그 안에 들어가는 것이 방 설정뿐이라는 사실을
+    // 못박는다 — 배정 결과가 섞여 들어오면 그때는 실제 유출이다.
+    assert.deepEqual(payload.state.roomSettingsSource.settings.roleCounts, room.settings.roleCounts)
+    assert.notDeepEqual(
+        payload.state.roomSettingsSource.settings.roleCounts,
+        prepared.session.roleComposition,
+        'CITIZEN까지 포함된 배정 결과가 복원 원본으로 새어 나갔다',
+    )
+    assert.equal(Object.hasOwn(payload.state.roomSettingsSource.settings.roleCounts, 'CITIZEN'), false)
+
+    // 그 밖의 어디에도 역할 구성 이름이 없다 — 복원 원본 안쪽만 예외다.
+    const withoutRestoreSource = JSON.stringify({
+        ...payload,
+        state: { ...payload.state, roomSettingsSource: undefined },
+    })
+    assert.equal(withoutRestoreSource.includes('roleComposition'), false)
+    assert.equal(withoutRestoreSource.includes('roleCounts'), false)
     // 다른 참가자 목록에는 여전히 role/team이 없다(themeIndex는 비밀이 아닌 표시 색상이다).
     for (const player of payload.state.players) {
         // F-21(AC-01/AC-03): isAlive·isParticipating·membershipId는 새로 승인된 **공개** 필드다

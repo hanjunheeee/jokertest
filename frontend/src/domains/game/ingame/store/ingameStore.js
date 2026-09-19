@@ -3,7 +3,11 @@ import { create } from "zustand"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
 import { applyPlayerEliminatedPure } from "./applyPlayerEliminated.js"
-import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "./applySessionSnapshot.js"
+import {
+  applySessionSnapshotPure,
+  bootstrapSessionSnapshotPure,
+  normalizeRoomSettingsSourceForStore,
+} from "./applySessionSnapshot.js"
 import { getDayVoteRound, parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
 
 // 밤 역할 턴을 "아직 아무 턴도 방송되지 않음"으로 되돌리는 패치. 밤을 벗어나거나 새 밤에
@@ -483,6 +487,15 @@ export const useInGameStore = create((set) => ({
         state: state
           ? {
               ...state,
+              // F-24(AC-01): 모양이 틀린 값은 null이다 — 화면이 "확인할 수 없음"을 보여준다.
+              roomCode: typeof state.roomCode === "string" && state.roomCode.length > 0
+                ? state.roomCode
+                : null,
+              // F-24(AC-04/RESTORE-24): 재접속 경로(applySessionSnapshotPure)와 **같은 정규화**를
+              // 쓴다. 두 경로가 갈리면 최초 진입과 새로고침이 서로 다른 모양의 원본을 갖는다.
+              // payload 객체를 그대로 참조하지 않으므로 이후 호출부가 응답을 변형해도 store는
+              // 오염되지 않는다.
+              roomSettingsSource: normalizeRoomSettingsSourceForStore(state.roomSettingsSource),
               players: Array.isArray(state.players)
                 ? state.players.map((p) => ({
                     ...p,

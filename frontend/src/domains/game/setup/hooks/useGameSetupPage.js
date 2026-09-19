@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
-import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import {
+  readInGameReceiptScope,
+  useInGameStore,
+} from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
+import {
+  NEXT_ROOM_SETTINGS_RESTORE_CODES,
+  useNextRoomSettingsStore,
+} from "../store/nextRoomSettingsStore.js"
+import { buildRoomSettingsFormState } from "../utils/roomSettingsForm.js"
 import {
   CREATE_ROOM_ERROR_MESSAGES,
   CREATE_ROOM_TIMEOUT_MS,
@@ -14,6 +23,42 @@ import {
 } from "../constants/gameSetupSocket.js"
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * F-24(AC-04, A-04): 지금 이 순간의 **소속 축**(방·게임·참가 소속).
+ *
+ * 계정·연결만 보던 예전 범위로는 "R1 조회가 R2 생성 후 현재 소속을 되돌린다"를 막을 수 없었다 —
+ * 같은 계정·같은 연결에서 R1을 보낸 뒤 R2가 방을 만들면, 계정·연결 축은 하나도 바뀌지 않은
+ * 채로 R1의 늦은 ACK가 그 방 위에 옛 방을 덮어쓴다. 소속 자체를 축으로 삼아야 그 전이가 보인다.
+ *
+ *   - 대기방: roomId만으로는 부족하다(같은 roomId로 다시 만들어질 수 있다) — 서버가 방마다
+ *     새로 발급하는 roomInstanceId와 "방에 있는가"를 함께 본다.
+ *   - 게임: gameId와 참가 소속 세대(membershipEpoch)를 본다. membershipEpoch는 값이 원래대로
+ *     돌아오는 왕복(이탈→같은 판 재입장)까지 드러낸다.
+ */
+function readMembershipScope() {
+  const matching = useMatchingStore.getState()
+  const receipt = readInGameReceiptScope()
+  return {
+    isInRoom: matching.isInRoom === true,
+    roomId: matching.roomId ?? null,
+    roomInstanceId: matching.roomInstanceId ?? null,
+    gameId: receipt.gameId,
+    membershipId: receipt.membershipId,
+    membershipEpoch: receipt.membershipEpoch,
+  }
+}
+
+/** 두 소속 축이 모든 값에서 같은가. 하나라도 다르면 false다(fail-closed). */
+function isSameMembershipScope(a, b) {
+  if (a === null || typeof a !== "object" || b === null || typeof b !== "object") return false
+  return a.isInRoom === b.isInRoom
+    && a.roomId === b.roomId
+    && a.roomInstanceId === b.roomInstanceId
+    && a.gameId === b.gameId
+    && a.membershipId === b.membershipId
+    && a.membershipEpoch === b.membershipEpoch
+}
 
 /**
  * 게임 만들기 페이지의 입장 애니메이션, 방 생성 요청(ack), ack 유실 복구, 대기방 이동을 관리합니다.
@@ -31,6 +76,72 @@ export function useGameSetupPage() {
   // 요청을 줄이기 위한 UX 보조일 뿐이라는 점에 유의해야 합니다(서버 보호의 대체가 아님).
   const isCreatingRef = useRef(false)
   const mountedRef = useRef(true)
+
+  // F-24(AC-04/AC-05/RESTORE-24): 다음 방 생성 화면의 **초기 폼**은 이 계정의 복원 원본에서
+  // 나온다. 계정 축(uuid + identityGeneration)을 함께 보는 이유는 A→B→A 왕복 때문이다 —
+  // uuid만 보면 값이 원래대로 돌아와 전이 자체가 사라지고, 전환 전에 계산된 폼이 그대로 남는다.
+  const accountId = useAuthStore((s) => s.user?.uuid ?? null)
+  const identityGeneration = useAuthStore((s) => s.identityGeneration)
+  const readRestoreSource = useNextRoomSettingsStore((s) => s.readRestoreSource)
+
+  /**
+   * 복원 원본 → 폼 상태. 실패(누락·손상·표현 불가)는 조용히 기본값으로 바꾸지 않고 코드로
+   * 알린다 — 덮으면 "복원했다"는 말이 거짓이 되고, 사용자는 건드리지도 않은 값으로 방을
+   * 만들게 된다(A-11). 기본값으로 시작하는 것 자체는 정상 경로이므로(유지 해제·저장 없음)
+   * 그 두 경우에는 안내를 만들지 않는다.
+   */
+  const restore = useMemo(() => {
+    if (!accountId) return { formState: null, resetKey: `none:${identityGeneration}`, notice: "" }
+    const read = readRestoreSource(accountId)
+    const key = `${accountId}:${identityGeneration}:${read.code}`
+
+    if (read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.NONE
+      || read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED) {
+      // AC-05: 유지가 꺼져 있거나 저장된 원본이 없으면 **항목 정의의 기본값**으로 시작한다.
+      // initialFormState=null이 곧 그 계약이다(useSetupTabState.buildInitialState).
+      return { formState: null, resetKey: key, notice: "" }
+    }
+    if (read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.DISABLED_PERSIST_FAILED) {
+      // AC-05/A-11: 해제 의도가 이겨 **이 화면은 기본값으로 시작한다**. 다만 그 해제를 매체에
+      // 남기지 못했다는 사실까지 감추지는 않는다 — 새로고침하면 이전 값이 다시 보일 수 있다.
+      return {
+        formState: null,
+        resetKey: key,
+        notice: "설정 유지 해제를 저장하지 못했습니다. 이 화면은 기본값으로 시작하지만 새로고침하면 이전 설정이 다시 보일 수 있습니다.",
+      }
+    }
+    if (read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.CORRUPTED) {
+      return {
+        formState: null,
+        resetKey: key,
+        notice: "저장된 다음 게임 설정을 불러오지 못해 기본값으로 시작합니다.",
+      }
+    }
+    if (read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.STORAGE_UNAVAILABLE) {
+      return {
+        formState: null,
+        resetKey: key,
+        notice: "이 브라우저에서는 설정을 저장·복원할 수 없어 기본값으로 시작합니다.",
+      }
+    }
+
+    const form = buildRoomSettingsFormState(read.source)
+    if (!form.ok) {
+      // 서버 원본은 멀쩡한데 이 화면이 그릴 수 없는 값이다 — 기본값으로 덮되 그 사실을 알린다.
+      return {
+        formState: null,
+        resetKey: `${key}:form-${form.code}`,
+        notice: "저장된 다음 게임 설정을 이 화면에서 표현할 수 없어 기본값으로 시작합니다.",
+      }
+    }
+    return {
+      formState: form,
+      resetKey: `${key}:${read.source.settingsVersion ?? ""}`,
+      notice: read.code === NEXT_ROOM_SETTINGS_RESTORE_CODES.SANITIZE_WRITE_FAILED
+        ? "저장된 설정을 정리해 복원했지만 정리된 값을 다시 저장하지 못했습니다."
+        : "",
+    }
+  }, [accountId, identityGeneration, readRestoreSource])
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
@@ -51,7 +162,50 @@ export function useGameSetupPage() {
     alert(message ?? CREATE_ROOM_ERROR_MESSAGES.NETWORK)
   }
 
-  const enterRoom = (room) => {
+  /**
+   * F-24(AC-04, A-04): 생성 요청 하나의 **범위**를 한 벌로 캡처한다.
+   *
+   * 예전에는 ACK·timeout·복구 조회·finally가 서로 다른 시점의 상태를 각자 읽었다 — enterRoom은
+   * 언마운트 뒤에도 store를 바꿨고, recoverCurrentRoom은 getSocket()을 **다시** 읽었으며,
+   * finally는 어느 요청의 것인지 묻지 않고 잠금을 풀었다. 그래서 R1을 보낸 뒤 소켓이 교체되거나
+   * 계정이 A→B→A로 왕복하면, R1의 늦은 ACK가 지금 화면의 방으로 커밋되고 R1의 늦은 finally가
+   * R2의 잠금을 풀었다.
+   *
+   * 토큰은 매 요청마다 새 객체다 — 값이 같아질 수 없으므로 A→B→A에도 구별된다.
+   */
+  const requestScopeRef = useRef(null)
+  const captureRequestScope = (socket) => ({
+    token: {},
+    accountId,
+    identityGeneration,
+    socket,
+    socketId: socket?.id ?? null,
+    // 요청을 보낸 시점의 소속. 응답·복구 조회·finally가 전부 이 값과 **그때의 살아 있는 값**을
+    // 맞춘다 — 그래야 R1→R2 사이에 생긴 소속을 R1의 늦은 답이 되돌리지 못한다.
+    membership: readMembershipScope(),
+  })
+
+  /**
+   * 캡처한 범위가 **아직 현재인가**. 하나라도 어긋나면 false다(fail-closed).
+   *
+   * 소켓은 객체 동일성과 id를 함께 본다 — 같은 객체가 재연결되면 참조는 그대로이고 id만
+   * 바뀌므로, 둘 중 하나만 보면 한쪽 전이가 판정에서 사라진다.
+   *
+   * 소속(방·게임·참가)도 같은 축이다. 계정·연결이 그대로여도 그 사이 다른 방·다른 판에
+   * 앉았다면 이 요청의 답은 지금 화면의 답이 아니다(A-04).
+   */
+  const isScopeCurrent = (scope) => {
+    if (scope === null || requestScopeRef.current !== scope) return false
+    const auth = useAuthStore.getState()
+    if ((auth.user?.uuid ?? null) !== scope.accountId) return false
+    if (auth.identityGeneration !== scope.identityGeneration) return false
+    const socket = getSocket()
+    if (socket !== scope.socket) return false
+    if ((socket?.id ?? null) !== scope.socketId) return false
+    return isSameMembershipScope(readMembershipScope(), scope.membership)
+  }
+
+  const enterRoom = (room, scope = null) => {
     // 서버는 이미 방을 만들었으므로 store 반영은 언마운트 여부와 무관하게 항상 수행한다.
     // 화면을 실제로 옮기는 navigate만 마운트 여부에 따라 건너뛴다(이미 다른 화면으로 이동한
     // 사용자를 방해하지 않기 위함) — 여기서 store 반영까지 생략하면 서버는 방을 만들었는데
@@ -59,6 +213,11 @@ export function useGameSetupPage() {
     // matching store를 설정하기 전에 인게임 store의 이전 gameId를 먼저 무효화한다 — 두 store
     // 설정 사이의 창에서 이전 세션의 지연 ack/game_ended가 도착해도 ingame gameId 비교가 더
     // 이상 그 세션과 일치하지 않으므로, 방금 커밋한 이 Room의 matching 상태를 지우지 않는다.
+    // F-24(AC-04, A-04): 범위가 지난 응답은 **store에도 반영하지 않는다.** 위 주석의 "서버는
+    // 이미 방을 만들었으므로 항상 반영한다"는 규칙은 같은 신원·같은 연결 안에서만 참이다 —
+    // 계정이나 연결이 바뀐 뒤라면 그 방은 지금 이 화면이 앉을 자리가 아니고, 반영하면 현재
+    // 소속을 옛 방으로 되돌린다. 범위를 아예 넘기지 않은 호출은 예전 계약 그대로다.
+    if (scope !== null && !isScopeCurrent(scope)) return
     useInGameStore.getState().clearGame()
     useMatchingStore.getState().setRoom(room)
     if (!mountedRef.current) return
@@ -72,19 +231,25 @@ export function useGameSetupPage() {
    * 서버가 pending:true(아직 socket.join 등 커밋 과정을 처리 중)를 내려주면 짧게 기다렸다
    * 다시 조회하되, CURRENT_ROOM_MAX_POLL_ATTEMPTS만큼만 시도하고 무한 polling은 하지 않습니다.
    */
-  const recoverCurrentRoom = async () => {
-    const socket = getSocket()
-    if (!socket) {
+  const recoverCurrentRoom = async (scope) => {
+    // F-24(AC-04, A-04): getSocket()을 **다시 읽지 않는다**. 다시 읽으면 R1의 복구 조회가 그
+    // 사이 교체된 새 연결로 나가고, 그 답이 R2가 만든 현재 소속을 되돌릴 수 있다. 조회는
+    // 요청을 보낸 바로 그 연결에서만 의미가 있다.
+    const socket = scope?.socket ?? null
+    if (!socket || !isScopeCurrent(scope)) {
       showError(CREATE_ROOM_ERROR_MESSAGES.NETWORK)
       return
     }
 
     for (let attempt = 0; attempt < CURRENT_ROOM_MAX_POLL_ATTEMPTS; attempt += 1) {
+      // 매 시도 직전에 다시 확인한다 — 대기(wait) 사이에 범위가 지났을 수 있다.
+      if (!isScopeCurrent(scope)) return
       try {
         const res = await socket.timeout(CURRENT_ROOM_TIMEOUT_MS).emitWithAck(SOCKET_EVENTS.GET_CURRENT_ROOM, {})
+        if (!isScopeCurrent(scope)) return
 
         if (res?.ok && res.room) {
-          enterRoom(res.room)
+          enterRoom(res.room, scope)
           return
         }
 
@@ -114,23 +279,34 @@ export function useGameSetupPage() {
 
     isCreatingRef.current = true
     setIsCreating(true)
+    const scope = captureRequestScope(socket)
+    requestScopeRef.current = scope
 
     try {
       const response = await socket.timeout(CREATE_ROOM_TIMEOUT_MS).emitWithAck(SOCKET_EVENTS.CREATE_ROOM, settings)
+      // 옛 요청의 ACK는 지금 화면의 답이 아니다 — 오류 안내도, 방 반영도 하지 않는다.
+      if (!isScopeCurrent(scope)) return
 
       if (!response.ok) {
         showError(response.message)
         return
       }
 
-      enterRoom(response.room)
+      enterRoom(response.room, scope)
     } catch {
       // ack timeout/유실은 서버 실패를 의미하지 않는다 — 방은 만들어졌는데 응답만
       // 못 받았을 수 있어 곧바로 실패 안내를 하지 않고 실제 상태를 먼저 확인한다.
-      await recoverCurrentRoom()
+      if (!isScopeCurrent(scope)) return
+      await recoverCurrentRoom(scope)
     } finally {
-      isCreatingRef.current = false
-      if (mountedRef.current) setIsCreating(false)
+      // F-24(AC-04, A-04): **자기 요청의 잠금만 푼다.** 예전에는 R1의 늦은 finally가 그 사이
+      // 시작된 R2의 잠금을 풀어, 서버에 두 번째 생성 요청이 나갈 수 있었다. 범위가 이미
+      // 바뀐 요청은 아무것도 되돌리지 않고 그대로 물러난다.
+      if (requestScopeRef.current === scope) {
+        requestScopeRef.current = null
+        isCreatingRef.current = false
+        if (mountedRef.current) setIsCreating(false)
+      }
     }
   }
 
@@ -161,5 +337,11 @@ export function useGameSetupPage() {
     isCreating,
     goBackToMultiplay,
     createGame,
+    // F-24(AC-04/AC-05): 다음 방 생성 폼의 초기값과 그 경계. 복원이 없으면 null이고, 그때
+    // GameSetupPanel은 항목 정의의 기본값에서 시작한다(기존 생성 계약 그대로).
+    initialFormState: restore.formState,
+    formResetKey: restore.resetKey,
+    // 복원 실패·정리 재저장 실패를 화면이 그대로 알린다(성공으로 바꾸지 않는다).
+    restoreNotice: restore.notice,
   }
 }

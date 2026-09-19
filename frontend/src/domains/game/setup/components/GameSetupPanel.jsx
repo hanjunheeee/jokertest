@@ -140,10 +140,16 @@ export default function GameSetupPanel({
     // 만들어진다. "지정했다"는 사실 자체는 여기서 만들지 않으므로(editedRoleTimeIds 불변),
     // 손대지 않은 저장은 여전히 override를 싣지 않는다.
     //
-    // 생성 화면(mode='create')에는 "지정하지 않음"이라는 상태가 없다 — 네 직업 모두 명시값이고
-    // 그대로 실린다. 그래서 이 따라가기는 편집 모드에만 적용한다(기존 생성 계약 보존).
-    if (!isEditMode || id !== OVERALL_NIGHT_ACTION_TIME_ID || !changed) return
-    const serverSpecified = initialFormState?.specifiedRoleNightActionTimes ?? []
+    // 기본 생성 화면에는 "지정하지 않음"이라는 상태가 없다 — 네 직업 모두 명시값이고 그대로
+    // 실린다. 그래서 따라가기의 기준은 모드가 아니라 **지정 목록의 존재**다.
+    //
+    // F-24(AC-04): 복원으로 시작하는 생성 화면(mode='create' + 복원된 지정 목록)은 편집 화면과
+    // 정확히 같은 상황이다 — 서버가 일부 직업만 지정한 설정을 물려받았으므로, 지정하지 않은
+    // 직업은 전체 밤 시간을 따라가야 한다. 모드로 판정하면 그 화면만 60을 보여주는데 서버는
+    // 90을 쓰는 어긋남이 생긴다. 지정 목록 없는 기본 create는 그대로 예전 계약이다.
+    const hasSpecifiedList = Array.isArray(initialFormState?.specifiedRoleNightActionTimes)
+    if (!hasSpecifiedList || id !== OVERALL_NIGHT_ACTION_TIME_ID || !changed) return
+    const serverSpecified = initialFormState.specifiedRoleNightActionTimes
     for (const [roleTimeId, role] of Object.entries(NIGHT_TIME_ID_TO_ROLE)) {
       // 서버가 명시한 override와 이번에 방장이 직접 바꾼 값은 전체 시간과 독립이다.
       if (serverSpecified.includes(role) || editedRoleTimeIds.has(roleTimeId)) continue
