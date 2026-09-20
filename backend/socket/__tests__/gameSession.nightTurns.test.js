@@ -2440,12 +2440,17 @@ test('AC-05(F-25): 유효 제출자와 대상자만 수신 대상이고, 기권�
     }
     assert.deepEqual(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'].map((r) => contracts.get(r).revision), [1, 2, 3, 4])
 
-    // 이번 조각은 새 개인 메시지를 만들지 않는다 — 참가자가 받은 사건은 기존 집합뿐이다.
+    // F-26a: 이 밤에 새로 생기는 개인 메시지는 night_action_success뿐이고, 그 수신자는 유효
+    // 제출자·대상자(광대·시민)뿐이다 — 기권한 세 역할은 어떤 관점으로도 받지 않는다.
     const received = new Set()
     for (const socket of sockets.values()) for (const entry of socket.emitted) received.add(entry.event)
     assert.deepEqual([...received].sort(), [
-        'night_actions_resolved', 'night_result_applied', 'night_turn_ended', 'night_turn_started',
+        'night_action_success', 'night_actions_resolved', 'night_result_applied', 'night_turn_ended', 'night_turn_started',
     ])
+    for (const [uuid, socket] of sockets) {
+        const count = socket.emitted.filter((e) => e.event === 'night_action_success').length
+        assert.equal(count, [jokerUuid, citizenUuid].includes(uuid) ? 1 : 0, `${uuid}: 성공 사건 수신 건수`)
+    }
     // 공개 턴 payload에는 사건·대상·수신자 정보가 없다.
     for (const broadcast of turnBroadcasts(io)) {
         const keys = Object.keys(broadcast.payload).sort()
@@ -2737,4 +2742,314 @@ test('AC-04(F-25): 이전 밤·정리된 run의 대기 토큰은 현재 진행�
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, dayIndexAfter)
     assert.equal(clock.pendingCount(), 0)
+})
+
+// ---------------------------------------------------------------------------
+// F-26a — 역할별 성공 사건의 서버 생성·수신자별 payload
+//
+// F-25의 내부 연출 계약(run.wait.contract)은 이미 사건·수신자를 확정한다. 이 절은 그 계약이
+// 실제 night_action_success 개별 emit으로 이어지는지, 그리고 그 payload가 허용 키만 갖는지를
+// 검사한다 — wireSession이 실제로 배선한 submit_night_action을 그대로 쓴다.
+// ---------------------------------------------------------------------------
+
+test('AC-01(F-26a): 역할별 성공 사건은 능력 사용자·대상자에게만 전달되고 다른 역할·비참가자는 0건이다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac01' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    // 같은 채널에 남아 있지만 이 판의 참가자는 아닌 소켓(비참가자 음성 대조).
+    const outsider = createFakeSocket('f26a-ac01-outsider')
+    outsider.rooms.add(session.channelId)
+    io.sockets.sockets.set(outsider.id, outsider)
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, doctorUuid) // 광대가 의사를 공격
+    submit(doctorUuid, doctorUuid) // 의사가 자기 자신을 치료
+    submit(guardUuid, citizenUuid) // 경비원이 시민을 조사
+    submit(witchHunterUuid, null) // 마녀사냥꾼 기권 — 사건 없음
+
+    assert.equal(sockets.get(jokerUuid).countReceived('night_action_success'), 1, '광대는 KILL의 USER다')
+    assert.equal(sockets.get(guardUuid).countReceived('night_action_success'), 1, '경비원은 INVESTIGATE의 USER다')
+    assert.equal(sockets.get(citizenUuid).countReceived('night_action_success'), 1, '시민은 INVESTIGATE의 TARGET이다')
+    assert.equal(sockets.get(doctorUuid).countReceived('night_action_success'), 2, '의사는 KILL의 TARGET이자 HEAL의 USER/TARGET이다')
+    assert.equal(sockets.get(witchHunterUuid).countReceived('night_action_success'), 0, '기권한 역할은 어떤 사건도 받지 못한다')
+    assert.equal(outsider.countReceived('night_action_success'), 0, '이 판의 참가자가 아닌 소켓은 받지 못한다')
+})
+
+test('AC-01(F-26a): 계약 수신자 목록은 계산 시점의 사실이다 — 첫 수신자 전달 중 대상자가 자격을 잃으면 후속 전송은 없다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac01-reverify' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    const jokerSocket = sockets.get(jokerUuid)
+    const citizenSocket = sockets.get(citizenUuid)
+    const originalEmit = jokerSocket.emit.bind(jokerSocket)
+    jokerSocket.emit = (event, payload) => {
+        // 첫 수신자(행위자)가 성공 사건을 받는 바로 그 순간, 다음 수신자(대상자)를 채널에서 뗀다.
+        if (event === 'night_action_success') citizenSocket.rooms.delete(session.channelId)
+        return originalEmit(event, payload)
+    }
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    assert.equal(jokerSocket.countReceived('night_action_success'), 1, '먼저 전달된 행위자는 정상 수신한다')
+    assert.equal(citizenSocket.countReceived('night_action_success'), 0, '전달 도중 자격을 잃은 대상자는 받지 못한다')
+})
+
+test('AC-02(F-26a): 대상 전용 성공 사건 payload는 허용 키만 가지고 조사자 신원·조사 결과를 담지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac02' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const nightDayIndex = session.dayIndex
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, null)
+    submit(doctorUuid, null)
+    submit(guardUuid, citizenUuid)
+    submit(witchHunterUuid, null)
+
+    const citizenSocket = sockets.get(citizenUuid)
+    const targetEntries = citizenSocket.emitted.filter((e) => e.event === 'night_action_success')
+    assert.equal(targetEntries.length, 1)
+    const targetPayload = targetEntries[0].payload
+    assert.deepEqual(Object.keys(targetPayload).sort(), ['eventId', 'gameId', 'nightDayIndex', 'perspectives', 'type'])
+    assert.deepEqual(targetPayload.perspectives, ['TARGET'])
+    assert.equal(targetPayload.type, 'INVESTIGATE')
+    assert.equal(targetPayload.gameId, session.id)
+    // 밤이 이미 자동 최종화돼 session.dayIndex가 올라갔을 수 있으므로(네 역할이 모두 끝난
+    // 밤이라 마지막 제출 직후 확정된다), payload는 **그 사건이 실제로 생성된 밤**의 번호를
+    // 담아야 한다 — 확정 후 오른 dayIndex와 비교하지 않는다.
+    assert.equal(targetPayload.nightDayIndex, nightDayIndex)
+    const serializedTarget = JSON.stringify(targetPayload)
+    assert.equal(serializedTarget.includes(guardUuid), false, '조사자 uuid가 담기지 않는다')
+    assert.equal(serializedTarget.includes('role'), false, '조사 결과(대상의 실제 역할)가 담기지 않는다')
+    assert.equal(citizenSocket.countReceived('night_action_result'), 0, '대상자는 기존 조사 결과 경로도 받지 않는다')
+
+    // 조사자(USER) 쪽 payload에는 targetId가 붙지만, 그것도 조사 결과(role)는 아니다.
+    const guardSocket = sockets.get(guardUuid)
+    const guardPayload = guardSocket.emitted.find((e) => e.event === 'night_action_success').payload
+    assert.deepEqual(Object.keys(guardPayload).sort(), ['eventId', 'gameId', 'nightDayIndex', 'perspectives', 'targetId', 'type'])
+    assert.equal(guardPayload.targetId, citizenUuid)
+    assert.equal(JSON.stringify(guardPayload).includes('role'), false)
+    assert.equal(guardSocket.countReceived('night_action_result'), 1, '조사자 본인은 기존 결과 경로로 역할을 받는다(변경 없음)')
+})
+
+test('AC-03(F-26a): 복수 인원 역할에서 명시적으로 기권한 행위자는 사용자 사건 수신자에서 제외된다', () => {
+    const { session, jokerUuids, otherUuids } = commitDualJokerSessionAtNight({ id: 'f26a-ac03-explicit' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuids[0], otherUuids[0])
+    submit(jokerUuids[1], null)
+
+    assert.equal(sockets.get(jokerUuids[0]).countReceived('night_action_success'), 1, '유효 제출자는 사용자 사건을 받는다')
+    assert.equal(sockets.get(jokerUuids[1]).countReceived('night_action_success'), 0, '명시적 기권자는 받지 못한다')
+    assert.equal(sockets.get(otherUuids[0]).countReceived('night_action_success'), 1, '대상자는 그대로 받는다')
+
+    const payload = sockets.get(jokerUuids[0]).emitted.find((e) => e.event === 'night_action_success').payload
+    assert.deepEqual(payload.perspectives, ['USER'])
+    assert.equal(payload.targetId, otherUuids[0])
+})
+
+test('AC-03(F-26a): 시간 만료로 기권 처리된 행위자도 사용자 사건 수신자에서 제외된다', () => {
+    const { session, jokerUuids, otherUuids } = commitDualJokerSessionAtNight({ id: 'f26a-ac03-timeout' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuids[0], otherUuids[0])
+    // 두 번째 광대는 제출하지 않은 채 제한시간을 넘긴다 — expireNightTurnWithAbstentions가 기권으로 기록한다.
+    clock.advance(NIGHT_TURN_DURATION_MS)
+
+    assert.equal(sockets.get(jokerUuids[0]).countReceived('night_action_success'), 1)
+    assert.equal(sockets.get(jokerUuids[1]).countReceived('night_action_success'), 0, '시간 만료 기권자도 받지 못한다')
+    assert.equal(sockets.get(otherUuids[0]).countReceived('night_action_success'), 1)
+})
+
+test('AC-04(F-26a): 사망한 대상자가 연결 중이면 확정 성공 사건을 실제로 수신한다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac04', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+
+    // 첫 밤: 광대가 시민을 지목하고 나머지는 기권 → 그 시민이 canonical 사망으로 확정된다.
+    const firstClock = createManualClock()
+    startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+    assert.equal(session.players.get(citizenUuid).alive, false)
+    stopDayPhaseTimer(session.id)
+
+    // 같은 세션의 다음 밤으로 되돌린다(dayIndex는 이미 올라 있어 마녀사냥꾼이 활동할 수 있다).
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+
+    const clock = createManualClock()
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, null)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    assert.deepEqual(submit(witchHunterUuid, citizenUuid), { ok: true })
+
+    const citizenSocket = sockets.get(citizenUuid)
+    assert.equal(citizenSocket.connected, true)
+    assert.equal(session.players.get(citizenUuid).alive, false, '수신 확인이 생존 상태를 바꾸지 않는다')
+
+    // citizenSocket은 첫 밤 KILL의 TARGET으로도 이미 한 번 받았으므로, 이 절의 관심사인
+    // CONFIRM만 따로 골라 확인한다.
+    const confirmEntries = citizenSocket.emitted.filter((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM')
+    assert.equal(confirmEntries.length, 1, '사망했지만 연결·참여가 유지되는 대상자는 CONFIRM 성공 사건을 받는다')
+    assert.deepEqual(confirmEntries[0].payload.perspectives, ['TARGET'])
+    assert.deepEqual(Object.keys(confirmEntries[0].payload).sort(), ['eventId', 'gameId', 'nightDayIndex', 'perspectives', 'type'])
+
+    for (const uuid of [doctorUuid, guardUuid]) {
+        assert.equal(sockets.get(uuid).countReceived('night_action_success'), 0, `${uuid}: 무관 참가자는 받지 않는다`)
+    }
+    // jokerUuid는 첫 밤 KILL의 USER라 총 수신은 1(둘째 밤에는 기권했다) — CONFIRM은 없다.
+    assert.equal(sockets.get(jokerUuid).countReceived('night_action_success'), 1)
+    assert.equal(sockets.get(jokerUuid).emitted.some((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM'), false)
+    assert.equal(sockets.get(witchHunterUuid).countReceived('night_action_success'), 1, '마녀사냥꾼 본인은 CONFIRM의 USER 관점으로 받는다')
+})
+
+test('AC-04(F-26a): 같은 대상이 연결이 끊긴 상태라면 성공 사건을 받지 못한다(음성 대조)', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac04-negative', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+
+    const firstClock = createManualClock()
+    startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+    assert.equal(session.players.get(citizenUuid).alive, false)
+    stopDayPhaseTimer(session.id)
+
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    sockets.get(citizenUuid).connected = false // 대상자의 연결이 끊긴 상태
+
+    // 첫 밤 KILL의 TARGET으로 이미 한 번 받은 뒤의 기준선 — 둘째 밤에는 그 위로 CONFIRM이
+    // 늘어나지 않아야 한다(연결이 끊겼으므로).
+    const before = sockets.get(citizenUuid).countReceived('night_action_success')
+
+    const clock = createManualClock()
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, null)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    assert.deepEqual(submit(witchHunterUuid, citizenUuid), { ok: true })
+
+    assert.equal(sockets.get(citizenUuid).countReceived('night_action_success'), before, '연결이 끊긴 대상자는 새 성공 사건을 받지 못한다')
+    assert.equal(
+        sockets.get(citizenUuid).emitted.some((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM'),
+        false,
+        'CONFIRM은 전달되지 않는다',
+    )
+})
+
+test('AC-05(F-26a): 능력 사용자와 대상자가 같은 자기 치료 사건은 그 소켓에 정확히 한 번만 전달된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac05' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, doctorUuid)
+    submit(doctorUuid, doctorUuid)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const doctorSocket = sockets.get(doctorUuid)
+    const healEntries = doctorSocket.emitted.filter((e) => e.event === 'night_action_success' && e.payload.type === 'HEAL')
+    assert.equal(healEntries.length, 1, 'HEAL 사건은 의사 소켓에 정확히 한 번만 전달된다')
+    assert.deepEqual(healEntries[0].payload.perspectives, ['USER', 'TARGET'])
+    assert.equal(healEntries[0].payload.targetId, doctorUuid)
+
+    for (const [uuid, socket] of sockets) {
+        if (uuid === doctorUuid) continue
+        assert.equal(
+            socket.emitted.filter((e) => e.event === 'night_action_success' && e.payload.type === 'HEAL').length,
+            0,
+            `${uuid}: HEAL 사건은 다른 소켓에 가지 않는다`,
+        )
+    }
+    assert.equal(session.players.get(doctorUuid).alive, true)
+})
+
+test('AC-06(F-26a): 성공 사건 payload마다 게임 ID·밤 번호·사건 ID가 포함되고, 같은 사건은 같은 ID·다른 사건은 다른 ID다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac06' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const nightDayIndex = session.dayIndex
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, doctorUuid)
+    submit(doctorUuid, doctorUuid)
+    submit(guardUuid, citizenUuid)
+    submit(witchHunterUuid, null)
+
+    const allSuccess = []
+    for (const socket of sockets.values()) {
+        for (const entry of socket.emitted) {
+            if (entry.event === 'night_action_success') allSuccess.push(entry.payload)
+        }
+    }
+    assert.ok(allSuccess.length > 0)
+    for (const payload of allSuccess) {
+        assert.equal(payload.gameId, session.id)
+        assert.equal(payload.nightDayIndex, nightDayIndex)
+        assert.equal(typeof payload.eventId, 'string')
+        assert.ok(payload.eventId.length > 0)
+    }
+
+    const killAtActor = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success').payload
+    const killAtTarget = sockets.get(doctorUuid).emitted.find((e) => e.event === 'night_action_success' && e.payload.type === 'KILL').payload
+    const healAtDoctor = sockets.get(doctorUuid).emitted.find((e) => e.event === 'night_action_success' && e.payload.type === 'HEAL').payload
+
+    assert.equal(killAtTarget.eventId, killAtActor.eventId, '같은 사건의 사용자·대상 payload는 eventId가 같다')
+    assert.notEqual(killAtActor.eventId, healAtDoctor.eventId, 'KILL과 HEAL은 서로 다른 사건 ID다')
+})
+
+test('AC-06(F-26a): 같은 역할의 사건이라도 밤이 다르면 사건 ID가 다르다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26a-ac06-nights', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+
+    const firstClock = createManualClock()
+    startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+    const firstKillPayload = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success').payload
+    stopDayPhaseTimer(session.id)
+
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+
+    const secondClock = createManualClock()
+    startNightTurnSequence(io, session, { ...secondClock, randomFn: () => 0.5 })
+    submit(jokerUuid, null)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    assert.deepEqual(submit(witchHunterUuid, citizenUuid), { ok: true })
+    const secondConfirmEntries = sockets.get(witchHunterUuid).emitted.filter((e) => e.event === 'night_action_success')
+    const secondConfirmPayload = secondConfirmEntries[secondConfirmEntries.length - 1].payload
+
+    assert.notEqual(firstKillPayload.eventId, secondConfirmPayload.eventId)
+    assert.equal(firstKillPayload.nightDayIndex < secondConfirmPayload.nightDayIndex, true)
 })
