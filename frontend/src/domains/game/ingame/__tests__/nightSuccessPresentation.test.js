@@ -407,6 +407,62 @@ test("AC-02(CODEX 반려 수정): KILL만 finish된 채 DAY 결과가 먼저 반
   session.close()
 })
 
+/**
+ * AC-03(CODEX 반려 수정): **옛 onClose는 새 표시를 지우지 않는다.**
+ *
+ * 최종 생존 화면의 닫기는 예전에 무조건 setTrack(null)이었다. 그래서 이미 닫힌 화면의 늦은
+ * 콜백(StrictMode의 setup→cleanup→setup, 모달의 지연 dismiss, 옛 렌더가 들고 있던 참조)이
+ * **그 뒤에 세워진 새 최종 표시**를 통째로 지웠다 — 새 화면은 아직 아무것도 보여주지 못했는데
+ * 사라진다. 이제 닫기도 finish와 같은 두 검사를 통과해야 한다: 수락 범위가 지금과 같은가,
+ * 그리고 지금 떠 있는 것이 **그 콜백이 닫으려던 바로 그 표시**인가.
+ */
+test("AC-03(CODEX 반려 수정): 옛 최종 표시의 늦은 onClose는 그 뒤에 세워진 새 최종 표시를 지우지 않는다", () => {
+  seedNightSession({ dayIndex: 3 })
+  const session = openSession()
+
+  // ① KILL 하나로 최종 표시가 선다(DOCTOR 턴 종료로 "HEAL은 더 오지 않는다"가 확인된 뒤).
+  session.deliver("night_action_success",
+    buildSuccessPayload({ type: "KILL", eventId: "k-final-1", nightDayIndex: 3, perspectives: ["TARGET"] }))
+  session.finish("COMPLETED")
+  session.deliver("night_turn_ended", buildNightTurnEndedPayload({ role: "DOCTOR", dayIndex: 3 }))
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 4, selfAlive: true }))
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: true },
+    "전제: 첫 최종 표시가 떠야 한다")
+
+  // 그 표시가 그린 닫기 콜백을 들고 있는다 — 늦게 불리는 것이 바로 이 참조다.
+  const staleClose = session.value.onClose
+
+  // ② 다음 밤(5)이 시작되고 그 밤의 KILL이 소비되어 **새 추적·새 최종 표시**가 선다.
+  act(() => {
+    useInGameStore.getState().setGamePayload({
+      gameId: GAME_ID,
+      state: {
+        id: GAME_ID, phase: "NIGHT", dayIndex: 5, dayPhase: null,
+        players: ROSTER.map((p) => ({ ...p })), self: buildSelf(),
+      },
+    })
+  })
+  session.deliver("night_action_success",
+    buildSuccessPayload({ type: "KILL", eventId: "k-final-2", nightDayIndex: 5, perspectives: ["TARGET"] }))
+  assert.equal(session.value.current?.eventId, "k-final-2", "전제: 다음 밤의 사건이 큐에 들어와야 한다")
+  session.finish("COMPLETED")
+  session.deliver("night_turn_ended", buildNightTurnEndedPayload({ role: "DOCTOR", dayIndex: 5 }))
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 6, selfAlive: true }))
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: true },
+    "전제: 새 최종 표시가 떠 있어야 한다")
+
+  // ③ 옛 콜백이 늦게 불린다 — 새 표시는 그대로여야 한다.
+  act(() => staleClose())
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: true },
+    "옛 onClose가 새 최종 표시를 지웠다")
+
+  // ④ 지금 표시의 확인만이 그 표시를 닫는다.
+  act(() => session.value.onClose())
+  assert.equal(session.value.finalStatus, null, "현재 표시의 확인이 최종 화면을 닫지 못했다")
+
+  session.close()
+})
+
 test("hold가 걸린 동안에는 표시하지 않되 큐·최종 상태는 그대로 보존한다", () => {
   seedNightSession()
   const socket = createFakeSocket()

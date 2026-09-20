@@ -120,6 +120,17 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
    */
   const capturedReceiptScope = useMemo(() => readNightSuccessReceiptScope(current), [current])
 
+  /**
+   * F-27b(AC-03, CODEX 반려 수정): 이 렌더의 수신 범위. 최종 표시의 닫기(onClose)가 "지금도
+   * 같은 범위인가"를 묻는 기준으로 쓴다 — 사건 객체에 결속된 수락 범위(capturedReceiptScope)는
+   * 큐가 비면 사라지지만, 최종 생존 화면은 그 뒤에도 남아 있기 때문이다.
+   */
+  const capturedCloseScope = useMemo(
+    () => readInGameReceiptScope({ accountId: authUuid, identityGeneration }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 아래 축들이 곧 범위의 전이 경계다.
+    [authUuid, identityGeneration, identityScopeVersion, socketEpochId, gameId],
+  )
+
   // F-27b(AC-02): 최종 상태로 이어질 KILL/HEAL 추적.
   // { scopeKey, nightDayIndex, targetId, killDone, healDone, healWindowClosed }.
   const [track, setTrack] = useState(null)
@@ -207,11 +218,10 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     }
   }, [current, capturedReceiptScope, scopeKey, authUuid])
 
-  const onClose = useCallback(() => {
-    setTrack(null)
-  }, [])
-
   let finalStatus = null
+  // 지금 화면에 떠 있는 최종 표시를 만든 **바로 그 추적 객체**. 아래 onClose가 "내가 닫는
+  // 것이 지금 떠 있는 그 표시인가"를 물을 때 쓰는 동일성 기준이다.
+  let displayedTrack = null
   if (
     track
     && track.scopeKey === scopeKey
@@ -223,8 +233,33 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     const player = (gameState?.players ?? []).find((p) => p?.uuid === track.targetId) ?? null
     if (player && typeof player.alive === "boolean") {
       finalStatus = { targetId: track.targetId, alive: player.alive }
+      displayedTrack = track
     }
   }
+
+  /**
+   * F-27b(AC-03/AC-08, CODEX 반려 수정): 최종 생존 화면의 닫기.
+   *
+   * 예전에는 무조건 setTrack(null)이었다. 그래서 **옛 표시의 늦은 onClose**(StrictMode의
+   * setup→cleanup→setup, 연결이 교체되기 직전 화면의 확인, 이미 닫힌 모달의 지연 콜백)가 그
+   * 뒤에 세워진 **새 추적**을 지웠다 — 새 표시는 아직 아무것도 보여주지 못했는데 최종 생존
+   * 화면이 통째로 사라진다.
+   *
+   * 그래서 finish와 **같은 두 검사**를 건다: ① 이 콜백이 만들어진 렌더의 수락 범위가 호출
+   * 시점의 현재 범위와 여덟 축 모두 같은가, ② 지금 store가 들고 있는 추적이 이 콜백이 닫으려는
+   * **그 표시 객체**와 같은가. 하나라도 어긋나면 아무 것도 하지 않는다. 최종 표시가 떠 있지
+   * 않은 렌더의 onClose는 애초에 닫을 것이 없으므로 그대로 no-op이다.
+   */
+  const onClose = useCallback(() => {
+    if (displayedTrack === null) return
+    const auth = useAuthStore.getState()
+    const receiptScope = readInGameReceiptScope({
+      accountId: auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null,
+      identityGeneration: auth.identityGeneration ?? null,
+    })
+    if (!isSameInGameReceiptScope(capturedCloseScope, receiptScope)) return
+    setTrack((prev) => (prev === displayedTrack ? null : prev))
+  }, [displayedTrack, capturedCloseScope])
 
   return {
     current,

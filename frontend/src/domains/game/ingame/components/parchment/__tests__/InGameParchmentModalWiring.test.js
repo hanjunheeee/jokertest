@@ -181,6 +181,12 @@ test("InGamePage는 새 셸을 쓰는 세 오버레이를 각각 정확히 한 �
       assert.match(block[0], prop, `${mount.tag}의 ${prop} 배선이 없다`)
     }
   }
+
+  // F-27b(AC-01, CODEX 반려 수정): 비수신자 대기 중에는 역할 공개를 **마운트하지 않는다**.
+  // open만 false로 내리면 퇴장 애니메이션(AnimatePresence) 동안 역할명·진영·동료 목록이 DOM에
+  // 남는다 — 대기 화면이 그 위를 덮어도 그 문자열은 이미 이 화면의 것이다. 열림 상태의 출처는
+  // 그대로 오버레이 스택 하나이고(위 props 잠금), 여기서는 그 위의 억제 조건만 잠근다.
+  assert.match(source, /\{nightPresentationWaitOpen \? null : \(\s*<InGameRoleRevealOverlay/)
 })
 
 test("세 오버레이는 각자 새 파치먼트 셸에 물려 있고, 셸이 아는 variantKey만 쓴다", async () => {

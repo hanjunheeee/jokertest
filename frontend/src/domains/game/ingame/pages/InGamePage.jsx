@@ -136,12 +136,21 @@ export default function InGamePage() {
       readInGameReceiptScope({ accountId: authUuid, identityGeneration }),
     )
   /**
-   * 표시 우선순위: 이미 재생 중인 연출(자기 역할 공개·공개 사망·성공 사건)이 있으면 그쪽이
-   * 먼저다. 대기 화면은 그 아래에서 기다리다가 다시 떠오르며, 그동안에도 대기 상태 자체는
-   * 그대로다 — 가려졌다고 완료로 처리하지 않는다(해제 권한은 서버에만 있다).
+   * 표시 우선순위(CODEX 반려 수정): **자기 역할 공개보다 대기가 위다.**
+   *
+   * 예전에는 roleReveal.open이면 대기 화면을 접었다. 그러면 역할 공개를 열어 둔 참가자는 그
+   * 밤 내내 대기 화면을 보지 못하고, 그 창을 닫는 순간에야 비로소 기다리는 쪽임을 안다 —
+   * 승인 계약은 그 반대다: 비수신자는 **진행 중 내내** 대기 화면만 본다. 그래서 유효한 대기가
+   * 있으면 역할 공개 오버레이는 아예 마운트하지 않고(아래 렌더 참고 — 열림 여부만 끄면 퇴장
+   * 애니메이션 동안 역할·진영 문자열이 DOM에 남는다), 대기가 풀리면 그대로 다시 열린다
+   * (확인한 것으로 처리하지 않는다).
+   *
+   * 반대로 **이미 재생 중인 연출**(공개 사망·개인 성공 사건)은 그대로 위에 남는다. 그 둘은
+   * 잘리면 복구할 수 없는 일회성 연출이고, 애초에 그것을 받는 참가자는 이 밤의 비수신자가
+   * 아니다(대기 상태는 그동안에도 그대로 살아 있다 — 가려졌다고 완료로 처리하지 않는다).
    */
   const nightPresentationWaitOpen = nightPresentationWaitOwned
-    && !roleReveal.open && !killReveal.open && !nightSuccessPresentation.open
+    && !killReveal.open && !nightSuccessPresentation.open
 
   // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다 — 단, 이 판정의 사망
   // 연출이 재생 중이거나 큐에 남아 있는 동안은 기다린다(연출이 통째로 잘리지 않게).
@@ -293,12 +302,18 @@ export default function InGamePage() {
         phase={phaseEntrance.phase}
         onConfirm={phaseEntrance.confirm}
       />
-      <InGameRoleRevealOverlay
-        open={roleReveal.open}
-        onClose={roleReveal.close}
-        roleInfo={roleReveal.roleInfo}
-        players={gameState?.players}
-      />
+      {/* F-27b(AC-01, CODEX 반려 수정): 대기 중에는 역할 공개를 **마운트하지 않는다**. open만
+          false로 내리면 퇴장 애니메이션(AnimatePresence) 동안 역할명·진영·동료 목록이 DOM에
+          그대로 남는다 — 대기 화면이 덮고 있어도 그 문자열은 이미 이 화면의 것이다. 열림
+          상태의 출처는 그대로 오버레이 스택 하나이며, 대기가 풀리면 같은 상태로 다시 열린다. */}
+      {nightPresentationWaitOpen ? null : (
+        <InGameRoleRevealOverlay
+          open={roleReveal.open}
+          onClose={roleReveal.close}
+          roleInfo={roleReveal.roleInfo}
+          players={gameState?.players}
+        />
+      )}
       {/* 대기 화면은 이 개인 결과 오버레이와 같은 z 단계를 쓴다 — 둘이 동시에 그려지면
           어느 쪽이 위인지가 렌더 순서에 좌우되므로, 대기 중에는 아예 띄우지 않는다. */}
       <InGameNightPresentationWait open={nightPresentationWaitOpen} />

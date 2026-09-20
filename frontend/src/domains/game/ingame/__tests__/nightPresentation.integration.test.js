@@ -73,36 +73,6 @@ mock.module("../utils/pickInGamePlayerFrame.js", {
   },
 })
 
-/**
- * AC-02: 효과음 런타임은 **기록하는 대역**으로 바꾼다. 무음 회귀의 관측 지점이기 때문이다 —
- * 이 슬라이스는 새 소리를 하나도 추가하지 않으므로, 대기 시작·해제·복원 구간에서 이 배열이
- * 한 칸도 늘지 않는다는 사실이 곧 증거다(F-16 player 자신의 무음·중복·복원 억제는
- * store/__tests__/sfxConsumer.test.js와 shared/hooks/__tests__/bgmPlaybackLock.test.js가 본다).
- */
-const sfxDispatches = []
-const sfxClaims = []
-mock.module("@/shared/hooks/useSfxRuntime.js", {
-  namedExports: {
-    dispatchSfxEvent: (event) => {
-      sfxDispatches.push(event)
-      return { status: "suppressed", reason: "no-runtime", completion: Promise.resolve("stopped") }
-    },
-    dispatchUiSfx: (kind, event) => {
-      sfxDispatches.push({ kind, event, ui: true })
-      return { status: "suppressed", reason: "no-runtime", completion: Promise.resolve("stopped") }
-    },
-    claimSfxAudio: (event) => {
-      sfxClaims.push(event)
-      return { status: "suppressed", reason: "no-runtime", attach: () => {}, release: () => {} }
-    },
-    getSfxMix: () => ({ gain: 0, muted: true }),
-    subscribeSfxMix: () => () => {},
-    getSfxSilenceLog: () => [],
-    __setSfxPlayerForTests: () => {},
-    useSfxRuntime: () => {},
-  },
-})
-
 mock.module("../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "http://localhost:4000", DISCORD_SUPPORT_URL: undefined },
 })
@@ -144,15 +114,67 @@ const { useGameSessionSocketEvents } = await import("../hooks/useGameSessionSock
 const { useInGameSessionSnapshotSync } = await import("../hooks/useInGameSessionSnapshotSync.js")
 const { useInGameNightSuccessPresentation } = await import("../hooks/useInGameNightSuccessPresentation.js")
 const {
-  INGAME_KILL_ANIMATION_VIDEO_URL, INGAME_KILL_REVEAL_RETRY_LABEL, INGAME_KILL_REVEAL_SKIP_LABEL,
+  INGAME_KILL_ANIMATION_VIDEO_URL, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
+  INGAME_KILL_REVEAL_RETRY_LABEL, INGAME_KILL_REVEAL_SKIP_LABEL,
 } = await import("../constants/killReveal/ingameKillReveal.js")
 const { INGAME_NIGHT_PRESENTATION_WAIT_MESSAGE } = await import("../components/InGameNightPresentationWait.jsx")
 // AC-05: 실제 화면은 이 페이지 컴포넌트 하나다 — 아래 통합 시나리오는 이것을 직접 마운트한다.
 const { default: InGamePage } = await import("../pages/InGamePage.jsx")
 const { router } = await import("../../../../app/routes/index.jsx")
 const { useMatchingStore } = await import("../../matching/store/matchingStore.js")
+const { getInGameRoleRevealInfo } = await import("../utils/getInGameRoleRevealInfo.js")
 
 const flushMicrotasks = () => new Promise((resolve) => { setTimeout(resolve, 0) })
+
+// ───────────────────────────────────────────────────────────────────────────
+// AC-02 · F-16 효과음 런타임 (대역하지 않는다)
+//
+// CODEX 반려 수정: 예전에는 useSfxRuntime 모듈 전체를 대역으로 갈아끼웠다. 그러면 "소리가
+// 나지 않았다"는 관측이 **대역의 사실**이 되어 무음 회귀의 증거가 되지 못한다. 이제 실제
+// 모듈을 그대로 쓰고, App이 설치하는 자리에 **실제 production player**를 직접 꽂는다
+// (sfxConsumer.test.js의 recordProductionPlayer와 같은 주입점이다).
+//
+// 바꾸는 것은 매체 경계 하나뿐이다: createMedia가 실제 Audio를 만들지 않고 생성 요청만
+// 적는다. dispatch·claim은 세기 위해 얇은 껍데기를 덧씌우되 **모든 호출을 실제 player로
+// 그대로 넘긴다** — 그래서 중복 판정·범위 판정·무음 사유는 전부 실제 코드가 낸 값이다.
+// ───────────────────────────────────────────────────────────────────────────
+const { __setSfxPlayerForTests } = await import("../../../../shared/hooks/useSfxRuntime.js")
+const { createSfxPlayer } = await import("../../../../shared/audio/sfxPlayer.js")
+const { SFX_MANIFEST } = await import("../../../../shared/audio/sfxManifest.js")
+
+const sfxDispatches = []
+const sfxClaims = []
+const sfxMediaCreations = []
+
+const productionSfxPlayer = createSfxPlayer({
+  manifest: SFX_MANIFEST,
+  getSettings: () => ({ masterVolume: 100, sfxVolume: 100, sfxMuted: false }),
+  getScope: () => ({
+    accountId: useAuthStore.getState().user?.uuid ?? null,
+    gameId: useInGameStore.getState().gameId ?? null,
+    roomId: null,
+  }),
+  // 매체 경계 — 실제 재생 장치만 대신한다(실제로 여기까지 오는 사건이 있으면 그 자체가 증거다).
+  createMedia: (src) => {
+    sfxMediaCreations.push(src)
+    return {
+      play: () => Promise.resolve(),
+      pause() {},
+      addEventListener() {},
+      removeEventListener() {},
+    }
+  },
+})
+
+__setSfxPlayerForTests({
+  dispatch: (event) => { sfxDispatches.push(event); return productionSfxPlayer.dispatch(event) },
+  claimAudio: (event, options) => { sfxClaims.push(event); return productionSfxPlayer.claimAudio(event, options) },
+  getMix: () => productionSfxPlayer.getMix(),
+  subscribeMix: (listener) => productionSfxPlayer.subscribeMix(listener),
+  getSilenceLog: () => productionSfxPlayer.getSilenceLog(),
+  syncScope: () => productionSfxPlayer.syncScope(),
+  dispose: () => productionSfxPlayer.dispose(),
+})
 
 // ───────────────────────────────────────────────────────────────────────────
 // 전송 계층 대역
@@ -515,7 +537,7 @@ function createProductionInGameScreen(Page) {
  * 쓴다 — 어느 쪽이 그려졌는지가 DOM으로 곧장 드러난다. 라우터는 마운트마다 새로 만든다(앞
  * 구간의 이동 기록이 다음 구간으로 새지 않는다).
  */
-async function mountInGamePageDirect(socket, Page) {
+async function mountInGamePageDirect(socket, Page, { dismissOverlays = true } = {}) {
   currentSocket = socket
   for (const cb of [...socketSubscribers]) cb()
   const directRouter = createMemoryRouter(
@@ -527,8 +549,101 @@ async function mountInGamePageDirect(socket, Page) {
   )
   let view
   await act(async () => { view = render(React.createElement(RouterProvider, { router: directRouter })) })
-  await dismissParchmentOverlays(view.container)
+  if (dismissOverlays) await dismissParchmentOverlays(view.container)
   return view
+}
+
+/** 마운트 직후 자동으로 열리는 자기 역할 공개 창(닫지 않은 상태에서만 있다). */
+function findRoleRevealDialog(container) {
+  return container.querySelector('[role="dialog"][aria-label="내 역할 보기"]')
+}
+
+/**
+ * 프런트 연출의 **상한(워치독)만** 시험이 소유하는 가짜 시계. 그 밖의 지연은 실제 타이머
+ * 그대로 흘러간다(React·testing-library가 쓰는 예약을 건드리면 마운트 자체가 흔들린다).
+ */
+function captureVideoWatchdogTimers() {
+  const originalSetTimeout = globalThis.setTimeout
+  const originalClearTimeout = globalThis.clearTimeout
+  const pending = new Map()
+  let nextId = 1
+  globalThis.setTimeout = (fn, delay, ...rest) => {
+    if (delay === INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS) {
+      const id = { watchdog: nextId++ }
+      pending.set(id, fn)
+      return id
+    }
+    return originalSetTimeout(fn, delay, ...rest)
+  }
+  globalThis.clearTimeout = (id) => {
+    if (pending.has(id)) {
+      pending.delete(id)
+      return undefined
+    }
+    return originalClearTimeout(id)
+  }
+  return {
+    pendingCount: () => pending.size,
+    /** 예약된 상한을 전부 만료시킨다. */
+    fire() {
+      const due = [...pending.values()]
+      pending.clear()
+      for (const fn of due) fn()
+    },
+    restore() {
+      globalThis.setTimeout = originalSetTimeout
+      globalThis.clearTimeout = originalClearTimeout
+    },
+  }
+}
+
+/**
+ * 서버 진행 구간 하나 동안 **실제로 예약된 전역 타이머**를 모은다.
+ *
+ * 낮 타이머(startDayPhaseTimer)는 밤 최종화가 전역 setTimeout으로 거는 예약이라(밤 턴 엔진의
+ * 주입 시계와는 별개다) 그 경계를 직접 가로채는 것 말고는 관측할 방법이 없다 —
+ * backend/socket/__tests__/gameSession.nightTurns.test.js가 쓰는 것과 같은 관례다. 이 창
+ * 안에서는 React를 건드리지 않는다(서버 리스너 호출만 동기적으로 일어난다).
+ */
+function captureServerScheduledTimers(run) {
+  const originalSetTimeout = globalThis.setTimeout
+  const calls = []
+  let fakeTimerId = 1
+  globalThis.setTimeout = (fn, delay) => {
+    calls.push({ fn, delay })
+    return fakeTimerId++
+  }
+  try {
+    run()
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+  }
+  return calls
+}
+
+/**
+ * 남은 밤 역할 턴을 **실제 서버 엔진으로** 끝까지 몰아붙인다 — 사건이 없는 제출은 대기를
+ * 만들지 않으므로 즉시 다음 역할로 넘어가고, 마지막 역할이 끝나면 서버가 그 밤을 최종화한다.
+ * 이 밤의 결과(roster·다음 낮·낮 타이머)는 전부 그 최종화가 만든 것이다(시험이 주입하지 않는다).
+ */
+function driveRemainingNightRolesToFinalization(ctx) {
+  return captureServerScheduledTimers(() => {
+    for (let guard = 0; guard < 12 && ctx.session.phase === "NIGHT"; guard += 1) {
+      const role = ctx.session.nightTurnRole
+      if (!role) {
+        // 대기 중이거나 제출 창이 열려 있다 — 주입 시계로 그 구간을 지나간다.
+        ctx.advance(30_000)
+        continue
+      }
+      const actor = [...ctx.session.players.entries()]
+        .find(([, player]) => player.role === role && player.isAlive !== false)
+      if (!actor) {
+        ctx.advance(30_000)
+        continue
+      }
+      ctx.submit(actor[0], null)
+    }
+  })
 }
 
 /** 한 시나리오 구간이 끝났다 — 화면·store·소켓을 다음 구간이 쓸 수 있는 상태로 되돌린다. */
@@ -619,6 +734,46 @@ test("AC-01/AC-02/AC-05: 실제 KILL이 대기를 열면 비수신자 화면에�
   assert.equal(sfxDispatches.length, sfxBefore, "대기 해제가 새 효과음을 만들었다")
 
   await leaveInGamePage()
+})
+
+test("AC-01(CODEX 반려 수정): 역할 공개가 떠 있어도 대기 알림이 오면 대기 화면이 그 위를 덮고, 역할 비밀 정보는 DOM에서 사라진다", async () => {
+  const ctx = setupBackendNight("f27bl-wait-over-role-reveal")
+  const outsiderUuid = pickOutsider(ctx)
+  assert.deepEqual(ctx.submit(ctx.jokerUuid, ctx.citizenUuid), { ok: true })
+  const waitPayload = ctx.receivedBy(outsiderUuid, "night_presentation_wait")[0].payload
+
+  seedFrontSession(ctx, outsiderUuid)
+  const socket = createFrontSocket()
+  // 역할 공개를 닫지 않는다 — 마운트 직후 자동으로 열리는 바로 그 화면 위로 대기가 온다.
+  const view = await mountInGamePageDirect(socket, InGamePage, { dismissOverlays: false })
+
+  const roleInfo = getInGameRoleRevealInfo(useInGameStore.getState().state.self, { authUuid: outsiderUuid })
+  assert.ok(roleInfo, "전제: 역할 공개가 그릴 정보가 있어야 한다")
+  assert.notEqual(findRoleRevealDialog(view.container), null, "전제: 역할 공개가 떠 있어야 한다")
+  assert.equal(view.container.innerHTML.includes(roleInfo.roleName), true,
+    "전제: 역할 공개가 역할명을 그리고 있어야 한다")
+
+  await act(async () => { socket.deliver("night_presentation_wait", waitPayload) })
+
+  // 계약: 대기가 역할 공개를 **가린다**(그 반대가 아니다).
+  assert.notEqual(view.container.querySelector("[data-ingame-night-presentation-wait]"), null,
+    "역할 공개가 떠 있다고 유효한 대기 화면이 숨겨졌다")
+  assert.equal(findRoleRevealDialog(view.container), null, "대기 중인데 역할 공개 창이 남아 있다")
+  assert.equal(view.container.innerHTML.includes(roleInfo.roleName), false,
+    "대기 중 화면에 역할명이 남아 있다")
+  assert.equal(view.container.innerHTML.includes(roleInfo.teamLabel), false,
+    "대기 중 화면에 진영 표시가 남아 있다")
+
+  // 가려졌을 뿐 확인한 것으로 처리하지 않는다 — 대기가 풀리면 그대로 다시 열린다.
+  await act(async () => {
+    socket.deliver("night_presentation_wait", { ...waitPayload, waiting: false })
+  })
+  assert.equal(view.container.querySelector("[data-ingame-night-presentation-wait]"), null,
+    "해제 뒤에도 대기 화면이 남았다")
+  assert.notEqual(findRoleRevealDialog(view.container), null,
+    "대기가 풀렸는데 역할 공개가 돌아오지 않았다")
+
+  resetScreenBetweenScenes()
 })
 
 test("AC-01/AC-03/AC-05: 대기 중 새로고침은 실제 조회로 대기를 복원하고, 그 새 연결도 해제 통지를 받는다", async () => {
@@ -782,6 +937,69 @@ test("AC-03/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 완료
   assert.equal(ctx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 완료했는데 다음 역할이 없다")
 
   await leaveInGamePage()
+})
+
+test("AC-03(CODEX 반려 수정): 재시도 뒤에도 매체가 무응답이면 상한이 다시 걸려 ERROR가 실제 서버에 정확히 한 번 보고된다", async () => {
+  const ctx = setupBackendNight("f27bl-retry-watchdog")
+  assert.deepEqual(ctx.submit(ctx.jokerUuid, ctx.citizenUuid), { ok: true })
+  const killPayload = ctx.receivedBy(ctx.citizenUuid, "night_action_success")[0].payload
+
+  seedFrontSession(ctx, ctx.citizenUuid)
+  const socket = createFrontSocket({ forwardEmitTo: ctx.backendSockets.get(ctx.citizenUuid) })
+  const clock = captureVideoWatchdogTimers()
+  const originalPlay = dom.window.HTMLMediaElement.prototype.play
+  try {
+    // 최초 재생은 자동재생 정책으로 거부된다 — 재시도 화면이 뜨고 그 시도의 상한은 끝난다.
+    dom.window.HTMLMediaElement.prototype.play = function blockedPlay() {
+      const err = new Error("NotAllowedError")
+      err.name = "NotAllowedError"
+      return Promise.reject(err)
+    }
+    const view = await mountInGamePageDirect(socket, InGamePage)
+    await act(async () => { socket.deliver("night_action_success", killPayload) })
+    await act(async () => { await flushMicrotasks() })
+
+    const killPanel = () => view.container.querySelector("[data-ingame-night-success-kill]")
+    assert.notEqual(findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+      "전제: 자동재생 차단이면 재시도 화면이 뜬다")
+    assert.equal(clock.pendingCount(), 0, "응답이 온 시도의 상한이 그대로 남아 있다")
+
+    // 재시도 — 이번에는 매체가 **아무 응답도 하지 않는다**(거부도 ended도 error도 없다).
+    dom.window.HTMLMediaElement.prototype.play = function silentPlay() {
+      return new Promise(() => {})
+    }
+    await act(async () => { findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL).click() })
+    await act(async () => { await flushMicrotasks() })
+    assert.equal(clock.pendingCount(), 1, "재시도가 상한을 다시 예약하지 않았다(무응답이면 영영 멈춘다)")
+    assert.equal(socket.emitsFor("acknowledge_night_action_success").length, 0,
+      "아직 아무 응답도 없는데 완료를 보고했다")
+
+    // 상한 경과 — ERROR가 실제 서버 리스너에 정확히 한 번 도달한다.
+    await act(async () => { clock.fire() })
+    await act(async () => { await flushMicrotasks() })
+    const acks = socket.emitsFor("acknowledge_night_action_success")
+    assert.equal(acks.length, 1, "재시도 무응답이 상한 뒤에도 보고되지 않았다")
+    assert.equal(acks[0].payload.outcome, "ERROR", "재시도 무응답이 ERROR로 보고되지 않았다")
+    assert.deepEqual(acks[0].response, { ok: true, duplicate: false })
+    const stored = ctx.gameSessionSocketLayer.__testables
+      .__getNightSuccessReceiptsForTests(ctx.session)
+    assert.equal(stored.byEvent.get(killPayload.eventId).get(ctx.citizenUuid).completed, true,
+      "ERROR 보고가 서버 완료 기록을 남기지 않았다")
+
+    // 화면은 그 자리에 멈추지 않고 다음 사건으로 넘어간다(큐가 비었으므로 연출이 닫힌다).
+    assert.equal(killPanel(), null, "ERROR로 끝난 연출이 화면에 남았다")
+    assert.deepEqual(useInGameStore.getState().nightSuccessQueue, [])
+    assert.equal(clock.pendingCount(), 0, "끝난 연출의 상한이 남아 있다")
+
+    // 나머지 수신자까지 끝나면 서버가 대기를 풀고 다음 역할을 시작한다.
+    assert.equal(ctx.session.nightTurnRole, null, "한 수신자의 ERROR만으로 다음 역할이 시작됐다")
+    ctx.ack(ctx.jokerUuid, killPayload, "SKIPPED")
+    assert.equal(ctx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 끝났는데 다음 역할이 없다")
+  } finally {
+    dom.window.HTMLMediaElement.prototype.play = originalPlay
+    clock.restore()
+  }
+  resetScreenBetweenScenes()
 })
 
 test("AC-03/AC-05: 미응답 상한은 대기를 정확히 한 번 해제하고, 그 뒤의 늦은 최초 완료는 진행을 되돌리지 않는다", () => {
@@ -1019,8 +1237,10 @@ test("F27 BL production integration scenarios", async () => {
   assert.equal(view.container.querySelector("video[src]"), null, "완료한 연출이 화면에 남았다")
   // 한 수신자의 완료만으로는 서버가 진행하지 않는다 — 다음 역할(=다음 턴 타이머)은 아직이다.
   assert.equal(ctx.session.nightTurnRole, null, "한 수신자 완료만으로 다음 역할이 시작됐다")
-  ctx.ack(ctx.jokerUuid, killPayload)
+  // 대기 해제는 다음 **역할 턴**만 연다 — 밤이 끝난 것이 아니므로 낮 타이머는 아직 없다.
+  const timersOnWaitRelease = captureServerScheduledTimers(() => { ctx.ack(ctx.jokerUuid, killPayload) })
   assert.equal(ctx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 끝났는데 다음 역할이 없다")
+  assert.deepEqual(timersOnWaitRelease, [], "연출 대기 해제가 낮 타이머를 예약했다")
 
   // 의사가 같은 대상을 치료한다 — 전용 영상이 없는 종류라 임시 연출로 확인한다(AC-04 범위).
   assert.deepEqual(ctx.submit(ctx.doctorUuid, ctx.citizenUuid), { ok: true })
@@ -1040,20 +1260,29 @@ test("F27 BL production integration scenarios", async () => {
   ctx.ack(ctx.doctorUuid, healPayload)
   assert.deepEqual(useInGameStore.getState().nightSuccessQueue, [], "두 연출을 소비했는데 큐가 남았다")
 
-  // 최종 생존은 연출이 아니라 canonical roster에서만 온다 — 다음 낮 결과가 반영된 뒤에 뜬다.
+  // 최종 생존은 연출이 아니라 canonical roster에서만 온다 — 그리고 그 roster는 **실제 서버가
+  // 밤을 최종화한 결과**다(CODEX 반려 수정: 낮 상태를 시험이 주입하지 않는다).
   assert.equal(view.container.querySelector("[data-ingame-night-success-final]"), null,
     "밤 결과가 반영되기 전에 최종 상태가 떴다")
-  const nextDayIndex = ctx.session.dayIndex + 1
-  await act(async () => {
-    socket.deliver("night_result_applied", {
-      gameId: ctx.session.id,
-      phase: "DAY",
-      dayIndex: nextDayIndex,
-      players: backendRosterForStore(ctx).map((p) => ({ uuid: p.uuid, alive: true })),
-      victimUuid: null,
-      deathReveals: [],
-    })
-  })
+  const nightDayIndex = ctx.session.dayIndex
+  assert.equal(ctx.receivedBy(ctx.citizenUuid, "night_result_applied").length, 0,
+    "전제: 아직 밤이 최종화되지 않았다")
+
+  // 남은 역할 턴을 실제 서버 엔진으로 끝까지 몰아붙인다 → 마지막 역할이 끝나야 밤이 최종화되고,
+  // 그때 비로소 낮 타이머가 정확히 한 번 예약된다.
+  const dayTimerCalls = driveRemainingNightRolesToFinalization(ctx)
+  assert.equal(ctx.session.phase, "DAY", "실제 서버가 밤을 최종화하지 않았다")
+  const nextDayIndex = ctx.session.dayIndex
+  assert.equal(nextDayIndex, nightDayIndex + 1, "최종화가 다음 낮으로 넘기지 않았다")
+  assert.equal(dayTimerCalls.length, 1,
+    `밤 최종화 뒤 낮 타이머가 정확히 한 번 예약되지 않았다(${dayTimerCalls.map((c) => c.delay).join(",")})`)
+
+  // 화면이 받는 것도 그 최종화가 실제로 보낸 payload 하나다(시험이 만든 값이 아니다).
+  const applied = ctx.receivedBy(ctx.citizenUuid, "night_result_applied")
+  assert.equal(applied.length, 1, "서버 최종화가 밤 결과 전달을 만들지 않았다")
+  await act(async () => { socket.deliver("night_result_applied", applied[0].payload) })
+  assert.equal(useInGameStore.getState().state.phase, "DAY", "서버 밤 결과가 화면에 반영되지 않았다")
+  assert.equal(useInGameStore.getState().state.dayIndex, nextDayIndex)
   const finalPanel = view.container.querySelector("[data-ingame-night-success-final]")
   assert.notEqual(finalPanel, null, "킬+치료 두 연출을 마친 대상자에게 최종 생존 표시가 뜨지 않았다")
   assert.equal(finalPanel.getAttribute("data-ingame-night-success-final"), "ALIVE",
@@ -1107,6 +1336,97 @@ test("F27 BL production integration scenarios", async () => {
   } finally {
     dom.window.HTMLMediaElement.prototype.play = originalPlay
   }
+  resetScreenBetweenScenes()
+
+  // ── ③b 재시도 성공: 다시 재생이 실제로 먹히면 정상 종료가 COMPLETED로 서버에 닿는다 ────
+  const retryCtx = setupBackendNight("f27bl-prod-retry-ok")
+  assert.deepEqual(retryCtx.submit(retryCtx.jokerUuid, retryCtx.citizenUuid), { ok: true })
+  const retryPayload = retryCtx.receivedBy(retryCtx.citizenUuid, "night_action_success")[0].payload
+
+  seedFrontSession(retryCtx, retryCtx.citizenUuid)
+  const retrySocket = createFrontSocket({
+    forwardEmitTo: retryCtx.backendSockets.get(retryCtx.citizenUuid),
+  })
+  const retryOriginalPlay = dom.window.HTMLMediaElement.prototype.play
+  try {
+    let autoplayBlocked = true
+    dom.window.HTMLMediaElement.prototype.play = function maybeBlockedPlay() {
+      if (!autoplayBlocked) return Promise.resolve()
+      const err = new Error("NotAllowedError")
+      err.name = "NotAllowedError"
+      return Promise.reject(err)
+    }
+    const retryView = await mountInGamePageDirect(retrySocket, InGamePage)
+    await act(async () => { retrySocket.deliver("night_action_success", retryPayload) })
+    await act(async () => { await flushMicrotasks() })
+    const retryPanel = () => retryView.container.querySelector("[data-ingame-night-success-kill]")
+    assert.notEqual(findButton(retryPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+      "전제: 자동재생 차단이면 재시도 화면이 뜬다")
+
+    // 사용자가 다시 눌렀고 이번에는 재생이 풀린다 — 아직 아무 것도 보고하지 않는다.
+    autoplayBlocked = false
+    await act(async () => { findButton(retryPanel(), INGAME_KILL_REVEAL_RETRY_LABEL).click() })
+    await act(async () => { await flushMicrotasks() })
+    assert.equal(findButton(retryPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+      "재생이 풀렸는데 재시도 화면이 남아 있다")
+    assert.equal(retrySocket.emitsFor("acknowledge_night_action_success").length, 0,
+      "재생 중에 완료를 보고했다")
+
+    // 정상 종료 → COMPLETED가 실제 서버 리스너에 닿는다.
+    const retryVideo = retryView.container.querySelector("video[src]")
+    assert.notEqual(retryVideo, null, "재시도 성공 뒤 연출 영상이 사라졌다")
+    await act(async () => { fireEvent(retryVideo, new dom.window.Event("ended")) })
+    const retryAcks = retrySocket.emitsFor("acknowledge_night_action_success")
+    assert.equal(retryAcks.length, 1, "재시도 성공 뒤 정상 종료가 완료 보고 한 번으로 이어지지 않았다")
+    assert.deepEqual(retryAcks[0].payload, {
+      gameId: retryCtx.session.id,
+      nightDayIndex: retryPayload.nightDayIndex,
+      eventId: retryPayload.eventId,
+    })
+    assert.deepEqual(retryAcks[0].response, { ok: true, duplicate: false })
+    const retryStored = retryCtx.gameSessionSocketLayer.__testables
+      .__getNightSuccessReceiptsForTests(retryCtx.session)
+    assert.equal(retryStored.byEvent.get(retryPayload.eventId).get(retryCtx.citizenUuid).completed, true,
+      "재시도 성공의 완료가 서버 기록에 남지 않았다")
+    assert.equal(retryCtx.session.nightTurnRole, null, "한 수신자 완료만으로 다음 역할이 시작됐다")
+    retryCtx.ack(retryCtx.jokerUuid, retryPayload)
+    assert.equal(retryCtx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 끝났는데 다음 역할이 없다")
+  } finally {
+    dom.window.HTMLMediaElement.prototype.play = retryOriginalPlay
+  }
+  resetScreenBetweenScenes()
+
+  // ── ③c 재생 오류: ERROR가 실제 서버 리스너에 닿아 비수신자의 대기까지 풀린다 ──────────
+  const errorCtx = setupBackendNight("f27bl-prod-error")
+  const errorOutsider = pickOutsider(errorCtx)
+  assert.deepEqual(errorCtx.submit(errorCtx.jokerUuid, errorCtx.citizenUuid), { ok: true })
+  const errorPayload = errorCtx.receivedBy(errorCtx.citizenUuid, "night_action_success")[0].payload
+  assert.equal(errorCtx.receivedBy(errorOutsider, "night_presentation_wait").length, 1,
+    "전제: 비수신자의 대기가 시작돼 있어야 한다")
+
+  seedFrontSession(errorCtx, errorCtx.citizenUuid)
+  const errorSocket = createFrontSocket({
+    forwardEmitTo: errorCtx.backendSockets.get(errorCtx.citizenUuid),
+  })
+  const errorView = await mountInGamePageDirect(errorSocket, InGamePage)
+  await act(async () => { errorSocket.deliver("night_action_success", errorPayload) })
+  const errorVideo = errorView.container.querySelector("video[src]")
+  assert.notEqual(errorVideo, null, "연출 영상이 시작되지 않았다")
+
+  await act(async () => { fireEvent(errorVideo, new dom.window.Event("error")) })
+  const errorAcks = errorSocket.emitsFor("acknowledge_night_action_success")
+  assert.equal(errorAcks.length, 1, "재생 오류가 완료 보고 한 번으로 이어지지 않았다")
+  assert.equal(errorAcks[0].payload.outcome, "ERROR", "재생 오류가 ERROR로 보고되지 않았다")
+  assert.deepEqual(errorAcks[0].response, { ok: true, duplicate: false })
+  assert.equal(errorView.container.querySelector("[data-ingame-night-success-kill]"), null,
+    "오류로 끝난 연출이 화면에 남았다")
+  assert.equal(errorCtx.session.nightTurnRole, null, "한 수신자의 오류만으로 다음 역할이 시작됐다")
+
+  errorCtx.ack(errorCtx.jokerUuid, errorPayload, "ERROR")
+  const errorRelease = errorCtx.receivedBy(errorOutsider, "night_presentation_wait")
+  assert.equal(errorRelease.length, 2, "ERROR 보고로도 비수신자의 대기가 풀리지 않았다")
+  assert.equal(errorRelease[1].payload.waiting, false)
+  assert.equal(errorCtx.session.nightTurnRole, "DOCTOR", "ERROR 뒤 다음 역할이 시작되지 않았다")
   resetScreenBetweenScenes()
 
   // ── ④ 마지막 밤: 종료가 연출보다 먼저 도착해도 연출을 끝낸 뒤 결과 화면으로 간다 ──

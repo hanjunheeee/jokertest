@@ -41,6 +41,13 @@ function isAutoplayBlockedRejection(err) {
   return err !== null && typeof err === "object" && err.name === "NotAllowedError"
 }
 
+/** 한 재생 시도가 걸어 둔 상한 예약을 버린다(응답이 온 순간·수명이 끝난 순간 모두 여기로 온다). */
+function cancelPlaybackWatchdog(lifetime) {
+  if (!lifetime || lifetime.watchdogId === null || lifetime.watchdogId === undefined) return
+  clearTimeout(lifetime.watchdogId)
+  lifetime.watchdogId = null
+}
+
 /**
  * KILL 사건 전용 — 기존 사망 연출과 같은 kill-animation.mp4를 재생한다(AC-05).
  *
@@ -75,18 +82,43 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
    * 한 번의 재생 시도. **동기 예외와 비동기 거부를 같은 한 곳에서 분류한다** — 예전에는
    * play()가 그 자리에서 던지면(일부 브라우저·대역) 아무도 보고하지 않아 연출이 워치독
    * 상한까지 멈춰 있었다. 자동재생 정책 거부만 재시도 화면이고, 나머지는 전부 ERROR다.
+   *
+   * F-27b(AC-03, CODEX 반려 수정): **시도마다 상한을 새로 건다.** 예전에는 상한 예약이 마운트
+   * 효과 안에 한 번뿐이라, 사용자가 "다시 재생"을 누른 뒤 매체가 아무 응답도 하지 않으면
+   * (ended·error·거부 어느 것도 오지 않는 정지 상태) 그 표시는 영원히 그 자리에 남았다 —
+   * 이미 소진된 상한은 다시 울리지 않으므로 완료 보고도, 다음 사건도 오지 않는다.
+   *
+   * 상한이 하는 일은 시도의 종류에 따라 다르다:
+   *   - 최초 시도의 무응답 → 건너뛰기 버튼을 띄운다(사용자가 볼 기회를 먼저 준다).
+   *   - 재시도의 무응답   → 사용자는 이미 한 번 눌렀다. ERROR로 한 번 보고하고 다음 사건으로
+   *                          넘어간다(화면이 여기서 멈추지 않는다).
+   * 응답이 오면(거부·오류·정상 종료) 그 즉시 예약을 버린다 — 상한은 **침묵에만** 건다.
    */
-  const runPlayback = useCallback((lifetime) => {
+  const runPlayback = useCallback((lifetime, { retry = false } = {}) => {
     const generation = lifetime.generation + 1
     lifetime.generation = generation
     const isCurrentAttempt = () =>
       attemptRef.current === lifetime && lifetime.alive && lifetime.generation === generation
+
+    cancelPlaybackWatchdog(lifetime)
+    lifetime.watchdogId = setTimeout(() => {
+      if (!isCurrentAttempt()) return
+      lifetime.watchdogId = null
+      if (retry) {
+        setStatus("error")
+        onFinish("ERROR")
+        return
+      }
+      setStatus((prev) => (prev === "playing" ? "watchdog" : prev))
+    }, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS)
 
     const video = videoRef.current
     if (!video) return
 
     const reportFailure = (err) => {
       if (!isCurrentAttempt()) return
+      // 응답이 왔다 — 이 시도의 상한은 여기서 끝난다(재시도 화면에는 건너뛰기가 함께 있다).
+      cancelPlaybackWatchdog(lifetime)
       if (isAutoplayBlockedRejection(err)) {
         setStatus("retry")
         return
@@ -106,7 +138,7 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
   }, [onFinish])
 
   useEffect(() => {
-    const lifetime = { alive: true, generation: 0 }
+    const lifetime = { alive: true, generation: 0, watchdogId: null }
     attemptRef.current = lifetime
     setStatus("playing")
 
@@ -121,16 +153,11 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
     }
     runPlayback(lifetime)
 
-    const watchdog = setTimeout(() => {
-      if (!lifetime.alive || attemptRef.current !== lifetime) return
-      setStatus((prev) => (prev === "playing" ? "watchdog" : prev))
-    }, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS)
-
     return () => {
       // 이 표시의 수명이 끝났다. 매체는 멈추고 예약·재시도 상태는 버리되, **완료 보고는
       // 만들지 않는다** — StrictMode의 setup→cleanup→setup은 사용자가 본 것이 아니다.
       lifetime.alive = false
-      clearTimeout(watchdog)
+      cancelPlaybackWatchdog(lifetime)
       try {
         videoRef.current?.pause?.()
       } catch {
@@ -139,17 +166,23 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
     }
   }, [eventId, runPlayback])
 
-  const handleEnded = () => onFinish("COMPLETED")
+  /** 사용자·매체가 낸 종료 응답 하나. 그 시도의 상한은 더 울릴 필요가 없다. */
+  const settleWith = (outcome) => {
+    cancelPlaybackWatchdog(attemptRef.current)
+    onFinish(outcome)
+  }
+
+  const handleEnded = () => settleWith("COMPLETED")
   const handleError = () => {
     setStatus("error")
-    onFinish("ERROR")
+    settleWith("ERROR")
   }
-  const handleSkip = () => onFinish("SKIPPED")
+  const handleSkip = () => settleWith("SKIPPED")
   const handleRetry = () => {
     const lifetime = attemptRef.current
     if (!lifetime || !lifetime.alive) return
     setStatus("playing")
-    runPlayback(lifetime)
+    runPlayback(lifetime, { retry: true })
   }
 
   return (
