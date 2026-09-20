@@ -601,6 +601,10 @@ function __resetStateForTests() {
     // F-25b: 밤 최종화 재진입 표식도 비운다 — 남으면 다음 테스트의 같은 gameId가 "이미 최종화
     // 진행 중"으로 오인돼 밤이 영영 확정되지 않는다.
     nightFinalizeInFlight.clear()
+    // F-26b: WeakMap은 비울 수 없으므로 새 것으로 갈아끼운다 — 같은 session 객체를 재사용하는
+    // 스위트가 이전 테스트의 완료 수신 기록에 막히지 않게 한다(terminalPersistBySession과 동일
+    // 이유).
+    nightSuccessReceiptsBySession = new WeakMap()
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
     for (const [gameId, pending] of [...disconnectGraceRuns]) {
@@ -1024,6 +1028,20 @@ function respondNightAction(uuid, trustedGameId, callback, payload) {
 // 수 있는 이유가 이 Map이다 — 제출 핸들러는 gameId만으로 진행 중인 run을 찾는다.
 const nightTurnRuns = new Map()
 
+/**
+ * F-26b(AC-05): session → 그 밤에 emitNightSuccessEvents가 실제로 전송한 성공 사건의
+ * 수신자별 완료 수신 기록. run.contracts는 stopNightTurnSequence에서 run과 함께 사라지므로
+ * DAY·TRIBUNAL·ENDED로 넘어간 뒤에도 완료 ACK를 대조할 수 있는 별도 보관소가 필요하다.
+ *
+ * 값은 { nightDayIndex, byEvent: Map<eventId, Map<uuid, record>> }이고, record는
+ * { membershipId, socketId, socket, completed }다 — socket은 실제 전송 당시의 소켓 객체
+ * 참조이며, 재연결로 만들어진 새 객체는 이 기록의 소유자가 아니다(AC-05의 "옛 소켓" 거부).
+ *
+ * 다음 밤 startNightTurnSequence가 이전 밤 보관함을 통째로 교체하고, finalizeGameSessionEnd가
+ * 세션 종료 시 지운다. WeakMap이라 session이 수거되면 표식도 함께 사라진다.
+ */
+let nightSuccessReceiptsBySession = new WeakMap()
+
 // ── F-25: 역할 턴의 내부 진행 단계와 연출 계약 ───────────────────────────────────
 //
 // 이 절이 만드는 것은 **서버 내부 사실**뿐이다. 새 개인 소켓 메시지·전달 영수증·재생 완료
@@ -1411,6 +1429,40 @@ function buildNightSuccessPayload(contract, event, recipient) {
 }
 
 /**
+ * F-26b(AC-05): 이 session의 완료 수신 보관함에서 (eventId, uuid) 기록을 얻거나 만든다.
+ * 이미 있으면(동일 기록) **덮어쓰지 않고** 기존 값을 그대로 돌려준다 — 완료 표식이 재전송으로
+ * false로 되돌아가지 않게 한다. 보관함 자체가 없으면(정상 경로에서는 startNightTurnSequence가
+ * 항상 먼저 연다) 기록하지 않고 null을 돌려준다 — 내부 부기 실패가 공개 성공 사건 전달을
+ * 막지는 않는다.
+ */
+function recordNightSuccessReceipt(session, event, recipient, socket) {
+    const store = nightSuccessReceiptsBySession.get(session)
+    if (!store) return { record: null, created: false }
+    let byUuid = store.byEvent.get(event.eventId)
+    if (!byUuid) {
+        byUuid = new Map()
+        store.byEvent.set(event.eventId, byUuid)
+    }
+    const existing = byUuid.get(recipient.uuid)
+    if (existing) return { record: existing, created: false }
+    const record = {
+        membershipId: recipient.membershipId,
+        socketId: recipient.socketId,
+        socket,
+        completed: false,
+    }
+    byUuid.set(recipient.uuid, record)
+    return { record, created: true }
+}
+
+/** emit이 실패했을 때 **이번에 새로 추가한 미완료 기록만** 지운다(이전 완료 기록은 유지). */
+function discardNightSuccessReceiptIfUncompleted(session, eventId, uuid) {
+    const byUuid = nightSuccessReceiptsBySession.get(session)?.byEvent.get(eventId)
+    const record = byUuid?.get(uuid)
+    if (record && record.completed !== true) byUuid.delete(uuid)
+}
+
+/**
  * F-26a(AC-01/AC-04/AC-05): F-25 계약이 고정한 사건별 수신자 목록을 소비해 night_action_success를
  * 개별 emit한다.
  *
@@ -1423,6 +1475,10 @@ function buildNightSuccessPayload(contract, event, recipient) {
  * 한 사건·한 소켓 쌍은 정확히 한 번만 전달한다(자기 치료처럼 USER·TARGET이 한 recipient
  * 항목으로 이미 합쳐져 있지만, 방어적으로 한 번 더 막는다). 개별 emit 예외는 로그만 남기고
  * 다른 수신자의 전달을 막지 않는다.
+ *
+ * F-26b(AC-05): 기존 수신자 검사를 모두 통과한 전송 **직전**에 완료 ACK 대조용 기록을 확보한다
+ * (동기 전송 대역에서 클라이언트가 같은 동기 구간 안에 완료를 되돌려도 기록이 이미 있게 하기
+ * 위함이다). emit이 예외를 던지면 이번에 추가한 기록만 되돌린다.
  */
 function emitNightSuccessEvents(run, contract) {
     if (!contract || !Array.isArray(contract.events) || contract.events.length === 0) return
@@ -1452,10 +1508,12 @@ function emitNightSuccessEvents(run, contract) {
 
             deliveredEventSocketPairs.add(dedupeKey)
 
+            const { created } = recordNightSuccessReceipt(session, event, recipient, recipientSocket)
             try {
                 recipientSocket.emit('night_action_success', buildNightSuccessPayload(contract, event, recipient))
             } catch (err) {
                 console.error('[밤 성공 사건 전달 실패]', { code: 'DELIVERY_ERROR', eventId: event.eventId, gameId: session.id })
+                if (created) discardNightSuccessReceiptIfUncompleted(session, event.eventId, recipient.uuid)
             }
         }
     }
@@ -1621,6 +1679,13 @@ function startNightTurnSequence(io, session, deps = {}) {
     if (session.phase !== 'NIGHT') return null
     const existing = nightTurnRuns.get(session.id)
     if (existing) return existing
+
+    // F-26b(AC-05): 이 밤의 완료 수신 보관함을 연다. 같은 밤(같은 nightDayIndex)의 run
+    // 재생성은 기존 완료 기록을 보존하고, 다른 밤의 잔존 보관함은 여기서 통째로 교체한다.
+    const storedReceipts = nightSuccessReceiptsBySession.get(session)
+    if (!storedReceipts || storedReceipts.nightDayIndex !== session.dayIndex) {
+        nightSuccessReceiptsBySession.set(session, { nightDayIndex: session.dayIndex, byEvent: new Map() })
+    }
 
     const run = {
         io,
@@ -3875,6 +3940,10 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
  * endGameSessionForPlayer 성공 직후 await 없이 즉시 호출해야 한다.
  */
 function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
+    // F-26b(AC-05): 이 session의 완료 수신 보관함을 game_ended 전송보다 먼저 지운다 — 종료 전송
+    // 중에 재진입한 완료 요청도 이미 취소된 사건으로 거부되게 한다.
+    nightSuccessReceiptsBySession.delete(session)
+
     /**
      * F-23(AC-04): 종료 수신 후보와 **정리 전 제외 사실**을 여기서 고정한다.
      *
@@ -4425,6 +4494,92 @@ function getCurrentSocketForUuid(io, uuid) {
 }
 
 /** ROLE_REVEAL 확인·낮 투표 준비·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
+/**
+ * F-26b(AC-05): 밤 성공 사건 소비 완료 ACK. registerGameHandlers가
+ * acknowledge_night_action_success로 등록한다 — 완료 여부만 기록하고 턴 진행·판정·대기 해제는
+ * 어떤 것도 건드리지 않는다(releaseNightPresentationWait는 여전히 즉시 통과이고, 실제 대기
+ * 구현은 F-27a의 몫으로 남는다).
+ *
+ * 검증은 형태 → 연결/canonical 소켓 → 참여 세션 → 완료 보관함의 사건·수명 → 원래 수신자(소켓
+ * 객체·id·소속)·현재 채널 자격 순으로 진행하고, 중복 판정은 그 모두를 통과한 **뒤**에 온다.
+ * 실패 응답은 INVALID_PAYLOAD·NOT_ELIGIBLE·STALE_EVENT 중 하나이며 사건이나 다른 수신자의
+ * 정보를 담지 않는다. 성공 응답은 {ok:true, duplicate}뿐이다 — 최초 완료는 duplicate:false,
+ * 같은 수신자의 재요청은 duplicate:true다.
+ */
+function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const { gameId, nightDayIndex, eventId } = payload
+    if (typeof gameId !== 'string' || gameId.length === 0) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    if (!Number.isInteger(nightDayIndex) || nightDayIndex < 0) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    if (typeof eventId !== 'string' || eventId.length === 0) {
+        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    if (!isCurrentSocketForUuid(uuid, socket, io)) {
+        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    const session = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
+    if (!session) {
+        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    const store = nightSuccessReceiptsBySession.get(session)
+    if (!store || store.nightDayIndex !== nightDayIndex) {
+        respond(callback, { ok: false, code: 'STALE_EVENT', message: '더 이상 유효하지 않은 사건입니다.' })
+        return
+    }
+    const byUuid = store.byEvent.get(eventId)
+    if (!byUuid) {
+        respond(callback, { ok: false, code: 'STALE_EVENT', message: '더 이상 유효하지 않은 사건입니다.' })
+        return
+    }
+    const record = byUuid.get(uuid)
+    if (!record) {
+        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+    // F-26b: 원래 이 사건을 전달받은 바로 그 소켓 객체·id여야 한다 — 재연결로 만든 새 객체나
+    // namespace의 같은 id를 가진 다른 객체는 이 완료의 소유자가 아니다.
+    if (record.socket !== socket || record.socketId !== socket.id) {
+        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+    if ((session.players.get(uuid)?.membershipId ?? null) !== record.membershipId) {
+        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+    if (!isEligibleSessionRecipient(session, socket, uuid)) {
+        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+    if (hasMembershipOutsideSession(session, uuid)) {
+        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    if (record.completed) {
+        respond(callback, { ok: true, duplicate: true })
+        return
+    }
+    record.completed = true
+    respond(callback, { ok: true, duplicate: false })
+}
+
 function registerGameHandlers(io, socket, uuid) {
     /**
      * F-23(AC-04): 배선과 **같은 동기 구간**에서 이 연결의 소유권을 기록한다.
@@ -4447,6 +4602,10 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('resolve_tribunal_vote', (payload, callback) => handleResolveTribunalVote(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, socket, uuid, payload, callback))
     socket.on('get_session_snapshot', (payload, callback) => handleGetSessionSnapshot(io, socket, uuid, payload, callback))
+    // F-26b: 밤 성공 사건 소비 완료 ACK. 등록 당시 uuid를 캡처해 F-26a의 개별 전달과 같은
+    // 방식으로 인증 신원을 신뢰한다.
+    socket.on('acknowledge_night_action_success', (payload, callback) =>
+        handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback))
     // F-21: 진행 중 추방과, 대기방·게임 공용 결과 재조회. 결과 조회를 여기 한 번만 등록하는
     // 이유는 registerGameHandlers가 게임 참가 여부와 무관하게 모든 연결에 걸리기 때문이다 —
     // 방금 방을 떠난 대기방 방장도 같은 이벤트로 자기 명령의 결과를 확인할 수 있다.
@@ -4604,6 +4763,10 @@ module.exports = {
         // 방지를 실제 경로로 확인할 수 있게 한다.
         buildNightSuccessPayload,
         emitNightSuccessEvents,
+        // F-26b: 밤 성공 사건 완료 ACK 핸들러와 완료 수신 보관함. 시험이 등록된 리스너를 통해
+        // 도달하는지, 그리고 세션별 완료 기록의 수명을 실제 경계로 확인할 수 있게 한다.
+        handleAcknowledgeNightActionSuccess,
+        __getNightSuccessReceiptsForTests: (session) => nightSuccessReceiptsBySession.get(session) ?? null,
         computeEmptyTurnDelayMs,
         resolveNightTurnDurationMs,
         startDayPhaseTimer,
