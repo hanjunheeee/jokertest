@@ -140,7 +140,10 @@ const EXISTING_TABLES = [
         model: 'AccountFindRequest',
         tableName: 'account_find_requests',
         pk: ['id'],
-        notNull: ['email'],
+        // F-29a(0014-find-id-requests, 설계도 §2-6): 아이디 찾기는 이메일을 아직 모르는
+        // 상태에서 조회 사건을 기록해야 해서 email을 의도적으로 nullable로 바꿨다 — 더 이상
+        // NOT NULL이 아니다.
+        notNull: [],
         columns: {
             id:           'INTEGER',
             email:        'STRING(100)',
