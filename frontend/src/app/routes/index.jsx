@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import ViewportShell from "@/shared/layouts/viewportShell";
 import LoginPage from "@/domains/auth/pages/LoginPage"
+import FindIdPage from "@/domains/auth/pages/FindIdPage"
 import ProtectedRoute from "@/shared/ui/ProtectedRoute";
 import MyPage from "@/domains/user/pages/MyPage";
 import AccountPage from "@/domains/user/pages/AccountPage";
@@ -28,6 +29,8 @@ export const router = createBrowserRouter([
       // 로그인은 인증 전에도 접근할 수 있어야 하므로 보호 라우트 밖에 둡니다.
       { path: "/", element: <LoginPage /> },
       { path: "/login", element: <LoginPage /> },
+      // F-29a: 아이디 찾기는 비로그인 상태에서 접근해야 하므로 보호 라우트 밖에 둡니다.
+      { path: "/find-id", element: <FindIdPage /> },
       {
         // 아래 라우트들은 로그인 상태가 아니면 /login으로 이동합니다.
         element: <ProtectedRoute />,
