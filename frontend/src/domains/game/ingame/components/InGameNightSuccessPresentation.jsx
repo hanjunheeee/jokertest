@@ -100,7 +100,7 @@ function applyMixToVideo(video, mix, forceMuted) {
  * ERROR·SKIPPED·COMPLETED 중 무엇이든 사용자의 동작이나 브라우저 이벤트 하나당 정확히 한 번만
  * onFinish를 부른다 — 조용히 다음으로 넘어가지 않는다.
  */
-function InGameNightSuccessRoleVideo({ eventId, src, onFinish }) {
+function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
   const videoRef = useRef(null)
   const [status, setStatus] = useState("loading")
   /**
@@ -355,7 +355,7 @@ export default function InGameNightSuccessPresentation({
   if (current) {
     const video = resolveNightSuccessVideo(current)
     if (video) {
-      return <InGameNightSuccessRoleVideo eventId={current.eventId} src={video.src} onFinish={finish} />
+      return <InGameNightSuccessKillVideo eventId={current.eventId} src={video.src} onFinish={finish} />
     }
     return (
       <InGameNightSuccessPendingAsset type={current.type} eventId={current.eventId} onFinish={finish} />
