@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import InGameParchmentModalBase from "./parchment/InGameParchmentModalBase.js"
 import InGameParchmentConfirmButton from "./parchment/InGameParchmentConfirmButton.js"
 import { INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
@@ -59,13 +59,54 @@ function isAutoplayBlockedRejection(err) {
 function InGameNightSuccessKillVideo({ eventId, onFinish }) {
   const videoRef = useRef(null)
   const [status, setStatus] = useState("playing")
-  const eventIdRef = useRef(eventId)
-  useEffect(() => {
-    eventIdRef.current = eventId
-  })
+  /**
+   * F-27b(AC-03/AC-08): **표시 수명 + 재생 시도 세대.**
+   *
+   * eventId 하나로는 늦은 응답을 가를 수 없다 — 재접속하면 같은 eventId가 복원되므로, 옛
+   * 시도의 늦은 거부가 "같은 사건이니 내 것"이라며 새 표시를 ERROR로 끝내 버린다. 그래서
+   * 이 표시 인스턴스(수명 객체의 **참조**)와 그 안의 시도 번호를 함께 본다. cleanup·다음
+   * 사건·새 연결·사용자 재시도 중 무엇이든 둘 중 하나를 바꾸므로, 그 이전의 응답은 전부
+   * 자기 자리를 잃는다.
+   */
+  const attemptRef = useRef(null)
+
+  /**
+   * 한 번의 재생 시도. **동기 예외와 비동기 거부를 같은 한 곳에서 분류한다** — 예전에는
+   * play()가 그 자리에서 던지면(일부 브라우저·대역) 아무도 보고하지 않아 연출이 워치독
+   * 상한까지 멈춰 있었다. 자동재생 정책 거부만 재시도 화면이고, 나머지는 전부 ERROR다.
+   */
+  const runPlayback = useCallback((lifetime) => {
+    const generation = lifetime.generation + 1
+    lifetime.generation = generation
+    const isCurrentAttempt = () =>
+      attemptRef.current === lifetime && lifetime.alive && lifetime.generation === generation
+
+    const video = videoRef.current
+    if (!video) return
+
+    const reportFailure = (err) => {
+      if (!isCurrentAttempt()) return
+      if (isAutoplayBlockedRejection(err)) {
+        setStatus("retry")
+        return
+      }
+      setStatus("error")
+      onFinish("ERROR")
+    }
+
+    let playResult
+    try {
+      playResult = video.play?.()
+    } catch (err) {
+      reportFailure(err)
+      return
+    }
+    if (playResult && typeof playResult.then === "function") playResult.catch(reportFailure)
+  }, [onFinish])
 
   useEffect(() => {
-    let cancelled = false
+    const lifetime = { alive: true, generation: 0 }
+    attemptRef.current = lifetime
     setStatus("playing")
 
     const video = videoRef.current
@@ -76,29 +117,26 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
       } catch {
         // 아직 메타데이터가 없는 브라우저는 currentTime 대입이 던질 수 있다 — 재생 시도는 계속한다.
       }
-      const playResult = video.play?.()
-      if (playResult && typeof playResult.then === "function") {
-        playResult.catch((err) => {
-          if (cancelled) return
-          if (isAutoplayBlockedRejection(err)) {
-            setStatus("retry")
-            return
-          }
-          setStatus("error")
-          onFinish("ERROR")
-        })
-      }
     }
+    runPlayback(lifetime)
 
     const watchdog = setTimeout(() => {
-      if (!cancelled) setStatus((prev) => (prev === "playing" ? "watchdog" : prev))
+      if (!lifetime.alive || attemptRef.current !== lifetime) return
+      setStatus((prev) => (prev === "playing" ? "watchdog" : prev))
     }, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS)
 
     return () => {
-      cancelled = true
+      // 이 표시의 수명이 끝났다. 매체는 멈추고 예약·재시도 상태는 버리되, **완료 보고는
+      // 만들지 않는다** — StrictMode의 setup→cleanup→setup은 사용자가 본 것이 아니다.
+      lifetime.alive = false
       clearTimeout(watchdog)
+      try {
+        videoRef.current?.pause?.()
+      } catch {
+        // 이미 분리된 요소의 pause는 무시한다(정리 경로가 던져서는 안 된다).
+      }
     }
-  }, [eventId, onFinish])
+  }, [eventId, runPlayback])
 
   const handleEnded = () => onFinish("COMPLETED")
   const handleError = () => {
@@ -107,22 +145,10 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
   }
   const handleSkip = () => onFinish("SKIPPED")
   const handleRetry = () => {
-    const targetEventId = eventId
+    const lifetime = attemptRef.current
+    if (!lifetime || !lifetime.alive) return
     setStatus("playing")
-    const video = videoRef.current
-    if (!video) return
-    const playResult = video.play?.()
-    if (playResult && typeof playResult.then === "function") {
-      playResult.catch((err) => {
-        if (eventIdRef.current !== targetEventId) return
-        if (isAutoplayBlockedRejection(err)) {
-          setStatus("retry")
-          return
-        }
-        setStatus("error")
-        onFinish("ERROR")
-      })
-    }
+    runPlayback(lifetime)
   }
 
   return (

@@ -9,6 +9,7 @@ import {
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { isStaleSessionSnapshotAckResponse } from "../utils/isStaleSessionSnapshotAckResponse.js"
+import { parseNightTurnStartedPayload } from "../utils/parseNightTurnStartedPayload.js"
 
 const SESSION_SNAPSHOT_TIMEOUT_MS = 5000
 
@@ -89,6 +90,49 @@ function readCurrentMembershipId() {
   return (state.players ?? []).find((player) => player.uuid === me)?.membershipId ?? null
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// F-27b(AC-01): **조회 중에 대기가 바뀌었는가**
+//
+// 조회 응답의 presentationWaiting은 서버가 그 응답을 만든 **그 순간**의 사실이다. 그 사이에
+// 같은 연결로 waiting:false(해제)나 다음 역할 턴 시작이 도착했다면, 늦게 도착한 응답을
+// 그대로 커밋하는 순간 이미 끝난 대기가 화면에 되살아난다(반대로 조회 중 새 대기가 시작된
+// 경우에는 방금 받은 true가 옛 false로 덮인다).
+//
+// 그래서 요청 **전에** 두 알림을 읽기 전용으로 관측해 **게임·밤별 순번**만 센다. 화면 상태는
+// 조금도 만들지 않는다(빈 store에서도 마찬가지다 — 그 판이 무엇인지 아직 모르므로 추정하지
+// 않고 payload가 말하는 게임·밤으로만 센다). 응답이 말하는 게임·밤의 순번이 요청 뒤에 바뀌었
+// 으면 그 응답 전체를 커밋하지 않고 기존 제한 재조회로 **현재 값**을 다시 얻는다. 예산이
+// 소진되면 기존 실패 처리로 끝낸다 — 옛 응답을 승격하지 않는다.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** 관측 순번의 키. 같은 판의 다른 밤은 서로 다른 사실이다. */
+function nightObservationKey(gameId, nightDayIndex) {
+  return `${gameId}|${nightDayIndex}`
+}
+
+/** night_presentation_wait 알림의 형태 검사(store의 허용 키 계약과 같은 셋이다). */
+function readWaitObservationTarget(payload) {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null
+  if (Object.keys(payload).length !== 3) return null
+  if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return null
+  if (!Number.isInteger(payload.nightDayIndex) || payload.nightDayIndex < 0) return null
+  if (typeof payload.waiting !== "boolean") return null
+  return nightObservationKey(payload.gameId, payload.nightDayIndex)
+}
+
+/**
+ * night_turn_started 알림의 형태 검사. 기존 파서를 그대로 쓰되 payload 자신의 게임·날짜로
+ * 대조한다 — 빈 store는 아직 판을 모르므로 "현재 판과 같은가"를 물을 수 없고, 여기서 필요한
+ * 것은 "이 알림이 어느 판·어느 밤을 말하는가"뿐이다(화면 상태는 만들지 않는다).
+ */
+function readTurnStartObservationTarget(payload) {
+  const parsed = parseNightTurnStartedPayload({
+    payload, gameId: payload?.gameId, dayIndex: payload?.dayIndex,
+  })
+  if (!parsed) return null
+  return nightObservationKey(parsed.gameId, parsed.dayIndex)
+}
+
 /** 지금 이 순간의 인증 축. 요청 캡처와 응답 재확인이 같은 함수를 쓴다. */
 function readCurrentAuthScope() {
   const auth = useAuthStore.getState()
@@ -146,6 +190,9 @@ export function useInGameSessionSnapshotSync() {
   // F-26(AC-01): 이 세대의 재조회 예산(최초 시도 시각 기준). 세대가 바뀌면 통째로 새로 만들고,
   // 옛 예약은 객체 동일성 비교로 스스로 무효가 된다.
   const retryRef = useRef({ epoch: -1, attempts: 0, deadline: 0, timerId: null })
+  // F-27b(AC-01): 게임·밤별 관측 순번(키 → 관측 횟수). 화면 상태가 아니라 "조회 중에 이 밤의
+  // 대기가 움직였는가"만 세는 부기다.
+  const nightObservationsRef = useRef(new Map())
 
   useEffect(() => {
     mountedRef.current = true
@@ -191,6 +238,31 @@ export function useInGameSessionSnapshotSync() {
       // 영원히 붙잡아 두지 않는다).
       if (!isFirstRun && gameId && socket.connected) setIdentityRebindPending(true)
     }
+
+    /**
+     * F-27b(AC-01): 요청보다 **먼저** 설치하는 읽기 전용 관측. 이 연결·이 인증의 알림만 센다 —
+     * 소켓이 교체됐거나 계정이 바뀐 뒤 도착한 알림은 이 요청이 견줄 사실이 아니다.
+     */
+    const isObservableNow = () =>
+      mountedRef.current && getSocket() === socket
+      && (useAuthStore.getState().user?.uuid ?? null) === authUuid
+
+    const noteNightObservation = (key) => {
+      if (key === null) return
+      const book = nightObservationsRef.current
+      book.set(key, (book.get(key) ?? 0) + 1)
+    }
+
+    const observeWaitNotice = (payload) => {
+      if (!isObservableNow()) return
+      noteNightObservation(readWaitObservationTarget(payload))
+    }
+    const observeTurnStart = (payload) => {
+      if (!isObservableNow()) return
+      noteNightObservation(readTurnStartObservationTarget(payload))
+    }
+    socket.on("night_presentation_wait", observeWaitNotice)
+    socket.on("night_turn_started", observeTurnStart)
 
     /** 예약된 재조회를 취소한다(전이·언마운트·새 connect가 옛 예약을 남기지 않는다). */
     const cancelScheduledRetry = () => {
@@ -240,6 +312,29 @@ export function useInGameSessionSnapshotSync() {
       const receiptContext = readInGameReceiptScope({
         accountId: requestAuthUuid, identityGeneration: requestIdentityGeneration,
       })
+      // F-27b(AC-01): 이 시도가 나가는 순간의 관측 순번 사본. 응답이 도착했을 때 같은 키의
+      // 값이 달라져 있으면 그 응답은 이미 지나간 사실이다(같은 값의 반복 알림도 순번에는
+      // 남으므로, 반복 방송 뒤에 도착한 응답도 현재 값으로 다시 확인한다).
+      const observationsAtRequest = new Map(nightObservationsRef.current)
+
+      /**
+       * 이 응답이 말하는 게임·밤의 관측이 요청 뒤에 바뀌었는가.
+       *
+       * 응답이 NIGHT을 말하면 그 밤 하나만 견준다. 그 밖의 단계(DAY·TRIBUNAL·ENDED)를 말하는
+       * 응답은 특정 밤을 지목하지 않으므로, 같은 판의 관측 **전부**를 견준다(그 사이에 새 밤의
+       * 대기가 시작됐다면 이 응답의 false가 그것을 덮으면 안 된다).
+       */
+      const hasConflictingNightObservation = (response) => {
+        const responseGameId = typeof response?.gameId === "string" && response.gameId.length > 0
+          ? response.gameId
+          : requestGameId
+        if (!responseGameId) return false
+        const keys = response?.phase === "NIGHT" && Number.isInteger(response?.dayIndex)
+          ? [nightObservationKey(responseGameId, response.dayIndex)]
+          : [...nightObservationsRef.current.keys()].filter((key) => key.startsWith(`${responseGameId}|`))
+        return keys.some((key) =>
+          (nightObservationsRef.current.get(key) ?? 0) !== (observationsAtRequest.get(key) ?? 0))
+      }
 
       /** 지금 이 순간의 범위. 요청 캡처와 끝맺기 판정이 같은 함수를 쓴다(기준이 갈리지 않는다). */
       const readScopeNow = () => readInGameReceiptScope(readCurrentAuthScope())
@@ -458,6 +553,14 @@ export function useInGameSessionSnapshotSync() {
           // F-26(AC-01): 채널 재가입이 끝나지 않았다는 답이다. 예산이 남아 있으면 같은 연결에서
           // 다시 묻고 이 시도로는 아무 결론도 내리지 않는다(빈 복원 성공으로 읽지 않는다).
           if (isRoutingPending(response) && scheduleRetry()) return
+          // F-27b(AC-01): 조회 중에 이 밤의 대기가 움직였다면 이 응답은 이미 지나간 사실이다 —
+          // 아무것도 커밋하지 않고 같은 연결에서 현재 값을 다시 묻는다. 예산이 소진됐으면 기존
+          // 실패 경로로 끝낸다(옛 응답을 승격하지 않는다).
+          if (hasConflictingNightObservation(response)) {
+            if (scheduleRetry()) return
+            settleUnapplied()
+            return
+          }
           if (!requestGameId) {
             if (response?.ok !== true) {
               finishRebindUnapplied(scopeOnArrival)
@@ -560,6 +663,11 @@ export function useInGameSessionSnapshotSync() {
 
     return () => {
       socket.off("connect", handleConnect)
+      // F-27b(AC-01): 자기 관측 리스너만 해제하고 기록도 함께 비운다(다음 세대는 자기 요청
+      // 뒤의 관측만 견준다 — 지나간 세대의 순번을 물려받지 않는다).
+      socket.off("night_presentation_wait", observeWaitNotice)
+      socket.off("night_turn_started", observeTurnStart)
+      nightObservationsRef.current = new Map()
       // 이 세대의 예약도 함께 끝낸다 — 전이 뒤에 옛 예약이 깨어나 남의 연결로 묻지 않는다.
       cancelScheduledRetry()
     }

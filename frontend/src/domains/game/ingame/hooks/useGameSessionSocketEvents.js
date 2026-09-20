@@ -349,6 +349,10 @@ export function useGameSessionSocketEvents() {
     // 역할의 턴을 똑같이 돌리고 같은 payload를 세션 channel 전체에 방송하므로, 여기서 역할별·
     // 생존별로 나눠 구독하면 죽은 직업의 턴 안내만 조용히 사라진다.
     const handleNightTurnStarted = (payload) => {
+      // F-27b(AC-01): 다른 공개 사건과 **같은** 등록 범위 가드다. 턴 시작은 그 앞의 연출 대기가
+      // 해제됐다는 뜻이기도 하므로(store의 applyNightTurnStarted가 대기를 함께 비운다), 옛
+      // 연결·옛 신원의 구독이 늦게 받은 시작 알림이 현재 화면의 대기를 지우면 안 된다.
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const parsed = parseNightTurnStartedPayload({
@@ -372,6 +376,8 @@ export function useGameSessionSocketEvents() {
     // 서버가 현재 역할 턴의 종료를 확정한 순간 role/deadline을 함께 비운다. 다음 started가
     // 오기 전의 공백도 서버 상태의 일부이므로 이전 역할을 로컬에서 유지하거나 추정하지 않는다.
     const handleNightTurnEnded = (payload) => {
+      // 시작 알림과 같은 이유의 등록 범위 가드다(한쪽만 걸면 그쪽으로 샌다).
+      if (!isRegistrationScopeCurrent(registeredScope)) return
       const current = useInGameStore.getState()
       if (!current.gameId || !current.state) return
       const parsed = parseNightTurnEndedPayload({
@@ -467,6 +473,19 @@ export function useGameSessionSocketEvents() {
     const handleNightActionSuccess = (payload) => {
       if (!isRegistrationScopeCurrent(registeredScope)) return
       useInGameStore.getState().receiveNightSuccess(payload, currentReceiptScope())
+    }
+
+    /**
+     * F-27b(AC-01): 이 밤의 연출을 **받지 않는** 참가자에게만 오는 대기 알림
+     * (night_presentation_wait). 세 키뿐이라 역할·대상·사건 ID는 어디에도 없다.
+     *
+     * 성공 사건과 **같은 등록 범위 가드**를 먼저 통과시키고, 형태·게임/밤 일치·본인 신원
+     * 재확인은 store의 receiveNightPresentationWait가 소유한다(다른 apply*와 같은 분담).
+     * 소리도 ACK도 없다 — 이 사건은 제출도 전이도 아니고, 해제 권한은 전적으로 서버에 있다.
+     */
+    const handleNightPresentationWait = (payload) => {
+      if (!isRegistrationScopeCurrent(registeredScope)) return
+      useInGameStore.getState().receiveNightPresentationWait(payload, currentReceiptScope())
     }
 
     /**
@@ -572,6 +591,7 @@ export function useGameSessionSocketEvents() {
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("night_action_result", handleNightActionResult)
     socket.on("night_action_success", handleNightActionSuccess)
+    socket.on("night_presentation_wait", handleNightPresentationWait)
     socket.on("day_vote_resolved", handleDayVoteResolved)
     socket.on("day_phase_changed", handleDayPhaseChanged)
     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
@@ -587,6 +607,7 @@ export function useGameSessionSocketEvents() {
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("night_action_result", handleNightActionResult)
       socket.off("night_action_success", handleNightActionSuccess)
+      socket.off("night_presentation_wait", handleNightPresentationWait)
       socket.off("day_vote_resolved", handleDayVoteResolved)
       socket.off("day_phase_changed", handleDayPhaseChanged)
       detachNightTurnListeners()

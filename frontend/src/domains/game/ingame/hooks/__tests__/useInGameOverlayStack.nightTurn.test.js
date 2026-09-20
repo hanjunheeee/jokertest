@@ -245,7 +245,9 @@ test("live root(InGamePage)가 교정된 컨트롤러를 그대로 쓴다", () =
   // 페이지는 자체 역할 턴 상태를 만들지 않고 useInGameOverlayStack 하나만 쓴다.
   assert.match(pageSource, /useInGameOverlayStack\(\)/)
   assert.match(pageSource, /nightTurn/)
-  assert.match(pageSource, /open=\{nightTurn\.open\}/)
+  // F-27b(AC-01): 열림의 출처는 여전히 컨트롤러 하나이고, 비수신자 대기 중에만 그 위에
+  // 그리지 않는다는 억제 조건이 곱해진다(페이지가 자기 턴 상태를 만드는 것이 아니다).
+  assert.match(pageSource, /open=\{nightTurn\.open && !nightPresentationWaitOpen\}/)
   assert.match(pageSource, /announcement=\{nightTurn\.announcement\}/)
   assert.match(pageSource, /onClose=\{nightTurn\.close\}/)
 

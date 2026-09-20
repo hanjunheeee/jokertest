@@ -136,12 +136,23 @@ test("InGamePage는 새 셸을 쓰는 세 오버레이를 각각 정확히 한 �
     {
       tag: "InGameNightTurnAnnouncementOverlay",
       importPath: "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx",
-      props: [/open=\{nightTurn\.open\}/, /announcement=\{nightTurn\.announcement\}/, /onClose=\{nightTurn\.close\}/],
+      // F-27b(AC-01): 열림 상태의 출처는 여전히 오버레이 스택 하나뿐이고, 거기에 **비수신자
+      // 대기 중에는 그 위에 그리지 않는다**는 억제 조건 하나만 곱해진다(페이지가 자기 안내
+      // 상태를 따로 만들지 않는다는 계약은 그대로다).
+      props: [
+        /open=\{nightTurn\.open && !nightPresentationWaitOpen\}/,
+        /announcement=\{nightTurn\.announcement\}/,
+        /onClose=\{nightTurn\.close\}/,
+      ],
     },
     {
       tag: "InGamePhaseEntranceOverlay",
       importPath: "../components/phaseEntrance/InGamePhaseEntranceOverlay.js",
-      props: [/open=\{phaseEntrance\.open\}/, /phase=\{phaseEntrance\.phase\}/, /onConfirm=\{phaseEntrance\.confirm\}/],
+      props: [
+        /open=\{phaseEntrance\.open && !nightPresentationWaitOpen\}/,
+        /phase=\{phaseEntrance\.phase\}/,
+        /onConfirm=\{phaseEntrance\.confirm\}/,
+      ],
     },
     {
       tag: "InGameRoleRevealOverlay",

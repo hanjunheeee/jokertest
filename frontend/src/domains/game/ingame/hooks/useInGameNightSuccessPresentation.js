@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import {
   getInGameIdentityScopeVersion,
+  isSameInGameReceiptScope,
   readInGameReceiptScope,
+  readNightSuccessReceiptScope,
   selectNightSuccessQueue,
   subscribeInGameIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
+import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
 
 /**
  * F-27b(AC-02, CODEX 반려 수정): "이 밤에 더 이상 HEAL이 오지 않는다"를 판정하는 유일한 근거.
@@ -95,11 +98,27 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
   )
 
+  // F-27b(AC-03): 연결 축도 추적·리스너 범위에 넣는다. 소켓이 교체되면 이전 연결이 수락한
+  // 사건 기록은 store에서 취소되는데(cancelNightSuccessRecords), 추적만 남아 있으면 새 연결의
+  // 첫 사건이 지난 연결의 killDone/healDone을 물려받는다.
+  const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
+  const socketEpochId = getInGameSocketEpochId(socket)
+
   const current = queue[0] ?? null
 
   const scopeKey = gameId && authUuid
-    ? `${gameId}|${authUuid}|${identityGeneration}|${identityScopeVersion}`
+    ? `${gameId}|${authUuid}|${identityGeneration}|${identityScopeVersion}|${socketEpochId}`
     : null
+
+  /**
+   * F-27b(AC-03/AC-08): **이 사건 객체**에 결속된 수락 범위. 같은 사건 객체를 보고 있는 동안
+   * 고정되므로 리렌더가 표시(영상 effect)를 다시 시작시키지 않는다.
+   *
+   * eventId가 아니라 객체 동일성으로 묻는 것이 핵심이다 — 재접속으로 같은 eventId가 복원되면
+   * 새 entry와 새 범위가 기록에 들어가는데, 그때 옛 표시가 자기 entry로 물으면 null이 돌아와
+   * 옛 콜백이 새 표시를 완료시키지 못한다(readNightSuccessReceiptScope 참고).
+   */
+  const capturedReceiptScope = useMemo(() => readNightSuccessReceiptScope(current), [current])
 
   // F-27b(AC-02): 최종 상태로 이어질 KILL/HEAL 추적.
   // { scopeKey, nightDayIndex, targetId, killDone, healDone, healWindowClosed }.
@@ -122,7 +141,6 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
   // (HEAL_WINDOW_CLOSING_ROLE 주석 참고). useGameSessionSocketEvents와 별개로 이 훅이 직접
   // 구독한다(useInGameKillReveal이 night_result_applied/tribunal_vote_resolved를 독립 구독하는
   // 것과 같은 관례) — 표시 전용 파생이라 canonical nightTurnRole을 건드리지 않는다.
-  const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
   useEffect(() => {
     if (!socket || typeof socket.on !== "function") return undefined
     const handleNightTurnEnded = (payload) => {
@@ -140,16 +158,32 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     return () => socket.off("night_turn_ended", handleNightTurnEnded)
   }, [socket, gameId, scopeKey])
 
+  /**
+   * F-27b(AC-03/AC-08): 표시 완료 보고.
+   *
+   * 예전에는 완료 범위를 **호출 시점에 새로 읽어** 넘겼다. 그래서 재접속으로 같은 eventId가
+   * 복원된 뒤 옛 표시의 ended·reject가 늦게 도착하면, 그 호출이 지금 범위를 들고 와서 **새
+   * 기록**을 완료시키고 ACK까지 보냈다(그 화면은 아직 아무것도 보지 못했는데 연출이 사라진다).
+   *
+   * 이제는 이 사건 객체에 결속된 **수락 당시 범위**만 쓴다. 그 범위가 없거나(이미 완료됐거나
+   * 다른 entry의 기록이다) 지금 범위와 한 축이라도 다르면 아무 것도 하지 않는다 — 보고도,
+   * 추적 갱신도 없다. 그리고 store가 noop을 돌려준 호출은 **실제 소비가 아니므로** 최종 생존
+   * 추적도 건드리지 않는다(중복 보고가 killDone/healDone을 세우지 못한다).
+   */
   const finish = useCallback((outcome) => {
     if (!current) return
     const entry = current
+    const capturedScope = capturedReceiptScope
+    if (capturedScope === null) return
 
     const auth = useAuthStore.getState()
     const receiptScope = readInGameReceiptScope({
       accountId: auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null,
       identityGeneration: auth.identityGeneration ?? null,
     })
-    useInGameStore.getState().completeNightSuccess(entry.eventId, receiptScope, outcome)
+    if (!isSameInGameReceiptScope(capturedScope, receiptScope)) return
+    const result = useInGameStore.getState().completeNightSuccess(entry.eventId, capturedScope, outcome)
+    if (!result || result.status === "noop") return
 
     if (NIGHT_SUCCESS_FINAL_STATUS_TYPES.has(entry.type) && scopeKey) {
       const targetId = resolveNightSuccessTargetId(entry, authUuid)
@@ -171,7 +205,7 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
         })
       }
     }
-  }, [current, scopeKey, authUuid])
+  }, [current, capturedReceiptScope, scopeKey, authUuid])
 
   const onClose = useCallback(() => {
     setTrack(null)
