@@ -20,6 +20,14 @@ const ROLE_TEAMS = {
 }
 
 const KNOWN_PHASES = new Set(["ROLE_REVEAL", "NIGHT", "DAY", "TRIBUNAL", "ENDED"])
+/**
+ * F-26(AC-04): **같은 날짜 안의** 진행 순서. 서버 canonical 전이 순서와 같다 —
+ * ROLE_REVEAL → (다음 날짜의) DAY → TRIBUNAL → NIGHT, 종료는 언제나 마지막이다.
+ * 날짜를 넘는 비교에는 쓰지 않는다(NIGHT n → DAY n+1은 날짜가 이미 갈라 준다).
+ */
+const PHASE_PROGRESS_RANK = Object.freeze({
+  ROLE_REVEAL: 0, DAY: 1, TRIBUNAL: 2, NIGHT: 3, ENDED: 4,
+})
 // 이 두 phase에서는 밤 사이 아직 낮/재판 관련 결과가 존재할 수 없다(game-core의
 // canIncludeDayTribunalFields와 동일한 게이트) — nightResult/dayVoteResolution/tribunal
 // 모두 이 phase에서는 반드시 없어야 한다.
@@ -347,6 +355,30 @@ export function applySessionSnapshotPure(current, response) {
   // 종료(ENDED) 확정 이후에는 어떤 스냅샷도 활성 phase로 되돌릴 수 없다(잠금). 동일하게
   // ENDED인 스냅샷을 다시 적용하는 것은 막지 않는다(멱등 재적용 허용).
   if (current.state.phase === "ENDED" && response.phase !== "ENDED") return current
+
+  /**
+   * F-26(AC-04): **시간을 거스르는 스냅샷은 적용하지 않는다.**
+   *
+   * 여기까지의 검사는 "같은 판·같은 인원·앞서지 않은 참여 세대·앞서지 않은 개인 순서"만 본다.
+   * 그런데 조회를 보낸 뒤 실제 진행이 다음 밤으로 넘어가면, 보류돼 있던 **이전 밤의 응답**이
+   * 그 값들을 모두 만족한 채 늦게 도착할 수 있다(참여 세대는 이탈에서만 오르고 selfProgressSeq도
+   * 그 밤의 값 그대로다). 그 응답을 반영하면 화면은 지나간 밤으로 되돌아가고, 같은 커밋이
+   * 그 밤의 성공 사건 큐까지 함께 되살린다.
+   *
+   * 날짜는 단조 증가한다(enterDayPhase만 올린다). 같은 날짜 안의 진행 순서도 고정이다 —
+   * ROLE_REVEAL → DAY → TRIBUNAL → NIGHT, 그리고 종료(ENDED)는 그 뒤다. 그래서 더 과거를
+   * 말하는 응답만 거부하고, 같은 단계의 재적용(멱등 복원)과 앞으로 가는 전이는 그대로 허용한다.
+   * 현재 날짜를 모르는 화면(구버전 state)은 이 축으로 판단하지 않는다.
+   */
+  const currentDayIndex = current.state.dayIndex
+  if (isNonNegativeInteger(currentDayIndex)) {
+    if (response.dayIndex < currentDayIndex) return current
+    if (response.dayIndex === currentDayIndex) {
+      const currentRank = PHASE_PROGRESS_RANK[current.state.phase]
+      const responseRank = PHASE_PROGRESS_RANK[response.phase]
+      if (currentRank !== undefined && responseRank !== undefined && responseRank < currentRank) return current
+    }
+  }
 
   // 스냅샷 payload에는 표시 색상(themeIndex)이 없다 — game_started 한 곳에서만 내려오는
   // 값이라 여기서 roster를 새로 조립할 때 기존 store 값을 uuid로 이어받지 않으면 재접속

@@ -45,6 +45,7 @@ const { useInGameStore, selectNightSuccessQueue, readInGameReceiptScope } = awai
 const { setSocket } = await import("../../../../../shared/socket/socketClient.js")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { useGameSessionSocketEvents } = await import("../../hooks/useGameSessionSocketEvents.js")
+const { useInGameSessionSnapshotSync } = await import("../../hooks/useInGameSessionSnapshotSync.js")
 
 const GAME_ID = "game-npr-store"
 const SELF_UUID = "uuid-self"
@@ -60,9 +61,12 @@ function buildSelf() {
 }
 
 /** 서버 소켓처럼 등록된 리스너에게만 동기적으로 전달하는 최소 fake다. */
-function createFakeSocket({ id = "socket-1", connected = true, forwardEmitTo = null } = {}) {
+function createFakeSocket({
+  id = "socket-1", connected = true, forwardEmitTo = null, holdAckResponses = false,
+} = {}) {
   const listeners = new Map()
   const emitted = []
+  const ackCalls = []
   return {
     id,
     connected,
@@ -96,6 +100,33 @@ function createFakeSocket({ id = "socket-1", connected = true, forwardEmitTo = n
       }
     },
     emitted,
+    // ── F-26(AC-01): 재접속 스냅샷 조회(ack 요청)의 대역 ────────────────────────
+    //
+    // useInGameSessionSnapshotSync는 socket.timeout(ms).emitWithAck(...)로 묻는다. 이 두 자리를
+    // 갖추지 않으면 그 훅을 실제로 마운트할 수 없고, 그러면 "복원 payload가 실제 서버 응답에서
+    // 와서 store 큐가 된다"를 이 파일이 검사할 방법이 없다(emit 기록과 섞지 않기 위해 별도
+    // 배열에 남긴다). forwardEmitTo가 있으면 backend에 등록된 같은 이름의 실제 리스너로 넘긴다.
+    timeout() {
+      return this
+    },
+    emitWithAck(event, payload) {
+      const entry = { event, payload }
+      ackCalls.push(entry)
+      return new Promise((resolve, reject) => {
+        entry.resolve = resolve
+        entry.reject = reject
+        if (!forwardEmitTo) return
+        // 응답을 시험이 붙잡아 둘 수 있게 한다(재가입 보류·늦은 응답 재현용).
+        const settle = (response) => {
+          entry.response = response
+          if (holdAckResponses) entry.release = () => resolve(response)
+          else resolve(response)
+        }
+        forwardEmitTo.trigger(event, payload, settle)
+      })
+    },
+    ackCalls,
+    holdAckResponses,
   }
 }
 
@@ -112,6 +143,10 @@ function openSession({ socketOptions } = {}) {
   act(() => setSocket(socket))
   const { result, unmount } = renderHook(() => {
     useGameSessionSocketEvents()
+    // F-26(AC-01/AC-06): 재접속 복원 경로도 **실제 production 훅**이 만든다. 이 마운트가 없으면
+    // 아래 복원 시험은 store 액션을 직접 부르는 것과 다를 바 없어, "서버 응답이 훅을 거쳐 큐가
+    // 된다"는 연결 자체를 검사하지 못한다(소켓 없는 환경에서는 조용히 no-op이다).
+    useInGameSessionSnapshotSync()
     return useInGameStore(selectNightSuccessQueue)
   })
   return {
@@ -121,6 +156,12 @@ function openSession({ socketOptions } = {}) {
     },
     deliver(event, payload) {
       act(() => socket.deliver(event, payload))
+    },
+    /** 실제 재연결(connect)을 흘려보낸다 — 훅은 microtask 뒤에 새 조회를 보낸다. */
+    async reconnect() {
+      await act(async () => {
+        socket.deliver("connect", undefined)
+      })
     },
     complete(eventId) {
       const auth = useAuthStore.getState()
@@ -491,6 +532,11 @@ test("AC-04: 본인 것이 아닌 개인 결과는 실제 훅 경로에서 저�
 
 const readQueue = () => useInGameStore.getState().nightSuccessQueue
 
+/** 훅의 microtask 경계(연결 뒤 요청 캡처·ack 처리)를 충분히 넘긴다. */
+async function flushMicrotasks() {
+  for (let i = 0; i < 5; i++) await Promise.resolve()
+}
+
 function buildKillSuccessPayload(overrides = {}) {
   return {
     gameId: GAME_ID,
@@ -775,7 +821,14 @@ function createConventionFollowingRegistry() {
   })
 }
 
-test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등록한 실제 서버 리스너로 전달된다", () => {
+/**
+ * 실제 backend 세션을 밤 상태로 세우고, 광대의 KILL 성공 사건이 나간 직후 상태를 돌려준다.
+ *
+ * backend/socket/__tests__/gameSession.nightTurns.test.js의 준비 코드
+ * (commitFullRoleSessionAtNight·wireSession·createManualClock)를 그대로 옮겨 쓴다 — backend
+ * 생산 코드는 건드리지 않는다. 두 결합 시험(완료 ACK·재접속 복원)이 이 준비를 공유한다.
+ */
+function setupBackendNightKill(roomId) {
   process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test"
   const REPO_ROOT = new URL("../../../../../../../", import.meta.url)
   const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
@@ -791,10 +844,9 @@ test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등�
   gameSessionSocketLayer.__resetStateForTests()
   gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
 
-  // backend/socket/__tests__/gameSession.nightTurns.test.js::commitFullRoleSessionAtNight를
-  // 그대로 옮겨 쓴다(playerCount=10·jokerCount=1로 5개 역할을 전부 배정한다).
-  const players = Array.from({ length: 10 }, (_, i) => makeBackendPlayer(`fp-f26b-wire-${i}`))
-  const room = makeBackendRoom({ id: "f26b-frontend-ac05-wiring", players, jokerCount: 1 })
+  // playerCount=10·jokerCount=1로 5개 역할을 전부 배정한다.
+  const players = Array.from({ length: 10 }, (_, i) => makeBackendPlayer(`fp-${roomId}-${i}`))
+  const room = makeBackendRoom({ id: roomId, players, jokerCount: 1 })
   const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
   gameSessionCore.commitGameSession(candidate.session)
   const session = candidate.session
@@ -809,7 +861,6 @@ test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등�
   const jokerUuid = [...session.players.values()].find((p) => p.role === "JOKER").uuid
   const citizenUuid = [...session.players.values()].find((p) => p.role === "CITIZEN").uuid
 
-  // backend/socket/__tests__/gameSession.nightTurns.test.js::wireSession을 그대로 옮겨 쓴다.
   const io = createFakeIo([])
   const backendSockets = new Map()
   for (const uuid of session.players.keys()) {
@@ -821,8 +872,6 @@ test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등�
     backendSockets.set(uuid, backendSocket)
   }
 
-  // backend/socket/__tests__/gameSession.nightTurns.test.js::createManualClock을 그대로 옮겨 쓴다
-  // (startNightTurnSequence가 요구하는 시계·타이머 의존성 주입구다).
   let now = 1_000_000
   let nextTimerId = 1
   const timers = new Map()
@@ -849,7 +898,26 @@ test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등�
 
   const killEntry = backendSockets.get(jokerUuid).emitted.find((e) => e.event === "night_action_success")
   assert.ok(killEntry, "전제: 광대가 KILL 성공 사건을 받아야 한다")
-  const successPayload = killEntry.payload
+
+  return {
+    gameSessionSocketLayer,
+    gameSessionCore,
+    io,
+    session,
+    backendSockets,
+    jokerUuid,
+    citizenUuid,
+    successPayload: killEntry.payload,
+    createBackendFakeSocket,
+    countingCallback,
+  }
+}
+
+test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등록한 실제 서버 리스너로 전달된다", () => {
+  const {
+    gameSessionSocketLayer, session, backendSockets, jokerUuid, successPayload, countingCallback,
+  } = setupBackendNightKill("f26b-frontend-ac05-wiring")
+
   assert.equal(session.phase, "NIGHT")
   assert.equal(session.dayIndex, successPayload.nightDayIndex, "전제: 완료 요청 시점에도 같은 밤이어야 한다")
 
@@ -907,4 +975,159 @@ test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등�
   assert.equal(storedAfter.byEvent.get(successPayload.eventId).get(jokerUuid).completed, true)
 
   joker.close()
+})
+
+// ---------------------------------------------------------------------------
+// F-26 결합 시험 · 새로고침·재접속 복원
+//
+// 위 결합 시험과 같은 실제 backend 세션 위에서, 이번에는 **연결이 교체된 뒤**를 재현한다.
+// 프런트는 빈 store로 시작해 production 훅(useInGameSessionSnapshotSync)이 보내는 실제
+// get_session_snapshot 조회만으로 그 밤의 미완료 성공 사건을 되찾아야 한다 — store 액션을
+// 직접 부르지 않고, 서버 응답의 nightSuccessRecovery가 그 유일한 입력이다.
+// ---------------------------------------------------------------------------
+
+/** 같은 계정의 새 canonical 연결을 만든다(새로고침) — 옛 객체는 namespace에서 밀려난다. */
+function reconnectBackendSocket(ctx, uuid, { joinChannel = true } = {}) {
+    const next = ctx.createBackendFakeSocket(uuid)
+    if (joinChannel) next.rooms.add(ctx.session.channelId)
+    next.data.activeGameId = ctx.session.id
+    ctx.io.sockets.sockets.set(next.id, next)
+    ctx.gameSessionSocketLayer.registerGameHandlers(ctx.io, next, uuid)
+    return next
+}
+
+/** 빈 store + 그 계정으로 로그인한 화면(새로고침 직후의 메모리 상태다). */
+function seedEmptyStoreForAccount(uuid, nickname = "광대") {
+  act(() => {
+    useAuthStore.setState({ isLoggedIn: true, user: { uuid, nickname }, identityGeneration: 0 })
+    useInGameStore.setState({
+      gameId: null, state: null, hostUuid: null, error: null, snapshotSeq: 0, nightPrivateResult: null,
+    })
+  })
+}
+
+test("AC-01/AC-02 결합: ACK 전에 연결이 교체되면 실제 snapshot 조회가 그 사건을 복원하고, 완료 뒤에는 다시 복원되지 않는다", async () => {
+  const ctx = setupBackendNightKill("f26-frontend-recovery")
+  const { gameSessionSocketLayer, session, jokerUuid, successPayload } = ctx
+
+  const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+  const record = stored.byEvent.get(successPayload.eventId).get(jokerUuid)
+  assert.equal(record.completed, false, "전제: 완료 ACK 전이다")
+  assert.deepEqual(record.payload, successPayload,
+    "전제: 서버가 전달한 그 payload가 수신 기록에 보관돼야 복원할 자료가 있다")
+
+  // 새로고침: 같은 계정의 새 canonical 연결이 등록되고, 프런트 메모리 store는 비어 있다.
+  const reconnected = reconnectBackendSocket(ctx, jokerUuid)
+  seedEmptyStoreForAccount(jokerUuid)
+
+  const joker = openSession({ socketOptions: { forwardEmitTo: reconnected } })
+  // production 훅이 마운트 직후 실제 조회를 보내고, 그 응답이 store를 복원한다.
+  await act(async () => { await flushMicrotasks() })
+
+  const ackCall = joker.socket.ackCalls.find((c) => c.event === "get_session_snapshot")
+  assert.ok(ackCall, "훅이 실제 get_session_snapshot 조회를 보내지 않았다")
+  assert.deepEqual(ackCall.payload, {}, "빈 store의 조회는 gameId 없이 나간다")
+  assert.equal(ackCall.response.ok, true, `조회가 실패했다: ${JSON.stringify(ackCall.response)}`)
+  assert.deepEqual(ackCall.response.nightSuccessRecovery, [successPayload],
+    "서버 응답이 미완료 사건의 제한 payload를 그대로 실어야 한다")
+
+  assert.equal(useInGameStore.getState().gameId, session.id, "빈 store 복원 자체가 실패했다")
+  assert.deepEqual(readQueue().map((e) => e.eventId), [successPayload.eventId],
+    "복원된 미완료 사건이 큐에 정확히 한 건 들어와야 한다")
+
+  // 복원된 사건은 이 연결의 것이므로 완료까지 된다(서버 기록이 실제로 바뀐다).
+  const completed = joker.complete(successPayload.eventId)
+  assert.equal(completed.status, "sent")
+  assert.deepEqual(
+    joker.socket.emitted.find((e) => e.event === "acknowledge_night_action_success").response,
+    { ok: true, duplicate: false },
+    "복원된 사건의 완료가 서버에서 거부됐다",
+  )
+  assert.equal(record.completed, true, "서버 기록이 완료로 바뀌지 않았다")
+  assert.deepEqual(readQueue(), [], "완료한 사건이 큐에 남았다")
+
+  // AC-02: 완료 뒤의 재조회는 그 사건을 다시 실어 보내지 않고, 큐도 늘지 않는다.
+  await joker.reconnect()
+  const ackCalls = joker.socket.ackCalls.filter((c) => c.event === "get_session_snapshot")
+  assert.equal(ackCalls.length, 2, "재연결이 새 조회를 보내지 않았다")
+  // 복원할 것이 없어도 키는 **항상** 실린다(빈 배열) — 완료된 사건이 그 배열에 없다는 것이
+  // 이 시험의 사실이다.
+  assert.deepEqual(ackCalls[1].response.nightSuccessRecovery, [],
+    "이미 완료된 사건이 다시 복원 목록에 실렸다")
+  assert.deepEqual(readQueue(), [], "완료된 사건이 재접속으로 다시 큐에 들어왔다")
+
+  joker.close()
+})
+
+test("AC-01/AC-05 결합: 채널 재가입이 끝나지 않은 조회는 빈 복원이 아니라 보류로 답하고, 재조회가 그 사건을 되찾는다", async () => {
+  const ctx = setupBackendNightKill("f26-frontend-pending")
+  const { session, jokerUuid, successPayload } = ctx
+
+  // 새 연결이 아직 판 채널에 들어가지 않았다 — 이 순간 수신 자격을 확인할 수 없다.
+  const reconnected = reconnectBackendSocket(ctx, jokerUuid, { joinChannel: false })
+  assert.equal(reconnected.rooms.has(session.channelId), false, "전제: 아직 재가입 전이다")
+  seedEmptyStoreForAccount(jokerUuid)
+
+  const joker = openSession({ socketOptions: { forwardEmitTo: reconnected } })
+  await act(async () => { await flushMicrotasks() })
+
+  const first = joker.socket.ackCalls[0]
+  assert.equal(first.response.ok, false)
+  assert.equal(first.response.code, "SESSION_ROUTING_PENDING",
+    "재가입 중 조회가 빈 복원 성공으로 답했다(클라이언트는 다시 묻지 않는다)")
+  assert.equal(Object.hasOwn(first.response, "nightSuccessRecovery"), false,
+    "보류 응답에 복원 payload가 실렸다")
+  assert.equal(useInGameStore.getState().gameId, null, "보류 응답으로 store가 복원됐다")
+  assert.deepEqual(readQueue(), [], "보류 응답이 큐를 만들었다")
+
+  // 그 보류가 시작한 재동기화가 실제로 채널에 다시 넣는다(서버가 소유한 작업이다).
+  await act(async () => { await flushMicrotasks() })
+  assert.equal(reconnected.rooms.has(session.channelId), true,
+    "보류 응답이 재가입 작업을 시작하지 않았다")
+
+  // 훅의 제한 재조회(250ms 간격)가 같은 연결에서 다시 묻고, 이번에는 복원된다.
+  await act(async () => {
+    await new Promise((resolve) => { setTimeout(resolve, 400) })
+    await flushMicrotasks()
+  })
+
+  const ackCalls = joker.socket.ackCalls.filter((c) => c.event === "get_session_snapshot")
+  assert.ok(ackCalls.length >= 2, "보류 뒤에 같은 연결의 재조회가 없었다")
+  const succeeded = ackCalls.find((c) => c.response?.ok === true)
+  assert.ok(succeeded, "재조회가 끝내 성공하지 못했다")
+  assert.deepEqual(succeeded.response.nightSuccessRecovery, [successPayload])
+  assert.deepEqual(readQueue().map((e) => e.eventId), [successPayload.eventId],
+    "재조회로 복원된 사건이 큐에 들어오지 않았다")
+
+  joker.close()
+})
+
+test("AC-05 결합: 그 사건의 수신자가 아닌 참가자는 재접속해도 같은 사건을 복원받지 못한다", async () => {
+  const ctx = setupBackendNightKill("f26-frontend-outsider")
+  const { session, jokerUuid, citizenUuid, successPayload } = ctx
+
+  // 이 KILL의 수신자는 광대(USER)와 시민(TARGET)뿐이다. 무관한 역할 하나를 고른다.
+  const outsiderUuid = [...session.players.keys()]
+    .find((uuid) => uuid !== jokerUuid && uuid !== citizenUuid)
+  assert.ok(outsiderUuid)
+
+  const reconnected = reconnectBackendSocket(ctx, outsiderUuid)
+  seedEmptyStoreForAccount(outsiderUuid, "무관")
+
+  const outsider = openSession({ socketOptions: { forwardEmitTo: reconnected } })
+  await act(async () => { await flushMicrotasks() })
+
+  const ackCall = outsider.socket.ackCalls[0]
+  assert.equal(ackCall.response.ok, true, "무관 참가자의 정상 조회 자체는 성공해야 한다")
+  assert.deepEqual(ackCall.response.nightSuccessRecovery, [],
+    "비수신자의 응답에 남의 성공 사건이 실렸다")
+  assert.equal(useInGameStore.getState().gameId, session.id, "전제: 일반 복원은 정상이어야 한다")
+  assert.deepEqual(readQueue(), [], "비수신자 화면에 남의 성공 사건이 큐로 들어왔다")
+  // 그 사건이 실린 다른 참가자(대상자)의 기록은 그대로 미완료다.
+  const stored = ctx.gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+  assert.equal(stored.byEvent.get(successPayload.eventId).get(citizenUuid).completed, false)
+  assert.equal(stored.byEvent.get(successPayload.eventId).has(outsiderUuid), false,
+    "비수신자에게 기록이 새로 만들어졌다")
+
+  outsider.close()
 })

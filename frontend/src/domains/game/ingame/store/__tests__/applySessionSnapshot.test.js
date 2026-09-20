@@ -137,14 +137,19 @@ test("applySessionSnapshotPure: 유효한 NIGHT 스냅샷을 반영한다(nightR
   assert.equal(result.state.nightResult, null)
 })
 
+// F-26(AC-04): 아래 DAY 스냅샷 fixture들은 **실제 날짜 전이**를 쓴다(NIGHT n → DAY n+1).
+// 예전에는 같은 날짜의 NIGHT → DAY로 적어 두었는데 서버는 그런 전이를 만들지 않는다 —
+// enterDayPhase가 날짜를 올리고, 그 낮의 nightResult.dayIndex도 올라간 날짜와 같다
+// (game-core buildSessionSnapshot 참고). 검증 목적(DAY 스냅샷의 nightResult·deathReveals 반영)은
+// 그대로 두고 날짜만 현실화한다 — 같은 날짜의 역행은 이제 시간을 거스르는 응답으로 거부된다.
 test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영하고 희생자 alive를 false로 표시한다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
   const response = baseResponse({
     phase: "DAY",
-    dayIndex: 1,
+    dayIndex: 2,
     dayPhase: "DAY_DISCUSSION",
     players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
-    nightResult: { dayIndex: 1, victimUuid: "p3" },
+    nightResult: { dayIndex: 2, victimUuid: "p3" },
   })
 
   const result = applySessionSnapshotPure(current, response)
@@ -152,7 +157,7 @@ test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영
   assert.notEqual(result, current)
   assert.equal(result.state.phase, "DAY")
   assert.equal(result.state.dayPhase, "DAY_DISCUSSION")
-  assert.deepEqual(result.state.nightResult, { dayIndex: 1, victimUuid: "p3" })
+  assert.deepEqual(result.state.nightResult, { dayIndex: 2, victimUuid: "p3" })
   assert.equal(result.state.players.find((p) => p.uuid === "p3").alive, false)
   assert.equal(result.state.dayVoteResolution, null)
   assert.equal(result.state.tribunal, null)
@@ -166,10 +171,10 @@ test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영
 test("F-23(AC-05) DAY 스냅샷의 공개 deathReveals를 정규화해 그대로 옮긴다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
   const response = baseResponse({
-    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    phase: "DAY", dayIndex: 2, dayPhase: "DAY_DISCUSSION",
     players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
     nightResult: {
-      dayIndex: 1, victimUuid: "p3",
+      dayIndex: 2, victimUuid: "p3",
       deathReveals: [{ victimUuid: "p3", source: "JOKER" }],
     },
   })
@@ -178,17 +183,17 @@ test("F-23(AC-05) DAY 스냅샷의 공개 deathReveals를 정규화해 그대로
 
   assert.notEqual(result, current)
   assert.deepEqual(result.state.nightResult, {
-    dayIndex: 1, victimUuid: "p3", deathReveals: [{ victimUuid: "p3", source: "JOKER" }],
+    dayIndex: 2, victimUuid: "p3", deathReveals: [{ victimUuid: "p3", source: "JOKER" }],
   })
 })
 
 test("F-23(AC-05) 허용되지 않은 source·roster 밖 uuid·형태가 틀린 원소는 연출에서 제외되고 정상 원소만 남는다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
   const response = baseResponse({
-    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    phase: "DAY", dayIndex: 2, dayPhase: "DAY_DISCUSSION",
     players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
     nightResult: {
-      dayIndex: 1, victimUuid: "p3",
+      dayIndex: 2, victimUuid: "p3",
       deathReveals: [
         { victimUuid: "p3", source: "WITCH_HUNTER" },
         // roster 밖 — 화면이 닉네임조차 만들 수 없다.
@@ -215,9 +220,9 @@ test("F-23(AC-05) 허용되지 않은 source·roster 밖 uuid·형태가 틀린 
 test("F-23(AC-05) deathReveals 키가 없는 옛 스냅샷은 그대로 복원되고 그 키를 만들지도 않는다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
   const response = baseResponse({
-    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    phase: "DAY", dayIndex: 2, dayPhase: "DAY_DISCUSSION",
     players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
-    nightResult: { dayIndex: 1, victimUuid: "p3" },
+    nightResult: { dayIndex: 2, victimUuid: "p3" },
   })
 
   const result = applySessionSnapshotPure(current, response)
@@ -230,9 +235,9 @@ test("F-23(AC-05) 복원된 deathReveals는 원본 응답과 독립이다(응답
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
   const reveals = [{ victimUuid: "p3", source: "JOKER" }]
   const response = baseResponse({
-    phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION",
+    phase: "DAY", dayIndex: 2, dayPhase: "DAY_DISCUSSION",
     players: basePlayers().map((p) => (p.uuid === "p3" ? { ...p, isAlive: false } : p)),
-    nightResult: { dayIndex: 1, victimUuid: "p3", deathReveals: reveals },
+    nightResult: { dayIndex: 2, victimUuid: "p3", deathReveals: reveals },
   })
 
   const result = applySessionSnapshotPure(current, response)
@@ -241,6 +246,101 @@ test("F-23(AC-05) 복원된 deathReveals는 원본 응답과 독립이다(응답
   reveals[0].source = "OTHER"
 
   assert.deepEqual(result.state.nightResult.deathReveals, [{ victimUuid: "p3", source: "JOKER" }])
+})
+
+// ── F-26(AC-04): **시간을 거스르는 스냅샷은 적용하지 않는다** ────────────────────
+//
+// 조회를 보낸 뒤 진행이 다음 밤으로 넘어가면, 보류돼 있던 이전 밤의 응답이 기존 검사(같은 판·
+// 같은 인원·앞서지 않은 참여 세대·앞서지 않은 개인 순서)를 **전부 만족한 채** 늦게 도착할 수
+// 있다. 그 응답이 반영되면 화면이 지나간 밤으로 되돌아가고, 같은 커밋이 그 밤의 성공 사건까지
+// 되살린다. 날짜와 같은 날짜 안의 단계 순서가 그것을 가르는 유일한 값이다.
+
+test("F-26(AC-04): 현재보다 과거 날짜의 스냅샷은 거부된다 — store는 완전히 변경되지 않는다", () => {
+  const current = baseCurrent({ phase: "NIGHT", dayIndex: 3 })
+  assertRejected(current, baseResponse({ phase: "NIGHT", dayIndex: 2 }))
+  assertRejected(current, baseResponse({ phase: "DAY", dayIndex: 2, dayPhase: "DAY_DISCUSSION" }))
+})
+
+test("F-26(AC-04): 같은 날짜의 단계 역행(NIGHT→DAY/TRIBUNAL·TRIBUNAL→DAY)은 거부된다", () => {
+  assertRejected(
+    baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
+    baseResponse({ phase: "DAY", dayIndex: 2, dayPhase: "DAY_VOTE" }),
+  )
+  assertRejected(
+    baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
+    baseResponse({
+      phase: "TRIBUNAL",
+      dayIndex: 2,
+      dayVoteResolution: { outcome: "TRIBUNAL", tribunalTargetUuid: "p2", publicVoteCount: 2, publicAbstainCount: 0 },
+      tribunal: { defendantUuid: "p2", resolved: false },
+    }),
+  )
+  assertRejected(
+    baseCurrent({ phase: "TRIBUNAL", dayIndex: 2 }),
+    baseResponse({ phase: "DAY", dayIndex: 2, dayPhase: "DAY_VOTE" }),
+  )
+  assertRejected(
+    baseCurrent({ phase: "DAY", dayIndex: 2 }),
+    baseResponse({ phase: "ROLE_REVEAL", dayIndex: 2 }),
+  )
+})
+
+test("F-26(AC-04): 앞으로 가는 전이와 같은 단계 재적용은 그대로 허용된다(양성 대조)", () => {
+  // NIGHT n → DAY n+1: 서버가 실제로 만드는 전이다(enterDayPhase가 날짜를 올린다).
+  const toNextDay = applySessionSnapshotPure(
+    baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
+    baseResponse({ phase: "DAY", dayIndex: 3, dayPhase: "DAY_DISCUSSION" }),
+  )
+  assert.equal(toNextDay.state.phase, "DAY")
+  assert.equal(toNextDay.state.dayIndex, 3)
+
+  // 같은 날짜 안의 정상 진행(DAY → TRIBUNAL → NIGHT).
+  const toTribunal = applySessionSnapshotPure(
+    baseCurrent({ phase: "DAY", dayIndex: 2 }),
+    baseResponse({
+      phase: "TRIBUNAL",
+      dayIndex: 2,
+      dayVoteResolution: { outcome: "TRIBUNAL", tribunalTargetUuid: "p2", publicVoteCount: 2, publicAbstainCount: 0 },
+      tribunal: { defendantUuid: "p2", resolved: false },
+    }),
+  )
+  assert.equal(toTribunal.state.phase, "TRIBUNAL")
+  const toNight = applySessionSnapshotPure(
+    baseCurrent({ phase: "TRIBUNAL", dayIndex: 2 }),
+    baseResponse({ phase: "NIGHT", dayIndex: 2 }),
+  )
+  assert.equal(toNight.state.phase, "NIGHT")
+
+  // 같은 단계·같은 날짜의 재적용(멱등 복원)은 막지 않는다.
+  const reapplied = applySessionSnapshotPure(
+    baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
+    baseResponse({ phase: "NIGHT", dayIndex: 2 }),
+  )
+  assert.equal(reapplied.state.phase, "NIGHT")
+  assert.equal(reapplied.state.dayIndex, 2)
+
+  // 밤 킬로 곧바로 끝난 판은 날짜가 오르지 않는다 — 그 ENDED 복원도 허용된다.
+  const ended = applySessionSnapshotPure(
+    baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
+    baseResponse({ phase: "ENDED", dayIndex: 2, winResult: { winner: "JOKER" } }),
+  )
+  assert.equal(ended.state.phase, "ENDED")
+  assert.deepEqual(ended.state.winResult, { winner: "JOKER" })
+})
+
+test("F-26(AC-04): 현재 날짜를 모르는 화면(구버전 state)은 이 축으로 판단하지 않는다", () => {
+  // bootstrapSessionSnapshotPure가 쓰는 최소 seed가 바로 이 모양이다(날짜가 없다).
+  const seed = {
+    gameId: "game-1",
+    state: {
+      id: "game-1",
+      players: [{ uuid: "p1" }, { uuid: "p2" }, { uuid: "p3" }],
+      self: { uuid: "p1" },
+    },
+  }
+  const result = applySessionSnapshotPure(seed, baseResponse({ phase: "NIGHT", dayIndex: 2 }))
+  assert.notEqual(result, seed)
+  assert.equal(result.state.dayIndex, 2)
 })
 
 test("applySessionSnapshotPure: 유효한 TRIBUNAL(미확정) 스냅샷은 dayVoteResolution/tribunal을 함께 반영한다", () => {

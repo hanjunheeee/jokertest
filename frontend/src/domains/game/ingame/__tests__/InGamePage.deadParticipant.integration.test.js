@@ -1010,11 +1010,15 @@ const SERVER_INDIRECT_EMIT_SITES_LOCK = [
   "backend/socket/channelMembership.js:267 event",
   "backend/socket/channelMembership.js:275 event",
   // 게임 방송 경계·밤 턴·낮 페이즈 래퍼 — 전부 호출 지점의 리터럴을 받아 넘긴다.
+  // (F-26: 아래 세 줄 번호는 같은 세 지점이 그대로 밀린 값이다 — resyncSessionRouting의 범위
+  //  고정·공유와 진입 canonical 검사·await 뒤 재검증, 그리고 성공 사건 수신 기록의 payload
+  //  보관이 그 앞에 들어갔다. 지점이 새로 생긴 것이 아니라 위치만 바뀌었다는 사실은 이 잠금이
+  //  여전히 9개라는 것으로 확인한다.)
   "backend/socket/gameSession.js:477 event",
-  "backend/socket/gameSession.js:1126 event",
-  "backend/socket/gameSession.js:1746 event",
+  "backend/socket/gameSession.js:1225 event",
+  "backend/socket/gameSession.js:1917 event",
   // 게임 채팅 — CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다(아래에서 그 표를 확인한다).
-  "backend/socket/gameSession.js:3020 eventName",
+  "backend/socket/gameSession.js:3191 eventName",
   // 개인 전송기 — emitToUser(uuid, event, payload)의 event 파라미터.
   "backend/socket/socket.js:27 event",
 ]

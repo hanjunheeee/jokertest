@@ -519,28 +519,87 @@ function socketHasLiveMembership(socket, uuid) {
 }
 
 /**
+ * F-26(AC-03/AC-06): **같은 범위의 재가입은 한 번만 시작한다.**
+ *
+ * 연결 등록 경로(socket.js::registerConnectionHandlers)와 재접속 조회 경로
+ * (handleGetSessionSnapshot의 SESSION_ROUTING_PENDING)가 같은 소켓에 대해 동시에 재동기화를
+ * 요구한다. 그 둘이 각자 join을 걸면 같은 채널에 두 번 들어가고, 한쪽의 늦은 되돌리기가
+ * 다른 쪽의 정당한 가입을 지운다. 그래서 (게임·채널·계정·소켓 id·소속) 다섯 축이 같은 작업은
+ * 하나의 Promise와 하나의 토큰을 공유한다 — 축이 하나라도 다르면 그것은 다른 작업이다.
+ *
+ * 실패·완료는 **자기 토큰만** 해제한다. 그래서 다음 적격 재조회가 새 join을 시작할 수 있고,
+ * 이미 다른 범위의 작업이 진행 중이면 그 작업의 해제를 옛 작업이 가로채지 않는다.
+ */
+let sessionRoutingWorkSeq = 0
+const sessionRoutingWorkBySocket = new WeakMap()
+/** 이 소켓의 activeGameId를 **마지막으로 세운** 재동기화 토큰(되돌리기 소유권 판정 전용). */
+const activeGameIdOwnerBySocket = new WeakMap()
+
+/**
  * 연결 시점에 socket.data.activeGameId를 registry 기준으로 재바인딩하고, 활성 세션의 channel에
  * 아직 가입돼 있지 않으면 재가입시킨다. 라우팅 정보만 동기화할 뿐 어떤 권한도 부여하지
  * 않는다 — mutation·disconnect 권한은 오직 isCurrentSocketForUuid만 판정한다. 활성 세션이
  * 없으면 아무 것도 하지 않는다(no-op). 이미 가입된 channel에는 다시 join하지 않으므로
  * 동일 socket에 대해 여러 번 호출해도 멱등하다.
+ *
+ * F-26(AC-03): 같은 범위의 진행 중 작업이 있으면 그 Promise를 그대로 돌려준다(공유) — 호출부는
+ * 여전히 await/catch만 하면 되고, 어느 호출부가 시작했는지에 따라 결과가 갈리지 않는다.
  */
-async function resyncSessionRouting(socket, uuid) {
+function resyncSessionRouting(socket, uuid) {
     const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
-    if (!routing) return
+    if (!routing) return Promise.resolve()
 
     // 유예 만료로 배제된 uuid는 같은 uuid로 다시 접속해도 세션 라우팅을 되돌려받지 못한다 —
     // activeGameId 재바인딩과 channel 재가입이 모두 여기서 막히므로, 그 세션의 어떤 방송도
     // 다시 받지 못한다(관전 복귀 거부). 유예 취소보다 먼저 판정해야 배제된 참가자의 재접속이
     // 이미 끝난 유예를 되살리는 것처럼 보이지 않는다.
-    if (gameSessionCore.isForfeitedFromSession(routing.gameId, uuid)) return
+    if (gameSessionCore.isForfeitedFromSession(routing.gameId, uuid)) return Promise.resolve()
 
+    /**
+     * F-26(AC-03): **canonical 검사가 유예 취소·join보다 먼저다.**
+     *
+     * 아래 run()이 하는 두 가지(단절 유예 취소, 채널 재가입)는 그 판의 상태를 실제로 바꾼다.
+     * 이미 교체된 옛 연결이 그 둘을 먼저 수행하면 남이 된 연결이 **남의 재접속을 대신
+     * 선언**하는 셈이다 — 이미 끝났어야 할 유예가 취소되어 사망 확정이 사라지고, 그 연결이
+     * 경기 채널에 들어간 뒤에야 뒤늦은 재검사가 그것을 되돌린다(그 사이의 방송은 이미 받았다).
+     *
+     * registry가 주입되지 않은 환경에서는 이 축을 묻지 않는다 — 그 축을 **알 수 없다**는
+     * 뜻이지 "자격 없음"이라는 뜻이 아니다(isEligibleSessionRecipient와 같은 관례다. 여기서
+     * fail-closed하면 registry 없는 경계의 정상 재가입이 전부 끊긴다).
+     */
+    if (onlineUsersRegistry instanceof Map && !isCurrentSocketForUuid(uuid, socket)) return Promise.resolve()
+
+    // 진입 시점의 범위를 고정한다 — 소속(membershipId)까지 포함해야 같은 판의 이탈→재입장이
+    // 같은 작업으로 뭉쳐지지 않는다.
+    //
+    // F-26(AC-03): session 객체와 socket.id는 **값으로** 붙잡는다. socket.id는 같은 객체 위에서
+    // 재연결마다 바뀌는 가변 필드라, token.socket.id와 비교하면 언제나 자기 자신과 같아 그
+    // 비교가 아무것도 막지 못한다. session 객체도 식별자가 아니라 **그때 그 객체**를 들고
+    // 있어야 비동기 구간 뒤에 "같은 판인가"를 물을 수 있다.
+    const session = gameSessionCore.getActiveSessionForDeparture(uuid, routing.gameId) ?? null
+    const membershipId = session?.players?.get(uuid)?.membershipId ?? null
+    const socketId = socket?.id ?? null
+    const scopeKey = `${routing.gameId} ${routing.channelId} ${uuid} ${socketId ?? ''} ${membershipId ?? ''}`
+
+    const inFlight = sessionRoutingWorkBySocket.get(socket)
+    if (inFlight && inFlight.scopeKey === scopeKey) return inFlight.promise
+
+    sessionRoutingWorkSeq += 1
+    const token = {
+        id: sessionRoutingWorkSeq, scopeKey, socket, socketId, uuid, routing, session, membershipId, ready: false,
+    }
+
+    // 작업 본문은 이 함수 안에 그대로 둔다(고정한 범위·토큰만 보고 돈다). 공유를 위해 Promise를
+    // **await 이전에** 등록해야 하므로 본문만 즉시 실행 함수로 감싼다.
+    const run = async () => {
     // 재접속했으므로 진행 중인 유예를 취소한다 — 이 취소가 없으면 새로고침한 참가자가 유예
     // 만료 시각에 그대로 사망한다. 라우팅 재바인딩보다 먼저 해서, join이 지연되더라도 사망
     // 확정이 그 사이에 끼어들 수 없게 한다.
     cancelDisconnectGrace(routing.gameId, uuid)
 
     socket.data.activeGameId = routing.gameId
+    // 되돌리기는 **이 토큰이 세운 값**만 건드린다(그 사이 다른 경로가 갱신했다면 남의 것이다).
+    activeGameIdOwnerBySocket.set(socket, token)
     if (!socket.rooms.has(routing.channelId)) {
         // F-21(AC-05/AC-06): socket.join은 adapter에 따라 비동기다. 그 사이에 이 계정이 그
         // 세션에서 빠질 수 있다(추방·이탈·유예 만료) — 완료 뒤 **다시** 검사하지 않으면,
@@ -548,14 +607,41 @@ async function resyncSessionRouting(socket, uuid) {
         await socket.join(routing.channelId)
 
         const current = gameSessionCore.getActiveSessionRoutingInfo(uuid)
-        const stillMine = current !== null
+        /**
+         * F-26(AC-03): **비동기 구간을 지난 뒤에는 자기 자신부터 다시 묻는다.**
+         *
+         * 이 await 사이에 같은 소켓에 대해 다른 범위의 재동기화가 시작됐을 수 있다(이탈→재입장,
+         * 새 판, 소켓 id 재발급). 그러면 지금부터의 판정도 정리도 전부 **남의 작업**에 대한
+         * 것이다 — 그 경우에는 아무 것도 하지 않는다(되돌리기까지 하면 그 사이 정당하게 시작된
+         * 새 가입을 옛 작업이 지운다).
+         *
+         * session 동일성도 같은 이유로 다시 묻는다. gameId는 같은데 session 객체가 새로 만들어진
+         * 경우(같은 방으로 다시 시작된 판)는 라우팅 비교만으로는 드러나지 않는다.
+         */
+        const stillLatest = sessionRoutingWorkBySocket.get(socket)?.token === token
+        const stillSameSession =
+            gameSessionCore.getActiveSessionForDeparture(uuid, routing.gameId) === token.session
+        const stillMine = stillLatest
+            && stillSameSession
+            && current !== null
             && current.gameId === routing.gameId
             && current.channelId === routing.channelId
             && !gameSessionCore.isForfeitedFromSession(routing.gameId, uuid)
             // 그 사이 같은 계정의 새 연결이 canonical 소켓을 교체했다면 이 채널 가입은 남의
             // 것을 흉내 내는 셈이다(권한은 여전히 isCurrentSocketForUuid만 판정한다).
             && isCurrentSocketForUuid(uuid, socket)
-        if (stillMine) return
+            // F-26(AC-03): 이 작업이 시작될 때 고정한 소속·소켓 id와도 같아야 한다 — 같은 판의
+            // 이탈→재입장으로 소속이 교체된 뒤의 가입은 이 작업의 것이 아니다.
+            && socket.id === token.socketId
+            && (token.session?.players?.get(uuid)?.membershipId ?? null) === token.membershipId
+        if (stillMine) {
+            // 재가입이 실제로 끝났고 모든 축이 그대로다 — 이 범위의 준비 완료다.
+            token.ready = true
+            return
+        }
+
+        // 최신 작업이 아니면 여기서 끝난다 — 남의 작업이 남긴 가입을 옛 토큰이 되돌리지 않는다.
+        if (!stillLatest) return
 
         // **자신이 방금 남긴 잘못된 가입만** 되돌린다. 그 사이 다른 경로가 이 소켓을 새
         // 세션의 채널에 넣었다면 그 채널은 건드리지 않는다.
@@ -573,11 +659,24 @@ async function resyncSessionRouting(socket, uuid) {
                 keepsConnection: () => socketHasLiveMembership(socket, uuid),
             },
         )
-        // activeGameId도 그 사이 갱신되지 않은 경우에만 되돌린다.
-        if (socket.data.activeGameId === routing.gameId) {
+        // activeGameId도 그 사이 갱신되지 않은 경우에만 되돌린다 — 값이 같아도 **다른 토큰이
+        // 다시 세운 값**이면 그것은 이 정리의 것이 아니다(F-26 AC-03).
+        if (socket.data.activeGameId === routing.gameId && activeGameIdOwnerBySocket.get(socket) === token) {
             socket.data.activeGameId = current !== null ? current.gameId : null
+            activeGameIdOwnerBySocket.delete(socket)
         }
+        return
     }
+    // 이미 그 채널에 들어가 있었다 — 라우팅은 그대로 현재 사실이다.
+    token.ready = true
+    }
+
+    const promise = run().finally(() => {
+        const current = sessionRoutingWorkBySocket.get(socket)
+        if (current && current.token === token) sessionRoutingWorkBySocket.delete(socket)
+    })
+    sessionRoutingWorkBySocket.set(socket, { scopeKey, token, promise })
+    return promise
 }
 
 /**
@@ -1429,37 +1528,99 @@ function buildNightSuccessPayload(contract, event, recipient) {
 }
 
 /**
+ * F-26(AC-01/AC-05): 수신 기록에 보관할 **제한된 성공 사건 payload**를 필드별로 복사한다.
+ *
+ * buildNightSuccessPayload가 만든 그 객체를 그대로 들고 있지 않는다 — 보관본이 전달본과 같은
+ * 참조면 전달 뒤의 변형이 복원 자료까지 함께 바꾼다. 허용 키는 전달 payload와 정확히 같고
+ * (TARGET 전용은 다섯, USER 관점이 있을 때만 targetId), 모양이 아니면 null이다(fail-closed —
+ * 그 기록은 복원 대상이 되지 않는다).
+ */
+function copyNightSuccessPayload(payload) {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null
+    if (typeof payload.gameId !== 'string' || payload.gameId.length === 0) return null
+    if (typeof payload.eventId !== 'string' || payload.eventId.length === 0) return null
+    if (!Number.isInteger(payload.nightDayIndex) || payload.nightDayIndex < 0) return null
+    if (typeof payload.type !== 'string' || payload.type.length === 0) return null
+    if (!Array.isArray(payload.perspectives) || payload.perspectives.length === 0) return null
+    const copy = {
+        gameId: payload.gameId,
+        nightDayIndex: payload.nightDayIndex,
+        eventId: payload.eventId,
+        type: payload.type,
+        perspectives: [...payload.perspectives],
+    }
+    if (payload.perspectives.includes('USER')) {
+        if (typeof payload.targetId !== 'string' || payload.targetId.length === 0) return null
+        copy.targetId = payload.targetId
+    }
+    return copy
+}
+
+/**
  * F-26b(AC-05): 이 session의 완료 수신 보관함에서 (eventId, uuid) 기록을 얻거나 만든다.
  * 이미 있으면(동일 기록) **덮어쓰지 않고** 기존 값을 그대로 돌려준다 — 완료 표식이 재전송으로
  * false로 되돌아가지 않게 한다. 보관함 자체가 없으면(정상 경로에서는 startNightTurnSequence가
  * 항상 먼저 연다) 기록하지 않고 null을 돌려준다 — 내부 부기 실패가 공개 성공 사건 전달을
  * 막지는 않는다.
+ *
+ * F-26(AC-01/AC-02): 신규 기록은 전달한 그 payload의 **필드별 복사본**을 함께 보관한다 —
+ * 재접속 복원(handleGetSessionSnapshot)이 같은 eventId·같은 허용 필드를 다시 만들지 않고 이
+ * 보관본만 되돌려주기 위한 유일한 자료다. 기존 기록은 **같은 membershipId일 때만** 이 전달의
+ * 것이다(refused=true는 "다른 소속의 기록이므로 전달하지 않는다"는 뜻이다). 같은 소속의 유효한
+ * live 재전달은 연결 결속(socket·socketId)만 갱신하고 최초 payload와 completed는 보존한다 —
+ * completed를 false로 되돌리는 경로는 어디에도 없다.
  */
-function recordNightSuccessReceipt(session, event, recipient, socket) {
+function recordNightSuccessReceipt(session, event, recipient, socket, payload = null) {
     const store = nightSuccessReceiptsBySession.get(session)
-    if (!store) return { record: null, created: false }
+    if (!store) return { record: null, created: false, refused: false }
     let byUuid = store.byEvent.get(event.eventId)
     if (!byUuid) {
         byUuid = new Map()
         store.byEvent.set(event.eventId, byUuid)
     }
     const existing = byUuid.get(recipient.uuid)
-    if (existing) return { record: existing, created: false }
+    if (existing) {
+        if (existing.membershipId !== recipient.membershipId) {
+            return { record: null, created: false, refused: true }
+        }
+        if (existing.completed !== true && socket) {
+            existing.socket = socket
+            existing.socketId = typeof socket.id === 'string' ? socket.id : recipient.socketId
+        }
+        return { record: existing, created: false, refused: false }
+    }
     const record = {
         membershipId: recipient.membershipId,
         socketId: recipient.socketId,
         socket,
         completed: false,
+        // 복원 자료. 모양이 아니면 null이고, 그 기록은 snapshot 복원에 실리지 않는다.
+        payload: copyNightSuccessPayload(payload),
     }
     byUuid.set(recipient.uuid, record)
-    return { record, created: true }
+    return { record, created: true, refused: false }
 }
 
-/** emit이 실패했을 때 **이번에 새로 추가한 미완료 기록만** 지운다(이전 완료 기록은 유지). */
-function discardNightSuccessReceiptIfUncompleted(session, eventId, uuid) {
+/**
+ * emit이 실패했을 때 **그 실패한 연결의 결속만** 푼다(기록 자체는 남긴다).
+ *
+ * F-26(AC-02): 예전에는 미완료 기록을 통째로 지웠다. 기록에 복원 payload가 들어온 지금 그
+ * 삭제는 "전달에 한 번 실패했다"를 "이 사건은 없었다"로 바꾼다 — 그 수신자는 재접속해도
+ * 자기 사건을 복원받지 못한다. 그래서 membershipId·제한된 payload·completed=false는 보존하고
+ * 연결 결속만 비운다(결속이 없는 기록은 어떤 ACK도 통과시키지 못하고, 다음 정상 조회가
+ * 현재 자격을 확인한 뒤 새 연결로 다시 결속한다).
+ *
+ * 이미 완료된 기록과, 그 사이 **다른 연결이 결속한** 기록은 건드리지 않는다 — 옛 전송 예외가
+ * 새 연결의 결속을 지우지 못하게 하는 유일한 근거다.
+ */
+function discardNightSuccessReceiptIfUncompleted(session, eventId, uuid, failedSocket = null, failedSocketId = null) {
     const byUuid = nightSuccessReceiptsBySession.get(session)?.byEvent.get(eventId)
     const record = byUuid?.get(uuid)
-    if (record && record.completed !== true) byUuid.delete(uuid)
+    if (!record || record.completed === true) return
+    if (record.socket !== failedSocket) return
+    if (record.socketId !== failedSocketId) return
+    record.socket = null
+    record.socketId = null
 }
 
 /**
@@ -1506,14 +1667,24 @@ function emitNightSuccessEvents(run, contract) {
             if (!stillEligibleForDelivery(session, recipientSocket)) continue
             if (hasMembershipOutsideSession(session, recipient.uuid)) continue
 
+            // F-26(AC-01/AC-02): 기존 자격 검사를 모두 통과한 **뒤에만** 허용 payload를 만들고,
+            // 같은 것을 기록에 보관해 재접속 복원이 다시 만들지 않게 한다. 다른 소속의 기록이면
+            // 이 전달의 것이 아니므로 보내지 않고(refused), 이미 완료된 기록은 재전송하지 않는다.
+            const payload = buildNightSuccessPayload(contract, event, recipient)
+            const { record, refused } = recordNightSuccessReceipt(session, event, recipient, recipientSocket, payload)
+            if (refused) continue
+            if (record && record.completed === true) continue
+
             deliveredEventSocketPairs.add(dedupeKey)
 
-            const { created } = recordNightSuccessReceipt(session, event, recipient, recipientSocket)
+            // 실패 정리는 "그때 결속한 바로 그 연결"만 푼다 — 그 사이 다른 연결이 결속했다면
+            // 이 예외는 그 결속을 건드릴 근거가 없다.
+            const boundSocketId = record ? record.socketId : null
             try {
-                recipientSocket.emit('night_action_success', buildNightSuccessPayload(contract, event, recipient))
+                recipientSocket.emit('night_action_success', payload)
             } catch (err) {
                 console.error('[밤 성공 사건 전달 실패]', { code: 'DELIVERY_ERROR', eventId: event.eventId, gameId: session.id })
-                if (created) discardNightSuccessReceiptIfUncompleted(session, event.eventId, recipient.uuid)
+                discardNightSuccessReceiptIfUncompleted(session, event.eventId, recipient.uuid, recipientSocket, boundSocketId)
             }
         }
     }
@@ -4244,7 +4415,88 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
         isConnected: isUuidConnected(io, player.uuid),
     }))
 
-    respond(callback, { ok: true, ...result.snapshot, players })
+    // ── F-26(AC-01/AC-02/AC-04/AC-05): 미완료 성공 사건 복원 ─────────────────────
+    //
+    // 새로 배정하지 않는다. 이 조회가 돌려주는 것은 **이미 이 계정에게 전달된 뒤 완료 ACK를
+    // 받지 못한** 기록의 보관 payload뿐이다. 완료된 기록·다른 계정·다른 소속의 기록·내부
+    // contract·socket 정보는 어디에도 실리지 않는다.
+    //
+    // 수명은 기존 완료 창을 그대로 쓰되(isNightSuccessCompletionWindowOpen) **ENDED는 제외**한다 —
+    // 결과가 확정된 판에서 다시 연출을 시작하지 않는다는 운영자 확정 경계다. 그래서 허용은
+    // NIGHT n · DAY n+1 · TRIBUNAL n+1이다.
+    const recoverySession = gameSessionCore.getActiveSessionForDeparture(uuid, result.snapshot.gameId)
+    const nightSuccessRecovery = []
+    if (recoverySession) {
+        // **재가입 준비 검사는 복원할 사건이 있든 없든 같다.**
+        //
+        // 아직 채널로 돌아오지 않은 조회는 수신 자격 자체를 확인할 수 없어(채널 미가입) 복원할
+        // 사건이 있어도 0건이 된다. 그 0건을 ok:true로 돌려주면 클라이언트는 "복원할 것이 없다"로
+        // 읽고 다시 묻지 않는다 — 그러니 **보류를 pending의 유무로 판단하면 안 된다**. 그 유무는
+        // 준비가 끝난 뒤에만 의미 있는 사실이다. 같은 범위의 재동기화 작업을 시작(또는 공유)하고
+        // 보류를 명시적으로 알린다.
+        if (!isEligibleSessionRecipient(recoverySession, socket, uuid)
+            && !socket.rooms?.has?.(recoverySession.channelId)
+            && gameSessionCore.getActiveSessionRoutingInfo(uuid)?.channelId === recoverySession.channelId) {
+            resyncSessionRouting(socket, uuid).catch((err) => {
+                console.error('\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m', err)
+            })
+            respond(callback, {
+                ok: false,
+                code: 'SESSION_ROUTING_PENDING',
+                message: '게임 정보를 다시 불러오는 중입니다.',
+            })
+            return
+        }
+
+        const receiptStore = nightSuccessReceiptsBySession.get(recoverySession)
+        if (receiptStore
+            && recoverySession.phase !== 'ENDED'
+            && isNightSuccessCompletionWindowOpen(recoverySession, receiptStore.nightDayIndex)) {
+            const membershipId = recoverySession.players.get(uuid)?.membershipId ?? null
+            const pending = collectPendingNightSuccessRecords(receiptStore, uuid, membershipId)
+            // 준비가 끝났으면 **현재 자격**을 다시 확인한 뒤에만 결속·복사한다. 여기서부터
+            // 응답까지 await가 없으므로 그 사이에 자격이 바뀔 수 없다.
+            if (pending.length > 0
+                && isCurrentSocketForUuid(uuid, socket, io)
+                && isEligibleSessionRecipient(recoverySession, socket, uuid)
+                && !hasMembershipOutsideSession(recoverySession, uuid)) {
+                for (const record of pending) {
+                    record.socket = socket
+                    record.socketId = socket.id
+                    nightSuccessRecovery.push(copyNightSuccessPayload(record.payload))
+                }
+            }
+        }
+    }
+
+    respond(callback, {
+        ok: true,
+        ...result.snapshot,
+        players,
+        // 복원할 사건이 없어도 **빈 배열을 싣는다**(계약). 키를 생략하면 "복원 항목이 없다"와
+        // "이 서버는 복원을 모른다"가 같은 모양이 되어, 클라이언트가 둘을 구분할 수 없다.
+        nightSuccessRecovery,
+    })
+}
+
+/**
+ * F-26(AC-01/AC-02/AC-05): 이 계정의 **미완료·같은 소속·복원 payload가 있는** 기록만 고른다.
+ *
+ * completed=true는 절대 포함하지 않는다(응답 유실로 클라이언트가 완료를 모르더라도 서버 완료가
+ * 권위다 — 다시 연출하지 않는다). 다른 uuid의 기록은 순회 대상 자체가 아니고, 소속이 다른
+ * 기록은 이 자리의 사실이 아니다. payload가 없는 기록(모양 오류로 보관되지 않은 경우)도 뺀다.
+ */
+function collectPendingNightSuccessRecords(store, uuid, membershipId) {
+    const pending = []
+    for (const byUuid of store.byEvent.values()) {
+        const record = byUuid.get(uuid)
+        if (!record) continue
+        if (record.completed === true) continue
+        if (record.membershipId !== membershipId) continue
+        if (copyNightSuccessPayload(record.payload) === null) continue
+        pending.push(record)
+    }
+    return pending
 }
 
 /**

@@ -397,8 +397,16 @@ test("AC-03: 사망 연출 구독은 전역 훅과 별개의 리스너이고, �
 // 라이브 방송을 놓친 연결(새로고침·재연결)이 그 밤의 공개 사망을 회복한다. 라이브 경로와
 // **같은 id 형식**을 쓰므로 어느 순서로 같은 사망이 들어와도 큐 증가는 한 번뿐이다.
 
-/** get_session_snapshot 응답 한 벌. phase/nightResult만 시험이 정한다. */
-function snapshotResponse({ phase = "DAY", dayIndex = 1, deadUuids = [], nightResult = null } = {}) {
+/**
+ * get_session_snapshot 응답 한 벌. phase/nightResult만 시험이 정한다.
+ *
+ * F-26(AC-04): 낮 스냅샷의 기본 날짜는 **그 밤의 다음 날짜**다(seedSession은 NIGHT 1이다).
+ * 서버는 같은 날짜의 NIGHT → DAY 전이를 만들지 않는다 — enterDayPhase가 날짜를 올리고, 그
+ * 낮이 보고하는 nightResult.dayIndex도 올라간 날짜와 같다. 이제 시간을 거스르는 스냅샷은
+ * applySessionSnapshotPure가 거부하므로, 여기 fixture도 실제 전이만 쓴다(검증 목적은 그대로다).
+ * 밤 킬이 곧바로 끝낸 판(ENDED)은 날짜가 오르지 않으므로 그 밤 번호를 그대로 쓴다.
+ */
+function snapshotResponse({ phase = "DAY", dayIndex = phase === "ENDED" ? 1 : 2, deadUuids = [], nightResult = null } = {}) {
   const dead = new Set(deadUuids)
   return {
     ok: true,
@@ -424,7 +432,7 @@ test("F-23(AC-05): 라이브 방송을 놓쳐도 스냅샷만으로 그 밤의 �
   act(() => {
     applySnapshotAsCurrentRequest(snapshotResponse({
       deadUuids: [V1],
-      nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
+      nightResult: { dayIndex: 2, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
     }))
   })
 
@@ -442,7 +450,7 @@ test("F-23(AC-05): 같은 사망이 라이브→스냅샷으로 두 번 들어�
   const session = open()
 
   session.deliver("night_result_applied", {
-    gameId: GAME_ID, phase: "DAY", dayIndex: 1,
+    gameId: GAME_ID, phase: "DAY", dayIndex: 2,
     players: ROSTER.map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== V1 })),
     victimUuid: V1,
     deathReveals: [{ victimUuid: V1, source: "JOKER" }],
@@ -456,7 +464,7 @@ test("F-23(AC-05): 같은 사망이 라이브→스냅샷으로 두 번 들어�
   act(() => {
     applySnapshotAsCurrentRequest(snapshotResponse({
       deadUuids: [V1],
-      nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
+      nightResult: { dayIndex: 2, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
     }))
   })
 
@@ -473,13 +481,13 @@ test("F-23(AC-05): 스냅샷 먼저 → 같은 사망의 라이브 방송이 뒤
   act(() => {
     applySnapshotAsCurrentRequest(snapshotResponse({
       deadUuids: [V1],
-      nightResult: { dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
+      nightResult: { dayIndex: 2, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }] },
     }))
   })
   assert.equal(session.killReveal.open, true)
 
   session.deliver("night_result_applied", {
-    gameId: GAME_ID, phase: "DAY", dayIndex: 1,
+    gameId: GAME_ID, phase: "DAY", dayIndex: 2,
     players: ROSTER.map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== V1 })),
     victimUuid: V1,
     deathReveals: [{ victimUuid: V1, source: "JOKER" }],
@@ -531,7 +539,7 @@ test("F-23(AC-05): 스냅샷 복구도 roster 밖 희생자는 연출로 만들�
   act(() => {
     applySnapshotAsCurrentRequest(snapshotResponse({
       nightResult: {
-        dayIndex: 1, victimUuid: null,
+        dayIndex: 2, victimUuid: null,
         deathReveals: [{ victimUuid: OUTSIDER, source: "JOKER" }],
       },
     }))
@@ -550,7 +558,7 @@ test("F-23(AC-05): 스냅샷 복구도 roster 밖 희생자는 연출로 만들�
 
 /** 밤 공개 결과가 실린 스냅샷 한 벌(그 밤 첫째의 사망). */
 const RESTORED_NIGHT = Object.freeze({
-  dayIndex: 1, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }],
+  dayIndex: 2, victimUuid: V1, deathReveals: [{ victimUuid: V1, source: "JOKER" }],
 })
 
 /** 같은 판·같은 계정에서 **내 소속만** 교체한다(이탈→재입장과 같은 전이다). */
