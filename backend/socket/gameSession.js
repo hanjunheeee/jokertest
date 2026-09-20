@@ -1024,6 +1024,44 @@ function respondNightAction(uuid, trustedGameId, callback, payload) {
 // 수 있는 이유가 이 Map이다 — 제출 핸들러는 gameId만으로 진행 중인 run을 찾는다.
 const nightTurnRuns = new Map()
 
+// ── F-25: 역할 턴의 내부 진행 단계와 연출 계약 ───────────────────────────────────
+//
+// 이 절이 만드는 것은 **서버 내부 사실**뿐이다. 새 개인 소켓 메시지·전달 영수증·재생 완료
+// ACK는 어느 것도 여기서 생기지 않는다(각각 F-26a/F-26b의 책임). 공개
+// night_turn_started/night_turn_ended의 이름·허용 키·개수도 그대로다 — 사건의 성공 여부나
+// 수신자 수가 공개 메시지의 모양 차이로 드러나면 그 자체가 부채널이기 때문이다(A-08).
+//
+// 대기는 **같은 동기 호출 안에서 즉시 통과**한다. 실제 상한·타이머·해제 조건은 F-27a가
+// 구현하므로 여기서는 timeout도 Promise도 ACK 집계도 만들지 않는다.
+
+/** run의 내부 진행 단계. 공개 payload·snapshot 어디에도 실리지 않는다. */
+const NIGHT_TURN_STAGES = Object.freeze({
+    IDLE: 'IDLE',
+    SUBMITTING: 'SUBMITTING',
+    PRESENTATION_WAIT: 'PRESENTATION_WAIT',
+    STOPPED: 'STOPPED',
+})
+
+/** 내부 계약의 형태 번호. F-26a가 이 값으로 자기가 아는 모양인지 확인한다. */
+const NIGHT_PRESENTATION_CONTRACT_VERSION = 1
+
+/**
+ * 역할 → 그 역할이 만드는 사건 종류.
+ *
+ * core가 실제로 기록하는 사건은 KILL/HEAL뿐이다(applyNightRoleStep). GUARD/WITCH_HUNTER는
+ * 확정 step에서 조사·확인 기술자를 만들어 붙이되, core의 events 배열에는 절대 덧붙이지
+ * 않는다 — 그 배열은 최종 판정(prepareNightResolutionForSession)의 입력이다.
+ */
+const NIGHT_PRESENTATION_EVENT_TYPE_BY_ROLE = Object.freeze({
+    JOKER: 'KILL',
+    DOCTOR: 'HEAL',
+    GUARD: 'INVESTIGATE',
+    WITCH_HUNTER: 'CONFIRM',
+})
+
+/** 사건 수신 관점. 한 계정이 둘 다 가질 수 있다(의사의 자기 치료). 순서는 항상 이 순서다. */
+const NIGHT_PRESENTATION_PERSPECTIVES = Object.freeze(['USER', 'TARGET'])
+
 /**
  * 생존 actor가 없는 턴의 종료 지연(ms)을 계산합니다. 턴 제한시간의 20~60% 구간이며, 난수원을
  * 인자로 받아 테스트가 결정적으로 검증할 수 있게 합니다(handleResolveNight의 deps 관례와 동일).
@@ -1086,6 +1124,12 @@ function emitNightTurnEvent(run, event, payload) {
  */
 function advanceNightTurn(run) {
     const { session } = run
+    // F-25(A-05): 종료 방송 중에 이탈 종결·단계 전이·시퀀스 정리가 끼어들 수 있다. 그 뒤에
+    // 남은 진행 호출이 새 타이머를 만들거나 지나간 밤을 다시 진행시키지 못하게, **지금의**
+    // run 동일성·단계·밤 번호를 여기서 다시 묻는다(정리된 run의 후속 호출은 no-op이다).
+    if (nightTurnRuns.get(session.id) !== run) return
+    if (session.phase !== 'NIGHT') return
+    if (session.dayIndex !== run.nightDayIndex) return
     run.index += 1
     if (run.index >= gameSessionCore.NIGHT_TURN_ORDER.length) {
         // F-25b(AC-03/AC-05): 네 역할이 모두 끝난 밤은 여기서 **자동으로 최종화**된다 — 최종
@@ -1098,6 +1142,9 @@ function advanceNightTurn(run) {
 
     const role = gameSessionCore.NIGHT_TURN_ORDER[run.index]
     session.nightTurnRole = role
+    // 이 역할의 제출 구간이 열렸다. 연출 대기(PRESENTATION_WAIT)는 역할 확정 뒤에야 등록되므로,
+    // 그 사이에 도착한 제출·판정 요청은 여기의 단계로 구분된다.
+    run.stage = NIGHT_TURN_STAGES.SUBMITTING
     const durationMs = resolveNightTurnDurationMs(run, role)
     const deadline = run.nowFn() + durationMs
     run.deadline = deadline
@@ -1140,6 +1187,8 @@ function expireNightTurnWithAbstentions(run, role) {
     const { session } = run
     if (nightTurnRuns.get(session.id) !== run) return
     if (session.nightTurnRole !== role) return
+    // F-25: 이미 확정돼 연출 대기로 넘어간 턴에는 기권을 기록하지 않는다(옛 제출 타이머 no-op).
+    if (run.stage !== NIGHT_TURN_STAGES.SUBMITTING) return
 
     for (const graceRun of [...(disconnectGraceRuns.get(session.id)?.values() ?? [])]) {
         if (session.players.get(graceRun.uuid)?.role !== role) continue
@@ -1163,14 +1212,262 @@ function expireNightTurnWithAbstentions(run, role) {
 }
 
 /**
+ * F-25: 내부 계약의 **깊은 복사**. 보관본과 반환본이 어떤 참조도 공유하지 않게 한다 —
+ * 호출자가 받은 값을 변형해도 run의 보관 계약·다음 반환·core의 진행 자료가 오염되지 않는다.
+ */
+function cloneNightPresentationContract(contract) {
+    return {
+        version: contract.version,
+        gameId: contract.gameId,
+        nightDayIndex: contract.nightDayIndex,
+        role: contract.role,
+        revision: contract.revision,
+        step: { ...contract.step },
+        healingClosed: contract.healingClosed,
+        events: contract.events.map((event) => ({
+            eventId: event.eventId,
+            type: event.type,
+            targetId: event.targetId,
+            actorUuids: [...event.actorUuids],
+            recipients: event.recipients.map((recipient) => ({
+                uuid: recipient.uuid,
+                membershipId: recipient.membershipId,
+                socketId: recipient.socketId,
+                perspectives: [...recipient.perspectives],
+            })),
+        })),
+        recoveryStates: { ...contract.recoveryStates },
+    }
+}
+
+/**
+ * F-25(AC-05): 한 사건의 **수신 대상** 목록을 조립한다(순수 계산).
+ *
+ * 행위자 목록은 "역할 확정 당시의 유효 행동 근거"(USER)이고, 대상자는 그 사건이 일어난
+ * 상대(TARGET)다. 둘 다 `deliverableSocketIdByUuid`와 교차한 뒤에야 수신 대상이 된다 — 그
+ * 표가 곧 "지금 이 순간 이 판의 사건을 받을 수 있는 계정"이다.
+ *
+ * 대상자는 생존으로 거르지 않는다 — 확정 사망한 참가자도 연결과 참여가 유지되면 자기에게
+ * 일어난 사건의 수신 대상이다(isEligibleSessionRecipient가 alive를 묻지 않는 이유와 같다).
+ * 자기 자신을 치료한 의사처럼 두 자격을 동시에 갖는 계정은 **한 항목**으로 합쳐진다.
+ *
+ * socket 객체·session·Map 같은 가변 참조는 담지 않는다(식별자와 관점뿐이다).
+ */
+function buildNightPresentationRecipients(session, deliverableSocketIdByUuid, actorUuids, targetId) {
+    const wanted = new Map()
+    for (const uuid of actorUuids) {
+        if (typeof uuid !== 'string' || uuid.length === 0) continue
+        wanted.set(uuid, new Set(['USER']))
+    }
+    if (typeof targetId === 'string' && targetId.length > 0) {
+        const perspectives = wanted.get(targetId) ?? new Set()
+        perspectives.add('TARGET')
+        wanted.set(targetId, perspectives)
+    }
+
+    const recipients = []
+    for (const [uuid, perspectives] of wanted) {
+        if (!deliverableSocketIdByUuid.has(uuid)) continue
+        recipients.push({
+            uuid,
+            membershipId: session.players.get(uuid)?.membershipId ?? null,
+            socketId: deliverableSocketIdByUuid.get(uuid),
+            perspectives: NIGHT_PRESENTATION_PERSPECTIVES.filter((perspective) => perspectives.has(perspective)),
+        })
+    }
+    return recipients
+}
+
+/**
+ * F-25(AC-02/AC-05): 확정된 한 역할의 **내부 연출 계약**을 만든다 — 이 조각이 F-26a에게
+ * 남기는 유일한 산출물이다.
+ *
+ * 입력은 completeNightRole이 돌려준 확정 결과와 core의 진행 자료뿐이고, 어떤 판정도 다시
+ * 하지 않는다. KILL/HEAL은 core가 이미 기록한 사건을 그대로 복사하고(의사의 RESOLVED만으로
+ * HEAL을 만들지 않는다 — 실제로 회복 대기 중이던 대상을 되살렸을 때만 core가 HEAL을 남긴다),
+ * GUARD/WITCH_HUNTER는 확정 step에서 조사·확인 기술자를 만든다. 실패·합의 실패·기권·무역할·
+ * 무행위자는 events가 빈 **완료된** 계약을 남긴다.
+ *
+ * 사건 ID는 게임·밤·역할·확정 revision·역할 내 순번만으로 정한다 — 대상·조사자·결과·수신자
+ * 수는 ID에 넣지 않는다. 같은 확정에 대해서는 몇 번을 다시 물어도 같은 ID다.
+ *
+ * 같은 역할 확정의 계약은 한 번만 만들어 run에 보관하고, 반환은 언제나 깊은 복사다.
+ */
+function buildNightPresentationContract(run, completed) {
+    const { io, session } = run
+    const role = completed?.role ?? null
+    const revision = completed?.revision ?? null
+
+    const stored = run.contracts.get(role)
+    if (stored && stored.revision === revision) return cloneNightPresentationContract(stored)
+
+    const progress = gameSessionCore.getNightProgress(session)
+    const step = { ...(completed?.step ?? {}) }
+
+    // 진행 자료는 **살아 있는 내부 자료**다 — 읽는 즉시 복사해 담는다.
+    const recoveryStates = {}
+    for (const [uuid, state] of progress?.recoveryStates ?? []) recoveryStates[uuid] = state
+
+    const eventType = NIGHT_PRESENTATION_EVENT_TYPE_BY_ROLE[role] ?? null
+    const descriptors = []
+    if (eventType === 'KILL' || eventType === 'HEAL') {
+        for (const event of progress?.events ?? []) {
+            if (event?.type !== eventType) continue
+            descriptors.push({ type: event.type, targetId: event.targetId ?? null })
+        }
+    } else if (eventType !== null && step.status === 'RESOLVED' && typeof step.targetId === 'string') {
+        descriptors.push({ type: eventType, targetId: step.targetId })
+    }
+
+    // 사용자(USER) 자격의 근거는 성공 ACK가 아니라 **역할 확정 시점에 canonical로 저장된
+    // 제출**이다. 그래서 기권(null)·미제출은 물론, 기록되지 않는 광대의 동료 지목 no-op도
+    // 여기 들어오지 않는다(A-03). 회복 제외는 core의 역할 계산(computeNightRoleStep)과 같은
+    // 규칙이고, DOCTOR만 예외인 이유도 같다(공격받은 의사 본인의 자기 치료를 막지 않는다).
+    // 다수결·합의 정책 자체는 resolveRoleNightAction이 소유한다 — 여기서 재집계하지 않는다.
+    const actorUuids = []
+    if (descriptors.length > 0) {
+        let submissions = []
+        try {
+            submissions = gameSessionCore.collectRoleNightSubmissions(session, role)
+        } catch (err) {
+            console.error('[밤 연출 계약 오류]', { code: 'ACTOR_COLLECT_ERROR', role, gameId: session.id })
+        }
+        const states = gameSessionCore.NIGHT_RECOVERY_STATES
+        for (const submission of submissions) {
+            if ((submission?.target ?? null) === null) continue
+            if (role !== 'DOCTOR') {
+                const state = progress?.recoveryStates?.get(submission.actorUuid)
+                if (state === states.PENDING_RECOVERY || state === states.DEATH_CANDIDATE) continue
+            }
+            if (!actorUuids.includes(submission.actorUuid)) actorUuids.push(submission.actorUuid)
+        }
+    }
+
+    // "지금 이 순간 이 판의 사건을 받을 수 있는 계정 → 그 canonical 소켓 id". 계약 하나에 대해
+    // 한 번만 계산한다 — 사건마다 다시 물으면 같은 확정 안에서도 결과가 갈릴 수 있다.
+    //
+    // 후보 목록은 계산 시점의 사실이므로(F-23 AC-04) 후보를 구한 **뒤**의 소켓 교체·채널 제외·
+    // 이탈을 stillEligibleForDelivery로 다시 묻고, 새 소속을 얻은 계정은 A-12와 같은 축으로
+    // 한 번 더 제외한다. 이 결과도 전송 권한을 영구 보증하지 않는다 — 실제 전송 직전의
+    // 재확인은 F-26a의 책임이다.
+    const deliverableSocketIdByUuid = new Map()
+    if (descriptors.length > 0) {
+        let candidates = []
+        try {
+            candidates = resolveSessionParticipantSockets(io, session)
+        } catch (err) {
+            console.error('[밤 연출 계약 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', role, gameId: session.id })
+        }
+        for (const candidate of candidates) {
+            const uuid = candidate?.data?.user?.uuid ?? null
+            if (typeof uuid !== 'string' || uuid.length === 0) continue
+            if (deliverableSocketIdByUuid.has(uuid)) continue
+            if (!stillEligibleForDelivery(session, candidate)) continue
+            if (hasMembershipOutsideSession(session, uuid)) continue
+            deliverableSocketIdByUuid.set(uuid, typeof candidate.id === 'string' ? candidate.id : null)
+        }
+    }
+
+    const contract = {
+        version: NIGHT_PRESENTATION_CONTRACT_VERSION,
+        gameId: session.id,
+        nightDayIndex: run.nightDayIndex,
+        role,
+        revision,
+        step,
+        healingClosed: completed?.healingClosed === true,
+        events: descriptors.map((descriptor, index) => ({
+            eventId: `night-presentation:${session.id}:${run.nightDayIndex}:${role}:${revision}:${index}`,
+            type: descriptor.type,
+            targetId: descriptor.targetId,
+            actorUuids: [...actorUuids],
+            recipients: buildNightPresentationRecipients(session, deliverableSocketIdByUuid, actorUuids, descriptor.targetId),
+        })),
+        recoveryStates,
+    }
+    run.contracts.set(role, contract)
+    return cloneNightPresentationContract(contract)
+}
+
+/**
+ * F-25(AC-01): 확정된 역할을 **연출 대기(PRESENTATION_WAIT)** 로 넘긴다.
+ *
+ * 사건이 있든 없든 모든 완료 역할이 이 전이를 거친다 — 대기 여부 자체가 그 역할의 성공을
+ * 알려주는 부채널이 되면 안 되기 때문이다(A-08). 이 단계에서는 제출 타이머가 이미 비워져
+ * 있고 session.nightTurnRole도 비워진다(다음 역할은 아직 시작되지 않았다).
+ *
+ * 돌려주는 토큰은 이 run·이 세션·이 밤·이 역할·이 확정 revision에만 유효한 1회용 열쇠다 —
+ * 이전 run이나 이전 밤의 토큰으로는 현재 대기를 닫을 수 없다.
+ */
+function beginNightPresentationWait(run, completed, contract) {
+    const { session } = run
+    run.waitSeq += 1
+    const token = {
+        run,
+        session,
+        gameId: session.id,
+        nightDayIndex: run.nightDayIndex,
+        role: completed.role,
+        revision: completed.revision ?? null,
+        waitId: `${session.id}:${run.nightDayIndex}:${completed.role}:${completed.revision}:${run.waitSeq}`,
+        contract,
+    }
+    run.stage = NIGHT_TURN_STAGES.PRESENTATION_WAIT
+    run.wait = token
+    session.nightTurnRole = null
+    return token
+}
+
+/**
+ * F-25(AC-01): 연출 대기를 닫고 다음 역할로 넘어간다.
+ *
+ * 이번 조각의 해제는 **같은 동기 호출 안의 즉시 통과**다 — 클라이언트의 재생 완료 판정이
+ * 아니다. 실제 대기·상한·해제 조건은 F-27a가 구현한다.
+ *
+ * 대기를 **먼저** 닫은 뒤에 진행한다 — 그래야 같은 토큰으로 두 번 들어와도 두 번째는 아무
+ * 것도 하지 않는다. run·세션·게임·밤·역할·토큰 중 하나라도 어긋나면 no-op이다(이탈 종결이
+ * 종료 방송 중에 run을 정리했다면 그 정리가 먼저 끝나고 이 호출은 지나간다).
+ */
+function releaseNightPresentationWait(run, token) {
+    if (!run || !token) return false
+    if (token.run !== run) return false
+    const { session } = run
+    if (token.session !== session) return false
+    if (nightTurnRuns.get(session.id) !== run) return false
+    if (token.gameId !== session.id) return false
+    if (token.nightDayIndex !== run.nightDayIndex) return false
+    if (session.phase !== 'NIGHT') return false
+    if (session.dayIndex !== run.nightDayIndex) return false
+    if (run.stage !== NIGHT_TURN_STAGES.PRESENTATION_WAIT) return false
+    if (run.wait !== token) return false
+
+    run.wait = null
+    run.stage = NIGHT_TURN_STAGES.IDLE
+    advanceNightTurn(run)
+    return true
+}
+
+/** 그 판이 지금 내부 연출 대기 중인가(제출·수동 판정·최종화가 공유하는 단일 질문). */
+function isNightPresentationWaitActive(gameId) {
+    const run = nightTurnRuns.get(gameId)
+    return !!run && run.stage === NIGHT_TURN_STAGES.PRESENTATION_WAIT
+}
+
+/**
  * 지정한 역할의 턴을 끝내고 종료를 방송한 뒤 다음 턴으로 넘어갑니다. role 인자는 "이 종료
  * 요청이 어느 턴에 대한 것인지"를 명시해, 이미 지나간 턴의 늦게 도착한 타이머가 현재 턴을
  * 잘못 끝내는 것을 막습니다.
+ *
+ * F-25: 역할 확정 → 내부 연출 계약 구성 → 연출 대기 등록 → 기존 종료 방송 → 즉시 통과 순으로
+ * 진행합니다. 방송 중에 도착한 재진입(중복 종료·다음 역할 제출·수동 판정·이탈 종결)은 전부
+ * 이 대기 단계에서 끊깁니다.
  */
 function endNightTurn(run, role) {
     const { session } = run
     if (nightTurnRuns.get(session.id) !== run) return
     if (session.nightTurnRole !== role) return
+    // 이미 연출 대기로 넘어간 턴은 다시 닫지 않는다(종료 방송 중의 중복 호출 차단).
+    if (run.stage !== NIGHT_TURN_STAGES.SUBMITTING) return
 
     // F-25b(AC-01/A-06): 그 역할의 결과·사건·완료 표식을 **방송과 다음 턴 진행보다 먼저**
     // canonical 상태에 기록한다. 의사 턴이면 이 호출이 이번 밤의 치료 가능성을 닫지만,
@@ -1188,14 +1485,24 @@ function endNightTurn(run, role) {
         return
     }
 
+    // F-25(AC-02/AC-05): 확정 직후·종료 방송 **전에** 그 역할의 사건과 수신 대상을 고정한다.
+    // 계약 구성 자체는 canonical 상태를 전혀 바꾸지 않는다.
+    let contract = null
+    try {
+        contract = buildNightPresentationContract(run, completed)
+    } catch (err) {
+        console.error('[밤 연출 계약 오류]', { code: 'CONTRACT_BUILD_ERROR', role, gameId: session.id })
+    }
+
     if (run.timerId !== null) {
         run.clearTimeoutFn(run.timerId)
         run.timerId = null
     }
     run.deadline = null
-    session.nightTurnRole = null
+
+    const wait = beginNightPresentationWait(run, completed, contract)
     emitNightTurnEvent(run, 'night_turn_ended', gameSessionCore.buildNightTurnEndedPayload(session, role))
-    advanceNightTurn(run)
+    releaseNightPresentationWait(run, wait)
 }
 
 /**
@@ -1239,6 +1546,15 @@ function startNightTurnSequence(io, session, deps = {}) {
         index: -1,
         timerId: null,
         deadline: null,
+        // F-25: 이 run이 진행하는 **밤 번호**. 확정으로 dayIndex가 오른 뒤 도착한 늦은 타이머·
+        // 대기 토큰이 새 밤을 진행시키지 못하게 하는 유일한 근거다.
+        nightDayIndex: session.dayIndex,
+        // F-25: 내부 진행 단계와 현재 연출 대기 토큰(공개 payload·snapshot에는 실리지 않는다).
+        stage: NIGHT_TURN_STAGES.IDLE,
+        wait: null,
+        waitSeq: 0,
+        // 역할 → 그 역할 확정의 내부 연출 계약 보관본. 반환은 언제나 깊은 복사다.
+        contracts: new Map(),
         randomFn: deps.randomFn ?? Math.random,
         nowFn: deps.nowFn ?? Date.now,
         setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
@@ -1265,6 +1581,9 @@ function stopNightTurnSequence(gameId) {
         run.timerId = null
     }
     run.deadline = null
+    // F-25: 대기 토큰과 단계를 무효화한다 — 정리된 run으로 들어온 늦은 해제 호출은 no-op이다.
+    run.wait = null
+    run.stage = NIGHT_TURN_STAGES.STOPPED
     nightTurnRuns.delete(gameId)
     delete run.session.nightTurnRole
 }
@@ -2161,6 +2480,16 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
         return
     }
 
+    // F-25(AC-01): 그 판이 연출 대기 중이면 core를 부르기 **전에** 끊는다. 대기 중에는
+    // session.nightTurnRole이 비어 있어 core의 턴 소유권 검사가 "턴 시퀀서가 없는 밤"으로
+    // 오인하고 **다음** 역할의 제출을 받아들일 수 있다. 판정 기준은 client가 보낸 gameId가
+    // 아니라 registry가 돌려준 이 계정의 canonical 세션이다(둘이 갈리면 기존 경로로 보낸다).
+    const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
+    if (routing && routing.gameId === gameId && isNightPresentationWaitActive(routing.gameId)) {
+        respondNightAction(uuid, undefined, callback, { ok: false, code: 'ACTIONS_PENDING', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
     let result
     try {
         result = gameSessionCore.submitNightAction(uuid, gameId, targetId)
@@ -2638,6 +2967,10 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
 
     const gameId = session?.id
     if (typeof gameId !== 'string' || !gameId) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    // F-25(AC-04): 연출 대기 중에는 **어느 경로로 들어와도** 확정하지 않는다. prepared를 이미
+    // 들고 들어온 수동 경로까지 여기서 막아야, 종료 방송 중의 재진입이 커밋·저장·보상을
+    // 시작할 수 없다(자동 최종화는 대기가 닫힌 뒤 stopNightTurnSequence를 지나 도착한다).
+    if (isNightPresentationWaitActive(gameId)) return { ok: false, code: 'ACTIONS_PENDING' }
     if (nightFinalizeInFlight.has(gameId)) return { ok: false, code: 'NIGHT_FINALIZE_IN_PROGRESS' }
 
     nightFinalizeInFlight.add(gameId)
@@ -2806,6 +3139,15 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
     const { gameId } = payload
     if (typeof gameId !== 'string') {
         respondResolveNight(uuid, undefined, callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+
+    // F-25(AC-04): 연출 대기 중인 밤은 아직 확정할 수 없다. 이 본문은 **먼저 준비를 수행**하므로
+    // 공통 경계(finalizeNightForSession)의 가드만으로는 "준비도 0회"를 만족할 수 없다 —
+    // prepare 앞에서 끊는다. 기준은 registry가 돌려준 이 계정의 canonical 세션이다.
+    const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
+    if (routing && routing.gameId === gameId && isNightPresentationWaitActive(routing.gameId)) {
+        respondResolveNight(uuid, routing.gameId, callback, { ok: false, code: 'ACTIONS_PENDING', message: '요청을 처리할 수 없습니다.' })
         return
     }
 
@@ -4169,6 +4511,13 @@ module.exports = {
         recordConnectionOwnership,
         startNightTurnSequence,
         stopNightTurnSequence,
+        // F-25: 역할 확정 직후의 내부 사건·수신 대상 계약과 즉시 통과 대기. 시험이 방어 복사와
+        // 토큰 불일치 no-op을 실제 경계에서 확인할 수 있게 한다(공개 소켓 계약은 바뀌지 않는다).
+        buildNightPresentationContract,
+        beginNightPresentationWait,
+        releaseNightPresentationWait,
+        isNightPresentationWaitActive,
+        NIGHT_TURN_STAGES,
         computeEmptyTurnDelayMs,
         resolveNightTurnDurationMs,
         startDayPhaseTimer,

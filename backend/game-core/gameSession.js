@@ -4552,6 +4552,15 @@ module.exports = {
     completeNightRole,
     isNightRoleCompleted,
     markNightSequenced,
+    // F-25: 역할 턴이 끝난 직후의 **내부** 사건·수신 대상 계산이 읽는 진행 자료 조회기와 제출
+    // 수집기. 소켓 계층의 연출 계약이 production 경로에서 그대로 부르므로 __testables가 아니라
+    // 정식 export다(같은 함수 참조가 __testables에도 그대로 남아 기존 시험은 영향받지 않는다).
+    // 반환값은 **살아 있는 내부 자료**다 — 호출부는 읽고 즉시 복사할 뿐 변형하지 않는다.
+    getNightProgress,
+    collectRoleNightSubmissions,
+    // 회복 상태 열거값. 소켓 계층이 core와 **같은** 회복 제외 규칙을 적용해야 하므로,
+    // 문자열을 다시 적지 않도록 값 자체를 노출한다.
+    NIGHT_RECOVERY_STATES,
     commitNightResolution,
     // 끊김 사망은 밤 판정과 같은 순서 계약을 공유하지만 소켓 계층의 유예 타이머가 직접 부르는
     // 진입점이므로, 밤 판정 3인방과 나란히 정식 export로 둔다.
