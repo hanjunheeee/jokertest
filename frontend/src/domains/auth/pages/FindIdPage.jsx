@@ -47,7 +47,14 @@ export default function FindIdPage() {
   const requestGenerationRef = useRef(0)
   const unmountedRef = useRef(false)
 
-  useEffect(() => () => { unmountedRef.current = true }, [])
+  // StrictMode 개발 실행은 effect를 마운트 → 정리 → 재마운트 순으로 두 번 돈다. 정리에서
+  // unmountedRef를 true로 만든 뒤 다음 마운트에서 false로 되돌리지 않으면, 실제로는 화면에
+  // 남아 있는데도 이후의 모든 응답 처리가 "언마운트됨"으로 오판해 버려지고 화면이
+  // submitting에 그대로 머문다.
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => { unmountedRef.current = true }
+  }, [])
 
   const submit = () => {
     const validation = validateLocalInput(nickname, birthDate)

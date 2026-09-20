@@ -12,7 +12,6 @@ const crypto                 = require("crypto");
 const { createRateLimiter }  = require("../middleware/rateLimit");
 const { validateFindIdRequest } = require("../validation/findIdValidation");
 const { findId }             = require("../controller/accountRecovery.controller");
-const { getClientIp }        = require("../utils/ip");
 
 router.post("/signup", signup);
 router.get("/check-email", checkEmail);
@@ -29,10 +28,15 @@ const toPositiveInt = (value, fallback) => {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+// req.ip를 쓴다 — backend/index.js:51의 `app.set("trust proxy", 1)`이 신뢰 경계 안에서
+// Express가 계산한 값이다. utils/ip.js의 getClientIp는 신뢰 경계와 무관하게
+// X-Forwarded-For 첫 값을 그대로 채택해, 클라이언트가 그 헤더를 바꾸는 것만으로 이 IP
+// 제한을 우회할 수 있었다(getClientIp 자체는 accountRecovery.controller.js가 로그 저장용
+// IP 문자열을 만드는 데 그대로 쓰므로 건드리지 않는다).
 const findIdIpRateLimiter = createRateLimiter({
     windowMs: toPositiveInt(process.env.FIND_ID_WINDOW_MS, 600000),
     max:      toPositiveInt(process.env.FIND_ID_IP_MAX, 10),
-    keyOf:    (req) => `ip:${getClientIp(req)}`,
+    keyOf:    (req) => `ip:${req.ip}`,
 });
 
 const findIdTargetRateLimiter = createRateLimiter({

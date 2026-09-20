@@ -79,6 +79,33 @@ async function mountFindIdPage() {
   return view
 }
 
+// F-29a AC-07 재검토 대응: main.jsx는 개발 빌드에서 React.StrictMode로 감싼다. StrictMode는
+// effect를 마운트 → 정리 → 재마운트 순으로 두 번 돌려, cleanup에서만 unmountedRef를 true로
+// 만들고 재마운트 시 되돌리지 않는 버그를 실사용 환경에서 재현한다(일반 mountFindIdPage는
+// StrictMode가 없어 이 결함을 잡지 못했다).
+async function mountFindIdPageStrict() {
+  let view
+  await act(async () => {
+    view = render(
+      React.createElement(
+        React.StrictMode,
+        null,
+        React.createElement(
+          MemoryRouter,
+          { initialEntries: ["/find-id"] },
+          React.createElement(
+            Routes,
+            null,
+            React.createElement(Route, { path: "/find-id", element: React.createElement(FindIdPage) }),
+            React.createElement(Route, { path: "/login", element: React.createElement("div", null, LOGIN_STUB_TEXT) }),
+          ),
+        ),
+      ),
+    )
+  })
+  return view
+}
+
 const fillForm = (view, { nickname = "찾을닉네임", birthDate = "2000-01-15" } = {}) => {
   fireEvent.change(view.container.querySelector('input[name="nickname"]'), { target: { value: nickname } })
   fireEvent.change(view.container.querySelector('input[name="birthDate"]'), { target: { value: birthDate } })
@@ -264,6 +291,28 @@ test("idle 상태에서도 뒤로 가기를 누르면 /login으로 이동한다"
   const view = await mountFindIdPage()
   await act(async () => { fireEvent.click(view.getByText("뒤로 가기")) })
   await waitFor(() => assert.ok(view.container.textContent.includes(LOGIN_STUB_TEXT)))
+});
+
+// ── AC-07 재검토 대응: StrictMode 이중 마운트에서도 응답 처리가 버려지지 않는다 ──────
+
+test("StrictMode로 마운트해도 제출 → 성공 응답이 found로 전이된다(submitting에 멈추지 않음)", async () => {
+  findIdHandler = async () => ({ ok: true, maskedEmail: "a***c@e***.com" })
+  const view = await mountFindIdPageStrict()
+  fillForm(view)
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("a***c@e***.com")))
+  assert.equal(view.container.querySelector('input[name="nickname"]'), null)
+});
+
+test("StrictMode로 마운트해도 제출 → NOT_FOUND 응답이 notFound로 전이된다(submitting에 멈추지 않음)", async () => {
+  findIdHandler = async () => ({ ok: false, code: "NOT_FOUND" })
+  const view = await mountFindIdPageStrict()
+  fillForm(view, { nickname: "안맞는닉", birthDate: "1990-01-01" })
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("입력한 정보와 일치하는 계정을 찾을 수 없습니다.")))
+  assert.ok(view.container.querySelector('button[type="submit"]'), "submitting에 멈춰 있으면 제출 버튼이 계속 disabled로 남습니다")
 });
 
 // ── AC-07: 실제 공개 라우트 배선 ──────────────────────────────────────────────

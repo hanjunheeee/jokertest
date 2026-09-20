@@ -16,6 +16,7 @@ process.env.FIND_ID_TARGET_MAX = "1000";
 // 미들웨어·제한기·서비스·컨트롤러는 전부 실제 코드가 돈다.
 
 const test         = require("node:test");
+const { mock }     = require("node:test");
 const assert       = require("node:assert/strict");
 const { once }     = require("node:events");
 const express      = require("express");
@@ -204,6 +205,36 @@ test("잘못된 JSON 본문은 원본 파싱 오류를 감추고 고정된 400 I
 
     assert.equal(res.status, 400);
     assert.deepEqual(body, { ok: false, code: "INVALID_INPUT" });
+});
+
+test("쿼리스트링·후행 슬래시가 붙은 /auth/find-id 변형도 잘못된 JSON 본문을 같은 고정 400으로 감춘다(로그도 무결)", async (t) => {
+    const base = await startServer(t);
+
+    const consoleErrorMock = mock.method(console, "error", () => {});
+    t.after(() => consoleErrorMock.mock.restore());
+
+    // 파싱 실패 시 err.message에 실릴 원문 조각 — 원래 originalUrl 완전일치 검사는 이
+    // 변형들에서 걸러내지 못하고 일반 오류 처리로 빠져 이 값이 응답·로그에 노출될 수 있었다.
+    const sensitiveFragment = "leaked-secret-fragment-9f3c";
+    const malformedBody = `{not-valid-json,"nickname":"${sensitiveFragment}"`;
+
+    for (const path of ["/auth/find-id?x=1", "/auth/find-id/", "/auth/find-id/?x=1"]) {
+        const res = await fetch(`${base}${path}`, {
+            method:  "POST",
+            headers: { "content-type": "application/json" },
+            body:    malformedBody,
+        });
+        const bodyText = await res.text();
+
+        assert.equal(res.status, 400, `${path}는 400이어야 합니다`);
+        assert.deepEqual(JSON.parse(bodyText), { ok: false, code: "INVALID_INPUT" });
+        assert.doesNotMatch(bodyText, new RegExp(sensitiveFragment));
+    }
+
+    const loggedText = consoleErrorMock.mock.calls
+        .map((call) => call.arguments.map((arg) => String(arg)).join(" "))
+        .join("\n");
+    assert.doesNotMatch(loggedText, new RegExp(sensitiveFragment), "캡처한 로그에도 요청 본문 값이 없어야 합니다");
 });
 
 test("마스킹 힌트는 인증 토큰으로 쓸 수 없다 — 그 값을 accessToken 쿠키로 보내도 보호 라우트는 401이다", async (t) => {
