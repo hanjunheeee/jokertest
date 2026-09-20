@@ -2919,17 +2919,20 @@ test('resolve_night 종료(CITIZEN 승리): 마지막 생존 JOKER가 NIGHT 희�
     // 판정 자체는 commitNightResolution이 커밋한 victim을 그대로 소비하므로 이 경로로도 실제
     // 판정 로직을 정확히 구동한다.
     const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-term-citizen' })
+    // F-25b(A-03): commit은 내부 준비 대장에 등재된 resolution만 받아들이므로, 손으로 만든
+    // fixture도 **테스트 전용 등록**으로 출처를 붙인다(production 우회가 아니다 — 등록 값은
+    // 실제 준비와 동일하게 등록 시점의 세션 상태로 고정되고, 오염 fixture는 그대로 걸린다).
     const deps = {
         prepare: () => ({
             ok: true,
             session,
-            resolution: {
+            resolution: gameSessionCore.__registerNightPreparationForTests(session, {
                 gameId: session.id,
                 dayIndex: session.dayIndex,
                 pendingEliminationTargetId: jokerUuid,
                 privateResults: new Map(),
                 resolved: true,
-            },
+            }),
         }),
     }
 
@@ -3033,6 +3036,116 @@ test('불변성: NIGHT 종료 payload를 캡처해 중첩 필드를 변형해도
     const rebuilt = gameSessionCore.buildTerminalFields(session)
     assert.equal(rebuilt.winResult.winner, originalWinner)
     assert.equal(rebuilt.players.length, session.players.size)
+})
+
+// ---------------------------------------------------------------------------
+// F-25b(AC-05) — 수동 resolve_night와 공통 밤 최종화 경계
+// ---------------------------------------------------------------------------
+
+test('AC-05(F-25b): 결과 전달 도중 같은 밤의 resolve_night가 재진입해도 두 번째는 거부되고 수신자별 결과가 늘지 않는다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } =
+        commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-reentry' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+
+    // 첫 수신자의 결과 전달이 같은 경계를 다시 부른다(이탈 커밋이 타이머를 깨우는 등의 재진입 재현).
+    const reentrantSocket = socketByUuid.get(uuids[0])
+    const reentryResponses = []
+    const originalEmit = reentrantSocket.emit.bind(reentrantSocket)
+    reentrantSocket.emit = (event, ...args) => {
+        const result = originalEmit(event, ...args)
+        if (event === 'night_result_applied' && reentryResponses.length === 0) {
+            const inner = countingCallback()
+            handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, inner.callback)
+            reentryResponses.push(inner.getResponse())
+        }
+        return result
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(reentryResponses.length, 1)
+    assert.equal(reentryResponses[0].ok, false, '재진입한 두 번째 요청은 성공하지 않는다')
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.players.get(victimUuid).alive, false)
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1, `${uuid}의 night_result_applied 건수`)
+    }
+})
+
+test('AC-05/A-08(F-25b): 준비 이후 이탈이 그 판을 끝내면 밤 커밋이 거부되고 밤 결과가 방송되지 않는다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } =
+        commitTrioSessionWithSocketsAtNight({ id: 'room-rn-depart-terminal' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+
+    // 준비는 정상 경로로 만들고, 그 직후 유일한 광대의 이탈이 먼저 판을 끝낸다.
+    const deps = {
+        prepare: (uuid, gameId) => {
+            const prepared = gameSessionCore.prepareNightResolution(uuid, gameId)
+            assert.equal(prepared.ok, true)
+            const departure = gameSessionCore.commitParticipantDeparture(session, jokerUuid)
+            assert.deepEqual(departure.terminal, { winner: 'CITIZEN' })
+            return prepared
+        },
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback, deps)
+
+    assert.deepEqual(getResponse(), {
+        ok: false, code: 'GAME_ALREADY_ENDED', message: '요청을 처리할 수 없습니다.',
+    })
+    assert.equal(session.phase, 'ENDED')
+    assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
+    // 이탈이 확정한 사망만 남는다 — 밤은 새 사망도 새 방송도 만들지 않았다.
+    assert.equal(session.players.get(victimUuid).alive, true)
+    assert.equal(session.nightResolution, null)
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 0, `${uuid}에게 밤 결과가 가면 안 된다`)
+    }
+})
+
+test('AC-05(F-25b): 이전 밤의 준비로는 다음 밤을 확정할 수 없고 세션 상태도 방송도 늘지 않는다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } =
+        commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-stale-night' })
+    const [firstTargetUuid, secondTargetUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, firstTargetUuid)
+    const stalePrepared = gameSessionCore.prepareNightResolution(jokerUuid, session.id)
+    assert.equal(stalePrepared.ok, true)
+
+    // 그 밤을 정상적으로 끝낸다.
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, countingCallback().callback)
+    assert.equal(session.phase, 'DAY')
+
+    // 다음 밤으로 되돌린 뒤, 이전 밤의 준비를 그대로 다시 들이민다.
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    const deliveriesBefore = uuids.map(
+        (uuid) => socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length,
+    )
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback, {
+        prepare: () => stalePrepared,
+    })
+
+    // 오래된 준비는 내부 상태 신호이므로 코드를 그대로 노출하지 않는다.
+    assert.deepEqual(getResponse(), {
+        ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.',
+    })
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.players.get(secondTargetUuid).alive, true)
+    assert.deepEqual(
+        uuids.map((uuid) => socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length),
+        deliveriesBefore,
+    )
 })
 
 // ---------------------------------------------------------------------------

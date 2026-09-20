@@ -1509,3 +1509,75 @@ test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권�
 
   assertStoreFactsUnchanged(before, "이미 소속을 가진 요청의 bootstrap 응답")
 })
+
+// ---------------------------------------------------------------------------
+// F-25b(AC-06) — 재접속 스냅샷이 임시 사망을 최종 사망으로 보여주지 않는다
+//
+// 실제 소비 경로 그대로다: get_session_snapshot ack → requestSnapshot의 신원·소속·연결 세대
+// 검사 → applySessionSnapshot → applySessionSnapshotPure의 isAlive→alive 변환 → InGamePage의
+// selectInGameDeadParticipantChoice와 행동 패널의 resolveInGameSelfAliveForControls.
+// ---------------------------------------------------------------------------
+
+const { selectInGameDeadParticipantChoice } = await import("../../utils/selectInGameDeadParticipantChoice.js")
+const { resolveInGameSelfAliveForControls } = await import("../../utils/selectInGameSelfAlive.js")
+
+/** 그 밤의 스냅샷 하나를 실제 ack 경로로 흘려보내고, 복원된 canonical state를 돌려준다. */
+async function restoreFromSnapshot(response, { gameId = "g1", playerUuid = "player-1" } = {}) {
+  seedStore({ gameId, playerUuid, nickname: "Alice" })
+  seedAuth(playerUuid)
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  setFakeSocket(fake.socket)
+
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve(response)
+    await flushMicrotasks()
+  })
+  const state = useInGameStore.getState().state
+  hook.unmount()
+  return state
+}
+
+test("F-25b(AC-06): 치료 가능성이 해소되지 않은 밤의 스냅샷은 본인을 생존으로 복원하고 사망 선택창을 열지 않는다", async () => {
+  // 서버가 임시 사망 상태를 공개 스냅샷에 담지 않는다는 계약의 소비 쪽 — isAlive:true이고
+  // 현재 밤의 확정 nightResult가 없다.
+  const state = await restoreFromSnapshot({
+    ...buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1", phase: "NIGHT", dayIndex: 0 }),
+    nightResult: null,
+  })
+
+  assert.equal(state.phase, "NIGHT")
+  assert.equal(state.players.find((p) => p.uuid === "player-1").alive, true)
+  assert.equal(state.nightResult ?? null, null, "미확정 공격이 확정 밤 결과로 나타나면 안 된다")
+  assert.equal(selectInGameDeadParticipantChoice(state, "player-1"), false, "사망 선택창이 열리면 안 된다")
+  assert.equal(resolveInGameSelfAliveForControls(state, null), true, "본인은 여전히 행동 가능 상태다")
+})
+
+test("F-25b(AC-06): 치료가 성공한 밤의 최종 스냅샷은 victimUuid가 null이고 본인이 생존으로 복원된다", async () => {
+  const state = await restoreFromSnapshot({
+    ...buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1", phase: "DAY", dayIndex: 1 }),
+    dayPhase: "DAY_DISCUSSION",
+    nightResult: { dayIndex: 1, victimUuid: null, deathReveals: [] },
+  })
+
+  assert.equal(state.phase, "DAY")
+  assert.equal(state.nightResult.victimUuid, null)
+  assert.deepEqual(state.nightResult.deathReveals, [])
+  assert.equal(state.players.find((p) => p.uuid === "player-1").alive, true)
+  assert.equal(selectInGameDeadParticipantChoice(state, "player-1"), false)
+  assert.equal(resolveInGameSelfAliveForControls(state, null), true)
+})
+
+test("F-25b(AC-06) 대조군: 미치료 밤이 최종 확정된 뒤의 스냅샷에서만 본인이 사망으로 복원되고 선택창이 열린다", async () => {
+  const response = buildSnapshotResponseWithNightResult({ gameId: "g1", playerUuid: "player-1", dayIndex: 1 })
+  // 확정된 밤이므로 roster도 사망을 반영한다(서버 buildSessionSnapshot의 isAlive).
+  response.players = response.players.map((p) => ({ ...p, isAlive: false }))
+
+  const state = await restoreFromSnapshot(response)
+
+  assert.equal(state.nightResult.victimUuid, "player-1")
+  assert.equal(state.players.find((p) => p.uuid === "player-1").alive, false)
+  assert.equal(selectInGameDeadParticipantChoice(state, "player-1"), true)
+  assert.equal(resolveInGameSelfAliveForControls(state, null), false)
+})

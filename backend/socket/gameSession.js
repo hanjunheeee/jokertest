@@ -598,6 +598,9 @@ function __resetStateForTests() {
     // F-21(AC-03): 이탈 재평가 표식도 비운다 — 남으면 다음 테스트의 같은 gameId가 이탈이
     // 없었는데도 "분모가 줄어든 라운드"로 판정돼 제출 직후 판정이 일어난다.
     departureResolveMarks.clear()
+    // F-25b: 밤 최종화 재진입 표식도 비운다 — 남으면 다음 테스트의 같은 gameId가 "이미 최종화
+    // 진행 중"으로 오인돼 밤이 영영 확정되지 않는다.
+    nightFinalizeInFlight.clear()
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
     for (const [gameId, pending] of [...disconnectGraceRuns]) {
@@ -1085,7 +1088,11 @@ function advanceNightTurn(run) {
     const { session } = run
     run.index += 1
     if (run.index >= gameSessionCore.NIGHT_TURN_ORDER.length) {
+        // F-25b(AC-03/AC-05): 네 역할이 모두 끝난 밤은 여기서 **자동으로 최종화**된다 — 최종
+        // 사망 확정·승패 판정·전적 저장·결과 방송은 전부 그 공통 경계 하나가 소유하므로,
+        // 수동 resolve_night와 이 자동 경로가 같은 밤을 두 번 확정할 수 없다.
         stopNightTurnSequence(session.id)
+        finalizeNightForSession(run.io, session)
         return
     }
 
@@ -1165,6 +1172,22 @@ function endNightTurn(run, role) {
     if (nightTurnRuns.get(session.id) !== run) return
     if (session.nightTurnRole !== role) return
 
+    // F-25b(AC-01/A-06): 그 역할의 결과·사건·완료 표식을 **방송과 다음 턴 진행보다 먼저**
+    // canonical 상태에 기록한다. 의사 턴이면 이 호출이 이번 밤의 치료 가능성을 닫지만,
+    // canonical alive는 바꾸지 않는다 — 최종 사망은 밤 전체가 끝난 뒤 한 번만 확정된다.
+    let completed
+    try {
+        completed = gameSessionCore.completeNightRole(session, role)
+    } catch (err) {
+        completed = { ok: false, code: 'ROLE_COMPLETE_UNEXPECTED_ERROR' }
+    }
+    if (!completed.ok) {
+        // 기록에 실패하면 종료 방송도 다음 역할 진행도 하지 않는다 — 기록되지 않은 역할을
+        // 건너뛴 채 밤이 최종화되면 그 밤의 집계가 조용히 어긋난다.
+        console.error('[밤 역할 확정 실패]', { code: completed.code, role, gameId: session.id })
+        return
+    }
+
     if (run.timerId !== null) {
         run.clearTimeoutFn(run.timerId)
         run.timerId = null
@@ -1224,6 +1247,11 @@ function startNightTurnSequence(io, session, deps = {}) {
         durationMs: deps.turnDurationMs ?? null,
     }
     nightTurnRuns.set(session.id, run)
+    // F-25b: 이 밤이 순차 진행 중임을 canonical 상태에 표시한다 — 아직 아무 역할도 끝나지
+    // 않은 순차 밤에 들어온 resolve_night가 미완료 역할을 건너뛰고 확정해 버리지 않도록,
+    // 첫 턴 진입(advanceNightTurn)보다 먼저 세운다. 유예 만료로 세션이 이미 NIGHT를 벗어난
+    // 경우는 위 가드에서 걸러졌고, core도 현재 phase를 다시 확인한다.
+    gameSessionCore.markNightSequenced(session)
     advanceNightTurn(run)
     return run
 }
@@ -2558,10 +2586,213 @@ function respondResolveNight(uuid, gameId, callback, payload) {
  * Error, 판정 결과(암살 후보·보호 대상·개인 결과 등), nightActions는 로그에 절대 포함하지
  * 않습니다.
  */
-function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
-    const prepare = deps.prepare ?? gameSessionCore.prepareNightResolution
+/**
+ * F-25b(A-03): commit이 돌려주는 코드 중 **클라이언트에 그대로 보내면 안 되는** 것들.
+ *
+ * 출처 없는 준비·오래된 준비·registry 불일치는 전부 서버 내부 상태 신호다(정상 클라이언트가
+ * 만들어낼 수 있는 상황이 아니다). 기존 오염 fixture 시험과 같은 관측 결과를 유지하기 위해
+ * 이 코드들은 {code:'COMMIT_ERROR', uuid, gameId} 3키 로그와 INTERNAL_ERROR ack으로 정규화한다.
+ * NIGHT_ALREADY_RESOLVED·ACTIONS_PENDING·GAME_ALREADY_ENDED·INVALID_PHASE는 정상 도달 가능한
+ * 공개 코드라 여기에 없다.
+ */
+const NIGHT_COMMIT_INTERNAL_ONLY_CODES = new Set([
+    'UNKNOWN_RESOLUTION_SOURCE',
+    'STALE_RESOLUTION',
+    'SESSION_NOT_FOUND',
+    'NOT_A_PARTICIPANT',
+])
+
+/**
+ * F-25b: 같은 세션의 밤 최종화가 **동시에 두 번 진입하지 못하게** 하는 표식.
+ *
+ * commit 자체가 원자적 단일 게이트지만(같은 밤의 두 번째 커밋은 NIGHT_ALREADY_RESOLVED),
+ * ack·emit이 다시 이 경계를 부르는 재진입(수신자 emit이 이탈을 커밋하고 그 정리가 타이머를
+ * 깨우는 등)까지는 막지 못한다. 전송 시작 전에 표식을 세워 그 경로를 끊는다.
+ */
+const nightFinalizeInFlight = new Set()
+
+/**
+ * F-25b: **한 밤을 최종화하는 유일한 경계.** 수동 resolve_night(handleResolveNight)와 마지막
+ * 역할 턴이 끝난 자동 진행(advanceNightTurn)이 모두 이 함수 하나를 지난다 — 그래서 같은 밤에
+ * 대해 최종 사망 확정·승패 판정·전적 저장·결과 방송이 각각 최대 1회만 일어난다(AC-05).
+ *
+ * 순서: 재진입 표식 확보 → 유효한 준비(세션 단위) → commit(유일한 mutation) → 공개 payload와
+ * 개인 결과 고정 → terminal이면 기존 persistTerminalSession → 수동 호출의 ack → 시퀀스 중단과
+ * 낮 타이머 동기화 → 수신자별 기존 세 이벤트 전달.
+ *
+ * 새 종료 보류·저장 재시도·세션 삭제 계약을 만들지 않는다(A-11) — 종결 저장은 기존 훅
+ * 그대로이고, 세션 전체 정리는 여전히 기존 종료 경로(finalizeGameSessionEnd)가 소유한다.
+ *
+ * @param {object} io
+ * @param {object} session - registry에 등록된 canonical GameSession
+ * @param {object} [options]
+ * @param {object|null} [options.prepared] - 이미 계산된 준비({ok,session,resolution}). 수동 경로가 넘긴다.
+ * @param {object} [options.deps] - prepareForSession/commit/resolveParticipantSockets 주입
+ * @param {function|null} [options.onResult] - 수동 경로의 ack 전달자. 자동 경로는 null이다.
+ * @returns {{ok:boolean, code?:string, terminal?:object|null, victimUuid?:string|null}}
+ */
+function finalizeNightForSession(io, session, { prepared = null, deps = {}, onResult = null } = {}) {
+    const prepareForSession = deps.prepareForSession ?? gameSessionCore.prepareNightResolutionForSession
     const commit = deps.commit ?? gameSessionCore.commitNightResolution
     const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+
+    const gameId = session?.id
+    if (typeof gameId !== 'string' || !gameId) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (nightFinalizeInFlight.has(gameId)) return { ok: false, code: 'NIGHT_FINALIZE_IN_PROGRESS' }
+
+    nightFinalizeInFlight.add(gameId)
+    try {
+        let resolvedPrepared = prepared
+        if (!resolvedPrepared) {
+            try {
+                resolvedPrepared = prepareForSession(session)
+            } catch (err) {
+                console.error('[밤 행동 판정 오류]', { code: 'PREPARE_UNEXPECTED_ERROR', uuid: undefined, gameId })
+                return { ok: false, code: 'INTERNAL_ERROR' }
+            }
+        }
+        if (!resolvedPrepared || resolvedPrepared.ok !== true) {
+            return { ok: false, code: resolvedPrepared?.code ?? 'INTERNAL_ERROR' }
+        }
+
+        // 준비가 가리키는 세션이 곧 이 경계의 canonical 세션이다(두 값이 갈리면 진행하지 않는다).
+        const targetSession = resolvedPrepared.session ?? session
+        const resolution = resolvedPrepared.resolution
+
+        let applied
+        try {
+            applied = commit(targetSession, resolution)
+        } catch (err) {
+            console.error('[밤 행동 판정 오류]', { code: 'COMMIT_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+            if (onResult) onResult({ ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+            return { ok: false, code: 'INTERNAL_ERROR' }
+        }
+
+        if (!applied.ok) {
+            if (NIGHT_COMMIT_INTERNAL_ONLY_CODES.has(applied.code)) {
+                console.error('[밤 행동 판정 오류]', { code: 'COMMIT_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+                if (onResult) onResult({ ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+                return { ok: false, code: 'INTERNAL_ERROR' }
+            }
+            if (onResult) onResult({ ok: false, code: applied.code, message: '요청을 처리할 수 없습니다.' })
+            return { ok: false, code: applied.code }
+        }
+
+        // 여기부터는 이미 확정된 밤이다 — 아래 어떤 실패도 커밋된 상태를 되돌리지 않는다.
+        //
+        // commit이 이미 phase/dayIndex를 갱신한 뒤의 session을 받는다 — recipient마다 동일한
+        // payload이므로 루프 밖에서 한 번만 만들어 재사용한다. 기존 필드 조립과 terminal 필드
+        // 병합은 별도 try 블록이다 — 기존 조립이 실패해도 terminal이 있으면 최소
+        // payload({phase,winResult,players})는 반드시 전달한다.
+        let nightResultAppliedPayload = null
+        try {
+            // 공개 사망 reveal은 commit이 canonical resolution에 채워 넣은 목록(실제로 alive→dead로
+            // 바뀐 참가자만)을 그대로 실어 나른다 — 소켓 계층은 목록을 만들지도, 고치지도 않는다.
+            nightResultAppliedPayload = gameSessionCore.buildNightResultAppliedPayload(
+                targetSession,
+                applied.victimUuid,
+                resolution.publicDeathReveals,
+            )
+        } catch (err) {
+            console.error('[밤 행동 판정 오류]', { code: 'PAYLOAD_BUILD_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+        }
+
+        if (applied.terminal) {
+            try {
+                const terminalFields = gameSessionCore.buildTerminalFields(targetSession)
+                nightResultAppliedPayload = nightResultAppliedPayload
+                    ? { ...nightResultAppliedPayload, ...terminalFields }
+                    : terminalFields
+            } catch (err) {
+                console.error('[밤 행동 판정 오류]', { code: 'TERMINAL_BUILD_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+            }
+            // 완주 종료의 두 경로 중 하나다. 저장은 여기서 딱 한 번 시작되고, 실패해도 아래의
+            // ack·방송을 막지 않는다(payload 조립 실패와 같은 격리 정책). 같은 판의 두 번째
+            // 종결 훅(세션 정리 등)은 persistTerminalSession이 스스로 막는다(F-21 A-09).
+            persistTerminalSession(targetSession, { completed: true })
+        }
+
+        if (onResult) {
+            onResult(nightResultAppliedPayload
+                ? { ok: true }
+                : { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+        }
+
+        // 밤이 판정됐으므로 그 밤의 턴 시퀀스는 어떤 경우에도 끝난다. 낮으로 넘어갔으면(비종결)
+        // 그 낮의 토론 제한시간을 시작하고, 승자가 확정돼 ENDED가 됐으면 낮 타이머도 걸지 않는다
+        // (startDayPhaseTimer가 phase 가드로 스스로 정리한다).
+        try {
+            stopNightTurnSequence(targetSession.id)
+            startDayPhaseTimer(io, targetSession)
+        } catch (err) {
+            console.error('[밤 행동 판정 오류]', { code: 'TIMER_SYNC_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+        }
+
+        let recipients
+        try {
+            recipients = resolveParticipantSockets(io, targetSession)
+        } catch (err) {
+            console.error('[밤 행동 판정 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+            return { ok: true, victimUuid: applied.victimUuid, terminal: applied.terminal ?? null }
+        }
+
+        for (const recipientSocket of recipients) {
+            // 목록은 계산 시점의 사실이다 — 앞 수신자의 emit이 이 계정을 그 판에서 빼거나 새
+            // 소속으로 옮겼을 수 있으므로 전송 직전에 자격을 다시 묻는다(F-23 AC-04).
+            if (!stillEligibleForDelivery(targetSession, recipientSocket)) continue
+            const recipientUuid = recipientSocket.data?.user?.uuid ?? null
+            // 일반 사건의 자격 검사에는 "다른 경기 routing"이 포함돼 있지 않다 — 밤 결과는
+            // 새 소속을 얻은 계정에게 가면 안 되므로 그 축을 여기서 한 번 더 묻는다(A-12).
+            if (recipientUuid !== null && hasMembershipOutsideSession(targetSession, recipientUuid)) continue
+
+            try {
+                recipientSocket.emit('night_actions_resolved', { gameId: targetSession.id, dayIndex: resolution.dayIndex })
+            } catch (err) {
+                console.error('[밤 행동 판정 오류]', { code: 'DELIVERY_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+            }
+
+            const privateResult = resolution.privateResults?.get(recipientUuid)
+            if (privateResult !== undefined) {
+                try {
+                    recipientSocket.emit('night_action_result', {
+                        gameId: targetSession.id,
+                        dayIndex: resolution.dayIndex,
+                        ...privateResult,
+                        // F-16(AC-04/AC-05): 이 개인 결과의 안정 사건 ID와 허용 수신 계정이다.
+                        // 수신자는 현재 인증 계정이 accountId와 같을 때만 소리를 낸다 — 전달
+                        // 경로(개별 emit)에 더해 클라이언트에서도 한 번 더 대조하는 이중 방어다.
+                        //
+                        // ID에는 게임·밤·본인 행동 종류만 넣는다. 대상 uuid나 조사로 드러난
+                        // 역할 같은 비밀 값은 ID에도 서버 로그에도 복제하지 않는다(AC-05).
+                        sfxEvent: {
+                            eventId: `game:${targetSession.id}:night:${resolution.dayIndex}:${privateResult.actionType}`,
+                            accountId: recipientUuid,
+                            gameId: targetSession.id,
+                            origin: 'live',
+                        },
+                    })
+                } catch (err) {
+                    console.error('[밤 행동 판정 오류]', { code: 'PRIVATE_DELIVERY_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+                }
+            }
+
+            if (nightResultAppliedPayload) {
+                try {
+                    recipientSocket.emit('night_result_applied', nightResultAppliedPayload)
+                } catch (err) {
+                    console.error('[밤 행동 판정 오류]', { code: 'DELIVERY_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
+                }
+            }
+        }
+
+        return { ok: true, victimUuid: applied.victimUuid, terminal: applied.terminal ?? null }
+    } finally {
+        nightFinalizeInFlight.delete(gameId)
+    }
+}
+
+function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
+    const prepare = deps.prepare ?? gameSessionCore.prepareNightResolution
 
     if (typeof callback !== 'function') return
     if (!isCurrentSocketForUuid(uuid, socket)) {
@@ -2597,119 +2828,25 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
         return
     }
 
-    let applied
-    try {
-        applied = commit(prepared.session, prepared.resolution)
-    } catch (err) {
-        console.error('[밤 행동 판정 오류]', { code: 'COMMIT_ERROR', uuid, gameId: prepared.session.id })
-        respondResolveNight(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
-        return
+    // 준비 이후의 커밋·저장·결과 전달은 전부 공통 경계가 소유한다 — 자동 밤 최종화가 같은
+    // 함수를 쓰므로 두 경로가 같은 밤을 두 번 확정할 수 없다(AC-05).
+    //
+    // onResult에 uuid를 실어 둔다: 공통 경계의 오류 로그가 기존과 동일한
+    // {code, uuid, gameId} 3키를 유지해야 하기 때문이다(자동 경로에서는 uuid가 undefined다).
+    let answered = false
+    const onResult = (response) => {
+        answered = true
+        respondResolveNight(uuid, prepared.session.id, callback, response)
     }
+    onResult.uuid = uuid
 
-    if (!applied.ok) {
-        // prepare~commit 사이 다른 이벤트로 세션이 ENDED로 전이됐을 수 있다(신뢰 경계 재검증 실패).
-        respondResolveNight(uuid, prepared.session.id, callback, { ok: false, code: applied.code, message: '요청을 처리할 수 없습니다.' })
-        return
-    }
-
-    // 밤이 판정됐으므로 그 밤의 턴 시퀀스는 어떤 경우에도 끝난다. 낮으로 넘어갔으면(비종결)
-    // 그 낮의 토론 제한시간을 시작하고, 승자가 확정돼 ENDED가 됐으면 낮 타이머도 걸지 않는다
-    // (startDayPhaseTimer가 phase 가드로 스스로 정리한다).
-    try {
-        stopNightTurnSequence(prepared.session.id)
-        startDayPhaseTimer(io, prepared.session)
-    } catch (err) {
-        console.error('[밤 행동 판정 오류]', { code: 'TIMER_SYNC_ERROR', uuid, gameId: prepared.session.id })
-    }
-
-    // commit(=commitNightResolution)이 이미 phase/dayIndex를 갱신한 뒤의 session을 받는다 —
-    // recipient마다 동일한 payload이므로 루프 밖에서 한 번만 만들어 재사용한다. 기존 필드 조립과
-    // terminal 필드 병합은 별도 try 블록이다 — 기존 조립이 실패해도 terminal이 있으면 최소
-    // payload({phase,winResult,players})는 반드시 broadcast하고, 요청자에게는 INTERNAL_ERROR ACK를 보낸다.
-    let nightResultAppliedPayload = null
-    try {
-        // 공개 사망 reveal은 commit이 canonical resolution에 채워 넣은 목록(실제로 alive→dead로
-        // 바뀐 참가자만)을 그대로 실어 나른다 — 소켓 계층은 목록을 만들지도, 고치지도 않는다.
-        nightResultAppliedPayload = gameSessionCore.buildNightResultAppliedPayload(
-            prepared.session,
-            applied.victimUuid,
-            prepared.resolution.publicDeathReveals,
-        )
-    } catch (err) {
-        console.error('[밤 행동 판정 오류]', { code: 'PAYLOAD_BUILD_ERROR', uuid, gameId: prepared.session.id })
-    }
-
-    if (applied.terminal) {
-        try {
-            const terminalFields = gameSessionCore.buildTerminalFields(prepared.session)
-            nightResultAppliedPayload = nightResultAppliedPayload
-                ? { ...nightResultAppliedPayload, ...terminalFields }
-                : terminalFields
-        } catch (err) {
-            console.error('[밤 행동 판정 오류]', { code: 'TERMINAL_BUILD_ERROR', uuid, gameId: prepared.session.id })
-        }
-        // 완주 종료의 두 경로 중 하나다. 저장은 여기서 딱 한 번 시작되고, 실패해도 아래의
-        // ACK·방송을 막지 않는다(payload 조립 실패와 같은 격리 정책).
-        persistTerminalSession(prepared.session, { completed: true })
-    }
-
-    if (!nightResultAppliedPayload) {
-        respondResolveNight(uuid, prepared.session.id, callback, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
-    } else {
-        respondResolveNight(uuid, prepared.session.id, callback, { ok: true })
-    }
-
-    let recipients
-    try {
-        recipients = resolveParticipantSockets(io, prepared.session)
-    } catch (err) {
-        console.error('[밤 행동 판정 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', uuid, gameId: prepared.session.id })
-        return
-    }
-
-    for (const recipientSocket of recipients) {
-        if (!stillEligibleForDelivery(prepared.session, recipientSocket)) continue
-        try {
-            recipientSocket.emit('night_actions_resolved', { gameId: prepared.session.id, dayIndex: prepared.resolution.dayIndex })
-        } catch (err) {
-            console.error('[밤 행동 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
-        }
-
-        const recipientUuid = recipientSocket.data?.user?.uuid
-        const privateResult = prepared.resolution.privateResults.get(recipientUuid)
-        if (privateResult !== undefined) {
-            try {
-                recipientSocket.emit('night_action_result', {
-                    gameId: prepared.session.id,
-                    dayIndex: prepared.resolution.dayIndex,
-                    ...privateResult,
-                    // F-16(AC-04/AC-05): 이 개인 결과의 안정 사건 ID와 허용 수신 계정이다.
-                    // 수신자는 현재 인증 계정이 accountId와 같을 때만 소리를 낸다 — 전달
-                    // 경로(개별 emit)에 더해 클라이언트에서도 한 번 더 대조하는 이중 방어다.
-                    //
-                    // ID에는 게임·밤·본인 행동 종류만 넣는다. 대상 uuid나 조사로 드러난
-                    // 역할 같은 비밀 값은 ID에도 서버 로그에도 복제하지 않는다(AC-05).
-                    // actionType은 이 payload가 이미 담고 있는 "본인 자신의" 행동이라
-                    // 새로 노출되는 정보가 없다.
-                    sfxEvent: {
-                        eventId: `game:${prepared.session.id}:night:${prepared.resolution.dayIndex}:${privateResult.actionType}`,
-                        accountId: recipientUuid,
-                        gameId: prepared.session.id,
-                        origin: 'live',
-                    },
-                })
-            } catch (err) {
-                console.error('[밤 행동 판정 오류]', { code: 'PRIVATE_DELIVERY_ERROR', uuid, gameId: prepared.session.id })
-            }
-        }
-
-        if (nightResultAppliedPayload) {
-            try {
-                recipientSocket.emit('night_result_applied', nightResultAppliedPayload)
-            } catch (err) {
-                console.error('[밤 행동 판정 오류]', { code: 'DELIVERY_ERROR', uuid, gameId: prepared.session.id })
-            }
-        }
+    const outcome = finalizeNightForSession(io, prepared.session, { prepared, deps, onResult })
+    // 재진입 표식에 막혀 공통 경계가 아무 것도 하지 않은 경우처럼 ack가 아직 나가지 않았다면
+    // 요청자는 답을 받지 못한 채 남는다 — 이 요청이 그 밤을 확정하지 못했다는 사실만 알린다.
+    if (!answered) {
+        respondResolveNight(uuid, prepared.session.id, callback, outcome?.ok
+            ? { ok: true }
+            : { ok: false, code: 'NIGHT_ALREADY_RESOLVED', message: '요청을 처리할 수 없습니다.' })
     }
 }
 
@@ -3996,6 +4133,9 @@ module.exports = {
         handleSubmitJokerChatMessage,
         handleSubmitGameChatMessage,
         handleResolveNight,
+        // F-25b: 수동 resolve_night와 자동 밤 최종화가 공유하는 유일한 확정 경계.
+        finalizeNightForSession,
+        endNightTurn,
         handleSubmitDayVote,
         handleResolveDayVote,
         handleCastTribunalVote,

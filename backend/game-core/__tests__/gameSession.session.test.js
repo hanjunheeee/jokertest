@@ -61,6 +61,7 @@ const {
     commitPrepared,
     tamperPrepared,
     handBuiltPrepared,
+    sourcedNightResolution,
 } = require('./gameSession.testUtils')
 
 // 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
@@ -1618,7 +1619,7 @@ test('getSessionSnapshotForPlayer: 첫 응답 객체(players/self/winResult/nigh
     const session = nightSessionOf3({ id: 'room-snap-defcopy' })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
     const viewerUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: jokerUuid })
     commitNightResolution(session, resolution)
     assert.equal(session.phase, 'ENDED')
     assert.deepEqual(session.winResult, { winner: 'CITIZEN' })

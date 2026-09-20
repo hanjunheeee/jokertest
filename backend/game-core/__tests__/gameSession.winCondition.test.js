@@ -15,7 +15,7 @@ const {
     prepareJokerChatMessage,
     commitJokerChatMessage,
 } = gameSession
-const { makeWinConditionSession, nightSessionOf3 } = require('./gameSession.testUtils')
+const { makeWinConditionSession, nightSessionOf3, sourcedNightResolution } = require('./gameSession.testUtils')
 
 // 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
 // 각 테스트가 이전 테스트가 남긴 상태의 영향을 받지 않도록 매번 초기화한다.
@@ -78,7 +78,7 @@ test('evaluateWinCondition: 생존 JOKER가 1명 이상이지만 생존 비-JOKE
 test('canonical 종료 상태: 승리 확정 시 phase는 ENDED, winResult는 {winner} 단일 키이며, 재평가·중복 판정 요청이 canonical winResult를 교체·변형하지 않는다', () => {
     const session = nightSessionOf3({ id: 'room-canonical-terminal' })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: jokerUuid })
 
     const first = commitNightResolution(session, resolution)
 
@@ -115,7 +115,7 @@ test('종료 후 mutation 차단: 8개 prepare/commit 진입점 전부가 GAME_A
     const session = nightSessionOf3({ id: 'room-post-end-lock' })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
     const aliveUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: jokerUuid })
     commitNightResolution(session, resolution)
     assert.equal(session.phase, 'ENDED')
     const canonicalWinResult = session.winResult
