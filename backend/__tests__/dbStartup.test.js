@@ -107,6 +107,19 @@ test("정상 기동 후 REST 요청과 소켓 핸드셰이크가 동작한다", 
     assert.equal(meRes.status, 401, "/auth 라우터가 마운트되지 않았습니다");
     assert.equal(meBody.success, false);
 
+    // 1-1) F-29a: POST /auth/find-id도 이 실제 index.js의 app 인스턴스(같은 /auth 마운트)로만
+    // 도달한다 — 형식이 잘못된 본문은 DB 없이도(실제 MySQL 미연결) 검증 미들웨어에서 400으로
+    // 끝나므로, 이 요청이 404가 아니라 400을 받는다는 사실 자체가 findId 라우트가 실제
+    // 기동된 app에 마운트되어 있음을 증명한다.
+    const findIdRes  = await fetch(`${base}/auth/find-id`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+    });
+    const findIdBody = await findIdRes.json();
+    assert.equal(findIdRes.status, 400, "POST /auth/find-id가 실제 app에 마운트되지 않았습니다");
+    assert.deepEqual(findIdBody, { ok: false, code: "INVALID_INPUT" });
+
     // 2) 미들웨어 체인 맨 끝의 notFoundHandler
     const missingRes  = await fetch(`${base}/__no_such_route__`);
     const missingBody = await missingRes.json();

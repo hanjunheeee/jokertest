@@ -6,6 +6,17 @@
 ## 1. 변경 파일
 
 **수정**
+- `backend/index.js` — 재검토 R-IMPL 대응(2026-09-21 2회차): "backend/index.js::app 가
+  backend/routes/auth.routes.js::router 를 마운트하지 않는다"는 소비처 미연결 지적을 받았다.
+  실제로는 `app.use("/auth", authRouter)`가 이전부터 존재했고 `authRouter`가 그대로
+  `POST /auth/find-id`를 포함하지만(§2의 실행 증거), 이 마운트 지점이 이번 슬라이스의 diff에
+  전혀 나타나지 않아 기계적 소비처 연결 검사가 그 사실을 확인하지 못했다. 그 mount 줄
+  바로 위에 F-29a가 이 마운트를 통해 `/auth/find-id`에 도달한다는 설명 주석을 추가해 이번
+  diff에 이 연결이 명시적으로 나타나게 했다(동작은 바꾸지 않음). 추가로
+  `backend/__tests__/dbStartup.test.js`(실제 `backend/index.js`를 `require`해 진짜 기동시키는
+  유일한 시험)에 `POST /auth/find-id`가 이 실제 `app` 인스턴스에서 400(INVALID_INPUT)으로
+  응답하는지 확인하는 단정을 추가했다 — `/auth/me`가 401을 받는 기존 단정과 같은 자리에서,
+  실제 기동된 서버로 이 마운트 자체를 직접 증명한다.
 - `backend/routes/auth.routes.js` — `POST /auth/find-id`를 IP 제한 → 입력 검증 → 대상(닉네임)
   제한 → 컨트롤러 순서로 등록.
 - `backend/models/auth/account_find_request.model.js` — `email`을 `allowNull: true`로 변경.
@@ -21,6 +32,9 @@
 - `frontend/src/domains/game/ingame/__tests__/InGamePage.deadParticipant.integration.test.js` —
   실제 router.routes 전체 목록을 잠그는 기존 회귀 시험(`ROUTE_WIRING_LOCK`)에 `/find-id` 항목을
   추가(따라오는 수정 — 새 공개 라우트가 생겼으므로 잠금 목록 갱신이 필요했다).
+- `backend/__tests__/dbStartup.test.js` — 실제 `backend/index.js`를 기동해 `/auth/me` 401을
+  확인하던 기존 단정 옆에 `POST /auth/find-id` 400 단정을 추가(위 `backend/index.js` 항목 참고,
+  따라오는 수정).
 
 **신규**
 - `backend/validation/findIdValidation.js` — `validateFindIdPayload`/`validateFindIdRequest`.
@@ -42,6 +56,7 @@
 
 | AC | 명령 | 결과 |
 | --- | --- | --- |
+| AC-01 | `node-test --prefix backend __tests__/dbStartup.test.js` | 4/4 pass — 실제 `require("backend/index.js")`로 기동한 진짜 `app`에 `POST /auth/find-id`가 400(INVALID_INPUT)으로 응답함을 확인, `backend/index.js::app`이 `auth.routes.js::router`를 마운트함을 직접 증명(재검토 R-IMPL 대응). |
 | AC-01/02/03/04 | `node-test --prefix backend __tests__/findId.api.test.js` | 9/9 pass |
 | AC-01/02/03/04 | `node-test --prefix backend __tests__/findId.policy.test.js` | 22/22 pass |
 | AC-05 | `node-test --prefix backend __tests__/rateLimit.test.js` | 10/10 pass(순수 제한기 로직) |
