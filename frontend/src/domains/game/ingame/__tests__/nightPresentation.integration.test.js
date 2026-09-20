@@ -134,7 +134,7 @@ mock.module("@/shared/socket/socketClient.js", {
 })
 
 const { renderHook, render, cleanup, fireEvent } = await import("@testing-library/react")
-const { MemoryRouter, RouterProvider } = await import("react-router-dom")
+const { MemoryRouter, RouterProvider, createMemoryRouter } = await import("react-router-dom")
 const {
   useInGameStore, readInGameReceiptScope, selectNightSuccessQueue,
 } = await import("../store/ingameStore.js")
@@ -143,8 +143,12 @@ const { setSocket } = await import("../../../../shared/socket/socketClient.js")
 const { useGameSessionSocketEvents } = await import("../hooks/useGameSessionSocketEvents.js")
 const { useInGameSessionSnapshotSync } = await import("../hooks/useInGameSessionSnapshotSync.js")
 const { useInGameNightSuccessPresentation } = await import("../hooks/useInGameNightSuccessPresentation.js")
-const { INGAME_KILL_ANIMATION_VIDEO_URL } = await import("../constants/killReveal/ingameKillReveal.js")
+const {
+  INGAME_KILL_ANIMATION_VIDEO_URL, INGAME_KILL_REVEAL_RETRY_LABEL, INGAME_KILL_REVEAL_SKIP_LABEL,
+} = await import("../constants/killReveal/ingameKillReveal.js")
 const { INGAME_NIGHT_PRESENTATION_WAIT_MESSAGE } = await import("../components/InGameNightPresentationWait.jsx")
+// AC-05: 실제 화면은 이 페이지 컴포넌트 하나다 — 아래 통합 시나리오는 이것을 직접 마운트한다.
+const { default: InGamePage } = await import("../pages/InGamePage.jsx")
 const { router } = await import("../../../../app/routes/index.jsx")
 const { useMatchingStore } = await import("../../matching/store/matchingStore.js")
 
@@ -484,6 +488,55 @@ async function leaveInGamePage() {
   await act(async () => { await router.navigate("/lobby") })
   useInGameStore.getState().clearGame()
   useMatchingStore.getState().clearRoom()
+}
+
+/**
+ * ProtectedRoute가 /ingame에서 실제로 하는 두 가지 — 전역 수신 훅 하나와, 호출부가 건넨 화면.
+ * 인증 분기(Navigate)는 이 시나리오의 관심사가 아니므로 그 판정만 빼고 나머지는 그대로다.
+ *
+ * 화면을 인자로 받는 이유는 "무엇을 마운트하는지"를 시험 본문에 남기기 위해서다 — 이 helper가
+ * 몰래 다른 것을 그리면 그 시험이 보는 것도 production 화면이 아니게 된다.
+ */
+function createProductionInGameScreen(Page) {
+  return function ProductionInGameScreen() {
+    useGameSessionSocketEvents()
+    return React.createElement(Page)
+  }
+}
+
+/**
+ * 실제 InGamePage를 직접 마운트한다.
+ *
+ * data router(createMemoryRouter)를 쓰는 이유는 InGamePage가 useInGameExit → useBlocker로
+ * 뒤로가기 이탈을 막기 때문이다 — 그 차단은 data router 위에서만 성립하므로, 여기서 MemoryRouter를
+ * 쓰면 화면을 마운트하는 것 자체가 실패한다(즉, 이 라우터 선택은 편의가 아니라 production 계약이다).
+ *
+ * 결과 이동까지 한 화면에서 관측해야 하므로 /gameresult 자리에는 표식만 둔 최소 라우트 표를
+ * 쓴다 — 어느 쪽이 그려졌는지가 DOM으로 곧장 드러난다. 라우터는 마운트마다 새로 만든다(앞
+ * 구간의 이동 기록이 다음 구간으로 새지 않는다).
+ */
+async function mountInGamePageDirect(socket, Page) {
+  currentSocket = socket
+  for (const cb of [...socketSubscribers]) cb()
+  const directRouter = createMemoryRouter(
+    [
+      { path: "/ingame", element: React.createElement(createProductionInGameScreen(Page)) },
+      { path: "/gameresult", element: React.createElement("div", { "data-test-game-result": "true" }) },
+    ],
+    { initialEntries: ["/ingame"] },
+  )
+  let view
+  await act(async () => { view = render(React.createElement(RouterProvider, { router: directRouter })) })
+  await dismissParchmentOverlays(view.container)
+  return view
+}
+
+/** 한 시나리오 구간이 끝났다 — 화면·store·소켓을 다음 구간이 쓸 수 있는 상태로 되돌린다. */
+function resetScreenBetweenScenes() {
+  cleanup()
+  useInGameStore.getState().clearGame()
+  currentSocket = null
+  for (const cb of [...socketSubscribers]) cb()
 }
 
 test.afterEach(async () => {
@@ -900,4 +953,197 @@ test("AC-02: 대기 화면은 어떤 상호작용에도 소리를 만들지 않�
     "대기 화면이 사용자 조작으로 닫혔다")
 
   await leaveInGamePage()
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC-05 · F-27 완료 조건의 통합 확인
+//
+// 위의 개별 시험들이 각자 한 경계를 보는 반면, 이 시나리오는 **실제 InGamePage 하나를 직접
+// 마운트한 채** F-27 완료 조건을 순서대로 통과시킨다: 대기 화면 은닉 → 영상 정상 재생과 완료
+// 보고 → 킬+치료 두 연출 뒤의 최종 생존 표시 → 두 수신자가 모두 끝나야 시작되는 다음 역할 턴 →
+// 재생 실패(자동재생 차단)의 재시도·건너뛰기 → 마지막 밤의 결과 화면 이동.
+//
+// 서버는 실제 game-core 세션과 registerGameHandlers가 등록한 리스너가, 화면은 실제 store·수신
+// 훅·InGamePage가 담당한다. 구간마다 화면·store·소켓을 되돌려 앞 구간의 상태가 다음 구간의
+// 관측을 오염시키지 않게 한다(auth/ingame store가 싱글턴이라 계정은 한 번에 하나다).
+// ═══════════════════════════════════════════════════════════════════════════
+
+test("F27 BL production integration scenarios", async () => {
+  // ── ① 비수신자: 실제 페이지에 대기 문구만 뜨고 비밀 정보도 소리도 없다 ──────────
+  const waitCtx = setupBackendNight("f27bl-prod-wait")
+  const outsiderUuid = pickOutsider(waitCtx)
+  assert.deepEqual(waitCtx.submit(waitCtx.jokerUuid, waitCtx.citizenUuid), { ok: true })
+  const waitPayload = waitCtx.receivedBy(outsiderUuid, "night_presentation_wait")[0].payload
+
+  seedFrontSession(waitCtx, outsiderUuid)
+  const waitSocket = createFrontSocket()
+  const waitView = await mountInGamePageDirect(waitSocket, InGamePage)
+  const sfxBeforeWait = sfxDispatches.length
+  const claimsBeforeWait = sfxClaims.length
+
+  await act(async () => { waitSocket.deliver("night_presentation_wait", waitPayload) })
+  assert.notEqual(waitView.container.querySelector("[data-ingame-night-presentation-wait]"), null,
+    "실제 InGamePage가 비수신자에게 대기 화면을 띄우지 않았다")
+  assert.equal(waitView.container.textContent.includes(INGAME_NIGHT_PRESENTATION_WAIT_MESSAGE), true)
+  assert.equal(waitView.container.querySelector("video[src]"), null, "비수신자 화면에 연출 영상이 떴다")
+  for (const secret of [waitCtx.jokerUuid, waitCtx.citizenUuid, "KILL", "JOKER"]) {
+    assert.equal(waitView.container.innerHTML.includes(secret), false,
+      `대기 중 화면에 ${secret}이(가) 노출됐다`)
+  }
+  assert.equal(sfxDispatches.length, sfxBeforeWait, "대기 시작이 새 소리를 만들었다")
+  assert.equal(sfxClaims.length, claimsBeforeWait, "대기 시작이 내장음 소유권을 선점했다")
+  assert.equal(waitSocket.emitsFor("acknowledge_night_action_success").length, 0,
+    "비수신자가 완료 보고를 보냈다")
+  resetScreenBetweenScenes()
+
+  // ── ② 대상자: 킬 영상 정상 종료 → 두 수신자 완료 → 다음 역할 턴 → 치료 연출 →
+  //      다음 낮 반영 뒤 최종 생존 표시 ─────────────────────────────────────────
+  const ctx = setupBackendNight("f27bl-prod-flow")
+  assert.deepEqual(ctx.submit(ctx.jokerUuid, ctx.citizenUuid), { ok: true })
+  const killPayload = ctx.receivedBy(ctx.citizenUuid, "night_action_success")[0].payload
+
+  seedFrontSession(ctx, ctx.citizenUuid)
+  const socket = createFrontSocket({ forwardEmitTo: ctx.backendSockets.get(ctx.citizenUuid) })
+  const view = await mountInGamePageDirect(socket, InGamePage)
+
+  await act(async () => { socket.deliver("night_action_success", killPayload) })
+  const killVideo = view.container.querySelector("video[src]")
+  assert.notEqual(killVideo, null, "실제 페이지가 KILL 연출 영상을 마운트하지 않았다")
+  assert.equal(killVideo.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL)
+  assert.equal(killVideo.muted, true, "연출 영상이 음소거가 아니다(AC-02)")
+
+  await act(async () => { fireEvent(killVideo, new dom.window.Event("ended")) })
+  const killAcks = socket.emitsFor("acknowledge_night_action_success")
+  assert.equal(killAcks.length, 1, "정상 종료가 완료 보고 한 번으로 이어지지 않았다")
+  assert.deepEqual(killAcks[0].response, { ok: true, duplicate: false })
+  assert.equal(view.container.querySelector("video[src]"), null, "완료한 연출이 화면에 남았다")
+  // 한 수신자의 완료만으로는 서버가 진행하지 않는다 — 다음 역할(=다음 턴 타이머)은 아직이다.
+  assert.equal(ctx.session.nightTurnRole, null, "한 수신자 완료만으로 다음 역할이 시작됐다")
+  ctx.ack(ctx.jokerUuid, killPayload)
+  assert.equal(ctx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 끝났는데 다음 역할이 없다")
+
+  // 의사가 같은 대상을 치료한다 — 전용 영상이 없는 종류라 임시 연출로 확인한다(AC-04 범위).
+  assert.deepEqual(ctx.submit(ctx.doctorUuid, ctx.citizenUuid), { ok: true })
+  const healPayload = ctx.receivedBy(ctx.citizenUuid, "night_action_success")[1]?.payload
+  assert.ok(healPayload, "전제: 대상자가 HEAL 성공 사건을 받아야 한다")
+  await act(async () => { socket.deliver("night_action_success", healPayload) })
+  // 확인 버튼은 반드시 **이 임시 연출 안에서** 찾는다 — 아래 게임 표면(행동 패널)에도 같은
+  // 이름의 버튼이 있어서, 화면 전체에서 찾으면 연출이 아닌 쪽을 누르게 된다.
+  const healPanel = view.container.querySelector("[data-ingame-night-success-pending]")
+  assert.notEqual(healPanel, null, "HEAL의 임시 연출이 뜨지 않았다")
+  assert.equal(healPanel.getAttribute("data-ingame-night-success-pending"), "HEAL")
+  const healConfirm = findButton(healPanel, "확인")
+  assert.notEqual(healConfirm, null, "임시 연출에 확인 버튼이 없다")
+  await act(async () => { healConfirm.click() })
+  assert.equal(socket.emitsFor("acknowledge_night_action_success").length, 2,
+    "두 번째 연출의 완료 보고가 없다")
+  ctx.ack(ctx.doctorUuid, healPayload)
+  assert.deepEqual(useInGameStore.getState().nightSuccessQueue, [], "두 연출을 소비했는데 큐가 남았다")
+
+  // 최종 생존은 연출이 아니라 canonical roster에서만 온다 — 다음 낮 결과가 반영된 뒤에 뜬다.
+  assert.equal(view.container.querySelector("[data-ingame-night-success-final]"), null,
+    "밤 결과가 반영되기 전에 최종 상태가 떴다")
+  const nextDayIndex = ctx.session.dayIndex + 1
+  await act(async () => {
+    socket.deliver("night_result_applied", {
+      gameId: ctx.session.id,
+      phase: "DAY",
+      dayIndex: nextDayIndex,
+      players: backendRosterForStore(ctx).map((p) => ({ uuid: p.uuid, alive: true })),
+      victimUuid: null,
+      deathReveals: [],
+    })
+  })
+  const finalPanel = view.container.querySelector("[data-ingame-night-success-final]")
+  assert.notEqual(finalPanel, null, "킬+치료 두 연출을 마친 대상자에게 최종 생존 표시가 뜨지 않았다")
+  assert.equal(finalPanel.getAttribute("data-ingame-night-success-final"), "ALIVE",
+    "치료로 살아남은 대상자가 사망으로 표시됐다")
+  assert.equal(socket.emitsFor("acknowledge_night_action_success").length, 2,
+    "최종 생존 표시가 추가 완료 보고를 만들었다")
+  resetScreenBetweenScenes()
+
+  // ── ③ 재생 실패: 자동재생 차단은 재시도 화면만 보여주고, 건너뛰기로만 끝난다 ─────
+  const failCtx = setupBackendNight("f27bl-prod-retry")
+  assert.deepEqual(failCtx.submit(failCtx.jokerUuid, failCtx.citizenUuid), { ok: true })
+  const failPayload = failCtx.receivedBy(failCtx.citizenUuid, "night_action_success")[0].payload
+
+  seedFrontSession(failCtx, failCtx.citizenUuid)
+  const failSocket = createFrontSocket({ forwardEmitTo: failCtx.backendSockets.get(failCtx.citizenUuid) })
+  const originalPlay = dom.window.HTMLMediaElement.prototype.play
+  try {
+    dom.window.HTMLMediaElement.prototype.play = function blockedPlay() {
+      const err = new Error("NotAllowedError")
+      err.name = "NotAllowedError"
+      return Promise.reject(err)
+    }
+    const failView = await mountInGamePageDirect(failSocket, InGamePage)
+    await act(async () => { failSocket.deliver("night_action_success", failPayload) })
+    await act(async () => { await flushMicrotasks() })
+
+    // 버튼은 이 연출 안에서만 찾는다(아래 게임 표면의 같은 이름 버튼과 섞이지 않게).
+    const killPanel = () => failView.container.querySelector("[data-ingame-night-success-kill]")
+    assert.notEqual(killPanel(), null, "KILL 연출 자체가 마운트되지 않았다")
+    assert.notEqual(findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+      "자동재생 차단인데 재시도 화면이 뜨지 않았다")
+    assert.equal(failSocket.emitsFor("acknowledge_night_action_success").length, 0,
+      "재시도 화면에서 이미 완료를 보고했다")
+
+    // 다시 눌러도 막히는 환경 — 여전히 보고하지 않고, 사용자가 빠져나갈 길만 남는다.
+    await act(async () => { findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL).click() })
+    await act(async () => { await flushMicrotasks() })
+    assert.equal(failSocket.emitsFor("acknowledge_night_action_success").length, 0,
+      "재시도 실패가 완료 보고를 만들었다")
+
+    const skipButton = findButton(killPanel(), INGAME_KILL_REVEAL_SKIP_LABEL)
+    assert.notEqual(skipButton, null, "재시도 화면에 건너뛰기가 없어 연출을 빠져나갈 수 없다")
+    await act(async () => { skipButton.click() })
+    const skipAcks = failSocket.emitsFor("acknowledge_night_action_success")
+    assert.equal(skipAcks.length, 1, "건너뛰기가 완료 보고 한 번으로 이어지지 않았다")
+    assert.equal(skipAcks[0].payload.outcome, "SKIPPED", "건너뛰기가 SKIPPED로 보고되지 않았다")
+    assert.deepEqual(skipAcks[0].response, { ok: true, duplicate: false })
+    assert.equal(failCtx.session.nightTurnRole, null, "한 수신자의 건너뛰기만으로 다음 역할이 시작됐다")
+    failCtx.ack(failCtx.jokerUuid, failPayload, "SKIPPED")
+    assert.equal(failCtx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 끝났는데 다음 역할이 없다")
+  } finally {
+    dom.window.HTMLMediaElement.prototype.play = originalPlay
+  }
+  resetScreenBetweenScenes()
+
+  // ── ④ 마지막 밤: 종료가 연출보다 먼저 도착해도 연출을 끝낸 뒤 결과 화면으로 간다 ──
+  const lastCtx = setupBackendNight("f27bl-prod-last-night")
+  assert.deepEqual(lastCtx.submit(lastCtx.jokerUuid, lastCtx.citizenUuid), { ok: true })
+  const lastPayload = lastCtx.receivedBy(lastCtx.citizenUuid, "night_action_success")[0].payload
+
+  seedFrontSession(lastCtx, lastCtx.citizenUuid)
+  const lastSocket = createFrontSocket({ forwardEmitTo: lastCtx.backendSockets.get(lastCtx.citizenUuid) })
+  const lastView = await mountInGamePageDirect(lastSocket, InGamePage)
+
+  await act(async () => { lastSocket.deliver("night_action_success", lastPayload) })
+  assert.notEqual(lastView.container.querySelector("video[src]"), null, "연출 영상이 시작되지 않았다")
+
+  await act(async () => {
+    lastSocket.deliver("night_result_applied", {
+      gameId: lastCtx.session.id,
+      phase: "ENDED",
+      dayIndex: lastCtx.session.dayIndex,
+      players: backendRosterForStore(lastCtx)
+        .map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== lastCtx.citizenUuid })),
+      victimUuid: lastCtx.citizenUuid,
+      winResult: { winner: "JOKER" },
+      deathReveals: [],
+    })
+  })
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
+  assert.equal(lastView.container.querySelector("[data-test-game-result]"), null,
+    "아직 연출이 남았는데 결과 화면으로 넘어갔다")
+  assert.notEqual(lastView.container.querySelector("video[src]"), null, "종료 도착이 연출을 잘랐다")
+
+  const lastVideo = lastView.container.querySelector("video[src]")
+  await act(async () => { fireEvent(lastVideo, new dom.window.Event("ended")) })
+  await act(async () => { await flushMicrotasks() })
+  assert.notEqual(lastView.container.querySelector("[data-test-game-result]"), null,
+    "연출이 끝났는데 결과 화면으로 가지 않았다")
+  assert.equal(lastSocket.emitsFor("acknowledge_night_action_success").length, 1,
+    "마지막 밤의 완료 보고가 정확히 한 번이 아니다")
+  resetScreenBetweenScenes()
 })

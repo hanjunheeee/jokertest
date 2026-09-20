@@ -637,6 +637,42 @@ test("open이 아니면 아무것도 그리지 않는다", () => {
   }
 })
 
+/**
+ * 소비처 연결(AC-03): 이 컴포넌트의 표시 값은 **오직 useInGameNightSuccessPresentation**에서
+ * 온다. props를 하나도 주지 않으면 그 사실이 그대로 드러난다 — 컴포넌트가 직접 훅을 불러
+ * 큐의 선두 사건을 그리고, 재생 종료가 같은 훅의 finish를 지나 실제 서버 보고까지 이어진다.
+ *
+ * (InGamePage는 다른 오버레이와의 우선순위를 합쳐야 해서 같은 훅의 값을 props로 내려보낸다 —
+ *  그 controlled 경로는 이 파일의 나머지 컴포넌트 층 시험과 아래 페이지 층 시험이 본다.)
+ */
+test("소비처 연결(AC-03): props 없이도 컴포넌트가 직접 훅을 불러 선두 사건을 표시하고 완료를 보고한다", () => {
+  seedNightSession()
+  const socket = createFakeSocket()
+  act(() => setSocket(socket))
+  // 사건은 실제 전역 수신 훅이 store에 넣는다 — 컴포넌트는 그 store만 본다(대역 없음).
+  const receiver = renderHook(() => useGameSessionSocketEvents(), { wrapper: routerWrapper })
+  act(() => socket.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "standalone-kill" })))
+  assert.equal(useInGameStore.getState().nightSuccessQueue.length, 1, "전제: 큐에 사건 하나가 있어야 한다")
+
+  const { container, unmount } = renderPresentation({})
+  try {
+    const video = container.querySelector("video")
+    assert.notEqual(video, null, "props 없이 놓아둔 컴포넌트가 큐의 선두 KILL 사건을 그리지 않았다")
+    assert.equal(video.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL)
+
+    act(() => { fireEvent(video, new dom.window.Event("ended")) })
+    const acks = socket.ackCallsFor("acknowledge_night_action_success")
+    assert.equal(acks.length, 1, "컴포넌트가 직접 부른 훅의 finish가 완료 보고로 이어지지 않았다")
+    assert.equal(acks[0].payload.eventId, "standalone-kill")
+    assert.deepEqual(useInGameStore.getState().nightSuccessQueue, [], "완료한 사건이 큐에 남았다")
+    assert.equal(container.querySelector("video"), null, "완료한 사건의 연출이 그대로 남았다")
+  } finally {
+    unmount()
+    receiver.unmount()
+    act(() => setSocket(null))
+  }
+})
+
 // ── 3) 페이지 층 ─────────────────────────────────────────────────────────
 
 const { RouterProvider } = await import("react-router-dom")

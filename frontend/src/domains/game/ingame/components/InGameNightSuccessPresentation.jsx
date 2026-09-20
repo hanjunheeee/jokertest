@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import InGameParchmentModalBase from "./parchment/InGameParchmentModalBase.js"
 import InGameParchmentConfirmButton from "./parchment/InGameParchmentConfirmButton.js"
+import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
 import {
   INGAME_KILL_ANIMATION_VIDEO_URL,
@@ -217,14 +218,39 @@ function InGameNightSuccessPendingAsset({ type, eventId, onFinish }) {
 /**
  * F-27b: 밤 성공 사건(night_action_success) 큐의 표시 컴포넌트.
  *
- * useInGameNightSuccessPresentation이 넘기는 현재 사건 하나만 그린다 — KILL은 실제 영상을,
- * 나머지 세 종류는 임시 연출을 보여주고, 큐가 비면 finalStatus(있을 때만) 최종 생존 화면으로
- * 이어진다. 어떤 경로도 이 컴포넌트가 직접 소켓 emit이나 store 변경을 하지 않는다 — 모든
- * 종료는 finish(outcome) 한 콜백을 통해 훅으로만 올라간다.
+ * 표시에 필요한 값의 출처는 **오직 useInGameNightSuccessPresentation 하나**다. 그래서 이
+ * 컴포넌트는 스스로 설 수 있다 — props 없이 놓아두면 그 훅을 직접 불러 큐의 선두 사건을 읽고,
+ * 재생 종료를 같은 훅의 finish로 보고한다(store·소켓을 직접 만지는 줄은 이 파일에 없다).
+ *
+ * 다만 InGamePage는 자기 화면의 다른 오버레이(자기 역할 공개·공개 사망 연출)와의 우선순위를
+ * 합쳐 "지금 띄워도 되는가"를 정해야 하므로, **같은 훅으로 만든 값**을 props로 내려보낸다.
+ * open이 실제로 넘어왔으면 그쪽이 이긴다(controlled). 그때 이 컴포넌트가 가진 자기 훅은
+ * hold로 접어 둔다 — 두 벌의 표시가 동시에 열리거나, 페이지가 보류시킨 연출이 여기서 혼자
+ * 열리는 일이 없어야 한다.
+ *
+ * 어느 쪽이든 이 컴포넌트가 직접 소켓 emit이나 store 변경을 하지 않는 것은 같다 — KILL은 실제
+ * 영상을, 나머지 세 종류는 임시 연출을 보여주고, 큐가 비면 finalStatus(있을 때만) 최종 생존
+ * 화면으로 이어지며, 모든 종료는 finish(outcome) 한 콜백을 통해 훅으로만 올라간다.
  */
 export default function InGameNightSuccessPresentation({
-  current, open, finish, assetStatus, finalStatus, onClose,
-}) {
+  current: currentProp,
+  open: openProp,
+  finish: finishProp,
+  assetStatus: assetStatusProp,
+  finalStatus: finalStatusProp,
+  onClose: onCloseProp,
+  hold = false,
+} = {}) {
+  const controlled = openProp !== undefined
+  const owned = useInGameNightSuccessPresentation({ hold: controlled || hold })
+
+  const current = controlled ? currentProp : owned.current
+  const open = controlled ? openProp : owned.open
+  const finish = controlled ? finishProp : owned.finish
+  const assetStatus = controlled ? assetStatusProp : owned.assetStatus
+  const finalStatus = controlled ? finalStatusProp : owned.finalStatus
+  const onClose = controlled ? onCloseProp : owned.onClose
+
   if (!open) return null
 
   if (current) {
