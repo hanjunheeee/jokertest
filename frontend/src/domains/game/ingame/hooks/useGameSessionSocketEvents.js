@@ -15,6 +15,7 @@ import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import {
   getInGameIdentityScopeVersion,
   isCurrentGameKickEvent,
+  noteInGameConnectionRebound,
   readInGameReceiptScope,
   subscribeInGameIdentityScope,
   useInGameStore,
@@ -168,7 +169,14 @@ export function useGameSessionSocketEvents() {
   const [connectSeq, setConnectSeq] = useState(0)
   useEffect(() => {
     if (!socket) return undefined
-    const handleConnect = () => setConnectSeq((current) => current + 1)
+    const handleConnect = () => {
+      setConnectSeq((current) => current + 1)
+      // F-26b(AC-02): 같은 소켓 객체의 재연결도 이전 연결이 수락한 밤 성공 사건 기록(큐·수락
+      // eventId·ACK 표식)을 취소해야 한다 — ingameStore는 소켓에 직접 리스너를 걸지 않으므로
+      // (다른 기능의 리스너 집합을 늘리지 않기 위해서다), 이미 connect를 구독하는 이 effect가
+      // 그 사실을 store에 전달한다.
+      noteInGameConnectionRebound()
+    }
     socket.on("connect", handleConnect)
     return () => socket.off("connect", handleConnect)
   }, [socket])

@@ -4494,90 +4494,123 @@ function getCurrentSocketForUuid(io, uuid) {
 }
 
 /** ROLE_REVEAL 확인·낮 투표 준비·NIGHT 행동 제출·JOKER 비밀 채팅·공개 DAY/사망자 채팅·명시적 이탈 이벤트 배선을 담당합니다. */
+// F-26b(AC-05): acknowledge_night_action_success가 허용하는 정확한 필드 집합. uuid·
+// membershipId·perspectives·targetId·서버 내부 wait 토큰 같은 값은 이 요청에 실리지 않는다 —
+// 그런 키가 하나라도 있으면(오타·다른 계약 payload 재사용 등) 형태 오류로 즉시 거부한다.
+const NIGHT_SUCCESS_ACK_ALLOWED_KEYS = new Set(['gameId', 'nightDayIndex', 'eventId'])
+
+/**
+ * F-26b(AC-05): 지금 이 session의 phase/dayIndex가 밤 nightDayIndex의 사건을 완료할 수 있는
+ * 수명 안인가. 수락은 NIGHT n에서만 일어나고, 완료는 그 수락 범위가 유지된 채 NIGHT n·
+ * DAY n+1·TRIBUNAL n+1·ENDED n 또는 n+1일 때만 허용한다(다음 NIGHT n+1부터는 보관함 자체가
+ * 교체돼 STALE_EVENT가 되지만, 이 검사는 phase/dayIndex 기준으로 같은 경계를 한 번 더 명시한다).
+ */
+function isNightSuccessCompletionWindowOpen(session, nightDayIndex) {
+    if (session.phase === 'NIGHT') return session.dayIndex === nightDayIndex
+    if (session.phase === 'DAY' || session.phase === 'TRIBUNAL') return session.dayIndex === nightDayIndex + 1
+    if (session.phase === 'ENDED') return session.dayIndex === nightDayIndex || session.dayIndex === nightDayIndex + 1
+    return false
+}
+
 /**
  * F-26b(AC-05): 밤 성공 사건 소비 완료 ACK. registerGameHandlers가
  * acknowledge_night_action_success로 등록한다 — 완료 여부만 기록하고 턴 진행·판정·대기 해제는
  * 어떤 것도 건드리지 않는다(releaseNightPresentationWait는 여전히 즉시 통과이고, 실제 대기
  * 구현은 F-27a의 몫으로 남는다).
  *
- * 검증은 형태 → 연결/canonical 소켓 → 참여 세션 → 완료 보관함의 사건·수명 → 원래 수신자(소켓
- * 객체·id·소속)·현재 채널 자격 순으로 진행하고, 중복 판정은 그 모두를 통과한 **뒤**에 온다.
- * 실패 응답은 INVALID_PAYLOAD·NOT_ELIGIBLE·STALE_EVENT 중 하나이며 사건이나 다른 수신자의
- * 정보를 담지 않는다. 성공 응답은 {ok:true, duplicate}뿐이다 — 최초 완료는 duplicate:false,
- * 같은 수신자의 재요청은 duplicate:true다.
+ * callback은 **선택적**이다(계획 계약) — 없거나 함수가 아니면 검증·최초 완료 기록은 그대로
+ * 수행하고 응답만 생략한다. frontend/src/domains/game/ingame/store/ingameStore.js의
+ * completeNightSuccess는 항상 callback을 넘기지만, 이 핸들러 자체의 계약은 그것과 독립적이다.
+ *
+ * 검증은 형태(정확히 세 필드) → 연결/canonical 소켓 → 참여 세션 → 완료 보관함의 사건·수명
+ * (phase/dayIndex 포함) → 원래 수신자(소켓 객체·id·소속)·현재 채널 자격 순으로 진행하고, 중복
+ * 판정은 그 모두를 통과한 **뒤**에 온다. 실패 응답은 INVALID_PAYLOAD·NOT_ELIGIBLE·STALE_EVENT
+ * 중 하나이며 사건이나 다른 수신자의 정보를 담지 않는다. 성공 응답은 {ok:true, duplicate}뿐이다 —
+ * 최초 완료는 duplicate:false, 같은 수신자의 재요청은 duplicate:true다.
  */
 function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback) {
-    if (typeof callback !== 'function') return
+    const reply = typeof callback === 'function' ? (result) => respond(callback, result) : () => {}
 
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    const payloadKeys = Object.keys(payload)
+    if (payloadKeys.length !== NIGHT_SUCCESS_ACK_ALLOWED_KEYS.size
+        || payloadKeys.some((key) => !NIGHT_SUCCESS_ACK_ALLOWED_KEYS.has(key))) {
+        reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
         return
     }
     const { gameId, nightDayIndex, eventId } = payload
     if (typeof gameId !== 'string' || gameId.length === 0) {
-        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
         return
     }
     if (!Number.isInteger(nightDayIndex) || nightDayIndex < 0) {
-        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
         return
     }
     if (typeof eventId !== 'string' || eventId.length === 0) {
-        respond(callback, { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
         return
     }
 
     if (!isCurrentSocketForUuid(uuid, socket, io)) {
-        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        reply({ ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
         return
     }
 
     const session = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
     if (!session) {
-        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        reply({ ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        return
+    }
+
+    if (!isNightSuccessCompletionWindowOpen(session, nightDayIndex)) {
+        reply({ ok: false, code: 'STALE_EVENT', message: '더 이상 유효하지 않은 사건입니다.' })
         return
     }
 
     const store = nightSuccessReceiptsBySession.get(session)
     if (!store || store.nightDayIndex !== nightDayIndex) {
-        respond(callback, { ok: false, code: 'STALE_EVENT', message: '더 이상 유효하지 않은 사건입니다.' })
+        reply({ ok: false, code: 'STALE_EVENT', message: '더 이상 유효하지 않은 사건입니다.' })
         return
     }
     const byUuid = store.byEvent.get(eventId)
     if (!byUuid) {
-        respond(callback, { ok: false, code: 'STALE_EVENT', message: '더 이상 유효하지 않은 사건입니다.' })
+        reply({ ok: false, code: 'STALE_EVENT', message: '더 이상 유효하지 않은 사건입니다.' })
         return
     }
     const record = byUuid.get(uuid)
     if (!record) {
-        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        reply({ ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
         return
     }
     // F-26b: 원래 이 사건을 전달받은 바로 그 소켓 객체·id여야 한다 — 재연결로 만든 새 객체나
     // namespace의 같은 id를 가진 다른 객체는 이 완료의 소유자가 아니다.
     if (record.socket !== socket || record.socketId !== socket.id) {
-        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        reply({ ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
         return
     }
     if ((session.players.get(uuid)?.membershipId ?? null) !== record.membershipId) {
-        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        reply({ ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
         return
     }
     if (!isEligibleSessionRecipient(session, socket, uuid)) {
-        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        reply({ ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
         return
     }
     if (hasMembershipOutsideSession(session, uuid)) {
-        respond(callback, { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+        reply({ ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
         return
     }
 
     if (record.completed) {
-        respond(callback, { ok: true, duplicate: true })
+        reply({ ok: true, duplicate: true })
         return
     }
     record.completed = true
-    respond(callback, { ok: true, duplicate: false })
+    reply({ ok: true, duplicate: false })
 }
 
 function registerGameHandlers(io, socket, uuid) {

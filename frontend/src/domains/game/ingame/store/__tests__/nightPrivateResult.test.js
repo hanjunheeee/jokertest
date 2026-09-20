@@ -577,6 +577,27 @@ test("AC-02: 다른 gameId·다른 밤 번호·잘못된 형태의 사건은 sto
   session.close()
 })
 
+test("AC-02: 같은 소켓 객체가 재연결되면(connect 재발생) 이전 연결이 수락한 사건은 취소되고 완료해도 emit하지 않는다", () => {
+  seedNightSession()
+  const session = openSession()
+
+  session.deliver("night_action_success", buildKillSuccessPayload())
+  assert.equal(readQueue().length, 1)
+
+  // 소켓 **객체는 그대로 두고** connect만 다시 관측시킨다 — useGameSessionSocketEvents의
+  // connectSeq(훅 리렌더용)와 별개로, ingameStore도 자기 연결 세대를 스스로 올려야 한다
+  // (rebindConnectionScope의 handleObservedSocketConnect 참고).
+  act(() => session.socket.deliver("connect"))
+
+  assert.deepEqual(readQueue(), [], "재연결 후에도 이전 연결이 수락한 사건이 큐에 남아 있다")
+
+  const outcome = session.complete("evt-kill-1")
+  assert.equal(outcome.status, "noop", "재연결 전에 수락한 사건이 완료 대상으로 남아 있다")
+  assert.equal(session.socket.emitted.length, 0, "재연결 전에 수락한 사건의 완료가 emit됐다")
+
+  session.close()
+})
+
 test("AC-03: 사용자=대상자인 자기 치료 사건은 정확히 한 번만 처리되어 큐·완료 요청에 하나씩만 남는다", () => {
   seedNightSession()
   const session = openSession()
@@ -603,7 +624,10 @@ test("AC-04: 수락된 사건이 FIFO 대기 큐로 노출되고, 완료마다 �
   seedNightSession()
   const session = openSession()
 
-  assert.deepEqual(session.queue, [])
+  // 처음의 빈 큐가 곧 store가 소유한 공용 불변 빈 배열이다 — 아래에서 큐를 비운 뒤 이
+  // 참조와 다시 같아지는지(===)를 확인한다.
+  const initialEmptyQueue = session.queue
+  assert.deepEqual(initialEmptyQueue, [])
 
   session.deliver("night_action_success", buildKillSuccessPayload({ eventId: "evt-kill-1" }))
   assert.equal(session.queue.length, 1)
@@ -622,6 +646,9 @@ test("AC-04: 수락된 사건이 FIFO 대기 큐로 노출되고, 완료마다 �
 
   session.complete("evt-heal-1")
   assert.deepEqual(session.queue, [])
+  // F-26b(AC-04): 빈 상태는 항상 같은 공용 불변 배열이어야 한다 — filter()가 만든 새 빈
+  // 배열을 그대로 저장하면 이 참조 동일성이 깨진다.
+  assert.equal(session.queue, initialEmptyQueue, "마지막 항목 소비 뒤의 빈 큐가 공용 빈 배열 참조가 아니다")
 
   session.close()
 })

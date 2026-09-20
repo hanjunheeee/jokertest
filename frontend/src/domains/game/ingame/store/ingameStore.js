@@ -167,6 +167,19 @@ subscribeSocket(rebindConnectionScope)
 rebindConnectionScope()
 
 /**
+ * F-26b(AC-02): **같은 소켓 객체의 실제 재연결**을 호출부(연결을 실제로 관측하는 수신 훅)가
+ * 알려온다. rebindConnectionScope는 객체 참조 비교만 하므로, 재연결로 id만 바뀌고 객체는
+ * 그대로인 전이는 위 구독으로 잡히지 않는다 — 이 store가 소켓에 직접 리스너를 걸지 않는다는
+ * 원칙(바로 위 주석)을 지키면서 그 전이를 반영하려면, 이미 connect 사건을 구독해야 하는
+ * 다른 모듈(useGameSessionSocketEvents의 connectSeq 갱신 effect)이 이 함수를 함께 불러야 한다.
+ * 그래서 이 store 자신의 리스너 집합은 하나도 늘지 않는다.
+ */
+export function noteInGameConnectionRebound() {
+  socketEpoch += 1
+  cancelNightSuccessRecords()
+}
+
+/**
  * 요청을 **보내는 그 순간**의 범위를 한 벌로 캡처한다.
  *
  * 계정 축(accountId·identityGeneration)은 이 store가 읽을 수 없으므로 호출부(인증을 아는 훅)가
@@ -1189,10 +1202,13 @@ export const useInGameStore = create((set) => ({
     let removed = false
     set((current) => {
       if (!isReceiptScopeCurrent(receiptScope, current)) return current
-      const nextQueue = current.nightSuccessQueue.filter((item) => item.eventId !== eventId)
-      if (nextQueue.length === current.nightSuccessQueue.length) return current
+      const filtered = current.nightSuccessQueue.filter((item) => item.eventId !== eventId)
+      if (filtered.length === current.nightSuccessQueue.length) return current
       removed = true
-      return { nightSuccessQueue: nextQueue }
+      // F-26b(AC-04): 빈 상태는 항상 같은 공용 불변 배열이어야 한다(참조 안정성 계약) — 마지막
+      // 항목을 소비했을 때 filter()가 새로 만든 빈 배열을 그대로 저장하면, 이후 selector가
+      // 돌려주는 참조가 다른 빈 상태(EMPTY_NIGHT_SUCCESS_QUEUE)와 달라져 버린다.
+      return { nightSuccessQueue: filtered.length === 0 ? EMPTY_NIGHT_SUCCESS_QUEUE : filtered }
     })
     if (!removed) return { status: "noop" }
     // emit 직전에 범위가 취소됐으면(위 set() 도중의 재확인과 별개로, 이론상의 재진입 대비)
