@@ -432,9 +432,12 @@ test("ok:false ack도 store를 참조 수준에서 전혀 바꾸지 않는다", 
   hook.unmount()
 })
 
-test("타임아웃/오류로 요청이 실패해도 이후 재연결은 정상적으로 다시 요청하고 성공할 수 있다", async () => {
+test("타임아웃/오류로 요청이 실패해도 이후 재연결은 정상적으로 다시 요청하고 성공할 수 있다", async (t) => {
   seedStore({ gameId: "g1" })
   seedAuth("user-a")
+  // ack 창의 만료를 재현하려면 이 시험이 시계를 쥐고 있어야 한다(rejectAsAckTimeout 참고).
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
   const fake = createFakeSessionSnapshotSocket()
   fake.socket.connected = true
   setFakeSocket(fake.socket)
@@ -442,10 +445,7 @@ test("타임아웃/오류로 요청이 실패해도 이후 재연결은 정상�
   const applyCalls = wrapApplySessionSnapshot()
   const hook = renderHook(() => useInGameSessionSnapshotSync())
 
-  await act(async () => {
-    fake.emitWithAckCalls[0].reject(new Error("operation has timed out"))
-    await flushMicrotasks()
-  })
+  await rejectAsAckTimeout(clock, fake.emitWithAckCalls[0])
   assert.equal(applyCalls.length, 0)
 
   await emitConnect(fake)
@@ -1052,9 +1052,11 @@ test("F-23(AC-05): 소속을 싣지 않은(모른다고 말하는) 응답은 이
  * 열리지 않으면 신원 전이로 연출 큐가 버려지는 순간 잔존 ENDED로 결과 화면에 들어가고,
  * 닫히지 않으면 화면이 영영 인게임에 갇힌다. 두 사실을 한 시험에서 함께 고정한다.
  */
-test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 실패여도 반드시 닫는다", async () => {
+test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 실패여도 반드시 닫는다", async (t) => {
   seedStore({ gameId: "g1", playerUuid: "player-1" })
   seedAuth("player-1")
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
   const fake = createFakeSessionSnapshotSocket()
   fake.socket.connected = true
   fake.socket.id = "sock-1"
@@ -1070,10 +1072,7 @@ test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 �
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 재연결이 현재 신원의 스냅샷을 다시 물어야 한다")
   assert.equal(getInGameSnapshotRebindPending(), true, "재연결 구간에 재결속 보류가 열리지 않았다")
 
-  await act(async () => {
-    fake.emitWithAckCalls[1].reject(new Error("operation has timed out"))
-    await flushMicrotasks()
-  })
+  await rejectAsAckTimeout(clock, fake.emitWithAckCalls[1])
   assert.equal(getInGameSnapshotRebindPending(), false, "응답이 끝났는데 보류가 남아 화면이 갇힌다")
 
   // 정상 응답으로 끝나는 경우도 같다.
@@ -1146,9 +1145,11 @@ function deliverTerminalNightResult({ gameId, accountId, playerUuid = "player-1"
  * 구현하든(보류 유지 또는 잔존 상태 무효화) 이 한 줄이 결함을 잡는다. 동시에 영구히 갇혀서도
  * 안 되므로, 다음 연결의 정상 스냅샷에서 이동 근거가 복원되는 것까지 같은 시험에 고정한다.
  */
-test("F-23(SPLIT-1): 재결속 스냅샷이 거부되면 잔존 ENDED의 결과 이동 근거가 남지 않는다", async () => {
+test("F-23(SPLIT-1): 재결속 스냅샷이 거부되면 잔존 ENDED의 결과 이동 근거가 남지 않는다", async (t) => {
   seedEndedStore()
   seedAuth("player-1")
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
   const fake = createFakeSessionSnapshotSocket()
   fake.socket.connected = true
   fake.socket.id = "sock-1"
@@ -1160,10 +1161,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 거부되면 잔존 ENDED의 결과 
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
 
-  await act(async () => {
-    fake.emitWithAckCalls[1].reject(new Error("operation has timed out"))
-    await flushMicrotasks()
-  })
+  await rejectAsAckTimeout(clock, fake.emitWithAckCalls[1])
 
   assert.equal(
     getInGameSnapshotRebindPending() === false && hasResultNavigationBasis(),
@@ -1226,9 +1224,11 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패 응답(ok:false)으로 끝나
  * 반대 방향의 방어다. 재결속을 짊어지지 않은 평범한 첫 동기화가 실패했다고 해서, 방금 받은
  * 정상 종료 결과를 지우면 안 된다 — 그 state는 이전 신원의 잔존물이 아니라 지금 신원의 사실이다.
  */
-test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 신원의 종료 결과를 지우지 않는다", async () => {
+test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 신원의 종료 결과를 지우지 않는다", async (t) => {
   seedEndedStore()
   seedAuth("player-1")
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
   const fake = createFakeSessionSnapshotSocket()
   fake.socket.connected = true
   fake.socket.id = "sock-1"
@@ -1238,10 +1238,9 @@ test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 �
   assert.equal(fake.emitWithAckCalls.length, 1, "전제: 마운트가 한 번 물어야 한다")
   assert.equal(getInGameSnapshotRebindPending(), false, "전제: 마운트 자체는 전이가 아니다")
 
-  await act(async () => {
-    fake.emitWithAckCalls[0].reject(new Error("operation has timed out"))
-    await flushMicrotasks()
-  })
+  // 예산까지 다 쓴 뒤의 끝맺기다 — 이 시험이 보는 것은 그 자리에서 무엇을 지우는가이므로,
+  // 아직 다시 물을 수 있는 이른 거부로는 그 자리에 닿지 못한다.
+  await rejectAsAckTimeout(clock, fake.emitWithAckCalls[0])
 
   assert.equal(hasResultNavigationBasis(), true, "재결속과 무관한 조회 실패가 현재 종료 결과를 지웠다")
 
@@ -1260,7 +1259,9 @@ test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 �
  * 두 경우를 **같은 실패 경로로 나란히** 통과시켜, 판정 기준이 "실패했는가"가 아니라
  * "어느 범위에서 받았는가"임을 한 시험에 고정한다.
  */
-test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDED는 제거되고, 현재 연결에서 받은 종료 결과는 보존된다", async () => {
+test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDED는 제거되고, 현재 연결에서 받은 종료 결과는 보존된다", async (t) => {
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
   // ── (가) 이전 연결이 받아 둔 잔존 ENDED ──────────────────────────────────────
   seedEndedStore({ gameId: "g-stale" })
   seedAuth("player-1")
@@ -1273,10 +1274,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   await emitConnect(stale, () => { stale.socket.id = "stale-2" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
 
-  await act(async () => {
-    stale.emitWithAckCalls[1].reject(new Error("operation has timed out"))
-    await flushMicrotasks()
-  })
+  await rejectAsAckTimeout(clock, stale.emitWithAckCalls[1])
 
   assert.equal(
     hasResultNavigationBasis(), false,
@@ -1310,10 +1308,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   assert.equal(hasResultNavigationBasis(), true, "전제: 이 연결의 정상 종료 결과가 반영돼야 한다")
 
   // 그리고 (가)와 **똑같은** 실패가 그 재결속 요청에 도착한다.
-  await act(async () => {
-    live.emitWithAckCalls[1].reject(new Error("operation has timed out"))
-    await flushMicrotasks()
-  })
+  await rejectAsAckTimeout(clock, live.emitWithAckCalls[1])
 
   assert.equal(getInGameSnapshotRebindPending(), false, "보류가 남아 화면이 영영 갇힌다")
   assert.equal(
@@ -1339,9 +1334,11 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
  * 쓴다. 판정 기준이 "실패했는가"도 "연결이 바뀌었는가"도 아니라 "그 결과를 받은 범위가 아직
  * 현재인가"임을 두 시험이 함께 고정한다.
  */
-test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이전 계정이 받아 둔 종료 결과는 이동 근거로 남지 않는다", async () => {
+test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이전 계정이 받아 둔 종료 결과는 이동 근거로 남지 않는다", async (t) => {
   seedStore({ gameId: "g-auth", playerUuid: "player-1", phase: "NIGHT", dayIndex: 1 })
   seedAuth("player-1")
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
   const fake = createFakeSessionSnapshotSocket()
   fake.socket.connected = true
   fake.socket.id = "sock-1"
@@ -1373,11 +1370,8 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 인증 왕복이 재결속 보류를 열어야 한다")
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 현재 신원의 스냅샷을 다시 물어야 한다")
 
-  // 그 요청이 실패한다 — 현재 신원의 사실을 끝내 확인하지 못했다.
-  await act(async () => {
-    fake.emitWithAckCalls[1].reject(new Error("operation has timed out"))
-    await flushMicrotasks()
-  })
+  // 그 요청이 실패한다 — 현재 신원의 사실을 끝내 확인하지 못했다(예산까지 다 쓴 뒤다).
+  await rejectAsAckTimeout(clock, fake.emitWithAckCalls[1])
 
   assert.equal(
     getInGameSnapshotRebindPending() === false && hasResultNavigationBasis(),
@@ -1897,6 +1891,26 @@ function installRetryClock() {
 }
 
 /**
+ * F-26(AC-01): **ack 창이 만료되어 도착한 거부** — 실제 timeout을 그대로 재현한다.
+ *
+ * 그냥 reject를 떨어뜨리는 것은 "예산 안에서 **일찍** 거부됐다"는 다른 사건이다(그 경로는 같은
+ * 연결에서 남은 예산으로 다시 묻는다 — 이 파일 끝의 두 시험이 그것을 고정한다). 진짜 timeout은
+ * 그 시도의 ack 창(= 남은 예산 전체)이 다 흐른 뒤에만 도착하므로, 시계를 예산 밖으로 민 뒤에
+ * 거부해야 두 사건이 섞이지 않는다. 아래 시험들이 검사하는 것은 **끝맺기** 쪽이다.
+ *
+ * @param {ReturnType<typeof installRetryClock>} clock 이 시험이 쥐고 있는 가짜 시계
+ * @param {{reject: Function}} request 그 시도의 ack 요청
+ */
+async function rejectAsAckTimeout(clock, request) {
+  // 총 예산(5초) 밖으로 민다 — 이 시점에는 그 시도의 ack 창도 함께 만료돼 있다.
+  clock.skip(6000)
+  await act(async () => {
+    request.reject(new Error("operation has timed out"))
+    await flushMicrotasks()
+  })
+}
+
+/**
  * 전송 자체가 실패하는(아무 것도 나가지 않는) 연결. `attempts`가 **시도 횟수**를 세고,
  * `failing = false`로 바꾸면 그 다음 시도부터 평범한 ack 요청이 된다.
  */
@@ -2002,4 +2016,81 @@ test("F-26(AC-01): 일시적인 전송 실패 뒤 다음 재조회가 성공하�
   } finally {
     clock.restore()
   }
+})
+
+// ---------------------------------------------------------------------------
+// F-26(AC-01/AC-06) · **예산 안에서 일찍 도착한 비동기 거부**
+//
+// 전송이 동기 예외로 죽는 경우(위 createFailingTransportSocket)와 달리, 요청은 나갔는데 ack
+// 창이 다 흐르기 전에 Promise가 거부되는 경우가 있다 — 연결이 닫히는 중이라 emit이 실패하거나,
+// 직렬화·어댑터 오류이거나, 서버가 ack를 오류로 돌려주는 경우다. 그 거부를 timeout과 같이
+// 취급해 그 자리에서 끝맺으면 예산이 몇 초 남았는데도 이 연결은 다시 묻지 않는다.
+//
+// 그래서 두 축을 함께 고정한다: (i) 예산이 남았으면 실패로 굳지 않고 다시 묻는다, (ii) 그래도
+// **유한하다** — 거부가 계속되면 예산·상한 안에서 끝나고 전송 횟수가 상한을 넘지 않는다.
+// ---------------------------------------------------------------------------
+
+/** 그 시도의 ack가 창이 다 흐르기 전에 거부된다(timeout이 아니다 — 시계를 밀지 않는다). */
+async function rejectEarly(request) {
+  await act(async () => {
+    request.reject(new Error("connection closed before ack"))
+    await flushMicrotasks()
+  })
+}
+
+test("F-26(AC-01): 예산 안에서 일찍 거부된 전송은 실패로 굳지 않고, 다음 시도의 성공이 그대로 복원한다", async (t) => {
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
+  // 빈 store로 연다 — bootstrapStatus가 'checking'에서 시작하므로 "실패로 굳었는가"가 보인다.
+  const { fake, hook } = openConnectedHook({ empty: true })
+  assert.equal(fake.emitWithAckCalls.length, 1, "전제: 마운트가 한 번 물어야 한다")
+
+  await rejectEarly(fake.emitWithAckCalls[0])
+
+  assert.equal(hook.result.current, "checking",
+    "예산이 남았는데 이른 비동기 거부가 곧바로 실패로 확정됐다")
+  assert.equal(clock.pending(), 1, "이른 비동기 거부 뒤 같은 연결의 재조회가 예약되지 않았다")
+
+  // 다음 시도가 나가고, 이번에는 평범하게 성공한다.
+  await clock.advance(250)
+  assert.equal(fake.emitWithAckCalls.length, 2, "예약된 재조회가 나가지 않았다")
+  assert.deepEqual(fake.emitWithAckCalls[1].payload, {}, "빈 store의 재조회는 gameId 없이 묻는다")
+
+  const payload = recoveryPayload()
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+
+  assert.equal(useInGameStore.getState().gameId, "g1", "회복된 재조회의 응답이 복원하지 못했다")
+  assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId],
+    "이른 거부 뒤 성공한 재조회로 큐가 복원되지 않았다")
+  assert.equal(hook.result.current, "recovered", "복원에 성공했는데 화면이 실패로 남았다")
+  assert.equal(getInGameSnapshotRebindPending(), false)
+  assert.equal(clock.pending(), 0, "성공한 세대의 예약이 남았다")
+
+  hook.unmount()
+})
+
+test("F-26(AC-06): 이른 비동기 거부가 예산이 다할 때까지 이어지면 failed로 끝나고 전송 횟수는 상한을 넘지 않는다", async (t) => {
+  const clock = installRetryClock()
+  t.after(() => clock.restore())
+  const { fake, hook } = openConnectedHook({ empty: true })
+
+  // 나가는 요청마다 창이 흐르기 전에 거부된다 — 재시도가 살아 있는 한 이 순환은 계속된다.
+  // 상한이 없다면 이 반복은 40회를 다 돌고 시도 수도 그만큼 늘어난다.
+  for (let i = 0; i < 40; i += 1) {
+    const attempt = fake.emitWithAckCalls[i]
+    if (attempt) await rejectEarly(attempt)
+    if (clock.pending() === 0) break
+    await clock.advance(250)
+  }
+
+  assert.equal(fake.emitWithAckCalls.length, 20,
+    "이른 거부가 이어질 때 전송 횟수가 상한(최초 시도 포함 20회)을 지키지 않았다")
+  assert.equal(clock.pending(), 0, "끝난 세대의 예약이 남았다")
+  assert.equal(hook.result.current, "failed", "예산·상한이 끝났는데 화면이 확인 중에 갇혔다")
+  assert.equal(getInGameSnapshotRebindPending(), false, "보류가 남아 화면이 영영 갇힌다")
+
+  hook.unmount()
 })
