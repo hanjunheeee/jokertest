@@ -282,6 +282,32 @@ function evaluateWinCondition(session) {
     return null
 }
 
+/**
+ * F-25b: **사망 확정·승패 평가·종료 확정이 실제로 일어난 지점**을 세는 테스트 관찰 통로.
+ *
+ * "그 시점에는 아직 승패 판정이 시작되지 않았다"(AC-01)와 "정확히 1회만 실행된다"(AC-03)는
+ * 호출 횟수에 대한 단언이라, export를 갈아끼우는 방식으로는 셀 수 없다 — 이 모듈 안의
+ * lexical 호출(evaluateWinCondition/finalizeGameSession)은 export를 보지 않기 때문이다.
+ * 그래서 실제 호출 지점에 관찰자를 두되, production 기본값은 항상 null이라 동작이 없다.
+ *
+ * 관찰자는 (1) 무엇도 되돌릴 수 없고(throw를 삼킨다), (2) 원자적 커밋 구간을 재진입할 수
+ * 없다 — 관찰 중에는 아래 두 커밋이 NIGHT_COMMIT_REENTERED로 즉시 거부된다.
+ */
+let nightCommitObserver = null
+let nightCommitObserverBusy = false
+
+function observeNightCommit(event, detail) {
+    if (typeof nightCommitObserver !== 'function') return
+    nightCommitObserverBusy = true
+    try {
+        nightCommitObserver(event, detail)
+    } catch (err) {
+        // 관찰 실패가 이미 확정된 상태를 되돌리거나 남은 단계를 건너뛰게 하지 않는다.
+    } finally {
+        nightCommitObserverBusy = false
+    }
+}
+
 // 세션을 종료 상태로 확정하는 유일한 mutation이다. 신규 상태 객체를 만들지 않고 기존
 // session.phase에 'ENDED'를 추가하는 방식을 그대로 따른다 — session.winResult는 이 호출
 // 이후에만 존재하며, 그 존재 여부 자체가 "종료됨"을 뜻하는 신호다.
@@ -293,6 +319,7 @@ function finalizeGameSession(session, winResult) {
     session.phase = 'ENDED'
     session.winResult = winResult
     session.endedAt = Date.now()
+    observeNightCommit('GAME_FINALIZED', { gameId: session.id, winner: winResult?.winner ?? null })
 }
 
 // 8개 진입점(prepare 4 + commit 4)이 각자 최상단에서(기존 idempotency 단축 경로보다 먼저)
@@ -785,6 +812,10 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         // 시점엔 항상 null이어야 하고(assertValidSessionForCommit), 판정 이후에는 다시 null로
         // 돌아가지 않는 immutable 값이 된다(재판정 금지 계약).
         nightResolution: null,
+        // F-25b: 이번 밤의 **진행 중** 기록(역할별 완료·킬/치료 사건·회복 상태). 확정
+        // 결과(nightResolution)와 분리된 서버 내부 전용 자료이며 공개 payload·snapshot 어느
+        // 쪽에도 직렬화되지 않는다. 매 NIGHT 진입에서 null로 되돌린다.
+        nightProgress: null,
         // DAY 투표/기권 제출을 추적한다. uuid → targetId(참가자 uuid) | null(기권). 커밋
         // 시점엔 항상 빈 Map이어야 하고(assertValidSessionForCommit), NIGHT→DAY 전이마다
         // commitNightResolution이 새 빈 Map으로 교체한다(이전 DAY의 투표를 이어받지 않음).
@@ -1573,6 +1604,241 @@ function resolveRoleNightAction(session, role, excludedActorUuids = new Set()) {
     return tie ? null : winner
 }
 
+// ── F-25b: 밤 진행 자료(session.nightProgress) ───────────────────────────────
+//
+// 확정 결과(session.nightResolution)와 **분리된** 서버 내부 전용 기록이다. 역할 턴이 하나씩
+// 끝날 때마다(completeNightRole) 그 역할의 결과·사건·완료 표식이 여기에 쌓이고, 밤 전체가
+// 끝난 뒤의 최종 준비(prepareNightResolutionForSession)가 이 기록 하나만 읽어 확정 resolution을
+// 만든다. 공개 payload·snapshot 어느 쪽도 이 객체를 직렬화하지 않는다(A-02).
+//
+// 이 기록이 canonical player.alive를 절대 바꾸지 않는다는 것이 F-25b의 핵심이다 — 광대가
+// 지목한 대상은 밤이 최종화될 때까지 alive:true로 남고(임시 사망), 그래서 그 전 시점의
+// 승패 판정·경기 종료·전적 저장이 시작될 수 없다(AC-01).
+const NIGHT_RECOVERY_STATES = Object.freeze({
+    PENDING_RECOVERY: 'PENDING_RECOVERY',
+    RECOVERED: 'RECOVERED',
+    DEATH_CANDIDATE: 'DEATH_CANDIDATE',
+})
+
+/**
+ * 아직 회복하지 못한(= 이번 밤 공격을 받고 살아나지 못한) 상태인가. 의사 턴이 끝나면
+ * PENDING_RECOVERY가 DEATH_CANDIDATE로 바뀌므로, 후속 역할(GUARD/WITCH_HUNTER)의 **행위자**
+ * 배제는 두 값을 똑같이 취급해야 F-25a의 RECOVERY_BLOCKED 계약이 그대로 유지된다.
+ */
+function isRecoveryBlockedState(state) {
+    return state === NIGHT_RECOVERY_STATES.PENDING_RECOVERY || state === NIGHT_RECOVERY_STATES.DEATH_CANDIDATE
+}
+
+function createNightProgress(session, { sequenced = false } = {}) {
+    return {
+        gameId: session.id,
+        nightDayIndex: session.dayIndex,
+        // 역할 완료마다 1씩 오른다. 준비 객체가 이 값을 붙들고 있어서, 준비 이후에 역할이
+        // 하나 더 완료되면 그 준비는 오래된 것으로 거부된다.
+        revision: 0,
+        // 이 밤이 턴 시퀀서로 진행 중인가. nightTurnRole은 턴 사이에 잠시 null이 되므로
+        // "순차 진행 중"의 근거로 쓸 수 없다(마지막 턴 종료 방송 중의 틈).
+        sequenced,
+        completedRoles: new Set(),
+        roleSteps: [],
+        events: [],
+        recoveryStates: new Map(),
+        roleTargets: new Map(),
+        // 의사 턴이 끝났는가 = 이번 밤의 치료 가능성이 닫혔는가. 의사가 없거나 전멸했거나
+        // 기권·상충이어도 의사 턴이 끝나면 참이 된다(A-06).
+        healingClosed: false,
+    }
+}
+
+/** 이 진행 자료가 **지금 이 세션의 이 밤** 것인가(다른 밤의 기록을 재사용하지 않는다). */
+function matchesCurrentNight(session, progress) {
+    return !!progress
+        && progress.gameId === session.id
+        && progress.nightDayIndex === session.dayIndex
+}
+
+function getNightProgress(session) {
+    return matchesCurrentNight(session, session?.nightProgress) ? session.nightProgress : null
+}
+
+function ensureNightProgress(session, { sequenced = false } = {}) {
+    let progress = getNightProgress(session)
+    if (!progress) {
+        progress = createNightProgress(session, { sequenced })
+        session.nightProgress = progress
+    }
+    if (sequenced) progress.sequenced = true
+    return progress
+}
+
+/**
+ * 한 역할의 이번 밤 결과를 계산한다(순수 계산 — progress를 읽기만 한다). F-25a의 단일 루프
+ * 본문을 그대로 옮긴 것이라 역할별 규칙은 비트 단위로 같다. 순차 경로와 기존 직접 판정
+ * 경로가 **같은 함수**를 쓰므로 두 경로의 판정이 갈릴 수 없다(AC-05).
+ */
+function computeNightRoleStep(session, progress, role) {
+    const hasRoleInGame = [...session.players.values()].some((player) => player.role === role)
+    if (!hasRoleInGame) return { role, targetId: null, status: 'NO_ROLE' }
+
+    const actors = getAliveActorUuidsForRole(session, role)
+    if (actors.length === 0) {
+        // 그 역할 보유자가 전멸했거나(사망), dayIndex 때문에 아직 활동할 수 없다.
+        return { role, targetId: null, status: 'NO_ACTOR' }
+    }
+
+    // DOCTOR만 예외다 — 광대에게 공격받은 의사 본인의 자기 치료를 막지 않기 위해 그 단계에는
+    // 배제를 적용하지 않는다(F-25a A-03).
+    const excludedActorUuids = role === 'DOCTOR'
+        ? new Set()
+        : new Set(actors.filter((actorUuid) => isRecoveryBlockedState(progress.recoveryStates.get(actorUuid))))
+
+    const targetId = resolveRoleNightAction(session, role, excludedActorUuids)
+    if (targetId === null) {
+        return { role, targetId: null, status: excludedActorUuids.size > 0 ? 'RECOVERY_BLOCKED' : 'NO_RESULT' }
+    }
+    return { role, targetId, status: 'RESOLVED' }
+}
+
+/**
+ * 의사 턴 종료 = 이번 밤의 치료 가능성이 닫히는 순간. 남은 PENDING_RECOVERY를 전부
+ * DEATH_CANDIDATE로 바꾸지만 **canonical alive는 건드리지 않는다**(A-06) — 최종 사망은 밤
+ * 전체가 끝난 뒤의 commitNightResolution에서 단 한 번 확정된다.
+ */
+function closeNightHealing(progress) {
+    if (progress.healingClosed) return
+    progress.healingClosed = true
+    for (const [uuid, state] of progress.recoveryStates) {
+        if (state === NIGHT_RECOVERY_STATES.PENDING_RECOVERY) {
+            progress.recoveryStates.set(uuid, NIGHT_RECOVERY_STATES.DEATH_CANDIDATE)
+        }
+    }
+}
+
+/**
+ * 계산된 역할 결과를 진행 자료에 **기록**한다(유일한 mutation 경계). 같은 역할이 두 번
+ * 기록되는 일은 호출자가 completedRoles로 먼저 막는다 — 그래야 사건(events)이 늘어나지 않는다(A-07).
+ */
+function applyNightRoleStep(progress, step) {
+    progress.roleSteps.push(step)
+    progress.roleTargets.set(step.role, step.targetId)
+
+    if (step.status === 'RESOLVED') {
+        if (step.role === 'JOKER') {
+            progress.recoveryStates.set(step.targetId, NIGHT_RECOVERY_STATES.PENDING_RECOVERY)
+            progress.events.push({ type: 'KILL', targetId: step.targetId })
+        } else if (step.role === 'DOCTOR') {
+            // "치료 성공" 사건은 실제로 회복 대기 중이던 대상을 되살렸을 때만 만든다 —
+            // 공격받지 않은 생존자를 보호해도 사건은 생기지 않는다(roleTargets에는 그대로 담겨
+            // 기존 assassinationBlocked 계약을 지킨다).
+            if (progress.recoveryStates.get(step.targetId) === NIGHT_RECOVERY_STATES.PENDING_RECOVERY) {
+                progress.recoveryStates.set(step.targetId, NIGHT_RECOVERY_STATES.RECOVERED)
+                progress.events.push({ type: 'HEAL', targetId: step.targetId })
+            }
+        }
+    }
+
+    // 상태·사유와 무관하게 의사 턴이 끝나면 치료 가능성이 닫힌다.
+    if (step.role === 'DOCTOR') closeNightHealing(progress)
+
+    progress.completedRoles.add(step.role)
+    progress.revision += 1
+}
+
+/**
+ * 그 역할의 생존 행위자가 낸 non-null 대상이 여전히 참가자이고 역할이 요구하는 생존 상태를
+ * 유지하는지 확인한다. prepareNightResolution의 두 번째 루프와 같은 규칙을 역할 단위로
+ * 좁힌 것이다 — 통과해야만 그 역할의 결과를 기록한다.
+ */
+function findInvalidRoleSubmission(session, role) {
+    for (const actorUuid of getAliveActorUuidsForRole(session, role)) {
+        const target = session.nightActions.get(actorUuid)
+        if (target === null || target === undefined) continue
+        const targetPlayer = session.players.get(target)
+        if (!targetPlayer) return actorUuid
+        const targetStateOk = requiresAliveTarget(role) ? targetPlayer.alive === true : targetPlayer.alive !== true
+        if (!targetStateOk) return actorUuid
+    }
+    return null
+}
+
+/**
+ * F-25b: **한 역할의 밤 턴을 확정한다.** 소켓 계층의 endNightTurn이 종료 방송·다음 턴 진행보다
+ * 먼저 부르는 유일한 진입점이다.
+ *
+ * 하는 일은 딱 둘이다 — (1) 그 역할의 canonical 결과를 계산해 session.nightProgress에 기록하고,
+ * (2) 그 역할이 DOCTOR면 이번 밤의 치료 가능성을 닫는다. **canonical player.alive는 바꾸지
+ * 않으며**, 승패 판정·경기 종료·전적 저장은 어느 것도 시작하지 않는다(AC-01/AC-03/A-06).
+ *
+ * 멱등하다 — 이미 완료된 역할의 재진입은 사건을 추가하지 않고 alreadyCompleted:true만
+ * 돌려준다(emit 재진입·늦은 타이머가 같은 역할을 두 번 기록할 수 없다).
+ *
+ * @param {object} session - canonical GameSession(registry에 등록된 바로 그 객체여야 한다)
+ * @param {string} role - NIGHT_TURN_ORDER의 역할
+ */
+function completeNightRole(session, role) {
+    if (!session || typeof session.id !== 'string') return { ok: false, code: 'SESSION_NOT_FOUND' }
+    // 자동 경로는 대표 UUID·가짜 소켓을 만들지 않는다(A-10) — 권한의 근거는 "registry에 있는
+    // 바로 그 canonical session 객체인가" 하나뿐이다.
+    if (gameSessions.get(session.id) !== session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+
+    const endedCheck = assertSessionNotEnded(session)
+    if (!endedCheck.ok) return endedCheck
+
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+    if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
+    if (!NIGHT_TURN_ORDER.includes(role)) return { ok: false, code: 'INVALID_ROLE' }
+
+    const progress = ensureNightProgress(session, { sequenced: true })
+    if (progress.completedRoles.has(role)) {
+        return { ok: true, role, alreadyCompleted: true, revision: progress.revision, healingClosed: progress.healingClosed }
+    }
+
+    if (findInvalidRoleSubmission(session, role) !== null) {
+        // 어떤 것도 기록하지 않는다 — 호출자(endNightTurn)는 종료 방송도 다음 턴 진행도 하지 않는다.
+        return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+    }
+
+    const step = computeNightRoleStep(session, progress, role)
+    applyNightRoleStep(progress, step)
+
+    return {
+        ok: true,
+        role,
+        alreadyCompleted: false,
+        // 방어 복사 — 호출자가 변형해도 진행 자료는 오염되지 않는다.
+        step: { ...step },
+        revision: progress.revision,
+        healingClosed: progress.healingClosed,
+    }
+}
+
+/**
+ * F-25b: 이 밤이 **턴 시퀀서로 진행 중**임을 표시한다(소켓 계층의 startNightTurnSequence가
+ * run을 등록한 직후 한 번 부른다).
+ *
+ * 표식이 필요한 이유: 표식이 없으면 네 역할이 하나도 완료되지 않은 순차 밤에 들어온
+ * resolve_night가 "시퀀서 없는 직접 판정"으로 오인돼 미완료 역할을 건너뛴 채 밤을 확정해
+ * 버린다. 현재 NIGHT가 아니거나 이미 확정된 밤에는 아무 것도 하지 않는다 — 이탈이 먼저
+ * 종결시킨 세션을 이 호출이 되살리지 않는다.
+ */
+function markNightSequenced(session) {
+    if (!session || typeof session.id !== 'string') return false
+    if (gameSessions.get(session.id) !== session) return false
+    if (session.phase !== 'NIGHT') return false
+    if (session.nightResolution !== null) return false
+    ensureNightProgress(session, { sequenced: true })
+    return true
+}
+
+/**
+ * 이번 밤의 어떤 역할이 **이미 확정**되었는가. submitNightAction이 늦은 제출을 거부하는 근거다 —
+ * 마지막 턴 종료 방송 중 nightTurnRole이 잠시 null인 틈에도 완료된 역할을 다시 쓸 수 없다.
+ */
+function isNightRoleCompleted(session, role) {
+    const progress = getNightProgress(session)
+    return !!progress && progress.sequenced && progress.completedRoles.has(role)
+}
+
 /**
  * 보호로 암살이 무산된 밤에 "생존한 JOKER 본인"에게만 가는 개인 통지의 canonical 형태를 만든다.
  *
@@ -1671,6 +1937,12 @@ function submitNightAction(uuid, gameId, targetId) {
     if (currentTurnRole !== null && currentTurnRole !== actor.role) {
         return { ok: false, code: 'NOT_YOUR_TURN' }
     }
+    // F-25b: 순차 진행 중인 밤에서 **이미 확정된 역할**의 늦은 제출은 거부한다. nightTurnRole만
+    // 보면 마지막 턴 종료 방송 중(그 값이 잠시 null인 틈)이나 다음 턴 진입 직전에 완료된 역할의
+    // 결과를 다시 쓸 수 있다 — 그러면 이미 기록된 KILL/HEAL 사건과 집계가 어긋난다(A-07).
+    if (isNightRoleCompleted(session, actor.role)) {
+        return { ok: false, code: 'NOT_YOUR_TURN' }
+    }
 
     if (targetId !== null) {
         const targetPlayer = session.players.get(targetId)
@@ -1758,113 +2030,83 @@ function prepareNightResolution(uuid, gameId) {
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
     if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
 
+    // 여기부터의 준비는 요청자와 무관한 세션 단위 계산이다 — 자동 밤 최종화(소켓 계층의
+    // finalizeNightForSession)가 대표 UUID나 가짜 소켓을 만들지 않고 같은 경계를 쓸 수 있도록
+    // 분리했다(A-10).
+    return prepareNightResolutionForSession(session)
+}
+
+/**
+ * F-25b: **세션 하나의 밤 최종 준비**(어떤 상태도 바꾸지 않는 순수 함수). 수동 resolve_night의
+ * 인증 래퍼(prepareNightResolution)와 자동 밤 최종화가 공유하는 유일한 준비 경계다.
+ *
+ * 두 갈래가 있고, 둘 다 **같은 역할 계산**(computeNightRoleStep/applyNightRoleStep)을 쓴다:
+ *   - 순차 진행이 시작된 밤: session.nightProgress에 네 역할이 전부 완료되고 치료 가능성이
+ *     닫혀 있어야 한다. 하나라도 남았으면 ACTIONS_PENDING이다(미완료 역할을 수동 판정이
+ *     건너뛰게 하지 않는다).
+ *   - 시퀀서 없는 기존 직접 판정: 현재 적격 행위자의 제출 완료·대상 유효성을 먼저 전부
+ *     검증한 뒤, **지역** 진행 자료에서 네 역할을 순서대로 계산한다(session은 건드리지 않는다).
+ *
+ * 성공하면 반환된 resolution은 내부 준비 대장(nightPreparations)에 등록된다 —
+ * commitNightResolution은 그 등록이 있는 객체만 받아들이고, 등록 시점에 복사해 둔 값으로
+ * 커밋하므로 반환된 객체의 필드·Map·Set을 변형해도 확정 내용은 달라지지 않는다.
+ */
+function prepareNightResolutionForSession(session) {
+    if (!session || typeof session.id !== 'string') return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (gameSessions.get(session.id) !== session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+
     const endedCheck1 = assertSessionNotEnded(session)
     if (!endedCheck1.ok) return endedCheck1
 
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
 
-    // 두 루프가 같은 목록을 봐야 한다 — "제출했어야 할 사람"과 "표를 검증할 사람"이 갈리면
-    // 사망자가 남긴 잔여 entry가 판정을 막을 수 있다. 목록은 한 번만 계산해 재사용한다.
-    const eligibleActorUuids = getEligibleNightActorUuids(session)
-    for (const actorUuid of eligibleActorUuids) {
-        if (!session.nightActions.has(actorUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
-    }
+    const sequencedProgress = getNightProgress(session)?.sequenced === true ? getNightProgress(session) : null
 
-    // 검증은 eligible alive actor의 표만 본다(session.nightActions 전체가 아님) — 대상도
-    // 참가자로 존재할 뿐 아니라 그 actor의 역할이 요구하는 생존 상태를 유지해야 한다.
-    // submitNightAction과 같은 헬퍼(requiresAliveTarget)로 판정하므로 두 경계가 갈릴 수 없다 —
-    // 여기에 이 규칙이 없으면 WITCH_HUNTER의 (정당한) 사망자 지목이 그 밤 전체를
-    // TARGET_NOT_A_PARTICIPANT로 잠가버린다. 생존을 요구하는 역할에 대한 이 검증이
-    // commitNightResolution이 전제로 삼는 조건(victim.alive === true)과 정확히 같으므로,
-    // 여기를 통과한 resolution으로 commit이 throw하는 경우는 존재하지 않는다
-    // (prepareDayVoteResolution과 동일한 모양).
-    for (const actorUuid of eligibleActorUuids) {
-        const target = session.nightActions.get(actorUuid)
-        if (target !== null) {
-            const targetPlayer = session.players.get(target)
-            if (!targetPlayer) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
-            const actorRole = session.players.get(actorUuid)?.role
-            const targetStateOk = requiresAliveTarget(actorRole) ? targetPlayer.alive === true : targetPlayer.alive !== true
-            if (!targetStateOk) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+    let progress
+    if (sequencedProgress) {
+        for (const role of NIGHT_TURN_ORDER) {
+            if (!sequencedProgress.completedRoles.has(role)) return { ok: false, code: 'ACTIONS_PENDING' }
         }
-    }
-
-    // F-25a: 네 역할을 NIGHT_TURN_ORDER 순서로 하나씩 처리한다(병렬 집계가 아니다). canonical
-    // player.alive는 이 함수 안에서 절대 바뀌지 않는다 — 대신 이번 판정 호출에서만 유효한 임시
-    // 상태(recoveryStates)로 "누가 공격받아 회복 대기 중인지·치료로 회복됐는지"를 추적해, 뒤
-    // 역할(GUARD/WITCH_HUNTER)의 집계가 아직 치료받지 못한 행위자의 제출을 성공한 결과로 세지
-    // 않게 한다. DOCTOR 단계만 예외다 — 광대에게 공격받은 의사 본인의 자기 치료를 막지 않기
-    // 위해 그 단계에는 배제를 적용하지 않는다(A-03).
-    //
-    // roleSteps는 네 역할 전부를 항상 기록한다 — 실패·기권·상충·역할 부재도 다음 역할 처리를
-    // 막지 않는다는 사실 자체가 이 배열로 남는다(AC-04). events는 킬·치료를 순서가 있는 사건으로
-    // 보존해, 치료가 앞선 킬 사건을 지우지 않는다(AC-01).
-    const recoveryStates = new Map() // uuid → 'PENDING_RECOVERY' | 'RECOVERED' | 'DEATH_CANDIDATE'
-    const events = []
-    const roleSteps = []
-
-    let assassinationTargetId = null
-    let protectionTargetId = null
-    let investigationTargetId = null
-    let confirmationTargetId = null
-
-    for (const role of NIGHT_TURN_ORDER) {
-        const hasRoleInGame = [...session.players.values()].some((player) => player.role === role)
-        if (!hasRoleInGame) {
-            roleSteps.push({ role, targetId: null, status: 'NO_ROLE' })
-            continue
+        if (!sequencedProgress.healingClosed) return { ok: false, code: 'ACTIONS_PENDING' }
+        progress = sequencedProgress
+    } else {
+        // 두 루프가 같은 목록을 봐야 한다 — "제출했어야 할 사람"과 "표를 검증할 사람"이 갈리면
+        // 사망자가 남긴 잔여 entry가 판정을 막을 수 있다. 목록은 한 번만 계산해 재사용한다.
+        const eligibleActorUuids = getEligibleNightActorUuids(session)
+        for (const actorUuid of eligibleActorUuids) {
+            if (!session.nightActions.has(actorUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
         }
 
-        const actors = getAliveActorUuidsForRole(session, role)
-        if (actors.length === 0) {
-            // 그 역할 보유자가 전멸했거나(사망), dayIndex 때문에 아직 활동할 수 없다
-            // (WITCH_HUNTER의 첫 밤). 둘 다 "역할은 있으나 지금은 행동할 수 없음"으로 같이
-            // 묶인다 — NO_ROLE(애초에 이 판에 없음)과는 구분된다.
-            roleSteps.push({ role, targetId: null, status: 'NO_ACTOR' })
-            continue
-        }
-
-        const excludedActorUuids = role === 'DOCTOR'
-            ? new Set()
-            : new Set(actors.filter((actorUuid) => recoveryStates.get(actorUuid) === 'PENDING_RECOVERY'))
-
-        const targetId = resolveRoleNightAction(session, role, excludedActorUuids)
-        if (targetId === null) {
-            // 배제된 행위자가 있었는데도 결과가 없다면 "회복하지 못해 막힌" 것과 "애초에 기권·
-            // 상충으로 합의가 안 된" 것을 구분해 남긴다(AC-04).
-            roleSteps.push({ role, targetId: null, status: excludedActorUuids.size > 0 ? 'RECOVERY_BLOCKED' : 'NO_RESULT' })
-            continue
-        }
-
-        roleSteps.push({ role, targetId, status: 'RESOLVED' })
-
-        if (role === 'JOKER') {
-            assassinationTargetId = targetId
-            recoveryStates.set(targetId, 'PENDING_RECOVERY')
-            events.push({ type: 'KILL', targetId })
-        } else if (role === 'DOCTOR') {
-            protectionTargetId = targetId
-            // "치료 성공" 사건은 실제로 회복 대기 중이던 대상을 되살렸을 때만 만든다(A-03) —
-            // 공격받지 않은 생존자를 보호해도 사건은 생기지 않는다(대신 protectedTargetIds에는
-            // 그대로 담겨 기존 assassinationBlocked 계약을 그대로 지킨다).
-            if (recoveryStates.get(targetId) === 'PENDING_RECOVERY') {
-                recoveryStates.set(targetId, 'RECOVERED')
-                events.push({ type: 'HEAL', targetId })
+        // 검증은 eligible alive actor의 표만 본다(session.nightActions 전체가 아님) — 대상도
+        // 참가자로 존재할 뿐 아니라 그 actor의 역할이 요구하는 생존 상태를 유지해야 한다.
+        // submitNightAction과 같은 헬퍼(requiresAliveTarget)로 판정하므로 두 경계가 갈릴 수 없다 —
+        // 여기에 이 규칙이 없으면 WITCH_HUNTER의 (정당한) 사망자 지목이 그 밤 전체를
+        // TARGET_NOT_A_PARTICIPANT로 잠가버린다.
+        for (const actorUuid of eligibleActorUuids) {
+            const target = session.nightActions.get(actorUuid)
+            if (target !== null) {
+                const targetPlayer = session.players.get(target)
+                if (!targetPlayer) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+                const actorRole = session.players.get(actorUuid)?.role
+                const targetStateOk = requiresAliveTarget(actorRole) ? targetPlayer.alive === true : targetPlayer.alive !== true
+                if (!targetStateOk) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
             }
-        } else if (role === 'GUARD') {
-            investigationTargetId = targetId
-        } else if (role === 'WITCH_HUNTER') {
-            confirmationTargetId = targetId
         }
+
+        // 이 실패는 canonical 생존·phase·확정 결과와 완료 사건을 전혀 바꾸지 않는다 —
+        // 지역 진행 자료만 쓰고 session.nightProgress에는 대입하지 않는다.
+        progress = createNightProgress(session, { sequenced: false })
+        for (const role of NIGHT_TURN_ORDER) {
+            applyNightRoleStep(progress, computeNightRoleStep(session, progress, role))
+        }
+        closeNightHealing(progress)
     }
 
-    // 끝까지 치료받지 못한 암살 대상은 이번 판정의 사망 후보다. commitNightResolution의
-    // pendingEliminationTargetId 소비 계약은 그대로이며, 이 상태는 그 계산과 별개로 서버 내부
-    // 기록용이다.
-    if (assassinationTargetId !== null && recoveryStates.get(assassinationTargetId) === 'PENDING_RECOVERY') {
-        recoveryStates.set(assassinationTargetId, 'DEATH_CANDIDATE')
-    }
+    const assassinationTargetId = progress.roleTargets.get('JOKER') ?? null
+    const protectionTargetId = progress.roleTargets.get('DOCTOR') ?? null
+    const investigationTargetId = progress.roleTargets.get('GUARD') ?? null
+    const confirmationTargetId = progress.roleTargets.get('WITCH_HUNTER') ?? null
 
     // 보호 대상은 canonical 하나(또는 없음)다. 필드 이름과 Set 타입은 그대로 두어 이 값을
     // 소비하는 쪽(assassinationBlocked·테스트)의 모양이 바뀌지 않게 하고, 원소 수만 0 또는 1이 된다.
@@ -1874,14 +2116,24 @@ function prepareNightResolution(uuid, gameId) {
     // 것이고, 사망이 확정된 뒤의 잔여 효과 소멸은 3단계에서 별도로 일어난다.
     const assassinationBlocked =
         assassinationTargetId !== null && protectedTargetIds.has(assassinationTargetId)
-    const pendingEliminationTargetId = assassinationBlocked ? null : assassinationTargetId
+
+    // 최종 사망 후보. 치료로 살아났으면 null이고, 준비 시점에 이미 이 판에서 빠졌거나
+    // (DISCONNECT 사망·참여 종료) 이미 사망한 대상도 null로 정규화한다 — 그 사망은 이탈 경로가
+    // 이미 확정했으므로 여기서 ASSASSINATION과 새 공개 reveal을 만들지 않는다(A-08).
+    let pendingEliminationTargetId = assassinationBlocked ? null : assassinationTargetId
+    if (pendingEliminationTargetId !== null) {
+        const candidate = session.players.get(pendingEliminationTargetId)
+        if (!candidate || candidate.alive !== true || !isParticipatingInSession(session, pendingEliminationTargetId)) {
+            pendingEliminationTargetId = null
+        }
+    }
 
     // 역할 → 그 역할의 생존 보유자 전원에게 "동일하게" 갈 개인 결과의 생성자. 대상이 없는
     // 역할(전원 SKIP·상충·비활성 WITCH_HUNTER)은 아예 등재되지 않아 결과가 만들어지지 않는다.
     // 생성자를 담는 이유는 수신자마다 새 객체를 나눠 주기 위함이다 — 소켓 계층이 이 객체를
     // spread해 payload에 담으므로, 하나를 공유하면 한 수신자 경로의 오염이 나머지에 전파된다.
     const privateResultBuilderByRole = new Map()
-    if (investigationTargetId !== null) {
+    if (investigationTargetId !== null && session.players.has(investigationTargetId)) {
         // 결과는 진영(team)이 아니라 대상의 실제 role이다 — 경비원의 조사는 "시민 진영인가"가
         // 아니라 "무슨 역할인가"를 알려준다(판정 4.3.1).
         const role = session.players.get(investigationTargetId).role
@@ -1891,7 +2143,7 @@ function prepareNightResolution(uuid, gameId) {
             role,
         }))
     }
-    if (confirmationTargetId !== null) {
+    if (confirmationTargetId !== null && session.players.has(confirmationTargetId)) {
         const role = session.players.get(confirmationTargetId).role
         privateResultBuilderByRole.set('WITCH_HUNTER', () => ({
             actionType: 'CONFIRM',
@@ -1916,25 +2168,52 @@ function prepareNightResolution(uuid, gameId) {
         if (buildResult !== undefined) privateResults.set(player.uuid, buildResult())
     }
 
-    return {
-        ok: true,
-        session,
-        resolution: {
-            gameId: session.id,
-            dayIndex: session.dayIndex,
-            assassinationTargetId,
-            protectedTargetIds,
-            pendingEliminationTargetId,
-            privateResults,
-            // F-25a: 서버 내부 전용 기록이다(A-05) — buildNightResultAppliedPayload/
-            // buildSessionSnapshot 어느 쪽도 이 세 필드를 읽지 않으므로 공개 payload에는
-            // 노출되지 않는다.
-            roleSteps,
-            events,
-            recoveryStates,
-            resolved: true,
-        },
+    const resolution = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        assassinationTargetId,
+        protectedTargetIds,
+        pendingEliminationTargetId,
+        privateResults,
+        // F-25a/F-25b: 서버 내부 전용 기록이다(A-02) — buildNightResultAppliedPayload/
+        // buildSessionSnapshot 어느 쪽도 이 세 필드를 읽지 않으므로 공개 payload에는
+        // 노출되지 않는다. 매번 새 배열/새 Map으로 복사해 진행 자료와 분리한다.
+        roleSteps: progress.roleSteps.map((step) => ({ ...step })),
+        events: progress.events.map((event) => ({ ...event })),
+        recoveryStates: new Map(progress.recoveryStates),
+        resolved: true,
     }
+
+    registerNightPreparation(session, resolution, {
+        sequenced: progress.sequenced === true,
+        progressRevision: progress.revision,
+    })
+
+    return { ok: true, session, resolution }
+}
+
+/**
+ * F-25b(A-03): 준비 객체 → 그 준비의 **출처 기록**. commitNightResolution은 이 대장에 등재된
+ * 객체만 받아들이고, 커밋에 쓰는 값도 이 기록의 복사본에서만 읽는다 — 반환된 resolution의
+ * 필드·Map·Set을 바깥에서 변형해도 확정 내용이 달라지지 않는다.
+ *
+ * WeakMap이라 세션·준비 객체가 사라지면 기록도 함께 사라진다(별도 정리 경로가 필요 없다).
+ */
+const nightPreparations = new WeakMap()
+
+function registerNightPreparation(session, resolution, { sequenced, progressRevision }) {
+    nightPreparations.set(resolution, {
+        session,
+        gameId: session.id,
+        nightDayIndex: session.dayIndex,
+        participationRevision: Number.isSafeInteger(session.participationRevision) ? session.participationRevision : 0,
+        sequenced,
+        progressRevision,
+        // 커밋이 실제로 소비하는 값의 내부 원본. 전달된 객체가 아니라 이 값을 쓴다.
+        pendingEliminationTargetId: resolution.pendingEliminationTargetId ?? null,
+        consumed: false,
+    })
+    return resolution
 }
 
 // 밤 사망을 "누가 죽였는지"가 아니라 "어떤 공개 사건이었는지"로만 표현하는 공개 열거값이다.
@@ -2037,10 +2316,55 @@ function expireDeadPlayerNightEffects(session, deadUuids) {
  * 반환값 { victimUuid }는 buildNightResultAppliedPayload에 그대로 넘길 값입니다.
  */
 function commitNightResolution(session, resolution) {
+    // 관찰자가 원자적 커밋 구간 안에서 이 함수를 다시 부르는 것을 구조적으로 막는다.
+    if (nightCommitObserverBusy) return { ok: false, code: 'NIGHT_COMMIT_REENTERED' }
     const endedCheck = assertSessionNotEnded(session)
     if (!endedCheck.ok) return endedCheck
 
-    const victimUuid = resolution.pendingEliminationTargetId
+    // ── F-25b(A-03): mutation 이전의 출처·신선도 검증 ────────────────────────
+    //
+    // 이 블록을 통과하지 못한 호출은 session의 어떤 필드도 바꾸지 않는다(상태 불변 실패).
+    // 출처가 없는 resolution, 다른 세션·다른 경기·이전 밤의 준비, 그리고 준비 이후 상태가
+    // 달라진(역할이 더 완료됐거나 참여 구성이 바뀐) 준비가 전부 여기서 끊긴다.
+    const record = (resolution !== null && typeof resolution === 'object')
+        ? nightPreparations.get(resolution)
+        : undefined
+    if (!record) return { ok: false, code: 'UNKNOWN_RESOLUTION_SOURCE' }
+    if (record.session !== session) return { ok: false, code: 'UNKNOWN_RESOLUTION_SOURCE' }
+    // 같은 준비로 두 번 커밋할 수 없다(자동/수동 경쟁의 두 번째 진입).
+    if (record.consumed) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
+    // 이탈 종결이나 registry 삭제가 먼저 일어났다면 밤 커밋을 거부한다(A-08).
+    if (gameSessions.get(session.id) !== session) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (record.gameId !== session.id) return { ok: false, code: 'STALE_RESOLUTION' }
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+    if (record.nightDayIndex !== session.dayIndex) return { ok: false, code: 'STALE_RESOLUTION' }
+    // 같은 밤의 두 번째 커밋은 재평가·재저장·재방송 없이 여기서 끝난다.
+    if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
+    const currentParticipationRevision =
+        Number.isSafeInteger(session.participationRevision) ? session.participationRevision : 0
+    if (currentParticipationRevision !== record.participationRevision) return { ok: false, code: 'STALE_RESOLUTION' }
+
+    if (record.sequenced) {
+        const progress = getNightProgress(session)
+        if (!progress || progress.sequenced !== true) return { ok: false, code: 'STALE_RESOLUTION' }
+        if (progress.revision !== record.progressRevision) return { ok: false, code: 'STALE_RESOLUTION' }
+        if (!progress.healingClosed) return { ok: false, code: 'ACTIONS_PENDING' }
+        for (const role of NIGHT_TURN_ORDER) {
+            if (!progress.completedRoles.has(role)) return { ok: false, code: 'ACTIONS_PENDING' }
+        }
+    }
+
+    // 최종 후보는 **내부 원본**에서만 읽는다. 준비 이후 그 대상이 이탈·끊김으로 빠졌다면
+    // 여기서 한 번 더 null로 정규화한다 — 그 사망은 이탈 경로가 이미 확정했다(A-08).
+    //
+    // roster에 **존재하는** 참가자일 때만 정규화한다. 아예 이 판의 참가자가 아닌 uuid는
+    // 정상 준비 경로가 만들어낼 수 없는 값이므로 조용히 "희생자 없는 밤"으로 바꾸지 않고
+    // 아래 방어적 불변조건에서 그대로 터지게 둔다(수동 조립·오염 fixture 방어).
+    let victimUuid = record.pendingEliminationTargetId ?? null
+    if (victimUuid !== null && session.players.has(victimUuid) && !isParticipatingInSession(session, victimUuid)) {
+        victimUuid = null
+    }
+
     let victim = null
     if (victimUuid !== null) {
         victim = session.players.get(victimUuid)
@@ -2061,6 +2385,12 @@ function commitNightResolution(session, resolution) {
         if (victim.alive !== true) throw new Error(`commitNightResolution: victim(${victimUuid})이 이미 사망 상태`)
     }
     // 이 지점 이후로는 절대 throw하지 않는다.
+    // 준비를 "소진"으로 표시하는 것도, 전달된 객체에 확정 값을 반영하는 것도 검증을 전부
+    // 통과한 뒤에만 한다 — 거부·throw로 끝난 호출은 세션도 준비 기록도 바꾸지 않는다.
+    // 확정 값을 전달 객체에 되쓰는 이유는 그 객체가 곧 session.nightResolution이 되고
+    // buildSessionSnapshot/buildNightResultAppliedPayload가 이 필드를 읽기 때문이다.
+    resolution.pendingEliminationTargetId = victimUuid
+    record.consumed = true
     // 공개 사망 reveal은 반드시 이 지점에서 만든다 — 위 두 검증을 통과했다는 것은 victim이
     // 참가자로 실재하고 아직 alive:true였다는 뜻이므로, 여기서 만들어진 reveal은 정의상
     // "이번 판정이 실제로 alive→dead로 바꾼 참가자"만 담는다. victim이 없는 밤(무득표·보호
@@ -2072,12 +2402,14 @@ function commitNightResolution(session, resolution) {
     if (victim) {
         victim.alive = false
         victim.deathReason = DEATH_REASONS.ASSASSINATION
+        observeNightCommit('NIGHT_DEATH_FINALIZED', { gameId: session.id, victimUuid, reason: DEATH_REASONS.ASSASSINATION })
     }
     // 판정 순서 3단계 — 사망자의 잔여 효과 소멸. 반드시 사망 확정 뒤에 온다.
     expireDeadPlayerNightEffects(session, victimUuid === null ? [] : [victimUuid])
 
     // 판정 순서 4단계 — 승리 재평가는 사망 이벤트 직후 항상, 낮 진입 전에 한다.
     const winResult = evaluateWinCondition(session)
+    observeNightCommit('WIN_EVALUATED', { gameId: session.id, source: 'NIGHT', winner: winResult?.winner ?? null })
     if (winResult) {
         finalizeGameSession(session, winResult)
         return { ok: true, victimUuid, terminal: { winner: winResult.winner } }
@@ -2109,6 +2441,7 @@ function commitNightResolution(session, resolution) {
  * 공개 방송 계약은 buildDisconnectEliminationPayload가 별도로 만들며 role/team/원인을 싣지 않는다.
  */
 function commitDisconnectElimination(session, uuid) {
+    if (nightCommitObserverBusy) return { ok: false, code: 'NIGHT_COMMIT_REENTERED' }
     const endedCheck = assertSessionNotEnded(session)
     if (!endedCheck.ok) return endedCheck
 
@@ -2119,6 +2452,7 @@ function commitDisconnectElimination(session, uuid) {
     // 이 지점 이후로는 절대 throw하지 않는다.
     victim.alive = false
     victim.deathReason = DEATH_REASONS.DISCONNECT
+    observeNightCommit('DISCONNECT_DEATH_FINALIZED', { gameId: session.id, victimUuid: uuid, reason: DEATH_REASONS.DISCONNECT })
     expireDeadPlayerNightEffects(session, [uuid])
 
     if (!session.forfeitedUuids) session.forfeitedUuids = new Set()
@@ -2130,6 +2464,8 @@ function commitDisconnectElimination(session, uuid) {
     session.detachedUuids.add(uuid)
 
     const winResult = evaluateWinCondition(session)
+    // 이탈이 촉발한 승패 평가는 밤 최종화의 평가와 **출처로 구분**해 센다(A-08).
+    observeNightCommit('WIN_EVALUATED', { gameId: session.id, source: 'DISCONNECT', winner: winResult?.winner ?? null })
     if (winResult) {
         finalizeGameSession(session, winResult)
         return { ok: true, victimUuid: uuid, terminal: { winner: winResult.winner } }
@@ -2289,6 +2625,8 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
                 session.phase = 'NIGHT'
                 session.nightActions = new Map()
                 session.nightResolution = null
+                // F-25b: 지난 밤의 진행 기록을 이어받지 않는다.
+                session.nightProgress = null
                 tribunalCancelled = true
             }
         }
@@ -3089,6 +3427,8 @@ function commitDayVoteResolution(session, resolution) {
         session.phase = 'NIGHT'
         session.nightActions = new Map()
         session.nightResolution = null
+        // F-25b: 지난 밤의 진행 기록을 이어받지 않는다.
+        session.nightProgress = null
     }
     return { ok: true }
 }
@@ -3418,6 +3758,8 @@ function commitTribunalVoteResolution(session, resolution) {
     session.phase = 'NIGHT'
     session.nightActions = new Map()
     session.nightResolution = null
+    // F-25b: 지난 밤의 진행 기록을 이어받지 않는다.
+    session.nightProgress = null
     return { ok: true, terminal: null }
 }
 
@@ -4017,6 +4359,9 @@ function __resetStateForTests() {
     gameSessions.clear()
     playerSession.clear()
     roomGameSession.clear()
+    // F-25b: 관찰자가 남으면 다음 테스트의 커밋이 이전 테스트의 배열에 사건을 쌓는다.
+    nightCommitObserver = null
+    nightCommitObserverBusy = false
     // 채팅 능력 기록은 WeakMap이라 지울 대상이 없다 — prepared 객체가 버려지면 함께 사라진다.
 }
 
@@ -4093,6 +4438,12 @@ module.exports = {
     getChatRecipientUuids,
     CHAT_CHANNELS,
     prepareNightResolution,
+    // F-25b: 세션 단위 준비/역할 완료 경계. 소켓 계층의 턴 오케스트레이터와 공통 밤 최종화가
+    // 직접 부르는 진입점이라 __testables가 아니라 정식 export다.
+    prepareNightResolutionForSession,
+    completeNightRole,
+    isNightRoleCompleted,
+    markNightSequenced,
     commitNightResolution,
     // 끊김 사망은 밤 판정과 같은 순서 계약을 공유하지만 소켓 계층의 유예 타이머가 직접 부르는
     // 진입점이므로, 밤 판정 3인방과 나란히 정식 export로 둔다.
@@ -4146,6 +4497,30 @@ module.exports = {
     getActiveGamePresenceSnapshot,
     __resetStateForTests,
     __getStateSnapshotForTests,
+    /**
+     * F-25b: **테스트 전용** 준비 등록. 실제 제출 경로로는 만들 수 없는 밤(광대가 동료를
+     * 지목해야 성립하는 CITIZEN 승리 분기 등)을 손으로 조립한 resolution으로 재현하면서도
+     * commitNightResolution의 출처 검증을 우회하지 않게 한다.
+     *
+     * 소켓·HTTP 어느 경로에도 노출되지 않는다 — production 코드는 이 함수를 참조하지 않으며,
+     * 등록되는 값도 실제 준비와 동일하게 **등록 시점의** 세션 상태로 고정된다(그래서 오염된
+     * fixture는 여전히 victim 검증에서 걸린다).
+     */
+    /**
+     * F-25b: **테스트 전용** 커밋 관찰자 등록(null이면 해제). 실제 사망 확정·승패 평가·종료
+     * 확정 지점에서 { event, detail }을 받는다 — 횟수 단언(AC-01의 0회, AC-03의 1회)의 근거다.
+     */
+    __setNightCommitObserverForTests(observer = null) {
+        nightCommitObserver = typeof observer === 'function' ? observer : null
+        nightCommitObserverBusy = false
+    },
+    __registerNightPreparationForTests(session, resolution, options = {}) {
+        const progress = getNightProgress(session)
+        return registerNightPreparation(session, resolution, {
+            sequenced: options.sequenced ?? (progress?.sequenced === true),
+            progressRevision: options.progressRevision ?? (progress?.revision ?? 0),
+        })
+    },
     // 테스트에서 개별 함수를 직접 호출하거나 registry를 의도적으로 파괴하기 위한 통로입니다.
     // 런타임 코드에서는 참조하지 않습니다.
     __testables: {
@@ -4176,6 +4551,11 @@ module.exports = {
         getChatRateLimitMap,
         getEligibleNightActorUuids,
         NIGHT_ACTION_RESOLUTION_POLICY,
+        // F-25b 밤 진행 자료의 내부 계산기·조회기. 테스트가 역할 단위 중간 상태를 직접 검사한다.
+        NIGHT_RECOVERY_STATES,
+        getNightProgress,
+        computeNightRoleStep,
+        closeNightHealing,
         collectRoleNightSubmissions,
         resolveRoleNightAction,
         buildAssassinationFailureNotice,

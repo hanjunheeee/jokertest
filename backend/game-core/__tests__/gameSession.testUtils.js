@@ -587,10 +587,37 @@ function handBuiltPrepared({ session, channel, actorUuid, nickname, text, sentAt
     }
 }
 
+/**
+ * F-25b(A-03): 손으로 조립한 밤 판정 resolution에 **출처 등록**을 붙여 돌려준다.
+ *
+ * commitNightResolution은 내부 준비 대장에 등재된 객체만 받아들이므로(출처 없는 준비는
+ * UNKNOWN_RESOLUTION_SOURCE), 실제 제출 경로로는 만들 수 없는 밤(광대가 동료를 지목해야
+ * 성립하는 CITIZEN 승리 분기 등)을 재현하는 기존 테스트들은 이 헬퍼로 fixture를 만든다.
+ *
+ * production 우회가 아니다 — 등록되는 값도 실제 준비와 똑같이 **등록 시점의** 세션 상태
+ * (gameId·dayIndex·participationRevision·진행 revision)로 고정되므로, 오염된 fixture는 여전히
+ * victim 검증과 신선도 검증에서 그대로 걸린다.
+ *
+ * @param {object} session - canonical GameSession
+ * @param {object} fields - resolution에 담을 필드(pendingEliminationTargetId 등)
+ */
+function sourcedNightResolution(session, fields = {}) {
+    const resolution = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        pendingEliminationTargetId: null,
+        privateResults: new Map(),
+        resolved: true,
+        ...fields,
+    }
+    return gameSession.__registerNightPreparationForTests(session, resolution)
+}
+
 module.exports = {
     makePlayer,
     makeRoom,
     sequenceRandom,
+    sourcedNightResolution,
     setupTribunalReadySession,
     commitRoleRevealSession,
     validSession,

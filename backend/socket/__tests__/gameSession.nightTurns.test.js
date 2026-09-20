@@ -11,7 +11,12 @@ const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
 const { createFakeSocket, createFakeIo, countingCallback } = require('./testHelpers/matchmakingFixtures')
 
-const { startNightTurnSequence, computeEmptyTurnDelayMs, resolveNightTurnDurationMs } = gameSessionSocketLayer.__testables
+const {
+    startNightTurnSequence,
+    computeEmptyTurnDelayMs,
+    resolveNightTurnDurationMs,
+    handleResolveNight,
+} = gameSessionSocketLayer.__testables
 const { NIGHT_TURN_ORDER, NIGHT_TURN_DURATION_MS } = gameSessionCore
 
 /**
@@ -221,6 +226,10 @@ test('night turn: 모든 night_turn_started payload가 deadline을 포함하고 
     const { io, submit } = wireSession(session)
     const clock = createManualClock(5_000_000)
     const startedAt = clock.now()
+    // F-25b: 마지막 턴이 끝나면 그 밤이 자동으로 최종화돼 DAY로 넘어가며 dayIndex가 하나
+    // 오른다 — 턴 payload가 실어야 하는 값은 **그 턴이 속한 밤**의 dayIndex이므로 시작 전에
+    // 붙잡아 둔다(판정 후의 session.dayIndex와 비교하면 기대값 자체가 달라진다).
+    const nightDayIndex = session.dayIndex
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     for (const uuid of [jokerUuid, doctorUuid, guardUuid, witchHunterUuid]) submit(uuid, null)
@@ -233,7 +242,7 @@ test('night turn: 모든 night_turn_started payload가 deadline을 포함하고 
         // 제출은 시계를 진행시키지 않으므로 네 턴 모두 같은 시각에 시작됐다.
         assert.equal(broadcast.payload.deadline, startedAt + NIGHT_TURN_DURATION_MS)
         assert.equal(broadcast.payload.gameId, session.id)
-        assert.equal(broadcast.payload.dayIndex, session.dayIndex)
+        assert.equal(broadcast.payload.dayIndex, nightDayIndex)
     }
 })
 
@@ -1647,4 +1656,255 @@ test('night turn: [음성 대조] 누출 탐지기가 정상 payload는 통과�
     for (const payload of leakyPayloads) {
         assert.ok(detectAliveLeak(payload).length > 0, `누출 payload를 놓쳤다: ${JSON.stringify(payload)}`)
     }
+})
+
+// ---------------------------------------------------------------------------
+// F-25b — 마지막 역할 턴이 끝난 밤의 자동 최종화
+//
+// 여기서 쓰는 입력은 전부 registerGameHandlers가 배선한 **실제 submit_night_action**과 실제
+// 턴 타이머다. 자동 최종화(advanceNightTurn → finalizeNightForSession)와 수동
+// resolve_night(handleResolveNight → 같은 finalizeNightForSession)가 같은 밤을 두 번
+// 확정하지 못한다는 것이 이 절의 핵심이다.
+// ---------------------------------------------------------------------------
+
+/** 실제 사망 확정·승패 평가·종료 확정 지점의 호출 횟수를 센다(export 교체로는 셀 수 없다). */
+function captureCommitEvents() {
+    const events = []
+    gameSessionCore.__setNightCommitObserverForTests((event, detail) => events.push({ event, ...detail }))
+    return {
+        events,
+        countOf: (event) => events.filter((e) => e.event === event).length,
+        winEvaluations: (source) => events.filter((e) => e.event === 'WIN_EVALUATED' && e.source === source).length,
+    }
+}
+
+/** 수신자별 night_result_applied 전달 건수를 uuid → 건수로 모은다. */
+function nightResultDeliveryCounts(sockets) {
+    const counts = new Map()
+    for (const [uuid, socket] of sockets) {
+        counts.set(uuid, socket.emitted.filter((e) => e.event === 'night_result_applied').length)
+    }
+    return counts
+}
+
+test('AC-01(F-25b): 광대 턴이 끝난 시점에는 대상이 여전히 canonical alive이고 승패 판정·종료 확정·밤 결과 방송이 하나도 시작되지 않는다', () => {
+    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'f25b-ac01' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid), { ok: true })
+
+    // 광대 턴은 끝났고 의사 턴이 진행 중이다 — 치료 가능성이 아직 열려 있다.
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
+    assert.equal(session.players.get(citizenUuid).alive, true)
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.nightResolution, null)
+    assert.equal(Object.hasOwn(session, 'winResult'), false)
+    assert.deepEqual(observed.events, [])
+    for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 0)
+})
+
+test('AC-02/AC-03(F-25b): 치료가 성공한 밤은 마지막 턴이 끝나는 순간 자동 확정되고 사망 0·승패 평가 1회·수신자별 결과 1건이다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f25b-ac02' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const nightDayIndex = session.dayIndex
+    const aliveBefore = [...session.players.values()].filter((p) => p.alive).length
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid), { ok: true })
+    assert.deepEqual(submit(doctorUuid, citizenUuid), { ok: true })
+    assert.deepEqual(submit(guardUuid, null), { ok: true })
+    assert.deepEqual(submit(witchHunterUuid, null), { ok: true })
+
+    assert.equal(session.players.get(citizenUuid).alive, true)
+    assert.equal([...session.players.values()].filter((p) => p.alive).length, aliveBefore)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, nightDayIndex + 1)
+    assert.equal(Object.hasOwn(session, 'winResult'), false)
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    assert.equal(observed.countOf('GAME_FINALIZED'), 0)
+
+    for (const [uuid, count] of nightResultDeliveryCounts(sockets)) {
+        assert.equal(count, 1, `${uuid}의 night_result_applied 건수`)
+    }
+    const applied = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_result_applied')
+    assert.equal(applied.payload.victimUuid, null)
+    assert.deepEqual(applied.payload.deathReveals, [])
+    assert.equal(applied.payload.players.find((p) => p.uuid === citizenUuid).alive, true)
+})
+
+test('AC-03(F-25b): 치료되지 않은 밤은 마지막 턴 종료 뒤 사망 1회·승패 평가 1회로 확정되고 그 전에는 어떤 것도 확정되지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f25b-ac03' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    // 의사 턴이 끝났지만 아직 최종 사망은 없다 — 치료 가능성만 닫혔다(A-06).
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'GUARD')
+    assert.equal(session.players.get(citizenUuid).alive, true)
+    assert.deepEqual(observed.events, [])
+
+    submit(guardUuid, citizenUuid)
+    // 경비원 턴까지 끝나도 마찬가지다.
+    assert.equal(session.players.get(citizenUuid).alive, true)
+    assert.deepEqual(observed.events, [])
+
+    submit(witchHunterUuid, null)
+
+    assert.equal(session.players.get(citizenUuid).alive, false)
+    assert.equal(session.players.get(citizenUuid).deathReason, 'ASSASSINATION')
+    assert.equal(session.phase, 'DAY')
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    assert.equal(observed.winEvaluations('DISCONNECT'), 0)
+
+    for (const [uuid, count] of nightResultDeliveryCounts(sockets)) {
+        assert.equal(count, 1, `${uuid}의 night_result_applied 건수`)
+    }
+    const applied = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_result_applied')
+    assert.equal(applied.payload.victimUuid, citizenUuid)
+    assert.deepEqual(applied.payload.deathReveals, [{ victimUuid: citizenUuid, source: 'JOKER' }])
+    // 경비원은 그 밤의 개인 결과를 그대로 받는다(공통 최종화가 개인 결과 전달도 소유한다).
+    const guardResult = sockets.get(guardUuid).emitted.find((e) => e.event === 'night_action_result')
+    assert.equal(guardResult.payload.actionType, 'INVESTIGATE')
+    assert.equal(guardResult.payload.targetId, citizenUuid)
+})
+
+test('AC-05(F-25b): 자동 최종화가 끝난 뒤 도착한 수동 resolve_night는 거부되고 사망·승패 평가·결과 방송이 늘지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f25b-ac05-auto-first' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    for (const [uuid, target] of [[jokerUuid, citizenUuid], [doctorUuid, null], [guardUuid, null], [witchHunterUuid, null]]) {
+        submit(uuid, target)
+    }
+    assert.equal(session.phase, 'DAY')
+    const deliveriesAfterAuto = nightResultDeliveryCounts(sockets)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, sockets.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: false, code: 'NIGHT_ALREADY_RESOLVED', message: '요청을 처리할 수 없습니다.',
+    })
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    assert.deepEqual(nightResultDeliveryCounts(sockets), deliveriesAfterAuto)
+})
+
+test('AC-05(F-25b): 네 역할이 끝나기 전의 수동 resolve_night는 ACTIONS_PENDING이고, 이후 자동 진행이 그 밤을 정확히 1회 확정한다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f25b-ac05-manual-early' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, sockets.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    // 미완료 역할을 수동 판정이 건너뛰지 않는다.
+    assert.deepEqual(getResponse(), {
+        ok: false, code: 'ACTIONS_PENDING', message: '요청을 처리할 수 없습니다.',
+    })
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.players.get(citizenUuid).alive, true)
+    assert.deepEqual(observed.events, [])
+    for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 0)
+
+    // 남은 턴이 정상 진행되면 자동 최종화가 그 밤을 한 번만 확정한다.
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    assert.equal(session.phase, 'DAY')
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 1)
+})
+
+test('AC-03/AC-05(F-25b): 마지막 턴이 제출 없이 만료돼도(전원 기권) 그 밤은 자동으로 정확히 1회 확정된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f25b-expire-last' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    // 마녀사냥꾼 턴만 남기고 시계를 만료까지 돌린다.
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'WITCH_HUNTER')
+    assert.equal(session.phase, 'NIGHT')
+    assert.deepEqual(observed.events, [])
+
+    clock.advance(NIGHT_TURN_DURATION_MS)
+
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.players.get(citizenUuid).alive, false)
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 1)
+    // 확정된 밤의 턴 시퀀스는 남아 있지 않다.
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
+})
+
+test('A-12(F-25b): 유효한 진행 세션의 수신자가 0명이어도 밤 커밋과 단계 전이는 그대로 수행된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f25b-no-recipients' })
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    // 마지막 턴이 끝나기 직전에 모든 연결이 사라진다 — 전달할 상대가 없다는 이유로 이미
+    // 시작된 밤의 확정을 생략하면 그 판은 영영 밤에 갇힌다.
+    io.sockets.sockets.clear()
+
+    clock.advance(NIGHT_TURN_DURATION_MS)
+
+    assert.equal(session.phase, 'DAY', '수신자가 없어도 밤은 확정되고 낮으로 넘어간다')
+    assert.equal(session.players.get(citizenUuid).alive, false)
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+})
+
+test('AC-01(F-25b): 무인 턴만으로 진행되는 밤도 마지막 무인 턴이 끝나기 전까지는 아무 것도 확정하지 않는다', () => {
+    // dayIndex 0이라 WITCH_HUNTER는 아직 활동할 수 없고, 나머지 세 역할은 전원 기권으로 만료된다.
+    const { session } = commitFullRoleSessionAtNight({ id: 'f25b-empty-turns', dayIndex: 0 })
+    const { io, sockets } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    // 세 번째 턴까지는 어떤 확정도 없다.
+    clock.advance(NIGHT_TURN_DURATION_MS * 3)
+    assert.equal(session.phase, 'NIGHT')
+    assert.deepEqual(observed.events, [])
+
+    clock.advance(NIGHT_TURN_DURATION_MS)
+
+    assert.equal(session.phase, 'DAY')
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0, '아무도 지목되지 않은 밤이다')
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 1)
 })

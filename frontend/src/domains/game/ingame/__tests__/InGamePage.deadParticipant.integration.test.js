@@ -1010,10 +1010,10 @@ const SERVER_INDIRECT_EMIT_SITES_LOCK = [
   "backend/socket/channelMembership.js:275 event",
   // 게임 방송 경계·밤 턴·낮 페이즈 래퍼 — 전부 호출 지점의 리터럴을 받아 넘긴다.
   "backend/socket/gameSession.js:477 event",
-  "backend/socket/gameSession.js:1067 event",
-  "backend/socket/gameSession.js:1252 event",
+  "backend/socket/gameSession.js:1070 event",
+  "backend/socket/gameSession.js:1280 event",
   // 게임 채팅 — CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다(아래에서 그 표를 확인한다).
-  "backend/socket/gameSession.js:2516 eventName",
+  "backend/socket/gameSession.js:2544 eventName",
   // 개인 전송기 — emitToUser(uuid, event, payload)의 event 파라미터.
   "backend/socket/socket.js:27 event",
 ]
@@ -1720,6 +1720,59 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
 
   // 그리고 상단 나가기 수단은 그대로 남아 있다.
   assert.ok(container.querySelector("button[aria-label='게임 나가기']"), "상단 나가기 버튼이 사라졌다")
+})
+
+test("F-25b(AC-02/AC-04): 치료가 성공한 밤의 결과를 받으면 사망 선택이 뜨지 않고 화면도 /ingame에 남는다", async () => {
+  seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 0 })
+  const { container } = await mountInGame()
+  const socket = currentSocket
+
+  // 서버 공통 최종화가 보내는 그대로다 — 치료가 성공한 밤이라 victimUuid가 null이고
+  // roster의 누구도 사망으로 바뀌지 않으며 winResult도 없다.
+  await act(async () => {
+    socket.deliver("night_result_applied", {
+      gameId: GAME_ID, phase: "DAY", dayIndex: 1,
+      players: [{ uuid: SELF, alive: true }, { uuid: OTHER, alive: true }],
+      victimUuid: null,
+      deathReveals: [],
+    })
+  })
+  await dismissParchmentOverlays(container)
+
+  assert.equal(
+    useInGameStore.getState().state.players.find((p) => p.uuid === SELF).alive, true,
+    "치료가 성공했는데 canonical 사망으로 반영됐다",
+  )
+  assert.equal(useInGameStore.getState().state.phase, "DAY")
+  assert.equal(useInGameStore.getState().state.winResult ?? null, null, "치료 성공 밤이 승패를 확정했다")
+  assert.equal(choicePanel(container), null, "생존자에게 사망 선택이 떴다")
+  assert.equal(router.state.location.pathname, "/ingame", "치료 성공 밤인데 화면을 떠났다")
+})
+
+test("F-25b(AC-04) 대조군: 같은 마지막 밤이 치료 없이 종결되면 결과 화면으로 넘어간다", async () => {
+  seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 0 })
+  await mountInGame()
+  const socket = currentSocket
+  assert.equal(router.state.location.pathname, "/ingame", "전제: 아직 진행 중이다")
+
+  // 미치료로 그 밤이 종결된 경우 — 공통 최종화가 terminal 필드를 함께 싣는다.
+  // 공개 사망은 본인이 아니므로 사망 연출 큐가 이동을 붙잡지 않는다.
+  await act(async () => {
+    socket.deliver("night_result_applied", {
+      gameId: GAME_ID, phase: "ENDED", dayIndex: 0,
+      players: [{ uuid: SELF, isAlive: true }, { uuid: OTHER, isAlive: false }],
+      victimUuid: OTHER,
+      winResult: { winner: "JOKER" },
+      deathReveals: [],
+    })
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "ENDED")
+  assert.deepEqual(useInGameStore.getState().state.winResult, { winner: "JOKER" })
+  await waitFor(() => assert.notEqual(
+    router.state.location.pathname, "/ingame",
+    "종결된 밤인데 결과 화면으로 넘어가지 못했다",
+  ))
 })
 
 test("F-23(AC-06): 나가기 성공 ACK는 정확히 한 번 정리하고 로비로 replace 이동한다", async () => {

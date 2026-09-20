@@ -15,7 +15,14 @@ const {
     commitGameSession,
     submitNightAction,
     prepareNightResolution,
+    prepareNightResolutionForSession,
+    completeNightRole,
+    isNightRoleCompleted,
+    markNightSequenced,
     commitNightResolution,
+    commitParticipantDeparture,
+    commitDisconnectElimination,
+    NIGHT_TURN_ORDER,
     buildNightResultAppliedPayload,
     prepareTribunalVoteResolution,
     commitTribunalVoteResolution,
@@ -31,6 +38,7 @@ const {
     commitFullRoleSessionAtNight,
     nightSessionOf3,
     nightSessionOf4NoWin,
+    sourcedNightResolution,
     commitAssassinationNight,
     nightSessionWithDoctor,
     nightSessionWithDuplicateRole,
@@ -65,7 +73,7 @@ test('commitNightResolution: 유효한 victim이 있으면 그 player만 alive:f
     const players = [...session.players.values()]
     const victim = players.find((p) => p.role !== 'JOKER')
     const other = players.find((p) => p.uuid !== victim.uuid)
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: victim.uuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: victim.uuid })
 
     const result = commitNightResolution(session, resolution)
 
@@ -81,7 +89,7 @@ test('commitNightResolution: 유효한 victim이 있으면 그 player만 alive:f
 test('commitNightResolution: pendingEliminationTargetId가 null이면 전원 alive 유지, phase/dayIndex는 그대로 전이한다', () => {
     const session = nightSessionOf3({ id: 'room-cnr-null' })
     const uuids = [...session.players.keys()]
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: null, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: null })
 
     const result = commitNightResolution(session, resolution)
 
@@ -95,7 +103,7 @@ test('commitNightResolution: pendingEliminationTargetId가 null이면 전원 ali
 test('commitNightResolution: 마지막 생존 JOKER를 제거하면 DAY로 전이하지 않고 CITIZEN 승리로 종료된다', () => {
     const session = nightSessionOf3({ id: 'room-cnr-win-citizen' })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: jokerUuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: jokerUuid })
 
     const result = commitNightResolution(session, resolution)
 
@@ -112,7 +120,7 @@ test('commitNightResolution: 마지막 생존 JOKER를 제거하면 DAY로 전�
 test('commitNightResolution: 희생자 반영 후 생존 JOKER가 생존 비-JOKER와 동수가 되면 JOKER 승리로 종료된다', () => {
     const session = nightSessionOf3({ id: 'room-cnr-win-joker' })
     const citizenUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: citizenUuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: citizenUuid })
 
     const result = commitNightResolution(session, resolution)
 
@@ -125,7 +133,7 @@ test('commitNightResolution: 희생자 반영 후 생존 JOKER가 생존 비-JOK
 
 test('commitNightResolution: victim이 세션 밖 uuid를 가리키면 throw하고 nightResolution/phase/dayIndex/alive가 전부 호출 전과 동일하다', () => {
     const session = nightSessionOf3({ id: 'room-cnr-oob' })
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: 'not-a-participant', privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: 'not-a-participant' })
 
     assert.throws(() => commitNightResolution(session, resolution))
 
@@ -139,7 +147,7 @@ test('commitNightResolution: victim이 이미 alive:false면 throw하고 상태�
     const session = nightSessionOf3({ id: 'room-cnr-dead' })
     const [victimUuid] = [...session.players.keys()]
     session.players.get(victimUuid).alive = false
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: victimUuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: victimUuid })
 
     assert.throws(() => commitNightResolution(session, resolution))
 
@@ -154,7 +162,7 @@ test('buildNightResultAppliedPayload: top-level 키가 정확히 [dayIndex, deat
     // 자체가 달라진다(winResult 등 terminal 전용 필드 포함).
     const session = nightSessionOf4NoWin({ id: 'room-bnrap' })
     const victimUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
-    const resolution = { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: victimUuid, privateResults: new Map(), resolved: true }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: victimUuid })
     commitNightResolution(session, resolution)
 
     const payload = buildNightResultAppliedPayload(session, victimUuid, session.nightResolution.publicDeathReveals)
@@ -271,14 +279,10 @@ test('공개 사망 reveal: 이미 죽어 있던 대상은 새 reveal을 만들�
     const session = nightSessionOf4NoWin({ id: 'room-reveal-already-dead' })
     const [victimUuid] = [...session.players.keys()]
     session.players.get(victimUuid).alive = false
-    const resolution = {
-        gameId: session.id,
-        dayIndex: 0,
+    const resolution = sourcedNightResolution(session, {
         assassinationTargetId: victimUuid,
         pendingEliminationTargetId: victimUuid,
-        privateResults: new Map(),
-        resolved: true,
-    }
+    })
 
     assert.throws(() => commitNightResolution(session, resolution))
 
@@ -532,13 +536,7 @@ test('밤 해소: 밤 사망으로 광대가 전멸하면 낮 진입 없이 즉�
     // resolution을 손으로 구성한다(기존 commitNightResolution 테스트들과 같은 방식).
     const session = nightSessionOf3({ id: 'room-nb-win-citizen' })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
-    const resolution = {
-        gameId: session.id,
-        dayIndex: 0,
-        pendingEliminationTargetId: jokerUuid,
-        privateResults: new Map(),
-        resolved: true,
-    }
+    const resolution = sourcedNightResolution(session, { pendingEliminationTargetId: jokerUuid })
 
     const applied = commitNightResolution(session, resolution)
 
@@ -1331,13 +1329,9 @@ test('불변조건: 희생자가 있는 밤을 판정하면 phase는 NIGHT로 �
     const session = nightSessionOf4NoWin({ id: 'room-inv-victim' })
     const victim = [...session.players.values()].find((p) => p.role !== 'JOKER')
 
-    const result = commitNightResolution(session, {
-        gameId: session.id,
-        dayIndex: 0,
+    const result = commitNightResolution(session, sourcedNightResolution(session, {
         pendingEliminationTargetId: victim.uuid,
-        privateResults: new Map(),
-        resolved: true,
-    })
+    }))
 
     assert.equal(result.ok, true)
     assert.notEqual(session.phase, 'NIGHT')
@@ -1347,13 +1341,9 @@ test('불변조건: 희생자가 있는 밤을 판정하면 phase는 NIGHT로 �
 test('불변조건: 희생자가 없는 밤을 판정해도 phase는 NIGHT로 남지 않는다(→DAY)', () => {
     const session = nightSessionOf3({ id: 'room-inv-none' })
 
-    const result = commitNightResolution(session, {
-        gameId: session.id,
-        dayIndex: 0,
+    const result = commitNightResolution(session, sourcedNightResolution(session, {
         pendingEliminationTargetId: null,
-        privateResults: new Map(),
-        resolved: true,
-    })
+    }))
 
     assert.equal(result.ok, true)
     assert.notEqual(session.phase, 'NIGHT')
@@ -1364,13 +1354,9 @@ test('불변조건: 종결되는 밤을 판정해도 phase는 NIGHT로 남지 �
     const session = nightSessionOf3({ id: 'room-inv-terminal' })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
 
-    const result = commitNightResolution(session, {
-        gameId: session.id,
-        dayIndex: 0,
+    const result = commitNightResolution(session, sourcedNightResolution(session, {
         pendingEliminationTargetId: jokerUuid,
-        privateResults: new Map(),
-        resolved: true,
-    })
+    }))
 
     assert.equal(result.ok, true)
     assert.notEqual(session.phase, 'NIGHT')
@@ -1487,4 +1473,600 @@ test('다중 사이클 회귀: 승리 없는 NIGHT→DAY→TRIBUNAL(무죄) 사�
     const freshSubmit = submitNightAction(jokerUuid, session.id, defendantUuid)
     assert.deepEqual(freshSubmit, { ok: true, gameId: session.id })
     assert.equal(session.nightActions.get(jokerUuid), defendantUuid)
+})
+
+// ---------------------------------------------------------------------------
+// F-25b — 역할별 순차 확정과 밤 최종화의 경계
+//
+// 이 절의 모든 시험은 **실제 순차 경로**(completeNightRole → … →
+// prepareNightResolutionForSession → commitNightResolution)를 그대로 구동한다. 소켓 계층의
+// endNightTurn이 production에서 이 순서를 만드는데(각 턴 종료마다 completeNightRole 하나),
+// 그 배선 자체는 backend/socket/__tests__/gameSession.nightTurns.test.js가 검증한다.
+// ---------------------------------------------------------------------------
+
+/**
+ * 사망 확정·승패 평가·종료 확정이 **실제로 일어난 횟수**를 센다. 이 모듈 안의 lexical 호출은
+ * export를 갈아끼워도 잡히지 않으므로, 실제 호출 지점의 관찰 통로로만 셀 수 있다.
+ * DB 0행 같은 간접 증거로 "호출되지 않았다"를 대신하지 않는다는 것이 이 헬퍼의 존재 이유다.
+ */
+function captureCommitEvents() {
+    const events = []
+    gameSession.__setNightCommitObserverForTests((event, detail) => events.push({ event, ...detail }))
+    return {
+        events,
+        countOf: (event) => events.filter((e) => e.event === event).length,
+        winEvaluations: (source) => events.filter((e) => e.event === 'WIN_EVALUATED' && e.source === source).length,
+    }
+}
+
+/** JOKER 1 · DOCTOR 1 · CITIZEN n 구성의 밤 픽스처(GUARD/WITCH_HUNTER 없음)를 만든다. */
+function sequencedNight({ id, playerCount = 5 }) {
+    const fixture = nightSessionWithDoctor({ id, playerCount })
+    assert.equal(markNightSequenced(fixture.session), true)
+    return fixture
+}
+
+/** 남은 역할을 순서대로 확정해 그 밤의 네 역할 완료 상태를 만든다. */
+function completeRemainingRoles(session, roles) {
+    for (const role of roles) {
+        const done = completeNightRole(session, role)
+        assert.equal(done.ok, true, `${role} 확정 실패(${done.code})`)
+    }
+}
+
+// --- AC-01: 킬 직후·치료 판정 전에는 승패 판정도 종료도 시작되지 않는다 ---
+
+test('AC-01(F-25b): 광대 턴만 끝난 시점에는 KILL·PENDING_RECOVERY만 남고 대상은 canonical alive이며 승패 평가·종료 확정이 한 번도 실행되지 않는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac01' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    const observed = captureCommitEvents()
+
+    const completed = completeNightRole(session, 'JOKER')
+
+    assert.equal(completed.ok, true)
+    assert.deepEqual(completed.step, { role: 'JOKER', targetId: targetUuid, status: 'RESOLVED' })
+    assert.equal(completed.healingClosed, false, '광대 턴은 치료 가능성을 닫지 않는다')
+
+    const progress = gameSession.__testables.getNightProgress(session)
+    assert.deepEqual(progress.events, [{ type: 'KILL', targetId: targetUuid }])
+    assert.equal(progress.recoveryStates.get(targetUuid), 'PENDING_RECOVERY')
+    assert.deepEqual([...progress.completedRoles], ['JOKER'])
+
+    // canonical 상태는 그대로다 — 임시 사망은 alive를 바꾸지 않는다.
+    assert.equal(session.players.get(targetUuid).alive, true)
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, 0)
+    assert.equal(session.nightResolution, null)
+    assert.equal(Object.hasOwn(session, 'winResult'), false)
+
+    // 승패 판정·사망 확정·종료 확정 중 어느 것도 시작되지 않았다(0회).
+    assert.deepEqual(observed.events, [])
+
+    // 의사는 아직 자기 턴을 쓸 수 있다 — 치료 가능성이 열려 있다는 것의 관측 가능한 형태다.
+    assert.deepEqual(submitNightAction(doctorUuid, session.id, targetUuid), { ok: true, gameId: session.id })
+})
+
+test('AC-01(F-25b): 네 역할이 다 끝나기 전의 밤 최종 준비는 ACTIONS_PENDING이고 canonical 상태를 전혀 바꾸지 않는다', () => {
+    const { session, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-pending' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    const observed = captureCommitEvents()
+
+    assert.deepEqual(prepareNightResolutionForSession(session), { ok: false, code: 'ACTIONS_PENDING' })
+    // 수동 resolve_night가 들어와도 같은 코드다 — 미완료 역할을 건너뛰고 확정하지 않는다.
+    assert.deepEqual(prepareNightResolution(jokerUuid, session.id), { ok: false, code: 'ACTIONS_PENDING' })
+
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.players.get(targetUuid).alive, true)
+    assert.deepEqual(observed.events, [])
+})
+
+// --- AC-02: 치료가 성공한 밤은 최종 사망 0이고 승패 상태가 변하지 않는다 ---
+
+test('AC-02(F-25b): 순차 경로에서 치료가 성공하면 그 밤의 최종 사망은 0이고 victimUuid/deathReveals가 비며 승패 상태가 변하지 않는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac02' })
+    const [targetUuid] = citizenUuids
+    const aliveBefore = [...session.players.values()].filter((p) => p.alive).length
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, targetUuid)
+    const observed = captureCommitEvents()
+
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+    const progress = gameSession.__testables.getNightProgress(session)
+    assert.deepEqual(progress.events, [
+        { type: 'KILL', targetId: targetUuid },
+        { type: 'HEAL', targetId: targetUuid },
+    ])
+    assert.equal(progress.recoveryStates.get(targetUuid), 'RECOVERED')
+
+    const prepared = prepareNightResolutionForSession(session)
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.resolution.pendingEliminationTargetId, null)
+
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: null, terminal: null })
+    assert.deepEqual(session.nightResolution.publicDeathReveals, [])
+    assert.equal(session.players.get(targetUuid).alive, true)
+    assert.equal([...session.players.values()].filter((p) => p.alive).length, aliveBefore)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(Object.hasOwn(session, 'winResult'), false)
+
+    // 사망 확정은 0회, 승패 평가는 밤 최종화의 1회뿐이고 종료 확정은 없다.
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    assert.equal(observed.countOf('GAME_FINALIZED'), 0)
+
+    const payload = buildNightResultAppliedPayload(session, applied.victimUuid, session.nightResolution.publicDeathReveals)
+    assert.equal(payload.victimUuid, null)
+    assert.deepEqual(payload.deathReveals, [])
+})
+
+// --- AC-03: 미치료 밤은 의사 턴 이후 전체 밤 종료에서 정확히 1회 확정된다 ---
+
+test('AC-03(F-25b): 의사 턴이 기권으로 끝나면 치료 가능성만 닫히고(DEATH_CANDIDATE) 사망·승패 평가는 그 시점에 한 번도 실행되지 않는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac03-doctor' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    const observed = captureCommitEvents()
+
+    const completed = completeNightRole(session, 'DOCTOR')
+
+    assert.equal(completed.ok, true)
+    assert.equal(completed.healingClosed, true)
+    const progress = gameSession.__testables.getNightProgress(session)
+    assert.equal(progress.recoveryStates.get(targetUuid), 'DEATH_CANDIDATE')
+    // A-06: 의사 종료는 치료 가능성만 닫는다 — canonical alive는 그대로다.
+    assert.equal(session.players.get(targetUuid).alive, true)
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.nightResolution, null)
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
+    assert.equal(observed.winEvaluations('NIGHT'), 0)
+})
+
+test('AC-03(F-25b): 미치료 밤은 마지막 역할까지 끝난 뒤에만 사망 1회·승패 평가 1회로 확정되고 DAY로 넘어간다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac03-final' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    const observed = captureCommitEvents()
+
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    // 네 역할이 다 끝나도 최종화 전까지는 아무 것도 확정되지 않는다.
+    assert.equal(session.players.get(targetUuid).alive, true)
+    assert.deepEqual(observed.events, [])
+
+    const prepared = prepareNightResolutionForSession(session)
+    assert.equal(prepared.ok, true)
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: targetUuid, terminal: null })
+    assert.equal(session.players.get(targetUuid).alive, false)
+    assert.equal(session.players.get(targetUuid).deathReason, 'ASSASSINATION')
+    assert.equal(session.phase, 'DAY')
+    assert.deepEqual(session.nightResolution.publicDeathReveals, [{ victimUuid: targetUuid, source: 'JOKER' }])
+
+    // 정확히 한 번씩이다 — 사망 확정 1, 밤 승패 평가 1, 종료 확정 0(비종결 밤).
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+    assert.equal(observed.winEvaluations('DISCONNECT'), 0)
+    assert.equal(observed.countOf('GAME_FINALIZED'), 0)
+})
+
+test('AC-03(F-25b): 같은 밤을 두 번 최종화하려 해도 두 번째는 거부되고 사망·승패 평가가 다시 실행되지 않는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-once' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    const prepared = prepareNightResolutionForSession(session)
+    const observed = captureCommitEvents()
+    commitNightResolution(prepared.session, prepared.resolution)
+    const dayIndexAfterFirst = session.dayIndex
+
+    // (a) 같은 준비 객체로 다시 커밋 — 준비는 이미 소진됐다.
+    assert.deepEqual(
+        commitNightResolution(session, prepared.resolution),
+        { ok: false, code: 'NIGHT_ALREADY_RESOLVED' },
+    )
+    // (b) 이미 확정된 밤에 대해 새 준비를 만들려는 시도 자체가 막힌다.
+    assert.deepEqual(prepareNightResolutionForSession(session), { ok: false, code: 'NIGHT_ALREADY_RESOLVED' })
+
+    assert.equal(session.dayIndex, dayIndexAfterFirst)
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+})
+
+test('AC-03(F-25b): 같은 밤의 두 번째 커밋은 NIGHT_ALREADY_RESOLVED로 거부되고 상태가 불변이다(밤이 아직 NIGHT로 남는 손상 상태 재현)', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-dup-commit' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    // 두 경로가 같은 밤에 대해 각각 준비를 들고 최종화를 시도하는 경쟁 상황이다.
+    const first = prepareNightResolutionForSession(session)
+    const second = prepareNightResolutionForSession(session)
+    assert.equal(first.ok, true)
+    assert.equal(second.ok, true)
+    assert.notEqual(first.resolution, second.resolution)
+
+    const nightDayIndex = session.dayIndex
+    const observed = captureCommitEvents()
+    assert.deepEqual(
+        commitNightResolution(session, first.resolution),
+        { ok: true, victimUuid: targetUuid, terminal: null },
+    )
+    // 늦은 두 번째 진입이 phase/dayIndex 가드만으로 걸리지 않도록 그 밤의 좌표로 되돌린다 —
+    // 그래야 "이미 확정된 밤"이라는 사실 자체가 유일한 거부 근거임을 확인할 수 있다.
+    session.phase = 'NIGHT'
+    session.dayIndex = nightDayIndex
+
+    assert.deepEqual(
+        commitNightResolution(session, second.resolution),
+        { ok: false, code: 'NIGHT_ALREADY_RESOLVED' },
+    )
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+})
+
+// --- AC-04: 마지막 밤의 킬+치료 ---
+
+test('AC-04(F-25b): 마지막 밤에 킬과 치료가 함께 일어나도 치료가 성공하면 게임이 끝나지 않는다', () => {
+    // 킬 전: 생존 JOKER 1 · 생존 비-JOKER 2 → 어느 진영도 승리하지 않는다.
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac04-heal', playerCount: 3 })
+    const [targetUuid] = citizenUuids
+    assert.equal(gameSession.__testables.evaluateWinCondition(session), null, '킬 전에는 승자가 없어야 한다')
+
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, targetUuid)
+    const observed = captureCommitEvents()
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+    const prepared = prepareNightResolutionForSession(session)
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: null, terminal: null })
+    assert.equal([...session.players.values()].filter((p) => p.alive).length, 3)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(Object.hasOwn(session, 'winResult'), false)
+    assert.equal(observed.countOf('GAME_FINALIZED'), 0)
+})
+
+test('AC-04(F-25b) 대조군: 같은 마지막 밤에서 치료가 없으면 광대 동수로 게임이 종료된다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac04-kill', playerCount: 3 })
+    const [targetUuid] = citizenUuids
+    assert.equal(gameSession.__testables.evaluateWinCondition(session), null)
+
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    const observed = captureCommitEvents()
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+    const prepared = prepareNightResolutionForSession(session)
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: targetUuid, terminal: { winner: 'JOKER' } })
+    assert.equal([...session.players.values()].filter((p) => p.alive).length, 2)
+    assert.equal(session.phase, 'ENDED')
+    assert.deepEqual(session.winResult, { winner: 'JOKER' })
+    assert.equal(observed.countOf('GAME_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+})
+
+// --- A-07: 완료된 역할의 사건은 이후 어떤 정리로도 재계산·삭제되지 않는다 ---
+
+test('A-07(F-25b): 이미 확정된 역할의 재진입은 사건을 늘리지 않고 revision도 오르지 않는다(멱등)', () => {
+    const { session, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-idempotent' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    const first = completeNightRole(session, 'JOKER')
+
+    const again = completeNightRole(session, 'JOKER')
+
+    assert.deepEqual(again, {
+        ok: true, role: 'JOKER', alreadyCompleted: true, revision: first.revision, healingClosed: false,
+    })
+    const progress = gameSession.__testables.getNightProgress(session)
+    assert.deepEqual(progress.events, [{ type: 'KILL', targetId: targetUuid }])
+    assert.equal(progress.roleSteps.length, 1)
+})
+
+test('A-07(F-25b): 확정된 역할의 늦은 제출은 거부되고 이미 기록된 사건을 다시 쓰지 못한다', () => {
+    const { session, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-late-submit' })
+    const [targetUuid, otherUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    // 마지막 턴 종료 방송 중 nightTurnRole이 잠시 null인 틈을 재현한다.
+    assert.equal(session.nightTurnRole ?? null, null)
+    assert.equal(isNightRoleCompleted(session, 'JOKER'), true)
+
+    assert.deepEqual(submitNightAction(jokerUuid, session.id, otherUuid), { ok: false, code: 'NOT_YOUR_TURN' })
+
+    assert.equal(session.nightActions.get(jokerUuid), targetUuid)
+    assert.deepEqual(
+        gameSession.__testables.getNightProgress(session).events,
+        [{ type: 'KILL', targetId: targetUuid }],
+    )
+})
+
+test('A-08(F-25b): KILL 뒤 광대가 이탈해 경기가 끝나면 미확정 밤은 커밋되지 않고, 이미 기록된 KILL 사건도 확정 nightResolution으로 승격되지 않는다', () => {
+    const { session, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-joker-left', playerCount: 6 })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    const observed = captureCommitEvents()
+
+    const departure = commitParticipantDeparture(session, jokerUuid)
+
+    // 유일한 광대의 이탈은 기존 F-21대로 그 자리에서 DISCONNECT 사망과 승패 평가를 수행한다.
+    assert.equal(departure.ok, true)
+    assert.deepEqual(departure.terminal, { winner: 'CITIZEN' })
+    assert.equal(session.phase, 'ENDED')
+    assert.equal(observed.countOf('DISCONNECT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.winEvaluations('DISCONNECT'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 0)
+
+    // 이미 확정된 사건은 진행 자료에 그대로 남고, 확정 결과로 승격되지 않는다.
+    const progress = gameSession.__testables.getNightProgress(session)
+    assert.deepEqual(progress.events, [{ type: 'KILL', targetId: targetUuid }])
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.players.get(targetUuid).alive, true, '임시 사망 후보는 이탈 종결에도 최종 사망하지 않는다')
+
+    // 늦은 밤 최종화는 추가 커밋을 만들지 않는다.
+    assert.deepEqual(prepareNightResolutionForSession(session), { ok: false, code: 'GAME_ALREADY_ENDED' })
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
+})
+
+test('A-07(F-25b): 의사가 자기 턴 확정 전에 이탈하면 그 턴은 행위자 없음으로 닫히고 이미 확정된 KILL은 그대로 사망 후보로 남는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-doctor-left-early', playerCount: 6 })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, targetUuid)
+
+    const departure = commitParticipantDeparture(session, doctorUuid)
+    assert.equal(departure.ok, true)
+    assert.equal(departure.terminal ?? null, null, '의사 이탈만으로는 끝나지 않는 구성이다')
+
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+    const progress = gameSession.__testables.getNightProgress(session)
+    // 아직 확정되지 않았던 의사 턴은 현재 상태(생존 의사 없음)로 계산돼 치료가 성립하지 않는다.
+    assert.deepEqual(progress.events, [{ type: 'KILL', targetId: targetUuid }])
+    assert.equal(progress.healingClosed, true)
+    assert.equal(progress.recoveryStates.get(targetUuid), 'DEATH_CANDIDATE')
+    // 이미 확정된 KILL 사건 자체는 이탈로 사라지지 않는다.
+    assert.deepEqual(
+        progress.roleSteps.find((s) => s.role === 'JOKER'),
+        { role: 'JOKER', targetId: targetUuid, status: 'RESOLVED' },
+    )
+})
+
+test('A-08(F-25b): KILL→HEAL 뒤 대상이 이탈하면 그 사망은 이탈 경로가 소유하고 HEAL이 되살리지 않는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-healed-left', playerCount: 6 })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, targetUuid)
+    completeNightRole(session, 'DOCTOR')
+    assert.equal(gameSession.__testables.getNightProgress(session).recoveryStates.get(targetUuid), 'RECOVERED')
+
+    assert.equal(commitParticipantDeparture(session, targetUuid).ok, true)
+    completeRemainingRoles(session, ['GUARD', 'WITCH_HUNTER'])
+    const prepared = prepareNightResolutionForSession(session)
+    const applied = commitNightResolution(prepared.session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: null, terminal: null })
+    assert.equal(session.players.get(targetUuid).alive, false, '이탈 사망이 HEAL로 되살아나지 않는다')
+    assert.equal(session.players.get(targetUuid).deathReason, 'DISCONNECT')
+    assert.deepEqual(session.nightResolution.publicDeathReveals, [])
+})
+
+test('A-07(F-25b): 의사 턴이 끝난 뒤 의사가 이탈해도 이미 만들어진 HEAL 사건과 RECOVERED 상태는 유지된다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-doctor-left', playerCount: 6 })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, targetUuid)
+    completeNightRole(session, 'DOCTOR')
+
+    assert.equal(commitParticipantDeparture(session, doctorUuid).ok, true)
+
+    const progress = gameSession.__testables.getNightProgress(session)
+    assert.deepEqual(progress.events, [
+        { type: 'KILL', targetId: targetUuid },
+        { type: 'HEAL', targetId: targetUuid },
+    ])
+    assert.equal(progress.recoveryStates.get(targetUuid), 'RECOVERED')
+    assert.equal(progress.healingClosed, true)
+})
+
+// --- A-08: 이탈이 먼저 확정한 사망은 밤이 다시 처리하지 않는다 ---
+
+test('A-08(F-25b): 공격 대상이 밤 최종화 전에 끊김 사망하면 그 밤의 최종 후보는 null로 정규화되고 새 ASSASSINATION·reveal이 생기지 않는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-target-left', playerCount: 6 })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    const prepared = prepareNightResolutionForSession(session)
+    assert.equal(prepared.resolution.pendingEliminationTargetId, targetUuid)
+
+    const observed = captureCommitEvents()
+    // 준비 이후에 이탈이 먼저 그 사망을 확정한다.
+    assert.equal(commitDisconnectElimination(session, targetUuid).ok, true)
+    assert.equal(session.players.get(targetUuid).deathReason, 'DISCONNECT')
+
+    // 준비 시점의 최종 후보가 그 사이 빠졌으므로 커밋이 그 자리에서 null로 정규화한다 —
+    // 준비를 다시 만들 필요 없이, 이미 확정된 사망을 밤이 다시 처리하지 않는다.
+    const applied = commitNightResolution(session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: null, terminal: null })
+    assert.equal(session.nightResolution.pendingEliminationTargetId, null, '확정 결과에도 null이 반영된다')
+    assert.equal(session.players.get(targetUuid).deathReason, 'DISCONNECT', '사망 원인이 ASSASSINATION으로 덮이지 않는다')
+    assert.deepEqual(session.nightResolution.publicDeathReveals, [])
+    // 사망은 이탈 경로가 1회 확정했고 밤은 새 사망을 만들지 않았다.
+    assert.equal(observed.countOf('DISCONNECT_DEATH_FINALIZED'), 1)
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
+    assert.equal(observed.winEvaluations('DISCONNECT'), 1)
+    assert.equal(observed.winEvaluations('NIGHT'), 1)
+})
+
+// --- A-03: 준비 출처·신선도 ---
+
+test('A-03(F-25b): 출처 없는 준비·다른 경기의 준비·이전 밤의 준비는 전부 거부되고 세션 상태가 불변이다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-source-a' })
+    const other = sequencedNight({ id: 'room-f25b-source-b' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    const prepared = prepareNightResolutionForSession(session)
+    const observed = captureCommitEvents()
+
+    // (a) 출처가 전혀 없는 손조립 객체
+    assert.deepEqual(
+        commitNightResolution(session, { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: targetUuid }),
+        { ok: false, code: 'UNKNOWN_RESOLUTION_SOURCE' },
+    )
+    // (b) 다른 경기에서 만든 준비
+    submitNightAction(other.jokerUuid, other.session.id, other.citizenUuids[0])
+    completeNightRole(other.session, 'JOKER')
+    submitNightAction(other.doctorUuid, other.session.id, null)
+    completeRemainingRoles(other.session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    const otherPrepared = prepareNightResolutionForSession(other.session)
+    assert.deepEqual(
+        commitNightResolution(session, otherPrepared.resolution),
+        { ok: false, code: 'UNKNOWN_RESOLUTION_SOURCE' },
+    )
+    // (c) 전달된 준비 객체를 바깥에서 변형해도 확정 내용은 등록된 원본을 따른다
+    prepared.resolution.pendingEliminationTargetId = other.citizenUuids[0]
+    const applied = commitNightResolution(session, prepared.resolution)
+
+    assert.deepEqual(applied, { ok: true, victimUuid: targetUuid, terminal: null })
+    assert.equal(session.players.get(targetUuid).alive, false)
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
+})
+
+test('A-03(F-25b): 준비 이후 역할이 하나 더 확정되면 그 준비는 오래된 것으로 거부된다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-stale-rev' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    const prepared = prepareNightResolutionForSession(session)
+    // 준비 이후에 진행 자료가 한 번 더 움직였다고 가정한다(진행 revision만 올린다).
+    gameSession.__testables.getNightProgress(session).revision += 1
+    const observed = captureCommitEvents()
+
+    assert.deepEqual(
+        commitNightResolution(session, prepared.resolution),
+        { ok: false, code: 'STALE_RESOLUTION' },
+    )
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.players.get(targetUuid).alive, true)
+    assert.deepEqual(observed.events, [])
+})
+
+// --- A-02/AC-06: 공개 스냅샷은 임시 사망을 최종 사망으로 내보내지 않는다 ---
+
+test('AC-06(F-25b): 킬 직후·의사 종료 직후의 스냅샷은 대상을 isAlive:true로 내보내고 그 밤의 확정 nightResult를 담지 않는다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac06' })
+    const [targetUuid] = citizenUuids
+    const viewerUuid = citizenUuids[1]
+    submitNightAction(jokerUuid, session.id, targetUuid)
+
+    completeNightRole(session, 'JOKER')
+    const afterKill = getSessionSnapshotForPlayer(viewerUuid, session.id)
+    assert.equal(afterKill.ok, true)
+    assert.equal(afterKill.snapshot.players.find((p) => p.uuid === targetUuid).isAlive, true)
+    assert.equal(afterKill.snapshot.nightResult ?? null, null)
+    // 진행 자료(회복 상태·비공개 대상)는 어떤 경로로도 직렬화되지 않는다.
+    const serializedAfterKill = JSON.stringify(afterKill.snapshot)
+    for (const forbidden of ['nightProgress', 'recoveryStates', 'PENDING_RECOVERY', 'DEATH_CANDIDATE', 'roleSteps']) {
+        assert.equal(serializedAfterKill.includes(forbidden), false, `${forbidden}가 공개 스냅샷에 노출됨`)
+    }
+
+    submitNightAction(doctorUuid, session.id, null)
+    completeNightRole(session, 'DOCTOR')
+    const afterDoctor = getSessionSnapshotForPlayer(viewerUuid, session.id)
+    assert.equal(afterDoctor.snapshot.players.find((p) => p.uuid === targetUuid).isAlive, true)
+    assert.equal(afterDoctor.snapshot.nightResult ?? null, null)
+
+    completeRemainingRoles(session, ['GUARD', 'WITCH_HUNTER'])
+    const prepared = prepareNightResolutionForSession(session)
+    commitNightResolution(prepared.session, prepared.resolution)
+
+    const afterCommit = getSessionSnapshotForPlayer(viewerUuid, session.id)
+    assert.equal(afterCommit.snapshot.players.find((p) => p.uuid === targetUuid).isAlive, false)
+    assert.equal(afterCommit.snapshot.nightResult.victimUuid, targetUuid)
+})
+
+test('AC-06(F-25b): 치료가 성공한 밤의 최종 스냅샷은 대상을 생존으로, nightResult.victimUuid를 null로 내보낸다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-ac06-heal' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, targetUuid)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    const prepared = prepareNightResolutionForSession(session)
+    commitNightResolution(prepared.session, prepared.resolution)
+
+    const snapshot = getSessionSnapshotForPlayer(targetUuid, session.id)
+
+    assert.equal(snapshot.ok, true)
+    assert.equal(snapshot.snapshot.players.find((p) => p.uuid === targetUuid).isAlive, true)
+    assert.equal(snapshot.snapshot.nightResult.victimUuid, null)
+})
+
+// --- A-10: 자동 최종화의 실행 전제 ---
+
+test('A-10(F-25b): 순차 준비는 요청자 uuid 없이 canonical session만으로 성립하고, registry에서 빠진 세션·종료된 세션은 거부된다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-a10' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+    // 종료된 세션은 그 자리에서 거부된다(늦은 타이머가 끝난 판을 다시 진행시키지 않는다).
+    const endedFixture = sequencedNight({ id: 'room-f25b-a10-ended' })
+    endedFixture.session.phase = 'ENDED'
+    endedFixture.session.winResult = { winner: 'CITIZEN' }
+    assert.deepEqual(prepareNightResolutionForSession(endedFixture.session), { ok: false, code: 'GAME_ALREADY_ENDED' })
+    assert.deepEqual(completeNightRole(endedFixture.session, 'GUARD'), { ok: false, code: 'GAME_ALREADY_ENDED' })
+
+    // registry에서 제거된 세션 객체는 같은 id를 가졌어도 거부된다(대표 UUID를 만들지 않는다).
+    gameSession.__testables.__deleteGameSessionOnlyForTests(session.id)
+    assert.deepEqual(prepareNightResolutionForSession(session), { ok: false, code: 'SESSION_NOT_FOUND' })
+    assert.deepEqual(completeNightRole(session, 'GUARD'), { ok: false, code: 'SESSION_NOT_FOUND' })
+})
+
+test('A-01(F-25b) 회귀: 순차 경로도 NIGHT_TURN_ORDER의 네 역할을 그 순서 그대로 roleSteps에 남긴다', () => {
+    const { session, doctorUuid, jokerUuid, citizenUuids } = sequencedNight({ id: 'room-f25b-order' })
+    const [targetUuid] = citizenUuids
+    submitNightAction(jokerUuid, session.id, targetUuid)
+    completeNightRole(session, 'JOKER')
+    submitNightAction(doctorUuid, session.id, null)
+    completeRemainingRoles(session, ['DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+    const prepared = prepareNightResolutionForSession(session)
+
+    assert.deepEqual(prepared.resolution.roleSteps.map((s) => s.role), [...NIGHT_TURN_ORDER])
 })

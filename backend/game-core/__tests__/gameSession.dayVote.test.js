@@ -41,6 +41,7 @@ const {
     resolveTribunalVotes,
     assertNoForbiddenPrivateData,
     collectOtherPlayerRoleSecrets,
+    sourcedNightResolution,
 } = require('./gameSession.testUtils')
 
 // 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
@@ -226,7 +227,7 @@ test('submitDayVote: NIGHT→DAY 전환마다 dayVotes가 새 빈 Map으로 교�
     session.dayVotes.set('stale-uuid', 'stale-target')
     const staleMapRef = session.dayVotes
     session.phase = 'NIGHT'
-    const resolution2 = { gameId: session.id, dayIndex: 1, pendingEliminationTargetId: null, privateResults: new Map(), resolved: true }
+    const resolution2 = sourcedNightResolution(session, { pendingEliminationTargetId: null })
 
     commitNightResolution(session, resolution2)
 
@@ -841,9 +842,7 @@ test('enterDayPhase: 첫 낮도 밤을 넘긴 낮도 항상 DAY_DISCUSSION에서
     advanceDayToVotePhase(session)
     session.phase = 'NIGHT'
     const readyMapRef = session.dayVoteReadyUuids
-    commitNightResolution(session, {
-        gameId: session.id, dayIndex: 1, pendingEliminationTargetId: null, privateResults: new Map(), resolved: true,
-    })
+    commitNightResolution(session, sourcedNightResolution(session, { pendingEliminationTargetId: null }))
 
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayPhase, 'DAY_DISCUSSION')
