@@ -188,6 +188,10 @@ function buildNightResultApplied({ dayIndex, selfAlive, victimUuid = null }) {
   }
 }
 
+function buildNightTurnEndedPayload({ role, dayIndex = 1 }) {
+  return { gameId: GAME_ID, dayIndex, role }
+}
+
 function useProductionTree({ hold = false } = {}) {
   // ProtectedRoute 위치의 전역 구독 — night_action_success·night_result_applied 모두 이
   // 훅이 실제로 받아 store로 넘긴다(receiveNightSuccess·applyNightResultAppliedPayload).
@@ -372,6 +376,37 @@ test("AC-02: night_result_applied가 먼저 도착해도, 큐가 다 비기 전�
   session.close()
 })
 
+/**
+ * AC-02(CODEX 반려 수정): "KILL 연출 종료 → DAY 결과 도착 → HEAL 사건 도착" 순서 고정 시험.
+ *
+ * KILL만 finish된 채 night_result_applied가 먼저 반영되는 시점에는(HEAL이 이 밤에 더 올지
+ * 아직 알 수 없다) 최종 상태를 보여주면 안 된다 — 이전 코드는 track을 KILL·HEAL 구분 없이
+ * 마지막 사건 하나로만 덮어써서, 바로 이 시점에 finalStatus를 잘못 켰다. HEAL이 이 밤에
+ * 더 오지 않는다는 확인은 오직 DOCTOR의 night_turn_ended 방송으로만 한다(추측하지 않는다 —
+ * HEAL_WINDOW_CLOSING_ROLE 주석 참고). 그 방송이 도착한 뒤에야 KILL 하나만으로 최종 상태가 켜진다.
+ */
+test("AC-02(CODEX 반려 수정): KILL만 finish된 채 DAY 결과가 먼저 반영되면, DOCTOR의 턴 종료 전까지 최종 상태를 보여주지 않는다", () => {
+  seedNightSession({ dayIndex: 7 })
+  const session = openSession()
+
+  session.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "k3", nightDayIndex: 7, perspectives: ["TARGET"] }))
+  session.finish("COMPLETED")
+  assert.equal(session.value.current, null, "KILL만 있었으니 큐는 이미 비어 있다")
+
+  // "DAY 결과 도착" — 이 시점에는 이 밤에 HEAL이 왔는지·안 왔는지 아직 아무 근거가 없다.
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 8, selfAlive: true }))
+  assert.equal(
+    session.value.finalStatus, null,
+    "HEAL이 finish되지도, DOCTOR 턴 종료로 '더 오지 않는다'가 확인되지도 않았는데 최종 상태가 떴다",
+  )
+
+  // DOCTOR의 턴이 끝났다는 서버 방송만이 "이 밤엔 HEAL이 더 오지 않는다"의 근거다.
+  session.deliver("night_turn_ended", buildNightTurnEndedPayload({ role: "DOCTOR", dayIndex: 7 }))
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: true })
+
+  session.close()
+})
+
 test("hold가 걸린 동안에는 표시하지 않되 큐·최종 상태는 그대로 보존한다", () => {
   seedNightSession()
   const socket = createFakeSocket()
@@ -433,6 +468,94 @@ test("AC-05: KILL 사건은 기존 사망 연출과 같은 영상을 재생하�
     unmount()
     dom.window.HTMLMediaElement.prototype.play = originalPlay
   }
+})
+
+/** play()가 강제로 거부(reject)되도록 잠시 바꿔치기한다. name은 DOMException.name 흉내다. */
+function withRejectingPlay(errorName, fn) {
+  const originalPlay = dom.window.HTMLMediaElement.prototype.play
+  dom.window.HTMLMediaElement.prototype.play = function rejectingPlay() {
+    const err = new Error(errorName)
+    err.name = errorName
+    return Promise.reject(err)
+  }
+  return Promise.resolve(fn()).finally(() => {
+    dom.window.HTMLMediaElement.prototype.play = originalPlay
+  })
+}
+
+/** 등록된 마이크로태스크(예: play()의 .catch)가 전부 풀리도록 한 틱 기다린다. */
+const flushMicrotasks = () => act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+test("AC-03(CODEX 반려 수정): 자동재생 차단(NotAllowedError)은 재시도 화면만 보여주고 아직 보고하지 않는다", async () => {
+  const finishes = []
+  await withRejectingPlay("NotAllowedError", async () => {
+    const { container, unmount } = renderPresentation({
+      current: { eventId: "k-autoplay", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      open: true,
+      finish: (outcome) => finishes.push(outcome),
+      assetStatus: "VERIFIED",
+      finalStatus: null,
+      onClose: () => {},
+    })
+    try {
+      await flushMicrotasks()
+      const retryButton = [...container.querySelectorAll("button")]
+        .find((b) => b.textContent.trim() === "다시 재생")
+      assert.notEqual(retryButton, null, "자동재생 차단은 재시도 버튼을 보여줘야 한다")
+      assert.deepEqual(finishes, [], "재시도 화면만으로는 아직 아무것도 보고하면 안 된다")
+    } finally {
+      unmount()
+    }
+  })
+})
+
+test("AC-03(CODEX 반려 수정): 자동재생 차단이 아닌 재생 실패(예: NotSupportedError)는 ERROR로 한 번 보고하고 넘어간다", async () => {
+  const finishes = []
+  await withRejectingPlay("NotSupportedError", async () => {
+    const { container, unmount } = renderPresentation({
+      current: { eventId: "k-decode-fail", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      open: true,
+      finish: (outcome) => finishes.push(outcome),
+      assetStatus: "VERIFIED",
+      finalStatus: null,
+      onClose: () => {},
+    })
+    try {
+      await flushMicrotasks()
+      assert.deepEqual(finishes, ["ERROR"], "자동재생 차단이 아닌 재생 실패는 재시도로 묶지 않고 바로 ERROR로 보고해야 한다")
+      const retryButton = [...container.querySelectorAll("button")]
+        .find((b) => b.textContent.trim() === "다시 재생")
+      assert.equal(retryButton, undefined, "재시도로 풀리지 않는 실패인데 재시도 버튼을 보여주면 안 된다")
+    } finally {
+      unmount()
+    }
+  })
+})
+
+test("AC-03(CODEX 반려 수정): 재시도 화면에서 건너뛰기를 누르면 SKIPPED로 한 번 보고된다", async () => {
+  const finishes = []
+  await withRejectingPlay("NotAllowedError", async () => {
+    const { container, unmount } = renderPresentation({
+      current: { eventId: "k-skip-from-retry", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      open: true,
+      finish: (outcome) => finishes.push(outcome),
+      assetStatus: "VERIFIED",
+      finalStatus: null,
+      onClose: () => {},
+    })
+    try {
+      await flushMicrotasks()
+      const skipButton = [...container.querySelectorAll("button")]
+        .find((b) => b.textContent.trim() === "건너뛰기")
+      assert.notEqual(skipButton, null, "자동재생 차단 화면에도 건너뛰기가 있어야 막히지 않는다")
+      fireEvent.click(skipButton)
+      assert.deepEqual(finishes, ["SKIPPED"])
+    } finally {
+      unmount()
+    }
+  })
 })
 
 test("AC-04: HEAL·INVESTIGATE·CONFIRM은 '자료 대기' 임시 연출을 보여주고, 확인은 COMPLETED·건너뛰기는 SKIPPED로 각각 끝낸다", () => {

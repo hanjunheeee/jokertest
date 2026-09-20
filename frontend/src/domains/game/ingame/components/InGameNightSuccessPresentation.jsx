@@ -31,17 +31,30 @@ function buildFinalStatusLabel(alive) {
 }
 
 /**
+ * play() 거부가 브라우저 자동재생 정책 때문인가(사용자 동작 — 다시 재생 버튼 — 으로 다시 풀릴
+ * 수 있는 **유일한** 실패 종류다). 스펙·주요 브라우저 모두 이 경우를 DOMException
+ * "NotAllowedError"로만 표시한다. 자산 로드 실패·디코드 오류 등 그 밖의 모든 거부 사유는
+ * 사용자가 다시 눌러도 똑같이 실패하므로 재시도로 묶지 않고 ERROR로 바로 보고한다.
+ */
+function isAutoplayBlockedRejection(err) {
+  return err !== null && typeof err === "object" && err.name === "NotAllowedError"
+}
+
+/**
  * KILL 사건 전용 — 기존 사망 연출과 같은 kill-animation.mp4를 재생한다(AC-05).
  *
  * 기존 InGameKillRevealOverlay는 종료·오류·건너뛰기를 모두 onConsume 하나로 알려서 보고
- * 결과를 구분할 수 없다 — 그래서 재사용하지 않고, 같은 자산·같은 3단계 실패 대응(재시도/
- * 건너뛰기/워치독)을 이 컴포넌트가 다시 구현하되 세 종료 경로를 finish(outcome)로 구분해
- * 알린다.
+ * 결과를 구분할 수 없다 — 그래서 재사용하지 않고, 같은 자산으로 종료 경로를 finish(outcome)로
+ * 구분해 알린다.
  *
- *   - ended(정상 종료)            → COMPLETED
- *   - video의 error(재생 자체 실패) → ERROR
- *   - 사용자가 건너뛰기를 누름      → SKIPPED(자동재생 거부 뒤 재시도 화면, 워치독 뒤 정지 화면
- *     양쪽 모두 사용자가 명시적으로 눌러야만 보고된다 — 조용히 다음으로 넘어가지 않는다)
+ *   - ended(정상 종료)                        → COMPLETED
+ *   - video의 error 이벤트(재생 자체 실패)      → ERROR(한 번만 보고하고 다음 사건으로 넘어간다)
+ *   - play() 거부 · 자동재생 정책(NotAllowedError) → 재시도 화면(아직 보고하지 않는다)
+ *   - play() 거부 · 그 밖의 사유(자산 로드 실패 등) → ERROR(재시도로 풀리지 않는 실패라 바로 보고)
+ *   - 사용자가 건너뛰기를 누름(재시도 화면·워치독 화면 어느 쪽에서든) → SKIPPED
+ *
+ * ERROR·SKIPPED·COMPLETED 중 무엇이든 사용자의 동작이나 브라우저 이벤트 하나당 정확히 한 번만
+ * onFinish를 부른다 — 조용히 다음으로 넘어가지 않는다.
  */
 function InGameNightSuccessKillVideo({ eventId, onFinish }) {
   const videoRef = useRef(null)
@@ -65,8 +78,14 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
       }
       const playResult = video.play?.()
       if (playResult && typeof playResult.then === "function") {
-        playResult.catch(() => {
-          if (!cancelled) setStatus("retry")
+        playResult.catch((err) => {
+          if (cancelled) return
+          if (isAutoplayBlockedRejection(err)) {
+            setStatus("retry")
+            return
+          }
+          setStatus("error")
+          onFinish("ERROR")
         })
       }
     }
@@ -79,7 +98,7 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
       cancelled = true
       clearTimeout(watchdog)
     }
-  }, [eventId])
+  }, [eventId, onFinish])
 
   const handleEnded = () => onFinish("COMPLETED")
   const handleError = () => {
@@ -94,8 +113,14 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
     if (!video) return
     const playResult = video.play?.()
     if (playResult && typeof playResult.then === "function") {
-      playResult.catch(() => {
-        if (eventIdRef.current === targetEventId) setStatus("retry")
+      playResult.catch((err) => {
+        if (eventIdRef.current !== targetEventId) return
+        if (isAutoplayBlockedRejection(err)) {
+          setStatus("retry")
+          return
+        }
+        setStatus("error")
+        onFinish("ERROR")
       })
     }
   }
@@ -114,9 +139,17 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
           onError={handleError}
         />
         {status === "retry" ? (
-          <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleRetry}>
-            {INGAME_KILL_REVEAL_RETRY_LABEL}
-          </button>
+          <>
+            <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleRetry}>
+              {INGAME_KILL_REVEAL_RETRY_LABEL}
+            </button>
+            {/* AC-03(CODEX 반려 수정): 자동재생 거부는 재시도만으로는 못 벗어날 수 있다(권한이
+                계속 거부되는 환경) — 재시도 화면에서도 건너뛰기로 SKIPPED를 보고할 수 있어야
+                연출이 막히지 않는다. */}
+            <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleSkip}>
+              {INGAME_KILL_REVEAL_SKIP_LABEL}
+            </button>
+          </>
         ) : null}
         {status === "watchdog" ? (
           <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleSkip}>

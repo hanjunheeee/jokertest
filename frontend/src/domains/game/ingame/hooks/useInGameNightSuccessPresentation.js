@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
+import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import {
   getInGameIdentityScopeVersion,
@@ -7,6 +8,24 @@ import {
   subscribeInGameIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
+
+/**
+ * F-27b(AC-02, CODEX 반려 수정): "이 밤에 더 이상 HEAL이 오지 않는다"를 판정하는 유일한 근거.
+ *
+ * backend/game-core/gameSession.js의 applyNightRoleStep(1730-1754)은 DOCTOR 역할 스텝을 적용할
+ * 때(성공 여부와 무관하게) closeNightHealing을 호출한다 — 그 함수 자체의 주석이 "상태·사유와
+ * 무관하게 의사 턴이 끝나면 치료 가능성이 닫힌다"고 명시한다(closeNightHealing, 1716-1724).
+ * 그 스텝이 확정되는 시점에 서버는 night_turn_ended(role: "DOCTOR")를 방송한다 — 그래서 그
+ * 방송의 도착이 곧 "이 밤의 치료 가능성이 닫혔다"는 서버가 주는 값이다.
+ *
+ * 반대로 NIGHT_TURN_ORDER(역할이 도는 순서) 자체는 이 판정의 근거로 쓰지 않는다 —
+ * constants/nightTurn/ingameNightTurnAnnouncement.js가 "안내 문구 사전의 정렬일 뿐, 현재 턴을
+ * 결정하지 않는다"고 명시적으로 경고하는 값이고, 과거에 프런트가 이 순서를 스스로 가정해
+ * 진행시키다가 서버 턴과 어긋난 회귀가 있었다(같은 파일 6-8행). 그래서 "GUARD·WITCH_HUNTER의
+ * 사건이 도착했으니 DOCTOR 턴은 끝났을 것"이라는 추론은 쓰지 않고, DOCTOR 자신의 종료 방송만
+ * 근거로 삼는다.
+ */
+const HEAL_WINDOW_CLOSING_ROLE = "DOCTOR"
 
 // F-27b(AC-02): 최종 생존 표시로 이어질 수 있는 두 종류뿐이다 — INVESTIGATE·CONFIRM은 roster의
 // alive를 바꾸지 않는다.
@@ -53,10 +72,12 @@ function isInGameNightResultReflected(state, nightDayIndex) {
  * 부른다. 그 사건은 이미 completed=true로 기록돼 있으므로(큐가 넘어갔다는 것 자체가 그 사건이
  * 먼저 완료됐다는 뜻이다) store가 noop으로 막는다 — 옛 콜백이 새 사건을 완료하는 일은 없다.
  *
- * finalStatus는 KILL·HEAL이 이 밤에 대해 이 대상(targetId — USER 관점의 targetId 또는 TARGET
- * 관점의 본인)으로 최소 한 번 finish된 뒤, 큐가 완전히 비고 같은 밤의 night_result_applied가
- * canonical roster에 반영됐을 때만 켜진다. 연출 자체(KILL·HEAL 표시)는 alive를 조금도 바꾸지
- * 않는다 — 최종 생존은 오직 roster에서만 읽는다(A-02).
+ * finalStatus는 **이 밤의 KILL이 finish되고, 그 대상에 대한 HEAL도 finish됐거나(치료 성공)
+ * HEAL이 더 오지 않는다는 것이 확인된 뒤에만** 켜진다 — "더 오지 않는다"는 DOCTOR 역할의
+ * night_turn_ended 방송(HEAL_WINDOW_CLOSING_ROLE)으로만 판정한다(추측하지 않는다, 위 상수의
+ * 주석 참고). 거기에 더해 큐가 완전히 비고 같은 밤의 night_result_applied가 canonical
+ * roster에 반영돼야 한다. 연출 자체(KILL·HEAL 표시)는 alive를 조금도 바꾸지 않는다 — 최종
+ * 생존은 오직 roster에서만 읽는다(A-02).
  *
  * @param {object} [options]
  * @param {boolean} [options.hold] 더 높은 우선순위 오버레이(자기 역할 공개, 사망 연출)가 떠
@@ -80,7 +101,8 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     ? `${gameId}|${authUuid}|${identityGeneration}|${identityScopeVersion}`
     : null
 
-  // F-27b(AC-02): 최종 상태로 이어질 KILL/HEAL 추적. { scopeKey, nightDayIndex, targetId }.
+  // F-27b(AC-02): 최종 상태로 이어질 KILL/HEAL 추적.
+  // { scopeKey, nightDayIndex, targetId, killDone, healDone, healWindowClosed }.
   const [track, setTrack] = useState(null)
 
   // 범위가 바뀌면(계정 전이·소속 왕복·게임 교체) 이전 신원이 남긴 추적은 더 이상 이 화면의
@@ -96,6 +118,28 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     setTrack((prev) => (prev && prev.nightDayIndex === gameState.dayIndex ? prev : null))
   }, [gameState?.phase, gameState?.dayIndex])
 
+  // F-27b(AC-02): DOCTOR의 night_turn_ended가 "이 밤엔 HEAL이 더 오지 않는다"는 유일한 근거다
+  // (HEAL_WINDOW_CLOSING_ROLE 주석 참고). useGameSessionSocketEvents와 별개로 이 훅이 직접
+  // 구독한다(useInGameKillReveal이 night_result_applied/tribunal_vote_resolved를 독립 구독하는
+  // 것과 같은 관례) — 표시 전용 파생이라 canonical nightTurnRole을 건드리지 않는다.
+  const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
+  useEffect(() => {
+    if (!socket || typeof socket.on !== "function") return undefined
+    const handleNightTurnEnded = (payload) => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      if (payload.role !== HEAL_WINDOW_CLOSING_ROLE) return
+      if (typeof payload.gameId !== "string" || payload.gameId !== gameId) return
+      if (!Number.isInteger(payload.dayIndex)) return
+      setTrack((prev) => {
+        if (!prev || prev.scopeKey !== scopeKey || prev.nightDayIndex !== payload.dayIndex) return prev
+        if (prev.healWindowClosed) return prev
+        return { ...prev, healWindowClosed: true }
+      })
+    }
+    socket.on("night_turn_ended", handleNightTurnEnded)
+    return () => socket.off("night_turn_ended", handleNightTurnEnded)
+  }, [socket, gameId, scopeKey])
+
   const finish = useCallback((outcome) => {
     if (!current) return
     const entry = current
@@ -110,7 +154,21 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     if (NIGHT_SUCCESS_FINAL_STATUS_TYPES.has(entry.type) && scopeKey) {
       const targetId = resolveNightSuccessTargetId(entry, authUuid)
       if (targetId) {
-        setTrack({ scopeKey, nightDayIndex: entry.nightDayIndex, targetId })
+        const isKill = entry.type === "KILL"
+        setTrack((prev) => {
+          if (prev && prev.scopeKey === scopeKey && prev.nightDayIndex === entry.nightDayIndex
+            && prev.targetId === targetId) {
+            return { ...prev, killDone: prev.killDone || isKill, healDone: prev.healDone || !isKill }
+          }
+          return {
+            scopeKey,
+            nightDayIndex: entry.nightDayIndex,
+            targetId,
+            killDone: isKill,
+            healDone: !isKill,
+            healWindowClosed: false,
+          }
+        })
       }
     }
   }, [current, scopeKey, authUuid])
@@ -123,6 +181,8 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
   if (
     track
     && track.scopeKey === scopeKey
+    && track.killDone
+    && (track.healDone || track.healWindowClosed)
     && queue.length === 0
     && isInGameNightResultReflected(gameState, track.nightDayIndex)
   ) {
