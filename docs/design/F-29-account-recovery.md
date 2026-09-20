@@ -33,7 +33,7 @@
 
 - 링크를 여는 동작은 화면이 `verify`(POST)를 부르는 것이다 — GET으로 토큰을 받는 서버 경로를 만들지 않는다(메일 미리보기가 소비하지 못하게).
 - 응답·로그에 전체 이메일, 사용자 UUID, 토큰 원문, 생년월일 원문을 넣지 않는다.
-- 소셜 전용 계정(로컬 비밀번호 없음): `request`는 같은 `{ok:true}`를 주되 메일은 '제공자 로그인 안내'를 보내고 토큰을 만들지 않는다. `confirm`에 그런 계정의 토큰이 올 수는 없지만 방어적으로 `SOCIAL_ONLY`.
+- 소셜 전용 계정(판정은 §2-3a의 `users.has_local_password = false`): `request`는 같은 `{ok:true}`를 주되 메일은 '제공자 로그인 안내'를 보내고 토큰을 만들지 않는다. `confirm`에 그런 계정의 토큰이 올 수는 없지만 방어적으로 `SOCIAL_ONLY`.
 
 ### 2-2. 이메일 마스킹 (BW)
 - 서버에서만 마스킹한다. 로컬 부분: 1자면 `*`, 2자면 첫 글자+`*`, 3자 이상이면 첫 글자 + `*`(나머지 길이와 무관하게 3개 고정) + 마지막 글자. 도메인은 첫 글자 + `***` + 최상위 도메인(`.com` 등)만 남긴다. 어떤 길이에서도 원문 전체가 복원되지 않아야 한다.
@@ -45,6 +45,19 @@
 - 유효기간 기본 30분(서버 설정). 새 요청이 오면 그 사용자의 이전 미사용 토큰을 폐기한다.
 - `confirm`은 **한 트랜잭션**: 비밀번호 규칙 검사 → 해시로 토큰 행 잠금 조회 → 상태 판정 → 사용 처리 → `password_hash` 갱신 → `markOnlineSessionsOffline(user_id, {transaction})` → 남은 토큰 폐기 → 커밋. 동시 제출은 정확히 하나만 성공. 계정 정지·권한 상태는 바꾸지 않는다.
 - 링크 주소는 **서버 설정의 앱 기본 URL** + `/password-reset?token=…`. 클라이언트가 보낸 목적지로 만들지 않는다.
+
+### 2-3a. 로컬 비밀번호 보유 여부 (BX) — 운영자 대행 확정 2026-09-21
+배경(코드에서 확인): `backend/service/socialAuth.service.js::completeSocialSignup`(:231~)은 소셜 가입 계정에도 `users.password_hash`에 **난수 비밀번호의 해시**를 넣는다(NOT NULL이라서). 그래서 `password_hash`만으로는 '소셜 전용 계정'과 '로컬 비밀번호 계정'을 구분할 수 없다 — §2-1의 `SOCIAL_ONLY` 분기에 사용자별 근거가 필요하다(BX 계획이 이 공백으로 3회 반려됐다).
+
+- 새 컬럼 **`users.has_local_password`** BOOLEAN NOT NULL DEFAULT true (BX의 마이그레이션에 포함).
+- **기존 행 backfill**(마이그레이션 안, 재실행 안전): 아래 둘 중 하나에 해당하는 사용자는 `false`, 나머지는 `true`.
+  1. 그 사용자의 `user_external_identities` 행 중 `(provider, subject)`가 **소비된**(`consumed_at IS NOT NULL`) `social_signup_intents` 행과 일치하는 것이 있다 — 소셜 가입 완료로 만들어진 계정이라는 직접 근거(같은 트랜잭션에서 사용자·identity·intent 소비가 함께 기록된다, socialAuth.service.js:252~268).
+  2. (intent 행이 남아 있지 않은 경우의 보조 근거) 외부 identity의 `created_at`이 그 사용자 `created_at`으로부터 **10초 이내**다 — 소셜 가입은 한 트랜잭션에서 둘을 만든다. 로그인한 기존 계정에 나중에 연결한 identity(`linkExternalIdentityForValidatedSession`)는 이 조건에 들지 않는다.
+  - 두 근거가 서로 어긋나는 행은 없다(1이 참이면 2도 참). 어느 근거에도 들지 않으면 로컬 계정으로 본다. `verify()`는 `has_local_password IS NULL`인 행이 0임과, 근거 1에 해당하는 사용자가 모두 `false`임을 확인한다. 기존 계정의 다른 데이터는 건드리지 않는다.
+- **유지 규칙**: 로컬 가입(`auth.service.js::signup`) → `true`(기본값) / 소셜 가입 완료(`completeSocialSignup`) → `false`를 명시해 생성 / 기존 계정에 소셜 연결 → 바꾸지 않음 / 비밀번호 변경(`profile.controller.js::updatePassword`, 현재 비밀번호를 요구하므로 로컬 계정만 가능) → `true` 유지 / 재설정 `confirm` 성공 → `true` 유지.
+- **재설정에서의 사용**: `request` — 계정이 있고 `has_local_password = false`면 토큰을 만들지 않고 `SOCIAL_LOGIN_GUIDE` 메일만 보낸다(응답은 같은 `{ok:true}`). `confirm` — 토큰의 사용자가 `false`면 `SOCIAL_ONLY`(비밀번호를 바꾸지 않는다). 소셜 전용 계정에 새 로컬 비밀번호를 발급하거나 계정을 병합하지 않는다.
+- 시험: 실제 fixture로 (a) 로컬 가입 계정, (b) 소셜 가입 계정, (c) 로컬 가입 뒤 소셜을 연결한 계정을 만들고 backfill·request·confirm의 분기를 DB 시험으로 고정한다. backfill의 두 근거를 각각 따로 검증한다(intent가 있는 경우 / intent 행을 지운 경우).
+- `schema.existingTables.test.js`의 users 컬럼 잠금에 이 컬럼을 추가한다(아래 '마이그레이션 공통' 주의).
 
 ### 2-4. 메일 어댑터 (BX가 만들고 F-31이 공유)
 - `backend/mail/mailAdapter.js`: `sendMail({to, template, params}) → {ok, id?}`. 구현 둘 — 설정 기반 실제 전송(설정이 없으면 '설정 미비'로 실패를 돌려준다. 비밀값은 환경 설정에만), **테스트용 메모리 어댑터**(보낸 메일을 배열에 쌓아 시험이 읽는다).
