@@ -2,6 +2,7 @@ import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
+import { createRequire } from "node:module"
 
 // ---------------------------------------------------------------------------
 // AC-04 · nightPrivateResult는 오버레이 확인·NIGHT 재진입·gameId 변경에서만 비워지고,
@@ -59,7 +60,7 @@ function buildSelf() {
 }
 
 /** 서버 소켓처럼 등록된 리스너에게만 동기적으로 전달하는 최소 fake다. */
-function createFakeSocket({ id = "socket-1", connected = true } = {}) {
+function createFakeSocket({ id = "socket-1", connected = true, forwardEmitTo = null } = {}) {
   const listeners = new Map()
   const emitted = []
   return {
@@ -79,11 +80,20 @@ function createFakeSocket({ id = "socket-1", connected = true } = {}) {
     listenerCount(event) {
       return listeners.get(event)?.size ?? 0
     },
-    // F-26b(AC-05): completeNightSuccess가 실제로 부르는 클라이언트 emit 대역이다. 등록된
-    // 서버 리스너 없이 여기서는 기록만 한다 — 서버 결합(등록 리스너로의 실제 전달)은
-    // backend/socket/__tests__/gameSession.nightTurns.test.js가 wireSession으로 검사한다.
+    // F-26b(AC-05): completeNightSuccess가 실제로 부르는 클라이언트 emit 대역이다. 기본은
+    // 기록만 한다(대부분의 시험 — 서버 결합은 backend/socket/__tests__/gameSession.nightTurns.test.js가
+    // wireSession으로 따로 검사한다). forwardEmitTo를 넘긴 시험(AC-05 결합 시험 전용)만 기록과
+    // 함께 backend에 registerGameHandlers로 등록된 같은 이름의 리스너로 payload를 그대로
+    // 전달한다 — 응답도 그 실제 리스너의 것을 받아 emitted 항목에 함께 남긴다.
     emit(event, payload, callback) {
-      emitted.push({ event, payload, callback })
+      const entry = { event, payload, callback }
+      emitted.push(entry)
+      if (forwardEmitTo) {
+        forwardEmitTo.trigger(event, payload, (response) => {
+          entry.response = response
+          if (typeof callback === "function") callback(response)
+        })
+      }
     },
     emitted,
   }
@@ -97,8 +107,8 @@ function createFakeSocket({ id = "socket-1", connected = true } = {}) {
  * 구독 결과(result.current)를 노출한다. complete(eventId)는 그 순간의 receiptScope를
  * readInGameReceiptScope로 캡처해 production completeNightSuccess를 그대로 호출한다.
  */
-function openSession() {
-  const socket = createFakeSocket()
+function openSession({ socketOptions } = {}) {
+  const socket = createFakeSocket(socketOptions)
   act(() => setSocket(socket))
   const { result, unmount } = renderHook(() => {
     useGameSessionSocketEvents()
@@ -728,4 +738,173 @@ test("F-26b 전이: 그 밤의 결과 적용(NIGHT→DAY)은 성공 사건 큐�
   assert.equal(readQueue().length, 0)
 
   session.close()
+})
+
+// ---------------------------------------------------------------------------
+// AC-05 결합 시험 · completeNightSuccess → registerGameHandlers 등록 리스너
+//
+// 위 AC-05 시험들의 createFakeSocket.emit은 기록만 한다(forwardEmitTo를 넘기지 않으면 그대로다).
+// 이 시험 하나만 forwardEmitTo를 켜서, frontend emit이 backend에 실제로 등록된
+// acknowledge_night_action_success 리스너로 전달되게 한다 — production completeNightSuccess →
+// 소켓 emit → registerGameHandlers가 배선한 서버 handleAcknowledgeNightActionSuccess까지 실제
+// 경로로 검사한다(핸들러를 직접 호출하지 않는다).
+//
+// 서버 세션·성공 사건 준비는 backend/socket/__tests__/gameSession.nightTurns.test.js의 준비
+// 코드(commitFullRoleSessionAtNight·createManualClock·wireSession·createConventionFollowingRegistry의
+// 관례)를 그대로 옮겨 쓴다 — backend 생산 코드는 건드리지 않는다. backend/models(→Sequelize)는
+// require 시점에 DATABASE_URL을 파싱만 한다(연결은 시도하지 않는다) — 같은 파일 맨 위의 더미
+// 폴백 관례(backend/socket/__tests__/gameSession.nightTurns.test.js 1~4행)를 그대로 따른다.
+// ---------------------------------------------------------------------------
+
+function makeBackendPlayer(uuid, nickname = `nick-${uuid}`) {
+  return { uuid, nickname, isReady: true }
+}
+
+function makeBackendRoom({ id, players, jokerCount = 1 }) {
+  return { id, players: new Map(players.map((p) => [p.uuid, p])), settings: { jokerCount } }
+}
+
+/** backend/socket/__tests__/gameSession.nightTurns.test.js::createConventionFollowingRegistry와 같다. */
+function createConventionFollowingRegistry() {
+  const overrides = new Map()
+  return new Proxy(overrides, {
+    get(target, prop, receiver) {
+      if (prop === "get") return (uuid) => (target.has(uuid) ? target.get(uuid) : `sock-${uuid}`)
+      return Reflect.get(target, prop, receiver)
+    },
+  })
+}
+
+test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등록한 실제 서버 리스너로 전달된다", () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test"
+  const REPO_ROOT = new URL("../../../../../../../", import.meta.url)
+  const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
+  const gameSessionSocketLayer = backendRequire("./gameSession")
+  const gameSessionCore = backendRequire("../game-core/gameSession")
+  const matchmaking = backendRequire("./matchmaking")
+  const {
+    createFakeSocket: createBackendFakeSocket, createFakeIo, countingCallback,
+  } = backendRequire("./__tests__/testHelpers/matchmakingFixtures")
+
+  gameSessionCore.__resetStateForTests()
+  matchmaking.__resetStateForTests()
+  gameSessionSocketLayer.__resetStateForTests()
+  gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
+
+  // backend/socket/__tests__/gameSession.nightTurns.test.js::commitFullRoleSessionAtNight를
+  // 그대로 옮겨 쓴다(playerCount=10·jokerCount=1로 5개 역할을 전부 배정한다).
+  const players = Array.from({ length: 10 }, (_, i) => makeBackendPlayer(`fp-f26b-wire-${i}`))
+  const room = makeBackendRoom({ id: "f26b-frontend-ac05-wiring", players, jokerCount: 1 })
+  const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
+  gameSessionCore.commitGameSession(candidate.session)
+  const session = candidate.session
+  for (const uuid of session.players.keys()) gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+  session.phase = "NIGHT"
+  session.dayIndex = 2
+  session.nightActions = new Map()
+  session.nightResolution = null
+  session.dayVotes = new Map()
+  session.dayVoteResolution = null
+  session.tribunal = null
+  const jokerUuid = [...session.players.values()].find((p) => p.role === "JOKER").uuid
+  const citizenUuid = [...session.players.values()].find((p) => p.role === "CITIZEN").uuid
+
+  // backend/socket/__tests__/gameSession.nightTurns.test.js::wireSession을 그대로 옮겨 쓴다.
+  const io = createFakeIo([])
+  const backendSockets = new Map()
+  for (const uuid of session.players.keys()) {
+    const backendSocket = createBackendFakeSocket(uuid)
+    backendSocket.rooms.add(session.channelId)
+    backendSocket.data.activeGameId = session.id
+    io.sockets.sockets.set(backendSocket.id, backendSocket)
+    gameSessionSocketLayer.registerGameHandlers(io, backendSocket, uuid)
+    backendSockets.set(uuid, backendSocket)
+  }
+
+  // backend/socket/__tests__/gameSession.nightTurns.test.js::createManualClock을 그대로 옮겨 쓴다
+  // (startNightTurnSequence가 요구하는 시계·타이머 의존성 주입구다).
+  let now = 1_000_000
+  let nextTimerId = 1
+  const timers = new Map()
+  const clock = {
+    nowFn: () => now,
+    setTimeoutFn(fn, delayMs) {
+      const id = nextTimerId++
+      timers.set(id, { at: now + Math.max(0, delayMs), fn })
+      return id
+    },
+    clearTimeoutFn(id) {
+      timers.delete(id)
+    },
+  }
+
+  gameSessionSocketLayer.__testables.startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+
+  // 광대(유일한 생존 JOKER)가 시민을 공격한다 — 그 턴이 곧바로 끝나 KILL 성공 사건이 나간다.
+  let submitResponse = null
+  backendSockets.get(jokerUuid).trigger(
+    "submit_night_action", { gameId: session.id, targetId: citizenUuid }, (res) => { submitResponse = res },
+  )
+  assert.deepEqual(submitResponse, { ok: true })
+
+  const killEntry = backendSockets.get(jokerUuid).emitted.find((e) => e.event === "night_action_success")
+  assert.ok(killEntry, "전제: 광대가 KILL 성공 사건을 받아야 한다")
+  const successPayload = killEntry.payload
+  assert.equal(session.phase, "NIGHT")
+  assert.equal(session.dayIndex, successPayload.nightDayIndex, "전제: 완료 요청 시점에도 같은 밤이어야 한다")
+
+  const storedBefore = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+  assert.equal(storedBefore.byEvent.get(successPayload.eventId).get(jokerUuid).completed, false,
+    "전제: 완료 전 서버 기록은 completed:false다")
+
+  // ── 프런트 쪽 ── 실제 훅·store를 마운트하고, 이 시험만 emit을 backend의 등록 리스너로 전달한다.
+  useAuthStore.setState({ isLoggedIn: true, user: { uuid: jokerUuid, nickname: "광대" }, identityGeneration: 0 })
+  useInGameStore.setState({
+    gameId: null, state: null, hostUuid: null, error: null, snapshotSeq: 0, nightPrivateResult: null,
+  })
+  useInGameStore.getState().setGamePayload({
+    gameId: session.id,
+    state: {
+      id: session.id,
+      phase: "NIGHT",
+      dayIndex: session.dayIndex,
+      dayPhase: null,
+      players: [{ uuid: jokerUuid, nickname: "광대" }],
+      self: { uuid: jokerUuid, nickname: "광대", role: "JOKER", team: "JOKER", hasActedThisPhase: false },
+    },
+  })
+
+  const joker = openSession({ socketOptions: { forwardEmitTo: backendSockets.get(jokerUuid) } })
+  joker.deliver("night_action_success", successPayload)
+  assert.equal(readQueue().length, 1)
+
+  const first = joker.complete(successPayload.eventId)
+  assert.equal(first.status, "sent")
+  assert.equal(readQueue().length, 0)
+  assert.equal(joker.socket.emitted.length, 1, "완료 요청이 정확히 한 번 전송돼야 한다")
+  assert.equal(joker.socket.emitted[0].event, "acknowledge_night_action_success")
+  assert.deepEqual(joker.socket.emitted[0].response, { ok: true, duplicate: false },
+    "실제 등록된 서버 리스너의 최초 완료 응답이어야 한다")
+
+  const storedAfter = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+  assert.equal(storedAfter.byEvent.get(successPayload.eventId).get(jokerUuid).completed, true,
+    "실제 서버 기록이 completed:true로 바뀌어야 한다")
+
+  // 같은 사건의 반복 완료 호출은 추가 emit을 만들지 않는다.
+  const second = joker.complete(successPayload.eventId)
+  assert.equal(second.status, "noop")
+  assert.equal(joker.socket.emitted.length, 1, "이미 완료한 사건의 반복 호출이 추가 emit을 만들었다")
+
+  // 서버 멱등 시험: 등록된 리스너에 같은 payload를 직접 한 번 더 넣어도 duplicate:true이고
+  // 완료 상태는 여전히 한 번만 바뀐 것이다.
+  const directAck = countingCallback()
+  backendSockets.get(jokerUuid).trigger(
+    "acknowledge_night_action_success",
+    { gameId: session.id, nightDayIndex: successPayload.nightDayIndex, eventId: successPayload.eventId },
+    directAck.callback,
+  )
+  assert.deepEqual(directAck.getResponse(), { ok: true, duplicate: true })
+  assert.equal(storedAfter.byEvent.get(successPayload.eventId).get(jokerUuid).completed, true)
+
+  joker.close()
 })
