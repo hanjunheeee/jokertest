@@ -394,6 +394,12 @@ function buildGameResultRecord(session, {
     disconnectedUuid,
     endedAt = Date.now(),
 } = {}) {
+    // F-25b(AC-01): **경기 기록(전적·통계) 조립이 시작된 지점**이다. "킬 직후·치료 판정 전에는
+    // 기록 저장이 시작되지 않는다"는 저장소 호출 0회나 DB 0행이 아니라 이 호출의 0회로 판정한다 —
+    // 저장소보다 한 단계 앞선 경계라서, 레코드만 조립하고 저장에 실패하는 경우까지 잡아낸다.
+    // 관찰자는 production에서 항상 null이므로 이 줄은 동작을 바꾸지 않는다.
+    observeNightCommit('RESULT_RECORD_BUILD_STARTED', { gameId: session?.id ?? null, completed })
+
     const winner = completed ? session.winResult.winner : ABORTED_WINNER
     const resolvedEndedAt = new Date(completed ? session.endedAt ?? endedAt : endedAt)
 
@@ -1629,6 +1635,9 @@ function isRecoveryBlockedState(state) {
     return state === NIGHT_RECOVERY_STATES.PENDING_RECOVERY || state === NIGHT_RECOVERY_STATES.DEATH_CANDIDATE
 }
 
+/** 진행 자료가 아직 없는 밤의 "완료된 역할" 집합(읽기 전용으로만 쓴다 — 절대 추가하지 않는다). */
+const EMPTY_COMPLETED_ROLES = Object.freeze(new Set())
+
 function createNightProgress(session, { sequenced = false } = {}) {
     return {
         gameId: session.id,
@@ -1769,8 +1778,17 @@ function findInvalidRoleSubmission(session, role) {
  * (2) 그 역할이 DOCTOR면 이번 밤의 치료 가능성을 닫는다. **canonical player.alive는 바꾸지
  * 않으며**, 승패 판정·경기 종료·전적 저장은 어느 것도 시작하지 않는다(AC-01/AC-03/A-06).
  *
- * 멱등하다 — 이미 완료된 역할의 재진입은 사건을 추가하지 않고 alreadyCompleted:true만
- * 돌려준다(emit 재진입·늦은 타이머가 같은 역할을 두 번 기록할 수 없다).
+ * **순차 완료 경계**를 스스로 강제한다(AC-03). 받아들이는 것은 NIGHT_TURN_ORDER에서 지금
+ * 차례인 역할 하나뿐이다:
+ *   (1) 선행 역할이 전부 완료(무역할·무행위자로 건너뜀 처리된 것 포함)돼 있어야 하고,
+ *   (2) 이 역할 자신은 아직 완료되지 않았어야 하며,
+ *   (3) 그 역할의 생존 행위자 전원이 제출(기권 포함)을 마쳤어야 한다.
+ * 셋 중 하나라도 어긋나면 **어떤 상태도 바꾸지 않고** 거부한다 — 순서를 건너뛴 완료(의사·경비원
+ * 먼저), 이미 완료한 역할의 재완료, 제출이 끝나지 않은 완료가 전부 여기서 끊긴다. 소켓 계층의
+ * 턴 가드(run 동일성·현재 턴 역할)를 신뢰하지 않고 core가 독립적으로 재검증한다.
+ *
+ * 거부는 진행 자료를 만들지도 않는다 — 검증을 전부 통과한 뒤에야 ensureNightProgress로 기록
+ * 경계에 들어간다(emit 재진입·늦은 타이머가 사건을 늘리거나 revision을 올릴 수 없다).
  *
  * @param {object} session - canonical GameSession(registry에 등록된 바로 그 객체여야 한다)
  * @param {string} role - NIGHT_TURN_ORDER의 역할
@@ -1788,16 +1806,26 @@ function completeNightRole(session, role) {
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
     if (!NIGHT_TURN_ORDER.includes(role)) return { ok: false, code: 'INVALID_ROLE' }
 
-    const progress = ensureNightProgress(session, { sequenced: true })
-    if (progress.completedRoles.has(role)) {
-        return { ok: true, role, alreadyCompleted: true, revision: progress.revision, healingClosed: progress.healingClosed }
+    // ── 순차 완료 경계(AC-03) — 여기서 거부하면 진행 자료조차 만들지 않는다 ─────────
+    //
+    // 기준은 **이번 밤의 완료 표식**이다(소켓 계층의 session.nightTurnRole이 아니다) — 그 값은
+    // 턴 사이와 마지막 턴 종료 방송 중 잠시 null이라 "지금 차례"의 근거가 될 수 없다.
+    const completedRoles = getNightProgress(session)?.completedRoles ?? EMPTY_COMPLETED_ROLES
+    if (completedRoles.has(role)) return { ok: false, code: 'ROLE_ALREADY_COMPLETED' }
+    for (const earlierRole of NIGHT_TURN_ORDER) {
+        if (earlierRole === role) break
+        if (!completedRoles.has(earlierRole)) return { ok: false, code: 'ROLE_OUT_OF_ORDER' }
     }
+    // 그 역할의 생존 행위자가 전원 제출(기권 포함)을 마쳐야 확정할 수 있다. 무인 역할은 공집합이라
+    // 공허참이고, 제한시간 만료는 미제출자를 전부 기권으로 먼저 기록한 뒤에야 이 함수를 부른다.
+    if (!isRoleTurnComplete(session, role)) return { ok: false, code: 'ACTIONS_PENDING' }
 
     if (findInvalidRoleSubmission(session, role) !== null) {
         // 어떤 것도 기록하지 않는다 — 호출자(endNightTurn)는 종료 방송도 다음 턴 진행도 하지 않는다.
         return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
     }
 
+    const progress = ensureNightProgress(session, { sequenced: true })
     const step = computeNightRoleStep(session, progress, role)
     applyNightRoleStep(progress, step)
 
@@ -2201,6 +2229,73 @@ function prepareNightResolutionForSession(session) {
  */
 const nightPreparations = new WeakMap()
 
+/**
+ * F-25b(AC-05): 준비가 **무엇을 보고 만들어졌는지**의 지문이다. 커밋은 지금 상태로 이 값을 다시
+ * 계산해 같을 때만 진행한다 — 준비 뒤에 제출이 바뀌었거나(다른 대상·기권·새 제출·제출 삭제),
+ * 그 사이에 순차 진행이 새로 시작·진행됐다면 그 준비는 더 이상 현재 밤을 설명하지 못한다.
+ *
+ * 생존 roster는 일부러 넣지 않는다 — 준비 이후의 이탈·끊김 사망은 기존 participationRevision과
+ * 커밋 시점의 최종 후보 null 정규화가 이미 소유하는 축이고(A-08), 그 경로는 "거부하고 다시 준비"가
+ * 아니라 "이미 확정된 사망을 밤이 다시 처리하지 않는다"가 승인된 계약이기 때문이다.
+ */
+function computeNightInputFingerprint(session) {
+    const submissions = []
+    for (const [actorUuid, target] of session.nightActions ?? []) {
+        submissions.push(`${actorUuid}>${target === null || target === undefined ? 'SKIP' : target}`)
+    }
+    submissions.sort()
+
+    const progress = getNightProgress(session)
+    const progressPart = progress
+        ? [
+            progress.sequenced ? 'SEQ' : 'DIRECT',
+            progress.revision,
+            progress.healingClosed ? 'HEAL_CLOSED' : 'HEAL_OPEN',
+            NIGHT_TURN_ORDER.filter((role) => progress.completedRoles.has(role)).join('+'),
+        ].join('#')
+        : 'NO_PROGRESS'
+
+    return `${session.id}@${session.dayIndex}|${progressPart}|${submissions.join(',')}`
+}
+
+/** 준비 내용의 깊은 복사(Map/Set/배열/평범한 객체까지). 바깥의 변형이 내부 원본에 닿지 못하게 한다. */
+function cloneNightPreparationValue(value) {
+    if (value instanceof Map) {
+        const copy = new Map()
+        for (const [key, nested] of value) copy.set(key, cloneNightPreparationValue(nested))
+        return copy
+    }
+    if (value instanceof Set) return new Set(value)
+    if (Array.isArray(value)) return value.map((item) => cloneNightPreparationValue(item))
+    if (value !== null && typeof value === 'object') {
+        const copy = {}
+        for (const [key, nested] of Object.entries(value)) copy[key] = cloneNightPreparationValue(nested)
+        return copy
+    }
+    return value
+}
+
+/** 준비 시점의 필드 전체를 키 단위로 떠 둔다 — 커밋이 소비하는 유일한 원본이다. */
+function snapshotNightPreparation(resolution) {
+    const snapshot = new Map()
+    for (const key of Object.keys(resolution)) snapshot.set(key, cloneNightPreparationValue(resolution[key]))
+    return snapshot
+}
+
+/**
+ * 전달된 준비 객체를 **세션이 보관한 준비 결과 그대로** 되돌린다(커밋 직전에 한 번).
+ *
+ * 준비 이후 바깥에서 바꾼 값(대상·공개 출처 귀속·개인 결과)도, 새로 덧붙인 필드(위조된
+ * witchHunterExecutionTargetId 등)도 확정 내용이 될 수 없다 — 전달된 객체는 "어느 준비인가"를
+ * 식별하는 데에만 쓰이고, 확정·reveal·스냅샷이 읽는 값은 전부 이 복원본에서 온다.
+ */
+function restoreNightPreparation(resolution, snapshot) {
+    for (const key of Object.keys(resolution)) {
+        if (!snapshot.has(key)) delete resolution[key]
+    }
+    for (const [key, value] of snapshot) resolution[key] = cloneNightPreparationValue(value)
+}
+
 function registerNightPreparation(session, resolution, { sequenced, progressRevision }) {
     nightPreparations.set(resolution, {
         session,
@@ -2209,8 +2304,11 @@ function registerNightPreparation(session, resolution, { sequenced, progressRevi
         participationRevision: Number.isSafeInteger(session.participationRevision) ? session.participationRevision : 0,
         sequenced,
         progressRevision,
+        // 준비가 본 입력(제출·순차 진행 상태)의 지문. 커밋이 지금 상태로 다시 계산해 대조한다.
+        inputFingerprint: computeNightInputFingerprint(session),
         // 커밋이 실제로 소비하는 값의 내부 원본. 전달된 객체가 아니라 이 값을 쓴다.
         pendingEliminationTargetId: resolution.pendingEliminationTargetId ?? null,
+        prepared: snapshotNightPreparation(resolution),
         consumed: false,
     })
     return resolution
@@ -2344,6 +2442,12 @@ function commitNightResolution(session, resolution) {
         Number.isSafeInteger(session.participationRevision) ? session.participationRevision : 0
     if (currentParticipationRevision !== record.participationRevision) return { ok: false, code: 'STALE_RESOLUTION' }
 
+    // 준비 뒤에 제출이 바뀌었거나 순차 진행이 새로 시작·진행됐다면 그 준비는 오래된 것이다 —
+    // 거부하고 다시 준비하게 한다(이 지점까지 세션은 어떤 필드도 바뀌지 않았다).
+    if (record.inputFingerprint !== computeNightInputFingerprint(session)) {
+        return { ok: false, code: 'STALE_RESOLUTION' }
+    }
+
     if (record.sequenced) {
         const progress = getNightProgress(session)
         if (!progress || progress.sequenced !== true) return { ok: false, code: 'STALE_RESOLUTION' }
@@ -2387,8 +2491,12 @@ function commitNightResolution(session, resolution) {
     // 이 지점 이후로는 절대 throw하지 않는다.
     // 준비를 "소진"으로 표시하는 것도, 전달된 객체에 확정 값을 반영하는 것도 검증을 전부
     // 통과한 뒤에만 한다 — 거부·throw로 끝난 호출은 세션도 준비 기록도 바꾸지 않는다.
-    // 확정 값을 전달 객체에 되쓰는 이유는 그 객체가 곧 session.nightResolution이 되고
-    // buildSessionSnapshot/buildNightResultAppliedPayload가 이 필드를 읽기 때문이다.
+    //
+    // 확정에 쓰는 값은 **세션이 보관한 준비 결과**뿐이다. 전달된 객체는 여기까지 "어느 준비인가"를
+    // 식별하는 데에만 쓰였으므로, 그 사이 바깥에서 바뀐 필드·덧붙은 필드를 전부 원본으로 되돌린 뒤
+    // 확정한다(AC-05). 되돌린 객체가 곧 session.nightResolution이 되고
+    // buildSessionSnapshot/buildNightResultAppliedPayload가 그 필드를 읽는다.
+    restoreNightPreparation(resolution, record.prepared)
     resolution.pendingEliminationTargetId = victimUuid
     record.consumed = true
     // 공개 사망 reveal은 반드시 이 지점에서 만든다 — 위 두 검증을 통과했다는 것은 victim이

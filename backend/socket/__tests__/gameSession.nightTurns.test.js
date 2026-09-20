@@ -9,6 +9,9 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
+// F-25b(AC-05): 저장 실패→재시도를 실제 저장 경계 위에서 재현하려면 이 모듈의 함수를 대역으로
+// 갈아끼워야 한다(kickPlayers.test.js의 기존 관례와 같은 방식 — 시험 끝에 원본으로 되돌린다).
+const gameResultRepository = require('../../repositories/gameResult.repositories')
 const { createFakeSocket, createFakeIo, countingCallback } = require('./testHelpers/matchmakingFixtures')
 
 const {
@@ -1703,6 +1706,9 @@ test('AC-01(F-25b): 광대 턴이 끝난 시점에는 대상이 여전히 canoni
     assert.equal(session.nightResolution, null)
     assert.equal(Object.hasOwn(session, 'winResult'), false)
     assert.deepEqual(observed.events, [])
+    // 기록 저장은 저장소 호출보다 한 단계 앞선 **레코드 조립**에서부터 시작되지 않았다 —
+    // 이 통로가 실제 조립에서는 울린다는 양성 대조는 아래 저장 재시도 시험이 함께 본다.
+    assert.equal(observed.countOf('RESULT_RECORD_BUILD_STARTED'), 0, '경기 기록 조립이 시작되면 안 된다')
     for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 0)
 })
 
@@ -1886,6 +1892,105 @@ test('A-12(F-25b): 유효한 진행 세션의 수신자가 0명이어도 밤 커
     assert.equal(session.players.get(citizenUuid).alive, false)
     assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
     assert.equal(observed.winEvaluations('NIGHT'), 1)
+})
+
+/** 비-광대 하나가 더 죽으면 광대 동수로 끝나는 3인 밤(playerCount=3·jokerCount=1). */
+function commitLastNightSessionAtNight({ id = 'room-turns-last', dayIndex = 2 } = {}) {
+    const players = [makePlayer(`ln-${id}-a`), makePlayer(`ln-${id}-b`), makePlayer(`ln-${id}-c`)]
+    const room = makeRoom({ id, players, jokerCount: 1 })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    ackAllAndRewindToNight(session, dayIndex)
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    const targetUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
+    return { session, jokerUuid, targetUuid }
+}
+
+/** 현재 턴부터 밤이 끝날 때까지 몰아붙인다 — 광대만 대상을 지목하고 나머지는 전원 건너뛴다. */
+function driveNightToFinalization(session, submit, clock, jokerUuid, targetUuid) {
+    for (let guard = 0; guard <= NIGHT_TURN_ORDER.length; guard += 1) {
+        const role = gameSessionCore.getCurrentNightTurnRole(session)
+        if (role === null) break
+        const actors = gameSessionCore.getAliveActorUuidsForRole(session, role)
+        if (actors.length === 0) {
+            clock.advance(NIGHT_TURN_DURATION_MS)
+            continue
+        }
+        for (const actorUuid of actors) {
+            assert.deepEqual(submit(actorUuid, actorUuid === jokerUuid ? targetUuid : null), { ok: true })
+        }
+    }
+}
+
+/** 보류된 promise 연쇄(저장 시도 → 성공/실패 처리)를 전부 소진시킨다. */
+async function settlePendingWork() {
+    for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setImmediate(resolve))
+}
+
+test('AC-05(F-25b): 저장이 한 번 실패한 뒤 재시도해도 같은 밤의 사망·경기 기록 조립·보상 평가가 두 번 일어나지 않는다', async () => {
+    // 이 시험이 답하는 질문: "저장 실패 뒤의 재시도가 같은 밤의 사망·보상·기록을 두 번 만드는가."
+    // 레코드는 **조립 지점**에서 세고(RESULT_RECORD_BUILD_STARTED), 재시도가 쓰는 값이 처음 것과
+    // 같은 객체인지까지 본다 — 두 번 조립되면 ended_at·roster·통계 delta가 갈릴 수 있기 때문이다.
+    const { session, jokerUuid, targetUuid } = commitLastNightSessionAtNight({ id: 'f25b-persist-retry' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+    const observed = captureCommitEvents()
+    const participantUuids = [...session.players.keys()]
+
+    const persistCalls = []
+    const originalPersist = gameResultRepository.persistGameResultRecord
+    gameResultRepository.persistGameResultRecord = async (record) => {
+        persistCalls.push(record)
+        if (persistCalls.length === 1) throw new Error('저장 실패(테스트 주입)')
+        return { persisted: true }
+    }
+    const evaluatedUuids = []
+    gameSessionSocketLayer.__testables.__setEvaluateAchievementsForTests(async (userId) => {
+        evaluatedUuids.push(userId)
+    })
+    gameSessionSocketLayer.__testables.__setTerminalPersistTimersForTests({
+        setTimeoutFn: clock.setTimeoutFn,
+        clearTimeoutFn: clock.clearTimeoutFn,
+    })
+
+    try {
+        startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+        driveNightToFinalization(session, submit, clock, jokerUuid, targetUuid)
+
+        assert.equal(session.phase, 'ENDED', '그 밤의 사망으로 광대가 동수가 되어 경기가 끝난다')
+        assert.deepEqual(session.winResult, { winner: 'JOKER' })
+        assert.equal(session.players.get(targetUuid).alive, false)
+
+        await settlePendingWork()
+        assert.equal(persistCalls.length, 1, '첫 저장 시도가 실패했다')
+        assert.equal(evaluatedUuids.length, 0, '저장을 확인하기 전에는 보상 평가가 시작되지 않는다')
+
+        // 재시도(최초 실패 → 1초 뒤)를 수동 시계로 깨운다.
+        clock.advance(1_000)
+        await settlePendingWork()
+
+        assert.equal(persistCalls.length, 2, '정확히 한 번 재시도했다')
+        assert.equal(persistCalls[1], persistCalls[0], '재시도는 처음 조립한 바로 그 레코드 객체를 다시 쓴다')
+        assert.equal(observed.countOf('RESULT_RECORD_BUILD_STARTED'), 1, '경기 기록 조립은 재시도에도 1회뿐이다')
+        assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1, '사망 확정은 1회뿐이다')
+        assert.equal(observed.winEvaluations('NIGHT'), 1)
+        assert.equal(observed.countOf('GAME_FINALIZED'), 1)
+        assert.deepEqual([...evaluatedUuids].sort(), [...participantUuids].sort(), '보상 평가는 원 참가자마다 1회다')
+        for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 1)
+
+        // 같은 판의 늦은 종결 훅도 새 레코드를 조립하지 않는다(중복 저장·중복 보상이 없다).
+        gameSessionSocketLayer.__testables.persistTerminalSession(session, { completed: true })
+        await settlePendingWork()
+
+        assert.equal(persistCalls.length, 2)
+        assert.equal(observed.countOf('RESULT_RECORD_BUILD_STARTED'), 1)
+        assert.deepEqual([...evaluatedUuids].sort(), [...participantUuids].sort())
+    } finally {
+        gameResultRepository.persistGameResultRecord = originalPersist
+        gameSessionSocketLayer.__testables.__setEvaluateAchievementsForTests()
+        gameSessionSocketLayer.__testables.__setTerminalPersistTimersForTests()
+    }
 })
 
 test('AC-01(F-25b): 무인 턴만으로 진행되는 밤도 마지막 무인 턴이 끝나기 전까지는 아무 것도 확정하지 않는다', () => {

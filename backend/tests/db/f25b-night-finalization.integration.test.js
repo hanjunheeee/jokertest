@@ -462,6 +462,9 @@ test('AC-01: 킬 직후·치료 판정 전 시점에는 승패 판정·경기 �
 
     // ── 호출 부재는 계측된 사건 구간에서 판정한다(0회) ────────────────────────
     assert.deepEqual(observed.events, [], '승패 평가·사망 확정·종료 확정이 하나도 실행되면 안 된다');
+    // 저장소 호출보다 한 단계 앞선 **레코드 조립**도 시작되지 않았다 — 이 통로가 실제 조립에서는
+    // 반드시 울린다는 양성 대조는 아래 저장 재시도 시험과 game-core 시험이 함께 본다.
+    assert.equal(observed.countOf('RESULT_RECORD_BUILD_STARTED'), 0, '경기 기록 조립이 시작되면 안 된다');
     assert.equal(repo.calls.length, 0, '경기 기록 저장이 시작되면 안 된다');
     assert.equal(__getTerminalPersistRunsForTests().length, 0, '종결 저장 작업이 등록되면 안 된다');
     assert.equal(evaluations.count(), 0, '업적 평가가 시작되면 안 된다');
@@ -758,4 +761,101 @@ test('AC-05: 자동 최종화와 수동 resolve_night가 겹쳐도 사망·경�
     };
     assert.deepEqual(after, before, '중복 진입이 업적·원장·소유권을 다시 반영했다');
     for (const uuid of participants) assertItemRewardGranted(after.byUser[uuid], `${uuid} 중복 진입 후`);
+});
+
+test('AC-05: 밤 최종화의 첫 저장이 실패해도 재시도는 **같은 레코드**를 쓰고 그 밤의 사망·보상·경기 기록이 두 번 만들어지지 않는다', async (t) => {
+    // 이 시험만이 답하는 질문: "저장 실패 뒤의 재시도가 같은 밤의 사망·보상·기록을 두 번 만드는가."
+    // f21의 A-09(이탈 종결 경로)와 같은 계약을 **밤 최종화 경로**에서 다시 본다.
+    if (unavailable(t)) return;
+    await setUp();
+
+    const host = await createLocalUser('n6h');
+    const doc = await createLocalUser('n6d');
+    const cit = await createLocalUser('n6c');
+    const participants = [host, doc, cit];
+    await seedCompletedHistory(participants, ITEM_REWARD_WINS);
+
+    const evaluations = captureAchievementEvaluations(t);
+    const observed = captureCommitEvents();
+
+    // 첫 시도만 실패시킨다 — 두 번째부터는 실제 저장소가 돈다(재시도가 진짜 DB에 쓰는지를 본다).
+    const originalPersist = gameResultRepository.persistGameResultRecord;
+    const seen = [];
+    let failNext = true;
+    gameResultRepository.persistGameResultRecord = (record) => {
+        seen.push(record);
+        if (failNext) {
+            failNext = false;
+            return Promise.reject(new Error('DB 다운(주입)'));
+        }
+        return originalPersist(record);
+    };
+    evaluations.onRestore(() => { gameResultRepository.persistGameResultRecord = originalPersist; });
+
+    // 실제 1초를 기다리지 않도록 재시도 타이머만 손으로 돌린다(판정 로직은 그대로다).
+    const scheduled = [];
+    gameSessionSocketLayer.__testables.__setTerminalPersistTimersForTests({
+        setTimeoutFn: (fn) => { scheduled.push(fn); return scheduled.length; },
+        clearTimeoutFn: () => {},
+    });
+    evaluations.onRestore(() => gameSessionSocketLayer.__testables.__setTerminalPersistTimersForTests());
+
+    const io = createFakeIo();
+    const { session, jokerUuid, doctorUuid, citizenUuids } = commitNightSession({
+        roomId: 'db-f25b-retry', gameId: crypto.randomUUID(), hostUuid: host, uuids: participants,
+    });
+    makeSessionRewardEligible(session);
+    const sockets = new Map(participants.map((uuid) => [uuid, connectSocket(io, uuid)]));
+    const targetUuid = citizenUuids[0];
+    const clock = createManualClock();
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
+    submitNight(io, sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    submitNight(io, sockets.get(doctorUuid), doctorUuid, session, null);
+    clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
+
+    assert.equal(session.phase, 'ENDED', '광대 동수로 그 밤에 종료된다');
+    assert.equal(session.players.get(targetUuid).alive, false);
+
+    // 첫 시도는 실패했고 작업은 남아 있다 — 실패한 판이 아무도 다시 쓰지 않는 상태가 되면 안 된다.
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(seen.length, 1, '첫 저장 시도가 있었다');
+    assert.equal(__getTerminalPersistRunsForTests().length, 1, '실패한 저장 작업이 남아 있다');
+    assert.equal(await db.GameResult.count({ where: { id: session.id } }), 0, '실패한 시도는 아무 것도 쓰지 않는다');
+    assert.equal(evaluations.count(), 0, '저장을 확인하기 전에는 보상 평가가 시작되지 않는다');
+
+    // 저장을 기다리는 동안 그 세션이 정리된 상황을 재현한다 — 레코드를 다시 조립한다면 여기서
+    // roster·ended_at이 무너진다.
+    const endedAtBefore = seen[0].result.ended_at.getTime();
+    const rosterBefore = seen[0].players.map((row) => row.user_id).sort();
+    session.dayIndex = 99;
+
+    assert.equal(scheduled.length, 1, '재시도 타이머는 정확히 하나여야 한다');
+    scheduled.shift()();
+    assert.ok(await waitForPersistSettled(), '재시도 저장이 끝나지 않았다');
+    assert.ok(await evaluations.settled(), '업적 평가가 끝나지 않았다');
+
+    // 재시도는 문자 그대로 같은 객체를 다시 썼다 — 경기 기록은 한 번만 조립됐다.
+    assert.equal(seen.length, 2);
+    assert.equal(seen[1], seen[0], '재시도는 처음 조립한 바로 그 레코드 객체를 다시 쓴다');
+    assert.equal(seen[1].result.ended_at.getTime(), endedAtBefore);
+    assert.deepEqual(seen[1].players.map((row) => row.user_id).sort(), rosterBefore);
+    assert.equal(observed.countOf('RESULT_RECORD_BUILD_STARTED'), 1, '경기 기록 조립은 재시도에도 1회뿐이다');
+
+    // 그 밤의 사망·승패 평가·종료 확정도 각각 1회뿐이다.
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1);
+    assert.equal(observed.winEvaluations('NIGHT'), 1);
+    assert.equal(observed.countOf('GAME_FINALIZED'), 1);
+
+    // 실제 DB에도 한 벌만 커밋됐다.
+    assert.equal(await db.GameResult.count({ where: { id: session.id } }), 1);
+    assert.equal((await playerRowsOf(session.id)).length, participants.length);
+    for (const uuid of participants) assert.equal((await statsOf(uuid)).total_games, 1, 'total_games는 정확히 1 증가한다');
+
+    // 보상도 한 번만 반영됐다(0 == 0 비교가 되지 않도록 실제 지급이 있었음을 먼저 확인한다).
+    const rewards = Object.fromEntries(await Promise.all(
+        participants.map(async (uuid) => [uuid, await rewardSnapshotFor(uuid)]),
+    ));
+    assert.ok(await db.AchievementGrant.count() > 0, '보상 조건을 심었는데도 최초 지급이 하나도 없다');
+    for (const uuid of participants) assertItemRewardGranted(rewards[uuid], `${uuid} 재시도 후`);
 });
