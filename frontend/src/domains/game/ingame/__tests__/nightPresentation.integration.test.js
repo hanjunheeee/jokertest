@@ -109,6 +109,8 @@ const {
   useInGameStore, readInGameReceiptScope, selectNightSuccessQueue,
 } = await import("../store/ingameStore.js")
 const { useAuthStore } = await import("../../../auth/store/auth.store.js")
+const { useSettingsStore } = await import("../../../settings/store/settingsStore.js")
+const { useBgmAutoplay } = await import("../../../../shared/hooks/useBgmAutoplay.js")
 const { setSocket } = await import("../../../../shared/socket/socketClient.js")
 const { useGameSessionSocketEvents } = await import("../hooks/useGameSessionSocketEvents.js")
 const { useInGameSessionSnapshotSync } = await import("../hooks/useInGameSessionSnapshotSync.js")
@@ -125,6 +127,27 @@ const { useMatchingStore } = await import("../../matching/store/matchingStore.js
 const { getInGameRoleRevealInfo } = await import("../utils/getInGameRoleRevealInfo.js")
 
 const flushMicrotasks = () => new Promise((resolve) => { setTimeout(resolve, 0) })
+
+/**
+ * F-27c(AC-04): bgmPlaybackLock.test.js와 같은 관찰 방식 — audio 요소가 실제로 소리를 낼 수
+ * 있었는지는 play()가 몇 번 불렸는지로만 증명한다(muted 플래그만 보면 "재생 시도 자체가
+ * 없었다"를 놓친다).
+ */
+function createFakeBgmMedia() {
+  return {
+    volume: 0.6,
+    muted: false,
+    playCallCount: 0,
+    pauseCallCount: 0,
+    play() {
+      this.playCallCount += 1
+      return Promise.resolve()
+    },
+    pause() {
+      this.pauseCallCount += 1
+    },
+  }
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // AC-02 · F-16 효과음 런타임 (대역하지 않는다)
@@ -169,15 +192,20 @@ const productionSfxPlayer = createSfxPlayer({
   },
 })
 
-__setSfxPlayerForTests({
-  dispatch: (event) => { sfxDispatches.push(event); return productionSfxPlayer.dispatch(event) },
-  claimAudio: (event, options) => { sfxClaims.push(event); return productionSfxPlayer.claimAudio(event, options) },
-  getMix: () => productionSfxPlayer.getMix(),
-  subscribeMix: (listener) => productionSfxPlayer.subscribeMix(listener),
-  getSilenceLog: () => productionSfxPlayer.getSilenceLog(),
-  syncScope: () => productionSfxPlayer.syncScope(),
-  dispose: () => productionSfxPlayer.dispose(),
-})
+/** 공유 productionSfxPlayer(고정 Master100×SFX100)로 되돌린다 — 기본 상태이자 대부분의 시험이 쓰는 값이다. */
+function installSharedProductionSfxPlayer() {
+  __setSfxPlayerForTests({
+    dispatch: (event) => { sfxDispatches.push(event); return productionSfxPlayer.dispatch(event) },
+    claimAudio: (event, options) => { sfxClaims.push(event); return productionSfxPlayer.claimAudio(event, options) },
+    getMix: () => productionSfxPlayer.getMix(),
+    subscribeMix: (listener) => productionSfxPlayer.subscribeMix(listener),
+    getSilenceLog: () => productionSfxPlayer.getSilenceLog(),
+    syncScope: () => productionSfxPlayer.syncScope(),
+    dispose: () => productionSfxPlayer.dispose(),
+  })
+}
+
+installSharedProductionSfxPlayer()
 
 // ───────────────────────────────────────────────────────────────────────────
 // 전송 계층 대역
@@ -975,11 +1003,19 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
   const claimsBefore = sfxClaims.length
   const mediaBefore = sfxMediaCreations.length
 
+  // AC-04: 같은 영상 사건 동안 BGM 재생기의 play() 호출이 0회임을 bgmPlaybackLock.test.js와
+  // 같은 방식(가짜 매체의 playCallCount)으로 직접 관찰한다.
+  const bgmMedia = createFakeBgmMedia()
+  const bgmHook = renderHook(() => useBgmAutoplay({ current: bgmMedia }))
+
   await act(async () => { socket.deliver("night_action_success", killPayload) })
   const video = view.container.querySelector("video[src]")
   assert.notEqual(video, null, "실제 페이지가 KILL 영상을 마운트하지 않았다")
   // citizenUuid는 대상자(TARGET) 관점이다 — §2-5 선택표의 KILL-TARGET 영상이어야 한다.
   assert.equal(video.getAttribute("src"), NIGHT_SUCCESS_VIDEO["KILL-TARGET"])
+  // 재생 시작(따라서 mix 적용)은 취소 가능한 마이크로태스크 예약이다(AC-02 StrictMode 방지) —
+  // 한 틱 기다린 뒤에 muted/volume을 확인한다.
+  await act(async () => { await flushMicrotasks() })
   // AC-03: 별도 dispatch 없이 getSfxMix가 준 Master×SFX(여기서는 100×100)가 그대로 적용된다.
   assert.equal(video.muted, false, "Master×SFX가 모두 100인데 영상이 음소거다")
   assert.ok(Math.abs(video.volume - 1) < 1e-9, `volume이 Master×SFX(1.0)와 다르다: ${video.volume}`)
@@ -988,6 +1024,7 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
   assert.equal(sfxDispatches.length, sfxBefore, "역할 영상 표시가 별도 SFX dispatch를 만들었다")
   assert.equal(sfxClaims.length, claimsBefore, "역할 영상 표시가 claimAudio를 호출했다")
   assert.equal(sfxMediaCreations.length, mediaBefore, "역할 영상 표시가 별도 매체를 생성했다")
+  assert.equal(bgmMedia.playCallCount, 0, "역할 영상 표시가 BGM play()를 호출했다")
 
   await act(async () => { fireEvent(video, new dom.window.Event("ended")) })
   const acks = socket.emitsFor("acknowledge_night_action_success")
@@ -995,6 +1032,7 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
   assert.equal(sfxDispatches.length, sfxBefore, "역할 영상 종료가 별도 SFX dispatch를 만들었다")
   assert.equal(sfxClaims.length, claimsBefore, "역할 영상 종료가 claimAudio를 호출했다")
   assert.equal(sfxMediaCreations.length, mediaBefore, "역할 영상 종료가 별도 매체를 생성했다")
+  assert.equal(bgmMedia.playCallCount, 0, "역할 영상 종료가 BGM play()를 호출했다")
   assert.deepEqual(acks[0].payload,
     { gameId: ctx.session.id, nightDayIndex: killPayload.nightDayIndex, eventId: killPayload.eventId })
   assert.deepEqual(acks[0].response, { ok: true, duplicate: false })
@@ -1004,8 +1042,84 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
 
   ctx.ack(ctx.jokerUuid, killPayload)
   assert.equal(ctx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 완료했는데 다음 역할이 없다")
+  assert.equal(bgmMedia.playCallCount, 0, "나머지 수신자 완료까지의 진행이 BGM play()를 호출했다")
 
+  bgmHook.unmount()
   await leaveInGamePage()
+})
+
+/**
+ * F-27c(AC-03, CODEX 반려 수정): 위 시험은 productionSfxPlayer가 고정 Master100×SFX100을
+ * 반환하는 getSettings로 만들어져, "player의 mix 계산"이 실제로 움직이는지(단지 상수 1.0을
+ * 통과시키는 게 아니라)는 증명하지 못한다. 이 시험은 **실제 useSettingsStore**를 읽고
+ * 구독하는 별도 sfxPlayer 인스턴스를 이 시험 동안만 설치해, Master 50 × SFX 40 = 0.2처럼
+ * 100×100이 아닌 값과 음소거 on이 실제 스토어 변경 → 실제 sfxPlayer.getMix/subscribeMix →
+ * video.volume/muted까지 그대로 이어짐을 확인한다. 다른 시험이 쓰는 공유 productionSfxPlayer
+ * (고정 100×100)는 건드리지 않고, 끝나면 정확히 되돌린다.
+ */
+test("AC-03: 실제 settingsStore의 Master×SFX·음소거 값이 실제 sfxPlayer 계산을 거쳐 video에 반영된다(100×100 고정이 아닌 값)", async () => {
+  const ctx = setupBackendNight("f27bl-real-settings-mix")
+  assert.deepEqual(ctx.submit(ctx.jokerUuid, ctx.citizenUuid), { ok: true })
+  const killPayload = ctx.receivedBy(ctx.citizenUuid, "night_action_success")[0].payload
+
+  seedFrontSession(ctx, ctx.citizenUuid)
+
+  const previousVolumes = { ...useSettingsStore.getState().volumes }
+  const previousSfxMuted = useSettingsStore.getState().sfxMuted
+  useSettingsStore.setState({
+    volumes: { ...previousVolumes, "master-volume": 50, "sfx-volume": 40 },
+    sfxMuted: false,
+  })
+
+  const realSettingsSfxPlayer = createSfxPlayer({
+    manifest: SFX_MANIFEST,
+    getSettings: () => {
+      const s = useSettingsStore.getState()
+      return {
+        masterVolume: s.volumes["master-volume"],
+        sfxVolume: s.volumes["sfx-volume"],
+        sfxMuted: s.sfxMuted === true,
+      }
+    },
+    subscribeSettings: (listener) => useSettingsStore.subscribe(listener),
+    getScope: () => ({
+      accountId: useAuthStore.getState().user?.uuid ?? null,
+      gameId: useInGameStore.getState().gameId ?? null,
+      roomId: null,
+    }),
+    createMedia: () => ({ play: () => Promise.resolve(), pause() {}, addEventListener() {}, removeEventListener() {} }),
+  })
+  __setSfxPlayerForTests({
+    dispatch: (event) => realSettingsSfxPlayer.dispatch(event),
+    claimAudio: (event, options) => realSettingsSfxPlayer.claimAudio(event, options),
+    getMix: () => realSettingsSfxPlayer.getMix(),
+    subscribeMix: (listener) => realSettingsSfxPlayer.subscribeMix(listener),
+    getSilenceLog: () => realSettingsSfxPlayer.getSilenceLog(),
+    syncScope: () => realSettingsSfxPlayer.syncScope(),
+    dispose: () => realSettingsSfxPlayer.dispose(),
+  })
+
+  try {
+    const socket = createFrontSocket({ forwardEmitTo: ctx.backendSockets.get(ctx.citizenUuid) })
+    const view = await mountInGamePage(socket)
+    await act(async () => { socket.deliver("night_action_success", killPayload) })
+    const video = view.container.querySelector("video[src]")
+    assert.notEqual(video, null, "실제 페이지가 KILL 영상을 마운트하지 않았다")
+    // 재생 시작(mix 적용)은 취소 가능한 마이크로태스크 예약이다 — 한 틱 기다린다.
+    await act(async () => { await flushMicrotasks() })
+    assert.equal(video.muted, false)
+    assert.ok(Math.abs(video.volume - 0.2) < 1e-9, `실제 settingsStore Master50×SFX40=0.2가 아니다: ${video.volume}`)
+
+    // 실제 settingsStore를 음소거로 바꾼다 — 실제 sfxPlayer의 mix 재계산이 video에 반영돼야 한다.
+    act(() => { useSettingsStore.setState({ sfxMuted: true }) })
+    assert.equal(video.muted, true, "실제 settingsStore의 음소거가 video에 반영되지 않았다")
+
+    await leaveInGamePage()
+  } finally {
+    installSharedProductionSfxPlayer()
+    realSettingsSfxPlayer.dispose()
+    useSettingsStore.setState({ volumes: previousVolumes, sfxMuted: previousSfxMuted })
+  }
 })
 
 test("AC-03(CODEX 반려 수정): 재시도 뒤에도 매체가 무응답이면 상한이 다시 걸려 ERROR가 실제 서버에 정확히 한 번 보고된다", async () => {
@@ -1313,6 +1427,8 @@ test("F27 BL production integration scenarios", async () => {
   const killVideo = view.container.querySelector("video[src]")
   assert.notEqual(killVideo, null, "실제 페이지가 KILL 연출 영상을 마운트하지 않았다")
   assert.equal(killVideo.getAttribute("src"), NIGHT_SUCCESS_VIDEO["KILL-TARGET"])
+  // 재생 시작(따라서 mix 적용)은 취소 가능한 마이크로태스크 예약이다 — 한 틱 기다린다.
+  await act(async () => { await flushMicrotasks() })
   assert.equal(killVideo.muted, false, "Master×SFX가 모두 100인데 영상이 음소거다(AC-03)")
 
   await act(async () => { fireEvent(killVideo, new dom.window.Event("ended")) })

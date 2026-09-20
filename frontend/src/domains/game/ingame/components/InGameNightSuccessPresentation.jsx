@@ -104,18 +104,37 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
   const videoRef = useRef(null)
   const [status, setStatus] = useState("loading")
   /**
-   * F-27c(AC-03/AC-05): **표시 수명 + 재생 시도 세대 + 무음 latch.**
+   * F-27c(AC-03/AC-05): **표시 수명 + 재생 시도 세대 + 무음 latch + 종료 가드.**
    *
    * eventId 하나로는 늦은 응답을 가를 수 없다 — 재접속하면 같은 eventId가 복원되므로, 옛
    * 시도의 늦은 거부가 "같은 사건이니 내 것"이라며 새 표시를 ERROR로 끝내 버린다. 그래서
    * 이 표시 인스턴스(수명 객체의 **참조**)와 그 안의 시도 번호를 함께 본다. cleanup·다음
    * 사건·새 연결·사용자 재시도 중 무엇이든 둘 중 하나를 바꾸므로, 그 이전의 응답은 전부
    * 자기 자리를 잃는다. silentLatch는 이 사건의 수명 동안만 유지된다 — 다음 사건은 latch 없이
-   * 다시 시작한다.
+   * 다시 시작한다. settled는 이 사건이 이미 한 번 끝났는지를 표시한다(아래 settleOnce 참고).
    */
   const attemptRef = useRef(null)
 
+  /**
+   * F-27c(AC-05, CODEX 반려 수정): **settleWith·reportFailure·watchdog가 공유하는 단일 종료
+   * 가드.** 예전에는 세 경로가 각자 onFinish를 직접 불러서, ended가 COMPLETED를 보고한 뒤에도
+   * 뒤이은 error 이벤트나 뒤늦은 watchdog·reportFailure가 같은 사건을 또 보고할 수 있었다.
+   * 이제는 이 함수 하나만 onFinish를 부르고, 그 사건(lifetime)당 한 번 불리고 나면 이후의 모든
+   * settleOnce 호출은 조용히 무시한다 — **먼저 일어난 종료 하나만** 보고된다.
+   */
+  const settleOnce = useCallback((lifetime, outcome, nextStatus) => {
+    if (!lifetime || lifetime.settled) return
+    lifetime.settled = true
+    cancelPlaybackWatchdog(lifetime)
+    if (nextStatus) setStatus(nextStatus)
+    onFinish(outcome)
+  }, [onFinish])
+
   const runPlayback = useCallback((lifetime, { retry = false } = {}) => {
+    // 이미 끝난 사건은 새 시도를 시작하지 않는다(예: StrictMode 이중 마운트의 첫 setup이
+    // 취소되지 않은 채로 늦게 굴러 들어오는 경우에 대한 방어선).
+    if (lifetime.settled) return
+
     const generation = lifetime.generation + 1
     lifetime.generation = generation
     const isCurrentAttempt = () =>
@@ -126,8 +145,7 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
       if (!isCurrentAttempt()) return
       lifetime.watchdogId = null
       if (retry) {
-        setStatus("error")
-        onFinish("ERROR")
+        settleOnce(lifetime, "ERROR", "error")
         return
       }
       setStatus((prev) => (prev === "loading" || prev === "playing" ? "watchdog" : prev))
@@ -139,9 +157,7 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
     const mix = getSfxMix()
     const forceMuted = lifetime.silentLatch || mix.muted
     if (!applyMixToVideo(video, mix, forceMuted)) {
-      cancelPlaybackWatchdog(lifetime)
-      setStatus("error")
-      onFinish("ERROR")
+      settleOnce(lifetime, "ERROR", "error")
       return
     }
     const attemptWasMuted = forceMuted
@@ -160,8 +176,7 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
         setStatus("retry")
         return
       }
-      setStatus("error")
-      onFinish("ERROR")
+      settleOnce(lifetime, "ERROR", "error")
     }
 
     let playResult
@@ -176,10 +191,10 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
         if (isCurrentAttempt()) setStatus((prev) => (prev === "loading" ? "playing" : prev))
       }, reportFailure)
     }
-  }, [onFinish])
+  }, [settleOnce])
 
   useEffect(() => {
-    const lifetime = { alive: true, generation: 0, watchdogId: null, silentLatch: false }
+    const lifetime = { alive: true, generation: 0, watchdogId: null, silentLatch: false, settled: false }
     attemptRef.current = lifetime
     setStatus("loading")
 
@@ -192,11 +207,25 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
         // 아직 메타데이터가 없는 브라우저는 currentTime 대입이 던질 수 있다 — 재생 시도는 계속한다.
       }
     }
-    runPlayback(lifetime)
+
+    /**
+     * F-27c(AC-02, CODEX 반려 수정): 재생 시작을 **취소 가능한 예약**으로 미룬다. React
+     * StrictMode의 setup→cleanup→setup은 둘 다 동기적으로 일어나므로, 첫 setup이 곧바로
+     * play()를 부르면 두 번째(살아남는) setup도 각자 play()를 불러 **같은 video에 재생이
+     * 두 번** 걸린다. 대신 마이크로태스크로 미뤄 두면 첫 setup의 cleanup이 그 예약을
+     * 무효화하고, 실제로 살아남은 setup의 예약만 마이크로태스크 큐가 비워질 때 실행된다 —
+     * 같은 사건·같은 마운트 수명에서 play()는 정확히 한 번만 불린다.
+     */
+    let scheduled = true
+    queueMicrotask(() => {
+      if (!scheduled) return
+      runPlayback(lifetime)
+    })
 
     return () => {
       // 이 표시의 수명이 끝났다. 매체는 멈추고 예약·재시도 상태는 버리되, **완료 보고는
       // 만들지 않는다** — StrictMode의 setup→cleanup→setup은 사용자가 본 것이 아니다.
+      scheduled = false
       lifetime.alive = false
       cancelPlaybackWatchdog(lifetime)
       try {
@@ -217,29 +246,18 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
       if (!video || !lifetime || !lifetime.alive) return
       const forceMuted = lifetime.silentLatch || mix.muted
       if (!applyMixToVideo(video, mix, forceMuted)) {
-        cancelPlaybackWatchdog(lifetime)
-        setStatus("error")
-        onFinish("ERROR")
+        settleOnce(lifetime, "ERROR", "error")
       }
     })
     return unsubscribe
-  }, [onFinish])
+  }, [settleOnce])
 
-  /** 사용자·매체가 낸 종료 응답 하나. 그 시도의 상한은 더 울릴 필요가 없다. */
-  const settleWith = (outcome) => {
-    cancelPlaybackWatchdog(attemptRef.current)
-    onFinish(outcome)
-  }
-
-  const handleEnded = () => settleWith("COMPLETED")
-  const handleError = () => {
-    setStatus("error")
-    settleWith("ERROR")
-  }
-  const handleSkip = () => settleWith("SKIPPED")
+  const handleEnded = () => settleOnce(attemptRef.current, "COMPLETED")
+  const handleError = () => settleOnce(attemptRef.current, "ERROR", "error")
+  const handleSkip = () => settleOnce(attemptRef.current, "SKIPPED")
   const handleRetry = () => {
     const lifetime = attemptRef.current
-    if (!lifetime || !lifetime.alive) return
+    if (!lifetime || !lifetime.alive || lifetime.settled) return
     setStatus("loading")
     runPlayback(lifetime, { retry: true })
   }
