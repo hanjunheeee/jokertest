@@ -92,9 +92,16 @@ function createFakeSessionSnapshotSocket() {
   const offCalls = []
   const connectHandlers = new Set()
   const emitWithAckCalls = []
+  // F-26(AC-01): 복원된 성공 사건의 완료(completeNightSuccess)는 ack 요청이 아니라 평범한
+  // emit으로 나간다. 이 자리가 없으면 "복원 항목을 그 화면이 실제로 완료할 수 있는가"를
+  // 검사할 수 없다(전송 실패로만 끝난다).
+  const emitCalls = []
 
   const socket = {
     connected: false,
+    emit(event, payload, callback) {
+      emitCalls.push({ event, payload, callback })
+    },
     on(event, handler) {
       onCalls.push({ event, handler })
       if (event === "connect") connectHandlers.add(handler)
@@ -121,13 +128,30 @@ function createFakeSessionSnapshotSocket() {
     },
   }
 
-  return { socket, onCalls, offCalls, connectHandlers, emitWithAckCalls }
+  return { socket, onCalls, offCalls, connectHandlers, emitWithAckCalls, emitCalls }
 }
 
 async function flushMicrotasks() {
   for (let i = 0; i < 5; i++) {
     await Promise.resolve()
   }
+}
+
+/**
+ * F-26(AC-04): connect 사건을 흘려보내고 **그 사건이 예약한 microtask까지** 실행한다.
+ *
+ * 훅은 connect에서 요청 세대만 즉시 올리고, 요청 범위 캡처·전송은 microtask로 미룬다 — 같은
+ * connect를 구독하는 useGameSessionSocketEvents가 noteInGameConnectionRebound로 연결 세대를
+ * 올리기 때문이다(등록 순서에 따라 옛 세대로 요청이 나가는 것을 막는 유일한 방법이다). 그래서
+ * "connect 뒤에 요청이 나갔는가"를 보는 시험은 그 microtask 경계를 함께 지나야 한다.
+ *
+ * @param {Function} [mutate] connect 직전에 소켓 상태를 바꾸는 작업(id 재발급·connected 등).
+ */
+async function emitConnect(fake, mutate = null) {
+  await act(async () => {
+    if (mutate) mutate()
+    fake.socket.triggerConnect()
+  })
 }
 
 function seedStore({ gameId, playerUuid = "player-1", nickname = "Alice", role = "CITIZEN", phase = "NIGHT", dayIndex = 0 }) {
@@ -242,7 +266,7 @@ test("이미 연결된 socket으로 활성화하면 connect 리스너 1개 등�
   hook.unmount()
 })
 
-test("연결되지 않은 상태로 활성화하면 요청이 없고, 최초 connect에서 정확히 1회 요청한다", () => {
+test("연결되지 않은 상태로 활성화하면 요청이 없고, 최초 connect에서 정확히 1회 요청한다", async () => {
   seedStore({ gameId: "g1" })
   seedAuth("user-a")
   const fake = createFakeSessionSnapshotSocket()
@@ -252,10 +276,7 @@ test("연결되지 않은 상태로 활성화하면 요청이 없고, 최초 con
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   assert.equal(fake.emitWithAckCalls.length, 0)
 
-  act(() => {
-    fake.socket.connected = true
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.connected = true })
 
   assert.equal(fake.emitWithAckCalls.length, 1)
   assert.deepEqual(fake.emitWithAckCalls[0].payload, { gameId: "g1" })
@@ -302,7 +323,7 @@ test("StrictMode의 setup→cleanup→setup 재실행 후에도 살아있는 con
   hook.unmount()
 })
 
-test("이후 각 실제 connect epoch마다 정확히 1회씩 요청한다(재연결마다 새 요청)", () => {
+test("이후 각 실제 connect epoch마다 정확히 1회씩 요청한다(재연결마다 새 요청)", async () => {
   seedStore({ gameId: "g1" })
   seedAuth("user-a")
   const fake = createFakeSessionSnapshotSocket()
@@ -312,17 +333,17 @@ test("이후 각 실제 connect epoch마다 정확히 1회씩 요청한다(재�
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   assert.equal(fake.emitWithAckCalls.length, 1)
 
-  act(() => fake.socket.triggerConnect())
+  await emitConnect(fake)
   assert.equal(fake.emitWithAckCalls.length, 2)
   assert.deepEqual(fake.emitWithAckCalls[1].payload, { gameId: "g1" })
 
-  act(() => fake.socket.triggerConnect())
+  await emitConnect(fake)
   assert.equal(fake.emitWithAckCalls.length, 3)
 
   hook.unmount()
 })
 
-test("manager 수준의 reconnect 리스너는 등록되지 않으며, connect 1회당 요청도 1회뿐이다", () => {
+test("manager 수준의 reconnect 리스너는 등록되지 않으며, connect 1회당 요청도 1회뿐이다", async () => {
   seedStore({ gameId: "g1" })
   seedAuth("user-a")
   const fake = createFakeSessionSnapshotSocket()
@@ -330,7 +351,7 @@ test("manager 수준의 reconnect 리스너는 등록되지 않으며, connect 1
   setFakeSocket(fake.socket)
 
   const hook = renderHook(() => useInGameSessionSnapshotSync())
-  act(() => fake.socket.triggerConnect())
+  await emitConnect(fake)
 
   assert.ok(
     fake.onCalls.every((c) => c.event === "connect"),
@@ -427,7 +448,7 @@ test("타임아웃/오류로 요청이 실패해도 이후 재연결은 정상�
   })
   assert.equal(applyCalls.length, 0)
 
-  act(() => fake.socket.triggerConnect())
+  await emitConnect(fake)
   assert.equal(fake.emitWithAckCalls.length, 2)
 
   await act(async () => {
@@ -451,7 +472,7 @@ test("이전 요청이 응답하지 않아도(영구 미응답) 재연결 시 �
   assert.equal(fake.emitWithAckCalls.length, 1)
   // 요청 1(v1)은 절대 resolve/reject하지 않는다.
 
-  act(() => fake.socket.triggerConnect())
+  await emitConnect(fake)
   assert.equal(fake.emitWithAckCalls.length, 2, "미응답 요청이 있어도 재연결은 새 요청(v2)을 막지 않아야 한다")
 
   await act(async () => {
@@ -474,7 +495,7 @@ test("새 요청(v2) 이후 도착한 이전 요청(v1)의 늦은 응답은 stor
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   const pendingV1 = fake.emitWithAckCalls[0]
 
-  act(() => fake.socket.triggerConnect())
+  await emitConnect(fake)
   await act(async () => {
     fake.emitWithAckCalls[1].resolve(buildValidSnapshotResponse({ gameId: "g1" }))
     await flushMicrotasks()
@@ -873,10 +894,9 @@ test("F-23(SPLIT-1): 연결이 끊긴 뒤 도착한 응답은 반영되지 않�
   assertStoreFactsUnchanged(before, "끊긴 연결의 응답")
 
   // 실제 재연결: 새 id가 발급되고 그 연결에서 다시 요청한다.
-  act(() => {
+  await emitConnect(fake, () => {
     fake.socket.connected = true
     fake.socket.id = "sock-2"
-    fake.socket.triggerConnect()
   })
   assert.equal(fake.emitWithAckCalls.length, 2, "재연결에서 현재 요청이 재개되지 않았다")
 
@@ -923,7 +943,7 @@ test("F-23(SPLIT-1): 형태 오류·실패 응답은 state·snapshotSeq·수신 
   })
   assertStoreFactsUnchanged(before, "형태가 잘못된 응답")
 
-  act(() => fake.socket.triggerConnect())
+  await emitConnect(fake)
   await act(async () => {
     fake.emitWithAckCalls[1].resolve({ ok: false, code: "INTERNAL_ERROR" })
     await flushMicrotasks()
@@ -1035,10 +1055,7 @@ test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 �
     "마운트 자체는 전이가 아니다 — 그것만으로 결과 이동이 막히면 안 된다",
   )
 
-  act(() => {
-    fake.socket.id = "sock-2"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-2" })
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 재연결이 현재 신원의 스냅샷을 다시 물어야 한다")
   assert.equal(getInGameSnapshotRebindPending(), true, "재연결 구간에 재결속 보류가 열리지 않았다")
 
@@ -1049,10 +1066,7 @@ test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 �
   assert.equal(getInGameSnapshotRebindPending(), false, "응답이 끝났는데 보류가 남아 화면이 갇힌다")
 
   // 정상 응답으로 끝나는 경우도 같다.
-  act(() => {
-    fake.socket.id = "sock-3"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-3" })
   assert.equal(getInGameSnapshotRebindPending(), true)
   await act(async () => {
     fake.emitWithAckCalls[2].resolve(buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1" }))
@@ -1061,10 +1075,7 @@ test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 �
   assert.equal(getInGameSnapshotRebindPending(), false)
 
   // 보류 중에 화면이 사라져도 그 보류를 다음 화면으로 넘기지 않는다.
-  act(() => {
-    fake.socket.id = "sock-4"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-4" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 아직 응답을 기다리는 중이어야 한다")
   hook.unmount()
   assert.equal(getInGameSnapshotRebindPending(), false, "언마운트가 보류를 다음 화면으로 넘겼다")
@@ -1134,10 +1145,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 거부되면 잔존 ENDED의 결과 
 
   const hook = renderHook(() => useInGameSessionSnapshotSync())
 
-  act(() => {
-    fake.socket.id = "sock-2"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-2" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
 
@@ -1158,10 +1166,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 거부되면 잔존 ENDED의 결과 
   )
 
   // 영구 무효가 아니다: 다음 연결의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다.
-  act(() => {
-    fake.socket.id = "sock-3"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-3" })
   await act(async () => {
     fake.emitWithAckCalls[2].resolve(endedSnapshotResponse())
     await flushMicrotasks()
@@ -1183,10 +1188,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패 응답(ok:false)으로 끝나
 
   const hook = renderHook(() => useInGameSessionSnapshotSync())
 
-  act(() => {
-    fake.socket.id = "sock-2"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-2" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재결속 보류가 열려야 한다")
 
   const seqBefore = useInGameStore.getState().snapshotSeq
@@ -1257,10 +1259,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   setFakeSocket(stale.socket)
 
   const staleHook = renderHook(() => useInGameSessionSnapshotSync())
-  act(() => {
-    stale.socket.id = "stale-2"
-    stale.socket.triggerConnect()
-  })
+  await emitConnect(stale, () => { stale.socket.id = "stale-2" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
 
   await act(async () => {
@@ -1287,10 +1286,7 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   setFakeSocket(live.socket)
 
   const liveHook = renderHook(() => useInGameSessionSnapshotSync())
-  act(() => {
-    live.socket.id = "live-2"
-    live.socket.triggerConnect()
-  })
+  await emitConnect(live, () => { live.socket.id = "live-2" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
   assert.equal(live.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
 
@@ -1385,10 +1381,7 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
   )
 
   // 영구 무효가 아니다: 현재 신원의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다.
-  act(() => {
-    fake.socket.id = "sock-2"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-2" })
   await act(async () => {
     fake.emitWithAckCalls[2].resolve(endedSnapshotResponse({ gameId: "g-auth" }))
     await flushMicrotasks()
@@ -1427,10 +1420,7 @@ test("F-23(AC-05 보수): 재결속 중 effect 이전의 신원 전이 — 옛 �
   assert.equal(getInGameSnapshotRebindPending(), false, "전제: 마운트 자체는 전이가 아니다")
 
   // 실제 재연결이 재결속 보류를 연다 — 이 요청이 곧 "옛 요청"이 된다.
-  act(() => {
-    fake.socket.id = "sock-2"
-    fake.socket.triggerConnect()
-  })
+  await emitConnect(fake, () => { fake.socket.id = "sock-2" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
   const staleRequest = fake.emitWithAckCalls[1]
@@ -1580,4 +1570,246 @@ test("F-25b(AC-06) 대조군: 미치료 밤이 최종 확정된 뒤의 스냅샷
   assert.equal(state.players.find((p) => p.uuid === "player-1").alive, false)
   assert.equal(selectInGameDeadParticipantChoice(state, "player-1"), true)
   assert.equal(resolveInGameSelfAliveForControls(state, null), false)
+})
+
+// ---------------------------------------------------------------------------
+// F-26(AC-01/AC-02/AC-04) — 미완료 성공 사건의 복원과 재가입 보류
+//
+// 이 훅은 복원 payload를 만들지 않는다. 서버 응답의 nightSuccessRecovery를 store의 두 복원
+// 액션에 그대로 넘기고, 그 검증·중복 판정·결속은 store가 소유한다(live 수신과 같은 한 곳이다).
+// 아래 시험들은 그 경계를 실제 ack 경로로만 통과시킨다.
+// ---------------------------------------------------------------------------
+
+const readSuccessQueue = () => useInGameStore.getState().nightSuccessQueue
+
+/** 지금 이 순간의 인증 축(production 호출부와 같은 두 값). */
+function readCurrentAuthScopeForTest() {
+  const auth = useAuthStore.getState()
+  return {
+    accountId: auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null,
+    identityGeneration: auth.identityGeneration ?? null,
+  }
+}
+
+/** 서버가 복원해 주는 한 사건의 제한 payload(TARGET 전용은 targetId를 담지 않는다). */
+function recoveryPayload({
+  gameId = "g1", nightDayIndex = 0, eventId = "ev-recover-1", type = "KILL", perspectives = ["TARGET"],
+} = {}) {
+  const payload = { gameId, nightDayIndex, eventId, type, perspectives: [...perspectives] }
+  if (perspectives.includes("USER")) payload.targetId = "player-2"
+  return payload
+}
+
+/** 정상 응답 + 복원 배열. 응답 자체는 기존 fixture를 그대로 쓴다(키만 하나 더 붙는다). */
+function snapshotWithRecovery(recovery, { gameId = "g1", playerUuid = "player-1", phase = "NIGHT", dayIndex = 0 } = {}) {
+  return {
+    ...buildValidSnapshotResponse({ gameId, playerUuid, phase, dayIndex }),
+    nightSuccessRecovery: recovery,
+  }
+}
+
+/** 같은 판을 들고 있는 화면 + 그 계정으로 로그인 + 연결된 소켓 한 벌. */
+function openConnectedHook({ gameId = "g1", playerUuid = "player-1", empty = false } = {}) {
+  if (empty) useInGameStore.setState({ gameId: null, state: null, error: null })
+  else seedStore({ gameId, playerUuid })
+  seedAuth(playerUuid)
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = "sock-1"
+  setFakeSocket(fake.socket)
+  const hook = renderHook(() => useInGameSessionSnapshotSync())
+  return { fake, hook }
+}
+
+test("F-26(AC-01): 기존 판의 재접속 응답에 실린 미완료 사건이 실제 ack 경로로 큐에 복원된다", async () => {
+  const { fake, hook } = openConnectedHook()
+  const payload = recoveryPayload()
+  const seqBefore = useInGameStore.getState().snapshotSeq
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+
+  assert.equal(useInGameStore.getState().snapshotSeq, seqBefore + 1, "전제: 그 응답은 실제로 반영돼야 한다")
+  assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId])
+  // 허용 필드만 복사된다 — TARGET 전용 항목에 targetId가 생기지 않는다.
+  assert.deepEqual(Object.keys(readSuccessQueue()[0]).sort(),
+    ["eventId", "gameId", "nightDayIndex", "perspectives", "type"])
+
+  // 같은 응답을 다시 받아도(재조회·중복 전달) 큐는 늘지 않는다.
+  await act(async () => { fake.socket.triggerConnect() })
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+  assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId],
+    "같은 사건이 재조회로 두 번 큐에 들어갔다")
+
+  hook.unmount()
+})
+
+test("F-26(AC-01): 빈 store bootstrap도 같은 경로로 복원한다(복원 항목은 그 뒤 완료까지 된다)", async () => {
+  const { fake, hook } = openConnectedHook({ empty: true })
+  const payload = recoveryPayload()
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+
+  assert.equal(useInGameStore.getState().gameId, "g1", "전제: 빈 store 복원 자체가 성공해야 한다")
+  assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId])
+
+  // 복원 항목의 소유 범위는 **복원 뒤의 현재 범위**다 — 그래야 그 화면이 완료할 수 있다.
+  // 완료는 수락 당시의 범위와 **모든 축**이 같아야 한다 — 계정 축은 실제 인증 store에서 읽는다
+  // (production 소비처도 같은 두 값을 넘긴다).
+  const scope = readInGameReceiptScope(readCurrentAuthScopeForTest())
+  const outcome = useInGameStore.getState().completeNightSuccess(payload.eventId, scope)
+  assert.equal(outcome.status, "sent", `복원된 사건을 완료할 수 없었다: ${JSON.stringify(outcome)}`)
+  assert.deepEqual(readSuccessQueue(), [])
+  const ackEmit = fake.emitCalls.find((c) => c.event === "acknowledge_night_action_success")
+  assert.ok(ackEmit, "완료가 서버로 전송되지 않았다")
+  assert.deepEqual(ackEmit.payload,
+    { gameId: "g1", nightDayIndex: payload.nightDayIndex, eventId: payload.eventId })
+
+  hook.unmount()
+})
+
+test("F-26(AC-01): 복원 배열이 하나라도 어긋나면 snapshot 전체가 거부된다(부분 반영 없음)", async () => {
+  for (const broken of [
+    "not-an-array",
+    [recoveryPayload(), { gameId: "g1" }],
+    [recoveryPayload({ gameId: "g-other" })],
+    // 다른 밤의 사건은 이 화면의 수명 밖이다.
+    [recoveryPayload({ nightDayIndex: 7 })],
+  ]) {
+    const { fake, hook } = openConnectedHook()
+    const before = snapshotStoreFacts()
+
+    await act(async () => {
+      fake.emitWithAckCalls[0].resolve(snapshotWithRecovery(broken))
+      await flushMicrotasks()
+    })
+
+    assertStoreFactsUnchanged(before, `잘못된 복원 배열(${JSON.stringify(broken)})`)
+    assert.deepEqual(readSuccessQueue(), [], "거부된 응답이 큐를 만들었다")
+    hook.unmount()
+  }
+})
+
+test("F-26(AC-01): 수신 문맥 없이 부른 복원(직접 호출)은 상태만 복원하고 사건은 만들지 않는다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  const payload = recoveryPayload()
+
+  // 계정 축을 모르는 커밋이다 — 그런 응답으로 개인 사건을 되돌려주지 않는다(fail-closed).
+  const seqBefore = useInGameStore.getState().snapshotSeq
+  act(() => {
+    useInGameStore.getState().applySessionSnapshot(snapshotWithRecovery([payload]))
+  })
+  assert.deepEqual(readSuccessQueue(), [], "증거 없는 적용이 성공 사건 큐를 만들었다")
+  assert.equal(useInGameStore.getState().snapshotSeq, seqBefore, "그 응답은 통째로 거부돼야 한다")
+})
+
+test("F-26(AC-02): 로컬 완료 기록이 같은 범위의 늦은 복원보다 우선한다", async () => {
+  const { fake, hook } = openConnectedHook()
+  const payload = recoveryPayload()
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+  // 완료는 수락 당시의 범위와 **모든 축**이 같아야 한다 — 계정 축은 실제 인증 store에서 읽는다
+  // (production 소비처도 같은 두 값을 넘긴다).
+  const scope = readInGameReceiptScope(readCurrentAuthScopeForTest())
+  assert.equal(useInGameStore.getState().completeNightSuccess(payload.eventId, scope).status, "sent")
+  assert.deepEqual(readSuccessQueue(), [])
+
+  // 그 뒤에 도착한(보류됐던) 같은 사건의 복원은 재삽입되지 않는다.
+  await act(async () => { fake.socket.triggerConnect() })
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+  assert.deepEqual(readSuccessQueue(), [], "로컬 완료한 사건이 늦은 복원으로 다시 큐에 들어왔다")
+
+  hook.unmount()
+})
+
+test("F-26(AC-04): 새 밤으로 들어가는 복원은 이전 밤의 큐를 비우고, 같은 밤 재적용은 보존한다", async () => {
+  const { fake, hook } = openConnectedHook()
+  const payload = recoveryPayload({ nightDayIndex: 0 })
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+  assert.equal(readSuccessQueue().length, 1)
+
+  // 같은 밤의 재적용(복원 배열 없음)은 큐를 비우지 않는다.
+  await act(async () => { fake.socket.triggerConnect() })
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(buildValidSnapshotResponse({ gameId: "g1", phase: "NIGHT", dayIndex: 0 }))
+    await flushMicrotasks()
+  })
+  assert.equal(readSuccessQueue().length, 1, "같은 밤 재적용이 큐를 비웠다")
+
+  // 다음 밤으로 들어가면 이전 밤의 사건은 이 밤으로 넘어오지 않는다.
+  await act(async () => { fake.socket.triggerConnect() })
+  await act(async () => {
+    fake.emitWithAckCalls[2].resolve(buildValidSnapshotResponse({ gameId: "g1", phase: "NIGHT", dayIndex: 1 }))
+    await flushMicrotasks()
+  })
+  assert.deepEqual(readSuccessQueue(), [], "다음 밤에 이전 밤의 성공 사건이 남았다")
+
+  hook.unmount()
+})
+
+test("F-26(AC-01): SESSION_ROUTING_PENDING은 빈 복원 성공이 아니다 — 같은 연결에서 다시 묻고 그 응답으로 복원한다", async () => {
+  const { fake, hook } = openConnectedHook()
+  const payload = recoveryPayload()
+  const before = snapshotStoreFacts()
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve({ ok: false, code: "SESSION_ROUTING_PENDING", message: "…" })
+    await flushMicrotasks()
+  })
+  assertStoreFactsUnchanged(before, "재가입 보류 응답")
+  assert.deepEqual(readSuccessQueue(), [], "보류 응답이 큐를 만들었다")
+
+  // 250ms 뒤 같은 연결에서 재조회가 나간다(새 connect 없이 이 훅이 스스로 묻는다).
+  await act(async () => {
+    await new Promise((resolve) => { setTimeout(resolve, 400) })
+    await flushMicrotasks()
+  })
+  assert.ok(fake.emitWithAckCalls.length >= 2, "보류 뒤 같은 연결의 재조회가 없었다")
+  assert.deepEqual(fake.emitWithAckCalls[1].payload, { gameId: "g1" })
+
+  await act(async () => {
+    fake.emitWithAckCalls[1].resolve(snapshotWithRecovery([payload]))
+    await flushMicrotasks()
+  })
+  assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId],
+    "재조회 응답으로도 복원되지 않았다")
+
+  hook.unmount()
+})
+
+test("F-26(AC-01): 언마운트·새 세대는 예약된 재조회를 취소한다(사라진 화면이 계속 묻지 않는다)", async () => {
+  const { fake, hook } = openConnectedHook()
+
+  await act(async () => {
+    fake.emitWithAckCalls[0].resolve({ ok: false, code: "SESSION_ROUTING_PENDING", message: "…" })
+    await flushMicrotasks()
+  })
+  const beforeUnmount = fake.emitWithAckCalls.length
+  hook.unmount()
+
+  await act(async () => {
+    await new Promise((resolve) => { setTimeout(resolve, 400) })
+    await flushMicrotasks()
+  })
+  assert.equal(fake.emitWithAckCalls.length, beforeUnmount,
+    "언마운트 뒤에도 예약된 재조회가 요청을 보냈다")
 })

@@ -3338,3 +3338,280 @@ test('AC-05(F-26b) 전이: DAY n+1로 넘어간 뒤에도 그 밤의 사건을 �
     const staleAck = ackSuccess(sockets, jokerUuid, payload)
     assert.equal(staleAck.code, 'STALE_EVENT', '수명 밖(두 밤 뒤)의 완료 요청이 통과했다')
 })
+
+// ---------------------------------------------------------------------------
+// F-26 · 새로고침·재접속 복원(get_session_snapshot의 nightSuccessRecovery)
+//
+// 여기서도 요청은 등록된 실제 리스너로만 보낸다(wireSession → registerGameHandlers). 복원은 새
+// 사건을 만들지 않는다 — **이미 전달된 뒤 완료 ACK를 받지 못한** 수신 기록의 보관 payload를 그대로
+// 되돌려주는 것뿐이고, 그 수명은 기존 완료 창에서 ENDED만 제외한 NIGHT n·DAY n+1·TRIBUNAL n+1이다.
+// ---------------------------------------------------------------------------
+
+/** 등록된 get_session_snapshot 리스너로 조회하고 ack 응답을 돌려준다. */
+function getSnapshot(socket, payload = {}) {
+    const { callback, getResponse } = countingCallback()
+    socket.trigger('get_session_snapshot', payload, callback)
+    return getResponse()
+}
+
+/**
+ * 같은 계정의 **새 canonical 연결**을 만든다(새로고침). 규약상 id는 `sock-<uuid>`이므로 같은 id로
+ * 등록하면 namespace의 그 자리가 새 객체로 교체되고, 옛 객체는 그 즉시 canonical이 아니다.
+ */
+function reconnectSocket(io, session, uuid, { joinChannel = true } = {}) {
+    const next = createFakeSocket(uuid)
+    if (joinChannel) next.rooms.add(session.channelId)
+    next.data.activeGameId = session.id
+    io.sockets.sockets.set(next.id, next)
+    gameSessionSocketLayer.registerGameHandlers(io, next, uuid)
+    return next
+}
+
+/** 광대가 시민을 공격해 KILL 성공 사건이 나간 직후의 밤(같은 밤이 계속된다)을 만든다. */
+function startNightWithKill(id) {
+    const ctx = commitFullRoleSessionAtNight({ id, dayIndex: 2 })
+    const wired = wireSession(ctx.session)
+    const clock = createManualClock()
+    startNightTurnSequence(wired.io, ctx.session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(wired.submit(ctx.jokerUuid, ctx.citizenUuid), { ok: true })
+    const killEntry = wired.sockets.get(ctx.jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    assert.ok(killEntry, '전제: 광대가 KILL 성공 사건을 받아야 한다')
+    assert.equal(ctx.session.phase, 'NIGHT', '전제: 한 역할만 끝났으므로 같은 밤이 계속된다')
+    return { ...ctx, ...wired, clock, successPayload: killEntry.payload }
+}
+
+test('AC-01(F-26): 전달된 성공 사건의 제한 payload가 수신 기록에 보관되고, 재접속 조회가 그것을 그대로 복원한다', () => {
+    const { session, io, jokerUuid, citizenUuid, successPayload } = startNightWithKill('f26-ac01-recover')
+
+    const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+    const jokerRecord = stored.byEvent.get(successPayload.eventId).get(jokerUuid)
+    assert.deepEqual(jokerRecord.payload, successPayload,
+        '전달한 그 payload가 필드별로 보관돼야 복원할 자료가 있다')
+    assert.notEqual(jokerRecord.payload, successPayload, '보관본은 전달본과 같은 참조여서는 안 된다')
+
+    // 새로고침: 같은 계정의 새 연결이 canonical이 된다.
+    const reconnected = reconnectSocket(io, session, jokerUuid)
+    const response = getSnapshot(reconnected, { gameId: session.id })
+    assert.equal(response.ok, true, JSON.stringify(response))
+    assert.deepEqual(response.nightSuccessRecovery, [successPayload],
+        '미완료 사건이 같은 eventId·같은 허용 필드로 복원되지 않았다')
+    assert.notEqual(response.nightSuccessRecovery[0], jokerRecord.payload,
+        '응답이 보관본 참조를 그대로 내보냈다(응답 변형이 보관본을 오염시킨다)')
+
+    // 대상자(TARGET)도 자기 사건을 복원받고, 그 payload에는 targetId가 없다.
+    const targetReconnected = reconnectSocket(io, session, citizenUuid)
+    const targetResponse = getSnapshot(targetReconnected, { gameId: session.id })
+    assert.equal(targetResponse.nightSuccessRecovery.length, 1)
+    assert.deepEqual(Object.keys(targetResponse.nightSuccessRecovery[0]).sort(),
+        ['eventId', 'gameId', 'nightDayIndex', 'perspectives', 'type'])
+    assert.deepEqual(targetResponse.nightSuccessRecovery[0].perspectives, ['TARGET'])
+
+    // 복원은 현재 연결로 기록을 다시 결속한다 — 그 연결의 완료 ACK가 통과한다.
+    const ack = countingCallback()
+    reconnected.trigger('acknowledge_night_action_success', {
+        gameId: session.id, nightDayIndex: successPayload.nightDayIndex, eventId: successPayload.eventId,
+    }, ack.callback)
+    assert.deepEqual(ack.getResponse(), { ok: true, duplicate: false }, '복원 뒤의 최초 완료가 거부됐다')
+    assert.equal(jokerRecord.completed, true)
+})
+
+test('AC-02(F-26): 이미 완료된 사건은 재접속 조회에 실리지 않는다(응답만 유실된 경우도 같다)', () => {
+    const { session, io, sockets, jokerUuid, successPayload } = startNightWithKill('f26-ac02-completed')
+    const ackPayload = {
+        gameId: session.id, nightDayIndex: successPayload.nightDayIndex, eventId: successPayload.eventId,
+    }
+
+    // 클라이언트가 완료를 보냈고 서버는 기록했다 — 응답이 유실되어 클라이언트만 그것을 모른다.
+    assert.deepEqual(ackSuccess(sockets, jokerUuid, ackPayload), { ok: true, duplicate: false })
+
+    const reconnected = reconnectSocket(io, session, jokerUuid)
+    const response = getSnapshot(reconnected, { gameId: session.id })
+    assert.equal(response.ok, true)
+    assert.equal(Object.hasOwn(response, 'nightSuccessRecovery'), false,
+        '서버가 완료를 기록한 사건이 다시 복원 목록에 실렸다')
+
+    // 대조군: ACK가 서버에 아예 도착하지 않은 대상자는 그대로 복원 대상이다.
+    const citizenUuid = [...session.players.keys()]
+        .find((uuid) => (gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+            .byEvent.get(successPayload.eventId).has(uuid) && uuid !== jokerUuid))
+    const targetReconnected = reconnectSocket(io, session, citizenUuid)
+    assert.equal(getSnapshot(targetReconnected, { gameId: session.id }).nightSuccessRecovery.length, 1,
+        'ACK를 보내지 않은 수신자의 사건까지 함께 사라졌다')
+})
+
+test('AC-02(F-26): 전송 예외는 기록을 지우지 않고 결속만 풀며, 새 연결의 복원이 그 기록을 다시 결속한다', () => {
+    const ctx = commitFullRoleSessionAtNight({ id: 'f26-ac02-delivery-error', dayIndex: 2 })
+    const { session, jokerUuid, citizenUuid } = ctx
+    const { io, sockets, submit } = wireSession(session)
+    // 광대에게 보내는 성공 사건 전송이 예외를 던진다(기록은 이미 만들어진 뒤다).
+    sockets.get(jokerUuid).emitShouldThrowOn = 'night_action_success'
+
+    const clock = createManualClock()
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid), { ok: true })
+
+    const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+    const eventId = [...stored.byEvent.keys()][0]
+    const record = stored.byEvent.get(eventId).get(jokerUuid)
+    assert.ok(record, '전송 예외가 수신 기록을 통째로 지웠다 — 그러면 복원할 자료가 없다')
+    assert.equal(record.completed, false)
+    assert.equal(record.socket, null, '실패한 연결의 결속이 그대로 남았다')
+    assert.equal(record.socketId, null)
+    assert.ok(record.payload, '복원 payload가 사라졌다')
+
+    // 결속이 없는 기록은 어떤 완료도 통과시키지 않는다.
+    const nightDayIndex = record.payload.nightDayIndex
+    assert.equal(ackSuccess(sockets, jokerUuid, { gameId: session.id, nightDayIndex, eventId }).code,
+        'NOT_ELIGIBLE', '전달받지 못한 연결의 완료가 통과했다')
+
+    // 새 연결의 복원이 그 기록을 다시 결속하고, 그 뒤에는 완료할 수 있다.
+    const reconnected = reconnectSocket(io, session, jokerUuid)
+    const response = getSnapshot(reconnected, { gameId: session.id })
+    assert.equal(response.nightSuccessRecovery.length, 1, '전송에 실패한 사건이 복원되지 않았다')
+    assert.equal(record.socket, reconnected)
+    const ack = countingCallback()
+    reconnected.trigger('acknowledge_night_action_success',
+        { gameId: session.id, nightDayIndex, eventId }, ack.callback)
+    assert.deepEqual(ack.getResponse(), { ok: true, duplicate: false })
+})
+
+test('AC-03(F-26): 사망해 연결이 끊겼던 대상자도 다음 낮에 재접속하면 자기 CONFIRM 사건을 복원받고 완료할 수 있다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26-ac03-dead-target', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+
+    // 첫 밤: 광대가 시민을 죽인다(실제 KILL 판정 → canonical alive=false).
+    const firstClock = createManualClock()
+    startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+    assert.equal(session.players.get(citizenUuid).alive, false, '전제: 대상자가 실제로 사망해야 한다')
+    gameSessionSocketLayer.__testables.stopDayPhaseTimer(session.id)
+
+    // 다음 밤: 마녀사냥꾼이 그 사망자를 확인한다 — 연결 중이므로 CONFIRM을 실제로 수신한다.
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    const clock = createManualClock()
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, null)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    assert.deepEqual(submit(witchHunterUuid, citizenUuid), { ok: true })
+
+    const confirmEntry = sockets.get(citizenUuid).emitted
+        .find((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM')
+    assert.ok(confirmEntry, '전제: 사망한 대상자가 연결 중에 CONFIRM을 받아야 한다')
+    const confirmPayload = confirmEntry.payload
+    const nightDayIndex = confirmPayload.nightDayIndex
+
+    // 그 밤이 끝나 DAY n+1로 넘어갔다(자동 최종화). ACK는 아직 보내지 않았다.
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, nightDayIndex + 1)
+    gameSessionSocketLayer.__testables.stopDayPhaseTimer(session.id)
+
+    // 단절 → 같은 소속의 새 canonical 연결로 재접속한다(사망 상태 그대로다).
+    sockets.get(citizenUuid).connected = false
+    const reconnected = reconnectSocket(io, session, citizenUuid)
+    const response = getSnapshot(reconnected, { gameId: session.id })
+    assert.equal(response.ok, true, JSON.stringify(response))
+    assert.deepEqual(response.nightSuccessRecovery, [confirmPayload],
+        'DAY n+1의 재접속이 그 밤의 CONFIRM을 복원하지 않았다')
+    assert.deepEqual(Object.keys(response.nightSuccessRecovery[0]).sort(),
+        ['eventId', 'gameId', 'nightDayIndex', 'perspectives', 'type'])
+    assert.equal(session.players.get(citizenUuid).alive, false, '복원이 생존 상태를 바꿨다')
+
+    const ack = countingCallback()
+    reconnected.trigger('acknowledge_night_action_success',
+        { gameId: session.id, nightDayIndex, eventId: confirmPayload.eventId }, ack.callback)
+    assert.deepEqual(ack.getResponse(), { ok: true, duplicate: false }, '복원 뒤 최초 완료가 거부됐다')
+
+    // TRIBUNAL n+1에서도 같은 창이다 — 아직 완료하지 않은 다른 수신자(마녀사냥꾼)로 확인한다.
+    session.phase = 'TRIBUNAL'
+    const hunterReconnected = reconnectSocket(io, session, witchHunterUuid)
+    const tribunalResponse = getSnapshot(hunterReconnected, { gameId: session.id })
+    assert.equal(tribunalResponse.nightSuccessRecovery.length, 1, 'TRIBUNAL n+1 복원이 막혔다')
+    assert.deepEqual(tribunalResponse.nightSuccessRecovery[0].perspectives, ['USER'])
+
+    // ENDED와 다음 NIGHT은 복원 대상이 아니다.
+    session.phase = 'ENDED'
+    assert.equal(Object.hasOwn(getSnapshot(hunterReconnected, { gameId: session.id }), 'nightSuccessRecovery'),
+        false, '결과가 확정된 판에서 성공 사건이 복원됐다')
+    session.phase = 'NIGHT'
+    session.dayIndex = nightDayIndex + 1
+    assert.equal(Object.hasOwn(getSnapshot(hunterReconnected, { gameId: session.id }), 'nightSuccessRecovery'),
+        false, '다음 밤에서 이전 밤의 사건이 복원됐다')
+})
+
+test('AC-03(F-26): 재가입이 끝나지 않은 조회는 SESSION_ROUTING_PENDING이고, 그 조회가 시작한 재동기화 뒤에 복원된다', async () => {
+    const { session, io, jokerUuid, successPayload } = startNightWithKill('f26-ac03-pending')
+
+    // 새 연결이 아직 판 채널에 들어가지 않았다 — 이 순간에는 수신 자격을 확인할 수 없다.
+    const reconnected = reconnectSocket(io, session, jokerUuid, { joinChannel: false })
+    const pending = getSnapshot(reconnected, { gameId: session.id })
+    assert.equal(pending.ok, false)
+    assert.equal(pending.code, 'SESSION_ROUTING_PENDING',
+        '재가입 중 조회가 빈 복원 성공으로 답했다 — 클라이언트는 다시 묻지 않는다')
+    assert.equal(Object.hasOwn(pending, 'nightSuccessRecovery'), false)
+    assert.equal(Object.hasOwn(pending, 'phase'), false, '보류 응답이 snapshot 본문을 실었다')
+
+    // 그 보류가 시작한 재동기화가 채널 재가입을 끝낸다.
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(reconnected.rooms.has(session.channelId), true, '보류 응답이 재가입을 시작하지 않았다')
+    assert.deepEqual(reconnected.joined, [session.channelId], '같은 범위의 재가입은 한 번이어야 한다')
+
+    const response = getSnapshot(reconnected, { gameId: session.id })
+    assert.equal(response.ok, true, JSON.stringify(response))
+    assert.deepEqual(response.nightSuccessRecovery, [successPayload], '재조회가 복원하지 못했다')
+})
+
+test('AC-04(F-26): 다른 밤의 사건은 복원되지 않는다(보관함 교체·수명 검사 둘 다)', () => {
+    const { session, io, submit, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, successPayload } =
+        startNightWithKill('f26-ac04-stale-night')
+
+    // 그 밤을 끝내고 다음 밤을 시작한다 — 보관함이 통째로 교체된다.
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+    gameSessionSocketLayer.__testables.stopDayPhaseTimer(session.id)
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    const nextClock = createManualClock()
+    startNightTurnSequence(io, session, { ...nextClock, randomFn: () => 0.5 })
+    assert.notEqual(session.dayIndex, successPayload.nightDayIndex, '전제: 다음 밤으로 넘어가야 한다')
+
+    const reconnected = reconnectSocket(io, session, jokerUuid)
+    assert.equal(Object.hasOwn(getSnapshot(reconnected, { gameId: session.id }), 'nightSuccessRecovery'),
+        false, '보관함이 교체된 뒤에도 이전 밤 사건이 복원됐다')
+})
+
+test('AC-05(F-26): 그 사건의 수신자가 아닌 역할·기권자는 재접속해도 복원 목록을 받지 못한다', () => {
+    const { session, io, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid, successPayload } =
+        startNightWithKill('f26-ac05-recipients')
+
+    // KILL의 수신자는 광대(USER)와 시민(TARGET)뿐이다.
+    for (const uuid of [jokerUuid, citizenUuid]) {
+        const socket = reconnectSocket(io, session, uuid)
+        assert.equal(getSnapshot(socket, { gameId: session.id }).nightSuccessRecovery.length, 1,
+            `${uuid}: 정당한 수신자의 복원이 막혔다`)
+    }
+    for (const uuid of [doctorUuid, guardUuid, witchHunterUuid]) {
+        const socket = reconnectSocket(io, session, uuid)
+        const response = getSnapshot(socket, { gameId: session.id })
+        assert.equal(response.ok, true, `${uuid}: 일반 조회 자체는 성공해야 한다`)
+        assert.equal(Object.hasOwn(response, 'nightSuccessRecovery'), false,
+            `${uuid}: 이 사건의 수신자가 아닌 참가자에게 복원 목록이 실렸다`)
+    }
+    // 비참가자는 애초에 snapshot 자체를 받지 못한다(기존 계약 그대로다).
+    const outsider = createFakeSocket('f26-ac05-outsider')
+    io.sockets.sockets.set(outsider.id, outsider)
+    gameSessionSocketLayer.registerGameHandlers(io, outsider, 'f26-ac05-outsider')
+    const denied = getSnapshot(outsider, { gameId: session.id })
+    assert.equal(denied.ok, false)
+    assert.equal(Object.hasOwn(denied, 'nightSuccessRecovery'), false)
+    assert.ok(successPayload.eventId)
+})

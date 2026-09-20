@@ -510,14 +510,169 @@ function clearNightSuccessQueue() {
 }
 
 /**
- * "밤이 아니었다가 밤이 됐다"일 때만 밤 성공 사건 큐·기록을 비우는 패치를 돌려준다.
+ * F-26(AC-04): 이 전이가 **밤 성공 사건 수명의 끝**인가(부수 효과 없는 판정).
+ *
+ * 예전에는 "직전 phase가 NIGHT이 아니었는가" 하나만 봤다. 그래서 NIGHT n → NIGHT n+1처럼
+ * 두 상태가 모두 NIGHT인 전이에서는 지난 밤의 큐·기록이 그대로 남았고, 늦게 도착한 옛 밤의
+ * pending이 새 밤의 화면에 다시 들어올 수 있었다. 사건의 수명 단위는 phase가 아니라 **그 밤**
+ * 이므로 날짜까지 함께 본다 — 같은 NIGHT 날짜의 반복 관측·역할 턴 갱신·재접속 복원만 재진입이
+ * 아니다.
+ */
+function shouldClearNightSuccessOnNightEntry(beforeState, afterState) {
+  if (afterState?.phase !== "NIGHT") return false
+  if (beforeState?.phase === "NIGHT" && beforeState?.dayIndex === afterState?.dayIndex) return false
+  return true
+}
+
+/**
+ * "이 밤이 아니었다가 이 밤이 됐다"일 때만 밤 성공 사건 큐·기록을 비우는 패치를 돌려준다.
  * clearNightPrivateResultOnNightEntry와 같은 재진입 판정이지만, applySessionSnapshot처럼 결과
  * phase가 다양한 경로에서는 beforeState·afterState를 함께 봐야 한다.
  */
 function clearNightSuccessOnNightEntry(beforeState, afterState) {
-  if (afterState?.phase !== "NIGHT") return {}
-  if (beforeState?.phase === "NIGHT") return {}
+  if (!shouldClearNightSuccessOnNightEntry(beforeState, afterState)) return {}
   return clearNightSuccessQueue()
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// F-26: **live 수신과 재접속 복원이 공유하는 한 벌의 검증·중복 판정**
+//
+// 복원은 새 사건을 만들지 않는다 — 서버가 이미 이 계정에게 보냈고 완료 ACK를 받지 못한 기록의
+// 보관 payload를 그대로 돌려준 것뿐이다. 그래서 검증·허용 필드 복사·중복 판정은 live 수신과
+// **완전히 같은 코드**를 지나야 한다. 두 벌로 나뉘면 한쪽만 느슨해지고, 그 느슨한 쪽이 곧
+// "다른 계정·다른 소속·다른 밤의 사건이 큐에 들어오는" 통로가 된다.
+//
+// 다른 것은 수명 하나뿐이다: live 신규 수신은 NIGHT n에서만, 복원은 그 밤의 완료 창(ENDED 제외)
+// 인 NIGHT n · DAY n+1 · TRIBUNAL n+1에서 허용한다. 이 문맥은 이 모듈 안에만 있고 소켓
+// payload에서 읽지 않는다 — 외부 입력이 수명을 넓힐 수 있으면 그것이 곧 우회로다.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** 복원 경로임을 나타내는 내부 문맥(외부로 내보내지 않는다). */
+const NIGHT_SUCCESS_RESTORE_CONTEXT = Object.freeze({ mode: "RESTORE" })
+
+/** 이 상태에서 그 밤의 사건을 받아들일 수 있는가. */
+function isNightSuccessWindowOpen(state, nightDayIndex, restore) {
+  const phase = state?.phase ?? null
+  const dayIndex = state?.dayIndex ?? null
+  if (phase === "NIGHT") return dayIndex === nightDayIndex
+  if (restore === null) return false
+  // 복원 전용 창. ROLE_REVEAL·ENDED·다음 밤·다른 밤은 어떤 경우에도 허용하지 않는다.
+  if (phase === "DAY" || phase === "TRIBUNAL") return dayIndex === nightDayIndex + 1
+  return false
+}
+
+/**
+ * 한 성공 사건 payload를 이 후보 상태·이 수신 범위에서 받아들일 수 있는지 판정한다.
+ *
+ * **아무것도 바꾸지 않는다** — 전역 기록도 store도 건드리지 않고, 판정 결과와 (신규일 때만)
+ * 큐 항목·기록 초안만 돌려준다. 그래서 snapshot 복원이 배열 전체를 먼저 검사한 뒤 한 번에
+ * 커밋할 수 있다(중간에 실패하면 부분 반영이 남지 않는다).
+ *
+ * @param {object} candidate 커밋 후보 상태({gameId, state}). live는 현재 store, 복원은 patch 결과다.
+ * @param {object} payload 검증하지 않은 사건 payload(서버 값이라도 외부 입력으로 다룬다).
+ * @param {object|null} receiptScope 이 수신의 소유 범위(계정 축은 호출부가 넣는다).
+ * @param {{has: (eventId: string) => boolean}} records 중복 판정용 기록 집합.
+ * @param {object|null} restore 복원 문맥(null이면 live 신규 수신이다).
+ * @returns {{status: "REJECT"|"DUPLICATE"|"ACCEPT", entry?: object, record?: object}}
+ */
+function prepareNightSuccessReception(candidate, payload, receiptScope, records, restore = null) {
+  if (!isValidNightSuccessPayload(payload)) return { status: "REJECT" }
+  if (!candidate?.gameId || !candidate?.state) return { status: "REJECT" }
+  if (payload.gameId !== candidate.gameId) return { status: "REJECT" }
+  if (!isNightSuccessWindowOpen(candidate.state, payload.nightDayIndex, restore)) return { status: "REJECT" }
+  if (receiptScope === null || typeof receiptScope !== "object") return { status: "REJECT" }
+  // 성공 사건은 항상 누군가의 행동 결과다 — "지금 로그인한 계정 = 이 판의 본인"까지 요구한다.
+  const selfUuid = candidate.state.self?.uuid ?? null
+  if (receiptScope.accountId === null || receiptScope.accountId !== selfUuid) return { status: "REJECT" }
+  if (receiptScope.gameId !== candidate.gameId) return { status: "REJECT" }
+  if (receiptScope.membershipId !== readSelfMembershipId(candidate.state)) return { status: "REJECT" }
+  if (restore === null) {
+    // live 경로는 커밋하는 그 순간의 연결·소속 축을 여기서 직접 확인한다.
+    if (!isReceiptScopeCurrent(receiptScope, candidate)) return { status: "REJECT" }
+  }
+  // 복원 경로의 연결 축은 commitWithReceipt가 이미 확인했다(요청 세대·소켓 객체/id·연결 상태).
+  // 소속 축은 위의 등식 하나가 전부다 — 이 기록은 **방금 커밋한 그 자리**의 것이어야 한다.
+  // 소속을 모르는 응답(membershipId=null)까지 거부하지는 않는다: live 신규 수신도 그 값을
+  // 요구하지 않고, 서버가 이미 "같은 membershipId의 기록만" 복원하도록 걸러 보낸다. 여기서
+  // 거부하면 그 축을 아직 모르는 정상 화면의 snapshot 전체가 함께 버려진다.
+  // 이미 아는 사건(수락 대기 중이거나 로컬 완료된 사건)은 다시 큐에 넣지 않는다 — 로컬 완료
+  // 기록이 같은 범위의 늦은 pending보다 우선한다.
+  if (records.has(payload.eventId)) return { status: "DUPLICATE" }
+
+  const entry = buildNightSuccessQueueEntry(payload)
+  return {
+    status: "ACCEPT",
+    entry,
+    record: { scope: receiptScope, entry, completed: false, ackStatus: "pending" },
+  }
+}
+
+/**
+ * F-26(AC-01/AC-02/AC-04/AC-05): snapshot 응답의 `nightSuccessRecovery` 배열을 **부수 효과 없이**
+ * 검사한다.
+ *
+ * 키가 없는 응답은 기존 호환 경로다(복원할 것이 없다는 뜻이고, 그 자체로는 아무 실패도 아니다).
+ * 배열이 아니거나 한 항목이라도 형태·게임·수명·본인·소속 검사를 통과하지 못하면 **snapshot 전체
+ * 를 거부**한다 — 배열의 뒤쪽 오류로 앞쪽만 반영되는 부분 커밋을 만들지 않는다.
+ *
+ * @returns {{ok: false} | {ok: true, entries: object[]}}
+ */
+function planNightSuccessRecovery(response, candidate, receiptScope, knownEventIds) {
+  if (!Object.hasOwn(response ?? {}, "nightSuccessRecovery")) return { ok: true, entries: [] }
+  const raw = response.nightSuccessRecovery
+  if (!Array.isArray(raw)) return { ok: false }
+  if (raw.length === 0) return { ok: true, entries: [] }
+  if (receiptScope === null || typeof receiptScope !== "object") return { ok: false }
+
+  const seen = new Set(knownEventIds)
+  const entries = []
+  for (const payload of raw) {
+    const prepared = prepareNightSuccessReception(
+      candidate, payload, receiptScope, seen, NIGHT_SUCCESS_RESTORE_CONTEXT,
+    )
+    if (prepared.status === "REJECT") return { ok: false }
+    if (prepared.status === "DUPLICATE") continue
+    seen.add(prepared.entry.eventId)
+    entries.push(prepared.entry)
+  }
+  return { ok: true, entries }
+}
+
+/**
+ * 검증이 끝난 복원 항목을 모듈 기록에 결속하고 새 큐를 만든다(같은 set() 커밋 안에서 불린다).
+ *
+ * 결속 범위는 이 커밋이 만든 **후속 신원 범위**다 — 요청 시점의 범위가 아니라 커밋 뒤에
+ * readInGameReceiptScope가 돌려줄 값과 같은 모양이어야 completeNightSuccess가 그 사건을 완료할
+ * 수 있다(빈 store bootstrap은 요청 시점에 gameId·소속을 모른다).
+ */
+function commitNightSuccessRecovery(entries, ownerScope, baseQueue) {
+  if (entries.length === 0) return {}
+  for (const entry of entries) {
+    nightSuccessRecords.set(entry.eventId, {
+      scope: ownerScope, entry, completed: false, ackStatus: "pending",
+    })
+  }
+  return { nightSuccessQueue: [...baseQueue, ...entries] }
+}
+
+/**
+ * 이 커밋이 만든 신원 범위(readInGameReceiptScope와 같은 여덟 축·같은 모양).
+ *
+ * 계정 축은 호출부가 넘긴 수신 범위에서, 판·소속은 **방금 커밋한 state**에서, 세대·연결은 이
+ * 모듈이 소유한 관측에서 읽는다(buildSnapshotResultOwner와 같은 분담이다). adoptIdentityScope
+ * 이후에 불러야 membershipEpoch가 이 커밋의 값이 된다.
+ */
+function buildFollowUpReceiptScope(receipt, gameId, state) {
+  return Object.freeze({
+    accountId: receipt?.accountId ?? null,
+    identityGeneration: receipt?.identityGeneration ?? null,
+    gameId: gameId ?? null,
+    membershipId: readSelfMembershipId(state),
+    membershipEpoch,
+    socketEpoch,
+    socketId: receipt?.socketId ?? null,
+    socketConnected: receipt?.socketConnected ?? false,
+  })
 }
 
 /**
@@ -1039,15 +1194,37 @@ export const useInGameStore = create((set) => ({
       // F-23(AC-05): 기존 non-null 소속과 **다른 소속**을 주장하는 응답은 여기서 끝난다 —
       // state·snapshotSeq·수신 증거 셋 모두 참조 보존 no-op이고, 관측 기준도 채택하지 않는다.
       if (claimsForeignMembership(current, patch.state)) return current
+      // F-26(AC-01/AC-04): 미완료 성공 사건 복원 배열을 **부수 효과 없이 먼저 전부** 검사한다.
+      // 여기서 실패하면 state·snapshotSeq·수신 증거·모듈 기록 전부가 참조 보존 no-op이다
+      // (아래 밤 재진입 정리도 실행되지 않는다).
+      const willClearNightSuccess = shouldClearNightSuccessOnNightEntry(current.state, patch.state)
+      const recovery = planNightSuccessRecovery(
+        response,
+        { gameId: current.gameId ?? null, state: patch.state },
+        // 복원 항목의 소유 범위는 **이 커밋이 만드는 후속 범위**다(요청 시점 범위가 아니다 —
+        // 빈 store bootstrap은 그때 판도 소속도 모른다). 검사에 쓰는 이 사본과 아래 결속에
+        // 쓰는 사본은 membershipEpoch 하나만 다르고(결속은 adoptIdentityScope 이후 값), 그
+        // 필드는 복원 검사에 쓰이지 않는다.
+        buildFollowUpReceiptScope(receiptContext, current.gameId ?? null, patch.state),
+        // 이 커밋이 이전 밤의 기록을 비우는 전이라면 중복 판정의 기준도 비워진 뒤의 사실이다.
+        willClearNightSuccess ? [] : nightSuccessRecords.keys(),
+      )
+      if (!recovery.ok) return current
       const snapshotSeq = current.snapshotSeq + 1
       // 이 커밋이 만든 소속을 같은 자리에서 관측 기준으로 채택한다 — 자기 복원을 외부 소속
       // 교체로 오인하지 않게 한다(아래 store 구독자는 같은 값을 다시 보므로 세지 않는다).
       adoptIdentityScope(current.gameId ?? null, patch.state)
+      // F-26b: 같은 밤의 snapshot·역할 턴 갱신은 재진입이 아니다 — 복원 결과가 실제로 다른
+      // 밤으로 들어갔을 때만 큐·기록을 비운다(그 정리가 복원 항목보다 **먼저** 일어난다).
+      const nightEntryPatch = clearNightSuccessOnNightEntry(current.state, patch.state)
       return {
         ...patch,
-        // F-26b: 같은 NIGHT snapshot·역할 턴 갱신은 재진입이 아니다 — 복원 결과가 실제로
-        // "밤이 아니었다가 밤이 됐다"일 때만 큐·기록을 비운다.
-        ...clearNightSuccessOnNightEntry(current.state, patch.state),
+        ...nightEntryPatch,
+        ...commitNightSuccessRecovery(
+          recovery.entries,
+          buildFollowUpReceiptScope(receiptContext, current.gameId ?? null, patch.state),
+          willClearNightSuccess ? EMPTY_NIGHT_SUCCESS_QUEUE : current.nightSuccessQueue,
+        ),
         snapshotSeq,
         snapshotResultOwner: buildSnapshotResultOwner(receiptContext, current.gameId ?? null, patch.state, snapshotSeq),
       }
@@ -1071,6 +1248,17 @@ export const useInGameStore = create((set) => ({
       }
       const patch = bootstrapSessionSnapshotPure(response)
       if (!patch) return current
+      // F-26(AC-01): 이 경로는 아래에서 기존 기록을 통째로 비우므로, 중복 판정 기준도 비워진
+      // 뒤의 사실(빈 집합)이다. 배열에 하나라도 문제가 있으면 여기서 끝난다 — 빈 store가
+      // 어중간하게 복원되는 상태를 만들지 않는다.
+      const recovery = planNightSuccessRecovery(
+        response,
+        { gameId: patch.gameId ?? null, state: patch.state },
+        // applySessionSnapshot과 같은 이유로 후속 범위로 검사한다(위 주석 참고).
+        buildFollowUpReceiptScope(receiptContext, patch.gameId ?? null, patch.state),
+        [],
+      )
+      if (!recovery.ok) return current
       const snapshotSeq = current.snapshotSeq + 1
       adoptIdentityScope(patch.gameId ?? null, patch.state)
       // 빈 store에 gameId가 처음 붙는 경로다(gameId 변경) — 개인 결과·성공 사건 큐도 이 세션
@@ -1083,6 +1271,12 @@ export const useInGameStore = create((set) => ({
         snapshotResultOwner: buildSnapshotResultOwner(receiptContext, patch.gameId ?? null, patch.state, snapshotSeq),
         ...CLEARED_NIGHT_PRIVATE_RESULT,
         ...clearNightSuccessQueue(),
+        // 비운 **뒤에** 이 응답이 복원해 준 미완료 사건만 다시 싣는다.
+        ...commitNightSuccessRecovery(
+          recovery.entries,
+          buildFollowUpReceiptScope(receiptContext, patch.gameId ?? null, patch.state),
+          EMPTY_NIGHT_SUCCESS_QUEUE,
+        ),
       }
     }),
 
@@ -1166,20 +1360,13 @@ export const useInGameStore = create((set) => ({
    */
   receiveNightSuccess: (payload, receiptScope = null) =>
     set((current) => {
-      if (!isValidNightSuccessPayload(payload)) return current
-      if (!current.gameId || !current.state) return current
-      if (payload.gameId !== current.gameId) return current
-      if (current.state.phase !== "NIGHT") return current
-      if (payload.nightDayIndex !== current.state.dayIndex) return current
-      if (receiptScope === null || typeof receiptScope !== "object") return current
-      const selfUuid = current.state.self?.uuid ?? null
-      if (receiptScope.accountId === null || receiptScope.accountId !== selfUuid) return current
-      if (!isReceiptScopeCurrent(receiptScope, current)) return current
-      if (nightSuccessRecords.has(payload.eventId)) return current
+      // F-26: 검증·허용 필드 복사·중복 판정은 복원 경로와 **같은 한 곳**이 소유한다(live는
+      // 복원 문맥 없이 부르므로 수명이 NIGHT n으로 좁혀진다).
+      const prepared = prepareNightSuccessReception(current, payload, receiptScope, nightSuccessRecords)
+      if (prepared.status !== "ACCEPT") return current
 
-      const entry = buildNightSuccessQueueEntry(payload)
-      nightSuccessRecords.set(payload.eventId, { scope: receiptScope, entry, completed: false, ackStatus: "pending" })
-      return { nightSuccessQueue: [...current.nightSuccessQueue, entry] }
+      nightSuccessRecords.set(prepared.entry.eventId, prepared.record)
+      return { nightSuccessQueue: [...current.nightSuccessQueue, prepared.entry] }
     }),
 
   /**

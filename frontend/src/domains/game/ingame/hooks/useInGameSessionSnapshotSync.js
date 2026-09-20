@@ -13,6 +13,25 @@ import { isStaleSessionSnapshotAckResponse } from "../utils/isStaleSessionSnapsh
 const SESSION_SNAPSHOT_TIMEOUT_MS = 5000
 
 // ───────────────────────────────────────────────────────────────────────────
+// F-26(AC-01): **같은 연결 안의 제한된 재조회**
+//
+// 서버는 채널 재가입이 아직 끝나지 않은 조회에 SESSION_ROUTING_PENDING으로 답한다(빈 복원
+// 성공으로 오인시키지 않기 위한 명시적 보류다). 그 답을 받고 아무것도 하지 않으면 재가입이
+// 끝난 뒤에도 이 연결은 다시 묻지 않고, 그 사이 복원돼야 할 미완료 성공 사건이 이 연결
+// 내내 화면에 오지 않는다. 그래서 **이미 snapshot 요청을 소유한 이 훅 안에서** 다시 묻는다 —
+// 새 훅·서버 타이머·connect 수신 훅으로 재시도 소유자를 나누지 않는다.
+//
+// 상한은 유한하고 작다: 시도 사이 250ms · 최초 시도부터 총 5초 · 최대 20회 · 동시 1요청.
+// 각 ack timeout은 남은 예산만 쓴다(마지막 시도가 예산을 넘겨 기다리지 않는다). 영구 오류
+// (배제·다른 판·형태 오류)는 재시도하지 않는다 — 그 답은 기다려도 바뀌지 않는다.
+// ───────────────────────────────────────────────────────────────────────────
+const SNAPSHOT_RETRY_DELAY_MS = 250
+const SNAPSHOT_RETRY_BUDGET_MS = 5000
+const SNAPSHOT_MAX_ATTEMPTS = 20
+/** 이 코드만 "지금은 아직 준비되지 않았다"는 뜻이다(재조회 대상). */
+const SESSION_ROUTING_PENDING_CODE = "SESSION_ROUTING_PENDING"
+
+// ───────────────────────────────────────────────────────────────────────────
 // F-23(SPLIT-1): **신원 재결속이 진행 중인가**
 //
 // 신원(계정·소속)이나 연결이 바뀌면 지금 화면이 들고 있는 state는 아직 **이전 신원이 받아
@@ -124,6 +143,9 @@ export function useInGameSessionSnapshotSync() {
   const observedBaseRef = useRef(false)
   // 우리 자신의 정상 복원이 만든 후속 범위. 이 범위로의 전이는 새 요청을 만들지 않는다.
   const fulfilledRef = useRef(null)
+  // F-26(AC-01): 이 세대의 재조회 예산(최초 시도 시각 기준). 세대가 바뀌면 통째로 새로 만들고,
+  // 옛 예약은 객체 동일성 비교로 스스로 무효가 된다.
+  const retryRef = useRef({ epoch: -1, attempts: 0, deadline: 0, timerId: null })
 
   useEffect(() => {
     mountedRef.current = true
@@ -131,6 +153,12 @@ export function useInGameSessionSnapshotSync() {
       mountedRef.current = false
       // 이 화면이 사라지면 재결속도 끝난다 — 보류 상태를 다음 화면으로 넘기지 않는다.
       setIdentityRebindPending(false)
+      // 예약된 재조회도 함께 끝낸다(사라진 화면이 요청을 남기지 않는다).
+      const retry = retryRef.current
+      if (retry.timerId !== null) {
+        clearTimeout(retry.timerId)
+        retry.timerId = null
+      }
     }
   }, [])
 
@@ -164,13 +192,40 @@ export function useInGameSessionSnapshotSync() {
       if (!isFirstRun && gameId && socket.connected) setIdentityRebindPending(true)
     }
 
-    const requestSnapshot = () => {
+    /** 예약된 재조회를 취소한다(전이·언마운트·새 connect가 옛 예약을 남기지 않는다). */
+    const cancelScheduledRetry = () => {
+      const retry = retryRef.current
+      if (retry.timerId !== null) {
+        clearTimeout(retry.timerId)
+        retry.timerId = null
+      }
+    }
+
+    const requestSnapshot = ({ retry = false } = {}) => {
       const requestEpochVersion = epochVersionRef.current
-      // 이 세대에서 이미 요청을 보냈다면 다시 보내지 않는다 — StrictMode 이중 호출과, 같은
-      // 세대 안에서 connect 핸들러와 "이미 연결됨" 분기가 동시에 조건을 만족하는 경우를
-      // 하나의 네트워크 호출로 합친다.
-      if (requestedVersionRef.current === requestEpochVersion) return
-      requestedVersionRef.current = requestEpochVersion
+      if (!retry) {
+        // 이 세대에서 이미 요청을 보냈다면 다시 보내지 않는다 — StrictMode 이중 호출과, 같은
+        // 세대 안에서 connect 핸들러와 "이미 연결됨" 분기가 동시에 조건을 만족하는 경우를
+        // 하나의 네트워크 호출로 합친다.
+        if (requestedVersionRef.current === requestEpochVersion) return
+        requestedVersionRef.current = requestEpochVersion
+        // 이 세대의 재조회 예산을 **최초 시도 시각 기준**으로 연다(옛 예약은 여기서 버려진다).
+        cancelScheduledRetry()
+        retryRef.current = {
+          epoch: requestEpochVersion,
+          attempts: 0,
+          deadline: Date.now() + SNAPSHOT_RETRY_BUDGET_MS,
+          timerId: null,
+        }
+      }
+      const attemptBudget = retryRef.current
+      // 예산이 이 세대의 것이 아니면(전이 이후 도착한 옛 예약) 아무 요청도 만들지 않는다.
+      if (attemptBudget.epoch !== requestEpochVersion) return
+      attemptBudget.attempts += 1
+      // 각 시도는 **남은 예산만** 기다린다. 첫 시도는 예산 전체이므로 기존 5초와 같다.
+      const ackTimeoutMs = Math.max(
+        1, Math.min(SESSION_SNAPSHOT_TIMEOUT_MS, attemptBudget.deadline - Date.now()),
+      )
 
       const requestSocket = socket
       const requestGameId = gameId
@@ -290,6 +345,37 @@ export function useInGameSessionSnapshotSync() {
         })
       }
 
+      /**
+       * F-26(AC-01): 같은 연결에서 한 번 더 묻는다. 예약에 성공하면 true다 — 그때는 이 시도의
+       * 실패로 재결속을 끝맺지 않는다(보류는 이 세대의 마지막 시도가 끝맺는다).
+       *
+       * 상한·전이·언마운트·소켓 교체를 모두 확인하고, 이미 예약이 있으면 새로 걸지 않는다
+       * (동시 1요청). 예산이 다음 시도의 간격조차 남기지 않으면 더 묻지 않는다.
+       */
+      const scheduleRetry = () => {
+        if (!mountedRef.current) return false
+        if (epochVersionRef.current !== requestEpochVersion) return false
+        if (retryRef.current !== attemptBudget) return false
+        if (attemptBudget.epoch !== requestEpochVersion) return false
+        if (attemptBudget.attempts >= SNAPSHOT_MAX_ATTEMPTS) return false
+        if (attemptBudget.deadline - Date.now() <= SNAPSHOT_RETRY_DELAY_MS) return false
+        if (attemptBudget.timerId !== null) return true
+        attemptBudget.timerId = setTimeout(() => {
+          attemptBudget.timerId = null
+          if (!mountedRef.current) return
+          if (epochVersionRef.current !== requestEpochVersion) return
+          if (retryRef.current !== attemptBudget) return
+          if (getSocket() !== requestSocket) return
+          requestSnapshot({ retry: true })
+        }, SNAPSHOT_RETRY_DELAY_MS)
+        return true
+      }
+
+      /** 서버가 "아직 준비되지 않았다"고 답했는가(그 코드 하나만 재조회 대상이다). */
+      const isRoutingPending = (response) =>
+        response !== null && typeof response === "object"
+        && response.ok !== true && response.code === SESSION_ROUTING_PENDING_CODE
+
       /** 정상 복원이 만든 후속 범위를 "충족된 요청"으로 남긴다(되먹임 방지). */
       const rememberFulfilled = () => {
         const auth = readCurrentAuthScope()
@@ -305,7 +391,7 @@ export function useInGameSessionSnapshotSync() {
       let ackPromise = null
       try {
         ackPromise = requestSocket
-          .timeout(SESSION_SNAPSHOT_TIMEOUT_MS)
+          .timeout(ackTimeoutMs)
           .emitWithAck("get_session_snapshot", requestGameId ? { gameId: requestGameId } : {})
       } catch {
         // 동기 전송 예외도 실패와 **같은 세대·범위 검사**를 거친다(한쪽만 느슨하면 그쪽으로 샌다).
@@ -313,6 +399,11 @@ export function useInGameSessionSnapshotSync() {
         // 걷어낸 뒤 재결속 보류를 끝맺는다(무한 보류도, 옛 상태로의 이동도 만들지 않는다).
         const scopeNow = readScopeNow()
         const stale = isStaleNow()
+        // F-26(AC-01): 전송 실패는 남은 예산 안에서 한 번 더 시도한다. **다만 재결속 보류와
+        // bootstrapStatus는 기존 계약 그대로 여기서 끝맺는다** — 그 둘은 "확인하지 못한 채
+        // 끝났다"를 유한하게 알리는 값이고(F-23 SPLIT-1), 재시도가 성공하면 그 응답이 정상
+        // 경로로 상태를 다시 세운다. 재시도가 보류를 더 붙잡으면 그 계약이 느슨해진다.
+        if (!stale) scheduleRetry()
         finishRebindUnapplied(scopeNow)
         if (stale) return
         if (!requestGameId) setBootstrapStatus("failed")
@@ -330,6 +421,9 @@ export function useInGameSessionSnapshotSync() {
             finishRebindUnapplied(scopeOnArrival)
             return
           }
+          // F-26(AC-01): 채널 재가입이 끝나지 않았다는 답이다. 예산이 남아 있으면 같은 연결에서
+          // 다시 묻고 이 시도로는 아무 결론도 내리지 않는다(빈 복원 성공으로 읽지 않는다).
+          if (isRoutingPending(response) && scheduleRetry()) return
           if (!requestGameId) {
             if (response?.ok !== true) {
               finishRebindUnapplied(scopeOnArrival)
@@ -374,6 +468,10 @@ export function useInGameSessionSnapshotSync() {
           // 바꾸지 않지만, 두 읽기의 순서가 결과를 가르지 않는다는 사실을 코드에 남겨 둔다.
           const scopeNow = readScopeNow()
           const stale = isStaleNow()
+          // 위 동기 예외 경로와 같은 분담이다 — 남은 예산이 있으면 한 번 더 묻되, 재결속 보류와
+          // bootstrapStatus는 여기서 끝맺는다(정상 타임아웃은 예산을 다 쓴 뒤이므로 애초에
+          // 재시도가 예약되지 않는다).
+          if (!stale) scheduleRetry()
           finishRebindUnapplied(scopeNow)
           if (stale) return
           if (!requestGameId) setBootstrapStatus("failed")
@@ -387,7 +485,29 @@ export function useInGameSessionSnapshotSync() {
       // 재연결은 연결 축의 전이다 — 그 순간 사망 연출 큐는 이전 연결의 것이라 버려지므로,
       // 이 연결의 스냅샷이 도착할 때까지 결과 화면 이동을 보류시킨다.
       if (useInGameStore.getState().gameId) setIdentityRebindPending(true)
-      requestSnapshot()
+      // 옛 세대의 예약은 여기서 끝난다(새 connect가 그 답을 기다리지 않는다).
+      cancelScheduledRetry()
+
+      /**
+       * F-26(AC-04): **요청 범위 캡처는 microtask로 미룬다.**
+       *
+       * 같은 connect 사건을 useGameSessionSocketEvents도 구독하고 있고, 그쪽 리스너가
+       * noteInGameConnectionRebound로 연결 세대를 올린다(이전 연결이 수락한 성공 사건 기록을
+       * 취소하는 것도 그 자리다). 두 리스너의 등록 순서는 마운트 순서에 따라 달라지므로, 여기서
+       * 즉시 범위를 캡처하면 그 순서에 따라 **옛 연결 세대로 요청이 나가는** 경우가 생긴다 —
+       * 그 응답은 자기 검사에 걸려 버려지고, 이 연결은 다시 묻지 않는다.
+       *
+       * 세대 증가는 즉시 하고(옛 응답은 그 즉시 실격이다) 캡처만 미룬다. 예약이 실행될 때
+       * 세대나 소켓이 달라졌으면 그 요청은 만들지 않는다.
+       */
+      const scheduledEpochVersion = epochVersionRef.current
+      const scheduledSocket = socket
+      queueMicrotask(() => {
+        if (!mountedRef.current) return
+        if (epochVersionRef.current !== scheduledEpochVersion) return
+        if (getSocket() !== scheduledSocket) return
+        requestSnapshot()
+      })
     }
 
     socket.on("connect", handleConnect)
@@ -401,6 +521,8 @@ export function useInGameSessionSnapshotSync() {
 
     return () => {
       socket.off("connect", handleConnect)
+      // 이 세대의 예약도 함께 끝낸다 — 전이 뒤에 옛 예약이 깨어나 남의 연결로 묻지 않는다.
+      cancelScheduledRetry()
     }
   }, [socket, gameId, authUuid, identityGeneration, identityScopeVersion])
 
