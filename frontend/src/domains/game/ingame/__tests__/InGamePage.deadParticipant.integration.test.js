@@ -988,8 +988,8 @@ const SERVER_EMIT_EVENTS_LOCK = [
   "game_started",
   // 진행 중 게임(backend/socket/gameSession.js)
   "day_phase_changed", "day_vote_resolved", "game_ended", "game_kicked", "game_phase_changed",
-  "joker_chat_message", "night_action_result", "night_actions_resolved", "night_result_applied",
-  "night_turn_ended", "night_turn_started", "player_eliminated",
+  "joker_chat_message", "night_action_result", "night_action_success", "night_actions_resolved",
+  "night_result_applied", "night_turn_ended", "night_turn_started", "player_eliminated",
   "session_participation_changed", "session_self_progress", "tribunal_vote_resolved",
   // 개인 전송기(emitToUser 계열) — 친구·초대·알림·업적·전적 커밋 뒤 캐시 무효화
   "account_cache_invalidated", "achievement_granted", "friend_relation_invalidated",
@@ -1011,9 +1011,9 @@ const SERVER_INDIRECT_EMIT_SITES_LOCK = [
   // 게임 방송 경계·밤 턴·낮 페이즈 래퍼 — 전부 호출 지점의 리터럴을 받아 넘긴다.
   "backend/socket/gameSession.js:477 event",
   "backend/socket/gameSession.js:1108 event",
-  "backend/socket/gameSession.js:1599 event",
+  "backend/socket/gameSession.js:1681 event",
   // 게임 채팅 — CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다(아래에서 그 표를 확인한다).
-  "backend/socket/gameSession.js:2873 eventName",
+  "backend/socket/gameSession.js:2955 eventName",
   // 개인 전송기 — emitToUser(uuid, event, payload)의 event 파라미터.
   "backend/socket/socket.js:27 event",
 ]
