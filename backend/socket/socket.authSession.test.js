@@ -22,6 +22,7 @@ const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHand
 const socketLayer = require("./socket");
 const matchmaking = require("./matchmaking");
 const gameSessionSocketLayer = require("./gameSession");
+const sessionLifecycle = require("../auth/sessionLifecycle");
 
 const UUID = "auth-session-uuid";
 const SESSION_ID = "auth-session-1";
@@ -337,4 +338,80 @@ test("AC-09/AC-06: 강제 종료된 이전 소켓의 disconnect는 새 세션의
     assert.deepEqual(presenceWrites.map((row) => row.status), ["ONLINE"]);
     assert.equal(onlineUsers.get(UUID), fresh.id);
     assert.equal(session.is_online, true);
+});
+
+// ── F-29b AC-04: 클라이언트 이벤트 없이도 연결별 주기 검사가 세션 폐기를 반영한다 ──────
+// 비밀번호 재설정으로 세션이 폐기돼도, 그 소켓이 아무 이벤트를 보내지 않으면
+// wrapSocketWithSessionGuard(이벤트 가로채기)만으로는 절대 감지되지 않는다 — 독립 타이머가
+// 필요한 이유다.
+
+test("F-29b AC-04: 유효한 검사 이후 클라이언트 이벤트 없이 세션이 폐기되면 다음 검사에서 강제 종료된다", async (t) => {
+    const { session } = stubAuthStorage(t);
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    const socket = makeGuardedSocket(UUID);
+
+    const watcher = socketLayer.__testables.startSessionRevocationWatcher(socket);
+    t.after(() => watcher.stop());
+
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(socket.disconnectCalls, 0, "첫 검사는 세션이 유효하므로 종료하면 안 됩니다");
+    assert.equal(socket.emitted.length, 0);
+
+    session.is_online = false; // 클라이언트 이벤트 없이 다른 경로(재설정)로 폐기된 상태를 흉내낸다.
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(socket.emitted.map((e) => e.event), ["force_disconnect"]);
+    assert.equal(socket.disconnectCalls, 1);
+});
+
+test("F-29b AC-04: stop() 이후 늦게 끝난 검사는 emit·disconnect를 만들지 않는다", async (t) => {
+    stubAuthStorage(t);
+    const socket = makeGuardedSocket(UUID);
+
+    let resolveCheck;
+    t.mock.method(sessionLifecycle, "resolveSession", () => new Promise((resolve) => { resolveCheck = resolve; }));
+
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    const watcher = socketLayer.__testables.startSessionRevocationWatcher(socket);
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS); // 검사 시작 — 아직 끝나지 않음
+
+    watcher.stop();
+    resolveCheck({ ok: false, status: 401, message: "폐기됨" }); // 종료 이후에 늦게 도착한 결과
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(socket.emitted.length, 0);
+    assert.equal(socket.disconnectCalls, 0);
+});
+
+test("F-29b AC-04: 검사가 아직 끝나지 않았으면 다음 tick은 중복 조회를 시작하지 않는다", async (t) => {
+    stubAuthStorage(t);
+    const socket = makeGuardedSocket(UUID);
+
+    let callCount = 0;
+    let resolveFirst;
+    t.mock.method(sessionLifecycle, "resolveSession", () => {
+        callCount += 1;
+        if (callCount === 1) return new Promise((resolve) => { resolveFirst = resolve; });
+        return Promise.resolve({ ok: true });
+    });
+
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    const watcher = socketLayer.__testables.startSessionRevocationWatcher(socket);
+    t.after(() => watcher.stop());
+
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS); // 첫 검사 시작(대기 중)
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS); // 아직 끝나지 않았으니 건너뛰어야 함
+    assert.equal(callCount, 1, "진행 중인 검사가 있으면 새 조회를 시작하면 안 됩니다");
+
+    resolveFirst({ ok: true });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(callCount, 2, "이전 검사가 끝난 뒤에는 다음 tick에서 다시 조회해야 합니다");
 });

@@ -172,8 +172,13 @@ const postFindId = (base, body) => fetch(`${base}/auth/find-id`, {
 test('AC-06: 0014 up·verify를 두 번 실행해도 오류 없고 기존 행은 그대로 보존된다', async (t) => {
     if (unavailable(t)) return;
     // 0014 이전 상태(email NOT NULL)부터 직접 세운다 — 이 케이스 자체가 그 전환을 검증한다.
+    // F-29b(0015)가 0014 뒤에 추가된 뒤로는 이름 제외 filter가 0015까지 함께 남겨 "0014
+    // 이전"이 아니게 됐다 — f19의 F19_MIGRATION_INDEX와 같은 원칙으로 0014의 실제 위치를
+    // 찾아 그 앞 prefix만 적용한다.
     await resetSchema();
-    const priorMigrations = MIGRATIONS.filter((m) => m.name !== addFindIdRequests.name);
+    const findIdRequestsIndex = MIGRATIONS.findIndex((m) => m.name === addFindIdRequests.name);
+    assert.notEqual(findIdRequestsIndex, -1, 'MIGRATIONS에서 0014-find-id-requests를 찾을 수 없습니다');
+    const priorMigrations = MIGRATIONS.slice(0, findIdRequestsIndex);
     await migrationRunner.applyMigrations({ sequelize, migrations: priorMigrations });
     schemaState = 'dirty';
 

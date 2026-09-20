@@ -63,9 +63,16 @@ const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout
 // authService.signup이 만드는 EconomyLoadout 행을 이 스위트가 실제 SELECT/INSERT로 건드리는
 // 이상, 0011이 빠지면 그 컬럼이 없는 실제 DB에서 "Unknown column" 오류로 깨진다.
 const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
+// F-29b: User 모델이 이제 has_local_password를 정의한다(기본값 true) — 이 스위트가 실제
+// authService.signup()으로 만드는 모든 User 행이 그 컬럼을 INSERT하므로, 0015가 빠지면
+// "Unknown column" 오류로 깨진다. backfill이 참조하는 external_identities/
+// social_signup_intents가 필요하므로 addSocialAuth(0005, 아래에서 이미 require됨)도 함께
+// 적용 배열에 넣는다(이전에는 buildManagedSchema의 관리 테이블 목록에만 쓰이고 실제로는
+// 적용되지 않았다).
+const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

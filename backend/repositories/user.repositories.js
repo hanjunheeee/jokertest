@@ -44,8 +44,12 @@ exports.withTransaction = async (work) => {
 // password_hash로 비교하게 되어 "옛 비밀번호로 통과한 로그인이 변경 이후에 세션을 만드는"
 // 경합을 막는다.
 exports.findByEmail = async (email, options = {}) => {
-    const { transaction, lock } = options;
-    return await db.User.findOne({ where: { email }, transaction, lock });
+    const { transaction, lock, logging } = options;
+    const findOptions = { where: { email }, transaction, lock };
+    // F-29b: 재설정 서비스는 logging:false를 명시해 이 조회의 이메일이 SQL 로그에 남지
+    // 않게 한다(AC-06). 명시하지 않은 기존 호출부는 Sequelize 기본 로깅을 그대로 쓴다.
+    if (logging !== undefined) findOptions.logging = logging;
+    return await db.User.findOne(findOptions);
 };
 
 exports.findByNickname = async (nickname) => {
@@ -53,8 +57,10 @@ exports.findByNickname = async (nickname) => {
 };
 
 exports.findByUuid = async (uuid, options = {}) => {
-    const { transaction, lock } = options;
-    return await db.User.findOne({ where: { uuid }, transaction, lock });
+    const { transaction, lock, logging } = options;
+    const findOptions = { where: { uuid }, transaction, lock };
+    if (logging !== undefined) findOptions.logging = logging;
+    return await db.User.findOne(findOptions);
 };
 
 // options는 { transaction } 전달용입니다. 기본값이 있어 기존 호출부는 그대로 동작합니다.

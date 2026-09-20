@@ -257,6 +257,10 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememb
             nickname: nicknameResult.value,
             birth_date: birthDateValue,
             email_verified: true,
+            // F-29b §2-3a: 소셜 가입 완료는 로컬 비밀번호가 없는 계정임을 명시적으로
+            // 표시한다 — 이후 비밀번호 재설정 요청은 새 토큰을 발급하지 않고 제공자 로그인
+            // 안내만 보낸다(passwordReset.service.js requestPasswordReset 참고).
+            has_local_password: false,
         }, { transaction });
         await userRepository.createUserStats(user.uuid, { transaction });
         await userRepository.createExternalIdentity({

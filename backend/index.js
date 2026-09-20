@@ -43,10 +43,27 @@ const app = express();
 
 // 프론트(5173)에서 쿠키 기반 인증 요청을 보낼 수 있도록 origin과 credentials를 함께 허용합니다.
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+
+// F-29b(AC-06/A-08): 비밀번호 재설정 범위는 본문 파서보다 먼저 no-store를 건다 — 파서 자체가
+// 던지는 오류(잘못된 JSON 등)에 대한 응답에도 적용되어야 하기 때문이다. 경로 판정은
+// errorHandler.js의 같은 판정(대소문자·후행 슬래시 무시, 쿼리 제외)과 맞춘다.
+const isPasswordResetScopedPath = (req) => String(req.originalUrl || req.url || '')
+    .split('?')[0].replace(/\/+$/, '').toLowerCase().startsWith('/auth/password-reset');
+app.use((req, res, next) => {
+    if (isPasswordResetScopedPath(req)) res.set('Cache-Control', 'no-store');
+    next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(morgan("dev"));
+// F-29b(AC-06): 재설정 범위(토큰이 쿼리·본문에 실려 오는 요청)는 morgan 접근 로그에서도
+// 경로를 고정 문자열로 남긴다 — 쿼리(?token=…)와 하위 경로·변형이 로그에 원문 그대로
+// 남으면 서버 로그 자체가 토큰 유출 경로가 된다.
+morgan.token("safe-url", (req) => (
+    isPasswordResetScopedPath(req) ? "/auth/password-reset/[REDACTED]" : (req.originalUrl || req.url)
+));
+app.use(morgan(":method :safe-url :status :response-time ms"));
 // 리버스 프록시(Nginx 등) 환경에서 x-forwarded-for 헤더로 실제 클라이언트 IP를 읽기 위함
 app.set("trust proxy", 1);
 

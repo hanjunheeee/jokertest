@@ -63,8 +63,14 @@ function initSocket(httpServer) {
  * 단위 테스트할 수 있다 — handleConnection은 즉시 presence/DB 작업을 시작하므로,
  * 배선만 검증하려는 테스트가 그 부수효과까지 떠안지 않게 하기 위함이다.
  */
-function registerDisconnectHandler(io, socket, uuid) {
+// sessionWatcher는 선택 인자다(F-29b AC-04) — registerConnectionHandlers를 통해서만 넘어오고,
+// 기존 단위 시험(fake socket이 on(event,cb) 하나만 지원하며 once가 없다)은 이 인자 없이
+// 그대로 호출한다. 이벤트마다 새 리스너를 등록하는 socket.once 대신, 이미 등록되는 이
+// disconnect 콜백 안에서 함께 정리한다 — fake socket이 on을 단일 슬롯으로 구현해도(핸들러가
+// 하나만 있어도) 깨지지 않는다.
+function registerDisconnectHandler(io, socket, uuid, sessionWatcher) {
     socket.on("disconnect", () => {
+        sessionWatcher?.stop();
         // gameSession.onDisconnect가 반드시 가장 먼저 실행돼야 한다 — handleDisconnect가
         // onlineUsers[uuid] 엔트리를 자신의 첫 await 이전에 동기적으로 지우므로, 순서를
         // 바꾸면 정당한(canonical) 소켓의 실제 disconnect조차 registry에서 자신을 찾지
@@ -110,10 +116,53 @@ function wrapSocketWithSessionGuard(socket) {
     return socket;
 }
 
+// F-29b(AC-04): 이벤트 guard(wrapSocketWithSessionGuard)는 클라이언트가 다음 이벤트를 보낼
+// 때까지 세션 폐기를 감지하지 못한다 — 비밀번호 재설정으로 세션이 폐기된 뒤에도 아무
+// 이벤트를 보내지 않는 유휴 연결은 계속 열려 있었다. 연결마다 독립 타이머를 두어, 클라이언트
+// 이벤트 없이도 일정 주기로 세션을 재검증한다.
+const SESSION_CHECK_INTERVAL_MS = 5000;
+
+function startSessionRevocationWatcher(socket) {
+    let checking = false;
+    let stopped = false;
+
+    const timer = setInterval(() => {
+        if (checking || stopped) return;
+        checking = true;
+
+        sessionLifecycle.resolveSession(socket.data.user)
+            .then((result) => {
+                if (stopped) return; // 늦게 끝난 검사는 disconnect 이후의 emit/disconnect를 만들지 않는다.
+                if (!result.ok) {
+                    socket.emit("force_disconnect", { message: result.message });
+                    socket.disconnect(true);
+                }
+            })
+            .catch((err) => {
+                if (!stopped) console.error("\x1b[31m[소켓 세션 주기 검사 에러]\x1b[0m", err);
+            })
+            .finally(() => { checking = false; });
+    }, SESSION_CHECK_INTERVAL_MS);
+    // 이 타이머 하나 때문에 Node 프로세스가 종료를 기다리지 않게 한다(테스트·정상 종료 모두).
+    if (typeof timer.unref === "function") timer.unref();
+
+    return {
+        stop() {
+            stopped = true;
+            clearInterval(timer);
+        },
+    };
+}
+
 function registerConnectionHandlers(io, socket) {
     const { uuid } = socket.data.user;
 
     wrapSocketWithSessionGuard(socket);
+
+    // disconnect 시점에 종료 표식(stopped=true)과 clearInterval을 함께 실행한다(아래
+    // registerDisconnectHandler 호출에 전달) — io.close()도 연결된 소켓마다 disconnect를
+    // 발생시키므로 여기서 함께 정리된다.
+    const sessionWatcher = startSessionRevocationWatcher(socket);
 
     handleConnection(io, socket, uuid).catch((err) => {
         console.error("\x1b[31m[소켓 접속 처리 에러]\x1b[0m", err);
@@ -137,7 +186,7 @@ function registerConnectionHandlers(io, socket) {
     gameSession.registerGameHandlers(io, socket, uuid);
     registerNotificationHandlers(socket, uuid);
 
-    registerDisconnectHandler(io, socket, uuid);
+    registerDisconnectHandler(io, socket, uuid, sessionWatcher);
 }
 
 /**
@@ -283,5 +332,6 @@ module.exports = {
     __testables: {
         registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect,
         authenticateSocket, wrapSocketWithSessionGuard, registerNotificationHandlers,
+        startSessionRevocationWatcher, SESSION_CHECK_INTERVAL_MS,
     },
 };

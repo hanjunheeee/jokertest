@@ -44,7 +44,9 @@ const addF19FriendsInvites = require('../db/migrations/0013-f19-friends-invites'
 // F-29a: account_find_requests.email을 nullable로 바꿔, 아이디 찾기가 이메일을 아직 모르는
 // 상태에서도 조회 사건을 기록할 수 있게 한다(accountRecovery.service.js의 findId 참고).
 const addFindIdRequests = require('../db/migrations/0014-find-id-requests');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests];
+// F-29b: 비밀번호 재설정 토큰 해시 전환 + users.has_local_password(§2-3a) 추가·backfill.
+const addPasswordResetTokens = require('../db/migrations/0015-password-reset-tokens');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

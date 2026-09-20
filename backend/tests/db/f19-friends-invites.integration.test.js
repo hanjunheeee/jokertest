@@ -317,6 +317,28 @@ const createLocalUser = async (label) => {
     return uuid;
 };
 
+// F-29b(0015) 회귀 대응: 0013 직전 상태(F19_MIGRATION_INDEX 이전)를 세우는 두 이관 시험은
+// users에 has_local_password가 아직 없는 스키마 위에서 사용자를 만든다. 위 createLocalUser는
+// db.User.create(런타임 모델, defaultValue: true 포함)를 쓰므로 그 시점에는 없는 컬럼을
+// INSERT하려다 "Unknown column" 오류가 난다 — 이 두 시험만 그 시점에 실제로 존재하는
+// 컬럼만 raw SQL로 직접 넣는다(모델 기본값에 기대지 않는다).
+const createLocalUserBeforeReset = async (label) => {
+    const uuid = crypto.randomUUID();
+    const nickname = `${label}${uuid.slice(0, Math.max(1, 8 - label.length))}`.slice(0, 8);
+    await sequelize.query(
+        'INSERT INTO users (uuid, password_hash, nickname, email, role, status, email_verified, failed_login_count, created_at, updated_at) '
+        + 'VALUES (:uuid, :password_hash, :nickname, :email, :role, :status, :email_verified, :failed_login_count, NOW(), NOW())',
+        {
+            replacements: {
+                uuid, password_hash: await testPasswordHash(), nickname,
+                email: `${label}-${uuid}@example.com`, role: 'USER', status: 'ACTIVE',
+                email_verified: false, failed_login_count: 0,
+            },
+        },
+    );
+    return uuid;
+};
+
 const startRouteServer = async (t) => {
     const app = express();
     app.use(express.json());
@@ -551,9 +573,9 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
 
     // (2) 보존 대상 행을 실제로 심는다. 예전 UNIQUE가 아직 살아 있으므로 같은 방향의 terminal
     //     중복은 아직 만들 수 없다 — 그것이 바로 0013이 푸는 문제다.
-    const u1 = await createLocalUser('fk-1');
-    const u2 = await createLocalUser('fk-2');
-    const u3 = await createLocalUser('fk-3');
+    const u1 = await createLocalUserBeforeReset('fk-1');
+    const u2 = await createLocalUserBeforeReset('fk-2');
+    const u3 = await createLocalUserBeforeReset('fk-3');
 
     const declined = await db.FriendRequest.create({ requester_id: u1, receiver_id: u2, status: 'DECLINED' });
     const keptPending = await db.FriendRequest.create({ requester_id: u1, receiver_id: u3, status: 'PENDING' });
@@ -1770,8 +1792,8 @@ test('review5 migration: preserve existing CANCELLED history when normalizing cr
     // AC-05 시험과 같은 이유로 "마지막 원소"가 아니라 F19_MIGRATION_INDEX(0013의 실제 위치)로
     // 0013 직전 상태를 세운다.
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, F19_MIGRATION_INDEX) });
-    const a = await createLocalUser('mh-a');
-    const b = await createLocalUser('mh-b');
+    const a = await createLocalUserBeforeReset('mh-a');
+    const b = await createLocalUserBeforeReset('mh-b');
     const history = await db.FriendRequest.create({ requester_id: b, receiver_id: a, status: 'CANCELLED' });
     const keep = await db.FriendRequest.create({ requester_id: a, receiver_id: b, status: 'PENDING' });
     const cross = await db.FriendRequest.create({ requester_id: b, receiver_id: a, status: 'PENDING' });
