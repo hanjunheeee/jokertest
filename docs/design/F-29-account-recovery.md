@@ -111,6 +111,8 @@
 | `submitting` | `SOCIAL_ONLY` | `socialOnly` | 제공자 로그인 안내 |
 | `submitting` | 네트워크 오류·5xx | `ready` | 재시도 가능 안내(입력 유지) |
 
+> **마이그레이션을 추가하는 조각 공통(2026-09-21 추가, F-29a 실측)**: 새 마이그레이션은 기존 시험의 전제를 깬다 — (1) `backend/__tests__/schema.existingTables.test.js`가 기존 테이블의 컬럼 타입·NOT NULL을 잠그고 있으므로, 기존 테이블을 바꾸면 그 단언을 **지우지 말고 새 스키마로 갱신**한다. (2) `backend/tests/db/`의 마이그레이션 통합 시험 중 '마지막 마이그레이션이 NNNN'이라는 전제에 기대는 것이 있는지 찾아 같이 고친다(F-29a가 f19 시험을 '0013까지 적용한 상태' 기준으로 바꿨다 — 그 방식을 따른다). (3) `backend/scripts/migrate-db.js`에 import 등록. 계획의 시험 항목에 이 셋을 명시한다.
+
 ## 3. 조각별 담당
 
 | 조각 | 담당 | 하지 않는 것 |
