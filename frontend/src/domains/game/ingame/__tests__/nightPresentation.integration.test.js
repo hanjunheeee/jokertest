@@ -262,14 +262,23 @@ function createConventionFollowingRegistry() {
   })
 }
 
-/** 실제 세션을 밤(dayIndex 2)에 세우고 밤 턴 엔진을 수동 시계로 돌린다. */
-function setupBackendNight(roomId) {
+/**
+ * 실제 세션을 밤(dayIndex 2)에 세우고 밤 턴 엔진을 수동 시계로 돌린다.
+ *
+ * playerCount는 **그 밤이 무엇으로 끝날 수 있는가**를 정하는 유일한 손잡이다. 기본 10인
+ * 구성에서는 한 명이 죽어도 승패가 갈리지 않으므로 밤이 끝나면 다음 낮으로 넘어가고,
+ * 3인 구성(setupBackendLastNight)에서는 그 밤의 킬 하나로 생존 비-광대가 한 명만 남아
+ * 서버의 승패 판정(생존 광대 ≥ 생존 비-광대)이 그 자리에서 성립한다. 어느 쪽도 결과를
+ * 주입하지 않는다 — 인원 구성만 다르고 판정은 전부 실제 서버가 한다.
+ */
+function setupBackendNight(roomId, { playerCount = 10 } = {}) {
   process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test"
   const REPO_ROOT = new URL("../../../../../../", import.meta.url)
   const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
   const gameSessionSocketLayer = backendRequire("./gameSession")
   const gameSessionCore = backendRequire("../game-core/gameSession")
   const matchmaking = backendRequire("./matchmaking")
+  const gameResultRepository = backendRequire("../repositories/gameResult.repositories")
   const {
     createFakeSocket: createBackendFakeSocket, createFakeIo,
   } = backendRequire("./__tests__/testHelpers/matchmakingFixtures")
@@ -279,7 +288,16 @@ function setupBackendNight(roomId) {
   gameSessionSocketLayer.__resetStateForTests()
   gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
 
-  const players = Array.from({ length: 10 }, (_, i) => makeBackendPlayer(`fp-${roomId}-${i}`))
+  /**
+   * 종료가 실제로 일어나는 구성에서는 최종화 뒤에 전적 저장·보상 평가가 따라붙는다. 그 둘은
+   * 이 시험의 관심사(연출·대기·결과 이동)가 아니라 **바깥 경계**이므로 여기서만 대역한다 —
+   * 실제 저장소를 그대로 두면 SQL 접속을 시도하고, 그 재시도 타이머가 낮 타이머 관측에
+   * 섞인다. 게임 진행 경로는 어느 것도 대역하지 않는다.
+   */
+  gameResultRepository.persistGameResultRecord = async () => ({ persisted: true })
+  gameSessionSocketLayer.__testables.__setEvaluateAchievementsForTests(async () => {})
+
+  const players = Array.from({ length: playerCount }, (_, i) => makeBackendPlayer(`fp-${roomId}-${i}`))
   const room = { id: roomId, players: new Map(players.map((p) => [p.uuid, p])), settings: { jokerCount: 1 } }
   const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
   gameSessionCore.commitGameSession(candidate.session)
@@ -293,10 +311,11 @@ function setupBackendNight(roomId) {
   session.dayVoteResolution = null
   session.tribunal = null
 
-  const roleOf = (role) => [...session.players.values()].find((p) => p.role === role).uuid
+  // 3인 구성에는 의사가 없다(2~5인의 특수 역할 예산이 0이다) — 그 자리는 null로 둔다.
+  const roleOf = (role) => [...session.players.values()].find((p) => p.role === role)?.uuid ?? null
   const jokerUuid = roleOf("JOKER")
   const doctorUuid = roleOf("DOCTOR")
-  const citizenUuid = [...session.players.values()].find((p) => p.role === "CITIZEN").uuid
+  const citizenUuid = roleOf("CITIZEN")
 
   const io = createFakeIo([])
   const backendSockets = new Map()
@@ -392,6 +411,25 @@ function setupBackendNight(roomId) {
     },
   }
   return ctx
+}
+
+/**
+ * **마지막 밤** 구성 — 3인·광대 1(비-광대 2).
+ *
+ * 이 밤에 광대의 킬이 실제로 성립하면 생존 비-광대가 한 명만 남는다. 그러면 서버의 승패
+ * 판정(생존 광대 ≥ 생존 비-광대)이 그 밤의 최종화 안에서 성립해, 실제 서버가 스스로 판을
+ * ENDED로 확정하고 winResult를 실은 결과를 방송한다. 시험은 종료도 승자도 만들지 않는다 —
+ * 만드는 것은 "그 킬 하나로 끝나는 인원 구성"뿐이다.
+ *
+ * 3인에는 의사가 없으므로(특수 역할 예산 0) 그 킬을 되돌릴 치료도 존재하지 않는다.
+ */
+function setupBackendLastNight(roomId) {
+  const ctx = setupBackendNight(roomId, { playerCount: 3 })
+  const nonJokerUuids = [...ctx.session.players.values()]
+    .filter((player) => player.role !== "JOKER")
+    .map((player) => player.uuid)
+  assert.equal(nonJokerUuids.length, 2, "전제: 마지막 밤 구성은 광대 1 + 비-광대 2다")
+  return { ...ctx, targetUuid: nonJokerUuids[0], bystanderUuid: nonJokerUuids[1] }
 }
 
 /** 이 KILL·HEAL 사건의 수신자가 아닌 참가자 하나. */
@@ -547,10 +585,25 @@ async function mountInGamePageDirect(socket, Page, { dismissOverlays = true } = 
     ],
     { initialEntries: ["/ingame"] },
   )
+  // "결과 화면으로 **한 번** 갔다"는 DOM 존재만으로는 셀 수 없다 — 실제 이동을 그때그때 적는다.
+  const navigations = []
+  directRouter.subscribe((state) => navigations.push(state.location.pathname))
   let view
   await act(async () => { view = render(React.createElement(RouterProvider, { router: directRouter })) })
   if (dismissOverlays) await dismissParchmentOverlays(view.container)
+  view.directRouter = directRouter
+  view.navigations = navigations
   return view
+}
+
+/** 지금 화면에 떠 있는 **개인** 성공 연출(KILL)의 영상. 공개 사망 연출과 섞이지 않는다. */
+function privateKillVideo(view) {
+  return view.container.querySelector("[data-ingame-night-success-kill] video")
+}
+
+/** 같은 판정이 만든 **공개** 사망 연출의 영상(모든 참가자가 본다). */
+function publicDeathRevealVideo(view) {
+  return view.container.querySelector("[data-ingame-kill-reveal] video")
 }
 
 /** 마운트 직후 자동으로 열리는 자기 역할 공개 창(닫지 않은 상태에서만 있다). */
@@ -1095,37 +1148,53 @@ test("AC-04/AC-05: KILL·HEAL을 모두 완료한 대상자는 다음 낮에 같
 // AC-05 · 마지막 밤의 결과 이동
 // ═══════════════════════════════════════════════════════════════════════════
 
-test("AC-03/AC-05: 마지막 밤의 ENDED가 연출보다 먼저 도착해도 연출을 끝까지 보여준 뒤 결과 화면으로 한 번 이동한다", async () => {
-  const ctx = setupBackendNight("f27bl-last-night")
-  assert.deepEqual(ctx.submit(ctx.jokerUuid, ctx.citizenUuid), { ok: true })
-  const killPayload = ctx.receivedBy(ctx.citizenUuid, "night_action_success")[0].payload
+test("AC-03/AC-05: 마지막 밤의 종료가 연출 도중에 도착해도(실제 서버 최종화) 연출을 끝까지 보여준 뒤 결과 화면으로 한 번 이동한다", async () => {
+  // 종료를 시험이 만들지 않는다 — 그 밤의 킬 하나로 승패가 갈리는 인원 구성을 세우고, 나머지는
+  // 전부 실제 서버가 한다(대기 상한 해제 → 남은 역할 → 밤 최종화 → 승패 판정 → 결과 방송).
+  const ctx = setupBackendLastNight("f27bl-last-night")
+  assert.deepEqual(ctx.submit(ctx.jokerUuid, ctx.targetUuid), { ok: true })
+  const killPayload = ctx.receivedBy(ctx.targetUuid, "night_action_success")[0].payload
 
-  seedFrontSession(ctx, ctx.citizenUuid)
-  const socket = createFrontSocket({ forwardEmitTo: ctx.backendSockets.get(ctx.citizenUuid) })
+  seedFrontSession(ctx, ctx.targetUuid)
+  const socket = createFrontSocket({ forwardEmitTo: ctx.backendSockets.get(ctx.targetUuid) })
   const view = await mountInGamePage(socket)
 
   await act(async () => { socket.deliver("night_action_success", killPayload) })
-  assert.notEqual(view.container.querySelector("video[src]"), null, "연출 영상이 시작되지 않았다")
+  assert.notEqual(privateKillVideo(view), null, "연출 영상이 시작되지 않았다")
 
-  // 상한 해제로 서버가 먼저 밤을 최종화하고 종료 결과가 도착한다.
-  await act(async () => {
-    socket.deliver("night_result_applied", {
-      gameId: ctx.session.id,
-      phase: "ENDED",
-      dayIndex: ctx.session.dayIndex,
-      players: backendRosterForStore(ctx).map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== ctx.citizenUuid })),
-      victimUuid: ctx.citizenUuid,
-      winResult: { winner: "JOKER" },
-      deathReveals: [],
-    })
-  })
+  // 아무도 보고하지 않은 채 대기 상한이 지나면 서버가 스스로 진행한다 — 남은 역할까지 실제
+  // 엔진으로 지나가면 그 밤의 킬이 확정되고, 그 사망이 곧 승패다.
+  ctx.advance(12_000)
+  assert.equal(ctx.session.nightTurnRole, "DOCTOR", "전제: 상한 해제 뒤 다음 역할이 시작된다")
+  const scheduledOnEnd = driveRemainingNightRolesToFinalization(ctx)
+  assert.equal(ctx.session.phase, "ENDED", "실제 서버가 마지막 밤을 종료로 최종화하지 않았다")
+  assert.deepEqual(ctx.session.winResult, { winner: "JOKER" })
+  assert.equal(ctx.session.players.get(ctx.targetUuid).alive, false)
+  assert.deepEqual(scheduledOnEnd, [], "경기가 끝났는데 다음 낮 타이머가 예약됐다")
+
+  // 화면이 받는 종료도 서버가 실제로 보낸 payload 하나다(시험이 조립한 값이 아니다).
+  const applied = ctx.receivedBy(ctx.targetUuid, "night_result_applied")
+  assert.equal(applied.length, 1, "서버 최종화가 결과 전달을 만들지 않았다")
+  assert.equal(applied[0].payload.phase, "ENDED")
+  assert.deepEqual(applied[0].payload.winResult, { winner: "JOKER" })
+
+  await act(async () => { socket.deliver("night_result_applied", applied[0].payload) })
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
   assert.equal(router.state.location.pathname, "/ingame",
     "아직 연출이 남았는데 결과 화면으로 넘어갔다")
-  assert.notEqual(view.container.querySelector("video[src]"), null, "종료 도착이 연출을 잘랐다")
 
-  // 연출이 끝나야(정상 종료) 이동한다 — 그리고 정확히 한 번이다.
-  const video = view.container.querySelector("video[src]")
+  // 같은 판정이 만든 **공개** 사망 연출이 먼저 올라온다(그동안 개인 연출은 소비되지 않고 남는다).
+  const publicReveal = publicDeathRevealVideo(view)
+  assert.notEqual(publicReveal, null, "종료와 함께 온 공개 사망 연출이 뜨지 않았다")
+  assert.equal(socket.emitsFor("acknowledge_night_action_success").length, 0,
+    "공개 연출이 개인 연출의 완료 보고를 대신 만들었다")
+  await act(async () => { fireEvent(publicReveal, new dom.window.Event("ended")) })
+  assert.equal(router.state.location.pathname, "/ingame",
+    "개인 연출이 남았는데 결과 화면으로 넘어갔다")
+
+  // 개인 연출은 잘리지 않고 그대로 이어지고, 그것이 끝나야 결과로 간다 — 정확히 한 번이다.
+  const video = privateKillVideo(view)
+  assert.notEqual(video, null, "종료 도착이 개인 연출을 잘랐다")
   await act(async () => { fireEvent(video, new dom.window.Event("ended")) })
   await act(async () => { await flushMicrotasks() })
   assert.equal(router.state.location.pathname, "/gameresult", "연출이 끝났는데 결과 화면으로 가지 않았다")
@@ -1429,41 +1498,67 @@ test("F27 BL production integration scenarios", async () => {
   assert.equal(errorCtx.session.nightTurnRole, "DOCTOR", "ERROR 뒤 다음 역할이 시작되지 않았다")
   resetScreenBetweenScenes()
 
-  // ── ④ 마지막 밤: 종료가 연출보다 먼저 도착해도 연출을 끝낸 뒤 결과 화면으로 간다 ──
-  const lastCtx = setupBackendNight("f27bl-prod-last-night")
-  assert.deepEqual(lastCtx.submit(lastCtx.jokerUuid, lastCtx.citizenUuid), { ok: true })
-  const lastPayload = lastCtx.receivedBy(lastCtx.citizenUuid, "night_action_success")[0].payload
+  // ── ④ 마지막 밤: 실제 서버가 그 밤의 킬로 승패를 확정하고, 그 방송이 도착해야 결과로 간다 ──
+  //
+  // 순서가 이 시나리오의 전부다: 연출 중에는 이동하지 않는다 → 연출 완료 보고(ACK) → 마지막
+  // 역할의 대기 해제 뒤 **서버가** 최종화 → 서버가 방송한 ENDED를 실제 수신 훅이 받는다 →
+  // 그때 비로소 결과 화면으로 정확히 한 번 이동한다. 종료·승자·생존은 어느 것도 주입하지 않는다.
+  const lastCtx = setupBackendLastNight("f27bl-prod-last-night")
+  assert.deepEqual(lastCtx.submit(lastCtx.jokerUuid, lastCtx.targetUuid), { ok: true })
+  const lastPayload = lastCtx.receivedBy(lastCtx.targetUuid, "night_action_success")[0].payload
 
-  seedFrontSession(lastCtx, lastCtx.citizenUuid)
-  const lastSocket = createFrontSocket({ forwardEmitTo: lastCtx.backendSockets.get(lastCtx.citizenUuid) })
+  seedFrontSession(lastCtx, lastCtx.targetUuid)
+  const lastSocket = createFrontSocket({ forwardEmitTo: lastCtx.backendSockets.get(lastCtx.targetUuid) })
   const lastView = await mountInGamePageDirect(lastSocket, InGamePage)
 
   await act(async () => { lastSocket.deliver("night_action_success", lastPayload) })
-  assert.notEqual(lastView.container.querySelector("video[src]"), null, "연출 영상이 시작되지 않았다")
-
-  await act(async () => {
-    lastSocket.deliver("night_result_applied", {
-      gameId: lastCtx.session.id,
-      phase: "ENDED",
-      dayIndex: lastCtx.session.dayIndex,
-      players: backendRosterForStore(lastCtx)
-        .map((p) => ({ uuid: p.uuid, isAlive: p.uuid !== lastCtx.citizenUuid })),
-      victimUuid: lastCtx.citizenUuid,
-      winResult: { winner: "JOKER" },
-      deathReveals: [],
-    })
-  })
-  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
+  const lastVideo = privateKillVideo(lastView)
+  assert.notEqual(lastVideo, null, "마지막 밤의 연출 영상이 시작되지 않았다")
+  // 연출 중에는 이동하지 않는다 — 서버도 아직 그 밤을 끝내지 않았다.
+  assert.equal(lastCtx.session.phase, "NIGHT", "전제: 연출 중에는 아직 밤이다")
   assert.equal(lastView.container.querySelector("[data-test-game-result]"), null,
-    "아직 연출이 남았는데 결과 화면으로 넘어갔다")
-  assert.notEqual(lastView.container.querySelector("video[src]"), null, "종료 도착이 연출을 잘랐다")
+    "연출 중에 결과 화면으로 넘어갔다")
 
-  const lastVideo = lastView.container.querySelector("video[src]")
+  // 연출 완료 → COMPLETED가 실제 서버 리스너에 정확히 한 번 닿는다.
   await act(async () => { fireEvent(lastVideo, new dom.window.Event("ended")) })
+  const lastAcks = lastSocket.emitsFor("acknowledge_night_action_success")
+  assert.equal(lastAcks.length, 1, "마지막 밤의 완료 보고가 정확히 한 번이 아니다")
+  assert.deepEqual(lastAcks[0].response, { ok: true, duplicate: false })
+  assert.equal(lastView.container.querySelector("[data-test-game-result]"), null,
+    "완료 보고만으로 결과 화면으로 넘어갔다(서버는 아직 종료를 방송하지 않았다)")
+
+  // 나머지 수신자까지 끝나야 대기가 풀리고, 남은 역할까지 지나야 서버가 그 밤을 최종화한다.
+  lastCtx.ack(lastCtx.jokerUuid, lastPayload)
+  assert.equal(lastCtx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 끝났는데 다음 역할이 없다")
+  const lastNightTimers = driveRemainingNightRolesToFinalization(lastCtx)
+  assert.equal(lastCtx.session.phase, "ENDED", "그 밤의 킬로 경기가 끝나지 않았다")
+  assert.deepEqual(lastCtx.session.winResult, { winner: "JOKER" })
+  assert.equal(lastCtx.session.players.get(lastCtx.targetUuid).alive, false)
+  assert.deepEqual(lastNightTimers, [], "경기가 끝났는데 다음 낮 타이머가 예약됐다")
+
+  // 화면이 받는 종료도 서버가 실제로 보낸 payload 하나다.
+  const lastApplied = lastCtx.receivedBy(lastCtx.targetUuid, "night_result_applied")
+  assert.equal(lastApplied.length, 1, "서버 최종화가 결과 전달을 만들지 않았다")
+  assert.equal(lastApplied[0].payload.phase, "ENDED")
+  assert.deepEqual(lastApplied[0].payload.winResult, { winner: "JOKER" })
+  assert.equal(lastView.container.querySelector("[data-test-game-result]"), null,
+    "서버가 종료했다는 사실만으로 화면이 먼저 넘어갔다")
+
+  await act(async () => { lastSocket.deliver("night_result_applied", lastApplied[0].payload) })
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "서버 종료가 화면에 반영되지 않았다")
+
+  // 같은 판정이 만든 공개 사망 연출까지 끝나야 결과 화면으로 간다 — 그리고 이동은 한 번뿐이다.
+  const lastPublicReveal = publicDeathRevealVideo(lastView)
+  assert.notEqual(lastPublicReveal, null, "종료와 함께 온 공개 사망 연출이 뜨지 않았다")
+  assert.equal(lastView.container.querySelector("[data-test-game-result]"), null,
+    "공개 사망 연출이 남았는데 결과 화면으로 넘어갔다")
+  await act(async () => { fireEvent(lastPublicReveal, new dom.window.Event("ended")) })
   await act(async () => { await flushMicrotasks() })
   assert.notEqual(lastView.container.querySelector("[data-test-game-result]"), null,
-    "연출이 끝났는데 결과 화면으로 가지 않았다")
+    "연출이 모두 끝났는데 결과 화면으로 가지 않았다")
+  assert.equal(lastView.navigations.filter((path) => path === "/gameresult").length, 1,
+    "결과 화면 이동이 정확히 한 번이 아니다")
   assert.equal(lastSocket.emitsFor("acknowledge_night_action_success").length, 1,
-    "마지막 밤의 완료 보고가 정확히 한 번이 아니다")
+    "결과 이동이 추가 완료 보고를 만들었다")
   resetScreenBetweenScenes()
 })
