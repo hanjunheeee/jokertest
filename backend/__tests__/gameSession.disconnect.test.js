@@ -506,6 +506,70 @@ test('AC-02: ROLE_REVEAL과 TRIBUNAL도 각각 다음 top-level phase 진입 경
     assert.equal(tribunal.session.players.get(tribunal.doctorUuid).alive, false)
 })
 
+// ---------------------------------------------------------------------------
+// F-27a(AC-04) — 연출 대기 중 참가자가 재접속해도 대기 게이트가 멈추거나 재시작되지 않는다
+// ---------------------------------------------------------------------------
+
+test('F-27a(AC-04): 대기 중 수신자가 끊기면 남은 기다림에서 빠지고, 남은 수신자의 완료 ACK만으로 해제된다', async () => {
+    const { session, jokerUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac04-reconnect' })
+    const targetUuid = [...session.players.values()].find((p) => p.role === 'CITIZEN').uuid
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, targetUuid), { ok: true })
+
+    const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
+    assert.ok(run?.wait, '전제: JOKER의 KILL 사건이 실제 연출 대기를 연다')
+    assert.equal(run.wait.active, true)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '대기 중에는 다음 역할이 시작되지 않는다')
+    const killEventId = [...run.wait.waiting.keys()][0]
+    assert.deepEqual([...run.wait.waiting.get(killEventId).keys()].sort(), [jokerUuid, targetUuid].sort())
+
+    // 대상자가 끊긴다 — 실제 onDisconnect 경로를 태운다(AC-01 시험과 같은 방식: connected만
+    // false로 바꾸고 namespace에서는 빼지 않는다 — 등록된 소유권 검사가 그대로 통과한다).
+    disconnectSocket(sockets, targetUuid)
+    await gameSessionSocketLayer.onDisconnect(io, sockets.get(targetUuid), targetUuid)
+
+    // 끊긴 수신자는 더 이상 기다림의 대상이 아니다 — 대기 자체는 멈추지도 재시작되지도 않는다.
+    assert.equal(run.wait, gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id).wait,
+        '재평가가 대기 토큰을 새로 만들지 않는다')
+    assert.deepEqual([...run.wait.waiting.get(killEventId).keys()], [jokerUuid], '끊긴 대상자가 대기에서 제외됐다')
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '남은 수신자가 아직 완료하지 않아 대기는 계속된다')
+
+    // 남은 수신자(jokerUuid)의 완료 ACK만으로 대기가 해제되고 다음 역할이 시작된다.
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const { callback, getResponse } = countingCallback()
+    sockets.get(jokerUuid).trigger('acknowledge_night_action_success', {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }, callback)
+    assert.deepEqual(getResponse(), { ok: true, duplicate: false })
+
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '해제 뒤 다음 역할이 정상 시작됐다')
+    // 끊긴 참가자의 재접속 유예는 대기 해제와 무관하게 그대로 살아 있다(취소되지 않았다).
+    assert.notEqual(getDisconnectGraceRun(session.id, targetUuid), undefined)
+})
+
+test('F-27a(AC-04): 대기의 남은 유일한 수신자까지 끊기면 재접속 없이도 그 자리에서 즉시 해제된다', async () => {
+    const { session, jokerUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac04-all-disconnect' })
+    const targetUuid = [...session.players.values()].find((p) => p.role === 'CITIZEN').uuid
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, targetUuid), { ok: true })
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '전제: 실제 연출 대기 중이다')
+
+    // 대상자에 이어 행위자까지 끊긴다 — 이제 이 사건을 기다릴 적격 수신자가 하나도 남지 않는다.
+    disconnectSocket(sockets, targetUuid)
+    await gameSessionSocketLayer.onDisconnect(io, sockets.get(targetUuid), targetUuid)
+    disconnectSocket(sockets, jokerUuid)
+    await gameSessionSocketLayer.onDisconnect(io, sockets.get(jokerUuid), jokerUuid)
+
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR',
+        '남은 수신자가 없으면 완료 ACK 없이도 즉시 해제되고 다음 역할이 시작된다')
+})
+
 test('AC-07: 같은 역할 생존자가 2→1이 되면 남은 한 명의 기존 제출만으로 역할 턴 완료가 재평가된다', () => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac07-resolver' })
     const secondDoctor = [...session.players.values()].find((player) => player.role === 'CITIZEN').uuid

@@ -82,7 +82,25 @@ const {
     startNightTurnSequence,
     persistTerminalSession,
     __getTerminalPersistRunsForTests,
+    // F-27a: 실제 연출 대기 게이트가 열리면(진짜 사건 + 현재 적격 수신자) 완료 보고 또는 상한
+    // 경과 전까지 다음 역할·최종화가 시작되지 않는다. 이 파일의 구동은 "실제 상한이 막 지난
+    // 것"과 같은 releaseNightPresentationWait 직접 호출로 그 대기를 드레인한다(drainWait 참고).
+    __getNightTurnRunForTests,
+    releaseNightPresentationWait,
 } = gameSessionSocketLayer.__testables;
+
+/**
+ * F-27a: 진행 중인 연출 대기(있다면)를 즉시 해제한다 — 상한이 막 지난 것과 같은 호출이다.
+ * gameSession.nightTurns.test.js의 동명 헬퍼와 같은 계약: 완료 ACK를 대신 보내지 않으므로
+ * 수신 기록은 completed:false로 남고, 이 파일이 보는 사망·승패·저장 단언에는 영향이 없다.
+ */
+function drainWait(session) {
+    for (let guard = 0; guard < 20; guard += 1) {
+        const run = __getNightTurnRunForTests(session.id);
+        if (!run || !run.wait || run.wait.active !== true) return;
+        releaseNightPresentationWait(run, run.wait);
+    }
+}
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
@@ -456,6 +474,10 @@ test('AC-01: 킬 직후·치료 판정 전 시점에는 승패 판정·경기 �
     // 실제 입력 경로: submit_night_action → handleSubmitNightAction → submitNightAction →
     // maybeEndNightTurnOnCompletion → endNightTurn → completeNightRole.
     assert.deepEqual(submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid), { ok: true });
+    // F-27a: 실제 KILL 사건이 연출 대기를 연다 — 상한이 막 지난 것과 같은 해제로 드레인해야
+    // DOCTOR 차례가 실제로 시작된다(드레인은 완료 ACK를 보내지 않으므로 수신 기록은
+    // completed:false로 남고, 아래 사망·승패·저장 단언에는 영향이 없다).
+    drainWait(session);
 
     // ── 킬 직후, 의사 판정 전의 canonical 상태 ────────────────────────────────
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '의사 차례에서 멈춰 있어야 한다');
@@ -517,7 +539,9 @@ test('AC-02: 치료가 성공한 밤은 최종 사망 0이고 승패 상태와 �
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    drainWait(session); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
     submitNight(sockets.get(doctorUuid), doctorUuid, session, targetUuid);
+    drainWait(session); // F-27a: 실제 HEAL 사건의 대기를 풀어야 GUARD 차례가 시작된다.
     // 남은 두 턴(GUARD/WITCH_HUNTER)은 행위자가 없어 지연 타이머로 끝난다 — 그 뒤 자동 최종화.
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
@@ -567,6 +591,7 @@ test('AC-03: 치료되지 않은 밤은 의사 차례가 끝난 뒤 최종 사�
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    drainWait(session); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
     // 의사가 기권해 치료 가능성만 닫힌다 — A-06: 이 시점에 최종 사망은 아직 없다.
     submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
     const progress = gameSessionCore.__testables.getNightProgress(session);
@@ -630,7 +655,9 @@ test('AC-04: 마지막 밤에 킬과 치료가 함께 발생해도 치료가 성
     const healClock = createManualClock();
     startNightTurnSequence(io, healed.session, { ...healClock, randomFn: () => 0.5 });
     submitNight(healSockets.get(healed.jokerUuid), healed.jokerUuid, healed.session, healTarget);
+    drainWait(healed.session); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
     submitNight(healSockets.get(healed.doctorUuid), healed.doctorUuid, healed.session, healTarget);
+    drainWait(healed.session); // F-27a: 실제 HEAL 사건의 대기를 풀어야 GUARD 차례가 시작된다.
     healClock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(healed.session.phase, 'DAY', '치료가 성공했으므로 게임이 끝나지 않는다');
@@ -651,6 +678,7 @@ test('AC-04: 마지막 밤에 킬과 치료가 함께 발생해도 치료가 성
     const killClock = createManualClock();
     startNightTurnSequence(io, killed.session, { ...killClock, randomFn: () => 0.5 });
     submitNight(killSockets.get(killed.jokerUuid), killed.jokerUuid, killed.session, killTarget);
+    drainWait(killed.session); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
     submitNight(killSockets.get(killed.doctorUuid), killed.doctorUuid, killed.session, null);
     killClock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
@@ -711,6 +739,10 @@ test('AC-05: 자동 최종화와 수동 resolve_night가 겹쳐도 사망·경�
     assert.deepEqual(observed.events, []);
     assert.equal(repo.calls.length, 0);
 
+    // F-27a: 위 조기 거부는 실제 KILL 사건의 연출 대기가 아직 열려 있는 상태에서 관측한
+    // 사실이다(수동 판정도 자동 진행도 대기 중에는 통과하지 않는다) — 이제 그 대기를 풀어야
+    // DOCTOR 차례가 시작된다.
+    drainWait(session);
     submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
@@ -819,6 +851,7 @@ test('AC-05: 밤 최종화의 첫 저장이 실패해도 재시도는 **같은 �
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    drainWait(session); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
     submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 

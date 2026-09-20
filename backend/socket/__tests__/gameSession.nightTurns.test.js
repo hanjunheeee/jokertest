@@ -162,6 +162,26 @@ function commitJokerTrioSessionAtNight({ id = 'room-turns-joker', dayIndex = 0 }
     return { session, jokerUuids, citizenUuid }
 }
 
+/**
+ * F-27a: 진행 중인 연출 대기(있다면)를 즉시 해제한다.
+ *
+ * 완료 ACK를 대신 보내지 않는다 — releaseNightPresentationWait를 직접 호출해 "상한이 지금
+ * 막 지났다"와 똑같은 해제만 수행한다(그 함수 자체가 실제 ACK 경로·상한 타이머 콜백이
+ * 공유하는 유일한 해제 경계다). 그래서 이 드레인을 거친 수신 기록은 completed:false로
+ * 남는다 — 대기 자체가 아니라 턴 순서·판정 결과를 보는 기존 시험 대부분과, completed:false
+ * 상태를 전제로 하는 F-26 복원 시험 양쪽 모두가 그대로 성립한다. 사건이 없거나 현재 적격
+ * 수신자가 없는 대기는 activateNightPresentationWait가 이미 즉시 해제했을 것이므로 이 함수는
+ * 아무 것도 하지 않는다. 해제가 다음 역할에서 새 대기를 만들 수 있으므로 대기가 남아 있는
+ * 동안 반복한다.
+ */
+function drainPresentationWait(session) {
+    for (let guard = 0; guard < 20; guard += 1) {
+        const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
+        if (!run || !run.wait || run.wait.active !== true) return
+        gameSessionSocketLayer.__testables.releaseNightPresentationWait(run, run.wait)
+    }
+}
+
 /** 세션 참가자 전원의 fake socket을 만들고 registerGameHandlers로 실제 이벤트 배선까지 마친 io를 돌려준다. */
 function wireSession(session) {
     const sockets = new Map()
@@ -174,10 +194,21 @@ function wireSession(session) {
         gameSessionSocketLayer.registerGameHandlers(io, socket, uuid)
         sockets.set(uuid, socket)
     }
-    /** 배선된 submit_night_action 이벤트로 제출한다(targetId === null이면 건너뛰기). */
-    const submit = (uuid, targetId) => {
+    /**
+     * 배선된 submit_night_action 이벤트로 제출한다(targetId === null이면 건너뛰기).
+     *
+     * F-27a: 제출로 그 역할의 턴이 끝나면 서버는 실제 연출 대기 상태에 들어간다(사건이 있고
+     * 현재 적격 수신자가 있을 때만). 이 헬퍼를 쓰는 기존 시험 대부분은 대기 자체가 아니라
+     * 턴 순서·판정 결과를 보므로, 기본값(autoDrainWait:true)은 drainPresentationWait로 그
+     * 대기를 곧바로 풀어 예전과 같은 "제출 즉시 다음 역할"의 관측 결과를 유지한다(게이트를
+     * 끄는 것이 아니라 상한이 막 지난 것과 같은 실제 해제 경계를 대신 불러 주는 것이다). 대기
+     * 자체를 검사하는 시험은 { autoDrainWait: false }로 이 편의를 끄고 직접 ACK·상한·재접속을
+     * 구동한다.
+     */
+    const submit = (uuid, targetId, { autoDrainWait = true } = {}) => {
         const { callback, getResponse } = countingCallback()
         sockets.get(uuid).trigger('submit_night_action', { gameId: session.id, targetId }, callback)
+        if (autoDrainWait) drainPresentationWait(session)
         return getResponse()
     }
     return { io, sockets, submit }
@@ -633,6 +664,10 @@ test('night turn: 제한시간이 만료되면 미제출 생존자만 기권으�
     assert.deepEqual(submit(jokerUuids[0], citizenUuid), { ok: true })
 
     clock.advance(NIGHT_TURN_DURATION_MS)
+    // F-27a: 만료로 그 역할이 끝나면 실제 KILL 사건이 있어 연출 대기가 열린다 — submit()이
+    // 아니라 clock.advance로 끝났으므로 자동 드레인을 거치지 않는다. 여기서 명시적으로
+    // 드레인해 이 시험의 관심사(기권 기록·다음 턴 시작)를 그대로 관측한다.
+    drainPresentationWait(session)
 
     // 이미 제출한 표는 기권으로 덮이지 않고, 미제출자만 SKIP(null)으로 기록된다.
     assert.equal(session.nightActions.get(jokerUuids[0]), citizenUuid)
@@ -2445,7 +2480,8 @@ test('AC-05(F-25): 유효 제출자와 대상자만 수신 대상이고, 기권�
     const received = new Set()
     for (const socket of sockets.values()) for (const entry of socket.emitted) received.add(entry.event)
     assert.deepEqual([...received].sort(), [
-        'night_action_success', 'night_actions_resolved', 'night_result_applied', 'night_turn_ended', 'night_turn_started',
+        'night_action_success', 'night_actions_resolved', 'night_presentation_wait',
+        'night_result_applied', 'night_turn_ended', 'night_turn_started',
     ])
     for (const [uuid, socket] of sockets) {
         const count = socket.emitted.filter((e) => e.event === 'night_action_success').length
@@ -2868,6 +2904,9 @@ test('AC-03(F-26a): 시간 만료로 기권 처리된 행위자도 사용자 사
     submit(jokerUuids[0], otherUuids[0])
     // 두 번째 광대는 제출하지 않은 채 제한시간을 넘긴다 — expireNightTurnWithAbstentions가 기권으로 기록한다.
     clock.advance(NIGHT_TURN_DURATION_MS)
+    // F-27a: 실제 KILL 사건이 있는 턴이 clock.advance로 끝났다 — submit()의 자동 드레인을
+    // 거치지 않았으므로 명시적으로 드레인해 이 시험의 수신 범위 단언을 그대로 관측한다.
+    drainPresentationWait(session)
 
     assert.equal(sockets.get(jokerUuids[0]).countReceived('night_action_success'), 1)
     assert.equal(sockets.get(jokerUuids[1]).countReceived('night_action_success'), 0, '시간 만료 기권자도 받지 못한다')
@@ -3616,4 +3655,358 @@ test('AC-05(F-26): 그 사건의 수신자가 아닌 역할·기권자는 재접
     assert.equal(denied.ok, false)
     assert.equal(Object.hasOwn(denied, 'nightSuccessRecovery'), false)
     assert.ok(successPayload.eventId)
+})
+
+// ---------------------------------------------------------------------------
+// F-27a · 연출 대기 게이트의 실제 해제 조건(완료 ACK·오류·건너뛰기·미응답 상한)
+//
+// 이 절부터 activateNightPresentationWait가 실제로 상한 타이머를 걸고, 완료 ACK 또는 그 상한
+// 경과만이 대기를 닫는다. wireSession의 submit()은 기본적으로 그 대기를 실제 해제 경계
+// (releaseNightPresentationWait — 상한이 막 지난 것과 동일한 호출)로 곧바로 흘려보내므로,
+// 대기 자체의 차단·해제 조건을 보는 시험은 { autoDrainWait: false }로 그 편의를 끄고 여기서
+// 직접 ACK·상한·재접속을 구동한다.
+// ---------------------------------------------------------------------------
+
+/** run의 현재 연출 대기 토큰(없으면 null). */
+function currentWait(session) {
+    return gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)?.wait ?? null
+}
+
+test('AC-01(F-27a): 성공 사건 발생 뒤 서버는 실제 대기에 들어가고, 두 수신자가 각각 완료 보고를 마칠 때까지 다음 역할이 시작되지 않는다', () => {
+    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac01-block' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    const wait = currentWait(session)
+    assert.ok(wait, '전제: 실제 KILL 사건이 연출 대기를 연다')
+    assert.equal(wait.active, true)
+    assert.equal(clock.pendingCount(), 1, '상한 타이머가 정확히 하나 걸려 있다')
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '대기 중에는 다음 역할이 시작되지 않는다')
+    assert.equal(session.phase, 'NIGHT')
+    assert.deepEqual(turnEventLog(io), [['night_turn_started', 'JOKER'], ['night_turn_ended', 'JOKER']])
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
+    const ackOf = (uuid, entry) => {
+        const { callback, getResponse } = countingCallback()
+        sockets.get(uuid).trigger('acknowledge_night_action_success',
+            { gameId: session.id, nightDayIndex: entry.payload.nightDayIndex, eventId: entry.payload.eventId }, callback)
+        return getResponse()
+    }
+
+    // 상한 직전까지 시계를 진행시켜도(둘 다 아직 완료하지 않았으므로) 대기는 풀리지 않는다.
+    const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
+    clock.advance(run.presentationWaitTimeoutMs - 1)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
+    assert.equal(currentWait(session), wait, '같은 토큰이 그대로 유지된다')
+
+    // 한 명만 완료해도 아직 풀리지 않는다.
+    assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: false })
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '수신자 2명 중 1명만 완료했다')
+    assert.equal(gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+        .byEvent.get(killEntry.payload.eventId).get(citizenUuid).completed, false)
+
+    // 나머지 한 명까지 완료해야 비로소 풀린다.
+    assert.deepEqual(ackOf(citizenUuid, citizenEntry), { ok: true, duplicate: false })
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '두 수신자 모두 완료한 뒤에야 다음 역할이 시작된다')
+    assert.equal(currentWait(session), null)
+})
+
+test('AC-01/AC-02(F-27a): 아무도 완료 보고를 하지 않으면 상한이 지날 때까지 대기가 계속되고, 상한이 지나면 정확히 한 번 해제된다', () => {
+    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac01-timeout' })
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
+    const timeoutMs = run.presentationWaitTimeoutMs
+
+    clock.advance(timeoutMs - 1)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '상한 직전에는 아직 풀리지 않는다')
+    assert.equal(clock.pendingCount(), 1)
+
+    clock.advance(1)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '상한이 지나면 진행 해제로 다음 역할이 시작된다')
+    // 해제된 대기의 상한 타이머는 취소된다 — 유일하게 남은 타이머는 방금 시작된 DOCTOR
+    // 제출 구간의 새 타이머다(대기 타이머가 이중으로 남지 않았다는 근거).
+    assert.equal(clock.pendingCount(), 1, '해제된 대기의 상한 타이머는 남지 않고 다음 역할의 제출 타이머만 남는다')
+
+    // 위조된(또는 이미 해제된) 토큰으로 같은 run을 다시 해제하려 해도 두 번째 진행은 없다.
+    assert.equal(releaseNightPresentationWait(run, { run, forged: true }), false)
+    assert.equal(turnEventLog(io).filter(([event, role]) => event === 'night_turn_started' && role === 'DOCTOR').length, 1,
+        '다음 역할이 두 번 시작되지 않았다')
+})
+
+test('AC-02(F-27a): outcome이 COMPLETED(명시)·ERROR·SKIPPED 중 무엇이든 두 수신자가 모두 보고하면 진행 해제는 정확히 1회다', () => {
+    for (const outcome of ['COMPLETED', 'ERROR', 'SKIPPED']) {
+        const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: `f27a-ac02-${outcome.toLowerCase()}` })
+        const { io, sockets, submit } = wireSession(session)
+        const clock = createManualClock()
+
+        startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+        assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+        const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+        const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
+        const ackOf = (uuid, entry) => {
+            const { callback, getResponse } = countingCallback()
+            sockets.get(uuid).trigger('acknowledge_night_action_success', {
+                gameId: session.id, nightDayIndex: entry.payload.nightDayIndex, eventId: entry.payload.eventId, outcome,
+            }, callback)
+            return getResponse()
+        }
+        assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: false })
+        assert.deepEqual(ackOf(citizenUuid, citizenEntry), { ok: true, duplicate: false })
+
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', `${outcome}: 두 수신자 완료 뒤 다음 역할이 시작됐다`)
+        assert.equal(turnEventLog(io).filter(([event, role]) => event === 'night_turn_started' && role === 'DOCTOR').length, 1,
+            `${outcome}: 다음 역할이 두 번 시작되지 않았다`)
+
+        const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+        assert.equal(stored.byEvent.get(killEntry.payload.eventId).get(jokerUuid).outcome, outcome)
+    }
+})
+
+test('AC-02(F-27a): 콜백 없는 완료 보고도 outcome·완료 기록을 그대로 반영하고 대기를 해제한다', () => {
+    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac02-no-callback' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
+    sockets.get(jokerUuid).trigger('acknowledge_night_action_success',
+        { gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId, outcome: 'SKIPPED' })
+    sockets.get(citizenUuid).trigger('acknowledge_night_action_success',
+        { gameId: session.id, nightDayIndex: citizenEntry.payload.nightDayIndex, eventId: citizenEntry.payload.eventId })
+
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
+    const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+    assert.equal(stored.byEvent.get(killEntry.payload.eventId).get(jokerUuid).outcome, 'SKIPPED')
+})
+
+test('AC-02(F-27a): null·빈 문자열·알 수 없는 outcome과 여분 키는 INVALID_PAYLOAD이고 완료 기록도 대기도 바뀌지 않는다', () => {
+    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac02-invalid-outcome' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const base = { gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId }
+    const ack = (payload) => {
+        const { callback, getResponse } = countingCallback()
+        sockets.get(jokerUuid).trigger('acknowledge_night_action_success', payload, callback)
+        return getResponse()
+    }
+
+    assert.equal(ack({ ...base, outcome: null }).code, 'INVALID_PAYLOAD')
+    assert.equal(ack({ ...base, outcome: '' }).code, 'INVALID_PAYLOAD')
+    assert.equal(ack({ ...base, outcome: 'TIMEOUT' }).code, 'INVALID_PAYLOAD')
+    assert.equal(ack({ ...base, outcome: 'COMPLETED', extra: 'x' }).code, 'INVALID_PAYLOAD')
+
+    const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+    assert.equal(stored.byEvent.get(killEntry.payload.eventId).get(jokerUuid).completed, false,
+        '거부된 요청이 완료 기록을 바꿨다')
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '거부된 요청이 대기를 풀지 않았다')
+})
+
+test('AC-03(F-27a): 이미 해제된 사건의 중복·지연 완료 보고는 진행을 다시 멈추거나 두 번째 해제를 일으키지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f27a-ac03-late' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
+    const ackOf = (uuid, entry) => {
+        const { callback, getResponse } = countingCallback()
+        sockets.get(uuid).trigger('acknowledge_night_action_success',
+            { gameId: session.id, nightDayIndex: entry.payload.nightDayIndex, eventId: entry.payload.eventId }, callback)
+        return getResponse()
+    }
+    assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: false })
+    assert.deepEqual(ackOf(citizenUuid, citizenEntry), { ok: true, duplicate: false })
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '해제로 DOCTOR 턴이 시작됐다')
+
+    // 같은 밤: 이미 해제된 사건의 중복 보고는 duplicate:true뿐이고 어떤 진행도 다시 만들지 않는다.
+    assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: true })
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
+
+    // 나머지 세 역할을 전원 기권으로 넘겨 다음 밤을 연다 — 완료 수신 보관함이 통째로 교체된다.
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+    assert.equal(session.phase, 'DAY')
+    stopDayPhaseTimer(session.id)
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    const nextClock = createManualClock()
+    startNightTurnSequence(io, session, { ...nextClock, randomFn: () => 0.5 })
+
+    // 지난 밤 사건에 대한 지연 보고는 다음 밤에서 STALE_EVENT이고, 진행 중인 새 턴을 건드리지 않는다.
+    assert.equal(ackOf(citizenUuid, citizenEntry).code, 'STALE_EVENT')
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'JOKER', '다음 밤의 진행은 옛 밤의 지연 보고로 바뀌지 않는다')
+})
+
+test('AC-04(F-27a): 대기 중 재접속(새 canonical 소켓)은 대기를 멈추거나 재시작하지 않고, 그 연결의 복원 ACK로 정상 해제된다', () => {
+    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac04-snapshot-reconnect', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    const before = currentWait(session)
+    assert.ok(before)
+
+    // 광대가 재접속한다(새로고침) — 새 canonical 소켓이 생긴다.
+    const reconnected = reconnectSocket(io, session, jokerUuid)
+    const snapshot = getSnapshot(reconnected, { gameId: session.id })
+    assert.equal(snapshot.ok, true, JSON.stringify(snapshot))
+    const killPayload = snapshot.nightSuccessRecovery.find((p) => p.type === 'KILL')
+    assert.ok(killPayload, '진행 중인 KILL 사건이 복원됐다')
+
+    // 재접속이 대기를 멈추거나 재시작하지 않았다 — 같은 토큰, 여전히 대기 중이다.
+    assert.equal(currentWait(session), before)
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
+
+    // 새 연결에서 보낸 완료 보고가 정상적으로 통과한다.
+    const ack1 = countingCallback()
+    reconnected.trigger('acknowledge_night_action_success',
+        { gameId: session.id, nightDayIndex: killPayload.nightDayIndex, eventId: killPayload.eventId }, ack1.callback)
+    assert.deepEqual(ack1.getResponse(), { ok: true, duplicate: false })
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, 'TARGET이 아직 완료하지 않아 대기는 계속된다')
+
+    const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
+    const ack2 = countingCallback()
+    sockets.get(citizenUuid).trigger('acknowledge_night_action_success',
+        { gameId: session.id, nightDayIndex: citizenEntry.payload.nightDayIndex, eventId: citizenEntry.payload.eventId }, ack2.callback)
+    assert.deepEqual(ack2.getResponse(), { ok: true, duplicate: false })
+
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '두 수신자 모두 완료한 뒤에야 해제된다')
+})
+
+test('AC-05(F-27a): 마지막 역할의 연출 대기도 완료 보고가 오기 전까지 최종화를 막고, 해제되면 정확히 한 번 결과 단계로 진행한다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f27a-ac05-last', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+
+    // 첫 밤: 광대가 시민을 죽인다(실제 사망 확정) — 이 밤의 대기 자체는 이 시험의 관심사가
+    // 아니므로 기본 드레인(상한이 막 지난 것과 동일한 해제)으로 넘긴다.
+    const firstClock = createManualClock()
+    startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+    assert.equal(session.players.get(citizenUuid).alive, false)
+    assert.equal(session.phase, 'DAY')
+    stopDayPhaseTimer(session.id)
+
+    // 둘째 밤: 마녀사냥꾼이 그 사망자를 확인한다 — 마지막 역할의 실제 CONFIRM 사건이다.
+    // 관찰은 여기서부터 시작한다 — 첫 밤의 사망 확정·승패 평가가 이 시험의 "0회" 단언에
+    // 섞이지 않게 하기 위함이다.
+    const observed = captureCommitEvents()
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    const clock = createManualClock()
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, null)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    assert.deepEqual(submit(witchHunterUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    // 대기 중에는 자동 최종화도 수동 판정도 결과를 확정하지 못한다.
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED') + observed.countOf('GAME_FINALIZED'), 0)
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, sockets.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+    assert.deepEqual(getResponse(), { ok: false, code: 'ACTIONS_PENDING', message: '요청을 처리할 수 없습니다.' })
+
+    // 두 수신자(마녀사냥꾼·시민)가 완료 보고를 마치면 그제서야 정확히 한 번 최종화된다.
+    const confirmEntry = sockets.get(witchHunterUuid).emitted.find((e) => e.event === 'night_action_success')
+    const citizenConfirmEntry = sockets.get(citizenUuid).emitted
+        .find((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM')
+    for (const [uuid, entry] of [[witchHunterUuid, confirmEntry], [citizenUuid, citizenConfirmEntry]]) {
+        const ack = countingCallback()
+        sockets.get(uuid).trigger('acknowledge_night_action_success',
+            { gameId: session.id, nightDayIndex: entry.payload.nightDayIndex, eventId: entry.payload.eventId }, ack.callback)
+        assert.deepEqual(ack.getResponse(), { ok: true, duplicate: false })
+    }
+
+    assert.equal(session.phase, 'DAY', '해제 뒤 결과 단계(낮)로 정확히 한 번 진행했다')
+    // 이 밤은 확인(CONFIRM)뿐이라 새 사망은 없다 — "정확히 한 번"의 근거는 승패 평가 1회다.
+    assert.equal(observed.winEvaluations('NIGHT'), 1, '해제 뒤 승패 평가가 정확히 한 번 실행됐다')
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0, '이 밤은 새 사망이 없다')
+    assert.equal(observed.countOf('GAME_FINALIZED'), 0, '아직 경기가 끝나지 않았다')
+    assert.equal(gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id), null,
+        '최종화된 밤의 run은 정리된다')
+})
+
+test('AC-06(F-27a): 연출 대기 알림은 비수신자에게만 gameId·nightDayIndex·waiting 세 키로 전달되고, 수신자·외부인에게는 가지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f27a-ac06-notify' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
+
+    // 비수신자(의사·경비원·마녀사냥꾼)만 waiting:true를 받는다. 수신자(광대·시민)는 받지 않는다.
+    for (const uuid of [doctorUuid, guardUuid, witchHunterUuid]) {
+        const entries = sockets.get(uuid).emitted.filter((e) => e.event === 'night_presentation_wait')
+        assert.equal(entries.length, 1, `${uuid}: 비수신자는 대기 알림을 정확히 한 번 받아야 한다`)
+        assert.deepEqual(Object.keys(entries[0].payload).sort(), ['gameId', 'nightDayIndex', 'waiting'])
+        assert.equal(entries[0].payload.gameId, session.id)
+        assert.equal(entries[0].payload.waiting, true)
+    }
+    for (const uuid of [jokerUuid, citizenUuid]) {
+        assert.equal(sockets.get(uuid).emitted.filter((e) => e.event === 'night_presentation_wait').length, 0,
+            `${uuid}: 대기의 수신자 본인은 대기 알림을 받지 않는다`)
+    }
+
+    // 완료 보고로 해제하면 같은 비수신자에게 waiting:false가 정확히 한 번 더 간다(새 계정은 추가되지 않는다).
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
+    for (const [uuid, entry] of [[jokerUuid, killEntry], [citizenUuid, citizenEntry]]) {
+        const { callback } = countingCallback()
+        sockets.get(uuid).trigger('acknowledge_night_action_success',
+            { gameId: session.id, nightDayIndex: entry.payload.nightDayIndex, eventId: entry.payload.eventId }, callback)
+    }
+
+    for (const uuid of [doctorUuid, guardUuid, witchHunterUuid]) {
+        const entries = sockets.get(uuid).emitted.filter((e) => e.event === 'night_presentation_wait')
+        assert.equal(entries.length, 2, `${uuid}: 활성화·해제 각각 한 번씩만 받아야 한다`)
+        assert.equal(entries[1].payload.waiting, false)
+        assert.deepEqual(Object.keys(entries[1].payload).sort(), ['gameId', 'nightDayIndex', 'waiting'])
+    }
+})
+
+test('AC-06(F-27a): 사건이 없는 턴은 통지 없이 즉시 해제되고, 대기 알림이 전송되지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } =
+        commitFullRoleSessionAtNight({ id: 'f27a-ac06-empty' })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    assert.deepEqual(submit(jokerUuid, null, { autoDrainWait: false }), { ok: true })
+
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '사건 없는 턴은 즉시 해제된다')
+    for (const uuid of [doctorUuid, guardUuid, witchHunterUuid]) {
+        assert.equal(sockets.get(uuid).emitted.filter((e) => e.event === 'night_presentation_wait').length, 0)
+    }
 })
