@@ -1262,6 +1262,8 @@ function flattenRoutes(routes, ProtectedRouteType, guarded = false) {
 const ROUTE_WIRING_LOCK = {
   "/": { component: "LoginPage", from: "@/domains/auth/pages/LoginPage", guarded: false },
   "/login": { component: "LoginPage", from: "@/domains/auth/pages/LoginPage", guarded: false },
+  // F-29a: 아이디 찾기는 로그인 전에도 접근해야 하므로 ProtectedRoute 밖(비보호)이다.
+  "/find-id": { component: "FindIdPage", from: "@/domains/auth/pages/FindIdPage", guarded: false },
   "/mypage": { component: "MyPage", from: "@/domains/user/pages/MyPage", guarded: true },
   "/account": { component: "AccountPage", from: "@/domains/user/pages/AccountPage", guarded: true },
   "/lobby": { component: "LobbyPage", from: "@/domains/lobby/pages/LobbyPage", guarded: true },

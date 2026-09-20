@@ -8,10 +8,50 @@ const {
     discordLinkStart, discordLinkCallback,
 } = require("../controller/user.controller");
 const { verifyToken }        = require("../middleware/auth.middleware");
+const crypto                 = require("crypto");
+const { createRateLimiter }  = require("../middleware/rateLimit");
+const { validateFindIdRequest } = require("../validation/findIdValidation");
+const { findId }             = require("../controller/accountRecovery.controller");
 
 router.post("/signup", signup);
 router.get("/check-email", checkEmail);
 router.post("/login", login);
+
+// F-29a(AC-05): 아이디 찾기 요청 빈도 제한. 라우터 구성 시 한 번만 생성해 요청마다
+// 카운터가 초기화되지 않게 한다. IP 제한은 검증 실패도 포함해 이 경로에 들어온 모든 요청을
+// 세고(먼저 연결), 대상(닉네임) 제한은 검증을 통과한 요청만 정규화된 닉네임의 SHA-256으로
+// 센다(뒤에 연결) — 생년월일은 키에 섞지 않아 날짜만 바꿔 대상 제한을 우회할 수 없다.
+// 환경변수가 없거나 잘못되면(Number가 NaN 등) 조용히 제한 해제로 떨어지지 않도록, createRateLimiter가
+// 유효하지 않은 설정에서 즉시 예외를 던진다 — 그래서 아래는 항상 유효한 숫자로 기본값을 먼저 계산한다.
+const toPositiveInt = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+// req.ip를 쓴다 — backend/index.js:51의 `app.set("trust proxy", 1)`이 신뢰 경계 안에서
+// Express가 계산한 값이다. utils/ip.js의 getClientIp는 신뢰 경계와 무관하게
+// X-Forwarded-For 첫 값을 그대로 채택해, 클라이언트가 그 헤더를 바꾸는 것만으로 이 IP
+// 제한을 우회할 수 있었다(getClientIp 자체는 accountRecovery.controller.js가 로그 저장용
+// IP 문자열을 만드는 데 그대로 쓰므로 건드리지 않는다).
+const findIdIpRateLimiter = createRateLimiter({
+    windowMs: toPositiveInt(process.env.FIND_ID_WINDOW_MS, 600000),
+    max:      toPositiveInt(process.env.FIND_ID_IP_MAX, 10),
+    keyOf:    (req) => `ip:${req.ip}`,
+});
+
+const findIdTargetRateLimiter = createRateLimiter({
+    windowMs: toPositiveInt(process.env.FIND_ID_WINDOW_MS, 600000),
+    max:      toPositiveInt(process.env.FIND_ID_TARGET_MAX, 5),
+    keyOf:    (req, res) => `target:${crypto.createHash("sha256").update(res.locals.findIdInput.nickname).digest("hex")}`,
+});
+
+router.post(
+    "/find-id",
+    findIdIpRateLimiter,
+    validateFindIdRequest,
+    findIdTargetRateLimiter,
+    findId,
+);
 
 // 액세스 토큰이 이미 만료된 상태에서 호출되는 경로이므로 verifyToken을 걸지 않는다 —
 // 갱신 자격(refreshToken 쿠키) 자체의 유효성은 authService.refresh가 검증한다(F-03).

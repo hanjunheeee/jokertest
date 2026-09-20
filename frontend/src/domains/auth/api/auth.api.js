@@ -35,3 +35,11 @@ export const logoutApi = async () => {
 export const completeSocialSignupApi = async ({ intentToken, nickname, birthDate }) => {
     return await api.post('/auth/social/signup/complete', { intentToken, nickname, birthDate });
 };
+
+// F-29a: 아이디 찾기. 닉네임+생년월일이 실제 계정과 일치하면 마스킹된 이메일 힌트를
+// { ok: true, maskedEmail } 형태로 돌려주고, 그 외(불일치/계정 없음/생년월일 미등록)는
+// 전부 같은 { ok: false, code: 'NOT_FOUND' }로 응답합니다. 전달 객체를 두 필드로 새로
+// 구성해 그 외 값이 실려 나가지 않게 합니다.
+export const findIdApi = async ({ nickname, birthDate }) => {
+    return await api.post('/auth/find-id', { nickname, birthDate });
+};

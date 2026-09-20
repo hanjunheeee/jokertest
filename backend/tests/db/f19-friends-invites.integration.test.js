@@ -45,6 +45,17 @@ const {
 } = require('../helpers/isolatedTestDb');
 
 const { MIGRATIONS } = require('../../scripts/migrate-db');
+
+// 0013 "직전" 상태를 세우는 시험들이 공유하는 위치 계산. 예전에는 0013이 MIGRATIONS의
+// 마지막 원소였기 때문에 `MIGRATIONS.slice(0, -1)`이 곧 "0013 앞까지"였다. F-29a가 뒤에
+// 0014-find-id-requests를 추가하면서 그 전제가 깨졌다(마지막 원소가 더 이상 0013이 아니다) —
+// 이름으로 0013의 실제 위치를 찾아 앞부분만 자르면, 이후 마이그레이션이 몇 개가 더 추가돼도
+// 이 시험들을 고치지 않아도 된다.
+const F19_MIGRATION_INDEX = MIGRATIONS.findIndex((migration) => migration.name === '0013-f19-friends-invites');
+if (F19_MIGRATION_INDEX === -1) {
+    throw new Error('MIGRATIONS 목록에서 0013-f19-friends-invites를 찾을 수 없습니다.');
+}
+
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests,
     addVoteParticipations, addAchievementGrants, addNotifications, addF19FriendsInvites,
@@ -504,12 +515,9 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
     if (unavailable(t)) return;
     await setUpBareSchema(t);
 
-    // (1) 0013 직전 상태. 마지막 원소가 0013이다(scripts/migrate-db.js::MIGRATIONS).
-    assert.equal(
-        MIGRATIONS[MIGRATIONS.length - 1].name, '0013-f19-friends-invites',
-        '이 시험은 0013이 목록의 마지막이라는 전제에 의존한다',
-    );
-    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, -1) });
+    // (1) 0013 직전 상태. F19_MIGRATION_INDEX(파일 상단)가 0013의 실제 위치를 찾아 그 앞까지만
+    // 적용한다 — "0013이 목록의 마지막"이라는 전제 대신 "0013까지 적용한 상태"를 기준으로 삼는다.
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, F19_MIGRATION_INDEX) });
 
     const queryInterface = sequelize.getQueryInterface();
     const leftmostOf = (index) => (index.fields ?? []).map((field) => field.attribute ?? field)[0];
@@ -1759,7 +1767,9 @@ test('review5 RR: block committed after initial read must prevent finalization',
 test('review5 migration: preserve existing CANCELLED history when normalizing cross pending', async (t) => {
     if (unavailable(t)) return;
     await setUpBareSchema(t);
-    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, -1) });
+    // AC-05 시험과 같은 이유로 "마지막 원소"가 아니라 F19_MIGRATION_INDEX(0013의 실제 위치)로
+    // 0013 직전 상태를 세운다.
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, F19_MIGRATION_INDEX) });
     const a = await createLocalUser('mh-a');
     const b = await createLocalUser('mh-b');
     const history = await db.FriendRequest.create({ requester_id: b, receiver_id: a, status: 'CANCELLED' });

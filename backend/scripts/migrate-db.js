@@ -41,7 +41,10 @@ const addNotifications = require('../db/migrations/0012-add-notifications');
 // F-19: 즐겨찾기·차단·게임 초대 테이블과 friend_requests의 PENDING 유일 제약 교체도 실제
 // 배포 명령에서 순서대로 적용한다(gameInvite.service.js·friend.service.js의 멱등·권한 근거).
 const addF19FriendsInvites = require('../db/migrations/0013-f19-friends-invites');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites];
+// F-29a: account_find_requests.email을 nullable로 바꿔, 아이디 찾기가 이메일을 아직 모르는
+// 상태에서도 조회 사건을 기록할 수 있게 한다(accountRecovery.service.js의 findId 참고).
+const addFindIdRequests = require('../db/migrations/0014-find-id-requests');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

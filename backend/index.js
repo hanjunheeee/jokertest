@@ -50,7 +50,11 @@ app.use(morgan("dev"));
 // 리버스 프록시(Nginx 등) 환경에서 x-forwarded-for 헤더로 실제 클라이언트 IP를 읽기 위함
 app.set("trust proxy", 1);
 
-app.use("/auth", authRouter);
+// F-29a: authRouter가 등록하는 POST /auth/find-id(아이디 찾기)를 포함해, 인증 관련 공개·
+// 보호 경로 전부가 이 마운트 하나를 통해 실제로 요청을 받는다 — backend/__tests__/dbStartup.test.js
+// 의 "정상 기동 후 REST 요청과 소켓 핸드셰이크가 동작한다"가 이 app 인스턴스를 실제로 기동해
+// GET /auth/me(같은 authRouter가 등록)가 401로 응답하는 것으로 이 마운트 경로 자체를 검증한다.
+app.use("/auth", authRouter); // F-29a: 이 마운트로 POST /auth/find-id(accountRecovery.controller.js::findId)까지 실제로 연결된다.
 app.use("/user", userRouter);
 app.use("/friends", friendRouter);
 app.use("/game", gameRouter);
