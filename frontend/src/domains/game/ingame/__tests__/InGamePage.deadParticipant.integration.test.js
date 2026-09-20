@@ -1513,7 +1513,7 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
 /** InGamePage가 실제로 마운트하는 컴포넌트 전부(오버레이·모달·패널 포함). */
 const INGAME_MOUNT_LOCK = [
   "InGameActionPanel", "InGameBackground", "InGameChatShell", "InGameDeadParticipantChoice",
-  "InGameKillRevealOverlay", "InGameNightPrivateResultOverlay",
+  "InGameKillRevealOverlay", "InGameNightPrivateResultOverlay", "InGameNightSuccessPresentation",
   "InGameNightTurnAnnouncementOverlay", "InGamePhaseEntranceOverlay", "InGamePlayerBoard",
   "InGamePlayerSessionProvider", "InGameRoleRevealOverlay", "InGameTimebar",
   "InGameTopControls", "InGameVoteStatusPanel", "PlayerRecordListPanel", "SettingPanel",

@@ -469,6 +469,10 @@ export function isCurrentGameKickEvent(store, payload) {
 
 const NIGHT_SUCCESS_TYPES = new Set(["KILL", "HEAL", "INVESTIGATE", "CONFIRM"])
 const NIGHT_SUCCESS_PERSPECTIVES = new Set(["USER", "TARGET"])
+// F-27b(AC-03): 서버 handleAcknowledgeNightActionSuccess(backend/socket/gameSession.js)의
+// NIGHT_SUCCESS_OUTCOMES와 같은 세 값이다 — 완료 보고의 세 번째 필드가 두 쪽에서 어긋나지
+// 않게 한다. 생략 시 기본값은 서버와 동일하게 COMPLETED다.
+const NIGHT_SUCCESS_OUTCOMES = new Set(["COMPLETED", "ERROR", "SKIPPED"])
 
 /** night_action_success payload의 형태 검사(서버 값이라도 신뢰하지 않는 외부 입력으로 다룬다). */
 function isValidNightSuccessPayload(payload) {
@@ -1379,8 +1383,13 @@ export const useInGameStore = create((set) => ({
    *
    * 반환하는 status는 로컬 전송 시도의 결과일 뿐 서버 수신 보장이 아니다 — 실제 서버 응답은
    * ackStatus(pending→accepted/rejected)로 record에 늦게 반영된다.
+   *
+   * F-27b(AC-03): 세 번째 인자 outcome은 이 완료가 재생 완료(COMPLETED)·재생 오류(ERROR)·
+   * 사용자 건너뛰기(SKIPPED) 중 무엇인지를 싣는다. 셋 밖의 값은 큐·기록 어느 쪽도 바꾸지 않는
+   * noop이다(기존 두 인자 호출과의 호환은 기본값 COMPLETED가 지킨다).
    */
-  completeNightSuccess: (eventId, receiptScope = null) => {
+  completeNightSuccess: (eventId, receiptScope = null, outcome = "COMPLETED") => {
+    if (!NIGHT_SUCCESS_OUTCOMES.has(outcome)) return { status: "noop" }
     const record = nightSuccessRecords.get(eventId)
     if (!record || record.completed) return { status: "noop" }
     if (receiptScope === null || typeof receiptScope !== "object") return { status: "noop" }
@@ -1412,7 +1421,14 @@ export const useInGameStore = create((set) => ({
     try {
       socket.emit(
         "acknowledge_night_action_success",
-        { gameId: record.entry.gameId, nightDayIndex: record.entry.nightDayIndex, eventId: record.entry.eventId },
+        {
+          gameId: record.entry.gameId,
+          nightDayIndex: record.entry.nightDayIndex,
+          eventId: record.entry.eventId,
+          // F-27b(AC-03): 생략은 서버 기본값(COMPLETED)과 같은 뜻이다 — 완료 보고에만 세
+          // 기본 필드 계약을 그대로 지킨다. ERROR·SKIPPED만 명시적으로 싣는다.
+          ...(outcome === "ERROR" || outcome === "SKIPPED" ? { outcome } : {}),
+        },
         (response) => {
           // 늦은 callback은 같은 사건·같은 소유 범위의 기록이 아직 남아 있을 때만 갱신한다.
           if (nightSuccessRecords.get(eventId) !== record) return

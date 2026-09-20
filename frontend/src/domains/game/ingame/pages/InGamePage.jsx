@@ -9,6 +9,7 @@ import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseE
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
 import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/InGameNightPrivateResultOverlay.jsx"
 import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.jsx"
+import InGameNightSuccessPresentation from "../components/InGameNightSuccessPresentation.jsx"
 import InGameDeadParticipantChoice from "../components/deadChoice/InGameDeadParticipantChoice.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
@@ -37,6 +38,7 @@ import {
 } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameKillReveal } from "../hooks/useInGameKillReveal.js"
 import { useInGameNightPrivateResult } from "../hooks/useInGameNightPrivateResult.js"
+import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
@@ -96,13 +98,20 @@ export default function InGamePage() {
 
   // 사망 연출과 밤 개인 결과는 오버레이 스택 밖에서 이 페이지가 직접 조립한다 —
   // useInGameOverlayStack은 인자 없이 호출하는 기존 계약을 그대로 유지하고(로컬 오버레이 스택
-  // 로직은 이 슬라이스에서 바꾸지 않는다), 두 오버레이의 우선순위는 여기서 hold로 잇는다:
-  //   1. 자기 역할 공개(roleReveal) → 2. 사망 연출 → 3. 밤 개인 결과
-  // 3·4번(진입 연출·역할 턴 안내)보다 위에 그려지는 것은 각자의 z 단계가 보장한다
-  // (killReveal z-[70]/[71], nightPrivateResult z-[65]/[66] > 진입·안내 z-[60]/[61]).
+  // 로직은 이 슬라이스에서 바꾸지 않는다), 오버레이들의 우선순위는 여기서 hold로 잇는다:
+  //   1. 자기 역할 공개(roleReveal) → 2. 사망 연출 → 3. 밤 성공 사건 연출 → 4. 밤 개인 결과
+  // 5·6번(진입 연출·역할 턴 안내)보다 위에 그려지는 것은 각자의 z 단계가 보장한다
+  // (killReveal z-[70]/[71], nightSuccessPresentation도 KILL은 같은 z-[70]/[71](kill reveal이
+  // hold로 동시에 열리지 않는다), 나머지 세 종류·nightPrivateResult는 z-[65]/[66] > 진입·안내
+  // z-[60]/[61]).
   const killReveal = useInGameKillReveal({ hold: roleReveal.open })
-  const nightPrivateResult = useInGameNightPrivateResult({
+  // F-27b(AC-01/AC-02/AC-03/AC-04/AC-05): 서버가 역할별로 개별 전송한 성공 사건 큐(광대 킬→
+  // 의사 치료→경비원 조사→마녀사냥꾼 확인)를 하나씩 표시한다.
+  const nightSuccessPresentation = useInGameNightSuccessPresentation({
     hold: roleReveal.open || killReveal.open,
+  })
+  const nightPrivateResult = useInGameNightPrivateResult({
+    hold: roleReveal.open || killReveal.open || nightSuccessPresentation.open,
   })
 
   // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다 — 단, 이 판정의 사망
@@ -152,13 +161,18 @@ export default function InGamePage() {
     && !roleReveal.open
     && !killReveal.open
     && !killReveal.pending
+    // F-27b: 밤 성공 사건 연출(및 그 뒤에 이어지는 최종 생존 화면)이 떠 있는 동안에도 가려선
+    // 안 된다 — 개인 결과 오버레이와 같은 이유다.
+    && !nightSuccessPresentation.open
     // 개인 결과 오버레이(z-[65])보다 위에 그려지므로, 둘이 동시에 열리면 확인 버튼이 가려진다.
     && !nightPrivateResult.open
 
-  // 사망 연출·개인 결과가 떠 있는 동안에도 아래 게임 표면의 입력을 함께 잠근다. 잠금 판단만
-  // 여기서 합치고, 오버레이 스택이 내는 interactionBlocked 자체는 그대로 아래로 흘려보낸다.
+  // 사망 연출·성공 사건 연출·개인 결과가 떠 있는 동안에도 아래 게임 표면의 입력을 함께
+  // 잠근다. 잠금 판단만 여기서 합치고, 오버레이 스택이 내는 interactionBlocked 자체는 그대로
+  // 아래로 흘려보낸다.
   const surfaceLocked =
     interactionBlocked || killReveal.open || nightPrivateResult.open || deadChoiceOpen
+    || nightSuccessPresentation.open
 
   // 상태바에 상시로 띄우는 밤 역할 턴의 남은 시간. 서버가 실어 보낸 deadline 하나에서만 만든다.
   const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
@@ -254,6 +268,17 @@ export default function InGamePage() {
         revealId={killReveal.revealId}
         message={killReveal.message}
         onConsume={killReveal.consume}
+      />
+      {/* F-27b: 밤 성공 사건(광대 킬→의사 치료→경비원 조사→마녀사냥꾼 확인) 큐를 하나씩
+          표시한다. KILL은 기존 사망 연출 영상을, 나머지는 임시 연출을 보여주고, 큐가 비면
+          같은 밤의 night_result_applied가 반영된 뒤에만 최종 생존 화면으로 이어진다. */}
+      <InGameNightSuccessPresentation
+        current={nightSuccessPresentation.current}
+        open={nightSuccessPresentation.open}
+        finish={nightSuccessPresentation.finish}
+        assetStatus={nightSuccessPresentation.assetStatus}
+        finalStatus={nightSuccessPresentation.finalStatus}
+        onClose={nightSuccessPresentation.onClose}
       />
       {/* F-23(AC-06): 확정 사망한 참가자의 두 선택. "관전 계속하기"는 서버 요청 0회이며
           소속·역할을 바꾸지 않는다 — 접은 뒤에도 상단 나가기 버튼은 그대로 쓸 수 있다. */}
