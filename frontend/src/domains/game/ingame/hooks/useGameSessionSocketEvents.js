@@ -15,10 +15,13 @@ import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import {
   getInGameIdentityScopeVersion,
   isCurrentGameKickEvent,
+  noteInGameConnectionRebound,
   readInGameReceiptScope,
   subscribeInGameIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
+// F-26b(AC-01): 밤 성공 사건 수신은 store가 소유한 받은 그대로의 payload를 넘기므로 별도
+// 파서가 없다(다른 apply*와 달리 형태 검증도 store 쪽 receiveNightSuccess가 한다).
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
 import { createSelfDisconnectHandler } from "../utils/createSelfDisconnectHandler.js"
@@ -166,7 +169,14 @@ export function useGameSessionSocketEvents() {
   const [connectSeq, setConnectSeq] = useState(0)
   useEffect(() => {
     if (!socket) return undefined
-    const handleConnect = () => setConnectSeq((current) => current + 1)
+    const handleConnect = () => {
+      setConnectSeq((current) => current + 1)
+      // F-26b(AC-02): 같은 소켓 객체의 재연결도 이전 연결이 수락한 밤 성공 사건 기록(큐·수락
+      // eventId·ACK 표식)을 취소해야 한다 — ingameStore는 소켓에 직접 리스너를 걸지 않으므로
+      // (다른 기능의 리스너 집합을 늘리지 않기 위해서다), 이미 connect를 구독하는 이 effect가
+      // 그 사실을 store에 전달한다.
+      noteInGameConnectionRebound()
+    }
     socket.on("connect", handleConnect)
     return () => socket.off("connect", handleConnect)
   }, [socket])
@@ -449,6 +459,17 @@ export function useGameSessionSocketEvents() {
     }
 
     /**
+     * F-26b(AC-01/AC-02/AC-03): 역할별 성공 사건(night_action_success) 개인 수신. F-26a가
+     * 개별 emit하는 사건이라 등록 범위를 다른 공개 사건과 똑같이 먼저 본다 — 옛 연결·옛 신원의
+     * 구독이 늦게 받은 사건이 현재 화면의 대기 큐에 들어가면 안 된다. 형태·게임/밤 일치·본인
+     * 신원 재확인은 store의 receiveNightSuccess가 소유한다(다른 apply* 액션과 같은 분담).
+     */
+    const handleNightActionSuccess = (payload) => {
+      if (!isRegistrationScopeCurrent(registeredScope)) return
+      useInGameStore.getState().receiveNightSuccess(payload, currentReceiptScope())
+    }
+
+    /**
      * F-21(AC-03/AC-05): 참여 상태 변화 공개 방송. 생존(player_eliminated)·단계
      * (game_phase_changed)와 **분리된** 사실이라 별도 reducer가 소유한다. 형태·게임 일치·
      * 세대 단조성 검증은 전부 store가 하므로 여기서는 그대로 넘긴다. 소리는 없다 — 이 사건은
@@ -550,6 +571,7 @@ export function useGameSessionSocketEvents() {
     socket.on("game_phase_changed", handlePhaseChanged)
     socket.on("night_result_applied", handleNightResultApplied)
     socket.on("night_action_result", handleNightActionResult)
+    socket.on("night_action_success", handleNightActionSuccess)
     socket.on("day_vote_resolved", handleDayVoteResolved)
     socket.on("day_phase_changed", handleDayPhaseChanged)
     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
@@ -564,6 +586,7 @@ export function useGameSessionSocketEvents() {
       socket.off("game_phase_changed", handlePhaseChanged)
       socket.off("night_result_applied", handleNightResultApplied)
       socket.off("night_action_result", handleNightActionResult)
+      socket.off("night_action_success", handleNightActionSuccess)
       socket.off("day_vote_resolved", handleDayVoteResolved)
       socket.off("day_phase_changed", handleDayPhaseChanged)
       detachNightTurnListeners()

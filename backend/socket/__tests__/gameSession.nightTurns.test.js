@@ -3053,3 +3053,288 @@ test('AC-06(F-26a): 같은 역할의 사건이라도 밤이 다르면 사건 ID�
     assert.notEqual(firstKillPayload.eventId, secondConfirmPayload.eventId)
     assert.equal(firstKillPayload.nightDayIndex < secondConfirmPayload.nightDayIndex, true)
 })
+
+// ---------------------------------------------------------------------------
+// F-26b · 밤 성공 사건 소비 완료 ACK(acknowledge_night_action_success)
+//
+// 등록된 실제 리스너(wireSession → registerGameHandlers)를 통해서만 요청한다 — 서버 핸들러를
+// 직접 호출하면 등록부 배선이 빠져도 시험이 통과하므로 그 경로를 대체하지 않는다.
+// ---------------------------------------------------------------------------
+
+/** 등록된 acknowledge_night_action_success 리스너로 완료 요청을 보내고 ack 응답을 돌려준다. */
+function ackSuccess(sockets, uuid, payload) {
+    const { callback, getResponse } = countingCallback()
+    sockets.get(uuid).trigger('acknowledge_night_action_success', payload, callback)
+    return getResponse()
+}
+
+test('AC-05(F-26b): 완료 ACK은 서버 기록을 정확히 한 번 바꾸고, 같은 요청의 재전달은 duplicate:true다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac05-basic', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    assert.ok(killEntry, '전제: 광대가 KILL 성공 사건을 받아야 한다')
+    const payload = {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }
+
+    const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+    assert.equal(stored?.byEvent.get(payload.eventId)?.get(jokerUuid)?.completed, false,
+        '전제: 완료 전 기록은 completed:false다')
+
+    const first = ackSuccess(sockets, jokerUuid, payload)
+    assert.deepEqual(first, { ok: true, duplicate: false })
+    assert.equal(stored.byEvent.get(payload.eventId).get(jokerUuid).completed, true)
+
+    const second = ackSuccess(sockets, jokerUuid, payload)
+    assert.deepEqual(second, { ok: true, duplicate: true })
+    // 완료 상태는 여전히 true 하나뿐이다 — 중복 요청이 완료 변경을 반복하지 않는다.
+    assert.equal(stored.byEvent.get(payload.eventId).get(jokerUuid).completed, true)
+})
+
+test('AC-03/AC-05(F-26b): 광대가 의사를 공격하고 의사가 자신을 치료하면 KILL·HEAL 두 사건이 각각 한 번씩만 완료된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac03-selfheal', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, doctorUuid)
+    submit(doctorUuid, doctorUuid) // 자기 치료
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const jokerEvents = sockets.get(jokerUuid).emitted.filter((e) => e.event === 'night_action_success')
+    assert.equal(jokerEvents.length, 1)
+    // 의사도 광대의 공격 TARGET이라 KILL 사건 하나를 함께 받는다(F-26a AC-04) — 자기 치료
+    // 단언은 HEAL 사건 하나로만 좁혀서 본다.
+    const doctorHealEvents = sockets.get(doctorUuid).emitted
+        .filter((e) => e.event === 'night_action_success' && e.payload.type === 'HEAL')
+    assert.equal(doctorHealEvents.length, 1, '자기 치료는 한 소켓에 정확히 한 번만 전달돼야 한다(USER·TARGET 합쳐진 recipient)')
+    assert.deepEqual([...doctorHealEvents[0].payload.perspectives].sort(), ['TARGET', 'USER'])
+    assert.notEqual(jokerEvents[0].payload.eventId, doctorHealEvents[0].payload.eventId, 'KILL과 HEAL은 서로 다른 사건이어야 한다')
+
+    const killPayload = {
+        gameId: session.id, nightDayIndex: jokerEvents[0].payload.nightDayIndex, eventId: jokerEvents[0].payload.eventId,
+    }
+    const healPayload = {
+        gameId: session.id, nightDayIndex: doctorHealEvents[0].payload.nightDayIndex, eventId: doctorHealEvents[0].payload.eventId,
+    }
+
+    assert.deepEqual(ackSuccess(sockets, jokerUuid, killPayload), { ok: true, duplicate: false })
+    assert.deepEqual(ackSuccess(sockets, doctorUuid, healPayload), { ok: true, duplicate: false })
+    // HEAL은 관점 수(USER·TARGET)만큼 중복 완료되지 않는다 — 같은 요청의 재전달만 duplicate다.
+    assert.deepEqual(ackSuccess(sockets, doctorUuid, healPayload), { ok: true, duplicate: true })
+})
+
+test('AC-05(F-26b): 형태 오류·비수신자·변조된 사건 ID·다른 게임·옛 소켓의 완료 요청은 전부 거부되고 완료 상태를 바꾸지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac05-reject', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const payload = {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }
+
+    // 형태 오류.
+    assert.equal(ackSuccess(sockets, jokerUuid, {}).code, 'INVALID_PAYLOAD')
+    assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, nightDayIndex: -1 }).code, 'INVALID_PAYLOAD')
+    assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, eventId: '' }).code, 'INVALID_PAYLOAD')
+
+    // 이 사건을 전달받지 않은 경비원(비수신자) — citizenUuid는 이 KILL의 TARGET이라 정당한
+    // 수신자이므로(F-26a AC-04) 비수신자 사례로 쓸 수 없다.
+    assert.equal(ackSuccess(sockets, guardUuid, payload).code, 'NOT_ELIGIBLE')
+
+    // 변조된 사건 ID.
+    assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, eventId: 'tampered-event-id' }).code, 'STALE_EVENT')
+
+    // 다른 게임.
+    assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, gameId: 'game-other' }).code, 'NOT_ELIGIBLE')
+
+    // 옛 소켓 — 재연결로 같은 id의 **다른 객체**가 등록되면, 옛 객체도 이 사건을 실제로 받지
+    // 않은 새 객체도 완료할 수 없다(원래 전달받은 바로 그 소켓 객체만 완료할 수 있다).
+    const reconnected = createFakeSocket(jokerUuid, { id: sockets.get(jokerUuid).id })
+    io.sockets.sockets.set(reconnected.id, reconnected)
+    gameSessionSocketLayer.registerGameHandlers(io, reconnected, jokerUuid)
+    assert.equal(ackSuccess(sockets, jokerUuid, payload).code, 'NOT_ELIGIBLE', '옛 소켓 객체의 완료 요청이 통과했다')
+    const reconnectedAck = countingCallback()
+    reconnected.trigger('acknowledge_night_action_success', payload, reconnectedAck.callback)
+    assert.equal(reconnectedAck.getResponse().code, 'NOT_ELIGIBLE', '이 사건을 실제로 받지 않은 새 연결이 완료를 통과했다')
+
+    // 위 모든 거부는 완료 기록을 바꾸지 않았다 — 실제 원래 수신자가 있는 세션의 기록은 여전히
+    // completed:false다.
+    const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+    assert.equal(stored.byEvent.get(payload.eventId).get(jokerUuid).completed, false)
+})
+
+test('AC-05(F-26b) 전이: 다음 밤이 시작되면 이전 밤의 완료 수신 보관함이 교체되고 옛 요청은 STALE_EVENT로 거부된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac05-nextnight', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const firstClock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const firstPayload = {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }
+    gameSessionSocketLayer.__testables.stopDayPhaseTimer(session.id)
+
+    // 다음 밤으로 강제 진입한다(F-26a AC-06 시험과 같은 관례 — 네 역할 전원 제출이 이미 자동
+    // 최종화를 돌려 dayIndex를 올려 놓았다).
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    assert.notEqual(session.dayIndex, firstPayload.nightDayIndex, '전제: 자동 최종화가 다음 밤으로 넘어가야 한다')
+
+    const secondClock = createManualClock()
+    startNightTurnSequence(io, session, { ...secondClock, randomFn: () => 0.5 })
+
+    const ack = ackSuccess(sockets, jokerUuid, firstPayload)
+    assert.equal(ack.code, 'STALE_EVENT', '다음 밤 시작 뒤에도 이전 밤 사건을 완료할 수 있었다')
+})
+
+test('AC-05(F-26b): finalizeGameSessionEnd는 완료 수신 보관함을 지우고, 그 뒤의 완료 요청은 STALE_EVENT다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac05-finalize', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const payload = {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }
+    assert.ok(gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session),
+        '전제: 완료 수신 보관함이 있어야 한다')
+
+    gameSessionSocketLayer.__testables.finalizeGameSessionEnd(
+        io, session, 'TEST_TERMINATION', null, [jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid],
+    )
+    assert.equal(gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session), null,
+        'finalizeGameSessionEnd가 완료 수신 보관함을 지우지 않았다')
+
+    const ack = ackSuccess(sockets, jokerUuid, payload)
+    assert.equal(ack.code, 'STALE_EVENT')
+})
+
+// frontend/src/domains/game/ingame/store/ingameStore.js::completeNightSuccess가 실제로 emit하는
+// payload 모양은 정확히 {gameId, nightDayIndex, eventId}다(같은 파일의 socket.emit 호출부 참고).
+// 아래 두 시험은 그 계약을 서버 쪽에서 지킨다 — 여분 필드 거부와 콜백 생략 허용은 프런트
+// 시험(frontend/.../__tests__/nightPrivateResult.test.js)이 검사하는 emit 쪽 모양과 항상 같은
+// 세 필드를 가리켜야 한다.
+
+test('AC-05(F-26b): 콜백이 없어도 검증·최초 완료 기록은 그대로 수행되고, 응답만 생략된다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac05-nocallback', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const payload = {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }
+
+    // 콜백을 아예 넘기지 않는다 — 계획 계약(U-01)은 "callback은 선택적이며 함수인 경우만
+    // 응답한다"다. 검증·최초 완료 기록은 응답 여부와 무관하게 그대로 일어나야 한다.
+    assert.doesNotThrow(() => sockets.get(jokerUuid).trigger('acknowledge_night_action_success', payload))
+
+    const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+    assert.equal(stored.byEvent.get(payload.eventId).get(jokerUuid).completed, true,
+        '콜백 없는 요청도 최초 완료를 기록해야 한다')
+
+    // 같은 사건의 재요청(이번엔 콜백 있음)은 이미 기록된 완료를 duplicate:true로 돌려줘야 한다 —
+    // 콜백 생략이 완료 판정 자체를 건너뛴 것이 아님을 확인한다.
+    assert.deepEqual(ackSuccess(sockets, jokerUuid, payload), { ok: true, duplicate: true })
+})
+
+test('AC-05(F-26b): gameId·nightDayIndex·eventId 외의 여분 필드가 있으면 INVALID_PAYLOAD다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac05-extrakeys', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const payload = {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }
+
+    // uuid·membershipId처럼 이 요청이 절대 싣지 않는 필드가 하나라도 섞이면 거부한다.
+    assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, uuid: jokerUuid }).code, 'INVALID_PAYLOAD')
+    assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, membershipId: 'mem-x' }).code, 'INVALID_PAYLOAD')
+    assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, extra: true }).code, 'INVALID_PAYLOAD')
+
+    // 여분 필드 없는 정상 요청은 그대로 통과한다 — 위 거부가 필드 이름이 아니라 세 필드
+    // 자체를 막은 것이 아님을 함께 확인한다.
+    assert.deepEqual(ackSuccess(sockets, jokerUuid, payload), { ok: true, duplicate: false })
+})
+
+test('AC-05(F-26b) 전이: DAY n+1로 넘어간 뒤에도 그 밤의 사건을 완료할 수 있고, 두 밤을 더 지난 뒤의 완료는 STALE_EVENT다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f26b-ac05-daywindow', dayIndex: 2 })
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    submit(jokerUuid, citizenUuid)
+    submit(doctorUuid, null)
+    submit(guardUuid, null)
+    submit(witchHunterUuid, null)
+
+    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+    const payload = {
+        gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
+    }
+    assert.equal(session.phase, 'DAY', '전제: 자동 최종화가 다음 낮으로 넘어가야 한다')
+    assert.equal(session.dayIndex, payload.nightDayIndex + 1, '전제: 낮 번호가 그 밤의 다음 번호여야 한다')
+
+    // 밤이 끝나 DAY n+1로 넘어간 채로도(보관함은 아직 그 밤의 것 그대로) 완료할 수 있다.
+    assert.deepEqual(ackSuccess(sockets, jokerUuid, payload), { ok: true, duplicate: false })
+
+    // 이제 보관함은 건드리지 않은 채로 session만 두 밤 더 지난 것처럼 되돌린다 — 보관함
+    // 존재 여부만으로는 걸리지 않는, phase/dayIndex 수명 검사 자체를 겨냥한 시험이다(같은
+    // eventId를 다시 쓴다 — 이미 완료된 기록이라도 수명 검사가 store 조회보다 먼저 막아야 한다).
+    session.phase = 'NIGHT'
+    session.dayIndex = payload.nightDayIndex + 2
+
+    const staleAck = ackSuccess(sockets, jokerUuid, payload)
+    assert.equal(staleAck.code, 'STALE_EVENT', '수명 밖(두 밤 뒤)의 완료 요청이 통과했다')
+})

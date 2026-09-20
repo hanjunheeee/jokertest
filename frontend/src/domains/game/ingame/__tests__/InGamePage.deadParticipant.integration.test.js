@@ -759,7 +759,8 @@ const BACKEND_SOCKET_ON_EVENTS_LOCK = [
   "join_matchmaking", "join_public_room", "join_room_by_code", "kick_room_player",
   "leave_matchmaking", "leave_room", "set_ready", "start_game", "update_room_settings",
   // 진행 중 게임(backend/socket/gameSession.js)
-  "acknowledge_role_reveal", "cast_day_vote", "cast_tribunal_vote", "get_kick_result",
+  "acknowledge_night_action_success", "acknowledge_role_reveal", "cast_day_vote",
+  "cast_tribunal_vote", "get_kick_result",
   "get_session_snapshot", "kick_game_player", "leave_game_session", "ready_for_day_vote",
   "resolve_day_vote", "resolve_night", "resolve_tribunal_vote", "submit_game_chat_message",
   "submit_joker_chat_message", "submit_night_action",
@@ -1010,10 +1011,10 @@ const SERVER_INDIRECT_EMIT_SITES_LOCK = [
   "backend/socket/channelMembership.js:275 event",
   // 게임 방송 경계·밤 턴·낮 페이즈 래퍼 — 전부 호출 지점의 리터럴을 받아 넘긴다.
   "backend/socket/gameSession.js:477 event",
-  "backend/socket/gameSession.js:1108 event",
-  "backend/socket/gameSession.js:1681 event",
+  "backend/socket/gameSession.js:1126 event",
+  "backend/socket/gameSession.js:1746 event",
   // 게임 채팅 — CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다(아래에서 그 표를 확인한다).
-  "backend/socket/gameSession.js:2955 eventName",
+  "backend/socket/gameSession.js:3020 eventName",
   // 개인 전송기 — emitToUser(uuid, event, payload)의 event 파라미터.
   "backend/socket/socket.js:27 event",
 ]
@@ -1366,7 +1367,8 @@ test("F-23(SPLIT-1/AC-02): 비로그인 /ingame 직접 진입은 로그인으로
  * 어떤 이름으로도 없다**. 항목이 늘면 이 단언이 깨진다.
  */
 const CLIENT_EMIT_EVENTS_LOCK = [
-  "accept_game_invite", "acknowledge_role_reveal", "cast_day_vote", "cast_tribunal_vote",
+  "accept_game_invite", "acknowledge_night_action_success", "acknowledge_role_reveal",
+  "cast_day_vote", "cast_tribunal_vote",
   "create_room", "delete_room", "get_current_room",
   // F-23(AC-02 보수): 초대 ACK 유실 재조회. useFriendSocketEvents.js:239의 emitWithAck 호출이
   // **여러 줄**이라 줄 단위 수집기가 통째로 놓치고 있던 액션이다(그래서 예전 잠금에 없었다).
@@ -1387,7 +1389,8 @@ const CLIENT_SUBSCRIBE_EVENTS_LOCK = [
   "friend_relation_invalidated", "friend_request_accepted", "friend_request_declined",
   "friend_request_received", "friend_status_change", "game_ended", "game_invite_received",
   "game_invite_updated", "game_kicked", "game_phase_changed", "game_started", "host_changed",
-  "joker_chat_message", "night_action_result", "night_actions_resolved", "night_result_applied",
+  "joker_chat_message", "night_action_result", "night_action_success", "night_actions_resolved",
+  "night_result_applied",
   "night_turn_ended", "night_turn_started", "notification_created", "player_eliminated",
   "player_joined_room", "player_left_room", "player_ready_changed", "public_rooms_updated",
   "room_deleted", "room_joined", "room_join_failed", "room_kicked", "room_settings_updated",
@@ -1524,7 +1527,8 @@ const INGAME_MOUNT_LOCK = [
  * 기록**이라 관전 자격과는 무관하다.
  */
 const INGAME_STORE_DATA_KEYS = [
-  "error", "gameId", "hostUuid", "nightPrivateResult", "snapshotResultOwner", "snapshotSeq", "state",
+  "error", "gameId", "hostUuid", "nightPrivateResult", "nightSuccessQueue", "snapshotResultOwner",
+  "snapshotSeq", "state",
 ]
 const MATCHING_STORE_DATA_KEYS = [
   "accessType", "bootEpoch", "canStart", "hostUuid", "isInRoom", "isSearching", "players",
@@ -1600,11 +1604,17 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     "applyNightTurnEnded", "applyNightTurnStarted", "applyParticipationChanged",
     "applyPhaseChanged", "applyPlayerEliminated", "applySelfProgress", "applySessionSnapshot",
     "applyTribunalResolved", "bootstrapSessionSnapshot", "clearGame", "clearNightPrivateResult",
+    // F-26b(AC-05) completeNightSuccess: 밤 성공 사건 대기 큐 소비 완료를 서버로 정확히 한 번
+    // 전송한다. 관전 진입·전환이 아니며 phase·roster·참여는 건드리지 않는다.
+    "completeNightSuccess",
     // F-23(SPLIT-1) invalidateUnconfirmedTerminalResult: 신원·연결이 바뀐 뒤 현재 신원의
     // 스냅샷을 끝내 받지 못했을 때, 이전 신원이 받아 둔 잔존 종료 상태에서 **결과 이동
     // 근거(winResult)만** 걷어낸다. 관전 진입·전환이 아니며 phase·roster·참여는 건드리지
     // 않는다 — 현재 연결의 정상 스냅샷이 ENDED를 다시 실으면 그대로 복원된다.
     "invalidateUnconfirmedTerminalResult",
+    // F-26b(AC-01) receiveNightSuccess: 서버가 개별 전송한 역할별 성공 사건을 대기 큐에 수락한다.
+    // 관전 진입·전환이 아니며 phase·roster·참여는 건드리지 않는다.
+    "receiveNightSuccess",
     "setGameError", "setGamePayload", "setNightPrivateResult",
   ], "인게임 store의 액션 목록이 바뀌었다")
   assert.deepEqual(matchingShape.actions, [

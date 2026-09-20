@@ -1,6 +1,10 @@
 // 파일 역할: ingameStore.js - 전역 상태 store입니다.
 import { create } from "zustand"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
+// F-26b: 밤 성공 사건 기록의 인증 전이(A→B→A 포함) 동기 취소 전용이다 — 계정 축 자체는 여전히
+// 호출부(수신 훅)가 receiptScope로 넘긴다(다른 receipt-scope 값과 같은 분담). 상대 경로로 두는
+// 이유는 이 store가 node:test에서 플레인 Node로 로드되는 대상이기 때문이다(useGameSessionSocketEvents.js와 동일).
+import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { applyTribunalResolvedPure } from "./applyTribunalResolved.js"
 import { applyPlayerEliminatedPure } from "./applyPlayerEliminated.js"
 import {
@@ -58,6 +62,35 @@ function readSelfMembershipId(state) {
   const me = state?.self?.uuid ?? null
   if (!me) return null
   return (state?.players ?? []).find((player) => player?.uuid === me)?.membershipId ?? null
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// F-26b: **밤 성공 사건 수락·완료 기록**
+//
+// 아래 세 값은 이 파일 뒤쪽(연결 축 관측·식별 축 관측)이 만드는 취소 신호를 즉시 반영해야
+// 하므로, 그 관측들보다 먼저 선언한다 — rebindConnectionScope의 모듈 초기화 호출(파일 하단)이
+// cancelNightSuccessRecords를 곧바로 참조하기 때문이다.
+//
+// nightSuccessRecords는 React 상태가 아니라 이 store가 소유한 모듈 부기다(terminalResultScope와
+// 같은 성질) — eventId → { scope, entry, completed, ackStatus }. scope는 수락 당시 캡처한
+// receiptScope(readInGameReceiptScope와 같은 모양)이고, completed는 completeNightSuccess가
+// 정확히 한 번만 true로 바꾼다. useInGameStore가 아직 만들어지기 전(모듈 초기화 구간)에는
+// nightSuccessStoreApi가 null이라 취소가 조용히 no-op한다.
+const EMPTY_NIGHT_SUCCESS_QUEUE = Object.freeze([])
+const nightSuccessRecords = new Map()
+let nightSuccessStoreApi = null
+
+/**
+ * 밤 성공 사건 기록을 동기적으로 전부 취소한다. 연결 교체·재연결·소속 전이·인증 전이(로그인·
+ * 로그아웃, A→B→A 포함) 축 어디서 호출해도 같은 결과다 — 이 모든 축의 전이 하나하나가 "이전
+ * 화면이 받아 둔 것"을 지금 화면의 사실이 아니게 만들기 때문이다.
+ */
+function cancelNightSuccessRecords() {
+  if (nightSuccessRecords.size === 0) return
+  nightSuccessRecords.clear()
+  if (!nightSuccessStoreApi) return
+  nightSuccessStoreApi.setState((current) =>
+    (current.nightSuccessQueue.length === 0 ? current : { nightSuccessQueue: EMPTY_NIGHT_SUCCESS_QUEUE }))
 }
 
 let membershipEpoch = 0
@@ -125,10 +158,26 @@ function rebindConnectionScope() {
   observedSocket = next
   // 객체가 바뀌면 연결 수명도 새로 열린다 — 옛 연결에서 받은 증거는 여기서 끊긴다.
   socketEpoch += 1
+  // F-26b: 연결 객체가 교체될 때마다 밤 성공 사건 기록도 함께 취소한다 — 이전 연결에서 수락한
+  // 사건은 새 연결의 화면이 완료할 수 없다.
+  cancelNightSuccessRecords()
 }
 
 subscribeSocket(rebindConnectionScope)
 rebindConnectionScope()
+
+/**
+ * F-26b(AC-02): **같은 소켓 객체의 실제 재연결**을 호출부(연결을 실제로 관측하는 수신 훅)가
+ * 알려온다. rebindConnectionScope는 객체 참조 비교만 하므로, 재연결로 id만 바뀌고 객체는
+ * 그대로인 전이는 위 구독으로 잡히지 않는다 — 이 store가 소켓에 직접 리스너를 걸지 않는다는
+ * 원칙(바로 위 주석)을 지키면서 그 전이를 반영하려면, 이미 connect 사건을 구독해야 하는
+ * 다른 모듈(useGameSessionSocketEvents의 connectSeq 갱신 effect)이 이 함수를 함께 불러야 한다.
+ * 그래서 이 store 자신의 리스너 집합은 하나도 늘지 않는다.
+ */
+export function noteInGameConnectionRebound() {
+  socketEpoch += 1
+  cancelNightSuccessRecords()
+}
 
 /**
  * 요청을 **보내는 그 순간**의 범위를 한 벌로 캡처한다.
@@ -414,6 +463,63 @@ export function isCurrentGameKickEvent(store, payload) {
   return sameId(payload.targetMembershipId, seated.membershipId)
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// F-26b: **밤 성공 사건 payload 검증·큐 항목 조립**
+// ───────────────────────────────────────────────────────────────────────────
+
+const NIGHT_SUCCESS_TYPES = new Set(["KILL", "HEAL", "INVESTIGATE", "CONFIRM"])
+const NIGHT_SUCCESS_PERSPECTIVES = new Set(["USER", "TARGET"])
+
+/** night_action_success payload의 형태 검사(서버 값이라도 신뢰하지 않는 외부 입력으로 다룬다). */
+function isValidNightSuccessPayload(payload) {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return false
+  if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return false
+  if (typeof payload.eventId !== "string" || payload.eventId.length === 0) return false
+  if (!Number.isInteger(payload.nightDayIndex) || payload.nightDayIndex < 0) return false
+  if (!NIGHT_SUCCESS_TYPES.has(payload.type)) return false
+  if (!Array.isArray(payload.perspectives) || payload.perspectives.length === 0) return false
+  const seenPerspectives = new Set()
+  for (const perspective of payload.perspectives) {
+    if (!NIGHT_SUCCESS_PERSPECTIVES.has(perspective)) return false
+    if (seenPerspectives.has(perspective)) return false
+    seenPerspectives.add(perspective)
+  }
+  if (payload.perspectives.includes("USER")) {
+    if (typeof payload.targetId !== "string" || payload.targetId.length === 0) return false
+  }
+  return true
+}
+
+/** 허용 필드만 명시적으로 복사한다 — TARGET 전용 payload는 targetId·여분 필드를 담지 않는다. */
+function buildNightSuccessQueueEntry(payload) {
+  const entry = {
+    eventId: payload.eventId,
+    gameId: payload.gameId,
+    nightDayIndex: payload.nightDayIndex,
+    type: payload.type,
+    perspectives: [...payload.perspectives],
+  }
+  if (payload.perspectives.includes("USER")) entry.targetId = payload.targetId
+  return Object.freeze(entry)
+}
+
+/** 밤 성공 사건 큐·기록을 함께 비우는 패치를 만든다(모듈 맵의 부수 정리를 포함한다). */
+function clearNightSuccessQueue() {
+  nightSuccessRecords.clear()
+  return { nightSuccessQueue: EMPTY_NIGHT_SUCCESS_QUEUE }
+}
+
+/**
+ * "밤이 아니었다가 밤이 됐다"일 때만 밤 성공 사건 큐·기록을 비우는 패치를 돌려준다.
+ * clearNightPrivateResultOnNightEntry와 같은 재진입 판정이지만, applySessionSnapshot처럼 결과
+ * phase가 다양한 경로에서는 beforeState·afterState를 함께 봐야 한다.
+ */
+function clearNightSuccessOnNightEntry(beforeState, afterState) {
+  if (afterState?.phase !== "NIGHT") return {}
+  if (beforeState?.phase === "NIGHT") return {}
+  return clearNightSuccessQueue()
+}
+
 /**
  * 서버 인게임 상태를 보관하는 클라이언트 store.
  * 도메인 판정은 서버 game-core가 담당하고, 프론트는 동기화된 상태를 렌더링만 합니다.
@@ -450,6 +556,12 @@ export const useInGameStore = create((set) => ({
   // 증거 없는 직접 적용(receipt 없이 부른 applySessionSnapshot)은 상태 호환성만 유지하고
   // 연출 증거는 만들지 않는다(null).
   snapshotResultOwner: null,
+
+  // F-26b(AC-01/AC-04): 서버가 역할별로 개별 전송한 성공 사건(night_action_success)의 수락
+  // 대기 큐(FIFO). 연출 소비처는 이 배열을 순서대로 소비하고 completeNightSuccess로 완료한다.
+  // 빈 상태는 항상 같은 공용 불변 배열이다(참조 안정성). 밤 재진입·gameId 변경·clearGame에서만
+  // 비워진다(nightPrivateResult와 같은 수명 규칙 — clearNightSuccessQueue/OnNightEntry 참고).
+  nightSuccessQueue: EMPTY_NIGHT_SUCCESS_QUEUE,
 
   // 이 밤에 나에게만 온 개인 결과(night_action_result). state 안이 아니라 최상위에 두는 이유는
   // canonical 세션 상태가 아니기 때문이다 — 서버 스냅샷·방송이 실어 나르는 값이 아니라 이
@@ -516,7 +628,7 @@ export const useInGameStore = create((set) => ({
         // 개인 결과는 gameId가 실제로 바뀔 때만 비운다 — 이전 게임의 결과가 새 세션으로 넘어오는
         // 것은 막아야 하지만, 같은 게임에 대한 재적용(중복 game_started 등)까지 비우면 아직
         // 확인하지 않은 이번 밤의 결과가 조용히 사라진다("비워지는 시점은 정확히 셋" 계약).
-        ...(nextGameId !== current.gameId ? CLEARED_NIGHT_PRIVATE_RESULT : {}),
+        ...(nextGameId !== current.gameId ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearNightSuccessQueue() } : {}),
       }
     }),
 
@@ -553,7 +665,7 @@ export const useInGameStore = create((set) => ({
         },
         // 밤으로 들어가는 경로에서만 개인 결과를 비운다(ROLE_REVEAL에서는 이미 비어 있지만,
         // "NIGHT에 들어갈 때 비운다"는 규칙을 이 경로에도 똑같이 적용해 예외를 만들지 않는다).
-        ...(isLegacyFirstNight ? CLEARED_NIGHT_PRIVATE_RESULT : {}),
+        ...(isLegacyFirstNight ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearNightSuccessQueue() } : {}),
       }
     }),
 
@@ -878,8 +990,9 @@ export const useInGameStore = create((set) => ({
         // night_turn_started가 도착하기 전까지 role/deadline은 비어 있어야 한다.
         return {
           state: { ...current.state, phase: "NIGHT", dayPhase: null, dayVoteResolution, ...CLEARED_NIGHT_TURN },
-          // NIGHT 재진입 — 지난 밤의 개인 결과는 이 밤으로 넘어오지 않는다.
+          // NIGHT 재진입 — 지난 밤의 개인 결과·성공 사건 큐는 이 밤으로 넘어오지 않는다.
           ...CLEARED_NIGHT_PRIVATE_RESULT,
+          ...clearNightSuccessQueue(),
         }
       }
       return current
@@ -897,7 +1010,11 @@ export const useInGameStore = create((set) => ({
       const patch = applyTribunalResolvedPure(current, payload)
       if (patch === current) return current
       if (patch.state?.phase !== "NIGHT") return patch
-      return { ...patch, ...clearNightPrivateResultOnNightEntry(current) }
+      return {
+        ...patch,
+        ...clearNightPrivateResultOnNightEntry(current),
+        ...clearNightSuccessOnNightEntry(current.state, patch.state),
+      }
     }),
 
   // get_session_snapshot 재접속 응답을 반영한다. 검증·병합은 순수 함수 applySessionSnapshotPure에
@@ -928,6 +1045,9 @@ export const useInGameStore = create((set) => ({
       adoptIdentityScope(current.gameId ?? null, patch.state)
       return {
         ...patch,
+        // F-26b: 같은 NIGHT snapshot·역할 턴 갱신은 재진입이 아니다 — 복원 결과가 실제로
+        // "밤이 아니었다가 밤이 됐다"일 때만 큐·기록을 비운다.
+        ...clearNightSuccessOnNightEntry(current.state, patch.state),
         snapshotSeq,
         snapshotResultOwner: buildSnapshotResultOwner(receiptContext, current.gameId ?? null, patch.state, snapshotSeq),
       }
@@ -953,14 +1073,16 @@ export const useInGameStore = create((set) => ({
       if (!patch) return current
       const snapshotSeq = current.snapshotSeq + 1
       adoptIdentityScope(patch.gameId ?? null, patch.state)
-      // 빈 store에 gameId가 처음 붙는 경로다(gameId 변경) — 개인 결과도 이 세션 기준으로
-      // 새로 시작한다. 어차피 비어 있지만, gameId가 바뀌는 모든 경로가 같은 규칙을 따르게 한다.
+      // 빈 store에 gameId가 처음 붙는 경로다(gameId 변경) — 개인 결과·성공 사건 큐도 이 세션
+      // 기준으로 새로 시작한다. 어차피 비어 있지만, gameId가 바뀌는 모든 경로가 같은 규칙을
+      // 따르게 한다.
       return {
         ...patch,
         error: null,
         snapshotSeq,
         snapshotResultOwner: buildSnapshotResultOwner(receiptContext, patch.gameId ?? null, patch.state, snapshotSeq),
         ...CLEARED_NIGHT_PRIVATE_RESULT,
+        ...clearNightSuccessQueue(),
       }
     }),
 
@@ -1031,6 +1153,92 @@ export const useInGameStore = create((set) => ({
   clearNightPrivateResult: () =>
     set((current) => (current.nightPrivateResult === null ? current : CLEARED_NIGHT_PRIVATE_RESULT)),
 
+  /**
+   * F-26b(AC-01/AC-02/AC-03): night_action_success 수신을 반영한다. 호출부
+   * (useGameSessionSocketEvents)가 수신 시점의 receiptScope를 함께 넘긴다 — 등록 범위 가드를
+   * 통과한 사건이라도, 커밋하는 그 순간의 게임·소속·연결·본인 신원을 여기서 다시 확인한다
+   * (commitWithReceipt과 같은 이유이지만, 이 값은 winResult 계열의 계정 축 규칙과 달리 "지금
+   * 로그인한 계정 = 이 판의 본인"까지 요구한다 — 성공 사건은 항상 누군가의 행동 결과다).
+   *
+   * eventId 하나가 사건 중복 판정의 단위다. 자기 치료처럼 USER·TARGET 두 관점을 가진 사건도
+   * 서버(F-26a)가 이미 한 payload로 합쳐 보내므로, 여기서는 그 payload를 그대로 한 번만
+   * 큐에 넣는다 — 재전달은 참조 보존 no-op이다.
+   */
+  receiveNightSuccess: (payload, receiptScope = null) =>
+    set((current) => {
+      if (!isValidNightSuccessPayload(payload)) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (current.state.phase !== "NIGHT") return current
+      if (payload.nightDayIndex !== current.state.dayIndex) return current
+      if (receiptScope === null || typeof receiptScope !== "object") return current
+      const selfUuid = current.state.self?.uuid ?? null
+      if (receiptScope.accountId === null || receiptScope.accountId !== selfUuid) return current
+      if (!isReceiptScopeCurrent(receiptScope, current)) return current
+      if (nightSuccessRecords.has(payload.eventId)) return current
+
+      const entry = buildNightSuccessQueueEntry(payload)
+      nightSuccessRecords.set(payload.eventId, { scope: receiptScope, entry, completed: false, ackStatus: "pending" })
+      return { nightSuccessQueue: [...current.nightSuccessQueue, entry] }
+    }),
+
+  /**
+   * F-26b(AC-05): 대기 큐 소비 완료를 서버로 **정확히 한 번** 전송한다.
+   *
+   * 큐에 없는 ID·범위 불일치(다른 계정·다른 소속·다른 연결로 수락된 사건)·이미 완료된 ID는
+   * 전부 {status:"noop"}이고 상태·전송 어느 쪽도 바꾸지 않는다. 유효한 완료는 큐 항목 제거와
+   * 완료 표식 기록을 같은 set() 안에서 원자적으로 남긴 뒤, 그 커밋 밖에서 소켓 emit을 딱 한
+   * 번 시도한다 — 이후 같은 eventId의 반복 호출은 record.completed에서 즉시 막힌다.
+   *
+   * 반환하는 status는 로컬 전송 시도의 결과일 뿐 서버 수신 보장이 아니다 — 실제 서버 응답은
+   * ackStatus(pending→accepted/rejected)로 record에 늦게 반영된다.
+   */
+  completeNightSuccess: (eventId, receiptScope = null) => {
+    const record = nightSuccessRecords.get(eventId)
+    if (!record || record.completed) return { status: "noop" }
+    if (receiptScope === null || typeof receiptScope !== "object") return { status: "noop" }
+    if (!isSameInGameReceiptScope(record.scope, receiptScope)) return { status: "noop" }
+
+    let removed = false
+    set((current) => {
+      if (!isReceiptScopeCurrent(receiptScope, current)) return current
+      const filtered = current.nightSuccessQueue.filter((item) => item.eventId !== eventId)
+      if (filtered.length === current.nightSuccessQueue.length) return current
+      removed = true
+      // F-26b(AC-04): 빈 상태는 항상 같은 공용 불변 배열이어야 한다(참조 안정성 계약) — 마지막
+      // 항목을 소비했을 때 filter()가 새로 만든 빈 배열을 그대로 저장하면, 이후 selector가
+      // 돌려주는 참조가 다른 빈 상태(EMPTY_NIGHT_SUCCESS_QUEUE)와 달라져 버린다.
+      return { nightSuccessQueue: filtered.length === 0 ? EMPTY_NIGHT_SUCCESS_QUEUE : filtered }
+    })
+    if (!removed) return { status: "noop" }
+    // emit 직전에 범위가 취소됐으면(위 set() 도중의 재확인과 별개로, 이론상의 재진입 대비)
+    // 전송하지 않는다 — 기록 자체가 사라졌다면 더 이상 이 store의 것이 아니다.
+    if (nightSuccessRecords.get(eventId) !== record) return { status: "noop" }
+
+    record.completed = true
+
+    const socket = getSocket()
+    if (!socket || typeof socket.emit !== "function") {
+      record.ackStatus = "send_failed"
+      return { status: "send_failed" }
+    }
+    try {
+      socket.emit(
+        "acknowledge_night_action_success",
+        { gameId: record.entry.gameId, nightDayIndex: record.entry.nightDayIndex, eventId: record.entry.eventId },
+        (response) => {
+          // 늦은 callback은 같은 사건·같은 소유 범위의 기록이 아직 남아 있을 때만 갱신한다.
+          if (nightSuccessRecords.get(eventId) !== record) return
+          record.ackStatus = response && typeof response === "object" && response.ok === true ? "accepted" : "rejected"
+        },
+      )
+    } catch (err) {
+      record.ackStatus = "send_failed"
+      return { status: "send_failed" }
+    }
+    return { status: "sent" }
+  },
+
   setGameError: (error) => set({ error }),
 
   clearGame: () =>
@@ -1040,8 +1248,14 @@ export const useInGameStore = create((set) => ({
       // 화면에서 다시 연출이 된다. 단조 세대는 여기서도 되돌리지 않는다(아래 구독자 참고).
       snapshotResultOwner: null,
       ...CLEARED_NIGHT_PRIVATE_RESULT,
+      // F-26b: 큐와 수락·완료 기록을 함께 비운다 — 세션 정리는 밤 성공 사건 수명의 끝이다.
+      ...clearNightSuccessQueue(),
     }),
 }))
+
+// F-26b: cancelNightSuccessRecords가 모듈 초기화 구간(연결 축 관측의 첫 rebindConnectionScope
+// 호출 등) 이후에도 안전하게 store를 갱신할 수 있도록, store 생성이 끝난 지금 참조를 넘긴다.
+nightSuccessStoreApi = useInGameStore
 
 // 최초 관측 기준. 이후로는 **실제 전이만** 세대를 올린다(초기값 자체는 전이가 아니다).
 adoptIdentityScope(null, null)
@@ -1052,7 +1266,13 @@ adoptIdentityScope(null, null)
  * 남는다(값 비교만으로는 구별할 수 없는 바로 그 구간이다).
  */
 useInGameStore.subscribe((next) => {
+  const membershipEpochBeforeAdopt = membershipEpoch
   adoptIdentityScope(next.gameId ?? null, next.state ?? null)
+  // F-26b: 소속 전이(같은 판 안의 이탈→재입장 A→B→A 포함)마다 밤 성공 사건 기록을 동기
+  // 취소한다 — 커밋이 이미 끝난 뒤라 여기서의 재귀 setState는 안전하다(zustand의 표준
+  // "상태 변화에 대한 부수 효과" 패턴). 초기 관측(module 로드 시 adoptIdentityScope(null,null))은
+  // 이 구독이 등록되기 전이라 여기 걸리지 않는다.
+  if (membershipEpoch !== membershipEpochBeforeAdopt) cancelNightSuccessRecords()
 
   // F-23(SPLIT-1): 종료 결과의 수신 범위도 여기서 한 곳에서만 기록한다. 공개 밤 판정
   // (applyNightResultAppliedPayload)·재판 판정(applyTribunalResolved)·끊김 사망
@@ -1073,4 +1293,29 @@ useInGameStore.subscribe((next) => {
     : null
 })
 
+/**
+ * F-26b: 인증 전이(로그인·로그아웃, A→B→A 왕복 포함)마다 밤 성공 사건 기록을 동기 취소한다.
+ *
+ * 계정 축은 이 store가 소유한 값이 아니고 다른 receipt-scope 필드들처럼 호출부가 넘겨주는
+ * 값이지만, 이 취소만은 예외다 — receiveNightSuccess/completeNightSuccess의 범위 비교는
+ * "다음 호출이 있을 때"만 stale을 걸러낸다. 그 사이 아무 호출도 없이 화면(큐 selector)이
+ * 이전 계정의 잔존 사건을 계속 보여주는 틈을 막으려면, 전이 그 자체를 구독해야 한다.
+ * identityGeneration만 관찰한다 — loggedOutIntentionally 같은 무관한 필드 변화로 불필요하게
+ * 취소하지 않는다.
+ */
+let observedAuthIdentityGeneration = useAuthStore.getState().identityGeneration ?? null
+useAuthStore.subscribe((state) => {
+  const nextGeneration = state.identityGeneration ?? null
+  if (nextGeneration === observedAuthIdentityGeneration) return
+  observedAuthIdentityGeneration = nextGeneration
+  cancelNightSuccessRecords()
+})
+
 export const selectInGameState = (store) => store.state
+
+/**
+ * F-26b(AC-04): 대기 큐 selector. 정렬·관점 분할·복사 없이 저장된 nightSuccessQueue를 그대로
+ * 반환한다 — 참조 안정성(빈 상태는 항상 같은 공용 빈 배열)이 React 구독자의 불필요한 재계산을
+ * 막는다. production 영상 소비처 연결은 F-27에서 이 selector를 구독하는 컴포넌트를 추가한다.
+ */
+export const selectNightSuccessQueue = (store) => store.nightSuccessQueue

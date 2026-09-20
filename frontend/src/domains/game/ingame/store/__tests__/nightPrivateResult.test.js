@@ -2,6 +2,7 @@ import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
+import { createRequire } from "node:module"
 
 // ---------------------------------------------------------------------------
 // AC-04 · nightPrivateResult는 오버레이 확인·NIGHT 재진입·gameId 변경에서만 비워지고,
@@ -40,8 +41,9 @@ mock.module("react-router-dom", {
 })
 
 const { renderHook } = await import("@testing-library/react")
-const { useInGameStore } = await import("../ingameStore.js")
+const { useInGameStore, selectNightSuccessQueue, readInGameReceiptScope } = await import("../ingameStore.js")
 const { setSocket } = await import("../../../../../shared/socket/socketClient.js")
+const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { useGameSessionSocketEvents } = await import("../../hooks/useGameSessionSocketEvents.js")
 
 const GAME_ID = "game-npr-store"
@@ -58,9 +60,12 @@ function buildSelf() {
 }
 
 /** 서버 소켓처럼 등록된 리스너에게만 동기적으로 전달하는 최소 fake다. */
-function createFakeSocket() {
+function createFakeSocket({ id = "socket-1", connected = true, forwardEmitTo = null } = {}) {
   const listeners = new Map()
+  const emitted = []
   return {
+    id,
+    connected,
     on(event, handler) {
       if (!listeners.has(event)) listeners.set(event, new Set())
       listeners.get(event).add(handler)
@@ -75,21 +80,59 @@ function createFakeSocket() {
     listenerCount(event) {
       return listeners.get(event)?.size ?? 0
     },
+    // F-26b(AC-05): completeNightSuccess가 실제로 부르는 클라이언트 emit 대역이다. 기본은
+    // 기록만 한다(대부분의 시험 — 서버 결합은 backend/socket/__tests__/gameSession.nightTurns.test.js가
+    // wireSession으로 따로 검사한다). forwardEmitTo를 넘긴 시험(AC-05 결합 시험 전용)만 기록과
+    // 함께 backend에 registerGameHandlers로 등록된 같은 이름의 리스너로 payload를 그대로
+    // 전달한다 — 응답도 그 실제 리스너의 것을 받아 emitted 항목에 함께 남긴다.
+    emit(event, payload, callback) {
+      const entry = { event, payload, callback }
+      emitted.push(entry)
+      if (forwardEmitTo) {
+        forwardEmitTo.trigger(event, payload, (response) => {
+          entry.response = response
+          if (typeof callback === "function") callback(response)
+        })
+      }
+    },
+    emitted,
   }
 }
 
 /**
  * 실제 훅을 마운트한 세션을 연다. 반환된 deliver로 서버 이벤트를 흘려보내고, close로
  * 언마운트한다(구독 해제까지 실제 cleanup을 태운다).
+ *
+ * F-26b(AC-04): 같은 마운트 콜백에서 selectNightSuccessQueue를 함께 구독해 실제 React
+ * 구독 결과(result.current)를 노출한다. complete(eventId)는 그 순간의 receiptScope를
+ * readInGameReceiptScope로 캡처해 production completeNightSuccess를 그대로 호출한다.
  */
-function openSession() {
-  const socket = createFakeSocket()
+function openSession({ socketOptions } = {}) {
+  const socket = createFakeSocket(socketOptions)
   act(() => setSocket(socket))
-  const { unmount } = renderHook(() => useGameSessionSocketEvents())
+  const { result, unmount } = renderHook(() => {
+    useGameSessionSocketEvents()
+    return useInGameStore(selectNightSuccessQueue)
+  })
   return {
     socket,
+    get queue() {
+      return result.current
+    },
     deliver(event, payload) {
       act(() => socket.deliver(event, payload))
+    },
+    complete(eventId) {
+      const auth = useAuthStore.getState()
+      const scope = readInGameReceiptScope({
+        accountId: auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null,
+        identityGeneration: auth.identityGeneration ?? null,
+      })
+      let outcome
+      act(() => {
+        outcome = useInGameStore.getState().completeNightSuccess(eventId, scope)
+      })
+      return outcome
     },
     close() {
       unmount()
@@ -101,6 +144,9 @@ function openSession() {
 /** 밤(dayIndex 1)에 들어와 있는 세션을 세운다 — 개인 결과가 도착할 수 있는 유일한 시점이다. */
 function seedNightSession({ gameId = GAME_ID } = {}) {
   act(() => {
+    // F-26b: receiveNightSuccess는 "로그인 계정 = self.uuid"를 요구한다 — 인게임 store가
+    // 읽을 수 없는 계정 축을 호출부(훅)가 receiptScope로 넘기기 때문이다.
+    useAuthStore.setState({ isLoggedIn: true, user: { uuid: SELF_UUID, nickname: "나" }, identityGeneration: 0 })
     useInGameStore.setState({
       gameId: null,
       state: null,
@@ -432,4 +478,433 @@ test("AC-04: 본인 것이 아닌 개인 결과는 실제 훅 경로에서 저�
   session.deliver("night_action_result", { ...GUARD_RESULT, targetId: SELF_UUID })
   assert.equal(readResult(), null, "대상이 본인인 조사 결과가 저장됐다")
   session.close()
+})
+
+// ---------------------------------------------------------------------------
+// F-26b · 역할별 성공 사건(night_action_success) 수신 · 완료 ACK · 중복/오래된 사건 거부
+//
+// 이 파일의 기존 관례(production 훅을 실제로 마운트하고 가짜 소켓으로 실제 이벤트를 흘린다)를
+// 그대로 따른다. complete()는 store의 production completeNightSuccess를 그대로 호출하고,
+// 서버로의 실제 등록 리스너 결합은 backend/socket/__tests__/gameSession.nightTurns.test.js가
+// wireSession으로 검사한다(A-05 — 이 파일의 소비 경계는 명시적 완료 호출까지다).
+// ---------------------------------------------------------------------------
+
+const readQueue = () => useInGameStore.getState().nightSuccessQueue
+
+function buildKillSuccessPayload(overrides = {}) {
+  return {
+    gameId: GAME_ID,
+    nightDayIndex: 1,
+    eventId: "evt-kill-1",
+    type: "KILL",
+    perspectives: ["USER"],
+    targetId: OTHER_UUID,
+    ...overrides,
+  }
+}
+
+function buildSelfHealSuccessPayload(overrides = {}) {
+  return {
+    gameId: GAME_ID,
+    nightDayIndex: 1,
+    eventId: "evt-heal-1",
+    type: "HEAL",
+    perspectives: ["USER", "TARGET"],
+    targetId: SELF_UUID,
+    ...overrides,
+  }
+}
+
+test("AC-01: 역할별 성공 사건을 수신하면 store에 사건 ID·밤 번호가 저장되고, 같은 사건 ID 재전달은 중복 추가되지 않는다", () => {
+  seedNightSession()
+  const session = openSession()
+
+  session.deliver("night_action_success", buildKillSuccessPayload())
+  assert.equal(readQueue().length, 1)
+  assert.deepEqual(readQueue()[0], {
+    eventId: "evt-kill-1", gameId: GAME_ID, nightDayIndex: 1, type: "KILL",
+    perspectives: ["USER"], targetId: OTHER_UUID,
+  })
+
+  const afterFirst = readQueue()
+  session.deliver("night_action_success", buildKillSuccessPayload())
+  assert.equal(readQueue(), afterFirst, "같은 eventId 재전달이 큐를 다시 만들었다")
+  assert.equal(readQueue().length, 1)
+
+  assert.equal(session.socket.listenerCount("night_action_success"), 1, "훅이 실제로 구독해야 하는 시험이다")
+  session.close()
+  assert.equal(session.socket.listenerCount("night_action_success"), 0, "cleanup이 구독을 해제하지 않았다")
+  // close()의 setSocket(null)은 연결 축 전이이기도 하다 — 그 자체로 큐를 취소할 수 있으므로,
+  // 아래 단언은 "그 값에서 더 바뀌지 않는다"만 본다(닫기 전 값과의 동일성은 요구하지 않는다).
+  const afterClose = readQueue().length
+
+  act(() => session.socket.deliver("night_action_success", buildKillSuccessPayload({ eventId: "evt-kill-2" })))
+  assert.equal(readQueue().length, afterClose, "해제된 뒤에도 핸들러가 남아 store를 바꿨다")
+})
+
+test("AC-02: 다른 gameId·다른 밤 번호·잘못된 형태의 사건은 store가 거부해 저장하지 않는다", () => {
+  seedNightSession()
+  const session = openSession()
+
+  const before = readQueue()
+  session.deliver("night_action_success", buildKillSuccessPayload({ gameId: "game-other" }))
+  assert.equal(readQueue(), before, "다른 게임의 사건이 저장됐다")
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ nightDayIndex: 0 }))
+  assert.equal(readQueue(), before, "밤 0(현재 밤과 다름)의 사건이 저장됐다")
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ nightDayIndex: 2 }))
+  assert.equal(readQueue(), before, "밤 2(현재 밤과 다름)의 사건이 저장됐다")
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ eventId: "" }))
+  assert.equal(readQueue(), before, "빈 eventId의 사건이 저장됐다")
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ type: "ASSASSINATE" }))
+  assert.equal(readQueue(), before, "허용되지 않은 type의 사건이 저장됐다")
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ perspectives: [] }))
+  assert.equal(readQueue(), before, "빈 perspectives의 사건이 저장됐다")
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ perspectives: ["USER"], targetId: undefined }))
+  assert.equal(readQueue(), before, "USER 관점인데 targetId가 없는 사건이 저장됐다")
+
+  // TARGET 전용은 targetId·여분 필드를 저장하지 않는다.
+  session.deliver("night_action_success", {
+    gameId: GAME_ID, nightDayIndex: 1, eventId: "evt-target-only",
+    type: "INVESTIGATE", perspectives: ["TARGET"], targetId: OTHER_UUID, role: "JOKER",
+  })
+  assert.equal(readQueue().length, 1)
+  assert.deepEqual(readQueue()[0], {
+    eventId: "evt-target-only", gameId: GAME_ID, nightDayIndex: 1, type: "INVESTIGATE", perspectives: ["TARGET"],
+  })
+  assert.ok(!("targetId" in readQueue()[0]), "TARGET 전용 사건에 targetId가 저장됐다")
+  assert.ok(!("role" in readQueue()[0]), "TARGET 전용 사건에 여분 필드가 저장됐다")
+
+  // 뒤따른 정상 사건은 그대로 수락된다.
+  session.deliver("night_action_success", buildKillSuccessPayload())
+  assert.equal(readQueue().length, 2)
+
+  session.close()
+})
+
+test("AC-02: 같은 소켓 객체가 재연결되면(connect 재발생) 이전 연결이 수락한 사건은 취소되고 완료해도 emit하지 않는다", () => {
+  seedNightSession()
+  const session = openSession()
+
+  session.deliver("night_action_success", buildKillSuccessPayload())
+  assert.equal(readQueue().length, 1)
+
+  // 소켓 **객체는 그대로 두고** connect만 다시 관측시킨다 — useGameSessionSocketEvents의
+  // connectSeq(훅 리렌더용)와 별개로, ingameStore도 자기 연결 세대를 스스로 올려야 한다
+  // (rebindConnectionScope의 handleObservedSocketConnect 참고).
+  act(() => session.socket.deliver("connect"))
+
+  assert.deepEqual(readQueue(), [], "재연결 후에도 이전 연결이 수락한 사건이 큐에 남아 있다")
+
+  const outcome = session.complete("evt-kill-1")
+  assert.equal(outcome.status, "noop", "재연결 전에 수락한 사건이 완료 대상으로 남아 있다")
+  assert.equal(session.socket.emitted.length, 0, "재연결 전에 수락한 사건의 완료가 emit됐다")
+
+  session.close()
+})
+
+test("AC-03: 사용자=대상자인 자기 치료 사건은 정확히 한 번만 처리되어 큐·완료 요청에 하나씩만 남는다", () => {
+  seedNightSession()
+  const session = openSession()
+
+  session.deliver("night_action_success", buildSelfHealSuccessPayload())
+  assert.equal(readQueue().length, 1)
+  assert.deepEqual(readQueue()[0].perspectives, ["USER", "TARGET"])
+  assert.equal(readQueue()[0].targetId, SELF_UUID)
+
+  session.deliver("night_action_success", buildSelfHealSuccessPayload())
+  assert.equal(readQueue().length, 1, "자기 치료 사건이 두 관점으로 중복 저장됐다")
+
+  assert.equal(session.socket.emitted.length, 0, "완료 전 ACK가 이미 전송됐다")
+  const outcome = session.complete("evt-heal-1")
+  assert.equal(outcome.status, "sent")
+  assert.equal(readQueue().length, 0)
+  assert.equal(session.socket.emitted.length, 1, "완료 요청이 정확히 한 번 전송돼야 한다")
+  assert.deepEqual(session.socket.emitted[0].payload, { gameId: GAME_ID, nightDayIndex: 1, eventId: "evt-heal-1" })
+
+  session.close()
+})
+
+test("AC-04: 수락된 사건이 FIFO 대기 큐로 노출되고, 완료마다 정확히 그 항목만 빠진다", () => {
+  seedNightSession()
+  const session = openSession()
+
+  // 처음의 빈 큐가 곧 store가 소유한 공용 불변 빈 배열이다 — 아래에서 큐를 비운 뒤 이
+  // 참조와 다시 같아지는지(===)를 확인한다.
+  const initialEmptyQueue = session.queue
+  assert.deepEqual(initialEmptyQueue, [])
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ eventId: "evt-kill-1" }))
+  assert.equal(session.queue.length, 1)
+  assert.equal(session.queue[0].eventId, "evt-kill-1")
+
+  session.deliver("night_action_success", buildSelfHealSuccessPayload({ eventId: "evt-heal-1" }))
+  assert.equal(session.queue.length, 2)
+  assert.deepEqual(session.queue.map((e) => e.eventId), ["evt-kill-1", "evt-heal-1"])
+
+  const beforeRedeliver = session.queue
+  session.deliver("night_action_success", buildKillSuccessPayload({ eventId: "evt-kill-1" }))
+  assert.equal(session.queue, beforeRedeliver, "중복 재전달이 새 배열을 만들었다")
+
+  session.complete("evt-kill-1")
+  assert.deepEqual(session.queue.map((e) => e.eventId), ["evt-heal-1"])
+
+  session.complete("evt-heal-1")
+  assert.deepEqual(session.queue, [])
+  // F-26b(AC-04): 빈 상태는 항상 같은 공용 불변 배열이어야 한다 — filter()가 만든 새 빈
+  // 배열을 그대로 저장하면 이 참조 동일성이 깨진다.
+  assert.equal(session.queue, initialEmptyQueue, "마지막 항목 소비 뒤의 빈 큐가 공용 빈 배열 참조가 아니다")
+
+  session.close()
+})
+
+test("AC-05: 완료 소비는 서버로 정확히 한 번만 전송되고, 반복 호출·모르는 ID는 추가 전송을 만들지 않는다", () => {
+  seedNightSession()
+  const session = openSession()
+  session.deliver("night_action_success", buildKillSuccessPayload())
+
+  const first = session.complete("evt-kill-1")
+  assert.equal(first.status, "sent")
+  const second = session.complete("evt-kill-1")
+  assert.equal(second.status, "noop")
+  assert.equal(session.socket.emitted.length, 1, "이미 완료한 사건의 반복 호출이 추가 emit을 만들었다")
+
+  const unknown = session.complete("evt-does-not-exist")
+  assert.equal(unknown.status, "noop")
+  assert.equal(session.socket.emitted.length, 1)
+
+  session.close()
+})
+
+test("AC-05: 수락 당시와 다른 receiptScope로 완료를 시도하면 거부되고 emit도 없다", () => {
+  seedNightSession()
+  const session = openSession()
+  session.deliver("night_action_success", buildKillSuccessPayload())
+
+  const bogusScope = { accountId: "someone-else", identityGeneration: 0, gameId: GAME_ID }
+  const outcome = useInGameStore.getState().completeNightSuccess("evt-kill-1", bogusScope)
+  assert.equal(outcome.status, "noop")
+  assert.equal(readQueue().length, 1, "범위가 다른 완료 요청이 큐를 지웠다")
+  assert.equal(session.socket.emitted.length, 0)
+
+  session.close()
+})
+
+test("F-26b 전이: NIGHT 재진입(낮 투표 동률→밤)과 clearGame은 성공 사건 큐를 비운다", () => {
+  seedNightSession()
+  const session = openSession()
+  session.deliver("night_action_success", buildKillSuccessPayload())
+  assert.equal(readQueue().length, 1)
+
+  // DAY로 먼저 넘어가야 day_vote_resolved가 반영된다(applyDayVoteResolvedToPhase는
+  // phase === "DAY"일 때만 진행한다) — NIGHT_RESULT_APPLIED는 dayIndex 2의 DAY로 옮긴다.
+  session.deliver("night_result_applied", NIGHT_RESULT_APPLIED)
+  assert.equal(useInGameStore.getState().state.phase, "DAY")
+  assert.equal(readQueue().length, 1, "DAY 전이가 완료 전 성공 사건 큐를 지웠다")
+
+  session.deliver("day_vote_resolved", {
+    gameId: GAME_ID, dayIndex: 2, phase: "NIGHT", outcome: "TIE",
+    tribunalTargetUuid: null, publicVoteCount: 2, publicAbstainCount: 1,
+  })
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.equal(readQueue().length, 0, "새 밤에 지난 밤의 성공 사건 큐가 남았다")
+
+  session.deliver("night_action_success", buildKillSuccessPayload({ eventId: "evt-kill-2", nightDayIndex: 2 }))
+  assert.equal(readQueue().length, 1, "새 밤의 정상 사건이 거부됐다")
+
+  act(() => useInGameStore.getState().clearGame())
+  assert.equal(readQueue().length, 0, "clearGame이 큐를 비우지 않았다")
+
+  session.close()
+})
+
+test("F-26b 전이: 그 밤의 결과 적용(NIGHT→DAY)은 성공 사건 큐를 비우지 않고, DAY에서도 완료할 수 있다", () => {
+  seedNightSession()
+  const session = openSession()
+  session.deliver("night_action_success", buildKillSuccessPayload())
+  assert.equal(readQueue().length, 1)
+
+  session.deliver("night_result_applied", NIGHT_RESULT_APPLIED)
+  assert.equal(useInGameStore.getState().state.phase, "DAY")
+  assert.equal(readQueue().length, 1, "DAY 전이가 완료 전 성공 사건 큐를 지웠다")
+
+  const outcome = session.complete(readQueue()[0].eventId)
+  assert.equal(outcome.status, "sent")
+  assert.equal(readQueue().length, 0)
+
+  session.close()
+})
+
+// ---------------------------------------------------------------------------
+// AC-05 결합 시험 · completeNightSuccess → registerGameHandlers 등록 리스너
+//
+// 위 AC-05 시험들의 createFakeSocket.emit은 기록만 한다(forwardEmitTo를 넘기지 않으면 그대로다).
+// 이 시험 하나만 forwardEmitTo를 켜서, frontend emit이 backend에 실제로 등록된
+// acknowledge_night_action_success 리스너로 전달되게 한다 — production completeNightSuccess →
+// 소켓 emit → registerGameHandlers가 배선한 서버 handleAcknowledgeNightActionSuccess까지 실제
+// 경로로 검사한다(핸들러를 직접 호출하지 않는다).
+//
+// 서버 세션·성공 사건 준비는 backend/socket/__tests__/gameSession.nightTurns.test.js의 준비
+// 코드(commitFullRoleSessionAtNight·createManualClock·wireSession·createConventionFollowingRegistry의
+// 관례)를 그대로 옮겨 쓴다 — backend 생산 코드는 건드리지 않는다. backend/models(→Sequelize)는
+// require 시점에 DATABASE_URL을 파싱만 한다(연결은 시도하지 않는다) — 같은 파일 맨 위의 더미
+// 폴백 관례(backend/socket/__tests__/gameSession.nightTurns.test.js 1~4행)를 그대로 따른다.
+// ---------------------------------------------------------------------------
+
+function makeBackendPlayer(uuid, nickname = `nick-${uuid}`) {
+  return { uuid, nickname, isReady: true }
+}
+
+function makeBackendRoom({ id, players, jokerCount = 1 }) {
+  return { id, players: new Map(players.map((p) => [p.uuid, p])), settings: { jokerCount } }
+}
+
+/** backend/socket/__tests__/gameSession.nightTurns.test.js::createConventionFollowingRegistry와 같다. */
+function createConventionFollowingRegistry() {
+  const overrides = new Map()
+  return new Proxy(overrides, {
+    get(target, prop, receiver) {
+      if (prop === "get") return (uuid) => (target.has(uuid) ? target.get(uuid) : `sock-${uuid}`)
+      return Reflect.get(target, prop, receiver)
+    },
+  })
+}
+
+test("AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등록한 실제 서버 리스너로 전달된다", () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test"
+  const REPO_ROOT = new URL("../../../../../../../", import.meta.url)
+  const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
+  const gameSessionSocketLayer = backendRequire("./gameSession")
+  const gameSessionCore = backendRequire("../game-core/gameSession")
+  const matchmaking = backendRequire("./matchmaking")
+  const {
+    createFakeSocket: createBackendFakeSocket, createFakeIo, countingCallback,
+  } = backendRequire("./__tests__/testHelpers/matchmakingFixtures")
+
+  gameSessionCore.__resetStateForTests()
+  matchmaking.__resetStateForTests()
+  gameSessionSocketLayer.__resetStateForTests()
+  gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
+
+  // backend/socket/__tests__/gameSession.nightTurns.test.js::commitFullRoleSessionAtNight를
+  // 그대로 옮겨 쓴다(playerCount=10·jokerCount=1로 5개 역할을 전부 배정한다).
+  const players = Array.from({ length: 10 }, (_, i) => makeBackendPlayer(`fp-f26b-wire-${i}`))
+  const room = makeBackendRoom({ id: "f26b-frontend-ac05-wiring", players, jokerCount: 1 })
+  const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
+  gameSessionCore.commitGameSession(candidate.session)
+  const session = candidate.session
+  for (const uuid of session.players.keys()) gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+  session.phase = "NIGHT"
+  session.dayIndex = 2
+  session.nightActions = new Map()
+  session.nightResolution = null
+  session.dayVotes = new Map()
+  session.dayVoteResolution = null
+  session.tribunal = null
+  const jokerUuid = [...session.players.values()].find((p) => p.role === "JOKER").uuid
+  const citizenUuid = [...session.players.values()].find((p) => p.role === "CITIZEN").uuid
+
+  // backend/socket/__tests__/gameSession.nightTurns.test.js::wireSession을 그대로 옮겨 쓴다.
+  const io = createFakeIo([])
+  const backendSockets = new Map()
+  for (const uuid of session.players.keys()) {
+    const backendSocket = createBackendFakeSocket(uuid)
+    backendSocket.rooms.add(session.channelId)
+    backendSocket.data.activeGameId = session.id
+    io.sockets.sockets.set(backendSocket.id, backendSocket)
+    gameSessionSocketLayer.registerGameHandlers(io, backendSocket, uuid)
+    backendSockets.set(uuid, backendSocket)
+  }
+
+  // backend/socket/__tests__/gameSession.nightTurns.test.js::createManualClock을 그대로 옮겨 쓴다
+  // (startNightTurnSequence가 요구하는 시계·타이머 의존성 주입구다).
+  let now = 1_000_000
+  let nextTimerId = 1
+  const timers = new Map()
+  const clock = {
+    nowFn: () => now,
+    setTimeoutFn(fn, delayMs) {
+      const id = nextTimerId++
+      timers.set(id, { at: now + Math.max(0, delayMs), fn })
+      return id
+    },
+    clearTimeoutFn(id) {
+      timers.delete(id)
+    },
+  }
+
+  gameSessionSocketLayer.__testables.startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+
+  // 광대(유일한 생존 JOKER)가 시민을 공격한다 — 그 턴이 곧바로 끝나 KILL 성공 사건이 나간다.
+  let submitResponse = null
+  backendSockets.get(jokerUuid).trigger(
+    "submit_night_action", { gameId: session.id, targetId: citizenUuid }, (res) => { submitResponse = res },
+  )
+  assert.deepEqual(submitResponse, { ok: true })
+
+  const killEntry = backendSockets.get(jokerUuid).emitted.find((e) => e.event === "night_action_success")
+  assert.ok(killEntry, "전제: 광대가 KILL 성공 사건을 받아야 한다")
+  const successPayload = killEntry.payload
+  assert.equal(session.phase, "NIGHT")
+  assert.equal(session.dayIndex, successPayload.nightDayIndex, "전제: 완료 요청 시점에도 같은 밤이어야 한다")
+
+  const storedBefore = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+  assert.equal(storedBefore.byEvent.get(successPayload.eventId).get(jokerUuid).completed, false,
+    "전제: 완료 전 서버 기록은 completed:false다")
+
+  // ── 프런트 쪽 ── 실제 훅·store를 마운트하고, 이 시험만 emit을 backend의 등록 리스너로 전달한다.
+  useAuthStore.setState({ isLoggedIn: true, user: { uuid: jokerUuid, nickname: "광대" }, identityGeneration: 0 })
+  useInGameStore.setState({
+    gameId: null, state: null, hostUuid: null, error: null, snapshotSeq: 0, nightPrivateResult: null,
+  })
+  useInGameStore.getState().setGamePayload({
+    gameId: session.id,
+    state: {
+      id: session.id,
+      phase: "NIGHT",
+      dayIndex: session.dayIndex,
+      dayPhase: null,
+      players: [{ uuid: jokerUuid, nickname: "광대" }],
+      self: { uuid: jokerUuid, nickname: "광대", role: "JOKER", team: "JOKER", hasActedThisPhase: false },
+    },
+  })
+
+  const joker = openSession({ socketOptions: { forwardEmitTo: backendSockets.get(jokerUuid) } })
+  joker.deliver("night_action_success", successPayload)
+  assert.equal(readQueue().length, 1)
+
+  const first = joker.complete(successPayload.eventId)
+  assert.equal(first.status, "sent")
+  assert.equal(readQueue().length, 0)
+  assert.equal(joker.socket.emitted.length, 1, "완료 요청이 정확히 한 번 전송돼야 한다")
+  assert.equal(joker.socket.emitted[0].event, "acknowledge_night_action_success")
+  assert.deepEqual(joker.socket.emitted[0].response, { ok: true, duplicate: false },
+    "실제 등록된 서버 리스너의 최초 완료 응답이어야 한다")
+
+  const storedAfter = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+  assert.equal(storedAfter.byEvent.get(successPayload.eventId).get(jokerUuid).completed, true,
+    "실제 서버 기록이 completed:true로 바뀌어야 한다")
+
+  // 같은 사건의 반복 완료 호출은 추가 emit을 만들지 않는다.
+  const second = joker.complete(successPayload.eventId)
+  assert.equal(second.status, "noop")
+  assert.equal(joker.socket.emitted.length, 1, "이미 완료한 사건의 반복 호출이 추가 emit을 만들었다")
+
+  // 서버 멱등 시험: 등록된 리스너에 같은 payload를 직접 한 번 더 넣어도 duplicate:true이고
+  // 완료 상태는 여전히 한 번만 바뀐 것이다.
+  const directAck = countingCallback()
+  backendSockets.get(jokerUuid).trigger(
+    "acknowledge_night_action_success",
+    { gameId: session.id, nightDayIndex: successPayload.nightDayIndex, eventId: successPayload.eventId },
+    directAck.callback,
+  )
+  assert.deepEqual(directAck.getResponse(), { ok: true, duplicate: true })
+  assert.equal(storedAfter.byEvent.get(successPayload.eventId).get(jokerUuid).completed, true)
+
+  joker.close()
 })
