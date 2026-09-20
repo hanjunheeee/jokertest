@@ -132,8 +132,14 @@ module.exports = {
         if (!tokensTable[TOKEN_HASH_COLUMN] || tokensTable[TOKEN_HASH_COLUMN].allowNull !== true) {
             throw new Error(`${TOKENS_TABLE}.${TOKEN_HASH_COLUMN}이 nullable로 존재하지 않습니다.`);
         }
+        if (!/varchar\s*\(\s*64\s*\)/i.test(tokensTable[TOKEN_HASH_COLUMN].type ?? '')) {
+            throw new Error(`${TOKENS_TABLE}.${TOKEN_HASH_COLUMN}의 타입이 STRING(64)가 아닙니다: ${tokensTable[TOKEN_HASH_COLUMN].type}`);
+        }
         if (!tokensTable[REVOKED_AT_COLUMN] || tokensTable[REVOKED_AT_COLUMN].allowNull !== true) {
             throw new Error(`${TOKENS_TABLE}.${REVOKED_AT_COLUMN}이 nullable로 존재하지 않습니다.`);
+        }
+        if (!/date\s*(time)?/i.test(tokensTable[REVOKED_AT_COLUMN].type ?? '')) {
+            throw new Error(`${TOKENS_TABLE}.${REVOKED_AT_COLUMN}의 타입이 DATE가 아닙니다: ${tokensTable[REVOKED_AT_COLUMN].type}`);
         }
         if (!tokensTable.token || tokensTable.token.allowNull !== true) {
             throw new Error(`${TOKENS_TABLE}.token이 nullable로 바뀌지 않았습니다.`);
@@ -143,6 +149,12 @@ module.exports = {
         const hashIndex = tokenIndexes.find((index) => index.name === TOKEN_HASH_UNIQUE_INDEX);
         if (!hashIndex || hashIndex.unique !== true) {
             throw new Error(`${TOKEN_HASH_UNIQUE_INDEX} 유일 인덱스가 없습니다.`);
+        }
+        const hashIndexColumns = (hashIndex.fields ?? []).map((field) => field.attribute);
+        if (hashIndexColumns.length !== 1 || hashIndexColumns[0] !== TOKEN_HASH_COLUMN) {
+            throw new Error(
+                `${TOKEN_HASH_UNIQUE_INDEX}의 대상 열이 [${TOKEN_HASH_COLUMN}]이 아닙니다: [${hashIndexColumns.join(', ')}]`,
+            );
         }
 
         const [[legacyLeak]] = await sequelize.query(
@@ -162,6 +174,18 @@ module.exports = {
         const column = usersTable[HAS_LOCAL_PASSWORD_COLUMN];
         if (!column || column.allowNull !== false) {
             throw new Error(`${USERS_TABLE}.${HAS_LOCAL_PASSWORD_COLUMN}이 NOT NULL로 존재하지 않습니다.`);
+        }
+        if (!/tinyint|bool/i.test(column.type ?? '')) {
+            throw new Error(`${USERS_TABLE}.${HAS_LOCAL_PASSWORD_COLUMN}의 타입이 BOOLEAN이 아닙니다: ${column.type}`);
+        }
+        // MySQL의 describeTable은 BOOLEAN(TINYINT(1)) 기본값을 문자열/숫자 어느 쪽으로도 돌려줄
+        // 수 있다 — dialect 표현 차이를 넓게 허용하되 "true를 뜻하는 값"인지만 확인한다.
+        const isTruthyDefault = (value) => (
+            value === true || value === 1 || value === '1'
+            || (typeof value === 'string' && value.trim().toLowerCase() === 'true')
+        );
+        if (!isTruthyDefault(column.defaultValue)) {
+            throw new Error(`${USERS_TABLE}.${HAS_LOCAL_PASSWORD_COLUMN}의 기본값이 true가 아닙니다: ${column.defaultValue}`);
         }
 
         const [[nullCount]] = await sequelize.query(

@@ -38,7 +38,11 @@ const withDeadlockRetry = async (work) => {
     let attempt = 0;
     for (;;) {
         try {
-            return await userRepository.withTransaction(work);
+            // 계약: transaction({logging:false}, work) — 재설정 트랜잭션 안의 SQL(토큰 해시·
+            // 이메일이 바인딩된다)이 Sequelize 기본 로깅으로 나가지 않게 트랜잭션 수준에서도
+            // logging:false를 명시한다(각 호출이 이미 logging:false를 개별 전달하는 것과
+            // 별개로, 트랜잭션 자체의 로깅 경로도 막는다).
+            return await userRepository.withTransaction(work, { logging: false });
         } catch (error) {
             attempt += 1;
             if (isDeadlock(error) && attempt <= DEADLOCK_MAX_RETRIES) continue;

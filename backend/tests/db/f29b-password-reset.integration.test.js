@@ -183,6 +183,59 @@ test('AC-02/AC-04: 유효 토큰으로 재설정하면 새 비밀번호 로그�
     assert.deepEqual(await verifyAfter.json(), { ok: false, code: 'USED' });
 });
 
+// ── AC-04: confirm 자체의 세션 폐기를 "새 로그인"과 분리해 검증 ──────────────────
+//
+// 위 AC-02/AC-04 시험의 기존 세션 401 확인은 confirm 이후에 새 로그인(다른 비밀번호로)을
+// 한 번 더 거친 뒤에 수행된다 — issueSessionForUser 자신도 로그인마다 이전 세션을 전부
+// 폐기하는 계약이 있으므로, confirm 없이 로그인만 두 번 해도 첫 세션은 revoked_at이 찍힌다.
+// 그래서 위 시험만으로는 "confirm이 세션을 폐기했다"와 "그 뒤의 새 로그인이 폐기했다"를
+// 구분하지 못한다. 이 시험은 새 로그인을 전혀 거치지 않고, confirm 하나만으로 기존 세션들이
+// 거부되는지와 DB의 그 세션 행에 실제로 revoked_at이 찍히는지를 직접 확인한다.
+test('AC-04: confirm은 새 로그인 없이도 기존 세션 전체를 폐기하고 DB에 revoked_at을 남긴다', async (t) => {
+    if (unavailable(t)) return;
+    await rebuildFullSchema();
+
+    const local = await createLocalUser({ nickname: 'AC04세션', email: `ac04-${crypto.randomUUID()}@example.com` });
+    const memory = useMemoryMailAdapter(t);
+    const base = await startServer(t);
+    const { generateToken } = require('../../utils/jwt');
+
+    // 실제 로그인은 issueSessionForUser의 "이전 세션 전부 폐기" 계약 때문에 두 개의 활성
+    // 세션을 동시에 남기지 못한다(다른 기기/탭 시뮬레이션이 아니라 그저 순차 로그인이 되어
+    // 버린다) — 그래서 두 번째 세션은 저장소로 직접 발급해, 로그인 호출 없이도 같은 계정의
+    // 서로 다른 두 활성 세션을 만든다.
+    const sessionAId = crypto.randomUUID();
+    const sessionBId = crypto.randomUUID();
+    await db.UserSession.create({ id: sessionAId, user_id: local.uuid, is_online: true, ip_address: '127.0.0.1' });
+    await db.UserSession.create({ id: sessionBId, user_id: local.uuid, is_online: true, ip_address: '127.0.0.2' });
+    const accessTokenA = generateToken({ uuid: local.uuid, role: 'USER', sessionId: sessionAId });
+    const accessTokenB = generateToken({ uuid: local.uuid, role: 'USER', sessionId: sessionBId });
+
+    const meABefore = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenA}` } });
+    assert.equal(meABefore.status, 200, '전제: 세션 A는 confirm 이전에 유효해야 합니다');
+    const meBBefore = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenB}` } });
+    assert.equal(meBBefore.status, 200, '전제: 세션 B는 confirm 이전에 유효해야 합니다');
+
+    await postJson(base, '/auth/password-reset/request', { email: local.email });
+    const rawToken = tokenOf(memory.outbox.at(-1));
+    const confirmRes = await postJson(base, '/auth/password-reset/confirm', { token: rawToken, newPassword: 'ac04-new-pw-1' });
+    assert.equal(confirmRes.status, 200);
+
+    // 여기까지 로그인 호출이 한 번도 없었다 — 두 세션 모두 거부돼야 confirm 자체의 세션
+    // 폐기라고 말할 수 있다.
+    const meAAfter = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenA}` } });
+    assert.equal(meAAfter.status, 401, 'confirm이 세션 A를 폐기하지 못했습니다(새 로그인 없이)');
+    const meBAfter = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenB}` } });
+    assert.equal(meBAfter.status, 401, 'confirm이 세션 B를 폐기하지 못했습니다(새 로그인 없이)');
+
+    const [rowA, rowB] = await Promise.all([
+        db.UserSession.findOne({ where: { id: sessionAId } }),
+        db.UserSession.findOne({ where: { id: sessionBId } }),
+    ]);
+    assert.ok(rowA.revoked_at, 'DB의 세션 A 행에 revoked_at이 찍히지 않았습니다');
+    assert.ok(rowB.revoked_at, 'DB의 세션 B 행에 revoked_at이 찍히지 않았습니다');
+});
+
 // ── AC-03: 만료·사용된 토큰 거부, 재발급 시 이전 링크 무효화, 동시 제출 ───────────
 
 test('AC-03: 만료된 토큰·이미 사용된 토큰은 거부되고, 새 요청 발급 후 이전 미사용 링크도 거부된다', async (t) => {
@@ -329,65 +382,78 @@ test('AC-06: 0015 up·verify를 두 번 실행해도 오류 없고 기존 토큰
     await assert.rejects(() => addPasswordResetTokens.down());
 });
 
-// ── AC-05 §2-3a: has_local_password backfill ─────────────────────────────────
+// ── AC-05 §2-3a: has_local_password backfill (기존 계정의 true→false 이관) ───────
 //
-// 이관 전 fixture는 이 프로세스 안에서 실제 authService.signup·socialAuthService를 호출해
-// 만든다. 0015의 컬럼 추가(addColumn)는 여기서 먼저 직접 한 번 실행해 둔다(스키마만 —
-// 이 시점에는 대상 행이 없어 backfill 자체는 공집합 위에서 실행되어 무해하다) — 그래야 실제
-// authService.signup/socialAuthService가 런타임 User 모델(has_local_password 포함)로 정상
-// INSERT할 수 있다. 이후 migrationRunner.applyMigrations로 "공식" 0015 적용을 실행하면 컬럼
-// 추가는 멱등하게 건너뛰고 backfill만 실제 데이터 위에서 다시 계산된다 — AC-06의 "컬럼이
-// 이미 있어도 미완료 backfill을 수행할 수 있어야 한다" 계약을 그대로 재사용한다.
-test('AC-05: has_local_password backfill은 로컬·연결(intent 보존)·연결(intent 유실, 생성시각 근접)은 false, 지연 연결(로컬)은 true로 수렴한다', async (t) => {
+// 0015 **직전** 상태(0014까지만 적용 — has_local_password 컬럼 자체가 DB에 없다)에서 실제
+// authService.signup·socialAuthService를 호출해 fixture를 만든다. 런타임 User 모델은 이미
+// has_local_password를 필수 속성으로 갖고 있어(§2-3a), 그대로 두면 INSERT가 "Unknown
+// column"으로 깨진다 — 그래서 fixture를 만드는 동안만 db.User에서 이 속성을 제거해 그 시점의
+// 실제 스키마와 모델을 맞춘다(컬럼 자체가 DB에 없으므로 이 조작은 사실을 모델에 맞출
+// 뿐이다). fixture 생성이 끝나면 즉시 원래 속성으로 복원한다 — 그 뒤에야 "공식" 0015를
+// 적용해, 이미 존재하던 이 계정들이 true→false로 실제 이관되는지를 검증한다.
+test('AC-05: has_local_password backfill은 0015 이전에 실제로 존재하던 계정을 올바르게 이관한다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, PASSWORD_RESET_INDEX) });
     const queryInterface = sequelize.getQueryInterface();
-    await addPasswordResetTokens.up(queryInterface, Sequelize, sequelize); // 컬럼만 미리 추가(공집합 backfill)
 
-    // (a) 순수 로컬 가입 — 근거 없음 → true.
-    const localOnly = await createLocalUser({ nickname: 'BF로컬', email: `bf-local-${crypto.randomUUID()}@example.com` });
+    const savedAttribute = db.User.rawAttributes.has_local_password;
+    db.User.removeAttribute('has_local_password');
 
-    // (b) 소셜 가입 완료(intent 보존) — 근거1(소비된 intent의 provider/subject 일치) → false.
-    const fpB = `fp-${crypto.randomUUID()}`;
-    const stateB = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint: fpB });
-    const callbackB = await socialAuthService.handleOAuthCallback({
-        provider: 'google', subject: `sub-${crypto.randomUUID()}`, email: `bf-social-b-${crypto.randomUUID()}@example.com`,
-        rawState: stateB.state, browserFingerprint: fpB, reqInfo: REQ_INFO,
-    });
-    const socialIntentPreserved = await socialAuthService.completeSocialSignup({
-        intentToken: callbackB.intentToken, nickname: 'BF소셜B', birthDate: '1992-02-02', reqInfo: REQ_INFO,
-    });
+    let localOnly;
+    let socialIntentPreserved;
+    let socialIntentDeleted;
+    let delayedLocal;
+    try {
+        // (a) 순수 로컬 가입 — 근거 없음 → true.
+        localOnly = await createLocalUser({ nickname: 'BF로컬', email: `bf-local-${crypto.randomUUID()}@example.com` });
 
-    // (c) 소셜 가입 완료 후 소비된 intent 행만 삭제 — 근거1 소멸, 근거2(생성 시각 10초 이내)만 남는다 → false.
-    const fpC = `fp-${crypto.randomUUID()}`;
-    const stateC = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint: fpC });
-    const callbackC = await socialAuthService.handleOAuthCallback({
-        provider: 'discord', subject: `sub-${crypto.randomUUID()}`, email: `bf-social-c-${crypto.randomUUID()}@example.com`,
-        rawState: stateC.state, browserFingerprint: fpC, reqInfo: REQ_INFO,
-    });
-    const socialIntentDeleted = await socialAuthService.completeSocialSignup({
-        intentToken: callbackC.intentToken, nickname: 'BF소셜C', birthDate: '1992-03-03', reqInfo: REQ_INFO,
-    });
-    await db.SocialSignupIntent.destroy({ where: { email: { [db.Sequelize.Op.like]: 'bf-social-c-%' } } });
+        // (b) 소셜 가입 완료(intent 보존) — 근거1(소비된 intent의 provider/subject 일치) → false.
+        const fpB = `fp-${crypto.randomUUID()}`;
+        const stateB = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint: fpB });
+        const callbackB = await socialAuthService.handleOAuthCallback({
+            provider: 'google', subject: `sub-${crypto.randomUUID()}`, email: `bf-social-b-${crypto.randomUUID()}@example.com`,
+            rawState: stateB.state, browserFingerprint: fpB, reqInfo: REQ_INFO,
+        });
+        socialIntentPreserved = await socialAuthService.completeSocialSignup({
+            intentToken: callbackB.intentToken, nickname: 'BF소셜B', birthDate: '1992-02-02', reqInfo: REQ_INFO,
+        });
 
-    // (d) 로컬 가입 후 10초를 넘겨 명시적 연결 — 근거1 없음(연결은 intent를 만들지 않는다),
-    // 근거2도 없도록 identity.created_at을 실제로 10초 넘게 뒤로 민다(시각 자체를 조작하되,
-    // has_local_password 표식은 건드리지 않는다 — backfill 로직만 검증한다).
-    const delayedLocal = await createLocalUser({ nickname: 'BF지연', email: `bf-delayed-${crypto.randomUUID()}@example.com` });
-    const delayedLogin = await authService.login({ email: delayedLocal.email, password: delayedLocal.password }, REQ_INFO);
-    const sessionId = require('jsonwebtoken').decode(delayedLogin.token).sessionId;
-    // linkExternalIdentityForValidatedSession은 state를 직접 받지 않는다(호출부가 이미 state
-    // 소비·바인딩을 확인했다고 전제한다, socialAuth.service.js 참고) — 활성 세션만 재확인한다.
-    const linkedIdentity = await socialAuthService.linkExternalIdentityForValidatedSession({
-        userId: delayedLocal.uuid, sessionId, provider: 'google', subject: `sub-delayed-${crypto.randomUUID()}`, email: delayedLocal.email,
-    });
-    await sequelize.query(
-        'UPDATE external_identities SET created_at = DATE_SUB(created_at, INTERVAL 30 SECOND) WHERE id = :id',
-        { replacements: { id: linkedIdentity.id } },
-    );
+        // (c) 소셜 가입 완료 후 소비된 intent 행만 삭제 — 근거1 소멸, 근거2(생성 시각 10초
+        // 이내)만 남는다 → false.
+        const fpC = `fp-${crypto.randomUUID()}`;
+        const stateC = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint: fpC });
+        const callbackC = await socialAuthService.handleOAuthCallback({
+            provider: 'discord', subject: `sub-${crypto.randomUUID()}`, email: `bf-social-c-${crypto.randomUUID()}@example.com`,
+            rawState: stateC.state, browserFingerprint: fpC, reqInfo: REQ_INFO,
+        });
+        socialIntentDeleted = await socialAuthService.completeSocialSignup({
+            intentToken: callbackC.intentToken, nickname: 'BF소셜C', birthDate: '1992-03-03', reqInfo: REQ_INFO,
+        });
+        await db.SocialSignupIntent.destroy({ where: { email: { [db.Sequelize.Op.like]: 'bf-social-c-%' } } });
 
-    // "공식" 0015 적용 — backfill이 이 모든 실제 데이터 위에서 계산된다.
+        // (d) 로컬 가입 후 10초를 넘겨 명시적 연결 — 근거1 없음(연결은 intent를 만들지
+        // 않는다), 근거2도 없어야 한다. 시각을 조작하지 않고 실제로 10초 넘게 기다린 뒤
+        // 연결해, identity.created_at이 진짜로 users.created_at보다 10초 넘게 뒤에 남게 한다.
+        delayedLocal = await createLocalUser({ nickname: 'BF지연', email: `bf-delayed-${crypto.randomUUID()}@example.com` });
+        await new Promise((resolve) => setTimeout(resolve, 11_000));
+        const delayedLogin = await authService.login({ email: delayedLocal.email, password: delayedLocal.password }, REQ_INFO);
+        const sessionId = require('jsonwebtoken').decode(delayedLogin.token).sessionId;
+        // linkExternalIdentityForValidatedSession은 state를 직접 받지 않는다(호출부가 이미
+        // state 소비·바인딩을 확인했다고 전제한다, socialAuth.service.js 참고) — 활성 세션만
+        // 재확인한다.
+        await socialAuthService.linkExternalIdentityForValidatedSession({
+            userId: delayedLocal.uuid, sessionId, provider: 'google', subject: `sub-delayed-${crypto.randomUUID()}`, email: delayedLocal.email,
+        });
+    } finally {
+        // 컬럼이 여전히 DB에 없는 이 시점에 반드시 원복한다 — 그래야 이 프로세스의 다른
+        // 시험(뒤이은 정상 0015 적용·API 시험 등)이 정상 모델을 그대로 쓴다.
+        db.User.rawAttributes.has_local_password = savedAttribute;
+        db.User.refreshAttributes();
+    }
+
+    // "공식" 0015 적용 — backfill이 0015 이전부터 실제로 존재하던 이 데이터 위에서 계산된다
+    // (이 시점에야 has_local_password 컬럼이 처음 생긴다 — true→false 실제 이관).
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
     await addPasswordResetTokens.verify(queryInterface, Sequelize, sequelize);
 
@@ -429,4 +495,48 @@ test('AC-05: has_local_password backfill은 로컬·연결(intent 보존)·연�
     assert.equal(memory.outbox[0].template, 'SOCIAL_LOGIN_GUIDE');
     const socialTokenCount = await db.PasswordResetToken.count({ where: { user_id: socialIntentPreserved.user.uuid } });
     assert.equal(socialTokenCount, 0);
+});
+
+// ── AC-05(경계 시험, 시각 직접 주입) §2-3a 근거2의 10초 컷오프 ─────────────────────
+//
+// 위 "실제 fixture" 시험은 실제 경로가 남기는 시각만 쓴다(지연 연결을 실제로 11초 기다린다).
+// 그 시험과 별개로, 근거2("identity와 사용자 생성 시각 차이 10초 이내") 컷오프 자체를 단위
+// 수준으로 정확히 가르려면 제어된 시각이 필요하다 — 이 시험은 그 목적을 위해 명시적으로
+// created_at을 직접 조작한다(이름대로 "시각을 직접 넣은 경계 시험"이며, 위 시험처럼 실제
+// 서비스 경로가 남긴 시각을 그대로 쓰는 시험이 아니다).
+test('AC-05(경계 시험, 시각 직접 주입): backfill 근거2는 10초 경계를 가른다', async (t) => {
+    if (unavailable(t)) return;
+    await rebuildFullSchema();
+    const queryInterface = sequelize.getQueryInterface();
+
+    const makeLinkedCandidate = async (label, deltaSeconds) => {
+        const local = await createLocalUser({ nickname: label, email: `bf-edge-${label}-${crypto.randomUUID()}@example.com` });
+        const login = await authService.login({ email: local.email, password: local.password }, REQ_INFO);
+        const sessionId = require('jsonwebtoken').decode(login.token).sessionId;
+        const identity = await socialAuthService.linkExternalIdentityForValidatedSession({
+            userId: local.uuid, sessionId, provider: 'google', subject: `sub-edge-${label}-${crypto.randomUUID()}`, email: local.email,
+        });
+        await sequelize.query(
+            'UPDATE external_identities ei JOIN users u ON u.uuid = ei.user_id '
+            + 'SET ei.created_at = DATE_ADD(u.created_at, INTERVAL :deltaSeconds SECOND) WHERE ei.id = :id',
+            { replacements: { deltaSeconds, id: identity.id } },
+        );
+        return local;
+    };
+
+    // 근거2는 ABS(TIMESTAMPDIFF(MICROSECOND, identity.created_at, user.created_at)) <= 10초다.
+    const within = await makeLinkedCandidate('within', 9); // 9초 이내 → 근거2 성립 → false
+    const outside = await makeLinkedCandidate('outside', 11); // 11초 초과 → 근거2 없음 → true
+
+    // backfill을 다시 계산시킨다 — up()은 컬럼이 이미 있어도 항상 backfill을 다시 계산한다
+    // (AC-06 "컬럼이 이미 있어도 미완료 backfill을 수행할 수 있어야 한다"와 같은 멱등 계약).
+    await addPasswordResetTokens.up(queryInterface, Sequelize, sequelize);
+    await addPasswordResetTokens.verify(queryInterface, Sequelize, sequelize);
+
+    const flagOf = async (uuid) => {
+        const [rows] = await sequelize.query('SELECT has_local_password FROM users WHERE uuid = :uuid', { replacements: { uuid } });
+        return Boolean(Number(rows[0].has_local_password));
+    };
+    assert.equal(await flagOf(within.uuid), false, '근거2: 10초 이내 연결은 false여야 한다');
+    assert.equal(await flagOf(outside.uuid), true, '근거2: 10초를 넘긴 연결은 true여야 한다');
 });

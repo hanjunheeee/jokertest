@@ -139,7 +139,14 @@ function startSessionRevocationWatcher(socket) {
                 }
             })
             .catch((err) => {
-                if (!stopped) console.error("\x1b[31m[소켓 세션 주기 검사 에러]\x1b[0m", err);
+                if (stopped) return; // stop() 이후의 늦은 실패는 emit·disconnect를 만들지 않는다.
+                // 계약: 세션 재검증이 예외로 실패해도 연결을 열어 두지 않는다(성공 판정과
+                // 마찬가지로 fail-closed). 로그에는 원문 오류 객체 대신 고정 문구와 오류 이름만
+                // 남긴다 — 원문 오류에 요청 입력·SQL 상세가 실려 있을 수 있다(F-29b AC-06과
+                // 같은 원칙).
+                console.error("\x1b[31m[소켓 세션 주기 검사 실패]\x1b[0m", err?.name ?? "UnknownError");
+                socket.emit("force_disconnect", { message: "세션 상태를 확인할 수 없어 연결이 종료되었습니다." });
+                socket.disconnect(true);
             })
             .finally(() => { checking = false; });
     }, SESSION_CHECK_INTERVAL_MS);

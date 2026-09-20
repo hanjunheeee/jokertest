@@ -353,6 +353,107 @@ test("AC-06: 모든 재설정 응답에 no-store가 적용되고 토큰 원문�
     assert.equal(JSON.stringify(confirmBody).includes(rawToken), false);
 });
 
+// ── AC-06: 실제 backend/index.js의 콘솔·접근 로그(morgan 포함)에도 원문이 없다 ─────
+//
+// 위 시험들은 이 파일 안의 최소 express 앱(auth 라우터만 마운트)에 대한 "응답 본문"만
+// 검사한다 — index.js 자신이 붙이는 morgan 접근 로그·console 출력까지는 검증하지 못한다.
+// backend/__tests__/dbStartup.test.js의 "정상 기동 후 REST 요청과 소켓 핸드셰이크가
+// 동작한다" 시험과 같은 방식으로 실제 index.js를 이 프로세스 안에서 기동하고(db.sequelize.sync만
+// 대체), stdout·console 출력을 가로채 재설정 왕복 전체에서 원문·전체 이메일·새 비밀번호가
+// 어디에도 없는지, morgan의 safe-url 마스킹이 실제로 적용되는지 확인한다.
+test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그에 원문·이메일·새 비밀번호가 남지 않는다", async (t) => {
+    stubPasswordResetTokenModel(t);
+    const user = localUser();
+    stubUserRepository(t, { users: [user] });
+    const memory = useMemoryMailAdapter(t);
+
+    const originalSync = db.sequelize.sync;
+    db.sequelize.sync = async () => db.sequelize;
+    t.after(() => { db.sequelize.sync = originalSync; });
+
+    const net = require("node:net");
+    const findFreePort = () => new Promise((resolve, reject) => {
+        const probe = net.createServer();
+        probe.once("error", reject);
+        probe.listen(0, "127.0.0.1", () => {
+            const { port } = probe.address();
+            probe.close(() => resolve(port));
+        });
+    });
+    const originalPort = process.env.PORT;
+    process.env.PORT = String(await findFreePort());
+    t.after(() => {
+        if (originalPort === undefined) delete process.env.PORT;
+        else process.env.PORT = originalPort;
+    });
+
+    const capturedStdout = [];
+    const capturedConsole = [];
+    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    // 가로채되 삼키지 않는다("tap") — 그대로 삼키면 node:test 자신의 TAP 리포터가 이 시험
+    // 실행 창과 겹쳐 비동기로 내보내는 **다른 시험**의 결과 줄까지 함께 사라진다(실제로
+    // 처음 구현에서 이 문제로 옆 시험 결과가 리포터 출력에서 누락됐다). 원래 함수도 그대로
+    // 호출해 실제 stdout·콘솔 동작은 바꾸지 않고, 우리는 사본만 따로 기록한다.
+    process.stdout.write = (chunk, ...rest) => {
+        capturedStdout.push(String(chunk));
+        return originalStdoutWrite(chunk, ...rest);
+    };
+    console.log = (...args) => {
+        capturedConsole.push(args.map(String).join(" "));
+        originalConsoleLog(...args);
+    };
+    console.error = (...args) => {
+        capturedConsole.push(args.map(String).join(" "));
+        originalConsoleError(...args);
+    };
+    const restoreConsole = () => {
+        process.stdout.write = originalStdoutWrite;
+        console.log = originalConsoleLog;
+        console.error = originalConsoleError;
+    };
+    t.after(restoreConsole);
+
+    const { server, io } = require("../index.js");
+    await once(server, "listening");
+    t.after(async () => {
+        io.close();
+        if (server.listening) await new Promise((resolve) => server.close(resolve));
+    });
+
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    const requestRes = await postRequest(base, { email: user.email });
+    assert.equal(requestRes.status, 200);
+    const rawToken = tokenOf(memory.outbox[0]);
+    assert.ok(rawToken);
+
+    const verifyRes = await getVerify(base, rawToken);
+    assert.equal(verifyRes.status, 200);
+
+    const newPassword = "index-js-real-app-pw-1";
+    const confirmRes = await postConfirm(base, { token: rawToken, newPassword });
+    assert.equal(confirmRes.status, 200);
+
+    // 쿼리 토큰이 실린 존재하지 않는 하위 경로도 접근 로그에 흔적을 남긴다.
+    await fetch(`${base}/auth/password-reset/does-not-exist?token=${encodeURIComponent(rawToken)}`);
+
+    restoreConsole();
+
+    const allOutput = [...capturedStdout, ...capturedConsole].join("\n");
+    assert.equal(allOutput.includes(rawToken), false, "토큰 원문이 콘솔/접근 로그에 남았습니다");
+    assert.equal(allOutput.includes(user.email), false, "전체 이메일이 콘솔/접근 로그에 남았습니다");
+    assert.equal(allOutput.includes(newPassword), false, "새 비밀번호가 콘솔/접근 로그에 남았습니다");
+
+    const resetLogLines = capturedStdout.join("").split(/\r?\n/).filter((line) => line.includes("/auth/password-reset"));
+    assert.ok(resetLogLines.length > 0, "재설정 경로에 대한 접근 로그가 전혀 남지 않았습니다");
+    for (const line of resetLogLines) {
+        assert.equal(line.includes("?token="), false, `접근 로그에 쿼리 토큰이 그대로 남았습니다: ${line}`);
+        assert.match(line, /\/auth\/password-reset\/\[REDACTED\]/, `접근 로그가 마스킹되지 않았습니다: ${line}`);
+    }
+});
+
 // ── 제한기(rate limiter) ─────────────────────────────────────────────────────
 
 test("제한기: 대상 이메일별 한도를 넘으면 429 RATE_LIMITED다", async (t) => {

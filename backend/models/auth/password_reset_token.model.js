@@ -15,6 +15,12 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     tableName: 'password_reset_tokens',
     timestamps: false,
+    // 0015-password-reset-tokens.js가 만드는 것과 같은 이름의 유일 인덱스를 모델에도
+    // 선언한다 — 마이그레이션과 모델 정의가 서로 다른 인덱스 이름/대상을 가리키지 않게
+    // 맞춘다(F-29b AC-06).
+    indexes: [
+      { name: 'password_reset_tokens_token_hash_unique', unique: true, fields: ['token_hash'] },
+    ],
   });
 
   PasswordResetToken.associate = (models) => {

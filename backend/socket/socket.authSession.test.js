@@ -23,6 +23,7 @@ const socketLayer = require("./socket");
 const matchmaking = require("./matchmaking");
 const gameSessionSocketLayer = require("./gameSession");
 const sessionLifecycle = require("../auth/sessionLifecycle");
+const { createFakeSocket, createFakeIo } = require("./__tests__/testHelpers/matchmakingFixtures");
 
 const UUID = "auth-session-uuid";
 const SESSION_ID = "auth-session-1";
@@ -414,4 +415,82 @@ test("F-29b AC-04: 검사가 아직 끝나지 않았으면 다음 tick은 중복
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callCount, 2, "이전 검사가 끝난 뒤에는 다음 tick에서 다시 조회해야 합니다");
+});
+
+test("F-29b AC-04: 주기 검사 중 예외가 발생해도 연결을 유지하지 않고 강제 종료하며, 원문 오류는 로그에 남기지 않는다", async (t) => {
+    stubAuthStorage(t);
+    const socket = makeGuardedSocket(UUID);
+
+    const sensitiveMessage = "DB 커넥션 끊김: 10.0.0.5:3306 사용자=admin";
+    t.mock.method(sessionLifecycle, "resolveSession", async () => { throw new Error(sensitiveMessage); });
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
+    const loggedArgs = [];
+    const originalConsoleError = console.error;
+    console.error = (...args) => { loggedArgs.push(args); };
+    t.after(() => { console.error = originalConsoleError; });
+
+    const watcher = socketLayer.__testables.startSessionRevocationWatcher(socket);
+    t.after(() => watcher.stop());
+
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // 계약: 재검증이 예외로 실패해도 연결을 열어 둔 채로 두지 않는다 — 실패 판정(ok:false)과
+    // 같은 결과(안내 후 강제 종료)여야 한다.
+    assert.deepEqual(socket.emitted.map((e) => e.event), ["force_disconnect"], "검사 예외에서도 연결을 종료해야 합니다");
+    assert.equal(socket.disconnectCalls, 1);
+
+    const loggedText = JSON.stringify(loggedArgs);
+    assert.equal(loggedText.includes(sensitiveMessage), false, "원문 오류 메시지가 로그에 남으면 안 됩니다");
+    assert.equal(loggedText.includes("10.0.0.5"), false, "오류 상세(주소 등)가 로그에 남으면 안 됩니다");
+});
+
+test("F-29b AC-04: registerConnectionHandlers를 거치면 주기 검사가 실제로 시작되고 disconnect에서 정리된다", async (t) => {
+    // 위의 F-29b AC-04 시험들은 startSessionRevocationWatcher를 직접 호출한다 — 그 함수
+    // 자체의 동작은 증명하지만, 실제 연결 진입점(registerConnectionHandlers)이 그 함수를
+    // 실제로 호출해 배선했는지는 증명하지 못한다. 이 시험은 registerConnectionHandlers를
+    // 실제로 거쳐 그 배선 자체를 검증한다.
+    const { session } = stubAuthStorage(t);
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
+    const fakeSocket = createFakeSocket(UUID);
+    fakeSocket.data.user = { uuid: UUID, sessionId: SESSION_ID };
+    let disconnectCalls = 0;
+    fakeSocket.disconnect = () => { disconnectCalls += 1; };
+    const io = createFakeIo([fakeSocket]);
+
+    socketLayer.__testables.registerConnectionHandlers(io, fakeSocket);
+    // handleConnection의 비동기 부수효과(presence 등)가 끝나도록 흘려보낸다.
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(disconnectCalls, 0, "registerConnectionHandlers를 거친 연결도 유효한 첫 검사에서 종료되면 안 됩니다");
+
+    // 클라이언트 이벤트를 이 소켓에 한 번도 보내지 않은 채(이벤트 가드는 관여하지 않는다)
+    // 세션만 폐기된 상태를 흉내낸다 — registerConnectionHandlers가 실제로 주기 검사를
+    // 시작했을 때만 다음 tick에서 감지된다. 배선이 빠졌다면(예: watcher를 만들기만 하고
+    // 등록하지 않았다면) 이 assert가 실패한다.
+    session.is_online = false;
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(disconnectCalls, 1, "registerConnectionHandlers로 시작된 주기 검사가 세션 폐기를 반영하지 못했습니다");
+
+    // disconnect 이벤트가 실제로 sessionWatcher.stop()까지 정리하는지 — 정리되지 않으면
+    // 아래에서 세션을 다시 폐기 상태로 두고 더 tick했을 때 추가 disconnect가 발생한다.
+    session.is_online = true;
+    fakeSocket.trigger("disconnect");
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    session.is_online = false;
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS * 2);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(disconnectCalls, 1, "disconnect 이후에도 주기 검사 타이머가 정리되지 않았습니다(clearInterval 누락)");
 });
