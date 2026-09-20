@@ -17,6 +17,9 @@ import { act } from "react"
 import { JSDOM } from "jsdom"
 import { register } from "node:module"
 import React from "react"
+import fs from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   pretendToBeVisual: true,
@@ -64,11 +67,26 @@ mock.module("../utils/pickInGamePlayerFrame.js", {
     resolveAccountCardFrameSrc: () => null,
   },
 })
+// F-27c(AC-03): 이 화면이 소비하는 것은 dispatchSfxEvent가 아니라 getSfxMix/subscribeSfxMix다
+// (별도 효과음 dispatch 없이 Master×SFX·mute를 영상에 직접 적용한다, AC-04). 시험이 직접
+// 조절할 수 있는 mix 하나를 여기서 관리하고, 컴포넌트의 subscribeSfxMix 구독자에게 그대로
+// 통지한다 — 실제 sfxPlayer의 computeMix를 복제하지 않고 계약(getMix/subscribeMix 모양)만 흉내낸다.
+let testSfxMix = { gain: 1, muted: false }
+const testSfxMixListeners = new Set()
+function setTestSfxMix(next) {
+  testSfxMix = next
+  for (const listener of [...testSfxMixListeners]) listener(testSfxMix)
+}
 mock.module("@/shared/hooks/useSfxRuntime.js", {
   namedExports: {
     dispatchSfxEvent: () => {},
     dispatchUiSfx: () => {},
     useSfxRuntime: () => {},
+    getSfxMix: () => testSfxMix,
+    subscribeSfxMix: (listener) => {
+      testSfxMixListeners.add(listener)
+      return () => testSfxMixListeners.delete(listener)
+    },
   },
 })
 mock.module("../../../../shared/env.js", {
@@ -109,7 +127,11 @@ const { setSocket } = await import("../../../../shared/socket/socketClient.js")
 const { useGameSessionSocketEvents } = await import("../hooks/useGameSessionSocketEvents.js")
 const { useInGameNightSuccessPresentation } = await import("../hooks/useInGameNightSuccessPresentation.js")
 const { default: InGameNightSuccessPresentation } = await import("../components/InGameNightSuccessPresentation.jsx")
-const { INGAME_KILL_ANIMATION_VIDEO_URL } = await import("../constants/killReveal/ingameKillReveal.js")
+const { resolveNightSuccessVideo } = await import("../utils/resolveNightSuccessVideo.js")
+const { SFX_MANIFEST } = await import("../../../../shared/audio/sfxManifest.js")
+
+/** §2-5 선택표의 실제 값 — 하드코딩 사본을 만들지 않고 production manifest에서 직접 읽는다. */
+const NIGHT_SUCCESS_VIDEO = SFX_MANIFEST["night-success-video"].embeddedVideos
 
 const GAME_ID = "game-night-success"
 const SELF_UUID = "uuid-self"
@@ -227,6 +249,7 @@ function openSession({ hold = false } = {}) {
 test.afterEach(() => {
   cleanup()
   useInGameStore.getState().clearGame()
+  setTestSfxMix({ gain: 1, muted: false })
 })
 
 // ── 1) 훅 층 ─────────────────────────────────────────────────────────────
@@ -323,15 +346,19 @@ test("AC-04: 전용 영상이 없는 HEAL·INVESTIGATE·CONFIRM은 assetStatus�
   const session = openSession()
 
   session.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "e1" }))
-  assert.equal(session.value.assetStatus, "VERIFIED", "KILL은 실제 영상이 있으므로 검증된 상태여야 한다")
+  assert.equal(session.value.assetStatus, "AVAILABLE", "KILL-USER은 선택표에 영상이 있으므로 AVAILABLE이어야 한다")
   session.finish("COMPLETED")
 
   session.deliver("night_action_success", buildSuccessPayload({ type: "HEAL", eventId: "e2" }))
-  session.deliver("night_action_success", buildSuccessPayload({ type: "INVESTIGATE", eventId: "e3" }))
+  assert.equal(session.value.assetStatus, "AVAILABLE", "HEAL-USER도 선택표에 영상이 있다")
+  session.finish("COMPLETED")
+
+  // INVESTIGATE-TARGET(perspectives가 TARGET뿐)은 선택표에 없다 — PENDING으로 남아야 한다.
+  session.deliver("night_action_success",
+    buildSuccessPayload({ type: "INVESTIGATE", eventId: "e3", perspectives: ["TARGET"] }))
   assert.equal(session.value.assetStatus, "PENDING")
   session.finish("COMPLETED") // 임시 연출 확인(=COMPLETED 보고)조차 자산 상태를 바꾸지 않는다.
-  assert.equal(session.value.current?.type, "INVESTIGATE")
-  assert.equal(session.value.assetStatus, "PENDING", "전용 자산이 없는 종류는 확인 뒤에도 PENDING이어야 한다")
+  assert.equal(session.value.current, null)
 
   session.close()
 })
@@ -489,7 +516,12 @@ function renderPresentation(props) {
   return render(React.createElement(InGameNightSuccessPresentation, props))
 }
 
-test("AC-05: KILL 사건은 기존 사망 연출과 같은 영상을 재생하고, 종료·오류·건너뛰기를 구분해 보고한다", () => {
+/** 등록된 마이크로태스크(예: 예약된 재생 시작, play()의 .catch)가 전부 풀리도록 한 틱 기다린다. */
+const flushMicrotasks = () => act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+})
+
+test("AC-05: KILL 사건은 기존 사망 연출과 같은 영상을 재생하고, 종료·오류·건너뛰기를 구분해 보고한다 — 먼저 일어난 종료 하나만 보고된다", async () => {
   // video.play()가 실제로 호출되는지 스파이한다 — jsdom의 기본 구현은 아무 것도 하지 않는
   // no-op(notImplemented)이라 예외 없이 그대로 감쌀 수 있다.
   const playCalls = []
@@ -504,25 +536,88 @@ test("AC-05: KILL 사건은 기존 사망 연출과 같은 영상을 재생하�
     current: { eventId: "k1", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
     open: true,
     finish: (outcome) => finishes.push(outcome),
-    assetStatus: "VERIFIED",
+    assetStatus: "AVAILABLE",
     finalStatus: null,
     onClose: () => {},
   })
   try {
     const video = container.querySelector("video")
     assert.notEqual(video, null, "KILL은 <video>를 마운트해야 한다")
-    assert.equal(video.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL, "기존 킬 연출 영상과 같은 URL이어야 한다")
-    assert.equal(playCalls.length, 1, "마운트되면 곧바로 play()를 호출해야 한다")
+    assert.equal(video.getAttribute("src"), NIGHT_SUCCESS_VIDEO["KILL-USER"], "KILL-USER 선택표 영상과 같은 URL이어야 한다")
+
+    // AC-02(CODEX 반려 수정): 재생 시작은 취소 가능한 마이크로태스크 예약이라 마운트 직후
+    // 동기적으로는 아직 play()가 불리지 않는다 — 한 틱 기다려야 한다.
+    await flushMicrotasks()
+    assert.equal(playCalls.length, 1, "마운트 뒤 한 틱 안에 play()를 정확히 한 번 호출해야 한다")
     assert.equal(playCalls[0], video)
 
     fireEvent(video, new dom.window.Event("ended"))
     assert.deepEqual(finishes, ["COMPLETED"])
 
+    // AC-05(CODEX 반려 수정): settleWith·reportFailure·watchdog가 공유하는 종료 가드 때문에,
+    // 이미 COMPLETED로 끝난 사건에 뒤이어 온 error 이벤트는 추가로 보고되지 않는다 — 먼저
+    // 일어난 종료 하나만 보고된다.
     fireEvent(video, new dom.window.Event("error"))
-    assert.deepEqual(finishes, ["COMPLETED", "ERROR"], "media error는 ERROR로 보고돼야 한다")
+    assert.deepEqual(finishes, ["COMPLETED"], "이미 종료된 사건에 뒤이은 media error가 다시 보고됐다")
   } finally {
     unmount()
     dom.window.HTMLMediaElement.prototype.play = originalPlay
+  }
+})
+
+/**
+ * F-27c(AC-02, CODEX 반려 수정): React StrictMode는 개발 빌드에서 mount effect를
+ * setup→cleanup→setup으로 **동기적으로 두 번** 실행해 정리 누락을 드러낸다. 이 시험은 실제
+ * 수신(night_action_success) → store 큐 → 훅 → 컴포넌트 전체를 StrictMode 아래 마운트해,
+ * 같은 사건에 play()가 정확히 한 번만 불리고, 같은 사건의 재전달·리렌더에도 늘지 않으며,
+ * 완료 보고(ACK)도 정확히 한 번임을 확인한다.
+ */
+test("AC-02(CODEX 반려 수정): React StrictMode 이중 마운트에서도 play()는 정확히 한 번만 불리고, 같은 사건 재전달·리렌더에도 늘지 않으며 완료 ACK도 한 번이다", async () => {
+  seedNightSession()
+  const socket = createFakeSocket()
+  act(() => setSocket(socket))
+  const receiver = renderHook(() => useGameSessionSocketEvents(), { wrapper: routerWrapper })
+
+  const playCalls = []
+  const originalPlay = dom.window.HTMLMediaElement.prototype.play
+  dom.window.HTMLMediaElement.prototype.play = function spyPlay(...args) {
+    playCalls.push(this)
+    return originalPlay.apply(this, args)
+  }
+
+  let view
+  try {
+    act(() => socket.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "strict-kill" })))
+    assert.equal(useInGameStore.getState().nightSuccessQueue.length, 1, "전제: 큐에 사건 하나가 있어야 한다")
+
+    view = render(
+      React.createElement(React.StrictMode, null, React.createElement(InGameNightSuccessPresentation, null)),
+    )
+    await flushMicrotasks()
+    const video = view.container.querySelector("video")
+    assert.notEqual(video, null, "StrictMode 아래서도 영상이 마운트돼야 한다")
+    assert.equal(playCalls.length, 1, "StrictMode의 setup→cleanup→setup에서 play()가 두 번 이상 불렸다")
+
+    // 같은 사건이 다시 전달돼도(store가 중복으로 거른다) 재생이 다시 시작되지 않는다.
+    act(() => socket.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "strict-kill" })))
+    await flushMicrotasks()
+    assert.equal(playCalls.length, 1, "같은 사건의 재전달이 play()를 다시 불렀다")
+
+    // 같은 props로 리렌더해도 마운트 effect의 deps(eventId·src)가 그대로라 다시 돌지 않는다.
+    act(() => view.rerender(
+      React.createElement(React.StrictMode, null, React.createElement(InGameNightSuccessPresentation, null)),
+    ))
+    await flushMicrotasks()
+    assert.equal(playCalls.length, 1, "리렌더가 play()를 다시 불렀다")
+
+    act(() => { fireEvent(video, new dom.window.Event("ended")) })
+    const acks = socket.ackCallsFor("acknowledge_night_action_success")
+    assert.equal(acks.length, 1, "완료 보고(ACK)가 정확히 한 번이 아니다")
+  } finally {
+    view?.unmount()
+    receiver.unmount()
+    dom.window.HTMLMediaElement.prototype.play = originalPlay
+    act(() => setSocket(null))
   }
 })
 
@@ -539,11 +634,6 @@ function withRejectingPlay(errorName, fn) {
   })
 }
 
-/** 등록된 마이크로태스크(예: play()의 .catch)가 전부 풀리도록 한 틱 기다린다. */
-const flushMicrotasks = () => act(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 0))
-})
-
 test("AC-03(CODEX 반려 수정): 자동재생 차단(NotAllowedError)은 재시도 화면만 보여주고 아직 보고하지 않는다", async () => {
   const finishes = []
   await withRejectingPlay("NotAllowedError", async () => {
@@ -551,7 +641,7 @@ test("AC-03(CODEX 반려 수정): 자동재생 차단(NotAllowedError)은 재시
       current: { eventId: "k-autoplay", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
       open: true,
       finish: (outcome) => finishes.push(outcome),
-      assetStatus: "VERIFIED",
+      assetStatus: "AVAILABLE",
       finalStatus: null,
       onClose: () => {},
     })
@@ -574,7 +664,7 @@ test("AC-03(CODEX 반려 수정): 자동재생 차단이 아닌 재생 실패(�
       current: { eventId: "k-decode-fail", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
       open: true,
       finish: (outcome) => finishes.push(outcome),
-      assetStatus: "VERIFIED",
+      assetStatus: "AVAILABLE",
       finalStatus: null,
       onClose: () => {},
     })
@@ -597,7 +687,7 @@ test("AC-03(CODEX 반려 수정): 재시도 화면에서 건너뛰기를 누르�
       current: { eventId: "k-skip-from-retry", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
       open: true,
       finish: (outcome) => finishes.push(outcome),
-      assetStatus: "VERIFIED",
+      assetStatus: "AVAILABLE",
       finalStatus: null,
       onClose: () => {},
     })
@@ -614,11 +704,62 @@ test("AC-03(CODEX 반려 수정): 재시도 화면에서 건너뛰기를 누르�
   })
 })
 
-test("AC-04: HEAL·INVESTIGATE·CONFIRM은 '자료 대기' 임시 연출을 보여주고, 확인은 COMPLETED·건너뛰기는 SKIPPED로 각각 끝낸다", () => {
-  for (const [type, roleLabel] of [["HEAL", "의사"], ["INVESTIGATE", "경비원"], ["CONFIRM", "마녀사냥꾼"]]) {
+/**
+ * F-27c(AC-05): 유음 시도가 자동재생 정책(NotAllowedError)으로 거절되면 무음으로 **한 번만**
+ * 조용히 재시도한다 — 성공하면 ACK 없이 계속 보여주고, 그 뒤 설정을 다시 유음으로 바꿔도
+ * 사용자 동작 없이는 소리를 켜지 않는다(무음 latch가 사건 수명 동안 유지된다).
+ */
+test("AC-05: 유음 재생 거절(NotAllowedError) → 무음 재생 성공 → COMPLETED 1회, 그 뒤 음량 설정을 바꿔도 그 재생은 무음을 유지한다", async () => {
+  const playCalls = []
+  const originalPlay = dom.window.HTMLMediaElement.prototype.play
+  dom.window.HTMLMediaElement.prototype.play = function maybeBlockedPlay() {
+    playCalls.push({ muted: this.muted })
+    if (playCalls.length === 1) {
+      const err = new Error("NotAllowedError")
+      err.name = "NotAllowedError"
+      return Promise.reject(err)
+    }
+    return Promise.resolve()
+  }
+  setTestSfxMix({ gain: 1, muted: false }) // 유음 설정 — 첫 시도는 유음으로 걸린다.
+
+  const finishes = []
+  const { container, unmount } = renderPresentation({
+    current: { eventId: "k-silent-retry", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true,
+    finish: (outcome) => finishes.push(outcome),
+    assetStatus: "AVAILABLE",
+    finalStatus: null,
+    onClose: () => {},
+  })
+  try {
+    const video = container.querySelector("video")
+    await flushMicrotasks()
+    assert.equal(playCalls.length, 2, "유음 거절 뒤 무음으로 정확히 한 번만 재시도해야 한다")
+    assert.equal(playCalls[0].muted, false, "첫 시도는 유음(mix.muted=false)으로 걸려야 한다")
+    assert.equal(playCalls[1].muted, true, "무음 재시도는 muted=true로 걸려야 한다")
+    assert.equal(video.muted, true, "무음 재시도 성공 뒤 video가 무음 상태여야 한다")
+    assert.deepEqual(finishes, [], "무음 재시도 성공만으로는 아직 아무것도 보고하면 안 된다(ACK 없이 계속 보여준다)")
+
+    fireEvent(video, new dom.window.Event("ended"))
+    assert.deepEqual(finishes, ["COMPLETED"], "무음 재생이 끝나면 COMPLETED가 정확히 한 번 보고돼야 한다")
+
+    // 사용자 동작 없이 설정만 유음으로 바꿔도, 이미 무음 latch가 선 이 재생은 계속 무음이다.
+    act(() => setTestSfxMix({ gain: 1, muted: false }))
+    assert.equal(video.muted, true, "설정을 유음으로 바꿨는데 무음 latch가 선 재생이 다시 유음이 됐다")
+    assert.deepEqual(finishes, ["COMPLETED"], "설정 변경이 추가 보고를 만들었다")
+  } finally {
+    unmount()
+    dom.window.HTMLMediaElement.prototype.play = originalPlay
+    setTestSfxMix({ gain: 1, muted: false })
+  }
+})
+
+test("AC-01/AC-04: 전용 영상이 없는 TARGET 조합(INVESTIGATE-TARGET·CONFIRM-TARGET)은 '자료 대기' 임시 연출을 보여주고, 확인은 COMPLETED·건너뛰기는 SKIPPED로 각각 끝내며 USER 자산 경로를 요청하지 않는다", () => {
+  for (const [type, roleLabel] of [["INVESTIGATE", "경비원"], ["CONFIRM", "마녀사냥꾼"]]) {
     const finishes = []
     const { container, unmount } = renderPresentation({
-      current: { eventId: `pending-${type}`, type, gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      current: { eventId: `pending-${type}`, type, gameId: GAME_ID, nightDayIndex: 1, perspectives: ["TARGET"] },
       open: true,
       finish: (outcome) => finishes.push(outcome),
       assetStatus: "PENDING",
@@ -626,8 +767,15 @@ test("AC-04: HEAL·INVESTIGATE·CONFIRM은 '자료 대기' 임시 연출을 보�
       onClose: () => {},
     })
     try {
+      assert.equal(container.querySelector("video"), null, `${type}-TARGET 화면에 영상을 그리면 안 된다`)
       assert.equal(container.textContent.includes("자료 대기"), true, `${type} 화면에 '자료 대기' 문구가 없다`)
-      assert.equal(container.textContent.includes(roleLabel), true, `${type} 화면에 역할 표시(${roleLabel})가 없다`)
+      assert.equal(container.textContent.includes(roleLabel), false, `${type}-TARGET 화면에 역할명(${roleLabel})이 노출됐다`)
+      // 대상자 화면은 USER 전용 자산 경로를 DOM 어디에도 참조하면 안 된다.
+      assert.equal(
+        container.innerHTML.includes(NIGHT_SUCCESS_VIDEO[`${type}-USER`]),
+        false,
+        `${type}-TARGET 화면이 USER 자산 경로(${NIGHT_SUCCESS_VIDEO[`${type}-USER`]})를 참조했다`,
+      )
 
       const confirmButton = [...container.querySelectorAll("button")].find((b) => b.textContent.trim() === "확인")
       assert.notEqual(confirmButton, null)
@@ -642,7 +790,7 @@ test("AC-04: HEAL·INVESTIGATE·CONFIRM은 '자료 대기' 임시 연출을 보�
 test("AC-04: 임시 연출을 backdrop/Escape로 닫으면 SKIPPED로 보고된다", () => {
   const finishes = []
   const { container, unmount } = renderPresentation({
-    current: { eventId: "pending-heal", type: "HEAL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    current: { eventId: "pending-investigate", type: "INVESTIGATE", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["TARGET"] },
     open: true,
     finish: (outcome) => finishes.push(outcome),
     assetStatus: "PENDING",
@@ -654,6 +802,223 @@ test("AC-04: 임시 연출을 backdrop/Escape로 닫으면 SKIPPED로 보고된�
     assert.deepEqual(finishes, ["SKIPPED"])
   } finally {
     unmount()
+  }
+})
+
+// ── AC-01: 8가지 type × 관점 선택표 ─────────────────────────────────────
+
+/**
+ * F-27c(AC-01, CODEX 반려 수정): 설계도 §2-5 표의 다섯 URL을 **문자열 리터럴**로 못 박는다 —
+ * 기대값을 production manifest(NIGHT_SUCCESS_VIDEO)에서 그대로 가져오면, sfxManifest.js의
+ * embeddedVideos 등록 자체가 틀려도(오타·잘못된 파일명 등) 시험이 "manifest가 말하는 대로"
+ * 통과해버려 오등록을 검출하지 못한다.
+ */
+const EXPECTED_NIGHT_SUCCESS_VIDEO_URLS = Object.freeze({
+  "KILL-USER": "/video-direction/night-success-kill-user.webm",
+  "KILL-TARGET": "/video-direction/night-success-kill-target.webm",
+  "HEAL-USER": "/video-direction/night-success-heal.webm",
+  "HEAL-TARGET": "/video-direction/night-success-heal.webm",
+  "INVESTIGATE-USER": "/video-direction/night-success-investigate-user.webm",
+  "CONFIRM-USER": "/video-direction/night-success-confirm-user.webm",
+})
+
+test("AC-01: 사건 type과 관점 8가지 조합 각각에서 §2-5 선택표대로 자산 경로가 선택된다", () => {
+  const COMBINATIONS = [
+    { type: "KILL", perspectives: ["USER"], expectSrc: EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["KILL-USER"] },
+    { type: "KILL", perspectives: ["TARGET"], expectSrc: EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["KILL-TARGET"] },
+    { type: "HEAL", perspectives: ["USER"], expectSrc: EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["HEAL-USER"] },
+    { type: "HEAL", perspectives: ["TARGET"], expectSrc: EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["HEAL-TARGET"] },
+    { type: "INVESTIGATE", perspectives: ["USER"], expectSrc: EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["INVESTIGATE-USER"] },
+    { type: "INVESTIGATE", perspectives: ["TARGET"], expectSrc: null },
+    { type: "CONFIRM", perspectives: ["USER"], expectSrc: EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["CONFIRM-USER"] },
+    { type: "CONFIRM", perspectives: ["TARGET"], expectSrc: null },
+  ]
+
+  for (const { type, perspectives, expectSrc } of COMBINATIONS) {
+    const entry = { eventId: `combo-${type}-${perspectives.join("")}`, type, gameId: GAME_ID, nightDayIndex: 1, perspectives }
+    // 순수 선택 함수 층위에서도 같은 값을 내야 한다(훅·컴포넌트 둘 다 이 함수를 호출한다).
+    const resolved = resolveNightSuccessVideo(entry)
+    assert.equal(resolved?.src ?? null, expectSrc, `${type}-${perspectives[0]} 선택 함수 결과가 다르다`)
+
+    const { container, unmount } = renderPresentation({
+      current: entry,
+      open: true,
+      finish: () => {},
+      assetStatus: expectSrc ? "AVAILABLE" : "PENDING",
+      finalStatus: null,
+      onClose: () => {},
+    })
+    try {
+      const video = container.querySelector("video")
+      if (expectSrc) {
+        assert.notEqual(video, null, `${type}-${perspectives[0]}은 영상을 그려야 한다`)
+        assert.equal(video.getAttribute("src"), expectSrc)
+      } else {
+        assert.equal(video, null, `${type}-${perspectives[0]}은 전용 영상이 없어 임시 연출이어야 한다`)
+        assert.equal(container.textContent.includes("자료 대기"), true)
+      }
+    } finally {
+      unmount()
+    }
+  }
+})
+
+/**
+ * F-27c(AC-01, CODEX 반려 수정): controlled props가 아니라 **실제 수신(night_action_success)
+ * → store 큐 → 표시 경로** 전체로 최소 두 조합(KILL-TARGET·자기 치료 HEAL)을 확인한다 — 훅이
+ * 큐를 잘못 조립하거나 컴포넌트가 store 대신 엉뚱한 값을 그리는 배선 결함은 controlled 시험만
+ *으로는 드러나지 않는다.
+ */
+test("AC-01: 실제 수신 → store 큐 → 표시 경로에서도 KILL-TARGET과 자기 치료(HEAL) 선택표가 그대로 적용된다", () => {
+  seedNightSession()
+  const socket = createFakeSocket()
+  act(() => setSocket(socket))
+  const receiver = renderHook(() => useGameSessionSocketEvents(), { wrapper: routerWrapper })
+  try {
+    // KILL-TARGET — 대상자 관점, 실제 소켓 수신 경로.
+    act(() => socket.deliver("night_action_success",
+      buildSuccessPayload({ type: "KILL", eventId: "real-kill-target", perspectives: ["TARGET"] })))
+    assert.equal(useInGameStore.getState().nightSuccessQueue.length, 1, "전제: 큐에 KILL 사건이 있어야 한다")
+
+    const killView = renderPresentation({})
+    try {
+      const video = killView.container.querySelector("video")
+      assert.notEqual(video, null, "실제 수신 경로가 KILL-TARGET 영상을 그리지 않았다")
+      assert.equal(video.getAttribute("src"), EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["KILL-TARGET"])
+      act(() => { fireEvent(video, new dom.window.Event("ended")) })
+      assert.equal(socket.ackCallsFor("acknowledge_night_action_success").length, 1)
+    } finally {
+      killView.unmount()
+    }
+
+    // 자기 치료(HEAL, perspectives에 USER·TARGET 동시 포함) — 실제 수신 경로.
+    act(() => socket.deliver("night_action_success", buildSuccessPayload({
+      type: "HEAL", eventId: "real-self-heal", perspectives: ["USER", "TARGET"], targetId: SELF_UUID,
+    })))
+    assert.equal(useInGameStore.getState().nightSuccessQueue.length, 1, "전제: 큐에 HEAL 사건이 있어야 한다")
+
+    const healView = renderPresentation({})
+    try {
+      const videos = healView.container.querySelectorAll("video")
+      assert.equal(videos.length, 1, "실제 수신 경로의 자기 치료도 영상이 정확히 하나만 렌더돼야 한다")
+      assert.equal(videos[0].getAttribute("src"), EXPECTED_NIGHT_SUCCESS_VIDEO_URLS["HEAL-USER"])
+      act(() => { fireEvent(videos[0], new dom.window.Event("ended")) })
+      assert.equal(socket.ackCallsFor("acknowledge_night_action_success").length, 2)
+    } finally {
+      healView.unmount()
+    }
+  } finally {
+    receiver.unmount()
+    act(() => setSocket(null))
+  }
+})
+
+// ── AC-06: 다섯 자산 파일의 존재 고정 ───────────────────────────────────
+
+test("AC-06: frontend/public/video-direction 아래 역할 영상 5개가 존재하고 크기가 0보다 크다", () => {
+  // 파일 이름은 문자열 리터럴로 고정한다 — sfxManifest.js의 embeddedVideos에서 가져오면
+  // manifest 자체가 잘못돼도(오타·파일 삭제) 시험이 같은 값을 다시 확인할 뿐 실제 파일
+  // 존재를 증명하지 못한다. 이 조각은 이 파일들을 만들거나 바꾸지 않는다(운영자가 이미 커밋).
+  const VIDEO_DIRECTION_FILES = [
+    "night-success-kill-user.webm",
+    "night-success-kill-target.webm",
+    "night-success-heal.webm",
+    "night-success-investigate-user.webm",
+    "night-success-confirm-user.webm",
+  ]
+  // __tests__ → ingame → game → domains → src → frontend → public/video-direction
+  const videoDirectionDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..", "..", "..", "..", "..", "public", "video-direction",
+  )
+
+  for (const file of VIDEO_DIRECTION_FILES) {
+    const full = path.join(videoDirectionDir, file)
+    assert.ok(fs.existsSync(full), `frontend/public/video-direction/${file}이 없다`)
+    const stat = fs.statSync(full)
+    assert.ok(stat.isFile(), `frontend/public/video-direction/${file}이 파일이 아니다`)
+    assert.ok(stat.size > 0, `frontend/public/video-direction/${file}의 크기가 0이다`)
+  }
+})
+
+// ── AC-02: 자기 치료(USER === TARGET) ───────────────────────────────────
+
+test("AC-02: USER와 TARGET이 동일 인물인 자기 치료(HEAL)는 영상이 정확히 1회만 재생된다", async () => {
+  const playCalls = []
+  const originalPlay = dom.window.HTMLMediaElement.prototype.play
+  dom.window.HTMLMediaElement.prototype.play = function spyPlay(...args) {
+    playCalls.push(this)
+    return originalPlay.apply(this, args)
+  }
+
+  const finishes = []
+  const { container, unmount } = renderPresentation({
+    current: {
+      eventId: "self-heal", type: "HEAL", gameId: GAME_ID, nightDayIndex: 1,
+      perspectives: ["USER", "TARGET"], targetId: SELF_UUID,
+    },
+    open: true,
+    finish: (outcome) => finishes.push(outcome),
+    assetStatus: "AVAILABLE",
+    finalStatus: null,
+    onClose: () => {},
+  })
+  try {
+    const videos = container.querySelectorAll("video")
+    assert.equal(videos.length, 1, "자기 치료 사건에 영상이 정확히 하나만 렌더돼야 한다")
+    assert.equal(videos[0].getAttribute("src"), NIGHT_SUCCESS_VIDEO["HEAL-USER"])
+
+    // 재생 시작은 취소 가능한 마이크로태스크 예약이다 — 한 틱 기다려야 play()가 불린다.
+    await flushMicrotasks()
+    assert.equal(playCalls.length, 1, "자기 치료 영상은 정확히 한 번만 재생을 시도해야 한다")
+
+    fireEvent(videos[0], new dom.window.Event("ended"))
+    assert.deepEqual(finishes, ["COMPLETED"])
+  } finally {
+    unmount()
+    dom.window.HTMLMediaElement.prototype.play = originalPlay
+  }
+})
+
+// ── AC-03: Master×SFX·mute가 영상에 반영된다 ────────────────────────────
+
+test("AC-03: 영상 재생 시 볼륨이 Master×SFX 값으로 적용되고, 설정 변경도 재생을 다시 시작하지 않은 채 반영된다", async () => {
+  const playCalls = []
+  const originalPlay = dom.window.HTMLMediaElement.prototype.play
+  dom.window.HTMLMediaElement.prototype.play = function spyPlay(...args) {
+    playCalls.push(this)
+    return originalPlay.apply(this, args)
+  }
+  setTestSfxMix({ gain: 0.5 * 0.4, muted: false }) // Master 50 × SFX 40
+
+  const { container, unmount } = renderPresentation({
+    current: { eventId: "mix-1", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true,
+    finish: () => {},
+    assetStatus: "AVAILABLE",
+    finalStatus: null,
+    onClose: () => {},
+  })
+  try {
+    const video = container.querySelector("video")
+    // mix는 재생 시작 시도(취소 가능한 마이크로태스크 예약) 안에서 적용된다 — 한 틱 기다린다.
+    await flushMicrotasks()
+    assert.equal(video.muted, false)
+    assert.ok(Math.abs(video.volume - 0.2) < 1e-9, `volume이 Master×SFX(0.2)와 다르다: ${video.volume}`)
+
+    // 설정 변경 — 새 재생을 시작하지 않고 같은 video에 반영돼야 한다.
+    act(() => setTestSfxMix({ gain: 0.25 * 0.4, muted: false }))
+    assert.ok(Math.abs(video.volume - 0.1) < 1e-9, `볼륨 변경이 반영되지 않았다: ${video.volume}`)
+    assert.equal(playCalls.length, 1, "설정 변경이 재생을 다시 시작시켰다")
+
+    // 음소거 설정 — video.muted가 true가 돼야 한다(AC-03).
+    act(() => setTestSfxMix({ gain: 0, muted: true }))
+    assert.equal(video.muted, true, "음소거 설정인데 video.muted가 true가 아니다")
+    assert.equal(playCalls.length, 1, "음소거 반영이 재생을 다시 시작시켰다")
+  } finally {
+    unmount()
+    dom.window.HTMLMediaElement.prototype.play = originalPlay
+    setTestSfxMix({ gain: 1, muted: false })
   }
 })
 
@@ -682,7 +1047,7 @@ test("open이 아니면 아무것도 그리지 않는다", () => {
     current: { eventId: "e1", type: "KILL" },
     open: false,
     finish: () => {},
-    assetStatus: "VERIFIED",
+    assetStatus: "AVAILABLE",
     finalStatus: null,
     onClose: () => {},
   })
@@ -714,7 +1079,7 @@ test("소비처 연결(AC-03): props 없이도 컴포넌트가 직접 훅을 불
   try {
     const video = container.querySelector("video")
     assert.notEqual(video, null, "props 없이 놓아둔 컴포넌트가 큐의 선두 KILL 사건을 그리지 않았다")
-    assert.equal(video.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL)
+    assert.equal(video.getAttribute("src"), NIGHT_SUCCESS_VIDEO["KILL-USER"])
 
     act(() => { fireEvent(video, new dom.window.Event("ended")) })
     const acks = socket.ackCallsFor("acknowledge_night_action_success")
@@ -767,7 +1132,7 @@ test("소비처 연결: 실제 InGamePage가 훅과 컴포넌트를 마운트해
   })
   const video = view.container.querySelector("video[src]")
   assert.notEqual(video, null, "InGamePage가 실제로 KILL 영상을 마운트해야 한다")
-  assert.equal(video.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL)
+  assert.equal(video.getAttribute("src"), NIGHT_SUCCESS_VIDEO["KILL-TARGET"])
 
   await act(async () => { fireEvent(video, new dom.window.Event("ended")) })
   const ack = socket.ackCallsFor("acknowledge_night_action_success")
@@ -777,7 +1142,11 @@ test("소비처 연결: 실제 InGamePage가 훅과 컴포넌트를 마운트해
   await act(async () => {
     socket.deliver("night_action_success", buildSuccessPayload({ type: "HEAL", eventId: "page-e2", perspectives: ["TARGET"] }))
   })
-  assert.equal(view.container.textContent.includes("자료 대기"), true, "HEAL은 임시 연출이 이어서 떠야 한다")
+  // HEAL-TARGET도 선택표에 있으므로(자기 치료가 아니어도 대상자가 보는 영상이 있다) 임시 연출이
+  // 아니라 영상이 이어서 떠야 한다.
+  const healVideo = view.container.querySelector("video[src]")
+  assert.notEqual(healVideo, null, "HEAL-TARGET도 영상이 있어야 한다")
+  assert.equal(healVideo.getAttribute("src"), NIGHT_SUCCESS_VIDEO["HEAL-TARGET"])
 
   await act(async () => { await router.navigate("/lobby") })
   useInGameStore.getState().clearGame()

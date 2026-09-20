@@ -102,7 +102,10 @@ mock.module("@/shared/socket/socketClient", {
   },
 })
 mock.module("@/shared/hooks/useSfxRuntime.js", {
-  namedExports: { dispatchSfxEvent: () => {}, dispatchUiSfx: () => {}, useSfxRuntime: () => {} },
+  namedExports: {
+    dispatchSfxEvent: () => {}, dispatchUiSfx: () => {}, useSfxRuntime: () => {},
+    getSfxMix: () => ({ gain: 0, muted: true }), subscribeSfxMix: () => () => {},
+  },
 })
 mock.module("../../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "http://localhost:4000", DISCORD_SUPPORT_URL: undefined },

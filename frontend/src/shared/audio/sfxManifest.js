@@ -79,6 +79,24 @@ export const SFX_CLASSIFICATION = Object.freeze({
   MUSIC: "music",
 })
 
+/**
+ * F-27c(AC-01) · 밤 성공 사건 역할 영상 선택표. 사건 `${type}-${perspective}` → public 경로.
+ *
+ * 운영자가 제공한 웹 변환본(VP9 알파 + Opus, frontend/public/video-direction) 5개만 등록한다.
+ * INVESTIGATE-TARGET·CONFIRM-TARGET은 전용 영상이 없어 표에 없다 — resolveNightSuccessVideo가
+ * 이 경우 null을 돌려주고 기존 임시 연출로 넘어간다(USER 경로를 대신 조회하지 않는다).
+ * HEAL-USER·HEAL-TARGET은 같은 파일을 가리킨다 — 자기 치료(perspectives에 둘 다 있는 사건)도
+ * 결과 하나만 골라야 하므로 어느 관점으로 조회해도 같은 영상이 나와야 한다.
+ */
+const NIGHT_SUCCESS_VIDEO_TABLE = Object.freeze({
+  "KILL-USER": "/video-direction/night-success-kill-user.webm",
+  "KILL-TARGET": "/video-direction/night-success-kill-target.webm",
+  "HEAL-USER": "/video-direction/night-success-heal.webm",
+  "HEAL-TARGET": "/video-direction/night-success-heal.webm",
+  "INVESTIGATE-USER": "/video-direction/night-success-investigate-user.webm",
+  "CONFIRM-USER": "/video-direction/night-success-confirm-user.webm",
+})
+
 /** 아직 자산이 제공되지 않은 항목의 공통 형태 — 경로·해시를 지어내지 않는다. */
 function pendingAsset(extra) {
   return {
@@ -164,6 +182,21 @@ export const SFX_MANIFEST = Object.freeze({
   // --- 사망·결과(AC-01) ---------------------------------------------------
   "player-eliminated": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
   "game-result": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+
+  // --- 밤 성공 사건 역할 영상 내장음(F-27c AC-01/AC-04) --------------------
+  // audioMode="embedded"라 player.dispatch()의 별도 재생 경로는 이 kind를 EMBEDDED_OWNED로
+  // 거부한다(sfxPlayer.js) — 화면은 이 kind를 dispatch하지 않고 getSfxMix/subscribeSfxMix로
+  // Master×SFX·mute만 직접 읽어 영상 요소에 적용한다(claimAudio·dispatch 어느 것도 부르지
+  // 않는다). src/sha256을 null로 남기는 것은 "별도 효과음으로 잘라낸 재생"이 여전히 미검토라는
+  // 뜻이다 — embeddedVideos의 승인은 완전히 다른 채널(영상 자체)이고, 이 kind로 별도 SFX를
+  // 재생해도 되는 근거가 아니다.
+  "night-success-video": pendingAsset({
+    scope: SFX_SCOPE.GAME,
+    notificationKey: null,
+    audioMode: "embedded",
+    silenceReason: "별도 추출 재생은 금지된다 — 승인된 것은 embeddedVideos의 영상 파일 자체뿐이다.",
+    embeddedVideos: NIGHT_SUCCESS_VIDEO_TABLE,
+  }),
 })
 
 /** manifest에서 kind 항목을 찾는다. 모르는 kind는 null이다(추측하지 않는다). */

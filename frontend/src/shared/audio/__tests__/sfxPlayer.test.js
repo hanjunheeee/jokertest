@@ -530,6 +530,43 @@ test("AC-05 manifest가 embedded로 표시한 사건에는 별도 음을 내지 
   assert.equal(h.media.length, 0)
 })
 
+// ---------------------------------------------------------------------------
+// F-27c(AC-04) · night-success-video — 배포 manifest의 밤 성공 사건 역할 영상 내장음 항목
+// ---------------------------------------------------------------------------
+
+test("F-27c(AC-04) night-success-video는 GAME 범위·embedded·5개 URL 선택표로 배포 manifest에 등록돼 있다", () => {
+  const entry = SFX_MANIFEST["night-success-video"]
+  assert.ok(entry, "night-success-video kind가 배포 manifest에 없다")
+  assert.equal(entry.scope, SFX_SCOPE.GAME)
+  assert.equal(entry.notificationKey, null)
+  assert.equal(entry.audioMode, "embedded")
+  // 별도 효과음 재생 승인 근거(src/sha256)는 여전히 null이다 — embeddedVideos의 승인은 영상
+  // 파일 자체에 대한 것이고, 이 kind로 잘라낸 별도 재생을 허용하는 근거가 아니다.
+  assert.equal(entry.src, null)
+  assert.equal(entry.sha256, null)
+
+  const table = entry.embeddedVideos
+  assert.deepEqual(Object.keys(table).sort(), [
+    "CONFIRM-USER", "HEAL-TARGET", "HEAL-USER", "INVESTIGATE-USER", "KILL-TARGET", "KILL-USER",
+  ])
+  for (const [key, src] of Object.entries(table)) {
+    assert.equal(typeof src, "string", `${key} 경로가 문자열이 아니다`)
+    assert.ok(src.startsWith("/video-direction/"), `${key} 경로가 /video-direction/ 아래가 아니다: ${src}`)
+    assert.ok(src.endsWith(".webm"), `${key} 경로가 webm이 아니다: ${src}`)
+  }
+  // INVESTIGATE-TARGET·CONFIRM-TARGET은 전용 영상이 없다 — 표에 없어야 임시 연출로 넘어간다.
+  assert.equal(table["INVESTIGATE-TARGET"], undefined)
+  assert.equal(table["CONFIRM-TARGET"], undefined)
+})
+
+test("F-27c(AC-04) night-success-video를 별도 dispatch해도 매체·로드가 전혀 만들어지지 않는다", () => {
+  const h = makePlayer({ manifest: SFX_MANIFEST })
+  const result = h.player.dispatch(gameEvent("role-video-1", { kind: "night-success-video" }))
+  assert.equal(result.status, "suppressed")
+  assert.equal(h.media.length, 0, "night-success-video 별도 dispatch가 매체를 만들었다")
+  assert.equal(h.loads.length, 0, "night-success-video 별도 dispatch가 자산을 로드하려 했다")
+})
+
 test("AC-05 claimAudio는 mix를 매체에 적용하고 cleanup 뒤에는 건드리지 않는다", () => {
   const h = makePlayer({ settings: { masterVolume: 100, sfxVolume: 50 } })
   const claim = h.player.claimAudio(gameEvent("mov-1"), { mode: "embedded" })
