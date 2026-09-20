@@ -314,6 +314,23 @@ export function useInGameSessionSnapshotSync() {
         setIdentityRebindPending(false)
       }
 
+      /**
+       * F-26(AC-01): **이 세대의 조회가 적용 없이 끝났다 — 더 물을 것이 남아 있지 않을 때만.**
+       *
+       * 재결속 보류와 bootstrapStatus는 "확인하지 못한 채 끝났다"를 알리는 값이다(F-23 SPLIT-1).
+       * 재시도가 아직 예약돼 있는데 그것을 먼저 내려 버리면, 아직 답을 기다리는 중인 화면이
+       * **실패로 확정**되고 뒤이은 성공 응답이 이미 내려간 결론을 다시 뒤집는다. 그래서 이 끝맺기는
+       * 예산이 소진된(또는 애초에 재시도가 불가능한) 자리에서 한 번만 불린다.
+       */
+      const settleUnapplied = () => {
+        // 끝맺기 판정의 현재 범위는 store를 건드리기 전에 읽는다(위 finishRebindUnapplied 참고).
+        const scopeNow = readScopeNow()
+        const stale = isStaleNow()
+        finishRebindUnapplied(scopeNow)
+        if (stale) return
+        if (!requestGameId) setBootstrapStatus("failed")
+      }
+
       /** 응답·실패·예외 어느 경로에서도 같은 기준으로 묻는다(한쪽만 느슨하면 그쪽으로 샌다). */
       const isStaleNow = () => {
         const auth = readCurrentAuthScope()
@@ -352,20 +369,42 @@ export function useInGameSessionSnapshotSync() {
        * 상한·전이·언마운트·소켓 교체를 모두 확인하고, 이미 예약이 있으면 새로 걸지 않는다
        * (동시 1요청). 예산이 다음 시도의 간격조차 남기지 않으면 더 묻지 않는다.
        */
+      /** 이 예약·실행이 아직 **이 세대·이 예산·이 연결**의 것인가(아니면 남의 보류다). */
+      const ownsRetrySlot = () =>
+        mountedRef.current
+        && epochVersionRef.current === requestEpochVersion
+        && retryRef.current === attemptBudget
+        && attemptBudget.epoch === requestEpochVersion
+      /** 아직 시도 횟수가 남았는가. */
+      const hasAttemptsLeft = () => attemptBudget.attempts < SNAPSHOT_MAX_ATTEMPTS
+      /** 이 세대의 남은 예산(ms). 음수/0이면 총 5초를 이미 넘겼다. */
+      const retryBudgetLeftMs = () => attemptBudget.deadline - Date.now()
+
       const scheduleRetry = () => {
-        if (!mountedRef.current) return false
-        if (epochVersionRef.current !== requestEpochVersion) return false
-        if (retryRef.current !== attemptBudget) return false
-        if (attemptBudget.epoch !== requestEpochVersion) return false
-        if (attemptBudget.attempts >= SNAPSHOT_MAX_ATTEMPTS) return false
-        if (attemptBudget.deadline - Date.now() <= SNAPSHOT_RETRY_DELAY_MS) return false
+        if (!ownsRetrySlot()) return false
+        if (!hasAttemptsLeft()) return false
+        // 다음 시도의 간격조차 예산 안에 들어가지 않으면 예약하지 않는다.
+        if (retryBudgetLeftMs() <= SNAPSHOT_RETRY_DELAY_MS) return false
         if (attemptBudget.timerId !== null) return true
         attemptBudget.timerId = setTimeout(() => {
           attemptBudget.timerId = null
-          if (!mountedRef.current) return
-          if (epochVersionRef.current !== requestEpochVersion) return
-          if (retryRef.current !== attemptBudget) return
+          // 남의 세대·남의 연결이면 아무 것도 하지 않는다(그쪽 보류는 그쪽 요청이 끝맺는다).
+          if (!ownsRetrySlot()) return
           if (getSocket() !== requestSocket) return
+          /**
+           * F-26(AC-06): **타이머가 실행되는 이 순간 예산·횟수를 다시 검사한다.**
+           *
+           * 예약 시점의 검사만으로는 부족하다 — 예약과 실행 사이에 얼마나 흘렀는지는 예약이
+           * 알 수 없다(느린 프레임, 탭 비활성화, 디버거 정지, 긴 동기 작업). 여기서 다시
+           * 묻지 않으면 5초 예산을 한참 넘긴 뒤에도 전송이 나간다.
+           *
+           * 더 물을 수 없다면 이 자리가 이 세대의 마지막이다 — 앞선 실패가 미뤄 둔 끝맺기를
+           * 여기서 수행한다(그래야 보류가 영영 남지 않는다).
+           */
+          if (!hasAttemptsLeft() || retryBudgetLeftMs() <= 0) {
+            settleUnapplied()
+            return
+          }
           requestSnapshot({ retry: true })
         }, SNAPSHOT_RETRY_DELAY_MS)
         return true
@@ -395,18 +434,13 @@ export function useInGameSessionSnapshotSync() {
           .emitWithAck("get_session_snapshot", requestGameId ? { gameId: requestGameId } : {})
       } catch {
         // 동기 전송 예외도 실패와 **같은 세대·범위 검사**를 거친다(한쪽만 느슨하면 그쪽으로 샌다).
-        // 이 세대에는 더 이상 올 응답이 없다 — 적용하지 못한 채 끝났으므로 이동 근거를
-        // 걷어낸 뒤 재결속 보류를 끝맺는다(무한 보류도, 옛 상태로의 이동도 만들지 않는다).
-        const scopeNow = readScopeNow()
-        const stale = isStaleNow()
-        // F-26(AC-01): 전송 실패는 남은 예산 안에서 한 번 더 시도한다. **다만 재결속 보류와
-        // bootstrapStatus는 기존 계약 그대로 여기서 끝맺는다** — 그 둘은 "확인하지 못한 채
-        // 끝났다"를 유한하게 알리는 값이고(F-23 SPLIT-1), 재시도가 성공하면 그 응답이 정상
-        // 경로로 상태를 다시 세운다. 재시도가 보류를 더 붙잡으면 그 계약이 느슨해진다.
-        if (!stale) scheduleRetry()
-        finishRebindUnapplied(scopeNow)
-        if (stale) return
-        if (!requestGameId) setBootstrapStatus("failed")
+        //
+        // F-26(AC-01): 이 경로에서는 **아무 것도 나가지 않았다** — ack 창을 쓰지 않았으므로 이
+        // 세대의 예산이 그대로 남아 있다. 남은 예산으로 한 번 더 묻고, 재시도가 예약된 동안에는
+        // 실패로 확정하지 않는다(예산이 소진된 뒤 마지막 시도가 settleUnapplied로 끝맺는다).
+        // 그러지 않으면 아직 답을 기다리는 화면이 첫 실패에서 'failed'로 굳는다.
+        if (!isStaleNow() && scheduleRetry()) return
+        settleUnapplied()
         return
       }
 
@@ -464,17 +498,16 @@ export function useInGameSessionSnapshotSync() {
           // 늦게 실패하는 동안 이미 새 게임·새 계정·새 연결이 들어와 있을 수 있는데, 그때
           // failed로 덮으면 방금 복원된 화면이 "세션 없음"으로 되돌아간다.
           //
-          // 세대·범위 판정을 store 변경보다 **먼저** 읽는다 — 아래 무효화는 이 판정의 입력을
-          // 바꾸지 않지만, 두 읽기의 순서가 결과를 가르지 않는다는 사실을 코드에 남겨 둔다.
-          const scopeNow = readScopeNow()
-          const stale = isStaleNow()
-          // 위 동기 예외 경로와 같은 분담이다 — 남은 예산이 있으면 한 번 더 묻되, 재결속 보류와
-          // bootstrapStatus는 여기서 끝맺는다(정상 타임아웃은 예산을 다 쓴 뒤이므로 애초에
-          // 재시도가 예약되지 않는다).
-          if (!stale) scheduleRetry()
-          finishRebindUnapplied(scopeNow)
-          if (stale) return
-          if (!requestGameId) setBootstrapStatus("failed")
+          /**
+           * F-26(AC-01): **이 거부는 ack 창의 만료다 — 그 시점이 곧 예산의 끝이다.**
+           *
+           * 각 시도의 ack 창은 남은 예산 전체다(ackTimeoutMs = min(5000, deadline - now)이고
+           * 예산 총량이 5000이므로 언제나 deadline - now와 같다). 그래서 이 거부가 도착한
+           * 순간에는 deadline도 함께 지나 있다 — 여기서 새 시도를 예약할 수 있는 예산은 구조적
+           * 으로 남지 않는다. 남은 예산으로 다시 묻는 것은 **아무 것도 보내지 못한** 동기 전송
+           * 예외(위 catch)의 몫이고, 이 자리는 그 세대를 끝맺는 자리다.
+           */
+          settleUnapplied()
         })
     }
 

@@ -3427,7 +3427,9 @@ test('AC-02(F-26): 이미 완료된 사건은 재접속 조회에 실리지 않�
     const reconnected = reconnectSocket(io, session, jokerUuid)
     const response = getSnapshot(reconnected, { gameId: session.id })
     assert.equal(response.ok, true)
-    assert.equal(Object.hasOwn(response, 'nightSuccessRecovery'), false,
+    // 복원할 것이 없어도 키는 **항상** 실린다(빈 배열) — 완료된 사건이 그 배열에 없다는 것이
+    // 이 시험의 사실이다.
+    assert.deepEqual(response.nightSuccessRecovery, [],
         '서버가 완료를 기록한 사건이 다시 복원 목록에 실렸다')
 
     // 대조군: ACK가 서버에 아예 도착하지 않은 대상자는 그대로 복원 대상이다.
@@ -3537,12 +3539,12 @@ test('AC-03(F-26): 사망해 연결이 끊겼던 대상자도 다음 낮에 재�
 
     // ENDED와 다음 NIGHT은 복원 대상이 아니다.
     session.phase = 'ENDED'
-    assert.equal(Object.hasOwn(getSnapshot(hunterReconnected, { gameId: session.id }), 'nightSuccessRecovery'),
-        false, '결과가 확정된 판에서 성공 사건이 복원됐다')
+    assert.deepEqual(getSnapshot(hunterReconnected, { gameId: session.id }).nightSuccessRecovery,
+        [], '결과가 확정된 판에서 성공 사건이 복원됐다')
     session.phase = 'NIGHT'
     session.dayIndex = nightDayIndex + 1
-    assert.equal(Object.hasOwn(getSnapshot(hunterReconnected, { gameId: session.id }), 'nightSuccessRecovery'),
-        false, '다음 밤에서 이전 밤의 사건이 복원됐다')
+    assert.deepEqual(getSnapshot(hunterReconnected, { gameId: session.id }).nightSuccessRecovery,
+        [], '다음 밤에서 이전 밤의 사건이 복원됐다')
 })
 
 test('AC-03(F-26): 재가입이 끝나지 않은 조회는 SESSION_ROUTING_PENDING이고, 그 조회가 시작한 재동기화 뒤에 복원된다', async () => {
@@ -3585,8 +3587,8 @@ test('AC-04(F-26): 다른 밤의 사건은 복원되지 않는다(보관함 교�
     assert.notEqual(session.dayIndex, successPayload.nightDayIndex, '전제: 다음 밤으로 넘어가야 한다')
 
     const reconnected = reconnectSocket(io, session, jokerUuid)
-    assert.equal(Object.hasOwn(getSnapshot(reconnected, { gameId: session.id }), 'nightSuccessRecovery'),
-        false, '보관함이 교체된 뒤에도 이전 밤 사건이 복원됐다')
+    assert.deepEqual(getSnapshot(reconnected, { gameId: session.id }).nightSuccessRecovery,
+        [], '보관함이 교체된 뒤에도 이전 밤 사건이 복원됐다')
 })
 
 test('AC-05(F-26): 그 사건의 수신자가 아닌 역할·기권자는 재접속해도 복원 목록을 받지 못한다', () => {
@@ -3603,7 +3605,7 @@ test('AC-05(F-26): 그 사건의 수신자가 아닌 역할·기권자는 재접
         const socket = reconnectSocket(io, session, uuid)
         const response = getSnapshot(socket, { gameId: session.id })
         assert.equal(response.ok, true, `${uuid}: 일반 조회 자체는 성공해야 한다`)
-        assert.equal(Object.hasOwn(response, 'nightSuccessRecovery'), false,
+        assert.deepEqual(response.nightSuccessRecovery, [],
             `${uuid}: 이 사건의 수신자가 아닌 참가자에게 복원 목록이 실렸다`)
     }
     // 비참가자는 애초에 snapshot 자체를 받지 못한다(기존 계약 그대로다).

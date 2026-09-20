@@ -911,20 +911,31 @@ test("F-23(SPLIT-1): 연결이 끊긴 뒤 도착한 응답은 반영되지 않�
   hook.unmount()
 })
 
-test("F-23(SPLIT-1): 전송 자체가 동기 예외로 실패해도 같은 세대 검사를 거쳐 유한 상태로 끝맺는다", () => {
+test("F-23(SPLIT-1): 전송 자체가 동기 예외로 실패해도 같은 세대 검사를 거쳐 유한 상태로 끝맺는다", async () => {
   useInGameStore.setState({ gameId: null, state: null, error: null })
   seedAuth("player-1")
-  const fake = createFakeSessionSnapshotSocket()
-  fake.socket.connected = true
-  fake.socket.emitWithAck = () => { throw new Error("transport closed") }
-  setFakeSocket(fake.socket)
+  const clock = installRetryClock()
+  try {
+    const fake = createFakeSessionSnapshotSocket()
+    fake.socket.connected = true
+    fake.socket.emitWithAck = () => { throw new Error("transport closed") }
+    setFakeSocket(fake.socket)
 
-  const hook = renderHook(() => useInGameSessionSnapshotSync())
+    const hook = renderHook(() => useInGameSessionSnapshotSync())
 
-  assert.equal(hook.result.current, "failed", "동기 전송 예외가 확인 중으로 남았다")
-  assert.equal(useInGameStore.getState().gameId, null)
+    // F-26(AC-01): 아무 것도 나가지 못한 시도는 남은 예산으로 다시 묻는다 — 그 동안은 아직
+    // 실패가 아니다(첫 실패에서 굳으면 뒤이은 성공이 이미 내려간 결론을 뒤집는다).
+    assert.equal(hook.result.current, "checking", "재시도가 남았는데 첫 실패로 확정됐다")
 
-  hook.unmount()
+    // 그래도 **유한하다**(이 시험의 원래 계약이다) — 예산이 끝나면 반드시 내려온다.
+    for (let i = 0; i < 30; i += 1) await clock.advance(250)
+    assert.equal(hook.result.current, "failed", "동기 전송 예외가 확인 중으로 남았다")
+    assert.equal(useInGameStore.getState().gameId, null)
+
+    hook.unmount()
+  } finally {
+    clock.restore()
+  }
 })
 
 test("F-23(SPLIT-1): 형태 오류·실패 응답은 state·snapshotSeq·수신 증거를 모두 참조 보존한다", async () => {
@@ -1812,4 +1823,183 @@ test("F-26(AC-01): 언마운트·새 세대는 예약된 재조회를 취소한�
   })
   assert.equal(fake.emitWithAckCalls.length, beforeUnmount,
     "언마운트 뒤에도 예약된 재조회가 요청을 보냈다")
+})
+
+// ---------------------------------------------------------------------------
+// F-26(AC-01/AC-06) · 재조회 예산을 **가짜 시계**로 본다
+//
+// 이 훅의 재조회는 250ms 간격 · 총 5초 · 최대 20회다. 실제 타이머로는 두 가지를 볼 수 없다:
+//   · 상한(20회)까지 도는 데 실제로 5초가 걸린다.
+//   · **예약과 실행 사이에 시간이 더 흘렀다**(탭 비활성화·긴 동기 작업·디버거 정지)를 만들 수
+//     없다 — 바로 그 창이 타이머 콜백의 deadline 재검사가 막는 자리다.
+//
+// 가로채는 것은 재조회 간격(250ms)의 setTimeout과 Date.now뿐이다. 다른 지연은 실제 타이머로
+// 그대로 흘려보내 React·testing-library의 스케줄을 건드리지 않는다.
+// ---------------------------------------------------------------------------
+function installRetryClock() {
+  const realSetTimeout = globalThis.setTimeout
+  const realClearTimeout = globalThis.clearTimeout
+  const realNow = Date.now
+  const scheduled = new Map()
+  let now = 1_000_000
+  let seq = 0
+
+  globalThis.setTimeout = (fn, delay, ...rest) => {
+    if (delay !== 250) return realSetTimeout(fn, delay, ...rest)
+    seq += 1
+    const id = `retry-timer-${seq}`
+    scheduled.set(id, { fn, dueAt: now + delay })
+    return id
+  }
+  globalThis.clearTimeout = (id) => {
+    if (scheduled.delete(id)) return undefined
+    return realClearTimeout(id)
+  }
+  Date.now = () => now
+
+  /** 지금 시각 기준으로 만기된 예약을 **등록 순서가 아니라 만기 순서로** 하나씩 실행한다. */
+  async function fireDue() {
+    for (;;) {
+      let dueId = null
+      let due = null
+      for (const [id, entry] of scheduled) {
+        if (entry.dueAt <= now && (due === null || entry.dueAt < due.dueAt)) {
+          dueId = id
+          due = entry
+        }
+      }
+      if (due === null) return
+      scheduled.delete(dueId)
+      await act(async () => {
+        due.fn()
+        await flushMicrotasks()
+      })
+    }
+  }
+
+  return {
+    /** 시계를 ms만큼 진행시키고 그 사이 만기된 재조회를 실행한다. */
+    async advance(ms) {
+      now += ms
+      await fireDue()
+    },
+    /** 예약을 **실행하지 않은 채** 시계만 민다(만기된 타이머가 뒤늦게 깨어나는 창을 만든다). */
+    skip(ms) { now += ms },
+    /** 지금 예약돼 있는 재조회 타이머 수(동시 1요청 계약의 관측점이기도 하다). */
+    pending: () => scheduled.size,
+    restore() {
+      globalThis.setTimeout = realSetTimeout
+      globalThis.clearTimeout = realClearTimeout
+      Date.now = realNow
+      scheduled.clear()
+    },
+  }
+}
+
+/**
+ * 전송 자체가 실패하는(아무 것도 나가지 않는) 연결. `attempts`가 **시도 횟수**를 세고,
+ * `failing = false`로 바꾸면 그 다음 시도부터 평범한 ack 요청이 된다.
+ */
+function createFailingTransportSocket({ id = "sock-1" } = {}) {
+  const fake = createFakeSessionSnapshotSocket()
+  fake.socket.connected = true
+  fake.socket.id = id
+  fake.attempts = 0
+  fake.failing = true
+  const sendAck = fake.socket.emitWithAck.bind(fake.socket)
+  fake.socket.emitWithAck = (event, payload) => {
+    fake.attempts += 1
+    if (fake.failing) throw new Error("transport closed")
+    return sendAck(event, payload)
+  }
+  return fake
+}
+
+test("F-26(AC-06): 예약된 재조회는 실행 시점에 예산을 다시 검사한다 — 총 5초 밖에서는 전송하지 않고 failed로 끝난다", async () => {
+  useInGameStore.setState({ gameId: null, state: null, error: null })
+  seedAuth("player-1")
+  const clock = installRetryClock()
+  try {
+    const fake = createFailingTransportSocket()
+    setFakeSocket(fake.socket)
+    const hook = renderHook(() => useInGameSessionSnapshotSync())
+
+    assert.equal(fake.attempts, 1, "전제: 마운트가 첫 시도를 보내야 한다")
+    assert.equal(hook.result.current, "checking",
+      "재시도 예산이 남았는데 첫 전송 실패가 곧바로 실패로 확정됐다")
+    assert.equal(clock.pending(), 1, "전제: 남은 예산으로 재조회가 예약돼야 한다")
+
+    // 예약은 그대로 둔 채 시계만 예산 밖으로 민다 — 그 뒤에 타이머가 깨어난다.
+    clock.skip(6000)
+    await clock.advance(0)
+
+    assert.equal(fake.attempts, 1, "총 5초 예산을 넘긴 뒤에도 예약된 재조회가 전송됐다")
+    assert.equal(hook.result.current, "failed", "예산이 끝났는데 화면이 확인 중에 갇혔다")
+    assert.equal(clock.pending(), 0, "끝난 세대의 예약이 남았다")
+
+    hook.unmount()
+  } finally {
+    clock.restore()
+  }
+})
+
+test("F-26(AC-06): 같은 연결의 재조회는 최대 20회까지만 나가고 그 뒤로는 한 번도 더 묻지 않는다", async () => {
+  useInGameStore.setState({ gameId: null, state: null, error: null })
+  seedAuth("player-1")
+  const clock = installRetryClock()
+  try {
+    const fake = createFailingTransportSocket()
+    setFakeSocket(fake.socket)
+    const hook = renderHook(() => useInGameSessionSnapshotSync())
+
+    assert.equal(fake.attempts, 1)
+    // 상한을 넘겨 가며 시계를 민다 — 상한이 실제로 존재한다면 어느 시점부터 시도가 멈춘다.
+    for (let i = 0; i < 30; i += 1) await clock.advance(250)
+
+    assert.equal(fake.attempts, 20, "재조회 상한(최초 시도 포함 20회)이 지켜지지 않았다")
+    assert.equal(clock.pending(), 0, "상한에 닿은 뒤에도 예약이 남았다")
+    assert.equal(hook.result.current, "failed", "상한에 닿았는데 화면이 확인 중에 갇혔다")
+
+    hook.unmount()
+  } finally {
+    clock.restore()
+  }
+})
+
+test("F-26(AC-01): 일시적인 전송 실패 뒤 다음 재조회가 성공하면 그 응답이 정상 경로로 복원한다", async () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1" })
+  seedAuth("player-1")
+  const clock = installRetryClock()
+  try {
+    const fake = createFailingTransportSocket()
+    setFakeSocket(fake.socket)
+    const hook = renderHook(() => useInGameSessionSnapshotSync())
+
+    assert.equal(fake.attempts, 1)
+    assert.equal(fake.emitWithAckCalls.length, 0, "전제: 첫 시도는 아무 것도 보내지 못했다")
+
+    // 전송 경로가 회복된다 — 다음 예약이 깨어나면 평범한 조회가 나간다.
+    fake.failing = false
+    await clock.advance(250)
+    assert.equal(fake.attempts, 2, "전송 실패 뒤 예약된 재조회가 나가지 않았다")
+    assert.equal(fake.emitWithAckCalls.length, 1)
+    assert.deepEqual(fake.emitWithAckCalls[0].payload, { gameId: "g1" })
+
+    const payload = recoveryPayload()
+    const seqBefore = useInGameStore.getState().snapshotSeq
+    await act(async () => {
+      fake.emitWithAckCalls[0].resolve(snapshotWithRecovery([payload]))
+      await flushMicrotasks()
+    })
+
+    assert.equal(useInGameStore.getState().snapshotSeq, seqBefore + 1,
+      "회복된 재조회의 응답이 상태를 세우지 못했다")
+    assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId],
+      "회복된 재조회의 응답으로 복원되지 않았다")
+    assert.equal(clock.pending(), 0, "성공한 세대의 예약이 남았다")
+
+    hook.unmount()
+  } finally {
+    clock.restore()
+  }
 })

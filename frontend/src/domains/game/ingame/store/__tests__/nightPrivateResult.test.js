@@ -1050,7 +1050,9 @@ test("AC-01/AC-02 결합: ACK 전에 연결이 교체되면 실제 snapshot 조�
   await joker.reconnect()
   const ackCalls = joker.socket.ackCalls.filter((c) => c.event === "get_session_snapshot")
   assert.equal(ackCalls.length, 2, "재연결이 새 조회를 보내지 않았다")
-  assert.equal(Object.hasOwn(ackCalls[1].response, "nightSuccessRecovery"), false,
+  // 복원할 것이 없어도 키는 **항상** 실린다(빈 배열) — 완료된 사건이 그 배열에 없다는 것이
+  // 이 시험의 사실이다.
+  assert.deepEqual(ackCalls[1].response.nightSuccessRecovery, [],
     "이미 완료된 사건이 다시 복원 목록에 실렸다")
   assert.deepEqual(readQueue(), [], "완료된 사건이 재접속으로 다시 큐에 들어왔다")
 
@@ -1117,7 +1119,7 @@ test("AC-05 결합: 그 사건의 수신자가 아닌 참가자는 재접속해�
 
   const ackCall = outsider.socket.ackCalls[0]
   assert.equal(ackCall.response.ok, true, "무관 참가자의 정상 조회 자체는 성공해야 한다")
-  assert.equal(Object.hasOwn(ackCall.response, "nightSuccessRecovery"), false,
+  assert.deepEqual(ackCall.response.nightSuccessRecovery, [],
     "비수신자의 응답에 남의 성공 사건이 실렸다")
   assert.equal(useInGameStore.getState().gameId, session.id, "전제: 일반 복원은 정상이어야 한다")
   assert.deepEqual(readQueue(), [], "비수신자 화면에 남의 성공 사건이 큐로 들어왔다")

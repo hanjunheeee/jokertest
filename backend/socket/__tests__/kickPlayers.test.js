@@ -583,8 +583,13 @@ test('AC-03: 진행 중 추방 뒤에도 잔류자의 스냅샷에는 사망한 
     const io = createFakeIo([])
     kickGamePlayer(io, createFakeSocket('g7-a'), 'g7-a', gameKickPayload(session, 'g7-a', 'g7-d'))
 
+    // F-26(AC-01): 조회의 재가입 준비 검사는 **복원할 사건의 유무와 무관하게** 모든 조회에
+    // 적용된다. 잔류자의 연결은 그 판의 채널에 실제로 들어가 있는 것이 정상 상태이므로 fixture도
+    // 그렇게 만든다 — 채널 밖 소켓으로 물으면 roster가 아니라 재가입 보류를 보게 된다.
+    const stayerSocket = createFakeSocket('g7-b')
+    stayerSocket.rooms.add(session.channelId)
     const { callback, getResponse } = countingCallback()
-    handleGetSessionSnapshot(io, createFakeSocket('g7-b'), 'g7-b', { gameId: session.id }, callback)
+    handleGetSessionSnapshot(io, stayerSocket, 'g7-b', { gameId: session.id }, callback)
     const snapshot = getResponse()
 
     assert.equal(snapshot.ok, true)
@@ -1077,10 +1082,20 @@ test('AC-05: join 완료 전에 canonical 소켓이 교체되면 남이 된 연�
 
     let releaseJoin
     const joinGate = new Promise((resolve) => { releaseJoin = resolve })
-    // 규약상 canonical socket.id는 `sock-<uuid>`다 — 다른 id의 연결은 이미 교체된 옛 연결이다.
-    const oldSocket = createFakeSocket('rs3-d', { id: 'sock-rs3-d-old', joinGate })
+    // F-26(AC-03): 재동기화를 **시작하는 그 순간에는 정상 canonical 연결**이어야 한다(규약상
+    // socket.id는 `sock-<uuid>`다). 교체는 join이 끝나기 전에 일어난다 — 애초에 남이었던 연결은
+    // 이제 진입 검사에서 막혀 join 자체를 시작하지 않으므로, 그 fixture로는 이 시험이 보려는
+    // "join 도중의 교체"를 재현할 수 없다.
+    const oldSocket = createFakeSocket('rs3-d', { joinGate })
+    const io = createFakeIo([oldSocket])
     const resyncing = gameSessionSocketLayer.resyncSessionRouting(oldSocket, 'rs3-d')
     await oldSocket.joinCalled
+
+    // 같은 계정의 새 연결이 canonical이 된다(registry·namespace 모두 교체).
+    const newSocket = createFakeSocket('rs3-d', { id: 'sock-rs3-d-new' })
+    io.sockets.sockets.set(newSocket.id, newSocket)
+    gameSessionSocketLayer.setOnlineUsersRegistry(new Map([['rs3-d', newSocket.id]]))
+
     releaseJoin()
     await resyncing
 
