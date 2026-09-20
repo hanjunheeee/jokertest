@@ -406,9 +406,17 @@ async function globalRecordSnapshot() {
     };
 }
 
-const submitNight = (io, socket, uuid, session, targetId) => {
+/**
+ * 실제 submit_night_action 경로를 그대로 탄다.
+ *
+ * 생산 시그니처는 backend/socket/gameSession.js::handleSubmitNightAction(socket, uuid, payload,
+ * callback) 네 개다 — io를 받지 않는다(같은 파일 4016행의 socket.on 등록도 이 네 개로 부른다).
+ * io를 앞에 끼워 넣으면 callback 자리에 payload 객체가 들어가 `typeof callback !== 'function'`
+ * 에서 조용히 반환되고, 제출이 실제로는 한 건도 들어가지 않은 채 ack만 null로 남는다.
+ */
+const submitNight = (socket, uuid, session, targetId) => {
     let response = null;
-    handleSubmitNightAction(io, socket, uuid, { gameId: session.id, targetId }, (r) => { response = r; });
+    handleSubmitNightAction(socket, uuid, { gameId: session.id, targetId }, (r) => { response = r; });
     return response;
 };
 
@@ -447,7 +455,7 @@ test('AC-01: 킬 직후·치료 판정 전 시점에는 승패 판정·경기 �
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     // 실제 입력 경로: submit_night_action → handleSubmitNightAction → submitNightAction →
     // maybeEndNightTurnOnCompletion → endNightTurn → completeNightRole.
-    assert.deepEqual(submitNight(io, sockets.get(jokerUuid), jokerUuid, session, targetUuid), { ok: true });
+    assert.deepEqual(submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid), { ok: true });
 
     // ── 킬 직후, 의사 판정 전의 canonical 상태 ────────────────────────────────
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '의사 차례에서 멈춰 있어야 한다');
@@ -508,8 +516,8 @@ test('AC-02: 치료가 성공한 밤은 최종 사망 0이고 승패 상태와 �
     const clock = createManualClock();
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
-    submitNight(io, sockets.get(jokerUuid), jokerUuid, session, targetUuid);
-    submitNight(io, sockets.get(doctorUuid), doctorUuid, session, targetUuid);
+    submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    submitNight(sockets.get(doctorUuid), doctorUuid, session, targetUuid);
     // 남은 두 턴(GUARD/WITCH_HUNTER)은 행위자가 없어 지연 타이머로 끝난다 — 그 뒤 자동 최종화.
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
@@ -558,9 +566,9 @@ test('AC-03: 치료되지 않은 밤은 의사 차례가 끝난 뒤 최종 사�
     const clock = createManualClock();
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
-    submitNight(io, sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
     // 의사가 기권해 치료 가능성만 닫힌다 — A-06: 이 시점에 최종 사망은 아직 없다.
-    submitNight(io, sockets.get(doctorUuid), doctorUuid, session, null);
+    submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
     const progress = gameSessionCore.__testables.getNightProgress(session);
     assert.equal(progress.healingClosed, true);
     assert.equal(progress.recoveryStates.get(targetUuid), 'DEATH_CANDIDATE');
@@ -621,8 +629,8 @@ test('AC-04: 마지막 밤에 킬과 치료가 함께 발생해도 치료가 성
     const healTarget = healed.citizenUuids[0];
     const healClock = createManualClock();
     startNightTurnSequence(io, healed.session, { ...healClock, randomFn: () => 0.5 });
-    submitNight(io, healSockets.get(healed.jokerUuid), healed.jokerUuid, healed.session, healTarget);
-    submitNight(io, healSockets.get(healed.doctorUuid), healed.doctorUuid, healed.session, healTarget);
+    submitNight(healSockets.get(healed.jokerUuid), healed.jokerUuid, healed.session, healTarget);
+    submitNight(healSockets.get(healed.doctorUuid), healed.doctorUuid, healed.session, healTarget);
     healClock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(healed.session.phase, 'DAY', '치료가 성공했으므로 게임이 끝나지 않는다');
@@ -642,8 +650,8 @@ test('AC-04: 마지막 밤에 킬과 치료가 함께 발생해도 치료가 성
     const killTarget = killed.citizenUuids[0];
     const killClock = createManualClock();
     startNightTurnSequence(io, killed.session, { ...killClock, randomFn: () => 0.5 });
-    submitNight(io, killSockets.get(killed.jokerUuid), killed.jokerUuid, killed.session, killTarget);
-    submitNight(io, killSockets.get(killed.doctorUuid), killed.doctorUuid, killed.session, null);
+    submitNight(killSockets.get(killed.jokerUuid), killed.jokerUuid, killed.session, killTarget);
+    submitNight(killSockets.get(killed.doctorUuid), killed.doctorUuid, killed.session, null);
     killClock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(killed.session.phase, 'ENDED');
@@ -694,7 +702,7 @@ test('AC-05: 자동 최종화와 수동 resolve_night가 겹쳐도 사망·경�
     const clock = createManualClock();
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
-    submitNight(io, sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
 
     // 네 역할이 끝나기 전의 수동 요청은 미완료 역할을 건너뛰지 않는다.
     let earlyAck = null;
@@ -703,7 +711,7 @@ test('AC-05: 자동 최종화와 수동 resolve_night가 겹쳐도 사망·경�
     assert.deepEqual(observed.events, []);
     assert.equal(repo.calls.length, 0);
 
-    submitNight(io, sockets.get(doctorUuid), doctorUuid, session, null);
+    submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(session.phase, 'ENDED', '광대 동수로 그 밤에 종료된다');
@@ -810,8 +818,8 @@ test('AC-05: 밤 최종화의 첫 저장이 실패해도 재시도는 **같은 �
     const clock = createManualClock();
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
-    submitNight(io, sockets.get(jokerUuid), jokerUuid, session, targetUuid);
-    submitNight(io, sockets.get(doctorUuid), doctorUuid, session, null);
+    submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
+    submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(session.phase, 'ENDED', '광대 동수로 그 밤에 종료된다');
