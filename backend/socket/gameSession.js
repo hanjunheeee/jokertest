@@ -1390,6 +1390,78 @@ function buildNightPresentationContract(run, completed) {
 }
 
 /**
+ * F-26a(AC-02/AC-06): 한 수신자에게 보낼 개인 성공 사건 payload를 **명시적 필드 선택**으로
+ * 만든다 — contract/event/recipient 어느 것도 그대로 spread하지 않는다.
+ *
+ * TARGET 전용 허용 키는 정확히 gameId·nightDayIndex·eventId·type·perspectives 다섯이다.
+ * targetId는 USER 관점을 가진 수신자에게만 덧붙는다(자기 자신을 지목한 행위자 관점) — TARGET만
+ * 가진 수신자는 "누가 자신에게 무엇을 했다"는 사실만 받고, 조사자 신원이나 조사 결과(역할 등)는
+ * 이 사건에 애초에 담기지 않는다(그 정보는 기존 night_action_result 경로가 소유한다).
+ */
+function buildNightSuccessPayload(contract, event, recipient) {
+    const payload = {
+        gameId: contract.gameId,
+        nightDayIndex: contract.nightDayIndex,
+        eventId: event.eventId,
+        type: event.type,
+        perspectives: [...recipient.perspectives],
+    }
+    if (recipient.perspectives.includes('USER')) payload.targetId = event.targetId
+    return payload
+}
+
+/**
+ * F-26a(AC-01/AC-04/AC-05): F-25 계약이 고정한 사건별 수신자 목록을 소비해 night_action_success를
+ * 개별 emit한다.
+ *
+ * 계약의 수신자 목록은 **계약을 만든 시점의 사실**이다(F-23 AC-04와 같은 이유) — 실제 전송
+ * 직전에 io.sockets.sockets에서 계약이 기록한 socketId를 다시 찾아 인증 uuid 일치·canonical
+ * 소켓 여부·현재 membershipId 일치·일반 수신 자격·다른 세션 소속 여부를 전부 재검증한다. 하나라도
+ * 어긋나면 그 수신자에게는 보내지 않는다 — 앞 수신자의 emit이 다음 수신자를 이 판에서 빼거나
+ * 새 소속으로 옮겼을 수 있기 때문이다.
+ *
+ * 한 사건·한 소켓 쌍은 정확히 한 번만 전달한다(자기 치료처럼 USER·TARGET이 한 recipient
+ * 항목으로 이미 합쳐져 있지만, 방어적으로 한 번 더 막는다). 개별 emit 예외는 로그만 남기고
+ * 다른 수신자의 전달을 막지 않는다.
+ */
+function emitNightSuccessEvents(run, contract) {
+    if (!contract || !Array.isArray(contract.events) || contract.events.length === 0) return
+    const { io, session } = run
+    if (nightTurnRuns.get(session.id) !== run) return
+    if (session.id !== contract.gameId) return
+    if (session.dayIndex !== contract.nightDayIndex) return
+
+    const registry = io?.sockets?.sockets
+    if (!registry || typeof registry.get !== 'function') return
+
+    const deliveredEventSocketPairs = new Set()
+
+    for (const event of contract.events) {
+        for (const recipient of event.recipients ?? []) {
+            const dedupeKey = `${event.eventId}:${recipient.socketId}`
+            if (deliveredEventSocketPairs.has(dedupeKey)) continue
+
+            if (typeof recipient.socketId !== 'string' || recipient.socketId.length === 0) continue
+            const recipientSocket = registry.get(recipient.socketId)
+            if (!recipientSocket) continue
+            if (recipientSocket.data?.user?.uuid !== recipient.uuid) continue
+            if (!isCurrentSocketForUuid(recipient.uuid, recipientSocket, io)) continue
+            if ((session.players.get(recipient.uuid)?.membershipId ?? null) !== recipient.membershipId) continue
+            if (!stillEligibleForDelivery(session, recipientSocket)) continue
+            if (hasMembershipOutsideSession(session, recipient.uuid)) continue
+
+            deliveredEventSocketPairs.add(dedupeKey)
+
+            try {
+                recipientSocket.emit('night_action_success', buildNightSuccessPayload(contract, event, recipient))
+            } catch (err) {
+                console.error('[밤 성공 사건 전달 실패]', { code: 'DELIVERY_ERROR', eventId: event.eventId, gameId: session.id })
+            }
+        }
+    }
+}
+
+/**
  * F-25(AC-01): 확정된 역할을 **연출 대기(PRESENTATION_WAIT)** 로 넘긴다.
  *
  * 사건이 있든 없든 모든 완료 역할이 이 전이를 거친다 — 대기 여부 자체가 그 역할의 성공을
@@ -1501,6 +1573,16 @@ function endNightTurn(run, role) {
     run.deadline = null
 
     const wait = beginNightPresentationWait(run, completed, contract)
+    // F-26a(AC-01/AC-06): 역할별 성공 연출은 공개 종료 방송보다 먼저, 확정된 바로 그 계약으로
+    // 전달한다 — 계약 구성 실패(contract === null)는 이 조각을 조용히 건너뛰고 기존 종료 진행은
+    // 그대로 이어간다(공개 턴 계약을 F-26a 실패가 막지 않는다).
+    if (contract) {
+        try {
+            emitNightSuccessEvents(run, contract)
+        } catch (err) {
+            console.error('[밤 성공 사건 전달 오류]', { code: 'SUCCESS_EVENT_ERROR', role, gameId: session.id })
+        }
+    }
     emitNightTurnEvent(run, 'night_turn_ended', gameSessionCore.buildNightTurnEndedPayload(session, role))
     releaseNightPresentationWait(run, wait)
 }
@@ -4518,6 +4600,10 @@ module.exports = {
         releaseNightPresentationWait,
         isNightPresentationWaitActive,
         NIGHT_TURN_STAGES,
+        // F-26a: 역할별 성공 사건의 개인 payload 조립·전달 경계. 시험이 허용 키·재검증·중복
+        // 방지를 실제 경로로 확인할 수 있게 한다.
+        buildNightSuccessPayload,
+        emitNightSuccessEvents,
         computeEmptyTurnDelayMs,
         resolveNightTurnDurationMs,
         startDayPhaseTimer,
