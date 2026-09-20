@@ -4605,6 +4605,56 @@ function getSocketForUuid(io, uuid) {
 }
 
 /**
+ * F-27b(AC-01): 이 조회자가 **지금 이 밤의 연출을 받지 않는 참가자로서 대기 중인가.**
+ *
+ * 새로고침한 비수신자에게는 시작 알림(night_presentation_wait)이 이미 지나갔다. 그 사실을
+ * 돌려주지 못하면 그 화면은 대기 중인 판에서 아무 안내도 없이 비어 있게 된다 — 그래서 조회
+ * 응답에 boolean **한 키**만 더한다(계약·역할·사건·수신자 수·토큰 정보는 어디에도 싣지 않는다).
+ *
+ * 판정은 지금 이 판의 살아 있는 사실만 쓴다: 이 세션의 현재 run · PRESENTATION_WAIT 단계 ·
+ * 활성화된 그 토큰 · NIGHT · 같은 밤. 수신자 여부는 **불변 계약(token.contract)** 으로만
+ * 판정한다 — token.waiting은 연결이 끊긴 수신자 항목이 제거되므로, 그것으로 판정하면 원래
+ * 수신자가 재접속했을 때 비수신자 대기로 오인된다(A-06).
+ *
+ * true인 조회자는 해제 통지를 받을 수 있어야 하므로 token.notifyTargets에 중복 없이 보충한다.
+ * 대기 Map·완료 기록·상한 타이머·역할 진행은 조금도 건드리지 않는다(조회는 판을 진행시키지
+ * 않는다).
+ */
+function resolveNightPresentationWaitingForSnapshot(session, uuid) {
+    const run = nightTurnRuns.get(session.id)
+    if (!run) return false
+    if (run.stage !== NIGHT_TURN_STAGES.PRESENTATION_WAIT) return false
+    const token = run.wait
+    if (!token || token.active !== true) return false
+    if (token.run !== run) return false
+    if (token.session !== session) return false
+    if (token.gameId !== session.id) return false
+    if (session.phase !== 'NIGHT') return false
+    if (token.nightDayIndex !== run.nightDayIndex) return false
+    if (session.dayIndex !== run.nightDayIndex) return false
+
+    const membershipId = session.players.get(uuid)?.membershipId ?? null
+    if (!isAccountCurrentlyEligibleForWait(run, session, uuid, membershipId)) return false
+
+    const contract = token.contract
+    if (contract && Array.isArray(contract.events)) {
+        for (const event of contract.events) {
+            for (const recipient of event.recipients ?? []) {
+                if (recipient?.uuid === uuid) return false
+            }
+        }
+    }
+
+    if (Array.isArray(token.notifyTargets)) {
+        const already = token.notifyTargets.some(
+            (target) => target.uuid === uuid && target.membershipId === membershipId,
+        )
+        if (!already) token.notifyTargets.push({ uuid, membershipId })
+    }
+    return true
+}
+
+/**
  * get_session_snapshot 요청-ACK 전용 조회 핸들러입니다. 다른 8개 핸들러와 달리
  * assertSessionNotEnded guard는 적용되지 않습니다 — ENDED 이후에도 최종 결과(phase/winResult/
  * players)를 조회할 수 있어야 합니다. 그러나 current-socket 권한(isCurrentSocketForUuid)은
@@ -4683,6 +4733,9 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
     // NIGHT n · DAY n+1 · TRIBUNAL n+1이다.
     const recoverySession = gameSessionCore.getActiveSessionForDeparture(uuid, result.snapshot.gameId)
     const nightSuccessRecovery = []
+    // F-27b(AC-01): 비수신자 대기 여부. 아래 블록의 재가입 보류·복원 결속과 같은 자격 검사
+    // 위에서만 계산되고(그 보류는 이 값을 만들기 전에 return한다), 기본값은 false다.
+    let presentationWaiting = false
     if (recoverySession) {
         // **재가입 준비 검사는 복원할 사건이 있든 없든 같다.**
         //
@@ -4724,6 +4777,9 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
                 }
             }
         }
+
+        // 대기 판정은 복원 결속과 같은 자리(채널 재가입이 끝난 뒤)에서 한 번만 한다.
+        presentationWaiting = resolveNightPresentationWaitingForSnapshot(recoverySession, uuid)
     }
 
     respond(callback, {
@@ -4733,6 +4789,9 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
         // 복원할 사건이 없어도 **빈 배열을 싣는다**(계약). 키를 생략하면 "복원 항목이 없다"와
         // "이 서버는 복원을 모른다"가 같은 모양이 되어, 클라이언트가 둘을 구분할 수 없다.
         nightSuccessRecovery,
+        // F-27b(AC-01): 같은 이유로 false도 **항상 싣는다** — 키가 없는 응답은 "이 서버는
+        // 대기를 모른다"는 뜻이고, 그때만 클라이언트가 기존 대기를 보존한다.
+        presentationWaiting,
     })
 }
 

@@ -10,6 +10,7 @@ import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNi
 import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/InGameNightPrivateResultOverlay.jsx"
 import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.jsx"
 import InGameNightSuccessPresentation from "../components/InGameNightSuccessPresentation.jsx"
+import InGameNightPresentationWait from "../components/InGameNightPresentationWait.jsx"
 import InGameDeadParticipantChoice from "../components/deadChoice/InGameDeadParticipantChoice.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
@@ -20,6 +21,9 @@ import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import {
   getInGameIdentityScopeVersion,
+  isSameInGameReceiptScope,
+  readInGameReceiptScope,
+  selectNightPresentationWait,
   subscribeInGameIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
@@ -114,6 +118,40 @@ export default function InGamePage() {
     hold: roleReveal.open || killReveal.open || nightSuccessPresentation.open,
   })
 
+  /**
+   * F-27b(AC-01): 이 밤의 연출을 **하나도 받지 않는** 참가자의 대기.
+   *
+   * store가 들고 있는 값은 "서버가 그렇게 알렸다"는 사실과 그것을 받은 수신 범위뿐이다(역할·
+   * 대상·사건 ID는 어디에도 없다). 그 범위가 지금과 여덟 축 모두 같을 때만 화면을 연다 —
+   * 이전 계정·이전 소속·이전 연결이 받은 대기는 이 화면의 사실이 아니다(공개 사망 연출과 같은
+   * fail-closed 경계다). 밤 이탈·다른 밤으로의 전이는 store가 커밋마다 정리한다.
+   */
+  const nightPresentationWait = useInGameStore(selectNightPresentationWait)
+  const nightPresentationWaitOwned = nightPresentationWait !== null
+    && nightPresentationWait.gameId === gameId
+    && gameState?.phase === "NIGHT"
+    && gameState?.dayIndex === nightPresentationWait.nightDayIndex
+    && isSameInGameReceiptScope(
+      nightPresentationWait.scope,
+      readInGameReceiptScope({ accountId: authUuid, identityGeneration }),
+    )
+  /**
+   * 표시 우선순위(CODEX 반려 수정): **자기 역할 공개보다 대기가 위다.**
+   *
+   * 예전에는 roleReveal.open이면 대기 화면을 접었다. 그러면 역할 공개를 열어 둔 참가자는 그
+   * 밤 내내 대기 화면을 보지 못하고, 그 창을 닫는 순간에야 비로소 기다리는 쪽임을 안다 —
+   * 승인 계약은 그 반대다: 비수신자는 **진행 중 내내** 대기 화면만 본다. 그래서 유효한 대기가
+   * 있으면 역할 공개 오버레이는 아예 마운트하지 않고(아래 렌더 참고 — 열림 여부만 끄면 퇴장
+   * 애니메이션 동안 역할·진영 문자열이 DOM에 남는다), 대기가 풀리면 그대로 다시 열린다
+   * (확인한 것으로 처리하지 않는다).
+   *
+   * 반대로 **이미 재생 중인 연출**(공개 사망·개인 성공 사건)은 그대로 위에 남는다. 그 둘은
+   * 잘리면 복구할 수 없는 일회성 연출이고, 애초에 그것을 받는 참가자는 이 밤의 비수신자가
+   * 아니다(대기 상태는 그동안에도 그대로 살아 있다 — 가려졌다고 완료로 처리하지 않는다).
+   */
+  const nightPresentationWaitOpen = nightPresentationWaitOwned
+    && !killReveal.open && !nightSuccessPresentation.open
+
   // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다 — 단, 이 판정의 사망
   // 연출이 재생 중이거나 큐에 남아 있는 동안은 기다린다(연출이 통째로 잘리지 않게).
   //
@@ -121,8 +159,14 @@ export default function InGamePage() {
   // 아니라 "이 신원이 받은 것인지 아직 모른다"이므로, 큐가 비었다는 사실만으로 넘어가면 옛
   // 신원의 잔존 ENDED로 결과 화면에 들어간다. 이 보류는 유한하다 — 스냅샷 요청이 성공·실패·
   // 거부 어느 쪽으로 끝나도 해제된다(useInGameSessionSnapshotSync).
+  //
+  // F-27b(AC-03): 마지막 밤의 상한 해제로 ENDED가 성공 연출보다 **먼저** 도착할 수 있다. 그때
+  // 그대로 넘어가면 아직 소비하지 않은 개인 연출(과 그 뒤의 최종 생존 화면)이 통째로 잘린다 —
+  // 사망 연출과 같은 이유로 성공 연출의 pending·open도 이동을 미룬다. 이 보류 역시 유한하다:
+  // 큐는 정상 종료·오류·건너뛰기 어느 경로로도 반드시 비워지고, 최종 화면은 확인으로 닫힌다.
   useInGameResultNavigation({
-    hold: killReveal.open || killReveal.pending || identityRebindPending,
+    hold: killReveal.open || killReveal.pending || identityRebindPending
+      || nightSuccessPresentation.open || nightSuccessPresentation.pending,
   })
 
   // F-23(AC-06): 확정 사망한 참가자에게만 여는 선택창.
@@ -166,13 +210,17 @@ export default function InGamePage() {
     && !nightSuccessPresentation.open
     // 개인 결과 오버레이(z-[65])보다 위에 그려지므로, 둘이 동시에 열리면 확인 버튼이 가려진다.
     && !nightPrivateResult.open
+    // F-27b(AC-01): 대기 화면 위에 선택창이 뜨면 그 창의 존재 자체가 "너는 지금 기다리는
+    // 쪽이다"를 넘어 다른 정보를 섞는다. 대기가 끝나면 이 창은 그대로 다시 열린다(사망 참가자의
+    // 계속 보기·나가기 자격은 조금도 바뀌지 않는다).
+    && !nightPresentationWaitOpen
 
   // 사망 연출·성공 사건 연출·개인 결과가 떠 있는 동안에도 아래 게임 표면의 입력을 함께
   // 잠근다. 잠금 판단만 여기서 합치고, 오버레이 스택이 내는 interactionBlocked 자체는 그대로
   // 아래로 흘려보낸다.
   const surfaceLocked =
     interactionBlocked || killReveal.open || nightPrivateResult.open || deadChoiceOpen
-    || nightSuccessPresentation.open
+    || nightSuccessPresentation.open || nightPresentationWaitOpen
 
   // 상태바에 상시로 띄우는 밤 역할 턴의 남은 시간. 서버가 실어 보낸 deadline 하나에서만 만든다.
   const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
@@ -241,24 +289,36 @@ export default function InGamePage() {
 
       {/* 오버레이는 우선순위가 낮은 것부터 그린다 — 실제 표시 순서는 렌더 순서가 아니라
           useInGameOverlayStack이 정한 hold 관계와 각자의 z 단계가 결정한다. */}
+      {/* F-27b(AC-01): 대기 중에는 턴 안내·진입 연출·개인 결과를 그 위에 띄우지 않는다.
+          띄우지 않을 뿐 각자의 상태는 그대로다 — 대기가 끝나면 원래 순서대로 다시 열린다
+          (가려진 오버레이를 확인한 것으로 처리하지 않는다). */}
       <InGameNightTurnAnnouncementOverlay
-        open={nightTurn.open}
+        open={nightTurn.open && !nightPresentationWaitOpen}
         announcement={nightTurn.announcement}
         onClose={nightTurn.close}
       />
       <InGamePhaseEntranceOverlay
-        open={phaseEntrance.open}
+        open={phaseEntrance.open && !nightPresentationWaitOpen}
         phase={phaseEntrance.phase}
         onConfirm={phaseEntrance.confirm}
       />
-      <InGameRoleRevealOverlay
-        open={roleReveal.open}
-        onClose={roleReveal.close}
-        roleInfo={roleReveal.roleInfo}
-        players={gameState?.players}
-      />
+      {/* F-27b(AC-01, CODEX 반려 수정): 대기 중에는 역할 공개를 **마운트하지 않는다**. open만
+          false로 내리면 퇴장 애니메이션(AnimatePresence) 동안 역할명·진영·동료 목록이 DOM에
+          그대로 남는다 — 대기 화면이 덮고 있어도 그 문자열은 이미 이 화면의 것이다. 열림
+          상태의 출처는 그대로 오버레이 스택 하나이며, 대기가 풀리면 같은 상태로 다시 열린다. */}
+      {nightPresentationWaitOpen ? null : (
+        <InGameRoleRevealOverlay
+          open={roleReveal.open}
+          onClose={roleReveal.close}
+          roleInfo={roleReveal.roleInfo}
+          players={gameState?.players}
+        />
+      )}
+      {/* 대기 화면은 이 개인 결과 오버레이와 같은 z 단계를 쓴다 — 둘이 동시에 그려지면
+          어느 쪽이 위인지가 렌더 순서에 좌우되므로, 대기 중에는 아예 띄우지 않는다. */}
+      <InGameNightPresentationWait open={nightPresentationWaitOpen} />
       <InGameNightPrivateResultOverlay
-        open={nightPrivateResult.open}
+        open={nightPrivateResult.open && !nightPresentationWaitOpen}
         kind={nightPrivateResult.kind}
         label={nightPrivateResult.label}
         onConfirm={nightPrivateResult.confirm}

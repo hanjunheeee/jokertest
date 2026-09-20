@@ -4385,6 +4385,11 @@ test('get_session_snapshot: self 블록은 요청자 본인의 정보만 담고,
     assert.notEqual(jokerAck.getResponse().self.uuid, citizenAck.getResponse().self.uuid)
 })
 
+// F-27b(AC-01): 아래 여섯 개의 top-level 키 잠금에 presentationWaiting이 더해졌다. 값은
+// boolean 하나뿐이고(계약·역할·수신자 수·토큰은 어디에도 실리지 않는다), 복원할 것이 없는
+// 단계에서도 **항상 실린다** — 키를 생략하면 "대기가 아니다"와 "이 서버는 대기를 모른다"가
+// 같은 모양이 되어 클라이언트가 기존 대기를 보존할지 지울지 정할 수 없다(nightSuccessRecovery의
+// 빈 배열 계약과 같은 이유다).
 test('get_session_snapshot: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — 소켓 계층 ack에도 nightResult/dayVoteResolution/tribunal/winResult가 전부 포함되고 비밀 데이터가 없다', () => {
     const { session, io, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-sock-tribunal-end' })
     const [citizenA, citizenB, citizenC] = citizenUuids
@@ -4410,7 +4415,7 @@ test('get_session_snapshot: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — 소�
 
     assert.deepEqual(
         Object.keys(snapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'tribunal', 'winResult'],
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'tribunal', 'winResult'],
     )
     assert.deepEqual(snapshot.winResult, { winner: 'CITIZEN' })
     // 종료된 판에는 진행할 단계가 없다 — kind만 NONE이고 수는 담기지 않는다.
@@ -4429,7 +4434,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     handleGetSessionSnapshot(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, nightAck.callback)
     const nightSnapshot = nightAck.getResponse()
     assert.equal(nightSnapshot.ok, true)
-    assert.deepEqual(Object.keys(nightSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'])
+    assert.deepEqual(Object.keys(nightSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'])
     assert.equal(nightSnapshot.phase, 'NIGHT')
     // F-21(AC-03): 밤의 공개 진행은 **수를 담지 않는다**. 행동자 수·제출자 수가 실리면 그 값
     // 자체가 생존한 특수 직업의 존재를 알려준다(밤 턴 payload가 생존 정보를 싣지 않는 것과 같은 계약).
@@ -4447,7 +4452,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     // 낮 스냅샷에만 dayPhase가 실린다 — 재접속 클라이언트가 토론/투표를 구분해야 하기 때문이다.
     assert.deepEqual(
         Object.keys(daySnapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'],
+        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'],
     )
     assert.equal(daySnapshot.dayPhase, 'DAY_DISCUSSION')
     assert.deepEqual(daySnapshot.nightResult, {
@@ -4468,7 +4473,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const tribunalSnapshot = tribunalAck.getResponse()
     assert.deepEqual(
         Object.keys(tribunalSnapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'tribunal'],
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'tribunal'],
     )
     assert.deepEqual(tribunalSnapshot.tribunal, { defendantUuid: citizenB, resolved: false })
     assertNoForbiddenPrivateData(tribunalSnapshot, collectOtherPlayerRoleSecrets(session, jokerUuid))
@@ -4485,7 +4490,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const postTribunalAck = countingCallback()
     handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, postTribunalAck.callback)
     const postTribunalSnapshot = postTribunalAck.getResponse()
-    assert.deepEqual(Object.keys(postTribunalSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'])
+    assert.deepEqual(Object.keys(postTribunalSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'])
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'nightResult'), false)
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'tribunal'), false)
@@ -4500,7 +4505,7 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const endedSnapshot = endedAck.getResponse()
     assert.deepEqual(
         Object.keys(endedSnapshot).sort(),
-        ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'winResult'],
+        ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'winResult'],
     )
     assert.deepEqual(endedSnapshot.nightResult, {
         dayIndex: session.dayIndex,

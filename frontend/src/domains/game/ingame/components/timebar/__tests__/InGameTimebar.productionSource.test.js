@@ -105,9 +105,12 @@ test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연
   assert.match(source, /const killReveal = useInGameKillReveal\(\{ hold: roleReveal\.open \}\)/)
   // F-23(SPLIT-1): 기존 두 보류 조건은 그대로 두고, 신원 재결속 보류가 **같은 자리에** 더해진다.
   // 신원·연결 전이로 큐가 버려지는 순간 잔존 ENDED로 넘어가지 않게 하는 조건이다.
+  // F-27b(AC-03): 같은 자리에 **밤 성공 연출의 pending·open**도 더해진다. 마지막 밤의 상한
+  // 해제로 ENDED가 연출보다 먼저 도착해도 현재 큐와 표시 중인 최종 상태가 잘리지 않게 하는
+  // 조건이고, 기존 세 조건은 그대로 남는다.
   assert.match(
     source,
-    /useInGameResultNavigation\(\{\s*hold: killReveal\.open \|\| killReveal\.pending \|\| identityRebindPending,\s*\}\)/,
+    /useInGameResultNavigation\(\{\s*hold: killReveal\.open \|\| killReveal\.pending \|\| identityRebindPending\s*\|\| nightSuccessPresentation\.open \|\| nightSuccessPresentation\.pending,\s*\}\)/,
   )
   assert.match(source, /const identityRebindPending = useInGameSnapshotRebindPending\(\)/)
   assert.match(source, /useInGameSnapshotRebindPending,\s*\} from "\.\.\/hooks\/useInGameSessionSnapshotSync\.js"/)
@@ -127,7 +130,9 @@ test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연
     },
     {
       tag: "InGameNightPrivateResultOverlay",
-      props: [/open=\{nightPrivateResult\.open\}/, /kind=\{nightPrivateResult\.kind\}/, /label=\{nightPrivateResult\.label\}/, /onConfirm=\{nightPrivateResult\.confirm\}/],
+      // F-27b(AC-01): 개인 결과는 대기 화면과 같은 z 단계를 쓰므로 대기 중에는 띄우지 않는다.
+      // 열림의 출처는 여전히 훅 하나다(페이지가 자기 판정을 따로 만들지 않는다).
+      props: [/open=\{nightPrivateResult\.open && !nightPresentationWaitOpen\}/, /kind=\{nightPrivateResult\.kind\}/, /label=\{nightPrivateResult\.label\}/, /onConfirm=\{nightPrivateResult\.confirm\}/],
     },
   ]) {
     const occurrences = source.match(new RegExp(`<${mount.tag}\\b`, "g")) ?? []

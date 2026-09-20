@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import InGameParchmentModalBase from "./parchment/InGameParchmentModalBase.js"
 import InGameParchmentConfirmButton from "./parchment/InGameParchmentConfirmButton.js"
+import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
 import {
   INGAME_KILL_ANIMATION_VIDEO_URL,
@@ -40,6 +41,13 @@ function isAutoplayBlockedRejection(err) {
   return err !== null && typeof err === "object" && err.name === "NotAllowedError"
 }
 
+/** 한 재생 시도가 걸어 둔 상한 예약을 버린다(응답이 온 순간·수명이 끝난 순간 모두 여기로 온다). */
+function cancelPlaybackWatchdog(lifetime) {
+  if (!lifetime || lifetime.watchdogId === null || lifetime.watchdogId === undefined) return
+  clearTimeout(lifetime.watchdogId)
+  lifetime.watchdogId = null
+}
+
 /**
  * KILL 사건 전용 — 기존 사망 연출과 같은 kill-animation.mp4를 재생한다(AC-05).
  *
@@ -59,13 +67,79 @@ function isAutoplayBlockedRejection(err) {
 function InGameNightSuccessKillVideo({ eventId, onFinish }) {
   const videoRef = useRef(null)
   const [status, setStatus] = useState("playing")
-  const eventIdRef = useRef(eventId)
-  useEffect(() => {
-    eventIdRef.current = eventId
-  })
+  /**
+   * F-27b(AC-03/AC-08): **표시 수명 + 재생 시도 세대.**
+   *
+   * eventId 하나로는 늦은 응답을 가를 수 없다 — 재접속하면 같은 eventId가 복원되므로, 옛
+   * 시도의 늦은 거부가 "같은 사건이니 내 것"이라며 새 표시를 ERROR로 끝내 버린다. 그래서
+   * 이 표시 인스턴스(수명 객체의 **참조**)와 그 안의 시도 번호를 함께 본다. cleanup·다음
+   * 사건·새 연결·사용자 재시도 중 무엇이든 둘 중 하나를 바꾸므로, 그 이전의 응답은 전부
+   * 자기 자리를 잃는다.
+   */
+  const attemptRef = useRef(null)
+
+  /**
+   * 한 번의 재생 시도. **동기 예외와 비동기 거부를 같은 한 곳에서 분류한다** — 예전에는
+   * play()가 그 자리에서 던지면(일부 브라우저·대역) 아무도 보고하지 않아 연출이 워치독
+   * 상한까지 멈춰 있었다. 자동재생 정책 거부만 재시도 화면이고, 나머지는 전부 ERROR다.
+   *
+   * F-27b(AC-03, CODEX 반려 수정): **시도마다 상한을 새로 건다.** 예전에는 상한 예약이 마운트
+   * 효과 안에 한 번뿐이라, 사용자가 "다시 재생"을 누른 뒤 매체가 아무 응답도 하지 않으면
+   * (ended·error·거부 어느 것도 오지 않는 정지 상태) 그 표시는 영원히 그 자리에 남았다 —
+   * 이미 소진된 상한은 다시 울리지 않으므로 완료 보고도, 다음 사건도 오지 않는다.
+   *
+   * 상한이 하는 일은 시도의 종류에 따라 다르다:
+   *   - 최초 시도의 무응답 → 건너뛰기 버튼을 띄운다(사용자가 볼 기회를 먼저 준다).
+   *   - 재시도의 무응답   → 사용자는 이미 한 번 눌렀다. ERROR로 한 번 보고하고 다음 사건으로
+   *                          넘어간다(화면이 여기서 멈추지 않는다).
+   * 응답이 오면(거부·오류·정상 종료) 그 즉시 예약을 버린다 — 상한은 **침묵에만** 건다.
+   */
+  const runPlayback = useCallback((lifetime, { retry = false } = {}) => {
+    const generation = lifetime.generation + 1
+    lifetime.generation = generation
+    const isCurrentAttempt = () =>
+      attemptRef.current === lifetime && lifetime.alive && lifetime.generation === generation
+
+    cancelPlaybackWatchdog(lifetime)
+    lifetime.watchdogId = setTimeout(() => {
+      if (!isCurrentAttempt()) return
+      lifetime.watchdogId = null
+      if (retry) {
+        setStatus("error")
+        onFinish("ERROR")
+        return
+      }
+      setStatus((prev) => (prev === "playing" ? "watchdog" : prev))
+    }, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS)
+
+    const video = videoRef.current
+    if (!video) return
+
+    const reportFailure = (err) => {
+      if (!isCurrentAttempt()) return
+      // 응답이 왔다 — 이 시도의 상한은 여기서 끝난다(재시도 화면에는 건너뛰기가 함께 있다).
+      cancelPlaybackWatchdog(lifetime)
+      if (isAutoplayBlockedRejection(err)) {
+        setStatus("retry")
+        return
+      }
+      setStatus("error")
+      onFinish("ERROR")
+    }
+
+    let playResult
+    try {
+      playResult = video.play?.()
+    } catch (err) {
+      reportFailure(err)
+      return
+    }
+    if (playResult && typeof playResult.then === "function") playResult.catch(reportFailure)
+  }, [onFinish])
 
   useEffect(() => {
-    let cancelled = false
+    const lifetime = { alive: true, generation: 0, watchdogId: null }
+    attemptRef.current = lifetime
     setStatus("playing")
 
     const video = videoRef.current
@@ -76,53 +150,39 @@ function InGameNightSuccessKillVideo({ eventId, onFinish }) {
       } catch {
         // 아직 메타데이터가 없는 브라우저는 currentTime 대입이 던질 수 있다 — 재생 시도는 계속한다.
       }
-      const playResult = video.play?.()
-      if (playResult && typeof playResult.then === "function") {
-        playResult.catch((err) => {
-          if (cancelled) return
-          if (isAutoplayBlockedRejection(err)) {
-            setStatus("retry")
-            return
-          }
-          setStatus("error")
-          onFinish("ERROR")
-        })
-      }
     }
-
-    const watchdog = setTimeout(() => {
-      if (!cancelled) setStatus((prev) => (prev === "playing" ? "watchdog" : prev))
-    }, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS)
+    runPlayback(lifetime)
 
     return () => {
-      cancelled = true
-      clearTimeout(watchdog)
+      // 이 표시의 수명이 끝났다. 매체는 멈추고 예약·재시도 상태는 버리되, **완료 보고는
+      // 만들지 않는다** — StrictMode의 setup→cleanup→setup은 사용자가 본 것이 아니다.
+      lifetime.alive = false
+      cancelPlaybackWatchdog(lifetime)
+      try {
+        videoRef.current?.pause?.()
+      } catch {
+        // 이미 분리된 요소의 pause는 무시한다(정리 경로가 던져서는 안 된다).
+      }
     }
-  }, [eventId, onFinish])
+  }, [eventId, runPlayback])
 
-  const handleEnded = () => onFinish("COMPLETED")
+  /** 사용자·매체가 낸 종료 응답 하나. 그 시도의 상한은 더 울릴 필요가 없다. */
+  const settleWith = (outcome) => {
+    cancelPlaybackWatchdog(attemptRef.current)
+    onFinish(outcome)
+  }
+
+  const handleEnded = () => settleWith("COMPLETED")
   const handleError = () => {
     setStatus("error")
-    onFinish("ERROR")
+    settleWith("ERROR")
   }
-  const handleSkip = () => onFinish("SKIPPED")
+  const handleSkip = () => settleWith("SKIPPED")
   const handleRetry = () => {
-    const targetEventId = eventId
+    const lifetime = attemptRef.current
+    if (!lifetime || !lifetime.alive) return
     setStatus("playing")
-    const video = videoRef.current
-    if (!video) return
-    const playResult = video.play?.()
-    if (playResult && typeof playResult.then === "function") {
-      playResult.catch((err) => {
-        if (eventIdRef.current !== targetEventId) return
-        if (isAutoplayBlockedRejection(err)) {
-          setStatus("retry")
-          return
-        }
-        setStatus("error")
-        onFinish("ERROR")
-      })
-    }
+    runPlayback(lifetime, { retry: true })
   }
 
   return (
@@ -191,14 +251,39 @@ function InGameNightSuccessPendingAsset({ type, eventId, onFinish }) {
 /**
  * F-27b: 밤 성공 사건(night_action_success) 큐의 표시 컴포넌트.
  *
- * useInGameNightSuccessPresentation이 넘기는 현재 사건 하나만 그린다 — KILL은 실제 영상을,
- * 나머지 세 종류는 임시 연출을 보여주고, 큐가 비면 finalStatus(있을 때만) 최종 생존 화면으로
- * 이어진다. 어떤 경로도 이 컴포넌트가 직접 소켓 emit이나 store 변경을 하지 않는다 — 모든
- * 종료는 finish(outcome) 한 콜백을 통해 훅으로만 올라간다.
+ * 표시에 필요한 값의 출처는 **오직 useInGameNightSuccessPresentation 하나**다. 그래서 이
+ * 컴포넌트는 스스로 설 수 있다 — props 없이 놓아두면 그 훅을 직접 불러 큐의 선두 사건을 읽고,
+ * 재생 종료를 같은 훅의 finish로 보고한다(store·소켓을 직접 만지는 줄은 이 파일에 없다).
+ *
+ * 다만 InGamePage는 자기 화면의 다른 오버레이(자기 역할 공개·공개 사망 연출)와의 우선순위를
+ * 합쳐 "지금 띄워도 되는가"를 정해야 하므로, **같은 훅으로 만든 값**을 props로 내려보낸다.
+ * open이 실제로 넘어왔으면 그쪽이 이긴다(controlled). 그때 이 컴포넌트가 가진 자기 훅은
+ * hold로 접어 둔다 — 두 벌의 표시가 동시에 열리거나, 페이지가 보류시킨 연출이 여기서 혼자
+ * 열리는 일이 없어야 한다.
+ *
+ * 어느 쪽이든 이 컴포넌트가 직접 소켓 emit이나 store 변경을 하지 않는 것은 같다 — KILL은 실제
+ * 영상을, 나머지 세 종류는 임시 연출을 보여주고, 큐가 비면 finalStatus(있을 때만) 최종 생존
+ * 화면으로 이어지며, 모든 종료는 finish(outcome) 한 콜백을 통해 훅으로만 올라간다.
  */
 export default function InGameNightSuccessPresentation({
-  current, open, finish, assetStatus, finalStatus, onClose,
-}) {
+  current: currentProp,
+  open: openProp,
+  finish: finishProp,
+  assetStatus: assetStatusProp,
+  finalStatus: finalStatusProp,
+  onClose: onCloseProp,
+  hold = false,
+} = {}) {
+  const controlled = openProp !== undefined
+  const owned = useInGameNightSuccessPresentation({ hold: controlled || hold })
+
+  const current = controlled ? currentProp : owned.current
+  const open = controlled ? openProp : owned.open
+  const finish = controlled ? finishProp : owned.finish
+  const assetStatus = controlled ? assetStatusProp : owned.assetStatus
+  const finalStatus = controlled ? finalStatusProp : owned.finalStatus
+  const onClose = controlled ? onCloseProp : owned.onClose
+
   if (!open) return null
 
   if (current) {

@@ -1393,6 +1393,10 @@ const CLIENT_SUBSCRIBE_EVENTS_LOCK = [
   "friend_request_received", "friend_status_change", "game_ended", "game_invite_received",
   "game_invite_updated", "game_kicked", "game_phase_changed", "game_started", "host_changed",
   "joker_chat_message", "night_action_result", "night_action_success", "night_actions_resolved",
+  // F-27b(AC-01): 이 밤의 연출을 하나도 받지 않는 참가자의 대기 알림. 세 키(gameId·
+  // nightDayIndex·waiting)뿐이라 역할·대상·사건 ID를 싣지 않는다 — 대기 화면은 진행 안내
+  // 문구 하나만 그린다.
+  "night_presentation_wait",
   "night_result_applied",
   "night_turn_ended", "night_turn_started", "notification_created", "player_eliminated",
   "player_joined_room", "player_left_room", "player_ready_changed", "public_rooms_updated",
@@ -1513,7 +1517,12 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
 /** InGamePage가 실제로 마운트하는 컴포넌트 전부(오버레이·모달·패널 포함). */
 const INGAME_MOUNT_LOCK = [
   "InGameActionPanel", "InGameBackground", "InGameChatShell", "InGameDeadParticipantChoice",
-  "InGameKillRevealOverlay", "InGameNightPrivateResultOverlay", "InGameNightSuccessPresentation",
+  "InGameKillRevealOverlay",
+  // F-27b(AC-01) InGameNightPresentationWait: 그 밤의 연출을 받지 않는 참가자에게만 뜨는
+  // 고정 문구 화면이다. 역할·대상·사건 ID를 props로도 DOM으로도 받지 않고, 버튼·타이머·ACK·
+  // 오디오를 만들지 않는다(해제 권한은 전적으로 서버에 있다).
+  "InGameNightPresentationWait",
+  "InGameNightPrivateResultOverlay", "InGameNightSuccessPresentation",
   "InGameNightTurnAnnouncementOverlay", "InGamePhaseEntranceOverlay", "InGamePlayerBoard",
   "InGamePlayerSessionProvider", "InGameRoleRevealOverlay", "InGameTimebar",
   "InGameTopControls", "InGameVoteStatusPanel", "PlayerRecordListPanel", "SettingPanel",
@@ -1530,7 +1539,13 @@ const INGAME_MOUNT_LOCK = [
  * 기록**이라 관전 자격과는 무관하다.
  */
 const INGAME_STORE_DATA_KEYS = [
-  "error", "gameId", "hostUuid", "nightPrivateResult", "nightSuccessQueue", "snapshotResultOwner",
+  "error", "gameId", "hostUuid",
+  // F-27b(AC-01) nightPresentationWait: 그 밤의 연출을 받지 않는 참가자의 대기 상태다.
+  // { gameId, nightDayIndex, scope } 뿐이라 역할·대상·사건 ID는 담지 않는다. 진입 자격이
+  // 아니라 **서버가 소유한 순간 상태의 사본**이고, 해제는 서버 알림·다음 역할 턴 시작·밤
+  // 이탈·판 교체·신원/연결 전이로만 일어난다.
+  "nightPresentationWait",
+  "nightPrivateResult", "nightSuccessQueue", "snapshotResultOwner",
   "snapshotSeq", "state",
 ]
 const MATCHING_STORE_DATA_KEYS = [
@@ -1615,6 +1630,10 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     // 근거(winResult)만** 걷어낸다. 관전 진입·전환이 아니며 phase·roster·참여는 건드리지
     // 않는다 — 현재 연결의 정상 스냅샷이 ENDED를 다시 실으면 그대로 복원된다.
     "invalidateUnconfirmedTerminalResult",
+    // F-27b(AC-01) receiveNightPresentationWait: 그 밤의 연출을 받지 않는 참가자에게만 오는
+    // 대기 알림을 화면 상태로 반영한다. 큐·ACK·오디오를 만들지 않고 phase·roster·참여도
+    // 건드리지 않는다 — 대기의 시작과 끝은 전적으로 서버가 소유한다.
+    "receiveNightPresentationWait",
     // F-26b(AC-01) receiveNightSuccess: 서버가 개별 전송한 역할별 성공 사건을 대기 큐에 수락한다.
     // 관전 진입·전환이 아니며 phase·roster·참여는 건드리지 않는다.
     "receiveNightSuccess",

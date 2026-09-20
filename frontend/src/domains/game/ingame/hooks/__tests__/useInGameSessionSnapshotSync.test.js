@@ -292,14 +292,18 @@ test("의존성이 바뀌지 않은 리렌더는 리스너를 추가하거나 �
   setFakeSocket(fake.socket)
 
   const hook = renderHook(() => useInGameSessionSnapshotSync())
-  assert.equal(fake.onCalls.length, 1)
+  // F-27b(AC-01): connect 하나에 **읽기 전용 관측** 둘이 더해진다(night_presentation_wait·
+  // night_turn_started). 관측은 화면 상태를 만들지 않고 게임·밤별 순번만 세지만, 리스너가
+  // 리렌더마다 늘어나면 안 된다는 계약은 그대로다.
+  assert.deepEqual(fake.onCalls.map((c) => c.event).sort(),
+    ["connect", "night_presentation_wait", "night_turn_started"])
   assert.equal(fake.emitWithAckCalls.length, 1)
 
   hook.rerender()
   hook.rerender()
   hook.rerender()
 
-  assert.equal(fake.onCalls.length, 1)
+  assert.equal(fake.onCalls.length, 3)
   assert.equal(fake.offCalls.length, 0)
   assert.equal(fake.emitWithAckCalls.length, 1)
 
@@ -353,9 +357,12 @@ test("manager 수준의 reconnect 리스너는 등록되지 않으며, connect 1
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   await emitConnect(fake)
 
-  assert.ok(
-    fake.onCalls.every((c) => c.event === "connect"),
-    "이 훅은 connect 외의 이벤트(예: 'reconnect')를 구독하면 안 된다",
+  // 이 훅이 구독하는 이름은 정확히 셋뿐이다 — 요청 세대를 여는 connect와, 조회 경합을 재는
+  // 읽기 전용 관측 둘. manager 수준의 'reconnect' 같은 다른 이름은 어느 것도 없다.
+  assert.deepEqual(
+    [...new Set(fake.onCalls.map((c) => c.event))].sort(),
+    ["connect", "night_presentation_wait", "night_turn_started"],
+    "이 훅은 connect·관측 둘 외의 이벤트(예: 'reconnect')를 구독하면 안 된다",
   )
   assert.equal(fake.emitWithAckCalls.length, 2, "connect 1회당 요청은 정확히 1회여야 한다(이중 트리거 없음)")
 
@@ -741,7 +748,7 @@ test("F-23: 같은 Socket 객체가 재연결되어 id만 바뀌면 그 이전 �
   hook.unmount()
 })
 
-test("cleanup은 이 훅이 등록한 connect 핸들러만 정확한 참조로 제거하고, 다른 이벤트 리스너는 그대로 둔다", () => {
+test("cleanup은 이 훅이 등록한 리스너만 정확한 참조로 제거하고, 다른 이벤트 리스너는 그대로 둔다", () => {
   seedStore({ gameId: "g1" })
   seedAuth("user-a")
   const fake = createFakeSessionSnapshotSocket()
@@ -758,13 +765,23 @@ test("cleanup은 이 훅이 등록한 connect 핸들러만 정확한 참조로 �
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   const ownHandler = [...fake.connectHandlers][0]
   assert.ok(ownHandler)
+  // F-27b(AC-01): 관측 리스너 둘도 **자기가 등록한 그 참조로만** 해제돼야 한다 — 남의
+  // night_turn_started 구독(useGameSessionSocketEvents·성공 연출 훅)을 건드리면 안 된다.
+  const handlerFor = (event) => fake.onCalls.find((c) => c.event === event)?.handler
+  const waitHandler = handlerFor("night_presentation_wait")
+  const turnHandler = handlerFor("night_turn_started")
+  assert.ok(waitHandler && turnHandler)
 
   hook.unmount()
 
   assert.deepEqual(
     fake.offCalls.map((c) => ({ event: c.event, handler: c.handler })),
-    [{ event: "connect", handler: ownHandler }],
-    "cleanup은 이 훅이 등록한 connect 핸들러 하나만 정확한 참조로 off해야 한다",
+    [
+      { event: "connect", handler: ownHandler },
+      { event: "night_presentation_wait", handler: waitHandler },
+      { event: "night_turn_started", handler: turnHandler },
+    ],
+    "cleanup은 이 훅이 등록한 세 리스너를 정확한 참조로만 off해야 한다",
   )
   assert.equal(fake.connectHandlers.size, 0)
 })

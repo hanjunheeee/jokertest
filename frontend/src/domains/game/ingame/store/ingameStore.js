@@ -84,13 +84,23 @@ let nightSuccessStoreApi = null
  * 밤 성공 사건 기록을 동기적으로 전부 취소한다. 연결 교체·재연결·소속 전이·인증 전이(로그인·
  * 로그아웃, A→B→A 포함) 축 어디서 호출해도 같은 결과다 — 이 모든 축의 전이 하나하나가 "이전
  * 화면이 받아 둔 것"을 지금 화면의 사실이 아니게 만들기 때문이다.
+ *
+ * F-27b(AC-01): **비수신자 대기도 같은 축에서 함께 취소한다.** 대기 중인 비수신자는 성공 사건
+ * 기록이 0개다 — 예전의 `size === 0` 조기 반환은 그 화면을 통째로 지나쳐, 계정 A→B→A·소속
+ * 왕복·방 이동·소켓 교체·재연결 뒤에도 이전 신원이 받은 대기 화면이 그대로 남았다. 그래서
+ * 기록 유무와 무관하게 store를 한 번 확인하고, 지울 것이 없으면 참조 보존 no-op으로 끝낸다.
  */
 function cancelNightSuccessRecords() {
-  if (nightSuccessRecords.size === 0) return
-  nightSuccessRecords.clear()
+  if (nightSuccessRecords.size > 0) nightSuccessRecords.clear()
   if (!nightSuccessStoreApi) return
-  nightSuccessStoreApi.setState((current) =>
-    (current.nightSuccessQueue.length === 0 ? current : { nightSuccessQueue: EMPTY_NIGHT_SUCCESS_QUEUE }))
+  nightSuccessStoreApi.setState((current) => {
+    const patch = {}
+    if (current.nightSuccessQueue.length !== 0) patch.nightSuccessQueue = EMPTY_NIGHT_SUCCESS_QUEUE
+    if (current.nightPresentationWait !== null) patch.nightPresentationWait = null
+    // 빈 패치는 current를 그대로 돌려준다 — zustand가 Object.is로 no-op 처리하므로 구독자도
+    // 불리지 않는다(이 함수는 store 구독 안에서도 불린다).
+    return Object.keys(patch).length === 0 ? current : patch
+  })
 }
 
 let membershipEpoch = 0
@@ -680,6 +690,106 @@ function buildFollowUpReceiptScope(receipt, gameId, state) {
 }
 
 /**
+ * F-27b(AC-03/AC-08): 이 **사건 객체**에 결속된 수락 범위를 읽는다(아무것도 바꾸지 않는다).
+ *
+ * eventId만으로는 부족하다. 재접속으로 같은 eventId가 복원되면 새 entry 객체와 새 범위가
+ * 기록에 들어가는데, 그때 옛 표시가 들고 있던 entry로 범위를 물으면 **새 기록의 범위**가
+ * 돌아와 옛 콜백이 새 표시를 완료시킨다. 그래서 기록의 entry와 넘어온 객체가 **같은 참조**일
+ * 때만 답한다. 이미 완료된 기록·없는 기록·다른 entry는 전부 null이다(fail-closed).
+ *
+ * 돌려주는 값은 불변 사본이라 호출부가 들고 있어도 기록이 바뀌지 않는다. 큐·기록·ACK 상태는
+ * 조금도 건드리지 않는다.
+ */
+export function readNightSuccessReceiptScope(entry) {
+  if (entry === null || typeof entry !== "object") return null
+  const eventId = entry.eventId
+  if (typeof eventId !== "string" || eventId.length === 0) return null
+  const record = nightSuccessRecords.get(eventId)
+  if (!record || record.completed === true) return null
+  if (record.entry !== entry) return null
+  const scope = record.scope
+  if (scope === null || typeof scope !== "object") return null
+  return Object.freeze({ ...scope })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// F-27b(AC-01): **비수신자 연출 대기**
+//
+// 서버는 그 밤의 연출을 하나도 받지 않는 참가자에게만 night_presentation_wait를 보낸다
+// ({gameId, nightDayIndex, waiting} 세 키뿐이다 — 역할·대상·사건 ID는 어디에도 없다).
+// 이 store는 그 사실을 성공 큐와 **완전히 분리된** 한 값으로만 들고 있는다: 큐도 ACK도
+// 오디오도 만들지 않는다. 대기의 시작과 끝은 오직 서버가 소유하고, 화면은 그것을 비춘다.
+//
+// 값은 { gameId, nightDayIndex, scope }다. scope는 그 사실을 받은 순간의 수신 범위이고,
+// 화면은 그 범위가 지금과 같을 때만 대기 화면을 그린다(공개 결과의 수신 증거와 같은 성질).
+// ───────────────────────────────────────────────────────────────────────────
+
+/** night_presentation_wait payload의 형태 검사 — 허용 키는 정확히 셋이다. */
+function isValidNightPresentationWaitPayload(payload) {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return false
+  const keys = Object.keys(payload)
+  if (keys.length !== 3) return false
+  if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return false
+  if (!Number.isInteger(payload.nightDayIndex) || payload.nightDayIndex < 0) return false
+  if (typeof payload.waiting !== "boolean") return false
+  return true
+}
+
+/** 지금 들고 있는 대기가 이 상태·이 판의 사실인가(밤 이탈·다른 밤·판 교체는 전부 거짓). */
+function isNightPresentationWaitLive(wait, gameId, state) {
+  if (wait === null || typeof wait !== "object") return false
+  if (!gameId || wait.gameId !== gameId) return false
+  if (state?.phase !== "NIGHT") return false
+  return state?.dayIndex === wait.nightDayIndex
+}
+
+/**
+ * F-27b(AC-01): snapshot 응답의 `presentationWaiting`을 **부수 효과 없이** 판정한다.
+ *
+ * 키가 없는 응답은 기존 호환 경로다 — 그 서버는 대기를 모르므로 **같은 판·같은 밤·같은 범위**의
+ * 대기만 그대로 보존하고, 없으면 만들지 않는다(빈 bootstrap에 대기가 생기지 않는 자리다).
+ * boolean이 아니면 snapshot 전체를 거부한다(ok:false) — 대기 필드 오류로 state·snapshotSeq·
+ * 성공 큐가 부분 반영되지 않게 한다. true는 NIGHT·인증 본인·수신 문맥을 모두 요구한다.
+ *
+ * @returns {{ok:false} | {ok:true, waiting:boolean}}
+ */
+function planNightPresentationWaitRestore(response, candidate, ownerScope, previousWait) {
+  const hasKey = Object.hasOwn(response ?? {}, "presentationWaiting")
+  if (!hasKey) {
+    if (!isNightPresentationWaitLive(previousWait, candidate?.gameId ?? null, candidate?.state ?? null)) {
+      return { ok: true, waiting: false }
+    }
+    if (!isSameInGameReceiptScope(previousWait.scope, ownerScope)) return { ok: true, waiting: false }
+    return { ok: true, waiting: true }
+  }
+  const waiting = response.presentationWaiting
+  if (typeof waiting !== "boolean") return { ok: false }
+  if (!waiting) return { ok: true, waiting: false }
+  if (ownerScope === null || typeof ownerScope !== "object") return { ok: false }
+  if (!candidate?.gameId || !candidate?.state) return { ok: false }
+  if (candidate.state.phase !== "NIGHT") return { ok: false }
+  if (!Number.isInteger(candidate.state.dayIndex) || candidate.state.dayIndex < 0) return { ok: false }
+  // 대기도 성공 사건과 같은 기준을 쓴다 — "지금 로그인한 계정 = 이 판의 본인"이어야 한다.
+  if (ownerScope.accountId === null || ownerScope.accountId !== (candidate.state.self?.uuid ?? null)) {
+    return { ok: false }
+  }
+  if (ownerScope.gameId !== candidate.gameId) return { ok: false }
+  return { ok: true, waiting: true }
+}
+
+/** 검증이 끝난 대기 판정을 같은 커밋의 후속 범위에 결속한다(패치만 돌려준다). */
+function commitNightPresentationWait(waiting, ownerScope, gameId, state) {
+  if (!waiting) return { nightPresentationWait: null }
+  return {
+    nightPresentationWait: Object.freeze({
+      gameId: gameId ?? null,
+      nightDayIndex: state?.dayIndex ?? null,
+      scope: ownerScope,
+    }),
+  }
+}
+
+/**
  * 서버 인게임 상태를 보관하는 클라이언트 store.
  * 도메인 판정은 서버 game-core가 담당하고, 프론트는 동기화된 상태를 렌더링만 합니다.
  *
@@ -721,6 +831,12 @@ export const useInGameStore = create((set) => ({
   // 빈 상태는 항상 같은 공용 불변 배열이다(참조 안정성). 밤 재진입·gameId 변경·clearGame에서만
   // 비워진다(nightPrivateResult와 같은 수명 규칙 — clearNightSuccessQueue/OnNightEntry 참고).
   nightSuccessQueue: EMPTY_NIGHT_SUCCESS_QUEUE,
+
+  // F-27b(AC-01): 이 밤의 연출을 **하나도 받지 않는** 참가자의 대기 상태. 서버가 소유한
+  // 순간 사실이라 성공 큐와 완전히 분리해 둔다 — { gameId, nightDayIndex, scope } 또는 null이고,
+  // 이 값이 큐·ACK·오디오를 만드는 일은 없다. 대기 해제는 서버 알림(waiting:false)·다음 역할
+  // 턴 시작·밤 이탈/새 밤·판 교체·신원/연결 전이 중 하나로만 일어난다.
+  nightPresentationWait: null,
 
   // 이 밤에 나에게만 온 개인 결과(night_action_result). state 안이 아니라 최상위에 두는 이유는
   // canonical 세션 상태가 아니기 때문이다 — 서버 스냅샷·방송이 실어 나르는 값이 아니라 이
@@ -787,7 +903,9 @@ export const useInGameStore = create((set) => ({
         // 개인 결과는 gameId가 실제로 바뀔 때만 비운다 — 이전 게임의 결과가 새 세션으로 넘어오는
         // 것은 막아야 하지만, 같은 게임에 대한 재적용(중복 game_started 등)까지 비우면 아직
         // 확인하지 않은 이번 밤의 결과가 조용히 사라진다("비워지는 시점은 정확히 셋" 계약).
-        ...(nextGameId !== current.gameId ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearNightSuccessQueue() } : {}),
+        ...(nextGameId !== current.gameId
+          ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearNightSuccessQueue(), nightPresentationWait: null }
+          : {}),
       }
     }),
 
@@ -1063,7 +1181,13 @@ export const useInGameStore = create((set) => ({
         return current
       }
 
-      return { state: { ...current.state, nightTurnRole: parsed.role, nightTurnDeadline: parsed.deadline } }
+      return {
+        state: { ...current.state, nightTurnRole: parsed.role, nightTurnDeadline: parsed.deadline },
+        // F-27b(AC-01): 다음 역할 턴이 실제로 시작됐다는 것은 그 앞의 연출 대기가 서버에서
+        // 이미 해제됐다는 뜻이다(releaseNightPresentationWait → advanceNightTurn 순서).
+        // 해제 통지가 유실된 연결도 이 공개 방송 하나로 대기 화면을 벗어난다.
+        ...(current.nightPresentationWait !== null ? { nightPresentationWait: null } : {}),
+      }
     }),
 
   // night_turn_ended는 서버가 현재 역할 턴을 끝냈다는 canonical 방송이다. 현재 턴과 정확히
@@ -1214,6 +1338,15 @@ export const useInGameStore = create((set) => ({
         willClearNightSuccess ? [] : nightSuccessRecords.keys(),
       )
       if (!recovery.ok) return current
+      // F-27b(AC-01): 대기 필드도 **부수 효과 전에** 함께 검사한다 — 복원 배열 오류와 대기
+      // 필드 오류 어느 쪽이든 state·snapshotSeq·큐·대기를 부분 반영하지 않는다.
+      const waitPlan = planNightPresentationWaitRestore(
+        response,
+        { gameId: current.gameId ?? null, state: patch.state },
+        buildFollowUpReceiptScope(receiptContext, current.gameId ?? null, patch.state),
+        current.nightPresentationWait,
+      )
+      if (!waitPlan.ok) return current
       const snapshotSeq = current.snapshotSeq + 1
       // 이 커밋이 만든 소속을 같은 자리에서 관측 기준으로 채택한다 — 자기 복원을 외부 소속
       // 교체로 오인하지 않게 한다(아래 store 구독자는 같은 값을 다시 보므로 세지 않는다).
@@ -1228,6 +1361,14 @@ export const useInGameStore = create((set) => ({
           recovery.entries,
           buildFollowUpReceiptScope(receiptContext, current.gameId ?? null, patch.state),
           willClearNightSuccess ? EMPTY_NIGHT_SUCCESS_QUEUE : current.nightSuccessQueue,
+        ),
+        // 대기의 소유 범위도 복원 항목과 **같은 후속 범위**다(커밋 뒤 readInGameReceiptScope가
+        // 돌려줄 값과 같은 모양이어야 화면의 범위 비교가 성립한다).
+        ...commitNightPresentationWait(
+          waitPlan.waiting,
+          buildFollowUpReceiptScope(receiptContext, current.gameId ?? null, patch.state),
+          current.gameId ?? null,
+          patch.state,
         ),
         snapshotSeq,
         snapshotResultOwner: buildSnapshotResultOwner(receiptContext, current.gameId ?? null, patch.state, snapshotSeq),
@@ -1263,6 +1404,15 @@ export const useInGameStore = create((set) => ({
         [],
       )
       if (!recovery.ok) return current
+      // 빈 store에는 보존할 대기가 없다 — 키가 없는 기존 호환 응답은 여기서 false가 되고,
+      // 명시적인 presentationWaiting:true만 새 대기를 만든다(새로고침 복원 경로).
+      const waitPlan = planNightPresentationWaitRestore(
+        response,
+        { gameId: patch.gameId ?? null, state: patch.state },
+        buildFollowUpReceiptScope(receiptContext, patch.gameId ?? null, patch.state),
+        null,
+      )
+      if (!waitPlan.ok) return current
       const snapshotSeq = current.snapshotSeq + 1
       adoptIdentityScope(patch.gameId ?? null, patch.state)
       // 빈 store에 gameId가 처음 붙는 경로다(gameId 변경) — 개인 결과·성공 사건 큐도 이 세션
@@ -1280,6 +1430,12 @@ export const useInGameStore = create((set) => ({
           recovery.entries,
           buildFollowUpReceiptScope(receiptContext, patch.gameId ?? null, patch.state),
           EMPTY_NIGHT_SUCCESS_QUEUE,
+        ),
+        ...commitNightPresentationWait(
+          waitPlan.waiting,
+          buildFollowUpReceiptScope(receiptContext, patch.gameId ?? null, patch.state),
+          patch.gameId ?? null,
+          patch.state,
         ),
       }
     }),
@@ -1374,6 +1530,52 @@ export const useInGameStore = create((set) => ({
     }),
 
   /**
+   * F-27b(AC-01): night_presentation_wait 수신을 반영한다. 호출부(useGameSessionSocketEvents)가
+   * 등록 범위 가드를 통과한 payload와 수신 시점의 receiptScope를 함께 넘긴다.
+   *
+   * 검사는 receiveNightSuccess와 **같은 기준**이다: 허용 키 정확히 셋 · 같은 판 · NIGHT ·
+   * 같은 밤 날짜 · 인증 본인 · 현재 수신 범위. 하나라도 어긋나면 참조 보존 no-op이라 잘못된
+   * 알림이 대기를 만들지도, 지우지도 못한다.
+   *
+   * waiting:false는 대기를 비우고, true는 소유 범위와 함께 저장한다. 같은 값의 재방송은 상태
+   * 참조를 보존한다(같은 연결의 반복 알림이 리렌더를 만들지 않는다). 성공 큐·ACK·오디오는
+   * 어느 경로에서도 만들지 않는다.
+   */
+  receiveNightPresentationWait: (payload, receiptScope = null) =>
+    set((current) => {
+      if (!isValidNightPresentationWaitPayload(payload)) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (current.state.phase !== "NIGHT") return current
+      if (current.state.dayIndex !== payload.nightDayIndex) return current
+      if (receiptScope === null || typeof receiptScope !== "object") return current
+      if (receiptScope.accountId === null || receiptScope.accountId !== (current.state.self?.uuid ?? null)) {
+        return current
+      }
+      if (receiptScope.gameId !== current.gameId) return current
+      if (receiptScope.membershipId !== readSelfMembershipId(current.state)) return current
+      if (!isReceiptScopeCurrent(receiptScope, current)) return current
+
+      if (!payload.waiting) {
+        return current.nightPresentationWait === null ? current : { nightPresentationWait: null }
+      }
+      const existing = current.nightPresentationWait
+      if (existing !== null
+        && existing.gameId === payload.gameId
+        && existing.nightDayIndex === payload.nightDayIndex
+        && isSameInGameReceiptScope(existing.scope, receiptScope)) {
+        return current
+      }
+      return {
+        nightPresentationWait: Object.freeze({
+          gameId: payload.gameId,
+          nightDayIndex: payload.nightDayIndex,
+          scope: receiptScope,
+        }),
+      }
+    }),
+
+  /**
    * F-26b(AC-05): 대기 큐 소비 완료를 서버로 **정확히 한 번** 전송한다.
    *
    * 큐에 없는 ID·범위 불일치(다른 계정·다른 소속·다른 연결로 수락된 사건)·이미 완료된 ID는
@@ -1453,6 +1655,8 @@ export const useInGameStore = create((set) => ({
       ...CLEARED_NIGHT_PRIVATE_RESULT,
       // F-26b: 큐와 수락·완료 기록을 함께 비운다 — 세션 정리는 밤 성공 사건 수명의 끝이다.
       ...clearNightSuccessQueue(),
+      // F-27b(AC-01): 비수신자 대기도 같은 자리에서 끝난다(세션이 사라지면 기다릴 것도 없다).
+      nightPresentationWait: null,
     }),
 }))
 
@@ -1476,6 +1680,15 @@ useInGameStore.subscribe((next) => {
   // "상태 변화에 대한 부수 효과" 패턴). 초기 관측(module 로드 시 adoptIdentityScope(null,null))은
   // 이 구독이 등록되기 전이라 여기 걸리지 않는다.
   if (membershipEpoch !== membershipEpochBeforeAdopt) cancelNightSuccessRecords()
+
+  // F-27b(AC-01): **밤 이탈·다른 밤·판 교체는 대기의 끝이다.** 이 정리를 액션마다 흩어 놓으면
+  // 한 경로만 빠뜨려도 낮 화면 위에 대기 안내가 남는다 — 모든 커밋이 지나는 이 한 곳에서만
+  // 판정한다(성공 큐와 달리 대기는 서버가 소유한 순간 상태라, 그 밤을 벗어나면 보존할 이유가
+  // 없다). 커밋이 끝난 뒤의 재귀 setState라 안전하고, 두 번째 관측에서는 이미 null이라 멈춘다.
+  if (next.nightPresentationWait !== null
+    && !isNightPresentationWaitLive(next.nightPresentationWait, next.gameId ?? null, next.state ?? null)) {
+    useInGameStore.setState({ nightPresentationWait: null })
+  }
 
   // F-23(SPLIT-1): 종료 결과의 수신 범위도 여기서 한 곳에서만 기록한다. 공개 밤 판정
   // (applyNightResultAppliedPayload)·재판 판정(applyTribunalResolved)·끊김 사망
@@ -1522,3 +1735,10 @@ export const selectInGameState = (store) => store.state
  * 막는다. production 영상 소비처 연결은 F-27에서 이 selector를 구독하는 컴포넌트를 추가한다.
  */
 export const selectNightSuccessQueue = (store) => store.nightSuccessQueue
+
+/**
+ * F-27b(AC-01): 비수신자 연출 대기 selector. 저장된 값을 그대로 돌려준다(참조 안정성 —
+ * 같은 값의 재방송은 receiveNightPresentationWait가 이미 참조를 보존한다). 화면은 이 값의
+ * scope가 지금 범위와 같은지를 직접 확인한 뒤에만 대기 화면을 그린다.
+ */
+export const selectNightPresentationWait = (store) => store.nightPresentationWait

@@ -407,6 +407,62 @@ test("AC-02(CODEX 반려 수정): KILL만 finish된 채 DAY 결과가 먼저 반
   session.close()
 })
 
+/**
+ * AC-03(CODEX 반려 수정): **옛 onClose는 새 표시를 지우지 않는다.**
+ *
+ * 최종 생존 화면의 닫기는 예전에 무조건 setTrack(null)이었다. 그래서 이미 닫힌 화면의 늦은
+ * 콜백(StrictMode의 setup→cleanup→setup, 모달의 지연 dismiss, 옛 렌더가 들고 있던 참조)이
+ * **그 뒤에 세워진 새 최종 표시**를 통째로 지웠다 — 새 화면은 아직 아무것도 보여주지 못했는데
+ * 사라진다. 이제 닫기도 finish와 같은 두 검사를 통과해야 한다: 수락 범위가 지금과 같은가,
+ * 그리고 지금 떠 있는 것이 **그 콜백이 닫으려던 바로 그 표시**인가.
+ */
+test("AC-03(CODEX 반려 수정): 옛 최종 표시의 늦은 onClose는 그 뒤에 세워진 새 최종 표시를 지우지 않는다", () => {
+  seedNightSession({ dayIndex: 3 })
+  const session = openSession()
+
+  // ① KILL 하나로 최종 표시가 선다(DOCTOR 턴 종료로 "HEAL은 더 오지 않는다"가 확인된 뒤).
+  session.deliver("night_action_success",
+    buildSuccessPayload({ type: "KILL", eventId: "k-final-1", nightDayIndex: 3, perspectives: ["TARGET"] }))
+  session.finish("COMPLETED")
+  session.deliver("night_turn_ended", buildNightTurnEndedPayload({ role: "DOCTOR", dayIndex: 3 }))
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 4, selfAlive: true }))
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: true },
+    "전제: 첫 최종 표시가 떠야 한다")
+
+  // 그 표시가 그린 닫기 콜백을 들고 있는다 — 늦게 불리는 것이 바로 이 참조다.
+  const staleClose = session.value.onClose
+
+  // ② 다음 밤(5)이 시작되고 그 밤의 KILL이 소비되어 **새 추적·새 최종 표시**가 선다.
+  act(() => {
+    useInGameStore.getState().setGamePayload({
+      gameId: GAME_ID,
+      state: {
+        id: GAME_ID, phase: "NIGHT", dayIndex: 5, dayPhase: null,
+        players: ROSTER.map((p) => ({ ...p })), self: buildSelf(),
+      },
+    })
+  })
+  session.deliver("night_action_success",
+    buildSuccessPayload({ type: "KILL", eventId: "k-final-2", nightDayIndex: 5, perspectives: ["TARGET"] }))
+  assert.equal(session.value.current?.eventId, "k-final-2", "전제: 다음 밤의 사건이 큐에 들어와야 한다")
+  session.finish("COMPLETED")
+  session.deliver("night_turn_ended", buildNightTurnEndedPayload({ role: "DOCTOR", dayIndex: 5 }))
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 6, selfAlive: true }))
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: true },
+    "전제: 새 최종 표시가 떠 있어야 한다")
+
+  // ③ 옛 콜백이 늦게 불린다 — 새 표시는 그대로여야 한다.
+  act(() => staleClose())
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: true },
+    "옛 onClose가 새 최종 표시를 지웠다")
+
+  // ④ 지금 표시의 확인만이 그 표시를 닫는다.
+  act(() => session.value.onClose())
+  assert.equal(session.value.finalStatus, null, "현재 표시의 확인이 최종 화면을 닫지 못했다")
+
+  session.close()
+})
+
 test("hold가 걸린 동안에는 표시하지 않되 큐·최종 상태는 그대로 보존한다", () => {
   seedNightSession()
   const socket = createFakeSocket()
@@ -634,6 +690,42 @@ test("open이 아니면 아무것도 그리지 않는다", () => {
     assert.equal(container.textContent, "")
   } finally {
     unmount()
+  }
+})
+
+/**
+ * 소비처 연결(AC-03): 이 컴포넌트의 표시 값은 **오직 useInGameNightSuccessPresentation**에서
+ * 온다. props를 하나도 주지 않으면 그 사실이 그대로 드러난다 — 컴포넌트가 직접 훅을 불러
+ * 큐의 선두 사건을 그리고, 재생 종료가 같은 훅의 finish를 지나 실제 서버 보고까지 이어진다.
+ *
+ * (InGamePage는 다른 오버레이와의 우선순위를 합쳐야 해서 같은 훅의 값을 props로 내려보낸다 —
+ *  그 controlled 경로는 이 파일의 나머지 컴포넌트 층 시험과 아래 페이지 층 시험이 본다.)
+ */
+test("소비처 연결(AC-03): props 없이도 컴포넌트가 직접 훅을 불러 선두 사건을 표시하고 완료를 보고한다", () => {
+  seedNightSession()
+  const socket = createFakeSocket()
+  act(() => setSocket(socket))
+  // 사건은 실제 전역 수신 훅이 store에 넣는다 — 컴포넌트는 그 store만 본다(대역 없음).
+  const receiver = renderHook(() => useGameSessionSocketEvents(), { wrapper: routerWrapper })
+  act(() => socket.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "standalone-kill" })))
+  assert.equal(useInGameStore.getState().nightSuccessQueue.length, 1, "전제: 큐에 사건 하나가 있어야 한다")
+
+  const { container, unmount } = renderPresentation({})
+  try {
+    const video = container.querySelector("video")
+    assert.notEqual(video, null, "props 없이 놓아둔 컴포넌트가 큐의 선두 KILL 사건을 그리지 않았다")
+    assert.equal(video.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL)
+
+    act(() => { fireEvent(video, new dom.window.Event("ended")) })
+    const acks = socket.ackCallsFor("acknowledge_night_action_success")
+    assert.equal(acks.length, 1, "컴포넌트가 직접 부른 훅의 finish가 완료 보고로 이어지지 않았다")
+    assert.equal(acks[0].payload.eventId, "standalone-kill")
+    assert.deepEqual(useInGameStore.getState().nightSuccessQueue, [], "완료한 사건이 큐에 남았다")
+    assert.equal(container.querySelector("video"), null, "완료한 사건의 연출이 그대로 남았다")
+  } finally {
+    unmount()
+    receiver.unmount()
+    act(() => setSocket(null))
   }
 })
 
