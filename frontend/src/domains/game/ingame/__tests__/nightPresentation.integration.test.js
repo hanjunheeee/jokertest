@@ -114,7 +114,7 @@ const { useGameSessionSocketEvents } = await import("../hooks/useGameSessionSock
 const { useInGameSessionSnapshotSync } = await import("../hooks/useInGameSessionSnapshotSync.js")
 const { useInGameNightSuccessPresentation } = await import("../hooks/useInGameNightSuccessPresentation.js")
 const {
-  INGAME_KILL_ANIMATION_VIDEO_URL, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
+  INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
   INGAME_KILL_REVEAL_RETRY_LABEL, INGAME_KILL_REVEAL_SKIP_LABEL,
 } = await import("../constants/killReveal/ingameKillReveal.js")
 const { INGAME_NIGHT_PRESENTATION_WAIT_MESSAGE } = await import("../components/InGameNightPresentationWait.jsx")
@@ -141,6 +141,9 @@ const flushMicrotasks = () => new Promise((resolve) => { setTimeout(resolve, 0) 
 const { __setSfxPlayerForTests } = await import("../../../../shared/hooks/useSfxRuntime.js")
 const { createSfxPlayer } = await import("../../../../shared/audio/sfxPlayer.js")
 const { SFX_MANIFEST } = await import("../../../../shared/audio/sfxManifest.js")
+
+/** F-27c(AC-01) §2-5 선택표의 실제 값 — 하드코딩 사본을 만들지 않고 production manifest에서 읽는다. */
+const NIGHT_SUCCESS_VIDEO = SFX_MANIFEST["night-success-video"].embeddedVideos
 
 const sfxDispatches = []
 const sfxClaims = []
@@ -960,7 +963,7 @@ test("AC-03/AC-05: 재접속으로 같은 사건이 복원되면 옛 표시의 �
   second.close()
 })
 
-test("AC-03/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 완료 기록이 바뀌고, 나머지 수신자까지 끝나야 다음 역할이 시작된다", async () => {
+test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 완료 기록이 바뀌고, 나머지 수신자까지 끝나야 다음 역할이 시작된다 — 그동안 별도 SFX·매체 생성은 0회다", async () => {
   const ctx = setupBackendNight("f27bl-page-video")
   assert.deepEqual(ctx.submit(ctx.jokerUuid, ctx.citizenUuid), { ok: true })
   const killPayload = ctx.receivedBy(ctx.citizenUuid, "night_action_success")[0].payload
@@ -968,17 +971,30 @@ test("AC-03/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 완료
   seedFrontSession(ctx, ctx.citizenUuid)
   const socket = createFrontSocket({ forwardEmitTo: ctx.backendSockets.get(ctx.citizenUuid) })
   const view = await mountInGamePage(socket)
+  const sfxBefore = sfxDispatches.length
+  const claimsBefore = sfxClaims.length
+  const mediaBefore = sfxMediaCreations.length
 
   await act(async () => { socket.deliver("night_action_success", killPayload) })
   const video = view.container.querySelector("video[src]")
   assert.notEqual(video, null, "실제 페이지가 KILL 영상을 마운트하지 않았다")
-  assert.equal(video.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL)
-  // AC-02: 영상 요소는 muted다 — 내장음 재생 경로 자체가 열리지 않는다.
-  assert.equal(video.muted, true, "연출 영상이 음소거가 아니다")
+  // citizenUuid는 대상자(TARGET) 관점이다 — §2-5 선택표의 KILL-TARGET 영상이어야 한다.
+  assert.equal(video.getAttribute("src"), NIGHT_SUCCESS_VIDEO["KILL-TARGET"])
+  // AC-03: 별도 dispatch 없이 getSfxMix가 준 Master×SFX(여기서는 100×100)가 그대로 적용된다.
+  assert.equal(video.muted, false, "Master×SFX가 모두 100인데 영상이 음소거다")
+  assert.ok(Math.abs(video.volume - 1) < 1e-9, `volume이 Master×SFX(1.0)와 다르다: ${video.volume}`)
+  // AC-04: 역할 영상이 뜬 것만으로 별도 SFX dispatch·claimAudio·매체 생성이 없어야 한다 — 이
+  // 컴포넌트는 getSfxMix/subscribeSfxMix만 직접 읽는다(sfxPlayer.dispatch·claimAudio 미경유).
+  assert.equal(sfxDispatches.length, sfxBefore, "역할 영상 표시가 별도 SFX dispatch를 만들었다")
+  assert.equal(sfxClaims.length, claimsBefore, "역할 영상 표시가 claimAudio를 호출했다")
+  assert.equal(sfxMediaCreations.length, mediaBefore, "역할 영상 표시가 별도 매체를 생성했다")
 
   await act(async () => { fireEvent(video, new dom.window.Event("ended")) })
   const acks = socket.emitsFor("acknowledge_night_action_success")
   assert.equal(acks.length, 1)
+  assert.equal(sfxDispatches.length, sfxBefore, "역할 영상 종료가 별도 SFX dispatch를 만들었다")
+  assert.equal(sfxClaims.length, claimsBefore, "역할 영상 종료가 claimAudio를 호출했다")
+  assert.equal(sfxMediaCreations.length, mediaBefore, "역할 영상 종료가 별도 매체를 생성했다")
   assert.deepEqual(acks[0].payload,
     { gameId: ctx.session.id, nightDayIndex: killPayload.nightDayIndex, eventId: killPayload.eventId })
   assert.deepEqual(acks[0].response, { ok: true, duplicate: false })
@@ -1296,8 +1312,8 @@ test("F27 BL production integration scenarios", async () => {
   await act(async () => { socket.deliver("night_action_success", killPayload) })
   const killVideo = view.container.querySelector("video[src]")
   assert.notEqual(killVideo, null, "실제 페이지가 KILL 연출 영상을 마운트하지 않았다")
-  assert.equal(killVideo.getAttribute("src"), INGAME_KILL_ANIMATION_VIDEO_URL)
-  assert.equal(killVideo.muted, true, "연출 영상이 음소거가 아니다(AC-02)")
+  assert.equal(killVideo.getAttribute("src"), NIGHT_SUCCESS_VIDEO["KILL-TARGET"])
+  assert.equal(killVideo.muted, false, "Master×SFX가 모두 100인데 영상이 음소거다(AC-03)")
 
   await act(async () => { fireEvent(killVideo, new dom.window.Event("ended")) })
   const killAcks = socket.emitsFor("acknowledge_night_action_success")
@@ -1311,19 +1327,15 @@ test("F27 BL production integration scenarios", async () => {
   assert.equal(ctx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 끝났는데 다음 역할이 없다")
   assert.deepEqual(timersOnWaitRelease, [], "연출 대기 해제가 낮 타이머를 예약했다")
 
-  // 의사가 같은 대상을 치료한다 — 전용 영상이 없는 종류라 임시 연출로 확인한다(AC-04 범위).
+  // 의사가 같은 대상을 치료한다 — HEAL-TARGET도 선택표에 있으므로 영상이 이어서 뜬다(AC-01).
   assert.deepEqual(ctx.submit(ctx.doctorUuid, ctx.citizenUuid), { ok: true })
   const healPayload = ctx.receivedBy(ctx.citizenUuid, "night_action_success")[1]?.payload
   assert.ok(healPayload, "전제: 대상자가 HEAL 성공 사건을 받아야 한다")
   await act(async () => { socket.deliver("night_action_success", healPayload) })
-  // 확인 버튼은 반드시 **이 임시 연출 안에서** 찾는다 — 아래 게임 표면(행동 패널)에도 같은
-  // 이름의 버튼이 있어서, 화면 전체에서 찾으면 연출이 아닌 쪽을 누르게 된다.
-  const healPanel = view.container.querySelector("[data-ingame-night-success-pending]")
-  assert.notEqual(healPanel, null, "HEAL의 임시 연출이 뜨지 않았다")
-  assert.equal(healPanel.getAttribute("data-ingame-night-success-pending"), "HEAL")
-  const healConfirm = findButton(healPanel, "확인")
-  assert.notEqual(healConfirm, null, "임시 연출에 확인 버튼이 없다")
-  await act(async () => { healConfirm.click() })
+  const healVideo = view.container.querySelector("video[src]")
+  assert.notEqual(healVideo, null, "HEAL-TARGET 영상이 뜨지 않았다")
+  assert.equal(healVideo.getAttribute("src"), NIGHT_SUCCESS_VIDEO["HEAL-TARGET"])
+  await act(async () => { fireEvent(healVideo, new dom.window.Event("ended")) })
   assert.equal(socket.emitsFor("acknowledge_night_action_success").length, 2,
     "두 번째 연출의 완료 보고가 없다")
   ctx.ack(ctx.doctorUuid, healPayload)

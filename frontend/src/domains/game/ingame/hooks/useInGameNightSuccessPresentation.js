@@ -11,6 +11,7 @@ import {
   useInGameStore,
 } from "../store/ingameStore.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
+import { resolveNightSuccessVideo } from "../utils/resolveNightSuccessVideo.js"
 
 /**
  * F-27b(AC-02, CODEX 반려 수정): "이 밤에 더 이상 HEAL이 오지 않는다"를 판정하는 유일한 근거.
@@ -266,10 +267,12 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     open: !hold && (current !== null || finalStatus !== null),
     pending: current !== null,
     finish,
-    // F-27b(AC-04/AC-05): 사건별 자산 검증 상태. KILL만 실제 영상(kill-animation.mp4)이 있고,
-    // 나머지 세 종류는 전용 영상이 없는 동안 항상 PENDING이다 — 임시 연출을 확인해도 이 값은
-    // 바뀌지 않는다(임시 연출 확인 ≠ 최종 영상 검증 완료).
-    assetStatus: current ? (current.type === "KILL" ? "VERIFIED" : "PENDING") : null,
+    // F-27c(AC-01/AC-04): 사건별 자산 가용 상태 — resolveNightSuccessVideo(current)가 선택표에서
+    // 자산을 찾으면 AVAILABLE, 못 찾으면(전용 영상이 없는 TARGET 조합 등) PENDING이다. 이 값은
+    // "영상이 있다/없다"는 신호일 뿐이며, 실제 렌더링은 표시 컴포넌트가 같은 사건 객체로
+    // resolveNightSuccessVideo를 다시 불러 독립적으로 정한다(assetStatus만으로 영상 사용을
+    // 허용하지 않는다) — 임시 연출을 확인해도 이 값은 바뀌지 않는다.
+    assetStatus: current ? (resolveNightSuccessVideo(current) ? "AVAILABLE" : "PENDING") : null,
     finalStatus,
     onClose,
   }

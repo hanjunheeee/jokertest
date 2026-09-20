@@ -109,6 +109,10 @@ mock.module("@/shared/hooks/useSfxRuntime.js", {
     dispatchSfxEvent: () => {},
     dispatchUiSfx: () => {},
     useSfxRuntime: () => {},
+    // F-27c(AC-03): InGameNightSuccessPresentation.jsx가 직접 소비한다 — 런타임이 없을 때와
+    // 같은 무음 fallback 값을 흉내낸다(getSfxMix의 no-runtime 응답과 동일).
+    getSfxMix: () => ({ gain: 0, muted: true }),
+    subscribeSfxMix: () => () => {},
   },
 })
 // import.meta.env는 Vite 빌드타임 치환이라 plain Node에서 해석되지 않는다 — 경계 모듈

@@ -111,7 +111,10 @@ mock.module("@/shared/socket/socketClient", {
   },
 })
 mock.module("@/shared/hooks/useSfxRuntime.js", {
-  namedExports: { dispatchSfxEvent: () => {}, dispatchUiSfx: () => {} },
+  namedExports: {
+    dispatchSfxEvent: () => {}, dispatchUiSfx: () => {},
+    getSfxMix: () => ({ gain: 0, muted: true }), subscribeSfxMix: () => () => {},
+  },
 })
 // 실제 대기방 페이지는 친구 패널을 함께 들고 온다 — 그 경로가 Vite 전용 import.meta.env
 // (shared/env.js)와 HTTP client를 거친다. 바깥 경계만 대역으로 두고 페이지·훅·store는 실제
