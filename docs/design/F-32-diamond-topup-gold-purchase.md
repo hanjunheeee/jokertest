@@ -53,6 +53,39 @@
 - 골드 구매: 기존 `purchaseController.js`의 referenceEventId·pending/unknown 복구 방식을 그대로 쓴다.
 - API 함수는 상점 도메인의 기존 API 모듈 관례를 따른다(`storePurchase.store.js` 옆).
 
+### 2-5a. 충전·구매 화면의 상태 전이 (CH)
+> 아래 표는 2026-09-21 추가 — F-27b(CE) 첫 심사의 생산 코드 결함 2건이 모두 설계도가 한 줄로만 적은 화면 동작(사건 순서·오류 분기)에서 나왔다. 화면은 **상태 × 사건 → 다음 상태·부작용**으로 적는다. 표에 없는 조합은 '상태 유지·부작용 없음'이다.
+
+**다이아 충전**
+
+| 상태 | 사건 | 다음 상태 | 부작용 |
+|---|---|---|---|
+| `idle` | 상품 선택·충전 누름 | `creatingOrder` | `POST /economy/topup/orders` 1회(`productId`, `version`) |
+| `creatingOrder` | 재클릭 | `creatingOrder` | 추가 호출 없음 |
+| `creatingOrder` | `ok:true` | `paying` | 토스 **테스트** 결제창 호출(`clientKey`, `orderId`, `amount`는 응답 값만 사용) |
+| `creatingOrder` | `PRODUCT_VERSION_MISMATCH` | `priceChanged` | 새 가격 표시 + 다시 확인받기. 자동으로 새 가격에 주문하지 않는다 |
+| `creatingOrder` | `PRODUCT_NOT_FOUND`·`PRODUCT_STOPPED` | `idle` | 상품 목록 재조회 + 안내 |
+| `creatingOrder` | 네트워크 오류·5xx | `failed` | 재시도 |
+| `paying` | 결제창 닫힘·취소·실패 복귀 | `canceled` | **confirm을 부르지 않는다.** 미지급 안내 |
+| `paying` | 성공 복귀(`paymentKey`,`orderId`,`amount`) | `confirming` | `POST …/confirm` 1회 |
+| `confirming` | `GRANTED` | `done` | `fetchSummary`로 잔액 갱신 |
+| `confirming` | `PENDING_GRANT` | `pendingGrant` | "지급 대기" 표시, 주문 조회로 이어서 확인(간격을 두고, 상한 있음) |
+| `confirming` | `AMOUNT_MISMATCH`·`NOT_OWNER`·`PAYMENT_FAILED`·`CONFIG_MISSING` | `failed` | 사유별 안내. 미지급 |
+| `confirming` | 네트워크 오류·응답 유실 | `unknown` | **성공으로도 실패로도 단정하지 않는다** — `GET …/orders/:orderId`로 확정 |
+| `unknown`·`pendingGrant` | 주문 조회 `GRANTED` | `done` | 잔액 갱신 |
+| `unknown`·`pendingGrant` | 주문 조회 `FAILED`·`CANCELED`·`EXPIRED` | `failed` | 미지급 안내 |
+| 복귀 라우트 | 새로고침(같은 `orderId`) | `confirming` 또는 `unknown` | confirm은 서버가 멱등이므로 다시 불러도 한 번만 지급된다. 화면은 같은 주문에 confirm을 동시에 두 번 보내지 않는다 |
+
+**골드 구매** — 기존 `purchaseController.js`의 상태(pending/unknown/rejected/blocked)와 referenceEventId 복구를 **그대로** 쓴다. 추가되는 것만 적는다.
+
+| 상태 | 사건 | 다음 상태 | 부작용 |
+|---|---|---|---|
+| `idle` | 구매 누름 | `pending` | `POST /economy/gold-purchases` 1회(`productId`,`version`,`referenceEventId`) |
+| `pending` | `INSUFFICIENT_DIAMOND` | `rejected` | 부족 안내 + 충전으로 이동 링크 |
+| `pending` | `PRODUCT_VERSION_MISMATCH` | `priceChanged` | 새 조건 확인받기 |
+| `pending` | 응답 유실 | `unknown` | 기존 결과 조회(`GET /economy/purchases/:referenceEventId`)로 확정 |
+| `pending` | `ok:true` | `done` | 응답의 두 잔액으로 갱신 |
+
 ### 2-6. 본 조각 (BQ)
 - 새로고침·재로그인·다른 브라우저에서 잔액과 **진행 중이던 충전 주문 상태**가 복원되는 것(주문 조회로 `PENDING_GRANT`를 이어서 끝냄), 로그아웃·계정 전환 시 이전 계정 캐시 초기화.
 - F-32 전체 통합 시험과 증거 수집, 조각 사이 어긋난 곳 보완. 실제 토스 테스트 결제는 키가 없으면 미검증으로 남긴다.

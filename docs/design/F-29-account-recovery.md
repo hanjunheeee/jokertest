@@ -65,6 +65,52 @@
 - API 함수는 `auth.api.js`에 추가: `findIdApi`(BW), `requestPasswordResetApi`·`verifyPasswordResetApi`·`confirmPasswordResetApi`(CF).
 - 상태 표시: 결과 없음·요청 제한·통신 실패·재시도·뒤로 가기(BW) / 요청 완료 공통 안내·링크 무효·만료·이미 사용·소셜 전용 안내·완료 뒤 로그인 이동(CF). 새 비밀번호는 프런트 `signupValidation`의 같은 규칙으로 미리 검사한다.
 
+### 2-8. 화면 상태 전이
+> 아래 표는 2026-09-21 추가 — F-27b(CE) 첫 심사의 생산 코드 결함 2건이 모두 설계도가 한 줄로만 적은 화면 동작(사건 순서·오류 분기)에서 나왔다. 화면은 **상태 × 사건 → 다음 상태·부작용**으로 적는다. 표에 없는 조합은 '상태 유지·부작용 없음'이다.
+
+**아이디 찾기 화면 (BW)**
+
+| 상태 | 사건 | 다음 상태 | 부작용 |
+|---|---|---|---|
+| `idle` | 입력 변경 | `idle` | 형식 검사 결과만 갱신(닉네임 비어 있음·생년월일 형식). 서버 호출 없음 |
+| `idle` | 제출(형식 통과) | `submitting` | `findIdApi` 1회. 제출 버튼 비활성 |
+| `idle` | 제출(형식 실패) | `idle` | 해당 입력 아래 안내. 서버 호출 없음 |
+| `submitting` | 제출 재클릭 | `submitting` | **추가 호출 없음** |
+| `submitting` | 응답 `ok:true` | `found` | 마스킹 이메일 표시. 입력값은 화면 상태에서 지운다 |
+| `submitting` | 응답 `NOT_FOUND` | `notFound` | 어느 입력이 틀렸는지 드러내지 않는 공통 안내 |
+| `submitting` | 429 `RATE_LIMITED` | `rateLimited` | 잠시 뒤 다시 시도 안내. 자동 재시도하지 않는다 |
+| `submitting` | 400 `INVALID_INPUT` | `idle` | 입력 안내 |
+| `submitting` | 네트워크 오류·5xx | `failed` | 재시도 버튼 |
+| `failed`·`rateLimited`·`notFound` | 재시도/다시 입력 | `idle` | 직전 입력 유지(생년월일 포함 — 화면 상태에만) |
+| 어느 상태든 | 뒤로 가기 | (로그인 화면) | 진행 중 요청의 결과는 버린다(언마운트 뒤 상태 갱신 없음) |
+
+**재설정 요청 화면 (CF)**
+
+| 상태 | 사건 | 다음 상태 | 부작용 |
+|---|---|---|---|
+| `idle` | 제출(이메일 형식 통과) | `submitting` | `requestPasswordResetApi` 1회 |
+| `submitting` | 응답 `ok:true` | `sent` | "가입된 이메일이면 메일을 보냈다"는 **공통 안내**(계정 유무를 드러내지 않는다) |
+| `submitting` | 429 | `rateLimited` | 안내 |
+| `submitting` | 네트워크 오류·5xx | `failed` | 재시도 버튼 |
+| `sent` | 다시 보내기 | `submitting` | 같은 호출 1회(서버가 빈도 제한) |
+
+**링크 도착 화면 (CF)** — 진입 시 URL의 `token`을 읽는다. 토큰은 화면 상태에만 두고 저장소·로그에 남기지 않는다.
+
+| 상태 | 사건 | 다음 상태 | 부작용 |
+|---|---|---|---|
+| `checking` | 마운트 | `checking` | `verifyPasswordResetApi` **정확히 1회**(StrictMode 이중 마운트에도 1회 — 소비하지 않는 호출이지만 빈도 제한을 아낀다) |
+| `checking` | `VALID` | `ready` | 새 비밀번호·확인 입력 표시 |
+| `checking` | `INVALID`·`EXPIRED`·`USED` | `linkInvalid` | 각 사유 안내 + 다시 요청하기 링크 |
+| `checking` | 토큰 없음 | `linkInvalid` | 서버 호출 없음 |
+| `ready` | 제출(규칙 8~64자·72바이트·확인 일치 통과) | `submitting` | `confirmPasswordResetApi` 1회 |
+| `ready` | 제출(규칙 실패) | `ready` | 입력 안내. 서버 호출 없음 |
+| `submitting` | 재클릭 | `submitting` | 추가 호출 없음 |
+| `submitting` | `ok:true` | `done` | 완료 안내 뒤 로그인으로 이동. 비밀번호 입력값을 지운다 |
+| `submitting` | `INVALID_PASSWORD` | `ready` | 입력 안내 |
+| `submitting` | `INVALID`·`EXPIRED`·`USED` | `linkInvalid` | 사유 안내 |
+| `submitting` | `SOCIAL_ONLY` | `socialOnly` | 제공자 로그인 안내 |
+| `submitting` | 네트워크 오류·5xx | `ready` | 재시도 가능 안내(입력 유지) |
+
 ## 3. 조각별 담당
 
 | 조각 | 담당 | 하지 않는 것 |

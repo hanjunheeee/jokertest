@@ -38,6 +38,33 @@
 - `signupProof`는 컴포넌트/훅 상태에만 둔다 — localStorage·sessionStorage·zustand persist·로그에 남기지 않는다.
 - API 함수는 `frontend/src/domains/auth/api/auth.api.js`에 추가: `requestSignupCodeApi`, `verifySignupCodeApi`. `signupApi`는 `signupProof`를 실어 보낸다.
 
+### 2-3a. 가입 화면의 인증 상태 전이 (CG)
+> 아래 표는 2026-09-21 추가 — F-27b(CE) 첫 심사의 생산 코드 결함 2건이 모두 설계도가 한 줄로만 적은 화면 동작(사건 순서·오류 분기)에서 나왔다. 화면은 **상태 × 사건 → 다음 상태·부작용**으로 적는다. 표에 없는 조합은 '상태 유지·부작용 없음'이다.
+
+인증 상태는 가입 폼의 하위 상태다. `signupProof`와 인증번호는 컴포넌트/훅 상태에만 둔다.
+
+| 상태 | 사건 | 다음 상태 | 부작용 |
+|---|---|---|---|
+| `unverified` | '인증번호 받기'(이메일 형식 통과) | `sending` | `requestSignupCodeApi` 1회 |
+| `sending` | 재클릭 | `sending` | 추가 호출 없음 |
+| `sending` | `ok:true` | `codeSent` | 재발송 카운트다운 시작(`resendAfterSec`), 만료 시각 기록(`expiresInSec`) |
+| `sending` | `RESEND_TOO_SOON` | `codeSent` | 남은 초로 카운트다운 |
+| `sending` | 429 | `unverified` | 요청 제한 안내 |
+| `sending` | 네트워크 오류·5xx | `unverified` | 재시도 가능 안내 |
+| `codeSent` | 번호 확인 제출 | `verifying` | `verifySignupCodeApi` 1회 |
+| `codeSent` | 재발송(카운트다운 0) | `sending` | 이전 번호는 무효(서버). 입력한 번호를 지운다 |
+| `codeSent` | 재발송(카운트다운 > 0) | `codeSent` | 호출 없음(버튼 비활성) |
+| `codeSent` | 만료 시각 경과 | `codeExpired` | 만료 안내 + 재발송 |
+| `verifying` | `ok:true` | `verified` | `signupProof` 보관, 가입 제출 **활성화** |
+| `verifying` | `CODE_INVALID` | `codeSent` | 남은 시도 횟수 표시 |
+| `verifying` | `CODE_EXPIRED` | `codeExpired` | |
+| `verifying` | `TOO_MANY_ATTEMPTS` | `locked` | 재발송만 가능 |
+| `verifying` | 네트워크 오류·5xx | `codeSent` | 재시도 가능 안내 |
+| **어느 상태든** | **이메일 입력값 변경** | `unverified` | `signupProof`·번호·카운트다운·만료를 **모두 초기화** |
+| `verified` | 가입 제출 | (기존 가입 흐름) | `signupApi`에 `signupProof`를 실어 보낸다 |
+| `verified` | 가입 응답 `SIGNUP_PROOF_INVALID`·`REQUIRED` | `unverified` | 증명 폐기, 다시 인증 안내 |
+| `unverified`·`codeSent`·… (`verified` 아님) | 가입 제출 | 그대로 | **제출 불가**(버튼 비활성 + 안내). 서버 호출 없음 |
+
 ### 2-4. 소셜 가입과 통합 (BP)
 - Google·Discord 가입: **제공자가 이메일을 확인했다고 알려 준 경우에만** 메일 인증을 건너뛰고 `email_verified=true`. 제공자가 미확인으로 알려 주거나 이메일을 주지 않으면 §2-1의 같은 인증 흐름을 거치게 한다. 제공자 확인 여부를 어디서 읽는지는 `backend/service/socialAuth.service.js`의 실제 값을 확인해 계획에 적는다(추측하지 않는다).
 - F-31 전체 통합 시험과 조각 사이 어긋난 곳 보완.
