@@ -1159,6 +1159,30 @@ const NIGHT_TURN_STAGES = Object.freeze({
     STOPPED: 'STOPPED',
 })
 
+// F-27a: 연출 대기 상한의 기본값과 platform setTimeout 지연의 상한(2^31-1ms, 그 이상은 즉시
+// 발화하는 구현이 있어 "진짜 상한"이 아니게 된다).
+const NIGHT_PRESENTATION_WAIT_DEFAULT_TIMEOUT_MS = 12000
+const NIGHT_PRESENTATION_WAIT_MAX_TIMEOUT_MS = 2147483647
+
+/**
+ * F-27a(AC-01): 이 밤의 연출 대기 상한(ms)을 정한다. 우선순위는 (1) deps로 명시 주입된
+ * presentationWaitTimeoutMs, (2) 환경변수 NIGHT_PRESENTATION_WAIT_TIMEOUT_MS, (3) 기본값
+ * 12000이다. 유효하지 않은 값(비정수·0 이하·플랫폼 타이머 범위 밖)은 조용히 다음 순위로
+ * 넘어간다 — 상한 계산 자체가 던지면 밤이 시작되지 않기 때문이다.
+ */
+function resolveNightPresentationWaitTimeoutMs(deps) {
+    const isValidTimeout = (value) =>
+        Number.isInteger(value) && value > 0 && value <= NIGHT_PRESENTATION_WAIT_MAX_TIMEOUT_MS
+
+    const injected = deps?.presentationWaitTimeoutMs
+    if (isValidTimeout(injected)) return injected
+
+    const fromEnv = Number(process.env.NIGHT_PRESENTATION_WAIT_TIMEOUT_MS)
+    if (isValidTimeout(fromEnv)) return fromEnv
+
+    return NIGHT_PRESENTATION_WAIT_DEFAULT_TIMEOUT_MS
+}
+
 /** 내부 계약의 형태 번호. F-26a가 이 값으로 자기가 아는 모양인지 확인한다. */
 const NIGHT_PRESENTATION_CONTRACT_VERSION = 1
 
@@ -1712,6 +1736,13 @@ function beginNightPresentationWait(run, completed, contract) {
         revision: completed.revision ?? null,
         waitId: `${session.id}:${run.nightDayIndex}:${completed.role}:${completed.revision}:${run.waitSeq}`,
         contract,
+        // F-27a(AC-01/AC-02/AC-06): 활성화 여부·상한 타이머·기다릴 사건·계정 목록·비수신자
+        // 통지 목록. 활성화 전에는 전부 비어 있다 — 성공 사건 전송 중 동기 ACK가 들어와도
+        // active가 false인 동안에는 reevaluateNightPresentationWait이 아무 것도 하지 않는다.
+        active: false,
+        timerId: null,
+        waiting: null,
+        notifyTargets: null,
     }
     run.stage = NIGHT_TURN_STAGES.PRESENTATION_WAIT
     run.wait = token
@@ -1720,14 +1751,14 @@ function beginNightPresentationWait(run, completed, contract) {
 }
 
 /**
- * F-25(AC-01): 연출 대기를 닫고 다음 역할로 넘어간다.
- *
- * 이번 조각의 해제는 **같은 동기 호출 안의 즉시 통과**다 — 클라이언트의 재생 완료 판정이
- * 아니다. 실제 대기·상한·해제 조건은 F-27a가 구현한다.
+ * F-25(AC-01)/F-27a(AC-02/AC-05): 연출 대기를 닫고 다음 역할로 넘어간다.
  *
  * 대기를 **먼저** 닫은 뒤에 진행한다 — 그래야 같은 토큰으로 두 번 들어와도 두 번째는 아무
  * 것도 하지 않는다. run·세션·게임·밤·역할·토큰 중 하나라도 어긋나면 no-op이다(이탈 종결이
  * 종료 방송 중에 run을 정리했다면 그 정리가 먼저 끝나고 이 호출은 지나간다).
+ *
+ * 상한 타이머를 취소한 뒤, 활성화 때 저장해 둔 비수신자 목록에만 waiting:false를 통지한다
+ * (해제 시점에 새 계정을 목록에 추가하지 않는다). 통지 예외는 격리해 진행을 막지 않는다.
  */
 function releaseNightPresentationWait(run, token) {
     if (!run || !token) return false
@@ -1742,8 +1773,21 @@ function releaseNightPresentationWait(run, token) {
     if (run.stage !== NIGHT_TURN_STAGES.PRESENTATION_WAIT) return false
     if (run.wait !== token) return false
 
+    if (token.timerId !== null && token.timerId !== undefined) {
+        run.clearTimeoutFn(token.timerId)
+    }
+    token.timerId = null
+    token.active = false
+
     run.wait = null
     run.stage = NIGHT_TURN_STAGES.IDLE
+
+    try {
+        emitNightPresentationWait(run, token, false)
+    } catch (err) {
+        console.error('[연출 대기 해제 통지 오류]', { code: 'RELEASE_NOTIFY_ERROR', gameId: session.id })
+    }
+
     advanceNightTurn(run)
     return true
 }
@@ -1752,6 +1796,194 @@ function releaseNightPresentationWait(run, token) {
 function isNightPresentationWaitActive(gameId) {
     const run = nightTurnRuns.get(gameId)
     return !!run && run.stage === NIGHT_TURN_STAGES.PRESENTATION_WAIT
+}
+
+/**
+ * F-27a(AC-02/AC-03/AC-04): 이 계정이 **지금** 대기의 해제 조건에 남아 있어야 하는가.
+ *
+ * membershipId가 대기 등록 당시와 다르면(이탈 후 재참가 등) 같은 계정이어도 다른 소속이다.
+ * 나머지는 isEligibleSessionRecipient(참여·연결·canonical 소켓·채널 가입·전달 제외)와
+ * hasMembershipOutsideSession(다른 판·대기방 소속)을 그대로 재사용한다 — 공개 사건 전달이
+ * 쓰는 것과 같은 자격 판정이다.
+ */
+function isAccountCurrentlyEligibleForWait(run, session, uuid, membershipId) {
+    if (typeof uuid !== 'string' || uuid.length === 0) return false
+    if ((session.players.get(uuid)?.membershipId ?? null) !== membershipId) return false
+    const socket = getCurrentSocketForUuid(run.io, uuid)
+    if (!socket) return false
+    if (!isEligibleSessionRecipient(session, socket, uuid)) return false
+    if (hasMembershipOutsideSession(session, uuid)) return false
+    return true
+}
+
+/**
+ * F-27a(AC-06): 연출 대기 알림의 유일한 전송 경계. 활성화·해제 시점에 저장해 둔 비수신자
+ * 목록(token.notifyTargets)에게만 {gameId, nightDayIndex, waiting} 세 필드를 개별 emit한다.
+ * 비밀 정보(계약·사건·역할)는 어디에도 싣지 않는다. 전송 직전에 현재 canonical 연결·소속·
+ * 수신 자격을 다시 검사한다(F-23 AC-04와 같은 이유).
+ */
+function emitNightPresentationWait(run, token, waiting) {
+    const { session } = run
+    const targets = token.notifyTargets ?? []
+    if (targets.length === 0) return
+    const registry = run.io?.sockets?.sockets
+    if (!registry || typeof registry.get !== 'function') return
+
+    for (const target of targets) {
+        const socketId = onlineUsersRegistry instanceof Map ? onlineUsersRegistry.get(target.uuid) : undefined
+        if (typeof socketId !== 'string' || socketId.length === 0) continue
+        const targetSocket = registry.get(socketId)
+        if (!targetSocket) continue
+        if (targetSocket.data?.user?.uuid !== target.uuid) continue
+        if (!isCurrentSocketForUuid(target.uuid, targetSocket, run.io)) continue
+        if ((session.players.get(target.uuid)?.membershipId ?? null) !== target.membershipId) continue
+        if (!stillEligibleForDelivery(session, targetSocket)) continue
+        if (hasMembershipOutsideSession(session, target.uuid)) continue
+
+        try {
+            targetSocket.emit('night_presentation_wait', {
+                gameId: session.id,
+                nightDayIndex: token.nightDayIndex,
+                waiting,
+            })
+        } catch (err) {
+            console.error('[연출 대기 알림 전송 실패]', { code: 'DELIVERY_ERROR', gameId: session.id })
+        }
+    }
+}
+
+/**
+ * F-27a(AC-01/AC-02/AC-06): beginNightPresentationWait가 등록한 토큰을 실제로 활성화한다.
+ *
+ * 계약 전체(모든 사건)의 수신 계정·membershipId를 중복 없이 모아 "기다릴 목록"을 고정한다.
+ * 사건이 없거나(계약 자체가 없거나 events가 비었거나) 그 계정 중 지금 실제로 적격인 사람이
+ * 하나도 없으면 대기할 이유가 없다 — 즉시 해제한다(releaseNightPresentationWait 재사용).
+ *
+ * 그 외에는 지금 이 판의 적격 참가자 중 계약 수신 계정이 아닌 사람에게 waiting:true를
+ * 통지하고(통지 자체는 재평가를 유발하지 않는다), 그 뒤에야 활성화 표식을 세우고 상한
+ * 타이머를 건 다음 이미 쌓인 완료 기록을 한 번 재평가한다 — 성공 사건 전송 중 동기 ACK가
+ * 있었더라도 활성화 전에는 반영되지 않고, 이 재평가에서 한꺼번에 확인된다.
+ */
+function activateNightPresentationWait(run, token) {
+    if (!run || !token) return
+    if (token.run !== run) return
+    const { session } = run
+    if (token.session !== session) return
+    if (nightTurnRuns.get(session.id) !== run) return
+    if (token.gameId !== session.id) return
+    if (token.nightDayIndex !== run.nightDayIndex) return
+    if (run.stage !== NIGHT_TURN_STAGES.PRESENTATION_WAIT) return
+    if (run.wait !== token) return
+
+    const contract = token.contract
+    const waiting = new Map()
+    let hasEvents = false
+    let anyCurrentlyEligible = false
+    if (contract && Array.isArray(contract.events)) {
+        for (const event of contract.events) {
+            for (const recipient of event.recipients ?? []) {
+                if (typeof recipient.uuid !== 'string' || recipient.uuid.length === 0) continue
+                hasEvents = true
+                let byUuid = waiting.get(event.eventId)
+                if (!byUuid) {
+                    byUuid = new Map()
+                    waiting.set(event.eventId, byUuid)
+                }
+                const membershipId = recipient.membershipId ?? null
+                byUuid.set(recipient.uuid, membershipId)
+                if (!anyCurrentlyEligible && isAccountCurrentlyEligibleForWait(run, session, recipient.uuid, membershipId)) {
+                    anyCurrentlyEligible = true
+                }
+            }
+        }
+    }
+
+    token.waiting = waiting
+
+    if (!hasEvents || !anyCurrentlyEligible) {
+        releaseNightPresentationWait(run, token)
+        return
+    }
+
+    const waitingUuids = new Set()
+    for (const byUuid of waiting.values()) {
+        for (const uuid of byUuid.keys()) waitingUuids.add(uuid)
+    }
+
+    const notifyTargets = []
+    try {
+        const candidates = resolveSessionParticipantSockets(run.io, session)
+        for (const candidate of candidates) {
+            const uuid = candidate?.data?.user?.uuid ?? null
+            if (typeof uuid !== 'string' || uuid.length === 0) continue
+            if (waitingUuids.has(uuid)) continue
+            if (!stillEligibleForDelivery(session, candidate)) continue
+            if (hasMembershipOutsideSession(session, uuid)) continue
+            notifyTargets.push({ uuid, membershipId: session.players.get(uuid)?.membershipId ?? null })
+        }
+    } catch (err) {
+        console.error('[연출 대기 통지 대상 계산 오류]', { code: 'NOTIFY_TARGET_ERROR', gameId: session.id })
+    }
+    token.notifyTargets = notifyTargets
+
+    try {
+        emitNightPresentationWait(run, token, true)
+    } catch (err) {
+        console.error('[연출 대기 통지 오류]', { code: 'ACTIVATE_NOTIFY_ERROR', gameId: session.id })
+    }
+
+    token.active = true
+    token.timerId = run.setTimeoutFn(() => {
+        if (run.wait !== token) return
+        releaseNightPresentationWait(run, token)
+    }, run.presentationWaitTimeoutMs)
+
+    reevaluateNightPresentationWait(run, token)
+}
+
+/**
+ * F-27a(AC-02/AC-03/AC-04): 진행 중인 연출 대기 토큰의 남은 기다림을 재평가한다.
+ *
+ * run·세션·밤·토큰·활성화 상태 중 하나라도 지금 사실과 다르면 아무 것도 하지 않는다(오래된
+ * 토큰·다른 밤·아직 활성화되지 않은 토큰의 재평가는 전부 no-op이다). 남은 각 사건·계정 항목의
+ * 현재 자격을 다시 묻고, 자격을 잃었으면 더 이상 기다리지 않는다(그 항목을 대기에서 뺀다).
+ * 남은 모든 항목이 실제 완료 기록(completed:true)을 가졌을 때만 대기를 해제한다 — 기록이
+ * 아예 없거나(전달 실패) completed가 아니면 여전히 대기 중이고 상한만이 그것을 끝낸다.
+ */
+function reevaluateNightPresentationWait(run, token) {
+    if (!run || !token) return
+    if (token.run !== run) return
+    const { session } = run
+    if (token.session !== session) return
+    if (nightTurnRuns.get(session.id) !== run) return
+    if (token.gameId !== session.id) return
+    if (token.nightDayIndex !== run.nightDayIndex) return
+    if (run.stage !== NIGHT_TURN_STAGES.PRESENTATION_WAIT) return
+    if (run.wait !== token) return
+    if (token.active !== true) return
+
+    const waiting = token.waiting
+    if (!waiting) return
+
+    for (const [eventId, byUuid] of [...waiting]) {
+        for (const [uuid, membershipId] of [...byUuid]) {
+            if (!isAccountCurrentlyEligibleForWait(run, session, uuid, membershipId)) {
+                byUuid.delete(uuid)
+            }
+        }
+        if (byUuid.size === 0) waiting.delete(eventId)
+    }
+
+    const store = nightSuccessReceiptsBySession.get(session)
+    for (const [eventId, byUuid] of waiting) {
+        const eventRecords = store?.byEvent.get(eventId)
+        for (const uuid of byUuid.keys()) {
+            const record = eventRecords?.get(uuid)
+            if (!record || record.completed !== true) return
+        }
+    }
+
+    releaseNightPresentationWait(run, token)
 }
 
 /**
@@ -1813,7 +2045,7 @@ function endNightTurn(run, role) {
         }
     }
     emitNightTurnEvent(run, 'night_turn_ended', gameSessionCore.buildNightTurnEndedPayload(session, role))
-    releaseNightPresentationWait(run, wait)
+    activateNightPresentationWait(run, wait)
 }
 
 /**
@@ -1879,6 +2111,8 @@ function startNightTurnSequence(io, session, deps = {}) {
         clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout,
         // null이면 "명시 주입 없음" — 턴마다 세션 설정에서 그 직업의 길이를 유도한다.
         durationMs: deps.turnDurationMs ?? null,
+        // F-27a(AC-01): 이 밤의 연출 대기 상한. deps > 환경변수 > 기본값 12000ms 순으로 정한다.
+        presentationWaitTimeoutMs: resolveNightPresentationWaitTimeoutMs(deps),
     }
     nightTurnRuns.set(session.id, run)
     // F-25b: 이 밤이 순차 진행 중임을 canonical 상태에 표시한다 — 아직 아무 역할도 끝나지
@@ -1899,6 +2133,16 @@ function stopNightTurnSequence(gameId) {
         run.timerId = null
     }
     run.deadline = null
+    // F-27a: 살아 있는 대기 토큰의 상한 타이머도 함께 취소한다 — 정리 뒤에 발화하는 옛
+    // 상한 콜백은 어차피 run.wait 동일성 검사에서 no-op이지만, 타이머 자체를 남겨 두면
+    // 세션이 사라진 뒤에도 발화하는 콜백이 된다(제출 타이머와 같은 이유).
+    if (run.wait) {
+        if (run.wait.timerId !== null && run.wait.timerId !== undefined) {
+            run.clearTimeoutFn(run.wait.timerId)
+        }
+        run.wait.timerId = null
+        run.wait.active = false
+    }
     // F-25: 대기 토큰과 단계를 무효화한다 — 정리된 run으로 들어온 늦은 해제 호출은 no-op이다.
     run.wait = null
     run.stage = NIGHT_TURN_STAGES.STOPPED
@@ -2565,6 +2809,19 @@ function advancePhaseAfterDeparture(io, session, applied) {
     }
 
     if (session.phase === 'NIGHT') {
+        const run = nightTurnRuns.get(session.id)
+        // F-27a(AC-04): 이탈 당시 연출 대기 중이었다면 그 토큰을 재평가한다 — 이탈자가
+        // 대기의 수신자였다면 더 이상 기다리지 않고, 남은 수신자 전원이 이미 완료했다면
+        // 즉시 해제된다. 대기 중에는 다음 역할의 제출 완료를 재확인할 이유가 없으므로
+        // maybeEndNightTurnOnCompletion은 부르지 않는다.
+        if (run && run.stage === NIGHT_TURN_STAGES.PRESENTATION_WAIT && run.wait) {
+            try {
+                reevaluateNightPresentationWait(run, run.wait)
+            } catch (err) {
+                console.error('[이탈 후 단계 진행 실패]', { code: 'WAIT_REEVALUATE_ERROR', gameId: session.id })
+            }
+            return
+        }
         // 죽은 참가자는 더 이상 생존 actor가 아니다 — 같은 직업의 남은 생존자가 이미 제출을
         // 마쳤다면 그 턴은 제한시간을 기다리지 않고 끝난다. 행동자가 1→0이 된 경우에는
         // 기존 run/deadline을 그대로 두고 그 run의 정상 만료에 맡긴다(A-07).
@@ -4749,7 +5006,10 @@ function getCurrentSocketForUuid(io, uuid) {
 // F-26b(AC-05): acknowledge_night_action_success가 허용하는 정확한 필드 집합. uuid·
 // membershipId·perspectives·targetId·서버 내부 wait 토큰 같은 값은 이 요청에 실리지 않는다 —
 // 그런 키가 하나라도 있으면(오타·다른 계약 payload 재사용 등) 형태 오류로 즉시 거부한다.
-const NIGHT_SUCCESS_ACK_ALLOWED_KEYS = new Set(['gameId', 'nightDayIndex', 'eventId'])
+// F-27a(AC-02): outcome은 **선택**이다 — 생략은 COMPLETED와 같다.
+const NIGHT_SUCCESS_ACK_ALLOWED_KEYS = new Set(['gameId', 'nightDayIndex', 'eventId', 'outcome'])
+/** F-27a(AC-02): 명시된 outcome이 이 셋 밖이면(빈 문자열·null·오타 포함) 형태 오류다. */
+const NIGHT_SUCCESS_OUTCOMES = new Set(['COMPLETED', 'ERROR', 'SKIPPED'])
 
 /**
  * F-26b(AC-05): 지금 이 session의 phase/dayIndex가 밤 nightDayIndex의 사건을 완료할 수 있는
@@ -4788,8 +5048,7 @@ function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback
         return
     }
     const payloadKeys = Object.keys(payload)
-    if (payloadKeys.length !== NIGHT_SUCCESS_ACK_ALLOWED_KEYS.size
-        || payloadKeys.some((key) => !NIGHT_SUCCESS_ACK_ALLOWED_KEYS.has(key))) {
+    if (payloadKeys.some((key) => !NIGHT_SUCCESS_ACK_ALLOWED_KEYS.has(key))) {
         reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
         return
     }
@@ -4803,6 +5062,12 @@ function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback
         return
     }
     if (typeof eventId !== 'string' || eventId.length === 0) {
+        reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+        return
+    }
+    // F-27a(AC-02): 생략은 COMPLETED다. 셋 밖의 값(빈 문자열·null·오타 포함)은 형태 오류다.
+    const outcome = 'outcome' in payload ? payload.outcome : 'COMPLETED'
+    if (!NIGHT_SUCCESS_OUTCOMES.has(outcome)) {
         reply({ ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
         return
     }
@@ -4862,7 +5127,20 @@ function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback
         return
     }
     record.completed = true
+    record.outcome = outcome
     reply({ ok: true, duplicate: false })
+
+    // F-27a(AC-01/AC-02/AC-03): 현재 대기 토큰이 정확히 이 사건을 기다리고 있을 때만
+    // 재평가한다 — 다른 역할·다른 밤의 토큰이거나 이미 해제된 뒤라면 재평가는 no-op이므로
+    // 무조건 호출해도 안전하지만, 여기서 미리 걸러 불필요한 순회를 만들지 않는다.
+    const run = nightTurnRuns.get(session.id)
+    if (run && run.wait && run.wait.waiting && run.wait.waiting.has(eventId)) {
+        try {
+            reevaluateNightPresentationWait(run, run.wait)
+        } catch (err) {
+            console.error('[밤 성공 완료 처리 오류]', { code: 'WAIT_REEVALUATE_ERROR', gameId: session.id })
+        }
+    }
 }
 
 function registerGameHandlers(io, socket, uuid) {
@@ -4949,6 +5227,16 @@ async function onDisconnect(io, socket, uuid) {
     const graceTarget = gameSessionCore.getDisconnectGraceTarget(uuid, expectedGameId)
     if (graceTarget) {
         beginDisconnectGrace(io, graceTarget.session, uuid)
+        // F-27a(AC-04): 끊긴 참가자가 연출 대기의 수신자였다면 남은 기다림에서 그를 뺀다 —
+        // 재접속 없이도 남은 수신자 전원이 이미 완료했다면 즉시 해제된다.
+        const graceRun = nightTurnRuns.get(graceTarget.session.id)
+        if (graceRun && graceRun.wait) {
+            try {
+                reevaluateNightPresentationWait(graceRun, graceRun.wait)
+            } catch (err) {
+                console.error('[연결 종료 처리 실패]', { code: 'WAIT_REEVALUATE_ERROR', gameId: graceTarget.session.id })
+            }
+        }
         return
     }
 
@@ -4956,7 +5244,19 @@ async function onDisconnect(io, socket, uuid) {
     // active game and reconnect rights. A missing grace target is not evidence that
     // the game ended: falling through here used to delete every participant's session.
     const reconnectState = gameSessionCore.getSessionSnapshotForPlayer(uuid, expectedGameId)
-    if (reconnectState.ok && ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(reconnectState.snapshot.phase)) return
+    if (reconnectState.ok && ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(reconnectState.snapshot.phase)) {
+        // F-27a(AC-04): 사망 참가자의 단절도 같은 재평가를 받는다 — 사망자도 연출 대기의
+        // 수신자(TARGET)일 수 있다.
+        const survivingRun = nightTurnRuns.get(expectedGameId)
+        if (survivingRun && survivingRun.wait) {
+            try {
+                reevaluateNightPresentationWait(survivingRun, survivingRun.wait)
+            } catch (err) {
+                console.error('[연결 종료 처리 실패]', { code: 'WAIT_REEVALUATE_ERROR', gameId: expectedGameId })
+            }
+        }
+        return
+    }
 
     let result
     try {
@@ -5044,6 +5344,13 @@ module.exports = {
         releaseNightPresentationWait,
         isNightPresentationWaitActive,
         NIGHT_TURN_STAGES,
+        // F-27a: 실제 대기 활성화·재평가·비수신자 통지 경계와 그 상한. 시험이 부분 ACK·
+        // outcome별 해제·재접속 재평가·상한 진행을 실제 경로로 확인할 수 있게 한다.
+        activateNightPresentationWait,
+        reevaluateNightPresentationWait,
+        emitNightPresentationWait,
+        resolveNightPresentationWaitTimeoutMs,
+        __getNightTurnRunForTests: (gameId) => nightTurnRuns.get(gameId) ?? null,
         // F-26a: 역할별 성공 사건의 개인 payload 조립·전달 경계. 시험이 허용 키·재검증·중복
         // 방지를 실제 경로로 확인할 수 있게 한다.
         buildNightSuccessPayload,
