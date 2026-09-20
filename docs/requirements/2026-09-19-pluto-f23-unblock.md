@@ -269,3 +269,13 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 | BU (F-25a) | Sonnet | 작음(2파일) | 2회 | 2 | 1h05 | 사전 분할 |
 | BV (F-25b) | Sonnet→Opus 5 | 300K | 3회+재계획 | 실질 3 | 약 4h | 중단·Docker·검사기 오판 포함 |
 | BJ (F-25) | Opus 5 | 75K | 3회(45분) | **1** | **1h27** | 병렬 심사·경계 확정·사전 분할 |
+
+## F-26a (BY) — 2026-09-20 14:42~
+- 계획 1회 통과(14:43~14:53, 10분, Codex 계획·Claude 검증). 수정 대상은 `backend/socket/gameSession.js::endNightTurn` 하나, 신규 `emitNightSuccessEvents`·`buildNightSuccessPayload`·소켓 메시지 `night_action_success`. game-core 12개 부품은 참고·회귀용.
+- **앞뒤 맥락 실험(수정 29)은 이번 조각에 적용되지 않았다**: `context` 칸 전부 빔. 원인 — 계획 1라운드에서 모델이 `backend/socket/gameSession.js`(접힌 110개)를 첫 번째로 펼쳐 달라고 했지만, 그래프 선검색이 펼침 10칸을 이미 다 써서 요청이 **로그 없이 버려졌다**. 수정 대상 함수가 후보 ID를 못 얻어 `selected`에 들어가지 못했다(모델은 지어내지 않고 notes에 서술).
+- **Pluto 수정 30** (`plan.ts`): 선검색·반려 근거가 미리 펼친 파일은 모델의 펼침 예산에서 빼고 센다. 예산 초과로 못 펼친 파일은 로그에 남긴다. CD 계획부터 적용.
+- 구현 1회차(14:53~15:03, 10분, Sonnet) → 심사 통과(재판정 합의) → `npm test --prefix frontend` 실패: F-23의 "서버 송신 사건 이름 잠금" 시험에 새 사건 `night_action_success`가 없다. **알려진 패턴 — 새 소켓 사건을 추가하는 조각은 이 잠금 목록을 같이 갱신해야 한다.** 2회차(15:07~15:12, 5분, 세션 이어가기)에서 잠금 목록·줄 번호 갱신.
+- 2회차 심사(15:15): AC-01만 갈림(Claude yes · Codex partial). Codex 사유는 코드 결함이 아니라 원문 미제공 — `socket.js::registerConnectionHandlers`, 시험 파일의 `wireSession`. 회귀 없음은 Codex도 인정.
+- **Pluto 수정 31** (`tie-sources.ts`): 반대 판정이 `경로::심볼`로 직접 지목한 파일은 바뀌지 않았거나 시험 파일이어도 원문을 붙인다(작업본 밖은 읽지 않음). 1차 재심(15:17, `reviewAgain`) — Codex가 위 두 유보는 **해소**라고 판정, 대신 Claude가 인용한 시험 파일 2772–2856줄 assertion 원문이 없다는 새 유보.
+- **Pluto 수정 32** (`tie-sources.ts` `citedRanges`, `verify.ts`): 상대 판정이 인용한 **줄 범위**(`경로:a-b`, 경로와 떨어진 `lines a-b` 포함, 범위당 120줄·4개 상한)의 원문도 재판정에 붙인다.
+- **Pluto 수정 33** (`verify.ts` `reverify`): 같은 커밋 불일치 재심을 1회→**최대 2회**로. 2번째는 `reviewAgain` 명시 + 사유 80자 이상일 때만. **내가 만든 잠금(수정 15)을 내가 넓힌 것이다** — 두 심사관이 모두 yes여야 통과하는 조건은 그대로이고 심사를 건너뛰지 않는다. 3번째는 없다. 2차 재심 접수(15:2x). 여기서도 갈리면 재심하지 않고 Codex 사유 그대로 구현으로 되돌린다.
