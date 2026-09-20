@@ -30,9 +30,14 @@ const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-tok
 // backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 다섯 스위트가 항상 같은 정의를
 // 쓰게 한다.
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
+// F-29b: 런타임 User 모델이 이제 has_local_password를 NOT NULL로 요구한다(0015가 추가·
+// backfill한다) — 이 스위트가 실제 db.User.create()를 호출하므로(F-05가 f05/f07에 이미 한
+// 것과 같은 이유), 0015까지 적용해야 한다. 0015의 up()은 backfill SQL에서 external_identities·
+// social_signup_intents(0005)를 참조하므로 0005도 함께 적용해야 한다.
+const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addPasswordResetTokens];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });
