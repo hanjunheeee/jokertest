@@ -3672,59 +3672,82 @@ function currentWait(session) {
     return gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)?.wait ?? null
 }
 
-test('AC-01(F-27a): 성공 사건 발생 뒤 서버는 실제 대기에 들어가고, 두 수신자가 각각 완료 보고를 마칠 때까지 다음 역할이 시작되지 않는다', () => {
-    const { session, jokerUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac01-block' })
+test('AC-01(F-27a): 성공 사건 발생 뒤 서버는 실제 대기에 들어가고, 두 수신자가 각각 완료 보고를 마칠 때까지 다음 역할도 낮 타이머도 시작되지 않는다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
+        commitFullRoleSessionAtNight({ id: 'f27a-ac01-block' })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
 
-    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
-
-    const wait = currentWait(session)
-    assert.ok(wait, '전제: 실제 KILL 사건이 연출 대기를 연다')
-    assert.equal(wait.active, true)
-    // (a) 대기 중에는 run.stage가 직접 PRESENTATION_WAIT임을 확인한다 — isNightPresentationWaitActive
-    // 같은 간접 판정이 아니라 제출·수동 판정·최종화가 실제로 검사하는 바로 그 필드다.
-    assert.equal(gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id).stage,
-        NIGHT_TURN_STAGES.PRESENTATION_WAIT, '대기 중 run.stage는 PRESENTATION_WAIT다')
-    assert.equal(clock.pendingCount(), 1, '상한 타이머가 정확히 하나 걸려 있다')
-    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '대기 중에는 다음 역할이 시작되지 않는다')
-    assert.equal(session.phase, 'NIGHT')
-    assert.deepEqual(turnEventLog(io), [['night_turn_started', 'JOKER'], ['night_turn_ended', 'JOKER']])
-
-    // (b) 대기 중에는 다음 역할 제출 타이머뿐 아니라 낮 타이머도 예약되지 않는다 — 가짜 시계에
-    // 걸린 항목이 상한 타이머 하나뿐이라는 사실과, 낮이 아닌 동안에는 startDayPhaseTimer 자체가
-    // 어떤 타이머도 새로 걸지 못한다는 사실을 함께 확인한다(그 호출이 가짜 시계에 아무 것도
-    // 더하지 않는다).
-    assert.equal(gameSessionSocketLayer.__testables.startDayPhaseTimer(io, session), null,
-        '밤이 끝나지 않은 동안에는 낮 타이머가 만들어질 수 없다')
-    assert.equal(clock.pendingCount(), 1, '낮 타이머 시도 뒤에도 가짜 시계의 예약은 상한 타이머 하나뿐이다')
-
-    const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
-    const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
-    const ackOf = (uuid, entry) => {
-        const { callback, getResponse } = countingCallback()
-        sockets.get(uuid).trigger('acknowledge_night_action_success',
-            { gameId: session.id, nightDayIndex: entry.payload.nightDayIndex, eventId: entry.payload.eventId }, callback)
-        return getResponse()
+    // 낮 타이머(startDayPhaseTimer)는 finalizeNightForSession이 deps 없이 부르므로 실제
+    // 진행 경로에서는 전역 setTimeout을 쓴다(밤 턴의 가짜 시계와는 별개다) — "실제 진행
+    // 경로에서 낮 타이머가 예약되지 않았다"를 검증하려면 그 전역을 직접 가로채야 한다.
+    // 시험 전용 주입 지점을 새로 만들지 않고 전역 자체를 관찰·복원한다.
+    const originalSetTimeout = globalThis.setTimeout
+    const dayTimerCalls = []
+    let fakeTimerId = 1
+    globalThis.setTimeout = (fn, delay) => {
+        dayTimerCalls.push({ fn, delay })
+        return fakeTimerId++
     }
+    try {
+        startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+        assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
 
-    // 상한 직전까지 시계를 진행시켜도(둘 다 아직 완료하지 않았으므로) 대기는 풀리지 않는다.
-    const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
-    clock.advance(run.presentationWaitTimeoutMs - 1)
-    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
-    assert.equal(currentWait(session), wait, '같은 토큰이 그대로 유지된다')
+        const wait = currentWait(session)
+        assert.ok(wait, '전제: 실제 KILL 사건이 연출 대기를 연다')
+        assert.equal(wait.active, true)
+        // 대기 중에는 run.stage가 직접 PRESENTATION_WAIT임을 확인한다 — isNightPresentationWaitActive
+        // 같은 간접 판정이 아니라 제출·수동 판정·최종화가 실제로 검사하는 바로 그 필드다.
+        assert.equal(gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id).stage,
+            NIGHT_TURN_STAGES.PRESENTATION_WAIT, '대기 중 run.stage는 PRESENTATION_WAIT다')
+        assert.equal(clock.pendingCount(), 1, '상한 타이머가 정확히 하나 걸려 있다')
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '대기 중에는 다음 역할이 시작되지 않는다')
+        assert.equal(session.phase, 'NIGHT')
+        assert.deepEqual(turnEventLog(io), [['night_turn_started', 'JOKER'], ['night_turn_ended', 'JOKER']])
+        // (i) 대기 중(ACK 전·상한 전)에는 실제 낮 타이머 예약이 0건이다.
+        assert.equal(dayTimerCalls.length, 0, '대기 중에는 낮 타이머가 예약되지 않는다')
 
-    // 한 명만 완료해도 아직 풀리지 않는다.
-    assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: false })
-    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '수신자 2명 중 1명만 완료했다')
-    assert.equal(gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
-        .byEvent.get(killEntry.payload.eventId).get(citizenUuid).completed, false)
+        const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
+        const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
+        const ackOf = (uuid, entry) => {
+            const { callback, getResponse } = countingCallback()
+            sockets.get(uuid).trigger('acknowledge_night_action_success',
+                { gameId: session.id, nightDayIndex: entry.payload.nightDayIndex, eventId: entry.payload.eventId }, callback)
+            return getResponse()
+        }
 
-    // 나머지 한 명까지 완료해야 비로소 풀린다.
-    assert.deepEqual(ackOf(citizenUuid, citizenEntry), { ok: true, duplicate: false })
-    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '두 수신자 모두 완료한 뒤에야 다음 역할이 시작된다')
-    assert.equal(currentWait(session), null)
+        // 상한 직전까지 시계를 진행시켜도(둘 다 아직 완료하지 않았으므로) 대기는 풀리지 않는다.
+        const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
+        clock.advance(run.presentationWaitTimeoutMs - 1)
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
+        assert.equal(currentWait(session), wait, '같은 토큰이 그대로 유지된다')
+        assert.equal(dayTimerCalls.length, 0, '상한 직전까지도 낮 타이머는 예약되지 않는다')
+
+        // 한 명만 완료해도 아직 풀리지 않는다.
+        assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: false })
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '수신자 2명 중 1명만 완료했다')
+        assert.equal(gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
+            .byEvent.get(killEntry.payload.eventId).get(citizenUuid).completed, false)
+        assert.equal(dayTimerCalls.length, 0)
+
+        // 나머지 한 명까지 완료해야 비로소 풀린다 — 이 해제는 DOCTOR 턴을 열 뿐, 아직 밤이
+        // 끝나지 않았으므로 낮 타이머는 여전히 예약되지 않는다.
+        assert.deepEqual(ackOf(citizenUuid, citizenEntry), { ok: true, duplicate: false })
+        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '두 수신자 모두 완료한 뒤에야 다음 역할이 시작된다')
+        assert.equal(currentWait(session), null)
+        assert.equal(dayTimerCalls.length, 0, 'JOKER 대기 해제는 낮 타이머를 만들지 않는다')
+
+        // 남은 세 역할은 실제 사건이 없어(전원 건너뜀) 즉시 해제된다 — 그 밤을 끝까지 몰아붙인다.
+        submit(doctorUuid, null)
+        submit(guardUuid, null)
+        submit(witchHunterUuid, null)
+
+        // (ii) 마지막 역할의 대기가 해제되어 밤이 최종화된 뒤에야 낮 타이머가 실제로 예약된다.
+        assert.equal(session.phase, 'DAY', '전제: 밤이 끝나 낮으로 넘어갔다')
+        assert.equal(dayTimerCalls.length, 1, '밤이 최종화된 뒤에야 낮 타이머가 정확히 한 번 예약된다')
+    } finally {
+        globalThis.setTimeout = originalSetTimeout
+    }
 })
 
 test('AC-01/AC-02(F-27a): 아무도 완료 보고를 하지 않으면 상한이 지날 때까지 대기가 계속되고, 상한이 지나면 정확히 한 번 해제된다', () => {
