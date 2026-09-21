@@ -36,7 +36,7 @@ const userRepository    = require("../repositories/user.repositories");
 const socialAuthService = require("../service/socialAuth.service");
 
 const REPO_KEYS = ["findActiveSession", "checkActiveBan"];
-const SERVICE_KEYS = ["completeSocialSignup", "issueOAuthState", "linkExternalIdentity"];
+const SERVICE_KEYS = ["completeSocialSignup", "getSocialSignupIntent", "issueOAuthState", "linkExternalIdentity"];
 
 // verifyToken(auth.middleware.js) → sessionLifecycle.resolveSession은 userRepository를
 // 통해서만 세션 상태를 읽는다. 이 두 함수만 스텁하면 "지금 유효한 세션"과 "이미 폐기된
@@ -260,6 +260,118 @@ test("가입 완료에 성공하면 그제서야 oauthAttempt 쿠키를 지운�
     const clearedAttempt = findSetCookie(res, "oauthAttempt");
     assert.ok(clearedAttempt, "성공했으면 더 이상 필요 없는 oauthAttempt 쿠키를 지워야 합니다");
     assert.match(clearedAttempt, /^oauthAttempt=;/, "삭제 쿠키는 값이 비어 있어야 합니다");
+});
+
+// ── F-31 AC-03: 클라이언트는 "이미 인증됐다"를 주장할 수 없다 ────────────────────
+//
+// 완료 컨트롤러가 요청 본문에서 꺼내는 값은 intentToken·nickname·birthDate·email·
+// signupProof뿐이다 — email_verified/emailVerified/verified/provider/subject/rememberMe를
+// 실어도 서비스 입력에 닿지 않아야 한다(인증 생략 판정은 서버가 잠근 intent.email만 본다).
+
+test("완료 요청에 email_verified·verified·provider·subject·rememberMe를 주입해도 서비스 입력에 전달되지 않는다(AC-03)", async (t) => {
+    const { calls } = stubSocialAuthService(t, {
+        completeSocialSignup: async () => ({
+            user: { uuid: "new-uuid", nickname: "소셜닉", role: "USER" },
+            token: "fake-access-token", refreshToken: null, refreshTokenExpiresAt: null,
+        }),
+    });
+    const base = await startServer(t);
+
+    const res = await postJson(base, "/auth/social/signup/complete", {
+        intentToken: "intent-1",
+        nickname: "소셜닉",
+        birthDate: "2000-01-01",
+        email: "claimed@example.com",
+        signupProof: "proof-1",
+        // 아래는 전부 클라이언트의 권한 주장이다 — 서비스에 닿으면 안 된다.
+        email_verified: true,
+        emailVerified: true,
+        verified: true,
+        provider: "google",
+        subject: "attacker-subject",
+        rememberMe: true,
+    });
+
+    assert.equal(res.status, 200);
+    const passed = calls[0].args[0];
+    assert.deepEqual(Object.keys(passed).sort(), ["birthDate", "email", "intentToken", "nickname", "rememberMe", "reqInfo", "signupProof"],
+        "컨트롤러는 허용한 가입 필드와 서버가 만든 rememberMe·reqInfo만 서비스에 넘겨야 합니다");
+    assert.equal(passed.email_verified, undefined);
+    assert.equal(passed.emailVerified, undefined);
+    assert.equal(passed.verified, undefined);
+    assert.equal(passed.provider, undefined);
+    assert.equal(passed.subject, undefined);
+    assert.equal(passed.rememberMe, false, "rememberMe는 서명 쿠키에서만 읽으므로 본문 주장은 무시되어야 합니다");
+    assert.equal(passed.email, "claimed@example.com", "email은 전달되지만, 실제 사용 여부는 서비스가 잠근 intent가 판정합니다");
+    assert.equal(passed.signupProof, "proof-1");
+});
+
+test("서비스가 증명을 거부하면(SIGNUP_PROOF_REQUIRED/INVALID) 401 code가 그대로 실리고 세션 쿠키를 발급하지 않는다(AC-03)", async (t) => {
+    for (const code of ["SIGNUP_PROOF_REQUIRED", "SIGNUP_PROOF_INVALID"]) {
+        await t.test(code, async (t2) => {
+            stubSocialAuthService(t2, {
+                completeSocialSignup: async () => {
+                    const error = new Error("이메일 인증 증명이 유효하지 않습니다.");
+                    error.status = 401;
+                    error.code = code;
+                    throw error;
+                },
+            });
+            const base = await startServer(t2);
+
+            const res = await postJson(base, "/auth/social/signup/complete",
+                { intentToken: "intent-1", nickname: "소셜닉", birthDate: "2000-01-01", email: "a@example.com" });
+            const body = await res.json();
+
+            assert.equal(res.status, 401);
+            assert.equal(body.success, false);
+            assert.equal(body.code, code);
+            assert.equal(findSetCookie(res, "accessToken"), undefined, "증명 거부는 세션을 발급하면 안 됩니다");
+        });
+    }
+});
+
+// ── F-31 AC-02: POST /auth/social/signup/intent (비소비 조회) ────────────────────
+
+test("intent 조회는 intentToken만 서비스에 넘기고 emailVerificationRequired만 no-store로 응답한다(AC-02)", async (t) => {
+    const { calls } = stubSocialAuthService(t, {
+        getSocialSignupIntent: async () => ({ emailVerificationRequired: true }),
+    });
+    const base = await startServer(t);
+
+    const res = await postJson(base, "/auth/social/signup/intent", {
+        intentToken: "intent-1",
+        // 조회 응답을 조작하려는 주장들 — 컨트롤러가 꺼내지도 않아야 한다.
+        emailVerificationRequired: false,
+        email_verified: true,
+        provider: "google",
+    });
+    const body = await res.json();
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(calls[0].args[0], { intentToken: "intent-1" }, "조회 서비스에는 intentToken만 넘어가야 합니다");
+    assert.deepEqual(body, { success: true, data: { emailVerificationRequired: true } },
+        "응답에는 화면 분기용 boolean만 실려야 합니다(이메일·provider·subject 비노출)");
+    assert.match(res.headers.get("cache-control") ?? "", /no-store/);
+    assert.equal(findSetCookie(res, "accessToken"), undefined, "조회는 세션을 발급하지 않습니다");
+});
+
+test("만료·소비된 intent 조회는 서비스 오류의 status·code가 그대로 실린다(AC-02)", async (t) => {
+    stubSocialAuthService(t, {
+        getSocialSignupIntent: async () => {
+            const error = new Error("이미 처리된 가입 요청입니다.");
+            error.status = 409;
+            error.code = "INTENT_CONSUMED";
+            throw error;
+        },
+    });
+    const base = await startServer(t);
+
+    const res = await postJson(base, "/auth/social/signup/intent", { intentToken: "consumed" });
+    const body = await res.json();
+
+    assert.equal(res.status, 409);
+    assert.equal(body.code, "INTENT_CONSUMED");
 });
 
 // ── POST /auth/social/link/state, POST /auth/social/link (R-IMPL: 라우트 제거됨) ─────

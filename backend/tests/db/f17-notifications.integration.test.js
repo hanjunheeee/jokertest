@@ -248,27 +248,50 @@ const createLocalUser = async (label) => {
     return uuid;
 };
 
+// 이 파일은 시험마다 실제 라우터 서버를 새로 띄운다(listen(0)). 전역 fetch(undici)는 같은
+// origin의 keep-alive 연결을 전역 풀에 남겨 재사용하는데, 전체 직렬 실행처럼 CPU가 붐비면
+// 이전 시험의 서버가 닫히는 중인 소켓을 다음 요청이 집어 "fetch failed"로 떨어질 수 있다.
+// 그래서 응답·요청 양쪽에 Connection: close를 붙여 연결 재사용을 막고, 종료 시 남은 연결을
+// 모두 끊은 뒤 close를 기다린다(profile.updatePassword.sessionRevocation.test.js와 같은 방식).
+// 포트가 Fetch 표준의 "bad port"이면 undici가 요청을 거부하므로 다시 고른다.
+const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+    101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,
+    514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
+    3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
+const closeServer = (server) => {
+    server.closeAllConnections?.();
+    return new Promise((resolve) => server.close(resolve));
+};
+
 const startRouteServer = async (t) => {
     const app = express();
+    app.use((req, res, next) => { res.set('Connection', 'close'); next(); });
     app.use(express.json());
     app.use(cookieParser());
     app.use('/notifications', require('../../routes/notification.routes'));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    t.after(() => new Promise((resolve) => server.close(resolve)));
-    return `http://127.0.0.1:${server.address().port}`;
+    for (;;) {
+        const server = app.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        if (FETCH_BAD_PORTS.has(server.address().port)) {
+            await closeServer(server);
+            continue;
+        }
+        t.after(() => closeServer(server));
+        return `http://127.0.0.1:${server.address().port}`;
+    }
 };
 
 const tokenFor = (uuid) => generateToken({ uuid, role: 'USER', sessionId: `session-${uuid}` });
 const authGet = (base, uuid, path = '/notifications') =>
-    fetch(`${base}${path}`, { headers: { cookie: `accessToken=${tokenFor(uuid)}` } });
+    fetch(`${base}${path}`, { headers: { cookie: `accessToken=${tokenFor(uuid)}`, Connection: 'close' } });
 const authPatch = (base, uuid, id) =>
     fetch(`${base}/notifications/${id}/read`, {
         method: 'PATCH',
-        headers: { cookie: `accessToken=${tokenFor(uuid)}`, 'Content-Type': 'application/json' },
+        headers: { cookie: `accessToken=${tokenFor(uuid)}`, 'Content-Type': 'application/json', Connection: 'close' },
         body: '{}',
     });
 

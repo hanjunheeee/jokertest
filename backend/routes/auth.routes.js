@@ -3,7 +3,7 @@ const router  = express.Router();
 
 const {
     signup, login, me, logout, checkEmail, refresh,
-    completeSocialSignup, googleAuthStart, googleAuthCallback,
+    completeSocialSignup, getSocialSignupIntent, googleAuthStart, googleAuthCallback,
     discordAuthStart, discordAuthCallback,
     discordLinkStart, discordLinkCallback,
 } = require("../controller/user.controller");
@@ -152,6 +152,11 @@ router.post("/logout", verifyToken, logout);
 // F-05: 소셜 로그인 최초 인증 이후 가입을 완료한다. 아직 계정이 없으므로 verifyToken을
 // 걸지 않는다 — 인증은 intentToken(socialAuth.service.js가 발급) 자체가 대신한다.
 router.post("/social/signup/complete", completeSocialSignup);
+
+// F-31 AC-02: 가입 보완 화면이 자체 메일 인증 필요 여부를 서버에서 읽어 가는 비소비 조회다.
+// 완료와 같은 이유로 verifyToken을 걸지 않는다(아직 계정이 없다) — intentToken 자체가 그
+// 자격이고, 이 경로는 intent를 소비하지 않으며 화면 분기용 boolean만 돌려준다.
+router.post("/social/signup/intent", getSocialSignupIntent);
 
 // F-06/F-07: Google·Discord 제공자 검증 어댑터(googleOAuth.service.js/discordOAuth.service.js)가
 // 완성되어, F-05가 남겨둔 계약(auth.routes.js 위쪽 주석 — "실제 제공자 검증 어댑터를 완성해

@@ -42,13 +42,18 @@ const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-
 // F-29b: completeSocialSignup이 이제 has_local_password:false를 명시적으로 저장한다 — 이
 // 스위트가 실제로 만드는 User 행이 그 컬럼을 필요로 하므로 0015를 적용 배열에 넣는다.
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
+// F-31(AC-02/AC-06): 이메일 미제공 소셜 가입은 이제 email=null인 intent로 남는다 — 이
+// 스위트는 자체 MIGRATIONS 목록을 쓰므로 social_signup_intents.email을 nullable로 바꾸는
+// 0017과, 그 뒤 자체 인증이 쓰는 인증 상태 테이블(0016)을 명시적으로 포함한다.
+const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
+const addSocialSignupEmail = require('../../db/migrations/0017-social-signup-email');
 // F-05 R-IMPL(CODEX-2/VERIFY-10): 관리 목록·드롭 순서·대상 DB 확인은
 // backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 f01~f05·user.accountPaths가
 // 항상 같은 정의를 쓰게 한다(이 스위트가 만드는 social 테이블을 다른 스위트가 몰라
 // resetSchema()가 거부하던 결함의 근본 원인).
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });
@@ -507,22 +512,35 @@ test('AC-05: 사용자가 취소하면 즉시 거부되고 아무 것도 생성�
     );
 });
 
-test('AC-05: 제공자가 이메일을 주지 않으면 거부되고 계정이 만들어지지 않으며, 소비된 state는 재사용할 수 없다', async (t) => {
+// F-31 AC-02: 이전에는 EMAIL_MISSING으로 거부했다. 이제는 거부 대신 email=null인 가입
+// intent를 만들어 자체 메일 인증으로 보완하게 한다 — 다만 인증을 마치기 전 단계에서
+// 계정·identity·세션이 만들어지지 않는다는 기존 단언과 state 재사용 금지는 그대로 지킨다.
+test('AC-05: 제공자가 이메일을 주지 않으면 계정 없이 자체 인증이 필요한 intent만 남고, 소비된 state는 재사용할 수 없다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const { state, browserFingerprint } = await issueLoginState();
     const beforeUsers = await db.User.count();
+    const beforeIdentities = await db.ExternalIdentity.count();
+    const beforeSessions = await db.UserSession.count();
 
-    await assert.rejects(
-        socialAuthService.handleOAuthCallback({
-            provider: 'google', subject: `sub-${crypto.randomUUID()}`, email: null,
-            rawState: state, browserFingerprint, reqInfo: REQ_INFO,
-        }),
-        (error) => error.status === 400 && error.code === 'EMAIL_MISSING',
-    );
+    const result = await socialAuthService.handleOAuthCallback({
+        provider: 'google', subject: `sub-${crypto.randomUUID()}`, email: null,
+        rawState: state, browserFingerprint, reqInfo: REQ_INFO,
+    });
+    assert.equal(result.status, 'SIGNUP_REQUIRED');
+    assert.equal(result.emailVerificationRequired, true);
+    assert.equal(result.email, null);
+    const intentRow = await db.SocialSignupIntent.findOne({
+        where: { intent_token_hash: crypto.createHash('sha256').update(result.intentToken).digest('hex') },
+    });
+    assert.ok(intentRow, 'intent 행이 생겨야 한다');
+    assert.equal(intentRow.email, null, '제공자가 주지 않은 이메일을 임의 값으로 채우면 안 된다');
+    assert.equal(intentRow.consumed_at, null);
     assert.equal(await db.User.count(), beforeUsers, '이메일 없이 임의의 값으로 계정을 만들면 안 된다');
+    assert.equal(await db.ExternalIdentity.count(), beforeIdentities);
+    assert.equal(await db.UserSession.count(), beforeSessions, '인증 완료 전에는 세션을 발급하면 안 된다');
 
     // 재검토 지적: 이메일 미제공으로 계정 생성이 실패하면 이전 버전은 state 소비까지
     // 같은 트랜잭션으로 묶어 롤백해, 같은 state를 다시 시도(재생)할 수 있었다.

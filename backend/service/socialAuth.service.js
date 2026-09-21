@@ -6,6 +6,13 @@ const { createError } = require("../utils/appError");
 const { validateNickname, validateBirthDate } = require("../validation/signupValidation");
 const db = require("../models");
 const economyService = require("./economy.service");
+// F-31 AC-02/AC-04: 제공자가 이메일을 검증해 주지 못한 소셜 가입은 F-31a가 이미 만든
+// 서버 로직(인증번호 발송·확인·가입 증명 소비)을 그대로 재사용한다 — 이 파일은 증명
+// 소비만 자기 트랜잭션에서 호출하고, 발송·빈도 제한·메일 전송은 다시 구현하지 않는다.
+const signupEmailVerificationService = require("./signupEmailVerification.service");
+const {
+    normalizeEmail: normalizeSignupEmail, validateEmailFormat,
+} = require("../validation/signupEmailVerificationValidation");
 
 // F-05 소셜 계정 공통 기반. 제공자별 실제 OAuth 연동(F-06/F-07)은 이 파일의 책임이 아니다 —
 // 여기 모든 함수는 이미 서버가 검증을 마친 결과(provider/subject/email, state 원문)만
@@ -145,21 +152,30 @@ exports.resolveOAuthAccount = async ({
             return { status: "LOGIN", user, ...session };
         }
 
-        // AC-02/AC-05: 새 identity — users.email이 NOT NULL이라 이메일 없이는 계정을
-        // 만들 수 없다. 서버가 임의의 공용 이메일을 지어내지 않고 그대로 거부한다.
-        if (typeof email !== "string" || !email.trim()) {
-            throw createError("제공자로부터 이메일을 받지 못했습니다.", 400, "EMAIL_MISSING");
-        }
-        const normalizedEmail = email.trim();
+        // F-31 AC-01/AC-02: 새 identity. email은 제공자 어댑터(googleOAuth.service.js
+        // /discordOAuth.service.js)가 "제공자가 소유를 검증해 줬다"고 확인한 경우에만
+        // 문자열로 들어온다 — 미검증(email_verified/verified가 boolean true가 아님)이거나
+        // 아예 제공하지 않으면 null이다. 클라이언트가 콜백 쿼리나 요청 본문으로 이메일·
+        // 인증 여부를 주장할 수 있는 입력 자체가 없다(user.controller.js 콜백 참고).
+        //
+        // 이전 회차는 이메일이 없으면 EMAIL_MISSING으로 가입 자체를 거부했다. 이제는
+        // email이 null인 intent를 만들어, 가입 보완 단계에서 자체 메일 인증(F-31a)을
+        // 거치게 한다(AC-02) — 그 판정은 아래 completeSocialSignup이 잠근 intent.email로만
+        // 내린다.
+        const verifiedEmail = typeof email === "string" && email.trim() ? email.trim() : null;
 
         // AC-04: 같은 이메일의 기존 계정이 있어도 여기서 자동으로 병합하지 않는다. 병합은
         // D-01이 승인한 방식(로그인 후 명시적 연결, 아래 linkExternalIdentity)으로만 한다.
-        const existingByEmail = await userRepository.findByEmail(normalizedEmail, { transaction });
-        if (existingByEmail) {
-            throw createError(
-                "이미 가입된 이메일입니다. 기존 계정으로 로그인한 뒤 소셜 계정을 연결해주세요.",
-                409, "EMAIL_CONFLICT",
-            );
+        // 자체 인증 분기(verifiedEmail === null)의 이메일 충돌은 실제 주소가 정해지는
+        // 완료 시점에 같은 코드로 다시 검사한다.
+        if (verifiedEmail !== null) {
+            const existingByEmail = await userRepository.findByEmail(verifiedEmail, { transaction });
+            if (existingByEmail) {
+                throw createError(
+                    "이미 가입된 이메일입니다. 기존 계정으로 로그인한 뒤 소셜 계정을 연결해주세요.",
+                    409, "EMAIL_CONFLICT",
+                );
+            }
         }
 
         const rawIntentToken = generateOpaqueToken();
@@ -168,12 +184,45 @@ exports.resolveOAuthAccount = async ({
             intent_token_hash: hashValue(rawIntentToken),
             provider,
             subject,
-            email: normalizedEmail,
+            email: verifiedEmail,
             expires_at: expiresAt,
         }, { transaction });
 
-        return { status: "SIGNUP_REQUIRED", intentToken: rawIntentToken, email: normalizedEmail, expiresAt };
+        return {
+            status: "SIGNUP_REQUIRED",
+            intentToken: rawIntentToken,
+            email: verifiedEmail,
+            // 화면 분기용 값이다 — 권한 근거가 아니다(완료 판정은 항상 잠근 intent가 내린다).
+            emailVerificationRequired: verifiedEmail === null,
+            expiresAt,
+        };
     });
+};
+
+// ── 소셜 가입 보완 상태 조회 (AC-02/AC-03) ───────────────────────────────────
+
+// 가입 보완 화면이 "자체 메일 인증이 필요한 intent인지"를 서버에서 읽어 가기 위한 비소비
+// 조회다. 행을 소비하지 않고 사용자·세션도 만들지 않는다 — 부재·만료·소비는 기존
+// completeSocialSignup과 같은 code(INTENT_INVALID/INTENT_EXPIRED/INTENT_CONSUMED)로
+// 거절한다. 반환값은 화면 분기에만 쓰이며, 실제 인증 생략 여부는 완료 시점에 잠근
+// intent.email이 다시 판정한다(AC-03: 이 응답을 신뢰해 권한을 주지 않는다).
+exports.getSocialSignupIntent = async ({ intentToken } = {}) => {
+    if (typeof intentToken !== "string" || !intentToken) {
+        throw createError("가입 정보가 없습니다.", 400, "INTENT_INVALID");
+    }
+
+    const intent = await userRepository.findSocialSignupIntentByHash(hashValue(intentToken));
+    if (!intent) {
+        throw createError("가입 정보가 만료되었거나 존재하지 않습니다. 다시 로그인해주세요.", 400, "INTENT_INVALID");
+    }
+    if (intent.consumed_at) {
+        throw createError("이미 처리된 가입 요청입니다.", 409, "INTENT_CONSUMED");
+    }
+    if (intent.expires_at <= new Date()) {
+        throw createError("가입 가능 시간이 만료되었습니다. 다시 로그인해주세요.", 400, "INTENT_EXPIRED");
+    }
+
+    return { emailVerificationRequired: intent.email === null };
 };
 
 // 제공자별 연동이 검증을 마친 뒤 넘겨주는 결과만 받는다: provider/subject(고유 식별자),
@@ -209,7 +258,15 @@ exports.handleOAuthCallback = async ({
 // rememberMe: 콜백이 SIGNUP_REQUIRED로 끝나기 전에 사용자가 선택했던 "로그인 상태 유지"
 // 값을 컨트롤러가 서버 서명 쿠키로 보존해 여기까지 그대로 전달한다(F-06 R-IMPL #2). 기본값은
 // false — 호출부가 넘기지 않으면 기존과 동일하게 세션 쿠키(비영속)로 발급된다.
-exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememberMe = false, reqInfo = {} }) => {
+//
+// F-31 AC-02/AC-03: email·signupProof는 intent.email이 null일 때(= 제공자가 이메일을
+// 검증해 주지 못한 가입)만 쓰인다 — 그 경우에만 F-31a의 가입 증명을 같은 트랜잭션에서
+// 소비해 계정 이메일을 확정한다. intent.email이 문자열이면(제공자가 검증한 주소) 이 두
+// 값은 아예 읽지 않는다 — 클라이언트가 email/인증 여부를 주장해도 계정 주소를 바꾸거나
+// 자체 인증을 건너뛸 수 없다(판정은 오직 잠근 intent 행이 내린다).
+exports.completeSocialSignup = async ({
+    intentToken, nickname, birthDate, email, signupProof, rememberMe = false, reqInfo = {},
+}) => {
     if (typeof intentToken !== "string" || !intentToken) {
         throw createError("가입 정보가 없습니다.", 400, "INTENT_INVALID");
     }
@@ -243,6 +300,47 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememb
             throw createError("가입 가능 시간이 만료되었습니다. 다시 로그인해주세요.", 400, "INTENT_EXPIRED");
         }
 
+        // F-31 AC-01/AC-02: 계정 이메일은 잠근 intent가 정한다.
+        //  - intent.email이 문자열이면 제공자가 검증한 주소다 → 그대로 쓰고 자체 인증을
+        //    건너뛴다. 요청의 email/signupProof는 읽지 않는다(AC-03).
+        //  - null이면 제공자가 검증해 주지 못한 가입이다 → 제출된 이메일을 형식 검증·
+        //    정규화한 뒤, 그 주소로 발급된 F-31a 가입 증명을 이 트랜잭션에서 소비해야만
+        //    계정이 만들어진다.
+        let accountEmail = intent.email;
+        const emailSnapshot = intent.email; // external_identities에는 제공자 확인 주소만 남긴다.
+
+        if (intent.email === null) {
+            if (!validateEmailFormat(email)) {
+                throw createError("이메일 형식이 올바르지 않습니다.", 400, "INVALID_INPUT");
+            }
+            const normalizedEmail = normalizeSignupEmail(email);
+
+            if (typeof signupProof !== "string" || !signupProof) {
+                throw createError("이메일 인증이 필요합니다.", 401, "SIGNUP_PROOF_REQUIRED");
+            }
+
+            // A-03: 호출부(이 함수)의 트랜잭션에 참여한다 — 아래 기본 지급·세션 발급이
+            // 실패하면 이 소비 표시도 함께 롤백되어 같은 증명으로 다시 시도할 수 있다.
+            const proofResult = await signupEmailVerificationService.consumeSignupProof(
+                { email: normalizedEmail, signupProof }, { transaction },
+            );
+            if (!proofResult.ok) {
+                throw createError("이메일 인증 증명이 유효하지 않습니다.", 401, "SIGNUP_PROOF_INVALID");
+            }
+
+            // 증명을 소비한 뒤에야 실제 주소가 확정되므로, 이메일 충돌도 여기서 검사한다 —
+            // 자동 병합은 여전히 하지 않는다(AC-04/D-01과 같은 원칙).
+            const existingByEmail = await userRepository.findByEmail(normalizedEmail, { transaction });
+            if (existingByEmail) {
+                throw createError(
+                    "이미 가입된 이메일입니다. 기존 계정으로 로그인한 뒤 소셜 계정을 연결해주세요.",
+                    409, "EMAIL_CONFLICT",
+                );
+            }
+
+            accountEmail = normalizedEmail;
+        }
+
         const existingNickname = await userRepository.findByNickname(nicknameResult.value);
         if (existingNickname) {
             throw createError("이미 사용 중인 닉네임입니다.", 409);
@@ -252,7 +350,7 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememb
         const password_hash = await hashPassword(randomSecret);
 
         const user = await userRepository.createUser({
-            email: intent.email,
+            email: accountEmail,
             password_hash,
             nickname: nicknameResult.value,
             birth_date: birthDateValue,
@@ -267,7 +365,10 @@ exports.completeSocialSignup = async ({ intentToken, nickname, birthDate, rememb
             provider: intent.provider,
             subject: intent.subject,
             user_id: user.uuid,
-            email_snapshot: intent.email,
+            // 제공자가 확인해 준 주소만 스냅샷으로 남긴다 — 자체 인증으로 보완한 가입은
+            // 제공자가 준 주소가 없으므로 null이다(사용자가 입력한 주소를 "제공자가 준
+            // 값"인 것처럼 남기지 않는다).
+            email_snapshot: emailSnapshot,
         }, { transaction });
         await userRepository.markSocialSignupIntentConsumed(intent.id, { transaction });
         // CODEX-2(F-08 AC-03) 대응: 로컬 가입(auth.service.js signup)과 같은 이유로, 소셜

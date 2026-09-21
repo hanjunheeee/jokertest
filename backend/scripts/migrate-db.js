@@ -49,7 +49,11 @@ const addPasswordResetTokens = require('../db/migrations/0015-password-reset-tok
 // F-31a: 가입 이메일 인증(인증번호·가입 증명) 상태 테이블도 실제 배포 명령에서 순서대로
 // 적용한다(signupEmailVerification.service.js가 이 테이블에 직접 INSERT/UPDATE한다).
 const addSignupEmailVerification = require('../db/migrations/0016-signup-email-verification');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification];
+// F-31: social_signup_intents.email을 nullable로 바꾼다 — 제공자가 이메일을 검증해 주지
+// 못한 소셜 가입도 자체 메일 인증으로 보완할 수 있게 하는 스키마 변경이다
+// (socialAuth.service.js resolveOAuthAccount/completeSocialSignup 참고).
+const addSocialSignupEmail = require('../db/migrations/0017-social-signup-email');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

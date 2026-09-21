@@ -484,6 +484,38 @@ test("AC-04: 인증 완료 후 이메일을 바꾸면 인증 상태가 초기화
   hook.unmount()
 })
 
+// 재검토 지적(F-31 AC-04 a): 렌더 시점의 값 비교만으로는 같은 배치 안에서 A→B→A로 되돌아간
+// 변경을 "변화 없음"으로 본다. 변경 핸들러가 전이마다 동기적으로 폐기해야 한다.
+test("AC-04: 같은 배치 안에서 이메일을 A→B→A로 바꿔도 기존 인증이 폐기되고 가입 제출이 막힌다", async () => {
+  signupRequests.length = 0
+  alertMessages.length = 0
+  requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
+  verifySignupCodeImpl = async () => ({ ok: true, signupProof: "proof-token-aba" })
+  signupApiImpl = async () => ({ success: true, message: "회원가입이 완료되었습니다." })
+  const hook = renderHook(() => useLoginPage())
+  act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
+
+  await completeSignupEmailVerification(hook)
+  assert.equal(hook.result.current.canSubmitSignup, true)
+  const originalEmail = hook.result.current.formData.email
+
+  act(() => {
+    // 리렌더 없이 같은 클로저에서 두 번 — 최종 값은 원래 주소(A)로 돌아온다.
+    hook.result.current.handleInputChange({ target: { name: "email", value: "other@example.com" } })
+    hook.result.current.handleInputChange({ target: { name: "email", value: originalEmail } })
+  })
+
+  assert.equal(hook.result.current.formData.email, originalEmail)
+  assert.equal(hook.result.current.signupEmailVerification.stage, "unverified", "A→B→A 뒤에도 기존 인증은 폐기돼 있어야 한다")
+  assert.equal(hook.result.current.canSubmitSignup, false)
+
+  await act(async () => {
+    await hook.result.current.handleSubmit({ preventDefault() {} })
+  })
+  assert.equal(signupRequests.length, 0, "폐기된 인증으로는 가입 API를 부르면 안 된다")
+  hook.unmount()
+})
+
 test("AC-04: 발송 중에 이메일을 바꾸면 늦게 도착한 발송 응답이 인증 상태를 되살리지 않는다", async () => {
   let resolveRequest
   requestSignupCodeImpl = () => new Promise((resolve) => { resolveRequest = resolve })

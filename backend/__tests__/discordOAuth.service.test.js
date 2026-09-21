@@ -18,6 +18,22 @@ process.env.DISCORD_LINK_REDIRECT_URI = process.env.DISCORD_LINK_REDIRECT_URI ||
 
 const discordOAuthService = require("../service/discordOAuth.service");
 
+// Fetch 표준의 "bad port" 목록 — undici(전역 fetch)는 이 포트로의 요청을 "bad port"로
+// 거부한다. listen(0)이 우연히 이 중 하나를 받으면 시험이 불안정하게 실패하므로 다시 고른다.
+const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+    101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,
+    514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
+    3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
+const listenOnFetchablePort = async (server) => {
+    for (;;) {
+        server.listen(0, "127.0.0.1");
+        await once(server, "listening");
+        if (!FETCH_BAD_PORTS.has(server.address().port)) return;
+        await new Promise((resolve) => server.close(resolve));
+    }
+};
+
 // Discord의 token/@me 엔드포인트를 흉내 내는 실제 로컬 HTTP 서버를 띄운다.
 const startMockDiscord = async (t, { tokenHandler, meHandler }) => {
     const server = http.createServer((req, res) => {
@@ -30,8 +46,7 @@ const startMockDiscord = async (t, { tokenHandler, meHandler }) => {
             res.writeHead(404, { "Connection": "close" }).end();
         });
     });
-    server.listen(0, "127.0.0.1");
-    await once(server, "listening");
+    await listenOnFetchablePort(server);
     t.after(() => {
         server.closeAllConnections?.();
         return new Promise((resolve) => server.close(resolve));
@@ -107,6 +122,29 @@ test("verified가 false면 이메일을 검증되지 않은 값으로 취급해 
     assert.equal(profile.subject, "discord-id-2");
     assert.equal(profile.email, null);
 });
+
+// F-31 AC-01: 자체 메일 인증을 건너뛰는 유일한 근거는 "서버가 조회한 Discord 프로필의
+// verified가 boolean true"다 — 그 외(누락·문자열 'true'·truthy 값·이메일 미제공)는 전부
+// null로 넘겨 자체 인증 분기로 보내야 한다(googleOAuth.service.test.js와 같은 계약).
+for (const [label, profileBody] of [
+    ["verified 누락", { id: "discord-missing", email: "missing-flag@example.com" }],
+    ["verified가 문자열 'true'", { id: "discord-string", email: "string-flag@example.com", verified: "true" }],
+    ["verified가 숫자 1", { id: "discord-one", email: "one-flag@example.com", verified: 1 }],
+    ["verified는 true지만 이메일 미제공", { id: "discord-no-email", verified: true }],
+    ["이메일이 문자열이 아님", { id: "discord-obj-email", email: { value: "x@example.com" }, verified: true }],
+]) {
+    test(`AC-01: ${label}이면 email은 null이고 subject만 넘어간다(자체 인증 분기로 보낸다)`, async (t) => {
+        const base = await startMockDiscord(t, {
+            tokenHandler: jsonHandler(200, { access_token: `token-${profileBody.id}` }),
+            meHandler: jsonHandler(200, profileBody),
+        });
+        withFetchRedirectedTo(t, base);
+
+        const profile = await discordOAuthService.exchangeCodeForProfile(`code-${profileBody.id}`);
+        assert.equal(profile.subject, profileBody.id);
+        assert.equal(profile.email, null, "boolean true가 아닌 인증 표시는 이메일을 통과시키면 안 됩니다");
+    });
+}
 
 // ── 실패 상태코드·잘못된 응답 ────────────────────────────────────────────────
 
