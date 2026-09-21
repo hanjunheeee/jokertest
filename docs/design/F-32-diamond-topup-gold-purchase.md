@@ -35,6 +35,7 @@
 | `POST /economy/topup/orders` | `{productId, version}` | `{ok:true, orderId, amount, orderName, clientKey}` / `PRODUCT_NOT_FOUND`·`PRODUCT_STOPPED`·`PRODUCT_VERSION_MISMATCH`(+현재 상품)·`CONFIG_MISSING`(키 미설정 — 주문을 저장하지 않는다) | CB |
 | `POST /economy/topup/orders/:orderId/confirm` | `{paymentKey, amount}` | `{ok:true, status:'GRANTED', balanceDiamond}` / `status:'PENDING_GRANT'`(승인은 됐고 지급 재시도 중) / `AMOUNT_MISMATCH`·`ORDER_NOT_FOUND`·`NOT_OWNER`·`PAYMENT_FAILED`·`CONFIG_MISSING` | CB |
 | `GET /economy/topup/orders/:orderId` | — | `{ok:true, status:'CREATED'｜'CONFIRMING'｜'PENDING_GRANT'｜'GRANTED'｜'FAILED'｜'CANCELED'｜'EXPIRED', …}` — 응답 유실 복구용 | CB |
+| `GET /economy/topup/orders?state=open` | — | `{ok:true, orders:[{orderId, status, amount, orderName, createdAt}]}` — 인증 계정의 **진행 중 주문 발견**(§2-6a). 읽기 전용 | BQ |
 | `POST /economy/gold-purchases` | `{productId, version, referenceEventId}` | `{ok:true, balanceGold, balanceDiamond}` / `INSUFFICIENT_DIAMOND`·`PRODUCT_*` — 같은 `referenceEventId` 재시도는 저장된 결과. 결과 조회는 기존 `GET /economy/purchases/:referenceEventId` | CC |
 
 ### 2-3. 충전 주문과 지급 (CB)
@@ -95,6 +96,28 @@
 - 새로고침·재로그인·다른 브라우저에서 잔액과 **진행 중이던 충전 주문 상태**가 복원되는 것(주문 조회로 `PENDING_GRANT`를 이어서 끝냄), 로그아웃·계정 전환 시 이전 계정 캐시 초기화.
 - F-32 전체 통합 시험과 증거 수집, 조각 사이 어긋난 곳 보완. 실제 토스 테스트 결제는 키가 없으면 미검증으로 남긴다.
 
+### 2-6a. 진행 중 충전 주문의 발견 (BQ, 2026-09-22 추가)
+> 왜 필요한가: 결제는 승인됐는데 지급이 `PENDING_GRANT`(또는 `CONFIRMING`)에 멈춘 주문은 **confirm·주문 조회가 불려야** 지급이 이어진다(§2-3). 같은 브라우저라면 복귀 URL의 `orderId`로 이어 가지만, 다른 브라우저·재로그인에서는 화면이 `orderId`를 모른다 — 그대로 두면 "돈은 나갔는데 다이아가 안 들어온" 주문이 남는다. 그래서 계정 기준으로 진행 중 주문을 찾는 읽기 전용 경로를 하나 둔다.
+
+**서버** — `GET /economy/topup/orders?state=open` (`verifyToken`·`requireSelf`, 기존 충전 API와 같은 오류 범위·`Cache-Control: no-store`)
+- 대상: 인증 계정(`user_id` = 인증 uuid)의 주문 중 `status`가 **`CONFIRMING`·`PENDING_GRANT`** 인 것만. `CREATED`(결제 전이라 돈이 나가지 않았다)와 종결 상태(`GRANTED`·`FAILED`·`CANCELED`·`EXPIRED`)는 돌려주지 않는다.
+- 정렬·범위: `created_at` 내림차순, **최대 5건**(페이지 없음 — 정상 사용에서 진행 중 주문은 0~1건이다. 5건을 넘으면 최신 5건만, 나머지는 다음 진입 때 다시 발견된다).
+- 응답: `{ok:true, orders:[{orderId, status, amount, orderName, createdAt}]}`. 없으면 빈 배열. `paymentKey`·`clientKey`·lease·내부 필드는 싣지 않는다. 다른 계정의 주문은 어떤 경우에도 나오지 않는다(쿼리 조건이 인증 uuid다 — 본문·쿼리의 계정 식별자는 쓰지 않는다).
+- **부작용 없음**: 이 경로는 상태를 바꾸지 않고 지급·외부 승인 호출을 하지 않는다. 지급을 이어 가는 것은 기존 `GET /economy/topup/orders/:orderId`(와 confirm)뿐이다.
+- `state`가 `open`이 아니거나 없으면 400 `INVALID_TOPUP_ORDER_REQUEST`(기존 코드 재사용). DB 실패는 기존 범위 규칙대로 `SERVER_ERROR`.
+- 구현 위치: `backend/service/topup.service.js`에 조회 함수 하나, `backend/routes/economy.routes.js`에 라우트 하나(`/topup/orders/:orderId`보다 **앞에** 등록할 필요는 없다 — 경로가 다르다). 마이그레이션·모델 변경 없음(기존 `user_id`·`status`·`created_at` 컬럼만 쓴다).
+
+**화면** — `currencyPurchase.store.js`·`StorePanel.jsx`
+- 상점 진입(계정 확정 뒤, 계정이 바뀌면 다시) 때 **한 번** 발견을 호출한다. 복귀 URL을 처리 중이면 복귀 처리가 먼저다 — 발견 결과에 **같은 `orderId`** 가 있으면 건너뛴다(같은 주문에 조회·confirm을 겹쳐 보내지 않는다, §2-5a).
+- 발견된 주문은 **최신 것부터 하나씩** 기존 `checkOrder(orderId)` 경로로 넘긴다 — 기존 규칙(2초 간격·최대 5회·상한 뒤 수동 '결과 확인')을 그대로 쓴다. 새 폴링 규칙을 만들지 않는다. 화면의 충전 피드백에는 **진행 중인 한 건**만 표시하고, 끝나면(`GRANTED` → 잔액 갱신 / 실패 종결 → 미지급 안내) 다음 건으로 넘어간다.
+- 발견으로 이어 가는 주문에도 §2-5a의 기존 규칙을 그대로 지킨다: 같은 주문의 요청은 하나로 공유하고(orderId 단위), **발견된 주문에 화면이 confirm을 새로 보내지 않는다**(화면은 `paymentKey`를 모른다 — 주문 조회만 한다), 실패·취소 복귀에서는 confirm을 부르지 않는다. 발견 처리 중에 다른 주문의 성공 복귀가 들어오면 복귀 주문을 먼저 처리하고 발견 목록은 그 뒤에 이어 간다.
+- 발견 호출 자체가 실패하면 조용히 넘어간다(상점 사용을 막지 않는다, 다음 진입 때 다시 시도). 계정 전환·로그아웃 때는 발견 결과와 진행 상태를 버린다(이전 계정의 주문이 새 계정 화면에 보이지 않는다).
+
+**시험**
+- 서버(`backend/tests/db/f32a-topup.integration.test.js` 또는 BQ 통합 시험 파일): `PENDING_GRANT`·`CONFIRMING`·`CREATED`·`GRANTED`·`FAILED` 주문을 두 계정에 섞어 만든 뒤 — 자기 계정의 `PENDING_GRANT`·`CONFIRMING`만, 최신순, 최대 5건, 허용 키만 / 다른 계정 주문 0건 / 호출 전후 주문 상태·원장·지갑 불변(부작용 없음) / `state` 누락·다른 값 → 400.
+- 화면(`frontend/src/domains/store/pages/__tests__/F32CurrencyPurchase.ui.test.js` 또는 BQ 시험 파일): 복귀 URL·저장소 없이 마운트 → 발견 1회 → `PENDING_GRANT` 주문을 조회로 이어 `GRANTED` → 잔액 갱신 / 발견 결과가 복귀 URL의 `orderId`와 같으면 추가 조회 없음 / 발견 실패 → 상점 정상 사용 / 계정 전환 → 이전 계정 주문 표시 0.
+- 통합: 발견 → 주문 조회 → 지급 완료까지 원장 1건·잔액 1회 증가(이중 지급 없음).
+
 > **마이그레이션을 추가하는 조각 공통(2026-09-21 추가, F-29a 실측)**: 새 마이그레이션은 기존 시험의 전제를 깬다 — (1) `backend/__tests__/schema.existingTables.test.js`가 기존 테이블의 컬럼 타입·NOT NULL을 잠그고 있으므로, 기존 테이블을 바꾸면 그 단언을 **지우지 말고 새 스키마로 갱신**한다. (2) `backend/tests/db/`의 마이그레이션 통합 시험 중 '마지막 마이그레이션이 NNNN'이라는 전제에 기대는 것이 있는지 찾아 같이 고친다(F-29a가 f19 시험을 '0013까지 적용한 상태' 기준으로 바꿨다 — 그 방식을 따른다). (3) `backend/scripts/migrate-db.js`에 import 등록. (4) **기존 모델(특히 `users`)에 NOT NULL 컬럼을 더하면**, `backend/tests/db/`의 통합 시험 중 **자기만의 마이그레이션 부분집합으로 스키마를 세우고 그 모델의 `create()`를 부르는 파일**(예: `f03-session`의 `MIGRATIONS` 상수)이 `Unknown column`으로 깨진다 — 그런 파일을 전부 찾아 새 마이그레이션(과 그것이 참조하는 선행 마이그레이션)을 목록에 더한다(F-29b 실측: 전체 시험에서 8건 실패). 계획의 시험 항목에 이 넷을 명시하고, 구현은 done 전에 실행기로 `tests/db` 전체를 f01-migrations를 맨 앞에 두고 한 번 돌린다.
 
 ## 3. 조각별 담당
@@ -104,7 +127,7 @@
 | **CB — F32a** | §2-1(상품 테이블·목록 API·외부 작성자 계약 문서) · §2-2의 topup 3개 · §2-3 | 골드 구매. 화면 |
 | **CC — F32b** | §2-2의 gold-purchases · §2-4. CB의 상품 테이블·조회를 **재사용** | 충전. 화면 |
 | **CH — F32c** | §2-5 | 서버 코드 |
-| **BQ — F32 본 조각** | §2-6 | 앞 세 조각의 재구현 |
+| **BQ — F32 본 조각** | §2-6 · §2-6a(발견 API는 BQ가 **새로 추가**하는 것이지 CB의 재구현이 아니다) | 앞 세 조각의 재구현 |
 
 ## 4. 시험으로 고정할 것
 
