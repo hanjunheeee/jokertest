@@ -367,12 +367,13 @@ export function PasswordResetPage() {
         if (isStale()) return
         submittingRef.current = false
 
-        // 알려진 사유는 서버가 실제로 그 사유로 **거부**했을 때만 적용합니다. 서버는 이 네
-        // 코드를 전부 400 {ok:false,code}로만 내보냅니다(passwordReset.controller.js) — 다른
-        // 상태(5xx·429)에 같은 code 문자열이 섞여 와도 링크 무효·소셜 전용으로 단정하지
-        // 않습니다(shared/api/response.js의 toApiError는 status와 code만 싣고 ok는 버리므로,
-        // "ok:false와 함께 확인"을 여기서는 거부 상태(400) 확인으로 읽습니다).
-        const rejectedWithCode = error?.status === 400 ? error.code : undefined
+        // 알려진 사유는 서버가 실제로 그 사유로 **거부**했을 때만 적용합니다. 서버 계약은
+        // 400 {ok:false, code} 하나뿐입니다(passwordReset.controller.js) — 그래서 거부 상태
+        // (400)와 본문의 ok:false를 **둘 다** 확인합니다. 둘 중 하나라도 어긋나는 응답
+        // (400인데 ok:true, 5xx·429에 같은 code 문자열이 섞인 본문)은 계약 밖이므로 링크
+        // 무효·소셜 전용으로 확정하지 않고 재시도 가능한 상태로 둡니다(설계도 §2-8).
+        // ok는 shared/api/response.js의 toApiError가 본문에서 그대로 실어 옵니다.
+        const rejectedWithCode = (error?.status === 400 && error?.ok === false) ? error.code : undefined
 
         if (error?.status === 429) {
           // 제한은 입력을 보존한 채 ready로 남고, 자동 재시도는 하지 않습니다.

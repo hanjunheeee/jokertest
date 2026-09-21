@@ -222,10 +222,35 @@ const createF29RecoveryFixture = async (t, options = {}) => {
         return { uuid: completed.user.uuid, email, nickname };
     };
 
+    /**
+     * 같은 사용자의 **추가** 미사용 재설정 토큰 행을 직접 심는다.
+     *
+     * 왜 직접 심는가: 정상 경로(requestPasswordReset)는 새 토큰을 만들기 전에 그 계정의 기존
+     * 미사용 토큰을 모두 폐기하므로, 실제 요청만으로는 미사용 토큰이 둘이 될 수 없다. 그래서
+     * "confirm이 **남은** 토큰까지 폐기한다"(AC-04)는 계약은 사용한 그 토큰 하나만으로는
+     * 증명되지 않는다 — 소비되지 않은 다른 토큰이 함께 죽는지 보려면 그 행이 존재해야 한다.
+     * 저장 형태(해시만 저장, 원문 컬럼은 NULL)는 생산 경로와 같게 맞춘다.
+     *
+     * @returns {Promise<{rawToken: string, id: number}>} 링크에 쓸 원문과 심은 행의 id
+     */
+    const plantUnusedResetToken = async ({ userId, ttlMs = 30 * 60 * 1000 }) => {
+        const crypto = require('node:crypto');
+        const rawToken = crypto.randomBytes(32).toString('base64url');
+        const row = await db.PasswordResetToken.create({
+            user_id: userId,
+            token: null,
+            token_hash: crypto.createHash('sha256').update(rawToken).digest('hex'),
+            expired_at: new Date(Date.now() + ttlMs),
+            used: false,
+        });
+        return { rawToken, id: row.id };
+    };
+
     return {
         baseURL,
         db,
         sequelize: getSchemaSequelize(),
+        plantUnusedResetToken,
         io,
         mail: memoryMail,
         outbox: memoryMail.outbox,

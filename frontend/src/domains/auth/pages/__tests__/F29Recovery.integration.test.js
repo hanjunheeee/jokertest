@@ -505,6 +505,17 @@ test("AC-04: 재설정이 성공하면 클라이언트 이벤트 없이도 기�
 
   await postJson("/auth/password-reset/request", { email: targetEmail })
   const token = fixtureModule.tokenOf(fx.outbox.at(-1))
+
+  // "남은 재설정 토큰까지 폐기된다"를 확인하려면 **소비되지 않을** 다른 토큰이 있어야 한다.
+  // 정상 경로는 새 발급 때마다 기존 미사용 토큰을 폐기하므로 미사용 토큰을 둘로 만들 수
+  // 없다 — 그래서 확정 직전에 같은 계정의 별도 미사용 행을 직접 심는다.
+  const planted = await fx.plantUnusedResetToken({ userId: target.uuid })
+  const plantedBefore = await fx.db.PasswordResetToken.findByPk(planted.id)
+  assert.equal(plantedBefore.used, false, "전제: 심어 둔 토큰은 확정 이전에 미사용이다")
+  assert.equal(plantedBefore.revoked_at, null)
+  const plantedVerifyBefore = await testFetch(`/auth/password-reset/verify?token=${encodeURIComponent(planted.rawToken)}`)
+  assert.deepEqual(await plantedVerifyBefore.json(), { ok: true, status: "VALID" }, "전제: 심어 둔 토큰은 확정 이전에 실제로 쓸 수 있다")
+
   const confirmRes = await postJson("/auth/password-reset/confirm", { token, newPassword: "revoke-all-pw-1" })
   assert.equal(confirmRes.status, 200)
 
@@ -523,7 +534,17 @@ test("AC-04: 재설정이 성공하면 클라이언트 이벤트 없이도 기�
   assert.deepEqual(otherForceDisconnects, [], "다른 계정의 소켓까지 끊으면 안 된다")
   assert.equal(otherSocket.connected, true)
 
-  // 남은 재설정 토큰도 함께 폐기된다 — 재로그인만이 길이다.
+  // 남은 재설정 토큰(확정에 쓰이지 않은 그 행)도 함께 폐기된다 — 재로그인만이 길이다.
+  const plantedAfter = await fx.db.PasswordResetToken.findByPk(planted.id)
+  assert.equal(plantedAfter.used, true, "확정에 쓰이지 않은 다른 토큰이 미사용으로 남으면 안 된다")
+  assert.ok(plantedAfter.revoked_at, "남은 토큰은 폐기 시각이 찍혀야 한다")
+
+  const plantedVerifyAfter = await testFetch(`/auth/password-reset/verify?token=${encodeURIComponent(planted.rawToken)}`)
+  assert.deepEqual(await plantedVerifyAfter.json(), { ok: false, code: "INVALID" })
+  const plantedConfirm = await postJson("/auth/password-reset/confirm", { token: planted.rawToken, newPassword: "planted-should-fail-1" })
+  assert.equal(plantedConfirm.status, 400)
+  assert.deepEqual(await plantedConfirm.json(), { ok: false, code: "INVALID" }, "폐기된 남은 토큰으로는 다시 재설정할 수 없어야 한다")
+
   const remaining = await fx.db.PasswordResetToken.count({ where: { user_id: target.uuid, used: false } })
   assert.equal(remaining, 0)
   const relogin = await postJson("/auth/login", { email: targetEmail, password: "revoke-all-pw-1" })

@@ -743,6 +743,41 @@ test("AC-05: 400이 아닌 응답에 실려 온 토큰 코드는 링크 무효�
   assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh")
 })
 
+// 서버 계약은 400 {ok:false, code} 하나뿐이다 — 상태만 400이면서 본문이 그 계약을 따르지
+// 않는 응답(ok:true이거나 ok가 아예 없는)은 "링크가 만료됐다"는 사실 주장으로 바꾸면 안 된다.
+for (const [label, body] of [
+  ["ok:true", { ok: true, code: "EXPIRED" }],
+  ["ok 없음", { code: "EXPIRED" }],
+]) {
+  test(`AC-05: 400이지만 본문이 ${label}이면 링크 무효로 확정하지 않고 입력을 보존한 채 재시도 안내를 보여준다`, async () => {
+    const view = await mountReadyResetPage()
+    fetchHandler = async () => jsonResponse(400, body)
+    fillPasswords(view, "abcdefgh", "abcdefgh")
+    await act(async () => { submitForm(view) })
+
+    await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+    for (const message of Object.values(LINK_INVALID_MESSAGE_BY_CODE)) {
+      assert.equal(view.container.textContent.includes(message), false, `${label} 본문을 ${message}로 단정하면 안 됩니다`)
+    }
+    assert.equal(view.container.textContent.includes("비밀번호가 재설정되었어요"), false)
+    assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh", "입력은 보존되어야 합니다")
+    assert.ok(view.container.querySelector('button[type="submit"]'), "다시 제출할 수 있어야 합니다")
+    assert.equal(fetchCalls.length, 1, "자동 재시도가 있으면 안 됩니다")
+  })
+}
+
+test("AC-03: verify도 같은 규칙이다 — 400이지만 ok:false가 아닌 본문은 링크 무효로 확정하지 않는다", async () => {
+  fetchHandler = async () => jsonResponse(400, { ok: true, code: "EXPIRED" })
+  const view = await mountResetPageStrict(VALID_TOKEN)
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  for (const message of Object.values(LINK_INVALID_MESSAGE_BY_CODE)) {
+    assert.equal(view.container.textContent.includes(message), false, "계약 밖 본문을 링크 무효로 단정하면 안 됩니다")
+  }
+  assert.ok(view.getByText("다시 확인"), "재시도 가능한 상태여야 합니다")
+  assert.equal(fetchCalls.length, 1)
+})
+
 test("AC-05: A에서 제출한 뒤 B를 거쳐 A로 다시 들어와 새로 제출하면, 먼저 보낸 요청의 늦은 성공 응답이 새 화면을 덮어쓰지 않는다", async () => {
   const tokenA = "late-a-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   const tokenB = "late-b-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

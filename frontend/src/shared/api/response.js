@@ -20,6 +20,11 @@ const readErrorBody = async (response) => {
 const toApiError = (errorData, fallbackMessage) => {
     const error = new Error(errorData.message || fallbackMessage);
     if (errorData.code) error.code = errorData.code;
+    // F-29c AC-01: 응답 본문의 ok를 그대로 싣습니다 — code만 넘기면 호출하는 쪽이 "서버가
+    // 실제로 ok:false로 거부했다"와 "계약에 없는 본문(예: 400인데 ok:true)"을 구분할 수
+    // 없어, 후자를 특정 실패 사유로 확정해 버립니다. 값 자체를 판단하지 않고 그대로 싣기만
+    // 하므로, 이 값을 읽지 않는 기존 호출부의 동작은 달라지지 않습니다.
+    if (errorData.ok !== undefined) error.ok = errorData.ok;
     return error;
 };
 
