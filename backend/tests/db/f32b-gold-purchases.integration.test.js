@@ -361,6 +361,41 @@ test('AC-03: 같은 요청을 순차·병렬로 여러 번 보내도 차감·지
     assert.equal((await ledgerRows(user)).length, 4);
 });
 
+// 지갑 행이 아직 없는 계정은 다이아 잔액이 0이라 구매가 성공할 수 없다(다이아를 얻는 경로는 모두 지갑 행을
+// 만든다). 그래서 계획이 허용하는 두 번째 방식을 택한다: 같은 키의 순차·병렬 중복 요청이 모두
+// INSUFFICIENT_DIAMOND로 끝나고, 지갑 최초 생성 경합에서도 지갑·원장·구매 요청에 중복·부분 효과가 없다.
+test('AC-03: 지갑 행이 없는 계정의 같은 키 순차·병렬 중복 요청은 모두 INSUFFICIENT_DIAMOND이고 지갑·원장·구매 요청에 어떤 효과도 남지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+    const ctx = await boot(t);
+    await insertProduct();
+    const user = await createUser('nowdup');
+    const empty = { wallet: null, ledger: [], requests: 0, entitlements: 0 };
+    assert.deepEqual(await snapshot(user), empty);
+
+    const seqKey = ref('nw-seq');
+    const first = await ctx.buy(user, REQ(seqKey));
+    const second = await ctx.buy(user, REQ(seqKey));
+    for (const r of [first, second]) {
+        assert.equal(r.status, 400, JSON.stringify(r.json));
+        assert.equal(r.json.code, 'INSUFFICIENT_DIAMOND');
+    }
+    assert.deepEqual(second, first, '순차 재시도는 같은 거절이다');
+    assert.deepEqual(await snapshot(user), empty);
+
+    // 지갑 최초 생성 경합: 병렬 2회(같은 키)와 병렬 2회(서로 다른 키)
+    const parKey = ref('nw-par');
+    const same = await Promise.all([ctx.buy(user, REQ(parKey)), ctx.buy(user, REQ(parKey))]);
+    const different = await Promise.all([ctx.buy(user, REQ(ref('nw-a'))), ctx.buy(user, REQ(ref('nw-b')))]);
+    for (const r of [...same, ...different]) {
+        assert.equal(r.status, 400, JSON.stringify(r.json));
+        assert.equal(r.json.code, 'INSUFFICIENT_DIAMOND');
+    }
+    assert.deepEqual(same[1], same[0], '같은 키 병렬 요청의 응답이 같다');
+    assert.deepEqual(await snapshot(user), empty, '부분 지갑 행도 남지 않는다');
+    assert.equal(await count('SELECT COUNT(*) AS n FROM economy_wallets WHERE user_id = :userId', { userId: user }), 0);
+});
+
 test('AC-03: 서로 다른 키 두 요청은 한 번 살 다이아만 있으면 1성공·1부족, 두 번 살 다이아면 둘 다 성공한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -502,7 +537,30 @@ test('AC-04(AC-06 회귀): 기존 SINGLE·BULK 결과 조회는 ok·잔액 필�
     );
     const res = await ctx.result(user, key);
     assert.equal(res.status, 200);
+    assert.equal(res.json.kind, 'SINGLE');
     assert.deepEqual(Object.keys(res.json).sort(), ['createdAt', 'kind', 'results']);
+
+    // BULK: 실제 POST /economy/purchases/bulk가 커밋한 구매 요청을 조회한다.
+    const buyer = await createUser('bulk');
+    await seedWallet(buyer, { diamond: 0, gold: 1000 });
+    const bulkKey = ref('bulk');
+    const bulk = await ctx.call('/economy/purchases/bulk', {
+        method: 'POST',
+        user: buyer,
+        body: { items: [{ itemId: 'profile-border-남작' }, { itemId: 'profile-border-자작' }], referenceEventId: bulkKey },
+    });
+    assert.equal(bulk.status, 201, JSON.stringify(bulk.json));
+    assert.equal(await count("SELECT COUNT(*) AS n FROM economy_purchase_requests WHERE user_id = :userId AND kind = 'BULK'", { userId: buyer }), 1);
+
+    const bulkResult = await ctx.result(buyer, bulkKey);
+    assert.equal(bulkResult.status, 200);
+    assert.equal(bulkResult.json.kind, 'BULK');
+    assert.equal(bulkResult.json.results.length, 2);
+    assert.deepEqual(Object.keys(bulkResult.json).sort(), ['createdAt', 'kind', 'results']);
+    for (const field of ['ok', 'balanceDiamond', 'balanceGold']) {
+        assert.equal(field in res.json, false, `SINGLE 응답에 ${field}가 없다`);
+        assert.equal(field in bulkResult.json, false, `BULK 응답에 ${field}가 없다`);
+    }
 });
 
 // ═══ AC-05: 변조·상품 검증·상품 변경 반영 ═══════════════════════════════════════════════

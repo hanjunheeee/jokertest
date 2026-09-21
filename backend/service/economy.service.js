@@ -683,7 +683,12 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
 
     // 같은 키의 저장 요청은 종류·상품·버전이 같을 때만 저장 결과로 복구하고, 다르면 충돌이다.
     const consumeStored = (stored) => {
-        if (stored.kind !== GOLD_PURCHASE_KIND || !purchasePayloadsEqual(stored.payload_json, payload)) {
+        // MySQL JSON 컬럼은 키 순서를 다시 정렬해 돌려주므로 문자열 비교가 아니라 필드별로 비교한다.
+        const storedPayload = typeof stored.payload_json === 'string' ? JSON.parse(stored.payload_json) : stored.payload_json;
+        if (stored.kind !== GOLD_PURCHASE_KIND
+            || storedPayload?.type !== payload.type
+            || storedPayload?.productId !== payload.productId
+            || storedPayload?.version !== payload.version) {
             throw purchaseRequestConflictError();
         }
         return goldPurchaseResultOf(stored);
