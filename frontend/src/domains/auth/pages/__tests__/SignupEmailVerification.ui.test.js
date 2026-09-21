@@ -228,7 +228,12 @@ test("AC-01: unverified·sending·codeSent·verifying 단계 전부에서 가입
   await assertBlocked() // verifying
 })
 
-test("AC-01: codeExpired·locked 단계에서도 가입 버튼은 비활성화된다", async () => {
+test("AC-01: codeExpired·locked 단계에서도 가입 버튼은 비활성화된다", async (t) => {
+  // 재검토 지적(AC-03): 재발송 버튼은 60초 대기 중에는 비활성화되어 있어(disabled 상태의
+  // 버튼은 클릭해도 onClick이 실행되지 않는다) 대기 중 클릭만으로는 locked에 도달할 수
+  // 없다 — 가짜 시계로 대기를 실제로 흘려보내야 재발송이 실행되고, 그 재발송 이후의 확인
+  // 실패(TOO_MANY_ATTEMPTS)로만 locked에 도달한다.
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] })
   fetchHandler = makeRouter({
     "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
   })
@@ -243,6 +248,11 @@ test("AC-01: codeExpired·locked 단계에서도 가입 버튼은 비활성화�
   await act(async () => { fireEvent.click(verifyButton(view)) })
   assert.equal(submitButton(view).disabled, true, "codeExpired")
 
+  // 재발송 대기(60초)를 실제로 흘려보내야 재발송 버튼이 열린다 — 대기 중 클릭은 아무 일도
+  // 하지 않는다(비활성화된 버튼).
+  act(() => { t.mock.timers.tick(60000) })
+  assert.equal(sendButton(view).disabled, false, "재발송 대기가 끝나야 재발송할 수 있다")
+
   fetchHandler = makeRouter({
     "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
     "POST /auth/signup/email-code/verify": () => jsonResponse(429, { ok: false, code: "TOO_MANY_ATTEMPTS" }),
@@ -252,6 +262,8 @@ test("AC-01: codeExpired·locked 단계에서도 가입 버튼은 비활성화�
   await act(async () => { fireEvent.click(verifyButton(view)) })
   assert.equal(submitButton(view).disabled, true, "locked")
   assert.equal(verifyButton(view).disabled, true, "locked에서는 확인 자체가 막혀야 한다")
+  assert.equal(codeInput(view).disabled, true, "locked에서는 번호 입력도 막혀야 한다")
+  assert.match(notice(view), /초과/, "locked 안내 문구가 화면에 보여야 한다")
 })
 
 // ── AC-02: 발송→확인→가입 제출 성공 흐름 ─────────────────────────────────────────
@@ -440,6 +452,28 @@ test("AC-03: 잘못된 body(계약 밖 200 응답)도 특정 실패로 단정하
   assert.equal(sendButton(view).textContent, "인증번호 받기", "계약 밖 응답은 codeSent로 넘어가면 안 된다")
 })
 
+// 재검토 지적(AC-03): 5xx 응답에 CODE_INVALID처럼 익숙한 code가 우연히 실려 와도, 그
+// code가 약속한 status(400)와 다르면 "오입력" 같은 확정 사유로 단정하면 안 되고 통신
+// 실패로 처리해야 한다.
+test("AC-03: 확인 응답이 5xx와 함께 CODE_INVALID를 실어 보내도 오입력으로 확정하지 않고 통신 실패로 안내한다", async () => {
+  fetchHandler = makeRouter({
+    "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
+  })
+  const view = await mountLoginPageAtSignup()
+  fillSignupFields(view)
+  await act(async () => { fireEvent.click(sendButton(view)) })
+
+  fetchHandler = makeRouter({
+    "POST /auth/signup/email-code/verify": () => jsonResponse(500, { ok: false, code: "CODE_INVALID", attemptsRemaining: 4 }),
+  })
+  fireEvent.change(codeInput(view), { target: { value: "777777" } })
+  await act(async () => { fireEvent.click(verifyButton(view)) })
+
+  assert.match(notice(view), /통신할 수 없습니다/, "status가 400이 아니므로 CODE_INVALID 문구를 확정해서는 안 된다")
+  assert.equal(notice(view)?.includes("남은 시도"), false, "확정되지 않은 attemptsRemaining을 화면에 보여주면 안 된다")
+  assert.equal(codeInput(view).value, "777777", "통신 실패 후에도 입력한 번호를 지우면 안 된다")
+})
+
 // ── AC-04: 이메일 변경 시 인증 상태 초기화 ───────────────────────────────────────
 
 test("AC-04: 인증 완료 후 이메일을 바꾸면 인증 상태가 초기화되어 재인증이 필요하다", async () => {
@@ -562,4 +596,131 @@ test("AC-05: 인증 완료 후 언마운트→재마운트하면 다시 인증�
 
   const view2 = await mountLoginPageAtSignup()
   assert.equal(submitButton(view2).disabled, true, "재마운트 후에는 다시 인증을 요구해야 한다")
+})
+
+// 재검토 지적(AC-05): 기존 시험은 성공 경로의 저장소·쿠키·콘솔만 검사했다 — 승인 계약이
+// 명시한 나머지 경로(가입 통신 실패·이메일 주소 변경·모드 이탈)에도 같은 비저장 관찰이
+// 필요하다.
+
+test("AC-05: 가입 제출이 통신 실패해도 저장소·쿠키·콘솔에 증명·번호가 남지 않는다", async () => {
+  const SECRET_CODE = "246810"
+  const SECRET_PROOF = "leak-check-signup-network-fail-proof"
+  fetchHandler = makeRouter({
+    "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
+    "POST /auth/signup/email-code/verify": () => jsonResponse(200, { ok: true, signupProof: SECRET_PROOF }),
+  })
+  const view = await mountLoginPageAtSignup()
+  fillSignupFields(view)
+  await act(async () => { fireEvent.click(sendButton(view)) })
+  fireEvent.change(codeInput(view), { target: { value: SECRET_CODE } })
+  await act(async () => { fireEvent.click(verifyButton(view)) })
+  assert.equal(submitButton(view).disabled, false)
+
+  fetchHandler = makeRouter({
+    "POST /auth/signup": () => { throw new TypeError("network down") },
+  })
+  await act(async () => { fireEvent.submit(form(view)) })
+  // handleSubmit의 통신 실패 분기는 error.message를 그대로 보여준다(원본 에러 문구
+  // 노출은 이 시험의 관심사가 아니다) — 여기서는 실패가 실제로 안내되고, 그 뒤로도
+  // 증명·번호가 어디에도 새지 않는지만 확인한다.
+  assert.equal(alertMessages.length, 1, "통신 실패 안내가 떠야 한다")
+
+  for (const write of storageWrites) {
+    assert.equal(write.value.includes(SECRET_PROOF), false, `저장소에 증명이 남았습니다(key=${write.key})`)
+    assert.equal(write.value.includes(SECRET_CODE), false, `저장소에 인증번호가 남았습니다(key=${write.key})`)
+  }
+  for (const cookie of cookieWrites) {
+    assert.equal(cookie.includes(SECRET_PROOF), false, "쿠키에 증명이 남았습니다")
+    assert.equal(cookie.includes(SECRET_CODE), false, "쿠키에 인증번호가 남았습니다")
+  }
+  for (const line of consoleCalls) {
+    assert.equal(line.includes(SECRET_PROOF), false, "콘솔에 증명이 남았습니다")
+    assert.equal(line.includes(SECRET_CODE), false, "콘솔에 인증번호가 남았습니다")
+  }
+})
+
+test("AC-05: 인증 완료 후 이메일을 바꾸면 이전 증명이 메모리에서도 폐기되어 재사용되지 않고 저장소에도 남지 않는다", async () => {
+  const FIRST_PROOF = "leak-check-emailchange-first-proof"
+  const SECOND_PROOF = "leak-check-emailchange-second-proof"
+  const SECOND_EMAIL = "changed-leak-check@example.com"
+  fetchHandler = makeRouter({
+    "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
+    "POST /auth/signup/email-code/verify": () => jsonResponse(200, { ok: true, signupProof: FIRST_PROOF }),
+  })
+  const view = await mountLoginPageAtSignup()
+  fillSignupFields(view)
+  await act(async () => { fireEvent.click(sendButton(view)) })
+  fireEvent.change(codeInput(view), { target: { value: "111000" } })
+  await act(async () => { fireEvent.click(verifyButton(view)) })
+  assert.equal(submitButton(view).disabled, false)
+
+  fireEvent.change(view.container.querySelector('input[name="email"]'), { target: { value: SECOND_EMAIL } })
+  assert.equal(submitButton(view).disabled, true)
+
+  fetchHandler = makeRouter({
+    "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
+    "POST /auth/signup/email-code/verify": () => jsonResponse(200, { ok: true, signupProof: SECOND_PROOF }),
+    "POST /auth/signup": () => jsonResponse(200, { success: true, message: "가입 완료" }),
+  })
+  await act(async () => { fireEvent.click(sendButton(view)) })
+  fireEvent.change(codeInput(view), { target: { value: "222000" } })
+  await act(async () => { fireEvent.click(verifyButton(view)) })
+  await act(async () => { fireEvent.submit(form(view)) })
+
+  const signupCall = fetchCalls.find((c) => c.url === "/auth/signup")
+  assert.ok(signupCall, "가입 요청이 실제로 나가야 한다(빈 경로 시험 방지)")
+  assert.equal(
+    JSON.parse(signupCall.options.body).signupProof,
+    SECOND_PROOF,
+    "이메일 변경 후에는 새 증명만 쓰여야 한다 — 이전 증명이 메모리에 남아 재사용되면 안 된다",
+  )
+
+  for (const write of storageWrites) {
+    assert.equal(write.value.includes(FIRST_PROOF), false, `저장소에 이전 증명이 남았습니다(key=${write.key})`)
+    assert.equal(write.value.includes(SECOND_PROOF), false, `저장소에 증명이 남았습니다(key=${write.key})`)
+  }
+  for (const cookie of cookieWrites) {
+    assert.equal(cookie.includes(FIRST_PROOF), false, "쿠키에 이전 증명이 남았습니다")
+    assert.equal(cookie.includes(SECOND_PROOF), false, "쿠키에 증명이 남았습니다")
+  }
+  for (const line of consoleCalls) {
+    assert.equal(line.includes(FIRST_PROOF), false, "콘솔에 이전 증명이 남았습니다")
+    assert.equal(line.includes(SECOND_PROOF), false, "콘솔에 증명이 남았습니다")
+  }
+})
+
+test("AC-05: 인증 완료 후 로그인 모드로 돌아가면(모드 이탈) 증명이 메모리에서 폐기되고 저장소에도 남지 않는다", async () => {
+  const SECRET_PROOF = "leak-check-modeexit-proof"
+  const SECRET_CODE = "333222"
+  fetchHandler = makeRouter({
+    "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
+    "POST /auth/signup/email-code/verify": () => jsonResponse(200, { ok: true, signupProof: SECRET_PROOF }),
+  })
+  const view = await mountLoginPageAtSignup()
+  fillSignupFields(view)
+  await act(async () => { fireEvent.click(sendButton(view)) })
+  fireEvent.change(codeInput(view), { target: { value: SECRET_CODE } })
+  await act(async () => { fireEvent.click(verifyButton(view)) })
+  assert.equal(submitButton(view).disabled, false)
+
+  // 모드 이탈: 가입 화면을 벗어나 로그인 화면으로 전환한다(언마운트는 아니다 — 훅은
+  // 계속 마운트되어 있다).
+  act(() => { fireEvent.click(findButtonByText(view, "로그인하기")) })
+
+  // 다시 가입 모드로 돌아오면 이전 증명이 메모리에 남아있지 않아 재인증이 필요해야 한다.
+  act(() => { fireEvent.click(findButtonByText(view, "회원가입")) })
+  assert.equal(submitButton(view).disabled, true, "모드 이탈 후 재진입하면 이전 증명이 재사용되면 안 된다")
+
+  for (const write of storageWrites) {
+    assert.equal(write.value.includes(SECRET_PROOF), false, `저장소에 증명이 남았습니다(key=${write.key})`)
+    assert.equal(write.value.includes(SECRET_CODE), false, `저장소에 인증번호가 남았습니다(key=${write.key})`)
+  }
+  for (const cookie of cookieWrites) {
+    assert.equal(cookie.includes(SECRET_PROOF), false, "쿠키에 증명이 남았습니다")
+    assert.equal(cookie.includes(SECRET_CODE), false, "쿠키에 인증번호가 남았습니다")
+  }
+  for (const line of consoleCalls) {
+    assert.equal(line.includes(SECRET_PROOF), false, "콘솔에 증명이 남았습니다")
+    assert.equal(line.includes(SECRET_CODE), false, "콘솔에 인증번호가 남았습니다")
+  }
 })

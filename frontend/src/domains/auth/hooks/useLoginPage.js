@@ -159,25 +159,41 @@ function isValidSignupEmailFormat(email) {
 
 const GENERIC_SIGNUP_CODE_RETRY_MESSAGE = "서버와 통신할 수 없습니다. 다시 시도해주세요."
 
+// 재검토 지적(AC-03): code만 보고 분기하면 5xx 응답에 익숙한 code가 우연히 실려 와도
+// 확정된 실패 사유로 오인할 수 있다 — 승인 계약대로 status(서버가 실제로 약속한 4xx)와
+// code가 함께 맞을 때만 그 사유로 인정하고, 그 외(5xx·형식 밖 응답)는 통신 실패로 본다.
+const SIGNUP_CODE_ERROR_STATUS = {
+  RESEND_TOO_SOON: 429,
+  RATE_LIMITED: 429,
+  INVALID_INPUT: 400,
+  CODE_INVALID: 400,
+  CODE_EXPIRED: 400,
+  TOO_MANY_ATTEMPTS: 429,
+}
+
+function isKnownSignupCodeError(error, code) {
+  return error?.code === code && error?.status === SIGNUP_CODE_ERROR_STATUS[code]
+}
+
 // POST /auth/signup/email-code 실패를 화면에 보여줄 안내로 옮깁니다.
 function describeSignupCodeRequestError(error) {
-  if (error?.code === "RESEND_TOO_SOON" && Number.isFinite(error.resendAfterSec)) {
+  if (isKnownSignupCodeError(error, "RESEND_TOO_SOON") && Number.isFinite(error.resendAfterSec)) {
     return { kind: "RESEND_TOO_SOON", resendAfterSec: error.resendAfterSec }
   }
-  if (error?.code === "RATE_LIMITED") return { kind: "RATE_LIMITED" }
-  if (error?.code === "INVALID_INPUT") return { kind: "INVALID_INPUT" }
+  if (isKnownSignupCodeError(error, "RATE_LIMITED")) return { kind: "RATE_LIMITED" }
+  if (isKnownSignupCodeError(error, "INVALID_INPUT")) return { kind: "INVALID_INPUT" }
   return { kind: "UNKNOWN" }
 }
 
 // POST /auth/signup/email-code/verify 실패를 화면에 보여줄 안내로 옮깁니다.
 function describeSignupCodeVerifyError(error) {
-  if (error?.code === "CODE_INVALID") {
+  if (isKnownSignupCodeError(error, "CODE_INVALID")) {
     return { kind: "CODE_INVALID", attemptsRemaining: Number.isFinite(error.attemptsRemaining) ? error.attemptsRemaining : null }
   }
-  if (error?.code === "CODE_EXPIRED") return { kind: "CODE_EXPIRED" }
-  if (error?.code === "TOO_MANY_ATTEMPTS") return { kind: "TOO_MANY_ATTEMPTS" }
-  if (error?.code === "RATE_LIMITED") return { kind: "RATE_LIMITED" }
-  if (error?.code === "INVALID_INPUT") return { kind: "INVALID_INPUT" }
+  if (isKnownSignupCodeError(error, "CODE_EXPIRED")) return { kind: "CODE_EXPIRED" }
+  if (isKnownSignupCodeError(error, "TOO_MANY_ATTEMPTS")) return { kind: "TOO_MANY_ATTEMPTS" }
+  if (isKnownSignupCodeError(error, "RATE_LIMITED")) return { kind: "RATE_LIMITED" }
+  if (isKnownSignupCodeError(error, "INVALID_INPUT")) return { kind: "INVALID_INPUT" }
   return { kind: "UNKNOWN" }
 }
 
@@ -203,6 +219,11 @@ export function useLoginPage() {
   const verificationGenerationRef = useRef(0)
   // 더블 클릭 등 연속 클릭으로 같은 요청이 중복 발사되지 않게 막는 동기 잠금입니다.
   const verificationRequestInFlightRef = useRef(false)
+  // 재검토 지적(AC-02): isSubmitting은 React state라 리렌더 전에는 같은 클로저가 이전 값을
+  // 그대로 들고 있다 — 같은 틱에 handleSubmit이 두 번 호출되면(더블 클릭 등) 둘 다 그
+  // 리렌더 전 값을 읽어 검사를 통과할 수 있다. ref는 동기적으로 갱신·공유되므로 이 경합을
+  // 막는다.
+  const submitInFlightRef = useRef(false)
   // 재발송 대기·인증번호 만료 카운트다운을 1초마다 다시 그리기 위한 트리거입니다 — 값
   // 자체는 읽지 않고 setState 호출로 리렌더만 유발합니다.
   const [, forceVerificationTick] = useState(0)
@@ -422,64 +443,73 @@ export function useLoginPage() {
   // 현재 모드에 따라 로그인 또는 회원가입 요청을 보냅니다.
   const handleSubmit = async (e) => {
     e.preventDefault()
+    // 재검토 지적(AC-02): 아래 isSubmitting state 검사보다 먼저 동기 ref로 막습니다 —
+    // 같은 틱에 두 번 호출돼도(예: 더블 클릭) 두 호출 모두 리렌더 전 state 클로저를 보게
+    // 되어 state만으로는 중복 호출을 막을 수 없습니다.
+    if (submitInFlightRef.current) return
     if (isSubmitting) return
+    submitInFlightRef.current = true
 
-    // 닉네임 길이/문자셋, 비밀번호 길이·확인 일치, 생년월일 유효성을 서버에 보내기 전에
-    // 먼저 걸러낸다. 서버(backend/validation/signupValidation.js)도 같은 규칙을 다시
-    // 검사하므로, 여기서는 빠른 실패로 불필요한 요청만 줄인다.
-    if (isSignupMode) {
-      const validation = validateSignupForm(formData)
-      if (!validation.ok) {
-        alert(validation.message)
-        return
-      }
-
-      // AC-01: 이메일 인증을 마치지 않았으면(또는 그 사이 이메일을 바꿔 인증이
-      // 초기화됐으면) API를 호출하지 않고 여기서 막습니다 — Enter 제출·강제 form
-      // submit으로 버튼의 disabled를 우회해도 이 검사가 최종 방어선입니다.
-      if (!hasValidSignupProof) {
-        alert("이메일 인증을 완료해주세요.")
-        return
-      }
-    }
-
-    setIsSubmitting(true)
     try {
+      // 닉네임 길이/문자셋, 비밀번호 길이·확인 일치, 생년월일 유효성을 서버에 보내기 전에
+      // 먼저 걸러낸다. 서버(backend/validation/signupValidation.js)도 같은 규칙을 다시
+      // 검사하므로, 여기서는 빠른 실패로 불필요한 요청만 줄인다.
       if (isSignupMode) {
-        const signupProof = emailVerification.signupProof
-        const result = await signupApi({ ...formData, signupProof })
-        if (result?.success !== true) {
-          alert("서버와 연결할 수 없습니다. 다시 시도해주세요.")
+        const validation = validateSignupForm(formData)
+        if (!validation.ok) {
+          alert(validation.message)
           return
         }
-        alert("회원가입이 완료되었습니다! 로그인해주세요.")
-        setIsSignupMode(false)
-        // AC-05: 가입 증명·번호는 성공 즉시(1회용) 폐기합니다 — 성공 응답을 재사용해
-        // 다시 제출할 수 없게 generation도 함께 올립니다.
-        verificationGenerationRef.current += 1
-        setEmailVerification(INITIAL_EMAIL_VERIFICATION)
-      } else {
-        const { user } = await loginApi({ ...formData, rememberMe })
-        login(user)
-        navigate("/lobby")
+
+        // AC-01: 이메일 인증을 마치지 않았으면(또는 그 사이 이메일을 바꿔 인증이
+        // 초기화됐으면) API를 호출하지 않고 여기서 막습니다 — Enter 제출·강제 form
+        // submit으로 버튼의 disabled를 우회해도 이 검사가 최종 방어선입니다.
+        if (!hasValidSignupProof) {
+          alert("이메일 인증을 완료해주세요.")
+          return
+        }
       }
-    } catch (error) {
-      if (isSignupMode && (error.code === "SIGNUP_PROOF_REQUIRED" || error.code === "SIGNUP_PROOF_INVALID")) {
-        // 서버가 증명을 거부했습니다 — 이미 소비됐거나 만료된 증명이므로 화면에 남겨두면
-        // 안 됩니다(AC-05). 재인증을 요구합니다.
-        verificationGenerationRef.current += 1
-        setEmailVerification(INITIAL_EMAIL_VERIFICATION)
-        alert(
-          error.code === "SIGNUP_PROOF_REQUIRED"
-            ? "이메일 인증이 필요합니다. 다시 인증해주세요."
-            : "이메일 인증이 만료되었거나 이미 사용되었습니다. 다시 인증해주세요.",
-        )
-      } else {
-        console.error("API 통신 에러")
-        alert(error.message || "서버와 연결할 수 없습니다.")
+
+      setIsSubmitting(true)
+      try {
+        if (isSignupMode) {
+          const signupProof = emailVerification.signupProof
+          const result = await signupApi({ ...formData, signupProof })
+          if (result?.success !== true) {
+            alert("서버와 연결할 수 없습니다. 다시 시도해주세요.")
+            return
+          }
+          alert("회원가입이 완료되었습니다! 로그인해주세요.")
+          setIsSignupMode(false)
+          // AC-05: 가입 증명·번호는 성공 즉시(1회용) 폐기합니다 — 성공 응답을 재사용해
+          // 다시 제출할 수 없게 generation도 함께 올립니다.
+          verificationGenerationRef.current += 1
+          setEmailVerification(INITIAL_EMAIL_VERIFICATION)
+        } else {
+          const { user } = await loginApi({ ...formData, rememberMe })
+          login(user)
+          navigate("/lobby")
+        }
+      } catch (error) {
+        if (isSignupMode && (error.code === "SIGNUP_PROOF_REQUIRED" || error.code === "SIGNUP_PROOF_INVALID")) {
+          // 서버가 증명을 거부했습니다 — 이미 소비됐거나 만료된 증명이므로 화면에 남겨두면
+          // 안 됩니다(AC-05). 재인증을 요구합니다.
+          verificationGenerationRef.current += 1
+          setEmailVerification(INITIAL_EMAIL_VERIFICATION)
+          alert(
+            error.code === "SIGNUP_PROOF_REQUIRED"
+              ? "이메일 인증이 필요합니다. 다시 인증해주세요."
+              : "이메일 인증이 만료되었거나 이미 사용되었습니다. 다시 인증해주세요.",
+          )
+        } else {
+          console.error("API 통신 에러")
+          alert(error.message || "서버와 연결할 수 없습니다.")
+        }
+      } finally {
+        setIsSubmitting(false)
       }
     } finally {
-      setIsSubmitting(false)
+      submitInFlightRef.current = false
     }
   }
 

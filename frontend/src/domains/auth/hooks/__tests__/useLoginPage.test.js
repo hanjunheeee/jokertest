@@ -264,6 +264,39 @@ test("유효한 회원가입 입력은 이메일 인증 완료 후 signupApi를 
   hook.unmount()
 })
 
+// 재검토 지적(AC-02): isSubmitting state만으로는 같은 틱의 연속 호출을 막지 못한다 — 두
+// 호출 모두 리렌더 전 클로저를 보므로 state 검사를 통과할 수 있다. submitInFlightRef 같은
+// 동기 잠금이 있어야 실제로 막힌다.
+test("AC-02: 같은 틱에 제출을 두 번 호출해도 가입 API 호출은 정확히 1회다", async () => {
+  signupRequests.length = 0
+  signupCodeRequests.length = 0
+  signupCodeVerifications.length = 0
+  alertMessages.length = 0
+  requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
+  verifySignupCodeImpl = async () => ({ ok: true, signupProof: "proof-race-1" })
+  signupApiImpl = async () => ({ success: true, message: "회원가입이 완료되었습니다." })
+  const hook = renderHook(() => useLoginPage())
+
+  act(() => {
+    hook.result.current.setIsSignupMode(true)
+    fillSignupFields(hook)
+  })
+  await completeSignupEmailVerification(hook)
+  assert.equal(hook.result.current.canSubmitSignup, true)
+
+  await act(async () => {
+    // 같은 틱에 handleSubmit을 두 번 호출한다 — 두 호출 모두 아직 리렌더되지 않은 같은
+    // 클로저에서 시작되므로, state가 아니라 동기 ref로만 막을 수 있는 경합이다.
+    await Promise.all([
+      hook.result.current.handleSubmit({ preventDefault() {} }),
+      hook.result.current.handleSubmit({ preventDefault() {} }),
+    ])
+  })
+
+  assert.equal(signupRequests.length, 1, "동시 제출이어도 가입 API는 한 번만 호출되어야 한다")
+  hook.unmount()
+})
+
 // ── F-31b AC-01: 인증 완료 전 제출 차단 ──────────────────────────────────────────
 
 test("AC-01: 이메일 인증을 완료하지 않으면 강제로 handleSubmit을 호출해도 signupApi를 부르지 않는다", async () => {
@@ -304,7 +337,7 @@ test("AC-03: 재발송 대기 중에는 재발송 API를 다시 부르지 않는
 
 test("AC-03: RESEND_TOO_SOON 응답은 남은 초를 그대로 상태에 반영한다", async () => {
   signupCodeRequests.length = 0
-  requestSignupCodeImpl = async () => { throw apiError("잠시 후 다시 시도해주세요.", { code: "RESEND_TOO_SOON", resendAfterSec: 45 }) }
+  requestSignupCodeImpl = async () => { throw apiError("잠시 후 다시 시도해주세요.", { code: "RESEND_TOO_SOON", resendAfterSec: 45, status: 429 }) }
   const hook = renderHook(() => useLoginPage())
   act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
 
@@ -318,7 +351,7 @@ test("AC-03: RESEND_TOO_SOON 응답은 남은 초를 그대로 상태에 반영�
 
 test("AC-03: 오입력하면 서버가 준 남은 시도 횟수를 그대로 보여주고 번호 입력을 유지한다", async () => {
   requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
-  verifySignupCodeImpl = async () => { throw apiError("인증번호가 올바르지 않습니다.", { code: "CODE_INVALID", attemptsRemaining: 4 }) }
+  verifySignupCodeImpl = async () => { throw apiError("인증번호가 올바르지 않습니다.", { code: "CODE_INVALID", attemptsRemaining: 4, status: 400 }) }
   const hook = renderHook(() => useLoginPage())
   act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
 
@@ -335,7 +368,7 @@ test("AC-03: 오입력하면 서버가 준 남은 시도 횟수를 그대로 보
 test("AC-03: 인증번호가 만료되면 codeExpired로 전이하고 확인을 다시 부르지 않는다", async () => {
   const verifyCallsBefore = signupCodeVerifications.length
   requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
-  verifySignupCodeImpl = async () => { throw apiError("만료되었습니다.", { code: "CODE_EXPIRED" }) }
+  verifySignupCodeImpl = async () => { throw apiError("만료되었습니다.", { code: "CODE_EXPIRED", status: 400 }) }
   const hook = renderHook(() => useLoginPage())
   act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
 
@@ -352,7 +385,7 @@ test("AC-03: 인증번호가 만료되면 codeExpired로 전이하고 확인을 
 
 test("AC-03: 오입력 횟수를 초과하면 locked로 전이하고 확인을 막는다", async () => {
   requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
-  verifySignupCodeImpl = async () => { throw apiError("시도 초과", { code: "TOO_MANY_ATTEMPTS" }) }
+  verifySignupCodeImpl = async () => { throw apiError("시도 초과", { code: "TOO_MANY_ATTEMPTS", status: 429 }) }
   const hook = renderHook(() => useLoginPage())
   act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
 
@@ -365,7 +398,7 @@ test("AC-03: 오입력 횟수를 초과하면 locked로 전이하고 확인을 �
 })
 
 test("AC-03: 일반 요청 제한(RATE_LIMITED)은 이전 상태를 유지한 채 안내만 보여준다", async () => {
-  requestSignupCodeImpl = async () => { throw apiError("요청이 많습니다.", { code: "RATE_LIMITED" }) }
+  requestSignupCodeImpl = async () => { throw apiError("요청이 많습니다.", { code: "RATE_LIMITED", status: 429 }) }
   const hook = renderHook(() => useLoginPage())
   act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
 
@@ -385,6 +418,49 @@ test("AC-03: 네트워크/미확인 실패는 재시도 안내를 보여주고 �
 
   assert.equal(hook.result.current.signupEmailVerification.stage, "unverified")
   assert.match(hook.result.current.signupEmailVerification.message, /통신할 수 없습니다/)
+  hook.unmount()
+})
+
+// 재검토 지적(AC-03): 5xx 응답에 익숙한 code(예: RATE_LIMITED)가 실려 와도, 그 code가
+// 약속한 status(429)와 다르면 확정된 사유로 단정하면 안 되고 통신 실패로 처리해야 한다.
+test("AC-03: 발송이 5xx와 함께 익숙한 code를 실어 보내도 확정 사유로 단정하지 않고 통신 실패로 처리한다", async () => {
+  requestSignupCodeImpl = async () => { throw apiError("서버 오류", { code: "RATE_LIMITED", status: 500 }) }
+  const hook = renderHook(() => useLoginPage())
+  act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
+
+  await act(async () => { await hook.result.current.handleRequestSignupCode() })
+
+  assert.equal(hook.result.current.signupEmailVerification.stage, "unverified")
+  assert.match(
+    hook.result.current.signupEmailVerification.message,
+    /통신할 수 없습니다/,
+    "status가 code와 맞지 않으면(429 아닌 5xx) RATE_LIMITED 문구가 아니라 통신 실패 안내를 보여야 한다",
+  )
+  hook.unmount()
+})
+
+test("AC-03: 확인이 5xx와 함께 익숙한 code를 실어 보내도 확정 사유로 단정하지 않고 통신 실패로 처리하며 입력을 유지한다", async () => {
+  requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
+  verifySignupCodeImpl = async () => { throw apiError("서버 오류", { code: "CODE_INVALID", attemptsRemaining: 2, status: 500 }) }
+  const hook = renderHook(() => useLoginPage())
+  act(() => { hook.result.current.setIsSignupMode(true); fillSignupFields(hook) })
+
+  await act(async () => { await hook.result.current.handleRequestSignupCode() })
+  act(() => { hook.result.current.handleSignupCodeChange({ target: { value: "000000" } }) })
+  await act(async () => { await hook.result.current.handleVerifySignupCode() })
+
+  assert.equal(hook.result.current.signupEmailVerification.stage, "codeSent")
+  assert.equal(
+    hook.result.current.signupEmailVerification.attemptsRemaining,
+    null,
+    "status가 code와 맞지 않으면 서버가 준 attemptsRemaining을 확정 값으로 쓰면 안 된다",
+  )
+  assert.match(
+    hook.result.current.signupEmailVerification.message,
+    /통신할 수 없습니다/,
+    "status가 code와 맞지 않으면(400 아닌 5xx) CODE_INVALID 문구가 아니라 통신 실패 안내를 보여야 한다",
+  )
+  assert.equal(hook.result.current.signupEmailVerification.code, "000000", "확인 실패 후에도 입력한 번호를 지우면 안 된다")
   hook.unmount()
 })
 
