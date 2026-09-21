@@ -27,7 +27,7 @@ const startMockDiscord = async (t, { tokenHandler, meHandler }) => {
             const body = Buffer.concat(chunks).toString("utf8");
             if (req.url.startsWith("/token")) return tokenHandler(req, res, body);
             if (req.url.startsWith("/me")) return meHandler(req, res, body);
-            res.writeHead(404).end();
+            res.writeHead(404, { "Connection": "close" }).end();
         });
     });
     server.listen(0, "127.0.0.1");
@@ -55,7 +55,12 @@ const withFetchRedirectedTo = (t, base) => {
 };
 
 const jsonHandler = (status, body) => (req, res) => {
-    res.writeHead(status, { "content-type": "application/json" });
+    // 매 시험이 listen(0)으로 새 서버·새 포트를 열었다 닫는다. undici(전역 fetch)가 직전
+    // 시험의 keep-alive 연결을 재사용하려 들면, 그 사이 서버가 닫혀 "fetch failed"로 불안정
+    // 실패할 수 있다(격리된 시험 자체 안에서만 벌어지는 재사용이며, 다른 시험 파일과는
+    // 무관하다 — 파일마다 별도 프로세스로 돈다). 응답마다 Connection: close를 실어
+    // 클라이언트가 이 연결을 다음 시험으로 넘겨 재사용하지 않게 한다.
+    res.writeHead(status, { "content-type": "application/json", "Connection": "close" });
     res.end(JSON.stringify(body));
 };
 
