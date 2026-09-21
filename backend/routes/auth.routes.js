@@ -16,10 +16,59 @@ const { validatePasswordResetRequest } = require("../validation/passwordResetVal
 const {
     requestPasswordReset, verifyPasswordReset, confirmPasswordReset,
 } = require("../controller/passwordReset.controller");
+const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
+const { validateSignupCodeRequest, validateSignupCodeVerify } = require("../validation/signupEmailVerificationValidation");
+const {
+    requestSignupCode, verifySignupCode,
+} = require("../controller/signupEmailVerification.controller");
 
 router.post("/signup", signup);
 router.get("/check-email", checkEmail);
 router.post("/login", login);
+
+// F-31a(AC-05): 가입 이메일 인증번호 발송 요청 빈도 제한. find-id·password-reset과 같은
+// 패턴으로 라우터 구성 시 한 번만 제한기 4개(IP 시간·일, 이메일 시간·일)를 만든다. IP
+// 제한은 입력 검증보다 먼저 연결해 잘못된 입력을 보낸 요청도 IP 시도로 센다 — 그래야
+// 형식이 잘못된 이메일을 반복 제출해 이메일 키 기반 제한을 우회하는 것을 막는다. 이메일
+// 제한은 검증을 통과한 뒤 정규화된 이메일의 SHA-256으로 센다(원문 이메일은 제한기 키에
+// 담기지 않는다).
+const signupEmailVerificationConfig = getSignupEmailVerificationConfig(process.env);
+
+const signupCodeIpHourRateLimiter = createRateLimiter({
+    windowMs: signupEmailVerificationConfig.ipHourWindowMs,
+    max:      signupEmailVerificationConfig.ipHourMax,
+    keyOf:    (req) => `ip-hour:${req.ip}`,
+});
+const signupCodeIpDayRateLimiter = createRateLimiter({
+    windowMs: signupEmailVerificationConfig.ipDayWindowMs,
+    max:      signupEmailVerificationConfig.ipDayMax,
+    keyOf:    (req) => `ip-day:${req.ip}`,
+});
+const signupCodeEmailHourRateLimiter = createRateLimiter({
+    windowMs: signupEmailVerificationConfig.emailHourWindowMs,
+    max:      signupEmailVerificationConfig.emailHourMax,
+    keyOf:    (req, res) => `email-hour:${crypto.createHash("sha256").update(res.locals.signupEmailCodeInput.email).digest("hex")}`,
+});
+const signupCodeEmailDayRateLimiter = createRateLimiter({
+    windowMs: signupEmailVerificationConfig.emailDayWindowMs,
+    max:      signupEmailVerificationConfig.emailDayMax,
+    keyOf:    (req, res) => `email-day:${crypto.createHash("sha256").update(res.locals.signupEmailCodeInput.email).digest("hex")}`,
+});
+
+router.post(
+    "/signup/email-code",
+    signupCodeIpHourRateLimiter,
+    signupCodeIpDayRateLimiter,
+    validateSignupCodeRequest,
+    signupCodeEmailHourRateLimiter,
+    signupCodeEmailDayRateLimiter,
+    requestSignupCode,
+);
+router.post(
+    "/signup/email-code/verify",
+    validateSignupCodeVerify(signupEmailVerificationConfig.codeLength),
+    verifySignupCode,
+);
 
 // F-29a(AC-05): 아이디 찾기 요청 빈도 제한. 라우터 구성 시 한 번만 생성해 요청마다
 // 카운터가 초기화되지 않게 한다. IP 제한은 검증 실패도 포함해 이 경로에 들어온 모든 요청을

@@ -227,6 +227,9 @@ const NEW_MODELS = [
     // 않는다 — friend_requests에 늘어난 것은 status에서 파생되는 generated 컬럼 하나뿐이고
     // 그것은 모델이 아니라 마이그레이션이 소유한다.
     'FriendFavorite', 'FriendBlock', 'GameInvite',
+    // F-31a: 가입 이메일 인증 상태(0016-signup-email-verification 마이그레이션). users를
+    // 참조하는 FK가 없는 독립 테이블이며 User 모델에 컬럼·관계를 추가하지 않는다.
+    'SignupEmailVerification',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {

@@ -70,9 +70,14 @@ const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-
 // 적용 배열에 넣는다(이전에는 buildManagedSchema의 관리 테이블 목록에만 쓰이고 실제로는
 // 적용되지 않았다).
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
+// F-31a: authService.signup()이 이제 signupProof를 소비하려면 signup_email_verifications가
+// 실제로 있어야 한다 — 이 스위트가 실제 signup을 여러 번 호출하므로(동시 가입, 관리 필드
+// 무시 등) 이 마이그레이션도 체인에 명시적으로 넣는다.
+const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
+const { prepareSignupProof } = require('../helpers/signupProof');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });
@@ -124,6 +129,7 @@ const db = require('../../models');
 const authService = require('../../service/auth.service');
 const userRepository = require('../../repositories/user.repositories');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
+const { hashPassword } = require('../../utils/hash');
 
 // db(backend/models)는 require 캐시 싱글턴이라 db.sequelize는 이 파일의 네 테스트가
 // 전부 공유한다. 이전 회차는 테스트마다 개별적으로 t.after(() => db.sequelize.close())를
@@ -134,53 +140,59 @@ test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
 });
 
-// ── AC-05 ───────────────────────────────────────────────────────────────────
+// ── AC-04(F-31a)/AC-05 ────────────────────────────────────────────────────
+//
+// F-31a 도입 이전에는 이 자리에서 "두 요청이 findByEmail 사전 조회를 모두 마친 뒤에야
+// 다음 단계로 넘어가게" 강제하는 인위적 장벽으로 같은 이메일 동시 가입의 DB 유일 제약을
+// 검증했다. authService.signup()이 이제 계정 생성보다 먼저 signup_email_verifications
+// 행을 잠가 가입 증명을 소비하므로(F-31a AC-04), 그 장벽을 잠금 *뒤에* 두면 두 트랜잭션이
+// 서로의 진행을 기다리며 교착된다(하나가 잠금을 쥔 채 상대가 도착하길 기다리지만, 상대는
+// 그 잠금이 풀리기 전에는 자신의 findByEmail 단계에 도달할 수 없다). 그래서:
+//   - "같은 증명으로 동시 제출"은 서비스 계층(authService.signup)에서 인위적 장벽 없이
+//     자연스러운 DB 행 잠금만으로 검증한다(F-31a AC-04) — 정확히 하나만 성공하고
+//     나머지는 SIGNUP_PROOF_INVALID다.
+//   - "같은 이메일 DB 유일 제약" 자체(F-02 AC-05)는 증명 소비를 우회해 저장소 계층
+//     (userRepository.createUser)을 직접 동시 호출하는 방식으로 유지한다.
 
-test('AC-05: 사전 조회가 둘 다 "중복 없음"을 본 뒤에도 DB 유일 제약이 하나만 남긴다', async (t) => {
+test('AC-04(F-31a, 서비스 동시성): 같은 signupProof로 동시에 signup을 호출하면 하나만 성공하고 나머지는 SIGNUP_PROOF_INVALID다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
-    // signup()의 findByEmail 사전 조회가 우연히 순차적으로 끝나면(하나가 커밋된 뒤 다른
-    // 하나가 조회) 두 번째는 애플리케이션 계층의 사전 검사("이미 사용 중인 이메일입니다.",
-    // auth.service.js)에서 걸러질 수 있다 — 이러면 409가 DB 유일 제약이 아니라 이 사전
-    // 검사 때문일 수 있어, "DB 유일 제약에 의해 409"라는 AC-05를 입증하지 못한다.
-    //
-    // 이전 회차는 "두 호출 모두 findByEmail을 시작했다"는 시점(arrival)에만 장벽을 뒀는데,
-    // 이는 두 실제 쿼리가 *시작*되는 것만 보장할 뿐 *완료*를 보장하지 않는다 — JS 이벤트
-    // 루프 스케줄링에 우연히 기대는 것이지 구조적 보장이 아니라는 재검토 지적을 받았다.
-    // 그래서 두 번째 장벽(settled)을 추가해, 두 원본 조회가 모두 "중복 없음"으로 응답을
-    // 받은 뒤에야 각 호출이 결과를 반환하도록 강제한다 — 어느 한쪽도 상대의 조회가 끝나기
-    // 전에는 findByEmail 이후 단계(비밀번호 해싱·INSERT)로 넘어갈 수 없다.
-    const originalFindByEmail = userRepository.findByEmail;
-    let arrivedCount = 0;
-    let releaseArrival;
-    const bothArrived = new Promise((resolve) => { releaseArrival = resolve; });
-    let settledCount = 0;
-    let releaseSettled;
-    const bothSettled = new Promise((resolve) => { releaseSettled = resolve; });
-    userRepository.findByEmail = async (queriedEmail) => {
-        arrivedCount += 1;
-        if (arrivedCount >= 2) releaseArrival();
-        await bothArrived;
-
-        const result = await originalFindByEmail(queriedEmail);
-        settledCount += 1;
-        if (settledCount >= 2) releaseSettled();
-        await bothSettled;
-
-        return result;
-    };
-    t.after(() => { userRepository.findByEmail = originalFindByEmail; });
-
     const email = 'concurrent-signup@example.com';
+    const { signupProof } = await prepareSignupProof(email);
+
     const attempts = await Promise.allSettled([
-        authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: '동시가입1' }),
-        authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: '동시가입2' }),
+        authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: '동시가입1', signupProof }),
+        authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: '동시가입2', signupProof }),
     ]);
 
-    assert.equal(arrivedCount, 2, '두 요청 모두 findByEmail 사전 조회에 도달해야 경합 조건이 성립한다');
-    assert.equal(settledCount, 2, '두 요청 모두 실제 조회 응답("중복 없음")을 받은 뒤에야 다음 단계로 넘어가야 한다');
+    const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
+    const rejected = attempts.filter((a) => a.status === 'rejected');
+
+    assert.equal(fulfilled.length, 1, '정확히 하나만 성공해야 한다');
+    assert.equal(rejected.length, 1, '나머지 하나는 실패해야 한다');
+    assert.equal(rejected[0].reason.status, 401);
+    assert.equal(rejected[0].reason.code, 'SIGNUP_PROOF_INVALID');
+
+    const [rows] = await sequelize.query('SELECT COUNT(*) AS cnt FROM users WHERE email = :email', {
+        replacements: { email },
+    });
+    assert.equal(Number(rows[0].cnt), 1, 'users 테이블에는 정확히 한 행만 남아야 한다');
+});
+
+test('AC-05(저장소 동시성): 저장소 계층에서 같은 이메일로 동시 생성해도 DB 유일 제약이 하나만 남긴다', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    const email = 'concurrent-repo-signup@example.com';
+    const password_hash = await hashPassword('pw12345678');
+
+    const attempts = await Promise.allSettled([
+        userRepository.createUser({ email, password_hash, nickname: '저장소동시1', birth_date: new Date('2000-01-01') }),
+        userRepository.createUser({ email, password_hash, nickname: '저장소동시2', birth_date: new Date('2000-01-01') }),
+    ]);
 
     const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
     const rejected = attempts.filter((a) => a.status === 'rejected');
@@ -203,13 +215,19 @@ test('AC-06: role/status/email_verified를 실어 보내도 저장되지 않고,
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const email = 'ac06-signup@example.com';
+    const { signupProof } = await prepareSignupProof(email);
+    // F-31a: email_verified는 이제 클라이언트 입력과 무관하게 서버가 실제 인증 결과로
+    // 채운다 — 요청에 false를 실어도(관리 필드 조작 시도와 구분해 정상적으로 "아직
+    // 인증 안 됨"을 주장하는 값이어도) 실제 저장값은 항상 true다(가입 자체가 이미 이메일
+    // 인증 증명을 소비했기 때문).
     const created = await authService.signup({
         ...VALID_SIGNUP_BASE,
         email,
         nickname: 'AC06유저',
         role: 'ADMIN',
         status: 'BANNED',
-        email_verified: true,
+        email_verified: false,
+        signupProof,
     });
 
     const [rows] = await sequelize.query(
@@ -219,7 +237,7 @@ test('AC-06: role/status/email_verified를 실어 보내도 저장되지 않고,
     assert.equal(rows.length, 1);
     assert.equal(rows[0].role, 'USER', '관리 필드로 보낸 role이 아니라 기본값이어야 한다');
     assert.equal(rows[0].status, 'ACTIVE', '관리 필드로 보낸 status가 아니라 기본값이어야 한다');
-    assert.equal(Number(rows[0].email_verified), 0, '관리 필드로 보낸 email_verified가 아니라 기본값(false)이어야 한다');
+    assert.equal(Number(rows[0].email_verified), 1, '요청의 email_verified 값과 무관하게 서버 인증 결과(true)가 저장되어야 한다');
 
     const { user, token } = await authService.login(
         { email, password: VALID_SIGNUP_BASE.password },
@@ -240,7 +258,8 @@ test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const email = 'ac06-longsnapshot@example.com';
-    const created = await authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: 'AC06스냅샷' });
+    const { signupProof } = await prepareSignupProof(email);
+    const created = await authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: 'AC06스냅샷', signupProof });
 
     const longNicknameSnapshot = '가'.repeat(45); // 30자 초과, F-01이 확장한 50자 이내
     const gameId = '55555555-5555-5555-5555-555555555555';
@@ -291,7 +310,8 @@ test('AC-03: birth_date는 서버 시간대와 무관하게 저장·복원된다
     });
 
     const email = 'ac03-birthdate@example.com';
-    const created = await authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: 'AC03생일', birthDate: '2000-06-15' });
+    const { signupProof } = await prepareSignupProof(email);
+    const created = await authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: 'AC03생일', birthDate: '2000-06-15', signupProof });
 
     // UTC 기준으로 자정을 넘어 날짜가 바뀌는 방향(양쪽)의 시간대에서 모두 확인한다.
     const timezones = ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles'];

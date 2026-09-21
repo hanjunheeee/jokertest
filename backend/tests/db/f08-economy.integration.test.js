@@ -88,6 +88,9 @@ const { hashPassword } = require('../../utils/hash');
 const authService = require('../../service/auth.service');
 const socialAuthService = require('../../service/socialAuth.service');
 const { backfillDefaultEntitlements } = require('../../db/backfillEconomy');
+// F-31a: authService.signup()이 이제 signupProof를 요구한다 — 실제 requestSignupCode/
+// verifySignupCode를 통해 진짜 증명을 발급받는다(스텁하지 않는다).
+const { prepareSignupProof } = require('../helpers/signupProof');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
@@ -329,12 +332,15 @@ test('AC-03(CODEX-2): authService.signup 직후 — 지갑/장착 조회를 한 
 
     const uuid = crypto.randomUUID();
     const nickname = `sgn${uuid.slice(0, 5)}`.slice(0, 8);
+    const email = `signup-${uuid}@example.com`;
+    const { signupProof } = await prepareSignupProof(email);
     const user = await authService.signup({
-        email: `signup-${uuid}@example.com`,
+        email,
         password: 'correct-horse-battery-1',
         passwordConfirm: 'correct-horse-battery-1',
         nickname,
         birthDate: '2000-01-01',
+        signupProof,
     });
 
     const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
@@ -378,12 +384,14 @@ test('AC-03(CODEX-2): socialAuthService.completeSocialSignup 직후 — 지갑/�
     assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
 });
 
-test('AC-03(CODEX-2): 가입 트랜잭션 실패는 기본 지급까지 함께 롤백한다(부분 계정 방지)', async (t) => {
+test('AC-03(CODEX-2)/AC-04(F-31a): 가입 트랜잭션 실패는 기본 지급·증명 소비까지 함께 롤백하고, 같은 증명으로 재시도하면 성공한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
     const uuid = crypto.randomUUID();
     const nickname = `rb${uuid.slice(0, 6)}`.slice(0, 8);
+    const email = `rollback-${uuid}@example.com`;
+    const { signupProof } = await prepareSignupProof(email);
 
     // ensureDefaultEntitlements 안에서 실제로 한 번 지급(itemId 있는 원장 기록)이 성공한
     // 뒤, 그 다음(아직 트랜잭션이 끝나기 전) 단계에서 실패를 주입해 "일부만 지급된 채
@@ -401,17 +409,39 @@ test('AC-03(CODEX-2): 가입 트랜잭션 실패는 기본 지급까지 함께 �
 
     await assert.rejects(
         authService.signup({
-            email: `rollback-${uuid}@example.com`,
+            email,
             password: 'correct-horse-battery-1',
             passwordConfirm: 'correct-horse-battery-1',
             nickname,
             birthDate: '2000-01-01',
+            signupProof,
         }),
         /시뮬레이션된 지급 실패/,
     );
 
     const userRow = await db.User.findOne({ where: { nickname } });
-    assert.equal(userRow, null, '기본 지급이 실패하면 계정 생성 자체도 롤백되어 반쪽 계정이 남으면 안 된다');
+    assert.equal(userRow, null, '기본 지급이 실패하면 계정 생성 자체도 롤백되어 반쪽 계정이 남으면 안 된다(통계는 users의 자식이라 함께 사라진다)');
+
+    const [[verificationRow]] = await db.sequelize.query(
+        'SELECT proof_consumed_at FROM signup_email_verifications WHERE email = :email AND purpose = :purpose',
+        { replacements: { email, purpose: 'SIGNUP' } },
+    );
+    assert.ok(verificationRow, '인증 행 자체는 남아 있어야 한다(발송·확인은 별도 트랜잭션으로 이미 커밋됨)');
+    assert.equal(verificationRow.proof_consumed_at, null, '실패한 가입 트랜잭션이 증명 소비를 커밋하면 안 된다');
+
+    // 실패 주입을 해제하고 같은 증명으로 재시도하면 성공해야 한다(AC-04) — 증명이
+    // 롤백으로 되살아났음을 실제로 증명한다.
+    models.EconomyEntitlement.create = originalCreate;
+    const retried = await authService.signup({
+        email,
+        password: 'correct-horse-battery-1',
+        passwordConfirm: 'correct-horse-battery-1',
+        nickname,
+        birthDate: '2000-01-01',
+        signupProof,
+    });
+    const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: retried.uuid } });
+    assert.equal(owned.length, 17, '재시도가 성공하면 기본 지급 17종이 모두 있어야 한다');
 });
 
 test('AC-03(CODEX-2): 기존 계정 백필(backfillDefaultEntitlements) — 가입 훅 없이 만들어진 계정도 지갑/장착 조회 없이 지급된다', async (t) => {

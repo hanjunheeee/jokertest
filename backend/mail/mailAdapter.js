@@ -7,8 +7,9 @@
 const https = require('https');
 const { URL } = require('url');
 
-// SIGNUP_CODE는 F-31이 쓸 공유 경계로 이름만 예약한다 — 여기서는 렌더링하지 않는다.
-const TEMPLATES = new Set(['PASSWORD_RESET', 'SOCIAL_LOGIN_GUIDE']);
+// F-31a: SIGNUP_CODE는 가입 이메일 인증번호 안내다. 인증번호 원문은 이 템플릿의 렌더링
+// 결과(메일 본문)와 params에만 존재한다 — sendMail의 반환값에는 절대 포함되지 않는다.
+const TEMPLATES = new Set(['PASSWORD_RESET', 'SOCIAL_LOGIN_GUIDE', 'SIGNUP_CODE']);
 
 const renderTemplate = (template, params = {}) => {
     if (template === 'PASSWORD_RESET') {
@@ -23,6 +24,15 @@ const renderTemplate = (template, params = {}) => {
             subject: '[Joker] 계정 안내',
             text: '이 이메일로 가입된 계정은 소셜 로그인 전용이라 비밀번호가 없습니다. '
                 + '로그인 화면에서 사용하셨던 소셜 로그인으로 진행해주세요.',
+        };
+    }
+    if (template === 'SIGNUP_CODE') {
+        const minutes = Math.max(1, Math.floor((params.expiresInSec ?? 0) / 60));
+        return {
+            subject: '[Joker] 가입 인증번호',
+            text: `아래 인증번호를 입력해 이메일 인증을 완료해주세요.\n\n${params.code}\n\n`
+                + `이 인증번호는 발급 후 ${minutes}분 이내에만 사용할 수 있습니다. `
+                + '본인이 요청하지 않았다면 이 메일을 무시해주세요.',
         };
     }
     throw new Error('알 수 없는 메일 목적입니다.');

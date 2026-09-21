@@ -88,6 +88,11 @@ const socialAuthService = require('../../service/socialAuth.service');
 const userRepository = require('../../repositories/user.repositories');
 const mailAdapterModule = require('../../mail/mailAdapter');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+const { hashPassword } = require('../../utils/hash');
+// F-31a: authService.signup()이 이제 signupProof를 요구한다 — 실제 requestSignupCode/
+// verifySignupCode를 통해 진짜 증명을 발급받는다(전용 메모리 메일 어댑터를 쓰므로 이
+// 파일이 재설정 검증용으로 패치한 createHttpMailAdapter와 outbox를 공유하지 않는다).
+const { prepareSignupProof } = require('../helpers/signupProof');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
@@ -128,9 +133,27 @@ const postJson = (base, path, body) => fetch(`${base}${path}`, {
 const getPath = (base, path) => fetch(`${base}${path}`);
 
 const createLocalUser = async ({ nickname, email, password = 'correct-horse-1' }) => {
+    const { signupProof } = await prepareSignupProof(email);
     const user = await authService.signup({
-        email, password, passwordConfirm: password, nickname, birthDate: '1995-05-05',
+        email, password, passwordConfirm: password, nickname, birthDate: '1995-05-05', signupProof,
     });
+    return { uuid: user.uuid, email, password };
+};
+
+/**
+ * F-31a: 0015 **이전**(has_local_password·signup_email_verifications 어느 쪽도 없는) 스키마
+ * 위에서 "가입 훅을 거친 적 없는 기존 계정"을 흉내 낸다. 이 시점에는 authService.signup을
+ * 호출할 수 없다(증명 저장소 테이블 자체가 아직 없다) — 그건 이 backfill 시험의 검증
+ * 대상(당시 계정 이관)이 아니라 현재 가입 API의 동작이므로, 의도적으로 우회한다. 로그인에
+ * 필요한 비밀번호 해시를 포함해 실제 계정 데이터를 만든다.
+ */
+const createLegacyLocalUser = async ({ nickname, email, password = 'correct-horse-1' }) => {
+    const uuid = crypto.randomUUID();
+    const password_hash = await hashPassword(password);
+    const user = await db.User.create({
+        uuid, email, password_hash, nickname, birth_date: new Date('1995-05-05'),
+    });
+    await db.UserStats.create({ user_id: user.uuid });
     return { uuid: user.uuid, email, password };
 };
 
@@ -586,8 +609,10 @@ test('AC-05: has_local_password backfill은 0015 이전에 실제로 존재하�
     let socialIntentDeleted;
     let delayedLocal;
     try {
-        // (a) 순수 로컬 가입 — 근거 없음 → true.
-        localOnly = await createLocalUser({ nickname: 'BF로컬', email: `bf-local-${crypto.randomUUID()}@example.com` });
+        // (a) 순수 로컬 가입 — 근거 없음 → true. 이 스키마에는 아직
+        // signup_email_verifications도 없으므로(0016은 0015보다 뒤) createLocalUser(실제
+        // authService.signup)를 쓸 수 없다 — createLegacyLocalUser로 당시 계정을 흉내 낸다.
+        localOnly = await createLegacyLocalUser({ nickname: 'BF로컬', email: `bf-local-${crypto.randomUUID()}@example.com` });
 
         // (b) 소셜 가입 완료(intent 보존) — 근거1(소비된 intent의 provider/subject 일치) → false.
         const fpB = `fp-${crypto.randomUUID()}`;
@@ -616,7 +641,7 @@ test('AC-05: has_local_password backfill은 0015 이전에 실제로 존재하�
         // (d) 로컬 가입 후 10초를 넘겨 명시적 연결 — 근거1 없음(연결은 intent를 만들지
         // 않는다), 근거2도 없어야 한다. 시각을 조작하지 않고 실제로 10초 넘게 기다린 뒤
         // 연결해, identity.created_at이 진짜로 users.created_at보다 10초 넘게 뒤에 남게 한다.
-        delayedLocal = await createLocalUser({ nickname: 'BF지연', email: `bf-delayed-${crypto.randomUUID()}@example.com` });
+        delayedLocal = await createLegacyLocalUser({ nickname: 'BF지연', email: `bf-delayed-${crypto.randomUUID()}@example.com` });
         await new Promise((resolve) => setTimeout(resolve, 11_000));
         const delayedLogin = await authService.login({ email: delayedLocal.email, password: delayedLocal.password }, REQ_INFO);
         const sessionId = require('jsonwebtoken').decode(delayedLogin.token).sessionId;
