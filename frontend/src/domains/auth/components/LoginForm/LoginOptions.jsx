@@ -13,8 +13,9 @@ export default function LoginOptions({ rememberMe, onRememberMeChange }) {
       <div className="flex shrink-0 items-center gap-2">
         <Link to="/find-id" className="auth-text-link">아이디 찾기</Link>
         <span className="text-white/40" aria-hidden="true">|</span>
-        {/* 아직 기능 연결 전인 비밀번호 찾기 버튼입니다. */}
-        <button type="button" className="auth-text-link">비밀번호 찾기</button>
+        {/* F-29c: 비밀번호 찾기도 아이디 찾기와 같은 방식으로 비로그인 상태에서도 접근 가능한
+            공개 라우트(/password-reset/request)로 이동합니다. */}
+        <Link to="/password-reset/request" className="auth-text-link">비밀번호 찾기</Link>
       </div>
     </div>
   )
