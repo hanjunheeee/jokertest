@@ -94,6 +94,90 @@ exports.globalErrorHandler = (err, req, res, next) => {
         return res.status(status).json({ ok: false, code });
     }
 
+    // F-32a(AC-05): 재화 상품 목록·다이아 충전 API 범위는 원본 오류(메시지·스택·중첩 데이터·
+    // 요청 본문·헤더)를 로그와 응답 어디에도 남기지 않는다. 결제 어댑터·DB·JSON 파서 오류에는
+    // secret이나 요청 원문이 실려 있을 수 있어서다. 쿼리·후행 슬래시·대소문자 변형은 같은 범위로
+    // 판정한다. 코드가 있는 오류는 아래 표에 있는 것만 그 코드와 고정 상태·고정 문구로 응답하고,
+    // 예상 밖 오류는 SERVER_ERROR(500)로 수렴한다. 인증 401(ACCESS_TOKEN_EXPIRED 포함)의 의미는
+    // 유지한다.
+    const topupScopedPath = String(req.originalUrl || req.url || '')
+        .split('?')[0].replace(/\/+$/, '').toLowerCase();
+    const isTopupScope = topupScopedPath === '/economy/currency-products'
+        || topupScopedPath === '/economy/topup'
+        || topupScopedPath.startsWith('/economy/topup/');
+    if (isTopupScope) {
+        res.set('Cache-Control', 'no-store');
+        const TOPUP_SCOPED_ERRORS = {
+            INVALID_PRODUCT_KIND: { status: 400, message: '알 수 없는 상품 종류입니다.' },
+            UNKNOWN_TOPUP_ORDER_FIELD: { status: 400, message: '허용되지 않은 필드가 포함되어 있습니다.' },
+            INVALID_TOPUP_ORDER_REQUEST: { status: 400, message: '요청 형식이 올바르지 않습니다.' },
+            UNKNOWN_TOPUP_CONFIRM_FIELD: { status: 400, message: '허용되지 않은 필드가 포함되어 있습니다.' },
+            INVALID_TOPUP_CONFIRM_REQUEST: { status: 400, message: '요청 형식이 올바르지 않습니다.' },
+            PRODUCT_NOT_FOUND: { status: 404, message: '상품을 찾을 수 없습니다.' },
+            PRODUCT_STOPPED: { status: 409, message: '판매가 중지된 상품입니다.' },
+            PRODUCT_VERSION_MISMATCH: { status: 409, message: '상품 정보가 변경되었습니다.' },
+            ORDER_NOT_FOUND: { status: 404, message: '주문을 찾을 수 없습니다.' },
+            NOT_OWNER: { status: 403, message: '다른 계정의 주문에는 접근할 수 없습니다.' },
+            AMOUNT_MISMATCH: { status: 400, message: '결제 금액이 주문과 다릅니다.' },
+            PAYMENT_KEY_MISMATCH: { status: 409, message: '이 주문에 이미 다른 결제키가 연결되어 있습니다.' },
+            PAYMENT_KEY_CONFLICT: { status: 409, message: '이 결제키는 다른 주문에서 사용 중입니다.' },
+            PAYMENT_FAILED: { status: 402, message: '결제가 완료되지 않았습니다.' },
+            PAYMENT_PROCESSING: { status: 503, message: '결제 확인이 진행 중입니다. 잠시 후 다시 조회하세요.' },
+            CONFIG_MISSING: { status: 503, message: '결제 설정이 올바르지 않습니다.' },
+        };
+        const PUBLIC_PRODUCT_FIELDS = {
+            productId: 'string', kind: 'string', displayName: 'string', payCurrency: 'string',
+            payAmount: 'number', grantCurrency: 'string', grantAmount: 'number', bonusAmount: 'number', version: 'number',
+        };
+        // 버전 불일치의 현재 상품은 검증된 공개 필드만, 타입까지 확인해 싣는다.
+        const publicProductOf = (candidate) => {
+            if (!candidate || typeof candidate !== 'object') return undefined;
+            const picked = {};
+            for (const [field, type] of Object.entries(PUBLIC_PRODUCT_FIELDS)) {
+                if (typeof candidate[field] !== type) return undefined;
+                picked[field] = candidate[field];
+            }
+            return picked;
+        };
+
+        const rawStatus = err.status || err.statusCode;
+        const rawCode = typeof err.code === 'string' ? err.code : undefined;
+
+        if (rawStatus === 401) {
+            if (rawCode === 'ACCESS_TOKEN_EXPIRED') {
+                return res.status(401).json({ success: false, message: '액세스 토큰이 만료되었습니다.', code: 'ACCESS_TOKEN_EXPIRED' });
+            }
+            return res.status(401).json({ success: false, message: '로그인이 필요합니다.' });
+        }
+        // 코드 없는 403은 인증 계층(정지 계정)에서만 나온다 — 그 안내 문구만 유지하고 그 밖은 고정 문구다.
+        if (rawStatus === 403 && !rawCode) {
+            const banned = typeof err.message === 'string' && err.message.startsWith('정지된 계정입니다.');
+            return res.status(403).json({ success: false, message: banned ? err.message : '접근 권한이 없습니다.' });
+        }
+        if (rawCode === 'ECONOMY_FORBIDDEN') {
+            return res.status(403).json({ ok: false, code: 'ECONOMY_FORBIDDEN', message: '다른 계정의 경제 데이터에 접근할 수 없습니다.' });
+        }
+        const fixed = rawCode ? TOPUP_SCOPED_ERRORS[rawCode] : undefined;
+        if (fixed) {
+            if (rawCode === 'PAYMENT_PROCESSING') res.set('Retry-After', '2');
+            const body = { ok: false, code: rawCode, message: fixed.message };
+            if (rawCode === 'PRODUCT_VERSION_MISMATCH') {
+                const product = publicProductOf(err.currentProduct);
+                if (product) body.product = product;
+            }
+            return res.status(fixed.status).json(body);
+        }
+        // 코드 없는 400(JSON 파서 오류 등)은 고정 코드로만, 그 밖은 SERVER_ERROR로 수렴한다.
+        if (!rawCode && rawStatus === 400) {
+            return res.status(400).json({ ok: false, code: 'INVALID_INPUT', message: '요청 형식이 올바르지 않습니다.' });
+        }
+        if (!rawCode && rawStatus === 404) {
+            return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: '요청한 경로를 찾을 수 없습니다.' });
+        }
+        console.error(`[economy-topup] SERVER_ERROR ${req.method}`);
+        return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: '서버 내부에서 에러가 발생했습니다.' });
+    }
+
     console.error('\x1b[31m%s\x1b[0m', err.stack);
 
     const statusCode = err.status || err.statusCode || 500;

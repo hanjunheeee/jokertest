@@ -53,7 +53,11 @@ const addSignupEmailVerification = require('../db/migrations/0016-signup-email-v
 // 못한 소셜 가입도 자체 메일 인증으로 보완할 수 있게 하는 스키마 변경이다
 // (socialAuth.service.js resolveOAuthAccount/completeSocialSignup 참고).
 const addSocialSignupEmail = require('../db/migrations/0017-social-signup-email');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail];
+// F-32a: 재화 상품표와 다이아 충전 주문 테이블도 실제 배포 명령에서 순서대로 적용한다
+// (currencyProducts.service.js·topup.service.js가 이 테이블을 읽고 쓴다). 운영 상품은
+// 이 마이그레이션이 넣지 않는다.
+const addCurrencyProductsTopupOrders = require('../db/migrations/0018-add-currency-products-topup-orders');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

@@ -4,14 +4,26 @@ const router  = express.Router();
 const { verifyToken } = require("../middleware/auth.middleware");
 const { createError }  = require("../utils/appError");
 const economyService = require("../service/economy.service");
+// F-32a: 서비스는 구조 분해로 캡처하지 않고 모듈 객체로 호출한다 — 라우트 시험이 서비스
+// 함수를 일시적으로 바꿔 끼워도 이 파일에 반영된다(economyService와 같은 관례).
+const currencyProductsService = require("../service/currencyProducts.service");
+const topupService = require("../service/topup.service");
 const userRepository = require("../repositories/user.repositories");
 const { getRewardCatalogEntry } = require("../economy/catalog");
 
 // 자기 계정 데이터만 조회할 수 있다(F-08 AC-06). verifyToken이 채운 req.user.uuid와
 // URL의 :userId가 다르면 401이 아니라 403이다 — 토큰 자체는 유효하지만 그 토큰의
 // 권한 범위를 벗어난 요청이기 때문이다.
+//
+// F-32a: 인증 uuid가 없으면 거부한다. :userId 경로 변수가 없는 신규 API(상품 목록·충전 주문)에서는
+// 비교할 대상이 없으므로 인증 uuid만 서비스 입력이 되고, 본문·쿼리의 계정 식별자는 권한 근거로
+// 쓰지 않는다 — 주문 소유권은 서비스가 저장된 user_id와 비교한다(NOT_OWNER).
 const requireSelf = (req, res, next) => {
-    if (req.user.uuid !== req.params.userId) {
+    const authenticatedUuid = req.user?.uuid;
+    if (typeof authenticatedUuid !== "string" || authenticatedUuid.length === 0) {
+        return next(createError("로그인이 필요합니다.", 401));
+    }
+    if (req.params.userId !== undefined && authenticatedUuid !== req.params.userId) {
         return next(createError("다른 계정의 경제 데이터에 접근할 수 없습니다.", 403, "ECONOMY_FORBIDDEN"));
     }
     next();
@@ -252,6 +264,104 @@ router.post("/admin/grant", verifyToken, async (req, res, next) => {
             idempotent: result.idempotent,
             ledgerEntry: serializeLedgerEntry(result.ledgerEntry),
         });
+    } catch (error) { next(error); }
+});
+
+// ── F-32a: 재화 상품 목록·다이아 충전 주문 ──────────────────────────────────────────────
+// 네 경로 모두 verifyToken → requireSelf를 거친다. 계정은 항상 인증 uuid(req.user.uuid)이며,
+// 본문·쿼리·경로의 어떤 계정 식별자도 서비스로 넘기지 않는다. 응답은 서비스 반환값에서 공개
+// 필드를 명시적으로 골라 만든다(결제키·임대·내부 상태·secret은 어떤 경로로도 싣지 않는다).
+// 오류는 next(error)로 넘겨 globalErrorHandler의 안전한 신규 범위 분기가 직렬화한다.
+const ALLOWED_TOPUP_ORDER_FIELDS = new Set(["productId", "version"]);
+const ALLOWED_TOPUP_CONFIRM_FIELDS = new Set(["paymentKey", "amount"]);
+const PRODUCT_KINDS = new Set(["DIAMOND_TOPUP", "GOLD_PURCHASE"]);
+
+const isPositiveSafeInteger = (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+
+const serializePublicProduct = (product) => ({
+    productId: product.productId,
+    kind: product.kind,
+    displayName: product.displayName,
+    payCurrency: product.payCurrency,
+    payAmount: product.payAmount,
+    grantCurrency: product.grantCurrency,
+    grantAmount: product.grantAmount,
+    bonusAmount: product.bonusAmount,
+    version: product.version,
+});
+
+const serializeTopupOrder = (order) => ({
+    ok: true,
+    orderId: order.orderId,
+    status: order.status,
+    amount: order.amount,
+    orderName: order.orderName,
+    productId: order.productId,
+    version: order.version,
+    grantAmount: order.grantAmount,
+    bonusAmount: order.bonusAmount,
+    ...(order.status === "GRANTED" ? { balanceDiamond: order.balanceDiamond } : {}),
+    createdAt: order.createdAt,
+});
+
+router.get("/currency-products", verifyToken, requireSelf, async (req, res, next) => {
+    try {
+        const { kind } = req.query;
+        if (kind !== undefined && (typeof kind !== "string" || !PRODUCT_KINDS.has(kind))) {
+            throw createError("알 수 없는 상품 종류입니다.", 400, "INVALID_PRODUCT_KIND");
+        }
+        const products = await currencyProductsService.listCurrencyProducts({ kind });
+        res.json({ ok: true, products: products.map(serializePublicProduct) });
+    } catch (error) { next(error); }
+});
+
+router.post("/topup/orders", verifyToken, requireSelf, async (req, res, next) => {
+    try {
+        const body = req.body ?? {};
+        // 클라이언트가 amount·grantAmount·userId 같은 값을 함께 보내도 무시하지 않고 거부한다.
+        rejectUnknownFields(body, ALLOWED_TOPUP_ORDER_FIELDS, "UNKNOWN_TOPUP_ORDER_FIELD");
+        const { productId, version } = body;
+        if (typeof productId !== "string" || productId.length === 0 || productId.length > 64 || !isPositiveSafeInteger(version)) {
+            throw createError("productId와 version이 필요합니다.", 400, "INVALID_TOPUP_ORDER_REQUEST");
+        }
+        const order = await topupService.createTopupOrder({ userId: req.user.uuid, productId, version });
+        res.status(201).json({
+            ok: true,
+            orderId: order.orderId,
+            amount: order.amount,
+            orderName: order.orderName,
+            // 프런트로 나가는 키는 공개 clientKey뿐이다.
+            clientKey: order.clientKey,
+        });
+    } catch (error) { next(error); }
+});
+
+router.post("/topup/orders/:orderId/confirm", verifyToken, requireSelf, async (req, res, next) => {
+    try {
+        const body = req.body ?? {};
+        rejectUnknownFields(body, ALLOWED_TOPUP_CONFIRM_FIELDS, "UNKNOWN_TOPUP_CONFIRM_FIELD");
+        const { paymentKey, amount } = body;
+        if (typeof paymentKey !== "string" || paymentKey.length === 0 || paymentKey.length > 200 || !isPositiveSafeInteger(amount)) {
+            throw createError("paymentKey와 amount가 필요합니다.", 400, "INVALID_TOPUP_CONFIRM_REQUEST");
+        }
+        const result = await topupService.confirmTopupOrder({
+            userId: req.user.uuid, orderId: req.params.orderId, paymentKey, amount,
+        });
+        if (result.status === "GRANTED") {
+            res.json({ ok: true, status: "GRANTED", balanceDiamond: result.balanceDiamond });
+        } else {
+            // 승인은 됐고 지급을 이어서 재시도하는 중 — 같은 confirm·주문 조회가 지급을 끝낸다.
+            res.json({ ok: true, status: "PENDING_GRANT" });
+        }
+    } catch (error) { next(error); }
+});
+
+// 응답 유실 복구용 조회. 결제창 복귀 쿼리(paymentKey 등)는 읽지 않는다 — 조회만으로 승인·지급을
+// 시작하지 않는다(CREATED 주문은 부작용이 없고, 복구는 이미 저장된 결제키로만 이어진다).
+router.get("/topup/orders/:orderId", verifyToken, requireSelf, async (req, res, next) => {
+    try {
+        const order = await topupService.getTopupOrder({ userId: req.user.uuid, orderId: req.params.orderId });
+        res.json(serializeTopupOrder(order));
     } catch (error) { next(error); }
 });
 

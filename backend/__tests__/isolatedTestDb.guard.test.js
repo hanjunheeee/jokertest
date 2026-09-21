@@ -158,6 +158,45 @@ test('존재하지 않는 관리 테이블은 drop을 시도하지 않는다', a
     assert.deepEqual(sequelize.dropCalls, ['users']);
 });
 
+// F-32a(AC-06): 기본 관리 목록은 0018의 두 테이블을 알고 있어야 한다 — 모르면 f32a 스위트가
+// 남긴 테이블을 다른 스위트가 "모르는 테이블"로 오판해 거부한다. 주문은 users를 참조하므로
+// users보다 먼저 드롭된다.
+test('F-32a: 기본 관리 목록은 상품·주문 테이블을 알고 있고 주문은 users보다 먼저 drop된다', async () => {
+    assert.ok(SCHEMA.managedTables.includes('economy_currency_products'));
+    assert.ok(SCHEMA.managedTables.includes('economy_topup_orders'));
+
+    const sequelize = makeStubSequelize({
+        connectedDatabaseName: APPROVED_DB_NAME,
+        existingTables: ['users', 'economy_topup_orders', 'economy_currency_products'],
+    });
+    await resetManagedSchema(sequelize, APPROVED_URL, SCHEMA);
+
+    assert.deepEqual([...sequelize.dropCalls].sort(), ['economy_currency_products', 'economy_topup_orders', 'users']);
+    assert.ok(
+        sequelize.dropCalls.indexOf('economy_topup_orders') < sequelize.dropCalls.indexOf('users'),
+        'economy_topup_orders는 users를 참조하므로 먼저 drop되어야 합니다',
+    );
+});
+
+test('F-32a: EMPTY_TABLES override를 주면 두 테이블은 관리 목록에 추가되지 않는다', () => {
+    const minimal = buildManagedSchema({
+        baseline: { TABLE_ORDER: ['users'] },
+        addRefreshTokenHistory: { TABLE_NAME: 'refresh_token_history' },
+        addSocialAuth: { TABLE_NAMES: {} },
+        addEconomy: { TABLE_NAMES: {} },
+        addEconomyPurchaseRequests: { TABLE_NAMES: {} },
+        addVoteParticipations: { TABLE_NAMES: {} },
+        addAchievementGrants: { TABLE_NAMES: {} },
+        addNotifications: { TABLE_NAMES: {} },
+        addF19FriendsInvites: { TABLE_NAMES: {} },
+        addCurrencyProductsTopupOrders: { TABLE_NAMES: {} },
+        migrationRunner: { META_TABLE: 'schema_migrations' },
+    });
+    assert.ok(!minimal.managedTables.includes('economy_topup_orders'));
+    assert.ok(!minimal.managedTables.includes('economy_currency_products'));
+    assert.ok(!minimal.dropOrder.includes('economy_topup_orders'));
+});
+
 // ── resetManagedData: 스키마를 두고 행만 비우는 경로도 같은 안전 확인을 먼저 지난다 ────
 //
 // F-19 검증 시간 보수로 추가된 경로다. 드롭보다 덜 파괴적으로 보이지만 "전용 테스트 DB의
@@ -208,6 +247,7 @@ const DATA_SCHEMA = buildManagedSchema({
     addAchievementGrants: EMPTY_TABLES,
     addNotifications: EMPTY_TABLES,
     addF19FriendsInvites: EMPTY_TABLES,
+    addCurrencyProductsTopupOrders: EMPTY_TABLES,
     migrationRunner: { META_TABLE: 'schema_migrations' },
 });
 

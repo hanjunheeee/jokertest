@@ -230,6 +230,10 @@ const NEW_MODELS = [
     // F-31a: 가입 이메일 인증 상태(0016-signup-email-verification 마이그레이션). users를
     // 참조하는 FK가 없는 독립 테이블이며 User 모델에 컬럼·관계를 추가하지 않는다.
     'SignupEmailVerification',
+    // F-32a: 재화 상품표와 다이아 충전 주문(0018-add-currency-products-topup-orders 마이그레이션).
+    // 주문만 users를 참조하는 자식 테이블이며 User 모델에 컬럼·관계를 추가하지 않는다.
+    // 상세 컬럼·인덱스 계약은 f32a.migration.test.js가 검사한다.
+    'EconomyCurrencyProduct', 'EconomyTopupOrder',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {
