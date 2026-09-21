@@ -28,10 +28,10 @@
 |---|---|---|---|
 | `POST /auth/find-id` | `{nickname, birthDate}`(YYYY-MM-DD) | 일치: `{ok:true, maskedEmail}` / 그 밖 전부(불일치·계정 없음·생년월일 미등록): **같은** `{ok:false, code:'NOT_FOUND'}` / 제한: 429 `RATE_LIMITED` / 형식 오류: 400 `INVALID_INPUT` | BW |
 | `POST /auth/password-reset/request` | `{email}` | 계정 유무·메일 장애와 무관하게 **같은** `{ok:true}` / 429 `RATE_LIMITED` / 400 `INVALID_INPUT` | BX |
-| `POST /auth/password-reset/verify` | `{token}` | `{ok:true, status:'VALID'}` 또는 `{ok:false, code:'INVALID'｜'EXPIRED'｜'USED'}` — **토큰을 소비하지 않는다** | BX |
+| **`GET /auth/password-reset/verify?token=…`** (정정 2026-09-21 — 병합된 F-29b 구현 기준) | 쿼리 `token` | `{ok:true, status:'VALID'}` 또는 `{ok:false, code:'INVALID'｜'EXPIRED'｜'USED'}` — **토큰을 소비하지 않는다**(몇 번을 불러도 토큰 행·비밀번호·세션 불변) | BX |
 | `POST /auth/password-reset/confirm` | `{token, newPassword}` | `{ok:true}` / `INVALID`·`EXPIRED`·`USED`·`INVALID_PASSWORD`·`SOCIAL_ONLY` | BX |
 
-- 링크를 여는 동작은 화면이 `verify`(POST)를 부르는 것이다 — GET으로 토큰을 받는 서버 경로를 만들지 않는다(메일 미리보기가 소비하지 못하게).
+- **정정(2026-09-21)**: 이 설계도의 첫 판은 verify를 POST·body로 적었으나 병합된 F-29b(`backend/routes/auth.routes.js:93`, `passwordReset.controller.js::verifyPasswordReset`)는 **GET·쿼리**로 구현했고 양쪽 심사와 전체 시험을 통과했다. **병합된 것을 계약으로 삼는다** — verify는 토큰을 소비하지 않으므로 메일 미리보기·링크 프리페치가 GET을 불러도 무해하고(요구사항의 '링크를 여는 GET만으로 사용 처리하지 않는다' 충족), 서버 요청 로그는 `backend/index.js`의 URL 마스킹이 `?token=`을 가린다(F-29b의 실제 index.js 로그 캡처 시험이 고정). 토큰을 **소비하는** 것은 `confirm`(POST·body)뿐이다. F-29c(CF)와 BM은 이 GET 계약을 그대로 쓰고 서버를 바꾸지 않는다.
 - 응답·로그에 전체 이메일, 사용자 UUID, 토큰 원문, 생년월일 원문을 넣지 않는다.
 - 소셜 전용 계정(판정은 §2-3a의 `users.has_local_password = false`): `request`는 같은 `{ok:true}`를 주되 메일은 '제공자 로그인 안내'를 보내고 토큰을 만들지 않는다. `confirm`에 그런 계정의 토큰이 올 수는 없지만 방어적으로 `SOCIAL_ONLY`.
 
@@ -111,7 +111,7 @@
 
 | 상태 | 사건 | 다음 상태 | 부작용 |
 |---|---|---|---|
-| `checking` | 마운트 | `checking` | `verifyPasswordResetApi` **정확히 1회**(StrictMode 이중 마운트에도 1회 — 소비하지 않는 호출이지만 빈도 제한을 아낀다) |
+| `checking` | 마운트 | `checking` | `verifyPasswordResetApi`(GET `/auth/password-reset/verify?token=`) **정확히 1회**(StrictMode 이중 마운트에도 1회 — 소비하지 않는 호출이지만 빈도 제한을 아낀다). 토큰은 `encodeURIComponent`로 실어 보낸다 |
 | `checking` | `VALID` | `ready` | 새 비밀번호·확인 입력 표시 |
 | `checking` | `INVALID`·`EXPIRED`·`USED` | `linkInvalid` | 각 사유 안내 + 다시 요청하기 링크 |
 | `checking` | 토큰 없음 | `linkInvalid` | 서버 호출 없음 |
