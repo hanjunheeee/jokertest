@@ -66,6 +66,16 @@
 - USER·TARGET이 같은 사람(자기 치료)은 한 번만 재생한다. USER 시점 영상을 TARGET에게 돌려쓰지 않는다(조사자가 드러날 수 있다).
 - 기존 `/video-direction/kill-animation.mp4`와 최종 사망 연출(`useInGameKillReveal`)은 그대로 둔다.
 
+### 2-6. 브라우저 공통 재생 — stacked MP4 + canvas 합성 (F-27d, 2026-09-22)
+F-27c의 웹 변환본(VP9 알파 WebM)은 Safari·iOS에서 알파가 나오지 않는다. 운영자가 같은 5개 영상을 **stacked-alpha MP4**(H.264 + AAC, 프레임의 위 절반 = 색, 아래 절반 = 알파 마스크)로도 변환해 저장소에 두었다(`c43d6c0d`): `frontend/public/video-direction/night-success-{kill-user,kill-target,heal,investigate-user,confirm-user}-stacked.mp4`.
+
+- 재생 경로는 **하나**다: 모든 브라우저가 stacked MP4를 쓴다(VP9 알파 지원 여부를 감지해 갈라 쓰지 않는다 — 감지가 믿을 만하지 않고 경로가 둘이면 시험도 둘이다). 선택표(§2-5)의 역할·관점 → 자산 대응은 그대로이고 **경로만** `-stacked.mp4`로 바뀐다. 기존 `.webm` 5개는 지우지 않지만 화면이 요청하지 않는다.
+- `<video>`는 화면에 보이지 않게 두고(소리와 시간축의 원천), 보이는 것은 `<canvas>`다. 매 프레임 video의 위 절반(색)과 아래 절반(마스크)을 합성해 canvas에 그린다 — canvas 크기는 video 가로 × (세로 ÷ 2). 합성 계산(색 픽셀 + 마스크 밝기 → 알파)은 DOM 없이 시험할 수 있는 순수 함수로 분리한다.
+- 프레임 루프는 `requestVideoFrameCallback`이 있으면 그것을, 없으면 `requestAnimationFrame`을 쓴다. 표시 수명이 끝나면(F-27c의 lifetime cleanup) 루프를 반드시 취소한다.
+- F-27c가 만든 것은 전부 그대로 둔다: 음량·음소거 적용(`applyMixToVideo`), 무음 latch, 자동재생 거부 재시도, 워치독, `settleOnce` 단일 종료 가드, COMPLETED·ERROR·SKIPPED 보고. 소리는 계속 video 요소에서 난다.
+- canvas 2D 컨텍스트를 얻지 못하거나 합성이 던지면 → `ERROR` 1회 보고(밤 진행을 막지 않는다).
+- 실제 Safari·iOS·Chrome에서의 합성 결과·성능은 자동 시험으로 확인할 수 없다 — 미검증으로 남기고 F-28에서 확인한다.
+
 ## 3. 조각별 담당
 
 | 조각 | 담당 | 하지 않는 것 |
@@ -74,6 +84,7 @@
 | **CE — F-27b (화면 연출)** | §2-4 전부: 소비 훅, `completeNightSuccess`의 `outcome` 인자, 순서·두 연출 뒤 생존 표시·보고 | 서버 코드. 비수신자 대기 화면. 효과음·무음 정책. 재접속·마지막 밤 통합 |
 | **BL — F-27 본 조각** | §2-3의 **화면 쪽**(`night_presentation_wait` 수신 → 비밀 정보 없는 대기 화면. 비수신자가 새로고침해도 대기 여부가 복원되게 기존 세션 스냅샷 응답에 `presentationWaiting: true｜false` 한 키를 싣는다 — 그 밖의 정보는 넣지 않는다) · 재접속(F-26 BK의 복원)·중복 이벤트·마지막 밤에서 연출이 잘리거나 멈추지 않는 통합 흐름 · 같은 밤 사건을 다음 낮에 다시 재생하지 않음 · **이 조각은 새 소리를 추가하지 않는다**(F-16 무음 정책 그대로) · F-27 통합 시험(임시 연출 기준) | BZ·CE가 만든 계약의 재설계. **영상 자산 변환·연결·내장음·개인 성공 효과음(F-27c)** |
 | **F-27c — 역할 영상 연결 (F-28 직전에 추가)** | 수령한 MOV 5개의 웹용 변환본 연결(변환은 운영자가 ffmpeg로 미리 해서 저장소에 둔다 — 구현 AI는 변환하지 않는다) · 역할·USER/TARGET 관점별 자산 선택(§2-5의 확정표 그대로) · 내장 사운드 사용: Master×SFX와 음소거 설정 적용, **같은 사건에 내장음과 별도 성공 효과음을 중복 재생하지 않는다**, 별도 BGM·다른 출처 소리는 기존 무음 정책 유지 · `sfxManifest.js::SFX_MANIFEST`의 전용 kind 등록 · 자동재생 제한·오디오 오류가 밤 진행을 영구 대기로 만들지 않음(F-27b의 ERROR·SKIPPED 보고에 기댄다) · `SFX-DEFER-27`(`docs/requirements/2026-09-12-sfx-scope-split.md`)의 담당을 BL에서 이 조각으로 옮긴다 | 서버 계약. 연출 순서·보고(F-27b) |
+| **F-27d — 브라우저 공통 재생 (F-28 직전에 추가)** | §2-6 전부: 선택표 경로를 stacked MP4로 교체 · 숨긴 video + canvas 합성 · 프레임 루프와 정리 · canvas 실패 → ERROR | 서버 계약. F-27c의 소리·재시도·보고 규칙 재설계. 영상 변환·재인코딩. 기존 `.webm` 삭제 |
 
 ## 4. 시험으로 고정할 것 (조각의 성공 조건이 가리키는 증명 방식)
 
