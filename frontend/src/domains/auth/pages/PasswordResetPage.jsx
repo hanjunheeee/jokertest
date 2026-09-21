@@ -197,7 +197,11 @@ export function PasswordResetRequestPage() {
   )
 }
 
-const LINK_INVALID_MESSAGE = "링크가 만료되었거나 이미 사용되었어요. 다시 요청해주세요."
+// AC-03: EXPIRED·USED·INVALID는 원인이 다르므로 안내 문구도 사유별로 나눕니다 — 세 상태를
+// 하나의 문구로 합치면 사용자가 "왜" 다시 요청해야 하는지 알 수 없습니다.
+const LINK_EXPIRED_MESSAGE = "링크가 만료됐어요. 비밀번호 재설정을 다시 요청해주세요."
+const LINK_USED_MESSAGE = "이미 사용된 링크예요. 비밀번호가 이미 재설정되었다면 새 비밀번호로 로그인해주세요."
+const LINK_INVALID_MESSAGE = "유효하지 않은 링크예요. 이메일에 있는 링크 주소를 다시 확인해주세요."
 const VERIFY_FAILED_MESSAGE = "서버와 통신할 수 없습니다. 다시 확인해주세요."
 const CONFIRM_RETRY_MESSAGE = "서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요."
 const DONE_MESSAGE = "비밀번호가 재설정되었어요. 새 비밀번호로 다시 로그인해주세요."
@@ -212,6 +216,9 @@ export function PasswordResetPage() {
 
   // verifying | ready | linkInvalid | verifyFailed | submitting | done | socialOnly
   const [status, setStatus] = useState(token ? "verifying" : "linkInvalid")
+  // linkInvalid 화면에서 어떤 문구를 보여줄지 결정합니다: EXPIRED | USED | INVALID.
+  // 토큰이 아예 없는 링크는 형식부터 잘못된 것이므로 INVALID로 취급합니다.
+  const [linkInvalidReason, setLinkInvalidReason] = useState(token ? "" : "INVALID")
   const [password, setPassword] = useState("")
   const [passwordConfirm, setPasswordConfirm] = useState("")
   const [formError, setFormError] = useState("")
@@ -241,11 +248,13 @@ export function PasswordResetPage() {
     setPassword("")
     setPasswordConfirm("")
     setFormError("")
+    setLinkInvalidReason(token ? "" : "INVALID")
     submittingRef.current = false
   }, [token])
 
   useEffect(() => {
     if (!token) {
+      setLinkInvalidReason("INVALID")
       setStatus("linkInvalid")
       return
     }
@@ -262,10 +271,17 @@ export function PasswordResetPage() {
     promise
       .then((result) => {
         if (cancelled || unmountedRef.current) return
-        if (result?.ok && result.status === "VALID") {
+        if (result?.ok === true && result.status === "VALID") {
           setStatus("ready")
-        } else {
+        } else if (result?.ok === false && (result.code === "EXPIRED" || result.code === "USED" || result.code === "INVALID")) {
+          setLinkInvalidReason(result.code)
           setStatus("linkInvalid")
+        } else {
+          // 예상 밖 본문(ok도 code도 알아볼 수 없는 형태)은 무효로 단정하지 않고 통신
+          // 실패와 같은 재시도 가능한 상태로 처리합니다 — 캐시도 지워 "다시 확인"이 새
+          // 요청을 만들게 합니다.
+          verifyPromiseCacheRef.current.delete(token)
+          setStatus("verifyFailed")
         }
       })
       .catch(() => {
@@ -292,12 +308,20 @@ export function PasswordResetPage() {
     const submittedToken = token
 
     confirmPasswordResetApi({ token: submittedToken, newPassword: password })
-      .then(() => {
+      .then((result) => {
         submittingRef.current = false
         if (unmountedRef.current || tokenRef.current !== submittedToken) return
-        setPassword("")
-        setPasswordConfirm("")
-        setStatus("done")
+
+        if (result?.ok === true) {
+          setPassword("")
+          setPasswordConfirm("")
+          setStatus("done")
+        } else {
+          // 예상 밖 성공 본문(ok:true가 아닌 형태)은 완료로 처리하지 않습니다 — 입력을
+          // 보존한 채 ready로 돌아가 재시도 가능한 안내를 보여줍니다.
+          setFormError(CONFIRM_RETRY_MESSAGE)
+          setStatus("ready")
+        }
       })
       .catch((error) => {
         submittingRef.current = false
@@ -309,6 +333,7 @@ export function PasswordResetPage() {
           setFormError(error.message || "비밀번호 조건을 다시 확인해주세요.")
           setStatus("ready")
         } else if (error?.code === "INVALID" || error?.code === "EXPIRED" || error?.code === "USED") {
+          setLinkInvalidReason(error.code)
           setStatus("linkInvalid")
         } else {
           // 통신 실패·429 모두 입력을 보존한 채 ready로 남아 수동 재시도를 안내합니다.
@@ -367,11 +392,15 @@ export function PasswordResetPage() {
   }
 
   if (status === "linkInvalid") {
+    const linkInvalidMessage =
+      linkInvalidReason === "EXPIRED" ? LINK_EXPIRED_MESSAGE
+      : linkInvalidReason === "USED" ? LINK_USED_MESSAGE
+      : LINK_INVALID_MESSAGE
     return (
       <AuthScene onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <p role="alert" className="rounded bg-red-500/20 px-3 py-2 text-xs text-red-200">
-            {LINK_INVALID_MESSAGE}
+            {linkInvalidMessage}
           </p>
           <button type="button" onClick={() => navigate("/password-reset/request")} className="auth-text-link">다시 요청하기</button>
         </div>

@@ -320,20 +320,52 @@ test("AC-03: VALID 토큰은 ready 화면(새 비밀번호 입력)을 보여주�
   assert.equal(fetchCalls[0].url, `/auth/password-reset/verify?token=${encodeURIComponent(VALID_TOKEN)}`)
 })
 
+// AC-03(재검토 대응): EXPIRED·USED·INVALID는 화면 상태는 같은 linkInvalid여도 사유별로
+// 다른 안내 문구를 보여줘야 한다 — 세 안내 문구가 서로 달라야 하고, 그중 어떤 것도 다른
+// 코드에 잘못 표시되면 안 된다.
+const LINK_INVALID_MESSAGE_BY_CODE = {
+  EXPIRED: "링크가 만료됐어요",
+  USED: "이미 사용된 링크예요",
+  INVALID: "유효하지 않은 링크예요",
+}
+
 for (const code of ["EXPIRED", "USED", "INVALID"]) {
-  test(`AC-03: 검증 응답 ${code}는 링크 무효 화면을 보여주고 confirm은 호출하지 않는다`, async () => {
+  test(`AC-03: 검증 응답 ${code}는 사유에 맞는 안내를 보여주고 confirm은 호출하지 않는다`, async () => {
     fetchHandler = async () => jsonResponse(200, { ok: false, code })
     const view = await mountResetPageStrict(VALID_TOKEN)
-    await waitFor(() => assert.ok(view.container.textContent.includes("링크가 만료되었거나 이미 사용되었어요")))
+    await waitFor(() => assert.ok(view.container.textContent.includes(LINK_INVALID_MESSAGE_BY_CODE[code])))
+
+    for (const [otherCode, otherMessage] of Object.entries(LINK_INVALID_MESSAGE_BY_CODE)) {
+      if (otherCode === code) continue
+      assert.equal(view.container.textContent.includes(otherMessage), false, `${code} 화면에 ${otherCode}의 문구가 섞이면 안 됩니다`)
+    }
+
     assert.equal(fetchCalls.length, 1)
     assert.equal(view.container.querySelector('input[name="password"]'), null)
   })
 }
 
-test("AC-03: 토큰이 없는 링크는 호출 없이 무효 화면을 보여준다", async () => {
+test("AC-03: 토큰이 없는 링크는 호출 없이 무효 화면(INVALID 사유)을 보여준다", async () => {
   const view = await mountResetPageStrict(undefined)
-  await waitFor(() => assert.ok(view.container.textContent.includes("링크가 만료되었거나 이미 사용되었어요")))
+  await waitFor(() => assert.ok(view.container.textContent.includes(LINK_INVALID_MESSAGE_BY_CODE.INVALID)))
   assert.equal(fetchCalls.length, 0)
+})
+
+test("AC-03: 검증 응답 본문이 예상 밖 형태(ok도 code도 알아볼 수 없음)면 무효로 단정하지 않고 재시도 가능한 통신 실패로 처리한다", async () => {
+  fetchHandler = async () => jsonResponse(200, { unexpected: "shape" })
+  const view = await mountResetPageStrict(VALID_TOKEN)
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  assert.ok(view.getByText("다시 확인"), "통신 오류와 같은 재검증 버튼을 제공해야 합니다")
+  for (const message of Object.values(LINK_INVALID_MESSAGE_BY_CODE)) {
+    assert.equal(view.container.textContent.includes(message), false, "예상 밖 본문을 무효 링크로 단정하면 안 됩니다")
+  }
+  assert.equal(fetchCalls.length, 1)
+
+  fetchHandler = async () => jsonResponse(200, { ok: true, status: "VALID" })
+  await act(async () => { fireEvent.click(view.getByText("다시 확인")) })
+  await waitFor(() => assert.ok(view.container.querySelector('input[name="password"]')))
+  assert.equal(fetchCalls.length, 2)
 })
 
 test("AC-03: 토큰에 특수문자가 있으면 encodeURIComponent로 인코딩해 전달한다", async () => {
@@ -400,11 +432,11 @@ test("AC-03: 토큰이 바뀌면 이전 토큰의 늦은 verify 응답이 새 �
 
   await waitFor(() => assert.equal(fetchCalls.length, 1))
   await act(async () => { fireEvent.click(view.getByText("SWITCH_TOKEN")) })
-  await waitFor(() => assert.ok(view.container.textContent.includes("링크가 만료되었거나 이미 사용되었어요")))
+  await waitFor(() => assert.ok(view.container.textContent.includes("링크가 만료됐어요")))
 
   await act(async () => { resolveA(jsonResponse(200, { ok: true, status: "VALID" })) })
   assert.ok(
-    view.container.textContent.includes("링크가 만료되었거나 이미 사용되었어요"),
+    view.container.textContent.includes("링크가 만료됐어요"),
     "A의 늦은 응답이 B 화면(무효)을 덮어쓰면 안 됩니다",
   )
   assert.equal(view.container.querySelector('input[name="password"]'), null)
@@ -549,13 +581,25 @@ test("AC-05: 서버가 INVALID_PASSWORD를 반환하면 ready로 남아 안내�
   assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh")
 })
 
-test("AC-05: confirm이 토큰 오류(EXPIRED)를 반환하면 링크 무효 화면으로 전이한다", async () => {
+test("AC-05: confirm이 토큰 오류(EXPIRED)를 반환하면 사유에 맞는 링크 무효 화면으로 전이한다", async () => {
   const view = await mountReadyResetPage()
   fetchHandler = async () => jsonResponse(400, { ok: false, code: "EXPIRED" })
   fillPasswords(view, "abcdefgh", "abcdefgh")
   await act(async () => { submitForm(view) })
 
-  await waitFor(() => assert.ok(view.container.textContent.includes("링크가 만료되었거나 이미 사용되었어요")))
+  await waitFor(() => assert.ok(view.container.textContent.includes("링크가 만료됐어요")))
+})
+
+test("AC-05: confirm 응답이 200이지만 ok:true가 아니면 완료로 처리하지 않고 ready에서 재시도 안내를 보여준다", async () => {
+  const view = await mountReadyResetPage()
+  fetchHandler = async () => jsonResponse(200, { unexpected: "shape" })
+  fillPasswords(view, "abcdefgh", "abcdefgh")
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  assert.equal(view.container.textContent.includes("비밀번호가 재설정되었어요"), false, "예상 밖 본문을 완료로 처리하면 안 됩니다")
+  assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh", "입력은 보존되어야 합니다")
+  assert.ok(view.container.querySelector('button[type="submit"]'), "ready로 돌아와 다시 제출할 수 있어야 합니다")
 })
 
 test("AC-05: confirm 통신 실패·429는 입력을 보존한 채 ready에서 재시도 안내를 보여준다", async () => {
