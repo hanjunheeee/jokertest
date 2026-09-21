@@ -26,39 +26,67 @@ const { prepareSignupProof } = require("../tests/helpers/signupProof");
 // economy 지급 로직 자체(그건 economy.service.test.js·f08-economy.integration.test.js가
 // 검증한다) 검증이 아니라, "createUser/createUserStats처럼 economy 지급도 같은 트랜잭션
 // 경계 안에 있는지"만 확인하는 것이라 최소한으로만 흉내 낸다.
+// F-31a(AC-04 재검토): 이전 버전은 이 네 모델이 create() 즉시 영구 저장소에 기록해,
+// signup() 트랜잭션이 중간에 실패해도(예: 17개 소유권 중 16번째에서 실패) 그 이전에
+// "성공"한 지갑·소유권·원장·장착이 그대로 남았다 — 실제 Sequelize라면 트랜잭션 롤백으로
+// 함께 사라질 데이터가 가짜 DB에서는 사라지지 않아, "지급 실패가 부분 지급을 남기지
+// 않는다"를 이 스위트가 검증하지 못했다. users/user_stats(setupFakeDb의 committed/staged)
+// 와 signup_email_verifications(createSignupEmailVerificationFake)처럼 committed vs staged
+// 를 나눠, beginStage/commitStage/discardStage를 트랜잭션 성공·실패에 맞춰 호출해야만
+// 커밋된 값으로 반영된다.
 const createEconomyFakes = () => {
-    const wallets = new Map();
-    const entitlements = [];
-    const loadouts = new Map();
-    const ledgerEntries = [];
+    const committedWallets = new Map();
+    const committedEntitlements = [];
+    const committedLoadouts = new Map();
+    const committedLedgerEntries = [];
     let nextLedgerId = 1;
+    let staged = null;
+
+    const beginStage = () => {
+        staged = { wallets: new Map(), entitlements: [], loadouts: new Map(), ledgerEntries: [] };
+    };
+    const commitStage = () => {
+        if (!staged) return;
+        for (const [key, value] of staged.wallets) committedWallets.set(key, value);
+        committedEntitlements.push(...staged.entitlements);
+        for (const [key, value] of staged.loadouts) committedLoadouts.set(key, value);
+        committedLedgerEntries.push(...staged.ledgerEntries);
+        staged = null;
+    };
+    const discardStage = () => { staged = null; };
 
     const EconomyWallet = {
         async create({ user_id, balance_gold, balance_diamond }) {
+            assert.ok(staged, "EconomyWallet.create가 트랜잭션 스테이징 밖에서 호출되었습니다");
             const record = {
                 user_id, balance_gold, balance_diamond,
                 async update(patch) { Object.assign(record, patch); },
             };
-            wallets.set(user_id, record);
+            staged.wallets.set(user_id, record);
             return record;
         },
-        async findOne({ where }) { return wallets.get(where.user_id) ?? null; },
+        async findOne({ where }) {
+            return (staged && staged.wallets.get(where.user_id)) ?? committedWallets.get(where.user_id) ?? null;
+        },
     };
 
     const EconomyEntitlement = {
         async create({ user_id, item_id, item_type, source }) {
+            assert.ok(staged, "EconomyEntitlement.create가 트랜잭션 스테이징 밖에서 호출되었습니다");
             const record = { user_id, item_id, item_type, source };
-            entitlements.push(record);
+            staged.entitlements.push(record);
             return record;
         },
         async findOne({ where }) {
-            return entitlements.find((e) => e.user_id === where.user_id && e.item_id === where.item_id) ?? null;
+            const pool = [...(staged ? staged.entitlements : []), ...committedEntitlements];
+            return pool.find((e) => e.user_id === where.user_id && e.item_id === where.item_id) ?? null;
         },
     };
 
     const EconomyLoadout = {
         async findOrCreate({ where, defaults }) {
-            let stored = loadouts.get(where.user_id);
+            assert.ok(staged, "EconomyLoadout.findOrCreate가 트랜잭션 스테이징 밖에서 호출되었습니다");
+            let stored = staged.loadouts.get(where.user_id) ?? committedLoadouts.get(where.user_id);
             if (stored) return [stored, false];
             stored = {
                 user_id: where.user_id,
@@ -67,35 +95,44 @@ const createEconomyFakes = () => {
                 selected_card_frame_id: null,
                 ...defaults,
             };
-            loadouts.set(where.user_id, stored);
+            staged.loadouts.set(where.user_id, stored);
             return [stored, true];
         },
-        async findOne({ where }) { return loadouts.get(where.user_id) ?? null; },
+        async findOne({ where }) {
+            return (staged && staged.loadouts.get(where.user_id)) ?? committedLoadouts.get(where.user_id) ?? null;
+        },
         async update(patch, { where }) {
-            const stored = loadouts.get(where.user_id);
+            const stored = (staged && staged.loadouts.get(where.user_id)) ?? committedLoadouts.get(where.user_id);
             if (!stored) return [0];
             const matches = Object.entries(where).every(([key, expected]) => stored[key] === expected);
             if (!matches) return [0];
             Object.assign(stored, patch);
+            if (staged && !staged.loadouts.has(where.user_id)) staged.loadouts.set(where.user_id, stored);
             return [1];
         },
     };
 
     const EconomyLedgerEntry = {
         async create(fields) {
+            assert.ok(staged, "EconomyLedgerEntry.create가 트랜잭션 스테이징 밖에서 호출되었습니다");
             const record = { id: nextLedgerId++, ...fields };
-            ledgerEntries.push(record);
+            staged.ledgerEntries.push(record);
             return record;
         },
         async findOne({ where }) {
             if (!where.reference_event_id) return null;
-            return ledgerEntries.find((e) => e.user_id === where.user_id && e.reference_event_id === where.reference_event_id) ?? null;
+            const pool = [...(staged ? staged.ledgerEntries : []), ...committedLedgerEntries];
+            return pool.find((e) => e.user_id === where.user_id && e.reference_event_id === where.reference_event_id) ?? null;
         },
     };
 
     return {
         EconomyWallet, EconomyEntitlement, EconomyLoadout, EconomyLedgerEntry,
-        _inspect: { entitlements, loadouts },
+        beginStage, commitStage, discardStage,
+        _inspect: {
+            entitlements: committedEntitlements, loadouts: committedLoadouts,
+            wallets: committedWallets, ledgerEntries: committedLedgerEntries,
+        },
     };
 };
 
@@ -195,24 +232,35 @@ const setupFakeDb = (t, { statsCreateFails = false } = {}) => {
     const signupVerificationFake = createSignupEmailVerificationFake();
     db.SignupEmailVerification = signupVerificationFake.SignupEmailVerification;
 
+    const economyFakes = createEconomyFakes();
+    db.sequelize.models.EconomyWallet = economyFakes.EconomyWallet;
+    db.sequelize.models.EconomyEntitlement = economyFakes.EconomyEntitlement;
+    db.sequelize.models.EconomyLoadout = economyFakes.EconomyLoadout;
+    db.EconomyLedgerEntry = economyFakes.EconomyLedgerEntry;
+
     // F-31a(임시 복원): transaction 가짜가 options·work 두 인자 형태(db.sequelize.transaction
     // (options, work))도 받도록 확장한다 — signupEmailVerification.service.js가 아니라도
     // 향후 어떤 호출부가 옵션을 넘기든 이 가짜가 깨지지 않게 한다. work가 던지면 이번
-    // 트랜잭션에서 만든 signup_email_verifications 스테이징도 함께 버린다(discardStage).
+    // 트랜잭션에서 만든 signup_email_verifications·경제(지갑·소유권·원장·장착) 스테이징도
+    // 함께 버린다(discardStage) — AC-04 재검토: 경제 데이터도 user/user_stats와 똑같이
+    // 트랜잭션 경계 밖에서는 살아남지 않아야 한다.
     db.sequelize.transaction = async (optionsOrWork, maybeWork) => {
         const work = typeof optionsOrWork === "function" ? optionsOrWork : maybeWork;
         const tx = { id: "tx-1", LOCK: { UPDATE: "UPDATE" } };
         staged = { users: [], user_stats: [] };
         signupVerificationFake.beginStage();
+        economyFakes.beginStage();
 
         try {
             const result = await work(tx);
             committed.users.push(...staged.users);
             committed.user_stats.push(...staged.user_stats);
             signupVerificationFake.commitStage();
+            economyFakes.commitStage();
             return result;
         } catch (error) {
             signupVerificationFake.discardStage();
+            economyFakes.discardStage();
             throw error;
         } finally {
             staged = null;
@@ -243,12 +291,6 @@ const setupFakeDb = (t, { statsCreateFails = false } = {}) => {
             return data;
         },
     };
-
-    const economyFakes = createEconomyFakes();
-    db.sequelize.models.EconomyWallet = economyFakes.EconomyWallet;
-    db.sequelize.models.EconomyEntitlement = economyFakes.EconomyEntitlement;
-    db.sequelize.models.EconomyLoadout = economyFakes.EconomyLoadout;
-    db.EconomyLedgerEntry = economyFakes.EconomyLedgerEntry;
 
     t.after(() => {
         db.sequelize.transaction = original.transaction;
@@ -331,6 +373,42 @@ test("정상 가입이면 user와 user_stats가 같은 트랜잭션으로 함께
     const loadout = economyInspect.loadouts.get("uuid-1");
     assert.equal(loadout.selected_profile_photo_id, "player-profile-금빛가면", "가입 직후 기본 선택은 금빛가면이어야 한다");
     assert.equal(loadout.selected_profile_border_id, "profile-border-평민");
+});
+
+// F-31a(AC-04 재검토): f31a-signup-email-verification.integration.test.js의 같은 이름
+// 시험(실제 DB)이 16번째 소유권 생성에서 지급을 실패시켜 롤백을 확인하는 것과 같은
+// 시나리오를, 이 파일의 가짜 DB로도 검증한다 — economyFakes가 이제 committed/staged를
+// 나누므로, 실패 이전에 "성공"한 지갑·소유권(1~15번째)·원장·장착까지 전부 커밋되지 않고
+// 계정·통계와 함께 사라지는지 확인할 수 있다.
+test("경제 지급이 중간에 실패하면 그 이전에 성공한 지갑·소유권·원장·장착도 계정·통계와 함께 롤백된다", async (t) => {
+    const { committed, economyInspect } = setupFakeDb(t);
+    const { signupProof } = await prepareSignupProof(SIGNUP_INPUT.email);
+
+    const entitlementModel = db.sequelize.models.EconomyEntitlement;
+    const originalCreate = entitlementModel.create;
+    let createCount = 0;
+    entitlementModel.create = async (...args) => {
+        createCount += 1;
+        if (createCount === 16) throw new Error("시뮬레이션된 지급 실패");
+        return originalCreate.apply(entitlementModel, args);
+    };
+    t.after(() => { entitlementModel.create = originalCreate; });
+
+    await assert.rejects(
+        authService.signup({ ...SIGNUP_INPUT, signupProof }),
+        /시뮬레이션된 지급 실패/,
+    );
+
+    assert.deepEqual(committed.users, [], "지급 실패는 계정 생성도 롤백해야 합니다");
+    assert.deepEqual(committed.user_stats, [], "지급 실패는 통계 생성도 롤백해야 합니다");
+    assert.equal(economyInspect.wallets.size, 0, "지급 실패 이전에 만든 지갑도 커밋되면 안 됩니다");
+    assert.equal(economyInspect.entitlements.length, 0, "실패 이전에 성공한 15개 소유권도 커밋되면 안 됩니다");
+    assert.equal(economyInspect.ledgerEntries.length, 0, "실패 이전에 성공한 원장도 커밋되면 안 됩니다");
+    assert.equal(economyInspect.loadouts.size, 0, "기본 장착도 커밋되면 안 됩니다");
+
+    const row = await db.SignupEmailVerification.findOne({ where: { email: SIGNUP_INPUT.email, purpose: "SIGNUP" } });
+    assert.ok(row);
+    assert.equal(row.proof_consumed_at, null, "지급 실패도 증명 소비를 커밋하면 안 됩니다");
 });
 
 test("가입 증명 없이 호출하면 SIGNUP_PROOF_REQUIRED로 거부되고 트랜잭션도 열리지 않는다", async (t) => {

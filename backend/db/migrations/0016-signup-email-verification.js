@@ -21,6 +21,42 @@ const REQUIRED_COLUMNS = [
     'proof_hash', 'proof_expires_at', 'proof_consumed_at',
 ];
 
+/**
+ * 컬럼별로 verify가 반드시 확인하는 계약(0012-add-notifications.js의 COLUMN_CONTRACTS와
+ * 같은 원칙). type은 MySQL describeTable()의 원시 타입 문자열에 대한 관대한 정규식이다 —
+ * 표시 폭(예: int(11) vs int)까지는 강제하지 않되, INTEGER/VARCHAR(n)/DATETIME처럼
+ * 근본적으로 다른 컬럼으로 바뀌는 것은 잡아낸다. code_hash/proof_hash가 nullable이 아니게
+ * 바뀌면 "원문 대신 해시만 저장한다"는 전제와 무관하게 매 요청마다 값이 강제되어 버리고,
+ * email/purpose가 nullable이면 유일 인덱스가 있어도 행 식별이 흔들린다.
+ */
+const COLUMN_CONTRACTS = Object.freeze({
+    id: { allowNull: false, primaryKey: true, type: /^int/i },
+    email: { allowNull: false, type: /^varchar\(100\)$/i },
+    purpose: { allowNull: false, type: /^varchar\(20\)$/i },
+    generation: { allowNull: false, type: /^int/i },
+    code_hash: { allowNull: true, type: /^varchar\(64\)$/i },
+    code_expires_at: { allowNull: true, type: /^datetime/i },
+    attempts: { allowNull: false, type: /^int/i },
+    code_consumed_at: { allowNull: true, type: /^datetime/i },
+    sent_at: { allowNull: true, type: /^datetime/i },
+    proof_hash: { allowNull: true, type: /^varchar\(64\)$/i },
+    proof_expires_at: { allowNull: true, type: /^datetime/i },
+    proof_consumed_at: { allowNull: true, type: /^datetime/i },
+});
+
+/** 인덱스 이름별로 정확히 어떤 컬럼을 어느 순서로 덮어야 하는지(0012와 같은 원칙) —
+ *  이름과 unique만 보면 UNIQUE(id)에 같은 이름만 붙인 스키마도 통과해버린다. */
+const EXPECTED_INDEXES = Object.freeze({
+    [EMAIL_PURPOSE_UNIQUE_INDEX]: { unique: true, fields: ['email', 'purpose'] },
+    [PROOF_HASH_UNIQUE_INDEX]: { unique: true, fields: ['proof_hash'] },
+});
+
+/** showIndex() 결과의 필드 이름만 뽑는다(MySQL은 [{attribute,...}], 인메모리 시험 대역은
+ *  문자열 배열을 줄 수 있어 양쪽을 모두 받는다 — 0012-add-notifications.js와 동일). */
+const indexFieldNames = (index) => (Array.isArray(index?.fields) ? index.fields : []).map((field) => (
+    typeof field === 'string' ? field : (field?.attribute ?? field?.name ?? '')
+));
+
 module.exports = {
     name: '0016-signup-email-verification',
 
@@ -69,27 +105,50 @@ module.exports = {
         if (missing.length > 0) {
             throw new Error(`${TABLE_NAME}에 누락된 컬럼: [${missing.join(', ')}]`);
         }
-        if (table.email.allowNull !== false) {
-            throw new Error(`${TABLE_NAME}.email이 NOT NULL이 아닙니다.`);
-        }
-        if (table.purpose.allowNull !== false) {
-            throw new Error(`${TABLE_NAME}.purpose가 NOT NULL이 아닙니다.`);
-        }
-        if (table.code_hash.allowNull !== true) {
-            throw new Error(`${TABLE_NAME}.code_hash가 nullable이 아닙니다.`);
-        }
-        if (table.proof_hash.allowNull !== true) {
-            throw new Error(`${TABLE_NAME}.proof_hash가 nullable이 아닙니다.`);
+
+        for (const [column, contract] of Object.entries(COLUMN_CONTRACTS)) {
+            const actual = table[column];
+            // describeTable이 allowNull/type을 주지 않는 방언에서는 그 항목을 판정하지
+            // 않는다(없는 정보를 불일치로 단정하지 않는다) — 0012-add-notifications.js와 동일.
+            if (actual.allowNull !== undefined && actual.allowNull !== contract.allowNull) {
+                throw new Error(
+                    `${TABLE_NAME}.${column}의 NULL 허용이 계약과 다릅니다: ` +
+                    `기대 allowNull=${contract.allowNull}, 실제 allowNull=${actual.allowNull}`,
+                );
+            }
+            if (contract.primaryKey === true && actual.primaryKey !== undefined && actual.primaryKey !== true) {
+                throw new Error(`${TABLE_NAME}.${column} 컬럼이 기본 키가 아닙니다.`);
+            }
+            if (contract.type && actual.type !== undefined && !contract.type.test(String(actual.type))) {
+                throw new Error(
+                    `${TABLE_NAME}.${column}의 타입이 계약과 다릅니다: ` +
+                    `기대 패턴 ${contract.type}, 실제 ${actual.type}`,
+                );
+            }
         }
 
         const indexes = await queryInterface.showIndex(TABLE_NAME);
-        const emailPurposeIndex = indexes.find((index) => index.name === EMAIL_PURPOSE_UNIQUE_INDEX);
-        if (!emailPurposeIndex || emailPurposeIndex.unique !== true) {
-            throw new Error(`${EMAIL_PURPOSE_UNIQUE_INDEX} 유일 인덱스가 없습니다.`);
-        }
-        const proofHashIndex = indexes.find((index) => index.name === PROOF_HASH_UNIQUE_INDEX);
-        if (!proofHashIndex || proofHashIndex.unique !== true) {
-            throw new Error(`${PROOF_HASH_UNIQUE_INDEX} 유일 인덱스가 없습니다.`);
+        for (const [name, expected] of Object.entries(EXPECTED_INDEXES)) {
+            const index = indexes.find((candidate) => candidate.name === name);
+            if (!index) {
+                throw new Error(`${TABLE_NAME} 적용 후에도 ${name} 인덱스가 없습니다.`);
+            }
+            // 이름이 같아도 덮는 컬럼이 다르면(예: 같은 이름의 UNIQUE(id)) 유일성 계약이
+            // 지켜지지 않는다 — 순서까지 정확히 대조한다.
+            const actualFields = indexFieldNames(index);
+            if (actualFields.join(',') !== expected.fields.join(',')) {
+                throw new Error(
+                    `${TABLE_NAME}의 ${name} 인덱스가 기대한 컬럼을 덮지 않습니다: ` +
+                    `기대 [${expected.fields.join(', ')}], 실제 [${actualFields.join(', ')}]`,
+                );
+            }
+            const isUnique = index.unique === true;
+            if (isUnique !== expected.unique) {
+                throw new Error(
+                    `${TABLE_NAME}의 ${name} 인덱스 unique 여부가 계약과 다릅니다: ` +
+                    `기대 ${expected.unique}, 실제 ${isUnique}`,
+                );
+            }
         }
     },
 
@@ -97,4 +156,7 @@ module.exports = {
     TABLE_NAMES,
     EMAIL_PURPOSE_UNIQUE_INDEX,
     PROOF_HASH_UNIQUE_INDEX,
+    REQUIRED_COLUMNS,
+    COLUMN_CONTRACTS,
+    EXPECTED_INDEXES,
 };

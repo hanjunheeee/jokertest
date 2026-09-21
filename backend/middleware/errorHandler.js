@@ -22,17 +22,28 @@ exports.globalErrorHandler = (err, req, res, next) => {
         return res.status(status).json({ ok: false, code });
     }
 
-    // F-31a(AC-06): 가입 이메일 인증(발송·확인) 경로의 예기치 못한 오류는 원본 메시지·
-    // 스택을 절대 노출하지 않는다. 알려진 실패(코드 오류·시도 초과·재발송 대기)는
-    // 컨트롤러가 이미 고정된 형태로 응답하므로, 여기 도달하는 것은 잘못된 JSON 본문이나
-    // 예상 밖 예외뿐이다. 기존 POST /auth/signup(계정 생성 자체)의 응답 형태는 이 범위에
-    // 포함하지 않는다 — SIGNUP_PROOF_REQUIRED/SIGNUP_PROOF_INVALID/중복 이메일·닉네임 모두
-    // 원문을 담지 않는 고정 메시지이며, 아래 일반 처리기가 그대로 응답해도 원문 노출 문제가
-    // 없다.
-    const signupCodeRequestPath = String(req.originalUrl || req.url || '')
+    // F-31a(AC-06 재검토): 가입 범위 세 경로(POST /auth/signup·/auth/signup/email-code·
+    // /auth/signup/email-code/verify — 쿼리·후행 슬래시·대소문자 변형 포함) 전부에서 원본
+    // 메시지·스택·요청 본문이 로그·응답 어디에도 남지 않아야 한다. 이전 회차는
+    // /auth/signup/email-code만 이 보호에 포함시켰다 — POST /auth/signup 자체의 JSON 파서
+    // 오류(express.json()이 body-parser로 던지는 SyntaxError에는 원본 요청 본문 전체가
+    // err.body에 실려 있다)나 예상 밖 예외는 아래 일반 처리기로 흘러 console.error(err.stack)로
+    // 로그에 남을 수 있었다.
+    //
+    // SIGNUP_PROOF_REQUIRED/SIGNUP_PROOF_INVALID(auth.service.js가 던지는 유일한 code
+    // 있는 오류)는 이미 원문을 담지 않는 고정 한국어 메시지이므로 그 code·status(401)를
+    // 그대로 응답한다 — AC-01/AC-03/AC-04 계약이 이 두 code·status를 구분해서 쓴다. 그 외
+    // (가입 필드 검증 실패·중복 이메일/닉네임·notFoundHandler의 404·JSON 파서 오류 등 code가
+    // 없는 모든 오류)는 status만으로 INVALID_INPUT(400)/SERVER_ERROR(그 외)로 수렴시키고,
+    // err.message·err.stack·err.body 어느 것도 로그·응답에 담지 않는다.
+    const signupScopedPath = String(req.originalUrl || req.url || '')
         .split('?')[0].replace(/\/+$/, '').toLowerCase();
-    if (signupCodeRequestPath.startsWith('/auth/signup/email-code')) {
+    if (signupScopedPath.startsWith('/auth/signup')) {
         res.set('Cache-Control', 'no-store');
+        if (typeof err.code === 'string' && err.code) {
+            const statusCode = err.status || err.statusCode || 500;
+            return res.status(statusCode).json({ success: false, message: err.message, code: err.code });
+        }
         const status = (err.status || err.statusCode) === 400 ? 400 : 500;
         const code = status === 400 ? 'INVALID_INPUT' : 'SERVER_ERROR';
         return res.status(status).json({ ok: false, code });

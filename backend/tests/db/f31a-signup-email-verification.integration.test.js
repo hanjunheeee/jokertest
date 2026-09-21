@@ -262,6 +262,23 @@ test('AC-04: 지급 실패 후 롤백 — 증명이 미소비로 남아 같은 �
     const [userRowsAfterFailure] = await sequelize.query('SELECT uuid FROM users WHERE email = :email', { replacements: { email } });
     assert.equal(userRowsAfterFailure.length, 0, '지급 실패는 계정 생성 자체도 롤백해야 한다');
 
+    // AC-04 재검토: 계정 생성뿐 아니라 같은 트랜잭션 안에서 만들어졌을 통계·지갑·원장·
+    // 소유권·장착도 전부 남지 않아야 한다(지급이 16번째 항목에서 실패하므로, 그 이전
+    // 15개 소유권·원장과 지갑·장착 생성이 이미 일어난 뒤였다 — 그것들이 살아남으면
+    // "부분 지급된 계정 없는 데이터"가 고아로 남는다). users가 롤백되어 uuid를 알 수
+    // 없으므로 테이블 전체 행 수로 확인한다 — rebuildFullSchema가 이 테스트 시작 시
+    // 스키마를 통째로 새로 만들어 다른 테스트의 데이터와 섞이지 않는다.
+    const [[userStatsCount]] = await sequelize.query('SELECT COUNT(*) AS c FROM user_stats');
+    assert.equal(Number(userStatsCount.c), 0, '지급 실패는 통계 생성도 롤백해야 한다');
+    const [[walletCount]] = await sequelize.query('SELECT COUNT(*) AS c FROM economy_wallets');
+    assert.equal(Number(walletCount.c), 0, '지급 실패는 지갑 생성도 롤백해야 한다');
+    const [[entitlementCount]] = await sequelize.query('SELECT COUNT(*) AS c FROM economy_entitlements');
+    assert.equal(Number(entitlementCount.c), 0, '지급 실패 이전에 성공한 소유권도 함께 롤백되어야 한다');
+    const [[ledgerCount]] = await sequelize.query('SELECT COUNT(*) AS c FROM economy_ledger_entries');
+    assert.equal(Number(ledgerCount.c), 0, '지급 실패 이전에 성공한 원장도 함께 롤백되어야 한다');
+    const [[loadoutCount]] = await sequelize.query('SELECT COUNT(*) AS c FROM economy_loadouts');
+    assert.equal(Number(loadoutCount.c), 0, '지급 실패는 기본 장착 생성도 롤백해야 한다');
+
     const [verificationRows] = await sequelize.query(
         `SELECT proof_consumed_at FROM signup_email_verifications WHERE email = :email AND purpose = 'SIGNUP'`,
         { replacements: { email } },

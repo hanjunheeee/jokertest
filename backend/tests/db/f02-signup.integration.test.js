@@ -127,6 +127,7 @@ const VALID_SIGNUP_BASE = {
 // 그대로 태운다.
 const db = require('../../models');
 const authService = require('../../service/auth.service');
+const signupEmailVerificationService = require('../../service/signupEmailVerification.service');
 const userRepository = require('../../repositories/user.repositories');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
 const { hashPassword } = require('../../utils/hash');
@@ -162,10 +163,30 @@ test('AC-04(F-31a, 서비스 동시성): 같은 signupProof로 동시에 signup�
     const email = 'concurrent-signup@example.com';
     const { signupProof } = await prepareSignupProof(email);
 
+    // 재검토 지적: 결과(하나 성공·하나 실패)만으로는 두 요청이 실제로 증명 행 잠금을
+    // 다퉜음을 보이지 못한다(한쪽이 다른 쪽이 시작하기도 전에 이미 끝났어도 같은 결과가
+    // 나온다) — 위 주석대로 잠금 *뒤*에 장벽을 두면 서로의 진행을 기다리며 교착되므로,
+    // 잠금을 실제로 시도하기 *직전*(consumeSignupProof 진입 시점)에 2자 장벽을 둔다.
+    // 이 지점은 아직 어떤 DB 잠금도 쥐지 않은 상태라, 둘 다 도착한 뒤 함께 풀려나도
+    // 교착이 생기지 않는다 — 이후 실제 FOR UPDATE 다툼은 평소대로 DB가 직렬화한다.
+    const originalConsumeSignupProof = signupEmailVerificationService.consumeSignupProof;
+    let arrivals = 0;
+    let releaseBarrier;
+    const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
+    signupEmailVerificationService.consumeSignupProof = async (...args) => {
+        arrivals += 1;
+        if (arrivals >= 2) releaseBarrier();
+        await barrier;
+        return originalConsumeSignupProof(...args);
+    };
+    t.after(() => { signupEmailVerificationService.consumeSignupProof = originalConsumeSignupProof; });
+
     const attempts = await Promise.allSettled([
         authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: '동시가입1', signupProof }),
         authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: '동시가입2', signupProof }),
     ]);
+
+    assert.equal(arrivals, 2, '두 요청 모두 증명 소비(잠금 시도) 지점에 도달해야 실제 경합을 검증한 것이다');
 
     const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
     const rejected = attempts.filter((a) => a.status === 'rejected');

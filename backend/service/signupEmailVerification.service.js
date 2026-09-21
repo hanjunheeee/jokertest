@@ -81,6 +81,8 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
         }
 
         const nextGeneration = row.generation + 1;
+        const previousGeneration = row.generation;
+        const previousCodeHash = row.code_hash;
         const sentAt = new Date(nowMs);
         const expiresInSec = Math.floor(config.codeTtlMs / 1000);
         const resendAfterSec = Math.floor(config.resendCooldownMs / 1000);
@@ -104,7 +106,20 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
             return { alreadyRegistered: true, expiresInSec, resendAfterSec };
         }
 
-        const code = generateNumericCode(config.codeLength);
+        // F-31a(AC-02 재검토): 재발송으로 뽑은 새 번호가 우연히 직전 번호와 같은 숫자면,
+        // 무효화되었어야 할 이전 이메일을 아직 들고 있는 사용자가 그 숫자를 입력해도
+        // 그대로 통과해버려 "재발송 시 이전 번호 무효" 계약이 깨진다. 원문을 저장하지
+        // 않으므로 직전 번호 자체와는 비교할 수 없지만, 후보 번호를 이전 세대(previousGeneration)
+        // 로 해시했을 때 이전 code_hash와 같은지는 비교할 수 있다 — 같으면(=직전 번호와
+        // 동일한 숫자) 다시 뽑는다. 충돌 확률이 10^-length라 재시도는 사실상 항상 한 번
+        // 안에 끝난다.
+        let code = generateNumericCode(config.codeLength);
+        while (
+            previousCodeHash
+            && hashCode(normalizedEmail, previousGeneration, code, config.hmacSecret) === previousCodeHash
+        ) {
+            code = generateNumericCode(config.codeLength);
+        }
         const codeHash = hashCode(normalizedEmail, nextGeneration, code, config.hmacSecret);
         const codeExpiresAt = new Date(nowMs + config.codeTtlMs);
 
