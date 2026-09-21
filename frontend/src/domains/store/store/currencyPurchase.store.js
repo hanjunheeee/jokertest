@@ -137,6 +137,7 @@ export async function requestTossTestPayment({ clientKey, orderId, amount, order
 const initialState = {
   products: [],
   productsStatus: "idle", // idle | loading | ready | error
+  productsLoadCount: 0, // 목록 조회 성공 횟수 — 어느 경로(자동·수동)로든 성공하면 오른다
   productsStale: false, // 상품 조건이 바뀌어 목록을 다시 받기 전에는 구매하지 않는다
   configPending: false, // 서버가 주문 생성을 CONFIG_MISSING으로 거절함(목록 새로고침 성공 뒤 다시 시도)
   status: "idle", // idle | creatingOrder | payment | confirming | pendingGrant | unknown | done | failed | canceled
@@ -158,6 +159,7 @@ let checkRun = null
 let pollTimer = null
 let pollCount = 0
 const returnRuns = new Map()
+const inFlightOrders = new Map() // orderId → 진행 중인 복귀 처리(같은 주문 confirm 동시 1회)
 
 const activate = (id) => {
   if (id === account) return
@@ -170,6 +172,7 @@ const activate = (id) => {
   productsRun = null
   checkRun = null
   returnRuns.clear()
+  inFlightOrders.clear()
   store.setState({ ...initialState }, true)
 }
 useAuthStore.subscribe((state) => activate(state.user?.uuid ?? null))
@@ -193,7 +196,7 @@ const loadProducts = () => {
       if (started !== generation) return false
       // 목록을 다시 받는 것은 서버 키가 설정됐다는 판정이 아니다 — 다음 충전 클릭이 주문 생성으로 다시 판정한다.
       set((state) => ({
-        products, productsStatus: "ready", productsStale: false, configPending: false,
+        products, productsStatus: "ready", productsLoadCount: state.productsLoadCount + 1, productsStale: false, configPending: false,
         reason: state.reason === "CONFIG_MISSING" ? null : state.reason,
       }))
       return true
@@ -364,6 +367,9 @@ const handleReturn = (search, { entryNeeded = false } = {}) => {
   const key = ret.mode === "fail" ? `fail:${search}` : ret.valid ? `${ret.orderId}:${ret.paymentKey}:${ret.amount}` : `invalid:${search}`
   const existing = returnRuns.get(key)
   if (existing) return existing.promise
+  // 같은 주문의 확인이 진행 중이면 paymentKey·amount가 달라진 복귀도 새 confirm을 만들지 않고 먼저 온 입력의 결과를 공유한다.
+  const sharing = ret.mode === "success" && ret.valid ? inFlightOrders.get(ret.orderId) : null
+  if (sharing) { returnRuns.set(key, sharing); return sharing.promise }
   const run = { entryPending: Boolean(entryNeeded && ret.mode === "success"), promise: null }
   returnRuns.set(key, run)
   if (ret.mode === "fail") {
@@ -373,7 +379,10 @@ const handleReturn = (search, { entryNeeded = false } = {}) => {
     set({ status: "failed", reason: "INVALID_RETURN", order: null })
     if (run.entryPending) { run.entryPending = false; run.promise = refreshSummary(started) } else run.promise = Promise.resolve()
   } else {
+    inFlightOrders.set(ret.orderId, run)
     run.promise = runReturn(ret, run, started)
+    const release = () => { if (inFlightOrders.get(ret.orderId) === run) inFlightOrders.delete(ret.orderId) }
+    run.promise.then(release, release)
   }
   return run.promise
 }

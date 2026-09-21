@@ -315,6 +315,23 @@ test("AC-03: StrictMode·재마운트에도 같은 복귀의 confirm과 진입 �
   assert.equal(posts(CONFIRM).length, 1)
 })
 
+test("AC-03: 같은 주문의 confirm이 진행 중이면 paymentKey·amount만 바뀐 복귀도 새 confirm을 만들지 않고 먼저 온 입력의 결과를 공유한다", async () => {
+  await newWorld()
+  const confirm = deferred()
+  route("POST", CONFIRM, () => { world.diamond = 210; return confirm.promise })
+  const view = await mountStore({ path: RETURN })
+  await waitFor(() => assert.equal(posts(CONFIRM).length, 1))
+  // 같은 orderId, 다른 paymentKey·amount의 두 번째 복귀를 confirm 보류 중에 넣는다(search 변경 효과 경로).
+  await goToReturn("/store?topup=success&paymentKey=pay_key_2&orderId=ORDER_0001&amount=1200")
+  await flush()
+  assert.equal(posts(CONFIRM).length, 1, "진행 중인 같은 주문에는 두 번째 confirm을 보내지 않는다")
+  confirm.resolve(json(200, { ok: true, status: "GRANTED", balanceDiamond: 210 }))
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 210")
+  await flush()
+  assert.deepEqual(posts(CONFIRM).map((call) => call.body), [{ paymentKey: "pay_key_1", amount: 1100 }], "먼저 온 입력의 값으로 confirm한다")
+  assert.match(text(view), /충전이 완료되었습니다/)
+})
+
 test("AC-02: 계정이 바뀐 뒤 이전 계정의 확인 종료는 새 계정의 잔액 조회를 시작하지 않는다", async () => {
   await newWorld()
   const confirm = deferred()
@@ -747,6 +764,41 @@ test("AC-05: 저장된 priceChanged 기록으로 상점을 열면 목록을 다�
   await waitText(view, /골드 구매가 완료되었습니다/)
   assert.equal(posts(GOLD_POST)[0].body.version, 5)
   assert.notEqual(posts(GOLD_POST)[0].body.referenceEventId, "shop:old")
+})
+
+test("AC-05: 최초 목록 조회가 실패해도 수동 재조회가 성공하면 새 조건 확인이 활성화된다", async () => {
+  const record = { kind: "GOLD", status: "priceChanged", referenceEventId: "shop:old", itemIds: [], productId: "gold-a", version: 3, error: null, code: null }
+  await newWorld({ storage: { "joker:store-purchase:v1:user-1": JSON.stringify(record) } })
+  route("GET", PRODUCTS_URL, () => apiError(500, "SERVER_ERROR"))
+  const view = await mountStore()
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 100")
+  await click(view, "인게임 재화")
+  await waitText(view, /상품 목록을 불러오지 못했습니다/)
+  assert.equal(button(view, "새 조건 확인").disabled, true, "목록을 받지 못한 동안은 재확인할 수 없다")
+  route("GET", PRODUCTS_URL, () => json(200, { ok: true, products: [DIAMOND_PRODUCT, { ...GOLD_PRODUCT, version: 5, payAmount: 8 }] }))
+  await click(view, "상품 목록 새로고침")
+  await waitText(view, /새 조건: 8 다이아/)
+  await waitFor(() => assert.equal(button(view, "새 조건 확인").disabled, false))
+  assert.equal(posts(GOLD_POST).length, 0)
+})
+
+test("AC-05: 골드 구매 서버 거부·통신 실패는 각각 실패·확인 필요로 표시하고 잔액은 그대로이다", async () => {
+  const view = await mountGold()
+  route("POST", GOLD_POST, () => apiError(409, "PRODUCT_STOPPED"))
+  await click(view, "골드 구매")
+  await waitText(view, /골드 구매에 실패했습니다\. 재화는 차감되지 않았습니다/)
+  assert.doesNotMatch(text(view), /다이아가 부족합니다/)
+  assert.equal(posts(GOLD_POST).length, 1)
+  assert.equal(balance(view, GOLD_LABEL), "무료 재화 1000")
+  assert.equal(balance(view, DIAMOND_LABEL), "유료 재화 100")
+  assert.equal(button(view, "골드 구매").disabled, false, "거부 뒤에는 다시 구매할 수 있다")
+
+  route("POST", GOLD_POST, () => { throw new TypeError("offline") })
+  await click(view, "골드 구매")
+  await waitText(view, /골드 구매 결과 확인이 필요합니다/)
+  assert.doesNotMatch(text(view), /골드 구매에 실패했습니다/)
+  assert.equal(balance(view, GOLD_LABEL), "무료 재화 1000")
+  assert.equal(balance(view, DIAMOND_LABEL), "유료 재화 100")
 })
 
 test("회귀: 기존 스킨 상품은 기존 일괄구매 POST로 구매한다", async () => {

@@ -150,7 +150,7 @@ export default function StorePanel({ visible = true }) {
   }, [activeCategory, currencyItems])
 
   const [selectedItem, setSelectedItem] = useState(STORE_ITEMS[0])
-  const [priceRechecked, setPriceRechecked] = useState(false)
+  const [recheckBase, setRecheckBase] = useState(null)
   const [deadPreviewIds, setDeadPreviewIds] = useState(() => new Set())
   const [skinZoomItem, setSkinZoomItem] = useState(null)
   const [profileBorderZoomItem, setProfileBorderZoomItem] = useState(null)
@@ -198,14 +198,13 @@ export default function StorePanel({ visible = true }) {
   useEffect(() => { processReturn() }, [search]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 복원된 가격 변경 상태는 목록을 다시 받아 새 조건을 확인받기 전까지 구매를 막는다.
+  // 최초 조회가 실패해도 수동 재조회 등 어느 경로로든 목록 조회가 한 번 더 성공하면 새 조건 확인이 풀린다.
   const goldRecordId = goldPriceChanged ? purchaseState.referenceEventId : null
   useEffect(() => {
-    setPriceRechecked(false)
-    if (!goldRecordId) return undefined
-    let alive = true
-    currencyPurchase.loadProducts().then((ok) => { if (alive && ok) setPriceRechecked(true) })
-    return () => { alive = false }
+    setRecheckBase(goldRecordId ? currencyPurchase.store.getState().productsLoadCount : null)
+    if (goldRecordId) currencyPurchase.loadProducts()
   }, [goldRecordId])
+  const priceRechecked = goldRecordId !== null && recheckBase !== null && currency.productsLoadCount > recheckBase
 
   // 일괄구매 확인 대화상자는 카테고리와 무관하게 원래 선택된 품목을 그대로 보여줘야
   // 한다(리마운트 복원 포함) — 현재 카테고리로 걸러진 visibleItems 대신 전체 카탈로그
