@@ -43,3 +43,19 @@ export const completeSocialSignupApi = async ({ intentToken, nickname, birthDate
 export const findIdApi = async ({ nickname, birthDate }) => {
     return await api.post('/auth/find-id', { nickname, birthDate });
 };
+
+// F-29c: 비밀번호 재설정 요청 → 링크 검증(비소비 GET) → 새 비밀번호 확정(소비 POST) 세 단계.
+// requestPasswordResetApi는 계정 존재 여부와 무관하게 항상 같은 { ok: true } 응답을 받는다
+// (backend/controller/passwordReset.controller.js::requestPasswordReset). verifyPasswordResetApi는
+// 토큰을 body가 아니라 쿼리로만 전달한다 — 서버가 이 호출로는 토큰을 소비하지 않는다.
+export const requestPasswordResetApi = async ({ email }) => {
+    return await api.post('/auth/password-reset/request', { email });
+};
+
+export const verifyPasswordResetApi = async ({ token }) => {
+    return await api.get(`/auth/password-reset/verify?token=${encodeURIComponent(token)}`);
+};
+
+export const confirmPasswordResetApi = async ({ token, newPassword }) => {
+    return await api.post('/auth/password-reset/confirm', { token, newPassword });
+};
