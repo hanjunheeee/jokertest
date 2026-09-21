@@ -74,6 +74,8 @@ const ORDER_GET = /\/economy\/topup\/orders\/[^/]+$/
 const GOLD_POST = /\/economy\/gold-purchases$/
 const PURCHASE_GET = /\/economy\/purchases\/[^/]+$/
 const BULK_POST = /\/economy\/purchases\/bulk$/
+const TRANSACTIONS = /\/economy\/accounts\/[^/]+\/transactions$/
+const OPEN_ORDERS = /\/economy\/topup\/orders\?state=open$/
 
 // 임시 가격·지급량은 시험 데이터에만 둔다.
 const DIAMOND_PRODUCT = {
@@ -99,6 +101,12 @@ const sdkFactory = (clientKey) => ({
     requestPayment: async (args) => { events.push("SDK"); sdkCalls.push({ clientKey, customerKey, args }); return sdkBehavior(args) },
   }),
 })
+// 골드 구매 성공 픽스처: 서버가 커밋한 두 잔액을 world에 반영해 뒤이은 지갑 조회도 같은 값을 돌려준다.
+const goldCommitted = (balanceGold, balanceDiamond) => {
+  world.gold = balanceGold
+  world.diamond = balanceDiamond
+  return json(200, { ok: true, balanceGold, balanceDiamond })
+}
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((res, rej) => { resolve = res; reject = rej })
@@ -113,6 +121,7 @@ const { useEconomyStore } = await import("../../../economy/store/economy.store.j
 const { currencyPurchase } = await import("../../store/currencyPurchase.store.js")
 const { storePurchase } = await import("../../store/storePurchase.store.js")
 const { createPurchaseController } = await import("../../store/purchaseController.js")
+const { currencyHistory } = await import("../../store/currencyHistory.store.js")
 
 const setUser = async (user) => act(async () => {
   useAuthStore.setState({ isLoggedIn: Boolean(user), user, loggedOutIntentionally: false })
@@ -121,7 +130,7 @@ const setUser = async (user) => act(async () => {
 // 새 문서·새 세션을 모사한다: 계정을 비워 모든 스토어를 초기화하고 저장소를 준비한 뒤 로그인한다.
 async function newWorld({ diamond = 100, gold = 1000, storage = {}, products = [DIAMOND_PRODUCT, GOLD_PRODUCT] } = {}) {
   routes = []; calls = []; events = []; sdkCalls = []
-  world = { diamond, gold, products }
+  world = { diamond, gold, products, transactions: [], openOrders: [] }
   sdkBehavior = async () => {}
   window.TossPayments = sdkFactory
   await setUser(null)
@@ -131,6 +140,9 @@ async function newWorld({ diamond = 100, gold = 1000, storage = {}, products = [
   route("GET", ENTITLEMENTS, () => json(200, { entitlements: ENTITLEMENTS_LIST, loadout: LOADOUT }))
   route("GET", PRODUCTS_URL, () => json(200, { ok: true, products: world.products }))
   route("POST", ORDERS, () => json(201, { ok: true, orderId: "ORDER_0001", amount: 1100, orderName: "다이아 100", clientKey: CLIENT_KEY }))
+  // F-32 BQ: 기본은 빈 원장·진행 주문 없음 — 기존 케이스가 의도치 않은 복구를 시작하지 않는다.
+  route("GET", TRANSACTIONS, () => json(200, { transactions: world.transactions }))
+  route("GET", OPEN_ORDERS, () => json(200, { ok: true, orders: world.openOrders }))
   await setUser({ uuid: "user-1", nickname: "테스터" })
 }
 
@@ -607,21 +619,28 @@ test("AC-05: 서버 가격·지급량을 그대로 표시하고 골드 POST는 p
   assert.match(text(view), /골드 구매를 처리하고 있습니다/)
 
   const entitlementsBefore = useEconomyStore.getState().entitlements
-  goldPost.resolve(json(200, { ok: true, balanceGold: 1123, balanceDiamond: 93 }))
+  goldPost.resolve(goldCommitted(1123, 93))
   await waitText(view, /골드 구매가 완료되었습니다/)
-  assert.equal(balance(view, GOLD_LABEL), "무료 재화 1123")
-  assert.equal(balance(view, DIAMOND_LABEL), "유료 재화 93")
+  await waitBalance(view, GOLD_LABEL, "무료 재화 1123")
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 93")
   assert.deepEqual(useEconomyStore.getState().entitlements, entitlementsBefore)
   assert.equal(useEconomyStore.getState().loadout.revision, "r1")
 })
 
 test("AC-05: 골드 구매 전에 시작한 늦은 지갑 조회가 구매 성공 뒤 잔액을 되돌리지 못한다", async () => {
   const view = await mountGold()
+  // 구매 전 지갑 응답(late)과 구매 뒤 현재 지갑 재조회 응답(fresh)을 따로 보류한다.
   const lateWallet = deferred()
-  route("GET", WALLET, () => lateWallet.promise)
+  const freshWallet = deferred()
+  const walletResponses = [lateWallet, freshWallet]
+  route("GET", WALLET, () => walletResponses.shift().promise)
   const summary = useEconomyStore.getState().fetchSummary()
-  route("POST", GOLD_POST, () => json(200, { ok: true, balanceGold: 1123, balanceDiamond: 93 }))
+  route("POST", GOLD_POST, () => goldCommitted(1123, 93))
   await click(view, "골드 구매")
+  await waitText(view, /골드 구매가 완료되었습니다/)
+  assert.equal(walletResponses.length, 0, "구매 뒤 현재 지갑 재조회를 시작한다")
+  assert.equal(balance(view, GOLD_LABEL), "무료 재화 불러오는 중", "재조회 중에는 구매 결과 숫자를 최종 값으로 보이지 않는다")
+  freshWallet.resolve(json(200, { balanceGold: 1123, balanceDiamond: 93 }))
   await waitBalance(view, GOLD_LABEL, "무료 재화 1123")
   lateWallet.resolve(json(200, { balanceGold: 1000, balanceDiamond: 100 }))
   await summary
@@ -663,12 +682,16 @@ test("AC-05: 응답 유실은 확인 필요이고 결과 확인이 저장된 원
   await click(view, "골드 구매")
   await waitText(view, /골드 구매 결과 확인이 필요합니다/)
   const original = posts(GOLD_POST)[0].body
-  route("GET", PURCHASE_GET, () => json(200, { ok: true, kind: "GOLD", results: [], balanceGold: 1123, balanceDiamond: 93 }))
+  route("GET", PURCHASE_GET, () => {
+    world.gold = 1123
+    world.diamond = 93
+    return json(200, { ok: true, kind: "GOLD", results: [], balanceGold: 1123, balanceDiamond: 93 })
+  })
   await click(view, "결과 확인")
   await waitText(view, /골드 구매가 완료되었습니다/)
   assert.equal(calls.find((call) => PURCHASE_GET.test(call.path)).path, `/economy/purchases/${encodeURIComponent(original.referenceEventId)}`)
   assert.equal(posts(GOLD_POST).length, 1)
-  assert.equal(balance(view, GOLD_LABEL), "무료 재화 1123")
+  await waitBalance(view, GOLD_LABEL, "무료 재화 1123")
 })
 
 test("AC-05: 결과 404는 unknown이며 상품 선택·단순 클릭은 재전송하지 못하고, 명시적 다시 시도만 원래 본문으로 재전송한다", async () => {
@@ -694,7 +717,7 @@ test("AC-05: 결과 404는 unknown이며 상품 선택·단순 클릭은 재전�
   assert.equal(posts(GOLD_POST).length, 1)
 
   route("GET", PURCHASE_GET, () => json(404, { success: false, code: "PURCHASE_RESULT_NOT_FOUND", message: "none" }))
-  route("POST", GOLD_POST, () => json(200, { ok: true, balanceGold: 1123, balanceDiamond: 93 }))
+  route("POST", GOLD_POST, () => goldCommitted(1123, 93))
   await click(view, "다시 시도")
   await waitText(view, /골드 구매가 완료되었습니다/)
   assert.equal(posts(GOLD_POST).length, 2)
@@ -714,13 +737,13 @@ test("AC-05: 가격 변경은 목록을 다시 받아 새 조건을 보이고, �
   const firstReference = posts(GOLD_POST)[0].body.referenceEventId
   await waitFor(() => assert.equal(button(view, "새 조건 확인").disabled, false))
   await click(view, "새 조건 확인")
-  route("POST", GOLD_POST, () => json(200, { ok: true, balanceGold: 1150, balanceDiamond: 91 }))
+  route("POST", GOLD_POST, () => goldCommitted(1150, 91))
   await click(view, "골드 구매")
   await waitText(view, /골드 구매가 완료되었습니다/)
   assert.equal(posts(GOLD_POST).length, 2)
   assert.equal(posts(GOLD_POST)[1].body.version, 4)
   assert.notEqual(posts(GOLD_POST)[1].body.referenceEventId, firstReference)
-  assert.equal(balance(view, GOLD_LABEL), "무료 재화 1150")
+  await waitBalance(view, GOLD_LABEL, "무료 재화 1150")
 })
 
 test("AC-05: 저장 실패 시 전송을 막고, 계정이 바뀌면 이전 계정의 늦은 결과를 무시한다", async () => {
@@ -759,7 +782,7 @@ test("AC-05: 저장된 priceChanged 기록으로 상점을 열면 목록을 다�
   assert.equal(posts(GOLD_POST).length, 0)
   await waitFor(() => assert.equal(button(view, "새 조건 확인").disabled, false))
   await click(view, "새 조건 확인")
-  route("POST", GOLD_POST, () => json(200, { ok: true, balanceGold: 1200, balanceDiamond: 92 }))
+  route("POST", GOLD_POST, () => goldCommitted(1200, 92))
   await click(view, "골드 구매")
   await waitText(view, /골드 구매가 완료되었습니다/)
   assert.equal(posts(GOLD_POST)[0].body.version, 5)
@@ -930,4 +953,420 @@ test("저장 왕복: kind 없는 기존 기록은 복구되고 잘못된 kind·�
   }
   dom.window.localStorage.setItem(STORAGE_KEY, JSON.stringify(good))
   assert.equal(makeController().controller.store.getState().status, "unknown")
+})
+
+// ── F-32 BQ: 진행 중 주문 발견(§2-6a)·거래 내역·현재 지갑 재조회 ─────────────────────────
+const openOrder = (orderId, status, minute = 0, amount = 1100) => ({
+  orderId, status, amount, orderName: "다이아 100", createdAt: `2026-09-22T01:0${minute}:00.000Z`,
+})
+const ledger = (id, reason, currency, amount, balanceAfter, referenceEventId) => ({
+  id, reason, itemId: null, currency, amount, balanceAfter, referenceEventId, createdAt: "2026-09-22T01:00:00.000Z",
+})
+const orderIdOf = (url) => decodeURIComponent(url.split("/").pop())
+const orderGets = (orderId) => calls.filter((call) => call.method === "GET" && call.path === `/economy/topup/orders/${orderId}`).length
+const feedbackText = (view) => view.queryByTestId("topup-feedback")?.textContent ?? ""
+const historyRows = (view) => Array.from(view.container.querySelectorAll('[data-testid="currency-transaction"]'))
+const currentOrderId = () => currencyPurchase.store.getState().order?.orderId ?? null
+// 서버 지급을 모사한다 — 잔액과 충전 원장을 함께 커밋한다.
+const grantTopup = (orderId, total = 110) => {
+  world.diamond += total
+  world.transactions = [ledger(world.transactions.length + 1, "DIAMOND_TOPUP", "DIAMOND", total, world.diamond, `topup:${orderId}`), ...world.transactions]
+}
+
+test("BQ §2-6a: 복귀 URL·저장소 없이 진입하면 발견 1회 → 최신 주문 한 건을 2초 뒤 조회로 이어 GRANTED에서 잔액·원장을 갱신한다", async () => {
+  await newWorld({ diamond: 0, gold: 0 })
+  world.openOrders = [openOrder("ORDER_OPEN_1", "PENDING_GRANT", 2), openOrder("ORDER_OPEN_0", "CONFIRMING", 1)]
+  route("GET", ORDER_GET, ({ url }) => {
+    const orderId = orderIdOf(url)
+    grantTopup(orderId)
+    return json(200, { ok: true, orderId, status: "GRANTED", balanceDiamond: world.diamond })
+  })
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const view = await mountStore()
+  await flush()
+  const storedKeys = Array.from({ length: dom.window.localStorage.length }, (_, i) => dom.window.localStorage.key(i))
+  assert.ok(
+    storedKeys.every((key) => !/ORDER_OPEN|topup/.test(`${key}${dom.window.localStorage.getItem(key)}`)),
+    "복원 근거로 브라우저 저장소를 쓰지 않는다(충전 주문을 저장소에 두지 않는다)",
+  )
+  assert.equal(dom.window.location.search, "", "복귀 URL 없이 진입한다")
+  assert.equal(count("GET", OPEN_ORDERS), 1)
+  await untilText(view, /다이아 지급을 기다리고 있습니다/)
+  assert.equal(currentOrderId(), "ORDER_OPEN_1", "최신 주문부터 한 건만 표시한다")
+  await tick(1999)
+  assert.equal(count("GET", ORDER_GET), 0)
+  await tick(1)
+  assert.equal(orderGets("ORDER_OPEN_1"), 1)
+  await untilBalance(view, DIAMOND_LABEL, "유료 재화 110")
+  // 첫 주문이 끝나면 다음 주문으로 넘어간다(별도 예산, 다시 2초 뒤).
+  await until(() => assert.equal(currentOrderId(), "ORDER_OPEN_0"))
+  assert.equal(orderGets("ORDER_OPEN_0"), 0)
+  await tick(2000)
+  await untilBalance(view, DIAMOND_LABEL, "유료 재화 220")
+  assert.match(feedbackText(view), /충전이 완료되었습니다/)
+  assert.equal(posts(CONFIRM).length, 0, "발견된 주문에 confirm을 새로 보내지 않는다")
+  assert.equal(count("GET", OPEN_ORDERS), 1)
+
+  await click(view, "인게임 재화")
+  await until(() => assert.equal(historyRows(view).length, 2))
+  const [latest, older] = historyRows(view)
+  assert.equal(latest.getAttribute("data-transaction-id"), "2")
+  assert.match(latest.textContent, /다이아 충전.*다이아.*\+110.*잔액 220/)
+  assert.match(older.textContent, /다이아 충전.*다이아.*\+110.*잔액 110/)
+})
+
+test("BQ §2-6a: 앞 주문이 미확정·상한이면 다음 주문 조회 0회 — 수동 확인으로 종결되면 다음 주문이 별도 5회 예산으로 이어진다", async () => {
+  await newWorld()
+  world.openOrders = [openOrder("ORDER_NEW_1", "CONFIRMING", 2), openOrder("ORDER_OLD_2", "PENDING_GRANT", 1)]
+  const statusOf = { ORDER_NEW_1: "CONFIRMING", ORDER_OLD_2: "PENDING_GRANT" }
+  route("GET", ORDER_GET, ({ url }) => json(200, { ok: true, orderId: orderIdOf(url), status: statusOf[orderIdOf(url)] }))
+  const seen = []
+  const unsubscribe = currencyPurchase.store.subscribe((state) => seen.push(`${state.status}:${state.order?.orderId ?? "-"}`))
+  try {
+    mock.timers.enable({ apis: ["setTimeout"] })
+    const view = await mountStore()
+    await flush()
+    await untilText(view, /결제 결과 확인이 필요합니다/)
+    for (let i = 1; i <= 5; i += 1) { await tick(2000); assert.equal(orderGets("ORDER_NEW_1"), i) }
+    await tick(10000)
+    assert.equal(orderGets("ORDER_NEW_1"), 5)
+    assert.equal(orderGets("ORDER_OLD_2"), 0, "앞 주문이 끝나기 전에는 다음 주문으로 넘어가지 않는다")
+    assert.match(text(view), /자동 확인을 마쳤습니다/)
+
+    statusOf.ORDER_NEW_1 = "GRANTED"
+    await click(view, "결과 확인")
+    await until(() => assert.equal(currentOrderId(), "ORDER_OLD_2"))
+    assert.equal(orderGets("ORDER_NEW_1"), 6)
+    assert.equal(currencyPurchase.store.getState().autoChecks, 0, "다음 주문은 별도 5회 예산")
+    const doneAt = seen.indexOf("done:ORDER_NEW_1")
+    assert.ok(doneAt !== -1 && doneAt < seen.indexOf("pendingGrant:ORDER_OLD_2"), "종결 표시 다음에 다음 주문을 표시한다")
+    await tick(1999)
+    assert.equal(orderGets("ORDER_OLD_2"), 0)
+    statusOf.ORDER_OLD_2 = "EXPIRED"
+    await tick(1)
+    await untilText(view, /결제 시간이 만료되어 다이아가 지급되지 않았습니다/)
+    assert.equal(orderGets("ORDER_OLD_2"), 1)
+    assert.equal(posts(CONFIRM).length, 0)
+  } finally { unsubscribe() }
+})
+
+test("BQ §2-6a: 복귀 URL과 같은 orderId가 발견되면 추가 조회 없이 복귀 처리만 하고, 실패 복귀의 orderId도 발견에서 제외한다", async () => {
+  await newWorld()
+  world.openOrders = [openOrder("ORDER_0001", "CONFIRMING")]
+  route("POST", CONFIRM, () => { world.diamond = 210; return json(200, { ok: true, status: "GRANTED", balanceDiamond: 210 }) })
+  route("GET", ORDER_GET, () => json(200, { ok: true, orderId: "ORDER_0001", status: "GRANTED" }))
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const view = await mountStore({ path: RETURN })
+  await flush()
+  await untilBalance(view, DIAMOND_LABEL, "유료 재화 210")
+  await tick(20000)
+  assert.equal(count("GET", OPEN_ORDERS), 1)
+  assert.equal(count("GET", ORDER_GET), 0, "같은 주문에 조회를 겹쳐 보내지 않는다")
+  assert.equal(posts(CONFIRM).length, 1)
+  assert.match(feedbackText(view), /충전이 완료되었습니다/)
+  cleanup()
+  mock.timers.reset()
+
+  await newWorld()
+  world.openOrders = [openOrder("ORDER_0001", "PENDING_GRANT")]
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const failView = await mountStore({ path: "/store?topup=fail&code=PAY_PROCESS_CANCELED&message=x&orderId=ORDER_0001" })
+  await flush()
+  await tick(20000)
+  assert.equal(count("GET", OPEN_ORDERS), 1)
+  assert.equal(count("GET", ORDER_GET), 0)
+  assert.equal(posts(CONFIRM).length, 0, "실패 복귀는 confirm을 보내지 않는다")
+  assert.match(feedbackText(failView), /결제가 취소되었거나 완료되지 않았습니다/)
+})
+
+test("BQ §2-6a: 발견 주문 조회 중 다른 주문의 성공 복귀가 먼저 — 늦은 발견 조회는 복귀 화면을 덮지 않고, 복귀 종결 뒤 남은 자동 횟수로 이어 간다", async () => {
+  await newWorld()
+  world.openOrders = [openOrder("ORDER_OPEN_1", "CONFIRMING")]
+  const heldGet = deferred()
+  let respondGet = () => heldGet.promise
+  route("GET", ORDER_GET, () => respondGet())
+  const confirm = deferred()
+  route("POST", CONFIRM, () => confirm.promise)
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const view = await mountStore()
+  await flush()
+  await untilText(view, /결제 결과 확인이 필요합니다/)
+  await tick(2000)
+  assert.equal(orderGets("ORDER_OPEN_1"), 1)
+
+  await goToReturn()
+  await flush()
+  assert.equal(posts(CONFIRM).length, 1)
+  assert.equal(currentOrderId(), "ORDER_0001")
+  heldGet.resolve(json(200, { ok: true, orderId: "ORDER_OPEN_1", status: "CONFIRMING" }))
+  await flush()
+  assert.equal(currencyPurchase.store.getState().status, "confirming")
+  assert.equal(currentOrderId(), "ORDER_0001", "늦은 발견 조회가 복귀 화면을 덮지 않는다")
+  await tick(10000)
+  assert.equal(orderGets("ORDER_OPEN_1"), 1, "복귀 처리 중에는 발견 주문 타이머가 멈춘다")
+
+  world.diamond = 210
+  respondGet = () => json(200, { ok: true, orderId: "ORDER_OPEN_1", status: "CONFIRMING" })
+  confirm.resolve(json(200, { ok: true, status: "GRANTED", balanceDiamond: 210 }))
+  await untilBalance(view, DIAMOND_LABEL, "유료 재화 210")
+  await until(() => assert.equal(currentOrderId(), "ORDER_OPEN_1"))
+  assert.equal(currencyPurchase.store.getState().autoChecks, 1, "사용한 자동 횟수를 보존한다")
+  for (let i = 0; i < 8; i += 1) await tick(2000)
+  assert.equal(orderGets("ORDER_OPEN_1"), 5, "재개는 남은 4회만 쓴다")
+  assert.equal(orderGets("ORDER_0001"), 0)
+  assert.match(text(view), /자동 확인을 마쳤습니다/)
+})
+
+test("BQ §2-6a: 선점된 발견 주문의 늦은 조회가 GRANTED면 기록에 보관했다가 복귀 종결 뒤 추가 조회 없이 완료로 반영한다", async () => {
+  await newWorld()
+  world.openOrders = [openOrder("ORDER_OPEN_1", "PENDING_GRANT")]
+  const heldGet = deferred()
+  route("GET", ORDER_GET, () => heldGet.promise)
+  route("POST", CONFIRM, () => apiError(400, "AMOUNT_MISMATCH"))
+  const seen = []
+  const unsubscribe = currencyPurchase.store.subscribe((state) => seen.push(`${state.status}:${state.order?.orderId ?? "-"}`))
+  try {
+    mock.timers.enable({ apis: ["setTimeout"] })
+    const view = await mountStore()
+    await flush()
+    await tick(2000)
+    const confirmGate = deferred()
+    route("POST", CONFIRM, () => confirmGate.promise)
+    await goToReturn()
+    await flush()
+    grantTopup("ORDER_OPEN_1")
+    heldGet.resolve(json(200, { ok: true, orderId: "ORDER_OPEN_1", status: "GRANTED" }))
+    await flush()
+    assert.equal(currentOrderId(), "ORDER_0001")
+    assert.equal(currencyPurchase.store.getState().status, "confirming")
+    confirmGate.resolve(apiError(400, "AMOUNT_MISMATCH"))
+    await untilBalance(view, DIAMOND_LABEL, "유료 재화 210")
+    assert.ok(seen.includes("failed:ORDER_0001"), "복귀 주문의 결과를 먼저 표시한다")
+    assert.match(feedbackText(view), /충전이 완료되었습니다/)
+    assert.equal(currentOrderId(), "ORDER_OPEN_1")
+    assert.equal(orderGets("ORDER_OPEN_1"), 1, "보관한 결과를 쓰고 다시 조회하지 않는다")
+  } finally { unsubscribe() }
+})
+
+test("BQ §2-6a: 같은 주문의 발견 조회가 진행 중일 때 성공 복귀가 오면 조회를 먼저 끝낸다 — GRANTED면 confirm 0회, 아니면 confirm을 직렬로 1회", async () => {
+  for (const [final, expectedConfirms] of [["GRANTED", 0], ["PENDING_GRANT", 1]]) {
+    await newWorld()
+    world.openOrders = [openOrder("ORDER_0001", "PENDING_GRANT")]
+    const heldGet = deferred()
+    route("GET", ORDER_GET, () => heldGet.promise)
+    route("POST", CONFIRM, () => { world.diamond = 210; return json(200, { ok: true, status: "GRANTED", balanceDiamond: 210 }) })
+    mock.timers.enable({ apis: ["setTimeout"] })
+    const view = await mountStore()
+    await flush()
+    await untilText(view, /다이아 지급을 기다리고 있습니다/)
+    await tick(2000)
+    assert.equal(orderGets("ORDER_0001"), 1)
+    await goToReturn()
+    await flush()
+    assert.equal(posts(CONFIRM).length, 0, `${final}: 조회가 끝나기 전에는 confirm을 보내지 않는다`)
+    if (final === "GRANTED") world.diamond = 210
+    heldGet.resolve(json(200, { ok: true, orderId: "ORDER_0001", status: final }))
+    await untilBalance(view, DIAMOND_LABEL, "유료 재화 210")
+    assert.match(feedbackText(view), /충전이 완료되었습니다/)
+    assert.equal(posts(CONFIRM).length, expectedConfirms, final)
+    assert.equal(orderGets("ORDER_0001"), 1, `${final}: 조회를 추가하지 않는다`)
+    cleanup()
+    mock.timers.reset()
+  }
+})
+
+const BROKEN_DISCOVERY = [
+  ["5xx", () => apiError(500, "SERVER_ERROR")],
+  ["network", () => { throw new TypeError("offline") }],
+  ["ok 누락", () => json(200, { orders: [] })],
+  ["배열 아님", () => json(200, { ok: true, orders: {} })],
+  ["중복 ID", () => json(200, { ok: true, orders: [openOrder("ORDER_DUP_1", "CONFIRMING"), openOrder("ORDER_DUP_1", "PENDING_GRANT")] })],
+  ["허용 밖 상태", () => json(200, { ok: true, orders: [openOrder("ORDER_BAD_1", "CREATED")] })],
+  ["깨진 필드", () => json(200, { ok: true, orders: [{ ...openOrder("ORDER_BAD_2", "CONFIRMING"), amount: "1100" }] })],
+  ["6건", () => json(200, { ok: true, orders: [1, 2, 3, 4, 5, 6].map((i) => openOrder(`ORDER_MANY_${i}`, "CONFIRMING")) })],
+]
+test("BQ §2-6a: 발견 실패·깨진 응답은 조용히 끝나 상점 구매를 막지 않고, 같은 진입에서는 재호출하지 않으며 다시 들어오면 1회 재시도한다", async () => {
+  for (const [name, respond] of BROKEN_DISCOVERY) {
+    await newWorld()
+    route("GET", OPEN_ORDERS, respond)
+    const view = await mountStore()
+    await waitBalance(view, DIAMOND_LABEL, "유료 재화 100")
+    await openCurrencyTab(view)
+    await selectItem(view, "골드 묶음")
+    await flush()
+    assert.equal(count("GET", OPEN_ORDERS), 1, name)
+    assert.equal(view.queryByTestId("topup-feedback"), null, name)
+    assert.equal(count("GET", ORDER_GET), 0, name)
+    assert.equal(button(view, "골드 구매").disabled, false, `${name}: 상점 구매는 그대로`)
+    await goToReturn("/store?view=again")
+    await flush()
+    assert.equal(count("GET", OPEN_ORDERS), 1, `${name}: 검색 문자열 변경은 발견을 반복하지 않는다`)
+    cleanup()
+    route("GET", OPEN_ORDERS, () => json(200, { ok: true, orders: [] }))
+    await mountStore()
+    await flush()
+    assert.equal(count("GET", OPEN_ORDERS), 2, `${name}: 다시 들어오면 1회 재시도`)
+    cleanup()
+  }
+})
+
+test("BQ §2-6a: StrictMode 마운트는 같은 진입으로 보아 발견을 한 번만 한다", async () => {
+  await newWorld()
+  await mountStore({ strict: true })
+  await flush()
+  assert.equal(count("GET", OPEN_ORDERS), 1)
+})
+
+test("BQ §2-6a: A→B→A 사이 이전 세대의 발견·원장 응답이 늦게 와도 새 세대 화면에 반영되지 않는다", async () => {
+  await newWorld()
+  const heldDiscovery = deferred()
+  const heldTransactions = deferred()
+  route("GET", OPEN_ORDERS, () => heldDiscovery.promise)
+  route("GET", TRANSACTIONS, () => heldTransactions.promise)
+  const view = await mountStore()
+  await flush()
+  assert.equal(count("GET", OPEN_ORDERS), 1)
+  route("GET", OPEN_ORDERS, () => json(200, { ok: true, orders: [] }))
+  route("GET", TRANSACTIONS, () => json(200, { transactions: [] }))
+  await setUser({ uuid: "user-2", nickname: "둘째" })
+  await flush()
+  await setUser({ uuid: "user-1", nickname: "테스터" })
+  await flush()
+  assert.equal(count("GET", OPEN_ORDERS), 3, "계정이 바뀔 때마다 새 진입으로 발견한다")
+  heldDiscovery.resolve(json(200, { ok: true, orders: [openOrder("ORDER_STALE_1", "PENDING_GRANT")] }))
+  heldTransactions.resolve(json(200, { transactions: [ledger(99, "DIAMOND_TOPUP", "DIAMOND", 110, 999, "topup:ORDER_STALE_1")] }))
+  await flush()
+  assert.equal(view.queryByTestId("topup-feedback"), null, "이전 세대의 발견 주문을 표시하지 않는다")
+  assert.equal(currencyHistory.store.getState().status, "ready")
+  assert.deepEqual(currencyHistory.store.getState().transactions, [], "이전 세대의 원장을 반영하지 않는다")
+  assert.equal(count("GET", ORDER_GET), 0)
+})
+
+test("BQ §2-6a: 계정 전환 뒤 이전 계정 발견 주문의 늦은 조회 GRANTED는 새 세대의 화면·잔액·원장 조회를 바꾸지 않는다", async () => {
+  await newWorld()
+  world.openOrders = [openOrder("ORDER_OPEN_A", "PENDING_GRANT")]
+  const heldGet = deferred()
+  route("GET", ORDER_GET, () => heldGet.promise)
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const view = await mountStore()
+  await flush()
+  await untilText(view, /다이아 지급을 기다리고 있습니다/)
+  await tick(2000)
+  assert.equal(orderGets("ORDER_OPEN_A"), 1)
+  world.openOrders = []
+  await setUser({ uuid: "user-2", nickname: "둘째" })
+  await flush()
+  await setUser({ uuid: "user-1", nickname: "테스터" })
+  await flush()
+  const walletCalls = count("GET", WALLET)
+  const historyCalls = count("GET", TRANSACTIONS)
+  heldGet.resolve(json(200, { ok: true, orderId: "ORDER_OPEN_A", status: "GRANTED" }))
+  await flush()
+  await tick(20000)
+  assert.equal(view.queryByTestId("topup-feedback"), null)
+  assert.equal(count("GET", WALLET), walletCalls)
+  assert.equal(count("GET", TRANSACTIONS), historyCalls)
+  assert.equal(orderGets("ORDER_OPEN_A"), 1)
+})
+
+test("BQ AC-01: 거래 내역은 서버 원장 순서·값을 그대로 보이고, 실패·깨진 응답은 빈 안내가 아닌 오류·재시도이며 성공한 빈 배열만 '없음'이다", async () => {
+  await newWorld()
+  world.transactions = [
+    ledger("9007199254740993", "GOLD_PURCHASE", "GOLD", 127, 1127, "shop:g1"),
+    ledger(7, "GOLD_PURCHASE", "DIAMOND", -7, 93, "shop:g1"),
+    ledger(5, "DIAMOND_TOPUP", "DIAMOND", 110, 100, "topup:ORDER_X1"),
+  ]
+  let respond = () => json(200, { transactions: world.transactions })
+  route("GET", TRANSACTIONS, () => respond())
+  const view = await mountStore()
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 100")
+  await openCurrencyTab(view)
+  await waitFor(() => assert.equal(historyRows(view).length, 3))
+  assert.deepEqual(historyRows(view).map((row) => row.getAttribute("data-transaction-id")), ["9007199254740993", "7", "5"])
+  assert.match(historyRows(view)[0].textContent, /골드 구매.*골드.*\+127.*잔액 1,127/)
+  assert.match(historyRows(view)[1].textContent, /골드 구매.*다이아.*-7.*잔액 93/)
+  assert.match(historyRows(view)[2].textContent, /다이아 충전.*다이아.*\+110.*잔액 100/)
+  assert.match(text(view), /최근 50건/)
+  assert.equal(balance(view, DIAMOND_LABEL), "유료 재화 100", "현재 잔액은 원장 합산이 아니라 지갑 조회 값이다")
+
+  const broken = [
+    () => { throw new TypeError("offline") },
+    () => apiError(500, "SERVER_ERROR"),
+    () => json(200, {}),
+    () => json(200, { transactions: [ledger(1, "DIAMOND_TOPUP", "DIAMOND", 1, 1, "a:1"), ledger(1, "DIAMOND_TOPUP", "DIAMOND", 1, 2, "a:2")] }),
+    () => json(200, { transactions: [{ ...ledger(2, "DIAMOND_TOPUP", "DIAMOND", 1, 1, "a:3"), balanceAfter: -1 }] }),
+    () => json(200, { transactions: [{ ...ledger(3, "DIAMOND_TOPUP", "DIAMOND", 1, 1, "a:4"), createdAt: "never" }] }),
+  ]
+  for (const respondBroken of broken) {
+    respond = respondBroken
+    await act(async () => { await currencyHistory.load() })
+    await waitText(view, /거래 내역을 불러오지 못했습니다/)
+    assert.doesNotMatch(text(view), /거래 내역이 없습니다/)
+    assert.equal(historyRows(view).length, 0)
+  }
+  respond = () => json(200, { transactions: [] })
+  await click(view, "내역 다시 불러오기")
+  await waitText(view, /거래 내역이 없습니다/)
+})
+
+test("BQ AC-01: 충전 완료 뒤 지갑·원장 조회가 실패해도 완료 판정은 유지되고 각각의 재시도로 서버 값을 채운다", async () => {
+  await newWorld()
+  route("POST", CONFIRM, () => json(200, { ok: true, status: "GRANTED", balanceDiamond: 210 }))
+  const view = await mountStore()
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 100")
+  await openCurrencyTab(view)
+  route("GET", WALLET, () => json(500, { ok: false }))
+  route("GET", TRANSACTIONS, () => { throw new TypeError("offline") })
+  await goToReturn()
+  await waitText(view, /거래 내역을 불러오지 못했습니다/)
+  await waitFor(() => assert.equal(useEconomyStore.getState().status, "error"))
+  assert.match(feedbackText(view), /충전이 완료되었습니다/)
+
+  world.diamond = 210
+  world.transactions = [ledger(1, "DIAMOND_TOPUP", "DIAMOND", 110, 210, "topup:ORDER_0001")]
+  route("GET", WALLET, () => json(200, { balanceGold: world.gold, balanceDiamond: world.diamond }))
+  route("GET", TRANSACTIONS, () => json(200, { transactions: world.transactions }))
+  await click(view, "내역 다시 불러오기")
+  await act(async () => { fireEvent.click(view.getAllByRole("button", { name: "재시도" })[0]) })
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 210")
+  await waitFor(() => assert.equal(historyRows(view).length, 1))
+  assert.match(feedbackText(view), /충전이 완료되었습니다/)
+  assert.equal(posts(CONFIRM).length, 1)
+})
+
+test("BQ AC-02: 골드 결과 조회의 잔액은 최초 구매 스냅샷 — 확인 뒤 현재 지갑·원장을 다시 읽어 현재 값을 보이고 완료·참조 ID는 유지한다", async () => {
+  const view = await mountGold()
+  route("POST", GOLD_POST, () => { throw new TypeError("lost") })
+  await click(view, "골드 구매")
+  await waitText(view, /골드 구매 결과 확인이 필요합니다/)
+  const original = posts(GOLD_POST)[0].body
+  // 그 사이 다른 정상 거래로 현재 지갑이 바뀌었다(구매 결과는 최초 값 그대로).
+  world.gold = 1500
+  world.diamond = 50
+  world.transactions = [
+    ledger(12, "GOLD_PURCHASE", "GOLD", 127, 1127, original.referenceEventId),
+    ledger(11, "GOLD_PURCHASE", "DIAMOND", -7, 93, original.referenceEventId),
+  ]
+  route("GET", PURCHASE_GET, () => json(200, { ok: true, kind: "GOLD", results: [], balanceGold: 1127, balanceDiamond: 93 }))
+  const walletCalls = count("GET", WALLET)
+  const historyCalls = count("GET", TRANSACTIONS)
+  await click(view, "결과 확인")
+  await waitText(view, /골드 구매가 완료되었습니다/)
+  await waitBalance(view, GOLD_LABEL, "무료 재화 1500")
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 50")
+  assert.equal(count("GET", WALLET), walletCalls + 1)
+  assert.equal(count("GET", TRANSACTIONS), historyCalls + 1)
+  await waitFor(() => assert.equal(historyRows(view).length, 2))
+  assert.equal(storePurchase.store.getState().status, "confirmed")
+  assert.equal(storePurchase.store.getState().referenceEventId, original.referenceEventId)
+  assert.equal(posts(GOLD_POST).length, 1)
+
+  // 재조회 실패는 잔액 재시도로 남고 구매 완료를 뒤집지 않는다.
+  route("GET", WALLET, () => json(500, { ok: false }))
+  route("POST", GOLD_POST, () => goldCommitted(1600, 43))
+  world.gold = 1500
+  await click(view, "골드 구매")
+  await waitFor(() => assert.equal(useEconomyStore.getState().status, "error"))
+  assert.equal(storePurchase.store.getState().status, "confirmed")
+  assert.match(text(view), /골드 구매가 완료되었습니다/)
 })

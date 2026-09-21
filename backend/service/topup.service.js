@@ -429,8 +429,36 @@ const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
     return toOrderView(fresh, balance);
 };
 
+const OPEN_ORDER_STATUSES = [ORDER_STATUS.CONFIRMING, ORDER_STATUS.PENDING_GRANT];
+const OPEN_ORDER_LIMIT = 5;
+
+/**
+ * F-32 §2-6a 진행 중 주문 발견. 인증 계정의 CONFIRMING·PENDING_GRANT 주문만 최신순 최대 5건을
+ * 공개 필드 다섯 개로 돌려준다. 읽기 전용이다 — 상태 변경·지급·결제 어댑터 호출은 하지 않고,
+ * 지급을 이어 가는 것은 기존 getTopupOrder(주문 단건 조회)뿐이다. DB 오류는 그대로 던진다.
+ */
+const listOpenTopupOrders = async ({ userId }, deps = {}) => {
+    if (typeof userId !== 'string' || userId.length === 0) {
+        throw createError('로그인이 필요합니다.', 401);
+    }
+    const db = dbOf(deps);
+    const rows = await orderModel(db).findAll({
+        where: { user_id: userId, status: OPEN_ORDER_STATUSES },
+        order: [['created_at', 'DESC'], ['order_id', 'DESC']],
+        limit: OPEN_ORDER_LIMIT,
+    });
+    return rows.map((row) => ({
+        orderId: row.order_id,
+        status: row.status,
+        amount: row.pay_amount,
+        orderName: row.order_name,
+        createdAt: row.created_at,
+    }));
+};
+
 module.exports = {
     ORDER_STATUS,
+    OPEN_ORDER_LIMIT,
     LEASE_MS,
     ORDER_ID_PATTERN,
     PAYMENT_KEY_PATTERN,
@@ -438,4 +466,5 @@ module.exports = {
     createTopupOrder,
     confirmTopupOrder,
     getTopupOrder,
+    listOpenTopupOrders,
 };
