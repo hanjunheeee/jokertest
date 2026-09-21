@@ -30,21 +30,39 @@ exports.globalErrorHandler = (err, req, res, next) => {
     // err.body에 실려 있다)나 예상 밖 예외는 아래 일반 처리기로 흘러 console.error(err.stack)로
     // 로그에 남을 수 있었다.
     //
+    // F-31a(AC-06 CODEX-3 대응): code가 있는 오류는 이 표에 있는 것만 그 code와 여기
+    // 직접 박아 둔 고정 문구로 응답한다 — err.message를 그대로 실으면, 이 코드가 앞으로
+    // 다른 곳에서 원본을 담은 채로 재사용되기만 해도 그 원문이 그대로 응답에 새 나간다.
     // SIGNUP_PROOF_REQUIRED/SIGNUP_PROOF_INVALID(auth.service.js가 던지는 유일한 code
-    // 있는 오류)는 이미 원문을 담지 않는 고정 한국어 메시지이므로 그 code·status(401)를
-    // 그대로 응답한다 — AC-01/AC-03/AC-04 계약이 이 두 code·status를 구분해서 쓴다. 그 외
-    // (가입 필드 검증 실패·중복 이메일/닉네임·notFoundHandler의 404·JSON 파서 오류 등 code가
-    // 없는 모든 오류)는 status만으로 INVALID_INPUT(400)/SERVER_ERROR(그 외)로 수렴시키고,
-    // err.message·err.stack·err.body 어느 것도 로그·응답에 담지 않는다.
+    // 있는 오류)만 이 표에 있다 — AC-01/AC-03/AC-04 계약이 이 두 code·status(401)를
+    // 구분해서 쓴다. 표에 없는 code(예상하지 못한 코드)는 status·message와 무관하게
+    // 고정 SERVER_ERROR(500)로 수렴한다.
+    const SIGNUP_SCOPED_ALLOWED_ERROR_CODES = {
+        SIGNUP_PROOF_REQUIRED: { status: 401, message: '이메일 인증이 필요합니다.' },
+        SIGNUP_PROOF_INVALID: { status: 401, message: '이메일 인증 증명이 유효하지 않습니다.' },
+    };
     const signupScopedPath = String(req.originalUrl || req.url || '')
         .split('?')[0].replace(/\/+$/, '').toLowerCase();
     if (signupScopedPath.startsWith('/auth/signup')) {
         res.set('Cache-Control', 'no-store');
         if (typeof err.code === 'string' && err.code) {
-            const statusCode = err.status || err.statusCode || 500;
-            return res.status(statusCode).json({ success: false, message: err.message, code: err.code });
+            const fixed = SIGNUP_SCOPED_ALLOWED_ERROR_CODES[err.code];
+            if (fixed) {
+                return res.status(fixed.status).json({ success: false, message: fixed.message, code: err.code });
+            }
+            return res.status(500).json({ ok: false, code: 'SERVER_ERROR' });
         }
-        const status = (err.status || err.statusCode) === 400 ? 400 : 500;
+        // code가 없는 오류: 가입 필드 검증 실패(400, INVALID_INPUT)와, 이미 사용 중인
+        // 이메일/닉네임(409 — auth.service.js·user.repositories.js가 SQL·요청 입력을
+        // 그대로 담지 않고 직접 고정한 안전한 문자열만 던진다)은 이번 변경 이전부터의
+        // 기존 status·문구를 그대로 유지한다(회귀 금지). 그 밖(404·예상하지 못한 500 등)은
+        // SERVER_ERROR로 수렴시키고, err.message·err.stack·err.body 어느 것도 로그·응답에
+        // 담지 않는다.
+        const rawStatus = err.status || err.statusCode;
+        if (rawStatus === 409) {
+            return res.status(409).json({ success: false, message: err.message });
+        }
+        const status = rawStatus === 400 ? 400 : 500;
         const code = status === 400 ? 'INVALID_INPUT' : 'SERVER_ERROR';
         return res.status(status).json({ ok: false, code });
     }

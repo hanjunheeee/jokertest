@@ -29,6 +29,7 @@ const cookieParser = require("cookie-parser");
 
 const db = require("../models");
 const userRepository = require("../repositories/user.repositories");
+const authService = require("../service/auth.service");
 const mailAdapterModule = require("../mail/mailAdapter");
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
 
@@ -487,85 +488,119 @@ test("AC-05: 이메일 시간당 한도를 넘으면 429 RATE_LIMITED이다(재�
     assert.deepEqual(await third.json(), { ok: false, code: "RATE_LIMITED" });
 });
 
-// 재검토 지적: 위 두 시험은 시간당 한도만 확인했다 — auth.routes.js가 실제로 구성하는
-// 일당 제한기(이메일 10/일, IP 100/일 기본값)는 한 번도 검증되지 못했다. 이 창(24시간)은
-// 실제 대기로 검증할 수 없고, auth.routes.js도 findId·password-reset 라우트와 마찬가지로
-// 제한기에 가짜 시계를 주입할 방법이 없다(now는 항상 실제 Date.now) — passwordReset.
-// api.test.js의 "제한기: 대상 이메일별 한도를 넘으면..." 시험과 같은 원칙으로, 라우터가
-// 쓰는 것과 같은 설정값(getSignupEmailVerificationConfig)으로 createRateLimiter를 직접
-// 재현해 가짜 시계로 일당 경계를 확인한다.
-test("AC-05: 이메일 일당 한도(설정값)를 가짜 시계로 검증한다", async (t) => {
-    const { createRateLimiter } = require("../middleware/rateLimit");
-    const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
+// 재검토 지적(CODEX-3): 이전 버전의 위 두 시험은 별도로 생성한 createRateLimiter
+// 인스턴스를 시험했다 — 승인된 계약은 실제 발송 API(실제 라우터 배선의 POST
+// /auth/signup/email-code)에서의 일당 제한이므로, 이 인스턴스가 올바르다는 사실이
+// auth.routes.js가 실제로 그 설정으로 제한기를 구성해 요청 경로에 연결했는지는 증명하지
+// 못한다. 아래 두 시험은 실제 라우터(loadFreshAuthRouter)로 실제 HTTP 요청을 보낸다.
+// auth.routes.js는 findId·password-reset 라우트와 마찬가지로 제한기에 가짜 시계를 주입할
+// 방법을 노출하지 않지만, createRateLimiter의 now 기본값은 라우터가 require되는(=
+// createRateLimiter(...)가 호출되는) 시점의 Date.now 참조를 그대로 캡처한다 — 그래서
+// loadFreshAuthRouter를 호출하기 전에 전역 Date.now를 가짜 시계로 바꿔 두면(다른 곳도
+// 같은 방식을 쓴다: backend/socket/__tests__/roomCodeLifecycle.test.js,
+// backend/tests/db/f21-participant-departure.integration.test.js), 실제 라우터가 그
+// 가짜 시계로 24시간 창을 실제 대기 없이 넘길 수 있다. 이메일/IP 시간당 한도를 낮게
+// 두면 일당 한도를 다 채우기 전에 시간당 한도에 먼저 걸려 일당 한도 자체가 시험되지
+// 않으므로, 매 성공 요청 뒤 시계를 한 시간씩 전진시켜 시간당 창은 매번 새로 시작하고
+// 일당 창(요청 시작 시점부터 고정된 24시간)만 누적되게 한다.
+test("AC-05: 실제 라우터에서 이메일 일당 한도를 넘기면 429이고, 차단된 요청은 메일도 인증 행 갱신도 없다", async (t) => {
+    const originalEnv = {
+        SIGNUP_IP_HOUR_MAX: process.env.SIGNUP_IP_HOUR_MAX,
+        SIGNUP_IP_DAY_MAX: process.env.SIGNUP_IP_DAY_MAX,
+        SIGNUP_EMAIL_HOUR_MAX: process.env.SIGNUP_EMAIL_HOUR_MAX,
+        SIGNUP_EMAIL_DAY_MAX: process.env.SIGNUP_EMAIL_DAY_MAX,
+    };
+    process.env.SIGNUP_IP_HOUR_MAX = "1000";
+    process.env.SIGNUP_IP_DAY_MAX = "1000";
+    process.env.SIGNUP_EMAIL_HOUR_MAX = "1"; // 시간당 창을 매번 새로 시작해 이 한도에 가려지지 않게 한다
+    process.env.SIGNUP_EMAIL_DAY_MAX = "3";
+    t.after(() => Object.assign(process.env, originalEnv));
 
-    // 이 파일 상단은 다른 시험들이 서로 간섭하지 않도록 SIGNUP_EMAIL_DAY_MAX를 1000으로
-    // 올려 둔다 — 진짜 기본값(설정하지 않았을 때의 10)을 검증하려면 이 시험 동안만 그 값을
-    // 잠시 걷어내야 한다.
-    const originalDayMax = process.env.SIGNUP_EMAIL_DAY_MAX;
-    delete process.env.SIGNUP_EMAIL_DAY_MAX;
-    t.after(() => { process.env.SIGNUP_EMAIL_DAY_MAX = originalDayMax; });
+    const realDateNow = Date.now;
+    let fakeNow = realDateNow();
+    Date.now = () => fakeNow;
+    t.after(() => { Date.now = realDateNow; });
 
-    const config = getSignupEmailVerificationConfig(process.env);
-    assert.equal(config.emailDayMax, 10, "기본값이 바뀌었다면 이 시험의 반복 횟수도 함께 바꿔야 한다");
+    const rows = stubSignupEmailVerificationModel(t);
+    stubUserRepository(t, { users: [] });
+    const memory = useMemoryMailAdapter(t);
+    const router = loadFreshAuthRouter();
+    const base = await startServer(t, { router });
 
-    let now = 0;
-    const limiter = createRateLimiter({
-        windowMs: config.emailDayWindowMs, max: config.emailDayMax,
-        keyOf: () => "email-day:fixed", now: () => now,
-    });
-    const run = () => new Promise((resolve) => {
-        const res = { status(code) { this._status = code; return this; }, json(body) { resolve({ status: this._status, body }); } };
-        limiter({}, res, () => resolve({ status: 200, body: null }));
-    });
+    const HOUR_MS = 60 * 60 * 1000;
+    const email = `ac05-email-day-${crypto.randomUUID()}@example.com`;
 
-    for (let i = 0; i < config.emailDayMax; i += 1) {
-        assert.equal((await run()).status, 200, `${i + 1}번째 요청은 통과해야 한다`);
+    for (let i = 0; i < 3; i += 1) {
+        const res = await postCode(base, { email });
+        assert.equal(res.status, 200, `${i + 1}번째 요청은 통과해야 한다`);
+        fakeNow += HOUR_MS;
+        await sleep(350); // 서비스 계층의 재발송 대기(실제 시계 기준, 이 파일 상단에서 300ms로 낮춤)를 넘긴다
     }
-    const overLimit = await run();
-    assert.equal(overLimit.status, 429);
-    assert.deepEqual(overLimit.body, { ok: false, code: "RATE_LIMITED" });
 
-    // 하루 창이 지나면 회복되어야 한다.
-    now += config.emailDayWindowMs;
-    assert.equal((await run()).status, 200, "24시간 창이 지나면 다시 통과해야 한다");
+    const rowBefore = rows.find((row) => row.email === email);
+    const generationBefore = rowBefore.generation;
+    const codeHashBefore = rowBefore.code_hash;
+
+    const blocked = await postCode(base, { email });
+    assert.equal(blocked.status, 429);
+    assert.deepEqual(await blocked.json(), { ok: false, code: "RATE_LIMITED" });
+    assert.equal(memory.outbox.length, 3, "차단된 요청은 메일을 보내면 안 된다");
+
+    const rowAfter = rows.find((row) => row.email === email);
+    assert.equal(rowAfter.generation, generationBefore, "차단된 요청은 인증 행의 generation을 바꾸면 안 된다");
+    assert.equal(rowAfter.code_hash, codeHashBefore, "차단된 요청은 인증번호 해시를 바꾸면 안 된다");
 });
 
-test("AC-05: IP 일당 한도(설정값)를 가짜 시계로 검증한다", async (t) => {
-    const { createRateLimiter } = require("../middleware/rateLimit");
-    const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
+test("AC-05: 실제 라우터에서 IP 일당 한도를 넘기면 429이고, 차단된 요청은 메일도 인증 행 생성도 없다", async (t) => {
+    const originalEnv = {
+        SIGNUP_IP_HOUR_MAX: process.env.SIGNUP_IP_HOUR_MAX,
+        SIGNUP_IP_DAY_MAX: process.env.SIGNUP_IP_DAY_MAX,
+        SIGNUP_EMAIL_HOUR_MAX: process.env.SIGNUP_EMAIL_HOUR_MAX,
+        SIGNUP_EMAIL_DAY_MAX: process.env.SIGNUP_EMAIL_DAY_MAX,
+    };
+    process.env.SIGNUP_IP_HOUR_MAX = "1"; // 시간당 창을 매번 새로 시작해 이 한도에 가려지지 않게 한다
+    process.env.SIGNUP_IP_DAY_MAX = "3";
+    process.env.SIGNUP_EMAIL_HOUR_MAX = "1000";
+    process.env.SIGNUP_EMAIL_DAY_MAX = "1000";
+    t.after(() => Object.assign(process.env, originalEnv));
 
-    const originalDayMax = process.env.SIGNUP_IP_DAY_MAX;
-    delete process.env.SIGNUP_IP_DAY_MAX;
-    t.after(() => { process.env.SIGNUP_IP_DAY_MAX = originalDayMax; });
+    const realDateNow = Date.now;
+    let fakeNow = realDateNow();
+    Date.now = () => fakeNow;
+    t.after(() => { Date.now = realDateNow; });
 
-    const config = getSignupEmailVerificationConfig(process.env);
-    assert.equal(config.ipDayMax, 100, "기본값이 바뀌었다면 이 시험의 반복 횟수도 함께 바꿔야 한다");
+    const rows = stubSignupEmailVerificationModel(t);
+    stubUserRepository(t, { users: [] });
+    const memory = useMemoryMailAdapter(t);
+    const router = loadFreshAuthRouter();
+    const base = await startServer(t, { router });
 
-    let now = 0;
-    const limiter = createRateLimiter({
-        windowMs: config.ipDayWindowMs, max: config.ipDayMax,
-        keyOf: () => "ip-day:fixed", now: () => now,
-    });
-    const run = () => new Promise((resolve) => {
-        const res = { status(code) { this._status = code; return this; }, json(body) { resolve({ status: this._status, body }); } };
-        limiter({}, res, () => resolve({ status: 200, body: null }));
-    });
+    const HOUR_MS = 60 * 60 * 1000;
+    // IP 한도이므로(같은 테스트 서버 = 같은 클라이언트 IP) 이메일은 매번 다르게 써서
+    // 이메일 쪽 제한기가 끼어들지 않게 한다.
+    const emails = [0, 1, 2].map(() => `ac05-ip-day-${crypto.randomUUID()}@example.com`);
 
-    for (let i = 0; i < config.ipDayMax; i += 1) {
-        assert.equal((await run()).status, 200, `${i + 1}번째 요청은 통과해야 한다`);
+    for (let i = 0; i < 3; i += 1) {
+        const res = await postCode(base, { email: emails[i] });
+        assert.equal(res.status, 200, `${i + 1}번째 요청은 통과해야 한다`);
+        fakeNow += HOUR_MS;
     }
-    const overLimit = await run();
-    assert.equal(overLimit.status, 429);
-    assert.deepEqual(overLimit.body, { ok: false, code: "RATE_LIMITED" });
 
-    now += config.ipDayWindowMs;
-    assert.equal((await run()).status, 200, "24시간 창이 지나면 다시 통과해야 한다");
+    const blockedEmail = `ac05-ip-day-blocked-${crypto.randomUUID()}@example.com`;
+    const blocked = await postCode(base, { email: blockedEmail });
+    assert.equal(blocked.status, 429);
+    assert.deepEqual(await blocked.json(), { ok: false, code: "RATE_LIMITED" });
+    assert.equal(memory.outbox.length, 3, "차단된 요청은 메일을 보내면 안 된다");
+    assert.ok(
+        !rows.some((row) => row.email === blockedEmail),
+        "IP 한도로 차단된 요청은 검증(입력 검사·이메일 제한기)에 도달하지 못하므로 인증 행 자체를 만들면 안 된다",
+    );
 });
 
-// 재검토 지적: 위 시험들은 createRateLimiter 자체가 올바른지만 본다 — auth.routes.js가
-// 실제 요청에서 이메일 제한기의 keyOf에 "의도한 값"(res.locals.signupEmailCodeInput.email,
-// 즉 검증 미들웨어가 trim+소문자로 정규화한 값)을 넘기는지는 실제 라우터 배선으로만
-// 확인할 수 있다. 대소문자·앞뒤 공백만 다른 두 이메일이 같은 제한기 키를 쓰는지(=같은
+// 재검토 지적: 위 이메일 일당 시험은 일당 한도 자체가 실제 라우터에서 강제되는지를
+// 본다 — auth.routes.js가 실제 요청에서 이메일 제한기의 keyOf에 "의도한 값"
+// (res.locals.signupEmailCodeInput.email, 즉 검증 미들웨어가 trim+소문자로 정규화한 값)을
+// 넘기는지는 별개로, 대소문자·앞뒤 공백만 다른 두 이메일이 같은 제한기 키를 쓰는지(=같은
 // 계정으로 취급되는지), 그리고 다른 이메일은 별도 키를 쓰는지를 실제 HTTP 요청으로 확인한다.
 test("AC-05: 이메일 제한기의 keyOf는 실제 요청에서 정규화된 이메일(trim+소문자)로 계산된다", async (t) => {
     const originalEnv = {
@@ -698,6 +733,88 @@ test("AC-06: 이미 가입된 이메일도 같은 발송 응답 형태를 받고
     const verifyRes = await postVerify(base, { email: existingUser.email, code: "000000" });
     assert.equal(verifyRes.status, 400);
     assert.deepEqual(await verifyRes.json(), { ok: false, code: "CODE_INVALID" });
+});
+
+// 재검토 지적(CODEX-3): errorHandler.js::globalErrorHandler가 가입 범위에서 code가 있는
+// 오류를 만나면 허용 목록 여부와 무관하게 err.message를 그대로 응답에 실었다(a) — 허용
+// 목록에 없는 code라도 원본 메시지가 새 나갔다. 게다가 code가 없는 기존 이메일/닉네임
+// 중복(409)까지 SERVER_ERROR(500)로 뭉개는 회귀가 있었다(b). 아래 세 시험이 각각을
+// 확인한다.
+test("AC-06: 허용 목록 밖의 code를 가진 오류는 고정 SERVER_ERROR로 응답하고 원본 메시지를 응답·로그 어디에도 남기지 않는다", async (t) => {
+    const secretMessage = `절대 노출되면 안 되는 내부 진단 메시지-${crypto.randomUUID()}`;
+    t.mock.method(authService, "signup", async () => {
+        const error = new Error(secretMessage);
+        error.status = 500;
+        // errorHandler.js의 허용 목록(SIGNUP_PROOF_REQUIRED/SIGNUP_PROOF_INVALID)에 없는
+        // 임의의 code — 이런 code를 만나도 err.message를 그대로 응답하면 안 된다.
+        error.code = "SOME_UNEXPECTED_INTERNAL_CODE";
+        throw error;
+    });
+
+    const capturedConsole = [];
+    const originalConsoleError = console.error;
+    console.error = (...args) => { capturedConsole.push(args.map(String).join(" ")); };
+    t.after(() => { console.error = originalConsoleError; });
+
+    const base = await startServer(t);
+    const res = await postSignup(base, {
+        email: `ac06-unknowncode-${crypto.randomUUID()}@example.com`,
+        ...VALID_SIGNUP_FIELDS,
+        signupProof: "irrelevant-because-signup-is-stubbed",
+    });
+    const text = await res.text();
+
+    assert.equal(res.status, 500);
+    assert.deepEqual(JSON.parse(text), { ok: false, code: "SERVER_ERROR" });
+    assert.equal(text.includes(secretMessage), false, "허용 목록 밖 code의 원본 메시지가 응답에 남았습니다");
+    assert.equal(capturedConsole.join("\n").includes(secretMessage), false, "허용 목록 밖 code의 원본 메시지가 로그에 남았습니다");
+});
+
+test("AC-06: 기존 이메일 중복(409, code 없음)은 SERVER_ERROR로 뭉개지지 않고 기존 상태·문구를 유지한다", async (t) => {
+    stubSignupEmailVerificationModel(t);
+    const { byUuid } = stubUserRepository(t, { users: [] });
+    const memory = useMemoryMailAdapter(t);
+    const base = await startServer(t);
+
+    const email = `ac06-dupe-email-${crypto.randomUUID()}@example.com`;
+    await postCode(base, { email });
+    const code = memory.outbox.at(-1).params.code;
+    const verifyRes = await postVerify(base, { email, code });
+    const { signupProof } = await verifyRes.json();
+
+    // 증명은 이미 정상 발급됐다 — 그 사이 다른 경로(예: 소셜 가입)가 같은 이메일로 먼저
+    // 계정을 만든 것처럼 재현한다(auth.signup.rollback.test.js의 "이메일·닉네임 중복
+    // 검사는 증명 소비 이후..." 시험과 같은 재현 방식: 증명을 먼저 받고 그 다음에 중복을
+    // 만든다 — 그래야 requestSignupCode의 "이미 가입된 이메일에는 번호를 보내지 않는다"
+    // 분기를 우회하지 않는다).
+    byUuid.set(crypto.randomUUID(), { email, nickname: "다른경로로먼저가입", password_hash: "h" });
+
+    const res = await postSignup(base, { email, ...VALID_SIGNUP_FIELDS, signupProof });
+    const body = await res.json();
+    assert.equal(res.status, 409, "회귀 이전과 같은 상태 코드를 유지해야 한다");
+    assert.deepEqual(body, { success: false, message: "이미 사용 중인 이메일입니다." }, "회귀 이전과 같은 문구를 유지해야 한다");
+});
+
+test("AC-06: 기존 닉네임 중복(409, code 없음)은 SERVER_ERROR로 뭉개지지 않고 기존 상태·문구를 유지한다", async (t) => {
+    stubSignupEmailVerificationModel(t);
+    stubUserRepository(t, { users: [] });
+    const memory = useMemoryMailAdapter(t);
+    const base = await startServer(t);
+
+    const email = `ac06-dupe-nickname-${crypto.randomUUID()}@example.com`;
+    await postCode(base, { email });
+    const code = memory.outbox.at(-1).params.code;
+    const verifyRes = await postVerify(base, { email, code });
+    const { signupProof } = await verifyRes.json();
+
+    // 이메일 중복 검사를 통과한 뒤 닉네임 중복 검사에서 걸리도록, 그 사이에 닉네임 조회만
+    // 충돌하게 만든다(이메일 조회는 기존 stub대로 "없음"을 유지한다).
+    userRepository.findByNickname = async () => ({ uuid: crypto.randomUUID() });
+
+    const res = await postSignup(base, { email, ...VALID_SIGNUP_FIELDS, signupProof });
+    const body = await res.json();
+    assert.equal(res.status, 409, "회귀 이전과 같은 상태 코드를 유지해야 한다");
+    assert.deepEqual(body, { success: false, message: "이미 사용 중인 닉네임입니다." }, "회귀 이전과 같은 문구를 유지해야 한다");
 });
 
 // ── AC-06: 실제 backend/index.js의 콘솔·접근 로그(morgan 포함)에도 원문이 없다 ─────
