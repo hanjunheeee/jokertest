@@ -191,6 +191,39 @@ test("NOT_FOUND는 공통 안내 문구를 보여주고, 다시 입력을 누르
   assert.equal(view.container.querySelector('input[name="birthDate"]').value, "1990-01-01")
 });
 
+// ── AC-02/AC-07: 계약 밖 응답은 "계정 없음"으로 단정하지 않는다 ────────────────────
+//
+// 서버 계약은 {ok:true,maskedEmail}과 {ok:false,code:'NOT_FOUND'} 둘 뿐이다. "ok가 아니면
+// 전부 notFound"였을 때는 정체를 알 수 없는 본문이 "그런 계정은 없다"는 사실 주장으로
+// 바뀌었고, truthy 비교였을 때는 힌트가 없는 성공 본문이 빈 결과 화면을 열었다.
+
+test("ok:true인데 maskedEmail이 없으면 결과 화면을 열지 않고 재시도 안내를 보여준다", async () => {
+  findIdHandler = async () => ({ ok: true })
+  const view = await mountFindIdPage()
+  fillForm(view, { nickname: "정상닉네임", birthDate: "2000-01-15" })
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  assert.ok(view.container.querySelector('input[name="nickname"]'), "빈 힌트로 결과 화면을 열면 안 됩니다")
+  assert.equal(view.container.querySelector('input[name="nickname"]').value, "정상닉네임", "입력은 보존됩니다")
+  assert.equal(calls.length, 1, "자동 재시도가 있으면 안 됩니다")
+});
+
+test("계약에 없는 본문은 '계정 없음'이 아니라 입력을 보존한 통신 실패로 처리한다", async () => {
+  findIdHandler = async () => ({ ok: false, code: "SOMETHING_ELSE" })
+  const view = await mountFindIdPage()
+  fillForm(view, { nickname: "정상닉네임", birthDate: "2000-01-15" })
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  assert.equal(
+    view.container.textContent.includes("입력한 정보와 일치하는 계정을 찾을 수 없습니다."),
+    false,
+    "알 수 없는 응답을 '계정 없음'이라는 사실 주장으로 바꾸면 안 됩니다",
+  );
+  assert.equal(view.container.querySelector('input[name="nickname"]').value, "정상닉네임")
+});
+
 // ── AC-05/AC-07: 429(RATE_LIMITED) ───────────────────────────────────────────
 
 test("429 응답은 제한 안내를 보여주고 자동으로 재시도하지 않는다", async () => {

@@ -34,7 +34,11 @@ const validateResetEmailInput = (email) => {
   return { ok: true, value }
 }
 
-const REQUEST_SENT_MESSAGE = "입력하신 이메일로 재설정 링크를 보내드렸어요. 메일함을 확인해주세요."
+// AC-01/AC-05: 완료 안내는 "접수했다"까지만 말합니다 — 서버 응답({ok:true})은 계정이 있었다는
+// 뜻도, 메일이 실제로 발송·도착했다는 뜻도 아닙니다(backend/service/passwordReset.service.js는
+// 계정 없음·소셜 전용·발송 실패를 모두 같은 {ok:true}로 수렴시킵니다). 발송을 단정하면 화면이
+// 응답에 없는 사실을 말하게 되고, 미등록 이메일을 넣은 사람에게 "그 계정이 있다"는 신호가 됩니다.
+const REQUEST_SENT_MESSAGE = "재설정 요청을 접수했어요. 입력하신 주소로 가입된 계정이 있다면 재설정 링크가 담긴 메일이 도착합니다. 메일이 보이지 않으면 스팸함까지 확인한 뒤 아래 '다시 보내기'를 눌러주세요."
 const REQUEST_RATE_LIMITED_MESSAGE = "너무 많은 요청입니다. 잠시 후 다시 시도해주세요."
 const REQUEST_FAILED_MESSAGE = "서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요."
 
@@ -69,10 +73,16 @@ export function PasswordResetRequestPage() {
 
     requestPasswordResetApi({ email: targetEmail })
       .then((result) => {
-        submittingRef.current = false
+        // 세대·언마운트 확인을 잠금 해제보다 **먼저** 합니다 — 늦게 도착한 옛 응답이 지금
+        // 진행 중인 요청의 잠금을 풀어 버리면, 그 사이 제출이 한 번 더 나갈 수 있습니다.
         if (unmountedRef.current || requestGenerationRef.current !== generation) return
+        submittingRef.current = false
 
-        if (result?.ok) {
+        // 계약은 {ok:true} 하나뿐입니다(passwordReset.controller.js::requestPasswordReset).
+        // ok:'true'·{sent:1} 같은 계약 밖 200 본문을 truthy 비교로 완료 처리하면, 서버가
+        // 실제로 무엇을 했는지 모르는 채 "접수됐다"고 말하게 됩니다 — 입력을 보존한 채
+        // 재시도 가능한 실패로 남깁니다.
+        if (result?.ok === true) {
           setSentEmail(targetEmail)
           setStatus("sent")
         } else {
@@ -80,8 +90,8 @@ export function PasswordResetRequestPage() {
         }
       })
       .catch((error) => {
-        submittingRef.current = false
         if (unmountedRef.current || requestGenerationRef.current !== generation) return
+        submittingRef.current = false
 
         if (error?.status === 429) {
           setStatus("rateLimited")
@@ -204,6 +214,11 @@ const LINK_USED_MESSAGE = "이미 사용된 링크예요. 비밀번호가 이미
 const LINK_INVALID_MESSAGE = "유효하지 않은 링크예요. 이메일에 있는 링크 주소를 다시 확인해주세요."
 const VERIFY_FAILED_MESSAGE = "서버와 통신할 수 없습니다. 다시 확인해주세요."
 const CONFIRM_RETRY_MESSAGE = "서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요."
+// AC-01: verify·confirm은 IP별 합산 제한 하나를 공유합니다(backend/routes/auth.routes.js의
+// passwordResetCheckIpRateLimiter) — 429는 "통신 실패"가 아니라 "지금은 더 보낼 수 없다"이므로
+// 안내를 분리하고, 자동 재호출은 하지 않습니다(사용자가 직접 다시 눌러야 다음 요청이 나갑니다).
+const VERIFY_RATE_LIMITED_MESSAGE = "확인 요청이 너무 많습니다. 잠시 후 '다시 확인'을 눌러주세요."
+const CONFIRM_RATE_LIMITED_MESSAGE = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."
 const DONE_MESSAGE = "비밀번호가 재설정되었어요. 새 비밀번호로 다시 로그인해주세요."
 const SOCIAL_ONLY_MESSAGE = "소셜 로그인으로 가입한 계정이에요. 소셜 로그인 버튼으로 로그인해주세요."
 
@@ -222,25 +237,28 @@ export function PasswordResetPage() {
   const [password, setPassword] = useState("")
   const [passwordConfirm, setPasswordConfirm] = useState("")
   const [formError, setFormError] = useState("")
+  const [verifyFailedMessage, setVerifyFailedMessage] = useState(VERIFY_FAILED_MESSAGE)
   const [verifyReloadKey, setVerifyReloadKey] = useState(0)
 
   const submittingRef = useRef(false)
   const unmountedRef = useRef(false)
-  // confirm 응답이 도착했을 때, 그 사이 token이 바뀌었으면(늦은 응답) 버리기 위한 최신 token
-  // 참조입니다 — closure가 캡처한 제출 당시 token과 비교합니다.
-  const tokenRef = useRef(token)
-  // StrictMode가 effect를 마운트 → 정리 → 재마운트로 두 번 돌려도 같은 token이면 GET verify를
-  // 한 번만 시작하도록, token별로 진행 중인 Promise를 재사용합니다.
-  const verifyPromiseCacheRef = useRef(new Map())
+  // "방문 세대"입니다 — token이 실제로 **바뀔 때만** 증가합니다(StrictMode의 이중 effect는
+  // 같은 token으로 다시 돌므로 증가하지 않습니다). 토큰 문자열만 비교하면 A→B→A에서 첫 A의
+  // 늦은 응답이 다시 같은 문자열을 보고 "내 것"이라 착각합니다 — 세대 번호는 같은 토큰으로
+  // 돌아온 새 방문도 다른 방문으로 구분합니다.
+  const visitIdRef = useRef(0)
+  const visitedTokenRef = useRef(null)
+  // 같은 방문 안에서만 진행 중인 GET verify Promise를 재사용합니다 — StrictMode 이중 effect는
+  // 호출 1회로 합치고, 새 방문(A→B→A)은 서버 상태를 다시 조회합니다.
+  const verifyCacheRef = useRef({ key: "", promise: null })
+  // confirm 요청 번호입니다 — 같은 방문 안에서도 앞선 제출의 늦은 응답이 새 제출의 잠금·화면을
+  // 건드리지 못하게 합니다.
+  const confirmRequestRef = useRef(0)
 
   useEffect(() => {
     unmountedRef.current = false
     return () => { unmountedRef.current = true }
   }, [])
-
-  useEffect(() => {
-    tokenRef.current = token
-  }, [token])
 
   // token이 바뀌면 이전 입력·오류·잠금을 지웁니다 — A의 화면 상태가 B로 새어 들어가지
   // 않습니다.
@@ -253,6 +271,14 @@ export function PasswordResetPage() {
   }, [token])
 
   useEffect(() => {
+    // token이 바뀐 진입만 새 방문입니다. StrictMode가 같은 token으로 effect를 한 번 더 돌 때는
+    // 여기서 세대가 오르지 않아 아래 캐시가 그대로 맞고, GET은 한 번만 나갑니다.
+    if (visitedTokenRef.current !== token) {
+      visitedTokenRef.current = token
+      visitIdRef.current += 1
+    }
+    const visitId = visitIdRef.current
+
     if (!token) {
       setLinkInvalidReason("INVALID")
       setStatus("linkInvalid")
@@ -262,15 +288,16 @@ export function PasswordResetPage() {
     let cancelled = false
     setStatus("verifying")
 
-    let promise = verifyPromiseCacheRef.current.get(token)
+    const cacheKey = `${visitId}:${verifyReloadKey}:${token}`
+    let promise = verifyCacheRef.current.key === cacheKey ? verifyCacheRef.current.promise : null
     if (!promise) {
       promise = verifyPasswordResetApi({ token })
-      verifyPromiseCacheRef.current.set(token, promise)
+      verifyCacheRef.current = { key: cacheKey, promise }
     }
 
     promise
       .then((result) => {
-        if (cancelled || unmountedRef.current) return
+        if (cancelled || unmountedRef.current || visitIdRef.current !== visitId) return
         if (result?.ok === true && result.status === "VALID") {
           setStatus("ready")
         } else if (result?.ok === false && (result.code === "EXPIRED" || result.code === "USED" || result.code === "INVALID")) {
@@ -280,24 +307,26 @@ export function PasswordResetPage() {
           // 예상 밖 본문(ok도 code도 알아볼 수 없는 형태)은 무효로 단정하지 않고 통신
           // 실패와 같은 재시도 가능한 상태로 처리합니다 — 캐시도 지워 "다시 확인"이 새
           // 요청을 만들게 합니다.
-          verifyPromiseCacheRef.current.delete(token)
+          verifyCacheRef.current = { key: "", promise: null }
+          setVerifyFailedMessage(VERIFY_FAILED_MESSAGE)
           setStatus("verifyFailed")
         }
       })
-      .catch(() => {
+      .catch((error) => {
         // 실패한 Promise는 캐시에서 지워야 "다시 확인" 클릭이 새 요청을 만듭니다.
-        verifyPromiseCacheRef.current.delete(token)
-        if (cancelled || unmountedRef.current) return
+        verifyCacheRef.current = { key: "", promise: null }
+        if (cancelled || unmountedRef.current || visitIdRef.current !== visitId) return
+        setVerifyFailedMessage(error?.status === 429 ? VERIFY_RATE_LIMITED_MESSAGE : VERIFY_FAILED_MESSAGE)
         setStatus("verifyFailed")
       })
 
     return () => { cancelled = true }
   }, [token, verifyReloadKey])
 
-  // 검증 통신 오류(네트워크·5xx·예상 밖 응답)에서만 사용자가 명시적으로 다시 검증합니다 —
+  // 검증 통신 오류(네트워크·5xx·429·예상 밖 응답)에서만 사용자가 명시적으로 다시 검증합니다 —
   // 화면 진입 자체는 재호출을 만들지 않습니다.
   const retryVerify = () => {
-    verifyPromiseCacheRef.current.delete(token)
+    verifyCacheRef.current = { key: "", promise: null }
     setVerifyReloadKey((k) => k + 1)
   }
 
@@ -306,11 +335,22 @@ export function PasswordResetPage() {
     setFormError("")
     setStatus("submitting")
     const submittedToken = token
+    // 제출 당시의 방문 세대와 요청 번호를 함께 기록합니다 — 응답이 이 둘과 모두 맞을 때만
+    // 잠금과 화면을 움직입니다. 토큰 문자열만 비교하면 A→B→A 재진입 후의 새 제출을 첫 A의
+    // 늦은 응답이 덮어써 버립니다.
+    const submittedVisitId = visitIdRef.current
+    const requestId = ++confirmRequestRef.current
+    const isStale = () => (
+      unmountedRef.current
+      || visitIdRef.current !== submittedVisitId
+      || confirmRequestRef.current !== requestId
+    )
 
     confirmPasswordResetApi({ token: submittedToken, newPassword: password })
       .then((result) => {
+        // 잠금 해제보다 소속 확인이 먼저입니다(요청 화면과 같은 이유).
+        if (isStale()) return
         submittingRef.current = false
-        if (unmountedRef.current || tokenRef.current !== submittedToken) return
 
         if (result?.ok === true) {
           setPassword("")
@@ -324,19 +364,30 @@ export function PasswordResetPage() {
         }
       })
       .catch((error) => {
+        if (isStale()) return
         submittingRef.current = false
-        if (unmountedRef.current || tokenRef.current !== submittedToken) return
 
-        if (error?.code === "SOCIAL_ONLY") {
+        // 알려진 사유는 서버가 실제로 그 사유로 **거부**했을 때만 적용합니다. 서버는 이 네
+        // 코드를 전부 400 {ok:false,code}로만 내보냅니다(passwordReset.controller.js) — 다른
+        // 상태(5xx·429)에 같은 code 문자열이 섞여 와도 링크 무효·소셜 전용으로 단정하지
+        // 않습니다(shared/api/response.js의 toApiError는 status와 code만 싣고 ok는 버리므로,
+        // "ok:false와 함께 확인"을 여기서는 거부 상태(400) 확인으로 읽습니다).
+        const rejectedWithCode = error?.status === 400 ? error.code : undefined
+
+        if (error?.status === 429) {
+          // 제한은 입력을 보존한 채 ready로 남고, 자동 재시도는 하지 않습니다.
+          setFormError(CONFIRM_RATE_LIMITED_MESSAGE)
+          setStatus("ready")
+        } else if (rejectedWithCode === "SOCIAL_ONLY") {
           setStatus("socialOnly")
-        } else if (error?.code === "INVALID_PASSWORD") {
+        } else if (rejectedWithCode === "INVALID_PASSWORD") {
           setFormError(error.message || "비밀번호 조건을 다시 확인해주세요.")
           setStatus("ready")
-        } else if (error?.code === "INVALID" || error?.code === "EXPIRED" || error?.code === "USED") {
-          setLinkInvalidReason(error.code)
+        } else if (rejectedWithCode === "INVALID" || rejectedWithCode === "EXPIRED" || rejectedWithCode === "USED") {
+          setLinkInvalidReason(rejectedWithCode)
           setStatus("linkInvalid")
         } else {
-          // 통신 실패·429 모두 입력을 보존한 채 ready로 남아 수동 재시도를 안내합니다.
+          // 통신 실패·5xx 모두 입력을 보존한 채 ready로 남아 수동 재시도를 안내합니다.
           setFormError(CONFIRM_RETRY_MESSAGE)
           setStatus("ready")
         }
@@ -383,7 +434,7 @@ export function PasswordResetPage() {
       <AuthScene onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <p role="alert" className="rounded bg-red-500/20 px-3 py-2 text-xs text-red-200">
-            {VERIFY_FAILED_MESSAGE}
+            {verifyFailedMessage}
           </p>
           <button type="button" onClick={retryVerify} className="auth-text-link">다시 확인</button>
         </div>
