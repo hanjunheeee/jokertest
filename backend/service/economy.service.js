@@ -641,6 +641,179 @@ const getPurchaseResult = async (userId, referenceEventId, db = defaultDb()) => 
     return { kind: existing.kind, results: existing.result_json, createdAt: existing.created_at };
 };
 
+// F-32b 골드 구매(다이아 → 골드). 상품은 게임 서버가 요청 시점에 DB에서 읽은 값만 신뢰한다.
+// 다이아 차감·골드 지급(재화 원장 2행)·구매 요청 1행이 하나의 READ COMMITTED 부모 트랜잭션에서
+// 함께 커밋되거나 함께 롤백된다. 구매 요청 행(kind 'GOLD')이 최초 처리 결과의 유일한 근거라,
+// 같은 참조 사건 ID의 재시도·결과 조회는 현재 지갑·현재 상품표를 다시 보지 않고 그 저장 결과를 돌려준다.
+const GOLD_PURCHASE_KIND = 'GOLD';
+const GOLD_PURCHASE_REASON = 'GOLD_PURCHASE';
+const GOLD_PURCHASE_MAX_ATTEMPTS = 3;
+
+// 재화 원장의 (user_id, reference_event_id) 유일 키는 STRING(150)이다 — 클라이언트 키 길이와
+// 무관하게 항상 고정 길이가 되도록 SHA-256으로 파생하고 접미사로 두 행을 구분한다.
+const deriveGoldPurchaseReferenceEventId = (referenceEventId, leg) =>
+    `gold:${crypto.createHash('sha256').update(referenceEventId).digest('hex')}:${leg}`;
+
+const isDeadlockError = (error) =>
+    error?.parent?.code === 'ER_LOCK_DEADLOCK' || error?.original?.code === 'ER_LOCK_DEADLOCK';
+
+const goldPurchaseResultOf = (stored) => {
+    const [diamondEntry, goldEntry] = stored.result_json;
+    return {
+        idempotent: true,
+        kind: stored.kind,
+        results: stored.result_json,
+        balanceDiamond: diamondEntry.balance_after,
+        balanceGold: goldEntry.balance_after,
+    };
+};
+
+const goldPurchaseInvalid = () => createError('골드 구매 요청 형식이 올바르지 않습니다.', 400, 'INVALID_GOLD_PURCHASE_REQUEST');
+
+const purchaseGold = async ({ userId, productId, version, referenceEventId }, db = defaultDb()) => {
+    if (typeof userId !== 'string' || userId.length === 0
+        || typeof productId !== 'string' || productId.length === 0 || productId.length > 64
+        || !Number.isSafeInteger(version) || version <= 0
+        || typeof referenceEventId !== 'string' || referenceEventId.length === 0 || referenceEventId.length > 150) {
+        throw goldPurchaseInvalid();
+    }
+
+    const models = economyModels(db);
+    const payload = { type: GOLD_PURCHASE_REASON, productId, version };
+
+    // 같은 키의 저장 요청은 종류·상품·버전이 같을 때만 저장 결과로 복구하고, 다르면 충돌이다.
+    const consumeStored = (stored) => {
+        // MySQL JSON 컬럼은 키 순서를 다시 정렬해 돌려주므로 문자열 비교가 아니라 필드별로 비교한다.
+        const storedPayload = typeof stored.payload_json === 'string' ? JSON.parse(stored.payload_json) : stored.payload_json;
+        if (stored.kind !== GOLD_PURCHASE_KIND
+            || storedPayload?.type !== payload.type
+            || storedPayload?.productId !== payload.productId
+            || storedPayload?.version !== payload.version) {
+            throw purchaseRequestConflictError();
+        }
+        return goldPurchaseResultOf(stored);
+    };
+    const findStored = (transaction) => models.EconomyPurchaseRequest.findOne({
+        where: { user_id: userId, reference_event_id: referenceEventId },
+        ...(transaction ? { transaction } : {}),
+    });
+
+    // 이미 커밋된 요청은 상품 조회보다 먼저 복구한다 — 그 사이 상품이 바뀌거나 판매가 중지돼도
+    // 최초 결과가 그대로여야 한다.
+    const preExisting = await findStored(null);
+    if (preExisting) return consumeStored(preExisting);
+
+    // 순환 참조를 피하려고(currencyProducts.service가 MAX_BALANCE를 이 파일에서 가져온다) 실행
+    // 시점에 불러온다. 라우트 시험이 함수를 바꿔 끼워도 반영되게 모듈 객체로 호출한다.
+    const currencyProductsService = require('./currencyProducts.service');
+
+    const runOnce = () => models.sequelize.transaction({ isolationLevel: 'READ COMMITTED' }, async (t) => {
+        // PRODUCT_* 오류는 잠시 보관한다 — 잠금 뒤에 같은 요청이 먼저 커밋됐는지 확인해야 하기
+        // 때문이다. DB 조회 실패 같은 그 밖의 오류는 상품 오류로 바꾸지 않고 그대로 던진다.
+        let product = null;
+        let productError = null;
+        try {
+            product = await currencyProductsService.getCurrencyProduct(
+                { productId, version, kind: currencyProductsService.KINDS.GOLD_PURCHASE },
+                db,
+                { transaction: t },
+            );
+        } catch (error) {
+            if (typeof error?.code === 'string' && error.code.startsWith('PRODUCT_')) productError = error;
+            else throw error;
+        }
+
+        // 지갑이 이미 있으면 바로 UPDATE 잠금만 잡는다 — 중복 INSERT 실패가 남기는 공유 잠금 때문에
+        // 동시 요청끼리 잠금 승격 deadlock이 나는 것을 피한다. 없을 때만 만들고 다시 잠근다.
+        const lockWallet = () => models.EconomyWallet.findOne({
+            where: { user_id: userId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+        });
+        let wallet = await lockWallet();
+        if (!wallet) {
+            await ensureWalletRow(db, userId, t);
+            wallet = await lockWallet();
+        }
+
+        // 잠금 뒤 재확인 — 앞선 동시 요청이 이미 커밋했다면 그 결과를 소비한다.
+        const committed = await findStored(t);
+        if (committed) return consumeStored(committed);
+        if (productError) throw productError;
+
+        // 클라이언트가 보낸 금액·수량은 이 함수에 도달하지 않는다 — 가격·지급량은 서버 상품 값뿐이다.
+        const payAmount = product.payAmount;
+        const grantTotal = product.grantAmount + product.bonusAmount;
+        if (wallet.balance_diamond < payAmount) {
+            throw createError('다이아 잔액이 부족합니다.', 400, 'INSUFFICIENT_DIAMOND');
+        }
+
+        const diamondOutcome = await applyLedgerTransaction(db, {
+            userId,
+            reason: GOLD_PURCHASE_REASON,
+            currency: CURRENCIES.DIAMOND,
+            amount: -payAmount,
+            referenceEventId: deriveGoldPurchaseReferenceEventId(referenceEventId, 'diamond'),
+        }, { transaction: t });
+        const goldOutcome = await applyLedgerTransaction(db, {
+            userId,
+            reason: GOLD_PURCHASE_REASON,
+            currency: CURRENCIES.GOLD,
+            amount: grantTotal,
+            referenceEventId: deriveGoldPurchaseReferenceEventId(referenceEventId, 'gold'),
+        }, { transaction: t });
+        // 구매 요청이 없는데 원장 행이 이미 있다면 저장소가 어긋난 상태다 — 원장 함수의 중복 반환을
+        // 신규 성공으로 취급하지 않고 전체를 롤백한다.
+        if (diamondOutcome.idempotent || goldOutcome.idempotent) {
+            throw createError('골드 구매 원장 상태가 일치하지 않습니다.', 500, 'GOLD_PURCHASE_LEDGER_INCONSISTENT');
+        }
+
+        const results = [snapshotLedgerEntry(diamondOutcome.ledgerEntry), snapshotLedgerEntry(goldOutcome.ledgerEntry)];
+        try {
+            await models.EconomyPurchaseRequest.create({
+                user_id: userId,
+                reference_event_id: referenceEventId,
+                kind: GOLD_PURCHASE_KIND,
+                payload_json: payload,
+                result_json: results,
+            }, { transaction: t });
+        } catch (error) {
+            if (error?.name === 'SequelizeUniqueConstraintError') {
+                throw Object.assign(
+                    createError('이미 처리된 참조 사건입니다.', 409, 'DUPLICATE_PURCHASE_REQUEST'),
+                    { referenceEventId },
+                );
+            }
+            throw error;
+        }
+
+        return {
+            idempotent: false,
+            kind: GOLD_PURCHASE_KIND,
+            results,
+            balanceDiamond: diamondOutcome.walletBalance,
+            balanceGold: goldOutcome.walletBalance,
+        };
+    });
+
+    // 실제 deadlock은 부모 트랜잭션 전체가 롤백된 뒤 처음부터 다시 실행한다(최대 3회).
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            // eslint-disable-next-line no-await-in-loop -- 시도는 순서대로여야 한다.
+            return await runOnce();
+        } catch (error) {
+            if (isDeadlockError(error) && attempt < GOLD_PURCHASE_MAX_ATTEMPTS) continue;
+            if (error?.code === 'DUPLICATE_PURCHASE_REQUEST') {
+                // 롤백된 뒤 커밋된 행을 계정·키로 다시 읽는다 — 같은 내용이면 저장 결과, 다르면 충돌.
+                // eslint-disable-next-line no-await-in-loop
+                const existing = await findStored(null);
+                if (existing) return consumeStored(existing);
+            }
+            throw error;
+        }
+    }
+};
+
 /** QA/운영 보상 지급 — role 검사는 라우트 계층 책임이다(실제 계정 데이터 기준, 라우트
  *  참고). currency는 GOLD/DIAMOND 중 하나를 명시해야 하며 기본값은 GOLD다. amount는
  *  1 이상의 정수만 허용한다(음수·0 지급은 이 경로의 목적이 아니다) — 상한·안전 정수
@@ -983,6 +1156,7 @@ module.exports = {
     purchaseItem,
     purchaseItems,
     getPurchaseResult,
+    purchaseGold,
     grantReward,
     grantAchievementCurrency,
     grantAchievementItem,
