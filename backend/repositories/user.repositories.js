@@ -34,8 +34,16 @@ const toConflictError = (error) => {
 
 // 서비스 계층이 db 인스턴스를 직접 import하지 않고도 트랜잭션 경계를 열 수 있게 합니다.
 // work가 throw하면 Sequelize의 managed transaction이 롤백한 뒤 원래 에러를 다시 던집니다.
-exports.withTransaction = async (work) => {
-    return await db.sequelize.transaction(work);
+// options는 sequelize.transaction() 자체에 전달할 옵션입니다(F-29b: logging:false로 트랜잭션
+// 시작 자체의 SQL 로깅도 막는다). options가 없는 기존 호출부는 예전과 똑같이 work 하나만
+// 넘겨 db.sequelize.transaction(work)를 호출한다 — 일부 기존 시험이 db.sequelize.transaction을
+// 단일 인자(work) 시그니처의 가짜로 직접 대체해 두고 있어(예: profile.updatePassword의
+// 세션 폐기 회귀 시험), 여기서 항상 두 인자로 호출하면 그 가짜들이 깨진다.
+exports.withTransaction = async (work, options = {}) => {
+    if (Object.keys(options).length === 0) {
+        return await db.sequelize.transaction(work);
+    }
+    return await db.sequelize.transaction(options, work);
 };
 
 // options로 { transaction, lock }을 받는다 — 로그인과 비밀번호 변경이 같은 유저 행을
@@ -44,8 +52,12 @@ exports.withTransaction = async (work) => {
 // password_hash로 비교하게 되어 "옛 비밀번호로 통과한 로그인이 변경 이후에 세션을 만드는"
 // 경합을 막는다.
 exports.findByEmail = async (email, options = {}) => {
-    const { transaction, lock } = options;
-    return await db.User.findOne({ where: { email }, transaction, lock });
+    const { transaction, lock, logging } = options;
+    const findOptions = { where: { email }, transaction, lock };
+    // F-29b: 재설정 서비스는 logging:false를 명시해 이 조회의 이메일이 SQL 로그에 남지
+    // 않게 한다(AC-06). 명시하지 않은 기존 호출부는 Sequelize 기본 로깅을 그대로 쓴다.
+    if (logging !== undefined) findOptions.logging = logging;
+    return await db.User.findOne(findOptions);
 };
 
 exports.findByNickname = async (nickname) => {
@@ -53,8 +65,10 @@ exports.findByNickname = async (nickname) => {
 };
 
 exports.findByUuid = async (uuid, options = {}) => {
-    const { transaction, lock } = options;
-    return await db.User.findOne({ where: { uuid }, transaction, lock });
+    const { transaction, lock, logging } = options;
+    const findOptions = { where: { uuid }, transaction, lock };
+    if (logging !== undefined) findOptions.logging = logging;
+    return await db.User.findOne(findOptions);
 };
 
 // options는 { transaction } 전달용입니다. 기본값이 있어 기존 호출부는 그대로 동작합니다.

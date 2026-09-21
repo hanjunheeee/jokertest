@@ -22,6 +22,20 @@ exports.globalErrorHandler = (err, req, res, next) => {
         return res.status(status).json({ ok: false, code });
     }
 
+    // F-29b(AC-06/A-08): 비밀번호 재설정 범위(요청·verify·confirm 및 그 밖의 하위 경로)는
+    // 대소문자·후행 슬래시와 무관하게 같은 고정 응답으로 수렴한다 — 토큰이 담긴 쿼리·본문
+    // 오류가 원본 메시지·스택으로 새 나가지 않게 한다. 파서 오류(잘못된 JSON 등)로 이
+    // 경로에 도달하지 못한 요청도 originalUrl만으로 여기서 잡힌다.
+    const resetRequestPath = String(req.originalUrl || req.url || '')
+        .split('?')[0].replace(/\/+$/, '').toLowerCase();
+    if (resetRequestPath.startsWith('/auth/password-reset')) {
+        res.set('Cache-Control', 'no-store');
+        const rawStatus = err.status || err.statusCode;
+        const status = rawStatus === 400 ? 400 : (rawStatus === 404 ? 404 : 500);
+        const code = status === 400 ? 'INVALID_INPUT' : (status === 404 ? 'INVALID' : 'SERVER_ERROR');
+        return res.status(status).json({ ok: false, code });
+    }
+
     console.error('\x1b[31m%s\x1b[0m', err.stack);
 
     const statusCode = err.status || err.statusCode || 500;

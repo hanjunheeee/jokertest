@@ -21,7 +21,8 @@ const EXISTING_TABLES = [
         tableName: 'users',
         pk: ['uuid'],
         timestampManaged: ['created_at', 'updated_at', 'deleted_at'],
-        notNull: ['password_hash', 'nickname', 'email'],
+        // F-29b(§2-3a): has_local_password가 추가됐다 — NOT NULL, 기본값 true.
+        notNull: ['password_hash', 'nickname', 'email', 'has_local_password'],
         columns: {
             uuid:               'UUID',
             password_hash:      'STRING(255)',
@@ -36,6 +37,7 @@ const EXISTING_TABLES = [
             locked_until:       'DATE',
             last_login_at:      'DATE',
             birth_date:         'DATE',
+            has_local_password: 'BOOLEAN',
             created_at:         'DATE',
             updated_at:         'DATE',
             deleted_at:         'DATE',
@@ -126,13 +128,17 @@ const EXISTING_TABLES = [
         model: 'PasswordResetToken',
         tableName: 'password_reset_tokens',
         pk: ['id'],
-        notNull: ['user_id', 'token', 'expired_at'],
+        // F-29b: token은 더 이상 필수가 아니다(신규 발급은 해시만 쓴다) — token_hash·
+        // revoked_at이 추가됐고 둘 다 nullable이다.
+        notNull: ['user_id', 'expired_at'],
         columns: {
             id:         'INTEGER',
             user_id:    'UUID',
             token:      'STRING(255)',
+            token_hash: 'STRING(64)',
             expired_at: 'DATE',
             used:       'BOOLEAN',
+            revoked_at: 'DATE',
             created_at: 'DATE',
         },
     },

@@ -65,9 +65,12 @@ const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout
 // completeSocialSignup(Discord)이 실제로 만드는 EconomyLoadout 행도 그 컬럼을 SELECT하므로,
 // 0011이 빠지면 그 컬럼이 없는 실제 DB에서 "Unknown column" 오류로 깨진다.
 const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
+// F-29b: completeSocialSignup(Discord 가입 완료도 공통 함수를 그대로 탄다)이 이제
+// has_local_password:false를 명시적으로 저장한다 — 0015를 적용 배열에 넣는다.
+const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

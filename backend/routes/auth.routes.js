@@ -12,6 +12,10 @@ const crypto                 = require("crypto");
 const { createRateLimiter }  = require("../middleware/rateLimit");
 const { validateFindIdRequest } = require("../validation/findIdValidation");
 const { findId }             = require("../controller/accountRecovery.controller");
+const { validatePasswordResetRequest } = require("../validation/passwordResetValidation");
+const {
+    requestPasswordReset, verifyPasswordReset, confirmPasswordReset,
+} = require("../controller/passwordReset.controller");
 
 router.post("/signup", signup);
 router.get("/check-email", checkEmail);
@@ -52,6 +56,42 @@ router.post(
     findIdTargetRateLimiter,
     findId,
 );
+
+// F-29b: 비밀번호 재설정. request는 IP 제한 → 입력 검증 → 정규화 이메일 해시 제한 순서로
+// find-id와 같은 패턴을 따른다(AC-01). verify·confirm은 이메일을 받지 않으므로 대상별
+// 제한이 없고, 대신 합산 IP 제한 하나를 공유해(같은 인스턴스) 토큰 추측 시도 전체를 센다.
+const passwordResetRequestIpRateLimiter = createRateLimiter({
+    windowMs: toPositiveInt(process.env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
+    max:      toPositiveInt(process.env.PASSWORD_RESET_REQUEST_IP_MAX, 10),
+    keyOf:    (req) => `ip:${req.ip}`,
+});
+
+const passwordResetRequestEmailRateLimiter = createRateLimiter({
+    windowMs: toPositiveInt(process.env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
+    max:      toPositiveInt(process.env.PASSWORD_RESET_REQUEST_EMAIL_MAX, 3),
+    keyOf:    (req, res) => `email:${crypto.createHash("sha256")
+        .update(res.locals.passwordResetInput.email.trim().toLowerCase())
+        .digest("hex")}`,
+});
+
+// verify(GET, 토큰 존재 확인용 비소비 조회)와 confirm(POST, 실제 제출) 둘 다 같은 카운터로
+// 묶는다 — "verify·confirm 합산 IP 20회/10분" 계약(둘을 나누면 verify만 반복해 confirm 제한을
+// 우회할 수 있다).
+const passwordResetCheckIpRateLimiter = createRateLimiter({
+    windowMs: toPositiveInt(process.env.PASSWORD_RESET_CHECK_WINDOW_MS, 10 * 60 * 1000),
+    max:      toPositiveInt(process.env.PASSWORD_RESET_CHECK_IP_MAX, 20),
+    keyOf:    (req) => `ip:${req.ip}`,
+});
+
+router.post(
+    "/password-reset/request",
+    passwordResetRequestIpRateLimiter,
+    validatePasswordResetRequest,
+    passwordResetRequestEmailRateLimiter,
+    requestPasswordReset,
+);
+router.get("/password-reset/verify", passwordResetCheckIpRateLimiter, verifyPasswordReset);
+router.post("/password-reset/confirm", passwordResetCheckIpRateLimiter, confirmPasswordReset);
 
 // 액세스 토큰이 이미 만료된 상태에서 호출되는 경로이므로 verifyToken을 걸지 않는다 —
 // 갱신 자격(refreshToken 쿠키) 자체의 유효성은 authService.refresh가 검증한다(F-03).

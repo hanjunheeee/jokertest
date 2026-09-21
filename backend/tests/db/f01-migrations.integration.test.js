@@ -551,7 +551,15 @@ test('AC-04: 50자 닉네임이 실제 경기 저장 경로를 통해 잘리지 
     const userId = '33333333-3333-3333-3333-333333333333';
     const gameId = '44444444-4444-4444-4444-444444444444';
 
-    await db.User.create({ uuid: userId, password_hash: 'hash', nickname: longNickname, email: 'long-nick@example.com' });
+    // F-29b(0015) 회귀 대응: 이 스위트는 독립된 0001~0004 배열만 적용한다 — has_local_password는
+    // 0015가 추가하므로 여기서는 아직 없다. db.User.create(런타임 모델)는 그 컬럼을 기본값과
+    // 함께 INSERT하려다 "Unknown column" 오류를 낸다. 이 시점에 실제로 존재하는 컬럼만 raw
+    // SQL로 직접 넣는다(모델 기본값에 기대지 않는다) — 0001~0004 본문은 건드리지 않는다.
+    await sequelize.query(
+        'INSERT INTO users (uuid, password_hash, nickname, email, role, status, email_verified, failed_login_count, created_at, updated_at) '
+        + "VALUES (:uuid, 'hash', :nickname, 'long-nick@example.com', 'USER', 'ACTIVE', false, 0, NOW(), NOW())",
+        { replacements: { uuid: userId, nickname: longNickname } },
+    );
     await db.UserStats.create({ user_id: userId });
 
     const session = {
