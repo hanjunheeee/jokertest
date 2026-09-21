@@ -39,6 +39,10 @@ mock.module("../../api/auth.api.js", {
     signupApi: async () => ({}),
     loginApi: async () => ({}),
     checkEmailApi: async () => ({ available: true }),
+    // F-31b: useLoginPage.js가 이제 이 두 함수도 import한다 — 이 파일은 그 함수를 실제로
+    // 호출하지 않지만, import 자체가 성립하려면 목 모듈에도 이름이 있어야 한다.
+    requestSignupCodeApi: async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 }),
+    verifySignupCodeApi: async () => ({ ok: true, signupProof: "unused-in-this-test" }),
   },
 })
 mock.module("../../store/auth.store.js", {

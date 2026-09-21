@@ -25,11 +25,32 @@ const toApiError = (errorData, fallbackMessage) => {
     // 없어, 후자를 특정 실패 사유로 확정해 버립니다. 값 자체를 판단하지 않고 그대로 싣기만
     // 하므로, 이 값을 읽지 않는 기존 호출부의 동작은 달라지지 않습니다.
     if (errorData.ok !== undefined) error.ok = errorData.ok;
+    // F-31b(AC-03): 가입 이메일 인증 실패 메타데이터입니다. 남은 재발송 대기(초)와 남은
+    // 오입력 시도 횟수는 화면에 그대로 보여줘야 하는 값이라, 호출하는 쪽이 서버가 실제로
+    // 보낸 값과 "생략됨"을 구분할 수 있게 숫자일 때만 싣습니다.
+    if (typeof errorData.resendAfterSec === "number") error.resendAfterSec = errorData.resendAfterSec;
+    if (typeof errorData.attemptsRemaining === "number") error.attemptsRemaining = errorData.attemptsRemaining;
+    if (errorData.success !== undefined) error.success = errorData.success;
     return error;
 };
 
+// F-31b(AC-02/AC-05): 가입 증명 거부(SIGNUP_PROOF_REQUIRED/SIGNUP_PROOF_INVALID)는
+// backend/middleware/errorHandler.js가 401 { success:false, code, message }로 응답한다 —
+// 실제로 로그인된 세션이 만료된 것이 아니라, 아직 계정도 없는 가입 화면에서 증명이
+// 없거나 유효하지 않다는 뜻이다. 등록된 전역 401 처리기(handleAuthUnauthorized)에 먼저
+// 넘기면 로그아웃 처리 후 /login으로 이동시키거나 code를 버린 일반 Error를 던져(F-05
+// 이후로 이미 그렇게 동작한다) 가입 화면이 두 코드를 구분할 수 없게 된다. 그래서 이
+// 두 코드만 전역 처리기보다 먼저 구조화된 오류로 던진다.
+const SIGNUP_PROOF_ERROR_CODES = new Set(["SIGNUP_PROOF_REQUIRED", "SIGNUP_PROOF_INVALID"]);
+
 const handleUnauthorized = async (response) => {
     const errorData = await readErrorBody(response);
+
+    if (errorData.success === false && SIGNUP_PROOF_ERROR_CODES.has(errorData.code)) {
+        const error = toApiError(errorData, "이메일 인증이 필요합니다.");
+        error.status = 401;
+        throw error;
+    }
 
     // 등록된 도메인 핸들러가 있으면 실제 처리는 그쪽에 맡깁니다.
     if (unauthorizedHandler) {

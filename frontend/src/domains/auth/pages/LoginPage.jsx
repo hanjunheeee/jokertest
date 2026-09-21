@@ -15,6 +15,11 @@ export default function LoginPage() {
     handleSubmit,
     setRememberMe,
     setIsSignupMode,
+    signupEmailVerification,
+    handleSignupCodeChange,
+    handleRequestSignupCode,
+    handleVerifySignupCode,
+    canSubmitSignup,
   } = useLoginPage()
 
   // F-06 AC-02/AC-04: Google 콜백(user.controller.js googleAuthCallback)은 신규 계정이면
@@ -55,7 +60,16 @@ export default function LoginPage() {
 
       {/* 현재 모드에 따라 로그인 폼과 회원가입 폼 중 하나를 보여줍니다. */}
       {isSignupMode ? (
-        <SignupForm formData={formData} onChange={handleInputChange} onSwitchToLogin={() => setIsSignupMode(false)} />
+        <SignupForm
+          formData={formData}
+          onChange={handleInputChange}
+          onSwitchToLogin={() => setIsSignupMode(false)}
+          emailVerification={signupEmailVerification}
+          onSignupCodeChange={handleSignupCodeChange}
+          onRequestSignupCode={handleRequestSignupCode}
+          onVerifySignupCode={handleVerifySignupCode}
+          canSubmitSignup={canSubmitSignup}
+        />
       ) : (
         <LoginForm
           formData={formData}
