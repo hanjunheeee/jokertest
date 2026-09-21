@@ -66,8 +66,8 @@ export default function LoginPage() {
           onSwitchToLogin={() => setIsSignupMode(false)}
           emailVerification={signupEmailVerification}
           onSignupCodeChange={handleSignupCodeChange}
-          onRequestSignupCode={handleRequestSignupCode}
-          onVerifySignupCode={handleVerifySignupCode}
+          handleRequestSignupCode={handleRequestSignupCode}
+          handleVerifySignupCode={handleVerifySignupCode}
           canSubmitSignup={canSubmitSignup}
         />
       ) : (

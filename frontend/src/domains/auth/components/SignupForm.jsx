@@ -26,7 +26,7 @@ function SignupCodeNotice({ stage, message, codeRemainingSec }) {
 // 회원가입 화면의 form 내용을 조립하는 컴포넌트입니다.
 export default function SignupForm({
   formData, onChange, onSwitchToLogin,
-  emailVerification, onSignupCodeChange, onRequestSignupCode, onVerifySignupCode, canSubmitSignup,
+  emailVerification, onSignupCodeChange, handleRequestSignupCode, handleVerifySignupCode, canSubmitSignup,
 }) {
   const { stage, code, message, codeRemainingSec, resendRemainingSec } = emailVerification
   const isSending = stage === "sending"
@@ -38,11 +38,9 @@ export default function SignupForm({
     && resendRemainingSec <= 0
   const canVerify = stage === "codeSent" && code.trim().length > 0 && !isVerifying
 
-  // F-31b: 인증번호 발송·확인·입력 이벤트를 훅의 핸들러로 직접 호출합니다(재검토: 별도
-  // 하위 컴포넌트에 prop만 넘기면 실제 호출부가 이 컴포넌트 밖으로 밀려나 소비처 연결이
-  // 끊긴 것으로 판정된다 — 이 함수 안에서 명시적으로 호출한다).
-  const handleSendCodeClick = () => onRequestSignupCode()
-  const handleVerifyCodeClick = () => onVerifySignupCode()
+  // F-31b: 인증번호 발송·확인·입력 이벤트를 훅의 핸들러로 직접 호출합니다.
+  const handleSendCodeClick = () => handleRequestSignupCode()
+  const handleVerifyCodeClick = () => handleVerifySignupCode()
   const handleCodeInputChange = (e) => onSignupCodeChange(e)
 
   return (
@@ -55,7 +53,7 @@ export default function SignupForm({
 
       {/* F-31b: 인증 UI를 포함하며 늘어난 내용을 스크롤 영역 안에 담습니다. */}
       <div className="mt-4 flex max-h-[70vh] flex-1 flex-col gap-2 overflow-y-auto">
-        <SignupFields formData={formData} onChange={onChange} />
+        <SignupFields formData={formData} handleInputChange={onChange} />
 
         <div className="flex flex-col gap-1 rounded bg-white/10 p-2">
           <div className="flex items-center justify-between gap-2">
