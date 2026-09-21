@@ -36,6 +36,11 @@ const addF19FriendsInvites = require('../../db/migrations/0013-f19-friends-invit
 // 실제로 호출하는 f02·f08·f29b 포함)의 resetSchema()가 "모르는 테이블"로 오판해 거부하지
 // 않도록 여기서 한 번만 등록한다. users를 참조하는 FK가 없어 드롭 순서는 자유롭다.
 const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
+// F-32a: economy_currency_products/economy_topup_orders(0018)도 같은 이유로 항상 관리
+// 목록에 포함시킨다 — f32a 스위트가 이 두 테이블을 만들면, 그 사실을 모르는 다른 스위트의
+// resetSchema()가 "모르는 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다. 주문은
+// users를 참조하는 자식이라 users보다 먼저 드롭한다.
+const addCurrencyProductsTopupOrders = require('../../db/migrations/0018-add-currency-products-topup-orders');
 
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
@@ -98,7 +103,8 @@ const buildManagedSchema = ({
     addVoteParticipations: addVoteParticipationsOverride,
     addAchievementGrants: addAchievementGrantsOverride,
     addNotifications: addNotificationsOverride,
-    addF19FriendsInvites: addF19FriendsInvitesOverride, migrationRunner,
+    addF19FriendsInvites: addF19FriendsInvitesOverride,
+    addCurrencyProductsTopupOrders: addCurrencyProductsTopupOrdersOverride, migrationRunner,
 }) => {
     const resolvedAddEconomy = addEconomyOverride ?? addEconomy;
     const resolvedAddEconomyPurchaseRequests = addEconomyPurchaseRequestsOverride ?? addEconomyPurchaseRequests;
@@ -106,6 +112,7 @@ const buildManagedSchema = ({
     const resolvedAddAchievementGrants = addAchievementGrantsOverride ?? addAchievementGrants;
     const resolvedAddNotifications = addNotificationsOverride ?? addNotifications;
     const resolvedAddF19FriendsInvites = addF19FriendsInvitesOverride ?? addF19FriendsInvites;
+    const resolvedAddCurrencyProductsTopupOrders = addCurrencyProductsTopupOrdersOverride ?? addCurrencyProductsTopupOrders;
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
     const economyTables = Object.values(resolvedAddEconomy.TABLE_NAMES);
     const purchaseRequestTables = Object.values(resolvedAddEconomyPurchaseRequests.TABLE_NAMES);
@@ -113,6 +120,9 @@ const buildManagedSchema = ({
     const achievementGrantTables = Object.values(resolvedAddAchievementGrants.TABLE_NAMES);
     const notificationTables = Object.values(resolvedAddNotifications.TABLE_NAMES);
     const f19FriendTables = Object.values(resolvedAddF19FriendsInvites.TABLE_NAMES);
+    // 주문만 users를 참조하고 두 테이블 사이에는 FK가 없다(주문은 상품을 참조하지 않는다) —
+    // 그래서 순서와 무관하게 users보다만 먼저 드롭하면 된다.
+    const currencyProductTopupTables = Object.values(resolvedAddCurrencyProductsTopupOrders.TABLE_NAMES);
 
     const managedTables = [
         ...baseline.TABLE_ORDER,
@@ -125,10 +135,14 @@ const buildManagedSchema = ({
         ...notificationTables,
         ...f19FriendTables,
         addSignupEmailVerification.TABLE_NAME,
+        ...currencyProductTopupTables,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        // F-32a: 주문은 users를 참조하는 자식이라 baseline 역순(users가 마지막)보다 먼저
+        // 드롭해야 하고, 상품은 어디서 드롭해도 FK에 걸리지 않는다.
+        ...currencyProductTopupTables,
         // signup_email_verifications는 users를 참조하지 않는 독립 테이블이라 어디서
         // 드롭해도 FK 제약에 걸리지 않는다.
         addSignupEmailVerification.TABLE_NAME,

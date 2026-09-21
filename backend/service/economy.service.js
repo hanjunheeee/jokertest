@@ -995,6 +995,12 @@ module.exports = {
     // 그대로 재사용한다(요청 필드를 되짚어 재구성하지 않고, equipItem이 실제로 돌려준 loadout
     // 행에서 직접 읽는다).
     buildSkinsByJob,
+    // F-32a: 충전 서비스(topup.service.js)가 주문 GRANTED 갱신과 같은 부모 트랜잭션에서 다이아
+    // 원장을 기록할 때 쓴다. 함수 본문은 그대로이며 __internal에도 계속 노출된다.
+    // MAX_BALANCE는 상품 검증(currencyProducts.service.js)이 지급 합계 한도를 같은 값으로
+    // 대조하도록 공개한다.
+    applyLedgerTransaction,
+    MAX_BALANCE,
     // 테스트 전용 — 낮은 레벨 원장 적용 로직을 직접 검증할 때 사용한다.
     __internal: { applyLedgerTransaction, ensureWalletRow, ensureDefaultLoadout },
 };

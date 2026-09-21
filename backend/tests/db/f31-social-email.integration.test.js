@@ -682,7 +682,11 @@ test('AC-06: 0016까지 적용된 DB의 기존 intent 행은 0017의 NOT NULL→
     const rowsBefore = await selectRows();
     assert.equal(rowsBefore.length, 1);
 
-    const { applied } = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    // 이 시험은 0017의 NOT NULL→nullable 변경만 본다 — 이후 마이그레이션(0018 등)이 추가되어도
+    // applied가 0017 하나여야 한다는 단언이 깨지지 않도록 적용 범위를 0017까지로 한정한다.
+    const { applied } = await migrationRunner.applyMigrations({
+        sequelize, migrations: MIGRATIONS.slice(0, index0017 + 1),
+    });
     assert.deepEqual(applied, [addSocialSignupEmail.name], '0017만 새로 적용되어야 한다');
 
     const after = await queryInterface.describeTable('social_signup_intents');
