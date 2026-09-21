@@ -45,10 +45,24 @@ export const logoutApi = async () => {
     return await api.post('/auth/logout');
 };
 
+// F-31: 소셜 가입 보완 화면이 "이 intent가 자체 메일 인증을 요구하는지"를 서버에서 읽어
+// 옵니다(비소비 조회). 서버(user.controller.js getSocialSignupIntent)는
+// { emailVerificationRequired: boolean }만 돌려주며, 이 값은 화면 분기에만 쓰입니다 —
+// 실제 인증 생략 여부는 완료 요청이 잠근 intent로 다시 판정합니다.
+export const getSocialSignupIntentApi = async ({ intentToken }) => {
+    return await api.post('/auth/social/signup/intent', { intentToken });
+};
+
 // F-05: 소셜 로그인 최초 인증 이후, 닉네임 등 필수 정보를 보완해 가입을 완료합니다.
 // intentToken은 서버(socialAuth.service.js의 handleOAuthCallback)가 발급한 1회용 값입니다.
-export const completeSocialSignupApi = async ({ intentToken, nickname, birthDate }) => {
-    return await api.post('/auth/social/signup/complete', { intentToken, nickname, birthDate });
+//
+// F-31 AC-02/AC-03: 제공자가 이메일을 검증해 주지 못한 가입은 자체 메일 인증으로 받은
+// email·signupProof를 함께 보냅니다. provider·subject·email_verified·rememberMe 같은
+// 권한 주장은 이 요청 객체에 담지 않습니다 — 새 객체를 여기서 직접 구성하므로 호출한 쪽이
+// 추가 필드를 실어도 서버에 그대로 넘어가지 않습니다(rememberMe는 서버가 로그인 시작
+// 시점에 서명해 둔 쿠키에서만 읽습니다).
+export const completeSocialSignupApi = async ({ intentToken, nickname, birthDate, email, signupProof }) => {
+    return await api.post('/auth/social/signup/complete', { intentToken, nickname, birthDate, email, signupProof });
 };
 
 // F-29a: 아이디 찾기. 닉네임+생년월일이 실제 계정과 일치하면 마스킹된 이메일 힌트를

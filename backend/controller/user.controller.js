@@ -165,7 +165,11 @@ exports.completeSocialSignup = async (req, res, next) => {
             deviceType: getDeviceType(userAgent),
         };
 
-        const { intentToken, nickname, birthDate } = req.body;
+        // F-31 AC-03: 요청에서 읽는 값은 이 다섯 개뿐이다 — email·signupProof는 서비스가
+        // 잠근 intent.email이 null일 때(제공자가 이메일을 검증해 주지 못한 가입)만 쓰인다.
+        // email_verified/emailVerified/verified/provider/subject 같은 "이미 인증됐다"는
+        // 클라이언트 주장은 여기서 아예 꺼내지 않으므로 서비스 입력에 닿지 않는다.
+        const { intentToken, nickname, birthDate, email, signupProof } = req.body ?? {};
 
         const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
         const rememberMe = attempt?.purpose === "signup"
@@ -173,7 +177,7 @@ exports.completeSocialSignup = async (req, res, next) => {
             && attempt?.rememberMe === true;
 
         const { user, token, refreshToken, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
-            intentToken, nickname, birthDate, rememberMe, reqInfo,
+            intentToken, nickname, birthDate, email, signupProof, rememberMe, reqInfo,
         });
 
         // 가입 보완용 쿠키는 계정이 실제로 만들어진 뒤에만 지운다(CODEX-1 재검토 지적
@@ -201,6 +205,25 @@ exports.completeSocialSignup = async (req, res, next) => {
                 },
             },
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// F-31 AC-02/AC-03: 가입 보완 화면이 "이 intent가 자체 메일 인증을 요구하는지"를 서버에서
+// 읽어 가는 비소비 조회다. 요청에서 읽는 값은 intentToken 하나뿐이고, 응답에는 화면 분기용
+// boolean만 싣는다 — intent의 이메일·제공자·subject는 내보내지 않는다. 이 응답은 어떤
+// 권한의 근거도 아니다: 실제 인증 생략 여부는 완료 요청이 다시 잠근 intent.email로만
+// 판정된다(socialAuth.service.js completeSocialSignup 참고). 토큰·증명은 로그에 남기지
+// 않고(오류는 그대로 next로 넘긴다), 중간 캐시가 이 판정을 보관하지 않도록 no-store다.
+exports.getSocialSignupIntent = async (req, res, next) => {
+    try {
+        const { intentToken } = req.body ?? {};
+
+        const { emailVerificationRequired } = await socialAuthService.getSocialSignupIntent({ intentToken });
+
+        res.set("Cache-Control", "no-store");
+        res.status(200).json({ success: true, data: { emailVerificationRequired } });
     } catch (error) {
         next(error);
     }

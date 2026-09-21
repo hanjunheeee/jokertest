@@ -276,6 +276,22 @@ for (const table of EXISTING_TABLES) {
     });
 }
 
+// F-31(AC-02/AC-06): social_signup_intents.email만 nullable로 바뀌었다 — 제공자가 이메일을
+// 검증해 주지 못한 가입의 intent는 email=null로 저장된다. 타입(STRING(100))과 나머지
+// 컬럼의 NOT NULL·유일 제약은 그대로여야 한다. 실제 DB 쪽 변경은 0017 마이그레이션이
+// 적용하며 backend/tests/db/f31-social-email.integration.test.js가 describeTable로 확인한다.
+test('social_signup_intents: email만 nullable이고 나머지 제약·타입은 그대로다', () => {
+    const attributes = attributesOf(db.SocialSignupIntent);
+    assert.equal(db.SocialSignupIntent.tableName, 'social_signup_intents');
+    assert.equal(typeNameOf(attributes.email), 'STRING(100)');
+    assert.equal(attributes.email.allowNull, true);
+    for (const column of ['intent_token_hash', 'provider', 'subject', 'expires_at']) {
+        assert.equal(attributes[column].allowNull, false, `${column}는 NOT NULL이어야 한다`);
+    }
+    assert.equal(attributes.intent_token_hash.unique, true);
+    assert.equal(attributes.consumed_at.allowNull, true);
+});
+
 test('신규 관계는 users에 컬럼을 만들지 않는다', () => {
     // hasMany는 자식 테이블에만 외래키를 만듭니다. users에 game_result 관련 컬럼이
     // 생겼다면 관계가 반대로 정의된 것입니다.

@@ -44,6 +44,14 @@ process.env.DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI  || 'https:
 // Discord는 그 한 콜백으로만 돌려주므로 link로 시작한 왕복도 로그인 콜백(purpose:link를
 // 거부한다)으로 떨어진다(discordOAuth.service.js resolveRedirectUri 참고).
 process.env.DISCORD_LINK_REDIRECT_URI = process.env.DISCORD_LINK_REDIRECT_URI || 'https://backend.example.test/auth/discord/link/callback';
+// F-31 AC-02: verified:false는 이제 거부가 아니라 자체 메일 인증(F-31a)으로 이어진다 —
+// 이 스위트가 실제 발송·확인 HTTP까지 돌리므로 그 설정도 함께 갖춘다(auth.routes.js는
+// require 시점에 제한기 설정을 읽으므로 반드시 라우터 require보다 먼저 세팅해야 한다).
+process.env.SIGNUP_EMAIL_HMAC_SECRET = process.env.SIGNUP_EMAIL_HMAC_SECRET || 'f07-signup-email-hmac-secret';
+process.env.SIGNUP_EMAIL_HOUR_MAX = '1000';
+process.env.SIGNUP_EMAIL_DAY_MAX = '1000';
+process.env.SIGNUP_IP_HOUR_MAX = '1000';
+process.env.SIGNUP_IP_DAY_MAX = '1000';
 
 const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
@@ -68,9 +76,14 @@ const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-
 // F-29b: completeSocialSignup(Discord 가입 완료도 공통 함수를 그대로 탄다)이 이제
 // has_local_password:false를 명시적으로 저장한다 — 0015를 적용 배열에 넣는다.
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
+// F-31(AC-02/AC-06): 제공자가 이메일을 검증해 주지 못한 Discord 가입은 이제 자체 메일
+// 인증으로 보완된다 — 이 스위트는 자체 MIGRATIONS 목록을 쓰므로, 그 인증 상태 테이블(0016)과
+// social_signup_intents.email을 nullable로 바꾸는 변경(0017)을 명시적으로 포함해야 한다.
+const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
+const addSocialSignupEmail = require('../../db/migrations/0017-social-signup-email');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });
@@ -115,6 +128,7 @@ const db = require('../../models');
 const authService = require('../../service/auth.service');
 const discordOAuthService = require('../../service/discordOAuth.service');
 const userRepository = require('../../repositories/user.repositories');
+const mailAdapterModule = require('../../mail/mailAdapter');
 const { hashPassword } = require('../../utils/hash');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
 
@@ -355,12 +369,19 @@ for (const rememberMe of [false, true]) {
     });
 }
 
-// ── AC-03: discordOAuth.service.js의 email:null이 실제로 공통 서비스의 EMAIL_MISSING 거부까지 이어진다 ──
-
-test('AC-03: 검증되지 않은 이메일(verified:false)은 discordOAuthService가 null로 반환하고, 실제 콜백 라우트가 세션 발급 없이 EMAIL_MISSING으로 거부하며 아무 것도 생성하지 않는다(실제 DB, 스텁 없음)', async (t) => {
+// ── AC-03 → F-31 AC-02: discordOAuth.service.js의 email:null은 이제 거부가 아니라 자체 메일 인증으로 이어진다 ──
+//
+// 이전 회차는 verified:false가 EMAIL_MISSING으로 끝나는 것을 고정했다. F-31부터는 같은 입력이
+// SIGNUP_REQUIRED + email=null intent로 끝나고, 기존 F-31a 발송·확인 HTTP로 받은 증명을
+// 제출해야만 계정이 만들어진다. "인증 완료 전에는 사용자·identity·세션이 생기지 않는다"는
+// 이전 단언은 그 단계에 그대로 보존한다.
+test('F-31 AC-02: 검증되지 않은 이메일(verified:false)은 intent만 남기고, 증명 없는 완료는 거절되며, 기존 발송·확인 API로 받은 증명으로만 단일 계정이 만들어진다(실제 DB, 스텁 없음)', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    const memory = mailAdapterModule.createMemoryMailAdapter();
+    t.mock.method(mailAdapterModule, 'createHttpMailAdapter', () => memory);
 
     const subject = `discord-unverified-${crypto.randomUUID()}`;
     const { base: fixtureBase } = await startMockDiscord(t, {
@@ -375,17 +396,96 @@ test('AC-03: 검증되지 않은 이메일(verified:false)은 discordOAuthServic
 
     const beforeUsers = await db.User.count();
     const beforeIdentities = await db.ExternalIdentity.count();
+    const beforeSessions = await db.UserSession.count();
 
     const callbackRes = await rawGet(base, `/auth/discord/callback?code=real-code-x&state=${state}`, {
         cookie: cookieHeader(attemptCookie),
     });
 
     assert.equal(callbackRes.statusCode, 302);
-    assert.equal(callbackRes.headers.location, `${process.env.FRONTEND_URL}/login?socialError=EMAIL_MISSING`,
-        'discordOAuth.service.js가 verified:false를 email:null로 넘긴 뒤, 실제 socialAuthService.resolveOAuthAccount가 EMAIL_MISSING으로 거부해야 한다');
+    const callbackUrl = new URL(callbackRes.headers.location);
+    assert.equal(callbackUrl.pathname, '/login');
+    assert.equal(callbackUrl.searchParams.get('socialError'), null, '미인증 이메일은 더 이상 거부로 끝나지 않는다');
+    const intentToken = callbackUrl.searchParams.get('socialIntent');
+    assert.ok(intentToken, 'SIGNUP_REQUIRED면 intentToken이 실려야 한다');
     assert.equal(findSetCookie(callbackRes.headers, 'accessToken'), undefined);
-    assert.equal(await db.User.count(), beforeUsers, '이메일 미제공으로는 계정이 생기면 안 된다');
+    assert.equal(await db.User.count(), beforeUsers, '인증 완료 전에는 계정이 생기면 안 된다');
     assert.equal(await db.ExternalIdentity.count(), beforeIdentities);
+    assert.equal(await db.UserSession.count(), beforeSessions);
+    const intentRow = await db.SocialSignupIntent.findOne({ where: { provider: 'discord', subject } });
+    assert.equal(intentRow.email, null, '제공자가 검증하지 않은 주소는 intent에 저장되면 안 된다');
+    assert.equal(intentRow.consumed_at, null);
+
+    const signupCookieHeader = cookieHeader(findSetCookie(callbackRes.headers, 'oauthAttempt'));
+    const postComplete = (body) => fetch(`${base}/auth/social/signup/complete`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: signupCookieHeader },
+        body: JSON.stringify(body),
+    });
+    const email = `f07-self-${crypto.randomUUID()}@example.com`;
+    const nickname = `f0${subject.slice(-6)}`;
+
+    // 증명 없이(인증됐다는 주장만 실어) 완료를 시도하면 거절되고 아무 것도 생기지 않는다.
+    const noProofRes = await postComplete({ intentToken, nickname, birthDate: '1996-05-05', email, email_verified: true, verified: true });
+    const noProofBody = await noProofRes.json();
+    assert.equal(noProofRes.status, 401, JSON.stringify(noProofBody));
+    assert.equal(noProofBody.code, 'SIGNUP_PROOF_REQUIRED');
+    assert.equal(await db.User.count(), beforeUsers);
+    assert.equal((await intentRow.reload()).consumed_at, null, '거절된 완료는 intent를 소비하면 안 된다');
+
+    // 기존 F-31a 발송·확인 API로 증명을 받는다(재구현 없음).
+    const codeRes = await fetch(`${base}/auth/signup/email-code`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }),
+    });
+    assert.equal(codeRes.status, 200, await codeRes.text());
+    const code = memory.outbox.at(-1).params.code;
+    const verifyRes = await fetch(`${base}/auth/signup/email-code/verify`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, code }),
+    });
+    const { signupProof } = await verifyRes.json();
+    assert.ok(signupProof);
+
+    const completeRes = await postComplete({ intentToken, nickname, birthDate: '1996-05-05', email, signupProof });
+    const completeBodyRaw = await completeRes.text();
+    assert.equal(completeRes.status, 200, completeBodyRaw);
+    const newUuid = JSON.parse(completeBodyRaw).data.user.uuid;
+
+    const storedUser = await db.User.findByPk(newUuid);
+    assert.equal(storedUser.email, email);
+    assert.equal(storedUser.email_verified, true);
+    const identity = await db.ExternalIdentity.findOne({ where: { provider: 'discord', subject } });
+    assert.equal(identity.user_id, newUuid);
+    assert.equal(identity.email_snapshot, null, '제공자가 주지 않은 주소를 제공자 스냅샷으로 남기면 안 된다');
+    assert.equal(await db.User.count(), beforeUsers + 1);
+    assert.equal(await db.ExternalIdentity.count({ where: { provider: 'discord', subject } }), 1);
+});
+
+// ── F-31 AC-05: 기존 identity는 제공자 이메일이 없어도 추가 인증 없이 같은 계정으로 로그인되고 email_verified가 바뀌지 않는다 ──
+
+test('F-31 AC-05: email_verified=false인 기존 Discord identity 계정은 제공자 이메일 미제공 재로그인에서도 자체 인증 없이 같은 UUID로 로그인되고 값이 보존된다(실제 DB, 스텁 없음)', async (t) => {
+    if (unavailable(t)) return;
+    await resetSchema();
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+
+    const local = await createLocalUser('f07legacy');
+    await db.User.update({ email_verified: false }, { where: { uuid: local.uuid } });
+    const subject = `discord-legacy-${crypto.randomUUID()}`;
+    await userRepository.createExternalIdentity({ provider: 'discord', subject, user_id: local.uuid });
+
+    const { base: fixtureBase } = await startMockDiscord(t, { profile: { id: subject, verified: false } });
+    withFetchRedirectedTo(t, fixtureBase);
+    const base = await startServer(t);
+
+    const startRes = await rawGet(base, '/auth/discord');
+    const callbackRes = await rawGet(base, `/auth/discord/callback?code=legacy-code&state=${stateOf(startRes.headers)}`, {
+        cookie: cookieHeader(findSetCookie(startRes.headers, 'oauthAttempt')),
+    });
+    assert.equal(callbackRes.headers.location, `${process.env.FRONTEND_URL}/lobby`, '기존 identity는 자체 인증 화면으로 가면 안 된다');
+    assert.ok(findSetCookie(callbackRes.headers, 'accessToken'));
+    assert.equal(await db.SocialSignupIntent.count({ where: { subject } }), 0);
+    assert.equal(await db.User.count(), 1);
+    const after = await db.User.findByPk(local.uuid);
+    assert.equal(after.email_verified, false, '로그인이 email_verified를 허위로 true로 바꾸면 안 된다');
 });
 
 // ── AC-04 전제: 실제 Discord 이메일이 기존 로컬 계정과 같아도 자동 병합되지 않는다 ────────
