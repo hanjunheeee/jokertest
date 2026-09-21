@@ -470,3 +470,8 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 - 4회차 후보 `a0be7bb7`(시험 파일 1개 delta): 양쪽 코드 심사 통과(02:19), 명령 5개 exit 0(백엔드 시험 25.6분, fail 0), 성공 조건 6개 전부 기계 PASS, 교차 검증 불일치 0 — 02:46.
 - **F-32a(CB) 완료 처리(02:46)**: 위임 규칙대로 승인·병합 → `0facbace`(파일 25개). 소요 23:59~02:47 = **2시간 48분**(구현 4회차: done.json 누락 1, 심사 갈림 1, 시험 단언 1).
 - **F-27d 삽입 시점 메모**: `batch/insert`는 돌고 있는 단계가 하나도 없을 때만 받는다(`batch-insert.ts`: "Batch is running; retry only at idle"). 병합이 끝나면 17초 안에 다음 조각이 시작되므로 병합 **뒤**에는 틈이 없다 — 틈은 조각이 `RESULT=human`으로 승인을 기다리는 동안뿐이다. CB 때는 그 틈에 승인을 먼저 눌러 놓쳤다. **다음 조각(CC)이 승인 대기로 멈추면 승인 전에 먼저 삽입한다.**
+
+## F-32b (CC) — 2026-09-22 02:47~ (골드 구매 서버)
+- 계획 승인 02:57, 구현 1회차가 03:05에 후보 `5c113425`(파일 6개, +948/−6) 커밋.
+- **R-SCOPE(03:06) — 범위 밖 1개 → rescope(03:08)**: `backend/service/currencyProducts.service.js::getCurrencyProduct`에 선택적 세 번째 인자 `{ transaction }` 추가(골드 구매가 상품을 부모 트랜잭션 안에서 읽기 위함, 인자가 없으면 기존 호출과 동일). 기존 파일에서 지워진 줄은 교체된 6줄뿐, 단언 삭제·약화 없음(`economy.route.test.js`의 서비스 키 목록은 확장).
+- **F-27d(CJ) 삽입 완료(03:07)**: CC가 R-SCOPE로 멈춘 틈(도는 단계 0)에 `batch/insert`로 BN 앞에 넣었다 — CJ = 47/48, BN = 48/48. planNotes.CJ = 설계도 `docs/design/F-27-night-presentation.md` §2-6.
