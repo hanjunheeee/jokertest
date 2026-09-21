@@ -487,3 +487,8 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 - 구현 1회차(04:44~05:16, $5.43)가 done.json 없이 종료 → 자동 재시도 3회가 계획 반려로 이미 소진돼 IMPL=human. 작업본에 8개 파일이 작성돼 있고 남은 일은 시험 확인·done.json뿐(`.pluto/progress.md`) → **retry overrideCap(05:2x)로 같은 세션을 이어 마무리**시킴. 결함 반송이 아니다.
 - 이어가기 세션이 05:21에 후보 `8ff72d81`(파일 8개 = 계획한 그 8개, +1,698/−40) 커밋. **R-SCOPE(05:21) — 범위 밖 18개 → rescope(05:2x)**: 전부 계획한 파일 **안의** 부품(계획에 없던 도우미 12 + 따라오는 수정 한도 초과 6 — `StorePanel`·`StoreItemGrid`·`StoreSelectedItemDetail`·`purchaseController`·`storePurchase.store`). 새 파일·계획 밖 파일 없음, 기존 시험에서 지워진 줄 0.
 - **심사 1회차(05:22~05:23) — 갈림: AC-03·AC-05 (Claude yes · Codex partial), 재판정 뒤에도 같음 → 반송(05:2x, overrideCap).** 구체 지적 3건: ① `currencyPurchase.store.js::handleReturn`의 중복 판정 키가 orderId·paymentKey·amount 조합이라, confirm 진행 중에 paymentKey·amount만 다른 복귀가 오면 confirm이 한 번 더 나감(설계도 §2-5a "같은 주문에 confirm을 동시에 두 번 보내지 않는다" 위반) → orderId 단위 판정 + 시험 ② `StorePanel`의 `priceRechecked`가 최초 조회 성공 때만 true — 최초 조회 실패 뒤 수동 재조회가 성공해도 '새 조건 확인'이 disabled로 남음 → 어느 경로의 조회 성공이든 풀리게 + 시험 ③ 일반 골드 구매 실패 화면 단언 없음 → 추가.
+- 수정 후보 `9dacb11c`: 양쪽 코드 심사 통과(05:28, 갈렸던 2건 닫힘), 명령 5개 exit 0(프런트 시험 2,435개 fail 0, 백엔드 시험 21.6분 fail 0), 성공 조건 6개 전부 기계 PASS, 교차 검증 불일치 0 — 05:51.
+- **F-32c(CH) 완료 처리(05:5x)**: 위임 규칙대로 승인·병합. AC-04의 '설정 대기' 해석은 운영자가 직접 정한 것이고(위 결정), 성공 조건 문장은 고치지 않았다. 소요 03:48~05:52 = **2시간 4분**(계획 반려 3, done.json 누락 1, 심사 갈림 1), Claude 쪽 비용 $8.47.
+
+### F-28에서 볼 것 (F-32c분 추가)
+- 실제 Chrome에서: 상점 재화 탭에 서버 상품이 보이는지, 충전을 누르면 (키 미설정 상태에서) 버튼이 '설정 대기'로 바뀌고 결제창이 뜨지 않는지. 토스 test 키를 넣은 경우 결제창 → 복귀 → 확인 중 → 완료 → 잔액 갱신. 골드 구매의 부족·완료·가격 변경 재확인.
