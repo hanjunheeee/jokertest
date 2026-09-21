@@ -23,10 +23,10 @@ function SignupCodeNotice({ stage, message, codeRemainingSec }) {
   return null
 }
 
-// F-31b: 회원가입 이메일 인증(발송·번호 입력·확인·재발송) UI입니다. 상태 로직은
-// useLoginPage.js가 갖고 있고, 이 컴포넌트는 그 상태를 그대로 그립니다.
-function SignupEmailVerificationPanel({
-  emailVerification, onRequestSignupCode, onSignupCodeChange, onVerifySignupCode,
+// 회원가입 화면의 form 내용을 조립하는 컴포넌트입니다.
+export default function SignupForm({
+  formData, onChange, onSwitchToLogin,
+  emailVerification, onSignupCodeChange, onRequestSignupCode, onVerifySignupCode, canSubmitSignup,
 }) {
   const { stage, code, message, codeRemainingSec, resendRemainingSec } = emailVerification
   const isSending = stage === "sending"
@@ -38,62 +38,13 @@ function SignupEmailVerificationPanel({
     && resendRemainingSec <= 0
   const canVerify = stage === "codeSent" && code.trim().length > 0 && !isVerifying
 
-  return (
-    <div className="flex flex-col gap-1 rounded bg-white/10 p-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="px-1 text-xs text-white/80">이메일 인증</span>
-        {!isVerified && (
-          <button
-            type="button"
-            data-testid="signup-code-send"
-            onClick={onRequestSignupCode}
-            disabled={stage === "unverified" ? isSending : !canResend}
-            className="cursor-pointer rounded bg-white/10 px-2 py-1 text-xs text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <SignupCodeSendButtonLabel stage={stage} resendRemainingSec={resendRemainingSec} />
-          </button>
-        )}
-      </div>
+  // F-31b: 인증번호 발송·확인·입력 이벤트를 훅의 핸들러로 직접 호출합니다(재검토: 별도
+  // 하위 컴포넌트에 prop만 넘기면 실제 호출부가 이 컴포넌트 밖으로 밀려나 소비처 연결이
+  // 끊긴 것으로 판정된다 — 이 함수 안에서 명시적으로 호출한다).
+  const handleSendCodeClick = () => onRequestSignupCode()
+  const handleVerifyCodeClick = () => onVerifySignupCode()
+  const handleCodeInputChange = (e) => onSignupCodeChange(e)
 
-      {showCodeInput && !isVerified && (
-        <div className="flex items-center gap-2 px-1">
-          <input
-            type="text"
-            inputMode="numeric"
-            name="signupEmailCode"
-            data-testid="signup-code-input"
-            value={code}
-            onChange={onSignupCodeChange}
-            placeholder="인증번호를 입력하세요"
-            disabled={stage === "codeExpired" || stage === "locked"}
-            className="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-sm text-white outline-none placeholder:text-white/55"
-          />
-          <button
-            type="button"
-            data-testid="signup-code-verify"
-            onClick={onVerifySignupCode}
-            disabled={!canVerify}
-            className="cursor-pointer rounded bg-white/10 px-2 py-1 text-xs text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isVerifying ? "확인 중..." : "확인"}
-          </button>
-        </div>
-      )}
-
-      {isVerified ? (
-        <p className="px-2 text-xs text-emerald-400">이메일 인증이 완료되었습니다.</p>
-      ) : (
-        <SignupCodeNotice stage={stage} message={message} codeRemainingSec={codeRemainingSec} />
-      )}
-    </div>
-  )
-}
-
-// 회원가입 화면의 form 내용을 조립하는 컴포넌트입니다.
-export default function SignupForm({
-  formData, onChange, onSwitchToLogin,
-  emailVerification, onSignupCodeChange, onRequestSignupCode, onVerifySignupCode, canSubmitSignup,
-}) {
   return (
     <>
       <header className="text-center">
@@ -106,12 +57,53 @@ export default function SignupForm({
       <div className="mt-4 flex max-h-[70vh] flex-1 flex-col gap-2 overflow-y-auto">
         <SignupFields formData={formData} onChange={onChange} />
 
-        <SignupEmailVerificationPanel
-          emailVerification={emailVerification}
-          onRequestSignupCode={onRequestSignupCode}
-          onSignupCodeChange={onSignupCodeChange}
-          onVerifySignupCode={onVerifySignupCode}
-        />
+        <div className="flex flex-col gap-1 rounded bg-white/10 p-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="px-1 text-xs text-white/80">이메일 인증</span>
+            {!isVerified && (
+              <button
+                type="button"
+                data-testid="signup-code-send"
+                onClick={handleSendCodeClick}
+                disabled={stage === "unverified" ? isSending : !canResend}
+                className="cursor-pointer rounded bg-white/10 px-2 py-1 text-xs text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <SignupCodeSendButtonLabel stage={stage} resendRemainingSec={resendRemainingSec} />
+              </button>
+            )}
+          </div>
+
+          {showCodeInput && !isVerified && (
+            <div className="flex items-center gap-2 px-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                name="signupEmailCode"
+                data-testid="signup-code-input"
+                value={code}
+                onChange={handleCodeInputChange}
+                placeholder="인증번호를 입력하세요"
+                disabled={stage === "codeExpired" || stage === "locked"}
+                className="min-w-0 flex-1 rounded bg-white/10 px-2 py-1 text-sm text-white outline-none placeholder:text-white/55"
+              />
+              <button
+                type="button"
+                data-testid="signup-code-verify"
+                onClick={handleVerifyCodeClick}
+                disabled={!canVerify}
+                className="cursor-pointer rounded bg-white/10 px-2 py-1 text-xs text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isVerifying ? "확인 중..." : "확인"}
+              </button>
+            </div>
+          )}
+
+          {isVerified ? (
+            <p className="px-2 text-xs text-emerald-400">이메일 인증이 완료되었습니다.</p>
+          ) : (
+            <SignupCodeNotice stage={stage} message={message} codeRemainingSec={codeRemainingSec} />
+          )}
+        </div>
 
         {!canSubmitSignup && (
           <p className="px-2 text-xs text-white/60">이메일 인증을 완료해야 가입할 수 있습니다.</p>

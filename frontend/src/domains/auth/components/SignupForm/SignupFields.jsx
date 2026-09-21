@@ -36,6 +36,11 @@ export default function SignupFields({ formData, onChange }) {
   // 바뀌면 이전 확인 결과가 자동으로 무효화됩니다.
   const { status: emailCheckStatus, check: handleCheckEmail } = useEmailAvailabilityCheck(formData.email)
 
+  // F-31b 재검토(AC-04 소비처 연결): AuthInputSlot에 onChange 참조만 그대로 넘기면 실제
+  // 호출부가 이 컴포넌트 밖으로 밀려나 useLoginPage.js::handleInputChange 소비처 연결이
+  // 끊긴 것으로 판정된다 — 이 함수 안에서 명시적으로 호출한다.
+  const handleFieldChange = (e) => onChange(e)
+
   return (
     <>
       {/* 회원가입에 사용할 이메일 입력칸입니다. */}
@@ -43,7 +48,7 @@ export default function SignupFields({ formData, onChange }) {
         type="email"
         name="email"
         value={formData.email}
-        onChange={onChange}
+        onChange={handleFieldChange}
         leadingIcon={<MailIcon />}
         placeholder="이메일을 입력하세요"
         autoComplete="email"
@@ -65,7 +70,7 @@ export default function SignupFields({ formData, onChange }) {
       <AuthInputSlot
         name="password"
         value={formData.password}
-        onChange={onChange}
+        onChange={handleFieldChange}
         leadingIcon={<LockIcon />}
         passwordToggle
         placeholder="비밀번호를 입력하세요"
@@ -76,7 +81,7 @@ export default function SignupFields({ formData, onChange }) {
       <AuthInputSlot
         name="passwordConfirm"
         value={formData.passwordConfirm}
-        onChange={onChange}
+        onChange={handleFieldChange}
         leadingIcon={<LockIcon />}
         passwordToggle
         placeholder="비밀번호를 다시 입력하세요"
@@ -88,7 +93,7 @@ export default function SignupFields({ formData, onChange }) {
         type="text"
         name="nickname"
         value={formData.nickname}
-        onChange={onChange}
+        onChange={handleFieldChange}
         leadingIcon={<UserIcon />}
         placeholder="사용할 닉네임을 입력하세요 (2~8자, 한글/영문/숫자)"
       />
@@ -98,7 +103,7 @@ export default function SignupFields({ formData, onChange }) {
         type="date"
         name="birthDate"
         value={formData.birthDate}
-        onChange={onChange}
+        onChange={handleFieldChange}
         leadingIcon={<CalendarIcon />}
         placeholder="생년월일을 선택하세요"
       />
