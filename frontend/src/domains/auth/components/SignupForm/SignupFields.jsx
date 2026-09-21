@@ -31,7 +31,7 @@ function EmailCheckMessage({ status }) {
 }
 
 // 회원가입에 필요한 이메일/비밀번호/닉네임/생년월일 입력칸 묶음입니다.
-export default function SignupFields({ formData, onChange }) {
+export default function SignupFields({ formData, handleInputChange }) {
   // 상태 로직은 useLoginPage.js의 useEmailAvailabilityCheck가 갖고 있습니다 — 이메일이
   // 바뀌면 이전 확인 결과가 자동으로 무효화됩니다.
   const { status: emailCheckStatus, check: handleCheckEmail } = useEmailAvailabilityCheck(formData.email)
@@ -43,7 +43,7 @@ export default function SignupFields({ formData, onChange }) {
         type="email"
         name="email"
         value={formData.email}
-        onChange={onChange}
+        onChange={handleInputChange}
         leadingIcon={<MailIcon />}
         placeholder="이메일을 입력하세요"
         autoComplete="email"
@@ -65,7 +65,7 @@ export default function SignupFields({ formData, onChange }) {
       <AuthInputSlot
         name="password"
         value={formData.password}
-        onChange={onChange}
+        onChange={handleInputChange}
         leadingIcon={<LockIcon />}
         passwordToggle
         placeholder="비밀번호를 입력하세요"
@@ -76,7 +76,7 @@ export default function SignupFields({ formData, onChange }) {
       <AuthInputSlot
         name="passwordConfirm"
         value={formData.passwordConfirm}
-        onChange={onChange}
+        onChange={handleInputChange}
         leadingIcon={<LockIcon />}
         passwordToggle
         placeholder="비밀번호를 다시 입력하세요"
@@ -88,7 +88,7 @@ export default function SignupFields({ formData, onChange }) {
         type="text"
         name="nickname"
         value={formData.nickname}
-        onChange={onChange}
+        onChange={handleInputChange}
         leadingIcon={<UserIcon />}
         placeholder="사용할 닉네임을 입력하세요 (2~8자, 한글/영문/숫자)"
       />
@@ -98,7 +98,7 @@ export default function SignupFields({ formData, onChange }) {
         type="date"
         name="birthDate"
         value={formData.birthDate}
-        onChange={onChange}
+        onChange={handleInputChange}
         leadingIcon={<CalendarIcon />}
         placeholder="생년월일을 선택하세요"
       />

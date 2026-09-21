@@ -18,6 +18,21 @@ export const checkEmailApi = async (email) => {
     return await api.get(`/auth/check-email?email=${encodeURIComponent(email)}`);
 };
 
+// F-31b: 가입 이메일 인증번호를 발송(최초 발송·재발송 공용)합니다. 서버(F-31a
+// signupEmailVerification.controller.js)는 { ok:true, resendAfterSec, expiresInSec }
+// 또는 { ok:false, code, resendAfterSec? } 형태로 응답합니다. email만 새로 구성해
+// 전달하므로 호출한 쪽이 추가 필드를 실어도 서버에 그대로 넘어가지 않습니다.
+export const requestSignupCodeApi = async ({ email }) => {
+    return await api.post('/auth/signup/email-code', { email });
+};
+
+// F-31b: 발송된 인증번호를 확인합니다. 성공하면 { ok:true, signupProof }를 돌려주며,
+// signupProof는 이 응답 한 번에만 원문으로 나타납니다(호출한 쪽이 별도 저장소에 남기지
+// 않아야 합니다). 실패는 code(CODE_INVALID/CODE_EXPIRED/TOO_MANY_ATTEMPTS)로 구분됩니다.
+export const verifySignupCodeApi = async ({ email, code }) => {
+    return await api.post('/auth/signup/email-code/verify', { email, code });
+};
+
 // 현재 로그인한 사용자 정보를 조회합니다.
 // 쿠키 기반 인증이라 별도 body 없이 GET 요청만 보냅니다.
 export const getMeApi = async () => {
