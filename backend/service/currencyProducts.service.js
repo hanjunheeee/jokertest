@@ -94,11 +94,15 @@ const listCurrencyProducts = async ({ kind } = {}, db = defaultDb()) => {
  * PRODUCT_STOPPED, 버전이 다르면 PRODUCT_VERSION_MISMATCH(현재 상품을 currentProduct에
  * 공개 필드로 실어)다. 성공하면 서버 내부 표현(status·sortOrder 포함)을 돌려준다.
  */
-const getCurrencyProduct = async ({ productId, version, kind }, db = defaultDb()) => {
+const getCurrencyProduct = async ({ productId, version, kind }, db = defaultDb(), { transaction = null } = {}) => {
     const notFound = () => createError('상품을 찾을 수 없습니다.', 404, 'PRODUCT_NOT_FOUND');
     if (!isNonEmptyString(productId, 64)) throw notFound();
 
-    const row = await productModel(db).findOne({ where: { product_id: productId } });
+    // 부모 트랜잭션이 주어지면(골드 구매) 같은 트랜잭션으로 읽는다 — 없으면 기존 호출과 같다.
+    const row = await productModel(db).findOne({
+        where: { product_id: productId },
+        ...(transaction ? { transaction } : {}),
+    });
     const product = normalizeProductRow(row);
     if (!product) throw notFound();
     if (kind !== undefined && product.kind !== kind) throw notFound();

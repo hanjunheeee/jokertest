@@ -162,13 +162,47 @@ router.post("/purchases/bulk", verifyToken, async (req, res, next) => {
 // F-09 AC-04 — 커밋 후 응답을 잃어버렸을 때 같은 참조 사건 ID로 결과를 복구한다.
 // 커밋된 적이 없으면(요청이 아예 도달하지 않았거나 커밋 전 오류로 롤백됨) 404다 — 그
 // 두 경우를 이 응답 하나로는 구분하지 않는다(economyService.getPurchaseResult 참고).
-router.get("/purchases/:referenceEventId", verifyToken, async (req, res, next) => {
+router.get("/purchases/:referenceEventId", verifyToken, requireSelf, async (req, res, next) => {
     try {
         const result = await economyService.getPurchaseResult(req.user.uuid, req.params.referenceEventId);
         if (!result) {
             throw createError("해당 참조 사건 ID로 커밋된 구매 결과가 없습니다.", 404, "PURCHASE_RESULT_NOT_FOUND");
         }
-        res.json({ kind: result.kind, results: result.results.map(serializeLedgerEntry), createdAt: result.createdAt });
+        const body = { kind: result.kind, results: result.results.map(serializeLedgerEntry), createdAt: result.createdAt };
+        // F-32b: 골드 구매 결과만 저장된 두 원장의 balance_after로 ok·두 잔액을 더 싣는다. 현재
+        // 지갑이나 현재 상품표로 다시 계산하지 않는다. 기존 SINGLE·BULK 응답은 그대로다.
+        if (result.kind === "GOLD") {
+            const diamondEntry = result.results.find((entry) => entry.currency === "DIAMOND");
+            const goldEntry = result.results.find((entry) => entry.currency === "GOLD");
+            Object.assign(body, {
+                ok: true,
+                balanceDiamond: diamondEntry?.balance_after,
+                balanceGold: goldEntry?.balance_after,
+            });
+        }
+        res.json(body);
+    } catch (error) { next(error); }
+});
+
+// F-32b: 다이아로 골드 구매. 인증 uuid와 productId·version·referenceEventId만 서비스로 넘긴다.
+// 가격·수량 같은 금액 참고 필드는 신뢰하지 않고 버린다(서버 상품표 값만 쓴다). 그 밖의 미지 필드
+// (userId 등)는 서비스에 닿기 전에 거부한다.
+const ALLOWED_GOLD_PURCHASE_FIELDS = new Set(["productId", "version", "referenceEventId"]);
+const IGNORED_GOLD_PURCHASE_REFERENCE_FIELDS = ["price", "priceGold", "amount", "quantity", "payAmount", "grantAmount", "bonusAmount"];
+
+router.post("/gold-purchases", verifyToken, requireSelf, async (req, res, next) => {
+    try {
+        const body = { ...(req.body ?? {}) };
+        for (const field of IGNORED_GOLD_PURCHASE_REFERENCE_FIELDS) delete body[field];
+        rejectUnknownFields(body, ALLOWED_GOLD_PURCHASE_FIELDS, "UNKNOWN_GOLD_PURCHASE_FIELD");
+        const { productId, version, referenceEventId } = body;
+        if (typeof productId !== "string" || productId.length === 0 || productId.length > 64
+            || !isPositiveSafeInteger(version)
+            || typeof referenceEventId !== "string" || referenceEventId.length === 0 || referenceEventId.length > 150) {
+            throw createError("productId·version·referenceEventId가 필요합니다.", 400, "INVALID_GOLD_PURCHASE_REQUEST");
+        }
+        const result = await economyService.purchaseGold({ userId: req.user.uuid, productId, version, referenceEventId });
+        res.status(200).json({ ok: true, balanceGold: result.balanceGold, balanceDiamond: result.balanceDiamond });
     } catch (error) { next(error); }
 });
 

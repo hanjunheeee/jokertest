@@ -37,7 +37,7 @@ const stubAuthGate = (t, { accountsByUuid = {} } = {}) => {
 };
 
 const stubService = (t, overrides = {}) => {
-    const keys = ["getWalletSummary", "listTransactions", "purchaseItem", "equipItem", "grantReward"];
+    const keys = ["getWalletSummary", "listTransactions", "purchaseItem", "equipItem", "grantReward", "purchaseGold", "getPurchaseResult"];
     const originals = Object.fromEntries(keys.map((key) => [key, economyService[key]]));
     const calls = [];
     for (const key of keys) {
@@ -437,4 +437,119 @@ test("AC-04(R-IMPL): 보상 카탈로그에 없는 reason은 400으로 거부되
     assert.equal(res.status, 400);
     assert.equal(res.json.code, "UNKNOWN_REWARD_REASON");
     assert.equal(calls.filter((c) => c.name === "grantReward").length, 0);
+});
+
+// ── F-32b: POST /economy/gold-purchases ─────────────────────────────────────
+
+const goldBody = (extra = {}) => ({ productId: "gold-1", version: 1, referenceEventId: "gold-ref-1", ...extra });
+
+test("F-32b: 금액·수량 참고 필드는 버려지고 서비스에는 인증 userId·productId·version·referenceEventId 네 필드만 전달된다", async (t) => {
+    stubAuthGate(t);
+    const { calls, lastCall } = stubService(t, {
+        purchaseGold: async () => ({ idempotent: false, balanceGold: 130, balanceDiamond: 70 }),
+    });
+    const base = await startServer(t);
+
+    const res = await request(base, "/economy/gold-purchases", {
+        method: "POST",
+        token: tokenFor(USER_A),
+        body: goldBody({ price: 0, priceGold: -1, amount: 9, quantity: 100, payAmount: 0, grantAmount: 99999, bonusAmount: 99999 }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.json, { ok: true, balanceGold: 130, balanceDiamond: 70 });
+    assert.equal(calls.filter((c) => c.name === "purchaseGold").length, 1);
+    assert.deepEqual(lastCall("purchaseGold").args[0], {
+        userId: USER_A, productId: "gold-1", version: 1, referenceEventId: "gold-ref-1",
+    });
+});
+
+test("F-32b: 미인증·미지 필드·잘못된 식별 필드는 서비스 호출 전에 실패한다", async (t) => {
+    stubAuthGate(t);
+    const { calls } = stubService(t);
+    const base = await startServer(t);
+
+    const anon = await request(base, "/economy/gold-purchases", { method: "POST", body: goldBody() });
+    assert.equal(anon.status, 401);
+
+    const unknown = await request(base, "/economy/gold-purchases", {
+        method: "POST", token: tokenFor(USER_A), body: goldBody({ userId: USER_B }),
+    });
+    assert.equal(unknown.status, 400);
+    assert.equal(unknown.json.code, "UNKNOWN_GOLD_PURCHASE_FIELD");
+
+    const invalidBodies = [
+        goldBody({ productId: 1 }), goldBody({ productId: "" }), goldBody({ productId: "p".repeat(65) }),
+        goldBody({ version: "1" }), goldBody({ version: 0 }), goldBody({ version: 1.5 }),
+        goldBody({ referenceEventId: "" }), goldBody({ referenceEventId: "r".repeat(151) }), { productId: "gold-1", version: 1 },
+    ];
+    for (const body of invalidBodies) {
+        const res = await request(base, "/economy/gold-purchases", { method: "POST", token: tokenFor(USER_A), body });
+        assert.equal(res.status, 400, JSON.stringify(body));
+        assert.equal(res.json.code, "INVALID_GOLD_PURCHASE_REQUEST");
+    }
+    assert.equal(calls.filter((c) => c.name === "purchaseGold").length, 0);
+});
+
+test("F-32b: 서비스 오류는 고정 상태·문구로 응답하고 예상 밖 DB 오류는 원문 없이 500이다", async (t) => {
+    stubAuthGate(t);
+    const cases = [
+        [createError("secret detail", 400, "INSUFFICIENT_DIAMOND"), 400, "INSUFFICIENT_DIAMOND", "다이아 잔액이 부족합니다."],
+        [createError("secret detail", 400, "BALANCE_LIMIT_EXCEEDED"), 400, "BALANCE_LIMIT_EXCEEDED", "잔액 한도를 초과했습니다."],
+        [createError("secret detail", 409, "REFERENCE_EVENT_CONFLICT"), 409, "REFERENCE_EVENT_CONFLICT", "참조 사건 ID가 이미 다른 요청에 사용되었습니다."],
+        [createError("secret detail", 409, "PRODUCT_STOPPED"), 409, "PRODUCT_STOPPED", "판매가 중지된 상품입니다."],
+        [new Error("SQL syntax near secret"), 500, "SERVER_ERROR", "서버 내부에서 에러가 발생했습니다."],
+    ];
+    let thrown;
+    stubService(t, { purchaseGold: async () => { throw thrown; } });
+    const base = await startServer(t);
+    for (const [error, status, code, message] of cases) {
+        thrown = error;
+        const res = await request(base, "/economy/gold-purchases", { method: "POST", token: tokenFor(USER_A), body: goldBody() });
+        assert.equal(res.status, status, code);
+        assert.equal(res.json.code, code);
+        assert.equal(res.json.message, message);
+        assert.doesNotMatch(JSON.stringify(res.json), /secret/);
+    }
+
+    const mismatch = Object.assign(createError("x", 409, "PRODUCT_VERSION_MISMATCH"), {
+        currentProduct: {
+            productId: "gold-1", kind: "GOLD_PURCHASE", displayName: "골드", payCurrency: "DIAMOND", payAmount: 30,
+            grantCurrency: "GOLD", grantAmount: 100, bonusAmount: 10, version: 2, status: "ON_SALE",
+        },
+    });
+    thrown = mismatch;
+    const res = await request(base, "/economy/gold-purchases", { method: "POST", token: tokenFor(USER_A), body: goldBody() });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.product.version, 2);
+    assert.equal("status" in res.json.product, false);
+});
+
+test("F-32b: GET /purchases/:referenceEventId는 GOLD 결과에만 ok·저장된 두 잔액을 더하고 기존 SINGLE 응답은 그대로다", async (t) => {
+    stubAuthGate(t);
+    const entry = (currency, amount, balance) => ({
+        id: 1, reason: "GOLD_PURCHASE", item_id: null, currency, amount, balance_after: balance, reference_event_id: "r", created_at: "2026-09-22T00:00:00.000Z",
+    });
+    const stored = {
+        gold: { kind: "GOLD", results: [entry("DIAMOND", -30, 70), entry("GOLD", 110, 130)], createdAt: "2026-09-22T00:00:00.000Z" },
+        single: { kind: "SINGLE", results: [entry("GOLD", -5, 3)], createdAt: "2026-09-22T00:00:00.000Z" },
+    };
+    const { lastCall } = stubService(t, {
+        getPurchaseResult: async (userId, referenceEventId) => stored[referenceEventId] ?? null,
+    });
+    const base = await startServer(t);
+
+    const gold = await request(base, "/economy/purchases/gold", { token: tokenFor(USER_A) });
+    assert.equal(gold.status, 200);
+    assert.equal(gold.json.ok, true);
+    assert.equal(gold.json.balanceDiamond, 70);
+    assert.equal(gold.json.balanceGold, 130);
+    assert.equal(gold.json.kind, "GOLD");
+    assert.deepEqual(gold.json.results.map((r) => r.balanceAfter), [70, 130]);
+    assert.deepEqual(lastCall("getPurchaseResult").args.slice(0, 2), [USER_A, "gold"]);
+
+    const single = await request(base, "/economy/purchases/single", { token: tokenFor(USER_A) });
+    assert.deepEqual(Object.keys(single.json).sort(), ["createdAt", "kind", "results"]);
+
+    const missing = await request(base, "/economy/purchases/none", { token: tokenFor(USER_A) });
+    assert.equal(missing.status, 404);
 });

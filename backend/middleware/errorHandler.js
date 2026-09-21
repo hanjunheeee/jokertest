@@ -102,9 +102,12 @@ exports.globalErrorHandler = (err, req, res, next) => {
     // 유지한다.
     const topupScopedPath = String(req.originalUrl || req.url || '')
         .split('?')[0].replace(/\/+$/, '').toLowerCase();
+    // F-32b: 골드 구매(POST /economy/gold-purchases)도 같은 범위다 — 다이아·골드 원장 원문이나
+    // DB 오류 원문을 응답·로그에 남기지 않고 아래 표의 고정 상태·문구로만 응답한다.
     const isTopupScope = topupScopedPath === '/economy/currency-products'
         || topupScopedPath === '/economy/topup'
-        || topupScopedPath.startsWith('/economy/topup/');
+        || topupScopedPath.startsWith('/economy/topup/')
+        || topupScopedPath === '/economy/gold-purchases';
     if (isTopupScope) {
         res.set('Cache-Control', 'no-store');
         const TOPUP_SCOPED_ERRORS = {
@@ -124,6 +127,11 @@ exports.globalErrorHandler = (err, req, res, next) => {
             PAYMENT_FAILED: { status: 402, message: '결제가 완료되지 않았습니다.' },
             PAYMENT_PROCESSING: { status: 503, message: '결제 확인이 진행 중입니다. 잠시 후 다시 조회하세요.' },
             CONFIG_MISSING: { status: 503, message: '결제 설정이 올바르지 않습니다.' },
+            UNKNOWN_GOLD_PURCHASE_FIELD: { status: 400, message: '허용되지 않은 필드가 포함되어 있습니다.' },
+            INVALID_GOLD_PURCHASE_REQUEST: { status: 400, message: '요청 형식이 올바르지 않습니다.' },
+            INSUFFICIENT_DIAMOND: { status: 400, message: '다이아 잔액이 부족합니다.' },
+            BALANCE_LIMIT_EXCEEDED: { status: 400, message: '잔액 한도를 초과했습니다.' },
+            REFERENCE_EVENT_CONFLICT: { status: 409, message: '참조 사건 ID가 이미 다른 요청에 사용되었습니다.' },
         };
         const PUBLIC_PRODUCT_FIELDS = {
             productId: 'string', kind: 'string', displayName: 'string', payCurrency: 'string',
