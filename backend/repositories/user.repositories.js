@@ -212,8 +212,10 @@ exports.applyRefreshRotation = async (sessionId, { newHash, previousHash, previo
 // user_stats 행이 없는 계정(트랜잭션 도입 이전에 반쪽으로 생성됐거나, 통계를 아직
 // 한 번도 쓰지 않은 계정)이 실제로 존재합니다. include에 where/required가 없어 쿼리는
 // LEFT JOIN이라 null을 돌려줄 뿐이므로, 결측 보정은 이 자리에서 끝냅니다.
+// F-30 AC-04: 명성(reputation)은 이 조회에서 더 이상 읽지도, 결측 보정으로 되살리지도
+// 않는다 — 사용자 화면에서 제거된 값이 응답에만 남으면 "지운 줄 알았던 값"이 계속 새어
+// 나간다. user_stats.reputation 컬럼과 이미 저장된 값 자체는 그대로 둔다(A-02).
 const STATS_DEFAULTS = {
-    reputation:       0,
     title:            '신참',
     total_games:      0,
     survival_count:   0,
@@ -240,7 +242,7 @@ exports.getMyProfile = async (uuid) => {
         attributes: ['nickname', 'profile_image_url'],
         include: [{
             model:      db.UserStats,
-            attributes: ['reputation', 'title', 'total_games', 'survival_count', 'execution_count', 'most_played_role'],
+            attributes: ['title', 'total_games', 'survival_count', 'execution_count', 'most_played_role'],
         }],
     });
 

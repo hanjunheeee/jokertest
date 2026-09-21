@@ -38,8 +38,13 @@ export const BLOOD_RECORD_CONTENT_INSET = {
   right: "15%",
 }
 
-export const BLOOD_RECORD_ROW_LABEL_CLASS = "font-subheading app-text-scaled [--app-text-size:3.6cqi] font-bold leading-none text-[#3d1810]"
-export const BLOOD_RECORD_ROW_VALUE_CLASS = "font-subheading app-text-scaled [--app-text-size:3.8cqi] font-bold leading-none tracking-wide text-[#2a0e08] tabular-nums"
+// F-30 AC-06: leading-none은 한 줄로 끝나는 짧은 문자열을 전제한 값이다 — 확대 글자·좁은
+// 화면에서 "전체 판수"가 두 줄로 접히면 줄끼리 붙어 읽을 수 없게 된다. 정상 줄 높이로 바꾸고
+// (leading-snug) 폭이 모자랄 때 줄바꿈될 수 있게 한다(min-w-0). break-keep은 한국어 단어
+// 가운데가 아니라 띄어쓰기에서만 접히게 한다. 천 단위 구분·tabular-nums·app-text-scaled와
+// 기본 글자 크기는 그대로다.
+export const BLOOD_RECORD_ROW_LABEL_CLASS = "font-subheading app-text-scaled [--app-text-size:3.6cqi] min-w-0 break-keep font-bold leading-snug text-[#3d1810]"
+export const BLOOD_RECORD_ROW_VALUE_CLASS = "font-subheading app-text-scaled [--app-text-size:3.8cqi] min-w-0 break-keep text-right font-bold leading-snug tracking-wide text-[#2a0e08] tabular-nums"
 
 export const BLOOD_RECORD_FRAME_IMG_CLASS = "block h-auto w-full shrink-0 select-none"
 

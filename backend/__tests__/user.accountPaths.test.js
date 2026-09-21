@@ -329,9 +329,12 @@ test("user_stats 행이 없는 계정도 프로필 조회가 200으로 성공한
     assert.deepEqual(body.data, {
         nickname:          "통계없음",
         profile_image_url: null,
-        reputation:        0,
+        // F-30 AC-04: reputation은 응답 키 자체가 사라졌다(아래에서 부재를 따로 단언한다).
         title:             "신참",
+        // F-30 AC-02/AC-03: 표시 판수·승률은 전적 조회 모집단에서만 나온다 — 참가 기록이
+        // 비었으므로 0판이고, 0으로 나누지 않고 승률 0이다.
         total_games:       0,
+        account_win_rate:  0,
         survival_count:    0,
         execution_count:   0,
         most_played_role:  null,
@@ -339,14 +342,16 @@ test("user_stats 행이 없는 계정도 프로필 조회가 200으로 성공한
         // 전적이 없으므로(빈 GameResultPlayer 스텁) null이다.
         highest_win_rate_role: null,
     });
+    assert.equal(Object.hasOwn(body.data, "reputation"), false);
 });
 
-test("user_stats가 있으면 그 값이 그대로 나온다", async (t) => {
+test("user_stats가 있어도 표시 판수·승률은 전적 조회 모집단에서 나오고 명성 키는 없다", async (t) => {
     stubDb(t, {
         findOne: async () => ({
             nickname:          "통계있음",
             profile_image_url: "https://example.com/a.png",
             UserStat: {
+                // 원본 명성·원본 누적 판수가 남아 있는 계정이다(DB 컬럼과 값은 보존 대상).
                 reputation: 42, title: "베테랑", total_games: 10,
                 survival_count: 7, execution_count: 3, most_played_role: "마피아",
             },
@@ -356,10 +361,55 @@ test("user_stats가 있으면 그 값이 그대로 나온다", async (t) => {
 
     const body = await (await getProfile(base)).json();
 
-    assert.equal(body.data.reputation, 42);
+    // F-30 AC-04: 원본에 명성이 있어도 응답에는 이름도 값도 실리지 않는다.
+    assert.equal(Object.hasOwn(body.data, "reputation"), false, "명성이 아직 응답에 실린다");
+    // F-30 AC-02: 참가 기록이 비었으므로 원본 10판이 아니라 0판이다.
+    assert.equal(body.data.total_games, 0, "원본 UserStats.total_games를 그대로 흘려보내면 안 된다");
+    assert.equal(body.data.account_win_rate, 0);
+    // 나머지 필드는 그대로다.
     assert.equal(body.data.title, "베테랑");
+    assert.equal(body.data.survival_count, 7);
+    assert.equal(body.data.execution_count, 3);
     assert.equal(body.data.most_played_role, "마피아");
     assert.equal(body.data.profile_image_url, "https://example.com/a.png");
+});
+
+// F-30 AC-02: 실제 인증 라우트를 통과한 조회가 **인증 계정·won 확정·GameResult JOIN** 조건을
+// 그대로 걸고, 그 결과를 승수/판수로 합산해 내려보내는지 확인한다. 위 테스트들은 빈 대역이라
+// "조건이 사라져도 0이 나온다"는 이유로 통과할 수 있었다.
+test("F-30 AC-02: 인증 계정의 확정 전적만 합산되어 표시 판수·승률이 나간다", async (t) => {
+    const seenOptions = [];
+    stubDb(t, {
+        findOne: async () => ({
+            nickname: "합산", profile_image_url: null,
+            UserStat: { reputation: 7, title: "신참", total_games: 999, survival_count: 1, execution_count: 0, most_played_role: "CITIZEN" },
+        }),
+    }, {
+        findAll: async (options) => {
+            seenOptions.push(options);
+            // 시민 1승/2판 + 광대 1승/1판 = 3판·2승.
+            return [
+                { user_id: "uuid-1", role: "CITIZEN", won: true,  is_alive: true,  GameResult: { settings: { gameSource: { v: 1, value: "production" } } } },
+                { user_id: "uuid-1", role: "CITIZEN", won: false, is_alive: false, GameResult: { settings: { gameSource: { v: 1, value: "production" } } } },
+                { user_id: "uuid-1", role: "JOKER",   won: true,  is_alive: true,  GameResult: { settings: { gameSource: { v: 1, value: "production" } } } },
+            ];
+        },
+    });
+    const base = await startServer(t);
+
+    const body = await (await getProfile(base)).json();
+
+    assert.equal(body.data.total_games, 3);
+    assert.equal(body.data.account_win_rate, 2 / 3, "최고 직업 승률(1.0)이나 직업별 평균(0.75)이 아니다");
+    assert.equal(Object.hasOwn(body.data, "reputation"), false);
+
+    // 조회 조건 자체를 확인한다 — 토큰의 uuid만 쓰고, 승패 미확정 행을 DB에서 걸러내며,
+    // 소속 경기 행이 반드시 있어야 한다.
+    const statsQuery = seenOptions.find((options) => options.include);
+    assert.ok(statsQuery, "전적 집계 조회가 include를 걸지 않았다");
+    assert.equal(statsQuery.where.user_id, "uuid-1");
+    assert.deepEqual(statsQuery.where.won, { [db.Sequelize.Op.ne]: null }, "won 미확정 행을 DB에서 걸러야 한다");
+    assert.equal(statsQuery.include[0].required, true, "소속 game_results가 없는 행이 섞이면 안 된다");
 });
 
 test("Sequelize 인스턴스로 넘어온 통계도 평탄화되어 노출된다", async (t) => {
@@ -373,9 +423,11 @@ test("Sequelize 인스턴스로 넘어온 통계도 평탄화되어 노출된다
 
     const body = await (await getProfile(base)).json();
 
-    assert.equal(body.data.reputation, 5);
+    // F-30 AC-04: 인스턴스 쪽에 명성이 남아 있어도 평탄화 결과에서 되살아나지 않는다.
+    assert.equal(Object.hasOwn(body.data, "reputation"), false);
     assert.equal(body.data.title, "중수");
     assert.equal(body.data.total_games, 0, "누락된 필드는 기본값으로 채워져야 합니다");
+    assert.equal(body.data.account_win_rate, 0);
 });
 
 test("존재하지 않는 유저의 프로필 조회는 404를 유지한다", async (t) => {

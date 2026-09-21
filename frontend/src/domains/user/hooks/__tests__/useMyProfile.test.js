@@ -44,11 +44,13 @@ const { useUserProfileStore } = await import("../../store/user.store.js")
 // 로컬 API가 실제로 돌려주는 프로필 응답 모양입니다. title을 포함합니다.
 // F-10: highest_win_rate_role(운명의 가면, AC-04)이 most_played_role과 별도 필드로
 // 추가됐다 — 자세한 마스크 선택 계약은 useMyProfile.roleStatistics.test.js가 검증한다.
+// F-30: reputation은 서버 응답에서 사라졌고(AC-04), account_win_rate가 계정 전체 유효 종료
+// 경기의 원시 승률(0~1)로 새로 실린다(AC-02). 1245판에 2/3 → 화면 표시는 66.7%다.
 const PROFILE_ROW = {
   nickname: "가면술사",
-  reputation: 1280,
   title: "무자비한 광대",
   total_games: 1245,
+  account_win_rate: 2 / 3,
   survival_count: 788,
   execution_count: 112,
   most_played_role: "광대",
@@ -57,8 +59,11 @@ const PROFILE_ROW = {
 
 function resetStore() {
   getMyProfileCallCount = 0
-  profileResponse = null
-  useUserProfileStore.setState({ data: null, loading: true })
+  // F-30 AC-03: store가 이제 표시할 수 없는 응답을 성공으로 캐시하지 않는다. 캐시를 세팅해
+  // 두는 시험들도 마운트 직후의 자동 재확인 조회를 한 번 받으므로, 기본 응답을 유효한 값으로
+  // 둬서 그 조회가 "검증 실패"로 흘러가지 않게 한다.
+  profileResponse = PROFILE_ROW
+  useUserProfileStore.setState({ data: null, loading: true, error: null })
 }
 
 test("데이터가 없으면 null 계약을 돌려주고 fetchProfile을 한 번 호출한다", async () => {
@@ -97,20 +102,24 @@ test("F-21(A-10): 캐시가 있어도 화면 진입은 서버를 한 번 다시 
   myPage.unmount()
 })
 
-test("profile은 닉네임·명성과 함께 title을 그대로 유지한다", () => {
+// F-30 AC-04: 명성은 화면에서 제거됐다 — 닉네임을 명성 이름 칸에 싣던 reputationLabel·
+// reputationValue 자체가 사라지고 닉네임과 title만 남는다.
+test("profile은 닉네임과 title만 담고 명성 필드를 더 이상 만들지 않는다", () => {
   resetStore()
   useUserProfileStore.setState({ data: PROFILE_ROW, loading: false })
 
   const { result } = renderHook(() => useMyProfile())
 
   assert.deepEqual(result.current.profile, {
-    reputationLabel: "가면술사",
-    reputationValue: 1280,
+    nickname: "가면술사",
     title: "무자비한 광대",
   })
+  assert.equal("reputationLabel" in result.current.profile, false)
+  assert.equal("reputationValue" in result.current.profile, false)
 })
 
-test("stats는 전적 숫자를 천 단위 구분 문자열로 바꿔 3행으로 돌려준다", () => {
+// F-30 AC-01: 생존 횟수·단두대 처형 행은 제거되고 전체 판수·승률 두 행만 남는다.
+test("stats는 전체 판수와 승률 두 행만 돌려준다(생존·처형 행은 없다)", () => {
   resetStore()
   useUserProfileStore.setState({ data: PROFILE_ROW, loading: false })
 
@@ -118,8 +127,41 @@ test("stats는 전적 숫자를 천 단위 구분 문자열로 바꿔 3행으로
 
   assert.deepEqual(result.current.stats, [
     { label: "전체 판수", value: "1,245" },
-    { label: "생존 횟수", value: "788" },
-    { label: "단두대 처형", value: "112" },
+    { label: "승률", value: "66.7%" },
+  ])
+  assert.equal(result.current.stats.length, 2)
+  assert.equal(result.current.stats.some((row) => row.label === "생존 횟수"), false)
+  assert.equal(result.current.stats.some((row) => row.label === "단두대 처형"), false)
+})
+
+// F-30 AC-03: 0판 계정은 승률을 감추거나 비워 두지 않고 0.0%로 표시한다.
+test("0판 계정의 승률은 0.0%다", () => {
+  resetStore()
+  useUserProfileStore.setState({
+    data: { ...PROFILE_ROW, total_games: 0, account_win_rate: 0 },
+    loading: false,
+  })
+
+  const { result } = renderHook(() => useMyProfile())
+
+  assert.deepEqual(result.current.stats, [
+    { label: "전체 판수", value: "0" },
+    { label: "승률", value: "0.0%" },
+  ])
+})
+
+test("전승 계정의 승률은 100.0%다", () => {
+  resetStore()
+  useUserProfileStore.setState({
+    data: { ...PROFILE_ROW, total_games: 7, account_win_rate: 1 },
+    loading: false,
+  })
+
+  const { result } = renderHook(() => useMyProfile())
+
+  assert.deepEqual(result.current.stats, [
+    { label: "전체 판수", value: "7" },
+    { label: "승률", value: "100.0%" },
   ])
 })
 

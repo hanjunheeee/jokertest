@@ -108,11 +108,13 @@ const ENTITLEMENTS = [
   { itemId: BORDER_NEXT, itemType: "PROFILE_BORDER" },
 ]
 
+// F-30: 명성은 응답에서 제거됐고(AC-04), 표시 판수와 원시 승률이 같은 모집단의 두 필드로
+// 내려온다(AC-02) — user.store가 둘 다 표시 가능한 값인지 검사하므로 유효한 값이어야 한다.
 const PROFILE_RESPONSE = {
   nickname: "테스터",
-  reputation: 10,
   title: "가면의 손님",
   total_games: 12,
+  account_win_rate: 0.25,
   survival_count: 7,
   execution_count: 2,
   highest_win_rate_role: "귀족",
@@ -291,6 +293,18 @@ test("F-18 AC-05: 로비 메뉴에 명예의 전당 진입(버튼·이동·접�
   // 키보드 포커스 대상도 메뉴 항목 수만큼만 있어야 한다(잔여 tabIndex 없음).
   const focusables = nav.querySelectorAll("button, a, [tabindex]")
   assert.equal(focusables.length, LOBBY_MENU_ITEMS.length)
+})
+
+// F-30 AC-04: 로비 배너는 실제 서버 응답을 그대로 태운 경로다 — 닉네임은 남고 명성은
+// 이름도 값도 없어야 한다(응답에서 지웠어도 화면이 옛 필드를 읽고 있으면 여기서 드러난다).
+test("F-30 AC-04: 실제 로비 배너에 닉네임이 그려지고 명성 이름·값은 어디에도 없다", async () => {
+  resetAll()
+  const view = await mountLobby()
+
+  const banner = view.getByRole("button", { name: "마이페이지" })
+  assert.ok(banner.textContent.includes("테스터"), "로비 배너에 닉네임이 보이지 않는다")
+  assert.equal(/명성/.test(view.container.textContent), false, "로비 화면에 명성 이름이 남아 있다")
+  assert.equal(banner.textContent.includes("10"), false, "로비 배너에 명성 값이 남아 있다")
 })
 
 test("F-18 AC-04: 로비의 프로필 수정 버튼은 마이페이지와 같은 프로필 편집 모달을 열고, 내부 이동을 일으키지 않는다", async () => {
