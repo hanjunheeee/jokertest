@@ -270,6 +270,187 @@ test('AC-03: 만료된 토큰·이미 사용된 토큰은 거부되고, 새 요�
     assert.deepEqual(await bConfirmAgain.json(), { ok: false, code: 'USED' });
 });
 
+test('AC-03: 발급된 링크를 여러 번 열어도(GET verify) 토큰·비밀번호·세션 중 어느 것도 바뀌지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await rebuildFullSchema();
+
+    const local = await createLocalUser({ nickname: 'AC03비소비', email: `ac03get-${crypto.randomUUID()}@example.com` });
+    const memory = useMemoryMailAdapter(t);
+    const base = await startServer(t);
+
+    const loginRes = await postJson(base, '/auth/login', { email: local.email, password: local.password, rememberMe: true });
+    const setCookies = loginRes.headers.getSetCookie?.() ?? [loginRes.headers.get('set-cookie')];
+    const accessToken = setCookies.find((c) => c.startsWith('accessToken=')).split(';')[0].split('=')[1];
+
+    await postJson(base, '/auth/password-reset/request', { email: local.email });
+    const rawToken = tokenOf(memory.outbox[0]);
+
+    const before = await db.PasswordResetToken.findOne({ where: { user_id: local.uuid }, raw: true });
+    const userBefore = await db.User.findByPk(local.uuid);
+
+    // 사용자가 링크를 새로고침하거나 여러 번 여는 상황 — 세 번 모두 같은 VALID여야 한다.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const res = await getPath(base, `/auth/password-reset/verify?token=${encodeURIComponent(rawToken)}`);
+        assert.equal(res.status, 200);
+        assert.deepEqual(await res.json(), { ok: true, status: 'VALID' });
+    }
+
+    const after = await db.PasswordResetToken.findOne({ where: { user_id: local.uuid }, raw: true });
+    assert.equal(after.used, before.used, 'GET verify가 토큰을 소비했습니다');
+    assert.equal(String(after.revoked_at), String(before.revoked_at));
+    assert.equal(String(after.expired_at), String(before.expired_at));
+    assert.equal(after.token_hash, before.token_hash);
+
+    const userAfter = await db.User.findByPk(local.uuid);
+    assert.equal(userAfter.password_hash, userBefore.password_hash);
+
+    const meAfter = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessToken}` } });
+    assert.equal(meAfter.status, 200, '비소비 조회가 기존 세션을 폐기하면 안 됩니다');
+
+    // 비소비였으므로 그 뒤에도 정상적으로 확정할 수 있다.
+    const confirmRes = await postJson(base, '/auth/password-reset/confirm', { token: rawToken, newPassword: 'after-many-gets-1' });
+    assert.equal(confirmRes.status, 200);
+});
+
+test('AC-03: 만료된 토큰은 confirm도 EXPIRED로 거부하고 저장 상태를 바꾸지 않으며, 재발급 이후 옛 미사용 링크는 INVALID다', async (t) => {
+    if (unavailable(t)) return;
+    await rebuildFullSchema();
+
+    const local = await createLocalUser({ nickname: 'AC03만료', email: `ac03exp-${crypto.randomUUID()}@example.com` });
+    const memory = useMemoryMailAdapter(t);
+    const base = await startServer(t);
+
+    await postJson(base, '/auth/password-reset/request', { email: local.email });
+    const tokenA = tokenOf(memory.outbox[0]);
+    await db.PasswordResetToken.update(
+        { expired_at: new Date(Date.now() - 1000) },
+        { where: { user_id: local.uuid } },
+    );
+
+    const userBefore = await db.User.findByPk(local.uuid);
+    const expiredConfirm = await postJson(base, '/auth/password-reset/confirm', { token: tokenA, newPassword: 'expired-try-pw-1' });
+    assert.equal(expiredConfirm.status, 400);
+    assert.deepEqual(await expiredConfirm.json(), { ok: false, code: 'EXPIRED' });
+
+    const rowAfterExpired = await db.PasswordResetToken.findOne({ where: { user_id: local.uuid }, raw: true });
+    // raw:true 조회는 MySQL의 tinyint를 0/1로 돌려준다(모델 인스턴스의 boolean이 아니다).
+    assert.equal(Number(rowAfterExpired.used), 0, '만료 거부가 토큰을 소비하면 안 됩니다');
+    assert.equal(rowAfterExpired.revoked_at, null);
+    const userAfterExpired = await db.User.findByPk(local.uuid);
+    assert.equal(userAfterExpired.password_hash, userBefore.password_hash);
+
+    // 재발급 — 만료 여부와 무관하게 이전 토큰은 폐기(revoked)되므로 INVALID다(USED가 아니다).
+    await postJson(base, '/auth/password-reset/request', { email: local.email });
+    const tokenB = tokenOf(memory.outbox[1]);
+    assert.notEqual(tokenA, tokenB);
+
+    const staleConfirm = await postJson(base, '/auth/password-reset/confirm', { token: tokenA, newPassword: 'stale-try-pw-1' });
+    assert.equal(staleConfirm.status, 400);
+    assert.deepEqual(await staleConfirm.json(), { ok: false, code: 'INVALID' });
+    assert.equal((await db.User.findByPk(local.uuid)).password_hash, userBefore.password_hash);
+
+    // 새 링크만 유효하다.
+    const okConfirm = await postJson(base, '/auth/password-reset/confirm', { token: tokenB, newPassword: 'reissued-pw-1' });
+    assert.equal(okConfirm.status, 200);
+    const relogin = await postJson(base, '/auth/login', { email: local.email, password: 'reissued-pw-1' });
+    assert.equal(relogin.status, 200);
+});
+
+test('AC-03/AC-04: 세션 폐기까지 저장한 뒤 오류가 나면 토큰·비밀번호·세션이 모두 롤백되고, 같은 링크로 다시 시도하면 성공한다', async (t) => {
+    if (unavailable(t)) return;
+    await rebuildFullSchema();
+
+    const local = await createLocalUser({ nickname: 'AC03롤백', email: `ac03rb-${crypto.randomUUID()}@example.com` });
+    const memory = useMemoryMailAdapter(t);
+    const base = await startServer(t);
+
+    const loginRes = await postJson(base, '/auth/login', { email: local.email, password: local.password, rememberMe: true });
+    const setCookies = loginRes.headers.getSetCookie?.() ?? [loginRes.headers.get('set-cookie')];
+    const accessToken = setCookies.find((c) => c.startsWith('accessToken=')).split(';')[0].split('=')[1];
+
+    await postJson(base, '/auth/password-reset/request', { email: local.email });
+    const rawToken = tokenOf(memory.outbox[0]);
+    const userBefore = await db.User.findByPk(local.uuid);
+
+    // 세션 폐기가 **실제로 저장된 뒤** 같은 트랜잭션 안에서 실패시킨다 — 부분 적용(비밀번호는
+    // 바뀌었는데 토큰은 미사용, 또는 세션만 끊김)이 남는지 보는 것이 이 케이스의 목적이다.
+    const original = userRepository.markOnlineSessionsOffline;
+    const patched = t.mock.method(userRepository, 'markOnlineSessionsOffline', async (...args) => {
+        await original.apply(userRepository, args);
+        throw new Error('injected failure after session revocation');
+    });
+
+    const failedConfirm = await postJson(base, '/auth/password-reset/confirm', { token: rawToken, newPassword: 'rolled-back-pw-1' });
+    assert.equal(failedConfirm.status, 500);
+    assert.deepEqual(await failedConfirm.json(), { ok: false, code: 'SERVER_ERROR' });
+
+    const rowAfterFailure = await db.PasswordResetToken.findOne({ where: { user_id: local.uuid }, raw: true });
+    assert.equal(Number(rowAfterFailure.used), 0, '실패한 시도가 토큰을 소비한 채로 남으면 링크가 영원히 죽는다');
+    const userAfterFailure = await db.User.findByPk(local.uuid);
+    assert.equal(userAfterFailure.password_hash, userBefore.password_hash, '비밀번호만 바뀐 부분 적용이 남으면 안 됩니다');
+    const meAfterFailure = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessToken}` } });
+    assert.equal(meAfterFailure.status, 200, '롤백됐다면 세션 폐기도 함께 되돌아가야 합니다');
+
+    // 주입을 푼 뒤에 로그인을 확인한다 — 로그인(issueSessionForUser)도 같은 저장소 함수로
+    // 이전 세션을 폐기하므로, 주입이 걸린 채로는 로그인 자체가 실패한다(그 실패는 이
+    // 케이스가 보려는 롤백과 무관하다).
+    patched.mock.restore();
+
+    const oldLogin = await postJson(base, '/auth/login', { email: local.email, password: local.password });
+    assert.equal(oldLogin.status, 200, '실패한 시도 이후에도 이전 비밀번호가 그대로여야 합니다');
+
+    // 같은 링크가 그대로 성공한다.
+    const okConfirm = await postJson(base, '/auth/password-reset/confirm', { token: rawToken, newPassword: 'retried-after-rollback-1' });
+    assert.equal(okConfirm.status, 200);
+    const relogin = await postJson(base, '/auth/login', { email: local.email, password: 'retried-after-rollback-1' });
+    assert.equal(relogin.status, 200);
+});
+
+test('AC-05: 소셜 전용 계정에 토큰이 심겨 있어도 confirm은 SOCIAL_ONLY로 거부하고 계정 상태를 바꾸지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await rebuildFullSchema();
+
+    const memory = useMemoryMailAdapter(t);
+    const base = await startServer(t);
+
+    // 정상 경로로는 소셜 전용 계정에 토큰이 발급되지 않는다(그 사실도 아래에서 확인한다) —
+    // 그래서 이 방어선을 시험하려면 토큰을 명시적으로 심어야 한다.
+    const fp = `fp-${crypto.randomUUID()}`;
+    const state = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint: fp });
+    const callback = await socialAuthService.handleOAuthCallback({
+        provider: 'google', subject: `sub-${crypto.randomUUID()}`, email: `ac05-social-${crypto.randomUUID()}@example.com`,
+        rawState: state.state, browserFingerprint: fp, reqInfo: REQ_INFO,
+    });
+    const completed = await socialAuthService.completeSocialSignup({
+        intentToken: callback.intentToken, nickname: 'AC05소셜', birthDate: '1993-03-03', reqInfo: REQ_INFO,
+    });
+    const socialUser = await db.User.findByPk(completed.user.uuid);
+    assert.equal(socialUser.has_local_password, false);
+
+    await postJson(base, '/auth/password-reset/request', { email: socialUser.email });
+    assert.equal(memory.outbox.at(-1).template, 'SOCIAL_LOGIN_GUIDE');
+    assert.equal(await db.PasswordResetToken.count({ where: { user_id: socialUser.uuid } }), 0, '정상 경로는 소셜 전용 계정에 토큰을 만들지 않습니다');
+
+    const plantedToken = crypto.randomBytes(32).toString('base64url');
+    await db.PasswordResetToken.create({
+        user_id: socialUser.uuid,
+        token: null,
+        token_hash: crypto.createHash('sha256').update(plantedToken).digest('hex'),
+        expired_at: new Date(Date.now() + 600000),
+        used: false,
+    });
+
+    const confirmRes = await postJson(base, '/auth/password-reset/confirm', { token: plantedToken, newPassword: 'social-should-fail-1' });
+    assert.equal(confirmRes.status, 400);
+    assert.deepEqual(await confirmRes.json(), { ok: false, code: 'SOCIAL_ONLY' });
+
+    const after = await db.User.findByPk(socialUser.uuid);
+    assert.equal(after.has_local_password, false, '소셜 전용 계정에 로컬 비밀번호가 부여되면 안 됩니다');
+    assert.equal(after.password_hash, socialUser.password_hash);
+    const planted = await db.PasswordResetToken.findOne({ where: { user_id: socialUser.uuid }, raw: true });
+    assert.equal(Number(planted.used), 0, '거부된 시도가 토큰을 소비하면 안 됩니다');
+});
+
 test('AC-03: 실제 MySQL에서 같은 토큰에 대한 동시 confirm 제출은 정확히 1회만 성공한다', async (t) => {
     if (unavailable(t)) return;
     await rebuildFullSchema();

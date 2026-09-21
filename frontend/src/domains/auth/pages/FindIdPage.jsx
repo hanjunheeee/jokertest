@@ -70,21 +70,33 @@ export default function FindIdPage() {
 
     findIdApi({ nickname: nickname.trim(), birthDate })
       .then((result) => {
-        submittingRef.current = false
+        // 세대·언마운트 확인을 잠금 해제보다 **먼저** 한다 — 늦게 도착한 옛 응답이 지금
+        // 진행 중인 요청의 잠금을 풀면 그 사이 제출이 한 번 더 나갈 수 있다.
         if (unmountedRef.current || requestGenerationRef.current !== generation) return
+        submittingRef.current = false
 
-        if (result?.ok) {
-          setMaskedEmail(result.maskedEmail)
+        // 서버 계약은 {ok:true,maskedEmail}과 {ok:false,code:'NOT_FOUND'} 둘 뿐이다
+        // (accountRecovery.controller.js::findId). truthy 비교로 성공을 판정하면 maskedEmail이
+        // 비어 있는 본문에도 결과 화면을 열어 빈 힌트를 보여주고, "ok가 아니면 전부 notFound"는
+        // 정체를 알 수 없는 본문을 "그런 계정이 없다"는 사실 주장으로 바꾼다. 둘 다 서버가
+        // 말하지 않은 것을 화면이 말하는 것이므로, 계약에 정확히 맞을 때만 그 화면으로 간다.
+        const maskedHint = typeof result?.maskedEmail === "string" ? result.maskedEmail.trim() : ""
+
+        if (result?.ok === true && maskedHint !== "") {
+          setMaskedEmail(maskedHint)
           setNickname("")
           setBirthDate("")
           setStatus("found")
-        } else {
+        } else if (result?.ok === false && result.code === "NOT_FOUND") {
           setStatus("notFound")
+        } else {
+          // 계약 밖 본문은 입력을 보존한 채 재시도 가능한 통신 실패로 남긴다.
+          setStatus("failed")
         }
       })
       .catch((error) => {
-        submittingRef.current = false
         if (unmountedRef.current || requestGenerationRef.current !== generation) return
+        submittingRef.current = false
 
         if (error?.status === 429) {
           setStatus("rateLimited")

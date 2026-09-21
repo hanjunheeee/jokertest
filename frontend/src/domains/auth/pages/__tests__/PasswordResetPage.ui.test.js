@@ -137,6 +137,39 @@ async function mountReadyResetPage(token = VALID_TOKEN) {
   return view
 }
 
+// 같은 화면에서 토큰 A ↔ B를 오갈 수 있는 하네스. "A로 들어갔다가 B를 거쳐 다시 A로"처럼
+// 토큰이 같은 문자열로 되돌아오는 재진입을 실제 라우팅으로 재현한다.
+function TokenSwitchHarness({ tokenA, tokenB }) {
+  return React.createElement(
+    MemoryRouter,
+    { initialEntries: [`/password-reset?token=${tokenA}`] },
+    React.createElement(
+      Routes,
+      null,
+      React.createElement(Route, {
+        path: "/password-reset",
+        element: React.createElement(
+          "div",
+          null,
+          React.createElement(Link, { to: `/password-reset?token=${tokenA}` }, "SWITCH_TO_A"),
+          React.createElement(Link, { to: `/password-reset?token=${tokenB}` }, "SWITCH_TO_B"),
+          React.createElement(PasswordResetPage),
+        ),
+      }),
+      React.createElement(Route, { path: "/password-reset/request", element: React.createElement("div", null, "REQUEST_STUB") }),
+      React.createElement(Route, { path: "/login", element: React.createElement("div", null, LOGIN_STUB_TEXT) }),
+    ),
+  )
+}
+
+async function mountTokenSwitchHarness(tokenA, tokenB) {
+  let view
+  await act(async () => {
+    view = render(React.createElement(React.StrictMode, null, React.createElement(TokenSwitchHarness, { tokenA, tokenB })))
+  })
+  return view
+}
+
 const fillEmail = (view, value) => {
   fireEvent.change(view.container.querySelector('input[name="email"]'), { target: { value } })
 }
@@ -189,6 +222,34 @@ test("AC-01: 등록된 이메일과 미등록 이메일 모두 같은 완료 안
   assert.equal(fetchCalls[0].url, "/auth/password-reset/request")
   assert.equal(fetchCalls[0].options.method, "POST")
   assert.deepEqual(JSON.parse(fetchCalls[0].options.body), { email: "missing@example.com" })
+})
+
+test("AC-01: 완료 안내는 실제 발송이나 계정 존재를 단정하지 않는다", async () => {
+  fetchHandler = async () => jsonResponse(200, { ok: true })
+  const view = await mountRequestPageStrict()
+  fillEmail(view, "user@example.com")
+  await act(async () => { submitForm(view) })
+  await waitFor(() => assert.ok(view.container.querySelector('[role="status"]')))
+
+  const message = view.container.querySelector('[role="status"]').textContent
+  // 서버가 답한 것은 {ok:true}(접수)뿐이다 — 계정 없음·소셜 전용·발송 실패도 같은 응답이다.
+  assert.equal(/보내드렸|발송했|전송했|전송이 완료/.test(message), false, `발송을 단정하는 문구가 있습니다: ${message}`)
+  assert.ok(message.includes("가입된 계정이 있다면"), "계정 존재를 전제하지 않는 조건부 안내여야 합니다")
+})
+
+test("AC-01: 계약 밖 200 본문(ok:'true')은 완료로 처리하지 않고 입력을 보존한 채 재시도 안내를 보여준다", async () => {
+  // truthy 비교였다면 문자열 'true'도 완료로 통과했다 — 서버가 무엇을 했는지 모르는 채
+  // "접수됐다"고 말하면 안 된다.
+  fetchHandler = async () => jsonResponse(200, { ok: "true" })
+  const view = await mountRequestPageStrict()
+  fillEmail(view, "user@example.com")
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  assert.equal(view.container.querySelector('[role="status"]'), null, "예상 밖 본문을 완료 안내로 바꾸면 안 됩니다")
+  assert.equal(view.container.querySelector('input[name="email"]').value, "user@example.com")
+  assert.ok(view.getByText("다시 입력"))
+  assert.equal(fetchCalls.length, 1, "자동 재시도가 있으면 안 됩니다")
 })
 
 test("지연 응답 중 연속 제출해도 요청은 한 번만 나간다", async () => {
@@ -442,6 +503,50 @@ test("AC-03: 토큰이 바뀌면 이전 토큰의 늦은 verify 응답이 새 �
   assert.equal(view.container.querySelector('input[name="password"]'), null)
 })
 
+test("AC-03: verify가 429면 링크 무효가 아니라 제한 안내를 보여주고 자동으로 재호출하지 않는다", async () => {
+  fetchHandler = async () => jsonResponse(429, { ok: false, code: "RATE_LIMITED" })
+  const view = await mountResetPageStrict(VALID_TOKEN)
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("확인 요청이 너무 많습니다")))
+  for (const message of Object.values(LINK_INVALID_MESSAGE_BY_CODE)) {
+    assert.equal(view.container.textContent.includes(message), false, "제한을 링크 무효로 단정하면 안 됩니다")
+  }
+  assert.equal(fetchCalls.length, 1, "429 이후 자동 재시도가 있으면 안 됩니다")
+
+  // 사용자가 직접 눌렀을 때만 다시 확인한다.
+  fetchHandler = async () => jsonResponse(200, { ok: true, status: "VALID" })
+  await act(async () => { fireEvent.click(view.getByText("다시 확인")) })
+  await waitFor(() => assert.ok(view.container.querySelector('input[name="password"]')))
+  assert.equal(fetchCalls.length, 2)
+})
+
+test("AC-03: 같은 토큰이라도 다른 화면을 거쳐 다시 들어오면 서버 상태를 새로 조회한다", async () => {
+  const tokenA = "revisit-a-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  const tokenB = "revisit-b-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  let verifyCount = 0
+  fetchHandler = async (url) => {
+    verifyCount += 1
+    // A는 처음엔 유효하지만, B를 거쳐 돌아온 두 번째 방문에서는 이미 사용된 상태다.
+    if (url.includes(tokenA)) {
+      return verifyCount === 1
+        ? jsonResponse(200, { ok: true, status: "VALID" })
+        : jsonResponse(200, { ok: false, code: "USED" })
+    }
+    return jsonResponse(200, { ok: true, status: "VALID" })
+  }
+
+  const view = await mountTokenSwitchHarness(tokenA, tokenB)
+  await waitFor(() => assert.ok(view.container.querySelector('input[name="password"]')))
+  assert.equal(fetchCalls.length, 1, "한 방문의 StrictMode 이중 effect는 GET 하나로 합쳐야 합니다")
+
+  await act(async () => { fireEvent.click(view.getByText("SWITCH_TO_B")) })
+  await waitFor(() => assert.equal(fetchCalls.length, 2))
+
+  await act(async () => { fireEvent.click(view.getByText("SWITCH_TO_A")) })
+  await waitFor(() => assert.ok(view.container.textContent.includes("이미 사용된 링크예요")))
+  assert.equal(fetchCalls.length, 3, "같은 토큰이라도 새 방문은 캐시된 옛 결과를 재사용하면 안 됩니다")
+})
+
 // ── AC-04: 새 비밀번호 8~64자, 확인 일치 ───────────────────────────────────────
 
 test("AC-04: 7자 비밀번호는 제출이 막히고 confirm을 호출하지 않는다", async () => {
@@ -611,6 +716,110 @@ test("AC-05: confirm 통신 실패·429는 입력을 보존한 채 ready에서 �
   await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
   assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh")
   assert.ok(view.container.querySelector('button[type="submit"]'))
+})
+
+test("AC-05: confirm이 429면 입력을 보존한 채 제한 안내를 보여주고 자동으로 다시 제출하지 않는다", async () => {
+  const view = await mountReadyResetPage()
+  fetchHandler = async () => jsonResponse(429, { ok: false, code: "RATE_LIMITED" })
+  fillPasswords(view, "abcdefgh", "abcdefgh")
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("요청이 너무 많습니다")))
+  assert.equal(view.container.textContent.includes("비밀번호가 재설정되었어요"), false)
+  assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh")
+  assert.equal(fetchCalls.length, 1, "429 이후 자동 재시도가 있으면 안 됩니다")
+})
+
+test("AC-05: 400이 아닌 응답에 실려 온 토큰 코드는 링크 무효로 단정하지 않는다", async () => {
+  // 서버는 EXPIRED/USED/INVALID/SOCIAL_ONLY를 400으로만 내보낸다 — 5xx 본문에 우연히 같은
+  // 문자열이 섞여 와도 "링크가 만료됐다"는 사실 주장으로 바꾸면 안 된다.
+  const view = await mountReadyResetPage()
+  fetchHandler = async () => jsonResponse(500, { ok: false, code: "EXPIRED" })
+  fillPasswords(view, "abcdefgh", "abcdefgh")
+  await act(async () => { submitForm(view) })
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  assert.equal(view.container.textContent.includes("링크가 만료됐어요"), false)
+  assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh")
+})
+
+// 서버 계약은 400 {ok:false, code} 하나뿐이다 — 상태만 400이면서 본문이 그 계약을 따르지
+// 않는 응답(ok:true이거나 ok가 아예 없는)은 "링크가 만료됐다"는 사실 주장으로 바꾸면 안 된다.
+for (const [label, body] of [
+  ["ok:true", { ok: true, code: "EXPIRED" }],
+  ["ok 없음", { code: "EXPIRED" }],
+]) {
+  test(`AC-05: 400이지만 본문이 ${label}이면 링크 무효로 확정하지 않고 입력을 보존한 채 재시도 안내를 보여준다`, async () => {
+    const view = await mountReadyResetPage()
+    fetchHandler = async () => jsonResponse(400, body)
+    fillPasswords(view, "abcdefgh", "abcdefgh")
+    await act(async () => { submitForm(view) })
+
+    await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+    for (const message of Object.values(LINK_INVALID_MESSAGE_BY_CODE)) {
+      assert.equal(view.container.textContent.includes(message), false, `${label} 본문을 ${message}로 단정하면 안 됩니다`)
+    }
+    assert.equal(view.container.textContent.includes("비밀번호가 재설정되었어요"), false)
+    assert.equal(view.container.querySelector('input[name="password"]').value, "abcdefgh", "입력은 보존되어야 합니다")
+    assert.ok(view.container.querySelector('button[type="submit"]'), "다시 제출할 수 있어야 합니다")
+    assert.equal(fetchCalls.length, 1, "자동 재시도가 있으면 안 됩니다")
+  })
+}
+
+test("AC-03: verify도 같은 규칙이다 — 400이지만 ok:false가 아닌 본문은 링크 무효로 확정하지 않는다", async () => {
+  fetchHandler = async () => jsonResponse(400, { ok: true, code: "EXPIRED" })
+  const view = await mountResetPageStrict(VALID_TOKEN)
+
+  await waitFor(() => assert.ok(view.container.textContent.includes("서버와 통신할 수 없습니다")))
+  for (const message of Object.values(LINK_INVALID_MESSAGE_BY_CODE)) {
+    assert.equal(view.container.textContent.includes(message), false, "계약 밖 본문을 링크 무효로 단정하면 안 됩니다")
+  }
+  assert.ok(view.getByText("다시 확인"), "재시도 가능한 상태여야 합니다")
+  assert.equal(fetchCalls.length, 1)
+})
+
+test("AC-05: A에서 제출한 뒤 B를 거쳐 A로 다시 들어와 새로 제출하면, 먼저 보낸 요청의 늦은 성공 응답이 새 화면을 덮어쓰지 않는다", async () => {
+  const tokenA = "late-a-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  const tokenB = "late-b-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  const confirmResolvers = []
+  fetchHandler = (url) => {
+    if (url.startsWith("/auth/password-reset/verify")) {
+      return Promise.resolve(jsonResponse(200, { ok: true, status: "VALID" }))
+    }
+    return new Promise((resolve) => { confirmResolvers.push(resolve) })
+  }
+
+  const view = await mountTokenSwitchHarness(tokenA, tokenB)
+  await waitFor(() => assert.ok(view.container.querySelector('input[name="password"]')))
+
+  // (1) A에서 첫 제출 — 응답은 아직 오지 않는다.
+  fillPasswords(view, "first-pw-1", "first-pw-1")
+  await act(async () => { submitForm(view) })
+  await waitFor(() => assert.equal(confirmResolvers.length, 1))
+
+  // (2) B로 갔다가 다시 A로 돌아온다(같은 토큰 문자열의 새 방문).
+  await act(async () => { fireEvent.click(view.getByText("SWITCH_TO_B")) })
+  await waitFor(() => assert.ok(view.container.querySelector('input[name="password"]')))
+  await act(async () => { fireEvent.click(view.getByText("SWITCH_TO_A")) })
+  await waitFor(() => assert.ok(view.container.querySelector('input[name="password"]')))
+  assert.equal(view.container.querySelector('input[name="password"]').value, "", "새 방문은 이전 입력을 물려받지 않습니다")
+
+  // (3) 새 방문에서 다시 제출한다 — 이 요청도 아직 응답이 없다.
+  fillPasswords(view, "second-pw-2", "second-pw-2")
+  await act(async () => { submitForm(view) })
+  await waitFor(() => assert.equal(confirmResolvers.length, 2))
+  assert.equal(view.container.querySelector("fieldset").disabled, true)
+
+  // (4) 이제서야 첫 요청의 성공 응답이 도착한다 — 토큰 문자열만 비교했다면 이 응답이 지금
+  // 화면을 완료로 바꿔 버렸다.
+  await act(async () => { confirmResolvers[0](jsonResponse(200, { ok: true })) })
+  assert.equal(view.container.textContent.includes("비밀번호가 재설정되었어요"), false, "옛 요청의 응답이 새 방문의 화면을 완료로 바꾸면 안 됩니다")
+  assert.equal(view.container.querySelector('input[name="password"]').value, "second-pw-2", "새 입력이 지워지면 안 됩니다")
+  assert.equal(view.container.querySelector("fieldset").disabled, true, "옛 응답이 진행 중인 제출의 잠금을 풀면 안 됩니다")
+
+  // (5) 새 요청의 응답이 도착해야 완료로 간다.
+  await act(async () => { confirmResolvers[1](jsonResponse(200, { ok: true })) })
+  await waitFor(() => assert.ok(view.container.textContent.includes("비밀번호가 재설정되었어요")))
 })
 
 test("제출 후 언마운트되면 늦은 confirm 응답이 상태를 바꾸려 하지 않는다", async () => {

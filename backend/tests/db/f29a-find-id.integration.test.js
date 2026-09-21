@@ -165,6 +165,52 @@ const postFindId = (base, body) => fetch(`${base}/auth/find-id`, {
     body: JSON.stringify(body),
 });
 
+const postJson = (base, path, body) => fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+});
+
+// 이 파일 전체는 한도를 1000으로 올려 둔다(위 주석) — 그래서 **기본 한도**(IP 10 / 대상 5)를
+// 검증하려면 그 환경값 없이 라우터를 새로 만들어야 한다. auth.routes.js는 require 시점에
+// 환경값을 읽어 카운터를 만들므로, 값을 치운 상태에서 캐시를 지우고 다시 require한다 —
+// 그러면 이 서버만 기본 한도를 쓰고 카운터도 0부터 시작한다.
+const startDefaultLimitRouteServer = async (t) => {
+    const routesPath = require.resolve('../../routes/auth.routes');
+    const rateLimitPath = require.resolve('../../middleware/rateLimit');
+    const savedIpMax = process.env.FIND_ID_IP_MAX;
+    const savedTargetMax = process.env.FIND_ID_TARGET_MAX;
+    delete process.env.FIND_ID_IP_MAX;
+    delete process.env.FIND_ID_TARGET_MAX;
+
+    delete require.cache[routesPath];
+    delete require.cache[rateLimitPath];
+    let router;
+    try {
+        router = require(routesPath);
+    } finally {
+        // 이 프로세스의 다른 케이스가 쓰는 "한도 없음" 라우터를 되돌린다.
+        delete require.cache[routesPath];
+        delete require.cache[rateLimitPath];
+        if (savedIpMax === undefined) delete process.env.FIND_ID_IP_MAX;
+        else process.env.FIND_ID_IP_MAX = savedIpMax;
+        if (savedTargetMax === undefined) delete process.env.FIND_ID_TARGET_MAX;
+        else process.env.FIND_ID_TARGET_MAX = savedTargetMax;
+    }
+
+    const app = express();
+    app.use(express.json());
+    app.use(cookieParser());
+    app.use('/auth', router);
+    app.use(notFoundHandler);
+    app.use(globalErrorHandler);
+
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    return `http://127.0.0.1:${server.address().port}`;
+};
+
 // ---------------------------------------------------------------------------
 // AC-06: 0014 재실행 안전성 — up/verify 두 번, NULL 이메일 삽입, 이력 보존, down 거부
 // ---------------------------------------------------------------------------
@@ -303,6 +349,109 @@ test('AC-04: 8자를 초과하는 기존 긴 닉네임 계정도 실제 DB에서
     assert.equal(res.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.maskedEmail, maskEmail(email));
+});
+
+test('AC-01/AC-03: 짧은 로컬 부분을 포함해 마스킹 결과는 고정된 값이고 원문은 어디에도 남지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    // 기대값을 여기 직접 적는다 — 생산 maskEmail()을 기대값 계산기로 쓰면 그 함수가 바뀔 때
+    // 시험도 함께 바뀌어 아무 것도 고정하지 못한다(a@b.co처럼 가릴 곳이 거의 없는 입력이
+    // 원문을 그대로 흘리는지는 그렇게는 절대 잡히지 않는다).
+    const cases = [
+        { nickname: '한글자로컬', email: 'a@b.co', expected: '*@b***.co' },
+        { nickname: '두글자로컬', email: 'ab@b.co', expected: 'a*@b***.co' },
+        { nickname: '보통로컬', email: 'abc@example.com', expected: 'a***c@e***.com' },
+        { nickname: '점없는도메인', email: 'abcd@localdomain', expected: 'a***d@l***' },
+    ];
+    for (const item of cases) {
+        await createLocalUser({ nickname: item.nickname, email: item.email, birthDate: new Date(Date.UTC(1993, 3, 4)) });
+    }
+    const base = await startRouteServer(t);
+
+    for (const item of cases) {
+        const res = await postFindId(base, { nickname: item.nickname, birthDate: '1993-04-04' });
+        const body = await res.json();
+        assert.deepEqual(body, { ok: true, maskedEmail: item.expected }, `${item.email}의 마스킹 결과`);
+        assert.equal(JSON.stringify(body).includes(item.email), false, `${item.email} 원문이 응답에 남으면 안 됩니다`);
+    }
+});
+
+test('AC-02: 생년월일이 등록되지 않은 계정도 같은 NOT_FOUND로 응답한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    await createLocalUser({ nickname: '생일없음', email: 'no-birth@example.com', birthDate: null });
+    const base = await startRouteServer(t);
+
+    const res = await postFindId(base, { nickname: '생일없음', birthDate: '1990-01-01' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: false, code: 'NOT_FOUND' });
+});
+
+test('AC-03: 마스킹 힌트는 재설정 요청에서도 계정으로 인정되지 않고, 토큰으로도 쓸 수 없다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    const email = 'hint-abuse@example.com';
+    const uuid = await createLocalUser({ nickname: '힌트악용', email, birthDate: new Date(Date.UTC(1994, 4, 5)) });
+    const base = await startRouteServer(t);
+
+    const findRes = await postFindId(base, { nickname: '힌트악용', birthDate: '1994-05-05' });
+    const { maskedEmail } = await findRes.json();
+    assert.equal(maskedEmail, 'h***e@e***.com');
+
+    // 힌트를 이메일로 쓴 재설정 요청 — 응답은 공통 {ok:true}지만 토큰도 메일도 생기지 않는다.
+    const requestRes = await postJson(base, '/auth/password-reset/request', { email: maskedEmail });
+    assert.equal(requestRes.status, 200);
+    assert.deepEqual(await requestRes.json(), { ok: true });
+    assert.equal(await db.PasswordResetToken.count(), 0, '존재하지 않는 계정에 토큰이 생기면 안 됩니다');
+
+    // 힌트를 토큰으로 쓴 confirm — 형식부터 거부되고 비밀번호는 그대로다.
+    const before = await db.User.findByPk(uuid);
+    const confirmRes = await postJson(base, '/auth/password-reset/confirm', { token: maskedEmail, newPassword: 'hint-abuse-pw-1' });
+    assert.equal(confirmRes.status, 400);
+    assert.deepEqual(await confirmRes.json(), { ok: false, code: 'INVALID' });
+    const after = await db.User.findByPk(uuid);
+    assert.equal(after.password_hash, before.password_hash);
+});
+
+test('AC-05(기본 한도): 대상 5회·IP 10회를 넘으면 429이고, 날짜·앞뒤 공백·계정 유무로 우회되지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    // 기본 한도를 쓰는 새 라우터(카운터도 0부터)를 쓴다 — 이 파일의 다른 케이스가 쓴 횟수가
+    // 넘어오지 않는다.
+    const base = await startDefaultLimitRouteServer(t);
+    await createLocalUser({ nickname: '한도대상', email: 'limit-target@example.com', birthDate: new Date(Date.UTC(1996, 6, 7)) });
+
+    // 같은 대상(정규화된 닉네임) 5회 — 날짜를 바꿔도, 앞뒤 공백을 붙여도 같은 카운터다.
+    const targetAttempts = [
+        { nickname: '한도대상', birthDate: '1996-07-07' }, // 실제로 일치하는 요청
+        { nickname: '한도대상', birthDate: '1996-07-08' }, // 날짜만 다름
+        { nickname: ' 한도대상 ', birthDate: '1996-07-09' }, // 앞뒤 공백
+        { nickname: '한도대상', birthDate: '1996-07-10' },
+        { nickname: ' 한도대상', birthDate: '1996-07-11' },
+    ];
+    for (const [index, attempt] of targetAttempts.entries()) {
+        const res = await postFindId(base, attempt);
+        assert.equal(res.status, 200, `대상 제한 안의 ${index + 1}번째 요청은 통과해야 합니다`);
+    }
+
+    const overTarget = await postFindId(base, { nickname: '한도대상', birthDate: '1996-07-12' });
+    assert.equal(overTarget.status, 429, '같은 대상 6번째 요청은 429여야 합니다');
+    assert.deepEqual(await overTarget.json(), { ok: false, code: 'RATE_LIMITED' });
+
+    // 여기까지 같은 IP로 6회를 보냈다(429가 된 요청도 IP 카운터에는 들어간다). 서로 다른
+    // 대상으로 4회 더 보내면 IP 10회를 정확히 채운다 — 존재하지 않는 계정도 똑같이 세어진다.
+    for (const nickname of ['없는대상하나', '없는대상둘', '없는대상셋', '없는대상넷']) {
+        const res = await postFindId(base, { nickname, birthDate: '1996-07-07' });
+        assert.equal(res.status, 200, `${nickname}은 대상 제한 안이므로 통과해야 합니다`);
+    }
+
+    const overIp = await postFindId(base, { nickname: '또다른대상', birthDate: '1996-07-07' });
+    assert.equal(overIp.status, 429, 'IP 11번째 요청은 대상이 달라도 429여야 합니다');
+    assert.deepEqual(await overIp.json(), { ok: false, code: 'RATE_LIMITED' });
 });
 
 test('AC-02: 날짜 불일치·미등록 계정 모두 실제 DB에서 같은 NOT_FOUND로 응답한다', async (t) => {
