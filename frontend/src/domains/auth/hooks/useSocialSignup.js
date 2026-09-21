@@ -22,6 +22,18 @@ const trustedErrorCode = (error) => (
   typeof error?.status === "number" && error.status >= 500 ? undefined : error?.code
 )
 
+const GENERIC_COMMUNICATION_ERROR_MESSAGE = "서버와 통신할 수 없습니다. 다시 시도해주세요."
+
+// 완료 응답의 user가 서버 계약(user.controller.completeSocialSignup: { uuid, nickname, role })
+// 모양일 때만 가입 완료로 본다 — {}·[]·식별자 없는 객체는 성공으로 처리하지 않는다.
+const isCompletedSignupUser = (user) => (
+  user !== null
+  && typeof user === "object"
+  && !Array.isArray(user)
+  && typeof user.uuid === "string"
+  && user.uuid.length > 0
+)
+
 // status: idle(입력 대기) | submitting(제출 중) | done(가입 완료) | expired(가입 자격 만료)
 //         | cancelled(이미 처리된 요청) | conflict(이메일 충돌) | error(그 외 입력/서버 오류)
 // intentStatus: loading(서버 intent 조회 중) | ready(조회 완료) | error(조회 실패, 재시도 가능)
@@ -116,7 +128,14 @@ export function useSocialSignup(intentToken) {
     setIntentAttempt((attempt) => attempt + 1)
   }
 
-  const handleEmailChange = (e) => setEmail(e.target.value)
+  // AC-04: 이메일이 실제로 바뀌면 그 변경 이벤트 안에서 곧바로 기존 인증(번호·증명)을
+  // 폐기한다. 렌더 시점 비교만으로는 한 배치 안의 A→B→A 변경을 "변화 없음"으로 보게 되므로,
+  // 전이마다 핸들러에서 동기적으로 초기화한다(F-31b useLoginPage.handleInputChange와 같은 규칙).
+  const handleEmailChange = (e) => {
+    const { value } = e.target
+    if (value !== email) verification.reset()
+    setEmail(value)
+  }
 
   // 조회가 끝나기 전에는 완료 제출을 막는다 — 자체 인증이 필요한지 모르는 상태로 완료를
   // 보내면, 서버가 증명 없는 요청을 거절하게 될 뿐 사용자는 이유를 알 수 없다.
@@ -172,6 +191,10 @@ export function useSocialSignup(intentToken) {
     }
 
     submittingRef.current = true
+    // AC-02: 완료 응답에도 조회 응답과 같은 세대 검사를 적용한다 — 제출 시점의 세대를
+    // 기억해 두고, 응답이 오기 전에 취소(언마운트)·intent 교체·재조회로 세대가 바뀌었으면
+    // 그 늦은 응답은 로그인·이동·상태 변경 없이 버린다.
+    const submitGeneration = intentGenerationRef.current
     setStatus("submitting")
     setErrorMessage(null)
     try {
@@ -182,18 +205,20 @@ export function useSocialSignup(intentToken) {
         email: verifiedPayload?.email,
         signupProof: verifiedPayload?.signupProof,
       })
-      // 계약 밖 200 응답(user 없음)은 가입 완료로 단정하지 않는다 — 로그인 상태를 만들지
-      // 않고 오류로 남겨 사용자가 다시 시도하게 한다.
-      const user = result?.user
-      if (!user || typeof user !== "object") {
+      if (intentGenerationRef.current !== submitGeneration) return // 이미 무효화됨
+      // 계약 밖 200 응답(user 없음·빈 객체·배열 등)은 성공도 특정 실패도 아니다 — 로그인
+      // 상태를 만들지 않고 통신 실패로 안내해 사용자가 다시 시도하게 한다.
+      if (!isCompletedSignupUser(result?.user)) {
         setStatus("error")
-        setErrorMessage("가입 결과를 확인할 수 없습니다. 다시 시도해주세요.")
+        setErrorMessage(GENERIC_COMMUNICATION_ERROR_MESSAGE)
         return
       }
-      login(user)
+      login(result.user)
       setStatus("done")
       navigate("/lobby")
     } catch (error) {
+      if (intentGenerationRef.current !== submitGeneration) return // 이미 무효화됨
+
       // response.js가 서버의 code(INTENT_EXPIRED 등, backend/service/socialAuth.service.js
       // 참고)를 Error.code로 실어 준다 — 메시지 문자열이 아니라 code로 분기해야 서버 메시지
       // 문구가 바뀌어도 상태 분기가 깨지지 않는다.
@@ -221,7 +246,7 @@ export function useSocialSignup(intentToken) {
       setErrorMessage(
         code === "SIGNUP_PROOF_REQUIRED" ? "이메일 인증이 필요합니다. 다시 인증해주세요."
           : code === "SIGNUP_PROOF_INVALID" ? "이메일 인증이 만료되었거나 이미 사용되었습니다. 다시 인증해주세요."
-            : code !== error?.code ? "서버와 통신할 수 없습니다. 다시 시도해주세요."
+            : code !== error?.code ? GENERIC_COMMUNICATION_ERROR_MESSAGE
               : error?.message || "가입을 완료할 수 없습니다.",
       )
     } finally {

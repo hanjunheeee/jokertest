@@ -267,19 +267,22 @@ test("AC-01: 제공자 검증 intent는 메일 API 없이 완료되고 email·si
   assert.ok(view.container.textContent.includes("LOBBY_STUB"), "성공하면 로비로 이동해야 한다")
 })
 
-test("AC-02: 완료 200 응답에 user가 없으면 가입 완료로 처리하지 않는다", async () => {
-  fetchHandler = makeRouter({
-    "POST /auth/social/signup/intent": () => jsonResponse(200, { success: true, data: { emailVerificationRequired: false } }),
-    "POST /auth/social/signup/complete": () => jsonResponse(200, { success: true, data: {} }),
-  })
-  const view = await mountSocialSignup()
-  fillProfile(view)
-  await act(async () => { fireEvent.click(submitButton(view)) })
+// 설계도 계약: 예상 밖 완료 응답은 성공도 특정 실패도 아니다 — 통신 실패로 안내한다.
+for (const [label, data] of [["user 없음", {}], ["user 빈 객체", { user: {} }], ["user 빈 배열", { user: [] }]]) {
+  test(`AC-02: 완료 200 응답이 ${label}이면 가입 완료로 처리하지 않고 통신 실패로 안내한다`, async () => {
+    fetchHandler = makeRouter({
+      "POST /auth/social/signup/intent": () => jsonResponse(200, { success: true, data: { emailVerificationRequired: false } }),
+      "POST /auth/social/signup/complete": () => jsonResponse(200, { success: true, data }),
+    })
+    const view = await mountSocialSignup()
+    fillProfile(view)
+    await act(async () => { fireEvent.click(submitButton(view)) })
 
-  assert.equal(useAuthStore.getState().isLoggedIn, false)
-  assert.equal(view.container.textContent.includes("LOBBY_STUB"), false)
-  assert.match(q(view, '[role="alert"]').textContent, /확인할 수 없습니다/)
-})
+    assert.equal(useAuthStore.getState().isLoggedIn, false)
+    assert.equal(view.container.textContent.includes("LOBBY_STUB"), false)
+    assert.equal(q(view, '[role="alert"]').textContent, "서버와 통신할 수 없습니다. 다시 시도해주세요.")
+  })
+}
 
 // ── AC-02/AC-04: 자체 인증 전체 사건 ───────────────────────────────────────────────
 

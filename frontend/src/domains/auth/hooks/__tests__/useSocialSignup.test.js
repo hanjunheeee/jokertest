@@ -244,6 +244,124 @@ test("인증 완료 후 이메일을 바꾸면 인증이 초기화되어 다시 
   hook.unmount()
 })
 
+// 재검토 지적(F-31 AC-04 a): 같은 배치 안의 A→B→A는 렌더 시점 값 비교로는 드러나지 않는다 —
+// 이메일 변경 핸들러가 전이마다 동기적으로 인증을 폐기해야 한다.
+test("같은 배치 안에서 이메일을 A→B→A로 바꿔도 기존 인증이 폐기되고 완료 제출이 막힌다", async () => {
+  intentImpl = async () => ({ emailVerificationRequired: true })
+
+  const hook = await mountReady("intent-aba")
+  await act(async () => { hook.result.current.handleEmailChange({ target: { value: "a@example.com" } }) })
+  await act(async () => { await hook.result.current.handleRequestSignupCode() })
+  await act(async () => { hook.result.current.handleSignupCodeChange({ target: { value: "333333" } }) })
+  await act(async () => { await hook.result.current.handleVerifySignupCode() })
+  assert.equal(hook.result.current.canSubmit, true)
+
+  act(() => {
+    hook.result.current.handleEmailChange({ target: { value: "b@example.com" } })
+    hook.result.current.handleEmailChange({ target: { value: "a@example.com" } })
+  })
+
+  assert.equal(hook.result.current.email, "a@example.com")
+  assert.equal(hook.result.current.emailVerification.stage, "unverified", "A→B→A 뒤에도 기존 인증은 폐기돼 있어야 한다")
+  assert.equal(hook.result.current.canSubmit, false)
+
+  await act(async () => { await hook.result.current.submit(VALID_FIELDS) })
+  assert.equal(completeRequests.length, 0, "폐기된 인증으로는 완료 API를 부르면 안 된다")
+  hook.unmount()
+})
+
+// ── 재검토 지적(F-31 AC-02): 완료 응답의 세대 검사와 계약 밖 user ─────────────────────
+
+test("완료 요청 중 취소(언마운트)되면 늦게 도착한 완료 응답은 login·navigate를 호출하지 않는다", async () => {
+  let resolveComplete
+  completeImpl = () => new Promise((resolve) => { resolveComplete = resolve })
+
+  const hook = await mountReady("intent-cancel-late")
+  let pendingSubmit
+  act(() => { pendingSubmit = hook.result.current.submit(VALID_FIELDS) })
+  assert.equal(completeRequests.length, 1)
+
+  // LoginPage의 취소는 socialIntent 쿼리를 지워 이 화면을 언마운트한다.
+  hook.unmount()
+
+  await act(async () => {
+    resolveComplete({ user: { uuid: "u-late", nickname: "늦은응답" } })
+    await pendingSubmit
+  })
+  assert.equal(loggedInUsers.length, 0, "취소 뒤 늦은 완료 응답으로 로그인하면 안 된다")
+  assert.equal(navigations.length, 0, "취소 뒤 늦은 완료 응답으로 이동하면 안 된다")
+})
+
+test("완료 요청 중 intent가 교체되면 이전 intent의 늦은 완료 응답은 login·navigate·상태 변경을 하지 않는다", async () => {
+  const pending = []
+  completeImpl = () => new Promise((resolve) => { pending.push(resolve) })
+
+  let hook
+  await act(async () => {
+    hook = renderHook(({ token }) => useSocialSignup(token), { initialProps: { token: "intent-old" } })
+  })
+  assert.equal(hook.result.current.intentStatus, "ready")
+
+  let oldSubmit
+  act(() => { oldSubmit = hook.result.current.submit(VALID_FIELDS) })
+  assert.equal(completeRequests.length, 1)
+  assert.equal(completeRequests[0].intentToken, "intent-old")
+
+  await act(async () => { hook.rerender({ token: "intent-new" }) })
+  assert.equal(hook.result.current.intentStatus, "ready")
+  assert.equal(hook.result.current.status, "idle")
+
+  await act(async () => {
+    pending[0]({ user: { uuid: "u-old", nickname: "이전시도" } })
+    await oldSubmit
+  })
+  assert.equal(loggedInUsers.length, 0, "교체된 intent의 완료 응답으로 로그인하면 안 된다")
+  assert.equal(navigations.length, 0)
+  assert.equal(hook.result.current.status, "idle", "이전 intent의 응답이 새 화면 상태를 바꾸면 안 된다")
+  hook.unmount()
+})
+
+test("완료 요청 중 intent가 교체된 뒤 도착한 이전 intent의 늦은 실패도 새 화면 상태를 바꾸지 않는다", async () => {
+  const pending = []
+  completeImpl = () => new Promise((_, reject) => { pending.push(reject) })
+
+  let hook
+  await act(async () => {
+    hook = renderHook(({ token }) => useSocialSignup(token), { initialProps: { token: "intent-old-2" } })
+  })
+  let oldSubmit
+  act(() => { oldSubmit = hook.result.current.submit(VALID_FIELDS) })
+
+  await act(async () => { hook.rerender({ token: "intent-new-2" }) })
+
+  await act(async () => {
+    const error = new Error("이미 처리된 가입 요청입니다.")
+    error.code = "INTENT_CONSUMED"
+    error.status = 409
+    pending[0](error)
+    await oldSubmit
+  })
+  assert.equal(hook.result.current.status, "idle", "이전 intent의 실패가 새 화면을 cancelled로 바꾸면 안 된다")
+  assert.equal(hook.result.current.errorMessage, null)
+  hook.unmount()
+})
+
+for (const [label, user] of [["빈 객체", {}], ["빈 배열", []], ["uuid 없는 객체", { nickname: "소셜닉" }], ["null", null]]) {
+  test(`완료 응답의 user가 ${label}이면 성공으로 처리하지 않고 통신 실패로 안내한다`, async () => {
+    completeImpl = async () => ({ user })
+
+    const hook = await mountReady(`intent-bad-user-${label}`)
+    await act(async () => { await hook.result.current.submit(VALID_FIELDS) })
+
+    assert.equal(completeRequests.length, 1)
+    assert.equal(loggedInUsers.length, 0, "계약 밖 user로 로그인하면 안 된다")
+    assert.equal(navigations.length, 0, "계약 밖 user로 로비로 이동하면 안 된다")
+    assert.equal(hook.result.current.status, "error")
+    assert.equal(hook.result.current.errorMessage, "서버와 통신할 수 없습니다. 다시 시도해주세요.")
+    hook.unmount()
+  })
+}
+
 test("서버가 증명을 거부하면(SIGNUP_PROOF_INVALID) 증명이 폐기되고 다시 인증해야 한다", async () => {
   intentImpl = async () => ({ emailVerificationRequired: true })
   completeImpl = async () => {

@@ -177,10 +177,18 @@ export function useLoginPage() {
     getMeApi().then(() => navigate("/lobby", { replace: true })).catch(() => {})
   }, [isAuthenticated, navigate])
 
-  // input의 name 값을 기준으로 formData의 같은 key를 업데이트합니다. 이메일이 바뀌었을 때의
-  // 인증 초기화는 공용 훅이 email 값 자체를 보고 수행하므로 여기서 따로 하지 않습니다.
+  // input의 name 값을 기준으로 formData의 같은 key를 업데이트합니다.
   const handleInputChange = (e) => {
     const { name, value } = e.target
+
+    // AC-04: 이메일 입력이 실제로 바뀌면(대소문자·공백만 바뀌어도) 이 변경 이벤트 안에서
+    // 곧바로 인증 상태를 전부 폐기합니다 — 한 배치 안에서 A→B→A로 되돌아가도 각 전이마다
+    // 초기화가 일어나므로 이전 인증이 되살아나지 않습니다. 공용 훅의 reset이 요청 세대도
+    // 함께 올려 진행 중이던 발송·확인 응답이 나중에 도착해도 무시됩니다.
+    if (name === "email" && value !== formData.email) {
+      resetSignupEmailVerification()
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 

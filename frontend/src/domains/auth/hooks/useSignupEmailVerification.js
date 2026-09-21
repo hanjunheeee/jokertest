@@ -110,6 +110,11 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
   // 아니라 렌더 중에 판정하므로, 입력이 어떤 경로로 바뀌든(붙여넣기·프로그램적 변경 포함)
   // 같은 초기화가 일어납니다. generation을 함께 올려 진행 중이던 발송·확인 응답이 나중에
   // 도착해도 무시되게 합니다. 구분자는 입력값에 나타날 수 없는 NUL(이스케이프)입니다.
+  //
+  // 단, 렌더 시점 비교는 한 배치 안에서 A→B→A로 되돌아간 변경을 "변화 없음"으로 봅니다.
+  // 그래서 이메일 입력의 변경 핸들러(useLoginPage.handleInputChange·useSocialSignup.
+  // handleEmailChange)가 값이 바뀔 때마다 아래 reset()을 동기적으로 호출해 전이마다
+  // 폐기합니다 — 이 렌더 비교는 그 밖의 경로(모드 이탈·시도 교체)를 위한 보조 장치입니다.
   const resetSignature = `${active ? "1" : "0"}\u0000${attemptKey ?? ""}\u0000${email}`
   const [appliedSignature, setAppliedSignature] = useState(resetSignature)
   if (appliedSignature !== resetSignature) {
@@ -117,6 +122,9 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
     verificationGenerationRef.current += 1
     setEmailVerification(INITIAL_EMAIL_VERIFICATION)
   }
+
+  // 언마운트되면 요청 세대를 올려, 진행 중이던 발송·확인의 늦은 응답이 무시되게 합니다.
+  useEffect(() => () => { verificationGenerationRef.current += 1 }, [])
 
   // AC-03: 재발송 대기·인증번호 만료 카운트다운을 화면에 살아있게 보여주기 위한 1초
   // 간격 타이머입니다. codeSent에서 만료 시각을 지나면 codeExpired로 전이시키고, 그

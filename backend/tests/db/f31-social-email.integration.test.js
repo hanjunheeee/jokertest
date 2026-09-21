@@ -537,29 +537,92 @@ test('AC-04: 기본 지급 도중 실패하면 intent·증명·사용자·identi
     assert.equal(await db.ExternalIdentity.count({ where: { provider: 'google', subject } }), 1);
 });
 
-test('AC-04: 로컬 가입과 소셜 가입이 같은 증명을 동시에 소비해도 계정은 하나만 생긴다', async (t) => {
-    if (unavailable(t)) return;
+// 로컬 가입(/auth/signup)과 소셜 가입 완료가 같은 가입 증명을 두고 경합하는 한 판을 준비한다.
+// 두 경로 모두 트랜잭션의 첫 자격 검사로 signup_email_verifications 행을 FOR UPDATE로 잠가
+// 소비하므로(auth.service.signup·socialAuth.service.completeSocialSignup), 패자는 계정을 만들기
+// 전에 401 SIGNUP_PROOF_INVALID로 거부되어야 한다.
+const prepareMixedProofRace = async (t) => {
     await rebuildFullSchema();
     const memory = useMemoryMailAdapter(t);
-    await startMockProvider(t, { profile: { id: `discord-mixed-${crypto.randomUUID()}`, verified: false } });
+    const subject = `discord-mixed-${crypto.randomUUID()}`;
+    await startMockProvider(t, { profile: { id: subject, verified: false } });
     const base = await startServer(t);
 
     const { intentToken, cookie } = await runOAuthToIntent(base, 'discord');
     const email = `f31-mixed-${crypto.randomUUID()}@example.com`;
     const signupProof = await requestAndVerifyProof(base, memory, email);
 
-    const [localRes, socialRes] = await Promise.all([
-        postJson(base, '/auth/signup', {
+    return {
+        subject, email, intentToken,
+        local: () => postJson(base, '/auth/signup', {
             email, nickname: '로컬경합', password: 'pw12345678', passwordConfirm: 'pw12345678', birthDate: BIRTH_DATE, signupProof,
         }),
-        postJson(base, '/auth/social/signup/complete', {
+        social: () => postJson(base, '/auth/social/signup/complete', {
             intentToken, nickname: '소셜경합', birthDate: BIRTH_DATE, email, signupProof,
         }, { cookie }),
-    ]);
-    const statuses = [localRes.status, socialRes.status];
-    assert.equal(statuses.filter((s) => s === 200).length, 1, `정확히 하나만 성공해야 한다: ${statuses}`);
-    assert.equal(await db.User.count({ where: { email } }), 1);
+    };
+};
+
+const readResult = async (res) => ({ status: res.status, body: await res.json() });
+
+// 한 판의 결과를 판정한다: 정확히 한쪽만 200, 패자는 401 SIGNUP_PROOF_INVALID, 그리고 DB의
+// 결과가 승자의 경로와 일치해야 한다(패자의 부분 생성·소비가 남으면 안 된다).
+const assertSingleWinner = async (race, results) => {
+    const summary = JSON.stringify(results);
+    const winners = Object.entries(results).filter(([, r]) => r.status === 200).map(([path]) => path);
+    assert.equal(winners.length, 1, `정확히 한쪽만 성공해야 한다: ${summary}`);
+    const [winner] = winners;
+    const loser = winner === 'local' ? 'social' : 'local';
+
+    assert.equal(results[loser].status, 401, `패자(${loser})는 401로 거부되어야 한다: ${summary}`);
+    assert.equal(results[loser].body.code, 'SIGNUP_PROOF_INVALID', `패자(${loser})는 소비된 증명으로 거부되어야 한다: ${summary}`);
+
+    const users = await db.User.findAll({ where: { email: race.email } });
+    assert.equal(users.length, 1);
+    assert.equal(users[0].nickname, winner === 'local' ? '로컬경합' : '소셜경합', '계정은 승자의 경로로 만들어져야 한다');
+    assert.equal(await countRows('users'), 1, '패자의 계정이 남으면 안 된다');
+
+    const identities = await db.ExternalIdentity.count({ where: { provider: 'discord', subject: race.subject } });
+    const intent = await readIntent(race.intentToken);
+    if (winner === 'social') {
+        assert.equal(identities, 1);
+        assert.ok(intent.consumed_at, '소셜이 이겼으면 intent가 소비되어야 한다');
+    } else {
+        assert.equal(identities, 0, '로컬이 이겼으면 소셜 identity가 남으면 안 된다');
+        assert.equal(intent.consumed_at, null, '소셜이 졌으면 intent 소비는 롤백되어야 한다');
+    }
+    return winner;
+};
+
+test('AC-04: 로컬 가입과 소셜 가입이 같은 증명을 동시에 소비하면 정확히 한쪽만 성공하고 패자는 SIGNUP_PROOF_INVALID로 거부된다(요청 순서를 바꿔도 같다)', async (t) => {
+    if (unavailable(t)) return;
+
+    for (const order of [['local', 'social'], ['social', 'local']]) {
+        const race = await prepareMixedProofRace(t);
+        const responses = await Promise.all(order.map((path) => race[path]()));
+        const results = {};
+        for (const [index, path] of order.entries()) results[path] = await readResult(responses[index]);
+        await assertSingleWinner(race, results);
+    }
 });
+
+// 위 경합 판은 누가 이길지 정하지 않는다 — 한 경로가 항상 실패해도 다른 경로가 늘 이기면
+// 통과할 수 있다. 순서를 확정한 판으로 두 경로 각각이 실제로 이길 수 있고, 진 쪽은 정해진
+// 오류로만 거부된다는 것을 따로 고정한다.
+for (const first of ['local', 'social']) {
+    test(`AC-04: 같은 증명을 ${first === 'local' ? '로컬 가입이 먼저' : '소셜 가입이 먼저'} 소비하면 그 경로가 성공하고 다른 경로는 SIGNUP_PROOF_INVALID로 거부된다`, async (t) => {
+        if (unavailable(t)) return;
+        const race = await prepareMixedProofRace(t);
+        const second = first === 'local' ? 'social' : 'local';
+
+        const results = {};
+        results[first] = await readResult(await race[first]());
+        assert.equal(results[first].status, 200, JSON.stringify(results[first]));
+        results[second] = await readResult(await race[second]());
+
+        assert.equal(await assertSingleWinner(race, results), first);
+    });
+}
 
 // ── AC-05: 기존 계정은 추가 인증 없이 로그인되고 값이 이관되지 않는다 ─────────────
 
@@ -585,6 +648,48 @@ test('AC-05: email_verified=false인 기존 Google identity는 제공자 이메�
 });
 
 // ── AC-06: 0017 마이그레이션 ─────────────────────────────────────────────────
+
+// 재검토 지적(AC-06): 보존 시험은 0017이 실제로 NOT NULL→nullable 변경을 수행할 때 기존 행이
+// 살아남는지를 봐야 한다 — 0016까지만 적용한 스키마(email NOT NULL)에 email이 있는 intent
+// 행을 먼저 넣고, 그 다음 0017을 적용한 뒤 그 행이 그대로인지 확인한다(설계도 마이그레이션
+// 공통 메모의 순서).
+test('AC-06: 0016까지 적용된 DB의 기존 intent 행은 0017의 NOT NULL→nullable 변경 뒤에도 그대로 남는다', async (t) => {
+    if (unavailable(t)) return;
+    const index0017 = MIGRATIONS.findIndex((m) => m.name === addSocialSignupEmail.name);
+    assert.ok(index0017 > 0, 'MIGRATIONS에 0017이 등록되어 있어야 한다');
+    assert.equal(MIGRATIONS[index0017 - 1].name, '0016-signup-email-verification', '0017 바로 앞은 0016이어야 한다');
+
+    await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
+    await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, index0017) });
+    const queryInterface = sequelize.getQueryInterface();
+
+    const before = await queryInterface.describeTable('social_signup_intents');
+    assert.equal(before.email.allowNull, false, '0016까지의 스키마에서 email은 아직 NOT NULL이어야 한다');
+
+    const expiresAt = new Date(Date.now() + 30 * 60_000);
+    expiresAt.setMilliseconds(0);
+    await sequelize.query(
+        `INSERT INTO social_signup_intents (intent_token_hash, provider, subject, email, expires_at, consumed_at, created_at)
+         VALUES (:hash, 'google', 'pre-0017-subject', 'pre-0017@example.com', :expiresAt, NULL, :createdAt)`,
+        { replacements: { hash: 'c'.repeat(64), expiresAt, createdAt: new Date() } },
+    );
+    const selectRows = async () => {
+        const [rows] = await sequelize.query(
+            'SELECT id, intent_token_hash, provider, subject, email, expires_at, consumed_at, created_at FROM social_signup_intents ORDER BY id',
+        );
+        return rows;
+    };
+    const rowsBefore = await selectRows();
+    assert.equal(rowsBefore.length, 1);
+
+    const { applied } = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    assert.deepEqual(applied, [addSocialSignupEmail.name], '0017만 새로 적용되어야 한다');
+
+    const after = await queryInterface.describeTable('social_signup_intents');
+    assert.equal(after.email.allowNull, true, '0017 적용 뒤 email은 nullable이어야 한다');
+    assert.deepEqual(await selectRows(), rowsBefore, '0017 적용 전 행은 모든 컬럼이 그대로 남아야 한다');
+    assert.equal((await db.User.count()), 0, '0017은 users를 건드리지 않는다');
+});
 
 test('AC-06: 0017 up·verify 반복은 멱등하고 기존 intent 행을 보존하며, email이 NULL인 행이 있으면 down을 거절한다', async (t) => {
     if (unavailable(t)) return;
