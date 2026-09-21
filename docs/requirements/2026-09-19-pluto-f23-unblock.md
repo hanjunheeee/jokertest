@@ -461,3 +461,7 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 ### F-28에서 볼 것 (F-31 본 조각분 추가)
 - Google/Discord로 처음 가입할 때 제공자가 이메일을 인증해 준 경우엔 바로 가입, 아닌 경우엔 자체 인증 화면이 뜨는지. 인증 없이 가입 완료 요청을 보내면 거부되는지.
 - 기존 소셜 계정 로그인에 추가 인증이 강제되지 않는지.
+
+## F-32a (CB) — 2026-09-21 23:59~ (다이아 충전 서버)
+- 계획 승인 00:28(고른 코드 43 · 새로 만들 것 13). 구현 1회차는 done.json 없이 끝남(01:11, R-IMPL) → 자동 되감기 2회차가 같은 세션을 이어 01:22에 후보 `1ad50bee`(파일 25개, +5,080/−4) 커밋.
+- **R-SCOPE(01:23) — 범위 밖 20개 → rescope(01:23:55)**. 내용: 계획에 없던 부품 1개(`backend/tests/helpers/isolatedTestDb.js` — 0018 테이블을 관리 목록·드롭 순서에 등록, 다른 스위트의 resetSchema가 "모르는 테이블"로 거부하지 않게 하는 기존 관례), 나머지 19개는 "따라오는 수정 한도(부품 8) 초과"로 새 시험·시험 도우미(`topup.service.test.js`, `fakeTopupDb.js`, `currencyProducts.service.test.js`)와 `economy.routes.js`의 새 라우트. 기존 파일에서 지워진 줄은 4줄뿐이고 단언 삭제·약화 없음을 diff로 확인: `f31-social-email` 시험은 `applied == [0017]` 단언을 그대로 두고 적용 범위만 0017까지로 한정(0018 추가로 깨지지 않게), `requireSelf`는 `:userId` 없는 새 API를 위해 "인증 uuid 필수 + userId가 있으면 일치" 로 바뀜(기존 403 경로 유지 — 판단은 심사에 맡긴다). 작업을 버리거나 다시 쪼개지 않았다.
