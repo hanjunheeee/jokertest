@@ -98,7 +98,21 @@ function StoreItemSlot({
           </div>
 
           <div className={`${STORE_SLOT_PRICE_CLASS} ${selected ? STORE_SLOT_PRICE_SELECTED_CLASS : ""}`}>
-            {isStorePricePending({ priceAmount }) ? (
+            {item.kind ? (
+              // F-32c: 서버 상품표의 결제 통화·금액을 그대로 보여 준다(원화는 원 단위, 다이아는 다이아 아이콘).
+              item.payCurrency === "DIAMOND" ? (
+                <>
+                  <PublicAsset
+                    src={STORE_ASSETS.premiumCurrencyIcon}
+                    alt=""
+                    className={STORE_SLOT_PRICE_ICON_CLASS}
+                  />
+                  <span className={STORE_SLOT_PRICE_AMOUNT_CLASS}>{item.payAmount}</span>
+                </>
+              ) : (
+                <span className={STORE_SLOT_PRICE_TEXT_CLASS}>{item.payAmount.toLocaleString("ko-KR")}원</span>
+              )
+            ) : isStorePricePending({ priceAmount }) ? (
               <span className={STORE_SLOT_PRICE_TEXT_CLASS}>{priceAmount}</span>
             ) : (
               <>
@@ -202,7 +216,8 @@ export default function StoreItemGrid({
     // F-09 R-IMPL(AC-06 재검토): 이미 보유한 상품은 일괄구매 선택 대상에서 제외한다 —
     // 서버(purchaseItems)도 기보유 상품을 ITEM_ALREADY_OWNED로 거부하지만, 화면에서부터
     // 선택 자체를 막아야 "보유중" 표시와 실제 동작이 일치한다.
-    if (bulkMode && !ownedItemIds.has(item.id)) {
+    // 재화 상품(item.kind)은 일괄구매 대상이 아니다.
+    if (bulkMode && !item.kind && !ownedItemIds.has(item.id)) {
       onBulkSelectionChange?.(item.id)
     }
 
