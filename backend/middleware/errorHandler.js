@@ -149,15 +149,17 @@ exports.globalErrorHandler = (err, req, res, next) => {
             }
             return res.status(401).json({ success: false, message: '로그인이 필요합니다.' });
         }
-        // 코드 없는 403은 인증 계층(정지 계정)에서만 나온다 — 그 안내 문구만 유지하고 그 밖은 고정 문구다.
+        // 코드 없는 403은 인증 계층(정지 계정)에서만 나온다. 접두어 뒤에 무엇이 붙어 있든 err.message
+        // 원문은 응답에 싣지 않는다 — 정지 안내는 여기 박아 둔 고정 문구로만, 그 밖은 고정 문구다.
         if (rawStatus === 403 && !rawCode) {
             const banned = typeof err.message === 'string' && err.message.startsWith('정지된 계정입니다.');
-            return res.status(403).json({ success: false, message: banned ? err.message : '접근 권한이 없습니다.' });
+            return res.status(403).json({ success: false, message: banned ? '정지된 계정입니다.' : '접근 권한이 없습니다.' });
         }
         if (rawCode === 'ECONOMY_FORBIDDEN') {
             return res.status(403).json({ ok: false, code: 'ECONOMY_FORBIDDEN', message: '다른 계정의 경제 데이터에 접근할 수 없습니다.' });
         }
-        const fixed = rawCode ? TOPUP_SCOPED_ERRORS[rawCode] : undefined;
+        // 상속 속성(constructor·__proto__·toString 등)을 허용 코드로 오인하지 않도록 자기 속성만 본다.
+        const fixed = rawCode && Object.hasOwn(TOPUP_SCOPED_ERRORS, rawCode) ? TOPUP_SCOPED_ERRORS[rawCode] : undefined;
         if (fixed) {
             if (rawCode === 'PAYMENT_PROCESSING') res.set('Retry-After', '2');
             const body = { ok: false, code: rawCode, message: fixed.message };

@@ -158,9 +158,10 @@ test('인증 오류 의미 유지: 401(ACCESS_TOKEN_EXPIRED 포함)·정지 계�
     assert.equal(plain.body.code, undefined);
     assert.ok(!JSON.stringify(plain.body).includes(MARK));
 
+    // 정지 안내는 고정 문구로만 나간다 — 접두어 뒤의 원문(사유 등)은 응답에 싣지 않는다.
     const banned = run(createError('정지된 계정입니다. 사유: 시험', 403), '/economy/topup/orders').res;
     assert.equal(banned.statusCode, 403);
-    assert.equal(banned.body.message, '정지된 계정입니다. 사유: 시험');
+    assert.equal(banned.body.message, '정지된 계정입니다.');
 
     const otherForbidden = run(createError(`권한 ${MARK}`, 403), '/economy/topup/orders').res;
     assert.equal(otherForbidden.statusCode, 403);
@@ -169,6 +170,34 @@ test('인증 오류 의미 유지: 401(ACCESS_TOKEN_EXPIRED 포함)·정지 계�
     const selfForbidden = run(createError(`x ${MARK}`, 403, 'ECONOMY_FORBIDDEN'), '/economy/topup/orders').res;
     assert.equal(selfForbidden.statusCode, 403);
     assert.equal(selfForbidden.body.code, 'ECONOMY_FORBIDDEN');
+});
+
+test('정지 안내 접두어 뒤에 secret 표식이 붙은 코드 없는 403도 원문이 응답·로그에 남지 않는다', (t) => {
+    const logs = captureConsole(t);
+    for (const url of ['/economy/topup/orders', '/economy/currency-products?x=1', '/ECONOMY/topup/orders/']) {
+        const err = Object.assign(createError(`정지된 계정입니다.${MARK} ${MARK}`, 403), { stack: `Error ${MARK}`, body: MARK });
+        const { res } = run(err, url);
+        assert.equal(res.statusCode, 403, url);
+        assert.deepEqual(res.body, { success: false, message: '정지된 계정입니다.' }, url);
+        assert.ok(!JSON.stringify(res).includes(MARK), url);
+    }
+    assert.ok(!logs.join('\n').includes(MARK), '로그에 표식이 남으면 안 된다');
+});
+
+test('상속 속성 이름(constructor·__proto__·toString·hasOwnProperty 등)의 err.code는 허용 코드가 아니라 SERVER_ERROR(500)로 수렴한다', (t) => {
+    const logs = captureConsole(t);
+    const inherited = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'isPrototypeOf'];
+    for (const code of inherited) {
+        for (const status of [400, 404, 409, 500]) {
+            const err = createError(`inherited ${MARK}`, status, code);
+            const { res, passedOn } = run(err, '/economy/topup/orders');
+            assert.equal(passedOn, null, `${code}/${status}: 오류 처리 자체가 실패하면 안 된다`);
+            assert.equal(res.statusCode, 500, `${code}/${status}`);
+            assert.deepEqual(res.body, { ok: false, code: 'SERVER_ERROR', message: '서버 내부에서 에러가 발생했습니다.' }, `${code}/${status}`);
+            assert.ok(!JSON.stringify(res.body).includes(MARK));
+        }
+    }
+    assert.ok(!logs.join('\n').includes(MARK));
 });
 
 test('응답이 이미 나갔으면 다음 오류 처리기로 넘긴다(신규 범위도 동일)', () => {

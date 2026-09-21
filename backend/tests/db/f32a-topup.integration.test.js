@@ -16,6 +16,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'f32a-topup-integration-test-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
@@ -57,6 +59,7 @@ const unavailable = (t) => {
 // 앱이 쓰는 연결(모델 로더의 싱글턴)은 첫 require 시점의 DATABASE_URL — 위에서 맞춘 격리 DB다.
 const db = require('../../models');
 const userRepository = require('../../repositories/user.repositories');
+const topupService = require('../../service/topup.service');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
 
 test.after(async () => {
@@ -194,16 +197,6 @@ const ledgerEntry = (userId, orderId) => one(
     { userId, ref: `topup:${orderId}` },
 );
 
-const waitFor = async (probe, { timeoutMs = 8000, intervalMs = 50 } = {}) => {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-        const value = await probe();
-        if (value) return value;
-        if (Date.now() > deadline) throw new Error('waitFor: 시간 초과');
-        await new Promise((resolve) => { setTimeout(resolve, intervalMs); });
-    }
-};
-
 /** 주문 하나와 그에 대응하는 제공자 쪽 결제를 만든다(사용자가 결제창에서 인증을 마친 상태). */
 const orderWithPayment = async (ctx, user, { scenario = 'approve', amount = 1000 } = {}) => {
     const created = await ctx.createOrder(user, { productId: TEST_PRODUCT.product_id, version: 1 });
@@ -230,10 +223,38 @@ const assertOrderRowLockable = async (orderId) => {
     });
 };
 
-const freshTopupService = () => {
-    const resolved = require.resolve('../../service/topup.service');
-    delete require.cache[resolved];
-    return require(resolved);
+/**
+ * 앱의 싱글턴(models/index.js)과 **별개의 새 Sequelize 연결**(같은 격리 테스트 DB)로 모델을 다시
+ * 초기화해 db 핸들을 만든다. 서비스에 deps.db로 넘기면 메모리 상태·연결 풀·모델 인스턴스를 앱과
+ * 공유하지 않는 "새 프로세스" 서비스 인스턴스가 된다 — 복구가 DB에 영속된 값만으로 이어지는지 본다.
+ */
+const openSeparateDb = async (t) => {
+    const separate = new Sequelize(TEST_DB_URL, { logging: false });
+    t.after(() => separate.close());
+    await separate.authenticate();
+
+    const handle = {};
+    const load = (dir) => {
+        for (const file of fs.readdirSync(dir)) {
+            const fullPath = path.join(dir, file);
+            if (fs.statSync(fullPath).isDirectory()) load(fullPath);
+            else if (file.indexOf('.') !== 0 && file !== 'index.js' && file.endsWith('.js') && !file.includes('.test.js')) {
+                const model = require(fullPath)(separate, Sequelize.DataTypes);
+                handle[model.name] = model;
+            }
+        }
+    };
+    load(path.join(__dirname, '../../models'));
+    for (const name of Object.keys(handle)) if (handle[name].associate) handle[name].associate(handle);
+    handle.sequelize = separate;
+    handle.Sequelize = Sequelize;
+
+    const [[appConn]] = await db.sequelize.query('SELECT CONNECTION_ID() AS id');
+    const [[freshConn]] = await separate.query('SELECT CONNECTION_ID() AS id');
+    assert.notEqual(handle.sequelize, db.sequelize);
+    assert.notEqual(handle.EconomyTopupOrder, db.EconomyTopupOrder, '모델 인스턴스를 앱과 공유하지 않는다');
+    assert.notEqual(freshConn.id, appConn.id, '앱과 다른 DB 연결이다');
+    return handle;
 };
 
 // ═══ AC-06(상품 계약): 외부 작성자의 커밋이 서버 재시작 없이 반영된다 ═══════════════════
@@ -681,8 +702,9 @@ test('AC-03: 제공자는 승인했지만 응답이 유실되면 CONFIRMING으�
     assert.equal(ctx.fake.providerState(a.paymentKey), 'DONE', '제공자는 이미 승인했다');
     await assertNothingGranted(user, a.orderId);
 
-    const fresh = freshTopupService();
-    const view = await fresh.getTopupOrder({ userId: user, orderId: a.orderId });
+    // 새 Sequelize 연결·새 모델 인스턴스로 만든 서비스 — 앱의 연결과 메모리를 공유하지 않는다.
+    const separate = await openSeparateDb(t);
+    const view = await topupService.getTopupOrder({ userId: user, orderId: a.orderId }, { db: separate });
     assert.equal(view.status, 'GRANTED');
     assert.equal(view.balanceDiamond, 110);
     assert.equal(await ledgerCount(user, a.orderId), 1);
@@ -699,6 +721,25 @@ test('AC-03: 제공자는 승인했지만 응답이 유실되면 CONFIRMING으�
     assert.equal(await diamondBalance(user2), 110);
     assert.equal((await ctx.confirm(user2, b.orderId, b.paymentKey, 1000)).json.balanceDiamond, 110);
     assert.equal(await diamondBalance(user2), 110, '반복 확인이 다시 지급하면 안 된다');
+
+    // (c) 재확인(confirm)을 새 연결의 서비스 인스턴스로 복구 — 결제키는 DB에 영속된 값으로만 이어진다
+    const user3 = await createUser('lost3');
+    const c = await orderWithPayment(ctx, user3, { scenario: 'lost-response' });
+    assert.equal((await ctx.confirm(user3, c.orderId, c.paymentKey, 1000)).status, 503);
+    assert.equal((await orderRow(c.orderId)).status, 'CONFIRMING');
+    await assertNothingGranted(user3, c.orderId);
+    const recovered = await topupService.confirmTopupOrder(
+        { userId: user3, orderId: c.orderId, paymentKey: c.paymentKey, amount: 1000 }, { db: separate },
+    );
+    assert.deepEqual(recovered, { status: 'GRANTED', balanceDiamond: 110 });
+    assert.equal(await ledgerCount(user3, c.orderId), 1);
+    assert.equal(await diamondBalance(user3), 110);
+    assert.equal(ctx.fake.callsOf('confirm').filter((call) => call.orderId === c.orderId).length, 1, '복구는 다시 승인하지 않고 조회한다');
+    const again = await topupService.confirmTopupOrder(
+        { userId: user3, orderId: c.orderId, paymentKey: c.paymentKey, amount: 1000 }, { db: separate },
+    );
+    assert.equal(again.balanceDiamond, 110);
+    assert.equal(await diamondBalance(user3), 110, '새 연결에서 반복 확인해도 다시 지급하지 않는다');
 });
 
 test('AC-03: 승인 뒤 원장 생성이 실패하면 PENDING_GRANT로 남고(원장 0건·잔액 그대로) 이후 조회·재확인이 이어서 1회 지급한다', async (t) => {
@@ -811,23 +852,63 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
     await insertProduct();
     const { orderId, paymentKey } = await orderWithPayment(ctx, user);
 
-    const hold = ctx.fake.hold(paymentKey);
+    // 서비스가 지급(원장 + GRANTED)을 커밋하고 돌아온 **직후, 응답이 나가기 전**에 멈추는 관찰 지점.
+    // 라우터는 topupService를 모듈 객체로 호출하므로 이 감싸기가 실제 confirm 경로에 그대로 끼어든다.
+    const originalConfirm = topupService.confirmTopupOrder;
+    let markCommitted;
+    let openResponse;
+    const grantCommitted = new Promise((resolve) => { markCommitted = resolve; });
+    const clientGone = new Promise((resolve) => { openResponse = resolve; });
+    topupService.confirmTopupOrder = async (...args) => {
+        const result = await originalConfirm.apply(topupService, args);
+        markCommitted(result);
+        await clientGone; // 클라이언트가 떠난 뒤에야 라우터가 응답을 쓴다
+        return result;
+    };
+    t.after(() => { topupService.confirmTopupOrder = originalConfirm; openResponse(); });
+
     const controller = new AbortController();
     const inFlight = ctx.call(`/economy/topup/orders/${orderId}/confirm`, {
         method: 'POST', user, body: { paymentKey, amount: 1000 }, signal: controller.signal,
-    }).catch((error) => ({ aborted: error.name }));
-    await hold.entered;
-    controller.abort(); // 클라이언트가 응답을 받기 전에 연결을 끊는다
-    hold.release();
-    assert.equal((await inFlight).aborted, 'AbortError');
+    }).then((res) => ({ res }), (error) => ({ aborted: error.name }));
 
-    await waitFor(async () => (await orderRow(orderId)).status === 'GRANTED');
+    // 지급이 이미 커밋된 상태에서(응답은 아직 없다) 클라이언트가 연결을 끊는다.
+    assert.deepEqual(await grantCommitted, { status: 'GRANTED', balanceDiamond: 110 });
+    const committed = await orderRow(orderId);
+    assert.equal(committed.status, 'GRANTED', '응답을 받기 전에 이미 GRANTED가 커밋되어 있다');
+    assert.ok(committed.granted_at);
     assert.equal(await ledgerCount(user, orderId), 1);
     assert.equal(await diamondBalance(user), 110);
+    controller.abort();
+    const lostResult = await inFlight;
+    assert.equal(lostResult.aborted, 'AbortError', '클라이언트는 응답을 받지 못했다');
+    assert.equal(lostResult.res, undefined);
+    openResponse(); // 서버는 끊어진 연결에 응답을 쓴다
+    topupService.confirmTopupOrder = originalConfirm;
+
+    // 응답 유실 뒤에도 커밋된 지급은 대기로 되돌아가지 않고, 재조회·재확인은 새 지급 없이 같은 결과를 준다.
+    assert.equal(await ledgerCount(user, orderId), 1);
+    assert.equal(await diamondBalance(user), 110);
+    assert.equal((await orderRow(orderId)).status, 'GRANTED');
 
     const fetched = await ctx.getOrder(user, orderId);
     assert.deepEqual([fetched.json.status, fetched.json.balanceDiamond], ['GRANTED', 110]);
+    const reconfirmed = await ctx.confirm(user, orderId, paymentKey, 1000);
+    assert.deepEqual(reconfirmed.json, { ok: true, status: 'GRANTED', balanceDiamond: 110 });
+
+    // 새 연결의 서비스 인스턴스에서도 같은 결과다.
+    const separate = await openSeparateDb(t);
+    const viaFreshConnection = await topupService.getTopupOrder({ userId: user, orderId }, { db: separate });
+    assert.deepEqual([viaFreshConnection.status, viaFreshConnection.balanceDiamond], ['GRANTED', 110]);
+    assert.deepEqual(
+        await topupService.confirmTopupOrder({ userId: user, orderId, paymentKey, amount: 1000 }, { db: separate }),
+        { status: 'GRANTED', balanceDiamond: 110 },
+    );
+
+    assert.equal(await ledgerCount(user, orderId), 1, '재조회·재확인 뒤에도 원장은 1건이다');
+    assert.equal(await diamondBalance(user), 110, '잔액은 한 번만 증가했다');
     assert.equal(ctx.fake.callsOf('confirm').length, 1);
+    assert.equal(ctx.fake.callsOf('get').length, 0, 'GRANTED 주문은 제공자를 다시 부르지 않는다');
 });
 
 // ═══ AC-04: 중복·동시 확인은 지급 1회, 외부 승인 중 DB 잠금 없음 ═══════════════════════════
