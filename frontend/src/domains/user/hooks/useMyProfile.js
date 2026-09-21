@@ -62,17 +62,23 @@ export function useMyProfile() {
     }
 
     // 화면 상단 프로필 영역에서 사용할 값입니다.
+    // F-30 AC-04: 명성은 화면에서 제거됐다 — 닉네임을 명성 이름 칸에 실어 보내던
+    // reputationLabel/reputationValue도 함께 없앤다(배너는 닉네임 하나만 받는다).
+    // title은 값 자체를 그대로 보존한다(기존에 없던 칭호 UI를 새로 만들지는 않는다).
     const profile = {
-        reputationLabel: `${data.nickname}`,
-        reputationValue: data.reputation,
-        title:           data.title,
+        nickname: data.nickname,
+        title:    data.title,
     }
 
-    // 전적 숫자들을 화면에 바로 보여줄 수 있는 배열 형태로 바꿉니다.
+    // F-30 AC-01/AC-02: 피의 기록은 **전체 판수와 승률 두 항목뿐**이다(생존 횟수·단두대 처형
+    // 행은 화면에서 제거됐다 — 원본 집계 자체는 서버에 그대로 남아 업적·랭킹이 계속 쓴다).
+    //
+    // 승률은 서버가 계정 전체 유효 종료 경기의 승수/판수로 계산한 원시 비율(0~1)이고, 여기서는
+    // 표시 자리수만 정한다 — 0판이면 0.0%, 전승이면 100.0%다. 두 숫자는 같은 응답의 같은
+    // 모집단에서 나오므로 화면에서 서로 검산할 수 있다.
     const stats = [
-        { label: "전체 판수",    value: data.total_games.toLocaleString() },
-        { label: "생존 횟수",    value: data.survival_count.toLocaleString() },
-        { label: "단두대 처형",  value: data.execution_count.toLocaleString() },
+        { label: "전체 판수", value: data.total_games.toLocaleString() },
+        { label: "승률",      value: `${(data.account_win_rate * 100).toFixed(1)}%` },
     ]
 
     // "운명의 가면"은 가장 많이 플레이한 직업이 아니라 최소 1판 이상 중 가장 승률이 높은

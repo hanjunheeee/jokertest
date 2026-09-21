@@ -40,10 +40,15 @@ const setCurrentUser = (nextUser) => {
 
 mock.module("../../api/user.api.js", {
   namedExports: {
+    // F-30 AC-03: 응답과 게이트를 **요청이 시작되는 순간에 고정**한다. 예전처럼 await 뒤에
+    // 전역을 다시 읽으면, 붙잡아 둔 A 계정의 요청이 그 사이 바뀐 B 계정의 응답을 돌려주게
+    // 되어 "늦게 도착한 이전 계정 응답"이라는 재현 자체가 성립하지 않는다.
     getMyProfileApi: async () => {
       getMyProfileCallCount += 1
-      if (pendingGate) await pendingGate
-      return profileResponse
+      const response = profileResponse
+      const gate = pendingGate
+      if (gate) await gate
+      return response
     },
     updateNicknameApi: async () => ({}),
     updatePasswordApi: async () => ({}),
@@ -70,11 +75,12 @@ const createDeferred = () => {
   return { promise, resolve }
 }
 
+// F-30: reputation은 응답에서 제거됐고 account_win_rate(계정 전체 원시 승률)가 추가됐다.
 const BASE_PROFILE_ROW = {
   nickname: "가면술사",
-  reputation: 1280,
   title: "무자비한 광대",
   total_games: 1245,
+  account_win_rate: 2 / 3,
   survival_count: 788,
   execution_count: 112,
   most_played_role: "귀족",
@@ -124,11 +130,10 @@ test("highest_win_rate_role이 추가돼도 기존 stats·title 필드는 그대
 
   const { result } = renderHook(() => useMyProfile())
 
-  assert.deepEqual(result.current.profile, { reputationLabel: "가면술사", reputationValue: 1280, title: "무자비한 광대" })
+  assert.deepEqual(result.current.profile, { nickname: "가면술사", title: "무자비한 광대" })
   assert.deepEqual(result.current.stats, [
     { label: "전체 판수", value: "1,245" },
-    { label: "생존 횟수", value: "788" },
-    { label: "단두대 처형", value: "112" },
+    { label: "승률", value: "66.7%" },
   ])
 })
 
@@ -170,10 +175,49 @@ test('mounted profile refetches once after account switch and renders the new ma
   resetStore()
   profileResponse = { ...BASE_PROFILE_ROW, nickname:'first', highest_win_rate_role:'광대' }
   const { result } = renderHook(() => useMyProfile())
-  await waitFor(() => assert.equal(result.current.profile?.reputationLabel, 'first'))
+  await waitFor(() => assert.equal(result.current.profile?.nickname, 'first'))
   profileResponse = { ...BASE_PROFILE_ROW, nickname:'second', highest_win_rate_role:'주치의' }
   await act(async () => setCurrentUser({uuid:'user-2'}))
-  await waitFor(() => assert.equal(result.current.profile?.reputationLabel, 'second'))
+  await waitFor(() => assert.equal(result.current.profile?.nickname, 'second'))
   assert.equal(result.current.description.highlight, '주치의')
   assert.equal(getMyProfileCallCount, 2)
+})
+
+// F-30 AC-03: A 계정 조회가 아직 날아가 있는 동안 B로 전환하고, B가 먼저 성공한 뒤에야
+// A의 응답이 도착하는 순서. B의 닉네임·판수·승률·가면 전부가 그대로 남아야 한다 —
+// 어느 하나라도 A의 값으로 되돌아가면 계정 격리가 깨진 것이다.
+test('A 보류 → B 전환 → B 성공 → A 응답 도착: B의 닉네임·판수·승률·가면이 그대로 유지된다', async () => {
+  resetStore()
+  const deferred = createDeferred()
+  pendingGate = deferred.promise
+  profileResponse = {
+    ...BASE_PROFILE_ROW,
+    nickname: 'A계정', total_games: 99, account_win_rate: 0.99, highest_win_rate_role: '광대',
+  }
+
+  const stalled = useUserProfileStore.getState().fetchProfile()
+  await Promise.resolve()
+
+  // 응답이 오기 전에 계정이 바뀐다(user.store의 auth 구독이 reset을 부른다).
+  setCurrentUser({ uuid: 'user-2' })
+
+  // B 계정의 조회는 붙잡지 않고 즉시 성공한다.
+  pendingGate = null
+  profileResponse = {
+    ...BASE_PROFILE_ROW,
+    nickname: 'B계정', total_games: 4, account_win_rate: 0.5, highest_win_rate_role: '주치의',
+  }
+  await useUserProfileStore.getState().fetchProfile()
+
+  // 이제서야 A의 응답이 도착한다.
+  deferred.resolve()
+  await stalled
+
+  const { result } = renderHook(() => useMyProfile())
+  assert.equal(result.current.profile.nickname, 'B계정', 'A의 뒤늦은 응답이 B 화면을 덮었다')
+  assert.deepEqual(result.current.stats, [
+    { label: '전체 판수', value: '4' },
+    { label: '승률', value: '50.0%' },
+  ])
+  assert.equal(result.current.description.highlight, '주치의')
 })

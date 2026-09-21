@@ -17,12 +17,13 @@ export const MY_PAGE_PROFILE_BANNER_DEFAULTS = {
   bannerImageClassName: MY_PAGE_BANNER_FRAME_IMAGE_CLASS,
 }
 
-// 피의 기록 프레임에 보여줄 prototype 더미 통계입니다.
-export const BLOOD_RECORD_STATS = [
-  { label: "전체 판수", value: "1,245" },
-  { label: "생존 횟수", value: "788" },
-  { label: "단두대 처형", value: "112" },
-]
+// 피의 기록 프레임의 기본값입니다.
+//
+// F-30 AC-01: 예전에는 prototype 더미 세 행(전체 판수 1,245 · 생존 횟수 788 · 단두대 처형 112)이
+// 들어 있었다. 그 기본값은 stats를 받지 못한 화면에 **실제 전적처럼 보이는 가짜 숫자**를 그리고,
+// 조회가 실패한 경우조차 그럴듯한 기록으로 위장한다(AC-03). 비어 있는 것이 정답이다 —
+// 실제 두 행은 useMyProfile이 서버 응답에서 만들어 내려보낸다.
+export const BLOOD_RECORD_STATS = []
 
 // 운명의 가면 하단 설명 문구입니다.
 export const FATE_MASK_DESCRIPTION = {

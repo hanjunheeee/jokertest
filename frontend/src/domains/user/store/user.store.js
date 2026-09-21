@@ -25,6 +25,33 @@ let profileFetchSequence = 0;
 /** 마지막으로 화면에 반영된 조회의 순번. 이보다 이른 조회의 응답은 이미 낡은 값이다. */
 let appliedProfileFetchSequence = 0;
 
+/**
+ * F-30 AC-03: **표시할 수 없는 응답을 성공으로 캐시하지 않는다.**
+ *
+ * 마이페이지의 전체 판수·승률은 이 캐시를 그대로 읽어 그린다. 누락·문자열·NaN·무한대·음수·
+ * 범위를 벗어난 승률이 그대로 들어오면 화면은 "0판 0.0%"나 "NaN%" 같은 값을 **정상 조회 결과로**
+ * 보여주게 된다 — 조회가 잘못됐다는 사실이 0판으로 위장되는 바로 그 경우다. 여기서 거르면
+ * 아래 catch가 기존 캐시를 보존한 채 실패 상태만 남기고, 화면은 다시 읽는 경로를 내놓는다.
+ *
+ * 판수는 음수가 아닌 **안전 정수**여야 한다(소수·2^53 이상은 집계 오류이지 큰 전적이 아니다).
+ * 승률은 반올림하지 않은 원시 비율이므로 0 이상 1 이하의 유한한 number여야 한다.
+ */
+const isDisplayableGameCount = (value) => Number.isSafeInteger(value) && value >= 0;
+const isDisplayableWinRate = (value) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+
+function assertDisplayableProfile(data) {
+    if (!data || typeof data !== 'object') {
+        throw new Error('프로필 응답이 객체가 아닙니다.');
+    }
+    if (!isDisplayableGameCount(data.total_games)) {
+        throw new Error(`프로필 응답의 전체 판수를 표시할 수 없습니다: ${String(data.total_games)}`);
+    }
+    if (!isDisplayableWinRate(data.account_win_rate)) {
+        throw new Error(`프로필 응답의 승률을 표시할 수 없습니다: ${String(data.account_win_rate)}`);
+    }
+}
+
 export const useUserProfileStore = create((set, get) => ({
     data: null,
     loading: true,
@@ -75,6 +102,12 @@ export const useUserProfileStore = create((set, get) => ({
             if (get().invalidationRevision !== startedAtRevision) return;
             // 더 나중에 시작된 조회가 이미 반영됐다면 이 응답은 그보다 오래된 사실이다.
             if (sequence < appliedProfileFetchSequence) return;
+            // F-30 AC-03: **순서 판정을 통과한 뒤에** 내용을 검사한다. 순서를 먼저 보는 이유는,
+            // 이미 낡은 응답의 검증 오류까지 현재 계정 화면에 실패로 남겨서는 안 되기 때문이다
+            // (그 응답은 애초에 이 화면의 사실이 아니다 — 위 세 검사가 조용히 버린다).
+            // 여기서 던지면 아래 catch가 받아 기존 캐시를 보존한 채 실패 상태만 남긴다.
+            // appliedProfileFetchSequence는 아직 올리지 않았으므로 catch의 순번 검사도 통과한다.
+            assertDisplayableProfile(data);
             appliedProfileFetchSequence = sequence;
             // 성공은 이전 실패를 지운다 — 더 새로운 조회가 확인해 준 값이기 때문이다.
             set({ data, loading: false, appliedRevision: startedAtRevision, error: null });

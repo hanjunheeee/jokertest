@@ -79,12 +79,17 @@ function makeGate() {
   return { promise, release: () => release() }
 }
 
-function profile(totalGames) {
+/**
+ * F-30: 성공 응답은 표시 판수와 **표시 승률**을 함께 싣는다(같은 모집단의 두 값). 승률을
+ * 명시 입력으로 받는 이유는, 판수만 바뀌고 승률이 따라오지 않는 응답을 실수로 "정상"처럼
+ * 쓰지 않기 위해서다 — store는 이제 그런 응답을 성공으로 캐시하지 않는다.
+ */
+function profile(totalGames, accountWinRate = 0) {
   return {
     nickname: "tester",
-    reputation: 0,
     title: "신참",
     total_games: totalGames,
+    account_win_rate: accountWinRate,
     survival_count: 0,
     execution_count: 0,
     most_played_role: null,
@@ -266,28 +271,40 @@ test("A-10: 무효화가 도착하면 화면은 stale을 표시하고, 새 값�
 
 test("A-10: 조회 실패는 로딩을 풀고 화면이 재시도할 수 있는 상태로 남긴다", async () => {
   profileResponses[0] = new Error("네트워크 실패")
-  profileResponses[1] = profile(2)
+  profileResponses[1] = profile(2, 0.5)
 
   const view = renderHook(() => useMyProfile())
   await flush()
   assert.equal(view.result.current.profile, null)
   assert.equal(view.result.current.loading, false)
+  // F-30 AC-03: **실패가 0판으로 위장되지 않는다.** 화면에 표시할 숫자 자체가 없고(stats=null),
+  // 실패했다는 사실만 남는다 — "전체 판수 0 · 승률 0.0%"는 정상 조회의 결과일 때만 쓰는 표시다.
+  assert.equal(view.result.current.stats, null)
+  assert.notEqual(view.result.current.error, null)
+  assert.equal(view.result.current.isStale, true)
   // 실패를 성공으로 바꾸지 않는다 — 화면에는 다시 읽을 경로만 있다(MyPageLayout이 이 값을 쓴다).
   assert.equal(typeof view.result.current.retry, "function")
 
   await flush(() => view.result.current.retry())
-  assert.equal(view.result.current.stats[0].value, "2")
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "2" },
+    { label: "승률", value: "50.0%" },
+  ])
+  assert.equal(view.result.current.error, null)
   view.unmount()
 })
 
 test("A-10: 무효화를 놓친 뒤의 재조회 실패는 캐시를 지우지 않되 그 사실을 화면에 남긴다", async () => {
-  profileResponses[0] = profile(3)
+  profileResponses[0] = profile(3, 1 / 3)
   profileResponses[1] = new Error("네트워크 실패") // 재진입 조회가 실패한다
-  profileResponses[2] = profile(7)
+  profileResponses[2] = profile(7, 1)
 
   const view = renderHook(() => useMyProfile())
   await flush()
-  assert.equal(view.result.current.stats[0].value, "3")
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "3" },
+    { label: "승률", value: "33.3%" },
+  ])
   assert.equal(view.result.current.isStale, false)
   assert.equal(view.result.current.error, null)
 
@@ -296,7 +313,12 @@ test("A-10: 무효화를 놓친 뒤의 재조회 실패는 캐시를 지우지 �
   await flush(() => dom.window.dispatchEvent(new dom.window.Event("focus")))
 
   // 쓸 수 있는 값은 그대로 남는다(실패 하나로 화면을 빈 숫자로 만들지 않는다).
-  assert.equal(view.result.current.stats[0].value, "3")
+  // F-30 AC-03: 판수뿐 아니라 승률도 갱신 전 값 그대로여야 한다 — 한쪽만 0으로 떨어지면
+  // 두 숫자가 서로 다른 시점을 말하게 된다.
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "3" },
+    { label: "승률", value: "33.3%" },
+  ])
   // 그러나 그 값이 **확인된 값이 아니라는 사실**은 남아야 한다 — 예전에는 무효화 세대가
   // 오르지 않았다는 이유로 isStale이 false였고 화면에 아무 표시도 없었다.
   assert.notEqual(view.result.current.error, null, "실패했는데 화면이 그 사실을 모른다")
@@ -305,9 +327,126 @@ test("A-10: 무효화를 놓친 뒤의 재조회 실패는 캐시를 지우지 �
 
   // 재시도가 성공하면 실패 표시는 사라지고 숫자가 확인된 값으로 바뀐다.
   await flush(() => view.result.current.retry())
-  assert.equal(view.result.current.stats[0].value, "7")
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "7" },
+    { label: "승률", value: "100.0%" },
+  ])
   assert.equal(view.result.current.error, null)
   assert.equal(view.result.current.isStale, false)
+  view.unmount()
+})
+
+// ── F-30 AC-02/AC-03: 판수와 승률이 같은 값으로 함께 수렴한다 ──────────────────
+
+test("F-30 AC-02/AC-03: 캐시된 3판 33.3%는 갱신 대기 중에도 그대로 보이고, 4판 50.0%로 함께 바뀐다", async () => {
+  profileResponses[0] = profile(3, 1 / 3)
+  const view = renderHook(() => useMyProfile())
+  await flush()
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "3" },
+    { label: "승률", value: "33.3%" },
+  ])
+  assert.equal(view.result.current.isStale, false)
+
+  const gate = makeGate()
+  pendingGates[1] = gate
+  profileResponses[1] = profile(4, 1 / 2)
+
+  await flush(() => { useUserProfileStore.getState().invalidate() })
+  // 갱신을 기다리는 동안에도 두 값은 **직전에 확인된 같은 시점의 값**으로 남는다.
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "3" },
+    { label: "승률", value: "33.3%" },
+  ])
+  assert.equal(view.result.current.isStale, true)
+
+  await flush(() => gate.release())
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "4" },
+    { label: "승률", value: "50.0%" },
+  ])
+  assert.equal(view.result.current.isStale, false)
+  view.unmount()
+})
+
+/**
+ * F-30 AC-03: 표시할 수 없는 판수·승률은 **성공 캐시가 되지 않는다.**
+ *
+ * 이 목록이 중요한 이유는, 이 중 다수가 그대로 통과하면 화면에 "0판 0.0%"나 "NaN%"로 보이기
+ * 때문이다 — 조회가 잘못됐다는 사실이 정상 전적으로 위장되는 바로 그 경우다.
+ */
+const UNDISPLAYABLE_RESPONSES = [
+  ["판수 누락", (() => { const row = profile(3, 0.5); delete row.total_games; return row })()],
+  ["승률 누락", (() => { const row = profile(3, 0.5); delete row.account_win_rate; return row })()],
+  ["판수 null", { ...profile(3, 0.5), total_games: null }],
+  ["승률 null", { ...profile(3, 0.5), account_win_rate: null }],
+  ["판수 문자열", { ...profile(3, 0.5), total_games: "3" }],
+  ["승률 문자열", { ...profile(3, 0.5), account_win_rate: "0.5" }],
+  ["판수 NaN", { ...profile(3, 0.5), total_games: Number.NaN }],
+  ["승률 NaN", { ...profile(3, 0.5), account_win_rate: Number.NaN }],
+  ["판수 무한대", { ...profile(3, 0.5), total_games: Number.POSITIVE_INFINITY }],
+  ["승률 무한대", { ...profile(3, 0.5), account_win_rate: Number.POSITIVE_INFINITY }],
+  ["판수 음수", { ...profile(3, 0.5), total_games: -1 }],
+  ["승률 음수", { ...profile(3, 0.5), account_win_rate: -0.1 }],
+  ["승률 1 초과", { ...profile(3, 0.5), account_win_rate: 1.2 }],
+  ["판수 소수", { ...profile(3, 0.5), total_games: 3.5 }],
+  ["판수 안전 정수 초과", { ...profile(3, 0.5), total_games: Number.MAX_SAFE_INTEGER + 2 }],
+  // 위 대역이 nullish 응답을 "다음 응답으로 대체"해 버리므로, 객체가 아닌 경우는 문자열로
+  // 재현한다(store의 판정은 둘 다 같은 "객체가 아님" 분기다).
+  ["응답이 객체가 아님", "not-an-object"],
+]
+
+for (const [label, response] of UNDISPLAYABLE_RESPONSES) {
+  test(`F-30 AC-03: ${label} 응답은 성공 캐시로 저장되지 않고 실패 상태로 남는다`, async () => {
+    profileResponses[0] = response
+    profileResponses[1] = profile(5, 0.2)
+
+    const view = renderHook(() => useMyProfile())
+    await flush()
+
+    assert.equal(useUserProfileStore.getState().data, null, `${label} 응답이 캐시에 저장됐다`)
+    assert.equal(view.result.current.stats, null, `${label} 응답이 0판으로 위장됐다`)
+    assert.notEqual(view.result.current.error, null, `${label} 응답이 실패로 표시되지 않았다`)
+    assert.equal(view.result.current.loading, false)
+
+    // 유효한 응답으로 재시도하면 정상 복구된다(실패 상태가 고착되지 않는다).
+    await flush(() => view.result.current.retry())
+    assert.deepEqual(view.result.current.stats, [
+      { label: "전체 판수", value: "5" },
+      { label: "승률", value: "20.0%" },
+    ])
+    assert.equal(view.result.current.error, null)
+    view.unmount()
+  })
+}
+
+test("F-30 AC-03: 이미 확인된 값이 있을 때 도착한 잘못된 응답은 그 값을 덮지 않고 갱신 실패로만 남는다", async () => {
+  profileResponses[0] = profile(6, 0.25)
+  profileResponses[1] = { ...profile(6, 0.25), account_win_rate: "0.9" } // 표시할 수 없는 갱신
+  profileResponses[2] = profile(8, 0.75)
+
+  const view = renderHook(() => useMyProfile())
+  await flush()
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "6" },
+    { label: "승률", value: "25.0%" },
+  ])
+
+  await flush(() => dom.window.dispatchEvent(new dom.window.Event("focus")))
+
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "6" },
+    { label: "승률", value: "25.0%" },
+  ], "잘못된 갱신 응답이 마지막으로 확인된 값을 덮었다")
+  assert.notEqual(view.result.current.error, null)
+  assert.equal(view.result.current.isStale, true)
+
+  await flush(() => view.result.current.retry())
+  assert.deepEqual(view.result.current.stats, [
+    { label: "전체 판수", value: "8" },
+    { label: "승률", value: "75.0%" },
+  ])
+  assert.equal(view.result.current.error, null)
   view.unmount()
 })
 

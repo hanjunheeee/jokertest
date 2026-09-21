@@ -354,17 +354,42 @@ test("AC-01: 저장 실패는 세 테이블 어디에도 흔적을 남기지 않
 test("AC-01: 저장 후 프로필 조회에 stats 변경이 반영된다", async (t) => {
     const { committed } = setupFakeDb(t);
 
-    await gameResultRepository.persistGameResult(makeEndedSession(), { completed: true });
+    // F-30 AC-02: 경기 출처를 production으로 고정한다 — 고정하지 않으면 이 프로세스의
+    // 환경(resolveGameSource)에 따라 development로 저장돼 표시 모집단에서 통째로 빠진다.
+    await gameResultRepository.persistGameResult(
+        makeEndedSession({ gameSource: "production" }),
+        { completed: true },
+    );
 
+    // 원본 UserStats 증분은 F-30 이후에도 그대로다(AC-05) — 업적·랭킹이 이 값을 계속 쓴다.
     assert.equal(committed.user_stats.get("u1").total_games, 4);
     assert.equal(committed.user_stats.get("u1").survival_count, 2);
     assert.equal(committed.user_stats.get("u1").most_played_role, "DOCTOR");
 
     const body = await readProfile("u1");
     assert.equal(body.success, true);
-    assert.equal(body.data.total_games, 4);
+    // F-30 AC-02: 표시 판수는 **이 fixture에 실제로 커밋된 적격 참가 행**에서 나온다. 과거
+    // 세 판은 user_stats 누적값으로만 존재하고 참가 행이 없으므로, 원본 4와 표시 1은 서로
+    // 다른 값이며 둘 다 맞다 — 표시값이 원본을 그대로 흘려보내지 않는다는 증거다.
+    assert.equal(body.data.total_games, 1);
+    assert.equal(body.data.account_win_rate, 1, "시민 승리 한 판이면 계정 승률은 1이다");
     assert.equal(body.data.survival_count, 2);
     assert.equal(body.data.most_played_role, "DOCTOR");
+    assert.equal(Object.hasOwn(body.data, "reputation"), false, "F-30 AC-04: 명성은 응답에서 제거됐다");
+
+    // 프로필 조회는 순수 읽기다 — 반복해도 커밋된 상태가 달라지지 않는다.
+    const snapshot = {
+        games: committed.game_results.length,
+        players: committed.game_result_players.length,
+        stats: { ...committed.user_stats.get("u1") },
+    };
+    const again = await readProfile("u1");
+    assert.deepEqual(again.data, body.data);
+    assert.deepEqual({
+        games: committed.game_results.length,
+        players: committed.game_result_players.length,
+        stats: { ...committed.user_stats.get("u1") },
+    }, snapshot, "프로필 조회가 저장 상태를 건드렸다");
 });
 
 // ── AC-02 ────────────────────────────────────────────────────────────────────

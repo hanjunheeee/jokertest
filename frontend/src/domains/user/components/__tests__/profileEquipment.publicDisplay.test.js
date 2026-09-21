@@ -82,6 +82,11 @@ const { default: InvitedGuestsRankingRow } =
   await import("../../../library/components/invitedGuests/shared/InvitedGuestsRankingRow.jsx")
 const { default: LobbyProfileArea } = await import("../../../lobby/components/LobbyProfileArea.jsx")
 const { useEconomyStore } = await import("../../../economy/store/economy.store.js")
+// F-30 AC-01/AC-04/AC-06: 배너와 피의 기록의 **최종 DOM**을 직접 본다 — 명성이 남아 있는지,
+// 기록이 정확히 두 행인지는 훅 반환값이 아니라 실제로 그려진 요소에서 판정해야 한다.
+const { default: MyPageBannerButton } = await import("../MyPageBannerButton.jsx")
+const { default: BloodRecordFrame } = await import("../BloodRecordFrame.jsx")
+const { MY_PAGE_PROFILE_BANNER_DEFAULTS } = await import("../../constants/myPageAssets.js")
 
 test("로비: 실제 LobbyProfileArea를 마운트하면(showProfilePortrait 배선을 거쳐) 서버가 실제로 응답한 계정 사진·테두리가 배너에 실제 DOM img로 그려진다", async () => {
   useEconomyStore.getState().reset()
@@ -93,7 +98,7 @@ test("로비: 실제 LobbyProfileArea를 마운트하면(showProfilePortrait 배
     })
 
   const { container } = render(React.createElement(LobbyProfileArea, {
-    profile: { reputationLabel: "초심자", reputationValue: 0 },
+    profile: { nickname: "초심자", title: "신참" },
     loading: false,
     onMyPage: () => {},
     onAccount: () => {},
@@ -118,7 +123,7 @@ test("로비: 장착 사진·테두리가 없는(loadout 기본값) 계정은 �
     : { entitlements: [], loadout: { selectedProfilePhotoId: null, selectedProfileBorderId: null } })
 
   const { container } = render(React.createElement(LobbyProfileArea, {
-    profile: { reputationLabel: "초심자", reputationValue: 0 },
+    profile: { nickname: "초심자", title: "신참" },
     loading: false,
     onMyPage: () => {},
     onAccount: () => {},
@@ -230,4 +235,128 @@ test("서고 랭킹: 상위 변환(mergeInvitedGuestsSpreads)은 이제 gameResu
   assert.equal(withAppearance.profileBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
   assert.equal(withoutAppearance.profileBorderSrc, null, "실제 장착 테두리가 없으면 기존처럼 null로 남아 테두리 없이 그려야 한다")
   assert.equal(withoutAppearance.profileSrc, "/shopItem/player-profile/프로필-금빛가면.png", "계정 사진도 없으면 기존 하드코딩 기본 사진으로 대체되어야 한다")
+})
+
+// ── F-30 AC-04/AC-06: 공통 프로필 배너에서 명성이 이름·값·장식·빈 자리까지 사라졌다 ──
+
+const installEquipmentApi = (loadout) => {
+  getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
+    ? { balanceGold: 0, balanceDiamond: 0 }
+    : { entitlements: [], loadout })
+}
+
+/** 배너가 그린 실제 텍스트 문단들(사진·테두리 img는 세지 않는다). */
+const paragraphTexts = (container) =>
+  [...container.querySelectorAll("p")].map((node) => node.textContent.trim())
+
+/** 명성 전용 장식이었던 세 트랙 grid와 구분선이 클래스 수준에서도 남아 있지 않은지. */
+const hasClassFragment = (container, fragment) =>
+  [...container.querySelectorAll("*")].some((node) =>
+    typeof node.className === "string" && node.className.includes(fragment))
+
+/**
+ * F-30 AC-06(CODEX 재검토): **공백이 하나도 없는 최대 길이 닉네임**을 쓴다.
+ * 닉네임 상한은 8자(backend/validation/signupValidation.js NICKNAME_MAX_LENGTH)이고,
+ * 한국어 닉네임은 공백 없이 8자를 채우는 경우가 가장 흔하다 — 이 입력이 "폭이 모자랄 때
+ * 어디서 접을 것인가"를 실제로 묻는 최악 입력이다. 공백이 있는 닉네임으로 시험하면
+ * 띄어쓰기에서 접히므로 줄바꿈 규칙이 잘못돼도 드러나지 않는다.
+ */
+const NO_SPACE_MAX_NICKNAME = "여덟자짜리닉네임"
+const BANNER_PROFILE = { nickname: NO_SPACE_MAX_NICKNAME, title: "무자비한 광대" }
+
+/**
+ * 공백 없는 한 덩어리 텍스트를 영역 안에 머물게 할 수 있는 규칙들. 줄바꿈 계열
+ * (overflow-wrap:anywhere · break-words · break-all)이거나 말줄임 계열(truncate ·
+ * line-clamp)이어야 한다.
+ *
+ * break-keep(word-break:keep-all)은 **여기에 없다** — 그것은 한국어 글자 사이의 줄바꿈을
+ * 오히려 금지하는 규칙이라, 공백 없는 닉네임에서는 폭 제한이 있어도 넘침을 막지 못한다.
+ */
+const IN_BOUNDS_TEXT_RULES = ["[overflow-wrap:anywhere]", "break-words", "break-all", "truncate", "line-clamp"]
+
+for (const [label, props] of [
+  ["로비", { showText: true, showProfilePortrait: true, showSettingsIcon: true, onSettingsClick: () => {}, onClick: () => {} }],
+  ["마이페이지", { ...MY_PAGE_PROFILE_BANNER_DEFAULTS }],
+]) {
+  test(`${label} 배너: 실제 MyPageBannerButton을 마운트하면 닉네임만 남고 명성 이름·값·구분선·빈 트랙이 전부 사라진다`, async () => {
+    useEconomyStore.getState().reset()
+    installEquipmentApi({ selectedProfilePhotoId: null, selectedProfileBorderId: null })
+
+    const { container } = render(React.createElement(MyPageBannerButton, { ...props, profile: BANNER_PROFILE }))
+
+    // 닉네임은 그대로 보인다(8자 전체가 잘려 사라지지 않는다 — 말줄임은 표시 규칙이지
+    // 문자열을 버리는 것이 아니다).
+    assert.deepEqual(paragraphTexts(container), [NO_SPACE_MAX_NICKNAME], "배너 텍스트 문단은 닉네임 하나뿐이어야 한다")
+
+    // F-30 AC-06: 앱 글자 배율을 계속 따르고(app-text-scaled), 폭을 넘지 않는다(max-w-full).
+    const nicknameNode = container.querySelector("p")
+    const nicknameClass = nicknameNode.className
+    for (const fragment of ["app-text-scaled", "max-w-full"]) {
+      assert.ok(nicknameClass.includes(fragment), `닉네임에 ${fragment} 계약이 없다`)
+    }
+
+    // 그리고 **공백 없는 최대 길이 닉네임**(위 입력)이 실제로 영역 안에 머물 수 있는 규칙이
+    // 그 요소에 걸려 있어야 한다. 폭 제한만으로는 쪼갤 수 없는 한 덩어리를 가두지 못한다.
+    assert.ok(
+      IN_BOUNDS_TEXT_RULES.some((rule) => nicknameClass.includes(rule)),
+      `공백 없는 닉네임을 영역 안에 두는 줄바꿈·말줄임 규칙이 없다: ${nicknameClass}`,
+    )
+
+    // break-keep(word-break:keep-all) **단독** 조합을 명시적으로 금지한다 — 이전 구현이 그
+    // 조합이었고, 한국어 글자 사이의 줄바꿈을 막아 오히려 넘침을 만들었다. 남겨 두려면
+    // 반드시 글자 사이를 다시 열어 주는 규칙(anywhere/break-all)이나 말줄임이 함께 있어야 한다.
+    assert.equal(
+      nicknameClass.includes("break-keep") && !IN_BOUNDS_TEXT_RULES.some((rule) => nicknameClass.includes(rule)),
+      false,
+      "break-keep 단독으로는 공백 없는 한글 닉네임이 영역 안에서 접히지 않는다",
+    )
+
+    // 명성 이름도 값도 화면 어디에도 없다.
+    assert.equal(/명성/.test(container.textContent), false, "명성 이름이 아직 그려진다")
+    assert.equal(container.textContent.includes("1280"), false)
+
+    // 명성 전용 장식(중간 구분선)과 명성 자리를 만들던 세 트랙 grid도 남아 있지 않다.
+    assert.equal(hasClassFragment(container, "grid-rows-[1fr_auto_1fr]"), false, "명성 자리를 만들던 빈 트랙이 남아 있다")
+    assert.equal(hasClassFragment(container, "-translate-y-[0.18rem]"), false, "명성 구분선이 남아 있다")
+
+    // 닉네임·칭호는 보존 대상이다 — title을 넘겨도 배너가 임의의 칭호 UI를 새로 만들지는 않는다.
+    assert.equal(container.textContent.includes("무자비한 광대"), false, "이번 범위에서 칭호 표시를 새로 추가하지 않는다")
+  })
+}
+
+// ── F-30 AC-01/AC-06: 피의 기록은 정확히 두 항목이고 더미 기록이 남지 않았다 ──
+
+test("피의 기록: 실제 BloodRecordFrame을 마운트하면 전체 판수·승률 두 행만 그 순서로 그려진다(생존·처형 없음)", () => {
+  const { container } = render(React.createElement(BloodRecordFrame, {
+    stats: [
+      { label: "전체 판수", value: "1,245" },
+      { label: "승률", value: "66.7%" },
+    ],
+  }))
+
+  const texts = [...container.querySelectorAll("span")].map((node) => node.textContent.trim())
+  assert.deepEqual(texts, ["전체 판수", "1,245", "승률", "66.7%"], "행 순서·개수가 두 항목 계약과 다르다")
+  assert.equal(container.textContent.includes("생존 횟수"), false)
+  assert.equal(container.textContent.includes("단두대 처형"), false)
+
+  // F-30 AC-06: 두 행 모두 앱 글자 배율을 따르고, leading-none이 아니라 정상 줄 높이로
+  // 접힐 수 있어야 한다(확대 글자에서 두 줄이 되어도 줄끼리 붙지 않는다).
+  for (const node of container.querySelectorAll("span")) {
+    assert.ok(node.className.includes("app-text-scaled"), "기록 글자가 앱 배율을 따르지 않는다")
+    assert.ok(node.className.includes("leading-snug"), "기록 줄 높이가 여전히 leading-none이다")
+    assert.equal(node.className.includes("leading-none"), false)
+    assert.ok(node.className.includes("min-w-0"), "기록 행이 좁은 폭에서 줄어들 수 없다")
+  }
+  // 값 쪽은 숫자 폭이 흔들리지 않도록 tabular-nums를 유지한다.
+  assert.ok([...container.querySelectorAll("span")].at(1).className.includes("tabular-nums"))
+})
+
+test("피의 기록: stats를 넘기지 않으면 예시 더미 기록이 아니라 아무 행도 그리지 않는다", () => {
+  const { container } = render(React.createElement(BloodRecordFrame, null))
+
+  assert.deepEqual([...container.querySelectorAll("span")].map((n) => n.textContent.trim()), [])
+  // 예전 더미 값(1,245 · 788 · 112)이 실제 전적처럼 보이면 안 된다.
+  for (const dummy of ["1,245", "788", "112", "전체 판수", "생존 횟수", "단두대 처형"]) {
+    assert.equal(container.textContent.includes(dummy), false, `더미 기록(${dummy})이 남아 있다`)
+  }
 })

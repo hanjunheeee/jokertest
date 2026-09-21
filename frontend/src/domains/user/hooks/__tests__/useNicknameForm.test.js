@@ -91,15 +91,21 @@ const { useAuthStore } = await import("../../../auth/store/auth.store.js")
 const { useUserProfileStore } = await import("../../store/user.store.js")
 const { useMyProfile } = await import("../useMyProfile.js")
 
+// F-30: reputation은 응답에서 제거됐고, 표시 판수·승률은 같은 모집단의 두 필드다.
 const BASE_PROFILE_ROW = {
   nickname: "변경전닉",
-  reputation: 100,
   title: "신참",
   total_games: 10,
+  account_win_rate: 0.4,
   survival_count: 5,
   execution_count: 1,
   most_played_role: "시민",
 }
+
+const EXPECTED_STATS = [
+  { label: "전체 판수", value: "10" },
+  { label: "승률", value: "40.0%" },
+]
 
 function resetStores() {
   updateNicknameCalls = []
@@ -124,7 +130,7 @@ test("AC-03: 닉네임 변경 성공 시 재요청 없이 auth store와 마이�
   const { result } = renderHook(() => useNicknameForm())
   const { result: profileResult } = renderHook(() => useMyProfile())
 
-  assert.equal(profileResult.current.profile.reputationLabel, "변경전닉", "변경 전 화면은 원래 닉네임을 보여줘야 합니다")
+  assert.equal(profileResult.current.profile.nickname, "변경전닉", "변경 전 화면은 원래 닉네임을 보여줘야 합니다")
 
   act(() => result.current.setNickname("변경후닉"))
   await submit(result)
@@ -137,10 +143,14 @@ test("AC-03: 닉네임 변경 성공 시 재요청 없이 auth store와 마이�
   assert.equal(useAuthStore.getState().user.nickname, "변경후닉", "auth store의 현재 사용자 닉네임이 즉시 갱신되어야 합니다")
 
   // 같은 patchProfile 호출이 useMyProfile이 읽는 캐시도 갱신했으므로, 별도 재요청 없이도
-  // 마이페이지의 "현재 닉네임 표시"(reputationLabel)가 같은 렌더 사이클에서 새 값으로 바뀐다.
+  // 마이페이지의 "현재 닉네임 표시"(profile.nickname)가 같은 렌더 사이클에서 새 값으로 바뀐다.
   // getMyProfileApi가 위에서 던지도록 스텁해 뒀으므로, 재요청이 있었다면 이 assert 전에
   // unhandled rejection으로 먼저 드러난다.
-  await waitFor(() => assert.equal(profileResult.current.profile.reputationLabel, "변경후닉"))
+  await waitFor(() => assert.equal(profileResult.current.profile.nickname, "변경후닉"))
+
+  // F-30 AC-04: 닉네임만 바뀐다 — 판수·승률·칭호는 같은 캐시 patch로 흔들리면 안 된다.
+  assert.deepEqual(profileResult.current.stats, EXPECTED_STATS)
+  assert.equal(profileResult.current.profile.title, "신참")
 })
 
 test("AC-03: 닉네임 변경 실패 시 auth store와 마이페이지 표시 모두 변경 전 닉네임을 그대로 유지한다", async () => {
@@ -156,5 +166,8 @@ test("AC-03: 닉네임 변경 실패 시 auth store와 마이페이지 표시 �
   await waitFor(() => assert.equal(result.current.nicknameMsg?.type, "error"))
 
   assert.equal(useAuthStore.getState().user.nickname, "변경전닉", "실패 시 auth store는 바뀌면 안 됩니다")
-  assert.equal(profileResult.current.profile.reputationLabel, "변경전닉", "실패 시 마이페이지 표시도 바뀌면 안 됩니다")
+  assert.equal(profileResult.current.profile.nickname, "변경전닉", "실패 시 마이페이지 표시도 바뀌면 안 됩니다")
+  // 실패는 닉네임뿐 아니라 판수·승률·칭호도 그대로 두어야 한다.
+  assert.deepEqual(profileResult.current.stats, EXPECTED_STATS)
+  assert.equal(profileResult.current.profile.title, "신참")
 })

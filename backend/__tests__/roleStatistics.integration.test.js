@@ -48,18 +48,30 @@ const setupFixtureDb = (t) => {
     let users = new Map();
 
     db.GameResultPlayer = {
-        findAll: async ({ where }) => {
+        // F-30 AC-02: 실제 조회 옵션을 그대로 재현한다.
+        //   - where.won: { [Op.ne]: null } 이 실제로 실려 오는지(리포지토리가 이 조건을 빼면
+        //     잔류자 미확정 행이 판수에 섞인다 — 대역이 무조건 걸러주면 그 회귀를 못 잡는다).
+        //   - include required:true: 소속 game_results 행이 없는 참가 행은 JOIN에서 빠진다.
+        //   - completed: 업적 기준(isAchievementRewardEligibleGame)과의 차이를 비교할 수 있게
+        //     함께 싣는다 — F-30 표시 모집단은 completed를 조건으로 쓰지 않는다.
+        findAll: async ({ where, include }) => {
             const gameById = games;
+            const excludesNullWon = where.won !== undefined;
+            const requiresGame = Array.isArray(include) && include.some((entry) => entry.required === true);
             return players
-                .filter((row) => row.won !== null && row.won !== undefined)
+                .filter((row) => !excludesNullWon || (row.won !== null && row.won !== undefined))
                 .filter((row) => where.user_id === undefined || row.user_id === where.user_id)
                 .filter((row) => where.role === undefined || row.role === where.role)
+                .filter((row) => !requiresGame || games.has(row.game_id))
                 .map((row) => ({
                     user_id: row.user_id,
                     role: row.role,
                     won: row.won,
                     is_alive: row.is_alive,
-                    GameResult: { settings: gameById.get(row.game_id)?.settings ?? null },
+                    GameResult: {
+                        settings: gameById.get(row.game_id)?.settings ?? null,
+                        completed: gameById.get(row.game_id)?.completed ?? null,
+                    },
                 }));
         },
     };
@@ -82,7 +94,9 @@ const setupFixtureDb = (t) => {
     });
 
     return {
-        addGame: (gameId, settings) => games.set(gameId, { settings }),
+        // completed는 F-12 업적 자격 게이트가 쓰는 값이다. F-30 표시 모집단은 이것을 조건으로
+        // 쓰지 않으므로 기본값을 true로 두되, 중단 경기 fixture가 명시적으로 false를 줄 수 있다.
+        addGame: (gameId, settings, { completed = true } = {}) => games.set(gameId, { settings, completed }),
         addPlayer: (row) => players.push(row),
         addUser: (uuid, fields) => users.set(uuid, { uuid, ...fields }),
         reset: () => { players = []; games = new Map(); users = new Map(); },
@@ -349,6 +363,221 @@ test("A-11: 전적이 없는 계정은 highest_win_rate_role이 null이다", asy
 
     const { body } = await callController(profileController.getMyProfile, { user: { uuid: "u1" } });
     assert.equal(body.data.highest_win_rate_role, null);
+});
+
+// ── F-30 AC-02/AC-03/AC-04: 표시 전체 판수·승률의 모집단과 명성 제거 ──────────────
+
+/**
+ * 프로필 조회의 사용자 쪽 절반만 고정한다. 원본 UserStat.total_games를 일부러 표시값과 다른
+ * 수(999)로 둬서, 응답의 total_games가 **전적 조회 모집단**에서만 나오는지(원본을 그대로
+ * 흘려보내지 않는지) 같은 시험에서 함께 확인할 수 있게 한다.
+ */
+const stubProfileUser = (t, overrides = {}) => {
+    const original = userRepository.getMyProfile;
+    userRepository.getMyProfile = async (uuid) => (uuid === "u1"
+        ? {
+            nickname: "닉1",
+            profile_image_url: null,
+            UserStat: {
+                title: "신참",
+                total_games: 999,
+                survival_count: 3,
+                execution_count: 1,
+                most_played_role: "CITIZEN",
+                ...overrides,
+            },
+        }
+        : null);
+    t.after(() => { userRepository.getMyProfile = original; });
+};
+
+const getMyProfileData = async (req = { user: { uuid: "u1" } }) =>
+    (await callController(profileController.getMyProfile, req)).body.data;
+
+test("F-30 AC-02: 표시 판수·승률은 계정 전체 유효 종료 경기의 판수·승수다(최고 직업 승률도 직업별 평균도 아니다)", async (t) => {
+    const fixture = setupFixtureDb(t);
+    stubProfileUser(t);
+
+    // 서로 다른 경기 ID를 쓴다 — 한 경기에 같은 계정이 여러 번 참가하는 모양을 만들지 않는다.
+    fixture.addGame("g1", { gameSource: productionGame() });
+    fixture.addGame("g2", { gameSource: productionGame() });
+    fixture.addGame("g3", { gameSource: productionGame() });
+    fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", true));   // 시민 1승
+    fixture.addPlayer(playerRow("g2", "u1", "CITIZEN", false));  // 시민 1패
+    fixture.addPlayer(playerRow("g3", "u1", "JOKER", true));     // 광대 1승(1판)
+
+    const data = await getMyProfileData();
+
+    assert.equal(data.total_games, 3);
+    assert.equal(data.account_win_rate, 2 / 3);
+    // 최고 승률 직업은 광대(1/1=100%)다 — 계정 승률과 서로 독립이어야 한다.
+    assert.equal(data.highest_win_rate_role, "광대");
+    assert.notEqual(data.account_win_rate, 1, "특정 직업의 최고 승률을 계정 승률로 쓰면 안 된다");
+    assert.notEqual(data.account_win_rate, 0.75, "직업별 승률의 평균(0.5·1.0)을 계정 승률로 쓰면 안 된다");
+    // 원본 UserStats.total_games(999)를 그대로 흘려보내지 않는다.
+    assert.notEqual(data.total_games, 999);
+});
+
+test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 경기·타 계정 행은 들어가지 않는다", async (t) => {
+    const fixture = setupFixtureDb(t);
+    stubProfileUser(t);
+
+    fixture.addGame("g1", { gameSource: productionGame() });
+    fixture.addGame("g2", { gameSource: productionGame() });
+    fixture.addGame("g3", { gameSource: productionGame() });
+    fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", true));
+    fixture.addPlayer(playerRow("g2", "u1", "CITIZEN", false));
+    fixture.addPlayer(playerRow("g3", "u1", "JOKER", true));
+
+    // 중단 경기(completed=false)의 이탈자는 패배가 확정된다 — 표시 모집단은 completed를
+    // 조건으로 쓰지 않으므로 이 한 판이 들어와 4판·2승이 된다.
+    fixture.addGame("abort-1", { gameSource: productionGame() }, { completed: false });
+    fixture.addPlayer(playerRow("abort-1", "u1", "GUARD", false, false));
+
+    let data = await getMyProfileData();
+    assert.equal(data.total_games, 4);
+    assert.equal(data.account_win_rate, 1 / 2);
+
+    // 여기부터는 전부 불변이어야 한다.
+    fixture.addPlayer(playerRow("abort-1", "u1", "DOCTOR", null, true));      // 잔류자(미확정)
+    fixture.addGame("dev-1", { gameSource: developmentGame() });
+    fixture.addPlayer(playerRow("dev-1", "u1", "JOKER", true));               // 개발 경기 승리
+    fixture.addPlayer(playerRow("g1", "other", "CITIZEN", true));             // 타 계정
+    fixture.addPlayer(playerRow("no-such-game", "u1", "CITIZEN", true));      // JOIN 대상 없음
+
+    data = await getMyProfileData();
+    assert.equal(data.total_games, 4, "잔류자·개발 경기·타 계정·JOIN 대상 없는 행이 표시 판수에 섞였다");
+    assert.equal(data.account_win_rate, 1 / 2);
+
+    // settings.gameSource가 아예 없는 과거 경기는 운영 기록으로 소급 집계된다(A-06/A-07).
+    fixture.addGame("legacy-1", {});
+    fixture.addPlayer(playerRow("legacy-1", "u1", "CITIZEN", true));
+
+    data = await getMyProfileData();
+    assert.equal(data.total_games, 5);
+    assert.equal(data.account_win_rate, 3 / 5);
+});
+
+test("F-30 AC-02: DB의 0/1 표현도 boolean과 같은 판수·승률을 만든다", async (t) => {
+    const fixture = setupFixtureDb(t);
+    stubProfileUser(t);
+
+    fixture.addGame("g1", { gameSource: productionGame() });
+    fixture.addGame("g2", { gameSource: productionGame() });
+    fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", 1));
+    fixture.addPlayer(playerRow("g2", "u1", "CITIZEN", 0));
+
+    const data = await getMyProfileData();
+    assert.equal(data.total_games, 2);
+    assert.equal(data.account_win_rate, 0.5);
+});
+
+test("F-30 AC-03: 전적이 전혀 없는 계정은 0판·승률 0이다(원본 판수 999는 쓰지 않는다)", async (t) => {
+    setupFixtureDb(t);
+    stubProfileUser(t);
+
+    const data = await getMyProfileData();
+    assert.equal(data.total_games, 0);
+    assert.equal(data.account_win_rate, 0, "0판에서 0으로 나눈 NaN이 나가면 안 된다");
+    assert.equal(Number.isFinite(data.account_win_rate), true);
+});
+
+test("F-30 AC-04: 프로필 응답에 reputation 키 자체가 없고 나머지 필드는 그대로다", async (t) => {
+    const fixture = setupFixtureDb(t);
+    // 원본에 명성이 남아 있는 계정이어도 응답에는 실리지 않아야 한다.
+    stubProfileUser(t, { reputation: 1280 });
+    fixture.addGame("g1", { gameSource: productionGame() });
+    fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", true));
+
+    const data = await getMyProfileData();
+
+    assert.equal(Object.hasOwn(data, "reputation"), false, "명성이 아직 응답에 실린다");
+    assert.equal(data.nickname, "닉1");
+    assert.equal(data.title, "신참");
+    assert.equal(data.survival_count, 3);
+    assert.equal(data.execution_count, 1);
+    assert.equal(data.most_played_role, "CITIZEN");
+    assert.equal(typeof data.account_win_rate, "number");
+});
+
+test("F-30 AC-02: 내 프로필도 req.user.uuid만 본다 — body/query의 다른 uuid는 무시된다", async (t) => {
+    const fixture = setupFixtureDb(t);
+    stubProfileUser(t);
+    fixture.addGame("g1", { gameSource: productionGame() });
+    for (let i = 0; i < 5; i += 1) fixture.addPlayer(playerRow("g1", "victim", "CITIZEN", true));
+    fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", false));
+
+    const data = await getMyProfileData({
+        user: { uuid: "u1" },
+        body: { user_id: "victim" },
+        query: { user_id: "victim" },
+    });
+
+    assert.equal(data.total_games, 1, "다른 계정의 전적이 내 표시 판수에 들어왔다");
+    assert.equal(data.account_win_rate, 0);
+});
+
+test("F-30 AC-03: 전적 조회가 실패하면 0판 성공 응답으로 위장하지 않고 오류로 이어진다", async (t) => {
+    setupFixtureDb(t);
+    stubProfileUser(t);
+    db.GameResultPlayer.findAll = async () => { throw new Error("전적 조회 실패"); };
+
+    await assert.rejects(
+        () => callController(profileController.getMyProfile, { user: { uuid: "u1" } }),
+        /전적 조회 실패/,
+        "조회 실패가 total_games=0 성공 응답으로 바뀌면 안 된다",
+    );
+});
+
+test("F-30 AC-03: 사용자가 없으면 여전히 404이고 전적 집계로 넘어가지 않는다", async (t) => {
+    setupFixtureDb(t);
+    stubProfileUser(t);
+
+    const { status, body } = await callController(profileController.getMyProfile, { user: { uuid: "nobody" } });
+    assert.equal(status, 404);
+    assert.equal(body.success, false);
+});
+
+// ── 저장 레코드 → 표시 모집단 왕복 ───────────────────────────────────────────────
+
+test("F-30 AC-02: buildGameResultRecord가 만든 정상·중단 레코드가 표시 판수·승률에 그대로 반영된다", async (t) => {
+    const fixture = setupFixtureDb(t);
+    stubProfileUser(t);
+
+    const endedSession = {
+        id: "win-1", roomId: "room-1", phase: "ENDED", dayIndex: 1, jokerCount: 0,
+        roleComposition: { JOKER: 0, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, CITIZEN: 1 },
+        timerSettings: { dayDiscussionTime: null, dayVoteTime: null, nightActionTime: null, roleNightActionTimes: {} },
+        startedAt: 1, endedAt: 2, winResult: { winner: "CITIZEN" }, gameSource: "production",
+        players: new Map([["u1", { uuid: "u1", nickname: "닉1", role: "CITIZEN", team: "CITIZEN", alive: true, deathReason: null }]]),
+    };
+    const abortedSession = {
+        id: "abort-2", roomId: "room-2", phase: "NIGHT", dayIndex: 1, jokerCount: 0,
+        roleComposition: { JOKER: 0, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, CITIZEN: 2 },
+        timerSettings: { dayDiscussionTime: null, dayVoteTime: null, nightActionTime: null, roleNightActionTimes: {} },
+        startedAt: 3, gameSource: "production",
+        players: new Map([
+            ["u1", { uuid: "u1", nickname: "닉1", role: "GUARD", team: "CITIZEN", alive: true, deathReason: null }],
+            ["u2", { uuid: "u2", nickname: "닉2", role: "CITIZEN", team: "CITIZEN", alive: true, deathReason: null }],
+        ]),
+    };
+
+    for (const [session, options] of [
+        [endedSession, { completed: true }],
+        [abortedSession, { completed: false, disconnectedUuid: "u1" }],
+    ]) {
+        const record = buildGameResultRecord(session, options);
+        fixture.addGame(record.result.id, record.result.settings, { completed: record.result.completed });
+        for (const player of record.players) fixture.addPlayer(player);
+    }
+
+    // u1: 정상 승리 1 + 중단 이탈 패배 1 = 2판 1승. u2(중단 잔류자, won=null)는 0판이다.
+    const data = await getMyProfileData();
+    assert.equal(data.total_games, 2);
+    assert.equal(data.account_win_rate, 0.5);
+
+    const stayerStats = await gameResultRepository.getMyRoleStatistics("u2");
+    assert.equal(stayerStats.reduce((sum, entry) => sum + entry.games, 0), 0, "중단 잔류자는 표시 판수가 0이어야 한다");
 });
 
 // ── 저장→조회 왕복: buildGameResultRecord가 만든 settings.gameSource를 그대로 읽는다 ──
