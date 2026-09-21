@@ -254,7 +254,25 @@ const hasClassFragment = (container, fragment) =>
   [...container.querySelectorAll("*")].some((node) =>
     typeof node.className === "string" && node.className.includes(fragment))
 
-const BANNER_PROFILE = { nickname: "여덟자닉네임입", title: "무자비한 광대" }
+/**
+ * F-30 AC-06(CODEX 재검토): **공백이 하나도 없는 최대 길이 닉네임**을 쓴다.
+ * 닉네임 상한은 8자(backend/validation/signupValidation.js NICKNAME_MAX_LENGTH)이고,
+ * 한국어 닉네임은 공백 없이 8자를 채우는 경우가 가장 흔하다 — 이 입력이 "폭이 모자랄 때
+ * 어디서 접을 것인가"를 실제로 묻는 최악 입력이다. 공백이 있는 닉네임으로 시험하면
+ * 띄어쓰기에서 접히므로 줄바꿈 규칙이 잘못돼도 드러나지 않는다.
+ */
+const NO_SPACE_MAX_NICKNAME = "여덟자짜리닉네임"
+const BANNER_PROFILE = { nickname: NO_SPACE_MAX_NICKNAME, title: "무자비한 광대" }
+
+/**
+ * 공백 없는 한 덩어리 텍스트를 영역 안에 머물게 할 수 있는 규칙들. 줄바꿈 계열
+ * (overflow-wrap:anywhere · break-words · break-all)이거나 말줄임 계열(truncate ·
+ * line-clamp)이어야 한다.
+ *
+ * break-keep(word-break:keep-all)은 **여기에 없다** — 그것은 한국어 글자 사이의 줄바꿈을
+ * 오히려 금지하는 규칙이라, 공백 없는 닉네임에서는 폭 제한이 있어도 넘침을 막지 못한다.
+ */
+const IN_BOUNDS_TEXT_RULES = ["[overflow-wrap:anywhere]", "break-words", "break-all", "truncate", "line-clamp"]
 
 for (const [label, props] of [
   ["로비", { showText: true, showProfilePortrait: true, showSettingsIcon: true, onSettingsClick: () => {}, onClick: () => {} }],
@@ -266,15 +284,32 @@ for (const [label, props] of [
 
     const { container } = render(React.createElement(MyPageBannerButton, { ...props, profile: BANNER_PROFILE }))
 
-    // 닉네임은 그대로 보인다.
-    assert.deepEqual(paragraphTexts(container), ["여덟자닉네임입"], "배너 텍스트 문단은 닉네임 하나뿐이어야 한다")
+    // 닉네임은 그대로 보인다(8자 전체가 잘려 사라지지 않는다 — 말줄임은 표시 규칙이지
+    // 문자열을 버리는 것이 아니다).
+    assert.deepEqual(paragraphTexts(container), [NO_SPACE_MAX_NICKNAME], "배너 텍스트 문단은 닉네임 하나뿐이어야 한다")
 
-    // F-30 AC-06: 앱 글자 배율을 계속 따르고(app-text-scaled), 폭이 모자라면 잘리지 않고
-    // 영역 안에서 접힌다(max-w-full + break-keep) — 확대 글자·좁은 화면의 넘침을 막는다.
+    // F-30 AC-06: 앱 글자 배율을 계속 따르고(app-text-scaled), 폭을 넘지 않는다(max-w-full).
     const nicknameNode = container.querySelector("p")
-    for (const fragment of ["app-text-scaled", "max-w-full", "break-keep"]) {
-      assert.ok(nicknameNode.className.includes(fragment), `닉네임에 ${fragment} 계약이 없다`)
+    const nicknameClass = nicknameNode.className
+    for (const fragment of ["app-text-scaled", "max-w-full"]) {
+      assert.ok(nicknameClass.includes(fragment), `닉네임에 ${fragment} 계약이 없다`)
     }
+
+    // 그리고 **공백 없는 최대 길이 닉네임**(위 입력)이 실제로 영역 안에 머물 수 있는 규칙이
+    // 그 요소에 걸려 있어야 한다. 폭 제한만으로는 쪼갤 수 없는 한 덩어리를 가두지 못한다.
+    assert.ok(
+      IN_BOUNDS_TEXT_RULES.some((rule) => nicknameClass.includes(rule)),
+      `공백 없는 닉네임을 영역 안에 두는 줄바꿈·말줄임 규칙이 없다: ${nicknameClass}`,
+    )
+
+    // break-keep(word-break:keep-all) **단독** 조합을 명시적으로 금지한다 — 이전 구현이 그
+    // 조합이었고, 한국어 글자 사이의 줄바꿈을 막아 오히려 넘침을 만들었다. 남겨 두려면
+    // 반드시 글자 사이를 다시 열어 주는 규칙(anywhere/break-all)이나 말줄임이 함께 있어야 한다.
+    assert.equal(
+      nicknameClass.includes("break-keep") && !IN_BOUNDS_TEXT_RULES.some((rule) => nicknameClass.includes(rule)),
+      false,
+      "break-keep 단독으로는 공백 없는 한글 닉네임이 영역 안에서 접히지 않는다",
+    )
 
     // 명성 이름도 값도 화면 어디에도 없다.
     assert.equal(/명성/.test(container.textContent), false, "명성 이름이 아직 그려진다")
