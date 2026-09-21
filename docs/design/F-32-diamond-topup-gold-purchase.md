@@ -32,7 +32,7 @@
 | 메서드·경로 | 요청 | 응답 | 담당 |
 |---|---|---|---|
 | `GET /economy/currency-products?kind=` | — | `{ok:true, products:[{productId, kind, displayName, payCurrency, payAmount, grantCurrency, grantAmount, bonusAmount, version}]}` — 판매 중·유효한 것만, `sort_order` 순. 없으면 빈 배열. DB 실패는 5xx | CB |
-| `POST /economy/topup/orders` | `{productId, version}` | `{ok:true, orderId, amount, orderName, clientKey}` / `PRODUCT_NOT_FOUND`·`PRODUCT_STOPPED`·`PRODUCT_VERSION_MISMATCH`(+현재 상품) | CB |
+| `POST /economy/topup/orders` | `{productId, version}` | `{ok:true, orderId, amount, orderName, clientKey}` / `PRODUCT_NOT_FOUND`·`PRODUCT_STOPPED`·`PRODUCT_VERSION_MISMATCH`(+현재 상품)·`CONFIG_MISSING`(키 미설정 — 주문을 저장하지 않는다) | CB |
 | `POST /economy/topup/orders/:orderId/confirm` | `{paymentKey, amount}` | `{ok:true, status:'GRANTED', balanceDiamond}` / `status:'PENDING_GRANT'`(승인은 됐고 지급 재시도 중) / `AMOUNT_MISMATCH`·`ORDER_NOT_FOUND`·`NOT_OWNER`·`PAYMENT_FAILED`·`CONFIG_MISSING` | CB |
 | `GET /economy/topup/orders/:orderId` | — | `{ok:true, status:'CREATED'｜'CONFIRMING'｜'PENDING_GRANT'｜'GRANTED'｜'FAILED'｜'CANCELED'｜'EXPIRED', …}` — 응답 유실 복구용 | CB |
 | `POST /economy/gold-purchases` | `{productId, version, referenceEventId}` | `{ok:true, balanceGold, balanceDiamond}` / `INSUFFICIENT_DIAMOND`·`PRODUCT_*` — 같은 `referenceEventId` 재시도는 저장된 결과. 결과 조회는 기존 `GET /economy/purchases/:referenceEventId` | CC |
@@ -54,6 +54,10 @@
 - API 함수는 상점 도메인의 기존 API 모듈 관례를 따른다(`storePurchase.store.js` 옆).
 
 ### 2-5a. 충전·구매 화면의 상태 전이 (CH)
+> **운영자 결정 2026-09-22 (AC-04 '설정 대기'의 판정 입력)**: 화면은 결제 키 유무를 미리 알 수 없다(키는 서버 환경 설정에만 있고, `GET /economy/currency-products`는 상품만 준다). **주문 생성 요청이 키 유무의 판정 입력이다** — `POST /economy/topup/orders`가 `CONFIG_MISSING`(503)으로 거절되면 버튼이 '설정 대기'가 된다. AC-04의 "결제 흐름이 시작되지 않는다"는 **결제창(SDK) 호출 0회 · confirm 0회 · 주문 미저장**을 뜻하며, 주문 생성 요청 1회는 허용된다. 서버 계약은 바꾸지 않고, 프런트 환경변수에 키를 따로 두지 않는다(클라이언트 키는 주문 응답의 `clientKey`만 쓴다).
+>
+> **파일 편성(같은 날)**: CH는 생산 파일 6개 + 시험 파일 2개(총 8개) 편성을 그대로 허용한다. '파일 3~5개'는 분할할 때의 목안이지 상한이 아니다 — 기능·시험을 빼거나 다시 쪼개지 않는다.
+
 > 아래 표는 2026-09-21 추가 — F-27b(CE) 첫 심사의 생산 코드 결함 2건이 모두 설계도가 한 줄로만 적은 화면 동작(사건 순서·오류 분기)에서 나왔다. 화면은 **상태 × 사건 → 다음 상태·부작용**으로 적는다. 표에 없는 조합은 '상태 유지·부작용 없음'이다. **서버 응답이 계약에 없는 형태(200인데 `ok`가 true가 아님, 알 수 없는 `code` 등)면 성공으로도 특정 실패로도 단정하지 않는다 — 통신 실패와 같은 재시도 가능 상태로 처리하고 입력을 유지한다**(F-29c 첫 심사 지적). 표에 여러 사유가 한 상태로 모이는 경우(예: `INVALID`·`EXPIRED`·`USED` → `linkInvalid`)에도 **사유별로 다른 안내 문구**를 보여 준다.
 
 **다이아 충전**
@@ -65,6 +69,7 @@
 | `creatingOrder` | `ok:true` | `paying` | 토스 **테스트** 결제창 호출(`clientKey`, `orderId`, `amount`는 응답 값만 사용) |
 | `creatingOrder` | `PRODUCT_VERSION_MISMATCH` | `priceChanged` | 새 가격 표시 + 다시 확인받기. 자동으로 새 가격에 주문하지 않는다 |
 | `creatingOrder` | `PRODUCT_NOT_FOUND`·`PRODUCT_STOPPED` | `idle` | 상품 목록 재조회 + 안내 |
+| `creatingOrder` | `CONFIG_MISSING` | `configPending` | 충전 버튼을 **'설정 대기'**로 표시한다. 결제창(SDK) 호출 0회 · confirm 0회. 서버는 주문을 저장하기 전에 거절하므로 주문·결제·지급이 생기지 않는다. 재클릭해도 같은 화면 수명 동안은 주문 요청을 다시 보내지 않는다(상품 목록을 다시 불러오면 풀린다) |
 | `creatingOrder` | 네트워크 오류·5xx | `failed` | 재시도 |
 | `paying` | 결제창 닫힘·취소·실패 복귀 | `canceled` | **confirm을 부르지 않는다.** 미지급 안내 |
 | `paying` | 성공 복귀(`paymentKey`,`orderId`,`amount`) | `confirming` | `POST …/confirm` 1회 |
