@@ -1148,9 +1148,33 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     await insertOrder('order-null-1', null);
     await insertOrder('order-null-2', null);
     await insertOrder('order-key-1', 'same-key');
-    await assert.rejects(() => insertOrder('order-key-2', 'same-key'), /Duplicate|unique/i);
-    await assert.rejects(() => insertOrder('order-key-1', 'other-key'), /Duplicate|PRIMARY/i);
-    await assert.rejects(() => insertOrder('order-orphan', null, crypto.randomUUID()), /foreign key/i);
+    // Sequelize는 원본 DB 오류를 감싸고 최상위 message를 'Validation error'로 바꾸므로 오류 객체의
+    // 이름과 원본(parent/original)의 code·message를 검사한다.
+    const assertWrappedDbError = async (run, { name, code, messagePattern }) => {
+        let caught = null;
+        try { await run(); } catch (err) { caught = err; }
+        assert.ok(caught, '오류가 나야 한다');
+        assert.equal(caught.name, name);
+        const original = caught.parent ?? caught.original;
+        assert.ok(original, '원본 DB 오류가 있어야 한다');
+        assert.equal(original.code, code);
+        assert.match(String(original.message), messagePattern);
+    };
+    await assertWrappedDbError(() => insertOrder('order-key-2', 'same-key'), {
+        name: 'SequelizeUniqueConstraintError',
+        code: 'ER_DUP_ENTRY',
+        messagePattern: /Duplicate entry .*economy_topup_orders_payment_key_unique/,
+    });
+    await assertWrappedDbError(() => insertOrder('order-key-1', 'other-key'), {
+        name: 'SequelizeUniqueConstraintError',
+        code: 'ER_DUP_ENTRY',
+        messagePattern: /Duplicate entry .*PRIMARY/,
+    });
+    await assertWrappedDbError(() => insertOrder('order-orphan', null, crypto.randomUUID()), {
+        name: 'SequelizeForeignKeyConstraintError',
+        code: 'ER_NO_REFERENCED_ROW_2',
+        messagePattern: /foreign key constraint fails/i,
+    });
     assert.equal(Number((await one("SELECT COUNT(*) AS n FROM economy_topup_orders WHERE product_id = 'gone-product'", {})).n), 3, '존재하지 않는 상품 ID의 주문도 저장된다(상품 FK 없음)');
 
     const foreignKeys = await queryInterface.getForeignKeyReferencesForTable('economy_topup_orders');
