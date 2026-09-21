@@ -262,6 +262,9 @@ test('정상 경로에서는 keepTables를 뺀 모든 관리 테이블이 자식
 
     assert.equal(result.cleaned, true);
     assert.deepEqual(sequelize.deleteCalls, [
+        // F-31a: signup_email_verifications(0016)는 users를 참조하지 않는 독립 테이블이라
+        // isolatedTestDb.js의 dropOrder 맨 앞에 온다(어디서 비워도 FK 제약에 걸리지 않는다).
+        'signup_email_verifications',
         'external_identities', 'oauth_states', 'social_signup_intents',
         'refresh_token_history',
         'user_sessions', 'users',

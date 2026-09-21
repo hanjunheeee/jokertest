@@ -49,8 +49,13 @@ app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 // errorHandler.js의 같은 판정(대소문자·후행 슬래시 무시, 쿼리 제외)과 맞춘다.
 const isPasswordResetScopedPath = (req) => String(req.originalUrl || req.url || '')
     .split('?')[0].replace(/\/+$/, '').toLowerCase().startsWith('/auth/password-reset');
+// F-31a(AC-06): 가입(이메일 인증 발송·확인 포함) 경로도 같은 원칙으로 no-store를 건다 —
+// 이 경로들은 원문을 쿼리에 싣지 않지만(전부 POST 본문), 방어적으로 같은 범위 판정을
+// 재사용해 향후 하위 경로가 늘어나도 빠짐없이 적용되게 한다.
+const isSignupScopedPath = (req) => String(req.originalUrl || req.url || '')
+    .split('?')[0].replace(/\/+$/, '').toLowerCase().startsWith('/auth/signup');
 app.use((req, res, next) => {
-    if (isPasswordResetScopedPath(req)) res.set('Cache-Control', 'no-store');
+    if (isPasswordResetScopedPath(req) || isSignupScopedPath(req)) res.set('Cache-Control', 'no-store');
     next();
 });
 
@@ -61,7 +66,9 @@ app.use(cookieParser());
 // 경로를 고정 문자열로 남긴다 — 쿼리(?token=…)와 하위 경로·변형이 로그에 원문 그대로
 // 남으면 서버 로그 자체가 토큰 유출 경로가 된다.
 morgan.token("safe-url", (req) => (
-    isPasswordResetScopedPath(req) ? "/auth/password-reset/[REDACTED]" : (req.originalUrl || req.url)
+    isPasswordResetScopedPath(req) ? "/auth/password-reset/[REDACTED]"
+        : isSignupScopedPath(req) ? "/auth/signup/[REDACTED]"
+        : (req.originalUrl || req.url)
 ));
 app.use(morgan(":method :safe-url :status :response-time ms"));
 // 리버스 프록시(Nginx 등) 환경에서 x-forwarded-for 헤더로 실제 클라이언트 IP를 읽기 위함

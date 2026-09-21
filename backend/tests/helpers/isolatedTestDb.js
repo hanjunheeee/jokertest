@@ -31,6 +31,11 @@ const addNotifications = require('../../db/migrations/0012-add-notifications');
 // 포함시킨다 — f19 스위트가 이 세 테이블을 만들면, 그 사실을 모르는 다른 스위트의
 // resetSchema()가 "모르는 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다.
 const addF19FriendsInvites = require('../../db/migrations/0013-f19-friends-invites');
+// F-31a: signup_email_verifications(0016)도 같은 이유로 항상 관리 목록에 포함시킨다 —
+// f31a 스위트가 이 테이블을 만들면, 그 사실을 모르는 다른 스위트(authService.signup을
+// 실제로 호출하는 f02·f08·f29b 포함)의 resetSchema()가 "모르는 테이블"로 오판해 거부하지
+// 않도록 여기서 한 번만 등록한다. users를 참조하는 FK가 없어 드롭 순서는 자유롭다.
+const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
 
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
@@ -119,10 +124,14 @@ const buildManagedSchema = ({
         ...achievementGrantTables,
         ...notificationTables,
         ...f19FriendTables,
+        addSignupEmailVerification.TABLE_NAME,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        // signup_email_verifications는 users를 참조하지 않는 독립 테이블이라 어디서
+        // 드롭해도 FK 제약에 걸리지 않는다.
+        addSignupEmailVerification.TABLE_NAME,
         // F-19의 세 테이블도 users를 참조하는 자식이라 baseline 역순보다 먼저 드롭한다.
         ...f19FriendTables,
         // notifications는 users를 참조하는 자식이라 baseline 역순(users가 마지막)보다 먼저

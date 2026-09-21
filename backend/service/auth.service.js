@@ -6,6 +6,8 @@ const { createError }         = require("../utils/appError");
 const { validateSignupPayload } = require("../validation/signupValidation");
 const db                      = require("../models");
 const economyService          = require("./economy.service");
+const signupEmailVerificationService = require("./signupEmailVerification.service");
+const { normalizeEmail: normalizeSignupEmail } = require("../validation/signupEmailVerificationValidation");
 const {
     PERSISTENT_SESSION_MAX_AGE_MS,
     ACCESS_TOKEN_SHORT_TTL_SECONDS,
@@ -88,14 +90,12 @@ exports.signup = async (userData) => {
     }
     const { email: normalizedEmail, password, nickname: normalizedNickname, birthDate } = parsed.value;
 
-    const existingUser = await userRepository.findByEmail(normalizedEmail);
-    if (existingUser) {
-        throw createError("이미 사용 중인 이메일입니다.", 409);
-    }
-
-    const existingNickname = await userRepository.findByNickname(normalizedNickname);
-    if (existingNickname) {
-        throw createError("이미 사용 중인 닉네임입니다.", 409);
+    // F-31a(AC-03): 가입 증명 토큰 없이는 가입 자체가 성립하지 않는다. 이 검사는 값의
+    // "모양"(문자열 존재 여부)만 본다 — 실제 유효성(발급 목적·만료·소비 여부)은 아래
+    // consumeSignupProof가 잠금 아래에서 판정한다.
+    const signupProof = userData?.signupProof;
+    if (typeof signupProof !== "string" || !signupProof) {
+        throw createError("이메일 인증이 필요합니다.", 401, "SIGNUP_PROOF_REQUIRED");
     }
 
     const password_hash = await hashPassword(password);
@@ -112,12 +112,36 @@ exports.signup = async (userData) => {
     // 커밋되지 않은 신규 user.uuid를 참조하는 경쟁 트랜잭션을 새로 열지 않는다 — DB
     // 오류로 지급이 실패하면 계정 생성 자체도 함께 롤백되어, 필수 지급 없이 계정만
     // 만들어지는 상태가 남지 않는다.
+    //
+    // F-31a(AC-04): 증명 소비를 이 트랜잭션의 첫 자격 검사로 둔다 — 동일한 증명으로
+    // 동시에 여러 signup()이 들어와도, signup_email_verifications 행의 FOR UPDATE 잠금이
+    // 직렬화해 정확히 하나만 소비에 성공하고 나머지는 계정을 만들기 전에 거부된다(이미
+    // 가입된 이메일의 재제출도 같은 "소비된 증명" 오류로 일관되게 거부된다).
     return await userRepository.withTransaction(async (transaction) => {
+        const proofResult = await signupEmailVerificationService.consumeSignupProof(
+            { email: normalizeSignupEmail(normalizedEmail), signupProof },
+            { transaction },
+        );
+        if (!proofResult.ok) {
+            throw createError("이메일 인증 증명이 유효하지 않습니다.", 401, proofResult.code ?? "SIGNUP_PROOF_INVALID");
+        }
+
+        const existingUser = await userRepository.findByEmail(normalizedEmail, { transaction });
+        if (existingUser) {
+            throw createError("이미 사용 중인 이메일입니다.", 409);
+        }
+
+        const existingNickname = await userRepository.findByNickname(normalizedNickname);
+        if (existingNickname) {
+            throw createError("이미 사용 중인 닉네임입니다.", 409);
+        }
+
         const user = await userRepository.createUser({
             email: normalizedEmail,
             password_hash,
             nickname: normalizedNickname,
             birth_date: birthDate,
+            email_verified: true,
         }, { transaction });
         await userRepository.createUserStats(user.uuid, { transaction });
         await economyService.ensureDefaultEntitlements(user.uuid, db, { transaction });

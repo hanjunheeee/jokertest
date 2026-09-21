@@ -46,7 +46,10 @@ const addF19FriendsInvites = require('../db/migrations/0013-f19-friends-invites'
 const addFindIdRequests = require('../db/migrations/0014-find-id-requests');
 // F-29b: 비밀번호 재설정 토큰 해시 전환 + users.has_local_password(§2-3a) 추가·backfill.
 const addPasswordResetTokens = require('../db/migrations/0015-password-reset-tokens');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens];
+// F-31a: 가입 이메일 인증(인증번호·가입 증명) 상태 테이블도 실제 배포 명령에서 순서대로
+// 적용한다(signupEmailVerification.service.js가 이 테이블에 직접 INSERT/UPDATE한다).
+const addSignupEmailVerification = require('../db/migrations/0016-signup-email-verification');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;
