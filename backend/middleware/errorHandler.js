@@ -53,14 +53,27 @@ exports.globalErrorHandler = (err, req, res, next) => {
             return res.status(500).json({ ok: false, code: 'SERVER_ERROR' });
         }
         // code가 없는 오류: 가입 필드 검증 실패(400, INVALID_INPUT)와, 이미 사용 중인
-        // 이메일/닉네임(409 — auth.service.js·user.repositories.js가 SQL·요청 입력을
-        // 그대로 담지 않고 직접 고정한 안전한 문자열만 던진다)은 이번 변경 이전부터의
-        // 기존 status·문구를 그대로 유지한다(회귀 금지). 그 밖(404·예상하지 못한 500 등)은
-        // SERVER_ERROR로 수렴시키고, err.message·err.stack·err.body 어느 것도 로그·응답에
-        // 담지 않는다.
+        // 이메일/닉네임(409 — auth.service.js:131,136이 직접 고정한 안전한 문자열만
+        // 던진다)은 이번 변경 이전부터의 기존 status·문구를 그대로 유지한다(회귀 금지).
+        // 그 밖(404·예상하지 못한 500 등)은 SERVER_ERROR로 수렴시키고, err.message·
+        // err.stack·err.body 어느 것도 로그·응답에 담지 않는다.
+        //
+        // F-31a(AC-06 CODEX-5 대응): code 없는 409를 err.message 그대로 응답하면, 이
+        // 분기가 앞으로 다른 code 없는 409(예: user.repositories.js의 toConflictError가
+        // 경합에서 던지는 일반 충돌 메시지)까지 무검증으로 통과시켜 임의의 오류 원문이
+        // 노출된다 — code가 있는 오류를 허용 목록으로 좁힌 것(위 SIGNUP_SCOPED_ALLOWED_
+        // ERROR_CODES)과 같은 원칙으로, 여기서도 실제로 시험이 보존을 요구하는 두 고정
+        // 문구만 허용 목록에 올리고 그 밖은 SERVER_ERROR로 수렴시킨다.
+        const KNOWN_SIGNUP_DUPLICATE_MESSAGES = new Set([
+            "이미 사용 중인 이메일입니다.",
+            "이미 사용 중인 닉네임입니다.",
+        ]);
         const rawStatus = err.status || err.statusCode;
         if (rawStatus === 409) {
-            return res.status(409).json({ success: false, message: err.message });
+            if (typeof err.message === 'string' && KNOWN_SIGNUP_DUPLICATE_MESSAGES.has(err.message)) {
+                return res.status(409).json({ success: false, message: err.message });
+            }
+            return res.status(500).json({ ok: false, code: 'SERVER_ERROR' });
         }
         const status = rawStatus === 400 ? 400 : 500;
         const code = status === 400 ? 'INVALID_INPUT' : 'SERVER_ERROR';

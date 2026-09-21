@@ -817,6 +817,33 @@ test("AC-06: 기존 닉네임 중복(409, code 없음)은 SERVER_ERROR로 뭉개
     assert.deepEqual(body, { success: false, message: "이미 사용 중인 닉네임입니다." }, "회귀 이전과 같은 문구를 유지해야 한다");
 });
 
+// 재검토 지적(CODEX-5): 위 두 시험이 보존을 확인하는 것은 "알려진 고정 문구"뿐이다 —
+// errorHandler.js가 code 없는 409 전부를 err.message 그대로 내보내면, 이 두 고정 문구가
+// 아닌 임의의 code 없는 409(예: 다른 저장소·서비스 코드가 향후 원본을 담은 메시지로 409를
+// 던지는 경우)의 원문도 그대로 새 나간다. 허용 목록에 없는 임의의 409 메시지가 실제로
+// 차단되는지 직접 확인한다.
+test("AC-06: 알려진 중복 문구가 아닌 임의의 code 없는 409는 원본 메시지를 응답에 남기지 않는다", async (t) => {
+    const secretMessage = `내부 전용 충돌 진단 메시지-${crypto.randomUUID()}`;
+    t.mock.method(authService, "signup", async () => {
+        const error = new Error(secretMessage);
+        error.status = 409;
+        // 의도적으로 code를 부여하지 않는다 — errorHandler.js의 code 없는 409 분기를 탄다.
+        throw error;
+    });
+
+    const base = await startServer(t);
+    const res = await postSignup(base, {
+        email: `ac06-unknown409-${crypto.randomUUID()}@example.com`,
+        ...VALID_SIGNUP_FIELDS,
+        signupProof: "irrelevant-because-signup-is-stubbed",
+    });
+    const text = await res.text();
+
+    assert.equal(res.status, 500, "허용 목록 밖 409는 SERVER_ERROR로 수렴해야 한다");
+    assert.deepEqual(JSON.parse(text), { ok: false, code: "SERVER_ERROR" });
+    assert.equal(text.includes(secretMessage), false, "허용 목록 밖 409의 원본 메시지가 응답에 남았습니다");
+});
+
 // ── AC-06: 실제 backend/index.js의 콘솔·접근 로그(morgan 포함)에도 원문이 없다 ─────
 //
 // 위 시험들은 이 파일 안의 최소 express 앱(auth 라우터만 마운트)에 대한 "응답 본문"만
