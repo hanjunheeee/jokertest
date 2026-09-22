@@ -19,11 +19,11 @@ export const INGAME_PARCHMENT_IMAGE_URL = "/frame/양피지 모달.png".normaliz
 
 /**
  * 파치먼트 프레임 — 이미지의 가로세로비(3:2)를 그대로 유지한다.
- * 폭은 데스크톱(40rem) · 좁은 화면(92vw) · 낮은 화면(132svh = 88svh × 3/2) 중 가장 작은 값으로
+ * 폭은 데스크톱(40rem) · 좁은 화면(92cqw) · 낮은 화면(132svh = 88svh × 3/2) 중 가장 작은 값으로
  * 정해지므로 어느 방향으로도 뷰포트를 넘지 않는다(가로 스크롤 없음).
  */
 export const INGAME_PARCHMENT_FRAME_CLASS =
-  "pointer-events-auto relative aspect-[3/2] w-[min(40rem,92vw,132svh)] select-none"
+  "pointer-events-auto relative aspect-[3/2] w-[min(40rem,92cqw,132svh)] select-none"
 
 /** 프레임을 가득 채우되 비율을 왜곡하지 않는 배경 이미지 */
 export const INGAME_PARCHMENT_IMAGE_CLASS =
@@ -42,7 +42,7 @@ export const INGAME_PARCHMENT_CONTENT_CLASS =
  * (이미지가 없으면 프레임 높이가 잡히지 않으므로 일반 흐름 박스로 그린다).
  */
 export const INGAME_PARCHMENT_FALLBACK_FRAME_CLASS =
-  "pointer-events-auto relative w-[min(40rem,92vw)] rounded-lg border border-[#6b4321] bg-gradient-to-b from-[#f3e5bd] via-[#e7d19f] to-[#c9a05f] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
+  "pointer-events-auto relative w-[min(40rem,92cqw)] rounded-lg border border-[#6b4321] bg-gradient-to-b from-[#f3e5bd] via-[#e7d19f] to-[#c9a05f] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
 
 export const INGAME_PARCHMENT_FALLBACK_CONTENT_CLASS =
   `flex max-h-[80svh] flex-col items-center justify-center gap-2 overflow-y-auto overscroll-contain px-6 py-7 text-center text-[#3a1a0c] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`

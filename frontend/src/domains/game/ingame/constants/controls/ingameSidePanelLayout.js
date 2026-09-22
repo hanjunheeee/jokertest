@@ -1,3 +1,5 @@
+// 2026-09-22: 창 폭(vw)이 아니라 게임 열(container-type: inline-size, 최대 1192px)의 폭(cqw)으로 잰다 —
+// 넓은 모니터에서 카드·패널이 열보다 크게 잡히고 작은 창에서 잘리던 원인이다.
 /**
  * 인게임 좌측 슬라이드 패널 — 전적목록·설정 등 공통 shell·헤더 레이아웃.
  */
@@ -7,7 +9,7 @@ export const INGAME_SIDE_PANEL_TRANSITION = {
 }
 
 export const INGAME_SIDE_PANEL_CLASS =
-  "absolute left-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(17.5rem,22.5vw,25.5rem)] max-w-[26rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
+  "absolute left-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(17.5rem,22.5cqw,25.5rem)] max-w-[26rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
 
 export const INGAME_SIDE_PANEL_INSET = {
   paddingTop: "clamp(4rem, 17%, 5.3rem)",
@@ -26,7 +28,7 @@ export const INGAME_SIDE_PANEL_CLOSE_BTN_CLASS =
   "interactive-scale absolute top-[clamp(1.35rem,7.5%,1.85rem)] right-[clamp(0.35rem,2.4%,0.72rem)] z-40 border-0 bg-transparent p-0 leading-none"
 
 export const INGAME_SIDE_PANEL_CLOSE_BTN_IMG_CLASS =
-  "block h-auto w-[clamp(2.6rem,3.95vw,3.2rem)] select-none"
+  "block h-auto w-[clamp(2.6rem,3.95cqw,3.2rem)] select-none"
 
 export const INGAME_SIDE_PANEL_HEADER_WRAP_CLASS =
   "relative mb-[clamp(0.45rem,1.2vh,0.65rem)] w-full shrink-0"
@@ -35,7 +37,7 @@ export const INGAME_SIDE_PANEL_HEADER_PLATE_CLASS =
   "block h-auto w-full select-none"
 
 export const INGAME_SIDE_PANEL_HEADER_TITLE_CLASS =
-  "pointer-events-none absolute inset-0 flex items-start justify-center px-[12%] pt-[3.8%] font-display text-[clamp(1.18rem,1.72vw,1.45rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute inset-0 flex items-start justify-center px-[12%] pt-[3.8%] font-display text-[clamp(1.18rem,1.72cqw,1.45rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const INGAME_SIDE_PANEL_HEADER_SUBTITLE_CLASS =
-  "mt-[clamp(0.42rem,1vh,0.58rem)] text-center font-subheading text-[clamp(0.62rem,0.9vw,0.76rem)] leading-snug font-bold text-[#1a1008]"
+  "mt-[clamp(0.42rem,1vh,0.58rem)] text-center font-subheading text-[clamp(0.62rem,0.9cqw,0.76rem)] leading-snug font-bold text-[#1a1008]"

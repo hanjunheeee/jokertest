@@ -1,3 +1,5 @@
+// 2026-09-22: 창 폭(vw)이 아니라 게임 열(container-type: inline-size, 최대 1192px)의 폭(cqw)으로 잰다 —
+// 넓은 모니터에서 카드·패널이 열보다 크게 잡히고 작은 창에서 잘리던 원인이다.
 /**
  * 인게임 플레이어 보드·링 좌표 엔진.
  *
@@ -26,7 +28,7 @@ export const INGAME_PLAYER_BOARD_POSITION_CLASS =
 
 /** 링 슬롯 기본 너비 — scale transform과 별도 (×1.3) */
 export const INGAME_PLAYER_SLOT_BASE_WIDTH =
-  "clamp(6.2rem, 13.65vw, 9.75rem)"
+  "clamp(6.2rem, 13.65cqw, 9.75rem)"
 
 /**
  * zone별 transform 기본값.

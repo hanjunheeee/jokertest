@@ -161,6 +161,17 @@
     container-name: game-viewport;
   }
 
+  /* 2026-09-22: 게임 열 최대 폭(1192px)보다 좁은 창에서는 배너 슬롯과 열 간격이 게임 열을 밀어내
+     가로 스크롤(잘림)이 생겼다 — 그 폭에서는 배너·간격을 접고 게임 열만 100%로 둔다. */
+  @media (max-width: 1191px) {
+    .viewport-shell {
+      gap: 0;
+    }
+    .viewport-shell__banner {
+      display: none;
+    }
+  }
+
   /* document.documentElement 전체화면(F11) — 배너는 유지하되 슬롯만 축소, 게임 영역 확장 */
   html:fullscreen,
   html:-webkit-full-screen {
