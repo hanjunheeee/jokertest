@@ -541,3 +541,37 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 - 오늘의 파이프라인 손질: Pluto 수정 45(`injectsIntoFactory`)·46(`usesMemberOfImportedSymbol`) — 연결 검사기 오판 6·7번째 패턴; 실행기 사전 적재 `fetch-no-keepalive.cjs`(+cause 기록) — 백엔드 시험 `fetch failed` 일괄 차단(이후 3회 전체 실행 fail 0).
 - **남은 사람 몫**: `docs/requirements/2026-09-22-f28-manual-checklist.md`(실제 Chrome·메일·결제·청음 29항목 + 2026-09-13 통합 시나리오). 자동 검증은 "통과"지만 실제 인수는 이 목록을 끝내야 완료다.
 - **배치 뒤 할 일**(운영자와 같이 정한다, 자동으로 안 함): 작업본 정리(`jokertest-slices` 3.1GB — BR·BS·BT는 split 잠금, L 보존), `tmp/` 정리(`db-backups` 보존), pluto 보완 목록(지시서 다이어트, 반복 blocker 즉시 중단, recover-wiring 후보 표식 공백, 그래프 색인 모순, 설계도 사실 확인, NUL 검사), 도메인 분석기 시험. `pluto/CB·CC·CH·BQ·CJ·BN` 브랜치·작업본은 남아 있다.
+
+## 배치 뒤 실제 인수 수정 Part A (2026-09-22 20:00~)
+운영자가 QA 창 5개(`.pluto/monitor/qa-five-windows.cjs`, 격리 DB `pluto_f01_20260909_al`, 백엔드 :4183 / 정적 프런트 :5183)로 실제 Chrome 인수를 하며 낸 16건 중 "작은 것"을 직접 고쳤다(계획 `~/.claude/plans/floofy-wondering-micali.md` Part A). 큰 것(이모티콘 E-1~E-3, 플레이어 카드 메뉴 V-1·V-2, 인게임 전적 S-1)은 설계도 F-33·F-34를 쓴 뒤 pluto 배치로 간다. 킬 영상의 "치지직 배경"은 원작자 확인 뒤 별도.
+
+### 운영자 정책 결정 3건 (이 자리에서 확정)
+1. **AUDIO-01 완화** — 라이선스 확인된 소리만 허용(자작 효과음 + CC0 배경음). 통합 요구사항 AUDIO-01 절에 완화 기록 추가. 운영자: "효과음 합성 + 배경음 CC0 다운로드", "Death Waltz (CC0) 받아라".
+2. **역할 턴 건너뜀** — 방 설정의 역할 구성이 0인 역할(예: 광대1·시민4 방의 의사·경비원·마녀사냥꾼)은 밤 턴을 돌리지 않는다. 구성은 방 설정에서 이미 보이므로 누설이 아니다. 전원 사망 역할의 턴은 그대로 돈다(20~60% 빈 턴 유지).
+3. **전적 집계** — `NODE_ENV=test`(자동 시험)만 제외하고 개발·QA·운영 판을 모두 집계한다. 운영자: "자동 시험 실행만 빼고 다 집계". QA 서버는 `GAME_SOURCE_OVERRIDE=production`으로 실행해 집계를 눈으로 본다.
+
+### 커밋 (브랜치 `windows-handoff-20260808`)
+| 항목 | 커밋 | 원인 → 변경 |
+|---|---|---|
+| A-1 로그인 상태 | a95d9682 | `ProtectedRoute`가 localStorage만 봐서 쿠키 세션과 어긋남(economy 403) → 마운트 때 `/auth/me`로 서버 uuid·role 채택(`bootstrapSession`), 실패면 logout, 판정 전엔 빈 화면 |
+| A-2 설정 인트로 | 78dcdded | 전면 스킵 레이어가 클릭을 삼키고 하드 시크로 마지막 프레임 깨짐 → `attachVideoIntroWatch`: pause만, error·3초 메타데이터 미도착이면 완료 |
+| A-7 추방 | 23d452cf | 방장 버튼이 세로 760px 미만에서 화면 밖 → 하단 행 고정, 확인 전엔 비활성으로 표시 |
+| A-6 결과창 | 23d452cf, 07e8358d | `winResult={winner}`뿐 → ENDED에만 `reveals[]`(uuid·닉네임·역할·팀·생존·사망사유) 추가; 방코드 보기·다시 재생 버튼 제거(패널 클릭 재시도) |
+| A-4 역할 턴 | 21712337 | `NIGHT_TURN_ORDER` 고정 순회 → `getNightTurnOrder(session)`(구성 > 0만), `advanceNightTurn`이 구성 0 역할을 방송 없이 완료 처리 |
+| A-5 전적 | 21712337 | `resolveGameSource`가 QA를 development로 분류해 집계 제외 → test/override 규칙, 저장소 필터는 {development,test} 제외 |
+| A-8 반응형 | c6e8e7eb | 게임 열이 `container-type: inline-size`인데 `vw` 사용 → `cqw`로 통일(잠금 시험 `containerUnits.test.js`), 로스터가 잠깐 비면 더미 10칸으로 튀던 것 → 마지막 유효 로스터 유지, 1191px 이하 배너 접힘 |
+| A-3 효과음 | c49e2b5b | 매니페스트 23종 전부 `pendingAsset`(무음) → `gen-sfx.mjs`로 22종 결정적 합성(WAV, ≤2초, sha256 기록), 승인 항목으로 등록 |
+| A-3 배경음 | b66aab6a | `MUSIC_PLAYBACK_ENABLED=false` → true, Death Waltz(CC0), `useBgmAutoplay`가 Master×배경음 구독, `useAudioControl`이 설정 `bgm-volume`을 읽고 씀 |
+
+### 시험 계약 변경 (단언 삭제 아님 — 정책·계약 변경에 맞춰 고친 것)
+- F-16 "BGM 재생 0" 계열(`bgmPlaybackLock.test.js`, `settingsStore.test.js` AC-05, `PasswordResetPage.ui.test.js` AC-07): "audio 없음·play 0회" → "라이선스 기록 있는 음원 하나만, Master×배경음 적용, 초기화는 볼륨만 되돌리고 play를 새로 부르지 않음". `nightPresentation.integration.test.js` AC-04는 마운트 직후 play 횟수를 기준선으로 잡고 영상 사건이 그 값을 바꾸지 않음을 본다.
+- F-27c/d "다시 재생 버튼" 단언 → 패널 클릭 재시도 표면(`data-ingame-kill-reveal-retry`).
+- 결과 페이지 "방코드 보기" 시험 삭제(`resultRoomCodeUnavailable.integration.test.js` — 기능 자체가 제거됨), `winResult.reveals`는 금지 키 가드의 예외로 등록.
+- 밤 턴 시험 헬퍼는 구성 없는 옛 세션과 구성 있는 세션을 나눠 "구성 0 역할은 `night_turn_started` 0회"를 추가.
+- 전적 저장소 시험: development·test 출처 제외, production 포함.
+- 효과음 시험: "무음 잠금" → "승인 자산은 재생 호출 1회".
+
+### 검증
+- 프런트 `npm test` 2479/2479, `vite build` 성공(A-3 배경음 뒤). 백엔드 game-core 552·socket 182·nightTurns 107(A-4/A-5 뒤).
+- 발견: `PasswordResetPage.ui.test.js` AC-07이 새 `<audio>`를 `assert.equal(el, null)`로 비교하다 node:test가 jsdom 요소를 diff 직렬화하며 `Array buffer allocation failed`(80초) — DOM 요소를 단언 메시지에 넣지 않도록 고쳤다.
+- 실제 화면(청음 포함)은 F-28 수동 목록에 남긴다.
