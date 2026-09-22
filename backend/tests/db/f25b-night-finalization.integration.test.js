@@ -214,8 +214,9 @@ function createManualClock(startMs = 1_000_000) {
 /**
  * JOKER 1 · DOCTOR 1 · 나머지 CITIZEN 구성의 세션을 만들어 **그 밤**(NIGHT)까지 맞춘다.
  *
- * GUARD/WITCH_HUNTER는 두지 않는다 — 그 두 턴은 "행위자 없는 턴"으로 자동 진행되므로, 이
- * 파일이 보려는 킬·치료·최종화 순서를 흐리지 않으면서도 네 역할 턴 전체를 그대로 통과한다.
+ * GUARD/WITCH_HUNTER는 두지 않는다 — 구성 0 역할은 턴 없이 즉시 확정되므로(2026-09-22 운영자
+ * 결정, socket/gameSession.js advanceNightTurn) 의사 차례가 끝나는 순간 그 밤이 최종화된다. 이
+ * 파일이 보려는 킬·치료·최종화 순서를 흐리지 않으면서도 네 역할의 판정 자료는 그대로 남는다.
  */
 function commitNightSession({ roomId, gameId, hostUuid, uuids }) {
     const players = new Map(uuids.map((uuid) => [uuid, {
@@ -546,7 +547,8 @@ test('AC-02: 치료가 성공한 밤은 최종 사망 0이고 승패 상태와 �
     drainWait(session, clock); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
     submitNight(sockets.get(doctorUuid), doctorUuid, session, targetUuid);
     drainWait(session, clock); // F-27a: 실제 HEAL 사건의 대기를 풀어야 GUARD 차례가 시작된다.
-    // 남은 두 턴(GUARD/WITCH_HUNTER)은 행위자가 없어 지연 타이머로 끝난다 — 그 뒤 자동 최종화.
+    // 남은 두 역할(GUARD/WITCH_HUNTER)은 구성 0이라 턴 없이 확정되고 그 밤은 자동 최종화된다 —
+    // 시계를 더 돌려도 다시 확정되지 않아야 아래 1회 단언이 성립한다.
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(session.phase, 'DAY', '치료가 성공한 밤도 정상적으로 낮으로 넘어간다');
@@ -596,16 +598,19 @@ test('AC-03: 치료되지 않은 밤은 의사 차례가 끝난 뒤 최종 사�
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
     drainWait(session, clock); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
-    // 의사가 기권해 치료 가능성만 닫힌다 — A-06: 이 시점에 최종 사망은 아직 없다.
-    submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
-    const progress = gameSessionCore.__testables.getNightProgress(session);
-    assert.equal(progress.healingClosed, true);
-    assert.equal(progress.recoveryStates.get(targetUuid), 'DEATH_CANDIDATE');
-    assert.equal(session.players.get(targetUuid).alive, true);
-    assert.deepEqual(observed.events, [], '의사 차례 종료 시점에는 사망·승패 평가가 0회다');
 
-    // 남은 두 턴이 끝나면서 그 밤이 최종화된다.
-    clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
+    // A-06: 의사 차례가 끝나기 전에는 치료 가능성이 열려 있고 최종 사망·승패 평가가 없다.
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '의사 차례에서 멈춰 있어야 한다');
+    const progress = gameSessionCore.__testables.getNightProgress(session);
+    assert.equal(progress.healingClosed, false);
+    assert.equal(progress.recoveryStates.get(targetUuid), 'PENDING_RECOVERY');
+    assert.equal(session.players.get(targetUuid).alive, true);
+    assert.deepEqual(observed.events, [], '의사 차례 종료 전에는 사망·승패 평가가 0회다');
+
+    // 의사가 기권해 치료 가능성이 닫힌다. 이 판의 구성은 GUARD·WITCH_HUNTER가 0이라(commitNightSession)
+    // 2026-09-22 운영자 결정(구성 0 역할은 턴 없이 즉시 확정, socket/gameSession.js advanceNightTurn)에
+    // 따라 의사 차례가 끝나는 바로 그 순간 그 밤이 최종화된다 — 기다릴 남은 턴이 없다.
+    submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
 
     assert.equal(session.players.get(targetUuid).alive, false);
     assert.equal(session.players.get(targetUuid).deathReason, 'ASSASSINATION');
@@ -614,6 +619,14 @@ test('AC-03: 치료되지 않은 밤은 의사 차례가 끝난 뒤 최종 사�
     assert.equal(observed.winEvaluations('NIGHT'), 1, '그에 따른 승패 판정도 1회다');
     assert.equal(observed.winEvaluations('DISCONNECT'), 0, '이탈 경로의 평가와 섞이지 않는다');
     assert.equal(observed.countOf('GAME_FINALIZED'), 0);
+
+    // 옛 턴 제한시간이 지나도(남은 타이머가 있었다면 울릴 시각) 같은 밤이 다시 확정되지 않는다.
+    const eventsAfterFinalize = observed.events.length;
+    clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
+    assert.equal(observed.events.length, eventsAfterFinalize, '최종화 뒤에는 사망·승패 평가가 더 실행되지 않는다');
+    assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1);
+    assert.equal(observed.winEvaluations('NIGHT'), 1);
+    assert.equal(session.phase, 'DAY');
 
     // 비종결 밤이므로 경기 기록은 한 행도 쓰이지 않는다.
     assert.equal(repo.calls.length, 0);

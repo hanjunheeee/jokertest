@@ -356,8 +356,28 @@ test('AC-04: 마지막 비-JOKER가 유예 만료로 사망하면 그 자리에�
 
     const [eliminated] = eliminationBroadcasts(io)
     assert.equal(eliminated.payload.phase, 'ENDED')
-    assert.deepEqual(eliminated.payload.winResult, { winner: 'JOKER' })
-    assert.equal(JSON.stringify(eliminated.payload).includes('role'), false)
+    // 종료 payload의 공개 winResult는 canonical { winner }에 판 종료 뒤 전원 정체 공개(reveals,
+    // 2026-09-22 계약 — gameSession.js buildPublicWinResult)를 붙인다. 승자와 각 참가자의
+    // 역할·생사·사망 사유가 세션 최종 상태와 정확히 같아야 한다.
+    const expectedReveals = [...session.players.values()].map((player) => ({
+        uuid: player.uuid,
+        nickname: player.nickname,
+        role: player.role,
+        team: player.role === 'JOKER' ? 'JOKER' : 'CITIZEN', // 이 fixture는 JOKER 1 + CITIZEN 2다
+        alive: player.alive,
+        deathReason: player.deathReason ?? null,
+    }))
+    assert.deepEqual(
+        [...eliminated.payload.winResult.reveals].sort((a, b) => a.uuid.localeCompare(b.uuid)),
+        [...expectedReveals].sort((a, b) => a.uuid.localeCompare(b.uuid)),
+    )
+    assert.deepEqual(eliminated.payload.winResult, { winner: 'JOKER', reveals: eliminated.payload.winResult.reveals })
+    const victimReveal = eliminated.payload.winResult.reveals.find((reveal) => reveal.uuid === victimUuid)
+    assert.equal(victimReveal.alive, false)
+    assert.equal(victimReveal.deathReason, 'DISCONNECT')
+    // reveals 밖(판 진행 중 공개 필드)에는 여전히 역할 정보가 새지 않는다.
+    const serialized = JSON.stringify(eliminated.payload, (key, value) => (key === 'reveals' ? undefined : value))
+    assert.equal(serialized.includes('role'), false)
 })
 
 test('AC-08: 유예 만료로 배제된 uuid는 같은 uuid로 돌아와도 스냅샷과 channel 복귀가 모두 거부된다', async () => {
