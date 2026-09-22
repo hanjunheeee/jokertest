@@ -18,15 +18,15 @@
 
 ## 2. AC-01 — 명령별 실행 결과
 
-| # | 명령 | 실행 | 로그 | 결과 |
+| # | 명령 | 실행(기준 커밋 · 실행 시각 UTC) | 로그 | 결과 |
 |---|---|---|---|---|
 | 1 | `npm ci --prefix frontend` | BN 구현 단계 | 콘솔 | exit 0 (212 packages) |
 | 2 | `npm ci --prefix backend` | BN 구현 단계 | 콘솔 | exit 0 (249 packages; bcrypt install script 미승인 경고 — prebuild 사용, 이후 DB 시험 정상) |
-| 3 | `npm test --prefix frontend` | impl-check `test --prefix frontend` | `.pluto/checks/1790067848801-32028-test.log` | **exit 0 · tests 2473 · pass 2466 · fail 0 · skipped 7** |
-| 4 | `npm run build --prefix frontend` | impl-check `build --prefix frontend` | `.pluto/checks/1790067994789-33508-build.log` | **exit 0** (vite 1063 modules; 500 kB 초과 chunk 경고만) |
-| 5 | `npm run test:game-core --prefix backend` | impl-check `node-test --prefix backend game-core/__tests__/*.test.js`(9개 파일, 스크립트와 같은 집합) | `.pluto/checks/1790068026084-38736-node-test.log` | **exit 0 · 551 / 551 · skip 0** |
-| 6 | 격리 DB 회귀(관련 부분집합, f01 선두) | impl-check `node-test --prefix backend` 15개 파일 | `.pluto/checks/1790068044243-23288-node-test.log` | **exit 0 · 214 / 214 · skip 0** (12분 47초) |
-| 7 | `npm test --prefix backend` (전체) | **검증 단계**: `node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test` | 검증 단계 산출물 | **BN 구현 단계 미실행** — 지시서 규칙("backend 전체는 검증 단계가 돌린다")에 따름. 결과는 검증 단계 기록이 판정한다. PASS로 적지 않는다. |
+| 3 | `npm test --prefix frontend` | impl-check `test --prefix frontend` · `f8036271`(dirty:false) · 2026-09-22T09:04:08Z → 09:06:32Z | `.pluto/checks/1790067848801-32028-test.log` | **exit 0 · tests 2473 · pass 2466 · fail 0 · skipped 7** |
+| 4 | `npm run build --prefix frontend` | impl-check `build --prefix frontend` · `f8036271`(dirty:false) · 2026-09-22T09:06:34Z → 09:06:44Z | `.pluto/checks/1790067994789-33508-build.log` | **exit 0** (vite 1063 modules; 500 kB 초과 chunk 경고만) |
+| 5 | `npm run test:game-core --prefix backend` | impl-check `node-test --prefix backend game-core/__tests__/*.test.js`(9개 파일, 스크립트와 같은 집합) · `f8036271`(dirty:false) · 2026-09-22T09:07:06Z → 09:07:16Z | `.pluto/checks/1790068026084-38736-node-test.log` | **exit 0 · tests 551 · pass 551 · fail 0 · skipped 0** |
+| 6 | 격리 DB 회귀(관련 부분집합, f01 선두) | impl-check `node-test --prefix backend` 15개 파일 · `f8036271`(dirty:false) · 2026-09-22T09:07:24Z → 09:20:11Z | `.pluto/checks/1790068044243-23288-node-test.log` | **exit 0 · tests 214 · pass 214 · fail 0 · skipped 0** (12분 47초) |
+| 7 | `npm test --prefix backend` (전체) | 승인 실행기 `node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test`. **(a) BN 재시도(2026-09-22)에서 이 명령을 두 번 실행하려 했으나 도구 승인 대기로 거부되어 실행되지 않았다**(형태를 바꿔 우회하지 않음 — `.pluto/progress.md`). **(b) 가장 최근의 공식 실행**: CJ 검증 VERIFY-5(CJ 후보 → 병합 `eb248a73`), 종료 2026-09-22T07:34:53Z, 소요 1570.8초(약 26분) | `C:/Users/minsa/jokertest/.pluto/monitor/backend-full-2026-09-22T07-34-53.290Z.log` | (b): **exit 0 · tests 2394 · pass 2394 · fail 0 · cancelled 0 · skipped 0**. 영향 대조: `git diff --stat eb248a73 HEAD`는 `.md` 문서 4개(요구 1·체크리스트 1·이 보고서 2)뿐 → backend 코드·시험·package.json이 같다. 단, **이번 BN 후보 SHA 자체에서 돈 실행은 아니다** — 이번 후보의 backend 전체 판정은 검증 단계의 같은 실행기 결과로 확정한다. |
 
 6번의 파일: `tests/db/f01-migrations.integration.test.js`, `f09-store-purchases`, `f12-achievements.integration`, `f12-achievements.api`, `f12-achievements.recovery`, `f13-profile-equipment`, `f19-friends-invites`, `f29a-find-id`, `f29b-password-reset`, `f31-social-email`, `f32a-topup`, `f32b-gold-purchases`, `services/achievementService.test.js`, `services/achievementDefinitions.test.js`, `socket/__tests__/spectatorAccess.test.js`.
 
@@ -49,13 +49,13 @@
 | F-01 DB 변경·이관 | AL `ba6d4695` | f01-migrations (6) | 병합 ✓ · PASS |
 | F-02 회원가입 입력·중복 | AM `0950d00a` | signupValidation 닉네임 등 (3) · 서버 f02는 검증 단계 | 병합 ✓ · 프론트 PASS |
 | F-03 로그인 유지·세션 | AN `4277a6e6` | 소켓 재인증 시험 (3) · 서버는 검증 단계 | 병합 ✓ · 프론트 PASS |
-| F-04 계정관리 | AO `c78b7764` | 프론트 (3) · 서버 f04는 검증 단계 | 병합 ✓ · 프론트 PASS |
+| F-04 계정관리 | AO `c78b7764` | 프론트 (3): `frontend/src/domains/user/hooks/__tests__/useNicknameForm.test.js` — `AC-03: 닉네임 변경 성공 시 재요청 없이 auth store와 마이페이지 표시(useMyProfile)가 즉시 새 닉네임으로 갱신된다`, `AC-03: 닉네임 변경 실패 시 auth store와 마이페이지 표시 모두 변경 전 닉네임을 그대로 유지한다`; `frontend/src/domains/auth/validation/__tests__/signupValidation.test.js` — `F-04 AC-04: bcrypt 72바이트를 넘는 비밀번호는 거부된다(멀티바이트 문자 포함)` (3번 로그 ✔) · 서버 f04는 검증 단계 | 병합 ✓ · 프론트 PASS |
 | F-05 소셜 공통 | AP `331d5762` | f31-social-email 소셜 경로 (6) · f05는 검증 단계 | 병합 ✓ · PASS(부분) |
 | F-06 Google 로그인 | AQ `635c929b` | f31 Google identity 재로그인 (6) | 병합 ✓ · PASS(부분) |
 | F-07 Discord 로그인 | AR `ee1f45a1` | f31 제공자 분기 (6) · f07은 검증 단계 | 병합 ✓ · PASS(부분) |
 | F-08 지갑·거래·소유권 | AS `bdefdd2d` | f09·f32b 원장 계약 (6) · f08은 검증 단계 | 병합 ✓ · PASS(부분) |
 | F-09 상품 구매·이모티콘 탭 | AT `9351a5b8` | f09 18건 (6) · 이모티콘 거부 AC-05 2건 | 병합 ✓ · PASS |
-| F-10 전적·랭킹·운명의 가면 | AU `0c470cc6` | 프론트 (3) · 서버 통계 DB는 검증 단계 | 병합 ✓ · 프론트 PASS |
+| F-10 전적·랭킹·운명의 가면 | AU `0c470cc6` | 프론트 (3): `frontend/src/domains/user/hooks/__tests__/useMyProfile.roleStatistics.test.js` — `최다 플레이(most_played_role)와 최고 승률(highest_win_rate_role)이 다르면 후자를 강조 문구로 쓴다`, `highest_win_rate_role이 null이면(전적 0판) 더미 직업 대신 전적 없음을 표시한다`, `A 보류 → B 전환 → B 성공 → A 응답 도착: B의 닉네임·판수·승률·가면이 그대로 유지된다`; `frontend/src/domains/user/hooks/__tests__/useMyProfile.test.js` — `0판 계정의 승률은 0.0%다` (3번 로그 ✔) · 랭킹 화면 자체의 프론트 자동 시험은 이 표에 지목하지 않음(운영자 U-08) · 서버 통계 DB는 검증 단계 | 병합 ✓ · 프론트 PASS |
 | F-11 투표 참여 집계 | AV `88f5d793` | achievementService 투표 지표 (6) · 영속 DB는 검증 단계 | 병합 ✓ · PASS(부분) |
 | F-12 22개 업적 | AW `81236f71` | f12×3 · achievementService · achievementDefinitions (6), 서고 store/integration (3) | 병합 ✓ · PASS |
 | F-13 프로필·테두리 | AX `c544d20c` | f13-profile-equipment (6) · accountProfileEquipment (3) | 병합 ✓ · PASS |
@@ -71,7 +71,7 @@
 | F-23 관전자 전면 제거 | BH `b2e2e4cd` (BR·BS·BT 분할 귀속) | spectatorAccess (6) · deadParticipant F-23 시험 (3) | 병합 ✓ · PASS |
 | F-24 방 코드·설정 유지 | BI `a2bfc1ab` | nextRoomSettings.integration (3) | 병합 ✓ · PASS |
 | F-25 밤 순차 판정 | BJ `6acc892b` (BU `152f216a`, BV `98cf4b71`) | game-core 551 (5) · deadParticipant F-25b (3) | 병합 ✓ · PASS |
-| F-26 능력 이벤트 | BK `13535a72` (BY `d8c45bf3`, CD `38f958a3`) | 프론트 성공 사건 수신 (3) · 서버 socket은 검증 단계 | 병합 ✓ · 프론트 PASS |
+| F-26 능력 이벤트 | BK `13535a72` (BY `d8c45bf3`, CD `38f958a3`) | 프론트 성공 사건 수신 (3): `frontend/src/domains/game/ingame/store/__tests__/nightPrivateResult.test.js` — `AC-01: 역할별 성공 사건을 수신하면 store에 사건 ID·밤 번호가 저장되고, 같은 사건 ID 재전달은 중복 추가되지 않는다`, `AC-05 결합: completeNightSuccess의 emit이 registerGameHandlers가 등록한 실제 서버 리스너로 전달된다`; `frontend/src/domains/game/ingame/hooks/__tests__/useInGameSessionSnapshotSync.test.js` — `F-26(AC-01): 기존 판의 재접속 응답에 실린 미완료 사건이 실제 ack 경로로 큐에 복원된다`; `frontend/src/domains/game/ingame/store/__tests__/applySessionSnapshot.test.js` — `F-26(AC-04): 현재보다 과거 날짜의 스냅샷은 거부된다 — store는 완전히 변경되지 않는다` (3번 로그 ✔) · 서버 socket은 검증 단계 | 병합 ✓ · 프론트 PASS |
 | F-27 직업별 영상 | BL `f6e93c8d` (BZ `77aaef8a`, CE `9b8d73f3`, CI `4719997b`, CJ `eb248a73`) | nightPresentation (3) | 병합 ✓ · PASS (브라우저·청음 운영자) |
 | F-29 아이디·비밀번호 찾기 | BM `5fa62b0c` (BW `9055612b`, BX `c17e5c59`, CF `e96363dd`) | f29a · f29b (6) · F29Recovery **skip 7** (3) | 병합 ✓ · 서버 PASS · 프론트↔DB 왕복 미검증 |
 | F-30 피의 기록·명성 제거 | BO `743dac3d` | myPageBloodRecord · 로비 배너 (3) | 병합 ✓ · PASS |
@@ -116,10 +116,11 @@
 | U-28 | AC-03 보충 | Chrome의 개별 실패·묶음 실패·응답 유실 복구와 화면/DB 비교 | 실제 Chrome 미실행 | 격리 DB 연결 서버 | 무차감·복구, 화면=DB |
 | U-29 | F-15 | 전체화면 사용자 담당 확인(기존 예외) | 브라우저 전체화면 정책은 자동화 불가 | 실제 Chrome | 전체화면 전환·복귀 |
 | U-30 | F-29 프론트 | `F29Recovery.integration.test.js` 7건의 화면↔실제 DB 왕복 | frontend 시험 실행에 격리 DB URL이 주입되지 않아 skip | 격리 DB 주입 실행 | 7건 PASS |
+| U-31 | F-32 · 계약서 5.3 | **재시작 없는 상품 변경과 기존 주문 조건 보존**: 서버를 띄운 채 별도 DB 연결로 다이아 상품 등록 → 상점 재화 탭 다음 조회에 표시 → 가격·지급량·보너스 수정(version 증가) → 재조회 반영, 옛 version 주문은 `PRODUCT_VERSION_MISMATCH`로 거부 → 판매 중지(`PRODUCT_STOPPED`)·삭제(`PRODUCT_NOT_FOUND`) 뒤 신규 주문 거부. 변경 **전에** 만든 주문은 `createTopupOrder`(`backend/service/topup.service.js`)가 저장한 스냅샷대로 승인·지급된다 | 실제 서버·Chrome·결제창에서 미실행. 자동 근거는 격리 DB·가짜 결제 어댑터 안의 것뿐: `backend/tests/db/f32a-topup.integration.test.js` — `AC-06: 별도 연결의 상품 등록·수정·판매 중지·삭제가 서버 재시작 없이 목록·주문에 반영된다`, `AC-01(A-03): 주문 뒤 상품 가격·지급량·version 변경과 삭제에도 승인 금액 1000·지급량 110이 유지된다`(2절 6번 PASS). 실제 결제창 승인은 토스 test 키 부재(U-18·U-24와 같은 사유) | 승인 DB에 연결한 실행 중 서버, DB 쓰기 가능한 별도 연결(운영자), 시험 계정, 1000원·100D+10 보너스 시험 상품, (선택) 토스 test 키 | 서버 재시작 없이 목록이 매번 DB 값과 같다; 옛 version 주문 409 + 현재 상품 재확인 안내; 중지·삭제 뒤 신규 주문 거부; 변경 전 주문의 승인 금액 1000원·지급 110D 유지(변경 뒤 가격 5000으로 확인하면 `AMOUNT_MISMATCH`), 삭제 뒤에도 기존 주문 행 유지·지급 1회 |
 
-구분 원칙: 미준비 자산(U-26) · 정책상 무음(U-26) · 재생 오류(자동 시험은 주입한 load reject·play 실패의 처리만 확인했고, 실제 브라우저 재생 오류는 관측하지 않았다 — U-19·U-25에 포함) · 브라우저 미실행(U-01, U-06~U-22, U-27~U-29) · 청음 미수행(U-19, U-25) · 외부 입력 미제공(U-03, U-09, U-14~U-16, U-18, U-23, U-24)을 합치지 않았다.
+구분 원칙: 미준비 자산(U-26) · 정책상 무음(U-26) · 재생 오류(자동 시험은 주입한 load reject·play 실패의 처리만 확인했고, 실제 브라우저 재생 오류는 관측하지 않았다 — U-19·U-25에 포함) · 브라우저 미실행(U-01, U-06~U-22, U-27~U-29, U-31) · 청음 미수행(U-19, U-25) · 외부 입력 미제공(U-03, U-09, U-14~U-16, U-18, U-23, U-24, U-31의 결제창 부분)을 합치지 않았다.
 
 ## 6. BN 자동 산출물 판정과 전체 실제 인수의 잔여 상태
 
-- **BN 자동 산출물**: 2절 1~6번 exit 0, FAIL 0. skip 7(F29Recovery, 프론트 DB 왕복)은 PASS로 세지 않았다. backend 전체(7번)는 검증 단계 판정 대기.
-- **전체 실제 인수**: 5절 U-01~U-30이 미검증으로 남아 있다. 이 항목들이 운영자 확인으로 닫히기 전에는 배치 F-01~F-32의 전체 완료나 모니터 종료를 선언하지 않는다.
+- **BN 자동 산출물**: 2절 1~6번 exit 0, FAIL 0. skip 7(F29Recovery, 프론트 DB 왕복)은 PASS로 세지 않았다. backend 전체(7번): BN 재시도의 승인 실행기 호출은 도구 승인 대기로 실행되지 못했다. 코드가 같은 직전 공식 실행(CJ VERIFY-5, `eb248a73`)은 2394/2394 PASS이지만, 이번 후보에서 돈 실행이 아니므로 이번 후보의 판정은 검증 단계 결과로 확정한다.
+- **전체 실제 인수**: 5절 U-01~U-31이 미검증으로 남아 있다. 이 항목들이 운영자 확인으로 닫히기 전에는 배치 F-01~F-32의 전체 완료나 모니터 종료를 선언하지 않는다.

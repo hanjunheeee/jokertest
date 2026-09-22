@@ -29,7 +29,7 @@
 | 2 | `npm ci --prefix backend` | BN 구현 단계 + 검증 단계 | bcrypt install script 미승인 경고(prebuild 사용) |
 | 3 | `npm test --prefix frontend` | BN 구현 단계(impl-check 실행기) + 검증 단계 | |
 | 4 | `npm run build --prefix frontend` | BN 구현 단계(impl-check 실행기) + 검증 단계 | |
-| 5 | `node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test` | **검증 단계만** | backend 전체(`npm test --prefix backend` = `node --env-file=.env.test --test`)의 승인 실행기 대응. 실행기는 package `scripts.test` 대조, `F01_TEST_DATABASE_URL` 주입, `--test-concurrency=1`, fetch-no-keepalive 사전 적재, TAP·로그 기록. verifyTimeoutMs=1800000, 실행기 timeout=2400000(임의로 늘리지 않음). raw `npm test --prefix backend`는 기본 `/test` DB 설정이라 따로 돌리지 않는다. |
+| 5 | `node C:/Users/minsa/jokertest/.pluto/monitor/run-backend-tests.cjs test` | **검증 단계**(BN 재시도의 구현 단계 호출은 도구 승인 대기로 실행되지 못함 — 결과 행은 `final-acceptance.md` 2절 7번) | backend 전체(`npm test --prefix backend` = `node --env-file=.env.test --test`)의 승인 실행기 대응. 실행기는 package `scripts.test` 대조, `F01_TEST_DATABASE_URL` 주입, `--test-concurrency=1`, fetch-no-keepalive 사전 적재, TAP·로그 기록. verifyTimeoutMs=1800000, 실행기 timeout=2400000(임의로 늘리지 않음). raw `npm test --prefix backend`는 기본 `/test` DB 설정이라 따로 돌리지 않는다. |
 | 별도 | `npm run test:game-core --prefix backend` | BN 구현 단계 | 원래 AC-01 문구 대응. `game-core/__tests__/*.test.js` 9개 파일을 실행기로 같은 집합 실행 |
 
 판정 규칙: 종료 코드 0이라도 **필수 DB 시험의 skip·시간 초과는 PASS가 아니다**. frontend 시험의 skip 7건(`F29Recovery.integration.test.js`, `F01_TEST_DATABASE_URL` 미주입)은 skip으로 따로 적는다.
@@ -171,7 +171,7 @@ wiring: 없음.
 | 발견·조회·지급 뒤 wallet·transactions 일치 | 발견 API | X0216 `BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각 1회 지급하고, 골드 구매 뒤 wallet·transactions·구매 결과가 별도 연결의 DB와 일치한다` |
 | 화면: 계정 세대로 늦은 결과 차단, 미완료 주문 발견·조회·폴링 | `currencyPurchase.store.js`(X0915), `storePurchase.store.js` `refreshAfterGold`(X0917), `StorePanel.jsx`(X0895) | X0911 `F32CurrencyPurchase.ui.test.js` |
 
-대역 경계: 결제 제공자는 가짜/로컬 어댑터. 운영자: Chrome 두 창·진행 중 주문 발견·A→B→A·재시작 없는 상품 변경·가격 재확인, 토스 test 키 결제창(6절).
+대역 경계: 결제 제공자는 가짜/로컬 어댑터. 운영자: Chrome 두 창·진행 중 주문 발견·A→B→A(최종 보고서 U-17), 재시작 없는 상품 등록·수정·판매 중지·삭제와 변경 전 주문 조건 보존·가격 재확인(최종 보고서 U-31), 토스 test 키 결제창(U-16·U-18·U-24)(6절).
 
 ### 5.4 SFX-INTEGRATION-28
 각 사건: 사건 → 생산자 → 수신자·소비 표식 → 자산 또는 무음 사유 → 자동 시험 → 운영자 실제 관측.
