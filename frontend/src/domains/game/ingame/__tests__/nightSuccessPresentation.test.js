@@ -1096,7 +1096,15 @@ test("AC-04: 다음 사건으로 전환되면 이전 프레임 예약이 취소�
   }
 })
 
-test("AC-04: requestVideoFrameCallback이 없으면 requestAnimationFrame으로 예약·취소한다", async () => {
+/**
+ * F-27d(AC-04, 반려 수정): 이전 버전은 rafHandles.length와 cancelledRafHandles.includes만
+ * 검사해 "예약했다/취소했다"는 것만 증명했다 — 저장된 콜백을 실제로 실행한 적이 없어 루프가
+ * 진짜로 프레임을 합성하고 다음 프레임을 다시 예약하는지는 전혀 검증하지 못했다. 이제 저장된
+ * 콜백을 직접 실행해 (a) 합성 그리기(drawImage) 1회, (b) 다음 requestAnimationFrame 재예약
+ * 1회를 확인하고, cleanup(unmount) 뒤 취소된 콜백을 늦게 강제 실행해도 추가 draw·재예약이
+ * 없음을 함께 확인한다.
+ */
+test("AC-04: requestVideoFrameCallback이 없으면 requestAnimationFrame으로 실제 프레임 합성·재예약이 동작하고, cleanup 뒤 늦은 콜백은 그리지도 재예약하지도 않는다", async () => {
   const rafHandles = []
   const cancelledRafHandles = []
   let nextRafHandle = 0
@@ -1109,6 +1117,13 @@ test("AC-04: requestVideoFrameCallback이 없으면 requestAnimationFrame으로 
     cancelledRafHandles.push(handle)
   })
 
+  const contexts = []
+  canvasContextFactory = (canvas) => {
+    const ctx = createRecordingCanvasContext(canvas)
+    contexts.push(ctx)
+    return ctx
+  }
+
   const { container, unmount } = renderPresentation({
     current: { eventId: "raf-fallback", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
     open: true, finish: () => {}, assetStatus: "AVAILABLE", finalStatus: null, onClose: () => {},
@@ -1117,15 +1132,33 @@ test("AC-04: requestVideoFrameCallback이 없으면 requestAnimationFrame으로 
     const video = container.querySelector("video")
     // 이 video 인스턴스만 requestVideoFrameCallback을 지원하지 않는 것으로 가장한다.
     Object.defineProperty(video, "requestVideoFrameCallback", { value: undefined, configurable: true })
+    Object.defineProperty(video, "videoWidth", { value: 2, configurable: true })
+    Object.defineProperty(video, "videoHeight", { value: 2, configurable: true })
+    Object.defineProperty(video, "readyState", { value: 2, configurable: true })
     await flushMicrotasks()
     assert.ok(rafHandles.length >= 1, "requestVideoFrameCallback이 없으면 requestAnimationFrame으로 예약해야 한다")
 
-    const lastHandle = rafHandles[rafHandles.length - 1].handle
+    const [, workCtx] = contexts
+    const rafCountBeforeDraw = rafHandles.length
+    const firstEntry = rafHandles[rafHandles.length - 1]
+    act(() => { firstEntry.cb(0) })
+    assert.equal(workCtx.calls.drawImage.length, 1, "저장된 requestAnimationFrame 콜백을 실행해도 합성 그리기(drawImage)가 일어나지 않았다")
+    assert.equal(rafHandles.length, rafCountBeforeDraw + 1, "프레임 합성 뒤 다음 requestAnimationFrame이 재예약되지 않았다")
+
+    const rafCountAfterDraw = rafHandles.length
+    const lastEntry = rafHandles[rafHandles.length - 1]
+    const lastHandle = lastEntry.handle
     unmount()
     assert.ok(cancelledRafHandles.includes(lastHandle), "언마운트가 requestAnimationFrame 예약을 취소하지 않았다")
+
+    const drawsAfterUnmount = workCtx.calls.drawImage.length
+    act(() => { lastEntry.cb(0) })
+    assert.equal(workCtx.calls.drawImage.length, drawsAfterUnmount, "cleanup 뒤 늦게 실행된 콜백이 추가로 그렸다")
+    assert.equal(rafHandles.length, rafCountAfterDraw, "cleanup 뒤 늦게 실행된 콜백이 다음 프레임을 재예약했다")
   } finally {
     installDomGlobal("requestAnimationFrame", defaultRequestAnimationFrame)
     installDomGlobal("cancelAnimationFrame", defaultCancelAnimationFrame)
+    resetCanvasContextFactory()
   }
 })
 
@@ -1148,6 +1181,36 @@ test("AC-05: canvas 2D 컨텍스트 획득이 null이거나 던지면 ERROR가 �
       unmount()
       resetCanvasContextFactory()
     }
+  }
+})
+
+/**
+ * F-27d(AC-05, 반려 수정): 이전에는 canvas 2D 컨텍스트 획득 실패를 effect setup 본문에서
+ * **동기적으로** settleOnce(ERROR)로 보고했다 — React StrictMode의 setup→cleanup→setup은
+ * lifetime을 두 개 만들고, 각 setup이 자기 lifetime으로 동기 실패를 즉시 보고하므로 같은
+ * 사건에 ERROR가 두 번 보고됐다(사건당 한 번 보장 위반). 이제는 컨텍스트 실패 보고도 재생
+ * 시작과 같은 취소 가능한 마이크로태스크 예약 안에서만(scheduled 플래그가 살아 있을 때만)
+ * 일어나므로, cleanup이 먼저 온 첫 setup의 실패 보고는 실행되지 않고 살아남은 setup만 보고한다.
+ */
+test("AC-05(CODEX 반려 수정): StrictMode의 setup→cleanup→setup에서도 canvas 컨텍스트 획득 실패는 사건당 정확히 한 번만 ERROR로 보고된다", async () => {
+  canvasContextFactory = () => null
+  const finishes = []
+  const { unmount } = render(
+    React.createElement(React.StrictMode, null, React.createElement(InGameNightSuccessPresentation, {
+      current: { eventId: "strict-ctx-fail", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      open: true,
+      finish: (outcome) => finishes.push(outcome),
+      assetStatus: "AVAILABLE",
+      finalStatus: null,
+      onClose: () => {},
+    })),
+  )
+  try {
+    await flushMicrotasks()
+    assert.deepEqual(finishes, ["ERROR"], "StrictMode 이중 마운트에서 canvas 컨텍스트 실패가 사건당 정확히 한 번 보고되지 않았다")
+  } finally {
+    unmount()
+    resetCanvasContextFactory()
   }
 })
 

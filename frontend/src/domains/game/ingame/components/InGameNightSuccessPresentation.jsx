@@ -332,28 +332,6 @@ function InGameNightSuccessKillVideo({ eventId, src, finish }) {
     }
 
     /**
-     * F-27d(AC-02/AC-05): canvas 2D 컨텍스트는 이 lifetime의 예약 시작에서 딱 한 번 확보한다 —
-     * 표시(고정 크기) canvas와, 합성 작업 전용으로 DOM에 붙이지 않는 canvas 각각의 getContext가
-     * null이거나 던지면 프레임을 하나도 그리지 못하므로 이 사건은 즉시 ERROR로 끝난다.
-     */
-    try {
-      const displayCanvas = canvasRef.current
-      const displayCtx = displayCanvas ? displayCanvas.getContext("2d") : null
-      const workCanvas = document.createElement("canvas")
-      const workCtx = workCanvas.getContext("2d")
-      if (!displayCtx || !workCtx) {
-        settleOnce(lifetime, "ERROR", "error")
-      } else {
-        lifetime.displayCanvas = displayCanvas
-        lifetime.displayCtx = displayCtx
-        lifetime.workCanvas = workCanvas
-        lifetime.workCtx = workCtx
-      }
-    } catch {
-      settleOnce(lifetime, "ERROR", "error")
-    }
-
-    /**
      * F-27c(AC-02, CODEX 반려 수정): 재생 시작을 **취소 가능한 예약**으로 미룬다. React
      * StrictMode의 setup→cleanup→setup은 둘 다 동기적으로 일어나므로, 첫 setup이 곧바로
      * play()를 부르면 두 번째(살아남는) setup도 각자 play()를 불러 **같은 video에 재생이
@@ -364,10 +342,36 @@ function InGameNightSuccessKillVideo({ eventId, src, finish }) {
      * F-27d(AC-04): 프레임 예약 루프도 같은 마이크로태스크에서 함께 시작한다 — 재생 시도별이
      * 아니라 이 표시 lifetime당 하나뿐이다. 자동재생 재시도(runPlayback의 재귀 호출)는 이
      * 루프를 다시 만들지 않는다.
+     *
+     * F-27d(AC-05, 반려 수정): canvas 2D 컨텍스트 확보(표시 canvas·합성용 작업 canvas 각각의
+     * getContext)도 **같은 취소 가능한 마이크로태스크 안에서** 시도한다. 예전에는 이 확보를
+     * effect setup 본문에 동기적으로 두었다 — StrictMode의 setup→cleanup→setup은 각자 자기
+     * lifetime으로 이 블록을 동기 실행하므로, getContext가 null/throw인 환경에서는 두 setup
+     * 모두 자기 lifetime.settled가 아직 false인 채로 settleOnce(ERROR)를 통과시켜 **같은 사건에
+     * ERROR가 두 번** 보고됐다(사건당 한 번 보장 위반). 이제는 cleanup이 scheduled를 먼저 꺼버린
+     * setup(StrictMode의 첫 setup처럼 버려지는 쪽)은 이 블록 자체가 실행되지 않으므로, 실제로
+     * 살아남은 setup 하나만 컨텍스트를 확보하거나 그 실패를 보고한다.
      */
     let scheduled = true
     queueMicrotask(() => {
       if (!scheduled) return
+      try {
+        const displayCanvas = canvasRef.current
+        const displayCtx = displayCanvas ? displayCanvas.getContext("2d") : null
+        const workCanvas = document.createElement("canvas")
+        const workCtx = workCanvas.getContext("2d")
+        if (!displayCtx || !workCtx) {
+          settleOnce(lifetime, "ERROR", "error")
+          return
+        }
+        lifetime.displayCanvas = displayCanvas
+        lifetime.displayCtx = displayCtx
+        lifetime.workCanvas = workCanvas
+        lifetime.workCtx = workCtx
+      } catch {
+        settleOnce(lifetime, "ERROR", "error")
+        return
+      }
       runPlayback(lifetime)
       if (!lifetime.settled) scheduleFrame(lifetime)
     })
