@@ -46,6 +46,17 @@ export const useAuthStore = create(
              */
             identityGeneration: 0,
 
+            /**
+             * 앱 시작 시 서버 세션(/auth/me) 대조 진행 상태다. "idle" → "pending" → "done".
+             * persist하지 않는다(새 프로세스마다 다시 대조한다). ProtectedRoute는 "pending"
+             * 동안 아무것도 그리지 않는다 — utils/bootstrapSession.js 참고.
+             */
+            sessionBootstrap: "idle",
+            setSessionBootstrap: (sessionBootstrap) => set({ sessionBootstrap }),
+
+            // 서버가 준 role만 갱신한다(같은 계정 — 세대는 올리지 않는다).
+            adoptRole: (role) => set((state) => (state.user ? { user: { ...state.user, role } } : {})),
+
             // 로그인 성공 시 호출합니다.
             // 로그인 상태와 사용자 정보를 저장하고, 직접 로그아웃 플래그는 꺼둡니다.
             login: (user) => {
