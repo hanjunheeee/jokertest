@@ -58,6 +58,36 @@ installDomGlobal("IntersectionObserver", class {
 })
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+/**
+ * F-27d: jsdom은 canvas npm 패키지 없이는 HTMLCanvasElement.getContext를 지원하지 않는다
+ * (항상 null) — InGameNightSuccessKillVideo가 그 null을 canvas 컨텍스트 획득 실패로 보고
+ * 즉시 ERROR로 끝내 버리므로, 실제 페이지가 KILL/HEAL 영상을 전혀 마운트하지 못한 채 다음
+ * 사건으로 넘어가 버린다. 정상 흐름을 보는 기존 시험들을 위해 최소 계약만 구현한 가짜 2D
+ * 컨텍스트를 기본으로 설치하고, AC-05의 canvas 실패 시험만 이를 null로 바꿔치기한다.
+ */
+function createIntegrationCanvasContext(canvas) {
+  return {
+    canvas,
+    drawImage() {},
+    getImageData(x, y, w, h) {
+      return { data: new Uint8ClampedArray(Math.max(0, w) * Math.max(0, h) * 4), width: w, height: h }
+    },
+    createImageData(w, h) {
+      return { data: new Uint8ClampedArray(Math.max(0, w) * Math.max(0, h) * 4), width: w, height: h }
+    },
+    putImageData() {},
+  }
+}
+let integrationCanvasContextFactory = (canvas) => createIntegrationCanvasContext(canvas)
+dom.window.HTMLCanvasElement.prototype.getContext = function fakeGetContext(type) {
+  if (type !== "2d") return null
+  return integrationCanvasContextFactory(this)
+}
+installDomGlobal("HTMLCanvasElement", dom.window.HTMLCanvasElement)
+function resetIntegrationCanvasContextFactory() {
+  integrationCanvasContextFactory = (canvas) => createIntegrationCanvasContext(canvas)
+}
+
 register(new URL("./testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 // ── 바깥 경계 대역(화면·훅·store·서버는 대역하지 않는다) ─────────────────────
@@ -1624,6 +1654,60 @@ test("F27 BL production integration scenarios", async () => {
   assert.equal(errorRelease.length, 2, "ERROR 보고로도 비수신자의 대기가 풀리지 않았다")
   assert.equal(errorRelease[1].payload.waiting, false)
   assert.equal(errorCtx.session.nightTurnRole, "DOCTOR", "ERROR 뒤 다음 역할이 시작되지 않았다")
+  resetScreenBetweenScenes()
+
+  // ── ③d F-27d: canvas 2D 컨텍스트 획득 실패도 ERROR로 실제 서버에 한 번 보고되고, 그
+  // 사건이 큐에서 제거된 뒤 정상 대역으로 돌아오면 다음 사건이 실제로 표시된다 ──────────
+  const canvasErrorCtx = setupBackendNight("f27bl-prod-canvas-error")
+  assert.deepEqual(canvasErrorCtx.submit(canvasErrorCtx.jokerUuid, canvasErrorCtx.citizenUuid), { ok: true })
+  const canvasErrorPayload = canvasErrorCtx.receivedBy(canvasErrorCtx.citizenUuid, "night_action_success")[0].payload
+
+  seedFrontSession(canvasErrorCtx, canvasErrorCtx.citizenUuid)
+  const canvasErrorSocket = createFrontSocket({
+    forwardEmitTo: canvasErrorCtx.backendSockets.get(canvasErrorCtx.citizenUuid),
+  })
+  integrationCanvasContextFactory = () => null
+  let canvasErrorView
+  try {
+    canvasErrorView = await mountInGamePageDirect(canvasErrorSocket, InGamePage)
+    await act(async () => { canvasErrorSocket.deliver("night_action_success", canvasErrorPayload) })
+    await act(async () => { await flushMicrotasks() })
+
+    const canvasErrorAcks = canvasErrorSocket.emitsFor("acknowledge_night_action_success")
+    assert.equal(canvasErrorAcks.length, 1, "canvas 컨텍스트 획득 실패가 완료 보고 한 번으로 이어지지 않았다")
+    assert.equal(canvasErrorAcks[0].payload.outcome, "ERROR", "canvas 실패가 ERROR로 보고되지 않았다")
+    assert.deepEqual(canvasErrorAcks[0].response, { ok: true, duplicate: false })
+    assert.equal(canvasErrorView.container.querySelector("[data-ingame-night-success-kill]"), null,
+      "canvas 실패로 끝난 연출이 화면에 남았다")
+  } finally {
+    resetIntegrationCanvasContextFactory()
+  }
+  canvasErrorCtx.ack(canvasErrorCtx.jokerUuid, canvasErrorPayload, "ERROR")
+  assert.equal(canvasErrorCtx.session.nightTurnRole, "DOCTOR", "canvas ERROR 뒤 다음 역할이 시작되지 않았다")
+
+  // 정상 대역으로 돌아온 뒤 같은 대상에게 온 다음 사건(HEAL)은 실제로 canvas·video와 함께
+  // 표시되고 정상 종료된다 — 실패한 사건 하나가 그 뒤의 표시 경로 자체를 막지 않는다.
+  assert.deepEqual(canvasErrorCtx.submit(canvasErrorCtx.doctorUuid, canvasErrorCtx.citizenUuid), { ok: true })
+  const canvasNextPayload = canvasErrorCtx.receivedBy(canvasErrorCtx.citizenUuid, "night_action_success")[1]?.payload
+  assert.ok(canvasNextPayload, "전제: canvas 실패 뒤에도 대상자가 다음(HEAL) 사건을 받아야 한다")
+  assert.notEqual(canvasNextPayload.eventId, canvasErrorPayload.eventId)
+
+  await act(async () => { canvasErrorSocket.deliver("night_action_success", canvasNextPayload) })
+  const canvasNextVideo = canvasErrorView.container.querySelector("video[src]")
+  assert.notEqual(canvasNextVideo, null, "canvas 실패 뒤 다음 사건이 화면에 표시되지 않았다")
+  assert.equal(canvasNextVideo.getAttribute("src"), NIGHT_SUCCESS_VIDEO["HEAL-TARGET"])
+  assert.notEqual(canvasErrorView.container.querySelector("canvas"), null,
+    "canvas 실패 뒤 다음 사건에 표시 canvas가 렌더되지 않았다")
+
+  await act(async () => { fireEvent(canvasNextVideo, new dom.window.Event("ended")) })
+  const canvasNextAcks = canvasErrorSocket.emitsFor("acknowledge_night_action_success")
+  assert.equal(canvasNextAcks.length, 2, "다음 사건의 정상 종료가 완료 보고로 이어지지 않았다")
+  assert.deepEqual(canvasNextAcks[1].payload, {
+    gameId: canvasErrorCtx.session.id,
+    nightDayIndex: canvasNextPayload.nightDayIndex,
+    eventId: canvasNextPayload.eventId,
+  })
+  canvasErrorCtx.ack(canvasErrorCtx.doctorUuid, canvasNextPayload)
   resetScreenBetweenScenes()
 
   // ── ④ 마지막 밤: 실제 서버가 그 밤의 킬로 승패를 확정하고, 그 방송이 도착해야 결과로 간다 ──

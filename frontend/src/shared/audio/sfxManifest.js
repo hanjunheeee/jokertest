@@ -80,21 +80,25 @@ export const SFX_CLASSIFICATION = Object.freeze({
 })
 
 /**
- * F-27c(AC-01) · 밤 성공 사건 역할 영상 선택표. 사건 `${type}-${perspective}` → public 경로.
+ * F-27d(AC-01) · 밤 성공 사건 역할 영상 선택표. 사건 `${type}-${perspective}` → public 경로.
  *
- * 운영자가 제공한 웹 변환본(VP9 알파 + Opus, frontend/public/video-direction) 5개만 등록한다.
- * INVESTIGATE-TARGET·CONFIRM-TARGET은 전용 영상이 없어 표에 없다 — resolveNightSuccessVideo가
- * 이 경우 null을 돌려주고 기존 임시 연출로 넘어간다(USER 경로를 대신 조회하지 않는다).
- * HEAL-USER·HEAL-TARGET은 같은 파일을 가리킨다 — 자기 치료(perspectives에 둘 다 있는 사건)도
- * 결과 하나만 골라야 하므로 어느 관점으로 조회해도 같은 영상이 나와야 한다.
+ * 운영자가 제공한 stacked MP4(위 절반 색·아래 절반 마스크, frontend/public/video-direction)
+ * 5개만 등록한다 — 브라우저 공통 재생을 위해 알파 채널이 없는 일반 MP4 하나에 색과 마스크를
+ * 위아래로 붙여 담았고, 재생 쪽(InGameNightSuccessKillVideo)이 canvas로 두 절반을 합성해
+ * 알파를 되살린다(VP9 알파 WebM은 더 이상 쓰지 않는다 — WebM 자체는 자산으로 남아 있지만
+ * 선택표는 참조하지 않는다). INVESTIGATE-TARGET·CONFIRM-TARGET은 전용 영상이 없어 표에 없다 —
+ * resolveNightSuccessVideo가 이 경우 null을 돌려주고 기존 임시 연출로 넘어간다(USER 경로를
+ * 대신 조회하지 않는다). HEAL-USER·HEAL-TARGET은 같은 파일을 가리킨다 — 자기 치료
+ * (perspectives에 둘 다 있는 사건)도 결과 하나만 골라야 하므로 어느 관점으로 조회해도 같은
+ * 영상이 나와야 한다.
  */
 const NIGHT_SUCCESS_VIDEO_TABLE = Object.freeze({
-  "KILL-USER": "/video-direction/night-success-kill-user.webm",
-  "KILL-TARGET": "/video-direction/night-success-kill-target.webm",
-  "HEAL-USER": "/video-direction/night-success-heal.webm",
-  "HEAL-TARGET": "/video-direction/night-success-heal.webm",
-  "INVESTIGATE-USER": "/video-direction/night-success-investigate-user.webm",
-  "CONFIRM-USER": "/video-direction/night-success-confirm-user.webm",
+  "KILL-USER": "/video-direction/night-success-kill-user-stacked.mp4",
+  "KILL-TARGET": "/video-direction/night-success-kill-target-stacked.mp4",
+  "HEAL-USER": "/video-direction/night-success-heal-stacked.mp4",
+  "HEAL-TARGET": "/video-direction/night-success-heal-stacked.mp4",
+  "INVESTIGATE-USER": "/video-direction/night-success-investigate-user-stacked.mp4",
+  "CONFIRM-USER": "/video-direction/night-success-confirm-user-stacked.mp4",
 })
 
 /** 아직 자산이 제공되지 않은 항목의 공통 형태 — 경로·해시를 지어내지 않는다. */

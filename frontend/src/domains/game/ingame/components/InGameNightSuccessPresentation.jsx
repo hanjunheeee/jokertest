@@ -3,6 +3,7 @@ import InGameParchmentModalBase from "./parchment/InGameParchmentModalBase.js"
 import InGameParchmentConfirmButton from "./parchment/InGameParchmentConfirmButton.js"
 import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { resolveNightSuccessVideo } from "../utils/resolveNightSuccessVideo.js"
+import { composeStackedAlpha } from "../utils/composeStackedAlpha.js"
 import { getSfxMix, subscribeSfxMix } from "../../../../shared/hooks/useSfxRuntime.js"
 import { INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
 import {
@@ -15,12 +16,17 @@ import {
 } from "../constants/killReveal/ingameKillReveal.js"
 
 /**
- * F-27c(알파 처리): 공용 INGAME_KILL_REVEAL_VIDEO_CLASS에는 bg-black이 있다 — 그 상수는
- * 바꾸지 않는다(공개 사망 연출은 여전히 검은 배경을 깐다). 역할 영상 5개는 VP9 알파 웹 변환본이라
- * 같은 크기·테두리·그림자 관례를 재사용하되 배경색만 뺀다(검은 배경을 깔면 알파가 무의미하다).
+ * F-27d(알파 처리): 공용 INGAME_KILL_REVEAL_VIDEO_CLASS에는 bg-black이 있다 — 그 상수는
+ * 바꾸지 않는다(공개 사망 연출은 여전히 검은 배경을 깐다). 역할 영상 5개는 stacked MP4(위
+ * 절반 색·아래 절반 마스크)라 video 자체는 화면에 보이지 않고, 같은 크기·테두리·그림자
+ * 관례를 표시용 canvas가 이어받되 배경색만 뺀다(검은 배경을 깔면 canvas가 그린 알파가
+ * 무의미하다).
  */
 const INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS =
   "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+
+/** 화면에 노출하지 않는 video 요소(합성 원본)에 적용하는 숨김 스타일. */
+const INGAME_NIGHT_SUCCESS_HIDDEN_VIDEO_STYLE = Object.freeze({ display: "none" })
 
 /** night_action_success type → 전용 영상이 없는 동안 임시 연출을 보여줄 수 있는 종류. */
 const NIGHT_SUCCESS_PENDING_SUPPORTED_TYPES = new Set(["HEAL", "INVESTIGATE", "CONFIRM"])
@@ -54,6 +60,34 @@ function cancelPlaybackWatchdog(lifetime) {
   if (!lifetime || lifetime.watchdogId === null || lifetime.watchdogId === undefined) return
   clearTimeout(lifetime.watchdogId)
   lifetime.watchdogId = null
+}
+
+/**
+ * F-27d(AC-04): lifetime이 걸어 둔 프레임 예약(requestVideoFrameCallback 또는 그 대체인
+ * requestAnimationFrame)을 취소한다. video가 requestVideoFrameCallback을 지원하면 그 예약은
+ * cancelVideoFrameCallback으로만 취소할 수 있다 — cancelAnimationFrame을 잘못 불러도 아무
+ * 효과가 없어 예약이 살아남는 사고를 막기 위해 어떤 방식으로 걸었는지(frameKind)를 함께 본다.
+ */
+function cancelFrameLoop(lifetime, video) {
+  if (!lifetime || lifetime.frameHandle === null || lifetime.frameHandle === undefined) return
+  const handle = lifetime.frameHandle
+  const kind = lifetime.frameKind
+  lifetime.frameHandle = null
+  if (kind === "video-frame" && video && typeof video.cancelVideoFrameCallback === "function") {
+    try {
+      video.cancelVideoFrameCallback(handle)
+    } catch {
+      // 이미 분리된 요소의 취소는 무시한다(정리 경로가 던져서는 안 된다).
+    }
+    return
+  }
+  if (typeof cancelAnimationFrame === "function") {
+    try {
+      cancelAnimationFrame(handle)
+    } catch {
+      // 위와 같은 이유.
+    }
+  }
 }
 
 /**
@@ -102,6 +136,7 @@ function applyMixToVideo(video, mix, forceMuted) {
  */
 function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
   const videoRef = useRef(null)
+  const canvasRef = useRef(null)
   const [status, setStatus] = useState("loading")
   /**
    * F-27c(AC-03/AC-05): **표시 수명 + 재생 시도 세대 + 무음 latch + 종료 가드.**
@@ -126,9 +161,86 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
     if (!lifetime || lifetime.settled) return
     lifetime.settled = true
     cancelPlaybackWatchdog(lifetime)
+    // lifetime.video(설정 시점에 고정한 참조)를 쓴다 — videoRef.current는 언마운트 정리
+    // 시점에 React가 이미 null로 되돌렸을 수 있다(AC-04 반려 수정: 그 경우 cancelFrameLoop가
+    // video 부재로 requestVideoFrameCallback 취소 대신 cancelAnimationFrame으로 잘못 새어
+    // 예약이 실제로는 취소되지 않았다).
+    cancelFrameLoop(lifetime, lifetime.video)
     if (nextStatus) setStatus(nextStatus)
     onFinish(outcome)
   }, [onFinish])
+
+  /**
+   * F-27d(AC-02/AC-03/AC-05): 한 프레임을 읽어 색·마스크 절반을 합성하고 표시 canvas에 그린다.
+   *
+   * video가 아직 프레임 데이터를 갖지 못했거나(readyState < HAVE_CURRENT_DATA) 크기를 모르면
+   * (videoWidth·videoHeight가 0 이하) 그리지 않고 조용히 다음 예약을 기다린다 — 이것은 실패가
+   * 아니라 "아직" 상태다. 반대로 높이가 짝수가 아니면(위·아래 절반으로 나눌 수 없으면) 자산
+   * 계약(A-02) 위반이라 ERROR로 끝낸다. canvas 2D 연산(drawImage·getImageData·putImageData) 중
+   * 하나라도 던지면 그 사건 하나만 ERROR로 끝내고 다음 사건으로 넘어간다.
+   */
+  const composeFrame = useCallback((lifetime) => {
+    const video = lifetime.video
+    if (!video) return
+    const width = video.videoWidth
+    const height = video.videoHeight
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+    if (!Number.isFinite(video.readyState) || video.readyState < 2) return
+    if (height % 2 !== 0) {
+      settleOnce(lifetime, "ERROR", "error")
+      return
+    }
+    const halfHeight = height / 2
+    try {
+      const workCanvas = lifetime.workCanvas
+      const workCtx = lifetime.workCtx
+      const displayCanvas = lifetime.displayCanvas
+      const displayCtx = lifetime.displayCtx
+      if (!workCanvas || !workCtx || !displayCanvas || !displayCtx) {
+        settleOnce(lifetime, "ERROR", "error")
+        return
+      }
+      workCanvas.width = width
+      workCanvas.height = height
+      workCtx.drawImage(video, 0, 0, width, height)
+      const colorImage = workCtx.getImageData(0, 0, width, halfHeight)
+      const maskImage = workCtx.getImageData(0, halfHeight, width, halfHeight)
+      const composed = composeStackedAlpha(colorImage.data, maskImage.data)
+      displayCanvas.width = width
+      displayCanvas.height = halfHeight
+      const outImage = displayCtx.createImageData(width, halfHeight)
+      outImage.data.set(composed)
+      displayCtx.putImageData(outImage, 0, 0)
+    } catch {
+      settleOnce(lifetime, "ERROR", "error")
+    }
+  }, [settleOnce])
+
+  /**
+   * F-27d(AC-04): 표시 lifetime당 하나의 프레임 예약 루프. requestVideoFrameCallback이 있으면
+   * 그 video에서 예약하고(재생 프레임이 실제로 갱신될 때만 불린다), 없으면 requestAnimationFrame
+   * 으로 대체한다. 콜백 진입 시 예약 ID를 먼저 비우고(중복 취소 방지), attemptRef 동일성·alive·
+   * settled를 확인한 뒤에만 그리고 다음 프레임을 예약한다 — 취소된 옛 콜백이 강제로 실행돼도
+   * (예: 취소 자체가 실패한 테스트 환경) 이 가드가 추가 draw·재예약·ACK를 막는다.
+   */
+  const scheduleFrame = useCallback((lifetime) => {
+    if (!lifetime.alive || lifetime.settled) return
+    const video = lifetime.video
+    const step = () => {
+      lifetime.frameHandle = null
+      if (attemptRef.current !== lifetime || !lifetime.alive || lifetime.settled) return
+      composeFrame(lifetime)
+      if (!lifetime.alive || lifetime.settled) return
+      scheduleFrame(lifetime)
+    }
+    if (video && typeof video.requestVideoFrameCallback === "function") {
+      lifetime.frameKind = "video-frame"
+      lifetime.frameHandle = video.requestVideoFrameCallback(step)
+    } else if (typeof requestAnimationFrame === "function") {
+      lifetime.frameKind = "raf"
+      lifetime.frameHandle = requestAnimationFrame(step)
+    }
+  }, [composeFrame])
 
   const runPlayback = useCallback((lifetime, { retry = false } = {}) => {
     // 이미 끝난 사건은 새 시도를 시작하지 않는다(예: StrictMode 이중 마운트의 첫 setup이
@@ -194,11 +306,16 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
   }, [settleOnce])
 
   useEffect(() => {
-    const lifetime = { alive: true, generation: 0, watchdogId: null, silentLatch: false, settled: false }
+    const lifetime = {
+      alive: true, generation: 0, watchdogId: null, silentLatch: false, settled: false,
+      frameHandle: null, frameKind: null, workCanvas: null, workCtx: null,
+      displayCanvas: null, displayCtx: null, video: null,
+    }
     attemptRef.current = lifetime
     setStatus("loading")
 
     const video = videoRef.current
+    lifetime.video = video
     if (video) {
       try {
         video.pause()
@@ -209,17 +326,44 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
     }
 
     /**
+     * F-27d(AC-02/AC-05): canvas 2D 컨텍스트는 이 lifetime의 예약 시작에서 딱 한 번 확보한다 —
+     * 표시(고정 크기) canvas와, 합성 작업 전용으로 DOM에 붙이지 않는 canvas 각각의 getContext가
+     * null이거나 던지면 프레임을 하나도 그리지 못하므로 이 사건은 즉시 ERROR로 끝난다.
+     */
+    try {
+      const displayCanvas = canvasRef.current
+      const displayCtx = displayCanvas ? displayCanvas.getContext("2d") : null
+      const workCanvas = document.createElement("canvas")
+      const workCtx = workCanvas.getContext("2d")
+      if (!displayCtx || !workCtx) {
+        settleOnce(lifetime, "ERROR", "error")
+      } else {
+        lifetime.displayCanvas = displayCanvas
+        lifetime.displayCtx = displayCtx
+        lifetime.workCanvas = workCanvas
+        lifetime.workCtx = workCtx
+      }
+    } catch {
+      settleOnce(lifetime, "ERROR", "error")
+    }
+
+    /**
      * F-27c(AC-02, CODEX 반려 수정): 재생 시작을 **취소 가능한 예약**으로 미룬다. React
      * StrictMode의 setup→cleanup→setup은 둘 다 동기적으로 일어나므로, 첫 setup이 곧바로
      * play()를 부르면 두 번째(살아남는) setup도 각자 play()를 불러 **같은 video에 재생이
      * 두 번** 걸린다. 대신 마이크로태스크로 미뤄 두면 첫 setup의 cleanup이 그 예약을
      * 무효화하고, 실제로 살아남은 setup의 예약만 마이크로태스크 큐가 비워질 때 실행된다 —
      * 같은 사건·같은 마운트 수명에서 play()는 정확히 한 번만 불린다.
+     *
+     * F-27d(AC-04): 프레임 예약 루프도 같은 마이크로태스크에서 함께 시작한다 — 재생 시도별이
+     * 아니라 이 표시 lifetime당 하나뿐이다. 자동재생 재시도(runPlayback의 재귀 호출)는 이
+     * 루프를 다시 만들지 않는다.
      */
     let scheduled = true
     queueMicrotask(() => {
       if (!scheduled) return
       runPlayback(lifetime)
+      if (!lifetime.settled) scheduleFrame(lifetime)
     })
 
     return () => {
@@ -228,13 +372,14 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
       scheduled = false
       lifetime.alive = false
       cancelPlaybackWatchdog(lifetime)
+      cancelFrameLoop(lifetime, lifetime.video)
       try {
         videoRef.current?.pause?.()
       } catch {
         // 이미 분리된 요소의 pause는 무시한다(정리 경로가 던져서는 안 된다).
       }
     }
-  }, [eventId, src, runPlayback])
+  }, [eventId, src, runPlayback, scheduleFrame, settleOnce])
 
   // F-27c(AC-03): 설정 변경(Master·SFX 볼륨, 음소거)을 같은 video에 반영한다 — play()를 다시
   // 부르지 않는다. 무음 latch가 서 있는 동안에는(AC-05) 설정이 유음으로 바뀌어도 이 사건은
@@ -265,15 +410,22 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
   return (
     <div className={INGAME_KILL_REVEAL_BACKDROP_CLASS} data-ingame-night-success-kill="">
       <div className={INGAME_KILL_REVEAL_PANEL_WRAP_CLASS}>
+        <canvas
+          ref={canvasRef}
+          className={INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS}
+          data-ingame-night-success-canvas=""
+        />
         <video
           ref={videoRef}
-          className={INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS}
           src={src}
           muted
           playsInline
           preload="auto"
           onEnded={handleEnded}
           onError={handleError}
+          style={INGAME_NIGHT_SUCCESS_HIDDEN_VIDEO_STYLE}
+          aria-hidden="true"
+          data-ingame-night-success-source-video=""
         />
         {status === "retry" ? (
           <>
