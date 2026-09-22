@@ -30,9 +30,8 @@ import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
  */
 const RESULT_BOOTSTRAP_HOLD_MS = 6000
 
-/** 결과 화면의 방 코드 진입 버튼. 로비 버튼과 같은 줄에 놓인다. */
-// 결과 화면의 평범한 텍스트 버튼(확인 불가 화면의 '로비로 돌아가기'). 방 코드 보기 버튼은 운영자
-// 지시로 삭제했다(2026-09-22) — 코드는 대기방에서만 본다.
+// 결과 화면의 평범한 텍스트 버튼(확인 불가 화면의 '로비로 돌아가기'). 결과 화면에서 방 번호를
+// 보여 주던 진입은 운영자 지시로 삭제했다(2026-09-22) — 번호는 대기방에서만 본다.
 const RESULT_PLAIN_BUTTON_CLASS =
   "cursor-pointer border-0 bg-transparent p-0 font-subheading app-text-scaled [--app-text-size:clamp(0.85rem,1.2vw,1.05rem)] font-semibold text-[#f5e6c8] underline decoration-dotted underline-offset-4 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
 
@@ -52,7 +51,7 @@ const UNAVAILABLE_BODY_CLASS =
  */
 const RESULT_UNAVAILABLE_TITLE = "게임 결과를 확인할 수 없습니다"
 const RESULT_UNAVAILABLE_BODY =
-  "이 판의 결과와 방 코드는 화면이 종료까지 받아 둔 값으로만 보여드립니다. 새로고침 등으로 그 값이 사라졌거나 이 계정의 참가 자격이 이미 정리된 경우에는 다시 불러올 수 없습니다."
+  "이 판의 결과는 화면이 종료까지 받아 둔 값으로만 보여드립니다. 새로고침 등으로 그 값이 사라졌거나 이 계정의 참가 자격이 이미 정리된 경우에는 다시 불러올 수 없습니다."
 
 /**
  * 결과 페이지 최상위 — 실데이터를 우선하고, 없으면 `?outcome=` 미리보기, 둘 다 없으면 로비로 보낸다.
