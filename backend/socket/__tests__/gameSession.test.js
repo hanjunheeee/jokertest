@@ -2959,7 +2959,8 @@ test('resolve_night 종료(CITIZEN 승리): 마지막 생존 JOKER가 NIGHT 희�
         Object.keys(expectedPayload).sort(),
         ['dayIndex', 'deathReveals', 'gameId', 'phase', 'players', 'victimUuid', 'winResult'],
     )
-    assert.deepEqual(expectedPayload.winResult, { winner: 'CITIZEN' })
+    assert.equal(expectedPayload.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
     assert.deepEqual(expectedPayload.deathReveals, [{ victimUuid: jokerUuid, source: 'UNKNOWN_NIGHT' }])
     assert.deepEqual(
         expectedPayload.players.map((p) => p.uuid).sort(),
@@ -2971,7 +2972,8 @@ test('resolve_night 종료(CITIZEN 승리): 마지막 생존 JOKER가 NIGHT 희�
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        const serialized = JSON.stringify(delivered[0].payload)
+        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'privateResults', 'ballotSnapshot', 'nightActions']) {
             assert.equal(serialized.includes(forbidden), false)
         }
@@ -3003,7 +3005,8 @@ test('resolve_night 종료(JOKER 승리): NIGHT 희생으로 parity(생존 JOKER
         Object.keys(expectedPayload).sort(),
         ['dayIndex', 'deathReveals', 'gameId', 'phase', 'players', 'victimUuid', 'winResult'],
     )
-    assert.deepEqual(expectedPayload.winResult, { winner: 'JOKER' })
+    assert.equal(expectedPayload.winResult.winner, 'JOKER')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
     assert.deepEqual(expectedPayload.deathReveals, [{ victimUuid, source: 'JOKER' }])
 
     for (const uuid of uuids) {
@@ -3011,7 +3014,8 @@ test('resolve_night 종료(JOKER 승리): NIGHT 희생으로 parity(생존 JOKER
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        const serialized = JSON.stringify(delivered[0].payload)
+        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'privateResults', 'ballotSnapshot', 'nightActions']) {
             assert.equal(serialized.includes(forbidden), false)
         }
@@ -3861,7 +3865,8 @@ test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        const serialized = JSON.stringify(delivered[0].payload)
+        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid', 'privateResults', 'nightActions']) {
             assert.equal(serialized.includes(forbidden), false)
         }
@@ -3948,14 +3953,16 @@ test('resolve_tribunal_vote 종료(CITIZEN 승리): 피고인이 마지막 생�
         Object.keys(expectedPayload).sort(),
         ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
     )
-    assert.deepEqual(expectedPayload.winResult, { winner: 'CITIZEN' })
+    assert.equal(expectedPayload.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
 
     for (const uuid of uuids) {
         const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'tribunal_vote_resolved')
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        const serialized = JSON.stringify(delivered[0].payload)
+        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid']) {
             assert.equal(serialized.includes(forbidden), false)
         }
@@ -4000,14 +4007,16 @@ test('resolve_tribunal_vote 종료(JOKER 승리): 피고인이 비-JOKER고 처�
         Object.keys(expectedPayload).sort(),
         ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
     )
-    assert.deepEqual(expectedPayload.winResult, { winner: 'JOKER' })
+    assert.equal(expectedPayload.winResult.winner, 'JOKER')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
 
     for (const uuid of uuids) {
         const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'tribunal_vote_resolved')
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        const serialized = JSON.stringify(delivered[0].payload)
+        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid']) {
             assert.equal(serialized.includes(forbidden), false)
         }
@@ -4131,7 +4140,9 @@ function assertNoForbiddenPrivateData(value, secretValues, path = [], insideSelf
     }
     if (value !== null && typeof value === 'object') {
         for (const [key, val] of Object.entries(value)) {
+            // 판이 끝난 뒤의 전원 정체 공개(winResult.reveals, 2026-09-22)는 self와 같이 role/team이 허용된다.
             const nextInsideSelf = insideSelf || (path.length === 0 && key === 'self')
+                || (path.length === 1 && path[0] === 'winResult' && key === 'reveals')
             assert.ok(
                 nextInsideSelf || !FORBIDDEN_PRIVATE_KEYS.has(key),
                 `forbidden key "${key}" found at ${[...path, key].join('.') || '(root)'}`,
@@ -4417,7 +4428,8 @@ test('get_session_snapshot: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — 소�
         Object.keys(snapshot).sort(),
         ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'tribunal', 'winResult'],
     )
-    assert.deepEqual(snapshot.winResult, { winner: 'CITIZEN' })
+    assert.equal(snapshot.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(snapshot.winResult.reveals) && snapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
     // 종료된 판에는 진행할 단계가 없다 — kind만 NONE이고 수는 담기지 않는다.
     assert.deepEqual(snapshot.progress, { kind: 'NONE', doneCount: null, requiredCount: null })
     assert.equal(snapshot.tribunal.executedUuid, jokerUuid)
@@ -4512,7 +4524,8 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
         victimUuid: citizenC,
         deathReveals: [{ victimUuid: citizenC, source: 'JOKER' }],
     })
-    assert.deepEqual(endedSnapshot.winResult, { winner: 'JOKER' })
+    assert.equal(endedSnapshot.winResult.winner, 'JOKER')
+    assert.ok(Array.isArray(endedSnapshot.winResult.reveals) && endedSnapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
     assert.equal(Object.hasOwn(endedSnapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(endedSnapshot, 'tribunal'), false)
     assertNoForbiddenPrivateData(endedSnapshot, collectOtherPlayerRoleSecrets(session, citizenB))

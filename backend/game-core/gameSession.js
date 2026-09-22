@@ -338,8 +338,30 @@ function buildTerminalFields(session) {
         phase: session.phase,
         players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, isAlive: alive })),
     }
-    if (session.winResult) fields.winResult = { ...session.winResult }
+    if (session.winResult) fields.winResult = buildPublicWinResult(session)
     return fields
+}
+
+/**
+ * 공개 winResult — canonical `session.winResult`({ winner })에 **전원 정체 공개(reveals)**를 붙인다.
+ * 판이 끝난 뒤(winResult가 있는 순간 phase는 ENDED)에는 역할이 비밀이 아니다 — 결과 화면이
+ * 참가자 명단·직업·생사를 그리는 데 이것을 쓴다(frontend buildGameResultViewModel). canonical
+ * 객체는 그대로 { winner } 한 키다(저장·재평가 계약 불변). 2026-09-22 실제 인수에서 결과 화면의
+ * 플레이어가 비어 있던 원인이 이 목록의 부재였다.
+ */
+function buildPublicWinResult(session) {
+    return { ...session.winResult, reveals: buildRoleReveals(session) }
+}
+
+function buildRoleReveals(session) {
+    return [...session.players.values()].map((player) => ({
+        uuid: player.uuid,
+        nickname: player.nickname,
+        role: player.role,
+        team: ROLE_DEFINITIONS[player.role]?.team ?? null,
+        alive: player.alive,
+        deathReason: player.alive ? null : (player.deathReason ?? null),
+    }))
 }
 
 // 완주하지 못한 판의 game_results.winner에 넣는 값. 컬럼이 NOT NULL이라 "승자 없음"도
@@ -4064,7 +4086,7 @@ function buildSessionSnapshot(session, uuid) {
         }
     }
 
-    if (session.winResult) fields.winResult = { ...session.winResult }
+    if (session.winResult) fields.winResult = buildPublicWinResult(session)
 
     return fields
 }

@@ -148,3 +148,32 @@ test('종료 후 mutation 차단: 8개 prepare/commit 진입점 전부가 GAME_A
         )
     }
 })
+
+// 2026-09-22 — 결과 화면용 공개 winResult: canonical { winner }는 그대로, 공개 필드(buildTerminalFields·
+// 스냅샷)에만 전원 정체 공개(reveals)가 붙는다.
+test('공개 winResult: ENDED이면 buildTerminalFields·스냅샷의 winResult에 전원 reveals(uuid·nickname·role·team·alive·deathReason)가 실리고, canonical session.winResult는 { winner } 한 키다', () => {
+    const session = nightSessionOf3({ id: 'room-public-win-result' })
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    assert.equal(commitNightResolution(session, sourcedNightResolution(session, { pendingEliminationTargetId: jokerUuid })).ok, true)
+    assert.equal(session.phase, 'ENDED')
+    const fields = gameSession.buildTerminalFields(session)
+    assert.deepEqual(Object.keys(session.winResult), ['winner'])
+    assert.equal(fields.winResult.winner, session.winResult.winner)
+    assert.equal(fields.winResult.reveals.length, session.players.size)
+    for (const reveal of fields.winResult.reveals) {
+        assert.deepEqual(Object.keys(reveal).sort(), ['alive', 'deathReason', 'nickname', 'role', 'team', 'uuid'])
+        const player = session.players.get(reveal.uuid)
+        assert.equal(reveal.role, player.role)
+        assert.equal(reveal.nickname, player.nickname)
+        assert.equal(reveal.alive, player.alive)
+        assert.equal(reveal.team, player.role === 'JOKER' ? 'JOKER' : 'CITIZEN')
+        if (player.alive) assert.equal(reveal.deathReason, null)
+    }
+    const anyUuid = [...session.players.keys()][0]
+    const snapshot = gameSession.getSessionSnapshotForPlayer(anyUuid, session.id)
+    assert.ok(snapshot.ok)
+    assert.equal(snapshot.snapshot.winResult.reveals.length, session.players.size)
+    // 공개 객체를 변형해도 canonical은 오염되지 않는다.
+    fields.winResult.reveals[0].role = 'TAMPERED'
+    assert.notEqual(session.players.get(fields.winResult.reveals[0].uuid).role, 'TAMPERED')
+})

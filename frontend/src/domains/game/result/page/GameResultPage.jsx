@@ -19,8 +19,6 @@ import { useGameResultPreview } from "../hooks/useGameResultPreview.js"
 import { useInGameExit } from "@/domains/game/ingame/hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "@/domains/game/ingame/hooks/useInGameSessionSnapshotSync.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
-import RoomCodeViewModal from "@/domains/game/matching/components/RoomCodeViewModal.jsx"
-import { isValidRoomCode } from "@/domains/game/matching/utils/roomCode.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 /**
@@ -33,7 +31,9 @@ import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 const RESULT_BOOTSTRAP_HOLD_MS = 6000
 
 /** 결과 화면의 방 코드 진입 버튼. 로비 버튼과 같은 줄에 놓인다. */
-const ROOM_CODE_BUTTON_CLASS =
+// 결과 화면의 평범한 텍스트 버튼(확인 불가 화면의 '로비로 돌아가기'). 방 코드 보기 버튼은 운영자
+// 지시로 삭제했다(2026-09-22) — 코드는 대기방에서만 본다.
+const RESULT_PLAIN_BUTTON_CLASS =
   "cursor-pointer border-0 bg-transparent p-0 font-subheading app-text-scaled [--app-text-size:clamp(0.85rem,1.2vw,1.05rem)] font-semibold text-[#f5e6c8] underline decoration-dotted underline-offset-4 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
 
 /** 확인 불가 화면의 안내 문구 스타일. 결과 연출 없이 사실만 읽어 준다. */
@@ -65,15 +65,9 @@ export default function GameResultPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [introComplete, setIntroComplete] = useState(false)
-  const [roomCodeOpen, setRoomCodeOpen] = useState(false)
   const live = useGameResultData()
   const preview = useGameResultPreview()
   const { requestExit } = useInGameExit()
-
-  // F-24(AC-01, A-14): 종료까지 이 화면이 받아 둔 코드. 없으면 null이고, 그 상태가 곧
-  // "확인할 수 없음"이다(다른 곳에서 복원해 오지 않는다).
-  const roomCode = useInGameStore((s) => s.state?.roomCode ?? null)
-  const canViewRoomCode = isValidRoomCode(roomCode)
 
   /**
    * F-24(AC-01/AC-02, A-14): **서버 참가 소속으로만** 이 화면의 상태를 다시 묻는다.
@@ -155,26 +149,6 @@ export default function GameResultPage() {
         transition={{ ...UI_REVEAL_TRANSITION, delay: GAME_RESULT_LOBBY_BUTTON_REVEAL_DELAY }}
       >
         {/*
-          F-24(AC-01/AC-02, A-14): 종료 직후의 방 코드 보기·복사.
-
-          코드의 원천은 **이 화면이 종료까지 받아 둔 현재 계정의 값**(state.roomCode)뿐이다.
-          새로고침으로 그 값이 사라졌거나 서버 참가 매핑이 이미 정리됐다면 복원하지 않는다 —
-          세션 보존 계약을 새로 만들지 않고, 다른 계정의 잔존 코드나 더미를 대신 보여주지도
-          않는다. 값이 없으면 진입 자체가 "확인 불가"이고, 눌러도 모달이 그 사실과 비활성
-          복사를 그대로 보여준다.
-
-          확인 불가 화면(view 없음)에서도 같은 진입을 준다 — 실패 경로를 버튼째 숨기면 사용자는
-          "코드를 확인할 수 없다"는 사실 자체를 어디서도 볼 수 없다.
-
-          preview(`?outcome=`) 진입에만 실제 코드 진입을 주지 않는다 — 더미 결과 화면에서
-          복사되는 코드는 어느 방도 가리키지 않는다.
-        */}
-        {live || !view ? (
-          <button type="button" className={ROOM_CODE_BUTTON_CLASS} onClick={() => setRoomCodeOpen(true)}>
-            {canViewRoomCode ? "방 코드 보기" : "방 코드 확인 불가"}
-          </button>
-        ) : null}
-        {/*
           로비 이동은 결과가 있을 때만 **실제 이탈**이다 — 그때만 기존 종료 경로(useInGameExit)를
           부른다. 확인 불가 화면에는 정리할 참가 소속도, 확인을 물을 것도 없으므로 결과 화면의
           장식 버튼 대신 화면 이동만 하는 평범한 버튼을 둔다(이탈 요청은 만들지 않는다).
@@ -188,7 +162,7 @@ export default function GameResultPage() {
         ) : (
           <button
             type="button"
-            className={ROOM_CODE_BUTTON_CLASS}
+            className={RESULT_PLAIN_BUTTON_CLASS}
             onClick={() => navigate("/multiplay", { replace: true })}
           >
             로비로 돌아가기
@@ -196,11 +170,6 @@ export default function GameResultPage() {
         )}
       </motion.div>
 
-      <RoomCodeViewModal
-        open={roomCodeOpen}
-        onClose={() => setRoomCodeOpen(false)}
-        roomCode={roomCode}
-      />
     </>
   )
 }

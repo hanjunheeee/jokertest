@@ -735,9 +735,10 @@ test("AC-03(CODEX 반려 수정): 자동재생 차단(NotAllowedError)은 재시
     })
     try {
       await flushMicrotasks()
-      const retryButton = [...container.querySelectorAll("button")]
-        .find((b) => b.textContent.trim() === "다시 재생")
-      assert.notEqual(retryButton, null, "자동재생 차단은 재시도 버튼을 보여줘야 한다")
+      const retrySurface = container.querySelector("[data-ingame-kill-reveal-retry]")
+      assert.notEqual(retrySurface, null, "자동재생 차단은 패널을 눌러 다시 재생하는 표면을 보여줘야 한다")
+      assert.equal([...container.querySelectorAll("button")].some((b) => b.textContent.trim() === "다시 재생"), false,
+        "별도 '다시 재생' 버튼은 그리지 않는다(운영자 UI 결정 2026-09-22)")
       assert.deepEqual(finishes, [], "재시도 화면만으로는 아직 아무것도 보고하면 안 된다")
     } finally {
       unmount()
@@ -759,9 +760,8 @@ test("AC-03(CODEX 반려 수정): 자동재생 차단이 아닌 재생 실패(�
     try {
       await flushMicrotasks()
       assert.deepEqual(finishes, ["ERROR"], "자동재생 차단이 아닌 재생 실패는 재시도로 묶지 않고 바로 ERROR로 보고해야 한다")
-      const retryButton = [...container.querySelectorAll("button")]
-        .find((b) => b.textContent.trim() === "다시 재생")
-      assert.equal(retryButton, undefined, "재시도로 풀리지 않는 실패인데 재시도 버튼을 보여주면 안 된다")
+      assert.equal(container.querySelector("[data-ingame-kill-reveal-retry]"), null,
+        "재시도로 풀리지 않는 실패인데 재시도 표면을 보여주면 안 된다")
     } finally {
       unmount()
     }

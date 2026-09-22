@@ -469,7 +469,9 @@ function assertNoForbiddenPrivateData(value, secretValues, path = [], insideSelf
     }
     if (value !== null && typeof value === 'object') {
         for (const [key, val] of Object.entries(value)) {
+            // 판이 끝난 뒤의 전원 정체 공개(winResult.reveals, 2026-09-22)는 self와 같이 role/team이 허용된다.
             const nextInsideSelf = insideSelf || (path.length === 0 && key === 'self')
+                || (path.length === 1 && path[0] === 'winResult' && key === 'reveals')
             assert.ok(
                 nextInsideSelf || !FORBIDDEN_PRIVATE_KEYS.has(key),
                 `forbidden key "${key}" found at ${[...path, key].join('.') || '(root)'}`,

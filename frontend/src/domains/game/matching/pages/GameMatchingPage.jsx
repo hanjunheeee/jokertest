@@ -32,6 +32,12 @@ import RoomSettingsResultNotice from "../components/RoomSettingsResultNotice.jsx
 // 필요하지 않다(대기방에는 둘 다 없다). 상태는 useMatchingPage→useMatchingRoomKick이 소유한다.
 import SettingKickPlayerModalContent from "@/domains/game/ingame/components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalContent.jsx"
 
+// 방장 버튼 행 — 화면 아래에 붙여 어떤 높이에서도 잘리지 않는다(위 주석 참고).
+const MATCHING_HOST_ACTION_ROW_CLASS =
+  "absolute bottom-[clamp(0.75rem,3vh,2rem)] left-1/2 z-30 flex -translate-x-1/2 items-center gap-3"
+const MATCHING_HOST_ACTION_BUTTON_CLASS =
+  "interactive-scale cursor-pointer rounded-md border border-[#c9b892]/60 bg-black/55 px-4 py-2 font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,1.3vw,1.1rem)] font-bold text-[#f5f0e6]"
+
 export default function GameMatchingPage() {
   const {
     uiVisible,
@@ -68,6 +74,7 @@ export default function GameMatchingPage() {
     roomSettings,
     roomAccessType,
     canKick,
+    isKickHost,
     kickModalOpen,
     openKickModal,
     closeKickModal,
@@ -153,31 +160,39 @@ export default function GameMatchingPage() {
         버튼이 아예 나타나지 않으므로 화면에서 편집을 시작할 수 없고, 서버도 같은 판정을
         독립적으로 다시 한다(버튼 상태는 권한 경계가 아니다).
       */}
-      {canEditSettings && !settingsOpen ? (
-        <button
-          type="button"
-          onClick={openSettings}
-          aria-label="방 설정 변경"
-          className="interactive-scale absolute left-1/2 top-[calc(50%+18rem)] z-30 -translate-x-1/2 cursor-pointer rounded-md border border-[#c9b892]/60 bg-black/55 px-4 py-2 font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,1.3vw,1.1rem)] font-bold text-[#f5f0e6]"
-        >
-          방 설정 변경
-        </button>
-      ) : null}
-
       {/*
+        방장 버튼 행. 예전에는 두 버튼이 `top-[calc(50%+18rem/21rem)]`에 있어 세로 760px 미만
+        화면에서는 `overflow-hidden` 밖으로 잘려 "추방·설정이 아예 없다"로 보였다(2026-09-22
+        실제 인수, 510px QA 창). 화면 아래에 붙여 어떤 높이에서도 보이게 한다.
         F-21(AC-01/AC-02): 추방 진입은 방장에게만 있다. 비방장에게는 버튼 자체가 없고, 서버도
-        같은 판정을 독립적으로 다시 한다(버튼 상태는 권한 경계가 아니다). 설정 편집과 같은
-        자리를 쓰지 않도록 한 줄 아래에 둔다.
+        같은 판정을 독립적으로 다시 한다(버튼 상태는 권한 경계가 아니다). 방장이지만 방 검증
+        전이면 비활성으로 그려 "왜 안 되는지"를 보여준다.
       */}
-      {canKick && !settingsOpen && !kickModalOpen ? (
-        <button
-          type="button"
-          onClick={openKickModal}
-          aria-label="참가자 추방"
-          className="interactive-scale absolute left-1/2 top-[calc(50%+21rem)] z-30 -translate-x-1/2 cursor-pointer rounded-md border border-[#c9b892]/60 bg-black/55 px-4 py-2 font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,1.3vw,1.1rem)] font-bold text-[#f5f0e6]"
-        >
-          참가자 추방
-        </button>
+      {!settingsOpen && !kickModalOpen && (canEditSettings || isKickHost) ? (
+        <div className={MATCHING_HOST_ACTION_ROW_CLASS}>
+          {canEditSettings ? (
+            <button
+              type="button"
+              onClick={openSettings}
+              aria-label="방 설정 변경"
+              className={MATCHING_HOST_ACTION_BUTTON_CLASS}
+            >
+              방 설정 변경
+            </button>
+          ) : null}
+          {isKickHost ? (
+            <button
+              type="button"
+              onClick={canKick ? openKickModal : undefined}
+              disabled={!canKick}
+              aria-label="참가자 추방"
+              title={canKick ? undefined : "방 정보를 서버에서 확인하는 중입니다"}
+              className={`${MATCHING_HOST_ACTION_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              참가자 추방
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {/*
@@ -219,7 +234,7 @@ export default function GameMatchingPage() {
       {hasPendingSettingsResult ? (
         <div
           role="status"
-          className="absolute left-1/2 top-[calc(50%+18rem)] z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#c9b892]/60 bg-black/70 px-4 py-2 text-[#f5f0e6]"
+          className="absolute bottom-[clamp(4rem,11vh,6.5rem)] left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#c9b892]/60 bg-black/70 px-4 py-2 text-[#f5f0e6]"
         >
           <span>{settingsError?.message ?? "저장 결과를 확인하는 중입니다."}</span>
           <button

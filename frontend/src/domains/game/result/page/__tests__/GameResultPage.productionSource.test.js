@@ -58,7 +58,9 @@ test("그릴 결과가 없으면 확인 불가 안내를 그리고, 로비 복�
   // 2) 확인이 끝났는데 결과가 없으면 **안내와 코드 확인 불가 진입을 그린다**.
   assert.match(source, /RESULT_UNAVAILABLE_TITLE/)
   assert.match(source, /RESULT_UNAVAILABLE_BODY/)
-  assert.match(source, /방 코드 확인 불가/)
+  // 2026-09-22 운영자 지시: 결과 화면의 방 코드 보기·확인 불가 UI는 삭제됐다(코드는 대기방에서만 본다).
+  assert.doesNotMatch(source, /방 코드/)
+  assert.doesNotMatch(source, /RoomCodeViewModal/)
 
   // 3) 이동 경로는 하나뿐이고, 그것은 effect의 자동 replace가 아니라 클릭 핸들러다.
   const navigationLines = source.split("\n").filter((line) => line.includes('navigate("/multiplay"'))

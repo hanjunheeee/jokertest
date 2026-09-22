@@ -166,6 +166,8 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
 
   return {
     canKick,
+    // 방장이지만 아직 방 검증 전이라 추방을 열 수 없는 상태를 화면이 "비활성"으로 그리기 위한 값.
+    isKickHost: isHost,
     kickModalOpen: effectiveOpen,
     openKickModal,
     closeKickModal,

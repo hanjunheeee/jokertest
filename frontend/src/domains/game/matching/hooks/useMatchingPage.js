@@ -51,7 +51,7 @@ export function useMatchingPage() {
   // F-21(AC-02): 방장만 추방 진입을 갖는다. 방 검증 전에는 열리지 않는다 — 아직 서버가
   // 확정해 주지 않은 소속으로 남을 내보내면 화면만 성공한 것처럼 보인다.
   const {
-    canKick, kickModalOpen, openKickModal, closeKickModal,
+    canKick, isKickHost, kickModalOpen, openKickModal, closeKickModal,
     kickTargets, kickPendingTarget, kickStatus, kickErrorCode, isKicking, canLookupKickResult, isAwaitingKickResolution,
     requestKickConfirm, cancelKickConfirm, confirmKick, lookupKickResult,
   } = useMatchingRoomKick({ isRoomVerified })
@@ -162,6 +162,7 @@ export function useMatchingPage() {
     // F-21(AC-02): 대기방 추방. 비방장에게는 canKick이 false라 진입 자체가 없고, 확인 취소는
     // 소켓 요청 0회이며, 미확인 결과는 성공으로 바꾸지 않고 기존 키 조회만 제공한다.
     canKick,
+    isKickHost,
     kickModalOpen,
     openKickModal,
     closeKickModal,

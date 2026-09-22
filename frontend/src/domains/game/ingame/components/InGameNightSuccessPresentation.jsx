@@ -10,7 +10,7 @@ import {
   INGAME_KILL_REVEAL_BACKDROP_CLASS,
   INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
   INGAME_KILL_REVEAL_PANEL_WRAP_CLASS,
-  INGAME_KILL_REVEAL_RETRY_LABEL,
+  INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR,
   INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS,
   INGAME_KILL_REVEAL_SKIP_LABEL,
 } from "../constants/killReveal/ingameKillReveal.js"
@@ -439,13 +439,21 @@ function InGameNightSuccessKillVideo({ eventId, src, finish }) {
         />
         {status === "retry" ? (
           <>
-            <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleRetry}>
-              {INGAME_KILL_REVEAL_RETRY_LABEL}
-            </button>
+            {/* 자동재생 거부: 별도 "다시 재생" 버튼 없이 패널을 누르면 다시 재생한다(운영자 UI 결정
+                2026-09-22). 건너뛰기 버튼은 이 표면 위에 그려 클릭이 재시도로 새지 않게 한다. */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="화면을 눌러 다시 재생"
+              {...{ [INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR]: "" }}
+              onClick={handleRetry}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") handleRetry() }}
+              className="absolute inset-0 cursor-pointer"
+            />
             {/* AC-05: 자동재생 거부는 재시도만으로는 못 벗어날 수 있다(권한이 계속 거부되는
                 환경) — 재시도 화면에서도 건너뛰기로 SKIPPED를 보고할 수 있어야 연출이 막히지
                 않는다. */}
-            <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleSkip}>
+            <button type="button" className={`${INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} relative z-10`} onClick={handleSkip}>
               {INGAME_KILL_REVEAL_SKIP_LABEL}
             </button>
           </>

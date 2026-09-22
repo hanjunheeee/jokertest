@@ -1647,7 +1647,8 @@ test('getSessionSnapshotForPlayer: 첫 응답 객체(players/self/winResult/nigh
     assert.equal(second.ok, true)
     assert.equal(second.snapshot.players.find((p) => p.uuid === jokerUuid).isAlive, false)
     assert.equal(second.snapshot.self.role, session.players.get(viewerUuid).role)
-    assert.deepEqual(second.snapshot.winResult, { winner: 'CITIZEN' })
+    assert.equal(second.snapshot.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(second.snapshot.winResult.reveals) && second.snapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
     assert.equal(second.snapshot.nightResult.victimUuid, jokerUuid)
     assert.equal(second.snapshot.players.length, session.players.size)
 })
@@ -1694,7 +1695,8 @@ test('getSessionSnapshotForPlayer: TRIBUNAL 유죄 처형으로 CITIZEN 승리 �
     assert.deepEqual(snapshot.tribunal, {
         defendantUuid: 'snA2', resolved: true, outcome: 'GUILTY', counts: { guilty: 2, notGuilty: 1 }, executedUuid: 'snA2',
     })
-    assert.deepEqual(snapshot.winResult, { winner: 'CITIZEN' })
+    assert.equal(snapshot.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(snapshot.winResult.reveals) && snapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
 
     // snA4는 소수 의견(NOT_GUILTY)을 던졌다 — 최종 집계(tribunal.outcome='GUILTY')와 다른 값이므로,
     // 이 개인 표가 다른 어떤 위치에도 노출되지 않아야 한다(FORBIDDEN_PRIVATE_KEYS의 'votes' 키
@@ -1820,7 +1822,8 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
         victimUuid: 'snB4',
         deathReveals: [{ victimUuid: 'snB4', source: 'JOKER' }],
     })
-    assert.deepEqual(endedSnapshot.snapshot.winResult, { winner: 'JOKER' })
+    assert.equal(endedSnapshot.snapshot.winResult.winner, 'JOKER')
+    assert.ok(Array.isArray(endedSnapshot.snapshot.winResult.reveals) && endedSnapshot.snapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
     assert.equal(Object.hasOwn(endedSnapshot.snapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(endedSnapshot.snapshot, 'tribunal'), false)
 

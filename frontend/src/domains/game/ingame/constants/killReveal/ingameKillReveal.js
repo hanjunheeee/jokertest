@@ -15,7 +15,12 @@ export const INGAME_KILL_REVEAL_UNKNOWN_NICKNAME = "한 플레이어"
 export const INGAME_KILL_REVEAL_SKIP_LABEL = "건너뛰기"
 
 /** 다시 재생 버튼 문구 — play() 호출이 reject됐을 때만 노출된다(재생 자체를 다시 시도). */
-export const INGAME_KILL_REVEAL_RETRY_LABEL = "다시 재생"
+/**
+ * 자동재생이 거부된 상태(retry)에서 **연출 패널 자체**를 누르면 다시 재생한다. 예전에는
+ * "다시 재생" 버튼을 따로 그렸는데 운영자가 UI 문제로 삭제를 지시했다(2026-09-22) — 남는 버튼은
+ * 건너뛰기뿐이다. 시험은 이 속성으로 재시도 표면을 찾는다.
+ */
+export const INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR = "data-ingame-kill-reveal-retry"
 
 /** 영상 재생/오류와 무관하게 화면이 영원히 막히지 않도록 하는 상한 시간(ms) */
 export const INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS = 12000

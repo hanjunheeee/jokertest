@@ -147,7 +147,7 @@ const { useInGameSessionSnapshotSync } = await import("../hooks/useInGameSession
 const { useInGameNightSuccessPresentation } = await import("../hooks/useInGameNightSuccessPresentation.js")
 const {
   INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
-  INGAME_KILL_REVEAL_RETRY_LABEL, INGAME_KILL_REVEAL_SKIP_LABEL,
+  INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR, INGAME_KILL_REVEAL_SKIP_LABEL,
 } = await import("../constants/killReveal/ingameKillReveal.js")
 const { INGAME_NIGHT_PRESENTATION_WAIT_MESSAGE } = await import("../components/InGameNightPresentationWait.jsx")
 // AC-05: 실제 화면은 이 페이지 컴포넌트 하나다 — 아래 통합 시나리오는 이것을 직접 마운트한다.
@@ -580,6 +580,11 @@ function openHookSession({ socketOptions } = {}) {
       act(() => setSocket(null))
     },
   }
+}
+
+// 자동재생 거부 상태의 재시도 표면(패널 자체) — 별도 버튼은 없다(2026-09-22).
+function findRetrySurface(container) {
+  return container?.querySelector(`[${INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR}]`) ?? null
 }
 
 function findButton(container, label) {
@@ -1173,7 +1178,7 @@ test("AC-03(CODEX 반려 수정): 재시도 뒤에도 매체가 무응답이면 
     await act(async () => { await flushMicrotasks() })
 
     const killPanel = () => view.container.querySelector("[data-ingame-night-success-kill]")
-    assert.notEqual(findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+    assert.notEqual(findRetrySurface(killPanel()), null,
       "전제: 자동재생 차단이면 재시도 화면이 뜬다")
     assert.equal(clock.pendingCount(), 0, "응답이 온 시도의 상한이 그대로 남아 있다")
 
@@ -1181,7 +1186,7 @@ test("AC-03(CODEX 반려 수정): 재시도 뒤에도 매체가 무응답이면 
     dom.window.HTMLMediaElement.prototype.play = function silentPlay() {
       return new Promise(() => {})
     }
-    await act(async () => { findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL).click() })
+    await act(async () => { findRetrySurface(killPanel()).click() })
     await act(async () => { await flushMicrotasks() })
     assert.equal(clock.pendingCount(), 1, "재시도가 상한을 다시 예약하지 않았다(무응답이면 영영 멈춘다)")
     assert.equal(socket.emitsFor("acknowledge_night_action_success").length, 0,
@@ -1336,7 +1341,8 @@ test("AC-03/AC-05: 마지막 밤의 종료가 연출 도중에 도착해도(실�
   const applied = ctx.receivedBy(ctx.targetUuid, "night_result_applied")
   assert.equal(applied.length, 1, "서버 최종화가 결과 전달을 만들지 않았다")
   assert.equal(applied[0].payload.phase, "ENDED")
-  assert.deepEqual(applied[0].payload.winResult, { winner: "JOKER" })
+  assert.equal(applied[0].payload.winResult.winner, "JOKER")
+  assert.ok(Array.isArray(applied[0].payload.winResult.reveals), "종료 payload의 공개 winResult에는 reveals가 실린다")
 
   await act(async () => { socket.deliver("night_result_applied", applied[0].payload) })
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
@@ -1539,13 +1545,13 @@ test("F27 BL production integration scenarios", async () => {
     // 버튼은 이 연출 안에서만 찾는다(아래 게임 표면의 같은 이름 버튼과 섞이지 않게).
     const killPanel = () => failView.container.querySelector("[data-ingame-night-success-kill]")
     assert.notEqual(killPanel(), null, "KILL 연출 자체가 마운트되지 않았다")
-    assert.notEqual(findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+    assert.notEqual(findRetrySurface(killPanel()), null,
       "자동재생 차단인데 재시도 화면이 뜨지 않았다")
     assert.equal(failSocket.emitsFor("acknowledge_night_action_success").length, 0,
       "재시도 화면에서 이미 완료를 보고했다")
 
     // 다시 눌러도 막히는 환경 — 여전히 보고하지 않고, 사용자가 빠져나갈 길만 남는다.
-    await act(async () => { findButton(killPanel(), INGAME_KILL_REVEAL_RETRY_LABEL).click() })
+    await act(async () => { findRetrySurface(killPanel()).click() })
     await act(async () => { await flushMicrotasks() })
     assert.equal(failSocket.emitsFor("acknowledge_night_action_success").length, 0,
       "재시도 실패가 완료 보고를 만들었다")
@@ -1587,14 +1593,14 @@ test("F27 BL production integration scenarios", async () => {
     await act(async () => { retrySocket.deliver("night_action_success", retryPayload) })
     await act(async () => { await flushMicrotasks() })
     const retryPanel = () => retryView.container.querySelector("[data-ingame-night-success-kill]")
-    assert.notEqual(findButton(retryPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+    assert.notEqual(findRetrySurface(retryPanel()), null,
       "전제: 자동재생 차단이면 재시도 화면이 뜬다")
 
     // 사용자가 다시 눌렀고 이번에는 재생이 풀린다 — 아직 아무 것도 보고하지 않는다.
     autoplayBlocked = false
-    await act(async () => { findButton(retryPanel(), INGAME_KILL_REVEAL_RETRY_LABEL).click() })
+    await act(async () => { findRetrySurface(retryPanel()).click() })
     await act(async () => { await flushMicrotasks() })
-    assert.equal(findButton(retryPanel(), INGAME_KILL_REVEAL_RETRY_LABEL), null,
+    assert.equal(findRetrySurface(retryPanel()), null,
       "재생이 풀렸는데 재시도 화면이 남아 있다")
     assert.equal(retrySocket.emitsFor("acknowledge_night_action_success").length, 0,
       "재생 중에 완료를 보고했다")
@@ -1752,7 +1758,8 @@ test("F27 BL production integration scenarios", async () => {
   const lastApplied = lastCtx.receivedBy(lastCtx.targetUuid, "night_result_applied")
   assert.equal(lastApplied.length, 1, "서버 최종화가 결과 전달을 만들지 않았다")
   assert.equal(lastApplied[0].payload.phase, "ENDED")
-  assert.deepEqual(lastApplied[0].payload.winResult, { winner: "JOKER" })
+  assert.equal(lastApplied[0].payload.winResult.winner, "JOKER")
+  assert.ok(Array.isArray(lastApplied[0].payload.winResult.reveals), "종료 payload의 공개 winResult에는 reveals가 실린다")
   assert.equal(lastView.container.querySelector("[data-test-game-result]"), null,
     "서버가 종료했다는 사실만으로 화면이 먼저 넘어갔다")
 

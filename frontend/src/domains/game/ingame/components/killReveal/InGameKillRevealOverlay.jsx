@@ -5,7 +5,7 @@ import {
   INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
   INGAME_KILL_REVEAL_MESSAGE_CLASS,
   INGAME_KILL_REVEAL_PANEL_WRAP_CLASS,
-  INGAME_KILL_REVEAL_RETRY_LABEL,
+  INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR,
   INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS,
   INGAME_KILL_REVEAL_SKIP_LABEL,
   INGAME_KILL_REVEAL_VIDEO_CLASS,
@@ -113,10 +113,17 @@ export default function InGameKillRevealOverlay({ open, revealId, message, onCon
           onError={handleError}
         />
         {message ? <p className={INGAME_KILL_REVEAL_MESSAGE_CLASS}>{message}</p> : null}
+        {/* 자동재생 거부: 별도 버튼 없이 패널을 누르면 다시 재생한다(운영자 UI 결정 2026-09-22). */}
         {status === "retry" ? (
-          <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleRetry}>
-            {INGAME_KILL_REVEAL_RETRY_LABEL}
-          </button>
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="화면을 눌러 다시 재생"
+            {...{ [INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR]: "" }}
+            onClick={handleRetry}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") handleRetry() }}
+            className="absolute inset-0 cursor-pointer"
+          />
         ) : null}
         {status === "watchdog" || status === "error" ? (
           <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleContinue}>
