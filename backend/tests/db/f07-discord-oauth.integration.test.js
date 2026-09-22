@@ -29,7 +29,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
-const { once } = require('node:events');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 
@@ -82,6 +81,11 @@ const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-
 const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
 const addSocialSignupEmail = require('../../db/migrations/0017-social-signup-email');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
+// 이 스위트의 fixture·앱 서버는 전역 fetch로 호출된다. Windows 동적 포트 범위(1024..15000)에는
+// Fetch 금지 포트가 섞여 있어 listen(0)이 그중 하나를 뽑으면 fetch가 "bad port"로 거부한다
+// (2026-09-22 전체 실행에서 fixture가 127.0.0.1:2049를 받아 실패했다) — 공용 helper로 Fetch가
+// 허용하는 고포트에 실제 bind한다.
+const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
@@ -162,13 +166,12 @@ const startMockDiscord = async (t, { profile }) => {
             res.writeHead(404).end();
         });
     });
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
+    const { url } = await listenOnFetchablePort(server);
     t.after(() => {
         server.closeAllConnections?.();
         return new Promise((resolve) => server.close(resolve));
     });
-    return { base: `http://127.0.0.1:${server.address().port}`, tokenRequests };
+    return { base: url, tokenRequests };
 };
 
 const withFetchRedirectedTo = (t, base) => {
@@ -192,11 +195,14 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    t.after(() => new Promise((resolve) => server.close(resolve)));
+    const server = http.createServer(app);
+    const { url } = await listenOnFetchablePort(server);
+    t.after(() => {
+        server.closeAllConnections?.();
+        return new Promise((resolve) => server.close(resolve));
+    });
 
-    return `http://127.0.0.1:${server.address().port}`;
+    return url;
 };
 
 const rawGet = (base, path, { cookie } = {}) => new Promise((resolve, reject) => {

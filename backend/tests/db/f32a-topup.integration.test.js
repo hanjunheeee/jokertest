@@ -16,6 +16,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'f32a-topup-integration-test-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+// 이 파일 아래쪽에서 `http`는 fetch 헬퍼 이름으로 쓰이므로 node 내장 모듈은 다른 이름으로 받는다.
+const nodeHttp = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
@@ -31,6 +33,11 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addCurrencyProductsTopupOrders = require('../../db/migrations/0018-add-currency-products-topup-orders');
 const { buildManagedSchema, resetManagedSchema, resetManagedData } = require('../helpers/isolatedTestDb');
 const { createFakeTossAdapter, installFakeAdapter, FAKE_CLIENT_KEY } = require('../helpers/fakeTossAdapter');
+// 이 스위트의 앱 서버는 전역 fetch로 호출된다. Windows 동적 포트 범위(1024..15000)에는 Fetch
+// 금지 포트가 섞여 있어 listen(0)이 그중 하나를 뽑으면 fetch가 "bad port"로 거부한다
+// (2026-09-22 전체 실행에서 앱 서버가 127.0.0.1:6697을 받아 실패했다) — 공용 helper로 Fetch가
+// 허용하는 고포트에 실제 bind한다.
+const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
@@ -115,10 +122,10 @@ const startServer = async (t) => {
     app.use('/economy', require('../../routes/economy.routes'));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
-    const server = app.listen(0, '127.0.0.1');
-    await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const server = nodeHttp.createServer(app);
+    const { url } = await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections?.(); }));
-    return `http://127.0.0.1:${server.address().port}`;
+    return url;
 };
 
 const http = (base) => async (path, { method = 'GET', user, body, signal } = {}) => {
