@@ -582,4 +582,5 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 - 요구사항 `docs/requirements/2026-09-22-f33-f34-batch.md`(커밋) → `cli.js batch … codex-plan` → **batch-e1750b46**, 6조각: CK(E-1) · CL(E-2) · CM(V-1) · CN(V-2) · CO(S-1) · CP(E-3). E-3를 맨 뒤에 둔 이유: V-1과 같은 `InGamePlayerBoard.jsx`를 건드리고 E-2의 `getEmojiPalette`에 의존.
 - `.pluto/config.json` planNotes CK~CP: 설계도 `@경로` + "이 조각은 §N 몫만" + 운영자가 확정한 항목은 blocker·unsure로 올리지 않는다 + 파일 수 편성 허용.
 - 감시: 세션 스크래치 `watch.cjs`(멈춤·조각 전환만 출력). 데몬 pid 45108 :9898.
+- **순서 실수(23:02)**: 배치 등록(23:02:37, CK 계획 시작·config 읽음)보다 planNotes 기록(23:02:55)이 늦었다 — 계획 단계는 `plan.ts:1094`에서 config를 한 번 읽으므로 CK 1회차 계획에는 설계도가 안 붙는다. 계획 검증(review.ts, 매번 config 새로 읽음)은 설계도를 보고 판정하므로 어긋나면 R-PLAN → 2회차(`rounds()` 재진입, config 재독)부터 붙는다. 한 회차 손실을 감수하고 둔다. **다음부터는 planNotes를 먼저 쓰고 배치를 등록한다**(조각 ID는 `nextSliceId` 순서라 미리 알 수 있다: 마지막 ID 다음 글자).
 
