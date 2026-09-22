@@ -379,30 +379,32 @@ test.afterEach(resetAll)
 // A-07 · 배포 manifest는 여전히 무음이다
 // ---------------------------------------------------------------------------
 
-test("A-07: 배포 manifest의 game-invite는 미검토 무음이고 매체를 만들지 않는다", async () => {
+test("A-07(2026-09-22 개정): 배포 manifest의 game-invite는 자작 합성 승인 자산이고 실제 해시가 맞을 때만 매체를 만든다", async () => {
   const entry = SFX_MANIFEST["game-invite"]
   assert.ok(entry, "배포 manifest에 game-invite 항목이 있어야 한다")
   assert.equal(entry.scope, SFX_SCOPE.ACCOUNT)
   // 게임 초대는 설정 화면의 "게임 초대"(game-invite) 항목을 따른다. "친구 초대"를 따르면
   // 사용자가 게임 초대를 꺼도 계속 울리고, 친구 요청만 끄면 게임 초대까지 함께 조용해진다.
   assert.equal(entry.notificationKey, "game-invite")
-  assert.equal(entry.reviewStatus, SFX_REVIEW_STATUS.NEEDS_REVIEW, "미검토 자산을 근거 없이 승인하지 않는다")
-  assert.equal(entry.src, null, "존재하지 않는 경로를 지어내지 않는다")
-  assert.equal(entry.sha256, null, "지어낸 해시가 없어야 한다")
-  assert.equal(typeof entry.silenceReason, "string")
-  assert.equal(checkSfxAssetAllowed(entry).allowed, false)
+  assert.equal(entry.reviewStatus, SFX_REVIEW_STATUS.APPROVED)
+  assert.equal(entry.src, "/sfx/game-invite.wav")
+  assert.match(entry.sha256, /^[0-9a-f]{64}$/)
+  assert.equal(checkSfxAssetAllowed(entry).allowed, true)
 
-  // 실제 배포 manifest로 재생기를 돌리면 매체가 하나도 만들어지지 않는다.
+  // 로드된 바이트의 해시가 검토 기록과 다르면(파일 바꿔치기) 여전히 매체를 만들지 않는다.
   signIn(ACCOUNT_A)
-  const h = installPlayer({ manifest: SFX_MANIFEST })
-  const result = h.player.dispatch({
-    kind: "game-invite", eventId: "game-invite:x:received", accountId: ACCOUNT_A, origin: "live",
-  })
+  const wrong = installPlayer({ manifest: SFX_MANIFEST, loadAsset: async () => ({ sha256: "0".repeat(64), src: entry.src }) })
+  wrong.player.dispatch({ kind: "game-invite", eventId: "game-invite:x:received", accountId: ACCOUNT_A, origin: "live" })
   await flush()
+  assert.equal(wrong.media.length, 0, "해시가 다른 바이트로 매체를 만들면 안 된다")
+  assert.equal(wrong.player.getSilenceLog().at(-1)?.reason, SFX_SUPPRESSED_REASON.ASSET_HASH_MISMATCH)
 
-  assert.equal(result.status, "suppressed")
-  assert.equal(result.reason, SFX_SUPPRESSED_REASON.ASSET_UNREVIEWED)
-  assert.equal(h.media.length, 0, "미검토 자산에 매체가 만들어졌다 — 모의 재생을 청음으로 주장하지 않는다")
+  // 해시가 맞으면 매체 하나를 만든다.
+  const right = installPlayer({ manifest: SFX_MANIFEST, loadAsset: async (e) => ({ sha256: e.sha256, src: e.src }) })
+  const result = right.player.dispatch({ kind: "game-invite", eventId: "game-invite:y:received", accountId: ACCOUNT_A, origin: "live" })
+  await flush()
+  assert.notEqual(result.status, "suppressed", "승인 자산이 억제됐다: " + result.reason)
+  assert.equal(right.media.length, 1)
 })
 
 // ---------------------------------------------------------------------------
@@ -1527,11 +1529,12 @@ test("AC-05: 늦게 도착한 **오래된** snapshot이 커서와 처리 가능 
 // F-16 재생기)가 내린 판정 그대로이고, 진단을 켜도 업무 경로가 그대로 끝나는지를 본다.
 // ---------------------------------------------------------------------------
 
-test("AC-07: QA 진단은 미검토 자산의 '적격 1 · 청음 0 · asset-unreviewed'를 그대로 적는다", async () => {
+test("AC-07: QA 진단은 미검토 자산(시험 fixture)의 '적격 1 · 청음 0 · asset-unreviewed'를 그대로 적는다", async () => {
   signIn(ACCOUNT_A)
-  // **배포 manifest 그대로** 쓴다 — fixture가 아니라 실제 미검토 자산 경로를 관찰한다.
+  // 2026-09-22부터 배포 manifest의 game-invite는 승인 자산이다 — 미검토 경로는 fixture로 재현한다
+  // (dispatch 시점에 결정되는 억제만 진단 요약의 suppressedByReason에 남는다).
   const runtime = installPlayer({
-    manifest: SFX_MANIFEST,
+    manifest: { ...SFX_MANIFEST, "game-invite": { ...SFX_MANIFEST["game-invite"], reviewStatus: SFX_REVIEW_STATUS.NEEDS_REVIEW, src: null, sha256: null, silenceReason: "시험 fixture" } },
     settings: { notifications: { "friend-invite": true } },
   })
   __setInviteSfxDiagnosticsEnvForTests(() => ({ dev: true, search: `?${INVITE_SFX_QA_FLAG}=1` }))

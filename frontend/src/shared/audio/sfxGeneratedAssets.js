@@ -1,0 +1,26 @@
+// 생성 파일 — 직접 고치지 말 것. scripts/gen-sfx.mjs가 frontend/public/sfx/*.wav와 함께 만든다.
+// 각 항목의 sha256은 그 파일의 실제 바이트 해시다(sfxManifest가 로드 시 대조한다).
+export const SFX_GENERATED_ASSETS = Object.freeze({
+  "ui-click": { src: "/sfx/ui-click.wav", sha256: "9dcfa1c260496e21f5efb41dc52a79a07b733edf587f0a7b34c835ab40eb39b8", durationMs: 90 },
+  "ui-confirm": { src: "/sfx/ui-confirm.wav", sha256: "863cee6b6ec2e0de1cfb471f8feabe1c39d89a18e8e53f08a04c758c29f06e90", durationMs: 260 },
+  "ui-cancel": { src: "/sfx/ui-cancel.wav", sha256: "c08b9648596083fe24ef35a7e44bb28f10191c283e8fb555d121d4d5d8b3ec6b", durationMs: 260 },
+  "friend-request-received": { src: "/sfx/friend-request-received.wav", sha256: "721e4bfc0df0bd43a1d4b19afd9242282c9084c89e3504fc6eb75e0a1e1a3cc3", durationMs: 380 },
+  "friend-request-accepted": { src: "/sfx/friend-request-accepted.wav", sha256: "f77fae864520fdea4b8c168473b7882ecc425e82bbd80ea768e974d61e3967c2", durationMs: 490 },
+  "friend-request-declined": { src: "/sfx/friend-request-declined.wav", sha256: "8873dca4bac591c4e4d5948348b96f4aaf31bf482d060d46d4075c6880508cea", durationMs: 440 },
+  "achievement-granted": { src: "/sfx/achievement-granted.wav", sha256: "d7469e742a53892c73cd129f57e7fe1aae46a56cc060bad5d28b5c7ec7ca88ac", durationMs: 780 },
+  "system-notification": { src: "/sfx/system-notification.wav", sha256: "45419c83c81ed2db2096717c5463b7b40e3352578eb7e132dff35072811d7fac", durationMs: 430 },
+  "game-invite": { src: "/sfx/game-invite.wav", sha256: "65985149bd4c3899e7282c0008db3e366bfc0575704896bff7ccd0614da464bb", durationMs: 570 },
+  "room-ready-changed": { src: "/sfx/room-ready-changed.wav", sha256: "d08c4e2af3819f95a3ced6d4a645ca06c5f5116f8f7a771df7f622a02d372389", durationMs: 100 },
+  "game-started": { src: "/sfx/game-started.wav", sha256: "cbaf4ebf1dd00dbef6e6be9846b5def823062fe1e1c20e4cccf145368a7e8806", durationMs: 1030 },
+  "game-phase-changed": { src: "/sfx/game-phase-changed.wav", sha256: "e4215e5aaa3d055d5c8aefc3c973e72e25fe4189c727575d45cf77b030811d8d", durationMs: 630 },
+  "day-phase-changed": { src: "/sfx/day-phase-changed.wav", sha256: "b1db3adbfd6debc6ca75fffd2684edab888f11f7f81a510a9405526c0e14cb42", durationMs: 610 },
+  "night-turn-started": { src: "/sfx/night-turn-started.wav", sha256: "af329b22f25e2f8822474f432bed55c45a722908326a15919de7bbadd82c7231", durationMs: 770 },
+  "day-vote-submitted": { src: "/sfx/day-vote-submitted.wav", sha256: "6f73181d01a13421ff80dbd8b59a512c86613ade4c0bd73fec307d2639df13b6", durationMs: 170 },
+  "tribunal-vote-submitted": { src: "/sfx/tribunal-vote-submitted.wav", sha256: "1f44d3714e3d5af37581392c16e9de61ceeeb668b55bf08c78d27cedad592e1f", durationMs: 170 },
+  "day-vote-resolved": { src: "/sfx/day-vote-resolved.wav", sha256: "bd647c72bf68af81afd97c7dd538c8c4766b3c8ebfbf3f48e0fbb1c289f93193", durationMs: 630 },
+  "tribunal-vote-resolved": { src: "/sfx/tribunal-vote-resolved.wav", sha256: "4be97a165deb0b3ae644eb5cb6ccd9f0071f557617843198f0f86da0b8bdeb42", durationMs: 670 },
+  "night-private-result": { src: "/sfx/night-private-result.wav", sha256: "d8bb1911b17419076932f02daeb4e8a81914c66361780fb0fa75b34b385691c9", durationMs: 440 },
+  "night-private-failure": { src: "/sfx/night-private-failure.wav", sha256: "f19d1f9070d69dc0f0c463834ec45eb0c91cf974e3a78ea88dc5da47b0accdbb", durationMs: 480 },
+  "player-eliminated": { src: "/sfx/player-eliminated.wav", sha256: "8910fa8b23d6b16d7517168baa956f5d6e1093910ee1d1228e67bb3552280851", durationMs: 690 },
+  "game-result": { src: "/sfx/game-result.wav", sha256: "c210c8a704b339e6e1fb5bcaeafbe2af7673189445f52c4c4efc010db920d905", durationMs: 1180 },
+})

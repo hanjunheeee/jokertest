@@ -1,3 +1,4 @@
+import { SFX_GENERATED_ASSETS } from "./sfxGeneratedAssets.js"
 /**
  * F-16 AC-02 · 효과음 자산 manifest.
  *
@@ -118,6 +119,30 @@ function pendingAsset(extra) {
 }
 
 /**
+ * 2026-09-22 운영자 결정(AUDIO-01 완화 — 라이선스 문제 없는 효과음 허용): 별도 효과음 22종은 외부 음원
+ * 없이 **합성**해 만든 자작 파일(frontend/scripts/gen-sfx.mjs → public/sfx/*.wav)이다. 출처·이용 조건이
+ * 곧 이 저장소이고, sha256은 생성 스크립트가 실제 바이트에서 계산해 sfxGeneratedAssets.js에 적는다 —
+ * 로더가 로드한 바이트를 그 해시와 대조하므로 파일만 바꿔치기해도 재생되지 않는다(A-04 검토 계약 그대로).
+ * 음악(BGM)은 여기 없다 — bgmAssets.js가 따로 다룬다.
+ */
+function synthesizedAsset(kind, extra) {
+  const generated = SFX_GENERATED_ASSETS[kind]
+  if (!generated) throw new Error(`sfxManifest: 합성 자산 목록에 없는 kind — ${kind} (scripts/gen-sfx.mjs 실행)`)
+  return {
+    reviewStatus: SFX_REVIEW_STATUS.APPROVED,
+    silenceReason: null,
+    source: "자작 합성 — frontend/scripts/gen-sfx.mjs (저장소 안에서 생성)",
+    creator: "joker 프로젝트 합성 스크립트",
+    usageTerms: "자작 — 저작권·이용 조건 제약 없음(운영자 AUDIO-01 완화 2026-09-22)",
+    sha256: generated.sha256,
+    src: generated.src,
+    durationMs: generated.durationMs,
+    classification: SFX_CLASSIFICATION.SHORT_NON_MUSICAL,
+    ...extra,
+  }
+}
+
+/**
  * 사건 kind → 자산·범위·알림 설정 키.
  *
  * notificationKey가 있으면 settingsStore.generalChecks의 그 항목이 꺼져 있을 때 재생하지
@@ -126,24 +151,24 @@ function pendingAsset(extra) {
  */
 export const SFX_MANIFEST = Object.freeze({
   // --- 실제 입력(AC-01 버튼 클릭/확인/취소) -------------------------------
-  "ui-click": pendingAsset({ scope: SFX_SCOPE.UI, notificationKey: null }),
-  "ui-confirm": pendingAsset({ scope: SFX_SCOPE.UI, notificationKey: null }),
-  "ui-cancel": pendingAsset({ scope: SFX_SCOPE.UI, notificationKey: null }),
+  "ui-click": synthesizedAsset("ui-click", { scope: SFX_SCOPE.UI, notificationKey: null }),
+  "ui-confirm": synthesizedAsset("ui-confirm", { scope: SFX_SCOPE.UI, notificationKey: null }),
+  "ui-cancel": synthesizedAsset("ui-cancel", { scope: SFX_SCOPE.UI, notificationKey: null }),
 
   // --- 친구(AC-01) --------------------------------------------------------
-  "friend-request-received": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "friend-invite" }),
-  "friend-request-accepted": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "friend-invite" }),
-  "friend-request-declined": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "friend-invite" }),
+  "friend-request-received": synthesizedAsset("friend-request-received", { scope: SFX_SCOPE.ACCOUNT, notificationKey: "friend-invite" }),
+  "friend-request-accepted": synthesizedAsset("friend-request-accepted", { scope: SFX_SCOPE.ACCOUNT, notificationKey: "friend-invite" }),
+  "friend-request-declined": synthesizedAsset("friend-request-declined", { scope: SFX_SCOPE.ACCOUNT, notificationKey: "friend-invite" }),
 
   // --- 업적 보상(AC-01) ---------------------------------------------------
-  "achievement-granted": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "system-notification" }),
+  "achievement-granted": synthesizedAsset("achievement-granted", { scope: SFX_SCOPE.ACCOUNT, notificationKey: "system-notification" }),
 
   // --- 시스템 알림(F-17 AC-07) -------------------------------------------
   // 서버가 생산하는 새 시스템 알림(notification.service.js의 ensureSystemWelcome)의 소리.
   // 계정 전역 사건이라 scope=account이고, 표시 설정은 업적과 같은 "시스템 알림" 항목을
   // 쓴다(A-03). 자산은 여전히 미검토라 재생기가 매체를 만들기 전에 asset-unreviewed로
   // 거부한다 — 이 항목을 추가했다고 소리가 나는 것이 아니다(A-07).
-  "system-notification": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "system-notification" }),
+  "system-notification": synthesizedAsset("system-notification", { scope: SFX_SCOPE.ACCOUNT, notificationKey: "system-notification" }),
 
   // --- 게임 초대 수신(F-19 AC-07) -----------------------------------------
   // 서버가 만든 새 게임 초대(gameInvite.service.js의 createInvite)의 소리. 계정 전역
@@ -156,36 +181,36 @@ export const SFX_MANIFEST = Object.freeze({
   //
   // **자산은 여전히 미검토다** — 재생기가 매체를 만들기 전에 asset-unreviewed로 거부하므로
   // 이 항목을 추가했다고 소리가 나지 않는다(A-07). 경로·해시를 지어내지 않는다.
-  "game-invite": pendingAsset({ scope: SFX_SCOPE.ACCOUNT, notificationKey: "game-invite" }),
+  "game-invite": synthesizedAsset("game-invite", { scope: SFX_SCOPE.ACCOUNT, notificationKey: "game-invite" }),
 
   // --- 준비·시작(AC-01) ---------------------------------------------------
-  "room-ready-changed": pendingAsset({ scope: SFX_SCOPE.ROOM, notificationKey: null }),
-  "game-started": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "room-ready-changed": synthesizedAsset("room-ready-changed", { scope: SFX_SCOPE.ROOM, notificationKey: null }),
+  "game-started": synthesizedAsset("game-started", { scope: SFX_SCOPE.GAME, notificationKey: null }),
 
   // --- 턴 전환(AC-01) -----------------------------------------------------
-  "game-phase-changed": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
-  "day-phase-changed": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
-  "night-turn-started": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "game-phase-changed": synthesizedAsset("game-phase-changed", { scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "day-phase-changed": synthesizedAsset("day-phase-changed", { scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "night-turn-started": synthesizedAsset("night-turn-started", { scope: SFX_SCOPE.GAME, notificationKey: null }),
 
   // --- 투표 제출(AC-01) ---------------------------------------------------
   // 제출(내 ACK)과 판정(전체 방송)은 서로 다른 kind다 — 같은 kind로 묶으면 내 제출과 그
   // 라운드의 판정이 같은 중복 키 공간을 공유하게 된다.
-  "day-vote-submitted": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
-  "tribunal-vote-submitted": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "day-vote-submitted": synthesizedAsset("day-vote-submitted", { scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "tribunal-vote-submitted": synthesizedAsset("tribunal-vote-submitted", { scope: SFX_SCOPE.GAME, notificationKey: null }),
 
   // --- 투표 판정(AC-01) ---------------------------------------------------
-  "day-vote-resolved": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
-  "tribunal-vote-resolved": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "day-vote-resolved": synthesizedAsset("day-vote-resolved", { scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "tribunal-vote-resolved": synthesizedAsset("tribunal-vote-resolved", { scope: SFX_SCOPE.GAME, notificationKey: null }),
 
   // --- 개인 사건(AC-05) ---------------------------------------------------
   // INVESTIGATE·CONFIRM의 개인 결과음. ASSASSINATE success:false는 아래 실패 통지로
   // 따로 매핑한다 — 실패를 성공음으로 둔갑시키지 않는다.
-  "night-private-result": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
-  "night-private-failure": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "night-private-result": synthesizedAsset("night-private-result", { scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "night-private-failure": synthesizedAsset("night-private-failure", { scope: SFX_SCOPE.GAME, notificationKey: null }),
 
   // --- 사망·결과(AC-01) ---------------------------------------------------
-  "player-eliminated": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
-  "game-result": pendingAsset({ scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "player-eliminated": synthesizedAsset("player-eliminated", { scope: SFX_SCOPE.GAME, notificationKey: null }),
+  "game-result": synthesizedAsset("game-result", { scope: SFX_SCOPE.GAME, notificationKey: null }),
 
   // --- 밤 성공 사건 역할 영상 내장음(F-27c AC-01/AC-04) --------------------
   // audioMode="embedded"라 player.dispatch()의 별도 재생 경로는 이 kind를 EMBEDDED_OWNED로

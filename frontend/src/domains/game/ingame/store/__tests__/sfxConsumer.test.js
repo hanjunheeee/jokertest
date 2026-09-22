@@ -202,7 +202,8 @@ test("F16 real hook and player deduplicate private delivery without losing game 
   session.deliver("night_action_result",payload)
   session.deliver("night_action_result",payload)
   const logs=player.getSilenceLog()
-  assert.equal(logs.filter(x=>x.reason==="asset-unreviewed").length,1)
+  // 2026-09-22: 자산은 승인됐다 — 같은 사건의 두 번째 배달만 duplicate로 거부된다.
+  assert.equal(logs.filter(x=>x.reason==="duplicate").length,1)
   assert.equal(readResult().targetId,OTHER_UUID)
   session.deliver("night_result_applied",NIGHT_RESULT_APPLIED)
   assert.equal(useInGameStore.getState().state.phase,"DAY")
@@ -237,8 +238,9 @@ test("F16 private restore origin survives consumer forwarding and does not claim
   seedNightSession();const session=openSession();const player=recordProductionPlayer()
   const payload={...GUARD_RESULT,sfxEvent:{eventId:"restore-private",accountId:SELF_UUID,gameId:GAME_ID,origin:"restore"}}
   session.deliver("night_action_result",payload)
-  assert.equal(player.getSilenceLog().filter(x=>x.reason==="asset-unreviewed").length,0)
+  // 복원(restore)은 표식을 남기지 않는다 — 뒤이은 live가 duplicate로 막히지 않아야 한다(2026-09-22: 자산 승인 뒤 기준).
+  assert.equal(player.getSilenceLog().filter(x=>x.reason==="restore-origin").length,1)
   session.deliver("night_action_result",{...payload,sfxEvent:{...payload.sfxEvent,origin:"live"}})
-  assert.equal(player.getSilenceLog().filter(x=>x.reason==="asset-unreviewed").length,1)
+  assert.equal(player.getSilenceLog().filter(x=>x.reason==="duplicate").length,0)
   session.close();player.dispose()
 })

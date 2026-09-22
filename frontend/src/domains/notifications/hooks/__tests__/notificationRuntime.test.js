@@ -896,7 +896,7 @@ test("AC-07: 알림 off와 mute는 재생 0회이고, 설정을 다시 켜도 �
   useSettingsStore.setState({ sfxMuted: false })
 })
 
-test("A-07: 실제 배포 manifest에서는 최초 처리도 매체 생성 0·재생 0이고 asset-unreviewed 사유가 남는다", async (t) => {
+test("A-07(2026-09-22 개정): 실제 배포 manifest의 system-notification은 자작 합성 승인 자산이라 최초 처리에서 매체 1개를 만들어 재생한다", async (t) => {
   loginAs(ACCOUNT_A)
   await primeLoadedSnapshot([])
   const { player, playCalls, created } = createRecordingRuntime({ manifest: SFX_MANIFEST })
@@ -906,25 +906,22 @@ test("A-07: 실제 배포 manifest에서는 최초 처리도 매체 생성 0·�
   const result = receiveLiveEnvelope(player, ACCOUNT_A, { notification: row, sfxEvent: systemEnvelope(row) })
 
   assert.equal(result.dispatched, true)
-  assert.equal(result.result.status, "suppressed")
-  assert.equal(result.result.reason, SFX_SUPPRESSED_REASON.ASSET_UNREVIEWED)
-  assert.equal(created.length, 0, "미검토 자산으로 Audio를 만들면 안 된다")
-  assert.equal(playCalls.length, 0)
-
-  const record = player.getSilenceLog().find((entry) => entry.kind === "system-notification")
-  assert.equal(record.reason, SFX_SUPPRESSED_REASON.ASSET_UNREVIEWED)
-  assert.ok(record.note, "무음 사유(silenceReason)가 함께 기록돼야 한다")
+  assert.notEqual(result.result.status, "suppressed", "승인 자산이 억제됐다: " + result.result.reason)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(created.length, 1, "승인 자산은 Audio를 정확히 하나 만든다")
+  assert.equal(playCalls.length, 1)
+  assert.equal(player.getSilenceLog().some((entry) => entry.kind === "system-notification" && entry.reason === SFX_SUPPRESSED_REASON.ASSET_UNREVIEWED), false)
 })
 
-test("A-07: 배포 manifest의 system-notification 항목은 여전히 미검토다(시험용 승인으로 바꾸지 않았다)", () => {
+test("A-07(2026-09-22 개정): 배포 manifest의 system-notification 항목은 자작 합성 승인 자산이다", () => {
   const entry = SFX_MANIFEST["system-notification"]
   assert.ok(entry, "F-17이 연결한 kind가 배포 manifest에 등록돼 있어야 한다")
-  assert.equal(entry.reviewStatus, SFX_REVIEW_STATUS.NEEDS_REVIEW)
-  assert.equal(entry.src, null)
+  assert.equal(entry.reviewStatus, SFX_REVIEW_STATUS.APPROVED)
+  assert.equal(entry.src, "/sfx/system-notification.wav")
   assert.equal(entry.scope, SFX_SCOPE.ACCOUNT)
   assert.equal(entry.notificationKey, "system-notification")
-  assert.ok(entry.silenceReason, "무음 사유를 지우지 않았다")
-  assert.equal(checkSfxAssetAllowed(entry).allowed, false)
+  assert.equal(entry.silenceReason, null, "승인 자산에는 무음 사유가 없다")
+  assert.equal(checkSfxAssetAllowed(entry).allowed, true)
 })
 
 // ---------------------------------------------------------------------------

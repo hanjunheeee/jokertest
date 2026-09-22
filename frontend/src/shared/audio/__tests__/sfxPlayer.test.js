@@ -241,22 +241,26 @@ async function flush() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-02 · 실제 배포 manifest는 자산이 없으므로 전부 무음이다
+// AC-02 · 실제 배포 manifest — 2026-09-22 운영자 AUDIO-01 완화: 별도 효과음은 자작 합성 승인 자산이다
 // ---------------------------------------------------------------------------
 
-test("AC-02 배포 manifest의 모든 항목은 아직 미검토이고 경로·해시를 지어내지 않는다", () => {
+test("AC-02 배포 manifest의 별도 효과음은 전부 자작 합성 승인 자산이고, 경로·해시는 생성 스크립트의 실제 값이다", () => {
   const kinds = Object.keys(SFX_MANIFEST)
   assert.ok(kinds.length > 0)
-  for (const kind of kinds) {
+  const separate = kinds.filter((kind) => SFX_MANIFEST[kind].audioMode !== "embedded")
+  assert.ok(separate.length >= 20)
+  for (const kind of separate) {
     const entry = SFX_MANIFEST[kind]
-    assert.equal(entry.reviewStatus, SFX_REVIEW_STATUS.NEEDS_REVIEW, `${kind}가 승인 상태로 바뀌었다`)
-    assert.equal(entry.src, null, `${kind}에 존재하지 않는 경로가 생겼다`)
-    assert.equal(entry.sha256, null, `${kind}에 지어낸 해시가 생겼다`)
-    assert.equal(typeof entry.silenceReason, "string")
-    assert.equal(checkSfxAssetAllowed(entry).allowed, false)
+    assert.equal(entry.reviewStatus, SFX_REVIEW_STATUS.APPROVED, `${kind}가 승인 상태가 아니다`)
+    assert.equal(entry.src, `/sfx/${kind}.wav`, `${kind}의 경로가 생성 규칙과 다르다`)
+    assert.match(entry.sha256, /^[0-9a-f]{64}$/, `${kind}의 sha256이 실제 해시 형식이 아니다`)
+    assert.ok(Number.isFinite(entry.durationMs) && entry.durationMs > 0 && entry.durationMs <= 2000, `${kind}의 길이가 상한을 넘는다`)
+    assert.match(entry.source, /gen-sfx/, "출처는 저장소의 합성 스크립트여야 한다")
+    assert.equal(typeof entry.usageTerms, "string")
+    assert.equal(checkSfxAssetAllowed(entry).allowed, true, `${kind}가 허용되지 않는다`)
   }
-  // 무음 목록이 실제 manifest에서 파생된다 — 문서 사본이 아니다.
-  assert.equal(listSilencedSfxKinds().length, kinds.length)
+  // 무음 목록은 실제 manifest에서 파생된다 — 내장음(embedded) 항목만 남는다.
+  assert.deepEqual(listSilencedSfxKinds().map((x) => x.kind), kinds.filter((kind) => SFX_MANIFEST[kind].audioMode === "embedded"))
 })
 
 test("AC-02 미검토 자산은 매체를 아예 만들지 않고 사유만 남긴다", () => {
@@ -829,7 +833,7 @@ test("F-17 배포 manifest의 system-notification은 계정 범위·시스템 �
   assert.ok(entry, "F-17이 연결한 kind가 배포 manifest에 없다")
   assert.equal(entry.scope, SFX_SCOPE.ACCOUNT, "시스템 알림은 계정 전역 사건이다")
   assert.equal(entry.notificationKey, "system-notification")
-  assert.equal(checkSfxAssetAllowed(entry).allowed, false)
+  assert.equal(checkSfxAssetAllowed(entry).allowed, true, "2026-09-22부터 자작 합성 자산으로 승인됐다")
 })
 
 test("F-17 안정 알림 ID는 계정 범위에서 한 번만 처리되고 복원 봉투는 표식을 남기지 않는다", async () => {
