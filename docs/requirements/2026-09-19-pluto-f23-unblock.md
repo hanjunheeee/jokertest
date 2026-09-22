@@ -575,3 +575,11 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 - 프런트 `npm test` 2479/2479, `vite build` 성공(A-3 배경음 뒤). 백엔드 game-core 552·socket 182·nightTurns 107(A-4/A-5 뒤).
 - 발견: `PasswordResetPage.ui.test.js` AC-07이 새 `<audio>`를 `assert.equal(el, null)`로 비교하다 node:test가 jsdom 요소를 diff 직렬화하며 `Array buffer allocation failed`(80초) — DOM 요소를 단언 메시지에 넣지 않도록 고쳤다.
 - 실제 화면(청음 포함)은 F-28 수동 목록에 남긴다.
+
+## F-33·F-34 배치 등록 (2026-09-22 22:3x)
+- 운영자 승인(22:2x): F-33 이모티콘·F-34 카드 메뉴 설계도의 제안 항목 전부 "이대로 진행", 운영 방식은 기존 배치와 같게(위임 승인 규칙·codex-plan·감시).
+- 설계도: `docs/design/F-33-emoticon.md`(자산 §0 표 — 한국어 제목↔ASCII 파일명↔itemId, 카탈로그 23종, 팔레트 테이블 `economy_emoji_palettes`·`GET/PUT /user/me/emoji-palette`(CAS), 사건 `send_emoji`/`emoji_shown`), `docs/design/F-34-player-card-menu.md`(좌클릭 메뉴 조건표 = `useInGameActionPanel` 기존 값, 제어 패널 제거·`InGamePhaseActionRow`, 카드 메뉴 추방은 `SettingKickPlayerModal`과 같은 인자, 전적 필드 `accountTotalGames`·`accountWinRate`). 커밋 16babb6b. 자산은 e2c55733.
+- 요구사항 `docs/requirements/2026-09-22-f33-f34-batch.md`(커밋) → `cli.js batch … codex-plan` → **batch-e1750b46**, 6조각: CK(E-1) · CL(E-2) · CM(V-1) · CN(V-2) · CO(S-1) · CP(E-3). E-3를 맨 뒤에 둔 이유: V-1과 같은 `InGamePlayerBoard.jsx`를 건드리고 E-2의 `getEmojiPalette`에 의존.
+- `.pluto/config.json` planNotes CK~CP: 설계도 `@경로` + "이 조각은 §N 몫만" + 운영자가 확정한 항목은 blocker·unsure로 올리지 않는다 + 파일 수 편성 허용.
+- 감시: 세션 스크래치 `watch.cjs`(멈춤·조각 전환만 출력). 데몬 pid 45108 :9898.
+
