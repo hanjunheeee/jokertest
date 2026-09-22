@@ -90,8 +90,9 @@ const SHOP_EMOTICONS = [
 const BASIC_OWNED = BASIC_EMOTICONS.map(([itemId]) => ({ itemId, itemType: "EMOTICON", source: "DEFAULT_GRANT" }))
 
 const { render, act, cleanup, waitFor, fireEvent, within } = await import("@testing-library/react")
-const { RouterProvider } = await import("react-router-dom")
+const { RouterProvider, MemoryRouter } = await import("react-router-dom")
 const { router } = await import("../../../../app/routes/index.jsx")
+const { default: StorePanel } = await import("../../components/panel/StorePanel.jsx")
 const { useAuthStore } = await import("../../../auth/store/auth.store.js")
 const { useEconomyStore } = await import("../../../economy/store/economy.store.js")
 const { EMOTICON_STORE_ITEMS, STORE_ITEMS } = await import("../../constants/storeItems.js")
@@ -122,6 +123,14 @@ async function mountStore({ path = "/store", strict = false } = {}) {
   await act(async () => { view = render(strict ? React.createElement(React.StrictMode, null, tree) : tree) })
   const skip = view.queryByRole("button", { name: "인트로 건너뛰기" })
   if (skip) await act(async () => { fireEvent.click(skip) })
+  return view
+}
+// 라우트·인트로 없이 실제 StorePanel만 MemoryRouter(useLocation 컨텍스트) 아래 직접 마운트한다.
+async function mountStorePanel() {
+  let view
+  await act(async () => {
+    view = render(React.createElement(MemoryRouter, { initialEntries: ["/store"] }, React.createElement(StorePanel, { visible: true })))
+  })
   return view
 }
 const text = (view) => view.container.textContent
@@ -179,6 +188,29 @@ test("AC-05: 이모티콘 탭에 23종이 모두 보이고 다른 카테고리 �
   for (const [, name] of [...BASIC_EMOTICONS, ...SHOP_EMOTICONS]) findSlot(view, name)
   assert.doesNotMatch(text(view), /남작|가고일/, "다른 카테고리 상품은 보이지 않는다")
   assert.doesNotMatch(text(view), /표시 전용/, "이모티콘은 더 이상 표시 전용이 아니다")
+})
+
+test("AC-05(StorePanel 직접 마운트): 기본 8종 소유 지갑이면 이모티콘 탭 23종·기본 8종 보유/구매 불가·상점 15종 구매 가능", async () => {
+  await newWorld()
+  const view = await mountStorePanel()
+  // StorePanel 자신의 진입 효과가 fetchSummary(/wallet + /entitlements)를 부른다.
+  await waitEconomyReady()
+  assert.ok(calls.some((call) => call.method === "GET" && WALLET.test(call.path)), "StorePanel이 지갑을 조회한다")
+  assert.ok(calls.some((call) => call.method === "GET" && ENTITLEMENTS.test(call.path)), "StorePanel이 소유 목록을 조회한다")
+  await openEmoticonTab(view)
+
+  assert.equal(slotButtons(view).length, 23, "이모티콘 탭의 상품 칸은 23개다")
+  for (const [, name] of BASIC_EMOTICONS) {
+    await selectItem(view, name)
+    const panel = detail(view)
+    assert.equal(panel.queryByRole("button", { name: "구매" }), null, `${name}에는 구매 버튼이 없어야 한다`)
+    assert.equal(panel.getByRole("button", { name: "보유중" }).disabled, true, `${name}은 보유중·비활성이다`)
+  }
+  for (const [, name] of SHOP_EMOTICONS) {
+    await selectItem(view, name)
+    assert.equal(detail(view).getByRole("button", { name: "구매" }).disabled, false, `${name}의 구매 버튼은 활성이어야 한다`)
+  }
+  assert.equal(posts(BULK_POST).length, 0, "선택만으로는 구매 요청을 보내지 않는다")
 })
 
 test("AC-05: 상점 15종은 선택하면 활성 구매 버튼이 보이고, 누르면 기존 구매 POST로 그 itemId를 구매한다", async () => {
