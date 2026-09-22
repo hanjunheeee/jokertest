@@ -12,7 +12,9 @@ import { STORE_ASSETS } from "../../constants/storeAssets.js"
 import { getStoreItemsByCategory, getStoreItemDisplayIcon, STORE_ITEMS } from "../../constants/storeItems.js"
 import { storePurchase, useStorePurchase } from "../../store/storePurchase.store.js"
 import { currencyPurchase, toCurrencyStoreItem, useCurrencyPurchase } from "../../store/currencyPurchase.store.js"
+import { currencyHistory } from "../../store/currencyHistory.store.js"
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
+import CurrencyTransactionHistory from "./CurrencyTransactionHistory.jsx"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
 import {
@@ -69,7 +71,9 @@ const TOPUP_FAILURE_MESSAGES = {
 const feedbackClass = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"
 
 // 다이아 충전 진행 상태·실패 사유·결과 확인 버튼. 일반 구매 피드백(StorePurchaseFeedback)과는 별도 영역이다.
-function CurrencyTopupFeedback({ currency, onCheck }) {
+// 수동 '결과 확인'은 표시 중인 주문 하나를 조회한다(이벤트 객체를 넘기지 않는다, 자동 확인 횟수는 그대로).
+function CurrencyTopupFeedback({ currency }) {
+  const onCheck = () => currencyPurchase.checkOrder()
   const { status, reason, configPending, autoChecks, lookupFailed } = currency
   if (status === "idle" && !configPending) return null
   const message = configPending
@@ -183,13 +187,32 @@ export default function StorePanel({ visible = true }) {
   const processReturn = () => currencyPurchase.handleReturn(searchRef.current, {
     entryNeeded: useEconomyStore.getState().status !== "ready",
   })
+  // F-32 BQ(§2-6a): 인증된 상점 진입마다 진입 식별자 하나 — StrictMode의 효과 재실행은 같은 식별자를
+  // 공유하고(발견 1회), 실제 재진입(새 마운트)·계정 변경은 새 식별자로 발견을 다시 한다.
+  const entryRef = useRef(null)
   useEffect(() => {
-    // 성공 복귀는 서버 확인 전에 잔액을 조회하지 않는다 — 진입 조회는 handleReturn이 확인 종료 뒤 한 번 맡는다.
-    if (new URLSearchParams(searchRef.current).get("topup") !== "success") useEconomyStore.getState().fetchSummary()
+    if (entryRef.current?.userId !== authUserId) entryRef.current = { userId: authUserId, id: Symbol("store-entry") }
+    const successReturn = new URLSearchParams(searchRef.current).get("topup") === "success"
+    // 성공 복귀는 서버 확인 전에 잔액·내역을 조회하지 않는다 — 진입 조회는 handleReturn이 확인 종료 뒤 한 번 맡는다.
+    if (!successReturn) {
+      useEconomyStore.getState().fetchSummary()
+      currencyHistory.load()
+    }
     storePurchase.activate(authUserId)
     storePurchase.check()
     currencyPurchase.loadProducts()
-    processReturn()
+    // 복귀 주문을 먼저 등록한 뒤 같은 진입의 발견을 요청한다(발견 결과는 복귀 orderId를 건너뛴다).
+    const returning = processReturn()
+    // 확인 종료가 늦으면 그 사이 계정·진입이 바뀌었을 수 있다 — 등록 당시 진입·계정일 때만 원장을 보완 조회한다.
+    if (successReturn) {
+      const entryId = entryRef.current.id
+      returning.then(() => {
+        const sameEntry = entryRef.current?.id === entryId
+        const sameUser = (useAuthStore.getState().user?.uuid ?? null) === authUserId
+        if (sameEntry && sameUser) currencyHistory.loadIfIdle()
+      })
+    }
+    if (authUserId) currencyPurchase.discoverOpenOrders(entryRef.current.id)
     setBulkMode(false)
     setBulkSelectedIds(new Set())
     setBulkPurchaseOpen(false)
@@ -350,9 +373,12 @@ export default function StorePanel({ visible = true }) {
             ) : (
               <StorePurchaseFeedback state={purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
             )}
-            <CurrencyTopupFeedback currency={currency} onCheck={currencyPurchase.checkOrder} />
+            <CurrencyTopupFeedback currency={currency} />
             {activeCategory === CURRENCY_CATEGORY ? (
-              <CurrencyListControls currency={currency} onReload={currencyPurchase.loadProducts} />
+              <>
+                <CurrencyListControls currency={currency} onReload={currencyPurchase.loadProducts} />
+                <CurrencyTransactionHistory />
+              </>
             ) : null}
             <div className={STORE_PANEL_MAIN_ROW_CLASS}>
               <div className={STORE_PANEL_GRID_COLUMN_CLASS}>

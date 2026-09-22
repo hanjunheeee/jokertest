@@ -127,7 +127,7 @@ const http = (base) => async (path, { method = 'GET', user, body, signal } = {})
     if (body !== undefined) headers['content-type'] = 'application/json';
     const res = await fetch(new URL(path, base), { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal });
     const json = await res.json().catch(() => null);
-    return { status: res.status, json };
+    return { status: res.status, json, headers: res.headers };
 };
 
 /** 서버·인증·가짜 어댑터를 한 번에 세운다. */
@@ -145,6 +145,7 @@ const boot = async (t, adapterOptions) => {
             method: 'POST', user, body: { paymentKey, amount, ...extra },
         }),
         getOrder: (user, orderId, query = '') => call(`/economy/topup/orders/${orderId}${query}`, { user }),
+        listOpen: (user, query = '?state=open') => call(`/economy/topup/orders${query}`, { user }),
     };
 };
 
@@ -1077,6 +1078,217 @@ test('AC-04: 임대가 만료된 CONFIRMING(처리자 중단)은 조회가 이�
     const row = await orderRow(c.orderId);
     assert.deepEqual([row.status, row.lease_token], ['CONFIRMING', 'taken-over'], '늦은 처리자가 새 임대의 상태를 덮으면 안 된다');
     assert.equal(await ledgerCount(user, c.orderId), 0);
+});
+
+// ═══ BQ §2-6a: 진행 중 주문 발견(읽기 전용) → 단건 조회 복구 → 골드 구매 ═══════════════════
+
+const OPEN_ORDER_KEYS = ['amount', 'createdAt', 'orderId', 'orderName', 'status'];
+
+/** 별도 연결로 주문 행을 직접 넣는다 — 상태·생성 시각을 시험이 정한다(결제키·임대 없음). */
+const insertOrderRow = async (userId, { orderId, status, createdAt, payAmount = 1000 }) => {
+    await sequelize.query(
+        `INSERT INTO economy_topup_orders
+           (order_id, user_id, product_id, version, pay_amount, grant_amount, bonus_amount, order_name, status, created_at, updated_at)
+         VALUES (:orderId, :userId, 'test-topup-1', 1, :payAmount, 100, 10, '시험 주문', :status, :createdAt, :createdAt)`,
+        { replacements: { orderId, userId, status, createdAt, payAmount } },
+    );
+    return orderId;
+};
+
+/** 부작용 검사용 전체 상태 — 주문 전 행·지갑·원장. */
+const economyState = async () => {
+    const pick = async (sql) => JSON.parse(JSON.stringify((await sequelize.query(sql))[0]));
+    return {
+        orders: await pick('SELECT * FROM economy_topup_orders ORDER BY order_id'),
+        wallets: await pick('SELECT * FROM economy_wallets ORDER BY user_id'),
+        ledger: await pick('SELECT * FROM economy_ledger_entries ORDER BY id'),
+    };
+};
+
+test('BQ §2-6a: 발견은 자기 계정의 CONFIRMING·PENDING_GRANT만 최신순 최대 5건·공개 키 5개로 돌려주고 아무것도 바꾸지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+    const ctx = await boot(t);
+    const owner = await createUser('own');
+    const other = await createUser('oth');
+    await insertProduct();
+
+    // owner: 진행 주문 7건(서로 다른 created_at) + 결제 전·종결 주문. other: 같은 상태 혼합.
+    const at = (minute) => `2026-09-22 01:${String(minute).padStart(2, '0')}:00`;
+    const openIds = [];
+    for (let i = 0; i < 7; i += 1) {
+        openIds.push(await insertOrderRow(owner, {
+            orderId: `open-${i}-${owner.slice(0, 8)}`, status: i % 2 ? 'CONFIRMING' : 'PENDING_GRANT', createdAt: at(10 + i), payAmount: 1000 + i,
+        }));
+    }
+    for (const [index, status] of ['CREATED', 'GRANTED', 'FAILED', 'CANCELED', 'EXPIRED'].entries()) {
+        await insertOrderRow(owner, { orderId: `closed-${status}-${owner.slice(0, 8)}`, status, createdAt: at(40 + index) });
+        await insertOrderRow(other, { orderId: `oclosed-${status}-${other.slice(0, 8)}`, status, createdAt: at(40 + index) });
+    }
+    const otherOpen = await insertOrderRow(other, { orderId: `oopen-${other.slice(0, 8)}`, status: 'PENDING_GRANT', createdAt: at(59) });
+
+    const before = await economyState();
+    const callsBefore = ctx.fake.calls.length;
+    const listed = await ctx.listOpen(owner);
+    assert.equal(listed.status, 200, JSON.stringify(listed.json));
+    assert.equal(listed.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(Object.keys(listed.json).sort(), ['ok', 'orders']);
+    assert.equal(listed.json.ok, true);
+    assert.deepEqual(listed.json.orders.map((o) => o.orderId), openIds.slice(2).reverse(), '최신순 최대 5건');
+    for (const order of listed.json.orders) {
+        assert.deepEqual(Object.keys(order).sort(), OPEN_ORDER_KEYS, '허용 키 정확히 다섯 개');
+        assert.ok(['CONFIRMING', 'PENDING_GRANT'].includes(order.status));
+        assert.equal(order.orderName, '시험 주문');
+        assert.ok(!Number.isNaN(Date.parse(order.createdAt)));
+    }
+    assert.deepEqual(listed.json.orders[0], {
+        orderId: openIds[6], status: 'PENDING_GRANT', amount: 1006, orderName: '시험 주문', createdAt: listed.json.orders[0].createdAt,
+    });
+    assert.ok(!JSON.stringify(listed.json).includes(other), '다른 계정 주문·식별자는 나오지 않는다');
+
+    // 다른 계정: 자기 진행 주문 1건만
+    const otherListed = await ctx.listOpen(other);
+    assert.deepEqual(otherListed.json.orders.map((o) => o.orderId), [otherOpen]);
+
+    // 읽기 전용: 주문·지갑·원장·제공자 호출 불변
+    assert.deepEqual(await economyState(), before, '발견 전후 주문·지갑·원장이 같아야 한다');
+    assert.equal(ctx.fake.calls.length, callsBefore, '발견은 결제 어댑터를 부르지 않는다');
+
+    // 최신 5건이 종결되면 다음 진입에서 남은 오래된 주문이 발견된다(페이지 없음)
+    await sequelize.query("UPDATE economy_topup_orders SET status = 'FAILED' WHERE order_id IN (:ids)", { replacements: { ids: openIds.slice(2) } });
+    const next = await ctx.listOpen(owner);
+    assert.deepEqual(next.json.orders.map((o) => o.orderId), [openIds[1], openIds[0]]);
+
+    // 진행 주문이 없으면 빈 배열(no-store 유지)
+    await sequelize.query("UPDATE economy_topup_orders SET status = 'GRANTED' WHERE user_id = :owner AND status IN ('CONFIRMING','PENDING_GRANT')", { replacements: { owner } });
+    const empty = await ctx.listOpen(owner);
+    assert.deepEqual([empty.status, empty.json], [200, { ok: true, orders: [] }]);
+    assert.equal(empty.headers.get('cache-control'), 'no-store');
+});
+
+test('BQ §2-6a: 발견은 인증 필수이고 state 누락·다른 값·배열은 400, DB 실패는 고정 SERVER_ERROR다(모두 no-store)', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+    const ctx = await boot(t);
+    const user = await createUser('disc');
+
+    const anon = await ctx.listOpen(undefined);
+    assert.equal(anon.status, 401);
+
+    for (const query of ['', '?state=', '?state=OPEN', '?state=closed', '?state=open&state=open', '?state[]=open']) {
+        const res = await ctx.listOpen(user, query);
+        assert.equal(res.status, 400, `${query} → ${JSON.stringify(res.json)}`);
+        assert.equal(res.json.code, 'INVALID_TOPUP_ORDER_REQUEST');
+        assert.equal(res.json.orders, undefined);
+        assert.equal(res.headers.get('cache-control'), 'no-store');
+    }
+
+    // 계정 식별자를 쿼리로 보내도 인증 계정 기준이다
+    const other = await createUser('dis2');
+    await insertProduct();
+    await insertOrderRow(other, { orderId: `x-${other.slice(0, 12)}`, status: 'PENDING_GRANT', createdAt: '2026-09-22 02:00:00' });
+    const spoof = await ctx.listOpen(user, `?state=open&userId=${other}`);
+    assert.deepEqual(spoof.json, { ok: true, orders: [] });
+
+    const original = db.EconomyTopupOrder.findAll;
+    db.EconomyTopupOrder.findAll = async () => { throw Object.assign(new Error('injected secret-sql detail'), { code: 'ER_INJECTED', sql: 'SELECT secret' }); };
+    t.after(() => { db.EconomyTopupOrder.findAll = original; });
+    const failed = await ctx.listOpen(user);
+    assert.equal(failed.status, 500);
+    assert.equal(failed.json.code, 'SERVER_ERROR');
+    assert.equal(failed.json.orders, undefined);
+    assert.ok(!JSON.stringify(failed.json).includes('secret'), '내부 오류 원문을 싣지 않는다');
+    assert.equal(failed.headers.get('cache-control'), 'no-store');
+});
+
+test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각 1회 지급하고, 골드 구매 뒤 wallet·transactions·구매 결과가 별도 연결의 DB와 일치한다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+    const ctx = await boot(t);
+    const user = await createUser('bqint');
+    const stranger = await createUser('bqstr');
+    await insertProduct();
+    await insertProduct({ product_id: 'test-gold-1', kind: 'GOLD_PURCHASE', pay_currency: 'DIAMOND', pay_amount: 30, grant_currency: 'GOLD', grant_amount: 100, bonus_amount: 10, sort_order: 5 });
+
+    // (a) 승인 응답 유실 → CONFIRMING, 원장 0
+    const lost = await orderWithPayment(ctx, user, { scenario: 'lost-response' });
+    assert.equal((await ctx.confirm(user, lost.orderId, lost.paymentKey, 1000)).json.code, 'PAYMENT_PROCESSING');
+    // (b) 지급 쓰기 실패 → PENDING_GRANT, 원장 0
+    let armed = 0;
+    const originalCreate = db.EconomyLedgerEntry.create;
+    db.EconomyLedgerEntry.create = async function injected(...args) {
+        if (armed > 0) { armed -= 1; throw Object.assign(new Error('injected ledger failure'), { code: 'ER_INJECTED' }); }
+        return originalCreate.apply(this, args);
+    };
+    t.after(() => { db.EconomyLedgerEntry.create = originalCreate; });
+    // 두 주문의 created_at이 겹치지 않게 1초 뒤에 만든다(최신순 판정 근거)
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const pending = await orderWithPayment(ctx, user);
+    armed = 1;
+    assert.deepEqual((await ctx.confirm(user, pending.orderId, pending.paymentKey, 1000)).json, { ok: true, status: 'PENDING_GRANT' });
+    assert.equal(await diamondBalance(user), 0);
+    assert.equal(await topupLedgerTotal(), 0);
+
+    // 발견: 최신(PENDING_GRANT)이 먼저, 부작용 없음
+    const callsBefore = ctx.fake.calls.length;
+    const found = await ctx.listOpen(user);
+    assert.deepEqual(found.json.orders.map((o) => [o.orderId, o.status]), [[pending.orderId, 'PENDING_GRANT'], [lost.orderId, 'CONFIRMING']]);
+    assert.equal(ctx.fake.calls.length, callsBefore);
+    assert.equal(await diamondBalance(user), 0);
+
+    // 발견된 orderId로 기존 단건 GET → 지급 완료(중복 GET·confirm은 추가 지급 없음)
+    for (const { orderId } of found.json.orders) {
+        const view = await ctx.getOrder(user, orderId);
+        assert.equal(view.json.status, 'GRANTED', JSON.stringify(view.json));
+    }
+    await Promise.all([
+        ctx.getOrder(user, pending.orderId), ctx.getOrder(user, lost.orderId),
+        ctx.confirm(user, pending.orderId, pending.paymentKey, 1000), ctx.confirm(user, lost.orderId, lost.paymentKey, 1000),
+    ]);
+    const separate = await openSeparateDb(t);
+    const topups = await separate.EconomyLedgerEntry.findAll({ where: { user_id: user, reason: 'DIAMOND_TOPUP' } });
+    assert.deepEqual(topups.map((e) => e.reference_event_id).sort(), [`topup:${lost.orderId}`, `topup:${pending.orderId}`].sort(), '주문별 충전 원장 1행');
+    assert.equal(await diamondBalance(user), 220);
+    assert.deepEqual((await ctx.listOpen(user)).json.orders, [], '지급된 주문은 더 발견되지 않는다');
+
+    // 골드 구매(D30 → G100+10)
+    const referenceEventId = `bq-gold-${crypto.randomBytes(6).toString('hex')}`;
+    const bought = await ctx.call('/economy/gold-purchases', { method: 'POST', user, body: { productId: 'test-gold-1', version: 1, referenceEventId } });
+    assert.deepEqual([bought.status, bought.json], [200, { ok: true, balanceGold: 110, balanceDiamond: 190 }]);
+    const replay = await ctx.call('/economy/gold-purchases', { method: 'POST', user, body: { productId: 'test-gold-1', version: 1, referenceEventId } });
+    assert.deepEqual(replay.json, { ok: true, balanceGold: 110, balanceDiamond: 190 }, '같은 키 재요청은 최초 결과');
+
+    const walletRow = await separate.sequelize.models.EconomyWallet.findOne({ where: { user_id: user } });
+    const wallet = await ctx.call(`/economy/accounts/${user}/wallet`, { user });
+    assert.deepEqual(wallet.json, { balanceGold: walletRow.balance_gold, balanceDiamond: walletRow.balance_diamond });
+    assert.deepEqual(wallet.json, { balanceGold: 110, balanceDiamond: 190 });
+
+    const ledgerRowsSeparate = await separate.EconomyLedgerEntry.findAll({ where: { user_id: user }, order: [['id', 'DESC']] });
+    const transactions = await ctx.call(`/economy/accounts/${user}/transactions`, { user });
+    assert.equal(transactions.status, 200);
+    assert.deepEqual(
+        transactions.json.transactions.map((e) => [String(e.id), e.reason, e.currency, e.amount, e.balanceAfter, e.referenceEventId]),
+        ledgerRowsSeparate.map((e) => [String(e.id), e.reason, e.currency, e.amount, e.balance_after, e.reference_event_id]),
+    );
+    for (const entry of transactions.json.transactions) {
+        assert.deepEqual(Object.keys(entry).sort(), ['amount', 'balanceAfter', 'createdAt', 'currency', 'id', 'itemId', 'reason', 'referenceEventId']);
+    }
+    assert.equal(transactions.json.transactions.filter((e) => e.reason === 'GOLD_PURCHASE').length, 2, '골드 구매 원장 2행');
+    assert.equal(transactions.json.transactions.filter((e) => e.reason === 'DIAMOND_TOPUP').length, 2);
+    assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_purchase_requests WHERE user_id = :user', { user })).n), 1, '구매 요청 1행');
+
+    // 과거 구매 결과는 최초 스냅샷이다 — 이후 지갑이 바뀌어도 그대로(현재 잔액은 wallet으로 확정)
+    const later = await orderWithPayment(ctx, user);
+    assert.equal((await ctx.confirm(user, later.orderId, later.paymentKey, 1000)).json.balanceDiamond, 300);
+    const result = await ctx.call(`/economy/purchases/${encodeURIComponent(referenceEventId)}`, { user });
+    assert.equal(result.json.kind, 'GOLD');
+    assert.deepEqual([result.json.balanceGold, result.json.balanceDiamond], [110, 190]);
+    assert.deepEqual((await ctx.call(`/economy/accounts/${user}/wallet`, { user })).json, { balanceGold: 110, balanceDiamond: 300 });
+
+    // 타인의 원장·지갑·발견은 보이지 않는다
+    assert.equal((await ctx.call(`/economy/accounts/${user}/transactions`, { user: stranger })).status, 403);
+    assert.equal((await ctx.call(`/economy/accounts/${user}/wallet`, { user: stranger })).status, 403);
+    assert.deepEqual((await ctx.listOpen(stranger)).json, { ok: true, orders: [] });
 });
 
 // ═══ AC-06: 마이그레이션 — 반복 적용·부분 실패 복구·기존 경제 데이터 보존 ═══════════════════

@@ -390,6 +390,28 @@ router.post("/topup/orders/:orderId/confirm", verifyToken, requireSelf, async (r
     } catch (error) { next(error); }
 });
 
+// F-32 §2-6a 진행 중 주문 발견(읽기 전용). 계정은 인증 uuid뿐이고 state=open만 받는다. 응답 행은
+// 공개 필드 다섯 개만 고른다(단건 조회 직렬화보다 좁다). 성공 응답도 캐시하지 않는다.
+router.get("/topup/orders", verifyToken, requireSelf, async (req, res, next) => {
+    try {
+        if (req.query.state !== "open") {
+            throw createError("state=open이 필요합니다.", 400, "INVALID_TOPUP_ORDER_REQUEST");
+        }
+        const orders = await topupService.listOpenTopupOrders({ userId: req.user.uuid });
+        res.set("Cache-Control", "no-store");
+        res.json({
+            ok: true,
+            orders: orders.map((order) => ({
+                orderId: order.orderId,
+                status: order.status,
+                amount: order.amount,
+                orderName: order.orderName,
+                createdAt: order.createdAt,
+            })),
+        });
+    } catch (error) { next(error); }
+});
+
 // 응답 유실 복구용 조회. 결제창 복귀 쿼리(paymentKey 등)는 읽지 않는다 — 조회만으로 승인·지급을
 // 시작하지 않는다(CREATED 주문은 부작용이 없고, 복구는 이미 저장된 결제키로만 이어진다).
 router.get("/topup/orders/:orderId", verifyToken, requireSelf, async (req, res, next) => {
