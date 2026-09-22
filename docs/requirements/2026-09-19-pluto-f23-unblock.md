@@ -534,3 +534,10 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 - 5회차 후보(문서 2개 보강): 양쪽 심사 통과(18:44), 명령 4개 exit 0, **백엔드 시험 8건 실패(19:11, 24.8분) — 또 `fetch failed`**(socialAuth.route 5·f19-friends 2·기타 1). 사전 적재가 `Connection: close`를 실제로 붙이는 것은 프로브로 확인(POST/GET 모두) — 그런데도 남는다(BQ 10회차·CJ 5회차는 같은 실행기로 fail 0이었음 → 부하 의존 가능성). 원인을 가리려고 사전 적재에 실패 fetch의 cause(code·주소·포트) stderr 기록을 추가. → **6회차(19:1x)** 변경 없이 재실행. 다음 실패 로그의 `FETCH_FAILED_CAUSE` 줄로 원인 확정.
 - 6회차(19:14~19:40): 심사 재사용, 명령 5개 exit 0 — 백엔드 전체 2,394개 fail 0(24.3분; 사전 적재의 `FETCH_FAILED_CAUSE` 6줄은 전부 의도된 실패 시험 — 타임아웃·abort·'other side closed' 검사), 프런트 2,466개 fail 0. 기계 PASS 2, manual 4를 `result/manual`로 기록(격리 DB·관전 제거·병합 원장·미검증 대장). 후보 `0ebf1f64`(보고서 2개: `docs/test-evidence/f28/final-acceptance.md`·`integration-contract.md`).
 - **BN은 RESULT=human에서 운영자 승인 대기** — AC-05 문구를 운영자 승인 아래 고쳤으므로 위임 승인 범위 밖. 소요 16:36~19:40 = 3시간 4분, Claude 쪽 비용 $12.43. 보고서 결론: 자동 산출물은 전부 기록됐고 **실제 Chrome·메일·결제·청음 인수는 남아 있다**(체크리스트 문서). 배치 48개 중 47개 병합, 마지막 1개 승인 대기.
+- **F-28(BN) 완료 처리(19:43)**: 운영자 "승인" → 병합 `2ed9a710`(문서 2개). **배치 batch-0ea6f89b 48개 전부 병합 — 끝.** 감시 내림. pluto 데몬은 그대로 둔다(운영자 지시 없음).
+
+## 배치 종료 요약 (2026-09-22 19:45)
+- 2026-09-19 시작한 F-23~F-32 배치가 오늘 19:43 마지막 F-28 병합으로 끝났다. 오늘 하루: BP(F-31 본) 마무리 → CB·CC·CH·BQ(F-32 전체) → CJ(F-27d, 새로 삽입) → BN(F-28). 브랜치 `windows-handoff-20260808`.
+- 오늘의 파이프라인 손질: Pluto 수정 45(`injectsIntoFactory`)·46(`usesMemberOfImportedSymbol`) — 연결 검사기 오판 6·7번째 패턴; 실행기 사전 적재 `fetch-no-keepalive.cjs`(+cause 기록) — 백엔드 시험 `fetch failed` 일괄 차단(이후 3회 전체 실행 fail 0).
+- **남은 사람 몫**: `docs/requirements/2026-09-22-f28-manual-checklist.md`(실제 Chrome·메일·결제·청음 29항목 + 2026-09-13 통합 시나리오). 자동 검증은 "통과"지만 실제 인수는 이 목록을 끝내야 완료다.
+- **배치 뒤 할 일**(운영자와 같이 정한다, 자동으로 안 함): 작업본 정리(`jokertest-slices` 3.1GB — BR·BS·BT는 split 잠금, L 보존), `tmp/` 정리(`db-backups` 보존), pluto 보완 목록(지시서 다이어트, 반복 blocker 즉시 중단, recover-wiring 후보 표식 공백, 그래프 색인 모순, 설계도 사실 확인, NUL 검사), 도메인 분석기 시험. `pluto/CB·CC·CH·BQ·CJ·BN` 브랜치·작업본은 남아 있다.
