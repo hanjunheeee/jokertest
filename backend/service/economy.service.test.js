@@ -357,7 +357,7 @@ test('AC-02: 기본 지급을 두 번 호출해도 계정당 한 번만 지급�
     await economyService.ensureDefaultEntitlements(userId, db);
 
     const grantedForUser = db._inspect.entitlements.filter((e) => e.user_id === userId);
-    assert.equal(grantedForUser.length, 17, '중복 없이 17종(프로필 16 + 테두리 1)만 보유해야 한다');
+    assert.equal(grantedForUser.length, 25, '중복 없이 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)만 보유해야 한다');
 });
 
 test('AC-02(R-IMPL): 같은 계정이 같은 참조 사건 ID를 다른 상품 구매에 재사용하면 이전 결과를 노출하지 않고 거부된다', async () => {
@@ -462,14 +462,20 @@ test('AC-03: 신규/기존 계정 모두 기본 프로필 16종 + 평민 테두�
 
     const summary = await economyService.getWalletSummary(userId, db);
 
-    assert.equal(summary.entitlements.length, 17);
+    assert.equal(summary.entitlements.length, 25);
     const photoCount = summary.entitlements.filter((e) => e.itemType === 'PROFILE_PHOTO').length;
     const borderCount = summary.entitlements.filter((e) => e.itemType === 'PROFILE_BORDER').length;
+    const emoticonIds = summary.entitlements.filter((e) => e.itemType === 'EMOTICON').map((e) => e.itemId).sort();
     assert.equal(photoCount, 16);
     assert.equal(borderCount, 1);
+    // F-33 E-1: 신규 계정도 기본 지급 이모티콘 8종만 받는다(상점 15종은 구매 대상).
+    assert.deepEqual(emoticonIds, [
+        'emoji-basic-anger', 'emoji-basic-dizzy', 'emoji-basic-grin', 'emoji-basic-hello',
+        'emoji-basic-love', 'emoji-basic-reject', 'emoji-basic-surrender', 'emoji-basic-tears',
+    ]);
 
     const ids = new Set(summary.entitlements.map((e) => e.itemId));
-    assert.equal(ids.size, 17, '중복 보유가 없어야 한다');
+    assert.equal(ids.size, 25, '중복 보유가 없어야 한다');
 
     assert.equal(summary.loadout.selectedProfilePhotoId, DEFAULT_PROFILE_PHOTO_ID);
     assert.equal(summary.loadout.selectedProfileBorderId, DEFAULT_PROFILE_BORDER_ID);
@@ -534,7 +540,7 @@ test('AC-03(R-IMPL): 지갑 조회 없이 곧바로 기본 프로필을 장착�
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
 
     const owned = db._inspect.entitlements.filter((e) => e.user_id === userId);
-    assert.equal(owned.length, 17, '장착이 트리거한 자동 기본 지급으로 17종을 모두 보유해야 한다');
+    assert.equal(owned.length, 25, '장착이 트리거한 자동 기본 지급으로 25종을 모두 보유해야 한다');
 });
 
 // ── AC-04: 서버가 클라이언트 가격을 신뢰하지 않는다 ─────────────────────────
@@ -702,7 +708,7 @@ test('CODEX-2(AC-03): ensureDefaultEntitlements도 외부 트랜잭션을 받으
     });
 
     const granted = db._inspect.entitlements.filter((e) => e.user_id === userId);
-    assert.equal(granted.length, 17, '부모 트랜잭션 안에서도 기본 프로필 16종 + 평민 테두리 1종이 모두 지급되어야 한다');
+    assert.equal(granted.length, 25, '부모 트랜잭션 안에서도 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)이 모두 지급되어야 한다');
 
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID, '부모 트랜잭션 안에서도 기본 선택값이 채워져야 한다');

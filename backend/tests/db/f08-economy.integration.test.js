@@ -284,6 +284,11 @@ test('AC-02/AC-06(R-IMPL): 서로 다른 계정이 같은 참조 사건 ID 문�
 
 // ── AC-03: 기본 지급(실제 DB) ────────────────────────────────────────────────
 
+const BASIC_EMOTICON_IDS = [
+    'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',
+    'emoji-basic-grin', 'emoji-basic-hello', 'emoji-basic-surrender', 'emoji-basic-dizzy',
+];
+
 test('AC-03: 실제 DB에서도 기본 프로필 16종 + 평민 테두리 1종이 중복 없이 지급되고 GOLD·DIAMOND 잔액은 0/0으로 시작한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -291,8 +296,14 @@ test('AC-03: 실제 DB에서도 기본 프로필 16종 + 평민 테두리 1종�
     const userId = await createLocalUser('ac03');
     const summary = await economyService.getWalletSummary(userId);
 
-    assert.equal(summary.entitlements.length, 17);
-    assert.equal(new Set(summary.entitlements.map((e) => e.itemId)).size, 17);
+    // F-33 E-1: 기본 지급은 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)이다.
+    assert.equal(summary.entitlements.length, 25);
+    assert.equal(new Set(summary.entitlements.map((e) => e.itemId)).size, 25);
+    assert.deepEqual(
+        summary.entitlements.filter((e) => e.itemType === 'EMOTICON').map((e) => e.itemId).sort(),
+        BASIC_EMOTICON_IDS.slice().sort(),
+        '신규 계정은 기본 이모티콘 8종만 받아야 한다',
+    );
     assert.equal(summary.balanceGold, 0);
     assert.equal(summary.balanceDiamond, 0);
 });
@@ -314,7 +325,7 @@ test('AC-03(R-IMPL): 실제 DB에서도 지갑 조회 없이 곧바로 기본 �
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
 
     const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
-    assert.equal(owned.length, 17, '장착이 트리거한 자동 기본 지급으로 17종을 모두 보유해야 한다');
+    assert.equal(owned.length, 25, '장착이 트리거한 자동 기본 지급으로 25종을 모두 보유해야 한다');
 });
 
 // ── AC-03(CODEX-2): 신규 가입/소셜 가입 완료/기존 계정 백필 — wallet·equip 조회 이전 ──
@@ -345,8 +356,8 @@ test('AC-03(CODEX-2): authService.signup 직후 — 지갑/장착 조회를 한 
 
     const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
     const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: user.uuid } });
-    assert.equal(owned.length, 17, '가입 트랜잭션이 커밋된 시점에 이미 기본 프로필 16종 + 평민 테두리 1종을 보유해야 한다');
-    assert.equal(new Set(owned.map((row) => row.item_id)).size, 17, '중복 지급이 없어야 한다');
+    assert.equal(owned.length, 25, '가입 트랜잭션이 커밋된 시점에 이미 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)을 보유해야 한다');
+    assert.equal(new Set(owned.map((row) => row.item_id)).size, 25, '중복 지급이 없어야 한다');
 
     const wallet = await db.sequelize.models.EconomyWallet.findOne({ where: { user_id: user.uuid } });
     assert.ok(wallet, '가입과 동시에 지갑 행도 만들어져 있어야 한다');
@@ -376,7 +387,7 @@ test('AC-03(CODEX-2): socialAuthService.completeSocialSignup 직후 — 지갑/�
     });
 
     const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: signup.user.uuid } });
-    assert.equal(owned.length, 17, '소셜 가입 완료 트랜잭션이 커밋된 시점에 이미 기본 지급이 끝나 있어야 한다');
+    assert.equal(owned.length, 25, '소셜 가입 완료 트랜잭션이 커밋된 시점에 이미 기본 지급이 끝나 있어야 한다');
 
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: signup.user.uuid } });
     const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
@@ -441,7 +452,7 @@ test('AC-03(CODEX-2)/AC-04(F-31a): 가입 트랜잭션 실패는 기본 지급·
         signupProof,
     });
     const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: retried.uuid } });
-    assert.equal(owned.length, 17, '재시도가 성공하면 기본 지급 17종이 모두 있어야 한다');
+    assert.equal(owned.length, 25, '재시도가 성공하면 기본 지급 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)이 모두 있어야 한다');
 });
 
 test('AC-03(CODEX-2): 기존 계정 백필(backfillDefaultEntitlements) — 가입 훅 없이 만들어진 계정도 지갑/장착 조회 없이 지급된다', async (t) => {
@@ -460,7 +471,12 @@ test('AC-03(CODEX-2): 기존 계정 백필(backfillDefaultEntitlements) — 가�
     assert.deepEqual(result.failures, []);
 
     const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
-    assert.equal(owned.length, 17, '백필 이후에는 지갑/장착 조회 없이도 기본 프로필 16종 + 평민 테두리 1종을 보유해야 한다');
+    assert.equal(owned.length, 25, '백필 이후에는 지갑/장착 조회 없이도 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)을 보유해야 한다');
+    const ownedIds = new Set(owned.map((row) => row.item_id));
+    for (const emoticonId of BASIC_EMOTICON_IDS) {
+        assert.ok(ownedIds.has(emoticonId), `백필된 기존 계정은 기본 이모티콘 ${emoticonId}를 보유해야 한다`);
+    }
+    const ledgerAfterBackfill = await db.EconomyLedgerEntry.count({ where: { user_id: userId } });
 
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
     const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
@@ -471,7 +487,8 @@ test('AC-03(CODEX-2): 기존 계정 백필(backfillDefaultEntitlements) — 가�
     const result2 = await backfillDefaultEntitlements({ db, batchSize: 50 });
     assert.deepEqual(result2.failures, []);
     const ownedAfterRerun = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: userId } });
-    assert.equal(ownedAfterRerun.length, 17, '재실행이 중복 지급을 만들면 안 된다');
+    assert.equal(ownedAfterRerun.length, 25, '재실행이 중복 지급을 만들면 안 된다');
+    assert.equal(await db.EconomyLedgerEntry.count({ where: { user_id: userId } }), ledgerAfterBackfill, '재실행이 새 원장을 만들면 안 된다');
 });
 
 // ── F-08 요구사항: DIAMOND 재화(실제 DB) ─────────────────────────────────────
