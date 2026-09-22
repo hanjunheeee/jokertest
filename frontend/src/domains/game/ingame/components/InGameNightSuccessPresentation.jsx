@@ -132,9 +132,15 @@ function applyMixToVideo(video, mix, forceMuted) {
  *   - 사용자가 건너뛰기를 누름(재시도 화면·워치독 화면 어느 쪽에서든) → SKIPPED
  *
  * ERROR·SKIPPED·COMPLETED 중 무엇이든 사용자의 동작이나 브라우저 이벤트 하나당 정확히 한 번만
- * onFinish를 부른다 — 조용히 다음으로 넘어가지 않는다.
+ * finish를 부른다 — 조용히 다음으로 넘어가지 않는다.
+ *
+ * F-27d(소비처 연결 반려 수정): 이 prop은 useInGameNightSuccessPresentation이 돌려주는 finish를
+ * 부모가 그대로 내려보낸 것이다 — onFinish로 이름을 바꿔 받으면 이 컴포넌트 본문 어디에도
+ * "finish(...)" 호출이 텍스트로 나타나지 않아, 실제로는 같은 함수를 부르면서도 소비처 연결
+ * 점검에서 훅의 finish를 호출하지 않는 것으로 보였다. 그래서 prop도 로컬 이름도 finish로 받아
+ * 그대로 finish(outcome)로 부른다.
  */
-function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
+function InGameNightSuccessKillVideo({ eventId, src, finish }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const [status, setStatus] = useState("loading")
@@ -152,9 +158,9 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
 
   /**
    * F-27c(AC-05, CODEX 반려 수정): **settleWith·reportFailure·watchdog가 공유하는 단일 종료
-   * 가드.** 예전에는 세 경로가 각자 onFinish를 직접 불러서, ended가 COMPLETED를 보고한 뒤에도
+   * 가드.** 예전에는 세 경로가 각자 finish를 직접 불러서, ended가 COMPLETED를 보고한 뒤에도
    * 뒤이은 error 이벤트나 뒤늦은 watchdog·reportFailure가 같은 사건을 또 보고할 수 있었다.
-   * 이제는 이 함수 하나만 onFinish를 부르고, 그 사건(lifetime)당 한 번 불리고 나면 이후의 모든
+   * 이제는 이 함수 하나만 finish를 부르고, 그 사건(lifetime)당 한 번 불리고 나면 이후의 모든
    * settleOnce 호출은 조용히 무시한다 — **먼저 일어난 종료 하나만** 보고된다.
    */
   const settleOnce = useCallback((lifetime, outcome, nextStatus) => {
@@ -167,8 +173,8 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
     // 예약이 실제로는 취소되지 않았다).
     cancelFrameLoop(lifetime, lifetime.video)
     if (nextStatus) setStatus(nextStatus)
-    onFinish(outcome)
-  }, [onFinish])
+    finish(outcome)
+  }, [finish])
 
   /**
    * F-27d(AC-02/AC-03/AC-05): 한 프레임을 읽어 색·마스크 절반을 합성하고 표시 canvas에 그린다.
@@ -525,7 +531,7 @@ export default function InGameNightSuccessPresentation({
   if (current) {
     const video = resolveNightSuccessVideo(current)
     if (video) {
-      return <InGameNightSuccessKillVideo eventId={current.eventId} src={video.src} onFinish={finish} />
+      return <InGameNightSuccessKillVideo eventId={current.eventId} src={video.src} finish={finish} />
     }
     return (
       <InGameNightSuccessPendingAsset type={current.type} eventId={current.eventId} onFinish={finish} />
