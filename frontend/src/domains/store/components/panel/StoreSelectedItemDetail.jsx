@@ -107,7 +107,7 @@ export default function StoreSelectedItemDetail({
               )}
             </div>
 
-            {item.category !== "이모티콘" ? <StorePurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} owned={owned} label={purchaseLabel} /> : <span>표시 전용 · 준비중</span>}
+            <StorePurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} owned={owned} label={purchaseLabel} />
           </div>
         </div>
       </div>

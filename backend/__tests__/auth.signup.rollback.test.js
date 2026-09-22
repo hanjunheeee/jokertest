@@ -367,9 +367,9 @@ test("정상 가입이면 user와 user_stats가 같은 트랜잭션으로 함께
     );
 
     // F-08 CODEX-2(AC-03): 지연 지급(wallet/equip 조회 시점)이 아니라 가입 자체가 기본
-    // 프로필 16종 + 평민 테두리 1종을 이미 끝낸 상태로 커밋되어야 한다.
+    // 프로필 16종 + 평민 테두리 1종 + 기본 이모티콘 8종(F-33 E-1)을 이미 끝낸 상태로 커밋되어야 한다.
     const granted = economyInspect.entitlements.filter((e) => e.user_id === "uuid-1");
-    assert.equal(granted.length, 17, "가입 트랜잭션 안에서 기본 프로필 16종 + 평민 테두리 1종이 모두 지급되어야 한다");
+    assert.equal(granted.length, 25, "가입 트랜잭션 안에서 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)이 모두 지급되어야 한다");
     const loadout = economyInspect.loadouts.get("uuid-1");
     assert.equal(loadout.selected_profile_photo_id, "player-profile-금빛가면", "가입 직후 기본 선택은 금빛가면이어야 한다");
     assert.equal(loadout.selected_profile_border_id, "profile-border-평민");

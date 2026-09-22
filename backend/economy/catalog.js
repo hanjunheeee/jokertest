@@ -106,20 +106,45 @@ const playerCardFrameItems = PLAYER_CARD_VARIANTS.map((variant) => ({
     purchasable: true,
 }));
 
-// F-09 AC-05: 이모티콘 탭은 "준비 중" 표시 전용이다 — 실제 판매하지 않는다
-// (frontend에는 이 유형의 항목을 그릴 그리드 콘텐츠가 아직 없다). 그래도 서버 카탈로그에
-// 이 유형·ID를 명시적으로 등록해 두는 이유는, 나중에 표시용 카드가 추가되거나 누군가
-// 그럴듯한 ID를 추측해 조작된 구매 요청을 보내도 "카탈로그에 없는 상품"이 아니라
-// "존재하지만 구매 불가능한 상품"으로 항상 purchasable:false에 걸려 거부되게 하기
-// 위함이다(purchaseItem/purchaseItems는 존재 여부와 무관하게 purchasable !== true면
-// 동일하게 거부한다).
-const emoticonItems = ['웃음', '울음', '화남', '박수'].map((label) => ({
-    id: `emoticon-${label}`,
-    type: ITEM_TYPES.EMOTICON,
-    priceGold: 0,
-    defaultGrant: false,
-    purchasable: false,
-}));
+// F-33 E-1: 이모티콘 23종(docs/design/F-33-emoticon.md §0). 기본 8종은 모든 계정에
+// 기본 지급(구매 불가), 상점 15종은 골드로 판매한다. 가격은 운영자 확정 전 임시값이라
+// 이 상수 하나로 모아 둔다 — 최종 상품표가 아니다. id·이름·경로는 frontend storeItems.js
+// EMOTICON_STORE_ITEMS와 같은 값이다.
+const EMOTICON_PRICE_GOLD_PLACEHOLDER = 500;
+
+const BASIC_EMOTICONS = [
+    ['reject', '거절'], ['tears', '눈물'], ['anger', '분노'], ['love', '사랑'],
+    ['grin', '씨익'], ['hello', '안녕'], ['surrender', '항복'], ['dizzy', '헤롱'],
+];
+
+const SHOP_EMOTICONS = [
+    ['thorned-heart', '가시박힌 심장'], ['duel-challenge', '결투를 신청한다'], ['nasty-mock', '기분나쁜 조롱'],
+    ['startled', '깜짝'], ['im-crying', '나 울고있어'], ['find-culprit', '범인 색출'],
+    ['ready-to-burn', '불 탈 준비됐어'], ['shush', '쉿 조용히'], ['which-potion', '어떤 약이었지'],
+    ['puzzled', '어리둥절'], ['elegant-toast', '우아한 건배'], ['meaningful', '의미심장'],
+    ['take-aim', '정조준'], ['dead-soul', '죽은자의 영혼'], ['vote-time', '투표할 시간이야'],
+];
+
+const emoticonItems = [
+    ...BASIC_EMOTICONS.map(([slug, name]) => ({
+        id: `emoji-basic-${slug}`,
+        type: ITEM_TYPES.EMOTICON,
+        name,
+        icon: `/shopItem/basic/emoji/${slug}.png`,
+        priceGold: 0,
+        defaultGrant: true,
+        purchasable: false,
+    })),
+    ...SHOP_EMOTICONS.map(([slug, name]) => ({
+        id: `emoji-${slug}`,
+        type: ITEM_TYPES.EMOTICON,
+        name,
+        icon: `/shopItem/emoji/${slug}.png`,
+        priceGold: EMOTICON_PRICE_GOLD_PLACEHOLDER,
+        defaultGrant: false,
+        purchasable: true,
+    })),
+];
 
 const ALL_ITEMS = [...profilePhotoItems, ...profileBorderItems, ...skinItems, ...playerCardFrameItems, ...emoticonItems];
 
@@ -128,7 +153,7 @@ const CATALOG_BY_ID = new Map(ALL_ITEMS.map((item) => [item.id, item]));
 /** @param {string} itemId @returns {{id:string,type:string,priceGold:number,defaultGrant:boolean,purchasable:boolean} | undefined} */
 const getCatalogItem = (itemId) => CATALOG_BY_ID.get(itemId);
 
-/** 기본 지급 대상(AC-03: 프로필 16종 + 평민 테두리 1종) 전체. */
+/** 기본 지급 대상(프로필 16종 + 평민 테두리 1종 + 기본 이모티콘 8종) 전체. */
 const listDefaultGrantItems = () => ALL_ITEMS.filter((item) => item.defaultGrant === true);
 
 // R-IMPL(2026-09-10, AC-04 재검토): /economy/admin/grant는 인증된 QA/ADMIN 계정만 호출할 수
@@ -155,6 +180,7 @@ module.exports = {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,
     DEFAULT_PROFILE_BORDER_ID,
+    EMOTICON_PRICE_GOLD_PLACEHOLDER,
     getCatalogItem,
     listDefaultGrantItems,
     getRewardCatalogEntry,

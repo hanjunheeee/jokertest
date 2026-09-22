@@ -169,7 +169,7 @@ test('AC-01: 발송→확인→가입 후 사용자·통계·경제 행과 인�
     const [entitlementRows] = await sequelize.query(
         'SELECT item_id FROM economy_entitlements WHERE user_id = :userId', { replacements: { userId } },
     );
-    assert.equal(entitlementRows.length, 17, '기본 프로필 16종 + 평민 테두리 1종이 지급되어야 한다');
+    assert.equal(entitlementRows.length, 25, '기본 프로필 16종 + 평민 테두리 1종 + 기본 이모티콘 8종이 지급되어야 한다');
 
     const [walletRows] = await sequelize.query(
         'SELECT balance_gold, balance_diamond FROM economy_wallets WHERE user_id = :userId', { replacements: { userId } },
@@ -227,12 +227,12 @@ test('AC-04: 같은 증명으로 동시에 HTTP 가입을 제출해도 계정 �
     const [entitlementRows] = await sequelize.query(
         'SELECT item_id FROM economy_entitlements WHERE user_id = :userId', { replacements: { userId: userRows[0].uuid } },
     );
-    assert.equal(entitlementRows.length, 17, '기본 지급도 정확히 한 번만 이루어져야 한다');
+    assert.equal(entitlementRows.length, 25, '기본 지급도 정확히 한 번만 이루어져야 한다');
     const [[ledgerCount]] = await sequelize.query(
         `SELECT COUNT(*) AS c FROM economy_ledger_entries WHERE user_id = :userId AND reason = 'DEFAULT_GRANT'`,
         { replacements: { userId: userRows[0].uuid } },
     );
-    assert.equal(Number(ledgerCount.c), 17, 'DEFAULT_GRANT 원장도 정확히 17건이어야 한다');
+    assert.equal(Number(ledgerCount.c), 25, 'DEFAULT_GRANT 원장도 정확히 25건이어야 한다');
 });
 
 test('AC-04: 지급 실패 후 롤백 — 증명이 미소비로 남아 같은 증명으로 재시도하면 성공한다', async (t) => {
@@ -298,7 +298,7 @@ test('AC-04: 지급 실패 후 롤백 — 증명이 미소비로 남아 같은 �
     const [entitlementRows] = await sequelize.query(
         'SELECT item_id FROM economy_entitlements WHERE user_id = :userId', { replacements: { userId: userRowsAfterRetry[0].uuid } },
     );
-    assert.equal(entitlementRows.length, 17, '재시도가 성공하면 기본 지급 17종이 모두 있어야 한다');
+    assert.equal(entitlementRows.length, 25, '재시도가 성공하면 기본 지급 25종이 모두 있어야 한다');
 });
 
 // ── AC-06: 마이그레이션 재실행 안전성·기존 계정 로그인 ────────────────────────

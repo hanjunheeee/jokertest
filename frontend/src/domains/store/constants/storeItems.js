@@ -148,11 +148,47 @@ export const INGAME_MONEY_STORE_ITEMS = [
   ...[10, 50, 100, 300].map((amount) => createIngameMoneyItem("diamond", amount)),
 ]
 
-export const EMOTICON_STORE_ITEMS = ["웃음", "울음", "화남", "박수"].map((name, i) => ({
-  id: `emoticon-${name}`, category: "이모티콘", name: `${name} 이모티콘`,
-  icon: PLAYER_CARD_STORE_ITEMS[i].icon, priceAmount: STORE_PRICE_PENDING,
-  grade: "임시 상품", description: "표시 전용 임시 이미지입니다. 구매 및 사용은 준비 중입니다.", tag: "준비중",
-}))
+// F-33 E-1: 이모티콘 23종(docs/design/F-33-emoticon.md §0). id는 서버 catalog.js와 같은 itemId다.
+// 상점 15종 가격은 서버 EMOTICON_PRICE_GOLD_PLACEHOLDER와 같은 임시값이다(최종 상품표 아님).
+export const EMOTICON_PRICE_GOLD_PLACEHOLDER = 500
+
+const BASIC_EMOTICONS = [
+  ["reject", "거절"], ["tears", "눈물"], ["anger", "분노"], ["love", "사랑"],
+  ["grin", "씨익"], ["hello", "안녕"], ["surrender", "항복"], ["dizzy", "헤롱"],
+]
+
+const SHOP_EMOTICONS = [
+  ["thorned-heart", "가시박힌 심장"], ["duel-challenge", "결투를 신청한다"], ["nasty-mock", "기분나쁜 조롱"],
+  ["startled", "깜짝"], ["im-crying", "나 울고있어"], ["find-culprit", "범인 색출"],
+  ["ready-to-burn", "불 탈 준비됐어"], ["shush", "쉿 조용히"], ["which-potion", "어떤 약이었지"],
+  ["puzzled", "어리둥절"], ["elegant-toast", "우아한 건배"], ["meaningful", "의미심장"],
+  ["take-aim", "정조준"], ["dead-soul", "죽은자의 영혼"], ["vote-time", "투표할 시간이야"],
+]
+
+export const EMOTICON_STORE_ITEMS = [
+  ...BASIC_EMOTICONS.map(([slug, name]) => ({
+    id: `emoji-basic-${slug}`,
+    category: "이모티콘",
+    name,
+    icon: `/shopItem/basic/emoji/${slug}.png`,
+    priceAmount: "0",
+    grade: "기본",
+    description: `기본 이모티콘 「${name}」. 모든 계정에 기본 지급됩니다.`,
+    tag: "기본 지급",
+    // 서버 catalog.js의 defaultGrant:true·purchasable:false와 같다 — 구매·일괄구매 대상이 아니다.
+    defaultGrant: true,
+  })),
+  ...SHOP_EMOTICONS.map(([slug, name]) => ({
+    id: `emoji-${slug}`,
+    category: "이모티콘",
+    name,
+    icon: `/shopItem/emoji/${slug}.png`,
+    priceAmount: String(EMOTICON_PRICE_GOLD_PLACEHOLDER),
+    grade: "상점",
+    description: `상점 이모티콘 「${name}」. 골드로 구매해 소유할 수 있습니다.`,
+    tag: null,
+  })),
+]
 
 /** 등록된 전체 상품 — 카테고리별 배열을 여기에 합칩니다. */
 export const STORE_ITEMS = [

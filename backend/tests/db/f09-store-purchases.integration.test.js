@@ -1,6 +1,6 @@
 'use strict';
 
-// F-09 실제 상품 구매(개별·일괄)·표시용 이모티콘 탭 — 실제 MySQL 격리 DB 검증. f01~f08과
+// F-09 실제 상품 구매(개별·일괄)·이모티콘 구매 —실제 MySQL 격리 DB 검증. f01~f08과
 // 완전히 같은 원칙·같은 물리 DB(F01_TEST_DATABASE_URL)를 쓴다(backend/tests/helpers/
 // isolatedTestDb.js 참고).
 //
@@ -16,8 +16,8 @@
 //     추가하지 않는다.
 //   - AC-04: 커밋 후 응답 유실은 같은 참조 사건 ID로 조회·재시도하면 기존 성공이 복원되고
 //     재차감되지 않으며, 커밋 전 오류(애초에 커밋된 적 없음)와 구분된다.
-//   - AC-05: 표시용 이모티콘(purchasable:false) 구매 요청은 개별·일괄 모두 거부되고
-//     부작용이 없다.
+//   - AC-05(F-33 E-1 계약 변경): 상점 이모티콘은 개별·일괄 구매가 성공하고, 기본 지급
+//     이모티콘(purchasable:false)·존재하지 않는 itemId 위조 요청은 거부되고 부작용이 없다.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -579,53 +579,131 @@ test('AC-04: 다른 계정의 구매 결과는 조회되지 않는다(계정 범
     assert.equal(asStranger, null, '다른 계정 범위에서는 같은 참조 사건 ID 문자열이어도 결과가 보이면 안 된다');
 });
 
-// ── AC-05: 표시용 이모티콘 구매 거부 ──────────────────────────────────────────
+// ── AC-05(F-33 E-1 계약 변경): 상점 이모티콘 구매 허용, 기본 지급·위조 이모티콘 거부 ──
+// F-09 당시에는 이모티콘이 표시 전용이라 개별·일괄 모두 거부됐다. F-33 E-1이 상점 15종을
+// 판매 상품으로 바꿨으므로 이 두 시험은 "구매 성공·골드 차감·소유 생성·원장 기록"으로
+// 다시 쓴다. 기본 지급 8종(purchasable:false)과 카탈로그에 없는 위조 itemId는 여전히 거부된다.
+// 모든 단언은 구매 직전 기준선 대비로 비교한다(seedGold가 원장 1줄을 남기고, 다른 경로의
+// 기본 지급이 소유 행을 미리 만들어 두었을 수도 있다).
 
-test('AC-05: 표시용 이모티콘 개별 구매는 거부되고 부작용이 없다', async (t) => {
+const SHOP_EMOTICON_ID = 'emoji-thorned-heart';
+const BASIC_EMOTICON_ID = 'emoji-basic-reject';
+
+test('AC-05: 상점 이모티콘 개별 구매는 골드를 차감하고 소유와 원장 1건을 만든다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
     const userId = await createLocalUser('ac5ind');
     await seedGold(userId, 10000);
-    const ledgerBeforeAttempt = await countLedgerEntries(userId);
+    const goldBefore = (await getWallet(userId)).balance_gold;
+    const entitlementsBefore = await countEntitlements(userId);
+    const ledgerBefore = await countLedgerEntries(userId);
 
-    const emoticonItem = catalog.ALL_ITEMS.find((item) => item.type === catalog.ITEM_TYPES.EMOTICON);
-    assert.ok(emoticonItem, '카탈로그에 표시용 이모티콘 항목이 있어야 한다');
-    assert.equal(emoticonItem.purchasable, false);
+    const item = catalog.getCatalogItem(SHOP_EMOTICON_ID);
+    assert.equal(item.type, catalog.ITEM_TYPES.EMOTICON);
+    assert.equal(item.purchasable, true);
 
-    await assert.rejects(
-        () => economyService.purchaseItem({ userId, itemId: emoticonItem.id, referenceEventId: `emo-${userId}` }),
-        (error) => error.code === 'ITEM_NOT_PURCHASABLE',
-    );
+    const result = await economyService.purchaseItem({ userId, itemId: SHOP_EMOTICON_ID, referenceEventId: `emo-${userId}` });
+    assert.equal(result.idempotent, false);
 
     const wallet = await getWallet(userId);
-    assert.equal(wallet.balance_gold, 10000);
-    assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 구매가 원장을 추가하면 안 된다');
-    assert.equal(await countPurchaseRequests(userId), 0);
+    assert.equal(wallet.balance_gold, goldBefore - catalog.EMOTICON_PRICE_GOLD_PLACEHOLDER);
+    assert.equal(await countEntitlements(userId), entitlementsBefore + 1);
+    assert.equal(await countLedgerEntries(userId), ledgerBefore + 1, '이모티콘 구매 원장이 정확히 1건이어야 한다');
+    assert.equal(await countPurchaseRequests(userId), 1);
+    const owned = await db.sequelize.models.EconomyEntitlement.findOne({ where: { user_id: userId, item_id: SHOP_EMOTICON_ID } });
+    assert.ok(owned, '구매한 이모티콘을 소유해야 한다');
+    assert.equal(owned.item_type, catalog.ITEM_TYPES.EMOTICON);
 });
 
-test('AC-05: 이모티콘이 섞인 일괄 구매는 조작된 요청이어도 전체가 거부되고, 함께 담긴 정상 상품도 지급되지 않는다', async (t) => {
+test('AC-05: 상점 이모티콘이 섞인 일괄 구매는 전체가 성공한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
     const userId = await createLocalUser('ac5bulk');
     await seedGold(userId, 10000);
-    const ledgerBeforeAttempt = await countLedgerEntries(userId);
-    const emoticonItem = catalog.ALL_ITEMS.find((item) => item.type === catalog.ITEM_TYPES.EMOTICON);
+    const goldBefore = (await getWallet(userId)).balance_gold;
+    const entitlementsBefore = await countEntitlements(userId);
+    const ledgerBefore = await countLedgerEntries(userId);
+    const expectedDeduction = catalog.getCatalogItem('profile-border-남작').priceGold + catalog.EMOTICON_PRICE_GOLD_PLACEHOLDER;
 
+    const result = await economyService.purchaseItems({
+        userId,
+        items: [{ itemId: 'profile-border-남작' }, { itemId: SHOP_EMOTICON_ID }],
+        referenceEventId: `emo-bulk-${userId}`,
+    });
+    assert.equal(result.kind, 'BULK');
+    assert.equal(result.results.length, 2);
+
+    const wallet = await getWallet(userId);
+    assert.equal(wallet.balance_gold, goldBefore - expectedDeduction);
+    assert.equal(await countEntitlements(userId), entitlementsBefore + 2);
+    assert.equal(await countLedgerEntries(userId), ledgerBefore + 2, '묶음의 품목마다 원장 1건씩이어야 한다');
+    assert.equal(await countPurchaseRequests(userId), 1);
+});
+
+test('AC-05: 기본 지급 이모티콘(purchasable:false) 구매는 개별·일괄 모두 거부되고 부작용이 없다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('ac5basic');
+    await seedGold(userId, 10000);
+    const goldBefore = (await getWallet(userId)).balance_gold;
+    const entitlementsBefore = await countEntitlements(userId);
+    const ledgerBefore = await countLedgerEntries(userId);
+
+    assert.equal(catalog.getCatalogItem(BASIC_EMOTICON_ID).purchasable, false);
+
+    await assert.rejects(
+        () => economyService.purchaseItem({ userId, itemId: BASIC_EMOTICON_ID, referenceEventId: `emo-basic-${userId}` }),
+        (error) => error.code === 'ITEM_NOT_PURCHASABLE',
+    );
     await assert.rejects(
         () => economyService.purchaseItems({
             userId,
-            items: [{ itemId: 'profile-border-남작' }, { itemId: emoticonItem.id }],
-            referenceEventId: `emo-bulk-${userId}`,
+            items: [{ itemId: SHOP_EMOTICON_ID }, { itemId: BASIC_EMOTICON_ID }],
+            referenceEventId: `emo-basic-bulk-${userId}`,
         }),
         (error) => error.code === 'ITEM_NOT_PURCHASABLE',
     );
 
     const wallet = await getWallet(userId);
-    assert.equal(wallet.balance_gold, 10000, '이모티콘이 섞인 조작된 묶음은 정상 상품도 지급하면 안 된다');
-    assert.equal(await countEntitlements(userId), 0);
-    assert.equal(await countLedgerEntries(userId), ledgerBeforeAttempt, '거부된 묶음이 원장을 추가하면 안 된다');
+    assert.equal(wallet.balance_gold, goldBefore, '거부된 구매는 골드를 차감하면 안 된다');
+    assert.equal(await countEntitlements(userId), entitlementsBefore, '함께 담긴 상점 이모티콘도 지급되면 안 된다');
+    assert.equal(await countLedgerEntries(userId), ledgerBefore, '거부된 구매가 원장을 추가하면 안 된다');
+    assert.equal(await countPurchaseRequests(userId), 0);
+});
+
+test('AC-05: 존재하지 않는 이모티콘 itemId 위조 구매는 거부되고 골드가 차감되지 않는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp();
+
+    const userId = await createLocalUser('ac5fake');
+    await seedGold(userId, 10000);
+    const goldBefore = (await getWallet(userId)).balance_gold;
+    const entitlementsBefore = await countEntitlements(userId);
+    const ledgerBefore = await countLedgerEntries(userId);
+
+    // 'emoticon-웃음'은 F-33 E-1이 삭제한 옛 표시용 id다 — 이제 카탈로그에 없는 상품이다.
+    for (const forgedId of ['emoji-no-such-emoticon', 'emoticon-웃음']) {
+        assert.equal(catalog.getCatalogItem(forgedId), undefined);
+        await assert.rejects(
+            () => economyService.purchaseItem({ userId, itemId: forgedId, referenceEventId: `emo-fake-${forgedId}-${userId}` }),
+            (error) => error.code === 'ITEM_NOT_PURCHASABLE',
+        );
+    }
+    await assert.rejects(
+        () => economyService.purchaseItems({
+            userId,
+            items: [{ itemId: SHOP_EMOTICON_ID }, { itemId: 'emoji-no-such-emoticon' }],
+            referenceEventId: `emo-fake-bulk-${userId}`,
+        }),
+        (error) => error.code === 'ITEM_NOT_PURCHASABLE',
+    );
+
+    const wallet = await getWallet(userId);
+    assert.equal(wallet.balance_gold, goldBefore, '위조 구매는 골드를 차감하면 안 된다');
+    assert.equal(await countEntitlements(userId), entitlementsBefore);
+    assert.equal(await countLedgerEntries(userId), ledgerBefore, '거부된 구매가 원장을 추가하면 안 된다');
     assert.equal(await countPurchaseRequests(userId), 0);
 });

@@ -31,10 +31,12 @@ import { useStoreCategoryFilter } from "../../hooks/useStoreCategoryFilter.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
-// F-09: 실제 서버 구매와 연결하지 않는 카테고리 — "인게임 재화"는 현금 충전 패키지고,
-// "이모티콘"은 표시 전용 준비 중 탭이다(작업 지시서 계획 메모, 둘 다 이 슬라이스 범위 밖).
-const NON_PURCHASABLE_CATEGORIES = new Set(["인게임 재화", "이모티콘"])
+// F-09: 일반 구매 경로와 연결하지 않는 카테고리 — "인게임 재화"는 서버 상품표 전용 흐름이다.
+// F-33 E-1: "이모티콘"은 상점 15종을 일반 구매·일괄구매로 판다(기본 지급 8종은 아래 defaultGrant로 막는다).
+const NON_PURCHASABLE_CATEGORIES = new Set(["인게임 재화"])
 const isRealPurchaseCategory = (category) => !NON_PURCHASABLE_CATEGORIES.has(category)
+// 기본 지급 상품(기본 이모티콘 8종)은 서버에서 purchasable:false다 — 구매 요청을 보내지 않는다.
+const isDefaultGrantItem = (item) => item?.defaultGrant === true
 
 // F-32c: "인게임 재화"는 서버 상품표(다이아 충전·골드 구매)로 채운다 — 정적 준비중 항목은 쓰지 않는다.
 const CURRENCY_CATEGORY = "인게임 재화"
@@ -272,6 +274,7 @@ export default function StorePanel({ visible = true }) {
       // 이미 보유한 상품을 선택한 채로 일괄구매 모드에 들어가면 그 상품이 자동으로
       // 선택돼 버린다 — 보유중인 상품은 일괄구매 대상이 될 수 없다(AC-06 재검토).
       const canSeedSelection = selectedItem && !selectedItem.kind && !ownedItemIds.has(selectedItem.id)
+        && !isDefaultGrantItem(selectedItem)
       setBulkSelectedIds(new Set(canSeedSelection ? [selectedItem.id] : []))
     } else {
       setBulkSelectedIds(new Set())
@@ -280,7 +283,7 @@ export default function StorePanel({ visible = true }) {
   }
 
   const handleBulkSelectionChange = (itemId) => {
-    if (purchaseLocked || ownedItemIds.has(itemId)) return
+    if (purchaseLocked || ownedItemIds.has(itemId) || isDefaultGrantItem(STORE_ITEMS.find((item) => item.id === itemId))) return
     setBulkSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(itemId)) next.delete(itemId)
@@ -310,6 +313,9 @@ export default function StorePanel({ visible = true }) {
     else if (goldPriceChanged) purchaseLabel = "가격 재확인 필요"
     else if (currency.productsStatus === "loading") purchaseLabel = "목록 확인 중"
     else purchaseLabel = "골드 구매"
+  } else if (isDefaultGrantItem(currentItem) && !ownedItemIds.has(currentItem.id)) {
+    // 지갑 요약을 받기 전(또는 아직 지급 전)에도 기본 지급 상품에 "구매"를 보이지 않는다.
+    purchaseLabel = "기본 지급"
   }
 
   const handlePurchaseClick = () => {
@@ -321,7 +327,8 @@ export default function StorePanel({ visible = true }) {
       const product = { productId: currentItem.productId, version: currentItem.version }
       if (currencyKind === "DIAMOND_TOPUP") currencyPurchase.startTopup(product)
       else storePurchase.purchaseGold(product)
-    } else if (selectedItem && isRealPurchaseCategory(selectedItem.category) && !ownedItemIds.has(selectedItem.id)) {
+    } else if (selectedItem && isRealPurchaseCategory(selectedItem.category) && !ownedItemIds.has(selectedItem.id)
+      && !isDefaultGrantItem(selectedItem)) {
       storePurchase.purchase([selectedItem.id])
     }
   }
@@ -420,6 +427,7 @@ export default function StorePanel({ visible = true }) {
                       || (!currencyKind && !isRealPurchaseCategory(currentItem.category))
                       || (!bulkMode && currencyKind !== null && currencyBlocked)
                       || (!bulkMode && ownedItemIds.has(currentItem.id))
+                      || (!bulkMode && isDefaultGrantItem(currentItem))
                     }
                   />
                 ) : null}

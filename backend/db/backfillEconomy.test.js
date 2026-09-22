@@ -114,6 +114,12 @@ const createFakeDb = ({ userUuids = [] } = {}) => {
     };
 };
 
+// F-33 E-1: 기본 지급 이모티콘 8종(docs/design/F-33-emoticon.md §0).
+const BASIC_EMOTICON_IDS = [
+    'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',
+    'emoji-basic-grin', 'emoji-basic-hello', 'emoji-basic-surrender', 'emoji-basic-dizzy',
+];
+
 const uuidsFor = (n, prefix = 'user') =>
     Array.from({ length: n }, (_, i) => `${prefix}-${String(i).padStart(4, '0')}`);
 
@@ -133,7 +139,12 @@ test('배치(batch): batchSize만큼씩 끊어 처리하고, 계정 수가 배�
 
     for (const uuid of uuids) {
         const granted = db._inspect.entitlements.filter((e) => e.user_id === uuid);
-        assert.equal(granted.length, 17, `${uuid}는 기본 프로필 16종 + 평민 테두리 1종을 모두 받아야 한다`);
+        assert.equal(granted.length, 25, `${uuid}는 기본 프로필 16종 + 평민 테두리 1종 + 기본 이모티콘 8종을 모두 받아야 한다`);
+        const grantedIds = new Set(granted.map((e) => e.item_id));
+        for (const emoticonId of BASIC_EMOTICON_IDS) {
+            assert.ok(grantedIds.has(emoticonId), `${uuid}는 백필로 기본 이모티콘 ${emoticonId}를 받아야 한다`);
+        }
+        assert.equal(granted.filter((e) => e.item_type === 'EMOTICON').length, 8, '상점 판매 이모티콘은 기본 지급되면 안 된다');
     }
 });
 
@@ -146,7 +157,7 @@ test('체크포인트(resumable): startAfterUuid를 넘기면 그 uuid 이전 �
     assert.equal(result.processed, 3, 'uuids[0]·uuids[1]은 건너뛰고 나머지 3개만 처리해야 한다');
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[0]).length, 0);
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[1]).length, 0);
-    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[2]).length, 17);
+    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[2]).length, 25);
 });
 
 test('멱등(idempotent): 같은 구간을 두 번 백필해도 계정당 중복 지급되지 않는다', async () => {
@@ -154,11 +165,17 @@ test('멱등(idempotent): 같은 구간을 두 번 백필해도 계정당 중복
     const db = createFakeDb({ userUuids: uuids });
 
     await backfillDefaultEntitlements({ db, batchSize: 10 });
+    const ledgerAfterFirst = db._inspect.ledgerEntries.length;
     const result2 = await backfillDefaultEntitlements({ db, batchSize: 10 });
 
     assert.equal(result2.granted, 3, '두 번째 실행도 모든 계정을 성공으로 보고해야 한다(이미 보유해도 성공)');
+    assert.equal(db._inspect.ledgerEntries.length, ledgerAfterFirst, '재실행이 새 원장 항목을 만들면 안 된다');
     for (const uuid of uuids) {
-        assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuid).length, 17, '재실행이 중복 지급을 만들면 안 된다');
+        const owned = db._inspect.entitlements.filter((e) => e.user_id === uuid);
+        assert.equal(owned.length, 25, '재실행이 중복 지급을 만들면 안 된다');
+        for (const emoticonId of BASIC_EMOTICON_IDS) {
+            assert.equal(owned.filter((e) => e.item_id === emoticonId).length, 1, `재실행 뒤에도 ${emoticonId}는 정확히 1건이어야 한다`);
+        }
     }
 });
 
@@ -177,7 +194,7 @@ test('재시도 안전(retry-safe): 일시적 오류는 maxRetries만큼 재시�
     assert.equal(failCount, 1, '딱 한 번만 실패를 주입했다');
     assert.deepEqual(result.failures, []);
     assert.equal(result.granted, 2);
-    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[0]).length, 17, '재시도 끝에 성공한 계정은 완전히 지급되어야 한다');
+    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[0]).length, 25, '재시도 끝에 성공한 계정은 완전히 지급되어야 한다');
 });
 
 test('재시도 안전(retry-safe): 계속 실패하는 계정은 failures에 기록되지만 나머지 계정 처리는 멈추지 않는다', async () => {
@@ -200,8 +217,8 @@ test('재시도 안전(retry-safe): 계속 실패하는 계정은 failures에 �
 
     // 실패한 계정과 무관하게 앞뒤 계정은 정상 처리되어야 한다(한 계정의 실패가 배치
     // 전체를 막지 않는다).
-    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[0]).length, 17);
-    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[2]).length, 17);
+    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[0]).length, 25);
+    assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[2]).length, 25);
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[1]).length, 0, '계속 실패한 계정은 부분 지급 없이 0건으로 남아야 한다');
 });
 
@@ -230,7 +247,7 @@ for (const failedIndex of [0, 1]) {
         }), /중단 시뮬레이션/);
         const safeCheckpoint = failedIndex === 0 ? null : uuids[0];
         assert.deepEqual(checkpoints, [safeCheckpoint, safeCheckpoint]);
-        assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[3]).length, 17,
+        assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[3]).length, 25,
             '실패 뒤의 정상 계정도 처리한다');
 
         db.EconomyLedgerEntry.create = originalCreate;
@@ -238,8 +255,8 @@ for (const failedIndex of [0, 1]) {
         assert.deepEqual(resumed.failures, []);
         for (const uuid of uuids) {
             const owned = db._inspect.entitlements.filter((e) => e.user_id === uuid);
-            assert.equal(owned.length, 17);
-            assert.equal(new Set(owned.map((e) => e.item_id)).size, 17);
+            assert.equal(owned.length, 25);
+            assert.equal(new Set(owned.map((e) => e.item_id)).size, 25);
         }
         const ledgerKeys = db._inspect.ledgerEntries.map((e) => `${e.user_id}:${e.reference_event_id}`);
         assert.equal(new Set(ledgerKeys).size, ledgerKeys.length);

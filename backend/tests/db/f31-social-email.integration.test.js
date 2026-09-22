@@ -479,11 +479,12 @@ test('AC-04: 같은 intent·증명으로 동시에 완료해도 계정·identity
     const userId = users[0].uuid;
     assert.equal(await db.ExternalIdentity.count({ where: { provider: 'discord', subject } }), 1);
     const [[entitlements]] = await sequelize.query('SELECT COUNT(*) AS c FROM economy_entitlements WHERE user_id = :userId', { replacements: { userId } });
-    assert.equal(Number(entitlements.c), 17);
+    // F-33 E-1: 기본 지급 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8).
+    assert.equal(Number(entitlements.c), 25);
     const [[ledger]] = await sequelize.query(
         `SELECT COUNT(*) AS c FROM economy_ledger_entries WHERE user_id = :userId AND reason = 'DEFAULT_GRANT'`, { replacements: { userId } },
     );
-    assert.equal(Number(ledger.c), 17);
+    assert.equal(Number(ledger.c), 25);
     const [[wallet]] = await sequelize.query('SELECT balance_gold, balance_diamond FROM economy_wallets WHERE user_id = :userId', { replacements: { userId } });
     assert.equal(Number(wallet.balance_gold), 0);
     assert.equal(Number(wallet.balance_diamond), 0);
@@ -533,7 +534,7 @@ test('AC-04: 기본 지급 도중 실패하면 intent·증명·사용자·identi
     }, { cookie });
     assert.equal(retry.status, 200, await retry.text());
     assert.equal(await countRows('users'), 1);
-    assert.equal(await countRows('economy_entitlements'), 17);
+    assert.equal(await countRows('economy_entitlements'), 25);
     assert.equal(await db.ExternalIdentity.count({ where: { provider: 'google', subject } }), 1);
 });
 
