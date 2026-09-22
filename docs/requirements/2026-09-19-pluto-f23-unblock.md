@@ -521,3 +521,8 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 - **Pluto 수정 46**(15:5x) `wiring.ts` `usesMemberOfImportedSymbol`: `to`가 점 심볼이고 `from`이 `to` 파일에서 머리를 import했고 코드에서 꼬리를 식별자로 쓰면 연결. 머리 미import·꼬리 미사용·점 없음은 미연결 유지(시험 4단언). review-loop 28/28, 빌드·데몬 재시작(idle 확인). `retry overrideCap`(4회차)로 코드 변경 없이 같은 후보를 검사로. 잃은 시간 약 50분(3회차 × 15분 + 수정).
 - 4회차(15:56) 변경 없음 → 고친 검사기가 연결 인정 → **R-SCOPE 3개 → rescope**: 전부 계획한 `InGameNightSuccessPresentation.jsx` 안의 부품(도우미 1 + 한도 초과 2). 7파일 +826/−36. 기존 시험에서 지운 줄은 `.webm` 경로·존재 단언 → `-stacked.mp4`로 1:1 교체(요구사항이 명시한 변경, 약화 아님).
 - **심사 1회차(15:57~15:59) — 갈림: AC-04·AC-05 (Claude yes · Codex partial), 재판정 뒤에도 같음 → 반송(16:0x, 5회차).** 지적 2건(원문 확인, AC-05는 실제 결함): ① canvas getContext 실패를 effect 안에서 동기적으로 `settleOnce(ERROR)` → StrictMode 이중 마운트에서 사건당 ERROR 2회(F-27c가 play()를 마이크로태스크로 미룬 것과 같은 이유로 옮겨야 함) + 시험 ② RAF 대체 경로 시험이 콜백을 실행하지 않아 루프 동작(그리기·재예약)을 증명 못 함 → 콜백 실행 시험 추가.
+- 5회차 후보 `6c7c3bac`: 양쪽 코드 심사 통과(16:07, 갈렸던 2건 닫힘), 명령 5개 exit 0(프런트 2,466개 fail 0, 백엔드 26분 fail 0 — 고친 실행기 두 번째 전체 실행도 깨끗), 성공 조건 6개 전부 기계 PASS.
+- **F-27d(CJ) 완료 처리(16:36)**: 위임 규칙대로 승인·병합. 소요 14:46~16:36 = **1시간 50분**(검사기 오판 3회차 ≈50분 포함), Claude 쪽 비용 $32.75(구현 5회차). **F-27 전체(BZ·CE·BL·CI·CJ) 완료.**
+
+### F-28에서 볼 것 (F-27d분 추가)
+- Safari·iOS·Chrome 각각에서 역할 영상(킬 USER/TARGET, 치료, 조사, 확인)이 검은 배경 없이 투명하게 canvas에 그려지고 소리가 나는지, 끝나면 다음 사건으로 넘어가는지. 재생이 막힌 환경에서 재시도·건너뛰기가 되는지.
