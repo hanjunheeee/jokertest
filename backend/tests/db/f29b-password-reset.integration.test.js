@@ -105,6 +105,22 @@ const rebuildFullSchema = async () => {
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 };
 
+// 이 파일은 시험마다 실제 앱 서버를 새로 띄운다(listen(0)). 전역 fetch(undici)는 같은
+// origin의 keep-alive 연결을 전역 풀에 남겨 재사용하는데, 전체 직렬 실행처럼 CPU가 붐비면
+// 이전 시험의 서버가 닫히는 중인 소켓을 다음 요청이 집어 "fetch failed"로 떨어질 수 있다.
+// 그래서 요청마다 Connection: close로 연결 재사용을 막고, 종료 시 남은 연결을 모두 끊은 뒤
+// close를 기다린다. 포트가 Fetch 표준의 "bad port"이면 undici가 요청을 거부하므로 다시 고른다
+// (profile.updatePassword.sessionRevocation.test.js와 같은 목록).
+const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+    101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,
+    514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
+    3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
+const closeServer = (server) => {
+    server.closeAllConnections?.();
+    return new Promise((resolve) => server.close(resolve));
+};
+
 const startServer = async (t) => {
     const app = express();
     app.use(express.json());
@@ -113,9 +129,14 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    t.after(() => new Promise((resolve) => server.close(resolve)));
+    let server;
+    for (;;) {
+        server = app.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        if (!FETCH_BAD_PORTS.has(server.address().port)) break;
+        await closeServer(server);
+    }
+    t.after(() => closeServer(server));
     return `http://127.0.0.1:${server.address().port}`;
 };
 
@@ -128,9 +149,9 @@ const useMemoryMailAdapter = (t) => {
 const tokenOf = (mail) => new URL(mail.params.resetUrl).searchParams.get('token');
 
 const postJson = (base, path, body) => fetch(`${base}${path}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { 'content-type': 'application/json', Connection: 'close' }, body: JSON.stringify(body),
 });
-const getPath = (base, path) => fetch(`${base}${path}`);
+const getPath = (base, path) => fetch(`${base}${path}`, { headers: { Connection: 'close' } });
 
 const createLocalUser = async ({ nickname, email, password = 'correct-horse-1' }) => {
     const { signupProof } = await prepareSignupProof(email);
@@ -176,7 +197,7 @@ test('AC-02/AC-04: 유효 토큰으로 재설정하면 새 비밀번호 로그�
     const accessToken = setCookies.find((c) => c.startsWith('accessToken=')).split(';')[0].split('=')[1];
     const refreshToken = setCookies.find((c) => c.startsWith('refreshToken=')).split(';')[0].split('=')[1];
 
-    const meBefore = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessToken}` } });
+    const meBefore = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessToken}` } });
     assert.equal(meBefore.status, 200);
 
     const requestRes = await postJson(base, '/auth/password-reset/request', { email: local.email });
@@ -196,9 +217,9 @@ test('AC-02/AC-04: 유효 토큰으로 재설정하면 새 비밀번호 로그�
     assert.equal(oldLogin.status, 401);
 
     // 재설정 이전 세션은 HTTP·refresh 모두 거부된다.
-    const meAfter = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessToken}` } });
+    const meAfter = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessToken}` } });
     assert.equal(meAfter.status, 401);
-    const refreshAfter = await fetch(`${base}/auth/refresh`, { method: 'POST', headers: { cookie: `refreshToken=${refreshToken}` } });
+    const refreshAfter = await fetch(`${base}/auth/refresh`, { method: 'POST', headers: { Connection: 'close', cookie: `refreshToken=${refreshToken}` } });
     assert.equal(refreshAfter.status, 401);
 
     // 남은 재설정 토큰(있다면)도 무효다 — 여기서는 이 토큰 자체가 USED다.
@@ -234,9 +255,9 @@ test('AC-04: confirm은 새 로그인 없이도 기존 세션 전체를 폐기�
     const accessTokenA = generateToken({ uuid: local.uuid, role: 'USER', sessionId: sessionAId });
     const accessTokenB = generateToken({ uuid: local.uuid, role: 'USER', sessionId: sessionBId });
 
-    const meABefore = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenA}` } });
+    const meABefore = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessTokenA}` } });
     assert.equal(meABefore.status, 200, '전제: 세션 A는 confirm 이전에 유효해야 합니다');
-    const meBBefore = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenB}` } });
+    const meBBefore = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessTokenB}` } });
     assert.equal(meBBefore.status, 200, '전제: 세션 B는 confirm 이전에 유효해야 합니다');
 
     await postJson(base, '/auth/password-reset/request', { email: local.email });
@@ -246,9 +267,9 @@ test('AC-04: confirm은 새 로그인 없이도 기존 세션 전체를 폐기�
 
     // 여기까지 로그인 호출이 한 번도 없었다 — 두 세션 모두 거부돼야 confirm 자체의 세션
     // 폐기라고 말할 수 있다.
-    const meAAfter = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenA}` } });
+    const meAAfter = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessTokenA}` } });
     assert.equal(meAAfter.status, 401, 'confirm이 세션 A를 폐기하지 못했습니다(새 로그인 없이)');
-    const meBAfter = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessTokenB}` } });
+    const meBAfter = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessTokenB}` } });
     assert.equal(meBAfter.status, 401, 'confirm이 세션 B를 폐기하지 못했습니다(새 로그인 없이)');
 
     const [rowA, rowB] = await Promise.all([
@@ -327,7 +348,7 @@ test('AC-03: 발급된 링크를 여러 번 열어도(GET verify) 토큰·비밀
     const userAfter = await db.User.findByPk(local.uuid);
     assert.equal(userAfter.password_hash, userBefore.password_hash);
 
-    const meAfter = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessToken}` } });
+    const meAfter = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessToken}` } });
     assert.equal(meAfter.status, 200, '비소비 조회가 기존 세션을 폐기하면 안 됩니다');
 
     // 비소비였으므로 그 뒤에도 정상적으로 확정할 수 있다.
@@ -411,7 +432,7 @@ test('AC-03/AC-04: 세션 폐기까지 저장한 뒤 오류가 나면 토큰·�
     assert.equal(Number(rowAfterFailure.used), 0, '실패한 시도가 토큰을 소비한 채로 남으면 링크가 영원히 죽는다');
     const userAfterFailure = await db.User.findByPk(local.uuid);
     assert.equal(userAfterFailure.password_hash, userBefore.password_hash, '비밀번호만 바뀐 부분 적용이 남으면 안 됩니다');
-    const meAfterFailure = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${accessToken}` } });
+    const meAfterFailure = await fetch(`${base}/auth/me`, { headers: { Connection: 'close', cookie: `accessToken=${accessToken}` } });
     assert.equal(meAfterFailure.status, 200, '롤백됐다면 세션 폐기도 함께 되돌아가야 합니다');
 
     // 주입을 푼 뒤에 로그인을 확인한다 — 로그인(issueSessionForUser)도 같은 저장소 함수로
