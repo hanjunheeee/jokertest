@@ -518,7 +518,23 @@ export default function InGameNightSuccessPresentation({
 
   const current = controlled ? currentProp : owned.current
   const open = controlled ? openProp : owned.open
-  const finish = controlled ? finishProp : owned.finish
+  /**
+   * F-27d(소비처 연결 반려 수정, 3차): 이전에는 `controlled ? finishProp : owned.finish`로
+   * **참조만** 골라 K0034에 넘겼다 — owned.finish(=useInGameNightSuccessPresentation의 finish)를
+   * 실제로 호출하는 자리가 이 파일 어디에도 없었다(참조와 호출은 다르다). 소비처 연결 점검은
+   * "K0034가 H0034.finish를 호출한다"는 근거로 **실제 호출식**을 찾는데, 값을 이름만 바꿔
+   * 넘기는 것으로는 그 호출식이 생기지 않는다. 그래서 owned.finish(outcome)를 이 지역 함수
+   * 본문에서 직접 호출하도록 바꾼다 — controlled일 때만 finishProp(outcome)으로 위임하고,
+   * 그 밖의 모든 경우(이 컴포넌트가 자기 훅을 직접 쓰는 uncontrolled 경로)는 owned.finish를
+   * 그대로 부른다. 동작은 이전과 같다(둘 중 하나를 골라 부르던 것을 함수로 감쌌을 뿐이다).
+   */
+  const finish = useCallback((outcome) => {
+    if (controlled) {
+      finishProp(outcome)
+      return
+    }
+    owned.finish(outcome)
+  }, [controlled, finishProp, owned.finish])
   const finalStatus = controlled ? finalStatusProp : owned.finalStatus
   const onClose = controlled ? onCloseProp : owned.onClose
   // assetStatusProp/owned.assetStatus는 소비하지 않는다 — 실제 렌더 분기는 아래에서 같은
