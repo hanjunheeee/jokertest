@@ -148,6 +148,22 @@ const loadFreshAuthRouter = () => {
     return router;
 };
 
+// 이 파일은 시험마다 실제 앱 서버를 새로 띄운다(listen(0)). 전역 fetch(undici)는 같은
+// origin의 keep-alive 연결을 전역 풀에 남겨 재사용하는데, 전체 직렬 실행처럼 CPU가 붐비면
+// 이전 시험의 서버가 닫히는 중인 소켓을 다음 요청이 집어 "fetch failed"로 떨어질 수 있다.
+// 그래서 요청마다 Connection: close로 연결 재사용을 막고, 종료 시 남은 연결을 모두 끊은 뒤
+// close를 기다린다. 포트가 Fetch 표준의 "bad port"이면 undici가 요청을 거부하므로 다시 고른다
+// (profile.updatePassword.sessionRevocation.test.js와 같은 목록).
+const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+    101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,
+    514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
+    3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
+const closeServer = (server) => {
+    server.closeAllConnections?.();
+    return new Promise((resolve) => server.close(resolve));
+};
+
 const startServer = async (t, { router } = {}) => {
     const app = express();
     app.use(express.json());
@@ -156,20 +172,26 @@ const startServer = async (t, { router } = {}) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    t.after(() => new Promise((resolve) => server.close(resolve)));
+    let server;
+    for (;;) {
+        server = app.listen(0, "127.0.0.1");
+        await once(server, "listening");
+        if (!FETCH_BAD_PORTS.has(server.address().port)) break;
+        await closeServer(server);
+    }
+    t.after(() => closeServer(server));
     return `http://127.0.0.1:${server.address().port}`;
 };
 
+const JSON_HEADERS = { "content-type": "application/json", Connection: "close" };
 const postCode = (base, body) => fetch(`${base}/auth/signup/email-code`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body),
 });
 const postVerify = (base, body) => fetch(`${base}/auth/signup/email-code/verify`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body),
 });
 const postSignup = (base, body) => fetch(`${base}/auth/signup`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body),
 });
 
 const VALID_SIGNUP_FIELDS = {
@@ -416,7 +438,7 @@ test("AC-03: 비밀번호 재설정용 증명 토큰으로 가입 API를 호출�
     const base = await startServer(t);
 
     const resetRes = await fetch(`${base}/auth/password-reset/request`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: existingUser.email }),
+        method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ email: existingUser.email }),
     });
     assert.equal(resetRes.status, 200);
     const resetMail = memory.outbox.find((mail) => mail.template === "PASSWORD_RESET");
@@ -642,13 +664,13 @@ test("AC-06: 잘못된 JSON 본문·존재하지 않는 하위 경로는 원본 
     const base = await startServer(t);
 
     const badJson = await fetch(`${base}/auth/signup/email-code`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: "{not-json",
+        method: "POST", headers: JSON_HEADERS, body: "{not-json",
     });
     assert.equal(badJson.status, 400);
     assert.deepEqual(await badJson.json(), { ok: false, code: "INVALID_INPUT" });
     assert.equal(badJson.headers.get("cache-control"), "no-store");
 
-    const notFound = await fetch(`${base}/auth/signup/email-code/does-not-exist`, { method: "POST" });
+    const notFound = await fetch(`${base}/auth/signup/email-code/does-not-exist`, { method: "POST", headers: { Connection: "close" } });
     assert.equal(notFound.status, 500, "notFoundHandler가 던진 404는 이 범위에서 SERVER_ERROR로 수렴한다");
     assert.deepEqual(await notFound.json(), { ok: false, code: "SERVER_ERROR" });
 });
@@ -685,7 +707,7 @@ test("AC-06: 가입 세 경로 모두 잘못된 JSON 본문에서 원본 오류�
 
     for (const url of targets) {
         const res = await fetch(url, {
-            method: "POST", headers: { "content-type": "application/json" }, body: badBody,
+            method: "POST", headers: JSON_HEADERS, body: badBody,
         });
         const text = await res.text();
         assert.ok(res.status === 400 || res.status === 500, `${url} 예기치 못한 상태코드: ${res.status}`);
@@ -906,7 +928,7 @@ test("AC-06: 실제 index.js로 발송→확인을 왕복해도 콘솔·접근 �
     await once(server, "listening");
     t.after(async () => {
         io.close();
-        if (server.listening) await new Promise((resolve) => server.close(resolve));
+        if (server.listening) await closeServer(server);
     });
 
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -924,7 +946,7 @@ test("AC-06: 실제 index.js로 발송→확인을 왕복해도 콘솔·접근 �
     // 쿼리에 원문을 실은 존재하지 않는 하위 경로도 접근 로그에 흔적을 남긴다(실제로는
     // 이 라우트들이 쿼리를 쓰지 않지만, 마스킹이 경로 접두어만으로 방어적으로 동작하는지
     // 확인한다).
-    await fetch(`${base}/auth/signup/email-code/does-not-exist?code=${encodeURIComponent(code)}`);
+    await fetch(`${base}/auth/signup/email-code/does-not-exist?code=${encodeURIComponent(code)}`, { headers: { Connection: "close" } });
 
     restoreConsole();
 
