@@ -515,3 +515,7 @@ AC-01은 [manual]이다. 기존 QA 하네스(`docs/qa/ui-16-browser-regression/h
 ### F-28에서 볼 것 (F-32 본 조각분 추가)
 - 실제 Chrome 두 창: 한 창에서 충전 confirm을 느리게 만든 채 다른 창(또는 재로그인)으로 상점에 들어가면 진행 중 주문이 발견되어 이어서 완료되고 잔액이 한 번만 오르는지(§2-6a). 계정 전환 뒤 이전 계정 주문이 안 보이는지.
 - 토스 테스트 키가 있으면 실제 결제창 → 복귀 → 확인 중 → 완료 → 잔액·내역 갱신. 없으면 미검증 유지.
+
+## F-27d (CJ) — 2026-09-22 14:46~ (역할 영상 stacked MP4·canvas 합성)
+- 계획 1회 통과(14:59). 구현 1~3회차(후보 `791ac878`→`1f4c1880`→`7426bbe8`, 마지막은 변경 없음) 전부 **연결 검사기 오판(일곱 번째 패턴)**으로 되돌아옴: 계획 wiring `InGameNightSuccessKillVideo → useInGameNightSuccessPresentation.finish`(점으로 적은 훅 구성원) — 컴포넌트는 훅 반환값에서 구조 분해한 `finish`를 `finish(outcome)`로 이미 부른다(구현자가 2회차에 prop 이름까지 `finish`로 맞췄는데도 검사기는 `useInGameNightSuccessPresentation.finish` 문자열을 찾았다). 자동 3회 소진 → IMPL=human(15:50).
+- **Pluto 수정 46**(15:5x) `wiring.ts` `usesMemberOfImportedSymbol`: `to`가 점 심볼이고 `from`이 `to` 파일에서 머리를 import했고 코드에서 꼬리를 식별자로 쓰면 연결. 머리 미import·꼬리 미사용·점 없음은 미연결 유지(시험 4단언). review-loop 28/28, 빌드·데몬 재시작(idle 확인). `retry overrideCap`(4회차)로 코드 변경 없이 같은 후보를 검사로. 잃은 시간 약 50분(3회차 × 15분 + 수정).
