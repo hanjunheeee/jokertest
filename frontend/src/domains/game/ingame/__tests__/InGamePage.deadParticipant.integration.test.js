@@ -1269,6 +1269,8 @@ const ROUTE_WIRING_LOCK = {
   "/password-reset/request": { component: "PasswordResetRequestPage", from: "@/domains/auth/pages/PasswordResetPage", guarded: false },
   "/password-reset": { component: "PasswordResetPage", from: "@/domains/auth/pages/PasswordResetPage", guarded: false },
   "/mypage": { component: "MyPage", from: "@/domains/user/pages/MyPage", guarded: true },
+  // F-33 E-2: 마이페이지 이모티콘 관리 화면. 보호 라우트 안이다(본인 팔레트만 다룬다).
+  "/mypage/emoticons": { component: "EmoticonPalettePage", from: "@/domains/user/pages/EmoticonPalettePage", guarded: true },
   "/account": { component: "AccountPage", from: "@/domains/user/pages/AccountPage", guarded: true },
   "/lobby": { component: "LobbyPage", from: "@/domains/lobby/pages/LobbyPage", guarded: true },
   "/gameMode": { component: "GameModePage", from: "@/domains/game/mode/pages/GameModePage", guarded: true },

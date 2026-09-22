@@ -253,6 +253,31 @@ const DATA_SCHEMA = buildManagedSchema({
 
 const ALL_MANAGED = [...DATA_SCHEMA.managedTables];
 
+// F-33 E-2: economy_emoji_palettes(0019)는 addEconomy(0006) 모듈이 아니라 별도
+// 마이그레이션이 만드는 테이블이라, buildManagedSchema가 **어떤 addEconomy가 넘어오든**
+// (여기서는 EMPTY_TABLES 스텁) 무조건 economy 묶음에 넣는다. 그 무조건 추가가 최소 스키마
+// 시나리오에서도 실제로 관리 목록·드롭 순서에 반영되는지를 값으로 고정한다 — 빠지면 f33
+// 스위트가 남긴 테이블을 다른 스위트가 "모르는 테이블"로 오판해 거부한다.
+test('최소 스키마(addEconomy 스텁)에서도 economy_emoji_palettes가 관리 목록과 드롭 순서에 들어간다', () => {
+    assert.deepEqual(DATA_SCHEMA.managedTables, [
+        'users', 'user_sessions', 'refresh_token_history',
+        'external_identities', 'oauth_states', 'social_signup_intents',
+        'economy_emoji_palettes',
+        'signup_email_verifications',
+        'schema_migrations',
+    ]);
+    // 드롭 순서는 "자식 → 부모"다 — economy_emoji_palettes는 users를 참조하므로 users보다
+    // 앞에 있어야 FK 제약에 걸리지 않는다.
+    assert.deepEqual(DATA_SCHEMA.dropOrder, [
+        'signup_email_verifications',
+        'economy_emoji_palettes',
+        'external_identities', 'oauth_states', 'social_signup_intents',
+        'refresh_token_history',
+        'user_sessions', 'users',
+        'schema_migrations',
+    ]);
+});
+
 test('전용 DB가 아니면 resetManagedData가 DELETE를 전혀 실행하지 않는다', async () => {
     const sequelize = makeDataStubSequelize({ connectedDatabaseName: 'irrelevant', existingTables: ALL_MANAGED });
     await assert.rejects(
@@ -305,6 +330,8 @@ test('정상 경로에서는 keepTables를 뺀 모든 관리 테이블이 자식
         // F-31a: signup_email_verifications(0016)는 users를 참조하지 않는 독립 테이블이라
         // isolatedTestDb.js의 dropOrder 맨 앞에 온다(어디서 비워도 FK 제약에 걸리지 않는다).
         'signup_email_verifications',
+        // F-33 E-2: economy_emoji_palettes(0019)도 관리 테이블이라 함께 비워진다.
+        'economy_emoji_palettes',
         'external_identities', 'oauth_states', 'social_signup_intents',
         'refresh_token_history',
         'user_sessions', 'users',
@@ -315,7 +342,7 @@ test('정상 경로에서는 keepTables를 뺀 모든 관리 테이블이 자식
     );
     // FOREIGN_KEY_CHECKS를 끄지 않고도 제약을 지킬 수 있는 근거가 이 순서다.
     const usersIndex = sequelize.deleteCalls.indexOf('users');
-    for (const child of ['external_identities', 'oauth_states', 'social_signup_intents', 'refresh_token_history', 'user_sessions']) {
+    for (const child of ['economy_emoji_palettes', 'external_identities', 'oauth_states', 'social_signup_intents', 'refresh_token_history', 'user_sessions']) {
         assert.ok(sequelize.deleteCalls.indexOf(child) < usersIndex, `${child}는 users보다 먼저 비워져야 합니다`);
     }
 });

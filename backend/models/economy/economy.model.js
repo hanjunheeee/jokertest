@@ -234,12 +234,44 @@ module.exports = (sequelize, DataTypes) => {
         ],
     });
 
+    // F-33 E-2(설계도 §2-2): 계정별 이모티콘 팔레트 8칸. 실제 DDL은
+    // backend/db/migrations/0019-add-emoji-palettes.js가 책임지고, 이 정의는 그 결과
+    // 스키마와 항상 같은 모양을 유지한다. 빈 칸은 NULL이다(슬롯을 비워 둘 수 있다).
+    // revision은 economy_loadouts와 같은 CAS 토큰이라 Sequelize defaultValue를 두지
+    // 않는다 — 모든 신규 행이 같은 문자열을 공유하면 CAS 비교가 무의미해지므로,
+    // 행을 만드는 서비스 코드가 매번 crypto.randomUUID()로 채운다.
+    const EconomyEmojiPalette = sequelize.define('EconomyEmojiPalette', {
+        user_id: {
+            type: DataTypes.UUID,
+            primaryKey: true,
+            allowNull: false,
+        },
+        slot_1: { type: DataTypes.STRING(120), allowNull: true },
+        slot_2: { type: DataTypes.STRING(120), allowNull: true },
+        slot_3: { type: DataTypes.STRING(120), allowNull: true },
+        slot_4: { type: DataTypes.STRING(120), allowNull: true },
+        slot_5: { type: DataTypes.STRING(120), allowNull: true },
+        slot_6: { type: DataTypes.STRING(120), allowNull: true },
+        slot_7: { type: DataTypes.STRING(120), allowNull: true },
+        slot_8: { type: DataTypes.STRING(120), allowNull: true },
+        revision: {
+            type: DataTypes.STRING(36),
+            allowNull: false,
+        },
+    }, {
+        tableName: 'economy_emoji_palettes',
+        timestamps: true,
+        createdAt: 'created_at',
+        updatedAt: 'updated_at',
+    });
+
     EconomyLedgerEntry.associate = (models) => {
         EconomyWallet.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
         EconomyLedgerEntry.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
         EconomyEntitlement.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
         EconomyLoadout.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
         EconomyPurchaseRequest.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
+        EconomyEmojiPalette.belongsTo(models.User, { foreignKey: 'user_id', targetKey: 'uuid' });
     };
 
     return EconomyLedgerEntry;

@@ -1,0 +1,173 @@
+// F-33 E-2(설계도 §2-2): 마이페이지 이모티콘 팔레트 상태. economy.store.js와 같은
+// requestGeneration 패턴을 쓰되, 계정 경계 판정만 다르다.
+//
+// economy.store.js는 useAuthStore를 구독해 user.uuid가 바뀔 때만 reset한다. 그러면 같은
+// 계정으로 로그아웃 후 다시 로그인한 경우(uuid는 그대로, 그 사이에 분명히 다른 신원 구간이
+// 있었다)를 걸러내지 못한다 — auth.store.js의 identityGeneration은 로그인·로그아웃마다
+// 단조 증가하는 "전이 횟수"라 A→B→A도 드러낸다. 이 store는 그 값 자체의 변화를 본다.
+//
+// 편집 중인 값(selectedSlots)은 화면이 아니라 이 store가 소유한다 — 페이지가 별도 useState로
+// 들고 있으면 저장 실패(409)로 서버 값이 갱신될 때 화면과 store가 서로 다른 팔레트를
+// 가리키게 된다.
+import { create } from "zustand"
+
+import { getEmojiPaletteApi, saveEmojiPaletteApi } from "../api/emojiPalette.api.js"
+import { useAuthStore } from "../../auth/store/auth.store.js"
+
+export const EMOJI_PALETTE_SLOT_COUNT = 8
+
+const emptySlots = () => Array.from({ length: EMOJI_PALETTE_SLOT_COUNT }, () => null)
+
+/** 서버가 준 slots를 화면이 그대로 믿을 수 있는 8칸 배열로 정규화한다 — 길이가 다르거나
+ *  배열이 아니면(계약 위반 응답) 빈 칸으로 채운다. 화면은 이 배열의 길이가 항상 8이라고
+ *  전제하고 렌더한다. */
+const normalizeSlots = (slots) => {
+  const base = emptySlots()
+  if (!Array.isArray(slots)) return base
+  return base.map((_, index) => {
+    const value = slots[index]
+    return typeof value === "string" && value.length > 0 ? value : null
+  })
+}
+
+const createInitialState = () => ({
+  // 서버가 마지막으로 확인해 준 값(취소가 되돌아갈 자리).
+  slots: emptySlots(),
+  revision: null,
+  owned: [],
+  // 편집 중인 값. 저장 전까지 서버에 보내지 않는다.
+  selectedSlots: emptySlots(),
+  selectedSlotIndex: 0,
+  status: "idle", // idle | loading | ready | error
+  error: null,
+  // 마지막 저장이 409로 거부됐을 때 서버가 알려준 현재 값. 화면의 충돌 안내 근거다.
+  conflict: null,
+})
+
+export const useEmojiPaletteStore = create((set, get) => ({
+  ...createInitialState(),
+  requestGeneration: 0,
+
+  /** 서버 값을 읽어 편집 상태까지 초기화한다. 거부(reject)는 반드시 여기서 잡는다 —
+   *  놓치면 페이지의 진입 효과가 처리되지 않은 rejection을 만든다. */
+  load: async () => {
+    set({ status: "loading", error: null, conflict: null })
+    const generation = get().requestGeneration
+    const identityGeneration = useAuthStore.getState().identityGeneration
+    // 요청이 끝났을 때 "그 사이 계정이 바뀌지 않았고, reset도 없었는가"를 함께 본다.
+    const isCurrent = () => get().requestGeneration === generation
+      && useAuthStore.getState().identityGeneration === identityGeneration
+
+    try {
+      const response = await getEmojiPaletteApi()
+      if (!isCurrent()) return { ok: false, stale: true }
+
+      const slots = normalizeSlots(response?.slots)
+      set({
+        slots,
+        selectedSlots: [...slots],
+        selectedSlotIndex: 0,
+        revision: typeof response?.revision === "string" ? response.revision : null,
+        owned: Array.isArray(response?.owned) ? [...response.owned] : [],
+        status: "ready",
+        error: null,
+        conflict: null,
+      })
+      return { ok: true }
+    } catch (error) {
+      if (!isCurrent()) return { ok: false, stale: true }
+      set({ status: "error", error })
+      return { ok: false, code: error?.code, error }
+    }
+  },
+
+  /** 교체할 슬롯을 고른다. 아직 서버 값을 받지 못했으면 아무 것도 하지 않는다. */
+  selectSlot: (index) => {
+    if (get().status !== "ready") return
+    if (!Number.isInteger(index) || index < 0 || index >= EMOJI_PALETTE_SLOT_COUNT) return
+    set({ selectedSlotIndex: index })
+  },
+
+  /** 고른 슬롯을 이 이모티콘으로 교체한다.
+   *
+   *  같은 이모티콘이 이미 다른 칸에 있으면 그 칸과 **자리를 바꾼다**. 그냥 덮어쓰면 한
+   *  팔레트에 같은 itemId가 두 번 생기고, 서버는 그 저장을 INVALID_SLOTS(중복)로 거부한다 —
+   *  화면에서 만들 수 있는 배치는 언제나 저장할 수 있어야 한다. */
+  assignItem: (itemId) => {
+    if (get().status !== "ready") return
+    if (typeof itemId !== "string" || itemId.length === 0) return
+
+    set((state) => {
+      const index = state.selectedSlotIndex
+      const next = [...state.selectedSlots]
+      const previous = next[index]
+      const duplicateIndex = next.findIndex((value, slot) => slot !== index && value === itemId)
+      next[index] = itemId
+      if (duplicateIndex !== -1) next[duplicateIndex] = previous
+      return { selectedSlots: next }
+    })
+  },
+
+  /** 편집 중인 8칸을 서버에 저장한다. 반환값만으로 화면이 결과를 분기할 수 있게 한다. */
+  save: async () => {
+    if (get().status !== "ready") return { ok: false, code: "NOT_READY" }
+
+    const generation = get().requestGeneration
+    const identityGeneration = useAuthStore.getState().identityGeneration
+    const isCurrent = () => get().requestGeneration === generation
+      && useAuthStore.getState().identityGeneration === identityGeneration
+
+    const slots = [...get().selectedSlots]
+    const expectedRevision = get().revision
+
+    try {
+      const response = await saveEmojiPaletteApi({ slots, expectedRevision })
+      if (!isCurrent()) return { ok: false, stale: true }
+
+      const savedSlots = normalizeSlots(response?.slots ?? slots)
+      const revision = typeof response?.revision === "string" ? response.revision : null
+      set({ slots: savedSlots, selectedSlots: [...savedSlots], revision, conflict: null, error: null })
+      return { ok: true, revision, slots: savedSlots }
+    } catch (error) {
+      if (!isCurrent()) return { ok: false, stale: true }
+
+      // 409 REVISION_MISMATCH만 서버의 현재 값을 함께 준다(shared/api/response.js
+      // toApiError가 Error에 싣는다) — 그 값으로 편집 상태까지 재조정해, 사용자가 곧바로
+      // 최신 값 위에서 다시 고를 수 있게 한다. 다른 실패(INVALID_SLOTS·NOT_OWNED 등)는
+      // 서버가 아무 것도 바꾸지 않았으므로 상태도 그대로 둔다.
+      if (error?.revision !== undefined) {
+        const conflictSlots = normalizeSlots(error.slots)
+        set({
+          slots: conflictSlots,
+          selectedSlots: [...conflictSlots],
+          revision: error.revision,
+          conflict: { revision: error.revision, slots: conflictSlots },
+        })
+        return { ok: false, code: error.code, status: error.status, revision: error.revision, slots: conflictSlots }
+      }
+      return { ok: false, code: error?.code, status: error?.status }
+    }
+  },
+
+  /** 편집을 버리고 서버에서 마지막으로 읽은 값으로 되돌린다. */
+  cancel: () => {
+    if (get().status !== "ready") return
+    set((state) => ({ selectedSlots: [...state.slots], conflict: null }))
+  },
+
+  /** 계정 경계를 넘는 모든 상태를 지우고 진행 중이던 요청을 전부 무효화한다
+   *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 신원의 응답은 전부 버려진다. */
+  reset: () => set((state) => ({
+    ...createInitialState(),
+    requestGeneration: state.requestGeneration + 1,
+  })),
+}))
+
+// 로그인·로그아웃으로 신원 전이가 일어나는 순간 즉시 리셋한다. uuid가 아니라
+// identityGeneration을 보는 이유: 같은 계정으로 다시 로그인해도(uuid 불변) 그 사이에
+// 분명히 다른 신원 구간이 있었고, 전환 도중 날아간 요청이 새 화면에 뒤늦게 반영되면 안 된다.
+useAuthStore.subscribe((state, prevState) => {
+  if (state.identityGeneration !== prevState?.identityGeneration) {
+    useEmojiPaletteStore.getState().reset()
+  }
+})

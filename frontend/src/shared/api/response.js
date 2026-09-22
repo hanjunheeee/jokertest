@@ -30,6 +30,13 @@ const toApiError = (errorData, fallbackMessage) => {
     // 보낸 값과 "생략됨"을 구분할 수 있게 숫자일 때만 싣습니다.
     if (typeof errorData.resendAfterSec === "number") error.resendAfterSec = errorData.resendAfterSec;
     if (typeof errorData.attemptsRemaining === "number") error.attemptsRemaining = errorData.attemptsRemaining;
+    // F-33 E-2(AC-03): 이모티콘 팔레트 저장이 409 REVISION_MISMATCH로 거부되면 서버가
+    // "지금의 진짜 값"(revision + slots 8칸)을 함께 내려보낸다. 그 값이 여기서 버려지면
+    // 화면은 충돌을 알면서도 무엇으로 재조정해야 하는지 모른 채 다시 GET을 던져야 한다.
+    // 값을 판단하지 않고 서버가 실제로 보낸 형태일 때만 그대로 싣는다 — 읽지 않는 기존
+    // 호출부의 동작은 달라지지 않는다.
+    if (typeof errorData.revision === "string") error.revision = errorData.revision;
+    if (Array.isArray(errorData.slots)) error.slots = errorData.slots;
     if (errorData.success !== undefined) error.success = errorData.success;
     return error;
 };

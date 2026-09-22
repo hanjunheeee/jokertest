@@ -57,7 +57,10 @@ const addSocialSignupEmail = require('../db/migrations/0017-social-signup-email'
 // (currencyProducts.service.js·topup.service.js가 이 테이블을 읽고 쓴다). 운영 상품은
 // 이 마이그레이션이 넣지 않는다.
 const addCurrencyProductsTopupOrders = require('../db/migrations/0018-add-currency-products-topup-orders');
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders];
+// F-33 E-2: 이모티콘 팔레트(8칸) 테이블도 실제 배포 명령에서 순서대로 적용한다
+// (economy.service.js의 getEmojiPalette/saveEmojiPalette가 이 테이블을 읽고 쓴다).
+const addEmojiPalettes = require('../db/migrations/0019-add-emoji-palettes');
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders, addEmojiPalettes];
 
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;

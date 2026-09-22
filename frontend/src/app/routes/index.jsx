@@ -6,6 +6,8 @@ import { PasswordResetRequestPage, PasswordResetPage } from "@/domains/auth/page
 import ProtectedRoute from "@/shared/ui/ProtectedRoute";
 import MyPage from "@/domains/user/pages/MyPage";
 import AccountPage from "@/domains/user/pages/AccountPage";
+// F-33 E-2: 마이페이지 이모티콘 관리 화면(/mypage/emoticons).
+import EmoticonPalettePage from "@/domains/user/pages/EmoticonPalettePage";
 import LobbyPage from "@/domains/lobby/pages/LobbyPage";
 import GameModePage from "@/domains/game/mode/pages/GameModePage";
 import MultiplayEntryPage from "@/domains/game/mode/pages/MultiplayEntryPage";
@@ -40,6 +42,7 @@ export const router = createBrowserRouter([
         element: <ProtectedRoute />,
         children: [
           { path: "/mypage", element: <MyPage /> },
+          { path: "/mypage/emoticons", element: <EmoticonPalettePage /> },
           { path: "/account", element: <AccountPage /> },
           { path: "/lobby", element: <LobbyPage /> },
           { path: "/gameMode", element: <GameModePage /> },
