@@ -552,7 +552,10 @@ test("F-27c(AC-04) night-success-video는 GAME 범위·embedded·5개 URL 선택
   for (const [key, src] of Object.entries(table)) {
     assert.equal(typeof src, "string", `${key} 경로가 문자열이 아니다`)
     assert.ok(src.startsWith("/video-direction/"), `${key} 경로가 /video-direction/ 아래가 아니다: ${src}`)
-    assert.ok(src.endsWith(".webm"), `${key} 경로가 webm이 아니다: ${src}`)
+    // F-27d: 선택표는 stacked MP4(위 절반 색·아래 절반 마스크)를 가리킨다 — VP9 알파 WebM은
+    // 더 이상 참조하지 않는다(브라우저 공통 재생, canvas 합성으로 알파를 되살린다).
+    assert.ok(src.endsWith("-stacked.mp4"), `${key} 경로가 -stacked.mp4가 아니다: ${src}`)
+    assert.equal(src.endsWith(".webm"), false, `${key} 경로가 .webm을 요청했다: ${src}`)
   }
   // INVESTIGATE-TARGET·CONFIRM-TARGET은 전용 영상이 없다 — 표에 없어야 임시 연출로 넘어간다.
   assert.equal(table["INVESTIGATE-TARGET"], undefined)

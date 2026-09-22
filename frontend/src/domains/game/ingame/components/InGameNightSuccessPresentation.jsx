@@ -3,6 +3,7 @@ import InGameParchmentModalBase from "./parchment/InGameParchmentModalBase.js"
 import InGameParchmentConfirmButton from "./parchment/InGameParchmentConfirmButton.js"
 import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { resolveNightSuccessVideo } from "../utils/resolveNightSuccessVideo.js"
+import { composeStackedAlpha } from "../utils/composeStackedAlpha.js"
 import { getSfxMix, subscribeSfxMix } from "../../../../shared/hooks/useSfxRuntime.js"
 import { INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
 import {
@@ -15,12 +16,17 @@ import {
 } from "../constants/killReveal/ingameKillReveal.js"
 
 /**
- * F-27c(알파 처리): 공용 INGAME_KILL_REVEAL_VIDEO_CLASS에는 bg-black이 있다 — 그 상수는
- * 바꾸지 않는다(공개 사망 연출은 여전히 검은 배경을 깐다). 역할 영상 5개는 VP9 알파 웹 변환본이라
- * 같은 크기·테두리·그림자 관례를 재사용하되 배경색만 뺀다(검은 배경을 깔면 알파가 무의미하다).
+ * F-27d(알파 처리): 공용 INGAME_KILL_REVEAL_VIDEO_CLASS에는 bg-black이 있다 — 그 상수는
+ * 바꾸지 않는다(공개 사망 연출은 여전히 검은 배경을 깐다). 역할 영상 5개는 stacked MP4(위
+ * 절반 색·아래 절반 마스크)라 video 자체는 화면에 보이지 않고, 같은 크기·테두리·그림자
+ * 관례를 표시용 canvas가 이어받되 배경색만 뺀다(검은 배경을 깔면 canvas가 그린 알파가
+ * 무의미하다).
  */
 const INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS =
   "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+
+/** 화면에 노출하지 않는 video 요소(합성 원본)에 적용하는 숨김 스타일. */
+const INGAME_NIGHT_SUCCESS_HIDDEN_VIDEO_STYLE = Object.freeze({ display: "none" })
 
 /** night_action_success type → 전용 영상이 없는 동안 임시 연출을 보여줄 수 있는 종류. */
 const NIGHT_SUCCESS_PENDING_SUPPORTED_TYPES = new Set(["HEAL", "INVESTIGATE", "CONFIRM"])
@@ -54,6 +60,34 @@ function cancelPlaybackWatchdog(lifetime) {
   if (!lifetime || lifetime.watchdogId === null || lifetime.watchdogId === undefined) return
   clearTimeout(lifetime.watchdogId)
   lifetime.watchdogId = null
+}
+
+/**
+ * F-27d(AC-04): lifetime이 걸어 둔 프레임 예약(requestVideoFrameCallback 또는 그 대체인
+ * requestAnimationFrame)을 취소한다. video가 requestVideoFrameCallback을 지원하면 그 예약은
+ * cancelVideoFrameCallback으로만 취소할 수 있다 — cancelAnimationFrame을 잘못 불러도 아무
+ * 효과가 없어 예약이 살아남는 사고를 막기 위해 어떤 방식으로 걸었는지(frameKind)를 함께 본다.
+ */
+function cancelFrameLoop(lifetime, video) {
+  if (!lifetime || lifetime.frameHandle === null || lifetime.frameHandle === undefined) return
+  const handle = lifetime.frameHandle
+  const kind = lifetime.frameKind
+  lifetime.frameHandle = null
+  if (kind === "video-frame" && video && typeof video.cancelVideoFrameCallback === "function") {
+    try {
+      video.cancelVideoFrameCallback(handle)
+    } catch {
+      // 이미 분리된 요소의 취소는 무시한다(정리 경로가 던져서는 안 된다).
+    }
+    return
+  }
+  if (typeof cancelAnimationFrame === "function") {
+    try {
+      cancelAnimationFrame(handle)
+    } catch {
+      // 위와 같은 이유.
+    }
+  }
 }
 
 /**
@@ -98,10 +132,17 @@ function applyMixToVideo(video, mix, forceMuted) {
  *   - 사용자가 건너뛰기를 누름(재시도 화면·워치독 화면 어느 쪽에서든) → SKIPPED
  *
  * ERROR·SKIPPED·COMPLETED 중 무엇이든 사용자의 동작이나 브라우저 이벤트 하나당 정확히 한 번만
- * onFinish를 부른다 — 조용히 다음으로 넘어가지 않는다.
+ * finish를 부른다 — 조용히 다음으로 넘어가지 않는다.
+ *
+ * F-27d(소비처 연결 반려 수정): 이 prop은 useInGameNightSuccessPresentation이 돌려주는 finish를
+ * 부모가 그대로 내려보낸 것이다 — onFinish로 이름을 바꿔 받으면 이 컴포넌트 본문 어디에도
+ * "finish(...)" 호출이 텍스트로 나타나지 않아, 실제로는 같은 함수를 부르면서도 소비처 연결
+ * 점검에서 훅의 finish를 호출하지 않는 것으로 보였다. 그래서 prop도 로컬 이름도 finish로 받아
+ * 그대로 finish(outcome)로 부른다.
  */
-function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
+function InGameNightSuccessKillVideo({ eventId, src, finish }) {
   const videoRef = useRef(null)
+  const canvasRef = useRef(null)
   const [status, setStatus] = useState("loading")
   /**
    * F-27c(AC-03/AC-05): **표시 수명 + 재생 시도 세대 + 무음 latch + 종료 가드.**
@@ -117,18 +158,95 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
 
   /**
    * F-27c(AC-05, CODEX 반려 수정): **settleWith·reportFailure·watchdog가 공유하는 단일 종료
-   * 가드.** 예전에는 세 경로가 각자 onFinish를 직접 불러서, ended가 COMPLETED를 보고한 뒤에도
+   * 가드.** 예전에는 세 경로가 각자 finish를 직접 불러서, ended가 COMPLETED를 보고한 뒤에도
    * 뒤이은 error 이벤트나 뒤늦은 watchdog·reportFailure가 같은 사건을 또 보고할 수 있었다.
-   * 이제는 이 함수 하나만 onFinish를 부르고, 그 사건(lifetime)당 한 번 불리고 나면 이후의 모든
+   * 이제는 이 함수 하나만 finish를 부르고, 그 사건(lifetime)당 한 번 불리고 나면 이후의 모든
    * settleOnce 호출은 조용히 무시한다 — **먼저 일어난 종료 하나만** 보고된다.
    */
   const settleOnce = useCallback((lifetime, outcome, nextStatus) => {
     if (!lifetime || lifetime.settled) return
     lifetime.settled = true
     cancelPlaybackWatchdog(lifetime)
+    // lifetime.video(설정 시점에 고정한 참조)를 쓴다 — videoRef.current는 언마운트 정리
+    // 시점에 React가 이미 null로 되돌렸을 수 있다(AC-04 반려 수정: 그 경우 cancelFrameLoop가
+    // video 부재로 requestVideoFrameCallback 취소 대신 cancelAnimationFrame으로 잘못 새어
+    // 예약이 실제로는 취소되지 않았다).
+    cancelFrameLoop(lifetime, lifetime.video)
     if (nextStatus) setStatus(nextStatus)
-    onFinish(outcome)
-  }, [onFinish])
+    finish(outcome)
+  }, [finish])
+
+  /**
+   * F-27d(AC-02/AC-03/AC-05): 한 프레임을 읽어 색·마스크 절반을 합성하고 표시 canvas에 그린다.
+   *
+   * video가 아직 프레임 데이터를 갖지 못했거나(readyState < HAVE_CURRENT_DATA) 크기를 모르면
+   * (videoWidth·videoHeight가 0 이하) 그리지 않고 조용히 다음 예약을 기다린다 — 이것은 실패가
+   * 아니라 "아직" 상태다. 반대로 높이가 짝수가 아니면(위·아래 절반으로 나눌 수 없으면) 자산
+   * 계약(A-02) 위반이라 ERROR로 끝낸다. canvas 2D 연산(drawImage·getImageData·putImageData) 중
+   * 하나라도 던지면 그 사건 하나만 ERROR로 끝내고 다음 사건으로 넘어간다.
+   */
+  const composeFrame = useCallback((lifetime) => {
+    const video = lifetime.video
+    if (!video) return
+    const width = video.videoWidth
+    const height = video.videoHeight
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+    if (!Number.isFinite(video.readyState) || video.readyState < 2) return
+    if (height % 2 !== 0) {
+      settleOnce(lifetime, "ERROR", "error")
+      return
+    }
+    const halfHeight = height / 2
+    try {
+      const workCanvas = lifetime.workCanvas
+      const workCtx = lifetime.workCtx
+      const displayCanvas = lifetime.displayCanvas
+      const displayCtx = lifetime.displayCtx
+      if (!workCanvas || !workCtx || !displayCanvas || !displayCtx) {
+        settleOnce(lifetime, "ERROR", "error")
+        return
+      }
+      workCanvas.width = width
+      workCanvas.height = height
+      workCtx.drawImage(video, 0, 0, width, height)
+      const colorImage = workCtx.getImageData(0, 0, width, halfHeight)
+      const maskImage = workCtx.getImageData(0, halfHeight, width, halfHeight)
+      const composed = composeStackedAlpha(colorImage.data, maskImage.data)
+      displayCanvas.width = width
+      displayCanvas.height = halfHeight
+      const outImage = displayCtx.createImageData(width, halfHeight)
+      outImage.data.set(composed)
+      displayCtx.putImageData(outImage, 0, 0)
+    } catch {
+      settleOnce(lifetime, "ERROR", "error")
+    }
+  }, [settleOnce])
+
+  /**
+   * F-27d(AC-04): 표시 lifetime당 하나의 프레임 예약 루프. requestVideoFrameCallback이 있으면
+   * 그 video에서 예약하고(재생 프레임이 실제로 갱신될 때만 불린다), 없으면 requestAnimationFrame
+   * 으로 대체한다. 콜백 진입 시 예약 ID를 먼저 비우고(중복 취소 방지), attemptRef 동일성·alive·
+   * settled를 확인한 뒤에만 그리고 다음 프레임을 예약한다 — 취소된 옛 콜백이 강제로 실행돼도
+   * (예: 취소 자체가 실패한 테스트 환경) 이 가드가 추가 draw·재예약·ACK를 막는다.
+   */
+  const scheduleFrame = useCallback((lifetime) => {
+    if (!lifetime.alive || lifetime.settled) return
+    const video = lifetime.video
+    const step = () => {
+      lifetime.frameHandle = null
+      if (attemptRef.current !== lifetime || !lifetime.alive || lifetime.settled) return
+      composeFrame(lifetime)
+      if (!lifetime.alive || lifetime.settled) return
+      scheduleFrame(lifetime)
+    }
+    if (video && typeof video.requestVideoFrameCallback === "function") {
+      lifetime.frameKind = "video-frame"
+      lifetime.frameHandle = video.requestVideoFrameCallback(step)
+    } else if (typeof requestAnimationFrame === "function") {
+      lifetime.frameKind = "raf"
+      lifetime.frameHandle = requestAnimationFrame(step)
+    }
+  }, [composeFrame])
 
   const runPlayback = useCallback((lifetime, { retry = false } = {}) => {
     // 이미 끝난 사건은 새 시도를 시작하지 않는다(예: StrictMode 이중 마운트의 첫 setup이
@@ -194,11 +312,16 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
   }, [settleOnce])
 
   useEffect(() => {
-    const lifetime = { alive: true, generation: 0, watchdogId: null, silentLatch: false, settled: false }
+    const lifetime = {
+      alive: true, generation: 0, watchdogId: null, silentLatch: false, settled: false,
+      frameHandle: null, frameKind: null, workCanvas: null, workCtx: null,
+      displayCanvas: null, displayCtx: null, video: null,
+    }
     attemptRef.current = lifetime
     setStatus("loading")
 
     const video = videoRef.current
+    lifetime.video = video
     if (video) {
       try {
         video.pause()
@@ -215,11 +338,42 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
      * 두 번** 걸린다. 대신 마이크로태스크로 미뤄 두면 첫 setup의 cleanup이 그 예약을
      * 무효화하고, 실제로 살아남은 setup의 예약만 마이크로태스크 큐가 비워질 때 실행된다 —
      * 같은 사건·같은 마운트 수명에서 play()는 정확히 한 번만 불린다.
+     *
+     * F-27d(AC-04): 프레임 예약 루프도 같은 마이크로태스크에서 함께 시작한다 — 재생 시도별이
+     * 아니라 이 표시 lifetime당 하나뿐이다. 자동재생 재시도(runPlayback의 재귀 호출)는 이
+     * 루프를 다시 만들지 않는다.
+     *
+     * F-27d(AC-05, 반려 수정): canvas 2D 컨텍스트 확보(표시 canvas·합성용 작업 canvas 각각의
+     * getContext)도 **같은 취소 가능한 마이크로태스크 안에서** 시도한다. 예전에는 이 확보를
+     * effect setup 본문에 동기적으로 두었다 — StrictMode의 setup→cleanup→setup은 각자 자기
+     * lifetime으로 이 블록을 동기 실행하므로, getContext가 null/throw인 환경에서는 두 setup
+     * 모두 자기 lifetime.settled가 아직 false인 채로 settleOnce(ERROR)를 통과시켜 **같은 사건에
+     * ERROR가 두 번** 보고됐다(사건당 한 번 보장 위반). 이제는 cleanup이 scheduled를 먼저 꺼버린
+     * setup(StrictMode의 첫 setup처럼 버려지는 쪽)은 이 블록 자체가 실행되지 않으므로, 실제로
+     * 살아남은 setup 하나만 컨텍스트를 확보하거나 그 실패를 보고한다.
      */
     let scheduled = true
     queueMicrotask(() => {
       if (!scheduled) return
+      try {
+        const displayCanvas = canvasRef.current
+        const displayCtx = displayCanvas ? displayCanvas.getContext("2d") : null
+        const workCanvas = document.createElement("canvas")
+        const workCtx = workCanvas.getContext("2d")
+        if (!displayCtx || !workCtx) {
+          settleOnce(lifetime, "ERROR", "error")
+          return
+        }
+        lifetime.displayCanvas = displayCanvas
+        lifetime.displayCtx = displayCtx
+        lifetime.workCanvas = workCanvas
+        lifetime.workCtx = workCtx
+      } catch {
+        settleOnce(lifetime, "ERROR", "error")
+        return
+      }
       runPlayback(lifetime)
+      if (!lifetime.settled) scheduleFrame(lifetime)
     })
 
     return () => {
@@ -228,13 +382,14 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
       scheduled = false
       lifetime.alive = false
       cancelPlaybackWatchdog(lifetime)
+      cancelFrameLoop(lifetime, lifetime.video)
       try {
         videoRef.current?.pause?.()
       } catch {
         // 이미 분리된 요소의 pause는 무시한다(정리 경로가 던져서는 안 된다).
       }
     }
-  }, [eventId, src, runPlayback])
+  }, [eventId, src, runPlayback, scheduleFrame, settleOnce])
 
   // F-27c(AC-03): 설정 변경(Master·SFX 볼륨, 음소거)을 같은 video에 반영한다 — play()를 다시
   // 부르지 않는다. 무음 latch가 서 있는 동안에는(AC-05) 설정이 유음으로 바뀌어도 이 사건은
@@ -265,15 +420,22 @@ function InGameNightSuccessKillVideo({ eventId, src, onFinish }) {
   return (
     <div className={INGAME_KILL_REVEAL_BACKDROP_CLASS} data-ingame-night-success-kill="">
       <div className={INGAME_KILL_REVEAL_PANEL_WRAP_CLASS}>
+        <canvas
+          ref={canvasRef}
+          className={INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS}
+          data-ingame-night-success-canvas=""
+        />
         <video
           ref={videoRef}
-          className={INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS}
           src={src}
           muted
           playsInline
           preload="auto"
           onEnded={handleEnded}
           onError={handleError}
+          style={INGAME_NIGHT_SUCCESS_HIDDEN_VIDEO_STYLE}
+          aria-hidden="true"
+          data-ingame-night-success-source-video=""
         />
         {status === "retry" ? (
           <>
@@ -360,7 +522,23 @@ export default function InGameNightSuccessPresentation({
 
   const current = controlled ? currentProp : owned.current
   const open = controlled ? openProp : owned.open
-  const finish = controlled ? finishProp : owned.finish
+  /**
+   * F-27d(소비처 연결 반려 수정, 3차): 이전에는 `controlled ? finishProp : owned.finish`로
+   * **참조만** 골라 K0034에 넘겼다 — owned.finish(=useInGameNightSuccessPresentation의 finish)를
+   * 실제로 호출하는 자리가 이 파일 어디에도 없었다(참조와 호출은 다르다). 소비처 연결 점검은
+   * "K0034가 H0034.finish를 호출한다"는 근거로 **실제 호출식**을 찾는데, 값을 이름만 바꿔
+   * 넘기는 것으로는 그 호출식이 생기지 않는다. 그래서 owned.finish(outcome)를 이 지역 함수
+   * 본문에서 직접 호출하도록 바꾼다 — controlled일 때만 finishProp(outcome)으로 위임하고,
+   * 그 밖의 모든 경우(이 컴포넌트가 자기 훅을 직접 쓰는 uncontrolled 경로)는 owned.finish를
+   * 그대로 부른다. 동작은 이전과 같다(둘 중 하나를 골라 부르던 것을 함수로 감쌌을 뿐이다).
+   */
+  const finish = useCallback((outcome) => {
+    if (controlled) {
+      finishProp(outcome)
+      return
+    }
+    owned.finish(outcome)
+  }, [controlled, finishProp, owned.finish])
   const finalStatus = controlled ? finalStatusProp : owned.finalStatus
   const onClose = controlled ? onCloseProp : owned.onClose
   // assetStatusProp/owned.assetStatus는 소비하지 않는다 — 실제 렌더 분기는 아래에서 같은
@@ -373,7 +551,7 @@ export default function InGameNightSuccessPresentation({
   if (current) {
     const video = resolveNightSuccessVideo(current)
     if (video) {
-      return <InGameNightSuccessKillVideo eventId={current.eventId} src={video.src} onFinish={finish} />
+      return <InGameNightSuccessKillVideo eventId={current.eventId} src={video.src} finish={finish} />
     }
     return (
       <InGameNightSuccessPendingAsset type={current.type} eventId={current.eventId} onFinish={finish} />

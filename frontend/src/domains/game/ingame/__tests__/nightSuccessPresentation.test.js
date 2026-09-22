@@ -53,6 +53,90 @@ installDomGlobal("IntersectionObserver", class {
 })
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+/**
+ * F-27d: jsdom은 canvas npm 패키지 없이는 HTMLCanvasElement.getContext를 지원하지 않는다
+ * (항상 null) — InGameNightSuccessKillVideo가 그 null을 canvas 컨텍스트 획득 실패로 보고
+ * 즉시 ERROR로 끝내 버리므로, 기존 재생 시험(AC-01·AC-03·AC-05 등)이 전부 깨진다. 그래서
+ * drawImage·getImageData·createImageData·putImageData의 최소 계약만 구현한 가짜 2D 컨텍스트를
+ * 기본으로 설치한다 — 실제 픽셀 연산은 하지 않되(예외를 던지지 않되) 모든 호출을 기록해
+ * 개별 시험이 나중에 대조할 수 있게 한다. 시험은 canvasContextFactory를 바꿔치기해 getContext
+ * 자체의 실패(AC-05)나 특정 픽셀 데이터(AC-02)를 주입한다.
+ */
+function createRecordingCanvasContext(canvas) {
+  const calls = { drawImage: [], getImageData: [], putImageData: [], createImageData: [] }
+  return {
+    canvas,
+    calls,
+    drawImage(...args) {
+      calls.drawImage.push(args)
+    },
+    getImageData(x, y, w, h) {
+      calls.getImageData.push([x, y, w, h])
+      return { data: new Uint8ClampedArray(Math.max(0, w) * Math.max(0, h) * 4), width: w, height: h }
+    },
+    createImageData(w, h) {
+      calls.createImageData.push([w, h])
+      return { data: new Uint8ClampedArray(Math.max(0, w) * Math.max(0, h) * 4), width: w, height: h }
+    },
+    putImageData(imageData, x, y) {
+      calls.putImageData.push([imageData, x, y])
+    },
+  }
+}
+
+let canvasContextFactory = (canvas) => createRecordingCanvasContext(canvas)
+dom.window.HTMLCanvasElement.prototype.getContext = function fakeGetContext(type) {
+  if (type !== "2d") return null
+  return canvasContextFactory(this)
+}
+installDomGlobal("HTMLCanvasElement", dom.window.HTMLCanvasElement)
+
+/** getContext 대역을 기본값으로 되돌린다(개별 시험이 finally에서 호출한다). */
+function resetCanvasContextFactory() {
+  canvasContextFactory = (canvas) => createRecordingCanvasContext(canvas)
+}
+
+/**
+ * F-27d(AC-04): video.requestVideoFrameCallback/cancelVideoFrameCallback을 결정론적으로
+ * 통제 가능한 가짜로 바꾼다 — 실제 브라우저 API는 실제 프레임 갱신에 묶여 있어 시험에서
+ * 타이밍을 예측할 수 없다. 등록된 콜백은 취소돼도 registered에서 지우지 않는다(늦게 강제
+ * 호출해 컴포넌트 자체의 방어 로직을 검증하기 위해서다) — 대신 cancelled에 따로 기록한다.
+ */
+function installFakeVideoFrameCallback(win) {
+  let nextHandle = 0
+  const registered = new Map()
+  const cancelled = new Set()
+  win.HTMLVideoElement.prototype.requestVideoFrameCallback = function requestVideoFrameCallback(cb) {
+    nextHandle += 1
+    const handle = nextHandle
+    registered.set(handle, { video: this, cb })
+    return handle
+  }
+  win.HTMLVideoElement.prototype.cancelVideoFrameCallback = function cancelVideoFrameCallback(handle) {
+    cancelled.add(handle)
+  }
+  return {
+    registered,
+    cancelled,
+    latestHandle: () => nextHandle,
+    invoke(handle) {
+      const entry = registered.get(handle)
+      if (!entry) return false
+      entry.cb(0, {})
+      return true
+    },
+    invokeLatest() {
+      return this.invoke(nextHandle)
+    },
+  }
+}
+const videoFrameCallbacks = installFakeVideoFrameCallback(dom.window)
+installDomGlobal("HTMLVideoElement", dom.window.HTMLVideoElement)
+
+/** AC-04의 requestAnimationFrame 대체 경로 시험이 되돌려 놓을 원래 예약 함수. */
+const defaultRequestAnimationFrame = globalThis.requestAnimationFrame
+const defaultCancelAnimationFrame = globalThis.cancelAnimationFrame
+
 register(new URL("./testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 // ── 바깥 경계 대역(페이지 층 전용 — 훅·컴포넌트 자체는 대역하지 않는다) ──────────
@@ -128,6 +212,7 @@ const { useGameSessionSocketEvents } = await import("../hooks/useGameSessionSock
 const { useInGameNightSuccessPresentation } = await import("../hooks/useInGameNightSuccessPresentation.js")
 const { default: InGameNightSuccessPresentation } = await import("../components/InGameNightSuccessPresentation.jsx")
 const { resolveNightSuccessVideo } = await import("../utils/resolveNightSuccessVideo.js")
+const { composeStackedAlpha } = await import("../utils/composeStackedAlpha.js")
 const { SFX_MANIFEST } = await import("../../../../shared/audio/sfxManifest.js")
 
 /** §2-5 선택표의 실제 값 — 하드코딩 사본을 만들지 않고 production manifest에서 직접 읽는다. */
@@ -250,6 +335,9 @@ test.afterEach(() => {
   cleanup()
   useInGameStore.getState().clearGame()
   setTestSfxMix({ gain: 1, muted: false })
+  resetCanvasContextFactory()
+  installDomGlobal("requestAnimationFrame", defaultRequestAnimationFrame)
+  installDomGlobal("cancelAnimationFrame", defaultCancelAnimationFrame)
 })
 
 // ── 1) 훅 층 ─────────────────────────────────────────────────────────────
@@ -805,6 +893,365 @@ test("AC-04: 임시 연출을 backdrop/Escape로 닫으면 SKIPPED로 보고된�
   }
 })
 
+// ── F-27d: stacked MP4 canvas 합성(AC-02/AC-03/AC-04/AC-05) ────────────────
+
+/** getImageData 반환값을 y좌표(색 절반=0, 마스크 절반=halfHeight)에 따라 통제하는 컨텍스트. */
+function createControlledFrameContext(canvas, { colorPixels, maskPixels }) {
+  const calls = { drawImage: [], getImageData: [], putImageData: [], createImageData: [] }
+  return {
+    canvas,
+    calls,
+    drawImage(...args) {
+      calls.drawImage.push(args)
+    },
+    getImageData(x, y, w, h) {
+      calls.getImageData.push([x, y, w, h])
+      const source = y === 0 ? colorPixels : maskPixels
+      return { data: Uint8ClampedArray.from(source), width: w, height: h }
+    },
+    createImageData(w, h) {
+      calls.createImageData.push([w, h])
+      return { data: new Uint8ClampedArray(Math.max(0, w) * Math.max(0, h) * 4), width: w, height: h }
+    },
+    putImageData(imageData, x, y) {
+      calls.putImageData.push([imageData, x, y])
+    },
+  }
+}
+
+test("AC-02: 프레임 합성이 색·마스크 절반을 실제로 읽어 알파를 채운 픽셀을 표시 canvas에 그린다", async () => {
+  // 2x2 영상 — 위 절반(2x1, 색) 아래 절반(2x1, 마스크). 픽셀 2개씩 4채널.
+  const colorPixels = new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, 255])
+  const maskPixels = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255])
+  const expected = composeStackedAlpha(colorPixels, maskPixels)
+
+  const contexts = []
+  canvasContextFactory = (canvas) => {
+    const ctx = createControlledFrameContext(canvas, { colorPixels, maskPixels })
+    contexts.push(ctx)
+    return ctx
+  }
+
+  const { container, unmount } = renderPresentation({
+    current: { eventId: "compose-1", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true,
+    finish: () => {},
+    assetStatus: "AVAILABLE",
+    finalStatus: null,
+    onClose: () => {},
+  })
+  try {
+    const video = container.querySelector("video")
+    await flushMicrotasks()
+    Object.defineProperty(video, "videoWidth", { value: 2, configurable: true })
+    Object.defineProperty(video, "videoHeight", { value: 2, configurable: true })
+    Object.defineProperty(video, "readyState", { value: 2, configurable: true })
+
+    videoFrameCallbacks.invokeLatest()
+
+    const [displayCtx, workCtx] = contexts
+    assert.equal(workCtx.calls.drawImage.length, 1, "작업용 canvas가 영상 프레임을 그리지 않았다")
+    assert.deepEqual(workCtx.calls.drawImage[0].slice(1), [0, 0, 2, 2], "drawImage 좌표·크기가 영상 전체와 다르다")
+    assert.deepEqual(
+      workCtx.calls.getImageData, [[0, 0, 2, 1], [0, 1, 2, 1]],
+      "색(위 절반)·마스크(아래 절반) crop 좌표가 다르다",
+    )
+
+    const displayCanvas = container.querySelector("canvas")
+    assert.equal(displayCanvas.width, 2, "표시 canvas 폭이 영상 폭과 달라야 한다")
+    assert.equal(displayCanvas.height, 1, "표시 canvas 높이가 영상 높이의 절반과 달라야 한다")
+
+    assert.equal(displayCtx.calls.putImageData.length, 1, "표시 canvas에 합성 결과를 그리지 않았다")
+    const [outImage, px, py] = displayCtx.calls.putImageData[0]
+    assert.deepEqual(Array.from(outImage.data), Array.from(expected), "합성 결과가 composeStackedAlpha 출력과 다르다")
+    assert.equal(px, 0)
+    assert.equal(py, 0)
+  } finally {
+    unmount()
+    resetCanvasContextFactory()
+  }
+})
+
+test("AC-03: canvas는 화면에 렌더되고 video는 DOM에 있되 숨김 스타일이며, 메타데이터 전에는 픽셀을 읽지 않는다", async () => {
+  const contexts = []
+  canvasContextFactory = (canvas) => {
+    const ctx = createRecordingCanvasContext(canvas)
+    contexts.push(ctx)
+    return ctx
+  }
+  const { container, unmount } = renderPresentation({
+    current: { eventId: "hidden-video", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true,
+    finish: () => {},
+    assetStatus: "AVAILABLE",
+    finalStatus: null,
+    onClose: () => {},
+  })
+  try {
+    const video = container.querySelector("video")
+    const canvasEl = container.querySelector("canvas")
+    assert.notEqual(video, null, "video가 DOM에 있어야 한다")
+    assert.notEqual(canvasEl, null, "canvas가 DOM에 있어야 한다")
+    assert.equal(video.style.display, "none", "video는 화면에 보이면 안 된다")
+    assert.equal(video.getAttribute("aria-hidden"), "true")
+
+    await flushMicrotasks()
+    // 메타데이터 전(jsdom videoWidth·videoHeight 기본값 0) — 아직 픽셀을 읽으면 안 된다.
+    videoFrameCallbacks.invokeLatest()
+    const [, workCtxBefore] = contexts
+    assert.equal(workCtxBefore.calls.getImageData.length, 0, "메타데이터 전인데 픽셀을 읽었다")
+
+    Object.defineProperty(video, "videoWidth", { value: 2, configurable: true })
+    Object.defineProperty(video, "videoHeight", { value: 4, configurable: true })
+    Object.defineProperty(video, "readyState", { value: 2, configurable: true })
+    videoFrameCallbacks.invokeLatest()
+    assert.equal(canvasEl.width, 2)
+    assert.equal(canvasEl.height, 2)
+    assert.deepEqual(workCtxBefore.calls.getImageData, [[0, 0, 2, 2], [0, 2, 2, 2]])
+  } finally {
+    unmount()
+    resetCanvasContextFactory()
+  }
+})
+
+test("AC-03: 유효한 높이가 홀수이면 ERROR로 끝난다", async () => {
+  const finishes = []
+  const { container, unmount } = renderPresentation({
+    current: { eventId: "odd-height", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true,
+    finish: (outcome) => finishes.push(outcome),
+    assetStatus: "AVAILABLE",
+    finalStatus: null,
+    onClose: () => {},
+  })
+  try {
+    const video = container.querySelector("video")
+    await flushMicrotasks()
+    Object.defineProperty(video, "videoWidth", { value: 2, configurable: true })
+    Object.defineProperty(video, "videoHeight", { value: 3, configurable: true })
+    Object.defineProperty(video, "readyState", { value: 2, configurable: true })
+    videoFrameCallbacks.invokeLatest()
+    assert.deepEqual(finishes, ["ERROR"], "홀수 높이가 ERROR로 끝나지 않았다")
+  } finally {
+    unmount()
+  }
+})
+
+test("AC-04: 언마운트가 프레임 예약을 취소하고, 취소된 콜백을 늦게 강제로 실행해도 추가 draw·보고가 없다", async () => {
+  const contexts = []
+  canvasContextFactory = (canvas) => {
+    const ctx = createRecordingCanvasContext(canvas)
+    contexts.push(ctx)
+    return ctx
+  }
+  const finishes = []
+  const { container, unmount } = renderPresentation({
+    current: { eventId: "cancel-unmount", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true,
+    finish: (outcome) => finishes.push(outcome),
+    assetStatus: "AVAILABLE",
+    finalStatus: null,
+    onClose: () => {},
+  })
+  const video = container.querySelector("video")
+  await flushMicrotasks()
+  Object.defineProperty(video, "videoWidth", { value: 2, configurable: true })
+  Object.defineProperty(video, "videoHeight", { value: 2, configurable: true })
+  Object.defineProperty(video, "readyState", { value: 2, configurable: true })
+
+  const handleBeforeUnmount = videoFrameCallbacks.latestHandle()
+  unmount()
+  assert.ok(videoFrameCallbacks.cancelled.has(handleBeforeUnmount), "언마운트가 예약된 프레임 콜백을 취소하지 않았다")
+
+  const [, workCtx] = contexts
+  const drawsBefore = workCtx.calls.drawImage.length
+  videoFrameCallbacks.invoke(handleBeforeUnmount)
+  assert.equal(workCtx.calls.drawImage.length, drawsBefore, "취소된 콜백이 추가 draw를 만들었다")
+  assert.deepEqual(finishes, [], "취소된 콜백이 추가 종료 보고를 만들었다")
+  resetCanvasContextFactory()
+})
+
+test("AC-04: 다음 사건으로 전환되면 이전 프레임 예약이 취소되고 새 사건에 새 예약이 걸린다", async () => {
+  const { rerender, unmount } = renderPresentation({
+    current: { eventId: "trans-1", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true, finish: () => {}, assetStatus: "AVAILABLE", finalStatus: null, onClose: () => {},
+  })
+  try {
+    await flushMicrotasks()
+    const handleForFirst = videoFrameCallbacks.latestHandle()
+
+    act(() => {
+      rerender(React.createElement(InGameNightSuccessPresentation, {
+        current: { eventId: "trans-2", type: "HEAL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+        open: true, finish: () => {}, assetStatus: "AVAILABLE", finalStatus: null, onClose: () => {},
+      }))
+    })
+    await flushMicrotasks()
+
+    assert.ok(videoFrameCallbacks.cancelled.has(handleForFirst), "다음 사건으로 전환됐는데 이전 프레임 예약이 취소되지 않았다")
+    const handleForSecond = videoFrameCallbacks.latestHandle()
+    assert.notEqual(handleForSecond, handleForFirst, "새 사건에 새 프레임 예약이 걸리지 않았다")
+  } finally {
+    unmount()
+  }
+})
+
+/**
+ * F-27d(AC-04, 반려 수정): 이전 버전은 rafHandles.length와 cancelledRafHandles.includes만
+ * 검사해 "예약했다/취소했다"는 것만 증명했다 — 저장된 콜백을 실제로 실행한 적이 없어 루프가
+ * 진짜로 프레임을 합성하고 다음 프레임을 다시 예약하는지는 전혀 검증하지 못했다. 이제 저장된
+ * 콜백을 직접 실행해 (a) 합성 그리기(drawImage) 1회, (b) 다음 requestAnimationFrame 재예약
+ * 1회를 확인하고, cleanup(unmount) 뒤 취소된 콜백을 늦게 강제 실행해도 추가 draw·재예약이
+ * 없음을 함께 확인한다.
+ */
+test("AC-04: requestVideoFrameCallback이 없으면 requestAnimationFrame으로 실제 프레임 합성·재예약이 동작하고, cleanup 뒤 늦은 콜백은 그리지도 재예약하지도 않는다", async () => {
+  const rafHandles = []
+  const cancelledRafHandles = []
+  let nextRafHandle = 0
+  installDomGlobal("requestAnimationFrame", (cb) => {
+    nextRafHandle += 1
+    rafHandles.push({ handle: nextRafHandle, cb })
+    return nextRafHandle
+  })
+  installDomGlobal("cancelAnimationFrame", (handle) => {
+    cancelledRafHandles.push(handle)
+  })
+
+  const contexts = []
+  canvasContextFactory = (canvas) => {
+    const ctx = createRecordingCanvasContext(canvas)
+    contexts.push(ctx)
+    return ctx
+  }
+
+  const { container, unmount } = renderPresentation({
+    current: { eventId: "raf-fallback", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+    open: true, finish: () => {}, assetStatus: "AVAILABLE", finalStatus: null, onClose: () => {},
+  })
+  try {
+    const video = container.querySelector("video")
+    // 이 video 인스턴스만 requestVideoFrameCallback을 지원하지 않는 것으로 가장한다.
+    Object.defineProperty(video, "requestVideoFrameCallback", { value: undefined, configurable: true })
+    Object.defineProperty(video, "videoWidth", { value: 2, configurable: true })
+    Object.defineProperty(video, "videoHeight", { value: 2, configurable: true })
+    Object.defineProperty(video, "readyState", { value: 2, configurable: true })
+    await flushMicrotasks()
+    assert.ok(rafHandles.length >= 1, "requestVideoFrameCallback이 없으면 requestAnimationFrame으로 예약해야 한다")
+
+    const [, workCtx] = contexts
+    const rafCountBeforeDraw = rafHandles.length
+    const firstEntry = rafHandles[rafHandles.length - 1]
+    act(() => { firstEntry.cb(0) })
+    assert.equal(workCtx.calls.drawImage.length, 1, "저장된 requestAnimationFrame 콜백을 실행해도 합성 그리기(drawImage)가 일어나지 않았다")
+    assert.equal(rafHandles.length, rafCountBeforeDraw + 1, "프레임 합성 뒤 다음 requestAnimationFrame이 재예약되지 않았다")
+
+    const rafCountAfterDraw = rafHandles.length
+    const lastEntry = rafHandles[rafHandles.length - 1]
+    const lastHandle = lastEntry.handle
+    unmount()
+    assert.ok(cancelledRafHandles.includes(lastHandle), "언마운트가 requestAnimationFrame 예약을 취소하지 않았다")
+
+    const drawsAfterUnmount = workCtx.calls.drawImage.length
+    act(() => { lastEntry.cb(0) })
+    assert.equal(workCtx.calls.drawImage.length, drawsAfterUnmount, "cleanup 뒤 늦게 실행된 콜백이 추가로 그렸다")
+    assert.equal(rafHandles.length, rafCountAfterDraw, "cleanup 뒤 늦게 실행된 콜백이 다음 프레임을 재예약했다")
+  } finally {
+    installDomGlobal("requestAnimationFrame", defaultRequestAnimationFrame)
+    installDomGlobal("cancelAnimationFrame", defaultCancelAnimationFrame)
+    resetCanvasContextFactory()
+  }
+})
+
+test("AC-05: canvas 2D 컨텍스트 획득이 null이거나 던지면 ERROR가 사건당 정확히 한 번 보고된다", async () => {
+  for (const factory of [() => null, () => { throw new Error("boom") }]) {
+    canvasContextFactory = factory
+    const finishes = []
+    const { unmount } = renderPresentation({
+      current: { eventId: `ctx-fail-${finishes.length}`, type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      open: true,
+      finish: (outcome) => finishes.push(outcome),
+      assetStatus: "AVAILABLE",
+      finalStatus: null,
+      onClose: () => {},
+    })
+    try {
+      await flushMicrotasks()
+      assert.deepEqual(finishes, ["ERROR"], "canvas 컨텍스트 획득 실패가 ERROR로 보고되지 않았다")
+    } finally {
+      unmount()
+      resetCanvasContextFactory()
+    }
+  }
+})
+
+/**
+ * F-27d(AC-05, 반려 수정): 이전에는 canvas 2D 컨텍스트 획득 실패를 effect setup 본문에서
+ * **동기적으로** settleOnce(ERROR)로 보고했다 — React StrictMode의 setup→cleanup→setup은
+ * lifetime을 두 개 만들고, 각 setup이 자기 lifetime으로 동기 실패를 즉시 보고하므로 같은
+ * 사건에 ERROR가 두 번 보고됐다(사건당 한 번 보장 위반). 이제는 컨텍스트 실패 보고도 재생
+ * 시작과 같은 취소 가능한 마이크로태스크 예약 안에서만(scheduled 플래그가 살아 있을 때만)
+ * 일어나므로, cleanup이 먼저 온 첫 setup의 실패 보고는 실행되지 않고 살아남은 setup만 보고한다.
+ */
+test("AC-05(CODEX 반려 수정): StrictMode의 setup→cleanup→setup에서도 canvas 컨텍스트 획득 실패는 사건당 정확히 한 번만 ERROR로 보고된다", async () => {
+  canvasContextFactory = () => null
+  const finishes = []
+  const { unmount } = render(
+    React.createElement(React.StrictMode, null, React.createElement(InGameNightSuccessPresentation, {
+      current: { eventId: "strict-ctx-fail", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      open: true,
+      finish: (outcome) => finishes.push(outcome),
+      assetStatus: "AVAILABLE",
+      finalStatus: null,
+      onClose: () => {},
+    })),
+  )
+  try {
+    await flushMicrotasks()
+    assert.deepEqual(finishes, ["ERROR"], "StrictMode 이중 마운트에서 canvas 컨텍스트 실패가 사건당 정확히 한 번 보고되지 않았다")
+  } finally {
+    unmount()
+    resetCanvasContextFactory()
+  }
+})
+
+test("AC-05: drawImage·getImageData·putImageData 중 하나라도 던지면 ERROR가 한 번만 보고되고, 이후 늦은 콜백은 무시된다", async () => {
+  for (const failing of ["drawImage", "getImageData", "putImageData"]) {
+    const contexts = []
+    canvasContextFactory = (canvas) => {
+      const ctx = createRecordingCanvasContext(canvas)
+      ctx[failing] = () => { throw new Error(`${failing} 실패`) }
+      contexts.push(ctx)
+      return ctx
+    }
+    const finishes = []
+    const { container, unmount } = renderPresentation({
+      current: { eventId: `fail-${failing}`, type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },
+      open: true,
+      finish: (outcome) => finishes.push(outcome),
+      assetStatus: "AVAILABLE",
+      finalStatus: null,
+      onClose: () => {},
+    })
+    try {
+      const video = container.querySelector("video")
+      await flushMicrotasks()
+      Object.defineProperty(video, "videoWidth", { value: 2, configurable: true })
+      Object.defineProperty(video, "videoHeight", { value: 2, configurable: true })
+      Object.defineProperty(video, "readyState", { value: 2, configurable: true })
+
+      const failingHandle = videoFrameCallbacks.latestHandle()
+      videoFrameCallbacks.invoke(failingHandle)
+      assert.deepEqual(finishes, ["ERROR"], `${failing} 실패가 ERROR로 보고되지 않았다`)
+
+      videoFrameCallbacks.invoke(failingHandle)
+      assert.deepEqual(finishes, ["ERROR"], `${failing} 실패 뒤 늦은 콜백이 추가로 보고했다`)
+    } finally {
+      unmount()
+      resetCanvasContextFactory()
+    }
+  }
+})
+
 // ── AC-01: 8가지 type × 관점 선택표 ─────────────────────────────────────
 
 /**
@@ -814,12 +1261,12 @@ test("AC-04: 임시 연출을 backdrop/Escape로 닫으면 SKIPPED로 보고된�
  * 통과해버려 오등록을 검출하지 못한다.
  */
 const EXPECTED_NIGHT_SUCCESS_VIDEO_URLS = Object.freeze({
-  "KILL-USER": "/video-direction/night-success-kill-user.webm",
-  "KILL-TARGET": "/video-direction/night-success-kill-target.webm",
-  "HEAL-USER": "/video-direction/night-success-heal.webm",
-  "HEAL-TARGET": "/video-direction/night-success-heal.webm",
-  "INVESTIGATE-USER": "/video-direction/night-success-investigate-user.webm",
-  "CONFIRM-USER": "/video-direction/night-success-confirm-user.webm",
+  "KILL-USER": "/video-direction/night-success-kill-user-stacked.mp4",
+  "KILL-TARGET": "/video-direction/night-success-kill-target-stacked.mp4",
+  "HEAL-USER": "/video-direction/night-success-heal-stacked.mp4",
+  "HEAL-TARGET": "/video-direction/night-success-heal-stacked.mp4",
+  "INVESTIGATE-USER": "/video-direction/night-success-investigate-user-stacked.mp4",
+  "CONFIRM-USER": "/video-direction/night-success-confirm-user-stacked.mp4",
 })
 
 test("AC-01: 사건 type과 관점 8가지 조합 각각에서 §2-5 선택표대로 자산 경로가 선택된다", () => {
@@ -853,9 +1300,19 @@ test("AC-01: 사건 type과 관점 8가지 조합 각각에서 §2-5 선택표�
       if (expectSrc) {
         assert.notEqual(video, null, `${type}-${perspectives[0]}은 영상을 그려야 한다`)
         assert.equal(video.getAttribute("src"), expectSrc)
+        assert.ok(expectSrc.endsWith("-stacked.mp4"), `${type}-${perspectives[0]} 기대 경로가 -stacked.mp4가 아니다: ${expectSrc}`)
+        assert.equal(video.getAttribute("src").endsWith(".webm"), false, `${type}-${perspectives[0]}이 .webm을 요청했다`)
+        // AC-03: 영상이 있는 조합은 표시용 canvas도 함께 렌더돼야 한다(video 자체는 숨긴다).
+        assert.notEqual(container.querySelector("canvas"), null, `${type}-${perspectives[0]}에 표시 canvas가 없다`)
       } else {
         assert.equal(video, null, `${type}-${perspectives[0]}은 전용 영상이 없어 임시 연출이어야 한다`)
+        assert.equal(container.querySelector("canvas"), null, `${type}-${perspectives[0]}은 canvas도 그리면 안 된다`)
         assert.equal(container.textContent.includes("자료 대기"), true)
+        // TARGET 전용 영상이 없는 조합은 USER 자산 경로를 DOM 어디에도 요청하지 않는다.
+        const userSrc = EXPECTED_NIGHT_SUCCESS_VIDEO_URLS[`${type}-USER`]
+        if (userSrc) {
+          assert.equal(container.innerHTML.includes(userSrc), false, `${type}-${perspectives[0]}이 USER 자산(${userSrc})을 참조했다`)
+        }
       }
     } finally {
       unmount()
@@ -915,11 +1372,20 @@ test("AC-01: 실제 수신 → store 큐 → 표시 경로에서도 KILL-TARGET�
 
 // ── AC-06: 다섯 자산 파일의 존재 고정 ───────────────────────────────────
 
-test("AC-06: frontend/public/video-direction 아래 역할 영상 5개가 존재하고 크기가 0보다 크다", () => {
+test("AC-06: frontend/public/video-direction 아래 역할 영상 stacked MP4 5개가 존재하고 크기가 0보다 크다", () => {
   // 파일 이름은 문자열 리터럴로 고정한다 — sfxManifest.js의 embeddedVideos에서 가져오면
   // manifest 자체가 잘못돼도(오타·파일 삭제) 시험이 같은 값을 다시 확인할 뿐 실제 파일
   // 존재를 증명하지 못한다. 이 조각은 이 파일들을 만들거나 바꾸지 않는다(운영자가 이미 커밋).
-  const VIDEO_DIRECTION_FILES = [
+  const VIDEO_DIRECTION_STACKED_FILES = [
+    "night-success-kill-user-stacked.mp4",
+    "night-success-kill-target-stacked.mp4",
+    "night-success-heal-stacked.mp4",
+    "night-success-investigate-user-stacked.mp4",
+    "night-success-confirm-user-stacked.mp4",
+  ]
+  // 기존 WebM 다섯 파일도 함께 남아 있어야 한다(선택표만 stacked MP4로 바뀌었을 뿐, 자산
+  // 자체를 지우거나 바꾸지 않는다 — A-02).
+  const VIDEO_DIRECTION_WEBM_FILES = [
     "night-success-kill-user.webm",
     "night-success-kill-target.webm",
     "night-success-heal.webm",
@@ -932,7 +1398,7 @@ test("AC-06: frontend/public/video-direction 아래 역할 영상 5개가 존재
     "..", "..", "..", "..", "..", "public", "video-direction",
   )
 
-  for (const file of VIDEO_DIRECTION_FILES) {
+  for (const file of [...VIDEO_DIRECTION_STACKED_FILES, ...VIDEO_DIRECTION_WEBM_FILES]) {
     const full = path.join(videoDirectionDir, file)
     assert.ok(fs.existsSync(full), `frontend/public/video-direction/${file}이 없다`)
     const stat = fs.statSync(full)
