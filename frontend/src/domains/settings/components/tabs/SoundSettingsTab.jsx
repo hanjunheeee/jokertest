@@ -33,7 +33,7 @@ export default function SoundSettingsTab() {
 
       {/* F-16(AC-03): 효과음 음소거. 볼륨과 독립이라 음소거 중에 슬라이더를 움직여도 음소거는
           유지되고, 해제하면 그때의 Master × 효과음 곱이 그대로 적용된다. 배경음은 이 항목과
-          무관하게 계속 차단된다(MUSIC_PLAYBACK_ENABLED). */}
+          무관하다 — 배경음은 Master × 배경음 슬라이더만 따른다(2026-09-22 AUDIO-01 완화). */}
       <div className={ROW_CLASS} data-setting-row>
         <span className={LABEL_CLASS}>{SFX_MUTE_LABEL}</span>
         <CheckBox

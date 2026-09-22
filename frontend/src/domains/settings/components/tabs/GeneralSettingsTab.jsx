@@ -80,9 +80,9 @@ export default function GeneralSettingsTab() {
       return
     }
     if (id === "reset-settings") {
-      // F-15(AC-05): 이 store는 볼륨·체크·텍스트 크기만 초기화한다 — 음악 재생 차단
-      // (MUSIC_PLAYBACK_ENABLED, useAudioControl)은 이 store와 연결되어 있지 않으므로
-      // 초기화가 음악을 다시 재생시킬 방법이 없다.
+      // F-15(AC-05): 이 store는 볼륨·체크·텍스트 크기만 초기화한다 — 배경음 볼륨은 기본값으로
+      // 돌아가지만 재생 여부는 바뀌지 않는다(useBgmAutoplay는 볼륨만 구독하고 play()는 마운트 때
+      // 한 번만 부른다).
       resetSettings()
     }
   }

@@ -863,22 +863,32 @@ test("app/routes/index.jsx는 /password-reset/request와 /password-reset을 Prot
   assert.match(source, /\{\s*path:\s*"\/password-reset",\s*element:\s*<PasswordResetPage\s*\/>\s*\}/)
 })
 
-// ── AC-07(A-05): 음악 차단·영상 무음 유지 ─────────────────────────────────────
+// ── AC-07(A-05): 배경음은 허용 음원만·영상 무음 유지 ───────────────────────────
+// 2026-09-22 운영자 AUDIO-01 완화: 라이선스가 확인된 배경음(bgmAssets.js의 BGM_LICENSES에 기록)만
+// <audio>로 실린다. 배경 영상은 계속 muted다. (실패 메시지에 DOM 요소를 넣으면 node:test의 diff가
+// jsdom 요소를 직렬화하다 메모리를 다 쓰므로 요소 대신 문자열/불리언만 단언한다.)
 
-test("AC-07: 두 페이지 모두 음악 재생 요소를 만들지 않고 배경 영상은 muted다", async () => {
+test("AC-07: 두 페이지의 배경음은 라이선스 기록이 있는 음원 하나뿐이고 배경 영상은 muted다", async () => {
   fetchHandler = async () => jsonResponse(200, { ok: true, status: "VALID" })
+  const { BGM_ASSETS, BGM_LICENSES, MUSIC_PLAYBACK_ENABLED } = await import("../../../../shared/constants/bgmAssets.js")
+  assert.equal(MUSIC_PLAYBACK_ENABLED, true)
+
+  const checkMedia = (container) => {
+    const audios = container.querySelectorAll("audio")
+    assert.equal(audios.length, 1, "배경음 <audio>는 정확히 하나여야 한다")
+    const src = audios[0].getAttribute("src")
+    assert.ok(src.endsWith(BGM_ASSETS.loginMusic), `배경음 src가 등록 음원이 아니다: ${src}`)
+    assert.ok(BGM_LICENSES[BGM_ASSETS.loginMusic], "배경음은 출처·라이선스 기록이 있어야 한다")
+    const video = container.querySelector("video")
+    assert.equal(video !== null, true, "배경 영상이 없다")
+    assert.equal(video.muted, true)
+  }
 
   const requestView = await mountRequestPageStrict()
-  assert.equal(requestView.container.querySelector("audio"), null)
-  const requestVideo = requestView.container.querySelector("video")
-  assert.ok(requestVideo)
-  assert.equal(requestVideo.muted, true)
+  checkMedia(requestView.container)
   cleanup()
 
   const resetView = await mountResetPageStrict(VALID_TOKEN)
   await waitFor(() => assert.ok(resetView.container.querySelector('input[name="password"]')))
-  assert.equal(resetView.container.querySelector("audio"), null)
-  const resetVideo = resetView.container.querySelector("video")
-  assert.ok(resetVideo)
-  assert.equal(resetVideo.muted, true)
+  checkMedia(resetView.container)
 })

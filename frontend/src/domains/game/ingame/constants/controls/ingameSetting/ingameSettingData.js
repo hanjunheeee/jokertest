@@ -14,8 +14,8 @@ export { SOUND_SETTING_VOLUMES as INGAME_SETTING_SOUND_VOLUMES } from "../../../
  * F-16(AC-03): 인게임 사운드 탭의 효과음 음소거 항목.
  *
  * 라벨만 이 도메인이 정하고 값은 설정 화면(UI-05)과 같은 store(settingsStore.sfxMuted)에
- * 둔다 — 위 슬라이더와 같은 이유다. 이 항목은 **효과음에만** 적용되며 배경음 차단
- * (MUSIC_PLAYBACK_ENABLED)을 되돌리지 않는다.
+ * 둔다 — 위 슬라이더와 같은 이유다. 이 항목은 **효과음에만** 적용되며 배경음(Master × 배경음
+ * 슬라이더)에는 영향을 주지 않는다.
  */
 export const INGAME_SETTING_SFX_MUTE = {
   id: "sfx-muted",

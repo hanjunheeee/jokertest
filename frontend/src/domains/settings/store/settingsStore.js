@@ -41,9 +41,9 @@ const GENERAL_CHECK_STORAGE_IDS = new Set(Object.keys(defaultGeneralChecks()))
 const CHAT_CHECK_STORAGE_ID_SET = new Set(CHAT_CHECK_STORAGE_IDS)
 
 /** F-16(AC-03): 효과음 음소거 기본값. 볼륨(master 100 × sfx 80 → gain 0.8)과 함께
- *  기기 저장·초기화 대상이다. 이 값은 **효과음에만** 적용된다 — BGM은 별도 정책
- *  (MUSIC_PLAYBACK_ENABLED)으로 차단되어 있고, 이 store의 어떤 조작도 그것을 되돌리지
- *  못한다(useAudioControl·useBgmAutoplay는 이 store를 구독하지 않는다). */
+ *  기기 저장·초기화 대상이다. 이 값은 **효과음에만** 적용된다 — 배경음은 이 값과
+ *  무관하게 volumes["master-volume"] × volumes["bgm-volume"]만 따른다(2026-09-22 AUDIO-01
+ *  완화 뒤 useBgmAutoplay·useAudioControl이 그 두 값을 구독한다). */
 export const SFX_MUTED_DEFAULT = false
 
 /** 마지막 기기 저장 실패(용량 초과·프라이빗 모드 등). null이면 마지막 쓰기가 성공한
@@ -321,8 +321,8 @@ export const useSettingsStore = create(
       setChatTextSize: (next) => set({ chatTextSize: next }),
 
       // F-15(AC-02/AC-05): 일반·사운드·채팅 환경설정만 초기화한다 — 계정 데이터나
-      // MUSIC_PLAYBACK_ENABLED 같은 음악 차단 정책은 이 store가 갖고 있지 않으므로 초기화가
-      // 건드릴 방법 자체가 없다(useAudioControl은 이 store를 구독하지 않는다).
+      // MUSIC_PLAYBACK_ENABLED 같은 음악 정책 상수는 이 store가 갖고 있지 않으므로 초기화가
+      // 건드릴 방법 자체가 없다. 초기화는 배경음 볼륨을 기본값으로 되돌릴 뿐 재생을 새로 시작하지 않는다.
       resetSettings: () =>
         set({
           volumes: defaultVolumes(),

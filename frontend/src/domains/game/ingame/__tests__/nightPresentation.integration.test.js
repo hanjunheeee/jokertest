@@ -1041,10 +1041,12 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
   const claimsBefore = sfxClaims.length
   const mediaBefore = sfxMediaCreations.length
 
-  // AC-04: 같은 영상 사건 동안 BGM 재생기의 play() 호출이 0회임을 bgmPlaybackLock.test.js와
-  // 같은 방식(가짜 매체의 playCallCount)으로 직접 관찰한다.
+  // AC-04: 같은 영상 사건 동안 BGM 재생기의 play() 호출이 늘지 않음을 bgmPlaybackLock.test.js와
+  // 같은 방식(가짜 매체의 playCallCount)으로 직접 관찰한다. 2026-09-22 AUDIO-01 완화로 훅은 마운트 때
+  // 한 번 play()를 부르므로, 마운트 직후 값을 기준선으로 잡고 영상 사건이 그 값을 바꾸지 않는지 본다.
   const bgmMedia = createFakeBgmMedia()
   const bgmHook = renderHook(() => useBgmAutoplay({ current: bgmMedia }))
+  const bgmPlayBaseline = bgmMedia.playCallCount
 
   await act(async () => { socket.deliver("night_action_success", killPayload) })
   const video = view.container.querySelector("video[src]")
@@ -1062,7 +1064,7 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
   assert.equal(sfxDispatches.length, sfxBefore, "역할 영상 표시가 별도 SFX dispatch를 만들었다")
   assert.equal(sfxClaims.length, claimsBefore, "역할 영상 표시가 claimAudio를 호출했다")
   assert.equal(sfxMediaCreations.length, mediaBefore, "역할 영상 표시가 별도 매체를 생성했다")
-  assert.equal(bgmMedia.playCallCount, 0, "역할 영상 표시가 BGM play()를 호출했다")
+  assert.equal(bgmMedia.playCallCount, bgmPlayBaseline, "역할 영상 표시가 BGM play()를 호출했다")
 
   await act(async () => { fireEvent(video, new dom.window.Event("ended")) })
   const acks = socket.emitsFor("acknowledge_night_action_success")
@@ -1070,7 +1072,7 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
   assert.equal(sfxDispatches.length, sfxBefore, "역할 영상 종료가 별도 SFX dispatch를 만들었다")
   assert.equal(sfxClaims.length, claimsBefore, "역할 영상 종료가 claimAudio를 호출했다")
   assert.equal(sfxMediaCreations.length, mediaBefore, "역할 영상 종료가 별도 매체를 생성했다")
-  assert.equal(bgmMedia.playCallCount, 0, "역할 영상 종료가 BGM play()를 호출했다")
+  assert.equal(bgmMedia.playCallCount, bgmPlayBaseline, "역할 영상 종료가 BGM play()를 호출했다")
   assert.deepEqual(acks[0].payload,
     { gameId: ctx.session.id, nightDayIndex: killPayload.nightDayIndex, eventId: killPayload.eventId })
   assert.deepEqual(acks[0].response, { ok: true, duplicate: false })
@@ -1080,7 +1082,7 @@ test("AC-03/AC-04/AC-05: 실제 페이지에서 KILL 영상이 끝나면 서버 
 
   ctx.ack(ctx.jokerUuid, killPayload)
   assert.equal(ctx.session.nightTurnRole, "DOCTOR", "두 수신자가 모두 완료했는데 다음 역할이 없다")
-  assert.equal(bgmMedia.playCallCount, 0, "나머지 수신자 완료까지의 진행이 BGM play()를 호출했다")
+  assert.equal(bgmMedia.playCallCount, bgmPlayBaseline, "나머지 수신자 완료까지의 진행이 BGM play()를 호출했다")
 
   bgmHook.unmount()
   await leaveInGamePage()

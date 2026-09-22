@@ -634,10 +634,11 @@ test("F-15(AC-02/AC-05): resetSettings는 volumes·generalChecks·generalTextSiz
   assert.equal(state.inGameSettingTab, "sound")
 })
 
-test("F-15(AC-05): resetSettings는 음악 재생 차단 정책(MUSIC_PLAYBACK_ENABLED)과 무관한 필드만 다룬다", async () => {
+test("F-15(AC-05): resetSettings는 음악 재생 정책(MUSIC_PLAYBACK_ENABLED)을 건드리지 않는다 — 정책은 상수이지 설정이 아니다", async () => {
   const { MUSIC_PLAYBACK_ENABLED } = await import("../../../../shared/constants/bgmAssets.js")
 
-  assert.equal(MUSIC_PLAYBACK_ENABLED, false, "음악 차단 정책은 이 슬라이스가 바꾸지 않는다")
+  // 2026-09-22 운영자 AUDIO-01 완화로 true가 됐다. 값이 무엇이든 설정 초기화가 이 상수를 읽거나 바꾸지 않는다.
+  assert.equal(typeof MUSIC_PLAYBACK_ENABLED, "boolean")
 
   const beforeKeys = Object.keys(useSettingsStore.getState())
   useSettingsStore.getState().resetSettings()

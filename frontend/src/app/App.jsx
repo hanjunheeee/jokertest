@@ -34,7 +34,7 @@ export default function App() {
     // 않는다"는 처리 표식이 활성 범위 내내 살아 있는다. 실제 사건 dispatch는 각 producer의
     // 수신 경계(useFriendSocketEvents·useMatchingRoom·useGameSessionSocketEvents)가 하고,
     // 일반 버튼/링크 클릭은 이 훅이 설치하는 document capture 단일 소유자가 처리한다.
-    // 이 훅은 BGM을 켜지 않는다 — 음악 차단(MUSIC_PLAYBACK_ENABLED)은 그대로다.
+    // 이 훅은 BGM을 켜지 않는다 — 배경음은 로비·로그인 화면의 useBgmAutoplay가 따로 맡는다.
     useSfxRuntime()
 
     // 앱이 켜질 때마다(새로고침 포함) localStorage의 로그인 상태를 서버 세션(쿠키)과 맞춥니다.
