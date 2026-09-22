@@ -360,6 +360,26 @@ test("AC-02: 계정이 바뀐 뒤 이전 계정의 확인 종료는 새 계정�
   assert.equal(currencyPurchase.store.getState().status, "idle")
 })
 
+test("BQ AC-01: 이전 계정의 성공 복귀 확인이 늦게 끝나도 새 계정의 원장 조회를 새 계정 첫 확인 전에 시작하지 않는다", async () => {
+  await newWorld()
+  const held = []
+  route("POST", CONFIRM, () => { const next = deferred(); held.push(next); return next.promise })
+  const historyOf = (uuid) => count("GET", new RegExp(`/economy/accounts/${uuid}/transactions$`))
+  await mountStore({ path: RETURN })
+  await waitFor(() => assert.equal(posts(CONFIRM).length, 1))
+  // 같은 복귀 URL에서 계정 B로 전환 — B도 성공 복귀라 첫 확인 종료 전에는 원장을 조회하지 않는다.
+  await setUser({ uuid: "user-2", nickname: "둘째" })
+  await waitFor(() => assert.equal(posts(CONFIRM).length, 2))
+  await flush()
+  assert.equal(historyOf("user-2"), 0)
+  held[0].resolve(apiError(400, "AMOUNT_MISMATCH")) // A의 confirm이 뒤늦게 끝난다
+  await flush()
+  assert.equal(historyOf("user-2"), 0, "A의 늦은 확인 종료가 B의 원장 조회를 시작하지 않는다")
+  held[1].resolve(apiError(400, "AMOUNT_MISMATCH"))
+  await flush()
+  assert.equal(historyOf("user-2"), 1, "B의 진입 원장 조회는 B의 첫 확인 종료 뒤 1회만")
+})
+
 // ── AC-03 ────────────────────────────────────────────────────────────────────────
 test("AC-03: 충전 버튼 연속 클릭·동시 호출에도 주문 생성은 1회만 처리된다", async () => {
   await newWorld()

@@ -203,7 +203,15 @@ export default function StorePanel({ visible = true }) {
     currencyPurchase.loadProducts()
     // 복귀 주문을 먼저 등록한 뒤 같은 진입의 발견을 요청한다(발견 결과는 복귀 orderId를 건너뛴다).
     const returning = processReturn()
-    if (successReturn) returning.then(() => currencyHistory.loadIfIdle())
+    // 확인 종료가 늦으면 그 사이 계정·진입이 바뀌었을 수 있다 — 등록 당시 진입·계정일 때만 원장을 보완 조회한다.
+    if (successReturn) {
+      const entryId = entryRef.current.id
+      returning.then(() => {
+        const sameEntry = entryRef.current?.id === entryId
+        const sameUser = (useAuthStore.getState().user?.uuid ?? null) === authUserId
+        if (sameEntry && sameUser) currencyHistory.loadIfIdle()
+      })
+    }
     if (authUserId) currencyPurchase.discoverOpenOrders(entryRef.current.id)
     setBulkMode(false)
     setBulkSelectedIds(new Set())
