@@ -1272,6 +1272,27 @@ function advanceNightTurn(run) {
     if (session.phase !== 'NIGHT') return
     if (session.dayIndex !== run.nightDayIndex) return
     run.index += 1
+    // 2026-09-22 운영자 결정: 방 설정의 역할 구성이 0인 역할은 턴(안내 방송·제한시간·연출 대기) 없이
+    // 즉시 확정한다 — "의사가 없는 판에서 의사의 시간입니다"가 나오지 않는다. 판정 자료(completedRoles·
+    // NO_ROLE 단계 기록)는 그대로 남으므로 밤 판정·저장 계약은 바뀌지 않는다. 구성은 방 설정에서
+    // 누구나 보는 값이라 이것으로 역할 유무가 새지 않는다(getNightTurnOrder 참고). 구성은 있지만
+    // 전원 사망한 역할은 아래 기존 경로대로 무작위 지연 턴이 돈다.
+    const activeTurnOrder = gameSessionCore.getNightTurnOrder(session)
+    while (run.index < gameSessionCore.NIGHT_TURN_ORDER.length
+        && !activeTurnOrder.includes(gameSessionCore.NIGHT_TURN_ORDER[run.index])) {
+        const absentRole = gameSessionCore.NIGHT_TURN_ORDER[run.index]
+        let completed
+        try {
+            completed = gameSessionCore.completeNightRole(session, absentRole)
+        } catch (err) {
+            completed = { ok: false, code: 'ROLE_COMPLETE_UNEXPECTED_ERROR' }
+        }
+        if (!completed.ok) {
+            console.error('[밤 부재 역할 확정 실패]', { code: completed.code, role: absentRole, gameId: session.id })
+            return
+        }
+        run.index += 1
+    }
     if (run.index >= gameSessionCore.NIGHT_TURN_ORDER.length) {
         // F-25b(AC-03/AC-05): 네 역할이 모두 끝난 밤은 여기서 **자동으로 최종화**된다 — 최종
         // 사망 확정·승패 판정·전적 저장·결과 방송은 전부 그 공통 경계 하나가 소유하므로,

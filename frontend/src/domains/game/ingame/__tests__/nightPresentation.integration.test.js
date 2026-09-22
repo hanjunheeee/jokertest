@@ -362,6 +362,9 @@ function setupBackendNight(roomId, { playerCount = 10 } = {}) {
   const room = { id: roomId, players: new Map(players.map((p) => [p.uuid, p])), settings: { jokerCount: 1 } }
   const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
   gameSessionCore.commitGameSession(candidate.session)
+  // 2026-09-22: 방 설정 구성이 0인 역할은 밤 턴이 돌지 않게 됐다(getNightTurnOrder). 이 파일은 네 역할의
+  // 연출 대기·보고 순서를 보므로 구성 정보가 없는 구버전 세션으로 만들어 네 턴이 전부 돌게 한다.
+  delete candidate.session.roleComposition
   const session = candidate.session
   for (const uuid of session.players.keys()) gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
   session.phase = "NIGHT"

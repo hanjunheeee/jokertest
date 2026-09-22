@@ -1019,9 +1019,10 @@ const SERVER_INDIRECT_EMIT_SITES_LOCK = [
   //  새로 생긴 것이 아니라 위치만 바뀌었다는 사실은 이 잠금이 여전히 9개라는 것으로 확인한다.)
   "backend/socket/gameSession.js:477 event",
   "backend/socket/gameSession.js:1249 event",
-  "backend/socket/gameSession.js:2161 event",
+  // (2026-09-22: 구성 0 역할의 턴 건너뛰기가 advanceNightTurn 앞에 들어가 아래 두 지점이 21줄 밀렸다.)
+  "backend/socket/gameSession.js:2182 event",
   // 게임 채팅 — CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다(아래에서 그 표를 확인한다).
-  "backend/socket/gameSession.js:3448 eventName",
+  "backend/socket/gameSession.js:3469 eventName",
   // 개인 전송기 — emitToUser(uuid, event, payload)의 event 파라미터.
   "backend/socket/socket.js:27 event",
 ]

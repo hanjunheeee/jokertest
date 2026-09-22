@@ -57,7 +57,7 @@ exports.recordValidDayVoteParticipation = async ({ gameId, dayIndex, userId }) =
 const isCompletedGameResult = (gameResult) => gameResult?.completed === true || gameResult?.completed === 1;
 
 const isEligibleGameResult = (gameResult) =>
-    isCompletedGameResult(gameResult) && gameResult?.settings?.gameSource?.value !== "development";
+    isCompletedGameResult(gameResult) && !["development", "test"].includes(gameResult?.settings?.gameSource?.value);
 
 /**
  * F-11 AC-05: F-12가 업적 진행을 판정할 때 쓰는 조회 연결점. 한 계정이 갖고 있는 저장된

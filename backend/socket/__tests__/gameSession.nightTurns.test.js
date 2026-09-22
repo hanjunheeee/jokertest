@@ -150,12 +150,16 @@ function commitFullRoleSessionAtNight({ id = 'room-turns', dayIndex = 2, setting
 }
 
 /** playerCount=3·jokerCount=2 세션을 밤 상태로 만든다 — 한 역할(JOKER)에 생존 actor가 2명인 구성. */
-function commitJokerTrioSessionAtNight({ id = 'room-turns-joker', dayIndex = 0 } = {}) {
+function commitJokerTrioSessionAtNight({ id = 'room-turns-joker', dayIndex = 0, keepComposition = false } = {}) {
     const players = [makePlayer(`ja-${id}`), makePlayer(`jb-${id}`), makePlayer(`jc-${id}`)]
     const room = makeRoom({ id, players, jokerCount: 2 })
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
     gameSessionCore.commitGameSession(candidate.session)
     const session = candidate.session
+    // 2026-09-22: 구성이 0인 역할은 턴이 돌지 않게 됐다(getNightTurnOrder). 이 헬퍼로 턴 역학(제출·기권·
+    // 타이머)을 보는 기존 시험들은 네 턴이 전부 도는 구조를 전제하므로, 구성 정보가 없는 구버전
+    // 세션으로 만든다. 구성 0 건너뛰기 자체는 keepComposition:true로 만든 세션의 시험이 본다.
+    if (!keepComposition) delete session.roleComposition
     ackAllAndRewindToNight(session, dayIndex)
     const jokerUuids = [...session.players.values()].filter((p) => p.role === 'JOKER').map((p) => p.uuid)
     const citizenUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
@@ -1936,6 +1940,8 @@ function commitLastNightSessionAtNight({ id = 'room-turns-last', dayIndex = 2 } 
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
     gameSessionCore.commitGameSession(candidate.session)
     const session = candidate.session
+    // 턴 역학 시험용 구버전(구성 없음) 세션 — commitJokerTrioSessionAtNight의 주석 참고(2026-09-22).
+    delete session.roleComposition
     ackAllAndRewindToNight(session, dayIndex)
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
     const targetUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
@@ -2719,8 +2725,8 @@ test('AC-06(F-25): 무인 역할·미제출 만료·존재하지 않는 직업�
     assert.equal(isNightPresentationWaitActive(session.id), false)
 })
 
-test('AC-06(F-25): 존재하지 않는 직업의 턴도 완료 계약을 남기고 순서를 건너뛰지 않는다', () => {
-    // playerCount=3·jokerCount=2 — 특수 직업 중 최소 둘은 이 판에 존재하지 않는다.
+test('AC-06(F-25, 2026-09-22 개정): 구성이 없는 구버전 세션에서는 존재하지 않는 직업의 턴도 완료 계약을 남기고 순서를 건너뛰지 않는다', () => {
+    // playerCount=3·jokerCount=2 — 특수 직업 중 최소 둘은 이 판에 존재하지 않는다(구성 정보 없음).
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'f25-no-role' })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
@@ -4182,4 +4188,28 @@ test('AC-06(F-27a): 사건이 없는 턴은 통지 없이 즉시 해제되고, �
     for (const uuid of [doctorUuid, guardUuid, witchHunterUuid]) {
         assert.equal(sockets.get(uuid).emitted.filter((e) => e.event === 'night_presentation_wait').length, 0)
     }
+})
+
+// ── 2026-09-22 운영자 결정: 방 설정의 역할 구성이 0인 역할은 밤 턴이 돌지 않는다 ─────────────
+test('구성 0 역할(광대 2·귀족 1 판의 의사·경비원·마녀사냥꾼)은 night_turn_started/ended가 0회이고, 판정 자료에는 NO_ROLE로 남으며, 광대 턴만 돈 뒤 밤이 정상 확정된다', () => {
+    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'comp-zero-skip', keepComposition: true })
+    assert.deepEqual(gameSessionCore.getNightTurnOrder(session), ['JOKER'], '구성이 있는 역할만 턴 순서에 남는다')
+    const { io, sockets, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    const run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    const startedRoles = () => io.broadcasts.filter((b) => b.event === 'night_turn_started').map((b) => b.payload.role)
+    assert.deepEqual(startedRoles(), ['JOKER'], '광대 턴만 시작된다')
+
+    for (const jokerUuid of jokerUuids) submit(jokerUuid, citizenUuid)
+    drainPresentationWait(session)
+    clock.advance(NIGHT_TURN_DURATION_MS * 4)
+
+    assert.deepEqual(startedRoles(), ['JOKER'], '의사·경비원·마녀사냥꾼 턴은 끝까지 시작되지 않는다')
+    assert.deepEqual(io.broadcasts.filter((b) => b.event === 'night_turn_ended').map((b) => b.payload.role), ['JOKER'])
+    const progress = gameSessionCore.__testables.getNightProgress(session)
+    for (const role of ['DOCTOR', 'GUARD', 'WITCH_HUNTER']) {
+        assert.ok(progress.completedRoles.has(role), role + ': 턴 없이도 판정 자료에는 확정된 것으로 남는다')
+    }
+    assert.notEqual(session.phase, 'NIGHT', '밤은 광대 턴만으로 정상 확정된다')
 })

@@ -42,3 +42,8 @@ test('AC-02: game_results 행 자체가 없으면(진행 중인 경기의 사건
     assert.equal(isEligibleGameResult(undefined), false);
     assert.equal(isEligibleGameResult(null), false);
 });
+
+// 2026-09-22: 자동 시험 출처(test)도 development와 같이 자격이 없다.
+test('AC-02: 자동 시험 경기(gameSource:test)는 정상 확정이어도 자격이 없다', () => {
+    assert.equal(isEligibleGameResult({ completed: true, settings: { gameSource: { value: 'test' } } }), false);
+});

@@ -125,8 +125,9 @@ function selectMaskOfFateRole(statsByRoleForUser, { minGames = MASK_OF_FATE_MIN_
  * @param {{ completed: boolean, gameSourceValue?: string|null }} game
  * @returns {boolean}
  */
+const EXCLUDED_GAME_SOURCES = new Set(['development', 'test']) // 자동 시험(test)·옛 개발 판(development)은 보상 대상이 아니다
 function isAchievementRewardEligibleGame({ completed, gameSourceValue }) {
-    return completed === true && gameSourceValue !== 'development'
+    return completed === true && !EXCLUDED_GAME_SOURCES.has(gameSourceValue)
 }
 
 module.exports = {

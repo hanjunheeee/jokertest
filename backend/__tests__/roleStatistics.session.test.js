@@ -31,11 +31,11 @@ const makeRoom = (overrides = {}) => ({
 
 // ── A-07: 서버 환경으로만 판정, 클라이언트 입력은 무시 ──────────────────────────
 
-test("resolveGameSource: NODE_ENV=production이면 production, 그 외에는 development다", () => {
+test("resolveGameSource: NODE_ENV=test(자동 시험)만 test, 그 외(개발·QA·운영)는 전부 production이다 — 2026-09-22 운영자 결정", () => {
     withNodeEnv("production", () => assert.equal(resolveGameSource(), "production"));
-    withNodeEnv("test", () => assert.equal(resolveGameSource(), "development"));
-    withNodeEnv("development", () => assert.equal(resolveGameSource(), "development"));
-    withNodeEnv(undefined, () => assert.equal(resolveGameSource(), "development"));
+    withNodeEnv("test", () => assert.equal(resolveGameSource(), "test"));
+    withNodeEnv("development", () => assert.equal(resolveGameSource(), "production"));
+    withNodeEnv(undefined, () => assert.equal(resolveGameSource(), "production"));
 });
 
 test("buildSessionCandidate: 세션 생성 시점의 서버 NODE_ENV로 session.gameSource가 고정된다", () => {
@@ -64,8 +64,15 @@ test("buildSessionCandidate: room.settings에 담긴 클라이언트 값은 game
         });
         const result = buildSessionCandidate(spoofedRoom);
         assert.equal(result.ok, true);
-        // 클라이언트가 "production"이라 우겨도 서버 환경이 development면 development로 고정된다.
-        assert.equal(result.session.gameSource, "development");
+        // 2026-09-22: 개발 서버의 판도 집계된다(production). 클라이언트 값은 여전히 무시된다 — 아래 test 환경 케이스가 그것을 증명한다.
+        assert.equal(result.session.gameSource, "production");
+    });
+    withNodeEnv("test", () => {
+        const spoofedRoom = makeRoom({ settings: { gameSource: "production", isDev: false } });
+        const result = buildSessionCandidate(spoofedRoom);
+        assert.equal(result.ok, true);
+        // 클라이언트가 "production"이라 우겨도 자동 시험 환경이면 test로 고정된다.
+        assert.equal(result.session.gameSource, "test");
     });
 });
 

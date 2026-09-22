@@ -212,3 +212,8 @@ test('only unregistered roles give no mask, no role stats and no Korean role nam
         assert.equal(getRoleKoreanName(role),null)
     }
 })
+
+// 2026-09-22: 자동 시험 출처(test)도 development와 같이 보상 대상에서 빠진다.
+test('isAchievementRewardEligibleGame: gameSourceValue가 test면 정상 확정이어도 보상 대상이 아니다', () => {
+    assert.equal(isAchievementRewardEligibleGame({ completed: true, gameSourceValue: 'test' }), false)
+})

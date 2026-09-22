@@ -389,7 +389,13 @@ const DEATH_REASONS = Object.freeze({
 // 세션 생성 시점에 한 번 호출해 session.gameSource에 고정하므로, 이후 서버가 재시작해
 // NODE_ENV가 바뀌어도 이미 만들어진 세션·저장된 결과의 출처는 흔들리지 않는다.
 function resolveGameSource() {
-    return process.env.NODE_ENV === 'production' ? 'production' : 'development'
+    // 2026-09-22 운영자 결정: 자동 시험(NODE_ENV=test)만 집계에서 뺀다 — 개발·QA·운영 서버의 판은
+    // 전부 전적·업적·랭킹에 들어간다(예전에는 production이 아니면 전부 development로 빠져 마이페이지가
+    // 늘 0판이었다). 저장 값 'test'는 기존 'development'와 같이 제외 출처로 취급한다.
+    // GAME_SOURCE_OVERRIDE는 QA 실행기(.pluto/monitor/qa-five-windows.cjs)처럼 NODE_ENV=test로 떠야 하는
+    // 서버가 판을 집계에 넣고 싶을 때만 쓴다('production'). 그 밖의 값은 무시한다.
+    if (process.env.GAME_SOURCE_OVERRIDE === 'production') return 'production'
+    return process.env.NODE_ENV === 'test' ? 'test' : 'production'
 }
 
 /**
@@ -1472,6 +1478,26 @@ function getEligibleNightActorUuids(session) {
 // 턴 자체는 똑같이 돈다. 턴이 도는지 여부가 생존·역할 정보를 흘리지 않게 하려는 것이며,
 // isEligibleForNightAction은 그 턴 안에서 누가 제출할 수 있는지만 가른다.
 const NIGHT_TURN_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+/**
+ * **이 판에서 실제로 도는** 밤 턴 순서 — 방 설정의 역할 구성(session.roleComposition)이 0인 역할은
+ * 턴 자체가 없다(운영자 결정 2026-09-22: 광대 1·시민 4 같은 판에서 "의사의 시간입니다"가 나오던
+ * 문제). 구성은 방 설정 화면에서 누구나 보는 값이라 이것으로 역할 유무가 새지 않는다. 구성은
+ * 있지만 **전원 사망**한 역할은 기존대로 턴이 돈다(사망은 공개 정보지만 턴 유무로 재확인시키지
+ * 않는다). roleComposition이 없는 세션(구버전·수동 조립)은 전체 순서 그대로다.
+ *
+ * 이 목록은 **소켓 계층의 턴 진행(방송·제한시간)**에만 쓴다. 밤 판정 자료(completedRoles·단계 기록)는
+ * 여전히 NIGHT_TURN_ORDER 네 역할 전부를 남긴다 — 구성 0 역할은 소켓 계층이 턴 없이 즉시
+ * NO_ROLE로 확정한다(advanceNightTurn). 판정·저장 계약은 그대로다.
+ * @param {object} session
+ * @returns {readonly string[]}
+ */
+function getNightTurnOrder(session) {
+    const composition = session?.roleComposition
+    if (!composition || typeof composition !== 'object') return NIGHT_TURN_ORDER
+    const order = NIGHT_TURN_ORDER.filter((role) => Number.isInteger(composition[role]) && composition[role] > 0)
+    return order.length > 0 ? Object.freeze(order) : NIGHT_TURN_ORDER
+}
 
 // 턴 하나의 제한시간. night_turn_started.deadline과, 생존 actor가 없는 턴의 무작위 지연 범위가
 // 모두 이 값 하나에서 유도된다(두 곳이 다른 기준을 쓰면 지연 길이만으로 전멸 여부가 새어나간다).
@@ -4549,6 +4575,7 @@ module.exports = {
     // 밤 턴 진행 규칙(순서·제한시간·payload·완료 판정)은 소켓 계층의 턴 오케스트레이터가
     // 그대로 소비하는 공개 계약이므로 __testables가 아니라 정식 export다.
     NIGHT_TURN_ORDER,
+    getNightTurnOrder,
     NIGHT_TURN_DURATION_MS,
     buildNightTurnStartedPayload,
     buildNightTurnEndedPayload,

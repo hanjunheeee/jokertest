@@ -170,7 +170,8 @@ exports.findGameResultById = async (gameId) => {
 // 과거 기록의 개발 여부 분류 기준을 명시적으로 미확정 상태로 남겼고, 실제로 식별할 수 있는
 // 근거도 없으므로 임의로 개발 경기로 재분류하지 않고 운영 기록으로 보아 소급 집계한다
 // (A-06/A-07). "development"로 명시된 값만 제외한다.
-const isRoleStatisticsEligibleGame = (settings) => settings?.gameSource?.value !== "development";
+const EXCLUDED_GAME_SOURCES = new Set(['development', 'test']); // 집계 제외 출처 — 자동 시험(test)과 옛 개발 판(development)
+const isRoleStatisticsEligibleGame = (settings) => !EXCLUDED_GAME_SOURCES.has(settings?.gameSource?.value);
 
 const toRoleStatisticsRow = (playerRow) => ({
     user_id: playerRow.user_id,

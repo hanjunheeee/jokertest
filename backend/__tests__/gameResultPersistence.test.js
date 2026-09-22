@@ -722,7 +722,8 @@ test("AC-05: 밤 판정 저장이 실패해도 night_result_applied 방송은 �
     const applied = emitted.filter((e) => e.event === "night_result_applied");
     assert.equal(applied.length, 1);
     assert.equal(applied[0].payload.phase, "ENDED");
-    assert.deepEqual(applied[0].payload.winResult, { winner: "CITIZEN" });
+    assert.equal(applied[0].payload.winResult.winner, "CITIZEN");
+    assert.ok(Array.isArray(applied[0].payload.winResult.reveals), "공개 winResult에는 전원 정체 공개(reveals)가 실린다");
 });
 
 // ── F-21 A-09/A-10: 불변 레코드·단일 재시도·커밋 후 개인 무효화 ────────────────
