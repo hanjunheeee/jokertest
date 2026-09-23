@@ -396,6 +396,19 @@ function seedSession({ phase, dayPhase = null, selfAlive = true, role = "CITIZEN
   })
 }
 
+/**
+ * 이 줄이 낼 수 있는 **모든** 송신 사건. 잠금 시험은 이름 하나가 아니라 이 집합 전체가
+ * 비었는지를 본다 — 예전에는 존재하지 않는 이름("ready_day_vote")으로 걸러서, 버튼이 실제로
+ * 보냈더라도 필터가 항상 빈 배열을 돌려주는 **공허한 단언**이었다. 아래 "송신이 실제로
+ * 관측된다"(대조군) 시험이 이 집합과 기록 소켓이 살아 있음을 먼저 증명한다.
+ */
+const PHASE_ACTION_EVENTS = [
+  "ready_for_day_vote", "cast_day_vote", "resolve_day_vote", "submit_night_action", "resolve_night",
+]
+
+const actionEventsOf = (transport) =>
+  transport.sent.filter((entry) => PHASE_ACTION_EVENTS.includes(entry.event))
+
 /** 실제 조작 Provider 아래에 실제 행동 줄만 마운트한다(페이지 전체 오버레이는 끌어오지 않는다). */
 function mountRealRow({ interactionBlocked = false }) {
   let view
@@ -421,7 +434,40 @@ test("AC-01⑤: 사망한 참가자는 실제 훅의 활성식으로 낮 준비�
   assert.notEqual(button, null, "전제: 낮 토론에는 준비 버튼이 있어야 한다")
   assert.equal(button.disabled, true, "사망자에게 낮 준비가 열려 있다")
   act(() => { fireEvent.click(button) })
-  assert.deepEqual(transport.sent.filter((entry) => entry.event === "ready_day_vote"), [])
+  assert.deepEqual(actionEventsOf(transport), [])
+})
+
+/**
+ * 대조군. 위아래의 "송신 0회" 단언들이 **버튼이 막혀서** 통과하는 것이지, 이 시험 장치가
+ * 애초에 아무 것도 관측하지 못해서 통과하는 것이 아님을 증명한다.
+ */
+test("AC-01⑤: 잠기지 않은 낮 준비는 실제로 ready_for_day_vote를 1회 보낸다(대조군)", () => {
+  const transport = createRecordingSocket()
+  currentSocket = transport.socket
+  for (const cb of [...socketSubscribers]) cb()
+  seedSession({ phase: "DAY", dayPhase: "DAY_DISCUSSION", selfAlive: true })
+
+  const view = mountRealRow({ interactionBlocked: false })
+  const button = buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_READY)
+  assert.equal(button.disabled, false, "전제: 생존·비차단이면 낮 준비가 열려 있어야 한다")
+  act(() => { fireEvent.click(button) })
+  assert.deepEqual(actionEventsOf(transport).map((entry) => entry.event), ["ready_for_day_vote"],
+    "행동 줄의 클릭이 실제 송신으로 이어지지 않았다(잠금 시험이 공허하다)")
+})
+
+test("AC-01⑤: interactionBlocked면 낮 토론 준비가 잠기고 송신이 0회다", () => {
+  const transport = createRecordingSocket()
+  currentSocket = transport.socket
+  for (const cb of [...socketSubscribers]) cb()
+  // 살아 있는 참가자다 — 잠그는 것은 오직 조작 차단뿐임을 분리해서 본다.
+  seedSession({ phase: "DAY", dayPhase: "DAY_DISCUSSION", selfAlive: true })
+
+  const view = mountRealRow({ interactionBlocked: true })
+  const button = buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_READY)
+  assert.notEqual(button, null, "전제: 낮 토론에는 준비 버튼이 있어야 한다")
+  assert.equal(button.disabled, true, "조작 차단 중인데 낮 준비가 열려 있다")
+  act(() => { fireEvent.click(button) })
+  assert.deepEqual(actionEventsOf(transport), [])
 })
 
 test("AC-01⑤: 사망한 참가자는 기권이 잠기지만 낮 집계는 그대로 열려 있다(생존 조건을 새로 붙이지 않는다)", () => {
@@ -434,7 +480,7 @@ test("AC-01⑤: 사망한 참가자는 기권이 잠기지만 낮 집계는 그�
   const abstain = buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_VOTE_ABSTAIN)
   assert.equal(abstain.disabled, true, "사망자에게 기권이 열려 있다")
   act(() => { fireEvent.click(abstain) })
-  assert.deepEqual(transport.sent.filter((entry) => entry.event === "cast_day_vote"), [])
+  assert.deepEqual(actionEventsOf(transport), [])
 
   assert.equal(buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE).disabled, false,
     "낮 집계에 없던 생존 조건이 새로 붙었다")
@@ -452,8 +498,7 @@ test("AC-01⑤: interactionBlocked면 낮 투표 줄의 두 버튼이 함께 잠
     assert.equal(button.disabled, true, `조작 차단 중인데 ${action}이 열려 있다`)
     act(() => { fireEvent.click(button) })
   }
-  assert.deepEqual(
-    transport.sent.filter((entry) => ["cast_day_vote", "resolve_day_vote"].includes(entry.event)), [])
+  assert.deepEqual(actionEventsOf(transport), [])
 })
 
 test("AC-01⑤: 사망한 참가자는 밤 건너뛰기가 잠기지만, 밤 종료는 resolveNightStatus로만 잠긴다", () => {
@@ -468,8 +513,23 @@ test("AC-01⑤: 사망한 참가자는 밤 건너뛰기가 잠기지만, 밤 종
   assert.notEqual(skip, null, "전제: 내 역할 턴이면 밤 버튼이 떠야 한다")
   assert.equal(skip.disabled, true, "사망자에게 밤 건너뛰기가 열려 있다")
   act(() => { fireEvent.click(skip) })
-  assert.deepEqual(transport.sent.filter((entry) => entry.event === "submit_night_action"), [])
+  assert.deepEqual(actionEventsOf(transport), [])
 
   assert.equal(buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_RESOLVE).disabled, false,
     "밤 종료에 없던 생존 조건이 새로 붙었다")
+})
+
+test("AC-01⑤: interactionBlocked면 밤 건너뛰기가 잠기고 송신이 0회다", () => {
+  const transport = createRecordingSocket()
+  currentSocket = transport.socket
+  for (const cb of [...socketSubscribers]) cb()
+  // 살아 있는 내 역할 턴이다 — 잠그는 것은 오직 조작 차단뿐임을 분리해서 본다.
+  seedSession({ phase: "NIGHT", selfAlive: true, role: "JOKER", nightTurnRole: "JOKER" })
+
+  const view = mountRealRow({ interactionBlocked: true })
+  const skip = buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_SKIP)
+  assert.notEqual(skip, null, "전제: 내 역할 턴이면 밤 버튼이 떠야 한다")
+  assert.equal(skip.disabled, true, "조작 차단 중인데 밤 건너뛰기가 열려 있다")
+  act(() => { fireEvent.click(skip) })
+  assert.deepEqual(actionEventsOf(transport), [])
 })
