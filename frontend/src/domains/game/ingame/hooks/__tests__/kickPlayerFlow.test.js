@@ -1,4 +1,4 @@
-import test from "node:test"
+import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { act, createElement } from "react"
 import { register } from "node:module"
@@ -22,8 +22,11 @@ installDomGlobal("window", dom.window)
 installDomGlobal("document", dom.window.document)
 installDomGlobal("navigator", dom.window.navigator)
 installDomGlobal("HTMLElement", dom.window.HTMLElement)
+installDomGlobal("Element", dom.window.Element)
 installDomGlobal("Node", dom.window.Node)
 installDomGlobal("Event", dom.window.Event)
+installDomGlobal("MouseEvent", dom.window.MouseEvent)
+installDomGlobal("KeyboardEvent", dom.window.KeyboardEvent)
 installDomGlobal("MutationObserver", dom.window.MutationObserver)
 installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(dom.window))
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
@@ -41,7 +44,21 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 // 기존 프론트 훅 시험들과 같은 로더를 등록한다(모듈 목킹이 아니라 경로 해석·JSX 변환뿐이다).
 register(new URL("../../__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
-const { renderHook, render, cleanup } = await import("@testing-library/react")
+// V-2(AC-03): 카드 메뉴 경로는 **실제 플레이어 보드**를 렌더한다. 초상·프레임 픽커는 vite
+// alias로 PNG를 끌어오므로 Node에서 그것만 대역한다(바깥 경계이며, 추방 계약과 무관하다).
+mock.module("../../utils/pickInGameJobPortrait.js", {
+  namedExports: { pickInGameJobPortrait: (index) => `portrait-${index}` },
+})
+mock.module("../../utils/pickInGamePlayerFrame.js", {
+  namedExports: {
+    pickInGameJobPortrait: (index) => `portrait-${index}`,
+    pickInGamePlayerFrame: (index) => `frame-${index}`,
+    resolveInGamePlayerFrameSrc: (frameSrc) => frameSrc,
+    resolveAccountCardFrameSrc: () => null,
+  },
+})
+
+const { renderHook, render, cleanup, fireEvent } = await import("@testing-library/react")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
 const { useInGameStore } = await import("../../store/ingameStore.js")
 const { applyTribunalResolvedPure } = await import("../../store/applyTribunalResolved.js")
@@ -53,6 +70,16 @@ const { applySessionSnapshotPure } = await import("../../store/applySessionSnaps
 // 진행 중 추방의 **실제 소비 경계**다(주입한 대역이 아니라 이 컴포넌트의 verifyMembership이 돈다).
 const { default: SettingKickPlayerModal } = await import(
   "../../components/controls/ingameSetting/kickPlayer/SettingKickPlayerModal.jsx")
+// V-2(AC-03): 카드 메뉴 경로의 **실제 생산 트리**. Provider·보드·메뉴·확인 대화를 대역하지
+// 않고 그대로 렌더해, 설정 → 방관리 모달과 같은 payload가 나가는지 나란히 비교한다.
+const { InGameActionProvider } = await import("../../pages/InGamePage.jsx")
+const { InGamePlayerSessionProvider } = await import("../../components/InGamePlayerSessionProvider.jsx")
+const { default: InGamePlayerBoard } = await import("../../components/board/InGamePlayerBoard.jsx")
+const { INGAME_PLAYER_CARD_MENU_ATTR } = await import(
+  "../../components/board/InGamePlayerCardMenu.jsx")
+const { INGAME_CARD_MENU_KICK_LABEL, INGAME_CARD_MENU_KICK_SENDING_REASON } = await import(
+  "../useInGamePlayerCardMenu.js")
+const { INGAME_E2E_ATTRS } = await import("../../constants/e2e/ingameE2eHooks.js")
 
 const HOST = "uuid-host"
 const TARGET = "uuid-target"
@@ -1135,4 +1162,208 @@ test("AC-01: setGamePayload는 서버 state.hostUuid를 쓰고 전원 생존 단
   const target = state.state.players.find((p) => p.uuid === TARGET)
   assert.equal(target.alive, false)
   assert.equal(target.isParticipating, true)
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// V-2(AC-03): **플레이어 카드 좌클릭 메뉴**의 추방 경로
+//
+// 제어 패널이 사라지고 설정 → 방관리 말고도 카드에서 바로 추방할 수 있게 됐다. 두 경로가
+// 서로 다른 payload를 만들면 한쪽만 고쳐져 조용히 갈라지므로, 여기서는 **실제 생산 트리**
+// (InGamePlayerSessionProvider > InGameActionProvider > InGamePlayerBoard)를 렌더해 나온
+// kick_game_player를 실제 모달 경로의 것과 나란히 비교한다. 대역은 소켓 하나뿐이다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 카드 보드는 themeIndex가 있는 roster만 실제 명단으로 인정한다
+ * (buildPlayerSessionSourceFromGameState) — 없으면 10칸 미리보기로 떨어져 본인 판정 자체가
+ * 성립하지 않는다. 그래서 카드 경로 시험만 이 명단을 쓴다.
+ */
+const CARD_ROSTER = [
+  { uuid: HOST, nickname: "호스트", alive: true, isParticipating: true, membershipId: "mem-host", themeIndex: 0 },
+  { uuid: TARGET, nickname: "대상", alive: true, isParticipating: true, membershipId: "mem-target", themeIndex: 1 },
+]
+
+/** 카드 경로용 seed. 기본은 방장 본인·낮 토론(=추방 말고 다른 항목이 하나도 없는 구간)이다. */
+function setUpCard({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION" } = {}) {
+  const socket = createFakeSocket()
+  socket.connected = true
+  act(() => {
+    useAuthStore.setState({ user: { uuid: selfUuid }, isLoggedIn: true })
+    useInGameStore.getState().clearGame()
+    useInGameStore.getState().setGamePayload({
+      gameId: "game-1",
+      state: gameState({
+        dayPhase,
+        players: CARD_ROSTER,
+        self: {
+          uuid: selfUuid,
+          nickname: selfUuid === HOST ? "호스트" : "대상",
+          role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false,
+        },
+      }),
+    })
+  })
+  setSocket(socket)
+  return socket
+}
+
+/** 실제 생산 트리. Provider·보드·메뉴·확인 대화 어느 것도 대역하지 않는다. */
+function mountCardKick() {
+  let view
+  act(() => {
+    view = render(createElement(
+      InGamePlayerSessionProvider,
+      null,
+      createElement(InGameActionProvider, { interactionBlocked: false },
+        createElement(InGamePlayerBoard)),
+    ))
+  })
+  return view
+}
+
+function openCardMenu(container, nickname) {
+  const card = container.querySelector(`[${INGAME_E2E_ATTRS.playerNickname}="${nickname}"]`)
+  assert.ok(card, `${nickname} 카드를 실제 보드에서 찾지 못했다`)
+  const slot = card.closest('[role="button"]')
+  act(() => {
+    fireEvent.mouseDown(slot)
+    fireEvent.click(slot)
+  })
+  return container.querySelector(`[${INGAME_PLAYER_CARD_MENU_ATTR}]`)
+}
+
+/** 잠긴 항목은 라벨 뒤에 사유 문구를 함께 그린다 — 정확 일치로 찾으면 그것만 못 찾는다. */
+function cardMenuItem(menu, label) {
+  if (!menu) return null
+  return [...menu.querySelectorAll("button")]
+    .find((node) => node.textContent.trim().startsWith(label)) ?? null
+}
+
+function kickFromCard(container) {
+  const menu = openCardMenu(container, "대상")
+  assert.ok(menu, "방장 카드 메뉴가 열리지 않았다")
+  const item = cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL)
+  assert.ok(item, "방장인데 카드 메뉴에 추방 항목이 없다")
+  act(() => { fireEvent.click(item) })
+  return item
+}
+
+test("V-2(AC-03): 방장이 아니면 카드 메뉴에 추방 항목이 없다(다른 항목은 그대로 뜬다)", () => {
+  const socket = setUpCard({ selfUuid: TARGET, dayPhase: "DAY_VOTE" })
+  const view = mountCardKick()
+
+  // 투표 구간이라 메뉴 자체는 열린다 — "메뉴가 안 열려서" 통과하는 것이 아님을 함께 고정한다.
+  const menu = openCardMenu(view.container, "호스트")
+  assert.ok(menu, "전제: 낮 투표 구간에는 카드 메뉴가 열려야 한다")
+  assert.ok(cardMenuItem(menu, "투표"), "전제: 투표 항목은 그대로 있어야 한다")
+  assert.equal(cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL), null,
+    "방장이 아닌데 추방 항목이 떴다")
+  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 0)
+})
+
+test("V-2(AC-03): 방장이면 다른 항목이 하나도 없는 구간에서도 추방 항목만으로 메뉴가 열린다", () => {
+  setUpCard({ dayPhase: "DAY_DISCUSSION" })
+  const view = mountCardKick()
+
+  const menu = openCardMenu(view.container, "대상")
+  assert.ok(menu, "방장인데 낮 토론 구간에서 카드 메뉴가 열리지 않았다")
+  assert.ok(cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL), "추방 항목이 없다")
+  assert.equal(cardMenuItem(menu, "투표"), null, "토론 구간인데 투표 항목이 떴다")
+  // 본인 카드에는 추방이 붙지 않는다.
+  const selfMenu = openCardMenu(view.container, "호스트")
+  assert.equal(cardMenuItem(selfMenu, INGAME_CARD_MENU_KICK_LABEL), null,
+    "본인 카드에 추방 항목이 떴다")
+})
+
+test("V-2(AC-03): 카드 메뉴 추방의 kick_game_player payload가 설정 모달 경로와 requestId만 빼고 같다", () => {
+  const cardSocket = setUpCard()
+  const cardView = mountCardKick()
+  kickFromCard(cardView.container)
+
+  assert.ok(byTestId("kick-confirm"), "카드 메뉴 추방이 확인 대화를 열지 않았다")
+  assert.equal(byTestId("kick-confirm-target").textContent, "대상", "확인 대화의 대상이 다르다")
+  clickTestId("kick-confirm-accept")
+
+  const cardSent = cardSocket.emitted.filter((e) => e.event === "kick_game_player")
+  assert.equal(cardSent.length, 1, "카드 경로가 정확히 한 번 보내지 않았다")
+
+  // 같은 seed로 실제 설정 모달 경로를 처음부터 다시 태운다.
+  cleanup()
+  act(() => { useInGameStore.getState().clearGame() })
+  const modalSocket = setUpCard()
+  mountRealModal()
+  clickRowKick("대상")
+  clickTestId("kick-confirm-accept")
+  const modalSent = modalSocket.emitted.filter((e) => e.event === "kick_game_player")
+  assert.equal(modalSent.length, 1, "모달 경로가 정확히 한 번 보내지 않았다")
+
+  const { requestId: cardRequestId, ...cardRest } = cardSent[0].payload
+  const { requestId: modalRequestId, ...modalRest } = modalSent[0].payload
+  assert.deepEqual(cardRest, modalRest, "카드 경로와 설정 모달 경로의 추방 payload가 다르다")
+  // requestId는 요청마다 달라야 하는 값이라 비교에서 빼되, 비어 있지 않음은 따로 본다.
+  assert.equal(typeof cardRequestId, "string")
+  assert.ok(cardRequestId.length > 0, "카드 경로의 requestId가 비어 있다")
+  assert.ok(String(modalRequestId).length > 0, "모달 경로의 requestId가 비어 있다")
+})
+
+test("V-2(AC-03): 카드 경로도 서버가 준 실패 사유를 그대로 보여준다(성공으로 바꾸지 않는다)", () => {
+  const socket = setUpCard()
+  const view = mountCardKick()
+  kickFromCard(view.container)
+  clickTestId("kick-confirm-accept")
+
+  const sent = socket.emitted.find((e) => e.event === "kick_game_player")
+  act(() => { sent.ack({ ok: false, code: "NOT_HOST" }) })
+
+  assert.equal(byTestId("kick-error").textContent, "NOT_HOST", "실패 사유가 그대로 뜨지 않았다")
+  assert.equal(byTestId("kick-confirm"), null, "실패했는데 확인 단계가 남아 있다")
+})
+
+test("V-2(AC-03): 전송 중에는 카드 메뉴의 추방 항목이 잠기고 추가 전송이 나가지 않는다", () => {
+  const socket = setUpCard()
+  const view = mountCardKick()
+  kickFromCard(view.container)
+  clickTestId("kick-confirm-accept")
+  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1)
+
+  // ACK를 주지 않는다 — 전송 중 상태 그대로 메뉴를 다시 연다.
+  const menu = openCardMenu(view.container, "대상")
+  const item = cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL)
+  assert.ok(item, "전송 중에도 항목 자체는 보여야 한다(왜 잠겼는지 알려야 하므로)")
+  assert.equal(item.disabled, true, "전송 중인데 추방 항목이 열려 있다")
+  assert.match(menu.textContent, new RegExp(INGAME_CARD_MENU_KICK_SENDING_REASON),
+    "잠긴 이유가 메뉴에 표시되지 않았다")
+
+  act(() => { fireEvent.click(item) })
+  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1,
+    "잠긴 항목이 두 번째 추방을 보냈다")
+})
+
+test("V-2(AC-03): ACK를 놓치면 대화를 닫아도 다시 열어 같은 영수증으로 결과를 조회할 수 있다", () => {
+  const socket = setUpCard()
+  const view = mountCardKick()
+  kickFromCard(view.container)
+  clickTestId("kick-confirm-accept")
+
+  const sent = socket.emitted.find((e) => e.event === "kick_game_player")
+  assert.ok(sent, "kick_game_player가 나가지 않았다")
+
+  // ACK 없이 대화를 닫는다 — 결과는 여전히 미확인이다.
+  clickTestId("kick-dialog-close")
+  assert.equal(byTestId("kick-confirm"), null)
+
+  // 그 상태에서도 다시 열 길이 있어야 한다(없으면 결과를 영영 확인할 수 없다).
+  clickTestId("kick-dialog-reopen")
+  clickTestId("kick-lookup-result")
+
+  const lookup = socket.emitted.find((e) => e.event === "get_kick_result")
+  assert.ok(lookup, "결과 조회가 나가지 않았다")
+  assert.equal(lookup.payload.requestId, sent.payload.requestId,
+    "결과 조회가 원래 추방과 다른 영수증 키를 썼다")
+  assert.equal(lookup.payload.bootEpoch, sent.payload.bootEpoch)
+
+  act(() => { lookup.ack({ ok: true, status: "KICKED" }) })
+  // 재조회는 새 추방이 아니다 — 전송 총량은 그대로 1회다.
+  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1,
+    "결과 조회가 두 번째 추방을 만들었다")
 })

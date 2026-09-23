@@ -17,6 +17,7 @@ import {
   INGAME_TIMEBAR_TRACK_INSET,
 } from "../../constants/timebar/ingameTimebarLayout.js"
 import InGameVoteToggleButton from "../vote/InGameVoteToggleButton.jsx"
+import InGamePhaseActionRow from "./InGamePhaseActionRow.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 /** 시간흐름 바 위 단계 노드 하나 — 활성 단계면 위에 지시 화살표를 추가로 그림 */
@@ -116,6 +117,11 @@ export default function InGameTimebar({
       {onVoteStatusClick ? (
         <InGameVoteToggleButton onClick={onVoteStatusClick} />
       ) : null}
+
+      {/* V-2: 제어 패널이 사라지면서 대상 없는 행동 버튼(준비·기권·집계·판정·건너뛰기·밤
+          종료)이 이 줄로 옮겨왔다. 값은 이 컴포넌트가 InGameActionContext에서 직접 읽으므로
+          시간바는 조작 계약을 알지 않는다 — 그릴 것이 없는 단계에서는 스스로 null이 된다. */}
+      <InGamePhaseActionRow />
     </div>
   )
 }

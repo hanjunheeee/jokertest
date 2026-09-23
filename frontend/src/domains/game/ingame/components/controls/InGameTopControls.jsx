@@ -31,7 +31,12 @@ function ControlButton({
   )
 }
 
-/** 인게임 좌측 상단 — 나가기·햄버거(전적목록)·설정 버튼 */
+/** 자기 역할 공개 버튼 아이콘. 실제로 존재하는 자산을 그대로 재사용한다(복제·이동 없음). */
+export const INGAME_ROLE_REVEAL_BUTTON_SRC = "/button/반전표시 버튼.png".normalize("NFD")
+
+export const INGAME_ROLE_REVEAL_BUTTON_LABEL = "내 역할 보기"
+
+/** 인게임 좌측 상단 — 나가기·햄버거(전적목록)·설정·내 역할 보기 버튼 */
 export default function InGameTopControls({
   // onExitClick: 나가기 버튼 클릭 시 호출되는 콜백 — 확인 후 leave_game_session을 전송함
   onExitClick,
@@ -39,6 +44,12 @@ export default function InGameTopControls({
   onMenuClick,
   // onSettingsClick: 설정 버튼 클릭 시 호출되는 콜백 — 인게임 설정 패널을 염
   onSettingsClick,
+  // onOpenRoleReveal: 자기 역할 공개 오버레이를 다시 여는 콜백 — V-2에서 제어 패널이 사라지며
+  // 이 줄로 옮겨왔다. 열림 상태의 소유자는 여전히 useInGameOverlayStack 하나다.
+  onOpenRoleReveal,
+  // roleRevealAvailable: 공개할 역할 정보가 실제로 있는가. 없으면 버튼 자체를 그리지 않는다
+  // (누를 수는 있는데 아무 일도 일어나지 않는 버튼을 남기지 않는다).
+  roleRevealAvailable = false,
   className = INGAME_TOP_CONTROLS_POSITION_CLASS,
 }) {
   return (
@@ -59,6 +70,13 @@ export default function InGameTopControls({
         src={INGAME_CONTROLS_ASSETS.settings}
         onClick={onSettingsClick}
       />
+      {roleRevealAvailable ? (
+        <ControlButton
+          ariaLabel={INGAME_ROLE_REVEAL_BUTTON_LABEL}
+          src={INGAME_ROLE_REVEAL_BUTTON_SRC}
+          onClick={onOpenRoleReveal}
+        />
+      ) : null}
     </div>
   )
 }

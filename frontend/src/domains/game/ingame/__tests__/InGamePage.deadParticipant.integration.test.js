@@ -1532,7 +1532,7 @@ const PAGE_MOUNT_LOCK = [
   // 유일한 소유자다. Provider JSX(<InGameActionContext.Provider>)를 쓰는 파일은 이 페이지
   // 하나뿐이라 이 목록에만 들어간다.
   "InGameActionContext", "InGameActionProvider",
-  "InGameActionPanel", "InGameBackground", "InGameChatShell", "InGameDeadParticipantChoice",
+  "InGameBackground", "InGameChatShell", "InGameDeadParticipantChoice",
   "InGameKillRevealOverlay",
   // F-27b(AC-01) InGameNightPresentationWait: 그 밤의 연출을 받지 않는 참가자에게만 뜨는
   // 고정 문구 화면이다. 역할·대상·사건 ID를 props로도 DOM으로도 받지 않고, 버튼·타이머·ACK·
@@ -1542,6 +1542,10 @@ const PAGE_MOUNT_LOCK = [
   "InGameNightTurnAnnouncementOverlay", "InGamePhaseEntranceOverlay", "InGamePlayerBoard",
   "InGamePlayerSessionProvider", "InGameRoleRevealOverlay", "InGameTimebar",
   "InGameTopControls", "InGameVoteStatusPanel", "PlayerRecordListPanel", "SettingPanel",
+  // V-2(AC-03): 카드 메뉴의 방장 추방 확인 대화. InGameActionProvider가 이 파일 안에서
+  // 직접 마운트한다 — 방장 여부·전송 중 여부·확인 입구가 전부 그 Provider의 컨텍스트 값에
+  // 있어야 카드 메뉴가 볼 수 있기 때문이다(설정 → 방관리 모달과 같은 본문을 재사용한다).
+  "SettingKickPlayerModalContent",
 ]
 
 /**
@@ -1558,12 +1562,24 @@ const BOARD_MOUNT_LOCK = ["InGamePlayerCard", "InGamePlayerCardMenu"]
  */
 const PLAY_AREA_MOUNT_LOCK = [
   "InGamePlayerSessionProvider", "InGameActionProvider", "InGameTimebar",
-  "InGamePlayerBoard", "InGameChatShell", "InGameActionPanel",
+  "InGamePlayerBoard", "InGameChatShell",
 ]
 
-/** 세 소유 파일이 합쳐서 마운트하는 이름 전부. InGamePlayerCardMenu가 여기 포함된다. */
+/**
+ * V-2(AC-01/AC-05): 시간흐름 바가 마운트하는 것 전부.
+ *
+ * 제어 패널이 사라지면서 **대상 없는 행동 버튼**(준비·기권·집계·판정·건너뛰기·밤 종료)이
+ * 이 바 아래 줄로 옮겨왔다 — 그래서 시간바도 이제 조작 경로를 소유한 파일이고, 마운트 잠금이
+ * 필요하다. TimebarNode는 import가 아니라 **이 파일 안의 로컬 함수 선언**이라 아래 import
+ * 포함 검사에서만 예외로 둔다(선언 존재는 따로 단언한다).
+ */
+const TIMEBAR_MOUNT_LOCK = [
+  "PublicAsset", "TimebarNode", "InGameVoteToggleButton", "InGamePhaseActionRow",
+]
+
+/** 네 소유 파일이 합쳐서 마운트하는 이름 전부. InGamePlayerCardMenu가 여기 포함된다. */
 const INGAME_MOUNT_LOCK = [...new Set([
-  ...PAGE_MOUNT_LOCK, ...BOARD_MOUNT_LOCK, ...PLAY_AREA_MOUNT_LOCK,
+  ...PAGE_MOUNT_LOCK, ...BOARD_MOUNT_LOCK, ...PLAY_AREA_MOUNT_LOCK, ...TIMEBAR_MOUNT_LOCK,
 ])]
 
 /**
@@ -1629,7 +1645,9 @@ async function auditInGameActionProviderTree(pageSource) {
     providesContext: providerDeclaration !== null
       && collectTags(providerDeclaration).includes("InGameActionContext.Provider"),
     underSessionProvider: actionProvider !== null,
-    wrapsActionPanel: wrapped.includes("InGameActionPanel"),
+    // V-2: 조작 값을 읽는 자리가 컨트롤 패널에서 **시간바 안의 단계 행동 줄**로 옮겨졌다.
+    // 그 줄은 시간바의 자식이므로, Provider가 감싸야 하는 것은 이제 시간바다.
+    wrapsTimebar: wrapped.includes("InGameTimebar"),
     wrapsPlayerBoard: wrapped.includes("InGamePlayerBoard"),
   }
 }
@@ -1733,11 +1751,29 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     assert.ok(playArea.imported.includes(name), `진행 UI 묶음이 ${name}을 import 없이 마운트한다`)
   }
 
-  const combined = [...new Set([...rendered, ...board.rendered, ...playArea.rendered])]
+  // ── V-2(AC-01/AC-05): 시간흐름 바 소유 파일 ──────────────────────────────────
+  const timebarSource = await readFile(
+    new URL("frontend/src/domains/game/ingame/components/timebar/InGameTimebar.jsx", REPO_ROOT), "utf8")
+  const timebar = collectRenderedComponents(timebarSource)
+  assert.deepEqual(timebar.rendered.sort(), [...TIMEBAR_MOUNT_LOCK].sort(),
+    "시간흐름 바의 마운트 목록이 바뀌었다 — 단계 행동 줄이 빠졌거나 다른 것이 붙었다")
+  // TimebarNode는 같은 파일의 로컬 함수 선언이라 import 목록에 없다(그 선언 자체를 본다).
+  assert.match(timebarSource, /function TimebarNode\b/,
+    "TimebarNode 로컬 선언이 사라졌다(import로 바뀌었다면 이 잠금의 근거가 달라진다)")
+  for (const name of timebar.rendered) {
+    if (name === "TimebarNode") continue
+    assert.ok(timebar.imported.includes(name), `시간흐름 바가 ${name}을 import 없이 마운트한다`)
+  }
+
+  const combined = [...new Set([
+    ...rendered, ...board.rendered, ...playArea.rendered, ...timebar.rendered,
+  ])]
   assert.deepEqual(combined.sort(), [...INGAME_MOUNT_LOCK].sort(),
-    "인게임 세 소유 파일의 마운트 합집합이 잠금과 다르다")
+    "인게임 네 소유 파일의 마운트 합집합이 잠금과 다르다")
   assert.ok(combined.includes("InGamePlayerCardMenu"),
     "플레이어 카드 좌클릭 메뉴가 인게임 마운트 목록에서 사라졌다")
+  assert.ok(combined.includes("InGamePhaseActionRow"),
+    "단계 행동 줄이 인게임 마운트 목록에서 사라졌다 — 제어 패널을 대체하는 유일한 자리다")
 
   // 포함 관계는 이름 목록으로 표현할 수 없다 — 실제 AST로 본다.
   const providerAudit = await auditInGameActionProviderTree(pageSource)
@@ -1747,7 +1783,7 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     callsActionHook: true,
     providesContext: true,
     underSessionProvider: true,
-    wrapsActionPanel: true,
+    wrapsTimebar: true,
     wrapsPlayerBoard: true,
   }, "조작 훅 Provider의 선언·export·컨텍스트 제공·세션 Provider 자손 포함 관계가 깨졌다")
 
@@ -1870,9 +1906,15 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
   assert.equal(useInGameStore.getState().state.self.uuid, SELF, "계속 보기가 신원을 바꿨다")
 
   // 전제: 지금은 토론 구간이고, 그 구간의 화면만 떠 있다.
+  //
+  // V-2(AC-01/AC-05): 구간별 DOM의 근거가 제어 패널의 "투표 대상 선택" 캡션에서 시간바 아래
+  // **단계 행동 줄**로 옮겨졌다(패널은 삭제됐다). 보는 것은 그대로다 — 이 구간에서만 그려지는
+  // 실제 DOM이 있고, 다른 구간의 것은 없다.
+  const dayVoteOnlyControl = () =>
+    container.querySelector('[data-ingame-phase-action="dayVoteAbstain"]')
   assert.equal(useInGameStore.getState().state.dayPhase, "DAY_DISCUSSION")
   assert.ok(findButton(container, "투표 시작 준비"), "전제: 토론 구간 화면이어야 한다")
-  assert.equal(container.textContent.includes("투표 대상 선택"), false)
+  assert.equal(dayVoteOnlyControl(), null, "토론 구간인데 투표 구간 전용 컨트롤이 떠 있다")
 
   // 계속 보기 뒤에도 공개 진행은 계속 들어오고 화면이 실제로 갱신된다.
   //
@@ -1891,8 +1933,8 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
     useInGameStore.getState().state.dayPhase, "DAY_VOTE",
     "공개 진행 사건이 store의 낮 구간을 갱신하지 않았다",
   )
-  await waitFor(() => assert.equal(
-    container.textContent.includes("투표 대상 선택"), true,
+  await waitFor(() => assert.notEqual(
+    dayVoteOnlyControl(), null,
     "공개 진행 사건이 화면에 반영되지 않았다",
   ))
   assert.equal(findButton(container, "투표 시작 준비"), null, "이전 구간 화면이 그대로 남아 있다")

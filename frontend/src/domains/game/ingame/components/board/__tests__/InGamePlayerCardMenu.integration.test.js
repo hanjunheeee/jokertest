@@ -188,7 +188,6 @@ async function mountInGamePage(socket) {
   return view
 }
 
-const controlPanelOf = (container) => container.querySelector('aside[aria-label="게임 조작"]')
 const menuNodeOf = (container) => container.querySelector(`[${INGAME_PLAYER_CARD_MENU_ATTR}]`)
 const menuIsOpen = (container) => menuNodeOf(container) !== null
 
@@ -206,28 +205,13 @@ test.afterEach(() => {
   for (const cb of [...socketSubscribers]) cb()
 })
 
-test("AC-04: 카드 좌클릭 메뉴의 투표가 기존 제어 패널 경로와 **같은 cast_day_vote 페이로드**를 보낸다", async () => {
-  // ── (1) 기존 경로: 제어 패널에서 대상을 고르고 투표 버튼을 누른다 ──
-  const panelRun = createFrontSocket()
-  seedDayVoteSession()
-  let view = await mountInGamePage(panelRun.socket)
-
-  const panel = controlPanelOf(view.container)
-  assert.notEqual(panel, null, "전제: 제어 패널이 떠 있어야 한다")
-  const panelTargetButton = panel.querySelector(`[${INGAME_E2E_ATTRS.targetId}="u2"]`)
-  assert.notEqual(panelTargetButton, null, "전제: 제어 패널에 u2 대상 버튼이 있어야 한다")
-  await act(async () => { fireEvent.click(panelTargetButton) })
-  await act(async () => { fireEvent.click(findButtonIn(controlPanelOf(view.container), "투표")) })
-
-  const panelSent = panelRun.sentFor("cast_day_vote")
-  assert.equal(panelSent.length, 1, "전제: 제어 패널 경로가 정확히 한 번 보내야 한다")
-  cleanup()
-  useInGameStore.getState().clearGame()
-
-  // ── (2) 새 경로: 플레이어 카드를 좌클릭해 뜬 메뉴에서 투표한다 ──
+test("AC-04: 카드 좌클릭 메뉴의 투표가 계약된 cast_day_vote 페이로드를 정확히 한 번 보낸다", async () => {
+  // V-2(AC-05): 제어 패널(aside[aria-label="게임 조작"])은 삭제됐다 — 예전 (1)단계의 "기존
+  // 경로와 비교"는 비교 대상 자체가 없어졌다. 페이로드 계약은 그대로이므로 아래 고정
+  // 리터럴이 그 계약을 직접 잠근다(패널 DOM에 의존하지 않는 더 강한 단언이다).
   const menuRun = createFrontSocket()
   seedDayVoteSession()
-  view = await mountInGamePage(menuRun.socket)
+  const view = await mountInGamePage(menuRun.socket)
 
   const slot = cardSlotOf(view.container, "B")
   await act(async () => {
@@ -246,8 +230,6 @@ test("AC-04: 카드 좌클릭 메뉴의 투표가 기존 제어 패널 경로와
 
   const menuSent = menuRun.sentFor("cast_day_vote")
   assert.equal(menuSent.length, 1, "카드 메뉴 경로가 정확히 한 번 보내지 않았다")
-  assert.deepEqual(menuSent[0].payload, panelSent[0].payload,
-    "카드 메뉴의 투표 페이로드가 기존 제어 패널 경로와 다르다")
   assert.deepEqual(menuSent[0].payload, { gameId: GAME_ID, dayIndex: 1, targetId: "u2" })
   assert.equal(menuIsOpen(view.container), false, "제출 뒤 메뉴가 닫히지 않았다")
 })

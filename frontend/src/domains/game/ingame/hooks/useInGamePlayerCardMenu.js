@@ -21,10 +21,16 @@ export const INGAME_CARD_MENU_ITEM_KINDS = Object.freeze({
   TRIBUNAL_GUILTY: "TRIBUNAL_GUILTY",
   TRIBUNAL_NOT_GUILTY: "TRIBUNAL_NOT_GUILTY",
   NIGHT_ACTION: "NIGHT_ACTION",
+  // V-2(AC-03): 방장 전용. 다른 항목과 달리 게임 단계와 무관하다 — 추방은 진행 상태가 아니라
+  // 방 권한이기 때문이다(설정 → 방관리 경로와 같은 권한·같은 서버 명령).
+  KICK: "KICK",
 })
 
 export const INGAME_CARD_MENU_DAY_VOTE_LABEL = "투표"
 export const INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL = "밤 행동"
+export const INGAME_CARD_MENU_KICK_LABEL = "추방(방장)"
+/** 추방 항목만의 잠금 사유. 다른 항목의 사유 우선순위(생존→대상→전송)와 섞지 않는다. */
+export const INGAME_CARD_MENU_KICK_SENDING_REASON = "처리 중"
 
 /**
  * 비활성 사유 문구. 우선순위는 고정이다(본인 사망 → 대상 목록 부재 → 전송 중 → 그 외 게이트):
@@ -143,6 +149,25 @@ export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
     })
   }
 
+  /**
+   * V-2(AC-03): 방장 전용 추방. 단계·생존·대상 목록과 무관하다 — 판정 기준은 "지금 이 세션의
+   * 방장이 나인가"와 "이 카드가 내가 아닌가" 둘뿐이다.
+   *
+   * 위 세 분기의 지역 enabled·resolveDisabledReason을 쓰지 않는다. 그것들은 전부 게임 진행
+   * 상태(투표 대상·재판 피고·밤 턴)를 근거로 삼는데, 추방의 유일한 일시적 잠금은 **이미
+   * 보낸 추방의 ACK를 기다리는 중**(ctx.isSending)이라 사유가 겹치지 않는다.
+   */
+  if (!isSelf && ctx.hostUuid && localPlayerId && ctx.hostUuid === localPlayerId) {
+    const sending = ctx.isSending === true
+    items.push({
+      kind: INGAME_CARD_MENU_ITEM_KINDS.KICK,
+      label: INGAME_CARD_MENU_KICK_LABEL,
+      visible: true,
+      enabled: !sending,
+      disabledReason: sending ? INGAME_CARD_MENU_KICK_SENDING_REASON : null,
+    })
+  }
+
   return items
 }
 
@@ -152,6 +177,7 @@ function findItem(ctx, targetId, localPlayerId, kind) {
 
 const DAY_KIND = INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE
 const NIGHT_KIND = INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION
+const KICK_KIND = INGAME_CARD_MENU_ITEM_KINDS.KICK
 
 /**
  * 플레이어 카드 좌클릭 메뉴 — 보드 전체에서 "메뉴는 한 번에 하나"를 관리하고, 각 카드의
@@ -313,14 +339,68 @@ export function useInGamePlayerCardMenu() {
     setPendingTick((tick) => tick + 1)
   }, [closeMenu, readLiveScope])
 
+  /**
+   * V-2(AC-03): 추방 항목 실행. 다른 항목과 **같은 세 겹**(동기 lock · 세대 · 최신 값 재검사)을
+   * 그대로 지키되, 게임 진행이 아니라 방 권한을 다시 묻는다.
+   *
+   * 여기서 확인 대화를 여는 것은 "제출"이 아니라 그 앞 단계다 — 실제 kick_game_player는
+   * 사용자가 대화에서 한 번 더 승인해야 나간다. 그래도 게이트를 제출과 같은 강도로 두는
+   * 이유는, 보관됐던 낡은 handler가 **방장이 아니게 된 뒤에** 대화를 열어 버리면 화면이
+   * 사용자에게 없는 권한을 약속하기 때문이다.
+   */
+  const runKick = useCallback((targetId, generation, capturedScope) => {
+    if (!mountedRef.current) return
+    if (lockRef.current) return
+    if (pendingRef.current !== null) return
+    if (openPlayerIdRef.current !== targetId) return
+    if (generation !== generationRef.current) return
+
+    const live = latestContextRef.current
+    if (!live) return
+    if (live.interactionBlocked) return
+    if (live.gameState?.phase === "ENDED") return
+
+    const item = findItem(live, targetId, localPlayerIdRef.current, KICK_KIND)
+    if (!item || !item.enabled) return
+    if (!isSameScope(capturedScope, readLiveScope())) return
+
+    // 권한은 렌더 값이 아니라 **지금 store·인증**에서 다시 읽는다. 셋이 전부 같은 사람을
+    // 가리킬 때만 방장이다(fail-closed — 하나라도 비면 아니다).
+    const store = useInGameStore.getState()
+    const hostUuid = store.hostUuid ?? null
+    const myUuid = useAuthStore.getState().user?.uuid ?? null
+    const localId = localPlayerIdRef.current
+    if (!hostUuid || !myUuid || !localId) return
+    if (hostUuid !== myUuid || myUuid !== localId) return
+    if (targetId === myUuid) return
+
+    // 대상이 **지금** roster에 있고 아직 참여 중이어야 한다(나간 참가자를 다시 추방하지 않는다).
+    const target = (store.state?.players ?? []).find((player) => player?.uuid === targetId)
+    if (!target) return
+    if (target.isParticipating === false) return
+
+    if (live.isSending === true) return
+    if (typeof live.requestConfirmByUuid !== "function") return
+
+    lockRef.current = true
+    live.requestConfirmByUuid(targetId)
+    // 세대를 무효화해 보관된 handler의 두 번째 호출을 막는다(lock은 closeMenu가 함께 푼다).
+    closeMenu()
+  }, [closeMenu, readLiveScope])
+
   const getItems = useCallback((playerId) => {
     const live = latestContextRef.current
     const generation = generationRef.current
+    // 추방은 대상 선택 → 커밋 단계가 없어 pending에 범위를 실어 둘 자리가 없다. 그래서 항목을
+    // 만드는 **이 시점**의 범위를 캡처해 두고, 실행할 때 지금 범위와 같은지 다시 본다.
+    const capturedScope = readLiveScope()
     return buildInGamePlayerCardMenuItems(live, playerId, localPlayerIdRef.current).map((item) => ({
       ...item,
-      onSelect: () => runSelect(playerId, item.kind, generation),
+      onSelect: item.kind === KICK_KIND
+        ? () => runKick(playerId, generation, capturedScope)
+        : () => runSelect(playerId, item.kind, generation),
     }))
-  }, [runSelect])
+  }, [runSelect, runKick, readLiveScope])
 
   const registerAnchor = useCallback((playerId, node) => {
     if (node === null || node === undefined) {
