@@ -100,3 +100,4 @@
 - 마운트 잠금은 현재 PAGE/BOARD/PLAY_AREA의 파일별 exact 목록과 합집합이다. PhaseActionRow는 Timebar 내부에 마운트하므로 Timebar 원문 수집·파일별 exact 목록을 추가하고 실제/기대 합집합 양쪽에 포함한다. Page 직계 목록에 없는 Row를 넣지 않는다. 추가된 확인 UI의 실제 소유 파일 목록도 갱신한다. Provider AST 검사는 삭제된 패널 대신 보드·시간바(행동 줄 경로)의 실제 포함관계를 보증하도록 바꾼다. 기존 다른 사건·store·마운트 단언은 보존한다.
 - 승인된 패널 잠금 시험 5개(controlPanel, frameAsset, presentation, productionSource, visualPolish)는 각각 명시적인 삭제 change로 계획하고, 구현 진행 기록에 계약 변경에 따른 삭제 목록을 남긴다. unsure/notes만으로 삭제 작업을 대신하지 않는다.
 - 추방 결과 대화를 닫아도 미확인 송신 잠금·영수증은 보존한다. Provider는 대상과 표시 상태를 분리하고 닫힌 동안 미확인 요청/영수증이 있으면 접근 가능한 추방 결과 조회 재열기 버튼을 제공한다. 재열기는 표시만 변경하고 새 추방·reset을 호출하지 않는다. 같은 requestId 조회와 중복 송신 0을 UI 회귀 시험으로 보증한다.
+- 카드 추방의 방장 구독은 기존 설정 경로와 동일한 ingameStore 최상위 hostUuid를 사용한다. setGamePayload의 서버 state.hostUuid 우선·호출 인수 hostUuid 폴백을 모두 보존하며, 중첩 state.hostUuid가 없는 지원 세션도 회귀 시험한다.
