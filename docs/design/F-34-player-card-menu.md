@@ -35,7 +35,7 @@
 | 항목 | 보이는 조건 | 활성 조건 | 실행 |
 |---|---|---|---|
 | 투표 | `phase==="DAY" && dayPhase==="DAY_VOTE"` | `dayVoteControlsEnabled` 이고 대상이 `dayVoteTargets`에 있음 | `setSelectedDayVoteTargetId(uuid)` 뒤 `submitDayVote()` |
-| 재판 투표(찬/반) | `phase==="DAY" && dayPhase==="TRIBUNAL"` 이고 카드가 `tribunalTargetUuid` | `tribunalVoteControlsEnabled` | `submitTribunalVote(찬|반)` |
+| 재판 투표(찬/반) | `gameState.phase==="TRIBUNAL"` 이고 카드 uuid가 `gameState.tribunal.defendantUuid` | `tribunalVoteControlsEnabled` | `submitTribunalVote("GUILTY"|"NOT_GUILTY")` |
 | 밤 행동 대상 | `phase==="NIGHT"` 이고 `isNightTurnActor` | `!nightActionsLocked` 이고 대상이 `nightActionTargets`에 있음 | `setSelectedNightTargetId(uuid)` 뒤 `submitNightAction()` |
 | 추방(방장) | `state.hostUuid === 나` 이고 카드 ≠ 나 (V-2) | `useKickPlayerRequest.status`가 SENDING이 아님 | §2-3 |
 
@@ -86,3 +86,16 @@
 | 대상 없는 행동의 자리(시간바 스택) | 제안(운영자 확인 필요) | 기존 투표 현황 버튼 선례 |
 | 전적 필드 이름·형식 | 제안(운영자 확인 필요) | F-30 형식 "{판수}판 \| {승률}%" |
 | 투표 현황의 개인별 득표 | 범위 밖 | 서버 계약 없음 |
+
+## 6. CM 병합 후 V-2 원문 정정 (2026-09-23)
+
+승인된 범위를 변경하지 않고 CM 병합26d106d의 실제 계약과 반복 계획 반려 근거를 반영한다. 이전 절의 옛 줄 번호·단순 마운트 목록보다 현재 소유 파일 원문을 우선한다.
+
+- 재판은 독립 phase `TRIBUNAL`이다. `DAY && TRIBUNAL`은 잘못된 과거 표기이며 사용하지 않는다.
+- 기권 활성은 `dayVoteControlsEnabled && dayVoteStatus !== "submitting"`이다. 낮 집계의 `dayVoteResolveControlsEnabled`로 대체하지 않는다. 건너뛰기는 `!nightActionsLocked && nightActionStatus !== "submitting"`; 다른 버튼도 기존 패널의 각 활성 조건을 그대로 옮긴다. 사망·차단·전송 중 회귀 시험을 유지한다.
+- `InGameActionProvider`는 Page와 별도 컴포넌트다. 추방 상태를 Provider가 소유하면 확인 대화도 그 값을 실제로 받을 수 있는 하위 소비처에 두거나 명시적 값·콜백 전달을 계획한다. 부모 Page가 자식 Provider의 훅 지역변수를 참조할 수 없다.
+- 추방 확인 대상은 문자열 uuid가 아니라 현재 roster의 `{uuid,nickname,membershipId}` 객체다. `currentTargets`도 현재 roster에서 생성·갱신한다. `status`/`isSending` 명칭은 `useKickPlayerRequest` 실제 반환값과 맞춘다. 메뉴를 여는 조건에도 추방 항목을 포함해 낮 토론 등 투표 항목이 없는 단계에 방장 추방 메뉴가 열리게 한다.
+- `SettingKickPlayerModalContent`는 모달 shell·상시 닫기 버튼을 제공하지 않는다. 확인 대상이 null이 된 ACK/조회 결과 후에도 FAILED/UNKNOWN·lookupResult를 보여줄 별도 표시 수명, 실제 shell, 명시적 닫기 경로와 Content 전체 props를 연결한다.
+- 추방 통합 fixture에는 요청자·대상의 membershipId와 bootEpoch·roomId·roomInstanceId 등 기존 SettingKickPlayerModal buildRequest의 필수 값을 포함한다. 기존 메뉴 통합 시험의 파일·투표 payload·우클릭 검증은 보존하되 삭제된 패널을 클릭하는 준비 경로는 승인된 payload 계약 검증으로 이관한다.
+- 마운트 잠금은 현재 PAGE/BOARD/PLAY_AREA의 파일별 exact 목록과 합집합이다. PhaseActionRow는 Timebar 내부에 마운트하므로 Timebar 원문 수집·파일별 exact 목록을 추가하고 실제/기대 합집합 양쪽에 포함한다. Page 직계 목록에 없는 Row를 넣지 않는다. 추가된 확인 UI의 실제 소유 파일 목록도 갱신한다. Provider AST 검사는 삭제된 패널 대신 보드·시간바(행동 줄 경로)의 실제 포함관계를 보증하도록 바꾼다. 기존 다른 사건·store·마운트 단언은 보존한다.
+- 승인된 패널 잠금 시험 5개(controlPanel, frameAsset, presentation, productionSource, visualPolish)는 각각 명시적인 삭제 change로 계획하고, 구현 진행 기록에 계약 변경에 따른 삭제 목록을 남긴다. unsure/notes만으로 삭제 작업을 대신하지 않는다.
