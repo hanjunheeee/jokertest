@@ -254,6 +254,11 @@ export function useInGamePlayerCardMenu() {
     if (live.gameState?.phase === "ENDED") return
     // 이 단계·이 대상에 띄울 항목이 하나도 없으면 빈 메뉴를 열지 않는다.
     if (buildInGamePlayerCardMenuItems(live, playerId, localPlayerIdRef.current).length === 0) return
+    // 이미 이 카드의 메뉴가 열려 있으면 아무것도 하지 않는다. 여기서 세대를 올리면 이미
+    // 그려져 있는 항목 handler가 전부 무효가 되는데, setOpenPlayerId는 같은 값이라 리렌더를
+    // 만들지 않아 새 handler가 그려지지 않는다 — 메뉴는 떠 있는데 어떤 항목도 듣지 않는
+    // 죽은 상태가 된다(카드를 한 번 더 누르는 것만으로 그렇게 된다).
+    if (openPlayerIdRef.current === playerId) return
     cancelPending()
     generationRef.current += 1
     openPlayerIdRef.current = playerId

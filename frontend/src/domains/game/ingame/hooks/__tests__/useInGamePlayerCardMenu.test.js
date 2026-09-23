@@ -544,6 +544,65 @@ test("AC-02: 밤 행동 항목은 submit_night_action을 1회 보내고, ACK 뒤
   await act(async () => { transport.settleAll({ ok: true }) })
 })
 
+test("AC-02: 밤 — ACK 뒤 같은 대상을 다시 골라도 같은 payload로 정확히 1회 더 나간다", async () => {
+  const transport = createControlledSocket()
+  setSocket(transport.socket)
+  seedSession({ phase: "NIGHT", role: "JOKER", nightTurnRole: "JOKER" })
+
+  const view = mountBoard()
+  openCardMenu(view.container, "B")
+  await act(async () => { fireEvent.click(menuButton(view.container, "암살")) })
+  assert.equal(transport.sentFor("submit_night_action").length, 1, "첫 밤 행동이 1회 나가지 않았다")
+
+  // ACK 전(전송 중)에는 **같은 대상**의 항목이 잠기고, 눌러도 전송이 늘지 않는다.
+  openCardMenu(view.container, "B")
+  const lockedItem = menuButton(view.container, "암살")
+  assert.notEqual(lockedItem, null, "전송 중에 밤 항목이 사라졌다")
+  assert.equal(lockedItem.disabled, true, "전송 중인데 밤 항목이 잠기지 않았다")
+  await act(async () => { fireEvent.click(lockedItem) })
+  assert.equal(transport.sentFor("submit_night_action").length, 1,
+    "전송 중 같은 대상 재클릭이 두 번째 제출을 보냈다")
+
+  // ACK로 status가 idle로 돌아오면 같은 대상 재제출이 다시 열린다 — 선택값이 그대로라
+  // setSelectedNightTargetId가 리렌더를 만들지 않는 경로인데도 정확히 1회가 더 나가야 한다.
+  await act(async () => { transport.settleAll({ ok: true }) })
+  openCardMenu(view.container, "B")
+  const reopenedItem = menuButton(view.container, "암살")
+  assert.equal(reopenedItem.disabled, false, "ACK 뒤에도 밤 항목이 잠겨 있다")
+  await act(async () => { fireEvent.click(reopenedItem) })
+
+  const sent = transport.sentFor("submit_night_action")
+  assert.equal(sent.length, 2, "ACK 뒤 같은 대상 재제출이 나가지 않았다")
+  assert.deepEqual(sent[0].payload, { gameId: GAME_ID, targetId: "u2" })
+  assert.deepEqual(sent[1].payload, { gameId: GAME_ID, targetId: "u2" },
+    "재제출 payload가 첫 제출과 같은 대상이 아니다")
+  assert.equal(menuIsOpen(view.container), false, "재제출 뒤 메뉴가 닫히지 않았다")
+  await act(async () => { transport.settleAll({ ok: true }) })
+})
+
+/**
+ * 같은 카드를 한 번 더 누르는 것은 사용자가 흔히 하는 일이다. 그때 메뉴 세대만 오르고
+ * 리렌더가 일어나지 않으면(열림 대상이 같아 setState가 튕긴다) 이미 그려져 있는 항목
+ * handler가 전부 낡은 세대를 들고 남아, 메뉴는 떠 있는데 아무 항목도 듣지 않게 된다.
+ */
+test("AC-02: 열려 있는 카드를 한 번 더 눌러도 메뉴 항목은 계속 살아 있어 제출이 1회 나간다", async () => {
+  const transport = createControlledSocket()
+  setSocket(transport.socket)
+  seedSession({ phase: "DAY", dayPhase: "DAY_VOTE" })
+
+  const view = mountBoard()
+  openCardMenu(view.container, "B")
+  assert.equal(menuIsOpen(view.container), true, "전제: 메뉴가 열려 있어야 한다")
+  openCardMenu(view.container, "B")
+  assert.equal(menuIsOpen(view.container), true, "같은 카드를 다시 눌렀더니 메뉴가 닫혔다")
+
+  await act(async () => { fireEvent.click(menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)) })
+  const sent = transport.sentFor("cast_day_vote")
+  assert.equal(sent.length, 1, "같은 카드를 다시 누른 뒤 메뉴 항목이 죽어 아무것도 제출되지 않았다")
+  assert.deepEqual(sent[0].payload, { gameId: GAME_ID, dayIndex: 1, targetId: "u2" })
+  await act(async () => { transport.settleAll({ ok: true }) })
+})
+
 test("AC-02: 재판 항목은 대상 선택 없이 cast_tribunal_vote를 1회 보낸다", async () => {
   const transport = createControlledSocket()
   setSocket(transport.socket)
@@ -593,6 +652,136 @@ test("AC-02/AC-03: 게이트가 닫힌 뒤 보관해 둔 재판 handler를 불�
   assert.equal(transport.sentFor("cast_tribunal_vote").length, 0,
     "닫힌 뒤 보관된 handler가 재판 투표를 보냈다")
   view.unmount()
+})
+
+/**
+ * 위 시험은 **단계가 바뀌어 메뉴가 닫힌** 뒤의 handler를 본다. 그것만으로는 "세대가 올라서
+ * 막혔다"와 "게이트를 다시 봤다"를 구분할 수 없다 — 여기서는 TRIBUNAL 단계도 피고도 메뉴
+ * 세대도 **그대로 둔 채** 지금의 게이트만 닫는다(본인이 사망 판정돼 재판 투표 자격을 잃는다).
+ * 보관해 둔 handler가 캡처 시점의 값으로 판단하면 이 조건에서 표가 나간다.
+ */
+test("AC-02/AC-03: 단계·메뉴 세대는 그대로인데 현재 게이트만 false가 되면 보관한 재판 handler가 제출 0회다", async () => {
+  const transport = createControlledSocket()
+  setSocket(transport.socket)
+  seedSession({ phase: "TRIBUNAL", tribunal: { defendantUuid: "u2" } })
+
+  let menuApi = null
+  function Probe() {
+    menuApi = useInGamePlayerCardMenu()
+    return null
+  }
+  const view = render(React.createElement(
+    InGamePlayerSessionProvider,
+    null,
+    React.createElement(ActionHarness, null, React.createElement(Probe)),
+  ))
+  act(() => menuApi.openMenu("u2"))
+  assert.equal(menuApi.openPlayerId, "u2", "전제: 피고 카드 메뉴가 열려 있어야 한다")
+  const guiltyItem = menuApi.getItems("u2").find((item) => item.vote === "GUILTY")
+  assert.equal(guiltyItem.enabled, true, "전제: 캡처 시점에는 항목이 활성이어야 한다")
+  const staleHandler = guiltyItem.onSelect
+
+  // 단계·피고는 그대로 두고 **생존 판정만** 뒤집는다 — 이 축은 메뉴의 닫힘 범위(9축)에 없어
+  // 메뉴는 열린 채로, 세대도 오르지 않은 채로 남는다.
+  act(() => {
+    useInGameStore.setState((s) => ({
+      state: {
+        ...s.state,
+        players: s.state.players.map((player) => (
+          player.uuid === SELF_UUID ? { ...player, alive: false } : player
+        )),
+      },
+    }))
+  })
+
+  assert.equal(useInGameStore.getState().state.phase, "TRIBUNAL", "전제: 단계는 그대로여야 한다")
+  assert.equal(useInGameStore.getState().state.tribunal.defendantUuid, "u2",
+    "전제: 피고는 그대로여야 한다")
+  assert.equal(menuApi.openPlayerId, "u2",
+    "전제: 게이트만 닫혔으므로 메뉴는 열린 채여야 한다(닫혔다면 세대 검사가 막은 것이라 이 시험이 무의미해진다)")
+  assert.equal(menuApi.getItems("u2")[0].enabled, false, "전제: 지금의 게이트가 닫혀 있어야 한다")
+  assert.equal(menuApi.getItems("u2")[0].disabledReason, INGAME_CARD_MENU_DISABLED_REASONS.selfDead)
+
+  await act(async () => { staleHandler() })
+  assert.equal(transport.sentFor("cast_tribunal_vote").length, 0,
+    "게이트가 닫힌 뒤 보관된 handler가 재판 투표를 보냈다(캡처 시점 값으로 판단했다)")
+  view.unmount()
+})
+
+/**
+ * 항목을 **실제로 눌러 pending을 세운 직후** 취소 사건을 같은 틱에 적용한다.
+ *
+ * 낮·밤 제출은 선택 state가 반영된 다음 커밋의 effect가 내보낸다 — 그 사이에 들어온 취소는
+ * 보관하던 제출을 통째로 버려야 한다. pending 없이 닫힘만 보는 시험은 이 구간을 전혀 지나가지
+ * 않으므로, 여기서는 반드시 클릭으로 pending을 세운 뒤에 취소한다.
+ */
+const PENDING_CANCEL_ROUTES = [
+  ["Esc", () => { fireEvent.keyDown(document, { key: "Escape" }) }],
+  ["바깥 mousedown", () => { fireEvent.mouseDown(document.body) }],
+  ["phase 전환", () => {
+    useInGameStore.getState().applyDayVoteResolvedToPhase(GAME_ID, 1, { outcome: "TIE" })
+  }],
+  ["dayPhase 전환", () => {
+    useInGameStore.setState((s) => ({ state: { ...s.state, dayPhase: "DAY_DISCUSSION" } }))
+  }],
+  ["dayVoteRound 전환", () => {
+    useInGameStore.setState((s) => ({ state: { ...s.state, dayVoteRound: 2 } }))
+  }],
+  ["identity 전환", () => { useAuthStore.setState({ identityGeneration: 11 }) }],
+]
+
+test("AC-03: 낮 투표 pending을 세운 직후 취소 사건이 오면 제출이 0회이고 메뉴도 닫힌다", async () => {
+  for (const [label, cancel] of PENDING_CANCEL_ROUTES) {
+    const transport = createControlledSocket()
+    setSocket(transport.socket)
+    seedSession({ phase: "DAY", dayPhase: "DAY_VOTE" })
+
+    const view = mountBoard()
+    openCardMenu(view.container, "B")
+    const voteItem = menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)
+    assert.equal(voteItem?.disabled, false, `${label}: 전제로 투표 항목이 활성이어야 한다`)
+
+    act(() => {
+      fireEvent.click(voteItem)
+      cancel()
+    })
+    // 취소 뒤의 커밋·effect까지 전부 흘려보낸다(늦게 나가는 제출도 여기서 드러난다).
+    await act(async () => {})
+
+    assert.equal(transport.sentFor("cast_day_vote").length, 0,
+      `${label}: 취소됐는데 보관하던 낮 투표가 전송됐다`)
+    assert.equal(menuIsOpen(view.container), false, `${label}: 취소 뒤에도 메뉴가 열려 있다`)
+    cleanup()
+  }
+})
+
+test("AC-03: 밤 행동 pending을 세운 직후 조작이 차단되면 제출이 0회이고 메뉴도 닫힌다", async () => {
+  const transport = createControlledSocket()
+  setSocket(transport.socket)
+  seedSession({ phase: "NIGHT", role: "JOKER", nightTurnRole: "JOKER" })
+
+  function Screen({ blocked }) {
+    return React.createElement(
+      InGamePlayerSessionProvider,
+      null,
+      React.createElement(ActionHarness, { interactionBlocked: blocked },
+        React.createElement(InGamePlayerBoard)),
+    )
+  }
+  const view = render(React.createElement(Screen, { blocked: false }))
+  openCardMenu(view.container, "B")
+  const nightItem = menuButton(view.container, "암살")
+  assert.equal(nightItem?.disabled, false, "전제로 밤 항목이 활성이어야 한다")
+
+  act(() => {
+    fireEvent.click(nightItem)
+    view.rerender(React.createElement(Screen, { blocked: true }))
+  })
+  await act(async () => {})
+
+  assert.equal(transport.sentFor("submit_night_action").length, 0,
+    "조작이 차단됐는데 보관하던 밤 행동이 전송됐다")
+  assert.equal(menuIsOpen(view.container), false, "차단 뒤에도 메뉴가 열려 있다")
 })
 
 test("AC-03: 바깥 mousedown과 Esc는 메뉴를 닫고 아무것도 제출하지 않는다", async () => {
