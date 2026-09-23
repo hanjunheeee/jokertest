@@ -101,3 +101,4 @@
 - 승인된 패널 잠금 시험 5개(controlPanel, frameAsset, presentation, productionSource, visualPolish)는 각각 명시적인 삭제 change로 계획하고, 구현 진행 기록에 계약 변경에 따른 삭제 목록을 남긴다. unsure/notes만으로 삭제 작업을 대신하지 않는다.
 - 추방 결과 대화를 닫아도 미확인 송신 잠금·영수증은 보존한다. Provider는 대상과 표시 상태를 분리하고 닫힌 동안 미확인 요청/영수증이 있으면 접근 가능한 추방 결과 조회 재열기 버튼을 제공한다. 재열기는 표시만 변경하고 새 추방·reset을 호출하지 않는다. 같은 requestId 조회와 중복 송신 0을 UI 회귀 시험으로 보증한다.
 - 카드 추방의 방장 구독은 기존 설정 경로와 동일한 ingameStore 최상위 hostUuid를 사용한다. setGamePayload의 서버 state.hostUuid 우선·호출 인수 hostUuid 폴백을 모두 보존하며, 중첩 state.hostUuid가 없는 지원 세션도 회귀 시험한다.
+- 내 역할 보기 아이콘은 기존 정사각형 자산 /button/반전표시 버튼.png를 NFD 정규화해 ControlButton src로 전달하며 ariaLabel은 내 역할 보기다. roleRevealAvailable=false면 미노출한다. 실제 ControlButton/PublicAsset 렌더·자산 존재·클릭 1회를 검증한다.
