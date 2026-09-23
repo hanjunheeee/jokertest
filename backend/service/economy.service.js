@@ -142,6 +142,10 @@ const economyModels = (db) => ({
     EconomyEntitlement: db.sequelize.models.EconomyEntitlement,
     EconomyLoadout: db.sequelize.models.EconomyLoadout,
     EconomyPurchaseRequest: db.sequelize.models.EconomyPurchaseRequest,
+    // F-33 E-2: 이모티콘 팔레트(0019-add-emoji-palettes). economy.model.js가
+    // sequelize.define으로만 등록하므로(파일 하나당 모델 하나만 db에 실린다) 다른
+    // economy 모델과 같은 방식으로 db.sequelize.models에서 꺼낸다.
+    EconomyEmojiPalette: db.sequelize.models.EconomyEmojiPalette,
 });
 
 const defaultDb = () => require('../models');
@@ -1146,6 +1150,133 @@ const getGameStartLoadouts = async (userIds, db = defaultDb()) => {
     return byUserId;
 };
 
+// ---------------------------------------------------------------------------
+// F-33 E-2 이모티콘 팔레트(설계도 §2-2)
+// ---------------------------------------------------------------------------
+//
+// economy_emoji_palettes(0019)의 8칸을 읽고 쓴다. 저장은 economy_loadouts와 같은 CAS
+// 계약을 따르되, 행 잠금 뒤 비교하는 equipProfileAppearance와 달리 "WHERE user_id AND
+// revision = expectedRevision" 조건부 UPDATE의 영향 행 수로 판정한다 — 비교와 쓰기가 단일
+// SQL 문 안에서 원자적으로 끝나므로 그 사이에 다른 트랜잭션이 끼어들 수 없다. revision은
+// 항상 새 UUID라 값이 그대로여도 UPDATE는 반드시 행을 바꾼다(affected가 "일치했는가"와
+// 같은 뜻이 된다).
+
+const EMOJI_PALETTE_SLOT_COLUMNS = Object.freeze([
+    'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6', 'slot_7', 'slot_8',
+]);
+
+/** 행이 없는 계정이 처음 조회할 때 채우는 기본 8종 — 설계도 §0 순서(거절·눈물·분노·사랑·
+ *  씨익·안녕·항복·헤롱) 그대로다. 카탈로그를 조회해 defaultGrant를 추리지 않는다: 그 목록에는
+ *  프로필 사진·테두리도 섞여 있고 순서도 보장되지 않는데, 팔레트 기본 배치는 설계도가 순서까지
+ *  고정한 값이기 때문이다. */
+const DEFAULT_EMOJI_PALETTE_SLOTS = Object.freeze([
+    'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',
+    'emoji-basic-grin', 'emoji-basic-hello', 'emoji-basic-surrender', 'emoji-basic-dizzy',
+]);
+
+const emojiPaletteDefaults = (userId) => ({
+    user_id: userId,
+    ...Object.fromEntries(EMOJI_PALETTE_SLOT_COLUMNS.map((column, index) => [column, DEFAULT_EMOJI_PALETTE_SLOTS[index]])),
+    revision: crypto.randomUUID(),
+});
+
+const emojiPaletteSlotsOf = (row) => EMOJI_PALETTE_SLOT_COLUMNS.map((column) => row[column] ?? null);
+
+const listOwnedEmoticons = async (models, userId, transaction = null) => {
+    const rows = await models.EconomyEntitlement.findAll({
+        where: { user_id: userId, item_type: ITEM_TYPES.EMOTICON },
+        ...(transaction ? { transaction } : {}),
+    });
+    return rows.map((row) => row.item_id);
+};
+
+/** slots 형식 검증(AC-05). DB를 건드리기 전에 끝난다 — null은 "빈 칸"이라는 정상 값이고,
+ *  중복 검사에서도 제외한다(빈 칸은 여러 개일 수 있다). */
+const assertValidEmojiSlots = (slots) => {
+    const invalid = () => createError('slots가 올바르지 않습니다.', 400, 'INVALID_SLOTS');
+    if (!Array.isArray(slots) || slots.length !== EMOJI_PALETTE_SLOT_COLUMNS.length) throw invalid();
+    if (slots.some((value) => value !== null && (typeof value !== 'string' || value.length === 0))) throw invalid();
+    const filled = slots.filter((value) => value !== null);
+    if (new Set(filled).size !== filled.length) throw invalid();
+};
+
+/** F-33 AC-01: 행이 없는 계정은 기본 8종을 채운 행을 그 자리에서 만들어 돌려준다.
+ *
+ *  equipItem과 같은 이유로 ensureDefaultEntitlements를 먼저 보장한다 — 아직 지갑·장착 조회를
+ *  한 번도 거치지 않은 계정은 기본 이모티콘 8종 소유 행이 없어서, owned가 비어 보이고 곧이어
+ *  저장하면 기본 배치 그대로인데도 NOT_OWNED로 거부된다. 멱등하므로 반복 호출해도 안전하다. */
+const getEmojiPalette = async (userId, db = defaultDb()) => {
+    await ensureDefaultEntitlements(userId, db);
+    const models = economyModels(db);
+
+    const [row] = await models.EconomyEmojiPalette.findOrCreate({
+        where: { user_id: userId },
+        defaults: emojiPaletteDefaults(userId),
+    });
+
+    return {
+        slots: emojiPaletteSlotsOf(row),
+        revision: row.revision,
+        owned: await listOwnedEmoticons(models, userId),
+    };
+};
+
+/** F-33 AC-02~AC-05: 형식 검증 → 소유 검증 → revision CAS 조건부 UPDATE를 하나의
+ *  트랜잭션으로 실행한다. 어느 단계에서 던지든 UPDATE 자체가 실행되지 않거나 롤백되므로
+ *  팔레트는 호출 전과 완전히 같은 상태로 남는다(부분 저장 없음). */
+const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = defaultDb()) => {
+    if (typeof expectedRevision !== 'string' || expectedRevision.length === 0) {
+        throw createError('expectedRevision이 필요합니다.', 400, 'MISSING_EXPECTED_REVISION');
+    }
+    assertValidEmojiSlots(slots);
+
+    await ensureDefaultEntitlements(userId, db);
+    const models = economyModels(db);
+
+    return db.sequelize.transaction(async (t) => {
+        await models.EconomyEmojiPalette.findOrCreate({
+            where: { user_id: userId },
+            defaults: emojiPaletteDefaults(userId),
+            transaction: t,
+        });
+
+        // 소유 검증은 CAS UPDATE보다 먼저 한다 — 위반이면 UPDATE가 아예 실행되지 않고
+        // 트랜잭션 전체가 롤백되므로, 방금 findOrCreate로 만들어진 기본 행이 있었더라도
+        // 컬럼 값은 호출 전과 같다(AC-04).
+        const owned = new Set(await listOwnedEmoticons(models, userId, t));
+        if (slots.some((value) => value !== null && !owned.has(value))) {
+            throw createError('소유하지 않은 이모티콘입니다.', 400, 'NOT_OWNED');
+        }
+
+        const revision = crypto.randomUUID();
+        const patch = { revision };
+        EMOJI_PALETTE_SLOT_COLUMNS.forEach((column, index) => { patch[column] = slots[index]; });
+
+        const [affected] = await models.EconomyEmojiPalette.update(patch, {
+            where: { user_id: userId, revision: expectedRevision },
+            transaction: t,
+        });
+        if (affected === 1) return { slots: [...slots], revision };
+
+        // AC-03: 영향 행 0 = 그 사이 다른 저장이 먼저 커밋됐다. 현재 값을 **잠금 읽기**로
+        // 다시 읽는다 — REPEATABLE READ에서 일반 SELECT는 이 트랜잭션이 이미 세운 스냅샷을
+        // 돌려주므로 승자가 방금 커밋한 최신 값을 놓친다(동시 저장 시험이 이것을 잡는다).
+        const current = await models.EconomyEmojiPalette.findOne({
+            where: { user_id: userId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+        });
+        const error = createError(
+            '이모티콘 팔레트가 다른 곳에서 이미 변경되었습니다. 최신 상태를 다시 불러온 뒤 다시 시도하세요.',
+            409,
+            'REVISION_MISMATCH',
+        );
+        error.revision = current.revision;
+        error.slots = emojiPaletteSlotsOf(current);
+        throw error;
+    });
+};
+
 module.exports = {
     CURRENCIES,
     FREE_CARD_FRAME_ID,
@@ -1164,6 +1295,11 @@ module.exports = {
     equipProfileAppearance,
     getPublicProfileLoadouts,
     getGameStartLoadouts,
+    // F-33 E-2: emojiPalette.controller.js가 부르는 팔레트 조회·저장. 기본 8종 배치는
+    // E-3(인게임 팔레트)도 같은 함수로 읽는다.
+    getEmojiPalette,
+    saveEmojiPalette,
+    DEFAULT_EMOJI_PALETTE_SLOTS,
     // F-14(AC-01, R-IMPL2 "실제 endpoint가 authoritative loadout을 돌려줘야 한다") —
     // economy.routes.js가 POST /economy/equip 응답에 selectedSkinsByJob을 실을 때 이 함수를
     // 그대로 재사용한다(요청 필드를 되짚어 재구성하지 않고, equipItem이 실제로 돌려준 loadout

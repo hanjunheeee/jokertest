@@ -41,6 +41,11 @@ const addSignupEmailVerification = require('../../db/migrations/0016-signup-emai
 // resetSchema()가 "모르는 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다. 주문은
 // users를 참조하는 자식이라 users보다 먼저 드롭한다.
 const addCurrencyProductsTopupOrders = require('../../db/migrations/0018-add-currency-products-topup-orders');
+// F-33 E-2: economy_emoji_palettes(0019)도 같은 이유로 항상 관리 목록에 포함시킨다 — f33
+// 스위트가 이 테이블을 만들면, 그 사실을 모르는 다른 스위트의 resetSchema()가 "모르는
+// 테이블"로 오판해 거부하지 않도록 여기서 한 번만 등록한다. users를 참조하는 자식이라
+// users보다 먼저 드롭한다.
+const addEmojiPalettes = require('../../db/migrations/0019-add-emoji-palettes');
 
 // F-05 R-IMPL(2026-09-10): backend/tests/db/f01~f05-*.integration.test.js와
 // backend/__tests__/user.accountPaths.test.js는 모두 같은 물리 MySQL 인스턴스(전용 격리
@@ -114,7 +119,11 @@ const buildManagedSchema = ({
     const resolvedAddF19FriendsInvites = addF19FriendsInvitesOverride ?? addF19FriendsInvites;
     const resolvedAddCurrencyProductsTopupOrders = addCurrencyProductsTopupOrdersOverride ?? addCurrencyProductsTopupOrders;
     const socialTables = Object.values(addSocialAuth.TABLE_NAMES);
-    const economyTables = Object.values(resolvedAddEconomy.TABLE_NAMES);
+    // economy_emoji_palettes는 addEconomy(0006) 모듈이 아니라 별도 마이그레이션 0019가
+    // 만드는 테이블이라, 어떤 addEconomy가 쓰이든(실제 모듈이든 시험용 stub이든) 항상
+    // economy 테이블 묶음에 들어간다 — 이 배열 하나가 managedTables와 dropOrder 양쪽에
+    // 그대로 쓰이므로 여기에만 더하면 두 곳에 함께 반영된다('economy_emoji_palettes').
+    const economyTables = [...Object.values(resolvedAddEconomy.TABLE_NAMES), addEmojiPalettes.TABLE_NAME];
     const purchaseRequestTables = Object.values(resolvedAddEconomyPurchaseRequests.TABLE_NAMES);
     const voteParticipationTables = Object.values(resolvedAddVoteParticipations.TABLE_NAMES);
     const achievementGrantTables = Object.values(resolvedAddAchievementGrants.TABLE_NAMES);

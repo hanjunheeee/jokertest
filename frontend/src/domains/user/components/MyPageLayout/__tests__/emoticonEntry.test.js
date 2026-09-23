@@ -5,21 +5,20 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-13 AC-06 — 마이페이지에 이모티콘 "진입 버튼만" 추가한다. 버튼 클릭 이후의 탭 내용·
-// 모달·장착 슬롯·보유 목록·구매/장착/전송 기능은 이 슬라이스 범위 밖이라 만들지 않는다
-// (계획 A-08 반증 조건).
+// F-33 E-2(설계도 §2-2) — **계약 변경**: F-13은 이모티콘 "진입 버튼만" 두고 클릭해도 아무
+// 일도 일어나지 않는 상태를 이 파일의 시험으로 고정했다(의도된 걸림돌). E-2가 그 뒤의
+// 화면(/mypage/emoticons)을 실제로 만들었으므로, "기능 부재"를 고정하던 단언
+// (assert.doesNotMatch(source, /Emoticon.*Overlay|Emoticon.*Panel|emoticonOpen/i),
+//  no-op 기본값 단언, MyPageLayout이 콜백을 넘기지 않는다는 단언 중 '미연결'의 근거였던 것)
+// 은 "이동한다"는 새 계약으로 다시 쓴다. 이모티콘 이동과 무관한 레이아웃·오버레이 단언
+// (ProfileEditOverlay·SkinCardWearOverlay)은 그대로 둔다.
 //
-// F-13(CODEX-4) 재검토: 버튼 자신의 실행 본문(클릭 시 실제로 무슨 일이 일어나는가)은 더
-// 이상 소스 정규식이 아니라 실제 jsdom 렌더 + 클릭 이벤트로 검증한다 —
+// 버튼의 실행 본문은 소스 정규식이 아니라 실제 jsdom 렌더 + 클릭으로 검증한다 —
 // frontend/.../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs가 이미 만든
-// module.register() ESM 훅을 재사용한다. EmoticonEntryButton은 MyPageFramedButton만
-// 재사용하는 자기완결 컴포넌트(store/네트워크 의존 없음)라 그대로 마운트할 수 있다.
-// MyPageLayout 전체는 useMyProfile·economy/profileCustomization store·라우팅까지 끌고 와
-// 이 시험의 관심사(콜백 미전달 배선 한 줄)를 넘는 과도한 mock이 필요하므로, "버튼에
-// onOpenEmoticons를 넘기지 않는다"는 배선 자체는 source 검증으로 유지한다 — 다만 그 배선이
-// 실제로 무엇을 뜻하는지(콜백 없는 버튼이 클릭해도 안전하다는 것)는 위 실제 렌더 시험이
-// 증명한다.
-const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true })
+// module.register() ESM 훅을 재사용한다. useNavigate는 MemoryRouter 안에서 실제
+// react-router-dom 구현을 그대로 쓰고, 이동 결과는 라우터의 현재 위치로 확인한다(navigate를
+// 대역으로 바꾸면 "그 함수를 불렀다"만 증명하고 실제 이동 경로는 증명하지 못한다).
+const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true, url: "http://localhost/" })
 function installDomGlobal(name, value) {
   Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 }
@@ -36,6 +35,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 register(new URL("../../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 const { render, fireEvent, cleanup } = await import("@testing-library/react")
+const { MemoryRouter, Routes, Route, useLocation } = await import("react-router-dom")
 test.afterEach(() => cleanup())
 
 const { default: EmoticonEntryButton } = await import("../EmoticonEntryButton.jsx")
@@ -43,47 +43,82 @@ const { default: EmoticonEntryButton } = await import("../EmoticonEntryButton.js
 const buttonUrl = new URL("../EmoticonEntryButton.jsx", import.meta.url)
 const layoutUrl = new URL("../../MyPageLayout.jsx", import.meta.url)
 
-test("실제 EmoticonEntryButton을 콜백 없이 마운트하고 클릭하면(MyPageLayout이 실제로 쓰는 방식) 아무 예외도 없고 새 DOM(탭·모달·슬롯)도 생기지 않는다", () => {
-  const { container, getByText } = render(React.createElement(EmoticonEntryButton))
-  const beforeChildCount = container.querySelectorAll("*").length
+/** 지금 라우터가 가리키는 경로를 화면에 그대로 찍는다 — 이동을 값으로 확인하기 위한 표식. */
+function LocationProbe() {
+  const location = useLocation()
+  return React.createElement("span", { "data-testid": "location" }, location.pathname)
+}
 
-  assert.doesNotThrow(() => fireEvent.click(getByText("이모티콘")))
+/** MyPageLayout이 실제로 쓰는 방식(props 없음)으로 버튼을 라우터 아래 마운트한다. */
+const renderInRouter = (props) => render(
+  React.createElement(
+    MemoryRouter,
+    { initialEntries: ["/mypage"] },
+    React.createElement(
+      Routes,
+      null,
+      React.createElement(Route, {
+        path: "*",
+        element: React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(EmoticonEntryButton, props),
+          React.createElement(LocationProbe),
+        ),
+      }),
+    ),
+  ),
+)
 
-  assert.equal(container.querySelectorAll("*").length, beforeChildCount, "클릭 이후에도 DOM 노드 수가 그대로여야 한다(새 탭/모달/슬롯이 생기지 않았다는 뜻)")
-})
-
-test("실제 EmoticonEntryButton에 onOpenEmoticons를 넘기면 클릭 시 정확히 그 콜백만 한 번 호출된다(버튼 자체의 연결 능력은 정상)", () => {
-  let calls = 0
-  const { getByText } = render(React.createElement(EmoticonEntryButton, { onOpenEmoticons: () => { calls += 1 } }))
+test("F-33 E-2: 콜백 없이 마운트한 EmoticonEntryButton(MyPageLayout이 실제로 쓰는 방식)을 클릭하면 /mypage/emoticons로 이동한다", () => {
+  const { getByText, getByTestId } = renderInRouter()
+  assert.equal(getByTestId("location").textContent, "/mypage", "클릭 전에는 아직 마이페이지에 있어야 한다")
 
   fireEvent.click(getByText("이모티콘"))
-  assert.equal(calls, 1, "콜백을 넘기면 실제로 호출되어야 한다 — 버튼 자체가 아니라 MyPageLayout이 넘기지 않는 것이 미연결의 이유임을 구분한다")
+
+  assert.equal(
+    getByTestId("location").textContent, "/mypage/emoticons",
+    "이모티콘 버튼은 이모티콘 관리 화면으로 이동해야 한다(F-13의 no-op 계약을 대체한다)",
+  )
 })
 
-test("EmoticonEntryButton은 기존 MyPageFramedButton만 재사용한다(새 탭·모달·슬롯 컴포넌트를 만들지 않는다)", async () => {
+test("F-33 E-2: onOpenEmoticons를 넘기면 그 콜백만 호출되고 라우트는 이동하지 않는다", () => {
+  let calls = 0
+  const { getByText, getByTestId } = renderInRouter({ onOpenEmoticons: () => { calls += 1 } })
+
+  fireEvent.click(getByText("이모티콘"))
+
+  assert.equal(calls, 1, "콜백을 넘기면 그 콜백이 정확히 한 번 호출되어야 한다")
+  assert.equal(getByTestId("location").textContent, "/mypage", "콜백을 넘기면 이동은 일어나지 않는다")
+})
+
+test("EmoticonEntryButton은 기존 MyPageFramedButton만 재사용한다(자체 탭·모달·슬롯 컴포넌트를 만들지 않는다)", async () => {
   const source = await readFile(buttonUrl, "utf8")
   assert.match(source, /import MyPageFramedButton from ".\/MyPageFramedButton\.jsx"/)
-  assert.match(source, /<MyPageFramedButton label="이모티콘" onClick=\{onOpenEmoticons\} \/>/)
-  // 후속 UI(탭/모달/슬롯/보유 목록)를 암시하는 상태·컴포넌트가 이 파일에 없어야 한다.
+  assert.match(source, /<MyPageFramedButton label="이모티콘" onClick=\{handleClick\} \/>/)
+  // 팔레트 화면 자체는 별도 라우트(EmoticonPalettePage)가 맡는다 — 이 버튼은 이동만 한다.
   assert.doesNotMatch(source, /useState/)
   assert.doesNotMatch(source, /Modal|Overlay|Panel|Grid/)
 })
 
-test("EmoticonEntryButton의 onOpenEmoticons는 선택 값이고 기본값이 아무 것도 하지 않는 no-op이다", async () => {
+test("F-33 E-2: EmoticonEntryButton의 기본 동작은 /mypage/emoticons 이동이다(더 이상 no-op 기본값이 아니다)", async () => {
   const source = await readFile(buttonUrl, "utf8")
-  assert.match(source, /onOpenEmoticons\s*=\s*\(\)\s*=>\s*\{\}/, "콜백을 넘기지 않으면 클릭해도 아무 일도 일어나지 않아야 한다")
+  assert.match(source, /useNavigate/, "이동은 react-router의 useNavigate로 한다")
+  assert.match(source, /navigate\("\/mypage\/emoticons"\)/, "이동 대상 경로가 라우터 잠금(ROUTE_WIRING_LOCK)과 같아야 한다")
+  assert.doesNotMatch(source, /onOpenEmoticons\s*=\s*\(\)\s*=>\s*\{\}/, "no-op 기본값은 제거됐다 — 콜백이 없으면 이동한다")
 })
 
-test("MyPageLayout은 EmoticonEntryButton에 onOpenEmoticons를 넘기지 않는다(클릭해도 미연결 상태 유지)", async () => {
+test("MyPageLayout은 EmoticonEntryButton을 props 없이 마운트한다(이동은 버튼 자신의 기본 동작이다)", async () => {
   const source = await readFile(layoutUrl, "utf8")
-  assert.match(source, /<EmoticonEntryButton \/>/, "콜백 없이 버튼만 렌더해야 한다 — onOpenEmoticons를 넘기면 후속 기능이 연결된 것처럼 보인다")
-  assert.doesNotMatch(source, /onOpenEmoticons=/, "MyPageLayout이 onOpenEmoticons를 넘기면 이 슬라이스 범위 밖인 후속 UI가 실제로 열리게 된다")
+  assert.match(source, /<EmoticonEntryButton \/>/, "레이아웃은 콜백 없이 버튼만 렌더한다")
+  assert.doesNotMatch(source, /onOpenEmoticons=/, "레이아웃이 콜백을 넘기면 기본 이동 경로가 가려진다")
 })
 
-test("MyPageLayout은 프로필 수정·스킨카드 장착과 같은 자리에 이모티콘 버튼을 추가만 했을 뿐, 다른 버튼의 기존 오버레이 배선은 그대로 둔다", async () => {
+test("MyPageLayout은 프로필 수정·스킨카드 장착의 기존 오버레이 배선을 그대로 둔다", async () => {
   const source = await readFile(layoutUrl, "utf8")
   assert.match(source, /<ProfileEditOverlay open=\{profileEditOpen\} onClose=\{\(\) => setProfileEditOpen\(false\)\} \/>/)
   assert.match(source, /<SkinCardWearOverlay open=\{skinCardWearOpen\} onClose=\{\(\) => setSkinCardWearOpen\(false\)\} \/>/)
-  // 이모티콘 전용 오버레이/패널은 아직 존재하지 않는다.
+  // 이모티콘은 오버레이가 아니라 별도 화면(/mypage/emoticons)이다 — 레이아웃에 전용
+  // 오버레이·패널 상태가 생기면 두 진입 경로가 갈라진다.
   assert.doesNotMatch(source, /Emoticon.*Overlay|Emoticon.*Panel|emoticonOpen/i)
 })

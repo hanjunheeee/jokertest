@@ -16,6 +16,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'f32a-topup-integration-test-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+// 이 파일 아래쪽에서 `http`는 fetch 헬퍼 이름으로 쓰이므로 node 내장 모듈은 다른 이름으로 받는다.
+const nodeHttp = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
@@ -31,6 +33,11 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addCurrencyProductsTopupOrders = require('../../db/migrations/0018-add-currency-products-topup-orders');
 const { buildManagedSchema, resetManagedSchema, resetManagedData } = require('../helpers/isolatedTestDb');
 const { createFakeTossAdapter, installFakeAdapter, FAKE_CLIENT_KEY } = require('../helpers/fakeTossAdapter');
+// 이 스위트의 앱 서버는 전역 fetch로 호출된다. Windows 동적 포트 범위(1024..15000)에는 Fetch
+// 금지 포트가 섞여 있어 listen(0)이 그중 하나를 뽑으면 fetch가 "bad port"로 거부한다
+// (2026-09-22 전체 실행에서 앱 서버가 127.0.0.1:6697을 받아 실패했다) — 공용 helper로 Fetch가
+// 허용하는 고포트에 실제 bind한다.
+const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
@@ -115,10 +122,10 @@ const startServer = async (t) => {
     app.use('/economy', require('../../routes/economy.routes'));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
-    const server = app.listen(0, '127.0.0.1');
-    await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const server = nodeHttp.createServer(app);
+    const { url } = await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections?.(); }));
-    return `http://127.0.0.1:${server.address().port}`;
+    return url;
 };
 
 const http = (base) => async (path, { method = 'GET', user, body, signal } = {}) => {
@@ -1310,8 +1317,17 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
 
     const index0018 = MIGRATIONS.findIndex((m) => m.name === addCurrencyProductsTopupOrders.name);
     assert.ok(index0018 > 0, 'CLI MIGRATIONS에 0018이 등록되어 있어야 한다');
-    assert.equal(index0018, MIGRATIONS.length - 1, '0018은 현재 마지막 마이그레이션이다');
     assert.equal(MIGRATIONS[index0018 - 1].name, '0017-social-signup-email');
+
+    // F-33 E-2: 0018 뒤에 0019(economy_emoji_palettes)가 등록되면서 "0018이 목록의 마지막"이라는
+    // 가정은 더 이상 성립하지 않는다. 이 케이스가 실제로 확인하려는 것은 **0017 → 0018 경계**이므로,
+    // 마지막 원소라는 위치 가정 대신 0018까지의 명시적 목록(upTo0018)으로 그 경계를 그대로 재현한다.
+    // 그러면 0018만 새로 적용됨·기존 데이터 보존·재실행 없음·부분 실패 복구를 예전과 똑같이 본다.
+    // 0018 이후의 나머지(after0018)는 이 케이스 끝에서 전체 목록으로 따로 적용해, 최신 전체 목록에
+    // 대한 보장(새 적용 목록·재실행 없음·기존 데이터 보존)도 함께 남긴다 — 커버리지가 줄지 않는다.
+    const upTo0018 = MIGRATIONS.slice(0, index0018 + 1);
+    const after0018 = MIGRATIONS.slice(index0018 + 1);
+    assert.equal(upTo0018[upTo0018.length - 1].name, addCurrencyProductsTopupOrders.name, 'upTo0018의 마지막은 0018이다');
 
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
     const upTo0017 = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, index0018) });
@@ -1327,7 +1343,7 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     await sequelize.query("INSERT INTO economy_loadouts (user_id, selected_profile_photo_id, revision, created_at, updated_at) VALUES (:u, 'item-keep', 'rev-keep', NOW(), NOW())", { replacements: { u: userId } });
     const before = await snapshotEconomy();
 
-    const applied = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    const applied = await migrationRunner.applyMigrations({ sequelize, migrations: upTo0018 });
     assert.deepEqual(applied.applied, [addCurrencyProductsTopupOrders.name], '0018만 새로 적용되어야 한다');
     assert.deepEqual(await snapshotEconomy(), before, '기존 경제 데이터는 값과 건수가 그대로여야 한다');
 
@@ -1336,7 +1352,7 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_topup_orders', {})).n), 0);
 
     // CLI 목록 재실행: 오류·중복 없음
-    assert.deepEqual((await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS })).applied, []);
+    assert.deepEqual((await migrationRunner.applyMigrations({ sequelize, migrations: upTo0018 })).applied, []);
 
     // up·verify 직접 반복
     await addCurrencyProductsTopupOrders.up(queryInterface, Sequelize, sequelize);
@@ -1391,6 +1407,22 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
 
     const foreignKeys = await queryInterface.getForeignKeyReferencesForTable('economy_topup_orders');
     assert.deepEqual(foreignKeys.map((fk) => [fk.columnName, fk.referencedTableName, fk.referencedColumnName]), [['user_id', 'users', 'uuid']]);
+
+    // ── 최신 전체 목록(0018 이후가 더 있는 현재 상태)도 같은 보장을 지킨다 ──────────────
+    //
+    // 위에서 0018까지만 적용한 상태이므로, 여기서 전체 CLI 목록을 적용하면 0018 이후의
+    // 나머지만 새로 적용되어야 한다. "0018이 마지막"이라는 위치 가정을 걷어낸 자리를 이
+    // 명시적 검증이 대신한다 — 목록이 더 길어져도 이 단언은 기대값을 목록에서 유도한다.
+    assert.ok(after0018.length > 0, '0018 이후에 등록된 마이그레이션이 있어야 이 구간이 의미를 갖는다(현재 0019)');
+    const tail = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
+    assert.deepEqual(tail.applied, after0018.map((m) => m.name), '0018 이후의 나머지 마이그레이션만 새로 적용되어야 한다');
+    assert.ok(
+        (await queryInterface.showAllTables()).includes('economy_emoji_palettes'),
+        '0019가 실제로 적용되어 economy_emoji_palettes가 생겨야 한다',
+    );
+    // 전체 목록 재실행도 오류·중복 없이 비어 있고, 기존 경제 데이터는 여전히 그대로다.
+    assert.deepEqual((await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS })).applied, []);
+    assert.deepEqual(await snapshotEconomy(), before, '나머지 마이그레이션 적용 후에도 기존 경제 데이터는 값과 건수가 그대로여야 한다');
 });
 
 test('AC-06: 전체 스키마를 다시 세우면(reset → 전체 적용) 두 신규 테이블도 오류 없이 만들어진다', async (t) => {
