@@ -1526,8 +1526,12 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
     "재접속 스냅샷 조회가 나가지 않았다(이 감사가 죽은 연결을 보고 있다)")
 })
 
-/** InGamePage가 실제로 마운트하는 컴포넌트 전부(오버레이·모달·패널 포함). */
-const INGAME_MOUNT_LOCK = [
+/** InGamePage.jsx가 실제로 마운트하는 컴포넌트 전부(오버레이·모달·패널 포함). */
+const PAGE_MOUNT_LOCK = [
+  // CM V-1: 조작 훅 값을 컨트롤 패널과 플레이어 카드 메뉴가 **함께** 보게 하는 통로와 그
+  // 유일한 소유자다. Provider JSX(<InGameActionContext.Provider>)를 쓰는 파일은 이 페이지
+  // 하나뿐이라 이 목록에만 들어간다.
+  "InGameActionContext", "InGameActionProvider",
   "InGameActionPanel", "InGameBackground", "InGameChatShell", "InGameDeadParticipantChoice",
   "InGameKillRevealOverlay",
   // F-27b(AC-01) InGameNightPresentationWait: 그 밤의 연출을 받지 않는 참가자에게만 뜨는
@@ -1539,6 +1543,96 @@ const INGAME_MOUNT_LOCK = [
   "InGamePlayerSessionProvider", "InGameRoleRevealOverlay", "InGameTimebar",
   "InGameTopControls", "InGameVoteStatusPanel", "PlayerRecordListPanel", "SettingPanel",
 ]
+
+/**
+ * CM V-1: 플레이어 보드가 마운트하는 것 전부. 카드와 **카드 좌클릭 메뉴** 둘뿐이다 —
+ * 메뉴가 사라지면(또는 보드가 다른 것을 함께 그리면) 이 정확 비교가 먼저 깨진다.
+ */
+const BOARD_MOUNT_LOCK = ["InGamePlayerCard", "InGamePlayerCardMenu"]
+
+/**
+ * CM V-1: 진행 UI 묶음(InGamePlayArea)이 마운트하는 것 전부. 이 파일도 보드와 컨트롤 패널을
+ * 함께 마운트하는 실제 소비 경로라, 조작 Provider가 빠지면 두 자식이 보는 컨텍스트가 null이
+ * 된다. 이 파일에는 Provider JSX가 없으므로(named import한 컴포넌트를 쓸 뿐) InGameActionContext는
+ * 목록에 들어가지 않는다.
+ */
+const PLAY_AREA_MOUNT_LOCK = [
+  "InGamePlayerSessionProvider", "InGameActionProvider", "InGameTimebar",
+  "InGamePlayerBoard", "InGameChatShell", "InGameActionPanel",
+]
+
+/** 세 소유 파일이 합쳐서 마운트하는 이름 전부. InGamePlayerCardMenu가 여기 포함된다. */
+const INGAME_MOUNT_LOCK = [...new Set([
+  ...PAGE_MOUNT_LOCK, ...BOARD_MOUNT_LOCK, ...PLAY_AREA_MOUNT_LOCK,
+])]
+
+/**
+ * CM V-1(AC-06): InGamePage.jsx가 **정말로** InGameActionProvider를 선언하고, 그것이
+ * InGamePlayerSessionProvider 자손으로서 컨트롤 패널과 플레이어 보드를 함께 감싸는지 확인한다.
+ *
+ * 이 하나만 정규식이 아니라 AST로 본다. 위 마운트 목록은 "이름이 나타난다"까지만 보증하는데,
+ * 이 계약의 핵심은 **포함 관계**(패널과 보드가 같은 Provider 아래 있는가)라서 이름 목록으로는
+ * 표현할 수 없기 때문이다. 나머지 import 연결 검사는 기존 for-loop를 그대로 쓴다.
+ */
+async function auditInGameActionProviderTree(pageSource) {
+  const { default: ts } = await import("typescript")
+  const sourceFile = ts.createSourceFile(
+    "InGamePage.jsx", pageSource, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JSX,
+  )
+
+  const tagNameOf = (node) => {
+    if (ts.isJsxElement(node)) return node.openingElement.tagName.getText(sourceFile)
+    if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText(sourceFile)
+    return null
+  }
+  const findElement = (root, name) => {
+    let found = null
+    const visit = (node) => {
+      if (found) return
+      if (tagNameOf(node) === name) { found = node; return }
+      node.forEachChild(visit)
+    }
+    visit(root)
+    return found
+  }
+  const collectTags = (root) => {
+    const names = []
+    const visit = (node) => {
+      const tag = tagNameOf(node)
+      if (tag) names.push(tag)
+      node.forEachChild(visit)
+    }
+    root.forEachChild(visit)
+    return names
+  }
+
+  let providerDeclaration = null
+  sourceFile.forEachChild((node) => {
+    if (!ts.isFunctionDeclaration(node)) return
+    if (node.name?.text !== "InGameActionProvider") return
+    providerDeclaration = node
+  })
+
+  const exported = providerDeclaration !== null
+    && (ts.getModifiers(providerDeclaration) ?? [])
+      .some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+
+  const sessionProvider = findElement(sourceFile, "InGamePlayerSessionProvider")
+  const actionProvider = sessionProvider ? findElement(sessionProvider, "InGameActionProvider") : null
+  const wrapped = actionProvider ? collectTags(actionProvider) : []
+
+  return {
+    declared: providerDeclaration !== null,
+    exported,
+    callsActionHook: providerDeclaration !== null
+      && /useInGameActionPanel\(/.test(providerDeclaration.getText(sourceFile)),
+    providesContext: providerDeclaration !== null
+      && collectTags(providerDeclaration).includes("InGameActionContext.Provider"),
+    underSessionProvider: actionProvider !== null,
+    wrapsActionPanel: wrapped.includes("InGameActionPanel"),
+    wrapsPlayerBoard: wrapped.includes("InGamePlayerBoard"),
+  }
+}
 
 /**
  * 두 store의 상태 모양(데이터 키·액션 이름) — 관전 상태가 다른 이름으로도 없어야 한다.
@@ -1606,15 +1700,56 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
   assert.deepEqual(probe.imported, ["WatchEntryModal"])
 
   const { rendered, imported } = collectRenderedComponents(pageSource)
-  assert.deepEqual(rendered.sort(), [...INGAME_MOUNT_LOCK].sort(),
+  assert.deepEqual(rendered.sort(), [...PAGE_MOUNT_LOCK].sort(),
     "인게임 화면의 마운트 목록이 바뀌었다 — 새 오버레이·모달이 붙었거나 기존 화면이 사라졌다")
   // 마운트되는 이름은 모두 이 파일이 실제로 import한 것이다(전역·동적 주입이 없다).
+  // 유일한 예외는 이 파일이 **직접 선언**하는 InGameActionProvider다 — 그 선언과 포함 관계는
+  // 아래 AST 감사가 따로, 더 강하게 본다(이름만 보는 이 for-loop보다 좁은 검사다).
+  const DECLARED_IN_PAGE = ["InGameActionProvider"]
   for (const name of rendered) {
+    if (DECLARED_IN_PAGE.includes(name)) continue
     assert.ok(imported.includes(name), `${name}이 import 없이 마운트된다`)
   }
   // 사망 참가자 선택은 보존 대상이다(A-01) — 목록에서 빠지면 위 단언이 먼저 깨진다.
   assert.ok(rendered.includes("InGameDeadParticipantChoice"),
     "기존 사망 참가자의 계속 보기 선택창이 사라졌다")
+
+  // ── CM V-1(AC-06): 보드·진행 묶음 소유 파일과 합집합 잠금 ────────────────────
+  const boardSource = await readFile(
+    new URL("frontend/src/domains/game/ingame/components/board/InGamePlayerBoard.jsx", REPO_ROOT), "utf8")
+  const board = collectRenderedComponents(boardSource)
+  assert.deepEqual(board.rendered.sort(), [...BOARD_MOUNT_LOCK].sort(),
+    "플레이어 보드의 마운트 목록이 바뀌었다 — 카드 좌클릭 메뉴가 빠졌거나 다른 것이 붙었다")
+  for (const name of board.rendered) {
+    assert.ok(board.imported.includes(name), `보드가 ${name}을 import 없이 마운트한다`)
+  }
+
+  const playAreaSource = await readFile(
+    new URL("frontend/src/domains/game/ingame/components/InGamePlayArea.jsx", REPO_ROOT), "utf8")
+  const playArea = collectRenderedComponents(playAreaSource)
+  assert.deepEqual(playArea.rendered.sort(), [...PLAY_AREA_MOUNT_LOCK].sort(),
+    "진행 UI 묶음의 마운트 목록이 바뀌었다 — 조작 Provider가 빠지면 보드·패널의 컨텍스트가 null이 된다")
+  for (const name of playArea.rendered) {
+    assert.ok(playArea.imported.includes(name), `진행 UI 묶음이 ${name}을 import 없이 마운트한다`)
+  }
+
+  const combined = [...new Set([...rendered, ...board.rendered, ...playArea.rendered])]
+  assert.deepEqual(combined.sort(), [...INGAME_MOUNT_LOCK].sort(),
+    "인게임 세 소유 파일의 마운트 합집합이 잠금과 다르다")
+  assert.ok(combined.includes("InGamePlayerCardMenu"),
+    "플레이어 카드 좌클릭 메뉴가 인게임 마운트 목록에서 사라졌다")
+
+  // 포함 관계는 이름 목록으로 표현할 수 없다 — 실제 AST로 본다.
+  const providerAudit = await auditInGameActionProviderTree(pageSource)
+  assert.deepEqual(providerAudit, {
+    declared: true,
+    exported: true,
+    callsActionHook: true,
+    providesContext: true,
+    underSessionProvider: true,
+    wrapsActionPanel: true,
+    wrapsPlayerBoard: true,
+  }, "조작 훅 Provider의 선언·export·컨텍스트 제공·세션 Provider 자손 포함 관계가 깨졌다")
 
   const shapeOf = (state) => ({
     data: Object.entries(state).filter(([, value]) => typeof value !== "function")
