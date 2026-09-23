@@ -1,5 +1,5 @@
 // 파일 역할: InGameActionPanel.jsx - 화면을 구성하는 컴포넌트입니다.
-import { useEffect, useState } from "react"
+import { useContext, useEffect, useState } from "react"
 import { getPlayerDisplayName } from "../../utils/getPlayerDisplayName.js"
 import {
   formatInGameEvent,
@@ -30,7 +30,7 @@ import {
 } from "../../constants/actions/ingameActionPanel.js"
 import { buildInGameControlPanelE2eAttrs } from "../../constants/e2e/ingameE2eHooks.js"
 import { getInGameNightTurnRoleLabel } from "../../utils/getInGameNightTurnRoleLabel.js"
-import { useInGameActionPanel } from "../../hooks/useInGameActionPanel.js"
+import { InGameActionContext } from "../../context/InGameActionContext.jsx"
 import { useInGameControlPanelLayout } from "../../hooks/useInGameControlPanelLayout.js"
 import InGameTargetPicker from "./InGameTargetPicker.jsx"
 import { INGAME_VOTE_ASSETS } from "../../constants/vote/ingameVoteAssets.js"
@@ -189,7 +189,10 @@ export default function InGameActionPanel({
     resolveNightStatus,
     resolveNightError,
     nightActionResult,
-  } = useInGameActionPanel({ interactionBlocked })
+    // V-1: 조작 훅은 InGamePage.jsx의 InGameActionProvider가 정확히 한 번 부른다 — 이 패널은
+    // 그 값을 **그대로** 소비할 뿐이라, 플레이어 카드 메뉴와 같은 선택 상태·같은 제출 경로를
+    // 본다(패널이 자기 인스턴스를 따로 만들면 두 경로의 선택값이 갈린다).
+  } = useContext(InGameActionContext) ?? {}
   const { expanded, toggle: toggleExpanded } = useInGameControlPanelLayout()
   const [selectedTribunalVote, setSelectedTribunalVote] = useState(null)
 

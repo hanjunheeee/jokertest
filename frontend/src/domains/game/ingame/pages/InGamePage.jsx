@@ -13,6 +13,7 @@ import InGameNightSuccessPresentation from "../components/InGameNightSuccessPres
 import InGameNightPresentationWait from "../components/InGameNightPresentationWait.jsx"
 import InGameDeadParticipantChoice from "../components/deadChoice/InGameDeadParticipantChoice.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
+import { InGameActionContext } from "../context/InGameActionContext.jsx"
 import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
 import SettingPanel from "../components/controls/ingameSetting/SettingPanel.jsx"
@@ -47,6 +48,26 @@ import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdow
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
+import { useInGameActionPanel } from "../hooks/useInGameActionPanel.js"
+
+/**
+ * V-1: 조작 훅(useInGameActionPanel)을 **정확히 한 번** 부르고 그 값을 아래로 흘려보내는
+ * 유일한 소유자.
+ *
+ * 컨트롤 패널과 플레이어 카드 메뉴는 같은 선택 상태(selectedDayVoteTargetId /
+ * selectedNightTargetId)와 같은 제출 경로를 봐야 한다 — 각자 훅을 부르면 인스턴스가 둘이 되어
+ * 한쪽에서 고른 대상이 다른 쪽에는 없는 상태가 된다. 그래서 훅 호출부는 이 컴포넌트 하나이고,
+ * 이 컴포넌트는 모듈 최상위에 둔다(렌더 안에서 정의하면 매 렌더마다 새 타입이 되어 아래
+ * 트리가 통째로 다시 마운트된다). InGamePlayArea.jsx도 같은 것을 named import해 재사용한다.
+ */
+export function InGameActionProvider({ interactionBlocked = false, children }) {
+  const actionPanelValue = useInGameActionPanel({ interactionBlocked })
+  return (
+    <InGameActionContext.Provider value={actionPanelValue}>
+      {children}
+    </InGameActionContext.Provider>
+  )
+}
 
 /**
  * 인게임 화면 전체(배경 + 컨트롤 + 타임바 + 플레이어 보드 + 채팅)를 조합하는 최상위 페이지
@@ -259,31 +280,35 @@ export default function InGamePage() {
           onSettingsClick={sidePanel.openSettings}
         />
         <InGamePlayerSessionProvider>
-          {/* NIGHT 문구는 로컬 canonical 턴(selectInGameNightTurnRole)에서만 파생한다 — 안내
-              오버레이가 닫혀도 이 줄은 턴이 끝날 때까지 남고, 남은 초는 서버 deadline에서
-              만든 카운트다운 하나만 붙는다. */}
-          <InGameTimebar
-            day={gameState?.dayIndex}
-            activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
-            statusMessage={selectInGameTimebarStatusMessage(gameState, nightTurnRemainingSec)}
-            onVoteStatusClick={() => setVoteStatusOpen(true)}
-          />
-          <InGamePlayerBoard />
-          <InGameChatShell />
-          <InGameActionPanel
-            onOpenRoleReveal={roleReveal.reopen}
-            roleRevealAvailable={Boolean(roleReveal.roleInfo)}
-            interactionBlocked={interactionBlocked}
-          />
-          <PlayerRecordListPanel
-            open={sidePanel.recordsOpen}
-            onClose={sidePanel.close}
-          />
-          <SettingPanel open={sidePanel.settingsOpen} onClose={sidePanel.close} />
-          <InGameVoteStatusPanel
-            open={voteStatusOpen}
-            onClose={() => setVoteStatusOpen(false)}
-          />
+          {/* V-1: 컨트롤 패널과 플레이어 보드(카드 메뉴)를 같은 조작 훅 인스턴스로 묶는다 —
+              둘이 한 Provider 아래에 있어야 선택 상태와 제출 경로가 하나다. */}
+          <InGameActionProvider interactionBlocked={interactionBlocked}>
+            {/* NIGHT 문구는 로컬 canonical 턴(selectInGameNightTurnRole)에서만 파생한다 — 안내
+                오버레이가 닫혀도 이 줄은 턴이 끝날 때까지 남고, 남은 초는 서버 deadline에서
+                만든 카운트다운 하나만 붙는다. */}
+            <InGameTimebar
+              day={gameState?.dayIndex}
+              activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
+              statusMessage={selectInGameTimebarStatusMessage(gameState, nightTurnRemainingSec)}
+              onVoteStatusClick={() => setVoteStatusOpen(true)}
+            />
+            <InGamePlayerBoard />
+            <InGameChatShell />
+            <InGameActionPanel
+              onOpenRoleReveal={roleReveal.reopen}
+              roleRevealAvailable={Boolean(roleReveal.roleInfo)}
+              interactionBlocked={interactionBlocked}
+            />
+            <PlayerRecordListPanel
+              open={sidePanel.recordsOpen}
+              onClose={sidePanel.close}
+            />
+            <SettingPanel open={sidePanel.settingsOpen} onClose={sidePanel.close} />
+            <InGameVoteStatusPanel
+              open={voteStatusOpen}
+              onClose={() => setVoteStatusOpen(false)}
+            />
+          </InGameActionProvider>
         </InGamePlayerSessionProvider>
       </div>
 

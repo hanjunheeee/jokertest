@@ -103,6 +103,11 @@ const { resolveAccountProfileBorderSrc, resolveAccountProfilePhotoSrc } =
 const { INGAME_PLAYER_STATUS, INGAME_PLAYER_STATUS_ASSETS } = await import("../constants/board/status/ingamePlayerStatus.js")
 const { default: InGamePlayerBoard } = await import("../components/board/InGamePlayerBoard.jsx")
 const { InGamePlayerSessionContext } = await import("../components/InGamePlayerSessionContext.js")
+// CM V-1: 보드가 카드 좌클릭 메뉴를 마운트하면서 조작 컨텍스트를 소비한다 — 이 파일의 보드
+// 마운트도 **실제** useInGameActionPanel이 만든 값을 흘려보내야 한다(최소·가짜 값을 꾸며 넣으면
+// 이 시험이 보는 트리가 더 이상 production 트리가 아니다).
+const { InGameActionContext } = await import("../context/InGameActionContext.jsx")
+const { useInGameActionPanel } = await import("../hooks/useInGameActionPanel.js")
 const { default: MatchingPartySlots } = await import("../../matching/components/MatchingPartySlots.jsx")
 const { useInGameStore } = await import("../store/ingameStore.js")
 // F-14(AC-01/AC-04, R-IMPL P1 수정): 본인 역할 공개 화면의 구매 스킨 standing 자산 소비 경로
@@ -146,6 +151,15 @@ function renderFinalPlayers(state) {
   return sourcePlayers.map((player, index) => mergeSourcePlayerWithPreview(player, preview[index]))
 }
 
+/**
+ * CM V-1: 조작 훅을 실제로 한 번 부르고 그 값을 실제 컨텍스트로 흘려보내는 하니스.
+ * 세션 Provider 안쪽에 놓아야 한다 — useInGameActionPanel 자신이 세션 컨텍스트를 읽는다.
+ */
+function ActionHarness({ children }) {
+  const actionPanelValue = useInGameActionPanel()
+  return React.createElement(InGameActionContext.Provider, { value: actionPanelValue }, children)
+}
+
 /** finalPlayers를 실제 InGamePlayerSessionContext.Provider + InGamePlayerBoard로 마운트하고
  * 렌더된 <img> src 목록을 돌려준다(실제 DOM, source 정규식이 아니다). */
 function renderBoard(finalPlayers, localPlayerId) {
@@ -153,7 +167,7 @@ function renderBoard(finalPlayers, localPlayerId) {
     React.createElement(
       InGamePlayerSessionContext.Provider,
       { value: { players: finalPlayers, localPlayerId } },
-      React.createElement(InGamePlayerBoard),
+      React.createElement(ActionHarness, null, React.createElement(InGamePlayerBoard)),
     ),
   )
   // PublicAsset은 publicAsset()으로 src를 encodeURI한다 — resolveAccountProfilePhotoSrc/
@@ -578,7 +592,7 @@ test("F-13 AC-05: InGamePlayerCard는 role을 props로 받지도 렌더하지도
     React.createElement(
       InGamePlayerSessionContext.Provider,
       { value: { players: finalPlayers, localPlayerId: "p1" } },
-      React.createElement(InGamePlayerBoard),
+      React.createElement(ActionHarness, null, React.createElement(InGamePlayerBoard)),
     ),
   )
   assert.doesNotMatch(container.textContent, /JOKER/, "role/team 값이 role을 아는 본인 화면이라도 카드 DOM 텍스트로 노출되면 안 된다(카드 자체가 role을 참조하지 않는다)")
