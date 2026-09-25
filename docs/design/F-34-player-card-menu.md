@@ -58,6 +58,8 @@
 - `ingameVotePreviewData.js`의 더미 상수와 `isVoteStatusLeader`/`resolveVoteStatusLeaderVoteCount`는 소비처가 없어지면 삭제.
 
 ### 2-5. 인게임 플레이어 전적 (S-1)
+- 현행 연결 위치 확인(2026-09-25): 비동기 게임 시작 진입점은 `backend/socket/matchmaking.js::handleStartGame`이며, `captureRoomStartProfiles`가 조회 후 공개 방을 바꾸지 않고 세션 후보 플레이어를 복사한다. 동기 `backend/game-core/gameSession.js::prepareGameSession`/`buildSessionCandidate`를 비동기로 바꾸는 것으로 가정하지 않는다. 전적 조회는 기존 비동기 캡처 경계에 연결하고, 조회 이후 기존 방·설정 버전·참가자 신원·준비·canonical 소켓 재검사와 마지막 검사→commit 사이 무await 계약을 보존한다. 이 실제 호출자와 해당 시작 경로 시험도 S-1 담당 파일에 포함된다.
+- 현행 프런트 연결 위치 확인: `bootstrapSessionSnapshotPure`는 seed를 만들어 `applySessionSnapshotPure`에 위임한다. 후자의 플레이어 입력 검증 루프와 `nextPlayers` 복사 구간 둘 다 새 공개 필드를 다뤄야 한다. bootstrap에 별도의 플레이어 검증 루프가 있다고 가정하지 않는다. 기존 잘못된 입력 거부·필드 없음 허용 계약을 유지한다.
 - 서버: 게임 시작 페이로드와 스냅샷의 플레이어 공개 필드에 **`accountTotalGames`(정수)**, **`accountWinRate`(0~100 정수, 소수 반올림)** 를 더한다. 계산은 `getMyRoleStatistics`와 같은 행(`findRoleStatisticsRows`, 출처 필터 동일)을 **참가자 전원에 대해 한 번에** 조회하는 새 저장소 함수 `getAccountRecordSummaries(userIds) → Map<userId, {totalGames, winRate}>`(`gameResult.repositories.js`)로 하고, 세션 생성 때 플레이어 객체에 붙인다(`buildPlayerAccountProfileFields`가 own-property로 복사). 조회 실패면 필드를 **붙이지 않는다**(0으로 위장 금지) — 로그만 남기고 게임은 진행한다.
 - 판 수 0인 계정은 `{accountTotalGames: 0, accountWinRate: 0}`을 **붙인다**(조회 성공이므로). 실패와 0을 프런트가 구분할 수 있어야 한다.
 - 프런트: `applySessionSnapshotPure`/`bootstrapSessionSnapshotPure`의 플레이어 루프에 두 필드를 own-property 검증(정수·범위)으로 추가, `buildPlayerSessionSourceFromGameState`가 세션 플레이어에 실어 준다. `PlayerRecordListContent`는 `DUMMY_PLAYER_RECORDS` 대신 세션 값으로 `"{n}판 | {rate}%"` 두 값을 보여주고, 필드가 없으면 "조회 실패"를 표시한다. `DUMMY_PLAYER_RECORDS_BASE`/`DUMMY_PLAYER_RECORDS`와 `formatPlayerRecordStats`의 wins/losses 인자는 삭제(프로필 자산 헬퍼는 남긴다).
