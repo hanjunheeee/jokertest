@@ -12,6 +12,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localh
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
 const crypto       = require("node:crypto");
+const nodeHttp     = require("node:http");
 const fs           = require("node:fs");
 const os           = require("node:os");
 const path         = require("node:path");
@@ -27,6 +28,9 @@ const userRepository = require("../repositories/user.repositories");
 const currencyProductsService = require("../service/currencyProducts.service");
 const topupService = require("../service/topup.service");
 const { createTossAdapter } = require("../payments/tossAdapter");
+// topup.route.test.js와 같은 이유 — 이 파일의 앱 서버도 전역 fetch로 호출되므로 Fetch 금지 포트를
+// 배정받지 않도록 같은 공용 helper로 bind한다(같은 원인의 인접 fixture).
+const { listenOnFetchablePort } = require("../tests/helpers/fetchablePort");
 
 const RUN = crypto.randomBytes(8).toString("hex");
 const CLIENT_KEY = `test_ck_public${RUN}0000`;
@@ -95,10 +99,10 @@ const startServer = async (t, accessLog) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await new Promise((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+    const server = nodeHttp.createServer(app);
+    const { url } = await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
-    return `http://127.0.0.1:${server.address().port}`;
+    return url;
 };
 
 const call = async (base, requestPath, { method = "GET", body, rawBody } = {}) => {

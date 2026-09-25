@@ -1,9 +1,9 @@
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
 import { useNavigate } from "react-router-dom"
 import InGameBackground from "../components/InGameBackground.jsx"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
-import InGameActionPanel from "../components/actions/InGameActionPanel.jsx"
+import SettingKickPlayerModalContent from "../components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalContent.jsx"
 import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOverlay.jsx"
 import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
@@ -49,6 +49,7 @@ import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
 import { useInGameActionPanel } from "../hooks/useInGameActionPanel.js"
+import { useInGameKickFromCard } from "../hooks/useInGameKickFromCard.js"
 
 /**
  * V-1: 조작 훅(useInGameActionPanel)을 **정확히 한 번** 부르고 그 값을 아래로 흘려보내는
@@ -62,9 +63,81 @@ import { useInGameActionPanel } from "../hooks/useInGameActionPanel.js"
  */
 export function InGameActionProvider({ interactionBlocked = false, children }) {
   const actionPanelValue = useInGameActionPanel({ interactionBlocked })
+
+  /**
+   * V-2(AC-03): 카드 메뉴의 방장 추방도 이 Provider가 소유한다.
+   *
+   * 왜 부모 InGamePage가 아니라 여기인가 — 카드 메뉴는 컨텍스트 값으로만 바깥과 말한다.
+   * 방장 여부(hostUuid)·전송 중 여부(isSending)·확인 대화를 여는 입구(requestConfirmByUuid)가
+   * 전부 이 value 안에 있어야 메뉴가 그것들을 볼 수 있다. 값과 그 값이 여는 대화가 다른
+   * 컴포넌트에 나뉘어 있으면 부모가 자식의 지역 상태를 참조해야 하는 불가능한 배선이 된다.
+   *
+   * hostUuid는 store **최상위** 키다(useInGameSettingIsHost와 같은 출처) — 설정 → 방관리
+   * 경로와 카드 경로가 서로 다른 방장 판정을 하지 않게 한다.
+   */
+  const hostUuid = useInGameStore((s) => s.hostUuid ?? null)
+  const kick = useInGameKickFromCard()
+  const [kickDialogTargetUuid, setKickDialogTargetUuid] = useState(null)
+  const [isKickDialogOpen, setIsKickDialogOpen] = useState(false)
+  const { requestConfirmByUuid, cancelConfirm, confirmKick, targets } = kick
+
+  /** 카드 메뉴가 부르는 입구. 확인 단계를 열면서 그 확인을 담을 대화도 함께 연다. */
+  const openKickConfirm = useCallback((uuid) => {
+    setKickDialogTargetUuid(uuid)
+    setIsKickDialogOpen(true)
+    requestConfirmByUuid(uuid)
+  }, [requestConfirmByUuid])
+
+  /** 대화를 닫는 유일한 경로. 확인 자체도 함께 버린다(요청은 나가지 않는다). */
+  const closeKickDialog = useCallback(() => {
+    cancelConfirm()
+    setIsKickDialogOpen(false)
+  }, [cancelConfirm])
+
+  const actionContextValue = {
+    ...actionPanelValue,
+    hostUuid,
+    isSending: kick.isSending,
+    requestConfirmByUuid: openKickConfirm,
+  }
+
   return (
-    <InGameActionContext.Provider value={actionPanelValue}>
+    <InGameActionContext.Provider value={actionContextValue}>
       {children}
+      {isKickDialogOpen ? (
+        <div role="dialog" aria-label="추방" data-kick-dialog-target={kickDialogTargetUuid ?? ""}>
+          {/* 상시 닫기. 확인 단계가 아직 안 열렸거나 결과만 남은 상태에서도 빠져나갈 길이
+              있어야 한다(대화가 화면을 잠그는 상태로 남지 않게). */}
+          <button type="button" data-testid="kick-dialog-close" onClick={closeKickDialog}>
+            닫기
+          </button>
+          <SettingKickPlayerModalContent
+            targets={targets}
+            pendingTarget={kick.pendingTarget}
+            status={kick.status}
+            errorCode={kick.errorCode}
+            isSending={kick.isSending}
+            canLookupResult={kick.canLookupResult}
+            isAwaitingResolution={kick.isAwaitingResolution}
+            onRequestConfirm={kick.requestConfirm}
+            onCancelConfirm={closeKickDialog}
+            onConfirmKick={() => confirmKick(targets)}
+            onLookupResult={kick.lookupResult}
+          />
+        </div>
+      ) : null}
+      {/* 대화를 닫아도 결과를 모르는 전송은 남는다. 그 상태에서 다시 열 길이 없으면 사용자는
+          이미 나간 추방의 결과를 영영 확인할 수 없다 — 새 추방을 보내는 것이 아니라 **기존
+          키를 조회**하는 경로다(useKickPlayerRequest의 잠금은 그대로 유지된다). */}
+      {!isKickDialogOpen && (kick.canLookupResult || kick.isSending || kick.isAwaitingResolution) ? (
+        <button
+          type="button"
+          data-testid="kick-dialog-reopen"
+          onClick={() => setIsKickDialogOpen(true)}
+        >
+          추방 결과 조회
+        </button>
+      ) : null}
     </InGameActionContext.Provider>
   )
 }
@@ -117,7 +190,7 @@ export default function InGamePage() {
   const identityRebindPending = useInGameSnapshotRebindPending()
   // 인게임 오버레이 스택 — 역할 공개, DAY/NIGHT 진입 연출, 밤 역할 턴 안내의 표시 순서를
   // 한 곳에서 결정한다(useInGameOverlayStack 참고). 각 오버레이가 서로의 상태를 알아야 하므로
-  // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — InGameActionPanel의 "내 역할 보기"
+  // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — 상단 버튼 줄의 "내 역할 보기"
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
   const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
 
@@ -274,14 +347,18 @@ export default function InGamePage() {
         className={`absolute inset-0 ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
         inert={surfaceLocked || undefined}
       >
+        {/* V-2(AC-02): "내 역할 보기"는 제어 패널이 아니라 이 상단 줄이 소유한다. 열림
+            상태의 출처는 그대로 useInGameOverlayStack 하나다(여기서는 그 입구만 옮겼다). */}
         <InGameTopControls
           onExitClick={requestExit}
           onMenuClick={sidePanel.openRecords}
           onSettingsClick={sidePanel.openSettings}
+          onOpenRoleReveal={roleReveal.reopen}
+          roleRevealAvailable={Boolean(roleReveal.roleInfo)}
         />
         <InGamePlayerSessionProvider>
-          {/* V-1: 컨트롤 패널과 플레이어 보드(카드 메뉴)를 같은 조작 훅 인스턴스로 묶는다 —
-              둘이 한 Provider 아래에 있어야 선택 상태와 제출 경로가 하나다. */}
+          {/* V-1/V-2: 단계 행동 줄(시간바 안)과 플레이어 보드(카드 메뉴)를 같은 조작 훅
+              인스턴스로 묶는다 — 둘이 한 Provider 아래에 있어야 선택 상태와 제출 경로가 하나다. */}
           <InGameActionProvider interactionBlocked={interactionBlocked}>
             {/* NIGHT 문구는 로컬 canonical 턴(selectInGameNightTurnRole)에서만 파생한다 — 안내
                 오버레이가 닫혀도 이 줄은 턴이 끝날 때까지 남고, 남은 초는 서버 deadline에서
@@ -294,11 +371,6 @@ export default function InGamePage() {
             />
             <InGamePlayerBoard />
             <InGameChatShell />
-            <InGameActionPanel
-              onOpenRoleReveal={roleReveal.reopen}
-              roleRevealAvailable={Boolean(roleReveal.roleInfo)}
-              interactionBlocked={interactionBlocked}
-            />
             <PlayerRecordListPanel
               open={sidePanel.recordsOpen}
               onClose={sidePanel.close}

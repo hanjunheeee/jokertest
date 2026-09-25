@@ -12,9 +12,17 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localh
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
+const nodeHttp     = require("node:http");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
 const jwt          = require("jsonwebtoken");
+
+// 이 스위트의 앱 서버는 전역 fetch로 호출된다. 이 장비의 Windows 동적 포트 범위(1024..15000)에는
+// Fetch 금지 포트가 섞여 있어 listen(0)이 그중 하나를 뽑으면 undici가 연결 시도조차 하지 않고
+// "TypeError: fetch failed (cause: bad port)"로 거부한다 — 2026-09-23 백엔드 전체 실행에서 이
+// 파일의 서버가 6667/6668/6669/6679를 받아 5건이 그렇게 실패했다. 공용 helper로 Fetch가 허용하는
+// 고포트에 실제 bind한다(금지 목록·OS 포트 범위를 건드리지 않고, 여전히 실제 loopback TCP다).
+const { listenOnFetchablePort } = require("../tests/helpers/fetchablePort");
 
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
 const { createError } = require("../utils/appError");
@@ -70,10 +78,10 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await new Promise((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+    const server = nodeHttp.createServer(app);
+    const { url } = await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
-    return `http://127.0.0.1:${server.address().port}`;
+    return url;
 };
 
 const request = async (base, path, { method = "GET", token, body, rawBody } = {}) => {
