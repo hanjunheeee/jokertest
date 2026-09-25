@@ -94,6 +94,8 @@ const { INGAME_PLAYER_CARD_MENU_ATTR } = await import("../InGamePlayerCardMenu.j
 const {
   INGAME_EMOJI_PALETTE_ATTR,
   INGAME_EMOJI_PALETTE_SLOT_COUNT,
+  INGAME_EMOJI_PALETTE_FRAME_WIDTH,
+  INGAME_EMOJI_PALETTE_FRAME_HEIGHT,
 } = await import("../InGameEmojiPalette.jsx")
 const { INGAME_E2E_ATTRS } = await import("../../../constants/e2e/ingameE2eHooks.js")
 
@@ -290,6 +292,45 @@ test("AC-03: 본인 카드 우클릭이 8칸 팔레트를 열고, 칸 클릭이 
   // 카드에는 실제로 재판 투표 항목이 있으므로, 전파가 새면 메뉴가 정말로 열린다.
   assert.equal(cardMenuOf(view.container), null, "칸 선택이 좌클릭 카드 메뉴로 샜다")
   assert.equal(paletteOf(view.container), null, "선택 뒤에도 팔레트가 닫히지 않았다")
+})
+
+test("AC-03: 8칸이 한 점으로 붕괴하지 않는다 — 루트가 자산 종횡비로 자기 높이를 만든다", async () => {
+  // 이 시험의 한계를 먼저 밝힌다: jsdom에는 배치 엔진이 없어 offsetHeight는 언제나 0이라,
+  // "실제로 몇 픽셀인가"는 여기서 잴 수 없다(실제 브라우저 확인은 운영자 몫으로 남는다).
+  // 대신 **높이가 0이 되는 원인 자체**를 본다 — 흐름에 남는 자식이 하나도 없는데 루트가 자기
+  // 높이를 선언하지 않는 상태. 그 조합이면 칸의 백분율 높이와 top/left가 전부 0으로 풀려
+  // 8칸이 한 점에 겹치고 선택 영역이 사라진다.
+  setUp()
+  const view = mountBoard()
+  await settle()
+
+  const palette = openPalette(view.container)
+  assert.ok(palette, "전제: 팔레트가 열려야 한다")
+
+  // (1) 배경도 8칸도 전부 absolute다 — 루트 높이를 만들어 줄 자식이 없다.
+  const children = [...palette.children]
+  assert.equal(children.length, INGAME_EMOJI_PALETTE_SLOT_COUNT + 1,
+    "팔레트 루트의 자식은 배경 1 + 칸 8이어야 한다")
+  for (const child of children) {
+    assert.ok(child.getAttribute("class")?.split(/\s+/).includes("absolute"),
+      `흐름에 남은 자식이 있다(${child.tagName}) — 이 시험의 전제가 깨졌으니 배치 근거를 다시 세워라`)
+  }
+
+  // (2) 그래서 루트가 폭만으로 높이를 갖도록 자산(769×738)의 종횡비를 직접 선언해야 한다.
+  assert.equal(
+    palette.style.aspectRatio.replace(/\s+/g, ""),
+    `${INGAME_EMOJI_PALETTE_FRAME_WIDTH}/${INGAME_EMOJI_PALETTE_FRAME_HEIGHT}`,
+    "루트에 높이 근거가 없다 — 자식이 전부 absolute라 높이가 0으로 붕괴한다",
+  )
+
+  // (3) 8칸은 서로 다른 8개의 자리를 갖는다(한 점에 겹쳐 그려지지 않는다).
+  const positions = paletteCells(palette).map((cell) => `${cell.style.top}|${cell.style.left}`)
+  assert.equal(positions.length, INGAME_EMOJI_PALETTE_SLOT_COUNT)
+  assert.equal(new Set(positions).size, INGAME_EMOJI_PALETTE_SLOT_COUNT,
+    "8칸이 서로 다른 자리에 놓이지 않았다(방사형 배치가 무너졌다)")
+  for (const position of positions) {
+    assert.match(position, /^\d+%\|\d+%$/, "칸의 자리가 루트 크기에 비례하지 않는다")
+  }
 })
 
 test("AC-03: 칸 위에서 우클릭을 놓아도(mouseup button=2) send_emoji는 한 번뿐이다", async () => {

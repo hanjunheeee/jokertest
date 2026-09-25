@@ -66,9 +66,26 @@ const createInitialState = () => ({
 let gamePendingKey = null
 let gamePendingPromise = null
 
+/**
+ * **요청 하나를 가리키는 토큰.** 키만으로는 "지금 살아 있는 요청인가"를 답할 수 없다.
+ *
+ * 키 비교만 하면 이런 순서가 통과한다: 요청 A(키 K)가 날아간 사이 무효화(resetGamePalette)가
+ * 일어나고, 같은 판으로 다시 들어와 요청 B(같은 키 K)가 시작된다. 이때 A가 응답하면 키도
+ * gameScopeKey도 전부 K라 A는 자기가 최신인 줄 알고 B의 슬롯을 덮어쓰고(폐기했어야 할 응답이
+ * 새 캐시가 된다), A의 finally는 키가 같다는 이유로 **B의 pending 토큰까지 지워** 중복 방지가
+ * 풀린다(같은 판에서 GET이 한 번 더 나간다).
+ *
+ * 그래서 요청마다 단조 증가하는 토큰을 발급하고, 응답을 반영할지(isCurrent)와 pending을
+ * 정리할지(finally)를 **그 토큰이 아직 현재 요청인가**로만 판정한다. 무효화는 토큰을 null로
+ * 만들므로, 그 시점 이후 도착하는 응답은 재진입 여부와 무관하게 전부 버려진다.
+ */
+let gamePendingToken = null
+let gameRequestSeq = 0
+
 function clearGamePaletteRequest() {
   gamePendingKey = null
   gamePendingPromise = null
+  gamePendingToken = null
 }
 
 export const useEmojiPaletteStore = create((set, get) => ({
@@ -134,11 +151,16 @@ export const useEmojiPaletteStore = create((set, get) => ({
     if (gamePendingKey === key && gamePendingPromise !== null) return gamePendingPromise
 
     clearGamePaletteRequest()
+    gameRequestSeq += 1
+    const token = gameRequestSeq
     gamePendingKey = key
+    gamePendingToken = token
     // 다른 판으로 넘어온 경우 이전 사본을 여기서 버린다(두 판의 배치가 섞이지 않게 한다).
     set({ gameScopeKey: key, gameStatus: "loading", gameSlots: null })
 
-    const isCurrent = () => inGameEmojiScopeKey(readInGameEmojiScope()) === key
+    // 토큰을 **먼저** 본다 — 키·gameScopeKey가 모두 같아도 그 사이 폐기된 요청이면 남의 자리다.
+    const isCurrent = () => gamePendingToken === token
+      && inGameEmojiScopeKey(readInGameEmojiScope()) === key
       && get().gameScopeKey === key
 
     const pending = (async () => {
@@ -154,7 +176,9 @@ export const useEmojiPaletteStore = create((set, get) => ({
         set({ gameStatus: "error" })
         return { ok: false, code: error?.code, error }
       } finally {
-        if (gamePendingKey === key) clearGamePaletteRequest()
+        // 내가 아직 현재 요청일 때만 치운다. 키로 판정하면 나를 폐기하고 시작된 **다음 요청의**
+        // pending을 지워, 같은 판에서 중복 방지가 풀린다.
+        if (gamePendingToken === token) clearGamePaletteRequest()
       }
     })()
 

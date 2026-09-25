@@ -17,6 +17,24 @@ export const INGAME_EMOJI_PALETTE_LABEL = "이모티콘 팔레트"
 /** 칸의 개수는 서버 계약(EMOJI_PALETTE_SLOT_COUNT=8)과 같다 — 화면이 이 길이를 전제로 그린다. */
 export const INGAME_EMOJI_PALETTE_SLOT_COUNT = 8
 
+/**
+ * palette-frame.png의 실제 픽셀 크기. 루트가 **자기 높이를 이 비율로 만든다.**
+ *
+ * 마이페이지(EmoticonPalettePage.jsx:203)는 배경 이미지를 흐름 안에 두어(`block h-auto w-full`)
+ * 이미지의 고유 비율이 컨테이너 높이를 만든다. 인게임 팔레트는 배경을 `absolute inset-0`으로
+ * 깔고 8칸도 전부 absolute라 **흐름에 남는 자식이 하나도 없다** — 그러면 루트 높이가 0이 되고,
+ * 칸의 `h-[22%]`와 `top: 12%~88%`가 전부 0으로 풀려 8칸이 한 점에 겹친다(선택 영역 붕괴).
+ * 그래서 루트가 폭만으로 높이를 갖도록 종횡비를 직접 선언한다.
+ *
+ * 클래스가 아니라 inline style인 이유: 이 값은 자산의 실측 크기에서 나온 계산된 비율이라
+ * 상수 하나가 곧 근거이고, 시험이 실제로 선언됐는지 확인할 수 있어야 하기 때문이다
+ * (jsdom은 Tailwind를 적용하지 않으므로 클래스만으로는 배치 회귀를 잡을 수 없다).
+ */
+export const INGAME_EMOJI_PALETTE_FRAME_WIDTH = 769
+export const INGAME_EMOJI_PALETTE_FRAME_HEIGHT = 738
+export const INGAME_EMOJI_PALETTE_ASPECT_RATIO =
+  `${INGAME_EMOJI_PALETTE_FRAME_WIDTH} / ${INGAME_EMOJI_PALETTE_FRAME_HEIGHT}`
+
 // 8칸 방사형 배치의 칸 중심 좌표(%). palette-frame.png(769×738)를 12시부터 시계 방향으로 돈다
 // (EmoticonPalettePage.jsx의 SLOT_POSITIONS와 같은 값 — 같은 자산의 같은 배치다).
 const SLOT_POSITIONS = [
@@ -115,6 +133,8 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
       role="group"
       aria-label={INGAME_EMOJI_PALETTE_LABEL}
       className={PALETTE_WRAP_CLASS}
+      // 흐름에 남는 자식이 없으므로 높이는 여기서만 나온다(위 상수 주석 참고).
+      style={{ aspectRatio: INGAME_EMOJI_PALETTE_ASPECT_RATIO }}
       onClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.preventDefault()}
       {...{ [INGAME_EMOJI_PALETTE_ATTR]: "true" }}

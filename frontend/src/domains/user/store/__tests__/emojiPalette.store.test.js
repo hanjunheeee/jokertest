@@ -490,3 +490,100 @@ test("loadForGame: 조회가 거부되면 처리되지 않은 rejection 없이 g
   assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready")
   assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
 })
+
+// ── 폐기 후 **같은 키로** 재진입 ──────────────────────────────────────────────
+//
+// 키만 비교하면 폐기된 요청이 자기가 최신인 줄 안다: 무효화 뒤 같은 판으로 다시 들어오면
+// 캐시 키도 gameScopeKey도 폐기 전과 **글자 그대로 같기** 때문이다. 그 상태에서 옛 응답이
+// 도착하면 (a) 새 요청의 슬롯·상태를 덮고, (b) finally가 키가 같다는 이유로 새 요청의 pending
+// 토큰까지 지워 중복 방지가 풀린다. 아래 두 시험은 resolve 경로와 reject 경로를 각각 본다.
+
+/** GET 응답을 호출 순서대로 시험이 쥐고 있게 한다(같은 키의 두 요청을 따로 풀기 위해). */
+const queueGets = (...deferreds) => {
+  let index = 0
+  handleRequest = async ({ method }) => {
+    if (method !== "GET") throw new Error(`unexpected ${method}`)
+    const deferred = deferreds[index]
+    index += 1
+    if (!deferred) throw new Error(`예상하지 않은 ${index}번째 GET`)
+    return await deferred.promise
+  }
+}
+
+test("loadForGame: 폐기 뒤 같은 키로 다시 시작하면, 앞 요청의 응답이 새 사본·pending을 바꾸지 못한다", async () => {
+  resetGameWorld()
+  seedGame()
+  const first = createDeferred()
+  const second = createDeferred()
+  queueGets(first, second)
+
+  const stalePending = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 1)
+
+  // 같은 판을 유지한 채 사본만 폐기한다 — 키는 폐기 전과 완전히 같은 값으로 되돌아온다.
+  useEmojiPaletteStore.getState().resetGamePalette()
+  assert.equal(useEmojiPaletteStore.getState().gameScopeKey, null)
+
+  const livePending = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2, "폐기 뒤 재진입이 새 조회를 내지 않았다")
+  const liveKey = useEmojiPaletteStore.getState().gameScopeKey
+  assert.ok(liveKey, "재진입한 요청이 캐시 키를 세우지 않았다")
+
+  // 폐기된 앞 요청이 **뒤늦게** 성공한다.
+  first.resolve(json(200, { ok: true, slots: NEXT_SLOTS, revision: "r-old", owned: [] }))
+  assert.deepEqual(await stalePending, { ok: false, stale: true },
+    "폐기된 요청이 자기 응답을 유효한 것으로 보고했다")
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameSlots, null,
+    "폐기된 요청의 응답이 새 요청의 사본 자리에 들어갔다")
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "loading",
+    "폐기된 요청이 진행 중인 새 요청의 상태를 끝난 것으로 바꿨다")
+  assert.equal(useEmojiPaletteStore.getState().gameScopeKey, liveKey)
+
+  // 앞 요청의 finally가 새 요청의 pending 토큰을 지웠다면 여기서 세 번째 GET이 나간다.
+  const rejoin = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2, "폐기된 요청의 정리가 새 요청의 중복 방지를 풀었다")
+
+  second.resolve(json(200, { ok: true, slots: GAME_SLOTS, revision: "r-new", owned: [] }))
+  assert.deepEqual((await livePending).slots, GAME_SLOTS)
+  assert.deepEqual((await rejoin).slots, GAME_SLOTS, "합쳐진 호출이 새 요청의 결과를 받지 못했다")
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS,
+    "새 요청의 응답이 최종 사본이 되어야 한다")
+  assert.equal(getCallCount(), 2)
+  assert.deepEqual(unhandled, [])
+})
+
+test("loadForGame: 폐기된 앞 요청이 거부돼도 새 요청의 상태·중복 방지는 그대로다", async () => {
+  resetGameWorld()
+  seedGame()
+  const first = createDeferred()
+  const second = createDeferred()
+  queueGets(first, second)
+
+  const stalePending = useEmojiPaletteStore.getState().loadForGame()
+  useEmojiPaletteStore.getState().resetGamePalette()
+  const livePending = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2)
+
+  first.reject(new TypeError("network down"))
+  assert.deepEqual(await stalePending, { ok: false, stale: true })
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "loading",
+    "폐기된 요청의 실패가 진행 중인 새 요청을 error로 끝냈다")
+  const rejoin = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2, "폐기된 요청의 실패 정리가 새 요청의 중복 방지를 풀었다")
+
+  second.resolve(json(200, { ok: true, slots: GAME_SLOTS, revision: "r-new", owned: [] }))
+  assert.deepEqual((await livePending).slots, GAME_SLOTS)
+  await rejoin
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
+  assert.deepEqual(unhandled, [], "폐기된 요청의 거부가 처리되지 않은 rejection으로 샜다")
+})
