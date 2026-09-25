@@ -80,6 +80,23 @@ matchmaking.__setGameInviteServiceForTests({
     cancelPendingInvitesForRoom: async () => {},
 })
 
+// CO S-1(AC-02/AC-03): 계정 전적 조회는 외형 조회와 **나란히** 도는 두 번째 비동기 경계다.
+// 그 대기 구간도 저장·이탈·소켓 교체가 끼어들 수 있는 창이므로, 외형 조회와 같은 gate 패턴으로
+// 붙잡아 둘 수 있어야 같은 회귀를 검증할 수 있다. recordSummaryShouldReject는 "조회가 실패해도
+// 최종 가드는 그대로 걸린다"를 확인하기 위한 것이다(실패 흡수가 가드를 건너뛰게 만들면 안 된다).
+let recordSummaryGate = null
+let recordSummaryCalls = 0
+let recordSummaryShouldReject = false
+
+matchmaking.__setGameResultRepositoryForTests({
+    getAccountRecordSummaries: async (userIds) => {
+        recordSummaryCalls += 1
+        if (recordSummaryGate) await recordSummaryGate.onEnter()
+        if (recordSummaryShouldReject) throw new Error('전적 조회 실패(테스트 주입)')
+        return new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }]))
+    },
+})
+
 const {
     createFakeSocket,
     createFakeIo,
@@ -288,6 +305,9 @@ test.beforeEach(() => {
     startLoadoutGate = null
     startLoadoutCalls = 0
     onStartLoadoutsRead = null
+    recordSummaryGate = null
+    recordSummaryCalls = 0
+    recordSummaryShouldReject = false
     matchmaking.__resetStateForTests()
     // game-core는 별도 registry(gameSessions/playerSession/roomGameSession)를 갖는다 —
     // matchmaking 초기화로는 비워지지 않아 여기서 따로 비운다(matchmaking.test.js와 같은 관례).
@@ -1044,6 +1064,191 @@ test('AC-04 · 내부 검사 통과 뒤·바깥 재개 전에 준비가 취소�
     const restarted = await new Promise((resolve) =>
         handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
     assert.equal(restarted.ok, true, restarted.message)
+})
+
+// ── CO S-1(AC-02/AC-03): 계정 전적 조회 대기 중의 방 상태 변경 ────────────────
+//
+// 전적 조회는 시작 경로에 새로 생긴 두 번째 await다. 그 대기 구간에서 방이 바뀌었는데도
+// 시작이 커밋되면, 지금까지 외형 조회 구간에서 막아 온 모든 사건이 새 경계로 우회된다.
+// 아래 시험들은 기존 외형 조회 gate 시험과 **같은 사건**을 전적 조회 gate로 다시 건다.
+
+/** 전원 준비된 2인 방 하나 — 아래 전적 조회 회귀 시험들이 공유한다. */
+async function setupReadyPairForStart(io) {
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 4, jokerCount: 1 })
+    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+    return { hostSocket, joinerSocket, room }
+}
+
+/** 시작 요청을 보내고 ack 횟수를 함께 센다(ack는 정확히 한 번이어야 한다). */
+function startWithAckCount(io, socket, uuid, payload, getCurrentSocketId) {
+    const state = { acks: 0, response: null }
+    state.promise = new Promise((resolve) => {
+        handleStartGame(io, socket, uuid, payload, (res) => {
+            state.acks += 1
+            state.response = res
+            resolve(res)
+        }, getCurrentSocketId)
+    })
+    return state
+}
+
+const gameStartedCount = (socket) => socket.emitted.filter((e) => e.event === 'game_started').length
+
+test('CO S-1 · 전적 조회 대기 중 설정이 저장되면 그 시작은 커밋되지 않고 방과 세션이 그대로다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, joinerSocket, room } = await setupReadyPairForStart(io)
+
+    recordSummaryGate = createStartGate()
+    const start = startWithAckCount(io, hostSocket, 'host-a', startPayload(room))
+    await recordSummaryGate.entered
+    assert.equal(recordSummaryCalls, 1, '시작 요청이 실제로 전적 조회 대기에 들어가야 이 사건이 성립한다')
+
+    const saved = await callAsPromise(
+        handleUpdateRoomSettings, io, hostSocket, 'host-a',
+        updatePayload(room.roomId, { maxPlayers: 6, jokerCount: 1 }),
+    )
+    assert.equal(saved.ok, true, saved.message)
+
+    recordSummaryGate.release()
+    const startResult = await start.promise
+    assert.equal(startResult.ok, false, '옛 설정으로 시작된 요청이 전적 조회 경계를 우회해 커밋됐다')
+    assert.equal(startResult.code, 'ROOM_STATE_CHANGED')
+    assert.equal(start.acks, 1, 'ack는 정확히 한 번이어야 한다')
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null, '세션이 커밋되면 안 된다')
+    assert.equal(gameStartedCount(hostSocket) + gameStartedCount(joinerSocket), 0)
+    assert.ok(gameRoomStillExists(room.roomId), '실패한 시작이 방을 없앴다')
+    const after = matchmaking.__getStateSnapshotForTests().gameRooms[0][1]
+    assert.equal(after.settings.maxPlayers, 6, '저장된 새 설정이 실패한 시작 때문에 되돌려지면 안 된다')
+})
+
+test('CO S-1 · 전적 조회 대기 중 방이 사라지면 그 시작은 커밋되지 않고 방이 되살아나지도 않는다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, joinerSocket, room } = await setupReadyPairForStart(io)
+
+    recordSummaryGate = createStartGate()
+    const start = startWithAckCount(io, hostSocket, 'host-a', startPayload(room))
+    await recordSummaryGate.entered
+
+    matchmaking.__removeRoomForTests(room.roomId)
+
+    recordSummaryGate.release()
+    const startResult = await start.promise
+    assert.equal(startResult.ok, false, '이미 사라진 방의 시작이 커밋됐다')
+    assert.equal(start.acks, 1)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null)
+    assert.equal(gameStartedCount(hostSocket) + gameStartedCount(joinerSocket), 0)
+    assert.equal(gameRoomStillExists(room.roomId), false, '실패한 시작이 사라진 방을 되살렸다')
+})
+
+test('CO S-1 · 전적 조회 대기 중 준비가 취소되면 그 시작은 커밋되지 않는다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, joinerSocket, room } = await setupReadyPairForStart(io)
+
+    recordSummaryGate = createStartGate()
+    const start = startWithAckCount(io, hostSocket, 'host-a', startPayload(room))
+    await recordSummaryGate.entered
+
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room, false))
+
+    recordSummaryGate.release()
+    const startResult = await start.promise
+    assert.equal(startResult.ok, false)
+    assert.equal(startResult.code, 'ROOM_STATE_CHANGED')
+    assert.equal(start.acks, 1)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null)
+    assert.equal(gameStartedCount(hostSocket) + gameStartedCount(joinerSocket), 0)
+    assert.ok(gameRoomStillExists(room.roomId))
+})
+
+test('CO S-1 · 전적 조회 대기 중 참가자가 나갔다가 다시 들어와 준비해도 옛 시작은 실패한다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, joinerSocket, room } = await setupReadyPairForStart(io)
+
+    recordSummaryGate = createStartGate()
+    const start = startWithAckCount(io, hostSocket, 'host-a', startPayload(room))
+    await recordSummaryGate.entered
+
+    // uuid 집합·인원·준비 상태·설정 버전이 전부 조회 시작 시점과 같아진다 — 그 값들만 보면
+    // 구별할 수 없는 사건이다(외형 조회 gate 시험과 같은 근거).
+    matchmaking.__testables.removeFromRoom(io, joinerSocket, 'p1')
+    const rejoined = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, rejoined, 'p1', readyPayload(room))
+
+    recordSummaryGate.release()
+    const startResult = await start.promise
+    assert.equal(startResult.ok, false, '이탈·재입장 사이에 걸쳐 있던 옛 시작이 커밋됐다')
+    assert.equal(startResult.code, 'ROOM_STATE_CHANGED')
+    assert.equal(start.acks, 1)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null)
+    assert.equal(gameStartedCount(hostSocket) + gameStartedCount(rejoined), 0)
+    assert.ok(gameRoomStillExists(room.roomId))
+})
+
+test('CO S-1 · 전적 조회 대기 중 canonical 소켓이 교체되면 옛 소켓의 시작은 커밋되지 않는다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, room } = await setupReadyPairForStart(io)
+
+    let canonicalHostSocketId = hostSocket.id
+    const getCurrentSocketId = (u) => (u === 'host-a' ? canonicalHostSocketId : `sock-${u}`)
+
+    recordSummaryGate = createStartGate()
+    const start = startWithAckCount(io, hostSocket, 'host-a', startPayload(room), getCurrentSocketId)
+    await recordSummaryGate.entered
+
+    const replacement = createFakeSocket('host-a', { id: 'sock-host-a-2' })
+    io.sockets.sockets.set(replacement.id, replacement)
+    await replacement.join(room.roomId)
+    canonicalHostSocketId = replacement.id
+    assert.equal(hostSocket.connected, true, '이 사건의 전제는 옛 소켓이 아직 연결돼 있다는 것이다')
+
+    recordSummaryGate.release()
+    const startResult = await start.promise
+    assert.equal(startResult.ok, false, '교체된 옛 소켓의 시작이 전적 조회 경계를 우회해 커밋됐다')
+    assert.equal(startResult.code, ROOM_SETTINGS_ERROR_CODES.STALE_SOCKET)
+    assert.equal(start.acks, 1)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null)
+    assert.ok(gameRoomStillExists(room.roomId))
+
+    // 현재 연결이 보낸 시작은 정상적으로 성공한다(모든 시작을 막은 것이 아니다).
+    recordSummaryGate = null
+    const byCurrent = await new Promise((resolve) =>
+        handleStartGame(io, replacement, 'host-a', startPayload(room), resolve, getCurrentSocketId))
+    assert.equal(byCurrent.ok, true, byCurrent.message)
+})
+
+test('CO S-1 · 전적 조회가 실패해도 최종 가드는 그대로 걸리고, 상태가 그대로면 전적 없이 시작된다', async () => {
+    const io = createFakeIo([])
+    const { hostSocket, joinerSocket, room } = await setupReadyPairForStart(io)
+
+    // (1) 조회가 실패한 채로 방 상태까지 바뀌면 — 실패 흡수가 가드를 건너뛰게 만들면 안 된다.
+    recordSummaryShouldReject = true
+    recordSummaryGate = createStartGate()
+    const start = startWithAckCount(io, hostSocket, 'host-a', startPayload(room))
+    await recordSummaryGate.entered
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room, false))
+    recordSummaryGate.release()
+
+    const startResult = await start.promise
+    assert.equal(startResult.ok, false, '전적 조회 실패가 방 상태 검사를 건너뛰게 만들었다')
+    assert.equal(startResult.code, 'ROOM_STATE_CHANGED')
+    assert.equal(start.acks, 1)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a'), null)
+    assert.equal(gameStartedCount(hostSocket) + gameStartedCount(joinerSocket), 0)
+
+    // (2) 같은 실패라도 방 상태가 그대로면 시작은 성공한다 — 전적은 표시용 정보일 뿐이고,
+    //     그 필드만 붙지 않는다(0판 0%로 위장하지 않는다).
+    recordSummaryGate = null
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room, true))
+    const restarted = await new Promise((resolve) =>
+        handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
+    assert.equal(restarted.ok, true, restarted.message)
+    const startedPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
+    for (const player of startedPayload.state.players) {
+        assert.equal(Object.hasOwn(player, 'accountTotalGames'), false)
+        assert.equal(Object.hasOwn(player, 'accountWinRate'), false)
+    }
 })
 
 test('AC-04 · 게임이 먼저 시작되면 이후 설정 저장은 거부되고 시작된 판의 설정은 그대로다', async () => {

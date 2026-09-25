@@ -186,6 +186,15 @@ export function applySessionSnapshotPure(current, response) {
     if (Object.hasOwn(player, "accountProfilePhotoId") && !isNonEmptyString(player.accountProfilePhotoId)) return current
     if (Object.hasOwn(player, "accountProfileBorderId") && !isNonEmptyString(player.accountProfileBorderId)) return current
     if (Object.hasOwn(player, "accountCardFrameId") && player.accountCardFrameId !== null && !isNonEmptyString(player.accountCardFrameId)) return current
+    // CO S-1(AC-04): 계정 전적(총 판수·승률)도 같은 own-property 조건부 계약이다 — 서버가
+    // 조회에 실패한 참가자에게는 키 자체를 만들지 않으므로(backend captureRoomStartProfiles)
+    // "없음"은 정상이다. 있으면 화면이 그대로 숫자로 그리는 값이라 모양을 여기서 강제한다:
+    // 판수는 음수·소수·문자열이면 안 되고, 승률은 거기에 더해 100을 넘을 수 없다. 어긋나면
+    // 이 필드만 버리지 않고 응답 전체를 거부한다 — 한 필드가 망가진 응답의 나머지 값을
+    // 신뢰할 근거가 없기 때문이다(이 함수의 다른 모든 검증과 같은 원자적 거부).
+    if (Object.hasOwn(player, "accountTotalGames") && !isNonNegativeInteger(player.accountTotalGames)) return current
+    if (Object.hasOwn(player, "accountWinRate")
+      && (!isNonNegativeInteger(player.accountWinRate) || player.accountWinRate > 100)) return current
     if (rosterByUuid.has(player.uuid)) return current
     rosterByUuid.set(player.uuid, player)
   }
@@ -412,6 +421,10 @@ export function applySessionSnapshotPure(current, response) {
     ...(Object.hasOwn(p, "accountProfilePhotoId") ? { accountProfilePhotoId: p.accountProfilePhotoId } : {}),
     ...(Object.hasOwn(p, "accountProfileBorderId") ? { accountProfileBorderId: p.accountProfileBorderId } : {}),
     ...(Object.hasOwn(p, "accountCardFrameId") ? { accountCardFrameId: p.accountCardFrameId } : {}),
+    // CO S-1(AC-04): 위에서 모양까지 확인한 계정 전적을 같은 조건부 복사 관례로 옮긴다 —
+    // 여기서 빠뜨리면 재접속·새로고침마다 전적 목록이 전원 "조회 실패"로 되돌아간다.
+    ...(Object.hasOwn(p, "accountTotalGames") ? { accountTotalGames: p.accountTotalGames } : {}),
+    ...(Object.hasOwn(p, "accountWinRate") ? { accountWinRate: p.accountWinRate } : {}),
   }))
 
   const nextSelf = {

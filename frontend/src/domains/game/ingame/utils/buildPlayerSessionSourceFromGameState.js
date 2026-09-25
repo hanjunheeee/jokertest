@@ -106,6 +106,16 @@ export function buildPlayerSessionSourceFromGameState(state) {
     if (Object.hasOwn(player, "accountCardFrameId")) {
       entry.accountCardFrameId = player.accountCardFrameId
     }
+    // CO S-1(AC-05): 계정 전적(총 판수·승률)도 프로필 자산과 같은 공개 필드이고, 같은
+    // own-property 조건부 복사 관례를 따른다 — 여기서 전달하지 않으면 서버가 보낸 전적이
+    // 세션 원본에서 끊겨 전적 목록이 전원 "조회 실패"로 보인다. 서버가 실제로 조회하지
+    // 못한 참가자는 키 자체가 없으므로 0판 0%로 채우지 않는다.
+    if (Object.hasOwn(player, "accountTotalGames")) {
+      entry.accountTotalGames = player.accountTotalGames
+    }
+    if (Object.hasOwn(player, "accountWinRate")) {
+      entry.accountWinRate = player.accountWinRate
+    }
     return entry
   })
 

@@ -30,6 +30,11 @@ let fakeGetGameStartLoadouts = async (userIds) =>
         cardFrameId: null,
         skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
     }]))
+// CO S-1(AC-02/AC-03): 게임 시작 시 참가자 전원의 계정 전적을 읽는 저장소도 실제 MySQL을
+// 요구한다 — economyService와 같은 이유로 대역을 주입한다. 기본값은 실제 저장소의 계약을
+// 그대로 흉내낸다: **요청한 모든 uuid**에 대해 항목이 있고, 기록이 없으면 0판 0%다.
+let fakeGetAccountRecordSummaries = async (userIds) =>
+    new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }]))
 
 const matchmaking = require('../matchmaking')
 matchmaking.__setUserRepositoryForTests({
@@ -38,6 +43,9 @@ matchmaking.__setUserRepositoryForTests({
 matchmaking.__setEconomyServiceForTests({
     getPublicProfileLoadouts: (...args) => fakeGetPublicProfileLoadouts(...args),
     getGameStartLoadouts: (...args) => fakeGetGameStartLoadouts(...args),
+})
+matchmaking.__setGameResultRepositoryForTests({
+    getAccountRecordSummaries: (...args) => fakeGetAccountRecordSummaries(...args),
 })
 // 방 소멸·시작 시 fire-and-forget으로 도는 초대 정리(gameInvite.service)는 실제 MySQL을
 // 요구한다. 대역이 없으면 이 순수 단위 스위트가 실제 DB 접속을 시도해 AccessDenied 로그를
@@ -91,6 +99,8 @@ test.beforeEach(() => {
     fakeFindByUuid = async (uuid) => ({ nickname: `user-${uuid}` })
     fakeGetPublicProfileLoadouts = async (userIds) =>
         Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }]))
+    fakeGetAccountRecordSummaries = async (userIds) =>
+        new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }]))
 })
 
 // ── create_room ──────────────────────────────────────────────────────────
@@ -1785,6 +1795,113 @@ test('start_game: 서버가 조회한 직업별 스킨은 자신의 실제 역�
         assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
         assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false)
         assert.equal(player.accountCardFrameId, 'player-card-시험용')
+    }
+})
+
+// CO S-1(AC-02/AC-03) — 게임 시작 시 계정 전적(총 판수·승률)이 실제 생산 경로를 그대로 타고
+// game_started 페이로드와 재접속 스냅샷 양쪽에 도달하는지. 합성 세션을 심지 않고
+// handleStartGame → captureRoomStartProfiles → buildPlayerAccountProfileFields를 전부 통과시킨다.
+
+test('start_game: 조회한 계정 전적이 game_started players[]와 재접속 스냅샷 양쪽에 own-property로 실리고, 역할별 통계·비공개 필드는 실리지 않는다(CO S-1 AC-02)', async () => {
+    const HOST = 'uuid-record-host'
+    const JOINER = 'uuid-record-joiner'
+    const RECORDS = new Map([
+        [HOST, { totalGames: 3, winRate: 67 }],
+        // 0판 0%도 서버가 말한 사실이다 — "조회 실패"와 같은 모양으로 뭉뚱그려지면 안 된다.
+        [JOINER, { totalGames: 0, winRate: 0 }],
+    ])
+    fakeGetAccountRecordSummaries = async (userIds) => new Map(userIds.map((id) => [id, RECORDS.get(id)]))
+
+    const hostSocket = createFakeSocket(HOST)
+    const io = createFakeIo([hostSocket])
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, HOST, JOINER, readyRoomHandlers)
+
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, HOST, startPayload(room), callback)
+    assert.equal(getResponse().ok, true)
+
+    const hostPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
+    const assertRecords = (players, where) => {
+        for (const player of players) {
+            const expected = RECORDS.get(player.uuid)
+            assert.equal(player.accountTotalGames, expected.totalGames, `${where}: ${player.uuid} 판수`)
+            assert.equal(player.accountWinRate, expected.winRate, `${where}: ${player.uuid} 승률`)
+            assert.equal(Object.hasOwn(player, 'accountTotalGames'), true)
+            assert.equal(Object.hasOwn(player, 'accountWinRate'), true)
+            // 전적을 싣는다고 해서 다른 계정 정보까지 새어 나가면 안 된다.
+            assert.equal(Object.hasOwn(player, 'accountSkinsByJob'), false, `${where}: 직업별 스킨이 공개되면 안 된다`)
+            assert.equal(Object.hasOwn(player, 'accountSkinId'), false)
+            assert.equal(Object.hasOwn(player, 'roleStatistics'), false, `${where}: 역할별 통계는 실리지 않는다`)
+            assert.equal(Object.hasOwn(player, 'achievements'), false)
+            assert.equal(Object.hasOwn(player, 'role'), false)
+        }
+    }
+    assertRecords(hostPayload.state.players, 'game_started')
+
+    // 다른 참가자가 받는 개별 payload도 같은 공개 전적을 본다(뷰어마다 달라지지 않는다).
+    const joinerPayload = joinerSocket.emitted.find((e) => e.event === 'game_started').payload
+    assertRecords(joinerPayload.state.players, 'game_started(joiner)')
+
+    // 새로고침 경로(재접속 스냅샷)도 같은 값을 말해야 한다 — 한쪽만 실으면 새로고침할 때마다
+    // 전적 목록이 사라진다.
+    const snapshot = gameSession.getSessionSnapshotForPlayer(HOST, hostPayload.gameId)
+    assert.equal(snapshot.ok, true)
+    assertRecords(snapshot.snapshot.players, 'session_snapshot')
+})
+
+test('start_game: 계정 전적 조회가 실패하면 그 필드만 붙지 않고 게임은 정상적으로 시작된다(CO S-1 AC-03)', async () => {
+    const HOST = 'uuid-record-fail-host'
+    const JOINER = 'uuid-record-fail-joiner'
+    fakeGetAccountRecordSummaries = async () => { throw new Error('전적 조회 실패(테스트 주입)') }
+
+    const hostSocket = createFakeSocket(HOST)
+    const io = createFakeIo([hostSocket])
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, HOST, JOINER, readyRoomHandlers)
+
+    const { callback, getCalls, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, HOST, startPayload(room), callback)
+
+    // 전적은 표시용 정보다 — 그것 때문에 판이 시작되지 못하면 안 된다(외형 조회 실패와 다르다).
+    assert.equal(getResponse().ok, true, '전적 조회 실패가 게임 시작을 막으면 안 된다')
+    assert.equal(getCalls(), 1)
+    assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 1, 'GameSession은 정상적으로 커밋돼야 한다')
+    assert.equal(hostSocket.emitted.filter((e) => e.event === 'game_started').length, 1)
+    assert.equal(joinerSocket.emitted.filter((e) => e.event === 'game_started').length, 1)
+
+    const hostPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
+    for (const player of hostPayload.state.players) {
+        // 0판 0%로 위장하지 않는다 — 키 자체가 없어야 화면이 "조회 실패"라고 말할 수 있다.
+        assert.equal(Object.hasOwn(player, 'accountTotalGames'), false, '조회 실패한 전적이 값으로 위장되면 안 된다')
+        assert.equal(Object.hasOwn(player, 'accountWinRate'), false)
+        // 전적 조회가 실패해도 나머지 계정 외형은 평소대로 실려야 한다.
+        assert.equal(Object.hasOwn(player, 'accountProfilePhotoId'), true)
+    }
+
+    const snapshot = gameSession.getSessionSnapshotForPlayer(HOST, hostPayload.gameId)
+    assert.equal(snapshot.ok, true)
+    for (const player of snapshot.snapshot.players) {
+        assert.equal(Object.hasOwn(player, 'accountTotalGames'), false)
+        assert.equal(Object.hasOwn(player, 'accountWinRate'), false)
+    }
+})
+
+test('start_game: 반쪽짜리 전적(판수만 있고 승률이 없음)은 아예 싣지 않는다(CO S-1 AC-03)', async () => {
+    const HOST = 'uuid-record-partial-host'
+    fakeGetAccountRecordSummaries = async (userIds) =>
+        new Map(userIds.map((id) => [id, { totalGames: 3 }])) // winRate 없음
+
+    const hostSocket = createFakeSocket(HOST)
+    const io = createFakeIo([hostSocket])
+    const { room } = await setupReadyRoomForStart(io, HOST, 'uuid-record-partial-joiner', readyRoomHandlers)
+
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, HOST, startPayload(room), callback)
+    assert.equal(getResponse().ok, true)
+
+    const hostPayload = hostSocket.emitted.find((e) => e.event === 'game_started').payload
+    for (const player of hostPayload.state.players) {
+        assert.equal(Object.hasOwn(player, 'accountTotalGames'), false, '한쪽만 있는 전적은 화면에서 의미를 만들 수 없다')
+        assert.equal(Object.hasOwn(player, 'accountWinRate'), false)
     }
 })
 

@@ -15,6 +15,12 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const matchmaking = require('../matchmaking')
+// CO S-1(AC-02): 게임 시작 경로가 계정 전적 저장소도 호출한다 — 대역이 없으면 이 순수 단위
+// 스위트가 실제 MySQL 접속을 시도한다(economyService 대역과 같은 이유).
+matchmaking.__setGameResultRepositoryForTests({
+    getAccountRecordSummaries: async (userIds) =>
+        new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
+})
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const kickReceiptStore = require('../kickReceiptStore')

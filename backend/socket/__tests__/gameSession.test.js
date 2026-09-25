@@ -11,6 +11,13 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
+// CO S-1(AC-02): 게임 시작 경로가 계정 전적 저장소도 호출한다 — 대역이 없으면 이 순수 단위
+// 스위트가 실제 MySQL 접속을 시도한다(economyService 대역과 같은 이유). 전적은 이 파일의
+// 검증 대상이 아니므로 전원 0판 0%로 고정한다.
+matchmaking.__setGameResultRepositoryForTests({
+    getAccountRecordSummaries: async (userIds) =>
+        new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
+})
 // 게임 시작·방 소멸에서 fire-and-forget으로 도는 초대 정리(gameInvite.service)는 실제 MySQL을
 // 요구한다. 대역이 없으면 이 스위트가 실제 DB 접속을 시도해 AccessDenied 로그를 남긴다
 // (단언은 실패하지 않지만 "SQL 경계를 건드리지 않는다"는 전제가 깨진다).

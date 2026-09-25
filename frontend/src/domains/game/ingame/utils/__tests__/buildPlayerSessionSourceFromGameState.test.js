@@ -377,3 +377,78 @@ test("동료가 2명 이상이면 각 동료 uuid 모두에 isAlly:true가 붙�
   assert.equal(result.sourcePlayers.find((p) => p.id === "u3").isAlly, true)
   assert.equal(Object.hasOwn(result.sourcePlayers.find((p) => p.id === "u4"), "isAlly"), false)
 })
+
+// ── CO S-1(AC-05): 계정 전적(총 판수·승률)의 own-property 조건부 복사 ─────────────
+
+test("계정 전적은 값이 있는 참가자에게만 정확히 복사되고, 0판 0%도 그대로 옮겨진다", () => {
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountTotalGames: 3, accountWinRate: 67 },
+        // 0판 0%는 "조회 실패"가 아니라 서버가 말한 사실이다 — falsy라고 빠뜨리면 안 된다.
+        { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1, accountTotalGames: 0, accountWinRate: 0 },
+      ],
+      self: { uuid: "u1", nickname: "호스트", role: "CITIZEN", team: "CITIZEN" },
+    }),
+  )
+  assert.equal(result.sourcePlayers[0].accountTotalGames, 3)
+  assert.equal(result.sourcePlayers[0].accountWinRate, 67)
+  assert.equal(Object.hasOwn(result.sourcePlayers[1], "accountTotalGames"), true)
+  assert.equal(result.sourcePlayers[1].accountTotalGames, 0)
+  assert.equal(result.sourcePlayers[1].accountWinRate, 0)
+})
+
+test("계정 전적 키가 없는 참가자에게는 키 자체가 생기지 않는다(상속 값도 만들지 않는다)", () => {
+  const inherited = Object.create({ accountTotalGames: 99, accountWinRate: 99 })
+  Object.assign(inherited, { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 })
+
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0 },
+        inherited,
+      ],
+      self: { uuid: "u1", nickname: "호스트", role: "CITIZEN", team: "CITIZEN" },
+    }),
+  )
+  for (const entry of result.sourcePlayers) {
+    assert.equal(Object.hasOwn(entry, "accountTotalGames"), false)
+    assert.equal(Object.hasOwn(entry, "accountWinRate"), false)
+  }
+})
+
+test("계정 전적을 옮겨도 입력 state의 player 객체는 변형되지 않는다", () => {
+  const players = [
+    { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountTotalGames: 3, accountWinRate: 67 },
+    { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
+  ]
+  const before = players.map((p) => JSON.stringify(p))
+
+  buildPlayerSessionSourceFromGameState(
+    validState({ players, self: { uuid: "u1", nickname: "호스트", role: "CITIZEN", team: "CITIZEN" } }),
+  )
+
+  assert.deepEqual(players.map((p) => JSON.stringify(p)), before)
+})
+
+// builder → merge 연결: builder가 옮긴 전적이 실제 병합 단계까지 살아남아야 화면에 도달한다.
+test("builder가 만든 sourcePlayers를 실제 mergeSourcePlayerWithPreview에 넘겨도 전적이 남는다", async () => {
+  const { mergeSourcePlayerWithPreview } = await import("../mergeSourcePlayerWithPreview.js")
+  const result = buildPlayerSessionSourceFromGameState(
+    validState({
+      players: [
+        { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountTotalGames: 3, accountWinRate: 67 },
+        { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
+      ],
+      self: { uuid: "u1", nickname: "호스트", role: "CITIZEN", team: "CITIZEN" },
+    }),
+  )
+
+  const preview = { id: "slot", nickname: "미리보기", portraitSrc: "p.png", frameSrc: "f.png", themeIndex: 0, theme: {} }
+  const merged = result.sourcePlayers.map((player) => mergeSourcePlayerWithPreview(player, preview))
+
+  assert.equal(merged[0].accountTotalGames, 3)
+  assert.equal(merged[0].accountWinRate, 67)
+  assert.equal(Object.hasOwn(merged[1], "accountTotalGames"), false)
+  assert.equal(Object.hasOwn(merged[1], "accountWinRate"), false)
+})
