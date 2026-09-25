@@ -20,6 +20,9 @@ import {
   subscribeInGameIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
+// E-3(F-33 AC-04): 이모티콘 말풍선의 유일한 저장소. 3초 만료 타이머는 그쪽이 소유하고 이
+// 훅은 "띄워라"·"전부 비워라"만 전달한다(다른 apply*와 같은 분담).
+import { useInGameEmojiBubbleStore } from "../store/inGameEmojiBubble.store.js"
 // F-26b(AC-01): 밤 성공 사건 수신은 store가 소유한 받은 그대로의 payload를 넘기므로 별도
 // 파서가 없다(다른 apply*와 달리 형태 검증도 store 쪽 receiveNightSuccess가 한다).
 import { createGameEndedHandler } from "../utils/createGameEndedHandler.js"
@@ -176,6 +179,10 @@ export function useGameSessionSocketEvents() {
       // (다른 기능의 리스너 집합을 늘리지 않기 위해서다), 이미 connect를 구독하는 이 effect가
       // 그 사실을 store에 전달한다.
       noteInGameConnectionRebound()
+      // E-3(F-33 AC-04): 끊겨 있던 사이에 지나간 이모티콘의 잔존 말풍선을 여기서 걷어낸다.
+      // subscribeInGameIdentityScope는 연결 재바인딩을 알리지 않으므로(noteInGameConnectionRebound가
+      // identityScopeListeners를 부르지 않는다) 이 훅이 명시적으로 담당한다.
+      useInGameEmojiBubbleStore.getState().clearAllActiveEmoji()
     }
     socket.on("connect", handleConnect)
     return () => socket.off("connect", handleConnect)
@@ -580,7 +587,30 @@ export function useGameSessionSocketEvents() {
       requestAccountCacheRefresh(payload.scopes, { invalidate: true })
     }
 
+    /**
+     * E-3(F-33 AC-04): 인게임 이모티콘 표현 공개 방송. 서버가 세션 채널 전체(죽은 참가자 포함,
+     * 이탈자 제외)에 보낸다.
+     *
+     * 가드가 **두 겹**이다. isRegistrationScopeCurrent는 등록 시점과 지금의 연결·계정·소속을
+     * 비교하지만 payload.gameId는 보지 않는다 — 같은 연결·같은 계정으로 다음 판에 들어간 뒤
+     * 이전 판의 방송이 늦게 도착하면 그 축들은 전부 통과할 수 있다. 그래서 현재 gameId가 있고
+     * payload.gameId가 그것과 **정확히 같은지**를 따로 묻는다.
+     *
+     * 소리는 없다(사망도 전이도 아니다). 형식이 하나라도 어긋나면 버린다(fail-closed).
+     */
+    const handleEmojiShown = (payload) => {
+      if (!isRegistrationScopeCurrent(registeredScope)) return
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+      const currentGameId = useInGameStore.getState().gameId
+      if (typeof currentGameId !== "string" || currentGameId.length === 0) return
+      if (payload.gameId !== currentGameId) return
+      if (typeof payload.uuid !== "string" || payload.uuid.length === 0) return
+      if (typeof payload.itemId !== "string" || payload.itemId.length === 0) return
+      useInGameEmojiBubbleStore.getState().setActiveEmoji(payload.uuid, payload.itemId, payload.sentAt)
+    }
+
     socket.on("game_ended", handleGameEnded)
+    socket.on("emoji_shown", handleEmojiShown)
     socket.on("player_eliminated", handlePlayerEliminated)
     socket.on("session_participation_changed", handleParticipationChanged)
     socket.on("session_self_progress", handleSelfProgress)
@@ -597,6 +627,7 @@ export function useGameSessionSocketEvents() {
     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
     return () => {
       socket.off("game_ended", handleGameEnded)
+      socket.off("emoji_shown", handleEmojiShown)
       socket.off("player_eliminated", handlePlayerEliminated)
       socket.off("session_participation_changed", handleParticipationChanged)
       socket.off("session_self_progress", handleSelfProgress)

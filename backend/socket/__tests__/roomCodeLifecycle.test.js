@@ -95,6 +95,8 @@ test.beforeEach(() => {
                 profilePhotoId: null, profileBorderId: null, cardFrameId: null,
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }])),
+        // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다.
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
 })
 

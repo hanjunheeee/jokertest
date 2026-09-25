@@ -1296,7 +1296,13 @@ async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settin
     // 전적 조회 실패는 여기서 흡수한다 — 전적은 표시용 정보일 뿐이라 그것 때문에 판이 시작되지
     // 못하면 잃는 것이 더 크다. 실패하면 빈 Map으로 대체되어 **필드 자체가 붙지 않는다**
     // (0판 0%로 위장하지 않는다 — 화면이 "조회 실패"와 "정말 0판"을 구분할 수 있어야 한다).
-    const [loadouts, recordSummaries] = await Promise.all([
+    // E-3(F-33 AC-01): 이모티콘 팔레트는 **게임 시작 때 한 번만** 읽어 세션에 캐시한다 — 판이
+    // 도는 동안 마이페이지에서 팔레트를 바꿔도 그 판의 소유·배치 판정이 흔들리지 않게 하려는
+    // 설계다. 전적과 같은 이유로 여기서 나란히 await하고, 실패는 전적처럼 흡수한다(A-05):
+    // 한 참가자의 조회가 실패하면 그 참가자만 빈 팔레트로 시작해 send_emoji가 NOT_OWNED로
+    // 거부될 뿐, 판 전체의 시작을 막지 않는다. 동기 throw까지 잡으려면 개별 호출을
+    // Promise.resolve().then(...) 안에서 해야 한다.
+    const [loadouts, recordSummaries, emojiPaletteEntries] = await Promise.all([
         economyServiceRef.getGameStartLoadouts(uuids),
         Promise.resolve()
             .then(() => gameResultRepositoryRef.getAccountRecordSummaries(uuids))
@@ -1305,6 +1311,16 @@ async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settin
                 console.error('[matchmaking] 계정 전적 조회 실패 — 전적 없이 게임을 시작합니다', error)
                 return new Map()
             }),
+        Promise.all(uuids.map((uuid) => Promise.resolve()
+            .then(() => economyServiceRef.getEmojiPalette(uuid))
+            .then((palette) => [uuid, {
+                slots: Array.isArray(palette?.slots) ? [...palette.slots] : [],
+                owned: Array.isArray(palette?.owned) ? [...palette.owned] : [],
+            }])
+            .catch((error) => {
+                console.error('[matchmaking] 이모지 팔레트 조회 실패 — 팔레트 없이 게임을 시작합니다', error)
+                return [uuid, { slots: [], owned: [] }]
+            }))),
     ])
 
     if (!isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVersionAtCapture)) {
@@ -1342,7 +1358,13 @@ async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settin
     // F-21: 세션이 승계할 프로세스 기동 식별자를 여기서 함께 넘긴다. 방 객체에 상시 두지 않는
     // 이유는 그 값이 방의 속성이 아니라 이 프로세스의 속성이기 때문이다 — 승계 지점 하나에서만
     // 실어 보내면 대기방과 게임이 같은 boot을 말한다는 것이 구조적으로 보장된다.
-    return { ok: true, room: { ...room, players, settings, bootEpoch: BOOT_EPOCH } }
+    // E-3(F-33 AC-01): 팔레트 캐시는 room 객체 **밖에** 실어 보낸다 — room은 prepareGameSession의
+    // 입력(검증 대상 설정·참가자)이고, 이 캐시는 세션이 커밋된 뒤에 붙는 서버 내부 자료다.
+    return {
+        ok: true,
+        room: { ...room, players, settings, bootEpoch: BOOT_EPOCH },
+        emojiPaletteByUuid: new Map(emojiPaletteEntries),
+    }
 }
 
 /** 공개 목록에 노출해도 되는 최소 Room 정보만 반환합니다. */
@@ -2819,6 +2841,14 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
     // 주장하지 않는다.
     try {
         gameSession.commitGameSession(prepared.session)
+        // E-3(F-33 AC-01/AC-02): 커밋 직후·같은 동기 구간에서 이모티콘 부속 상태를 붙인다.
+        // 이미 resolve된 값의 대입뿐이라 새 await가 없고, 위 2744 주석이 말하는 "여기서 통과한
+        // 조건이 그대로 커밋된다"는 원자성을 깨지 않는다. 커밋 **전에** 붙이지 않는 이유는
+        // commitGameSession의 경계 검사가 보는 필드 집합을 늘리지 않기 위함이다.
+        prepared.session.emojiPaletteByUuid = captured.emojiPaletteByUuid instanceof Map
+            ? captured.emojiPaletteByUuid
+            : new Map()
+        prepared.session.emojiRateLimit = new Map()
         room.players.forEach((_, u) => playerRoom.delete(u))
         gameRooms.delete(roomId)
         // 방이 게임으로 전환됐으므로 이 방을 향한 미확정 시도·PENDING 초대를 끝낸다.

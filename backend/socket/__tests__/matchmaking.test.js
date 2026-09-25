@@ -35,6 +35,9 @@ let fakeGetGameStartLoadouts = async (userIds) =>
 // 그대로 흉내낸다: **요청한 모든 uuid**에 대해 항목이 있고, 기록이 없으면 0판 0%다.
 let fakeGetAccountRecordSummaries = async (userIds) =>
     new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }]))
+// E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다 — 다른 두 대역과
+// 같은 이유로(실제 MySQL을 요구한다) 주입한다. 기본값은 빈 8칸·보유 없음이다.
+let fakeGetEmojiPalette = async () => ({ slots: Array(8).fill(null), owned: [] })
 
 const matchmaking = require('../matchmaking')
 matchmaking.__setUserRepositoryForTests({
@@ -43,6 +46,7 @@ matchmaking.__setUserRepositoryForTests({
 matchmaking.__setEconomyServiceForTests({
     getPublicProfileLoadouts: (...args) => fakeGetPublicProfileLoadouts(...args),
     getGameStartLoadouts: (...args) => fakeGetGameStartLoadouts(...args),
+    getEmojiPalette: (...args) => fakeGetEmojiPalette(...args),
 })
 matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: (...args) => fakeGetAccountRecordSummaries(...args),
@@ -101,6 +105,7 @@ test.beforeEach(() => {
         Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }]))
     fakeGetAccountRecordSummaries = async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }]))
+    fakeGetEmojiPalette = async () => ({ slots: Array(8).fill(null), owned: [] })
 })
 
 // ── create_room ──────────────────────────────────────────────────────────

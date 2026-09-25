@@ -75,6 +75,9 @@ matchmaking.__setEconomyServiceForTests({
             },
         })
     },
+    // E-3(F-33 AC-01): 팔레트 조회는 외형 조회와 나란히 도는 세 번째 경계다. 이 파일의 시험이
+    // 재현하려는 창은 **외형 조회** 대기 구간이므로 이 대역은 붙잡지 않고 즉시 resolve한다.
+    getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
 })
 matchmaking.__setGameInviteServiceForTests({
     cancelPendingInvitesForRoom: async () => {},

@@ -5223,6 +5223,91 @@ function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback
     }
 }
 
+/**
+ * E-3(F-33 AC-01/AC-02): 인게임 이모티콘 표현. 본인 카드 우클릭 팔레트에서 고른 한 칸을
+ * 그 판의 참가자 전원 화면에 3초짜리 말풍선으로 띄운다.
+ *
+ * ── 검사 순서가 계약이다 ─────────────────────────────────────────────────────
+ * STALE_SOCKET → INVALID_PAYLOAD → NOT_PARTICIPANT → GAME_ENDED → RATE_LIMITED →
+ * NOT_OWNED → NOT_IN_PALETTE. 순서를 바꾸면 각 거부가 드러내는 정보가 달라진다 — 예컨대
+ * 소유 검사를 참여 검사보다 먼저 두면, 그 판의 참가자가 아닌 계정도 "그 itemId를 가졌는가"를
+ * 응답 코드로 알아낼 수 있다. 어느 실패 분기도 상태를 바꾸지 않고 방송도 하지 않는다.
+ *
+ * ── 소유·배치는 클라이언트에게 묻지 않는다 ──────────────────────────────────
+ * 판정의 유일한 근거는 **게임 시작 때 캡처한** session.emojiPaletteByUuid다(matchmaking.js의
+ * captureRoomStartProfiles가 채운다). 요청 시점에 DB를 다시 읽지 않으므로 판이 도는 동안
+ * 마이페이지에서 팔레트를 바꿔도 그 판의 판정은 흔들리지 않고, 매 전송이 DB 조회를 만들지도
+ * 않는다. 팔레트가 없는 참가자(시작 시 조회 실패 — A-05)는 언제나 NOT_OWNED다.
+ *
+ * 방송은 emitToGameChannel 하나만 쓴다 — 그 경계가 이미 이탈자·배제된 옛 소켓을 제외하고
+ * 사망한 관전 참가자는 포함하므로(isEligibleSessionRecipient), 별도 수신자 목록 계산이 없다.
+ */
+function handleSendEmoji(io, socket, uuid, payload, callback) {
+    // ack를 받을 자리가 없으면 아무 일도 하지 않는다 — 상태도 바꾸지 않고 방송도 하지 않는다.
+    if (typeof callback !== 'function') return
+    const reject = (code) => respond(callback, { ok: false, code, message: '요청을 처리할 수 없습니다.' })
+
+    // ① 권한 판정의 유일한 술어(다른 핸들러와 같은 것을 쓴다).
+    if (!isCurrentSocketForUuid(uuid, socket)) {
+        reject('STALE_SOCKET')
+        return
+    }
+    // ② 형태. gameId·itemId는 빈 문자열도 거부한다(빈 itemId는 어떤 팔레트에도 없다).
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        reject('INVALID_PAYLOAD')
+        return
+    }
+    const { gameId, itemId } = payload
+    if (typeof gameId !== 'string' || gameId.length === 0
+        || typeof itemId !== 'string' || itemId.length === 0) {
+        reject('INVALID_PAYLOAD')
+        return
+    }
+
+    // ③ 그 판의 참가자인가. ABA 가드(요청이 가리키는 gameId가 이 계정의 현재 세션과 같은가)는
+    //    core의 조회가 이미 하고, 지금 이 연결이 그 판의 채널 소속인지는 방송 자격 술어가 한다.
+    const session = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
+    if (!session || !isEligibleSessionRecipient(session, socket, uuid)) {
+        reject('NOT_PARTICIPANT')
+        return
+    }
+
+    // ④ 끝난 판에는 아무것도 띄우지 않는다. core의 공용 guard를 그대로 재사용하고 그 내부
+    //    코드(GAME_ALREADY_ENDED)는 이 사건의 공개 계약값으로 바꿔 응답한다.
+    if (!gameSessionCore.assertSessionNotEnded(session).ok) {
+        reject('GAME_ENDED')
+        return
+    }
+
+    // ⑤ 간격. 판정과 기록이 같은 시각 값을 쓰도록 시계는 여기서 한 번만 읽는다.
+    const sentAt = Date.now()
+    const rateLimit = session.emojiRateLimit instanceof Map ? session.emojiRateLimit : null
+    const lastSentAt = rateLimit?.get(uuid)
+    if (typeof lastSentAt === 'number' && sentAt - lastSentAt < gameSessionCore.EMOJI_MIN_INTERVAL_MS) {
+        reject('RATE_LIMITED')
+        return
+    }
+
+    // ⑥⑦ 소유와 배치를 나눠 묻는다. "가졌지만 팔레트에 없다"와 "아예 없다"는 서로 다른
+    //     사실이고, 클라이언트가 팔레트를 다시 읽어야 하는지가 그 둘로 갈린다.
+    const palette = session.emojiPaletteByUuid instanceof Map
+        ? session.emojiPaletteByUuid.get(uuid)
+        : null
+    if (!Array.isArray(palette?.owned) || !palette.owned.includes(itemId)) {
+        reject('NOT_OWNED')
+        return
+    }
+    if (!Array.isArray(palette.slots) || !palette.slots.includes(itemId)) {
+        reject('NOT_IN_PALETTE')
+        return
+    }
+
+    // ⑧ 성공. 기록 → 방송 → ack 순서다. gameId는 payload가 아니라 canonical 세션에서 싣는다.
+    rateLimit?.set(uuid, sentAt)
+    emitToGameChannel(io, session, 'emoji_shown', { gameId: session.id, uuid, itemId, sentAt })
+    respond(callback, { ok: true, sentAt })
+}
+
 function registerGameHandlers(io, socket, uuid) {
     /**
      * F-23(AC-04): 배선과 **같은 동기 구간**에서 이 연결의 소유권을 기록한다.
@@ -5243,6 +5328,8 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('resolve_day_vote', (payload, callback) => handleResolveDayVote(io, socket, uuid, payload, callback))
     socket.on('cast_tribunal_vote', (payload, callback) => handleCastTribunalVote(io, socket, uuid, payload, callback))
     socket.on('resolve_tribunal_vote', (payload, callback) => handleResolveTribunalVote(io, socket, uuid, payload, callback))
+    // E-3(F-33): 인게임 이모티콘 표현. io는 이미 이 클로저의 값이라 새 매개변수가 필요 없다.
+    socket.on('send_emoji', (payload, callback) => handleSendEmoji(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, socket, uuid, payload, callback))
     socket.on('get_session_snapshot', (payload, callback) => handleGetSessionSnapshot(io, socket, uuid, payload, callback))
     // F-26b: 밤 성공 사건 소비 완료 ACK. 등록 당시 uuid를 캡처해 F-26a의 개별 전달과 같은
@@ -5390,6 +5477,10 @@ module.exports = {
         handleResolveTribunalVote,
         handleLeaveGameSession,
         handleGetSessionSnapshot,
+        // E-3(F-33 AC-01/AC-02): send_emoji가 그대로 부르는 실제 경로. 7종 거부 코드의 순서와
+        // 성공 방송은 이 핸들러 하나에만 있으므로, 시험이 socket.on 배선을 흉내내지 않고
+        // 실제 함수를 직접 부른다(다른 게임 핸들러와 같은 관례).
+        handleSendEmoji,
         // F-21: kick_game_player / get_kick_result가 그대로 부르는 실제 경로와 공통 이탈 경계.
         handleKickGamePlayer,
         handleGetKickResult,

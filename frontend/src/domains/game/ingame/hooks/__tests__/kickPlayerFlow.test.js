@@ -57,6 +57,15 @@ mock.module("../../utils/pickInGamePlayerFrame.js", {
     resolveAccountCardFrameSrc: () => null,
   },
 })
+// E-3(F-33 AC-03): 보드가 인게임 이모티콘 팔레트 사본을 읽으려고 emojiPalette.store를 import
+// 하면서 그 그래프가 HTTP 경계(shared/api/client.js → shared/env.js의 import.meta.env)에 닿는다.
+// 추방 계약과 무관한 바깥 경계라 조회가 결정적으로 실패하게 둔다(store가 그 거부를 스스로 잡는다).
+mock.module("../../../../user/api/emojiPalette.api.js", {
+  namedExports: {
+    getEmojiPaletteApi: async () => { throw new Error("network disabled in test") },
+    saveEmojiPaletteApi: async () => { throw new Error("network disabled in test") },
+  },
+})
 
 const { renderHook, render, cleanup, fireEvent } = await import("@testing-library/react")
 const { useAuthStore } = await import("../../../../auth/store/auth.store.js")
