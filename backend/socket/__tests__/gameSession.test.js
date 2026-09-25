@@ -570,6 +570,9 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
                 profilePhotoId: null, profileBorderId: null, cardFrameId: null,
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }])),
+        // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다 — 이 대역이
+        // 없으면 위 getGameStartLoadouts와 똑같은 이유로 실제 시작 경로가 INTERNAL_ERROR가 된다.
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
 
@@ -2123,6 +2126,9 @@ async function startRealTwoPlayerSession(hostUuid, joinerUuid) {
                 profilePhotoId: null, profileBorderId: null, cardFrameId: null,
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }])),
+        // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다 — 이 대역이
+        // 없으면 위 getGameStartLoadouts와 똑같은 이유로 실제 시작 경로가 INTERNAL_ERROR가 된다.
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
     const hostSocket = createFakeSocket(hostUuid)
@@ -2560,6 +2566,9 @@ for (const lateExit of ['leave', 'disconnect']) {
                 profilePhotoId: null, profileBorderId: null, cardFrameId: null,
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }])),
+        // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다 — 이 대역이
+        // 없으면 위 getGameStartLoadouts와 똑같은 이유로 실제 시작 경로가 INTERNAL_ERROR가 된다.
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
         handleLeaveGameSession(io, sockets[0], 'late-a', { gameId: session.id }, countingCallback().callback)
         const next = await callAsPromise(handleCreateRoom, io, sockets[0], 'late-a', validSettingsPayload())

@@ -67,6 +67,8 @@ matchmaking.__setEconomyServiceForTests({
             profilePhotoId: null, profileBorderId: null, cardFrameId: null,
             skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
         }])),
+    // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다.
+    getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
 })
 matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
 
@@ -908,6 +910,9 @@ test('AC-05: 시작 외형 조회 중 추방이 끼어들면 그 시작 요청�
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }]))
         },
+        // E-3(F-33 AC-01): 이 대역은 외형 조회만 막는다 — 팔레트 조회는 즉시 resolve해, 이
+        // 시험이 여전히 "외형 조회를 기다리는 창"만 재현하게 한다.
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
 
     const { io, sockets, room } = await setupRoom('kh-25', ['kj-36', 'kj-37'], { maxPlayers: 4 })

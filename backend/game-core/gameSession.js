@@ -89,6 +89,12 @@ const DAY_PHASES = Object.freeze({ DISCUSSION: 'DAY_DISCUSSION', VOTE: 'DAY_VOTE
 const CHAT_MAX_LENGTH = 150
 const CHAT_MIN_INTERVAL_MS = 500
 
+// E-3(F-33 AC-02): 인게임 이모티콘 재전송 최소 간격. 채팅과 **다른** 값·다른 Map을 쓴다 —
+// 말풍선은 3초간 카드 위에 남는 시각 연출이라 채팅의 500ms를 그대로 쓰면 한 사람이 다른
+// 참가자의 화면을 연속 교체로 덮을 수 있다. 값 자체를 소켓 계층과 시험이 함께 읽어야
+// 매직 넘버가 두 곳에 복제되지 않으므로 module.exports 최상위로 노출한다.
+const EMOJI_MIN_INTERVAL_MS = 1000
+
 // prepare~commit 사이에 정상적으로 흐를 수 있는 최대 시간. commit은 자신의 canonical 시계로
 // 이 창 밖의 sentAt(미래 시각·너무 오래된 시각)을 거부한다 — 그래야 rate limit이 "호출자가
 // 주장한 시각"이 아니라 실제 시간에 고정된다. 한 요청의 prepare~commit은 같은 tick 안에서
@@ -4478,6 +4484,20 @@ function commitGameChatMessage(prepared, { now = Date.now } = {}) {
  * Socket.IO 관련 지식은 이 함수에 없습니다(순수 registry 조작). 알림 전송·Socket.IO
  * channel 정리는 소켓 계층(backend/socket/gameSession.js)의 책임입니다.
  */
+/**
+ * E-3(F-33): 세션이 registry에서 실제로 사라질 때 이모티콘 부속 상태를 비운다.
+ *
+ * emojiPaletteByUuid는 참가자 전원의 보유 목록 사본이라 다른 어떤 세션 필드보다 크고,
+ * emojiRateLimit은 uuid→시각 기록이다. 둘 다 세션과 함께 버려지므로 GC만으로도 사라지지만,
+ * 종료된 판의 session 객체는 소켓 계층이 종료 알림·전적 저장을 위해 잠시 더 들고 있다 —
+ * 그 구간에 소유 목록이 남아 있을 이유가 없다. Map 참조는 그대로 두고 내용만 비운다
+ * (재대입하면 같은 참조를 들고 있던 호출부가 빈 Map이 아니라 옛 내용을 계속 본다).
+ */
+function clearSessionEmojiState(session) {
+    if (session?.emojiRateLimit instanceof Map) session.emojiRateLimit.clear()
+    if (session?.emojiPaletteByUuid instanceof Map) session.emojiPaletteByUuid.clear()
+}
+
 function endGameSessionForPlayer(uuid, reason, expectedGameId) {
     const gameId = playerSession.get(uuid)
     if (!gameId) return { ok: false, code: 'NOT_IN_SESSION' }
@@ -4505,6 +4525,7 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
             // 정리가 없으면 그 uuid만 영영 "다른 세션에 속함" 상태로 묶여 새 게임을 시작하지
             // 못한다. 이미 지워진 uuid에 대한 delete는 no-op이라 기존 경로는 그대로다.
             cleanupUuids.forEach((playerUuid) => playerSession.delete(playerUuid))
+            clearSessionEmojiState(session)
         }
         return { ok: true, session, reason, sessionDeleted, cleanupUuids }
     }
@@ -4513,6 +4534,7 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
     gameSessions.delete(gameId)
     if (roomGameSession.get(session.roomId) === gameId) roomGameSession.delete(session.roomId)
     cleanupUuids.forEach((playerUuid) => playerSession.delete(playerUuid))
+    clearSessionEmojiState(session)
 
     return { ok: true, session, reason, sessionDeleted: true, cleanupUuids }
 }
@@ -4655,6 +4677,13 @@ module.exports = {
     // 검증하는 테스트가 매직 넘버를 다시 적지 않도록 값 자체를 노출한다.
     CHAT_MIN_INTERVAL_MS,
     CHAT_COMMIT_MAX_AGE_MS,
+    // E-3(F-33 AC-01/AC-02): 인게임 이모티콘 경계. 소켓 계층의 send_emoji 핸들러가
+    // gameSessionCore.EMOJI_MIN_INTERVAL_MS로 간격을 읽고, assertSessionNotEnded로 종료 판정을
+    // 재사용한다(같은 함수 참조가 __testables에도 그대로 남아 기존 시험은 영향받지 않는다).
+    // clearSessionEmojiState는 세션이 registry에서 사라질 때 이 모듈이 스스로 부른다 —
+    // 소켓 계층이 정리 시점을 다시 판단하지 않도록 노출하지 않는다.
+    EMOJI_MIN_INTERVAL_MS,
+    assertSessionNotEnded,
     buildTerminalFields,
     // 전적 저장 레코드 조립은 소켓 계층이 종결 시점에 그대로 소비하는 공개 계약이라
     // __testables가 아니라 정식 export다(사망 원인 열거값도 함께 노출해 호출부와 테스트가

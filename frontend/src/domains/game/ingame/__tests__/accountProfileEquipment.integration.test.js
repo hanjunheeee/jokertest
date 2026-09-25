@@ -41,6 +41,17 @@ mock.module("../utils/pickInGamePlayerFrame.js", {
   },
 })
 
+// E-3(F-33 AC-03): 보드가 인게임 이모티콘 팔레트 사본을 읽으려고 emojiPalette.store를 import
+// 하면서 그 그래프가 HTTP 경계(shared/api/client.js → shared/env.js의 import.meta.env)에 닿는다.
+// 이 파일의 관심사는 계정 장착 자산의 배선이므로, 그 바깥 경계 하나만 갈아끼워 조회가
+// 결정적으로 실패하게 둔다(store가 거부를 스스로 잡아 gameStatus='error'로 끝낸다).
+mock.module("../../../user/api/emojiPalette.api.js", {
+  namedExports: {
+    getEmojiPaletteApi: async () => { throw new Error("network disabled in test") },
+    saveEmojiPaletteApi: async () => { throw new Error("network disabled in test") },
+  },
+})
+
 // F-13 AC-05(CODEX-4): "대기방 훅(useMatchingPage) 연결"을 raw source 정규식이 아니라 실제
 // renderHook으로 검증하기 위해, useMatchingPage.js가 끌고 오는 주변 협력자(react-router의
 // useNavigate, useMatchingRoom)만 이 저장소의 기존 관례(useInGameKillReveal.test.js 등)와

@@ -766,7 +766,10 @@ const BACKEND_SOCKET_ON_EVENTS_LOCK = [
   "acknowledge_night_action_success", "acknowledge_role_reveal", "cast_day_vote",
   "cast_tribunal_vote", "get_kick_result",
   "get_session_snapshot", "kick_game_player", "leave_game_session", "ready_for_day_vote",
-  "resolve_day_vote", "resolve_night", "resolve_tribunal_vote", "submit_game_chat_message",
+  // E-3(F-33): send_emoji — 본인 팔레트 한 칸을 그 판의 참가자 전원에게 보여 달라는 요청이다.
+  // 소유·배치 판정의 근거는 게임 시작 때 캡처한 세션 캐시라 이 사건이 DB를 다시 읽지 않는다.
+  "resolve_day_vote", "resolve_night", "resolve_tribunal_vote", "send_emoji",
+  "submit_game_chat_message",
   "submit_joker_chat_message", "submit_night_action",
 ]
 
@@ -992,7 +995,12 @@ const SERVER_EMIT_EVENTS_LOCK = [
   "room_deleted", "room_join_failed", "room_joined", "room_kicked", "room_settings_updated",
   "game_started",
   // 진행 중 게임(backend/socket/gameSession.js)
-  "day_phase_changed", "day_vote_resolved", "game_ended", "game_kicked", "game_phase_changed",
+  "day_phase_changed", "day_vote_resolved",
+  // E-3(F-33): emoji_shown — send_emoji가 통과했을 때 emitToGameChannel 하나로 세션 채널에
+  // 나가는 공개 방송이다(죽은 참가자 포함, 이탈자 제외). { gameId, uuid, itemId, sentAt }뿐이라
+  // 역할·소유 목록은 싣지 않는다.
+  "emoji_shown",
+  "game_ended", "game_kicked", "game_phase_changed",
   "joker_chat_message", "night_action_result", "night_action_success", "night_actions_resolved",
   "night_presentation_wait", "night_result_applied", "night_turn_ended", "night_turn_started", "player_eliminated",
   "session_participation_changed", "session_self_progress", "tribunal_vote_resolved",
@@ -1393,6 +1401,8 @@ const CLIENT_EMIT_EVENTS_LOCK = [
   "join_public_room", "join_room_by_code", "kick_game_player", "kick_room_player",
   "leave_game_session", "leave_matchmaking", "leave_room", "notifications_ready",
   "ready_for_day_vote", "resolve_day_vote", "resolve_night", "resolve_tribunal_vote",
+  // E-3(F-33 AC-03): useInGameEmojiSend가 보내는 유일한 전송이다(팔레트 칸 하나 = 요청 하나).
+  "send_emoji",
   "set_ready", "start_game", "submit_game_chat_message", "submit_joker_chat_message",
   "submit_night_action", "update_room_settings",
 ]
@@ -1400,7 +1410,11 @@ const CLIENT_EMIT_EVENTS_LOCK = [
 /** server→client 구독 사건 전체(= 화면 상태로 들어오는 모든 서버 사실). */
 const CLIENT_SUBSCRIBE_EVENTS_LOCK = [
   "account_cache_invalidated", "achievement_granted", "connect", "connect_error",
-  "day_phase_changed", "day_vote_resolved", "disconnect", "force_disconnect",
+  "day_phase_changed", "day_vote_resolved", "disconnect",
+  // E-3(F-33 AC-04): useGameSessionSocketEvents가 구독한다 — 등록 범위 + 현재 gameId 일치를
+  // 모두 통과한 방송만 말풍선 store로 들어간다.
+  "emoji_shown",
+  "force_disconnect",
   "friend_relation_invalidated", "friend_request_accepted", "friend_request_declined",
   "friend_request_received", "friend_status_change", "game_ended", "game_invite_received",
   "game_invite_updated", "game_kicked", "game_phase_changed", "game_started", "host_changed",
@@ -1549,10 +1563,17 @@ const PAGE_MOUNT_LOCK = [
 ]
 
 /**
- * CM V-1: 플레이어 보드가 마운트하는 것 전부. 카드와 **카드 좌클릭 메뉴** 둘뿐이다 —
- * 메뉴가 사라지면(또는 보드가 다른 것을 함께 그리면) 이 정확 비교가 먼저 깨진다.
+ * CM V-1: 플레이어 보드가 마운트하는 것 전부. 카드와 **카드 좌클릭 메뉴**가 그 둘이다 —
+ * 메뉴가 사라지면(또는 보드가 목록 밖의 것을 함께 그리면) 이 정확 비교가 먼저 깨진다.
+ *
+ * E-3(F-33 AC-03/AC-04): 여기에 이모티콘 두 개가 더해진다. 팔레트는 **본인 카드 우클릭**으로만
+ * 열리는 8칸 방사형 입력이고(타인 카드는 열지 않는다), 말풍선은 emoji_shown을 받은 카드 위에
+ * 3초간 뜨는 표시 전용 컴포넌트다. 둘 다 좌클릭 메뉴와 독립된 렌더 자리라 기존 메뉴 경로를
+ * 대체하지 않는다.
  */
-const BOARD_MOUNT_LOCK = ["InGamePlayerCard", "InGamePlayerCardMenu"]
+const BOARD_MOUNT_LOCK = [
+  "InGamePlayerCard", "InGamePlayerCardMenu", "InGameEmojiPalette", "InGameEmojiBubble",
+]
 
 /**
  * CM V-1: 진행 UI 묶음(InGamePlayArea)이 마운트하는 것 전부. 이 파일도 보드와 컨트롤 패널을

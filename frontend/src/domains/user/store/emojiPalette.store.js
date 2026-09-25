@@ -13,6 +13,14 @@ import { create } from "zustand"
 
 import { getEmojiPaletteApi, saveEmojiPaletteApi } from "../api/emojiPalette.api.js"
 import { useAuthStore } from "../../auth/store/auth.store.js"
+// E-3(F-33 AC-03): 인게임 팔레트 스냅샷의 유효 범위·무효화 시점 판정. 인게임 store를 직접
+// 구독해야 하는 이유는 아래 loadForGame 주석에 있다(subscribeInGameIdentityScope 하나로는
+// 판 종료·이탈을 알 수 없다).
+import {
+  inGameEmojiScopeKey,
+  readInGameEmojiScope,
+} from "../../game/ingame/utils/selectInGameEmojiScope.js"
+import { useInGameStore } from "../../game/ingame/store/ingameStore.js"
 
 export const EMOJI_PALETTE_SLOT_COUNT = 8
 
@@ -42,7 +50,26 @@ const createInitialState = () => ({
   error: null,
   // 마지막 저장이 409로 거부됐을 때 서버가 알려준 현재 값. 화면의 충돌 안내 근거다.
   conflict: null,
+  // ── E-3(F-33 AC-03): 인게임 팔레트 스냅샷 ────────────────────────────────
+  //
+  // 위 편집 상태(slots/selectedSlots)와 **완전히 분리된** 사본이다. 한 판이 도는 동안에는
+  // 마이페이지에서 무엇을 저장해도 이 값이 바뀌지 않아야 한다 — 서버의 판정 근거도 게임 시작
+  // 때 캡처한 세션 캐시라, 화면이 그보다 새로운 배치를 보여 주면 보낼 수 없는 칸을 누르게 된다.
+  gameSlots: null,
+  gameScopeKey: null,
+  gameStatus: "idle", // idle | loading | ready | error
 })
+
+// 같은 scope의 진행 중 요청. 상태 트리 밖에 두는 이유는 Promise가 직렬화 가능한 화면 값이
+// 아니고, StrictMode의 이중 effect가 **같은 틱에** 두 번 부르는 것을 합치려면 set()이 커밋되기
+// 전에도 보여야 하기 때문이다.
+let gamePendingKey = null
+let gamePendingPromise = null
+
+function clearGamePaletteRequest() {
+  gamePendingKey = null
+  gamePendingPromise = null
+}
 
 export const useEmojiPaletteStore = create((set, get) => ({
   ...createInitialState(),
@@ -79,6 +106,74 @@ export const useEmojiPaletteStore = create((set, get) => ({
       set({ status: "error", error })
       return { ok: false, code: error?.code, error }
     }
+  },
+
+  /**
+   * E-3(F-33 AC-03): **이 판에 고정되는** 8칸 사본을 한 번만 읽어 둔다.
+   *
+   * 캐시 키는 [authUuid, identityGeneration, gameId]다(selectInGameEmojiScope). 그래서
+   *   - StrictMode의 이중 effect와 같은 판의 보드 재마운트는 진행 중 Promise/완료 스냅샷을
+   *     그대로 재사용해 GET을 추가로 내지 않는다,
+   *   - 소켓 재연결·effect cleanup·일반 snapshot 갱신도 키를 바꾸지 않으므로 캐시가 유지된다,
+   *   - 계정 교체·로그아웃(identityGeneration)·다음 gameId만 새 요청을 만든다.
+   *
+   * 호출부가 넘긴 scope는 **주장**일 뿐이라, 지금의 canonical scope와 다르면 그 요청은 이미
+   * 지난 것으로 보고 조회하지 않는다(fail-closed). scope를 생략하면 지금 값을 그대로 쓴다.
+   */
+  loadForGame: async (scope = null) => {
+    const liveScope = readInGameEmojiScope()
+    const key = inGameEmojiScopeKey(liveScope)
+    // 유효한 판이 없으면 슬롯을 노출하지 않는다(있던 캐시도 아래 구독이 이미 비웠다).
+    if (key === null) return { ok: false, code: "NO_GAME_SCOPE" }
+    if (scope !== null && inGameEmojiScopeKey(scope) !== key) return { ok: false, stale: true }
+
+    const current = get()
+    if (current.gameScopeKey === key && current.gameStatus === "ready") {
+      return { ok: true, cached: true, slots: current.gameSlots }
+    }
+    if (gamePendingKey === key && gamePendingPromise !== null) return gamePendingPromise
+
+    clearGamePaletteRequest()
+    gamePendingKey = key
+    // 다른 판으로 넘어온 경우 이전 사본을 여기서 버린다(두 판의 배치가 섞이지 않게 한다).
+    set({ gameScopeKey: key, gameStatus: "loading", gameSlots: null })
+
+    const isCurrent = () => inGameEmojiScopeKey(readInGameEmojiScope()) === key
+      && get().gameScopeKey === key
+
+    const pending = (async () => {
+      try {
+        const response = await getEmojiPaletteApi()
+        // 늦게 도착한 응답은 버린다 — 그 사이 계정·판이 바뀌었으면 이 값은 남의 팔레트다.
+        if (!isCurrent()) return { ok: false, stale: true }
+        const slots = normalizeSlots(response?.slots)
+        set({ gameSlots: slots, gameStatus: "ready" })
+        return { ok: true, slots }
+      } catch (error) {
+        if (!isCurrent()) return { ok: false, stale: true }
+        set({ gameStatus: "error" })
+        return { ok: false, code: error?.code, error }
+      } finally {
+        if (gamePendingKey === key) clearGamePaletteRequest()
+      }
+    })()
+
+    gamePendingPromise = pending
+    return pending
+  },
+
+  /**
+   * 인게임 사본만 버린다(마이페이지 편집 상태는 건드리지 않는다). 진행 중 요청의 토큰도 함께
+   * 지워, 같은 키로 다시 들어오면 새 조회가 나갈 수 있게 한다.
+   */
+  resetGamePalette: () => {
+    clearGamePaletteRequest()
+    set((state) => {
+      if (state.gameScopeKey === null && state.gameSlots === null && state.gameStatus === "idle") {
+        return state
+      }
+      return { gameSlots: null, gameScopeKey: null, gameStatus: "idle" }
+    })
   },
 
   /** 교체할 슬롯을 고른다. 아직 서버 값을 받지 못했으면 아무 것도 하지 않는다. */
@@ -156,11 +251,17 @@ export const useEmojiPaletteStore = create((set, get) => ({
   },
 
   /** 계정 경계를 넘는 모든 상태를 지우고 진행 중이던 요청을 전부 무효화한다
-   *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 신원의 응답은 전부 버려진다. */
-  reset: () => set((state) => ({
-    ...createInitialState(),
-    requestGeneration: state.requestGeneration + 1,
-  })),
+   *  (requestGeneration 증가) — 그 뒤에 도착하는 이전 신원의 응답은 전부 버려진다.
+   *
+   *  인게임 사본과 그 진행 중 요청 토큰도 함께 지운다 — 계정이 바뀌면 그 판의 팔레트는
+   *  더 이상 이 화면의 것이 아니다. */
+  reset: () => {
+    clearGamePaletteRequest()
+    return set((state) => ({
+      ...createInitialState(),
+      requestGeneration: state.requestGeneration + 1,
+    }))
+  },
 }))
 
 // 로그인·로그아웃으로 신원 전이가 일어나는 순간 즉시 리셋한다. uuid가 아니라
@@ -170,4 +271,26 @@ useAuthStore.subscribe((state, prevState) => {
   if (state.identityGeneration !== prevState?.identityGeneration) {
     useEmojiPaletteStore.getState().reset()
   }
+})
+
+/**
+ * E-3(F-33 AC-03): 인게임 사본의 무효화 관측.
+ *
+ * subscribeInGameIdentityScope 하나로는 부족하다 — 그 신호는 게임/본인/소속 **전이**만 알리고,
+ * 같은 판이 끝나는 것(phase→ENDED)이나 내가 그 판에서 빠지는 것(roster isParticipating=false)을
+ * 알려 주지 않는다. 그 두 경우에도 팔레트를 그대로 들고 있으면 결과 화면 뒤까지 지난 판의
+ * 배치가 남는다. 그래서 canonical 상태 자체를 구독해 **캐시 키가 실제로 달라졌는가**만 본다.
+ *
+ * 키 비교 하나로 필요한 경우가 모두 덮인다: 종료·이탈·소유권 불일치·clearGame은 키를 null로
+ * 만들고, 다음 판은 다른 키가 된다. 반대로 소켓 재연결·보드 재마운트·StrictMode cleanup·일반
+ * snapshot 갱신은 키를 바꾸지 않으므로 캐시가 살아 있다(GET이 다시 나가지 않는다).
+ *
+ * 모듈 수명에 한 번만 등록한다(컴포넌트가 걸면 StrictMode가 구독을 다시 만든다).
+ */
+useInGameStore.subscribe(() => {
+  const state = useEmojiPaletteStore.getState()
+  // 들고 있는 것이 없으면 볼 것도 없다(모든 snapshot 갱신마다 계산하지 않는다).
+  if (state.gameScopeKey === null && state.gameStatus === "idle") return
+  if (inGameEmojiScopeKey(readInGameEmojiScope()) === state.gameScopeKey) return
+  useEmojiPaletteStore.getState().resetGamePalette()
 })
