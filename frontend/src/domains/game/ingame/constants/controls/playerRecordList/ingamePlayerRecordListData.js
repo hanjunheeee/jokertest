@@ -1,8 +1,9 @@
 /**
- * 플레이어별 전적목록 더미 데이터·포맷 유틸.
+ * 플레이어별 전적목록 프로필 자산·포맷 유틸.
  *
- * PlayerRecordListContent는 세션 players와 index로 병합합니다.
- * 닉네임은 InGamePlayerSession, 전적·프로필 UI는 API 연동 전 더미를 씁니다.
+ * 전적(판수·승률)은 더 이상 이 파일이 만들지 않습니다 — 서버가 게임 시작 페이로드·재접속
+ * 스냅샷의 players[]에 실어 주는 accountTotalGames/accountWinRate가 유일한 원천입니다
+ * (CO S-1). 프로필 사진·테두리만 아직 슬롯 index 순환 자산을 씁니다.
  */
 
 // 슬롯 index → shopItem 프로필 사진·테두리 순환. 전적목록 행과 게임 결과 화면
@@ -60,28 +61,27 @@ export function getPlayerRecordListProfileAssets(index = 0) {
   }
 }
 
-/** prototype 플레이어별 전적목록 탭.png — 더미 전적 */
-const DUMMY_PLAYER_RECORDS_BASE = [
-  { id: "player-1", name: "플레이어 1", wins: 62, losses: 18, winRate: 77.5 },
-  { id: "player-2", name: "플레이어 2", wins: 60, losses: 22, winRate: 73.2 },
-  { id: "player-3", name: "플레이어 3", wins: 70, losses: 30, winRate: 70.0 },
-  { id: "player-4", name: "플레이어 4", wins: 29, losses: 11, winRate: 72.5 },
-  { id: "player-5", name: "플레이어 5", wins: 80, losses: 25, winRate: 76.2 },
-  { id: "player-6", name: "플레이어 6", wins: 45, losses: 20, winRate: 69.2 },
-  { id: "player-7", name: "플레이어 7", wins: 55, losses: 17, winRate: 76.4 },
-  { id: "player-8", name: "플레이어 8", wins: 65, losses: 26, winRate: 71.4 },
-  { id: "player-9", name: "플레이어 9", wins: 58, losses: 19, winRate: 75.3 },
-  { id: "player-10", name: "플레이어 10", wins: 52, losses: 24, winRate: 68.4 },
-]
+/**
+ * CO S-1(AC-05): 서버가 그 계정의 전적을 조회하지 못했을 때 표시할 문구.
+ *
+ * 0판 0%로 대신 그리지 않는다 — "정말 한 판도 안 한 계정"과 "조회에 실패한 계정"은 다른
+ * 사실이고, 화면이 그 둘을 같은 모양으로 말하면 사용자는 없는 전적을 사실로 읽는다.
+ */
+export const PLAYER_RECORD_STATS_UNAVAILABLE_LABEL = "조회 실패"
 
-export const DUMMY_PLAYER_RECORDS = DUMMY_PLAYER_RECORDS_BASE.map((record, index) => ({
-  ...record,
-  ...getPlayerRecordListProfileAssets(index),
-}))
-
-/** 승/패/승률을 목록 행에 표시할 한 줄 텍스트로 포맷 */
-export function formatPlayerRecordStats({ wins, losses, winRate }) {
-  return `${wins}승 ${losses}패 | ${winRate.toFixed(1)}%`
+/**
+ * 총 판수·승률을 목록 행에 표시할 한 줄 텍스트로 포맷.
+ *
+ * 서버는 두 값을 함께 싣거나 아예 싣지 않는다(backend buildPlayerAccountProfileFields의
+ * own-property 계약) — 그래서 한쪽이라도 숫자가 아니면 반쪽짜리 전적을 지어내지 않고
+ * 조회 실패로 말한다. 승률은 서버가 이미 정수 %로 반올림해 내려주므로 여기서 다시
+ * 자리수를 만들지 않는다(두 곳에서 반올림하면 같은 전적이 화면마다 달라진다).
+ */
+export function formatPlayerRecordStats({ totalGames, winRate } = {}) {
+  if (!Number.isInteger(totalGames) || !Number.isInteger(winRate)) {
+    return PLAYER_RECORD_STATS_UNAVAILABLE_LABEL
+  }
+  return `${totalGames}판 | ${winRate}%`
 }
 
 /** 더미가 없는 슬롯용 기본 프로필 UI */

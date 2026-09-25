@@ -218,6 +218,55 @@ exports.getMyRoleStatistics = async (userId) => {
 };
 
 /**
+ * CO S-1(AC-01): 여러 계정의 **직업 구분 없는** 총 판수·승률을 한 번에 조회한다.
+ *
+ * 게임 시작 시 참가자 전원의 전적을 실어 보내야 하므로, 계정마다 따로 묻지 않고 한 번의
+ * IN 조회로 끝낸다(참가자 수만큼 왕복하면 시작 지연이 인원수에 비례해 늘어난다).
+ *
+ * 원시 행을 직접 세지 않고 반드시 findRoleStatisticsRows → aggregateRoleStatistics를 거친다 —
+ * 그래야 development·test 출처 제외, won=null(중단 경기 잔류자) 제외, 알 수 없는 역할 제외가
+ * 서고 통계와 **같은 규칙**으로 적용된다. 두 곳에 규칙을 따로 적으면 같은 계정의 판수가
+ * 화면마다 달라진다.
+ *
+ * aggregateRoleStatistics는 사용자당 **역할별** 항목을 돌려주므로 여기서 user_id 기준으로
+ * games/wins를 다시 합산한다. 역할별 winRate의 평균이 아니다 — 2판 1승(50%)과 1판 1승(100%)의
+ * 합은 3판 2승(67%)이지 75%가 아니다.
+ *
+ * @param {string[]} userIds 조회할 계정 uuid 목록
+ * @returns {Promise<Map<string, {totalGames:number, winRate:number}>>} 요청한 모든 uuid에 대해
+ *          항목이 존재한다 — 판 기록이 없는 계정도 {totalGames:0, winRate:0}으로 들어 있다
+ *          (호출부가 "조회되지 않은 계정"과 "0판인 계정"을 구분할 필요가 없게 한다).
+ */
+exports.getAccountRecordSummaries = async (userIds) => {
+    // 요청 목록으로 먼저 채워 두면 중복 uuid도 여기서 한 번으로 접히고, 기록이 없는 계정이
+    // 결과에서 조용히 빠지는 일도 없다.
+    const summaries = new Map((userIds ?? []).map((userId) => [userId, { totalGames: 0, winRate: 0 }]));
+    if (summaries.size === 0) return summaries;
+
+    const rows = await findRoleStatisticsRows({ user_id: { [db.Sequelize.Op.in]: [...summaries.keys()] } });
+
+    const totalsByUser = new Map();
+    for (const entry of roleStatisticsPolicy.aggregateRoleStatistics(rows)) {
+        const total = totalsByUser.get(entry.user_id) ?? { games: 0, wins: 0 };
+        total.games += entry.games;
+        total.wins += entry.wins;
+        totalsByUser.set(entry.user_id, total);
+    }
+
+    for (const [userId, { games, wins }] of totalsByUser) {
+        if (!summaries.has(userId)) continue; // 요청하지 않은 계정은 돌려주지 않는다
+        // 표시 단위(정수 %)로 여기서 반올림한다 — 목록 행은 소수점을 쓰지 않으므로 화면마다
+        // 다른 자리에서 반올림해 같은 전적이 다르게 보이는 일이 없게 한다.
+        summaries.set(userId, {
+            totalGames: games,
+            winRate: games > 0 ? Math.round((wins / games) * 100) : 0,
+        });
+    }
+
+    return summaries;
+};
+
+/**
  * AC-03: 한 직업의 전체 적격(최소 10판) 사용자 랭킹을 승률 내림차순으로 반환한다. 잘라내지
  * 않은 전체 목록이다 — 화면 페이지 이동은 호출부(컨트롤러/프런트)의 몫이다.
  */

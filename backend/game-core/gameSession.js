@@ -1260,6 +1260,13 @@ function buildPlayerAccountProfileFields(player) {
         // 절대 이 함수에 실지 않는다 — 그러면 본인이 아닌 참가자의 직업별 스킨 선택이
         // 전원에게 노출되어, 인게임에 실제로 렌더되는 스킨과 대조해 역할을 역산할 수 있다.
         ...(Object.hasOwn(player, 'accountCardFrameId') ? { accountCardFrameId: player.accountCardFrameId } : {}),
+        // CO S-1(AC-02/AC-03): 계정 전적(총 판수·승률)도 프로필 사진·테두리와 같은 공개 값이다 —
+        // 역할과 무관한 누적 집계라 이 값으로 이번 판의 역할을 추론할 수 없다. 조회에 실패한
+        // 참가자는 captureRoomStartProfiles가 애초에 이 두 키를 만들지 않으므로, own-property
+        // 판정만으로 "조회 실패"가 0판 0%로 위장되는 일이 구조적으로 생기지 않는다. 직업별
+        // 통계·업적 등 나머지 계정 정보는 여기에 절대 싣지 않는다(accountSkinsByJob과 같은 이유).
+        ...(Object.hasOwn(player, 'accountTotalGames') ? { accountTotalGames: player.accountTotalGames } : {}),
+        ...(Object.hasOwn(player, 'accountWinRate') ? { accountWinRate: player.accountWinRate } : {}),
     }
 }
 

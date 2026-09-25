@@ -82,6 +82,15 @@ export function mergeSourcePlayerWithPreview(player, preview) {
     ...(Object.hasOwn(player, "accountCardFrameId")
       ? { accountCardFrameId: player.accountCardFrameId }
       : {}),
+    // CO S-1(AC-05): 전적 목록이 읽는 값이다. 이 병합이 마지막 관문이라 여기서 빠뜨리면
+    // builder가 옮겨 온 전적이 화면 직전에 사라진다 — 0판 0%도 서버가 말한 사실이므로
+    // 그대로 옮기고(0을 누락으로 취급하지 않는다), 키가 없는 참가자에게는 만들지 않는다.
+    ...(Object.hasOwn(player, "accountTotalGames")
+      ? { accountTotalGames: player.accountTotalGames }
+      : {}),
+    ...(Object.hasOwn(player, "accountWinRate")
+      ? { accountWinRate: player.accountWinRate }
+      : {}),
     deathReason: player.deathReason,
   }
 }

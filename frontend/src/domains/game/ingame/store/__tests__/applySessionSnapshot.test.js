@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { applySessionSnapshotPure } from "../applySessionSnapshot.js"
+import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "../applySessionSnapshot.js"
 import { applyTribunalResolvedPure } from "../applyTribunalResolved.js"
 import { parseNightResultAppliedPayload } from "../../utils/parseNightResultAppliedPayload.js"
 
@@ -932,4 +932,105 @@ test('F14 real QA roster: unequipped null cards coexist with a purchased card', 
   const result=applySessionSnapshotPure(current,response)
   assert.notEqual(result,current)
   assert.deepEqual(result.state.players.map(p=>p.accountCardFrameId),response.players.map(p=>p.accountCardFrameId))
+})
+
+// ── CO S-1(AC-04): 계정 전적(accountTotalGames·accountWinRate) 검증·복사 ──────────
+//
+// 서버는 두 값을 조회한 참가자에게만 싣는다(own-property 계약) — 그래서 "없음"은 정상이고,
+// "있는데 모양이 틀림"은 응답 전체를 믿을 수 없다는 뜻이다(다른 모든 필드와 같은 원자적 거부).
+
+/** 응답 roster에 계정 전적을 얹는다(index별로 서로 다른 값을 주고, undefined면 키 자체를 뺀다). */
+function playersWithRecords(records) {
+  return basePlayers().map((player, index) => (
+    records[index] === undefined ? player : { ...player, ...records[index] }
+  ))
+}
+
+test('CO S-1(AC-04): 정수이며 범위 안인 계정 전적만 own-property로 채택되고, 없는 참가자는 키 자체가 생기지 않는다', () => {
+  const current = baseCurrent()
+  const response = baseResponse({
+    players: playersWithRecords([
+      { accountTotalGames: 3, accountWinRate: 67 },
+      // 0판 0%와 100%는 모두 유효한 경계값이다 — 거부하면 안 된다.
+      { accountTotalGames: 0, accountWinRate: 0 },
+      undefined, // 조회 실패: 서버가 두 키를 아예 싣지 않은 참가자
+    ]),
+  })
+
+  const result = applySessionSnapshotPure(current, response)
+  assert.notEqual(result, current)
+  assert.equal(result.state.players[0].accountTotalGames, 3)
+  assert.equal(result.state.players[0].accountWinRate, 67)
+  assert.equal(Object.hasOwn(result.state.players[1], 'accountTotalGames'), true, '0을 누락으로 취급하면 안 된다')
+  assert.equal(result.state.players[1].accountTotalGames, 0)
+  assert.equal(result.state.players[1].accountWinRate, 0)
+  assert.equal(Object.hasOwn(result.state.players[2], 'accountTotalGames'), false)
+  assert.equal(Object.hasOwn(result.state.players[2], 'accountWinRate'), false)
+})
+
+test('CO S-1(AC-04): 승률 100은 허용되고 101은 응답 전체를 거부한다', () => {
+  const accepted = applySessionSnapshotPure(
+    baseCurrent(),
+    baseResponse({ players: playersWithRecords([{ accountTotalGames: 7, accountWinRate: 100 }]) }),
+  )
+  assert.equal(accepted.state.players[0].accountWinRate, 100)
+
+  assertRejected(
+    baseCurrent(),
+    baseResponse({ players: playersWithRecords([{ accountTotalGames: 7, accountWinRate: 101 }]) }),
+  )
+})
+
+test('CO S-1(AC-04): 정수가 아니거나 범위를 벗어난 계정 전적은 응답 전체를 거부한다(부분 반영 없음)', () => {
+  const badValues = [-1, 1.5, '3', null, NaN, Infinity, true, {}, []]
+  for (const bad of badValues) {
+    assertRejected(
+      baseCurrent(),
+      baseResponse({ players: playersWithRecords([{ accountTotalGames: bad, accountWinRate: 50 }]) }),
+    )
+    assertRejected(
+      baseCurrent(),
+      baseResponse({ players: playersWithRecords([{ accountTotalGames: 3, accountWinRate: bad }]) }),
+    )
+  }
+})
+
+test('CO S-1(AC-04): 프로토타입으로 상속된 전적은 검증도 복사도 하지 않는다(own-property만 본다)', () => {
+  const inherited = Object.create({ accountTotalGames: 99, accountWinRate: 999 })
+  Object.assign(inherited, basePlayers()[0])
+  const current = baseCurrent()
+  const response = baseResponse({ players: [inherited, ...basePlayers().slice(1)] })
+
+  const result = applySessionSnapshotPure(current, response)
+  assert.notEqual(result, current, '상속된 값은 검증 대상이 아니므로 거부 사유가 되면 안 된다')
+  assert.equal(Object.hasOwn(result.state.players[0], 'accountTotalGames'), false)
+  assert.equal(Object.hasOwn(result.state.players[0], 'accountWinRate'), false)
+})
+
+test('CO S-1(AC-04): bootstrapSessionSnapshotPure도 같은 규칙을 그대로 따른다(위임 구조)', () => {
+  const accepted = bootstrapSessionSnapshotPure(baseResponse({
+    players: playersWithRecords([
+      { accountTotalGames: 3, accountWinRate: 67 },
+      { accountTotalGames: 0, accountWinRate: 0 },
+      undefined,
+    ]),
+  }))
+  assert.notEqual(accepted, null, '유효한 전적이 새로고침 하이드레이션을 막으면 안 된다')
+  assert.equal(accepted.gameId, 'game-1')
+  assert.equal(accepted.state.players[0].accountTotalGames, 3)
+  assert.equal(accepted.state.players[0].accountWinRate, 67)
+  assert.equal(accepted.state.players[1].accountTotalGames, 0)
+  assert.equal(Object.hasOwn(accepted.state.players[2], 'accountTotalGames'), false)
+
+  // 거부는 patch===seed로 나타나므로 bootstrap의 답은 null이다(부분 하이드레이션 없음).
+  for (const bad of [-1, 1.5, '3', null, NaN]) {
+    assert.equal(
+      bootstrapSessionSnapshotPure(baseResponse({ players: playersWithRecords([{ accountTotalGames: bad, accountWinRate: 50 }]) })),
+      null,
+    )
+  }
+  assert.equal(
+    bootstrapSessionSnapshotPure(baseResponse({ players: playersWithRecords([{ accountTotalGames: 3, accountWinRate: 101 }]) })),
+    null,
+  )
 })

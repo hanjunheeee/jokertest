@@ -1,6 +1,10 @@
 const crypto = require('crypto')
 const userRepository = require('../repositories/user.repositories')
 const economyService = require('../service/economy.service')
+// CO S-1(AC-02): 게임 시작 시 참가자 전원의 계정 전적(총 판수·승률)을 한 번에 읽는다.
+// user.repositories와 마찬가지로 require 시점에 backend/models를 함께 불러오지만, 이 파일은
+// 이미 그 모듈을 통해 models를 로드하므로 새로 생기는 요구사항은 없다.
+const gameResultRepository = require('../repositories/gameResult.repositories')
 const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
 const { validateCreateRoomPayload } = require('../utils/createRoomValidation')
 // F-20(AC-01~AC-06): 대기방 설정 변경의 입력 검증·허용 필드·이벤트/오류 코드는 전부 이
@@ -79,6 +83,16 @@ let economyServiceRef = economyService
 /** 테스트 전용: economyService 구현을 교체합니다. 인자 없이 호출하면 실제 모듈로 되돌립니다. */
 function __setEconomyServiceForTests(fakeEconomyService) {
     economyServiceRef = fakeEconomyService ?? economyService
+}
+
+// CO S-1(AC-02/AC-03): 게임 시작 스냅샷에 참가자 전원의 계정 전적(판수·승률)을 실으려면
+// game_result_players를 실제로 조회해야 한다 — userRepositoryRef·economyServiceRef와 **같은
+// 이유**로(호출 순간 실제 DB 연결을 요구한다) 테스트가 이 참조만 교체할 수 있어야 한다.
+let gameResultRepositoryRef = gameResultRepository
+
+/** 테스트 전용: gameResult 저장소 구현을 교체합니다. 인자 없이 호출하면 실제 모듈로 되돌립니다. */
+function __setGameResultRepositoryForTests(fakeRepository) {
+    gameResultRepositoryRef = fakeRepository ?? gameResultRepository
 }
 // NOTE: 게임 시작(handleStartGame)은 방장 권한·인원·준비 상태 가드를 통과하면
 // game-core/gameSession(prepareGameSession → commitGameSession)으로 GameSession을 만들고,
@@ -1276,7 +1290,22 @@ function isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVers
  */
 async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settingsVersionAtCapture) {
     const uuids = [...playersAtCapture.keys()]
-    const loadouts = await economyServiceRef.getGameStartLoadouts(uuids)
+    // CO S-1(AC-02/AC-03): 외형과 전적은 서로 독립적인 조회다 — 나란히(한 번의 await 경계에서)
+    // 읽어 시작 지연이 두 배가 되지 않게 하되, 실패의 무게는 다르게 다룬다. 외형 조회 실패는
+    // 지금까지처럼 그대로 전파해 시작을 막고(그 값이 없으면 세션 후보를 조립할 수 없다),
+    // 전적 조회 실패는 여기서 흡수한다 — 전적은 표시용 정보일 뿐이라 그것 때문에 판이 시작되지
+    // 못하면 잃는 것이 더 크다. 실패하면 빈 Map으로 대체되어 **필드 자체가 붙지 않는다**
+    // (0판 0%로 위장하지 않는다 — 화면이 "조회 실패"와 "정말 0판"을 구분할 수 있어야 한다).
+    const [loadouts, recordSummaries] = await Promise.all([
+        economyServiceRef.getGameStartLoadouts(uuids),
+        Promise.resolve()
+            .then(() => gameResultRepositoryRef.getAccountRecordSummaries(uuids))
+            .then((summaries) => (summaries instanceof Map ? summaries : new Map()))
+            .catch((error) => {
+                console.error('[matchmaking] 계정 전적 조회 실패 — 전적 없이 게임을 시작합니다', error)
+                return new Map()
+            }),
+    ])
 
     if (!isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVersionAtCapture)) {
         return { ok: false, code: 'ROOM_STATE_CHANGED' }
@@ -1284,11 +1313,18 @@ async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settin
 
     const players = new Map(uuids.map((uuid) => {
         const loadout = loadouts[uuid] ?? {}
+        // 두 값이 모두 정수일 때만 싣는다 — 반쪽짜리(판수만 있고 승률은 없는) 전적은 화면에서
+        // 의미를 만들 수 없으므로 애초에 만들지 않는다.
+        const record = recordSummaries.get(uuid)
+        const hasRecord = Number.isInteger(record?.totalGames) && Number.isInteger(record?.winRate)
         return [uuid, {
             ...room.players.get(uuid),
             accountProfilePhotoId: loadout.profilePhotoId ?? null,
             accountProfileBorderId: loadout.profileBorderId ?? null,
             accountCardFrameId: loadout.cardFrameId ?? null,
+            ...(hasRecord
+                ? { accountTotalGames: record.totalGames, accountWinRate: record.winRate }
+                : {}),
             accountSkinsByJob: { ...(loadout.skinsByJob
                 ?? { noble: null, clown: null, guard: null, doctor: null, witchHunter: null }) },
         }]
@@ -4150,6 +4186,7 @@ module.exports = {
     __resetStartedRoomMarksForTests,
     __setUserRepositoryForTests,
     __setEconomyServiceForTests,
+    __setGameResultRepositoryForTests,
     __setGameInviteServiceForTests,
     __setAdmissionTimeoutsForTests,
     __setRandomMatchmakingEnabledForTests,

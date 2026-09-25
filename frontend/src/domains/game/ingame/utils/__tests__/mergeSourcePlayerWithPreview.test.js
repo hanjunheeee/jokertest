@@ -205,3 +205,55 @@ test("accountCardFrameId가 있어도 portraitSrc·accountBorderSrc는 각자 �
   assert.equal(result.accountBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
   assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).png".normalize("NFC"))
 })
+
+// ── CO S-1(AC-05): 계정 전적(총 판수·승률) ──────────────────────────────────────
+
+test("계정 전적이 있으면 그대로 복사된다(0판 0%도 서버가 말한 사실이므로 옮긴다)", () => {
+  const withRecord = mergeSourcePlayerWithPreview(
+    { id: "u1", name: "A", connected: true, alive: true, accountTotalGames: 3, accountWinRate: 67 },
+    preview(),
+  )
+  assert.equal(withRecord.accountTotalGames, 3)
+  assert.equal(withRecord.accountWinRate, 67)
+
+  const zeroRecord = mergeSourcePlayerWithPreview(
+    { id: "u2", name: "B", connected: true, alive: true, accountTotalGames: 0, accountWinRate: 0 },
+    preview(),
+  )
+  assert.equal(Object.hasOwn(zeroRecord, "accountTotalGames"), true, "0을 누락으로 취급하면 안 된다")
+  assert.equal(zeroRecord.accountTotalGames, 0)
+  assert.equal(zeroRecord.accountWinRate, 0)
+})
+
+test("계정 전적 키가 없으면 출력에도 키가 생기지 않고, 상속된 값도 복사하지 않는다", () => {
+  const missing = mergeSourcePlayerWithPreview(
+    { id: "u3", name: "C", connected: true, alive: true },
+    preview(),
+  )
+  assert.equal(Object.hasOwn(missing, "accountTotalGames"), false)
+  assert.equal(Object.hasOwn(missing, "accountWinRate"), false)
+
+  const inherited = Object.create({ accountTotalGames: 99, accountWinRate: 99 })
+  Object.assign(inherited, { id: "u4", name: "D", connected: true, alive: true })
+  const fromPrototype = mergeSourcePlayerWithPreview(inherited, preview())
+  assert.equal(Object.hasOwn(fromPrototype, "accountTotalGames"), false)
+  assert.equal(Object.hasOwn(fromPrototype, "accountWinRate"), false)
+})
+
+test("계정 전적이 붙어도 기존 프로필·테마·역할 처리는 그대로다", () => {
+  const source = preview()
+  const result = mergeSourcePlayerWithPreview(
+    {
+      id: "u1", name: "A", connected: true, alive: true, themeIndex: 4, role: "JOKER", team: "JOKER",
+      accountProfilePhotoId: "player-profile-기사",
+      accountTotalGames: 3, accountWinRate: 67,
+    },
+    source,
+  )
+  assert.equal(result.role, "JOKER")
+  assert.equal(result.team, "JOKER")
+  assert.equal(result.themeIndex, 4)
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+  assert.equal(result.status, INGAME_PLAYER_STATUS.ALIVE)
+  assert.equal(result.accountTotalGames, 3)
+})
