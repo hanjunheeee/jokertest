@@ -1,4 +1,3 @@
-import { useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import LobbyBackground from "@/domains/lobby/components/LobbyBackground.jsx"
 import LobbyContentLayer from "@/domains/lobby/components/LobbyContentLayer.jsx"
@@ -8,20 +7,13 @@ import LobbyProfileArea from "@/domains/lobby/components/LobbyProfileArea.jsx"
 import { LOBBY_PAGE_ROOT_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
 import { useLobbyIntro } from "@/domains/lobby/hooks/useLobbyIntro.js"
 import { useLobbyNotificationPanels } from "@/domains/lobby/hooks/useLobbyNotificationPanels.js"
-import ProfileEditOverlay from "@/domains/user/components/profileEdit/ProfileEditOverlay.jsx"
 import { useMyProfile } from "@/domains/user/hooks/useMyProfile.js"
 
 export default function LobbyPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { profile, loading: profileLoading } = useMyProfile()
-  const { bgVideoRef, audioRef, uiVisible, skipIntro } = useLobbyIntro()
-
-  // F-18(AC-04): 마이페이지와 **같은** 프로필 편집 모달을 로비에서도 연다. 열림 상태만
-  // 여기서 소유하고(MyPageLayout.jsx와 동일한 소비 방식), 저장·반영은 기존 공용 경로
-  // (useProfileBorderEditor → economy store → profileCustomization store → 배너 초상)를
-  // 그대로 쓴다 — 새 편집기나 새 저장 경로를 만들지 않는다.
-  const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const { bgVideoRef, uiVisible, skipIntro } = useLobbyIntro()
 
   // 친구 목록 패널과 알림 모달의 열림 상태·대상 재진입 신호는 이 훅이 소유합니다.
   // 친구 데이터/핸들러는 여기서 구독하지 않습니다 — FriendListPanel이 open 여부를 받아서
@@ -47,7 +39,6 @@ export default function LobbyPage() {
     <div className={LOBBY_PAGE_ROOT_CLASS}>
       <LobbyBackground
         bgVideoRef={bgVideoRef}
-        audioRef={audioRef}
         uiVisible={uiVisible}
         onSkipIntro={skipIntro}
       />
@@ -59,10 +50,8 @@ export default function LobbyPage() {
           loading={profileLoading}
           onMyPage={() => navigate("/mypage")}
           onAccount={() => navigate("/account")}
-          onEditProfile={() => setProfileEditOpen(true)}
         />
         <LobbyFriendArea
-          audioRef={audioRef}
           friendListOpen={friendListOpen}
           onOpenFriendList={openFriendList}
           onCloseFriendList={closeFriendList}
@@ -74,8 +63,6 @@ export default function LobbyPage() {
           gameInviteTargetId={gameInviteTargetId}
         />
       </LobbyContentLayer>
-
-      <ProfileEditOverlay open={profileEditOpen} onClose={() => setProfileEditOpen(false)} />
     </div>
   )
 }

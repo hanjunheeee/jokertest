@@ -10,13 +10,15 @@
  */
 import {
   FRIEND_ACCEPT_BACK_BUTTON_CLASS,
-  FRIEND_ACCEPT_BUTTON_IMAGE_CLASS,
   FRIEND_ACCEPT_EMPTY_CLASS,
   FRIEND_ACCEPT_LIST_CLASS,
   FRIEND_ACCEPT_REFRESH_BUTTON_CLASS,
+  FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS,
   FRIEND_ACCEPT_TAB_CLASS,
   FRIEND_ACCEPT_TOOLBAR_CLASS,
   FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS,
+  FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS,
+  FRIEND_LIST_STATUS_DETAIL_MUTED_CLASS,
   RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS,
   RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
   RECOMMENDED_FRIEND_ACTIONS_CLASS,
@@ -74,12 +76,12 @@ function GameInviteRow({ invite, onAccept, onDecline, processing, error, targete
               {invite.senderName ?? "알 수 없는 사용자"}
             </p>
             {state.actionable ? null : (
-              <p data-invite-ended="true" className="app-text-scaled [--app-text-size:10px] text-white/45">
+              <p data-invite-ended="true" className={FRIEND_LIST_STATUS_DETAIL_MUTED_CLASS}>
                 {state.text}
               </p>
             )}
             {error !== null && error !== undefined ? (
-              <p role="status" data-invite-error={invite.inviteId} className="app-text-scaled [--app-text-size:10px] text-red-300/90">
+              <p role="status" data-invite-error={invite.inviteId} className={FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS}>
                 {error}
               </p>
             ) : null}
@@ -157,7 +159,7 @@ export default function GameInviteTab({
           className={FRIEND_ACCEPT_REFRESH_BUTTON_CLASS}
           style={{ outline: "none" }}
         >
-          <PublicAsset src={FRIEND_LIST_ASSETS.refreshButton} alt="" className={FRIEND_ACCEPT_BUTTON_IMAGE_CLASS} />
+          <PublicAsset src={FRIEND_LIST_ASSETS.refreshButton} alt="" className={FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS} />
         </button>
       </div>
 

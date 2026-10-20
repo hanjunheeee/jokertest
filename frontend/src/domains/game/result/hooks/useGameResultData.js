@@ -8,9 +8,8 @@ import { buildGameResultViewModel } from "../utils/buildGameResultViewModel.js"
  * 개발용 더미를 공급하는 useGameResultPreview를 대체하는 실데이터 경로다 — 그 훅과
  * gameResultPreviewData는 그대로 남아 `?outcome=` 진입에 계속 쓰인다.
  *
- * self.team까지 함께 읽는 이유: 이 저장소의 game-core는 winResult에 { winner }만 싣고
- * 전원 정체 공개를 내려주지 않으므로, 본인 승패는 store가 이미 갖고 있는 본인 진영으로만
- * 판정할 수 있다(buildGameResultViewModel 주석 참고).
+ * self.team까지 함께 읽는 이유: winResult.reveals에 본인이 없을 때(구버전 payload 등) 본인
+ * 승패를 store가 이미 갖고 있는 본인 진영으로 판정하기 위함이다.
  *
  * @flow store에 winResult가 없으면(게임이 끝나지 않았거나 세션이 정리됨) null을 돌려준다 —
  *   호출부가 그때 로비로 돌려보낸다. 있으면 본인 uuid·team과 함께 buildGameResultViewModel에

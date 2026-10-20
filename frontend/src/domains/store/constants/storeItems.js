@@ -243,10 +243,16 @@ export function isStorePricePending(item) {
   return item.priceAmount === STORE_PRICE_PENDING
 }
 
+/** 상점 그리드에 노출하지 않는 상품(기본 지급 이모티콘 등) */
+export const isDefaultGrantStoreItem = (item) => item?.defaultGrant === true
+
 /** @param {string | null} category */
 export function getStoreItemsByCategory(category) {
-  if (!category) return STORE_ITEMS
-  return STORE_ITEMS.filter((item) => item.category === category)
+  const byCategory = !category
+    ? STORE_ITEMS
+    : STORE_ITEMS.filter((item) => item.category === category)
+  // 기본 지급 이모티콘 8종은 팔레트·소유 목록용 카탈로그에만 두고 상점 그리드에서는 숨긴다.
+  return byCategory.filter((item) => !isDefaultGrantStoreItem(item))
 }
 
 /** @param {string} itemId */

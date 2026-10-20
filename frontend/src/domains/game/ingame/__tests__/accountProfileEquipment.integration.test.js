@@ -109,8 +109,10 @@ const { useMatchingPage } = await import("../../matching/hooks/useMatchingPage.j
 const { buildPlayerSessionSourceFromGameState } = await import("../utils/buildPlayerSessionSourceFromGameState.js")
 const { buildInGamePreviewPlayers } = await import("../utils/buildInGamePreviewPlayers.js")
 const { mergeSourcePlayerWithPreview } = await import("../utils/mergeSourcePlayerWithPreview.js")
-const { resolveAccountProfileBorderSrc, resolveAccountProfilePhotoSrc } =
+const { resolveAccountProfileBorderSrc } =
   await import("../../../../shared/utils/resolveAccountProfileAssets.js")
+const { resolveInGameAccountProfilePhotoSrc } =
+  await import("../utils/resolveInGameAccountProfilePhotoSrc.js")
 const { INGAME_PLAYER_STATUS, INGAME_PLAYER_STATUS_ASSETS } = await import("../constants/board/status/ingamePlayerStatus.js")
 const { default: InGamePlayerBoard } = await import("../components/board/InGamePlayerBoard.jsx")
 const { InGamePlayerSessionContext } = await import("../components/InGamePlayerSessionContext.js")
@@ -121,11 +123,9 @@ const { InGameActionContext } = await import("../context/InGameActionContext.jsx
 const { useInGameActionPanel } = await import("../hooks/useInGameActionPanel.js")
 const { default: MatchingPartySlots } = await import("../../matching/components/MatchingPartySlots.jsx")
 const { useInGameStore } = await import("../store/ingameStore.js")
-// F-14(AC-01/AC-04, R-IMPL P1 수정): 본인 역할 공개 화면의 구매 스킨 standing 자산 소비 경로
-// (self.accountSkinId → getInGameRoleRevealInfo → InGameRoleRevealOverlay 렌더)도 이 파일의
-// 다른 소비 경로와 같은 실제 함수·실제 DOM 계약으로 검증한다.
+// F-14(AC-01/AC-04): self.accountSkinId → getInGameRoleRevealInfo view-model standing 자산 계산도
+// 이 파일의 다른 소비 경로와 같은 실제 함수로 검증한다.
 const { getInGameRoleRevealInfo } = await import("../utils/getInGameRoleRevealInfo.js")
-const { default: InGameRoleRevealOverlay } = await import("../components/roleReveal/InGameRoleRevealOverlay.jsx")
 const { getSkinCardWearItemById, getDefaultSkinIdForJob } =
   await import("../../../user/constants/skinCardWear/skinCardWearCatalog.js")
 
@@ -198,7 +198,7 @@ test("F-13 AC-05: 서버가 계정 사진을 실어 보낸 참가자는 최종 �
   const withProfile = finalPlayers.find((p) => p.id === "u1")
   const withoutProfile = finalPlayers.find((p) => p.id === "u2")
 
-  assert.equal(withProfile.portraitSrc, resolveAccountProfilePhotoSrc("player-profile-기사"))
+  assert.equal(withProfile.portraitSrc, resolveInGameAccountProfilePhotoSrc("player-profile-기사"))
   assert.notEqual(withProfile.portraitSrc, "dummy-portrait-0", "계정 사진이 있으면 더미 preview 초상이 아니라 실제 계정 사진이어야 한다")
   assert.equal(withoutProfile.portraitSrc, "dummy-portrait-1", "계정 사진이 없는 참가자는 기존 preview 더미 초상을 그대로 유지해야 한다")
 })
@@ -212,7 +212,7 @@ test("F-13 AC-05: 계정 테두리는 인게임 카드의 frameSrc(직업 스킨
   assert.equal(merged.frameSrc, "dummy-frame-0", "accountProfileBorderId는 game_started state에 값이 있어도 카드 frameSrc를 바꾸면 안 된다")
 })
 
-test("F-13 AC-05: 서버가 계정 테두리를 실어 보낸 참가자는 최종 렌더 입력에 accountBorderSrc가 실제 테두리 자산으로 채워진다", () => {
+test("F-13 AC-05: 서버가 계정 테두리를 실어 보내도 인게임 카드에는 accountBorderSrc를 만들지 않는다(원형 프레임 미표시)", () => {
   const state = gameStartedState([
     { uuid: "u1", nickname: "호스트", alive: true, themeIndex: 0, accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" },
     { uuid: "u2", nickname: "참가자", alive: true, themeIndex: 1 },
@@ -222,8 +222,9 @@ test("F-13 AC-05: 서버가 계정 테두리를 실어 보낸 참가자는 최�
   const withBorder = finalPlayers.find((p) => p.id === "u1")
   const withoutBorder = finalPlayers.find((p) => p.id === "u2")
 
-  assert.equal(withBorder.accountBorderSrc, resolveAccountProfileBorderSrc("profile-border-귀족"))
-  assert.equal(Object.hasOwn(withoutBorder, "accountBorderSrc"), false, "계정 테두리가 없는 참가자는 accountBorderSrc 키 자체가 생기면 안 된다")
+  assert.equal(withBorder.accountProfileBorderId, "profile-border-귀족")
+  assert.equal(Object.hasOwn(withBorder, "accountBorderSrc"), false)
+  assert.equal(Object.hasOwn(withoutBorder, "accountBorderSrc"), false)
 })
 
 test("F-14 AC-01/AC-04: 서버가 계정 카드 프레임을 실어 보낸 참가자는 최종 카드의 frameSrc가 더미 preview 대신 실제 장착 카드 프레임으로 대체된다(프로필 사진·테두리와 독립적으로)", () => {
@@ -242,18 +243,18 @@ test("F-14 AC-01/AC-04: 서버가 계정 카드 프레임을 실어 보낸 참�
 
   assert.equal(withCard.frameSrc, "dummy-card-frame-player-card-왕관")
   assert.equal(withoutCard.frameSrc, "dummy-frame-1", "계정 카드 프레임이 없는 참가자는 기존 preview 더미 프레임을 그대로 유지해야 한다")
-  // 같은 참가자의 portraitSrc/accountBorderSrc가 카드 프레임과 무관하게 독립적으로 해석된다.
-  assert.equal(withCard.portraitSrc, resolveAccountProfilePhotoSrc("player-profile-기사"))
-  assert.equal(withCard.accountBorderSrc, resolveAccountProfileBorderSrc("profile-border-귀족"))
+  // 같은 참가자의 portraitSrc가 카드 프레임과 무관하게 독립적으로 해석된다.
+  assert.equal(withCard.portraitSrc, resolveInGameAccountProfilePhotoSrc("player-profile-기사"))
+  assert.equal(Object.hasOwn(withCard, "accountBorderSrc"), false)
 })
 
 // ---------------------------------------------------------------------------
 // F-14(AC-01/AC-04, R-IMPL P1 수정) — 실제 backend 세션의 self.accountSkinId가 실제
-// getInGameRoleRevealInfo(view-model)를 거쳐 실제 InGameRoleRevealOverlay DOM에
-// 렌더되는지, 그리고 다른 참가자의 직업별 장착 맵이 함께 새어나가지 않는지 확인한다.
+// getInGameRoleRevealInfo(view-model)가 standing 자산을 올바르게 계산하는지, 그리고
+// 다른 참가자의 직업별 장착 맵이 함께 새어나가지 않는지 확인한다.
 // ---------------------------------------------------------------------------
 
-test("F-14 AC-01/AC-04: 실제 backend 세션의 self.accountSkinId가 실제 getInGameRoleRevealInfo와 InGameRoleRevealOverlay를 거쳐 정확히 그 구매 스킨의 standing 자산으로 렌더된다(합성 self 리터럴이 아니라 실제 buildGameStartedPayload 생산 경로)", () => {
+test("F-14 AC-01/AC-04: 실제 backend 세션의 self.accountSkinId가 getInGameRoleRevealInfo view-model에 정확히 그 구매 스킨의 standing 자산으로 실린다(합성 self 리터럴이 아니라 실제 buildGameStartedPayload 생산 경로)", () => {
   const { buildSessionCandidate } = gameSessionCore.__testables
   const { commitGameSession, buildGameStartedPayload } = gameSessionCore
 
@@ -304,19 +305,9 @@ test("F-14 AC-01/AC-04: 실제 backend 세션의 self.accountSkinId가 실제 ge
     "구매한 스킨이 있으므로 기본 스킨이 아니라 실제 구매한 스킨이 view-model에 실려야 한다",
   )
 
-  // 실제 DOM 렌더 — <img>의 src가 view-model이 계산한 정확한 standing 자산과 같아야 한다.
-  const { container } = render(
-    React.createElement(InGameRoleRevealOverlay, { open: true, onClose: () => {}, roleInfo, players: [] }),
-  )
-  const imgSrcs = [...container.querySelectorAll("img")].map((img) => decodeURIComponent(img.getAttribute("src")))
-  assert.ok(
-    imgSrcs.includes(roleInfo.standingSrc.normalize("NFC")),
-    "실제 구매 스킨의 standing 자산이 실제 DOM <img>로 렌더되어야 한다",
-  )
-  cleanup()
 })
 
-test("F-14 AC-01/AC-04: self.accountSkinId가 없는(미장착) 참가자는 그 직업의 기본 스킨이 실제 DOM에 렌더된다(빈 화면 금지)", () => {
+test("F-14 AC-01/AC-04: self.accountSkinId가 없는(미장착) 참가자는 getInGameRoleRevealInfo view-model에 그 직업의 기본 스킨 standing 자산이 실린다", () => {
   const { buildSessionCandidate } = gameSessionCore.__testables
   const { commitGameSession, buildGameStartedPayload } = gameSessionCore
 
@@ -341,12 +332,6 @@ test("F-14 AC-01/AC-04: self.accountSkinId가 없는(미장착) 참가자는 그
   const expectedDefaultJob = self.role === "JOKER" ? "clown" : "noble"
   assert.equal(roleInfo.standingSrc, getSkinCardWearItemById(getDefaultSkinIdForJob(expectedDefaultJob)).standingSrc)
 
-  const { container } = render(
-    React.createElement(InGameRoleRevealOverlay, { open: true, onClose: () => {}, roleInfo, players: [] }),
-  )
-  const imgSrcs = [...container.querySelectorAll("img")].map((img) => decodeURIComponent(img.getAttribute("src")))
-  assert.ok(imgSrcs.includes(roleInfo.standingSrc.normalize("NFC")), "미장착이어도 기본 스킨 자산이 실제 DOM에 렌더되어야 한다")
-  cleanup()
 })
 
 // ---------------------------------------------------------------------------
@@ -426,7 +411,7 @@ test("F-13 AC-05: 실제 backend 세션에서 독립적으로 만든 game_starte
   // <img>는 PublicAsset이 publicAsset()으로 NFC 정규화한 뒤 encodeURI한 값이다(디코딩은 위
   // renderBoard가 이미 했다) — 같은 파일을 가리키는 두 유니코드 정규화 형태를 NFC로 맞춘 뒤
   // 비교한다.
-  const expectedPhotoSrc = resolveAccountProfilePhotoSrc("player-profile-그림자").normalize("NFC")
+  const expectedPhotoSrc = resolveInGameAccountProfilePhotoSrc("player-profile-그림자").normalize("NFC")
   assert.ok(firstRender.includes(expectedPhotoSrc), "최초 game_started 렌더에 실제 계정 사진이 실제 DOM img로 나타나야 한다")
 
   // 실제 화면이 get_session_snapshot ack를 받을 때 부르는 바로 그 액션이다
@@ -516,9 +501,9 @@ test("F-13 AC-05 R-IMPL: 재접속 스냅샷의 isConnected:false/isAlive:false�
 
   const disconnectedBadge = INGAME_PLAYER_STATUS_ASSETS.disconnected.normalize("NFC")
   const deadBadge = INGAME_PLAYER_STATUS_ASSETS.dead.normalize("NFC")
-  const v2PhotoSrc = resolveAccountProfilePhotoSrc("player-profile-드워프").normalize("NFC")
-  const v3PhotoSrc = resolveAccountProfilePhotoSrc("player-profile-그림자").normalize("NFC")
-  const v4PhotoSrc = resolveAccountProfilePhotoSrc("player-profile-마인").normalize("NFC")
+  const v2PhotoSrc = resolveInGameAccountProfilePhotoSrc("player-profile-드워프").normalize("NFC")
+  const v3PhotoSrc = resolveInGameAccountProfilePhotoSrc("player-profile-그림자").normalize("NFC")
+  const v4PhotoSrc = resolveInGameAccountProfilePhotoSrc("player-profile-마인").normalize("NFC")
   const v3BorderSrc = resolveAccountProfileBorderSrc("profile-border-귀족").normalize("NFC")
 
   // 수정 전에는 connected가 항상 true였으므로 status가 DISCONNECTED로 절대 떨어지지 않아
@@ -539,7 +524,7 @@ test("F-13 AC-05 R-IMPL: 재접속 스냅샷의 isConnected:false/isAlive:false�
   assert.ok(firstRender.includes(v2PhotoSrc), "연결이 끊겨도 계정 사진은 그대로 유지되어야 한다(리포트: 사진은 남아 있었다)")
   assert.ok(firstRender.includes(v3PhotoSrc), "사망해도 계정 사진은 유지되어야 한다")
   assert.ok(firstRender.includes(v4PhotoSrc), "끊기고 사망해도 계정 사진은 유지되어야 한다")
-  assert.ok(firstRender.includes(v3BorderSrc), "사망한 참가자도 계정 테두리가 유지되어야 한다(상태 오버레이와 별개 레이어)")
+  assert.ok(!firstRender.includes(v3BorderSrc), "인게임 카드에는 원형 계정 테두리를 렌더하지 않아야 한다")
 
   // role 비밀성 — 연결 끊김·사망 오버레이가 추가되어도 role 값이 DOM 텍스트로 노출되면 안 된다.
   const selfRole = useInGameStore.getState().state.self.role
@@ -566,7 +551,7 @@ test("F-13 AC-05 R-IMPL: 재접속 스냅샷의 isConnected:false/isAlive:false�
   assert.deepEqual(
     afterReloadRender,
     firstRender,
-    "새로고침(빈 store에서 bootstrapSessionSnapshot) 후에도 연결 끊김·사망 배지와 계정 사진·테두리가 그대로 유지되어야 한다 — 리포트의 'photos retained but disconnected overlays absent even after reload' 실패를 재현/차단한다",
+    "새로고침(빈 store에서 bootstrapSessionSnapshot) 후에도 연결 끊김·사망 배지와 계정 사진이 그대로 유지되어야 한다 — 리포트의 'photos retained but disconnected overlays absent even after reload' 실패를 재현/차단한다",
   )
 })
 
@@ -574,30 +559,24 @@ test("F-13 AC-05 R-IMPL: 재접속 스냅샷의 isConnected:false/isAlive:false�
 // F-13 AC-05 재검토(CODEX-2) — InGamePlayerBoard/InGamePlayerCard 실제 DOM 렌더
 // ---------------------------------------------------------------------------
 
-test("F-13 AC-05: InGamePlayerBoard는 accountBorderSrc를 InGamePlayerCard에 그대로 넘기고, 실제 DOM에서도 계정 테두리는 직업 프레임과 분리된 별도 레이어로 그려지며 alive/dead/disconnected 상태에서도 유지된다", () => {
+test("F-13 AC-05: InGamePlayerBoard는 alive/dead/disconnected 상태에서 ingame 사각형 초상만 렌더하고 원형 계정 테두리는 그리지 않는다", () => {
   const finalPlayers = [
-    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.png", frameSrc: "/frame.png", accountBorderSrc: "/p1-border.png", theme: {} },
-    { id: "p2", nickname: "사망자", status: INGAME_PLAYER_STATUS.DEAD, portraitSrc: "/p2-portrait.png", frameSrc: "/frame.png", accountBorderSrc: "/p2-border.png", theme: {} },
+    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.png", frameSrc: "/frame.png", theme: {} },
+    { id: "p2", nickname: "사망자", status: INGAME_PLAYER_STATUS.DEAD, portraitSrc: "/p2-portrait.png", frameSrc: "/frame.png", theme: {} },
     { id: "p3", nickname: "끊김", status: INGAME_PLAYER_STATUS.DISCONNECTED, portraitSrc: "/p3-portrait.png", frameSrc: "/frame.png", theme: {} },
   ]
 
   const imgSrcs = renderBoard(finalPlayers, "p1")
 
   assert.ok(imgSrcs.includes("/p1-portrait.png") && imgSrcs.includes("/p2-portrait.png") && imgSrcs.includes("/p3-portrait.png"), "세 참가자 모두 서로 다른 실제 초상이 렌더되어야 한다")
-  assert.ok(imgSrcs.includes("/p1-border.png"), "생존자의 계정 테두리가 실제 DOM에 렌더되어야 한다")
-  assert.ok(imgSrcs.includes("/p2-border.png"), "사망자도 계정 테두리가 유지되어야 한다(상태 오버레이와 별개 레이어)")
-  assert.ok(!imgSrcs.includes("/p3-border.png"), "계정 테두리가 없는 참가자는 없는 그대로여야 한다(생성되지 않음)")
-  // frameSrc(직업 스킨/카드 프레임)는 세 참가자 모두 같은 자산을 공유하지만 accountBorderSrc와는
-  // 별개 <img>로 렌더되어야 한다 — dead 상태는 resolveInGamePlayerFrameSrc가 alive와 다른
-  // 값으로 바꾸므로("/frame.png" 접두사는 공유) 접두사 기준으로 세 참가자 모두의 프레임
-  // 레이어가 여전히 개별적으로(계정 테두리와 별개로) 남아 있는지 확인한다.
+  assert.ok(!imgSrcs.includes("/p1-border.png") && !imgSrcs.includes("/p2-border.png"), "원형 계정 테두리 자산은 DOM에 나타나면 안 된다")
   const frameImgCount = imgSrcs.filter((src) => src.startsWith("/frame.png")).length
-  assert.equal(frameImgCount, finalPlayers.length * 2, "직업 프레임은(그림자 레이어 + 본체 레이어) 계정 테두리 렌더와 무관하게 참가자마다 그대로 유지되어야 한다")
+  assert.equal(frameImgCount, finalPlayers.length * 2, "직업 프레임은(그림자 레이어 + 본체 레이어) 참가자마다 그대로 유지되어야 한다")
 })
 
 test("F-13 AC-05: InGamePlayerCard는 role을 props로 받지도 렌더하지도 않는다(비밀 유지) — 실제 DOM 텍스트에 role 값이 노출되지 않는다", () => {
   const finalPlayers = [
-    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.png", frameSrc: "/frame.png", accountBorderSrc: "/p1-border.png", theme: {}, role: "JOKER", team: "JOKER" },
+    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.png", frameSrc: "/frame.png", theme: {}, role: "JOKER", team: "JOKER" },
   ]
   const { container } = render(
     React.createElement(
@@ -646,25 +625,23 @@ test("F-13 AC-05(CODEX-4): 대기방(useMatchingPage)은 실제로 마운트됐�
   }
 })
 
-test("F-13 AC-05: MatchingPartySlots는 실제 DOM에서 슬롯마다 서로 다른 계정 초상·테두리를 그리고, 계정 프로필이 없는 더미 슬롯은 기존 기본 자산으로 대체하며, 준비 배지는 그대로 유지한다", () => {
+test("F-13 AC-05: MatchingPartySlots는 준비 여부에 따라 매칭 실루엣만 그리고 준비/대기 배지는 표시하지 않는다", () => {
   const slots = [
     { id: "s1", ready: true, accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" },
     { id: "s2", ready: false, accountProfilePhotoId: "player-profile-드워프", accountProfileBorderId: "profile-border-평민" },
-    { id: "s3", ready: false }, // 아직 아무도 들어오지 않은 더미 슬롯
+    { id: "s3", ready: false },
   ]
 
   const { container } = render(React.createElement(MatchingPartySlots, { slots }))
   const imgSrcs = [...container.querySelectorAll("img")].map((img) => decodeURIComponent(img.getAttribute("src")))
 
-  assert.ok(imgSrcs.some((src) => src.includes("기사")), "s1 슬롯은 실제 계정 사진(기사)을 그려야 한다")
-  assert.ok(imgSrcs.some((src) => src.includes("드워프")), "s2 슬롯은 s1과 다른 실제 계정 사진(드워프)을 그려야 한다")
-  assert.notEqual(
-    [...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))[0],
-    [...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))[2],
-    "슬롯마다 독립적으로 해석해야 서로 다른 계정 이미지가 나온다",
-  )
+  assert.equal(imgSrcs.filter((src) => src.includes("매칭 준비 실루엣")).length, 1)
+  assert.equal(imgSrcs.filter((src) => src.includes("매칭 미준비 실루엣")).length, 2)
+  assert.equal(imgSrcs.some((src) => src.includes("기사") || src.includes("드워프")), false,
+    "슬롯은 계정 프로필 이미지 대신 실루엣만 그려야 한다")
 
-  const badgeTexts = container.textContent
-  assert.ok(badgeTexts.includes("준비"), "준비 여부 배지는 계정 초상 도입과 무관하게 그대로 유지되어야 한다")
+  const text = container.textContent
+  assert.equal(text.includes("준비완료"), false)
+  assert.equal(text.includes("대기중"), false)
   cleanup()
 })

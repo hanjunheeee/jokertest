@@ -1,9 +1,10 @@
-import { LOBBY_ASSETS } from "../../lobby/constants/lobbyAssets.js"
 import BannerMainButton from "./MyPageBannerButton/BannerMainButton.jsx"
 import SettingsGearButton from "./MyPageBannerButton/SettingsGearButton.jsx"
+import { MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
 import {
   LOBBY_BANNER_WIDTH_CLASS,
   LOBBY_TEXT_PANEL_INSET,
+  MY_PAGE_BANNER_FRAME_IMAGE_CLASS,
   MY_PAGE_BANNER_ROOT_CLASS,
 } from "../constants/myPageBannerStyle.js"
 
@@ -16,8 +17,8 @@ export default function MyPageBannerButton({
   showText = true,
   showProfilePortrait = false,
   showSettingsIcon = false,
-  bannerSrc = LOBBY_ASSETS.myPageButton,
-  bannerImageClassName,
+  bannerSrc = MY_PAGE_ASSETS.myPageButtonFrame,
+  bannerImageClassName = MY_PAGE_BANNER_FRAME_IMAGE_CLASS,
   textPanelInset = LOBBY_TEXT_PANEL_INSET,
   className = LOBBY_BANNER_WIDTH_CLASS,
 }) {

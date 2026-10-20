@@ -32,6 +32,7 @@ export const GAME_RESULT_PREVIEW = {
   outcome: "lose",
   winningTeam: "JOKER",
   players,
+  selfPlayerId: "p1",
   mvpPlayerId: "p3",
 }
 

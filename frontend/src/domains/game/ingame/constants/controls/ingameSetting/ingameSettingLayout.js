@@ -85,6 +85,19 @@ export const INGAME_SETTING_ROOM_ACTION_LINK_CLASS =
 export const INGAME_SETTING_ROOM_ACTION_LINK_DANGER_CLASS =
   "interactive-scale shrink-0 cursor-pointer border-0 bg-transparent p-0 font-subheading text-[clamp(0.72rem,0.95vw,0.86rem)] font-bold leading-none text-[#ffb4b4] underline decoration-[#c95555]/90 decoration-1 underline-offset-[0.18em] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+/** 설정 패널 우측 하단 — 방 코드 보기(모든 참가자 공통) */
+export const INGAME_SETTING_ROOM_CODE_BTN_WRAP_CLASS =
+  "pointer-events-none absolute bottom-[clamp(0.35rem,1.2vh,0.65rem)] right-0 z-20 translate-x-[clamp(1.15rem,6.5%,2.1rem)]"
+
+export const INGAME_SETTING_ROOM_CODE_BTN_CLASS =
+  "interactive-scale pointer-events-auto relative block w-[clamp(6.9rem,48%,9rem)] shrink-0 overflow-hidden cursor-pointer border-0 bg-transparent p-0 leading-none"
+
+export const INGAME_SETTING_ROOM_CODE_BTN_IMG_CLASS =
+  "block h-[clamp(2.15rem,3.1vw,2.65rem)] w-full select-none object-fill object-center"
+
+export const INGAME_SETTING_ROOM_CODE_BTN_LABEL_CLASS =
+  "pointer-events-none absolute inset-0 flex items-center justify-center px-[8%] text-center font-subheading text-[clamp(0.62rem,0.88vw,0.78rem)] font-bold leading-none text-[#ebe2cc]/90 [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+
 export const INGAME_SETTING_SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
 
 export const INGAME_SETTING_SCROLL_CLASS =

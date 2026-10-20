@@ -1,8 +1,10 @@
 import { useSearchParams } from "react-router-dom"
 import {
-  ACCOUNT_PANEL_ACTION_ROW_CLASS,
+  ACCOUNT_PANEL_ACTION_AREA_CLASS,
+  ACCOUNT_PANEL_ACTION_BUTTON_ROW_CLASS,
+  ACCOUNT_PANEL_FEEDBACK_LINE_CLASS,
   ACCOUNT_PANEL_FORM_CLASS,
-  ACCOUNT_PANEL_HEADING_CLASS,
+  ACCOUNT_PANEL_FORM_HEADING_CLASS,
   ACCOUNT_PANEL_SECTION_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
 import ConfirmButton from "@/domains/user/components/AccountPanel/ConfirmButton.jsx"
@@ -54,25 +56,26 @@ export default function DiscordAccountLink() {
 
   return (
     <section className={ACCOUNT_PANEL_SECTION_CLASS}>
-      <h3 className={ACCOUNT_PANEL_HEADING_CLASS}>Discord 계정 연결</h3>
+      <h3 className={ACCOUNT_PANEL_FORM_HEADING_CLASS}>Discord 계정 연결</h3>
 
       <form onSubmit={handleLinkDiscord} className={ACCOUNT_PANEL_FORM_CLASS}>
-        <div className={ACCOUNT_PANEL_ACTION_ROW_CLASS}>
-          {/* 연결 성공/취소/실패 메시지입니다. 나타난 뒤에는 쿼리를 지워 재현되지 않게 합니다. */}
+        <div className={ACCOUNT_PANEL_ACTION_AREA_CLASS}>
           {message ? (
-            <button
-              type="button"
-              onClick={clearLinkParams}
-              className="text-left"
-              aria-label="연결 결과 메시지 닫기"
-            >
-              <FeedbackMsg msg={message} />
-            </button>
-          ) : (
-            <span />
-          )}
-
-          <ConfirmButton label="연결하기" />
+            <div className={ACCOUNT_PANEL_FEEDBACK_LINE_CLASS}>
+              {/* 연결 성공/취소/실패 메시지입니다. 나타난 뒤에는 쿼리를 지워 재현되지 않게 합니다. */}
+              <button
+                type="button"
+                onClick={clearLinkParams}
+                className="block w-full text-left"
+                aria-label="연결 결과 메시지 닫기"
+              >
+                <FeedbackMsg msg={message} />
+              </button>
+            </div>
+          ) : null}
+          <div className={ACCOUNT_PANEL_ACTION_BUTTON_ROW_CLASS}>
+            <ConfirmButton label="연결하기" />
+          </div>
         </div>
       </form>
     </section>

@@ -10,10 +10,10 @@
  */
 import {
   FRIEND_ACCEPT_BACK_BUTTON_CLASS,
-  FRIEND_ACCEPT_BUTTON_IMAGE_CLASS,
   FRIEND_ACCEPT_EMPTY_CLASS,
   FRIEND_ACCEPT_LIST_CLASS,
   FRIEND_ACCEPT_REFRESH_BUTTON_CLASS,
+  FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS,
   FRIEND_ACCEPT_TAB_CLASS,
   FRIEND_ACCEPT_TOOLBAR_CLASS,
   FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS,
@@ -95,7 +95,7 @@ export default function FriendBlockTab({
           className={FRIEND_ACCEPT_REFRESH_BUTTON_CLASS}
           style={{ outline: "none" }}
         >
-          <PublicAsset src={FRIEND_LIST_ASSETS.refreshButton} alt="" className={FRIEND_ACCEPT_BUTTON_IMAGE_CLASS} />
+          <PublicAsset src={FRIEND_LIST_ASSETS.refreshButton} alt="" className={FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS} />
         </button>
       </div>
 

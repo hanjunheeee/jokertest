@@ -7,6 +7,7 @@ import { parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
 // 경로가 서로 다른 정규화를 쓰면 같은 사망이 다른 모양으로 들어와 연출이 갈라지므로, 라이브
 // 경로가 이미 쓰는 정규화기를 그대로 재사용한다.
 import { normalizeInGameNightDeathReveals } from "../utils/normalizeInGameNightDeathReveals.js"
+import { normalizePublicWinResult } from "../utils/normalizePublicWinResult.js"
 // F-24(RESTORE-24): 복원 원본 설정의 허용 목록은 한 곳(setup/utils)이 소유한다. 그 모듈은
 // 순수 함수만 담고 있어(zustand·React 없음) 스냅샷 경로가 저장소 모듈을 끌어오지 않는다.
 import { sanitizeRoomSettings } from "../../setup/utils/roomSettingsSourceSanitize.js"
@@ -336,16 +337,14 @@ export function applySessionSnapshotPure(current, response) {
   // (finalizeGameSession이 유일하게 phase를 ENDED로 바꾸며 그 호출에서 winResult도 함께 세팅됨).
   let winResult = null
   if (response.phase === "ENDED") {
-    if (
-      !Object.hasOwn(response, "winResult") ||
-      response.winResult === null ||
-      typeof response.winResult !== "object" ||
-      Array.isArray(response.winResult) ||
-      (response.winResult.winner !== "CITIZEN" && response.winResult.winner !== "JOKER")
-    ) {
+    if (!Object.hasOwn(response, "winResult") || response.winResult === null) {
       return current
     }
-    winResult = { winner: response.winResult.winner }
+    const normalizedWinResult = normalizePublicWinResult(response.winResult)
+    if (normalizedWinResult === null) {
+      return current
+    }
+    winResult = normalizedWinResult
   } else if (Object.hasOwn(response, "winResult")) {
     return current
   }

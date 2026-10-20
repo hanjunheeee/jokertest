@@ -90,7 +90,7 @@ export default function InGamePlayerBoard() {
           <div
             key={player.id}
             ref={(node) => cardMenu.registerAnchor(player.id, node)}
-            className="absolute pointer-events-auto"
+            className="absolute pointer-events-auto cursor-pointer"
             style={buildInGamePlayerSlotStyle(presets[index])}
             role="button"
             tabIndex={0}
@@ -113,7 +113,6 @@ export default function InGamePlayerBoard() {
             <InGamePlayerCard
               portraitSrc={player.portraitSrc}
               frameSrc={player.frameSrc}
-              accountBorderSrc={player.accountBorderSrc}
               nickname={player.nickname}
               status={player.status}
               theme={player.theme}

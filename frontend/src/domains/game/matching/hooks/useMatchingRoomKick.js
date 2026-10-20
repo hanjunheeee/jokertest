@@ -11,7 +11,7 @@ import { useKickPlayerRequest, captureVerificationGuard } from "../../ingame/hoo
  * F-21(AC-02/AC-04/AC-05/AC-06): **대기방** 추방의 실제 화면 경계.
  *
  * useMatchingPage가 이 훅을 그대로 소비하고, GameMatchingPage가 그 값을 추방 모달
- * (SettingKickPlayerModalContent)에 넘긴다. 전송·확인·실패·결과 재조회 수명은 인게임과
+ * (SettingKickPlayerModalShell + SettingKickPlayerModalContent)에 넘긴다. 전송·확인·실패·결과 재조회 수명은 인게임과
  * **같은** useKickPlayerRequest가 소유하므로 두 화면이 갈라지지 않는다.
  *
  * ── 이 훅이 책임지는 것 ────────────────────────────────────────────────────────

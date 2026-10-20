@@ -13,9 +13,9 @@ export const PLAYER_PORTRAIT_BG_GRADIENT_CLASS =
 export const PLAYER_PORTRAIT_CLOSEUP_IMAGE_CLASS =
   "absolute inset-0 block h-full w-full select-none object-cover object-center"
 
-/** 인게임 Player Frame — 클로즈업을 프레임 안에서 약간 축소 */
-export const PLAYER_PORTRAIT_INGAME_CLOSEUP_IMAGE_CLASS =
-  "absolute left-1/2 top-1/2 block h-[90%] w-[90%] -translate-x-1/2 -translate-y-1/2 select-none object-cover object-center"
+/** 인게임 Player Frame — ingame 사각형 프로필 자산을 초상창에 꽉 채움 */
+export const PLAYER_PORTRAIT_INGAME_SQUARE_IMAGE_CLASS =
+  "absolute inset-0 block h-full w-full select-none object-fill object-center"
 
 /** 전신 PNG — 상반신만 보이도록 확대·상단 정렬 (전적목록 등 레거시) */
 export const PLAYER_PORTRAIT_STANDING_CROP_IMAGE_CLASS =
@@ -45,8 +45,8 @@ export const PLAYER_PORTRAIT_VARIANTS = {
       left: "10%",
       right: "10%",
     },
-    bgGradientClass: PLAYER_PORTRAIT_BG_GRADIENT_CLASS,
-    portraitImageClass: PLAYER_PORTRAIT_INGAME_CLOSEUP_IMAGE_CLASS,
+    bgGradientClass: "",
+    portraitImageClass: PLAYER_PORTRAIT_INGAME_SQUARE_IMAGE_CLASS,
   },
 
   /** 친구 프로필 프레임.png (139×141) — 전적목록·친구목록 */

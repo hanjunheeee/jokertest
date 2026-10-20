@@ -10,15 +10,14 @@ import { pickJobPortrait } from "../../../../../shared/utils/pickJobPortrait.js"
 
 // --- 이 저장소의 백엔드가 실제로 만드는 winResult ---
 //
-// game-core/gameSession.js의 evaluateWinCondition은 { winner: 'CITIZEN' } 또는
-// { winner: 'JOKER' }만 돌려주고, finalizeGameSession이 그 객체를 그대로 session.winResult에
-// 넣는다. buildSessionSnapshot은 그것을 얕게 복사해 fields.winResult로 내려주고,
-// applySessionSnapshotPure는 winner 하나만 남긴 { winner }로 정규화한다 — 전원 정체 공개
-// (reveals)나 mvp는 어느 경로에도 없다.
+// game-core/gameSession.js의 canonical session.winResult는 { winner }만 갖지만, 공개
+// 스냅샷·terminal payload는 buildPublicWinResult로 reveals를 붙인다. store에는
+// normalizePublicWinResult가 winner와 유효한 reveals/mvp를 보존한다 — reveals가 없으면
+// 아래 로컬 winResult 계약처럼 players는 비어 있다.
 const LOCAL_WIN_RESULT_CITIZEN = { winner: "CITIZEN" }
 const LOCAL_WIN_RESULT_JOKER = { winner: "JOKER" }
 
-const EMPTY_ROSTER_VIEW = { players: [], rosterPlayers: [], mvp: null }
+const EMPTY_PLAYERS_VIEW = { players: [], mvp: null, selfUuid: null }
 
 test("로컬 winResult(시민 승리)에서 본인이 시민 진영이면 win이다", () => {
   const result = buildGameResultViewModel(LOCAL_WIN_RESULT_CITIZEN, "u-doctor", "CITIZEN")
@@ -26,7 +25,8 @@ test("로컬 winResult(시민 승리)에서 본인이 시민 진영이면 win이
   assert.deepEqual(result, {
     outcome: "win",
     winningTeam: "CITIZEN",
-    ...EMPTY_ROSTER_VIEW,
+    ...EMPTY_PLAYERS_VIEW,
+    selfUuid: "u-doctor",
   })
 })
 
@@ -48,7 +48,6 @@ test("로컬 winResult에는 reveals가 없으므로 다른 참가자의 정체�
   const result = buildGameResultViewModel(LOCAL_WIN_RESULT_JOKER, "u-joker", "JOKER")
 
   assert.deepEqual(result.players, [])
-  assert.deepEqual(result.rosterPlayers, [])
   assert.equal(result.mvp, null)
 })
 
@@ -69,9 +68,8 @@ test("winner가 CITIZEN/JOKER가 아니면 winningTeam은 null이고 승리로 �
 
 // --- 정체 공개(reveals)를 싣는 계약에서의 동작 ---
 //
-// 아래는 reveals를 함께 내려주는 winResult 계약(원격 결과 화면이 전제하는 형태)에 대한
-// 회귀 검사다. 이 저장소의 백엔드는 아직 그 형태를 만들지 않지만, 순수 함수 쪽 계약은
-// 원격 화면 코드를 그대로 옮겼으므로 함께 고정해 둔다.
+// 아래는 reveals를 함께 내려주는 공개 winResult 계약(결과 화면이 전제하는 형태)에 대한
+// 회귀 검사다.
 
 // 정체 공개를 싣는 5인 명단(광대 1 + 시민 진영 4).
 function baseReveals() {
@@ -185,22 +183,6 @@ test("profilePhotoSrc·profileBorderSrc는 전적목록과 같은 shopItem 프�
   )
 })
 
-test("rosterPlayers는 본인 uuid에 해당하는 플레이어 한 명만 담는다", () => {
-  const result = buildGameResultViewModel(winResultOf("CITIZEN"), "u-doctor")
-
-  assert.equal(result.rosterPlayers.length, 1)
-  assert.equal(result.rosterPlayers[0], result.players[2])
-  assert.equal(result.rosterPlayers[0].job, "주치의")
-})
-
-test("selfUuid가 없거나 명단에 없으면 rosterPlayers는 빈 배열이다", () => {
-  assert.deepEqual(buildGameResultViewModel(winResultOf("CITIZEN"), null).rosterPlayers, [])
-  assert.deepEqual(
-    buildGameResultViewModel(winResultOf("CITIZEN"), "u-not-in-roster").rosterPlayers,
-    [],
-  )
-})
-
 // --- reveals 누락·본인 미포함 ---
 
 test("reveals가 없으면 players는 빈 배열이고 outcome·winningTeam은 lose/null이다", () => {
@@ -210,8 +192,8 @@ test("reveals가 없으면 players는 빈 배열이고 outcome·winningTeam은 l
     outcome: "lose",
     winningTeam: "CITIZEN",
     players: [],
-    rosterPlayers: [],
     mvp: null,
+    selfUuid: "u-doctor",
   })
 })
 
@@ -220,8 +202,8 @@ test("reveals 필드 자체가 없어도 throw 없이 빈 결과를 돌려준다
     outcome: "lose",
     winningTeam: "JOKER",
     players: [],
-    rosterPlayers: [],
     mvp: null,
+    selfUuid: "u-joker",
   })
 })
 
@@ -230,15 +212,15 @@ test("winResult가 null/undefined여도 throw 없이 빈 결과를 돌려준다"
     outcome: "lose",
     winningTeam: null,
     players: [],
-    rosterPlayers: [],
     mvp: null,
+    selfUuid: "u-joker",
   })
   assert.deepEqual(buildGameResultViewModel(undefined, null), {
     outcome: "lose",
     winningTeam: null,
     players: [],
-    rosterPlayers: [],
     mvp: null,
+    selfUuid: null,
   })
 })
 

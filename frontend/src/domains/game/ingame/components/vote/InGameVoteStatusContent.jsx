@@ -1,5 +1,11 @@
 import {
   INGAME_VOTE_SCROLL_WRAP_CLASS,
+  INGAME_VOTE_STATUS_ROW_CLASS,
+  INGAME_VOTE_STATUS_SECTION_CLASS,
+  INGAME_VOTE_STATUS_TERM_CLASS,
+  INGAME_VOTE_STATUS_UNRESOLVED_CLASS,
+  INGAME_VOTE_STATUS_UNRESOLVED_WRAP_CLASS,
+  INGAME_VOTE_STATUS_VALUE_CLASS,
 } from "../../constants/vote/ingameVoteLayout.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 
@@ -22,12 +28,6 @@ const OUTCOME_LABELS = Object.freeze({
   REVOTE: "재투표",
 })
 
-const SECTION_CLASS = "flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 text-[0.8rem] text-[#f8ead2]"
-const ROW_CLASS = "flex items-center justify-between gap-3"
-const TERM_CLASS = "text-[0.72rem] tracking-wide text-[#e0c9a3]"
-const VALUE_CLASS = "font-semibold"
-const EMPTY_CLASS = "text-[0.8rem] text-[#e0c9a3]"
-
 /** 아직 어떤 라운드도 집계되지 않았음을 말하는 문구. 숫자 0과 구별되어야 한다. */
 export const INGAME_VOTE_STATUS_UNRESOLVED_LABEL = "집계 전"
 
@@ -37,8 +37,8 @@ export default function InGameVoteStatusContent() {
   if (!dayVoteResolution) {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className={INGAME_VOTE_SCROLL_WRAP_CLASS}>
-          <p className={`${SECTION_CLASS} ${EMPTY_CLASS}`} data-testid="vote-status-unresolved">
+        <div className={INGAME_VOTE_STATUS_UNRESOLVED_WRAP_CLASS}>
+          <p className={INGAME_VOTE_STATUS_UNRESOLVED_CLASS} data-testid="vote-status-unresolved">
             {INGAME_VOTE_STATUS_UNRESOLVED_LABEL}
           </p>
         </div>
@@ -56,30 +56,30 @@ export default function InGameVoteStatusContent() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className={INGAME_VOTE_SCROLL_WRAP_CLASS}>
-        <dl className={SECTION_CLASS} aria-label="낮 투표 집계">
-          <div className={ROW_CLASS}>
-            <dt className={TERM_CLASS}>득표</dt>
-            <dd className={VALUE_CLASS} data-testid="vote-status-public-vote-count">
+        <dl className={INGAME_VOTE_STATUS_SECTION_CLASS} aria-label="낮 투표 집계">
+          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
+            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>득표</dt>
+            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-public-vote-count">
               {publicVoteCount ?? "-"}
             </dd>
           </div>
-          <div className={ROW_CLASS}>
-            <dt className={TERM_CLASS}>기권</dt>
-            <dd className={VALUE_CLASS} data-testid="vote-status-public-abstain-count">
+          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
+            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>기권</dt>
+            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-public-abstain-count">
               {publicAbstainCount ?? "-"}
             </dd>
           </div>
-          <div className={ROW_CLASS}>
-            <dt className={TERM_CLASS}>결과</dt>
-            <dd className={VALUE_CLASS} data-testid="vote-status-outcome">
+          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
+            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>결과</dt>
+            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-outcome">
               {/* 서버가 아직 모르는 결과 이름이 와도 그 값을 그대로 보여준다 — 화면이 임의로
                   다른 결과로 바꿔 말하지 않는다. */}
               {outcome === null ? "-" : (OUTCOME_LABELS[outcome] ?? outcome)}
             </dd>
           </div>
-          <div className={ROW_CLASS}>
-            <dt className={TERM_CLASS}>재판 대상</dt>
-            <dd className={VALUE_CLASS} data-testid="vote-status-tribunal-target">
+          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
+            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>재판 대상</dt>
+            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-tribunal-target">
               {tribunalTargetUuid ?? "없음"}
             </dd>
           </div>

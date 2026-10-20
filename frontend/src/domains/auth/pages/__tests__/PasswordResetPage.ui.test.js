@@ -361,7 +361,7 @@ test("요청 중 뒤로 간 뒤 응답이 도착해도 이미 떠난 화면은 �
   await act(async () => { submitForm(view) })
   assert.equal(fetchCalls.length, 1)
 
-  await act(async () => { fireEvent.click(view.getByText("뒤로 가기")) })
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: "뒤로 가기" })) })
   await waitFor(() => assert.ok(view.container.textContent.includes(LOGIN_STUB_TEXT)))
 
   await act(async () => { resolveRequest(jsonResponse(200, { ok: true })) })
@@ -875,9 +875,7 @@ test("AC-07: 두 페이지의 배경음은 라이선스 기록이 있는 음원 
 
   const checkMedia = (container) => {
     const audios = container.querySelectorAll("audio")
-    assert.equal(audios.length, 1, "배경음 <audio>는 정확히 하나여야 한다")
-    const src = audios[0].getAttribute("src")
-    assert.ok(src.endsWith(BGM_ASSETS.loginMusic), `배경음 src가 등록 음원이 아니다: ${src}`)
+    assert.equal(audios.length, 0, "인증 화면은 App 공통 BGM을 쓰므로 페이지 안에 audio가 없어야 한다")
     assert.ok(BGM_LICENSES[BGM_ASSETS.loginMusic], "배경음은 출처·라이선스 기록이 있어야 한다")
     const video = container.querySelector("video")
     assert.equal(video !== null, true, "배경 영상이 없다")

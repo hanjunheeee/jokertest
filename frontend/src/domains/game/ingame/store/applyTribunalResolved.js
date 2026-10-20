@@ -1,3 +1,5 @@
+import { normalizePublicWinResult } from "../utils/normalizePublicWinResult.js"
+
 const TRIBUNAL_RESOLVED_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 
 // F-21(AC-03): 피고가 이 판에서 빠져 재판 자체가 성립하지 않은 경우다. 유죄도 무죄도 아니라는
@@ -79,16 +81,13 @@ export function applyTribunalResolvedPure(current, payload) {
   if (payload.phase === "ENDED") {
     if (current.state.phase !== "TRIBUNAL") return current
     if (!Array.isArray(payload.players)) return current
-    if (
-      !Object.hasOwn(payload, "winResult") ||
-      payload.winResult === null ||
-      typeof payload.winResult !== "object" ||
-      Array.isArray(payload.winResult) ||
-      (payload.winResult.winner !== "CITIZEN" && payload.winResult.winner !== "JOKER")
-    ) {
+    if (!Object.hasOwn(payload, "winResult") || payload.winResult === null) {
       return current
     }
-    const winResult = { winner: payload.winResult.winner }
+    const winResult = normalizePublicWinResult(payload.winResult)
+    if (winResult === null) {
+      return current
+    }
 
     const canonicalUuids = new Set((current.state.players ?? []).map((p) => p.uuid))
 

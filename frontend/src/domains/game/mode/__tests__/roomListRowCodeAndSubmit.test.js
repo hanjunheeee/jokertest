@@ -345,6 +345,18 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
       "같은 계약: 요약 표시용 스타일 상수(ROOM_LIST_ROW_SETTINGS_CLASS)가 같은 import 문장에 더해져" +
         " 원격과 가져오는 이름 집합이 달라졌다(출처 파일은 그대로다)",
     ],
+    [
+      /ROOM_LIST_ROW_HEADER_ROW_CLASS|ROOM_LIST_ROW_HEADER_DIVIDER_CLASS|settingsLine|showStatusBadges/,
+      "목록 행 2줄 레이아웃: 윗줄 방장 이름(의 방), 아랫줄 설정 요약·인원 — 단계 배지는 aria-label만 유지",
+    ],
+    [
+      /ROOM_LIST_ROW_TITLE_CLASS\}\>\{title\}/,
+      "같은 레이아웃: 방 이름을 윗줄 헤더로 옮겼다",
+    ],
+    [
+      /ROOM_LIST_ROW_STAGE_BADGE_CLASS|ROOM_LIST_ROW_TOP_ROW_CLASS/,
+      "같은 레이아웃: 단계 배지·구 TOP_ROW import를 헤더 2줄 구조로 대체했다",
+    ],
   ],
   "domains/game/mode/components/roomList/RoomListShell.jsx": [
     [
@@ -462,6 +474,14 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
       /^export const ROOM_LIST_ROW_SETTINGS_CLASS =$|^"pointer-events-none min-w-0 shrink truncate font-subheading/,
       "F-20 AC-03: 목록 행에 추가된 설정 요약 표시의 스타일 상수다" +
         " — 기존 행 스타일 상수는 그대로 두고 새 상수만 덧붙였다",
+    ],
+    [
+      /ROOM_LIST_ROW_HEADER_ROW_CLASS|ROOM_LIST_ROW_HEADER_DIVIDER_CLASS|justify-end|leading-tight/,
+      "목록 행 2줄 레이아웃: 헤더·구분선 상수와 오버레이·제목·설정 스타일 조정",
+    ],
+    [
+      /ROOM_LIST_ROW_TOP_ROW_CLASS|justify-between gap-\[clamp\(0\.05rem|ROOM_LIST_ROW_BOTTOM_ROW_CLASS|leading-none text-\[#f3d28d\]|pb-\[(1\.5|2\.5|3\.5|1|2|4|9)%\]/,
+      "같은 레이아웃: TOP_ROW·justify-between 오버레이·BOTTOM_ROW·제목 스타일·하단 여백 조정",
     ],
   ],
   "domains/game/setup/hooks/useSetupContentScrollOnRoleModeChange.js": [],

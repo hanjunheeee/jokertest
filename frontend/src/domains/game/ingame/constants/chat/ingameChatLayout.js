@@ -26,15 +26,33 @@ import {
   INGAME_CHAT_CLOSEUP_TEXT_WRAP_TRIM_CLASS,
 } from "./closeup/ingameChatCloseupLayout.js"
 import { INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME } from "./ingameChatFrameLayout.js"
+import {
+  INGAME_TRIBUNAL_CHAT_INPUT_SHIFT_CLASS,
+  INGAME_TRIBUNAL_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS,
+  INGAME_TRIBUNAL_CHAT_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS,
+  INGAME_TRIBUNAL_CHAT_SEND_BUTTON_CLASS,
+  INGAME_TRIBUNAL_CHAT_SEND_BUTTON_LABEL_CLASS,
+  INGAME_TRIBUNAL_CHAT_SEND_BUTTON_SHIFT_CLASS,
+  INGAME_TRIBUNAL_CHAT_TEXT_SCALED_FONT_SIZE,
+  INGAME_TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_CLASS,
+  INGAME_TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS,
+  INGAME_TRIBUNAL_CHAT_TEXT_WRAP_TRIM_CLASS,
+} from "../tribunalPresentation/ingameTribunalPresentationChatLayout.js"
 
 export { INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME }
+
+/** @param {"board" | "closeup" | "tribunal"} variant */
+function isInGameChatCloseupLikeVariant(variant) {
+  return variant === "closeup" || variant === "tribunal"
+}
 
 /** 인게임 채팅 — 입력·목록 공통 타이포 */
 export const INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS =
   "font-subheading text-[clamp(0.72rem,3.2cqi,0.92rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatTextTypographyClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_CLASS
     : INGAME_CHAT_TEXT_TYPOGRAPHY_CLASS
@@ -90,16 +108,18 @@ export const INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE =
   "clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))"
 
 /** 타이포 클래스와 같은 값을 쓰는 font-size 식 — 인라인 style이 필요한 곳(textarea)이 쓴다.
- *  @param {"board" | "closeup"} [variant] */
+ *  @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatScaledFontSize(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_TEXT_SCALED_FONT_SIZE
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE
     : INGAME_CHAT_TEXT_SCALED_FONT_SIZE
 }
 
 /** 채팅 본문·입력이 실제로 쓰는 타이포 클래스 — 배율 변수를 반영한다.
- *  @param {"board" | "closeup"} [variant] */
+ *  @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatScaledTypographyClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_TEXT_TYPOGRAPHY_SCALED_CLASS
     : INGAME_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS
@@ -151,8 +171,9 @@ export function getInGameChatInputPlaceholderClass(variant = "board") {
   return `pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center ${INGAME_CHAT_INPUT_WRAP_TRIM_CLASS} ${getInGameChatScaledTypographyClass(variant)} text-[#4a2814]`
 }
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatTextWrapTrimClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_TEXT_WRAP_TRIM_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_TEXT_WRAP_TRIM_CLASS
     : INGAME_CHAT_TEXT_WRAP_TRIM_CLASS
@@ -168,15 +189,17 @@ export function getInGameChatMessageSenderClass(variant = "board") {
   return `shrink-0 ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS} ${getInGameChatScaledTypographyClass(variant)}`
 }
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatInputSingleLineHeightClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_INPUT_SINGLE_LINE_HEIGHT_CLASS
     : INGAME_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS
 }
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatInputViewportFixedHeightClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
     : INGAME_CHAT_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
@@ -258,8 +281,9 @@ export const INGAME_CHAT_INPUT_VIEWPORT_CLASS =
 export const INGAME_CHAT_INPUT_SHIFT_CLASS =
   "ml-[clamp(1.4rem,7.6cqi,2.35rem)]"
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatInputShiftClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_INPUT_SHIFT_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_INPUT_SHIFT_CLASS
     : INGAME_CHAT_INPUT_SHIFT_CLASS
@@ -275,22 +299,25 @@ const INGAME_CHAT_SEND_BUTTON_CLASS =
 const INGAME_CHAT_SEND_BUTTON_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.56rem,3.1cqi,0.74rem)] font-bold text-[#e9b582] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatSendButtonClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_SEND_BUTTON_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_SEND_BUTTON_CLASS
     : INGAME_CHAT_SEND_BUTTON_CLASS
 }
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatSendButtonLabelClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_SEND_BUTTON_LABEL_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_SEND_BUTTON_LABEL_CLASS
     : INGAME_CHAT_SEND_BUTTON_LABEL_CLASS
 }
 
-/** @param {"board" | "closeup"} [variant] */
+/** @param {"board" | "closeup" | "tribunal"} [variant] */
 export function getInGameChatSendButtonShiftClass(variant = "board") {
+  if (variant === "tribunal") return INGAME_TRIBUNAL_CHAT_SEND_BUTTON_SHIFT_CLASS
   return variant === "closeup"
     ? INGAME_CHAT_CLOSEUP_SEND_BUTTON_SHIFT_CLASS
     : INGAME_CHAT_SEND_BUTTON_SHIFT_CLASS
@@ -337,21 +364,21 @@ export const INGAME_CHAT_MESSAGE_ROW_CLASS =
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatMessageListInset(variant = "board") {
-  return variant === "closeup"
+  return isInGameChatCloseupLikeVariant(variant)
     ? INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
     : INGAME_CHAT_MESSAGE_LIST_INSET
 }
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatTextFieldInset(variant = "board") {
-  return variant === "closeup"
+  return isInGameChatCloseupLikeVariant(variant)
     ? INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET
     : INGAME_CHAT_TEXT_FIELD_INSET
 }
 
 /** @param {"board" | "closeup"} [variant] */
 export function getInGameChatStatusLineInset(variant = "board") {
-  return variant === "closeup"
+  return isInGameChatCloseupLikeVariant(variant)
     ? INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET
     : INGAME_CHAT_STATUS_LINE_INSET
 }

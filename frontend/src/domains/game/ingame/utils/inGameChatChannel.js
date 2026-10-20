@@ -33,8 +33,8 @@ function resolveNightRoleChannel(state, alive) {
 
 /**
  * "지금 이 클라이언트가 실제로 보낼 수 있는 채널"을 canonical 상태에서만 유도한다(순수 함수).
- * 생존자는 DAY에서만, 사망자는 DAY/TRIBUNAL에서만 보낼 수 있다 — 밤에는 사망자도 보낼 수
- * 없다. 보낼 수 없으면 null이다.
+ * 생존자는 DAY·TRIBUNAL(최후의 반론)에서 공개 DAY 채널로 보낼 수 있다 — 밤에는 역할
+ * 채널만, 사망자는 어디서도 보낼 수 없다. 보낼 수 없으면 null이다.
  *
  * 이 판정은 UI 편의(버튼 비활성화)를 위한 것이고 권한의 원천이 아니다 — 서버가 같은 규칙을
  * 인증 uuid 기준으로 독립적으로 재검증한다. 사용자가 채널을 고르는 입력은 어디에도 없다.
@@ -46,6 +46,7 @@ export function resolveInGameChatSendChannel(state) {
   if (alive === null) return null
 
   if (state?.phase === "DAY") return alive ? INGAME_CHAT_CHANNELS.DAY : null
+  if (state?.phase === "TRIBUNAL") return alive ? INGAME_CHAT_CHANNELS.DAY : null
   if (state?.phase === "NIGHT") return resolveNightRoleChannel(state, alive)
   return null
 }
@@ -53,7 +54,7 @@ export function resolveInGameChatSendChannel(state) {
 /**
  * "지금 이 클라이언트가 실제로 볼 수 있는 채널"을 canonical 상태에서만 유도한다(순수 함수).
  * 전송 가능 여부와 분리돼 있다 — 생존자는 NIGHT/TRIBUNAL에서도 공개 DAY 채팅 내역을 계속
- * 보지만 보내지는 못한다(resolveInGameChatSendChannel이 null을 준다).
+ * 본다. TRIBUNAL에서는 최후의 반론 동안에도 DAY 채널로 보낼 수 있다.
  *
  * 사망이 확정되는 순간(canonical self.alive === false) 보기 채널은 DEAD로 바뀌므로, 그 이후에는
  * 공개/JOKER 메시지가 화면에 남지 않는다. 다만 밤에는 사망자에게 어떤 채널도 열지 않는다 —

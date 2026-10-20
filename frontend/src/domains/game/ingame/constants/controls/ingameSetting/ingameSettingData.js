@@ -50,13 +50,6 @@ export const INGAME_SETTING_ROOM_ROWS = [
     description: "현재 방 설정을 다음 게임에서도 유지합니다.",
     defaultChecked: false,
   },
-  {
-    kind: "action",
-    id: "view-room-code",
-    title: "방 코드 복사",
-    description: "방 코드를 확인하고 복사할 수 있습니다.",
-    actionLabel: "방 코드 보기",
-  },
 ]
 
 /** @type {InGameSettingTabId} */
@@ -79,6 +72,6 @@ export const INGAME_SETTING_CHAT_CHECKBOXES = [
   {
     id: "nickname-color",
     label: "닉네임 색상 표시",
-    defaultChecked: false,
+    defaultChecked: true,
   },
 ]

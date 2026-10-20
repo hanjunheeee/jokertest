@@ -871,13 +871,13 @@ export const useInGameStore = create((set) => ({
         : null
       return {
         gameId: nextGameId,
-        state: state
+      state: state
           ? {
               ...state,
               // F-24(AC-01): 모양이 틀린 값은 null이다 — 화면이 "확인할 수 없음"을 보여준다.
               roomCode: typeof state.roomCode === "string" && state.roomCode.length > 0
                 ? state.roomCode
-                : null,
+        : null,
               // F-24(AC-04/RESTORE-24): 재접속 경로(applySessionSnapshotPure)와 **같은 정규화**를
               // 쓴다. 두 경로가 갈리면 최초 진입과 새로고침이 서로 다른 모양의 원본을 갖는다.
               // payload 객체를 그대로 참조하지 않으므로 이후 호출부가 응답을 변형해도 store는
@@ -896,7 +896,7 @@ export const useInGameStore = create((set) => ({
           : null,
         hostUuid: serverHostUuid
           ?? (typeof hostUuid === "string" && hostUuid.trim().length > 0 ? hostUuid : null),
-        error: null,
+      error: null,
         // F-23(AC-05): 세션 교체 경계다 — 이전 스냅샷의 수신 증거를 새 payload가 만든
         // state로 이월하지 않는다(이월하면 옛 연결에서 본 사망이 새 세션의 연출이 된다).
         snapshotResultOwner: null,

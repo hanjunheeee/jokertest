@@ -24,6 +24,11 @@ import {
   mergeSpecifiedRoleNightActionTimes,
 } from "../utils/roomSettingsForm.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
+import GameSetupCancelButton from "./GameSetupCancelButton.jsx"
+import {
+  GAME_SETUP_FORM_ACTIONS_ROW_CLASS,
+  GAME_SETUP_FORM_ACTIONS_SINGLE_CLASS,
+} from "../constants/gameSetupFormActions.js"
 import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
 import MeetingGameSetupTab from "./MeetingGameSetupTab.jsx"
@@ -82,6 +87,7 @@ export default function GameSetupPanel({
   submitLabel,
   submitBusyLabel,
   submitDisabled = false,
+  onCancel = null,
 }) {
   const setupContentRef = useRef(null)
   const isEditMode = mode === "edit"
@@ -244,13 +250,22 @@ export default function GameSetupPanel({
 
         {/* 역할 구성이 유효하지 않은 동안에는 생성 자체를 막는다(회의&투표 탭에 있어도
             동일하게 적용된다 — 잘못된 설정이 탭 전환으로 가려지면 안 되기 때문). */}
-        <GameSetupCreateButton
-          onClick={handleSubmitClick}
-          disabled={isCreating || submitDisabled || !roleComposition.validation.ok}
-          label={submitLabel ?? (isEditMode ? "설정 저장" : "게임 만들기")}
-          busy={isCreating}
-          busyLabel={submitBusyLabel ?? (isEditMode ? "저장 중…" : null)}
-        />
+        <div className={onCancel ? GAME_SETUP_FORM_ACTIONS_ROW_CLASS : GAME_SETUP_FORM_ACTIONS_SINGLE_CLASS}>
+          <GameSetupCreateButton
+            onClick={handleSubmitClick}
+            disabled={isCreating || submitDisabled || !roleComposition.validation.ok}
+            label={submitLabel ?? (isEditMode ? "설정 저장" : "게임 만들기")}
+            busy={isCreating}
+            busyLabel={submitBusyLabel ?? (isEditMode ? "저장 중…" : null)}
+          />
+          {onCancel ? (
+            <GameSetupCancelButton
+              onClick={onCancel}
+              disabled={isCreating}
+              ariaLabel="설정 변경 취소"
+            />
+          ) : null}
+        </div>
       </motion.div>
     </div>
   )

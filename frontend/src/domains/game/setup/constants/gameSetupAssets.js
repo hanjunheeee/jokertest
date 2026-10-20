@@ -7,6 +7,7 @@ export const GAME_SETUP_ASSETS = {
   checkbox: "/button/체크박스2.png".normalize("NFD"),
   checkMark: "/button/체크표시.png".normalize("NFD"),
   createGameButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
+  cancelButton: "/button/버튼(취소 및 부정).png".normalize("NFD"),
   inputField: "/button/입력창1.png",
   arrow: "/button/이동 화살표.png".normalize("NFD"),
 }

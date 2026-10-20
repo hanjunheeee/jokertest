@@ -112,12 +112,26 @@ test("원격 결과 화면 전용 이탈 경로(useGameResultLobbyExit)는 쓰�
   assert.doesNotMatch(source, /createGameResultExitRequest/)
 })
 
-test("버튼은 새 스타일을 만들지 않고 공통 LabelledActionButton + 기존 빨간 버튼 에셋을 쓴다", async () => {
+test("버튼은 새 스타일을 만들지 않고 공통 LabelledActionButton + 기존 버튼 에셋을 쓴다", async () => {
   const source = await readFile(pageUrl, "utf8")
   const occurrences = source.match(/<LabelledActionButton\b/g) ?? []
-  assert.equal(occurrences.length, 1)
+  assert.equal(occurrences.length, 2)
+  assert.match(source, /src=\{GAME_RESULT_ASSETS\.matchingButton\}/)
+  assert.match(source, /GAME_RESULT_MATCHING_BUTTON_LABEL/)
   assert.match(source, /src=\{GAME_RESULT_ASSETS\.lobbyButton\}/)
-  assert.match(source, /label="로비로"/)
+  assert.match(source, /GAME_RESULT_LOBBY_BUTTON_LABEL/)
+})
+
+test("매칭 복귀는 전용 훅(useGameResultReturnToMatching)에 묶이고 leave_game_session을 쓰지 않는다", async () => {
+  const source = await readFile(pageUrl, "utf8")
+  assert.match(
+    source,
+    /import \{ useGameResultReturnToMatching \} from "\.\.\/hooks\/useGameResultReturnToMatching\.js"/,
+  )
+  assert.match(source, /const \{ requestReturnToMatching, isReturning \} = useGameResultReturnToMatching\(\)/)
+  assert.match(source, /onClick=\{\(\) => \{ if \(!isReturning\) requestReturnToMatching\(\) \}\}/)
+  assert.doesNotMatch(source, /leave_game_session/)
+  assert.doesNotMatch(source, /requestExit.*requestReturnToMatching|requestReturnToMatching.*requestExit/)
 })
 
 test("로비 버튼은 연출 영상이 끝난 뒤 결과 화면과 함께 렌더된다", async () => {

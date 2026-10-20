@@ -1,76 +1,90 @@
-// 파일 역할: InGamePlayerCardMenu.jsx - 화면을 구성하는 컴포넌트입니다.
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { INGAME_PLAYER_CARD_OVERLAY_ASSETS } from "../../constants/board/ingamePlayerCardOverlayAssets.js"
+import {
+  INGAME_PLAYER_CARD_OVERLAY_ACTIONS_CLASS,
+  INGAME_PLAYER_CARD_OVERLAY_BTN_CLASS,
+  INGAME_PLAYER_CARD_OVERLAY_BTN_IMG_CLASS,
+  INGAME_PLAYER_CARD_OVERLAY_BTN_LABEL_CLASS,
+  INGAME_PLAYER_CARD_OVERLAY_SCRIM_CLASS,
+  INGAME_PLAYER_CARD_OVERLAY_WRAP_CLASS,
+} from "../../constants/board/ingamePlayerCardOverlayLayout.js"
+import { INGAME_CARD_MENU_ITEM_KINDS } from "../../hooks/useInGamePlayerCardMenu.js"
 
-/** 카드 위에 뜨는 메뉴의 배경 — 실제로 존재하는 인게임 프레임 자산을 그대로 쓴다(복제·이동 없음). */
-export const INGAME_PLAYER_CARD_MENU_FRAME_SRC = "/frame/인게임 설정 프레임_.png"
-
-/** 이 메뉴 전체를 가리키는 표식. 시험·e2e가 "메뉴가 떴는가"를 DOM 하나로 판정한다. */
+/** 이 오버레이 전체를 가리키는 표식. 시험·e2e가 "메뉴가 떴는가"를 DOM 하나로 판정한다. */
 export const INGAME_PLAYER_CARD_MENU_ATTR = "data-ingame-player-card-menu"
 
-const MENU_WRAP_CLASS =
-  "absolute left-1/2 top-full z-40 w-[min(11rem,60vw)] -translate-x-1/2 translate-y-1"
+function resolveOverlayButtonAsset(kind) {
+  if (
+    kind === INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE_CANCEL
+    || kind === INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL
+    || kind === INGAME_CARD_MENU_ITEM_KINDS.TRIBUNAL_GUILTY
+  ) {
+    return INGAME_PLAYER_CARD_OVERLAY_ASSETS.cancelButton
+  }
+  return INGAME_PLAYER_CARD_OVERLAY_ASSETS.confirmButton
+}
 
-const MENU_FRAME_IMAGE_CLASS =
-  "pointer-events-none absolute inset-0 z-[1] block h-full w-full select-none object-fill"
-
-const MENU_CONTENT_CLASS =
-  "relative z-10 flex flex-col gap-1 px-3 py-3 text-[0.75rem] text-[#f8ead2]"
-
-const MENU_ITEM_CLASS =
-  "w-full rounded px-2 py-1 text-left font-semibold transition-colors enabled:hover:bg-[#f3d28d]/20 disabled:cursor-not-allowed disabled:opacity-60"
-
-const MENU_REASON_CLASS = "mt-0.5 block text-[0.65rem] font-normal text-[#e0c9a3]"
-
-const MENU_CLOSE_CLASS =
-  "mt-1 w-full rounded border border-[#f3d28d]/40 px-2 py-1 text-[0.65rem] text-[#e0c9a3]"
+function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason = null, onClick }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      aria-label={label}
+      title={disabled && disabledReason ? disabledReason : undefined}
+      className={INGAME_PLAYER_CARD_OVERLAY_BTN_CLASS}
+      disabled={disabled}
+      onClick={onClick}
+      style={{ outline: "none" }}
+    >
+      <PublicAsset src={assetSrc} alt="" className={INGAME_PLAYER_CARD_OVERLAY_BTN_IMG_CLASS} />
+      <span className={INGAME_PLAYER_CARD_OVERLAY_BTN_LABEL_CLASS}>{label}</span>
+    </button>
+  )
+}
 
 /**
- * 플레이어 카드 좌클릭 메뉴.
+ * 플레이어 카드 좌클릭 행동 오버레이.
  *
- * 열림·닫힘·항목 계산·제출은 전부 useInGamePlayerCardMenu가 소유한다 — 이 컴포넌트는 받은
- * 항목을 그리고 눌린 항목의 onSelect를 그대로 부르는 일만 한다(여기서 onClose를 함께 부르면
- * 훅이 "제출 뒤 닫기"를 소유하지 못하고 닫힘 순서가 두 곳으로 갈린다).
- *
- * 루트의 onClick stopPropagation은 오인 방지 보조일 뿐이다 — 바깥 클릭 판정 자체는 훅이
- * document mousedown + contains로 한다.
+ * 카드 하단 드롭다운 대신 카드 위에 어두운 scrim과 이미지 버튼을 겹친다.
+ * 열림·닫힘·항목 계산·제출은 useInGamePlayerCardMenu가 소유한다.
  */
 export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
   const visibleItems = items.filter((item) => item.visible !== false)
+  const hasSingleCardAction = visibleItems.some(
+    (item) => item.kind === INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE
+      || item.kind === INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE_CANCEL
+      || item.kind === INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION
+      || item.kind === INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL,
+  )
 
   return (
     <div
       ref={menuRef}
       role="menu"
       aria-label="플레이어 행동"
-      className={MENU_WRAP_CLASS}
+      className={INGAME_PLAYER_CARD_OVERLAY_WRAP_CLASS}
       onClick={(event) => event.stopPropagation()}
       {...{ [INGAME_PLAYER_CARD_MENU_ATTR]: "true" }}
     >
-      <PublicAsset
-        src={INGAME_PLAYER_CARD_MENU_FRAME_SRC}
-        alt=""
-        className={MENU_FRAME_IMAGE_CLASS}
-        aria-hidden="true"
-      />
-      <div className={MENU_CONTENT_CLASS}>
+      <div className={INGAME_PLAYER_CARD_OVERLAY_SCRIM_CLASS} aria-hidden="true" />
+      <div className={INGAME_PLAYER_CARD_OVERLAY_ACTIONS_CLASS}>
         {visibleItems.map((item) => (
-          <button
+          <OverlayImageButton
             key={item.kind}
-            type="button"
-            role="menuitem"
-            className={MENU_ITEM_CLASS}
+            label={item.label}
+            assetSrc={resolveOverlayButtonAsset(item.kind)}
             disabled={!item.enabled}
+            disabledReason={item.disabledReason}
             onClick={() => item.onSelect?.()}
-          >
-            {item.label}
-            {!item.enabled && item.disabledReason ? (
-              <span className={MENU_REASON_CLASS}>{item.disabledReason}</span>
-            ) : null}
-          </button>
+          />
         ))}
-        <button type="button" className={MENU_CLOSE_CLASS} onClick={() => onClose?.()}>
-          닫기
-        </button>
+        {hasSingleCardAction ? null : (
+          <OverlayImageButton
+            label="취소"
+            assetSrc={INGAME_PLAYER_CARD_OVERLAY_ASSETS.cancelButton}
+            onClick={() => onClose?.()}
+          />
+        )}
       </div>
     </div>
   )

@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { useLocation } from "react-router-dom"
+import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import StoreItemGrid from "./StoreItemGrid.jsx"
@@ -9,12 +8,13 @@ import StoreSkinZoomOverlay from "../skinZoom/StoreSkinZoomOverlay.jsx"
 import ProfileBorderZoomOverlay from "@/shared/ui/profileBorderZoom/ProfileBorderZoomOverlay.jsx"
 import StoreBulkPurchaseOverlay from "../bulkPurchase/StoreBulkPurchaseOverlay.jsx"
 import { STORE_ASSETS } from "../../constants/storeAssets.js"
-import { getStoreItemsByCategory, getStoreItemDisplayIcon, STORE_ITEMS } from "../../constants/storeItems.js"
+import {
+  getStoreItemsByCategory,
+  getStoreItemDisplayIcon,
+  isDefaultGrantStoreItem,
+  STORE_ITEMS,
+} from "../../constants/storeItems.js"
 import { storePurchase, useStorePurchase } from "../../store/storePurchase.store.js"
-import { currencyPurchase, toCurrencyStoreItem, useCurrencyPurchase } from "../../store/currencyPurchase.store.js"
-import { currencyHistory } from "../../store/currencyHistory.store.js"
-import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
-import CurrencyTransactionHistory from "./CurrencyTransactionHistory.jsx"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
 import {
@@ -30,133 +30,22 @@ import {
 import { useStoreCategoryFilter } from "../../hooks/useStoreCategoryFilter.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
+import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 
-// F-09: 일반 구매 경로와 연결하지 않는 카테고리 — "인게임 재화"는 서버 상품표 전용 흐름이다.
-// F-33 E-1: "이모티콘"은 상점 15종을 일반 구매·일괄구매로 판다(기본 지급 8종은 아래 defaultGrant로 막는다).
+// F-09: 일반 구매 경로와 연결하지 않는 카테고리 — "인게임 재화"는 정적 카탈로그(준비중)만 보여준다.
+// F-33 E-1: "이모티콘"은 상점 15종을 일반 구매·일괄구매로 판다(기본 지급 8종은 그리드에서 제외).
 const NON_PURCHASABLE_CATEGORIES = new Set(["인게임 재화"])
 const isRealPurchaseCategory = (category) => !NON_PURCHASABLE_CATEGORIES.has(category)
-// 기본 지급 상품(기본 이모티콘 8종)은 서버에서 purchasable:false다 — 구매 요청을 보내지 않는다.
-const isDefaultGrantItem = (item) => item?.defaultGrant === true
-
-// F-32c: "인게임 재화"는 서버 상품표(다이아 충전·골드 구매)로 채운다 — 정적 준비중 항목은 쓰지 않는다.
-const CURRENCY_CATEGORY = "인게임 재화"
-const BUSY_TOPUP_STATUSES = ["creatingOrder", "payment", "confirming", "pendingGrant", "unknown"]
-
-const TOPUP_MESSAGES = {
-  creatingOrder: "주문을 만들고 있습니다…",
-  payment: "결제창으로 이동하고 있습니다…",
-  confirming: "결제 결과를 서버에서 확인하고 있습니다…",
-  pendingGrant: "결제는 승인되었고 다이아 지급을 기다리고 있습니다.",
-  unknown: "결제 결과 확인이 필요합니다. 다이아는 확인 전까지 지급된 것으로 보지 않습니다.",
-  done: "충전이 완료되었습니다.",
-  canceled: "결제가 취소되었거나 완료되지 않았습니다. 다이아는 충전되지 않았습니다.",
-}
-const TOPUP_FAILURE_MESSAGES = {
-  AMOUNT_MISMATCH: "결제 금액이 주문과 달라 충전하지 않았습니다.",
-  NOT_OWNER: "다른 계정의 주문이라 충전하지 않았습니다.",
-  ORDER_NOT_FOUND: "주문을 찾을 수 없어 충전하지 않았습니다.",
-  PAYMENT_FAILED: "결제가 완료되지 않아 충전하지 않았습니다.",
-  CONFIG_MISSING: "결제 설정이 아직 준비되지 않아 충전하지 않았습니다.",
-  PAYMENT_KEY_MISMATCH: "결제 정보가 주문과 맞지 않아 충전하지 않았습니다.",
-  PAYMENT_KEY_CONFLICT: "결제 정보가 주문과 맞지 않아 충전하지 않았습니다.",
-  ORDER_FAILED: "결제가 실패해 다이아가 지급되지 않았습니다.",
-  ORDER_CANCELED: "결제가 취소되어 다이아가 지급되지 않았습니다.",
-  ORDER_EXPIRED: "결제 시간이 만료되어 다이아가 지급되지 않았습니다.",
-  ORDER_CREATE_FAILED: "주문을 만들지 못했습니다. 다시 시도해 주세요.",
-  SDK_LOAD_FAILED: "결제창을 불러오지 못했습니다. 다시 시도해 주세요.",
-  PAYMENT_WINDOW_FAILED: "결제창을 열지 못했습니다. 다시 시도해 주세요.",
-  INVALID_RETURN: "결제 복귀 정보가 올바르지 않아 확인하지 않았습니다.",
-  PRODUCT_VERSION_MISMATCH: "상품 정보가 변경되었습니다. 새 조건을 확인한 뒤 다시 시도해 주세요.",
-  PRODUCT_NOT_FOUND: "상품을 찾을 수 없습니다. 목록을 확인해 주세요.",
-  PRODUCT_STOPPED: "판매가 중지된 상품입니다. 목록을 확인해 주세요.",
-}
-const feedbackClass = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"
-
-// 다이아 충전 진행 상태·실패 사유·결과 확인 버튼. 일반 구매 피드백(StorePurchaseFeedback)과는 별도 영역이다.
-// 수동 '결과 확인'은 표시 중인 주문 하나를 조회한다(이벤트 객체를 넘기지 않는다, 자동 확인 횟수는 그대로).
-function CurrencyTopupFeedback({ currency }) {
-  const onCheck = () => currencyPurchase.checkOrder()
-  const { status, reason, configPending, autoChecks, lookupFailed } = currency
-  if (status === "idle" && !configPending) return null
-  const message = configPending
-    ? "결제 설정이 아직 준비되지 않았습니다(설정 대기). 상품 목록을 새로고침한 뒤 다시 시도해 주세요."
-    : status === "failed" ? (TOPUP_FAILURE_MESSAGES[reason] ?? "충전에 실패했습니다. 다이아는 지급되지 않았습니다.") : TOPUP_MESSAGES[status]
-  const resolvable = status === "unknown" || status === "pendingGrant"
-  return (
-    <div role="status" data-testid="topup-feedback" className={feedbackClass}>
-      <p>{message}</p>
-      {resolvable && lookupFailed ? <p>주문 조회에 실패했습니다.</p> : null}
-      {resolvable && autoChecks >= 5 ? <p>자동 확인을 마쳤습니다. 결과 확인을 눌러 다시 확인해 주세요.</p> : null}
-      {resolvable ? <button type="button" className="underline" onClick={onCheck}>결과 확인</button> : null}
-    </div>
-  )
-}
-
-// 골드 구매 상태(처리 중·완료·다이아 부족·실패·확인 필요·가격 변경). check·retry·가격 재확인은 명시적 클릭이다.
-function GoldPurchaseFeedback({ state, product, priceRechecked, onCheck, onRetry, onAcceptPrice, onGoTopup }) {
-  const { status, code, error } = state
-  if (status === "idle" && !error) return null
-  const messages = {
-    pending: "골드 구매를 처리하고 있습니다…",
-    confirmed: "골드 구매가 완료되었습니다.",
-    unknown: "골드 구매 결과 확인이 필요합니다.",
-    priceChanged: "상품 정보가 변경되었습니다. 새 조건을 확인한 뒤 다시 구매해 주세요.",
-    rejected: code === "INSUFFICIENT_DIAMOND" ? "다이아가 부족합니다. 잔액은 변하지 않았습니다." : "골드 구매에 실패했습니다. 재화는 차감되지 않았습니다.",
-  }
-  return (
-    <div role="status" data-testid="gold-feedback" className={feedbackClass}>
-      <p>{messages[status]}</p>
-      {status === "priceChanged" ? (
-        product
-          ? <p>새 조건: {product.payAmount} 다이아 → 골드 {product.grantAmount}{product.bonusAmount > 0 ? ` + 보너스 ${product.bonusAmount}` : ""}</p>
-          : <p>이 상품은 더 이상 판매 중이 아니거나 목록을 확인하지 못했습니다.</p>
-      ) : null}
-      {error && status !== "rejected" ? <p>{error}</p> : null}
-      {status === "rejected" && code !== "INSUFFICIENT_DIAMOND" && error ? <p>{error}</p> : null}
-      {status === "unknown" ? <button type="button" className="mr-4 underline" onClick={onCheck}>결과 확인</button> : null}
-      {status === "unknown" ? <button type="button" className="underline" onClick={onRetry}>다시 시도</button> : null}
-      {status === "priceChanged" ? (
-        <button type="button" className="underline" disabled={!priceRechecked || !product} onClick={onAcceptPrice}>새 조건 확인</button>
-      ) : null}
-      {status === "rejected" && code === "INSUFFICIENT_DIAMOND" ? (
-        <button type="button" className="underline" onClick={onGoTopup}>다이아 충전하러 가기</button>
-      ) : null}
-    </div>
-  )
-}
-
-// 상품 목록 새로고침·조회 실패 재시도·빈 목록 안내. 요청 중에는 중복 호출하지 않는다.
-function CurrencyListControls({ currency, onReload }) {
-  const loading = currency.productsStatus === "loading"
-  return (
-    <div className={feedbackClass} data-testid="currency-list-controls">
-      <button type="button" className="underline" disabled={loading} onClick={onReload}>상품 목록 새로고침</button>
-      {currency.productsStatus === "error" ? (
-        <span role="alert" className="ml-3">
-          상품 목록을 불러오지 못했습니다.{" "}
-          <button type="button" className="underline" disabled={loading} onClick={onReload}>다시 시도</button>
-        </span>
-      ) : null}
-      {currency.productsStatus === "ready" && currency.products.length === 0 ? (
-        <span role="status" className="ml-3">판매 중인 재화 상품이 없습니다.</span>
-      ) : null}
-    </div>
-  )
-}
 
 // 상점 메인 패널입니다. 상품 그리드, 선택 상품 상세, 사이드 필터를 조합합니다.
 export default function StorePanel({ visible = true }) {
   const { categories, activeCategory, selectCategory } = useStoreCategoryFilter()
-  const currency = useCurrencyPurchase()
-  const currencyItems = useMemo(() => currency.products.map(toCurrencyStoreItem), [currency.products])
-  const visibleItems = useMemo(() => {
-    const staticItems = getStoreItemsByCategory(activeCategory).filter((item) => item.category !== CURRENCY_CATEGORY)
-    if (activeCategory === CURRENCY_CATEGORY) return currencyItems
-    return activeCategory === null ? [...staticItems, ...currencyItems] : staticItems
-  }, [activeCategory, currencyItems])
+  const visibleItems = useMemo(
+    () => getStoreItemsByCategory(activeCategory),
+    [activeCategory],
+  )
 
   const [selectedItem, setSelectedItem] = useState(STORE_ITEMS[0])
-  const [recheckBase, setRecheckBase] = useState(null)
   const [deadPreviewIds, setDeadPreviewIds] = useState(() => new Set())
   const [skinZoomItem, setSkinZoomItem] = useState(null)
   const [profileBorderZoomItem, setProfileBorderZoomItem] = useState(null)
@@ -165,75 +54,24 @@ export default function StorePanel({ visible = true }) {
   const [bulkPurchaseOpen, setBulkPurchaseOpen] = useState(false)
   const purchaseState = useStorePurchase()
   const selectionLocked = ["pending", "unknown", "blocked"].includes(purchaseState.status)
-  const goldPriceChanged = purchaseState.kind === "GOLD" && purchaseState.status === "priceChanged"
-  // 가격 변경은 상품 선택(새 조건 확인)은 허용하되 재확인 전에는 어떤 구매도 막는다.
-  const purchaseLocked = selectionLocked || goldPriceChanged
+  const purchaseLocked = selectionLocked
   const economyStatus = useEconomyStore((state) => state.status)
   const authUserId = useAuthStore((state) => state.user?.uuid ?? null)
-  // F-09 R-IMPL(AC-06 재검토): useEconomyStore.entitlements는 fetchSummary가 이미
-  // 채워왔지만 지금까지 어떤 화면도 이 값을 읽지 않았다 — 재로그인 후 서버가 실제로
-  // 돌려준 소유권이 있어도 화면 어디에도 드러나지 않았다는 뜻이다. 여기서 읽어
-  // StoreItemGrid(일괄선택 차단)·StoreSelectedItemDetail(구매 버튼 비활성화·"보유중"
-  // 표시)에 전달해, 소유권 복원이 실제로 눈에 보이는 화면 상태로 이어지게 한다.
   const entitlements = useEconomyStore((state) => state.entitlements)
   const ownedItemIds = useMemo(
     () => new Set(entitlements.map((entitlement) => entitlement.itemId)),
     [entitlements],
   )
-  // F-32c: 결제창 복귀(/store?topup=…)는 같은 경로의 쿼리로 들어온다. 복귀 처리는 이 최신 값을 읽는다.
-  const search = useLocation().search
-  const searchRef = useRef(search)
-  searchRef.current = search
-  // 그 시점에 economy가 아직 ready가 아니면(새 문서 등) 첫 확인이 끝난 뒤 진입 조회가 필요하다 —
-  // 이 정보를 넘겨 성공 복귀의 진입 조회 책임을 currencyPurchase.handleReturn에 인계한다.
-  const processReturn = () => currencyPurchase.handleReturn(searchRef.current, {
-    entryNeeded: useEconomyStore.getState().status !== "ready",
-  })
-  // F-32 BQ(§2-6a): 인증된 상점 진입마다 진입 식별자 하나 — StrictMode의 효과 재실행은 같은 식별자를
-  // 공유하고(발견 1회), 실제 재진입(새 마운트)·계정 변경은 새 식별자로 발견을 다시 한다.
-  const entryRef = useRef(null)
+
   useEffect(() => {
-    if (entryRef.current?.userId !== authUserId) entryRef.current = { userId: authUserId, id: Symbol("store-entry") }
-    const successReturn = new URLSearchParams(searchRef.current).get("topup") === "success"
-    // 성공 복귀는 서버 확인 전에 잔액·내역을 조회하지 않는다 — 진입 조회는 handleReturn이 확인 종료 뒤 한 번 맡는다.
-    if (!successReturn) {
-      useEconomyStore.getState().fetchSummary()
-      currencyHistory.load()
-    }
+    useEconomyStore.getState().fetchSummary()
     storePurchase.activate(authUserId)
     storePurchase.check()
-    currencyPurchase.loadProducts()
-    // 복귀 주문을 먼저 등록한 뒤 같은 진입의 발견을 요청한다(발견 결과는 복귀 orderId를 건너뛴다).
-    const returning = processReturn()
-    // 확인 종료가 늦으면 그 사이 계정·진입이 바뀌었을 수 있다 — 등록 당시 진입·계정일 때만 원장을 보완 조회한다.
-    if (successReturn) {
-      const entryId = entryRef.current.id
-      returning.then(() => {
-        const sameEntry = entryRef.current?.id === entryId
-        const sameUser = (useAuthStore.getState().user?.uuid ?? null) === authUserId
-        if (sameEntry && sameUser) currencyHistory.loadIfIdle()
-      })
-    }
-    if (authUserId) currencyPurchase.discoverOpenOrders(entryRef.current.id)
     setBulkMode(false)
     setBulkSelectedIds(new Set())
     setBulkPurchaseOpen(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUserId])
-  useEffect(() => { processReturn() }, [search]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 복원된 가격 변경 상태는 목록을 다시 받아 새 조건을 확인받기 전까지 구매를 막는다.
-  // 최초 조회가 실패해도 수동 재조회 등 어느 경로로든 목록 조회가 한 번 더 성공하면 새 조건 확인이 풀린다.
-  const goldRecordId = goldPriceChanged ? purchaseState.referenceEventId : null
-  useEffect(() => {
-    setRecheckBase(goldRecordId ? currencyPurchase.store.getState().productsLoadCount : null)
-    if (goldRecordId) currencyPurchase.loadProducts()
-  }, [goldRecordId])
-  const priceRechecked = goldRecordId !== null && recheckBase !== null && currency.productsLoadCount > recheckBase
-
-  // 일괄구매 확인 대화상자는 카테고리와 무관하게 원래 선택된 품목을 그대로 보여줘야
-  // 한다(리마운트 복원 포함) — 현재 카테고리로 걸러진 visibleItems 대신 전체 카탈로그
-  // (STORE_ITEMS)에서 조회한다.
   const bulkSelectedItems = useMemo(
     () => STORE_ITEMS.filter((item) => bulkSelectedIds.has(item.id)),
     [bulkSelectedIds],
@@ -271,10 +109,8 @@ export default function StorePanel({ visible = true }) {
     if (purchaseLocked) return
     setBulkMode(nextBulkMode)
     if (nextBulkMode) {
-      // 이미 보유한 상품을 선택한 채로 일괄구매 모드에 들어가면 그 상품이 자동으로
-      // 선택돼 버린다 — 보유중인 상품은 일괄구매 대상이 될 수 없다(AC-06 재검토).
-      const canSeedSelection = selectedItem && !selectedItem.kind && !ownedItemIds.has(selectedItem.id)
-        && !isDefaultGrantItem(selectedItem)
+      const canSeedSelection = selectedItem && !ownedItemIds.has(selectedItem.id)
+        && !isDefaultGrantStoreItem(selectedItem)
       setBulkSelectedIds(new Set(canSeedSelection ? [selectedItem.id] : []))
     } else {
       setBulkSelectedIds(new Set())
@@ -283,7 +119,7 @@ export default function StorePanel({ visible = true }) {
   }
 
   const handleBulkSelectionChange = (itemId) => {
-    if (purchaseLocked || ownedItemIds.has(itemId) || isDefaultGrantItem(STORE_ITEMS.find((item) => item.id === itemId))) return
+    if (purchaseLocked || ownedItemIds.has(itemId) || isDefaultGrantStoreItem(STORE_ITEMS.find((item) => item.id === itemId))) return
     setBulkSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(itemId)) next.delete(itemId)
@@ -292,29 +128,12 @@ export default function StorePanel({ visible = true }) {
     })
   }
 
-  // 상품 목록이 바뀌면 같은 ID라도 새 version 객체를 선택에 반영한다 — 이전 조건으로 구매하지 않는다.
-  const currentItem = selectedItem ? (visibleItems.find((item) => item.id === selectedItem.id) ?? selectedItem) : null
-  const currencyKind = currentItem?.kind ?? null
-  // 재화 구매는 상품 목록이 정상이고(요청 중·실패·조건 변경·설정 대기가 아님) 다른 충전이 진행 중이 아닐 때만 가능하다.
-  const currencyBlocked = currency.productsStatus !== "ready" || currency.productsStale || currency.configPending
-    || (currencyKind === "DIAMOND_TOPUP" && BUSY_TOPUP_STATUSES.includes(currency.status))
+  const currentItem = selectedItem
+    ? (visibleItems.find((item) => item.id === selectedItem.id) ?? selectedItem)
+    : null
+
   let purchaseLabel = null
-  if (currencyKind === "DIAMOND_TOPUP") {
-    if (currency.configPending) purchaseLabel = "설정 대기"
-    else if (currency.productsStatus === "loading") purchaseLabel = "목록 확인 중"
-    else if (currency.status === "creatingOrder") purchaseLabel = "주문 생성 중"
-    else if (currency.status === "payment") purchaseLabel = "결제창 이동 중"
-    else if (currency.status === "confirming") purchaseLabel = "확인 중"
-    else if (currency.status === "pendingGrant") purchaseLabel = "지급 대기"
-    else if (currency.status === "unknown") purchaseLabel = "결과 확인 필요"
-    else purchaseLabel = "충전"
-  } else if (currencyKind === "GOLD_PURCHASE") {
-    if (purchaseState.status === "pending") purchaseLabel = "처리 중"
-    else if (goldPriceChanged) purchaseLabel = "가격 재확인 필요"
-    else if (currency.productsStatus === "loading") purchaseLabel = "목록 확인 중"
-    else purchaseLabel = "골드 구매"
-  } else if (isDefaultGrantItem(currentItem) && !ownedItemIds.has(currentItem.id)) {
-    // 지갑 요약을 받기 전(또는 아직 지급 전)에도 기본 지급 상품에 "구매"를 보이지 않는다.
+  if (isDefaultGrantStoreItem(currentItem) && !ownedItemIds.has(currentItem?.id)) {
     purchaseLabel = "기본 지급"
   }
 
@@ -322,28 +141,16 @@ export default function StorePanel({ visible = true }) {
     if (purchaseLocked || economyStatus !== "ready") return
     if (bulkMode) {
       if (bulkSelectedIds.size) { storePurchase.prepare(); setBulkPurchaseOpen(true) }
-    } else if (currencyKind) {
-      if (currencyBlocked) return
-      const product = { productId: currentItem.productId, version: currentItem.version }
-      if (currencyKind === "DIAMOND_TOPUP") currencyPurchase.startTopup(product)
-      else storePurchase.purchaseGold(product)
     } else if (selectedItem && isRealPurchaseCategory(selectedItem.category) && !ownedItemIds.has(selectedItem.id)
-      && !isDefaultGrantItem(selectedItem)) {
+      && !isDefaultGrantStoreItem(selectedItem)) {
       storePurchase.purchase([selectedItem.id])
     }
   }
-  // 다이아 부족 안내에서 같은 재화 탭의 다이아 충전 상품으로 이동한다. 이미 재화 탭이면 다시 눌러
-  // 전체 목록으로 토글하지 않는다.
-  const goToDiamondTopup = () => {
-    if (activeCategory !== CURRENCY_CATEGORY) selectCategory(CURRENCY_CATEGORY)
-    const target = currencyItems.find((item) => item.kind === "DIAMOND_TOPUP")
-    if (target) setSelectedItem(target)
-  }
-  const goldProduct = goldPriceChanged ? currencyItems.find((item) => item.productId === purchaseState.productId) : null
+
   const closeBulkPurchase = () => { setBulkPurchaseOpen(false); setBulkMode(false); setBulkSelectedIds(new Set()) }
   const handleBulkPurchaseConfirm = () => {
     if (purchaseLocked || economyStatus !== "ready") return
-    storePurchase.purchase(bulkSelectedItems.map(item => item.id))
+    storePurchase.purchase(bulkSelectedItems.map((item) => item.id))
   }
 
   useEffect(() => {
@@ -367,26 +174,7 @@ export default function StorePanel({ visible = true }) {
           <PublicAsset src={STORE_ASSETS.panelFrame} alt="" className={STORE_PANEL_FRAME_CLASS} />
 
           <div className={STORE_PANEL_CONTENT_CLASS} style={STORE_PANEL_INNER_PAD}>
-            {purchaseState.kind === "GOLD" ? (
-              <GoldPurchaseFeedback
-                state={purchaseState}
-                product={goldProduct}
-                priceRechecked={priceRechecked}
-                onCheck={storePurchase.check}
-                onRetry={storePurchase.retry}
-                onAcceptPrice={storePurchase.acceptPriceChange}
-                onGoTopup={goToDiamondTopup}
-              />
-            ) : (
-              <StorePurchaseFeedback state={purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
-            )}
-            <CurrencyTopupFeedback currency={currency} />
-            {activeCategory === CURRENCY_CATEGORY ? (
-              <>
-                <CurrencyListControls currency={currency} onReload={currencyPurchase.loadProducts} />
-                <CurrencyTransactionHistory />
-              </>
-            ) : null}
+            <StorePurchaseFeedback state={purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
             <div className={STORE_PANEL_MAIN_ROW_CLASS}>
               <div className={STORE_PANEL_GRID_COLUMN_CLASS}>
                 <div
@@ -424,10 +212,9 @@ export default function StorePanel({ visible = true }) {
                     purchaseDisabled={
                       purchaseLocked || economyStatus !== "ready"
                       || (bulkMode && bulkSelectedIds.size === 0)
-                      || (!currencyKind && !isRealPurchaseCategory(currentItem.category))
-                      || (!bulkMode && currencyKind !== null && currencyBlocked)
+                      || (!isRealPurchaseCategory(currentItem.category))
                       || (!bulkMode && ownedItemIds.has(currentItem.id))
-                      || (!bulkMode && isDefaultGrantItem(currentItem))
+                      || (!bulkMode && isDefaultGrantStoreItem(currentItem))
                     }
                   />
                 ) : null}

@@ -187,5 +187,9 @@ test("highest_win_rate_role이 없으면(전적 0판) 강조 문구를 전적 �
 
   const { result } = renderHook(() => useMyProfile())
 
-  assert.equal(result.current.description.highlight, "전적 없음")
+  assert.deepEqual(result.current.description, {
+    prefix: "",
+    highlight: "전적 없음",
+    suffix: " 아직 어떤 가면도 증명하지 못했습니다.",
+  })
 })

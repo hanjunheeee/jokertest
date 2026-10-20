@@ -33,7 +33,7 @@ const CHAT_FRAME_IMAGE_CLASS =
 /**
  * 인게임 채팅 UI — 보드·클로즈업 공통.
  * variant는 Context로 하위(Input·SendButton·MessageRow)에 전달합니다.
- * @param {"board" | "closeup"} [variant]
+ * @param {"board" | "closeup" | "tribunal"} [variant]
  * @param {(() => void) | null} [onOpenCloseup] board — 빈 프레임 클릭 시 클로즈업
  */
 export default function InGameChatContent({

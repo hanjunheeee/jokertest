@@ -7,11 +7,11 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 로비 우측 하단에 있는 친구 목록 열기 버튼입니다.
-export default function FriendListToggleButton({ open, onOpen }) {
+export default function FriendListToggleButton({ open, onOpen, ariaLabel = "친구 목록" }) {
   return (
     <button
       type="button"
-      aria-label="친구 목록"
+      aria-label={ariaLabel}
       aria-expanded={open}
       onClick={onOpen}
       className={LOBBY_FRIEND_LIST_BTN_CLASS}

@@ -9,7 +9,7 @@ export const INGAME_SIDE_PANEL_TRANSITION = {
 }
 
 export const INGAME_SIDE_PANEL_CLASS =
-  "absolute left-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(17.5rem,22.5cqw,25.5rem)] max-w-[26rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
+  "absolute left-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(26.25rem,33.75cqw,38.25rem)] max-w-[39rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
 
 export const INGAME_SIDE_PANEL_INSET = {
   paddingTop: "clamp(4rem, 17%, 5.3rem)",
@@ -40,4 +40,4 @@ export const INGAME_SIDE_PANEL_HEADER_TITLE_CLASS =
   "pointer-events-none absolute inset-0 flex items-start justify-center px-[12%] pt-[3.8%] font-display text-[clamp(1.18rem,1.72cqw,1.45rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const INGAME_SIDE_PANEL_HEADER_SUBTITLE_CLASS =
-  "mt-[clamp(0.42rem,1vh,0.58rem)] text-center font-subheading text-[clamp(0.62rem,0.9cqw,0.76rem)] leading-snug font-bold text-[#1a1008]"
+  "mt-[clamp(0.42rem,1vh,0.58rem)] text-center font-subheading text-[clamp(0.82rem,1.15cqw,0.98rem)] leading-snug font-bold text-[#1a1008]"

@@ -13,7 +13,7 @@ export const getOfflineFriendLabel = (friends) => {
   return `오프라인 (${friends.length})`
 }
 
-// 즐겨찾기 친구 그룹 제목을 만듭니다.
+// 즐겨찾기 친구 그룹 제목을 만듭니다 — 오프라인 그룹과 같이 전체 인원만 표시합니다.
 export const getFavoriteFriendLabel = (friends) => {
-  return `즐겨찾기 (${countOnlineFriends(friends)}/${friends.length})`
+  return `즐겨찾기 (${friends.length})`
 }

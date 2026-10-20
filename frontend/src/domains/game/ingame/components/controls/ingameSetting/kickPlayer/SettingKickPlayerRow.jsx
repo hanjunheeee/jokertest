@@ -1,8 +1,11 @@
 /**
  * 플레이어 추방 모달 — 플레이어 1명 + 추방 버튼
  */
+import { INGAME_KICK_PLAYER_ASSETS } from "../../../../constants/controls/ingameSetting/kickPlayer/ingameKickPlayerAssets.js"
 import {
   INGAME_KICK_PLAYER_ACTION_BTN_CLASS,
+  INGAME_KICK_PLAYER_ACTION_BTN_IMG_CLASS,
+  INGAME_KICK_PLAYER_ACTION_BTN_LABEL_CLASS,
   INGAME_KICK_PLAYER_NAME_CLASS,
   INGAME_KICK_PLAYER_PROFILE_PHOTO_WRAP_CLASS,
   INGAME_KICK_PLAYER_PROFILE_WRAP_CLASS,
@@ -12,6 +15,7 @@ import {
 import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../../constants/controls/ingameSetting/kickPlayer/ingameKickPlayerData.js"
 import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../../../constants/ingamePlayerTheme.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
+import PublicAsset from "@/shared/ui/PublicAsset"
 
 /**
  * F-21(AC-02): themeStyles를 **props로** 받는다. 예전에는 이 행이 직접
@@ -62,7 +66,16 @@ export default function SettingKickPlayerRow({
           className={INGAME_KICK_PLAYER_ACTION_BTN_CLASS}
           style={{ outline: "none" }}
         >
-          {isPending ? INGAME_KICK_PLAYER_MODAL_COPY.pendingLabel : INGAME_KICK_PLAYER_MODAL_COPY.kickActionLabel}
+          <PublicAsset
+            src={INGAME_KICK_PLAYER_ASSETS.kickActionButton}
+            alt=""
+            className={INGAME_KICK_PLAYER_ACTION_BTN_IMG_CLASS}
+          />
+          <span className={INGAME_KICK_PLAYER_ACTION_BTN_LABEL_CLASS}>
+            {isPending
+              ? INGAME_KICK_PLAYER_MODAL_COPY.pendingLabel
+              : INGAME_KICK_PLAYER_MODAL_COPY.kickActionLabel}
+          </span>
         </button>
       </div>
     </li>

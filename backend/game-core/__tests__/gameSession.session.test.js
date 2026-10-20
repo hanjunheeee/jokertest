@@ -231,6 +231,20 @@ test('checkGameSessionPreconditions: 참가자 중 한 명이라도 이미 다�
     assert.deepEqual(after, before)
 })
 
+test('checkGameSessionPreconditions: ENDED 판 소속은 playerSession에 남아 있어도 새 Room 시작을 막지 않는다', () => {
+    const firstRoom = makeRoom({ id: 'room-ended', players: [makePlayer('host'), makePlayer('guest')] })
+    const candidate = buildSessionCandidate(firstRoom)
+    commitGameSession(candidate.session)
+    candidate.session.phase = 'ENDED'
+    candidate.session.winResult = { winner: 'CITIZEN' }
+
+    const nextRoom = makeRoom({
+        id: 'room-after-ended',
+        players: [makePlayer('host'), makePlayer('guest'), makePlayer('extra')],
+    })
+    assert.deepEqual(checkGameSessionPreconditions(nextRoom), { ok: true })
+})
+
 // ---------------------------------------------------------------------------
 // commitGameSession — 정상 경로 + registry 재검증
 // ---------------------------------------------------------------------------
@@ -1856,8 +1870,8 @@ test('prepareGameChatMessage: 생존자 + DAY → DAY 채널로 라우팅되고 
     assert.deepEqual(chatRateLimitSnapshot(session), before)
 })
 
-test('prepareGameChatMessage: 생존자는 DAY 외 모든 phase에서 INVALID_PHASE이고 Map은 불변이다', () => {
-    for (const phase of ['ROLE_REVEAL', 'NIGHT', 'TRIBUNAL']) {
+test('prepareGameChatMessage: 생존자는 DAY·TRIBUNAL 외 phase에서 INVALID_PHASE이고 Map은 불변이다', () => {
+    for (const phase of ['ROLE_REVEAL', 'NIGHT']) {
         gameSession.__resetStateForTests()
         const { session, citizenUuids } = setupGameChatSession({ id: `room-gc-alive-${phase}`, phase })
         const [actor] = citizenUuids
@@ -1869,6 +1883,16 @@ test('prepareGameChatMessage: 생존자는 DAY 외 모든 phase에서 INVALID_PH
         })
         assert.deepEqual(chatRateLimitSnapshot(session), before)
     }
+})
+
+test('prepareGameChatMessage: 생존자는 TRIBUNAL에서도 DAY 채널로 발행할 수 있다', () => {
+    const { session, citizenUuids } = setupGameChatSession({ id: 'room-gc-alive-tribunal', phase: 'TRIBUNAL' })
+    const [actor] = citizenUuids
+
+    const prepared = prepareGameChatMessage(actor, session.id, '최후의 반론', { now: () => 1000, idFn: () => 'msg-tribunal' })
+
+    assert.equal(prepared.ok, true)
+    assert.equal(prepared.channel, CHAT_CHANNELS.DAY)
 })
 
 test('prepareGameChatMessage: 생존자는 ENDED에서 INVALID_PHASE가 아니라 GAME_ALREADY_ENDED로 먼저 걸린다', () => {

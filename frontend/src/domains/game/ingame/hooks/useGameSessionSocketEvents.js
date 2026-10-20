@@ -4,6 +4,7 @@ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClie
 // 상대 경로로 둔다 — 이 훅은 node:test에서 실제로 마운트해 검증하는 대상이고(store/__tests__/
 // nightPrivateResult.test.js), `@/` 별칭은 vite만 해석할 수 있어 그 실행을 막는다.
 import { useMatchingStore, isCurrentRoomKickEvent } from "../../matching/store/matchingStore.js"
+import { rememberPartyMatchingRoomReady } from "../../matching/utils/partyMatchingRejoin.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 // F-21(A-10): 전적 커밋 이후의 개인 캐시 무효화가 닿는 경계다. 세 store를 직접 import하지
 // 않는 이유는 그쪽이 api 계층(shared/env.js의 import.meta.env)에 닿아 있어, 이 훅 자체가
@@ -609,7 +610,13 @@ export function useGameSessionSocketEvents() {
       useInGameEmojiBubbleStore.getState().setActiveEmoji(payload.uuid, payload.itemId, payload.sentAt)
     }
 
+    const handlePartyMatchingRoomReady = (payload) => {
+      if (!isRegistrationScopeCurrent(registeredScope)) return
+      rememberPartyMatchingRoomReady(payload)
+    }
+
     socket.on("game_ended", handleGameEnded)
+    socket.on("party_matching_room_ready", handlePartyMatchingRoomReady)
     socket.on("emoji_shown", handleEmojiShown)
     socket.on("player_eliminated", handlePlayerEliminated)
     socket.on("session_participation_changed", handleParticipationChanged)
@@ -627,6 +634,7 @@ export function useGameSessionSocketEvents() {
     socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
     return () => {
       socket.off("game_ended", handleGameEnded)
+      socket.off("party_matching_room_ready", handlePartyMatchingRoomReady)
       socket.off("emoji_shown", handleEmojiShown)
       socket.off("player_eliminated", handlePlayerEliminated)
       socket.off("session_participation_changed", handleParticipationChanged)

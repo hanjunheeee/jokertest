@@ -1,5 +1,5 @@
 /**
- * F-20 AC-03: 방장이 실제로 편집·저장한 설정이 **비방장 참가자의 화면**과 공개 목록 행까지
+ * F-20 AC-03: 방장이 실제로 편집·저장한 설정이 **비방장 참가자 store**와 공개 목록 행까지
  * 이어지는지를 한 경로로 고정한다.
  *
  * 응답 객체를 읽어 보는 것으로는 "참가자가 그 값을 실제로 볼 수 있는가"를 말할 수 없다.
@@ -66,7 +66,6 @@ const { MemoryRouter } = await import("react-router-dom")
 const { default: GameMatchingPage } = await import("../../pages/GameMatchingPage.jsx")
 let participantPageView = null
 const { default: GameSetupPanel } = await import("../../../setup/components/GameSetupPanel.jsx")
-const { default: RoomSettingsSummaryPanel } = await import("../RoomSettingsSummaryPanel.jsx")
 const { default: RoomListRow } = await import("../../../mode/components/roomList/RoomListRow.jsx")
 const { buildRoomSettingsFormState, buildUpdateRoomSettingsPayload } =
   await import("../../../setup/utils/roomSettingsForm.js")
@@ -165,20 +164,16 @@ async function mountParticipantRoom(currentRoom) {
     participantPageView = render(React.createElement(MemoryRouter, { initialEntries: ["/matching"] },
       React.createElement(GameMatchingPage)))
   })
-  await waitFor(() => assert.ok(participantPageView.container.querySelector("[aria-label='현재 방 설정']")))
+  await waitFor(() => {
+    assert.equal(useMatchingStore.getState().hostUuid, "host-a")
+    assert.ok(useMatchingStore.getState().settings, "참가자 store에 서버 설정이 없다")
+  })
+  assert.equal(participantPageView.container.querySelector("[aria-label='현재 방 설정']"), null,
+    "대기 페이지에 읽기 전용 설정 UI가 남아 있다")
   assert.equal(participantPageView.container.querySelector("[aria-label='방 설정 변경']"), null,
     "비방장에게 설정 편집 버튼이 노출됐다")
-  assert.equal(useMatchingStore.getState().hostUuid, "host-a")
   assert.notEqual(useMatchingStore.getState().hostUuid, "p1", "이 시험의 전제는 비방장 참가자다")
   return { socket, view: participantPageView }
-}
-
-/** Read the SAME mounted production page; never re-render a fresh snapshot from getState. */
-async function currentParticipantSummary() {
-  await act(async () => { await Promise.resolve() })
-  assert.ok(participantPageView.container.querySelector("[aria-label='현재 방 설정']"),
-    "실제 대기 페이지의 설정 표시가 없다")
-  return participantPageView.container
 }
 
 test.afterEach(() => {
@@ -188,7 +183,7 @@ test.afterEach(() => {
   useMatchingStore.getState().clearRoom()
 })
 
-test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면 비방장 참가자 화면과 공개 목록에 그대로 나타난다", async () => {
+test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면 비방장 store와 공개 목록에 그대로 나타난다", async () => {
   const { io, hostSocket, guestSocket, room } = await createRoomWithParticipant({
     maxPlayers: 8, jokerCount: 2, nightActionTime: 90,
   })
@@ -196,9 +191,9 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   // 참가자는 저장 **이전**의 방을 보고 있다.
   const before = await new Promise((resolve) => handleGetCurrentRoom("p1", resolve))
   const { socket: clientSocket } = await mountParticipantRoom(before.room)
-  const beforeDom = await currentParticipantSummary()
-  assert.ok(beforeDom.textContent.includes("공개 참가"), beforeDom.textContent)
-  assert.ok(beforeDom.textContent.includes("8명"), beforeDom.textContent)
+  const beforeStore = useMatchingStore.getState()
+  assert.equal(beforeStore.accessType, "open")
+  assert.equal(beforeStore.settings.maxPlayers, 8)
   // 여기서 전역 cleanup을 부르면 참가자 훅까지 함께 언마운트돼 이후 사건을 받지 못한다 —
   // 각 트리는 자기 container로만 조회하므로 남겨 둔다.
 
@@ -257,28 +252,17 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   assert.ok(broadcast, "서버가 참가자에게 설정 변경 사건을 보내지 않았다")
   await act(async () => { clientSocket.trigger(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, broadcast.payload) })
 
+  // ── 비방장 참가자 store(실제 대기 페이지 훅) ─────────────────────────────
   const stored = useMatchingStore.getState()
   assert.equal(stored.accessType, "code")
   assert.equal(stored.settings.maxPlayers, 6)
-
-  // ── 비방장 참가자가 실제로 읽는 화면 ────────────────────────────────────
-  const summary = await currentParticipantSummary()
-  assert.equal(summary, beforeDom, "서버 방송 뒤 실제 페이지를 새로 마운트했다")
-  const text = summary.querySelector("[aria-label='현재 방 설정']").textContent
-  assert.ok(text.includes("코드로만 참가"), `입장 방식이 없다: ${text}`)
-  assert.ok(text.includes("6명"), `정원이 없다: ${text}`)
-  assert.ok(text.includes("광대 2"), `직업 구성이 없다: ${text}`)
-  assert.ok(text.includes("의사 1"), `직접 지정한 직업 인원이 없다: ${text}`)
-  assert.ok(text.includes("토론 90초"), `토론 시간이 없다: ${text}`)
-  assert.ok(text.includes("투표 60초"), `투표 시간이 없다: ${text}`)
-  assert.ok(text.includes("밤 60초"), `밤 시간이 없다: ${text}`)
-  assert.ok(text.includes("광대 밤 30초"), `직업별 밤 시간이 없다: ${text}`)
-  assert.ok(summary.querySelector("[aria-label='현재 방 설정']"), "읽기용 이름이 없다")
-
-  // 참가자 화면에 새어 나가면 안 되는 것들.
-  assert.equal(text.includes(room.roomCode), false, "방 코드가 설정 표시에 새어 나갔다")
-  assert.equal(/버전|settingsVersion/.test(text), false, "내부 버전 카운터가 화면에 노출됐다")
-  assert.equal(text.includes("host-a") || text.includes("p1"), false, "참가자 신원이 설정 표시에 섞였다")
+  assert.equal(stored.settings.roleCompositionMode, "custom")
+  assert.deepEqual(stored.settings.roleCounts, { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
+  assert.equal(stored.settings.dayDiscussionTime, 90)
+  assert.equal(stored.settings.nightActionTime, 60)
+  assert.deepEqual(stored.settings.roleNightActionTimes, { JOKER: 30 })
+  assert.equal(participantPageView.container.querySelector("[aria-label='현재 방 설정']"), null,
+    "서버 방송 뒤에도 읽기 전용 설정 UI가 나타나면 안 된다")
 
   // ── 같은 저장이 공개 목록 행에도 그대로 나타난다 ────────────────────────
   const list = await new Promise((resolve) => handleGetPublicRooms(resolve))
@@ -296,38 +280,20 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   assert.ok(rowText.includes("광대 2"), `목록 행에 직업 구성이 없다: ${rowText}`)
   assert.ok(rowText.includes("의사 1"), `목록 행에 직접 지정 구성이 없다: ${rowText}`)
   assert.ok(rowText.includes("토론 90초"), `목록 행에 토론 시간이 없다: ${rowText}`)
-  assert.ok(rowText.includes("광대 밤 30초"), `목록 행에 직업별 밤 시간이 없다: ${rowText}`)
+  assert.ok(rowText.includes("밤 60초"), `목록 행에 전체 밤 시간이 없다: ${rowText}`)
+  assert.equal(rowText.includes("광대 밤"), false, "목록 행에 직업별 밤 시간이 남아 있다")
 })
 
-test("AC-03 · 실제 대기 페이지가 useMatchingPage의 서버 확정 설정을 그 패널에 연결한다", async () => {
-  // Supplemental source wiring guard. The preceding test now mounts the actual
-  // GameMatchingPage and asserts updates in the same DOM tree after server events.
+test("AC-03 · 대기 페이지에는 읽기 전용 현재 방 설정 UI를 그리지 않는다", async () => {
   const { readFileSync } = await import("node:fs")
   const { fileURLToPath } = await import("node:url")
   const pagePath = fileURLToPath(new URL("../../pages/GameMatchingPage.jsx", import.meta.url))
   const source = readFileSync(pagePath, "utf8")
 
-  assert.ok(/import\s+RoomSettingsSummaryPanel\s+from/.test(source),
-    "대기 페이지가 현재 설정 패널을 불러오지 않는다")
-  // useMatchingPage가 돌려주는 서버 확정 값을 실제로 꺼내 쓴다.
-  assert.ok(/\broomSettings,/.test(source), "페이지가 roomSettings를 받지 않는다")
-  assert.ok(/\broomAccessType,/.test(source), "페이지가 roomAccessType을 받지 않는다")
-  assert.ok(/<RoomSettingsSummaryPanel[\s\S]*?settings=\{roomSettings\}/.test(source),
-    "페이지가 서버 확정 설정을 패널에 넘기지 않는다")
-  assert.ok(/<RoomSettingsSummaryPanel[\s\S]*?accessType=\{roomAccessType\}/.test(source),
-    "페이지가 입장 방식을 패널에 넘기지 않는다")
-  // 내부 버전 카운터는 표시 경로에 넘기지 않는다(참가자 화면의 진단값 노출 금지).
-  assert.equal(/<RoomSettingsSummaryPanel[\s\S]*?settingsVersion=/.test(source), false,
-    "내부 설정 버전이 표시 패널로 넘어간다")
-})
-
-test("AC-03 · 서버 설정을 아직 확보하지 못했으면 기본값을 지어내지 않고 아무것도 그리지 않는다", async () => {
-  let container
-  await act(async () => {
-    ;({ container } = render(React.createElement(RoomSettingsSummaryPanel, {
-      visible: true, accessType: null, settings: null,
-    })))
-  })
-  assert.equal(container.textContent.trim(), "",
-    "서버 설정이 없는데 화면이 값을 지어냈다")
+  assert.equal(/import\s+RoomSettingsSummaryPanel\s+from/.test(source), false,
+    "대기 페이지가 읽기 전용 설정 패널을 import한다")
+  assert.equal(/<RoomSettingsSummaryPanel/.test(source), false,
+    "대기 페이지가 읽기 전용 설정 패널을 그린다")
+  assert.equal(/aria-label="현재 방 설정"/.test(source), false,
+    "대기 페이지에 현재 방 설정 UI가 남아 있다")
 })

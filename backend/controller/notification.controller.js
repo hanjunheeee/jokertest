@@ -35,3 +35,14 @@ exports.markNotificationRead = async (req, res, next) => {
         next(error);
     }
 };
+
+/** 읽음 확정된 알림을 이 계정에서 전부 삭제한다 — 미확인 알림은 남긴다. */
+exports.deleteReadNotifications = async (req, res, next) => {
+    try {
+        const result = await notificationService.deleteReadForUser(req.user.uuid);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};

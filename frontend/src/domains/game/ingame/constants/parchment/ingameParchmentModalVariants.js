@@ -148,6 +148,36 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
     focusConfirmOnMount: true,
   }),
+  // 매칭 대기 — 게임 시작 불가 안내(양피지 모달.png + 확인 버튼(수락 및 긍정).png).
+  gameStartBlocked: Object.freeze({
+    animation: "none",
+    backdropClass: "absolute inset-0 z-40 w-full cursor-default border-0 bg-black/70 p-0",
+    wrapClass:
+      "pointer-events-none absolute inset-0 z-[41] flex items-center justify-center overflow-hidden px-[clamp(0.5rem,3vw,2rem)] py-[clamp(0.5rem,3vh,2rem)]",
+    panelClass: "pointer-events-auto max-w-full",
+    dialogLabel: "게임 시작 불가",
+    backdropLabel: "게임 시작 불가 안내 닫기",
+    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
+    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentContentClass: "",
+    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
+    focusConfirmOnMount: true,
+  }),
+  // F-33 E-2: 마이페이지 이모티콘 팔레트 저장 성공 안내 — 양피지 모달.png 공용 셸.
+  emoticonPaletteSave: Object.freeze({
+    animation: "none",
+    backdropClass: "fixed inset-0 z-[80] w-full cursor-default border-0 bg-black/70 p-0",
+    wrapClass:
+      "pointer-events-none fixed inset-0 z-[81] flex items-center justify-center overflow-hidden px-[clamp(0.5rem,3vw,2rem)] py-[clamp(0.5rem,3vh,2rem)]",
+    panelClass: "pointer-events-auto max-w-full",
+    dialogLabel: "팔레트 저장",
+    backdropLabel: "팔레트 저장 안내 닫기",
+    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
+    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentContentClass: "",
+    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
+    focusConfirmOnMount: true,
+  }),
 })
 
 /** @param {keyof typeof INGAME_PARCHMENT_MODAL_VARIANTS} variantKey */

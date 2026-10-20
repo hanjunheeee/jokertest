@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { Op } = require('sequelize');
 
 const { createError } = require('../utils/appError');
 
@@ -358,6 +359,27 @@ const markRead = async (userId, notificationId) => {
     });
 };
 
+/**
+ * 계정의 읽음 확정(read_at)된 알림을 전부 삭제한다.
+ *
+ * 미확인 알림은 건드리지 않는다 — 다른 계정의 행은 user_id 조건으로 애초에 대상이 아니다(A-05).
+ */
+const deleteReadForUser = async (userId) => {
+    if (typeof userId !== 'string' || userId.length === 0) {
+        throw createError('알림 대상 계정이 없습니다.', 500);
+    }
+
+    const { db } = deps;
+    const deletedCount = await db.Notification.destroy({
+        where: {
+            user_id: userId,
+            read_at: { [Op.ne]: null },
+        },
+    });
+
+    return { deletedCount };
+};
+
 module.exports = {
     NOTIFICATION_TYPES,
     SYSTEM_WELCOME,
@@ -373,6 +395,7 @@ module.exports = {
     ensureSystemWelcome,
     listForUser,
     markRead,
+    deleteReadForUser,
     // 테스트 전용 — achievementService.__internal.__setDepsForTests와 같은 관례다.
     // 런타임 코드에서는 참조하지 않는다.
     __internal: {

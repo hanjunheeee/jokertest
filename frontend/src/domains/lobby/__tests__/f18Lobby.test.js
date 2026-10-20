@@ -7,8 +7,8 @@ import React from "react"
 // F-18 로비 통합 시험 (AC-01 · AC-02 · AC-03 · AC-04 · AC-05).
 //
 // 실제 LobbyPage를 그대로 마운트해서 하나의 렌더 경로에서 확인한다 — 로비 오른쪽 큰
-// Discord 버튼의 제거, 왼쪽 메뉴의 고객센터 유지, 지원 링크 미설정 계약, 프로필 수정 모달
-// 진입·저장·즉시 반영, 명예의 전당 진입 제거. 화면 조각을 따로 만들어 흉내내지 않는다.
+// Discord 버튼의 제거, 왼쪽 메뉴의 고객센터 유지, 지원 링크 미설정 계약, 명예의 전당 진입
+// 제거. 화면 조각을 따로 만들어 흉내내지 않는다.
 //
 // AC-03 주의: 이 저장소에는 아직 실제 Discord 지원 URL(VITE_DISCORD_SUPPORT_URL)이 제공되지
 // 않았다. 그래서 env 경계는 **미설정(undefined)** 그대로 두고, "미설정이면 외부 목적지를
@@ -89,11 +89,6 @@ const { useEconomyStore } = await import("../../economy/store/economy.store.js")
 const { useUserProfileStore } = await import("../../user/store/user.store.js")
 const { useProfileCustomizationStore } = await import("../../user/store/profileCustomization.store.js")
 const { publicAsset } = await import("../../../shared/utils/publicAsset.js")
-const {
-  profileBorderAssetSrcForItemId,
-  profilePhotoAssetSrcForItemId,
-} = await import("../../user/constants/profileEditLayout.js")
-
 const USER_UUID = "user-1"
 
 const PHOTO_CURRENT = "player-profile-금빛가면"
@@ -187,7 +182,7 @@ async function mountLobby() {
       ),
     )
   })
-  // 프로필 조회가 끝나야 배너·프로필 수정 버튼이 실제로 드러난다.
+  // 프로필 조회가 끝나야 배너가 실제로 드러난다.
   await waitFor(() => assert.ok(view.queryByRole("button", { name: "마이페이지" })))
   return view
 }
@@ -307,119 +302,10 @@ test("F-30 AC-04: 실제 로비 배너에 닉네임이 그려지고 명성 이�
   assert.equal(banner.textContent.includes("10"), false, "로비 배너에 명성 값이 남아 있다")
 })
 
-test("F-18 AC-04: 로비의 프로필 수정 버튼은 마이페이지와 같은 프로필 편집 모달을 열고, 내부 이동을 일으키지 않는다", async () => {
+test("F-18: 로비 배너 아래 프로필 수정 버튼은 더 이상 렌더되지 않는다", async () => {
   resetAll()
   const view = await mountLobby()
 
-  const editButton = view.getByRole("button", { name: "프로필 수정" })
-  await act(async () => { fireEvent.click(editButton) })
-
-  const dialogs = view.getAllByRole("dialog")
-  assert.equal(dialogs.length, 1, "프로필 편집 모달은 하나만 열려야 합니다.")
-  assert.equal(dialogs[0].getAttribute("aria-label"), "프로필 수정")
-  assert.equal(currentPath, "/lobby", "모달은 페이지 이동 없이 로비 위에 열립니다.")
-})
-
-test("F-18 AC-04: 사진을 바꾸고 확인하면 실제 POST가 한 번만 나가고(중복 확인 방지), expectedRevision이 함께 실린다", async () => {
-  resetAll()
-  const view = await mountLobby()
-  await waitFor(() => assert.equal(useEconomyStore.getState().status, "ready"))
-  assert.equal(useEconomyStore.getState().loadout.revision, "rev-1", "저장 전에 서버 revision을 확보해야 한다")
-
-  // 저장 응답을 붙잡아 두어 "진행 중 연속 클릭"을 재현한다.
-  let resolvePost
-  postImpl = async (endpoint, body) => {
-    assert.equal(endpoint, "/economy/equip-profile")
-    equipProfileCalls.push(body)
-    return new Promise((resolve) => { resolvePost = resolve })
-  }
-
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: "프로필 수정" })) })
-
-  const bannerButton = view.getByRole("button", { name: "마이페이지" })
-  const bannerSrcBefore = Array.from(bannerButton.querySelectorAll("img")).map((img) => img.getAttribute("src"))
-
-  const photoGrid = view.getByRole("region", { name: "프로필 이미지 목록" })
-  const photoOptions = within(photoGrid).getAllByRole("button")
-  assert.equal(photoOptions.length, 2, "보유한 사진 목록이 서버 entitlements에서 유도되어야 한다")
-  assert.equal(photoOptions[0].getAttribute("aria-pressed"), "true")
-
-  await act(async () => { fireEvent.click(photoOptions[1]) })
-
-  assert.equal(photoOptions[1].getAttribute("aria-pressed"), "true", "선택은 초안(미리보기)에만 반영된다")
-  assert.deepEqual(
-    Array.from(bannerButton.querySelectorAll("img")).map((img) => img.getAttribute("src")),
-    bannerSrcBefore,
-    "저장 전에는 배너의 실제 장착 사진이 바뀌면 안 된다",
-  )
-
-  const confirmButton = view.getByRole("button", { name: "수정하기" })
-  await act(async () => { fireEvent.click(confirmButton) })
-  await act(async () => { fireEvent.click(confirmButton) })
-
-  assert.equal(equipProfileCalls.length, 1, "진행 중 연속 클릭은 실제 전송을 한 번만 만들어야 한다")
-  assert.equal(equipProfileCalls[0].photoItemId, PHOTO_NEXT)
-  assert.equal(equipProfileCalls[0].borderItemId, undefined, "바뀌지 않은 슬롯은 요청에 싣지 않는다")
-  assert.equal(equipProfileCalls[0].expectedRevision, "rev-1", "서버 CAS용 revision을 그대로 되돌려 보내야 한다")
-
-  await act(async () => {
-    resolvePost({ loadout: serverLoadout({ selectedProfilePhotoId: PHOTO_NEXT, revision: "rev-2" }) })
-  })
-
-  // 성공하면 모달이 닫히고, 배너의 사진이 서버 결과로 즉시 바뀐다.
-  await waitFor(() => assert.equal(view.queryAllByRole("dialog").length, 0))
-
-  const expectedPhotoSrc = publicAsset(profilePhotoAssetSrcForItemId(PHOTO_NEXT))
-  const expectedBorderSrc = publicAsset(profileBorderAssetSrcForItemId(BORDER_CURRENT))
-  await waitFor(() => {
-    const srcs = Array.from(
-      view.getByRole("button", { name: "마이페이지" }).querySelectorAll("img"),
-    ).map((img) => img.getAttribute("src"))
-    assert.ok(srcs.includes(expectedPhotoSrc), "저장한 사진이 로비 배너에 즉시 반영되어야 한다")
-    assert.ok(srcs.includes(expectedBorderSrc), "바꾸지 않은 테두리는 그대로 유지되어야 한다")
-  })
-})
-
-test("F-18 AC-04: 아무것도 바꾸지 않고 확인하면 서버 저장 요청을 만들지 않는다", async () => {
-  resetAll()
-  const view = await mountLobby()
-  await waitFor(() => assert.equal(useEconomyStore.getState().status, "ready"))
-
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: "프로필 수정" })) })
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: "수정하기" })) })
-
-  assert.equal(equipProfileCalls.length, 0, "바뀐 슬롯이 없으면 불필요한 요청을 만들지 않는다")
-  await waitFor(() => assert.equal(view.queryAllByRole("dialog").length, 0))
-})
-
-test("F-18 AC-04: 서버가 명시적으로 거부하면 모달과 초안을 유지하고 배너의 실제 장착 사진도 바뀌지 않는다", async () => {
-  resetAll()
-  const view = await mountLobby()
-  await waitFor(() => assert.equal(useEconomyStore.getState().status, "ready"))
-
-  postImpl = async (endpoint, body) => {
-    equipProfileCalls.push(body)
-    throw Object.assign(new Error("보유하지 않은 상품입니다."), { code: "ITEM_NOT_OWNED" })
-  }
-
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: "프로필 수정" })) })
-
-  const bannerButton = view.getByRole("button", { name: "마이페이지" })
-  const bannerSrcBefore = Array.from(bannerButton.querySelectorAll("img")).map((img) => img.getAttribute("src"))
-
-  const photoGrid = view.getByRole("region", { name: "프로필 이미지 목록" })
-  const photoOptions = within(photoGrid).getAllByRole("button")
-  await act(async () => { fireEvent.click(photoOptions[1]) })
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: "수정하기" })) })
-
-  assert.equal(equipProfileCalls.length, 1)
-  assert.equal(view.queryAllByRole("dialog").length, 1, "거부된 저장은 편집기를 닫지 않는다(재시도 경로 유지)")
-  assert.ok(view.queryByText("보유하지 않은 상품입니다."), "거부 사유가 화면에 드러나야 한다")
-  assert.deepEqual(
-    Array.from(
-      view.getByRole("button", { name: "마이페이지" }).querySelectorAll("img"),
-    ).map((img) => img.getAttribute("src")),
-    bannerSrcBefore,
-    "거부된 저장은 실제 장착 상태를 바꾸지 않는다",
-  )
+  assert.equal(view.queryAllByRole("button", { name: "프로필 수정" }).length, 0)
+  assert.equal(view.queryAllByRole("dialog").length, 0)
 })

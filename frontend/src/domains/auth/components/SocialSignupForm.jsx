@@ -4,6 +4,14 @@ import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import AuthInputSlot, { MailIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
 import SignupEmailVerification from "@/domains/auth/components/SignupEmailVerification.jsx"
 import { useSocialSignup } from "@/domains/auth/hooks/useSocialSignup.js"
+import {
+  SIGNUP_FORM_BODY_CLASS,
+  SIGNUP_HEADER_TEXT_CLASS,
+  SIGNUP_HINT_TEXT_CLASS,
+  SIGNUP_SUBMIT_BUTTON_CLASS,
+  SIGNUP_SUBMIT_BUTTON_WRAP_CLASS,
+} from "@/domains/auth/constants/signupLayoutStyle.js"
+import SignupScrollArea from "@/domains/auth/components/SignupScrollArea.jsx"
 
 // 닉네임 입력칸 앞에 보여줄 사용자 아이콘입니다(SignupForm/SignupFields.jsx와 같은 모양).
 function UserIcon() {
@@ -107,16 +115,16 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
   const isIntentLoading = intentStatus === "loading"
 
   return (
-    <>
-      <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
+    <div className={SIGNUP_FORM_BODY_CLASS}>
+      <header className="shrink-0 text-center">
+        <p className={SIGNUP_HEADER_TEXT_CLASS}>
           {emailVerificationRequired
             ? "소셜 계정으로 처음 오셨네요. 이메일 인증과 닉네임·생년월일이 필요해요"
             : "소셜 계정으로 처음 오셨네요. 닉네임과 생년월일을 알려주세요"}
         </p>
       </header>
 
-      <div className="mt-4 flex max-h-[70vh] flex-1 flex-col gap-2 overflow-y-auto">
+      <SignupScrollArea>
         {isIntentLoading && (
           <p data-testid="social-intent-loading" className="px-2 text-xs text-white/70">
             가입 정보를 불러오는 중입니다...
@@ -135,6 +143,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
               onChange={(e) => { if (!isSubmitting) handleEmailChange(e) }}
               leadingIcon={<MailIcon />}
               placeholder="이메일을 입력하세요"
+              compact
             />
             <SignupEmailVerification
               emailVerification={emailVerification}
@@ -152,6 +161,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
           onChange={(e) => { if (!isSubmitting) setNickname(e.target.value) }}
           leadingIcon={<UserIcon />}
           placeholder="사용할 닉네임을 입력하세요 (2~8자, 한글/영문/숫자)"
+          compact
         />
 
         <AuthInputSlot
@@ -161,27 +171,30 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
           onChange={(e) => { if (!isSubmitting) setBirthDate(e.target.value) }}
           leadingIcon={<CalendarIcon />}
           placeholder="생년월일을 선택하세요"
+          compact
         />
 
         {emailVerificationRequired && !canSubmit && !isSubmitting && (
-          <p className="px-2 text-xs text-white/60">이메일 인증을 완료해야 가입할 수 있습니다.</p>
+          <p className={SIGNUP_HINT_TEXT_CLASS}>이메일 인증을 완료해야 가입할 수 있습니다.</p>
         )}
 
-        {visibleError && <p role="alert" className="px-2 text-xs text-red-400">{visibleError}</p>}
+        {visibleError && <p role="alert" className="px-2 text-[11px] text-red-400">{visibleError}</p>}
 
-        <AuthImageButton
-          type="button"
-          onClick={handleSubmit}
-          disabled={!canSubmit}
-          src={LOGIN_ASSETS.signupButton}
-          label={isSubmitting ? "처리 중..." : "가입 완료"}
-          className="mt-1 cursor-pointer"
-        />
+        <div className={SIGNUP_SUBMIT_BUTTON_WRAP_CLASS}>
+          <AuthImageButton
+            type="button"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            src={LOGIN_ASSETS.signupButton}
+            label={isSubmitting ? "처리 중..." : "가입 완료"}
+            className={SIGNUP_SUBMIT_BUTTON_CLASS}
+          />
+        </div>
 
         <button type="button" onClick={onCancel} className="auth-text-link mt-2 text-center">
           취소하고 로그인 화면으로
         </button>
-      </div>
-    </>
+      </SignupScrollArea>
+    </div>
   )
 }

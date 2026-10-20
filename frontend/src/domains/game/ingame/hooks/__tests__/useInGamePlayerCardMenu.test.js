@@ -78,9 +78,9 @@ const {
   buildInGamePlayerCardMenuItems,
   INGAME_CARD_MENU_ITEM_KINDS,
   INGAME_CARD_MENU_DAY_VOTE_LABEL,
+  INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL,
+  INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL,
   INGAME_CARD_MENU_DISABLED_REASONS,
-  INGAME_CARD_MENU_KICK_LABEL,
-  INGAME_CARD_MENU_KICK_SENDING_REASON,
 } = await import("../useInGamePlayerCardMenu.js")
 const { default: InGamePlayerBoard } = await import("../../components/board/InGamePlayerBoard.jsx")
 const { INGAME_PLAYER_CARD_MENU_ATTR } = await import("../../components/board/InGamePlayerCardMenu.jsx")
@@ -112,10 +112,12 @@ function makeActionContext(overrides = {}) {
     dayVoteControlsEnabled: false,
     dayVoteStatus: "idle",
     dayVoteHasSubmitted: false,
+    dayVoteLastSubmittedTargetId: null,
     selfAliveForControls: true,
     nightActionTargets: [],
     nightActionsLocked: true,
     nightActionStatus: "idle",
+    nightActionLastSubmittedTargetId: null,
     nightActionLabel: null,
     isNightTurnActor: false,
     nightTurnRole: null,
@@ -127,7 +129,9 @@ function makeActionContext(overrides = {}) {
     setSelectedDayVoteTargetId() {},
     setSelectedNightTargetId() {},
     submitDayVote() {},
+    abstainDayVote() {},
     submitNightAction() {},
+    skipNightAction() {},
     submitTribunalVote() {},
     ...overrides,
   }
@@ -182,9 +186,13 @@ function tribunalContext(overrides = {}) {
   })
 }
 
-test("AC-01: DAY_DISCUSSION에는 카드 메뉴 항목이 아예 없고, DAY_VOTE에서만 투표 항목이 뜬다", () => {
+test("AC-01: DAY_DISCUSSION에는 비활성 투표 항목만 뜨고, DAY_VOTE에서만 투표가 활성화된다", () => {
   const discussion = renderMenuHookWithContext(dayVoteContext({ dayPhase: "DAY_DISCUSSION" }))
-  assert.deepEqual(discussion.result.current.getItems("u2"), [])
+  const discussionItems = discussion.result.current.getItems("u2")
+  assert.equal(discussionItems.length, 1)
+  assert.equal(discussionItems[0].kind, INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE)
+  assert.equal(discussionItems[0].enabled, false)
+  assert.equal(discussionItems[0].disabledReason, "토론 중입니다. 투표는 아직 열리지 않았습니다.")
   discussion.unmount()
 
   const vote = renderMenuHookWithContext(dayVoteContext())
@@ -239,11 +247,84 @@ test("AC-01: 전송 중에는 '전송 중입니다'로 잠기고, 그 외 게이
   gated.unmount()
 })
 
-test("AC-01: 이미 투표했어도(dayVoteHasSubmitted) 같은 라운드의 재투표 항목은 계속 활성이다", () => {
+test("AC-01: 이미 투표한 대상 카드에는 투표취소만, 다른 카드에는 투표하기만 뜬다", () => {
   const rendered = renderMenuHookWithContext(
-    dayVoteContext({ dayVoteHasSubmitted: true, selectedDayVoteTargetId: "u3" }),
+    dayVoteContext({
+      dayVoteHasSubmitted: true,
+      dayVoteLastSubmittedTargetId: "u3",
+      selectedDayVoteTargetId: "u3",
+    }),
   )
-  assert.equal(rendered.result.current.getItems("u2")[0].enabled, true)
+  const otherTarget = rendered.result.current.getItems("u2")
+  assert.equal(otherTarget.length, 1)
+  assert.equal(otherTarget[0].kind, INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE)
+  assert.equal(otherTarget[0].label, INGAME_CARD_MENU_DAY_VOTE_LABEL)
+  assert.equal(otherTarget[0].enabled, true)
+
+  const votedTarget = rendered.result.current.getItems("u3")
+  assert.equal(votedTarget.length, 1)
+  assert.equal(votedTarget[0].kind, INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE_CANCEL)
+  assert.equal(votedTarget[0].enabled, true)
+  rendered.unmount()
+})
+
+test("AC-02: 투표취소 항목은 cast_day_vote targetId:null을 정확히 한 번 보낸다", async () => {
+  const transport = createControlledSocket()
+  setSocket(transport.socket)
+  seedSession({ phase: "DAY", dayPhase: "DAY_VOTE" })
+
+  const view = mountBoard()
+  openCardMenu(view.container, "B")
+  await act(async () => { fireEvent.click(menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)) })
+  await act(async () => {
+    transport.settleAll({ ok: true })
+    useInGameStore.setState((s) => ({
+      state: {
+        ...s.state,
+        self: {
+          ...s.state.self,
+          hasSubmittedDayVote: true,
+          dayVoteTargetUuid: "u2",
+          dayVoteRound: 1,
+        },
+      },
+    }))
+  })
+
+  openCardMenu(view.container, "B")
+  assert.equal(
+    menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL),
+    null,
+    "투표한 대상 카드에 투표하기가 함께 뜨면 안 된다",
+  )
+  const cancelItem = menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL)
+  assert.notEqual(cancelItem, null, "투표한 대상 카드에 투표취소만 있어야 한다")
+
+  await act(async () => { fireEvent.click(cancelItem) })
+  const sent = transport.sentFor("cast_day_vote")
+  assert.equal(sent.length, 2, "투표취소가 정확히 한 번 더 나가지 않았다")
+  assert.deepEqual(sent[1].payload, { gameId: GAME_ID, dayIndex: 1, targetId: null })
+  view.unmount()
+})
+
+test("AC-01: 이미 밤 행동한 대상 카드에는 취소하기만, 다른 카드에는 직업 행동만 뜬다", () => {
+  const rendered = renderMenuHookWithContext(
+    nightContext({
+      nightActionLastSubmittedTargetId: "u3",
+      selectedNightTargetId: "u3",
+    }),
+  )
+  const otherTarget = rendered.result.current.getItems("u2")
+  assert.equal(otherTarget.length, 1)
+  assert.equal(otherTarget[0].kind, INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION)
+  assert.equal(otherTarget[0].label, "암살")
+  assert.equal(otherTarget[0].enabled, true)
+
+  const actedTarget = rendered.result.current.getItems("u3")
+  assert.equal(actedTarget.length, 1)
+  assert.equal(actedTarget[0].kind, INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL)
+  assert.equal(actedTarget[0].label, INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL)
+  assert.equal(actedTarget[0].enabled, true)
   rendered.unmount()
 })
 
@@ -459,6 +540,7 @@ function menuButton(container, label) {
 /** 실제 사용자가 하는 그대로 — 카드 위에서 mousedown → click 순서로 연다. */
 function openCardMenu(container, nickname) {
   const slot = slotOf(container, nickname)
+  if (menuIsOpen(container)) return slot
   act(() => {
     fireEvent.mouseDown(slot)
     fireEvent.click(slot)
@@ -499,7 +581,7 @@ test("AC-02: 낮 투표 항목을 실제로 클릭하면 선택값이 먼저 서
   await act(async () => { transport.settleAll({ ok: true }) })
 })
 
-test("AC-02: 같은 대상을 다시 골라도(선택값이 그대로여도) 제출이 정확히 1회 더 나간다", async () => {
+test("AC-02: 투표취소 뒤 같은 대상에 다시 투표하면 cast_day_vote가 정확히 1회 더 나간다", async () => {
   const transport = createControlledSocket()
   setSocket(transport.socket)
   seedSession({ phase: "DAY", dayPhase: "DAY_VOTE" })
@@ -507,14 +589,45 @@ test("AC-02: 같은 대상을 다시 골라도(선택값이 그대로여도) 제
   const view = mountBoard()
   openCardMenu(view.container, "B")
   await act(async () => { fireEvent.click(menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)) })
-  await act(async () => { transport.settleAll({ ok: true }) })
+  await act(async () => {
+    transport.settleAll({ ok: true })
+    useInGameStore.setState((s) => ({
+      state: {
+        ...s.state,
+        self: {
+          ...s.state.self,
+          hasSubmittedDayVote: true,
+          dayVoteTargetUuid: "u2",
+          dayVoteRound: 1,
+        },
+      },
+    }))
+  })
   assert.equal(transport.sentFor("cast_day_vote").length, 1)
+
+  openCardMenu(view.container, "B")
+  await act(async () => { fireEvent.click(menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL)) })
+  await act(async () => {
+    transport.settleAll({ ok: true })
+    useInGameStore.setState((s) => ({
+      state: {
+        ...s.state,
+        self: {
+          ...s.state.self,
+          hasSubmittedDayVote: true,
+          dayVoteTargetUuid: null,
+          dayVoteRound: 1,
+        },
+      },
+    }))
+  })
 
   openCardMenu(view.container, "B")
   await act(async () => { fireEvent.click(menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)) })
   const sent = transport.sentFor("cast_day_vote")
-  assert.equal(sent.length, 2, "같은 대상 재선택이 제출로 이어지지 않았다(선택값이 안 바뀌어 렌더가 없었다)")
-  assert.deepEqual(sent[1].payload, { gameId: GAME_ID, dayIndex: 1, targetId: "u2" })
+  assert.equal(sent.length, 3, "투표취소 뒤 같은 대상 재투표가 나가지 않았다")
+  assert.deepEqual(sent[1].payload, { gameId: GAME_ID, dayIndex: 1, targetId: null })
+  assert.deepEqual(sent[2].payload, { gameId: GAME_ID, dayIndex: 1, targetId: "u2" })
   await act(async () => { transport.settleAll({ ok: true }) })
 })
 
@@ -532,6 +645,28 @@ test("AC-02: 같은 버튼을 한 틱에 두 번 눌러도, StrictMode로 마운
   })
   assert.equal(transport.sentFor("cast_day_vote").length, 1, "연속 두 클릭이 두 번 제출됐다")
   await act(async () => { transport.settleAll({ ok: true }) })
+})
+
+test("AC-02: 취소하기 항목은 submit_night_action targetId:null을 정확히 한 번 보낸다", async () => {
+  const transport = createControlledSocket()
+  setSocket(transport.socket)
+  seedSession({ phase: "NIGHT", role: "JOKER", nightTurnRole: "JOKER" })
+
+  const view = mountBoard()
+  openCardMenu(view.container, "B")
+  await act(async () => { fireEvent.click(menuButton(view.container, "암살")) })
+  await act(async () => { transport.settleAll({ ok: true }) })
+
+  openCardMenu(view.container, "B")
+  assert.equal(menuButton(view.container, "암살"), null, "행동한 대상 카드에 직업 행동이 함께 뜨면 안 된다")
+  const cancelItem = menuButton(view.container, INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL)
+  assert.notEqual(cancelItem, null, "행동한 대상 카드에 취소하기만 있어야 한다")
+
+  await act(async () => { fireEvent.click(cancelItem) })
+  const sent = transport.sentFor("submit_night_action")
+  assert.equal(sent.length, 2, "취소하기가 정확히 한 번 더 나가지 않았다")
+  assert.deepEqual(sent[1].payload, { gameId: GAME_ID, targetId: null })
+  view.unmount()
 })
 
 test("AC-02: 밤 행동 항목은 submit_night_action을 1회 보내고, ACK 뒤 재제출이 다시 열린다", async () => {
@@ -556,7 +691,7 @@ test("AC-02: 밤 행동 항목은 submit_night_action을 1회 보내고, ACK 뒤
   await act(async () => { transport.settleAll({ ok: true }) })
 })
 
-test("AC-02: 밤 — ACK 뒤 같은 대상을 다시 골라도 같은 payload로 정확히 1회 더 나간다", async () => {
+test("AC-02: 밤 — 취소하기 뒤 같은 대상에 다시 행동하면 submit_night_action이 정확히 1회 더 나간다", async () => {
   const transport = createControlledSocket()
   setSocket(transport.socket)
   seedSession({ phase: "NIGHT", role: "JOKER", nightTurnRole: "JOKER" })
@@ -575,42 +710,47 @@ test("AC-02: 밤 — ACK 뒤 같은 대상을 다시 골라도 같은 payload로
   assert.equal(transport.sentFor("submit_night_action").length, 1,
     "전송 중 같은 대상 재클릭이 두 번째 제출을 보냈다")
 
-  // ACK로 status가 idle로 돌아오면 같은 대상 재제출이 다시 열린다 — 선택값이 그대로라
-  // setSelectedNightTargetId가 리렌더를 만들지 않는 경로인데도 정확히 1회가 더 나가야 한다.
   await act(async () => { transport.settleAll({ ok: true }) })
   openCardMenu(view.container, "B")
+  const cancelItem = menuButton(view.container, INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL)
+  assert.notEqual(cancelItem, null, "ACK 뒤 행동한 대상 카드에 취소하기가 떠야 한다")
+  await act(async () => { fireEvent.click(cancelItem) })
+  await act(async () => { transport.settleAll({ ok: true }) })
+
+  openCardMenu(view.container, "B")
   const reopenedItem = menuButton(view.container, "암살")
-  assert.equal(reopenedItem.disabled, false, "ACK 뒤에도 밤 항목이 잠겨 있다")
+  assert.notEqual(reopenedItem, null, "취소 뒤 같은 대상 카드에 직업 행동이 다시 떠야 한다")
+  assert.equal(reopenedItem.disabled, false, "취소 뒤에도 밤 항목이 잠겨 있다")
   await act(async () => { fireEvent.click(reopenedItem) })
 
   const sent = transport.sentFor("submit_night_action")
-  assert.equal(sent.length, 2, "ACK 뒤 같은 대상 재제출이 나가지 않았다")
+  assert.equal(sent.length, 3, "취소 뒤 같은 대상 재행동이 나가지 않았다")
   assert.deepEqual(sent[0].payload, { gameId: GAME_ID, targetId: "u2" })
-  assert.deepEqual(sent[1].payload, { gameId: GAME_ID, targetId: "u2" },
-    "재제출 payload가 첫 제출과 같은 대상이 아니다")
-  assert.equal(menuIsOpen(view.container), false, "재제출 뒤 메뉴가 닫히지 않았다")
+  assert.deepEqual(sent[1].payload, { gameId: GAME_ID, targetId: null })
+  assert.deepEqual(sent[2].payload, { gameId: GAME_ID, targetId: "u2" },
+    "재행동 payload가 첫 제출과 같은 대상이 아니다")
+  assert.equal(menuIsOpen(view.container), false, "재행동 뒤 메뉴가 닫히지 않았다")
   await act(async () => { transport.settleAll({ ok: true }) })
 })
 
-/**
- * 같은 카드를 한 번 더 누르는 것은 사용자가 흔히 하는 일이다. 그때 메뉴 세대만 오르고
- * 리렌더가 일어나지 않으면(열림 대상이 같아 setState가 튕긴다) 이미 그려져 있는 항목
- * handler가 전부 낡은 세대를 들고 남아, 메뉴는 떠 있는데 아무 항목도 듣지 않게 된다.
- */
-test("AC-02: 열려 있는 카드를 한 번 더 눌러도 메뉴 항목은 계속 살아 있어 제출이 1회 나간다", async () => {
+test("AC-03: 열려 있는 카드를 한 번 더 누르면 토글로 닫히고, 다시 열면 제출이 1회 나간다", async () => {
   const transport = createControlledSocket()
   setSocket(transport.socket)
   seedSession({ phase: "DAY", dayPhase: "DAY_VOTE" })
 
   const view = mountBoard()
-  openCardMenu(view.container, "B")
+  const slot = openCardMenu(view.container, "B")
   assert.equal(menuIsOpen(view.container), true, "전제: 메뉴가 열려 있어야 한다")
+
+  act(() => { fireEvent.click(slot) })
+  assert.equal(menuIsOpen(view.container), false, "같은 카드를 다시 눌렀을 때 메뉴가 닫혀야 한다")
+
   openCardMenu(view.container, "B")
-  assert.equal(menuIsOpen(view.container), true, "같은 카드를 다시 눌렀더니 메뉴가 닫혔다")
+  assert.equal(menuIsOpen(view.container), true, "다시 연 뒤 메뉴가 열려 있어야 한다")
 
   await act(async () => { fireEvent.click(menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)) })
   const sent = transport.sentFor("cast_day_vote")
-  assert.equal(sent.length, 1, "같은 카드를 다시 누른 뒤 메뉴 항목이 죽어 아무것도 제출되지 않았다")
+  assert.equal(sent.length, 1, "다시 연 뒤 메뉴 항목이 제출되지 않았다")
   assert.deepEqual(sent[0].payload, { gameId: GAME_ID, dayIndex: 1, targetId: "u2" })
   await act(async () => { transport.settleAll({ ok: true }) })
 })
@@ -943,209 +1083,8 @@ test("AC-03: 카드 우클릭(contextmenu)으로는 메뉴가 열리지 않는�
   assert.equal(menuIsOpen(view.container), false, "우클릭으로 메뉴가 열렸다")
 })
 
-// ═══════════════════════════════════════════════════════════════════════════
-// V-2(AC-03): 방장 추방 항목도 **같은** 최신값·세대·닫힘 계약을 지킨다
-//
-// 추방 항목이 여는 것은 확인 대화이지 전송이 아니다. 그래도 게이트를 제출과 같은 강도로
-// 두어야 한다 — 보관됐던 낡은 handler가 방장이 아니게 된 뒤에 대화를 열면, 화면이 사용자에게
-// 없는 권한을 약속하게 되기 때문이다. 확인 입구는 여기서 spy로 세고(실제 송신까지의 배선은
-// kickPlayerFlow.test.js가 생산 트리로 검증한다), 나머지는 전부 실제 훅·실제 store다.
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** 방장이 본인인 세션. hostUuid는 서버 state가 싣고 store 최상위 키로 들어간다. */
-function seedHostSession({ phase = "DAY", dayPhase = "DAY_DISCUSSION", hostUuid = SELF_UUID } = {}) {
-  act(() => {
-    useAuthStore.setState({
-      isLoggedIn: true, user: { uuid: SELF_UUID, nickname: "A" }, identityGeneration: 0,
-    })
-    useInGameStore.setState({ gameId: null, state: null, hostUuid: null, error: null, snapshotSeq: 0 })
-    useInGameStore.getState().setGamePayload({
-      gameId: GAME_ID,
-      state: {
-        id: GAME_ID,
-        phase,
-        dayIndex: 1,
-        dayPhase,
-        ...(hostUuid ? { hostUuid } : {}),
-        players: ROSTER.map((player) => ({ ...player, alive: true, isParticipating: true })),
-        self: {
-          uuid: SELF_UUID, nickname: "A", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false,
-        },
-      },
-    })
-  })
-}
-
-/** 생산 Provider와 **같은 모양**으로 병합한다(InGamePage.jsx의 InGameActionProvider 참고). */
-function KickHarness({ interactionBlocked = false, isSending = false, requestConfirmByUuid, children }) {
-  const actionPanelValue = useInGameActionPanel({ interactionBlocked })
-  const hostUuid = useInGameStore((s) => s.hostUuid ?? null)
-  const value = { ...actionPanelValue, hostUuid, isSending, requestConfirmByUuid }
-  return React.createElement(InGameActionContext.Provider, { value }, children)
-}
-
-/**
- * 실제 훅을 띄우고 대상 카드의 **추방 onSelect를 보관**해 돌려준다. 보관 시점에는 활성이어야
- * 한다 — 그러지 않으면 아래 "0회" 단언들이 엉뚱한 이유로 통과한다.
- */
-function mountKickMenu({ interactionBlocked = false, isSending = false } = {}) {
-  const calls = []
-  const requestConfirmByUuid = (uuid) => { calls.push(uuid) }
-  let menuApi = null
-  function Probe() {
-    menuApi = useInGamePlayerCardMenu()
-    return null
-  }
-  let view
-  act(() => {
-    view = render(React.createElement(
-      InGamePlayerSessionProvider,
-      null,
-      React.createElement(KickHarness, { interactionBlocked, isSending, requestConfirmByUuid },
-        React.createElement(Probe)),
-    ))
-  })
-  const rerender = (nextProps) => act(() => {
-    view.rerender(React.createElement(
-      InGamePlayerSessionProvider,
-      null,
-      React.createElement(KickHarness, {
-        interactionBlocked, isSending, requestConfirmByUuid, ...nextProps,
-      }, React.createElement(Probe)),
-    ))
-  })
-  return { view, calls, rerender, api: () => menuApi }
-}
-
-function captureKickHandler(harness, targetId = "u2") {
-  act(() => harness.api().openMenu(targetId))
-  assert.equal(harness.api().openPlayerId, targetId, "전제: 방장 카드 메뉴가 열려야 한다")
-  const item = harness.api().getItems(targetId).find((entry) => entry.label === INGAME_CARD_MENU_KICK_LABEL)
-  assert.notEqual(item, undefined, "전제: 방장에게 추방 항목이 있어야 한다")
-  assert.equal(item.enabled, true, "전제: 캡처 시점에는 추방 항목이 활성이어야 한다")
-  return item.onSelect
-}
-
-test("V-2(AC-03): 방장·타인·비전송이면 추방 확인을 정확히 1회 열고, 연속 두 번 눌러도 1회다", () => {
-  setSocket(createControlledSocket().socket)
-  seedHostSession()
-  const harness = mountKickMenu()
-  const handler = captureKickHandler(harness)
-
-  act(() => { handler() })
-  assert.deepEqual(harness.calls, ["u2"], "추방 확인이 정확히 1회 열리지 않았다")
-
-  // 같은 handler를 한 번 더 — 첫 호출이 메뉴를 닫아 세대를 올렸으므로 막힌다.
-  act(() => { handler() })
-  assert.deepEqual(harness.calls, ["u2"], "연속 클릭이 확인을 두 번 열었다")
-  assert.equal(harness.api().openPlayerId, null, "추방 확인을 연 뒤 메뉴가 닫히지 않았다")
-  harness.view.unmount()
-})
-
-test("V-2(AC-03): 본인 카드에는 추방 항목 자체가 없다", () => {
-  setSocket(createControlledSocket().socket)
-  seedHostSession()
-  const harness = mountKickMenu()
-
-  const selfItems = harness.api().getItems(SELF_UUID)
-  assert.equal(selfItems.find((entry) => entry.label === INGAME_CARD_MENU_KICK_LABEL), undefined,
-    "본인 카드에 추방 항목이 붙었다")
-  harness.view.unmount()
-})
-
-test("V-2(AC-03): 닫힘·다른 카드 전환 뒤 보관한 추방 handler는 확인을 0회 연다", () => {
-  for (const [label, disturb] of [
-    ["closeMenu", (harness) => act(() => harness.api().closeMenu())],
-    ["다른 카드 openMenu", (harness) => act(() => harness.api().openMenu("u3"))],
-  ]) {
-    setSocket(createControlledSocket().socket)
-    seedHostSession()
-    const harness = mountKickMenu()
-    const handler = captureKickHandler(harness)
-
-    disturb(harness)
-    act(() => { handler() })
-    assert.deepEqual(harness.calls, [], `${label} 뒤 보관된 handler가 확인을 열었다`)
-    harness.view.unmount()
-    cleanup()
-    useInGameStore.getState().clearGame()
-  }
-})
-
-test("V-2(AC-03): 단계가 바뀌면 리렌더 이전에 불려도 보관한 추방 handler가 0회다", () => {
-  setSocket(createControlledSocket().socket)
-  seedHostSession({ phase: "DAY", dayPhase: "DAY_DISCUSSION" })
-  const harness = mountKickMenu()
-  const handler = captureKickHandler(harness)
-
-  // act로 감싸지 않는다 — React가 아직 이 훅을 다시 그리지 않은 구간을 만들기 위해서다.
-  // 그 구간에도 runKick은 store를 **직접** 다시 읽어 범위 불일치를 잡아야 한다.
-  useInGameStore.setState((s) => ({ state: { ...s.state, dayPhase: "DAY_VOTE" } }))
-  act(() => { handler() })
-  assert.deepEqual(harness.calls, [], "단계가 바뀐 뒤 보관된 handler가 확인을 열었다")
-  harness.view.unmount()
-})
-
-test("V-2(AC-03): 조작 차단·게임 종료에서는 보관한 추방 handler가 0회다", () => {
-  for (const [label, next] of [
-    ["조작 차단", { interactionBlocked: true }],
-    ["게임 종료", null],
-  ]) {
-    setSocket(createControlledSocket().socket)
-    seedHostSession()
-    const harness = mountKickMenu()
-    const handler = captureKickHandler(harness)
-
-    if (next) harness.rerender(next)
-    else act(() => { useInGameStore.setState((s) => ({ state: { ...s.state, phase: "ENDED" } })) })
-
-    act(() => { handler() })
-    assert.deepEqual(harness.calls, [], `${label} 뒤 보관된 handler가 확인을 열었다`)
-    harness.view.unmount()
-    cleanup()
-    useInGameStore.getState().clearGame()
-  }
-})
-
-test("V-2(AC-03): 언마운트 뒤 보관한 추방 handler는 0회다", () => {
-  setSocket(createControlledSocket().socket)
-  seedHostSession()
-  const harness = mountKickMenu()
-  const handler = captureKickHandler(harness)
-
-  harness.view.unmount()
-  act(() => { handler() })
-  assert.deepEqual(harness.calls, [], "언마운트 뒤 보관된 handler가 확인을 열었다")
-})
-
-test("V-2(AC-03): 단계·세대는 그대로인데 방장 자격만 사라지면 보관한 추방 handler가 0회다", () => {
-  setSocket(createControlledSocket().socket)
-  seedHostSession()
-  const harness = mountKickMenu()
-  const handler = captureKickHandler(harness)
-
-  // 방장 축은 메뉴의 닫힘 범위(9축)에 없다 — 메뉴는 열린 채, 세대도 그대로다.
-  useInGameStore.setState({ hostUuid: "u3" })
-  assert.equal(harness.api().openPlayerId, "u2",
-    "전제: 방장 축만 바뀌었으므로 메뉴는 열린 채여야 한다")
-
-  act(() => { handler() })
-  assert.deepEqual(harness.calls, [], "방장이 아니게 된 뒤 보관된 handler가 확인을 열었다")
-  harness.view.unmount()
-})
-
-test("V-2(AC-03): 이미 전송 중이면 항목이 잠기고 보관한 추방 handler도 0회다", () => {
-  setSocket(createControlledSocket().socket)
-  seedHostSession()
-  const harness = mountKickMenu()
-  const handler = captureKickHandler(harness)
-
-  harness.rerender({ isSending: true })
-  const item = harness.api().getItems("u2").find((entry) => entry.label === INGAME_CARD_MENU_KICK_LABEL)
-  assert.equal(item.enabled, false, "전송 중인데 추방 항목이 열려 있다")
-  assert.equal(item.disabledReason, INGAME_CARD_MENU_KICK_SENDING_REASON)
-
-  act(() => { handler() })
-  assert.deepEqual(harness.calls, [], "전송 중인데 보관된 handler가 확인을 열었다")
-  harness.view.unmount()
+test("V-2(AC-03): 방장이어도 카드 행동 오버레이에 추방 항목은 없다(설정 → 방관리만)", () => {
+  const ctx = dayVoteContext({ hostUuid: SELF_UUID })
+  const items = buildInGamePlayerCardMenuItems(ctx, "u2", SELF_UUID)
+  assert.deepEqual(items.map((entry) => entry.kind), [INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE])
 })

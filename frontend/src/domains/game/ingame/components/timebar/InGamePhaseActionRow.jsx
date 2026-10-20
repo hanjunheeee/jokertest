@@ -13,7 +13,8 @@ import {
  * V-2: 제어 패널이 사라지면서 갈 곳을 잃은 **대상 없는 행동** 버튼들의 새 자리.
  *
  * 대상을 고르는 행동(낮 투표·밤 행동·재판 표)은 전부 플레이어 카드 좌클릭 메뉴가 맡는다 —
- * 여기 남는 것은 대상이 필요 없는 것뿐이다(준비·기권·집계·판정·건너뛰기·밤 종료).
+ * 여기 남는 것은 대상이 필요 없는 것뿐이다(준비·집계·판정·밤 종료). 기권·건너뛰기·투표
+ * 현황은 InGameCornerActionPanel(화면 우측 하단)이 맡는다.
  *
  * 값을 props로 받지 않고 InGameActionContext를 직접 읽는다. 시간바는 조작 훅과 아무 관계가
  * 없는 표시 전용 컴포넌트라, 그 사이로 열 몇 개의 값을 끼워 흘리면 시간바가 조작 계약을
@@ -63,12 +64,6 @@ function buildPhaseActions(ctx) {
 
   if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE") {
     actions.push({
-      action: INGAME_PHASE_ACTIONS.DAY_VOTE_ABSTAIN,
-      label: "기권",
-      enabled: Boolean(ctx.dayVoteControlsEnabled) && ctx.dayVoteStatus !== "submitting",
-      onClick: ctx.abstainDayVote,
-    })
-    actions.push({
       action: INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE,
       label: ctx.dayVoteResolveStatus === "resolving"
         ? "집계 중..."
@@ -96,12 +91,6 @@ function buildPhaseActions(ctx) {
 
   // 내 역할 턴이 아니면 밤 버튼을 아예 그리지 않는다(잠긴 버튼조차 보이지 않는다).
   if (phase === "NIGHT" && ctx.isNightTurnActor) {
-    actions.push({
-      action: INGAME_PHASE_ACTIONS.NIGHT_SKIP,
-      label: "건너뛰기",
-      enabled: ctx.nightActionsLocked !== true && ctx.nightActionStatus !== "submitting",
-      onClick: ctx.skipNightAction,
-    })
     actions.push({
       action: INGAME_PHASE_ACTIONS.NIGHT_RESOLVE,
       label: ctx.resolveNightStatus === "resolving"

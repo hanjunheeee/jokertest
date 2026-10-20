@@ -2,6 +2,7 @@ import { INGAME_CONTROLS_ASSETS } from "../../constants/controls/ingameControlsA
 import {
   INGAME_CONTROL_BTN_CLASS,
   INGAME_CONTROL_BTN_IMG_CLASS,
+  INGAME_ROLE_REVEAL_BTN_IMG_CLASS,
   INGAME_TOP_CONTROLS_POSITION_CLASS,
 } from "../../constants/controls/ingameControlsLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -16,6 +17,7 @@ function ControlButton({
   // onClick: 버튼 클릭 시 호출되는 콜백
   onClick,
   sfxOwner,
+  imgClassName = INGAME_CONTROL_BTN_IMG_CLASS,
 }) {
   return (
     <button
@@ -26,13 +28,13 @@ function ControlButton({
       className={INGAME_CONTROL_BTN_CLASS}
       style={{ outline: "none" }}
     >
-      <PublicAsset src={src} alt="" className={INGAME_CONTROL_BTN_IMG_CLASS} />
+      <PublicAsset src={src} alt="" className={imgClassName} />
     </button>
   )
 }
 
-/** 자기 역할 공개 버튼 아이콘. 실제로 존재하는 자산을 그대로 재사용한다(복제·이동 없음). */
-export const INGAME_ROLE_REVEAL_BUTTON_SRC = "/button/반전표시 버튼.png".normalize("NFD")
+/** 자기 역할 공개(직업 모달) 버튼 아이콘 */
+export const INGAME_ROLE_REVEAL_BUTTON_SRC = "/button/직업모달 표시버튼2.png".normalize("NFD")
 
 export const INGAME_ROLE_REVEAL_BUTTON_LABEL = "내 역할 보기"
 
@@ -74,6 +76,7 @@ export default function InGameTopControls({
         <ControlButton
           ariaLabel={INGAME_ROLE_REVEAL_BUTTON_LABEL}
           src={INGAME_ROLE_REVEAL_BUTTON_SRC}
+          imgClassName={INGAME_ROLE_REVEAL_BTN_IMG_CLASS}
           onClick={onOpenRoleReveal}
         />
       ) : null}

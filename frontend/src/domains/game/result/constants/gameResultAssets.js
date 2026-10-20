@@ -17,6 +17,8 @@ export const GAME_RESULT_ASSETS = {
     "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(베이스).png".normalize("NFD"),
   /** 로비 복귀 버튼 — 방 삭제/초대 취소와 같은 "부정·이탈" 계열 빨간 버튼 에셋 */
   lobbyButton: "/button/버튼(취소 및 부정).png".normalize("NFD"),
+  /** 같은 방 매칭 대기실 복귀 — 긍정·수락 계열 버튼 에셋 */
+  matchingButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
 }
 
 /** @param {"win" | "lose"} outcome */

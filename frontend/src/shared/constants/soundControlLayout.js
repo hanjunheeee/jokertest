@@ -1,5 +1,14 @@
 // SoundControl의 크기와 위치를 정하는 Tailwind class 모음입니다.
 // 컴포넌트 파일에서는 렌더링 흐름만 보이도록 스타일 문자열을 이 파일로 분리했습니다.
+
+/** 페이지 우하단 사운드 조절바 wrapper — 로비·매칭·설정 등 공통 */
+export const PAGE_SOUND_CONTROL_AREA_CLASS =
+  "absolute bottom-4 right-4 z-30 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6"
+
+/** 본문 UI(z-30) 위에 올리는 사운드 조절바 — 기억의 서고·마이페이지 계열 */
+export const PAGE_SOUND_CONTROL_ELEVATED_AREA_CLASS =
+  "pointer-events-auto absolute bottom-4 right-4 z-40 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6"
+
 export const SOUND_CONTROL_CLASSES = {
   iconSize: "w-[clamp(2.85rem,3.9vw,3.5rem)]",
   barWidth: "w-[clamp(10.75rem,14.8vw,13.5rem)]",

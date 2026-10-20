@@ -17,6 +17,7 @@ export default function Scrollbar({
   thumbSrc = CUSTOM_SCROLLBAR_ASSETS.thumb,
   box = null,
   trackInset = CUSTOM_SCROLLBAR_TRACK_INSET,
+  alwaysVisible = false,
   className = "",
 }) {
   // 스크롤바 트랙 DOM입니다. 썸 이동 범위 계산에 사용합니다.
@@ -38,7 +39,7 @@ export default function Scrollbar({
     box != null ? { top: box.top, height: box.height } : undefined
 
   // scrollRef가 없으면 정적 장식으로 보여주고, 있으면 실제 스크롤 가능 여부를 따릅니다.
-  const showScrollbar = !scrollRef || isScrollable
+  const showScrollbar = alwaysVisible || !scrollRef || isScrollable
 
   return (
     <div

@@ -12,6 +12,8 @@ export const LOGIN_ASSETS = {
   // 로그인/회원가입 주요 버튼 이미지입니다.
   loginButton: "/button/로그인 버튼.png",
   signupButton: "/button/회원가입 버튼.png",
+  emailCheckButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
+  signupCodeSendButton: "/button/채팅보내기 버튼.png",
 
   // 소셜 로그인 버튼 이미지입니다.
   google: "/button/구글로로그인.png".normalize("NFD"),

@@ -13,6 +13,7 @@ import {
   RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS,
   RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
   RECOMMENDED_FRIEND_ACTIONS_CLASS,
+  FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -153,12 +154,12 @@ export default function FriendListRow({
           <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
           <FriendOnlineStatus online={online} />
           {favoriteError !== null ? (
-            <p role="status" data-favorite-error={id} className="app-text-scaled [--app-text-size:10px] text-red-300/90">
+            <p role="status" data-favorite-error={id} className={FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS}>
               {favoriteError}
             </p>
           ) : null}
           {sendError !== null ? (
-            <p role="status" data-invite-error={id} className="app-text-scaled [--app-text-size:10px] text-red-300/90">
+            <p role="status" data-invite-error={id} className={FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS}>
               {sendError}
             </p>
           ) : null}

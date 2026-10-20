@@ -193,6 +193,10 @@ const initialAccountState = () => ({
   readPendingIds: [],
   /** 읽음 실패 메시지(id → message). 실패를 성공으로 위장하지 않기 위해 남긴다(A-06). */
   readErrors: {},
+  /** 읽은 메시지 일괄 삭제 진행 중 */
+  deleteReadPending: false,
+  /** 읽은 메시지 일괄 삭제 실패 메시지 */
+  deleteReadError: null,
   /** notifications_ready ACK 상태: idle | pending | sent | retry */
   readyState: "idle",
 })
@@ -435,8 +439,108 @@ export const useNotificationsStore = create((set, get) => ({
   /** ready ACK 상태 기록. 실패해도 조회·읽음·닫기를 잠그지 않는다(AC-07). */
   setReadyState: (readyState) => set({ readyState }),
 
+  /**
+   * 모달에 표시되는 미확인 알림을 한꺼번에 읽음으로 확정한다.
+   *
+   * UI는 즉시 반영(optimistic)하고 서버와 동기화한다. 열 때 일괄 호출이므로 실패 시
+   * 항목별 오류 UI는 띄우지 않고 optimistic만 되돌린다 — 이동·재시도에서 markRead가
+   * 오류를 보여준다.
+   */
+  markVisibleUnreadAsRead: async (generalChecks) => {
+    const { accountId, accountGeneration } = get()
+    if (accountId === null) return { ok: false, reason: "anonymous" }
+
+    const visible = selectVisibleNotifications(get().items, generalChecks)
+    const unread = visible.filter((item) => !item.readAt)
+    if (unread.length === 0) return { ok: true, marked: 0 }
+
+    const unreadIds = new Set(unread.map((item) => item.id))
+    const optimisticAt = new Date().toISOString()
+
+    set((state) => ({
+      items: state.items.map((item) =>
+        unreadIds.has(item.id) ? { ...item, readAt: optimisticAt } : item,
+      ),
+    }))
+
+    const results = await Promise.all(
+      unread.map(async (item) => {
+        try {
+          const row = await callNotificationsApi("markNotificationReadApi", item.id)
+          if (!isConfirmedReadRow(row, item.id)) return { id: item.id, ok: false, row: null }
+          return { id: item.id, ok: true, row }
+        } catch {
+          return { id: item.id, ok: false, row: null }
+        }
+      }),
+    )
+
+    if (!get().isCurrent(accountGeneration)) return { ok: false, reason: "stale" }
+
+    const failedIds = results.filter((result) => !result.ok).map((result) => result.id)
+    const succeededRows = results.filter((result) => result.ok).map((result) => result.row)
+
+    set((state) => ({
+      items: mergeNotifications(
+        state.items.map((item) => (failedIds.includes(item.id) ? { ...item, readAt: null } : item)),
+        succeededRows,
+      ),
+    }))
+
+    return {
+      ok: failedIds.length === 0,
+      marked: unread.length - failedIds.length,
+      failed: failedIds.length,
+    }
+  },
+
+  /**
+   * 읽음 확정된 알림을 목록·서버에서 전부 제거한다. 미확인 알림은 남긴다.
+   *
+   * UI는 즉시 반영(optimistic)하고, 실패하면 직전 목록으로 되돌린다.
+   */
+  deleteReadNotifications: async () => {
+    const { accountId, accountGeneration } = get()
+    if (accountId === null) return { ok: false, reason: "anonymous" }
+
+    const readItems = get().items.filter((item) => item.readAt)
+    if (readItems.length === 0) return { ok: true, deleted: 0 }
+
+    const snapshot = get().items
+    const readIds = new Set(readItems.map((item) => item.id))
+
+    set({
+      deleteReadPending: true,
+      deleteReadError: null,
+      items: snapshot.filter((item) => !readIds.has(item.id)),
+      readErrors: Object.fromEntries(
+        Object.entries(get().readErrors).filter(([id]) => !readIds.has(id)),
+      ),
+      readPendingIds: get().readPendingIds.filter((id) => !readIds.has(id)),
+    })
+
+    try {
+      await callNotificationsApi("deleteReadNotificationsApi")
+    } catch (error) {
+      if (!get().isCurrent(accountGeneration)) return { ok: false, reason: "stale" }
+      set({
+        deleteReadPending: false,
+        deleteReadError: error?.message ?? "읽은 메시지를 삭제하지 못했습니다.",
+        items: snapshot,
+      })
+      return { ok: false, reason: "error" }
+    }
+
+    if (!get().isCurrent(accountGeneration)) return { ok: false, reason: "stale" }
+
+    set({ deleteReadPending: false, deleteReadError: null })
+    return { ok: true, deleted: readItems.length }
+  },
+
+  clearDeleteReadError: () => set({ deleteReadError: null }),
+
   openModal: () => set({ open: true }),
-  closeModal: () => set({ open: false }),
+  closeModal: () => set({ open: false, deleteReadError: null }),
 
   /** 항목별 읽음 실패 표시를 지운다(재시도 직전). */
   clearReadError: (notificationId) =>

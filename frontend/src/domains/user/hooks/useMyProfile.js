@@ -86,11 +86,17 @@ export function useMyProfile() {
     // 다른 필드다. 대상이 없으면(전적이 0판) 서버가 null을 내려보내고, 여기서 더미 직업으로
     // 대체하지 않고 "전적 없음"으로 명시한다(A-05).
     const hasHighestWinRateRole = Boolean(data.highest_win_rate_role)
-    const description = {
-        prefix:    "이 자는",
-        highlight: hasHighestWinRateRole ? data.highest_win_rate_role : "전적 없음",
-        suffix:    hasHighestWinRateRole ? "의 가면을 쓸 때 가장 잔혹합니다." : "아직 어떤 가면도 증명하지 못했습니다.",
-    }
+    const description = hasHighestWinRateRole
+        ? {
+            prefix: "이 자는",
+            highlight: data.highest_win_rate_role,
+            suffix: "의 가면을 쓸 때 가장 잔혹합니다.",
+        }
+        : {
+            prefix: "",
+            highlight: "전적 없음",
+            suffix: " 아직 어떤 가면도 증명하지 못했습니다.",
+        }
 
     return { profile, stats, description, loading, isStale, error, retry: refresh }
 }

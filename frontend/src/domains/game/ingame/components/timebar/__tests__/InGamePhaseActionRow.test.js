@@ -96,6 +96,7 @@ mock.module("@/shared/socket/socketClient.js", {
 
 const { act, render, cleanup, fireEvent } = await import("@testing-library/react")
 const { default: InGamePhaseActionRow, INGAME_PHASE_ACTIONS } = await import("../InGamePhaseActionRow.jsx")
+const { default: InGameCornerActionPanel } = await import("../../actions/InGameCornerActionPanel.jsx")
 const { InGameActionContext } = await import("../../../context/InGameActionContext.jsx")
 const { InGamePlayerSessionProvider } = await import("../../InGamePlayerSessionProvider.jsx")
 const { InGameActionProvider } = await import("../../../pages/InGamePage.jsx")
@@ -190,7 +191,7 @@ test("AC-01①: 낮 토론 — dayReadyControlsEnabled가 false면 비활성이�
   assert.equal(ctx.submitDayReady.mock.callCount(), 0, "잠긴 낮 준비 버튼이 제출을 보냈다")
 })
 
-test("AC-01②: 낮 투표 — 기권·낮 집계 두 버튼이 뜨고 각각 대응 함수를 1회 부른다", () => {
+test("AC-01②: 낮 투표 — 낮 집계만 뜨고(기권은 우측 하단 패널) resolveDayVote를 1회 부른다", () => {
   const ctx = makeCtx({
     gameState: { phase: "DAY" },
     dayPhase: "DAY_VOTE",
@@ -199,38 +200,11 @@ test("AC-01②: 낮 투표 — 기권·낮 집계 두 버튼이 뜨고 각각 �
   })
   const view = renderRow(ctx)
 
-  assert.deepEqual(renderedActions(view.container),
-    [INGAME_PHASE_ACTIONS.DAY_VOTE_ABSTAIN, INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE])
-
-  fireEvent.click(buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_VOTE_ABSTAIN))
-  assert.equal(ctx.abstainDayVote.mock.callCount(), 1, "기권 클릭이 정확히 1회가 아니다")
-  assert.equal(ctx.resolveDayVote.mock.callCount(), 0, "기권 클릭이 집계까지 불렀다")
+  assert.deepEqual(renderedActions(view.container), [INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE])
 
   fireEvent.click(buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE))
   assert.equal(ctx.resolveDayVote.mock.callCount(), 1, "낮 집계 클릭이 정확히 1회가 아니다")
-  assert.equal(ctx.abstainDayVote.mock.callCount(), 1, "집계 클릭이 기권을 다시 불렀다")
-})
-
-test("AC-01②: 낮 투표 — 제출 중이거나 컨트롤이 닫히면 기권이 잠기고 클릭해도 0회다", () => {
-  const submitting = makeCtx({
-    gameState: { phase: "DAY" }, dayPhase: "DAY_VOTE",
-    dayVoteControlsEnabled: true, dayVoteStatus: "submitting",
-  })
-  let view = renderRow(submitting)
-  let button = buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_VOTE_ABSTAIN)
-  assert.equal(button.disabled, true, "제출 중인데 기권이 열려 있다")
-  fireEvent.click(button)
-  assert.equal(submitting.abstainDayVote.mock.callCount(), 0)
-  cleanup()
-
-  const closed = makeCtx({
-    gameState: { phase: "DAY" }, dayPhase: "DAY_VOTE", dayVoteControlsEnabled: false,
-  })
-  view = renderRow(closed)
-  button = buttonFor(view.container, INGAME_PHASE_ACTIONS.DAY_VOTE_ABSTAIN)
-  assert.equal(button.disabled, true)
-  fireEvent.click(button)
-  assert.equal(closed.abstainDayVote.mock.callCount(), 0)
+  assert.equal(ctx.abstainDayVote.mock.callCount(), 0, "집계 클릭이 기권까지 불렀다")
 })
 
 test("AC-01②: 낮 투표 — dayVoteResolveControlsEnabled가 false면 집계가 잠기고 클릭해도 0회다", () => {
@@ -268,51 +242,29 @@ test("AC-01③: 재판 — 재판 판정 버튼이 뜨고 활성일 때만 resol
   assert.equal(locked.resolveTribunalVote.mock.callCount(), 0, "잠긴 판정 버튼이 요청을 보냈다")
 })
 
-test("AC-01④: 밤 — 내 역할 턴이면 건너뛰기·밤 종료가 뜨고 각각 1회 부른다", () => {
+test("AC-01④: 밤 — 내 역할 턴이면 밤 종료만 뜨고(건너뛰기는 우측 하단 패널) resolveNight을 1회 부른다", () => {
   const ctx = makeCtx({
     gameState: { phase: "NIGHT" }, isNightTurnActor: true, nightActionsLocked: false,
   })
   const view = renderRow(ctx)
 
-  assert.deepEqual(renderedActions(view.container),
-    [INGAME_PHASE_ACTIONS.NIGHT_SKIP, INGAME_PHASE_ACTIONS.NIGHT_RESOLVE])
+  assert.deepEqual(renderedActions(view.container), [INGAME_PHASE_ACTIONS.NIGHT_RESOLVE])
 
-  fireEvent.click(buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_SKIP))
-  assert.equal(ctx.skipNightAction.mock.callCount(), 1, "건너뛰기 클릭이 정확히 1회가 아니다")
   fireEvent.click(buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_RESOLVE))
   assert.equal(ctx.resolveNight.mock.callCount(), 1, "밤 종료 클릭이 정확히 1회가 아니다")
-  assert.equal(ctx.skipNightAction.mock.callCount(), 1, "밤 종료 클릭이 건너뛰기를 다시 불렀다")
+  assert.equal(ctx.skipNightAction.mock.callCount(), 0, "밤 종료 클릭이 건너뛰기를 불렀다")
 })
 
-test("AC-01④: 밤 — nightActionsLocked는 건너뛰기만 잠근다(밤 종료는 그대로 열려 있다)", () => {
+test("AC-01④: 밤 — nightActionsLocked여도 밤 종료는 그대로 열려 있다", () => {
   const ctx = makeCtx({
     gameState: { phase: "NIGHT" }, isNightTurnActor: true, nightActionsLocked: true,
   })
   const view = renderRow(ctx)
 
-  const skip = buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_SKIP)
-  assert.equal(skip.disabled, true)
-  fireEvent.click(skip)
-  assert.equal(ctx.skipNightAction.mock.callCount(), 0)
-
-  // 밤 종료는 resolveNightStatus 하나로만 잠긴다 — 여기에 생존·잠금 조건을 새로 붙이지 않는다.
   const resolve = buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_RESOLVE)
   assert.equal(resolve.disabled, false, "밤 행동 잠금이 밤 종료까지 잠갔다")
   fireEvent.click(resolve)
   assert.equal(ctx.resolveNight.mock.callCount(), 1)
-})
-
-test("AC-01④: 밤 — 제출 중에는 건너뛰기만 잠긴다", () => {
-  const ctx = makeCtx({
-    gameState: { phase: "NIGHT" }, isNightTurnActor: true,
-    nightActionsLocked: false, nightActionStatus: "submitting",
-  })
-  const view = renderRow(ctx)
-
-  assert.equal(buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_SKIP).disabled, true)
-  fireEvent.click(buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_SKIP))
-  assert.equal(ctx.skipNightAction.mock.callCount(), 0)
-  assert.equal(buttonFor(view.container, INGAME_PHASE_ACTIONS.NIGHT_RESOLVE).disabled, false)
 })
 
 test("AC-01④: 밤 — resolveNightStatus가 idle이 아니면 밤 종료가 잠기고 클릭해도 0회다", () => {
@@ -417,7 +369,10 @@ function mountRealRow({ interactionBlocked = false }) {
       InGamePlayerSessionProvider,
       null,
       React.createElement(InGameActionProvider, { interactionBlocked },
-        React.createElement(InGamePhaseActionRow)),
+        React.createElement(React.Fragment, null,
+          React.createElement(InGamePhaseActionRow),
+          React.createElement(InGameCornerActionPanel, { onVoteStatusClick: () => {} }),
+        )),
     ))
   })
   return view
@@ -486,7 +441,7 @@ test("AC-01⑤: 사망한 참가자는 기권이 잠기지만 낮 집계는 그�
     "낮 집계에 없던 생존 조건이 새로 붙었다")
 })
 
-test("AC-01⑤: interactionBlocked면 낮 투표 줄의 두 버튼이 함께 잠기고 송신이 0회다", () => {
+test("AC-01⑤: interactionBlocked면 낮 투표(기권·집계)가 함께 잠기고 송신이 0회다", () => {
   const transport = createRecordingSocket()
   currentSocket = transport.socket
   for (const cb of [...socketSubscribers]) cb()
@@ -495,6 +450,7 @@ test("AC-01⑤: interactionBlocked면 낮 투표 줄의 두 버튼이 함께 잠
   const view = mountRealRow({ interactionBlocked: true })
   for (const action of [INGAME_PHASE_ACTIONS.DAY_VOTE_ABSTAIN, INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE]) {
     const button = buttonFor(view.container, action)
+    assert.notEqual(button, null, `전제: ${action} 버튼이 있어야 한다`)
     assert.equal(button.disabled, true, `조작 차단 중인데 ${action}이 열려 있다`)
     act(() => { fireEvent.click(button) })
   }

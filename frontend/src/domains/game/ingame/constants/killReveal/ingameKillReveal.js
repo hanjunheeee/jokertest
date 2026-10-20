@@ -5,8 +5,11 @@
  * 않고, JOKER는 "광대들"이라는 진영 단위 표현만 사용한다.
  */
 
-/** 사망 연출 영상 public URL (frontend/public 기준) */
-export const INGAME_KILL_ANIMATION_VIDEO_URL = "/video-direction/kill-animation.mp4"
+/**
+ * 공개 사망 연출 stacked MP4 — (귀족시점)사망 이펙트와 동일 자산을 재사용한다.
+ * night-success-kill-target-stacked.mp4 (F-27d stacked-alpha 포맷).
+ */
+export const INGAME_KILL_ANIMATION_VIDEO_URL = "/video-direction/night-success-kill-target-stacked.mp4"
 
 /** 닉네임을 찾지 못했을 때 쓰는 대체 표기 — uuid는 절대 화면에 내보내지 않는다. */
 export const INGAME_KILL_REVEAL_UNKNOWN_NICKNAME = "한 플레이어"
@@ -77,8 +80,13 @@ export const INGAME_KILL_REVEAL_BACKDROP_CLASS =
 export const INGAME_KILL_REVEAL_PANEL_WRAP_CLASS =
   "fixed inset-0 z-[71] flex flex-col items-center justify-center gap-4 px-[clamp(0.75rem,4vw,2rem)] py-[clamp(1rem,4vh,2rem)]"
 
+/** @deprecated 직접 <video> 표시용 — stacked canvas 합성에는 CANVAS_CLASS를 쓴다. */
 export const INGAME_KILL_REVEAL_VIDEO_CLASS =
   "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 bg-black object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+
+/** stacked MP4 canvas 합성 표시용 — bg-black 없음(알파가 canvas에 그려진다). */
+export const INGAME_KILL_REVEAL_CANVAS_CLASS =
+  "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
 
 export const INGAME_KILL_REVEAL_MESSAGE_CLASS =
   "max-w-[min(48rem,92vw)] text-center font-subheading text-[clamp(1rem,3vw,1.6rem)] font-bold tracking-wide text-[#f8ead2]"

@@ -117,7 +117,7 @@ test("유효한 accountProfilePhotoId가 있으면 preview의 더미 portraitSrc
     { id: "u1", name: "A", connected: true, alive: true, accountProfilePhotoId: "player-profile-기사" },
     preview(),
   )
-  assert.equal(result.portraitSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.png".normalize("NFD"))
 })
 
 test("accountProfileBorderId가 있어도 frameSrc는 건드리지 않는다(직업 스킨/카드 프레임 소유 유지)", () => {
@@ -136,31 +136,12 @@ test("accountProfilePhotoId가 알 수 없는(카탈로그 규칙과 다른) 값
   assert.equal(result.portraitSrc, "p.png")
 })
 
-// F-13 AC-05 재검토: 계정 테두리는 frameSrc(직업 스킨/카드 프레임)와 겹쳐 쓰지 않고
-// 별도 필드 accountBorderSrc로만 노출한다 — InGamePlayerCard가 이 필드로 별도 레이어를
-// 그린다(frameSrc 자체는 위 "accountProfileBorderId가 있어도 frameSrc는 건드리지 않는다"
-// 테스트가 이미 고정한다).
-test("유효한 accountProfileBorderId가 있으면 출력에 accountBorderSrc가 실제 테두리 자산으로 채워진다", () => {
+test("유효한 accountProfileBorderId가 있어도 인게임 카드에는 accountBorderSrc를 만들지 않는다(원형 프레임 미표시)", () => {
   const result = mergeSourcePlayerWithPreview(
     { id: "u1", name: "A", connected: true, alive: true, accountProfileBorderId: "profile-border-귀족" },
     preview(),
   )
-  assert.equal(result.accountBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
-})
-
-test("accountProfileBorderId 키 자체가 없으면 accountBorderSrc 키도 생기지 않는다", () => {
-  const result = mergeSourcePlayerWithPreview(
-    { id: "u2", name: "B", connected: true, alive: true },
-    preview(),
-  )
-  assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
-})
-
-test("accountProfileBorderId가 알 수 없는(카탈로그 규칙과 다른) 값이면 accountBorderSrc 키가 생기지 않는다", () => {
-  const result = mergeSourcePlayerWithPreview(
-    { id: "u1", name: "A", connected: true, alive: true, accountProfileBorderId: "../../../etc/passwd" },
-    preview(),
-  )
+  assert.equal(result.accountProfileBorderId, "profile-border-귀족")
   assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
 })
 
@@ -191,7 +172,7 @@ test("accountCardFrameId가 알 수 없는(카탈로그 규칙과 다른) 값이
   assert.equal(result.frameSrc, source.frameSrc)
 })
 
-test("accountCardFrameId가 있어도 portraitSrc·accountBorderSrc는 각자 독립적으로 해석된다(서로 종속되지 않음)", () => {
+test("accountCardFrameId가 있어도 portraitSrc는 ingame 사각형 자산으로, frameSrc는 장착 카드 프레임으로 각자 독립 해석된다", () => {
   const result = mergeSourcePlayerWithPreview(
     {
       id: "u1", name: "A", connected: true, alive: true,
@@ -201,8 +182,8 @@ test("accountCardFrameId가 있어도 portraitSrc·accountBorderSrc는 각자 �
     },
     preview(),
   )
-  assert.equal(result.portraitSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
-  assert.equal(result.accountBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.png".normalize("NFD"))
+  assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
   assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).png".normalize("NFC"))
 })
 
@@ -253,7 +234,7 @@ test("계정 전적이 붙어도 기존 프로필·테마·역할 처리는 그�
   assert.equal(result.role, "JOKER")
   assert.equal(result.team, "JOKER")
   assert.equal(result.themeIndex, 4)
-  assert.equal(result.portraitSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.png".normalize("NFD"))
   assert.equal(result.status, INGAME_PLAYER_STATUS.ALIVE)
   assert.equal(result.accountTotalGames, 3)
 })

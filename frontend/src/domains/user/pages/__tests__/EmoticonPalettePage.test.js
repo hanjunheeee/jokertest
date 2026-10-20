@@ -177,22 +177,20 @@ test("AC-11: 취소 버튼을 누르면 서버에서 마지막으로 불러온 �
   assert.equal(putCalls().length, 0, "취소는 서버에 아무 것도 보내지 않는다")
 })
 
-test("AC-12: 소유하지 않은 이모티콘은 왼쪽 목록에 나타나지 않는다", async () => {
+test("AC-12: 소유하지 않은 이모티콘은 목록에 어둡게 표시되며 선택할 수 없다", async () => {
   newWorld()
   const view = await mountReady()
 
-  // 소유한 것(기본 8종 + 깜짝)은 전부 보인다.
   for (const name of [...DEFAULT_NAMES, "깜짝"]) {
     assert.ok(listButton(view, name), `${name}은 보유 목록에 있어야 한다`)
   }
-  // 소유하지 않은 상점 이모티콘은 하나도 없다.
-  for (const name of ["정조준", "의미심장", "쉿 조용히", "가시박힌 심장"]) {
-    assert.equal(listButton(view, name), null, `${name}은 보유하지 않았으므로 목록에 없어야 한다`)
-  }
-  assert.doesNotMatch(view.container.textContent, /정조준|의미심장/)
+
+  const unownedButton = view.getByRole("button", { name: "정조준 (미보유)" })
+  assert.ok(unownedButton, "미보유 이모티콘도 목록에 표시되어야 한다")
+  assert.equal(unownedButton.disabled, true, "미보유 이모티콘은 선택할 수 없어야 한다")
 })
 
-test("AC-12: 검색어와 등급 드롭다운은 보유 목록만 좁힌다(미소유 항목이 다시 나타나지 않는다)", async () => {
+test("AC-12: 검색어와 등급 드롭다운은 카탈로그 전체를 좁힌다(미보유도 필터 결과에 포함된다)", async () => {
   newWorld()
   const view = await mountReady()
 
@@ -206,9 +204,9 @@ test("AC-12: 검색어와 등급 드롭다운은 보유 목록만 좁힌다(미�
     fireEvent.change(view.getByLabelText("이모티콘 검색"), { target: { value: "" } })
     fireEvent.change(view.getByLabelText("이모티콘 등급 필터"), { target: { value: "상점" } })
   })
-  assert.ok(listButton(view, "깜짝"), "보유한 상점 이모티콘만 남는다")
+  assert.ok(listButton(view, "깜짝"), "보유한 상점 이모티콘이 남는다")
   assert.equal(listButton(view, "거절"), null)
-  assert.equal(listButton(view, "정조준"), null, "미소유 상점 이모티콘은 등급 필터로도 나타나지 않는다")
+  assert.ok(view.getByRole("button", { name: "정조준 (미보유)" }), "미보유 상점 이모티콘도 등급 필터 결과에 포함된다")
 })
 
 test("초기화에 실패하면 에러 문구·다시 시도 버튼이 보이고 편집·저장이 막히며 처리되지 않은 rejection도 없다", async () => {

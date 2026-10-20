@@ -16,9 +16,11 @@ export default function PlayerPortraitFrame({
 
   return (
     <>
-      <div className="absolute z-0 overflow-hidden" style={bgInset}>
-        <div className={bgGradientClass} aria-hidden="true" />
-      </div>
+      {bgGradientClass ? (
+        <div className="absolute z-0 overflow-hidden" style={bgInset}>
+          <div className={bgGradientClass} aria-hidden="true" />
+        </div>
+      ) : null}
 
       <div className="absolute z-[1] overflow-hidden" style={portraitInset}>
         {src ? (

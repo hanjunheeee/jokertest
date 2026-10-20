@@ -5,17 +5,13 @@ import {
   LOBBY_BG_VIDEO_HIDDEN_CLASS,
   LOBBY_INTRO_SKIP_LAYER_CLASS,
 } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
-import { BGM_ASSETS, MUSIC_PLAYBACK_ENABLED } from "@/shared/constants/bgmAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-/** 로비 배경 PNG + 인트로 영상 + BGM */
-export default function LobbyBackground({ bgVideoRef, audioRef, uiVisible, onSkipIntro }) {
+/** 로비 배경 PNG + 인트로 영상 */
+export default function LobbyBackground({ bgVideoRef, uiVisible, onSkipIntro }) {
   return (
     <>
-      {MUSIC_PLAYBACK_ENABLED ? (
-        <audio ref={audioRef} src={publicAsset(BGM_ASSETS.loginMusic)} loop />
-      ) : null}
       <PublicAsset
         src={LOBBY_ASSETS.bgImage}
         alt=""

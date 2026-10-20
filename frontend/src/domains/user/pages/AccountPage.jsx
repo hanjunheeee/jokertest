@@ -1,9 +1,7 @@
 import { useNavigate } from "react-router-dom"
 import AccountPanel from "@/domains/user/components/AccountPanel.jsx"
 import UserPageBackground from "@/domains/user/components/UserPageBackground.jsx"
-import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
-import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
-import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
+import UserPageChrome from "@/domains/user/components/UserPageChrome.jsx"
 
 export default function AccountPage() {
   const navigate = useNavigate()
@@ -17,13 +15,7 @@ export default function AccountPage() {
       <AccountPanel />
 
       {/* 마이페이지로 돌아가는 뒤로가기 버튼입니다. */}
-      <MotionBackButton
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={BG_FADE_TRANSITION}
-        onClick={() => navigate("/mypage")}
-        className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-20`}
-      />
+      <UserPageChrome onBack={() => navigate("/mypage")} />
     </div>
   )
 }

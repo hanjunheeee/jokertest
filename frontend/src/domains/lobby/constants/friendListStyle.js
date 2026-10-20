@@ -136,8 +136,21 @@ export const FRIEND_LIST_TAB_CLASS = "flex h-full min-h-0 flex-col"
 export const FRIEND_LIST_FILTER_RESULT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
+// 친구 패널 빈 목록·상태·오류 안내 문구 공통 글자 크기입니다.
+export const FRIEND_LIST_STATUS_MESSAGE_CLASS = "app-text-scaled [--app-text-size:16px]"
+
+// row·항목 부가 안내 문구 글자 크기입니다.
+export const FRIEND_LIST_STATUS_DETAIL_CLASS = "app-text-scaled [--app-text-size:14px]"
+
+export const FRIEND_LIST_STATUS_DETAIL_MUTED_CLASS =
+  `${FRIEND_LIST_STATUS_DETAIL_CLASS} text-white/45`
+
+export const FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS =
+  `${FRIEND_LIST_STATUS_DETAIL_CLASS} text-red-300/90`
+
 // 기본 탭 로컬 검색 결과가 없을 때 문구 스타일입니다.
-export const FRIEND_LIST_FILTER_EMPTY_CLASS = "mt-6 text-center app-text-scaled [--app-text-size:11px] text-white/50"
+export const FRIEND_LIST_FILTER_EMPTY_CLASS =
+  `mt-6 text-center ${FRIEND_LIST_STATUS_MESSAGE_CLASS} text-white/50`
 
 // 친구 그룹 안의 row 목록이 너무 길어질 때 스크롤되게 하는 스타일입니다.
 export const FRIEND_TAB_SCROLLABLE_LIST_CLASS =
@@ -154,7 +167,8 @@ export const FRIEND_REQUEST_RESULT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[clamp(2.6rem,4.2vw,3.1rem)] pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 검색 결과가 없거나 검색 전일 때 보여주는 문구 스타일입니다.
-export const FRIEND_REQUEST_EMPTY_CLASS = "mt-10 text-center app-text-scaled [--app-text-size:11px] text-white/50"
+export const FRIEND_REQUEST_EMPTY_CLASS =
+  `mt-10 text-center ${FRIEND_LIST_STATUS_MESSAGE_CLASS} text-white/50`
 
 // 친구 신청 탭 좌측 하단 고정 뒤로가기 버튼 스타일입니다.
 export const FRIEND_REQUEST_BACK_BUTTON_CLASS = "absolute bottom-0 left-0 z-10"
@@ -174,19 +188,27 @@ export const FRIEND_ACCEPT_ALL_BUTTON_CLASS =
 export const FRIEND_ACCEPT_ALL_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,0.9vw,0.76rem)] font-bold tracking-wide text-[#e8f0dc] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
 
-// 새로고침 이미지 버튼 스타일입니다.
+// 새로고침 이미지 버튼 스타일입니다 — group + interactive-scale-sm hover.
 export const FRIEND_ACCEPT_REFRESH_BUTTON_CLASS =
-  "w-[clamp(1.45rem,2.1vw,1.7rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
+  "group w-[clamp(1.45rem,2.1vw,1.7rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
 
 // 버튼 안 이미지 공통 스타일입니다.
 export const FRIEND_ACCEPT_BUTTON_IMAGE_CLASS = "block h-auto w-full select-none"
+
+export const FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS =
+  `interactive-scale-sm ${FRIEND_ACCEPT_BUTTON_IMAGE_CLASS}`
 
 // 받은 친구 요청 목록 스타일입니다.
 export const FRIEND_ACCEPT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 // 받은 요청이 없을 때 보여줄 문구 스타일입니다.
-export const FRIEND_ACCEPT_EMPTY_CLASS = "mt-10 text-center app-text-scaled [--app-text-size:11px] text-white/50"
+export const FRIEND_ACCEPT_EMPTY_CLASS =
+  `mt-10 text-center ${FRIEND_LIST_STATUS_MESSAGE_CLASS} text-white/50`
+
+// 친구 패널 오류 안내 문구 스타일입니다.
+export const FRIEND_LIST_STATUS_ERROR_CLASS =
+  `${FRIEND_LIST_STATUS_MESSAGE_CLASS} text-red-300/90`
 
 // 수락 탭 아래쪽 뒤로가기 버튼 여백입니다.
 export const FRIEND_ACCEPT_BACK_BUTTON_CLASS = "mt-2"

@@ -6,7 +6,7 @@
  */
 import { createContext, useContext } from "react"
 
-/** @typedef {"board" | "closeup"} InGameChatVariant */
+/** @typedef {"board" | "closeup" | "tribunal"} InGameChatVariant */
 
 export const InGameChatVariantContext = createContext(/** @type {InGameChatVariant} */ ("board"))
 

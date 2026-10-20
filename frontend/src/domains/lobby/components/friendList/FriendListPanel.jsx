@@ -86,7 +86,6 @@ function FriendListPanelContent({
   acceptAllResult,
   onRefreshRequests,
   onAcceptRequest,
-  onDeclineRequest,
   onAcceptAll,
   onBlockUser,
   onUnblockUser,
@@ -136,7 +135,6 @@ function FriendListPanelContent({
           processingRequestIds={processingRequestIds}
           acceptAllResult={acceptAllResult}
           onAccept={onAcceptRequest}
-          onDecline={onDeclineRequest}
           onBlock={onBlockUser}
           onAcceptAll={onAcceptAll}
           onRefresh={onRefreshRequests}
@@ -231,7 +229,6 @@ export default function FriendListPanel({
     handleRefreshFriends,
     handleRefreshBlocks,
     handleAcceptRequest,
-    handleDeclineRequest,
     handleAcceptAll,
   } = useFriendListSync(open)
 
@@ -357,7 +354,6 @@ export default function FriendListPanel({
               acceptAllResult={acceptAllResult}
               onRefreshRequests={handleRefreshFriends}
               onAcceptRequest={handleAcceptRequest}
-              onDeclineRequest={handleDeclineRequest}
               onAcceptAll={handleAcceptAll}
               onBlockUser={handleBlockUser}
               onUnblockUser={handleUnblockUser}

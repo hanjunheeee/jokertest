@@ -2,7 +2,9 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
+import AuthInputSlot, { CalendarIcon, ProfileIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
+import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
+import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import { findIdApi } from "@/domains/auth/api/auth.api.js"
 
@@ -20,7 +22,7 @@ const validateLocalInput = (nickname, birthDate) => {
     return { ok: false, message: `닉네임을 ${NICKNAME_MIN_LENGTH}~${NICKNAME_MAX_LENGTH}자로 입력해주세요.` }
   }
   if (!ISO_DATE_PATTERN.test(birthDate)) {
-    return { ok: false, message: "생년월일을 YYYY-MM-DD 형식으로 입력해주세요." }
+    return { ok: false, message: "생년월일을 선택해주세요." }
   }
   return { ok: true }
 }
@@ -133,18 +135,18 @@ export default function FindIdPage() {
   return (
     <AuthScene onSubmit={handleSubmit}>
       <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
+        <p className="mt-[64px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
           가입할 때 입력한 닉네임과 생년월일로 계정을 찾아드려요
         </p>
       </header>
 
-      <div className="mt-4 flex flex-1 flex-col gap-2">
+      <div className="mt-6 flex flex-1 flex-col gap-2">
         {status === "found" ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <p className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-text-body">
               가입하신 이메일은 아래와 같아요
             </p>
-            <p role="status" className="rounded bg-white/10 px-3 py-2 text-sm font-bold text-white">
+            <p role="status" className={`${AUTH_RECOVERY_ALERT_CLASS} text-center`}>
               {maskedEmail}
             </p>
             <button type="button" onClick={backToIdle} className="auth-text-link">다시 찾기</button>
@@ -160,48 +162,50 @@ export default function FindIdPage() {
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder="닉네임을 입력하세요"
                 autoComplete="off"
+                leadingIcon={<ProfileIcon />}
               />
             </label>
 
             <label className="mt-1 font-subheading app-text-scaled [--app-text-size:12px] font-bold text-text-body/80">
               생년월일
               <AuthInputSlot
-                type="text"
+                type="date"
                 name="birthDate"
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
-                placeholder="YYYY-MM-DD"
-                autoComplete="off"
+                autoComplete="bday"
+                leadingIcon={<CalendarIcon />}
               />
             </label>
 
             {formError && (
-              <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+              <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
                 {formError}
               </p>
             )}
 
             {status === "notFound" && (
-              <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+              <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
                 {NOT_FOUND_MESSAGE}
               </p>
             )}
             {status === "rateLimited" && (
-              <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+              <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
                 {RATE_LIMITED_MESSAGE}
               </p>
             )}
             {status === "failed" && (
-              <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+              <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
                 {FAILED_MESSAGE}
               </p>
             )}
 
             <AuthImageButton
               type="submit"
-              src="/button/버튼 프레임1.png"
+              src="/button/버튼 프레임2.png"
               label={status === "submitting" ? "조회 중" : "아이디 찾기"}
               visibleLabel={status === "submitting" ? "조회 중" : "아이디 찾기"}
+              visibleLabelClassName="app-text-scaled [--app-text-size:16px]"
               disabled={isFormDisabled}
               className="mt-1 cursor-pointer"
             />
@@ -214,9 +218,9 @@ export default function FindIdPage() {
             )}
           </fieldset>
         )}
-
-        <button type="button" onClick={handleBack} className="auth-text-link mt-2">뒤로 가기</button>
       </div>
+
+      <AuthFrameBackButton onClick={handleBack} />
     </AuthScene>
   )
 }

@@ -2,8 +2,10 @@
 // (/password-reset) 두 공개 라우트 페이지입니다.
 import { useEffect, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
+import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import AuthInputSlot, { MailIcon, LockIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
+import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import { validateEmail, validatePassword, validatePasswordConfirm } from "@/domains/auth/validation/signupValidation.js"
 import { requestPasswordResetApi, verifyPasswordResetApi, confirmPasswordResetApi } from "@/domains/auth/api/auth.api.js"
@@ -141,15 +143,15 @@ export function PasswordResetRequestPage() {
   return (
     <AuthScene onSubmit={handleSubmit}>
       <header className="text-center">
-        <p className="mt-[40px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
+        <p className="mt-[64px] mb-[-10px] font-subheading app-text-scaled [--app-text-size:13px] font-bold leading-relaxed text-text-body/90">
           가입할 때 등록한 이메일로 비밀번호 재설정 링크를 보내드려요
         </p>
       </header>
 
-      <div className="mt-4 flex flex-1 flex-col gap-2">
+      <div className="mt-6 flex flex-1 flex-col gap-2">
         {status === "sent" ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <p role="status" className="rounded bg-white/10 px-3 py-2 text-sm font-bold text-white">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <p role="status" className={`${AUTH_RECOVERY_ALERT_CLASS} text-center`}>
               {REQUEST_SENT_MESSAGE}
             </p>
             <button type="button" onClick={handleResend} className="auth-text-link">다시 보내기</button>
@@ -170,25 +172,25 @@ export function PasswordResetRequestPage() {
             </label>
 
             {formError && (
-              <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+              <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
                 {formError}
               </p>
             )}
 
             {status === "rateLimited" && (
-              <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+              <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
                 {REQUEST_RATE_LIMITED_MESSAGE}
               </p>
             )}
             {status === "failed" && (
-              <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+              <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
                 {REQUEST_FAILED_MESSAGE}
               </p>
             )}
 
             <AuthImageButton
               type="submit"
-              src="/button/버튼 프레임1.png"
+              src="/button/버튼 프레임2.png"
               label={status === "submitting" ? "전송 중" : "재설정 링크 보내기"}
               visibleLabel={status === "submitting" ? "전송 중" : "재설정 링크 보내기"}
               disabled={isFormDisabled}
@@ -200,9 +202,9 @@ export function PasswordResetRequestPage() {
             )}
           </fieldset>
         )}
-
-        <button type="button" onClick={handleBack} className="auth-text-link mt-2">뒤로 가기</button>
       </div>
+
+      <AuthFrameBackButton onClick={handleBack} />
     </AuthScene>
   )
 }
@@ -434,7 +436,7 @@ export function PasswordResetPage() {
     return (
       <AuthScene onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <p role="alert" className="rounded bg-red-500/20 px-3 py-2 text-xs text-red-200">
+          <p role="alert" className={AUTH_RECOVERY_ALERT_CLASS}>
             {verifyFailedMessage}
           </p>
           <button type="button" onClick={retryVerify} className="auth-text-link">다시 확인</button>
@@ -451,7 +453,7 @@ export function PasswordResetPage() {
     return (
       <AuthScene onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <p role="alert" className="rounded bg-red-500/20 px-3 py-2 text-xs text-red-200">
+          <p role="alert" className={AUTH_RECOVERY_ALERT_CLASS}>
             {linkInvalidMessage}
           </p>
           <button type="button" onClick={() => navigate("/password-reset/request")} className="auth-text-link">다시 요청하기</button>
@@ -464,7 +466,7 @@ export function PasswordResetPage() {
     return (
       <AuthScene onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <p role="alert" className="rounded bg-red-500/20 px-3 py-2 text-xs text-red-200">
+          <p role="alert" className={AUTH_RECOVERY_ALERT_CLASS}>
             {SOCIAL_ONLY_MESSAGE}
           </p>
           <button type="button" onClick={goToLogin} className="auth-text-link">로그인으로 이동</button>
@@ -477,7 +479,7 @@ export function PasswordResetPage() {
     return (
       <AuthScene onSubmit={(e) => e.preventDefault()}>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <p role="status" className="rounded bg-white/10 px-3 py-2 text-sm font-bold text-white">
+          <p role="status" className={`${AUTH_RECOVERY_ALERT_CLASS} text-center`}>
             {DONE_MESSAGE}
           </p>
           <button type="button" onClick={goToLogin} className="auth-text-link">로그인으로 이동</button>
@@ -524,7 +526,7 @@ export function PasswordResetPage() {
           </label>
 
           {formError && (
-            <p role="alert" className="mt-1 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+            <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
               {formError}
             </p>
           )}

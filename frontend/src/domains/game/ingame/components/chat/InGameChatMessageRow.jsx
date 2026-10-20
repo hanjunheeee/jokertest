@@ -77,7 +77,7 @@ export default function InGameChatMessageRow({
 
   const messageMaxWidth =
     textFieldWidth > 0
-      ? variant === "closeup"
+      ? variant === "closeup" || variant === "tribunal"
         ? textFieldWidth * 0.92
         : textFieldWidth
       : 0

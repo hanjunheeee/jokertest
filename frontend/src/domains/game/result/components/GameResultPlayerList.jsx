@@ -6,6 +6,7 @@ import {
   GAME_RESULT_PLAYER_LIST_INSET_CLASS,
   GAME_RESULT_PLAYER_LIST_SCROLL_CLASS,
   GAME_RESULT_PLAYER_LIST_SCROLL_WRAP_CLASS,
+  GAME_RESULT_PLAYER_LIST_SCROLLBAR_CLASS,
   GAME_RESULT_PLAYER_LIST_TITLE_CLASS,
   GAME_RESULT_PLAYER_LIST_WRAP_CLASS,
 } from "../constants/gameResultLayout.js"
@@ -18,6 +19,7 @@ export default function GameResultPlayerList({
   outcome = "win",
   winningTeam = null,
   players = [],
+  selfUuid = null,
 }) {
   const scrollRef = useRef(null)
   const playerListFrameSrc = resolveGameResultPlayerListFrame(outcome)
@@ -49,11 +51,19 @@ export default function GameResultPlayerList({
             className={GAME_RESULT_PLAYER_LIST_SCROLL_CLASS}
           >
             {players.map((player) => (
-              <GameResultPlayerRow key={player.id} {...player} />
+              <GameResultPlayerRow
+                key={player.id}
+                {...player}
+                isSelf={Boolean(selfUuid && player.id === selfUuid)}
+              />
             ))}
           </ul>
 
-          <Scrollbar scrollRef={scrollRef} />
+          <Scrollbar
+            scrollRef={scrollRef}
+            alwaysVisible
+            className={GAME_RESULT_PLAYER_LIST_SCROLLBAR_CLASS}
+          />
         </div>
       </div>
     </section>

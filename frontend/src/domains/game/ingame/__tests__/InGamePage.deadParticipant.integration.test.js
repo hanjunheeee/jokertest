@@ -1547,7 +1547,6 @@ const PAGE_MOUNT_LOCK = [
   // 하나뿐이라 이 목록에만 들어간다.
   "InGameActionContext", "InGameActionProvider",
   "InGameBackground", "InGameChatShell", "InGameDeadParticipantChoice",
-  "InGameKillRevealOverlay",
   // F-27b(AC-01) InGameNightPresentationWait: 그 밤의 연출을 받지 않는 참가자에게만 뜨는
   // 고정 문구 화면이다. 역할·대상·사건 ID를 props로도 DOM으로도 받지 않고, 버튼·타이머·ACK·
   // 오디오를 만들지 않는다(해제 권한은 전적으로 서버에 있다).
@@ -1555,6 +1554,7 @@ const PAGE_MOUNT_LOCK = [
   "InGameNightPrivateResultOverlay", "InGameNightSuccessPresentation",
   "InGameNightTurnAnnouncementOverlay", "InGamePhaseEntranceOverlay", "InGamePlayerBoard",
   "InGamePlayerSessionProvider", "InGameRoleRevealOverlay", "InGameTimebar",
+  "InGameCornerActionPanel",
   "InGameTopControls", "InGameVoteStatusPanel", "PlayerRecordListPanel", "SettingPanel",
   // V-2(AC-03): 카드 메뉴의 방장 추방 확인 대화. InGameActionProvider가 이 파일 안에서
   // 직접 마운트한다 — 방장 여부·전송 중 여부·확인 입구가 전부 그 Provider의 컨텍스트 값에
@@ -1589,13 +1589,13 @@ const PLAY_AREA_MOUNT_LOCK = [
 /**
  * V-2(AC-01/AC-05): 시간흐름 바가 마운트하는 것 전부.
  *
- * 제어 패널이 사라지면서 **대상 없는 행동 버튼**(준비·기권·집계·판정·건너뛰기·밤 종료)이
- * 이 바 아래 줄로 옮겨왔다 — 그래서 시간바도 이제 조작 경로를 소유한 파일이고, 마운트 잠금이
- * 필요하다. TimebarNode는 import가 아니라 **이 파일 안의 로컬 함수 선언**이라 아래 import
- * 포함 검사에서만 예외로 둔다(선언 존재는 따로 단언한다).
+ * 제어 패널이 사라지면서 **대상 없는 행동 버튼**(준비·집계·판정·밤 종료)이 이 바 아래 줄로
+ * 옮겨왔다. 기권·건너뛰기·투표 현황은 InGameCornerActionPanel(우측 하단)이 맡는다.
+ * TimebarNode는 import가 아니라 **이 파일 안의 로컬 함수 선언**이라 아래 import 포함 검사에서만
+ * 예외로 둔다(선언 존재는 따로 단언한다).
  */
 const TIMEBAR_MOUNT_LOCK = [
-  "PublicAsset", "TimebarNode", "InGameVoteToggleButton", "InGamePhaseActionRow",
+  "PublicAsset", "TimebarNode", "InGamePhaseActionRow",
 ]
 
 /** 네 소유 파일이 합쳐서 마운트하는 이름 전부. InGamePlayerCardMenu가 여기 포함된다. */
@@ -2399,16 +2399,23 @@ test("F-23(SPLIT-2): 상한을 넘겨 미확정으로 끝난 시도의 늦은 AC
 /**
  * F-23(SPLIT-1): **재결속 중에는 결과 화면으로 넘어가지 않는다.**
  *
- * 재연결은 연결 축의 전이다. 그 순간 사망 연출 큐는 "이전 연결이 받은 것"이라 통째로
- * 버려지는데, 결과 이동이 큐가 비었다는 사실만 보고 넘어가면 새 연결에서 복구될 연출이 잘린
- * 채 잔존 ENDED로 화면이 떠난다. 보류는 유한해야 한다 — 그 연결의 스냅샷이 도착하면 풀린다.
+ * 재연결은 연결 축의 전이다. 그 순간 스냅샷 재조회가 시작되면 identityRebindPending이
+ * 올라가고, 그 구간에는 잔존 ENDED로 결과 화면에 들어가면 안 된다. 보류는 유한해야 한다 —
+ * 그 연결의 스냅샷이 도착하면 풀린다.
  */
-test("F-23(SPLIT-1): 재연결로 연출 큐가 버려져도 재결속이 끝나기 전에는 결과 화면으로 넘어가지 않는다", async () => {
+test("F-23(SPLIT-1): 재연결 후 재결속이 끝나기 전에는 결과 화면으로 넘어가지 않는다", async () => {
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
-  const { container } = await mountInGame()
+  await mountInGame()
   const socket = currentSocket
 
-  // 그 밤의 판정이 곧 승패를 확정한다 — 종료와 공개 사망 연출이 같은 사건에서 함께 온다.
+  // 재연결을 먼저 걸어 재결속 보류를 연다.
+  await act(async () => {
+    socket.id = "sock-2"
+    socket.deliver("connect")
+  })
+  assert.equal(router.state.location.pathname, "/ingame")
+
+  // 그 밤의 판정이 곧 승패를 확정한다 — 공개 사망 연출 없이 ENDED만 반영된다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
@@ -2420,23 +2427,6 @@ test("F-23(SPLIT-1): 재연결로 연출 큐가 버려져도 재결속이 끝나
   })
 
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
-  assert.ok(
-    container.querySelector("[data-ingame-kill-reveal]"),
-    "전제: 그 판정의 공개 사망 연출이 실제로 떠 있어야 한다",
-  )
-  assert.equal(
-    router.state.location.pathname, "/ingame",
-    "전제: 연출이 남아 있는 동안에는 결과 화면으로 넘어가지 않는다",
-  )
-
-  // 실제 재연결(같은 객체·새 sid). 연출 큐는 이전 연결의 것이라 여기서 버려진다.
-  await act(async () => {
-    socket.id = "sock-2"
-    socket.deliver("connect")
-  })
-
-  assert.equal(container.querySelector("[data-ingame-kill-reveal]"), null,
-    "전제: 재연결로 이전 연결의 연출 큐가 버려져야 한다")
   assert.equal(
     router.state.location.pathname, "/ingame",
     "재결속이 끝나기 전에 잔존 ENDED로 결과 화면에 들어갔다",
@@ -2472,36 +2462,33 @@ test("F-23(SPLIT-1): 재연결로 연출 큐가 버려져도 재결속이 끝나
  *
  * 동시에 사용자를 인게임에 영구히 가두어서도 안 된다. 그래서 실패 뒤 이동 0회와, 그 다음
  * 연결의 정상 스냅샷에서 이동이 **재개**되는 것을 한 시험에 함께 고정한다.
+ *
+ * 공개 사망 연출(kill reveal)은 제거됐다 — 이전 연결에서 받은 종료를 재연결 전에 확정하고,
+ * 같은 act 안에서 재연결해 이동 effect보다 재결속 보류가 먼저 올라가게 한다. 재연결 **뒤**
+ * 현재 연결에서 받은 종료는 별도 시험(F-23 SPLIT-1/AC-05)이 본다.
  */
 test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 화면에 넘어가지 않고, 다음 정상 스냅샷에서 이동이 재개된다", async () => {
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
-  const { container } = await mountInGame()
+  await mountInGame()
   const socket = currentSocket
 
+  // 이전 연결(sock-1)에서 종료를 받은 직후 곧바로 재연결 — 같은 act 안에서 이동 effect보다
+  // 재결속 보류가 먼저 올라가야 한다(공개 사망 연출 없이도 잔존 ENDED만으로는 넘어가지 않게).
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
       players: [{ uuid: SELF, isAlive: true }, { uuid: OTHER, isAlive: false }],
       victimUuid: OTHER,
       winResult: { winner: "CITIZEN" },
-      deathReveals: [{ victimUuid: OTHER, source: "JOKER" }],
+      deathReveals: [],
     })
-  })
-
-  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
-  assert.ok(
-    container.querySelector("[data-ingame-kill-reveal]"),
-    "전제: 그 판정의 공개 사망 연출이 실제로 떠 있어야 한다",
-  )
-  assert.equal(router.state.location.pathname, "/ingame", "전제: 연출 중에는 넘어가지 않는다")
-
-  // 실제 재연결 — 이전 연결의 연출 큐가 버려지고 재결속이 시작된다.
-  await act(async () => {
     socket.id = "sock-2"
     socket.deliver("connect")
   })
-  assert.equal(container.querySelector("[data-ingame-kill-reveal]"), null,
-    "전제: 재연결로 이전 연결의 연출 큐가 버려져야 한다")
+  assert.equal(router.state.location.pathname, "/ingame")
+
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
+  assert.equal(router.state.location.pathname, "/ingame", "전제: 재결속 중에는 넘어가지 않는다")
 
   // 그 연결의 스냅샷이 **실패한다**(서버 오류 응답).
   const failed = socket.takeAck("get_session_snapshot")
@@ -2515,6 +2502,10 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 
   // 실패 직후의 한 틱만 보고 통과시키지 않는다 — 이후 렌더에서도 이동이 없어야 한다.
   await act(async () => { await Promise.resolve() })
   assert.equal(router.state.location.pathname, "/ingame", "뒤이은 렌더에서 결과 화면으로 넘어갔다")
+  assert.equal(
+    useInGameStore.getState().state.winResult ?? null, null,
+    "이전 연결의 잔존 종료 결과가 확인 없이 이동 근거로 남았다",
+  )
   assert.equal(useInGameStore.getState().gameId, GAME_ID, "실패가 세션 자체를 지웠다")
 
   // 다음 연결의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다(영구히 갇히지 않는다).
@@ -2613,10 +2604,10 @@ test("F-23(SPLIT-1): 재연결 뒤 현재 연결에서 받은 정상 종료는 �
  */
 test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이전 계정의 종료 결과로 결과 화면에 넘어가지 않는다", async () => {
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
-  const { container } = await mountInGame()
+  await mountInGame()
   const socket = currentSocket
 
-  // 계정 A가 **이 연결에서** 정상 공개 종료를 받는다(공개 사망 연출이 이동을 붙잡는다).
+  // 계정 A가 **이 연결에서** 종료를 받는다 — 곧바로 인증 왕복을 이어 붙여 이동을 막는다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
@@ -2625,17 +2616,6 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
       winResult: { winner: "CITIZEN" },
       deathReveals: [{ victimUuid: OTHER, source: "JOKER" }],
     })
-  })
-  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
-  assert.ok(
-    container.querySelector("[data-ingame-kill-reveal]"),
-    "전제: 그 판정의 공개 사망 연출이 실제로 떠 있어야 한다",
-  )
-  assert.equal(router.state.location.pathname, "/ingame", "전제: 연출 중에는 넘어가지 않는다")
-
-  // A→B→A. 계정 값은 원래대로 돌아오지만 전이 세대는 두 번 올랐다. 판·소속·소켓 객체·sid·
-  // 연결 상태는 하나도 바뀌지 않는다 — 이 시험이 보는 축은 계정뿐이다.
-  await act(async () => {
     useAuthStore.setState((s) => ({
       user: { uuid: OTHER }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
     }))
@@ -2643,6 +2623,11 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
       user: { uuid: SELF, nickname: "나" }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
     }))
   })
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
+  assert.equal(router.state.location.pathname, "/ingame", "전제: 확인 전에는 넘어가지 않는다")
+
+  // A→B→A. 계정 값은 원래대로 돌아오지만 전이 세대는 두 번 올랐다. 판·소속·소켓 객체·sid·
+  // 연결 상태는 하나도 바뀌지 않는다 — 이 시험이 보는 축은 계정뿐이다.
   assert.equal(myMembership(), MY_MEMBERSHIP, "전제: 소속은 그대로다")
   assert.equal(socket.id, "sock-1", "전제: 연결은 교체되지 않는다")
   // 왕복 그 자체로도 넘어가지 않는다 — 전이로 연출 큐가 버려진 렌더에서 잔존 종료 결과가

@@ -145,6 +145,10 @@ const gameRooms = new Map()
 /** uuid → roomId — 역방향 조회용 */
 const playerRoom = new Map()
 
+/** ENDED 판 gameId → 방장이 만든 다음 대기방 스냅샷(참가자 폴링·새로고침 복구용). */
+const partyMatchingRoomByGameId = new Map()
+const PARTY_MATCHING_ROOM_TTL_MS = 30 * 60 * 1000
+
 // create_room과 join_room_by_code가 함께 쓰는 "방 전환 처리 중" 잠금이다. 생성 전용으로
 // 좁게 두지 않고 두 작업이 공유해야, 같은 사용자가 두 요청을 동시에 보내도(예: 다른 탭에서
 // 만들기와 코드 참가를 동시에 시도) 한쪽만 통과시킬 수 있다.
@@ -681,8 +685,9 @@ const ALREADY_IN_GAME_MESSAGE = '진행 중인 게임이 있습니다. 게임을
  * 호출하므로, 차단됐을 때 되돌려야 할 상태가 아예 생기지 않는다.
  */
 function rejectIfInActiveGame(uuid, respond) {
+    if (!gameSession.isParticipantBlockedFromMatchmaking(uuid)) return false
     const routing = gameSession.getActiveSessionRoutingInfo(uuid)
-    if (!routing || gameSession.isForfeitedFromSession(routing.gameId, uuid)) return false
+    if (!routing) return false
     respond({
         code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME,
         message: ALREADY_IN_GAME_MESSAGE,
@@ -824,6 +829,8 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
     })
     socket.on('create_room', (payload, callback) => handleCreateRoom(io, socket, uuid, payload, callback))
     socket.on('get_current_room', (payload, callback) => handleGetCurrentRoom(uuid, callback))
+    socket.on('get_party_matching_room', (payload, callback) =>
+        handleGetPartyMatchingRoom(uuid, payload, callback))
     socket.on('get_public_rooms', (payload, callback) => handleGetPublicRooms(callback))
     // payload를 여기서 미리 구조분해하지 않는다. null/문자열/배열처럼 예상 밖 형태가 오면
     // `{ roomId } = payload` 구조분해 자체가 예외를 던져 .catch()로 넘어가 사용자에게
@@ -917,6 +924,26 @@ function findLiveSocketForUuid(io, uuid) {
         return candidate
     }
     return null
+}
+
+function findAllLiveSocketsForUuid(io, uuid) {
+    const found = []
+    for (const candidate of io?.sockets?.sockets?.values?.() ?? []) {
+        if (candidate?.data?.user?.uuid !== uuid) continue
+        if (candidate.connected === false) continue
+        found.push(candidate)
+    }
+    return found
+}
+
+function readPartyMatchingRoomForGame(gameId) {
+    const entry = partyMatchingRoomByGameId.get(gameId)
+    if (!entry) return null
+    if (Date.now() - entry.createdAt > PARTY_MATCHING_ROOM_TTL_MS) {
+        partyMatchingRoomByGameId.delete(gameId)
+        return null
+    }
+    return entry.room
 }
 
 /**
@@ -1625,8 +1652,14 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
     // 있다. Map 커밋이 끝난 뒤에는 그 사실 자체를 되돌리지 않고, ack 전달 실패는 로그로만 남긴다.
     try {
         callback({ ok: true, room: buildRoomPayload(room) })
+        notifyEndedSessionPartyOfMatchingRoom(io, uuid, room)
     } catch (ackError) {
         console.error('[방 생성 ack 실패]', ackError)
+    }
+    try {
+        await autoJoinEndedSessionPartyToRoom(io, uuid, room)
+    } catch (err) {
+        console.error('[종료된 판 파티 자동 재입장 일괄 실패]', err)
     }
 }
 
@@ -3064,8 +3097,83 @@ function hasRoomMembership(uuid) {
 
 /** 그 계정이 지금 배제되지 않은 활성 세션에 속해 있는가(rejectIfInActiveGame과 같은 판정). */
 function hasLiveGameMembership(uuid) {
-    const routing = gameSession.getActiveSessionRoutingInfo(uuid)
-    return !!routing && !gameSession.isForfeitedFromSession(routing.gameId, uuid)
+    return gameSession.isParticipantBlockedFromMatchmaking(uuid)
+}
+
+/**
+ * 종료된 판의 방장이 새 대기방을 만들었을 때, 같은 게임 채널에 남아 있는 참가자에게 알린다.
+ */
+function notifyEndedSessionPartyOfMatchingRoom(io, hostUuid, room) {
+    const ctx = gameSession.getEndedSessionPartyBroadcastContext(hostUuid)
+    const gameId = ctx?.gameId ?? gameSession.getEndedSessionGameIdForParticipant(hostUuid)
+    if (!gameId) return
+    const payload = {
+        gameId,
+        room: buildRoomPayload(room),
+    }
+    partyMatchingRoomByGameId.set(gameId, { room: payload.room, createdAt: Date.now() })
+    try {
+        if (ctx) {
+            io.to(ctx.channelId).emit('party_matching_room_ready', payload)
+        }
+        const participantUuids = ctx?.participantUuids
+            ?? gameSession.getEndedSessionParticipantUuids(gameId, { excludeUuid: hostUuid })
+        for (const participantUuid of participantUuids) {
+            for (const participantSocket of findAllLiveSocketsForUuid(io, participantUuid)) {
+                participantSocket.emit('party_matching_room_ready', payload)
+            }
+        }
+    } catch (err) {
+        console.error('[종료된 판 파티 매칭 방 알림 실패]', err)
+    }
+}
+
+/**
+ * ENDED 판 방장이 새 대기방을 만들었을 때, 같은 판 참가자를 서버가 직접 그 방에 넣는다.
+ * 클라이언트 join_room_by_code·폴링에만 의존하면 이벤트 유실·세대 불일치로 대기 화면에
+ * 고정될 수 있어, 커밋 직후 best-effort로 한 번 더 확정한다.
+ */
+async function autoJoinEndedSessionPartyToRoom(io, hostUuid, room) {
+    const gameId = gameSession.getEndedSessionGameIdForParticipant(hostUuid)
+    if (!gameId || typeof room?.code !== 'string' || room.code.length === 0) return
+    const participantUuids = gameSession.getEndedSessionParticipantUuids(gameId, { excludeUuid: hostUuid })
+    for (const participantUuid of participantUuids) {
+        if (playerRoom.has(participantUuid)) continue
+        if (pendingRoomTransitions.has(participantUuid)) continue
+        if (matchmakingQueue.has(participantUuid)) continue
+        const participantSocket = findLiveSocketForUuid(io, participantUuid)
+        if (!participantSocket) continue
+        try {
+            await handleJoinRoomByCode(
+                io,
+                participantSocket,
+                participantUuid,
+                room.code,
+                { roomId: room.id, accessType: room.accessType ?? 'code' },
+            )
+        } catch (err) {
+            console.error('[종료된 판 파티 자동 재입장 실패]', { participantUuid, gameId, err })
+        }
+    }
+}
+
+/**
+ * ENDED 판 참가자가 방장이 만든 다음 대기방을 조회한다(폴링·새로고침 복구).
+ */
+function handleGetPartyMatchingRoom(uuid, payload, callback) {
+    if (typeof callback !== 'function') return
+    const gameId = typeof payload?.gameId === 'string' && payload.gameId.length > 0
+        ? payload.gameId
+        : gameSession.getEndedSessionGameIdForParticipant(uuid)
+    if (!gameId) {
+        callback({ ok: true, gameId: null, room: null })
+        return
+    }
+    if (!gameSession.canLookupPartyMatchingRoom(uuid, gameId)) {
+        callback({ ok: true, gameId, room: null })
+        return
+    }
+    callback({ ok: true, gameId, room: readPartyMatchingRoomForGame(gameId) })
 }
 
 /**
@@ -4050,6 +4158,7 @@ function __resetStateForTests() {
     // F-20: 설정 변경 결과 기록도 비운다 — 남으면 다음 테스트의 재시도 판정이 이전 테스트의
     // requestId를 "이미 처리한 요청"으로 오인한다.
     roomSettingsUpdateResults.clear()
+    partyMatchingRoomByGameId.clear()
     // F-21: 추방 영수증도 같은 이유로 비운다 — 남으면 다음 테스트의 같은 requestId가
     // "이미 결정된 요청"으로 재생된다.
     kickReceiptStore.__resetKickReceiptsForTests()
@@ -4245,6 +4354,7 @@ module.exports = {
         // 이 판정기가 스스로 표식을 걷어내는지 확인할 수 있어야 그 구분이 시험에 남는다.
         isStartedRoomMark,
         handleGetCurrentRoom,
+        handleGetPartyMatchingRoom,
         handleGetPublicRooms,
         handleJoinPublicRoom,
         handleJoinMatchmaking,

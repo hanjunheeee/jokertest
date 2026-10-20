@@ -12,6 +12,10 @@ import GameResultIntroVideo from "../components/GameResultIntroVideo.jsx"
 import GameResultShell from "../components/GameResultShell.jsx"
 import { GAME_RESULT_ASSETS } from "../constants/gameResultAssets.js"
 import { GAME_RESULT_LOBBY_BUTTON_REVEAL_DELAY } from "../constants/gameResultEntranceMotion.js"
+import {
+  GAME_RESULT_LOBBY_BUTTON_LABEL,
+  GAME_RESULT_MATCHING_BUTTON_LABEL,
+} from "../constants/gameResultLabels.js"
 import { GAME_RESULT_LOBBY_BUTTON_WRAP_CLASS } from "../constants/gameResultLayout.js"
 import { GAME_RESULT_OUTCOMES } from "../constants/gameResultPreviewData.js"
 import { useGameResultData } from "../hooks/useGameResultData.js"
@@ -19,6 +23,7 @@ import { useGameResultPreview } from "../hooks/useGameResultPreview.js"
 import { useInGameExit } from "@/domains/game/ingame/hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "@/domains/game/ingame/hooks/useInGameSessionSnapshotSync.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { useGameResultReturnToMatching } from "../hooks/useGameResultReturnToMatching.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 /**
@@ -67,6 +72,7 @@ export default function GameResultPage() {
   const live = useGameResultData()
   const preview = useGameResultPreview()
   const { requestExit } = useInGameExit()
+  const { requestReturnToMatching, isReturning } = useGameResultReturnToMatching()
 
   /**
    * F-24(AC-01/AC-02, A-14): **서버 참가 소속으로만** 이 화면의 상태를 다시 묻는다.
@@ -153,11 +159,18 @@ export default function GameResultPage() {
           장식 버튼 대신 화면 이동만 하는 평범한 버튼을 둔다(이탈 요청은 만들지 않는다).
         */}
         {view ? (
-          <LabelledActionButton
-            src={GAME_RESULT_ASSETS.lobbyButton}
-            label="로비로"
-            onClick={requestExit}
-          />
+          <>
+            <LabelledActionButton
+              src={GAME_RESULT_ASSETS.matchingButton}
+              label={GAME_RESULT_MATCHING_BUTTON_LABEL}
+              onClick={() => { if (!isReturning) requestReturnToMatching() }}
+            />
+            <LabelledActionButton
+              src={GAME_RESULT_ASSETS.lobbyButton}
+              label={GAME_RESULT_LOBBY_BUTTON_LABEL}
+              onClick={requestExit}
+            />
+          </>
         ) : (
           <button
             type="button"

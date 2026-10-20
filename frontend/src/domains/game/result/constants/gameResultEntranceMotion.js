@@ -33,12 +33,11 @@ export const GAME_RESULT_INNER_REVEAL_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 }
 
-/** 배너 → 로스터 → 플레이어 목록 → MVP 순 stagger delay (초) */
+/** 배너 → 플레이어 목록 → MVP 순 stagger delay (초) */
 export const GAME_RESULT_INNER_REVEAL_DELAYS = {
   banner: 0.28,
-  roster: 0.34,
-  playerList: 0.42,
-  mvp: 0.54,
+  playerList: 0.34,
+  mvp: 0.46,
 }
 
 /** 로비로 버튼 등장 delay */

@@ -4,10 +4,11 @@ import {
   getSliderKnotLeftPercent,
 } from "@/shared/constants/soundControlLayout"
 import { useAudioControl } from "@/shared/hooks/useAudioControl"
+import { getGlobalBgmRef } from "@/shared/hooks/useBgmRuntime.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 배경음 볼륨과 음소거를 조절하는 UI 컴포넌트입니다.
-export default function SoundControl({ audioRef }) {
+export default function SoundControl({ audioRef = getGlobalBgmRef() }) {
   // 실제 audio 제어 로직은 훅에 맡기고, 여기서는 화면에 필요한 값만 꺼냅니다.
   const { sliderValue, isSilent, disabled, onVolumeChange, toggleMute } = useAudioControl(audioRef)
 

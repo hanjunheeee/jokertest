@@ -44,23 +44,24 @@ export default function LoginPage() {
 
   if (socialView.mode === "socialSignup") {
     return (
-      <AuthScene onSubmit={(e) => e.preventDefault()}>
+      <AuthScene onSubmit={(e) => e.preventDefault()} frameSize="signup">
         <SocialSignupForm intentToken={socialView.intentToken} onCancel={clearSocialParams} />
       </AuthScene>
     )
   }
 
   return (
-    <AuthScene onSubmit={handleSubmit}>
-      {socialView.mode === "socialError" && (
-        <p role="alert" className="mt-2 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
-          {socialView.message}
-        </p>
-      )}
+    <AuthScene onSubmit={handleSubmit} frameSize={isSignupMode ? "signup" : "default"}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {socialView.mode === "socialError" && (
+          <p role="alert" className="mt-2 shrink-0 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-200">
+            {socialView.message}
+          </p>
+        )}
 
-      {/* 현재 모드에 따라 로그인 폼과 회원가입 폼 중 하나를 보여줍니다. */}
-      {isSignupMode ? (
-        <SignupForm
+        {/* 현재 모드에 따라 로그인 폼과 회원가입 폼 중 하나를 보여줍니다. */}
+        {isSignupMode ? (
+          <SignupForm
           formData={formData}
           onChange={handleInputChange}
           onSwitchToLogin={() => setIsSignupMode(false)}
@@ -69,16 +70,17 @@ export default function LoginPage() {
           handleRequestSignupCode={handleRequestSignupCode}
           handleVerifySignupCode={handleVerifySignupCode}
           canSubmitSignup={canSubmitSignup}
-        />
-      ) : (
-        <LoginForm
-          formData={formData}
-          rememberMe={rememberMe}
-          onChange={handleInputChange}
-          onRememberMeChange={setRememberMe}
-          onSwitchToSignup={() => setIsSignupMode(true)}
-        />
-      )}
+          />
+        ) : (
+          <LoginForm
+            formData={formData}
+            rememberMe={rememberMe}
+            onChange={handleInputChange}
+            onRememberMeChange={setRememberMe}
+            onSwitchToSignup={() => setIsSignupMode(true)}
+          />
+        )}
+      </div>
     </AuthScene>
   )
 }

@@ -28,7 +28,7 @@ const emptySlots = () => Array.from({ length: EMOJI_PALETTE_SLOT_COUNT }, () => 
 
 /** 서버가 준 slots를 화면이 그대로 믿을 수 있는 8칸 배열로 정규화한다 — 길이가 다르거나
  *  배열이 아니면(계약 위반 응답) 빈 칸으로 채운다. 화면은 이 배열의 길이가 항상 8이라고
- *  전제하고 렌더한다. */
+ *  전제하고 렌더한다. slots[i]는 (i+1)번 슬롯(12시=1번, 시계 방향) — emoticonPaletteSlots.js. */
 const normalizeSlots = (slots) => {
   const base = emptySlots()
   if (!Array.isArray(slots)) return base

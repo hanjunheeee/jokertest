@@ -8,22 +8,28 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 /** 인게임 화면 — 투표현황 팝업 열기 버튼 */
-export default function InGameVoteToggleButton({ onClick, className = INGAME_VOTE_TOGGLE_BTN_WRAP_CLASS }) {
+export default function InGameVoteToggleButton({
+  onClick,
+  className = INGAME_VOTE_TOGGLE_BTN_WRAP_CLASS,
+  buttonClassName = INGAME_VOTE_TOGGLE_BTN_CLASS,
+  imgClassName = INGAME_VOTE_TOGGLE_BTN_IMG_CLASS,
+  labelClassName = INGAME_VOTE_TOGGLE_BTN_LABEL_CLASS,
+}) {
   return (
     <div className={className}>
       <button
         type="button"
         aria-label="투표 현황 열기"
         onClick={onClick}
-        className={INGAME_VOTE_TOGGLE_BTN_CLASS}
+        className={buttonClassName}
         style={{ outline: "none" }}
       >
         <PublicAsset
           src={INGAME_VOTE_ASSETS.toggleButton}
           alt=""
-          className={INGAME_VOTE_TOGGLE_BTN_IMG_CLASS}
+          className={imgClassName}
         />
-        <span className={INGAME_VOTE_TOGGLE_BTN_LABEL_CLASS}>투표 현황</span>
+        <span className={labelClassName}>투표 현황</span>
       </button>
     </div>
   )

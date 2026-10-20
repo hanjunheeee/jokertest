@@ -15,8 +15,8 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
  * 경로의 createSessionEndFinalizer만 담당한다.
  *
  * @param {object} [options]
- * @param {boolean} [options.hold] 재생 중이거나 대기 중인 사망 연출(killReveal 큐)이 있는가.
- *   true인 동안에는 이동을 미룬다 — 지금 넘어가면 그 밤의 사망 연출이 통째로 잘린다.
+ * @param {boolean} [options.hold] 재생 중·대기 중인 밤 성공 연출이 있거나 신원 재결속 중인가.
+ *   true인 동안에는 이동을 미룬다 — 지금 넘어가면 그 밤의 개인 연출이 통째로 잘린다.
  * @flow ENDED·winResult·hold 세 조건이 처음으로 모두 갖춰진 순간에만 navigate하고, 그 뒤로는
  *   ref 가드가 재호출을 막는다(StrictMode 이중 effect·리렌더 포함). replace로 이동하므로
  *   뒤로가기로 종료된 인게임 화면에 되돌아가지 않는다(useInGameExit의 POP 차단은 REPLACE를

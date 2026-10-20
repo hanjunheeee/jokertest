@@ -15,3 +15,7 @@ export const INGAME_CONTROL_BTN_CLASS =
 /** interactive-scale-sm보다 약한 hover (1.08) */
 export const INGAME_CONTROL_BTN_IMG_CLASS =
   "block h-auto w-[clamp(2.45rem,5.2cqw,3.2rem)] select-none transition-transform duration-200 ease-out group-hover:scale-[1.08] group-active:scale-[0.95]"
+
+/** 내 역할 보기(직업 모달) 버튼 — 다른 상단 컨트롤보다 약간 작게 */
+export const INGAME_ROLE_REVEAL_BTN_IMG_CLASS =
+  "block h-auto w-[clamp(2.1rem,4.6cqw,2.85rem)] select-none transition-transform duration-200 ease-out group-hover:scale-[1.08] group-active:scale-[0.95]"

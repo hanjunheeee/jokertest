@@ -8,7 +8,7 @@
 export const INGAME_TIMEBAR_POSITION_CLASS =
   "absolute top-[clamp(0.45rem,1.8vh,1.1rem)] right-[clamp(0.35rem,1.2cqw,0.85rem)] z-10 w-[clamp(18rem,38cqw,30rem)] [container-type:inline-size]"
 
-/** 시간바와 선택적 투표 현황 버튼을 세로로 쌓는 래퍼 */
+/** 시간바와 단계 행동 줄을 세로로 쌓는 래퍼 */
 export const INGAME_TIMEBAR_STACK_CLASS =
   "flex flex-col items-stretch gap-[clamp(0.3rem,1.2cqi,0.55rem)]"
 
@@ -51,7 +51,7 @@ export const INGAME_TIMEBAR_NODE_ACTIVE_CLASS =
  * pointer-events-none으로 아래 보드의 클릭을 가로채지 않게 한다.
  */
 export const INGAME_TIMEBAR_STATUS_CLASS =
-  "pointer-events-none self-end truncate text-right font-subheading text-[clamp(0.62rem,3.1cqi,0.86rem)] font-bold leading-none tracking-wide text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none self-end truncate text-right font-subheading text-[clamp(0.82rem,4.1cqi,1.05rem)] font-bold leading-none tracking-wide text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 /** 좌측 일차 라벨 텍스트 스타일 */
 export const INGAME_TIMEBAR_DAY_LABEL_CLASS =

@@ -10,10 +10,32 @@ export function readBgmGain(state = useSettingsStore.getState()) {
     return (master / 100) * (bgm / 100)
 }
 
-function applyBgmGain(media, gain) {
+/** 우하단 조절바 음소거 — 페이지·SoundControl remount와 무관하게 앱 세션 동안 유지한다. */
+let globalBgmUiMuted = false
+const globalBgmUiMutedListeners = new Set()
+
+export function getGlobalBgmUiMuted() {
+    return globalBgmUiMuted
+}
+
+export function subscribeGlobalBgmUiMuted(listener) {
+    globalBgmUiMutedListeners.add(listener)
+    return () => globalBgmUiMutedListeners.delete(listener)
+}
+
+export function setGlobalBgmUiMuted(next) {
+    if (typeof next !== "boolean" || globalBgmUiMuted === next) return
+    globalBgmUiMuted = next
+    for (const listener of globalBgmUiMutedListeners) listener()
+}
+
+export function applyGlobalBgmToMedia(media, state = useSettingsStore.getState()) {
+    if (!media) return
+
     try {
+        const gain = readBgmGain(state)
         media.volume = gain
-        media.muted = gain <= 0
+        media.muted = !MUSIC_PLAYBACK_ENABLED || globalBgmUiMuted || gain <= 0
     } catch {
         // 일부 매체 구현은 volume 대입이 던진다 — 재생 자체는 계속한다.
     }
@@ -37,19 +59,27 @@ export function useBgmAutoplay(audioRef) {
             return undefined
         }
 
-        if (media) applyBgmGain(media, readBgmGain())
-        const unsubscribe = useSettingsStore.subscribe((state) => {
+        if (media) applyGlobalBgmToMedia(media)
+        const unsubscribeSettings = useSettingsStore.subscribe((state) => {
             const current = audioRef.current
-            if (current) applyBgmGain(current, readBgmGain(state))
+            if (current) applyGlobalBgmToMedia(current, state)
+        })
+        const unsubscribeUiMute = subscribeGlobalBgmUiMuted(() => {
+            const current = audioRef.current
+            if (current) applyGlobalBgmToMedia(current)
         })
 
         // 배경음악을 재생하는 함수입니다.
         const playBgm = () => {
             // 아직 audio 태그가 화면에 연결되지 않았다면 실행하지 않습니다.
-            if (!audioRef.current) return
+            const media = audioRef.current
+            if (!media) return
+
+            // 이미 재생 중이면 처음부터 다시 시작하지 않습니다(페이지 전환·중복 훅 방어).
+            if (media.paused === false) return
 
             // audio 태그의 play()를 호출해서 음악 재생을 시도합니다.
-            const result = audioRef.current.play()
+            const result = media.play()
             if (result && typeof result.catch === "function") {
                 result.catch(() => {
                     // 브라우저가 자동 재생을 막으면 여기로 들어옵니다 — 첫 클릭에서 다시 시도합니다.
@@ -67,7 +97,8 @@ export function useBgmAutoplay(audioRef) {
         // 페이지를 벗어나면 남아 있는 클릭 이벤트와 설정 구독을 정리합니다.
         return () => {
             window.removeEventListener("click", playBgm)
-            unsubscribe()
+            unsubscribeSettings()
+            unsubscribeUiMute()
         }
     }, [audioRef])
 }

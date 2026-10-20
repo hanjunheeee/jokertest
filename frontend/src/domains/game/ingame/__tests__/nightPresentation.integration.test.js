@@ -665,14 +665,9 @@ async function mountInGamePageDirect(socket, Page, { dismissOverlays = true } = 
   return view
 }
 
-/** 지금 화면에 떠 있는 **개인** 성공 연출(KILL)의 영상. 공개 사망 연출과 섞이지 않는다. */
+/** 지금 화면에 떠 있는 **개인** 성공 연출(KILL)의 영상. */
 function privateKillVideo(view) {
   return view.container.querySelector("[data-ingame-night-success-kill] video")
-}
-
-/** 같은 판정이 만든 **공개** 사망 연출의 영상(모든 참가자가 본다). */
-function publicDeathRevealVideo(view) {
-  return view.container.querySelector("[data-ingame-kill-reveal] video")
 }
 
 /** 마운트 직후 자동으로 열리는 자기 역할 공개 창(닫지 않은 상태에서만 있다). */
@@ -1352,15 +1347,6 @@ test("AC-03/AC-05: 마지막 밤의 종료가 연출 도중에 도착해도(실�
   await act(async () => { socket.deliver("night_result_applied", applied[0].payload) })
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
   assert.equal(router.state.location.pathname, "/ingame",
-    "아직 연출이 남았는데 결과 화면으로 넘어갔다")
-
-  // 같은 판정이 만든 **공개** 사망 연출이 먼저 올라온다(그동안 개인 연출은 소비되지 않고 남는다).
-  const publicReveal = publicDeathRevealVideo(view)
-  assert.notEqual(publicReveal, null, "종료와 함께 온 공개 사망 연출이 뜨지 않았다")
-  assert.equal(socket.emitsFor("acknowledge_night_action_success").length, 0,
-    "공개 연출이 개인 연출의 완료 보고를 대신 만들었다")
-  await act(async () => { fireEvent(publicReveal, new dom.window.Event("ended")) })
-  assert.equal(router.state.location.pathname, "/ingame",
     "개인 연출이 남았는데 결과 화면으로 넘어갔다")
 
   // 개인 연출은 잘리지 않고 그대로 이어지고, 그것이 끝나야 결과로 간다 — 정확히 한 번이다.
@@ -1770,16 +1756,9 @@ test("F27 BL production integration scenarios", async () => {
 
   await act(async () => { lastSocket.deliver("night_result_applied", lastApplied[0].payload) })
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "서버 종료가 화면에 반영되지 않았다")
-
-  // 같은 판정이 만든 공개 사망 연출까지 끝나야 결과 화면으로 간다 — 그리고 이동은 한 번뿐이다.
-  const lastPublicReveal = publicDeathRevealVideo(lastView)
-  assert.notEqual(lastPublicReveal, null, "종료와 함께 온 공개 사망 연출이 뜨지 않았다")
-  assert.equal(lastView.container.querySelector("[data-test-game-result]"), null,
-    "공개 사망 연출이 남았는데 결과 화면으로 넘어갔다")
-  await act(async () => { fireEvent(lastPublicReveal, new dom.window.Event("ended")) })
   await act(async () => { await flushMicrotasks() })
   assert.notEqual(lastView.container.querySelector("[data-test-game-result]"), null,
-    "연출이 모두 끝났는데 결과 화면으로 가지 않았다")
+    "종료가 반영됐는데 결과 화면으로 가지 않았다")
   assert.equal(lastView.navigations.filter((path) => path === "/gameresult").length, 1,
     "결과 화면 이동이 정확히 한 번이 아니다")
   assert.equal(lastSocket.emitsFor("acknowledge_night_action_success").length, 1,

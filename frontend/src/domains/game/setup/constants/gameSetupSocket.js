@@ -2,6 +2,7 @@
 export const SOCKET_EVENTS = {
   CREATE_ROOM: "create_room",
   GET_CURRENT_ROOM: "get_current_room",
+  GET_PARTY_MATCHING_ROOM: "get_party_matching_room",
   // F-20: 대기방 설정 변경. backend/utils/updateRoomSettingsValidation.js의
   // ROOM_SETTINGS_EVENTS와 같은 값이어야 한다(저장소에 공유 상수 모듈이 없어 수동 동기화하고,
   // 배선 시험이 두 목록이 갈리지 않았는지 확인한다).

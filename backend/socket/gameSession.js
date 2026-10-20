@@ -4597,6 +4597,15 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     // 하지 않는다(비-ENDED 경로는 core가 항상 sessionDeleted:true를 반환하므로 회귀가 없다).
     if (result.sessionDeleted) {
         finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
+        return
+    }
+    // 결과 화면에서 로비로 간 참가자는 ENDED detach만으로는 playerSession에서만 빠진다.
+    // 방장이 만든 다음 대기방에는 autoJoinEndedSessionPartyToRoom으로 이미 앉아 있을 수
+    // 있으므로, 잔류자의 매칭 화면·추방 목록에서도 빠지게 matchmaking Room을 정리한다.
+    try {
+        matchmaking.cleanupRoomStateForSessionParticipants(io, [uuid])
+    } catch (err) {
+        console.error('[ENDED 게임 이탈 시 matchmaking 정리 실패]', err)
     }
 }
 

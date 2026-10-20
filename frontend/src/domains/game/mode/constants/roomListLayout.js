@@ -57,11 +57,17 @@ export const ROOM_LIST_ROW_BUTTON_BASE_CLASS =
 export const ROOM_LIST_ROW_BUTTON_INTERACTIVE_CLASS = "cursor-pointer hover:brightness-110"
 export const ROOM_LIST_ROW_BUTTON_DISABLED_CLASS = "cursor-not-allowed"
 
-// 방 목록 행 프레임 위에 텍스트를 얹는 영역입니다. 상단(단계/상태 배지)·하단(제목/인원) 2행 구조입니다.
+// 방 목록 행 프레임 위에 텍스트를 얹는 영역입니다. 윗줄(방장·방 이름)·아랫줄(설정·인원) 2행 구조입니다.
 export const ROOM_LIST_ROW_OVERLAY_CLASS =
-  "absolute inset-0 flex flex-col justify-between gap-[clamp(0.05rem,0.3vh,0.15rem)] px-[8%] pt-[5%] pb-[16%]"
+  "absolute inset-0 flex flex-col justify-end gap-[clamp(0.12rem,0.35vh,0.22rem)] px-[8%] pt-[5%] pb-[3.5%]"
 
-export const ROOM_LIST_ROW_TOP_ROW_CLASS = "flex items-center justify-between gap-[clamp(0.3rem,0.8vw,0.45rem)]"
+// 윗줄: 방장 닉네임 + "의 방"(서버 title)과 상태 배지(코드·진행중·마감).
+export const ROOM_LIST_ROW_HEADER_ROW_CLASS =
+  "flex min-w-0 items-start justify-between gap-[clamp(0.3rem,0.8vw,0.45rem)]"
+
+// 방 이름 아래 구분선 — 프로토타입의 얇은 가로선.
+export const ROOM_LIST_ROW_HEADER_DIVIDER_CLASS =
+  "pointer-events-none h-px w-full shrink-0 bg-white/30"
 
 // 단계 배지: 방 이름보다 작고 대비가 낮은, 가장 눈에 덜 띄는 정보입니다.
 export const ROOM_LIST_ROW_STAGE_BADGE_CLASS =
@@ -82,21 +88,22 @@ export const ROOM_LIST_ROW_STATUS_BADGE_FULL_CLASS =
 export const ROOM_LIST_ROW_STATUS_BADGE_IN_PROGRESS_CLASS =
   `${ROOM_LIST_ROW_STATUS_BADGE_BASE_CLASS} border border-[#b50000]/55 bg-[#2a0605]/70 text-[#ff8f87]`
 
-export const ROOM_LIST_ROW_BOTTOM_ROW_CLASS = "flex items-center justify-between gap-[clamp(0.35rem,1vw,0.55rem)]"
+// 아랫줄: 광대 수·토론/투표/밤 시간(좌)과 현재/최대 인원(우).
+export const ROOM_LIST_ROW_BOTTOM_ROW_CLASS =
+  "flex min-w-0 items-center justify-between gap-[clamp(0.35rem,1vw,0.55rem)]"
 
-// 방 이름: 카드에서 가장 눈에 띄어야 하는 정보입니다. 기존 #f0b45c보다 차분한 #f3d28d를 씁니다.
+// 방 이름(방장 닉네임 + "의 방"): 카드에서 가장 눈에 띄어야 하는 정보입니다.
 export const ROOM_LIST_ROW_TITLE_CLASS =
-  "pointer-events-none min-w-0 flex-1 truncate text-left font-subheading app-text-scaled [--app-text-size:clamp(0.98rem,1.35vw,1.18rem)] font-bold leading-none text-[#f3d28d] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
+  "pointer-events-none min-w-0 flex-1 truncate text-left font-subheading app-text-scaled [--app-text-size:clamp(0.98rem,1.35vw,1.18rem)] font-bold leading-tight text-[#f3d28d] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
 
 // 인원수: 작지만 명확하게 읽혀야 하는 정보입니다(semibold, tabular-nums로 자릿수 흔들림 방지).
 export const ROOM_LIST_ROW_COUNT_CLASS =
   "pointer-events-none shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,0.88vw,0.76rem)] font-semibold leading-none tabular-nums text-white/95 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-// F-20: 서버가 승인한 직업 구성·제한시간 요약입니다. 제목보다 낮은 대비·작은 크기로 두어
-// 기존 행 위계(제목 > 인원 > 부가 정보)를 흔들지 않고, 좁은 폭에서는 잘라 인원 표시가
-// 밀려나지 않게 합니다(인원·마감 배지는 언제나 보여야 하는 정보입니다).
+// F-20: 서버가 승인한 직업 구성·제한시간 요약(예: 광대 2 / 토론 60초 · 투표 60초 · 밤 90초).
+// 제목보다 낮은 대비·작은 크기로 두고, 좁은 폭에서는 잘라 인원 표시가 밀려나지 않게 합니다.
 export const ROOM_LIST_ROW_SETTINGS_CLASS =
-  "pointer-events-none min-w-0 shrink truncate font-subheading app-text-scaled [--app-text-size:clamp(0.58rem,0.82vw,0.7rem)] font-medium leading-none text-white/65 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none min-w-0 flex-1 truncate text-left font-subheading app-text-scaled [--app-text-size:clamp(0.58rem,0.82vw,0.7rem)] font-medium leading-none text-white/80 antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 // 마감/진행중 카드를 어둡게 덮는 오버레이입니다.
 export const ROOM_LIST_ROW_DIM_OVERLAY_CLASS =

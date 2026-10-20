@@ -781,13 +781,14 @@ test("AC-04 · 소속이 갈리면 진행 중이던 시작 잠금이 풀리고, 
     socket.release("start_game", { ok: false, message: "지난 소속의 실패" })
     await oldStart
   })
-  assert.equal(alerts.includes("지난 소속의 실패"), false, "지난 소속의 실패가 지금 화면에 안내됐다")
+  assert.notEqual(result.current.startBlockedMessage, "지난 소속의 실패", "지난 소속의 실패가 지금 화면에 안내됐다")
   assert.equal(result.current.isStarting, true, "옛 요청의 finally가 새 요청의 잠금을 대신 풀었다")
 
   await act(async () => {
     socket.release("start_game", { ok: false, message: "지금 소속의 실패" })
     await newStart
   })
+  assert.equal(result.current.startBlockedMessage, "지금 소속의 실패")
   assert.equal(result.current.isStarting, false, "정상 완료가 잠금을 풀지 못했다")
 })
 

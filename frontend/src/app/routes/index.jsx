@@ -16,6 +16,7 @@ import GameSetupPage from "@/domains/game/setup/pages/GameSetupPage";
 import GameMatchingPage from "@/domains/game/matching/pages/GameMatchingPage";
 import InGamePage from "@/domains/game/ingame/pages/InGamePage.jsx";
 import GameResultPage from "@/domains/game/result/page/GameResultPage";
+import TribunalPresentationPreviewPage from "@/domains/game/ingame/pages/TribunalPresentationPreviewPage.jsx";
 import SettingPage from "@/domains/settings/pages/SettingPage.jsx";
 import StorePage from "@/domains/store/pages/StorePage.jsx";
 import LibraryPage from "@/domains/library/pages/LibraryPage.jsx";
@@ -52,6 +53,9 @@ export const router = createBrowserRouter([
           { path: "/game-matching", element: <GameMatchingPage /> },
           { path: "/ingame", element: <InGamePage /> },
           { path: "/gameresult", element: <GameResultPage /> },
+          ...(import.meta.env.DEV
+            ? [{ path: "/dev/tribunal-presentation", element: <TribunalPresentationPreviewPage /> }]
+            : []),
           { path: "/setting", element: <SettingPage /> },
           { path: "/store", element: <StorePage /> },
           { path: "/library", element: <LibraryPage /> },

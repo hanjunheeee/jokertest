@@ -19,6 +19,7 @@ import { useInGameResolveNight } from "./useInGameResolveNight.js"
 import { useInGameTribunalVoteResolve } from "./useInGameTribunalVoteResolve.js"
 import { useInGameDayDiscussionReady } from "./useInGameDayDiscussionReady.js"
 import { getDayVoteRound, parseDayVoteRoundFields } from "../utils/dayVoteRound.js"
+import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "../utils/resolveInGameDayPhase.js"
 
 const DAY_VOTE_RESOLVE_TIMEOUT_MS = 5000
 
@@ -120,7 +121,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const dayIndex = gameState?.dayIndex
   // 낮 하위 구간(DAY_DISCUSSION | DAY_VOTE). phase === "DAY"일 때만 의미가 있으므로 아래 모든
   // 게이트는 phase와 dayPhase 두 조건을 반드시 함께 본다.
-  const dayPhase = gameState?.dayPhase
+  const dayPhase = resolveInGameDayPhase(gameState)
   const dayVoteRound = getDayVoteRound(gameState)
   const dayVoteExcludedUuids = gameState?.dayVoteExcludedUuids
 
@@ -250,7 +251,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     !interactionBlocked &&
     !isGameEnded &&
     gameState?.phase === "DAY" &&
-    dayPhase === "DAY_VOTE" &&
+    dayPhase === INGAME_DAY_PHASES.VOTE &&
     // 서버 canonical 생존 상태로 판정한다 — 재판 처형·밤 사망이 반영된 뒤의 2일차 낮에서
     // 사망자에게 투표 UI가 열리지 않게 한다(서버 submitDayVote의 ACTOR_NOT_ALIVE와 짝).
     selfAliveForControls &&
@@ -298,7 +299,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     !interactionBlocked &&
     !isGameEnded &&
     gameState?.phase === "DAY" &&
-    dayPhase === "DAY_VOTE" &&
+    dayPhase === INGAME_DAY_PHASES.VOTE &&
     dayVoteResolveStatus === "idle"
 
   const resolveDayVote = () => {
@@ -360,7 +361,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     !interactionBlocked &&
     !isGameEnded &&
     gameState?.phase === "DAY" &&
-    dayPhase === "DAY_DISCUSSION" &&
+    dayPhase === INGAME_DAY_PHASES.DISCUSSION &&
     // 투표·밤 행동과 같은 판정원을 쓴다 — 세 게이트가 서로 다른 생존 판단을 하지 않게 한다.
     selfAliveForControls &&
     dayReady.status === "idle"
@@ -413,6 +414,9 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     nightActionSubmit.submit(null)
   }
 
+  const nightActionHasSubmitted =
+    gameState?.self?.hasActedThisPhase === true || nightActionSubmit.hasSubmitted === true
+
   return {
     gameState,
     error,
@@ -426,6 +430,8 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     hasTarget,
     nightActionStatus: nightActionSubmit.status,
     nightActionError: nightActionSubmit.error,
+    nightActionLastSubmittedTargetId: nightActionSubmit.lastSubmittedTargetId,
+    nightActionHasSubmitted,
     selectedDayVoteTargetId,
     setSelectedDayVoteTargetId,
     dayPhase,
@@ -454,6 +460,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     tribunalVoteStatus: tribunalVoteSubmit.status,
     tribunalVoteError: tribunalVoteSubmit.error,
     tribunalVoteSubmittedVote: tribunalVoteSubmit.submittedVote,
+    tribunalVoteHasSubmitted: tribunalVoteSubmit.hasSubmitted,
     tribunalVoteIsDefendant: tribunalVoteSubmit.isDefendant,
     tribunalVoteAlive: tribunalVoteSubmit.alive,
     tribunalVoteControlsEnabled,

@@ -10,6 +10,7 @@ import { useNotificationSocketEvents } from "@/domains/notifications/hooks/useNo
 import { useSocket } from "@/shared/hooks/useSocket"
 import { useAppTextScaleSync } from "@/app/useAppTextScaleSync.js"
 import { useSfxRuntime } from "@/shared/hooks/useSfxRuntime.js"
+import GlobalBgmLayer from "@/shared/ui/GlobalBgmLayer.jsx"
 
 export default function App() {
     const socket = useSocket()
@@ -34,8 +35,10 @@ export default function App() {
     // 않는다"는 처리 표식이 활성 범위 내내 살아 있는다. 실제 사건 dispatch는 각 producer의
     // 수신 경계(useFriendSocketEvents·useMatchingRoom·useGameSessionSocketEvents)가 하고,
     // 일반 버튼/링크 클릭은 이 훅이 설치하는 document capture 단일 소유자가 처리한다.
-    // 이 훅은 BGM을 켜지 않는다 — 배경음은 로비·로그인 화면의 useBgmAutoplay가 따로 맡는다.
     useSfxRuntime()
+
+    // 배경음은 GlobalBgmLayer가 앱 수명 동안 audio 하나만 유지한다 — 페이지 전환마다
+    // 새 audio를 만들지 않아 재생 위치가 끊기지 않는다.
 
     // 앱이 켜질 때마다(새로고침 포함) localStorage의 로그인 상태를 서버 세션(쿠키)과 맞춥니다.
     // 예전에는 isLoggedIn일 때만, 새로고침이 아닐 때만 /auth/me를 불렀고 응답은 버렸습니다 —
@@ -45,5 +48,10 @@ export default function App() {
         bootstrapSession({ getMe: getMeApi, getMyProfile: getMyProfileApi, store: useAuthStore })
     }, [])
 
-    return <RouterProvider router={router} />
+    return (
+        <>
+            <GlobalBgmLayer />
+            <RouterProvider router={router} />
+        </>
+    )
 }

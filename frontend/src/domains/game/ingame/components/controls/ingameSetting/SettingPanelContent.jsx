@@ -9,6 +9,7 @@ import {
 import { useInGameSettingIsHost } from "../../../hooks/useInGameSettingIsHost.js"
 import { useInGameSettingPanel } from "../../../hooks/useInGameSettingPanel.js"
 import SettingChatTab from "./SettingChatTab.jsx"
+import SettingRoomCodeButton from "./SettingRoomCodeButton.jsx"
 import SettingRoomTab from "./SettingRoomTab.jsx"
 import SettingSoundTab from "./SettingSoundTab.jsx"
 import SettingTabs from "./SettingTabs.jsx"
@@ -20,7 +21,7 @@ function SettingTabPanel({
 }) {
   if (activeTab === "chat") return <SettingChatTab />
   if (activeTab === "room") {
-    return <SettingRoomTab onOpenKickPlayer={onOpenKickPlayer} onOpenRoomCode={onOpenRoomCode} />
+    return <SettingRoomTab onOpenKickPlayer={onOpenKickPlayer} />
   }
   return (
     <SettingSoundTab
@@ -54,7 +55,7 @@ export default function SettingPanelContent({ onOpenKickPlayer, onOpenRoomCode }
     useInGameSettingPanel({ isHost })
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       <SidePanelHeader
         title="설정"
         subtitle="게임 중 빠르게 변경할 수 있는 설정입니다."
@@ -62,15 +63,7 @@ export default function SettingPanelContent({ onOpenKickPlayer, onOpenRoomCode }
 
       <SettingTabs tabs={visibleTabs} activeTab={activeTab} onSelect={setActiveTab} />
 
-      {isHost ? null : (
-        <div className={COMMON_ACTION_WRAP_CLASS}>
-          <button type="button" className={COMMON_ACTION_BTN_CLASS} onClick={() => onOpenRoomCode?.()}>
-            방 코드 보기
-          </button>
-        </div>
-      )}
-
-      <div className={`${INGAME_SETTING_SCROLL_WRAP_CLASS} w-full min-w-0`}>
+      <div className={`${INGAME_SETTING_SCROLL_WRAP_CLASS} w-full min-w-0 pb-[clamp(2.35rem,7vh,3rem)]`}>
         <div ref={scrollRef} className={INGAME_SETTING_SCROLL_CLASS}>
           <SettingTabPanel
             activeTab={activeTab}
@@ -85,6 +78,8 @@ export default function SettingPanelContent({ onOpenKickPlayer, onOpenRoomCode }
 
         <Scrollbar scrollRef={scrollRef} />
       </div>
+
+      <SettingRoomCodeButton onClick={() => onOpenRoomCode?.()} />
     </div>
   )
 }

@@ -3,14 +3,14 @@
  *
  * F-24(AC-01/AC-04/AC-05): 이 탭의 두 항목은 더 이상 지역 상태에만 머무르지 않는다.
  *   - "다음 게임 동일 설정 유지"는 useNextRoomSettings를 통해 현재 계정의 영속 저장소로 간다.
- *   - "방 코드 복사"는 부모(SettingPanel)가 띄우는 실제 방코드 모달을 연다.
+ *   - "방 코드 보기"는 설정 패널 우측 하단 공통 버튼(SettingRoomCodeButton)으로 이동했다.
  */
 import { INGAME_SETTING_ROOM_ROWS } from "../../../constants/controls/ingameSetting/ingameSettingData.js"
 import { INGAME_SETTING_TAB_BODY_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import { useNextRoomSettings } from "../../../hooks/useNextRoomSettings.js"
 import SettingRoomRow from "./SettingRoomRow.jsx"
 
-/** 안내·재시도 줄의 스타일. 행 아래에 붙어 실패 사유와 저장 범위를 함께 읽어 준다. */
+/** 안내·재시도 줄의 스타일. 행 아래에 붙어 실패 사유를 읽어 준다. */
 const NOTICE_CLASS =
   "mt-[0.45rem] px-[0.6rem] text-left font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1vw,0.88rem)] leading-snug text-[#f0e0c8]/80"
 const ERROR_CLASS = `${NOTICE_CLASS} text-[#ffb3a7]`
@@ -19,17 +19,11 @@ const RETRY_CLASS =
 
 export default function SettingRoomTab({ onOpenKickPlayer, onOpenRoomCode }) {
   const {
-    enabled, canToggle, canDisable, setKeepSettings, statusMessage, canRetry, retry, scopeNotice,
+    enabled, canToggle, canDisable, setKeepSettings, statusMessage, canRetry, retry,
   } = useNextRoomSettings()
 
   const handleRoomAction = (rowId) => {
-    if (rowId === "kick-player") {
-      onOpenKickPlayer?.()
-      return
-    }
-    if (rowId === "view-room-code") {
-      onOpenRoomCode?.()
-    }
+    if (rowId === "kick-player") onOpenKickPlayer?.()
   }
 
   return (
@@ -73,9 +67,6 @@ export default function SettingRoomTab({ onOpenKickPlayer, onOpenRoomCode }) {
                     ) : null}
                   </p>
                 ) : null}
-                {/* 저장 범위(같은 브라우저·계정별)를 항상 보이게 둔다 — 다른 브라우저에서도
-                    복원된다고 믿게 두지 않는다(A-08). */}
-                <p className={NOTICE_CLASS}>{scopeNotice}</p>
               </>
             ) : null}
           </div>

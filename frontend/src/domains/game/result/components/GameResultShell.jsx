@@ -18,16 +18,15 @@ import {
 import GameResultBanner from "./GameResultBanner.jsx"
 import GameResultMvpPanel from "./GameResultMvpPanel.jsx"
 import GameResultPlayerList from "./GameResultPlayerList.jsx"
-import GameResultRosterStrip from "./GameResultRosterStrip.jsx"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
-/** 게임 결과 화면 — 배경 + 승패 배너 + 본인 캐릭터 + 플레이어 목록 + MVP */
+/** 게임 결과 화면 — 배경 + 승패 배너 + 플레이어 목록 + MVP */
 export default function GameResultShell({
   outcome,
   winningTeam,
   players,
-  rosterPlayers = [],
+  selfUuid = null,
   mvp,
 }) {
   const bgSrc =
@@ -62,17 +61,6 @@ export default function GameResultShell({
           <GameResultBanner outcome={outcome} />
         </motion.div>
 
-        <motion.div
-          initial={GAME_RESULT_INNER_REVEAL_INITIAL}
-          animate={GAME_RESULT_INNER_REVEAL_ANIMATE}
-          transition={{
-            ...GAME_RESULT_INNER_REVEAL_TRANSITION,
-            delay: GAME_RESULT_INNER_REVEAL_DELAYS.roster,
-          }}
-        >
-          <GameResultRosterStrip players={rosterPlayers} />
-        </motion.div>
-
         <div className={GAME_RESULT_BODY_CLASS}>
           <motion.div
             initial={GAME_RESULT_INNER_REVEAL_INITIAL}
@@ -86,6 +74,7 @@ export default function GameResultShell({
               outcome={outcome}
               winningTeam={winningTeam}
               players={players}
+              selfUuid={selfUuid}
             />
           </motion.div>
           {mvp ? (

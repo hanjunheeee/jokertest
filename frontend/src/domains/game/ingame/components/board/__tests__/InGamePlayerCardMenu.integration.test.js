@@ -99,7 +99,10 @@ const { default: InGamePage } = await import("../../../pages/InGamePage.jsx")
 const { useInGameStore } = await import("../../../store/ingameStore.js")
 const { useAuthStore } = await import("../../../../../auth/store/auth.store.js")
 const { INGAME_PLAYER_CARD_MENU_ATTR } = await import("../InGamePlayerCardMenu.jsx")
-const { INGAME_CARD_MENU_DAY_VOTE_LABEL } = await import("../../../hooks/useInGamePlayerCardMenu.js")
+const {
+  INGAME_CARD_MENU_DAY_VOTE_LABEL,
+  INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL,
+} = await import("../../../hooks/useInGamePlayerCardMenu.js")
 const { INGAME_E2E_ATTRS } = await import("../../../constants/e2e/ingameE2eHooks.js")
 
 const GAME_ID = "cm-v1-board"
@@ -224,7 +227,12 @@ test("AC-04: 카드 좌클릭 메뉴의 투표가 계약된 cast_day_vote 페이
   assert.equal(menuIsOpen(view.container), true, "카드 좌클릭으로 메뉴가 열리지 않았다")
 
   const voteItem = findButtonIn(menuNodeOf(view.container), INGAME_CARD_MENU_DAY_VOTE_LABEL)
-  assert.notEqual(voteItem, null, "메뉴에 투표 항목이 없다")
+  assert.notEqual(voteItem, null, "오버레이에 투표하기 항목이 없다")
+  assert.equal(
+    findButtonIn(menuNodeOf(view.container), INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL),
+    null,
+    "아직 투표하지 않은 카드에는 투표취소가 함께 뜨면 안 된다",
+  )
   await act(async () => {
     // 정상 클릭의 mousedown이 "바깥 클릭 취소"로 처리되면 이 제출 자체가 사라진다.
     fireEvent.mouseDown(voteItem)

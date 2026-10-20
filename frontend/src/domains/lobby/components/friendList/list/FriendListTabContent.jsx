@@ -1,4 +1,5 @@
 import {
+  FRIEND_LIST_STATUS_ERROR_CLASS,
   FRIEND_LIST_TAB_CLASS,
   FRIEND_TAB_GROUP_GAP_CLASS,
   FRIEND_TAB_SCROLLABLE_LIST_CLASS,
@@ -80,7 +81,7 @@ export default function FriendListTabContent({
       />
       {/* 조회 실패를 빈 목록으로 위장하지 않는다 — 사실과 재시도를 함께 보여준다(AC-02). */}
       {friendsError !== null ? (
-        <p role="status" data-friend-list-error="true" className="px-2 app-text-scaled [--app-text-size:11px] text-red-300/90">
+        <p role="status" data-friend-list-error="true" className={`px-2 ${FRIEND_LIST_STATUS_ERROR_CLASS}`}>
           {friendsError}
           {onRetry !== null ? (
             <button type="button" onClick={onRetry} className="ml-2 underline" style={{ outline: "none" }}>

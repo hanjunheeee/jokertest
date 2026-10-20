@@ -229,7 +229,7 @@ function matchesPreparedGameChatCapability(prepared, capability) {
  * 결정한다(순수 함수 — 어떤 상태도 읽고 바꾸지 않는다). 발행 권한만 판정한다 — 수신 권한은
  * getChatRecipientUuids가 따로 판정하고, 둘의 분업이 "사망자는 읽을 수는 있어도 쓸 수는
  * 없다"를 만든다.
- *   - 생존자: DAY에서만 공개 채팅. 그 외 phase는 INVALID_PHASE.
+ *   - 생존자: DAY·TRIBUNAL(최후의 반론)에서 공개 DAY 채팅. 그 외 phase는 INVALID_PHASE.
  *   - 사망자: 어떤 phase에서도 발행할 수 없다(NOT_ELIGIBLE). 사망자는 공개 채널의 관전자이지
  *     발신자가 아니다 — 밤에 사망자끼리 대화가 열리면 밤 동안 정보가 새고(그 밤의 판정 전에
  *     사망 사실·역할이 오간다), 낮에 사망자가 발언하면 산 사람의 토론에 개입하게 된다.
@@ -239,7 +239,7 @@ function matchesPreparedGameChatCapability(prepared, capability) {
  */
 function resolveGameChatChannel(session, actor) {
     if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
-    if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
+    if (session.phase !== 'DAY' && session.phase !== 'TRIBUNAL') return { ok: false, code: 'INVALID_PHASE' }
     return { ok: true, channel: CHAT_CHANNELS.DAY }
 }
 
@@ -514,6 +514,75 @@ function getActiveSessionRoutingInfo(uuid) {
     const session = gameSessions.get(gameId)
     if (!session) return null
     return { gameId: session.id, channelId: session.channelId }
+}
+
+/**
+ * matchmaking 진입(create_room·코드/공개방 join·queue)을 막아야 하는 **진행 중** 게임 소속인가.
+ *
+ * 정상 종료(phase ENDED)된 판의 참가 소속은 "진행 중"이 아니다 — 결과 화면에서 매칭으로
+ * 돌아가 새 방을 만들거나 다시 참가할 수 있게 한다. 배제(forfeited)된 계정은 소속 매핑이
+ * 남아 있어도 막지 않는다(기존 rejectIfInActiveGame 계약과 같다).
+ */
+function isParticipantBlockedFromMatchmaking(uuid) {
+    const routing = getActiveSessionRoutingInfo(uuid)
+    if (!routing || isForfeitedFromSession(routing.gameId, uuid)) return false
+    const session = gameSessions.get(routing.gameId)
+    if (!session) return false
+    return session.phase !== 'ENDED'
+}
+
+/**
+ * 방장이 종료된 판에서 새 대기방을 만들었을 때, 같은 판 참가자에게 알릴 게임 채널 문맥.
+ * @returns {{gameId:string, channelId:string}|null}
+ */
+function getEndedSessionPartyBroadcastContext(hostUuid) {
+    const routing = getActiveSessionRoutingInfo(hostUuid)
+    if (!routing) return null
+    const session = gameSessions.get(routing.gameId)
+    if (!session || session.phase !== 'ENDED') return null
+    if (session.hostUuid !== hostUuid) return null
+    const participantUuids = []
+    for (const uuid of session.players.keys()) {
+        if (uuid === hostUuid) continue
+        if (isForfeitedFromSession(session.id, uuid)) continue
+        participantUuids.push(uuid)
+    }
+    return { gameId: session.id, channelId: session.channelId, participantUuids }
+}
+
+/**
+ * uuid가 아직 playerSession에 남아 있는 ENDED 판의 gameId를 돌려준다(순수 조회).
+ */
+function getEndedSessionGameIdForParticipant(uuid) {
+    const routing = getActiveSessionRoutingInfo(uuid)
+    if (!routing || isForfeitedFromSession(routing.gameId, uuid)) return null
+    const session = gameSessions.get(routing.gameId)
+    if (!session || session.phase !== 'ENDED') return null
+    return session.id
+}
+
+/**
+ * ENDED 판의 참가자가 방장이 만든 다음 대기방을 조회할 자격이 있는지(순수 조회).
+ */
+function canLookupPartyMatchingRoom(uuid, gameId) {
+    if (typeof gameId !== 'string' || gameId.length === 0) return false
+    if (isForfeitedFromSession(gameId, uuid)) return false
+    const session = gameSessions.get(gameId)
+    if (!session || session.phase !== 'ENDED') return false
+    return session.players.has(uuid)
+}
+
+/** ENDED 판 참가자 uuid 목록(방장·배제자 제외). 파티 매칭 방 알림 폴백용. */
+function getEndedSessionParticipantUuids(gameId, { excludeUuid = null } = {}) {
+    const session = gameSessions.get(gameId)
+    if (!session || session.phase !== 'ENDED') return []
+    const uuids = []
+    for (const uuid of session.players.keys()) {
+        if (uuid === excludeUuid) continue
+        if (isForfeitedFromSession(gameId, uuid)) continue
+        uuids.push(uuid)
+    }
+    return uuids
 }
 
 /**
@@ -902,7 +971,9 @@ function checkGameSessionPreconditions(room) {
         return { ok: false, code: 'DUPLICATE_ROOM_SESSION' }
     }
     for (const uuid of room.players.keys()) {
-        if (playerSession.has(uuid)) {
+        // ENDED 판 소속은 playerSession에 남아 있어도 "진행 중"이 아니다 — 결과 화면에서
+        // 대기방으로 돌아와 다시 start_game 할 수 있게 matchmaking 게이트와 같은 판정을 쓴다.
+        if (isParticipantBlockedFromMatchmaking(uuid)) {
             return { ok: false, code: 'PLAYER_ALREADY_IN_SESSION' }
         }
     }
@@ -1073,8 +1144,16 @@ function commitGameSession(session) {
         throw new Error(`Room에 이미 활성 GameSession 존재: ${session.roomId}`)
     }
     for (const uuid of session.players.keys()) {
-        if (playerSession.has(uuid)) {
-            throw new Error(`참가자가 이미 다른 GameSession에 속함: ${uuid}`)
+        const existingGameId = playerSession.get(uuid)
+        if (existingGameId && existingGameId !== session.id) {
+            const existingSession = gameSessions.get(existingGameId)
+            // ENDED 판 소속은 결과 화면→대기방→재시작 흐름에서 playerSession에 남아 있을 수
+            // 있다 — 새 판 커밋 전에 개별 이탈과 같은 방식으로 먼저 분리한다.
+            if (existingSession?.phase === 'ENDED') {
+                endGameSessionForPlayer(uuid, 'SUPERSEDED_BY_NEW_GAME', existingGameId)
+            } else if (isParticipantBlockedFromMatchmaking(uuid)) {
+                throw new Error(`참가자가 이미 다른 GameSession에 속함: ${uuid}`)
+            }
         }
     }
     gameSessions.set(session.id, session)
@@ -4693,6 +4772,11 @@ module.exports = {
     getSessionSnapshotForPlayer,
     buildSessionSnapshot,
     getActiveSessionRoutingInfo,
+    isParticipantBlockedFromMatchmaking,
+    getEndedSessionPartyBroadcastContext,
+    getEndedSessionGameIdForParticipant,
+    canLookupPartyMatchingRoom,
+    getEndedSessionParticipantUuids,
     // F-24(AC-02): 방 코드 → 세션 상태 조회. 소켓 계층(matchmaking)의 입장 판정과 코드 재발급
     // 예약이 직접 부르는 진입점이라 __testables가 아니라 정식 export다.
     getRoomCodeSessionState,

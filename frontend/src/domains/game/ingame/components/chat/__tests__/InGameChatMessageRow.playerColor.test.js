@@ -72,7 +72,7 @@ test("colorIndex가 유효한 비음수 정수가 아니면 테마가 없다(색
 
 // F-15(AC-02/AC-04): "닉네임 색상 표시" 체크박스가 실제 채팅 렌더링을 가린다 — 꺼져 있으면
 // 유효한 themeStyles가 있어도 색을 적용하지 않는다.
-test("닉네임 색상 표시가 꺼져 있으면 유효한 themeStyles가 있어도 색을 적용하지 않는다", () => {
+test("닉네임 색상 표시가 꺼져 있으면 유효한 themeStyles가 있어도 색·그림자를 적용하지 않는다", () => {
   setNicknameColorEnabled(false)
   const theme = resolveInGamePlayerThemeByColorIndex(0)
 
@@ -82,17 +82,29 @@ test("닉네임 색상 표시가 꺼져 있으면 유효한 themeStyles가 있�
   assert.equal(className, "")
 })
 
-test("설정을 저장한 적 없으면(store 기본값) ingameSettingData.js가 정한 기본값(꺼짐)을 따른다", () => {
+test("설정을 저장한 적 없으면(store 기본값) ingameSettingData.js가 정한 기본값(켜짐)을 따른다", () => {
   useSettingsStore.setState({ chatChecks: null })
   const theme = resolveInGamePlayerThemeByColorIndex(0)
 
   const { style } = resolveInGameChatPlayerColor(theme.styles)
 
   assert.equal(
-    style,
-    undefined,
-    "nickname-color의 defaultChecked가 false이므로 저장된 적 없으면 색을 적용하지 않아야 한다",
+    style?.color,
+    INGAME_PLAYER_THEME_PALETTE[0].color,
+    "nickname-color의 defaultChecked가 true이므로 저장된 적 없으면 팔레트 색을 적용해야 한다",
   )
+  assert.equal(
+    style?.textShadow,
+    "0 1px 2px rgba(0,0,0,0.85)",
+    "저장된 적 없어도 테마색 텍스트에는 그림자가 적용되어야 한다",
+  )
+})
+
+test("닉네임 색상 표시가 켜져 있으면 textShadow도 함께 돌려준다", () => {
+  const theme = resolveInGamePlayerThemeByColorIndex(0)
+  const { style } = resolveInGameChatPlayerColor(theme.styles)
+
+  assert.equal(style.textShadow, "0 1px 2px rgba(0,0,0,0.85)")
 })
 
 // F-15(AC-04): 색의 유일한 입력은 공개 colorIndex뿐이다 — 이 함수는 themeStyles.color 외의

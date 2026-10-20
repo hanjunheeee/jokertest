@@ -160,7 +160,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
   }, [socket])
 
   const send = () => {
-    // 지금 보낼 수 있는 채널이 없으면(생존자의 NIGHT/TRIBUNAL, 사망자의 ROLE_REVEAL/ENDED,
+    // 지금 보낼 수 있는 채널이 없으면(생존자의 NIGHT, 사망자의 DAY/TRIBUNAL/ROLE_REVEAL/ENDED,
     // 생존 여부 미확정 등) emit 자체를 하지 않는다 — 서버도 같은 규칙으로 INVALID_PHASE를
     // 반환한다. 채널은 사용자가 고르는 값이 아니라 canonical 상태에서만 유도된다.
     const requestChannel = sendChannel

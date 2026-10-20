@@ -33,6 +33,10 @@ export const INGAME_PLAYER_THEME_PALETTE_SIZE = INGAME_PLAYER_THEME_PALETTE.leng
 export const INGAME_PLAYER_THEME_TEXT_RENDER_CLASS =
   "antialiased [transform:translateZ(0)] [backface-visibility:hidden]"
 
+/** 플레이어 카드 명패·채팅 등 테마색 텍스트 가독성용 그림자 — ingamePlayerAssets 명패와 동일 */
+export const INGAME_PLAYER_THEME_TEXT_SHADOW =
+  "0 1px 2px rgba(0,0,0,0.85)"
+
 /**
  * @param {string} color
  * @param {{ emphasized?: boolean }} [options] emphasized — 투표 선택 등 stroke 강화

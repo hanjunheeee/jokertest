@@ -5,7 +5,7 @@ import { JSDOM } from "jsdom"
 import React from "react"
 
 // F-33 E-1: 실제 router·StorePage·StorePanel·그리드·상세·구매 컨트롤러·economy 스토어를 jsdom에 마운트해
-// 이모티콘 탭(23종)·상점 15종 구매 버튼·기본 8종 구매 불가를 검증한다. 대체하는 것은 외부 경계뿐이다 —
+// 이모티콘 탭(상점 15종)·구매·일괄구매·기본 8종 그리드 제외를 검증한다. 대체하는 것은 외부 경계뿐이다 —
 // env.js(API_BASE_URL)와 전역 fetch(서버 응답). 패턴은 F32CurrencyPurchase.ui.test.js와 같다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
@@ -177,20 +177,23 @@ test("storeItems: EMOTICON_STORE_ITEMS는 설계도 §0의 23종이고 기본 8�
   assert.equal(STORE_ITEMS.some((item) => item.id.startsWith("emoticon-")), false)
 })
 
-test("AC-05: 이모티콘 탭에 23종이 모두 보이고 다른 카테고리 상품은 섞이지 않는다", async () => {
+test("AC-05: 이모티콘 탭에는 상점 15종만 보이고 기본 8종·다른 카테고리 상품은 섞이지 않는다", async () => {
   await newWorld()
   const view = await mountStore()
   await waitEconomyReady()
   await openEmoticonTab(view)
 
   const slots = slotButtons(view)
-  assert.equal(slots.length, 23, "이모티콘 탭의 상품 칸은 23개다")
-  for (const [, name] of [...BASIC_EMOTICONS, ...SHOP_EMOTICONS]) findSlot(view, name)
+  assert.equal(slots.length, 15, "이모티콘 탭의 상품 칸은 상점 15종만이다")
+  for (const [, name] of SHOP_EMOTICONS) findSlot(view, name)
+  for (const [, name] of BASIC_EMOTICONS) {
+    assert.throws(() => findSlot(view, name), /상품 칸/)
+  }
   assert.doesNotMatch(text(view), /남작|가고일/, "다른 카테고리 상품은 보이지 않는다")
   assert.doesNotMatch(text(view), /표시 전용/, "이모티콘은 더 이상 표시 전용이 아니다")
 })
 
-test("AC-05(StorePanel 직접 마운트): 기본 8종 소유 지갑이면 이모티콘 탭 23종·기본 8종 보유/구매 불가·상점 15종 구매 가능", async () => {
+test("AC-05(StorePanel 직접 마운트): 이모티콘 탭에는 상점 15종만 보이고 모두 구매 가능하다", async () => {
   await newWorld()
   const view = await mountStorePanel()
   // StorePanel 자신의 진입 효과가 fetchSummary(/wallet + /entitlements)를 부른다.
@@ -199,13 +202,7 @@ test("AC-05(StorePanel 직접 마운트): 기본 8종 소유 지갑이면 이모
   assert.ok(calls.some((call) => call.method === "GET" && ENTITLEMENTS.test(call.path)), "StorePanel이 소유 목록을 조회한다")
   await openEmoticonTab(view)
 
-  assert.equal(slotButtons(view).length, 23, "이모티콘 탭의 상품 칸은 23개다")
-  for (const [, name] of BASIC_EMOTICONS) {
-    await selectItem(view, name)
-    const panel = detail(view)
-    assert.equal(panel.queryByRole("button", { name: "구매" }), null, `${name}에는 구매 버튼이 없어야 한다`)
-    assert.equal(panel.getByRole("button", { name: "보유중" }).disabled, true, `${name}은 보유중·비활성이다`)
-  }
+  assert.equal(slotButtons(view).length, 15, "이모티콘 탭의 상품 칸은 상점 15종만이다")
   for (const [, name] of SHOP_EMOTICONS) {
     await selectItem(view, name)
     assert.equal(detail(view).getByRole("button", { name: "구매" }).disabled, false, `${name}의 구매 버튼은 활성이어야 한다`)
@@ -232,45 +229,6 @@ test("AC-05: 상점 15종은 선택하면 활성 구매 버튼이 보이고, 누
   assert.deepEqual(posts(BULK_POST)[0].body.items, [{ itemId: "emoji-thorned-heart" }])
 })
 
-test("AC-05: 기본 8종은 선택해도 구매 버튼이 없고(보유중·비활성) 구매 요청을 보내지 않는다", async () => {
-  await newWorld()
-  const view = await mountStore()
-  await waitEconomyReady()
-  // 서버 소유 목록을 다시 받아도(재조회) 기본 8종은 보유 상태로 남는다.
-  await act(async () => { await useEconomyStore.getState().fetchSummary() })
-  assert.deepEqual(
-    useEconomyStore.getState().entitlements.map((entitlement) => entitlement.itemId),
-    BASIC_EMOTICONS.map(([itemId]) => itemId),
-  )
-  await openEmoticonTab(view)
-
-  for (const [, name] of BASIC_EMOTICONS) {
-    await selectItem(view, name)
-    const panel = detail(view)
-    assert.equal(panel.queryByRole("button", { name: "구매" }), null, `${name}에는 구매 버튼이 없어야 한다`)
-    const owned = panel.getByRole("button", { name: "보유중" })
-    assert.equal(owned.disabled, true)
-    assert.match(panel.getByText("기본 지급").textContent, /기본 지급/)
-    await act(async () => { fireEvent.click(owned) })
-  }
-  assert.equal(posts(BULK_POST).length, 0, "기본 지급 이모티콘은 구매 요청을 만들지 않는다")
-})
-
-test("AC-05: 소유 목록에 아직 없더라도 기본 8종은 구매 버튼 대신 '기본 지급'으로 막힌다", async () => {
-  await newWorld({ entitlements: [] })
-  const view = await mountStore()
-  await waitEconomyReady()
-  await openEmoticonTab(view)
-
-  await selectItem(view, "거절")
-  const panel = detail(view)
-  assert.equal(panel.queryByRole("button", { name: "구매" }), null)
-  const blocked = panel.getByRole("button", { name: "기본 지급" })
-  assert.equal(blocked.disabled, true)
-  await act(async () => { fireEvent.click(blocked) })
-  assert.equal(posts(BULK_POST).length, 0)
-})
-
 test("AC-05: 이모티콘 탭에서도 일괄구매로 상점 이모티콘을 묶어 사고, 기본 지급 이모티콘은 묶음에 들어가지 않는다", async () => {
   await newWorld()
   const view = await mountStore()
@@ -278,9 +236,9 @@ test("AC-05: 이모티콘 탭에서도 일괄구매로 상점 이모티콘을 �
   await openEmoticonTab(view)
 
   await click(view, "일괄구매")
+  await selectItem(view, "가시박힌 심장") // 탭 진입 시 자동 선택된 상품 해제
   await selectItem(view, "깜짝")
   await selectItem(view, "정조준")
-  await selectItem(view, "거절") // 기본 지급 — 선택되지 않아야 한다
   await click(view, "구매")
   const dialog = within(view.getByRole("dialog", { name: "선택 상품 구매 확인" }))
   await act(async () => { fireEvent.click(dialog.getByRole("button", { name: "구매하기" })) })

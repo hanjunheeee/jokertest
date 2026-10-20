@@ -16,7 +16,6 @@ import {
   INGAME_TIMEBAR_STATUS_CLASS,
   INGAME_TIMEBAR_TRACK_INSET,
 } from "../../constants/timebar/ingameTimebarLayout.js"
-import InGameVoteToggleButton from "../vote/InGameVoteToggleButton.jsx"
 import InGamePhaseActionRow from "./InGamePhaseActionRow.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
@@ -58,7 +57,6 @@ function TimebarNode({
  * @param {number} day 현재 게임 일차 — 좌측 "제 N일" 라벨
  * @param {string} activePhaseId 강조할 단계 노드 id
  * @param {string|null} statusMessage 프레임 아래에 띄울 현재 상태 문구(없으면 줄 자체를 그리지 않음)
- * @param {Function} [onVoteStatusClick] 투표현황 버튼 클릭 — 넘기지 않으면 버튼을 그리지 않음
  * @param {string} className 배치 클래스
  * @flow statusMessage가 비어 있으면(ENDED 등) 문구 줄을 렌더하지 않아 기존 표시·레이아웃이 그대로 유지된다.
  */
@@ -69,8 +67,6 @@ export default function InGameTimebar({
   activePhaseId = INGAME_DAY_TIMEBAR_ACTIVE_PHASE,
   // statusMessage: 현재 phase·밤 역할 턴 상태 문구 — 기본값 null이면 지금까지와 완전히 동일한 화면
   statusMessage = null,
-  // onVoteStatusClick: timebar 우측 하단 투표현황 버튼 클릭
-  onVoteStatusClick,
   className = INGAME_TIMEBAR_POSITION_CLASS,
 }) {
   const dayLabel = `제 ${day}일`
@@ -114,11 +110,7 @@ export default function InGameTimebar({
         <p className={INGAME_TIMEBAR_STATUS_CLASS}>{statusMessage}</p>
       ) : null}
 
-      {onVoteStatusClick ? (
-        <InGameVoteToggleButton onClick={onVoteStatusClick} />
-      ) : null}
-
-      {/* V-2: 제어 패널이 사라지면서 대상 없는 행동 버튼(준비·기권·집계·판정·건너뛰기·밤
+      {/* V-2: 제어 패널이 사라지면서 대상 없는 행동 버튼(준비·집계·판정·밤
           종료)이 이 줄로 옮겨왔다. 값은 이 컴포넌트가 InGameActionContext에서 직접 읽으므로
           시간바는 조작 계약을 알지 않는다 — 그릴 것이 없는 단계에서는 스스로 null이 된다. */}
       <InGamePhaseActionRow />

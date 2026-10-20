@@ -19,12 +19,12 @@ test("getAppTextScale: 기본값(3)은 배율 1이다 — 저장한 적 없으�
   assert.equal(getAppTextScale(GENERAL_SETTING_TEXT_SIZE.defaultValue), 1)
 })
 
-test("getAppTextScale: 최솟값·최댓값은 좁은 범위(0.85~1.15) 안에서 대칭이다", () => {
+test("getAppTextScale: 최솟값·최댓값은 0.7~1.3 범위 안에서 대칭이다", () => {
   const atMin = getAppTextScale(GENERAL_SETTING_TEXT_SIZE.min)
   const atMax = getAppTextScale(GENERAL_SETTING_TEXT_SIZE.max)
 
-  assert.ok(atMin >= 0.85 && atMin < 1)
-  assert.ok(atMax <= 1.15 && atMax > 1)
+  assert.ok(atMin >= 0.7 && atMin < 1)
+  assert.ok(atMax <= 1.3 && atMax > 1)
   assert.ok(Math.abs(1 - atMin - (atMax - 1)) < 1e-9, "기본값 기준으로 대칭이어야 한다")
 })
 

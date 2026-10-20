@@ -1,4 +1,7 @@
-import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../constants/ingamePlayerTheme.js"
+import {
+  INGAME_PLAYER_THEME_TEXT_RENDER_CLASS,
+  INGAME_PLAYER_THEME_TEXT_SHADOW,
+} from "../../constants/ingamePlayerTheme.js"
 import { INGAME_SETTING_CHAT_CHECKBOXES } from "../../constants/controls/ingameSetting/ingameSettingData.js"
 import { useSettingsStore } from "../../../../settings/store/settingsStore.js"
 
@@ -37,7 +40,9 @@ export function resolveInGameChatPlayerColor(themeStyles, nicknameColorEnabledOv
   const applyColor = Boolean(themeStyles) && nicknameColorEnabled
 
   return {
-    style: applyColor ? { color: themeStyles.color } : undefined,
+    style: applyColor
+      ? { color: themeStyles.color, textShadow: INGAME_PLAYER_THEME_TEXT_SHADOW }
+      : undefined,
     className: applyColor ? INGAME_PLAYER_THEME_TEXT_RENDER_CLASS : "",
   }
 }

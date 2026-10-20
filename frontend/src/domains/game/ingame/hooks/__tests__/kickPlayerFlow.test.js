@@ -88,8 +88,7 @@ const { InGamePlayerSessionProvider } = await import("../../components/InGamePla
 const { default: InGamePlayerBoard } = await import("../../components/board/InGamePlayerBoard.jsx")
 const { INGAME_PLAYER_CARD_MENU_ATTR } = await import(
   "../../components/board/InGamePlayerCardMenu.jsx")
-const { INGAME_CARD_MENU_KICK_LABEL, INGAME_CARD_MENU_KICK_SENDING_REASON } = await import(
-  "../useInGamePlayerCardMenu.js")
+const { INGAME_CARD_MENU_DAY_VOTE_LABEL } = await import("../useInGamePlayerCardMenu.js")
 const { INGAME_E2E_ATTRS } = await import("../../constants/e2e/ingameE2eHooks.js")
 
 const HOST = "uuid-host"
@@ -1176,12 +1175,7 @@ test("AC-01: setGamePayload는 서버 state.hostUuid를 쓰고 전원 생존 단
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// V-2(AC-03): **플레이어 카드 좌클릭 메뉴**의 추방 경로
-//
-// 제어 패널이 사라지고 설정 → 방관리 말고도 카드에서 바로 추방할 수 있게 됐다. 두 경로가
-// 서로 다른 payload를 만들면 한쪽만 고쳐져 조용히 갈라지므로, 여기서는 **실제 생산 트리**
-// (InGamePlayerSessionProvider > InGameActionProvider > InGamePlayerBoard)를 렌더해 나온
-// kick_game_player를 실제 모달 경로의 것과 나란히 비교한다. 대역은 소켓 하나뿐이다.
+// V-2(AC-03): 플레이어 카드 행동 오버레이 — 추방은 설정 → 방관리만
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
@@ -1194,7 +1188,7 @@ const CARD_ROSTER = [
   { uuid: TARGET, nickname: "대상", alive: true, isParticipating: true, membershipId: "mem-target", themeIndex: 1 },
 ]
 
-/** 카드 경로용 seed. 기본은 방장 본인·낮 토론(=추방 말고 다른 항목이 하나도 없는 구간)이다. */
+/** 카드 경로용 seed. 기본은 방장 본인·낮 토론(=비활성 투표 오버레이만 뜨는 구간)이다. */
 function setUpCard({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION" } = {}) {
   const socket = createFakeSocket()
   socket.connected = true
@@ -1250,218 +1244,32 @@ function cardMenuItem(menu, label) {
     .find((node) => node.textContent.trim().startsWith(label)) ?? null
 }
 
-function kickFromCard(container) {
-  const menu = openCardMenu(container, "대상")
-  assert.ok(menu, "방장 카드 메뉴가 열리지 않았다")
-  const item = cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL)
-  assert.ok(item, "방장인데 카드 메뉴에 추방 항목이 없다")
-  act(() => { fireEvent.click(item) })
-  return item
-}
-
-test("V-2(AC-03): 방장이 아니면 카드 메뉴에 추방 항목이 없다(다른 항목은 그대로 뜬다)", () => {
-  const socket = setUpCard({ selfUuid: TARGET, dayPhase: "DAY_VOTE" })
-  const view = mountCardKick()
-
-  // 투표 구간이라 메뉴 자체는 열린다 — "메뉴가 안 열려서" 통과하는 것이 아님을 함께 고정한다.
-  const menu = openCardMenu(view.container, "호스트")
-  assert.ok(menu, "전제: 낮 투표 구간에는 카드 메뉴가 열려야 한다")
-  assert.ok(cardMenuItem(menu, "투표"), "전제: 투표 항목은 그대로 있어야 한다")
-  assert.equal(cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL), null,
-    "방장이 아닌데 추방 항목이 떴다")
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 0)
-})
-
-test("V-2(AC-03): 방장이면 다른 항목이 하나도 없는 구간에서도 추방 항목만으로 메뉴가 열린다", () => {
+test("V-2(AC-03): 낮 토론 구간에는 비활성 투표 오버레이만 뜨고 추방 확인 대화는 열리지 않는다", () => {
   setUpCard({ dayPhase: "DAY_DISCUSSION" })
   const view = mountCardKick()
 
   const menu = openCardMenu(view.container, "대상")
-  assert.ok(menu, "방장인데 낮 토론 구간에서 카드 메뉴가 열리지 않았다")
-  assert.ok(cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL), "추방 항목이 없다")
-  assert.equal(cardMenuItem(menu, "투표"), null, "토론 구간인데 투표 항목이 떴다")
-  // 본인 카드에는 추방이 붙지 않는다.
-  const selfMenu = openCardMenu(view.container, "호스트")
-  assert.equal(cardMenuItem(selfMenu, INGAME_CARD_MENU_KICK_LABEL), null,
-    "본인 카드에 추방 항목이 떴다")
+  assert.ok(menu, "토론 구간에서도 카드 오버레이가 열려야 한다")
+  const voteButton = cardMenuItem(menu, INGAME_CARD_MENU_DAY_VOTE_LABEL)
+  assert.ok(voteButton, "전제: 투표하기가 있어야 한다")
+  assert.equal(voteButton.disabled, true, "토론 구간의 투표하기는 비활성이어야 한다")
+  assert.equal(byTestId("kick-confirm"), null, "카드에서 추방 확인 대화가 열렸다")
 })
 
-test("V-2(AC-03): 카드 메뉴 추방의 payload가 설정 모달 경로와 requestId만 빼고 같고, 두 경로가 각각 자기 영수증으로 조회한다", () => {
-  const cardSocket = setUpCard()
-  const cardView = mountCardKick()
-  kickFromCard(cardView.container)
-
-  assert.ok(byTestId("kick-confirm"), "카드 메뉴 추방이 확인 대화를 열지 않았다")
-  assert.equal(byTestId("kick-confirm-target").textContent, "대상", "확인 대화의 대상이 다르다")
-  clickTestId("kick-confirm-accept")
-
-  const cardSent = cardSocket.emitted.filter((e) => e.event === "kick_game_player")
-  assert.equal(cardSent.length, 1, "카드 경로가 정확히 한 번 보내지 않았다")
-
-  // ACK를 주지 않은 채 결과를 조회한다 — 이 경로가 **자기** 영수증 키를 쓰는지 본다.
-  clickTestId("kick-lookup-result")
-  const cardLookup = cardSocket.emitted.find((e) => e.event === "get_kick_result")
-  assert.ok(cardLookup, "카드 경로에서 결과 조회가 나가지 않았다")
-
-  // 같은 seed로 실제 설정 모달 경로를 처음부터 다시 태운다.
-  cleanup()
-  act(() => { useInGameStore.getState().clearGame() })
-  const modalSocket = setUpCard()
-  mountRealModal()
-  clickRowKick("대상")
-  clickTestId("kick-confirm-accept")
-  const modalSent = modalSocket.emitted.filter((e) => e.event === "kick_game_player")
-  assert.equal(modalSent.length, 1, "모달 경로가 정확히 한 번 보내지 않았다")
-  clickTestId("kick-lookup-result")
-  const modalLookup = modalSocket.emitted.find((e) => e.event === "get_kick_result")
-  assert.ok(modalLookup, "모달 경로에서 결과 조회가 나가지 않았다")
-
-  const { requestId: cardRequestId, ...cardRest } = cardSent[0].payload
-  const { requestId: modalRequestId, ...modalRest } = modalSent[0].payload
-  assert.deepEqual(cardRest, modalRest, "카드 경로와 설정 모달 경로의 추방 payload가 다르다")
-  /**
-   * requestId는 요청마다 달라야 하는 값이라 비교에서 빼되, **모양과 값을 각각 직접** 본다.
-   * String()으로 감싸 길이만 재면 값이 아예 없어도 통과한다(String(undefined) === "undefined",
-   * 길이 9) — 그 검사는 "화면이 영수증 키를 만들었다"를 전혀 보증하지 않는다.
-   */
-  assert.equal(typeof cardRequestId, "string", "카드 경로의 requestId가 문자열이 아니다")
-  assert.ok(cardRequestId.length > 0, "카드 경로의 requestId가 비어 있다")
-  assert.equal(typeof modalRequestId, "string", "모달 경로의 requestId가 문자열이 아니다")
-  assert.ok(modalRequestId.length > 0, "모달 경로의 requestId가 비어 있다")
-  assert.notEqual(cardRequestId, modalRequestId, "두 요청이 같은 영수증 키를 재사용했다")
-
-  // 각 조회는 **그 경로가 방금 보낸** 추방의 영수증만 쓴다(두 경로가 서로 섞이지 않는다).
-  assert.deepEqual(Object.keys(cardLookup.payload).sort(), ["bootEpoch", "requestId"])
-  assert.equal(cardLookup.payload.requestId, cardRequestId, "카드 경로 조회가 원래 영수증을 쓰지 않았다")
-  assert.equal(cardLookup.payload.bootEpoch, cardSent[0].payload.bootEpoch)
-  assert.deepEqual(Object.keys(modalLookup.payload).sort(), ["bootEpoch", "requestId"])
-  assert.equal(modalLookup.payload.requestId, modalRequestId, "모달 경로 조회가 원래 영수증을 쓰지 않았다")
-  assert.equal(modalLookup.payload.bootEpoch, modalSent[0].payload.bootEpoch)
-})
-
-test("V-2(AC-03): 카드 경로도 성공 ACK를 받으면 확인 단계가 사라지고 실패·미확인 문구가 남지 않는다", () => {
-  const socket = setUpCard()
+test("V-2(AC-03): 낮 투표 구간에는 투표 오버레이만 뜨고 추방 확인 대화는 열리지 않는다", () => {
+  const socket = setUpCard({ selfUuid: TARGET, dayPhase: "DAY_VOTE" })
   const view = mountCardKick()
-  kickFromCard(view.container)
-  clickTestId("kick-confirm-accept")
 
-  const sent = socket.emitted.find((e) => e.event === "kick_game_player")
-  assert.ok(byTestId("kick-confirm"), "전제: ACK 전에는 확인 단계가 떠 있어야 한다")
-
-  act(() => { sent.ack({ ok: true }) })
-
-  assert.equal(byTestId("kick-confirm"), null, "성공했는데 확인 단계가 남아 있다")
-  assert.equal(byTestId("kick-error"), null, "성공했는데 실패 사유가 떴다")
-  assert.equal(byTestId("kick-unknown"), null, "성공했는데 미확인 안내가 떴다")
-  // 성공은 확정된 결과다 — 더 물을 것이 없으므로 조회 입구도 닫힌다.
-  assert.equal(byTestId("kick-lookup-result"), null, "결과가 확정됐는데 조회 버튼이 남아 있다")
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1,
-    "성공 처리가 두 번째 추방을 만들었다")
+  const menu = openCardMenu(view.container, "호스트")
+  assert.ok(menu, "전제: 낮 투표 구간에는 카드 오버레이가 열려야 한다")
+  assert.ok(cardMenuItem(menu, INGAME_CARD_MENU_DAY_VOTE_LABEL), "전제: 투표하기가 있어야 한다")
+  assert.equal(byTestId("kick-confirm"), null, "카드에서 추방 확인 대화가 열렸다")
+  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 0)
 })
 
-test("V-2(AC-03): 카드 경로의 결과 조회가 UNKNOWN이면 그 문구를 그대로 보여준다(성공으로 승격하지 않는다)", () => {
-  const socket = setUpCard()
-  const view = mountCardKick()
-  kickFromCard(view.container)
-  clickTestId("kick-confirm-accept")
-
-  clickTestId("kick-lookup-result")
-  const lookup = socket.emitted.find((e) => e.event === "get_kick_result")
-  assert.ok(lookup, "결과 조회가 나가지 않았다")
-  act(() => { lookup.ack({ ok: true, status: "UNKNOWN" }) })
-
-  const unknown = byTestId("kick-unknown")
-  assert.ok(unknown, "UNKNOWN인데 미확인 문구가 뜨지 않았다")
-  assert.match(unknown.textContent, /결과를 확인할 수 없습니다/,
-    "미확인 문구가 서버가 말한 상태를 그대로 전하지 않는다")
-  assert.equal(byTestId("kick-error"), null, "조회가 실패한 것이 아닌데 실패 사유가 떴다")
-  assert.equal(byTestId("kick-confirm"), null, "결과를 받았는데 옛 확인 단계가 남아 있다")
-  // UNKNOWN의 올바른 다음 행동은 서버에서 목록을 **실제로** 다시 받는 것이다.
-  assert.ok(socket.emitted.find((e) => e.event === "get_session_snapshot"),
-    "UNKNOWN 뒤 실제 스냅샷 재확인이 시작되지 않았다")
-  assert.ok(byTestId("kick-awaiting-resolution"), "재확인 대기 안내가 없다")
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1,
-    "UNKNOWN이 두 번째 추방을 만들었다")
-})
-
-test("V-2(AC-03): 카드 경로도 서버가 준 실패 사유를 그대로 보여준다(성공으로 바꾸지 않는다)", () => {
-  const socket = setUpCard()
-  const view = mountCardKick()
-  kickFromCard(view.container)
-  clickTestId("kick-confirm-accept")
-
-  const sent = socket.emitted.find((e) => e.event === "kick_game_player")
-  act(() => { sent.ack({ ok: false, code: "NOT_HOST" }) })
-
-  assert.equal(byTestId("kick-error").textContent, "NOT_HOST", "실패 사유가 그대로 뜨지 않았다")
-  assert.equal(byTestId("kick-confirm"), null, "실패했는데 확인 단계가 남아 있다")
-})
-
-test("V-2(AC-03): 전송 중에는 카드 메뉴의 추방 항목이 잠기고 추가 전송이 나가지 않는다", () => {
-  const socket = setUpCard()
-  const view = mountCardKick()
-  kickFromCard(view.container)
-  clickTestId("kick-confirm-accept")
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1)
-
-  // ACK를 주지 않는다 — 전송 중 상태 그대로 메뉴를 다시 연다.
-  const menu = openCardMenu(view.container, "대상")
-  const item = cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL)
-  assert.ok(item, "전송 중에도 항목 자체는 보여야 한다(왜 잠겼는지 알려야 하므로)")
-  assert.equal(item.disabled, true, "전송 중인데 추방 항목이 열려 있다")
-  assert.match(menu.textContent, new RegExp(INGAME_CARD_MENU_KICK_SENDING_REASON),
-    "잠긴 이유가 메뉴에 표시되지 않았다")
-
-  act(() => { fireEvent.click(item) })
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1,
-    "잠긴 항목이 두 번째 추방을 보냈다")
-})
-
-test("V-2(AC-03): ACK를 놓치면 대화를 닫아도 다시 열어 같은 영수증으로 결과를 조회할 수 있다", () => {
-  const socket = setUpCard()
-  const view = mountCardKick()
-  kickFromCard(view.container)
-  clickTestId("kick-confirm-accept")
-
-  const sent = socket.emitted.find((e) => e.event === "kick_game_player")
-  assert.ok(sent, "kick_game_player가 나가지 않았다")
-
-  // ACK 없이 대화를 닫는다 — 결과는 여전히 미확인이다.
-  clickTestId("kick-dialog-close")
-  assert.equal(byTestId("kick-confirm"), null)
-
-  // 그 상태에서도 다시 열 길이 있어야 한다(없으면 결과를 영영 확인할 수 없다).
-  clickTestId("kick-dialog-reopen")
-  clickTestId("kick-lookup-result")
-
-  const lookup = socket.emitted.find((e) => e.event === "get_kick_result")
-  assert.ok(lookup, "결과 조회가 나가지 않았다")
-  assert.equal(lookup.payload.requestId, sent.payload.requestId,
-    "결과 조회가 원래 추방과 다른 영수증 키를 썼다")
-  assert.equal(lookup.payload.bootEpoch, sent.payload.bootEpoch)
-
-  act(() => { lookup.ack({ ok: true, status: "KICKED" }) })
-
-  // 조회 결과는 화면에 **실제로** 반영돼야 한다 — 확정된 결과 뒤에는 옛 확인도, 실패·미확인
-  // 안내도, 다시 물을 입구도 남지 않는다(조회했는데 화면이 그대로면 사용자는 여전히 모른다).
-  assert.equal(byTestId("kick-confirm"), null, "결과가 확정됐는데 옛 확인 단계가 남아 있다")
-  assert.equal(byTestId("kick-error"), null, "KICKED인데 실패 사유가 떴다")
-  assert.equal(byTestId("kick-unknown"), null, "KICKED인데 미확인 안내가 떴다")
-  assert.equal(byTestId("kick-lookup-result"), null, "결과가 확정됐는데 조회 버튼이 남아 있다")
-  assert.equal(byTestId("kick-awaiting-resolution"), null,
-    "결과를 알게 됐는데 재확인 대기 안내가 남아 있다")
-
-  // 재조회는 새 추방이 아니다 — 전송 총량은 그대로 1회다.
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 1,
-    "결과 조회가 두 번째 추방을 만들었다")
-})
-
-// ── 방장 판정의 출처가 두 경로에서 같은가 ────────────────────────────────────
+// ── 방장 판정 — 설정 → 방관리 경로 ─────────────────────────────────────────
 //
-// 설정 → 방관리(useInGameSettingIsHost)와 카드 메뉴는 서로 다른 코드에서 방장을 판정한다.
-// 둘이 서로 다른 값을 읽으면 한 화면에서는 추방할 수 있고 다른 화면에서는 없는 상태가 된다.
-// 가장 갈라지기 쉬운 자리가 **state.hostUuid가 없는 구버전 payload**다 — 그때 store는 호출부가
-// 넘긴 최상위 hostUuid로 폴백하므로, state 안만 보는 판정은 방장을 놓친다.
+// 카드 오버레이에는 추방이 없으므로, 방장 판정은 설정 경로만 본다.
 
 /** state.hostUuid **없이** 최상위 폴백 hostUuid로만 세워진 세션. */
 function setUpCardWithFallbackHost({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION" } = {}) {
@@ -1489,7 +1297,7 @@ function setUpCardWithFallbackHost({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION
   return socket
 }
 
-test("V-2(AC-03): state.hostUuid가 없는 폴백 세션에서도 설정 경로와 카드 경로의 방장 판정이 일치한다", () => {
+test("V-2(AC-03): state.hostUuid가 없는 폴백 세션에서도 설정 경로가 방장을 올바르게 판정한다", () => {
   setUpCardWithFallbackHost({ selfUuid: HOST })
 
   assert.equal(useInGameStore.getState().state.hostUuid, undefined,
@@ -1497,46 +1305,22 @@ test("V-2(AC-03): state.hostUuid가 없는 폴백 세션에서도 설정 경로�
   assert.equal(useInGameStore.getState().hostUuid, HOST,
     "전제: 폴백 hostUuid가 store 최상위에 저장돼야 한다")
 
-  // (1) 설정 → 방관리 경로의 판정
   const settingAsHost = renderHook(() => useInGameSettingIsHost())
   assert.equal(settingAsHost.result.current, true, "설정 경로가 폴백 세션의 방장을 못 알아본다")
 
-  // (2) 같은 세션에서 카드 경로의 판정
-  const hostView = mountCardKick()
-  const hostMenu = openCardMenu(hostView.container, "대상")
-  assert.ok(hostMenu, "폴백 세션에서 방장 카드 메뉴가 열리지 않았다")
-  assert.ok(cardMenuItem(hostMenu, INGAME_CARD_MENU_KICK_LABEL),
-    "설정 경로는 방장으로 보는데 카드 경로에는 추방 항목이 없다(두 판정이 갈렸다)")
-
-  // 같은 폴백 세션의 **비방장**도 두 경로가 함께 아니라고 말해야 한다(양쪽 다 true면 위 단언은
-  // 판정이 아니라 상수를 본 것이다).
   cleanup()
-  // 투표 구간으로 둔다 — 메뉴가 **열리는데도** 추방만 없음을 봐야 한다("메뉴가 안 열려서"
-  // 통과하면 이 단언은 판정을 본 것이 아니다).
-  const socket = setUpCardWithFallbackHost({ selfUuid: TARGET, dayPhase: "DAY_VOTE" })
-
+  setUpCardWithFallbackHost({ selfUuid: TARGET, dayPhase: "DAY_VOTE" })
   const settingAsGuest = renderHook(() => useInGameSettingIsHost())
   assert.equal(settingAsGuest.result.current, false, "설정 경로가 비방장에게 방관리를 열어줬다")
-
-  const guestView = mountCardKick()
-  const guestMenu = openCardMenu(guestView.container, "호스트")
-  assert.ok(guestMenu, "전제: 낮 투표 구간에는 카드 메뉴가 열려야 한다")
-  assert.ok(cardMenuItem(guestMenu, "투표"), "전제: 투표 항목은 그대로 있어야 한다")
-  assert.equal(cardMenuItem(guestMenu, INGAME_CARD_MENU_KICK_LABEL), null,
-    "설정 경로는 비방장으로 보는데 카드 경로에는 추방 항목이 떴다(두 판정이 갈렸다)")
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 0)
 })
 
-// 서버 state.hostUuid가 **있는** 세션에서는 그 값이 폴백을 이긴다(권한 출처가 하나임을 고정).
-test("V-2(AC-03): 서버 state.hostUuid가 있으면 폴백 인자보다 그 값이 이기고 두 경로가 함께 따른다", () => {
-  const socket = createFakeSocket()
-  socket.connected = true
+test("V-2(AC-03): 서버 state.hostUuid가 있으면 폴백 인자보다 그 값이 이긴다", () => {
   act(() => {
     useAuthStore.setState({ user: { uuid: TARGET }, isLoggedIn: true })
     useInGameStore.getState().clearGame()
     useInGameStore.getState().setGamePayload({
       gameId: "game-1",
-      hostUuid: TARGET, // 옛 방 단계 복사본 — 서버 값에 밀려야 한다
+      hostUuid: TARGET,
       state: gameState({
         dayPhase: "DAY_VOTE",
         players: CARD_ROSTER,
@@ -1544,15 +1328,8 @@ test("V-2(AC-03): 서버 state.hostUuid가 있으면 폴백 인자보다 그 값
       }),
     })
   })
-  setSocket(socket)
 
   assert.equal(useInGameStore.getState().hostUuid, HOST, "서버 state.hostUuid가 폴백에 밀렸다")
   assert.equal(renderHook(() => useInGameSettingIsHost()).result.current, false,
     "설정 경로가 옛 방 단계 복사본으로 방관리를 열어줬다")
-
-  const view = mountCardKick()
-  const menu = openCardMenu(view.container, "호스트")
-  assert.ok(menu, "전제: 낮 투표 구간에는 카드 메뉴가 열려야 한다")
-  assert.equal(cardMenuItem(menu, INGAME_CARD_MENU_KICK_LABEL), null,
-    "카드 경로가 옛 방 단계 복사본으로 추방 항목을 띄웠다")
 })

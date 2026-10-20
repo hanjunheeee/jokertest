@@ -46,10 +46,14 @@ test("기존 day/phase 표시 로직(제 N일 라벨·단계 노드·활성 노�
   assert.match(source, /active=\{phase\.id === activePhaseId\}/)
 })
 
-test("로컬 투표현황 토글 배선(onVoteStatusClick)은 이식 뒤에도 그대로 남는다", async () => {
-  const source = await readFile(componentUrl, "utf8")
-  assert.match(source, /import InGameVoteToggleButton from "\.\.\/vote\/InGameVoteToggleButton\.jsx"/)
-  assert.match(source, /<InGameVoteToggleButton onClick=\{onVoteStatusClick\} \/>/)
+test("투표현황 토글은 timebar가 아니라 InGamePage의 우측 하단 패널에 배선된다", async () => {
+  const timebarSource = await readFile(componentUrl, "utf8")
+  assert.doesNotMatch(timebarSource, /InGameVoteToggleButton/)
+  assert.doesNotMatch(timebarSource, /onVoteStatusClick/)
+
+  const pageSource = await readFile(pageUrl, "utf8")
+  assert.match(pageSource, /import InGameCornerActionPanel from "\.\.\/components\/actions\/InGameCornerActionPanel\.jsx"/)
+  assert.match(pageSource, /<InGameCornerActionPanel onVoteStatusClick=\{\(\) => setVoteStatusOpen\(true\)\} \/>/)
 })
 
 test("AC-02: InGamePage가 InGameBackground를 실제 화면 트리에 그린다", async () => {
@@ -96,60 +100,42 @@ test("AC-05: 페이지가 스냅샷 동기화 상태를 받아 guard 순수 함�
 // 재판 처형 사망자)으로 들여오는 것이 요구사항이라, 같은 관심사(페이지에 무엇이 배선돼 있는가)를
 // 그대로 두고 기대값만 이 슬라이스의 계약으로 옮긴다. 원격 은닉 릴(statusRole)은 여전히 금지다 —
 // 밤 턴 은닉 계산은 로컬이 다르게 푸는 문제라 어느 슬라이스에서도 가져오지 않는다.
-test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·사망 연출은 로컬 훅으로 배선된다", async () => {
+test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·밤 성공 연출은 로컬 훅으로 배선된다", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.doesNotMatch(source, /statusRole/)
+  assert.doesNotMatch(source, /InGameKillRevealOverlay/)
+  assert.doesNotMatch(source, /useInGameKillReveal/)
 
-  // 사망 연출: 로컬 훅에서 받아 오버레이로 넘기고, 결과 페이지 이동을 큐가 빌 때까지 보류한다.
-  assert.match(source, /import \{ useInGameKillReveal \} from "\.\.\/hooks\/useInGameKillReveal\.js"/)
-  assert.match(source, /const killReveal = useInGameKillReveal\(\{ hold: roleReveal\.open \}\)/)
-  // F-23(SPLIT-1): 기존 두 보류 조건은 그대로 두고, 신원 재결속 보류가 **같은 자리에** 더해진다.
-  // 신원·연결 전이로 큐가 버려지는 순간 잔존 ENDED로 넘어가지 않게 하는 조건이다.
-  // F-27b(AC-03): 같은 자리에 **밤 성공 연출의 pending·open**도 더해진다. 마지막 밤의 상한
-  // 해제로 ENDED가 연출보다 먼저 도착해도 현재 큐와 표시 중인 최종 상태가 잘리지 않게 하는
-  // 조건이고, 기존 세 조건은 그대로 남는다.
+  // F-23(SPLIT-1): 신원 재결속 보류와 F-27b 밤 성공 연출 보류만 결과 이동을 미룬다.
   assert.match(
     source,
-    /useInGameResultNavigation\(\{\s*hold: killReveal\.open \|\| killReveal\.pending \|\| identityRebindPending\s*\|\| nightSuccessPresentation\.open \|\| nightSuccessPresentation\.pending,\s*\}\)/,
+    /useInGameResultNavigation\(\{\s*hold: identityRebindPending\s*\|\| nightSuccessPresentation\.open \|\| nightSuccessPresentation\.pending,\s*\}\)/,
   )
   assert.match(source, /const identityRebindPending = useInGameSnapshotRebindPending\(\)/)
   assert.match(source, /useInGameSnapshotRebindPending,\s*\} from "\.\.\/hooks\/useInGameSessionSnapshotSync\.js"/)
 
-  // 밤 개인 결과: 사망 연출 뒤 순서로 열리고, 확인 콜백은 store를 비우는 훅의 것을 그대로 쓴다.
   assert.match(
     source,
     /import \{ useInGameNightPrivateResult \} from "\.\.\/hooks\/useInGameNightPrivateResult\.js"/,
   )
-  assert.match(source, /hold: roleReveal\.open \|\| killReveal\.open/)
+  assert.match(source, /hold: roleReveal\.open \|\| nightSuccessPresentation\.open/)
 
-  // 두 오버레이는 각각 정확히 한 번 마운트되고 훅 상태를 그대로 받는다.
-  for (const mount of [
-    {
-      tag: "InGameKillRevealOverlay",
-      props: [/open=\{killReveal\.open\}/, /revealId=\{killReveal\.revealId\}/, /message=\{killReveal\.message\}/, /onConsume=\{killReveal\.consume\}/],
-    },
-    {
-      tag: "InGameNightPrivateResultOverlay",
-      // F-27b(AC-01): 개인 결과는 대기 화면과 같은 z 단계를 쓰므로 대기 중에는 띄우지 않는다.
-      // 열림의 출처는 여전히 훅 하나다(페이지가 자기 판정을 따로 만들지 않는다).
-      props: [/open=\{nightPrivateResult\.open && !nightPresentationWaitOpen\}/, /kind=\{nightPrivateResult\.kind\}/, /label=\{nightPrivateResult\.label\}/, /onConfirm=\{nightPrivateResult\.confirm\}/],
-    },
+  const privateOccurrences = source.match(/<InGameNightPrivateResultOverlay\b/g) ?? []
+  assert.equal(privateOccurrences.length, 1, "InGameNightPrivateResultOverlay은 정확히 한 번만 마운트돼야 한다")
+  const privateBlock = source.match(/<InGameNightPrivateResultOverlay[\s\S]*?\/>/)
+  assert.notEqual(privateBlock, null, "InGameNightPrivateResultOverlay 마운트 블록을 찾을 수 없다")
+  for (const prop of [
+    /open=\{nightPrivateResult\.open && !nightPresentationWaitOpen\}/,
+    /kind=\{nightPrivateResult\.kind\}/,
+    /label=\{nightPrivateResult\.label\}/,
+    /onConfirm=\{nightPrivateResult\.confirm\}/,
   ]) {
-    const occurrences = source.match(new RegExp(`<${mount.tag}\\b`, "g")) ?? []
-    assert.equal(occurrences.length, 1, `${mount.tag}은 정확히 한 번만 마운트돼야 한다`)
-    const block = source.match(new RegExp(`<${mount.tag}[\\s\\S]*?/>`))
-    assert.notEqual(block, null, `${mount.tag} 마운트 블록을 찾을 수 없다`)
-    for (const prop of mount.props) {
-      assert.match(block[0], prop, `${mount.tag}의 ${prop} 배선이 없다`)
-    }
+    assert.match(privateBlock[0], prop, `InGameNightPrivateResultOverlay의 ${prop} 배선이 없다`)
   }
 
-  // 두 오버레이가 떠 있는 동안에도 아래 게임 표면은 잠긴다(오버레이 스택의 판단에 더해서만).
-  // F-23(AC-06): 확정 사망 선택창도 같은 잠금에 참여한다 — 선택을 받는 동안 뒤의 보드·채팅·
-  // 투표가 눌리면 안 된다. 줄바꿈이 들어갈 수 있으므로 공백을 유연하게 본다.
   assert.match(
     source,
-    /const surfaceLocked =\s*interactionBlocked \|\| killReveal\.open \|\| nightPrivateResult\.open \|\| deadChoiceOpen/,
+    /const surfaceLocked =\s*interactionBlocked \|\| nightPrivateResult\.open \|\| deadChoiceOpen/,
   )
   assert.match(source, /inert=\{surfaceLocked \|\| undefined\}/)
 })

@@ -35,6 +35,13 @@ import {
   UPDATE_ROOM_SETTINGS_TIMEOUT_MS,
 } from '@/domains/game/setup/constants/gameSetupSocket.js'
 import { buildUpdateRoomSettingsPayload } from '@/domains/game/setup/utils/roomSettingsForm.js'
+import { GAME_START_MESSAGES } from '../constants/gameStartMessages.js'
+import {
+  clearPartyRejoinGameId,
+  consumePartyMatchingRoomReady,
+  persistPartyRejoinGameId,
+  rememberPartyMatchingRoomReady,
+} from '../utils/partyMatchingRejoin.js'
 
 /**
  * F-16(AC-01/AC-04): 방 범위 사건 하나를 공통 재생기로 넘긴다.
@@ -126,7 +133,7 @@ const SET_READY_TIMEOUT_MS = 5000
 
 // getSocket()이 null일 때(연결 준비 전/유실) 보여줄 고정 안내 문구. 내부 구현(소켓 유무)을
 // 그대로 노출하지 않고, 사용자가 취할 수 있는 행동(잠시 후 재시도)만 안내한다.
-const SOCKET_UNAVAILABLE_MESSAGE = '서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.'
+const SOCKET_UNAVAILABLE_MESSAGE = GAME_START_MESSAGES.SOCKET_UNAVAILABLE
 
 // get_current_room ack 자체의 timeout이다(응답이 하나도 안 올 때).
 const CURRENT_ROOM_CHECK_TIMEOUT_MS = 5000
@@ -136,8 +143,15 @@ const CURRENT_ROOM_CHECK_TIMEOUT_MS = 5000
 // "최초 1회 + 재조회 3회 = 총 4회"로 그 파일의 "총 4회" 관례와 시도 횟수를 맞췄다.
 const CURRENT_ROOM_PENDING_RETRY_INTERVAL_MS = 700
 const CURRENT_ROOM_PENDING_MAX_RETRIES = 3
+const PARTY_MATCHING_ROOM_POLL_MS = 2500
+const PARTY_MATCHING_ROOM_POLL_TIMEOUT_MS = 5000
 
-export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
+export function useMatchingRoom({
+  onRoomDeleted,
+  onGameStarted,
+  endedGameId = null,
+  awaitPartyRoomRejoin = false,
+}) {
   // roomId가 바뀔 때만 리렌더링되도록 matchingStore에서 roomId 값만 구독 (selector 패턴)
   const roomId = useMatchingStore((s) => s.roomId)
 
@@ -158,6 +172,11 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
   const isStartingRef = useRef(false)
   const isSettingReadyRef = useRef(false)
   const mountedRef = useRef(true)
+  const endedGameIdRef = useRef(endedGameId)
+  endedGameIdRef.current = endedGameId
+  const awaitPartyRoomRejoinRef = useRef(awaitPartyRoomRejoin)
+  awaitPartyRoomRejoinRef.current = awaitPartyRoomRejoin
+  const partyRejoinInFlightRef = useRef(false)
   // start_game/set_ready 각각의 독립적인 요청 세대 번호다. get_current_room 확인 시리즈의
   // activeRequestVersion과는 완전히 별개로 관리한다(섞으면 Room 확인 재시도 로직과 액션
   // 요청의 늦은 응답 방어가 서로의 판단에 영향을 주게 된다). Socket disconnect/offline/교체
@@ -183,6 +202,8 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
    * 확인 절차가 끝난 뒤에도 남아야 하므로 settingsError(편집 패널 안의 실패 사유)와도 분리한다.
    */
   const [settingsResultNotice, setSettingsResultNotice] = useState(null)
+  // 게임 시작 버튼 클릭 후 시작이 불가할 때 모달 본문. stale 응답은 설정하지 않는다.
+  const [startBlockedMessage, setStartBlockedMessage] = useState(null)
   // F-20(AC-05): **지금 서버 응답을 기다리는** 저장의 식별자. timeout만이 결과 미확인을 만드는
   // 것이 아니다 — 응답을 기다리는 동안 연결이 끊기면 그 저장은 이미 커밋됐을 수도 있고 서버에
   // 닿지 못했을 수도 있다. 그 requestId를 여기 붙잡아 두었다가 단절 시점에 "미확인"으로
@@ -309,6 +330,123 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 결과 화면 → 매칭: room_joined(코드 참가)와 party_matching_room_ready(방장 재생성) 구독.
+  // roomId가 없을 때도 돌아야 하므로 방 이벤트 effect와 분리한다.
+  useEffect(() => {
+    if (!socket || !awaitPartyRoomRejoinRef.current) return undefined
+
+    const attachedSocket = socket
+    const attachedUuid = useAuthStore.getState().user?.uuid ?? null
+    let owned = true
+    const isCurrentSource = () =>
+      owned
+      && attachedSocket === getSocket()
+      && (useAuthStore.getState().user?.uuid ?? null) === attachedUuid
+
+    const rememberResolvedPartyGameId = (gameId) => {
+      if (typeof gameId !== 'string' || gameId.length === 0) return
+      endedGameIdRef.current = gameId
+      persistPartyRejoinGameId(attachedUuid, gameId)
+    }
+
+    const completePartyRejoin = (payload) => {
+      if (!isCurrentSource()) return
+      if (payload === null || typeof payload !== 'object') return
+      const accountId = useAuthStore.getState().user?.uuid ?? null
+      useInGameStore.getState().clearGame()
+      useMatchingStore.getState().setRoom(payload)
+      clearPartyRejoinGameId(accountId)
+      partyRejoinInFlightRef.current = false
+      roomApplyGenerationRef.current += 1
+      if (mountedRef.current) setRoomSyncStatus('verified')
+    }
+
+    const requestPartyRejoin = (payload) => {
+      if (!isCurrentSource()) return
+      if (useMatchingStore.getState().isInRoom) return
+      if (partyRejoinInFlightRef.current) return
+      const payloadGameId = typeof payload?.gameId === 'string' ? payload.gameId : null
+      const knownGameId = endedGameIdRef.current
+      if (payloadGameId && knownGameId && payloadGameId !== knownGameId) return
+      if (payloadGameId && !knownGameId) rememberResolvedPartyGameId(payloadGameId)
+      const roomCode = payload?.room?.roomCode
+      if (typeof roomCode !== 'string' || roomCode.length === 0) return
+      partyRejoinInFlightRef.current = true
+      const joinPayload = { roomCode }
+      if (typeof payload?.room?.roomId === 'string' && payload.room.roomId.length > 0) {
+        joinPayload.roomId = payload.room.roomId
+      }
+      socket.emit('join_room_by_code', joinPayload)
+    }
+
+    const handleRoomJoined = (payload) => {
+      completePartyRejoin(payload)
+    }
+
+    const handlePartyMatchingRoomReady = (payload) => {
+      rememberPartyMatchingRoomReady(payload)
+      requestPartyRejoin(payload)
+    }
+
+    const syncCurrentRoomIfAny = () => {
+      if (!isCurrentSource()) return Promise.resolve()
+      if (!awaitPartyRoomRejoinRef.current || useMatchingStore.getState().isInRoom) {
+        return Promise.resolve()
+      }
+      return socket
+        .timeout(CURRENT_ROOM_CHECK_TIMEOUT_MS)
+        .emitWithAck('get_current_room', {})
+        .then((response) => {
+          if (!isCurrentSource()) return
+          if (response?.ok && response.room) completePartyRejoin(response.room)
+        })
+        .catch(() => {})
+    }
+
+    const pollPartyMatchingRoom = () => {
+      if (!isCurrentSource()) return
+      if (!awaitPartyRoomRejoinRef.current || useMatchingStore.getState().isInRoom) return
+      void syncCurrentRoomIfAny()
+      const pollPayload = endedGameIdRef.current ? { gameId: endedGameIdRef.current } : {}
+      socket
+        .timeout(PARTY_MATCHING_ROOM_POLL_TIMEOUT_MS)
+        .emitWithAck(SOCKET_EVENTS.GET_PARTY_MATCHING_ROOM, pollPayload)
+        .then((response) => {
+          if (!isCurrentSource()) return
+          if (!response?.ok || !response.room) return
+          const resolvedGameId = response.gameId ?? endedGameIdRef.current
+          if (resolvedGameId) rememberResolvedPartyGameId(resolvedGameId)
+          rememberPartyMatchingRoomReady({ gameId: resolvedGameId, room: response.room })
+          requestPartyRejoin({ gameId: resolvedGameId, room: response.room })
+        })
+        .catch(() => {
+          partyRejoinInFlightRef.current = false
+        })
+    }
+
+    const pendingParty = consumePartyMatchingRoomReady(endedGameIdRef.current)
+    if (pendingParty) requestPartyRejoin(pendingParty)
+    pollPartyMatchingRoom()
+
+    const handleRoomJoinFailed = () => {
+      partyRejoinInFlightRef.current = false
+    }
+
+    socket.on('room_joined', handleRoomJoined)
+    socket.on('room_join_failed', handleRoomJoinFailed)
+    socket.on('party_matching_room_ready', handlePartyMatchingRoomReady)
+
+    const pollTimer = window.setInterval(pollPartyMatchingRoom, PARTY_MATCHING_ROOM_POLL_MS)
+
+    return () => {
+      owned = false
+      window.clearInterval(pollTimer)
+      socket.off('room_joined', handleRoomJoined)
+      socket.off('room_join_failed', handleRoomJoinFailed)
+      socket.off('party_matching_room_ready', handlePartyMatchingRoomReady)
+    }
+  }, [socket, endedGameId, awaitPartyRoomRejoin])
 
   // useEffect(setup, deps)는 "렌더링이 끝난 뒤에 실행할 부수 효과"를 등록하는
   // 훅입니다. deps 배열 안의 값이 바뀔 때마다 setup이 다시 실행되는데, 그 전에
@@ -744,7 +882,12 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
           }
 
           // room:null, pending 아님 → 서버가 "참여 중인 방 없음"을 명시적으로 확정했다.
-          // 클라이언트가 가진 roomId를 신뢰하지 않고 이 서버 판단만을 기준으로 정리한다.
+          // 결과 화면 → 매칭 대기(방장 재생성) 중에는 소속 없음이 정상이다 — store를 지우거나
+          // onRoomDeleted를 부르면 방금 성공한 파티 재입장까지 되돌릴 수 있다.
+          if (awaitPartyRoomRejoinRef.current && !useMatchingStore.getState().isInRoom) {
+            if (mountedRef.current) setRoomSyncStatus('verified')
+            return
+          }
           applyVerifiedRoom(() => useMatchingStore.getState().clearRoom())
           markRoomStateAdvanced()
           onRoomDeleted?.() // 곧 이 컴포넌트가 언마운트되므로 별도의 "no_room" 지속 상태는 두지 않는다.
@@ -973,13 +1116,12 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
       // 사용자가 알 수 있게 안내한다. 잠금·store는 건드리지 않는다(시도조차 하지
       // 않았으므로). disconnect/offline 직후 리렌더로 버튼이 잠기기 전의 짧은 구간도
       // 이 검사로 막는다.
-      alert(SOCKET_UNAVAILABLE_MESSAGE)
+      setStartBlockedMessage(SOCKET_UNAVAILABLE_MESSAGE)
       return
     }
     if (roomSyncStatus !== 'verified') {
-      // 버튼 disabled(UX 보호)와 별개로 실제 요청 경계를 여기서 다시 막는다 — 비활성화 갱신과
-      // 클릭 사이의 짧은 경합이나 프로그래매틱 트리거에 대비한 방어다.
-      alert('현재 방 상태를 확인하고 있습니다. 잠시 후 다시 시도해주세요.')
+      // 버튼은 항상 누를 수 있게 두고, 미검증 소속에서는 요청 대신 모달로만 안내한다.
+      setStartBlockedMessage(GAME_START_MESSAGES.ROOM_SYNC_PENDING)
       return
     }
 
@@ -1001,7 +1143,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 확보하지 못했다면 요청 자체를 보내지 않는다 — 서버가 현재 값으로 채워 주지 않으므로
     // 빈 값을 보내면 그대로 거부될 뿐이고, 사용자에게는 이유를 알 수 없는 실패로 보인다.
     if (!requestRoomId || !Number.isSafeInteger(requestSettingsVersion)) {
-      alert('현재 방 상태를 확인하고 있습니다. 잠시 후 다시 시도해주세요.')
+      setStartBlockedMessage(GAME_START_MESSAGES.ROOM_SYNC_PENDING)
       return
     }
     const isStaleResponse = () => {
@@ -1030,7 +1172,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
         // 그 사이 설정이 바뀌어 이 요청의 근거가 사라진 경우다 — 실패를 알리기 전에 최신
         // 상태를 다시 확보한다(방송을 놓쳤을 수도 있으므로 조회로 회복한다).
         if (response?.code === 'ROOM_STATE_CHANGED') requestRoomResync()
-        alert(response?.message ?? '게임을 시작할 수 없습니다.')
+        setStartBlockedMessage(response?.message ?? GAME_START_MESSAGES.FALLBACK)
       }
       // response.ok는 이번 슬라이스에서 항상 false다(GAME_CORE_NOT_READY 등). 실제 성공은
       // 다음 GameSession 슬라이스에서 game_started 방송으로 처리되며, 그 경로는 위의
@@ -1038,7 +1180,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     } catch {
       // socket.timeout()이 던지는 타임아웃 오류다 — 서버가 보낸 구체적인 실패 사유가 아니므로
       // 일반 실패 메시지와 구분해 안내한다.
-      if (!isStaleResponse()) alert('게임 시작 요청이 응답하지 않습니다. 잠시 후 다시 시도해주세요.')
+      if (!isStaleResponse()) setStartBlockedMessage(GAME_START_MESSAGES.REQUEST_TIMEOUT)
     } finally {
       // 이 요청이 아직 자기 세대를 소유하고 있을 때만 잠금을 해제한다. 그사이 disconnect 등으로
       // invalidateActionRequests가 세대를 이미 올리고 잠금도 풀어놨다면(또는 그 뒤 사용자가
@@ -1438,5 +1580,7 @@ export function useMatchingRoom({ onRoomDeleted, onGameStarted }) {
     // 확인 절차까지 마쳤는데도 적용 여부를 알 수 없을 때 대기방에 남는 안내다(자동 재저장 없음).
     settingsResultNotice,
     dismissSettingsResultNotice: () => setSettingsResultNotice(null),
+    startBlockedMessage,
+    dismissStartBlockedMessage: () => setStartBlockedMessage(null),
   }
 }

@@ -205,11 +205,13 @@ test("AC-03 · 지정돼 있지 않던 직업의 밤 시간을 실제로 바꾸�
     })))
   })
   const rowText = rowContainer.textContent
-  assert.ok(rowText.includes("광대 밤 60초"), `목록 행에 광대 밤 시간이 없다: ${rowText}`)
-  assert.ok(rowText.includes("경비원 밤 120초"), `목록 행에 경비원 밤 시간이 없다: ${rowText}`)
+  assert.ok(rowText.includes("광대 2"), `목록 행에 광대 수가 없다: ${rowText}`)
+  assert.ok(rowText.includes("밤 90초"), `목록 행에 전체 밤 시간이 없다: ${rowText}`)
+  assert.equal(rowText.includes("광대 밤"), false, "목록 행에 직업별 밤 시간이 남아 있다")
+  assert.equal(rowText.includes("경비원 밤"), false, "목록 행에 직업별 밤 시간이 남아 있다")
   const rowButton = rowContainer.querySelector("button[aria-label]")
-  assert.ok(rowButton.getAttribute("aria-label").includes("광대 밤 60초"),
-    "aria-label이 직업별 밤 시간을 읽어주지 않는다")
+  assert.equal(rowButton.getAttribute("aria-label").includes("광대 밤"), false,
+    "aria-label에 직업별 밤 시간이 들어가면 안 된다")
 })
 
 test("AC-03 · 일반 탭에서 바꾼 값과 직업별 밤 시간 편집이 한 요청에 함께 실린다", async () => {

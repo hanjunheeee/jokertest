@@ -294,6 +294,11 @@ const authPatch = (base, uuid, id) =>
         headers: { cookie: `accessToken=${tokenFor(uuid)}`, 'Content-Type': 'application/json', Connection: 'close' },
         body: '{}',
     });
+const authDeleteRead = (base, uuid) =>
+    fetch(`${base}/notifications/read`, {
+        method: 'DELETE',
+        headers: { cookie: `accessToken=${tokenFor(uuid)}`, Connection: 'close' },
+    });
 
 // ---------------------------------------------------------------------------
 // AC-01 · A-02: 실제 원본 사건 → 알림 행
@@ -547,6 +552,31 @@ test('AC-02: PATCH는 서버가 확정한 read_at을 돌려주고, 재시도해�
     // 재로그인(새 조회)해도 읽음 상태가 그대로 복원된다.
     const listed = await (await authGet(base, userId)).json();
     assert.ok(listed.data[0].readAt);
+});
+
+test('읽음 확정된 알림만 DELETE /read로 지워지고 미확인 행은 남는다', async (t) => {
+    if (unavailable(t)) return;
+    await setUp(t);
+
+    const owner = await createLocalUser('del-own');
+    const sender = await createLocalUser('del-snd');
+    const { notification: readRow } = await notificationService.ensureSystemWelcome(owner);
+    await friendService.sendFriendRequest(sender, owner);
+
+    assert.equal(await db.Notification.count({ where: { user_id: owner } }), 2);
+
+    const base = await startRouteServer(t);
+    assert.equal((await authPatch(base, owner, readRow.id)).status, 200);
+
+    const res = await authDeleteRead(base, owner);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.data.deletedCount, 1);
+
+    const remaining = await db.Notification.findAll({ where: { user_id: owner } });
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].type, 'friend-request');
+    assert.equal(remaining[0].read_at, null);
 });
 
 test('A-05: 다른 계정의 알림 id로 PATCH하면 404이고 어떤 행도 바뀌지 않는다', async (t) => {

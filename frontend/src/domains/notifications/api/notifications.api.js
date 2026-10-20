@@ -20,3 +20,6 @@ export const fetchNotificationsApi = () => api.get("/notifications")
  */
 export const markNotificationReadApi = (notificationId) =>
   api.patch(`/notifications/${encodeURIComponent(notificationId)}/read`, {})
+
+/** 읽음 확정된 알림을 이 계정에서 전부 삭제한다 — 미확인 알림은 남긴다. */
+export const deleteReadNotificationsApi = () => api.delete("/notifications/read")

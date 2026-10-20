@@ -6,6 +6,7 @@ import {
   FRIEND_ACCEPT_EMPTY_CLASS,
   FRIEND_ACCEPT_LIST_CLASS,
   FRIEND_ACCEPT_REFRESH_BUTTON_CLASS,
+  FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS,
   FRIEND_ACCEPT_TAB_CLASS,
   FRIEND_ACCEPT_TOOLBAR_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
@@ -92,7 +93,7 @@ function FriendAcceptRefreshButton({ onClick }) {
       <PublicAsset
         src={FRIEND_LIST_ASSETS.refreshButton}
         alt=""
-        className={FRIEND_ACCEPT_BUTTON_IMAGE_CLASS}
+        className={FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS}
       />
     </button>
   )
@@ -123,7 +124,7 @@ function FriendAcceptEmptyState({ isFiltering }) {
 
 // 받은 친구 요청 목록을 렌더링합니다.
 function FriendAcceptRequestList({
-  incomingRequests, isFiltering, onAccept, onDecline, onBlock, processingRequestIds, targetRequestId,
+  incomingRequests, isFiltering, onAccept, onBlock, processingRequestIds, targetRequestId,
 }) {
   return (
     <ul className={FRIEND_ACCEPT_LIST_CLASS}>
@@ -141,7 +142,6 @@ function FriendAcceptRequestList({
             accountProfilePhotoId={request.accountProfilePhotoId}
             accountProfileBorderId={request.accountProfileBorderId}
             onAccept={onAccept}
-            onDecline={onDecline}
             onBlock={onBlock}
             processing={processingRequestIds?.has?.(request.request_id) === true}
             targeted={targetRequestId != null && request.request_id === targetRequestId}
@@ -170,12 +170,11 @@ function FriendAcceptTargetMissingNotice() {
   )
 }
 
-// 받은 친구 요청을 검색하고 수락/거절하는 탭 화면입니다.
+// 받은 친구 요청을 검색하고 수락하는 탭 화면입니다.
 export default function FriendAcceptTab({
   onBack,
   incomingRequests = [],
   onAccept,
-  onDecline,
   onBlock = null,
   onAcceptAll,
   onRefresh,
@@ -227,7 +226,6 @@ export default function FriendAcceptTab({
         incomingRequests={visibleRequests}
         isFiltering={isFiltering}
         onAccept={onAccept}
-        onDecline={onDecline}
         onBlock={onBlock}
         processingRequestIds={processingRequestIds}
         targetRequestId={targetRequestId}

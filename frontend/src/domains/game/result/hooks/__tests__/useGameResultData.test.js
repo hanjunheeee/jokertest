@@ -127,7 +127,6 @@ test("서버가 정체 공개를 내려주지 않으므로 다른 참가자의 �
   const { result, unmount } = renderHook(() => useGameResultData())
 
   assert.deepEqual(result.current.players, [])
-  assert.deepEqual(result.current.rosterPlayers, [])
   assert.equal(result.current.mvp, null)
   unmount()
 })

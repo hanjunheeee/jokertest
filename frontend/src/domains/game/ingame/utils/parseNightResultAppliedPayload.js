@@ -1,3 +1,5 @@
+import { normalizePublicWinResult } from "./normalizePublicWinResult.js"
+
 /**
  * night_result_applied 방송을 검증·정규화한다. 신뢰하지 않는 외부 입력이므로 top-level 형태,
  * gameId 일치, dayIndex 단조성, canonical roster 정합성(누락/추가/중복 uuid), victim/alive
@@ -27,16 +29,13 @@ export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, cano
     if (typeof dayIndex !== "number" || payloadDayIndex !== dayIndex) return null
     if (!Array.isArray(players)) return null
     if (victimUuid !== null && typeof victimUuid !== "string") return null
-    if (
-      !Object.hasOwn(payload, "winResult") ||
-      payload.winResult === null ||
-      typeof payload.winResult !== "object" ||
-      Array.isArray(payload.winResult) ||
-      (payload.winResult.winner !== "CITIZEN" && payload.winResult.winner !== "JOKER")
-    ) {
+    if (!Object.hasOwn(payload, "winResult") || payload.winResult === null) {
       return null
     }
-    const winResult = { winner: payload.winResult.winner }
+    const winResult = normalizePublicWinResult(payload.winResult)
+    if (winResult === null) {
+      return null
+    }
 
     const seenEndedUuids = new Set()
     const normalizedEndedPlayers = []

@@ -47,9 +47,27 @@ export const INGAME_VOTE_TITLE_CLASS =
   "pointer-events-none absolute left-1/2 top-[clamp(2.15rem,6.2cqi,2.65rem)] z-[2] w-[clamp(9rem,36cqi,12rem)] -translate-x-1/2 text-center font-display text-[clamp(1.32rem,4.95cqi,1.72rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const INGAME_VOTE_SUBTITLE_CLASS =
-  "mb-[clamp(0.55rem,1.6cqi,0.75rem)] shrink-0 text-center font-subheading text-[clamp(0.62rem,2.1cqi,0.78rem)] font-bold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "mb-[clamp(0.55rem,1.6cqi,0.75rem)] shrink-0 text-center font-subheading text-[clamp(0.95rem,3.2cqi,1.2rem)] font-bold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const INGAME_VOTE_SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
+
+/** 집계 본문 — 라운드 집계 dl */
+export const INGAME_VOTE_STATUS_SECTION_CLASS =
+  "flex min-h-0 flex-1 flex-col gap-3 px-3 py-3 text-[clamp(1.2rem,4.2cqi,1.5rem)] text-[#f8ead2]"
+
+export const INGAME_VOTE_STATUS_ROW_CLASS = "flex items-center justify-between gap-3"
+
+export const INGAME_VOTE_STATUS_TERM_CLASS =
+  "text-[clamp(1.08rem,3.75cqi,1.32rem)] tracking-wide text-[#e0c9a3]"
+
+export const INGAME_VOTE_STATUS_VALUE_CLASS = "font-semibold"
+
+/** 아직 집계되지 않았을 때 — 본문 영역 중앙 */
+export const INGAME_VOTE_STATUS_UNRESOLVED_WRAP_CLASS =
+  `${INGAME_VOTE_SCROLL_WRAP_CLASS} flex items-center justify-center`
+
+export const INGAME_VOTE_STATUS_UNRESOLVED_CLASS =
+  "text-center font-subheading text-[clamp(1.2rem,4.2cqi,1.5rem)] font-bold text-[#e0c9a3] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const INGAME_VOTE_GRID_CLASS =
   `grid h-full min-h-0 grid-cols-2 gap-x-[clamp(0.52rem,2.1cqi,0.82rem)] gap-y-[clamp(0.33rem,1.12cqi,0.52rem)] overflow-y-auto overscroll-contain pr-[clamp(0.35rem,1.2cqi,0.55rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
@@ -63,19 +81,19 @@ export const INGAME_VOTE_PROFILE_WRAP_CLASS =
   "relative size-[clamp(2.78rem,9.75cqi,3.52rem)] shrink-0 overflow-hidden rounded-[2px] border border-[#5a4030]/70 bg-[#1a1008]/80"
 
 export const INGAME_VOTE_NAME_CLASS =
-  "min-w-0 flex-1 truncate font-subheading text-[clamp(0.87rem,3.08cqi,1.08rem)] font-bold leading-tight text-white"
+  "min-w-0 flex-1 truncate font-subheading text-[clamp(1.3rem,4.6cqi,1.62rem)] font-bold leading-tight text-white"
 
 export const INGAME_VOTE_COUNT_WRAP_CLASS =
   "flex shrink-0 items-center gap-[clamp(0.12rem,0.52cqi,0.18rem)] tabular-nums"
 
 export const INGAME_VOTE_COUNT_CLASS =
-  "font-subheading text-[clamp(0.87rem,3.08cqi,1.08rem)] font-bold leading-none"
+  "font-subheading text-[clamp(1.3rem,4.6cqi,1.62rem)] font-bold leading-none"
 
 export const INGAME_VOTE_COUNT_ACTIVE_CLASS = "text-[#d62828]"
 export const INGAME_VOTE_COUNT_IDLE_CLASS = "text-[#8a8078]"
 
 export const INGAME_VOTE_CROWN_CLASS =
-  "font-subheading text-[clamp(0.78rem,2.78cqi,0.99rem)] leading-none text-[#d62828]"
+  "font-subheading text-[clamp(1.17rem,4.15cqi,1.48rem)] leading-none text-[#d62828]"
 
 export const INGAME_VOTE_CHECKBOX_CLASS =
   "interactive-scale relative block w-[clamp(1.42rem,4.8cqi,1.72rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
@@ -96,9 +114,9 @@ export const INGAME_VOTE_SUBMIT_BTN_IMG_CLASS =
   "block h-auto w-full select-none"
 
 export const INGAME_VOTE_SUBMIT_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center pb-[2%] pt-[clamp(0.12rem,0.45cqi,0.18rem)] font-subheading text-[clamp(0.72rem,2.55cqi,0.9rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center pb-[2%] pt-[clamp(0.12rem,0.45cqi,0.18rem)] font-subheading text-[clamp(1.08rem,3.8cqi,1.35rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-/** timebar 우측 하단 — InGameTimebar stack children */
+/** timebar 아래(소형) — InGameCornerActionPanel이 크기를 덮어쓸 때의 기본값 */
 export const INGAME_VOTE_TOGGLE_BTN_WRAP_CLASS = "relative shrink-0 self-end"
 
 export const INGAME_VOTE_TOGGLE_BTN_CLASS =

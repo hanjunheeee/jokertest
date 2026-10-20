@@ -109,7 +109,11 @@ export const TRIBUNAL_VOTE_NOT_GUILTY_LABEL = "무죄"
 export const TRIBUNAL_VOTE_SUBMIT_LABEL = "투표 제출"
 export const TRIBUNAL_VOTE_SUBMITTING_LABEL = "제출 중..."
 export const TRIBUNAL_DEFENDANT_NOTICE = "당신은 피고인입니다. 투표할 수 없습니다."
+export const TRIBUNAL_VOTE_SUBMITTED_NOTICE = "투표가 완료되었습니다."
 export const TRIBUNAL_DEAD_NOTICE = "사망한 참가자는 투표할 수 없습니다."
+export const TRIBUNAL_RESOLVE_LABEL = "재판 판정"
+export const TRIBUNAL_RESOLVE_RESOLVING_LABEL = "판정 중..."
+export const TRIBUNAL_RESOLVE_DONE_LABEL = "판정 완료"
 
 // DAY 토론 페이즈(DAY_DISCUSSION) 섹션 라벨입니다. 토론 중에는 투표 컨트롤을 렌더하지 않고
 // 안내 문구와 "투표 시작 준비" 버튼만 노출합니다(생존자 전원이 준비하면 DAY_VOTE로 전이).

@@ -7,12 +7,8 @@ import {
   INGAME_ROLE_REVEAL_HEADER_CLASS,
   INGAME_ROLE_REVEAL_NICKNAME_CLASS,
   INGAME_ROLE_REVEAL_ROLE_NAME_CLASS,
-  INGAME_ROLE_REVEAL_STANDING_IMG_CLASS,
-  INGAME_ROLE_REVEAL_STANDING_WRAP_CLASS,
-  INGAME_ROLE_REVEAL_TEAM_BADGE_CLASS,
 } from "../../constants/roleReveal/ingameRoleRevealLayout.js"
 import { resolveInGameRoleRevealAllies } from "../../utils/resolveInGameRoleRevealAllies.js"
-import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 import InGameParchmentModalAnimated from "../parchment/InGameParchmentModalAnimated.jsx"
 
 /**
@@ -20,8 +16,6 @@ import InGameParchmentModalAnimated from "../parchment/InGameParchmentModalAnima
  *
  * 셸(backdrop·양피지·확인 버튼·Escape 닫기)은 InGameParchmentModalAnimated가 담당하고,
  * 이 파일은 역할 공개 본문만 채운다 — 밤 역할 턴 안내·DAY/NIGHT 진입 연출과 같은 셸이다.
- *
- * 진영 배지(teamLabel)는 이 저장소의 표시 계약이라 그대로 유지한다.
  *
  * 닫기/다시 열기는 완전히 로컬 UI 상태다: socket emit·REST 요청·canonical 세션 상태 변경이
  * 전혀 없고, phase 전이나 게임 액션을 막지도 않는다(useInGameRoleReveal 참고).
@@ -52,14 +46,7 @@ export default function InGameRoleRevealOverlay({
           <p className={INGAME_ROLE_REVEAL_NICKNAME_CLASS}>{roleInfo.nickname}</p>
         ) : null}
         <p className={INGAME_ROLE_REVEAL_ROLE_NAME_CLASS}>{roleInfo.roleName}</p>
-        <p className={INGAME_ROLE_REVEAL_TEAM_BADGE_CLASS}>{roleInfo.teamLabel}</p>
       </div>
-
-      {roleInfo.standingSrc ? (
-        <div className={INGAME_ROLE_REVEAL_STANDING_WRAP_CLASS}>
-          <PublicAsset src={roleInfo.standingSrc} alt="" className={INGAME_ROLE_REVEAL_STANDING_IMG_CLASS} />
-        </div>
-      ) : null}
 
       {roleInfo.description ? (
         <p className={INGAME_ROLE_REVEAL_DESCRIPTION_CLASS}>{roleInfo.description}</p>

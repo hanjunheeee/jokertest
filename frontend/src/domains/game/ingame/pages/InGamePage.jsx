@@ -3,12 +3,12 @@ import { useNavigate } from "react-router-dom"
 import InGameBackground from "../components/InGameBackground.jsx"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
+import { InGameChatSessionProvider } from "../components/chat/InGameChatSessionProvider.jsx"
 import SettingKickPlayerModalContent from "../components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalContent.jsx"
 import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOverlay.jsx"
 import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
 import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/InGameNightPrivateResultOverlay.jsx"
-import InGameKillRevealOverlay from "../components/killReveal/InGameKillRevealOverlay.jsx"
 import InGameNightSuccessPresentation from "../components/InGameNightSuccessPresentation.jsx"
 import InGameNightPresentationWait from "../components/InGameNightPresentationWait.jsx"
 import InGameDeadParticipantChoice from "../components/deadChoice/InGameDeadParticipantChoice.jsx"
@@ -19,6 +19,9 @@ import PlayerRecordListPanel from "../components/controls/playerRecordList/Playe
 import SettingPanel from "../components/controls/ingameSetting/SettingPanel.jsx"
 import InGameVoteStatusPanel from "../components/vote/InGameVoteStatusPanel.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
+import InGameCornerActionPanel from "../components/actions/InGameCornerActionPanel.jsx"
+import InGameTribunalPresentationGate from "../components/tribunalPresentation/InGameTribunalPresentationGate.jsx"
+import InGameTribunalExpulsionOverlay from "../components/tribunalExpulsion/InGameTribunalExpulsionOverlay.jsx"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import {
   getInGameIdentityScopeVersion,
@@ -41,11 +44,11 @@ import {
   useInGameSessionSnapshotSync,
   useInGameSnapshotRebindPending,
 } from "../hooks/useInGameSessionSnapshotSync.js"
-import { useInGameKillReveal } from "../hooks/useInGameKillReveal.js"
 import { useInGameNightPrivateResult } from "../hooks/useInGameNightPrivateResult.js"
 import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
+import { useInGameTribunalExpulsionPresentation } from "../hooks/useInGameTribunalExpulsionPresentation.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
 import { useInGameActionPanel } from "../hooks/useInGameActionPanel.js"
@@ -192,24 +195,25 @@ export default function InGamePage() {
   // 한 곳에서 결정한다(useInGameOverlayStack 참고). 각 오버레이가 서로의 상태를 알아야 하므로
   // 이 페이지 하나에서만 호출하고 아래로 내려보낸다 — 상단 버튼 줄의 "내 역할 보기"
   // 버튼과 역할 공개 오버레이도 여기서 같은 열림 상태를 공유한다.
-  const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack()
+  const tribunalExpulsion = useInGameTribunalExpulsionPresentation({
+    hold: false,
+  })
+  const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack({
+    deathRevealActive: tribunalExpulsion.open || tribunalExpulsion.pending,
+  })
 
-  // 사망 연출과 밤 개인 결과는 오버레이 스택 밖에서 이 페이지가 직접 조립한다 —
-  // useInGameOverlayStack은 인자 없이 호출하는 기존 계약을 그대로 유지하고(로컬 오버레이 스택
-  // 로직은 이 슬라이스에서 바꾸지 않는다), 오버레이들의 우선순위는 여기서 hold로 잇는다:
-  //   1. 자기 역할 공개(roleReveal) → 2. 사망 연출 → 3. 밤 성공 사건 연출 → 4. 밤 개인 결과
-  // 5·6번(진입 연출·역할 턴 안내)보다 위에 그려지는 것은 각자의 z 단계가 보장한다
-  // (killReveal z-[70]/[71], nightSuccessPresentation도 KILL은 같은 z-[70]/[71](kill reveal이
-  // hold로 동시에 열리지 않는다), 나머지 세 종류·nightPrivateResult는 z-[65]/[66] > 진입·안내
-  // z-[60]/[61]).
-  const killReveal = useInGameKillReveal({ hold: roleReveal.open })
+  // 밤 개인 결과는 오버레이 스택 밖에서 이 페이지가 직접 조립한다 —
+  // 오버레이들의 우선순위는 여기서 hold로 잇는다:
+  //   1. 자기 역할 공개(roleReveal) → 2. TRIBUNAL GUILTY 추방 연출 → 3. 밤 성공 사건 연출 → 4. 밤 개인 결과
+  // 진입 연출·역할 턴 안내는 z 단계로 그 아래에 그려진다.
   // F-27b(AC-01/AC-02/AC-03/AC-04/AC-05): 서버가 역할별로 개별 전송한 성공 사건 큐(광대 킬→
   // 의사 치료→경비원 조사→마녀사냥꾼 확인)를 하나씩 표시한다.
   const nightSuccessPresentation = useInGameNightSuccessPresentation({
-    hold: roleReveal.open || killReveal.open,
+    hold: roleReveal.open || tribunalExpulsion.open || tribunalExpulsion.pending,
   })
   const nightPrivateResult = useInGameNightPrivateResult({
-    hold: roleReveal.open || killReveal.open || nightSuccessPresentation.open,
+    hold: roleReveal.open || tribunalExpulsion.open || tribunalExpulsion.pending
+      || nightSuccessPresentation.open,
   })
 
   /**
@@ -239,35 +243,31 @@ export default function InGamePage() {
    * 애니메이션 동안 역할·진영 문자열이 DOM에 남는다), 대기가 풀리면 그대로 다시 열린다
    * (확인한 것으로 처리하지 않는다).
    *
-   * 반대로 **이미 재생 중인 연출**(공개 사망·개인 성공 사건)은 그대로 위에 남는다. 그 둘은
-   * 잘리면 복구할 수 없는 일회성 연출이고, 애초에 그것을 받는 참가자는 이 밤의 비수신자가
-   * 아니다(대기 상태는 그동안에도 그대로 살아 있다 — 가려졌다고 완료로 처리하지 않는다).
+   * 반대로 **이미 재생 중인 개인 성공 연출**은 그대로 위에 남는다 — 잘리면 복구할 수 없고,
+   * 애초에 그것을 받는 참가자는 이 밤의 비수신자가 아니다(대기 상태는 그동안에도 그대로 살아
+   * 있다 — 가려졌다고 완료로 처리하지 않는다).
    */
   const nightPresentationWaitOpen = nightPresentationWaitOwned
-    && !killReveal.open && !nightSuccessPresentation.open
+    && !nightSuccessPresentation.open
 
-  // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다 — 단, 이 판정의 사망
-  // 연출이 재생 중이거나 큐에 남아 있는 동안은 기다린다(연출이 통째로 잘리지 않게).
+  // 게임이 실제로 끝나면(ENDED + winResult) 결과 페이지로 한 번 이동한다.
   //
-  // F-23(SPLIT-1): 신원 재결속 중에도 기다린다. 그 구간의 killReveal은 "보여줄 연출이 없다"가
-  // 아니라 "이 신원이 받은 것인지 아직 모른다"이므로, 큐가 비었다는 사실만으로 넘어가면 옛
-  // 신원의 잔존 ENDED로 결과 화면에 들어간다. 이 보류는 유한하다 — 스냅샷 요청이 성공·실패·
-  // 거부 어느 쪽으로 끝나도 해제된다(useInGameSessionSnapshotSync).
+  // F-23(SPLIT-1): 신원 재결속 중에도 기다린다 — 현재 신원의 스냅샷을 확인하기 전에는 잔존
+  // ENDED로 넘어가지 않는다(유한 보류, useInGameSessionSnapshotSync).
   //
   // F-27b(AC-03): 마지막 밤의 상한 해제로 ENDED가 성공 연출보다 **먼저** 도착할 수 있다. 그때
   // 그대로 넘어가면 아직 소비하지 않은 개인 연출(과 그 뒤의 최종 생존 화면)이 통째로 잘린다 —
-  // 사망 연출과 같은 이유로 성공 연출의 pending·open도 이동을 미룬다. 이 보류 역시 유한하다:
-  // 큐는 정상 종료·오류·건너뛰기 어느 경로로도 반드시 비워지고, 최종 화면은 확인으로 닫힌다.
+  // 성공 연출의 pending·open도 이동을 미룬다(유한 — 큐는 반드시 비워진다).
   useInGameResultNavigation({
-    hold: killReveal.open || killReveal.pending || identityRebindPending
+    hold: identityRebindPending
+      || tribunalExpulsion.open || tribunalExpulsion.pending
       || nightSuccessPresentation.open || nightSuccessPresentation.pending,
   })
 
   // F-23(AC-06): 확정 사망한 참가자에게만 여는 선택창.
   //
-  // 자기 사망 연출이 재생 중이거나 큐에 남아 있는 동안에는 띄우지 않는다 — 선택창이 그 위를
-  // 덮으면 연출이 통째로 잘린다(기존 연출 우선순위를 그대로 따른다). 판정 근거는 잠정 피격
-  // 표식이 아니라 canonical roster의 확정 alive=false다(selectInGameDeadParticipantChoice).
+  // 판정 근거는 잠정 피격 표식이 아니라 canonical roster의 확정 alive=false다
+  // (selectInGameDeadParticipantChoice).
   const needsDeadChoice = selectInGameDeadParticipantChoice(gameState, authUuid) && !keepWatchingChosen
 
   /**
@@ -297,8 +297,6 @@ export default function InGamePage() {
 
   const deadChoiceOpen = (needsDeadChoice || needsExitRecovery)
     && !roleReveal.open
-    && !killReveal.open
-    && !killReveal.pending
     // F-27b: 밤 성공 사건 연출(및 그 뒤에 이어지는 최종 생존 화면)이 떠 있는 동안에도 가려선
     // 안 된다 — 개인 결과 오버레이와 같은 이유다.
     && !nightSuccessPresentation.open
@@ -309,12 +307,18 @@ export default function InGamePage() {
     // 계속 보기·나가기 자격은 조금도 바뀌지 않는다).
     && !nightPresentationWaitOpen
 
-  // 사망 연출·성공 사건 연출·개인 결과가 떠 있는 동안에도 아래 게임 표면의 입력을 함께
-  // 잠근다. 잠금 판단만 여기서 합치고, 오버레이 스택이 내는 interactionBlocked 자체는 그대로
+  // 성공 사건 연출·개인 결과가 떠 있는 동안에도 아래 게임 표면의 입력을 함께 잠근다.
+  // 잠금 판단만 여기서 합치고, 오버레이 스택이 내는 interactionBlocked 자체는 그대로
   // 아래로 흘려보낸다.
+  const tribunalPresentationOpen =
+    gameState?.phase === "TRIBUNAL"
+    && Boolean(gameState?.tribunal?.defendantUuid)
+    && gameState.tribunal.resolved !== true
+
   const surfaceLocked =
-    interactionBlocked || killReveal.open || nightPrivateResult.open || deadChoiceOpen
+    interactionBlocked || nightPrivateResult.open || deadChoiceOpen
     || nightSuccessPresentation.open || nightPresentationWaitOpen
+    || tribunalPresentationOpen || tribunalExpulsion.open
 
   // 상태바에 상시로 띄우는 밤 역할 턴의 남은 시간. 서버가 실어 보낸 deadline 하나에서만 만든다.
   const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
@@ -343,23 +347,24 @@ export default function InGamePage() {
       {/* 진입 연출이 떠 있는 동안에는 이 게임 표면 전체를 inert로 잠근다 — 포인터도 키보드
           초점도 안으로 들어가지 못하므로 낮 투표·채팅·재판·밤 행동·결과 컨트롤이 한꺼번에
           차단된다. 오버레이들은 이 래퍼 바깥에 있어 그대로 조작할 수 있다. */}
-      <div
-        className={`absolute inset-0 ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
-        inert={surfaceLocked || undefined}
-      >
-        {/* V-2(AC-02): "내 역할 보기"는 제어 패널이 아니라 이 상단 줄이 소유한다. 열림
-            상태의 출처는 그대로 useInGameOverlayStack 하나다(여기서는 그 입구만 옮겼다). */}
-        <InGameTopControls
-          onExitClick={requestExit}
-          onMenuClick={sidePanel.openRecords}
-          onSettingsClick={sidePanel.openSettings}
-          onOpenRoleReveal={roleReveal.reopen}
-          roleRevealAvailable={Boolean(roleReveal.roleInfo)}
-        />
-        <InGamePlayerSessionProvider>
-          {/* V-1/V-2: 단계 행동 줄(시간바 안)과 플레이어 보드(카드 메뉴)를 같은 조작 훅
-              인스턴스로 묶는다 — 둘이 한 Provider 아래에 있어야 선택 상태와 제출 경로가 하나다. */}
-          <InGameActionProvider interactionBlocked={interactionBlocked}>
+      <InGamePlayerSessionProvider>
+        <InGameChatSessionProvider>
+        {/* V-1/V-2: 단계 행동 줄(시간바 안)과 플레이어 보드(카드 메뉴)를 같은 조작 훅
+            인스턴스로 묶는다 — 둘이 한 Provider 아래에 있어야 선택 상태와 제출 경로가 하나다. */}
+        <InGameActionProvider interactionBlocked={interactionBlocked}>
+          <div
+            className={`absolute inset-0 ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
+            inert={surfaceLocked || undefined}
+          >
+            {/* V-2(AC-02): "내 역할 보기"는 제어 패널이 아니라 이 상단 줄이 소유한다. 열림
+                상태의 출처는 그대로 useInGameOverlayStack 하나다(여기서는 그 입구만 옮겼다). */}
+            <InGameTopControls
+              onExitClick={requestExit}
+              onMenuClick={sidePanel.openRecords}
+              onSettingsClick={sidePanel.openSettings}
+              onOpenRoleReveal={roleReveal.reopen}
+              roleRevealAvailable={Boolean(roleReveal.roleInfo)}
+            />
             {/* NIGHT 문구는 로컬 canonical 턴(selectInGameNightTurnRole)에서만 파생한다 — 안내
                 오버레이가 닫혀도 이 줄은 턴이 끝날 때까지 남고, 남은 초는 서버 deadline에서
                 만든 카운트다운 하나만 붙는다. */}
@@ -367,8 +372,8 @@ export default function InGamePage() {
               day={gameState?.dayIndex}
               activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
               statusMessage={selectInGameTimebarStatusMessage(gameState, nightTurnRemainingSec)}
-              onVoteStatusClick={() => setVoteStatusOpen(true)}
             />
+            <InGameCornerActionPanel onVoteStatusClick={() => setVoteStatusOpen(true)} />
             <InGamePlayerBoard />
             <InGameChatShell />
             <PlayerRecordListPanel
@@ -380,9 +385,12 @@ export default function InGamePage() {
               open={voteStatusOpen}
               onClose={() => setVoteStatusOpen(false)}
             />
-          </InGameActionProvider>
-        </InGamePlayerSessionProvider>
-      </div>
+          </div>
+          {/* TRIBUNAL 연출은 inert 잠금 밖에 둔다 — 배경 딤 위에서 유/무죄 버튼만 조작 가능. */}
+          <InGameTribunalPresentationGate />
+        </InGameActionProvider>
+        </InGameChatSessionProvider>
+      </InGamePlayerSessionProvider>
 
       {/* 오버레이는 우선순위가 낮은 것부터 그린다 — 실제 표시 순서는 렌더 순서가 아니라
           useInGameOverlayStack이 정한 hold 관계와 각자의 z 단계가 결정한다. */}
@@ -420,15 +428,9 @@ export default function InGamePage() {
         label={nightPrivateResult.label}
         onConfirm={nightPrivateResult.confirm}
       />
-      <InGameKillRevealOverlay
-        open={killReveal.open}
-        revealId={killReveal.revealId}
-        message={killReveal.message}
-        onConsume={killReveal.consume}
-      />
       {/* F-27b: 밤 성공 사건(광대 킬→의사 치료→경비원 조사→마녀사냥꾼 확인) 큐를 하나씩
-          표시한다. KILL은 기존 사망 연출 영상을, 나머지는 임시 연출을 보여주고, 큐가 비면
-          같은 밤의 night_result_applied가 반영된 뒤에만 최종 생존 화면으로 이어진다. */}
+          표시한다. 큐가 비면 같은 밤의 night_result_applied가 반영된 뒤에만 최종 생존
+          화면으로 이어진다. */}
       <InGameNightSuccessPresentation
         current={nightSuccessPresentation.current}
         open={nightSuccessPresentation.open}
@@ -447,6 +449,12 @@ export default function InGamePage() {
         onResolveOutcome={resolveExitOutcome}
         exitStatus={exitStatus}
         exitErrorCode={exitErrorCode}
+      />
+      <InGameTribunalExpulsionOverlay
+        open={tribunalExpulsion.open}
+        presentationId={tribunalExpulsion.presentationId}
+        message={tribunalExpulsion.message}
+        onComplete={tribunalExpulsion.consume}
       />
     </div>
   )

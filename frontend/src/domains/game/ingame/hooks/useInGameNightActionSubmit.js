@@ -21,11 +21,14 @@ const SUBMIT_TIMEOUT_MS = 5000
  */
 export function useInGameNightActionSubmit() {
   const gameId = useInGameStore((s) => s.gameId)
+  const phase = useInGameStore((s) => s.state?.phase)
+  const dayIndex = useInGameStore((s) => s.state?.dayIndex)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
   const [status, setStatus] = useState("idle") // idle | submitting
   const [error, setError] = useState(null)
   const [lastSubmittedTargetId, setLastSubmittedTargetId] = useState(null)
+  const [hasSubmitted, setHasSubmitted] = useState(false)
 
   const ackingRef = useRef(false)
   const versionRef = useRef(0)
@@ -47,6 +50,8 @@ export function useInGameNightActionSubmit() {
     if (!patch) return // unmounted: state는 건드리지 않는다
     setStatus(patch.status)
     setError(patch.error)
+    setHasSubmitted(false)
+    setLastSubmittedTargetId(null)
   }
 
   // disconnect・socket 객체 교체(재연결)・unmount 시 무효화.
@@ -61,11 +66,11 @@ export function useInGameNightActionSubmit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
-  // gameId 변경 시 무효화(이전 gameId를 향한 요청·에러 상태는 새 게임에 넘어가지 않는다).
+  // gameId·phase·dayIndex 변경 시 무효화(이전 턴/게임의 제출 이력이 새 화면에 남지 않게 한다).
   useEffect(() => {
     invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId])
+  }, [gameId, phase, dayIndex])
 
   const submit = (targetId) => {
     if (ackingRef.current) return
@@ -103,7 +108,10 @@ export function useInGameNightActionSubmit() {
         const patch = computeNightActionSubmitPatch(response)
         setStatus(patch.status)
         setError(patch.error)
-        if (response?.ok) setLastSubmittedTargetId(targetId)
+        if (response?.ok) {
+          setLastSubmittedTargetId(targetId)
+          setHasSubmitted(true)
+        }
       })
       .catch(() => {
         if (!isStale()) {
@@ -121,5 +129,5 @@ export function useInGameNightActionSubmit() {
       })
   }
 
-  return { status, error, lastSubmittedTargetId, submit }
+  return { status, error, lastSubmittedTargetId, hasSubmitted, submit }
 }

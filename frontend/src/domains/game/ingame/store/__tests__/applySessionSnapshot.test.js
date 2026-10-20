@@ -328,6 +328,20 @@ test("F-26(AC-04): 앞으로 가는 전이와 같은 단계 재적용은 그대�
   assert.deepEqual(ended.state.winResult, { winner: "JOKER" })
 })
 
+test("ENDED 스냅샷의 공개 winResult.reveals는 store에 보존된다", () => {
+  const reveals = [
+    { uuid: "p1", nickname: "P1", role: "JOKER", team: "JOKER", alive: true, deathReason: null },
+    { uuid: "p2", nickname: "P2", role: "DOCTOR", team: "CITIZEN", alive: false, deathReason: "NIGHT" },
+    { uuid: "p3", nickname: "P3", role: "CITIZEN", team: "CITIZEN", alive: true, deathReason: null },
+  ]
+  const ended = applySessionSnapshotPure(
+    baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
+    baseResponse({ phase: "ENDED", dayIndex: 2, winResult: { winner: "JOKER", reveals } }),
+  )
+
+  assert.deepEqual(ended.state.winResult, { winner: "JOKER", reveals })
+})
+
 test("F-26(AC-04): 현재 날짜를 모르는 화면(구버전 state)은 이 축으로 판단하지 않는다", () => {
   // bootstrapSessionSnapshotPure가 쓰는 최소 seed가 바로 이 모양이다(날짜가 없다).
   const seed = {

@@ -16,7 +16,7 @@
  * 공개 payload에는 role/team/사망 원인이 없다. 이 파서도 그런 값을 만들어내지 않는다(AC-05).
  */
 
-const TERMINAL_WINNERS = new Set(["CITIZEN", "JOKER"])
+import { normalizePublicWinResult } from "./normalizePublicWinResult.js"
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0
@@ -73,10 +73,8 @@ export function parsePlayerEliminatedPayload({
   let winResult = null
   if (isTerminal) {
     // terminal은 유효한 승자가 함께 와야만 종료로 인정한다.
-    const candidate = payload.winResult
-    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) return null
-    if (!TERMINAL_WINNERS.has(candidate.winner)) return null
-    winResult = { ...candidate }
+    winResult = normalizePublicWinResult(payload.winResult)
+    if (winResult === null) return null
   } else if (payload.phase !== phase) {
     // 일반 사망은 현재 canonical phase에서만 유효하다.
     return null

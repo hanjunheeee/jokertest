@@ -3,6 +3,7 @@ import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import SettingIntroSkipLayer from "@/domains/settings/components/SettingIntroSkipLayer.jsx"
 import { useVideoIntro } from "@/shared/hooks/useVideoIntro.js"
+import PageSoundControlArea from "@/shared/ui/PageBackgroundMusic.jsx"
 import StoreEntryBackground from "../components/StoreEntryBackground.jsx"
 import StorePanel from "../components/panel/StorePanel.jsx"
 import StoreCurrencyBalance from "../components/StoreCurrencyBalance.jsx"
@@ -64,6 +65,7 @@ export default function StorePage() {
         className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
         style={{ pointerEvents: introDone ? "auto" : "none" }}
       />
+      <PageSoundControlArea visible={introDone} />
     </div>
   )
 }

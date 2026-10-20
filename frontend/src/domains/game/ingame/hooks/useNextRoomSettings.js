@@ -16,8 +16,7 @@
  *      누락·손상이면 **복원 불가**다 — 둘을 같은 말로 다루면 기다리면 되는 상황과 영영 안 되는
  *      상황이 구별되지 않는다(A-01).
  *
- * 저장 범위는 같은 브라우저·같은 계정의 localStorage 하나뿐이다(A-08). 그 사실을 문구로
- * 그대로 알린다 — 다른 브라우저에서도 복원된다고 믿게 두지 않는다.
+ * 저장 범위는 같은 브라우저·같은 계정의 localStorage 하나뿐이다(A-08).
  */
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
@@ -39,10 +38,6 @@ export const NEXT_ROOM_SETTINGS_AVAILABILITY = Object.freeze({
   /** 서버 원본이 없거나 모양이 깨졌다 — 이 판의 설정은 복원할 수 없다. */
   SOURCE_UNAVAILABLE: "SOURCE_UNAVAILABLE",
 })
-
-/** 저장 범위 안내. 화면이 문구를 복붙하지 않도록 여기 한 곳에만 둔다. */
-export const NEXT_ROOM_SETTINGS_SCOPE_NOTICE =
-  "이 설정은 지금 사용하는 브라우저에 계정별로 저장됩니다. 다른 브라우저에서는 복원되지 않습니다."
 
 /** 상태 코드별 안내 문구. 없는 코드는 문구도 없다(조용한 성공). */
 const STATUS_MESSAGES = Object.freeze({
@@ -181,6 +176,5 @@ export function useNextRoomSettings() {
     /** 실패가 남아 있을 때만 재시도를 제공한다. */
     canRetry: failed,
     retry,
-    scopeNotice: NEXT_ROOM_SETTINGS_SCOPE_NOTICE,
   }
 }

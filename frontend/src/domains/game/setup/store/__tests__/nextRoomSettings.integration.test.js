@@ -522,33 +522,26 @@ async function startGameFromMatchingRoom({ host, created, router, view }) {
 }
 
 /**
- * 재판 처형의 공개 사망 연출을 실제로 끝까지 재생하고, **생산 훅이** 결과 화면으로 옮기는
- * 것을 관찰한다.
+ * 게임 종료(ENDED)가 반영되면 **생산 훅이** 결과 화면으로 옮기는 것을 관찰한다.
  *
- * 연출이 큐에 남아 있는 동안 결과 이동은 useInGameResultNavigation이 보류한다(hold). 시험은
- * 결과 경로로 이동하지 않으므로, 이 연출을 끝내는 것이 그 이동을 여는 유일한 입력이다 —
- * 실제 사용자가 하는 일과 같다.
+ * 공개 사망 연출(kill reveal)은 제거됐다 — 재판 처형 전용 연출은 추후 별도로 붙인다.
+ * 개인 밤 성공 연출이 남아 있으면 useInGameResultNavigation이 hold로 이동을 미룬다.
  */
 async function enterResultScreen({ router, view }) {
-  assert.equal(router.state.location.pathname, "/ingame", "종료 직전인데 인게임 화면이 아니다")
-  // 낮/밤 진입 연출이 떠 있으면 사용자가 닫는다(역할 공개가 아직 열려 있었다면 그것도) —
-  // 실제 화면에서 사망 연출은 그 다음 차례다.
-  await dismissParchmentOverlays(view.container)
-  await waitFor(() => {
-    assert.ok(
-      view.container.querySelector("[data-ingame-kill-reveal] video"),
-      "처형 사망 연출이 인게임 화면에 뜨지 않았다",
-    )
-  })
-  const reveal = view.container.querySelector("[data-ingame-kill-reveal] video")
-  await act(async () => { reveal.dispatchEvent(new dom.window.Event("ended")) })
-
-  await waitFor(() => {
+  if (router.state.location.pathname === "/ingame") {
+    await dismissParchmentOverlays(view.container)
+    await waitFor(() => {
+      assert.equal(
+        router.state.location.pathname, "/gameresult",
+        "생산 훅(InGamePage → useInGameResultNavigation)이 결과 화면으로 옮기지 않았다",
+      )
+    })
+  } else {
     assert.equal(
       router.state.location.pathname, "/gameresult",
-      "생산 훅(InGamePage → useInGameResultNavigation)이 결과 화면으로 옮기지 않았다",
+      "종료가 반영됐는데 결과 화면이 아니다",
     )
-  })
+  }
   assert.equal(
     userNavigations.includes("/gameresult"), false,
     "시험이 결과 경로로 직접 이동했다 — 그러면 실제 진입 연결을 우회한다",
@@ -728,8 +721,8 @@ test("F-24(AC-04) · 실제 시작 방송 → 유지 체크 → 정상 종료 �
   })
   assert.equal(persistedGameResults.length, 1, "정상 종료의 전적 저장이 실제로 시작되지 않았다")
 
-  // 7) **인게임 화면에서** 결과 화면으로 넘어간다 — 이 이동은 시험이 하지 않는다.
-  //    사망 연출을 끝내면 InGamePage의 useInGameResultNavigation이 /gameresult로 옮긴다.
+  // 7) 결과 화면으로 넘어간다 — 이 이동은 시험이 하지 않는다.
+  //    공개 사망 연출 없이 ENDED가 반영되면 useInGameResultNavigation이 /gameresult로 옮긴다.
   await enterResultScreen({ router, view: app })
 
   // 8) 결과 화면의 로비 버튼 → 실제 useInGameExit → 실제 leave_game_session.

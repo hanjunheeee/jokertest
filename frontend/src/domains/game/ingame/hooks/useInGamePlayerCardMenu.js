@@ -11,26 +11,26 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getDayVoteRound } from "../utils/dayVoteRound.js"
 import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
 import {
+  DAY_DISCUSSION_NOTICE,
   TRIBUNAL_VOTE_GUILTY_LABEL,
   TRIBUNAL_VOTE_NOT_GUILTY_LABEL,
 } from "../constants/actions/ingameActionPanel.js"
+import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "../utils/resolveInGameDayPhase.js"
 
 /** 카드 메뉴가 만들 수 있는 항목의 종류. 항목 하나가 정확히 하나의 제출 경로에 대응한다. */
 export const INGAME_CARD_MENU_ITEM_KINDS = Object.freeze({
   DAY_VOTE: "DAY_VOTE",
+  DAY_VOTE_CANCEL: "DAY_VOTE_CANCEL",
   TRIBUNAL_GUILTY: "TRIBUNAL_GUILTY",
   TRIBUNAL_NOT_GUILTY: "TRIBUNAL_NOT_GUILTY",
   NIGHT_ACTION: "NIGHT_ACTION",
-  // V-2(AC-03): 방장 전용. 다른 항목과 달리 게임 단계와 무관하다 — 추방은 진행 상태가 아니라
-  // 방 권한이기 때문이다(설정 → 방관리 경로와 같은 권한·같은 서버 명령).
-  KICK: "KICK",
+  NIGHT_ACTION_CANCEL: "NIGHT_ACTION_CANCEL",
 })
 
-export const INGAME_CARD_MENU_DAY_VOTE_LABEL = "투표"
+export const INGAME_CARD_MENU_DAY_VOTE_LABEL = "투표하기"
+export const INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL = "투표취소"
+export const INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL = "취소하기"
 export const INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL = "밤 행동"
-export const INGAME_CARD_MENU_KICK_LABEL = "추방(방장)"
-/** 추방 항목만의 잠금 사유. 다른 항목의 사유 우선순위(생존→대상→전송)와 섞지 않는다. */
-export const INGAME_CARD_MENU_KICK_SENDING_REASON = "처리 중"
 
 /**
  * 비활성 사유 문구. 우선순위는 고정이다(본인 사망 → 대상 목록 부재 → 전송 중 → 그 외 게이트):
@@ -66,12 +66,24 @@ function resolveDisabledReason({ selfAlive, inTargets, submitting }) {
   return INGAME_CARD_MENU_DISABLED_REASONS.blocked
 }
 
+/** 카드 오버레이가 "이 대상에게 이미 투표했는가"를 판단할 때 쓰는 확정 표 대상 id. */
+function resolveCardDayVoteTargetId(ctx) {
+  if (!ctx?.dayVoteHasSubmitted) return null
+  return ctx.dayVoteLastSubmittedTargetId ?? null
+}
+
+/** 카드 오버레이가 "이 대상에게 이미 밤 행동을 제출했는가"를 판단할 때 쓰는 확정 대상 id. */
+function resolveCardNightActionTargetId(ctx) {
+  return ctx?.nightActionLastSubmittedTargetId ?? null
+}
+
 /**
  * 한 플레이어 카드에 띄울 메뉴 항목을 계산한다(순수 함수 — 상태를 읽기만 한다).
  *
  * 표시 규칙(운영자 확정):
  *   - 낮 투표    : phase === "DAY" && dayPhase === "DAY_VOTE" && 대상 !== 본인
- *                  (DAY_DISCUSSION에는 아예 나타나지 않는다)
+ *   - 낮 토론    : phase === "DAY" && dayPhase === "DAY_DISCUSSION" && 대상 !== 본인
+ *                  (투표하기는 비활성 — 토론 중 안내만 보여준다)
  *   - 재판 투표  : phase === "TRIBUNAL" && 대상 === gameState.tribunal.defendantUuid
  *                  (유죄/무죄 두 항목이 함께 뜬다 — 피고 카드 하나에만 붙는다)
  *   - 밤 행동    : phase === "NIGHT" && 내 역할 턴 && 대상 !== 본인
@@ -91,20 +103,45 @@ export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
   const isSelf = isInGameSelfPlayer(targetId, localPlayerId)
   const selfAlive = ctx.selfAliveForControls !== false
   const items = []
+  const resolvedDayPhase = resolveInGameDayPhase({
+    phase,
+    dayPhase: gameState?.dayPhase ?? ctx.dayPhase ?? null,
+  })
 
-  if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE" && !isSelf) {
-    // 재투표 금지는 여기서 하지 않는다 — dayVoteHasSubmitted는 "이미 냈다"는 표시일 뿐이고,
-    // 서버는 같은 라운드의 표 변경을 허용한다(제어 패널의 투표 버튼과 같은 규칙이다).
+  if (phase === "DAY" && resolvedDayPhase === INGAME_DAY_PHASES.VOTE && !isSelf) {
     const inTargets = Array.isArray(ctx.dayVoteTargets)
       && ctx.dayVoteTargets.some((target) => target.id === targetId)
     const submitting = ctx.dayVoteStatus === "submitting"
-    const enabled = Boolean(ctx.dayVoteControlsEnabled) && !submitting && inTargets
+    const votedForThisPlayer = resolveCardDayVoteTargetId(ctx) === targetId
+
+    if (votedForThisPlayer) {
+      const enabled = Boolean(ctx.dayVoteControlsEnabled) && !submitting
+      items.push({
+        kind: INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE_CANCEL,
+        label: INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL,
+        visible: true,
+        enabled,
+        disabledReason: enabled ? null : resolveDisabledReason({ selfAlive, inTargets: true, submitting }),
+      })
+    } else {
+      const enabled = Boolean(ctx.dayVoteControlsEnabled) && !submitting && inTargets
+      items.push({
+        kind: INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE,
+        label: INGAME_CARD_MENU_DAY_VOTE_LABEL,
+        visible: true,
+        enabled,
+        disabledReason: enabled ? null : resolveDisabledReason({ selfAlive, inTargets, submitting }),
+      })
+    }
+  }
+
+  if (phase === "DAY" && resolvedDayPhase === INGAME_DAY_PHASES.DISCUSSION && !isSelf) {
     items.push({
       kind: INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE,
       label: INGAME_CARD_MENU_DAY_VOTE_LABEL,
       visible: true,
-      enabled,
-      disabledReason: enabled ? null : resolveDisabledReason({ selfAlive, inTargets, submitting }),
+      enabled: false,
+      disabledReason: DAY_DISCUSSION_NOTICE,
     })
   }
 
@@ -137,35 +174,27 @@ export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
     const inTargets = Array.isArray(ctx.nightActionTargets)
       && ctx.nightActionTargets.some((target) => target.id === targetId && target.selectable)
     const submitting = ctx.nightActionStatus === "submitting"
-    // 밤 제출에는 완료 잠금 단계가 없다 — useInGameNightActionSubmit의 status는
-    // idle | submitting 둘뿐이고 ACK·타임아웃 뒤 idle로 돌아와 재제출이 다시 열린다.
-    const enabled = ctx.nightActionsLocked !== true && !submitting && inTargets
-    items.push({
-      kind: INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION,
-      label: ctx.nightActionLabel || INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL,
-      visible: true,
-      enabled,
-      disabledReason: enabled ? null : resolveDisabledReason({ selfAlive, inTargets, submitting }),
-    })
-  }
+    const actedOnThisPlayer = resolveCardNightActionTargetId(ctx) === targetId
 
-  /**
-   * V-2(AC-03): 방장 전용 추방. 단계·생존·대상 목록과 무관하다 — 판정 기준은 "지금 이 세션의
-   * 방장이 나인가"와 "이 카드가 내가 아닌가" 둘뿐이다.
-   *
-   * 위 세 분기의 지역 enabled·resolveDisabledReason을 쓰지 않는다. 그것들은 전부 게임 진행
-   * 상태(투표 대상·재판 피고·밤 턴)를 근거로 삼는데, 추방의 유일한 일시적 잠금은 **이미
-   * 보낸 추방의 ACK를 기다리는 중**(ctx.isSending)이라 사유가 겹치지 않는다.
-   */
-  if (!isSelf && ctx.hostUuid && localPlayerId && ctx.hostUuid === localPlayerId) {
-    const sending = ctx.isSending === true
-    items.push({
-      kind: INGAME_CARD_MENU_ITEM_KINDS.KICK,
-      label: INGAME_CARD_MENU_KICK_LABEL,
-      visible: true,
-      enabled: !sending,
-      disabledReason: sending ? INGAME_CARD_MENU_KICK_SENDING_REASON : null,
-    })
+    if (actedOnThisPlayer) {
+      const enabled = ctx.nightActionsLocked !== true && !submitting
+      items.push({
+        kind: INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL,
+        label: INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL,
+        visible: true,
+        enabled,
+        disabledReason: enabled ? null : resolveDisabledReason({ selfAlive, inTargets: true, submitting }),
+      })
+    } else {
+      const enabled = ctx.nightActionsLocked !== true && !submitting && inTargets
+      items.push({
+        kind: INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION,
+        label: ctx.nightActionLabel || INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL,
+        visible: true,
+        enabled,
+        disabledReason: enabled ? null : resolveDisabledReason({ selfAlive, inTargets, submitting }),
+      })
+    }
   }
 
   return items
@@ -176,8 +205,9 @@ function findItem(ctx, targetId, localPlayerId, kind) {
 }
 
 const DAY_KIND = INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE
+const DAY_CANCEL_KIND = INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE_CANCEL
 const NIGHT_KIND = INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION
-const KICK_KIND = INGAME_CARD_MENU_ITEM_KINDS.KICK
+const NIGHT_CANCEL_KIND = INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL
 
 /**
  * 플레이어 카드 좌클릭 메뉴 — 보드 전체에서 "메뉴는 한 번에 하나"를 관리하고, 각 카드의
@@ -280,16 +310,16 @@ export function useInGamePlayerCardMenu() {
     if (live.gameState?.phase === "ENDED") return
     // 이 단계·이 대상에 띄울 항목이 하나도 없으면 빈 메뉴를 열지 않는다.
     if (buildInGamePlayerCardMenuItems(live, playerId, localPlayerIdRef.current).length === 0) return
-    // 이미 이 카드의 메뉴가 열려 있으면 아무것도 하지 않는다. 여기서 세대를 올리면 이미
-    // 그려져 있는 항목 handler가 전부 무효가 되는데, setOpenPlayerId는 같은 값이라 리렌더를
-    // 만들지 않아 새 handler가 그려지지 않는다 — 메뉴는 떠 있는데 어떤 항목도 듣지 않는
-    // 죽은 상태가 된다(카드를 한 번 더 누르는 것만으로 그렇게 된다).
-    if (openPlayerIdRef.current === playerId) return
+    // 같은 카드를 다시 누르면 토글로 닫는다.
+    if (openPlayerIdRef.current === playerId) {
+      closeMenu()
+      return
+    }
     cancelPending()
     generationRef.current += 1
     openPlayerIdRef.current = playerId
     setOpenPlayerId(playerId)
-  }, [cancelPending])
+  }, [cancelPending, closeMenu])
 
   /**
    * 항목 실행. setter·submit보다 **먼저** 모든 게이트를 지금 값으로 동기 재검사하고, 하나라도
@@ -312,21 +342,43 @@ export function useInGamePlayerCardMenu() {
     // 지금 이 순간의 canonical 국면도 항목별로 정확히 일치해야 한다 — 위 항목 계산은 마지막
     // 렌더의 컨텍스트를 쓰므로, store가 이미 다음 국면으로 넘어간 구간을 여기서 한 번 더 막는다.
     const liveScope = readLiveScope()
-    if (kind === DAY_KIND && (liveScope.phase !== "DAY" || liveScope.dayPhase !== "DAY_VOTE")) return
-    if (kind === NIGHT_KIND && liveScope.phase !== "NIGHT") return
-    if (kind !== DAY_KIND && kind !== NIGHT_KIND) {
+    const liveDayPhase = resolveInGameDayPhase({
+      phase: liveScope.phase,
+      dayPhase: useInGameStore.getState().state?.dayPhase ?? liveScope.dayPhase ?? null,
+    })
+    if ((kind === DAY_KIND || kind === DAY_CANCEL_KIND) && liveDayPhase !== INGAME_DAY_PHASES.VOTE) return
+    if ((kind === NIGHT_KIND || kind === NIGHT_CANCEL_KIND) && liveScope.phase !== "NIGHT") return
+    if (kind !== DAY_KIND && kind !== DAY_CANCEL_KIND && kind !== NIGHT_KIND && kind !== NIGHT_CANCEL_KIND) {
       if (liveScope.phase !== "TRIBUNAL") return
       if (useInGameStore.getState().state?.tribunal?.defendantUuid !== targetId) return
     }
 
     lockRef.current = true
 
-    if (kind !== DAY_KIND && kind !== NIGHT_KIND) {
+    if (kind !== DAY_KIND && kind !== DAY_CANCEL_KIND && kind !== NIGHT_KIND && kind !== NIGHT_CANCEL_KIND) {
       // 재판은 대상 선택을 거치지 않는다 — 소비 표식을 먼저 남기고 곧장 한 번 제출한다.
       const requestId = requestIdRef.current + 1
       requestIdRef.current = requestId
       consumedRef.current = requestId
       live.submitTribunalVote(item.vote)
+      closeMenu()
+      return
+    }
+
+    if (kind === DAY_CANCEL_KIND) {
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      consumedRef.current = requestId
+      live.abstainDayVote?.()
+      closeMenu()
+      return
+    }
+
+    if (kind === NIGHT_CANCEL_KIND) {
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      consumedRef.current = requestId
+      live.skipNightAction?.()
       closeMenu()
       return
     }
@@ -339,68 +391,14 @@ export function useInGamePlayerCardMenu() {
     setPendingTick((tick) => tick + 1)
   }, [closeMenu, readLiveScope])
 
-  /**
-   * V-2(AC-03): 추방 항목 실행. 다른 항목과 **같은 세 겹**(동기 lock · 세대 · 최신 값 재검사)을
-   * 그대로 지키되, 게임 진행이 아니라 방 권한을 다시 묻는다.
-   *
-   * 여기서 확인 대화를 여는 것은 "제출"이 아니라 그 앞 단계다 — 실제 kick_game_player는
-   * 사용자가 대화에서 한 번 더 승인해야 나간다. 그래도 게이트를 제출과 같은 강도로 두는
-   * 이유는, 보관됐던 낡은 handler가 **방장이 아니게 된 뒤에** 대화를 열어 버리면 화면이
-   * 사용자에게 없는 권한을 약속하기 때문이다.
-   */
-  const runKick = useCallback((targetId, generation, capturedScope) => {
-    if (!mountedRef.current) return
-    if (lockRef.current) return
-    if (pendingRef.current !== null) return
-    if (openPlayerIdRef.current !== targetId) return
-    if (generation !== generationRef.current) return
-
-    const live = latestContextRef.current
-    if (!live) return
-    if (live.interactionBlocked) return
-    if (live.gameState?.phase === "ENDED") return
-
-    const item = findItem(live, targetId, localPlayerIdRef.current, KICK_KIND)
-    if (!item || !item.enabled) return
-    if (!isSameScope(capturedScope, readLiveScope())) return
-
-    // 권한은 렌더 값이 아니라 **지금 store·인증**에서 다시 읽는다. 셋이 전부 같은 사람을
-    // 가리킬 때만 방장이다(fail-closed — 하나라도 비면 아니다).
-    const store = useInGameStore.getState()
-    const hostUuid = store.hostUuid ?? null
-    const myUuid = useAuthStore.getState().user?.uuid ?? null
-    const localId = localPlayerIdRef.current
-    if (!hostUuid || !myUuid || !localId) return
-    if (hostUuid !== myUuid || myUuid !== localId) return
-    if (targetId === myUuid) return
-
-    // 대상이 **지금** roster에 있고 아직 참여 중이어야 한다(나간 참가자를 다시 추방하지 않는다).
-    const target = (store.state?.players ?? []).find((player) => player?.uuid === targetId)
-    if (!target) return
-    if (target.isParticipating === false) return
-
-    if (live.isSending === true) return
-    if (typeof live.requestConfirmByUuid !== "function") return
-
-    lockRef.current = true
-    live.requestConfirmByUuid(targetId)
-    // 세대를 무효화해 보관된 handler의 두 번째 호출을 막는다(lock은 closeMenu가 함께 푼다).
-    closeMenu()
-  }, [closeMenu, readLiveScope])
-
   const getItems = useCallback((playerId) => {
     const live = latestContextRef.current
     const generation = generationRef.current
-    // 추방은 대상 선택 → 커밋 단계가 없어 pending에 범위를 실어 둘 자리가 없다. 그래서 항목을
-    // 만드는 **이 시점**의 범위를 캡처해 두고, 실행할 때 지금 범위와 같은지 다시 본다.
-    const capturedScope = readLiveScope()
     return buildInGamePlayerCardMenuItems(live, playerId, localPlayerIdRef.current).map((item) => ({
       ...item,
-      onSelect: item.kind === KICK_KIND
-        ? () => runKick(playerId, generation, capturedScope)
-        : () => runSelect(playerId, item.kind, generation),
+      onSelect: () => runSelect(playerId, item.kind, generation),
     }))
-  }, [runSelect, runKick, readLiveScope])
+  }, [runSelect])
 
   const registerAnchor = useCallback((playerId, node) => {
     if (node === null || node === undefined) {

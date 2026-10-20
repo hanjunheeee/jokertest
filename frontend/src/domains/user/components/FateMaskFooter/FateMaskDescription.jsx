@@ -16,8 +16,8 @@ export default function FateMaskDescription({ description }) {
       className={FATE_MASK_DESCRIPTION_CLASS}
       style={{ ...FATE_MASK_DESCRIPTION_INSET, textShadow: FATE_MASK_TEXT_SHADOW }}
     >
-      <span>
-        {prefix}{" "}
+      <span className="whitespace-nowrap">
+        {prefix ? `${prefix} ` : null}
         <span className={FATE_MASK_HIGHLIGHT_CLASS}>[{highlight}]</span>
         {suffix}
       </span>

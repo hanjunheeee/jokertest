@@ -37,10 +37,10 @@ test("생존자 NIGHT: 모든 역할이 자기 역할 채널만 보고 보낸다
   }
 })
 
-test("생존자 TRIBUNAL: DAY 내역은 보되 보내지는 못한다", () => {
+test("생존자 TRIBUNAL: DAY 내역을 보며 최후의 반론 중에도 DAY로 보낼 수 있다", () => {
   const state = buildState({ phase: "TRIBUNAL" })
   assert.equal(resolveInGameChatViewChannel(state), INGAME_CHAT_CHANNELS.DAY)
-  assert.equal(resolveInGameChatSendChannel(state), null)
+  assert.equal(resolveInGameChatSendChannel(state), INGAME_CHAT_CHANNELS.DAY)
 })
 
 test("사망자 NIGHT: 보기·전송 모두 null이다(밤에는 어떤 채팅도 보거나 보낼 수 없다)", () => {

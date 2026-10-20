@@ -1,10 +1,16 @@
 import { motion } from "framer-motion"
+import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import {
-  ACCOUNT_PANEL_BOX_CLASS,
   ACCOUNT_PANEL_CONTENT_CLASS,
-  ACCOUNT_PANEL_TITLE_CLASS,
+  ACCOUNT_PANEL_FRAME_CONTENT_CLASS,
+  ACCOUNT_PANEL_FRAME_IMG_CLASS,
+  ACCOUNT_PANEL_FRAME_INSET,
+  ACCOUNT_PANEL_FRAME_SHELL_CLASS,
+  ACCOUNT_PANEL_POSITION_CLASS,
+  ACCOUNT_PANEL_SCROLL_CLASS,
   ACCOUNT_PANEL_WRAP_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import NicknameSection from "@/domains/user/components/AccountPanel/NicknameSection.jsx"
 import PasswordSection from "@/domains/user/components/AccountPanel/PasswordSection.jsx"
 import DiscordAccountLink from "@/domains/user/components/DiscordAccountLink.jsx"
@@ -28,36 +34,45 @@ export default function AccountPanel() {
   } = useAccountForm()
 
   return (
-    <motion.div
-      className={ACCOUNT_PANEL_WRAP_CLASS}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={UI_REVEAL_TRANSITION}
-    >
-      <div className={ACCOUNT_PANEL_BOX_CLASS}>
-        <h2 className={ACCOUNT_PANEL_TITLE_CLASS}>계정 관리</h2>
+    <div className={ACCOUNT_PANEL_POSITION_CLASS}>
+      <motion.div
+        className={ACCOUNT_PANEL_WRAP_CLASS}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={UI_REVEAL_TRANSITION}
+      >
+      <div className={ACCOUNT_PANEL_FRAME_SHELL_CLASS}>
+        <PublicAsset src={LOGIN_ASSETS.frame} alt="" className={ACCOUNT_PANEL_FRAME_IMG_CLASS} />
 
-        <div className={ACCOUNT_PANEL_CONTENT_CLASS}>
-          <NicknameSection
-            nickname={nickname}
-            setNickname={setNickname}
-            nicknameMsg={nicknameMsg}
-            nicknameLoading={nicknameLoading}
-            onSubmit={handleNicknameSubmit}
-          />
+        <div
+          className={ACCOUNT_PANEL_FRAME_CONTENT_CLASS}
+          style={ACCOUNT_PANEL_FRAME_INSET}
+        >
+          <div className={ACCOUNT_PANEL_SCROLL_CLASS}>
+            <div className={ACCOUNT_PANEL_CONTENT_CLASS}>
+              <NicknameSection
+                nickname={nickname}
+                setNickname={setNickname}
+                nicknameMsg={nicknameMsg}
+                nicknameLoading={nicknameLoading}
+                onSubmit={handleNicknameSubmit}
+              />
 
-          <PasswordSection
-            pwForm={pwForm}
-            handlePwChange={handlePwChange}
-            pwMsg={pwMsg}
-            pwLoading={pwLoading}
-            onSubmit={handlePasswordSubmit}
-          />
+              <PasswordSection
+                pwForm={pwForm}
+                handlePwChange={handlePwChange}
+                pwMsg={pwMsg}
+                pwLoading={pwLoading}
+                onSubmit={handlePasswordSubmit}
+              />
 
-          {/* F-07 AC-04/D-01: 로그인한 사용자가 Discord 계정을 명시적으로 연결하는 컨트롤입니다. */}
-          <DiscordAccountLink />
+              {/* F-07 AC-04/D-01: 로그인한 사용자가 Discord 계정을 명시적으로 연결하는 컨트롤입니다. */}
+              <DiscordAccountLink />
+            </div>
+          </div>
         </div>
       </div>
-    </motion.div>
+      </motion.div>
+    </div>
   )
 }

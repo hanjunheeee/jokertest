@@ -309,7 +309,7 @@ test("요청 중 뒤로 간 뒤 응답이 도착해도 이미 떠난 화면은 �
   await act(async () => { submitForm(view) })
   assert.equal(calls.length, 1)
 
-  await act(async () => { fireEvent.click(view.getByText("뒤로 가기")) })
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: "뒤로 가기" })) })
   await waitFor(() => assert.ok(view.container.textContent.includes(LOGIN_STUB_TEXT)))
 
   // 화면을 떠난 뒤에야 지연된 응답이 도착한다 — 언마운트된 컴포넌트가 setState를 시도하면
@@ -322,7 +322,7 @@ test("요청 중 뒤로 간 뒤 응답이 도착해도 이미 떠난 화면은 �
 
 test("idle 상태에서도 뒤로 가기를 누르면 /login으로 이동한다", async () => {
   const view = await mountFindIdPage()
-  await act(async () => { fireEvent.click(view.getByText("뒤로 가기")) })
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: "뒤로 가기" })) })
   await waitFor(() => assert.ok(view.container.textContent.includes(LOGIN_STUB_TEXT)))
 });
 

@@ -5,12 +5,35 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 // 입력칸 안쪽에 들어가는 작은 아이콘들의 공통 크기와 색상입니다.
 const inputIconClass = "h-[20px] w-[20px] shrink-0 text-neutral-600"
 
+/** type="date" — 네이티브 달력 아이콘(::-webkit-calendar-picker-indicator) 스타일 훅 */
+export const AUTH_DATE_INPUT_CLASS = "auth-date-input"
+
 // 이메일 입력칸 앞에 보여줄 메일 아이콘입니다.
 export function MailIcon() {
   return (
     <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <path d="m3 7 9 6 9-6" />
+    </svg>
+  )
+}
+
+// 닉네임 입력칸 앞에 보여줄 프로필 아이콘입니다.
+export function ProfileIcon() {
+  return (
+    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6" />
+    </svg>
+  )
+}
+
+// 생년월일 입력칸 앞에 보여줄 달력 아이콘입니다.
+export function CalendarIcon() {
+  return (
+    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M4 10h16" />
     </svg>
   )
 }
@@ -57,6 +80,10 @@ export default function AuthInputSlot({
   autoComplete,
   leadingIcon,
   passwordToggle = false,
+  compact = false,
+  disabled = false,
+  inputMode,
+  inputTestId,
 }) {
   // 비밀번호를 화면에 보일지 숨길지 저장합니다.
   const [passwordVisible, setPasswordVisible] = useState(false)
@@ -65,14 +92,16 @@ export default function AuthInputSlot({
   const inputType = passwordToggle ? (passwordVisible ? "text" : "password") : type
 
   return (
-    <div className="relative w-full">
+    <div className={`relative w-full ${compact ? "origin-top -mb-0.5 scale-[0.97]" : ""}`}>
       {/* 입력칸 배경 이미지를 먼저 깔아둡니다. */}
       <PublicAsset src={LOGIN_ASSETS.input} alt="" className="block h-auto w-full select-none" />
 
       {/* 실제 입력 요소들은 배경 이미지 위에 겹쳐서 올립니다. */}
       <div className="absolute inset-0 flex items-center gap-2 px-[9%] py-2">
         {/* 왼쪽 아이콘은 클릭을 막지 않도록 pointer-events를 꺼둡니다. */}
-        <span className="pointer-events-none flex items-center">{leadingIcon}</span>
+        {leadingIcon ? (
+          <span className={`pointer-events-none flex items-center ${compact ? "scale-95" : ""}`}>{leadingIcon}</span>
+        ) : null}
 
         <input
           type={inputType}
@@ -81,7 +110,14 @@ export default function AuthInputSlot({
           onChange={onChange}
           placeholder={placeholder}
           autoComplete={autoComplete}
-          className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/55"
+          disabled={disabled}
+          inputMode={inputMode}
+          data-testid={inputTestId}
+          className={`min-w-0 flex-1 bg-transparent text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
+            type === "date"
+              ? `${AUTH_DATE_INPUT_CLASS}${value ? " auth-date-input--filled" : ""}`
+              : "text-white placeholder:text-white/55"
+          }`.trim()}
         />
 
         {/* 비밀번호 입력칸일 때만 보기/숨기기 버튼을 보여줍니다. */}

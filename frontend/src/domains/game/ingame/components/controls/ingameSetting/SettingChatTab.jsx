@@ -27,7 +27,8 @@ export default function SettingChatTab() {
   const setChatCheck = useSettingsStore((s) => s.setChatCheck)
 
   const textSize = storedTextSize ?? INGAME_SETTING_CHAT_SLIDER.defaultValue
-  const checks = storedChecks ?? defaultChatChecks()
+  // store에 일부 키만 있어도(예: show-time만 토글) 나머지는 ingameSettingData 기본값을 유지한다.
+  const checks = { ...defaultChatChecks(), ...(storedChecks ?? {}) }
 
   return (
     <div className={INGAME_SETTING_TAB_BODY_CLASS}>

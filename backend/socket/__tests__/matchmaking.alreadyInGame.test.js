@@ -399,3 +399,19 @@ test('AC-06: 게임이 끝나 세션 정리가 완료된 계정은 다시 방을
     const allowed = await callAsPromise(handleCreateRoom, io, socket, 'ac06e-a', validSettingsPayload())
     assert.equal(allowed.ok, true)
 })
+
+test('AC-06: phase ENDED인 판의 방장은 leave 없이 create_room 할 수 있다', async () => {
+    const session = seedActiveGameForAccount(['ended-host', 'ended-join'], { roomId: 'room-ended-phase' })
+    session.phase = 'ENDED'
+    session.hostUuid = 'ended-host'
+
+    const hostSocket = createFakeSocket('ended-host')
+    hostSocket.rooms.add(session.channelId)
+    const io = createFakeIo([hostSocket])
+
+    const response = await callAsPromise(
+        handleCreateRoom, io, hostSocket, 'ended-host', validSettingsPayload(),
+    )
+    assert.equal(response.ok, true)
+    assert.notEqual(response.code, 'ALREADY_IN_GAME')
+})

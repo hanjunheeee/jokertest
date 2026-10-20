@@ -9,7 +9,9 @@ import { useLibraryTab } from "../hooks/useLibraryTab.js"
 import { resolveAchievementLocation } from "../content/achievementLocation.js"
 import { NOTIFICATION_ACHIEVEMENT_PARAM } from "../../notifications/constants/notificationTargets.js"
 import MotionBackButton from "../../../shared/ui/MotionBackButton.jsx"
+import PageSoundControlArea from "@/shared/ui/PageBackgroundMusic.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "../../../shared/constants/navigationLayout.js"
+import { PAGE_SOUND_CONTROL_ELEVATED_AREA_CLASS } from "@/shared/constants/soundControlLayout.js"
 import { UI_REVEAL_TRANSITION } from "../../../shared/constants/pageTransitions.js"
 
 /** 기억의 서고 — 금지된 기록 레이아웃 */
@@ -64,6 +66,7 @@ export default function LibraryPage() {
         onClick={() => navigate("/lobby")}
         className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
       />
+      <PageSoundControlArea className={PAGE_SOUND_CONTROL_ELEVATED_AREA_CLASS} />
     </div>
   )
 }

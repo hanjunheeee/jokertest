@@ -47,4 +47,10 @@ export const INGAME_KICK_PLAYER_NAME_CLASS =
   "min-w-0 flex-1 truncate font-subheading text-[clamp(0.87rem,3.08cqi,1.08rem)] font-bold leading-tight text-white"
 
 export const INGAME_KICK_PLAYER_ACTION_BTN_CLASS =
-  "interactive-scale shrink-0 cursor-pointer border-0 bg-transparent p-0 font-subheading text-[clamp(0.72rem,2.55cqi,0.9rem)] font-bold leading-none text-[#ffb4b4] underline decoration-[#c95555]/90 decoration-1 underline-offset-[0.18em] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)] disabled:cursor-default disabled:no-underline disabled:text-[#ebe2cc]/55 disabled:opacity-80"
+  "interactive-scale group relative block w-[clamp(4.85rem,18.5cqi,6.15rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none disabled:cursor-default disabled:opacity-90"
+
+export const INGAME_KICK_PLAYER_ACTION_BTN_IMG_CLASS =
+  "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.03] group-active:scale-[0.97] group-disabled:transform-none"
+
+export const INGAME_KICK_PLAYER_ACTION_BTN_LABEL_CLASS =
+  "pointer-events-none absolute inset-0 flex items-center justify-center px-[8%] text-center font-subheading text-[clamp(0.58rem,1.95cqi,0.72rem)] font-bold leading-none text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)] group-disabled:text-[#ebe2cc]/75"
