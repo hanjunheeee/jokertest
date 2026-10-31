@@ -55,7 +55,7 @@ const { hashPassword } = require('../../utils/hash');
 
 const {
     callAsPromise, createFakeSocket, createFakeIo, validSettingsPayload, readyPayload, startPayload,
-} = require('../../socket/__tests__/testHelpers/matchmakingFixtures');
+} = require('../helpers/matchmakingFixtures');
 
 const { handleSendEmoji } = gameSessionSocketLayer.__testables;
 const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables;

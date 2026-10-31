@@ -1,0 +1,536 @@
+import test from "node:test"
+import assert from "node:assert/strict"
+import { readInGameReceiptScope, useInGameStore } from "../../../../../src/domains/game/ingame/store/ingameStore.js"
+
+function seedState(overrides = {}) {
+  const state = {
+    id: "game-1",
+    phase: "ROLE_REVEAL",
+    dayIndex: 0,
+    players: [{ uuid: "u1", nickname: "A" }],
+    self: { uuid: "u1", nickname: "A", role: "CITIZEN" },
+    ...overrides,
+  }
+  useInGameStore.setState({ gameId: "game-1", state, error: null })
+  return state
+}
+
+const ignoredCases = [
+  ["payload가 undefined면 무시되고 예외가 없다", () => seedState(), undefined],
+  ["payload가 null이면 무시되고 예외가 없다", () => seedState(), null],
+  ["payload가 배열이면 무시된다", () => seedState(), ["game-1", "NIGHT", 0]],
+  ["현재 gameId와 같지만 phase가 없으면 무시된다", () => seedState(), { gameId: "game-1", dayIndex: 0 }],
+  ["현재 gameId와 같지만 dayIndex가 없으면 무시된다", () => seedState(), { gameId: "game-1", phase: "NIGHT" }],
+  ["phase가 NIGHT가 아니면 무시된다", () => seedState(), { gameId: "game-1", phase: "DAY", dayIndex: 0 }],
+  ["dayIndex가 0이 아니면 무시된다", () => seedState(), { gameId: "game-1", phase: "NIGHT", dayIndex: 1 }],
+  [
+    "현재 state가 없으면 무시된다",
+    () => useInGameStore.setState({ gameId: "game-1", state: null, error: null }),
+    { gameId: "game-1", phase: "NIGHT", dayIndex: 0 },
+  ],
+  [
+    "현재 phase가 ROLE_REVEAL이 아니면 무시된다",
+    () => seedState({ phase: "NIGHT" }),
+    { gameId: "game-1", phase: "NIGHT", dayIndex: 0 },
+  ],
+  [
+    "다른 gameId면 무시된다",
+    () => seedState(),
+    { gameId: "game-other", phase: "NIGHT", dayIndex: 0 },
+  ],
+]
+
+for (const [label, setup, payload] of ignoredCases) {
+  test(`applyPhaseChanged: ${label} — store/game state 참조가 유지된다`, () => {
+    setup()
+    const storeBefore = useInGameStore.getState()
+    const gameStateBefore = storeBefore.state
+
+    assert.doesNotThrow(() => useInGameStore.getState().applyPhaseChanged(payload))
+
+    const storeAfter = useInGameStore.getState()
+    assert.equal(storeAfter, storeBefore)
+    assert.equal(storeAfter.state, gameStateBefore)
+  })
+}
+
+test("applyPhaseChanged: 올바른 {gameId, phase:'NIGHT', dayIndex:0}만 반영하며 players/self/기타 필드를 보존한다", () => {
+  const seeded = seedState()
+  const storeBefore = useInGameStore.getState()
+
+  useInGameStore.getState().applyPhaseChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 0 })
+
+  const storeAfter = useInGameStore.getState()
+  assert.notEqual(storeAfter, storeBefore)
+  assert.notEqual(storeAfter.state, seeded)
+  assert.equal(storeAfter.state.phase, "NIGHT")
+  assert.equal(storeAfter.state.dayIndex, 0)
+  assert.equal(storeAfter.state.id, seeded.id)
+  assert.deepEqual(storeAfter.state.players, seeded.players)
+  assert.deepEqual(storeAfter.state.self, seeded.self)
+})
+
+function seedNightState(overrides = {}) {
+  return seedState({
+    phase: "NIGHT",
+    dayIndex: 2,
+    players: [
+      { uuid: "p1", nickname: "P1", alive: true },
+      { uuid: "p2", nickname: "P2", alive: true },
+      { uuid: "p3", nickname: "P3", alive: true },
+    ],
+    ...overrides,
+  })
+}
+
+function terminalNightPayload(overrides = {}) {
+  return {
+    gameId: "game-1",
+    phase: "ENDED",
+    dayIndex: 2,
+    victimUuid: "p1",
+    winResult: { winner: "CITIZEN" },
+    players: [
+      { uuid: "p1", isAlive: false },
+      { uuid: "p2", isAlive: true },
+      { uuid: "p3", isAlive: true },
+    ],
+    ...overrides,
+  }
+}
+
+function nonTerminalNightPayload(overrides = {}) {
+  return {
+    gameId: "game-1",
+    phase: "DAY",
+    dayIndex: 3,
+    victimUuid: "p1",
+    players: [
+      { uuid: "p1", alive: false },
+      { uuid: "p2", alive: true },
+      { uuid: "p3", alive: true },
+    ],
+    ...overrides,
+  }
+}
+
+test("applyNightResultAppliedPayload: 종료(ENDED) payload는 phase를 ENDED로 바꾸고 winResult·생존 상태를 반영한다", () => {
+  seedNightState()
+  useInGameStore.getState().applyNightResultAppliedPayload(terminalNightPayload())
+
+  const after = useInGameStore.getState()
+  assert.equal(after.state.phase, "ENDED")
+  assert.deepEqual(after.state.winResult, { winner: "CITIZEN" })
+  assert.equal(after.state.players.find((p) => p.uuid === "p1").alive, false)
+  assert.equal(after.state.players.find((p) => p.uuid === "p2").alive, true)
+  assert.equal(after.state.players.find((p) => p.uuid === "p3").alive, true)
+})
+
+test("applyNightResultAppliedPayload: 종료 payload의 players 스냅샷은 canonical 생존 상태로 치환되고, payload에 없는 uuid는 기존 값을 유지한다", () => {
+  seedNightState()
+  useInGameStore.getState().applyNightResultAppliedPayload(
+    terminalNightPayload({
+      players: [
+        { uuid: "p1", isAlive: false },
+        { uuid: "p2", isAlive: false },
+      ],
+    }),
+  )
+
+  const players = useInGameStore.getState().state.players
+  assert.equal(players.find((p) => p.uuid === "p1").alive, false)
+  assert.equal(players.find((p) => p.uuid === "p2").alive, false)
+  assert.equal(players.find((p) => p.uuid === "p3").alive, true)
+})
+
+test("applyNightResultAppliedPayload: ENDED 확정 이후 어떤 payload도 상태를 되돌리지 못한다(잠금)", () => {
+  seedNightState()
+  useInGameStore.getState().applyNightResultAppliedPayload(terminalNightPayload())
+  const lockedState = useInGameStore.getState().state
+
+  useInGameStore.getState().applyNightResultAppliedPayload(nonTerminalNightPayload({ dayIndex: 4 }))
+  assert.equal(useInGameStore.getState().state, lockedState)
+
+  useInGameStore
+    .getState()
+    .applyNightResultAppliedPayload(terminalNightPayload({ dayIndex: 5, winResult: { winner: "JOKER" } }))
+  assert.equal(useInGameStore.getState().state, lockedState)
+})
+
+test("applyNightResultAppliedPayload: 구조 불량 종료 payload는 상태를 바꾸지 않는다", () => {
+  seedNightState()
+  const before = useInGameStore.getState()
+
+  useInGameStore.getState().applyNightResultAppliedPayload(terminalNightPayload({ dayIndex: "not-a-number" }))
+  assert.equal(useInGameStore.getState(), before)
+
+  useInGameStore.getState().applyNightResultAppliedPayload(terminalNightPayload({ players: "not-array" }))
+  assert.equal(useInGameStore.getState(), before)
+
+  useInGameStore.getState().applyNightResultAppliedPayload(terminalNightPayload({ gameId: "other-game" }))
+  assert.equal(useInGameStore.getState(), before)
+})
+
+test("applyNightResultAppliedPayload: dayIndex가 현재보다 과거인 종료 payload는(stale) 상태를 바꾸지 않는다", () => {
+  seedNightState({ dayIndex: 3 })
+  const before = useInGameStore.getState()
+
+  useInGameStore.getState().applyNightResultAppliedPayload(terminalNightPayload({ dayIndex: 2 }))
+  assert.equal(useInGameStore.getState(), before)
+})
+
+test("applyNightResultAppliedPayload: 비종료 결과는 기존처럼 DAY로 전이하고 생존 상태를 반영한다(회귀)", () => {
+  seedNightState()
+  useInGameStore.getState().applyNightResultAppliedPayload(nonTerminalNightPayload())
+
+  const after = useInGameStore.getState()
+  assert.equal(after.state.phase, "DAY")
+  assert.equal(after.state.dayIndex, 3)
+  assert.equal(after.state.players.find((p) => p.uuid === "p1").alive, false)
+  assert.equal(after.state.players.find((p) => p.uuid === "p2").alive, true)
+})
+
+test("applyNightResultAppliedPayload: 비종료 결과의 dayIndex가 현재 이하이면(stale) 상태를 바꾸지 않는다", () => {
+  seedNightState()
+  const before = useInGameStore.getState()
+
+  useInGameStore.getState().applyNightResultAppliedPayload(nonTerminalNightPayload({ dayIndex: 2 }))
+  assert.equal(useInGameStore.getState(), before)
+})
+
+test("applyPhaseChanged: 첫 DAY 진입은 dayPhase를 DAY_DISCUSSION으로 세팅한다", () => {
+  seedState()
+  useInGameStore.getState().applyPhaseChanged({ gameId: "game-1", phase: "DAY", dayIndex: 1 })
+
+  const after = useInGameStore.getState()
+  assert.equal(after.state.phase, "DAY")
+  assert.equal(after.state.dayPhase, "DAY_DISCUSSION")
+})
+
+test("applyPhaseChanged: legacy first-night 경로는 dayPhase를 null로 둔다(낮이 아니다)", () => {
+  seedState()
+  useInGameStore.getState().applyPhaseChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 0 })
+
+  assert.equal(useInGameStore.getState().state.dayPhase, null)
+})
+
+test("applyNightResultAppliedPayload: 밤→낮 전이도 dayPhase를 DAY_DISCUSSION으로 되돌린다(이전 낮의 투표가 이월되지 않는다)", () => {
+  seedNightState({ dayPhase: "DAY_VOTE" })
+  useInGameStore.getState().applyNightResultAppliedPayload(nonTerminalNightPayload())
+
+  const after = useInGameStore.getState()
+  assert.equal(after.state.phase, "DAY")
+  assert.equal(after.state.dayPhase, "DAY_DISCUSSION")
+})
+
+test("applyNightResultAppliedPayload: 종료(ENDED) payload는 dayPhase를 null로 비운다", () => {
+  seedNightState({ dayPhase: "DAY_VOTE" })
+  useInGameStore.getState().applyNightResultAppliedPayload(terminalNightPayload())
+
+  assert.equal(useInGameStore.getState().state.dayPhase, null)
+})
+
+function seedDayDiscussionState(overrides = {}) {
+  return seedState({
+    phase: "DAY",
+    dayIndex: 1,
+    dayPhase: "DAY_DISCUSSION",
+    players: [
+      { uuid: "p1", nickname: "P1", alive: true },
+      { uuid: "p2", nickname: "P2", alive: true },
+    ],
+    ...overrides,
+  })
+}
+
+function dayPhaseChangedPayload(overrides = {}) {
+  return { gameId: "game-1", dayIndex: 1, dayPhase: "DAY_VOTE", round: 1, ...overrides }
+}
+
+const ignoredDayPhaseCases = [
+  ["parsed가 null이면 무시된다", () => seedDayDiscussionState(), null],
+  ["parsed가 배열이면 무시된다", () => seedDayDiscussionState(), ["game-1", "DAY_VOTE"]],
+  ["gameId가 다르면 무시된다", () => seedDayDiscussionState(), dayPhaseChangedPayload({ gameId: "game-other" })],
+  ["gameId가 문자열이 아니면 무시된다", () => seedDayDiscussionState(), dayPhaseChangedPayload({ gameId: 1 })],
+  ["dayIndex가 다르면 무시된다", () => seedDayDiscussionState(), dayPhaseChangedPayload({ dayIndex: 2 })],
+  ["dayIndex가 정수가 아니면 무시된다", () => seedDayDiscussionState(), dayPhaseChangedPayload({ dayIndex: "1" })],
+  ["dayPhase가 DAY_VOTE가 아니면 무시된다", () => seedDayDiscussionState(), dayPhaseChangedPayload({ dayPhase: "DAY_DISCUSSION" })],
+  [
+    "phase가 DAY가 아니면 무시된다(낮 밖으로 새어 나가지 않는다)",
+    () => seedState({ phase: "NIGHT", dayIndex: 1 }),
+    dayPhaseChangedPayload(),
+  ],
+  [
+    "phase가 TRIBUNAL이면 무시된다",
+    () => seedState({ phase: "TRIBUNAL", dayIndex: 1 }),
+    dayPhaseChangedPayload(),
+  ],
+  [
+    "이미 DAY_VOTE면 중복 방송은 무시된다",
+    () => seedDayDiscussionState({ dayPhase: "DAY_VOTE" }),
+    dayPhaseChangedPayload(),
+  ],
+  [
+    "현재 state가 없으면 무시된다",
+    () => useInGameStore.setState({ gameId: "game-1", state: null, error: null }),
+    dayPhaseChangedPayload(),
+  ],
+]
+
+for (const [label, setup, parsed] of ignoredDayPhaseCases) {
+  test(`applyDayPhaseChanged: ${label} — store/game state 참조가 유지된다`, () => {
+    setup()
+    const storeBefore = useInGameStore.getState()
+    const gameStateBefore = storeBefore.state
+
+    assert.doesNotThrow(() => useInGameStore.getState().applyDayPhaseChanged(parsed))
+
+    const storeAfter = useInGameStore.getState()
+    assert.equal(storeAfter, storeBefore)
+    assert.equal(storeAfter.state, gameStateBefore)
+  })
+}
+
+test("applyDayPhaseChanged: 정상 전이는 dayPhase만 바꾸고 phase/dayIndex/players/self를 보존한다", () => {
+  const seeded = seedDayDiscussionState()
+  const storeBefore = useInGameStore.getState()
+
+  useInGameStore.getState().applyDayPhaseChanged(dayPhaseChangedPayload())
+
+  const storeAfter = useInGameStore.getState()
+  assert.notEqual(storeAfter, storeBefore)
+  assert.notEqual(storeAfter.state, seeded)
+  assert.equal(storeAfter.state.dayPhase, "DAY_VOTE")
+  assert.equal(storeAfter.state.phase, "DAY")
+  assert.equal(storeAfter.state.dayIndex, seeded.dayIndex)
+  assert.deepEqual(storeAfter.state.players, seeded.players)
+  assert.deepEqual(storeAfter.state.self, seeded.self)
+})
+
+test("applyDayVoteResolvedToPhase: TRIBUNAL/NIGHT 전이는 dayPhase를 null로 되돌린다", () => {
+  seedDayDiscussionState({ dayPhase: "DAY_VOTE" })
+  useInGameStore.getState().applyDayVoteResolvedToPhase("game-1", 1, { outcome: "TRIBUNAL", defendantUuid: "p2" })
+  assert.equal(useInGameStore.getState().state.phase, "TRIBUNAL")
+  assert.equal(useInGameStore.getState().state.dayPhase, null)
+
+  seedDayDiscussionState({ dayPhase: "DAY_VOTE" })
+  useInGameStore.getState().applyDayVoteResolvedToPhase("game-1", 1, { outcome: "ABSTAINED" })
+  assert.equal(useInGameStore.getState().state.phase, "NIGHT")
+  assert.equal(useInGameStore.getState().state.dayPhase, null)
+})
+
+function seedSnapshotState(overrides = {}) {
+  return seedState({
+    phase: "ROLE_REVEAL",
+    dayIndex: 0,
+    players: [
+      { uuid: "p1", nickname: "P1" },
+      { uuid: "p2", nickname: "P2" },
+      { uuid: "p3", nickname: "P3" },
+    ],
+    self: { uuid: "p1", nickname: "P1", role: "CITIZEN" },
+    ...overrides,
+  })
+}
+
+function snapshotPlayers() {
+  return [
+    { uuid: "p1", nickname: "P1", isAlive: true, isConnected: true },
+    { uuid: "p2", nickname: "P2", isAlive: true, isConnected: true },
+    { uuid: "p3", nickname: "P3", isAlive: true, isConnected: true },
+  ]
+}
+
+function validSnapshotResponse(overrides = {}) {
+  return {
+    ok: true,
+    gameId: "game-1",
+    phase: "ROLE_REVEAL",
+    dayIndex: 0,
+    players: snapshotPlayers(),
+    self: { uuid: "p1", nickname: "P1", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
+    ...overrides,
+  }
+}
+
+function assertSnapshotRejected(response) {
+  const before = useInGameStore.getState()
+  const preCall = structuredClone({ gameId: before.gameId, state: before.state, error: before.error })
+
+  let notifyCount = 0
+  const unsubscribe = useInGameStore.subscribe(() => {
+    notifyCount += 1
+  })
+
+  useInGameStore.getState().applySessionSnapshot(response)
+
+  unsubscribe()
+
+  assert.equal(useInGameStore.getState(), before)
+  assert.equal(notifyCount, 0)
+  const after = useInGameStore.getState()
+  assert.deepStrictEqual({ gameId: after.gameId, state: after.state, error: after.error }, preCall)
+}
+
+test("applySessionSnapshot: 유효한 스냅샷은 정확히 한 번의 상태 전이로 store 전체({gameId,state,error})를 갱신한다", () => {
+  seedSnapshotState()
+  const before = useInGameStore.getState()
+
+  let notifyCount = 0
+  const unsubscribe = useInGameStore.subscribe(() => {
+    notifyCount += 1
+  })
+
+  useInGameStore.getState().applySessionSnapshot(validSnapshotResponse())
+
+  unsubscribe()
+
+  const after = useInGameStore.getState()
+  assert.notEqual(after, before)
+  assert.equal(notifyCount, 1)
+  assert.equal(after.gameId, "game-1")
+  assert.equal(after.error, null)
+  assert.equal(after.state.phase, "ROLE_REVEAL")
+  assert.equal(after.state.dayIndex, 0)
+  assert.deepEqual(after.state.players, [
+    { uuid: "p1", nickname: "P1", alive: true, isConnected: true, isParticipating: true },
+    { uuid: "p2", nickname: "P2", alive: true, isConnected: true, isParticipating: true },
+    { uuid: "p3", nickname: "P3", alive: true, isConnected: true, isParticipating: true },
+  ])
+  assert.deepEqual(after.state.self, {
+    uuid: "p1",
+    nickname: "P1",
+    role: "CITIZEN",
+    team: "CITIZEN",
+    hasActedThisPhase: false,
+  })
+})
+
+test("applySessionSnapshot: response.ok가 true가 아니면 store가 전혀 변경되지 않고 구독자도 호출되지 않는다", () => {
+  seedSnapshotState()
+  assertSnapshotRejected(validSnapshotResponse({ ok: false }))
+})
+
+test("applySessionSnapshot: roster에 없는 uuid를 참조하면(nightResult.victimUuid) store가 전혀 변경되지 않는다", () => {
+  seedSnapshotState({ phase: "NIGHT", dayIndex: 1 })
+  assertSnapshotRejected(
+    validSnapshotResponse({
+      phase: "DAY",
+      dayIndex: 1,
+      dayPhase: "DAY_DISCUSSION",
+      nightResult: { dayIndex: 1, victimUuid: "phantom" },
+    }),
+  )
+})
+
+test("applySessionSnapshot: 비-JOKER인데 allies own-property가 있으면 store가 전혀 변경되지 않는다", () => {
+  seedSnapshotState()
+  assertSnapshotRejected(
+    validSnapshotResponse({
+      self: { uuid: "p1", nickname: "P1", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false, allies: [] },
+    }),
+  )
+})
+
+test("applySessionSnapshot: roster 인원 구성이 기존 세션과 다르면(누락) store가 전혀 변경되지 않는다", () => {
+  seedSnapshotState()
+  assertSnapshotRejected(validSnapshotResponse({ players: snapshotPlayers().slice(0, 2) }))
+})
+
+test("applySessionSnapshot: gameId가 양쪽 다 문자열이 아니면 신원 일치로 인정되지 않아 store가 전혀 변경되지 않는다", () => {
+  seedSnapshotState()
+  useInGameStore.setState({ gameId: true })
+  assertSnapshotRejected(validSnapshotResponse({ gameId: true }))
+})
+
+test("applySessionSnapshot: dayVoteResolution/tribunal outcome이 서로 모순되면 store가 전혀 변경되지 않는다", () => {
+  seedSnapshotState({ phase: "DAY", dayIndex: 1 })
+  assertSnapshotRejected(
+    validSnapshotResponse({
+      phase: "TRIBUNAL",
+      dayIndex: 1,
+      dayVoteResolution: { outcome: "TIE", tribunalTargetUuid: null, publicVoteCount: 1, publicAbstainCount: 1 },
+      tribunal: { defendantUuid: "p2", resolved: false },
+    }),
+  )
+})
+
+function seedSeatedState({ membershipId = "mem-a", phase = "DAY", dayIndex = 1 } = {}) {
+  return seedState({
+    phase,
+    dayIndex,
+    players: [
+      { uuid: "p1", nickname: "P1", alive: true, membershipId },
+      { uuid: "p2", nickname: "P2", alive: true, membershipId: "mem-b" },
+    ],
+    self: { uuid: "p1", nickname: "P1", role: "CITIZEN" },
+  })
+}
+
+function parsedTerminalElimination() {
+  return {
+    gameId: "game-1",
+    phase: "ENDED",
+    dayIndex: 1,
+    victimUuid: "p2",
+    players: [{ uuid: "p1", alive: true }, { uuid: "p2", alive: false }],
+    terminal: true,
+    winResult: { winner: "JOKER" },
+  }
+}
+
+test("commitWithReceipt: 현재 범위에서 캡처한 수신 증거는 예전과 똑같이 커밋된다", () => {
+  seedSeatedState()
+  const receipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), receipt)
+
+  const after = useInGameStore.getState().state
+  assert.equal(after.phase, "ENDED")
+  assert.deepEqual(after.winResult, { winner: "JOKER" })
+  assert.equal(after.players.find((p) => p.uuid === "p2").alive, false)
+})
+
+test("commitWithReceipt: 소속이 교체된 뒤 도착한 같은 수신 증거는 거절되어 store가 전혀 변경되지 않는다", () => {
+  seedSeatedState({ membershipId: "mem-a" })
+  const receipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+
+  seedSeatedState({ membershipId: "mem-after" })
+
+  const before = useInGameStore.getState()
+  const stateBefore = before.state
+  let notifyCount = 0
+  const unsubscribe = useInGameStore.subscribe(() => { notifyCount += 1 })
+
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), receipt)
+
+  unsubscribe()
+
+  assert.equal(useInGameStore.getState(), before, "지난 범위의 증거가 store 최상위 참조를 바꿨다")
+  assert.equal(useInGameStore.getState().state, stateBefore, "지난 범위의 증거가 game state를 바꿨다")
+  assert.equal(notifyCount, 0, "거절된 커밋이 구독자를 깨웠다")
+  assert.equal(stateBefore.phase, "DAY")
+  assert.equal(stateBefore.winResult ?? null, null, "지난 범위의 증거가 종료 결과를 실었다")
+})
+
+test("commitWithReceipt: 같은 자리로 되돌아온 A→B→A 뒤에도 그 사이의 수신 증거는 거절되고, 새 증거는 정상 커밋된다", () => {
+  seedSeatedState({ membershipId: "mem-a" })
+  const staleReceipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+
+  seedSeatedState({ membershipId: "mem-b" })
+  seedSeatedState({ membershipId: "mem-a" })
+
+  const current = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
+  assert.equal(current.membershipId, staleReceipt.membershipId, "전제: 소속 식별자 값은 되돌아와 있어야 한다")
+  assert.equal(current.gameId, staleReceipt.gameId, "전제: 판도 그대로여야 한다")
+  assert.notEqual(current.membershipEpoch, staleReceipt.membershipEpoch, "전제: 전이 세대만이 두 범위를 가른다")
+
+  const before = useInGameStore.getState()
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), staleReceipt)
+  assert.equal(useInGameStore.getState(), before, "왕복 이전에 캡처된 증거가 그대로 커밋됐다")
+  assert.equal(useInGameStore.getState().state.winResult ?? null, null)
+
+  useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), current)
+  assert.equal(useInGameStore.getState().state.phase, "ENDED", "현재 범위의 증거까지 막혔다")
+  assert.deepEqual(useInGameStore.getState().state.winResult, { winner: "JOKER" })
+})
