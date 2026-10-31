@@ -1,0 +1,103 @@
+// 진행 표시 파일
+// 단계별 몇 명 했는지 + 내가 냈는지, 스냅샷·방송이 사용
+const { getEligibleDayVoterUuids, getDayPhase, DAY_PHASES, getDayVoteRound } = require('../phase/day')
+const { getEligibleTribunalVoterUuids } = require('../phase/tribunal')
+
+// 지금 단계에서 몇 명 했는지 / 몇 명 해야 하는지 (밤은 숫자 숨김)
+function buildPublicPhaseProgress(session) {
+    if (session.phase === 'ROLE_REVEAL') {
+        const pending = [...session.players.values()].filter((p) => p.isParticipating !== false)
+        const acks = session.roleRevealAcks instanceof Set ? session.roleRevealAcks : new Set()
+        return {
+            kind: 'ROLE_REVEAL',
+            doneCount: pending.filter((p) => acks.has(p.uuid)).length,
+            requiredCount: pending.length,
+        }
+    }
+    if (session.phase === 'DAY') {
+        const eligible = getEligibleDayVoterUuids(session)
+        if (getDayPhase(session) === DAY_PHASES.DISCUSSION) {
+            const ready = session.dayVoteReadyUuids instanceof Set ? session.dayVoteReadyUuids : new Set()
+            return {
+                kind: 'DAY_DISCUSSION',
+                doneCount: eligible.filter((uuid) => ready.has(uuid)).length,
+                requiredCount: eligible.length,
+            }
+        }
+        return {
+            kind: 'DAY_VOTE',
+            doneCount: eligible.filter((uuid) => session.dayVotes.has(uuid)).length,
+            requiredCount: eligible.length,
+        }
+    }
+    if (session.phase === 'TRIBUNAL' && session.tribunal) {
+        const eligible = getEligibleTribunalVoterUuids(session, session.tribunal.defendantUuid)
+        const votes = session.tribunal.votes instanceof Map ? session.tribunal.votes : new Map()
+        return {
+            kind: 'TRIBUNAL',
+            doneCount: eligible.filter((uuid) => votes.has(uuid)).length,
+            requiredCount: eligible.length,
+        }
+    }
+    return { kind: session.phase === 'NIGHT' ? 'NIGHT' : 'NONE', doneCount: null, requiredCount: null }
+}
+
+// 내 진행 번호 +1 (늦게 온 옛 알림 거르기용)
+function bumpSelfProgressSeq(session) {
+    const next = (Number.isSafeInteger(session.selfProgressSeq) ? session.selfProgressSeq : 0) + 1
+    session.selfProgressSeq = next
+    return next
+}
+
+// 지금 단계에서 내가 낸 것 (역할 확인·투표 준비·낮 표·재판 표)
+function buildSelfSubmissionFields(session, uuid) {
+    const fields = {}
+    if (session.phase === 'ROLE_REVEAL') {
+        fields.hasAcknowledgedRoleReveal = session.roleRevealAcks instanceof Set
+            && session.roleRevealAcks.has(uuid)
+        return fields
+    }
+    if (session.phase === 'DAY') {
+        if (getDayPhase(session) === DAY_PHASES.DISCUSSION) {
+            fields.isDayVoteReady = session.dayVoteReadyUuids instanceof Set
+                && session.dayVoteReadyUuids.has(uuid)
+            return fields
+        }
+        const submitted = session.dayVotes.has(uuid)
+        fields.hasSubmittedDayVote = submitted
+        const target = submitted ? session.dayVotes.get(uuid) : null
+        fields.dayVoteTargetUuid = target === undefined ? null : target
+        fields.dayVoteRound = getDayVoteRound(session)
+        return fields
+    }
+    if (session.phase === 'TRIBUNAL' && session.tribunal) {
+        fields.hasSubmittedTribunalVote = session.tribunal.votes instanceof Map
+            && session.tribunal.votes.has(uuid)
+        return fields
+    }
+    return fields
+}
+
+// 지금 단계에서 내가 이미 했는지
+function computeHasActedThisPhase(session, uuid) {
+    switch (session.phase) {
+        case 'ROLE_REVEAL':
+            return session.roleRevealAcks.has(uuid)
+        case 'NIGHT':
+            return session.nightActions.has(uuid)
+        case 'DAY':
+            if (getDayPhase(session) === DAY_PHASES.VOTE) return session.dayVotes.has(uuid)
+            return session.dayVoteReadyUuids instanceof Set && session.dayVoteReadyUuids.has(uuid)
+        case 'TRIBUNAL':
+            return session.tribunal ? session.tribunal.votes.has(uuid) : false
+        default:
+            return false
+    }
+}
+
+module.exports = {
+    buildPublicPhaseProgress,
+    bumpSelfProgressSeq,
+    buildSelfSubmissionFields,
+    computeHasActedThisPhase,
+}
