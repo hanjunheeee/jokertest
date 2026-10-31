@@ -10,7 +10,7 @@ const mailAdapter = require('../mail/mailAdapter');
 
 const TOKEN_TTL_MS = (() => {
     const parsed = Number(process.env.PASSWORD_RESET_TOKEN_TTL_MS);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : 30 * 60 * 1000; // 기본 30분
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 30 * 60 * 1000;
 })();
 
 const DEADLOCK_MAX_RETRIES = 2;

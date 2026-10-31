@@ -247,7 +247,7 @@ test('AC-01/AC-02: 사진·테두리를 함께 확정하면 실제 DB에 한 번
     await setUp(t);
 
     const userId = await createLocalUser('f13both');
-    const expectedRevision = await currentRevision(userId); // 기본 지급 선행
+    const expectedRevision = await currentRevision(userId);
     await economyService.grantAchievementItem({ userId, itemId: 'profile-border-귀족', itemType: 'PROFILE_BORDER', referenceEventId: `grant-${userId}` });
 
     const result = await economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', borderItemId: 'profile-border-귀족', expectedRevision });
@@ -264,7 +264,7 @@ test('AC-01: 두 슬롯 중 하나가 미보유면 실제 DB에도 두 슬롯 �
     await setUp(t);
 
     const userId = await createLocalUser('f13part');
-    const expectedRevision = await currentRevision(userId); // 기본 지급 선행 — 사진 16종·평민 테두리만 보유
+    const expectedRevision = await currentRevision(userId);
 
     await assert.rejects(
         () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', borderItemId: 'profile-border-귀족', expectedRevision }),

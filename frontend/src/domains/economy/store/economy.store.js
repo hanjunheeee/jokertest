@@ -16,7 +16,7 @@ const initialState = {
   balanceDiamond: 0,
   entitlements: [],
   loadout: initialLoadout,
-  status: "idle", // idle | loading | ready | error
+  status: "idle",
   error: null,
   pendingPurchases: {},
 }

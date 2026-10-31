@@ -28,11 +28,11 @@ test("마스크 밝기 255(흰색)는 알파 255를 반환한다", () => {
 
 test("마스크 중간 밝기는 R·G·B 평균을 반올림한 알파를 반환한다", () => {
   const color = colorPixels()
-  const mask = maskOfBrightness(10, 20, 30) // 평균 20 → round(20) = 20
+  const mask = maskOfBrightness(10, 20, 30)
   const result = composeStackedAlpha(color, mask)
   assert.equal(result[3], 20)
 
-  const mask2 = maskOfBrightness(1, 1, 1) // 평균 1
+  const mask2 = maskOfBrightness(1, 1, 1)
   const result2 = composeStackedAlpha(color, mask2)
   assert.equal(result2[3], 1)
 })

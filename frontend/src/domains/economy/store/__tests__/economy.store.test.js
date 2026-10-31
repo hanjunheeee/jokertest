@@ -131,7 +131,7 @@ test("응답을 잃어버린(전송 불확실) 구매를 재시도하면 같은 
   const seenReferenceIds = []
   postImpl = async (endpoint, body) => {
     seenReferenceIds.push(body.referenceEventId)
-    if (shouldFail) throw new Error("네트워크 끊김") // code 없음 = 서버 응답을 받지 못함
+    if (shouldFail) throw new Error("네트워크 끊김")
     return { idempotent: true, ledgerEntry: { id: 1 } }
   }
   getImpl = async (endpoint) => (endpoint.endsWith("/wallet") ? { balanceGold: 0, balanceDiamond: 0 } : { entitlements: [], loadout: {} })
@@ -326,7 +326,7 @@ test("equipProfile 응답이 도착하기 전에 계정이 바뀌면(requestGene
   postImpl = () => new Promise((resolve) => { resolvePost = resolve })
 
   const equipPromise = useEconomyStore.getState().equipProfile({ photoItemId: "player-profile-기사" })
-  useEconomyStore.getState().reset() // 계정 전환/로그아웃 흉내 — generation 증가
+  useEconomyStore.getState().reset()
 
   resolvePost({ loadout: { selectedProfilePhotoId: "player-profile-기사" } })
   await equipPromise
@@ -462,7 +462,7 @@ test("F-13 AC-02(A-09, A-11 계약 보존): 전송 불확실(code 없음)은 sto
   resetStore()
   let postCalls = 0
   let getCalls = 0
-  postImpl = async () => { postCalls++; throw new TypeError("네트워크 오류") } // code 없음
+  postImpl = async () => { postCalls++; throw new TypeError("네트워크 오류") }
   getImpl = async () => { getCalls++; throw new Error("should not be called") }
 
   await assert.rejects(
@@ -544,7 +544,7 @@ test("F-13 AC-03(CODEX-6): 실제 purchase가 유발한 fetchSummary가 아직 �
       : {
         entitlements: [
           { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
-          { itemId: "profile-border-백작", itemType: "PROFILE_BORDER" }, // 방금 구매한 상품
+          { itemId: "profile-border-백작", itemType: "PROFILE_BORDER" },
         ],
         loadout: { selectedProfileBorderId: "profile-border-평민" },
       }))
@@ -584,8 +584,8 @@ test("F-13(CODEX-9): 획득 전에 시작된 fetchSummary가 획득 후 시작�
   const resolvers = []
   getImpl = (endpoint) => new Promise((resolve) => { resolvers.push({ endpoint, resolve }) })
 
-  const oldFetch = useEconomyStore.getState().fetchSummary() // 획득 전(오래된) 조회
-  const newFetch = useEconomyStore.getState().fetchSummary() // 구매/업적 이후 시작된 새 조회
+  const oldFetch = useEconomyStore.getState().fetchSummary()
+  const newFetch = useEconomyStore.getState().fetchSummary()
   assert.equal(resolvers.length, 4, "두 fetchSummary가 각각 wallet·entitlements 두 endpoint를 불러야 한다")
 
   resolvers.slice(2).forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
@@ -640,7 +640,7 @@ test("F-13(CODEX-9): equipProfile이 시작된 뒤에 시작된 fetchSummary가 
 
   const getResolvers = []
   getImpl = (endpoint) => new Promise((resolve) => { getResolvers.push({ endpoint, resolve }) })
-  const fetchPromise = useEconomyStore.getState().fetchSummary() // equip이 이미 진행 중일 때 시작된 조회
+  const fetchPromise = useEconomyStore.getState().fetchSummary()
   assert.equal(getResolvers.length, 2)
 
   resolveEquipPost({ loadout: { selectedProfilePhotoId: "player-profile-기사", selectedProfileBorderId: "profile-border-백작" } })
@@ -737,7 +737,7 @@ test("서버가 code와 함께 명시적으로 거부하면(확정 거부) statu
   postImpl = async (endpoint, body) => {
     seenReferenceIds.push(body.referenceEventId)
     const error = new Error("잔액이 부족합니다.")
-    error.code = "INSUFFICIENT_BALANCE" // backend/utils/appError.js createError가 싣는 값
+    error.code = "INSUFFICIENT_BALANCE"
     throw error
   }
 

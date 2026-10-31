@@ -70,7 +70,7 @@ function createFakeSocket() {
       return socket
     },
     emitWithAck() {
-      return new Promise(() => {}) // 이 파일은 방송 수신 경로만 검증한다
+      return new Promise(() => {})
     },
     trigger(event, payload) {
       for (const handler of [...(handlers.get(event) ?? [])]) handler(payload)

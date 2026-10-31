@@ -29,7 +29,7 @@ test("갱신 자격 쿠키는 항상 절대 만료(30일)의 persistent cookie�
 
 test("absoluteExpiresAt이 주어지면 세션·갱신 쿠키 Max-Age가 남은 시간으로 캡된다(회전이 30일을 연장하지 않는다)", () => {
     const now = Date.now();
-    const remainingMs = 3 * 24 * 60 * 60 * 1000; // 3일 남음
+    const remainingMs = 3 * 24 * 60 * 60 * 1000;
     const absoluteExpiresAt = new Date(now + remainingMs);
 
     const session = buildSessionCookieOptions(true, absoluteExpiresAt);
@@ -58,7 +58,7 @@ test("capAccessTokenTtlSeconds: 절대 기한이 충분히 남아있으면 기�
 
 test("capAccessTokenTtlSeconds: 절대 기한이 임박하면 남은 초로 내림(반올림 아님) 캡된다", () => {
     const now = new Date();
-    const almostExpired = new Date(now.getTime() + 5_400); // 5.4초 남음
+    const almostExpired = new Date(now.getTime() + 5_400);
     assert.equal(capAccessTokenTtlSeconds(ACCESS_TOKEN_SHORT_TTL_SECONDS, almostExpired, now), 5,
         "올림(6초)이 아니라 내림(5초)이어야 절대 기한을 넘지 않습니다");
 });

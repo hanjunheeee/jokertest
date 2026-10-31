@@ -178,7 +178,7 @@ test("assignItem: 이미 다른 칸에 있는 이모티콘을 넣으면 두 칸�
   await loadReady()
 
   useEmojiPaletteStore.getState().selectSlot(0)
-  useEmojiPaletteStore.getState().assignItem("emoji-basic-anger") // 원래 2번 칸에 있다
+  useEmojiPaletteStore.getState().assignItem("emoji-basic-anger")
 
   const slots = useEmojiPaletteStore.getState().selectedSlots
   assert.equal(slots[0], "emoji-basic-anger")
@@ -334,7 +334,7 @@ test("loadForGame: 마이페이지 load/save는 이 판의 사본을 건드리�
   respondGet(GAME_SLOTS)
   await useEmojiPaletteStore.getState().loadForGame()
 
-  await loadReady() // 마이페이지 진입 — slots/selectedSlots를 서버 기본 8종으로 채운다
+  await loadReady()
   assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS,
     "마이페이지 조회가 진행 중인 판의 사본을 덮었다")
 

@@ -93,14 +93,14 @@ function startSessionRevocationWatcher(socket) {
 
         sessionLifecycle.resolveSession(socket.data.user)
             .then((result) => {
-                if (stopped) return; // 늦게 끝난 검사는 disconnect 이후의 emit/disconnect를 만들지 않는다.
+                if (stopped) return;
                 if (!result.ok) {
                     socket.emit("force_disconnect", { message: result.message });
                     socket.disconnect(true);
                 }
             })
             .catch((err) => {
-                if (stopped) return; // stop() 이후의 늦은 실패는 emit·disconnect를 만들지 않는다.
+                if (stopped) return;
                 console.error("\x1b[31m[소켓 세션 주기 검사 실패]\x1b[0m", err?.name ?? "UnknownError");
                 socket.emit("force_disconnect", { message: "세션 상태를 확인할 수 없어 연결이 종료되었습니다." });
                 socket.disconnect(true);
@@ -145,7 +145,7 @@ function registerNotificationHandlers(socket, uuid) {
     socket.on("notifications_ready", (_payload, ack) => {
         const respond = (result) => {
             if (typeof ack === "function") {
-                try { ack(result); } catch { /* ACK 전달 실패는 생산 결과를 바꾸지 않는다 */ }
+                try { ack(result); } catch {}
             }
         };
 

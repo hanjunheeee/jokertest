@@ -173,7 +173,7 @@ test('A-09: 조회 API를 반복 호출해도 achievement_grants 행이 생기�
     await setUp();
 
     const userId = await createLocalUser('api2');
-    await persistWins(userId, 'CITIZEN', 10); // noble-win-10 조건 충족
+    await persistWins(userId, 'CITIZEN', 10);
 
     const base = await startRouteServer(t);
     for (let i = 0; i < 3; i += 1) {

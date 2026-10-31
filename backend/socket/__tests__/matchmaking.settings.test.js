@@ -389,7 +389,7 @@ test('AC-02 · 현재 참가 인원보다 작은 정원은 거부되고, 인원 
     await joinRoom(io, room.roomCode, 'p1')
     await joinRoom(io, room.roomCode, 'p2')
     await joinRoom(io, room.roomCode, 'p3')
-    await joinRoom(io, room.roomCode, 'p4') // host 포함 5명
+    await joinRoom(io, room.roomCode, 'p4')
 
     const before = snapshotRooms()
     const tooSmall = await callAsPromise(
@@ -416,7 +416,7 @@ test('AC-02 · 유효한 reserved 예약도 점유로 세고, 예약이 만료�
     const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 1 })
     await joinRoom(io, room.roomCode, 'p1')
     await joinRoom(io, room.roomCode, 'p2')
-    await joinRoom(io, room.roomCode, 'p3') // 확정 4명
+    await joinRoom(io, room.roomCode, 'p3')
     matchmaking.__seedAdmissionAttemptForTests('invited-1', { roomId: room.roomId, phase: 'reserved' })
 
     const blocked = await callAsPromise(
@@ -439,7 +439,7 @@ test('AC-02 · published 입장은 room.players와 예약에서 중복으로 세
     const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 4, jokerCount: 1 })
     await joinRoom(io, room.roomCode, 'p1')
     await joinRoom(io, room.roomCode, 'p2')
-    await joinRoom(io, room.roomCode, 'p3') // host 포함 확정 4명 = 정원 4
+    await joinRoom(io, room.roomCode, 'p3')
     assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms[0][1].players.length, 4)
     matchmaking.__seedAdmissionAttemptForTests('p3', { roomId: room.roomId, phase: 'published' })
 
@@ -783,7 +783,7 @@ test('AC-04 · 시작 요청이 외형 조회 중일 때 설정이 저장되면 
 
     const startPromise = new Promise((resolve) =>
         handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
-    await startLoadoutGate.entered // 시작 요청이 실제로 조회 대기에 들어갔음을 보장한다
+    await startLoadoutGate.entered
 
     const saved = await callAsPromise(
         handleUpdateRoomSettings, io, hostSocket, 'host-a',
@@ -1190,9 +1190,9 @@ test('AC-04 · 방·설정 버전이 빠졌거나 형태가 틀린 준비/시작
     const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
 
     const badReady = [
-        { isReady: true },                                                  // 둘 다 없음
-        { isReady: true, roomId: room.roomId },                             // 버전 없음
-        { isReady: true, expectedSettingsVersion: 1 },                      // 방 없음
+        { isReady: true },
+        { isReady: true, roomId: room.roomId },
+        { isReady: true, expectedSettingsVersion: 1 },
         { isReady: true, roomId: '', expectedSettingsVersion: 1 },
         { isReady: true, roomId: room.roomId, expectedSettingsVersion: 0 },
         { isReady: true, roomId: room.roomId, expectedSettingsVersion: '1' },
@@ -1402,7 +1402,7 @@ test('AC-05 · ACK를 잃은 원 요청자는 같은 requestId 조회로 적용 
         handleGetRoomSettingsUpdateResult, 'p1', { roomId: room.roomId, requestId },
     )
     assert.equal(otherAccount.status, 'UNKNOWN')
-    assert.ok(joinerSocket) // (조회가 다른 계정의 소속을 바꾸지 않았음을 아래에서 확인)
+    assert.ok(joinerSocket)
 
     const unknown = await callAsPromise(
         handleGetRoomSettingsUpdateResult, 'host-a', { roomId: room.roomId, requestId: 'never-sent' },

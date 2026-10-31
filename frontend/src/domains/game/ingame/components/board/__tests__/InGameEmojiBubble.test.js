@@ -274,7 +274,7 @@ test("AC-04: 여러 참가자의 말풍선은 서로 독립적으로 뜨고 사�
   assert.ok(bubbleOn(view.container, "상대"))
   assert.ok(bubbleOn(view.container, "본인"))
 
-  advance(1_000) // 상대만 3초 도달
+  advance(1_000)
   assert.equal(bubbleOn(view.container, "상대"), null, "먼저 받은 쪽이 3초에 사라지지 않았다")
   assert.ok(bubbleOn(view.container, "본인"), "나중에 받은 쪽이 함께 지워졌다")
 })

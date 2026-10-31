@@ -286,7 +286,7 @@ test("AC-04 · 아직 보지 못한 더 새로운 설정의 준비 사건은 버
 test("AC-05 · 같은 설정 버전의 방장 이전 뒤에 도착한 옛 전체 조회는 옛 방장을 되살리지 못한다", async () => {
   const { socket, result } = await mountVerified()
   const oldRoom = serverRoom({ hostUuid: "host-a" })
-  const newHostRoom = serverRoom({ hostUuid: "p1" }) // 설정 버전은 그대로 1이다
+  const newHostRoom = serverRoom({ hostUuid: "p1" })
 
   socket.answer = () => HOLD
   await act(async () => { socket.trigger("connect") })

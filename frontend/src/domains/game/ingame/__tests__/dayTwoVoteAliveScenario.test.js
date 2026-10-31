@@ -25,8 +25,8 @@ const { selectInGameSelfAlive } = await import("../utils/selectInGameSelfAlive.j
 const { INGAME_PREVIEW_PLAYER_COUNT } = await import("../constants/board/ingamePlayerBoard.js")
 
 const GAME_ID = "game-1"
-const EXECUTED_UUID = "u3" // 1일차 재판에서 처형된다.
-const NIGHT_VICTIM_UUID = "u2" // 그 밤에 사망한다.
+const EXECUTED_UUID = "u3"
+const NIGHT_VICTIM_UUID = "u2"
 
 const ROSTER = [
   { uuid: "u1", nickname: "A", role: "CITIZEN", team: "CITIZEN" },
@@ -255,12 +255,12 @@ test("2일차 낮: 서버 상태가 세션 목록으로 변환되지 못해 프�
 
 test("단계별 생존 상태: 각 이벤트 직후 계정별 self 생존 판정이 기대와 일치한다", () => {
   const expectedAfterStep = [
-    { u1: true, u2: true, u3: true, u4: true }, // 1일차 낮 진입
-    { u1: true, u2: true, u3: true, u4: true }, // 1일차 투표 개시
-    { u1: true, u2: true, u3: true, u4: true }, // TRIBUNAL 판정(아직 처형 전)
-    { u1: true, u2: true, u3: false, u4: true }, // 재판 GUILTY → u3 처형
-    { u1: true, u2: false, u3: false, u4: true }, // 밤 사망 반영 → u2 사망
-    { u1: true, u2: false, u3: false, u4: true }, // 2일차 투표 개시
+    { u1: true, u2: true, u3: true, u4: true },
+    { u1: true, u2: true, u3: true, u4: true },
+    { u1: true, u2: true, u3: true, u4: true },
+    { u1: true, u2: true, u3: false, u4: true },
+    { u1: true, u2: false, u3: false, u4: true },
+    { u1: true, u2: false, u3: false, u4: true },
   ]
 
   for (const { uuid } of ROSTER) {

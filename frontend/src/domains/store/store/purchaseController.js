@@ -143,7 +143,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       if (!current()) return
       const confirmed = { ...request, status: "confirmed" }
       try { update(confirmed) } catch { store.setState(confirmed, true) }
-      try { await refresh(result) } catch { /* 잔액 재시도 UI가 맡는다 */ }
+      try { await refresh(result) } catch {}
     } catch (error) {
       if (!current()) return
       let state

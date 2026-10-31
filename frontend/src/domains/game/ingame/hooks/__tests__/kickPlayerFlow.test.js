@@ -474,7 +474,7 @@ test("AC-05: 응답이 돌아오기 전에 소켓이 교체되면 그 응답은 
   act(() => result.current.confirmKick(currentTargets()))
   const pending = socket.emitted[0]
 
-  setSocket(createFakeSocket()) // 재연결로 canonical 소켓이 바뀌었다
+  setSocket(createFakeSocket())
   act(() => pending.ack({ ok: true, status: "KICKED" }))
 
   assert.equal(result.current.status, KICK_REQUEST_STATUS.SENDING)
@@ -836,7 +836,7 @@ test("AC-03: 이 사건 이전에 캡처된 낮은 세대는 최신 참여 상�
 
   apply(2, false)
   const afterLatest = useInGameStore.getState().state
-  apply(1, true) // 늦게 도착한 옛 사건
+  apply(1, true)
 
   assert.equal(useInGameStore.getState().state, afterLatest, "참조까지 완전한 no-op이어야 한다")
   assert.equal(useInGameStore.getState().state.players.find((p) => p.uuid === TARGET).isParticipating, false)
@@ -1132,7 +1132,7 @@ function setUpCardWithFallbackHost({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION
     useInGameStore.getState().clearGame()
     useInGameStore.getState().setGamePayload({
       gameId: "game-1",
-      hostUuid: HOST, // 구버전 payload 폴백 — state 안에는 없다
+      hostUuid: HOST,
       state: stateWithoutHostUuid,
     })
   })

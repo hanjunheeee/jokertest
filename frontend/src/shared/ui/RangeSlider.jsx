@@ -11,20 +11,20 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 function rangeRatio(value, min, max) {
-  if (max === min) return 0 // 구간 없으면 시작 위치
+  if (max === min) return 0
   return (value - min) / (max - min)
 }
 
 export default function RangeSlider({
-  value, // 현재 선택된 값 — 부모가 소유하는 제어 컴포넌트라 이 값을 그대로 보여줌
-  min, // 선택 가능한 최솟값
-  max, // 선택 가능한 최댓값
-  onChange, // 슬라이더를 움직일 때 호출할 콜백. 새 숫자 값을 인자로 넘겨줌
-  ariaLabel, // 스크린리더가 읽어줄 설명
-  trackSrc = RANGE_SLIDER_ASSETS.track, // 트랙(막대) 배경 이미지
-  knobSrc = RANGE_SLIDER_ASSETS.knob, // 노브(손잡이) 이미지
-  controlClassName = RANGE_SLIDER_CONTROL_CLASS, // 루트 레이아웃 클래스
-  valueClassName = RANGE_SLIDER_VALUE_CLASS, // 상단 숫자 표시 클래스
+  value,
+  min,
+  max,
+  onChange,
+  ariaLabel,
+  trackSrc = RANGE_SLIDER_ASSETS.track,
+  knobSrc = RANGE_SLIDER_ASSETS.knob,
+  controlClassName = RANGE_SLIDER_CONTROL_CLASS,
+  valueClassName = RANGE_SLIDER_VALUE_CLASS,
   wrapClassName = RANGE_SLIDER_WRAP_CLASS,
   trackLaneClassName = RANGE_SLIDER_TRACK_LANE_CLASS,
   trackClassName = RANGE_SLIDER_TRACK_CLASS,

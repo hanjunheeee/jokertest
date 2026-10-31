@@ -24,7 +24,7 @@ const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSch
     baseline, addRefreshTokenHistory, addSocialAuth, addCurrencyProductsTopupOrders, migrationRunner,
 });
 
-let sequelize; // 시험 자신의 연결 — 외부 상품 작성자와 DB 검사자 역할(앱과 별도 연결)
+let sequelize;
 
 test.before(async () => {
     if (!TEST_DB_URL) return;

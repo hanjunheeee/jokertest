@@ -211,7 +211,7 @@ test('AC-04: 동시에 같은 업적을 두 번 평가해도 재화는 한 번�
 
     const grantedCount = [a.granted, b.granted].filter(Boolean).length;
     assert.equal(grantedCount, 1);
-    assert.equal(economyService.calls.length, 2); // GOLD + DIAMOND, 딱 한 번만.
+    assert.equal(economyService.calls.length, 2);
 });
 
 const createRacyFakeDb = () => {
@@ -397,7 +397,7 @@ test('AC-05: 이 기능이 생기기 전부터 이미 임계값을 넘어 있던
     assert.ok(grantedIds.includes('noble-win-10'));
     assert.ok(grantedIds.includes('noble-win-20'));
     assert.ok(grantedIds.includes('noble-win-30'));
-    assert.ok(grantedIds.includes('record-7-erased-night')); // 30승
+    assert.ok(grantedIds.includes('record-7-erased-night'));
 
     const callsAfterFirst = economyService.calls.length;
     await achievementService.evaluateAndGrantForUser('user-veteran');

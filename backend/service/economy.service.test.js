@@ -220,9 +220,9 @@ const createFakeDb = () => {
     };
 };
 
-const PURCHASABLE_ITEM_ID = 'profile-border-남작'; // priceGold 200
+const PURCHASABLE_ITEM_ID = 'profile-border-남작';
 const PURCHASABLE_ITEM_PRICE = 200;
-const OTHER_PURCHASABLE_ITEM_ID = 'profile-border-자작'; // priceGold 300
+const OTHER_PURCHASABLE_ITEM_ID = 'profile-border-자작';
 
 const grantBalance = async (db, userId, amount, currency = CURRENCIES.GOLD) => {
     await economyService.grantReward({ userId, amount, currency, reason: 'TEST_SEED', referenceEventId: `seed:${userId}:${amount}:${Math.random()}` }, db);
@@ -549,7 +549,7 @@ test('AC-05: 카탈로그에 없는 임의 문자열(파일 경로 등)은 장�
 test('AC-05: 보유 중이어도 슬롯과 아이템 종류가 다르면 장착이 거부된다', async () => {
     const db = createFakeDb();
     const userId = 'user-ac05-typemismatch';
-    await economyService.ensureDefaultEntitlements(userId, db); // 평민 테두리 보유
+    await economyService.ensureDefaultEntitlements(userId, db);
 
     await assert.rejects(
         () => economyService.equipItem({ userId, slot: 'PROFILE_PHOTO', itemId: DEFAULT_PROFILE_BORDER_ID }, db),
@@ -589,7 +589,7 @@ test('CODEX-2(AC-03): applyLedgerTransaction이 외부(부모) 트랜잭션을 �
 test('CODEX-2(AC-03): 부모 트랜잭션이 이후 단계에서 실패해 롤백되면 그 안에서 일어난 지갑 갱신도 함께 되돌려진다', async () => {
     const db = createFakeDb();
     const userId = 'user-parent-tx-rollback';
-    await grantBalance(db, userId, 500); // 사전 시드(별도 트랜잭션, 이미 커밋됨)
+    await grantBalance(db, userId, 500);
 
     await assert.rejects(
         () => db.sequelize.transaction(async (t) => {
@@ -652,7 +652,7 @@ test('F-13 AC-01: 테두리를 보유하지 않은 채 사진과 함께 확정�
         () => economyService.equipProfileAppearance({
             userId,
             photoItemId: 'player-profile-기사',
-            borderItemId: 'profile-border-황제', // 보유하지 않음
+            borderItemId: 'profile-border-황제',
             expectedRevision,
         }, db),
         (error) => error.status === 403 && error.code === 'ITEM_NOT_OWNED',
@@ -667,11 +667,11 @@ test('F-13 AC-01: 테두리를 보유하지 않은 채 사진과 함께 확정�
 test('F-13 AC-01(CODEX-4): 소유권 행만 사라진(원장은 그대로인) 기본 사진은 ensureDefaultEntitlements가 조용히 재지급하지 않고 equipProfileAppearance가 실제로 거부한다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-photo-entitlement-gap';
-    const expectedRevision = await currentRevision(db, userId); // 기본 16종 사진 + 평민 테두리 지급(원장 포함)
+    const expectedRevision = await currentRevision(db, userId);
 
     const idx = db._inspect.entitlements.findIndex((e) => e.user_id === userId && e.item_id === 'player-profile-기사');
     assert.notEqual(idx, -1, '사전 조건: 기본 지급으로 이미 보유하고 있어야 한다');
-    db._inspect.entitlements.splice(idx, 1); // 소유권 행만 제거 — 원장(ledgerEntries)은 그대로 둔다
+    db._inspect.entitlements.splice(idx, 1);
 
     await assert.rejects(
         () => economyService.equipProfileAppearance({ userId, photoItemId: 'player-profile-기사', expectedRevision }, db),
@@ -698,7 +698,7 @@ test('F-13 AC-01: 사진 슬롯에 테두리 itemId를 보내면 종류 불일�
     await assert.rejects(
         () => economyService.equipProfileAppearance({
             userId,
-            photoItemId: DEFAULT_PROFILE_BORDER_ID, // 테두리 itemId를 사진 슬롯에
+            photoItemId: DEFAULT_PROFILE_BORDER_ID,
             borderItemId: DEFAULT_PROFILE_BORDER_ID,
             expectedRevision: afterFirst.revision,
         }, db),
@@ -826,7 +826,7 @@ test('F-13 AC-02(A-10, ABA 방지): 같은 값을 다시 명시적으로 저장�
 test('F-13(F0394 equipItem): 일반 장착(카드 프레임)도 같은 행을 갱신하면 revision을 새로 발급해, 프로필 편집기가 들고 있던 이전 revision을 무효화한다', async () => {
     const db = createFakeDb();
     const userId = 'user-f13-equipitem-invalidates';
-    const staleRevision = await currentRevision(db, userId); // 편집기가 이 시점에 revision을 읽어 뒀다고 가정
+    const staleRevision = await currentRevision(db, userId);
 
     await economyService.equipItem({ userId, slot: 'PLAYER_CARD_FRAME', itemId: economyService.FREE_CARD_FRAME_ID }, db);
 

@@ -41,9 +41,9 @@ test('validateCustomRoleCounts: 유효한 구성은 방어적 canonical 복사�
 
     assert.equal(result.ok, true)
     assert.deepEqual(result.roleCounts, { JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 })
-    assert.notEqual(result.roleCounts, source) // 원본 참조를 그대로 쓰지 않는다
+    assert.notEqual(result.roleCounts, source)
     source.JOKER = 99
-    assert.equal(result.roleCounts.JOKER, 2) // 원본을 나중에 바꿔도 복사본은 그대로
+    assert.equal(result.roleCounts.JOKER, 2)
 })
 
 test('validateCustomRoleCounts: 객체가 아니거나 배열이면 거부한다', () => {

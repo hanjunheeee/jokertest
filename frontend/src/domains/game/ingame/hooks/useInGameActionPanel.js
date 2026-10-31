@@ -144,9 +144,9 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const resolveNightRequest = useInGameResolveNight()
 
   const dayVoteResolveSocket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
-  const [dayVoteResolveStatus, setDayVoteResolveStatus] = useState("idle") // idle | resolving | resolved
+  const [dayVoteResolveStatus, setDayVoteResolveStatus] = useState("idle")
   const [dayVoteResolveError, setDayVoteResolveError] = useState(null)
-  const [dayVoteResolution, setDayVoteResolution] = useState(null) // { outcome, tribunalTargetUuid } | null
+  const [dayVoteResolution, setDayVoteResolution] = useState(null)
   const dayVoteAckingRef = useRef(false)
   const dayVoteVersionRef = useRef(0)
   const dayVoteMountedRef = useRef(true)

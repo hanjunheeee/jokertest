@@ -455,9 +455,9 @@ test('AC-02: 치료가 성공한 밤은 최종 사망 0이고 승패 상태와 �
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
-    drainWait(session, clock); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
+    drainWait(session, clock);
     submitNight(sockets.get(doctorUuid), doctorUuid, session, targetUuid);
-    drainWait(session, clock); // F-27a: 실제 HEAL 사건의 대기를 풀어야 GUARD 차례가 시작된다.
+    drainWait(session, clock);
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(session.phase, 'DAY', '치료가 성공한 밤도 정상적으로 낮으로 넘어간다');
@@ -502,7 +502,7 @@ test('AC-03: 치료되지 않은 밤은 의사 차례가 끝난 뒤 최종 사�
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
-    drainWait(session, clock); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
+    drainWait(session, clock);
 
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '의사 차례에서 멈춰 있어야 한다');
     const progress = gameSessionCore.__testables.getNightProgress(session);
@@ -565,9 +565,9 @@ test('AC-04: 마지막 밤에 킬과 치료가 함께 발생해도 치료가 성
     const healClock = createManualClock();
     startNightTurnSequence(io, healed.session, { ...healClock, randomFn: () => 0.5 });
     submitNight(healSockets.get(healed.jokerUuid), healed.jokerUuid, healed.session, healTarget);
-    drainWait(healed.session, healClock); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
+    drainWait(healed.session, healClock);
     submitNight(healSockets.get(healed.doctorUuid), healed.doctorUuid, healed.session, healTarget);
-    drainWait(healed.session, healClock); // F-27a: 실제 HEAL 사건의 대기를 풀어야 GUARD 차례가 시작된다.
+    drainWait(healed.session, healClock);
     healClock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
     assert.equal(healed.session.phase, 'DAY', '치료가 성공했으므로 게임이 끝나지 않는다');
@@ -587,7 +587,7 @@ test('AC-04: 마지막 밤에 킬과 치료가 함께 발생해도 치료가 성
     const killClock = createManualClock();
     startNightTurnSequence(io, killed.session, { ...killClock, randomFn: () => 0.5 });
     submitNight(killSockets.get(killed.jokerUuid), killed.jokerUuid, killed.session, killTarget);
-    drainWait(killed.session, killClock); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
+    drainWait(killed.session, killClock);
     submitNight(killSockets.get(killed.doctorUuid), killed.doctorUuid, killed.session, null);
     killClock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 
@@ -740,7 +740,7 @@ test('AC-05: 밤 최종화의 첫 저장이 실패해도 재시도는 **같은 �
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 });
     submitNight(sockets.get(jokerUuid), jokerUuid, session, targetUuid);
-    drainWait(session, clock); // F-27a: 실제 KILL 사건의 대기를 풀어야 DOCTOR 차례가 시작된다.
+    drainWait(session, clock);
     submitNight(sockets.get(doctorUuid), doctorUuid, session, null);
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2);
 

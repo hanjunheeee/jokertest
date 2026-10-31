@@ -36,7 +36,7 @@ const MAX_SUPPORTED_PLAYERS = 10
 
 const PLAYER_THEME_PALETTE_SIZE = 10
 
-const INITIAL_GAME_PHASE = 'ROLE_REVEAL' // 아직 밤이 시작되지 않은 역할 확인 단계(사용자 확정)
+const INITIAL_GAME_PHASE = 'ROLE_REVEAL'
 const INITIAL_DAY_INDEX = 0
 
 const DAY_PHASES = Object.freeze({ DISCUSSION: 'DAY_DISCUSSION', VOTE: 'DAY_VOTE' })
@@ -509,7 +509,7 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         roomId: room.id,
         roomCode: typeof room.code === 'string' && room.code ? room.code : null,
         roomSettingsSource: buildRoomSettingsSource(room),
-        channelId: room.id, // 기존 Socket.IO room(roomId)을 그대로 승계
+        channelId: room.id,
         hostUuid: room.hostUuid ?? null,
         roomInstanceId: room.instanceId ?? room.id,
         bootEpoch: room.bootEpoch ?? null,
@@ -816,7 +816,7 @@ function buildGameStartedPayload(session, viewerUuid) {
                 isParticipating: player.isParticipating !== false,
                 membershipId: player.membershipId ?? null,
                 ...buildPlayerAccountProfileFields(player),
-            })), // role 없음
+            })),
             self: buildViewerRoleFields(session, viewer),
         },
     }
@@ -2380,7 +2380,7 @@ function computeHasActedThisPhase(session, uuid) {
         case 'TRIBUNAL':
             return session.tribunal ? session.tribunal.votes.has(uuid) : false
         default:
-            return false // ENDED
+            return false
     }
 }
 
@@ -2389,7 +2389,7 @@ function canIncludeDayTribunalFields(session) {
     if (session.phase === 'ENDED') {
         return session.nightResolution !== null && session.nightResolution.dayIndex !== session.dayIndex
     }
-    return false // ROLE_REVEAL, NIGHT
+    return false
 }
 
 function buildSessionSnapshot(session, uuid) {

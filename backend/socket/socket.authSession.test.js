@@ -75,7 +75,7 @@ const runDisconnect = async (uuid) => {
     const handlers = {};
     const fakeSocket = {
         id: `sock-${uuid}`,
-        data: { user: { uuid } }, // forcedLogout 없음 → handleDisconnect 본문이 실제로 실행된다
+        data: { user: { uuid } },
         rooms: new Set(),
         on(event, cb) { handlers[event] = cb; },
     };
@@ -246,7 +246,7 @@ test("F-03 AC-09: 연결된 소켓의 보호 이벤트는 세션이 폐기되면
     let ran = false;
     socket.on("game_action", () => { ran = true; });
 
-    session.is_online = false; // 로그아웃/정지 등으로 세션이 폐기된 상태를 흉내낸다.
+    session.is_online = false;
     await socket._handlers.game_action();
 
     assert.equal(ran, false, "폐기된 세션에서는 이벤트 핸들러 본문이 실행되면 안 됩니다");
@@ -292,7 +292,7 @@ test("AC-09/AC-06: 강제 종료된 이전 소켓의 disconnect는 새 세션의
     };
     onlineUsers.set(UUID, existing.id);
 
-    await socketLayer.__testables.handleConnection(io, fresh, UUID); // 여기서 existing.forcedLogout = true
+    await socketLayer.__testables.handleConnection(io, fresh, UUID);
     await socketLayer.__testables.handleDisconnect(io, existing, UUID);
 
     assert.deepEqual(presenceWrites.map((row) => row.status), ["ONLINE"]);
@@ -314,7 +314,7 @@ test("F-29b AC-04: 유효한 검사 이후 클라이언트 이벤트 없이 세�
     assert.equal(socket.disconnectCalls, 0, "첫 검사는 세션이 유효하므로 종료하면 안 됩니다");
     assert.equal(socket.emitted.length, 0);
 
-    session.is_online = false; // 클라이언트 이벤트 없이 다른 경로(재설정)로 폐기된 상태를 흉내낸다.
+    session.is_online = false;
     t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
@@ -332,10 +332,10 @@ test("F-29b AC-04: stop() 이후 늦게 끝난 검사는 emit·disconnect를 만
 
     t.mock.timers.enable({ apis: ["setInterval"] });
     const watcher = socketLayer.__testables.startSessionRevocationWatcher(socket);
-    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS); // 검사 시작 — 아직 끝나지 않음
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
 
     watcher.stop();
-    resolveCheck({ ok: false, status: 401, message: "폐기됨" }); // 종료 이후에 늦게 도착한 결과
+    resolveCheck({ ok: false, status: 401, message: "폐기됨" });
     await new Promise((resolve) => setImmediate(resolve));
 
     assert.equal(socket.emitted.length, 0);
@@ -358,8 +358,8 @@ test("F-29b AC-04: 검사가 아직 끝나지 않았으면 다음 tick은 중복
     const watcher = socketLayer.__testables.startSessionRevocationWatcher(socket);
     t.after(() => watcher.stop());
 
-    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS); // 첫 검사 시작(대기 중)
-    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS); // 아직 끝나지 않았으니 건너뛰어야 함
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+    t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
     assert.equal(callCount, 1, "진행 중인 검사가 있으면 새 조회를 시작하면 안 됩니다");
 
     resolveFirst({ ok: true });

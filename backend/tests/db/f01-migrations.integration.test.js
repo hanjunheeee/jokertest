@@ -517,7 +517,7 @@ const wrapWithHistoryWriteFailure = (realSequelize, { targetName, failStatus }) 
                 return target.query(sql, options);
             };
         }
-        if (prop === 'constructor') return target.constructor; // 클래스 참조는 그대로 — bind하면 정적 프로퍼티 접근이 깨질 수 있다
+        if (prop === 'constructor') return target.constructor;
         const value = Reflect.get(target, prop, receiver);
         return typeof value === 'function' ? value.bind(target) : value;
     },

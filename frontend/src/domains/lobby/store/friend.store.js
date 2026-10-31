@@ -52,7 +52,7 @@ const initialAccountState = () => ({
     incomingRemovals: {},
 
     blockedUsers: [],
-    blocksStatus: "idle", // idle | loading | success | error
+    blocksStatus: "idle",
     blocksError: null,
 
     friendsError: null,

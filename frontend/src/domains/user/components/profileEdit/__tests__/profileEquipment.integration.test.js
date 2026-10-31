@@ -122,7 +122,7 @@ test("F-13 AC-02: 응답을 잃어버리면(code 없는 오류) 성공/실패를
     if (endpoint.endsWith("/wallet")) walletCalls += 1
     return readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
   }
-  postImpl = async () => { throw new TypeError("network disconnected") } // code 없음 — 전송 불확실
+  postImpl = async () => { throw new TypeError("network disconnected") }
 
   const { result } = renderHook(() => useProfileBorderEditor({ open: true, onClose: () => {} }))
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
@@ -208,14 +208,14 @@ test("F-13 AC-02(CODEX-1): 저장 응답을 기다리는 동안 편집기를 닫
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
 
   let confirmPromise
-  act(() => { confirmPromise = result.current.handleConfirm() }) // 저장 진행 중(응답 대기, 계정 전환 없음)
+  act(() => { confirmPromise = result.current.handleConfirm() })
 
-  rerender({ open: false }) // 사용자가 응답을 기다리지 않고 편집기를 닫음
-  rerender({ open: true }) // 즉시 다시 연다 — 새 세션 시작(초안이 실제 장착값으로 리셋됨)
+  rerender({ open: false })
+  rerender({ open: true })
   assert.equal(result.current.draftBorderItemId, "profile-border-평민", "새로 연 세션의 초안은 실제 장착값으로 리셋되어야 한다")
 
   await act(async () => {
-    resolvePost({ loadout: { selectedProfileBorderId: "profile-border-귀족" } }) // 이전 세션의 저장이 뒤늦게 성공
+    resolvePost({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
     await confirmPromise
   })
 
@@ -237,13 +237,13 @@ test("F-13 AC-02(CODEX-4): 저장 응답을 기다리는 동안 편집기를 닫
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
 
   let confirmPromise
-  act(() => { confirmPromise = result.current.handleConfirm() }) // 저장 진행 중(응답 대기)
+  act(() => { confirmPromise = result.current.handleConfirm() })
   assert.equal(result.current.confirmStatus, "saving")
 
-  rerender({ open: false }) // 사용자가 응답을 기다리지 않고 편집기를 닫고, 다시 열지 않는다
+  rerender({ open: false })
 
   await act(async () => {
-    resolvePost({ loadout: { selectedProfileBorderId: "profile-border-귀족" } }) // 닫힌 뒤 뒤늦게 성공 도착
+    resolvePost({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
     await confirmPromise
   })
 
@@ -276,10 +276,10 @@ test("F-13 AC-02(CODEX-4): 저장 응답을 기다리는 동안 편집기를 닫
 
   let confirmPromise
   act(() => { confirmPromise = result.current.handleConfirm() })
-  rerender({ open: false }) // 닫고 다시 열지 않는다
+  rerender({ open: false })
 
   await act(async () => {
-    rejectPost(new TypeError("network disconnected")) // 닫힌 뒤 뒤늦게 응답 유실(code 없음) 도착
+    rejectPost(new TypeError("network disconnected"))
     await confirmPromise
   })
 
@@ -311,8 +311,8 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
   assert.equal(result.current.confirmStatus, "saving")
   assert.equal(postDeferreds.length, 1)
 
-  rerender({ open: false }) // 사용자가 A의 응답을 기다리지 않고 편집기를 닫음
-  rerender({ open: true }) // 즉시 다시 연다 — 세션 B 시작(초안이 실제 장착값으로 리셋됨)
+  rerender({ open: false })
+  rerender({ open: true })
   assert.equal(result.current.draftBorderItemId, "profile-border-평민", "B의 초안은 실제 장착값으로 리셋되어야 한다")
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
@@ -364,8 +364,8 @@ test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 �
   act(() => { confirmAPromise = result.current.handleConfirm() })
   assert.equal(postDeferreds.length, 1)
 
-  rerender({ open: false }) // A의 응답을 기다리지 않고 닫음
-  rerender({ open: true }) // 세션 B 시작
+  rerender({ open: false })
+  rerender({ open: true })
 
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
@@ -426,8 +426,8 @@ test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫
   act(() => { confirmAPromise = result.current.handleConfirm() })
   assert.equal(postDeferreds.length, 1)
 
-  rerender({ open: false }) // 닫음
-  rerender({ open: true }) // 세션 B 시작
+  rerender({ open: false })
+  rerender({ open: true })
 
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
@@ -490,8 +490,8 @@ test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편�
   act(() => { confirmAPromise = result.current.handleConfirm() })
   assert.equal(postDeferreds.length, 1)
 
-  rerender({ open: false }) // 사용자가 A의 응답을 기다리지 않고 편집기를 닫음
-  rerender({ open: true }) // 즉시 다시 연다 — 세션 B 시작(초안이 실제 장착값으로 리셋됨)
+  rerender({ open: false })
+  rerender({ open: true })
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
@@ -565,8 +565,8 @@ test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummar
   assert.equal(walletDeferreds.length, 2, "A의 거부는 서버 상태를 재조회해야 한다(응답 유실)")
   assert.equal(result.current.confirmStatus, "saving", "재조회가 끝나기 전까지는 아직 A 자신의 handleConfirm이 진행 중이다")
 
-  rerender({ open: false }) // A의 재조회가 아직 끝나지 않은 채로 편집기를 닫음
-  rerender({ open: true }) // 세션 B 시작(초안이 실제 장착값으로 리셋됨)
+  rerender({ open: false })
+  rerender({ open: true })
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
@@ -631,8 +631,8 @@ test("F-13 AC-02 CODEX-7: B가 saving인 동안 A의 재조회 완료는 B 상�
   assert.equal(walletDeferreds.length, 2, "A의 거부는 서버 상태를 재조회해야 한다(응답 유실)")
   assert.equal(result.current.confirmStatus, "saving", "재조회가 끝나기 전까지는 아직 A 자신의 handleConfirm이 진행 중이다")
 
-  rerender({ open: false }) // A의 재조회가 아직 끝나지 않은 채로 편집기를 닫음
-  rerender({ open: true }) // 세션 B 시작(초안이 실제 장착값으로 리셋됨)
+  rerender({ open: false })
+  rerender({ open: true })
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
   act(() => {
@@ -684,7 +684,7 @@ test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계�
   let confirmPromise
   act(() => { confirmPromise = result.current.handleConfirm() })
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-브론즈" })(endpoint)
-  setCurrentUser({ uuid: "user-2" }) // 저장·재조회가 끝나기 전에 계정 전환 — economy store가 reset되고 generation이 올라간다
+  setCurrentUser({ uuid: "user-2" })
 
   await act(async () => { await confirmPromise })
 
@@ -724,9 +724,9 @@ test("F-13 AC-04: 편집기를 닫고 다른 계정으로 전환한 뒤 다시 �
   assert.equal(result.current.draftBorderItemId, "profile-border-평민")
   assert.deepEqual(result.current.ownedBorderOptions.map((o) => o.itemId), ["profile-border-평민"])
 
-  rerender({ open: false }) // 편집기를 닫음
-  setCurrentUser({ uuid: "user-2" }) // 다른 계정으로 전환(로그인 세션 교체와 동일한 store reset 경로)
-  rerender({ open: true }) // 새 계정으로 편집기를 다시 염
+  rerender({ open: false })
+  setCurrentUser({ uuid: "user-2" })
+  rerender({ open: true })
 
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
   assert.equal(
@@ -765,12 +765,12 @@ test("F-13 AC-04: 로그아웃 후 재로그인하면 편집기는 로그아웃 
   assert.equal(result.current.draftBorderItemId, "profile-border-귀족")
 
   rerender({ open: false })
-  setCurrentUser(null) // 로그아웃 — economy store가 초기 상태로 reset된다
+  setCurrentUser(null)
   rerender({ open: true })
-  await waitFor(() => assert.equal(useEconomyStore.getState().status, "error"), { timeout: 1000 }) // resolveUserId 가드: 로그인 필요
+  await waitFor(() => assert.equal(useEconomyStore.getState().status, "error"), { timeout: 1000 })
 
   rerender({ open: false })
-  setCurrentUser({ uuid: "user-1" }) // 재로그인(같은 계정)
+  setCurrentUser({ uuid: "user-1" })
   rerender({ open: true })
 
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
@@ -790,7 +790,7 @@ test("F-13 AC-03: 구매 직후(economy store의 purchase가 이미 entitlements
         ? [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }]
         : [
           { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
-          { itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" }, // 방금 구매한 상품
+          { itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" },
         ],
       loadout: { selectedProfileBorderId: "profile-border-평민" },
     }
@@ -824,7 +824,7 @@ test("F-13 AC-03(CODEX-2): 실제 useAchievements 훅을 마운트해 실제 업
         ? [{ itemId: "profile-border-평민", itemType: "PROFILE_BORDER" }]
         : [
           { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
-          { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" }, // 방금 업적으로 획득한 상품
+          { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" },
         ],
       loadout: { selectedProfileBorderId: "profile-border-평민" },
     }
@@ -865,7 +865,7 @@ test("F-13 AC-03(설계 감사, 2026-09-11): 편집기 마운트가 시작시킨
     : {
       entitlements: [
         { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
-        { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" }, // 방금 업적으로 획득
+        { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" },
       ],
       loadout: { selectedProfileBorderId: "profile-border-평민" },
     })
@@ -902,7 +902,7 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
         : [
           ...allDefaultPhotoEntitlements,
           { itemId: "profile-border-평민", itemType: "PROFILE_BORDER" },
-          { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" }, // 방금 업적으로 획득
+          { itemId: "profile-border-광대", itemType: "PROFILE_BORDER" },
         ],
       loadout: { selectedProfileBorderId: "profile-border-평민" },
     }

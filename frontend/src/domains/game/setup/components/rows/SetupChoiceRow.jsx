@@ -7,7 +7,7 @@ import {
 import Stepper from "@/shared/ui/Stepper"
 
 export default function SetupChoiceRow({ label, description, options, value, onChange }) {
-  const index = Math.max(0, options.findIndex((option) => option.value === value)) // 없으면 첫 칸
+  const index = Math.max(0, options.findIndex((option) => option.value === value))
 
   return (
     <div className={SETUP_ROW_CLASS} data-setup-row>

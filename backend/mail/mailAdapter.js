@@ -85,7 +85,7 @@ const createHttpMailAdapter = ({
                 },
                 timeout: timeoutMs,
             }, (res) => {
-                res.on('data', () => {}); // 응답 본문은 로깅·반환 어디에도 쓰지 않는다.
+                res.on('data', () => {});
                 res.on('end', () => {
                     if (res.statusCode >= 200 && res.statusCode < 300) {
                         finish({ ok: true });
@@ -107,7 +107,7 @@ const createHttpMailAdapter = ({
 
 const createMemoryMailAdapter = () => {
     const outbox = [];
-    let nextFailure = null; // 'result' | 'throw' | null
+    let nextFailure = null;
 
     const sendMail = async ({ to, template, params = {} }) => {
         if (!TEMPLATES.has(template)) {

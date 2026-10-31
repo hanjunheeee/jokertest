@@ -7,7 +7,7 @@ const addEconomy = require('../db/migrations/0006-add-economy');
 const migrationRunner = require('../db/migrationRunner');
 
 const createFakeQueryInterface = () => {
-    const tables = new Map(); // name -> { columns, indexes: [] }
+    const tables = new Map();
     return {
         async showAllTables() { return [...tables.keys()]; },
         async createTable(name, columns) {

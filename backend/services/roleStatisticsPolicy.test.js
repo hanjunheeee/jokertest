@@ -59,7 +59,7 @@ test('aggregateRoleStatistics: 계정·직업 조합별로 나뉘고 승률은 �
     assert.equal(u1Citizen.games, 3)
     assert.equal(u1Citizen.wins, 1)
     assert.equal(u1Citizen.survivalCount, 2)
-    assert.equal(u1Citizen.winRate, 1 / 3) // 0.333...으로 반올림되지 않음
+    assert.equal(u1Citizen.winRate, 1 / 3)
 
     assert.equal(u1Joker.games, 1)
     assert.equal(u1Joker.winRate, 1)
@@ -80,9 +80,9 @@ test('buildRoleRanking: 10판 미만은 랭킹에서 제외된다(경계값)', (
 })
 
 test('buildRoleRanking: 승률 내림차순 → 판수 내림차순 → UUID 오름차순', () => {
-    const higherWinRate = statEntry('b-user', 10, 8) // 0.8
-    const moreGamesSameRate = statEntry('a-user', 20, 10) // 0.5
-    const fewerGamesSameRate = statEntry('c-user', 10, 5) // 0.5
+    const higherWinRate = statEntry('b-user', 10, 8)
+    const moreGamesSameRate = statEntry('a-user', 20, 10)
+    const fewerGamesSameRate = statEntry('c-user', 10, 5)
     const result = buildRoleRanking([fewerGamesSameRate, higherWinRate, moreGamesSameRate])
     assert.deepEqual(result.map((r) => r.user_id), ['b-user', 'a-user', 'c-user'])
 })
@@ -109,8 +109,8 @@ test('buildRoleRanking: 0승(0판이 아닌 0승)끼리도 승률 동률로 취�
 })
 
 test('buildRoleRanking: 반올림하면 같아 보이는 승률도 원시 값으로 정확히 정렬된다', () => {
-    const higher = { user_id: 'u-higher', games: 2000, wins: 1201, winRate: 1201 / 2000 } // 0.6005
-    const lower = { user_id: 'u-lower', games: 2000, wins: 1199, winRate: 1199 / 2000 }   // 0.5995
+    const higher = { user_id: 'u-higher', games: 2000, wins: 1201, winRate: 1201 / 2000 }
+    const lower = { user_id: 'u-lower', games: 2000, wins: 1199, winRate: 1199 / 2000 }
     const result = buildRoleRanking([lower, higher])
     assert.deepEqual(result.map((r) => r.user_id), ['u-higher', 'u-lower'])
 })

@@ -13,7 +13,7 @@ export function useInGameResolveNight() {
   const gameId = useInGameStore((s) => s.gameId)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
-  const [status, setStatus] = useState("idle") // idle | resolving | resolved
+  const [status, setStatus] = useState("idle")
   const [error, setError] = useState(null)
   const [nightActionResult, setNightActionResult] = useState(null)
 
@@ -33,7 +33,7 @@ export function useInGameResolveNight() {
     versionRef.current += 1
     ackingRef.current = false
     const patch = computeResolveNightInvalidatePatch(mountedRef.current)
-    if (!patch) return // unmounted: state는 건드리지 않는다
+    if (!patch) return
     setStatus(patch.status)
     setError(patch.error)
     setNightActionResult(patch.nightActionResult)
@@ -43,7 +43,7 @@ export function useInGameResolveNight() {
     versionRef.current += 1
     ackingRef.current = false
     const patch = computeResolveNightDayTransitionPatch(mountedRef.current)
-    if (!patch) return // unmounted: state는 건드리지 않는다
+    if (!patch) return
     setStatus(patch.status)
     setError(patch.error)
   }

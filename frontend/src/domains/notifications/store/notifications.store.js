@@ -82,7 +82,7 @@ export function mergeNotifications(existing, incoming) {
 }
 
 const initialAccountState = () => ({
-  status: "idle", // idle | loading | success | error
+  status: "idle",
   error: null,
   items: [],
   soundSeen: new Set(),

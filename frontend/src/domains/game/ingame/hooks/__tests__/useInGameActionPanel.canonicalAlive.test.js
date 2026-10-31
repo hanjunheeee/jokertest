@@ -117,7 +117,7 @@ test("canonical 판정 불가(self.uuid 없음)면 세션 컨텍스트가 비었
       phase: "DAY",
       dayIndex: 2,
       dayPhase: "DAY_VOTE",
-      self: { role: "CITIZEN" }, // uuid가 없어 roster에서 본인을 특정할 수 없다.
+      self: { role: "CITIZEN" },
       players: [{ uuid: "p1", alive: false }],
       events: [],
     },

@@ -98,7 +98,7 @@ test('submitNightAction: GUARD는 자기 자신을 대상으로 지정하면 INV
 
 test('submitNightAction: WITCH_HUNTER의 자기 자신 지목은 (본인이 생존이므로) TARGET_NOT_DEAD이고 Map은 불변이다', () => {
     const fixture = commitFullRoleSessionAtNight()
-    fixture.session.dayIndex = 2 // WITCH_HUNTER는 둘째 밤부터 eligibility를 통과한다
+    fixture.session.dayIndex = 2
     const before = new Map(fixture.session.nightActions)
 
     const result = submitNightAction(fixture.witchHunterUuid, fixture.session.id, fixture.witchHunterUuid)
@@ -129,18 +129,18 @@ test('submitNightAction: CITIZEN은 항상 NOT_ELIGIBLE이고 Map은 불변이�
 
 test('submitNightAction: WITCH_HUNTER는 dayIndex 1까지 NOT_ELIGIBLE이고 dayIndex 2부터 제출 가능하다', () => {
     const { session, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight()
-    session.players.get(citizenUuid).alive = false // WITCH_HUNTER의 대상은 사망자여야 한다
+    session.players.get(citizenUuid).alive = false
 
     const day0 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
     assert.deepEqual(day0, { ok: false, code: 'NOT_ELIGIBLE' })
     assert.equal(session.nightActions.has(witchHunterUuid), false)
 
-    session.dayIndex = 1 // production의 첫 밤 — 여전히 불가
+    session.dayIndex = 1
     const day1 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
     assert.deepEqual(day1, { ok: false, code: 'NOT_ELIGIBLE' })
     assert.equal(session.nightActions.has(witchHunterUuid), false)
 
-    session.dayIndex = 2 // 두 번째 밤부터 가능
+    session.dayIndex = 2
     const day2 = submitNightAction(witchHunterUuid, session.id, citizenUuid)
     assert.deepEqual(day2, { ok: true, gameId: session.id })
     assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
@@ -212,7 +212,7 @@ test('submitNightAction: WITCH_HUNTER가 사망자를 지목하면 저장되고,
     const before = new Map(session.nightActions)
     const alive = submitNightAction(witchHunterUuid, session.id, doctorUuid)
     assert.deepEqual(alive, { ok: false, code: 'TARGET_NOT_DEAD' })
-    assert.deepEqual(session.nightActions, before) // 기존 유효 제출이 파괴되지 않는다
+    assert.deepEqual(session.nightActions, before)
 })
 
 test('submitNightAction: 생존 대상을 요구하는 역할(DOCTOR/GUARD/JOKER)은 사망자를 지목하면 TARGET_NOT_ALIVE다', () => {
@@ -357,7 +357,7 @@ test('submitNightAction(JOKER no-op 회귀): 기존 유효한 시민 표는 이�
     const result = submitNightAction(actor, session.id, teammate)
 
     assert.deepEqual(result, { ok: true, gameId: session.id })
-    assert.equal(session.nightActions.get(actor), citizenUuid) // 그대로 유지, teammate로 안 바뀜
+    assert.equal(session.nightActions.get(actor), citizenUuid)
 })
 
 test('submitNightAction(JOKER no-op 회귀): 기존 유효한 시민 표는 이후 자기 자신 대상 제출로도 파괴되지 않는다', () => {

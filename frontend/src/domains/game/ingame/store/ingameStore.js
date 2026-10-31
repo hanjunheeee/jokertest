@@ -605,7 +605,7 @@ export const useInGameStore = create((set) => ({
             ...current.state,
             phase: "ENDED",
             dayIndex: payload.dayIndex,
-            dayPhase: null, // 낮을 벗어났다 — dayPhase는 phase === "DAY"일 때만 의미가 있다.
+            dayPhase: null,
             ...CLEARED_NIGHT_TURN,
             players: nextPlayers,
             ...(payload.winResult ? { winResult: payload.winResult } : {}),

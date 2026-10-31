@@ -206,7 +206,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     }
 
     if (isStale()) return finish({ ok: false, stale: true })
-    try { onChanged?.() } catch { /* Audio cannot block the accepted save. */ }
+    try { onChanged?.() } catch {}
 
     let firstRejection = null
     const uncertainSlots = []

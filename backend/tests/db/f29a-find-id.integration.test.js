@@ -81,11 +81,11 @@ const rebuildSchema = async () => {
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 };
 
-let schemaState = 'unknown'; // 'unknown' | 'migrated' | 'dirty'
+let schemaState = 'unknown';
 
 const setUpFreshSchema = async (t) => {
     await rebuildSchema();
-    schemaState = 'dirty'; // 이 케이스는 스키마(0014 up/down)를 직접 다시 조작할 수 있다.
+    schemaState = 'dirty';
     t.diagnostic('[f29a-fixture] mode=fresh-schema');
 };
 
@@ -381,9 +381,9 @@ test('AC-05(기본 한도): 대상 5회·IP 10회를 넘으면 429이고, 날짜
     await createLocalUser({ nickname: '한도대상', email: 'limit-target@example.com', birthDate: new Date(Date.UTC(1996, 6, 7)) });
 
     const targetAttempts = [
-        { nickname: '한도대상', birthDate: '1996-07-07' }, // 실제로 일치하는 요청
-        { nickname: '한도대상', birthDate: '1996-07-08' }, // 날짜만 다름
-        { nickname: ' 한도대상 ', birthDate: '1996-07-09' }, // 앞뒤 공백
+        { nickname: '한도대상', birthDate: '1996-07-07' },
+        { nickname: '한도대상', birthDate: '1996-07-08' },
+        { nickname: ' 한도대상 ', birthDate: '1996-07-09' },
         { nickname: '한도대상', birthDate: '1996-07-10' },
         { nickname: ' 한도대상', birthDate: '1996-07-11' },
     ];

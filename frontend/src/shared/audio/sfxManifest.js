@@ -36,10 +36,10 @@ export const SFX_SUPPRESSED_REASON = Object.freeze({
 })
 
 export const SFX_SCOPE = Object.freeze({
-  ACCOUNT: "account", // 친구·업적처럼 계정 전역에서 한 번만 나는 사건
+  ACCOUNT: "account",
   GAME: "game",
   ROOM: "room",
-  UI: "ui", // 물리 활성화 단위 — 서버 사건이 아니다
+  UI: "ui",
 })
 
 export const SFX_CLASSIFICATION = Object.freeze({

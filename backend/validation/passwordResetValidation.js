@@ -12,7 +12,7 @@ const validateResetEmail = (email) => {
     const trimmed = email.trim();
     if (!trimmed) return { ok: false, message: INVALID_MESSAGE };
     if (trimmed.length > EMAIL_MAX_LENGTH) return { ok: false, message: INVALID_MESSAGE };
-    if (/\s/.test(trimmed)) return { ok: false, message: INVALID_MESSAGE }; // 내부 공백 금지
+    if (/\s/.test(trimmed)) return { ok: false, message: INVALID_MESSAGE };
 
     const atIndex = trimmed.indexOf('@');
     if (atIndex <= 0 || atIndex === trimmed.length - 1) return { ok: false, message: INVALID_MESSAGE };

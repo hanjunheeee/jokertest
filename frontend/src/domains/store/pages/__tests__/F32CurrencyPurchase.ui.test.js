@@ -167,7 +167,7 @@ const openCurrencyTab = async (view) => { await click(view, "인게임 재화");
 test.afterEach(async () => {
   cleanup()
   mock.timers.reset()
-  await setUser(null) // 진행 중 타이머·요청의 늦은 결과를 계정 무효화로 정리한다
+  await setUser(null)
 })
 
 test("AC-01: 서버 상품표를 순서·가격·지급량 그대로 보여 주고 주문→SDK→복귀 후 confirm 순서로 호출한다", async () => {
@@ -338,7 +338,7 @@ test("AC-02: 계정이 바뀐 뒤 이전 계정의 확인 종료는 새 계정�
   route("POST", CONFIRM, () => confirm.promise)
   await mountStore({ path: RETURN })
   await waitFor(() => assert.equal(posts(CONFIRM).length, 1))
-  await goToReturn("/store") // 새 계정은 복귀 URL이 아닌 일반 진입으로 시작한다
+  await goToReturn("/store")
   await setUser({ uuid: "user-2", nickname: "둘째" })
   await flush()
   const afterSwitch = count("GET", WALLET)
@@ -359,7 +359,7 @@ test("BQ AC-01: 이전 계정의 성공 복귀 확인이 늦게 끝나도 새 �
   await waitFor(() => assert.equal(posts(CONFIRM).length, 2))
   await flush()
   assert.equal(historyOf("user-2"), 0)
-  held[0].resolve(apiError(400, "AMOUNT_MISMATCH")) // A의 confirm이 뒤늦게 끝난다
+  held[0].resolve(apiError(400, "AMOUNT_MISMATCH"))
   await flush()
   assert.equal(historyOf("user-2"), 0, "A의 늦은 확인 종료가 B의 원장 조회를 시작하지 않는다")
   held[1].resolve(apiError(400, "AMOUNT_MISMATCH"))
@@ -440,7 +440,7 @@ test("AC-03: 자동 조회는 2초 간격 최대 5회에서 멈추고 수동 결
   mock.timers.enable({ apis: ["setTimeout"] })
   const view = await mountStore({ path: RETURN })
   await flush()
-  await untilBalance(view, DIAMOND_LABEL, "유료 재화 100") // 새 문서: 첫 확인 종료 뒤 진입 조회
+  await untilBalance(view, DIAMOND_LABEL, "유료 재화 100")
   for (let i = 1; i <= 5; i += 1) { await tick(2000); assert.equal(count("GET", ORDER_GET), i) }
   await tick(10000)
   assert.equal(count("GET", ORDER_GET), 5)
@@ -849,7 +849,7 @@ function makeController(idPrefix = "r") {
     postGold: (payload) => { goldPosts.push(payload); return behavior.postGold(payload) },
     lookup: (id, kind) => { lookups.push([id, kind]); return behavior.lookup(id, kind) },
     refresh: (result) => { refreshes.push(result) },
-    randomId: () => `${idPrefix}${++serial}`, // 실제 randomUUID는 컨트롤러마다 겹치지 않는다
+    randomId: () => `${idPrefix}${++serial}`,
   })
   controller.activate("A")
   return { controller, goldPosts, lookups, refreshes, legacyPosts, behavior }

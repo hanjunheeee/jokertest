@@ -194,20 +194,20 @@ test("AC-01: unverified·sending·codeSent·verifying 단계 전부에서 가입
     assert.equal(fetchCalls.filter((c) => c.url === "/auth/signup").length, before, "인증 전 제출은 가입 API를 부르면 안 된다")
   }
 
-  await assertBlocked() // unverified
+  await assertBlocked()
 
   act(() => { fireEvent.click(sendButton(view)) })
-  await assertBlocked() // sending
+  await assertBlocked()
 
   await act(async () => { resolveSend(jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 })) })
-  await assertBlocked() // codeSent
+  await assertBlocked()
 
   fetchHandler = makeRouter({
-    "POST /auth/signup/email-code/verify": () => new Promise(() => {}), // 응답 없이 verifying 유지
+    "POST /auth/signup/email-code/verify": () => new Promise(() => {}),
   })
   fireEvent.change(codeInput(view), { target: { value: "123456" } })
   act(() => { fireEvent.click(verifyButton(view)) })
-  await assertBlocked() // verifying
+  await assertBlocked()
 })
 
 test("AC-01: codeExpired·locked 단계에서도 가입 버튼은 비활성화된다", async (t) => {
@@ -233,7 +233,7 @@ test("AC-01: codeExpired·locked 단계에서도 가입 버튼은 비활성화�
     "POST /auth/signup/email-code": () => jsonResponse(200, { ok: true, resendAfterSec: 60, expiresInSec: 600 }),
     "POST /auth/signup/email-code/verify": () => jsonResponse(429, { ok: false, code: "TOO_MANY_ATTEMPTS" }),
   })
-  await act(async () => { fireEvent.click(sendButton(view)) }) // 재발송
+  await act(async () => { fireEvent.click(sendButton(view)) })
   fireEvent.change(codeInput(view), { target: { value: "000000" } })
   await act(async () => { fireEvent.click(verifyButton(view)) })
   assert.equal(submitButton(view).disabled, true, "locked")
@@ -337,7 +337,7 @@ test("AC-03: 재발송 대기가 60초에서 매초 줄어들고 0초가 되어�
   assert.equal(sendButton(view).textContent, "재발송 (59초)")
 
   const callsBeforeWait = fetchCalls.length
-  fireEvent.click(sendButton(view)) // 비활성 버튼 클릭 — 추가 호출이 없어야 한다
+  fireEvent.click(sendButton(view))
   assert.equal(fetchCalls.length, callsBeforeWait)
 
   act(() => { t.mock.timers.tick(59000) })
@@ -369,7 +369,7 @@ test("AC-03: 인증번호 만료 시각에 도달하면 codeExpired로 자동 �
   fillSignupFields(view)
   await act(async () => { fireEvent.click(sendButton(view)) })
 
-  act(() => { t.mock.timers.tick(600000) }) // 10분(=expiresInSec) 경과
+  act(() => { t.mock.timers.tick(600000) })
 
   assert.match(notice(view), /만료/)
   assert.equal(verifyButton(view).disabled, true)
@@ -414,7 +414,7 @@ test("AC-03: 오입력 남은 횟수·요청 제한·통신 실패는 서로 다
 
 test("AC-03: 잘못된 body(계약 밖 200 응답)도 특정 실패로 단정하지 않고 재시도 안내를 보여준다", async () => {
   fetchHandler = makeRouter({
-    "POST /auth/signup/email-code": () => jsonResponse(200, { ok: "true" }), // ok가 boolean이 아님
+    "POST /auth/signup/email-code": () => jsonResponse(200, { ok: "true" }),
   })
   const view = await mountLoginPageAtSignup()
   fillSignupFields(view)

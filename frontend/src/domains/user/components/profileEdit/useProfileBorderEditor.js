@@ -25,7 +25,7 @@ export function useProfileBorderEditor({ open, onClose }) {
   const [activeTab, setActiveTab] = useState(PROFILE_EDIT_TAB_PHOTO)
   const [draftPhotoItemId, setDraftPhotoItemId] = useState(currentPhotoItemId)
   const [draftBorderItemId, setDraftBorderItemId] = useState(currentBorderItemId)
-  const [confirmStatus, setConfirmStatus] = useState("idle") // idle | saving
+  const [confirmStatus, setConfirmStatus] = useState("idle")
   const [confirmError, setConfirmError] = useState(null)
   const [confirmUncertain, setConfirmUncertain] = useState(false)
 
@@ -92,7 +92,7 @@ export function useProfileBorderEditor({ open, onClose }) {
           : "ready"
 
   const handleConfirm = useCallback(async ({ onChanged } = {}) => {
-    if (confirmStatus === "saving" || pendingSaveRef.current) return // 중복 확인 방지
+    if (confirmStatus === "saving" || pendingSaveRef.current) return
 
     const photoChanged = draftPhotoItemId !== currentPhotoItemId
     const borderChanged = draftBorderItemId !== currentBorderItemId
@@ -102,7 +102,7 @@ export function useProfileBorderEditor({ open, onClose }) {
     }
 
     pendingSaveRef.current = true
-    try { onChanged?.() } catch { /* Audio cannot block the accepted save. */ }
+    try { onChanged?.() } catch {}
     setConfirmStatus("saving")
     setConfirmError(null)
     setConfirmUncertain(false)
@@ -122,7 +122,7 @@ export function useProfileBorderEditor({ open, onClose }) {
       setConfirmStatus("idle")
       onClose()
     } catch (error) {
-      if (isStale()) return // 이전 세션의 응답은 현재 화면이나 재조회를 변경하지 않는다.
+      if (isStale()) return
       const confirmedRejection = typeof error?.code === "string" && error.code.length > 0
       let refreshUncertain = false
       if (!confirmedRejection) {

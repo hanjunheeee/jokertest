@@ -29,7 +29,7 @@ const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSch
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });
 
-let sequelize; // 시험 자신의 연결 — 외부 상품 작성자와 DB 검사자 역할(앱과 별도 연결)
+let sequelize;
 
 test.before(async () => {
     if (!TEST_DB_URL) return;
@@ -600,7 +600,7 @@ test('AC-05: 실제 어댑터 — 키 누락·live 키는 CONFIG_MISSING이고, 
     if (unavailable(t)) return;
     await setUp();
     stubAuthGate(t);
-    const call = http(await startServer(t)); // 가짜 어댑터를 끼우지 않는다 — 실제 tossAdapter
+    const call = http(await startServer(t));
     const user = await createUser('real');
     await insertProduct();
 
@@ -802,7 +802,7 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
     topupService.confirmTopupOrder = async (...args) => {
         const result = await originalConfirm.apply(topupService, args);
         markCommitted(result);
-        await clientGone; // 클라이언트가 떠난 뒤에야 라우터가 응답을 쓴다
+        await clientGone;
         return result;
     };
     t.after(() => { topupService.confirmTopupOrder = originalConfirm; openResponse(); });
@@ -822,7 +822,7 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
     const lostResult = await inFlight;
     assert.equal(lostResult.aborted, 'AbortError', '클라이언트는 응답을 받지 못했다');
     assert.equal(lostResult.res, undefined);
-    openResponse(); // 서버는 끊어진 연결에 응답을 쓴다
+    openResponse();
     topupService.confirmTopupOrder = originalConfirm;
 
     assert.equal(await ledgerCount(user, orderId), 1);
@@ -1210,7 +1210,7 @@ const snapshotEconomy = async () => {
 
 test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그대로이고, 반복 적용·up/verify 직접 반복·부분 인덱스 실패 복구가 통과한다', async (t) => {
     if (unavailable(t)) return;
-    schemaReady = false; // 이 케이스는 스키마를 직접 만진다 — 다음 케이스는 전체 재구축한다
+    schemaReady = false;
     t.after(() => { schemaReady = false; });
 
     const index0018 = MIGRATIONS.findIndex((m) => m.name === addCurrencyProductsTopupOrders.name);

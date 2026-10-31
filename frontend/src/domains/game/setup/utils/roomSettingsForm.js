@@ -236,7 +236,7 @@ export function collectSpecifiedRoleNightActionTimes(ranges, specified) {
   if (Array.isArray(specified)) {
     for (const role of specified) {
       const id = ROLE_TO_NIGHT_TIME_ID[role]
-      if (id === undefined) continue // 알 수 없는 역할은 만들지 않는다(서버도 거부한다)
+      if (id === undefined) continue
       if (!Object.hasOwn(ranges ?? {}, id)) continue
       roleNightActionTimes[role] = ranges[id]
     }

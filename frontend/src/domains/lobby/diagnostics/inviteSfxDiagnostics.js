@@ -30,7 +30,7 @@ const listeners = new Set();
 
 function notify() {
     for (const listener of [...listeners]) {
-        try { listener(); } catch { /* 구독자 오류가 다음 구독자를 막지 않는다 */ }
+        try { listener(); } catch {}
     }
 }
 

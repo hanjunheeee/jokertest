@@ -209,7 +209,7 @@ test("이전에 죽은 참가자가 있고 이번 밤 새 희생자가 없으면
     nonTerminalPayload({
       victimUuid: null,
       players: [
-        { uuid: "p1", alive: false }, // 지난 TRIBUNAL에서 이미 처형됨
+        { uuid: "p1", alive: false },
         { uuid: "p2", alive: true },
         { uuid: "p3", alive: true },
       ],
@@ -230,8 +230,8 @@ test("이전에 죽은 참가자가 있고 이번 밤 새 희생자가 생기면
     nonTerminalPayload({
       victimUuid: "p2",
       players: [
-        { uuid: "p1", alive: false }, // 지난 TRIBUNAL에서 이미 처형됨
-        { uuid: "p2", alive: false }, // 이번 밤의 새 희생자
+        { uuid: "p1", alive: false },
+        { uuid: "p2", alive: false },
         { uuid: "p3", alive: true },
       ],
     }),
@@ -251,7 +251,7 @@ test("이미 죽은 참가자가 roster에서 다시 살아나면(resurrection) 
     nonTerminalPayload({
       victimUuid: null,
       players: [
-        { uuid: "p1", alive: true }, // 지난 TRIBUNAL에서 죽었는데 되살아난 것처럼 옴 — 거부돼야 함
+        { uuid: "p1", alive: true },
         { uuid: "p2", alive: true },
         { uuid: "p3", alive: true },
       ],

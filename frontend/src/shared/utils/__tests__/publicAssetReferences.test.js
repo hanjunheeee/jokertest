@@ -72,7 +72,7 @@ function readStringLiteralAt(content, i) {
       j += 1
       break
     }
-    if (c === "\n" && quote !== "`") break // 일반 문자열은 줄바꿈에서 종료(비정상 리터럴로 취급)
+    if (c === "\n" && quote !== "`") break
     raw += c
     j += 1
   }
@@ -139,7 +139,7 @@ function resolveModuleSpecifier(spec, fromFile) {
   let base
   if (spec.startsWith(".")) base = path.resolve(path.dirname(fromFile), spec)
   else if (spec.startsWith("@/")) base = path.join(SRC_DIR, spec.slice(2))
-  else return null // 외부 패키지 — 이 스캔 대상이 아니다
+  else return null
 
   for (const candidate of [
     base,
@@ -192,7 +192,7 @@ function resolveValueAt(content, index, file) {
   let i = index
   while (i < content.length && /\s/.test(content[i])) i++
   const ch = content[i]
-  if (ch !== '"' && ch !== "'" && ch !== "`") return null // 객체/배열/기타 표현식은 대상 밖
+  if (ch !== '"' && ch !== "'" && ch !== "`") return null
 
   const lit = readStringLiteralAt(content, i)
   if (lit.quote !== "`") return unescapeLiteral(lit.raw)
@@ -216,7 +216,7 @@ function findTopLevelConstLiteral(file, name) {
 function resolveExprToLiteral(expr, file, visited = new Set()) {
   const trimmed = expr.trim()
   if (/^["'`]/.test(trimmed)) return resolveValueAt(trimmed, 0, file)
-  if (!/^[\w$]+$/.test(trimmed)) return null // 멤버 접근·함수 호출·연산 등은 대상 밖
+  if (!/^[\w$]+$/.test(trimmed)) return null
   return resolveIdentifierLiteral(trimmed, file, visited)
 }
 
@@ -346,8 +346,8 @@ for (const file of SOURCE_FILES) {
       continue
     }
 
-    if (!looksAssetShaped) continue // 에셋 경로 모양이 아닌 동적 템플릿(클래스명 등)은 대상 밖
-    if (TEMPLATE_VERIFIED_BY_IMPORT_FILES.has(file)) continue // 아래에서 실값으로 별도 검증
+    if (!looksAssetShaped) continue
+    if (TEMPLATE_VERIFIED_BY_IMPORT_FILES.has(file)) continue
 
     unresolvedTemplateFailures.push(
       `해석 불가한 동적 템플릿(에셋 경로로 보임): \`${lit.raw}\`\n참조 위치: ${relativeToSrc(file)}\n` +

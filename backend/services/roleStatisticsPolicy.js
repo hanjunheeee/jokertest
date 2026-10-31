@@ -19,7 +19,7 @@ function aggregateRoleStatistics(rows) {
     const grouped = new Map()
 
     for (const row of rows ?? []) {
-        if (row.won !== true && row.won !== false) continue // null/undefined 제외(AC-05)
+        if (row.won !== true && row.won !== false) continue
         if (typeof row.user_id !== 'string' || !ROLE_CODES.includes(row.role)) continue
 
         const key = `${row.user_id}\u0000${row.role}`
@@ -70,7 +70,7 @@ function selectMaskOfFateRole(statsByRoleForUser, { minGames = MASK_OF_FATE_MIN_
     ))[0]
 }
 
-const EXCLUDED_GAME_SOURCES = new Set(['development', 'test']) // 자동 시험(test)·옛 개발 판(development)은 보상 대상이 아니다
+const EXCLUDED_GAME_SOURCES = new Set(['development', 'test'])
 function isAchievementRewardEligibleGame({ completed, gameSourceValue }) {
     return completed === true && !EXCLUDED_GAME_SOURCES.has(gameSourceValue)
 }

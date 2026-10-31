@@ -1197,7 +1197,7 @@ test("F-23(SPLIT-2) · 연결이 교체되면 옛 소켓의 오염된 설정 사
 
   const beforeOnOldSocket = firstSocket.requestsOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).length
   const receiptsBefore = clientReceiptsOf(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, secondSocket).length
-  seedContaminatedSettings(room.roomId) // 저장 직전의 저장값에 옛 오염이 남아 있는 상황
+  seedContaminatedSettings(room.roomId)
   const currentForm = buildRoomSettingsFormState({
     accessType: useMatchingStore.getState().accessType,
     settings: useMatchingStore.getState().settings,

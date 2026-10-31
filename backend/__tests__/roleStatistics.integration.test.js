@@ -169,9 +169,9 @@ test("AC-03: 최소 10판 미만 사용자는 랭킹에서 빠지고, 나머지�
     fixture.addUser("c-user", { nickname: "씨유저", profile_image_url: "/c.png" });
 
     for (let i = 0; i < 9; i += 1) fixture.addPlayer(playerRow("g1", "under-10", "JOKER", true));
-    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "b-user", "JOKER", i < 8));   // 0.8
-    for (let i = 0; i < 20; i += 1) fixture.addPlayer(playerRow("g1", "a-user", "JOKER", i < 10));  // 0.5, 20판
-    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "c-user", "JOKER", i < 5));   // 0.5, 10판
+    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "b-user", "JOKER", i < 8));
+    for (let i = 0; i < 20; i += 1) fixture.addPlayer(playerRow("g1", "a-user", "JOKER", i < 10));
+    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "c-user", "JOKER", i < 5));
 
     const ranking = await gameResultRepository.getRoleRanking("JOKER");
 
@@ -187,8 +187,8 @@ test("F-13 AC-05: getRoleRanking은 계정별로 서로 다른 실제 장착 사
     fixture.addUser("b-user", { nickname: "비유저", profile_image_url: "/b.png" });
     fixture.addUser("a-user", { nickname: "에이유저", profile_image_url: "/a.png" });
 
-    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "b-user", "JOKER", i < 8));  // 0.8
-    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "a-user", "JOKER", i < 5));  // 0.5
+    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "b-user", "JOKER", i < 8));
+    for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "a-user", "JOKER", i < 5));
 
     let seenUserIds = null;
     gameResultRepository.__setEconomyServiceForTests({
@@ -235,7 +235,7 @@ test("A-10: 랭킹 응답은 화면이 페이지를 넘기기 전에 잘리지 �
 
 test("AC-05: settings.gameSource가 아예 없는(이 기능 이전) 과거 경기는 운영 기록으로 소급 집계된다", async (t) => {
     const fixture = setupFixtureDb(t);
-    fixture.addGame("legacy-1", {}); // gameSource 필드 자체가 없다 — 식별 근거 없음(A-07)
+    fixture.addGame("legacy-1", {});
     fixture.addPlayer(playerRow("legacy-1", "u1", "DOCTOR", true));
 
     const stats = await gameResultRepository.getMyRoleStatistics("u1");
@@ -258,8 +258,8 @@ test("AC-05/A-07: settings.gameSource.value가 development인 경기는 내 전�
 test("AC-05: 중단 경기의 이탈자 패배 전적은 유지되고 won=null 잔류자는 생존 수에도 들어가지 않는다", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("abort-1", { gameSource: productionGame() });
-    fixture.addPlayer(playerRow("abort-1", "leaver", "CITIZEN", false, false)); // 이탈자: 패배 확정
-    fixture.addPlayer(playerRow("abort-1", "stayer", "CITIZEN", null, true));  // 잔류자: 미확정
+    fixture.addPlayer(playerRow("abort-1", "leaver", "CITIZEN", false, false));
+    fixture.addPlayer(playerRow("abort-1", "stayer", "CITIZEN", null, true));
 
     const leaverStats = await gameResultRepository.getMyRoleStatistics("leaver");
     const citizen = leaverStats.find((s) => s.role === "CITIZEN");
@@ -274,8 +274,8 @@ test("AC-05: 중단 경기의 이탈자 패배 전적은 유지되고 won=null �
 test("AC-04: 운명의 가면은 최다 플레이가 아니라 최소 1판 이상 최고 승률 직업이다", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("g1", { gameSource: productionGame() });
-    for (let i = 0; i < 20; i += 1) fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", i < 8)); // 20판, 0.4
-    for (let i = 0; i < 5; i += 1) fixture.addPlayer(playerRow("g1", "u1", "JOKER", true));      // 5판, 1.0
+    for (let i = 0; i < 20; i += 1) fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", i < 8));
+    for (let i = 0; i < 5; i += 1) fixture.addPlayer(playerRow("g1", "u1", "JOKER", true));
 
     const result = await gameResultRepository.getHighestWinRateRole("u1");
     assert.equal(result.role, "JOKER");
@@ -300,7 +300,7 @@ test("A-11: getMyProfile은 most_played_role을 그대로 유지하면서 highes
     t.after(() => { userRepository.getMyProfile = originalUserRepo; });
 
     fixture.addGame("g1", { gameSource: productionGame() });
-    for (let i = 0; i < 3; i += 1) fixture.addPlayer(playerRow("g1", "u1", "JOKER", true)); // 3판 전승 → 최고 승률
+    for (let i = 0; i < 3; i += 1) fixture.addPlayer(playerRow("g1", "u1", "JOKER", true));
 
     const { status, body } = await callController(profileController.getMyProfile, { user: { uuid: "u1" } });
 
@@ -351,9 +351,9 @@ test("F-30 AC-02: 표시 판수·승률은 계정 전체 유효 종료 경기의
     fixture.addGame("g1", { gameSource: productionGame() });
     fixture.addGame("g2", { gameSource: productionGame() });
     fixture.addGame("g3", { gameSource: productionGame() });
-    fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", true));   // 시민 1승
-    fixture.addPlayer(playerRow("g2", "u1", "CITIZEN", false));  // 시민 1패
-    fixture.addPlayer(playerRow("g3", "u1", "JOKER", true));     // 광대 1승(1판)
+    fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", true));
+    fixture.addPlayer(playerRow("g2", "u1", "CITIZEN", false));
+    fixture.addPlayer(playerRow("g3", "u1", "JOKER", true));
 
     const data = await getMyProfileData();
 
@@ -383,11 +383,11 @@ test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 
     assert.equal(data.total_games, 4);
     assert.equal(data.account_win_rate, 1 / 2);
 
-    fixture.addPlayer(playerRow("abort-1", "u1", "DOCTOR", null, true));      // 잔류자(미확정)
+    fixture.addPlayer(playerRow("abort-1", "u1", "DOCTOR", null, true));
     fixture.addGame("dev-1", { gameSource: developmentGame() });
-    fixture.addPlayer(playerRow("dev-1", "u1", "JOKER", true));               // 개발 경기 승리
-    fixture.addPlayer(playerRow("g1", "other", "CITIZEN", true));             // 타 계정
-    fixture.addPlayer(playerRow("no-such-game", "u1", "CITIZEN", true));      // JOIN 대상 없음
+    fixture.addPlayer(playerRow("dev-1", "u1", "JOKER", true));
+    fixture.addPlayer(playerRow("g1", "other", "CITIZEN", true));
+    fixture.addPlayer(playerRow("no-such-game", "u1", "CITIZEN", true));
 
     data = await getMyProfileData();
     assert.equal(data.total_games, 4, "잔류자·개발 경기·타 계정·JOIN 대상 없는 행이 표시 판수에 섞였다");

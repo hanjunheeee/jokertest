@@ -262,7 +262,7 @@ test("applyTribunalResolvedPure: dayIndex가 현재와 다르면(stale/mismatch)
 test("applyTribunalResolvedPure: ENDED 확정 이후 도착하는 비종료·종료 payload가 상태를 되돌리지 못한다", () => {
   const current = baseCurrent()
   const patch = applyTribunalResolvedPure(current, terminalTribunalPayload())
-  const merged = { ...current, ...patch } // zustand의 set() 병합 방식을 그대로 재현한다.
+  const merged = { ...current, ...patch }
   assert.equal(merged.state.phase, "ENDED")
 
   const afterNonTerminal = applyTribunalResolvedPure(merged, basePayload())
@@ -329,14 +329,14 @@ test("applyTribunalResolvedPure: 구조 불량 NIGHT 전이 payload는 상태를
   const current = baseCurrent()
 
   assert.equal(applyTribunalResolvedPure(current, nightTribunalPayload({ defendantUuid: "someone-else" })), current)
-  assert.equal(applyTribunalResolvedPure(current, nightTribunalPayload({ outcome: "NOT_GUILTY" })), current) // executedUuid가 defendantUuid와 불일치
+  assert.equal(applyTribunalResolvedPure(current, nightTribunalPayload({ outcome: "NOT_GUILTY" })), current)
   assert.equal(applyTribunalResolvedPure(current, nightTribunalPayload({ gameId: "other" })), current)
 })
 
 test("applyTribunalResolvedPure: NIGHT 전이 이후 재도착하는 NIGHT/TRIBUNAL payload는 상태를 되돌리지 못한다(멱등)", () => {
   const current = baseCurrent()
   const patch = applyTribunalResolvedPure(current, nightTribunalPayload())
-  const merged = { ...current, ...patch } // zustand의 set() 병합 방식을 그대로 재현한다.
+  const merged = { ...current, ...patch }
   assert.equal(merged.state.phase, "NIGHT")
   assert.equal(merged.state.tribunal, null)
 

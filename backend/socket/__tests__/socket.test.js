@@ -10,7 +10,7 @@ const presenceService = require('../../service/presence.service')
 const { createFakeSocket, createFakeIo } = require('./testHelpers/matchmakingFixtures')
 
 test('disconnect 시 registerDisconnectHandler가 gameSession.onDisconnect를 실제로 호출한다 (DB 접근 없음)', (t) => {
-    matchmaking.__resetStateForTests() // matchmaking.onDisconnect가 실행되므로 위생상 초기화
+    matchmaking.__resetStateForTests()
 
     const onDisconnectMock = t.mock.method(gameSessionSocketLayer, 'onDisconnect', async () => {})
     const handlers = {}
@@ -85,7 +85,7 @@ test('forcedLogout으로 강제 종료된 소켓도 활성 GameSession을 종료
 
     socket.__testables.registerDisconnectHandler(fakeIo, fakeSocket, 'forced-a')
     handlers.disconnect()
-    await Promise.resolve() // gameSession.onDisconnect는 await 없이 동기적으로 registry를 정리하지만, 방어적으로 한 틱 흘려보낸다.
+    await Promise.resolve()
 
     const snapshotAfter = gameSessionCore.__getStateSnapshotForTests()
     assert.equal(snapshotAfter.gameSessions.some(([gameId]) => gameId === prepared.session.id), true)

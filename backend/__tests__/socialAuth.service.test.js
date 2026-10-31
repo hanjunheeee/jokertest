@@ -25,12 +25,12 @@ const createRowLocks = () => {
 };
 
 const createFakeUserRepository = () => {
-    const oauthStates = new Map(); // state_hash -> row
+    const oauthStates = new Map();
     let nextStateId = 1;
     const usersByUuid = new Map();
     const usersByEmail = new Map();
-    const externalIdentities = new Map(); // `${provider}:${subject}` -> row
-    const socialSignupIntents = new Map(); // intent_token_hash -> row
+    const externalIdentities = new Map();
+    const socialSignupIntents = new Map();
     const locks = createRowLocks();
 
     return {

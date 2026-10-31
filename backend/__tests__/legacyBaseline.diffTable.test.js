@@ -30,7 +30,7 @@ const fakeRawDefault = (columnDef) => {
     if (!Object.prototype.hasOwnProperty.call(columnDef, 'defaultValue')) return null;
     const value = columnDef.defaultValue;
     if (value === Sequelize.NOW) return 'CURRENT_TIMESTAMP';
-    if (value === Sequelize.UUIDV4) return null; // 애플리케이션 레벨 생성 — DB DEFAULT 없음
+    if (value === Sequelize.UUIDV4) return null;
     if (value === null) return null;
     if (typeof value === 'boolean') return value ? '1' : '0';
     return String(value);
@@ -105,7 +105,7 @@ test('diffTable: 구조가 완전히 일치하면 문제가 없다 (game_result_
 test('diffTable: 컬럼 기본값이 실제 DB와 다르면 잡아낸다', async () => {
     const definition = definitions.users;
     const describeTable = fakeDescribeTable(definition);
-    describeTable.role.defaultValue = 'ADMIN'; // 기대값은 'USER'
+    describeTable.role.defaultValue = 'ADMIN';
     const problems = await baseline.diffTable(
         buildQueryInterface(definition, { describeTable }), Sequelize, 'users', definition,
     );
@@ -115,7 +115,7 @@ test('diffTable: 컬럼 기본값이 실제 DB와 다르면 잡아낸다', async
 test('diffTable: NOW() 기본값(CURRENT_TIMESTAMP)이 실제 DB에 없으면 잡아낸다', async () => {
     const definition = definitions.password_reset_tokens;
     const describeTable = fakeDescribeTable(definition);
-    describeTable.created_at.defaultValue = null; // 기대값은 CURRENT_TIMESTAMP
+    describeTable.created_at.defaultValue = null;
     const problems = await baseline.diffTable(
         buildQueryInterface(definition, { describeTable }), Sequelize, 'password_reset_tokens', definition,
     );

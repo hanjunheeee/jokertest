@@ -27,12 +27,12 @@ const createInitialState = () => ({
   owned: [],
   selectedSlots: emptySlots(),
   selectedSlotIndex: 0,
-  status: "idle", // idle | loading | ready | error
+  status: "idle",
   error: null,
   conflict: null,
   gameSlots: null,
   gameScopeKey: null,
-  gameStatus: "idle", // idle | loading | ready | error
+  gameStatus: "idle",
 })
 
 let gamePendingKey = null

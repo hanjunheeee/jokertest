@@ -318,7 +318,7 @@ export function createSfxPlayer(io) {
       return completion
     }
 
-    const loadControl = { /* 소리 재생 정보를 확인해, 현재 요청에 사용할 수 있는 상태인지 판단한다. */ isCancelled: /* 소리 재생에서 Cancelled 조건을 확인한다. | 관련 함수: isStale (frontend/src/shared/audio/sfxPlayer.js) */ () => isStale() }
+    const loadControl = {isCancelled:() => isStale() }
     let loading
     try {
       loading = Promise.resolve(loadAsset(entry, loadControl))
@@ -480,7 +480,7 @@ export function createSfxPlayer(io) {
     const admitted = admit(mode === "embedded" ? { ...rawEvent, audioMode: "embedded" } : rawEvent)
     if (!admitted.ok) {
       record(admitted.reason, admitted.event ?? rawEvent, { stage: "claim" })
-      return { status: "suppressed", reason: admitted.reason, /* 연결에 필요한 이벤트 처리·구독을 연결하거나 해제한다. */ attach: /* 소리 재생의 연결에 연결할 처리·구독을 관리한다. */ () => false, /* 더는 사용하지 않을 해제를 정리하거나 해제한다. */ release: () => {
+      return { status: "suppressed", reason: admitted.reason,attach:() => false,release: () => {
 } }
     }
 

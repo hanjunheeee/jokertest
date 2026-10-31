@@ -266,7 +266,7 @@ test("AC-05 · 결과 조회보다 나중에 도착한 더 새로운 설정 방�
 
 async function fireFromSupersededSocket(socketA, event, payload) {
   const socketB = createFakeSocket("sock-B")
-  socketB.answer = () => HOLD // 새 조회를 붙잡아 둬 잘못된 사건을 덮어 가리지 않는다.
+  socketB.answer = () => HOLD
   await act(async () => {
     setSocket(socketB)
     assert.equal(socketA.listenerCount(event), 1, `반드시 cleanup 전에 재현해야 한다(${event})`)
@@ -417,7 +417,7 @@ test("AC-05 · 확인 중에 신원이 바뀌면 검증이 확인 중에 갇히�
   useMatchingStore.getState().clearRoom()
   useAuthStore.setState({ user: { uuid: HOST }, isLoggedIn: true })
   const socketA = createFakeSocket("sock-A")
-  socketA.answer = () => HOLD // 최초 확인을 붙잡아 둔다.
+  socketA.answer = () => HOLD
   setSocket(socketA)
 
   const { result } = renderHook(() => useMatchingRoom(roomCallbacks))

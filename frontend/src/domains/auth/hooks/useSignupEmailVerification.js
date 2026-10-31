@@ -3,16 +3,16 @@ import { requestSignupCodeApi, verifySignupCodeApi } from "../api/auth.api.js"
 
 const INITIAL_EMAIL_VERIFICATION = {
   stage: "unverified",
-  email: "", // 이 상태가 유효한 이메일(발송 대상) — 입력값과 다르면 재인증이 필요합니다.
+  email: "",
   code: "",
   signupProof: null,
-  resendAvailableAt: null, // 절대 시각(ms). 재발송 가능 시각.
-  codeExpiresAt: null, // 절대 시각(ms). codeSent일 때만 의미가 있습니다.
+  resendAvailableAt: null,
+  codeExpiresAt: null,
   attemptsRemaining: null,
   message: "",
 }
 
-const SIGNUP_EMAIL_MAX_LENGTH = 100 // backend/validation/signupEmailVerificationValidation.js와 동일한 상한.
+const SIGNUP_EMAIL_MAX_LENGTH = 100
 
 export function isValidSignupEmailFormat(email) {
   if (typeof email !== "string") return false
@@ -120,13 +120,13 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
       ...prev,
       stage: "sending",
       email,
-      code: isResend ? "" : prev.code, // 재발송이면 이전에 입력하던 번호를 비웁니다.
+      code: isResend ? "" : prev.code,
       message: "",
     }))
 
     try {
       const result = await requestSignupCodeApi({ email })
-      if (verificationGenerationRef.current !== requestGeneration) return // 이미 무효화됨
+      if (verificationGenerationRef.current !== requestGeneration) return
 
       if (result?.ok === true && Number.isFinite(result.resendAfterSec) && Number.isFinite(result.expiresInSec)) {
         const now = Date.now()

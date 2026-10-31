@@ -225,7 +225,7 @@ test("AC-05: 이모티콘 탭에서도 일괄구매로 상점 이모티콘을 �
   await openEmoticonTab(view)
 
   await click(view, "일괄구매")
-  await selectItem(view, "가시박힌 심장") // 탭 진입 시 자동 선택된 상품 해제
+  await selectItem(view, "가시박힌 심장")
   await selectItem(view, "깜짝")
   await selectItem(view, "정조준")
   await click(view, "구매")

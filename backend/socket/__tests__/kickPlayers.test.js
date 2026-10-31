@@ -1947,7 +1947,7 @@ async function settleChannelRetries(times = 8) {
 
 test('AC-06: 유효한 전달 제외는 수위(1024)를 넘어도 하나도 축출되지 않는다', async () => {
     const channelId = 'chan-capacity'
-    const total = channelMembership.CHANNEL_EXCLUSION_ALARM_ENTRIES + 1 // 1025
+    const total = channelMembership.CHANNEL_EXCLUSION_ALARM_ENTRIES + 1
     const sockets = []
 
     for (let i = 0; i < total; i += 1) {
@@ -2353,7 +2353,7 @@ test('AC-06: 재가입이 끝나기 전에 추방되면 그 가입은 되돌아�
     t.after(() => matchmaking.setOnlineUsersRegistry(null))
 
     const resync = resyncRoomChannelOnReconnect(reconnected, target)
-    await gate.called // join 안에서 gate를 기다리는 중이다
+    await gate.called
 
     const kicked = kickRoomPlayer(io, sockets[host], host, roomKickPayload(room, host, target))
     assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))

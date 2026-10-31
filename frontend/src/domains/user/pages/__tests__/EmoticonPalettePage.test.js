@@ -63,7 +63,7 @@ const DEFAULT_SLOTS = [
   "emoji-basic-grin", "emoji-basic-hello", "emoji-basic-surrender", "emoji-basic-dizzy",
 ]
 const DEFAULT_NAMES = ["거절", "눈물", "분노", "사랑", "씨익", "안녕", "항복", "헤롱"]
-const OWNED = [...DEFAULT_SLOTS, "emoji-startled"] // 깜짝(상점) 하나만 더 가졌다.
+const OWNED = [...DEFAULT_SLOTS, "emoji-startled"]
 
 const putCalls = () => calls.filter((call) => call.method === "PUT")
 

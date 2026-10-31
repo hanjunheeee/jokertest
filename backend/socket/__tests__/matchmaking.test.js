@@ -111,7 +111,7 @@ test('create_room: 정상 생성 시 Socket room 가입과 Map 반영이 이루�
             'nightActionTime', 'roleCompositionMode', 'soulBetting', 'voteReveal'])
     assert.equal(JSON.stringify(res.room).includes('pectator'), false, '관전자 필드가 응답에 실렸다')
     assert.equal(res.room.accessType, 'open')
-    assert.equal(res.room.settingsVersion, 1) // 생성 시 서버가 부여하는 최초 확정본
+    assert.equal(res.room.settingsVersion, 1)
     assert.equal(socket.joined.length, 1)
     assert.equal(socket.joined[0], res.room.roomId)
 
@@ -231,7 +231,7 @@ test('create_room: 이미 방에 있는 사용자는 거부된다', async () => 
     assert.match(res.message, /이미 참여 중/)
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
-    assert.equal(snapshot.gameRooms.length, 1) // 두 번째 시도로 방이 더 생기지 않음
+    assert.equal(snapshot.gameRooms.length, 1)
 })
 
 test('create_room: 매칭 대기열에 남은 사용자는 자동 제거되지 않고 거부된다', async () => {
@@ -244,7 +244,7 @@ test('create_room: 매칭 대기열에 남은 사용자는 자동 제거되지 �
     assert.match(res.message, /매칭 대기열/)
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
-    assert.equal(snapshot.matchmakingQueue.length, 1) // 자동으로 큐에서 빠지지 않음(정책)
+    assert.equal(snapshot.matchmakingQueue.length, 1)
     assert.equal(snapshot.gameRooms.length, 0)
 })
 
@@ -258,7 +258,7 @@ test('create_room: 사용자 조회가 null을 반환하면 실패 응답을 보
     assert.match(res.message, /사용자 정보/)
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
-    assert.equal(snapshot.pendingRoomTransitions.length, 0) // 예약 해제 확인
+    assert.equal(snapshot.pendingRoomTransitions.length, 0)
 })
 
 test('create_room: 사용자 조회가 예외를 던지면 예약이 해제되고 고정 오류 메시지를 응답한다', async () => {
@@ -269,7 +269,7 @@ test('create_room: 사용자 조회가 예외를 던지면 예약이 해제되�
     const res = await callAsPromise(handleCreateRoom, io, socket, 'uuid-H', validSettingsPayload())
     assert.equal(res.ok, false)
     assert.equal(res.message, '방을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.')
-    assert.ok(!res.message.includes('DB 커넥션')) // 내부 오류 상세가 노출되지 않음
+    assert.ok(!res.message.includes('DB 커넥션'))
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.pendingRoomTransitions.length, 0)
@@ -369,7 +369,7 @@ test('join_room_by_code: 코드 없이/빈 코드/틀린 코드로는 code 방�
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, storedRoom] = snapshot.gameRooms.find(([id]) => id === secret.id)
-    assert.equal(storedRoom.players.length, 1) // host 외에 아무도 들어오지 못했다
+    assert.equal(storedRoom.players.length, 1)
     assert.equal(snapshot.playerRoom.filter(([uuid]) => uuid.startsWith('uuid-wrong-')).length, 0)
 })
 
@@ -485,7 +485,7 @@ test('join_room_by_code: 방별 maxPlayers를 적용해 4인 방의 5번째 참�
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms[0]
-    assert.equal(room.players.length, 4) // host + 3명 = 정원 4 도달
+    assert.equal(room.players.length, 4)
 
     const fifthSocket = createFakeSocket('uuid-p4')
     io.sockets.sockets.set(fifthSocket.id, fifthSocket)
@@ -493,7 +493,7 @@ test('join_room_by_code: 방별 maxPlayers를 적용해 4인 방의 5번째 참�
     assert.match(fifthSocket.emitted.at(-1).payload.message, /가득 찼습니다/)
 
     const after = matchmaking.__getStateSnapshotForTests()
-    assert.equal(after.gameRooms[0][1].players.length, 4) // 5번째는 반영되지 않음
+    assert.equal(after.gameRooms[0][1].players.length, 4)
 })
 
 test('join_room_by_code: settings가 없는 구버전(랜덤 매칭) 방은 기존 매칭 정원으로 fallback한다', async () => {
@@ -530,7 +530,7 @@ test('join_room_by_code: 동일 사용자의 join+join 동시 요청 중 하나�
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms.find(([id]) => id === created.room.roomId)
-    assert.equal(room.players.length, 2) // host + joiner, 중복 커밋 없음
+    assert.equal(room.players.length, 2)
 })
 
 test('create_room과 join_room_by_code를 같은 사용자로 교차 실행해도 한 방에만 소속된다', async () => {
@@ -558,13 +558,13 @@ test('create_room과 join_room_by_code를 같은 사용자로 교차 실행해�
     const createPromise = callAsPromise(handleCreateRoom, io, socket, uuid, validSettingsPayload())
     const joinPromise = handleJoinRoomByCode(io, socket, uuid, roomCode)
 
-    gate.resolve() // 두 요청 모두 동시에 조회를 마치게 함
+    gate.resolve()
     const createResult = await createPromise
     await joinPromise
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const roomsContainingUuid = snapshot.gameRooms.filter(([, room]) => room.players.some(([pUuid]) => pUuid === uuid))
-    assert.equal(roomsContainingUuid.length, 1) // 정확히 한 방에만 소속
+    assert.equal(roomsContainingUuid.length, 1)
 
     if (createResult.ok) {
         assert.equal(roomsContainingUuid[0][0], createResult.room.roomId)
@@ -608,7 +608,7 @@ test('get_current_room: playerRoom만 있고 실제 room.players에 없는 stale
     assert.deepEqual(res, { ok: true, room: null })
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
-    assert.equal(snapshot.playerRoom.length, 0) // 정리됨
+    assert.equal(snapshot.playerRoom.length, 0)
 })
 
 test('get_current_room: callback이 없는 요청은 상태를 바꾸지 않는다', () => {
@@ -616,7 +616,7 @@ test('get_current_room: callback이 없는 요청은 상태를 바꾸지 않는�
     const before = matchmaking.__getStateSnapshotForTests()
     handleGetCurrentRoom('uuid-L', undefined)
     const after = matchmaking.__getStateSnapshotForTests()
-    assert.deepEqual(after, before) // stale 매핑 정리조차 일어나지 않음(부수효과 없음)
+    assert.deepEqual(after, before)
 })
 
 test('join_matchmaking: 큐에 등록되지 않고 matchmaking_disabled를 응답한다', async () => {
@@ -655,7 +655,7 @@ test('onDisconnect: 참가자가 있는 상태에서 방장이 종료하면 host
     await handleJoinRoomByCode(io, joiner, 'uuid-joiner2', created.room.roomCode)
 
     matchmaking.onDisconnect(io, hostSocket, 'uuid-host4')
-    matchmaking.__flushRoomRetentionForTests() // 재접속 없이 유예 만료 → 실제 제거
+    matchmaking.__flushRoomRetentionForTests()
 
     const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed')
     const playerLeft = io.broadcasts.find((b) => b.event === 'player_left_room')
@@ -674,7 +674,7 @@ test('onDisconnect(ABA): 방을 삭제하고 다른 Socket으로 새 Room을 만
     await callAsPromise(handleCreateRoom, io, staleSocket, uuid, validSettingsPayload())
 
     const { handleDeleteRoom } = matchmaking.__testables
-    handleDeleteRoom(io, uuid) // Room A 삭제 → playerRoom에서 uuid 제거됨
+    handleDeleteRoom(io, uuid)
 
     const freshSocket = createFakeSocket(uuid, { id: 'sock-aba-mm-uuid-2' })
     io.sockets.sockets.set(freshSocket.id, freshSocket)
@@ -699,11 +699,11 @@ test('onDisconnect(ABA): activeRoomId 결합이 없는 레거시 Socket의 disco
         players: new Map([[uuid, { uuid, nickname: 'x', isReady: false }]]),
     })
     matchmaking.__seedPlayerRoomForTests(uuid, 'legacy-room-aba')
-    const socketWithoutBinding = createFakeSocket(uuid) // activeRoomId를 한 번도 심어주지 않은 소켓
+    const socketWithoutBinding = createFakeSocket(uuid)
     const io = createFakeIo([socketWithoutBinding])
 
     matchmaking.onDisconnect(io, socketWithoutBinding, uuid)
-    matchmaking.__flushRoomRetentionForTests() // 재접속 없이 유예 만료 → 실제 제거
+    matchmaking.__flushRoomRetentionForTests()
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.gameRooms.length, 0)
@@ -739,14 +739,14 @@ test('create_room: 사용자 조회를 기다리는 동안 연결이 끊기면 �
     socket.connected = false
     matchmaking.onDisconnect(io, socket, 'uuid-disc')
 
-    gate.resolve({ nickname: 'x' }) // 조회가 뒤늦게 돌아옴
+    gate.resolve({ nickname: 'x' })
     const res = await createPromise
 
     assert.equal(res.ok, false)
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.gameRooms.length, 0)
     assert.equal(snapshot.playerRoom.length, 0)
-    assert.equal(snapshot.pendingRoomTransitions.length, 0) // 재시도 가능한 상태로 남아야 함
+    assert.equal(snapshot.pendingRoomTransitions.length, 0)
 })
 
 test('create_room: socket.join 대기 중 연결이 끊기면 Socket room을 정리하고 Map에 흔적을 남기지 않는다', async () => {
@@ -762,7 +762,7 @@ test('create_room: socket.join 대기 중 연결이 끊기면 Socket room을 정
     const res = await createPromise
 
     assert.equal(res.ok, false)
-    assert.equal(socket.left.length, 1) // join 이후 connected 재확인에서 걸려 leave됨
+    assert.equal(socket.left.length, 1)
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.gameRooms.length, 0)
     assert.equal(snapshot.playerRoom.length, 0)
@@ -782,7 +782,7 @@ test('create_room: 성공 후 store 반영을 가정하는 room 객체는 재사
     })
 
     assert.equal(result.ok, true)
-    assert.equal(callbackCallCount, 1) // 정상 경로에서 콜백이 정확히 한 번만 호출됨
+    assert.equal(callbackCallCount, 1)
 })
 
 test('join_room_by_code: socket.join() 실패 시 방 상태가 변하지 않고 실패 응답을 보낸다', async () => {
@@ -797,7 +797,7 @@ test('join_room_by_code: socket.join() 실패 시 방 상태가 변하지 않고
     assert.match(joiner.emitted.at(-1).payload.message, /참여하지 못했습니다/)
     const after = matchmaking.__getStateSnapshotForTests()
     const [, room] = after.gameRooms.find(([id]) => id === created.room.roomId)
-    assert.equal(room.players.length, 1) // 새 참가자는 반영되지 않음
+    assert.equal(room.players.length, 1)
     assert.equal(after.pendingRoomTransitions.length, 0)
 })
 
@@ -826,10 +826,10 @@ test('join_room_by_code: join 이후 커밋 전 예상 못한 예외가 나면 S
     const failed = joiner.emitted.find((e) => e.event === 'room_join_failed')
     assert.match(failed.payload.message, /참여하지 못했습니다/)
     assert.equal(failed.payload.code, ROOM_JOIN_ERROR_CODES.INTERNAL_ERROR)
-    assert.equal(joiner.left.length, 1) // join 후 커밋 전 예외 → Socket room에서 정리됨
+    assert.equal(joiner.left.length, 1)
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms.find(([id]) => id === roomId)
-    assert.equal(room.players.length, 1) // 새 참가자는 반영되지 않음
+    assert.equal(room.players.length, 1)
     assert.equal(snapshot.playerRoom.some(([u]) => u === 'uuid-excjoin'), false)
 })
 
@@ -869,7 +869,7 @@ test('join_room_by_code: 마지막 한 자리에 서로 다른 두 사용자가 
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms.find(([id]) => id === roomId)
-    assert.equal(room.players.length, 4) // 정원 초과 없음
+    assert.equal(room.players.length, 4)
 })
 
 test('join_room_by_code: join 대기 중 다른 참가자가 먼저 마지막 자리를 채우면 정원 초과로 거부된다', async () => {
@@ -902,7 +902,7 @@ test('join_room_by_code: join 대기 중 다른 참가자가 먼저 마지막 �
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms.find(([id]) => id === roomId)
     assert.equal(room.players.length, 4)
-    assert.equal(laggingJoiner.left.length, 1) // join은 됐지만 정원 초과로 leave까지 마쳐야 함
+    assert.equal(laggingJoiner.left.length, 1)
 })
 
 test('join_room_by_code: join 대기 중 방이 삭제되면 참가를 거부하고 Socket room에서 나간다', async () => {
@@ -1158,7 +1158,7 @@ test('set_ready: isReady가 boolean이 아니면 상태 변경 없이 거부한�
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms[0]
     const [, player] = room.players.find(([uuid]) => uuid === 'uuid-ready-badtype')
-    assert.equal(player.isReady, false) // 잘못된 형식의 요청은 어느 것도 반영되지 않는다
+    assert.equal(player.isReady, false)
 })
 
 test('set_ready: payload 자체가 null·문자열·배열이면 구조분해 예외 없이 명시적으로 거부한다', async () => {
@@ -1196,8 +1196,8 @@ test('set_ready: payload에 다른 uuid를 넣어도 무시되고 요청자(인�
     const [, room] = snapshot.gameRooms.find(([id]) => id === created.room.roomId)
     const [, hostPlayer] = room.players.find(([uuid]) => uuid === 'uuid-ready-self-host')
     const [, joinerPlayer] = room.players.find(([uuid]) => uuid === 'uuid-ready-self-joiner')
-    assert.equal(hostPlayer.isReady, true) // 실제 인증된 요청자만 변경됨
-    assert.equal(joinerPlayer.isReady, false) // payload의 uuid는 애초에 읽히지 않음
+    assert.equal(hostPlayer.isReady, true)
+    assert.equal(joinerPlayer.isReady, false)
 })
 
 test('set_ready: 방에 참여하지 않은 사용자의 요청은 거부된다', async () => {
@@ -1232,7 +1232,7 @@ test('set_ready: callback이 없는 요청은 실제 Room·참가자가 있어�
     assert.deepEqual(after, before)
     const [, room] = after.gameRooms.find(([id]) => id === created.room.roomId)
     const [, player] = room.players.find(([uuid]) => uuid === 'uuid-ready-nocb')
-    assert.equal(player.isReady, false) // 콜백이 없어 검증 이전 단계에서 그대로 반환되어야 한다
+    assert.equal(player.isReady, false)
     assert.equal(created.room.canStart, false)
 })
 
@@ -1260,7 +1260,7 @@ test('set_ready: 요청자는 ack만 받고, 같은 방의 다른 참가자는 p
     io.sockets.sockets.set(joiner.id, joiner)
     await handleJoinRoomByCode(io, joiner, 'uuid-ready-recv-joiner', created.room.roomCode)
 
-    hostSocket.emitted.length = 0 // room_joined 등 이전 이벤트는 이번 검증과 무관하므로 비운다
+    hostSocket.emitted.length = 0
     joiner.emitted.length = 0
 
     const ack = await callAsPromise(handleSetReady, io, hostSocket, 'uuid-ready-recv-host', readyPayload(created.room))
@@ -1286,14 +1286,14 @@ test('canStart: 전원 준비된 방에 새 참가자가 들어오면(기본 미
 
     await callAsPromise(handleSetReady, io, hostSocket, 'uuid-canstart-a-host', readyPayload(created.room))
     const joinerAReady = await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-a-joinerA', readyPayload(created.room))
-    assert.equal(joinerAReady.canStart, true) // host+joinerA 2명 모두 준비 완료 → 시작 가능
+    assert.equal(joinerAReady.canStart, true)
 
     const joinerB = createFakeSocket('uuid-canstart-a-joinerB')
     io.sockets.sockets.set(joinerB.id, joinerB)
     await handleJoinRoomByCode(io, joinerB, 'uuid-canstart-a-joinerB', created.room.roomCode)
 
     const joinedBroadcast = joinerB.emitted.find((e) => e.event === 'player_joined_room')
-    assert.equal(joinedBroadcast.payload.canStart, false) // 새 참가자는 기본 미준비라 다시 false
+    assert.equal(joinedBroadcast.payload.canStart, false)
 })
 
 test('canStart: 미준비 참가자가 나가면 canStart가 다시 true로 재계산된다', async () => {
@@ -1313,11 +1313,11 @@ test('canStart: 미준비 참가자가 나가면 canStart가 다시 true로 재�
     await handleJoinRoomByCode(io, joinerB, 'uuid-canstart-b-joinerB', created.room.roomCode)
 
     matchmaking.onDisconnect(io, joinerB, 'uuid-canstart-b-joinerB')
-    matchmaking.__flushRoomRetentionForTests() // 재접속 없이 유예 만료 → 실제 제거
+    matchmaking.__flushRoomRetentionForTests()
 
     const leftBroadcast = io.broadcasts.find((b) => b.event === 'player_left_room')
     assert.ok(leftBroadcast)
-    assert.equal(leftBroadcast.payload.canStart, true) // 미준비였던 joinerB가 나가 다시 host+joinerA만 남음
+    assert.equal(leftBroadcast.payload.canStart, true)
 })
 
 test('canStart: 방장이 종료로 바뀌어도 남은 참가자의 준비 상태는 유지되고 canStart가 새 구성 기준으로 재계산된다', async () => {
@@ -1336,18 +1336,18 @@ test('canStart: 방장이 종료로 바뀌어도 남은 참가자의 준비 상�
     await callAsPromise(handleSetReady, io, joinerA, 'uuid-canstart-c-joinerA', readyPayload(created.room))
     await callAsPromise(handleSetReady, io, joinerB, 'uuid-canstart-c-joinerB', readyPayload(created.room))
 
-    matchmaking.onDisconnect(io, hostSocket, 'uuid-canstart-c-host') // 방장 종료 → joinerA가 새 방장
-    matchmaking.__flushRoomRetentionForTests() // 재접속 없이 유예 만료 → 실제 제거
+    matchmaking.onDisconnect(io, hostSocket, 'uuid-canstart-c-host')
+    matchmaking.__flushRoomRetentionForTests()
 
     const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed')
     assert.ok(hostChanged)
     assert.equal(hostChanged.payload.hostUuid, 'uuid-canstart-c-joinerA')
-    assert.equal(hostChanged.payload.canStart, true) // 남은 joinerA+joinerB 모두 준비 완료 상태 그대로 유지되어 충족
+    assert.equal(hostChanged.payload.canStart, true)
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, room] = snapshot.gameRooms[0]
     const [, joinerAPlayer] = room.players.find(([uuid]) => uuid === 'uuid-canstart-c-joinerA')
-    assert.equal(joinerAPlayer.isReady, true) // 방장 변경으로 준비 상태가 초기화되지 않는다
+    assert.equal(joinerAPlayer.isReady, true)
 })
 
 test('start_game: 참여 중인 방이 없으면 ROOM_NOT_FOUND로 ack가 정확히 한 번 온다', async () => {
@@ -1399,7 +1399,7 @@ test('start_game: 방장이 아닌 사용자의 요청은 NOT_HOST로 ack가 정
 
 test('start_game: 운영 최소 인원 기준으로 인원이 미달이면 MIN_PLAYERS_NOT_MET으로 ack가 정확히 한 번 온다', async () => {
     const originalMin = process.env.GAME_DEV_MIN_PLAYERS
-    process.env.GAME_DEV_MIN_PLAYERS = '2' // 개발 환경 기본값(1명)로는 항상 충족되므로 임시로 올린다
+    process.env.GAME_DEV_MIN_PLAYERS = '2'
     try {
         const hostSocket = createFakeSocket('uuid-start-min')
         const io = createFakeIo([hostSocket])
@@ -1457,7 +1457,7 @@ test('start_game: 정원(4)이 운영 최소 인원(5)보다 작아도 정원만
         }
 
         const res = await callAsPromise(handleStartGame, io, hostSocket, 'uuid-cap-host', startPayload(created.room))
-        assert.equal(res.ok, true) // 인원 미달로 막히지 않고 GameSession 전환까지 성공한다
+        assert.equal(res.ok, true)
     } finally {
         if (originalMin === undefined) delete process.env.GAME_DEV_MIN_PLAYERS
         else process.env.GAME_DEV_MIN_PLAYERS = originalMin
@@ -1646,7 +1646,7 @@ test('start_game: 계정 전적 조회가 실패하면 그 필드만 붙지 않�
 test('start_game: 반쪽짜리 전적(판수만 있고 승률이 없음)은 아예 싣지 않는다(CO S-1 AC-03)', async () => {
     const HOST = 'uuid-record-partial-host'
     fakeGetAccountRecordSummaries = async (userIds) =>
-        new Map(userIds.map((id) => [id, { totalGames: 3 }])) // winRate 없음
+        new Map(userIds.map((id) => [id, { totalGames: 3 }]))
 
     const hostSocket = createFakeSocket(HOST)
     const io = createFakeIo([hostSocket])
@@ -1763,7 +1763,7 @@ test('start_game: 참가자 중 한 명의 소켓이 connected:false이면 PARTI
     const hostSocket = createFakeSocket('uuid-pu-host')
     const io = createFakeIo([hostSocket])
     const { joinerSocket, room } = await setupReadyRoomForStart(io, 'uuid-pu-host', 'uuid-pu-joiner', readyRoomHandlers)
-    joinerSocket.connected = false // 참가자 중 한 명의 연결이 끊긴 상태를 재현
+    joinerSocket.connected = false
 
     const before = matchmaking.__getStateSnapshotForTests()
     const beforeSession = gameSession.__getStateSnapshotForTests()
@@ -1904,7 +1904,7 @@ test('AC-07: disconnect 직후 get_current_room은 여전히 이전 room ID를 �
     const io = createFakeIo([socket])
     const created = await callAsPromise(handleCreateRoom, io, socket, 'uuid-refresh', validSettingsPayload())
 
-    matchmaking.onDisconnect(io, socket, 'uuid-refresh') // = 새로고침으로 탭이 소켓을 끊은 순간
+    matchmaking.onDisconnect(io, socket, 'uuid-refresh')
 
     const res = await callAsPromise(handleGetCurrentRoom, 'uuid-refresh')
     assert.equal(res.ok, true)
@@ -1924,10 +1924,10 @@ test('AC-07: 재조회로 복구가 확인되면 유예 예약이 취소되어 �
         'disconnect가 유예를 예약하지 않았습니다',
     )
 
-    await callAsPromise(handleGetCurrentRoom, 'uuid-refresh-keep') // 재접속한 클라이언트의 재조회
+    await callAsPromise(handleGetCurrentRoom, 'uuid-refresh-keep')
     assert.deepEqual(matchmaking.__getPendingRoomRemovalsForTests(), [], '확인 후에도 예약이 남아있습니다')
 
-    matchmaking.__flushRoomRetentionForTests() // 예약이 남아있었다면 여기서 제거됐을 것이다
+    matchmaking.__flushRoomRetentionForTests()
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.playerRoom.some(([u]) => u === 'uuid-refresh-keep'), true)
     assert.equal(snapshot.gameRooms.some(([id]) => id === created.room.roomId), true)
@@ -1981,7 +1981,7 @@ test('AC-07: 재접속했지만 대기방으로 돌아오지 않으면 유예 �
     await handleJoinRoomByCode(io, joiner, 'uuid-lobby-joiner', created.room.roomCode)
 
     matchmaking.onDisconnect(io, joiner, 'uuid-lobby-joiner')
-    io.sockets.sockets.delete(joiner.id) // Socket.IO는 끊긴 소켓을 registry에서 지운다
+    io.sockets.sockets.delete(joiner.id)
 
     const freshSocket = createFakeSocket('uuid-lobby-joiner', { id: 'sock-lobby-joiner-2' })
     io.sockets.sockets.set(freshSocket.id, freshSocket)
@@ -1989,7 +1989,7 @@ test('AC-07: 재접속했지만 대기방으로 돌아오지 않으면 유예 �
     assert.equal(freshSocket.rooms.has(created.room.roomId), true)
 
     matchmaking.__flushRoomRetentionForTests()
-    await Promise.resolve() // socket.leave는 비동기라 한 틱 흘려보낸다
+    await Promise.resolve()
 
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.equal(snapshot.playerRoom.some(([u]) => u === 'uuid-lobby-joiner'), false)
@@ -2007,7 +2007,7 @@ test('AC-07: 유예 중 방이 이미 사라졌다면 만료가 뒤늦은 방송
     matchmaking.onDisconnect(io, joiner, 'uuid-stale-grace-joiner')
 
     const { handleDeleteRoom } = matchmaking.__testables
-    handleDeleteRoom(io, 'uuid-stale-grace-host') // 유예 중에 방장이 방을 통째로 삭제
+    handleDeleteRoom(io, 'uuid-stale-grace-host')
 
     io.broadcasts.length = 0
     matchmaking.__flushRoomRetentionForTests()

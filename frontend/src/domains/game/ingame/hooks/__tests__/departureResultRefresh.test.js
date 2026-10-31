@@ -87,8 +87,8 @@ test.beforeEach(() => {
 test("A-10: commit 직전에 시작된 조회는 무효화 이후 도착해도 최신 화면을 덮어쓰지 못한다", async () => {
   const gate = makeGate()
   pendingGates[0] = gate
-  profileResponses[0] = profile(3) // 커밋 전 숫자
-  profileResponses[1] = profile(4) // 커밋 후 숫자
+  profileResponses[0] = profile(3)
+  profileResponses[1] = profile(4)
 
   const stalled = useUserProfileStore.getState().fetchProfile()
   await Promise.resolve()
@@ -126,7 +126,7 @@ test("A-10: 무효화는 캐시를 비우지 않는다 — 화면이 빈 값으�
 test("A-10: A→B→A 계정 전환 뒤에 도착한 옛 응답은 현재 화면을 바꾸지 않는다", async () => {
   const gate = makeGate()
   pendingGates[0] = gate
-  profileResponses[0] = profile(99) // A 계정의 옛 응답
+  profileResponses[0] = profile(99)
 
   const stalled = useUserProfileStore.getState().fetchProfile()
   await Promise.resolve()
@@ -163,7 +163,7 @@ test("A-10: 조회 실패도 무효화 세대를 통과한 경우에만 반영�
 
 test("A-10: 화면 재진입은 캐시가 있어도 서버를 다시 읽고, 표시 숫자가 최신 값으로 바뀐다", async () => {
   profileResponses[0] = profile(3)
-  profileResponses[1] = profile(4) // 그 사이 서버가 전적을 커밋했다(신호는 못 받았다)
+  profileResponses[1] = profile(4)
 
   const first = renderHook(() => useMyProfile())
   await flush()
@@ -255,7 +255,7 @@ test("A-10: 조회 실패는 로딩을 풀고 화면이 재시도할 수 있는 
 
 test("A-10: 무효화를 놓친 뒤의 재조회 실패는 캐시를 지우지 않되 그 사실을 화면에 남긴다", async () => {
   profileResponses[0] = profile(3, 1 / 3)
-  profileResponses[1] = new Error("네트워크 실패") // 재진입 조회가 실패한다
+  profileResponses[1] = new Error("네트워크 실패")
   profileResponses[2] = profile(7, 1)
 
   const view = renderHook(() => useMyProfile())
@@ -361,7 +361,7 @@ for (const [label, response] of UNDISPLAYABLE_RESPONSES) {
 
 test("F-30 AC-03: 이미 확인된 값이 있을 때 도착한 잘못된 응답은 그 값을 덮지 않고 갱신 실패로만 남는다", async () => {
   profileResponses[0] = profile(6, 0.25)
-  profileResponses[1] = { ...profile(6, 0.25), account_win_rate: "0.9" } // 표시할 수 없는 갱신
+  profileResponses[1] = { ...profile(6, 0.25), account_win_rate: "0.9" }
   profileResponses[2] = profile(8, 0.75)
 
   const view = renderHook(() => useMyProfile())
@@ -395,12 +395,12 @@ test("A-10: 더 새로운 성공이 반영된 뒤 도착한 옛 실패는 그 �
 
   const gate = makeGate()
   pendingGates[1] = gate
-  profileResponses[1] = new Error("네트워크 실패") // 먼저 시작했지만 늦게 끝난다
+  profileResponses[1] = new Error("네트워크 실패")
   profileResponses[2] = profile(8)
 
   const failing = useUserProfileStore.getState().fetchProfile()
   await Promise.resolve()
-  await useUserProfileStore.getState().fetchProfile() // 더 나중에 시작해 먼저 끝난 성공
+  await useUserProfileStore.getState().fetchProfile()
 
   gate.release()
   await failing

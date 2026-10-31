@@ -126,7 +126,7 @@ test("CUSTOM에서 AUTO로 되돌아가면 이전 custom 필드가 payload에 �
   )
   assert.deepEqual(backToAuto, AUTO_PAYLOAD)
   assert.equal(Object.hasOwn(backToAuto, "roleCounts"), false)
-  assert.equal(backToAuto.jokerCount, 2) // AUTO는 다시 기존 스테퍼 값을 쓴다
+  assert.equal(backToAuto.jokerCount, 2)
 })
 
 function meetingTabRanges() {

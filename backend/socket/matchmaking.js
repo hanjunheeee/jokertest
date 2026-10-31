@@ -497,7 +497,7 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         handleAcceptGameInvite(io, socket, uuid, payload, callback).catch((err) => {
             console.error('\x1b[31m[초대 수락 에러]\x1b[0m', err)
             if (typeof callback === 'function') {
-                try { callback({ ok: false, code: 'INTERNAL_ERROR', message: '초대를 처리하지 못했습니다.' }) } catch { /* ack 실패는 상태를 바꾸지 않는다 */ }
+                try { callback({ ok: false, code: 'INTERNAL_ERROR', message: '초대를 처리하지 못했습니다.' }) } catch {}
             }
         })
     )
@@ -505,7 +505,7 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         handleGetGameInviteResult(uuid, payload, callback).catch((err) => {
             console.error('\x1b[31m[초대 결과 조회 에러]\x1b[0m', err)
             if (typeof callback === 'function') {
-                try { callback({ ok: false, code: 'UNKNOWN' }) } catch { /* 위와 같음 */ }
+                try { callback({ ok: false, code: 'UNKNOWN' }) } catch {}
             }
         })
     )
@@ -563,7 +563,7 @@ function scheduleRoomRetentionOnDisconnect(io, socket, uuid) {
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
 
-    cancelRoomRetention(uuid) // 같은 uuid의 예약은 언제나 가장 최근 것 하나만 남긴다
+    cancelRoomRetention(uuid)
     const scheduledTick = roomPresenceTick
 
     const run = () => {
@@ -952,7 +952,7 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
         room = {
             id: roomId,
             instanceId: crypto.randomUUID(),
-            code: null, // Socket room 가입 이후에 확정한다(아래 참고)
+            code: null,
             hostUuid: uuid,
             title: `${user.nickname}의 방`,
             accessType,
@@ -1309,8 +1309,8 @@ function handleGetCurrentRoom(uuid, callback) {
     const room = gameRooms.get(roomId)
 
     if (!room || !room.players.has(uuid)) {
-        playerRoom.delete(uuid) // 깨진 매핑은 정리해 다음 조회부터 일관되게 "없음"으로 응답한다
-        cancelRoomRetention(uuid) // 매핑이 사라졌으니 유예 예약도 함께 버린다
+        playerRoom.delete(uuid)
+        cancelRoomRetention(uuid)
         callback({ ok: true, room: null })
         return
     }

@@ -180,7 +180,7 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   await clickByAriaLabel(container, "코드로만 참가")
   await clickByAriaLabel(container, "최대 플레이어 수 감소")
   await clickByAriaLabel(container, "최대 플레이어 수 감소")
-  await clickByAriaLabel(container, "역할 구성 증가") // 자동 → 직접 지정
+  await clickByAriaLabel(container, "역할 구성 증가")
   await clickByAriaLabel(container, "의사 인원 증가")
 
   await clickTab(container, "회의&투표")

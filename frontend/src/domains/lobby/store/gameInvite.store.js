@@ -97,7 +97,7 @@ export function evaluateInviteSound(state, accountId, invite, now = Date.now()) 
 }
 
 const initialAccountState = () => ({
-    status: "idle", // idle | loading | success | error
+    status: "idle",
     error: null,
     invites: [],
     cursor: "0",

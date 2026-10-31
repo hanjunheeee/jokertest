@@ -175,7 +175,7 @@ test("AC-04: 저장이 진행 중일 때 확인을 다시 눌러도 equip이 두
   let firstConfirm
   act(() => { firstConfirm = result.current.handleConfirm() })
   assert.equal(result.current.confirmStatus, "saving")
-  await act(async () => { await result.current.handleConfirm() }) // 저장 중 재클릭 — 무시되어야 한다
+  await act(async () => { await result.current.handleConfirm() })
 
   assert.equal(calls, 1, "진행 중인 저장이 있으면 두 번째 확인 클릭은 새 요청을 만들면 안 된다")
 
@@ -295,10 +295,10 @@ test("A-08: 편집기를 닫았다가 다시 열면 이전에 남은 미확정 �
   )
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
 
-  act(() => result.current.setDraftBorderItemId("profile-border-귀족")) // 미확정 선택을 남긴다
+  act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
 
-  rerender({ open: false }) // Escape/배경 클릭으로 닫음(확인 없음)
-  rerender({ open: true }) // 다시 연다
+  rerender({ open: false })
+  rerender({ open: true })
 
   assert.equal(result.current.draftBorderItemId, "profile-border-평민", "재개방 시 초안은 이전 미확정 선택이 아니라 실제 장착 상태로 되돌아가야 한다")
 })
@@ -319,7 +319,7 @@ test("A-08: equip 응답이 도착하기 전에 계정이 바뀌면 그 성공�
   let confirmPromise
   act(() => { confirmPromise = result.current.handleConfirm() })
 
-  setCurrentUser({ uuid: "user-2" }) // 대기 중 계정 전환 — economy store가 reset되며 generation이 올라간다
+  setCurrentUser({ uuid: "user-2" })
 
   await act(async () => {
     deferred.resolve({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })

@@ -3,8 +3,8 @@ import { getMyAchievementsApi } from "../api/achievements.api.js";
 import { useAuthStore } from "../../auth/store/auth.store.js";
 
 const initialState = {
-  status: "idle", // idle | loading | success | error
-  achievements: null, // [{ id, current, threshold, achieved }, ...] — 조회 전용(A-09), 지급하지 않는다.
+  status: "idle",
+  achievements: null,
   error: null,
 };
 

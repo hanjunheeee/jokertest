@@ -18,7 +18,7 @@ function getSpecialRoleBudget(playerCount) {
     if (playerCount >= 10) return { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }
     if (playerCount >= 8) return { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 0 }
     if (playerCount >= 6) return { DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 }
-    return { DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 } // 2~5명
+    return { DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 }
 }
 
 function computeRoleComposition(playerCount, jokerCount) {
@@ -37,7 +37,7 @@ function computeRoleComposition(playerCount, jokerCount) {
         DOCTOR: doctorCount,
         GUARD: guardCount,
         WITCH_HUNTER: witchHunterCount,
-        CITIZEN: remaining, // 남은 슬롯 전부
+        CITIZEN: remaining,
     }
 }
 

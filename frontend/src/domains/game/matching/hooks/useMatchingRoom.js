@@ -295,7 +295,7 @@ export function useMatchingRoom({
     }
     const handlePlayerLeftRoom = ({ uuid, canStart, membershipId, roomId: eventRoomId }) => {
       if (!isCurrentSource()) return
-      if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
+      if (eventRoomId !== undefined && eventRoomId !== roomId) return
       if (typeof membershipId === "string" && membershipId.length > 0) {
         const seated = useMatchingStore.getState().players?.find((player) => player.uuid === uuid)
         if (!seated) return
@@ -308,7 +308,7 @@ export function useMatchingRoom({
       hostUuid, canStart, roomId: eventRoomId, settingsVersion, roomInstanceId, bootEpoch,
     }) => {
       if (!isCurrentSource()) return
-      if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
+      if (eventRoomId !== undefined && eventRoomId !== roomId) return
       const identity = useMatchingStore.getState()
       if (typeof roomInstanceId === "string" && typeof identity.roomInstanceId === "string"
         && roomInstanceId !== identity.roomInstanceId) return
@@ -320,7 +320,7 @@ export function useMatchingRoom({
     }
     const handleRoomSettingsUpdated = (payload) => {
       if (!isCurrentSource()) return
-      if (!payload || payload.roomId !== roomId) return // 다른 방의 늦은 사건은 적용하지 않는다
+      if (!payload || payload.roomId !== roomId) return
       const known = useMatchingStore.getState().settingsVersion
       const incoming = payload.settingsVersion
       if (Number.isSafeInteger(incoming) && Number.isSafeInteger(known)) {
@@ -334,7 +334,7 @@ export function useMatchingRoom({
       uuid, isReady, canStart, sfxEvent, roomId: eventRoomId, settingsVersion, readyRevision,
     }) => {
       if (!isCurrentSource()) return
-      if (eventRoomId !== undefined && eventRoomId !== roomId) return // 다른 방의 늦은 사건
+      if (eventRoomId !== undefined && eventRoomId !== roomId) return
       const verdict = classifyReadyEvent(useMatchingStore.getState(), uuid, { settingsVersion, readyRevision })
       if (verdict === READY_EVENT.STALE) return
       if (verdict === READY_EVENT.NEWER) {
@@ -448,7 +448,7 @@ export function useMatchingRoom({
     const settleFailed = (seriesId) => {
       if (cancelled || seriesId !== activeSeriesId) return
       setRoomSyncStatus('failed')
-      if (hasPromptedRetry) return // 같은 에피소드에서 confirm을 반복해서 띄우지 않는다.
+      if (hasPromptedRetry) return
       hasPromptedRetry = true
       const confirmed = window.confirm('방 상태를 확인하지 못했습니다. 다시 확인하시겠습니까?')
       dispatchUiSfx(confirmed ? 'ui-confirm' : 'ui-cancel')
@@ -503,7 +503,7 @@ export function useMatchingRoom({
             applyVerifiedRoom(() => useMatchingStore.getState().setRoom(response.room))
             markRoomStateAdvanced()
             setRoomSyncStatus('verified')
-            hasPromptedRetry = false // Room 확인 성공도 새 에피소드의 시작점이다.
+            hasPromptedRetry = false
             return
           }
 
@@ -525,7 +525,7 @@ export function useMatchingRoom({
           }
           applyVerifiedRoom(() => useMatchingStore.getState().clearRoom())
           markRoomStateAdvanced()
-          onRoomDeleted?.() // 곧 이 컴포넌트가 언마운트되므로 별도의 "no_room" 지속 상태는 두지 않는다.
+          onRoomDeleted?.()
         })
         .catch(() => {
           if (requestVersion === activeRequestVersion) checkInFlight = false
@@ -538,10 +538,10 @@ export function useMatchingRoom({
         window.clearTimeout(retryTimer)
         retryTimer = null
       }
-      activeSeriesId += 1 // 이전 시리즈에 속한 진행 중 요청·예약된 재시도를 전부 무효화한다.
+      activeSeriesId += 1
       if (resetPromptState) hasPromptedRetry = false
       setRoomSyncStatus('checking')
-      runCheckAttempt(activeSeriesId, 0) // retryCount는 이 시리즈 전용으로 항상 0부터 시작한다.
+      runCheckAttempt(activeSeriesId, 0)
     }
 
     bumpRoomApplyGenerationRef.current = () => {

@@ -191,7 +191,7 @@ test('day timer: 자동 전환 직후 투표 제한시간이 이어서 걸린다
     const clock = createManualClock()
 
     startDayPhaseTimer(io, session, { ...clock })
-    clock.advance(60_000) // 토론 만료 → DAY_VOTE
+    clock.advance(60_000)
 
     assert.equal(clock.pendingCount(), 1, '투표 제한시간이 예약돼 있다')
     clock.advance(30_000 - 1)

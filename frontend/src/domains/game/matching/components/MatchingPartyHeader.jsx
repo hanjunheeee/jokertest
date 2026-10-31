@@ -13,7 +13,7 @@ export default function MatchingPartyHeader({ visible, partyCount, transition })
     <motion.div
       className={MATCHING_PARTY_HEADER_CLASS}
       initial={{ opacity: 0 }}
-      animate={visible ? { opacity: 1 } : { opacity: 0 }} // uiVisible 기준으로 페이드인
+      animate={visible ? { opacity: 1 } : { opacity: 0 }}
       transition={transition}
       aria-label={`${MATCHING_POPUP_COPY.partyLabel} ${partyCount}명`}
     >

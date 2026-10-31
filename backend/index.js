@@ -54,7 +54,7 @@ morgan.token("safe-url", (req) => (
 app.use(morgan(":method :safe-url :status :response-time ms"));
 app.set("trust proxy", 1);
 
-app.use("/auth", authRouter); // F-29a: 이 마운트로 POST /auth/find-id(accountRecovery.controller.js::findId)까지 실제로 연결된다.
+app.use("/auth", authRouter);
 app.use("/user", userRouter);
 app.use("/friends", friendRouter);
 app.use("/game", gameRouter);

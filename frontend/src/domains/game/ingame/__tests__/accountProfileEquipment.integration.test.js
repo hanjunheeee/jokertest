@@ -233,7 +233,7 @@ test("F-14 AC-01/AC-04: self.accountSkinId가 없는(미장착) 참가자는 get
   const room = {
     id: "room-role-reveal-default-skin",
     players: new Map([
-      ["rd1", { uuid: "rd1", nickname: "호스트", isReady: true }], // accountSkinsByJob 자체가 없음
+      ["rd1", { uuid: "rd1", nickname: "호스트", isReady: true }],
       ["rd2", { uuid: "rd2", nickname: "참가자", isReady: true }],
     ]),
     settings: { jokerCount: 1 },
@@ -455,7 +455,7 @@ test("F-13 AC-05(CODEX-4): 대기방(useMatchingPage)은 실제로 마운트됐�
     players: [
       { uuid: "viewer-uuid", isReady: true, accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" },
       { uuid: "peer-uuid", isReady: false, accountProfilePhotoId: "player-profile-드워프", accountProfileBorderId: "profile-border-평민" },
-      { uuid: "no-profile-uuid", isReady: false }, // 계정 프로필 필드가 아예 없는 참가자(레거시/미도착)
+      { uuid: "no-profile-uuid", isReady: false },
     ],
   })
 

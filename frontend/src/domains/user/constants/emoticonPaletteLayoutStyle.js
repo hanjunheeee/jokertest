@@ -128,14 +128,14 @@ export const EMOTICON_PALETTE_FRAME_ASPECT_RATIO =
   `${EMOTICON_PALETTE_FRAME_WIDTH} / ${EMOTICON_PALETTE_FRAME_HEIGHT}`
 
 export const EMOTICON_PALETTE_SLOT_POSITIONS = [
-  { top: "15%", left: "50%" }, // 1번 — 12시
-  { top: "26%", left: "74%" }, // 2번 — 1~2시
-  { top: "50%", left: "84%" }, // 3번 — 3시
-  { top: "73.5%", left: "75%" }, // 4번 — 4~5시
-  { top: "85%", left: "50%" }, // 5번 — 6시
-  { top: "73.5%", left: "24%" }, // 6번 — 7~8시
-  { top: "50%", left: "16%" }, // 7번 — 9시
-  { top: "26%", left: "26%" }, // 8번 — 10~11시
+  { top: "15%", left: "50%" },
+  { top: "26%", left: "74%" },
+  { top: "50%", left: "84%" },
+  { top: "73.5%", left: "75%" },
+  { top: "85%", left: "50%" },
+  { top: "73.5%", left: "24%" },
+  { top: "50%", left: "16%" },
+  { top: "26%", left: "26%" },
 ]
 
 export const EMOTICON_PALETTE_SLOT_BTN_CLASS =

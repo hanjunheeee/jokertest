@@ -645,8 +645,8 @@ test('AC-05(경계 시험, 시각 직접 주입): backfill 근거2는 10초 경�
         return local;
     };
 
-    const within = await makeLinkedCandidate('within', 9); // 9초 이내 → 근거2 성립 → false
-    const outside = await makeLinkedCandidate('outside', 11); // 11초 초과 → 근거2 없음 → true
+    const within = await makeLinkedCandidate('within', 9);
+    const outside = await makeLinkedCandidate('outside', 11);
 
     await addPasswordResetTokens.up(queryInterface, Sequelize, sequelize);
     await addPasswordResetTokens.verify(queryInterface, Sequelize, sequelize);

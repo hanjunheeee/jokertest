@@ -129,7 +129,7 @@ test('창이 지나면 카운터가 초기화되어 다시 통과한다', () => 
     assert.equal(callLimiter(limiter, {}).nextCalled, true);
     assert.equal(callLimiter(limiter, {}).nextCalled, false, '창 안에서는 여전히 막혀야 합니다');
 
-    now += 1000; // 창 경계 정확히 지남
+    now += 1000;
     assert.equal(callLimiter(limiter, {}).nextCalled, true, '창이 지나면 회복되어야 합니다');
 });
 

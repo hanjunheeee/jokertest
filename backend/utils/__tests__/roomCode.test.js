@@ -34,5 +34,5 @@ test('socket.join 대기 중 생성된 다른 방도 코드 비교 대상에 포
     const first = generateUniqueRoomCode(existing, { generator: () => 'CCCCCC' })
     existing.set('room-1', { code: first })
     const second = generateUniqueRoomCode(existing, { generator: () => 'CCCCCC' })
-    assert.equal(second, null) // 재시도해도 같은 코드만 나오는 극단 상황을 흉내낸 것
+    assert.equal(second, null)
 })

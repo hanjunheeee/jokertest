@@ -425,10 +425,10 @@ test('F-14 AC-02: 다른 직업에서 구매한 스킨을 이 슬롯에 장착�
     await setUp(t);
 
     const userId = await createLocalUser('f14mismatch');
-    await purchase(userId, NOBLE_SKIN_ITEM_ID); // 귀족(noble) 스킨을 구매
+    await purchase(userId, NOBLE_SKIN_ITEM_ID);
 
     await assert.rejects(
-        () => economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: NOBLE_SKIN_ITEM_ID }), // 경비원(guard) 슬롯에 장착 시도
+        () => economyService.equipItem({ userId, slot: 'JOB_SKIN_GUARD', itemId: NOBLE_SKIN_ITEM_ID }),
         (error) => error.status === 400 && error.code === 'ITEM_TYPE_MISMATCH',
     );
 

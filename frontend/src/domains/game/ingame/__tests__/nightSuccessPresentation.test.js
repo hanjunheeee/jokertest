@@ -394,7 +394,7 @@ test("AC-04: 전용 영상이 없는 HEAL·INVESTIGATE·CONFIRM은 assetStatus�
   session.deliver("night_action_success",
     buildSuccessPayload({ type: "INVESTIGATE", eventId: "e3", perspectives: ["TARGET"] }))
   assert.equal(session.value.assetStatus, "PENDING")
-  session.finish("COMPLETED") // 임시 연출 확인(=COMPLETED 보고)조차 자산 상태를 바꾸지 않는다.
+  session.finish("COMPLETED")
   assert.equal(session.value.current, null)
 
   session.close()
@@ -428,10 +428,10 @@ test("AC-02: night_result_applied가 먼저 도착해도, 큐가 다 비기 전�
   session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 6, selfAlive: false, victimUuid: SELF_UUID }))
   assert.equal(session.value.finalStatus, null, "KILL 연출도 아직 끝나지 않았다")
 
-  session.finish("COMPLETED") // KILL 종료 — HEAL이 아직 큐에 남아 있다.
+  session.finish("COMPLETED")
   assert.equal(session.value.finalStatus, null, "HEAL 연출이 아직 남아 있다")
 
-  session.finish("COMPLETED") // HEAL 종료 — 이제 큐가 비고 결과도 이미 와 있다.
+  session.finish("COMPLETED")
   assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: false })
 
   session.close()
@@ -705,7 +705,7 @@ test("AC-05: 유음 재생 거절(NotAllowedError) → 무음 재생 성공 → 
     }
     return Promise.resolve()
   }
-  setTestSfxMix({ gain: 1, muted: false }) // 유음 설정 — 첫 시도는 유음으로 걸린다.
+  setTestSfxMix({ gain: 1, muted: false })
 
   const finishes = []
   const { container, unmount } = renderPresentation({
@@ -1295,7 +1295,7 @@ test("AC-03: 영상 재생 시 볼륨이 Master×SFX 값으로 적용되고, 설
     playCalls.push(this)
     return originalPlay.apply(this, args)
   }
-  setTestSfxMix({ gain: 0.5 * 0.4, muted: false }) // Master 50 × SFX 40
+  setTestSfxMix({ gain: 0.5 * 0.4, muted: false })
 
   const { container, unmount } = renderPresentation({
     current: { eventId: "mix-1", type: "KILL", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["USER"], targetId: OTHER_UUID },

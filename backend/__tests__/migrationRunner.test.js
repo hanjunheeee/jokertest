@@ -10,7 +10,7 @@ const createFakeSequelize = ({ failOn = () => false } = {}) => {
     const queryInterface = { showAllTables: async () => ['schema_migrations'] };
 
     const sequelize = {
-        constructor: {}, // ensureMetaTable은 showAllTables에 이미 포함돼 있어 createTable을 타지 않으므로 타입이 필요 없다
+        constructor: {},
         getQueryInterface: () => queryInterface,
         query: async (sql, options = {}) => {
             const replacements = options.replacements || {};
@@ -157,7 +157,7 @@ test('applyMigrations: verify()가 실패해도 DDL 성공 사실이 error_messa
 
 test('applyMigrations: applied 기록도, 그 뒤 failed 기록도 모두 실패하면 running에 멈추고 원래 오류가 전파되며 경고가 로그된다', async () => {
     const { sequelize, rows } = createFakeSequelize({
-        failOn: (sql) => sql.startsWith('UPDATE'), // applied든 failed든 모든 UPDATE를 막는다
+        failOn: (sql) => sql.startsWith('UPDATE'),
     });
     const migration = makeMigration('m1', { up: async () => {} });
     const logs = [];

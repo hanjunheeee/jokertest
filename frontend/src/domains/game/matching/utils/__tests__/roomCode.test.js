@@ -60,18 +60,18 @@ test("isValidRoomCode는 숫자만 있는 코드도 그대로 통과시킨다", 
 
 test("isValidRoomCode는 빈 값·길이 미달·비영숫자를 거부한다", () => {
   const rejected = [
-    "", // 아직 코드를 못 받음
+    "",
     null,
     undefined,
-    "ABC12", // 5자
-    "ABC1234", // 7자
-    "AB-123", // 하이픈
-    "AB 123", // 공백
-    " AB123", // 앞 공백
-    "AB123 ", // 뒤 공백
-    "AB12\n3", // 개행
-    "방코드12", // 한글
-    "AB12３D", // 전각 숫자
+    "ABC12",
+    "ABC1234",
+    "AB-123",
+    "AB 123",
+    " AB123",
+    "AB123 ",
+    "AB12\n3",
+    "방코드12",
+    "AB12３D",
   ]
 
   for (const code of rejected) {
@@ -124,7 +124,7 @@ test("normalizeRoomCodeChar는 대소문자를 바꾸지 않는다", () => {
 test("normalizeRoomCodeChar는 여러 글자가 들어오면 마지막 글자만 남긴다", () => {
   assert.equal(normalizeRoomCodeChar("AB"), "B")
   assert.equal(normalizeRoomCodeChar("2X"), "X")
-  assert.equal(normalizeRoomCodeChar("A-"), "A") // 쓸 수 없는 문자를 걷어낸 뒤의 마지막 글자
+  assert.equal(normalizeRoomCodeChar("A-"), "A")
   assert.equal(normalizeRoomCodeChar("-B"), "B")
 })
 
@@ -137,7 +137,7 @@ test("normalizeRoomCodeChar는 쓸 수 없는 값에 대해 빈 문자열을 준
 test("normalizeRoomCodeText는 영문자가 섞인 방코드를 그대로 보존한다", () => {
   assert.equal(normalizeRoomCodeText("AB2C3D"), "AB2C3D")
   assert.equal(normalizeRoomCodeText("ZZZZZZ"), "ZZZZZZ")
-  assert.equal(normalizeRoomCodeText("aB2c3D"), "aB2c3D") // 케이스 보존
+  assert.equal(normalizeRoomCodeText("aB2c3D"), "aB2c3D")
 })
 
 test("normalizeRoomCodeText는 숫자 전용 코드를 그대로 통과시킨다(회귀)", () => {

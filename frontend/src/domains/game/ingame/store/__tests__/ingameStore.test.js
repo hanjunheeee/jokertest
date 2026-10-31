@@ -49,8 +49,8 @@ for (const [label, setup, payload] of ignoredCases) {
     assert.doesNotThrow(() => useInGameStore.getState().applyPhaseChanged(payload))
 
     const storeAfter = useInGameStore.getState()
-    assert.equal(storeAfter, storeBefore) // 전체 store state 객체 참조 유지
-    assert.equal(storeAfter.state, gameStateBefore) // game state 참조 유지
+    assert.equal(storeAfter, storeBefore)
+    assert.equal(storeAfter.state, gameStateBefore)
   })
 }
 
@@ -61,8 +61,8 @@ test("applyPhaseChanged: 올바른 {gameId, phase:'NIGHT', dayIndex:0}만 반영
   useInGameStore.getState().applyPhaseChanged({ gameId: "game-1", phase: "NIGHT", dayIndex: 0 })
 
   const storeAfter = useInGameStore.getState()
-  assert.notEqual(storeAfter, storeBefore) // 반영된 경우엔 최상위 참조가 새로 생긴다
-  assert.notEqual(storeAfter.state, seeded) // game state 참조도 새로 생긴다
+  assert.notEqual(storeAfter, storeBefore)
+  assert.notEqual(storeAfter.state, seeded)
   assert.equal(storeAfter.state.phase, "NIGHT")
   assert.equal(storeAfter.state.dayIndex, 0)
   assert.equal(storeAfter.state.id, seeded.id)
@@ -517,8 +517,8 @@ test("commitWithReceipt: 같은 자리로 되돌아온 A→B→A 뒤에도 그 �
   seedSeatedState({ membershipId: "mem-a" })
   const staleReceipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
 
-  seedSeatedState({ membershipId: "mem-b" }) // 이탈(다른 자리)
-  seedSeatedState({ membershipId: "mem-a" }) // 재입장 — 값은 캡처 당시와 똑같아졌다
+  seedSeatedState({ membershipId: "mem-b" })
+  seedSeatedState({ membershipId: "mem-a" })
 
   const current = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
   assert.equal(current.membershipId, staleReceipt.membershipId, "전제: 소속 식별자 값은 되돌아와 있어야 한다")

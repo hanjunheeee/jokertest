@@ -910,7 +910,7 @@ test('CO S-1(AC-04): 정수이며 범위 안인 계정 전적만 own-property로
     players: playersWithRecords([
       { accountTotalGames: 3, accountWinRate: 67 },
       { accountTotalGames: 0, accountWinRate: 0 },
-      undefined, // 조회 실패: 서버가 두 키를 아예 싣지 않은 참가자
+      undefined,
     ]),
   })
 

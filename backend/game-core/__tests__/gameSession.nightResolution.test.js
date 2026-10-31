@@ -97,7 +97,7 @@ test('commitNightResolution: 마지막 생존 JOKER를 제거하면 DAY로 전�
     assert.deepEqual(result, { ok: true, victimUuid: jokerUuid, terminal: { winner: 'CITIZEN' } })
     assert.equal(session.phase, 'ENDED')
     assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
-    assert.equal(session.dayIndex, 0) // 승리 시 DAY 전이(dayIndex+1)를 실행하지 않는다
+    assert.equal(session.dayIndex, 0)
     assert.equal(session.players.get(jokerUuid).alive, false)
     for (const player of session.players.values()) {
         if (player.uuid !== jokerUuid) assert.equal(player.alive, true)
@@ -194,7 +194,7 @@ test('공개 사망 reveal: DOCTOR가 막아낸 JOKER 암살은 reveal을 만들
     const targetUuid = [...session.players.values()].find((p) => p.role === 'CITIZEN').uuid
 
     submitNightAction(jokerUuid, session.id, targetUuid)
-    submitNightAction(doctorUuid, session.id, targetUuid) // 같은 대상을 보호 → 암살 무효
+    submitNightAction(doctorUuid, session.id, targetUuid)
     const prepared = prepareNightResolution(jokerUuid, session.id)
 
     const applied = commitNightResolution(prepared.session, prepared.resolution)
@@ -410,8 +410,8 @@ test('밤 해소: 보호되지 않은 암살과 무득표 밤에는 실패 통�
 test('밤 해소 판정 순서: 암살당한 의사는 사망하고, 그가 타인에게 건 보호는 사망 뒤 소멸한다', () => {
     const { session, doctorUuid, jokerUuid, citizenUuids } = nightSessionWithDoctor({ id: 'room-nb-order' })
     const [protectedUuid] = citizenUuids
-    submitNightAction(doctorUuid, session.id, protectedUuid) // 의사는 타인을 보호한다(자기보호 아님)
-    submitNightAction(jokerUuid, session.id, doctorUuid) // 광대는 그 의사를 지목한다
+    submitNightAction(doctorUuid, session.id, protectedUuid)
+    submitNightAction(jokerUuid, session.id, doctorUuid)
 
     const prepared = prepareNightResolution(jokerUuid, session.id)
 
@@ -631,7 +631,7 @@ test('AC-03(F-25a) 대조: 공격받고 치료받지 못한 경비원의 조사�
         id: 'room-f25a-guard-unrecovered',
     })
     submitNightAction(jokerUuid, session.id, guardUuid)
-    submitNightAction(doctorUuid, session.id, null) // 치료하지 않는다
+    submitNightAction(doctorUuid, session.id, null)
     submitNightAction(guardUuid, session.id, citizenUuid)
 
     const prepared = prepareNightResolution(jokerUuid, session.id)
@@ -653,7 +653,7 @@ test('AC-03(F-25a): 공격받은 마녀사냥꾼이 치료로 회복되면 같�
     session.dayIndex = 2
     const citizenUuids = [...session.players.values()].filter((p) => p.role === 'CITIZEN').map((p) => p.uuid)
     const [deadCitizen, aliveCitizen] = citizenUuids
-    session.players.get(deadCitizen).alive = false // 이전에 이미 사망한(재판/이전 밤) 확인 대상
+    session.players.get(deadCitizen).alive = false
 
     submitNightAction(jokerUuid, session.id, witchHunterUuid)
     submitNightAction(doctorUuid, session.id, witchHunterUuid)
@@ -682,7 +682,7 @@ test('AC-03(F-25a) 대조: 공격받고 치료받지 못한 마녀사냥꾼의 �
     session.players.get(deadCitizen).alive = false
 
     submitNightAction(jokerUuid, session.id, witchHunterUuid)
-    submitNightAction(doctorUuid, session.id, null) // 치료하지 않는다
+    submitNightAction(doctorUuid, session.id, null)
     submitNightAction(guardUuid, session.id, aliveCitizen)
     submitNightAction(witchHunterUuid, session.id, deadCitizen)
 
@@ -1041,8 +1041,8 @@ test('AC-04 매트릭스: GUARD가 그 판에 없는 직업 → WITCH_HUNTER가 
 test('AC-04 매트릭스: GUARD 행동 실패(공격받고 치료받지 못함, RECOVERY_BLOCKED) → WITCH_HUNTER가 다음 역할로 유효한 확인을 확정하고 resolved:true다', () => {
     const { session, jokerUuids, doctorUuids, guardUuids, witchHunterUuids, citizenUuids, deadCitizen } =
         witchHunterReadyFixture('guard-recovery-blocked', { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 })
-    submitNightAction(jokerUuids[0], session.id, guardUuids[0]) // 광대가 경비원을 공격
-    submitNightAction(doctorUuids[0], session.id, citizenUuids[1]) // 의사는 다른 대상을 치료(경비원은 치료받지 못한다)
+    submitNightAction(jokerUuids[0], session.id, guardUuids[0])
+    submitNightAction(doctorUuids[0], session.id, citizenUuids[1])
     submitNightAction(guardUuids[0], session.id, citizenUuids[2])
     submitNightAction(witchHunterUuids[0], session.id, deadCitizen)
 
@@ -1145,8 +1145,8 @@ test('AC-04 매트릭스: WITCH_HUNTER가 그 판에 없는 직업 → 앞선 GU
 test('AC-04 매트릭스: WITCH_HUNTER 행동 실패(공격받고 치료받지 못함, RECOVERY_BLOCKED) → 앞선 GUARD의 성공 결과는 그대로 유지되고 resolved:true다', () => {
     const { session, jokerUuids, doctorUuids, guardUuids, witchHunterUuids, citizenUuids, deadCitizen } =
         witchHunterReadyFixture('wh-recovery-blocked', { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 })
-    submitNightAction(jokerUuids[0], session.id, witchHunterUuids[0]) // 광대가 마녀사냥꾼을 공격
-    submitNightAction(doctorUuids[0], session.id, citizenUuids[1]) // 의사는 다른 대상을 치료(마녀사냥꾼은 치료받지 못한다)
+    submitNightAction(jokerUuids[0], session.id, witchHunterUuids[0])
+    submitNightAction(doctorUuids[0], session.id, citizenUuids[1])
     submitNightAction(guardUuids[0], session.id, citizenUuids[2])
     submitNightAction(witchHunterUuids[0], session.id, deadCitizen)
 

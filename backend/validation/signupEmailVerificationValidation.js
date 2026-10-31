@@ -1,6 +1,6 @@
 'use strict';
 
-const EMAIL_MAX_LENGTH = 100; // users.email과 같은 상한(signupValidation.js, User 모델).
+const EMAIL_MAX_LENGTH = 100;
 
 const normalizeEmail = (email) => (typeof email === 'string' ? email.trim().toLowerCase() : email);
 
@@ -8,7 +8,7 @@ const validateEmailFormat = (email) => {
     if (typeof email !== 'string') return false;
     const trimmed = email.trim();
     if (!trimmed || trimmed.length > EMAIL_MAX_LENGTH) return false;
-    if (/\s/.test(trimmed)) return false; // 내부 공백 금지
+    if (/\s/.test(trimmed)) return false;
 
     const atIndex = trimmed.indexOf('@');
     if (atIndex <= 0 || atIndex === trimmed.length - 1) return false;

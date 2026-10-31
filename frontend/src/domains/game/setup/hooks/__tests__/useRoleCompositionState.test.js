@@ -46,7 +46,7 @@ test("CUSTOM으로 전환하면 직전 광대 수를 승계하고 파생 시민 
   assert.equal(result.current.isCustom, true)
   assert.equal(result.current.roleCounts.JOKER, 2)
   assert.equal(result.current.fixedRoleCount, 2)
-  assert.equal(result.current.citizenCount, 6) // 8 - 2
+  assert.equal(result.current.citizenCount, 6)
   assert.equal(result.current.validation.ok, true)
 })
 
@@ -70,11 +70,11 @@ test("maxPlayers가 바뀌면 파생 시민 수와 검증이 즉시 다시 계�
   act(() => result.current.selectMode("custom"))
   act(() => result.current.setRoleCount("DOCTOR", 1))
   act(() => result.current.setRoleCount("GUARD", 1))
-  assert.equal(result.current.citizenCount, 4) // 8 - (2+1+1)
+  assert.equal(result.current.citizenCount, 4)
   assert.equal(result.current.validation.ok, true)
 
   rerender({ maxPlayers: 4, autoJokerCount: 2 })
-  assert.equal(result.current.citizenCount, 0) // 4 - 4
+  assert.equal(result.current.citizenCount, 0)
   assert.equal(result.current.validation.ok, true)
 
   rerender({ maxPlayers: 4, autoJokerCount: 2 })
@@ -82,7 +82,7 @@ test("maxPlayers가 바뀌면 파생 시민 수와 검증이 즉시 다시 계�
   assert.equal(result.current.citizenCount, null)
   assert.equal(result.current.validation.ok, false)
   assert.equal(result.current.validation.code, "FIXED_ROLES_EXCEED_MAX_PLAYERS")
-  assert.equal(result.current.roleCounts.WITCH_HUNTER, 1) // 조용히 되돌리지 않는다
+  assert.equal(result.current.roleCounts.WITCH_HUNTER, 1)
 })
 
 test("AUTO로 되돌리면 잘못된 custom 값이 남아 있어도 다시 생성 가능해진다", () => {

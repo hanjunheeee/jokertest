@@ -112,10 +112,10 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
     if (unavailable(t)) return;
     await setUp();
 
-    const withRecords = await createLocalUser('rec');     // 시민 1승/2판 + 광대 1승/1판
-    const withoutRecords = await createLocalUser('none'); // 판 기록 없음
-    const excludedOnly = await createLocalUser('excl');   // development·test 출처만 있음
-    const leaver = await createLocalUser('leav');         // 중단 경기의 이탈자(잔류자 대조용)
+    const withRecords = await createLocalUser('rec');
+    const withoutRecords = await createLocalUser('none');
+    const excludedOnly = await createLocalUser('excl');
+    const leaver = await createLocalUser('leav');
 
     await seedFinishedGame(withRecords, 'CITIZEN', { winner: 'CITIZEN' });
     await seedFinishedGame(withRecords, 'CITIZEN', { winner: 'JOKER' });

@@ -249,7 +249,7 @@ test("같은 gameId라도 인증 계정 uuid가 바뀌면 새 reveal identity로
 
 test("이전 계정/게임의 stale self(uuid 불일치)는 자동으로 열리지 않는다", () => {
   seedStore({ gameId: "g1", playerUuid: "stale-uuid", nickname: "Ghost", role: "CITIZEN" })
-  seedAuth("player-1") // 인증된 계정과 store의 self.uuid가 다르다
+  seedAuth("player-1")
 
   const hook = renderHook(() => useInGameRoleReveal())
 

@@ -14,8 +14,8 @@ const {
 const generateOpaqueToken = () => crypto.randomBytes(32).toString("base64url");
 const hashValue = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 
-const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // state는 리다이렉트 왕복 시간만 견디면 된다.
-const SOCIAL_SIGNUP_INTENT_TTL_MS = 30 * 60 * 1000; // 가입 보완 폼을 채우는 동안 유지된다.
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const SOCIAL_SIGNUP_INTENT_TTL_MS = 30 * 60 * 1000;
 
 const VALID_PURPOSES = new Set(["login", "link"]);
 
@@ -204,7 +204,7 @@ exports.completeSocialSignup = async ({
         }
 
         let accountEmail = intent.email;
-        const emailSnapshot = intent.email; // external_identities에는 제공자 확인 주소만 남긴다.
+        const emailSnapshot = intent.email;
 
         if (intent.email === null) {
             if (!validateEmailFormat(email)) {
@@ -286,7 +286,7 @@ const linkExternalIdentityForValidatedSession = async ({ userId, sessionId, prov
             if (existing.user_id !== userId) {
                 throw createError("이미 다른 계정에 연결된 소셜 계정입니다.", 409, "IDENTITY_ALREADY_LINKED");
             }
-            return existing; // 이미 이 계정에 연결되어 있다 — 그대로 반환(멱등).
+            return existing;
         }
 
         return await userRepository.createExternalIdentity({

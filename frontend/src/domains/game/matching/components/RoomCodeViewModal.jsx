@@ -57,7 +57,7 @@ const FRAME_VARIANTS = {
 }
 
 export default function RoomCodeViewModal({ open, onClose, roomCode }) {
-  const [copied, setCopied] = useState(false) // true면 복사 버튼 라벨 "복사됨" 표시
+  const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState("")
   const [copyStatus, setCopyStatus] = useState("")
   const copyFeedbackTimerRef = useRef(null)
@@ -163,7 +163,7 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
                 frameSrc={GAME_MATCHING_ASSETS.roomCodeShareFrame}
                 frameAlt="초대 방코드"
                 value={displayRoomCode}
-                onChange={() => {}} // readOnly — 입력 변경 없음
+                onChange={() => {}}
                 readOnly
                 overlay={
                   <button

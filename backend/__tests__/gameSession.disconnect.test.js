@@ -167,7 +167,7 @@ test('AC-03: 유예 만료 사망 방송은 끊김 전용 공개 계약이고 �
     const clock = createManualClock()
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    submit(jokerUuid, null) // JOKER 턴을 닫아 DOCTOR 턴으로 넘긴다
+    submit(jokerUuid, null)
     assert.equal(session.nightTurnRole, 'DOCTOR')
 
     disconnectSocket(sockets, doctorUuid)
@@ -271,7 +271,7 @@ test('AC-05: 만료가 먼저 도착하면 사망은 정확히 한 번이고, �
 
     assert.equal(eliminationBroadcasts(io).length, 1)
     assert.deepEqual(turnEventLog(io), turnsAfterExpiry)
-    assert.equal(session.phase, 'NIGHT') // 남은 참가자의 밤은 그대로 이어진다
+    assert.equal(session.phase, 'NIGHT')
 })
 
 test('AC-01: 진행 중(NIGHT) 세션에서 한 명이 끊겨도 세션은 종료되지 않고 유예만 걸린다', async () => {
@@ -315,7 +315,7 @@ test('AC-04: 마지막 비-JOKER가 유예 만료로 사망하면 그 자리에�
         uuid: player.uuid,
         nickname: player.nickname,
         role: player.role,
-        team: player.role === 'JOKER' ? 'JOKER' : 'CITIZEN', // 이 fixture는 JOKER 1 + CITIZEN 2다
+        team: player.role === 'JOKER' ? 'JOKER' : 'CITIZEN',
         alive: player.alive,
         deathReason: player.deathReason ?? null,
     }))

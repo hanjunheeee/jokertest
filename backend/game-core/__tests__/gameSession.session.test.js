@@ -364,7 +364,7 @@ test('acknowledgeRoleReveal: 이미 DAY인 세션에 확인하면 INVALID_PHASE�
     const candidate = buildSessionCandidate(room)
     commitGameSession(candidate.session)
     acknowledgeRoleReveal('h1', candidate.session.id)
-    acknowledgeRoleReveal('h2', candidate.session.id) // 여기서 이미 DAY로 전이됨
+    acknowledgeRoleReveal('h2', candidate.session.id)
 
     const result = acknowledgeRoleReveal('h1', candidate.session.id)
 
@@ -388,7 +388,7 @@ test('acknowledgeRoleReveal: registry 불일치(세션은 있지만 players에 u
     const room = makeRoom({ id: 'room-ack-10', players: [makePlayer('j1'), makePlayer('j2')], jokerCount: 0 })
     const candidate = buildSessionCandidate(room)
     commitGameSession(candidate.session)
-    candidate.session.players.delete('j1') // playerSession엔 여전히 j1→gameId가 남아있는 불일치를 재현
+    candidate.session.players.delete('j1')
 
     const result = acknowledgeRoleReveal('j1', candidate.session.id)
 
@@ -505,7 +505,7 @@ test('슬라이스1: 중복·반복·전이 이후 확인은 DAY를 재초기화
     assert.equal(acknowledgeRoleReveal('s4c', session.id).transitioned, true)
 
     const dayVotesAfterTransition = session.dayVotes
-    session.dayVotes.set('s4a', null) // 이 DAY에서 실제로 접수된 표
+    session.dayVotes.set('s4a', null)
 
     for (const uuid of uuids) {
         assert.deepEqual(acknowledgeRoleReveal(uuid, session.id), { ok: false, code: 'INVALID_PHASE' })
@@ -514,7 +514,7 @@ test('슬라이스1: 중복·반복·전이 이후 확인은 DAY를 재초기화
 
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, 1)
-    assert.equal(session.dayVotes, dayVotesAfterTransition) // 새 Map으로 덮어쓰이지 않았다
+    assert.equal(session.dayVotes, dayVotesAfterTransition)
     assert.equal(session.dayVotes.get('s4a'), null)
     assert.equal(session.roleRevealAcks.size, uuids.length)
 })
@@ -573,7 +573,7 @@ test('슬라이스1: 초기 DAY 재접속 스냅샷은 DAY/dayIndex 1과 요청�
     assert.equal(result.snapshot.dayIndex, 1)
     assert.equal(result.snapshot.self.uuid, 's7a')
     assert.equal(result.snapshot.self.role, session.players.get('s7a').role)
-    assert.equal(result.snapshot.self.hasActedThisPhase, false) // 아직 이 DAY에 투표하지 않았다
+    assert.equal(result.snapshot.self.hasActedThisPhase, false)
     for (const player of result.snapshot.players) {
         assert.deepEqual(Object.keys(player).sort(), ['isAlive', 'isParticipating', 'membershipId', 'nickname', 'themeIndex', 'uuid'])
         assert.equal(Number.isInteger(player.themeIndex), true)
@@ -845,7 +845,7 @@ test('F-13(AC-05): buildSessionCandidate는 room.players의 계정 프로필 식
     const room = makeRoom({
         players: [
             makePlayer('ap1', 'A', { accountProfilePhotoId: 'player-profile-금빛가면', accountProfileBorderId: 'profile-border-귀족' }),
-            makePlayer('ap2', 'B'), // 계정 프로필 필드가 아예 없는 참가자도 섞어 둔다
+            makePlayer('ap2', 'B'),
             makePlayer('ap3', 'C'),
         ],
     })
@@ -872,7 +872,7 @@ test('F-13(AC-05): buildGameStartedPayload의 공용 players[]는 계정 프로�
         jokerCount: 1,
     })
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
-    const payload = buildGameStartedPayload(candidate.session, 'gs2') // 타인(gs2) 시점에서도 gs1의 공개 프로필이 보인다
+    const payload = buildGameStartedPayload(candidate.session, 'gs2')
 
     const p1 = payload.state.players.find((p) => p.uuid === 'gs1')
     const p2 = payload.state.players.find((p) => p.uuid === 'gs2')
@@ -943,7 +943,7 @@ test('F-14(AC-04): self는 자신의 실제 역할에 대응하는 accountSkinId
 test('F-14(AC-04): 계정에 그 직업 스킨 선택이 아예 없으면(own-property 없음) accountSkinId 키 자체가 생기지 않는다', () => {
     const room = makeRoom({
         players: [
-            makePlayer('fj3', 'A'), // accountSkinsByJob 필드 자체가 없는 참가자
+            makePlayer('fj3', 'A'),
             makePlayer('fj4', 'B'),
         ],
         jokerCount: 1,
@@ -973,7 +973,7 @@ test('F-14(AC-04): 공용 players[]와 타인 시점의 payload에는 어떤 참
     }
     const fj6Payload = buildGameStartedPayload(candidate.session, 'fj6')
     assert.equal(fj6Payload.state.self.uuid, 'fj6')
-    assert.notEqual(fj6Payload.state.self.accountSkinId, undefined) // 자기 자신의 값은 정상 노출
+    assert.notEqual(fj6Payload.state.self.accountSkinId, undefined)
 })
 
 test('F-14(AC-04): 공용 players[]는 계정 카드 프레임(accountCardFrameId)을 실제로 가진 참가자에게만 공개 필드로 담는다(직업 스킨과 달리 비밀 아님)', () => {
@@ -985,7 +985,7 @@ test('F-14(AC-04): 공용 players[]는 계정 카드 프레임(accountCardFrameI
         jokerCount: 1,
     })
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
-    const payload = buildGameStartedPayload(candidate.session, 'fc2') // 타인 시점에서도 공개된다
+    const payload = buildGameStartedPayload(candidate.session, 'fc2')
 
     const p1 = payload.state.players.find((p) => p.uuid === 'fc1')
     const p2 = payload.state.players.find((p) => p.uuid === 'fc2')
@@ -1499,7 +1499,7 @@ test('getSessionSnapshotForPlayer: expectedGameId — 생략 시 통과, 일치 
     assert.deepEqual(getSessionSnapshotForPlayer('snG1', 'not-the-real-id'), { ok: false, code: 'GAME_ID_MISMATCH' })
     assert.deepEqual(getSessionSnapshotForPlayer('snG1', ''), { ok: false, code: 'GAME_ID_MISMATCH' })
     assert.deepEqual(getSessionSnapshotForPlayer('snG1', '   '), { ok: false, code: 'GAME_ID_MISMATCH' })
-    assert.equal(getSessionSnapshotForPlayer('snG1', `  ${session.id}  `).ok, true) // 앞뒤 공백은 trim 후 비교
+    assert.equal(getSessionSnapshotForPlayer('snG1', `  ${session.id}  `).ok, true)
 })
 
 test('getSessionSnapshotForPlayer: 반복 요청은 deep-equal하고 canonical registry 상태를 전혀 바꾸지 않는다(멱등·읽기 전용)', () => {
@@ -1512,7 +1512,7 @@ test('getSessionSnapshotForPlayer: 반복 요청은 deep-equal하고 canonical r
     const afterSecondState = gameSession.__getStateSnapshotForTests()
 
     assert.deepEqual(first, second)
-    assert.notEqual(first.snapshot, second.snapshot) // 서로 다른 객체 참조(매 호출 새 구조체)
+    assert.notEqual(first.snapshot, second.snapshot)
     assert.deepEqual(beforeState, afterFirstState)
     assert.deepEqual(afterFirstState, afterSecondState)
 })
@@ -1554,11 +1554,11 @@ test('getSessionSnapshotForPlayer: 첫 응답 객체(players/self/winResult/nigh
 })
 
 test('getSessionSnapshotForPlayer: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — ENDED에서 nightResult/dayVoteResolution/tribunal/winResult가 전부 포함된다(다른 사이클의 밤 판정이라 nightResolution.dayIndex와 session.dayIndex가 어긋나므로)', () => {
-    const uuids = ['snA1', 'snA2', 'snA3', 'snA4'] // JOKER=snA2(randomFn:()=>0 고정 셔플)
+    const uuids = ['snA1', 'snA2', 'snA3', 'snA4']
     const session = buildSnapQuadSession({ id: 'room-snap-tribunal-end', uuids })
     ackAll(session)
 
-    const nightOutcome = resolveJokerOnlyNight(session, 'snA2', null) // 아무도 죽지 않음
+    const nightOutcome = resolveJokerOnlyNight(session, 'snA2', null)
     assert.deepEqual(nightOutcome, { ok: true, victimUuid: null, terminal: null })
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, 1)
@@ -1602,7 +1602,7 @@ test('getSessionSnapshotForPlayer: TRIBUNAL 유죄 처형으로 CITIZEN 승리 �
 })
 
 test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT→night-kill ENDED(JOKER 승리) 전체 진행에서 매 단계 top-level 키 집합이 정확하다', () => {
-    const uuids = ['snB1', 'snB2', 'snB3', 'snB4'] // JOKER=snB2(randomFn:()=>0 고정 셔플)
+    const uuids = ['snB1', 'snB2', 'snB3', 'snB4']
     const session = buildSnapQuadSession({ id: 'room-snap-progress', uuids })
     ackAll(session)
 
@@ -1614,7 +1614,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.deepEqual(nightSnapshotJoker.snapshot.self.allies, [])
     assertNoForbiddenPrivateData(nightSnapshotJoker.snapshot, collectOtherPlayerRoleSecrets(session, 'snB2'))
 
-    const nightOutcome = resolveJokerOnlyNight(session, 'snB2', 'snB3') // snB3(CITIZEN) 사망
+    const nightOutcome = resolveJokerOnlyNight(session, 'snB2', 'snB3')
     assert.deepEqual(nightOutcome, { ok: true, victimUuid: 'snB3', terminal: null })
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, 1)
@@ -1636,7 +1636,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
         daySnapshot.snapshot.nightResult.dayIndex,
         buildNightResultAppliedPayload(session, 'snB3', session.nightResolution.publicDeathReveals).dayIndex,
     )
-    assert.notEqual(daySnapshot.snapshot.nightResult.dayIndex, session.nightResolution.dayIndex) // 0 !== 1
+    assert.notEqual(daySnapshot.snapshot.nightResult.dayIndex, session.nightResolution.dayIndex)
     assert.deepEqual(
         daySnapshot.snapshot.players.find((p) => p.uuid === 'snB3'),
         {
@@ -1685,7 +1685,7 @@ test('getSessionSnapshotForPlayer: NIGHT→DAY→TRIBUNAL(무죄)→post-tribuna
     assert.equal(Object.hasOwn(postTribunalNightSnapshot.snapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(postTribunalNightSnapshot.snapshot, 'tribunal'), false)
 
-    const nightKillOutcome = resolveJokerOnlyNight(session, 'snB2', 'snB4') // snB4(CITIZEN) 사망 → 생존 JOKER 1 >= 생존 CITIZEN 1
+    const nightKillOutcome = resolveJokerOnlyNight(session, 'snB2', 'snB4')
     assert.deepEqual(nightKillOutcome, { ok: true, victimUuid: 'snB4', terminal: { winner: 'JOKER' } })
     assert.equal(session.phase, 'ENDED')
     assert.deepEqual(session.winResult, { winner: 'JOKER' })
@@ -2054,7 +2054,7 @@ test('commitGameChatMessage: prepare 이후 phase가 넘어가면(DAY→NIGHT) �
     const prepared = prepareGameChatMessage(actor, session.id, '안녕', { now: () => 1000 })
     const before = chatRateLimitSnapshot(session)
 
-    session.phase = 'NIGHT' // prepare~commit 사이의 밤 전이
+    session.phase = 'NIGHT'
 
     assert.deepEqual(commitPrepared(prepared), {
         ok: false,
@@ -2070,7 +2070,7 @@ test('commitGameChatMessage: prepare 이후 사망이 확정되면 발행 권한
     assert.equal(prepared.channel, CHAT_CHANNELS.DAY)
     const before = chatRateLimitSnapshot(session)
 
-    session.players.get(actor).alive = false // prepare~commit 사이의 사망
+    session.players.get(actor).alive = false
 
     assert.deepEqual(commitPrepared(prepared), {
         ok: false,
@@ -2316,10 +2316,10 @@ test('commitGameChatMessage: 실패한 커밋을 여러 번 시도해도 두 Map
     const before = chatRateLimitSnapshot(session)
 
     const attempts = [
-        () => commitPrepared(prepared, { now: 999 }), // 미래 sentAt
+        () => commitPrepared(prepared, { now: 999 }),
         () => commitPrepared(prepared, { now: NaN }),
         () => commitPrepared(prepared, { now: 1000 + CHAT_COMMIT_MAX_AGE_MS + 1 }),
-        () => commitGameChatMessage({ ...prepared }, { now: () => 1000 }), // 얕은 복사본은 능력이 없다
+        () => commitGameChatMessage({ ...prepared }, { now: () => 1000 }),
         () => commitGameChatMessage(null, { now: () => 1000 }),
         () => commitGameChatMessage(prepared.message, { now: () => 1000 }),
     ]

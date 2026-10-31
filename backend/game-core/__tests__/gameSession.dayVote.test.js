@@ -368,7 +368,7 @@ test('submitDayVote: 자기 자신을 대상으로 지정하면 SELF_TARGET_NOT_
 
 test('submitDayVote: 모든 실패 경로에서 dayVotes/phase/dayIndex/생존 상태가 호출 전후 완전히 동일하다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dv-15' })
-    session.dayVotes.set(uuidC, uuidB) // 기존 유효 제출이 실패 경로에서 파괴되지 않는지도 함께 확인
+    session.dayVotes.set(uuidC, uuidB)
     const beforeDayVotes = new Map(session.dayVotes)
     const beforePhase = session.phase
     const beforeDayIndex = session.dayIndex
@@ -1135,7 +1135,7 @@ test('commitTribunalVoteResolution: 승리 조건 미충족 전이는 지난 밤
         defendantUuid: 'rs4',
         randomFn: () => 0,
     })
-    session.nightActions.set('rs2', 'rs1') // rs2(JOKER)가 과거에 rs1을 지목했던 잔여 기록
+    session.nightActions.set('rs2', 'rs1')
     session.nightResolution = {
         gameId: session.id,
         dayIndex: session.dayIndex,
@@ -1159,7 +1159,7 @@ test('commitTribunalVoteResolution: 승리 조건 미충족 전이 이후 새 �
     const { session } = setupTribunalReadySession({
         uuids: ['fn1', 'fn2', 'fn3', 'fn4'],
         defendantUuid: 'fn4',
-        randomFn: () => 0, // fn2 == JOKER(이 4인 고정 셔플에서 유일한 밤 행동 eligible actor)
+        randomFn: () => 0,
     })
     castAllVotes(session, { fn1: 'GUILTY', fn2: 'GUILTY', fn3: 'GUILTY' })
     const prepared = prepareTribunalVoteResolution('fn1', session.id, session.dayIndex)

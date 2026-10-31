@@ -43,7 +43,7 @@ function makeNoise(seed) {
 }
 
 function render(notes) {
-  const totalMs = Math.max(...notes.map((x) => x.at + x.ms)) + 30 // 30ms 꼬리(클릭 잡음 방지)
+  const totalMs = Math.max(...notes.map((x) => x.at + x.ms)) + 30
   const length = Math.ceil((totalMs / 1000) * SAMPLE_RATE)
   const buf = new Float64Array(length)
   notes.forEach((note, index) => {

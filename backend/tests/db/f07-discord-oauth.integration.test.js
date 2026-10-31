@@ -225,7 +225,7 @@ for (const rememberMe of [false, true]) {
         assert.ok(signupAttemptCookie, 'SIGNUP_REQUIRED는 rememberMe를 들고 갈 서명된 가입 보완 쿠키를 다시 세팅해야 한다');
         const signupCookieHeader = cookieHeader(signupAttemptCookie);
 
-        const nickname = `f0${subject.slice(-6)}`; // 항상 8자 — 승인된 닉네임 상한(2~8자) 안.
+        const nickname = `f0${subject.slice(-6)}`;
 
         const rejectedRes = await fetch(`${base}/auth/social/signup/complete`, {
             method: 'POST',

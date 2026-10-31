@@ -1,9 +1,9 @@
 'use strict';
 
-const fs = require('fs'); // 파일/폴더를 읽기 위한 모듈
-const path = require('path'); // 경로를 안전하게 조합하기 위한 모듈
-const Sequelize = require('sequelize'); // Sequelize　라이브러리
-const process = require('process'); // 환경변수(process.env)를 사용하기 위한 모듈
+const fs = require('fs');
+const path = require('path');
+const Sequelize = require('sequelize');
+const process = require('process');
 const { buildPoolConfig } = require('../config/dbPool');
 
 const basename = path.basename(__filename);

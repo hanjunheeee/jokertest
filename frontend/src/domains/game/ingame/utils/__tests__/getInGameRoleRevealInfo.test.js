@@ -93,7 +93,7 @@ test("getInGameRoleRevealInfo: 각 역할은 서로 다른 roleName/description�
 })
 
 test("getInGameRoleRevealInfo: self.accountSkinId가 있으면 정확히 그 구매 스킨의 standing 자산을 반환한다(추측 없음)", () => {
-  const purchasedSkinId = "player-skin-경비원1-바이올렛" // GUARD 직업(guard 탭)의 실제 구매 가능 스킨 id
+  const purchasedSkinId = "player-skin-경비원1-바이올렛"
   const self = buildSelf({ role: "GUARD", team: "CITIZEN", accountSkinId: purchasedSkinId })
 
   const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
@@ -108,7 +108,7 @@ test("getInGameRoleRevealInfo: self.accountSkinId가 있으면 정확히 그 구
 })
 
 test("getInGameRoleRevealInfo: self.accountSkinId가 없으면(own-property 자체가 없음, undefined) 그 직업의 기본 스킨으로 대체한다", () => {
-  const self = buildSelf({ role: "DOCTOR", team: "CITIZEN" }) // accountSkinId 필드 자체가 없음
+  const self = buildSelf({ role: "DOCTOR", team: "CITIZEN" })
   const result = getInGameRoleRevealInfo(self, { authUuid: AUTH_UUID })
 
   assert.ok(result)

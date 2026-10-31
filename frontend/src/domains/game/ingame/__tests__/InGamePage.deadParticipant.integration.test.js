@@ -382,7 +382,7 @@ function splitSourceIntoCodeAndComments(source) {
       let insideClass = false
       while (index < source.length) {
         const inner = source[index]
-        if (inner === "\n") break // 닫히지 않은 채 줄이 끝났다면 정규식이 아니었다
+        if (inner === "\n") break
         if (inner === "\\") {
           takeAsCode(inner)
           if (index + 1 < source.length) takeAsCode(source[index + 1])
@@ -1618,7 +1618,7 @@ test("F-23(AC-06): ACK 유실은 성공이 아니며, 권위 있는 확인 뒤�
   const socket = currentSocket
 
   await act(async () => { findButton(container, "게임 나가기").click() })
-  socket.takeAck("leave_game_session") // 영영 응답하지 않는다.
+  socket.takeAck("leave_game_session")
 
   await act(async () => { globalThis.__fireExitTimeouts() })
 
@@ -1717,7 +1717,7 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기의 ACK가 유실되면 �
 
   assert.ok(socket.countEmits("get_session_snapshot") >= 1,
     "전제: 재접속 동기화가 배경에서 이미 한 번 조회한다")
-  socket.takeAck("leave_game_session") // 영영 응답하지 않는다.
+  socket.takeAck("leave_game_session")
 
   await act(async () => { globalThis.__fireExitTimeouts() })
 

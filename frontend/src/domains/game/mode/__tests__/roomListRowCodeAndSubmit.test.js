@@ -97,7 +97,7 @@ function makeImportStatement(text, fileRelativeToSrc) {
   const clause = text
     .replace(/^import\s*/, "")
     .replace(/\s*from\s*["'][^"']+["']\s*$/, "")
-    .replace(/^["'][^"']+["']$/, "") // side-effect import(`import "…"`)는 가져오는 이름이 없다
+    .replace(/^["'][^"']+["']$/, "")
     .trim()
   const target = resolveModuleTarget(module, fileRelativeToSrc)
 
@@ -127,7 +127,7 @@ function collectImports(source, fileRelativeToSrc) {
     const text = pending.lines
       .join(" ")
       .replace(/\s+/g, " ")
-      .replace(/,\s*\}/g, " }") // 여러 줄 import의 마지막 쉼표는 한 줄로 쓸 때 사라진다
+      .replace(/,\s*\}/g, " }")
       .trim()
     const statementIndex = statements.length
     for (const number of pending.numbers) byLine.set(number, statementIndex)
@@ -155,7 +155,7 @@ function diffHunksAgainstRemote(repoRelativePath) {
       hunks.push(hunk)
       continue
     }
-    if (!hunk) continue // @@ 앞의 ---/+++ 등 파일 머리말
+    if (!hunk) continue
     if (line.startsWith("+")) {
       hunk.added.push({ lineNumber: newLine, text: line.slice(1) })
       newLine += 1
@@ -206,7 +206,7 @@ function markF15ScaledTypographyLines(hunk) {
 
   for (const entry of hunk.removed) {
     const converted = toF15ScaledTypography(entry.text)
-    if (converted === entry.text) continue // 배율 대상 font-size가 없던 줄
+    if (converted === entry.text) continue
     if (!removedByScaledText.has(converted)) removedByScaledText.set(converted, [])
     removedByScaledText.get(converted).push(entry)
   }

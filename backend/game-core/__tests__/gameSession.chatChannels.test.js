@@ -254,7 +254,7 @@ test('AC-02: 준비된 뒤 사망이 확정되면 commit이 다시 거부한다 
     const prepared = prepareGameChatMessage(actor, session.id, '준비는 살아서', { now: () => 71_000 })
     assert.equal(prepared.channel, CHAT_CHANNELS.DAY)
 
-    session.players.get(actor).alive = false // prepare~commit 사이의 사망
+    session.players.get(actor).alive = false
 
     assert.deepEqual(commitPrepared(prepared), { ok: false, code: 'NOT_ELIGIBLE' })
     assert.deepEqual(chatRateLimitSnapshot(session), { DAY: [], DEAD: [], JOKER: [] })

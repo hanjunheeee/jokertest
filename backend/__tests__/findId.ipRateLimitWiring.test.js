@@ -30,7 +30,7 @@ const startServer = async (t) => {
 const stubDb = (t) => {
     const originalFindOne = db.User.findOne;
     const originalCreate = db.AccountFindRequest.create;
-    db.User.findOne = async () => null; // 항상 NOT_FOUND — 이 파일은 제한기 배선만 본다.
+    db.User.findOne = async () => null;
     db.AccountFindRequest.create = async () => ({ id: 1 });
     t.after(() => {
         db.User.findOne = originalFindOne;

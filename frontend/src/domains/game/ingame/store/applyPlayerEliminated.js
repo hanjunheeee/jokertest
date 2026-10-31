@@ -24,7 +24,7 @@ export function applyPlayerEliminatedPure(current, parsed) {
       state: {
         ...current.state,
         phase: "ENDED",
-        dayPhase: null, // 낮을 벗어났다.
+        dayPhase: null,
         ...CLEARED_NIGHT_TURN,
         players: nextPlayers,
         ...(parsed.winResult ? { winResult: parsed.winResult } : {}),

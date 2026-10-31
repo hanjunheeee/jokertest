@@ -188,7 +188,7 @@ test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에
     const { signupProof } = await prepareSignupProof(email);
     const created = await authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: 'AC06스냅샷', signupProof });
 
-    const longNicknameSnapshot = '가'.repeat(45); // 30자 초과, F-01이 확장한 50자 이내
+    const longNicknameSnapshot = '가'.repeat(45);
     const gameId = '55555555-5555-5555-5555-555555555555';
 
     const session = {

@@ -39,7 +39,7 @@ test("unsubscribe() 이후에는 listener가 더 이상 호출되지 않는다",
 
   unsubscribe()
   setSocket({ id: "b" })
-  assert.equal(callCount, 1) // unsubscribe 이후 변화는 반영되지 않음
+  assert.equal(callCount, 1)
 })
 
 test("같은 참조로 setSocket을 다시 호출하면 listener를 호출하지 않는다", () => {
@@ -49,10 +49,10 @@ test("같은 참조로 setSocket을 다시 호출하면 listener를 호출하지
   let callCount = 0
   const unsubscribe = subscribeSocket(() => { callCount += 1 })
 
-  setSocket(socketA) // 이미 같은 참조 — 알림 없어야 함
+  setSocket(socketA)
   assert.equal(callCount, 0)
 
-  setSocket({ id: "a2" }) // 값은 비슷해도 다른 참조 — 알림 있어야 함
+  setSocket({ id: "a2" })
   assert.equal(callCount, 1)
 
   unsubscribe()
@@ -62,7 +62,7 @@ test("null → socket → null 전이에서 매 실제 참조 변경마다 정�
   const events = []
   const unsubscribe = subscribeSocket(() => events.push(getSocket()))
 
-  setSocket(null) // 이미 null — 알림 없음
+  setSocket(null)
   assert.equal(events.length, 0)
 
   const socketA = { id: "a" }
@@ -87,8 +87,8 @@ test("서로 다른 구독자는 독립적으로 알림을 받고, 한쪽의 uns
 
   unsubscribeFirst()
   setSocket({ id: "b" })
-  assert.equal(firstCalls, 1) // 구독 해제됨
-  assert.equal(secondCalls, 2) // 여전히 구독 중
+  assert.equal(firstCalls, 1)
+  assert.equal(secondCalls, 2)
 
   unsubscribeSecond()
 })

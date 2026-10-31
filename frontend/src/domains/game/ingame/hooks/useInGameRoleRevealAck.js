@@ -10,7 +10,7 @@ export function useInGameRoleRevealAck() {
   const gameId = useInGameStore((s) => s.gameId)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
-  const [status, setStatus] = useState("idle") // idle | acking | acked
+  const [status, setStatus] = useState("idle")
   const [error, setError] = useState(null)
 
   const ackingRef = useRef(false)
@@ -30,7 +30,7 @@ export function useInGameRoleRevealAck() {
     ackingRef.current = false
     ackedRef.current = false
     const patch = computeRoleRevealInvalidatePatch(mountedRef.current)
-    if (!patch) return // unmounted: state는 건드리지 않는다
+    if (!patch) return
     setStatus(patch.status)
     setError(patch.error)
   }
@@ -44,7 +44,7 @@ export function useInGameRoleRevealAck() {
     return () => {
       socket.off("disconnect", handleDisconnect)
       socket.off("connect", handleConnect)
-      invalidate() // socket이 바뀌거나 컴포넌트가 사라질 때도 동일하게 무효화
+      invalidate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, gameId])

@@ -111,7 +111,7 @@ const createEconomyFakes = () => {
 };
 
 const createSignupEmailVerificationFake = () => {
-    const committedRows = new Map(); // `${email}::${purpose}` -> row
+    const committedRows = new Map();
     let stagedRows = null;
     let nextId = 1;
     let lastUpdateTransaction;
@@ -235,7 +235,7 @@ const setupFakeDb = (t, { statsCreateFails = false } = {}) => {
     };
 
     db.User = {
-        findOne: async () => null,          // 이메일·닉네임 중복 없음
+        findOne: async () => null,
         create:  async (data, options) => {
             requireTransaction(options, "createUser");
             const row = { uuid: "uuid-1", ...data };

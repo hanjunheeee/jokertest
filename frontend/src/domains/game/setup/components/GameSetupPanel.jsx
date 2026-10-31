@@ -150,7 +150,7 @@ export default function GameSetupPanel({
             <GameSetupTabs activeTab={activeTab} onSelect={setActiveTab} />
 
             <div ref={setupContentRef} className={SETUP_CONTENT_CLASS}>
-              {activeTab === "general" ? ( // 일반 탭
+              {activeTab === "general" ? (
                 <GeneralGameSetupTab
                   checks={checks}
                   ranges={ranges}
@@ -159,7 +159,7 @@ export default function GameSetupPanel({
                   roleComposition={roleComposition}
                   hiddenItemIds={hiddenItemIds}
                 />
-              ) : ( // 회의&투표 탭
+              ) : (
                 <MeetingGameSetupTab
                   checks={checks}
                   ranges={ranges}

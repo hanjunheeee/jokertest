@@ -30,7 +30,7 @@ export default function SetupStepperRow({
     () => options.map((option) => (unit ? `${option}${unit}` : option)),
     [options, unit],
   )
-  const index = Math.max(0, options.indexOf(value)) // value가 목록에 없으면 첫 칸으로
+  const index = Math.max(0, options.indexOf(value))
 
   return (
     <div className={SETUP_ROW_CLASS} data-setup-row>

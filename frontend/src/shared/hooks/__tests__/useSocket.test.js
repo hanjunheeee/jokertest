@@ -124,7 +124,7 @@ test("UNAUTHORIZED connect_error 한 번 + 갱신 성공은 재연결만 하고 
 test("F-03 R-IMPL #6: 갱신은 매번 성공하는데 소켓이 계속 UNAUTHORIZED면 상한 이후 재시도를 멈추고 로그아웃한다", async () => {
   resetAll();
   authState.isLoggedIn = true;
-  refreshImpl = async () => true; // HTTP 갱신 자체는 매번 "성공"한다 — 이 성공만으로는 무한 재시도를 막지 못했다.
+  refreshImpl = async () => true;
   const hook = renderHook(() => useSocket());
   await act(async () => {});
 

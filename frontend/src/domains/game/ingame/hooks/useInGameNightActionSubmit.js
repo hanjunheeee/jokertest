@@ -13,7 +13,7 @@ export function useInGameNightActionSubmit() {
   const dayIndex = useInGameStore((s) => s.state?.dayIndex)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
-  const [status, setStatus] = useState("idle") // idle | submitting
+  const [status, setStatus] = useState("idle")
   const [error, setError] = useState(null)
   const [lastSubmittedTargetId, setLastSubmittedTargetId] = useState(null)
   const [hasSubmitted, setHasSubmitted] = useState(false)
@@ -33,7 +33,7 @@ export function useInGameNightActionSubmit() {
     versionRef.current += 1
     ackingRef.current = false
     const patch = computeRoleRevealInvalidatePatch(mountedRef.current)
-    if (!patch) return // unmounted: state는 건드리지 않는다
+    if (!patch) return
     setStatus(patch.status)
     setError(patch.error)
     setHasSubmitted(false)

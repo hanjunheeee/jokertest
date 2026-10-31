@@ -183,11 +183,11 @@ test("겹친 retry 중 먼저 시작됐지만 늦게 끝나는(폐기된) 응답
 
   let staleOutcomePromise
   await act(async () => {
-    staleOutcomePromise = result.current.retry() // calls=2, staleGate에 걸려 대기한다
+    staleOutcomePromise = result.current.retry()
   })
 
   await act(async () => {
-    await result.current.retry() // calls=3, 즉시 성공 — "나중에 시작된 호출"로 store에 반영된다
+    await result.current.retry()
   })
   assert.equal(fetchSummaryCalls, 2, "나중에 시작된 retry가 성공하면 경제 상태를 다시 읽어와야 한다")
 
@@ -205,9 +205,9 @@ test("계정 전환 전에 시작된 retry가 전환 후 늦게 도착해도 경
   let calls = 0
   getMyAchievementsImpl = async () => {
     calls += 1
-    if (calls === 1) return SAMPLE_ACHIEVEMENTS // 최초 마운트(user-1)
-    if (calls === 2) { await gate.promise; return SAMPLE_ACHIEVEMENTS } // user-1의 retry, 늦게 도착
-    return [{ id: "record-1-masquerade", achieved: false, current: 0, threshold: 3, granted: false }] // 계정 전환 후 재마운트(user-2)
+    if (calls === 1) return SAMPLE_ACHIEVEMENTS
+    if (calls === 2) { await gate.promise; return SAMPLE_ACHIEVEMENTS }
+    return [{ id: "record-1-masquerade", achieved: false, current: 0, threshold: 3, granted: false }]
   }
 
   const { result } = renderHook(() => useAchievements())
@@ -216,11 +216,11 @@ test("계정 전환 전에 시작된 retry가 전환 후 늦게 도착해도 경
 
   let staleRetryPromise
   await act(async () => {
-    staleRetryPromise = result.current.retry() // calls=2, gate에 걸림 — 아직 user-1이다
+    staleRetryPromise = result.current.retry()
   })
 
-  await act(async () => { setCurrentUser({ uuid: "user-2" }) }) // requestGeneration 증가
-  await waitFor(() => assert.equal(result.current.status, "success")) // calls=3, 새 계정 조회 성공
+  await act(async () => { setCurrentUser({ uuid: "user-2" }) })
+  await waitFor(() => assert.equal(result.current.status, "success"))
   assert.equal(fetchSummaryCalls, 2, "새 계정 조회가 성공하면 경제 상태를 다시 읽어와야 한다")
 
   await act(async () => {

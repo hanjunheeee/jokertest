@@ -246,7 +246,7 @@ test("AC-02: 만료된 인증번호는 CODE_EXPIRED로 거부된다", async (t) 
     await postCode(base, { email });
     const code = memory.outbox.at(-1).params.code;
 
-    await sleep(1700); // SIGNUP_EMAIL_CODE_TTL_MS=1500보다 길게 대기
+    await sleep(1700);
 
     const res = await postVerify(base, { email, code });
     assert.equal(res.status, 400);
@@ -291,7 +291,7 @@ test("AC-02: 재발송 이후에는 이전 번호가 무효화되고 새 번호�
     await postCode(base, { email });
     const firstCode = memory.outbox.at(-1).params.code;
 
-    await sleep(350); // SIGNUP_EMAIL_RESEND_COOLDOWN_MS=300보다 길게 대기
+    await sleep(350);
     await postCode(base, { email });
     const secondCode = memory.outbox.at(-1).params.code;
 
@@ -327,7 +327,7 @@ test("AC-02: 재발송에서 직전과 같은 번호가 다시 뽑히면 재추�
     const firstCode = memory.outbox.at(-1).params.code;
     assert.equal(firstCode, "123456");
 
-    await sleep(350); // SIGNUP_EMAIL_RESEND_COOLDOWN_MS=300보다 길게 대기
+    await sleep(350);
     await postCode(base, { email });
     const secondCode = memory.outbox.at(-1).params.code;
     assert.equal(secondCode, "654321", "직전과 같은 번호(123456)가 다시 뽑히면 재추첨되어야 한다");
@@ -460,7 +460,7 @@ test("AC-05: 이메일 시간당 한도를 넘으면 429 RATE_LIMITED이다(재�
     const email = `ac05-email-${crypto.randomUUID()}@example.com`;
     const first = await postCode(base, { email });
     assert.equal(first.status, 200);
-    await sleep(350); // 재발송 대기(300ms)를 넘겨야 두 번째 요청이 실제로 발송 단계까지 간다
+    await sleep(350);
     const second = await postCode(base, { email });
     assert.equal(second.status, 200);
     await sleep(350);
@@ -478,7 +478,7 @@ test("AC-05: 실제 라우터에서 이메일 일당 한도를 넘기면 429이�
     };
     process.env.SIGNUP_IP_HOUR_MAX = "1000";
     process.env.SIGNUP_IP_DAY_MAX = "1000";
-    process.env.SIGNUP_EMAIL_HOUR_MAX = "1"; // 시간당 창을 매번 새로 시작해 이 한도에 가려지지 않게 한다
+    process.env.SIGNUP_EMAIL_HOUR_MAX = "1";
     process.env.SIGNUP_EMAIL_DAY_MAX = "3";
     t.after(() => Object.assign(process.env, originalEnv));
 
@@ -500,7 +500,7 @@ test("AC-05: 실제 라우터에서 이메일 일당 한도를 넘기면 429이�
         const res = await postCode(base, { email });
         assert.equal(res.status, 200, `${i + 1}번째 요청은 통과해야 한다`);
         fakeNow += HOUR_MS;
-        await sleep(350); // 서비스 계층의 재발송 대기(실제 시계 기준, 이 파일 상단에서 300ms로 낮춤)를 넘긴다
+        await sleep(350);
     }
 
     const rowBefore = rows.find((row) => row.email === email);
@@ -524,7 +524,7 @@ test("AC-05: 실제 라우터에서 IP 일당 한도를 넘기면 429이고, 차
         SIGNUP_EMAIL_HOUR_MAX: process.env.SIGNUP_EMAIL_HOUR_MAX,
         SIGNUP_EMAIL_DAY_MAX: process.env.SIGNUP_EMAIL_DAY_MAX,
     };
-    process.env.SIGNUP_IP_HOUR_MAX = "1"; // 시간당 창을 매번 새로 시작해 이 한도에 가려지지 않게 한다
+    process.env.SIGNUP_IP_HOUR_MAX = "1";
     process.env.SIGNUP_IP_DAY_MAX = "3";
     process.env.SIGNUP_EMAIL_HOUR_MAX = "1000";
     process.env.SIGNUP_EMAIL_DAY_MAX = "1000";
@@ -577,13 +577,13 @@ test("AC-05: 이메일 제한기의 keyOf는 실제 요청에서 정규화된 �
     const base = await startServer(t, { router });
 
     const rawLocal = `ac05-keyof-${crypto.randomUUID()}`;
-    const variantA = `  ${rawLocal}@Example.COM  `; // 대소문자·앞뒤 공백이 섞인 입력
-    const variantB = `${rawLocal}@example.com`;      // 이미 정규화된 같은 주소
+    const variantA = `  ${rawLocal}@Example.COM  `;
+    const variantB = `${rawLocal}@example.com`;
     const differentEmail = `ac05-keyof-other-${crypto.randomUUID()}@example.com`;
 
     const first = await postCode(base, { email: variantA });
     assert.equal(first.status, 200);
-    await sleep(350); // 재발송 대기(서비스 계층)를 넘겨야 두 번째 요청이 발송 단계까지 간다
+    await sleep(350);
     const second = await postCode(base, { email: variantB });
     assert.equal(second.status, 200, "정규화하면 같은 이메일이므로 재발송 자체는 통과해야 한다");
     await sleep(350);

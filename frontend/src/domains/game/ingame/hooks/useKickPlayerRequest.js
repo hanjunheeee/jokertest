@@ -272,16 +272,16 @@ export function useKickPlayerRequest({
         try {
           verification = verifyMembership()
         } catch {
-          return // 재확인을 시작조차 못 했다 — 잠긴 채로 둔다.
+          return
         }
         Promise.resolve(verification)
           .then((ok) => {
             if (!isVerificationStillCurrent()) return
-            if (ok === false) return // 실패하면 잠긴 채로 둔다 — 사용자가 다시 시도한다.
+            if (ok === false) return
             needsVerificationRef.current = false
             setNeedsVerification(false)
           })
-          .catch(() => { /* 재확인 실패는 잠금을 유지한다(모르는 상태를 풀지 않는다) */ })
+          .catch(() => {})
         return
       }
       applyStatus(KICK_REQUEST_STATUS.FAILED)

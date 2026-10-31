@@ -509,7 +509,7 @@ test('A-05: 목록 조회는 자기 계정 행만 돌려준다', async (t) => {
     const b = await createLocalUser('lb');
     await notificationService.ensureSystemWelcome(a);
     await notificationService.ensureSystemWelcome(b);
-    await friendService.sendFriendRequest(a, b); // b에게 친구 알림 1
+    await friendService.sendFriendRequest(a, b);
 
     const base = await startRouteServer(t);
     const aBody = await (await authGet(base, a)).json();

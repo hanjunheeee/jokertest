@@ -139,11 +139,11 @@ export async function requestTossTestPayment({ clientKey, orderId, amount, order
 
 const initialState = {
   products: [],
-  productsStatus: "idle", // idle | loading | ready | error
-  productsLoadCount: 0, // 목록 조회 성공 횟수 — 어느 경로(자동·수동)로든 성공하면 오른다
-  productsStale: false, // 상품 조건이 바뀌어 목록을 다시 받기 전에는 구매하지 않는다
-  configPending: false, // 서버가 주문 생성을 CONFIG_MISSING으로 거절함(목록 새로고침 성공 뒤 다시 시도)
-  status: "idle", // idle | creatingOrder | payment | confirming | pendingGrant | unknown | done | failed | canceled
+  productsStatus: "idle",
+  productsLoadCount: 0,
+  productsStale: false,
+  configPending: false,
+  status: "idle",
   reason: null,
   order: null,
   autoChecks: 0,
@@ -160,12 +160,12 @@ let creating = false
 let productsRun = null
 let pollTimer = null
 const returnRuns = new Map()
-const inFlightOrders = new Map() // orderId → 진행 중인 복귀 처리(같은 주문 confirm 동시 1회)
+const inFlightOrders = new Map()
 const records = new Map()
-let queue = [] // 표시 대기 중인 주문(발견 최신순, 선점된 주문은 맨 앞으로 돌아온다)
-const excluded = new Set() // 복귀 URL의 orderId — 발견 결과에서 건너뛴다
-const discoveryRuns = new Map() // 상점 진입 식별자 → 발견 Promise(같은 진입은 한 번)
-let active = null // 화면에 표시 중인 주문 { orderId, token }
+let queue = []
+const excluded = new Set()
+const discoveryRuns = new Map()
+let active = null
 let activeToken = 0
 
 const activate = (id) => {
@@ -282,7 +282,7 @@ const startTopup = async (product) => {
   } finally {
     if (started === generation) {
       creating = false
-      resumeQueue(started) // 결제창을 열지 못하고 끝났으면 대기 중인 발견 주문을 이어 간다
+      resumeQueue(started)
     }
   }
 }
@@ -335,7 +335,7 @@ const showQueued = (orderId, started) => {
     status: confirming ? "confirming" : record.serverStatus === "PENDING_GRANT" ? "pendingGrant" : "unknown",
     reason: null, order: { orderId, amount: record.amount }, autoChecks: record.pollCount, lookupFailed: false,
   })
-  if (confirming) return false // 복귀의 confirm이 끝나면 runReturn이 이 화면에 결과를 반영한다
+  if (confirming) return false
   if (record.heldReason) {
     const reason = record.heldReason
     record.heldReason = null
@@ -458,9 +458,9 @@ const runReturn = async (ret, run, started) => {
   if (started !== generation) return
   const shown = isActive(ret.orderId)
   if (outcome.kind === "granted") {
-    run.entryPending = false // 충전 후 조회가 진입 조회를 겸한다
+    run.entryPending = false
     record.serverStatus = "GRANTED"
-    if (!shown) { record.heldResult = "GRANTED"; return } // 다른 복귀가 선점 — 재개 때 완료로 표시한다
+    if (!shown) { record.heldResult = "GRANTED"; return }
     set({ status: "done", reason: null })
     const refreshing = refreshSummary(started)
     finishActive(ret.orderId, started)
@@ -473,7 +473,7 @@ const runReturn = async (ret, run, started) => {
   } else {
     record.serverStatus = outcome.kind === "pendingGrant" ? "PENDING_GRANT" : "CONFIRMING"
     takeEntryFetch()
-    if (!shown) return // 재개되면 남은 자동 확인 횟수로 조회를 이어 간다
+    if (!shown) return
     set({ status: outcome.kind })
     schedulePoll(started, ret.orderId)
   }
@@ -523,7 +523,7 @@ const discoverOpenOrders = (entryId) => {
       const next = advance(started)
       if (next) schedulePoll(started, next)
     },
-    () => { /* 발견 실패는 상점 사용을 막지 않는다 — 다음 진입에서 다시 시도한다 */ },
+    () => {},
   )
   discoveryRuns.set(entryId, run)
   return run

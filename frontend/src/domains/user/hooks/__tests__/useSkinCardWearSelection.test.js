@@ -345,7 +345,7 @@ test("F-14 AC-05: 전송 불확실(code 없음)은 UNCERTAIN 상태가 되고 au
   )
   act(() => result.current.selectItem(otherSkin))
 
-  postImpl = async () => { throw new Error("네트워크 오류(테스트 주입)") } // code 없음 = 전송 불확실
+  postImpl = async () => { throw new Error("네트워크 오류(테스트 주입)") }
   let getCalled = false
   getImpl = async (endpoint) => {
     getCalled = true

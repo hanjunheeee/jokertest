@@ -63,7 +63,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     if (!requesterMembershipId) return null
     const targetMembershipId = selectRoomMembershipId(state, target.uuid)
     if (!targetMembershipId || targetMembershipId !== target.membershipId) return null
-    if (target.uuid === authUuid) return null // 본인 추방은 보내지 않는다(서버도 거부한다)
+    if (target.uuid === authUuid) return null
     return {
       requestId,
       bootEpoch: state.bootEpoch,

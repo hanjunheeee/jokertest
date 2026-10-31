@@ -1,6 +1,6 @@
 process.env.JWT_SECRET = "find-id-ratelimit-wiring-test-secret";
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-process.env.FIND_ID_IP_MAX = "1000"; // IP 제한은 이 파일에서 검증하지 않는다 — 간섭을 없앤다.
+process.env.FIND_ID_IP_MAX = "1000";
 process.env.FIND_ID_TARGET_MAX = "2";
 process.env.FIND_ID_WINDOW_MS = "600000";
 
@@ -30,7 +30,7 @@ const startServer = async (t) => {
 const stubDb = (t) => {
     const originalFindOne = db.User.findOne;
     const originalCreate = db.AccountFindRequest.create;
-    db.User.findOne = async () => null; // 항상 NOT_FOUND — 이 파일은 제한기 배선만 본다.
+    db.User.findOne = async () => null;
     db.AccountFindRequest.create = async () => ({ id: 1 });
     t.after(() => {
         db.User.findOne = originalFindOne;

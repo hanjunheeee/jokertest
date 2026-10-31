@@ -6,7 +6,7 @@ import { useAuthStore } from "../../auth/store/auth.store.js"
 export const HISTORY_LIMIT = 50
 
 const initialState = {
-  status: "idle", // idle | loading | ready | error
+  status: "idle",
   transactions: [],
 }
 

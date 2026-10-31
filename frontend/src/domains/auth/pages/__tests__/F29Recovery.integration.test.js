@@ -39,8 +39,8 @@ const nativeFetch = globalThis.fetch
 
 let apiBase = ""
 let fetchCalls = []
-let beforeSend = null // async (call) => void
-let afterReceive = null // async (call, response) => "drop" | undefined
+let beforeSend = null
+let afterReceive = null
 let cookieJar = new Map()
 
 const cookieHeader = () => [...cookieJar].map(([name, value]) => `${name}=${value}`).join("; ")

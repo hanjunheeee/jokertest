@@ -92,7 +92,7 @@ function resolveBrowserStorage() {
       if (raw === null) return null
 
       try {
-        JSON.parse(raw) // 손상된 JSON이면 여기서 걸러 초기 상태로 대체한다.
+        JSON.parse(raw)
       } catch {
         return null
       }

@@ -268,7 +268,7 @@ test('AC-04: 소유하지 않은 itemId가 섞이면 NOT_OWNED로 거부되고 �
     const before = await getPalette(base, userId);
 
     const notOwned = [...DEFAULT_SLOTS];
-    notOwned[3] = 'emoji-take-aim'; // 상점 이모티콘 — 구매·지급하지 않았다.
+    notOwned[3] = 'emoji-take-aim';
 
     const rejected = await putPalette(base, userId, { slots: notOwned, expectedRevision: before.body.revision });
     assert.equal(rejected.status, 400);
@@ -308,13 +308,13 @@ test('AC-05: 길이·중복·형식이 어긋난 slots는 전부 INVALID_SLOTS�
     const expectedRevision = before.body.revision;
 
     const invalidSlots = [
-        DEFAULT_SLOTS.slice(0, 7),                                            // 길이 7
-        [...DEFAULT_SLOTS, 'emoji-basic-reject'],                             // 길이 9
-        [...DEFAULT_SLOTS.slice(0, 7), 'emoji-basic-reject'],                 // 중복
-        [...DEFAULT_SLOTS.slice(0, 7), 42],                                   // 숫자 원소
-        [...DEFAULT_SLOTS.slice(0, 7), { id: 'emoji-basic-dizzy' }],          // 객체 원소
-        [...DEFAULT_SLOTS.slice(0, 7), ''],                                   // 빈 문자열
-        'emoji-basic-reject',                                                 // 배열이 아님
+        DEFAULT_SLOTS.slice(0, 7),
+        [...DEFAULT_SLOTS, 'emoji-basic-reject'],
+        [...DEFAULT_SLOTS.slice(0, 7), 'emoji-basic-reject'],
+        [...DEFAULT_SLOTS.slice(0, 7), 42],
+        [...DEFAULT_SLOTS.slice(0, 7), { id: 'emoji-basic-dizzy' }],
+        [...DEFAULT_SLOTS.slice(0, 7), ''],
+        'emoji-basic-reject',
     ];
 
     for (const slots of invalidSlots) {

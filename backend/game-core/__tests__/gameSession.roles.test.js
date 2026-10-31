@@ -302,7 +302,7 @@ test('CUSTOM: session.jokerCount와 resolvedComposition.JOKER는 같은 값에�
 test('CUSTOM: 고정 역할 합이 실제 참가 인원을 넘으면 준비 단계에서 거부되고 registry는 그대로다', () => {
     const room = makeCustomRoom({
         players: ['c1', 'c2', 'c3'].map((uuid) => makePlayer(uuid)),
-        roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }, // 합계 4 > 3명
+        roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
     })
     const prepared = prepareGameSession(room)
 
@@ -372,7 +372,7 @@ test('AUTO: 저장된 jokerCount가 상한(2명)을 넘으면 시작 단계에�
 
 test('CUSTOM: 저장된 jokerCount와 roleCounts.JOKER가 어긋난 방은 시작할 수 없다', () => {
     const room = makeCustomRoom({ roleCounts: { JOKER: 2, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 } })
-    room.settings.jokerCount = 1 // 두 값이 갈린 상태(정상 경로로는 만들어질 수 없다)
+    room.settings.jokerCount = 1
 
     const prepared = prepareGameSession(room)
     assert.equal(prepared.ok, false)
@@ -502,8 +502,8 @@ test('CUSTOM: 커밋된 세션의 공개 payload에는 역할 구성이 노출�
 test('AUTO: roleComposition이 없는(수동 조립) 세션은 기존 computeRoleComposition 계약으로 검증된다', () => {
     const room = makeRoom({ players: ['a1', 'a2', 'a3', 'a4'].map((uuid) => makePlayer(uuid)), jokerCount: 1 })
     const prepared = buildSessionCandidate(room)
-    delete prepared.session.roleComposition // 구버전 세션 재현
+    delete prepared.session.roleComposition
 
-    commitGameSession(prepared.session) // 기존 AUTO 계약 그대로 통과한다
+    commitGameSession(prepared.session)
     assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 1)
 })

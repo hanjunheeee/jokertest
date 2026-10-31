@@ -19,7 +19,7 @@ export function createSfxAssetLoader(io = {}) {
     timeoutMs = SFX_LOAD_TIMEOUT_MS,
   } = io
 
-  return /* 저장된 데이터나 현재 상태에서 효과음 리소스를 찾아 호출한 코드가 사용할 수 있게 한다. | entry: 항목 값 | control: 조작 값 */ async function loadSfxAsset(entry, control) {
+  return async function loadSfxAsset(entry, control) {
 
     if (entry === null || typeof entry !== "object") throw new Error("sfx-asset-entry-invalid")
     if (typeof entry.src !== "string" || entry.src.length === 0) throw new Error("sfx-asset-src-missing")
@@ -44,7 +44,7 @@ export function createSfxAssetLoader(io = {}) {
 
     const sha256 = toHex(await digest(bytes))
     if (sha256 !== entry.sha256) {
-      return { sha256, src: null, /* 더는 사용하지 않을 해제를 정리하거나 해제한다. */ release: () => {
+      return { sha256, src: null,release: () => {
 } }
     }
 

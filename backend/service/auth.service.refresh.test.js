@@ -23,7 +23,7 @@ const baseSession = (overrides = {}) => ({
     refresh_token_hash: null,
     refresh_previous_hash: null,
     refresh_previous_expires_at: null,
-    refresh_token_expires_at: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 절대 만료까지 10일 남음
+    refresh_token_expires_at: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
     ...overrides,
 });
 
@@ -245,7 +245,7 @@ test("정지 감지 시 401/409가 아니라 403이며, 이 계정의 모든 세
 });
 
 test("절대 기한이 임박하면 새 액세스 토큰의 exp가 기본 TTL 대신 남은 시간만큼만 발급된다", async (t) => {
-    const remainingMs = 5_000; // 절대 만료까지 5초 남음(기본 15분보다 훨씬 짧다)
+    const remainingMs = 5_000;
     const session = baseSession({
         refresh_token_hash: hashOf("raw-current"),
         refresh_token_expires_at: new Date(Date.now() + remainingMs),
@@ -265,7 +265,7 @@ test("절대 기한이 임박하면 새 액세스 토큰의 exp가 기본 TTL �
 test("절대 기한을 이미 넘긴 세션은(초 단위 경계) 회전 대신 만료로 거부된다", async (t) => {
     const session = baseSession({
         refresh_token_hash: hashOf("raw-current"),
-        refresh_token_expires_at: new Date(Date.now() - 1), // 1ms라도 지났으면 만료
+        refresh_token_expires_at: new Date(Date.now() - 1),
     });
     const { calls } = stubRepo(t, { findSessionForRefresh: () => session });
 

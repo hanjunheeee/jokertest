@@ -11,7 +11,7 @@ export function useInGameDayDiscussionReady() {
   const dayPhase = useInGameStore((s) => s.state?.dayPhase)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
-  const [status, setStatus] = useState("idle") // idle | sending | ready
+  const [status, setStatus] = useState("idle")
   const [error, setError] = useState(null)
   const [readyCount, setReadyCount] = useState(null)
   const [requiredCount, setRequiredCount] = useState(null)
@@ -32,7 +32,7 @@ export function useInGameDayDiscussionReady() {
     versionRef.current += 1
     sendingRef.current = false
     readyRef.current = false
-    if (!mountedRef.current) return // unmounted: state는 건드리지 않는다
+    if (!mountedRef.current) return
     setStatus("idle")
     setError(null)
     setReadyCount(null)

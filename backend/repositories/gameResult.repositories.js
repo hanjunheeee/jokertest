@@ -114,7 +114,7 @@ exports.findGameResultById = async (gameId) => {
     };
 };
 
-const EXCLUDED_GAME_SOURCES = new Set(['development', 'test']); // 집계 제외 출처 — 자동 시험(test)과 옛 개발 판(development)
+const EXCLUDED_GAME_SOURCES = new Set(['development', 'test']);
 const isRoleStatisticsEligibleGame = (settings) => !EXCLUDED_GAME_SOURCES.has(settings?.gameSource?.value);
 
 const toRoleStatisticsRow = (playerRow) => ({
@@ -167,7 +167,7 @@ exports.getAccountRecordSummaries = async (userIds) => {
     }
 
     for (const [userId, { games, wins }] of totalsByUser) {
-        if (!summaries.has(userId)) continue; // 요청하지 않은 계정은 돌려주지 않는다
+        if (!summaries.has(userId)) continue;
         summaries.set(userId, {
             totalGames: games,
             winRate: games > 0 ? Math.round((wins / games) * 100) : 0,

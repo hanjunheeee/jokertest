@@ -384,8 +384,8 @@ test('night turn: 죽은 직업과 산 직업의 턴 방송이 같은 이벤트�
     const clock = createManualClock()
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    submit(jokerUuid, null) // 산 직업(JOKER) 턴 종료 → 죽은 직업(DOCTOR) 턴 시작
-    clock.advance(NIGHT_TURN_DURATION_MS) // 죽은 직업 턴 종료
+    submit(jokerUuid, null)
+    clock.advance(NIGHT_TURN_DURATION_MS)
 
     const byKey = new Map(turnBroadcasts(io).map((b) => [`${b.event}:${b.payload.role}`, b]))
     const aliveStarted = byKey.get('night_turn_started:JOKER')
@@ -1099,7 +1099,7 @@ test('night turn: [conceal 회귀 8/27] 은폐를 위해 판정을 되돌리지 
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     assert.deepEqual(submit(jokerUuid, null), { ok: true })
-    clock.advance(appliedDurationMs(session, 'DOCTOR')) // 무인 DOCTOR 턴은 연출만 하고 넘어간다
+    clock.advance(appliedDurationMs(session, 'DOCTOR'))
     assert.deepEqual(submit(guardUuid, null), { ok: true })
     assert.deepEqual(submit(witchHunterUuid, null), { ok: true })
 
@@ -2353,10 +2353,10 @@ test('AC-01(F-26a): 역할별 성공 사건은 능력 사용자·대상자에게
     io.sockets.sockets.set(outsider.id, outsider)
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    submit(jokerUuid, doctorUuid) // 광대가 의사를 공격
-    submit(doctorUuid, doctorUuid) // 의사가 자기 자신을 치료
-    submit(guardUuid, citizenUuid) // 경비원이 시민을 조사
-    submit(witchHunterUuid, null) // 마녀사냥꾼 기권 — 사건 없음
+    submit(jokerUuid, doctorUuid)
+    submit(doctorUuid, doctorUuid)
+    submit(guardUuid, citizenUuid)
+    submit(witchHunterUuid, null)
 
     assert.equal(sockets.get(jokerUuid).countReceived('night_action_success'), 1, '광대는 KILL의 USER다')
     assert.equal(sockets.get(guardUuid).countReceived('night_action_success'), 1, '경비원은 INVESTIGATE의 USER다')
@@ -2517,7 +2517,7 @@ test('AC-04(F-26a): 같은 대상이 연결이 끊긴 상태라면 성공 사건
     session.phase = 'NIGHT'
     session.nightActions = new Map()
     session.nightResolution = null
-    sockets.get(citizenUuid).connected = false // 대상자의 연결이 끊긴 상태
+    sockets.get(citizenUuid).connected = false
 
     const before = sockets.get(citizenUuid).countReceived('night_action_success')
 
@@ -2676,7 +2676,7 @@ test('AC-03/AC-05(F-26b): 광대가 의사를 공격하고 의사가 자신을 �
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     submit(jokerUuid, doctorUuid)
-    submit(doctorUuid, doctorUuid) // 자기 치료
+    submit(doctorUuid, doctorUuid)
     submit(guardUuid, null)
     submit(witchHunterUuid, null)
 

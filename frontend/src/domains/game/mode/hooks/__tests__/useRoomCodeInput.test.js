@@ -232,7 +232,7 @@ test("Backspace는 글자가 있는 칸을 비운다", () => {
 test("빈 칸에서 Backspace를 누르면 앞 칸을 비우고 그리로 이동한다", () => {
   const { cells, displayed, focusedIndex, unmount } = setup({ initialValue: "12" })
 
-  fireEvent.keyDown(cells[2], { key: "Backspace" }) // 2번 칸은 비어 있다
+  fireEvent.keyDown(cells[2], { key: "Backspace" })
 
   assert.equal(displayed(), "1")
   assert.equal(focusedIndex(), 1)

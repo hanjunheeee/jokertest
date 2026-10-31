@@ -505,7 +505,7 @@ test("제출 중 중복 호출은 두 번째 제출을 무시한다", async () =
   assert.equal(hook.result.current.status, "submitting")
 
   await act(async () => {
-    await hook.result.current.submit(VALID_FIELDS) // 제출 중 두 번째 호출 — 무시되어야 한다
+    await hook.result.current.submit(VALID_FIELDS)
   })
   assert.equal(completeRequests.length, 1, "제출 중에는 두 번째 요청을 보내지 않아야 한다")
 

@@ -183,7 +183,7 @@ test('방 삭제 후 public_rooms_updated 방송에서 해당 방이 사라진�
     const io = createFakeIo([host])
     const created = await callAsPromise(handleCreateRoom, io, host, 'delete-broadcast-host', settings('open'))
 
-    io.emitted.length = 0 // 생성 시점 방송은 이번 검증과 무관하므로 비워둔다
+    io.emitted.length = 0
     handleDeleteRoom(io, 'delete-broadcast-host')
 
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
@@ -212,7 +212,7 @@ test('참가자 disconnect 후 public_rooms_updated 방송에 인원 감소가 �
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
     assert.ok(broadcast, 'disconnect 후 목록 방송이 있어야 합니다')
     const room = broadcast.payload.rooms.find((r) => r.id === created.room.roomId)
-    assert.equal(room.current, 1) // host만 남음
+    assert.equal(room.current, 1)
 })
 
 test('public_rooms_updated로 방송되는 모든 방 DTO에는 roomCode/players/hostUuid/socketId가 없다', async () => {

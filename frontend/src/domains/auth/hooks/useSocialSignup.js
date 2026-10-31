@@ -56,7 +56,7 @@ export function useSocialSignup(intentToken) {
 
     getSocialSignupIntentApi({ intentToken })
       .then((data) => {
-        if (intentGenerationRef.current !== generation) return // 이미 무효화됨(교체·재시도·언마운트)
+        if (intentGenerationRef.current !== generation) return
         if (typeof data?.emailVerificationRequired !== "boolean") {
           setIntentStatus("error")
           setErrorMessage("가입 정보를 불러오지 못했습니다. 다시 시도해주세요.")
@@ -164,7 +164,7 @@ export function useSocialSignup(intentToken) {
         email: verifiedPayload?.email,
         signupProof: verifiedPayload?.signupProof,
       })
-      if (intentGenerationRef.current !== submitGeneration) return // 이미 무효화됨
+      if (intentGenerationRef.current !== submitGeneration) return
       if (!isCompletedSignupUser(result?.user)) {
         setStatus("error")
         setErrorMessage(GENERIC_COMMUNICATION_ERROR_MESSAGE)
@@ -174,7 +174,7 @@ export function useSocialSignup(intentToken) {
       setStatus("done")
       navigate("/lobby")
     } catch (error) {
-      if (intentGenerationRef.current !== submitGeneration) return // 이미 무효화됨
+      if (intentGenerationRef.current !== submitGeneration) return
 
       const code = trustedErrorCode(error)
       switch (code) {

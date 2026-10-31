@@ -26,7 +26,7 @@ export function useLobbyIntro() {
     }
 
     return () => video.removeEventListener("loadedmetadata", pauseIntro)
-  }, []) // mount 시점에 "이미 본 인트로인지" 한 번만 확인하면 됩니다.
+  }, [])
 
   useEffect(() => {
     if (!introDone) return

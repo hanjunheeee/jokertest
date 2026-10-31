@@ -63,7 +63,7 @@ export function useFriendListSync(friendListOpen) {
     fetchFriendsFromStore()
     fetchIncomingFromStore()
     fetchFavoritesFromStore()
-  }, [friendListOpen]) // 패널 열림 여부가 바뀔 때만 동기화합니다.
+  }, [friendListOpen])
 
   const handleRefreshFriends = async () => {
     await Promise.all([fetchFriendsFromStore(), fetchIncomingFromStore(), fetchFavoritesFromStore()])

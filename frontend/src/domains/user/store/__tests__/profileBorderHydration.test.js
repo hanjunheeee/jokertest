@@ -69,10 +69,10 @@ test("A-08: 계정 A에서 시작한 fetchSummary가 계정 B로 전환된 뒤 �
     ? Promise.resolve({ balanceGold: 0, balanceDiamond: 0 })
     : deferred.promise)
 
-  const fetchPromise = useEconomyStore.getState().fetchSummary() // user-1로 시작
-  setCurrentUser({ uuid: "user-2" }) // 응답이 오기 전에 계정 전환
+  const fetchPromise = useEconomyStore.getState().fetchSummary()
+  setCurrentUser({ uuid: "user-2" })
 
-  deferred.resolve({ loadout: { selectedProfileBorderId: "profile-border-귀족" } }) // user-1의 늦은 응답
+  deferred.resolve({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
   await fetchPromise
 
   const { frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
@@ -104,7 +104,7 @@ test("로그아웃 후 표시는 기본값으로 돌아가고, 재로그인(같�
   await useEconomyStore.getState().fetchSummary()
   assert.equal(useProfileCustomizationStore.getState().selectedBorderItemId, "profile-border-귀족")
 
-  setCurrentUser(null) // 로그아웃
+  setCurrentUser(null)
 
   assert.equal(useProfileCustomizationStore.getState().selectedBorderItemId, DEFAULT_PROFILE_BORDER_ITEM_ID)
   assert.equal(useProfileCustomizationStore.getState().frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)

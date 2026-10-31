@@ -104,7 +104,7 @@ test("세대가 바뀌어 폐기된 호출은 outcome:'stale'을 반환하고 st
   getMyAchievementsImpl = async () => { await deferred.promise; return SAMPLE_ACHIEVEMENTS }
 
   const stalePromise = useAchievementsStore.getState().fetchAchievements()
-  setCurrentUser({ uuid: "user-2" }) // reset() → requestGeneration 증가
+  setCurrentUser({ uuid: "user-2" })
   deferred.resolve()
 
   const outcome = await stalePromise

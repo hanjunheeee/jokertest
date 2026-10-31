@@ -323,7 +323,7 @@ test("AC-03 · 전체 밤 시간을 바꾼 뒤 직업 행을 처음 누르면 �
 
   const { container, getSubmitted } = await mountPanel({ mode: "edit", initialFormState: formState })
   await clickTab(container, "회의&투표")
-  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`) // 60 → 90
+  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`)
   assert.equal(readStepperRow(container, ROLE_TIME_LABELS.JOKER), "90초")
 
   await clickStepper(container, "광대 밤 시간 조절 증가")
@@ -344,7 +344,7 @@ test("AC-03 · 생성 화면에서는 전체 밤 시간을 바꿔도 직업 행�
   assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "90초")
   assert.equal(readStepperRow(container, ROLE_TIME_LABELS.JOKER), "90초")
 
-  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`) // 90 → 120
+  await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`)
   assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "120초")
   for (const role of Object.keys(ROLE_TIME_LABELS)) {
     assert.equal(readStepperRow(container, ROLE_TIME_LABELS[role]), "90초",
@@ -375,7 +375,7 @@ test("AC-03 · 이 화면이 표현할 수 없는 서버 설정은 기본값으�
   assert.equal(form({ maxPlayers: undefined }).code, "MISSING_FIELD")
 
   assert.equal(form({ dayDiscussionTime: 75 }).code, "OUT_OF_RANGE")
-  assert.equal(form({ dayVoteTime: 120 }).code, "OUT_OF_RANGE") // 투표는 30~90초다
+  assert.equal(form({ dayVoteTime: 120 }).code, "OUT_OF_RANGE")
   assert.equal(form({ nightActionTime: 150 }).code, "OUT_OF_RANGE")
   assert.equal(form({ roleNightActionTimes: { JOKER: 45 } }).code, "OUT_OF_RANGE")
 

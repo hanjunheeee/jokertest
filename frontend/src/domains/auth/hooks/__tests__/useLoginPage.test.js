@@ -601,27 +601,27 @@ test("AC-05: 이전 이메일의 뒤늦은 응답이 최신 확인 상태를 덮
     callCount += 1
     if (callCount === 1) {
       await firstPending
-      return { available: false } // 오래된(첫) 요청은 뒤늦게 "중복"으로 응답한다
+      return { available: false }
     }
-    return { available: true } // 최신(둘째) 요청은 먼저 "사용 가능"으로 응답한다
+    return { available: true }
   }
 
   const hook = renderHook(({ email: e }) => useEmailAvailabilityCheck(e), { initialProps: { email: "old@example.com" } })
 
   let firstCheck
   act(() => {
-    firstCheck = hook.result.current.check() // 응답을 아직 받지 못한 채 느리게 대기 중
+    firstCheck = hook.result.current.check()
   })
 
   hook.rerender({ email: "new@example.com" })
   await act(async () => {
-    await hook.result.current.check() // 최신 이메일 확인 요청은 즉시 응답을 받는다
+    await hook.result.current.check()
   })
   assert.equal(hook.result.current.status, "available", "최신 요청의 응답이 먼저 상태를 정해야 한다")
 
   await act(async () => {
     resolveFirst()
-    await firstCheck // 이제서야 오래된 요청의 응답이 도착한다
+    await firstCheck
   })
   assert.equal(hook.result.current.status, "available", "먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰면 안 된다")
   hook.unmount()
@@ -636,26 +636,26 @@ test("AC-05: 같은 이메일로 두 번 연달아 확인해도 먼저 보낸 �
     callCount += 1
     if (callCount === 1) {
       await firstPending
-      return { available: false } // 오래된(첫) 요청은 뒤늦게 "중복"으로 응답한다
+      return { available: false }
     }
-    return { available: true } // 최신(둘째) 요청은 먼저 "사용 가능"으로 응답한다
+    return { available: true }
   }
 
   const hook = renderHook(() => useEmailAvailabilityCheck("dup-click@example.com"))
 
   let firstCheck
   act(() => {
-    firstCheck = hook.result.current.check() // 첫 클릭: 응답을 아직 받지 못한 채 느리게 대기 중
+    firstCheck = hook.result.current.check()
   })
 
   await act(async () => {
-    await hook.result.current.check() // 둘째 클릭(같은 이메일): 먼저 응답을 받는다
+    await hook.result.current.check()
   })
   assert.equal(hook.result.current.status, "available", "최신(둘째) 요청의 응답이 먼저 상태를 정해야 한다")
 
   await act(async () => {
     resolveFirst()
-    await firstCheck // 이제서야 첫 클릭의 오래된 응답이 도착한다
+    await firstCheck
   })
   assert.equal(hook.result.current.status, "available", "같은 이메일이어도 먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰면 안 된다")
   hook.unmount()

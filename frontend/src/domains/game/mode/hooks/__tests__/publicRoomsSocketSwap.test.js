@@ -125,7 +125,7 @@ test("AC-03 · 소켓이 교체되면 새 소켓으로 목록을 다시 조회�
 
 test("AC-03 · 교체된 옛 소켓의 늦은 조회 응답과 늦은 방송은 현재 목록을 덮지 못한다", async () => {
   const socketA = createFakeSocket("A")
-  socketA.answer = () => HOLD // 최초 조회를 붙잡아 둔다.
+  socketA.answer = () => HOLD
   setSocket(socketA)
 
   const { result } = mount()
@@ -248,7 +248,7 @@ test("AC-03 · cleanup 이전의 옛 방송도 새 목록 조회가 보류된 �
   setSocket(socketA)
   const { result } = mount()
   await settle()
-  const socketB = createFakeSocket("B") // 새 조회를 보류해 잘못된 방송을 덮어 가리지 않는다.
+  const socketB = createFakeSocket("B")
   await act(async () => {
     setSocket(socketB)
     assert.equal(socketA.listenerCount(ROOM_LIST_SOCKET_EVENTS.PUBLIC_ROOMS_UPDATED), 1,

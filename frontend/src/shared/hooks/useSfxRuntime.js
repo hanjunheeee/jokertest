@@ -28,15 +28,15 @@ export function dispatchSfxEvent(event) {
 
 export function claimSfxAudio(event, options) {
   if (activePlayer === null) {
-    return { status: "suppressed", reason: SFX_SUPPRESSED_REASON.NO_RUNTIME, /* 연결에 필요한 이벤트 처리·구독을 연결하거나 해제한다. */ attach: () => {
-}, /* 더는 사용하지 않을 해제를 정리하거나 해제한다. */ release: () => {
+    return { status: "suppressed", reason: SFX_SUPPRESSED_REASON.NO_RUNTIME,attach: () => {
+},release: () => {
 } }
   }
   try {
     return activePlayer.claimAudio(event, options)
   } catch {
-    return { status: "suppressed", reason: SFX_SUPPRESSED_REASON.NO_RUNTIME, /* 연결에 필요한 이벤트 처리·구독을 연결하거나 해제한다. */ attach: () => {
-}, /* 더는 사용하지 않을 해제를 정리하거나 해제한다. */ release: () => {
+    return { status: "suppressed", reason: SFX_SUPPRESSED_REASON.NO_RUNTIME,attach: () => {
+},release: () => {
 } }
   }
 }
